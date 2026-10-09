@@ -27,8 +27,11 @@ import { MAINLINE_STEPS, worstState } from '@/lib/config-readiness'
 /** 设计真值源给出的**逐字**域 key（这份清单是 URL 契约，改它 = 旧链接失效） */
 const EXPECTED_KEYS = [
   'calc',
-  'processing-fee',
+  'processing-items',
+  'fee-combinations',
+  'operation-prices',
   'craft-route',
+  'cutting-height',
   'remnant-sizes',
   'enterprise',
   'ai',
@@ -98,11 +101,9 @@ describe('判据 3：查域 / 主线步骤映射（页面与徽标都取这里�
     // 正控：算料域有徽标来源
     expect(mainlineStepsOfDomain(findDomain('calc')!)).toEqual(['calc'])
     // 一个域覆盖**多步**（「工艺与路线」= 工序 + 路线 + 默认路线）⇒ 徽标取**最差**那一步，见下条
-    expect(mainlineStepsOfDomain(findDomain('craft-route')!)).toEqual([
-      'operations',
-      'routings',
-      'default-route',
-    ])
+    // v2（#6585）拆域后：「工序与部位单价」承载 `operations`，「工艺路线」承载 `routings` + `default-route`
+    expect(mainlineStepsOfDomain(findDomain('operation-prices')!)).toEqual(['operations'])
+    expect(mainlineStepsOfDomain(findDomain('craft-route')!)).toEqual(['routings', 'default-route'])
     // 反面：企业信息不在主线里 ⇒ 不声明（编读数 = 第二份会漂的口径）
     expect(mainlineStepsOfDomain(findDomain('enterprise')!)).toEqual([])
   })

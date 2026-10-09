@@ -67,7 +67,8 @@ import { WorkerPageConfigPanel } from '@/components/settings/WorkerPageConfigPan
 import { CalcCaliberPanel } from '@/components/settings/CalcCaliberPanel'
 import { RemnantItemSizesPanel } from '@/components/settings/RemnantItemSizesPanel'
 import { ConfigReadinessBar } from '@/components/settings/ConfigReadinessBar'
-import ProcessingBoard from '@/components/production-config/ProcessingBoard'
+import ProcessingItemsPanel from '@/components/production-config/ProcessingItemsPanel'
+import FeeCombinationsPanel from '@/components/production-config/FeeCombinationsPanel'
 import ProcessConfigBoard from '@/components/production-config/ProcessConfigBoard'
 import { readImageDimensions } from '@/lib/image-dimensions'
 import { getBminiH5Url } from '@/lib/bmini-h5-url'
@@ -82,6 +83,7 @@ import {
   type ConfigDomain,
   type ConfigDomainKey,
   domainOfMainlineStep,
+  resolveDomainKey,
 } from '@/lib/config-center-domains'
 // 🔴 主线判据的**唯一真值源**（类级守卫：tests/unit_ci_workflows/test_config_readiness_single_source.py）
 import {
@@ -166,7 +168,8 @@ export default function SettingsPage() {
 
   /** 初始域：`?domain=` 优先，其次旧 `?tab=` 映射，都没有 ⇒ 第一个可见域 */
   const [activeKey, setActiveKey] = useState<string>(() => {
-    const fromUrl = findDomain(urlDomain)
+    // `?domain=` 走**兼容别名**（#6585 拆域后旧链接仍要能打开，见 LEGACY_DOMAIN_ALIASES）
+    const fromUrl = findDomain(resolveDomainKey(urlDomain))
     if (fromUrl && has(fromUrl.requiredCode)) return fromUrl.key
     const legacy = urlTab ? LEGACY_TAB_TO_DOMAIN[urlTab] : null
     if (legacy && has(findDomain(legacy)?.requiredCode)) return legacy
@@ -372,7 +375,8 @@ export default function SettingsPage() {
             {activeDomain.key === 'calc' && (
               <CalcCaliberPanel calc={calc} calcError={calcError} loading={readinessLoading} />
             )}
-            {activeDomain.key === 'processing-fee' && <ProcessingBoard embedded />}
+            {activeDomain.key === 'processing-items' && <ProcessingItemsPanel embedded />}
+            {activeDomain.key === 'fee-combinations' && <FeeCombinationsPanel embedded />}
             {activeDomain.key === 'craft-route' && <ProcessConfigBoard embedded />}
             {activeDomain.key === 'remnant-sizes' && (
               <RemnantItemSizesPanel copy={REMNANT_PARAM_COPY} />

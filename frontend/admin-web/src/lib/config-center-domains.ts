@@ -4,7 +4,7 @@
  *
  * ## 它是什么
  *
- * 页面左栏那**四个区 · 八个域**的**唯一**定义处：域的 key / 人话名 / 一句话简介 / 所属区 /
+ * 页面左栏那**四个区 · 十一个域**的**唯一**定义处：域的 key / 人话名 / 一句话简介 / 所属区 /
  * 打开本域所需的读码。页面**只渲染它**，不写死任何字面量（否则「区里少了哪个域」「徽标少了一个」
  * 这类缺陷没有任何东西会变红）。
  *
@@ -107,6 +107,19 @@ export type ConfigDomainKey =
 /**
  * 八个域（**顺序即左栏顺序、也是依赖顺序**：先算钱 → 再干活 → 再省料 → 最后是这家店）。
  */
+/**
+ * 十一个域（**顺序即左栏顺序、也是依赖顺序**：先算钱 → 再干活 → 再省料 → 最后是这家店）。
+ *
+ * ⚠️ **v2（issue #6585）**：由 8 个域拆到 **11 个** —— 原来的 `processing-fee`（「加工项与加工费」，
+ * 一个域里塞两件事）拆成 `processing-items` + `fee-combinations`；原来的 `craft-route`
+ * （「工艺与路线」，一个域里塞四件事）拆成 `operation-prices` + `craft-route` + `cutting-height`。
+ * 拆的依据 = **一件配置一件事**：域内不许再套一层导航（设计 §2 判死线第 3 条），
+ * 而 v1 这几域里挂的功能体**各自自带 tab**（工序管理 / 算料配置 / 裁高配置、加工项 / 加工费组合）——
+ * 左栏一套导航 + 域内又一套，正是用户说的「分不清该点哪个」。
+ *
+ * 🔴 旧的 `?domain=processing-fee` 仍可用（见 {@link LEGACY_DOMAIN_ALIASES}，落到
+ * `processing-items`）—— 域 key 是**可分享的 URL 契约**，改域不许让旧链接落到空白。
+ */
 export const CONFIG_DOMAINS: readonly ConfigDomain[] = [
   {
     key: 'calc',
@@ -118,25 +131,51 @@ export const CONFIG_DOMAINS: readonly ConfigDomain[] = [
     mainlineSteps: ['calc'],
   },
   {
-    key: 'processing-fee',
-    label: '加工项与加工费',
+    key: 'processing-items',
+    label: '加工项与分类',
     zone: 'quote',
-    summary: '这家做哪些加工、什么特征组合收什么价 —— 组合命中不到，那一行就收不到价',
-    // 加工项 / 加工分类 / 加工费组合读面（`/production/processing` 的节点码）
+    summary: '这家提供哪些加工、它们怎么分类 —— 顾客下单时能选到的就是这里启用的',
+    // 加工项 / 加工分类读面（`processingItemApi` / `processingCategoryApi`）
     requiredCode: 'production:view',
-    // 🔴 主线把「加工费组合」算作**一步**，而本域还管「加工项与分类」——
-    //    主线今天没有「加工项」那一步（`config-readiness.ts` 头部「未实装」已具名登记）⇒
-    //    不编一个读数出来，本域**不显示**徽标。
+    // 主线今天没有「加工项」那一步（`config-readiness.ts` 头部「未实装」已具名登记）⇒ 不编读数、不显示徽标
+    mainlineSteps: [],
+  },
+  {
+    key: 'fee-combinations',
+    label: '加工费组合',
+    zone: 'quote',
+    summary: '什么特征组合收什么价 —— 组合命中不到，那一行就收不到价',
+    // 加工费组合 / 缺口读面（`productionApi.getFeeCombinations` / `getFeeGaps`）
+    requiredCode: 'production:view',
     mainlineSteps: ['fee-combinations'],
   },
   {
-    key: 'craft-route',
-    label: '工艺与路线',
+    key: 'operation-prices',
+    label: '工序与部位单价',
     zone: 'production',
-    summary: '车间要做哪些活、每道活多少钱、订单按哪条路线走',
-    // 工序库 / 价目 / 工艺路线读面（`/production/routings` 的节点码）
+    summary: '车间要做哪些活、每道活多少钱（给工人的计件单价）',
+    // 工序库 / 工序-部位价目读面（`getOperationsCatalog` / `getOperationPositions`）
     requiredCode: 'production:view',
-    mainlineSteps: ['operations', 'routings', 'default-route'],
+    mainlineSteps: ['operations'],
+  },
+  {
+    key: 'craft-route',
+    label: '工艺路线',
+    zone: 'production',
+    summary: '订单按哪条路线走 —— 没匹配到任何路线的订单走「默认路线」那条',
+    // 工艺路线读面（`productionApi.getRoutings`）
+    requiredCode: 'production:view',
+    // 「工艺路线」与「默认路线」是**同一个列表**的两步判据（领先条 = 默认路线）⇒ 一个域承载两步
+    mainlineSteps: ['routings', 'default-route'],
+  },
+  {
+    key: 'cutting-height',
+    label: '裁高配置',
+    zone: 'production',
+    summary: '裁剪高度怎么算 —— 成品高加上命中的增量项（定型 / 打孔这类）',
+    // 裁高读面（`cuttingHeightApi`）
+    requiredCode: 'production:view',
+    mainlineSteps: [],
   },
   {
     key: 'remnant-sizes',
@@ -182,6 +221,25 @@ export const CONFIG_DOMAINS: readonly ConfigDomain[] = [
     mainlineSteps: [],
   },
 ]
+
+/**
+ * 旧域 key → 现域 key（**URL 契约的兼容层**）。
+ *
+ * 为什么必须有：`?domain=` 是可分享 / 可收藏 / 可被通知与文档引用的地址 —— 拆域（#6585）把
+ * `processing-fee` 拆成两个域之后，旧链接**不许落到空白**（那等于「点了一个链接看到空页」，
+ * 比 404 更难排查）。这里只做**语义等价**的映射，不猜。
+ */
+export const LEGACY_DOMAIN_ALIASES: Readonly<Record<string, string>> = {
+  // v1 的「加工项与加工费」（一个域两件事）⇒ 落到「加工项与分类」（另一半在「加工费组合」域）
+  'processing-fee': 'processing-items',
+}
+
+/** 把 URL 里的 `?domain=` 解析成**现役**域（先查现役 key，再查兼容别名）；找不到 ⇒ `undefined`。 */
+export function resolveDomainKey(key: string | null | undefined): string | undefined {
+  if (!key) return undefined
+  if (CONFIG_DOMAINS.some((d) => d.key === key)) return key
+  return LEGACY_DOMAIN_ALIASES[key]
+}
 
 /** 按 key 取域（找不到 ⇒ `undefined`；调用方负责兜底，**不在这里编一个默认域**）。 */
 export function findDomain(key: string | null | undefined): ConfigDomain | undefined {
