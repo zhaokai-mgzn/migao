@@ -99,7 +99,7 @@ import {
   type CurtainBody,
 } from '@/lib/order-craft-fields'
 // 常用物流/快递（issue #4874）：词表唯一真值在 `lib/logistics.ts`，**不另造**一份候选
-import { LOGISTICS_COMPANIES, LOGISTICS_TYPES } from '@/lib/logistics'
+import { LOGISTICS_COMPANIES, LOGISTICS_TYPES, describeLogisticsProfile } from '@/lib/logistics'
 // 工艺规格的**展示行**（标签 + 格式化）—— 与订单详情 / 加工单 / 任务卡 / C 端报价卡**同一份**
 // （`craftSpecRows`）：收起态的「当前工艺参数」读数直接复用它，见 `craftPlanCurrentRows`。
 import { craftSpecRows } from '@/lib/craft-display'
@@ -1774,6 +1774,18 @@ export default function NewOrderPage() {
    */
   const [logisticsType, setLogisticsType] = useState('')
   const [logisticsCompany, setLogisticsCompany] = useState('')
+  /**
+   * **折叠态下要能看出「现在带出的是哪一家」**（issue #6589，用户 2026-10-09 逐字：「订单这里
+   * 折叠情况下应该要展示隐藏的具体信息」）。
+   *
+   * 为什么需要它：改前 `logistics-section` 的 `<summary>` 是一句**静态**提示，与上面这两个值
+   * **零绑定** ⇒ 收起时商家只看得到「常用物流（必填 · 选客户时自动带出）」，看不出**已经带出 /
+   * 改成了什么**（本页同类形态的先例 = issue #6399 的收起态读数 `craft-plan-current`）。
+   *
+   * 口径**不新造**：值 = `lib/logistics.ts::describeLogisticsProfile`（客户档案 / 发货页同一份）；
+   * 两者都缺 ⇒ 空串 ⇒ 退回通用提示 —— **不编造**默认值（#4419：「未指定」是真值）。
+   */
+  const logisticsSummary = describeLogisticsProfile(logisticsType, logisticsCompany)
 
   /**
    * **加急**与**要求到货日**（issue #5177，做在**订单**上 —— 不是售后页）。
@@ -3345,14 +3357,27 @@ export default function NewOrderPage() {
                   「新增订单时收货信息中缺少用户的常用物流/快递以及常用公司，选择客户后要默认带出」）
                   —— 两个**可编辑**控件（词表唯一真值 = `lib/logistics.ts`），选客户时按档案带出，
                   随建单提交顶层 `logisticsType` / `logisticsCompany`（后端 #4872 落 `orders` 两列）。
-                  ⚠️ 原先那条**只读**提示 `picked-logistics-hint` 已删除（不留两份口径）。 */}
+                  ⚠️ 原先那条**只读**提示 `picked-logistics-hint` 已删除（不留两份口径）。
+                  🔴 issue #6589（2026-10-09 用户逐字「订单这里折叠情况下应该要展示隐藏的具体信息」）：
+                  **收起态**的 `<summary>` 直接把 `logisticsSummary`（已带出的具体物流）摆出来 ——
+                  改前它与两个控件的值零绑定，收起时商家只能看见通用提示、看不出选了什么。 */}
               <details
                 data-testid="logistics-section"
                 ref={logisticsRef}
                 className="mt-4 rounded border border-neutral-200 bg-neutral-50/40 px-3 py-2"
               >
-                <summary className="cursor-pointer text-xs text-neutral-500 hover:text-neutral-700">
-                  常用物流（必填 · 选客户时自动带出）
+                <summary
+                  data-testid="logistics-summary"
+                  className="cursor-pointer text-xs text-neutral-500 hover:text-neutral-700"
+                >
+                  {logisticsSummary ? (
+                    <>
+                      常用物流：
+                      <span className="font-medium text-primary-700">{logisticsSummary}</span>
+                    </>
+                  ) : (
+                    '常用物流（必填 · 选客户时自动带出）'
+                  )}
                 </summary>
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
