@@ -26,10 +26,9 @@
 //   ② **客户服务**：`在线接待 → 知识库 → 售后工单 → 客户列表`
 //      —— 原「客户列表」把「在线接待 / 知识库」这对**接待时并用**的项隔开（客服边接待边查知识库）；
 //      改为「① 接待与工具 → ② 售后（工单，接待的第二出口） → ③ 客户档案（查档/建档，最低频）」。
-//   ③ **生产管理**：`加工项管理 → 工艺配置 → 生产看板 → 智能派单 → 计件工资`
-//      —— 原「生产看板 / 智能派单」排在「加工项管理 / 工艺配置」**之前**，而**加工项是派单机的输入**
-//      （加工费组合的 `items[]` 取自加工项目录、路线由工艺配置定义）⇒ 改为「**先备资料、再生产与派单**、
-//      最末结算（计件工资）」。⚠️ 这是**顺序**调整，不改任何码（四项仍各自挂原码）。
+//      ⚠️ 该轮的组内顺序（`加工项管理 → 工艺配置 → 生产看板 → 智能派单 → 计件工资`）已被 **#6580**
+//      （2026-10-09）覆盖：前两项菜单项**已移除**，本组现为 `生产看板 → 智能派单 → 计件工资`。
+//      （保留原记载的理由：它是「加工项是派单机的输入」这一判断的历史依据。）
 //   ④ **仓储与物料**：`入库单 → 库存明细 → 发货单 → 余料台账 → 省料看板`
 //      —— 原序把「发货单」（出库）夹在入库单之后、把「库存明细」甩到组末并被「省料看板」隔开；
 //      改为「**单据（进 → 账 → 出）→ 账（余料）→ 分析（省料）**」：
@@ -190,7 +189,8 @@ export const menuGroups: MenuGroup[] = [
       { key: 'finance', name: '财务对账', icon: 'Calculator', path: '/finance', permissionCode: 'finance:view', keywords: ['cw', 'caiwu', 'duizhang', '对账'] },
     ],
   },
-  // issue #5271：生产管理组**由 7 项降到 4 项** —— 只留「加工执行 + 工艺配置 + 结算」；
+  // 🔴 2026-10-09（issue #6580）：本组现为 **3 项**（加工项管理 / 工艺配置已移除 —— 见下方 children 前的注释）。
+  // 沿革：issue #5271 时**由 7 项降到 4 项** —— 只留「加工执行 + 工艺配置 + 结算」；
   // 面料进出与消耗（入库单 / 余料台账 / 省料看板）拆到「仓储与物料」组。
   // issue #4203/#4205 后端半边：本组节点权限码原统一 processing:manage（operator 已持有该码）。
   // 🔴 issue #5291：生产域新增**读**码 `production:view` —— 「生产看板 / 工艺配置 / 计件工资」
@@ -213,34 +213,24 @@ export const menuGroups: MenuGroup[] = [
     name: '生产管理',
     icon: 'Factory',
     children: [
-      // ⚠️ 组内顺序（用户 2026-10-06 方案 A1）：**先备资料、再生产与派单、最末结算** ——
-      // 加工项 / 工艺是**派单机的输入**（加工费组合的 `items[]` 取自加工项目录、路线由工艺配置定义），
-      // 原序把它们排在「生产看板 / 智能派单」之后 = 让「用结果的人」排在「准备输入的人」前面。
+      // 🔴 2026-10-09（issue #6580，用户裁定）：本组由 5 项收拢为 **3 项** ——
+      // 「加工项管理」`/production/processing` 与「工艺配置」`/production/routings` 两个**菜单项已移除**
+      //（用户逐字：「我的目的是要能移除加工项管理和工艺配置这两个菜单」），功能体并入
+      // `/settings`（企业基础设置）页内的配置域（设计真值源：`docs/design/enterprise-settings-redesign.md`）；
+      // 两个旧路径保留为重定向（旧深链不 404）⇒ 本组现为「生产看板 → 智能派单 → 计件工资」。
+      // ⚠️ 被移除的两项从此**没有菜单节点**，其旧路由登记在
+      // `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `ROUTE_WITHOUT_MENU_NODE`。
       //
-      // 加工项管理（2026-09-29 用户裁定：**由「商品与加工项」组移入本组**，原话
-      // 「加工项应该属于生产管理」）—— 它是**加工定价资料**（加工费组合的 `items[]` 必须取自
-      // 加工项目录的活跃加工项），与「生产看板 / 工艺配置 / 计件工资」同域
-      //（同组内「建组合发现缺加工项要跳到另一个菜单组去建」的割裂就此消除）。
-      //
-      // 沿革（**一字不动地保留**，只改归属）：
-      //   · issue #4490（用户裁定 2026-09-19；同日规格修订「合并后的菜单放入到商品管理大菜单下」）：
-      //     「加工项管理」(/production/processing) 与「加工费管理」(/production/processing-fees)
-      //     **合并为单一入口**；本次移组**不撤销该合并**（仍是同一入口、同一页）；
-      //   · issue #4542（用户裁定 2026-09-19）：菜单名 = **「加工项管理」**（与服务端同名）；
-      //   · ⚠️ **名字不再提「加工费」，但功能一个没减**：本页仍是**两个 tab**（`加工项` / `加工费组合`，
-      //     沿用 #4482 在工艺配置确立的范式）——「加工费组合」定价面**原样保留**，改的只是**菜单名**；
-      //     读到这里请勿以为加工费管理被删（能力断言在 processing-fees.test.tsx，一条不少）；
-      //   · 节点码自 issue #5291 起 = 生产域**读**码 `production:view`（页内写动作仍 `processing:manage`）；
-      //   · 两个旧路径都保留为重定向（/processing、/production/processing-fees → 本路径），旧深链不 404。
-      { key: 'processing', name: '加工项管理', icon: 'Scissors', path: '/production/processing', permissionCode: 'production:view', keywords: ['jgx', 'jiagong', 'jiagongfei', '加工费'] },
-      // issue #4416：「工序库」与「工艺路线」合并为单一入口「工艺配置」——
-      // 工序是**原子词汇**、路线是**用工序名拼出的有序序列**（后端护栏：序列引用的工序必须存在于
-      // 工序库活跃行），拆成两个菜单时建路线发现缺工序要跳到另一个菜单去建。
-      // 工序库半边 = 该页**左栏**；旧路径 /production/operations 保留为重定向（旧深链不 404）。
-      // issue #5699（P4）：该页第一屏 6 个读端点此前跨两个码（路线规则族 4 个是 processing:manage）
-      // ⇒ 按子菜单粒度整页收敛到**页面码** production:view（两码持有岗位集合逐值相同 ⇒ 零 delta；
-      // 写面 POST/DELETE 路线规则、PUT 工序部位仍由 processing:manage 拦）。
-      { key: 'production-process', name: '工艺配置', icon: 'Route', path: '/production/routings', permissionCode: 'production:view', keywords: ['gypz', 'gongyi', 'gongxu', 'luxian'] },
+      // 沿革（**一字不动地保留**，它们是历史事实）：
+      //   · 加工项管理（2026-09-29 用户裁定「加工项应该属于生产管理」）：由「商品与加工项」组移入本组
+      //     —— 它是**加工定价资料**（加工费组合的 `items[]` 必须取自加工项目录的活跃加工项）；
+      //   · issue #4490（用户裁定 2026-09-19）：「加工项管理」`/production/processing` 与
+      //     「加工费管理」`/production/processing-fees` **合并为单一入口**（本次移除菜单项**不撤销该合并**）；
+      //   · issue #4542：菜单名 = **「加工项管理」**（与服务端同名）；
+      //   · issue #4416：「工序库」与「工艺路线」合并为单一入口「工艺配置」（工序是**原子词汇**、
+      //     路线是**用工序名拼出的有序序列**）；工序库半边 = 该页**左栏**；
+      //   · 节点码（两者）自 issue #5291 起 = 生产域**读**码 `production:view`；
+      //   · issue #5699（P4）：工艺配置页第一屏 6 个读端点整页收敛到**页面码** production:view。
       // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）
       { key: 'production-board', name: '生产看板', icon: 'ClipboardCheck', path: '/production', permissionCode: 'production:view', keywords: ['sckb', 'shengchan', 'jiagongdan', '加工单'] },
       // 智能派单（issue #5177）：池化派单的**决策屏** —— 加急插队区（不进池、立即单派）
@@ -304,9 +294,10 @@ export const menuGroups: MenuGroup[] = [
     icon: 'Building2',
     children: [
       { key: 'employees', name: '员工管理', icon: 'Users', path: '/employees', permissionCode: 'employee:list', keywords: ['yggl', 'yuangong'] },
-      // issue #5291：岗位权限节点改挂**读**码 `system:view`（企业基础信息仍是 system:manage）。
+      // issue #5291：岗位权限节点改挂**读**码 `system:view`。
+      // 🔴 2026-10-09（issue #6580）：「企业基础信息」已由本组**移出**（→ 尾部独立项，并改名为
+      // 「企业基础设置」）—— 本组从此只有「人与权限」两件事（员工管理 / 岗位权限）。
       { key: 'roles', name: '岗位权限', icon: 'ShieldCheck', path: '/roles', permissionCode: 'system:view', keywords: ['gwqx', 'jiaose', 'quanxian'] },
-      { key: 'settings', name: '企业基础信息', icon: 'Settings', path: '/settings', permissionCode: 'system:manage', keywords: ['qyxx', 'shezhi', 'qiye'] },
     ],
   },
 ]
@@ -361,21 +352,35 @@ export const standaloneTopItems: MenuItem[] = [
   //   **不再存在**（组内已空）。原组里的两个动作码节点（`product:create` / `product:category`）
   //   由服务端权限树承载（判据里的 `ACTION_NODES` 按**节点归属组**登记）。
   { key: 'products', name: '商品管理', icon: 'Package', path: '/products', permissionCode: 'product:list', keywords: ['splb', 'spgl', 'shangpin', '商品'] },
-  // 参数总览（issue #6573，用户 2026-10-08 裁定**方案 C**）：由 `/settings?tab=params` 的 tab
-  // **升为一级菜单项**。理由 = 配置面（算料 / 加工费 / 工艺 / 余料回收）散在 6 个页面，而
-  // 「还缺什么」的信息被锁在「工艺配置」页的第一屏 ⇒ 集中管理 + 一条走得完的配置主线。
-  //
-  // 🔴 **节点码取既有码 `production:view`，不新造**：
-  //   · 新造一个码今天**没有任何岗位持有** ⇒ 菜单节点对所有人不可见（#4203 同族坑，仓内明令禁止）；
-  //   · 取 `production:view` ⇒ 持有该码的岗位（operator / product_manager / sales /
-  //     customer_service / finance，见 `rbac/manifest.json` 的 `roles.seed`）**此前进不去** `/settings`
-  //     （那里是 `system:manage`）⇒ 本项是**新增入口**、不是搬家；
-  //   · 本项**不改任何端点的权限码** ⇒ 授权 delta = 仅「新增一个入口的可见面」。
-  // 🔴 位置：与「商品管理」并列，同排在**所有分组之后**（`STANDALONE_TOP_AFTER_GROUP_KEY`）——
-  //   位置在**四处**同批表达（本文件 / `MenuController.MENU_TREE` / `AuthService` 顶层 `menus.add` /
-  //   `backend/ai-agent-service/app/context/menu_navigator.py` 的 `MENU_TREE`），
-  //   判据 = `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` 的顶层布局序列。
-  { key: 'params', name: '参数总览', icon: 'SlidersHorizontal', path: '/settings/params', permissionCode: 'production:view', keywords: ['cszl', 'canshu', 'peizhi', '配置', '缺什么'] },
+  // 🔴 2026-10-09（issue #6580，用户裁定 —— **同一天的第三次改判**）：原 #6573 在这里新增的
+  // 「参数总览」一级项**已撤掉**。用户逐字：「参数总揽不要单独搞个菜单，这些信息都**直接做到
+  // 企业基础信息中**」「我的目的是要能**移除加工项管理和工艺配置这两个菜单**」。
+  // ⇒ 配置面的落点是**企业基础设置页内**的配置域（设计真值源：
+  //   `docs/design/enterprise-settings-redesign.md`），不是一条并列的一级项。
+  // 旧链 `/settings/params` 保留为重定向（仓内口径：旧深链不 404）。
+  // 🔴 2026-10-09（issue #6580）：**企业基础设置**（原「企业基础信息」）由「组织管理」组移出，
+  // 成为**尾部独立项**、排在「通知中心」**上面** —— 用户逐字：「这个菜单和通知中心是一个类型的
+  // 放到通知中心的上面，并且和通知中心一起沉底」。
+  // · 改名：企业基础信息 → **企业基础设置**；路径一字不动（`/settings`）；
+  // · 🔴 **节点码 `system:manage` → `production:view`**（用户 2026-10-09 裁定，选项 A）：
+  //   合并加工项管理 / 工艺配置之后，它是生产配置面**唯一的入口**，而真实配置者
+  //   `operator` / `product_manager`（见 `rbac/manifest.json` 的 `roles.seed`）持
+  //   `production:view`、**不持** `system:manage` ⇒ 不换码 = 菜单对他们恒不可见（#4203 同族坑）。
+  //   复算：seed 里唯一天然持全码的是 `admin: ["*"]` ⇒ **改码对现有角色零损失**（既无人掉码、
+  //   也没有人凭空多出写面）；页内**经营域**（企业信息 / AI 客服 / 工人端页面 / 通知设置）仍按
+  //   各自的 `system:manage` 域级显隐 ⇒ 该码的**可授予面**不缩水（由 `MenuController` 的
+  //   org-center 组承载那一个权限码节点，见 `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`
+  //   的 `ACTION_NODES['org-center']` 登记）。
+  //   ⚠️ 本页经营域读面是 `system:manage` ⇒ 守卫码与首屏读码的**有意不一致**已在
+  //   `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `MENU_READ_PARITY_RESIDUALS`
+  //   具名登记（含 403 受害者认领）—— 判据 12 **只许登记、不许放宽**。
+  // · 席位：它与「商品管理」同用**一级项**席位（`standaloneTopItems`）。⚠️ 这不改变用户要的形态 ——
+  //   本仓最后一个组就是 `org-center`（`STANDALONE_TOP_AFTER_GROUP_KEY`），所以两个席位的渲染结果
+  //   连成一片：`商品管理 → 企业基础设置 → 通知中心`（尾部项在最后）⇒ 「企业基础设置在通知中心上面、
+  //   两者一起沉底」**逐字成立**。
+  // · 它是**配置指挥台**的宿主页（配置主线 + 配置域），设计真值源：
+  //   `docs/design/enterprise-settings-redesign.md`。
+  { key: 'settings', name: '企业基础设置', icon: 'Settings', path: '/settings', permissionCode: 'production:view', keywords: ['qyxx', 'shezhi', 'qiye', 'jichu', '配置'] },
 ]
 
 export const standaloneItems: MenuItem[] = [

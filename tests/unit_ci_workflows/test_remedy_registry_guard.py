@@ -694,7 +694,8 @@ LEGACY_KNOWN_SITES: tuple[tuple[str, str], ...] = (
     ("app/graph/skills/base_skill.py", "岗位权限"),
     ("ref:base/principles.md", "岗位权限"),
     ("tool:customer_manage", "客户列表"),
-    ("sugg:settings_manage", "企业基础信息"),
+    # issue #6580：「企业基础信息」改名「企业基础设置」（且页内改为域）⇒ 台账条目随之更新
+    ("sugg:settings_manage", "企业基础设置"),
 )
 #: 厚度下限（**现取读数**，不是解释性上限）：低于它说明抽取规则或读源坏了 ⇒ 红。
 LEGACY_POINTER_FLOOR = 60

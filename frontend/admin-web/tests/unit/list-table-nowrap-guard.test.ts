@@ -61,8 +61,6 @@ const FROZEN_TABLES: string[] = [
   'src/app/(dashboard)/production/piecework/page.tsx::表[工人|计件数量|金额]',
   'src/app/(dashboard)/production/piecework/page.tsx::表[工序|计件数量|金额]',
   'src/app/(dashboard)/production/pool/page.tsx::表[单号|单号|物料（商品 × 颜色 × 门幅）|需求米数|等待时长|加急标记|到货日]',
-  'src/app/(dashboard)/production/processing/page.tsx::表[选配组合|加工费单价|来源|操作]',
-  'src/app/(dashboard)/production/routings/page.tsx::表[工序|单价|分组 · 单位 · 操作]',
   'src/app/(dashboard)/products/[id]/ProductDetail.tsx::表[颜色|门幅|货号|库存|价格]',
   'src/app/(dashboard)/products/page.tsx::表[行号|货号|原因]',
   'src/app/(dashboard)/shipments/page.tsx::表[发货单号|订单号|客户|来源|发货人|发货时间|实发|操作]',
@@ -77,7 +75,7 @@ const FROZEN_TABLES: string[] = [
   'src/components/products/BatchStocktakeForm.tsx::表[批次号|货号|当前余量|实盘米数|差异]',
   'src/components/products/SkuMatrix.tsx::表[颜色分类|规格尺寸|*价格（元）|*库存（米）]',
 ]
-const TABLE_BASELINE = 25
+const TABLE_BASELINE = 23
 
 /**
  * 存量台账·规则 ②（手写药丸）：同上，冻结于 2026-10-06（issue #6398），**改前** 6 条 → **5**。

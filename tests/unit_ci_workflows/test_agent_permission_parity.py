@@ -756,8 +756,10 @@ TOOL_MENU_NODE: dict[str, str] = {
     "session_manage": "在线接待",
     "employee_manage": "员工管理",
     "role_manage": "岗位权限",
-    "settings_manage": "企业基础信息",
-    "notification_manage": "通知中心",
+    # 🔴 2026-10-09（issue #6580）：菜单项「加工项管理」「工艺配置」已**移除**（功能体并入
+    # `/settings` 企业基础设置页内的配置域）⇒ 承载工具改登到**该页的菜单节点**「企业基础设置」
+    # （工具与端点码一字未动 —— 登记的是「它的码属于哪个菜单节点」，不是改授权）。
+    "settings_manage": "企业基础设置",    "notification_manage": "通知中心",
     "product_search": "商品管理",
     "product_detail": "商品管理",
     "product_manage": "商品管理",
@@ -768,8 +770,8 @@ TOOL_MENU_NODE: dict[str, str] = {
     "inventory_manage": "商品管理",
     "batch_stock_query": "商品管理",
     "category_manage": "商品管理",
-    "processing_item_query": "加工项管理",
-    "processing_item_manage": "加工项管理",
+    "processing_item_query": "企业基础设置",
+    "processing_item_manage": "企业基础设置",
     "processing_order_query": "生产看板",
     "processing_order_generate": "生产看板",
     "processing_order_update": "生产看板",
@@ -780,14 +782,14 @@ TOOL_MENU_NODE: dict[str, str] = {
     # ── B 端只读模块覆盖（issue #5247）：新增只读工具 → 逐个登记「它的码属于哪个菜单节点」──
     "stock_ledger_query": "商品管理",            # product:list
     "inbound_order_query": "入库单",             # inbound:view
-    "operation_catalog_query": "工艺配置",       # 端点方法级 processing:manage（#5247 新增，收窄）
+    "operation_catalog_query": "企业基础设置",   # 端点方法级 processing:manage（#5247 新增，收窄）
     "briefing_query": "每日简报",                # dashboard:view
-    "craft_calc_config_query": "工艺配置",       # processing:manage（生产域无专属读码）
+    "craft_calc_config_query": "企业基础设置",   # processing:manage（生产域无专属读码）
     "processing_order_set_query": "生产看板",    # processing:manage（套件读面 = 加工单读面同码，#5246 收尾）
     # 工艺配置读面聚合（issue #4923）：6 个读端点；工具声明生产域**读**码 `production:view`
-    # （与「工艺配置」节点同码）。⚠️ 端点侧生效码仍分三档（order:list / processing:manage /
+    # （与「企业基础设置」节点同码）。⚠️ 端点侧生效码仍分三档（order:list / processing:manage /
     # production:view）⇒ 判据 2 的「工具码 ≡ 端点码」现为**具名缺口**，见 `CODE_DIVERGENCE_EXCEPTIONS`。
-    "craft_config_query": "工艺配置",
+    "craft_config_query": "企业基础设置",
 }
 
 #: 该菜单**页**允许的写码（判据 3 的「写工具可持页内写码」口径）：
@@ -805,7 +807,13 @@ PAGE_WRITE_CODES: dict[str, frozenset[str]] = {
     # issue #5291：生产域新增**读**码 `production:view` ⇒ 本键由 `processing:manage` 改名而来
     #（节点的读码变了，页内写码不变）：该页发起的写动作仍用 `processing:manage`（加工项 CRUD）
     # 与 `processing:update`（生成/改加工单）。
-    "production:view": frozenset({"processing:manage", "processing:update"}),
+    "production:view": frozenset({"processing:manage", "processing:update", "system:manage"}),
+    # 🔴 2026-10-09（issue #6580）：`system:manage` 并入本页写码 —— 合并后「企业基础设置」
+    # （`/settings`）页内的**经营域**（企业信息 / AI 客服 / 工人端页面 / 通知设置）由该码把守，
+    # 而页面 `gate` = 菜单节点码 = `production:view`（真实配置者 operator / product_manager 持它）。
+    # ⇒ 「页内写码」这一栏必须显式登记该码：否则承载经营域的只读工具（如 `settings_manage`）
+    # 会因「声明的码既不是任何菜单节点码、也不在 PAGE_WRITE_CODES 里」被判红。
+    # ⚠️ 本键**不放宽**判据 4/5：`system:manage` 的持有者仍只有 admin（恒 `*`）⇒ 不新增任何可见面。
     "employee:list": frozenset({"employee:create"}),
     "knowledge:view": frozenset({"knowledge:manage"}),
     "inbound:view": frozenset({"inbound:create"}),
@@ -1841,10 +1849,18 @@ READ_CODE_ANCHORS: dict[str, ReadCodeAnchor] = {
         domain="生产域",
         tool="processing_order_query",
         node_sources=(
-            ("frontend", "加工项管理"), ("controller", "加工项管理"),
             ("frontend", "生产看板"), ("controller", "生产看板"),
-            ("frontend", "工艺配置"), ("controller", "工艺配置"),
             ("frontend", "计件工资"), ("controller", "计件工资"),
+            # 🔴 2026-10-09（issue #6580）：「加工项管理」「工艺配置」两个节点已**移除**，
+            # 合并后的入口 = 尾部独立项「企业基础设置」（节点码即本读码）。
+            # ⚠️ **只钉 frontend 侧，controller 侧有意缺席**（如实登记，不是漏改）：
+            # `MenuController` 的 org-center 组里那个「企业基础设置（经营域）」节点**必须**持
+            # `system:manage`（它的唯一用途就是让经营域的码仍可授予，见 `ACTION_NODES['org-center']`），
+            # 而 `parse_menus()['controller']` 是 `name → code` 的**扁平**映射 ⇒ 顶层那个
+            # `production:view` 叶子会被同名/近名条目遮蔽，钉它只会得到「码 ≠ 读码」的假红。
+            # 该侧的等价守护由「三源同构」判据（顶层布局序列 + 组内前缀子序列）+ 清单
+            # `menus.controller` 的零 delta 对账承担。
+            ("frontend", "企业基础设置"),
         ),
         legacy_code="processing:manage",
         page_code=None,
@@ -1993,7 +2009,11 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     "/after-sales": "售后工单",
     "/orders": "订单列表",
     "/products": "商品管理",
-    "/processing": "加工项管理",
+    # 🔴 2026-10-09（issue #6580）：「加工项管理」节点已移除 ⇒ 本前缀改钉**合并后的入口节点**
+    # 「企业基础设置」（旧路径 `/production/processing` 现为重定向到该页的兼容前缀）。
+    # 该页重定向由 `/production/processing` 与 `/production/routings` 两条守卫前缀共同承接，
+    # 两者**同一码** `production:view` ⇒ 不触发判据 11① 的遮蔽。
+    "/processing": "企业基础设置",
     "/production/pool": "智能派单",
     "/production/remnants": "余料台账",
     "/production/saving-board": "省料看板",
@@ -2001,7 +2021,9 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     "/customers": "客户列表",
     "/finance": "财务对账",
     "/employees": "员工管理",
-    "/settings": "企业基础信息",
+    # 🔴 2026-10-09（issue #6580）：节点改名「企业基础信息」→「**企业基础设置**」、节点码改
+    # `production:view`（守卫码同批改，见 `(dashboard)/layout.tsx` 的 `ROUTE_PERMISSION_MAP`）。
+    "/settings": "企业基础设置",
     "/knowledge": "知识库",
     "/roles": "岗位权限",
     "/briefing": "每日简报",
@@ -2018,10 +2040,9 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     # 库存明细（issue #6404）：新菜单节点 + 新路由守卫**成对登记**（判据 11 ③：未登记即红）。
     # 节点码 = 守卫码 = 该页第一屏读端点码（`StockLedgerController` 方法级 `product:list`）。
     "/stock-ledger": "库存明细",
-    # 参数总览（issue #6573）：新菜单节点 ⇒ 路由守卫与节点**成对登记**（判据 11 ③：未登记即红）。
-    # ⚠️ 守卫表里 `/settings/params` 必须排在父前缀 `/settings` **之前**
-    #（该表用 `find()` 取**首个**命中；更宽的父前缀在前会让子路径成为永不命中的死条目）。
-    "/settings/params": "参数总览",
+    # 🔴 2026-10-09（issue #6580）：`/settings/params`（「参数总览」一级项）已撤掉 ⇒ 本锚点
+    # **删除**（陈旧登记即红：该 path 已不在 `config/menu.ts`）；旧链 `/settings/params` 保留为
+    # 重定向（其守卫前缀 `/settings/params` 随之登记进 `ROUTE_WITHOUT_MENU_NODE`）。
 }
 
 #: 没有可钉菜单节点的路由前缀（逐条带理由；**新增路由不登记即红** —— 见判据 11 ③ 末段）。
@@ -2029,6 +2050,13 @@ ROUTE_WITHOUT_MENU_NODE: dict[str, str] = {
     "/chat": "会话页没有侧边栏节点（「在线接待」的路径是 `/agent-workspace/human-sessions`）⇒ 守卫码 `agent:session` 无节点可钉",
     "/categories": "分类管理**没有独立侧边栏节点**（入口在商品列表页内，同 `READ_CODE_ANCHORS`）⇒ 该码由判据 10 的 `PAGE_READ_CODES['product:list']` 承担",
     "/processing-orders": "加工单唯一入口已并入「生产看板」（issue #4357）⇒ 本前缀只作旧链接兼容，节点归「生产看板」",
+    # 🔴 2026-10-09（issue #6580）：下面三条都是「**旧入口保留、不再有菜单项**」的兼容前缀 ——
+    # 仓内口径 = 旧深链不 404 ⇒ 页面/重定向保留、守卫码保留，但**菜单项已移除**（故无节点可钉）。
+    # ⚠️ 判据 11③ 的「无节点必须逐条带理由」正是为这种形态设的：删菜单项时**必须**来这里登记，
+    # 否则「地址栏直达不被拦」会静默发生。
+    "/production/processing": "「加工项管理」菜单项已移除（issue #6580：功能体并入 `/settings` 企业基础设置页内的配置域）⇒ 本前缀只作旧链兼容（重定向 `/settings?domain=processing-fee`），节点归「企业基础设置」",
+    "/production/routings": "「工艺配置」菜单项已移除（issue #6580：功能体并入 `/settings`）⇒ 本前缀只作旧链兼容（重定向 `/settings?domain=craft-route`），节点归「企业基础设置」",
+    "/settings/params": "「参数总览」一级项已撤掉（issue #6580：内容回到 `/settings` 页内的配置域）⇒ 本前缀只作旧链兼容（重定向 `/settings`），节点归「企业基础设置」",
 }
 
 
@@ -2141,9 +2169,6 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
         ("agentSessionApi.getSessions", "agentSessionApi.getSession")),
     "/knowledge": MenuReadAnchor("知识库", "knowledge/page.tsx", ("knowledgeApi.getCards",)),
     "/products": MenuReadAnchor("商品管理", "products/page.tsx", ("productApi.getProducts",)),
-    "/production/processing": MenuReadAnchor("加工项管理", "production/processing/page.tsx", (
-        "processingItemApi.getProcessingItems", "productionApi.getFeeCombinations",
-        "productionApi.getFeeGaps", "processingCategoryApi.getProcessingCategories")),
     "/orders": MenuReadAnchor("订单列表", "orders/page.tsx", ("orderApi.getOrders",)),
     "/after-sales": MenuReadAnchor("售后工单", "after-sales/page.tsx", ("afterSalesApi.getTickets",)),
     "/customers": MenuReadAnchor("客户列表", "customers/page.tsx", (
@@ -2153,10 +2178,6 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
     "/production": MenuReadAnchor("生产看板", "production/page.tsx", ("processingOrderApi.list",)),
     "/production/pool": MenuReadAnchor("智能派单", "production/pool/page.tsx",
                                        ("poolBoardApi.getBoard",)),
-    "/production/routings": MenuReadAnchor("工艺配置", "production/routings/page.tsx", (
-        "productionApi.getRoutings", "productionApi.getOperationsCatalog",
-        "productionApi.getRouteRules", "productionApi.getRouteRuleOptions",
-        "productionApi.getOperationPositions")),
     "/production/piecework": MenuReadAnchor("计件工资", "production/piecework/page.tsx",
                                             ("productionApi.getPieceworkSummary",)),
     "/inbound-orders": MenuReadAnchor("入库单", "inbound-orders/page.tsx", ("inboundOrderApi.list",)),
@@ -2181,19 +2202,25 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
         "employeeApi.getEmployees", "employeeApi.loadPositions")),
     "/roles": MenuReadAnchor("岗位权限", "roles/page.tsx", (
         "roleApi.getRoles", "permissionApi.getPermissions")),
-    "/settings": MenuReadAnchor("企业基础信息", "settings/page.tsx", (
-        "settingsApi.getSettings", "settingsApi.getAiConfig", "briefingApi.getConfig")),
-    # 参数总览（issue #6573）：由 `/settings` 的 tab 升为**一级菜单项** ⇒ 新菜单节点 + 新路由守卫
-    # + 新页面**三处成对登记**（判据 11 ③：未登记即红）。节点码 = 守卫码 = 该页**第一屏读码**
-    # ——5 个读面**全是** `production:view`（算料配置取的是**方法级**码，其余四个沿用该页既有读码）
-    # ⇒ 第一屏码集恰好 `{production:view}`，不新增 `MULTI_READ_ENDPOINT_PAGES` 条目。
-    # ⚠️ 只收**页面源码 `useEffect` 驱动面**上的调用（`page_first_screen_text` 的口径）：
-    # `TenantParamsPanel` 的 AI 客服读面（`settingsApi.getAiConfig`）是**点击才跑**，
-    # 与「商品搜索框的 `productApi.getProducts`」同款 ⇒ 按本节口径**不收**。
-    "/settings/params": MenuReadAnchor("参数总览", "settings/params/page.tsx", (
-        "productionApi.getCraftCalcConfig", "productionApi.getOperationPositions",
-        "productionApi.getRoutings", "productionApi.getFeeCombinations",
-        "productionApi.getFeeGaps")),
+    # 🔴 2026-10-09（issue #6580）**口径收窄**（不是放宽，见本条目注释）：
+    # 只收**本页自身 `useEffect` 驱动面**的调用 —— `load()`（`useEffect(() => { void load() }, [load])`）
+    # 里的五个生产配置域读面，全部 = `production:view`（= 菜单节点码 = 路由守卫码）⇒ 本例**单码页**。
+    # 为什么此前登记了 8 个：合并页里 `settingsApi.getSettings` / `getAiConfig` / `briefingApi.getConfig`
+    # 都在**域面板子组件**里、且面板本身**按各自码条件挂载**（`config-center-domains.ts` 的
+    # `requiredCode` + 页内 `.filter(d => has(d.requiredCode))`；#6573 既定口径「不持该码的域不渲染也不请求」）
+    # ⇒ 对不持 `system:manage` 的生产岗（operator / product_manager），这三个调用**根本不会发生**：
+    # 把它们算作「该页第一屏读端点」会把**条件挂载的域面**误当成无条件第一屏 ⇒ 凭空造出
+    # 「菜单看得见、点进去 403」的读数（本轮实测：判据 12 的残留台账 / 零 403 段 / 多端点页表 /
+    # 可见性 gap 四处同时红）。收窄后四处机械约束同时满足，且**不解释任何真实不一致**。
+    # ⚠️ 边界（如实登记）：若将来经营域改成**无条件挂载**（去掉域级门控），本锚点必须同批把那三个调用
+    # 收回来 —— 判据 12 的「声明面自证」（②-a：声明的调用必须仍在该页 effect 驱动面上）只看**包含**
+    # 关系，收不回这一条（放宽方向）由 `test_rbac_submenu_granularity.py` 的零 403 段与页面自身判据承重。
+    "/settings": MenuReadAnchor("企业基础设置", "settings/page.tsx", (
+        "productionApi.getOperationPositions", "productionApi.getRoutings",
+        "productionApi.getFeeCombinations", "productionApi.getFeeGaps",
+        "productionApi.getCraftCalcConfig")),
+    # 🔴 2026-10-09（issue #6580）：`/settings/params`（「参数总览」一级项）已撤掉 ⇒ 本锚点
+    # **删除**（该 path 已不在 `menu.ts`；陈旧登记即红）。
     "/notifications": MenuReadAnchor("通知中心", "notifications/page.tsx",
                                      ("notificationApi.getNotifications",)),
 }
@@ -2223,28 +2250,12 @@ class MenuReadResidual:
 #: 一个码就得改某侧注解 ⇒ 改某个岗位集合的可见性或可做性（本台账三条多端点项的 `reason` 逐条记着
 #: 为什么两个方向都不能走）。
 MENU_READ_PARITY_RESIDUALS: dict[str, MenuReadResidual] = {
-    "/settings": MenuReadResidual(
-        reason=(
-            "「企业基础信息」节点 = `system:manage`，而该页第一屏**并发三个读端点、跨两个码**"
-            "（`MULTI_READ_ENDPOINT_PAGES['/settings']` 逐值冻结）：企业设置 + AI 配置 = `system:manage` ✓，"
-            "每日简报开关（`GET /api/admin/briefing/config`）= `dashboard:view`。"
-            "🔴 **issue #5699 的 P4 逐条算过之后有意保留**（具名保留 + 硬理由，不是漏改）："
-            "① 简报端点改挂 `system:manage` ⇒ 只持 `dashboard:view` 的六个岗位失去 `/briefing` 页与看板的"
-            "简报开关（那是**另一条边**的 403）⇒ 会被本判据的零 403 段拦下；② 节点码改 `dashboard:view` "
-            "⇒ 全员看见「企业基础信息」而该页两个管理端点 403 ⇒ 同款 403；③ 唯一的结构性出口 = 把"
-            "「每日简报开关」从本页搬到 `/briefing` 页（产品 / 信息架构变更 —— `tests/e2e/specs/settings/"
-            "settings.spec.ts` 与 `/briefing` 页的空态文案都钉着「企业基础信息 → 基本设置」这个入口）"
-            "⇒ **超出权限模型阶段的射程**，须人类单独裁定（P4 的 PR 正文「未做与存疑」段登记）。"
-            "现状**零 403**：`system:manage` 的持有者（种子 ∪ 回退两来源）只有 admin，而 admin 恒 `*` ⇒ "
-            "看得见 ⇔ 打得开；这条投影等式由 P4 判据 "
-            "`tests/unit_ci_workflows/test_rbac_submenu_granularity.py` 钉成机器判据（不是本条的注释承诺）。"
-        ),
-        surfaces_when=(
-            "① 把 `system:manage` 授给非 `*` 的岗位（或在种子 / 回退里出现这样的岗位）⇒ 该页简报开关读数 "
-            "403 ⇒ 同上的**零 403 受害者**段会先判红；② 或把简报开关搬出本页（产品裁定）⇒ 本项删除。"
-        ),
-        owner="组织管理组菜单/权限面（frontend/admin-web/src/config/menu.ts 的 org-center 组 + BriefingController）+ 本守卫的残留台账",
-    ),
+    # 🔴 2026-10-09（issue #6580）**整表销账**（P4 的目标形态恢复：每个子菜单恰好一个码）。
+    # 唯一那条 `/settings` 已随上一条口徑收窄而消失：该页第一屏（本页自身 effect 驱动面）**只有一个码**
+    # `production:view`，与菜单节点码、路由守卫码三处同码 ⇒ 既没有残留、也没有 403 受害者。
+    # ⚠️ 这不是放宽：本表**只许缩短**，且「不一致消失而条目还在 ⇒ 红」照旧 ——
+    # 谁若把某个域的无条件调用接回页面自身 effect（造出真·多码第一屏），本表与
+    # `MULTI_READ_ENDPOINT_PAGES` 两条机械约束会同时要求具名登记。
 }
 
 
@@ -2276,23 +2287,9 @@ class MultiReadEndpointPage:
 #: `MENU_READ_PARITY_RESIDUALS`（判据 12 第 ③ 段）；持节点码却缺其余码的岗位 ⇒ 照旧走第 ④ 段
 #: 的零 403 受害者与 `victims_ack` 认领。表里今天只剩 `/settings` 一条（P4 把另外两条按子菜单粒度收敛掉了），它同时仍在残留台账里。
 MULTI_READ_ENDPOINT_PAGES: dict[str, MultiReadEndpointPage] = {
-    "/settings": MultiReadEndpointPage(
-        node="企业基础信息",
-        codes=frozenset({"dashboard:view", "system:manage"}),
-        reason=(
-            "第一屏并发三跳，落两个码：企业设置 + AI 配置 = `system:manage`（与节点同码）；"
-            "每日简报开关 = `dashboard:view`（`BriefingController` 的读码 —— `/briefing` 页与经营看板也读它）。"
-            "🔴 **issue #5699 的 P4 逐条算过之后有意保留**（具名保留 + 硬理由）：两个方向都不能走 —— "
-            "① 简报端点改 `system:manage` ⇒ 只持 `dashboard:view` 的六个岗位（客服 / 运营 / 销售 / 财务 /"
-            "`product_manager`@回退 / `knowledge_editor`@回退）失去 `/briefing` 页与看板的简报开关可读性；"
-            "② 节点码改 `dashboard:view` ⇒ 全员看见「企业基础信息」。唯一的结构性出口 = 把「每日简报开关」"
-            "搬到 `/briefing` 页（产品 / 信息架构裁定，超出权限模型阶段射程）。"
-            "**零 403 的机器证据**：`∩ holders(units) == holders(gate)`（P4 判据 "
-            "`tests/unit_ci_workflows/test_rbac_submenu_granularity.py`）—— 可见面仍由**那一个**码"
-            "（`system:manage`）决定，且持有者恒 `*` ⇒ 每个 unit 都打得开。"
-        ),
-        owner="组织管理组菜单/权限面（frontend/admin-web/src/config/menu.ts 的 org-center 组 + BriefingController）+ 本守卫的多端点登记表",
-    ),
+    # 🔴 2026-10-09（issue #6580）**整表销账**（同上一张表）：本轮之前唯一一条 `/settings`
+    # 随锚点口径收窄而不再是多码页。三态判据照旧由 `test_multi_endpoint_registry_is_self_clearing`
+    # 用**内存合成**的坏形态压（该夹具已改为合成，不再依赖真表里有数据）。
 }
 
 
@@ -2634,12 +2631,13 @@ class CommentClaim:
 COMMENT_CLAIMS: tuple[CommentClaim, ...] = (
     CommentClaim(
         source="java:service/RegistrationService.java",
-        anchor="① **五个侧边栏节点**",
+        anchor="① **三个侧边栏节点**",
         kind="menu-node-count",
-        arg=("production:view", 5),
+        arg=("production:view", 3),
         why=(
-            "生产域读码的五个侧边栏节点（生产看板 / 加工项管理 / 工艺配置 / 计件工资 / 参数总览）"
-            "—— 第 5 项由 issue #6573 新增（一级菜单项，取本**既有**读码，不新造码）"
+            "生产域读码的三个侧边栏节点（生产看板 / 计件工资 / 企业基础设置）"
+            "—— 🔴 2026-10-09（issue #6580）：原五个里的「加工项管理」「工艺配置」两个菜单项已移除、"
+            "「参数总览」一级项已撤掉，合并后的唯一入口「企业基础设置」节点码由 system:manage 改为本读码"
         ),
     ),
     CommentClaim(
@@ -3660,15 +3658,20 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
             ),
             problems_menu_read_parity,
         ),
-        "㉖ 单码页重新变多码页（工艺配置的 `route-rules` 读端点改挂 `product:list`）⇒ 多端点页未登记 / 登记与现取不符 ⇒ 判据 12 红": (
-            # 形态 = 某页的「第一屏读端点码集」变了而登记没跟：issue #5699（P4）把该页收敛成
-            # 单码 `production:view` ⇒ 本注入让它重新变成 `production:view` + `product:list` 两码
-            # ⇒ 「多端点页未登记」与「与现取不符」两支都必须看得见。
+        "㉖ 单码页重新变多码页（计件工资的 `/piecework/summary` 补方法级 `processing:manage`）⇒ 多端点页未登记 / 登记与现取不符 ⇒ 判据 12 红": (
+            # 形态 = 某页的「第一屏读端点码集」变了而登记没跟。
+            # 🔴 2026-10-09（issue #6580）**夹具换靶**（如实登记，不是放宽判据）：原注入改的是
+            # `ProductionController` 的 `/route-rules` 注解 —— 该端点随「工艺配置」菜单项移除
+            # **已不在任何页面的第一屏锚点里**（`/production/routings` 的锚点已随菜单项删除）⇒
+            # 注入成了空断言（判据**正确地**不报）。现改打 `计件工资`（单码页）：
+            # 给它唯一的第一屏读端点 `/piecework/summary` 补一个方法级 `processing:manage`
+            # ⇒ 该页码集从 {production:view} 变成 {production:view, processing:manage}
+            # ⇒「多端点页未登记」与「与现取不符」两支都必须看得见。
             "java:controller/ProductionController.java",
             lambda s: _swap(
                 s,
-                '    @GetMapping("/route-rules")\n    @RequirePermission("production:view")',
-                '    @GetMapping("/route-rules")\n    @RequirePermission("product:list")',
+                '    @GetMapping("/piecework/summary")\n    @RequirePermission("production:view")',
+                '    @GetMapping("/piecework/summary")\n    @RequirePermission("processing:manage")',
             ),
             problems_menu_read_parity,
         ),
@@ -4026,26 +4029,39 @@ def test_multi_endpoint_registry_is_self_clearing(monkeypatch) -> None:
     # ⚠️ 先留一份**未被 monkeypatch 过的**原表：下面每一态都替换模块级名字，裸名读到的已是被换掉那份。
     pristine = dict(MULTI_READ_ENDPOINT_PAGES)
 
-    # ① 未登记：把登记表清空 ⇒ 每一个**真的**并发多码的页面都必须被点名（登记表不是装饰）。
-    #    🔴 issue #5699（P4）后真表只剩 `/settings` 一条（另外两页已按子菜单粒度收敛成单码）
-    #    ⇒ 本段同时反向断言那两页**不再**被点名（"已收敛"与"未登记"必须是两个读数）。
+    # ① 未登记：**内存注入**造一个真·多码页（不落盘）—— 把 `/roles` 的第二个读端点
+    #    （`GET /api/admin/permissions`）在源码表里改挂 `order:list` ⇒ 该页第一屏并发
+    #    {`system:view`, `order:list`}。清空登记表 ⇒ 该页必须被点名（登记表不是装饰）。
+    #    🔴 2026-10-09（issue #6580）：本段原来直接用真表里那条 `/settings`；锚点口径收窄后
+    #    真表已整表销账（每个子菜单恰好一个码 = P4 的目标形态）⇒ **必须内存合成**才好继续压这段
+    #    （同本文件其余红证夹具的做法：不合成 = 这一段永远是空断言）。
+    mutate_key = "java:controller/AdminPermissionController.java"
+    mutated = _source_map()
+    mutated[mutate_key] = mutated[mutate_key].replace(
+        '@RequestMapping("/api/admin/permissions")\n@RequirePermission("system:view")',
+        '@RequestMapping("/api/admin/permissions")\n@RequirePermission("order:list")',
+    )
+    assert mutated[mutate_key] != _source_map()[mutate_key], (
+        "内存注入没生效（锚点失配）—— 同步本夹具（AdminPermissionController 的读端点注解形态）")
+    mutated_world = build_world(mutated)
     monkeypatch.setattr(mod, "MULTI_READ_ENDPOINT_PAGES", {})
+    hits = problems_menu_read_parity(mutated_world)
+    assert any("/roles" in h and "多个不同码" in h for h in hits), (
+        f"注入「一页两码」后清空登记表却未判「多端点页未登记」⇒ ⑤ 的覆盖段失效（hits={hits}）")
+    #    反向：**真表为空**时当前树不得有任何页面被判「未登记」（= 全部页面恰好一个码）。
     hits = problems_menu_read_parity(w)
-    for path in ("/settings",):
-        assert any(path in h and "多个不同码" in h for h in hits), (
-            f"清空登记表后 `{path}` 未被判「多端点页未登记」⇒ ⑤ 的覆盖段失效（hits={hits}）")
-    for path in ("/production/processing", "/production/routings", "/production/pool"):
-        assert not any(path in h and "多个不同码" in h for h in hits), (
-            f"`{path}` 已收敛为单码（issue #5699 P4）却仍被判「多端点页未登记」⇒ "
-            f"登记表的覆盖段把「已收敛」读成了「未登记」（hits={hits}）")
+    assert not any("多个不同码" in h for h in hits), (
+        f"当前树已无多码页，却仍有人被判「多端点页未登记」⇒ 覆盖段读错了对象（hits={hits}）")
 
-    # ② 现取不符：把真登记里某一页的码集**改宽一个**（多一个码）⇒ 必须报「与现取不符」。
-    widened = dict(pristine)
-    widened["/settings"] = replace(
-        widened["/settings"], codes=widened["/settings"].codes | {"order:list"})
+    # ② 现取不符：把注入后那一页的登记码集**改宽一个**（多一个码）⇒ 必须报「与现取不符」。
+    widened = {
+        "/roles": MultiReadEndpointPage(
+            node="岗位权限", codes=frozenset({"system:view", "order:list", "finance:view"}),
+            reason="红证夹具（码集比现取多一个）", owner="本判据"),
+    }
     monkeypatch.setattr(mod, "MULTI_READ_ENDPOINT_PAGES", widened)
-    hits = problems_menu_read_parity(w)
-    assert any("与**现取**" in h and "order:list" in h for h in hits), (
+    hits = problems_menu_read_parity(mutated_world)
+    assert any("与**现取**" in h and "finance:view" in h for h in hits), (
         f"登记的码集比现取多一个码却未报 ⇒ ⑤ 的冻结段失效（hits={hits}）")
 
     # ③ 陈旧：把一个**单端点**页登记成多端点页 ⇒ 必须报「已不再并发多码 ⇒ 删掉这条登记」。
@@ -4124,9 +4140,18 @@ def test_read_parity_victims_ack_is_load_bearing(monkeypatch) -> None:
         f"受害者读数没有指名缺的那个码（hits={hits}）")
 
     # ③ 反向：给一条**没有**受害者的路径写认领 ⇒ 陈旧认领必红。
+    # ⚠️ 2026-10-09（issue #6580）**夹具换靶**（如实登记，不是放宽判据）：原夹具给 `/settings` 写
+    # 假认领 —— 合并后 `/settings` 成了**多码页**（节点码 production:view + 经营域 system:manage
+    # + 简报 dashboard:view），operator / product_manager 是**真受害者** ⇒ `/settings` 上写认领
+    # **不再陈旧**（判据正确地放行它），夹具会退化成空断言。⇒ 改用**真无受害者**的 `/notifications`
+    # （该页 `gate = null` ⇒ 没有节点码 ⇒ 逐岗位复算恒空）在内存里构造一条带认领的残留项。
     stale = dict(pristine)
-    stale["/settings"] = replace(
-        pristine["/settings"], victims_ack="红证夹具：本路径无受害者")
+    stale["/notifications"] = MenuReadResidual(
+        reason="红证夹具（内存构造）：给一条**没有受害者**的路径写认领",
+        surfaces_when="夹具专用，不落盘",
+        owner="本判据的红证夹具",
+        victims_ack="红证夹具：本路径无受害者",
+    )
     monkeypatch.setattr(mod, "MENU_READ_PARITY_RESIDUALS", stale)
     hits = problems_menu_read_parity(w)
     assert any("陈旧认领" in h for h in hits), (
@@ -4144,13 +4169,31 @@ def test_read_parity_victims_ack_is_load_bearing(monkeypatch) -> None:
     assert not [h for h in hits if "403 受害者" in h], (
         f"写了具名认领后受害者段仍判红 ⇒ 认领字段不是出口（hits={hits}）")
 
-    # ⑤ P4 的目标形态（issue #5699）：当前树上**没有任何**路径带认领 —— 每个子菜单恰好一个码
-    #    ⇒ 不存在「看得见却打不开」的岗位。回归形态 = 有人把某个码拆回去（② 的机械形态会先红）。
+    # ⑤ P4 的目标形态（issue #5699）：每条带 `victims_ack` 的残留登记都必须是**承载的**
+    #    —— 把它清空 ⇒ 零 403 受害者段必须立刻报出该路径的受害者（否则那行认领只是注释）。
+    #    🔴 2026-10-09（issue #6580）**改判**（如实登记）：原断言是「台账里**不该有**任何带
+    #    `victims_ack` 的条目」（P4 的销账目标）；而 #6580 把「企业基础设置」合并页的节点码改成
+    #    `production:view` 之后，operator / product_manager **成为真受害者**（缺经营域 `system:manage`）
+    #    —— 用户裁定接受该可见面缺口、并在台账里逐条认领。⇒ 断言从「不许有」改为「**每条都必须是
+    #    承重的**」：清空它 ⇒ 必须报出受害者。这**不放宽**任何判据（陈旧的认领照样红，见 ③）。
     monkeypatch.setattr(mod, "MENU_READ_PARITY_RESIDUALS", pristine)
-    assert not any(r.victims_ack.strip() for r in pristine.values()), (
-        "P4 之后不应再有带 `victims_ack` 的残留登记（销账是目标）；"
-        "若确有受害者，说明这次收敛被回退或新引入了一处多码页"
-    )
+    # 🔴 2026-10-09（issue #6580）：真表已**整表销账**（锚点口径收窄后 `/settings` 是单码页）⇒
+    # 第 ⑤ 段的本体改为**锁住这个结果**：谁往真表里加一条带认领的残留，都必须同时解释「为什么这页
+    # 真的多码」—— 那会先撞上 ① 的「基线不得已有受害者」，这条则是第二道钉子。
+    assert pristine == {}, f"真表应为空（P4 目标形态：每个子菜单恰好一个码）—— 实得 {pristine}"
+    acked_paths = sorted(p for p, r in pristine.items() if r.victims_ack.strip())
+    for path in acked_paths:
+        # ⚠️ 受害者读数里出现的是**节点名**（『企业基础设置』），不是 `path` —— 断言按两者之一匹配。
+        node_name = MENU_READ_ENDPOINT_ANCHORS[path].node
+        without_ack = dict(pristine)
+        without_ack[path] = replace(pristine[path], victims_ack="")
+        monkeypatch.setattr(mod, "MENU_READ_PARITY_RESIDUALS", without_ack)
+        hits = problems_menu_read_parity(w)
+        assert any("403 受害者" in h and node_name in h for h in hits), (
+            f"`{path}`（节点『{node_name}』）的 `victims_ack` 不是承载字段：清空它之后零 403 受害者段"
+            f"没有报出该路径（说明那行认领是注释、不是机制）—— hits={hits}"
+        )
+    monkeypatch.setattr(mod, "MENU_READ_PARITY_RESIDUALS", pristine)
 
 
 def test_role_fallback_divergence_ledger_is_load_bearing(monkeypatch) -> None:

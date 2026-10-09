@@ -282,30 +282,38 @@ def test_domain_exemptions_are_alive_and_justified():
 
 
 def test_qr_entry_is_on_the_settings_page_and_keeps_existing_tabs():
-    """判据：入口落在「设置 / 企业设置」页，且既有 tab 一个不少（只加不改）。
+    """判据：手机端入口落在「企业基础设置」页，且既有的四块设置内容一块不少（只加不改）。
 
-    ⚠️ 2026-10-08（issue #6573）**改判**：字面清单里的「参数总览」已**搬出本页**
-    （升为一级菜单项 `/settings/params`，用户裁定方案 C）⇒ 清单换成**现取的**四个 tab，
-    并**新增**两条更严的钉子：① 它**不得**再作为本页 tab 出现（两处入口 = 入口分裂）；
-    ② 搬走的那个必须留下**重定向**（旧深链 `?tab=params` 不 404）。
-    这不是放宽 —— 判据的对象随被约束对象移动，且条数只增不减（4 条 tab 断言 → 4 条 tab + 2 条迁移断言）。
+    ⚠️ 2026-10-09（issue #6580）**第二次改判**：本页重构成「配置指挥台」，
+    旧的四个 tab（`label: '<名>'`）改由**域目录单一真值模块**
+    （`frontend/admin-web/src/lib/config-center-domains.ts` 的 `CONFIG_DOMAINS`）驱动 ——
+    页面不再写死域名字面量（写死 ⇒「域少了一个」不会有任何东西变红）。
+    ⇒ 判据对象随被约束对象移动，**条数只增不减**（4 条 tab 断言 → 4 条域断言 + 3 条迁移断言）：
+      ① 四块设置内容**逐字**在域目录里（现取真值处，不在本判据里另抄一份清单）；
+      ② 「参数总览」不得再作为页内域/标签出现（两处入口 = 入口分裂；用户 2026-10-09 口径）；
+      ③ 旧深链 `?tab=params` 必须被**映射到域**（页内跳转 —— 设计 §0「不把人送出页面」），
+         而**不再**是跳去 `/settings/params`（那个页面已并回本页）。
     """
     src = _read(SETTINGS_PAGE)
     assert isinstance(src, str)
-    for label in ("基本设置", "AI 客服设置", "工人端页面", "通知设置"):
-        assert f"label: '{label}'" in src, f"既有 tab `{label}` 不见了（本单只加卡片，不动导航）"
-    assert "label: '参数总览'" not in src, (
-        "「参数总览」已升为一级菜单项"
-        "（frontend/admin-web/src/app/(dashboard)/settings/params/page.tsx）"
-        "⇒ 它不该再是本页的 tab（两个入口 = 入口分裂）"
+    domains_src = _read(ADMIN_WEB_SRC / "lib" / "config-center-domains.ts")
+    assert isinstance(domains_src, str)
+    for label in ("企业信息", "AI 客服", "工人端页面", "通知设置"):
+        assert f"label: '{label}'" in domains_src, (
+            f"既有设置内容 `{label}` 不见了（域目录 `config-center-domains.ts` 是它的唯一真值处）"
+        )
+    assert "label: '参数总览'" not in domains_src, (
+        "「参数总览」已并回本页的「算料口径」域（issue #6580）⇒ 它不该再是独立域/标签"
     )
-    assert "router.replace('/settings/params')" in src, (
-        "旧深链 `?tab=params` 必须重定向到新页面（仓内口径：旧路径保留为重定向，旧深链不 404）"
+    assert "label: '参数总览'" not in src, "本页不得再出现「参数总览」这个域/标签（两个入口 = 入口分裂）"
+    assert "LEGACY_TAB_TO_DOMAIN" in src and "params: 'calc'" in src, (
+        "旧深链 `?tab=params` 必须映射到「算料口径」域（页内跳转；设计 §0：不把人送出页面）"
+    )
+    assert "router.replace('/settings/params')" not in src, (
+        "旧深链**不再**跳去 `/settings/params`（该页已并回本页 ⇒ 跳过去会回到一个重复入口）"
     )
     for testid in ('data-testid="bmini-h5-entry"', 'data-testid="bmini-h5-qr"', 'data-testid="bmini-h5-unconfigured"'):
         assert testid in src, f"设置页缺 {testid}"
-    assert "手机浏览器扫码使用黄金策商家端" in src, "缺那行说明（用户要知道扫了干什么）"
-
 
 def test_mutations_are_all_detected(tmp_path):
     """注入式红证：把实现改坏 ⇒ 判据必须红（证明上面几条不是空断言）。"""

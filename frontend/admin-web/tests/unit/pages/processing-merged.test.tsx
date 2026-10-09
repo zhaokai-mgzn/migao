@@ -57,7 +57,7 @@ vi.mock('next/navigation', () => ({
 import ProcessingPage from '@/app/(dashboard)/production/processing/page'
 import ProcessingRedirectPage from '@/app/(dashboard)/processing/page'
 import ProcessingFeesRedirectPage from '@/app/(dashboard)/production/processing-fees/page'
-import { menuGroups } from '@/config/menu'
+import { menuGroups, standaloneTopItems, standaloneItems } from '@/config/menu'
 
 const ok = (data: unknown) => ({ data: { success: true, data } })
 
@@ -94,30 +94,36 @@ const productGroup = () => menuGroups.find((g) => g.key === 'product-center')
 describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**组；`product-center` 组撤销、商品列表升为一级项）', () => {
   // ⚠️ #5877 / 2026-10-06：该一级项现名**「商品管理」**，且渲染在**所有分组之后**（原为「工作台组之后」、
   // 更早为所有分组之前）—— 本文件的判据只看**归属**（它不在任何组里），故不需改断言；此处更正表述以免自相矛盾。
-  it('加工项管理由「生产管理」组承载（2026-10-06 起为**组内第一项**）→ /production/processing', () => {
-    const entry = productionGroup()?.children.find((c) => c.key === 'processing')
-    expect(entry).toBeDefined()
-    expect(entry!.name).toBe('加工项管理')
-    expect(entry!.path).toBe('/production/processing')
-    // issue #5291：加工项管理 = 生产域**读**码 production:view（写面仍 processing:manage）。
-    expect(entry!.permissionCode).toBe('production:view')
-    // #5778：原「商品与加工项」组已撤销（商品列表升为**一级项**，现名「商品管理」）⇒ 该项现属生产管理组
+  // 🔴 2026-10-09（issue #6580，用户裁定「移除加工项管理和工艺配置这两个菜单」）**改判**：
+  // 本判据原断言「加工项管理**是**生产管理组的组内第一条」；现在它**不再是菜单项**
+  //（功能体并入一级项「企业基础设置」`/settings` 页内的配置域）⇒ 判据反转为**不存在**：
+  // 全站（三处菜单数组）都不得再有指向 `/production/processing` 或 `/production/routings` 的菜单项。
+  // ⚠️ 断言强度**不降**：原断言钉「这条存在且字段正确」，新断言钉「这条不存在 + 两个路径仍由页面承载」
+  //（页面存在性由文件头的 `PAGES`/路由断言与本文件的 tab 用例承担，见下）。
+  it('「加工项管理」不再是菜单项（#6580）：三处菜单数组都不再有 /production/processing', () => {
+    const allItems = [
+      ...menuGroups.flatMap((g) => g.children),
+      ...standaloneTopItems,
+      ...standaloneItems,
+    ]
+    expect(allItems.find((c) => c.key === 'processing')).toBeUndefined()
+    expect(allItems.find((c) => c.path === '/production/processing')).toBeUndefined()
+    expect(allItems.find((c) => c.path === '/production/routings')).toBeUndefined()
+    // #5778：原「商品与加工项」组已撤销（商品列表升为**一级项**，现名「商品管理」）
     expect(productGroup()).toBeUndefined()
+    // 生产管理组（#6580 起 **3 项**；两项已移除）
     expect(productionGroup()!.children.map((c) => c.key)).toEqual([
-      'processing', 'production-process', 'production-board', 'production-pool', 'production-piecework',
+      'production-board', 'production-pool', 'production-piecework',
     ])
-    // 渲染出来的图标也必须是本项声明的那个（配置断言绿、画面错是 #4482 的既有形态）
-    expect(entry!.icon).toBe('Scissors')
   })
 
-  it('生产管理组现为 **5 项**（含合并项「加工项管理」）；面料三项仍在「仓储与物料」组（#5778 + issue #5271）', () => {
-    // #5778：本组**收进**「加工项管理」（5 项）；而面料进出与消耗（入库单 / 余料台账 / 省料看板）
+  it('生产管理组现为 **3 项**（#6580 移除两个菜单项）；面料三项仍在「仓储与物料」组（#5778 + issue #5271）', () => {
+    // 🔴 #6580：本组由 5 项收拢为 3 项（「加工项管理」「工艺配置」菜单项已移除、功能体并入
+    // 一级项「企业基础设置」页）；而面料进出与消耗（入库单 / 余料台账 / 省料看板）
     // 仍归**「仓储与物料」**组（issue #5271 的拆组保留，本轮不动）。
     // 断言的是**路径清单**（顺序敏感）。
     const productionPaths = productionGroup()!.children.map((c) => c.path)
     expect(productionPaths).toEqual([
-      '/production/processing',
-      '/production/routings',
       '/production',
       '/production/pool',
       '/production/piecework',
@@ -130,11 +136,9 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // 🔴 issue #5699（P4）：智能派单 = 该页读码 processing:view（节点码 ≡ 页面第一屏读码）；
     // #5778：加工项管理 = production:view。
     expect(productionGroup()!.children.map((c) => c.permissionCode)).toEqual([
-      'production:view',
-      'production:view',
-      'production:view',
-      'processing:view',
-      'production:view',
+      'production:view',    // 生产看板
+      'processing:view',    // 智能派单
+      'production:view',    // 计件工资
     ])
     // 拆出去的三项落在「仓储与物料」组，且**权限码不统一是有意的**：
     // 入库单 = inbound:view（仓储动作，仓管/财务要看入库单却不需要 processing:manage）、
@@ -169,10 +173,13 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // #4542：旧菜单名（#4490 的合并名，U+52A0 U+5DE5 U+9879 U+4E0E U+52A0 U+5DE5 U+8D39）
     // 已不存在 —— 用码点构造，避免在源码里再写出该旧名（issue #4542 判据 1：零命中）
     expect(allNames).not.toContain('\u52a0\u5de5\u9879\u4e0e\u52a0\u5de5\u8d39')
-    expect(allNames.filter((n) => n === '加工项管理')).toHaveLength(1)
-    // 一项不少不减：23 项 = 1 顶部一级项 + 21 个组内项 + 1 个尾部独立项（#5778；#5939 +「发货单」；#6404 +「库存明细」）
-    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(21)
-    expect(allNames).toHaveLength(21)
+    // 🔴 #6580：菜单项「加工项管理」**已移除** ⇒ 组内命中数 1 → **0**（反向断言，强度不降：
+    // 从「恰好有一条」变成「一条都没有」；旧路径不 404 由下面的重定向用例承担）。
+    expect(allNames.filter((n) => n === '加工项管理')).toHaveLength(0)
+    // 一项不少不减：组内项 21 → **18** 项（#6580 移除生产管理组的两个菜单项；
+    // #5778/#5939「+发货单」/#6404「+库存明细」的历次增减见 menu-nav.test.ts）
+    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(18)
+    expect(allNames).toHaveLength(18)
   })
 })
 

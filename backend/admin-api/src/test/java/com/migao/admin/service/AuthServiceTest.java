@@ -574,16 +574,16 @@ class AuthServiceTest {
 
         // 🔴 2026-10-06（issue #6457，用户裁定方案 A1）：一级项**排在所有分组之后**、通知中心之前
         //（原为「工作台组之后」）—— 与前端渲染顺序逐项一致。
-        // 🔴 issue #6573：一级项 1 → **2**（「参数总览」由 `/settings` 的 tab 升为一级项，码取既有
-        // `production:view`；位置 = 「商品管理」之后、通知中心之前）。
+        // 🔴 issue #6580：第 2 个一级项由「参数总览」改为「企业基础设置」（组织管理组的组内项升为
+        // 一级项；席位不变，码仍取既有 `production:view`；位置 = 「商品管理」之后、通知中心之前）。
         assertThat(keysOf(menus)).containsExactly(
                 "workspace", "customer-service", "trade-center",
                 "production-center", "inventory-center", "org-center",
-                "products", "params", "notifications");
+                "products", "settings", "notifications");
         assertThat(namesOf(menus)).containsExactly(
                 "工作台", "客户服务", "交易管理",
                 "生产管理", "仓储与物料", "组织管理",
-                "商品管理", "参数总览", "通知中心");
+                "商品管理", "企业基础设置", "通知中心");
 
         // 工作台（#5271 由「独立项」改为组）
         var workspace = groupByKey(menus, "workspace");
@@ -605,13 +605,13 @@ class AuthServiceTest {
                 .containsExactly("/orders", "/finance");
 
         var production = groupByKey(menus, "production-center");
-        // 🔴 2026-10-06（方案 A1）：先备资料（加工项 → 工艺）→ 再生产与派单 → 最末结算
+        // 🔴 2026-10-09（issue #6580）：本组**由 5 项收拢为 3 项** —— 「加工项管理」
+        //（`processing`）「工艺配置」（`production-process`）两个菜单项按用户裁定移除
+        //（功能体并入一级项「企业基础设置」页内的配置域；旧路径保留为重定向）。
         assertThat(keysOf(production.getChildren())).containsExactly(
-                "processing", "production-process", "production-board",
-                "production-pool", "production-piecework");
+                "production-board", "production-pool", "production-piecework");
         assertThat(pathsOf(production.getChildren())).containsExactly(
-                "/production/processing", "/production/routings", "/production",
-                "/production/pool", "/production/piecework");
+                "/production", "/production/pool", "/production/piecework");
 
         var inventory = groupByKey(menus, "inventory-center");
         // 🔴 2026-10-06（方案 A1）：单据（进 → 账 → 出）→ 台账 → 分析
@@ -623,8 +623,10 @@ class AuthServiceTest {
                 "/production/saving-board");
 
         var org = groupByKey(menus, "org-center");
-        assertThat(keysOf(org.getChildren())).containsExactly("employees", "roles", "settings");
-        assertThat(pathsOf(org.getChildren())).containsExactly("/employees", "/roles", "/settings");
+        // 🔴 issue #6580：「企业基础设置」由本组**升为顶层一级项** ⇒ 本组只剩「员工管理 / 岗位权限」
+        //（该页经营域的权限码仍在 `MenuController` 的权限树上以 `企业基础设置（经营域）` 节点保留）。
+        assertThat(keysOf(org.getChildren())).containsExactly("employees", "roles");
+        assertThat(pathsOf(org.getChildren())).containsExactly("/employees", "/roles");
 
         // #3094/#5271：旧 `chat`「黄金策 · 在线对话」节点已删除；「会话监控」从来不在侧边栏里
         assertThat(allNames(menus)).doesNotContain("黄金策 · 在线对话", "会话监控");
@@ -634,13 +636,14 @@ class AuthServiceTest {
         assertThat(allNames(menus)).doesNotContain("客户管理", "商品与加工项", "智能客服");
         // #5778：顶层一级项「商品管理」不在任何组内（它不是 `menuGroup`）
         assertThat(allNames(menus)).contains("商品管理");
-        // issue #6573：第 2 个一级项「参数总览」同理（也不在 `orgChildren` 里 —— 它是顶层 `menuItem`）
-        assertThat(allNames(menus)).contains("参数总览");
-        assertThat(pathsOf(menus)).contains("/settings/params");
+        // 🔴 issue #6580：第 2 个一级项改为「企业基础设置」（原「参数总览」的席位）——同样不在
+        // `orgChildren` 里（它是顶层 `menuItem`），路径 = `/settings`。
+        assertThat(allNames(menus)).contains("企业基础设置");
+        assertThat(pathsOf(menus)).contains("/settings");
     }
 
     @Test
-    @DisplayName("生产管理组（#5291 + #5699 P4）：节点码 = 各页第一屏读码 —— production:view 组 = 生产看板/工艺配置/计件工资，智能派单 = processing:view")
+    @DisplayName("生产管理组（#6580 收拢为 3 项 + #5291/#5699 P4）：production:view = 生产看板/计件工资，智能派单 = processing:view")
     void currentUserMenusExposeProductionGroup() {
         // issue #5291：生产域新增**读**码 `production:view` —— 「看得见这一页」与「改得动生产数据」
         // 就此分开；**智能派单**仍按 `processing:manage`（同组不同权，其读端点用 processing:view、
@@ -649,18 +652,21 @@ class AuthServiceTest {
 
         var production = groupByKey(readOnly, "production-center");
         assertThat(production.getName()).isEqualTo("生产管理");
-        // #5778：加工项管理已移入本组；2026-10-06（方案 A1）起为**组内第一项**
+        // 🔴 issue #6580：「加工项管理」「工艺配置」两个菜单项已移除（功能体并入一级项
+        // 「企业基础设置」页内的配置域）⇒ 只持 `production:view` 时本组剩「生产看板 + 计件工资」。
         assertThat(namesOf(production.getChildren()))
-                .containsExactly("加工项管理", "工艺配置", "生产看板", "计件工资");
+                .containsExactly("生产看板", "计件工资");
         assertThat(pathsOf(production.getChildren())).containsExactly(
-                "/production/processing", "/production/routings", "/production", "/production/piecework");
+                "/production", "/production/piecework");
         // 同组不同权：智能派单**不**随读码一起出现（拆码没有变成「一组一起放行」）
         assertThat(allNames(readOnly)).doesNotContain("智能派单");
-        // 加工项管理（#5778 起归「生产管理」组）同批改用读码 ⇒ 也随 production:view 可见
-        assertThat(allNames(readOnly)).contains("加工项管理");
+        // 同批：两个已移除的菜单项**不得**再出现在下发菜单里（否则就是「服务端仍发、侧边栏不认」）
+        assertThat(allNames(readOnly)).doesNotContain("加工项管理", "工艺配置");
+        // 🔴 issue #6580：一级项「企业基础设置」的节点码 = `production:view` ⇒ 持该码即可见
+        assertThat(allNames(readOnly)).contains("企业基础设置");
 
         // 🔴 issue #5699（P4，子菜单粒度）之后**各页按自己的码**门控（不再「同组一起放行」）：
-        //   · production:view ⇒ 生产看板 + 工艺配置 + 计件工资
+        //   · production:view ⇒ 生产看板 + 计件工资（+ #6580 起的一级项「企业基础设置」）
         //   · processing:view ⇒ 智能派单（其页面读码）
         //   · product:list ⇒ 省料看板（其页面读码）
         // 反向断言（只持 processing:manage）：生产管理组**整组不出现**（该组没有任何节点再挂 manage），
@@ -670,7 +676,7 @@ class AuthServiceTest {
         assertThat(keysOf(manageOnly)).doesNotContain("production-center");
         var inventory = groupByKey(manageOnly, "inventory-center");
         assertThat(namesOf(inventory.getChildren())).containsExactly("余料台账");
-        assertThat(allNames(manageOnly)).doesNotContain("入库单", "智能派单", "省料看板", "工艺配置");
+        assertThat(allNames(manageOnly)).doesNotContain("入库单", "智能派单", "省料看板", "工艺配置", "企业基础设置");
 
         // 新码持有者的正向读数（各自只点亮自己那一页 ⇒ 证明节点码 ≡ 页面读码）
         var poolOnly = groupByKey(menusForPermissions("processing:view"), "production-center");

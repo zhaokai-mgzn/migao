@@ -28,7 +28,7 @@ class CraftCalcConfigQueryTool(BaseTool):
     )
 
     # 权限码（admin-api 目录，issue #5291）：`CraftCalcConfigController` 的 `GET` 改挂方法级
-    # 生产域读码 `production:view`（写面 `PUT` 仍是类级 `processing:manage`）—— 与侧边栏「工艺配置」节点同码。
+    # 生产域读码 `production:view`（写面 `PUT` 仍是类级 `processing:manage`）—— 与侧边栏「企业基础设置 → 工艺与路线」节点同码。
     required_permissions = ["production:view"]
     read_only = True
     destructive = False
@@ -42,7 +42,7 @@ class CraftCalcConfigQueryTool(BaseTool):
                 success=False,
                 error="权限不足",
                 message="您没有权限查看算料配置",
-                suggestion="请联系管理员为您开通「工艺配置」查看权限后重试",
+                suggestion="请联系管理员为您开通「企业基础设置 → 工艺与路线」查看权限后重试",
             )
 
         try:

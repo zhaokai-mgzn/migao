@@ -322,19 +322,21 @@ def problems_default_deny(mod) -> List[str]:
 def problems_role_trim(mod) -> List[str]:
     """判据 4：裁剪**只**看会话权限 —— 无权 ⇒ 不泄露路径/码，但 citation 仍可溯。"""
     out: List[str] = []
-    blind = mod.build_navigation_answer("工艺配置在哪", ["order:list"])
+    # 🔴 2026-10-09（issue #6580）：「工艺配置」菜单项已移除 ⇒ 夹具改用合并后的入口
+    # 「企业基础设置」（节点 = `/settings`，码 = `production:view`），形态与口径一字不变。
+    blind = mod.build_navigation_answer("企业基础设置在哪", ["order:list"])
     if blind.registered is not True:
-        out.append("「工艺配置」是已登记功能，无权角色也应拿到 registered=True（只是看不到页面）")
+        out.append("「企业基础设置」是已登记功能，无权角色也应拿到 registered=True（只是看不到页面）")
     if blind.granted:
         out.append("无权角色竟拿到 granted 节点 ⇒ 裁剪失效（越权面）")
     if not blind.denied:
         out.append("裁剪把登记节点整个弄丢了（既不在 granted 也不在 denied）⇒ 判据会空跑")
     blob = json.dumps(blind.to_data(), ensure_ascii=False)
-    if "/production/routings" in blob:
+    if "/settings" in blob:
         out.append("无权角色的载荷里出现了页面路径 ⇒ 越权面")
     if "production:view" in blob:
         out.append("无权角色的载荷里出现了权限码 ⇒ 越权面")
-    if "登记项 #production-process" not in blind.to_data()["citation"]:
+    if "登记项 #settings" not in blind.to_data()["citation"]:
         out.append("无权角色的 citation 不可溯（必须仍然引登记项 → 菜单节点）")
     for feature in mod.NAV_FEATURES:
         answer = mod.build_navigation_answer(feature.label, ["*"])
@@ -772,8 +774,10 @@ class TestJudgementsOnRealObject:
         assert all_paths == {n.path for n in nav.MENU_TREE}
         visible = {n.path for n in nav.visible_nodes(["order:list", "dashboard:view"])}
         assert visible == {"/orders", "/shipments", "/notifications", "/dashboard", "/briefing"}
-        nodes = nav.nodes_for_feature("production-process")
-        assert [(n.path, n.permission_code) for n in nodes] == [("/production/routings", "production:view")]
+        # 🔴 2026-10-09（issue #6580）：「工艺配置」「加工项管理」两个菜单项已移除（功能体并入
+        # 「企业基础设置」页内的配置域）⇒ 夹具改用合并后的入口 `settings`（其节点 = `/settings`）。
+        nodes = nav.nodes_for_feature("settings")
+        assert [(n.path, n.permission_code) for n in nodes] == [("/settings", "production:view")]
         assert nav.nodes_for_feature("no-such-feature") == ()
 
 
@@ -787,8 +791,8 @@ class TestEveryJudgementCanGoRed:
         mutated = _load_mutated(
             tmp_path,
             lambda s: s.replace(
-                'MenuNode("production-center", "工艺配置", "/production/routings", "production:view")',
-                'MenuNode("production-center", "工艺配置", "/production/wrong", "production:view")',
+                'MenuNode(STANDALONE_GROUP, "企业基础设置", "/settings", "production:view")',
+                'MenuNode(STANDALONE_GROUP, "企业基础设置", "/production/wrong", "production:view")',
             ),
         )
         ts_paths = {n.path for n in menu_ts_nodes}
@@ -908,7 +912,7 @@ class TestEveryJudgementCanGoRed:
             return source.replace(marker, "granted.append(node)")
 
         mutated = _load_mutated(tmp_path, mutate)
-        assert mutated.build_navigation_answer("工艺配置在哪", ["order:list"]).to_data()["pages"], "前提自证失败"
+        assert mutated.build_navigation_answer("企业基础设置在哪", ["order:list"]).to_data()["pages"], "前提自证失败"
         problems = problems_role_trim(mutated)
         with capsys.disabled():
             print(f"[MC-065][红证4] 去掉裁剪 ⇒ problems={len(problems)} :: {problems[:1]}")

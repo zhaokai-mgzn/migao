@@ -43,6 +43,14 @@ export interface ConfigReadinessBarProps {
   states: Record<string, ReadinessState>
   /** 读数是否仍在路上（**不谎报**：加载中不显示任何一步为「待配置」） */
   loading: boolean
+  /**
+   * 可选：给了就把「去配置」渲染成**页内跳转**（设计 G3：不把人送出页面）—— 入参 = 步骤 key。
+   *
+   * 为什么不直接改 `MAINLINE_STEPS[].href`：同一块主线**还被别的持有者渲染**（工艺配置页自带的
+   * 就绪面），那边的去处是**跨页**的；把 href 改成页内锚点会让那边的链接**指向不存在的域**。
+   * 所以这里做成**可选的渲染形态**：新页传 `onGoto`（页内），老面不传（保持跨页链接）。
+   */
+  onGoto?: (stepKey: string) => void
 }
 
 /** 三态徽标（**不出现第四种形态**；`unknown` 的措辞必须与 `todo` 明显不同） */
@@ -52,7 +60,7 @@ const STATE_COPY: Record<ReadinessState, { text: string; className: string }> = 
   unknown: { text: '读不到', className: 'bg-neutral-100 text-neutral-600 border-neutral-200' },
 }
 
-export function ConfigReadinessBar({ states, loading }: ConfigReadinessBarProps) {
+export function ConfigReadinessBar({ states, loading, onGoto }: ConfigReadinessBarProps) {
   const [open, setOpen] = useState(false)
 
   const entries = MAINLINE_STEPS.map((s) => ({
@@ -123,14 +131,27 @@ export function ConfigReadinessBar({ states, loading }: ConfigReadinessBarProps)
                     </p>
                   )}
                 </div>
-                <Link
-                  href={s.href}
-                  data-testid={`readiness-goto-${s.key}`}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-primary-700 hover:underline flex-shrink-0 mt-0.5"
-                >
-                  去配置
-                  <ExternalLink className="w-3 h-3" />
-                </Link>
+                {onGoto ? (
+                  // 页内跳转（设计 G3）：跳到本页那个域，**不离开页面** —— 这是「一条走得完的路」的关键
+                  <button
+                    type="button"
+                    data-testid={`readiness-goto-${s.key}`}
+                    onClick={() => onGoto(s.key)}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-primary-700 hover:underline flex-shrink-0 mt-0.5"
+                  >
+                    去配置
+                    <ChevronRight className="w-3 h-3" />
+                  </button>
+                ) : (
+                  <Link
+                    href={s.href}
+                    data-testid={`readiness-goto-${s.key}`}
+                    className="inline-flex items-center gap-1 text-xs font-medium text-primary-700 hover:underline flex-shrink-0 mt-0.5"
+                  >
+                    去配置
+                    <ExternalLink className="w-3 h-3" />
+                  </Link>
+                )}
               </li>
             )
           })}

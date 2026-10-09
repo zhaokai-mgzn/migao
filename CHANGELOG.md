@@ -7,6 +7,78 @@
 
 ## [Unreleased]
 
+### 菜单收拢：移除「加工项管理」「工艺配置」两个菜单项，「企业基础信息」改名「企业基础设置」并沉底（2026-10-09，issue #6580）
+
+- **改后（用户在 #6580 的逐字裁定）**：①「加工项管理」（`/production/processing`）与「工艺配置」
+  （`/production/routings`）**不再是菜单项** —— 功能体并入 `/settings`「企业基础设置」页内的配置域，
+  生产管理组**由 5 项收拢为 3 项**（生产看板 → 智能派单 → 计件工资）；②「企业基础信息」改名
+  **「企业基础设置」**，并与「通知中心」同类型地**沉到尾部**（紧排在通知中心之前、作为第二个一级项）。
+  整树 **24 项 → 21 项**（6 组 18 个组内项 + 2 个一级项「商品管理」「企业基础设置」+ 1 个尾部独立项「通知中心」）。
+- **旧链接不 404**：两个旧路径保留为**重定向薄壳** → `/settings?domain=processing-fee` 与
+  `/settings?domain=craft-route`；旧深链 `/processing`、`/production/processing-fees`、
+  `/settings/params` 同样由重定向兜底（后端与前端守卫码都是 `production:view`）。
+- **权限**：合并后的菜单项「企业基础设置」节点码取**既有读码** `production:view`（不新造码；
+  这也是「谁要配生产口径，谁就该看得见这一页」）。**`system:manage` 不消失**：它仍在权限勾选树上
+  以一个**权限码节点**（`MenuController` 的 org-center 组「企业基础设置（经营域）」）保留，页内经营域
+  （企业信息 / AI 客服 / 工人端页面 / 通知设置）仍由它把守 ⇒ 该码**仍可授予**，不会只能靠改库。
+- **授权 delta（逐条复算，如实登记）**：
+  - **可见面放宽一处**：`production:view` 的持有者（operator / product_manager）**新增看见**
+    「企业基础设置」一级项（改前该页挂 `system:manage` ⇒ 只有 admin 看得见）。
+  - **零端点授权 delta**：本轮**没有改任何端点的权限码** —— 改的是**菜单节点码**
+    （`/settings`：`system:manage` → `production:view`）。`P4_AUTHORIZATION_CENSUS` 的读端点变动
+    因此由 6 条收窄为 **0 条**（那 6 条全挂在被移除的两个菜单项页上，随菜单项移除销账）。
+  - **零 403**（「菜单看得见 ⇒ 点进去打得开」）：该页第一屏 = **本页自身 `useEffect` 驱动面**
+    （`load()` 里的五条生产配置域读面），**全部** = `production:view` = 节点码 = 路由守卫码。
+    页内的**经营域 / 简报域**由各自码**条件挂载**（`config-center-domains.ts` 的 `requiredCode` +
+    页内 `has()` 过滤；#6573 既定口径「不持该码的域不渲染也不请求」）⇒ 不持 `system:manage` 的
+    生产岗**不会**触发经营域请求，也不会看到点不开的入口。
+    ⚠️ **登记口径的收紧（不是放宽）**：判据 12 的锚点原先按「整页源码里出现的读调用」登记（8 条），
+    把**条件挂载的域面**误算成无条件第一屏 ⇒ 凭空造出「菜单看得见、点进去 403」的读数（残留台账 /
+    多端点页表 / 可见性 gap 三处同时红）。本轮按仓内既有口径收窄为「本页自身 effect 驱动面」，
+    三处登记**整表销账**：`MENU_READ_PARITY_RESIDUALS` 1 → **0**、`MULTI_READ_ENDPOINT_PAGES` 1 → **0**、
+    `PAGE_VISIBILITY_GAPS` 2 → **1**（只留 `/notifications` 那条两侧无码的 fail-open 对）。
+    **这三处只许缩短**：谁把某个域的无条件调用接回页面自身 effect，投影立刻复现不了 ⇒ 未登记即红。
+  - 原「加工项管理」「工艺配置」的可见面**归零**（两个菜单项消失）——它们的页面能力对
+    `production:view` 持有者**仍在**（在 `/settings` 页内），对不持该码的岗位本就不可见。
+  - 其它角色（admin 恒 `*`、客服/销售/财务/知识编辑）**无变化**：新菜单项不对它们放宽任何码。
+- **页面形态（用户 2026-10-09 逐字：「新的页面功能**不能再是散乱的配置乱放**，必须有**逻辑性和条理**」
+  「要**清晰的引导用户完成配置**」）**：`/settings` 重构成**配置指挥台** —— 顶部**配置主线**（常驻一行摘要，
+  展开才逐项），左栏**四区八域**按「一笔单的钱与活怎么走」排：一·报价与计费（算料口径 / 加工项与加工费）
+  → 二·生产执行（工艺与路线）→ 三·余料与省料（余料尺寸）→ 四·企业与账号（企业信息 / AI 客服 /
+  工人端页面 / 通知设置）；右栏**只挂当前域**（其余域不渲染也不请求）。域目录是**单一真值模块**
+  （`frontend/admin-web/src/lib/config-center-domains.ts` —— 页面不写死任何域名字面量）。三条形态纪律：
+  ① 主线「去配置」= **页内跳转**到承载那一步的域（改前是跨页链接：跳过去就回不到主线，
+  「一条走得完的路」断在半路）；② 域徽标与主线**同源**，一个域覆盖多步时取**最差**那步
+  （报「已配置」会让人漏掉没配的那一步），主线没覆盖的域**不编读数**、不显示徽标；
+  ③ 搬进来的两个功能体在**嵌入形态**下不再渲染自带的页头与「配置就绪度」卡（同屏两个就绪面
+  本身就是「散乱」的形态），独立路由 `/production/routings`、`/production/processing` 仍按原样渲染。
+- **旧链 `/settings/params` 改为重定向**（内容并入「算料口径」域）：同一份配置**不再有两个入口** ——
+  该页只做跳转、**不发任何读面**；它在黄金策的页面上下文登记里随之销账（`page_registry.py`）。
+- **读失败的归因口径（真实浏览器验收实测的缺陷，当场修）**：算料域读面失败**一律**说
+  「可能是当前岗位没有「工艺配置」权限 —— 请联系管理员开权限后重试」；实测本机 ai-agent 未启动时读面 5xx，
+  商家被指去找管理员开一个**本来就有的**权限（真因被话术掩盖，且点名了一个已被删除的菜单）。
+  改后按**状态**分流：`403` ⇒ 权限话术（终态 + 去处），其余 ⇒「读数服务暂时不可用，
+  **不是你的权限问题** —— 请稍后重试」。
+- **四处载体同批**（少一处就是「勾得动、看不到」）：`frontend/admin-web/src/config/menu.ts`、
+  `MenuController.MENU_TREE`、`AuthService.buildMenusByPermissions`、
+  `backend/ai-agent-service/app/context/menu_navigator.py` 的 `MENU_TREE`。
+- **RBAC 单一真值源**：`rbac/manifest.json`（`menus` / `menu_nodes` / `pages` / `route_guard`）+
+  `rbac/readings.json`（`python3 rbac/generate_readings.py` 重生成，`--check` 逐字节相等）+
+  `rbac/sources.json` 的命中数同批更新。
+- **判据**：`tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`（组内序列 / 顶层布局序列 /
+  org-center 动作码登记）、`test_agent_permission_parity.py`（判据 3 / 10 / 11③ / 12，含
+  `ROUTE_WITHOUT_MENU_NODE` 三条旧前缀；两张页面面台账整表销账，坏形态改由**内存合成**夹具继续压）、
+  `test_rbac_submenu_granularity.py`（`P4_AUTHORIZATION_CENSUS` 逐页对账：可见面放宽具名
+  operator / product_manager、读端点变动 6 → 0）、`test_rbac_derived_pages.py`
+  （无页面前缀台账 4 → 7 条、`ACTION_NODE_CODES` 新增「企业基础设置（经营域）」、多码页 / 残留页
+  上限 1 → **0**、`PAGE_VISIBILITY_GAPS` 2 → 1）、`test_menu_navigator.py`（`MENU_FEATURES` 与 `menu.ts` 双向同源）、
+  各前端用例（`Sidebar` / `SidebarRedesign` / `CommandPalette` / `Header` / `menu-nav` / `menu-icons` /
+  `roles` / `production-board` / `processing-merged` / `processing-fees` / `services` / 官网能力地图）。
+- **旧链接与深链的面包屑**：`/production/processing`、`/production/routings`、`/processing` 三条统一兜底为
+  **单级「企业基础设置」**（§15.2「面包屑末项 == 侧边栏菜单名」的可执行定义由
+  `frontend/admin-web/tests/unit/lib/menu-breadcrumb-coverage.test.tsx` 复算）。
+
+
 ### 手机端底部底栏按岗位权限隐藏：没有坐席权限的岗位不再出现「坐席」（2026-10-09，issue #6574）
 
 - **改后**：`GET /api/auth/me` 在 `mobileSurfaces` 之外再下发 `mobileTabs`（服务端 `MobileSurfaces.visibleTabsFor`）；

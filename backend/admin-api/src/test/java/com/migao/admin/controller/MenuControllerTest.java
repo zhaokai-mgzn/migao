@@ -73,10 +73,16 @@ class MenuControllerTest {
             "经营看板", "每日简报",
             "在线接待", "知识库", "售后工单", "客户列表",
             "订单列表", "财务对账",
-            "加工项管理", "工艺配置", "生产看板", "智能派单", "计件工资",
+            // 🔴 2026-10-09（issue #6580，用户裁定「移除加工项管理和工艺配置这两个菜单」）：
+            // 「加工项管理」「工艺配置」两个菜单项已移除（功能体并入「企业基础设置」页内的配置域）。
+            "生产看板", "智能派单", "计件工资",
             "入库单", "库存明细", "发货单", "余料台账", "省料看板",
-            "员工管理", "岗位权限", "企业基础信息",
-            "商品管理", "参数总览");
+            "员工管理", "岗位权限",
+            // 组内的**权限码节点**（无 path、不是菜单项）：只为让经营域的码仍可授予
+            "企业基础设置（经营域）",
+            "商品管理",
+            // 顶层一级项（由组织管理组升上来，席位即原「参数总览」）
+            "企业基础设置");
 
     /** 动作码节点（非菜单项）2 个，**统一追加在组尾**：order:detail / employee:create。
      *  🔴 2026-09-29（#5778）：原 4 个 → **2 个** —— 「新增商品」/「商品分类管理」两个节点原挂在
@@ -86,9 +92,9 @@ class MenuControllerTest {
             "订单详情", "新增员工");
 
     /** 顶层**一级项**名（`children` 为空、直接跳转的那些，**不属于任何组**）。
-     *  🔴 #6573 起两个：商品管理 / 参数总览 —— 它们不参与 `allChildren` 的组内计数，
-     *  由 `topLevelStandaloneItems` 单独断言（避免两处都算它们 ⇒ 重复计数）。 */
-    private static final List<String> TOP_LEVEL_STANDALONE_LABELS = List.of("商品管理", "参数总览");
+     *  🔴 #6580 起两个：商品管理 / 企业基础设置（原「参数总览」的席位）—— 它们不参与
+     *  `allChildren` 的组内计数，由 `topLevelStandaloneItems` 单独断言（避免两处都算它们 ⇒ 重复计数）。 */
+    private static final List<String> TOP_LEVEL_STANDALONE_LABELS = List.of("商品管理", "企业基础设置");
 
     /**
      * 拉取菜单树 DOM —— jsonPath 的过滤表达式对「单元素结果是否解包」语义不稳，
@@ -168,23 +174,24 @@ class MenuControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data").isArray())
                 // issue #5271：七大组（旧树是 9 个顶层条目）。
-                // 🔴 2026-09-29（issue #5778）：**六大组 + 两个顶层一级项「商品管理」「参数总览」= 8 个顶层条目**
+                // 🔴 2026-10-09（issue #6580）：**六大组 + 两个顶层一级项「商品管理」「企业基础设置」= 8 个顶层条目**
                 //（`product-center` 撤销、`smart-customer-service` → `customer-service`、商品列表升为一级项；
                 //  「参数总览」由 issue #6573 从 `/settings` 的 tab 升为一级项）。
                 .andExpect(jsonPath("$.data.length()").value(8));
     }
 
     @Test
-    @DisplayName("2026-10-06 新 IA：顶层一级项（商品管理 / 参数总览）不在任何组内，且排在**所有分组之后**")
+    @DisplayName("新 IA：顶层一级项（商品管理 / 企业基础设置，后者由 #6580 从组织管理组升上来）不在任何组内，且排在**所有分组之后**")
     void topLevelStandaloneItemMirrorsFrontend() throws Exception {
         JsonNode tree = fetchTree();
         var tops = topLevelStandaloneItems(tree);
-        assertEquals(2, tops.size(), "顶层一级项应恰有 2 个（商品管理 / 参数总览）—— 实得 = " + labels(tree));
+        assertEquals(2, tops.size(), "顶层一级项应恰有 2 个（商品管理 / 企业基础设置）—— 实得 = " + labels(tree));
         assertEquals("商品管理", tops.get(0).path("label").asText(),
                 "第 1 个顶层一级项必须是「商品管理」—— 实得 = " + labels(tree));
-        // issue #6573：第 2 个一级项 = 「参数总览」（码取既有读码 `production:view`，不新造码）
-        assertEquals("参数总览", tops.get(1).path("label").asText(),
-                "第 2 个顶层一级项必须是「参数总览」—— 实得 = " + labels(tree));
+        // 🔴 issue #6580：第 2 个一级项 = 「企业基础设置」（由组织管理组升上来，席位即原「参数总览」；
+        // 码取既有读码 `production:view`，不新造码）。
+        assertEquals("企业基础设置", tops.get(1).path("label").asText(),
+                "第 2 个顶层一级项必须是「企业基础设置」—— 实得 = " + labels(tree));
         // 🔴 2026-10-06（issue #6457，用户裁定方案 A1）：一级项**排在所有分组之后**（原「工作台组之后」）
         // —— 组名即「分组」，渲染在组与组之间会让「大菜单并列」自相矛盾。
         // 顶层**位次**：第 0 项 = 「工作台」组、第 6 项（末项）= 一级项「商品管理」。
@@ -195,9 +202,9 @@ class MenuControllerTest {
                 "顶层倒数第 3 项必须是「组织管理」组（两个一级项紧跟在它之后）—— 实得 = " + codes(tree));
         assertEquals("product:list", tree.get(tree.size() - 2).path("code").asText(),
                 "顶层倒数第 2 项必须是「商品管理」（排在**所有分组之后**）—— 实得 = " + codes(tree));
-        // issue #6573：末项 = 「参数总览」（与「商品管理」并列、同排在所有分组之后）
+        // 🔴 issue #6580：末项 = 「企业基础设置」（与「商品管理」并列、同排在所有分组之后）
         assertEquals("production:view", tree.get(tree.size() - 1).path("code").asText(),
-                "顶层末项必须是「参数总览」—— 实得 = " + codes(tree));
+                "顶层末项必须是「企业基础设置」—— 实得 = " + codes(tree));
         assertEquals("product:list", tops.get(0).path("code").asText());
         assertEquals(0, tops.get(0).path("children").size(),
                 "一级项不得有子节点（它不是组）—— 有子节点说明它被写成了组");
@@ -260,20 +267,21 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("生产管理组（#5291 + #5699 P4）：节点码 = 各页第一屏读码 —— 生产看板/工艺配置/计件工资 production:view、智能派单 processing:view")
+    @DisplayName("生产管理组（#6580 收拢为 3 项 + #5291/#5699 P4）：生产看板/计件工资 production:view、智能派单 processing:view")
     void productionCenterGroupMirrorsMenuTs() throws Exception {
         JsonNode production = group(fetchTree(), "production-center");
         assertEquals("生产管理", production.path("label").asText());
-        // 🔴 2026-10-06（issue #6457，方案 A1）：组内顺序 = 先备资料 → 再生产与派单 → 最末结算。
-        assertEquals(List.of("加工项管理", "工艺配置", "生产看板", "智能派单", "计件工资"),
+        // 🔴 2026-10-09（issue #6580）：本组**由 5 项收拢为 3 项** —— 「加工项管理」「工艺配置」
+        // 两个菜单项按用户裁定移除 ⇒ 只剩「生产看板 → 智能派单 → 计件工资」。
+        assertEquals(List.of("生产看板", "智能派单", "计件工资"),
                 labels(production.path("children")));
         // issue #5699（P4，子菜单粒度）：每个节点码 ≡ 该页第一屏读码 —— 智能派单 = processing:view
         //（ProductionPoolController 两个读端点同码）；工艺配置 = production:view（该页第一屏 6 个读端点
         // 本次整页收敛到该码；两码持有岗位集合逐值相同 ⇒ 零 delta）；#5291 的 production:view
         // 仍覆盖生产看板与计件工资。
-        // #5778：加工项管理由已撤销的「商品与加工项」组移入本组（2026-10-06 起为**组内第一项**）。
-        assertEquals(List.of("production:view", "production:view", "production:view",
-                "processing:view", "production:view"), codes(production.path("children")));
+        // 🔴 #6580：两项移除后组内码为 [生产看板, 智能派单, 计件工资]。
+        assertEquals(List.of("production:view", "processing:view", "production:view"),
+                codes(production.path("children")));
     }
 
     @Test
@@ -295,13 +303,17 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("组织管理组：员工管理/岗位权限/企业基础信息 + 组尾动作码（新增员工）")
+    @DisplayName("组织管理组：员工管理/岗位权限/企业基础设置（经营域，权限码节点） + 组尾动作码（新增员工）")
     void orgCenterGroupMirrorsMenuTs() throws Exception {
         JsonNode org = group(fetchTree(), "org-center");
         assertEquals("组织管理", org.path("label").asText());
-        assertEquals(List.of("员工管理", "岗位权限", "企业基础信息", "新增员工"),
+        // 🔴 2026-10-09（issue #6580）：第 3 项由「企业基础信息」菜单项改为**权限码节点**
+        // 「企业基础设置（经营域）」——菜单项本体已升为**顶层一级项**（见
+        // `topLevelStandaloneItemMirrorsFrontend`），这里保留的是**经营域权限码**的挂载点
+        //（否则 `system:manage` 会从权限勾选树上消失，页内经营域永远无法授予）。
+        assertEquals(List.of("员工管理", "岗位权限", "企业基础设置（经营域）", "新增员工"),
                 labels(org.path("children")));
-        // issue #5291：岗位权限节点改挂**读**码 system:view（企业基础信息仍是 system:manage）。
+        // issue #5291：岗位权限节点改挂**读**码 system:view（经营域码节点仍是 system:manage）。
         assertEquals(List.of("employee:list", "system:view", "system:manage", "employee:create"),
                 codes(org.path("children")));
     }
@@ -329,12 +341,12 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("菜单项一项不少不减（**21 组内项** + **2 顶层一级项**各恰好一次）+ 2 个动作码节点（合计 23 组内节点）")
+    @DisplayName("菜单项一项不少不减（**18 组内项** + **1 个组内权限码节点** + **2 顶层一级项**各恰好一次）+ 2 个动作码节点")
     void everyMenuItemAppearsExactlyOnce() throws Exception {
         List<String> all = labels(allChildren(fetchTree()));
         for (String name : MENU_ITEM_LABELS) {
             int expected = 1;
-            // 顶层**一级项**（「商品管理」「参数总览」）是**叶子** ⇒ 不在 `allChildren`
+            // 顶层**一级项**（「商品管理」「企业基础设置」）是**叶子** ⇒ 不在 `allChildren`
             // （它们不属于任何组），改在顶层一级项集合里各断言恰好一次。
             // ⚠️ 这里按**名单**判断而不是按名字硬编码：将来再加一级项，忘了登记就会落到下面那条
             // 「组内节点出现次数不是 1」上 ⇒ 当场红（不会静默跳过）。
@@ -351,7 +363,7 @@ class MenuControllerTest {
             assertEquals(1, all.stream().filter(action::equals).count(),
                     "动作码节点「" + action + "」缺失或重复（实得全表 = " + all + "）");
         }
-        // 组内节点总数 = 21 个**组内**菜单项（23 项 − **2 个**顶层一级项「商品管理」「参数总览」）
+        // 组内节点总数 = 18 个**组内**菜单项（21 项 − **2 个**顶层一级项「商品管理」「企业基础设置」）
         // + 2 动作码节点 = 23。
         // （#5939：菜单项 21 → 22；#6404：菜单项 22 → 23，组内项 21 → 22；#6573：菜单项 23 → 24，
         //   组内项**不变**（新增的是顶层一级项）⇒ 总数 24 → 25，组内 22 → 21 + 2 动作码。）
