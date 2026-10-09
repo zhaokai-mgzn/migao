@@ -3665,6 +3665,24 @@ _CASE_DA_022 = EvalCase(
     precondition='本用例是 [backend-contract] 的**视图契约**用例（不进 agent-eval 冒烟）：两条 user_inputs 是**同一能力**的两种问法，不是两次会话。前置 = 端点可用且当前账号持 product:list。该前置由两侧单测直接构造并断言 ⇒ 前置不成立（端点 / 权限码改名）时单测直接红，不会表现为「agent 不干活」',
 )
 
+# ── DA-024 [NORMAL] 评测目标租户收敛到单一可注入配置（EVAL_TENANT_ID），并钉住「非 DEBUG 不接受外部租户」（issue #6288）（源: cases/data.yml）──
+_CASE_DA_024 = EvalCase(
+    id='DA-024',
+    legacy_id='',
+    title='评测目标租户收敛到单一可注入配置（EVAL_TENANT_ID），并钉住「非 DEBUG 不接受外部租户」（issue #6288）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['（基建判据，非 LLM 行为用例）评测链路的 DEBUG 降级身份与前置复位/db 校验 SQL 必须指向同一个可注入租户'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 源码面未登记即红：backend/ai-agent-service/app/utils/auth.py 与 tests/agent_eval/local_runner.py 的**代码行**里不得再出现裸 `tenant_id=1` / `tenant_id = 1`（注释豁免；判据 = tests/unit_ci_workflows/test_eval_tenant_single_source.py 的 audit_bare_tenant_literals）。红证：把本地运行器的一处参数化改回 `tenant_id = 1` ⇒ 该判据必红。', "配置面逐值：注入 EVAL_TENANT_ID=7 / 25 / 1000 ⇒ 运行器的 SQL 模板逐值落到注入租户（不是断言「非空」）；缺省/非法/越界（''、abc、0、-3、25.5）⇒ fail-closed 回落默认 25。判据 = 同文件 test_injected_tenant_value_is_used / test_sql_targets_use_the_configured_tenant。", '🔴 反向护栏（缺一不可）：生产路径（settings.DEBUG=False）下即使注入租户（配置值 / X-Debug-Role 头）也**不生效** —— auth.py 的每一次 `tenant_id=DEBUG_FALLBACK_TENANT_ID` 都必须落在「settings.DEBUG + debug_role」守卫的 if 体内；非 DEBUG 路径的租户只来自 JWT payload（源码里不得出现 os.environ/getenv 租户回落）。红证：把身份构造挪出守卫 ⇒ audit_debug_tenant_is_guarded 必红；给 payload 分支加环境变量兜底 ⇒ audit_non_debug_tenant_from_payload_only 必红。', '单一真值不漂移：app/config.py 的 EVAL_TENANT_ID 字段默认值 ≡ local_runner.py 的 EVAL_TENANT_ID 默认值 ≡ 云测试租户 25（2026-10-04 环境重建后的 tenant「米高测试环境」）；只改一侧即红。', "已部署入口显式钉住：.github/workflows/agent-eval.yml（唯一打已部署云环境的入口）的评测步骤 EVAL_TENANT_ID == '25'；本地临时栈两条 workflow（post-deploy-eval / xiaobu-acceptance）显式回落 '1'（栈内种子租户），否则复位/校验「查不到对象」。", '行为面（真请求对象）：DEBUG=true + X-Debug-Role ⇒ 返回身份的 tenant_id == 配置值（管理员与 C 端 customer 两条各一）；DEBUG=false + 注入的调试头 ⇒ 401 fail-closed（生产路径永不产生「配置租户」的身份）。判据 = backend/ai-agent-service/tests/test_eval_tenant_config.py。'],
+    skip_reason='[backend-contract] 本用例是基建/安全护栏判据（非 LLM 行为）：静态与结构判据由 tests/unit_ci_workflows/test_eval_tenant_single_source.py 验证（零 LLM，pr-check 的 ci workflow helper unit tests job 每次 PR 都跑），行为面由 backend/ai-agent-service/tests/test_eval_tenant_config.py 验证（真 Request 打桩 + 真 auth 分支）。不进入 agent-eval 冒烟（它本身不产生 LLM 行为证据，且评测入口正在改的正是它自己）。',
+    tags=['eval-infra', 'tenant', 'single-source', 'security-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── DF-001 [ADVERSARIAL] Token攻击 - 要求生成超长回复（源: cases/defense.yml）──
 _CASE_DF_001 = EvalCase(
     id='DF-001',
@@ -13835,6 +13853,7 @@ ALL_CASES = (
     _CASE_DA_021,
     _CASE_DA_023,
     _CASE_DA_022,
+    _CASE_DA_024,
     _CASE_DF_001,
     _CASE_DF_002,
     _CASE_DF_003,

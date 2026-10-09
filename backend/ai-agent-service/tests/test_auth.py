@@ -227,7 +227,8 @@ class TestGetCurrentUser:
 
         user = await get_current_user(request, authorization=None)
         assert user.user_id == "dev_user"
-        assert user.tenant_id == 1
+        from app.utils.auth import DEBUG_FALLBACK_TENANT_ID  # #6288: 可配（默认 25）
+        assert user.tenant_id == DEBUG_FALLBACK_TENANT_ID
         # #3511（HR-003 归因）：DEBUG 管理员身份必须带**通配权限**——
         # 否则 role=admin 只能过 allowed_roles 粗筛，凡声明 required_permissions 的
         # 工具（employee_manage 等）会一律「权限不足」：B 端独立栈实测
@@ -259,7 +260,8 @@ class TestGetCurrentUser:
         user = await get_current_user(request, authorization=None)
         assert user.user_id == "debug_customer_new"
         assert user.role == "customer"
-        assert user.tenant_id == 1
+        from app.utils.auth import DEBUG_FALLBACK_TENANT_ID  # #6288: 可配（默认 25）
+        assert user.tenant_id == DEBUG_FALLBACK_TENANT_ID
 
     @patch("app.utils.auth.settings")
     @pytest.mark.asyncio
@@ -380,7 +382,8 @@ class TestDebugPermissionsHeader:
             "X-Debug-Permissions 未生效 ⇒ 越权用例仍以通配权限跑（#4108 本要治的形态）")
         assert user.role == "admin"
         assert user.user_id == "dev_user"
-        assert user.tenant_id == 1
+        from app.utils.auth import DEBUG_FALLBACK_TENANT_ID  # #6288: 可配（默认 25）
+        assert user.tenant_id == DEBUG_FALLBACK_TENANT_ID
 
     @patch("app.utils.auth.settings")
     @pytest.mark.asyncio

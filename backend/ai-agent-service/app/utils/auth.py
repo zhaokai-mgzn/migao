@@ -41,6 +41,25 @@ _DEBUG_USER_ID_RE = re.compile(r"debug_[a-z0-9_]{1,32}")
 _DEBUG_PERMISSION_CODE_RE = re.compile(r"[a-z][a-z0-9_]{0,31}(?::[a-z][a-z0-9_]{0,31}){0,2}")
 
 
+# DEBUG 降级身份的**目标租户**（issue #6288）—— 单一真值 = 环境变量 `EVAL_TENANT_ID`
+# （`app/config.py` 的 `settings.EVAL_TENANT_ID`；`tests/agent_eval/local_runner.py` 读同一个
+# 变量名，两处**不得**再各写一份字面量）。
+#
+# 为什么必须可注入而不是写死：2026-10-04 云测试环境重建后，原 tenant 1「词元通达」连同
+# 全部数据已被清空 ⇒ 写死 1 会让「唯一打**已部署**环境的评测入口」（`agent-eval.yml` 的
+# `local_runner.py`，借本 DEBUG 分支拿管理员身份）落到一个**不存在的租户**，
+# 而该入口近一个月无人触发 ⇒ 不报警、只在下一次手动跑时才发现。
+#
+# ⚠️ 安全边界**不放宽**（与 P0-3 同源，逐条对应）：
+#   · 本值**只**在 `settings.DEBUG` + 显式 `X-Debug-Role` 头分支内被读（生产
+#     `DEBUG=false` 永不进入该分支 ⇒ 本值取什么都不影响生产）；
+#   · 非 DEBUG 分支的租户**只**从 JWT payload 解析（`payload.get("tenantId")`），
+#     不接受任何外部传入的租户（含本环境变量 / 请求头）；
+#   · 非法值 fail-closed 回落默认（绝不静默取任意租户）。
+# 判据（会红）：`tests/unit_ci_workflows/test_eval_tenant_single_source.py`。
+DEBUG_FALLBACK_TENANT_ID = settings.EVAL_TENANT_ID
+
+
 def _debug_permissions_override(raw: str) -> Optional[list[str]]:
     """解析 `X-Debug-Permissions`（逗号分隔权限码）→ 码列表；非法/为空 → None（回落 `["*"]`）。"""
     if not raw:
@@ -312,7 +331,7 @@ async def get_current_user(
         # 【P0-3 安全加固 2026-09-03】DEBUG 降级必须带显式调试头 X-Debug-Role，
         # 禁止"无 token 无头 → 静默直通租户 1 管理员"：
         #   - 此前生产若误配 DEBUG=true，任何浏览器/客户端无 token 请求都会被
-        #     降级为 tenant_id=1 的 dev_user 管理员，导致跨租户数据泄露
+        #     降级为（当时的）租户 1 的 dev_user 管理员，导致跨租户数据泄露
         #     （POC 实测：新商家 /chat 页面读到词元通达租户的全部订单/会话）。
         #   - 现在：DEBUG=true 且无 token 时，仅当请求带 X-Debug-Role 头才放行
         #     （本地验收 / CI xiaobu 显式注入该头）；无头一律 401 fail-closed。
@@ -342,7 +361,7 @@ async def get_current_user(
                     logger.warning("No auth token in DEBUG mode, using CUSTOMER identity (xiaobu)")
                 default_user = UserIdentity(
                     user_id=_uid,
-                    tenant_id=1,
+                    tenant_id=DEBUG_FALLBACK_TENANT_ID,
                     identity_type="account",
                     role=UserRole.CUSTOMER,
                 )
@@ -353,7 +372,7 @@ async def get_current_user(
                 )
                 default_user = UserIdentity(
                     user_id="dev_user",
-                    tenant_id=1,
+                    tenant_id=DEBUG_FALLBACK_TENANT_ID,
                     identity_type="account",
                     role=UserRole.ADMIN,
                     # 通配权限（#3511 HR-003 归因）：DEBUG 管理员身份此前 permissions=[] →

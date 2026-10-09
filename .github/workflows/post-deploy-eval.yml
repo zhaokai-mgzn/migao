@@ -586,6 +586,10 @@ jobs:
         env:
           AI_API_URL: http://localhost:8001
           ADMIN_API_URL: http://localhost:8080
+          # 目标租户（issue #6288）：本入口跑的是**本地临时栈** ⇒ 显式回落栈内租户 1
+          # （由 `scripts/eval_stack_seed.sh` 注入的 fixtures 逐行创建，与云测试环境重建无关）。
+          # 不设 ⇒ 回落到云端默认 25，复位 / db 校验会「查不到对象」。
+          EVAL_TENANT_ID: "1"
           SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN || 'ci-service-token-placeholder' }}
           PERSONA: ${{ matrix.persona }}
           PYTHONUTF8: "1"

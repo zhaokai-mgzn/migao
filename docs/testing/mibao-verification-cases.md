@@ -2434,7 +2434,7 @@
 真值: customer-list.profile-view
 溯源: 2026-10-03 新增（issue #6217 / 族 3 · 包 4 / V1）：族 3（跨域具名视图）此前只有 product_health（#5369）与 customer_profile（#5456），本条目为**客户价值分层 / 流失预警**视图的专属用例 —— 它答的是页面结构上做不到的问题（客户列表只有单客户维度，无法按流失风险排序）。⚠️ 不并进简报表快照（先例 #5458 裁定：权限面不同 ⇒ 复用即越权）；取数只用三条既有只读端点。 ｜ tags: query, tool, cross-domain, disclosure, churn
 
-## 数据域（23 case）
+## 数据域（24 case）
 
 ### DA-001. 经营概览 🔵
 ```
@@ -2716,6 +2716,20 @@
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-10-04 新增（issue #6280）：商品级用料缺口与耗尽风险视图。粒度 = **商品**（实测 order_items 无 sku_id 原生列、SKU 身份只在 processing_info 的 jsonb 里，字面键覆盖率上限约 25%）⇒ 不做 SKU 级细分。需求侧用未完成订单（confirmed + producing，与族 1 UNSHIPPED_STATUSES 同口径）。**未覆盖面（如实登记）**：页面与 §15 UI 旅程 / Playwright 多模态验收**显式拆到 #6282**（本单不含）；**预测层未启用**（真实周桶深度 2 周 < 8 周，dev 库读数见 issue #6280 的 S0 系列评论），重启条件 = 深度 ≥ 8 周（约 2026-11-15 后）。 2026-10-07 **rebase 到 origin/main 后收口**（本包此前从未编译通过 ⇒ 判据从未真跑，对应 CI 红点 = `admin-api unit tests`，现取失败 run 37608465660）：① 修掉 `MaterialShortageService.java` 里 `historyDepth));` 的**多余括号**（语法错误 ⇒ 整个 admin-api 编不过）；② `band(null 交期)` 由 `critical` 改回 **`short`**（实现与本文「交期未知单列 short」口径不一致）；③ `parseLimit` 非整数分支的 message 补 **`≥ 1`**（与 0 / 负数分支同口径）；④ 源码扫描判据的**唯一一次假红**：Javadoc 里字面写了被扫的挂钟写法 ⇒ 改为 `{@link LocalDate.now}` 形态（原 Javadoc 字面写法）（判据不动）；⑤ `rowOrderIsDeterministic` 的期望值改为与本文件「分层降序」口径一致（紧急度降序 blocked → critical → … → unknown）；⑥ 补 `MaterialShortageControllerTest`（`growth_gate` 对新增 Controller 要求的同名判据，缺 ⇒ blocker 1 条，现取 0 条）。本机定点读数：Java 23 passed（18 服务 + 5 控制器）/ ai-agent 14 passed / 生成物新鲜 + truths + 6 个 cases 面判据文件 341 passed。 ⑦ **`Case Coverage Gate` 的真因在判据侧、不在用例侧**：`scripts/case_coverage.py::tool_declared_actions` 只认 `"enum": [ ... ]` 的**字面**形态，而 `inventory_manage` 把枚举归一到模块级常量 （`"enum": list(VALID_ACTION_ORDER)`）⇒ 取值集解析为空 ⇒ 该工具被判成「没有 action 维度」⇒ **每一条**声明过它的用例（本单的 DA-022 + 存量 PR-004）都被报成 dangling。修在解析器（新增「常量引用」解析腿，并把 `enum` **键名**排除出取值集），并落 L0 判据 `tests/unit_ci_workflows/test_case_coverage_action_enum_source.py`（5 条，含红证注入）；**工具源码一字未改**（`git diff HEAD -- backend/ai-agent-service/app/tools/inventory_manage.py` 为空）。 ⑧ **全量 `./mvnw test` 的另一处确定性红（CI `admin-api unit tests` 的真实红点）**：`MaterialShortageService` 直接构造注入 `JdbcTemplate`，而 `SecurityConfigTest`（全仓唯一的全上下文 `@SpringBootTest`，显式 exclude DataSource/MyBatis/Redis 自动配置）里**没有** `JdbcTemplate` bean ⇒ 上下文起不来 ⇒ 该类 55 条全 error（首轮全量实测 `Tests run: 4216, Failures: 1, Errors: 55`，根因 = `No qualifying bean of type JdbcTemplate`）。修法 = 改走 `ObjectProvider<JdbcTemplate>` 延迟获取（既有先例 = `service/ClientRequestIdService.java`，其注释已写明这个坑），拿不到 DB ⇒ fail-closed 503（读视图**不得**把「没查」冒充「没问题」）。并把这个「同族坑第 5 次」固化进既有护栏 `tests/unit_ci_workflows/test_security_config_mapper_mocks.py`（新增「不得直接声明 JdbcTemplate 字段」一条 + 非空自证；注入式红证：把字段改回直接注入 ⇒ 该判据红并具名报出文件）。 ⑨ **同一次全量跑出的第 2 处确定性红**：`BusinessClockTestSourceGuardTest`（`src/test` 侧的**族级**挂钟普查，台账只许缩短）报 `MaterialShortageServiceTest.java` 有 4 处「新命中」——而它们全是**本测试自己的判据字面量**（needle 串 `LocalDate.now(` / `LocalDateTime.now(` / `Clock.system` ×2，含 `@DisplayName` 文本）。根因不是「读了挂钟」，而是**平行实现**：该用例在单文件上重写了一份 「src/main 不得读挂钟」的扫描，而既有全仓守卫 `BusinessClockSourceGuardTest#onlyTheClockComponentReadsBusinessTimeFromMain`（扫描面 = 整个 `src/main/java`）**严格更强**。⇒ 删掉那份重复扫描（不往台账加条目、不扩 `SELF_EXCLUDED`，守卫强度不变，覆盖由更强的全仓守卫承担）。 ⑩ **`ci workflow helper unit tests（后半）` 的红也在本包**（不是存量债、不是已自愈）：`tests/unit_ci_workflows/test_assertion_specs_wellformed.py::TestOutputKeysAreProducible#test_snapshot_is_fresh` 判「工具产出键快照」过期 —— 本包给 `inventory_manage` 加了第三个 action，其返回 `dict(view)`（**动态形状**）⇒ 源码推导 = `dynamic=true / actions=null` + `shape_notes=["data=dict(view)"]`，而快照还是加 action 之前那份（`source_sha256` 也对不上）。按判据自己给的修法刷新并提交：`python3 scripts/output_keys_snapshot.py --refresh`（现取 51 个工具 / 223 个产出键）。本机复现读数：`MIGAO_CI_HELPER_SHARD=2/2 pytest tests/unit_ci_workflows` = **1 failed / 3406 passed** ⇒ 刷新后同口径全绿。 ｜ tags: query, tool, cross-domain, material-shortage, disclosure
+
+### DA-024. 评测目标租户收敛到单一可注入配置（EVAL_TENANT_ID），并钉住「非 DEBUG 不接受外部租户」（issue #6288） 🔵
+```
+你: （基建判据，非 LLM 行为用例）评测链路的 DEBUG 降级身份与前置复位/db 校验 SQL 必须指向同一个可注入租户
+期望: direct_reply
+数据: 🔴 源码面未登记即红：backend/ai-agent-service/app/utils/auth.py 与 tests/agent_eval/local_runner.py 的**代码行**里不得再出现裸 `tenant_id=1` / `tenant_id = 1`（注释豁免；判据 = tests/unit_ci_workflows/test_eval_tenant_single_source.py 的 audit_bare_tenant_literals）。红证：把本地运行器的一处参数化改回 `tenant_id = 1` ⇒ 该判据必红。
+数据: 配置面逐值：注入 EVAL_TENANT_ID=7 / 25 / 1000 ⇒ 运行器的 SQL 模板逐值落到注入租户（不是断言「非空」）；缺省/非法/越界（''、abc、0、-3、25.5）⇒ fail-closed 回落默认 25。判据 = 同文件 test_injected_tenant_value_is_used / test_sql_targets_use_the_configured_tenant。
+数据: 🔴 反向护栏（缺一不可）：生产路径（settings.DEBUG=False）下即使注入租户（配置值 / X-Debug-Role 头）也**不生效** —— auth.py 的每一次 `tenant_id=DEBUG_FALLBACK_TENANT_ID` 都必须落在「settings.DEBUG + debug_role」守卫的 if 体内；非 DEBUG 路径的租户只来自 JWT payload（源码里不得出现 os.environ/getenv 租户回落）。红证：把身份构造挪出守卫 ⇒ audit_debug_tenant_is_guarded 必红；给 payload 分支加环境变量兜底 ⇒ audit_non_debug_tenant_from_payload_only 必红。
+数据: 单一真值不漂移：app/config.py 的 EVAL_TENANT_ID 字段默认值 ≡ local_runner.py 的 EVAL_TENANT_ID 默认值 ≡ 云测试租户 25（2026-10-04 环境重建后的 tenant「米高测试环境」）；只改一侧即红。
+数据: 已部署入口显式钉住：.github/workflows/agent-eval.yml（唯一打已部署云环境的入口）的评测步骤 EVAL_TENANT_ID == '25'；本地临时栈两条 workflow（post-deploy-eval / xiaobu-acceptance）显式回落 '1'（栈内种子租户），否则复位/校验「查不到对象」。
+数据: 行为面（真请求对象）：DEBUG=true + X-Debug-Role ⇒ 返回身份的 tenant_id == 配置值（管理员与 C 端 customer 两条各一）；DEBUG=false + 注入的调试头 ⇒ 401 fail-closed（生产路径永不产生「配置租户」的身份）。判据 = backend/ai-agent-service/tests/test_eval_tenant_config.py。
+跳过: [backend-contract] 本用例是基建/安全护栏判据（非 LLM 行为）：静态与结构判据由 tests/unit_ci_workflows/test_eval_tenant_single_source.py 验证（零 LLM，pr-check 的 ci workflow helper unit tests job 每次 PR 都跑），行为面由 backend/ai-agent-service/tests/test_eval_tenant_config.py 验证（真 Request 打桩 + 真 auth 分支）。不进入 agent-eval 冒烟（它本身不产生 LLM 行为证据，且评测入口正在改的正是它自己）。
+```
+溯源: 2026-10-09 新增（issue #6288）：云测试环境重建（2026-10-04，tenant 1「词元通达」连同全部数据清空 ⇒ 新云测试租户 = tenant 25「米高测试环境」）后，评测链路把租户写死成 1 —— auth.py 的 DEBUG 降级身份两处 + local_runner.py 的 8 处 SQL 字面量（前置复位 4 处 + db 校验 3 处 + 内联查询 3 处）。**未覆盖面（如实登记）**：① 「改后能否真打到 tenant 25」需一次人工择时的手动 workflow_dispatch（真实 LLM 成本，按 #4262 不自动派发）⇒ 本用例只钉可注入与护栏，不声称已打到；② 部署侧 .env.ai-agent 的 DEBUG 取值不在本机可得（外部输入）⇒ 服务端实际走哪条分支未取证；③ 默认值 25 的依据是仓内 durable 证据（tests/smoke/config.py 的 CLOUD_TENANT_ID=25 + acceptance/2026-10-04/BRIEF.md + .github/cases/bmini.yml 的 #6564 记录），非本机复探。 ｜ tags: eval-infra, tenant, single-source, security-guard
 
 ## 防御域（24 case）
 
@@ -10556,8 +10570,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：729（活跃 134，跳过 595）
-- tier 分布：smoke 12 / normal 675 / adversarial 32
+- 用例总数：730（活跃 134，跳过 596）
+- tier 分布：smoke 12 / normal 676 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10567,7 +10581,7 @@
 - 对话边界域：45
 - 跨域：3
 - 客户域：12
-- 数据域：23
+- 数据域：24
 - 防御域：24
 - 财务对账域：6
 - 人事域：13
@@ -10612,6 +10626,7 @@
 - DA-009: 智能每日经营简报：数字回填校验（LLM 编造即丢弃，issue #3468）
 - DA-010: 智能每日经营简报：PII 不进 prompt + RLS 隔离（issue #3468）
 - DA-022: 缺料风险视图：material_shortage（商品级需求 vs SKU 权威库存）的缺口分层与「未知≠0」披露（issue #6280）
+- DA-024: 评测目标租户收敛到单一可注入配置（EVAL_TENANT_ID），并钉住「非 DEBUG 不接受外部租户」（issue #6288）
 - KN-001: 元元知识问答 - 面料问题先检索本店知识卡片（query 必填）
 - KN-002: 元元知识问答 - 清洗保养类问题走知识卡片检索
 - KN-003: 黄金策知识问答 - 本店售后政策先检索知识卡片（B 端接线回归，issue #3059）
