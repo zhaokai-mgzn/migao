@@ -1005,6 +1005,8 @@ def cmd_reap_merged(args: argparse.Namespace) -> int:
 
     cwd = Path.cwd()
     root = main_root(cwd)
+    # 自动收尾同样可能删掉**调用者所在的 worktree** ⇒ 先离开（同一族的自动面；判据同 finish）。
+    cwd, _ = leave_deletion_radius(root)
     wt_base = wt_base_dir(cwd)
     mode = "APPLY（真删）" if args.apply else "dry-run（零删除）"
     print(f"🧹 自动收尾（{mode}）—— 判定：有**已合并** PR 且**无 open PR**")
@@ -1183,6 +1185,34 @@ class Target:
         return bool(self.registered or self.local or self.remote)
 
 
+def leave_deletion_radius(root: Path, target: str | None = None) -> tuple[Path, str | None]:
+    """收尾前**离开可能被删掉的检出目录**（issue #6261）⇒ 返回 `(安全 cwd, 绝对化后的 target)`。
+
+    包收尾的默认形态是**站在包里**跑 `finish`，而收尾第一步就删掉那个 worktree ⇒ 进程 cwd
+    变成一个**已被 unlink 的目录** ⇒ ① `Path.cwd()` 抛 `FileNotFoundError`；②
+    `subprocess.run(..., cwd=<已删目录>)` 在 `Popen.__init__` 当场抛 `FileNotFoundError`
+    （**不是** `returncode != 0` —— `git()` 的 `check=True` 与 `delete_remote_branch` 的
+    `check=False` 都接不住）⇒ 脚本**中断在「删 worktree 之后、删分支之前」**，留下
+    「worktree 删了、本地/远程分支还在」的半收尾尾巴（与铁律 12(d) 同族）。
+
+    所以本函数**只做一件事**：把进程 cwd 换到**安全目录**（= 主工作区根；
+    `main_root()` 在 worktree 内也返回主仓库根）——**不改变删除顺序**（顺序即安全顺序），
+    只保证后面每一步都在一个**真实存在**的目录里跑。
+
+    🔴 两个返回值都**必须**用上（这是 `#6261` 的第二个坑）：光 `os.chdir` 不够 ——
+    后面 `git(...)` 拿的还是**旧的 `cwd` 变量**，那正是已删目录 ⇒ 照抛不误。
+    故约定：`cwd, target = leave_deletion_radius(...)` —— **`cwd` 重绑定**、**`target` 用返回值**
+    （`target` 若是相对路径，须按**调用时**的 cwd 先绝对化：chdir 之后同一个相对字符串会指向别处）。
+
+    （`cmd_land` 自 v1.x 起就有一行等价的 `os.chdir(root)`；本函数把那一行收敛成**一份实现**，
+    供 `finish` / `prune` / `reap-merged` 复用 —— 免得同类子命令各写各的、漏一个就再踩一次。）
+    """
+    if target is not None and not Path(target).is_absolute() and Path(target).is_dir():
+        target = str(Path(target).resolve())
+    os.chdir(root)
+    return root, target
+
+
 def resolve_target(target: str, cwd: Path) -> Target:
     """按分支名或工作区路径解析出「worktree 路径 + 分支名」的现状。"""
     path: str | None = None
@@ -1241,6 +1271,14 @@ def remote_heads(cwd: Path, *, refresh: bool = False) -> set[str] | None:
     """`origin` 的全部远程分支名 —— **一次** `git ls-remote --heads origin`（进程内缓存）。
 
     返回 `None` = 无法判定（git 抖动 / 离线）⇒ 调用方**退回逐分支探测**（判定语义逐字不变，只是慢）。
+
+    ⚠️ 缓存是**进程内快照** ⇒ **谁改了远程、谁就在自证前让它失效**：`verify_clean` 拿这份快照
+    判「远程分支还在不在」，于是「**缓存先被读过 → 远程才被删**」这个顺序会让自证读到
+    **删除前**的值、报出与最终态相反的结论（自证的全部意义就是**最后读一次真值**）。
+    只走 `batch_delete_remote_branches`（它自己 refresh）**不够**：`cmd_prune` 的**逐分支**
+    `delete_remote_branch` 不走它（issue #6261 里该路径的自证一度与最终态相反）。⇒ 每条删除路径
+    删完各自刷一次；刷在**自证之前 / 循环之外**，**不是**每个目标刷一次（那会把 `NS-3` 的
+    「常数次读数」退化成 N 次往返）。
     """
     key = str(cwd)
     if refresh or key not in _REMOTE_HEADS:
@@ -1379,12 +1417,15 @@ def verify_clean(target: Target, cwd: Path, root: Path) -> bool:
 def cmd_finish(args: argparse.Namespace) -> int:
     cwd = Path.cwd()
     root = main_root(cwd)
-    target = resolve_target(args.target, cwd)
+    # 收尾会删掉**调用者所在的 worktree** ⇒ 先把 cwd 换到主工作区根（判据见 leave_deletion_radius）。
+    # 两个返回值都要用上：`cwd` 重绑定（**否则后面 git 拿的还是已删目录**）、`target_arg` 已绝对化。
+    cwd, target_arg = leave_deletion_radius(root, args.target)
+    target = resolve_target(target_arg, cwd)
     if not target.exists:
-        if ledger_has(target.branch, cwd) or ledger_has(args.target, cwd):
-            print(f"✅ 已收尾（收尾台账已记录：{target.branch or args.target}）—— 无需再做。")
+        if ledger_has(target.branch, cwd) or ledger_has(target_arg, cwd):
+            print(f"✅ 已收尾（收尾台账已记录：{target.branch or target_arg}）—— 无需再做。")
             return EXIT_OK
-        print(f"❌ 找不到目标（分支/工作区都不存在）：{args.target}", file=sys.stderr)
+        print(f"❌ 找不到目标（分支/工作区都不存在）：{target_arg}", file=sys.stderr)
         return EXIT_USAGE
 
     print(f"🧹 收尾：{target.branch}"
@@ -1443,6 +1484,8 @@ def cmd_finish(args: argparse.Namespace) -> int:
 def cmd_prune(args: argparse.Namespace) -> int:
     cwd = Path.cwd()
     root = main_root(cwd)
+    # 批量收尾同样可能删掉**调用者所在的 worktree** ⇒ 先离开（同一族的批量面；判据同 finish）。
+    cwd, _ = leave_deletion_radius(root)
     mode = "APPLY（真删）" if args.apply else "dry-run（零删除）"
     print(f"🧹 批量收尾（{mode}）—— 对所有已注册 worktree 做同样的判定\n")
     warn_dot_worktrees(cwd, "prune")
@@ -1505,6 +1548,14 @@ def cmd_prune(args: argparse.Namespace) -> int:
             print(f"✅ 已删除本地分支：{t.branch}")
         if delete_remote_branch(t.branch, cwd):
             print(f"✅ 已删除远程分支：origin/{t.branch}")
+
+    # 本路径的远程删除**不走** batch_delete_remote_branches（那条路自己 refresh）⇒ 删除段结束后
+    # **刷一次**读缓存再自证：自证读的是 `_REMOTE_HEADS` 快照，不刷就可能读到**删除前**的值、
+    # 报出与最终态相反的自证结论（#6261 里该路径出现过「已删干净却报 ❌ 远程分支不存在」）。
+    # 刷在**循环外**：循环内刷会把「常数次读数」退化成 N 次往返（`NS-3` 的教训）。
+    remote_heads(cwd, refresh=True)
+
+    for t in removable:
         if not verify_clean(t, cwd, root):
             failures += 1
 
