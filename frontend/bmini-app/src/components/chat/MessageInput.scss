@@ -1,15 +1,16 @@
 @use '../../styles/variables.scss' as *;
 
-// 输入条（豆包式单容器）：textarea 常驻 + 右下自适应动作组
+// 输入条（豆包式单容器）：**单行** `[切换][输入框 或「按住说话」][加图][动作键]`（issue #6596）
 // 设计依据：docs/design/agent-input-bar-unified-design.md §4.1/§4.5（C 端深蓝金 token）
 // 尺度约定：designWidth 750，1px = 1rpx；触摸键统一 88px（44pt，对齐 MessageList 头像尺度）
+// 🔴 底部安全区由**页面**补（`pages/chat/index/index.scss` 的 `.chat-page` 预留底栏那一条）
+//    —— 这里补两次会让输入条被抬起、底下留缝（同 `MerchantTabBar.scss` 的不变量 ①）。
 .message-input {
   display: flex;
   flex-direction: column;
   background: $bg-primary;
   border-top: 1px solid $border-color;
   padding: $space-sm $space-md 0;
-  padding-bottom: env(safe-area-inset-bottom);
 
   // ── 单容器（浅灰底大圆角）──
   &__container {
@@ -82,7 +83,73 @@
     height: 24px;
   }
 
-  // ── 文本输入（常驻）──
+  // ── 单行容器（issue #6596）──
+  // 定高 88px：四格在同一行、垂直居中；容器（浅灰底）只随草稿图 / 录音条向上增长，**这一行不抖**。
+  &__row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 88px;
+    gap: $space-xs; // 4px（行内四格紧一点，触摸热区仍是 88px）
+    flex-wrap: nowrap;
+  }
+
+  // 左：键盘 ⇄ 语音切换（触摸热区 88px = 44pt，与其它触摸键同尺度）
+  &__mode-toggle {
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: transparent;
+
+    // 浏览器确实没有录音能力：图标降透明度（点了会给显式解释，不是灰掉不可点）
+    &--disabled {
+      opacity: 0.4;
+    }
+  }
+
+  // 中间：输入框 或「按住说话」（固定高，与两侧触摸键同高 ⇒ 一行对齐）
+  &__center {
+    flex: 1;
+    min-width: 0;
+    height: 88px;
+    display: flex;
+    align-items: center;
+  }
+
+  // 「按住说话」条（默认语音模式的中间那一格）：宽胶囊 + 可见文字
+  &__hold {
+    flex: 1;
+    height: 88px;
+    border-radius: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: $primary-light;
+    // 按住时手指会上下移动（上滑取消）⇒ 不让页面跟着滚
+    touch-action: none;
+    user-select: none;
+
+    &--disabled {
+      opacity: 0.4;
+    }
+
+    // 录音中：红色浅底提示（状态详情在录音条）
+    &--recording {
+      background: rgba(229, 72, 77, 0.15);
+    }
+  }
+
+  &__hold-text {
+    font-size: 28px;
+    font-weight: 500;
+    color: $text-primary;
+  }
+
+  // ── 文本输入（键盘模式才渲染）──
   // 🔴 Taro H5 的 DOM 是 `<taro-textarea-core class="message-input__textarea">` 里再套一个
   //    **原生** `<textarea class="taro-textarea">` —— 真正绘制文字的是**内层**那个。规则只写在外层时，
   //    字号 / 字体 / 占位符色 / 缩放手柄**一条都到不了文字上**，输入框里跑的是浏览器默认
@@ -122,12 +189,16 @@
     color: $text-secondary;
   }
 
-  // ── 右下自适应动作组 ──
+  // 添图：与其它触摸键同尺度（视觉上内联在行里，不另起一行）
+  &__attach {
+    flex-shrink: 0;
+  }
+
+  // ── 动作键位（流式中=停止 / 有草稿=发送 / 空草稿=不占位）──
   &__actions {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    gap: $space-md;
+    flex-shrink: 0;
   }
 
   &__icon-btn {

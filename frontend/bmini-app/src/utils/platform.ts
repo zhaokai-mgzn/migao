@@ -83,8 +83,14 @@ export const H5_SCAN_PHOTO_HINT = '当前浏览器不能直接扫码：已改用
 export const H5_SCAN_PHOTO_FAILED_HINT =
   '照片里没识别出二维码：请对准二维码重拍一张，或在下框手输加工单号'
 
-/** h5 语音不可用时的**显式**提示（入口保留可见但禁用，点击给解释 —— 不静默消失、不留「点了没反应」） */
-export const H5_VOICE_UNAVAILABLE_HINT = '浏览器暂不支持语音输入，请用文字发送'
+/**
+ * 浏览器**确实没有**录音能力时的显式提示（issue #5650 / #6596）。
+ *
+ * 只在 `MediaRecorder` + `getUserMedia` 都拿不到时才走到这里（h5 的录音已于 #6596 用浏览器原生 API 做出来，
+ * 见 `frontend/bmini-app/src/utils/voiceBrowserRecorder.ts`）⇒ 这是**罕见**分支：切换键点了给解释 +
+ * 告诉用户下一步怎么办，不静默消失、也不留「点了没反应」。
+ */
+export const H5_VOICE_UNAVAILABLE_HINT = '当前浏览器不支持语音输入：请用文字发送'
 
 /** h5 微信登录不可用时的**显式**提示（浏览器走账号密码 —— 用户裁定「浏览器仍然需要账号密码」） */
 export const H5_WECHAT_LOGIN_UNAVAILABLE_HINT =
@@ -103,7 +109,7 @@ export const H5_WECHAT_LOGIN_UNAVAILABLE_HINT =
 export const H5_API_OUTLET_LEDGER: Record<string, string> = {
   login: 'h5 不走微信换码：miniAppLogin 直接拒绝并指向账号密码登录（employeeLogin → POST /api/auth/employee/login）',
   getRecorderManager:
-    'h5 不调用它（stub）：语音入口保留可见但禁用，点击给显式提示（H5_VOICE_UNAVAILABLE_HINT）',
+    'h5 不调用它（stub）⇒ 语音改走**浏览器原生** `getUserMedia` + `MediaRecorder`（issue #6596，见 frontend/bmini-app/src/utils/voiceBrowserRecorder.ts）；浏览器确实没有这两个 API 时才回落文字模式，切换键点了给显式提示（H5_VOICE_UNAVAILABLE_HINT）',
   scanCode:
     'h5 仅微信内置浏览器可用（JS-SDK）；纯浏览器降级为**拍照识别**（`Taro.chooseImage` + `<img>`/canvas + jsQR 本机解码，**0 次 LLM** —— 复用 `src/utils/inbound/barcodeDecode.ts`，不新写第二份解码实现），失败/取消再回落到手输单号（文案 = H5_SCAN_PHOTO_HINT / H5_SCAN_PHOTO_FAILED_HINT；issue #5750 起「只给手输」不再是合格出路）',
   createOffscreenCanvas:

@@ -1,24 +1,32 @@
 /**
  * 语音输入工具（按住说话模式）
  *
- * 链路：RecorderManager 录音（mp3）→ 上传后端 /api/chat/transcribe → 返回文本
+ * 链路：录音 → 上传后端 /api/chat/transcribe → 返回文本
  * 后端：ai-agent-service ASR 模块（DashScope paraformer），免前端插件配置
  *
+ * ## 录音实现按平台分流（issue #6596）
+ *
+ * - **weapp**：`Taro.getRecorderManager()`，`format: 'mp3'`，交回 `tempFilePath`
+ * - **h5**：浏览器 `getUserMedia` + `MediaRecorder`（`./voiceBrowserRecorder`），交回 **blob URL**
+ *   —— 旧实现里 h5 直接 `return null`（Taro 的 h5 实现是 stub），#6476 据此判定「H5 不许写按住说话」；
+ *   用户 2026-10-09 要「默认按住说话」⇒ 把 H5 录音**做出来**（后端已支持 webm/mp4，不改后端）。
+ *   只有浏览器**确实没有**这两个 API 时 `isVoiceSupported()` 才为假（⇒ 输入条回落文字模式）。
+ *
  * 交互契约（供 MessageInput 使用）：
- *   - isVoiceSupported()       当前环境是否支持录音（小程序 ✅ / H5 stub ❌）
+ *   - isVoiceSupported()       当前环境是否支持录音（小程序 ✅ / 具备 MediaRecorder 的浏览器 ✅）
  *   - startRecording()          touchStart 时调用：开始录音（最长 60s）
- *   - stopRecording()           touchEnd 时调用：停止录音，resolve 音频临时路径
+ *   - stopRecording()           touchEnd 时调用：停止录音，resolve 音频临时路径 / blob URL
  *   - transcribeFile(path)      上传转写，返回 { text, durationMs } 或 null
  *   - stopAndTranscribe()       停止 + 转写一步到位（松开直接发送用）
  *
- * 注意：RecorderManager 仅微信小程序可用；H5 下 getRecorderManager 返回 stub，
- * 必须懒加载 + 能力检测，禁止在模块顶层调用（否则 H5 页面加载即崩溃）。
+ * 注意：RecorderManager 仅微信小程序可用；**禁止在模块顶层调用**（否则 H5 页面加载即崩溃）。
  */
 
 import Taro from '@tarojs/taro'
 import { getToken } from './auth'
 import { AI_API_BASE_URL } from './constants'
 import { isH5 } from './platform'
+import { startBrowserRecording, supportsBrowserRecording, type BrowserRecording } from './voiceBrowserRecorder'
 
 export interface VoiceResult {
   text: string
@@ -32,22 +40,19 @@ interface TranscribeResponse {
   error?: { message?: string }
 }
 
-// ── 录音器懒加载单例（H5 环境不可用，顶层禁止调用）──
+// ── 录音器懒加载单例（顶层禁止调用）──
 
 let recorderManager: any = null
 let listenersReady = false
 let pendingResolve: ((path: string) => void) | null = null
 let pendingReject: ((e: Error) => void) | null = null
 let recording = false
+/** h5 当前这次浏览器录音会话（null = 没在录） */
+let browserRecording: BrowserRecording | null = null
 
+/** weapp 的录音器；h5 不走它（Taro h5 的实现是 stub） */
 function getRecorder(): any {
   if (recorderManager) return recorderManager
-  // 🔴 h5 分支（issue #5650）：Taro h5 的 `getRecorderManager` 是
-  // `temporarilyNotSupport('getRecorderManager')`（实测 `dist/api/media/recorder.js`）——
-  // 调用会触发 Taro 的 `__taroNotSupport` 事件 + `console.warn`，返回值也没有 `onStop`/`start`。
-  // **平台分支放在能力探测之前**：探测只能回答「这个对象缺什么方法」，回答不了「该不该给用户这个入口」
-  // （探测为假时既可能是「浏览器没实现」，也可能是「这台设备没麦克风」⇒ 只能静默隐藏入口 = 静默失败）。
-  // h5 的出路在 UI 层：入口保留可见但禁用 + 点击给显式提示（`H5_VOICE_UNAVAILABLE_HINT`）。
   if (isH5()) return null
   try {
     recorderManager = Taro.getRecorderManager()
@@ -57,8 +62,16 @@ function getRecorder(): any {
   return recorderManager
 }
 
-/** 当前环境是否支持录音（微信小程序 ✅；H5 的 stub 无 onStop/start → ❌） */
+/**
+ * 当前环境是否支持录音（issue #6596 改判）
+ *
+ * - **h5**：现取浏览器能力（`MediaRecorder` + `getUserMedia`）—— 有就是有，**不写死**。
+ *   微信 webview / Safari / Chrome 都具备 ⇒ B 端默认语音模式在真机上才是真的。
+ * - **weapp**：`RecorderManager` 具备 `onStop` / `start`。
+ * - 其余编译目标：无语音入口。
+ */
 export function isVoiceSupported(): boolean {
+  if (isH5()) return supportsBrowserRecording()
   const rm = getRecorder()
   return !!rm && typeof rm.onStop === 'function' && typeof rm.start === 'function'
 }
@@ -98,8 +111,16 @@ export function isRecordingNow(): boolean {
 /** 开始录音（touchStart）。重复调用前先 stop。 */
 export function startRecording(): void {
   if (!isVoiceSupported() || recording) return
-  ensureListeners()
   recording = true
+
+  if (isH5()) {
+    // 浏览器：getUserMedia 是异步的（可能弹授权）⇒ 会话对象先拿住，授权完成由它的 ready 承载
+    browserRecording = startBrowserRecording()
+    if (!browserRecording) recording = false
+    return
+  }
+
+  ensureListeners()
   pendingResolve = null
   pendingReject = null
   getRecorder().start({
@@ -111,8 +132,16 @@ export function startRecording(): void {
   })
 }
 
-/** 停止录音，resolve 音频临时路径（touchEnd）。 */
+/** 停止录音，resolve 音频临时路径 / blob URL（touchEnd）。 */
 export function stopRecording(): Promise<string> {
+  if (isH5()) {
+    const session = browserRecording
+    browserRecording = null
+    recording = false
+    if (!session) return Promise.reject(new Error('当前环境不支持录音'))
+    return session.stop()
+  }
+
   return new Promise<string>((resolve, reject) => {
     if (!isVoiceSupported()) {
       reject(new Error('当前环境不支持录音'))
@@ -124,32 +153,74 @@ export function stopRecording(): Promise<string> {
   })
 }
 
-/** 上传音频并转写。失败返回 null（调用方自行 toast）。 */
+/** `blob:` URL ⇒ 反查回 Blob（h5 录音的载体就是它） */
+async function resolveAudioBlob(path: string): Promise<Blob> {
+  const resp = await fetch(path)
+  return await resp.blob()
+}
+
+/** h5：blob → 后端认得的**扩展名**（`_get_audio_format` 按 media type / 文件名判族：webm 与 mp4） */
+function audioFileName(blob: Blob): string {
+  const type = String(blob.type || '').toLowerCase()
+  return type.includes('mp4') ? 'voice.m4a' : 'voice.webm'
+}
+
+/**
+ * 上传音频并转写。失败返回 null（调用方自行 toast）。
+ *
+ * 两种载体都走**同一个上传点**（避免第二份鉴权/字段口径）：
+ * weapp = `Taro.uploadFile`；h5 = `blob:` URL → `fetch` + `FormData`（浏览器原生 multipart）。
+ */
 export async function transcribeFile(tempFilePath: string): Promise<VoiceResult | null> {
   const token = getToken()
+  const authHeader = token ? `Bearer ${token}` : ''
+  const url = `${AI_API_BASE_URL}/api/chat/transcribe`
 
-  const resp = await Taro.uploadFile({
-    url: `${AI_API_BASE_URL}/api/chat/transcribe`,
-    filePath: tempFilePath,
-    name: 'audio',
-    header: {
-      Authorization: token ? `Bearer ${token}` : '',
-      'X-Client-Type': 'wechat_mini',
-    },
-    formData: {
-      language: 'zh',
-      // 租户来自 JWT，上传时不带 tenant_id（后端 transcribe 签名只有 audio + language）
-    },
-  })
+  let statusCode: number
+  let raw: string
+
+  if (isH5()) {
+    const blob = await resolveAudioBlob(tempFilePath)
+    const form = new FormData()
+    form.append('audio', blob, audioFileName(blob))
+    form.append('language', 'zh')
+    const resp = await fetch(url, {
+      method: 'POST',
+      // ⚠️ 不要手写 Content-Type：boundary 由浏览器生成
+      headers: {
+        Authorization: authHeader,
+        'X-Client-Type': 'bmini_h5',
+      },
+      body: form,
+    })
+    statusCode = resp.status
+    raw = await resp.text()
+  } else {
+    const resp = await Taro.uploadFile({
+      url,
+      filePath: tempFilePath,
+      name: 'audio',
+      header: {
+        Authorization: authHeader,
+        'X-Client-Type': 'wechat_mini',
+      },
+      formData: {
+        language: 'zh',
+        // 租户来自 JWT，上传时不带 tenant_id（后端 transcribe 签名只有 audio + language）
+      },
+    })
+    statusCode = resp.statusCode
+    raw = resp.data
+  }
 
   let parsed: TranscribeResponse
   try {
-    parsed = JSON.parse(resp.data) as TranscribeResponse
+    parsed = JSON.parse(raw) as TranscribeResponse
   } catch {
     return null
   }
 
-  if (resp.statusCode !== 200 || !parsed.text) {
+  if (statusCode !== 200 || !parsed.text) {
     return null
   }
 
