@@ -48,7 +48,7 @@ export function CuttingHeightPanel({
         <div className="mb-1">
           <h2 className="text-base font-medium text-neutral-900">裁高配置</h2>
           <p className="mt-0.5 text-sm text-neutral-500">
-            这一刀该多高：<strong>裁剪高度 = 成品高 + 命中的增量项</strong>。命中口径由服务端判。
+            这一刀该多高：<strong>裁剪高度 = 成品高 + 命中的增量项</strong>。命中哪几项由系统按规则判定，不用你手算。
           </p>
         </div>
       )}

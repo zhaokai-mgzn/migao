@@ -522,7 +522,7 @@ export function OperationPricePanel({
                   ⚠️ 这道工序有
                   <strong className="mx-1">{manageUnlinked.length}</strong>
                   条设置<strong>没有关联到它</strong>（价目行指向的不是这道工序）——
-                  下面带「这些行指向的不是这道工序」标记的行**不提供设置**（改它们就是改另一道工序）；
+                  下面带「这些行指向的不是这道工序」标记的行<strong>不提供设置</strong>（改它们就是改另一道工序）；
                   点底部<strong className="mx-1">删除</strong>可直接删掉这道工序。
                 </p>
               )}

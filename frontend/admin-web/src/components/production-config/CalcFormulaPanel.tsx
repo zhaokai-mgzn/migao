@@ -115,7 +115,7 @@ export function CalcFormulaPanel({ embedded = false }: { embedded?: boolean } = 
         <div className="mb-1">
           <h2 className="text-base font-medium text-neutral-900">算料公式</h2>
           <p className="mt-0.5 text-sm text-neutral-500">
-            兜底公式：韩褶 / 打孔按工艺自动推导；推导不适用时用这条备用公式。
+            备用公式：韩褶 / 打孔按工艺自动算；算不出来时用这条公式。
           </p>
         </div>
       )}
