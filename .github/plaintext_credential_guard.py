@@ -28,6 +28,31 @@ dev 内部 service token（`X-Service-Token`，64 位十六进制）以**明文*
 「这个常量是字面量还是环境注入」，只会制造一片必须豁免的真·正确代码。
 「字面量被搬进常量、再由头引用」这一形态已由 **R1 在定义处**抓住。）
 
+## R3：验收产物 / 测试面上的**裸** token 字面量（issue #6303）
+
+`acceptance/**` 的机器产物按惯例要**提交进仓库**，而 R1 是「**凭据命名的键** = 字面量」——
+**键名不叫 service token 的产物它一条也抓不到**（现取实测，三种真实形态全部漏判）：
+
+| 产物里的形态（键名） | R1/R2 | 为什么漏 |
+|---|---|---|
+| `"tokenA": "ey…"` | 不判 | 键名 `tokenA` 不匹配 `_CRED_NAME` |
+| `"accessToken": "ey…"` | 不判 | 同上 |
+| `"service_token": "ey…"` | 不判 | 键名匹配，但 **`_R1` 的左右边界吃不下键的闭引号**（`"service_token":` 里 `"` ∉ `\w`，`[^\w]*` 只能消费一处） |
+
+风险：**一条 `git add acceptance/` 就把活 JWT 推上远端**（2026-10-04 实测 `race-sweep/out/fixtures.json`
+落着登录后的真 token）—— gitleaks 只扫 **diff 新增行** ⇒ 存量永不报警，正是本守卫存在的理由。
+
+**判据形态（只判**裸** JWT，不判「长随机串」）**：三段 base64url、点分，且**去掉固定头 `ey`+`J` 之后
+仍 ≥ `_R3_MIN_BODY` 个字符**。这条「**除固定头之外没有足够熵 ⇒ 不成立**」的判据是**刻意**的：
+
+- `method-notes.md` 里那句**文档截断举例**（固定 JWT 头 + `…`）⇒ **不判**（它后面没有第二段，也够不着长度门）；
+- 三段假 token（每段几十字符）⇒ **判**（合成样本见判据文件）。
+
+射程 = `acceptance/**` 与 `tests/**` 的 `.json` / `.log` / `.md`（issue #6303 点名的产物面）+ 运行态
+会话存储的**可见**名（`.session.json` / `.store.json` —— 它们本该走 `.gitignore`，被跟踪了就是机制失效）。
+**射程外**：`.mjs` 等**写盘装置**（harness 源码）与 `docs/**` —— 本规则不替 `.gitignore` 做兜底，
+未覆盖的形态**有意登记**在下面「边界」里（不粉饰成"已覆盖"）。
+
 ## 正确的替代形态（判红时给出的出口，逐字照抄 issue #6170 的形态）
 
 ```python
@@ -63,7 +88,9 @@ python3 .github/plaintext_credential_guard.py --root <dir>  # 扫指定根（测
 ## 边界（照实登记，§19.1）
 
 - 判的是**凭据命名 + 字面量取值**这一族；**不判**「随机字符串但名字不叫 token/secret」（会误伤哈希、
-  订单号、迁移指纹等 —— 实测整仓扫描里那类噪声有上千条）。
+  订单号、迁移指纹等 —— 实测整仓扫描里那类噪声有上千条）。**唯一例外 = R3**（issue #6303）：它把
+  `acceptance/**`/`tests/**` 的产物面上的**裸 JWT** 也算进来 —— 那条不靠键名，靠「**三段点分 + 去头后
+  仍有 ≥ `_R3_MIN_BODY` 字符**」的**结构**判据（长度门是防「文档里截断举例」误报的那一半）。
 - **不判**二进制 / 未跟踪的构建产物（`node_modules` / `.venv` / `dist` … 逐条列在 `SKIP_DIRS`）。
 - **不替代** gitleaks：它是**新增行**扫描，本守卫只补「存量 + 形态」这一半。
 - 判不了「这个值**是不是**真的那枚 dev token」（本仓**不许**再出现该值，不写进代码）⇒
@@ -77,6 +104,7 @@ import os
 import re
 import subprocess
 import sys
+from functools import lru_cache
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -91,6 +119,23 @@ _CRED_NAME_RE = re.compile(_CRED_NAME, re.IGNORECASE)
 _HEX64 = re.compile(r"^[0-9a-fA-F]{32,}$")
 _LONG_RANDOM = re.compile(r"^[A-Za-z0-9_\-+/=.]{40,}$")
 _JWT = re.compile(r"^eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+$")
+
+# R3（issue #6303）：`acceptance/**` / `tests/**` 的**产物面**上「裸 JWT 字面量」。
+# 判据 = **结构**（三段点分）+ **长度门**（去掉固定头后仍 ≥ _R3_MIN_BODY）——
+# 「除固定头之外没有足够熵 ⇒ 不成立」，故文档里的**截断举例**（`ey…` + `…`）**不判**（防误报）。
+# ⚠️ 固定头**拆开拼**：本文件也是被判对象之一 ⇒ 不许出现连续的 `ey`+`J` 字面量（自洽，同 pr_body_guard 的 R3）。
+# ⚠️ **不**用 `_JWT` 本体：它按 `^…$` 锚在「整行恰好是一个 JWT」上，产物里的形态是
+# `"tokenA": "ey…"` ⇒ 锚定式判据在**引用处**永不命中（现取实测：三种真实键名全部漏判）。
+_JWT_HEAD = "ey" + chr(74) + "[A-Za-z0-9_\\-]*"   # chr(74) == 'J'（拆开写 ⇒ 本文件自身不含连续固定头）
+_R3_MIN_BODY = 40
+_R3 = re.compile(
+    "(" + _JWT_HEAD + r")\.[A-Za-z0-9_\-]+\.([A-Za-z0-9_\-]{" + str(_R3_MIN_BODY) + ",})")
+
+#: R3 的射程：产物面两个根 + 三种文本后缀（issue #6303 点名 `.json`/`.log`/`.md`）。
+_R3_ROOTS = ("acceptance/", "tests/")
+_R3_SUFFIXES = (".json", ".log", ".md")
+#: 运行态**会话存储**的可见名 —— 它们本该被 `.gitignore` 排除，出现在被跟踪集合里就是机制失效。
+_SESSION_STORE_NAMES = (".session.json", ".store.json")
 _STR = r"""(?P<q>["'])(?P<v>[^"'\\\n]*)(?P=q)"""
 
 # R1：`<凭据名> = "<字面量>"`（Python / Java / TS / 赋值 / 关键字参数 / 字典键）
@@ -209,27 +254,61 @@ def _strip_py_comment(line: str) -> str:
     return line
 
 
-def _scan_line(rel: str, lineno: int, line: str) -> list[Finding]:
-    """单行判定（纯函数，供测试在内存里做变异注入）。"""
+def _r3_rules(rel: str, is_ignored) -> list[str]:
+    """本文件在不在 R3 射程里 ⇒ 返回 `["R3-artifact-token-literal"]` 或 `[]`（issue #6303）。
+
+    两条入口，各自独立可判：
+    ① **产物面**：`acceptance/**` / `tests/**` 下的 `.json` / `.log` / `.md`；
+    ② **会话存储的可见名**：任何路径上的 `.session.json` / `.store.json` —— **只判「本该被忽略
+       却仍被跟踪」**（`is_ignored` 为真 ⇒ **整条规则对本文件退出**：被忽略的文件本就不会被提交，
+       判它等于逼人给正常产物加豁免）；`is_ignored is None`（非 git 面 / git 不可用）⇒ 第 ② 条
+       **不判**（不臆造「本该被忽略」的读数），该名下的 `.json` 仍由第 ① 条的后缀面兜住。
+       改成别的名（如 `state.json`）⇒ 只剩第 ① 条覆盖（是 `.json`），**登记为边界**。
+    """
+    if is_ignored is not None and is_ignored(rel):
+        return []                                   # 已被 .gitignore 排除 ⇒ 进不了仓，不判（两个名都不判）
+    if rel.endswith(_SESSION_STORE_NAMES):
+        return ["R3-artifact-token-literal"]        # 本该被排除却进来了 ⇒ 机制失效
+    if rel.endswith(_R3_SUFFIXES) and rel.startswith(_R3_ROOTS):
+        return ["R3-artifact-token-literal"]
+    return []
+
+
+def _scan_line(rel: str, lineno: int, line: str, rules: tuple[str, ...] = ("R1", "R2")) -> list[Finding]:
+    """单行判定（纯函数，供测试在内存里做变异注入）。
+
+    `rules` 决定本行适用哪几条（R3 只对产物面生效 —— 由 `_r3_rules` 现取，**不**在行内再判路径）。
+    """
     if PRAGMA in line or _COMMENT_LINE.match(line):
         return []
     # 只剥 Python 系的 `#` 注释（少数几类文本里 `#` 不是注释符 ⇒ 只可能**漏判**，不会假红）。
     code = _strip_py_comment(line) if rel.endswith(
         (".py", ".sh", ".yml", ".yaml", ".toml", ".cfg", ".ini")) else line
     findings: list[Finding] = []
-    for m in _R1.finditer(code):
-        value = _comment_free_value(" " + m.group("v"))
-        if _looks_like_credential(value) and not _is_environment_reference(code, m.end("name")):
-            findings.append(Finding(rel, lineno, "R1-credential-literal", m.group("name"), line))
-    for m in _R2.finditer(code):
-        if _looks_like_credential(_comment_free_value(" " + m.group("v"))):
-            findings.append(Finding(rel, lineno, "R2-service-token-header-literal", "X-Service-Token", line))
+    if "R1" in rules:
+        for m in _R1.finditer(code):
+            value = _comment_free_value(" " + m.group("v"))
+            if _looks_like_credential(value) and not _is_environment_reference(code, m.end("name")):
+                findings.append(Finding(rel, lineno, "R1-credential-literal", m.group("name"), line))
+    if "R2" in rules:
+        for m in _R2.finditer(code):
+            if _looks_like_credential(_comment_free_value(" " + m.group("v"))):
+                findings.append(Finding(rel, lineno, "R2-service-token-header-literal", "X-Service-Token", line))
+    if "R3" in rules:
+        for m in _R3.finditer(code):
+            body = code[m.start():].strip().strip("\"',")
+            findings.append(Finding(rel, lineno, "R3-artifact-token-literal",
+                                    body[:24] + "…", line))
     return findings
 
 
 def _iter_files(root: str):
     """扫「真源码」：有 git 就用 `git ls-files`（= 仓库里真实存在、会被提交的文件），
-    否则退回 os.walk（`--root` 指向 tmp 面的测试场景）。两者都**现取**。"""
+    否则退回 os.walk（`--root` 指向 tmp 面的测试场景）。两者都**现取**。
+
+    产出 `(rel, full, git_backed)` —— `git_backed` 现取（**不写死**）：只用真仓库那一次判定
+    「本该被忽略却仍被跟踪」（R3 的第 ② 条入口），tmp 面上不臆造该读数。
+    """
     def _keep(rel: str) -> bool:
         parts = rel.split(os.sep)
         if any(p in _SKIP_DIRS for p in parts):
@@ -247,7 +326,7 @@ def _iter_files(root: str):
             ).stdout.decode("utf-8", "replace")
             for rel in sorted(p for p in out.split("\0") if p):
                 if _keep(rel):
-                    yield rel, os.path.join(root, rel)
+                    yield rel, os.path.join(root, rel), True
             return
         except (OSError, subprocess.CalledProcessError):
             pass  # 退化到 os.walk（不静默：下面的「面为空」会判 3）
@@ -257,34 +336,55 @@ def _iter_files(root: str):
             full = os.path.join(dirpath, fn)
             rel = os.path.relpath(full, root)
             if _keep(rel):
-                yield rel, full
+                yield rel, full, False
+
+
+@lru_cache(maxsize=None)
+def _is_git_ignored(root: str, rel: str):
+    """`git check-ignore` ⇒ `True`/`False`；git 不可用 / 报错 ⇒ `None`（**不可判定**，不猜）。
+
+    按 (root, rel) **缓存**：同一根下逐个文件判会起上千个进程 —— 而 R3 的第 ② 条入口只在
+    「`.git` 在根上」（真仓）时才问，问的次数 = 命中 `.session.json`/`.store.json` 可见名的文件数（实测 0~4）。
+    """
+    try:
+        proc = subprocess.run(["git", "check-ignore", "-q", "--no-index", "--", rel],
+                              cwd=root, capture_output=True)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return proc.returncode == 0
 
 
 def scan(root: str = REPO_ROOT) -> tuple[list[Finding], int]:
     """返回 `(findings, scanned_file_count)`。第三个状态由调用方按 count==0 判。"""
     findings: list[Finding] = []
     count = 0
-    for rel, full in _iter_files(root):
+    for rel, full, git_backed in _iter_files(root):
         try:
             with open(full, encoding="utf-8") as fh:
                 text = fh.read()
         except (OSError, UnicodeDecodeError):
             continue
         count += 1
+        ignored = (lambda r, _root=root: _is_git_ignored(_root, r)) if git_backed else None
+        rules = ("R1", "R2") + (("R3",) if _r3_rules(rel, ignored) else ())
         for lineno, line in enumerate(text.splitlines(), 1):
-            findings.extend(_scan_line(rel, lineno, line))
+            findings.extend(_scan_line(rel, lineno, line, rules))
     return findings, count
 
 
 def render(findings: list[Finding], count: int) -> str:
     if not findings:
-        return f"✅ 零命中（现取扫描：{count} 个文件）—— 凭据一律走环境注入（issue #6172）"
+        return f"✅ 零命中（现取扫描：{count} 个文件）—— 凭据一律走环境注入（issue #6172）；" \
+               f"验收产物 / 测试面上零裸 token（issue #6303）"
     lines = [
-        f"❌ 命中 {len(findings)} 处「凭据字面量留在代码里」（现取扫描：{count} 个文件）",
+        f"❌ 命中 {len(findings)} 处「凭据 / token 字面量留在被跟踪文件里」（现取扫描：{count} 个文件）",
         "",
         "改用什么（issue #6170 的形态，逐字照抄）：",
         '    SERVICE_TOKEN = os.environ.get("MIGAO_SERVICE_TOKEN", "")',
         '    headers = {"X-Service-Token": SERVICE_TOKEN} if SERVICE_TOKEN else {}',
+        "",
+        "R3（issue #6303，验收产物 / 测试面的裸 token）⇒ 落盘前**脱敏**"
+        "（`<REDACTED-JWT>`）+ 运行态会话存储交给 `.gitignore`（`git rm --cached` 掉已入库的那几个），",
         "",
     ]
     for f in findings:
