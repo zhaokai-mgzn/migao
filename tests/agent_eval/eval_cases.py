@@ -6279,6 +6279,24 @@ _CASE_MC_089 = EvalCase(
     precondition='本用例是 [backend-contract] 纯离线判据：前置 = `scripts/*.sh` 在场且可解析；行为面判据在 `tmp_path` 里真 `git init` + 真 `add` 造真 worktree 与真会话锁（零网络、零其库、不碰任何真实工作区）。前置由判据自身持有：文件缺失 / 夹具造不出来 ⇒ 当场红（不表现成「agent 不干活」）；agent-eval 栈不跑它',
 )
 
+# ── MC-090 [NORMAL] 数据库**外键违例**的归口与日志面（issue #6210）：外键违例 ⇒ 4xx（VALIDATION_ERROR）且**不落兜底 500**，且这一类日志**不打异常本体与堆栈**（约束名 / 表名 / schema 不进日志）；射程**刻意只到外键** —— 唯一 / 非空 / 检查违例保持既有 500 契约（两向反向对照：非约束类未知异常仍 500 带堆栈、唯一键失败仍 500 带堆栈）；类级元守卫 = 分支台账 ⇄ 反射双向相等（新分支未登记即红）（源: cases/misc.yml）──
+_CASE_MC_090 = EvalCase(
+    id='MC-090',
+    legacy_id='',
+    title='数据库**外键违例**的归口与日志面（issue #6210）：外键违例 ⇒ 4xx（VALIDATION_ERROR）且**不落兜底 500**，且这一类日志**不打异常本体与堆栈**（约束名 / 表名 / schema 不进日志）；射程**刻意只到外键** —— 唯一 / 非空 / 检查违例保持既有 500 契约（两向反向对照：非约束类未知异常仍 500 带堆栈、唯一键失败仍 500 带堆栈）；类级元守卫 = 分支台账 ⇄ 反射双向相等（新分支未登记即红）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['转人工端点 `POST /api/admin/agent-sessions` 收到一个**不存在的 `aiSessionId`** 时，调用方该看到 4xx（引用不存在 / 数据与约束不符），而不是「服务器内部错误」（500）；并且服务端日志里**不该**出现数据库的约束名 / 表名 —— 那是内部实现细节，泄漏出去既难看也是信息面风险。'],
+    expectations=[],
+    data_checks=['**病（改前形态，逐字读数）**：`GlobalExceptionHandler` 无 `DataIntegrityViolationException` 分支 ⇒ 外键违例（PG `SQLState 23503`，Spring 包成 `DataIntegrityViolationException`）落兜底 `Exception` ⇒ `status=500` + 内部错误信封（`INTERNAL_ERROR` /「服务器内部错误」）；且兜底那行 `log.error(…, e)` 打**完整堆栈** ⇒ `logHasConstraintName=true logHasTableName=true`。留档出处（**只读、不改**）= `acceptance/2026-10-03/agent-service-sweep/REPORT.md` 的 `F-D1` 节（原始 `.log` **未入库**，如实登记）。', '**判据①（归口 · 4xx，不落兜底）**：外键违例 ⇒ HTTP **422** + 错误码 `VALIDATION_ERROR`（`isNotEqualTo(500)`）。选 422 而不选 404 的理由：这是**请求体字段**（`aiSessionId`）指向的行不存在，不是**端点**不存在；且与仓内 `IllegalArgumentException` 同档语义（本仓 `VALIDATION_ERROR` = 422）。判据 = `backend/admin-api/src/test/java/com/migao/admin/config/GlobalExceptionHandlerDataIntegrityTest.java::foreignKeyViolationMapsToClientErrorNotFiveHundred`。', '**判据②（日志脱敏 · 这一类不打堆栈）**：外键违例的日志事件 —— 格式化消息与异常链里**都不得**出现约束名 `agent_sessions_ai_session_id_fkey` / 表名 `agent_sessions` / PG 原始消息 / 堆栈帧，且 `event.getThrowableProxy()` **为 null**；同时**不得静默**：必须仍含请求坐标（`uri=/api/admin/agent-sessions`）与约束类别 `kind=FOREIGN_KEY`（类别取自 `SQLState` 短枚举，不含标识符）。判据 = 同文件 `foreignKeyViolationLogIsSanitizedAndStillAttributable`。', '**判据③（响应体不泄漏，改前已成立 · 记为对照）**：响应体是固定文案，不含约束名 / 表名（`responseHasConstraintName=false`。改前响应体就是固定串「服务器内部错误」，这一半**不是**本单引入的缺陷 —— 照实登记，不冒充修复）。判据 = 同文件 `responseBodyDoesNotLeakConstraintOrTableName`。', '**判据④（反向对照 · 防「一律不打堆栈 / 一律 4xx」）**：**非**约束类的未知异常 ⇒ 仍 **500** + `INTERNAL_ERROR`，且日志**仍带异常堆栈**（`throwableProxy` 非空、类名 = 异常类名、消息 = 异常 message，格式化消息含 `type=…`）。判据 = 同文件 `unknownExceptionStillFiveHundredWithStackTrace`。**没有这一条，本修法就可被读成「把所有 5xx 变成 4xx / 把所有日志堆栈砍掉」——那是放宽门禁**。', '**判据⑥（本案例自身的 case_ids 声明自检）**：本文件头部的声明行恰 1 行，且 `MC-090` 能在 `misc.yml` 里被解析到（`extract_case_ids` 只认**注释起始**的声明行、前 50 行内；判据 = `.github/growth_gate.py`）。**防复发（#5346 同族，本包实测踩过一次）**：新增用例的 `data_checks` 里**禁止**出现「关闭关键词 + 紧邻井号 + 号」的形态（哪怕只是**引用** PR body 模板）—— 那种串会被 `close-linked-issues.yml` 的朴素正则扫到并在合并后误关别的单；本包初稿写过一处，已改成「关键词与号分开」的措辞。自检命令：读 `close-linked-issues.yml` 里的正则本体，对自己写的 body / 用例跑一遍同一正则、命中数必须是**本意关闭的那些**（本单 = 1 条，即本 issue）。', '**判据⑤（同族反向对照 · 唯一约束刻意不拦）**：`SQLState 23505` ⇒ **不劫持**，仍 **500** 且日志**仍带堆栈**（保既有契约）。理由：本仓已有判据把「建单写面注入唯一键失败 ⇒ **必须仍 5xx**」钉住（`MerchantShipmentAtomicityTest` / `MerchantShipmentRouteTest`，它们判的是**回滚**，但状态码断言在那儿）⇒ 本分支**射程刻意收到「外键」**，所有非外键路径与原行为**逐字节相同**。**红证（实测）**：宽归口版本（唯一违例也返 422）在 CI 上把 `MerchantShipmentAtomicityTest` 两条判红 —— `admin-api unit tests` job 113894868123、`MERCHANT…:197 / :239 Range for response status value 422 expected:<SERVER_ERROR> but was:<CLIENT_ERROR>`；收窄到外键后本地 35 条（处理器族 + 发货族）全绿。判据 = 同文件 `uniqueViolationKeepsTheExistingFiveHundredContract`。', '**类级元守卫（判据 1~6，既有承载体 · 未登记即红）**：分支台账 `BRANCH_LEDGER` ⇄ 反射出的 `@ExceptionHandler` 目标类型**双向相等**（兜底 `Exception.class` 除外）—— 本条分支若未登记 ⇒ `branchLedgerMatchesReflection` 与 `guardDiscriminates` **当场具名判红**（红证逐字：`分支未登记到台账: org.springframework.dao.DataIntegrityViolationException`）。承载体 = `backend/admin-api/src/test/java/com/migao/admin/config/GlobalExceptionHandlerCoverageTest.java`（本单只把新分支登记进台账 + 补 `case_ids`）。形态级钉法 = `GlobalExceptionHandlerDataIntegrityTest::handlerRegistryHasTheDatabaseIntegrityBranchMappedToClientError`（反射断言「这一类有具名分支」且「归口落在 4xx 族」—— 防「登记了却仍返 500」的纸面修复）。', '**落码**：`backend/admin-api/src/main/java/com/migao/admin/config/GlobalExceptionHandler.java` —— 新增 `@ExceptionHandler(DataIntegrityViolationException.class)` 分支（422 + 固定文案 + 脱敏日志，`ConstraintKind` 由 `SQLState` 推类别）+ 私有 `firstSqlException` 沿 cause 链取 `SQLException`。**只降这一族**：`handleException` 兜底仍是 500 且仍打堆栈。', '🔴 **覆盖边界（照实登记，不粉饰）**：① 判据用**替身约束异常**（`SQLException` 子类，`getSQLState()` 返回真实码），**未连真库** —— 「MyBatis 的异常翻译链在真 PG 上把 `SQLState 23503` 原样送到 `getMostSpecificCause()`」这一环由生产读数（改前 `PSQLException` 进日志）与本替身同形推定，**未在本判据里真跑**；② 归口**只到外键**（`SQLState 23503`）；唯一 / 非空 / 检查与「取不到 state」一律**交回兜底 500**（既有契约），不区分具体表 / 约束；③ 管理端「先查存在性」的入口校验**不在本单射程**（本单只是异常归口兜底，不是把 FK 提前拦掉）；④ 端点级（真 MockMvc + 真库）判据**未落**，本判据是处理器级直调 + 真实日志事件。'],
+    skip_reason='[backend-contract] 处理器级直调判据（断言 HTTP 状态码 / 响应体 / logback 真实日志事件）+ 既有类级元守卫（纯静态：反射取 `@ExceptionHandler` ⇄ 台账双向相等）：判定层在 Java 单测，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'exception-mapping', 'log-sanitization', 'schema-leak', 'fail-closed', 'red-proof', 'class-level-guard', 'blast-radius'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -13995,6 +14013,7 @@ ALL_CASES = (
     _CASE_MC_087,
     _CASE_MC_088,
     _CASE_MC_089,
+    _CASE_MC_090,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
