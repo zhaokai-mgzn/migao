@@ -1,6 +1,6 @@
 // case_ids: BM-006, PG-018, BM-035
 /**
- * bmini 报工页的**身份面收口**（issue #5647 的 G4 + G10）。
+ * bmini 报工页的**身份面收口**（issue #5647 的 G4 + G10；🔴 2026-10-09 按 issue #6598 改判）。
  *
  * ## 两处半成品（本文件各锁一条）
  * ① **G4 读面**：页面读的是 `/api/admin/production/orders/{id}/operations`（**商家会话**），
@@ -9,19 +9,26 @@
  *    「给工人商家权限」解决。收口 = 有工人 session 时读 `GET /api/worker/production/orders/{id}/operations`
  *    （服务端**同一份**读面 `ProductionService#getOperations`，字段逐字同源）；
  *    无工人 session（纯商家设备）时保持商家路径**一字不变**（商家打不开 = 红线）。
- * ② **G10 写面**：页面同时存在 URL 定工序的 `.../operations/{id}/report` 与 `scan/complete`
- *    两条写路径 ⇒ 防呆④（非本部位码）/ 防呆⑤（工序必须确定）/ 一次事务 / `done_at`
- *    在 URL 定工序那条路上**全都不生效**。收口 = 写面只有一个入口 `scan/complete`，
- *    凭证 = 读面下发的**部位任务码** `part_token`（issue #4946 一部位一码，键恒在）；
- *    **没有码就不提供写入口** —— 回退到 URL 定工序 = 把防呆整条绕开。离线补传队列同绑这条路
- *    （凭证随队列项落盘、幂等键复用 ⇒ 服务端同键重放只记一次）。
+ * ② **G10 写面**（🔴 **口径已由 issue #6598 改动，理由留痕见下**）：页面曾同时存在 URL 定工序的
+ *    `.../operations/{id}/report` 与 `scan/complete` 两条写路径 ⇒ 当时判定「防呆④（非本部位码）/
+ *    防呆⑤（工序必须确定）/ 一次事务 / `done_at` 在 URL 定工序那条路上**全都不生效**」，收口 =
+ *    写面只有一个入口 `scan/complete`，凭证 = 读面下发的**部位任务码** `part_token`；
+ *    **没有码就不提供写入口**。
+ *
+ *    🔴 **该判定已被实测纠正**（issue #6598，2026-10-09 用户逐字「当前工人报工只能按固定顺序报工，
+ *    这个设计是不对的，**允许工人自由报工**」）：那条路走的就是**同一份**记账实现
+ *    （`ProductionService#report` → `#applyReport`：CAS 推进 / `done_at` / 完工判定一处不差），
+ *    归属校验走 `ProductionService#requireActiveOperation`（同租户 + 未软删 + 属于本加工单）。
+ *    ⇒ 写面**改判为两条具名路**：有码走 `scan/complete`（扫码 = 快捷定位），**无码走
+ *    `reportOperationFree`**（工序由工人显式选，整张加工单内任选任意工序）。
+ *    **一条都没放宽的**：「工序必须显式确定」（#4694）+「写入口只在有工人身份时渲染」（#6467）。
  *
  * ## 红证（每条判据的失败形态，逐条都实测过）
  * - 把 `loadOrder` 的读面写死成 `getOrderOperations` ⇒ ①红（2026-09-26 实测：工人设备读面 401 的形态）。
  * - 把 `loadOrder` 的读面写死成 `getWorkerOrderOperations` ⇒ ②红（商家账号打不开）。
- * - 把 `handleReport` 改回 `reportOperation(orderId, operationId, …)` ⇒ ③红。
- * - 去掉 `part_token` 判空（无码也发请求）⇒ ④红。
- * - 补传不带凭证 / 重新生成幂等键 ⇒ ⑤红。
+ * - 有码部位不再走 `completeByScan` ⇒ ③红。
+ * - **无码部位不给写入口**（还原 #5647 G10 的旧分支）⇒ ④红（issue #6598 改判后的新口径）。
+ * - 有码条目补传不带凭证 / 重新生成幂等键 ⇒ ⑤红。
  */
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -63,6 +70,7 @@ jest.mock('../src/services/productionService', () => ({
   getOrderPiecework: jest.fn(),
   scanResolve: jest.fn(),
   completeByScan: jest.fn(),
+  reportOperationFree: jest.fn(),
   shipOrder: jest.fn(),
   shipWorkerOrder: jest.fn(),
 }))
@@ -74,6 +82,7 @@ import {
   getOrderOperations,
   getOrderPiecework,
   getWorkerOrderOperations,
+  reportOperationFree,
 } from '../src/services/productionService'
 import type { OrderOperations } from '../src/services/productionService'
 import { flushPendingReports, listPendingReports } from '../src/utils/productionOffline'
@@ -128,6 +137,7 @@ function makeDetail(): OrderOperations {
 const mockGet = getOrderOperations as jest.Mock
 const mockWorkerGet = getWorkerOrderOperations as jest.Mock
 const mockComplete = completeByScan as jest.Mock
+const mockFree = reportOperationFree as jest.Mock
 
 /** 报工成功回执（`worker_name` 由**服务端**回执 —— 身份不在请求体里，issue #4733）。 */
 function okComplete(operationId = 'op2') {
@@ -155,6 +165,7 @@ describe('bmini 报工页读面按身份分流（issue #5647 G4）', () => {
     mockGet.mockResolvedValue({ success: true, data: makeDetail() })
     mockWorkerGet.mockResolvedValue({ success: true, data: makeDetail() })
     mockComplete.mockResolvedValue(okComplete())
+    mockFree.mockResolvedValue(okComplete('op3'))
     ;(getOrderPiecework as jest.Mock).mockResolvedValue({ success: false, message: '网络异常' })
   })
 
@@ -183,7 +194,7 @@ describe('bmini 报工页读面按身份分流（issue #5647 G4）', () => {
   })
 })
 
-describe('bmini 报工写面唯一入口 = scan/complete（issue #5647 G10）', () => {
+describe('bmini 报工写面：有码走 scan/complete、无码走自由报工（#5647 G10 → #6598 改判）', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     ;(Taro as any).__clearStorage()
@@ -195,6 +206,7 @@ describe('bmini 报工写面唯一入口 = scan/complete（issue #5647 G10）', 
     mockGet.mockResolvedValue({ success: true, data: makeDetail() })
     mockWorkerGet.mockResolvedValue({ success: true, data: makeDetail() })
     mockComplete.mockResolvedValue(okComplete())
+    mockFree.mockResolvedValue(okComplete('op3'))
     ;(getOrderPiecework as jest.Mock).mockResolvedValue({ success: false, message: '网络异常' })
   })
 
@@ -229,16 +241,30 @@ describe('bmini 报工写面唯一入口 = scan/complete（issue #5647 G10）', 
     )
   })
 
-  it('🔴 部位没有任务码（part_token=null）⇒ 不给写入口：不加按钮 + 显式提示', async () => {
+  it('🔴 部位没有任务码（part_token=null）⇒ **仍有**写入口，改走无码端点（issue #6598 改判）', async () => {
     await openPage()
 
-    // 布帘（有码）2 道工序 ⇒ 2 个按钮；纱帘（无码）那道**不出现**按钮。
-    // 红证：去掉 `part_token` 判空 ⇒ 这里变 3 个（无码也发一个注定无从校验的报工请求）。
-    expect(screen.getAllByText('完成报工')).toHaveLength(2)
-    expect(screen.getByText(/本部位暂无任务码/)).toBeTruthy()
+    // 布帘（有码）2 道 + 纱帘（无码）1 道 ⇒ **3 个**按钮。
+    // 🔴 issue #6598（用户裁定「允许工人自由报工」）改判：改前这里是 2 个 + 一句
+    // 「本部位暂无任务码，无法报工」；那条旧判据（issue #5647 G10）已作废 ——
+    // 无码部位改走 `reportOperationFree`（工序由工人显式选），服务端仍校验归属 / 未软删 / 同租户。
+    // 红证：还原「无码不渲染按钮」的旧分支 ⇒ 这里退回 2 个、且旧提示文案重新出现。
+    expect(screen.getAllByText('完成报工')).toHaveLength(3)
+    expect(screen.queryByText(/本部位暂无任务码/)).toBeNull()
+
+    // 第 3 个 = 纱帘（无码）那道 ⇒ 走无码端点，工序显式给出
+    fireEvent.click(screen.getAllByText('完成报工')[2])
+    await waitFor(() =>
+      expect(mockFree).toHaveBeenCalledWith(
+        ORDER_ID, 'op3', expect.stringMatching(/^report-/),
+        { qty: 11, qualified_qty: 11, work_type: 'normal' },
+      ),
+    )
+    // 无码那条路**不碰**扫码端点（空凭证去撞 scan/complete 必然被拒）
+    expect(mockComplete).not.toHaveBeenCalled()
   })
 
-  it('🔴 离线补传同绑唯一写入口：凭证随队列项落盘 + 补传复用同一幂等键', async () => {
+  it('🔴 有码条目离线补传：凭证随队列项落盘 + 补传复用同一幂等键（#6598 后这条路的判据不变）', async () => {
     mockComplete.mockResolvedValueOnce({ success: false, offline: true, message: '网络异常，请检查网络连接' })
 
     await openPage()
@@ -291,6 +317,7 @@ describe('bmini 报工页：无工人身份 ⇒ 不给工人写入口（issue #6
     mockGet.mockResolvedValue({ success: true, data: makeDetail() })
     mockWorkerGet.mockResolvedValue({ success: true, data: makeDetail() })
     mockComplete.mockResolvedValue(okComplete())
+    mockFree.mockResolvedValue(okComplete('op3'))
     ;(getOrderPiecework as jest.Mock).mockResolvedValue({ success: false, message: '网络异常' })
   })
 

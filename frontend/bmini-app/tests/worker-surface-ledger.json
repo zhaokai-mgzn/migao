@@ -1,22 +1,36 @@
 {
   "_what": "工人面写入口台账（issue #6467 切片 1，S8 类级固化）。登记「哪些页面渲染工人写入口 / 哪些页面必须先有工人身份」——未登记即红。判据 = tests/worker-surface-ledger.test.ts。",
   "_how_to_regen": "条数现取：cd frontend/bmini-app && node -e \"const l=require('./tests/worker-surface-ledger.json');console.log(l.entries.length)\"（台账本体不许手写死条数：守卫按 src/pages 下全部 .tsx 现取配对集，双向相等才算过）",
-  "_detection": "守卫扫 src/pages 下全部 .tsx（先剥注释）里出现的『工人写调用』记号（completeByScan( / workerLogin( / workerLogout( / createInboundDraft( / postInboundDraft(）；每个 (页面, 调用) 配对都必须在 entries 里登记，且每条登记都必须仍能被扫到（台账只许缩短）。requires_worker_session=true 的条目还必须逐条命中 gate_tokens（= 该页「必须先有工人身份」的**声明 + 用到它的渲染条件**两个记号；只写声明不接到渲染条件 ⇒ 红）。",
+  "_detection": "守卫扫 src/pages 下全部 .tsx（先剥注释）里出现的『工人写调用』记号（completeByScan( / reportOperationFree( / workerLogin( / workerLogout( / createInboundDraft( / postInboundDraft(）；每个 (页面, 调用) 配对都必须在 entries 里登记，且每条登记都必须仍能被扫到（台账只许缩短）。requires_worker_session=true 的条目还必须逐条命中 gate_tokens（= 该页「必须先有工人身份」的**声明 + 用到它的渲染条件**两个记号；只写声明不接到渲染条件 ⇒ 红）。⚠️ 报工页有两条具名写路（有码 scan/complete / 无码 reportOperationFree，issue #6598）⇒ 台账给两条各登记**各自那处**闸门记号：扫码一屏 `{workerReady ? (`、逐道报工 `{workerReady && (`（两处写法刻意不同，见 index.tsx 注释）—— 摘掉任一条的身份闸门 ⇒ 该条独有的记号消失 ⇒ 判红并具名到那条写路。",
   "entries": [
     {
       "page": "src/pages/production/index/index.tsx",
       "call": "completeByScan(",
-      "label": "完成报工 / A 模式开工（唯一写入口 scan/complete）",
+      "label": "完成报工 / A 模式开工（**有任务码** ⇒ 扫码快捷定位，走 scan/complete）",
       "requires_worker_session": true,
       "gate_tokens": [
         "const workerReady = hasWorkerSession()",
-        "{workerReady ? (",
-        "position.part_token && workerReady ? ("
+        "{workerReady ? ("
       ],
       "guide_token": "PRODUCTION_WORKER_LOGIN_REQUIRED",
       "login_route_token": "WORKER_TAB_LOGIN_ROUTE",
       "case_ids": [
         "BM-035"
+      ]
+    },
+    {
+      "page": "src/pages/production/index/index.tsx",
+      "call": "reportOperationFree(",
+      "label": "完成报工 / **无码自由报工**（issue #6598：整张加工单内任选任意工序，工序由工人显式选）",
+      "requires_worker_session": true,
+      "gate_tokens": [
+        "const workerReady = hasWorkerSession()",
+        "{workerReady && ("
+      ],
+      "guide_token": "PRODUCTION_WORKER_LOGIN_REQUIRED",
+      "login_route_token": "WORKER_TAB_LOGIN_ROUTE",
+      "case_ids": [
+        "BM-036"
       ]
     },
     {

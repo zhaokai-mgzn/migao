@@ -9,6 +9,7 @@ import {
   getWorkerOrderOperations,
   newReportRequestId,
   reportInFlightLock,
+  reportOperationFree,
   scanResolve,
   shipOrder,
   shipWorkerOrder,
@@ -446,15 +447,29 @@ export default function ProductionPage() {
   }, [handlePhotoScan, resolveScannedCode])
 
   /**
-   * 逐道「完成报工」—— **唯一写入口** `scan/complete`（issue #5647 G10）。
+   * 逐道「完成报工」—— 报工页的写入口（issue #5647 G10 → **issue #6598 改口径**）。
    *
-   * <p>曾经这条路走 URL 定工序的 `.../orders/{orderId}/operations/{operationId}/report`：
-   * 没有码、不校验部位归属、非事务、也不落 `done_at` ⇒ 防呆④（非本部位码）/ 防呆⑤（工序必须确定）/
-   * 一次事务 / `done_at` **在这条路上全不生效**，同一租户两条报工路径迟早给出不同结果。</p>
+   * <p>🔴 <b>2026-10-09 用户裁定（逐字）</b>：「当前工人报工只能按固定顺序报工，这个设计是不对的，
+   * <b>允许工人自由报工</b>」；开放范围当场选定 = <b>整张加工单内任选任意工序（不扫码也能自由报）</b>。
+   * 看到该现象的链路 = 扫码报工（扫部位任务码后系统只给「下一道」，要给「不是这道？改」才换得了）。</p>
    *
-   * <p>现在：凭证 = 本部位的**任务码** `part_token`（一部位一码，issue #4946），工序由**服务端**
-   * 校验归属（跨部位 ⇒ 422 `OPERATION_NOT_IN_SCAN_TARGET`），数量由工人确认后随 body 传。
-   * **没有码就不提供写入口**（在 JSX 里不渲染按钮）—— 退回 URL 定工序 = 把防呆整条绕开。</p>
+   * <p>于是本函数有**两条**写路，判别键 = 本部位有没有任务码：</p>
+   * <ol>
+   *   <li><b>有码</b>（{@code position.part_token}）⇒ {@code completeByScan}：
+   *       <b>扫码保留为快捷定位</b>（服务端按码校验归属，跨部位 ⇒ 422），不是唯一入口；</li>
+   *   <li><b>无码</b> ⇒ {@code reportOperationFree}：工序由工人在本单清单里<b>显式选</b>，
+   *       服务端仍校验「属于本加工单 + 未软删 + 同租户」。</li>
+   * </ol>
+   *
+   * <p>两条路收口在服务端**同一份**记账实现（{@code ProductionService#applyReport}：
+   * CAS 推进 + {@code done_at} + 完工判定）⇒ 读数逐值一致，不新造第二份口径。</p>
+   *
+   * <p>⚠️ <b>已作废的旧判据（留痕，不删）</b>：改前这里写的是「<b>没有码就不提供写入口</b>」，
+   * 理由是「退回 URL 定工序 = 把防呆整条绕开」。🔴 该理由与今日代码不符：那条路走的就是同一份
+   * {@code applyReport}（{@code done_at} / 一次事务 / CAS 一处不差），归属校验走
+   * {@code ProductionService#requireActiveOperation}（同租户 + 未软删 + 属于本加工单）。
+   * ⇒ 「必须落在本次扫码码内」这一条按用户裁定<b>放开</b>；而「<b>工序必须显式确定</b>」
+   * （issue #4694 硬约束）与「写入口只在有工人身份时渲染」（issue #6467）<b>一条都没放宽</b>。</p>
    *
    * <p>数量默认 = 剩余应做，可改；前端守上限，服务端仍兜底。失败只展示后端 message，不清空列表。</p>
    */
@@ -466,11 +481,6 @@ export default function ProductionPage() {
       if (!workerReady) return
       const orderId = detail.order_id
       const token = position.part_token
-      if (!token) {
-        // 兜底（按钮本就不渲染）：绝不用「没有凭证」的请求去撞服务端
-        setError('本部位暂无任务码，无法报工：请让管理端重新生成加工单任务码后再报')
-        return
-      }
       const remaining = remainingQty(operation)
       const typed = qtyInputs[operation.id]
       const qty = typed === undefined || typed === '' ? remaining : Number(typed)
@@ -506,13 +516,19 @@ export default function ProductionPage() {
       setReportingId(operation.id)
       setError('')
       try {
-        const res = await completeByScan(token, operation.id, requestId, payload)
+        // 有码 ⇒ 扫码端点（按码定位部位）；无码 ⇒ 无码端点（工序由工人显式选，issue #6598）
+        const res = token
+          ? await completeByScan(token, operation.id, requestId, payload)
+          : await reportOperationFree(orderId, operation.id, requestId, payload)
         if (!res.success) {
           if (res.offline) {
             // 弱网降级：进本机队列（幂等键 + 报工凭证随队列项落盘，补传复用它们 ⇒ 不会重复计件）
             enqueuePendingReport({
               requestId,
-              token,
+              // 🔴 issue #6598：无码条目必须**显式**标记 —— 否则补传会把「本来就不需要码」
+              // 误判成「旧版本缺凭证」而出队丢弃（静默丢单）。
+              kind: token ? 'scan' : 'free',
+              token: token || '',
               orderId,
               operationId: operation.id,
               operationName: operation.operation,
@@ -955,15 +971,12 @@ export default function ProductionPage() {
               {specSummary(position).length > 0 && (
                 <Text className='production-position__spec'>{specSummary(position).join(' · ')}</Text>
               )}
-              {/* 🔴 本部位没有任务码 ⇒ **不提供写入口**（issue #5647 G10）：唯一写入口 `scan/complete`
-                  按码定位「哪一套、哪个部位」，没有码就只能退回 URL 定工序那条路 —— 而那条路上
-                  防呆④⑤ / 一次事务 / `done_at` 全不生效。出口是**可行动**的：管理端重新生成
-                  本单任务码即补齐部位码（`ProductionService#ensurePartTokens`）。 */}
-              {!position.part_token && (
-                <Text className='production-position__no-code'>
-                  本部位暂无任务码，无法报工 —— 请让管理端重新生成本单任务码后再报
-                </Text>
-              )}
+              {/* 🔴 本部位没有任务码 ⇒ **报工入口照旧在**（issue #6598，2026-10-09 用户裁定
+                  「允许工人自由报工」，开放范围 = 整张加工单内任选任意工序、不扫码也能自由报）。
+                  改前这里渲染的是「本部位暂无任务码，无法报工 —— 请让管理端重新生成本单任务码」
+                  （issue #5647 G10 的口径）⇒ 那条判据已作废：无码时按钮改走
+                  `reportOperationFree`（工序由工人显式选，服务端仍校验归属 / 未软删 / 同租户），
+                  服务端记账与扫码路**同一份实现**。任务码从此只是**扫码快捷定位**，不是写入门槛。 */}
               {position.operations.map((operation) => {
                 // 🔴 计件查找键 = **逻辑工序名**（`per_operation[].operation` 是逻辑名，如 `精裁`），
                 // 不是 `operation` 快照名（`精裁-布`）—— 改前拿快照名去比 ⇒ 永远查不到 ⇒
@@ -1007,9 +1020,15 @@ export default function ProductionPage() {
                         {`本次最多 ${formatQty(remainingQty(operation))}${operation.unit}`}
                       </Text>
                       {/* disabled = in-flight 锁的可见面（issue #4116 §5-1）：报工期间不可再点。
-                          写入口只在**有部位任务码**（issue #5647 G10）**且有工人身份**（issue #6467）
-                          时才有：没有工人身份时写请求必然 401。 */}
-                      {position.part_token && workerReady ? (
+                          写入口只在**有工人身份**（issue #6467）时才有：没有工人身份时写请求必然 401。
+                          🔴 issue #6598 起**不再要求 `part_token`**（用户裁定「允许工人自由报工」）：
+                          有码走 `completeByScan`（扫码快捷定位），无码走 `reportOperationFree`
+                          （工序由工人显式选）—— 判别在 `handleReport` 里，两路共用同一份服务端记账。
+                          ⚠️ 本处的身份闸门刻意与同文件「扫码一屏」那处**写法不同**（这里用短路
+                          `&&`、那里用三元）：两处由此可被文本判据**各自定位** ——
+                          `frontend/bmini-app/tests/worker-surface-ledger.json` 给「无码自由报工」
+                          这条写路登记的独有记号就是本处这一行，摘掉它即判红并具名到该写路。 */}
+                      {workerReady && (
                         <Button
                           className='operation-item__btn'
                           disabled={reportingId !== null}
@@ -1017,7 +1036,7 @@ export default function ProductionPage() {
                         >
                           {reportingId === operation.id ? '报工中…' : '完成报工'}
                         </Button>
-                      ) : null}
+                      )}
                     </View>
                   </View>
                 )

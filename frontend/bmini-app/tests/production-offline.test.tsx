@@ -7,10 +7,17 @@
  * `loadOrder` 直连网络、**不落 storage**；报工失败只弹全局 toast ⇒ 断网时列表空白、
  * 报工请求**必然丢单**（工人以为报了，服务端一条没有）。
  *
- * ## issue #5647（G10）之后：补传绑在**唯一写入口** `scan/complete` 上
- * 队列项多两个字段 —— `token`（本部位任务码 = 报工凭证，`scan/complete` 靠它定位
- * 「哪一套、哪个部位」）与 `sendQty`（在线时传了数量才补传数量：A 模式一屏【开工】
- * **不传数量**，由服务端取「剩余应做」，补传必须逐字同形）。
+ * ## 补传的两条写路（issue #5647 G10 → 🔴 issue #6598 改判）
+ * 队列项带 `token`（本部位任务码 = 报工凭证，`scan/complete` 靠它定位「哪一套、哪个部位」）、
+ * `sendQty`（在线时传了数量才补传数量：A 模式一屏【开工】**不传数量**，由服务端取「剩余应做」，
+ * 补传必须逐字同形），以及 **`kind`**（issue #6598 新增）。
+ *
+ * 🔴 2026-10-09 用户裁定（逐字）：「当前工人报工只能按固定顺序报工，这个设计是不对的，
+ * **允许工人自由报工**」；开放范围 = **整张加工单内任选任意工序（不扫码也能自由报）**。
+ * ⇒ 无码部位照样能报工，队列里因此有**两种**条目，只能靠**显式** `kind` 分开
+ * （`'free'` = 无码自由报工；缺键 = 有码 `scan/complete`）—— 「`token` 是否为空」**不是**判别键：
+ * 它同时是「旧版本入队的条目缺凭证」（该出队丢弃）与「本来就不需要码」（该照常补传）两个语义
+ * 共用的空值。两条各有独立用例（见下方最后一组）。
  * 幂等语义**一格不放宽**：凭证与幂等键一起落盘、补传复用同一个键。
  *
  * ## 本文件锁四条（每条都有红证）
@@ -75,6 +82,7 @@ jest.mock('../src/services/productionService', () => ({
   // 扫码主闭环（切片 ②）：本文件测逐道报工与补传链路 ⇒ 解析面默认返回 undefined
   scanResolve: jest.fn(),
   completeByScan: jest.fn(),
+  reportOperationFree: jest.fn(),
   getOrderPiecework: jest.fn(),
 }))
 
@@ -88,6 +96,7 @@ import Taro from '@tarojs/taro'
 import ProductionPage from '../src/pages/production/index/index'
 import {
   completeByScan,
+  reportOperationFree,
   getOrderOperations,
   getWorkerOrderOperations,
   getOrderPiecework,
@@ -171,6 +180,7 @@ function enableWorkerIdentity() {
   mockWorkerGet.mockResolvedValue({ success: true, data: makeDetail() })
 }
 const mockComplete = completeByScan as jest.Mock
+const mockFree = reportOperationFree as jest.Mock
 const mockPiecework = getOrderPiecework as jest.Mock
 
 describe('ProductionPage 弱网降级（issue #4206 / 补传收口 #5647）', () => {
@@ -292,6 +302,36 @@ describe('ProductionPage 弱网降级（issue #4206 / 补传收口 #5647）', ()
     expect(mockComplete).not.toHaveBeenCalled()
     expect(result.rejected).toHaveLength(1)
     expect(result.rejected[0].message).toMatch(/扫码凭证/)
+    expect(listPendingReports()).toHaveLength(0)
+  })
+
+  /**
+   * 🔴 <b>判别键的另一半（issue #6598）</b>：`kind: 'free'` 的无码条目**本来就不需要码**
+   * ⇒ 它**不得**被上面那条「旧版本缺凭证」判据吃掉（吃掉 = 静默丢单）。
+   *
+   * <p>这一对用例合起来才是完整的判别键判据：「`token` 空」有**两种**语义
+   * （旧版本缺码 / 本来就不需要码），只能靠**显式** `kind` 分开 —— 用「token 是否为空」
+   * 推断正是「两个语义共用一个空值」的同族坑。</p>
+   *
+   * <p>红证：把 `flushPendingReports` 的判别顺序改回「先判 token 空」（或删掉
+   * `isFreeReport` 分支）⇒ 本用例红（`rejected` 拿到 1 条、`mockFree` 零调用）。</p>
+   */
+  it('🔴 无码自由报工条目补传：走**无码端点** + 复用入队时的幂等键（不得被当成「旧版本缺凭证」丢单）', async () => {
+    enqueuePendingReport(makePending('report-free-no-token', { kind: 'free', token: '' }))
+    mockFree.mockResolvedValue({
+      success: true,
+      data: { operation_id: 'op2', done_qty: 11, status: 'done', order_completed: false, worker_name: '张师傅' },
+    })
+
+    const result = await flushPendingReports()
+
+    expect(result.sent).toHaveLength(1)
+    expect(result.rejected).toHaveLength(0)
+    // 无码端点 = `reportOperationFree(orderId, operationId, requestId, payload)`：
+    // 端点、参数、幂等键与在线逐字同形（只有这样服务端才按同一个键去重）
+    expect(mockFree).toHaveBeenCalledWith(ORDER_ID, 'op2', 'report-free-no-token', PAYLOAD)
+    // 有码那条路一次都不许被走到（空凭证去撞 scan/complete 必然被拒）
+    expect(mockComplete).not.toHaveBeenCalled()
     expect(listPendingReports()).toHaveLength(0)
   })
 
