@@ -451,41 +451,29 @@ describe('Header', () => {
     expect(screen.getByText('商品分类管理')).toBeInTheDocument()
   })
 
-  // issue #4490（含同日**规格修订**）：「加工项管理」(/processing) 并入 /production/processing，
-  // 并按用户裁定归**商品管理**组 ⇒ 面包屑跟着入口走（§15.2）。issue #4542（用户裁定）把菜单名
-  // 定为「加工项管理」（与服务端同名）⇒ 旧路径现为重定向，兜底面包屑也写该名。
-  it('/processing 路径面包屑（旧路径 → 生产管理 > 加工项管理，issue #4490/#4542；#5778 移组）', async () => {
-    mockPathname = '/processing'
+  // 🔴 2026-10-09（issue #6580）：「加工项管理」「工艺配置」两个菜单项已移除（功能体并入
+  // `/settings` 企业基础设置页内的配置域）⇒ 下面四条**旧深链**的兜底面包屑统一改判为
+  // **单级「企业基础设置」**（它是**一级项**、没有父组 ⇒ 单级，与 `/products` 同口径）。
+  // 判据形态（§15.2「面包屑末项 == 侧边栏菜单名」）一字未动，只换了那个真实存在的菜单名。
+  it.each([
+    ['/processing'],
+    ['/production/processing'],
+    ['/production/processing-fees'],
+    ['/production/routings'],
+  ])('旧深链 %s ⇒ 单级「企业基础设置」面包屑（#6580 菜单项已移除，页面保留为重定向）', async (path) => {
+    mockPathname = path
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('生产管理')).toBeInTheDocument()
-    expect(screen.getByText('加工项管理')).toBeInTheDocument()
-    // 旧菜单名（#4490 的合并名，用码点构造以免在源码里再写出它）不再渲染（issue #4542 改名）
-    expect(screen.queryByText('\u52a0\u5de5\u9879\u4e0e\u52a0\u5de5\u8d39')).not.toBeInTheDocument()
-  })
-
-  // issue #4490：合并后的唯一入口（两个 tab：加工项 / 加工费组合）—— 面包屑必须与新菜单名/分组一致
-  it('/production/processing 路径面包屑（生产管理 > 加工项管理，更具体子路径优先于 /production）', async () => {
-    mockPathname = '/production/processing'
-    await act(async () => {
-      render(<Header />)
-    })
-    // 🔴 #5778：本项已由「商品与加工项」组移入**生产管理**组 ⇒ 首项改判为「生产管理」
-    expect(screen.getByText('生产管理')).toBeInTheDocument()
-    expect(screen.getByText('加工项管理')).toBeInTheDocument()
+    expect(screen.getByText('企业基础设置')).toBeInTheDocument()
+    // 已移除的菜单名 / 已撤销的中转名都不得再渲染
+    expect(screen.queryByText('加工项管理')).not.toBeInTheDocument()
+    expect(screen.queryByText('工艺配置')).not.toBeInTheDocument()
+    expect(screen.queryByText('加工费管理')).not.toBeInTheDocument()
     // 不得回落到 /production 的「生产看板」（更具体子路径必须先命中）
     expect(screen.queryByText('生产看板')).not.toBeInTheDocument()
-  })
-
-  it('/production/processing-fees 旧路径面包屑也写新名（重定向到 ?tab=fees，issue #4490）', async () => {
-    mockPathname = '/production/processing-fees'
-    await act(async () => {
-      render(<Header />)
-    })
-    expect(screen.getByText('生产管理')).toBeInTheDocument()
-    expect(screen.getByText('加工项管理')).toBeInTheDocument()
-    expect(screen.queryByText('加工费管理')).not.toBeInTheDocument()
+    const nav = document.querySelector('nav')!
+    expect(nav.textContent).toBe('企业基础设置')
   })
 
   // 生产管理组面包屑（issue #4357）：加工单并入生产管理组。此前 /production **没有任何面包屑条目**
@@ -499,19 +487,6 @@ describe('Header', () => {
     expect(screen.getByText('生产看板')).toBeInTheDocument()
     // 不得回落成兜底面包屑
     expect(screen.queryByText('工作台')).not.toBeInTheDocument()
-  })
-
-  // issue #4416：工序库并入「工艺配置」/production/routings（旧 /production/operations 已重定向）
-  it('/production/routings 路径面包屑（生产管理 > 工艺配置，更具体子路径优先于 /production）', async () => {
-    mockPathname = '/production/routings'
-    await act(async () => {
-      render(<Header />)
-    })
-    expect(screen.getByText('生产管理')).toBeInTheDocument()
-    expect(screen.getByText('工艺配置')).toBeInTheDocument()
-    // 旧菜单名「工序库」/「工艺路线」都不该再出现在面包屑里（§15.2 面包屑与侧边栏菜单名一致）
-    expect(screen.queryByText('工序库')).not.toBeInTheDocument()
-    expect(screen.queryByText('工艺路线')).not.toBeInTheDocument()
   })
 
   it('/production/piecework 路径面包屑（生产管理 > 计件工资）', async () => {
@@ -680,30 +655,32 @@ describe('Header', () => {
     expect(screen.getByText('员工管理')).toBeInTheDocument()
   })
 
-  it('/settings 路径面包屑（#2969 企业基础信息归入组织管理组）', async () => {
+  it('/settings 路径面包屑（#6580 企业基础设置升为**一级项** ⇒ 单级）', async () => {
     mockPathname = '/settings'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('组织管理')).toBeInTheDocument()
-    expect(screen.getByText('企业基础信息')).toBeInTheDocument()
+    // 一级项没有父组 ⇒ 面包屑单级（与 `/products`、`/notifications` 同口径）；
+    // 它**不再**归组织管理组（#6580 由组内项升为一级项）。
+    expect(screen.getByText('企业基础设置')).toBeInTheDocument()
+    expect(screen.queryByText('组织管理')).not.toBeInTheDocument()
+    const nav = document.querySelector('nav')!
+    expect(nav.textContent).toBe('企业基础设置')
   })
 
-  // 🔴 issue #6573：「参数总览」由 `/settings?tab=params` 升为**一级菜单项** `/settings/params`
-  // ⇒ 它**不属于任何组** ⇒ 面包屑必须是**单级**「参数总览」（与「商品管理」「通知中心」同口径），
-  // 而不是落回 `/settings` 那条的「组织管理 / 企业基础信息」（= 把新页当成老页的子页）。
-  it('/settings/params 路径应显示**单级**「参数总览」面包屑（一级项无父组，issue #6573）', async () => {
+  // 🔴 issue #6580：「参数总览」一级项已撤掉（`/settings/params` 只作旧链兼容、重定向回 `/settings`）
+  // ⇒ 该路径的兜底面包屑随之删除，落回 `/settings` 那条 ⇒ **单级**「企业基础设置」。
+  it('/settings/params（旧深链）回退「企业基础设置」单级面包屑（#6580 撤掉该一级项）', async () => {
     mockPathname = '/settings/params'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getAllByText('参数总览')).toHaveLength(1)
-    // 更具体的子路径必须**先于** `/settings` 那条命中（否则会渲染成「组织管理 / 企业基础信息」）
+    expect(screen.getAllByText('企业基础设置')).toHaveLength(1)
+    expect(screen.queryByText('参数总览')).not.toBeInTheDocument()
     expect(screen.queryByText('组织管理')).not.toBeInTheDocument()
-    expect(screen.queryByText('企业基础信息')).not.toBeInTheDocument()
     // 单级 = 整个面包屑容器里没有分隔符（不是「碰巧只剩一项」）
     const nav = document.querySelector('nav')!
-    expect(nav.textContent).toBe('参数总览')
+    expect(nav.textContent).toBe('企业基础设置')
   })
 
   it('/agent-workspace 未知子路径回退「客服工作台」面包屑（#3081 快捷回复占位页已删除）', async () => {

@@ -105,7 +105,9 @@ class MenuNode:
     permission_code: str
 
 
-#: `menu.ts` 的**全量导航节点**（现取：6 组 21 项 + 3 个一级独立项 = 24；第 3 项「参数总览」= issue #6573）。
+#: `menu.ts` 的**全量导航节点**（现取：6 组 20 项 + 3 个一级独立项 = 23）。
+#: 🔴 2026-10-09（issue #6580）：「企业基础设置」由组内项变为独立项、并撤掉 #6573 的「参数总览」
+#: ⇒ 组内 21 → 20、独立项仍 3（商品管理 / 企业基础设置 / 通知中心）。
 #: 顺序 = `menu.ts` 的渲染顺序；判据按 `MENU_TREE_ORDER_LOCKED` 比对（**顺序也锁**，
 #: 因为「一级项与各组的相对位次」在 `menu.ts` 里是一门被用户裁定过的信息架构）。
 #: 🔴 2026-10-06（issue #6457，用户裁定方案 A1）：组内顺序重排 + 一级项「商品管理」沉到
@@ -124,8 +126,8 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     MenuNode("trade-center", "订单列表", "/orders", "order:list"),
     MenuNode("trade-center", "财务对账", "/finance", "finance:view"),
     # 生产管理（2026-10-06：先备资料 → 再生产与派单 → 最末结算）
-    MenuNode("production-center", "加工项管理", "/production/processing", "production:view"),
-    MenuNode("production-center", "工艺配置", "/production/routings", "production:view"),
+    # 🔴 2026-10-09（issue #6580，用户裁定）：「加工项管理」「工艺配置」两个菜单项**移除**
+    #（功能体并入 `/settings` 企业基础设置页内的配置域；旧路径保留为重定向）⇒ 本组只剩三项。
     MenuNode("production-center", "生产看板", "/production", "production:view"),
     MenuNode("production-center", "智能派单", "/production/pool", "processing:view"),
     MenuNode("production-center", "计件工资", "/production/piecework", "production:view"),
@@ -140,14 +142,18 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     # 组织管理
     MenuNode("org-center", "员工管理", "/employees", "employee:list"),
     MenuNode("org-center", "岗位权限", "/roles", "system:view"),
-    MenuNode("org-center", "企业基础信息", "/settings", "system:manage"),
-    # 一级独立项（`standaloneTopItems` 的「商品管理」+ `standaloneItems` 的「通知中心」）
+    # 一级独立项（`standaloneTopItems` 的「商品管理」「企业基础设置」+ `standaloneItems` 的「通知中心」）
     # 🔴 2026-10-06（issue #6457）：「商品管理」排在**所有分组之后**（原「工作台组之后」）
-    # ⇒ 顺序 =「6 组 21 项 → 商品管理 → 参数总览 → 通知中心」（参数总览 = issue #6573 新增的一级项）。
+    # 🔴 2026-10-09（issue #6580）：「企业基础信息」由 `org-center` 组**移出** → 尾部独立项、改名
+    # 「企业基础设置」、排在「通知中心」**上面**（用户逐字：「放到通知中心的上面，并且和通知中心
+    # 一起沉底」）；同日撤掉 #6573 新增的「参数总览」一级项（内容回到 `/settings` 页内的配置域，
+    # 设计见 `docs/design/enterprise-settings-redesign.md`）
+    # ⇒ 顺序 =「6 组 20 项 → 商品管理 → 企业基础设置 → 通知中心」。
     MenuNode(STANDALONE_GROUP, "商品管理", "/products", "product:list"),
-    # 参数总览（issue #6573）：一级项，与「商品管理」并列、同排在**所有分组之后**。
-    # 码 = 该页第一屏读码（`GET /api/admin/production/craft-calc-config` 的方法级 `production:view`）。
-    MenuNode(STANDALONE_GROUP, "参数总览", "/settings/params", "production:view"),
+    # 企业基础设置（原「企业基础信息」）：路径不变（`/settings`）；**节点码改 `production:view`**
+    #（issue #6580 用户裁定选 A：它是合并后生产配置面唯一入口，真实配置者 operator /
+    # product_manager 持该读码、不持 `system:manage` ⇒ 不换码则该菜单对他们恒不可见）。
+    MenuNode(STANDALONE_GROUP, "企业基础设置", "/settings", "production:view"),
     MenuNode(STANDALONE_GROUP, "通知中心", "/notifications", ""),
 )
 
@@ -193,7 +199,7 @@ class NavFeature:
 #:
 #: ## 括注承载两件事（**同一个字段，不新增第五列**）
 #:
-#: · **菜单名与口语的落差**（如「发货单（出库）」「企业基础信息（系统设置）」）；
+#: · **菜单名与口语的落差**（如「发货单（出库）」「企业基础设置（系统设置）」）；
 #: · 🔴 **「无独立导航目标」的操作**：某功能**在菜单里确实没有可指的页面**（例：给员工开账号
 #:   只在「员工管理」页内以按钮形式存在）⇒ **不许编一个不存在的菜单路径**，而是把它登记成
 #:   **该页的括注**（「员工管理（员工开账号）」），指向**最近的可指页面**。实测来源：
@@ -220,8 +226,11 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     NavFeature("finance", "财务对账（对账）", (("trade-center", "财务对账"),), ("财务对账", "对账")),
     NavFeature("production-board", "生产看板（加工单）", (("production-center", "生产看板"),), ("生产看板", "加工单")),
     NavFeature("production-pool", "智能派单（派单）", (("production-center", "智能派单"),), ("智能派单", "派单")),
-    NavFeature("processing-items", "加工项管理（加工项）", (("production-center", "加工项管理"),), ("加工项管理", "加工项")),
-    NavFeature("production-process", "工艺配置（工艺）", (("production-center", "工艺配置"),), ("工艺配置", "工艺")),
+    # 🔴 2026-10-09（issue #6580）：「加工项管理」「工艺配置」两个菜单项已**移除**（功能体并入
+    # 「企业基础设置」页内的配置域）⇒ 它们原来的两个登记项**同批删除**，不改成指向 `/settings`：
+    # 判据 7/9 要求「逐字等于该页菜单名」的那条说法归属该页，而三处都指同一节点会让
+    # `企业基础设置` 这条说法**互相遮蔽**（`problems_shadowed_aliases` 实测判红，见 issue #6062 的
+    # 「说法不许与别家成子串」口径）—— 登记项与菜单项必须**一一对应**。
     NavFeature("piecework", "计件工资（计件）", (("production-center", "计件工资"),), ("计件工资", "计件")),
     NavFeature("inbound-orders", "入库单（入库）", (("inventory-center", "入库单"),), ("入库单", "入库")),
     NavFeature("shipments", "发货单（出库）", (("inventory-center", "发货单"),), ("发货单", "出库")),
@@ -230,11 +239,14 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     NavFeature("stock-ledger", "库存明细（库存流水）", (("inventory-center", "库存明细"),), ("库存明细", "库存流水")),
     NavFeature("employees", "员工管理（员工开账号）", (("org-center", "员工管理"),), ("员工管理", "员工开账号")),
     NavFeature("roles", "岗位权限（角色权限）", (("org-center", "岗位权限"),), ("岗位权限", "角色权限")),
-    NavFeature("settings", "企业基础信息（系统设置）", (("org-center", "企业基础信息"),), ("企业基础信息", "系统设置")),
+    # 企业基础设置（原「企业基础信息」，issue #6580 改名 + 升为独立项）。
+    # ⚠️ 旧名「企业基础信息」**不得**当别名 —— 判据 6b 只收「与登记菜单名 / 功能名有包含关系」
+    # 的说法（防说法表退化成自由同义词词典），旧名与新名只差一个字、**无包含关系** ⇒
+    # 登记它会让 `menu_navigator` 在 import 期直接抛 `MenuNavigatorError`（实测）。
+    NavFeature("settings", "企业基础设置（系统设置）", ((STANDALONE_GROUP, "企业基础设置"),), ("企业基础设置", "系统设置")),
     NavFeature("products", "商品管理（商品）", ((STANDALONE_GROUP, "商品管理"),), ("商品管理", "商品")),
-    # 参数总览（issue #6573）：一级项。说法**接地**（逐字等于菜单名）—— 判据 6b 要求说法是
-    # 登记菜单名（或本功能 label）的一部分，本表不做同义词词典。
-    NavFeature("params", "参数总览（企业参数与配置主线）", ((STANDALONE_GROUP, "参数总览"),), ("参数总览",)),
+    # 🔴 2026-10-09（issue #6580）：「参数总览」一级项已撤掉（内容回到「企业基础设置」页内的
+    # 配置域）⇒ 本表对应条目**随之删除**（登记项必须能指到 `MENU_TREE` 里真实存在的节点）。
     NavFeature("notifications", "通知中心（消息）", ((STANDALONE_GROUP, "通知中心"),), ("通知中心", "消息")),
 )
 

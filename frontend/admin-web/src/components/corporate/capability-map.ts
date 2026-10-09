@@ -15,12 +15,10 @@ import {
   Package,
   PackageOpen,
   Recycle,
-  Route,
   Ruler,
-  Scissors,
   ScrollText,
+  Settings,
   ShieldCheck,
-  SlidersHorizontal,
   TrendingDown,
   Truck,
   UserCircle,
@@ -34,7 +32,7 @@ import {
  * 为什么单独成模块：首页与「产品与服务」页都要展示这套能力域，
  * 两处各写一份必然漂移（官网文案与现实脱节的病根）。
  *
- * 真值源 = `frontend/admin-web/src/config/menu.ts`（侧边栏单一源，6 组 21 项 + 2 个独立入口）
+ * 真值源 = `frontend/admin-web/src/config/menu.ts`（侧边栏单一源，6 组 18 项 + 2 个一级项 + 1 个尾部独立项）
  * ⇒ **本文件只做「分组展示」的排版，不新增、不改写任何菜单名**。
  * 改菜单请改 `config/menu.ts`，再回来同步这里的分组顺序。
  */
@@ -134,16 +132,6 @@ export const capabilityDomains: CapabilityDomain[] = [
         icon: Factory,
       },
       {
-        name: '加工项管理',
-        detail: '加工项与分类维护，以及「加工费组合」定价（元 / 米），未定价项单独告警。',
-        icon: Scissors,
-      },
-      {
-        name: '工艺配置',
-        detail: '工序库（裁剪 / 车位 / 后整）与工艺路线合并为统一入口；支持行业模板补套。',
-        icon: Route,
-      },
-      {
         name: '计件工资',
         detail: '按人 / 工序 / 部位 / 套四档下钻；返工与报废不计件，系统会自动排除。',
         icon: Coins,
@@ -200,13 +188,6 @@ export const capabilityDomains: CapabilityDomain[] = [
         detail: '岗位（角色）与权限树维护；权限分组的树就是侧边栏菜单本身，两处不会漂移。',
         icon: ShieldCheck,
       },
-      {
-        name: '企业基础信息',
-        // issue #6573：「参数总览」已由本页 tab 升为**一级菜单项** ⇒ 本行的点名同步（官网不得把
-        // 已搬走的入口继续说成在「企业基础信息」里）
-        detail: '企业名称与 Logo、AI 客服名称与欢迎语、工人端页面开关、通知设置。',
-        icon: Boxes,
-      },
     ],
   },
 ]
@@ -220,11 +201,15 @@ export const standaloneEntries: CapabilityItem[] = [
     icon: Package,
   },
   {
-    // issue #6573：一级菜单项（`/settings/params`）—— 官网必须与后台菜单同源（漏讲 ⇒ 判据红）
-    name: '参数总览',
+    // 🔴 issue #6580：本席位原为「参数总览」—— 该一级项已撤掉（内容回到 `/settings`
+    // 页内的配置域），改由**由组织管理组升为一级项**的「企业基础设置」占位（原名「企业基础信息」）。
+    // ⚠️ 本文件属「官网源码」⇒ 不得写无出处的年份/时间陈述（`corporate-home.test.tsx` 会判红），
+    // 故此处只引 issue 号、不写日期。
+    // 官网必须与后台菜单同源：名称、数量、归属三处都随 `config/menu.ts` 走（漏讲/多讲 ⇒ 判据红）。
+    name: '企业基础设置',
     detail:
-      '把散在各页的商家可配参数集中到一处（算料口径、AI 客服、加工费、余料回收）；顶部按依赖顺序排出配置主线，直接说清还缺哪项、该去哪页配。',
-    icon: SlidersHorizontal,
+      '把商家可配的东西集中到一处：企业名称与 Logo、AI 客服名称与欢迎语、工人端页面开关、通知设置，以及生产配置（加工项与分类、加工费组合定价、工序库与工艺路线）与算料口径；顶部按依赖顺序排出配置主线，直接说清还缺哪项、该去哪页配。',
+    icon: Settings,
   },
   {
     name: '通知中心',

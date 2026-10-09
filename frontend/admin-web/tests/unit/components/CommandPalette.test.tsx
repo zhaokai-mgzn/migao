@@ -35,8 +35,9 @@ vi.mock('@/lib/api', () => ({
 import CommandPalette from '@/components/layout/CommandPalette'
 
 /**
- * 新 IA 全量 **24 项**（**2026-10-06 方案 A1**：全部分组 → 一级项 → 独立项，== `flattenMenu` 顺序；
- * #5939 +「发货单」；#6404 +「库存明细」；#6573 +一级项「参数总览」）。
+ * 新 IA 全量 **21 项**（**2026-10-06 方案 A1**：全部分组 → 一级项 → 独立项，== `flattenMenu` 顺序；
+ * #5939 +「发货单」；#6404 +「库存明细」；#6573 +第二个一级项；**#6580 生产管理组收拢为 3 项、
+ * 一级项由「参数总览」改为「企业基础设置」**）。
  *
  * 顺序是本表**独立写死**的期望值 ⇒ 组内重排 / 一级项落位被无声改回 ⇒ 本用例当场红。
  */
@@ -49,8 +50,6 @@ const ALL_KEYS = [
   'customers',
   'orders',
   'finance',
-  'processing',
-  'production-process',
   'production-board',
   'production-pool',
   'production-piecework',
@@ -61,9 +60,10 @@ const ALL_KEYS = [
   'production-saving-board',
   'employees',
   'roles',
-  'settings',
+  // 一级项（#6580：「企业基础设置」由组织管理组的组内项升为一级项，席位即原「参数总览」）
   'products',
-  'params',
+  'settings',
+  // 尾部独立项
   'notifications',
 ]
 
@@ -99,9 +99,9 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     expect(document.querySelectorAll('[data-testid^="command-palette-item-"]')).toHaveLength(0)
   })
 
-  it('空查询 = 全量索引：列出全部 24 项（含独立项「通知中心」），顺序 = 菜单自身顺序', async () => {
+  it('空查询 = 全量索引：列出全部 21 项（含独立项「通知中心」），顺序 = 菜单自身顺序', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
-    await waitFor(() => expect(renderedKeys()).toHaveLength(24))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(21))
     expect(renderedKeys()).toEqual(ALL_KEYS)
     expect(input().value).toBe('')
   })
@@ -109,7 +109,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
   it('空查询也**不含**无权项：简报开关关 ⇒ 恰少「每日简报」（与侧边栏同一口径）', async () => {
     mockBriefingEnabled = false
     render(<CommandPalette open onClose={mockOnClose} />)
-    await waitFor(() => expect(renderedKeys()).toHaveLength(23))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(20))
     expect(renderedKeys()).toEqual(ALL_KEYS.filter((k) => k !== 'briefing'))
   })
 
@@ -248,7 +248,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     rerender(<CommandPalette open={false} onClose={mockOnClose} />)
     rerender(<CommandPalette open onClose={mockOnClose} />)
 
-    await waitFor(() => expect(renderedKeys()).toHaveLength(23))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(20))
     expect(input().value).toBe('')
   })
 })

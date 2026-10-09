@@ -31,12 +31,9 @@ import {
   Package,
   PackageOpen,
   Recycle,
-  Route,
-  Scissors,
   ScrollText,
   ShieldCheck,
   ShoppingCart,
-  SlidersHorizontal,
   UserCircle,
   Users,
   LifeBuoy,
@@ -66,8 +63,6 @@ export const menuIconMap: Record<string, LucideIcon> = {
   Package,
   PackageOpen,
   Recycle,
-  Route,
-  Scissors,
   ScrollText,
   ShieldCheck,
   ShoppingCart,
@@ -78,8 +73,10 @@ export const menuIconMap: Record<string, LucideIcon> = {
   TrendingDown,
   // 发货单（issue #5939）：与「入库单」的 PackageOpen 对称的出口图标
   Truck,
-  // 参数总览（issue #6573）：一级项，与 `/settings` 里该 tab 原本用的图标同一枚
-  SlidersHorizontal,
+  // 🔴 2026-10-09（issue #6580）：`Route`（工艺配置）/ `Scissors`（加工项管理）/
+  // `SlidersHorizontal`（参数总览）三枚图标随各自菜单项**移除**而销账 —— 判据② 要求
+  // 「注册表 ⇄ `menu.ts` 用到的图标名」**双向相等**：留着就是死映射（会把用不到的名字
+  // 也算进注册面）。
 }
 
 /**

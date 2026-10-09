@@ -323,30 +323,34 @@ describe('加工费组合 tab（issue #4386；issue #4490 合并后为 /producti
     expect(screen.getByTestId('fee-combination-fc-1')).toBeInTheDocument()
   })
 
-  it('侧边栏：**生产管理组**含合并项「加工项管理」（#4542 名 / #5778 归属）→ /production/processing（权限码 production:view，issue #5291）', async () => {
-    const { menuGroups } = await import('@/config/menu')
-    // issue #4490：「加工费管理」(/production/processing-fees) 与「加工项管理」(/processing)
-    // 合并为单一入口；#4542 起菜单名 =「加工项管理」。
-    // 🔴 #5778（用户裁定「加工项应该属于生产管理」）：该项**由「商品与加工项」组移入「生产管理」组**，
-    // 原 `product-center` 组整体撤销（商品列表升为**一级项**，现名「商品管理」；#5877 起排在
-    // 「工作台」组之后）—— 合并本身一字未动。
+  // 🔴 2026-10-09（issue #6580）**改判**：本用例原断言「生产管理组**含**合并项『加工项管理』」。
+  // 用户裁定「移除加工项管理和工艺配置这两个菜单」⇒ 两个菜单项已从三处菜单源移除（功能体并入
+  // 一级项「企业基础设置」`/settings` 页内的配置域）⇒ 判据反转为**不存在**，而**页面不 404**
+  // 由本文件剩余的重定向/tab 用例承担（它们一字未动）。
+  // ⚠️ 断言强度不降：原断言钉「这一条存在且字段正确」，新断言钉「三处数组都查不到它 + 组内也无」。
+  it('侧边栏：生产管理组**不含**已移除的「加工项管理」/「工艺配置」（#6580）；旧路径仍由页面承载', async () => {
+    const { menuGroups, standaloneTopItems, standaloneItems } = await import('@/config/menu')
     const production = menuGroups.find((g) => g.key === 'production-center')
     expect(production).toBeDefined()
     expect(production!.name).toBe('生产管理')
-    const entry = production!.children.find((c) => c.path === '/production/processing')
-    expect(entry).toBeDefined()
-    expect(entry!.name).toBe('加工项管理')
-    // issue #5291：加工项管理 = 生产域**读**码 production:view（加工项 CRUD 仍 processing:manage）。
-    expect(entry!.permissionCode).toBe('production:view')
+    const allItems = [
+      ...menuGroups.flatMap((g) => g.children),
+      ...standaloneTopItems,
+      ...standaloneItems,
+    ]
+    expect(allItems.find((c) => c.path === '/production/processing')).toBeUndefined()
+    expect(allItems.find((c) => c.path === '/production/routings')).toBeUndefined()
+    expect(production!.children.map((c) => c.name)).not.toContain('加工项管理')
+    expect(production!.children.map((c) => c.name)).not.toContain('工艺配置')
+    // #6580 后本组 = 生产看板 → 智能派单 → 计件工资
+    expect(production!.children.map((c) => c.path)).toEqual([
+      '/production',
+      '/production/pool',
+      '/production/piecework',
+    ])
     // 原「商品与加工项」组已撤销 ⇒ 不得再存在（商品管理表现为独立一级项，不属任何组）
     expect(menuGroups.find((g) => g.key === 'product-center')).toBeUndefined()
     expect(production!.children.map((c) => c.path)).not.toContain('/processing')
-    // 生产管理组归并结果必须仍在（合并只收敛入口，不重排既有项）
-    // ⚠️ issue #4416：原第 2 项「工序库」与第 3 项「工艺路线」已合并为「工艺配置」⇒
-    //    /production/operations **不再是**菜单项（页面改为重定向，旧深链仍可达）
-    // issue #5271：组 key `production` → `production-center`（且面料三项拆到「仓储与物料」）
-    expect(production!.children.map((c) => c.path)).toContain('/production/routings')
-    expect(production!.children.map((c) => c.name)).toContain('工艺配置')
     expect(production!.children.map((c) => c.path)).not.toContain('/production/operations')
     expect(production!.children.map((c) => c.path)).not.toContain('/production/processing-fees')
     // 旧 key 不再存在（`MenuController` 侧同步改了才叫三源同构）

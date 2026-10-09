@@ -82,12 +82,12 @@ class TestToolSurface:
 class TestExecuteSemantics:
     @pytest.mark.asyncio
     async def test_registered_question_returns_path_and_citation(self):
-        result = await NavGuideTool().execute(_ctx(["production:view"]), question="工艺配置在哪")
+        result = await NavGuideTool().execute(_ctx(["production:view"]), question="企业基础设置在哪")
         assert result.success is True
         payload = result.data
         assert set(payload) == ALLOWED_DATA_KEYS
-        assert [p["path"] for p in payload["pages"]] == ["/production/routings"]
-        assert payload["citation"].startswith("登记项 #production-process → 菜单节点")
+        assert [p["path"] for p in payload["pages"]] == ["/settings"]
+        assert payload["citation"].startswith("登记项 #settings → 菜单节点")
 
     @pytest.mark.asyncio
     async def test_unregistered_question_is_a_failure_with_no_pages(self):
@@ -105,19 +105,19 @@ class TestExecuteSemantics:
     @pytest.mark.asyncio
     async def test_permission_trimming_happens_in_the_tool(self):
         """**授权面在工具层**：无权角色拿不到路径与权限码（只有菜单名 + citation）。"""
-        result = await NavGuideTool().execute(_ctx(["order:list"]), question="工艺配置在哪")
+        result = await NavGuideTool().execute(_ctx(["order:list"]), question="企业基础设置在哪")
         blob = json.dumps(result.data, ensure_ascii=False)
         assert result.data["pages"] == []
-        assert "/production/routings" not in blob
+        assert "/settings" not in blob
         assert "production:view" not in blob
-        assert result.data["deniedMenuNames"] == ["工艺配置"]
+        assert result.data["deniedMenuNames"] == ["企业基础设置"]
 
     @pytest.mark.asyncio
     async def test_client_supplied_role_is_not_read(self):
         """裁剪**只**看服务端会话的 `permissions` —— role 换成什么都一样。"""
         for role in ("admin", "customer", "agent", "operator"):
             result = await NavGuideTool().execute(
-                _ctx(["order:list"], role=role), question="工艺配置在哪"
+                _ctx(["order:list"], role=role), question="企业基础设置在哪"
             )
             assert result.data["pages"] == [], f"role={role!r} 时竟拿到页面 ⇒ 裁剪读了 role"
 

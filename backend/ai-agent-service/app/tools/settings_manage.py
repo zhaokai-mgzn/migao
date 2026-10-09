@@ -46,7 +46,7 @@ class SettingsManageTool(BaseTool):
         "login_logs（登录日志）三个只读 action**（B 端已只读化，issue #5247 / #5302）。"
         "【反例】通知查询用 notification_manage；角色权限用 role_manage。"
         "【反例】调整系统参数 / 修改 AI 配置**不在本工具能力内** —— 引导用户到商户后台"
-        "「企业基础信息 → 基本设置 / AI 客服设置」页自助修改。"
+        "「企业基础设置 → 企业信息 / AI 客服」页自助修改。"
         "【反例】修改密码**不在本工具能力内**（后台暂无自助改密入口）—— 如实告知，"
         "并引导用户联系管理员处理，禁止承诺「已改好」。"
         "【标注】READONLY — 纯查询，不含任何写 action"
@@ -114,7 +114,7 @@ class SettingsManageTool(BaseTool):
                 suggestion=(
                     "本工具只提供只读查询（get_settings / get_ai_config / login_logs）。"
                     "调整系统参数 / 修改 AI 配置 / 修改密码不在本工具能力内 —— "
-                    "请如实告知用户，并引导其到商户后台「企业基础信息」页自助操作"
+                    "请如实告知用户，并引导其到商户后台「企业基础设置」页自助操作"
                     "（改密码在后台无自助入口 ⇒ 引导联系管理员）"
                 ),
             )
@@ -160,7 +160,7 @@ class SettingsManageTool(BaseTool):
             return admin_api_failure(response,
                 error=error_msg,
                 message=f"获取系统设置失败：{error_msg}",
-                suggestion="请稍后重试；若持续失败，请让用户通过商户后台「企业基础信息」页查看，或联系平台管理员",
+                suggestion="请稍后重试；若持续失败，请让用户通过商户后台「企业基础设置」页查看，或联系平台管理员",
             )
 
         data = response.get("data", {})
@@ -190,7 +190,7 @@ class SettingsManageTool(BaseTool):
             return admin_api_failure(response,
                 error=error_msg,
                 message=f"获取AI配置失败：{error_msg}",
-                suggestion="请稍后重试；若持续失败，请让用户通过商户后台「企业基础信息 → AI 客服设置」页查看，或联系平台管理员",
+                suggestion="请稍后重试；若持续失败，请让用户通过商户后台「企业基础设置 → AI 客服」页查看，或联系平台管理员",
             )
 
         data = response.get("data", {})

@@ -64,9 +64,10 @@ BACKEND_SERVICE = (
 )
 #: 前端词表副本
 FRONTEND_TYPES = REPO_ROOT / "frontend/admin-web/src/types/index.ts"
-#: 工序管理页（停用写面所在）
+#: 工序管理面（停用写面所在）—— issue #6580：功能体搬进 `ProcessConfigBoard`
+#: （旧路由 `production/routings/page.tsx` 现在只是渲染它的薄壳，里面没有写面）⇒ 宿主随功能体走。
 ROUTINGS_PAGE = (
-    REPO_ROOT / "frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx"
+    REPO_ROOT / "frontend/admin-web/src/components/production-config/ProcessConfigBoard.tsx"
 )
 
 #: 前端工序状态联合类型名（与本文件 C2/C3 判据同名 —— 改名即红，是有意的）

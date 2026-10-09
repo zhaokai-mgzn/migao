@@ -70,7 +70,7 @@ class CraftConfigQueryTool(BaseTool):
         "【标注】READONLY — 只读查询"
     )
 
-    # 权限码（admin-api 目录）：生产域**读**码 `production:view`，与侧边栏「工艺配置」节点同码
+    # 权限码（admin-api 目录）：生产域**读**码 `production:view`，与侧边栏「企业基础设置 → 工艺与路线」节点同码
     # （issue #5291 设立）。⚠️ 本工具六个端点里有三个的**端点侧**生效码不是本码（#4923 现场读数，
     # 见模块 docstring 与测试 `TestControllerPermissionParity`）⇒ 本码是**本包声明的读口径**，
     # 端点收敛属产品裁定、不在本包。
@@ -117,7 +117,7 @@ class CraftConfigQueryTool(BaseTool):
                 success=False,
                 error="权限不足",
                 message="您没有权限查询工艺配置的缺口与卡点",
-                suggestion="请联系管理员为您开通「工艺配置」查看权限后重试",
+                suggestion="请联系管理员为您开通「企业基础设置 → 工艺与路线」查看权限后重试",
             )
 
         if action not in VALID_ACTIONS:

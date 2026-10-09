@@ -108,7 +108,8 @@ STATIC_NO_LIMIT: dict[tuple[str, str], str] = {
 _SINGLETON_ANCHORS: tuple[tuple[str, str], ...] = (
     ("frontend/admin-web/src/store/auth.ts", "authApi.getUserInfo"),
     ("frontend/admin-web/src/components/layout/NotificationBell.tsx", "POLL_INTERVAL"),
-    ("frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx", "getCraftCalcConfig"),
+    # issue #6580：工艺配置页的功能体搬进 `ProcessConfigBoard`（旧路由成了薄壳）⇒ 锚点随功能体走
+    ("frontend/admin-web/src/components/production-config/ProcessConfigBoard.tsx", "getCraftCalcConfig"),
 )
 _SINGLETON_COST = len(_SINGLETON_ANCHORS)
 

@@ -151,7 +151,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
   }
 
-  it('侧边栏出现「生产管理」组与**四个**节点，路径与权限码正确', () => {
+  it('侧边栏出现「生产管理」组与**三个**节点，路径与权限码正确（#6580 收拢）', () => {
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
 
     const group = screen.getByText('生产管理').closest('[data-group-key]') as HTMLElement
@@ -164,24 +164,22 @@ describe('生产管理菜单入口（侧边栏）', () => {
     //    （#4542 起菜单名 =「加工项管理」）；
     //    issue #5034 / #5177 / #5159 / #5191 先后往本组加过 4 项，**#5271 把它们中的 3 项搬走**。
     // 🔴 #5778（用户裁定「加工项应该属于生产管理」）：加工项管理自「商品与加工项」组**移入本组**
-    //    ⇒ 4 → **5 项**。
-    // 🔴 2026-10-06（issue #6457，用户裁定方案 A1）：组内顺序改为「**先备资料 → 再生产与派单 → 结算**」
-    //    ⇒ 加工项管理 / 工艺配置**提到最前**（加工项是派单机的输入）。
-    expect(links).toHaveLength(5)
-    expect(links[0].textContent).toContain('加工项管理')
-    expect(links[0]).toHaveAttribute('href', '/production/processing')
-    expect(links[1].textContent).toContain('工艺配置')
-    expect(links[1]).toHaveAttribute('href', '/production/routings')
-    expect(links[2].textContent).toContain('生产看板')
-    expect(links[2]).toHaveAttribute('href', '/production')
-    expect(links[3].textContent).toContain('智能派单')
-    expect(links[3]).toHaveAttribute('href', '/production/pool')
-    expect(links[4].textContent).toContain('计件工资')
-    expect(links[4]).toHaveAttribute('href', '/production/piecework')
+    //    ⇒ 4 → 5 项；#5778 之后 #6580（2026-10-09 用户裁定）**把「加工项管理」「工艺配置」两项移除**
+    //    （功能体并入一级项「企业基础设置」页内的配置域）⇒ 5 → **3 项**。
+    //    旧深链 `/production/processing`、`/production/routings` 保留为**重定向薄壳**（不 404）。
+    expect(links).toHaveLength(3)
+    expect(links[0].textContent).toContain('生产看板')
+    expect(links[0]).toHaveAttribute('href', '/production')
+    expect(links[1].textContent).toContain('智能派单')
+    expect(links[1]).toHaveAttribute('href', '/production/pool')
+    expect(links[2].textContent).toContain('计件工资')
+    expect(links[2]).toHaveAttribute('href', '/production/piecework')
     // 旧「工序库」入口不再作为独立菜单项（页面改为重定向，旧深链仍可达）
     expect(Array.from(links).map((a) => a.textContent).join('|')).not.toContain('工序库')
-    // #5778：合并项**现在就在本组**（归生产管理组；它的结构/图标断言在 processing-merged.test.tsx）
-    expect(Array.from(links).map((a) => a.textContent).join('|')).toContain('加工项管理')
+    // 🔴 #6580：两个合并项（加工项管理 / 工艺配置）**已不再是菜单项** —— 反向断言（它们的功能体在
+    // 企业基础设置页内，结构与图标断言在 processing-merged.test.tsx / production-routings.test.tsx）。
+    expect(Array.from(links).map((a) => a.textContent).join('|')).not.toContain('加工项管理')
+    expect(Array.from(links).map((a) => a.textContent).join('|')).not.toContain('工艺配置')
     // issue #5271：面料三项也不在本组（移入「仓储与物料」组）
     const productionText = Array.from(links).map((a) => a.textContent).join('|')
     expect(productionText).not.toContain('入库单')
@@ -242,7 +240,9 @@ describe('生产管理菜单入口（侧边栏）', () => {
       expandGroup(key)
     }
     const hrefs = Array.from(document.querySelectorAll('a')).map((a) => a.getAttribute('href'))
-    expect(hrefs).toHaveLength(23) // 简报开关关 ⇒ 23 项（24 - 每日简报；#5939：21 → 22；#6404：22 → 23；#6573：23 → 24 项）
+    // 🔴 #6580：24 项 → 21 项（生产管理组 5 → 3；「参数总览」一级项随页合并撤销、
+    // 一级项席位改「企业基础设置」）⇒ 简报开关关时 = 20 项。
+    expect(hrefs).toHaveLength(20) // 简报开关关 ⇒ 20 项（21 - 每日简报；#5939/#6404/#6573 的历次 +1 见 menu-nav.test.ts）
     expect(hrefs).not.toContain('/processing-orders')
   })
 
@@ -253,9 +253,8 @@ describe('生产管理菜单入口（侧边栏）', () => {
     // #5271：本组 4 项**同码**（都是加工/生产管理动作）；
     // 原先「入库单是仓储动作、权限码独立（inbound:view，issue #5034）」的口径**不变**，
     // 只是它现在挂在**新组**「仓储与物料」下 ⇒ 本用例改判为「按组取码」而不是把它算进本组。
+    // 🔴 #6580：本组由 5 项收拢为 3 项（「加工项管理」「工艺配置」菜单项已移除）。
     expect(group!.children.map((c) => c.permissionCode)).toEqual([
-      'production:view',    // 加工项管理（#5778 移入本组；2026-10-06 起为组内第一项）
-      'production:view',    // 工艺配置
       'production:view',    // 生产看板（issue #5291）
       'processing:view',    // 智能派单（issue #5699 P4：节点码 = 该页读端点码）
       'production:view',    // 计件工资

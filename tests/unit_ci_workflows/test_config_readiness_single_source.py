@@ -45,9 +45,17 @@ ADMIN_WEB = REPO_ROOT / "frontend" / "admin-web" / "src"
 READINESS_MODULE = ADMIN_WEB / "lib" / "config-readiness.ts"
 
 #: 已知消费方（**策展清单**：新增消费方要显式加进来，否则本判据看不见它）。
+#:
+#: 🔴 2026-10-09（issue #6580）**清单随被约束对象移动**（不是放宽 —— 2 个消费方 → 3 个，且逐个
+#: 仍要满足「必须从判据模块引入 + 不得自带第二份」）：
+#:   · 原 `settings/params/page.tsx` 已并回 `/settings`（现在只是重定向，没有任何判据）⇒ 销账；
+#:   · 原 `production/routings/page.tsx` 现在是**薄壳**（只渲染 `ProcessConfigBoard`）⇒ 判据的宿主
+#:     随之移到 board 本身；
+#:   · 配置指挥台本页（`settings/page.tsx`）与主线的渲染面（`ConfigReadinessBar.tsx`）是新增的两个。
 CONSUMERS: tuple[Path, ...] = (
-    ADMIN_WEB / "app" / "(dashboard)" / "production" / "routings" / "page.tsx",
-    ADMIN_WEB / "app" / "(dashboard)" / "settings" / "params" / "page.tsx",
+    ADMIN_WEB / "app" / "(dashboard)" / "settings" / "page.tsx",
+    ADMIN_WEB / "components" / "settings" / "ConfigReadinessBar.tsx",
+    ADMIN_WEB / "components" / "production-config" / "ProcessConfigBoard.tsx",
 )
 
 #: 必须由判据模块导出的纯判据（改名/删除 ⇒ 红，逼人来这里登记）。

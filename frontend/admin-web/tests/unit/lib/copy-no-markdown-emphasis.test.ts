@@ -67,17 +67,18 @@ const REGISTERED = ['****'] as const
 const REGISTERED_MARKER_FILES = [
   'src/lib/craft-calc-glossary.ts',
   // issue #6573：配置主线的步骤文案（`MAINLINE_STEPS[].why/impact`）里带强调 —— 渲染点是
-  // `src/components/settings/ConfigReadinessBar.tsx`（见下方接线表；`production/routings`
-  // 页也消费同一模块，它在接线表里早就有）。
+  // `src/components/settings/ConfigReadinessBar.tsx`（见下方接线表）。
   'src/lib/config-readiness.ts',
   'src/lib/tenant-params.ts',
   'src/components/production/CraftCalcGlossary.tsx',
-  'src/components/settings/TenantParamsPanel.tsx',
   'src/components/settings/RemnantItemSizesPanel.tsx',
   'src/components/settings/OversizeThresholdPreview.tsx',
   'src/app/(dashboard)/production/remnants/page.tsx',
-  'src/app/(dashboard)/production/routings/page.tsx',
   'src/app/(dashboard)/stock-ledger/page.tsx',
+  // issue #6580（配置指挥台）：下面这些是**搬运后**仍然带强调的载体 ——
+  // 旧路由 `production/routings/page.tsx` 已变薄壳（不再带任何文案）⇒ 条目随之销账。
+  'src/components/settings/CalcCaliberPanel.tsx',
+  'src/components/production-config/ProcessConfigBoard.tsx',
 ] as const
 
 /**
@@ -89,11 +90,15 @@ const REGISTERED_MARKER_FILES = [
 const WIRED_FILES = [
   'src/components/production/CraftCalcGlossary.tsx',
   'src/components/settings/ConfigReadinessBar.tsx',
+  // issue #6580：配置指挥台的域面板与两个搬运过来的功能体（`**` 由各自的 InlineMarkdown 上屏）。
+  // ⚠️ `production/routings/page.tsx` 已从本表销账 —— 它现在是只渲染 board 的薄壳，**不含任何文案**，
+  // 留着会让「接线」判据读一个不存在的渲染点（陈旧条目即红）。
+  'src/components/settings/CalcCaliberPanel.tsx',
+  'src/components/production-config/ProcessConfigBoard.tsx',
   'src/components/settings/TenantParamsPanel.tsx',
   'src/components/settings/RemnantItemSizesPanel.tsx',
   'src/components/settings/OversizeThresholdPreview.tsx',
   'src/app/(dashboard)/production/remnants/page.tsx',
-  'src/app/(dashboard)/production/routings/page.tsx',
   'src/app/(dashboard)/stock-ledger/page.tsx',
 ] as const
 

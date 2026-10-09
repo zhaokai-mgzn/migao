@@ -77,9 +77,11 @@ NEGATIONS = (
     "不做", "不提供", "不在", "不得", "不能", "无法", "禁止", "切勿", "只读", "不支持", "已下线",
 )
 
-#: 引导目标（后台真实存在的页面/入口；`frontend/admin-web/src/app/(dashboard)/settings/page.tsx`
-#: 的 tab = basic/AI 客服设置/params/notification，通知中心 = `/notifications`）。
-GUIDANCE_TARGETS = ("企业基础信息", "AI 客服设置", "通知中心")
+#: 引导目标（后台真实存在的页面/入口）。
+#: 🔴 2026-10-09（issue #6580）**随 IA 更新**：`/settings` 由「企业基础信息 + 四个 tab」改成
+#: 「**企业基础设置** = 配置指挥台 + 四个区八个域」⇒ 页面名与页内块名逐字换了（AI 客服设置 → **AI 客服**）；
+#: 通知中心 = `/notifications` 不变。
+GUIDANCE_TARGETS = ("企业基础设置", "AI 客服", "通知中心")
 
 
 def _claimed_sentences(text: str):
@@ -176,7 +178,7 @@ class TestSettingsManageIsReadOnly:
         )
         assert "二次确认" not in desc, "description 仍在教「写前必须二次确认」（写能力已不存在）"
         assert "不在本工具能力内" in desc, "description 未写明写能力不在本工具能力内"
-        assert "企业基础信息" in desc and "AI 客服设置" in desc, (
+        assert "企业基础设置" in desc and "AI 客服" in desc, (
             "description 未给出后台引导路径（调整系统参数/AI 配置该怎么走）"
         )
 
@@ -326,7 +328,7 @@ class TestJudgementIsNotVacuous:
     def test_negated_sentences_are_not_false_positives(self):
         """假红面：**如实告知**的否定句不得被判成承诺（口径同 MC-021 的 `CAPABILITY_NEGATIONS`）。"""
         for honest in [
-            "调整系统参数不在本域能力内，请引导同事到后台「企业基础信息 → 基本设置」页操作。",
+            "调整系统参数不在本域能力内，请引导同事到后台「企业基础设置 → 企业信息」页操作。",
             "本域已只读：修改 AI 配置、改密码均不支持，不得向同事承诺。",
             "标记已读、发送通知已下线，请引导同事到后台「通知中心」页自助处理。",
         ]:

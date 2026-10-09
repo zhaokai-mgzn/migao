@@ -43,6 +43,14 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   { prefix: '/production/remnants', code: 'processing:manage' },
   // issue #5699（P4）：同上 —— 省料看板页面码 = product:list。
   { prefix: '/production/saving-board', code: 'product:list' },
+  // 🔴 2026-10-09（issue #6580）：下面两条是**旧入口兼容**前缀（对应菜单项已移除）——
+  // 「加工项管理」`/production/processing`、「工艺配置」`/production/routings` 的功能体已并入
+  // `/settings` 企业基础设置页 ⇒ 路由保留（旧深链不 404）、守卫码取新入口的页面码 `production:view`。
+  // ⚠️ 它们**必须排在父前缀 `/production` 之前**（本表用 `find()` + `startsWith`；更宽的父前缀在前会让
+  // 子路径成为**永不命中的死条目** ⇒ 判据 11① 判红）。菜单项已移除 ⇒ 无节点可钉，
+  // 故同批登记在 `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `ROUTE_WITHOUT_MENU_NODE`。
+  { prefix: '/production/processing', code: 'production:view' },
+  { prefix: '/production/routings', code: 'production:view' },
   { prefix: '/production', code: 'production:view' },
   { prefix: '/customers', code: 'customer:view' },
   { prefix: '/finance', code: 'finance:view' },
@@ -60,12 +68,16 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   //（同 #5976 入库单的现场形态）。
   { prefix: '/stock-ledger', code: 'product:list' },
   { prefix: '/employees', code: 'employee:list' },
-  // 参数总览（issue #6573）：由 `/settings` 的 tab 升为一级菜单项 ⇒ 页面守卫码 = 菜单节点码
-  // = 该页**第一屏读码**（`GET /api/admin/production/craft-calc-config` 的**方法级** `production:view`）。
-  // ⚠️ 必须排在 `/settings` **之前** —— 本表用 `find()` + `startsWith`，更宽的父前缀排在前面会让
-  // 这条子路径成为**永不命中的死条目**（判据 11① 判红，先例 = `/production/pool` 排在 `/production` 之前）。
+  // 🔴 2026-10-09（issue #6580）：`/settings/params`（原「参数总览」一级项）是**旧入口兼容**前缀
+  // —— 该一级项已撤掉（内容回到 `/settings` 页内的配置域）⇒ 路由保留、守卫码取新入口的页面码。
+  // ⚠️ 必须排在父前缀 `/settings` **之前**（`find()` + `startsWith`；否则它是永不命中的死条目 ⇒ 判据 11① 判红）。
   { prefix: '/settings/params', code: 'production:view' },
-  { prefix: '/settings', code: 'system:manage' },
+  // 🔴 2026-10-09（issue #6580）：`/settings` 的守卫码由 `system:manage` 改为 `production:view` ——
+  // 与菜单节点码、该页第一屏生产域读码同源（合并后的入口必须对真实配置者可见：operator /
+  // product_manager 持该读码、不持 `system:manage`）。经营域（企业信息 / AI 客服 / 工人端页面 /
+  // 通知设置）仍由各自的 `system:manage` **域级**门控 —— 该有意不一致已具名登记在
+  // `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `MENU_READ_PARITY_RESIDUALS`。
+  { prefix: '/settings', code: 'production:view' },
   // issue #5246：知识库页同理 —— 页面本身的守卫用读码 knowledge:view
   //（增删改/发布/归档等写动作由后端 knowledge:manage 拦截，前端不重复表达写权限）。
   { prefix: '/knowledge', code: 'knowledge:view' },

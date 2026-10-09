@@ -251,64 +251,38 @@ P4_AUTHORIZATION_CENSUS: dict[str, dict[str, object]] = {
         "units_changed": (),
         "menu_nodes": ("frontend:省料看板", "auth:省料看板", "controller:省料看板"),
     },
-    "/production/processing": {
-        "gate_before": "production:view",
-        "gate_after": "production:view",
-        "direction": "收窄 + 放宽（端点侧；可见面不变）",
-        "reason": (
-            "该页第一屏跨三个码（`order:list` ×2 / `processing:manage` ×1 / `production:view` ×1）"
-            "⇒ 「整页可见但某个 tab 403」（`product_manager@fallback` 的「加工费组合」tab）。"
-            "P4 把三个 unit 全部收敛到页面码 `production:view`。**D2**：理由 = 让**一个子菜单只有一个码**，"
-            "它支撑该页的 **4** 个第一屏读端点（= 全部），实际变动的是**其中 3 个端点的生效码**"
-            "（2 个从 `order:list`、1 个从 `processing:manage`）⇒ M（3）= N（3），且**没有**任何岗位"
-            "因此看见新菜单（可见面零变化：`production:view` 的持有者集合未变）。"
-            "🔴 **收窄（逐条点名，判据当场复算）**：`GET /api/admin/production/processing-fee-combinations` 与 "
-            "`.../processing-fee-gaps` 从 `order:list` 改挂 `production:view` ⇒ `customer_service`（客服）、"
-            "`sales`（销售）、`finance`（财务）**失去这两个端点的 API 可读性**（它们在 UI 上看不见该菜单，"
-            "只可能在手机端/直达调用里用到）；`product_manager`（回退）**获得**这两个端点 —— "
-            "它此前看得见「加工项管理」却在「加工费组合」tab 上 403（#5699 登记的半碎页面）。"
-            "`GET /api/admin/processing-categories` 从 `processing:manage` 改挂 `production:view`："
-            "两个码的持有者集合逐值相同 ⇒ **零 delta**。"
-        ),
-        "units_changed": (
-            ("GET /api/admin/production/processing-fee-combinations", "order:list", "production:view"),
-            ("GET /api/admin/production/processing-fee-gaps", "order:list", "production:view"),
-            ("GET /api/admin/processing-categories", "processing:manage", "production:view"),
-        ),
-        "menu_nodes": (),
-    },
-    "/production/routings": {
-        "gate_before": "production:view",
-        "gate_after": "production:view",
-        "direction": "零 delta（同义码统一）",
-        "reason": (
-            "该页第一屏 5 个读端点跨两个码（配置族 3 个 `processing:manage` / 2 个 `production:view`）。"
-            "P4 把配置族收敛到页面码 `production:view`。⚠️ **2026-10-01 起该页第一屏由 6 个读端点收敛为 5 个**"
-            "（issue #5874 删掉 `GET /production/seed-templates` 及其页面消费者）。**D2**：理由支撑该页 **5** 个端点，"
-            "实际变动 **3** 个端点的生效码 ⇒ M == N。**零 delta**：两个码的持有岗位集合在种子 / 回退两来源里"
-            "逐值相同（判据当场复算 `who_gains` / `who_loses` 必须都为空）。"
-        ),
-        "units_changed": (
-            ("GET /api/admin/production/operation-positions", "processing:manage", "production:view"),
-            ("GET /api/admin/production/route-rules", "processing:manage", "production:view"),
-            ("GET /api/admin/production/route-rule-options", "processing:manage", "production:view"),
-        ),
-        "menu_nodes": (),
-    },
+    # 🔴 2026-10-09（issue #6580）：`/production/processing`（加工项管理）与 `/production/routings`
+    # （工艺配置）两条 census 条目**随菜单项移除而销账**（两页已不在清单 `pages[]` 里 —— 它们不再是
+    # 子菜单页 ⇒ 没有「子菜单粒度」可判；旧路径仍由重定向承载，判据在
+    # `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `ROUTE_WITHOUT_MENU_NODE`）。
     "/settings": {
         "gate_before": "system:manage",
-        "gate_after": "system:manage",
-        "direction": "零 delta（具名保留一页多码）",
+        "gate_after": "production:view",
+        "direction": "放宽（可见面）：经营域单页（仅 admin）→ 生产配置面（operator / product_manager 也可见）",
         "reason": (
-            "🔴 **具名保留 + 硬理由**（两条出口都会造出新的 403，第三条出口是产品/信息架构裁定）："
-            "① 简报端点改挂 `system:manage` ⇒ 只持 `dashboard:view` 的六个岗位失去 `/briefing` 页与看板的"
-            "简报开关；② 节点码改 `dashboard:view` ⇒ 全员看见「企业基础信息」而该页两个管理端点 403；"
-            "③ 把「每日简报开关」搬到 `/briefing` 页 ⇒ 超出权限模型阶段的射程（须人类裁定）。"
-            "**零 delta 且零 403**：`system:manage` 的持有者只有 admin（恒 `*`）⇒ "
-            "`可见面投影 == 持码者`（判据当场复算）。"
+            "🔴 2026-10-09（issue #6580，用户裁定）**改判**：本页由「企业基础信息」（`system:manage`）"
+            "合并为「企业基础设置」并升为**一级菜单项** —— 加工项管理 / 工艺配置两个菜单项的功能体并入本页，"
+            "节点码取**既有读码** `production:view`（合并后它是生产配置面的唯一入口，而真实配置者 "
+            "**operator / product_manager** 持该读码、不持 `system:manage`）。"
+            "**复算**（`census_problems` 当场算，非人工誊写）：可见面 admin → admin + **operator** + "
+            "**product_manager**（新看见的就是这两个岗位，它们此前根本进不来 —— 这正是本次收敛要解决的"
+            "「缺配置的人配不了」）。"
+            "**零 403**：本页第一屏（**本页自身 effect 驱动面** = `load()` 里的五条生产配置域读面）"
+            "全部 = `production:view`（= 节点码 = 路由守卫码）⇒ 每个持节点码的岗位都持该页第一屏的每一个码。"
+            "⚠️ 页内**经营域 / 简报域**按各自码**条件挂载**（`config-center-domains.ts` 的 `requiredCode` + "
+            "页内 `has()` 过滤；#6573 既定口径「不持该码的域不渲染也不请求」）⇒ 不持 `system:manage` 的生产岗"
+            "**不会**触发经营域请求；`system:manage` 仍以权限码节点（`企业基础设置（经营域）`）保留在权限树上，"
+            "可授予性不变。**零端点授权 delta**：改的是**菜单节点码**，本页第一屏端点码一个未改。"
         ),
         "units_changed": (),
-        "menu_nodes": (),
+        # ⚠️ 只登记**两级**菜单源里那个真·一级项节点（`frontend` / `auth` 的
+        # 「企业基础设置」= `production:view`）。`controller` 那一源**故意不登记**：
+        # `MenuController` 侧同名的顶层节点被组织管理组里的**权限码节点**
+        # 「企业基础设置（经营域）」（= `system:manage`）遮蔽 —— 它是**另一个东西**
+        #（为保留该码的可授予性而存在），把它登记成本页节点会读出 `system:manage` ≠ `production:view`。
+        # 该遮蔽本身由 `test_agent_permission_parity.py` 的 `READ_CODE_ANCHORS['production:view']
+        # .node_sources` 逐字登记（那边只收 frontend 的节点来源，理由同此）。
+        "menu_nodes": ("frontend:企业基础设置", "auth:企业基础设置"),
     },
     "/notifications": {
         "gate_before": None,
@@ -656,31 +630,28 @@ def test_every_submenu_has_one_code_and_opens_for_whoever_sees_it():
     derive, manifest, present, parity = load_derive(), load_manifest(), present_faces(), load_parity_guard()
     assert submenu_problems(manifest, present, parity) == [], "前提：当前树这一面全绿"
 
-    # ① 端点改回独立码（`/production/processing` 的一个端点改回 `processing:manage`）
+    # ① 端点改回独立码（`/production/piecework` 的一个端点改挂 `processing:manage`）
+    #   🔴 2026-10-09（issue #6580）：夹具原钉 `/production/processing`（该页已不再是菜单项 ⇒
+    #   变异目标不存在）；真树同时已无多码页 ⇒ 变异体必须**自己造出**那一页（这正是本段的判别力）。
     back = _mutate_page(
-        manifest, "/production/processing",
+        manifest, "/production/piecework",
         units={
-            "production:view": [
-                "GET /api/admin/processing-items",
-                "GET /api/admin/production/processing-fee-combinations",
-                "GET /api/admin/production/processing-fee-gaps",
-            ],
-            "processing:manage": ["GET /api/admin/processing-categories"],
+            "production:view": ["GET /api/admin/production/piecework/summary"],
+            "processing:manage": ["GET /api/admin/production/pool/preview"],
         },
     )
     hits = submenu_problems(back, present, parity)
     assert any("一页多码未登记" in h for h in hits), f"端点改回独立码没被判红：{hits}"
     assert derive.derive_page_faces(back)["multi_code_pages"] == {
-        "/production/processing": ["processing:manage", "production:view"],
-        "/settings": ["dashboard:view", "system:manage"],
+        "/production/piecework": ["processing:manage", "production:view"],
     }, "变异体没被派生器读到 ⇒ 本条是空断言"
 
-    # ② 更宽的码进 units（`order:list` 的持有者多于 `/production/processing` 的节点码持有者）
+    # ② 更宽的码进 units（`order:list` 的持有者多于 `/production/piecework` 的节点码持有者）
     wider = _mutate_page(
-        manifest, "/production/processing",
+        manifest, "/production/piecework",
         units={
-            "production:view": ["GET /api/admin/processing-items"],
-            "order:list": ["GET /api/admin/production/processing-fee-combinations"],
+            "production:view": ["GET /api/admin/production/piecework/summary"],
+            "order:list": ["GET /api/admin/production/pool/preview"],
         },
     )
     hits = submenu_problems(wider, present, parity)
@@ -769,13 +740,17 @@ def test_p4_census_only_touches_read_endpoints():
         f"写侧台账条数漂移（现取 {len(live)} / 上限 {WRITE_UNDER_READ_CODE_CAP}）⇒ "
         "要么有人改了写端点的码（本阶段射程外、须人裁），要么漏登记"
     )
-    # 读侧：P4 记录在案的变动**恰好 6 条**（5 个方法级覆盖 + 1 个类级码改挂的列表读端点）。
-    # ⚠️ **2026-10-01 由 7 收敛为 6**：issue #5874 删掉 `GET /production/seed-templates`
-    # （商家面补套入口与后端端点同批退场）⇒ D1 表少一行，这个机器影子同步收窄（**只许缩短**）。
+    # 读侧：P4 记录在案的**读端点码变动**条数（D1 表的机器影子）。
+    #   沿革（**只许缩短**）：7 → **6**（2026-10-01，issue #5874 删掉 `GET /production/seed-templates`）
+    #   → 🔴 **0**（2026-10-09，issue #6580：`/production/processing` 与 `/production/routings` 两条
+    #   census 随**菜单项移除**销账 —— 那 6 条变动全部挂在这两页上；本轮改的是**菜单节点码**
+    #   （`/settings`: `system:manage` → `production:view`），**没有改任何端点的码** ⇒ 读侧变动为 0，
+    #   与「零端点授权 delta」的结论逐值吻合）。
     # 这个数是本阶段 D1 表的机器影子：多一条（把写端点记进来）或少一条（漏记读端点）都红。
     changed = sum(len(entry["units_changed"]) for entry in P4_AUTHORIZATION_CENSUS.values())
-    assert changed == 6, (
-        f"P4 的读端点变动应为 6 条，实际 {changed} ⇒ 同步 census（本数与 §一 D1 表逐条对应）"
+    assert changed == 0, (
+        f"P4 的读端点码变动应为 0 条（issue #6580 后剩下的都是**菜单节点码**变动），实际 {changed}"
+        " ⇒ 同步 census（本数与 D1 表逐条对应）"
     )
 
 

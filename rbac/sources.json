@@ -63,10 +63,10 @@
     {
       "face": "menu-frontend-nodes",
       "file": "frontend/admin-web/src/config/menu.ts",
-      "hits": 23,
+      "hits": 20,
       "kind": "declaration",
       "derived_from": "manifest.menu_nodes",
-      "note": "C1 真实侧边栏真值源（menu.ts，Sidebar 唯一读取的菜单源）。P4：『经营看板』节点补上 `permissionCode` ⇒ 带码节点命中数 19→20（涨跌都要在同 PR 更新本表）（issue #5939：+「发货单」节点 ⇒ 20→21；涨跌同 PR 更新）（issue #6404：+「库存明细」节点 ⇒ 21→22；涨跌同 PR 更新）"
+      "note": "C1 真实侧边栏真值源（menu.ts，Sidebar 唯一读取的菜单源）。P4：『经营看板』节点补上 `permissionCode` ⇒ 带码节点命中数 19→20（涨跌都要在同 PR 更新本表）（issue #5939：+「发货单」节点 ⇒ 20→21；涨跌同 PR 更新）（issue #6404：+「库存明细」节点 ⇒ 21→22；涨跌同 PR 更新）（issue #6580：「加工项管理」「工艺配置」「参数总览」三个节点移除、新增独立项「企业基础设置」⇒ 23→20；涨跌同 PR 更新）"
     },
     {
       "face": "route-guard-map",
@@ -247,10 +247,10 @@
     {
       "face": "page-first-screen-anchors",
       "file": "tests/unit_ci_workflows/test_agent_permission_parity.py",
-      "hits": 24,
+      "hits": 21,
       "kind": "declaration",
       "derived_from": "manifest.pages（P3 派生目标口径）",
-      "note": "**「页面 → 码」的第四份副本**（设计 §1.3 的 C 类第 4 份）：21 条「页面 → 第一屏调用的 api 函数」锚点表（`MENU_READ_ENDPOINT_ANCHORS`）。它是判据 12 的**唯一手写输入**（其余三跳都是现取）⇒ 也是「页面 → 码」这一事实唯一**不在**菜单/注解侧的手写副本。P3 起由清单 `pages[]` 派生（`rbac/derive.py` 的 `derive_page_faces()`），本登记保留为**未登记即红**的绊线：新增一个 `MenuReadAnchor(...)` 而不同步 P3 的页面表 ⇒ 现取 22 ≠ 登记 21 ⇒ 红（`hits` 逐值对账）。（issue #5939：+/shipments 锚点 ⇒ 21→22；涨跌同 PR 更新）（issue #6404：+/stock-ledger 锚点 ⇒ 22→23；涨跌同 PR 更新）"
+      "note": "**「页面 → 码」的第四份副本**（设计 §1.3 的 C 类第 4 份）：21 条「页面 → 第一屏调用的 api 函数」锚点表（`MENU_READ_ENDPOINT_ANCHORS`）。它是判据 12 的**唯一手写输入**（其余三跳都是现取）⇒ 也是「页面 → 码」这一事实唯一**不在**菜单/注解侧的手写副本。P3 起由清单 `pages[]` 派生（`rbac/derive.py` 的 `derive_page_faces()`），本登记保留为**未登记即红**的绊线：新增一个 `MenuReadAnchor(...)` 而不同步 P3 的页面表 ⇒ 现取 22 ≠ 登记 21 ⇒ 红（`hits` 逐值对账）。（issue #5939：+/shipments 锚点 ⇒ 21→22；涨跌同 PR 更新）（issue #6404：+/stock-ledger 锚点 ⇒ 22→23；涨跌同 PR 更新）（issue #6580：`/production/processing`、`/production/routings`、`/settings/params` 三条锚点随菜单项移除而删除 ⇒ 24→21；涨跌同 PR 更新）"
     },
     {
       "face": "page-parity-residual-ledger",
@@ -258,7 +258,7 @@
       "hits": 2,
       "kind": "ledger",
       "derived_from": "manifest.pages（P3 派生目标口径）",
-      "note": "判据侧的两张**页面面台账**：`MENU_READ_PARITY_RESIDUALS`（6 条，「节点码 ≠ 该页第一屏读码」的唯一登记处）与 `MULTI_READ_ENDPOINT_PAGES`（3 条，「一页多码」这一**结构事实**的唯一登记处）。P3 把两者的**条数与键集**都由 `pages[]` 派生（`parity_residual_pages` / `multi_code_pages`）并逐值对账 ⇒ 这两张表从「手写台账」变成「派生结果 + 只许缩短」。"
+      "note": "判据侧的两张**页面面台账**：`MENU_READ_PARITY_RESIDUALS`（**0 条**，「节点码 ≠ 该页第一屏读码」的唯一登记处）与 `MULTI_READ_ENDPOINT_PAGES`（**0 条**，「一页多码」这一**结构事实**的唯一登记处）——🔴 issue #6580：两张表**整表销账**（`/settings` 合并页的锚点口径收窄为「本页自身 effect 驱动面」后，它成为单码页；P4 的目标形态「每个子菜单恰好一个码」达成）。P3 把两者的**条数与键集**都由 `pages[]` 派生（`parity_residual_pages` / `multi_code_pages`）并逐值对账 ⇒ 这两张表从「手写台账」变成「派生结果 + 只许缩短」。"
     },
     {
       "face": "route-node-anchor-ledger",

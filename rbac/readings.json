@@ -301,8 +301,6 @@
       "订单列表": "order:list",
       "财务对账": "finance:view",
       "生产管理": null,
-      "加工项管理": "production:view",
-      "工艺配置": "production:view",
       "生产看板": "production:view",
       "智能派单": "processing:view",
       "计件工资": "production:view",
@@ -315,9 +313,8 @@
       "组织管理": null,
       "员工管理": "employee:list",
       "岗位权限": "system:view",
-      "企业基础信息": "system:manage",
       "商品管理": "product:list",
-      "参数总览": "production:view",
+      "企业基础设置": "production:view",
       "通知中心": null
     },
     "controller": {
@@ -326,8 +323,6 @@
       "在线接待": "agent:session",
       "知识库": "knowledge:view",
       "商品管理": "product:list",
-      "参数总览": "production:view",
-      "加工项管理": "production:view",
       "订单列表": "order:list",
       "售后工单": "after_sales:view",
       "客户列表": "customer:view",
@@ -335,7 +330,6 @@
       "订单详情": "order:detail",
       "生产看板": "production:view",
       "智能派单": "processing:view",
-      "工艺配置": "production:view",
       "计件工资": "production:view",
       "入库单": "inbound:view",
       "发货单": "order:list",
@@ -344,7 +338,7 @@
       "库存明细": "product:list",
       "员工管理": "employee:list",
       "岗位权限": "system:view",
-      "企业基础信息": "system:manage",
+      "企业基础设置（经营域）": "system:manage",
       "新增员工": "employee:create"
     },
     "auth": {
@@ -356,8 +350,6 @@
       "客户列表": "customer:view",
       "订单列表": "order:list",
       "财务对账": "finance:view",
-      "加工项管理": "production:view",
-      "工艺配置": "production:view",
       "生产看板": "production:view",
       "智能派单": "processing:view",
       "计件工资": "production:view",
@@ -368,9 +360,8 @@
       "省料看板": "product:list",
       "员工管理": "employee:list",
       "岗位权限": "system:view",
-      "企业基础信息": "system:manage",
       "商品管理": "product:list",
-      "参数总览": "production:view"
+      "企业基础设置": "production:view"
     },
     "user": {}
   },
@@ -448,18 +439,6 @@
       "code": null
     },
     {
-      "key": "processing",
-      "name": "加工项管理",
-      "path": "/production/processing",
-      "code": "production:view"
-    },
-    {
-      "key": "production-process",
-      "name": "工艺配置",
-      "path": "/production/routings",
-      "code": "production:view"
-    },
-    {
       "key": "production-board",
       "name": "生产看板",
       "path": "/production",
@@ -532,21 +511,15 @@
       "code": "system:view"
     },
     {
-      "key": "settings",
-      "name": "企业基础信息",
-      "path": "/settings",
-      "code": "system:manage"
-    },
-    {
       "key": "products",
       "name": "商品管理",
       "path": "/products",
       "code": "product:list"
     },
     {
-      "key": "params",
-      "name": "参数总览",
-      "path": "/settings/params",
+      "key": "settings",
+      "name": "企业基础设置",
+      "path": "/settings",
       "code": "production:view"
     },
     {
@@ -602,6 +575,14 @@
       "product:list"
     ],
     [
+      "/production/processing",
+      "production:view"
+    ],
+    [
+      "/production/routings",
+      "production:view"
+    ],
+    [
       "/production",
       "production:view"
     ],
@@ -635,7 +616,7 @@
     ],
     [
       "/settings",
-      "system:manage"
+      "production:view"
     ],
     [
       "/knowledge",
@@ -833,21 +814,6 @@
       "visibility_rule": "all"
     },
     {
-      "key": "processing",
-      "name": "加工项管理",
-      "path": "/production/processing",
-      "gate": "production:view",
-      "units": {
-        "production:view": [
-          "GET /api/admin/processing-categories",
-          "GET /api/admin/processing-items",
-          "GET /api/admin/production/processing-fee-combinations",
-          "GET /api/admin/production/processing-fee-gaps"
-        ]
-      },
-      "visibility_rule": "all"
-    },
-    {
       "key": "production-remnants",
       "name": "余料台账",
       "path": "/production/remnants",
@@ -855,22 +821,6 @@
       "units": {
         "processing:manage": [
           "GET /api/admin/production/remnants"
-        ]
-      },
-      "visibility_rule": "all"
-    },
-    {
-      "key": "production-process",
-      "name": "工艺配置",
-      "path": "/production/routings",
-      "gate": "production:view",
-      "units": {
-        "production:view": [
-          "GET /api/admin/production/operation-positions",
-          "GET /api/admin/production/operations-catalog",
-          "GET /api/admin/production/route-rule-options",
-          "GET /api/admin/production/route-rules",
-          "GET /api/admin/production/routings"
         ]
       },
       "visibility_rule": "all"
@@ -914,24 +864,8 @@
     },
     {
       "key": "settings",
-      "name": "企业基础信息",
+      "name": "企业基础设置",
       "path": "/settings",
-      "gate": "system:manage",
-      "units": {
-        "dashboard:view": [
-          "GET /api/admin/briefing/config"
-        ],
-        "system:manage": [
-          "GET /api/admin/settings",
-          "GET /api/admin/tenant/ai-config"
-        ]
-      },
-      "visibility_rule": "all"
-    },
-    {
-      "key": "params",
-      "name": "参数总览",
-      "path": "/settings/params",
       "gate": "production:view",
       "units": {
         "production:view": [
@@ -970,8 +904,8 @@
     }
   ],
   "ledger_counts": {
-    "MENU_READ_PARITY_RESIDUALS": 1,
-    "MULTI_READ_ENDPOINT_PAGES": 1,
+    "MENU_READ_PARITY_RESIDUALS": 0,
+    "MULTI_READ_ENDPOINT_PAGES": 0,
     "READ_WRITE_EXCEPTIONS": 0,
     "ROLE_FALLBACK_DIVERGENCES": 0,
     "AUTHORIZATION_CENSUS": 19,

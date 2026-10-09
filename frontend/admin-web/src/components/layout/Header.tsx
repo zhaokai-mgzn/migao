@@ -58,19 +58,25 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // 顺序敏感：/processing-orders 必须先于 /processing（find 按数组序取首个命中）
   // issue #4357：加工单并入生产管理组 ⇒ 本目录下只剩「生产明细」子路由（列表页已重定向）
   { match: (p) => p.startsWith('/processing-orders'), crumbs: [{ label: '生产管理' }, { label: '生产明细' }] },
-  // issue #4490（含同日规格修订）：旧「加工项管理」(/processing) 已并入 /production/processing。
-  // 🔴 本轮（2026-09-29 用户裁定）：该入口**由「商品与加工项」组移入「生产管理」组**
-  // ⇒ 面包屑首项随之改判为「生产管理」（§15.2「面包屑与侧边栏一致」—— 不改就两边对不上）。
-  // 本路径现为重定向，这里保留一条同口径的兜底。
-  // issue #4542：菜单名 = 「加工项管理」（与服务端 `MenuController`/`AuthService` 同名）；
-  // 该页仍是两个 tab（加工项 / 加工费组合），改名不减功能。
-  { match: (p) => p.startsWith('/processing'), crumbs: [{ label: '生产管理' }, { label: '加工项管理' }] },
+  // 🔴 2026-10-09（issue #6580）：旧「加工项管理」入口 `/processing` 的兜底面包屑已并入下方
+  // 「企业基础设置」那条合并条目（三个旧前缀同一处理）—— 该菜单项已移除，面包屑末项必须仍是
+  // **真实存在的侧边栏菜单名**（§15.2 的可执行定义在 `menu-breadcrumb-coverage.test.tsx`）。
 
   // 生产管理组（与侧边栏"生产管理"分组对齐，issue #4357 补 —— 此前本组**无任何面包屑条目**
   // ⇒ 落进兜底分支显示「工作台 > 经营看板」，§15.2「面包屑与侧边栏菜单名一致」不成立）
   // 顺序敏感：更具体的子路径必须先于 /production
-  // issue #4416：「工序库」并入「工艺配置」/production/routings（旧 /production/operations 已重定向）
-  { match: (p) => p.startsWith('/production/routings'), crumbs: [{ label: '生产管理' }, { label: '工艺配置' }] },
+  // 🔴 2026-10-09（issue #6580）：三个**旧深链**（菜单项已移除、页面保留为重定向薄壳）统一兜底到
+  // 合并后的入口「企业基础设置」（**一级项** ⇒ 面包屑单级，与 `/products`、`/notifications` 同口径）：
+  //   · `/production/processing`（原「加工项管理」）→ `/settings?domain=processing-fee`
+  //   · `/production/processing-fees`（同上页的第二个 tab）→ 同前
+  //   · `/production/routings`（原「工艺配置」）→ `/settings?domain=craft-route`
+  //   · `/processing`（更早的旧路径）→ 同 `/production/processing`
+  // ⚠️ 必须排在 `/production` 之前（本表 `find` 取首个命中，否则会被「生产看板」抢走）。
+  {
+    match: (p) =>
+      p.startsWith('/production/processing') || p.startsWith('/production/routings') || p.startsWith('/processing'),
+    crumbs: [{ label: '企业基础设置' }],
+  },
   // 智能派单（issue #5177）：**必须排在 `/production` 之前** —— 本表是 `find` 取**首个命中**，
   // `/production` 那条会抢走 `/production/pool`（面包屑会退化成「生产看板」= §15.2 不成立）。
   // 组名/菜单名与 `config/menu.ts` 的 `production-pool`、服务端两处菜单节点逐字一致。
@@ -85,11 +91,6 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // ⚠️ 必须排在下面的 `/production` 之前（本表 `find` 取首个命中，否则面包屑退化成「生产看板」）。
   // issue #5271：本页随「面料进出与消耗」动线**移入「仓储与物料」组**（原生产管理组）。
   { match: (p) => p.startsWith('/production/remnants'), crumbs: [{ label: '仓储与物料' }, { label: '余料台账' }] },
-  // issue #4490（含同日规格修订）：加工项 + 加工费合并为 /production/processing（两个 tab）。
-  // 🔴 本轮（2026-09-29 用户裁定）：归**生产管理**组（原「商品管理」组）⇒ 面包屑写
-  // 「生产管理 / 加工项管理」（#4542 改名后与服务端同名）。
-  // 前缀同时覆盖旧路径 /production/processing-fees（它重定向到 ?tab=fees）⇒ 旧深链的面包屑也写该名。
-  { match: (p) => p.startsWith('/production/processing'), crumbs: [{ label: '生产管理' }, { label: '加工项管理' }] },
   { match: (p) => p.startsWith('/production/piecework'), crumbs: [{ label: '生产管理' }, { label: '计件工资' }] },
   // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）
   { match: (p) => p.startsWith('/production'), crumbs: [{ label: '生产管理' }, { label: '生产看板' }] },
@@ -118,9 +119,10 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   { match: (p) => p.startsWith('/employees'), crumbs: [{ label: '组织管理' }, { label: '员工管理' }] },
   { match: (p) => p.startsWith('/roles'), crumbs: [{ label: '组织管理' }, { label: '岗位权限' }] },
   // 参数总览（issue #6573）：**一级菜单项**（不属于任何组）⇒ 面包屑单级，与「商品管理」「通知中心」同口径。
-  // ⚠️ 必须排在 `/settings` **之前** —— 本表用 `find()` 取首个命中，否则它会退化成「企业基础信息」。
-  { match: (p) => p.startsWith('/settings/params'), crumbs: [{ label: '参数总览' }] },
-  { match: (p) => p.startsWith('/settings'), crumbs: [{ label: '组织管理' }, { label: '企业基础信息' }] },
+  // ⚠️ 2026-10-09（issue #6580）：原 `/settings/params` 一级项已撤掉（内容回到 `/settings` 页内的
+  // 配置域）⇒ 该条面包屑随之删除，`/settings` 的层级由「组织管理 > 企业基础信息」改为**单级**
+  // 「企业基础设置」（它现在是尾部独立项，**没有父组**，与「通知中心」同口径）。
+  { match: (p) => p.startsWith('/settings'), crumbs: [{ label: '企业基础设置' }] },
 
   // 通知中心（独立菜单，全员可见，与顶栏铃铛一致）
   { match: (p) => p.startsWith('/notifications'), crumbs: [{ label: '通知中心' }] },

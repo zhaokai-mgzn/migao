@@ -225,3 +225,21 @@ export function readinessHeadline(
       : `${summary.unknown} 项读不到（刷新可重试）`
   return `配置完成 ${summary.done}/${summary.total} · ${gap} · 下一步「${nextLabel ?? ''}」`
 }
+
+/**
+ * 一批步骤状态的**最差**取值（`todo` > `unknown` > `done`）—— 用于「**一个配置域覆盖多步**」时
+ * 那个域的徽标（设计真值源 `docs/design/enterprise-settings-redesign.md` 的 G4：徽标与主线**同源**）。
+ *
+ * 为什么放这里而不是页面里：三态的任何取舍都属于「口径」，本模块是它的**唯一**家
+ *（类级守卫 `tests/unit_ci_workflows/test_config_readiness_single_source.py` 钉住）。
+ * 为什么「最差」而不是「最好」：域徽标要回答的是「**这个域还有没有事要做**」——
+ * 三步里只要一步没配好，这一域就不算配好；报「已配置」会让商家漏掉那一步。
+ *
+ * 空数组（或全是 `undefined`）⇒ `null`（**不编读数**：主线没覆盖它，那就不显示徽标）。
+ */
+export function worstState(of: ReadonlyArray<ReadinessState | undefined>): ReadinessState | null {
+  const present = of.filter((s): s is ReadinessState => Boolean(s))
+  if (!present.length) return null
+  const rank: Record<ReadinessState, number> = { todo: 0, unknown: 1, done: 2 }
+  return present.reduce((worst, cur) => (rank[cur] < rank[worst] ? cur : worst))
+}

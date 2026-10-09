@@ -184,9 +184,11 @@ describe('RolesPage', () => {
     expect(tree.getByText('每日简报')).toBeInTheDocument()
     expect(tree.getByText('经营看板')).toBeInTheDocument()
     // #5778：「商品列表」改名「商品管理」（菜单项判据见本文件 #5895 三条：`perm-standalone-top`）
-    // issue #4490：「加工项管理」+「加工费管理」合并为单一入口；#4542 起菜单名 =「加工项管理」
-    // （权限树与真实侧边栏同源）
-    expect(tree.getByText('加工项管理')).toBeInTheDocument()
+    // 🔴 #6580（2026-10-09 用户裁定）：菜单项「加工项管理」「工艺配置」**已移除**（功能体并入
+    // `/settings` 企业基础设置页内的配置域）⇒ 权限树不再渲染它们；同批「企业基础设置」由
+    // 组织管理组的组内项**升为一级项**（渲染在 `perm-standalone-top` 里，见下方断言）。
+    expect(tree.queryByText('加工项管理')).not.toBeInTheDocument()
+    expect(tree.queryByText('工艺配置')).not.toBeInTheDocument()
     expect(tree.getByText('订单列表')).toBeInTheDocument()
     expect(tree.getByText('售后工单')).toBeInTheDocument()
     expect(tree.getByText('客户列表')).toBeInTheDocument()
@@ -195,14 +197,15 @@ describe('RolesPage', () => {
     //（否则「勾得动/看不到」漂移）
     expect(tree.getByText('生产看板')).toBeInTheDocument()
     expect(tree.getByText('智能派单')).toBeInTheDocument()
-    expect(tree.getByText('工艺配置')).toBeInTheDocument()
     expect(tree.getByText('计件工资')).toBeInTheDocument()
     expect(tree.getByText('入库单')).toBeInTheDocument()
     expect(tree.getByText('余料台账')).toBeInTheDocument()
     expect(tree.getByText('省料看板')).toBeInTheDocument()
     expect(tree.getByText('员工管理')).toBeInTheDocument()
     expect(tree.getByText('岗位权限')).toBeInTheDocument()
-    expect(tree.getByText('企业基础信息')).toBeInTheDocument()
+    // 🔴 #6580：「企业基础设置」（原名「企业基础信息」）现为**一级项**
+    // ⇒ 渲染在 `perm-standalone-top` 块里（与「商品管理」同口径），不在分组树里重复出现。
+    expect(within(tree.getByTestId('perm-standalone-top')).getByText('企业基础设置')).toBeInTheDocument()
     // 旧口径不出现：旧权限名 + 英文 resourceType 组头
     expect(tree.queryByText('会话监控')).not.toBeInTheDocument()
     expect(tree.queryByText('快捷回复')).not.toBeInTheDocument()
@@ -212,7 +215,13 @@ describe('RolesPage', () => {
     // （该节位于本容器内）。「不出现在菜单树」这半条仍成立 —— 见下一行的计数断言。
     expect(within(screen.getByTestId('perm-extra-section')).getByText('订单退款')).toBeInTheDocument()
     expect(tree.queryAllByText('订单退款')).toHaveLength(1)
-    expect(tree.queryByText('系统管理')).not.toBeInTheDocument()
+    // 🔴 #6580（2026-10-09）：`system:manage`（权限目录里的显示名「系统管理」）**不再是任何
+    // 菜单节点的码** —— 合并后 `/settings` 的节点码 = `production:view`，该码改为在那个节点下的
+    // org-center 权限码节点（`企业基础设置（经营域）`）上保留可授予性。
+    // ⇒ 它按既有规则落进「操作权限」节（该节在本容器内），口径与上面的 `order:refund` **完全一样**：
+    // 出现一次、且不在菜单组里重复渲染（这条计数断言防的正是「同一权限两处渲染」）。
+    expect(within(screen.getByTestId('perm-extra-section')).getByText('系统管理')).toBeInTheDocument()
+    expect(tree.queryAllByText('系统管理')).toHaveLength(1)
     expect(tree.queryByText('dashboard')).not.toBeInTheDocument()
     expect(tree.queryByText('order')).not.toBeInTheDocument()
   })

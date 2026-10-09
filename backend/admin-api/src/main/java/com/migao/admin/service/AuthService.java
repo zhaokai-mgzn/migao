@@ -1372,14 +1372,6 @@ public class AuthService {
             menus.add(menuGroup("customer-service", "客户服务", customerServiceChildren));
         }
 
-        // 生产管理分组的「加工项管理」项（本轮由已撤销的「商品与加工项」组移入本组）：
-        // issue #5291：改挂生产域**读**码 `production:view`（写面仍是 processing:manage）。
-        // #4490/#4542：加工项管理与加工费管理**合并为单一入口**（该页两个 tab）；
-        // 路径 = `/production/processing`（旧 `/processing`、`/production/processing-fees`
-        // 由前端重定向兜底）—— 与 `menu.ts` 逐字一致。
-        // ⚠️ 用户 2026-10-06 方案 A1 起，本项是本组**第一项**（原为「智能派单」之后、「工艺配置」之前）
-        // —— 组内顺序 = 先备资料（加工项 / 工艺）→ 再生产与派单 → 最末结算（计件工资）。
-
         // 交易管理分组（本轮 2026-09-29 收窄为**「下单 → 收款」两项**：客户列表 / 售后工单
         // 已移入「客户服务」组 —— 用户原话「客户管理也不属于交易管理」）。
         // 顺序 = 订单列表 → 财务对账（与 `menu.ts` 的 `trade-center` 组逐值一致）。
@@ -1395,33 +1387,20 @@ public class AuthService {
         }
 
         // 生产管理分组（issue #4203/#4205 后端半边）：#5271 起**由 7 项降到 4 项** ——
-        // 面料进出与消耗（入库单 / 余料台账 / 省料看板）拆到「仓储与物料」组；
-        // 本组只留「加工执行 + 工艺配置 + 结算」；权限码自 issue #5291 起分出**读**码 production:view
-        //（生产看板 / 工艺配置 / 计件工资），智能派单仍是 processing:manage。
-        // 四个节点**必须与 MenuController 的静态权限树、前端 config/menu.ts 三处同构**；漏一处
+        // 面料进出与消耗（入库单 / 余料台账 / 省料看板）拆到「仓储与物料」组。
+        // 🔴 2026-10-09（issue #6580，用户裁定）：本组**再收拢为 3 项** —— 「加工项管理」
+        // `/production/processing` 与「工艺配置」`/production/routings` 两个**菜单项已移除**
+        //（功能体并入 `/settings` 企业基础设置页内的配置域；旧路径保留为重定向），
+        // 本组现为「生产看板 → 智能派单 → 计件工资」。
+        // 三个节点**必须与 MenuController 的静态权限树、前端 config/menu.ts 三处同构**；漏一处
         // 就是「岗位权限页勾得动、侧边栏看不到」（#4203 点名的同族坑）。
         List<UserInfoResponse.MenuItem> productionChildren = new java.util.ArrayList<>();
-        // issue #5291：加工项管理 / 工艺配置 / 生产看板 / 计件工资按生产域**读**码门控；智能派单沿用
-        // processing:view。🔴 注释必须写在 `if` **之外**：`tests/unit_ci_workflows/` 的
+        // issue #5291：生产看板 / 计件工资按生产域**读**码门控；智能派单沿用 processing:view。
+        // 🔴 注释必须写在 `if` **之外**：`tests/unit_ci_workflows/` 的
         // `test_agent_permission_parity.py` 的 `_iter_menu_auth`（RBAC 单一真值源 P1~P5 的**唯一**
         // auth 菜单解析器）用的形态是 `permissions.contains("X")) {` **紧跟** `var.add(menuItem(...))`
         // —— `{` 与 `.add` 之间插入任何一行（注释也一样）⇒ 该项**静默从读数里消失**（实测：一行注释
         // 曾让「生产看板」从 `rbac/readings.json` 的 `menus.auth` 里消失，「清单 == 生成物」对账因此判红）。
-        // 加工项管理（2026-09-29 由「商品与加工项」组移入本组；2026-10-06 起为**本组第一项**）。
-        // ⚠️ 写法必须仍是 `children.add(menuItem(...))` 直调（三源同构守卫按该形态解析）；
-        // 不要为「先算再填」引入中间变量或三元表达式 —— 那样解析器看不见本项（实测已踩）。
-        if (isAll || permissions.contains("production:view")) {
-            productionChildren.add(menuItem("processing", "加工项管理", "/production/processing"));
-        }
-        // 🔴 issue #4440/#4416：「工序库」+「工艺路线」已合并为单入口「工艺配置」
-        // （旧路径 /production/operations 是重定向）—— 服务端此前仍是合并前的两个节点。
-        // issue #5699 **P4**：该页第一屏 6 个读端点此前跨两个码（路线规则族 4 个是 `processing:manage`）
-        // ⇒ 整页收敛到**页面码** `production:view`（两码持有岗位集合逐值相同 ⇒ 对所有角色的可见面与
-        // 可做面零 delta；写面 POST/DELETE 路线规则、PUT 工序部位仍由 processing:manage 拦）。
-        // **节点顺序**必须仍是 menu.ts 的顺序（三源同构守卫）⇒ 本项 2026-10-06 起为组内第二项。
-        if (isAll || permissions.contains("production:view")) {
-            productionChildren.add(menuItem("production-process", "工艺配置", "/production/routings"));
-        }
         // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）。
         if (isAll || permissions.contains("production:view")) {
             productionChildren.add(menuItem("production-board", "生产看板", "/production"));
@@ -1479,17 +1458,17 @@ public class AuthService {
             menus.add(menuGroup("inventory-center", "仓储与物料", inventoryChildren));
         }
 
-        // 组织管理分组（员工管理 / 岗位权限 / 企业基础信息）
+        // 组织管理分组（员工管理 / 岗位权限）
+        // 🔴 2026-10-09（issue #6580）：「企业基础信息」已由本组**移出** → 顶层尾部独立项
+        //（与「商品管理」并列、排在「通知中心」上面），改名「**企业基础设置**」、节点码改
+        // `production:view`（理由见下方顶层 add 处的注记）。
         List<UserInfoResponse.MenuItem> orgChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("employee:list")) {
             orgChildren.add(menuItem("employees", "员工管理", "/employees"));
         }
-        // issue #5291：岗位权限节点改挂**读**码 `system:view`（企业基础信息仍是 system:manage）。
+        // issue #5291：岗位权限节点改挂**读**码 `system:view`。
         if (isAll || permissions.contains("system:view")) {
             orgChildren.add(menuItem("roles", "岗位权限", "/roles"));
-        }
-        if (isAll || permissions.contains("system:manage")) {
-            orgChildren.add(menuItem("settings", "企业基础信息", "/settings"));
         }
         if (!orgChildren.isEmpty()) {
             menus.add(menuGroup("org-center", "组织管理", orgChildren));
@@ -1504,13 +1483,18 @@ public class AuthService {
             menus.add(menuItem("products", "商品管理", "/products"));
         }
 
-        // 参数总览（issue #6573）：由 `/settings` 的 tab 升为一级菜单项 —— 与「商品管理」并列、
-        // 同排在**所有分组之后**（位置在**四处**同批表达：本处 add 的文档位置 /
-        // `MenuController.MENU_TREE` 的顶层节点顺序 / `frontend/admin-web/src/config/menu.ts` 的
-        // `standaloneTopItems` / `backend/ai-agent-service/app/context/menu_navigator.py` 的
-        // `MENU_TREE`）。码 = 该页第一屏读码 `production:view`（既有码，不新造）。
+        // 🔴 2026-10-09（issue #6580）：**企业基础设置**（原「企业基础信息」，原在 `org-center` 组内）
+        // 移到这里 —— 与「商品管理」并列的尾部独立项、排在「通知中心」**上面**
+        //（用户逐字：「这个菜单和通知中心是一个类型的放到通知中心的上面，并且和通知中心一起沉底」）。
+        // 位置在**三处**同批表达：本处 add 的顺序 / `MenuController.MENU_TREE` 的顶层节点顺序 /
+        // `frontend/admin-web/src/config/menu.ts` 的 `standaloneTopItems`；路径不变（`/settings`）。
+        // 🔴 **码由 `system:manage` 改为 `production:view`**（用户裁定选 A）：它是合并后生产配置面
+        // **唯一的入口**，而真实配置者 `operator` / `product_manager` 持 `production:view`、**不持**
+        // `system:manage` ⇒ 不换码 = 该菜单对他们恒不可见。复算：seed 里唯一天然持全码的是
+        // `admin: ["*"]` ⇒ **换码对现有角色零损失**（无人掉码、也无人凭空多出写面）。经营域的
+        // `system:manage` 可授予面由 `MenuController` 的 org-center 组那个权限码节点保住。
         if (isAll || permissions.contains("production:view")) {
-            menus.add(menuItem("params", "参数总览", "/settings/params"));
+            menus.add(menuItem("settings", "企业基础设置", "/settings"));
         }
 
         // 通知中心：全员可见（与顶栏铃铛一致，无权限码限制）

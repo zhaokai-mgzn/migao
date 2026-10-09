@@ -2124,7 +2124,7 @@ def calculate_multi_position(positions: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 # ── 本租户算料口径的取用（issue #4922）──────────────────────────────────────────
-# 真值源 = `craft_calc_configs`（商家在「工艺配置 → 算料配置」改），读面 =
+# 真值源 = `craft_calc_configs`（商家在「企业基础设置 → 算料口径」改），读面 =
 # admin-api `GET /api/admin/production/craft-calc-config`（**同一份实现**：默认值/校验的唯一出处
 # 仍是本模块的 `DEFAULT_CRAFT_CALC_CONFIG` 与 `resolve_craft_calc_config`）。
 #
@@ -2519,7 +2519,7 @@ class CurtainCalcTool(BaseTool):
                 message="读取本租户的算料口径失败，为避免按错误口径报价，本次不报价",
                 suggestion=(
                     "请确认 admin-api 服务正常后重试。本工具必须按本租户"
-                    "「工艺配置 → 算料配置」的口径算料，系统不会用引擎默认口径顶替。"),
+                    "「企业基础设置 → 算料口径」的口径算料，系统不会用引擎默认口径顶替。"),
             )
 
         try:

@@ -197,7 +197,9 @@ export const SUBTITLE_SCOPE = 'src/app/(dashboard)'
  *  守卫）⇒ 本条随之 151 → 156。 */
 export const SUBTITLE_EXEMPT = [
   // 「无权访问」是**错误态**：必须写清「缺什么权限 + 去哪儿开」——短不了，且这正是用户要的引导。
-  'src/app/(dashboard)/layout.tsx:156',
+  // ⚠️ 本台账按 `文件:行` 索引 ⇒ **同一文件任何加删行都要同批更新这里**（issue #6580 的
+  // `ROUTE_PERMISSION_MAP` 新增两条前缀把该行从 156 推到 167 ⇒ 本条同步改号）。
+  'src/app/(dashboard)/layout.tsx:168',
 ]
 
 /** 抽「页面头 = h1 + 紧跟的兄弟 p」的静态文本（含三元各分支字面量） */

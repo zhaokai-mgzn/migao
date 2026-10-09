@@ -60,7 +60,9 @@ const CALC_SRC = resolve(__dirname, '../../../../../backend/ai-agent-service/app
 const engineSrc = readFileSync(CALC_SRC, 'utf8')
 
 /** 「算料配置」tab 所在页面（第二份口径的**可能落点**，必须钉住） */
-const PAGE_SRC = resolve(__dirname, '../../../src/app/(dashboard)/production/routings/page.tsx')
+// issue #6580：算料配置的**编辑面**从「工艺配置」页搬进配置指挥台的「算料口径」域
+// （`settings/CalcCaliberPanel.tsx`）⇒ 判据 3 的宿主随**功能体**走，不随旧路由走（旧路由现在只是薄壳）。
+const PAGE_SRC = resolve(__dirname, '../../../src/components/production-config/ProcessConfigBoard.tsx')
 const pageSrc = readFileSync(PAGE_SRC, 'utf8')
 
 /** 后端契约类型（`hem_margin` 的口径注释在守卫范围内；`side_margin` 应已整体退场） */
