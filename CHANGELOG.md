@@ -14,9 +14,12 @@
   生产管理组**由 5 项收拢为 3 项**（生产看板 → 智能派单 → 计件工资）；②「企业基础信息」改名
   **「企业基础设置」**，并与「通知中心」同类型地**沉到尾部**（紧排在通知中心之前、作为第二个一级项）。
   整树 **24 项 → 21 项**（6 组 18 个组内项 + 2 个一级项「商品管理」「企业基础设置」+ 1 个尾部独立项「通知中心」）。
-- **旧链接不 404**：两个旧路径保留为**重定向薄壳** → `/settings?domain=processing-fee` 与
-  `/settings?domain=craft-route`；旧深链 `/processing`、`/production/processing-fees`、
-  `/settings/params` 同样由重定向兜底（后端与前端守卫码都是 `production:view`）。
+- **旧链接不 404**：两个旧路径 `/production/processing`、`/production/routings` 保留为**薄壳** ——
+  各自只渲染搬出去的那个功能体（`ProcessingBoard` / `ProcessConfigBoard`），**旧深链照常打开、行为不变**
+  （不重定向：deep link 上还有锚点与页面级测试在依赖它）。另三条旧链 `/processing`、
+  `/production/processing-fees`、`/settings/params` 由**重定向**兜底（后端与前端守卫码都是 `production:view`）。
+  ⚠️ 口径登记（v2 待办）：这两条薄壳路由与页内域**编辑同一份配置** ⇒ 它们是设计真值源里
+  「同一配置不留两个入口」的**已知过渡例外**（菜单入口已收拢，旧链尚未重定向）。
 - **权限**：合并后的菜单项「企业基础设置」节点码取**既有读码** `production:view`（不新造码；
   这也是「谁要配生产口径，谁就该看得见这一页」）。**`system:manage` 不消失**：它仍在权限勾选树上
   以一个**权限码节点**（`MenuController` 的 org-center 组「企业基础设置（经营域）」）保留，页内经营域

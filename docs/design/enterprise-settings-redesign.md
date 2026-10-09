@@ -124,7 +124,10 @@
    在 `craft-route` 域里会出现**同屏第二处就绪面**（判死线第 2 条）。v1 用「本页主线是唯一常驻就绪面」+
    域内那块属 board 内部来兜，v2 拆解时删除。
 3. 「余料尺寸」域没有主线步骤（主线今天不含它）⇒ **不显示徽标**（宁缺勿滥）；补主线步骤见 #6579。
-4. 「加工项」域与「加工费组合」步的对应：域 `processing-fee` 覆盖主线步 `fee-combinations`；
+4. **两条旧路由仍是「可用的独立页」而非重定向**（`/production/routings`、`/production/processing` 各自
+   渲染 board，旧深链行为不变）⇒ 它们与页内域**编辑同一份配置**，是判死线第 1 条的**已知过渡例外**；
+   v2 拆域时把它们改成重定向到对应域（`/settings?domain=craft-route` / `?domain=processing-fee`）。
+5. 「加工项」域与「加工费组合」步的对应：域 `processing-fee` 覆盖主线步 `fee-combinations`；
    「加工项与分类」本身还没有主线步骤（同上，见 #6579）。
 
 ## 7. 不在射程（如实登记）
