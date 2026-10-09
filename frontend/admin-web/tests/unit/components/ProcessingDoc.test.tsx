@@ -18,6 +18,7 @@ import ProcessingDoc, {
   PROCESSING_DOC_NOT_COLLECTED_FIELDS,
 } from '@/components/orders/ProcessingDoc'
 import type { Order, OrderItem, ProcessingOrder, ProcessingOrderItem } from '@/types'
+import { collectTableIntegrity, dataTables } from '@/components/orders/doc-tables'
 
 /**
  * 加工单（**A4 可打印纸质文档**，issue #5651）—— 照客户现行实物制式（issue #5651 实证表 #3）。
@@ -99,6 +100,18 @@ const cellText = (testId: string): string =>
   document.querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? ''
 
 describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
+  // 类级固化（issue #6595）：本单据的正文表逐行自洽（Σ(colSpan) = 表头列数）——
+  // 主体行少渲染一格 ⇒ 备注列在数据行没有单元格 ⇒ 整列没有边框（用户真机截图撞见的那一处）。
+  it('表格列数不变量：正文明细表逐行 Σ(colSpan) = 表头列数（issue #6595）', () => {
+    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
+    const tables = collectTableIntegrity(dataTables(doc())) // 单据：加工单 ProcessingDoc
+    expect(tables.length).toBeGreaterThan(0)
+    for (const table of tables) {
+      expect(table.columns).toBe(PROCESSING_DOC_COLUMNS.length)
+      expect(table.rows.every((n) => n === PROCESSING_DOC_COLUMNS.length)).toBe(true)
+    }
+  })
+
   it('① 表头九栏逐条命中实证 #3 的制式（缺值显式占位，不静默留空）', () => {
     render(
       <ProcessingDoc

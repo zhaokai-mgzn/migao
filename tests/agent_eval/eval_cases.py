@@ -13513,6 +13513,24 @@ _CASE_UI_094 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-095 [NORMAL] 打印单据表格列数不变量：每行 Σ(colSpan) 必须等于表头列数 —— 实例判据（加工单「备注」列数据行缺格 ⇒ 整列无边框）+ 五份单据测试的类级元守卫（issue #6595）（源: cases/ui.yml）──
+_CASE_UI_095 = EvalCase(
+    id='UI-095',
+    legacy_id='',
+    title='打印单据表格列数不变量：每行 Σ(colSpan) 必须等于表头列数 —— 实例判据（加工单「备注」列数据行缺格 ⇒ 整列无边框）+ 五份单据测试的类级元守卫（issue #6595）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['2026-10-09 用户真机截图指出：加工单打印预览里「备注」列**数据行没有边框**（红框圈出）。上一轮我先按「列没对齐」查错了方向（表头/数据行边界逐像素相同），用户逐字纠正：「我是说备注那列的样式缺失了边框」。'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 判据 1·**加工单主体行必须占满 8 列**：任一套表格的每一行 Σ(colSpan) 等于 `PROCESSING_DOC_COLUMNS.length`（= 8）；品名规格为空（没有整行补位）时也必须如此 —— 这正是「备注列在数据行没有单元格 ⇒ 整列没有边框」的判据。执行点 = `frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx` 的「表格列数不变量：正文明细表逐行 Σ(colSpan) = 表头列数」+ `frontend/admin-web/tests/unit/components/doc-table-integrity-guard.test.tsx` 的「加工单 · 表格列数不变量」三条。', '🔴 判据 2·**类级元守卫：五份单据都挂同一条不变量**（加工单 / 报价单 / 销售单 / 发货单 / 任务卡）：每份单据的测试必须在本文件里出现「不变量调用 + 单据标识」同一行（`collectTableIntegrity` + `单据：<label>`），未登记即红并逐份具名。执行点 = `doc-table-integrity-guard.test.tsx` 的「类级元守卫 · 每份打印单据都挂同一条表格不变量」三条（含语料下限 ≥ 5 与判别力自证）。', '🔴 判据 3·**判别力自证（注入式，实跑读数）**：① 内存对照 —— 表头 8 列 / 数据行 7 格 ⇒ 抛 `占 7 列，表头是 8 列`；补第 8 格 ⇒ 转绿且读数 ={ columns: 8, rows: [8, 8] }；一格 `colSpan=8` 的行同样自洽（`colSpan` 计入）；容器里 0 张表 ⇒ 抛错（空集不许被读成通过）。② **真浏览器红证**（Chromium 1400×1100 @2x，把修好的第 8 格从渲染出的 DOM 摘掉 = 修前形态）：数据行 `lastCellRight` 由 747.8 退到 649.5，而表头仍是 747.8 ⇒ 备注列（649.5..747.8）在数据行没有格子；补回第 8 格 ⇒ 两者同为 747.8。③ 元守卫内存对照：无标识的调用不认。', '🔴 判据 4·**抬头信息表不被误判（边界，不许放宽）**：`ProcessingDoc` 的抬头表是 `tbody`-only 且行**本来就不等列**（`地址`/`货运` 两行是 `label + colspan=3`，实测 4+4+6+4+6）⇒ 不变量只取带 `<thead>` 的正文明细表（`dataTables()`）；抬头表进面 = 假红。执行点 = `doc-table-integrity-guard.test.tsx` 的「抬头信息表（tbody-only、行内不等列）不被误判」。', "**不回归**：只加一格（`<DocTd>{''}</DocTd>`）—— 列宽分配、纸面文案、接口与字段名一字未动（`frontend-fix.no-api-change`）；备注补位行的触发条件（`item.specification` 非空）与整行形态不变。"],
+    skip_reason='[backend-contract] 纯前端打印版式 + 静态/运行时判据（无 LLM 环节），不进 agent-eval 冒烟',
+    tags=['ui', 'print', 'table-integrity', 'admin-web', 'meta-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -14272,6 +14290,7 @@ ALL_CASES = (
     _CASE_UI_092,
     _CASE_UI_093,
     _CASE_UI_094,
+    _CASE_UI_095,
     _CASE_UT_001,
     _CASE_UT_002,
 )

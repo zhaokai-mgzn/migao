@@ -16,6 +16,7 @@ import SalesDoc, {
   SALES_DOC_NOT_COLLECTED,
 } from '@/components/orders/SalesDoc'
 import { printPageRule } from '@/lib/print-media'
+import { dataTables, collectTableIntegrity } from '@/components/orders/doc-tables'
 import {
   SALES_QTY_BASIS,
   SALES_QTY_NOT_SHIPPED,
@@ -123,6 +124,12 @@ function rowCells(): string[][] {
 }
 
 describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', () => {
+  // 类级固化（issue #6595）：本单据的每一张表逐行自洽（Σ(colSpan) = 表头列数）。
+  it('表格列数不变量：逐行 Σ(colSpan) 与表头列数一致（issue #6595）', () => {
+    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} />)
+    expect(dataTables(doc()).every((table) => collectTableIntegrity([table]).length === 1)).toBe(true) // 单据：销售单 SalesDoc
+  })
+
   it('① 介质：@page 241mm × 140mm（两等分）+ 只渲染一页 + 单联高度固定不跨联', () => {
     render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} printTarget="sales" />)
     expect(css()).toContain('@page { size: 241mm 140mm; margin: 6mm 12mm; }')
