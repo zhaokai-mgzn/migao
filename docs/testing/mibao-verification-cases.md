@@ -6426,7 +6426,7 @@
 ```
 溯源: 2026-10-03 新增（issue #6238，第三轮深度测试的核验包 · 涉钱面）：台账 #6220 的 unverified 观察项核验为**真**并**当场修复** —— 修法 = 进入事务后先取工序行排他锁（`ProductionOperationMapper#lockById` 的 `SELECT … FOR UPDATE`）**再读**旧价（顺序即语义），使「价是否真变了」建立在库内已提交事实上 ⇒ 同价重复提交退化为既有的幂等空分支（照常 200，**不是** 409：请求意图已达成）；异价并发两次变更各自成行、created_at 顺序与提交顺序一致。为什么不用 CAS + 409：CAS 会**静默丢弃**后写者的改价，对涉钱配置面不可接受。交付物 = 真库并发判据（N=4 × 3 轮 + 串行/同价重复正对照 + 库层零兜底实测 + 入口面无幂等键）+ 台账 unverified → entries 回填 + REALDB_FILES 登记。取号 PP-022：库内 PP-001~PP-021（PP-001 是**已退役**的旧用例号、PP-002/003/004/005 为历史空号 ⇒ 按 PP-015 / PP-016 先例「不复用已发布的号段」取 max+1，**不**用分配器给的最小空闲号 PP-001）；PP-022 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。 ｜ tags: production, price-version, concurrency, backend-contract
 
-## 加工单域（61 case）
+## 加工单域（62 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -7226,6 +7226,20 @@
 跳过: [backend-contract] 后端契约用例（分页入参准入 + 类级源码元守卫，无 LLM 环节，不进 agent-eval 冒烟）：断言由 PaginationParamGateTest / PaginationParamGateEndpointTest / PaginationParamGateWiringTest（Java，standalone MockMvc + Mockito，不连真库）与 tests/unit_ci_workflows/test_pagination_param_gate.py（读生产源码的类级元守卫 + 判别力自证）执行
 ```
 溯源: 2026-10-03 新增（issue #6222，P3·读面）：主会话在未修复构建 :8080 上逐字复现 —— `GET /api/admin/orders?page=1&size=-5` ⇒ 200 / total=0 / items 359 行（after-sales 5 / stock-ledger 389 同款）。机制：MyBatis-Plus 的 `PaginationInnerInterceptor` 把**负数 size** 当「不分页」信号（`pageSize < 0` 直接 return ⇒ 不追加 LIMIT、**不执行 count 查询**）⇒ 拦截器只填 `records`、`total` 停在默认 0；被 `setMaxLimit(500)` 约束的只是**正数** size ⇒ 行数不设上界。危害：`total=0` 让客户端分页器立刻认为已到末页 ⇒ 「有数据却显示为空 / 翻不动页」。**口径裁定 = 显式拒绝（400）而非钳到合法下界**，三条理由：① 病根是「非法入参**不静默**」，钳位仍是静默（把「静默给错数据」换成「静默改口径」）；② 本仓已有同族显式拒绝范式（`StockQuantity.requireOneDecimal` / `MoneyScale.requireTwoDecimals`(#6221) / 负数数量 ⇒ 400）；③ 钳位会掩盖调用方（含 Agent / 前端）的真实缺陷。**为什么这样选单点**（最少代码阶梯）：分页入口有两个族（`@RequestParam long size` 控制器方法现取 22 个 + 自带 page/size 字段的查询 DTO 三个、**无共同基类**），且 DTO 属性名不保证等于 HTTP 参数名（`ProductQueryRequest.productId` 对 `@RequestParam productCode`）⇒ DTO 侧做准入要么靠 `WebDataBinder` 名字启发（会漏）、要么按属性名校验（对不上）；两族**都必须**经同一个 HTTP 参数集 ⇒ 唯一真正单点 = Servlet 层参数闸（`prehandle` 取参 + `PaginationParamGate` 判定），并在 WebConfig 注册（排在授权/归属之后，沿用 F3 #6063 与 #6158 的次序纪律）。**类级固化**：台账 25 条分页入口 + 6 条判据 + 5 种坏形态判别力自证（未登记即红 / 幽灵条目 / 缺 why / DTO 声明被删 / 接线锚失效 + 只改措辞不红）。取号：`python3 scripts/next_case_id.py PG` 现取 PG-070（origin/main@dacac7471:001-067,069 · PR #6227:068 ⇒ 最小空闲 070）。 ｜ tags: api, pagination, fail-closed, backend-contract, negative-size
+
+### PG-071. 工人自由报工：整张加工单内任选任意工序（不扫码也能报），且与扫码路共用同一份记账 🔵
+```
+你: 工人在报工页对着一道「我做了这道」的工序报工：本部位没有任务码 / 不想扫码时，此前**根本没有写入口**（按钮只在有部位任务码时渲染），现在可以直接报整张加工单里的任意工序
+期望: direct_reply
+数据: 判据 1·🔴 **无码 + 显式工序 + 工人 session ⇒ 成功，且计件记到 session 解出的工人头上**（body 里塞 `worker_id`=冒领无效 —— 身份只来自 `X-Worker-Session-Id`，issue #4733 不放宽）。红证（实跑过）：不指定 `operationId` ⇒ 该条判红；证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionWorkerFreeReportTest.java
+数据: 判据 2·🔴 **「工序必须显式确定」不放宽**（issue #4694）：缺 / 空 `operationId` ⇒ 422 且**零写入**（不猜「下一道」）；不存在的工序 id ⇒ 404 零写入。红证（实跑过）：让服务端在缺 id 时回落到推断 ⇒ 该条判红；证据：同判据 1
+数据: 判据 3·🔴 **归属三重校验一条不松**：工序属于**另一张**加工单 / 已软删（`deleted=1`）/ 属于**别的租户** ⇒ 一律拒绝且**零写入**（进度不得记到废弃实例或别人的单上）；证据：同判据 1（三条独立用例）
+数据: 判据 4·**幂等**：同 `X-Client-Request-Id` 重放 ⇒ 不重复计件（回放首次结果、零新增写入）；证据：同判据 1
+数据: 判据 5·🔴 **两条写路共用同一份记账**：无码路径与扫码路径的记账实参**逐值一致**（`done_at` / CAS 推进 / 完工判定同一份实现）—— 这是「放宽的是入口、不是口径」的机器判据；证据：同判据 1
+数据: 判据 6·**端侧（bmini 报工页）**：无 `part_token` 的部位**仍然**有写入口（清单来自服务端，每道工序一个按钮）；跨部位自由报走无码端点且工序由工人**显式**给；**扫码定位不回归**（有码部位仍走 `completeByScan`）；失败只展示服务端 message 且列表不清空；无码报工离线入队时记住「这条从来不需要码」并复用同一幂等键 ⇒ 补传不重复计件。红证（实跑过）：把无码分支改回「不渲染按钮」⇒ 该文件多条判红；证据：frontend/bmini-app/tests/production-free-report.test.tsx
+跳过: [backend-contract] 确定性判据（Java 单测 + 端侧 jest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-09 新增（issue #6598；用户逐字「当前工人报工只能按固定顺序报工，这个设计是不对的，**允许工人自由报工**」，当场选定范围 = **整张加工单内任选任意工序（不扫码也能自由报）**）。**旧口径作废**：issue #5647 G10 的「没有任务码 ⇒ 不提供写入口」按本次用户裁定退场，其当年的依据（那条 URL 定工序的路「非事务 / 不落 done_at」）经复核与今日代码不符 —— 两条路都走 `ProductionService#applyReport`。**未被放宽的**：工序必须显式确定（#4694）、身份只由服务端从工人 session 解（#4733）、归属校验（同租户 + 未软删 + 属于本加工单）、幂等键与一次事务。**未固化项**：worker-h5（`/w/` 工号+PIN 面）本次未接该入口。 ｜ tags: processing-order, production, worker, report, free-report
 
 ## 商品域（119 case）
 
@@ -10447,8 +10461,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：722（活跃 134，跳过 588）
-- tier 分布：smoke 12 / normal 668 / adversarial 32
+- 用例总数：723（活跃 134，跳过 589）
+- tier 分布：smoke 12 / normal 669 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10468,7 +10482,7 @@
 - 领域本体域：4
 - 订单域：63
 - 加工项域：27
-- 加工单域：61
+- 加工单域：62
 - 商品域：119
 - 工具注册器域：1
 - 设置域：10
@@ -10667,6 +10681,7 @@
 - PG-069: 加工项/加工单列表：该页键全为空时不再 500（Map.of() 空表 + 未判空的空键索引；issue #6226）
 - PG-068: 生产交付风险视图：processing_order_query(delivery_risk) 的跨单聚合与披露纪律（issue #6217）
 - PG-070: 列表端点非法分页入参（size<0 / 非整数）⇒ 400 显式拒绝，不再 200 + total=0 + 整页行（issue #6222；page<1 按裁定有意不拒）
+- PG-071: 工人自由报工：整张加工单内任选任意工序（不扫码也能报），且与扫码路共用同一份记账
 - PP-007: 黄金策加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 黄金策加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）

@@ -8780,6 +8780,24 @@ _CASE_PG_070 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-071 [NORMAL] 工人自由报工：整张加工单内任选任意工序（不扫码也能报），且与扫码路共用同一份记账（源: cases/processing-order.yml）──
+_CASE_PG_071 = EvalCase(
+    id='PG-071',
+    legacy_id='',
+    title='工人自由报工：整张加工单内任选任意工序（不扫码也能报），且与扫码路共用同一份记账',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人在报工页对着一道「我做了这道」的工序报工：本部位没有任务码 / 不想扫码时，此前**根本没有写入口**（按钮只在有部位任务码时渲染），现在可以直接报整张加工单里的任意工序'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 **无码 + 显式工序 + 工人 session ⇒ 成功，且计件记到 session 解出的工人头上**（body 里塞 `worker_id`=冒领无效 —— 身份只来自 `X-Worker-Session-Id`，issue #4733 不放宽）。红证（实跑过）：不指定 `operationId` ⇒ 该条判红；证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionWorkerFreeReportTest.java', '判据 2·🔴 **「工序必须显式确定」不放宽**（issue #4694）：缺 / 空 `operationId` ⇒ 422 且**零写入**（不猜「下一道」）；不存在的工序 id ⇒ 404 零写入。红证（实跑过）：让服务端在缺 id 时回落到推断 ⇒ 该条判红；证据：同判据 1', '判据 3·🔴 **归属三重校验一条不松**：工序属于**另一张**加工单 / 已软删（`deleted=1`）/ 属于**别的租户** ⇒ 一律拒绝且**零写入**（进度不得记到废弃实例或别人的单上）；证据：同判据 1（三条独立用例）', '判据 4·**幂等**：同 `X-Client-Request-Id` 重放 ⇒ 不重复计件（回放首次结果、零新增写入）；证据：同判据 1', '判据 5·🔴 **两条写路共用同一份记账**：无码路径与扫码路径的记账实参**逐值一致**（`done_at` / CAS 推进 / 完工判定同一份实现）—— 这是「放宽的是入口、不是口径」的机器判据；证据：同判据 1', '判据 6·**端侧（bmini 报工页）**：无 `part_token` 的部位**仍然**有写入口（清单来自服务端，每道工序一个按钮）；跨部位自由报走无码端点且工序由工人**显式**给；**扫码定位不回归**（有码部位仍走 `completeByScan`）；失败只展示服务端 message 且列表不清空；无码报工离线入队时记住「这条从来不需要码」并复用同一幂等键 ⇒ 补传不重复计件。红证（实跑过）：把无码分支改回「不渲染按钮」⇒ 该文件多条判红；证据：frontend/bmini-app/tests/production-free-report.test.tsx'],
+    skip_reason='[backend-contract] 确定性判据（Java 单测 + 端侧 jest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['processing-order', 'production', 'worker', 'report', 'free-report'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PP-002 [NORMAL] 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query）（源: cases/processing.yml）──
 _CASE_PP_002 = EvalCase(
     id='PP-002',
@@ -13979,6 +13997,7 @@ ALL_CASES = (
     _CASE_PG_069,
     _CASE_PG_068,
     _CASE_PG_070,
+    _CASE_PG_071,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,
