@@ -41,4 +41,24 @@ describe('加工费功能体的挂载形态（issue #6580）', () => {
     await waitFor(() => expect(screen.queryByText('加工项管理')).toBeNull())
     expect(screen.queryByText(/管理下单时客户可选的加工服务与加工费/)).toBeNull()
   })
+
+  /**
+   * #6585（域拆到功能粒度）：两栏的功能体各成独立面板，但本页**都挂着**（非激活那个 `hidden`）
+   * ——「切 tab 不丢状态」靠它。判据：两栏的**区块标题**都在 DOM 里 ⇒ 两个面板确实都挂上了。
+   * ⚠️ 独立路由（默认）两栏的区块标题照旧在 = 旧路由行为一字不变（`embedded` 原样透传）。
+   */
+  it('独立形态下两个面板都挂载（两栏区块标题都在）；嵌入形态两个面板都不带自己的区块标题', async () => {
+    const standalone = render(<ProcessingBoard />)
+    expect(screen.getByTestId('processing-items-title')).toHaveTextContent('加工项')
+    expect(screen.getByTestId('fee-combinations-title')).toHaveTextContent('加工费组合')
+    standalone.unmount()
+
+    // 嵌入形态：面板自己那一层标题随 `embedded` 去掉（域面板已给标题与一句话）
+    render(<ProcessingBoard embedded />)
+    await waitFor(() => expect(screen.queryByTestId('processing-items-title')).toBeNull())
+    expect(screen.queryByTestId('fee-combinations-title')).toBeNull()
+    // 功能面（testid 判）照旧
+    expect(screen.getByTestId('processing-items')).toBeInTheDocument()
+    expect(screen.getByTestId('fee-combinations')).toBeInTheDocument()
+  })
 })
