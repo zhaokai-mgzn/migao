@@ -755,7 +755,7 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-05 新增（issue #6352）：为跑 #6346 的 §15.7 多模态验收起本机三件套时撞见 —— 整页加载后聊天面 Bearer 为空。取号 AU-012（scripts/next_case_id.py au：现取 main 最大 = AU-011）。 ｜ tags: auth, session-restore, token, admin-web
 
-## B 端小程序域（47 case）
+## B 端小程序域（49 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1343,18 +1343,18 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-07 新增（issue #6478，铁律 8 类级固化）：修一个输入框的竖向对齐**只修这一处 = 没修** —— Taro h5 的两层 `<Input>` 形态在每个用 `<Input>` 的面上都存在。本台账把「有哪些输入面」变成可执行判据（未登记即红 + 只许缩短 + 抽取不完全即红 + 空台账 fail-closed + 每条声明 case_ids），并配 in-memory 注入式红证（红证走**真判据**，不另写第二份判定）。 ｜ tags: bmini, meta-guard
 
-### BM-044. B 端「问黄金策」输入条 H5 形态：placeholder 不承诺录音 + 样式必须落到内层原生控件（字体/占位符色/缩放手柄/单行行盒） 🔵
+### BM-044. B 端「问黄金策」输入条 H5 形态与语音可达性：placeholder 按「浏览器能不能录音」分流 + 样式必须落到内层原生控件（字体/占位符色/缩放手柄/单行行盒） 🔵
 ```
-你: 商家在手机浏览器（`app.migaozn.com/b/`）打开「问黄金策」：输入框里那行提示是**键盘措辞**（H5 里浏览器没有录音实现，不再写「按住说话」这种做不到的承诺），文字用 App 字体与设计色、右下**没有**原生缩放手柄、单行与动作行对齐
+你: 商家在手机浏览器（`app.migaozn.com/b/`）打开「问黄金策」：输入框里那行提示**不得承诺做不到的事**（浏览器真能录音时才写「按住说话」，不能录音时写键盘措辞），文字用 App 字体与设计色、右下**没有**原生缩放手柄、单行与动作行对齐
 期望: direct_reply
-数据: 判据 1·🔴 H5 不承诺录音：frontend/bmini-app/tests/chat-input-surface.test.tsx —— `TARO_ENV=h5` 且录音不可用时 placeholder = 键盘措辞（`打字问黄金策，比如「今天经营怎么样？」`）且**不含**「按住说话」。红证（实跑过）：把 placeholder 改回硬编码那一句 ⇒ 具名判红
+数据: 判据 1·🔴 **H5 按运行时能力分流**（2026-10-09 #6596 **改判**：H5 已把录音真做出来）：frontend/bmini-app/tests/chat-input-surface.test.tsx —— `TARO_ENV=h5` 且 `isVoiceSupported()` 为**假**（浏览器确实没有 `MediaRecorder`/`getUserMedia`）时 placeholder = 键盘措辞（`打字问黄金策，比如「今天经营怎么样？」`）且**不含**「按住说话」；能力为**真**时语音可达（**不许出现按不动的键**）。红证（实跑过）：把 placeholder 改回硬编码那一句 ⇒ 具名判红；把能力判定改回「h5 ⇒ 恒不支持」⇒ #6596 的判据集红
 数据: 判据 2·小程序（录音可用）保留「打字 or 说话」双语义 placeholder —— 一刀切成键盘措辞 ⇒ 红
 数据: 判据 3·🔴 **样式必须落到内层原生控件**：Taro H5 把 class 挂在包裹元素 `<taro-textarea-core>` 上，真正绘制文字的是内层 `<textarea class="taro-textarea">`；只写外层时实测内层跑的是**浏览器默认**（`monospace 13.33px` + 默认灰 placeholder + `resize` 手柄）。判据 = 输入态 SCSS 块含 `.taro-textarea` 内层选择器 + `font-family/font-size/line-height/color: inherit` + `resize: none` + `::placeholder` 用 `$text-secondary` + `min-height: 42px`（单行行盒，原 40px 小于行盒）；**反陷阱**断言块内不出现 `textarea` 标签选择器（H5 构建会把它改写成自定义元素 ⇒ 静默无效）。红证（各一次，实跑过）：删掉内层块 / `resize: none`→`both` / `min-height` 42→40px ⇒ 具名判红
 数据: 判据 4·真机读数（承载体，**不进 CI**）：真栈 + 真 Chromium（:8080 admin-api + :8001 ai-agent 跑被验 commit，H5 由本 worktree 构建产物供给）内层 `textarea` 读数由 `fontFamily: monospace` / `fontSize: 13.3333px` / `resize: both` / `::placeholder rgb(117,117,117)` 变为 App 字体 / `14.56px` / `none` / `rgb(90,107,124)`
 跳过: [backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/chat-input-surface.test.tsx + frontend/bmini-app/tests/message-input.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
-溯源: 2026-10-07 新增（issue #6476，用户逐字：「输入框中有一行小字叫发消息或按住说话的样式不对」）：三处独立病灶 —— ① 文案空承诺（H5 无录音却写「按住说话」，C 端早已按 `docs/design/agent-input-bar-unified-design.md` §R5 分流，B 端漏）；② **样式一条都没落到真控件**（Taro H5 的 class 在 `<taro-textarea-core>` 包裹元素上，内层原生控件跑浏览器默认：monospace 13.33px + 默认灰 + 原生 resize 斜线）；③ 行盒 `min-height: 40px` < 单行 42px。修法 = placeholder 平台分流 + 内层 `.taro-textarea` 显式继承 + 占位符真规则（`placeholderClass` 仅 weapp 生效）+ `min-height: 42px`。踩坑登记：**`textarea` 标签选择器会被 Taro 的 H5 构建改写成自定义元素**（产物实测 `.message-input__textarea taro-textarea-core{…}` = 又打回包裹元素），第一版守卫就是这么假绿的 —— 已补反陷阱断言。同型顺带发现另开两单：#6479（CORS 头白名单缺 `X-Client-Type`）、#6480（全站 H5 输入面内层控件不继承字体 + 占位符色落默认）。 ｜ tags: bmini, chat, input-bar, h5-surface
+溯源: 2026-10-07 新增（issue #6476，用户逐字：「输入框中有一行小字叫发消息或按住说话的样式不对」）：三处独立病灶 —— ① 文案空承诺（H5 无录音却写「按住说话」，C 端早已按 `docs/design/agent-input-bar-unified-design.md` §R5 分流，B 端漏）；② **样式一条都没落到真控件**（Taro H5 的 class 在 `<taro-textarea-core>` 包裹元素上，内层原生控件跑浏览器默认：monospace 13.33px + 默认灰 + 原生 resize 斜线）；③ 行盒 `min-height: 40px` < 单行 42px。修法 = placeholder 平台分流 + 内层 `.taro-textarea` 显式继承 + 占位符真规则（`placeholderClass` 仅 weapp 生效）+ `min-height: 42px`。踩坑登记：**`textarea` 标签选择器会被 Taro 的 H5 构建改写成自定义元素**（产物实测 `.message-input__textarea taro-textarea-core{…}` = 又打回包裹元素），第一版守卫就是这么假绿的 —— 已补反陷阱断言。同型顺带发现另开两单：#6479（CORS 头白名单缺 `X-Client-Type`）、#6480（全站 H5 输入面内层控件不继承字体 + 占位符色落默认）。【2026-10-09 改判（issue #6596）】判据 1 的口径由「H5 一律不承诺录音」改为「**按浏览器运行时能力分流**」—— 用户 2026-10-09 裁定 B 端输入条要「默认按住说话、语音/键盘可切」，同日 #6596 用 `getUserMedia` + `MediaRecorder` 把 H5 录音**真做出来**（后端 `/api/chat/transcribe` 早已认 webm/opus）⇒「H5 无录音」这个前提不再成立；判据本体（同一句 placeholder 分流）不变，只换前提。 ｜ tags: bmini, chat, input-bar, h5-surface
 
 ### BM-045. 工人登录租户解析 - 企业编码（服务端唯一解析点）+ 兼容期 tenantId 兜底，非 1 租户不再恒 401 🔵
 ```
@@ -1399,6 +1399,36 @@
 跳过: [backend-contract] 确定性判据（Java 单测 + jest + playwright 几何腿），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-08 新增（issue #6574；用户逐字回答 #6570 第 1 问「**1，按权限隐藏**」，同日第 2 问答「有意授权」⇒ 不动任何角色种子）：底栏此前是**构建期静态 4 项**（`setTabBarItem` 只能改文字/图标、`hideTabBar` 只能整条收起 ⇒ 删不掉某一格）⇒ 没有 `agent:session` 的岗位（实测：商品管理员 8 码 / 财务 9 码）照样看到「坐席」。修法 = ① 服务端在 `GET /api/auth/me` 下发 `mobileTabs`（`MobileSurfaces.visibleTabsFor`，沿用 #6570「服务端按岗位投影、端侧零口径」）；② 端侧自绘底栏（`src/components/MerchantTabBar.tsx`）并调 `Taro.hideTabBar()` 收起原生条 —— `app.config.ts` 的 `tabBar` **保留不动**（`Taro.switchTab` 只能落 tabBar 页；Taro 的 `.taro_page.taro_tabbar_page` 页面高度算式依赖 `--taro-tabbar-height`）。同批：`MobileSurfaces` 的 `readPermission` 允许 `null`（= **无需任何码**的 tab；**不**用 `*` —— 那是 `RoleService` 给管理员的通配标记，拿来当「人人可见」会让语义撞车）。**未固化项**：weapp 只有构建判据、**无真机读数**（两端同源码：原生条 `hideTabBar` + 自绘；小程序侧未实机验证）。 ｜ tags: bmini, tabbar, permission, backend_contract
+
+### BM-048. 「卡在哪」链路两处：数据页待办标签不折行 + 加工单详情显示这一单卡在哪（只读复用卡点面） 🔵
+```
+你: 商家在手机浏览器（app.migaozn.com/b/）打开「数据」页：待办左侧标签显示成「卡在 / 哪」两行；点这条待办进「加工单详情」后，页里只有抬头 + 工序进度，看不到这一单到底卡在哪
+期望: direct_reply
+数据: 判据 1·**标签不折行（形态，剔除注释后扫 scss）**：frontend/bmini-app/src/pages/dashboard/index/index.scss 的 `.task-item__tag` **不再**是固定 `width: 64px`（改宽度自适应 + 左右内边距）、`&-text` 有 `white-space: nowrap`、高度仍 40px；文案仍**全部**来自服务端 `type_label`（前端不缩字/不改字）。红证（实跑过）：样式退回 `width:64px` 且删 `nowrap` ⇒ 该文件 2 条判红；证据：frontend/bmini-app/tests/processing-order-detail-page.test.tsx
+数据: 判据 2·**宽度复算装得下 3 字**：按 scss 自己声明的 `font-size` 与左右内边距复算，`padding×2 + font-size×3 > 64`（即「卡在哪」这类服务端 3 字标签不再被 64px 挤成两行）。红证（实跑过）：把内边距改回 0 ⇒ 该条判红；证据：同上
+数据: 判据 3·🔴 **详情页真的接上了卡点面**：`GET /api/admin/production/stuck-points?processing_order_id=…` 被请求，且卡点块渲染出（工序显示名走唯一口径 `operationDisplayName` + 「等了 N 小时」+ 阈值与来源**逐字来自服务端**，前端不重算 stalled_hours/threshold）。红证（实跑过）：把卡点块渲染条件改恒 false ⇒ 4 条判红、无关判据照绿；证据：frontend/bmini-app/tests/processing-order-detail-stuck.test.tsx
+数据: 判据 4·**没有卡点 ⇒ 整块不渲染**（不摆「暂无卡点」空壳；`queryByTestId` 取不到才是机器读数，CSS 隐藏不算）；卡点面 403/失败 ⇒ 工序进度照旧渲染 + 卡点块一句可行动提示，**整页不报错**（三态不混淆）；证据：同判据 3
+数据: 判据 5·**该页仍零写请求**（issue #6567 的「纯只读」纪律不退化：只有 GET，不发任何写请求）；证据：frontend/bmini-app/tests/processing-order-detail-page.test.tsx
+数据: 判据 6·**浏览器几何/网络读数（承载体，不进 CI）**：acceptance/2026-10-09-bmini-three-fixes 的独立探针 —— 线上 BEFORE：`.task-item__tag` 宽 33.3 CSS px / `lineBoxes=2`、加工单详情 `stuckPointRequests=0` 且 `mentionsStuck=false`；修复后重放：`lineBoxes=1`、`stuckPointRequests=1`、正文出现工序名与「等了 74.6 小时」。红证 = 探针脚本同参数重跑（线上读旧产物即红）
+跳过: [backend-contract] 确定性前端判据（jest 形态 + DOM 断言）+ 独立几何探针；非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: processing-manage.craft-config-stuck-points, frontend-fix.no-api-change
+溯源: 2026-10-09 新增（issue #6597；用户逐字「2，卡在哪的样式不对，换行了 3.点击卡在哪进入加工单后也不不出来卡在哪」）：① 标签折行的根因是前端为服务端下发的固定文案配了死宽度（`.task-item__tag{width:64px}` < 3 字 × `font-size:24px`）；② 「卡在哪」待办点进的落点（issue #6567 建的「加工单详情」只读页）**从不请求**已存在的卡点面（`ProductionStuckPointService` 的 `GET /api/admin/production/stuck-points`）⇒ 入口点进来了、页里却把「为什么是卡点」丢掉。修法 = 标签宽度自适应（口径仍全量来自服务端）+ 详情页新增只读卡点块（三态：ok/无卡点不渲染/失败不拖垮整页）。**未固化项**：类级元守卫未落（只锁了 `.task-item__tag` 这一处，没有跨页面的「服务端下发文案的标签禁固定宽」元判据）；卡点块的几何是一次性探针读数、非常驻判据。 ｜ tags: bmini, production, dashboard, stuck-point, page-entry
+
+### BM-049. 「问黄金策」输入条：单行 + 默认按住说话 + 键盘/语音切换，且底栏不再遮住输入条（H5 语音真落地） 🔵
+```
+你: 商家在手机浏览器（app.migaozn.com/b/）用「问黄金策」：输入条此前是两行（输入框一行、动作一行），而且被底部那条自绘栏整个压住、只剩一条缝；语音按钮点不动（H5 上没有录音实现）。改后希望：输入框/加图/语音在**一行**、有固定的宽高、默认就显示「按住说话」，并能在语音与键盘之间来回切
+期望: direct_reply
+数据: 判据 1·**单行结构**：四个控件（键盘/语音切换键、中间区、加图、主动作键）都在同一条 `message-input__row` 内；`__row` 定高 88px（44pt）且行内 `nowrap`；证据：frontend/bmini-app/tests/chat-input-bar-layout.test.tsx
+数据: 判据 2·**默认语音模式 + 可切换**：首屏中间是「按住说话」且**没有**输入框；点键盘图标 ⇒ 中间换成输入框（placeholder 是键盘措辞）且「按住说话」消失，再点 ⇒ 变回；键盘模式下打字后主动作键变「发送」并发出输入的文字。红证（实跑过）：把默认态改回键盘 ⇒ 该文件多条判红；证据：同判据 1
+数据: 判据 3·🔴 **底栏留位（遮挡的根因之一）**：`.chat-page` 底部预留 == 底栏高（`50PX + 安全区`，且**取自同一条算式**，不是随手写的数）；`.chat-page` 是 `border-box`（状态栏 `padding-top` 不许把整页顶出视口 —— 改前它把 844 的视口顶成 864）；**安全区只补一次**（输入条自己不再补 `env(safe-area-inset-bottom)`，两处都补 ⇒ 底部留缝）；证据：同判据 1
+数据: 判据 4·🔴 **H5 语音是**真**实现的，不是空承诺**：能力探测不假绿（缺 `MediaRecorder` 或 `getUserMedia` ⇒ 判不支持）；`startRecording` 真请求麦克风并开录（不是只探测）；`stopRecording` 交回**可上传**的 blob（mime → 后端认得的扩展名，后端 `_get_audio_format` 认 webm/opus）；**麦克风被拒 ⇒ 抛出可行动的提示**（说清去哪开权限 + 还能怎么办）。红证（实跑过）：让探测只判 `MediaRecorder` 存在 ⇒ 该条判红；证据：frontend/bmini-app/tests/voice-browser-recorder.test.ts
+数据: 判据 5·**几何读数（常驻 e2e，承载体）**：真浏览器 390×844 下默认态是「按住说话」单行条，且 `coveredPx ≤ 0`、整页不高于视口；证据：tests/e2e/specs/bmini/bmini-chat-input-geometry.spec.ts
+数据: 判据 6·**独立探针读数（不进 CI）**：acceptance/2026-10-09-bmini-three-fixes/out/after-6596 —— 线上 BEFORE `coveredPx=70` / 整页 864（视口 844）；修后 `coveredPx=0` / 整页 844 / 默认 `按住说话` / 四控件纵向中心完全相等（`764.89`）。⚠️ 该目录同时记了一条坑：`index.html` 只引用固定名 chunk、不含应用代码 ⇒ 两个不同分支的构建它的 sha 竟逐字节相同，故探针另取 `app.js` 代码指纹
+跳过: [backend-contract] 确定性前端判据（jest 结构/DOM + playwright 几何），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-09 新增（issue #6596；用户逐字「1，米高对话框的样式比较混乱，语音按钮和输入框完全被遮挡了，我建议把输入框，添加图片，语音的按钮放一行，然后定义一个格式的宽高，而且默认文字叫按住说话，通过语音对话，语音和键盘icon可以切换文字输入和语音对话」，并补充「黄金策主页也是一样，输入框完全被遮住了」；范围当场选定 = **只改 B 端**，C 端元元不动、默认语音模式）。**根因两条**：① `MerchantTabBar` 是 `position:fixed` 的自绘底栏，而聊天页 `height:100vh` 且没有为它留位；② `.chat-page` 用 `100vh + padding-top:状态栏` 而**不是 border-box** ⇒ 整页比视口高 20px。**同时补上 H5 录音**（此前 `isH5()` ⇒ 无录音器，语音按钮在浏览器里点不动 = 空承诺；现走 `getUserMedia` + `MediaRecorder`，后端 `/api/chat/transcribe` 早已认浏览器 webm/opus）。**未固化项**：weapp/小程序侧只有构建判据、无真机读数；iOS 安全区那一半靠真机复测（Chromium 取不到 `env(safe-area-inset-bottom)`）。 ｜ tags: bmini, chat, message-input, voice, layout, safe-area
 
 ## 分类域（3 case）
 
@@ -6411,7 +6441,7 @@
 ```
 溯源: 2026-10-03 新增（issue #6238，第三轮深度测试的核验包 · 涉钱面）：台账 #6220 的 unverified 观察项核验为**真**并**当场修复** —— 修法 = 进入事务后先取工序行排他锁（`ProductionOperationMapper#lockById` 的 `SELECT … FOR UPDATE`）**再读**旧价（顺序即语义），使「价是否真变了」建立在库内已提交事实上 ⇒ 同价重复提交退化为既有的幂等空分支（照常 200，**不是** 409：请求意图已达成）；异价并发两次变更各自成行、created_at 顺序与提交顺序一致。为什么不用 CAS + 409：CAS 会**静默丢弃**后写者的改价，对涉钱配置面不可接受。交付物 = 真库并发判据（N=4 × 3 轮 + 串行/同价重复正对照 + 库层零兜底实测 + 入口面无幂等键）+ 台账 unverified → entries 回填 + REALDB_FILES 登记。取号 PP-022：库内 PP-001~PP-021（PP-001 是**已退役**的旧用例号、PP-002/003/004/005 为历史空号 ⇒ 按 PP-015 / PP-016 先例「不复用已发布的号段」取 max+1，**不**用分配器给的最小空闲号 PP-001）；PP-022 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。 ｜ tags: production, price-version, concurrency, backend-contract
 
-## 加工单域（61 case）
+## 加工单域（62 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -7211,6 +7241,20 @@
 跳过: [backend-contract] 后端契约用例（分页入参准入 + 类级源码元守卫，无 LLM 环节，不进 agent-eval 冒烟）：断言由 PaginationParamGateTest / PaginationParamGateEndpointTest / PaginationParamGateWiringTest（Java，standalone MockMvc + Mockito，不连真库）与 tests/unit_ci_workflows/test_pagination_param_gate.py（读生产源码的类级元守卫 + 判别力自证）执行
 ```
 溯源: 2026-10-03 新增（issue #6222，P3·读面）：主会话在未修复构建 :8080 上逐字复现 —— `GET /api/admin/orders?page=1&size=-5` ⇒ 200 / total=0 / items 359 行（after-sales 5 / stock-ledger 389 同款）。机制：MyBatis-Plus 的 `PaginationInnerInterceptor` 把**负数 size** 当「不分页」信号（`pageSize < 0` 直接 return ⇒ 不追加 LIMIT、**不执行 count 查询**）⇒ 拦截器只填 `records`、`total` 停在默认 0；被 `setMaxLimit(500)` 约束的只是**正数** size ⇒ 行数不设上界。危害：`total=0` 让客户端分页器立刻认为已到末页 ⇒ 「有数据却显示为空 / 翻不动页」。**口径裁定 = 显式拒绝（400）而非钳到合法下界**，三条理由：① 病根是「非法入参**不静默**」，钳位仍是静默（把「静默给错数据」换成「静默改口径」）；② 本仓已有同族显式拒绝范式（`StockQuantity.requireOneDecimal` / `MoneyScale.requireTwoDecimals`(#6221) / 负数数量 ⇒ 400）；③ 钳位会掩盖调用方（含 Agent / 前端）的真实缺陷。**为什么这样选单点**（最少代码阶梯）：分页入口有两个族（`@RequestParam long size` 控制器方法现取 22 个 + 自带 page/size 字段的查询 DTO 三个、**无共同基类**），且 DTO 属性名不保证等于 HTTP 参数名（`ProductQueryRequest.productId` 对 `@RequestParam productCode`）⇒ DTO 侧做准入要么靠 `WebDataBinder` 名字启发（会漏）、要么按属性名校验（对不上）；两族**都必须**经同一个 HTTP 参数集 ⇒ 唯一真正单点 = Servlet 层参数闸（`prehandle` 取参 + `PaginationParamGate` 判定），并在 WebConfig 注册（排在授权/归属之后，沿用 F3 #6063 与 #6158 的次序纪律）。**类级固化**：台账 25 条分页入口 + 6 条判据 + 5 种坏形态判别力自证（未登记即红 / 幽灵条目 / 缺 why / DTO 声明被删 / 接线锚失效 + 只改措辞不红）。取号：`python3 scripts/next_case_id.py PG` 现取 PG-070（origin/main@dacac7471:001-067,069 · PR #6227:068 ⇒ 最小空闲 070）。 ｜ tags: api, pagination, fail-closed, backend-contract, negative-size
+
+### PG-071. 工人自由报工：整张加工单内任选任意工序（不扫码也能报），且与扫码路共用同一份记账 🔵
+```
+你: 工人在报工页对着一道「我做了这道」的工序报工：本部位没有任务码 / 不想扫码时，此前**根本没有写入口**（按钮只在有部位任务码时渲染），现在可以直接报整张加工单里的任意工序
+期望: direct_reply
+数据: 判据 1·🔴 **无码 + 显式工序 + 工人 session ⇒ 成功，且计件记到 session 解出的工人头上**（body 里塞 `worker_id`=冒领无效 —— 身份只来自 `X-Worker-Session-Id`，issue #4733 不放宽）。红证（实跑过）：不指定 `operationId` ⇒ 该条判红；证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionWorkerFreeReportTest.java
+数据: 判据 2·🔴 **「工序必须显式确定」不放宽**（issue #4694）：缺 / 空 `operationId` ⇒ 422 且**零写入**（不猜「下一道」）；不存在的工序 id ⇒ 404 零写入。红证（实跑过）：让服务端在缺 id 时回落到推断 ⇒ 该条判红；证据：同判据 1
+数据: 判据 3·🔴 **归属三重校验一条不松**：工序属于**另一张**加工单 / 已软删（`deleted=1`）/ 属于**别的租户** ⇒ 一律拒绝且**零写入**（进度不得记到废弃实例或别人的单上）；证据：同判据 1（三条独立用例）
+数据: 判据 4·**幂等**：同 `X-Client-Request-Id` 重放 ⇒ 不重复计件（回放首次结果、零新增写入）；证据：同判据 1
+数据: 判据 5·🔴 **两条写路共用同一份记账**：无码路径与扫码路径的记账实参**逐值一致**（`done_at` / CAS 推进 / 完工判定同一份实现）—— 这是「放宽的是入口、不是口径」的机器判据；证据：同判据 1
+数据: 判据 6·**端侧（bmini 报工页）**：无 `part_token` 的部位**仍然**有写入口（清单来自服务端，每道工序一个按钮）；跨部位自由报走无码端点且工序由工人**显式**给；**扫码定位不回归**（有码部位仍走 `completeByScan`）；失败只展示服务端 message 且列表不清空；无码报工离线入队时记住「这条从来不需要码」并复用同一幂等键 ⇒ 补传不重复计件。红证（实跑过）：把无码分支改回「不渲染按钮」⇒ 该文件多条判红；证据：frontend/bmini-app/tests/production-free-report.test.tsx
+跳过: [backend-contract] 确定性判据（Java 单测 + 端侧 jest），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-09 新增（issue #6598；用户逐字「当前工人报工只能按固定顺序报工，这个设计是不对的，**允许工人自由报工**」，当场选定范围 = **整张加工单内任选任意工序（不扫码也能自由报）**）。**旧口径作废**：issue #5647 G10 的「没有任务码 ⇒ 不提供写入口」按本次用户裁定退场，其当年的依据（那条 URL 定工序的路「非事务 / 不落 done_at」）经复核与今日代码不符 —— 两条路都走 `ProductionService#applyReport`。**未被放宽的**：工序必须显式确定（#4694）、身份只由服务端从工人 session 解（#4733）、归属校验（同租户 + 未软删 + 属于本加工单）、幂等键与一次事务。**未固化项**：worker-h5（`/w/` 工号+PIN 面）本次未接该入口。**顺带固化的两处静默漏检**（本包引入第二条写路时才暴露）：`production-single-write-entry` 的端点抓取① 遇**嵌套泛型** `post<ProductionResponse<X>>(` 会在内层 `>` 处停下 ⇒ 一条端点都匹配不到（判据恒红/恒绿都不可信）；② 遇模板串 `${…}` 会截断端点 ⇒ 第二条写路被静默漏掉；两处都改成按实参位置解析并加计数断言防退化。 ｜ tags: processing-order, production, worker, report, free-report
 
 ## 商品域（119 case）
 
@@ -10432,13 +10476,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：721（活跃 134，跳过 587）
-- tier 分布：smoke 12 / normal 667 / adversarial 32
+- 用例总数：724（活跃 134，跳过 590）
+- tier 分布：smoke 12 / normal 670 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
 - 登录认证域：12
-- B 端小程序域：47
+- B 端小程序域：49
 - 分类域：3
 - 对话边界域：45
 - 跨域：3
@@ -10453,7 +10497,7 @@
 - 领域本体域：4
 - 订单域：63
 - 加工项域：27
-- 加工单域：61
+- 加工单域：62
 - 商品域：119
 - 工具注册器域：1
 - 设置域：10
@@ -10652,6 +10696,7 @@
 - PG-069: 加工项/加工单列表：该页键全为空时不再 500（Map.of() 空表 + 未判空的空键索引；issue #6226）
 - PG-068: 生产交付风险视图：processing_order_query(delivery_risk) 的跨单聚合与披露纪律（issue #6217）
 - PG-070: 列表端点非法分页入参（size<0 / 非整数）⇒ 400 显式拒绝，不再 200 + total=0 + 整页行（issue #6222；page<1 按裁定有意不拒）
+- PG-071: 工人自由报工：整张加工单内任选任意工序（不扫码也能报），且与扫码路共用同一份记账
 - PP-007: 黄金策加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 黄金策加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）

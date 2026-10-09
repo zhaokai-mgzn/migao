@@ -1,0 +1,157 @@
+{
+  "base": "https://app.migaozn.com",
+  "servedIndexSha256_16": "b1f3a2ef2929ec66",
+  "viewport": {
+    "w": 390,
+    "h": 844
+  },
+  "chatInput": {
+    "rendered": true,
+    "tabbarTop": 794,
+    "inputBottom": 864,
+    "inputHeight": 89.4,
+    "coveredPx": 70,
+    "coveredVerdict": "COVERED",
+    "viewportHeight": 844,
+    "chatPageHeight": 864
+  },
+  "todoTags": [
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "待排产",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 2,
+      "label": "卡在哪",
+      "lines": 2,
+      "rects": 1,
+      "textWidth": 33.3,
+      "tagWidth": 33.3,
+      "overflow": false,
+      "tagHeight": 20.8
+    }
+  ],
+  "dashboardBottomReach": {
+    "scrollContainer": "taro_page taro_tabbar_page taro_navigation_page taro_page_show taro_page_stationed",
+    "lastItemBottom": 115.1,
+    "tabbarTop": 794,
+    "lastItemCoveredPx": -678.9
+  },
+  "orderDetail": {
+    "text": "黄金策AI探针环境 · 商家经营助手🔄 新对话布你好，我是黄金策你的商家经营助手 经营、订单交付、库存、商品、售后、客户，都可以问我问黄金策数据坐席我的",
+    "mentionsStuck": false,
+    "stuckPointRequests": 0
+  },
+  "tagWrapVerdict": "WRAPPED",
+  "screenshots": [
+    "/tmp/mg-probe/run6/chat-page.png",
+    "/tmp/mg-probe/run6/dashboard-todo.png"
+  ],
+  "note": null
+}

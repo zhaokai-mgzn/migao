@@ -1906,16 +1906,16 @@ _CASE_BM_043 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── BM-044 [NORMAL] B 端「问黄金策」输入条 H5 形态：placeholder 不承诺录音 + 样式必须落到内层原生控件（字体/占位符色/缩放手柄/单行行盒）（源: cases/bmini.yml）──
+# ── BM-044 [NORMAL] B 端「问黄金策」输入条 H5 形态与语音可达性：placeholder 按「浏览器能不能录音」分流 + 样式必须落到内层原生控件（字体/占位符色/缩放手柄/单行行盒）（源: cases/bmini.yml）──
 _CASE_BM_044 = EvalCase(
     id='BM-044',
     legacy_id='',
-    title='B 端「问黄金策」输入条 H5 形态：placeholder 不承诺录音 + 样式必须落到内层原生控件（字体/占位符色/缩放手柄/单行行盒）',
+    title='B 端「问黄金策」输入条 H5 形态与语音可达性：placeholder 按「浏览器能不能录音」分流 + 样式必须落到内层原生控件（字体/占位符色/缩放手柄/单行行盒）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['商家在手机浏览器（`app.migaozn.com/b/`）打开「问黄金策」：输入框里那行提示是**键盘措辞**（H5 里浏览器没有录音实现，不再写「按住说话」这种做不到的承诺），文字用 App 字体与设计色、右下**没有**原生缩放手柄、单行与动作行对齐'],
+    user_inputs=['商家在手机浏览器（`app.migaozn.com/b/`）打开「问黄金策」：输入框里那行提示**不得承诺做不到的事**（浏览器真能录音时才写「按住说话」，不能录音时写键盘措辞），文字用 App 字体与设计色、右下**没有**原生缩放手柄、单行与动作行对齐'],
     expectations=['direct_reply'],
-    data_checks=['判据 1·🔴 H5 不承诺录音：frontend/bmini-app/tests/chat-input-surface.test.tsx —— `TARO_ENV=h5` 且录音不可用时 placeholder = 键盘措辞（`打字问黄金策，比如「今天经营怎么样？」`）且**不含**「按住说话」。红证（实跑过）：把 placeholder 改回硬编码那一句 ⇒ 具名判红', '判据 2·小程序（录音可用）保留「打字 or 说话」双语义 placeholder —— 一刀切成键盘措辞 ⇒ 红', '判据 3·🔴 **样式必须落到内层原生控件**：Taro H5 把 class 挂在包裹元素 `<taro-textarea-core>` 上，真正绘制文字的是内层 `<textarea class="taro-textarea">`；只写外层时实测内层跑的是**浏览器默认**（`monospace 13.33px` + 默认灰 placeholder + `resize` 手柄）。判据 = 输入态 SCSS 块含 `.taro-textarea` 内层选择器 + `font-family/font-size/line-height/color: inherit` + `resize: none` + `::placeholder` 用 `$text-secondary` + `min-height: 42px`（单行行盒，原 40px 小于行盒）；**反陷阱**断言块内不出现 `textarea` 标签选择器（H5 构建会把它改写成自定义元素 ⇒ 静默无效）。红证（各一次，实跑过）：删掉内层块 / `resize: none`→`both` / `min-height` 42→40px ⇒ 具名判红', '判据 4·真机读数（承载体，**不进 CI**）：真栈 + 真 Chromium（:8080 admin-api + :8001 ai-agent 跑被验 commit，H5 由本 worktree 构建产物供给）内层 `textarea` 读数由 `fontFamily: monospace` / `fontSize: 13.3333px` / `resize: both` / `::placeholder rgb(117,117,117)` 变为 App 字体 / `14.56px` / `none` / `rgb(90,107,124)`'],
+    data_checks=['判据 1·🔴 **H5 按运行时能力分流**（2026-10-09 #6596 **改判**：H5 已把录音真做出来）：frontend/bmini-app/tests/chat-input-surface.test.tsx —— `TARO_ENV=h5` 且 `isVoiceSupported()` 为**假**（浏览器确实没有 `MediaRecorder`/`getUserMedia`）时 placeholder = 键盘措辞（`打字问黄金策，比如「今天经营怎么样？」`）且**不含**「按住说话」；能力为**真**时语音可达（**不许出现按不动的键**）。红证（实跑过）：把 placeholder 改回硬编码那一句 ⇒ 具名判红；把能力判定改回「h5 ⇒ 恒不支持」⇒ #6596 的判据集红', '判据 2·小程序（录音可用）保留「打字 or 说话」双语义 placeholder —— 一刀切成键盘措辞 ⇒ 红', '判据 3·🔴 **样式必须落到内层原生控件**：Taro H5 把 class 挂在包裹元素 `<taro-textarea-core>` 上，真正绘制文字的是内层 `<textarea class="taro-textarea">`；只写外层时实测内层跑的是**浏览器默认**（`monospace 13.33px` + 默认灰 placeholder + `resize` 手柄）。判据 = 输入态 SCSS 块含 `.taro-textarea` 内层选择器 + `font-family/font-size/line-height/color: inherit` + `resize: none` + `::placeholder` 用 `$text-secondary` + `min-height: 42px`（单行行盒，原 40px 小于行盒）；**反陷阱**断言块内不出现 `textarea` 标签选择器（H5 构建会把它改写成自定义元素 ⇒ 静默无效）。红证（各一次，实跑过）：删掉内层块 / `resize: none`→`both` / `min-height` 42→40px ⇒ 具名判红', '判据 4·真机读数（承载体，**不进 CI**）：真栈 + 真 Chromium（:8080 admin-api + :8001 ai-agent 跑被验 commit，H5 由本 worktree 构建产物供给）内层 `textarea` 读数由 `fontFamily: monospace` / `fontSize: 13.3333px` / `resize: both` / `::placeholder rgb(117,117,117)` 变为 App 字体 / `14.56px` / `none` / `rgb(90,107,124)`'],
     skip_reason='[backend-contract] 确定性前端/结构判据（jest: frontend/bmini-app/tests/chat-input-surface.test.tsx + frontend/bmini-app/tests/message-input.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['bmini', 'chat', 'input-bar', 'h5-surface'],
     persona='',
@@ -1972,6 +1972,42 @@ _CASE_BM_047 = EvalCase(
     data_checks=['判据 1·**服务端投影逐值**（真值 = `MobileSurfaces.visibleTabsFor`）：商品管理员（8 码）/ 财务（9 码，均**无** `agent:session`）⇒ chat/dashboard/profile（**没有 sessions**）；客服（12 码，持 `agent:session`）⇒ 4 项齐全；一个码都没有的员工 ⇒ chat/profile（无码项）；`*` 通配 ⇒ 4 项。红证（实跑过）：把 `sessions` 的码改成 `null` ⇒ 同文件 `Tests run: 14, Failures: 4`。证据：backend/admin-api/src/test/java/com/migao/admin/service/MobileSurfacesTest.java', '判据 2·**`/me` 的 `mobileTabs` 字段与序列化**：`$.data.mobileTabs[0].key/route`、`[1].title` 逐值（字段名 = 端侧依赖：改名/改蛇形 ⇒ 端侧底栏退回「照显 4 项」+ 本判据红）。证据：backend/admin-api/src/test/java/com/migao/admin/controller/AuthIntegrationTest.java', '判据 3·🔴 **端侧只渲染服务端给的 tab**：给 3 项（无 `sessions`）⇒ 底栏**只有 3 格**且 `merchant-tab-sessions` 不存在；给 4 项 ⇒ 4 格（标题与顺序都取服务端，端侧不自造）。红证（实跑过）：端侧改回静态 4 项 ⇒ jest 1 failed / 12。证据：frontend/bmini-app/tests/merchant-tabbar.test.tsx', '判据 4·🔴 **拿不到菜单 / 空清单 ⇒ 照显 4 格**（tab 是**功能入口**：藏掉用户有的功能比露出一个点进去 403 的入口更糟 —— 与「数据」页待办块 `error ⇒ 照渲染` 同一条规则；入口与内容的 fail-closed 口径见 BM-046）。红证（实跑过）：把 `error` 当「一个都没有」⇒ jest 2 failed / 12。证据：同判据 3', '判据 5·🔴 **原生条必须被收起**（自绘底栏挂载即调 `Taro.hideTabBar({animation:false})`）：否则**两条底栏叠着**（自绘底栏上线后最容易出的形态）。红证（实跑过）：去掉该调用 ⇒ jest 1 failed / 12 + 几何腿 2 failed（`toBeHidden` Expected hidden / Received **visible**）。证据：frontend/bmini-app/tests/merchant-tabbar.test.tsx + tests/e2e/specs/bmini/bmini-tabbar.spec.ts 判据 7', '判据 6·**几何一格不放宽**（判据对象从原生条换成自绘条）：条贴底 ±1px / 条高 ∈[49,51]（页面高度算式按 Taro 的 50 留白）/ 每格图标与文字上下留白对称且都 > 0 / 水平居中 ±1px / 渲染出的四张图标 `src` 两两不同 / 当前页那一格 active。证据：tests/e2e/specs/bmini/bmini-tabbar.spec.ts + frontend/bmini-app/tests/tabbar-layout.test.ts（自绘底栏块：安全区只补一次、条不吃 `margin-bottom`、字面量 == Taro 现取的 50PX、flex 纵列居中、每格 `flex:1`）', "判据 7·**类级守卫（三处同源 + 接线 + 图标）**：服务端 `MobileSurfaces.TABS` ⇄ 端侧 `ALL_MERCHANT_TABS` ⇄ `app.config.ts` 的 `tabBar.list`（key/title/route 逐值，两处现取 4 项反空跑）；4 个 tab 页都必须接线 `<MerchantTabBar current='<自己的 key>' />`（新加 tab 页不接线 / 传错 key ⇒ 红）；8 张图标导入互不相同。红证（实跑过）：坐席页传 `current='chat'` ⇒ jest 1 failed / 12。证据：frontend/bmini-app/tests/merchant-tabbar.test.tsx"],
     skip_reason='[backend-contract] 确定性判据（Java 单测 + jest + playwright 几何腿），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['bmini', 'tabbar', 'permission', 'backend_contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── BM-048 [NORMAL] 「卡在哪」链路两处：数据页待办标签不折行 + 加工单详情显示这一单卡在哪（只读复用卡点面）（源: cases/bmini.yml）──
+_CASE_BM_048 = EvalCase(
+    id='BM-048',
+    legacy_id='',
+    title='「卡在哪」链路两处：数据页待办标签不折行 + 加工单详情显示这一单卡在哪（只读复用卡点面）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家在手机浏览器（app.migaozn.com/b/）打开「数据」页：待办左侧标签显示成「卡在 / 哪」两行；点这条待办进「加工单详情」后，页里只有抬头 + 工序进度，看不到这一单到底卡在哪'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**标签不折行（形态，剔除注释后扫 scss）**：frontend/bmini-app/src/pages/dashboard/index/index.scss 的 `.task-item__tag` **不再**是固定 `width: 64px`（改宽度自适应 + 左右内边距）、`&-text` 有 `white-space: nowrap`、高度仍 40px；文案仍**全部**来自服务端 `type_label`（前端不缩字/不改字）。红证（实跑过）：样式退回 `width:64px` 且删 `nowrap` ⇒ 该文件 2 条判红；证据：frontend/bmini-app/tests/processing-order-detail-page.test.tsx', '判据 2·**宽度复算装得下 3 字**：按 scss 自己声明的 `font-size` 与左右内边距复算，`padding×2 + font-size×3 > 64`（即「卡在哪」这类服务端 3 字标签不再被 64px 挤成两行）。红证（实跑过）：把内边距改回 0 ⇒ 该条判红；证据：同上', '判据 3·🔴 **详情页真的接上了卡点面**：`GET /api/admin/production/stuck-points?processing_order_id=…` 被请求，且卡点块渲染出（工序显示名走唯一口径 `operationDisplayName` + 「等了 N 小时」+ 阈值与来源**逐字来自服务端**，前端不重算 stalled_hours/threshold）。红证（实跑过）：把卡点块渲染条件改恒 false ⇒ 4 条判红、无关判据照绿；证据：frontend/bmini-app/tests/processing-order-detail-stuck.test.tsx', '判据 4·**没有卡点 ⇒ 整块不渲染**（不摆「暂无卡点」空壳；`queryByTestId` 取不到才是机器读数，CSS 隐藏不算）；卡点面 403/失败 ⇒ 工序进度照旧渲染 + 卡点块一句可行动提示，**整页不报错**（三态不混淆）；证据：同判据 3', '判据 5·**该页仍零写请求**（issue #6567 的「纯只读」纪律不退化：只有 GET，不发任何写请求）；证据：frontend/bmini-app/tests/processing-order-detail-page.test.tsx', '判据 6·**浏览器几何/网络读数（承载体，不进 CI）**：acceptance/2026-10-09-bmini-three-fixes 的独立探针 —— 线上 BEFORE：`.task-item__tag` 宽 33.3 CSS px / `lineBoxes=2`、加工单详情 `stuckPointRequests=0` 且 `mentionsStuck=false`；修复后重放：`lineBoxes=1`、`stuckPointRequests=1`、正文出现工序名与「等了 74.6 小时」。红证 = 探针脚本同参数重跑（线上读旧产物即红）'],
+    skip_reason='[backend-contract] 确定性前端判据（jest 形态 + DOM 断言）+ 独立几何探针；非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'production', 'dashboard', 'stuck-point', 'page-entry'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── BM-049 [NORMAL] 「问黄金策」输入条：单行 + 默认按住说话 + 键盘/语音切换，且底栏不再遮住输入条（H5 语音真落地）（源: cases/bmini.yml）──
+_CASE_BM_049 = EvalCase(
+    id='BM-049',
+    legacy_id='',
+    title='「问黄金策」输入条：单行 + 默认按住说话 + 键盘/语音切换，且底栏不再遮住输入条（H5 语音真落地）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家在手机浏览器（app.migaozn.com/b/）用「问黄金策」：输入条此前是两行（输入框一行、动作一行），而且被底部那条自绘栏整个压住、只剩一条缝；语音按钮点不动（H5 上没有录音实现）。改后希望：输入框/加图/语音在**一行**、有固定的宽高、默认就显示「按住说话」，并能在语音与键盘之间来回切'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**单行结构**：四个控件（键盘/语音切换键、中间区、加图、主动作键）都在同一条 `message-input__row` 内；`__row` 定高 88px（44pt）且行内 `nowrap`；证据：frontend/bmini-app/tests/chat-input-bar-layout.test.tsx', '判据 2·**默认语音模式 + 可切换**：首屏中间是「按住说话」且**没有**输入框；点键盘图标 ⇒ 中间换成输入框（placeholder 是键盘措辞）且「按住说话」消失，再点 ⇒ 变回；键盘模式下打字后主动作键变「发送」并发出输入的文字。红证（实跑过）：把默认态改回键盘 ⇒ 该文件多条判红；证据：同判据 1', '判据 3·🔴 **底栏留位（遮挡的根因之一）**：`.chat-page` 底部预留 == 底栏高（`50PX + 安全区`，且**取自同一条算式**，不是随手写的数）；`.chat-page` 是 `border-box`（状态栏 `padding-top` 不许把整页顶出视口 —— 改前它把 844 的视口顶成 864）；**安全区只补一次**（输入条自己不再补 `env(safe-area-inset-bottom)`，两处都补 ⇒ 底部留缝）；证据：同判据 1', '判据 4·🔴 **H5 语音是**真**实现的，不是空承诺**：能力探测不假绿（缺 `MediaRecorder` 或 `getUserMedia` ⇒ 判不支持）；`startRecording` 真请求麦克风并开录（不是只探测）；`stopRecording` 交回**可上传**的 blob（mime → 后端认得的扩展名，后端 `_get_audio_format` 认 webm/opus）；**麦克风被拒 ⇒ 抛出可行动的提示**（说清去哪开权限 + 还能怎么办）。红证（实跑过）：让探测只判 `MediaRecorder` 存在 ⇒ 该条判红；证据：frontend/bmini-app/tests/voice-browser-recorder.test.ts', '判据 5·**几何读数（常驻 e2e，承载体）**：真浏览器 390×844 下默认态是「按住说话」单行条，且 `coveredPx ≤ 0`、整页不高于视口；证据：tests/e2e/specs/bmini/bmini-chat-input-geometry.spec.ts', '判据 6·**独立探针读数（不进 CI）**：acceptance/2026-10-09-bmini-three-fixes/out/after-6596 —— 线上 BEFORE `coveredPx=70` / 整页 864（视口 844）；修后 `coveredPx=0` / 整页 844 / 默认 `按住说话` / 四控件纵向中心完全相等（`764.89`）。⚠️ 该目录同时记了一条坑：`index.html` 只引用固定名 chunk、不含应用代码 ⇒ 两个不同分支的构建它的 sha 竟逐字节相同，故探针另取 `app.js` 代码指纹'],
+    skip_reason='[backend-contract] 确定性前端判据（jest 结构/DOM + playwright 几何），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'chat', 'message-input', 'voice', 'layout', 'safe-area'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -8762,6 +8798,24 @@ _CASE_PG_070 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-071 [NORMAL] 工人自由报工：整张加工单内任选任意工序（不扫码也能报），且与扫码路共用同一份记账（源: cases/processing-order.yml）──
+_CASE_PG_071 = EvalCase(
+    id='PG-071',
+    legacy_id='',
+    title='工人自由报工：整张加工单内任选任意工序（不扫码也能报），且与扫码路共用同一份记账',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人在报工页对着一道「我做了这道」的工序报工：本部位没有任务码 / 不想扫码时，此前**根本没有写入口**（按钮只在有部位任务码时渲染），现在可以直接报整张加工单里的任意工序'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 **无码 + 显式工序 + 工人 session ⇒ 成功，且计件记到 session 解出的工人头上**（body 里塞 `worker_id`=冒领无效 —— 身份只来自 `X-Worker-Session-Id`，issue #4733 不放宽）。红证（实跑过）：不指定 `operationId` ⇒ 该条判红；证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionWorkerFreeReportTest.java', '判据 2·🔴 **「工序必须显式确定」不放宽**（issue #4694）：缺 / 空 `operationId` ⇒ 422 且**零写入**（不猜「下一道」）；不存在的工序 id ⇒ 404 零写入。红证（实跑过）：让服务端在缺 id 时回落到推断 ⇒ 该条判红；证据：同判据 1', '判据 3·🔴 **归属三重校验一条不松**：工序属于**另一张**加工单 / 已软删（`deleted=1`）/ 属于**别的租户** ⇒ 一律拒绝且**零写入**（进度不得记到废弃实例或别人的单上）；证据：同判据 1（三条独立用例）', '判据 4·**幂等**：同 `X-Client-Request-Id` 重放 ⇒ 不重复计件（回放首次结果、零新增写入）；证据：同判据 1', '判据 5·🔴 **两条写路共用同一份记账**：无码路径与扫码路径的记账实参**逐值一致**（`done_at` / CAS 推进 / 完工判定同一份实现）—— 这是「放宽的是入口、不是口径」的机器判据；证据：同判据 1', '判据 6·**端侧（bmini 报工页）**：无 `part_token` 的部位**仍然**有写入口（清单来自服务端，每道工序一个按钮）；跨部位自由报走无码端点且工序由工人**显式**给；**扫码定位不回归**（有码部位仍走 `completeByScan`）；失败只展示服务端 message 且列表不清空；无码报工离线入队时记住「这条从来不需要码」并复用同一幂等键 ⇒ 补传不重复计件。红证（实跑过）：把无码分支改回「不渲染按钮」⇒ 该文件多条判红；证据：frontend/bmini-app/tests/production-free-report.test.tsx'],
+    skip_reason='[backend-contract] 确定性判据（Java 单测 + 端侧 jest），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['processing-order', 'production', 'worker', 'report', 'free-report'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PP-002 [NORMAL] 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query）（源: cases/processing.yml）──
 _CASE_PP_002 = EvalCase(
     id='PP-002',
@@ -13601,6 +13655,8 @@ ALL_CASES = (
     _CASE_BM_045,
     _CASE_BM_046,
     _CASE_BM_047,
+    _CASE_BM_048,
+    _CASE_BM_049,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,
@@ -13960,6 +14016,7 @@ ALL_CASES = (
     _CASE_PG_069,
     _CASE_PG_068,
     _CASE_PG_070,
+    _CASE_PG_071,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,
