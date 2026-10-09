@@ -3421,7 +3421,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（88 case）
+## 杂项域（89 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4733,6 +4733,23 @@
 跳过: [backend-contract] 纯离线判据（零 LLM、零网络、零真机；只读两份部署脚本 + 桩化外部依赖真跑）由 tests/unit_ci_workflows/test_swas_deploy_disk_recovery.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-07 新增（issue #6508 P2 + issue #6505 P3，同一「部署链路可运维性」面 ⇒ 同包同 PR）。取号 **MC-087**（`python3 scripts/next_case_id.py mc`：main 现取 MC-001~MC-086 ⇒ 取 MC-087；同时刻 open PR 只有两条 dependabot，均未改 `.github/cases/**`）。本单 = ① 恢复出口从固定窗口改成**按水位选窗口 + 清到阈值以上为止**（含 `-af` 兜底档）② 缓存读数真正打进日志（消灭逐字的 `构建缓存：?`）③ 闸门中止打机读标记 + CI 收口按标记分支给出两条具名文案。**硬约束**：`BUILD_MIN_FREE_MB` 的 fail-closed（中止构建、旧容器不动）**原样保留**；不新增 schedule（铁律 10 —— 自愈是部署内、带阈值、幂等、失败可见）。⚠️ **未固化（照实登记）**：见 data_checks 末条覆盖边界三条 —— 尤其「真机上回收量 > 0」只能真跑一次自证。 ｜ 2026-10-07 **补录（issue #6512，同一文件 / 同一「部署链路可运维性」面）**：构建后「回收量为 0」的**假警**（水位充裕也告警）+ 回收量**口径**（Δ整盘已用 → 缓存占用差）。**红证（改前，同一命令 `python3 -m pytest tests/unit_ci_workflows/test_swas_deploy_disk_recovery.py -q`）= 13 failed / 33 passed**，其中行为面逐字复现真机 run `37634071278`：`🧹 缓存回收：水位 10050MB ⇒ 选窗口 72h` / `缓存回收量：0MB（已用 29296MB → 29296MB；档位 1/2）` / `::warning::缓存回收量为 0（构建缓存 6839MB，清理档 1/2）—— 出口没有真的腾出空间，需人工核对`；**改后 = 46 passed**（同族 `test_swas_server_side_build.py` / `test_swas_deploy_no_downgrade.py` / `test_swas_deploy_ci_hardening.py` / `test_swas_deploy_disk_retention.py` = 144 passed）。改后绿读数逐字：水位充裕夹具 = `ℹ️ 水位充裕（可用 10052MB ≥ 门槛 4096MB）⇒ 按 72h 档未匹配到可回收层，回收量 0 属预期（非异常）`（**无** `::warning::缓存回收量为 0`）；水位告急夹具 = `::warning::缓存回收量为 0（构建缓存 6839MB → 6839MB，清理档 1/2）—— 水位告急（可用 3000MB < 门槛 4096MB）而出口没有真的腾出空间，需人工核对`；口径夹具（prune 腾 2048MB、Δ整盘已用恒 0）= `缓存回收量：2048MB（构建缓存 6839MB → 4791MB；档位 1/2）`。⚠️ **未固化（照实登记）**：真机下一次健康部署的 run 上「黄标消失」只能事后核对 —— 本包**未**派发真机部署。 ｜ tags: backend-contract, deploy, swas, disk, cache, observability, fail-closed, red-proof
+
+### MC-088. 写面幂等接线覆盖率的类级元守卫（issue #6209）：凡消费同一份 ClientRequestIdService 的写面必须登记；读了 X-Client-Request-Id 却不接点位 ⇒ 红；豁免只许缩短；禁新造第二套幂等框架 🔵
+```
+你: issue #6209 边界：与上一轮发货面 K3b-1 同族 ⇒ 修复时一并核对同一机制在各写面的接入覆盖率，并把覆盖率落成类级元守卫（漏接即红）
+数据: **判据 1·未登记即红**：现取 admin-api 主源里出现幂等消费形态（`clientRequestIdService.claim|complete|discard|replay(`）的每个 .java 必须登记在台账 `consume_sites`（issue #6209 台账 = tests/unit_ci_workflows/idempotency_writeface_ledger.json）。
+数据: **判据 2·登记未被兑现即红**：每条登记的 `anchor` 必须在该文件里逐字出现（摘掉/改名接线 ⇒ 具名报出）。实测注入：把 ProductService 的 anchor 改成 `…ENDPOINT_DOES_NOT_EXIST` ⇒ `VIOLATION: 登记未被兑现即红：…ProductService.java 里逐字找不到 anchor「…」`。
+数据: **判据 3·陈旧条目即红（台账只许缩短）**：台账里的文件必须仍被现取扫描到。
+数据: **判据 4·声明侧闭合（#6209 的原始形态）**：读了 ClientRequestIdService.HEADER 的文件必须落在「自己消费 / 透传下游 / 缺口登记」三处之一 —— `ProductController` 改前正是「读了头、服务端没去重」，属此形态。
+数据: **判据 5·豁免只许缩短**：`declared_but_unwired` 条数 ≤ 冻结基线（条数现取打印；本包落地时为 0 条 —— 现取声明面 7 个文件全部闭合）。
+数据: **判据 6·同一份实现**：ClientRequestIdService 类文件恰一个、`public boolean claim(` 定义在它里面、`client_request_keys` 的 `UNIQUE (tenant_id, client_request_id)` 在 schema 终态的建表体里 ⇒ 禁新造第二套幂等框架。
+数据: **判据 7·共享消费下界**：现取消费文件数 ≥ 台账 `consume_floor`（本包 = 8；建品漏接后回到 7 ⇒ 红），防「悄悄摘掉某些接线」。
+数据: **判据 8·判别力自证**：未登记 / 登记未兑现 / 陈旧条目 / 新增豁免 / 扫描面为空五种坏形态在合成语料上各自判红，合规语料不红。复算命令 `python3 -m pytest tests/unit_ci_workflows/test_idempotency_writeface_coverage.py -q -p no:cacheprovider` ⇒ 13 passed；手动入口 `python3 tests/unit_ci_workflows/test_idempotency_writeface_coverage.py` 打印现取消费面=8 / 声明面=7。
+数据: 🔴 **覆盖边界（照实登记，不粉饰）**：① 形态判据不做 AST 解析（把服务注入到别的变量名 ⇒ 判「陈旧条目」，保守方向）；② **未接幂等的建单写面**（POST /api/admin/inbound-orders、POST /api/admin/orders、POST /api/admin/products/import）连请求头都没声明 ⇒ 形态判据天然看不见，登记在台账 `_known_unguarded_write_surfaces`（本包只登记、不代修）；③ 射程 = admin-api 主源，C 端 ai-agent 生成键侧由各自用例承担。
+前置: 纯静态判据：零 LLM、零网络、零 DB；前置 = admin-api 主源在场且非空（扫描面为空 ⇒ 当场红，不表现成「通过」）。
+跳过: [backend-contract] 纯离线静态守卫（读 Java 源码 + 台账 + schema）由 tests/unit_ci_workflows/test_idempotency_writeface_coverage.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-09 新增（issue #6209，同 PR 的类级固化）。取号 = `python3 scripts/next_case_id.py mc`（main 现取 MC-001~MC-087 ⇒ 取 MC-088）。**判别力实测**（真语料注入）：把 ProductService 的登记锚改成不存在的串 ⇒ 判据 2 具名判红；撤回 ⇒ 复绿（13 passed）。改前形态（`ProductController` 读了头却不接点位）正是判据 4 要抓的那一格。 ｜ tags: backend-contract, idempotency, guard, ledger, red-proof
 
 ## 商家入驻域（6 case）
 
@@ -7256,7 +7273,7 @@
 ```
 溯源: 2026-10-09 新增（issue #6598；用户逐字「当前工人报工只能按固定顺序报工，这个设计是不对的，**允许工人自由报工**」，当场选定范围 = **整张加工单内任选任意工序（不扫码也能自由报）**）。**旧口径作废**：issue #5647 G10 的「没有任务码 ⇒ 不提供写入口」按本次用户裁定退场，其当年的依据（那条 URL 定工序的路「非事务 / 不落 done_at」）经复核与今日代码不符 —— 两条路都走 `ProductionService#applyReport`。**未被放宽的**：工序必须显式确定（#4694）、身份只由服务端从工人 session 解（#4733）、归属校验（同租户 + 未软删 + 属于本加工单）、幂等键与一次事务。**未固化项**：worker-h5（`/w/` 工号+PIN 面）本次未接该入口。**顺带固化的两处静默漏检**（本包引入第二条写路时才暴露）：`production-single-write-entry` 的端点抓取① 遇**嵌套泛型** `post<ProductionResponse<X>>(` 会在内层 `>` 处停下 ⇒ 一条端点都匹配不到（判据恒红/恒绿都不可信）；② 遇模板串 `${…}` 会截断端点 ⇒ 第二条写路被静默漏掉；两处都改成按实参位置解析并加计数断言防退化。 ｜ tags: processing-order, production, worker, report, free-report
 
-## 商品域（119 case）
+## 商品域（120 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -8896,6 +8913,22 @@
 真值: batch-ledger.saving-metrics-read-face
 溯源: 2026-10-06 新增（issue #6430，用户两轮逐字）。取号 = 现取 `origin/main` 最大号 + 1（本仓取号法见 `tests/unit_ci_workflows/test_case_id_claims.py` 头注；`origin/main` 现取最大 = PR-126）⇒ PR-127。红证（实现前实测）：`./mvnw -q test -Dtest=SavingMetricsComparisonTest` 得 `COMPILATION ERROR … 找不到符号 类 MetricDelta / 方法 delta(...)`（契约点不存在 ⇒ 9 条判据一条都跑不到）；实现后 `Tests run: 12, Failures: 0, Errors: 0`（含 partial、期间键、**行级序列按期间汇总**三条，均由 2026-10-06 页面多模态验收反哺追加），真库 `Tests run: 7, Failures: 0`。 ｜ 2026-10-06 CI 反哺：首推被 `BusinessClockSourceGuardTest` 判红（我在服务里自取 `Instant` 时刻 = 业务「今天」的**第二个来源**，issue #3802 禁止）⇒ 改为**注入 `BusinessClock`**（业务时间单点，仓库 6+ 服务同一写法）并同批给 13 个手工构造点补 `BusinessClock` 实参；三条钟源守卫 + 本用例 19 条现取全绿。 ｜ 2026-10-07（issue #6459）：前端**不再渲染** `le0_2Share` 与 `purchasedMeters` 的环比（两张卡连同单位产出趋势被用户裁定删除，页面改为**一条读面** ⇒ 旧 UI-092 的「两腿同参」漂移面结构性消失）；服务端口径（期间选择 / verdict 四态 / partial / 行级按期间汇总）与真库自洽判据**一字未动**。 ｜ tags: batch-ledger, saving-metrics, real-db, backend-contract
 
+### PR-128. 商品创建服务端幂等（issue #6209）：同一 X-Client-Request-Id 并发 N 次 ⇒ 恰 1 条商品 + client_request_keys 恰 1 行；不同键各建一份（负向对照） 🔵
+```
+你: 现场证据 acceptance/2026-10-03/batch-writeface-sweep/out/E1-duplicate-submit.json：同 X-Client-Request-Id 串行 1 次 ⇒ 商品 1 条，随后同键并发 5 次 ⇒ 5 个请求全 200 各返回一个新 id、落地商品 6 条、client_request_keys 0 行
+数据: **判据 1·同键并发 ⇒ 恰 1 条业务对象**（真 PG，N=4 × 3 轮）：`ProductCreateIdempotencyRealDbTest#concurrentSameKeyCreatesExactlyOneProduct` 断言 products 该货号恰 1 行、所有成功结果的 id 同一个、至少 1 个 replayed=true、赢家的 SKU 恰 1 行。改后逐字读数 `[READING #6209 同键并发 r=0/1/2] 请求=4 成功=4 回放=3 不同id=1 商品行=1 幂等键行=1 SKU行=1`。
+数据: **判据 2·幂等留痕**：`client_request_keys` 该 (tenant_id, client_request_id) 恰 1 行（endpoint = ProductService.ENDPOINT_CREATE_PRODUCT）。改前现场读数是 **0 行**（写面从未接幂等）。
+数据: **判据 3·负向对照（防「一律只建一条」的假修）**：`ProductCreateIdempotencyRealDbTest#concurrentDistinctKeysEachCreateTheirOwnProduct` —— N=4 **不同**键并发 ⇒ 4 条独立商品 + 4 行幂等键，逐字读数 `[READING #6209 不同键并发] 成功=4 不同id=4 商品行=4 幂等键行=4`。
+数据: **判据 4·服务方法三态接线**：`ProductCreateIdempotencyTest`（claim 判非首次 ⇒ replay 且零 insert；首次 ⇒ insert 1 次 + complete；无键 ⇒ 零幂等交互；失败 ⇒ discard 不 complete）。
+数据: **判据 5·端点接线 + 回放标记冒到 HTTP 层**：`ProductCreateIdempotencyEndpointTest`（真 MockMvc，3 条）—— 带 X-Client-Request-Id ⇒ 头值逐字传到 ProductService#createProduct；回放响应 ⇒ `$.data.replayed == true`（服务端标记必须能冒到 HTTP 层）；不带头 ⇒ 传 null 且 `$.data.replayed` **不存在**（`@JsonInclude(NON_NULL)`，老客户端路径逐字不变）。服务级判据看不见这一层（现场读数与「从没接幂等」逐字相同）。
+数据: **判据 6·回放标记与线上时间格式都保住**：ProductResponse 加 `replayed`（回放=true 才出现，与订单/售后同族）；三个 DTO 的 `@JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")` **一字未改**（线上时间格式不变），回放路径用 `LenientOffsetDateTimeDeserializer` 反序列化该展示格式。
+数据: 🔴 **红证（并发类修复必填：注入方式 + 修前逐字读数）**：① **修前红（契约点不存在）** `cd backend/admin-api && ./mvnw -o test -Dtest='ProductCreateIdempotencyTest,ProductCreateIdempotencyEndpointTest,ProductCreateIdempotencyRealDbTest'` ⇒ `COMPILATION ERROR … 找不到符号 变量 ENDPOINT_CREATE_PRODUCT` / `无法将类 ProductService 中的方法 createProduct 应用到给定类型`；② **注入式红证（接上后把去重闸摘掉）** 把 ProductService 的 `if (!clientRequestIdService.claim(tenantId, clientRequestId, ENDPOINT_CREATE_PRODUCT)) {` 改成 `if (false && …) {` ⇒ `MIGAO_REQUIRE_REALDB=1 ./mvnw -o test -Dtest=ProductCreateIdempotencyRealDbTest` = `Tests run: 2, Failures: 2`，逐字读数 `[READING #6209 同键并发 r=0] 请求=4 成功=4 回放=0 不同id=4 商品行=4 幂等键行=0 SKU行=1`（= 现场 5 并发建 6 条的同族形态）+ `expected: 1L but was: 4L` / `expected: 4L but was: 0L`；撤回注入 ⇒ 复绿。
+数据: **改后绿读数（逐字）**：`Tests run: 10, Failures: 0, Errors: 0, Skipped: 0` + `BUILD SUCCESS`（单元 5 / 端点 3 / 真库并发 2）。
+数据: 🔴 **本次如实登记**：口径是**同一 X-Client-Request-Id 并发 N 次**（现场探针形态），本判据逐字取之；「大得多的并发（如 N=20）」与「真实网络下的前端重试」未取证。
+跳过: [backend-contract] 幂等接线 + 真 PG 并发落库事实（无 LLM 环节）⇒ 由 Java 定点判据与真库并发判据验证，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-09 新增（issue #6209）。取号 = `python3 scripts/next_case_id.py pr`（main 现取最大 PR-127 ⇒ 取 PR-128）。红→绿：改前契约点不存在（编译期找不到 ENDPOINT_CREATE_PRODUCT / 三参 createProduct）⇒ 注入式红证把去重闸摘掉得 2 failed（同键 4 并发建 4 条商品、幂等键 0 行，现场 6 条同族）；实现后 `Tests run: 9, Failures: 0`。本单同时把「哪些写面已接同一幂等点位」落成类级元守卫（见 MC-088）。｜ 2026-10-09 CI 反哺（跨台账/跨模块半径，四处都已同 PR 补齐）：① 新增真库判据 ⇒ 同批登记 `tests/unit_ci_workflows/test_realdb_failclosed.py` 的 `REALDB_FILES`（`ProductCreateIdempotencyRealDbTest.java: direct`，判据不许悄悄出现）；② 新增 2 条 `[backend-contract]` 用例（PR-128 + MC-088）⇒ 同批重锚 `case_machine_fail_channel_baseline.json`（`backend_contract_scoring_zero` 132 → 134，实测读数非推算，`no_channel_total` 恒 0）；③ `ProductResponse` 新增 `replayed` ⇒ 消费侧契约快照同批跟进（`backend/ai-agent-service/tests/contracts/snapshot-contract-fingerprints.json` 的 contracts 由 `contract_snapshot_registry.current_fingerprint()` 现算自 Java 源码刷新；快照**数据**未重抓 —— 本机无 dev 库凭据、空库重抓会把真实缓存覆盖成空数据，见 PR #6616 边界登记）；④ rebase 到含 #6618 的 main，`CHANGELOG.md` 并行冲突 = 两条条目都保留。 ｜ tags: backend-contract, idempotency, concurrency, real-db, red-proof
+
 ## 工具注册器域（1 case）
 
 ### RG-001. ToolRegistry 注册/查询/执行审计 🔵
@@ -10503,8 +10536,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：726（活跃 134，跳过 592）
-- tier 分布：smoke 12 / normal 672 / adversarial 32
+- 用例总数：728（活跃 134，跳过 594）
+- tier 分布：smoke 12 / normal 674 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10519,13 +10552,13 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：88
+- 杂项域：89
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：63
 - 加工项域：27
 - 加工单域：62
-- 商品域：119
+- 商品域：120
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
@@ -10642,6 +10675,7 @@
 - MC-084: 合并凭据 ⇄ push 触发面：会 arm auto-merge 的 job 必须引用非内置凭据（secrets.AUTOMERGE_PAT）且缺 secret 时显式具名回落，arm job 登记表双向对齐、未登记即红；新增非内置 secrets 引用的 owner 确认通道逐名比对、无确认时逐字仍 BLOCK
 - MC-086: 控制台口令面「只能建、不能救」的死角进不来：建号即设口令的 client 必须同时有同族重置出口（未配对即红 / 台账只许缩短 / 零命中即红 + 判别力自证）
 - MC-087: 部署链路的「磁盘水位 × 回收」联动 + 被前置闸门挡住时的收口归因（issue #6508 / #6505 / #6512）：恢复出口按水位选窗口（固定 168h 在真机是 `Total: 0B` 的空操作）；构建缓存读数不许是 `?`；`-af` 只许落在恢复出口；闸门中止打机读标记 `ABORT_REASON=`，CI 收口按标记分支（未开始部署 ≠ 环境可能坏）；构建后「回收量为 0」的告警由水位守卫（水位充裕 ⇒ 只打信息行「属预期」）+ 回收量口径 = 缓存占用差
+- MC-088: 写面幂等接线覆盖率的类级元守卫（issue #6209）：凡消费同一份 ClientRequestIdService 的写面必须登记；读了 X-Client-Request-Id 却不接点位 ⇒ 红；豁免只许缩短；禁新造第二套幂等框架
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
@@ -10750,6 +10784,7 @@
 - PR-124: 米宝解读可落值的商品字段放开为 name/material/craft/color；door_width 与 price 只写 note 建议、值不落地（issue #6361）
 - PR-125: 米宝解读额外生成商品描述文案 ⇒ 预填建品页「图文描述」富文本区（来源 [米宝解读]、有值才写键、不覆盖商家内容）（issue #6362）
 - PR-126: 识别 vs 推理的分工按字段定死：生成类字段（商品名/商品描述）只由 [米宝解读] 给值，识别路径永不许直填（issue #6386）
+- PR-128: 商品创建服务端幂等（issue #6209）：同一 X-Client-Request-Id 并发 N 次 ⇒ 恰 1 条商品 + client_request_keys 恰 1 行；不同键各建一份（负向对照）
 - UI-048: 工艺配置页：规则 / 工序删除的二次确认改**弹框**（与「删除工艺路线」同一形态；弹框写清删的是哪一条 + 删除中禁用 + 失败理由逐条）
 - UI-049: 工艺项页·**一张表装全部工序**（用户裁定 2026-09-21：删【打包发货】独立区块 ⇒ 两层分区退场；按车间分组可折叠；**不再有部位列**）
 - UI-050: 工艺项页·**【打包发货】独立区块已删除**（用户裁定 2026-09-21）+ 工艺路线并入该位置**同屏** + 两个 tab（工序管理 / 算料配置）+ **行为变更如实登记**（零价目行的工序**进表**：`data-state=no_row` + 行尾 `管理▸` 可停用/删除，issue #5875）

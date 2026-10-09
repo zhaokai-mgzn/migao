@@ -3,6 +3,7 @@ package com.migao.admin.controller;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.*;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.ProductService;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.security.TenantOwnedResource;
@@ -61,13 +62,20 @@ public class ProductController {
      * 新增商品
      *
      * POST /api/admin/products
+     *
+     * <p>幂等（issue #6209）：请求头 {@code X-Client-Request-Id} 非空时按
+     * {@code (tenantId, 键)} 去重（同一份 {@link com.migao.admin.service.ClientRequestIdService}，
+     * 与订单 / 售后 / 发货 / 报工 / 入库同族）。缺头 ⇒ 原路径逐字不变（老客户端不受影响）。</p>
      */
     @RequirePermission("product:create")
     @PostMapping
-    public ApiResponse<ProductResponse> createProduct(@Valid @RequestBody ProductCreateRequest request) {
+    public ApiResponse<ProductResponse> createProduct(
+            @Valid @RequestBody ProductCreateRequest request,
+            @RequestHeader(value = ClientRequestIdService.HEADER, required = false) String clientRequestId) {
         Long tenantId = TenantContext.getTenantId();
-        log.info("创建商品: name={}, tenantId={}", request.getName(), tenantId);
-        ProductResponse product = productService.createProduct(request, tenantId);
+        log.info("创建商品: name={}, tenantId={}, clientRequestId={}",
+                request.getName(), tenantId, clientRequestId);
+        ProductResponse product = productService.createProduct(request, tenantId, clientRequestId);
         return ApiResponse.success(product);
     }
 

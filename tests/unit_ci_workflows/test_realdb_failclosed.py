@@ -197,6 +197,13 @@ REALDB_FILES: dict[str, str] = {
     # 证的是「一行真的进了 stock_ledger_entries」（含 ck_stock_ledger_reason 约束与 NUMERIC(12,1) 列）。
     _SVC + "ProductStockLedgerRealDbTest.java": "direct",
     _SVC + "ProductSkuReceiveStockNullCostRealDbTest.java": "direct",
+    # issue #6209：建品写面的**并发同键**判据（N=4 同 X-Client-Request-Id ⇒ 恰 1 条商品 +
+    # `client_request_keys` 恰 1 行）。为什么必须真 PG：去重的原子性来源是 DDL 的
+    # `UNIQUE (tenant_id, client_request_id)` + `INSERT … ON CONFLICT DO NOTHING` 的**影响行数**
+    # ——「第二个写入者是否真的阻塞到第一个提交、然后读到快照并回放」靠的是**唯一索引上的行锁**
+    # （mock 的 insert 恒成功、也不会有第二个事务在索引上等 ⇒ 结构上不可见，判据会恒绿）；
+    # 而「同键并发建出几条商品 / 幂等键几行 / 赢家的 SKU 几行」是**并发下的落库读数**。
+    _SVC + "ProductCreateIdempotencyRealDbTest.java": "direct",
     # issue #5515：改品 prune 射程的真库判据 —— 证的是「请求没声明的维度一行都不许删」：
     # 只带 skus 的改品会把颜色删光、再经 product_skus.color_id 的 ON DELETE CASCADE 把其下 SKU 行
     # 一并静默删掉（真库读数 2 → 0）。级联是**数据库行为**，mock 面结构上不可见 ⇒ 必须真库。

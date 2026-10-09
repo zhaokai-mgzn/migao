@@ -234,7 +234,8 @@ class BusinessFlowIntegrationTest {
         productResponse.setCategoryId("cat-001");
         productResponse.setStatus("on_sale");
 
-        when(productService.createProduct(any(ProductCreateRequest.class), eq(1L)))
+        // issue #6209：建品端点改为「读 X-Client-Request-Id + 三参 createProduct」⇒ 桩钉三参重载
+        when(productService.createProduct(any(ProductCreateRequest.class), eq(1L), any()))
                 .thenReturn(productResponse);
 
         ProductCreateRequest createRequest = new ProductCreateRequest();

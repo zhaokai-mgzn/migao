@@ -145,7 +145,9 @@ class ProductStockLedgerRealDbTest {
         productService = new ProductService(session.getMapper(ProductMapper.class),
                 session.getMapper(CategoryMapper.class), session.getMapper(ProductColorMapper.class),
                 session.getMapper(ProductSkuMapper.class), session.getMapper(ProductAttributeMapper.class),
-                stockLedgerService);
+                stockLedgerService,
+                // 幂等键（issue #6209）：本类走无键路径 ⇒ 不需要幂等存储
+                null);
     }
 
     @AfterAll

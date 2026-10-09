@@ -65,6 +65,21 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     private final ProductAttributeMapper productAttributeMapper;
     /** 库存台账（issue #4055）：本类只负责在库存变更点写一行流水，查询/落账语义在该服务内 */
     private final StockLedgerService stockLedgerService;
+    /**
+     * 写请求幂等键（issue #6209）：建品写面此前**从未接**这个已有机制（订单 / 售后 / 发货 /
+     * 报工 / 入库都接了同一份实现），现场读数 = 同键并发 5 次建出 6 条商品 + {@code client_request_keys}
+     * 0 行。本类只**接线**，不新造幂等框架。
+     */
+    private final ClientRequestIdService clientRequestIdService;
+
+    /**
+     * 建品写面的端点标识（幂等键诊断列；与 {@code OrderService.ENDPOINT_CREATE_ORDER} 同族）。
+     *
+     * <p>两个入口共用它：表单 {@code POST /api/admin/products} 与 agent
+     * {@code POST /api/admin/agent/products} 落到**同一份**建品语义，同键跨入口复用会在表里留下
+     * 可查证据（与 {@code ProductionScanCompleteService} 对「两个端点」的处置同口径）。</p>
+     */
+    public static final String ENDPOINT_CREATE_PRODUCT = "POST /api/admin/products";
 
     /**
      * 导出表头（**导出与导入共用的单一源**，issue #5154）。
@@ -422,10 +437,67 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     }
 
     /**
-     * 创建商品
+     * 创建商品（无幂等键的既有入口 —— 程序化调用方与老客户端走这里，原路径逐字不变）。
+     *
+     * <p>新入口见 {@link #createProduct(ProductCreateRequest, Long, String)}：带
+     * {@code X-Client-Request-Id} 的 HTTP 写请求走它去重。</p>
      */
     @Transactional(rollbackFor = Exception.class)
     public ProductResponse createProduct(ProductCreateRequest request, Long tenantId) {
+        return createProduct(request, tenantId, null);
+    }
+
+    /**
+     * 创建商品 —— **带服务端幂等**（issue #6209）。
+     *
+     * <p>请求头 {@code X-Client-Request-Id} 非空时按 {@code (tenantId, 键)} 去重：首次请求正常建品
+     * 并把 {@link ProductResponse} 快照落库，同键再次到达**不再执行**、直接回放首次结果
+     * （调用方看到同一条商品 id）。无键 ⇒ {@code null} 透传给原路径，逐字不变。</p>
+     *
+     * <p><b>并发语义（与 {@code OrderService#createOrderForAgent} 同款，如实登记）</b>：本方法带
+     * {@code @Transactional}，{@code claim}/{@code complete}/{@code discard} 跑在**同一个事务**里
+     * ⇒ ① 成功才一起提交、失败一起回滚（占位不会残留）；② **并发同键**时第二个请求的
+     * {@code INSERT … ON CONFLICT DO NOTHING} 会**阻塞在唯一索引上**，直到第一个提交或回滚 ——
+     * 提交后它读到已落库的快照并回放（同一条商品 id），回滚后它自己成为首次执行者。
+     * 即并发是「串行等待」而非「立即回放」；这是刻意取舍（换取「不留残留占位」），
+     * 代价是同键并发第二个请求的响应时间被拉长。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public ProductResponse createProduct(ProductCreateRequest request, Long tenantId, String clientRequestId) {
+        // 无幂等键（老 ai-agent / 表单类调用方）⇒ 原路径逐字不变：零 DB 往返、不因服务端升级而报错
+        if (!StringUtils.hasText(clientRequestId)) {
+            return doCreateProduct(request, tenantId);
+        }
+        // ① 原子占位（INSERT … ON CONFLICT DO NOTHING，按影响行数判首次）——
+        //    不用「捕获唯一约束异常」探测冲突：PG 里冲突会让当前事务进入 aborted 状态，后续查询全失败
+        if (!clientRequestIdService.claim(tenantId, clientRequestId, ENDPOINT_CREATE_PRODUCT)) {
+            // ② 同键重复 ⇒ 不执行，直接回放首次成功快照（replay 对「占位但无结果」fail-closed 抛错）
+            return clientRequestIdService.replay(tenantId, clientRequestId, ProductResponse.class)
+                    .orElseThrow(() -> new BusinessException("REQUEST_IN_PROGRESS",
+                            "同一 X-Client-Request-Id 的请求正在处理中，本次未重复执行（请勿重复提交）",
+                            409,
+                            "请勿重复提交；请稍后用商品查询确认结果（换新幂等键重试同样会造成重复建品）"));
+        }
+        ProductResponse created;
+        try {
+            created = doCreateProduct(request, tenantId);
+        } catch (RuntimeException e) {
+            // ④ 执行失败 ⇒ 释放占位：否则一次失败就把该键永久占死，之后的重试全被误判为「重复」
+            clientRequestIdService.discard(tenantId, clientRequestId);
+            throw e; // 原样抛出，不吞（失败必须对调用方可见）
+        }
+        // ③ 执行成功 ⇒ 落结果快照，同键后续请求回放它。放在 try 之外：
+        //    快照写失败时**不得**释放占位（商品已经建出来了），宁可让同键请求 fail-closed 报错
+        clientRequestIdService.complete(tenantId, clientRequestId, created);
+        return created;
+    }
+
+    /**
+     * 建品的**执行体**（准入 + 落库），不含幂等分支 —— 幂等三态在
+     * {@link #createProduct(ProductCreateRequest, Long, String)} 里。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public ProductResponse doCreateProduct(ProductCreateRequest request, Long tenantId) {
         // issue #5063（V115）：库存是 1 位小数口径（0.1 米粒度）⇒ **超过 1 位小数显式拒绝**
         // （fail-closed；静默取整 = 账面与实物不符且无人发现，正是本单要治的形态）。
         // issue #6199：`products.stock` 是**绝对值**（实物米数）⇒ 同一次准入**还要拒负数**
@@ -2090,10 +2162,26 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
     /**
      * Agent 专用创建商品。
      * 自动填充默认值、解析分类/加工项 ID（支持名称/UUID/序号）。
+     *
+     * <p>无幂等键的既有入口（程序化调用方）；HTTP 入口见
+     * {@link #createProductForAgent(com.migao.admin.dto.agent.AgentProductCreateRequest, Long, String)}。</p>
      */
     @Transactional(rollbackFor = Exception.class)
     public ProductResponse createProductForAgent(com.migao.admin.dto.agent.AgentProductCreateRequest request,
                                                   Long tenantId) {
+        return createProductForAgent(request, tenantId, null);
+    }
+
+    /**
+     * Agent 专用创建商品 —— **带服务端幂等**（issue #6209）。
+     *
+     * <p>{@code X-Client-Request-Id}（由 {@code AgentProductController} 从请求头取）非空时按
+     * {@code (tenantId, 键)} 去重，与表单入口 {@code POST /api/admin/products} 共用同一份
+     * 幂等实现与同一端点标识（两个入口落到同一份建品语义）。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public ProductResponse createProductForAgent(com.migao.admin.dto.agent.AgentProductCreateRequest request,
+                                                  Long tenantId, String clientRequestId) {
         ProductCreateRequest createReq = new ProductCreateRequest();
 
         // name: 手动校验
@@ -2169,7 +2257,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 规格
         if (request.getSpecifications() != null) createReq.setSpecifications(request.getSpecifications());
 
-        return createProduct(createReq, tenantId);
+        return createProduct(createReq, tenantId, clientRequestId);
     }
 
     /**
