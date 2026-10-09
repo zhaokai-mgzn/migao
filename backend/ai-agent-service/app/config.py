@@ -15,6 +15,21 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     API_PREFIX: str = "/api"
 
+    # ── DEBUG 降级身份的**目标租户**（issue #6288）─────────────────────────────
+    # 单一真值：`app/utils/auth.py` 的 DEBUG 降级身份（C 端 customer / B 端管理员）
+    # 与 `tests/agent_eval/local_runner.py` 的前置复位 / db 校验 SQL 都读本变量
+    # （同一个环境变量名，两处**不得**再各写一份字面量）。
+    # 取值真值（2026-10-04 云测试环境重建）：tenant 1「词元通达」连同全部数据已清空，
+    # 当前云测试租户 = **tenant 25「米高测试环境」**（企业编码 `shop-8yn7`，
+    # 管理员手机 13800138000；逐条依据见 PR body）⇒ 默认指向它。
+    # ⚠️ **本地/CI docker 标准考场的租户 1 由栈内种子创建**、与本重建无关 ⇒ 评测 workflow
+    # 起栈那条腿显式设 `EVAL_TENANT_ID=1`（先例：`tests/smoke/config.py` 的
+    # `TENANT_ID` = local 1 / 云端 `CLOUD_TENANT_ID=25`）。
+    # ⚠️ 本变量**不放宽**任何安全边界：它只决定「DEBUG 降级身份落到哪个租户」，
+    # 非 DEBUG 分支（生产）仍然**只**从 JWT payload 取租户、不读本值（护栏见
+    # `tests/unit_ci_workflows/test_eval_tenant_single_source.py`）。
+    EVAL_TENANT_ID: int = 25
+
     # 服务器配置
     HOST: str = "0.0.0.0"
     PORT: int = 8000

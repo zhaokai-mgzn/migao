@@ -93,6 +93,12 @@ jobs:
           AI_API_URL: https://ai-api.migaozn.com
           ADMIN_API_URL: https://api.migaozn.com
           SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
+          # 目标租户（issue #6288）：本入口打的是**已部署**云测试环境 ⇒ 显式钉住云测试租户
+          # （tenant 1「词元通达」随 2026-10-04 环境重建连同全部数据清空；当前云测试租户 =
+          # tenant 25「米高测试环境」）。服务端的 DEBUG 降级身份与 runner 的复位/校验 SQL
+          # 都读同一个环境变量名 ⇒ 三处口径不会分叉（判据 =
+          # tests/unit_ci_workflows/test_eval_tenant_single_source.py）。
+          EVAL_TENANT_ID: "25"
           PYTHONUTF8: "1"
           PYTHONIOENCODING: utf-8
           # 波动台账（#3505 汇聚）：flake ledger 落盘 + artifact 上传，供高波动用例

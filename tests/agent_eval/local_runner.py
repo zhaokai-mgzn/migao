@@ -61,6 +61,41 @@ def _env_float(name: str, default: float) -> float:
 ROUND_SLEEP = _env_float("EVAL_ROUND_SLEEP", 0.5)
 CASE_SLEEP = _env_float("EVAL_CASE_SLEEP", 1.0)
 
+
+def _env_int(name: str, default: int, *, min_value: int = 1,
+             max_value: int = 2_147_483_647) -> int:
+    """整型环境变量（缺省 / 非法 / 越界 ⇒ 回落 `default` 并告警）。"""
+    raw = (os.environ.get(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        v = int(raw)
+    except ValueError:
+        print(f"⚠️ {name}={raw!r} 非法，回落默认 {default}")
+        return default
+    if not (min_value <= v <= max_value):
+        print(f"⚠️ {name}={raw!r} 越界（{min_value}~{max_value}），回落默认 {default}")
+        return default
+    return v
+
+
+# ── 评测目标租户的**单一真值**（issue #6288）─────────────────────────────────
+# 环境变量 `EVAL_TENANT_ID`（**整型校验后**才进 SQL / 落身份），默认 25。
+# 取值真值（2026-10-04 云测试环境重建）：tenant 1「词元通达」连同全部数据已清空，
+# 当前云测试租户 = **tenant 25「米高测试环境」**（企业编码 `shop-8yn7`）⇒ 默认指向它，
+# 与 `backend/ai-agent-service/app/config.py` 的 `EVAL_TENANT_ID` 同值同变量名
+# （服务端 DEBUG 降级身份与本运行器的 SQL 定位口径必须是同一个租户 —— 否则
+# 「复位哪个租户」「db 校验查哪个租户」与「请求落到哪个租户」三者会悄悄分叉）。
+# ⚠️ **本地/CI docker 标准考场的租户 1 由栈内种子创建**（`scripts/eval_stack_seed.sh`
+# 注入 `fixtures/*_eval_seed.sql`，逐行写 tenant_id=1），与本重建无关 ⇒ 起本地栈的评测
+# workflow 显式设 `EVAL_TENANT_ID=1`（先例：`tests/smoke/config.py` 的 `TENANT_ID`
+# = local `1` / 云端 `CLOUD_TENANT_ID=25`）。
+# ⚠️ 默认值落在**云端测试租户**：本运行器的复位 / db 校验只对「它真正打的那套环境」有意义，
+# 而唯一打**已部署**云环境的是 `agent-eval.yml`（`ai-api.migaozn.com`）；本地运维裸跑时
+# 显式传 `EVAL_TENANT_ID=1` 才不会「查不到对象」。
+EVAL_TENANT_ID = _env_int("EVAL_TENANT_ID", 25)
+
+
 # ── C 端用例集选择（纯逻辑拆到 eval_case_filter，issue #3266）──
 # 拆出去的动机：本文件有模块级 `import httpx`，而 CI 的 ci-workflow-helper 测试 job
 # 只装 pytest+pyyaml → 任何想复用「用例集选择」的测试/脚本一 import 本模块就崩。
@@ -294,11 +329,11 @@ _SEED_AFTERSALES_TICKET_NO = "AS-20260914-9001"
 # 只回状态不清留痕 = 假绿：`db_verify[after_sales_ticket]` 的
 # `expect_fields_nonempty: [closedAt, closeReason]` + `expect_close_reason_contains` 会被
 # **首跑残留**满足（重试即使什么都没写也可能过这条核对器）。
-_RESET_AFTERSALES_TICKET_SQL = """
+_RESET_AFTERSALES_TICKET_SQL = f"""
 UPDATE after_sales_tickets
    SET status = 'pending', closed_at = NULL, close_reason = NULL,
        internal_notes = NULL, updated_at = NOW()
- WHERE tenant_id = 1 AND ticket_no = $1
+ WHERE tenant_id = {EVAL_TENANT_ID} AND ticket_no = $1
 RETURNING id
 """
 
@@ -373,18 +408,18 @@ _SEED_PROCESSING_ORDER_NO = "EVAL-MB-ORD-0002"
 # + 把本用例为该订单生成的加工单**软删**（`deleted = 1`）—— 走软删是与仓库既有约定一致
 # 的做法，且 `uk_processing_orders_active` 唯一索引只覆盖 `deleted = 0` 的在途状态，
 # 软删后重跑再生成不会撞唯一键。
-_RESET_PROCESSING_ORDER_SQL = """
+_RESET_PROCESSING_ORDER_SQL = f"""
 UPDATE processing_orders
    SET deleted = 1, updated_at = NOW()
- WHERE tenant_id = 1 AND deleted = 0
-   AND order_id = (SELECT id FROM orders WHERE tenant_id = 1 AND order_no = $1)
+ WHERE tenant_id = {EVAL_TENANT_ID} AND deleted = 0
+   AND order_id = (SELECT id FROM orders WHERE tenant_id = {EVAL_TENANT_ID} AND order_no = $1)
 RETURNING id
 """
 
-_RESTORE_ORDER_STATUS_SQL = """
+_RESTORE_ORDER_STATUS_SQL = f"""
 UPDATE orders
    SET status = 'confirmed', updated_at = NOW()
- WHERE tenant_id = 1 AND order_no = $1
+ WHERE tenant_id = {EVAL_TENANT_ID} AND order_no = $1
 RETURNING id
 """
 
@@ -395,10 +430,10 @@ RETURNING id
 #   把 `cancelled` / `completed` 设为**终态**（`cancelled → Set.of()`）⇒ 用例首跑取消掉的订单
 #   在 HTTP 面上**没有**反向放行（这正是 OR-007 只能登记 `namespaces` 弱证据的原因）。
 #   复位与 `scripts/eval_stack_seed.sh` 走**同一条 DB**（同 `_reset_processing_order` 的先例）。
-_ORDER_STATUS_RESTORE_SQL = """
+_ORDER_STATUS_RESTORE_SQL = f"""
 UPDATE orders
    SET status = $2, updated_at = NOW()
- WHERE tenant_id = 1 AND order_no = $1
+ WHERE tenant_id = {EVAL_TENANT_ID} AND order_no = $1
 RETURNING id
 """
 
@@ -1266,7 +1301,7 @@ async def _restore_order_status(token: str, spec: dict, phase: str) -> str:
         conn = await asyncpg.connect(_eval_db_dsn(), timeout=8)
         try:
             row = await conn.fetchrow(
-                "SELECT status FROM orders WHERE tenant_id = 1 AND order_no = $1", order_no)
+                f"SELECT status FROM orders WHERE tenant_id = {EVAL_TENANT_ID} AND order_no = $1", order_no)
             if row is None:
                 return _clean_not_applied(
                     phase, f"库里没有订单 {order_no}（栈缺 seed？见 fixtures/mibao_eval_seed.sql）")
@@ -1277,7 +1312,7 @@ async def _restore_order_status(token: str, spec: dict, phase: str) -> str:
             if hit is None:
                 return _clean_not_applied(phase, f"订单 {order_no} 状态复位为 {want} 未命中任何行")
             back = await conn.fetchrow(
-                "SELECT status FROM orders WHERE tenant_id = 1 AND order_no = $1", order_no)
+                f"SELECT status FROM orders WHERE tenant_id = {EVAL_TENANT_ID} AND order_no = $1", order_no)
             got = str((back or {}).get("status") or "")
             if got != want:
                 return _clean_not_applied(
@@ -6303,7 +6338,7 @@ async def _probe_aftersales_ticket_count(ticket_no: str) -> int | None:
         conn = await asyncpg.connect(_eval_db_dsn(), timeout=8)
         try:
             row = await conn.fetchrow(
-                "SELECT COUNT(*) AS n FROM after_sales_tickets WHERE tenant_id = 1 AND ticket_no = $1",
+                f"SELECT COUNT(*) AS n FROM after_sales_tickets WHERE tenant_id = {EVAL_TENANT_ID} AND ticket_no = $1",
                 str(ticket_no))
             return int(row["n"]) if row is not None else None
         finally:
