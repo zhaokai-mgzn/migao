@@ -771,17 +771,26 @@ public class ProcessingOrderService {
     // ============================================================ 事件驱动自动成批（issue #5182 = 阶段 2b-3）
 
     /**
-     * 🔴 <b>自动成批派单的缺省值 = 关</b>（issue #5182 判据 1）。
+     * <b>自动成批派单的缺省值 = 开</b>（issue #6588；2026-10-09 用户裁定「记录期已结束，可以翻默认」）。
      *
-     * <p>不启用 ⇒ 与今天**逐值相同**（{@link #autoBatchDispatch} 在开关为假时
-     * <b>零读零写</b>立刻返回，三个事件挂载点只多一句永不抛的
-     * {@link PoolChangeNotifier#notifySafely}）。这不是保守：记录期基线正建立在
-     * 「指派与派单行为不变」之上（#5145/#5158/#5167/#5169/#5177 一路同款）。</p>
+     * <p>用户原话：「我觉得是不是不应该有这个开关，默认就应该开启智能派单」⇒ 智能派单是**默认能力**，
+     * 不是要商家去拨的开关：满足成批条件（①②③）或已过最晚派单日 ⇒ 系统自己合并排料并派单，
+     * 商家不必逐单勾选（人工入口「一键合并派单」照旧并存 —— 两条路都到同一个
+     * {@link #generatePooled} 口径）。</p>
      *
-     * <p>开关只有这一个载体（Spring 属性 {@code migao.production.auto-batch.enabled} 覆盖它，
-     * 属性缺失 ⇒ 本值）—— 红证 = 把它改为 {@code true} ⇒「默认关」那条判据当场变红。</p>
+     * <p><b>翻缺省改变了什么</b>：此前缺省 = 关，理由是「记录期基线」（#5145/#5158/#5167/#5169/#5177
+     * 一路以「不启用 ⇒ 与今天逐值相同」为前提）；用户已裁定记录期结束 ⇒ 该前提不再成立，
+     * 那条「缺省关 ⇒ 零动作」的判据随之退役（改为「**显式**关 ⇒ 零读零写」，见下）。</p>
+     *
+     * <p>🔴 <b>不变式（不因翻缺省而放松）</b>：{@code enabled=false}（显式策略 / 部署属性）⇒
+     * {@link #autoBatchDispatch} <b>零读零写</b>立刻返回 —— 关闸仍是一条真闸
+     * （红证 = 摘掉那行判定 ⇒ {@code explicitOffDoesNothingAtAll} 当场红）。</p>
+     *
+     * <p>缺省值只有这一个载体（Spring 属性 {@code migao.production.auto-batch.enabled} 覆盖它，
+     * 属性缺失 ⇒ 本值）；运维回退 = 部署侧显式写 {@code =false}，**不改码**。
+     * 红证 = 把它改回 {@code false} ⇒「缺省即开」那条判据当场变红。</p>
      */
-    public static final boolean AUTO_BATCH_DEFAULT_ENABLED = false;
+    public static final boolean AUTO_BATCH_DEFAULT_ENABLED = true;
 
     /** 成批条件①的缺省阈值：能填满某批次 ≥ X%（按该批次**入库量**为分母）。 */
     public static final int AUTO_BATCH_DEFAULT_FILL_RATIO_PERCENT = 80;
@@ -852,7 +861,7 @@ public class ProcessingOrderService {
                                   BigDecimal minBatchMeters, int standardCycleDays,
                                   String assignmentRule, BigDecimal maxWaitHours) {
 
-        /** 缺省关（与 {@link #AUTO_BATCH_DEFAULT_ENABLED} 同源，供测试与调用方构造显式策略用）。 */
+        /** 缺省策略（与 {@link #AUTO_BATCH_DEFAULT_ENABLED} 同源 ⇒ **开着**；要显式关，直接构造 {@code enabled=false} 的策略）。 */
         public static AutoBatchPolicy defaults() {
             return new AutoBatchPolicy(AUTO_BATCH_DEFAULT_ENABLED,
                     AUTO_BATCH_DEFAULT_FILL_RATIO_PERCENT,
@@ -880,7 +889,7 @@ public class ProcessingOrderService {
     /**
      * 一次「评估并按需成批」的**读数与痕迹**（判据 6 的审计面 + 判据 10 的可查面）。
      *
-     * @param enabled           本次是否真的评估了（{@code false} ⇒ 缺省关，零动作）
+     * @param enabled           本次是否真的评估了（{@code false} ⇒ **显式关**，零动作）
      * @param trigger           触发原因（{@link PoolChangeNotifier} 的四类）
      * @param rule              本次生效的指派规则
      * @param reasons           **命中的规则**逐条（按哪条规则派的：条件①/②/③/加急/业务到期）
@@ -937,7 +946,8 @@ public class ProcessingOrderService {
     public AutoBatchOutcome autoBatchDispatch(Long tenantId, String trigger, AutoBatchPolicy policyRaw) {
         AutoBatchPolicy policy = policyRaw == null ? autoBatchPolicy() : policyRaw;
         if (tenantId == null || !policy.enabled()) {
-            // 🔴 判据 1：缺省关 ⇒ **零读零写**（连池都不查）⇒ 与今天逐值相同
+            // 🔴 判据 1（#6588 重写）：**显式关** ⇒ 零读零写（连池都不查）。
+            // 缺省已翻成「开」⇒ 本条钉的从「缺省不动数据」变成「关闸真的关得上」。
             return new AutoBatchOutcome(false, trigger, null, List.of(), List.of(), List.of(), List.of());
         }
         String rule = StockBatchConsumptionService.normalizeAssignmentRule(policy.assignmentRule());
@@ -1029,7 +1039,7 @@ public class ProcessingOrderService {
                                                  AutoBatchPolicy policyRaw) {
         AutoBatchPolicy policy = policyRaw == null ? autoBatchPolicy() : policyRaw;
         if (tenantId == null || !policy.enabled()) {
-            // 🔴 判据 4：缺省关 ⇒ **零读零写**（与 autoBatchDispatch 同一条判断，不另立口径）
+            // 🔴 判据 4（#6588 重写）：**显式关** ⇒ 零读零写（与 autoBatchDispatch 同一条判断，不另立口径）
             return new AutoBatchOutcome(false, trigger, null, List.of(), List.of(), List.of(),
                     List.of());
         }

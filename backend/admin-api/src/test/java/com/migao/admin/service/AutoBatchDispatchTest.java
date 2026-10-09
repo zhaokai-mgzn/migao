@@ -34,6 +34,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
@@ -46,9 +47,12 @@ import static org.mockito.Mockito.when;
  *
  * <h2>判据映射（每条都带**能单独让它红**的形态）</h2>
  * <ol>
- *   <li><b>默认关</b>（判据 1）：{@code AUTO_BATCH_DEFAULT_ENABLED=false} ⇒ {@code autoBatchDispatch}
- *       **零读零写**（连池都不查、一个 mapper 都不碰）。
- *       红证 = 把缺省改成 {@code true} ⇒ 本类的缺省用例当场红。</li>
+ *   <li><b>缺省即开</b>（判据 1 的上半，issue #6588）：{@code AUTO_BATCH_DEFAULT_ENABLED=true} ⇒
+ *       **不传策略**的入口真的评估（池被读），而不是走「开关为假」那条早返回。
+ *       红证 = 把缺省改回 {@code false} ⇒ {@code defaultIsOnAndEvaluates} 当场红。</li>
+ *   <li><b>显式关 ⇒ 零读零写</b>（判据 1 的下半，不变式）：开关为假（部署属性 / 显式策略）⇒
+ *       {@code autoBatchDispatch} **一个 mapper 都不碰**、一次 {@code generate} 都不调。
+ *       红证 = 摘掉关闸判定 ⇒ {@code explicitOffDoesNothingAtAll} 当场红。</li>
  *   <li><b>事件驱动、不靠计时器</b>（判据 2）：① 结构性 —— 触发链上
  *       （{@code AutoBatchDispatchListener} / {@code PoolChangeNotifier} /
  *       {@code ProcessingOrderService}）**没有任何 {@code @Scheduled}**，且监听器是
@@ -67,7 +71,7 @@ import static org.mockito.Mockito.when;
  * </ol>
  */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("#5182 自动成批：事件驱动 / 默认关 / 条件生效 / 加急 / 兜底 / 幂等 / 失败留痕")
+@DisplayName("#5182 自动成批：事件驱动 / 缺省即开（显式关零动作） / 条件生效 / 加急 / 兜底 / 幂等 / 失败留痕")
 class AutoBatchDispatchTest {
 
     private static final Long TENANT = 5182L;
@@ -115,20 +119,38 @@ class AutoBatchDispatchTest {
         ReflectionTestUtils.setField(service, "stockBatchConsumptionService", stockBatchConsumptionService);
     }
 
-    // ─────────────────────────────────────────── 判据 1：默认关
+    // ─────────────────────────────────────────── 判据 1：缺省即开 / 显式关 ⇒ 零动作
 
     @Test
-    @DisplayName("🔴 判据1 默认关：不启用 ⇒ autoBatchDispatch **零读零写**（连池都不查）")
-    void defaultOffDoesNothingAtAll() {
+    @DisplayName("🔴 判据1a（#6588）缺省即开：**不传策略**的 2 参入口真的评估（池被读），不是早返回")
+    void defaultIsOnAndEvaluates() {
         assertThat(service.autoBatchPolicy().enabled())
-                .as("🔴 缺省 = 关（红证：把 AUTO_BATCH_DEFAULT_ENABLED 改成 true ⇒ 本断言红）")
+                .as("🔴 缺省 = 开（红证：把 AUTO_BATCH_DEFAULT_ENABLED 改回 false ⇒ 本断言与下面的评估断言同时红）")
+                .isTrue();
+        // 池里没有可派单 ⇒ 不派任何单，但**评估必须发生**（只桩池读本身，不桩用不到的 mapper 以免 UnnecessaryStubbing）
+        when(orderMapper.selectList(any())).thenReturn(List.of());
+
+        ProcessingOrderService.AutoBatchOutcome outcome =
+                service.autoBatchDispatch(TENANT, PoolChangeNotifier.TRIGGER_ORDER_CONFIRMED);
+
+        assertThat(outcome.enabled()).as("缺省开着 ⇒ 这条腿真的跑了（旧缺省 = 关时这里是 false）").isTrue();
+        verify(orderMapper, atLeastOnce()).selectList(any());
+        assertThat(calls).as("池里没单 ⇒ 一张都不派（缺省开 ≠ 乱派）").isEmpty();
+    }
+
+    @Test
+    @DisplayName("🔴 判据1b 显式关：开关为假 ⇒ autoBatchDispatch **零读零写**（连池都不查）")
+    void explicitOffDoesNothingAtAll() {
+        // 显式关的形态 = 部署属性 `migao.production.auto-batch.enabled=false`（与调用方传 disabled 策略同源）
+        ReflectionTestUtils.setField(service, "autoBatchEnabled", false);
+        assertThat(service.autoBatchPolicy().enabled())
+                .as("🔴 显式关（红证：摘掉 autoBatchDispatch 里那行 `!policy.enabled()` 关闸 ⇒ 本用例红）")
                 .isFalse();
 
         ProcessingOrderService.AutoBatchOutcome outcome =
                 service.autoBatchDispatch(TENANT, PoolChangeNotifier.TRIGGER_ORDER_CONFIRMED);
 
-        assertThat(outcome.enabled()).as("没有评估 ⇒ enabled=false（调用方据此不打日志，与今天逐值相同）")
-                .isFalse();
+        assertThat(outcome.enabled()).as("没有评估 ⇒ enabled=false（调用方据此不打日志）").isFalse();
         assertThat(outcome.dispatchedOrderNos()).isEmpty();
         assertThat(outcome.reasons()).isEmpty();
         verifyNoInteractions(orderMapper, orderItemMapper, processingOrderMapper,

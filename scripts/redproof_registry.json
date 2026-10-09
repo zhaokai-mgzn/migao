@@ -196,13 +196,13 @@
       "cost": "单类单方法 ×3"
     },
     {
-      "id": "auto-batch/default_off",
+      "id": "auto-batch/default_on",
       "tool": "scripts/auto-batch-red-proof.py",
-      "mutation": "default_off",
-      "criterion": "缺省关 ⇒ 零动作（自动成批缺省必须是关）",
+      "mutation": "default_on",
+      "criterion": "缺省即开 ⇒ 不传策略也真的评估（自动成批缺省必须是开，#6588）",
       "guarded": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
-      "anchor": "public static final boolean AUTO_BATCH_DEFAULT_ENABLED = false;",
-      "replacement": "public static final boolean AUTO_BATCH_DEFAULT_ENABLED = true; // [RED-PROOF]",
+      "anchor": "public static final boolean AUTO_BATCH_DEFAULT_ENABLED = true;",
+      "replacement": "public static final boolean AUTO_BATCH_DEFAULT_ENABLED = false; // [RED-PROOF]",
       "criteria": {
         "cwd": "backend/admin-api",
         "cmd": [
@@ -210,13 +210,13 @@
           "-o",
           "-q",
           "test",
-          "-Dtest=AutoBatchDispatchTest#defaultOffDoesNothingAtAll",
+          "-Dtest=AutoBatchDispatchTest#defaultIsOnAndEvaluates",
           "-DfailIfNoTests=false"
         ],
         "kind": "surefire",
         "fqn": "com.migao.admin.service.AutoBatchDispatchTest",
-        "method": "defaultOffDoesNothingAtAll",
-        "red_text": "缺省 = 关"
+        "method": "defaultIsOnAndEvaluates",
+        "red_text": "缺省 = 开"
       },
       "requires": [
         "cmd:java",
@@ -225,13 +225,13 @@
       "cost": "单类单方法 ×3"
     },
     {
-      "id": "auto-batch-due-scan/default_off",
-      "tool": "scripts/auto-batch-due-scan-red-proof.py",
-      "mutation": "default_off",
-      "criterion": "缺省关 ⇒ 扫描零动作（不启用也照扫 = 越权派单）",
-      "guarded": "backend/admin-api/src/main/java/com/migao/admin/service/AutoBatchDueScanService.java",
-      "anchor": "        if (!processingOrderService.autoBatchPolicy().enabled()) {",
-      "replacement": "        if (false) { // [RED-PROOF] 缺省关的闸被拆掉",
+      "id": "auto-batch/off_gate",
+      "tool": "scripts/auto-batch-red-proof.py",
+      "mutation": "off_gate",
+      "criterion": "显式关仍是一条真闸（关闸被拆 ⇒ 零读零写判据红）",
+      "guarded": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
+      "anchor": "        if (tenantId == null || !policy.enabled()) {\n            // 🔴 判据 1（#6588 重写）：**显式关** ⇒ 零读零写（连池都不查）。",
+      "replacement": "        if (tenantId == null) { // [RED-PROOF] 关闸被拆掉\n            // 🔴 判据 1（#6588 重写）：**显式关** ⇒ 零读零写（连池都不查）。",
       "criteria": {
         "cwd": "backend/admin-api",
         "cmd": [
@@ -239,13 +239,71 @@
           "-o",
           "-q",
           "test",
-          "-Dtest=AutoBatchDueScanServiceTest#defaultOffMeansZeroAction",
+          "-Dtest=AutoBatchDispatchTest#explicitOffDoesNothingAtAll",
+          "-DfailIfNoTests=false"
+        ],
+        "kind": "surefire",
+        "fqn": "com.migao.admin.service.AutoBatchDispatchTest",
+        "method": "explicitOffDoesNothingAtAll",
+        "red_text": "没有评估"
+      },
+      "requires": [
+        "cmd:java",
+        "file:backend/admin-api/mvnw"
+      ],
+      "cost": "单类单方法 ×3"
+    },
+    {
+      "id": "auto-batch-due-scan/default_on",
+      "tool": "scripts/auto-batch-due-scan-red-proof.py",
+      "mutation": "default_on",
+      "criterion": "缺省即开 ⇒ 扫描腿真的去查租户（缺省必须是开，#6588）",
+      "guarded": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
+      "anchor": "public static final boolean AUTO_BATCH_DEFAULT_ENABLED = true;",
+      "replacement": "public static final boolean AUTO_BATCH_DEFAULT_ENABLED = false; // [RED-PROOF]",
+      "criteria": {
+        "cwd": "backend/admin-api",
+        "cmd": [
+          "./mvnw",
+          "-o",
+          "-q",
+          "test",
+          "-Dtest=AutoBatchDueScanServiceTest#defaultIsOnSoScanRuns",
           "-DfailIfNoTests=false"
         ],
         "kind": "surefire",
         "fqn": "com.migao.admin.service.AutoBatchDueScanServiceTest",
-        "method": "defaultOffMeansZeroAction",
-        "red_text": "没有扫 ⇒ enabled=false"
+        "method": "defaultIsOnSoScanRuns",
+        "red_text": "缺省 = 开"
+      },
+      "requires": [
+        "cmd:java",
+        "file:backend/admin-api/mvnw"
+      ],
+      "cost": "单类单方法 ×3"
+    },
+    {
+      "id": "auto-batch-due-scan/off_gate",
+      "tool": "scripts/auto-batch-due-scan-red-proof.py",
+      "mutation": "off_gate",
+      "criterion": "显式关 ⇒ 扫描零动作（关闸被拆 = 越权派单）",
+      "guarded": "backend/admin-api/src/main/java/com/migao/admin/service/AutoBatchDueScanService.java",
+      "anchor": "        if (!processingOrderService.autoBatchPolicy().enabled()) {",
+      "replacement": "        if (false) { // [RED-PROOF] 关闸被拆掉",
+      "criteria": {
+        "cwd": "backend/admin-api",
+        "cmd": [
+          "./mvnw",
+          "-o",
+          "-q",
+          "test",
+          "-Dtest=AutoBatchDueScanServiceTest#explicitOffMeansZeroAction",
+          "-DfailIfNoTests=false"
+        ],
+        "kind": "surefire",
+        "fqn": "com.migao.admin.service.AutoBatchDueScanServiceTest",
+        "method": "explicitOffMeansZeroAction",
+        "red_text": "没有扫"
       },
       "requires": [
         "cmd:java",

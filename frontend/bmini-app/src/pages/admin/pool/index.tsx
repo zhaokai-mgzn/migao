@@ -184,12 +184,11 @@ export default function AdminPoolPage() {
 
       {data && (
         <View className='admin-surface__body'>
-          {/* 池化开关：池「看得见」≠「已开启」—— 两件事分开说 */}
-          <Text className='admin-hint' data-testid='pool-pooling-state'>
-            {data.poolingEnabled
-              ? '池化派单已开启：多单可合并排料'
-              : '池化派单未开启：派单按逐单排料（合并需先在电脑端开启池化）'}
-          </Text>
+          {/*
+            #6588：原「池化派单未开启：…（合并需先在电脑端开启池化）」已删 ——
+            电脑端**没有**这个开入口（用户 2026-10-09 逐字问「在哪开启？」），且本页自己就能合并派单
+            （勾选 → 预览合并方案 → 派单）⇒ 那是一句指向不存在的出口的引导，且把内部机制名摆给了商家。
+          */}
 
           {/* 超时告警（不得静默压单）—— 文案由服务端给（谁、等了多久、该做什么） */}
           {data.overdueCount > 0 && (

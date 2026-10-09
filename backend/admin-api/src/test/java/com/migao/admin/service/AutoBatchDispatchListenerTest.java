@@ -107,7 +107,7 @@ class AutoBatchDispatchListenerTest {
     }
 
     @Test
-    @DisplayName("缺省关（enabled=false）⇒ **一条日志都不打**（不启用 ⇒ 与今天逐值相同，不造噪声）")
+    @DisplayName("显式关（enabled=false）⇒ **一条日志都不打**（关着时不造噪声）")
     void disabledOutcomeLogsNothing() {
         when(processingOrderService.autoBatchDispatch(eq(TENANT), any()))
                 .thenReturn(new ProcessingOrderService.AutoBatchOutcome(false, "t", null,

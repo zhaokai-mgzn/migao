@@ -256,16 +256,15 @@ export default function ProductionPoolPage() {
         </Button>
       </div>
 
-      {/* 顶部状态条：池化开关 / 最长等待 / 池内订单 / 加急 / 超时未派 */}
+      {/*
+        顶部状态条：最长等待 / 待派订单 / 加工明细 / 加急 / 超时未派。
+
+        #6588：原「合并派单开关 未开启」徽标已删 —— 那是**只读**的服务端缺省值
+        （`ProductionPoolViews.Pool.poolingEnabled`），既不可点、也没有出口，摆成「开关」只会引来
+        「在哪开启？」（用户 2026-10-09 逐字提问）。**合并是页面上的动作**：勾选订单 → 一键合并派单。
+        ⚠️ 接口字段 `poolingEnabled` 契约未动（只不再上屏）。
+      */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 bg-white border border-neutral-200 rounded-lg p-3 text-sm">
-        <span data-testid="pool-status-pooling" className="inline-flex items-center gap-2">
-          <span className="text-neutral-500">合并派单开关</span>
-          {board?.poolingEnabled ? (
-            <Badge variant="success">已开启</Badge>
-          ) : (
-            <Badge variant="default">未开启</Badge>
-          )}
-        </span>
         <span data-testid="pool-status-max-wait" className="text-neutral-600">
           最长等待 <span className="font-mono text-neutral-900">{board?.maxWaitHours ?? MAX_WAIT_HOURS}</span> 小时
         </span>

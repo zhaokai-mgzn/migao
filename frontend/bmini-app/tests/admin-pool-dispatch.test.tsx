@@ -6,7 +6,7 @@
  *       → 二次确认 → `POST .../pool/dispatch` → 逐单结果上屏 + 重新拉池。
  *
  * 判据（每条都能被注入式改坏 ⇒ 红）：
- * ① 能打开 / 能读数据：单号、物料、需求米数、等待时长、池化开关状态、超时告警都在屏上；
+ * ① 能打开 / 能读数据：单号、物料、需求米数、等待时长、超时告警都在屏上（#6588：不再有「池化开关状态」提示 —— 它指向一个不存在的出口）；
  * ② 关键动作能提交：勾选 → 预览（服务端五个米数原样渲染）→ 确认派单 ⇒ 调一次 dispatch，参数逐字；
  * ③ **二次确认**：弹窗取消 ⇒ **一次都不调** dispatch（红证：去掉确认分支 ⇒ 必红）；
  * ④ **加急单不进成批**：加急区走「立刻单派」= 单订单 + `pooled:false`；
@@ -119,9 +119,11 @@ beforeEach(() => {
 })
 
 describe('管理面①智能派单（issue #5654）', () => {
-  it('能打开能读数据：池化开关状态 / 超时告警 / 加急区 / 物料分组都在屏上', async () => {
+  it('能打开能读数据：超时告警 / 加急区 / 物料分组都在屏上（#6588：不再提示「去电脑端开启池化」）', async () => {
     await renderPage()
-    expect(screen.getByTestId('pool-pooling-state').textContent).toContain('池化派单未开启')
+    // #6588：原「池化派单未开启：…（合并需先在电脑端开启池化）」指向一个**不存在**的出口
+    // （电脑端没有这个开入口，且本页自己就能合并派单）⇒ 整条提示删除
+    expect(screen.queryByTestId('pool-pooling-state')).toBeNull()
     expect(screen.getByTestId('pool-overdue').textContent).toContain('1 张单已超过滞留上限')
     expect(screen.getByTestId('pool-overdue').textContent).toContain('请立刻单派')
     expect(screen.getByTestId('pool-urgent-u1')).toBeTruthy()

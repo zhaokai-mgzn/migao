@@ -573,7 +573,7 @@ cases:
       - "读 `target/surefire-reports/**` 的机具**跑 Maven 前必须先 unlink 目标报告**（报告由 Maven 在测试跑完后才重写 ⇒ 被打断 / 编译失败时它保持**上一次变异**的内容）。判据只对**真的读报告**的机具施加（由代码里的字符串常量判定，注释 / docstring 提及不算）；不读报告的机具 = 不适用（cutting-plan 读 Maven stdout、saving-metrics-backend 读退出码、saving-metrics-web 走 npm）"
       - "报告缺失 ⇒ **fail-closed**（`if not <report>.exists(): raise`），实跑面退出码 `3` = **无法判定** —— 不回落读上一次的内容，也不当成「通过」"
       - "🔴 红证（**实测**，非推断）：种一份**陈旧**报告（含目标判据的 FAILURE 行）+ 让编译失败 ⇒ 改前机具打印「✅ 判据有判别力」并 exit 0（**假绿**：把编译失败读成「这条变异被抓到」）；改后打印「surefire 报告未产出 ⇒ 无法判定」并 exit 3。两个机具各实测一次"
-      - "对照组（修法不改变正常路径）：同一条真变异（`--only default_off` / `--only tenant_context_not_set`）在改前 / 改后结论一致（exit 0 + 「✅ … 判据有判别力」逐字相同）"
+      - "对照组（修法不改变正常路径）：同一条真变异（`--only default_on` / `--only tenant_context_not_set`）在改前 / 改后结论一致（exit 0 + 「✅ … 判据有判别力」逐字相同）"
       - "静态守卫的注入式红证（三个读报告机具逐条参数化）：删掉跑前的 unlink ⇒ 判据红；把 fail-closed 削成 `return \"\"` ⇒ 判据红；另有一条对**修复前形态**（无 unlink + `else \"\"` 回落）的逐字节内联回归锚"
     skip_reason: "[backend-contract] 机具的报告卫生由 pytest 纯函数判据 + 注入式红证，以及真跑 Maven 的红证 / 对照组验证（tests/unit_ci_workflows/test_redproof_harness_gate.py），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-09-23 新增（issue #5216）：auto-batch / auto-batch-due-scan 两个红证机具缺 surefire 报告卫生（同族的 pool-board 有）⇒ 跑前 unlink + 报告缺失判「无法判定」（exit 3）+ 把这条做成机械判据"

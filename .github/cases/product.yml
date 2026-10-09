@@ -3251,15 +3251,16 @@ cases:
     truths_ref:
       - batch-ledger.auto-batch-dispatch
     user_inputs:
-      - "自动成批的开关缺省与事件挂载点纪律（非 LLM 行为，由 Java 单测覆盖）"
+      - "自动成批的缺省（#6588 翻为**开**）与事件挂载点纪律（非 LLM 行为，由 Java 单测覆盖）"
     expectations: []
     data_checks:
-      - "判据 1·**默认关**：`AUTO_BATCH_DEFAULT_ENABLED=false` ⇒ `autoBatchDispatch` **零读零写**立刻返回（`enabled=false`、不派、`verifyNoInteractions` 全部 mapper、一次 `generate` 都不调）⇒ 不启用与今天**逐值相同**。**红证 = 把缺省改成 `true`** ⇒ 本判据当场红（机具：`scripts/auto-batch-red-proof.py --only default_off`）。"
+      - "🔴 判据 1a·**缺省即开**（issue #6588，用户裁定「记录期已结束，可以翻默认」）：`AUTO_BATCH_DEFAULT_ENABLED=true` ⇒ **不传策略**的 2 参入口真的评估（池被读、`outcome.enabled()=true`），而不是走早返回。**红证 = 把缺省改回 `false`** ⇒ 本判据当场红（机具：`scripts/auto-batch-red-proof.py --only default_on`）。"
+      - "🔴 判据 1b·**显式关 ⇒ 零读零写**（不变式，翻缺省不放松）：开关为假（部署属性 `migao.production.auto-batch.enabled=false` / 显式策略）⇒ `autoBatchDispatch` **一个 mapper 都不碰**、一次 `generate` 都不调、连池都不查。**红证 = 摘掉 `!policy.enabled()` 那行关闸** ⇒ 本判据当场红（机具：同文件 `--only off_gate`）。"
       - "判据 2·**事件驱动、不是计时器**：① 结构性 —— 触发链（`PoolChangeNotifier` / `AutoBatchDispatchListener` / `ProcessingOrderService`）**没有任何 `@Scheduled`**，且监听器是 `@TransactionalEventListener(phase = AFTER_COMMIT)`（提交前评估会读到「还没入池」的单 ⇒ 相位是正确性的一部分）；② 行为性 —— **没有到期的单**（进池 1~3 小时、到货日 30 天后）在条件满足时**当次事件内**即成批。**红证 = 把主触发改成「只在兜底扫描里」**（条件判定恒不成立）⇒ ②当场红。"
       - "判据 1/10·**挂载点纪律**（四个挂载点：确认支付 / 入库过账 / 改单 / 取消）：① `InOrder` 断言「状态流转 → 库存副作用 → 通知」的**顺序**（挂到业务前面 = 用一次评估阻塞主流程）；② 🔴 **通知点抛异常 ⇒ 主流程仍成功且副作用照旧**（确认支付照常返回、`increaseSales` 仍被调到；过账仍 `receiveStock`）；③ 通知点未装配 ⇒ 跳过且不影响主流程；④ 触发原因是四类之一。**红证 = 去掉 `notifySafely` 的 `catch`** ⇒ ②红；**把 `confirmPayment` 里那行通知删掉** ⇒ ①红。"
       - "判据 10·**失败可查**：通知点失败/未装配 ⇒ `INCIDENT_PRODUCTION_POOL_NOTIFY_FAILED` 出现在日志里（grep 得到，不静默）。"
     skip_reason: "[backend-contract] 自动成批的开关缺省与事件挂载点纪律（无黄金策工具面）⇒ 由 Java 单测覆盖，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-23 新增（issue #5182，阶段 2b-3）：默认关 + 事件驱动（AFTER_COMMIT，无计时器）+ 四个挂载点的 fail-soft 与留痕。取号 PR-086（本单硬分配区间 PR-086~PR-089）。"
+    merge_log: "2026-09-23 新增（issue #5182，阶段 2b-3）：默认关 + 事件驱动（AFTER_COMMIT，无计时器）+ 四个挂载点的 fail-soft 与留痕。取号 PR-086（本单硬分配区间 PR-086~PR-089）。 ｜ 2026-10-09 改判（issue #6588）：缺省翻为**开**（用户裁定记录期结束）⇒ 判据 1 拆成 1a 缺省即开 / 1b 显式关零读零写，红证机具同步重定向（`default_on` / `off_gate`）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/AutoBatchDispatchTest.java"
@@ -3461,16 +3462,17 @@ cases:
     truths_ref:
       - batch-ledger.auto-batch-due-scan
     user_inputs:
-      - "定时腿会不会变成「窗口到点就派」，以及不启用时它会不会偷偷动数据（非 LLM 行为，由 Java 判据覆盖）"
+      - "定时腿会不会变成「窗口到点就派」，以及它被显式关掉时会不会偷偷动数据（非 LLM 行为，由 Java 判据覆盖）"
     expectations: []
     data_checks:
       - "🔴 判据 2·**只查业务约束（不得引入池化窗口参数）**：① 池内等了 **30 小时**（超过看板 24 小时上限 ⇒ 智能派单会告警）但客户到货日在 30 天后（**未到期**）⇒ 扫描腿**不派**（红证：把等待上限当死线的变异 `window_as_deadline` ⇒ 本判据红）；② 进池才 **1 小时**（远未到上限）但已过最晚派单日 ⇒ **照派**；③ 把等待上限调成 `0.001h` / `9999h` ⇒ 派单结果与 `reasons` 文案**逐值相同**（派不派与该参数无关）；④ 结构性：策略记录 `AutoBatchPolicy` 的入参集合**逐个钉死**（只有既有的看板告警上限 `maxWaitHours`，**没有任何**新增的窗口/超时参数）。"
       - "🔴 判据 2·**定时腿是兜底、不是第二条主触发**：满足成批条件③（需求 ≥ 最小批量）但**未到期**的单 ⇒ 扫描腿一张都不派；**同一份池**走事件腿（`order_confirmed`）⇒ 当场按条件③成批 ⇒ 「什么时候成批」仍由业务事件决定，扫描腿只判业务约束。"
-      - "🔴 判据 4·**默认关**：自动成批未启用（`AUTO_BATCH_DEFAULT_ENABLED = false`）⇒ 扫描腿**零读零写**：连「有哪些租户」都不查（`orderMapper` / `itemMapper` / `processingOrderMapper` 零交互）、**零日志**、**零轮数**（心跳的 `rounds` 仍为 0）⇒ 记录期基线零污染。"
+      - "🔴 判据 4a·**缺省即开**（issue #6588）：缺省（属性缺失 ⇒ 开）⇒ 扫描腿**真的逐租户扫**：`orderMapper.selectConfirmedTenantIds()` 被调到、心跳 `rounds` +1。**红证 = 把缺省改回 `false`** ⇒ 本判据当场红（机具：`scripts/auto-batch-due-scan-red-proof.py --only default_on`）。"
+      - "🔴 判据 4b·**显式关 ⇒ 零读零写**（不变式）：开关为假（部署属性 `migao.production.auto-batch.enabled=false`）⇒ 扫描腿**零读零写**：连「有哪些租户」都不查（`orderMapper` / `itemMapper` / `processingOrderMapper` 零交互）、**零日志**、**零轮数**。**红证 = 摘掉扫描腿那行 `!autoBatchPolicy().enabled()` 闸** ⇒ 本判据当场红（机具：同文件 `--only off_gate`）。"
       - "🔴 判据 5·**心跳可见**：`/actuator/health` 的 `autoBatchDueScanHealth` details 给出 `enabled` / `rounds` / `last_success_at` / `last_failure_at` / `last_scanned_tenants` / `last_dispatched` / `last_error`（跑过一轮后轮数与最近成功时刻必须变；未跑过时为 `null` = 「没跑」长得像「没跑」），状态**恒 UP**（同 `MigrationHealthIndicator`：让扫描腿把整环境打成 DOWN 比原问题更糟）⇒ 停摆有可观测面（红证：`heartbeat_not_exposed` ⇒ 本判据红）。"
       - "**载体结构性（+ 边界）**：`@Scheduled` 只出现在**独立**的薄壳 `AutoBatchDueScanScheduler` 上（cron 可配 `migao.production.auto-batch.due-scan-cron`，缺省 `0 */5 * * * *` = 约定窗口 = 一个扫描周期 + 单轮耗时），事件链三类（监听器 / 通知点 / `ProcessingOrderService`）**仍无任何计时器**（#5182 判据 2 继续成立）；触发原因 `due_scan` **不是**事件四类之一。**约定窗口与多实例**：扫描周期只决定「多久看一眼」，到期判定是**日粒度** ⇒ 周期远小于一天即可；多实例部署时每个实例都会各自扫（本单**不做分布式锁**），安全由库层三道闸承担（见 PR-091）。"
     skip_reason: "[backend-contract] Java 判据（Mockito 真链路装配 + 反射/记录组件结构性断言），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-23 新增（issue #5184）：只查业务约束 / 默认关零动作 / 心跳可见 / 载体独立性的判据。取号 PR-092。"
+    merge_log: "2026-09-23 新增（issue #5184）：只查业务约束 / 默认关零动作 / 心跳可见 / 载体独立性的判据。取号 PR-092。 ｜ 2026-10-09 改判（issue #6588）：缺省翻为**开** ⇒ 判据 4 拆成 4a 缺省即开（扫描腿真的查租户）/ 4b 显式关零读零写，红证机具同步重定向（`default_on` / `off_gate`）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/AutoBatchDueScanServiceTest.java"

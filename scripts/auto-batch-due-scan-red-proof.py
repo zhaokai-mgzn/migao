@@ -67,7 +67,8 @@ TEST_DIR = "backend/admin-api/src/test/java/com/migao/admin/service/"
 
 #: 判据方法 → 它钉的那一格（打印用）
 CRITERIA = {
-    "defaultOffMeansZeroAction": "判据4 默认关（不启用 ⇒ 扫描腿零读零写）",
+    "defaultIsOnSoScanRuns": "判据4a 缺省即开（不显式关 ⇒ 扫描腿真的查租户）",
+    "explicitOffMeansZeroAction": "判据4b 显式关（开关为假 ⇒ 扫描腿零读零写）",
     "dueOrderIsDispatchedWithNoBusinessEvent": "判据1 到点自愈（无事件也派 + 痕迹 auto:due_scan）",
     "overdueButNotDueIsNotDispatched": "判据2 只查业务约束（超窗未到期 ⇒ 不派）",
     "scanOnlyChecksBusinessDueNotBatchConditions": "兜底不是第二主触发（不判优化条件）",
@@ -79,13 +80,22 @@ CRITERIA = {
 #: 每条变异：注入点（**源码原文**）+ 期望**全部**变红的判据方法 + 跑哪个类
 MUTATIONS = [
     {
-        "name": "default_off",
-        "why": "把「缺省关 ⇒ 零动作」的闸拆掉（不启用也照扫、照记轮数）",
+        "name": "default_on",
+        "why": "#6588 把缺省翻回「关」（缺省开 ⇒ 这条腿才会去查租户）",
+        "file": SVC + "ProcessingOrderService.java",
+        "old": "public static final boolean AUTO_BATCH_DEFAULT_ENABLED = true;",
+        "new": "public static final boolean AUTO_BATCH_DEFAULT_ENABLED = false; // [RED-PROOF]",
+        "cls": UNIT, "fqn": UNIT_FQN,
+        "expect": ["defaultIsOnSoScanRuns"],
+    },
+    {
+        "name": "off_gate",
+        "why": "把「显式关 ⇒ 零动作」的闸拆掉（不启用也照扫、照记轮数）",
         "file": SVC + "AutoBatchDueScanService.java",
         "old": "        if (!processingOrderService.autoBatchPolicy().enabled()) {",
-        "new": "        if (false) { // [RED-PROOF] 缺省关的闸被拆掉",
+        "new": "        if (false) { // [RED-PROOF] 关闸被拆掉",
         "cls": UNIT, "fqn": UNIT_FQN,
-        "expect": ["defaultOffMeansZeroAction"],
+        "expect": ["explicitOffMeansZeroAction"],
     },
     {
         "name": "no_business_due",
