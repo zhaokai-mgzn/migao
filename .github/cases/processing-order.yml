@@ -2727,11 +2727,15 @@ cases:
       - "判据 5·🔴 **两条写路共用同一份记账**：无码路径与扫码路径的记账实参**逐值一致**（`done_at` / CAS 推进 / 完工判定同一份实现）—— 这是「放宽的是入口、不是口径」的机器判据；证据：同判据 1"
       - "判据 6·**端侧（bmini 报工页）**：无 `part_token` 的部位**仍然**有写入口（清单来自服务端，每道工序一个按钮）；跨部位自由报走无码端点且工序由工人**显式**给；**扫码定位不回归**（有码部位仍走 `completeByScan`）；失败只展示服务端 message 且列表不清空；无码报工离线入队时记住「这条从来不需要码」并复用同一幂等键 ⇒ 补传不重复计件。红证（实跑过）：把无码分支改回「不渲染按钮」⇒ 该文件多条判红；证据：frontend/bmini-app/tests/production-free-report.test.tsx"
     skip_reason: "[backend-contract] 确定性判据（Java 单测 + 端侧 jest），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-09 新增（issue #6598；用户逐字「当前工人报工只能按固定顺序报工，这个设计是不对的，**允许工人自由报工**」，当场选定范围 = **整张加工单内任选任意工序（不扫码也能自由报）**）。**旧口径作废**：issue #5647 G10 的「没有任务码 ⇒ 不提供写入口」按本次用户裁定退场，其当年的依据（那条 URL 定工序的路「非事务 / 不落 done_at」）经复核与今日代码不符 —— 两条路都走 `ProductionService#applyReport`。**未被放宽的**：工序必须显式确定（#4694）、身份只由服务端从工人 session 解（#4733）、归属校验（同租户 + 未软删 + 属于本加工单）、幂等键与一次事务。**未固化项**：worker-h5（`/w/` 工号+PIN 面）本次未接该入口。"
+    merge_log: "2026-10-09 新增（issue #6598；用户逐字「当前工人报工只能按固定顺序报工，这个设计是不对的，**允许工人自由报工**」，当场选定范围 = **整张加工单内任选任意工序（不扫码也能自由报）**）。**旧口径作废**：issue #5647 G10 的「没有任务码 ⇒ 不提供写入口」按本次用户裁定退场，其当年的依据（那条 URL 定工序的路「非事务 / 不落 done_at」）经复核与今日代码不符 —— 两条路都走 `ProductionService#applyReport`。**未被放宽的**：工序必须显式确定（#4694）、身份只由服务端从工人 session 解（#4733）、归属校验（同租户 + 未软删 + 属于本加工单）、幂等键与一次事务。**未固化项**：worker-h5（`/w/` 工号+PIN 面）本次未接该入口。**顺带固化的两处静默漏检**（本包引入第二条写路时才暴露）：`production-single-write-entry` 的端点抓取① 遇**嵌套泛型** `post<ProductionResponse<X>>(` 会在内层 `>` 处停下 ⇒ 一条端点都匹配不到（判据恒红/恒绿都不可信）；② 遇模板串 `${…}` 会截断端点 ⇒ 第二条写路被静默漏掉；两处都改成按实参位置解析并加计数断言防退化。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionWorkerFreeReportTest.java"
         - "frontend/bmini-app/tests/production-free-report.test.tsx"
+        - "frontend/bmini-app/tests/production-worker-entry.test.tsx"
+        - "frontend/bmini-app/tests/production-offline.test.tsx"
+        - "frontend/bmini-app/tests/production-single-write-entry.test.ts"
+        - "frontend/bmini-app/tests/worker-surface-ledger.test.ts"
       ci:
         - pr-check.yml
         - bmini-app.yml
