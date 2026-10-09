@@ -2,6 +2,7 @@ package com.migao.admin.dto;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import lombok.Data;
 
@@ -30,6 +31,7 @@ public class ProductResponse {
      * 标记字段必须真实存在于响应 DTO 上，否则 Jackson 反序列化会把它**静默丢掉**）。
      * 正常首建为 {@code null}（{@code @JsonInclude(NON_NULL)} 口径下不出现在响应里）。</p>
      */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     private Boolean replayed;
 
     /**

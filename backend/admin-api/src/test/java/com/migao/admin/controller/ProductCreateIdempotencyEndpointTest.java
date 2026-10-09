@@ -24,6 +24,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -88,12 +89,30 @@ class ProductCreateIdempotencyEndpointTest extends BaseControllerTest {
     }
 
     @Test
+    @DisplayName("回放响应必须带 replayed=true（服务端标记要能冒到 HTTP 层）")
+    void theReplayedMarkerReachesTheResponse() throws Exception {
+        ProductResponse replayed = new ProductResponse();
+        replayed.setId("prod-6209");
+        replayed.setName("线②验收重复提交");
+        replayed.setReplayed(Boolean.TRUE);
+        when(productService.createProduct(any(ProductCreateRequest.class), anyLong(), any())).thenReturn(replayed);
+
+        mockMvc.perform(post(BASE)
+                        .header(ClientRequestIdService.HEADER, KEY)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.replayed").value(true));
+    }
+
+    @Test
     @DisplayName("不带头 ⇒ 传 null（老客户端路径一字不变）")
     void withoutTheHeaderTheServiceSeesNull() throws Exception {
         mockMvc.perform(post(BASE)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(BODY))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.replayed").doesNotExist());
 
         ArgumentCaptor<String> key = ArgumentCaptor.forClass(String.class);
         verify(productService).createProduct(any(ProductCreateRequest.class), anyLong(), key.capture());
