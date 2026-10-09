@@ -223,6 +223,8 @@ import {
   domainsOfZone,
   findDomain,
   mainlineStepsOfDomain,
+  LEGACY_DOMAIN_ALIASES,
+  resolveDomainKey,
 } from '@/lib/config-center-domains'
 import { BASE_ROUTE_NAMES, MAINLINE_STEPS } from '@/lib/config-readiness'
 
@@ -746,5 +748,32 @@ describe('判据 7：域内零 tab（两层导航并存 = 用户说的「分不�
     for (const k of TABS_NOT_YET_SPLIT) {
       expect(keys, `台账里的「未拆域」${k} 已不是域 key ⇒ 判据在空跑，请删掉该条目`).toContain(k)
     }
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 判据 4b：域 key 是**可分享的 URL 契约** —— v2 拆域不许让旧 key 落空白（issue #6585）
+// ══════════════════════════════════════════════════════════════════════════════
+describe('判据 4b：拆域后的旧 `?domain=` 兼容（不许点开一个链接看到空页）', () => {
+  it('🔴 `?domain=processing-fee`（v1 的「一个域两件事」）落到「加工项与分类」域', async () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams('domain=processing-fee'))
+    render(<SettingsPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('config-domain-panel-processing-items')).toBeInTheDocument(),
+    )
+  })
+
+  it('别名表是**单一真值**：里面每个 key 要么是现役域，要么是已登记的旧 key（不许有幽灵）', () => {
+    for (const [from, to] of Object.entries(LEGACY_DOMAIN_ALIASES)) {
+      // 旧 key **不得**再是现役域（否则别名是死的）
+      expect(CONFIG_DOMAINS.map((d) => d.key), `${from} 已是现役域 ⇒ 别名条目陈旧`).not.toContain(from)
+      // 目标必须真是现役域（打错字 ⇒ 旧链接落到空白）
+      expect(CONFIG_DOMAINS.map((d) => d.key), `${from} → ${to} 的目标不是现役域`).toContain(to)
+      expect(resolveDomainKey(from)).toBe(to)
+    }
+    // 现役 key 直接透传；未知 key 退回 undefined（由页面兜底到第一个可见域，不在这里编默认域）
+    expect(resolveDomainKey('calc')).toBe('calc')
+    expect(resolveDomainKey('nope')).toBeUndefined()
+    expect(resolveDomainKey(null)).toBeUndefined()
   })
 })
