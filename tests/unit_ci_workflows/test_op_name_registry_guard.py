@@ -193,6 +193,21 @@ EXEMPT_FACES: tuple[tuple[str, str], ...] = (
         "必须**同时**把它加回本文件的 `MANAGED_FACES` 与 S1 的 `FACES`。",
     ),
     (
+        "frontend/admin-web/src/components/production-config/features.ts",
+        "**数据/取数模块**（issue #6585 从 `ProcessConfigBoard` 拆出的 `use*Feature` 钩子集合）："
+        "它对 `CatalogOperation` 的引用**全是类型与取值**（建索引 `Map<string, CatalogOperation>`、"
+        "把行对象当参数传），**一个工序名都不渲染**（`.ts`，没有 JSX）。真正渲染工序名的面是"
+        "`OperationPricePanel.tsx` / `RoutingsPanel.tsx`，它们走 `operationDisplayName()`。"
+        "**过期即红**：一旦本模块开始渲染工序名（出现 JSX 或裸快照名）⇒ `_direct_render_hits` 会命中。",
+    ),
+    (
+        "frontend/admin-web/src/components/production-config/utils.tsx",
+        "**纯工具模块**（issue #6585 拆出的 `money` / `inputCls` 这类格式化与样式助手）："
+        "命中标记只因函数签名里带 `CatalogOperation` 形参并把它透传给调用方，"
+        "**自己不渲染任何文案**（工具函数返回字符串/class 名）。"
+        "**过期即红**：一旦这里开始渲染工序名 ⇒ 本文件的 `_direct_render_hits` 会命中。",
+    ),
+    (
         "frontend/admin-web/src/types/index.ts",
         "**类型契约声明**（`ProductionOperation` / `ProductionPosition` / `per_operation` 的 TS 类型）："
         "只声明字段、**不渲染**任何工序名 ⇒ 没有可管的渲染面；该文件对 `operation` / `operation_name` "
