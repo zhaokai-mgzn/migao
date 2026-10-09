@@ -280,13 +280,27 @@ jobs:
           BASE="${INPUT_BASE:-}"
           BASE_SOURCE="explicit(--base 输入)"
           if [ -z "$BASE" ]; then
-            # 水位 = 本 workflow **最近一次成功 run** 的 headSha（不新建台账；失败/取消不算成功 ⇒
-            # 未覆盖的范围会被下一次 run 重新覆盖，方向是**多验**）。
-            BASE="$(gh run list --workflow post-merge-verify.yml --status success --limit 1 \
+            # 水位 = 本 workflow **最近一次成功的、且落在 main 上的** run 的 headSha（不新建台账；
+            # 失败/取消不算成功 ⇒ 未覆盖的范围会被下一次 run 重新覆盖，方向是**多验**）。
+            #
+            # 🔴 **`--branch main` 不是可选修饰**（issue #6312 的**真根因**，2026-10-09 实测）：
+            #   本腿在 `pull_request: [opened, reopened]` 上也会跑 ⇒ 不筛分支时 `--status success`
+            #   取到的是**最近一次成功的 PR run**，而它的 headSha 是**PR 的分支头**
+            #   （实测 `463e511` / headBranch `docs/6408-demo-seed-evidence`）——**不在 main 检出里**
+            #   ⇒ 下面那句 `git cat-file -e` **必失败** ⇒ **永远**走 lookback 兜底。
+            #   那不是「首次运行」的例外，而是**常驻状态**：每轮都跑整个 40 提交窗口
+            #   （本机实测该窗口 = `863` 个变更文件 / `284` 条命中判据）⇒ 撞 job 上限被杀
+            #   （实测 cancelled 样本 `914s` / `917s` ≈ `timeout-minutes: 15`）⇒ 更不可能成功 ⇒ **正反馈**
+            #   （近 200 次 run 结局：`12 success / 82 failure / 98 cancelled`）。
+            #   `--branch main` 只留下 push / schedule 的 run（它们的 `headBranch` 就是 main ⇒
+            #   其 headSha 必是 main 上的提交），PR run（`headBranch` = PR 分支）被排除。
+            #   类级判据（防回到旧形态）= `tests/unit_ci_workflows/test_post_merge_verify_leg.py`
+            #   的 `_watermark_problems`（去掉本筛选 ⇒ 判据函数当场非空）。
+            BASE="$(gh run list --workflow post-merge-verify.yml --branch main --status success --limit 1 \
                       --json headSha --jq '.[0].headSha // empty' 2>/dev/null || true)"
-            BASE_SOURCE="水位(上次成功 run 的 headSha)"
+            BASE_SOURCE="水位(上次成功且落在 main 上的 run 的 headSha)"
             if [ -z "$BASE" ] || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
-              echo "::warning::取不到水位（首次运行 / gh 不可达 / 该对象不在检出里）⇒ 退回固定窗口 HEAD~${LOOKBACK}（多验，不是少验）"
+              echo "::warning::取不到可用水位（真·首次运行 / gh 不可达 / 该对象不在检出里）⇒ 退回固定窗口 HEAD~${LOOKBACK}（多验，不是少验）"
               BASE=""
               BASE_SOURCE="lookback(HEAD~${LOOKBACK})"
             fi

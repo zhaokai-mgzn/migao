@@ -30,6 +30,7 @@ required 检查上，**卡住全队列**，最后由人花一整轮热修（`#54
 | 13 | **不许放宽既有门禁**（判据 6）：本腿**不得**出现在 `pr-check.yml` 里（报告型 ≠ required） | 变异：在文本里塞一处 ⇒ 非空 |
 | 14 | **禁挂钟**（§23 G8）：机器可读报告只报与负载无关的量，**不含**任何时长字段 | 变异：往报告里塞一个时长键 ⇒ 非空 |
 | 15 | **首发日护栏**：判定本体尚未在 main 上落地 ⇒ **出声但不判红**（不许自造假红）；「workflow 在、脚本没了」⇒ **红** | 变异四个要素（`[ ! -f scripts/post_merge_verify.py ]` / `pending-merge` / workflow 存在判据 / `::error::`）**各能单独变红** |
+| 16 | **水位只取落在 main 上的成功 run**：查询必须含 `--branch main`（否则取到 PR head ⇒ 永不解析 ⇒ 永久冷启动窗口，issue #6312 真根因） | 变异：去掉 `--branch main` ⇒ 判据函数非空 |
 
 ## 边界（照实登记，别读成「已覆盖」）
 
@@ -328,6 +329,57 @@ def uses_checkout(step: dict) -> bool:
     return str(step.get("uses", "")).startswith("actions/checkout@")
 
 
+def _bash_code_lines(text: str) -> str:
+    """只留**会执行的行**：去掉整行注释（`#` 开头，允许前导空白）。
+
+    ⚠️ 必须剥（§23.8 **B1**「判据语料不含自身说明」的 bash 版）：workflow 的注释为了讲清病灶
+    会**引用** `--branch main` 这个字面量 ⇒ 不剥就变成「注释里留着字样 = 判据绿」：把查询改回
+    旧形态而注释不动 ⇒ 判据**不红**（**本判据第一版就是这么被自己的红证抓到的**）。
+    """
+    return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+
+
+def _watermark_query_text(doc: dict) -> str:
+    """取出**水位查询**所在那一步里**可执行**的 bash 原文（跑 `post_merge_verify.py` 且含 `gh run list`）。"""
+    for step in _steps(doc):
+        text = str(step.get("run", ""))
+        if "gh run list" in text and "post_merge_verify.py" in text:
+            return _bash_code_lines(text)
+    return ""
+
+
+def _watermark_problems(doc: dict) -> list[str]:
+    """判据 16：水位只能由**落在 main 上**的成功 run 推进（issue #6312 的**真根因**）。
+
+    病灶（2026-10-09 实测；本腿此前 10 次修复都没打中它）：原来的查询是
+    `gh run list --workflow post-merge-verify.yml --status success` —— **不筛事件 / 分支** ⇒
+    取到的是「最近一次成功的 run」，而本腿在 `pull_request: [opened, reopened]` 上也会跑 ⇒
+    那个 `headSha` 是 **PR 的分支头**（实测 `463e511`，`headBranch=docs/6408-demo-seed-evidence`），
+    **不在 main 检出里** ⇒ `git cat-file -e` **必失败** ⇒ **永远**退回 `HEAD~40`。
+
+    这不是「首次运行的兜底」，而是**常驻状态**：每轮都跑满整个 40 提交窗口（本机实测
+    `863` 变更文件 / `284` 条命中判据）⇒ 撞 job 上限被杀（实测 cancelled 样本 `914s`/`917s`
+    ≈ `timeout-minutes: 15`）⇒ 更不可能成功 ⇒ **正反馈**（近 200 次 run：`12 success / 82 failure /
+    98 cancelled`），且**水位永远停在原地**（最近一次成功 = 2026-10-06T06:17Z）。
+
+    ⇒ 判据两条：① 查询必须含 `--branch main`；② 必须保留 `--status success`（水位只许被成功推进）。
+    """
+    text = _watermark_query_text(doc)
+    if not text:
+        return ["找不到水位查询所在的那一步（跑 `post_merge_verify.py` 且含 `gh run list`）⇒ 本判据无从判定"]
+    problems = []
+    if "--branch main" not in text:
+        problems.append(
+            "水位查询没有限定 `--branch main` ⇒ 会取到 `pull_request` run 的 **PR head**"
+            "（不在 main 检出里）⇒ `git cat-file -e` 必失败 ⇒ **永久**退回 `HEAD~40` 冷启动窗口"
+            "（issue #6312 实测根因；实测取到的 sha = `463e511`，headBranch = `docs/6408-demo-seed-evidence`）")
+    if "--status success" not in text:
+        problems.append(
+            "水位查询丢了 `--status success` ⇒ 水位会被失败 / 取消的 run 推进 = **跳验**"
+            "（方向必须是「多验」，见本 workflow 头部的水位口径）")
+    return problems
+
+
 def _failure_hook_problems(doc: dict) -> list[str]:
     problems = []
     hooks = [s for s in _steps(doc) if "failure()" in str(s.get("if", ""))]
@@ -493,6 +545,25 @@ class TestWorkflowWiring:
                 raise AssertionError(f"变异点失配：失败钩子里找不到 `{needle}`（红证不得是空断言）")
             assert _failure_hook_problems(doc) != [], f"删掉 `{needle}` 之后判据没红 ⇒ 空断言"
         assert _failure_hook_problems(base) == [], "变异过程中把基线弄坏了（红证前提自证失败）"
+
+    def test_watermark_query_is_scoped_to_main(self):
+        """判据 16：水位只取**落在 main 上**的成功 run（issue #6312 的真根因）。"""
+        problems = _watermark_problems(yaml.safe_load(WORKFLOW.read_text(encoding="utf-8")))
+        assert problems == [], "\n".join(problems)
+
+    def test_dropping_branch_filter_turns_the_watermark_red(self):
+        """判据 16 的红证：把水位查询退回「不筛分支」的旧形态 ⇒ 必红（那就是 2026-10-09 之前的形状）。"""
+        doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+        needle = "--branch main --status success"
+        mutated = False
+        for job in (doc.get("jobs") or {}).values():
+            for step in (job.get("steps") or []):
+                if isinstance(step, dict) and needle in str(step.get("run", "")):
+                    step["run"] = str(step["run"]).replace(needle, "--status success")
+                    mutated = True
+        if not mutated:
+            raise AssertionError(f"变异点失配：找不到 `{needle}`（红证不得是空断言）")
+        assert _watermark_problems(doc) != [], "去掉 `--branch main` 之后判据没红 ⇒ 空断言"
 
     def test_reading_step_has_fail_open_guard(self):
         """判据 11：读数步的 fail-open 护栏 —— 发射器缺席时明说「读数缺失（不是零动作）」。"""
@@ -949,9 +1020,9 @@ class TestWorkloadSurfaceIsBoundedByConstruction:
         ledger = json.loads((REPO / FACE_DIR / "ci_cost_ledger.json").read_text(encoding="utf-8"))
         entry = next((leg for leg in ledger.get("legs") or []
                       if leg.get("workflow") == WORKFLOW.name and leg.get("job") == "verify"), None)
-        assert entry is not None, f"成本台账里没有 `{WORKFLOW.name}::verify` 条目 ⇒ 抬上限没有承接面（fail-closed）"
-        assert entry.get("hard_kill_seconds") == int(declared) * 60, (
-            f"成本台账 `hard_kill_seconds` = {entry.get('hard_kill_seconds')} != 现取 `timeout-minutes "
+        assert entry and entry.get("hard_kill_seconds") == int(declared) * 60, (
+            f"成本台账里没有 `{WORKFLOW.name}::verify` 条目（⇒ 抬上限没有**承接面**，fail-closed），"
+            f"或它的 `hard_kill_seconds` = {(entry or {}).get('hard_kill_seconds')} != 现取 `timeout-minutes "
             f"{declared} × 60` = {int(declared) * 60} ⇒ 那条既有判据会红"
             f"（修法：把该条改成 {int(declared) * 60} 并把 `hard_kill_source` 写成现取的 `timeout-minutes`）"
         )
