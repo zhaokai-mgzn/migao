@@ -7,6 +7,21 @@
 
 ## [Unreleased]
 
+### 手机端底部底栏按岗位权限隐藏：没有坐席权限的岗位不再出现「坐席」（2026-10-09，issue #6574）
+
+- **改后**：`GET /api/auth/me` 在 `mobileSurfaces` 之外再下发 `mobileTabs`（服务端 `MobileSurfaces.visibleTabsFor`）；
+  手机端**自绘底栏**只画服务端给的 tab（问黄金策 / 我的 = 无需任何码；数据 = `dashboard:view`；坐席 = `agent:session`）
+  ⇒ 商品管理员（8 码）/ 财务（9 码）这类**没有** `agent:session` 的岗位，底栏**只有 3 项**（不再出现「坐席」）。
+- **改前**：底栏是**构建期静态 4 项**、与岗位无关（`setTabBarItem` 只能改文字/图标、`hideTabBar` 只能整条收起 ⇒ 删不掉某一格）。
+- **机制**：原生 `tabBar` 配置**保留**（`Taro.switchTab` 只能落 tabBar 页；Taro 的页面高度算式依赖
+  `--taro-tabbar-height`），端侧调 `Taro.hideTabBar()` 收起原生条、在同一条带里画自己的底栏 ⇒ 导航与高度模型零改动。
+- **拿不到菜单**（网络 / 服务异常）⇒ **照显 4 项**：tab 是功能入口，藏掉用户有的功能比露出一个点进去 403 的入口更糟
+  （「我的」页入口与「数据」页待办块仍是 fail-closed + 显式重试，口径不变）。
+- **判据**：`backend/admin-api/src/test/java/com/migao/admin/service/MobileSurfacesTest.java`（无 `agent:session` ⇒ 无 sessions；
+  `*` ⇒ 4 项；无码项恒在）、`AuthIntegrationTest.java`（`mobileTabs` 字段与序列化）、
+  `frontend/bmini-app/tests/merchant-tabbar.test.tsx`（给 3 项只画 3 格 / 拉不到 ⇒ 照显 4 格 / 收起原生条 /
+  点击与选中态 / 三处同源 + 四个 tab 页接线守卫）、`tests/e2e/specs/bmini/bmini-tabbar.spec.ts`
+  （几何：贴底 / 条高 50 / 每格图标文字居中 / 四张图标两两不同 / **原生条不可见**）。
 ### 商家后台配置入口收拢：「参数总览」从「企业基础信息」的页签升为**一级菜单**，并给出**配置主线**（还缺什么、下一步去哪）（2026-10-08，issue #6573）
 
 - **改后**：大菜单新增一级项「参数总览」（页面 `frontend/admin-web/src/app/(dashboard)/settings/params/page.tsx`，

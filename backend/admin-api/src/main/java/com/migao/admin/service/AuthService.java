@@ -914,6 +914,7 @@ public class AuthService {
                     .capabilities(capabilitiesOf(permissions, -1L))
                     // 手机端菜单（issue #6570）：平台超管恒持 "*" ⇒ 全给（走通配，不是特例分支）
                     .mobileSurfaces(mobileSurfacesOf(permissions))
+                    .mobileTabs(mobileTabsOf(permissions))
                     .build();
         }
 
@@ -959,6 +960,8 @@ public class AuthService {
                 .capabilities(capabilitiesOf(permissions, user.getTenantId()))
                 // 手机端菜单（issue #6570，用户 2026-10-08 裁定「走 B」）：**服务端按岗位投影，端侧零口径**
                 .mobileSurfaces(mobileSurfacesOf(permissions))
+                // 底栏 tab（issue #6574，用户同日逐字「1，按权限隐藏」）：同一个投影口径
+                .mobileTabs(mobileTabsOf(permissions))
                 .build();
     }
 
@@ -970,7 +973,21 @@ public class AuthService {
      * 这里给的面，**不再自己拿 permissions 判菜单**（旧口径的 fail-open 与线上读数见 issue #6570）。</p>
      */
     private List<UserInfoResponse.MobileSurface> mobileSurfacesOf(List<String> permissions) {
-        return MobileSurfaces.visibleFor(permissions).stream()
+        return toResponse(MobileSurfaces.visibleFor(permissions));
+    }
+
+    /**
+     * 手机端底栏 tab（issue #6574）—— 同一个投影口径（{@link MobileSurfaces#visibleTabsFor}）。
+     *
+     * <p>端侧据此自绘底栏、把原生条收起（原生 `tabBar` 是构建期静态的，删不掉某一格）。</p>
+     */
+    private List<UserInfoResponse.MobileSurface> mobileTabsOf(List<String> permissions) {
+        return toResponse(MobileSurfaces.visibleTabsFor(permissions));
+    }
+
+    /** {@code MobileSurfaces.Surface} → 响应投影（两张清单共用一份形状） */
+    private List<UserInfoResponse.MobileSurface> toResponse(List<MobileSurfaces.Surface> surfaces) {
+        return surfaces.stream()
                 .map(surface -> UserInfoResponse.MobileSurface.builder()
                         .key(surface.key())
                         .title(surface.title())

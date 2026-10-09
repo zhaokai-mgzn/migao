@@ -1,4 +1,4 @@
-// case_ids: BM-046
+// case_ids: BM-046, BM-047
 package com.migao.admin.service;
 
 import org.junit.jupiter.api.DisplayName;
@@ -96,5 +96,68 @@ class MobileSurfacesTest {
                         "/pages/admin/inbound/index",
                         "/pages/admin/after-sales/index",
                         "/pages/admin/piecework/index");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 底栏 tab（issue #6574，用户 2026-10-08 逐字「**1，按权限隐藏**」）
+    // ══════════════════════════════════════════════════════════════════════
+
+    private static List<String> tabKeys(List<String> permissions) {
+        return MobileSurfaces.visibleTabsFor(permissions).stream().map(MobileSurfaces.Surface::key).toList();
+    }
+
+    @Test
+    @DisplayName("🔴 商品管理员（8 码，无 agent:session）⇒ 底栏**没有**「坐席」")
+    void productManagerHasNoSessionsTab() {
+        // 线上实测（2026-10-08）：这一类岗位此前照样看到「坐席」（静态 4 项）
+        assertThat(tabKeys(PRODUCT_MANAGER_CODES)).containsExactly("chat", "dashboard", "profile");
+    }
+
+    @Test
+    @DisplayName("🔴 财务（9 码，无 agent:session）⇒ 底栏**没有**「坐席」")
+    void financeHasNoSessionsTab() {
+        assertThat(tabKeys(FINANCE_CODES)).containsExactly("chat", "dashboard", "profile");
+    }
+
+    @Test
+    @DisplayName("客服（12 码，持 agent:session）⇒ 底栏 4 项齐全")
+    void customerServiceHasAllTabs() {
+        assertThat(tabKeys(CUSTOMER_SERVICE_CODES))
+                .containsExactly("chat", "dashboard", "sessions", "profile");
+    }
+
+    @Test
+    @DisplayName("一个码都没有的员工 ⇒ 仍看得见「问黄金策 / 我的」（无码项），看不到数据/坐席")
+    void zeroCodesKeepsCodelessTabs() {
+        assertThat(tabKeys(List.of())).containsExactly("chat", "profile");
+    }
+
+    @Test
+    @DisplayName("通配 `*` ⇒ 4 项全给，顺序 = 清单声明顺序")
+    void wildcardSeesAllTabs() {
+        assertThat(tabKeys(List.of("*"))).containsExactly("chat", "dashboard", "sessions", "profile");
+    }
+
+    @Test
+    @DisplayName("底栏两项的码 = 后端注解镜像（dashboard:view / agent:session），另两项**无码**（不是 `*`）")
+    void tabCodesMirrorBackendAnnotations() {
+        assertThat(MobileSurfaces.TABS)
+                .extracting(MobileSurfaces.Surface::key, MobileSurfaces.Surface::readPermission)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("chat", null),
+                        org.assertj.core.groups.Tuple.tuple("dashboard", "dashboard:view"),
+                        org.assertj.core.groups.Tuple.tuple("sessions", "agent:session"),
+                        org.assertj.core.groups.Tuple.tuple("profile", null));
+    }
+
+    @Test
+    @DisplayName("底栏 4 项都有 bmini 路由（与 `app.config.ts` 的 tabBar 逐值比对在 jest 守卫里）")
+    void tabsAllHaveRoutes() {
+        assertThat(MobileSurfaces.TABS).extracting(MobileSurfaces.Surface::route)
+                .containsExactly(
+                        "/pages/chat/index/index",
+                        "/pages/dashboard/index/index",
+                        "/pages/sessions/index/index",
+                        "/pages/profile/index/index");
     }
 }

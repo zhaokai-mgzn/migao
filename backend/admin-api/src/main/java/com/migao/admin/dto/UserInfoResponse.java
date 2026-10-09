@@ -49,6 +49,18 @@ public class UserInfoResponse {
     private List<MobileSurface> mobileSurfaces;
 
     /**
+     * 手机端（bmini）**底栏 tab** —— 同一个服务端投影（issue #6574，用户 2026-10-08 逐字「1，按权限隐藏」）。
+     *
+     * <p>为什么不能靠客户端过滤：{@code app.config.ts} 的 {@code tabBar} 是**构建期静态**的 4 项
+     * （{@code setTabBarItem} 只能改文字/图标，不能删格；{@code hideTabBar} 只能整条收起）
+     * ⇒ 没有 {@code agent:session} 的岗位照样看到「坐席」。端侧据本字段**自绘底栏**并把原生条收起。</p>
+     * <p>空数组 = 服务端明确答复（正常答复，但当前清单里 `chat`/`profile` 是「无需任何码」⇒ 实际不会空）；
+     * 端侧**拿不到**本字段时按「不隐藏功能」处置 —— **照显全部 tab**（与「数据」页待办块 error ⇒ 照渲染同规则）。</p>
+     * <p>⚠️ 同样只是 UI 显隐：进页后的数据面仍由 {@code @RequirePermission} 拦。</p>
+     */
+    private List<MobileSurface> mobileTabs;
+
+    /**
      * 手机端一个可见面 / 能力位（{@code MobileSurfaces.Surface} 的响应投影）。
      */
     @Data

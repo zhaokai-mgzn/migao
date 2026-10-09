@@ -7,6 +7,8 @@ import { useChatStore } from '../../../store/chatStore'
 import { useMobileMenu } from '../../../components/admin/useMobileMenu'
 // 商家面身份护栏（issue #6567）：纯工人设备打开本页 ⇒ 送回工人工作台
 import { useMerchantSurfaceGuard } from '../../../utils/roleGuard'
+// 底栏（issue #6574）：按岗位权限裁剪，端侧自绘 + 收起原生条
+import MerchantTabBar from '../../../components/MerchantTabBar'
 import './index.scss'
 
 /**
@@ -77,6 +79,9 @@ export default function ProfilePage() {
         <View className='login-btn' onClick={handleGoLogin}>
           <Text className='login-btn-text'>去登录</Text>
         </View>
+        {/* 底栏（issue #6574）：**未登录也有** —— 原生条本来就在（e2e 几何腿跑的就是未登录形态），
+            自绘条若只在登录分支里，未登录时底栏会整条消失 */}
+        <MerchantTabBar current='profile' />
       </View>
     )
   }
@@ -151,6 +156,9 @@ export default function ProfilePage() {
           <Text className='logout-text'>退出登录</Text>
         </View>
       </View>
+
+      {/* 底栏（issue #6574）：按岗位权限裁剪（服务端下发 `mobileTabs`），原生的静态 4 项被收起 */}
+      <MerchantTabBar current='profile' />
     </View>
   )
 }

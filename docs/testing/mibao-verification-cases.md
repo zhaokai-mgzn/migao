@@ -755,7 +755,7 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-05 新增（issue #6352）：为跑 #6346 的 §15.7 多模态验收起本机三件套时撞见 —— 整页加载后聊天面 Bearer 为空。取号 AU-012（scripts/next_case_id.py au：现取 main 最大 = AU-011）。 ｜ tags: auth, session-restore, token, admin-web
 
-## B 端小程序域（46 case）
+## B 端小程序域（47 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1383,7 +1383,22 @@
 数据: 判据 6·**源级：端侧不再自己判菜单码**：「我的」页源码不含 `visibleAdminSurfaces` / `useAdminPermissions` / `permissions.includes`，且确实调用 `useMobileMenu()`（反向自证，防空跑）；「数据」页的开关取 `s.key === 'production-todos'`。证据：同判据 3 的文件
 跳过: [backend-contract] 确定性判据（Java 单测 + jest + 源码守卫），非 LLM 行为，不进入 agent-eval 冒烟
 ```
-溯源: 2026-10-08 新增（issue #6570，用户逐字「走B，4。你直接通过读取租户数据来获取账号和密码」）：手机端菜单改由**服务端按岗位投影**（`MobileSurfaces` → `GET /api/auth/me` 的 `mobileSurfaces`），端侧只渲染服务端给的面；「数据」页的生产待办块改用**同一份清单**开关（消掉没有 `production:view` 的岗位那块永远无意义的「无权限」噪音）。**改判**：BM-009 判据 2 的「集合未知 ⇒ 照显（fail-open）」随之下线（用户裁定「走 B」），改为「拉不到 ⇒ 显式 + 可重试 + 不渲染」。落地形态**不是**在 `rbac/manifest.json` 新增一段：该清单的段集是**对账式**的（`test_manifest_segments_are_all_reconciled` 会把未对账的新段判红），故把「面 → 码」的服务端投影放在 `com.migao.admin.service.MobileSurfaces`，与后端 `@RequirePermission` 保持镜像（BM-009 判据 5 逐值比对）。**未固化项**：tabBar 仍为静态 4 项（小程序 tabBar 不能按角色逐项隐藏；是否上自定义 tabBar 待用户裁定，见 issue #6570）。 ｜ tags: bmini, menu, permission, backend_contract
+溯源: 2026-10-08 新增（issue #6570，用户逐字「走B，4。你直接通过读取租户数据来获取账号和密码」）：手机端菜单改由**服务端按岗位投影**（`MobileSurfaces` → `GET /api/auth/me` 的 `mobileSurfaces`），端侧只渲染服务端给的面；「数据」页的生产待办块改用**同一份清单**开关（消掉没有 `production:view` 的岗位那块永远无意义的「无权限」噪音）。**改判**：BM-009 判据 2 的「集合未知 ⇒ 照显（fail-open）」随之下线（用户裁定「走 B」），改为「拉不到 ⇒ 显式 + 可重试 + 不渲染」。落地形态**不是**在 `rbac/manifest.json` 新增一段：该清单的段集是**对账式**的（`test_manifest_segments_are_all_reconciled` 会把未对账的新段判红），故把「面 → 码」的服务端投影放在 `com.migao.admin.service.MobileSurfaces`，与后端 `@RequirePermission` 保持镜像（BM-009 判据 5 逐值比对）。**未固化项**：tabBar 仍为静态 4 项（小程序 tabBar 不能按角色逐项隐藏；是否上自定义 tabBar 待用户裁定，见 issue #6570）。 ｜ 2026-10-08（issue #6574）：用户裁定「1，按权限隐藏」⇒ 底栏改为服务端下发 `mobileTabs` + 端侧自绘 + 收起原生条（判据与红证见 BM-047）⇒ 本条那格「未固化项：tabBar 仍为静态 4 项」就此**收口**。 ｜ tags: bmini, menu, permission, backend_contract
+
+### BM-047. B 端 H5 底栏按岗位权限裁剪：服务端下发 mobileTabs + 端侧自绘 + 收起原生条（无坐席权限的岗位不再看到「坐席」） 🔵
+```
+你: 员工在手机端：没有坐席权限的岗位，底部不该出现「坐席」那一格（由服务端按岗位下发）
+期望: direct_reply
+数据: 判据 1·**服务端投影逐值**（真值 = `MobileSurfaces.visibleTabsFor`）：商品管理员（8 码）/ 财务（9 码，均**无** `agent:session`）⇒ chat/dashboard/profile（**没有 sessions**）；客服（12 码，持 `agent:session`）⇒ 4 项齐全；一个码都没有的员工 ⇒ chat/profile（无码项）；`*` 通配 ⇒ 4 项。红证（实跑过）：把 `sessions` 的码改成 `null` ⇒ 同文件 `Tests run: 14, Failures: 4`。证据：backend/admin-api/src/test/java/com/migao/admin/service/MobileSurfacesTest.java
+数据: 判据 2·**`/me` 的 `mobileTabs` 字段与序列化**：`$.data.mobileTabs[0].key/route`、`[1].title` 逐值（字段名 = 端侧依赖：改名/改蛇形 ⇒ 端侧底栏退回「照显 4 项」+ 本判据红）。证据：backend/admin-api/src/test/java/com/migao/admin/controller/AuthIntegrationTest.java
+数据: 判据 3·🔴 **端侧只渲染服务端给的 tab**：给 3 项（无 `sessions`）⇒ 底栏**只有 3 格**且 `merchant-tab-sessions` 不存在；给 4 项 ⇒ 4 格（标题与顺序都取服务端，端侧不自造）。红证（实跑过）：端侧改回静态 4 项 ⇒ jest 1 failed / 12。证据：frontend/bmini-app/tests/merchant-tabbar.test.tsx
+数据: 判据 4·🔴 **拿不到菜单 / 空清单 ⇒ 照显 4 格**（tab 是**功能入口**：藏掉用户有的功能比露出一个点进去 403 的入口更糟 —— 与「数据」页待办块 `error ⇒ 照渲染` 同一条规则；入口与内容的 fail-closed 口径见 BM-046）。红证（实跑过）：把 `error` 当「一个都没有」⇒ jest 2 failed / 12。证据：同判据 3
+数据: 判据 5·🔴 **原生条必须被收起**（自绘底栏挂载即调 `Taro.hideTabBar({animation:false})`）：否则**两条底栏叠着**（自绘底栏上线后最容易出的形态）。红证（实跑过）：去掉该调用 ⇒ jest 1 failed / 12 + 几何腿 2 failed（`toBeHidden` Expected hidden / Received **visible**）。证据：frontend/bmini-app/tests/merchant-tabbar.test.tsx + tests/e2e/specs/bmini/bmini-tabbar.spec.ts 判据 7
+数据: 判据 6·**几何一格不放宽**（判据对象从原生条换成自绘条）：条贴底 ±1px / 条高 ∈[49,51]（页面高度算式按 Taro 的 50 留白）/ 每格图标与文字上下留白对称且都 > 0 / 水平居中 ±1px / 渲染出的四张图标 `src` 两两不同 / 当前页那一格 active。证据：tests/e2e/specs/bmini/bmini-tabbar.spec.ts + frontend/bmini-app/tests/tabbar-layout.test.ts（自绘底栏块：安全区只补一次、条不吃 `margin-bottom`、字面量 == Taro 现取的 50PX、flex 纵列居中、每格 `flex:1`）
+数据: 判据 7·**类级守卫（三处同源 + 接线 + 图标）**：服务端 `MobileSurfaces.TABS` ⇄ 端侧 `ALL_MERCHANT_TABS` ⇄ `app.config.ts` 的 `tabBar.list`（key/title/route 逐值，两处现取 4 项反空跑）；4 个 tab 页都必须接线 `<MerchantTabBar current='<自己的 key>' />`（新加 tab 页不接线 / 传错 key ⇒ 红）；8 张图标导入互不相同。红证（实跑过）：坐席页传 `current='chat'` ⇒ jest 1 failed / 12。证据：frontend/bmini-app/tests/merchant-tabbar.test.tsx
+跳过: [backend-contract] 确定性判据（Java 单测 + jest + playwright 几何腿），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-08 新增（issue #6574；用户逐字回答 #6570 第 1 问「**1，按权限隐藏**」，同日第 2 问答「有意授权」⇒ 不动任何角色种子）：底栏此前是**构建期静态 4 项**（`setTabBarItem` 只能改文字/图标、`hideTabBar` 只能整条收起 ⇒ 删不掉某一格）⇒ 没有 `agent:session` 的岗位（实测：商品管理员 8 码 / 财务 9 码）照样看到「坐席」。修法 = ① 服务端在 `GET /api/auth/me` 下发 `mobileTabs`（`MobileSurfaces.visibleTabsFor`，沿用 #6570「服务端按岗位投影、端侧零口径」）；② 端侧自绘底栏（`src/components/MerchantTabBar.tsx`）并调 `Taro.hideTabBar()` 收起原生条 —— `app.config.ts` 的 `tabBar` **保留不动**（`Taro.switchTab` 只能落 tabBar 页；Taro 的 `.taro_page.taro_tabbar_page` 页面高度算式依赖 `--taro-tabbar-height`）。同批：`MobileSurfaces` 的 `readPermission` 允许 `null`（= **无需任何码**的 tab；**不**用 `*` —— 那是 `RoleService` 给管理员的通配标记，拿来当「人人可见」会让语义撞车）。**未固化项**：weapp 只有构建判据、**无真机读数**（两端同源码：原生条 `hideTabBar` + 自绘；小程序侧未实机验证）。 ｜ tags: bmini, tabbar, permission, backend_contract
 
 ## 分类域（3 case）
 
@@ -10414,13 +10429,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：720（活跃 134，跳过 586）
-- tier 分布：smoke 12 / normal 666 / adversarial 32
+- 用例总数：721（活跃 134，跳过 587）
+- tier 分布：smoke 12 / normal 667 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
 - 登录认证域：12
-- B 端小程序域：46
+- B 端小程序域：47
 - 分类域：3
 - 对话边界域：45
 - 跨域：3
@@ -10459,6 +10474,7 @@
 - BM-008: 黄金策唤出授权门（按权限码）- 管理员默认可唤；未授权员工明确「需要管理员授权」+ 可行动引导
 - BM-009: 管理面手机端 4 项（智能派单 / 入库过账 / 售后处理 / 计件工资报表）- h5 可用 + 权限双面 + 写动作护栏 + 与 PC 同源
 - BM-046: 手机端菜单 = 服务端按岗位投影（「我的」入口 + 「数据」生产待办块）；菜单拉不到 ⇒ 显式态，不照显
+- BM-047: B 端 H5 底栏按岗位权限裁剪：服务端下发 mobileTabs + 端侧自绘 + 收起原生条（无坐席权限的岗位不再看到「坐席」）
 - CH-027: 流式回复中切换会话再切回 - 等待状态与最终回复保留（issue #2901）
 - CH-028: 多会话并发流 - 会话 A 回复中 B 可发送，增量/停止互不干扰（issue #2906）
 - CH-030: C 端交互组件提交锁（防重复提交）—— confirm/choice/form 点选/提交后本地锁卡，已答消息携带 interactiveAnswered，历史回放后不复活

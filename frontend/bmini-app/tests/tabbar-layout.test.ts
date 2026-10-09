@@ -17,6 +17,14 @@
  * 三条不变量：① 安全区只补一次（条不吃 margin-bottom、条高覆盖安全区）；
  * ② 图标 + 文字在可视区垂直居中（flex 纵列居中 + `padding-top: 0`）；
  * ③ item 的底部安全区衬垫保留（只清 top）。
+ *
+ * ## issue #6574 起：**自绘底栏**也守同一族不变量
+ *
+ * 底栏改为按岗位权限裁剪（服务端下发 `mobileTabs`，端侧自绘 + 收起原生条）⇒ 用户看到的是
+ * `src/components/MerchantTabBar.scss` 的那一条。它必须满足同一族不变量（安全区只补一次 / 条高 =
+ * Taro 注入的 `--taro-tabbar-height` / 图标文字居中 / 每格等宽），否则 #5754 的病灶会以新形态复发。
+ * 本文件两块判据：上面 = 原生条（仍留在 `app.config.ts` 里，`switchTab` 与页面高度算式依赖它），
+ * 下面 = 自绘底栏（用户实际看到的）。
  */
 import fs from 'fs'
 import path from 'path'
@@ -25,6 +33,9 @@ const SRC = path.resolve(__dirname, '..', 'src')
 const APP_SCSS = path.join(SRC, 'app.scss')
 const STYLES_DIR = path.join(SRC, 'styles')
 const TABBAR_SCSS = path.join(STYLES_DIR, 'tabbar.scss')
+// 自绘底栏（issue #6574）：用户实际看到的那一条
+const MERCHANT_TABBAR_COMPONENT = path.join(SRC, 'components', 'MerchantTabBar.tsx')
+const MERCHANT_TABBAR_SCSS = path.join(SRC, 'components', 'MerchantTabBar.scss')
 
 /** 读文件；**缺文件 = 判红**（不是跳过 —— 缺了就没法区分「没违规」与「没检查」） */
 function read(file: string): string {
@@ -138,5 +149,47 @@ describe('B 端 H5 tabBar 居中不变量（issue #5754）', () => {
       code(fs.readFileSync(path.join(STYLES_DIR, file), 'utf-8')).includes('taro-tabbar__'),
     )
     expect(duplicated).toEqual([])
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════
+// 自绘底栏（issue #6574）：用户实际看到的那一条
+// ══════════════════════════════════════════════════════════════════════════
+
+describe('B 端 H5 自绘底栏的几何不变量（issue #6574）', () => {
+  const scss = code(read(MERCHANT_TABBAR_SCSS))
+
+  it('覆盖样式被组件真的引入（写在别处但没接线 ⇒ 红）', () => {
+    expect(code(read(MERCHANT_TABBAR_COMPONENT))).toContain("import './MerchantTabBar.scss'")
+  })
+
+  it('① 安全区只补一次：条高 = Taro 的 tabBar 高 + 安全区，且条**不吃** margin-bottom', () => {
+    const bar = scss.match(/\.merchant-tabbar\s*\{[^}]*\}/)?.[0] ?? ''
+    expect(bar).toMatch(/height:\s*calc\(\s*\d+PX\s*\+\s*env\(safe-area-inset-bottom\)\s*\)/)
+    expect(bar).toMatch(/padding-bottom:\s*env\(safe-area-inset-bottom\)\s*;/)
+    expect(bar).not.toContain('margin-bottom')
+  })
+
+  it('①b 🔴 构建陷阱：不许引用 `var(--taro-tabbar-height)`（全局扫描已覆盖，这里再显式钉一次）', () => {
+    expect(scss).not.toContain('var(--taro-tabbar-height')
+  })
+
+  it('①c 字面量必须与 Taro 运行时注入值**逐值相等**（Taro 升级改了值 ⇒ 判红）', () => {
+    const ours = Number(scss.match(/calc\(\s*(\d+)PX/)?.[1])
+    expect(Number.isFinite(ours)).toBe(true)
+    expect(ours).toBe(taroTabbarHeightPx())
+  })
+
+  it('② 图标 + 文字在可视区垂直居中（flex 纵列居中，不靠固定留白）', () => {
+    const item = scss.match(/\.merchant-tabbar__item\s*\{[^}]*\}/)?.[0] ?? ''
+    expect(item).toContain('display: flex')
+    expect(item).toContain('flex-direction: column')
+    expect(item).toContain('align-items: center')
+    expect(item).toContain('justify-content: center')
+  })
+
+  it('③ 每格等宽（某格被按岗位隐藏后，其余自动等分整条）', () => {
+    const item = scss.match(/\.merchant-tabbar__item\s*\{[^}]*\}/)?.[0] ?? ''
+    expect(item).toMatch(/flex:\s*1\s*;/)
   })
 })

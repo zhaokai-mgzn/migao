@@ -228,6 +228,18 @@ class AuthIntegrationTest {
                                 .key("production-todos")
                                 .title("生产待办")
                                 .build()))
+                // 底栏 tab（issue #6574，用户 2026-10-08 逐字「1，按权限隐藏」）：同一形状、同一序列化面
+                .mobileTabs(List.of(
+                        UserInfoResponse.MobileSurface.builder()
+                                .key("chat")
+                                .title("问黄金策")
+                                .route("/pages/chat/index/index")
+                                .build(),
+                        UserInfoResponse.MobileSurface.builder()
+                                .key("profile")
+                                .title("我的")
+                                .route("/pages/profile/index/index")
+                                .build()))
                 .build();
 
         when(authService.getCurrentUser()).thenReturn(userInfo);
@@ -249,6 +261,11 @@ class AuthIntegrationTest {
                 .andExpect(jsonPath("$.data.mobileSurfaces[0].route").value("/pages/admin/pool/index"))
                 // 无独立页面的能力位：`route` **缺键**（不是 null、不是空串）—— 端侧据此只开页面内的块
                 .andExpect(jsonPath("$.data.mobileSurfaces[1].key").value("production-todos"))
+                // 🔴 底栏（issue #6574）：端侧自绘底栏读的就是 `mobileTabs`（字段名/顺序都是端侧依赖）
+                .andExpect(jsonPath("$.data.mobileTabs[0].key").value("chat"))
+                .andExpect(jsonPath("$.data.mobileTabs[0].route").value("/pages/chat/index/index"))
+                .andExpect(jsonPath("$.data.mobileTabs[1].key").value("profile"))
+                .andExpect(jsonPath("$.data.mobileTabs[1].title").value("我的"))
                 .andExpect(jsonPath("$.data.mobileSurfaces[1].route").doesNotExist());
     }
 
