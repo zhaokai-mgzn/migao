@@ -396,7 +396,15 @@ lock_list() {
       echo "💀 $(basename "$f" .lock) | PID ${pid:-?} | ${ts} | ${path}（进程已退出，锁失效）"
     fi
   done
-  [ "$found" = "0" ] && echo "（无会话锁）"
+  # 🔴 issue #6243：**末行必须是显式的 `return 0`**。这里曾写成 `[ "$found" = "0" ] && echo "（无会话锁）"`
+  #   —— `found=1` 时 `&&` 短路 ⇒ 该复合命令退出码 = 1 ⇒ 它就是本函数返回值；而 `lock_list` 又是
+  #   `cmd_list` 的最后一条命令 ⇒ **只要 `$LOCK_DIR` 里有任何 `*.lock`（哪怕全是失效锁）**，
+  #   `./scripts/dev-worktree.sh list` 就 exit 1（「表列得好好的却报错」）。
+  #   真出错仍是非零：`git worktree list` 由 `set -e` 承担（本函数不吞错）。
+  if [ "$found" = "0" ]; then
+    echo "（无会话锁）"
+  fi
+  return 0
 }
 
 # 清理失效锁（进程已退出的）

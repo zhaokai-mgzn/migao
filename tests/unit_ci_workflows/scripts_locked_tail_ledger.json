@@ -1,0 +1,6 @@
+{
+  "_comment": "issue #6243 类级元守卫台账：`scripts/*.sh` 里「函数体最后一条命令 = `[ … ] && …`」这一退出码陷阱的**有意为之**登记。判据 = tests/unit_ci_workflows/test_dev_worktree_list_exit_code.py::test_no_unregistered_exit_code_tail_in_scripts（未登记即红 / 陈旧登记即红 / 条数冻结上界 LEDGER_MAX=1 写在判据里 ⇒ 台账只许缩短）。key 形态 `<脚本文件名>::<函数名>`，**不写行号**（行号会漂）。",
+  "exemptions": {
+    "dev-worktree.sh::lock_alive": "有意为之：它是**谓词**（`[ -f \"$f\" ] || return 1` 之后 `[ -n \"$pid\" ] && kill -0 \"$pid\"`），调用点全是 `if lock_alive …; then` / `lock_alive … 2>/dev/null` 这类**条件位置** ⇒ 非零正是「锁失效」这个语义本身（`add` 靠它拒绝重复建工作区、`rm` 靠它决定是否释放锁）。改成 `return 0` 会把「锁失效」判成「锁活跃」⇒ 正好把护栏改坏。"
+  }
+}
