@@ -163,7 +163,7 @@
    "shape_notes": [
     "data=response.get('data') or {}"
    ],
-   "source_sha256": "88ba4cfc8da6d417b66a4f27cedac7f0b9dc55673f7dfe8040398840765c3e81"
+   "source_sha256": "cb63b3256f1079550c94ae4be45644c1c1d72d61ee410458c1130d29e36678be"
   },
   "craft_config_query": {
    "actions": null,
@@ -182,7 +182,7 @@
    "shape_notes": [
     "data=response.get('data') or {}"
    ],
-   "source_sha256": "f024f31ca502bf4de550f4311b50ca6bd62f76655d7b533288d14c7f4bfee5dc"
+   "source_sha256": "601957d50e1b5a77769c58eb6a2faf0fd024e1e0ca616b8a32a5a7755f1b0080"
   },
   "curtain_calc": {
    "actions": null,
@@ -224,7 +224,7 @@
     "**{'panels': panels} if panels is not None else {}",
     "data=(None, meters_fixed_height, f'fixed_height{suffix}', '')"
    ],
-   "source_sha256": "b40ba4851f257fd86ebc5ac2494abe5d2ad567490a6a3909db536826269ef392"
+   "source_sha256": "100073a78198e557ece63a73d6aca987571d34cf80c2795c883683bff8edc6e6"
   },
   "customer_address_query": {
    "actions": null,
@@ -736,7 +736,7 @@
    "shape_notes": [
     "data=response.get('data') or {}"
    ],
-   "source_sha256": "ff0b3e0889c0971d8f877cc55835a01db5540580851a3397553847652e7ee66f"
+   "source_sha256": "64a49d99942447baedfc90d176562acec26c693137ccdf1b48ffe83ffa0c9790"
   },
   "order_create": {
    "actions": null,
@@ -1349,7 +1349,7 @@
     "data ← response.get('data', {})",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "a8757ca4d1c6f38a8f0937ea218c1f53913e5cf386aec80c37d795701b9421b6"
+   "source_sha256": "50845f8f46137120eec2d4371ed9140d86a8686897b8c493457ab3c72272c1ca"
   },
   "sku_update": {
    "actions": null,
