@@ -105,3 +105,22 @@ PROBE_PREFIX= PROBE_OUT=/tmp/after node <repo>/acceptance/.../bmini-geometry-pro
 产物指纹：`servedAppJsSha256_16 = 548d8615341f3f07`（**代码**指纹；`index.html` 是弱锚点，见上一节）。
 ④ 工人自由报工不在本端产物射程内（后端 + 报工页写入口），其独立证据见 PG-071 与
 「注入式红证：禁掉完工记账 ⇒ 恰好两条涉钱判据变红」。
+
+## 批次级三把工具（在**集成态**上跑的，不是在单个包上）
+
+| 工具 | 读数 | 判据 |
+|---|---|---|
+| `./check-ui-regression.sh` | ✅ UI 无回退（关键文件与 main token 一致或为正常新增） | 无 UI 回退 |
+| `./contract-check.sh` | ✅ 契约检查全部通过（三端一致） | 跨模块契约未破 |
+| `./verify-all.sh gate`（全量） | 由 `./scripts/batch-gate.sh` 对三个修复分支**一次**跑（见 PR 记录） | 与 CI 同规则 |
+
+## 交付与复验步骤（可复原，换人/换会话照此执行）
+
+1. **合并顺序**：`#6603`（#6597）→ `#6607`（#6596）→ `#6605`（#6598）→ 本账本 PR（最后）。
+   前三个合并后本分支 `git rebase origin/main` 再合，Case Trust 的红随之消失（已在集成 worktree 上实测）。
+2. **线上发布腿**（`/b/`）：`gh workflow run bmini-h5-publish.yml --ref main` ——
+   该腿只挂 `push: main` + `workflow_dispatch`，而本仓的 push run **会被吞**（实测 39/40 零 push run）⇒ 必须手动派发。
+3. **落地面身份**：`deploy/scripts/bmini-h5-verify-served.sh`（字节哈希 + 资源命名空间）。
+   🔴 注意它的字节哈希判据锚在 `index.html` 上，而 `index.html` **不含应用代码**（见上一节）⇒
+   另外要对一次**代码**指纹：线上 `/b/js/app.js` 的 sha 与本仓构建对账（集成态构建 = `548d8615341f3f07`）。
+4. **线上重放**：探针打 `https://app.migaozn.com/b/`（`PROBE_PREFIX` 自动为 `/b`），复算 ①②③ 的读数是否与集成态一致。
