@@ -88,3 +88,20 @@ PROBE_PREFIX= PROBE_OUT=/tmp/after node <repo>/acceptance/.../bmini-geometry-pro
 ⇒ 只拿 `index.html` 当构建指纹，会把两份不同的代码读成同一份（正是「声称的对象 ≠ 我读到的对象」）。
 **处置**：探针同时输出**代码指纹** `servedAppJsSha256_16`（取 `/js/app.js`，`cache: 'no-store'`）：
 `#6596` 构建 = `f36480c3e073fbe5`。两分支构建的真实差异另有直接读数佐证：`coveredPx` **70 → 0**。
+
+## 🔴 集成读数：三处修复**同时生效**的那一份产物（用户升级后真正看到的样子）
+
+上面两组 AFTER 各自只含一个分支的修复。真正要交付的是**三处一起**的那份产物 —— 主会话把三个修复分支
+合进一个集成 worktree（`git worktree add --detach origin/main` + 逐个 `merge`，**无冲突**）、持机器级重活锁
+`npm run build:h5`（exit 0），再用**同一支探针**量（`out/after-integration/`）：
+
+| 用户报的问题 | 集成产物读数 | 判据 |
+|---|---|---|
+| ① 输入条被底栏遮 | `coveredPx = 0`（BEFORE 70）、整页 844 = 视口 | 通过 |
+| ① 默认语音 + 一行 | 默认 `按住说话`、四控件纵向中心**完全相等**（764.89） | 通过 |
+| ②「卡在哪」标签折行 | 12 个标签全部 `lineBoxes = 1`（BEFORE 全 2）、宽 49.9 | `tagWrapVerdict = OK` |
+| ③ 详情页看不到卡在哪 | `stuckPointRequests = 1`（BEFORE 0）、正文出现「卡在哪 … **打包** 等了 74.6 小时」 | 通过 |
+
+产物指纹：`servedAppJsSha256_16 = 548d8615341f3f07`（**代码**指纹；`index.html` 是弱锚点，见上一节）。
+④ 工人自由报工不在本端产物射程内（后端 + 报工页写入口），其独立证据见 PG-071 与
+「注入式红证：禁掉完工记账 ⇒ 恰好两条涉钱判据变红」。
