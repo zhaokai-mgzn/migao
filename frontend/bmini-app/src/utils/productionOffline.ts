@@ -61,8 +61,12 @@ export interface PendingReport {
   /**
    * 🔴 补传走哪条写路（issue #6598）：`'free'` = 无码自由报工（工序由工人显式选，
    * 端点 `.../orders/{orderId}/operations/{operationId}/report`）；缺键 / 其他值 = `'scan'`
-   * （有任务码，走 `scan/complete`）。**旧版本入队的条目也没有这个键** ⇒ 与 `'free'` 的
-   * 差别靠 `token` 一起判（`'free'` 的 `token` 必为空串，而旧条目是「该有码却没有」）。
+   * （有任务码，走 `scan/complete`）。
+   *
+   * <p>⚠️ **判别只看本键**（见 {@link isFreeReport}）：旧版本入队的条目同样缺这个键、`token`
+   * 也为空，但它与 `'free'` 是**两个语义**（「该有码却没有」vs「本来就不需要码」）——
+   * 所以**不得**用「`token` 是否为空」去推断（那会把旧条目也当成「不需要码」发出去，
+   * 或反过来把无码条目静默丢单）。</p>
    */
   kind?: 'scan' | 'free'
   /**
@@ -188,7 +192,8 @@ export function isFreeReport(item: PendingReport): boolean {
 }
 
 /**
- * 默认补传实现 = **唯一写入口** `scan/complete`（issue #5647 G10）。
+ * 默认补传实现 = **有码**那条写路 `scan/complete`（issue #5647 G10；issue #6598 起它不再是
+ * 「唯一」入口 —— 无码条目的补传见 {@link sendByFreeReport}）。
  *
  * <p>补传与在线报工必须走**同一条路**：否则「离线时按老路入队、联网后按新路补传」（或反之）
  * 会让同一次报工在两条口径下落地 —— 那正是本单要治的病。</p>
