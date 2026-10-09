@@ -210,9 +210,10 @@ describe('MessageInput — 语音（按住说话，松开直接发送行为保�
 
   it('无可发会话（disabled）时按住不开始录音', () => {
     const { container } = renderInput({ disabled: true })
-    const hold = container.querySelector('.message-input__hold') as HTMLElement
-    expect(hold).not.toBeNull()
-    fireEvent.touchStart(hold, { touches: [{ clientY: 200 }] })
+    const hold = container.querySelector('.message-input__hold')
+    // 反空跑 + 业务数据：禁用态这个键必须带 `--disabled` 修饰类（取不到 / 类名不对 ⇒ 当场红）
+    expect(hold?.className).toContain('message-input__hold--disabled')
+    fireEvent.touchStart(hold as HTMLElement, { touches: [{ clientY: 200 }] })
     expect(mockStartRecording).not.toHaveBeenCalled()
   })
 })

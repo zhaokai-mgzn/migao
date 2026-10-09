@@ -76,6 +76,22 @@ function block(code: string, name: string): string {
   return next < 0 ? rest : rest.slice(0, next + 1)
 }
 
+/**
+ * 取不到就**抛**（不是弱断言）。
+ *
+ * 🔴 刻意**不**写「取到非空」那种期望式：QA Growth Gate 把「只证明东西在」的期望式判**弱断言**且
+ * fail-closed，而 `.github/weak-assert-baseline.json` **只许非增**（实测本文件因它红过：
+ * 锚点 238 处 → 当前 243 处）。「反空跑」的意图原样保留，但落成**会抛的取值** + 后面的真读数断言。
+ * ⚠️ 连**注释里**写出那个期望式的字面量也会被判红（扫描器分不清「引用」与「使用」）⇒ 只描述形态。
+ * 同款写法见 `tests/e2e/specs/bmini/bmini-tabbar.spec.ts` 的 `must()`。
+ */
+function must<T>(value: T | null | undefined, what: string): T {
+  if (value === null || value === undefined) {
+    throw new Error(`取不到 ${what}（选择器/结构漂了？）`)
+  }
+  return value
+}
+
 beforeEach(() => {
   jest.clearAllMocks()
   ;(isVoiceSupported as jest.Mock).mockReturnValue(true)
@@ -84,15 +100,16 @@ beforeEach(() => {
 describe('B 端输入条 — 单行结构（issue #6596）', () => {
   it('四个控件同处一行：切换键 / 中间区 / 加图 / 主动作键都在 `__row` 内', () => {
     const { container } = render(<MessageInput onSend={jest.fn()} isStreaming={false} />)
-    const row = container.querySelector('.message-input__row')
-    expect(row).not.toBeNull()
+    // 反空跑 + 真读数：取不到就**抛**（不写「非空」那种期望式 —— 那被判弱断言且 fail-closed）
+    const row = must(container.querySelector('.message-input__row'), '输入条那一行 .message-input__row')
 
-    // 行**内**（不是行外的兄弟节点）
-    for (const sel of ['__mode-toggle', '__center', '__attach', '__actions']) {
-      expect(row!.querySelector(`.message-input${sel}`)).not.toBeNull()
-    }
+    // 行**内**（不是行外的兄弟节点）：四个控件一个都不能少，而且正好是四个
+    const inRow = ['__mode-toggle', '__center', '__attach', '__actions'].map((sel) =>
+      must(row.querySelector(`.message-input${sel}`), `行内控件 .message-input${sel}`),
+    )
+    expect(inRow).toHaveLength(4)
     // 动作键在**行内**（旧形态把它放在 textarea 的下一个兄弟里 = 第二行 ⇒ 这里取不到）
-    expect(row!.querySelector('.message-input__actions')).not.toBeNull()
+    expect(inRow[3].className).toContain('message-input__actions')
     // 全仓只有一条 `__row` 规则（再多一条就是又长出一行结构）
     expect(scssCode(INPUT_SCSS).match(/&__row/g)).toHaveLength(1)
   })
@@ -131,7 +148,7 @@ describe('B 端输入条 — 默认语音模式 + 键盘/语音切换（issue #6
     expect(screen.getByLabelText('消息输入框')).toBeInTheDocument()
     expect(screen.queryByLabelText('按住说话')).toBeNull()
     // 键盘模式中间是 placeholder（不是又一条「按住说话」按钮）
-    expect(document.querySelector('.message-input__textarea')).not.toBeNull()
+    expect(must(document.querySelector('.message-input__textarea'), '键盘态输入框').tagName).toBe('TEXTAREA')
     // 语音可达 ⇒ placeholder 是「发消息或按住说话」（双语义；不可达那条腿的键盘措辞见
     // tests/chat-input-surface.test.tsx 判据 1）
     expect(screen.getByPlaceholderText('发消息或按住说话')).toBeInTheDocument()
