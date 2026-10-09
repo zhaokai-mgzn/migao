@@ -7,6 +7,33 @@
 
 ## [Unreleased]
 
+### 上传按**实际字节流**判类型与大小，且两个存储实现共用同一份护栏（2026-10-09，issue #6207 #6208）
+
+改前（2026-10-03 线②验收实测，两处同源病）：
+
+- 类型只看**文件扩展名**、大小档只按**客户端自报的 `Content-Type`** 选 ⇒
+  `big19.png` + `Content-Type: application/pdf` + **19.9MB** 真实内容 ⇒ **HTTP 200**，
+  对象落 OSS `images/` 且公共可读（绕过 5MB 图片上限）；
+  `.png` 名 + 非图片内容 ⇒ 200（零魔数校验）。
+- 同一语义的路径穿越护栏**在两个存储实现里分叉**：本地实现有 `safeResolve`（⇒ 422「非法文件路径」），
+  而运行的 OSS 实现零校验 ⇒ `directory=../../l2evil` 的越界 objectKey 由 SDK 抛出、被全局兜底成
+  **500 `INTERNAL_ERROR`**（输入错误被报成服务端故障）。
+
+改后：
+
+- 新增 `UploadGuard`（**唯一一份**判据）：类型按**魔数**（PNG/JPEG/GIF/WebP/BMP/PDF/OOXML），
+  大小按**服务端计数**；扩展名与内容必须同类，不符即拒；`directory` 的 `../` / 绝对路径 /
+  `..%2f` 编码形态一律 **422**（拒绝发生在建目录 / `putObject` **之前**，零副作用）；
+  目录另做首尾空白剥离与多斜杠归一（`a//b` ⇒ `a/b`）。
+- 护栏挂在 `FileStorageService#upload` 这一层（模板方法），两个实现**不可能**再各写一份 ⇒
+  新存储实现自动继承同一护栏（类级元守卫 = `FileStorageServiceTest` 的结构面判据
+  + `rejectionSemanticsAreSharedAcrossImplementations` 的同源判据）。
+- 触达面：`/api/admin/files/upload`、`/api/admin/files/upload-batch`、`/api/admin/upload/image`、
+  `/api/admin/upload/images`、`/api/worker/inbound/upload`（全部走 `FileStorageService`）。
+- **合法路径行为不变**：正常 png/jpg/gif/webp/pdf/xlsx/docx 仍 200；
+  **有意收严**（重启条件见 PR body）：扩展名与内容不符的（如 `.png` 装 PDF、`.csv` 装 xlsx）由
+  200 改为 **422** —— 否则伪装类型会被写进对象元数据、由静态托管原样回给浏览器。
+
 ### 加工单列宽按内容预算重排：批号不再折三行（2026-10-09，issue #6600）
 
 用户 2026-10-09：> 派（同意把批号列加宽）
