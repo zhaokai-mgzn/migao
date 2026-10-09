@@ -27,6 +27,26 @@
 - **边界**：只动这一处展示文案 —— 企业名（`tenantName`）行、未设置企业名时的回退、折叠态不渲染文本、
   企业 Logo 回退一律不变；黄金策对商家的自我介绍口径（「XX商家管理后台的 AI 助手」）**不在本次范围**。
 
+### 智能派单默认开启：不用点按钮也会自动合并派单，并删掉那个「合并派单开关」假开关（2026-10-09，issue #6588）
+
+- **改后**：自动成批的**缺省翻为开**（`AUTO_BATCH_DEFAULT_ENABLED = true`；属性
+  `migao.production.auto-batch.enabled` 缺失即开）—— 满足成批条件（能填满某批次 ≥80% / 让某批次余量收敛到
+  ≤0.2 米 / 池内同物料需求 ≥30 米）或已过最晚派单日（到货日 − 7 天；无到货日 ⇒ 进池日 + 7 天）⇒
+  系统自己合并排料并派单；人工「一键合并派单」照旧可用。加急单仍逐单立即派、一单一加工单不变。
+- **改前的问题（用户 2026-10-09 逐字：「我觉得是不是不应该有这个开关，默认就应该开启智能派单」）**：
+  该能力此前服务级缺省关 —— 省料的默认值落在一个**要人记得去点**的动作上。
+- **顺带删掉一个假开关**：「智能派单」状态条原有的「合并派单开关 未开启」徽标是**只读**的服务端缺省值
+  （字段 `poolingEnabled`），不可点、没有出口、恒为「未开启」⇒ 用户当场问「在哪开启？」。该徽标已删除；
+  **接口字段与 `pooled=true` 的合并派单路径一字未动**（只是不再上屏）。
+- **手机端悬空引导**：「（合并需先在电脑端开启池化）」指向一个不存在的出口（电脑端没有这个开入口，
+  且手机端自己就能合并派单）⇒ 整条提示删除。
+- **回退**：部署侧显式 `migao.production.auto-batch.enabled=false`（不改码）；显式关时行为不变（零读零写、
+  零日志）。
+- **判据**：`AutoBatchDispatchTest::defaultIsOnAndEvaluates` / `explicitOffDoesNothingAtAll`、
+  `AutoBatchDueScanServiceTest::defaultIsOnSoScanRuns` / `explicitOffMeansZeroAction`（红证机具
+  `scripts/auto-batch-red-proof.py` 与 `scripts/auto-batch-due-scan-red-proof.py` 的 `default_on` / `off_gate`）
+  + 前端「只读状态不得做成开关徽标」类级守卫。
+
 ### 配置指挥台 v2：配置域拆到功能粒度（8 → 11 域），域内不再套一层页签（2026-10-09，issue #6585）
 
 - **改后**：`/settings`「企业基础设置」左栏从 **8 个域扩到 11 个**，**一个域只干一件事**：

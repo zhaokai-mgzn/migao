@@ -25,9 +25,10 @@ import java.util.concurrent.atomic.AtomicLong;
  * （已过最晚派单日 ⇒ 必派），**不**判成批条件 ①②③（优化参数）、**不**读池化窗口 / 等待时长上限。
  * 主触发仍是业务事件（{@code AutoBatchDispatchListener}），本类是**兜底**、不是第二条主触发。
  *
- * <h2>默认关（判据 4）</h2>
- * 自动成批未启用 ⇒ 本方法**零读零写**立刻返回：连「有哪些租户」都不查
- * （记录期基线正建立在「不启用 ⇒ 行为与今天逐值相同」之上）。
+ * <h2>缺省即开 / 显式关 ⇒ 零动作（判据 4，issue #6588）</h2>
+ * 缺省（{@code migao.production.auto-batch.enabled} 缺失 ⇒ **开**）⇒ 这条腿真的逐租户扫；
+ * **显式关**（属性 = {@code false}）⇒ 本方法**零读零写**立刻返回：连「有哪些租户」都不查
+ * —— 关闸仍是一条真闸（红证 = 摘掉那行判定 ⇒ 判据 4b 当场红）。
  *
  * <h2>心跳可见（判据 5）</h2>
  * 这条腿**不靠日志心跳**（5 分钟一条 info 只会变成没人看的噪声），而是把
@@ -69,7 +70,7 @@ public class AutoBatchDueScanService {
     /**
      * 一轮到期扫描的读数（判据 1/4 的审计面 + 判据 5 的心跳面）。
      *
-     * @param enabled           本轮是否真的扫了（{@code false} ⇒ 缺省关、零动作）
+     * @param enabled           本轮是否真的扫了（{@code false} ⇒ **显式关**、零动作）
      * @param scannedTenants    本轮扫到的候选租户数（超集预筛的结果，不是「全平台租户数」）
      * @param dispatchedOrderNos 本轮派出去的加工单号
      * @param failures          本轮失败（含逐租户异常与逐单派单失败），逐条可行动
@@ -86,7 +87,8 @@ public class AutoBatchDueScanService {
      */
     public DueScanOutcome scanDuePooledOrders() {
         if (!processingOrderService.autoBatchPolicy().enabled()) {
-            // 🔴 判据 4：不启用 ⇒ **零读零写**（连租户都不查）⇒ 记录期基线零污染、零日志噪声
+            // 🔴 判据 4（#6588 重写）：**显式关** ⇒ 零读零写（连租户都不查）、零日志噪声。
+            // 缺省已翻成「开」⇒ 本条钉的是「关得上」，不再是「缺省不动数据」。
             return new DueScanOutcome(false, 0, List.of(), List.of());
         }
         rounds.incrementAndGet();

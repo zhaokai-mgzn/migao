@@ -26,7 +26,7 @@
 
 ## 用法
     python3 scripts/auto-batch-red-proof.py                 # 跑全部变异，逐条打印
-    python3 scripts/auto-batch-red-proof.py --only default_off
+    python3 scripts/auto-batch-red-proof.py --only default_on
     python3 scripts/auto-batch-red-proof.py --check         # 前提自检（门禁调用这个面；零副作用）
 
 退出码（实跑面）：`0` = 全部变异都被对应判据抓到；`1` = 有判据**没有**判别力（或意外结果）；
@@ -64,7 +64,8 @@ TEST_DIR = "backend/admin-api/src/test/java/com/migao/admin/service/"
 
 #: 判据方法 → 它钉的那一格（打印用）
 CRITERIA = {
-    "defaultOffDoesNothingAtAll": "判据1 默认关（缺省关 ⇒ 零读零写）",
+    "defaultIsOnAndEvaluates": "判据1a 缺省即开（不传策略 ⇒ 真的评估，不是早返回）",
+    "explicitOffDoesNothingAtAll": "判据1b 显式关 ⇒ 零读零写（关闸仍是一条真闸）",
     "batchingHappensOnTheEventEvenWhenNothingIsDue": "判据2 事件驱动（不靠计时器、也不是只在兜底扫描里）",
     "triggerChainHasNoTimerAndIsAnAfterCommitEventListener": "判据2 结构性（无 @Scheduled + AFTER_COMMIT）",
     "noConditionMetMeansNoDispatch": "判据3 都不满足 ⇒ 不派（条件不得恒真）",
@@ -85,13 +86,26 @@ CRITERIA = {
 #: 每条变异：注入点（**源码原文**）+ 期望**单独变红**的判据方法 + 跑哪个类
 MUTATIONS = [
     {
-        "name": "default_off",
-        "why": "缺省改成「总是自动成批」",
+        "name": "default_on",
+        "why": "#6588 把缺省翻回「关」（自动成批缺省必须是开）",
         "file": SVC + "ProcessingOrderService.java",
-        "old": "public static final boolean AUTO_BATCH_DEFAULT_ENABLED = false;",
-        "new": "public static final boolean AUTO_BATCH_DEFAULT_ENABLED = true; // [RED-PROOF]",
+        "old": "public static final boolean AUTO_BATCH_DEFAULT_ENABLED = true;",
+        "new": "public static final boolean AUTO_BATCH_DEFAULT_ENABLED = false; // [RED-PROOF]",
         "cls": UNIT, "fqn": UNIT_FQN,
-        "expect": ["defaultOffDoesNothingAtAll"],
+        "expect": ["defaultIsOnAndEvaluates"],
+    },
+    {
+        "name": "off_gate",
+        "why": "把「显式关 ⇒ 零读零写」的闸拆掉（关着也照评估、照派）",
+        "file": SVC + "ProcessingOrderService.java",
+        # 锚点带上下文行：`if (tenantId == null || !policy.enabled()) {` 在本文件出现**两次**
+        # （autoBatchDispatch 与 autoBatchDispatchDue 各一处）⇒ 只取裸行会命中 2 次，机具判「腐烂」
+        "old": "        if (tenantId == null || !policy.enabled()) {\n"
+               "            // 🔴 判据 1（#6588 重写）：**显式关** ⇒ 零读零写（连池都不查）。",
+        "new": "        if (tenantId == null) { // [RED-PROOF] 关闸被拆掉\n"
+               "            // 🔴 判据 1（#6588 重写）：**显式关** ⇒ 零读零写（连池都不查）。",
+        "cls": UNIT, "fqn": UNIT_FQN,
+        "expect": ["explicitOffDoesNothingAtAll"],
     },
     {
         "name": "trigger_only_in_fallback",

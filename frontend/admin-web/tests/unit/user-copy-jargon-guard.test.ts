@@ -212,3 +212,65 @@ describe('页面副标题要说清「这个功能是干什么的」（#6488 续�
     }
   })
 })
+
+/**
+ * 类级元守卫（#6588）：**只读的服务端状态不得做成「开关」徽标**摆给商家看。
+ *
+ * 病灶（实测 2026-10-09）：「智能派单」状态条把服务端缺省值 `poolingEnabled` 渲染成
+ * 「合并派单开关 已开启/未开启」徽标 —— 它**不可点、没有出口、恒为「未开启」**，
+ * 用户当场问「在哪开启？」。（研发模式 §31 P3「不摆内部标识」/ P4「只陈述事实与该做什么」同源。）
+ *
+ * 判据形态：**状态副词不得单独做成 `Badge` 的子节点** —— 状态要么挂在被控对象/动作上，
+ * 要么由控件本体（toggle / 按钮）表达；一个孤立的「已开启 / 未开启」说不出「谁被开启了、
+ * 我能做什么」。放行的形态：**动作结果徽标**（如「已派单」）与**真实 toggle**（`aria-label` 的开关）。
+ *
+ * 判据源 = 本文件（源码文本扫描；`Badge` 是本仓唯一的徽标组件）。
+ * 红证：把 `frontend/admin-web/src/app/(dashboard)/production/pool/page.tsx` 里那对
+ * `<Badge variant="default">未开启</Badge>` 放回去 ⇒ 本判据当场红。
+ */
+describe('只读状态不得做成「开关」徽标（#6588）', () => {
+  const SCAN_DIRS = ['src/app', 'src/components']
+  const STATE_WORD = '(已开启|未开启|已关闭|已启用|已停用)'
+  /**
+   * 两个命中形态（都是「状态词就是徽标的全部内容」）：
+   * ① 字面量：`<Badge variant="default">未开启</Badge>`（#6588 的病灶形态）；
+   * ② 条件表达式：`<Badge>{ok ? '已开启' : '已关闭'}</Badge>`。
+   * 放行：徽标里还有**别的信息**（动作结果 / 单号 / 对象名）。
+   */
+  const STATE_ONLY_BADGE =
+    new RegExp(`<Badge[^>]*>\\s*(?:${STATE_WORD}|\\{[^}]*['"]${STATE_WORD}['"])`)
+
+  const files = ((): string[] => {
+    const out: string[] = []
+    const walk = (rel: string) => {
+      for (const entry of readdirSync(join(ROOT, rel))) {
+        const child = `${rel}/${entry}`
+        if (statSync(join(ROOT, child)).isDirectory()) walk(child)
+        else if (/\.tsx?$/.test(entry)) out.push(child)
+      }
+    }
+    for (const dir of SCAN_DIRS) walk(dir)
+    return out
+  })()
+
+  it('普查面非空（扫不到文件 ⇒ 本判据在扫空气，而不是"没问题"）', () => {
+    expect(files.length).toBeGreaterThan(20)
+  })
+
+  it('源码里没有「孤立状态词」徽标（未登记即红）', () => {
+    const hits = files.filter((f) => STATE_ONLY_BADGE.test(readFileSync(join(ROOT, f), 'utf-8')))
+    expect(hits, `这些文件把只读状态做成了徽标（状态该由控件本体表达）:\n${hits.join('\n')}`).toEqual([])
+  })
+
+  it('判别力自证：坏形态判红、好形态（动作结果徽标 / 真实开关）不红', () => {
+    expect(STATE_ONLY_BADGE.test('<Badge variant="default">未开启</Badge>')).toBe(true)
+    expect(STATE_ONLY_BADGE.test("<Badge variant='success'>{ok ? '已开启' : '已关闭'}</Badge>")).toBe(true)
+    expect(STATE_ONLY_BADGE.test('<Badge variant="warning">加急插队</Badge>')).toBe(false)
+    expect(STATE_ONLY_BADGE.test('<Badge variant="success">已派单，加工单号 JG-1</Badge>')).toBe(false)
+  })
+
+  it('只改注释不红（对照读数）：散文里提到状态词不算上屏，徽标形态才有罪', () => {
+    expect(STATE_ONLY_BADGE.test('// 旧形态「合并派单开关 未开启」已删')).toBe(false)
+    expect(STATE_ONLY_BADGE.test("aria-label=\"启用智能每日经营简报开关\"")).toBe(false)
+  })
+})

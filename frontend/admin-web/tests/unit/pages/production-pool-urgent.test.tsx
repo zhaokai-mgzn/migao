@@ -297,10 +297,11 @@ describe('智能派单 · 加急插队区（PR-080）', () => {
     expect(screen.queryByTestId('pool-dispatch-results')).toBeNull()
   })
 
-  it('顶部必须看得见「池化开关未开启」（缺省关，不是隐形状态）', async () => {
+  it('#6588 顶部不再有「合并派单开关」徽标（只读状态不当控件摆），状态条读数照旧', async () => {
     render(<ProductionPoolPage />)
-    await waitFor(() => expect(screen.getByTestId('pool-status-pooling')).toBeInTheDocument())
-    expect(screen.getByTestId('pool-status-pooling')).toHaveTextContent('未开启')
+    await waitFor(() => expect(screen.getByTestId('pool-status-max-wait')).toBeInTheDocument())
+    expect(screen.queryByTestId('pool-status-pooling')).toBeNull()
     expect(screen.getByTestId('pool-status-max-wait')).toHaveTextContent('24')
+    expect(screen.getByTestId('pool-status-order-count')).toBeInTheDocument()
   })
 })

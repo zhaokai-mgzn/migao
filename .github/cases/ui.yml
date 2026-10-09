@@ -2013,9 +2013,9 @@ cases:
       - tool: direct_reply
     data_checks:
       - "🔴 判据·**三源同构**：`config/menu.ts` 的 `production-pool` 节点、`MenuController.MENU_TREE` 的 `new MenuNode(\"processing:manage\", \"智能派单\")`、`AuthService.buildMenusByPermissions` 的 `menuItem(\"production-pool\", \"智能派单\", \"/production/pool\")`、`Header.tsx` 面包屑 —— 四处逐字一致（任一处漏改就会出现「侧边栏看到的名字」与「后端下发的名字」不一致，`#4203` 同族坑）。"
-      - "🔴 判据·**页面零隐喻 + 人话读数**：整页渲染文本不出现 `/池/`，也不出现旧词（成批区 / 加急插队 / 一键成批派单 / 池化开关）；同时**必须有**替换后的人话（合并派单开关 / 待派订单 / 加急订单（不参与合并，立即派）/ 可合并的待派订单（按料分组）/ 一键合并派单）—— 「删掉就算过」不算通过。"
+      - "🔴 判据·**页面零隐喻 + 人话读数**：整页渲染文本不出现 `/池/`，也不出现旧词（成批区 / 加急插队 / 一键成批派单 / 池化开关 / **合并派单开关**）；同时**必须有**替换后的人话（待派订单 / 加急订单（不参与合并，立即派）/ 可合并的待派订单（按料分组）/ 一键合并派单）—— 「删掉就算过」不算通过。🔴 #6588 追加：原「合并派单开关 已开启/未开启」徽标**必须不存在**（`data-testid=\"pool-status-pooling\"` 取不到）—— 它是**只读**的服务端缺省值（字段 `poolingEnabled`），不可点、没有出口、恒为「未开启」，实测引来用户逐字提问「在哪开启？」；合并是页面上的**动作**（勾选 → 一键合并派单），不是要商家拨的开关。"
       - "🔴 判据·**只改文案（负控）**：路由 `/production/pool`、菜单 key `production-pool`、权限码 `processing:manage`、三个接口路径（含 `pooled` / `poolingEnabled` 字段）逐字未动（先例 = UI-028「角色权限」→「岗位权限」时 URL 与接口不变）。"
-      - "🔴 类级元守卫：`user-copy-jargon-guard.test.ts` 新增「机制隐喻」形态 —— `src/app` / `src/components` / `src/lib` 的**用户可见**行里出现 CJK「池」即红（注释与 SVG path 不算；ASCII 的 `pool` / `pooled` / `poolingEnabled` 是契约与实现，不在射程）。修复前实测具名 2 行预览标签（`src/lib/pool-board.ts` 的 `previewSummaryRows`（第一行「合并后预计领料米数」与第五行「合并新增收益」两处标签））。"
+      - "🔴 类级元守卫：`user-copy-jargon-guard.test.ts` 新增「机制隐喻」形态 —— `src/app` / `src/components` / `src/lib` 的**用户可见**行里出现 CJK「池」即红（注释与 SVG path 不算；ASCII 的 `pool` / `pooled` / `poolingEnabled` 是契约与实现，不在射程）。修复前实测具名 2 行预览标签（`src/lib/pool-board.ts` 的 `previewSummaryRows`（第一行「合并后预计领料米数」与第五行「合并新增收益」两处标签））。🔴 #6588 追加**第二形态**：**只读状态不得做成「开关」徽标** —— 状态副词（已开启 / 未开启 / 已关闭 / 已启用 / 已停用）不得单独作为 `Badge` 的子节点（`src/app` / `src/components` 源码扫描；判别力自证：坏的孤立状态徽标判红、动作结果徽标「已派单」与真实 toggle 不红；`aria-label` 里的「开关」是真实控件的可访问名，不在射程）。"
       - "**命名裁定留档**：菜单名曾考虑「智能下料」（用户先提），因本仓「下料」已被裁定为**车间裁剪工序**（工序库「裁剪组」；黄金策触发词「这单下料做到哪了」走 `production_worklog_query`）会撞名 ⇒ 用户改选「智能派单」；「智能」保留用户本意（系统按料分组、算好合并省多少），动作落回商家的词「派单」。"
     skip_reason: "[backend-contract] 纯前端文案/菜单名 + 静态守卫（无 LLM 行为面），不进入 agent-eval 冒烟"
     merge_log: "2026-09-25 新增（issue #5576）：池看板 → 智能派单 + 页内去内部隐喻 + 三源同构与「只改文案」负控 + 「池」隐喻类级元守卫。取号 UI-058。"

@@ -224,7 +224,7 @@ class AutoBatchDispatchRealDbTest {
                 session.getMapper(ProcessingItemMapper.class), mock(OrderService.class),
                 new ObjectMapper(), production, operations, qtyClient);
         ReflectionTestUtils.setField(service, "stockBatchConsumptionService", batchStock);
-        // 生产装配：开关打开（缺省关的形态由 AutoBatchDispatchTest 判据 1 钉住）
+        // 生产装配：显式把开关打开（缺省**已经是开**；关闸形态由 AutoBatchDispatchTest 判据 1b 钉住）
         ReflectionTestUtils.setField(service, "autoBatchEnabled", true);
         ReflectionTestUtils.setField(service, "autoBatchFillRatioPercent",
                 ProcessingOrderService.AUTO_BATCH_DEFAULT_FILL_RATIO_PERCENT);

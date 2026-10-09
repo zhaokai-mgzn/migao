@@ -233,7 +233,7 @@ class AutoBatchDueScanRealDbTest {
                 own.getMapper(OrderItemMapper.class), own.getMapper(ProcessingItemMapper.class),
                 mock(OrderService.class), new ObjectMapper(), production, operations, qtyClient);
         ReflectionTestUtils.setField(built, "stockBatchConsumptionService", batchStockOf(own));
-        // 生产装配：开关打开（缺省关的形态由 AutoBatchDueScanServiceTest 判据 4 钉住）
+        // 生产装配：显式把开关打开（缺省**已经是开**；关闸形态由 AutoBatchDueScanServiceTest 判据 4b 钉住）
         ReflectionTestUtils.setField(built, "autoBatchEnabled", true);
         ReflectionTestUtils.setField(built, "autoBatchFillRatioPercent",
                 ProcessingOrderService.AUTO_BATCH_DEFAULT_FILL_RATIO_PERCENT);

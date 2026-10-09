@@ -3711,7 +3711,11 @@ export interface SavingTrend {
 
 export interface PoolBoard {
   maxWaitHours: number
-  /** 池化开关**当前**是否开启（缺省关 —— 未开启必须看得见） */
+  /**
+   * 池化开关**当前**是否开启（服务端缺省值）。
+   * 🔴 #6588 起**不再上屏**：它是只读缺省值、不是可操作控件（旧形态做成「合并派单开关」徽标，
+   * 用户当场问「在哪开启？」）；合并派单是页面上的动作（勾选 → 一键合并派单）。字段本身是契约，保留。
+   */
   poolingEnabled: boolean
   /** = 池内（非加急）订单数 */
   orderCount: number

@@ -57,11 +57,15 @@ describe('智能派单：命名与去内部隐喻（issue #5576）', () => {
     expect(text).toContain(NAME)
     // 「池」是 pooling 的实现隐喻 —— 页面上一个都不要有
     expect(text).not.toMatch(/池/)
-    for (const oldWord of ['成批区', '加急插队', '一键成批派单', '池化开关']) {
+    for (const oldWord of ['成批区', '加急插队', '一键成批派单', '池化开关', '合并派单开关']) {
       expect(text, `旧文案「${oldWord}」仍在页面上`).not.toContain(oldWord)
     }
+    // #6588：**只读**的服务端缺省值不再当「开关」摆出来（它不是控件、没有出口，恒为「未开启」——
+    // 实测用户当场问「在哪开启？」）。合并是页面上的**动作**：勾选 → 一键合并派单。
+    expect(container.querySelector('[data-testid="pool-status-pooling"]'),
+      '池化开关徽标回来了：只读状态不是开关（#6588）').toBeNull()
     // 替换后的**人话**读数（不是"删了就算"）：状态条与两个区块都还在、且用商家的话
-    for (const plain of ['合并派单开关', '待派订单', '加急订单（不参与合并，立即派）', '可合并的待派订单（按料分组）', '一键合并派单']) {
+    for (const plain of ['待派订单', '加急订单（不参与合并，立即派）', '可合并的待派订单（按料分组）', '一键合并派单']) {
       expect(text, `缺人话读数「${plain}」`).toContain(plain)
     }
   })

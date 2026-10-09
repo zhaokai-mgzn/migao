@@ -94,8 +94,8 @@ TOOLS: dict[str, ToolSpec] = {
         criteria=(_AAPI_TEST + "service/CuttingPlanCalculatorTest.java",),
     ),
     "scripts/auto-batch-red-proof.py": ToolSpec(
-        floor=12,
-        heavy="Maven + JDK + PG 二进制（含 1 条真库判据；12 条变异实测 807s≈13min）",
+        floor=13,
+        heavy="Maven + JDK + PG 二进制（含 1 条真库判据；13 条变异实测 807s≈13min）",
         impl=(
             _AAPI_MAIN + "service/ProcessingOrderService.java",
             _AAPI_MAIN + "service/AutoBatchDispatchListener.java",
@@ -112,8 +112,8 @@ TOOLS: dict[str, ToolSpec] = {
         ),
     ),
     "scripts/auto-batch-due-scan-red-proof.py": ToolSpec(
-        floor=7,
-        heavy="Maven + JDK + PG 二进制（含 1 条真库判据；7 条变异实测 272s）",
+        floor=8,
+        heavy="Maven + JDK + PG 二进制（含 1 条真库判据；8 条变异实测 272s）",
         impl=(
             _AAPI_MAIN + "service/AutoBatchDueScanService.java",
             _AAPI_MAIN + "service/ProcessingOrderService.java",

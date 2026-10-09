@@ -45,6 +45,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -62,7 +63,9 @@ import static org.mockito.Mockito.when;
  *       红证 = 把判据换成 `PoolLine.overdue()`（池化窗口）⇒ ① 当场红。</li>
  *   <li><b>定时腿是兜底、不是第二条主触发</b>：满足成批条件③但未到期的单，扫描腿**一张都不派**
  *       （同夹具下事件腿会派）⇒ 定时腿**不**判优化条件。</li>
- *   <li><b>默认关</b>（判据 4）：开关关 ⇒ 扫描腿**零读零写**（连「有哪些租户」都不查）、零日志、零轮数。</li>
+ *   <li><b>缺省即开 / 显式关 ⇒ 零动作</b>（判据 4，issue #6588）：缺省开着 ⇒ 扫描腿**真的去查租户**
+ *       （心跳轮数 +1）；开关为假（部署属性 `migao.production.auto-batch.enabled=false`）⇒
+ *       **零读零写**（连「有哪些租户」都不查）、零日志、零轮数。</li>
  *   <li><b>心跳可见</b>（判据 5）：读数是 {@code /actuator/health} 上的 details（轮数 / 最近成功时刻 /
  *       失败时刻 / 扫了几个租户 / 派了几张 / 最近错误），恒 UP（同 {@code MigrationHealthIndicator}）。
  *       红证 = 去掉 details 里的时间戳 ⇒ 本判据红。</li>
@@ -76,7 +79,7 @@ import static org.mockito.Mockito.when;
  * {@code AutoBatchDueScanRealDbTest}。</p>
  */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("#5184 到期扫描腿：无事件也派 / 只查业务约束 / 默认关 / 幂等 / 心跳可见")
+@DisplayName("#5184 到期扫描腿：无事件也派 / 只查业务约束 / 缺省即开（显式关零动作） / 幂等 / 心跳可见")
 class AutoBatchDueScanServiceTest {
 
     private static final Long TENANT = 5184L;
@@ -136,13 +139,30 @@ class AutoBatchDueScanServiceTest {
         TenantContext.clear();
     }
 
-    // ─────────────────────────────────────────── 判据 4：默认关
+    // ─────────────────────────────────────────── 判据 4：缺省即开 / 显式关 ⇒ 零动作
 
     @Test
-    @DisplayName("🔴 判据4 默认关：自动成批未启用 ⇒ 扫描腿**零读零写**（连租户都不查 / 零日志 / 零轮数）")
-    void defaultOffMeansZeroAction() {
+    @DisplayName("🔴 判据4a（#6588）缺省即开：不显式关 ⇒ 扫描腿真的去查租户（心跳轮数 +1）")
+    void defaultIsOnSoScanRuns() {
         assertThat(service.autoBatchPolicy().enabled())
-                .as("🔴 缺省 = 关（红证：把 AUTO_BATCH_DEFAULT_ENABLED 改成 true ⇒ 本断言红）")
+                .as("🔴 缺省 = 开（红证：把 AUTO_BATCH_DEFAULT_ENABLED 改回 false ⇒ 本断言红）")
+                .isTrue();
+        when(orderMapper.selectConfirmedTenantIds()).thenReturn(List.of());
+
+        AutoBatchDueScanService.DueScanOutcome outcome = scanner.scanDuePooledOrders();
+
+        assertThat(outcome.enabled()).as("缺省开着 ⇒ 这一轮真的扫了（旧缺省 = 关时这里是 false）").isTrue();
+        verify(orderMapper).selectConfirmedTenantIds();
+        assertThat(scanner.getRounds()).as("跑过一轮 ⇒ 心跳轮数 +1（停摆可见面的前提）").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("🔴 判据4b 显式关：开关为假 ⇒ 扫描腿**零读零写**（连租户都不查 / 零日志 / 零轮数）")
+    void explicitOffMeansZeroAction() {
+        // 显式关的形态 = 部署属性 `migao.production.auto-batch.enabled=false`
+        ReflectionTestUtils.setField(service, "autoBatchEnabled", false);
+        assertThat(service.autoBatchPolicy().enabled())
+                .as("🔴 显式关（红证：摘掉扫描腿那行 `!autoBatchPolicy().enabled()` 闸 ⇒ 本用例红）")
                 .isFalse();
 
         List<String> messages = captureLogs(() -> {
@@ -154,8 +174,8 @@ class AutoBatchDueScanServiceTest {
         });
 
         verifyNoInteractions(orderMapper, orderItemMapper, processingOrderMapper);
-        assertThat(scanner.getRounds()).as("零动作 ⇒ 连轮数都不记（记录期基线零污染）").isZero();
-        assertThat(messages).as("缺省关 ⇒ 与今天逐值相同：一条日志都不打").isEmpty();
+        assertThat(scanner.getRounds()).as("零动作 ⇒ 连轮数都不记").isZero();
+        assertThat(messages).as("开关关着 ⇒ 一条日志都不打").isEmpty();
     }
 
     // ─────────────────────────────────────────── 判据 1：到点自愈
