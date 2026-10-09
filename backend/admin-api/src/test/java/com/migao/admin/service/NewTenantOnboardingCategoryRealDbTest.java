@@ -166,7 +166,10 @@ class NewTenantOnboardingCategoryRealDbTest {
                 session.getMapper(ProductSkuMapper.class),
                 session.getMapper(ProductAttributeMapper.class),
                 new StockLedgerService(session.getMapper(StockLedgerMapper.class),
-                        session.getMapper(ProductSkuMapper.class)));
+                        session.getMapper(ProductSkuMapper.class)),
+                // 幂等键（issue #6209）：本类走无键路径（createProduct(req, tenantId) ⇒ claim 不到），
+                // 幂等行为由 ProductCreateIdempotencyTest / ProductCreateIdempotencyRealDbTest 承担
+                null);
         // ServiceImpl 的 baseMapper（createProduct 末尾按 id 回读会用到）
         ReflectionTestUtils.setField(productService, "baseMapper", session.getMapper(ProductMapper.class));
         realSeedService = new ProductCategorySeedService(session.getMapper(CategoryMapper.class));

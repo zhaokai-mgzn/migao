@@ -167,7 +167,9 @@ class ProductControllerTest extends BaseControllerTest {
         @DisplayName("创建成功 -> 200")
         void create() throws Exception {
             ProductResponse p = buildProduct(PROD_ID, "新商品", "off_sale");
-            when(productService.createProduct(any(ProductCreateRequest.class), eq(TEST_TENANT_ID)))
+            // issue #6209：控制器改为「读 X-Client-Request-Id 并透传给三参 createProduct」
+            // ⇒ 桩必须钉三参重载（幂等接线判据见 ProductCreateIdempotencyEndpointTest）
+            when(productService.createProduct(any(ProductCreateRequest.class), eq(TEST_TENANT_ID), any()))
                     .thenReturn(p);
 
             String body = """

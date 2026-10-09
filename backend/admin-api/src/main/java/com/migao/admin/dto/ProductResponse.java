@@ -1,6 +1,8 @@
 package com.migao.admin.dto;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -10,9 +12,25 @@ import java.util.Map;
 
 /**
  * 商品响应 DTO
+ *
+ * <p>{@code @JsonIgnoreProperties(ignoreUnknown = true)}（issue #6209）：幂等回放时快照 JSON 由
+ * 同一个 DTO 序列化而来，而本 DTO 有**只写不出的派生 getter**（{@code getPrice()}）⇒ 严格模式下
+ * {@code replay} 会反序列化失败并 fail-closed 拒绝同键重试。与 {@code OrderDetailResponse} /
+ * {@code AfterSalesDetailResponse} 同款处置（它们各自也有派生 getter）。</p>
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 @Data
 public class ProductResponse {
+
+    /**
+     * 本次响应是否为**同键回放**（true = 没有新建，返回的是首次那条商品）。
+     *
+     * <p>issue #6209：不加这个字段时，调用方**分不出**「新建成功」与「同键回放」——
+     * 与订单 / 售后两条路径同款（见 {@code ClientRequestIdService.replay} 的 replayedMarker：
+     * 标记字段必须真实存在于响应 DTO 上，否则 Jackson 反序列化会把它**静默丢掉**）。
+     * 正常首建为 {@code null}（{@code @JsonInclude(NON_NULL)} 口径下不出现在响应里）。</p>
+     */
+    private Boolean replayed;
 
     /**
      * 商品ID
@@ -186,17 +204,20 @@ public class ProductResponse {
      * 最后编辑时间
      */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonDeserialize(using = LenientOffsetDateTimeDeserializer.class)
     private OffsetDateTime editedAt;
 
     /**
      * 创建时间
      */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonDeserialize(using = LenientOffsetDateTimeDeserializer.class)
     private OffsetDateTime createdAt;
 
     /**
      * 更新时间
      */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonDeserialize(using = LenientOffsetDateTimeDeserializer.class)
     private OffsetDateTime updatedAt;
 }

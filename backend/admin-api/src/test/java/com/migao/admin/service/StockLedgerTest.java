@@ -131,7 +131,7 @@ class StockLedgerTest {
 
         stockLedgerService = new StockLedgerService(stockLedgerMapper, productSkuMapper);
         productService = new ProductService(productMapper, categoryMapper, productColorMapper,
-                productSkuMapper, productAttributeMapper, stockLedgerService);
+                productSkuMapper, productAttributeMapper, stockLedgerService, clientRequestIdService);
         orderService = new OrderService(orderMapper, orderItemMapper, orderLogisticsMapper,
                 customerService, productMapper, productSkuMapper, financeTransactionMapper,
                 new ObjectMapper(), notificationService, processingOrderMapper, userService,
