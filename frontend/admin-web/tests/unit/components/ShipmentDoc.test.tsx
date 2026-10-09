@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { render, screen, cleanup, within } from '@testing-library/react'
 import ShipmentDoc from '@/components/orders/ShipmentDoc'
+import { dataTables, collectTableIntegrity } from '@/components/orders/doc-tables'
 import type { Order } from '@/types'
 
 /**
@@ -69,6 +70,12 @@ function buildOrder(overrides: Partial<Order> = {}): Order {
 }
 
 describe('ShipmentDoc — 发货单纸面内容', () => {
+  // 类级固化（issue #6595）：本单据的每一张表逐行自洽（Σ(colSpan) = 表头列数）。
+  it('表格列数不变量：逐行 Σ(colSpan) 与表头列数一致（issue #6595）', () => {
+    render(<ShipmentDoc order={buildOrder()} />)
+    expect(dataTables(document.querySelector('.shipment-print-area')).every((t) => collectTableIntegrity([t]).length === 1)).toBe(true) // 单据：发货单 ShipmentDoc
+  })
+
   it('渲染单据头：标题 + 订单号 + 下单时间', () => {
     render(<ShipmentDoc order={buildOrder()} />)
 

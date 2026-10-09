@@ -348,6 +348,12 @@ function SetBlock({
             {/* 批号 = 快照行的 `batchNo`（指派批次时写入）。缺值印 `—`（= 未指派），
                 与「我们没有这个字段」是两件事（issue #5914；登记见 PROCESSING_DOC_NOT_COLLECTED_FIELDS） */}
             <DocTd testId="processing-doc-batch">{paperText(snapshot?.batchNo)}</DocTd>
+            {/* 备注列（`PROCESSING_DOC_COLUMNS[7]`）的占位格 —— 本行内容不落这一列（品名规格走下面
+                那条整行「备注：…」），但**格子必须有**：
+                🔴 issue #6595 实测：原先主体行只渲染 7 格，而备注列在**数据行**没有任何单元格
+                ⇒ 表头 8 格 vs 数据 7 格，备注列的数据段**整列没有边框**（纸面右侧缺一块）。
+                一行的列数由**列序**决定：第 8 格在 ⇒ 这一列有边框；少渲染一格 ⇒ 该列恒无边框。 */}
+            <DocTd>{''}</DocTd>
           </tr>
           {remark !== '' && (
             <tr>

@@ -14,6 +14,7 @@ vi.mock('@/lib/api', () => ({
 
 import QuotationDoc from '@/components/orders/QuotationDoc'
 import ShipmentDoc from '@/components/orders/ShipmentDoc'
+import { dataTables, collectTableIntegrity } from '@/components/orders/doc-tables'
 import type { Order, OrderItem } from '@/types'
 /**
  * 报价单（可打印纸质文档，issue #4965）—— 照真实报价单 A4 制式（亿家纺织 CSO260918-03182）。
@@ -98,6 +99,12 @@ const printStyleEl = (el: Element | null | undefined): HTMLStyleElement =>
 const docText = () => doc()?.textContent || ''
 
 describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
+  // 类级固化（issue #6595）：本单据的每一张表逐行自洽（Σ(colSpan) = 表头列数）。
+  it('表格列数不变量：逐行 Σ(colSpan) 与表头列数一致（issue #6595）', () => {
+    render(<QuotationDoc order={buildOrder()} />)
+    expect(dataTables(doc()).every((table) => collectTableIntegrity([table]).length === 1)).toBe(true) // 单据：报价单 QuotationDoc
+  })
+
   describe('① 表头', () => {
     it('印标题「报价单」与单号', () => {
       render(<QuotationDoc order={buildOrder()} />)

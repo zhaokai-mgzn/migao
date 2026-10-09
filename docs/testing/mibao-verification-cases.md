@@ -9086,7 +9086,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（94 case）
+## 前端 UI 域（95 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -10447,6 +10447,20 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-10-08 新增（issue #6552）：跨页面**类级元守卫** —— 「服务端机器键被当展示文本上屏」这一族（#6523 料组标题 / #6535 省料看板「物料」列，两处都是被人/真机截图撞见才修的）此前**没有任何东西会红**：本仓唯一的跨页面上屏收口 `frontend/admin-web/scripts/user-copy-scan.mjs` 的 `candidateStrings()` 只抽字面量，看不见 `{group.materialKey}` 这种 JSX 表达式渲染。本用例 = 新建 `frontend/admin-web/tests/unit/jsx-machine-key-guard.test.ts`（扫描面 `src/**/*.tsx` 的 JSX 文本位 + 四条机器键形态 + 人话白名单台账「只许缩短」+ 判别力自证两条）；**现取违例 = 空集**（两处均已修）且空集被**显式断言**，扫描面另有存活下限与注入式自证。取号 UI-094（`python3 scripts/next_case_id.py ui`，现取 main 最大 = UI-093）。本包为纯测试/研发工具类改动 ⇒ 铁律 7 豁免，不写 CHANGELOG。 ｜ tags: ui, copy, machine-key, admin-web, meta-guard
 
+### UI-095. 打印单据表格列数不变量：每行 Σ(colSpan) 必须等于表头列数 —— 实例判据（加工单「备注」列数据行缺格 ⇒ 整列无边框）+ 五份单据测试的类级元守卫（issue #6595） 🔵
+```
+你: 2026-10-09 用户真机截图指出：加工单打印预览里「备注」列**数据行没有边框**（红框圈出）。上一轮我先按「列没对齐」查错了方向（表头/数据行边界逐像素相同），用户逐字纠正：「我是说备注那列的样式缺失了边框」。
+期望: direct_reply
+数据: 🔴 判据 1·**加工单主体行必须占满 8 列**：任一套表格的每一行 Σ(colSpan) 等于 `PROCESSING_DOC_COLUMNS.length`（= 8）；品名规格为空（没有整行补位）时也必须如此 —— 这正是「备注列在数据行没有单元格 ⇒ 整列没有边框」的判据。执行点 = `frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx` 的「表格列数不变量：正文明细表逐行 Σ(colSpan) = 表头列数」+ `frontend/admin-web/tests/unit/components/doc-table-integrity-guard.test.tsx` 的「加工单 · 表格列数不变量」三条。
+数据: 🔴 判据 2·**类级元守卫：五份单据都挂同一条不变量**（加工单 / 报价单 / 销售单 / 发货单 / 任务卡）：每份单据的测试必须在本文件里出现「不变量调用 + 单据标识」同一行（`collectTableIntegrity` + `单据：<label>`），未登记即红并逐份具名。执行点 = `doc-table-integrity-guard.test.tsx` 的「类级元守卫 · 每份打印单据都挂同一条表格不变量」三条（含语料下限 ≥ 5 与判别力自证）。
+数据: 🔴 判据 3·**判别力自证（注入式，实跑读数）**：① 内存对照 —— 表头 8 列 / 数据行 7 格 ⇒ 抛 `占 7 列，表头是 8 列`；补第 8 格 ⇒ 转绿且读数 ={ columns: 8, rows: [8, 8] }；一格 `colSpan=8` 的行同样自洽（`colSpan` 计入）；容器里 0 张表 ⇒ 抛错（空集不许被读成通过）。② **真浏览器红证**（Chromium 1400×1100 @2x，把修好的第 8 格从渲染出的 DOM 摘掉 = 修前形态）：数据行 `lastCellRight` 由 747.8 退到 649.5，而表头仍是 747.8 ⇒ 备注列（649.5..747.8）在数据行没有格子；补回第 8 格 ⇒ 两者同为 747.8。③ 元守卫内存对照：无标识的调用不认。
+数据: 🔴 判据 4·**抬头信息表不被误判（边界，不许放宽）**：`ProcessingDoc` 的抬头表是 `tbody`-only 且行**本来就不等列**（`地址`/`货运` 两行是 `label + colspan=3`，实测 4+4+6+4+6）⇒ 不变量只取带 `<thead>` 的正文明细表（`dataTables()`）；抬头表进面 = 假红。执行点 = `doc-table-integrity-guard.test.tsx` 的「抬头信息表（tbody-only、行内不等列）不被误判」。
+数据: **不回归**：只加一格（`<DocTd>{''}</DocTd>`）—— 列宽分配、纸面文案、接口与字段名一字未动（`frontend-fix.no-api-change`）；备注补位行的触发条件（`item.specification` 非空）与整行形态不变。
+跳过: [backend-contract] 纯前端打印版式 + 静态/运行时判据（无 LLM 环节），不进 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-10-09 新增（issue #6595）：用户真机截图撞见「加工单备注列数据行没有边框」。根因 = `ProcessingDoc` 主体行只渲染 7 格而表头 8 列 ⇒ 第 8 列在数据行**没有任何单元格**。修法 = 主体行补第 8 格（空 `DocTd`，边框自带）；固化 = 实例判据（逐行 Σ(colSpan) = 表头列数）+ 类级元守卫（五份打印单据的测试都必须挂这条不变量，未登记即红）+ 真浏览器注入式红证（摘掉一格 ⇒ 数据行右边界 747.8 → 649.5）。取号 UI-095（`python3 scripts/next_case_id.py ui` 超时，改用 `git show origin/main:.github/cases/ui.yml` 现取最大 = UI-094 + open PR 分支复核）。 ｜ tags: ui, print, table-integrity, admin-web, meta-guard
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -10476,8 +10490,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：724（活跃 134，跳过 590）
-- tier 分布：smoke 12 / normal 670 / adversarial 32
+- 用例总数：725（活跃 134，跳过 591）
+- tier 分布：smoke 12 / normal 671 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10502,7 +10516,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：94
+- 前端 UI 域：95
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

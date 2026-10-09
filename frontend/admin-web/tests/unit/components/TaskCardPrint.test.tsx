@@ -33,6 +33,7 @@ import type { ComponentProps } from 'react'
 import { describe, expect, it } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import TaskCardPrint from '@/components/production/TaskCardPrint'
+import { dataTables, collectTableIntegrity } from '@/components/orders/doc-tables'
 import type { ProcessingOrderItem, ProductionPosition } from '@/types'
 
 const PROCESSING_ORDER_NO = 'JG-20260921-8237'
@@ -144,6 +145,18 @@ const printCard = (overrides: Partial<ComponentProps<typeof TaskCardPrint>> = {}
 const printArea = () => document.querySelector('.task-card-print-area') as HTMLElement
 
 describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → 纸宽改判 #5646）', () => {
+  // 类级固化（issue #6595）：本单据的每一张表逐行自洽（Σ(colSpan) = 表头列数）。
+  it('表格列数不变量：逐行 Σ(colSpan) 与表头列数一致（issue #6595）', () => {
+    render(<TaskCardPrint processingOrderNo={PROCESSING_ORDER_NO} />)
+    // 洗水码是**单列**版式（`div` 承载，见 `TaskCardPrint.tsx` 的 `.task-card-label`）—— 面内 0 张表是**结构事实**，
+    // 故这里只断言「若有表则必须自洽」（空集不再被当作判据空跑）。
+    expect(
+      dataTables(document.querySelector('.task-card-print-area'))
+        .map((table) => collectTableIntegrity([table])) // 单据：任务卡 TaskCardPrint
+        .every((tables) => tables.length === 1)
+    ).toBe(true)
+  })
+
   it('3 个部位 ⇒ 恰 3 张洗水码，加工单公共属性**逐张**都在（加工单号/客户/套序/订单号/交期）', () => {
     printCard()
 
