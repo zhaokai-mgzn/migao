@@ -303,7 +303,7 @@ export default function Sidebar({
                 {user?.tenantName || '观星台'}
               </div>
               {user?.tenantName && (
-                <div className="mt-0.5 text-[11px] leading-tight text-neutral-400">观星台商家管理后台</div>
+                <div className="mt-0.5 text-[11px] leading-tight text-neutral-400">观星台</div>
               )}
             </div>
           )}
