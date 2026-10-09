@@ -67,8 +67,12 @@ import { WorkerPageConfigPanel } from '@/components/settings/WorkerPageConfigPan
 import { CalcCaliberPanel } from '@/components/settings/CalcCaliberPanel'
 import { RemnantItemSizesPanel } from '@/components/settings/RemnantItemSizesPanel'
 import { ConfigReadinessBar } from '@/components/settings/ConfigReadinessBar'
-import ProcessingBoard from '@/components/production-config/ProcessingBoard'
-import ProcessConfigBoard from '@/components/production-config/ProcessConfigBoard'
+import ProcessingItemsPanel from '@/components/production-config/ProcessingItemsPanel'
+import FeeCombinationsPanel from '@/components/production-config/FeeCombinationsPanel'
+import { OperationPricePanel } from '@/components/production-config/OperationPricePanel'
+import { RoutingsPanel } from '@/components/production-config/RoutingsPanel'
+import { CuttingHeightPanel } from '@/components/production-config/CuttingHeightPanel'
+import { CalcFormulaPanel } from '@/components/production-config/CalcFormulaPanel'
 import { readImageDimensions } from '@/lib/image-dimensions'
 import { getBminiH5Url } from '@/lib/bmini-h5-url'
 import { usePermission } from '@/lib/permission'
@@ -82,6 +86,7 @@ import {
   type ConfigDomain,
   type ConfigDomainKey,
   domainOfMainlineStep,
+  resolveDomainKey,
 } from '@/lib/config-center-domains'
 // 🔴 主线判据的**唯一真值源**（类级守卫：tests/unit_ci_workflows/test_config_readiness_single_source.py）
 import {
@@ -166,7 +171,8 @@ export default function SettingsPage() {
 
   /** 初始域：`?domain=` 优先，其次旧 `?tab=` 映射，都没有 ⇒ 第一个可见域 */
   const [activeKey, setActiveKey] = useState<string>(() => {
-    const fromUrl = findDomain(urlDomain)
+    // `?domain=` 走**兼容别名**（#6585 拆域后旧链接仍要能打开，见 LEGACY_DOMAIN_ALIASES）
+    const fromUrl = findDomain(resolveDomainKey(urlDomain))
     if (fromUrl && has(fromUrl.requiredCode)) return fromUrl.key
     const legacy = urlTab ? LEGACY_TAB_TO_DOMAIN[urlTab] : null
     if (legacy && has(findDomain(legacy)?.requiredCode)) return legacy
@@ -370,10 +376,18 @@ export default function SettingsPage() {
             </div>
 
             {activeDomain.key === 'calc' && (
-              <CalcCaliberPanel calc={calc} calcError={calcError} loading={readinessLoading} />
+              <div className="space-y-6">
+                <CalcCaliberPanel calc={calc} calcError={calcError} loading={readinessLoading} />
+                {/* 公式编辑：v1 时它在功能体的「算料配置」页签里，与左栏「算料口径」域编辑同一份配置
+                    （`craft-calc-config`）⇒ 设计判死线第 1 条。v2 把它并进本域，功能体那份随之删除。 */}
+                <CalcFormulaPanel embedded />
+              </div>
             )}
-            {activeDomain.key === 'processing-fee' && <ProcessingBoard embedded />}
-            {activeDomain.key === 'craft-route' && <ProcessConfigBoard embedded />}
+            {activeDomain.key === 'processing-items' && <ProcessingItemsPanel embedded />}
+            {activeDomain.key === 'fee-combinations' && <FeeCombinationsPanel embedded />}
+            {activeDomain.key === 'operation-prices' && <OperationPricePanel embedded />}
+            {activeDomain.key === 'craft-route' && <RoutingsPanel embedded />}
+            {activeDomain.key === 'cutting-height' && <CuttingHeightPanel embedded />}
             {activeDomain.key === 'remnant-sizes' && (
               <RemnantItemSizesPanel copy={REMNANT_PARAM_COPY} />
             )}

@@ -198,13 +198,39 @@ vi.mock('sonner', () => ({
 }))
 import { toast } from 'sonner'
 
-// 两个 board 由**另一个包**产出（见文件头）。本文件判「域 → 组件」的编排 ⇒ 用替身，
-// 替身的 testid 就是那两域面板的机器读数。
-vi.mock('@/components/production-config/ProcessingBoard', () => ({
-  default: () => <div data-testid="stub-processing-board" />,
+// 各域挂的功能体由**别的包**产出（见文件头）。本文件判「域 → 组件」的编排 ⇒ 用替身，
+// 替身的 testid 就是那些域面板的机器读数。
+// ⚠️ issue #6585：`processing-fee` 一个域拆成两个（加工项与分类 / 加工费组合）⇒ 替身也随之拆成两个。
+vi.mock('@/components/production-config/ProcessingItemsPanel', () => ({
+  default: ({ embedded }: { embedded?: boolean }) => (
+    <div data-testid="stub-processing-items" data-embedded={String(!!embedded)} />
+  ),
 }))
-vi.mock('@/components/production-config/ProcessConfigBoard', () => ({
-  default: () => <div data-testid="stub-process-config-board" />,
+vi.mock('@/components/production-config/FeeCombinationsPanel', () => ({
+  default: ({ embedded }: { embedded?: boolean }) => (
+    <div data-testid="stub-fee-combinations" data-embedded={String(!!embedded)} />
+  ),
+}))
+// v2（#6585）：生产执行三个域各自挂**独立面板**（不再整块挂自带页签的 board）
+vi.mock('@/components/production-config/OperationPricePanel', () => ({
+  OperationPricePanel: ({ embedded }: { embedded?: boolean }) => (
+    <div data-testid="stub-operation-price-panel" data-embedded={String(!!embedded)} />
+  ),
+}))
+vi.mock('@/components/production-config/RoutingsPanel', () => ({
+  RoutingsPanel: ({ embedded }: { embedded?: boolean }) => (
+    <div data-testid="stub-routings-panel" data-embedded={String(!!embedded)} />
+  ),
+}))
+vi.mock('@/components/production-config/CuttingHeightPanel', () => ({
+  CuttingHeightPanel: ({ embedded }: { embedded?: boolean }) => (
+    <div data-testid="stub-cutting-height-panel" data-embedded={String(!!embedded)} />
+  ),
+}))
+vi.mock('@/components/production-config/CalcFormulaPanel', () => ({
+  CalcFormulaPanel: ({ embedded }: { embedded?: boolean }) => (
+    <div data-testid="stub-calc-formula-panel" data-embedded={String(!!embedded)} />
+  ),
 }))
 
 import SettingsPage from '@/app/(dashboard)/settings/page'
@@ -215,6 +241,8 @@ import {
   domainsOfZone,
   findDomain,
   mainlineStepsOfDomain,
+  LEGACY_DOMAIN_ALIASES,
+  resolveDomainKey,
 } from '@/lib/config-center-domains'
 import { BASE_ROUTE_NAMES, MAINLINE_STEPS } from '@/lib/config-readiness'
 
@@ -353,7 +381,7 @@ describe('判据 3：首屏只挂当前域（不把 8 个域的表单全渲染�
     }
     // 非当前域的表单**不挂载**（不是 CSS 藏起来）
     expect(screen.queryByTestId('stub-processing-board')).toBeNull()
-    expect(screen.queryByTestId('stub-process-config-board')).toBeNull()
+    expect(screen.queryByTestId('stub-routings-panel')).toBeNull()
     expect(screen.queryByTestId('worker-page-config')).toBeNull()
     expect(screen.queryByTestId('param-remnant-specs')).toBeNull()
   })
@@ -369,17 +397,30 @@ describe('判据 3：首屏只挂当前域（不把 8 个域的表单全渲染�
     expect(await screen.findByLabelText('公司名称')).toBeInTheDocument()
   })
 
-  it('域 → 组件映射：加工项与加工费 / 工艺与路线 / 余料尺寸 / 工人端页面 各挂各的', async () => {
+  it('域 → 组件映射：加工项与分类 / 加工费组合 / 工艺与路线 / 余料尺寸 / 工人端页面 各挂各的', async () => {
     render(<SettingsPage />)
     await screen.findByTestId('config-domain-enterprise')
 
-    fireEvent.click(domainNav('processing-fee'))
-    expect(screen.getByTestId('stub-processing-board')).toBeInTheDocument()
-    expect(screen.queryByTestId('stub-process-config-board')).toBeNull()
+    fireEvent.click(domainNav('processing-items'))
+    expect(screen.getByTestId('stub-processing-items')).toBeInTheDocument()
+    expect(screen.queryByTestId('stub-fee-combinations')).toBeNull()
+    expect(screen.queryByTestId('stub-routings-panel')).toBeNull()
+
+    fireEvent.click(domainNav('fee-combinations'))
+    expect(screen.getByTestId('stub-fee-combinations')).toBeInTheDocument()
+    expect(screen.queryByTestId('stub-processing-items')).toBeNull()
 
     fireEvent.click(domainNav('craft-route'))
-    expect(screen.getByTestId('stub-process-config-board')).toBeInTheDocument()
-    expect(screen.queryByTestId('stub-processing-board')).toBeNull()
+    expect(screen.getByTestId('stub-routings-panel')).toBeInTheDocument()
+    expect(screen.queryByTestId('stub-operation-price-panel')).toBeNull()
+
+    fireEvent.click(domainNav('operation-prices'))
+    expect(screen.getByTestId('stub-operation-price-panel')).toBeInTheDocument()
+    expect(screen.queryByTestId('stub-routings-panel')).toBeNull()
+
+    fireEvent.click(domainNav('cutting-height'))
+    expect(screen.getByTestId('stub-cutting-height-panel')).toBeInTheDocument()
+    expect(screen.queryByTestId('stub-operation-price-panel')).toBeNull()
 
     fireEvent.click(domainNav('remnant-sizes'))
     expect(await screen.findByTestId('param-remnant-specs')).toBeInTheDocument()
@@ -409,7 +450,7 @@ describe('判据 4：URL —— `?domain=` 直达 + 旧 `?tab=` 逐条映射且*
     mockSearchParams.mockReturnValue(new URLSearchParams('domain=craft-route'))
     render(<SettingsPage />)
     expect(await screen.findByTestId('config-domain-panel-craft-route')).toBeInTheDocument()
-    expect(screen.getByTestId('stub-process-config-board')).toBeInTheDocument()
+    expect(screen.getByTestId('stub-routings-panel')).toBeInTheDocument()
   })
 
   it('旧深链 `?tab=params` ⇒ 算料口径域（**不**再 replace 跳走；旧的 `/settings/params` 面已并入本页）', async () => {
@@ -466,7 +507,7 @@ describe('判据 5：域按 requiredCode 显隐（复用 usePermission）', () =
     render(<SettingsPage />)
     await screen.findByTestId('config-domain-enterprise')
     // 「看得见 ⇒ 打得开」：不持码的域连导航项都不该有（不是渲染出来再让人撞 403）
-    for (const key of ['calc', 'processing-fee', 'craft-route']) {
+    for (const key of ['calc', 'processing-items', 'fee-combinations', 'craft-route']) {
       expect(screen.queryByTestId(`config-domain-${key}`)).toBeNull()
     }
     expect(screen.queryByTestId('calc-caliber-panel')).toBeNull()
@@ -639,11 +680,11 @@ describe('判据 4：主线的「去配置」跳到**本页那个域**（G3）�
     fireEvent.click(screen.getByTestId('readiness-goto-fee-combinations'))
 
     await waitFor(() =>
-      expect(screen.getByTestId('config-domain-panel-processing-fee')).toBeInTheDocument(),
+      expect(screen.getByTestId('config-domain-panel-fee-combinations')).toBeInTheDocument(),
     )
     expect(screen.queryByTestId('config-domain-panel-calc')).toBeNull()
     // URL 也跟着走（可分享 / 可回退；与左栏点击同一条路径）
-    expect(window.location.search).toBe('?domain=processing-fee')
+    expect(window.location.search).toBe('?domain=fee-combinations')
   })
 
   it('🔴 判别力：**多步共用一个域**时，任一步的去配置都落到同一个域（不会跳到不存在的域）', async () => {
@@ -696,5 +737,71 @@ describe('判据 6：算料读失败的归因 —— 403 说权限、其余说�
       expect(screen.getByText(/不是你的权限问题/)).toBeInTheDocument(),
     )
     expect(screen.queryByText(/请联系管理员开/)).toBeNull()
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 判据 7：**域内零 tab**（issue #6585 / 设计 §2 判死线第 3 条）
+//
+// 缺陷形态（v1 实测）：左栏一套域导航，域内又是旧页面的 tab（工序管理 / 算料配置 / 裁高配置、
+// 加工项 / 加工费组合）—— 两层导航并存正是用户说的「分不清该点哪个」。
+// 本判据是 v1 漏掉的那条**类级**守卫：它不看某一个域，而是遍历**全部域**。
+// ══════════════════════════════════════════════════════════════════════════════
+describe('判据 7：域内零 tab（两层导航并存 = 用户说的「分不清该点哪个」）', () => {
+  /**
+   * 🔴 **尚未拆域的域**（v2 分批把功能体按域拆开；这份清单**只许缩短**）。
+   *
+   * 每搬完一个域就从这里删一行 —— 留着一个已经拆好的条目 = 台账腐坏（下面的「无幽灵」断言会红）。
+   */
+  // 🔴 **2026-10-09（#6585）台账已清零** —— 11 个域全部拆到功能粒度，域内不再有第二层导航。
+  // 这份清单**只许为空**：将来若真出现「拆不动」的域，必须在这里具名登记 + 在 PR 里说清为什么。
+  const TABS_NOT_YET_SPLIT: string[] = []
+
+  it('除已登记的未拆域外，**每个域的面板里都没有 `role="tablist"`**', async () => {
+    render(<SettingsPage />)
+    await screen.findByTestId('config-domain-enterprise')
+    for (const d of CONFIG_DOMAINS) {
+      if (TABS_NOT_YET_SPLIT.includes(d.key)) continue
+      fireEvent.click(domainNav(d.key))
+      const panel = screen.getByTestId(`config-domain-panel-${d.key}`)
+      expect(
+        panel.querySelectorAll('[role="tablist"]').length,
+        `域「${d.label}」内部还有一套 tab —— 左栏已经有一套导航了（设计 §2 判死线第 3 条）`,
+      ).toBe(0)
+    }
+  })
+
+  it('台账无幽灵：登记的未拆域必须仍是**真实存在**的域 key（拼错 ⇒ 判据在对空气放行）', () => {
+    const keys = CONFIG_DOMAINS.map((d) => d.key)
+    for (const k of TABS_NOT_YET_SPLIT) {
+      expect(keys, `台账里的「未拆域」${k} 已不是域 key ⇒ 判据在空跑，请删掉该条目`).toContain(k)
+    }
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 判据 4b：域 key 是**可分享的 URL 契约** —— v2 拆域不许让旧 key 落空白（issue #6585）
+// ══════════════════════════════════════════════════════════════════════════════
+describe('判据 4b：拆域后的旧 `?domain=` 兼容（不许点开一个链接看到空页）', () => {
+  it('🔴 `?domain=processing-fee`（v1 的「一个域两件事」）落到「加工项与分类」域', async () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams('domain=processing-fee'))
+    render(<SettingsPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('config-domain-panel-processing-items')).toBeInTheDocument(),
+    )
+  })
+
+  it('别名表是**单一真值**：里面每个 key 要么是现役域，要么是已登记的旧 key（不许有幽灵）', () => {
+    for (const [from, to] of Object.entries(LEGACY_DOMAIN_ALIASES)) {
+      // 旧 key **不得**再是现役域（否则别名是死的）
+      expect(CONFIG_DOMAINS.map((d) => d.key), `${from} 已是现役域 ⇒ 别名条目陈旧`).not.toContain(from)
+      // 目标必须真是现役域（打错字 ⇒ 旧链接落到空白）
+      expect(CONFIG_DOMAINS.map((d) => d.key), `${from} → ${to} 的目标不是现役域`).toContain(to)
+      expect(resolveDomainKey(from)).toBe(to)
+    }
+    // 现役 key 直接透传；未知 key 退回 undefined（由页面兜底到第一个可见域，不在这里编默认域）
+    expect(resolveDomainKey('calc')).toBe('calc')
+    expect(resolveDomainKey('nope')).toBeUndefined()
+    expect(resolveDomainKey(null)).toBeUndefined()
   })
 })

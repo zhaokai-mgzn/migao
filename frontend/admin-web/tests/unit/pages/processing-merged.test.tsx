@@ -214,15 +214,19 @@ describe('合并页 /production/processing（两个 tab，不平铺）', () => {
     expect(itemsTab).toHaveAttribute('data-state', 'active')
     expect(feesTab).toHaveAttribute('data-state', 'inactive')
 
-    // 默认：加工项列表在、「加工费组合」面不在
+    // 默认：加工项列表在、「加工费组合」面不在（可见）
     await waitFor(() => expect(screen.getByTestId('processing-items-total')).toHaveTextContent('2'))
     expect(screen.getByTestId('processing-item-pi-1')).toHaveTextContent('韩褶')
-    expect(screen.queryByTestId('fee-combinations')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('fee-gaps')).not.toBeInTheDocument()
+    // 🔴 #6585：两栏的功能体各成**独立面板**，且**都保持挂载**（非激活那个 `hidden`）——
+    // 「切 tab 不丢状态」（下一条用例）靠的就是这一点。⇒ 互斥判据从「不在 DOM 里」改判为
+    // 「**不可见**」：jsdom 里 `queryByTestId` **不**过滤 hidden 元素，旧写法在新形态下必红；
+    // 而断言强度**不降反升**（旧写法只判「没挂载」，根本判不了可见性）。
+    expect(screen.queryByTestId('fee-combinations')).not.toBeVisible()
+    expect(screen.queryByTestId('fee-gaps')).not.toBeVisible()
 
     await userEvent.click(feesTab)
     expect(feesTab).toHaveAttribute('data-state', 'active')
-    expect(screen.queryByTestId('processing-items')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('processing-items')).not.toBeVisible()
     await waitFor(() => expect(screen.getByTestId('fee-combinations-total')).toHaveTextContent('1'))
     expect(screen.getByTestId('fee-combination-fc-1')).toHaveTextContent('¥12.00')
     // 未定价缺口仍在（#4386 交付物不退化）
@@ -261,24 +265,29 @@ describe('合并页 /production/processing（两个 tab，不平铺）', () => {
 
     await waitFor(() => expect(screen.getByTestId('processing-tab-fees')).toHaveAttribute('data-state', 'active'))
     expect(screen.getByTestId('fee-combinations')).toBeInTheDocument()
-    expect(screen.queryByTestId('processing-items')).not.toBeInTheDocument()
+    // #6585：非激活面板仍挂载但**不可见**（同上一条的互斥判据口径）
+    expect(screen.queryByTestId('processing-items')).not.toBeVisible()
   })
 
   it('加工项加载失败：只在「加工项」tab 给可读提示 + 重试，另一栏照常渲染（不整页白屏）', async () => {
-    mockGetProcessingItems.mockRejectedValueOnce(new Error('500'))
+    // 🔴 #6585：两栏各拉各的（加工费面板的**勾选源目录**也走这个端点）⇒ 必须让**两次**调用都失败，
+    // 才能判到「同一端点故障 ⇒ 两栏都说『加载失败』、都不说『目录为空』」。旧写法
+    // `mockRejectedValueOnce` 只喂失败给 board 的那一次，在新形态下第二栏会拿到成功响应 ⇒ 判据漏。
+    mockGetProcessingItems.mockRejectedValue(new Error('500'))
     render(<ProcessingPage />)
 
     await waitFor(() => expect(screen.getByTestId('processing-items-error')).toHaveTextContent('加工项加载失败'))
     // 加工费半边不受影响（各拉各的，一条失败不吞整页）
     await userEvent.click(screen.getByTestId('processing-tab-fees'))
     await waitFor(() => expect(screen.getByTestId('fee-combinations-total')).toHaveTextContent('1'))
-    // 勾选源与「加工项」tab 是同一份数据 ⇒ 加载失败**不得**说成「目录为空」
-    // （说成空会让商家去建一个其实已存在的加工项 —— 合并后新引入的形态）
+    // 勾选源目录与「加工项」tab 是**同一端点** ⇒ 它失败**不得**说成「目录为空」
+    // （说成空会让商家去建一个其实已存在的加工项 —— 合并后新引入的形态；两栏同端点同故障，必须同词）
     await userEvent.click(screen.getByTestId('fee-combination-new'))
     expect(screen.getByTestId('fee-combination-catalog-empty')).toHaveTextContent('加工项目录加载失败')
     await userEvent.click(screen.getByRole('button', { name: '取消' }))
 
     // 重试后渲染出真实数据（错误态消失）
+    mockGetProcessingItems.mockResolvedValue(ok(ITEMS))
     await userEvent.click(screen.getByTestId('processing-tab-items'))
     await userEvent.click(screen.getByTestId('processing-items-retry'))
     await waitFor(() => expect(screen.getByTestId('processing-items-total')).toHaveTextContent('2'))
