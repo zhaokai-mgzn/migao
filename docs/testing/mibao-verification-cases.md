@@ -8927,7 +8927,7 @@
 数据: 🔴 **本次如实登记**：口径是**同一 X-Client-Request-Id 并发 N 次**（现场探针形态），本判据逐字取之；「大得多的并发（如 N=20）」与「真实网络下的前端重试」未取证。
 跳过: [backend-contract] 幂等接线 + 真 PG 并发落库事实（无 LLM 环节）⇒ 由 Java 定点判据与真库并发判据验证，不进入 agent-eval 冒烟
 ```
-溯源: 2026-10-09 新增（issue #6209）。取号 = `python3 scripts/next_case_id.py pr`（main 现取最大 PR-127 ⇒ 取 PR-128）。红→绿：改前契约点不存在（编译期找不到 ENDPOINT_CREATE_PRODUCT / 三参 createProduct）⇒ 注入式红证把去重闸摘掉得 2 failed（同键 4 并发建 4 条商品、幂等键 0 行，现场 6 条同族）；实现后 `Tests run: 9, Failures: 0`。本单同时把「哪些写面已接同一幂等点位」落成类级元守卫（见 MC-088）。 ｜ tags: backend-contract, idempotency, concurrency, real-db, red-proof
+溯源: 2026-10-09 新增（issue #6209）。取号 = `python3 scripts/next_case_id.py pr`（main 现取最大 PR-127 ⇒ 取 PR-128）。红→绿：改前契约点不存在（编译期找不到 ENDPOINT_CREATE_PRODUCT / 三参 createProduct）⇒ 注入式红证把去重闸摘掉得 2 failed（同键 4 并发建 4 条商品、幂等键 0 行，现场 6 条同族）；实现后 `Tests run: 9, Failures: 0`。本单同时把「哪些写面已接同一幂等点位」落成类级元守卫（见 MC-088）。｜ 2026-10-09 CI 反哺（跨台账/跨模块半径，四处都已同 PR 补齐）：① 新增真库判据 ⇒ 同批登记 `tests/unit_ci_workflows/test_realdb_failclosed.py` 的 `REALDB_FILES`（`ProductCreateIdempotencyRealDbTest.java: direct`，判据不许悄悄出现）；② 新增 2 条 `[backend-contract]` 用例（PR-128 + MC-088）⇒ 同批重锚 `case_machine_fail_channel_baseline.json`（`backend_contract_scoring_zero` 132 → 134，实测读数非推算，`no_channel_total` 恒 0）；③ `ProductResponse` 新增 `replayed` ⇒ 消费侧契约快照同批跟进（`backend/ai-agent-service/tests/contracts/snapshot-contract-fingerprints.json` 的 contracts 由 `contract_snapshot_registry.current_fingerprint()` 现算自 Java 源码刷新；快照**数据**未重抓 —— 本机无 dev 库凭据、空库重抓会把真实缓存覆盖成空数据，见 PR #6616 边界登记）；④ rebase 到含 #6618 的 main，`CHANGELOG.md` 并行冲突 = 两条条目都保留。 ｜ tags: backend-contract, idempotency, concurrency, real-db, red-proof
 
 ## 工具注册器域（1 case）
 
