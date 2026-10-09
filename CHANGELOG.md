@@ -7,6 +7,27 @@
 
 ## [Unreleased]
 
+### 引用不存在的 `aiSessionId` 由 500 改为 422，且数据库约束名不再进日志（2026-10-09，issue #6210）
+
+改前（2026-10-03 线①验收留档，`acceptance/2026-10-03/agent-service-sweep/REPORT.md` 的 `F-D1`）：
+
+- 转人工端点 `POST /api/admin/agent-sessions` 收到**不存在的 `aiSessionId`**
+  （`agent_sessions.ai_session_id` 有外键指向 `sessions(id)`）⇒ PG 抛外键违例、Spring 包成
+  `DataIntegrityViolationException` ⇒ `GlobalExceptionHandler` **没有这一族分支** ⇒ 落兜底 ⇒
+  **HTTP 500** + `INTERNAL_ERROR`「服务器内部错误」。
+- 兜底那行 `log.error(…, e)` 打**完整堆栈** ⇒ 约束名 `agent_sessions_ai_session_id_fkey` 与表名进日志。
+
+改后：
+
+- 新增 `DataIntegrityViolationException` 具名分支，**射程刻意只到外键**（`SQLState 23503`）：
+  外键违例 ⇒ **HTTP 422** + `error.code=VALIDATION_ERROR`，**不落兜底**。
+  **其余约束违例（唯一 / 非空 / 检查 / 不可判）保持既有 500 与既有日志形状逐字节不变** ——
+  本仓已有判据把「建单写面注入唯一键失败 ⇒ 必须仍 5xx」钉住（`MerchantShipmentAtomicityTest`），
+  那是既有契约，不由本单顺手改口径（初版按整族降档，CI 当场判红那两条 ⇒ 已收窄）。
+- 外键违例这一类**不打异常本体与堆栈**：日志只留请求坐标（`method` / `uri` / `tenant`）+ 约束**类别**
+  （`kind=FOREIGN_KEY`，取自 `SQLState` 短枚举）⇒ 约束名 / 表名 / schema 不进日志。
+- 响应体仍是固定文案（这一半改前就没泄漏，如实登记、不冒充修复）。
+
 ### 上传按**实际字节流**判类型与大小，且两个存储实现共用同一份护栏（2026-10-09，issue #6207 #6208）
 
 改前（2026-10-03 线②验收实测，两处同源病）：

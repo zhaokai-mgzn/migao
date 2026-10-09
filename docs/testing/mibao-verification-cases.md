@@ -3435,7 +3435,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（90 case）
+## 杂项域（91 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4784,6 +4784,23 @@
 跳过: [backend-contract] 纯静态尾命令扫描 + 真 fixture 行为守卫（只读仓内脚本；真 git 仓库 / 真 worktree / 真会话锁一律造在 tmp_path，**不碰任何真实工作区**；零网络、零时钟、不起真库）由 tests/unit_ci_workflows/test_dev_worktree_list_exit_code.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-09 新增（issue #6243，P3 研发工具）。落码 = ① `scripts/dev-worktree.sh` 的 `lock_list` 末行改成 `if [ "$found" = "0" ]; then echo …; fi` + 显式 `return 0`（真出错仍非零：`git worktree list` 由 `set -e` 承担，本函数不吞错）；② 判据 tests/unit_ci_workflows/test_dev_worktree_list_exit_code.py（5 条：实例判据 / 修前红注入 / 负向对照两项 / 类级元守卫 / 判别力自证 + 射程钉住）；③ 台账 tests/unit_ci_workflows/scripts_locked_tail_ledger.json（现取 1 条具名豁免：`dev-worktree.sh::lock_alive`，上界冻结在判据里、只许缩短）。⚠️ **红证读数（逐字，可复算）**：改前 `./scripts/dev-worktree.sh list >/dev/null 2>&1; echo $?` ⇒ **1**（同 `lock` 子命令 = 1）；改后同命令 ⇒ **0**；负向对照 `./scripts/dev-worktree.sh bogus-subcommand >/dev/null 2>&1; echo $?` ⇒ **1**（改前改后一致）。⚠️ **类级扫描现取读数**：`scripts/*.sh` 里「函数末命令 = `[ … ] && …`」共 3 处 → 1 处已修（`lock_list`）、1 处具名豁免（`lock_alive`，谓词语义）、1 处误报形态（`machine-heavy-lock.sh::_ledger_surface` 是 `if …; then …; fi`，退出码来自块尾）⇒ 射程内实际命中 2 处、登记 1 处、修 1 处。⚠️ **未做 / 顺带发现（照实登记）**：**不治锁的生命周期** —— `add` 用 `$$` 落锁 ⇒ 锁一建就失效、只在 `rm` 时释放（失效锁长期累积）；本单只治退出码，锁生命周期属另一问题（见 PR body 边界节）。⚠️ **不入 CHANGELOG**（铁律 7 豁免：研发工具 / `scripts/` 改动，对用户无可观察影响）。取号 **MC-089**：main 现取最大 = MC-087；`fix/6209-product-create-idempotency` 在飞已占 **MC-088**（`git diff origin/main origin/fix/6209-… -- .github/cases/misc.yml` = `+  - id: MC-088`）⇒ 本包顺延取 MC-089。 ｜ tags: backend-contract, dev-tooling, worktree, session-lock, exit-code, meta-guard, ledger, red-proof
+
+### MC-090. 数据库**外键违例**的归口与日志面（issue #6210）：外键违例 ⇒ 4xx（VALIDATION_ERROR）且**不落兜底 500**，且这一类日志**不打异常本体与堆栈**（约束名 / 表名 / schema 不进日志）；射程**刻意只到外键** —— 唯一 / 非空 / 检查违例保持既有 500 契约（两向反向对照：非约束类未知异常仍 500 带堆栈、唯一键失败仍 500 带堆栈）；类级元守卫 = 分支台账 ⇄ 反射双向相等（新分支未登记即红） 🔵
+```
+你: 转人工端点 `POST /api/admin/agent-sessions` 收到一个**不存在的 `aiSessionId`** 时，调用方该看到 4xx（引用不存在 / 数据与约束不符），而不是「服务器内部错误」（500）；并且服务端日志里**不该**出现数据库的约束名 / 表名 —— 那是内部实现细节，泄漏出去既难看也是信息面风险。
+数据: **病（改前形态，逐字读数）**：`GlobalExceptionHandler` 无 `DataIntegrityViolationException` 分支 ⇒ 外键违例（PG `SQLState 23503`，Spring 包成 `DataIntegrityViolationException`）落兜底 `Exception` ⇒ `status=500` + 内部错误信封（`INTERNAL_ERROR` /「服务器内部错误」）；且兜底那行 `log.error(…, e)` 打**完整堆栈** ⇒ `logHasConstraintName=true logHasTableName=true`。留档出处（**只读、不改**）= `acceptance/2026-10-03/agent-service-sweep/REPORT.md` 的 `F-D1` 节（原始 `.log` **未入库**，如实登记）。
+数据: **判据①（归口 · 4xx，不落兜底）**：外键违例 ⇒ HTTP **422** + 错误码 `VALIDATION_ERROR`（`isNotEqualTo(500)`）。选 422 而不选 404 的理由：这是**请求体字段**（`aiSessionId`）指向的行不存在，不是**端点**不存在；且与仓内 `IllegalArgumentException` 同档语义（本仓 `VALIDATION_ERROR` = 422）。判据 = `backend/admin-api/src/test/java/com/migao/admin/config/GlobalExceptionHandlerDataIntegrityTest.java::foreignKeyViolationMapsToClientErrorNotFiveHundred`。
+数据: **判据②（日志脱敏 · 这一类不打堆栈）**：外键违例的日志事件 —— 格式化消息与异常链里**都不得**出现约束名 `agent_sessions_ai_session_id_fkey` / 表名 `agent_sessions` / PG 原始消息 / 堆栈帧，且 `event.getThrowableProxy()` **为 null**；同时**不得静默**：必须仍含请求坐标（`uri=/api/admin/agent-sessions`）与约束类别 `kind=FOREIGN_KEY`（类别取自 `SQLState` 短枚举，不含标识符）。判据 = 同文件 `foreignKeyViolationLogIsSanitizedAndStillAttributable`。
+数据: **判据③（响应体不泄漏，改前已成立 · 记为对照）**：响应体是固定文案，不含约束名 / 表名（`responseHasConstraintName=false`。改前响应体就是固定串「服务器内部错误」，这一半**不是**本单引入的缺陷 —— 照实登记，不冒充修复）。判据 = 同文件 `responseBodyDoesNotLeakConstraintOrTableName`。
+数据: **判据④（反向对照 · 防「一律不打堆栈 / 一律 4xx」）**：**非**约束类的未知异常 ⇒ 仍 **500** + `INTERNAL_ERROR`，且日志**仍带异常堆栈**（`throwableProxy` 非空、类名 = 异常类名、消息 = 异常 message，格式化消息含 `type=…`）。判据 = 同文件 `unknownExceptionStillFiveHundredWithStackTrace`。**没有这一条，本修法就可被读成「把所有 5xx 变成 4xx / 把所有日志堆栈砍掉」——那是放宽门禁**。
+数据: **判据⑥（本案例自身的 case_ids 声明自检）**：本文件头部的声明行恰 1 行，且 `MC-090` 能在 `misc.yml` 里被解析到（`extract_case_ids` 只认**注释起始**的声明行、前 50 行内；判据 = `.github/growth_gate.py`）。**防复发（#5346 同族，本包实测踩过一次）**：新增用例的 `data_checks` 里**禁止**出现「关闭关键词 + 紧邻井号 + 号」的形态（哪怕只是**引用** PR body 模板）—— 那种串会被 `close-linked-issues.yml` 的朴素正则扫到并在合并后误关别的单；本包初稿写过一处，已改成「关键词与号分开」的措辞。自检命令：读 `close-linked-issues.yml` 里的正则本体，对自己写的 body / 用例跑一遍同一正则、命中数必须是**本意关闭的那些**（本单 = 1 条，即本 issue）。
+数据: **判据⑤（同族反向对照 · 唯一约束刻意不拦）**：`SQLState 23505` ⇒ **不劫持**，仍 **500** 且日志**仍带堆栈**（保既有契约）。理由：本仓已有判据把「建单写面注入唯一键失败 ⇒ **必须仍 5xx**」钉住（`MerchantShipmentAtomicityTest` / `MerchantShipmentRouteTest`，它们判的是**回滚**，但状态码断言在那儿）⇒ 本分支**射程刻意收到「外键」**，所有非外键路径与原行为**逐字节相同**。**红证（实测）**：宽归口版本（唯一违例也返 422）在 CI 上把 `MerchantShipmentAtomicityTest` 两条判红 —— `admin-api unit tests` job 113894868123、`MERCHANT…:197 / :239 Range for response status value 422 expected:<SERVER_ERROR> but was:<CLIENT_ERROR>`；收窄到外键后本地 35 条（处理器族 + 发货族）全绿。判据 = 同文件 `uniqueViolationKeepsTheExistingFiveHundredContract`。
+数据: **类级元守卫（判据 1~6，既有承载体 · 未登记即红）**：分支台账 `BRANCH_LEDGER` ⇄ 反射出的 `@ExceptionHandler` 目标类型**双向相等**（兜底 `Exception.class` 除外）—— 本条分支若未登记 ⇒ `branchLedgerMatchesReflection` 与 `guardDiscriminates` **当场具名判红**（红证逐字：`分支未登记到台账: org.springframework.dao.DataIntegrityViolationException`）。承载体 = `backend/admin-api/src/test/java/com/migao/admin/config/GlobalExceptionHandlerCoverageTest.java`（本单只把新分支登记进台账 + 补 `case_ids`）。形态级钉法 = `GlobalExceptionHandlerDataIntegrityTest::handlerRegistryHasTheDatabaseIntegrityBranchMappedToClientError`（反射断言「这一类有具名分支」且「归口落在 4xx 族」—— 防「登记了却仍返 500」的纸面修复）。
+数据: **落码**：`backend/admin-api/src/main/java/com/migao/admin/config/GlobalExceptionHandler.java` —— 新增 `@ExceptionHandler(DataIntegrityViolationException.class)` 分支（422 + 固定文案 + 脱敏日志，`ConstraintKind` 由 `SQLState` 推类别）+ 私有 `firstSqlException` 沿 cause 链取 `SQLException`。**只降这一族**：`handleException` 兜底仍是 500 且仍打堆栈。
+数据: 🔴 **覆盖边界（照实登记，不粉饰）**：① 判据用**替身约束异常**（`SQLException` 子类，`getSQLState()` 返回真实码），**未连真库** —— 「MyBatis 的异常翻译链在真 PG 上把 `SQLState 23503` 原样送到 `getMostSpecificCause()`」这一环由生产读数（改前 `PSQLException` 进日志）与本替身同形推定，**未在本判据里真跑**；② 归口**只到外键**（`SQLState 23503`）；唯一 / 非空 / 检查与「取不到 state」一律**交回兜底 500**（既有契约），不区分具体表 / 约束；③ 管理端「先查存在性」的入口校验**不在本单射程**（本单只是异常归口兜底，不是把 FK 提前拦掉）；④ 端点级（真 MockMvc + 真库）判据**未落**，本判据是处理器级直调 + 真实日志事件。
+跳过: [backend-contract] 处理器级直调判据（断言 HTTP 状态码 / 响应体 / logback 真实日志事件）+ 既有类级元守卫（纯静态：反射取 `@ExceptionHandler` ⇄ 台账双向相等）：判定层在 Java 单测，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-09 新增（issue #6210）。取号 = `python3 scripts/next_case_id.py mc` ⇒ 候选 main(MC-001~088) ∪ 在飞 PR #6621(MC-089) ∪ 工作区 ⇒ **MC-090**（工具口径 = 最小空闲号 + 同一次调用断言号 ∉ 候选集）。**红证（改造前逐字）**：同一个外键违例走改前兜底 ⇒ `PRE-FIX status=500 code=INTERNAL_ERROR msg=服务器内部错误` + `logHasConstraintName=true logHasTableName=true`；改后 ⇒ `POST-FIX status=422 code=VALIDATION_ERROR msg=请求引用的数据不存在或已被删除` + `logHasConstraintName=false throwableProxy=null`。**反向对照**：非约束类未知异常仍 `500` 且 `throwableProxy` 非空。类级元守卫红证：新分支不登记台账 ⇒ `分支未登记到台账: org.springframework.dao.DataIntegrityViolationException`（实测）。⚠️ **射程收窄（实测驱动，逐字）**：初版按「整族（外键+唯一+非空+检查）⇒ 422」写，CI `admin-api unit tests`（job `113894868123`）当场判红两条 —— `MerchantShipmentAtomicityTest.thirdStepFailureRollsBackTheWholeMerchantShipRoute:197` 与 `failingInjectionReallyFires:239`，读数 `Range for response status value 422 expected:<SERVER_ERROR> but was:<CLIENT_ERROR>`（注入的是 `DuplicateKeyException`，它**是** `DataIntegrityViolationException` 的子类）。⇒ 改为**只认外键（23503）**、其余交回兜底，既有 5xx 契约零变化；本地 35 条（处理器族 + 发货族）全绿。⚠️ 未固化（照实登记）：见 data_checks 末条覆盖边界四条（未连真库 / 射程只到外键 / 入口校验不在射程 / 无端点级判据）。 ｜ tags: backend-contract, exception-mapping, log-sanitization, schema-leak, fail-closed, red-proof, class-level-guard, blast-radius
 
 ## 商家入驻域（6 case）
 
@@ -10570,8 +10587,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：730（活跃 134，跳过 596）
-- tier 分布：smoke 12 / normal 676 / adversarial 32
+- 用例总数：731（活跃 134，跳过 597）
+- tier 分布：smoke 12 / normal 677 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10586,7 +10603,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：90
+- 杂项域：91
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：63
@@ -10712,6 +10729,7 @@
 - MC-087: 部署链路的「磁盘水位 × 回收」联动 + 被前置闸门挡住时的收口归因（issue #6508 / #6505 / #6512）：恢复出口按水位选窗口（固定 168h 在真机是 `Total: 0B` 的空操作）；构建缓存读数不许是 `?`；`-af` 只许落在恢复出口；闸门中止打机读标记 `ABORT_REASON=`，CI 收口按标记分支（未开始部署 ≠ 环境可能坏）；构建后「回收量为 0」的告警由水位守卫（水位充裕 ⇒ 只打信息行「属预期」）+ 回收量口径 = 缓存占用差
 - MC-088: 写面幂等接线覆盖率的类级元守卫（issue #6209）：凡消费同一份 ClientRequestIdService 的写面必须登记；读了 X-Client-Request-Id 却不接点位 ⇒ 红；豁免只许缩短；禁新造第二套幂等框架
 - MC-089: dev-worktree 的退出码：`list` 不许因存在会话锁（哪怕全是失效锁）而 exit 1；`scripts/*.sh` 里函数体末命令不得是会被当成返回值的 `[ … ] && …` 复合形态（issue #6243）
+- MC-090: 数据库**外键违例**的归口与日志面（issue #6210）：外键违例 ⇒ 4xx（VALIDATION_ERROR）且**不落兜底 500**，且这一类日志**不打异常本体与堆栈**（约束名 / 表名 / schema 不进日志）；射程**刻意只到外键** —— 唯一 / 非空 / 检查违例保持既有 500 契约（两向反向对照：非约束类未知异常仍 500 带堆栈、唯一键失败仍 500 带堆栈）；类级元守卫 = 分支台账 ⇄ 反射双向相等（新分支未登记即红）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

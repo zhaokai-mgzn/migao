@@ -1,4 +1,4 @@
-// case_ids: API-008
+// case_ids: API-008, MC-090
 package com.migao.admin.config;
 
 import org.junit.jupiter.api.DisplayName;
@@ -94,7 +94,11 @@ class GlobalExceptionHandlerCoverageTest {
             "org.springframework.web.bind.MissingServletRequestParameterException",
             "org.springframework.web.method.annotation.MethodArgumentTypeMismatchException",
             // ↓ #6008：同族漏掉的第三个（缺必填 multipart 部分）
-            "org.springframework.web.multipart.support.MissingServletRequestPartException"
+            "org.springframework.web.multipart.support.MissingServletRequestPartException",
+            // ↓ #6210：数据库完整性约束违例（外键 / 唯一 / 非空 / 检查）—— 客户端引用了库里不存在的行；
+            //   改前**无**具名分支 ⇒ 落兜底 500，且 log.error(…, e) 把约束名写进日志。
+            //   行为判据（4xx + 日志脱敏 / 不脱敏两侧）= GlobalExceptionHandlerDataIntegrityTest（用例 MC-090）
+            "org.springframework.dao.DataIntegrityViolationException"
     );
 
     /** 请求绑定失败族：Spring 在「把 HTTP 请求绑定到控制器方法参数」时抛出的异常家族。 */
