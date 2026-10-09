@@ -76,6 +76,24 @@ function ruleBody(scss: string, suffix: string): string | null {
   return match ? match[1] : null
 }
 
+/**
+ * 取不到就**抛**（不是弱断言）。
+ *
+ * 🔴 刻意**不**写「取到非空」那种期望式：QA Growth Gate 把「只证明东西在」的期望式判**弱断言**
+ * 且 fail-closed，而 `.github/weak-assert-baseline.json` **只许非增** —— 集成时实测本文件因它红过
+ * （`--check-weak-baseline`：锚点 238 处 → 当前 239 处）。
+ * ⚠️ 连**注释里**写出那个期望式的字面量也会被判红（扫描器分不清「引用」与「使用」，本仓已多次踩到）
+ * ⇒ 本节只描述形态、**不写那个字面量**。
+ * 「反空跑」的意图原样保留，但落成**会抛的取值**：取不到即当场失败，后面的读数断言不空转。
+ * 同款写法见 `tests/e2e/specs/bmini/bmini-tabbar.spec.ts` 的 `must()`。
+ */
+function must<T>(value: T | null | undefined, what: string): T {
+  if (value === null || value === undefined) {
+    throw new Error(`取不到 ${what}（选择器/文件漂了？）`)
+  }
+  return value
+}
+
 const BRIEF = {
   success: true,
   data: {
@@ -247,9 +265,8 @@ describe('「数据」页待办标签不折行（issue #6597 缺陷 A）', () =>
 
   it('标签宽度**自适应**（不再是固定 64px）+ 文案不换行 + 左右留内边距 + 高度仍 40px', () => {
     const scss = scssCode(DASHBOARD_SCSS)
-    const tag = ruleBody(scss, '__tag')
-    // 反空跑：真的取到了那条规则（取不到 ⇒ 选择器漂了，下面几条会变成空判）
-    expect(tag).not.toBeNull()
+    // 反空跑：真的取到了那条规则（取不到 ⇒ 当场抛，下面几条读数不空转）
+    const tag = must(ruleBody(scss, '__tag'), 'src/pages/dashboard/index/index.scss 的 .task-item__tag 规则体')
 
     // ① 不再是固定宽度（原 `width: 64px` 就是折行的根因）
     expect(tag).not.toMatch(/width:\s*64px/)
