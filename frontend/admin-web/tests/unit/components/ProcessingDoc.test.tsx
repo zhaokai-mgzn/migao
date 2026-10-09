@@ -3,6 +3,8 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import { render, cleanup } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 // SalesDoc 与 ProcessingDoc 都会（经 hook / 组件）触到 `@/lib/api` —— 打桩成「无码」，
 // 避免 jsdom 真发 XHR（噪音）。「无码 ⇒ 整块不出现」的判据仍由组件行为决定。
@@ -31,7 +33,9 @@ import { collectTableIntegrity, dataTables } from '@/components/orders/doc-table
  * ④ 🔴 **缺值不许静默留空**：一律显式占位 `—`；本系统**没有采集**的字段（制单人 / 批号）
  *    另标「未采集」——「客户没填」与「我们没有这个列」必须可区分；
  * ⑤ 🔴 **缺码不画假码**（洗水码既有判据）：拿不到 QR 值 ⇒ 虚线占位框，不编码、不拿别的串顶替；
- * ⑥ 打印隔离沿用 #4983 / #4965 范式（共享 `print-doc` + 限定本次打印目标的 visibility 防御）。
+ * ⑥ 打印隔离沿用 #4983 / #4965 范式（共享 `print-doc` + 限定本次打印目标的 visibility 防御）；
+ * ⑦ **列宽按内容预算**（issue #6600）：批号是**固定 17 字符**的 `PC-yyyyMMdd-####`，原先只给 10%
+ *    ⇒ `table-layout: fixed` 下折成 3 行、把数据行撑高（真浏览器实测 63px）。现在 ≥16%（两行放得下）。
  */
 function buildItem(overrides: Partial<OrderItem> = {}): OrderItem {
   return {
@@ -98,6 +102,16 @@ const css = (): string =>
 /** 表头标签（第一行第一列那一格）的文本集合 */
 const cellText = (testId: string): string =>
   document.querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? ''
+
+/** 表头这一格的**声明宽度百分比**（`w-[N%]`，全仓唯一真值 = 表头） */
+const headerWidthOf = (label: string): number => {
+  const th = Array.from(doc()?.querySelectorAll('.processing-doc-table thead th') ?? []).find(
+    (el) => el.textContent?.trim() === label
+  )
+  return Number((th?.className ?? '').match(/\bw-\[(\d+)%\]/)?.[1] ?? NaN)
+}
+/** 8 列表头声明的宽度百分比（按表头顺序） */
+const headerWidths = (): number[] => PROCESSING_DOC_COLUMNS.map(headerWidthOf)
 
 describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
   // 类级固化（issue #6595）：本单据的正文表逐行自洽（Σ(colSpan) = 表头列数）——
@@ -319,5 +333,37 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
       <ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} printTarget="processing" />
     )
     expect(doc()?.getAttribute('data-print-target')).toBe('processing')
+  })
+
+  it('⑦ 列宽按内容预算：批号列 ≥16%（17 位批号两行放得下）+ 列序不变 + 合计 100%（issue #6600）', () => {
+    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
+    const widths = headerWidths()
+    // 列序：宽度调整不许顺手挪列（标签仍逐字等于列清单）
+    const labels = Array.from(doc()?.querySelectorAll('.processing-doc-table thead th') ?? []).map(
+      (el) => el.textContent?.trim()
+    )
+    expect(labels).toEqual([...PROCESSING_DOC_COLUMNS])
+    // 批号列的系统下限：17 字符 `PC-yyyyMMdd-####` 在 9pt 下单行约 40mm，
+    // 表宽 186mm ⇒ 16% ≈ 29.7mm 只够折「两行」；再回落 = 三行（#6600 的实测缺陷）
+    const batch = headerWidthOf('批号')
+    expect(batch).toBeGreaterThanOrEqual(16)
+    // 批号必须比常态为空的「备注」列宽
+    expect(batch).toBeGreaterThan(headerWidthOf('备注'))
+    expect(widths.reduce((sum, w) => sum + w, 0)).toBe(100)
+    // 8 列一个都不能少（少一个 label ⇒ NaN，这条会红）
+    expect(widths.every((w) => Number.isFinite(w))).toBe(true)
+
+    // 🔴 可红（在真值源上取证，不碰真文件）：把本组件的表头宽度声明改成**修前**的批号 10%
+    // ⇒ 同一个解析器把下限判红（`10 < 16`），改回 16 ⇒ 通过 —— 这条判据不是恒真。
+    const source = readFileSync(
+      join(process.cwd(), 'src/components/orders/ProcessingDoc.tsx'),
+      'utf-8'
+    )
+    const declared = Array.from(source.matchAll(/<DocTh[^>]*?w-\[(\d+)%\][^>]*?>\s*\{?PROCESSING_DOC_COLUMNS\[(\d)\]/g)).map(
+      (m) => ({ index: Number(m[2]), percent: Number(m[1]) })
+    )
+    expect(declared.find((d) => d.index === 6)?.percent).toBe(batch) // 判据读的就是真值源
+    const broken = declared.map((d) => (d.index === 6 ? 10 : d.percent))
+    expect(broken.find((p, i) => declared[i].index === 6)).toBeLessThan(16)
   })
 })

@@ -326,15 +326,15 @@ function SetBlock({
         <thead>
           <tr>
             <DocTh className="w-[8%]">{PROCESSING_DOC_COLUMNS[0]}</DocTh>
-            <DocTh className="w-[26%]">{PROCESSING_DOC_COLUMNS[1]}</DocTh>
+            <DocTh className="w-[22%]">{PROCESSING_DOC_COLUMNS[1]}</DocTh>
             <DocTh className="w-[11%]">{PROCESSING_DOC_COLUMNS[2]}</DocTh>
             <DocTh className="w-[9%]">{PROCESSING_DOC_COLUMNS[3]}</DocTh>
             <DocTh className="w-[14%]">{PROCESSING_DOC_COLUMNS[4]}</DocTh>
             <DocTh align="right" className="w-[8%]">
               {PROCESSING_DOC_COLUMNS[5]}
             </DocTh>
-            <DocTh className="w-[10%]">{PROCESSING_DOC_COLUMNS[6]}</DocTh>
-            <DocTh className="w-[14%]">{PROCESSING_DOC_COLUMNS[7]}</DocTh>
+            <DocTh className="w-[16%]">{PROCESSING_DOC_COLUMNS[6]}</DocTh>
+            <DocTh className="w-[12%]">{PROCESSING_DOC_COLUMNS[7]}</DocTh>
           </tr>
         </thead>
         <tbody>
