@@ -65,13 +65,23 @@ pytest 不可运行）。零动作**必须出声**（§23 G6）：打印「零�
 
 ## 读数（§23 G8：禁挂钟当判据）
 
-只报**与负载无关**的量：变更文件数 / 命中判据数 / 真正跑的判据数 / 跳过数 + 原因 / 未命中数。
-**不**把 `pytest` 的墙钟时间当任何判据（`--json` 里也不记录它）。
+只报**与负载无关**的量：变更文件数 / 命中判据数 / 真正跑的判据数 / 跳过数 + 原因 / 未命中数 /
+**并行度**。**不**把 `pytest` 的墙钟时间当任何判据（`--json` 里也不记录它）。
+
+## 并行度（issue #6312，2026-10-08 —— 本腿**跑得完**的前提）
+
+判定面在「水位取不到」的窗口里几乎全中：实测 `--lookback 40` 命中 **810 个变更文件 / 296 条判据 /
+5652 条用例**（现取 371 个判据文件里 296 个）⇒ 串行跑它在一个 runner 上撞 job `timeout-minutes`
+被 **SIGTERM**（`exit code 143`，run 37722027828 实测：判定步起 03:18:09、静默 658s 后 03:29:22 被杀）
+⇒ 本腿**永远出不了结论**。⇒ 除上限按工作量上界抬高（见 workflow 头部）之外，这里**并行跑**：
+`-n PARALLEL_WORKERS`，与 `pr-check.yml` 的 `ci workflow helper unit tests` 逐字同款
+（它同样 `-n 4`，镜像 = 托管 runner 的 4 vCPU）。缺 `pytest-xdist` 时**退回串行并出声**
+（不静默降级、也不判红 —— 装它由 workflow 的 Install deps 步负责，缺了那一步在那儿红）。
 
 一键复算（本机、零成本）：
 
     python3 scripts/post_merge_verify.py --list-only --lookback 40   # 只看选中面，不跑
-    python3 scripts/post_merge_verify.py --lookback 40               # 真跑选中面
+    python3 scripts/post_merge_verify.py --lookback 40               # 真跑选中面（并行）
     python3 scripts/post_merge_verify.py --base <sha> --head <sha>   # 定向复算某次落地
 """
 from __future__ import annotations
@@ -79,6 +89,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import os
 import re
 import subprocess
 import sys
@@ -93,6 +104,30 @@ UNMATCHED_PRINT_LIMIT = 12
 #: pytest 摘要行里的跳过计数（`-rs` 会把原因打在正文里，这里只取计数做读数）。
 SKIPPED_RE = re.compile(r"(\d+)\s+skipped")
 PYTEST_MISSING_MARKERS = ("No module named pytest", "No module named 'pytest'")
+#: 跑判据面的并行度（issue #6312）。**与 `pr-check.yml` 的 `ci workflow helper unit tests` 同款**
+#: （那边把 `-n 4` 与托管 runner 的 4 vCPU 对齐，且已有三方一致性台账
+#: `tests/unit_ci_workflows/helper_leg_shape_ledger.json` 的 `shape.parallel_workers`）。
+#: 存量读数（本机 8 核、同一选中面 5652 条）：`-n 8` = 685s；全量面 `-n 4` = 1043s / 6896 条。
+#: ⚠️ 这里**不**按核数自动取（`-n auto`）：CI 与本地要**可复算**的同一个值，且判据钉的是这个常量。
+PARALLEL_WORKERS = 4
+#: 缺 xdist 时的**出声**降级说明（不静默慢回去；装它由 workflow 的 Install deps 步负责）。
+XDIST_MISSING_NOTE = (f"⚠️ 没有 pytest-xdist ⇒ 退回**串行**跑（本腿可能因此撞上限被 SIGTERM，issue #6312）："
+                      f"装它 = workflow 的 Install deps 步（`pip install pytest-xdist`）")
+
+# ── 上限的**派生式**（issue #6312）────────────────────────────────────────────────────
+# 口径：上限不许是口味 —— 它 = 本腿**自己的工作量的上界**。工作量的口径是结构性的：本腿在**一个**
+# runner 上要干对等腿（`pr-check.yml` 的 `ci workflow helper unit tests`）**两片**的活 ——
+# 同一个判定面、同一个 runner 规格，那边每片各自 `timeout-minutes: 20`。
+# ⇒ 上界 = 片数 × 单片上限。这三个常量**只在这里声明一次**，workflow 的 job `timeout-minutes`
+#    必须 ≥ `MIN_TIMEOUT_MINUTES`，且判据现取 `pr-check.yml` 复算片数与单片上限 ——
+#    **单改任一边都红**（判据 = `tests/unit_ci_workflows/test_post_merge_verify_leg.py` 的上限族）。
+# ⚠️ 它不是挂钟读数：片数 / 单片上限都是**声明值**（YAML 里的 `timeout-minutes` 与 matrix 条目）。
+PEER_HELPER_JOB = "ci workflow helper unit tests"
+PEER_HELPER_JOB_TIMEOUT_MINUTES = 20
+WORKLOAD_BOUND_SHARDS = 2
+MIN_TIMEOUT_MINUTES = PEER_HELPER_JOB_TIMEOUT_MINUTES * 2
+#: 判定步把**它自己声明的上限**经环境传进来 ⇒ 本脚本能在运行期自证「上限 ≥ 工作量上界」。
+TIMEOUT_ENV = "MIGAO_JOB_TIMEOUT_MINUTES"
 
 
 class Undecidable(Exception):
@@ -300,18 +335,50 @@ def collect_criteria(repo: Path) -> dict[str, tuple[set[str], set[str], set[str]
 # ═══════════════════════════════════════════════════════════════════════════
 # 三、判定
 # ═══════════════════════════════════════════════════════════════════════════
-def run_selection(repo: Path, selected: list[str], python: str) -> tuple[int, str, int, str | None]:
-    """跑选中的判据 ⇒ (rc, 输出, 跳过数, 无法判定的原因)。"""
+def declared_timeout_problem(declared: str | None) -> str | None:
+    """运行期自证（issue #6312）：job 声明的上限 < 工作量上界 ⇒ 归因串；否则 `None`。
+
+    纯函数（判据可直接调用：正常读数 / 病态读数各一条）。缺变量 / 非整数 ⇒ `None`（= 说明读数
+    缺失，出声但不判红 —— 本地手跑没这个变量是合法的）。
+    """
+    text = (declared or "").strip()
+    if not text.isdigit():
+        return None
+    if int(text) >= MIN_TIMEOUT_MINUTES:
+        return None
+    return (f"本腿声明的上限 `timeout-minutes: {text}` < 工作量上界 {MIN_TIMEOUT_MINUTES}"
+            f"（= 对等腿 {PEER_HELPER_JOB!r} 的 {WORKLOAD_BOUND_SHARDS} 片 × 每片 "
+            f"{PEER_HELPER_JOB_TIMEOUT_MINUTES} 分）⇒ 判定面会在出结论前被 SIGTERM")
+
+
+def _check_declared_timeout() -> str | None:
+    """`declared_timeout_problem` 的**环境读取处**（`main()` 里唯一调它的那一步；判据钉这一处）。"""
+    return declared_timeout_problem(os.environ.get(TIMEOUT_ENV))
+
+
+def run_selection(repo: Path, selected: list[str], python: str) -> tuple[int, str, int, str | None, list[str]]:
+    """跑选中的判据 ⇒ (rc, 输出, 跳过数, 无法判定的原因, 开头若干行读数)。
+
+    并行度（issue #6312）走 `-n PARALLEL_WORKERS`（与 `pr-check.yml` 同款，理由见模块 docstring）；
+    **缺 xdist ⇒ 退回串行**并把降级说明作为读数的第一行带出去（不静默慢回去，也不判红 ——
+    装它是 workflow 的 Install deps 步的职责，缺了那一步在那里红）。
+    """
     probe = _run([python, "-c", "import pytest"], repo)
     if probe.returncode != 0:
-        return 3, probe.stderr.strip()[:300], 0, f"{python} 里没有 pytest ⇒ 无法判定（不等同于通过）"
+        return 3, probe.stderr.strip()[:300], 0, f"{python} 里没有 pytest ⇒ 无法判定（不等同于通过）", []
+    notes: list[str] = []
     argv = [python, "-m", "pytest", *selected, "-q", "--tb=short", "-rs", "-p", "no:cacheprovider"]
+    if _run([python, "-c", "import xdist"], repo).returncode == 0:
+        argv += ["-n", str(PARALLEL_WORKERS)]
+        notes.append(f"并行度 = {PARALLEL_WORKERS}（pytest-xdist；与 `pr-check.yml` 的 helper 腿同款）")
+    else:
+        notes.append(XDIST_MISSING_NOTE)
     proc = _run(argv, repo)
     out = (proc.stdout or "") + (proc.stderr or "")
     if proc.returncode != 0 and any(m in out for m in PYTEST_MISSING_MARKERS):
-        return 3, out, 0, "pytest 不可运行 ⇒ 无法判定（不等同于通过）"
+        return 3, out, 0, "pytest 不可运行 ⇒ 无法判定（不等同于通过）", notes
     skipped = int((SKIPPED_RE.search(out) or [0, 0])[1]) if SKIPPED_RE.search(out) else 0
-    return proc.returncode, out, skipped, None
+    return proc.returncode, out, skipped, None, notes
 
 
 def render(report: dict) -> str:
@@ -349,6 +416,8 @@ def render(report: dict) -> str:
             lines.append(f"  - …（其余 {len(un) - len(shown)} 个略）")
         lines.append("  注：『未命中』= 没有判据把它的路径写成可解析的引用 ⇒ 本腿看不见它（不是「没问题」）。")
     lines += ["", f"命令（可复制）：python3 scripts/post_merge_verify.py --base {w['base']} --head {w['head']}", ""]
+    for note in report["notes"]:
+        lines.append(note)
     if report["list_only"]:
         lines.append("（--list-only：只看选中面，**未跑判据** —— 这不是「通过」）")
     elif report["undecidable"]:
@@ -362,6 +431,7 @@ def render(report: dict) -> str:
         f"{report['changed_count']} / 命中判据 {report['selected_count']} / 跑判据 "
         f"{0 if report['list_only'] else report['selected_count']}"
         f" / 跳过 {report['skipped']} / 未命中 {len(un)}"
+        f" / 并行度 {report['parallel_workers']}"
     )
     return "\n".join(lines)
 
@@ -376,6 +446,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--json", type=Path, default=None, help="机器可读报告落盘路径")
     ap.add_argument("--list-only", action="store_true", help="只打印选中面，不跑判据")
     args = ap.parse_args(argv)
+
+    # ── 运行期自证：本腿自己声明的上限必须 ≥ 它自己的工作量上界（issue #6312）──────────────
+    # workflow 的判定步经 `MIGAO_JOB_TIMEOUT_MINUTES` 把**job 那一行**传进来 ⇒ 两边不可能各说各话。
+    problem = _check_declared_timeout()
+    if problem:
+        print(f"❌ {problem}", file=sys.stderr)
+        return 1
 
     repo = (args.repo or Path(__file__).resolve().parents[1]).resolve()
     try:
@@ -401,6 +478,10 @@ def main(argv: list[str] | None = None) -> int:
         "zero_action": None,
         "list_only": bool(args.list_only),
         "pytest_output": "",
+        # 并行度（issue #6312）：**与负载无关**的结构量（不是时长）—— 判据钉它 = 钉住"本腿会不会
+        # 退回串行"，而串行正是本腿撞上限被 SIGTERM 的形态。
+        "parallel_workers": PARALLEL_WORKERS,
+        "notes": [],
     }
     if not selected:
         report["zero_action"] = (
@@ -409,8 +490,8 @@ def main(argv: list[str] | None = None) -> int:
             else f"窗口内 {len(changed)} 个变更文件都未被任何判据引用（未触及判定面）"
         )
     elif not args.list_only:
-        rc, out, skipped, undecidable = run_selection(repo, selected, args.python)
-        report.update(rc=rc, pytest_output=out, skipped=skipped, undecidable=undecidable)
+        rc, out, skipped, undecidable, notes = run_selection(repo, selected, args.python)
+        report.update(rc=rc, pytest_output=out, skipped=skipped, undecidable=undecidable, notes=notes)
 
     print(render(report))
     if args.json:

@@ -308,8 +308,8 @@
       "workflow": "post-merge-verify.yml",
       "job": "verify",
       "check_name": "Post-Merge Verify (定向跑判据面)",
-      "hard_kill_seconds": 900,
-      "hard_kill_source": "workflow `timeout-minutes: 15`",
+      "hard_kill_seconds": 2700,
+      "hard_kill_source": "workflow `timeout-minutes: 45`（issue #6312：按本腿自己的工作量上界抬高）",
       "required": false,
       "measured": {
         "n": 7,

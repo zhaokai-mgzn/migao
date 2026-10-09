@@ -30,6 +30,7 @@ required 检查上，**卡住全队列**，最后由人花一整轮热修（`#54
 | 13 | **不许放宽既有门禁**（判据 6）：本腿**不得**出现在 `pr-check.yml` 里（报告型 ≠ required） | 变异：在文本里塞一处 ⇒ 非空 |
 | 14 | **禁挂钟**（§23 G8）：机器可读报告只报与负载无关的量，**不含**任何时长字段 | 变异：往报告里塞一个时长键 ⇒ 非空 |
 | 15 | **首发日护栏**：判定本体尚未在 main 上落地 ⇒ **出声但不判红**（不许自造假红）；「workflow 在、脚本没了」⇒ **红** | 变异四个要素（`[ ! -f scripts/post_merge_verify.py ]` / `pending-merge` / workflow 存在判据 / `::error::`）**各能单独变红** |
+| 16 | **水位只取落在 main 上的成功 run**：查询必须含 `--branch main`（否则取到 PR head ⇒ 永不解析 ⇒ 永久冷启动窗口，issue #6312 真根因） | 变异：去掉 `--branch main` ⇒ 判据函数非空 |
 
 ## 边界（照实登记，别读成「已覆盖」）
 
@@ -328,6 +329,57 @@ def uses_checkout(step: dict) -> bool:
     return str(step.get("uses", "")).startswith("actions/checkout@")
 
 
+def _bash_code_lines(text: str) -> str:
+    """只留**会执行的行**：去掉整行注释（`#` 开头，允许前导空白）。
+
+    ⚠️ 必须剥（§23.8 **B1**「判据语料不含自身说明」的 bash 版）：workflow 的注释为了讲清病灶
+    会**引用** `--branch main` 这个字面量 ⇒ 不剥就变成「注释里留着字样 = 判据绿」：把查询改回
+    旧形态而注释不动 ⇒ 判据**不红**（**本判据第一版就是这么被自己的红证抓到的**）。
+    """
+    return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+
+
+def _watermark_query_text(doc: dict) -> str:
+    """取出**水位查询**所在那一步里**可执行**的 bash 原文（跑 `post_merge_verify.py` 且含 `gh run list`）。"""
+    for step in _steps(doc):
+        text = str(step.get("run", ""))
+        if "gh run list" in text and "post_merge_verify.py" in text:
+            return _bash_code_lines(text)
+    return ""
+
+
+def _watermark_problems(doc: dict) -> list[str]:
+    """判据 16：水位只能由**落在 main 上**的成功 run 推进（issue #6312 的**真根因**）。
+
+    病灶（2026-10-09 实测；本腿此前 10 次修复都没打中它）：原来的查询是
+    `gh run list --workflow post-merge-verify.yml --status success` —— **不筛事件 / 分支** ⇒
+    取到的是「最近一次成功的 run」，而本腿在 `pull_request: [opened, reopened]` 上也会跑 ⇒
+    那个 `headSha` 是 **PR 的分支头**（实测 `463e511`，`headBranch=docs/6408-demo-seed-evidence`），
+    **不在 main 检出里** ⇒ `git cat-file -e` **必失败** ⇒ **永远**退回 `HEAD~40`。
+
+    这不是「首次运行的兜底」，而是**常驻状态**：每轮都跑满整个 40 提交窗口（本机实测
+    `863` 变更文件 / `284` 条命中判据）⇒ 撞 job 上限被杀（实测 cancelled 样本 `914s`/`917s`
+    ≈ `timeout-minutes: 15`）⇒ 更不可能成功 ⇒ **正反馈**（近 200 次 run：`12 success / 82 failure /
+    98 cancelled`），且**水位永远停在原地**（最近一次成功 = 2026-10-06T06:17Z）。
+
+    ⇒ 判据两条：① 查询必须含 `--branch main`；② 必须保留 `--status success`（水位只许被成功推进）。
+    """
+    text = _watermark_query_text(doc)
+    if not text:
+        return ["找不到水位查询所在的那一步（跑 `post_merge_verify.py` 且含 `gh run list`）⇒ 本判据无从判定"]
+    problems = []
+    if "--branch main" not in text:
+        problems.append(
+            "水位查询没有限定 `--branch main` ⇒ 会取到 `pull_request` run 的 **PR head**"
+            "（不在 main 检出里）⇒ `git cat-file -e` 必失败 ⇒ **永久**退回 `HEAD~40` 冷启动窗口"
+            "（issue #6312 实测根因；实测取到的 sha = `463e511`，headBranch = `docs/6408-demo-seed-evidence`）")
+    if "--status success" not in text:
+        problems.append(
+            "水位查询丢了 `--status success` ⇒ 水位会被失败 / 取消的 run 推进 = **跳验**"
+            "（方向必须是「多验」，见本 workflow 头部的水位口径）")
+    return problems
+
+
 def _failure_hook_problems(doc: dict) -> list[str]:
     problems = []
     hooks = [s for s in _steps(doc) if "failure()" in str(s.get("if", ""))]
@@ -494,6 +546,25 @@ class TestWorkflowWiring:
             assert _failure_hook_problems(doc) != [], f"删掉 `{needle}` 之后判据没红 ⇒ 空断言"
         assert _failure_hook_problems(base) == [], "变异过程中把基线弄坏了（红证前提自证失败）"
 
+    def test_watermark_query_is_scoped_to_main(self):
+        """判据 16：水位只取**落在 main 上**的成功 run（issue #6312 的真根因）。"""
+        problems = _watermark_problems(yaml.safe_load(WORKFLOW.read_text(encoding="utf-8")))
+        assert problems == [], "\n".join(problems)
+
+    def test_dropping_branch_filter_turns_the_watermark_red(self):
+        """判据 16 的红证：把水位查询退回「不筛分支」的旧形态 ⇒ 必红（那就是 2026-10-09 之前的形状）。"""
+        doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+        needle = "--branch main --status success"
+        mutated = False
+        for job in (doc.get("jobs") or {}).values():
+            for step in (job.get("steps") or []):
+                if isinstance(step, dict) and needle in str(step.get("run", "")):
+                    step["run"] = str(step["run"]).replace(needle, "--status success")
+                    mutated = True
+        if not mutated:
+            raise AssertionError(f"变异点失配：找不到 `{needle}`（红证不得是空断言）")
+        assert _watermark_problems(doc) != [], "去掉 `--branch main` 之后判据没红 ⇒ 空断言"
+
     def test_reading_step_has_fail_open_guard(self):
         """判据 11：读数步的 fail-open 护栏 —— 发射器缺席时明说「读数缺失（不是零动作）」。"""
         problems = _reading_step_problems(yaml.safe_load(WORKFLOW.read_text(encoding="utf-8")))
@@ -595,15 +666,370 @@ class TestWorkflowWiring:
         assert _wall_clock_problems(["changed_count", "selected_count"], doc) == [], \
             "负控：正常读数不得被判红"
 
-# ── issue #5434：**装依赖的解释器** 与 **跑判据的解释器** 必须是同一个 ──────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# 判据 20~22（issue #6312，2026-10-08）：**上限必须按本腿自己的工作量上界算出来**
 #
-# 实测形态（main 上连续多轮）：`actions/setup-python@v7` + `pip install -q pytest pyyaml` **都跑过了**，
-# 而判定步仍报 `❌ /usr/bin/python3 里没有 pytest ⇒ 无法判定（rc=3）` —— 因为 `pip` 装到了 toolcache 的
-# site-packages，而判定步的 `python3` 解析到 runner 自带的 `/usr/bin/python3`。
-# ⇒ 本腿**永远**停在「无法判定」= 铁律 9 A2 的机械化**实际从未生效**（#5423 要消灭的形态，发生在它自己身上）。
+# 病灶（现取读数，不是估算）：本腿的窗口起点 = 「最近一次**成功** run 的 headSha」，而水位取不到就
+# **一直退回** `LOOKBACK=40` ⇒ 本腿从未成功 ⇒ 每一轮都是同一个 40 提交窗口。实测该窗口命中
+# **296 条判据 / 5652 条用例**（`--list-only --lookback 40` 的现取读数；现取目录里 371 个判据文件）
+# ⇒ **正反馈**：越不成功 ⇒ 窗口越宽 ⇒ 越跑不完 ⇒ 越不成功。
+#   掐死点在 run `37722027828` 的判定步日志里逐字可见：判定步 03:18:09 起、末行 03:18:24（in-leg 复现），
+#   之后**静默 658s**，下一条即 `##[error]Process completed with exit code 143`（SIGTERM）03:29:22
+#   ⇒ `failure` 结论、`updatedAt - createdAt` = 710s。
+#   ⛔ 本 workflow 里**没有** step 级 `timeout`、`scripts/post_merge_verify.py` 里**没有** `timeout=` 包装
+#     （两处都逐字复核过）⇒ 掐死它的声明方只有 job `timeout-minutes`。
 #
-# 判据钉的是**不变量**（不是措辞）：本 workflow 里「装依赖」与「跑判据」必须共用**同一个解释器变量**，
-# 且判定步**不得**裸调 `python3`（那一处正是解释器可以分叉的地方）。
+# 🔴 **判据的形态（§23 G8：禁挂钟）**：钉的是**与负载无关的结构量** ——
+# ① 判定面**并行跑**（`-n` = 常驻常量，且 ≥ 托管 runner 的核数）；② 上限 ≥ 本腿自己的工作量上界
+#    （本腿在**一个** runner 上要干 `pr-check.yml` **两片**的活，两片各自 `timeout-minutes: 20`
+#    ⇒ 上界 = 两片上限之和）；③ **判据面的单文件把脚本与 workflow 的结构声明绑在一起**
+#    （「全量命令只许出现一次」的同族：同一条不变量在文本里长出第二份实现 ⇒ 红）。
+# ⛔ 没有任何一条把**实测时长**写进判据（那正是降成本类固化禁止的挂钟固化）。
+# ══════════════════════════════════════════════════════════════════════════════
+
+#: 托管 runner 的核数（`runs-on: ubuntu-latest` = 4 vCPU；`pr-check.yml` 把 `-n 4` 与它对上）。
+#: **不是实测时长** —— 它是 runner 规格这个结构量。
+RUNNER_VCPUS = 4
+#: `pr-check.yml` 里那两片 helper 腿的 job 名（现取用，不写死分片数）。
+HELPER_JOB_NAME = "ci workflow helper unit tests"
+#: 上限族的三段取值（现取自脚本文本，判据不复制它们的值 —— 只断言它们彼此自洽）。
+_MIN_TIMEOUT_RE = re.compile(r"^\s*MIN_TIMEOUT_MINUTES\s*=\s*([A-Z_]+)\s*\*\s*(\d+)\s*$", re.M)
+_BOUND_SHARDS_RE = re.compile(r"^\s*WORKLOAD_BOUND_SHARDS\s*=\s*(\d+)\s*$", re.M)
+_PARALLEL_RE = re.compile(r"^\s*PARALLEL_WORKERS\s*=\s*(\d+)\s*$", re.M)
+
+#: 上限真值源的环境变量名（**与 `scripts/post_merge_verify.py::TIMEOUT_ENV` 同名同义** ——
+#: workflow 级 `env:` 里那一项就是它，job `timeout-minutes` 与判定步的读数都从它派生）。
+TIMEOUT_ENV = "MIGAO_JOB_TIMEOUT_MINUTES"
+#: 上限族依赖的**模块级**常量名（现取文本断言它们真的可被现取 = 不是塞在函数体里的局部量）。
+SCRIPT_SOURCE_CONSTANTS = (
+    "PEER_HELPER_JOB_TIMEOUT_MINUTES",
+    "WORKLOAD_BOUND_SHARDS",
+    "MIN_TIMEOUT_MINUTES",
+    "PARALLEL_WORKERS",
+)
+
+
+def _peer_workload_bound(doc: dict) -> tuple[int, int, int]:
+    """现取对等腿的工作量上界 ⇒ `(片数, 单片上限分钟, 上界分钟)`；取不到 ⇒ 抛。
+
+    对等腿 = `pr-check.yml` 的 `ci workflow helper unit tests`（**同一个判定面、同一个 runner 规格**）：
+    本腿在一个 runner 上要干它**两片**的活 ⇒ 上界 = `片数 × 单片 timeout-minutes`。
+    """
+    ci = yaml.safe_load(PR_CHECK.read_text(encoding="utf-8"))
+    job = next((j for j in (ci.get("jobs") or {}).values()
+                if str(j.get("name") or "").startswith(HELPER_JOB_NAME)), None)
+    if job is None:
+        raise AssertionError(f"{PR_CHECK.name} 里找不到 job `{HELPER_JOB_NAME}` —— "
+                             "对等腿没了 ⇒ 上界无从计算（大声失败，不静默）")
+    matrix = ((job.get("strategy") or {}).get("matrix") or {}).get("include") or []
+    shards = [m for m in matrix if isinstance(m, dict) and m.get("shard")]
+    minutes = int(job.get("timeout-minutes") or 0)
+    if not shards or minutes <= 0:
+        raise AssertionError(f"{HELPER_JOB_NAME} 的分片/上限取不到：shards={shards} / "
+                             f"timeout-minutes={job.get('timeout-minutes')!r}")
+    return len(shards), minutes, len(shards) * minutes
+
+
+def _declared_workload_bound(doc: dict) -> str | None:
+    """本腿 job 上**显式声明**上限的那一项的**原始值**；没有 ⇒ `None`。
+
+    ⚠️ 取的是 **job key**（不是注释里的字样，§23.4 T2：判据不许被自己的说明文字喂红）。
+    ⚠️ 取**原始文本**而不是解出来的数字：本腿的上限走 `${{ fromJSON(env.…) }}`（唯一真值源），
+    `yaml.safe_load` 拿到的是那句表达式字符串，**数字由 GitHub 在运行期解** ⇒ 判据要判的是
+    「它**从句法上**只能来自那个真值源」，解出来的数字由运行期自证 + 行为级红证承担。
+    """
+    jobs = doc.get("jobs") or {}
+    if len(jobs) != 1:
+        raise AssertionError(f"本 workflow 应当只有一个 job（实测 {list(jobs)}）—— 结构变了，判据需同批改")
+    value = next(iter(jobs.values())).get("timeout-minutes")
+    return str(value) if value is not None else None
+
+
+def upper_bound_problems(doc: dict, script_text: str) -> list[str]:
+    """**纯函数**：上限族的结构问题清单（空 = 成立）。
+
+    全部与负载无关，三段：
+      ① **上限是字面整数**，且 workflow 级 `env.MIGAO_JOB_TIMEOUT_MINUTES` **逐字等于它**
+         （两边分叉 ⇒ 判定本体拿到的读数与 job 实际声明不是一个数 ⇒ 红）；
+         —— 为什么必须是字面量：`timeout-minutes` 是全仓成本台账的读数字段
+         （`tests/unit_ci_workflows/ci_cost_ledger.json` 的 `hard_kill_seconds` == `timeout-minutes × 60`，
+         由 `tests/unit_ci_workflows/test_ci_cost_ledger.py` 逐条复比）⇒ 写 `${{ … }}` 表达式会让那套判据
+         取不到整数（本单实测踩过）。**按仓库契约办**：表达式那条路被既有契约排除。
+      ② **上界自洽**：上限 ≥ 本腿自己的工作量上界（= 对等腿 `片数 × 单片上限`）——
+         「抬上限」**不是口味**：上界是**算出来的**，改小了就与本腿自己声明的工作量矛盾；
+      ③ **脚本侧派生式**：`MIN_TIMEOUT_MINUTES = <具名常量> * <片数>` 逐字在位，片数 == 对等腿现取的片数
+         （「单文件把脚本与 workflow 绑在一起」；改成裸数字 ⇒ 两边分叉 ⇒ 红）；
+         且运行期自证**真的接线**（谓词在 + 在 `main()` 里被调）。
+    """
+    problems: list[str] = []
+    declared = _declared_workload_bound(doc)
+    if declared is None:
+        return ["job 上**没有** `timeout-minutes` ⇒ 退回 GitHub 默认（360 分）⇒ 本族无从判定（fail-closed）"]
+    if not declared.isdigit():
+        problems.append(
+            f"`timeout-minutes: {declared}` 不是字面整数 ⇒ 全仓成本台账（`ci_cost_ledger.json` 的 "
+            "`hard_kill_seconds`）取不到值（本单实测：`ValueError: invalid literal for int()`）"
+        )
+    source = str((doc.get("env") or {}).get(TIMEOUT_ENV) or "")
+    if not source.isdigit():
+        problems.append(f"workflow 级 `env.{TIMEOUT_ENV}` 缺失或非整数（= {source!r}）"
+                        "⇒ 判定本体拿不到上限读数（自证会退化成没数据可判）")
+    elif declared.isdigit() and int(source) != int(declared):
+        problems.append(
+            f"上限两边分叉：`env.{TIMEOUT_ENV} = {source}` != job `timeout-minutes = {declared}` "
+            "⇒ 判定本体自证的是另一个数（§18.6：环境静默即缺陷）"
+        )
+    shard_count, shard_minutes, bound = _peer_workload_bound(doc)
+    if source.isdigit() and int(source) < bound:
+        problems.append(
+            f"上限 {source} < 本腿自己的工作量上界 {bound}"
+            f"（对等腿 `{HELPER_JOB_NAME}` = {shard_count} 片 × 每片 {shard_minutes} 分 —— "
+            "本腿在一个 runner 上要干两片的活）⇒ 撞上限被 SIGTERM（issue #6312 的形态，无结论）"
+        )
+    m = _MIN_TIMEOUT_RE.search(script_text)
+    bound_decl = _BOUND_SHARDS_RE.search(script_text)
+    if not m or not bound_decl:
+        problems.append(f"`{SCRIPT_REL}` 里没有 `MIN_TIMEOUT_MINUTES = <常量> * <片数>` / "
+                        f"`WORKLOAD_BOUND_SHARDS` 声明 ⇒ 上限没有可复算的派生式")
+    else:
+        if m.group(1) != "PEER_HELPER_JOB_TIMEOUT_MINUTES":
+            problems.append(f"派生式的被乘项 = {m.group(1)!r} ⇒ 应当引对等腿的**具名常量**"
+                            "（裸数字会让脚本与 workflow 各说各话）")
+        if int(m.group(2)) != shard_count or int(bound_decl.group(1)) != shard_count:
+            problems.append(f"派生式的片数 = {m.group(2)} / `WORKLOAD_BOUND_SHARDS` = {bound_decl.group(1)}"
+                            f"，而 `{PR_CHECK.name}` 现取是 {shard_count} 片 ⇒ 两边分叉")
+    # 运行期自证必须**真的接线**：谓词存在 + 在 `main()` 里真的被调（写出来没人读 = 死声明）
+    if "declared_timeout_problem" not in script_text:
+        problems.append(f"`{SCRIPT_REL}` 里没有运行期自证谓词（`declared_timeout_problem`）"
+                        "⇒ 「上限 ≥ 上界」只是纸面约定，声明值不会流到判定本体")
+    elif not re.search(r"^\s*problem\s*=\s*_check_declared_timeout\(\)\s*$", script_text, re.M):
+        problems.append(f"`{SCRIPT_REL}` 里运行期自证**没在 `main()` 里被调用**"
+                        "（缺 `problem = _check_declared_timeout()`）⇒ 声明值不再流到判定本体")
+    return problems
+
+
+def parallel_problems(script_text: str) -> list[str]:
+    """**纯函数**：判定面**并行跑**的结构问题清单（空 = 成立）。
+
+    为什么钉在 `SCRIPT_REL` 上：并行是**判定本体**的属性（判定步只调它一个脚本，判定面由它拉起），
+    钉在 workflow 文本上会因为「判定步里根本没有 pytest 命令行」而变成空断言。
+    """
+    problems: list[str] = []
+    if "PARALLEL_WORKERS" not in script_text:
+        problems.append(f"`{SCRIPT_REL}` 里没有 `PARALLEL_WORKERS` ⇒ 判定面并行度无从判定")
+    m = _PARALLEL_RE.search(script_text)
+    if not m:
+        problems.append(f"`{SCRIPT_REL}` 里 `PARALLEL_WORKERS` 不是模块级整数字面量 ⇒ 判据无从复算")
+    elif int(m.group(1)) < RUNNER_VCPUS:
+        problems.append(f"`PARALLEL_WORKERS = {m.group(1)}` < runner 的 {RUNNER_VCPUS} vCPU "
+                        "⇒ 判定面跑不满一台 runner（本腿撞上限的形态）")
+    # argv 必须真的把并行度接进 pytest（只声明常量不接线 = 死声明）
+    if not re.search(r'"-n"\s*,\s*str\(PARALLEL_WORKERS\)', script_text):
+        problems.append(f"`{SCRIPT_REL}` 没有把并行度接进 pytest argv（缺 `\"-n\", str(PARALLEL_WORKERS)`）"
+                        "⇒ 常量是死声明，判定面仍串行")
+    if "notes.append(XDIST_MISSING_NOTE)" not in script_text:
+        problems.append("缺 xdist 时的降级路径没有**出声**说明（`notes.append(XDIST_MISSING_NOTE)` 缺）"
+                        "⇒ 「慢回去」会静默发生（§23 G6：没跑 / 退化必须长得像没跑 / 退化）")
+    return problems
+
+
+class TestUpperBoundIsDerivedFromWorkload:
+    """判据 20~21：上限是**算出来的**，且判定面真的并行跑（issue #6312）。"""
+
+    def test_real_tree_satisfies_the_bound(self):
+        doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+        script_text = SCRIPT.read_text(encoding="utf-8")
+        assert upper_bound_problems(doc, script_text) == [], "\n".join(upper_bound_problems(doc, script_text))
+        assert parallel_problems(script_text) == [], "\n".join(parallel_problems(script_text))
+
+    #: 变异锚点 ⇒（脚本文本, 期望红）。锚点**逐字只出现一次**（下方断言把关）。
+    BOUND_MUTATIONS = {
+        # ① 把上限改回病态值 15（本单的主诉：15 = 掐死点）
+        "timeout_back_to_15": ("    timeout-minutes: 45", "    timeout-minutes: 15"),
+        # ② 摘掉上限读数源（判定本体拿不到数 ⇒ 自证退化成没数据可判）
+        "timeout_env_removed": ("  MIGAO_JOB_TIMEOUT_MINUTES: '45'\n", ""),
+        # ③ 两边分叉（job 45 / env 30）⇒ 自证的是另一个数
+        "timeout_env_diverges": ("  MIGAO_JOB_TIMEOUT_MINUTES: '45'", "  MIGAO_JOB_TIMEOUT_MINUTES: '30'"),
+        # ④ 把派生式拉低到低于上界（`* 2` → `* 1` = 只算一片）
+        "bound_shrunk_to_one_shard": ("MIN_TIMEOUT_MINUTES = PEER_HELPER_JOB_TIMEOUT_MINUTES * 2",
+                                      "MIN_TIMEOUT_MINUTES = PEER_HELPER_JOB_TIMEOUT_MINUTES * 1"),
+        # ⑤ 派生式改成裸数字（脚本与 workflow 各说各话）
+        "bound_becomes_a_bare_number": ("MIN_TIMEOUT_MINUTES = PEER_HELPER_JOB_TIMEOUT_MINUTES * 2",
+                                        "MIN_TIMEOUT_MINUTES = 45"),
+        # ⑥ 运行期自证被摘掉（声明值不再流到判定本体 ⇒ 「上限 ≥ 上界」退回纸面约定）
+        "self_check_unwired": ("    problem = _check_declared_timeout()", "    problem = None"),
+    }
+    #: 摘掉并行（本单的另一半）：判定面回到串行
+    PARALLEL_MUTATIONS = {
+        "parallel_flag_dropped": ('argv += ["-n", str(PARALLEL_WORKERS)]', "pass  # 并行被摘掉"),
+        "parallel_workers_lowered": ("PARALLEL_WORKERS = 4", "PARALLEL_WORKERS = 1"),
+        "xdist_note_removed": ("notes.append(XDIST_MISSING_NOTE)",
+                               "notes.append('（降级说明被摘掉）')"),
+    }
+    #: 每种变异作用于**哪个**文件（上界是「两边绑在一起」的不变量，单改任一边都必须红）。
+    BOUND_TARGETS = {
+        "timeout_back_to_15": "workflow",
+        "timeout_env_removed": "workflow",
+        "timeout_env_diverges": "workflow",
+        "bound_shrunk_to_one_shard": "script",
+        "bound_becomes_a_bare_number": "script",
+        "self_check_unwired": "script",
+    }
+
+    @pytest.mark.parametrize("name", sorted(BOUND_MUTATIONS))
+    def test_each_bound_mutation_turns_it_red(self, name):
+        """**红证**：上限变小 / 被摘掉 / 派生式分叉 / 自证没接线 —— 各能单独判红（§23.8 B3 同族：
+        只改一侧 ⇒ 静默分叉，所以两侧各有一条）。"""
+        old, new = self.BOUND_MUTATIONS[name]
+        target = SCRIPT if self.BOUND_TARGETS[name] == "script" else WORKFLOW
+        text = target.read_text(encoding="utf-8")
+        assert text.count(old) == 1, f"变异锚点失配（{name}）：{old!r} 在 {target.name} 里出现 {text.count(old)} 次"
+        mutated = text.replace(old, new, 1)
+        assert mutated != text, "变异没落到文本上（红证会是空断言）"
+        doc = yaml.safe_load(mutated if target is WORKFLOW else WORKFLOW.read_text(encoding="utf-8"))
+        script_text = mutated if target is SCRIPT else SCRIPT.read_text(encoding="utf-8")
+        assert upper_bound_problems(doc, script_text) != [], f"{name} 注入后判据没红 ⇒ 空断言"
+
+    @pytest.mark.parametrize("name", sorted(PARALLEL_MUTATIONS))
+    def test_each_parallel_mutation_turns_it_red(self, name):
+        """**红证**：摘掉 `-n` / 把并行度降到 1 / 摘掉降级说明**那一处调用** —— 各能单独判红。"""
+        old, new = self.PARALLEL_MUTATIONS[name]
+        text = SCRIPT.read_text(encoding="utf-8")
+        assert text.count(old) == 1, f"变异锚点失配（{name}）：{old!r} 出现 {text.count(old)} 次"
+        mutated = text.replace(old, new, 1)
+        assert mutated != text, "变异没落到文本上（红证会是空断言）"
+        assert parallel_problems(mutated) != [], f"{name} 注入后判据没红 ⇒ 空断言"
+
+    def test_script_declared_bound_constant_is_wired(self):
+        """判据 21 的**接线**面：脚本里那三个常量必须**可现取**（不是塞在函数体里的局部量），
+        且运行期自证必须**真的被调用**（`_check_declared_timeout()` 在 `main()` 里）——
+        常量被写出来却没人读 = 死声明，判据不许把死声明读成达标。"""
+        script_text = SCRIPT.read_text(encoding="utf-8")
+        for name in ("PEER_HELPER_JOB_TIMEOUT_MINUTES", "WORKLOAD_BOUND_SHARDS", "MIN_TIMEOUT_MINUTES"):
+            assert name in SCRIPT_SOURCE_CONSTANTS, f"常量 {name} 没登记进 `SCRIPT_SOURCE_CONSTANTS`"
+        assert _MIN_TIMEOUT_RE.search(script_text) and _BOUND_SHARDS_RE.search(script_text), \
+            "模块级常量取不到（被挪进函数体 / 改名）⇒ 判据退化成空断言"
+        assert re.search(r"^\s*problem\s*=\s*_check_declared_timeout\(\)\s*$", script_text, re.M), \
+            "运行期自证 `_check_declared_timeout()` 没在 `main()` 里被调用（声明值不再流到判定本体）"
+        assert "declared_timeout_problem" in script_text, "纯函数式的判定谓词不存在"
+
+    def test_comment_only_change_does_not_turn_red(self):
+        """**对照读数**：只改注释 ⇒ **不**红（§23.4 T2：判据不许被自己的说明文字喂红）。"""
+        doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+        script_text = SCRIPT.read_text(encoding="utf-8")
+        noisy_wf = WORKFLOW.read_text(encoding="utf-8").replace(
+            "  verify:", "  # 注释里提到 timeout-minutes: 45 与 ci workflow helper unit tests 都不算实现\n  verify:", 1)
+        noisy_script = script_text.replace(
+            "PARALLEL_WORKERS = 4", "# 注释里提到 PARALLEL_WORKERS = 1 不算实现\nPARALLEL_WORKERS = 4", 1)
+        assert upper_bound_problems(yaml.safe_load(noisy_wf), noisy_script) == [], \
+            "只加注释却判红 ⇒ 判据在读原文"
+        assert parallel_problems(noisy_script) == [], "只加注释却判红 ⇒ 判据在读原文"
+        assert upper_bound_problems(doc, script_text) == [], "基线本身应当绿"
+
+    def test_runtime_declared_timeout_self_check_goes_red(self, tmp_path):
+        """**行为级红证**：给腿**真传**一个病态上限（15）⇒ `rc=1` + 具名归因；正常值 ⇒ 照旧跑。
+
+        为什么还要这一层：上面几条只判**结构**（YAML 的值 + 脚本里的派生式）。这一条证明
+        「声明值**真的**流到判定本体、且真的会拦」—— 否则「上限 ≥ 上界」只是一句纸面约定
+        （`migao-acceptance` 的「修复必须重放」同族）。
+        ⚠️ 用**外部子进程 + 真 env**（不走 pytest 的 monkeypatch）：xdist worker 里改 `os.environ`
+        不保证传到 `subprocess` 拉起的解释器，那会让红证变成「测的是测试自己的注入」（假红/假绿）。
+        """
+        repo = _fixture(tmp_path)
+        env = dict(os.environ)
+
+        def run_with(timeout_value: str) -> tuple[int, str, dict]:
+            env["MIGAO_JOB_TIMEOUT_MINUTES"] = timeout_value
+            proc = subprocess.run(
+                [sys.executable, str(SCRIPT), "--repo", str(repo), "--list-only", "--lookback", "1",
+                 "--json", str(repo / "selfcheck.json")],
+                capture_output=True, text=True, cwd=str(repo), env=env)
+            return proc.returncode, (proc.stdout or "") + (proc.stderr or ""), {}
+
+        # ① 注入病态上限 15 ⇒ 必须 rc=1 且具名（点名病态值与上界）
+        rc_bad, out_bad, _ = run_with("15")
+        assert rc_bad == 1, f"注入 `timeout-minutes: 15` 后 rc={rc_bad}（应 1）—— 自证没接线：{out_bad[:300]!r}"
+        upper = str(_leg().MIN_TIMEOUT_MINUTES)
+        assert "15" in out_bad and upper in out_bad, \
+            f"归因串没点名病态值与上界 {upper}（不可行动）：{out_bad[:300]!r}"
+        # ② 对照读数：正常上限 ⇒ 不拦（`--list-only` 便宜，不真跑判据）
+        rc_ok, out_ok, _ = run_with(upper)
+        assert rc_ok == 0, f"正常上限下 `--list-only` rc={rc_ok}（应 0）：{out_ok[:300]!r}"
+        # ③ 缺变量（本地手跑）⇒ 也不拦
+        env.pop("MIGAO_JOB_TIMEOUT_MINUTES", None)
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPT), "--repo", str(repo), "--list-only", "--lookback", "1"],
+            capture_output=True, text=True, cwd=str(repo), env=env)
+        assert proc.returncode == 0, f"缺上限变量时 rc={proc.returncode}（本地手跑被误伤）：{proc.stdout[:200]!r}"
+
+
+class TestWorkloadSurfaceIsBoundedByConstruction:
+    """判据 22：判定面的**全量**是耗时上界（最坏窗口 = 全中），上限只需覆盖**它**。
+
+    为什么不是空断言：判定面的**最坏形态**不是估算出来的 —— 它是「窗口里每个判据文件都被选中」，
+    而选中规则是 `_referenced()` 做的**确定性** AST 匹配（`pr-check.yml` 那条 #5396 的形态：
+    一条判据引用 45 个文件 ⇒ 一个文件就能让该判据入选）。⇒ 上界 = **全量判据面**，
+    常数 = `(文件数 / 并行度) × 每文件工作量常数`，全部与负载无关。
+    """
+
+    #: 单 worker 每分钟能跑的**用例数**（**声明值，不是挂钟读数**）：判据面是纯 CPU / 子进程绑定，
+    #: `pr-check.yml` 的 helper 腿已有 `-n 4` 的库存台账（`helper_leg_shape_ledger.json`）。
+    #: 取值**保守于**该腿的实际吞吐（同一 runner 规格：一片 ≈3231 条 / 4 路 ≈5 分钟 ⇒ ≈160 条/分
+    #: /worker；这里取 100）—— 判的是「上限与声明的工作量自洽」，不是实测量。
+    TESTS_PER_WORKER_MINUTE = 100
+
+    def test_declared_timeout_covers_the_worst_case_face(self):
+        """最坏窗口 = 判定面**全中**；上限必须盖住「全量判据面 + 4 路并行」的工作量。
+
+        复算（零 LLM、确定性）：`ceil(判据文件数 × 每文件用例数 / 并行度 / 每 worker 每分钟用例数)`
+        —— 全部量都**现取**（文件数 = 目录现取；每文件用例数 = 冻结库存 / 文件数，取整往上），
+        没有一个是实测时长。同时断言「上限 ≥ 声明的最小上限」（= 2 × 对等腿单片上限）——
+        即 `timeout-minutes: 15` 那种「回到病态值」在本判据下**必红**。
+        """
+        doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+        declared = _declared_workload_bound(doc)
+        assert declared is not None and declared.isdigit(), f"job 上限不是字面整数：{declared!r}"
+        source = str((doc.get("env") or {}).get(TIMEOUT_ENV) or "")
+        assert source == declared, f"上限两边分叉：env={source!r} / job={declared!r}"
+        files = sorted(p.name for p in (REPO / FACE_DIR).glob("test_*.py"))
+        assert files, f"判定面为空：{REPO / FACE_DIR}（本判据无从判定 ⇒ 大声失败）"
+        workers = int(_PARALLEL_RE.search(SCRIPT.read_text(encoding="utf-8")).group(1))
+        inventory = json.loads((REPO / FACE_DIR / "helper_leg_shape_ledger.json").read_text(encoding="utf-8"))
+        total_cases = int((inventory.get("frozen_inventory") or {}).get("collected_total") or 0)
+        assert total_cases > 0, "冻结库存取不到（= 0）⇒ 本判据会退化成空断言（fail-closed 判红）"
+        cases_per_file = -(-total_cases // len(files))
+        need = -(-(len(files) * cases_per_file) // (workers * self.TESTS_PER_WORKER_MINUTE))
+        _, _, peer_bound = _peer_workload_bound(doc)
+        assert int(source) >= max(need, peer_bound), (
+            f"上限 {source} 盖不住工作量：判定面 {len(files)} 个判据文件 × "
+            f"{cases_per_file} 用例/文件 / {workers} 路并行 / 每 worker 每分钟 {self.TESTS_PER_WORKER_MINUTE} 条 "
+            f"⇒ 需要 {need} 分钟；且必须 ≥ 对等腿两片之和 {peer_bound} 分钟（issue #6312）"
+        )
+
+    def test_cost_ledger_hard_kill_ceiling_stays_in_sync(self):
+        """**与既有契约对齐**：`timeout-minutes` 是全仓成本台账的读数字段 ⇒ 台账必须同步更新。
+
+        仓库契约（`tests/unit_ci_workflows/test_ci_cost_ledger.py::test_hard_kill_ceiling_matches_workflow_verbatim`）：
+        `ci_cost_ledger.json` 的 `hard_kill_seconds` == 现取 `timeout-minutes × 60`。
+        本腿抬上限 ⇒ **必须**同批把该条更新（否则那条判据红 —— 本单实测踩过：台账里还写着 900）。
+        为什么这一条放在这里：抬上限的人只会打开本文件与 workflow，不一定会想到成本台账 ——
+        把「抬起必须同步」钉在**同一个判据文件**里，才拦得住下一次。
+        """
+        doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+        declared = _declared_workload_bound(doc)
+        ledger = json.loads((REPO / FACE_DIR / "ci_cost_ledger.json").read_text(encoding="utf-8"))
+        entry = next((leg for leg in ledger.get("legs") or []
+                      if leg.get("workflow") == WORKFLOW.name and leg.get("job") == "verify"), None)
+        assert entry and entry.get("hard_kill_seconds") == int(declared) * 60, (
+            f"成本台账里没有 `{WORKFLOW.name}::verify` 条目（⇒ 抬上限没有**承接面**，fail-closed），"
+            f"或它的 `hard_kill_seconds` = {(entry or {}).get('hard_kill_seconds')} != 现取 `timeout-minutes "
+            f"{declared} × 60` = {int(declared) * 60} ⇒ 那条既有判据会红"
+            f"（修法：把该条改成 {int(declared) * 60} 并把 `hard_kill_source` 写成现取的 `timeout-minutes`）"
+        )
+        assert str(declared) in str(entry.get("hard_kill_source") or ""), (
+            f"`hard_kill_source` 没说清上限从哪来（现为 {entry.get('hard_kill_source')!r}）"
+        )
+
 
 def test_deps_and_judging_step_share_one_interpreter():
     import re

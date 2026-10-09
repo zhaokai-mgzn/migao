@@ -31,3 +31,4 @@
 {"id":"1791426366.99902.18932","ts":"2026-10-08T02:26:07Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6529-image-lines-no-match","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791532737.39753.13592","ts":"2026-10-09T07:58:58Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6589-logistics-collapsed-summary","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791536614.78708.8250","ts":"2026-10-09T09:03:35Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6595-proc-doc-missing-cell","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791545927.47376.15503","ts":"2026-10-09T11:38:48Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6312-post-merge-verify","why":"子包 worktree 直跑全量（无批次标记）"}
