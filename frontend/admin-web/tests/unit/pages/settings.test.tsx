@@ -211,8 +211,26 @@ vi.mock('@/components/production-config/FeeCombinationsPanel', () => ({
     <div data-testid="stub-fee-combinations" data-embedded={String(!!embedded)} />
   ),
 }))
-vi.mock('@/components/production-config/ProcessConfigBoard', () => ({
-  default: () => <div data-testid="stub-process-config-board" />,
+// v2（#6585）：生产执行三个域各自挂**独立面板**（不再整块挂自带页签的 board）
+vi.mock('@/components/production-config/OperationPricePanel', () => ({
+  OperationPricePanel: ({ embedded }: { embedded?: boolean }) => (
+    <div data-testid="stub-operation-price-panel" data-embedded={String(!!embedded)} />
+  ),
+}))
+vi.mock('@/components/production-config/RoutingsPanel', () => ({
+  RoutingsPanel: ({ embedded }: { embedded?: boolean }) => (
+    <div data-testid="stub-routings-panel" data-embedded={String(!!embedded)} />
+  ),
+}))
+vi.mock('@/components/production-config/CuttingHeightPanel', () => ({
+  CuttingHeightPanel: ({ embedded }: { embedded?: boolean }) => (
+    <div data-testid="stub-cutting-height-panel" data-embedded={String(!!embedded)} />
+  ),
+}))
+vi.mock('@/components/production-config/CalcFormulaPanel', () => ({
+  CalcFormulaPanel: ({ embedded }: { embedded?: boolean }) => (
+    <div data-testid="stub-calc-formula-panel" data-embedded={String(!!embedded)} />
+  ),
 }))
 
 import SettingsPage from '@/app/(dashboard)/settings/page'
@@ -363,7 +381,7 @@ describe('判据 3：首屏只挂当前域（不把 8 个域的表单全渲染�
     }
     // 非当前域的表单**不挂载**（不是 CSS 藏起来）
     expect(screen.queryByTestId('stub-processing-board')).toBeNull()
-    expect(screen.queryByTestId('stub-process-config-board')).toBeNull()
+    expect(screen.queryByTestId('stub-routings-panel')).toBeNull()
     expect(screen.queryByTestId('worker-page-config')).toBeNull()
     expect(screen.queryByTestId('param-remnant-specs')).toBeNull()
   })
@@ -386,15 +404,23 @@ describe('判据 3：首屏只挂当前域（不把 8 个域的表单全渲染�
     fireEvent.click(domainNav('processing-items'))
     expect(screen.getByTestId('stub-processing-items')).toBeInTheDocument()
     expect(screen.queryByTestId('stub-fee-combinations')).toBeNull()
-    expect(screen.queryByTestId('stub-process-config-board')).toBeNull()
+    expect(screen.queryByTestId('stub-routings-panel')).toBeNull()
 
     fireEvent.click(domainNav('fee-combinations'))
     expect(screen.getByTestId('stub-fee-combinations')).toBeInTheDocument()
     expect(screen.queryByTestId('stub-processing-items')).toBeNull()
 
     fireEvent.click(domainNav('craft-route'))
-    expect(screen.getByTestId('stub-process-config-board')).toBeInTheDocument()
-    expect(screen.queryByTestId('stub-processing-items')).toBeNull()
+    expect(screen.getByTestId('stub-routings-panel')).toBeInTheDocument()
+    expect(screen.queryByTestId('stub-operation-price-panel')).toBeNull()
+
+    fireEvent.click(domainNav('operation-prices'))
+    expect(screen.getByTestId('stub-operation-price-panel')).toBeInTheDocument()
+    expect(screen.queryByTestId('stub-routings-panel')).toBeNull()
+
+    fireEvent.click(domainNav('cutting-height'))
+    expect(screen.getByTestId('stub-cutting-height-panel')).toBeInTheDocument()
+    expect(screen.queryByTestId('stub-operation-price-panel')).toBeNull()
 
     fireEvent.click(domainNav('remnant-sizes'))
     expect(await screen.findByTestId('param-remnant-specs')).toBeInTheDocument()
@@ -424,7 +450,7 @@ describe('判据 4：URL —— `?domain=` 直达 + 旧 `?tab=` 逐条映射且*
     mockSearchParams.mockReturnValue(new URLSearchParams('domain=craft-route'))
     render(<SettingsPage />)
     expect(await screen.findByTestId('config-domain-panel-craft-route')).toBeInTheDocument()
-    expect(screen.getByTestId('stub-process-config-board')).toBeInTheDocument()
+    expect(screen.getByTestId('stub-routings-panel')).toBeInTheDocument()
   })
 
   it('旧深链 `?tab=params` ⇒ 算料口径域（**不**再 replace 跳走；旧的 `/settings/params` 面已并入本页）', async () => {
@@ -727,7 +753,9 @@ describe('判据 7：域内零 tab（两层导航并存 = 用户说的「分不�
    *
    * 每搬完一个域就从这里删一行 —— 留着一个已经拆好的条目 = 台账腐坏（下面的「无幽灵」断言会红）。
    */
-  const TABS_NOT_YET_SPLIT = ['operation-prices', 'craft-route', 'cutting-height']
+  // 🔴 **2026-10-09（#6585）台账已清零** —— 11 个域全部拆到功能粒度，域内不再有第二层导航。
+  // 这份清单**只许为空**：将来若真出现「拆不动」的域，必须在这里具名登记 + 在 PR 里说清为什么。
+  const TABS_NOT_YET_SPLIT: string[] = []
 
   it('除已登记的未拆域外，**每个域的面板里都没有 `role="tablist"`**', async () => {
     render(<SettingsPage />)

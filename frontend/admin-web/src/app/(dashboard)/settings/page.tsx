@@ -69,7 +69,10 @@ import { RemnantItemSizesPanel } from '@/components/settings/RemnantItemSizesPan
 import { ConfigReadinessBar } from '@/components/settings/ConfigReadinessBar'
 import ProcessingItemsPanel from '@/components/production-config/ProcessingItemsPanel'
 import FeeCombinationsPanel from '@/components/production-config/FeeCombinationsPanel'
-import ProcessConfigBoard from '@/components/production-config/ProcessConfigBoard'
+import { OperationPricePanel } from '@/components/production-config/OperationPricePanel'
+import { RoutingsPanel } from '@/components/production-config/RoutingsPanel'
+import { CuttingHeightPanel } from '@/components/production-config/CuttingHeightPanel'
+import { CalcFormulaPanel } from '@/components/production-config/CalcFormulaPanel'
 import { readImageDimensions } from '@/lib/image-dimensions'
 import { getBminiH5Url } from '@/lib/bmini-h5-url'
 import { usePermission } from '@/lib/permission'
@@ -373,11 +376,18 @@ export default function SettingsPage() {
             </div>
 
             {activeDomain.key === 'calc' && (
-              <CalcCaliberPanel calc={calc} calcError={calcError} loading={readinessLoading} />
+              <div className="space-y-6">
+                <CalcCaliberPanel calc={calc} calcError={calcError} loading={readinessLoading} />
+                {/* 公式编辑：v1 时它在功能体的「算料配置」页签里，与左栏「算料口径」域编辑同一份配置
+                    （`craft-calc-config`）⇒ 设计判死线第 1 条。v2 把它并进本域，功能体那份随之删除。 */}
+                <CalcFormulaPanel embedded />
+              </div>
             )}
             {activeDomain.key === 'processing-items' && <ProcessingItemsPanel embedded />}
             {activeDomain.key === 'fee-combinations' && <FeeCombinationsPanel embedded />}
-            {activeDomain.key === 'craft-route' && <ProcessConfigBoard embedded />}
+            {activeDomain.key === 'operation-prices' && <OperationPricePanel embedded />}
+            {activeDomain.key === 'craft-route' && <RoutingsPanel embedded />}
+            {activeDomain.key === 'cutting-height' && <CuttingHeightPanel embedded />}
             {activeDomain.key === 'remnant-sizes' && (
               <RemnantItemSizesPanel copy={REMNANT_PARAM_COPY} />
             )}
