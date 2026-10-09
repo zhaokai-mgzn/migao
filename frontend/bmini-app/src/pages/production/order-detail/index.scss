@@ -102,4 +102,36 @@
     font-size: 26px;
     color: #5b6570;
   }
+
+  /* 「卡在哪」块（issue #6597）：读数全部来自服务端，这里只管排版 ——
+     抬头一句（不随卡点数增长），逐条各一行。 */
+  &__stuck-summary {
+    display: block;
+    margin-top: 8px;
+    font-size: 26px;
+    color: #5b6570;
+    line-height: 1.6;
+  }
+
+  &__stuck-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-top: 12px;
+  }
+
+  &__stuck-op {
+    flex: 1 1 auto;
+    margin-right: 16px;
+    font-size: 30px;
+    color: #0a2540;
+    word-break: break-all;
+  }
+
+  &__stuck-wait {
+    flex: 0 0 auto;
+    font-size: 28px;
+    color: #d92d20;
+    white-space: nowrap;
+  }
 }

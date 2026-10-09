@@ -143,9 +143,14 @@
   }
 
   &__tag {
-    width: 64px;
+    /* issue #6597：标签文案由**服务端**下发（`type_label`），长度不固定
+       （「卡在哪」3 字 = 24px × 3 = 72px）—— 原 `width: 64px` 装不下 ⇒ 折成两行。
+       口径：宽度**自适应** + `white-space: nowrap`（不换行、不截断、不缩字）；
+       高度/视觉仍 40px（与「待发货」等标签对齐），左右留内边距。 */
     height: 40px;
+    padding: 0 12px;
     border-radius: 8px;
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -155,6 +160,7 @@
     &-text {
       font-size: 24px;
       color: #1a73e8;
+      white-space: nowrap;
     }
   }
 
