@@ -7,6 +7,7 @@ import com.migao.admin.dto.ProductResponse;
 import com.migao.admin.dto.ProductSkuResponse;
 import com.migao.admin.dto.agent.AgentProductCreateRequest;
 import com.migao.admin.dto.agent.AgentProductUpdateRequest;
+import com.migao.admin.service.ClientRequestIdService;
 import com.migao.admin.service.ProductService;
 import com.migao.admin.security.RequirePermission;
 import lombok.RequiredArgsConstructor;
@@ -42,14 +43,20 @@ public class AgentProductController {
     /**
      * Agent 专用创建商品。
      * POST /api/admin/agent/products
+     *
+     * <p>幂等（issue #6209）：请求头 {@code X-Client-Request-Id} 非空时按 {@code (tenantId, 键)}
+     * 去重，与表单入口 {@code POST /api/admin/products} 共用同一份实现与同一端点标识。</p>
      */
     @PostMapping
     @RequirePermission("product:create")
-    public ApiResponse<ProductResponse> createProduct(@RequestBody AgentProductCreateRequest request) {
+    public ApiResponse<ProductResponse> createProduct(
+            @RequestBody AgentProductCreateRequest request,
+            @RequestHeader(value = ClientRequestIdService.HEADER, required = false) String clientRequestId) {
         Long tenantId = TenantContext.getTenantId();
-        log.info("[Agent] 创建商品: name={}, tenantId={}", request.getName(), tenantId);
+        log.info("[Agent] 创建商品: name={}, tenantId={}, clientRequestId={}",
+                request.getName(), tenantId, clientRequestId);
         try {
-            ProductResponse result = productService.createProductForAgent(request, tenantId);
+            ProductResponse result = productService.createProductForAgent(request, tenantId, clientRequestId);
             return ApiResponse.success(result);
         } catch (Exception e) {
             log.warn("[Agent] 创建商品失败: {}", e.getMessage());

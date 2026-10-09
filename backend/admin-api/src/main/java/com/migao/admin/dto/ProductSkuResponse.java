@@ -1,6 +1,7 @@
 package com.migao.admin.dto;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Data;
@@ -58,8 +59,10 @@ public class ProductSkuResponse {
     private String skuCode;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonDeserialize(using = LenientOffsetDateTimeDeserializer.class)
     private OffsetDateTime createdAt;
 
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonDeserialize(using = LenientOffsetDateTimeDeserializer.class)
     private OffsetDateTime updatedAt;
 }

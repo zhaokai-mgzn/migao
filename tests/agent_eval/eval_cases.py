@@ -6223,6 +6223,25 @@ _CASE_MC_087 = EvalCase(
     precondition='本用例是 [backend-contract] 纯静态 + 桩化执行式用例：前置 = `deploy/swas/deploy.sh` / `deploy/scripts/swas-deploy-ci.sh` 在场且可 `bash -n`；执行式判据在 `tmp_path` 里用桩 `df`/`docker`/`curl`/`flock`/`timeout`/`aliyun` 跑**真实**脚本（零网络、零真机、零删除）。前置由判据自身持有：文件缺失 / 脚本语法坏 / 桩取不到 ⇒ 当场红（不表现成「agent 不干活」）；agent-eval 栈不跑它',
 )
 
+# ── MC-088 [NORMAL] 写面幂等接线覆盖率的类级元守卫（issue #6209）：凡消费同一份 ClientRequestIdService 的写面必须登记；读了 X-Client-Request-Id 却不接点位 ⇒ 红；豁免只许缩短；禁新造第二套幂等框架（源: cases/misc.yml）──
+_CASE_MC_088 = EvalCase(
+    id='MC-088',
+    legacy_id='',
+    title='写面幂等接线覆盖率的类级元守卫（issue #6209）：凡消费同一份 ClientRequestIdService 的写面必须登记；读了 X-Client-Request-Id 却不接点位 ⇒ 红；豁免只许缩短；禁新造第二套幂等框架',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['issue #6209 边界：与上一轮发货面 K3b-1 同族 ⇒ 修复时一并核对同一机制在各写面的接入覆盖率，并把覆盖率落成类级元守卫（漏接即红）'],
+    expectations=[],
+    data_checks=['**判据 1·未登记即红**：现取 admin-api 主源里出现幂等消费形态（`clientRequestIdService.claim|complete|discard|replay(`）的每个 .java 必须登记在台账 `consume_sites`（issue #6209 台账 = tests/unit_ci_workflows/idempotency_writeface_ledger.json）。', '**判据 2·登记未被兑现即红**：每条登记的 `anchor` 必须在该文件里逐字出现（摘掉/改名接线 ⇒ 具名报出）。实测注入：把 ProductService 的 anchor 改成 `…ENDPOINT_DOES_NOT_EXIST` ⇒ `VIOLATION: 登记未被兑现即红：…ProductService.java 里逐字找不到 anchor「…」`。', '**判据 3·陈旧条目即红（台账只许缩短）**：台账里的文件必须仍被现取扫描到。', '**判据 4·声明侧闭合（#6209 的原始形态）**：读了 ClientRequestIdService.HEADER 的文件必须落在「自己消费 / 透传下游 / 缺口登记」三处之一 —— `ProductController` 改前正是「读了头、服务端没去重」，属此形态。', '**判据 5·豁免只许缩短**：`declared_but_unwired` 条数 ≤ 冻结基线（条数现取打印；本包落地时为 0 条 —— 现取声明面 7 个文件全部闭合）。', '**判据 6·同一份实现**：ClientRequestIdService 类文件恰一个、`public boolean claim(` 定义在它里面、`client_request_keys` 的 `UNIQUE (tenant_id, client_request_id)` 在 schema 终态的建表体里 ⇒ 禁新造第二套幂等框架。', '**判据 7·共享消费下界**：现取消费文件数 ≥ 台账 `consume_floor`（本包 = 8；建品漏接后回到 7 ⇒ 红），防「悄悄摘掉某些接线」。', '**判据 8·判别力自证**：未登记 / 登记未兑现 / 陈旧条目 / 新增豁免 / 扫描面为空五种坏形态在合成语料上各自判红，合规语料不红。复算命令 `python3 -m pytest tests/unit_ci_workflows/test_idempotency_writeface_coverage.py -q -p no:cacheprovider` ⇒ 13 passed；手动入口 `python3 tests/unit_ci_workflows/test_idempotency_writeface_coverage.py` 打印现取消费面=8 / 声明面=7。', '🔴 **覆盖边界（照实登记，不粉饰）**：① 形态判据不做 AST 解析（把服务注入到别的变量名 ⇒ 判「陈旧条目」，保守方向）；② **未接幂等的建单写面**（POST /api/admin/inbound-orders、POST /api/admin/orders、POST /api/admin/products/import）连请求头都没声明 ⇒ 形态判据天然看不见，登记在台账 `_known_unguarded_write_surfaces`（本包只登记、不代修）；③ 射程 = admin-api 主源，C 端 ai-agent 生成键侧由各自用例承担。'],
+    skip_reason='[backend-contract] 纯离线静态守卫（读 Java 源码 + 台账 + schema）由 tests/unit_ci_workflows/test_idempotency_writeface_coverage.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'idempotency', 'guard', 'ledger', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='纯静态判据：零 LLM、零网络、零 DB；前置 = admin-api 主源在场且非空（扫描面为空 ⇒ 当场红，不表现成「通过」）。',
+)
+
 # ── MC-089 [NORMAL] dev-worktree 的退出码：`list` 不许因存在会话锁（哪怕全是失效锁）而 exit 1；`scripts/*.sh` 里函数体末命令不得是会被当成返回值的 `[ … ] && …` 复合形态（issue #6243）（源: cases/misc.yml）──
 _CASE_MC_089 = EvalCase(
     id='MC-089',
@@ -11548,6 +11567,24 @@ _CASE_PR_127 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-128 [NORMAL] 商品创建服务端幂等（issue #6209）：同一 X-Client-Request-Id 并发 N 次 ⇒ 恰 1 条商品 + client_request_keys 恰 1 行；不同键各建一份（负向对照）（源: cases/product.yml）──
+_CASE_PR_128 = EvalCase(
+    id='PR-128',
+    legacy_id='',
+    title='商品创建服务端幂等（issue #6209）：同一 X-Client-Request-Id 并发 N 次 ⇒ 恰 1 条商品 + client_request_keys 恰 1 行；不同键各建一份（负向对照）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['现场证据 acceptance/2026-10-03/batch-writeface-sweep/out/E1-duplicate-submit.json：同 X-Client-Request-Id 串行 1 次 ⇒ 商品 1 条，随后同键并发 5 次 ⇒ 5 个请求全 200 各返回一个新 id、落地商品 6 条、client_request_keys 0 行'],
+    expectations=[],
+    data_checks=['**判据 1·同键并发 ⇒ 恰 1 条业务对象**（真 PG，N=4 × 3 轮）：`ProductCreateIdempotencyRealDbTest#concurrentSameKeyCreatesExactlyOneProduct` 断言 products 该货号恰 1 行、所有成功结果的 id 同一个、至少 1 个 replayed=true、赢家的 SKU 恰 1 行。改后逐字读数 `[READING #6209 同键并发 r=0/1/2] 请求=4 成功=4 回放=3 不同id=1 商品行=1 幂等键行=1 SKU行=1`。', '**判据 2·幂等留痕**：`client_request_keys` 该 (tenant_id, client_request_id) 恰 1 行（endpoint = ProductService.ENDPOINT_CREATE_PRODUCT）。改前现场读数是 **0 行**（写面从未接幂等）。', '**判据 3·负向对照（防「一律只建一条」的假修）**：`ProductCreateIdempotencyRealDbTest#concurrentDistinctKeysEachCreateTheirOwnProduct` —— N=4 **不同**键并发 ⇒ 4 条独立商品 + 4 行幂等键，逐字读数 `[READING #6209 不同键并发] 成功=4 不同id=4 商品行=4 幂等键行=4`。', '**判据 4·服务方法三态接线**：`ProductCreateIdempotencyTest`（claim 判非首次 ⇒ replay 且零 insert；首次 ⇒ insert 1 次 + complete；无键 ⇒ 零幂等交互；失败 ⇒ discard 不 complete）。', '**判据 5·端点接线 + 回放标记冒到 HTTP 层**：`ProductCreateIdempotencyEndpointTest`（真 MockMvc，3 条）—— 带 X-Client-Request-Id ⇒ 头值逐字传到 ProductService#createProduct；回放响应 ⇒ `$.data.replayed == true`（服务端标记必须能冒到 HTTP 层）；不带头 ⇒ 传 null 且 `$.data.replayed` **不存在**（`@JsonInclude(NON_NULL)`，老客户端路径逐字不变）。服务级判据看不见这一层（现场读数与「从没接幂等」逐字相同）。', '**判据 6·回放标记与线上时间格式都保住**：ProductResponse 加 `replayed`（回放=true 才出现，与订单/售后同族）；三个 DTO 的 `@JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")` **一字未改**（线上时间格式不变），回放路径用 `LenientOffsetDateTimeDeserializer` 反序列化该展示格式。', "🔴 **红证（并发类修复必填：注入方式 + 修前逐字读数）**：① **修前红（契约点不存在）** `cd backend/admin-api && ./mvnw -o test -Dtest='ProductCreateIdempotencyTest,ProductCreateIdempotencyEndpointTest,ProductCreateIdempotencyRealDbTest'` ⇒ `COMPILATION ERROR … 找不到符号 变量 ENDPOINT_CREATE_PRODUCT` / `无法将类 ProductService 中的方法 createProduct 应用到给定类型`；② **注入式红证（接上后把去重闸摘掉）** 把 ProductService 的 `if (!clientRequestIdService.claim(tenantId, clientRequestId, ENDPOINT_CREATE_PRODUCT)) {` 改成 `if (false && …) {` ⇒ `MIGAO_REQUIRE_REALDB=1 ./mvnw -o test -Dtest=ProductCreateIdempotencyRealDbTest` = `Tests run: 2, Failures: 2`，逐字读数 `[READING #6209 同键并发 r=0] 请求=4 成功=4 回放=0 不同id=4 商品行=4 幂等键行=0 SKU行=1`（= 现场 5 并发建 6 条的同族形态）+ `expected: 1L but was: 4L` / `expected: 4L but was: 0L`；撤回注入 ⇒ 复绿。", '**改后绿读数（逐字）**：`Tests run: 10, Failures: 0, Errors: 0, Skipped: 0` + `BUILD SUCCESS`（单元 5 / 端点 3 / 真库并发 2）。', '🔴 **本次如实登记**：口径是**同一 X-Client-Request-Id 并发 N 次**（现场探针形态），本判据逐字取之；「大得多的并发（如 N=20）」与「真实网络下的前端重试」未取证。'],
+    skip_reason='[backend-contract] 幂等接线 + 真 PG 并发落库事实（无 LLM 环节）⇒ 由 Java 定点判据与真库并发判据验证，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'idempotency', 'concurrency', 'real-db', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -13937,6 +13974,7 @@ ALL_CASES = (
     _CASE_MC_085,
     _CASE_MC_086,
     _CASE_MC_087,
+    _CASE_MC_088,
     _CASE_MC_089,
     _CASE_OB_001,
     _CASE_OB_002,
@@ -14219,6 +14257,7 @@ ALL_CASES = (
     _CASE_PR_125,
     _CASE_PR_126,
     _CASE_PR_127,
+    _CASE_PR_128,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

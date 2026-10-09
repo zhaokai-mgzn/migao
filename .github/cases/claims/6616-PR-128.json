@@ -1,0 +1,6 @@
+{
+  "id": "PR-128",
+  "pr": 6616,
+  "title": "商品创建服务端幂等（issue #6209）：同一 X-Client-Request-Id 并发 N 次 ⇒ 恰 1 条商品 + client_request_keys 恰 1 行；不同键各建一份（负向对照）",
+  "claimed_at": "2026-10-09"
+}

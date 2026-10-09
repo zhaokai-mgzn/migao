@@ -3376,6 +3376,37 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: MC-088
+    legacy_id: ""
+    title: "写面幂等接线覆盖率的类级元守卫（issue #6209）：凡消费同一份 ClientRequestIdService 的写面必须登记；读了 X-Client-Request-Id 却不接点位 ⇒ 红；豁免只许缩短；禁新造第二套幂等框架"
+    domains:
+      - misc
+      - backend
+    tier: normal
+    tags: [backend-contract, idempotency, guard, ledger, red-proof]
+    truths_ref: []
+    user_inputs:
+      - "issue #6209 边界：与上一轮发货面 K3b-1 同族 ⇒ 修复时一并核对同一机制在各写面的接入覆盖率，并把覆盖率落成类级元守卫（漏接即红）"
+    expectations: []
+    data_checks:
+      - "**判据 1·未登记即红**：现取 admin-api 主源里出现幂等消费形态（`clientRequestIdService.claim|complete|discard|replay(`）的每个 .java 必须登记在台账 `consume_sites`（issue #6209 台账 = tests/unit_ci_workflows/idempotency_writeface_ledger.json）。"
+      - "**判据 2·登记未被兑现即红**：每条登记的 `anchor` 必须在该文件里逐字出现（摘掉/改名接线 ⇒ 具名报出）。实测注入：把 ProductService 的 anchor 改成 `…ENDPOINT_DOES_NOT_EXIST` ⇒ `VIOLATION: 登记未被兑现即红：…ProductService.java 里逐字找不到 anchor「…」`。"
+      - "**判据 3·陈旧条目即红（台账只许缩短）**：台账里的文件必须仍被现取扫描到。"
+      - "**判据 4·声明侧闭合（#6209 的原始形态）**：读了 ClientRequestIdService.HEADER 的文件必须落在「自己消费 / 透传下游 / 缺口登记」三处之一 —— `ProductController` 改前正是「读了头、服务端没去重」，属此形态。"
+      - "**判据 5·豁免只许缩短**：`declared_but_unwired` 条数 ≤ 冻结基线（条数现取打印；本包落地时为 0 条 —— 现取声明面 7 个文件全部闭合）。"
+      - "**判据 6·同一份实现**：ClientRequestIdService 类文件恰一个、`public boolean claim(` 定义在它里面、`client_request_keys` 的 `UNIQUE (tenant_id, client_request_id)` 在 schema 终态的建表体里 ⇒ 禁新造第二套幂等框架。"
+      - "**判据 7·共享消费下界**：现取消费文件数 ≥ 台账 `consume_floor`（本包 = 8；建品漏接后回到 7 ⇒ 红），防「悄悄摘掉某些接线」。"
+      - "**判据 8·判别力自证**：未登记 / 登记未兑现 / 陈旧条目 / 新增豁免 / 扫描面为空五种坏形态在合成语料上各自判红，合规语料不红。复算命令 `python3 -m pytest tests/unit_ci_workflows/test_idempotency_writeface_coverage.py -q -p no:cacheprovider` ⇒ 13 passed；手动入口 `python3 tests/unit_ci_workflows/test_idempotency_writeface_coverage.py` 打印现取消费面=8 / 声明面=7。"
+      - "🔴 **覆盖边界（照实登记，不粉饰）**：① 形态判据不做 AST 解析（把服务注入到别的变量名 ⇒ 判「陈旧条目」，保守方向）；② **未接幂等的建单写面**（POST /api/admin/inbound-orders、POST /api/admin/orders、POST /api/admin/products/import）连请求头都没声明 ⇒ 形态判据天然看不见，登记在台账 `_known_unguarded_write_surfaces`（本包只登记、不代修）；③ 射程 = admin-api 主源，C 端 ai-agent 生成键侧由各自用例承担。"
+    precondition: "纯静态判据：零 LLM、零网络、零 DB；前置 = admin-api 主源在场且非空（扫描面为空 ⇒ 当场红，不表现成「通过」）。"
+    skip_reason: "[backend-contract] 纯离线静态守卫（读 Java 源码 + 台账 + schema）由 tests/unit_ci_workflows/test_idempotency_writeface_coverage.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-09 新增（issue #6209，同 PR 的类级固化）。取号 = `python3 scripts/next_case_id.py mc`（main 现取 MC-001~MC-087 ⇒ 取 MC-088）。**判别力实测**（真语料注入）：把 ProductService 的登记锚改成不存在的串 ⇒ 判据 2 具名判红；撤回 ⇒ 复绿（13 passed）。改前形态（`ProductController` 读了头却不接点位）正是判据 4 要抓的那一格。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_idempotency_writeface_coverage.py"
+      ci:
+        - pr-check.yml
+      verifies: []
 
   - id: MC-089
     legacy_id: ""

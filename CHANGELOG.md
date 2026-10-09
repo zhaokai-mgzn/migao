@@ -34,6 +34,25 @@
   **有意收严**（重启条件见 PR body）：扩展名与内容不符的（如 `.png` 装 PDF、`.csv` 装 xlsx）由
   200 改为 **422** —— 否则伪装类型会被写进对象元数据、由静态托管原样回给浏览器。
 
+### 建品写面接入服务端幂等：同一次提交并发/重复到达只建一条商品（2026-10-09，issue #6209）
+
+改前：商品创建（表单 `POST /api/admin/products` 与 agent `POST /api/admin/agent/products`）
+**从未接**仓内已有的幂等机制 —— 现场读数（`acceptance/2026-10-03/batch-writeface-sweep/out/E1-duplicate-submit.json`）：
+同一个 `X-Client-Request-Id` 串行 1 次建 1 条，随后**并发 5 次**全部 200 且各返回一个新 id、
+落地商品 **6 条**、`client_request_keys` **0 行**。
+
+- 两个入口现在都把请求头 `X-Client-Request-Id` 接到既有点位 `ClientRequestIdService`
+  （与订单 / 售后 / 发货 / 报工 / 入库同一份实现、同一张 `client_request_keys` 表），
+  首次执行建品并落结果快照，同键再次到达**回放首次那条**（响应带 `replayed=true`）且不再建品；
+- **不带头 ⇒ 原路径逐字不变**（老客户端不受影响，零额外 DB 往返）；
+- 判据（会红）：真库 N=4 同键并发 × 3 轮 ⇒ 商品恰 1 条 / 幂等键恰 1 行 / 3 个请求走回放；
+  **负向对照** N=4 不同键 ⇒ 各建一份（防「一律只建一条」的假修）；
+- 类级固化：新建写面若「读了幂等请求头却不接点位」或「接了却不登记」即判红
+  （`tests/unit_ci_workflows/test_idempotency_writeface_coverage.py` + 台账
+  `tests/unit_ci_workflows/idempotency_writeface_ledger.json`）；
+- 有意未接（登记在台账缺口表、各自开单）：`POST /api/admin/inbound-orders`（入库单创建）、
+  `POST /api/admin/orders`（表单建单，agent 侧已接）、`POST /api/admin/products/import`（Excel 导入）。
+
 ### 加工单列宽按内容预算重排：批号不再折三行（2026-10-09，issue #6600）
 
 用户 2026-10-09：> 派（同意把批号列加宽）

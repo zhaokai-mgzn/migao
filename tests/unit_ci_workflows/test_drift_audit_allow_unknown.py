@@ -346,6 +346,9 @@ def test_drift_free_tree_exits_0_under_the_scheduled_leg_flags(tmp_path):
     rc, out, rep = audit(repo, "--check", "--strict-stale", "--fail-on-unknown",
                          "--only", "skill-anchor,heartbeat",
                          "--live-anchor", missing_anchor(tmp_path),
+                         # #5743：本夹具里"谁在跑"与判定无关（它只测阈值本身）⇒ 显式声明
+                         # 「本次没有宿主」，免得 CI 注入的真 `GITHUB_WORKFLOW` 把读数搅进来。
+                         "--host-workflow", "",
                          "--gh-fixture", str(fixture), "--now", "2026-09-15T06:00:00Z",
                          offline=False)
     assert rc == 0, f"无漂移的树 + 定时腿参数仍非零：rc={rc}\n{out}"

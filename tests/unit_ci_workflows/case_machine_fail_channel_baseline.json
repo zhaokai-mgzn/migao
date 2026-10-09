@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 132
+    "backend_contract_scoring_zero": 135
   },
   "history": [
     {
@@ -372,6 +372,20 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 132,
       "note": "issue #6508（磁盘水位×回收联动）+ issue #6505（被前置闸门挡住时的收口归因）新增 **MC-087**（`[backend-contract]`、`expectations: []` ⇒ 按设计不进 agent-eval，故按 `scoring_assertion_count == 0`口径计入本指标）⇒ `backend_contract_scoring_zero` 131 → 132 是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。取值 = **实测**：`python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` ⇒ `{'no_channel_total': 0, 'backend_contract_scoring_zero': 132}`，**不是**按号推算。"
+    },
+    {
+      "sha": "pending-pr-6616",
+      "date": "2026-10-09",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 134,
+      "note": "issue #6209（建品写面接入服务端幂等）新增 **PR-128** + **MC-088** 两条用例（均 `[backend-contract]`、`expectations: []` ⇒ 按设计不进 agent-eval，故按 `scoring_assertion_count == 0` 口径计入本指标）⇒ `backend_contract_scoring_zero` 132 → 134 是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。两条的机器判红通道 = `traces.tests`：PR-128 = `backend/admin-api/src/test/java/com/migao/admin/service/ProductCreateIdempotencyTest.java` + `…/ProductCreateIdempotencyRealDbTest.java` + `…/controller/ProductCreateIdempotencyEndpointTest.java`（逐条非空且真实存在，CI 腿 = pr-check.yml 的 `admin-api unit tests`）；MC-088 = `tests/unit_ci_workflows/test_idempotency_writeface_coverage.py`（CI 腿 = pr-check.yml 的 `ci workflow helper unit tests`）。取值 = **实测**：`python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` ⇒ `{'no_channel_total': 0, 'backend_contract_scoring_zero': 134}`，**不是**按号推算。"
+    },
+    {
+      "sha": "pending-pr-6621",
+      "date": "2026-10-09",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 135,
+      "note": "issue #6243（dev-worktree `list` 存在会话锁时 exit 1）新增 **MC-089**（`[backend-contract]`、`expectations: []` ⇒ 按设计不进 agent-eval，故按 `scoring_assertion_count == 0` 口径计入本指标）。⚠️ 本行是**合并 origin/main（4aa77136a，含 #6616）后**的读数：同批由 #6616 落地的 **MC-088** 与 **PR-128** 也走同一通道（132 → 134），本包再 +1 ⇒ 132 → **135** 全部是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。取值 = **实测**：`python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` ⇒ `{'no_channel_total': 0, 'backend_contract_scoring_zero': 135}`，**不是**按号推算。"
     }
   ]
 }

@@ -1,5 +1,5 @@
 {
-  "_note": "抓取时刻的 admin-api 响应契约指纹（由 tests/contracts/conftest.py 在真实抓取成功时写出）。键集现算自 Java 源码 —— 数据变化不会让它过期，契约键集变化才会。判定见 tests/test_contract_snapshot_freshness.py；刷新 = 重跑一次真实抓取。",
+  "_note": "抓取时刻的 admin-api 响应契约指纹（由 tests/contracts/conftest.py 在真实抓取成功时写出）。键集现算自 Java 源码 —— 数据变化不会让它过期，契约键集变化才会。判定见 tests/test_contract_snapshot_freshness.py；刷新 = 重跑一次真实抓取。 ⚠️ PR #6616（issue #6209）登记：本 sidecar 的 contracts 由 contract_snapshot_registry.current_fingerprint()（键集**现算自 Java 源码**，非手抄）刷新；同批**未做线上重抓**（本机无 dev 库凭据，而空库重抓会把真实缓存快照覆盖成空数据 = 回归）⇒ `captured_at` 仍是**上一次真实数据抓取**的时刻，快照数据文件未改动。有 dev 环境者按 RECAPTURE_COMMAND 重抓一次即可同时推进两者。",
   "captured_at": "2026-10-03T18:03:51+08:00",
   "contracts": {
     "api_admin_after-sales": [
@@ -188,6 +188,7 @@
       "price",
       "pricingType",
       "recommended",
+      "replayed",
       "rollLengthM",
       "salesAmount",
       "salesCount",
@@ -205,5 +206,7 @@
       "unit",
       "updatedAt"
     ]
-  }
+  },
+  "fingerprint_refreshed_at": "2026-10-09T23:02:00+08:00",
+  "fingerprint_refresh_reason": "issue #6209：ProductResponse 新增 replayed（响应契约键集推进）"
 }
