@@ -1,0 +1,6 @@
+{
+  "id": "MC-088",
+  "pr": 6616,
+  "title": "写面幂等接线覆盖率的类级元守卫（issue #6209）：凡消费同一份 ClientRequestIdService 的写面必须登记；读了 X-Client-Request-Id 却不接点位 ⇒ 红；豁免只许缩短；禁新造第二套幂等框架",
+  "claimed_at": "2026-10-09"
+}
