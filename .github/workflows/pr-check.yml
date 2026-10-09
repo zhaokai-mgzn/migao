@@ -773,6 +773,10 @@ jobs:
             // 本步只负责发布/更新（issue #5292）。两件**禁止**的事：
             // ① 读 `$GITHUB_STEP_SUMMARY` —— 逐步文件，这里读到的必然是空串（本 issue 的病根）；
             // ② 在本步按 blocker 计数自建正文 —— 第二数据源，必然与结果 JSON 漂移。
+            // 🔒 认领依据 = 唯一的 **HTML marker**（issue #6423）：`listComments` 按创建序返回（旧 → 新），
+            //    裸子串认领会让**更早**一条含这几个字的人类评论被选中并被整条覆盖（人类 durable trail 被销毁）。
+            //    marker 同时写进正文 —— `updateComment` 会整条替换 body，漏写 ⇒ 下一轮认不出自己的评论。
+            const MARKER = '<!-- qa-growth-gate-report -->';
             let body = '';
             try {
               body = fs.readFileSync('growth-gate-pr-comment.md', 'utf8');
@@ -783,6 +787,7 @@ jobs:
             if (!body.trim()) {
               body = '## ❌ QA Growth Gate — 无法生成评论正文\n\n> 结果文件缺失/不可读或渲染失败（fail-closed）；详见本 job 日志。';
             }
+            if (!body.includes(MARKER)) body = MARKER + '\n' + body;
 
             // 查找已有 QA Gate 评论 → 更新；否则创建
             const { data: comments } = await github.rest.issues.listComments({
@@ -791,7 +796,9 @@ jobs:
               issue_number: context.issue.number,
             });
 
-            const prevComment = comments.find(c => c.body.includes('QA Growth Gate'));
+            // 只认领**自己的**报告（marker），取最新一条；没有 marker 评论（含旧版无 marker 报告）⇒ **新建**
+            // —— 宁可多一条，绝不按散文标题认领去覆盖人类评论（issue #6423）。
+            const prevComment = [...comments].reverse().find(c => c.body.includes(MARKER));
             if (prevComment) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
@@ -1072,6 +1079,11 @@ jobs:
         with:
           script: |
             const fs = require('fs');
+            // 🔒 认领依据 = 唯一的 **HTML marker**（issue #6423）：`listComments` 按创建序返回（旧 → 新），
+            //    裸子串认领（旧形态 `c.body.includes('Danger Scan')`）会让**更早**一条含这几个字的
+            //    人类评论被选中并被整条覆盖 ⇒ 人类 durable trail 被销毁（#6422 实证）。
+            //    marker 同时写进正文 —— `updateComment` 会整条替换 body，漏写 ⇒ 下一轮认不出自己的评论。
+            const MARKER = '<!-- danger-scan-report -->';
             let body = '⚠️ danger-scan 报告异常';
             try {
               const r = JSON.parse(fs.readFileSync('danger-scan-result.json', 'utf8'));
@@ -1080,10 +1092,13 @@ jobs:
               for (const w of r.warnings || []) lines.push('- ⚠️ ' + w);
               body = (r.blocker_count > 0 ? '## 🔒 Danger Scan — BLOCKED' : '## ✅ Danger Scan — PASSED') + '\n\n' + (lines.join('\n') || '无');
             } catch (e) { body = '⚠️ danger-scan 输出解析失败'; }
+            body = MARKER + '\n' + body;
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,
             });
-            const prev = comments.find(c => c.body.includes('Danger Scan'));
+            // 只认领**自己的**报告（marker），取最新一条；没有 marker 评论（含旧版无 marker 报告）⇒ **新建**
+            // —— 宁可多一条，绝不按散文标题认领去覆盖人类评论（issue #6423）。
+            const prev = [...comments].reverse().find(c => c.body.includes(MARKER));
             if (prev) { await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: prev.id, body }); }
             else { await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body }); }
 
