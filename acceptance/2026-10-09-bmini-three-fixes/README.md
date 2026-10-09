@@ -49,7 +49,16 @@ PROBE_PREFIX= PROBE_OUT=/tmp/after node <repo>/acceptance/.../bmini-geometry-pro
 
 ## AFTER 读数
 
-见 `out/after/`（同一脚本、同一视口、同一组桩数据；修复分支构建产物）。
+见 `out/after-6597/`（同一脚本、同一视口、同一组桩数据；`#6597` 修复分支构建产物 `05287e043d6c7754`）：
+
+| 项 | BEFORE | AFTER（#6597 分支） | 判据 |
+|---|---|---|---|
+| `.task-item__tag` | 宽 33.3 / `lineBoxes = 2` | 宽 49.9（文本 37.5）/ **`lineBoxes = 1`** | 不折行 ⇒ 通过 |
+| 加工单详情 `stuckPointRequests` | 0 | **1** | 接上了卡点面 |
+| 加工单详情 `mentionsStuck` | false | **true**（正文出现「卡在哪 … **打包** 等了 74.6 小时」，逐字等于服务端读数） | 看得见卡在哪 |
+
+⚠️ `out/after-6597/readings.json` 里的 `chatInput` 段**不是 AFTER** —— 那个分支不含 `#6596` 的修复
+（输入条仍被底栏遮住，`coveredPx = 70`），保留它只为对照；`#6596` 的 AFTER 由该分支自己的构建复算。
 
 ## 边界（照实登记）
 

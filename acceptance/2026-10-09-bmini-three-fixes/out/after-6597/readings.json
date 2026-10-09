@@ -1,0 +1,151 @@
+{
+  "what": "AFTER 读数（issue #6597 修复分支 fix/6597-stuck-tag-and-detail 的本地 h5 构建产物）",
+  "probe": "acceptance/2026-10-09-bmini-three-fixes/bmini-geometry-probe.mjs",
+  "servedIndexSha256_16": "05287e043d6c7754",
+  "viewport": {
+    "w": 390,
+    "h": 844
+  },
+  "tagWrapVerdict": "OK",
+  "todoTags": [
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "待排产",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    }
+  ],
+  "orderDetail": {
+    "rendered": true,
+    "text": "加工单号 JG-20261006-8477 订单号 20261006497350118 客户 SD07演示客814127-095 交期 2026-10-20 工序进度 已完成 6/9 布帘 精裁 · 布帘 应做 6.2米 · 已报 6.2米 打包 应做 1套 · 已报 0套 外帘装袋 应做 1套 · 已报 0套 卡在哪 这单有 1 道卡住了（上道已交、这道没人开工，等待超过 4 小时就列在这里；系统兜底默认值） 打包 等了 74.6 小时",
+    "mentionsStuck": true,
+    "hasHeader": true,
+    "hasOperations": true,
+    "stuckPointRequests": 1
+  },
+  "chatInput": {
+    "rendered": true,
+    "tabbarTop": 794,
+    "inputBottom": 864,
+    "inputHeight": 89.4,
+    "coveredPx": 70,
+    "coveredVerdict": "COVERED",
+    "viewportHeight": 844,
+    "chatPageHeight": 864
+  },
+  "note": "chatInput 段是本分支构建的读数 —— 它**不含 #6596 的修复**（输入条仍被底栏遮住）⇒ 该段不是 AFTER，仅作对照。"
+}
