@@ -7,6 +7,19 @@
 
 ## [Unreleased]
 
+### 下单页「常用物流」收起时也把已带出的物流摆出来（2026-10-09，issue #6589）
+
+用户 2026-10-09：> 订单这里折叠情况下应该要展示隐藏的具体信息
+
+改前：「常用物流」折叠区收起时 `<summary>` 是一句**静态**提示（「常用物流（必填 · 选客户时自动带出）」），
+与内部两个控件的值零绑定 ⇒ 商家选完客户带出了物流、或自己改过，**收起时都看不出来**。
+
+- 收起态 summary 直接显示 `常用物流：快递 · 顺丰`（值走 primary 高亮，与同页 `craft-plan-current` 同一形态）；
+- 值 = `lib/logistics.ts::describeLogisticsProfile`（客户档案 / 发货页同一份口径，前端不另拼）；
+  两项都缺 ⇒ 退回通用提示 —— **不编造**默认值（「未指定」仍是真值）。
+- 判据 = `.github/cases/order.yml` 的 OR-054 判据 8（`frontend/admin-web/tests/unit/pages/orders-new-submit-gate.test.tsx`）；
+  红证 = 单点变异（`logisticsSummary` 打成空串 ⇒ 该用例 1 failed / 8 skipped）。
+
 ### 侧边栏品牌副标题直接叫「观星台」（2026-10-09，issue #6590）
 
 - **改后**：管理后台侧边栏左上角企业名下方那行灰字，由「观星台商家管理后台」改为「观星台」。

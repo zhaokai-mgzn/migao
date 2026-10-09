@@ -14,9 +14,13 @@
  *  4. 提交失败必须说清「哪儿缺」：吸底条出现**可点的错误汇总**（不再只有一句 toast）；
  *  5. 出错的**折叠区必须自动展开**（费用明细 / 物流 `<details>` / 商品组卡 / 向导步骤）——
  *     否则商家只看到 toast，屏幕上什么都没有（本文件的存在理由就是这个）。
+ *  6. **折叠态下也要看得出「已经选了什么」**（issue #6589，用户 2026-10-09 逐字：「订单这里折叠
+ *     情况下应该要展示隐藏的具体信息」）—— 物流 `<details>` 收起时 `<summary>` 直接摆出当前值，
+ *     不再只有一句通用提示；两项都缺 ⇒ 退回通用提示（**不编造**默认值，#4419）。
  *
  * 🔴 红证（改前必红）：① 未定价仍会发请求；② 无 `submit-error-summary`；
- *    ③ `logistics-section` 不会自动展开；④ 收起组卡后提交失败不会自动展开。
+ *    ③ `logistics-section` 不会自动展开；④ 收起组卡后提交失败不会自动展开；
+ *    ⑤ 收起态 `logistics-summary` 只有通用提示（issue #6589 改前形态）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
@@ -245,6 +249,36 @@ describe('下单页提交闸门（issue #5840）', () => {
     fillLogistics()
     submit()
     await waitFor(() => expect(mockCreateOrder).toHaveBeenCalledTimes(1))
+  })
+
+  // ─────────────────────────────────────────────────────────────
+  // 判据 9（2026-10-09，issue #6589）：**折叠态**下 summary 要显示已带出的**具体物流**
+  // ─────────────────────────────────────────────────────────────
+  it('折叠态 summary 显示已带出的具体物流（不是只显示通用提示）', async () => {
+    // 用户逐字：「订单这里折叠情况下应该要展示隐藏的具体信息」（红框 = 收起态的「常用物流」那一行；
+    // 截图里姓名 / 手机号 / 地址都已填好，这一行却只有静态提示 ⇒ 看不出带出的是哪一家）。
+    render(<NewOrderPage />)
+    await pickCurtain()
+    fillCustomer()
+    await settleAsyncGates()
+
+    // ① 未指定 ⇒ 退回通用提示（「未指定」是真值，不编造「快递」—— #4419 口径）
+    const summary = screen.getByTestId('logistics-summary')
+    expect(summary.textContent).toContain('常用物流（必填 · 选客户时自动带出）')
+
+    fillLogistics()
+
+    // ② **收起态**下两项当前值都看得见（改前：summary 与两个控件的值零绑定 ⇒ 只有通用提示）
+    expect((screen.getByTestId('logistics-section') as HTMLDetailsElement).open).toBe(false)
+    expect(summary.textContent).toContain('常用物流：快递 · 顺丰')
+    // 值走 primary 色系（与周围中性灰的通用提示不同一档；同 #6399 收起态读数的形态）
+    expect(summary.querySelector('span.text-primary-700')?.textContent).toBe('快递 · 顺丰')
+
+    // ③ 读数是**跟着改的值走**的（不是一份写死的快照）
+    fireEvent.change(screen.getByTestId('order-logistics-company'), {
+      target: { value: '四季安物流' },
+    })
+    expect(summary.textContent).toContain('常用物流：快递 · 四季安物流')
   })
 
   // ─────────────────────────────────────────────────────────────
