@@ -54,7 +54,7 @@
  * 键 = `仓库相对路径::形态标签` —— 故意**不带行号**（一行新增就会把台账顶失效，本仓 #4668 的教训）。
  * 登记点**不再命中**（修好了）⇒ 守卫当场红，逼着同批删干净、不留僵尸豁免；
  * **现取**值 = 0（本单修完就该是 0）—— 将来若真有不可修形态，登记时必须写明理由与**死亡条件**
- * （同族范式 = `frontend/admin-web/tests/unit/components/print-doc-zero-fallback-guard.test.ts` 的
+ * （同族范式 = `frontend/admin-web/tests/unit/lib/print-doc-paper.test.ts` 的
  * `SCOPE_TARGETS` 与 `scripts/enum-fallback-ledger.json` 的豁免口径）。
  */
 import { readFileSync } from 'node:fs'

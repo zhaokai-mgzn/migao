@@ -5,7 +5,13 @@
  * 放在 `src/lib/` 而不是 `scripts/*.mjs` 或测试文件里，是为了让**组件测试可以直接 import**
  * —— 不必 import 一个 `*.test.ts`（那会把整套判据当副作用带进来）。
  * 静态判据面（`SCOPE` / 台账 / 命中形态）在 `frontend/admin-web/scripts/print-doc-zero-fallback-scan.mjs`，
- * 类级元守卫在 `frontend/admin-web/tests/unit/print-doc-zero-fallback-guard.test.ts`。
+ * 类级元守卫在 `frontend/admin-web/tests/unit/lib/print-doc-paper.test.ts`。
+ *
+ * ⚠️ **异常消息的措辞是刻意的**（别「顺手润色」回去）：本文件里的中文串会被
+ * `tests/unit/user-copy-jargon-guard.test.ts`（`scripts/user-copy-scan.mjs` 的 R3/R5）当成
+ * 「可能上屏的文案」体检 ⇒ 消息里**不写**「判据 / issue #NNNN / `标识符`」这类形态
+ * （所以有「检查范围为空」这种说法）。改回去就是给商家看研发腔，CI 会红。
+ * 本模块是**开发者面**的调用方契约（只有各单据测试 import），不是屏幕文案。
  */
 
 /** 纸面缺值的**唯一**允许形态（与 `SalesDoc.SALES_DOC_MISSING` / `ProcessingDoc.MISSING` 同字符） */
@@ -73,7 +79,7 @@ export function paperNumericColumn(
   }
   if (picked.length === 0) {
     throw new Error(
-      `判据面为空：column=${column} / rows=${Array.isArray(rows) ? rows.join(',') : rows} ` +
+      `检查范围为空：第 ${column} 列、第 ${Array.isArray(rows) ? rows.join(',') : rows} 行 ` +
         '在容器里一个数值格都没选到（版式变了 / 传错容器）—— 空集不得被读成通过。'
     )
   }
@@ -107,7 +113,7 @@ export function assertNoPaperZeroFill(
   values: readonly string[],
   { label, presence = [] }: { label?: string; presence?: readonly string[] } = {}
 ): void {
-  if (!label) throw new Error('调用本不变量必须给 `label`（报红时要点得出是哪份单据）')
+  if (!label) throw new Error('调用本不变量必须给 label（报红时要点得出是哪份单据）')
   const where = presence.length > 0 ? `（已注入：${presence.join(' / ')}）` : ''
   const offenders = values
     .map((value) => String(value).trim())
@@ -134,16 +140,16 @@ export function assertPaperKeepsMissingDistinct(
   cells: readonly string[],
   { label, presence = [] }: { label?: string; presence?: readonly string[] } = {}
 ): void {
-  if (!label) throw new Error('调用本不变量必须给 `label`（报红时要点得出是哪份单据）')
+  if (!label) throw new Error('调用本不变量必须给 label（报红时要点得出是哪份单据）')
   const where = presence.length > 0 ? `（已注入：${presence.join(' / ')}）` : ''
   const missing = cells.filter((cell) => cell === PAPER_MISSING)
   const realZero = cells.filter((cell) => cell === '0' || cell === '0.00')
   if (missing.length === 0 || realZero.length === 0) {
     throw new Error(
-      `${label} 的纸面数值格没有把「未知」与「真 0」两种形态**同时**摆出来${where}：` +
+      `${label} 的纸面数值格没有把「未知」与「真 0」两种形态同时摆出来${where}：` +
         `读到 ${cells.length} 格，其中 ${PAPER_MISSING} × ${missing.length}、真 0 × ${realZero.length} —— ` +
-        `两边都必须有：缺 ${PAPER_MISSING} ⇒ 缺值那半没渲染（判据在空气上跑）；缺真 0 ⇒ ` +
-        '没覆盖 issue #6720 的反向对照（真 0 必须仍印 0，不许把真值判红）。'
+        `两边都必须有：缺 ${PAPER_MISSING} ⇒ 缺值那半没渲染（这条检查范围等于空跑）；缺真 0 ⇒ ` +
+        '没覆盖「真 0 必须仍印 0」的反向对照。'
     )
   }
 }

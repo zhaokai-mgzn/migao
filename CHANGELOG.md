@@ -22,7 +22,7 @@
   「缺值不印 0」一组 —— 注入缺 `amount` / `unitPrice` / `quantity` / `subtotal` 的订单行 ⇒
   逐格断言价格 / 数量 / 金额栏是 `—`（**修前红在「印了 `0.00` / `0`」这条断言上**，不是找不到元素）；
   **反向对照**同组覆盖：真 0 行仍印 `0.00` 且不得出现 `—`。
-- **类级元守卫**：`tests/unit/print-doc-zero-fallback-guard.test.ts` + 单一源
+- **类级元守卫**：`tests/unit/lib/print-doc-paper.test.ts` + 单一源
   `frontend/admin-web/scripts/print-doc-zero-fallback-scan.mjs` —— 「**纸面不得把『未知』印成 0**」
   落在**打印单据族**（发货单 / 报价单 / 销售单 / 加工单 / 洗水码）的一致判据面：
   **未登记即红**（受管单据里出现 `(x ?? 0).toLocaleString` / `String(x ?? 0)` / `formatAmount(x ?? 0)`

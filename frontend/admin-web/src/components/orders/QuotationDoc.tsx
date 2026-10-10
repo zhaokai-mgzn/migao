@@ -68,7 +68,7 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  *    （= `lineSubtotal(item)`，行级 `subtotal` 与 `processingFee` 都缺时它返回 `null`）与汇总三栏
  *    在缺值时一律印 `—`（`QUOTATION_DOC_MISSING`）；**真 0 仍印 `0.00`**。
  *    判据 = `frontend/admin-web/tests/unit/components/QuotationDoc.test.tsx` 的「缺值不印 0」一组
- *    + 类级守卫 `frontend/admin-web/tests/unit/print-doc-zero-fallback-guard.test.ts`。
+ *    + 类级守卫 `frontend/admin-web/tests/unit/lib/print-doc-paper.test.ts`。
  */
 interface QuotationDocProps {
   order: Order

@@ -22,7 +22,7 @@
  * | 1 | **未登记即红**：`SCOPE`（打印单据族）里出现「`?? 0` / `|| 0` 落进印数值的形态」 | 报出 `文件::形态` 与可复制命令；修法 = 缺值印 `—`（真 0 仍印 `0.00`） |
  * | 2 | **台账只许缩短**：`LEDGER` 条目**不再命中** ⇒ 当场红 | 修好不同批删登记（僵尸豁免）⇒ 红 |
  * | 3 | **判别力自证**：坏形态在内存源码里逐形判红；好形态（缺值 ⇒ `—`、真 0、算术中性元、注释里的反例）**不**报 | 判据退化 / 被自己的文案喂红 ⇒ 红 |
- * | 4 | **实例不变量**：五份单据的测试都必须调 `assertNoPaperZeroFill`（**未登记即红**），且 `SCOPE` 必须含五份单据 | 新单据的测试不调它 ⇒ 具名报出；`SCOPE` 被改小 ⇒ 红 |
+ * | 4 | **实例不变量**：五份单据的测试都必须挂纸面判据（**未登记即红**），且 `SCOPE` 必须含五份单据 | 新单据的测试不调它 ⇒ 具名报出；`SCOPE` 被改小 ⇒ 红 |
  *
  * ## 边界（照实登记，§19.1）
  *
@@ -33,6 +33,9 @@
  *   **判不出来** —— 那半边由各单据测试里的「缺值不印 0」**实例判据**（真渲染 + 读纸面文本）承担。
  * - 洗水码 `TaskCardPrint` 今天**不印任何金额 / 数量**（纸面只有文字与短码）⇒ 对本形态天然免疫；
  *   它一旦开印数值，本文件的静态判据与 `SCOPE` 注释**同时**红（死亡条件写在 `SCOPE` 注释里）。
+ * - ⚠️ **本文件同时是 `src/lib/print-doc-paper.ts` 的单测**（判据面守的就是它导出的那几条函数）——
+ *   文件名按 `.github/tech-stack.yml` 的 `src/(lib|store)/(.+)\.ts → tests/unit/{1}/{2}.test.ts`
+ *   映射，**不要**改成别的名字（改了 ⇒ QA Growth Gate 判「缺测」）。
  */
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -45,13 +48,13 @@ import {
   printDocZeroFillSites,
   printDocZeroFillSitesFromSource,
   stripTsComments,
-} from '../../scripts/print-doc-zero-fallback-scan.mjs'
+} from '../../../scripts/print-doc-zero-fallback-scan.mjs'
 import {
   PAPER_MISSING,
   assertNoPaperZeroFill,
   assertPaperKeepsMissingDistinct,
-  paperNumericColumn,
   paperNumberCells,
+  paperNumericColumn,
   paperTextOf,
   paperZeroFills,
 } from '@/lib/print-doc-paper'
@@ -65,24 +68,19 @@ const probeLabels = (source: string) => probe(source).map((s) => s.label)
 /**
  * 各单据测试文件里对**纸面判据**的登记：单据标识（`// 单据：<label>`）与判据调用
  * （`assertNoPaperZeroFill` / `assertPaperKeepsMissingDistinct`）在**同一行或相邻行**
- * （标识写在上/下一行注释里都算；`doc-table-integrity-guard.test.tsx` 的懒判定阈值不适用这里
- * —— 本判据**多行调用**是常态，故窗口放到 600 字符并**必须**隔着换行或同行）。
+ * （标识写在上/下一行注释里都算；本判据的调用**多行**是常态，故窗口 = 相邻行）。
  */
 function registrations(source: string, label: string): string[] {
   const call = /assert(?:NoPaperZeroFill|PaperKeepsMissingDistinct)\s*\(/
   const marker = `单据：${label}`
   const lines = source.split('\n')
   for (let i = 0; i < lines.length; i += 1) {
-    if (!line_has_call(lines[i])) continue
+    if (!call.test(lines[i])) continue
     for (const j of [i - 1, i, i + 1]) {
       if (j >= 0 && j < lines.length && lines[j].includes(marker)) return [label]
     }
   }
   return []
-  // eslint-disable-next-line no-inner-declarations
-  function line_has_call(line: string) {
-    return call.test(line)
-  }
 }
 
 describe('打印单据族 · 「未知不得印成 0」类级判定面（issue #6720）', () => {
@@ -110,7 +108,7 @@ describe('打印单据族 · 「未知不得印成 0」类级判定面（issue #
       '纸面缺值必须印 `—`（范式：SalesDoc 的 SALES_DOC_MISSING），**真 0 仍印 `0.00`**；\n' +
         '确认过确属纸面外的算术中性元 / 非数值位，再登记进 ' +
         'frontend/admin-web/scripts/print-doc-zero-fallback-scan.mjs 的 LEDGER（并写明死亡条件）。\n' +
-        '复算命令（在 frontend/admin-web 下）：npx vitest run tests/unit/print-doc-zero-fallback-guard.test.ts'
+        '复算命令（在 frontend/admin-web 下）：npx vitest run tests/unit/lib/print-doc-paper.test.ts'
     ).toEqual([])
   })
 
@@ -157,7 +155,7 @@ describe('打印单据族 · 「未知不得印成 0」类级判定面（issue #
       '</table>'
     // 金额列 = index 3：两行都取到（缺值行「—」+ 真 0 行「0.00」）
     expect(paperNumericColumn(host, { column: 3 })).toEqual(['—', '0.00'])
-    expect(() => paperNumericColumn(host, { column: 9 })).toThrow(/判据面为空/)
+    expect(() => paperNumericColumn(host, { column: 9 })).toThrow(/检查范围为空/)
     expect(() => paperNumericColumn(null, { column: 1 })).toThrow(/空容器/)
   })
 
@@ -199,28 +197,36 @@ describe('打印单据族 · 「未知不得印成 0」类级判定面（issue #
     expect(probeLabels('formatAmount(item.amount ?? 0)')).toEqual(['格式化函数实参补位'])
     // ⑤ `||` 是同一个病的另一种写法
     expect(probeLabels('const v = (x || 0).toFixed(2)')).toEqual(['格式化补位'])
-    // ⑥ 括号包裹
+    // ⑥ 括号包裹在**方法调用之外**
     expect(probeLabels('const v = ((a ?? 0).toLocaleString("zh-CN"))')).toEqual(['格式化补位'])
-    // ⑦ 每个形态都必须在自己的样本上命中（判据面不许空转）
+    // ⑦ 每个形态都必须在自己的样本上命中（判据面不许空转）——形态集合与样本键**双向**对账
+    expect(Object.keys(BAD_SAMPLES).sort()).toEqual(PRINT_FILL_PATTERNS.map((p) => p.label).sort())
     for (const { label } of PRINT_FILL_PATTERNS) {
+      const sample = BAD_SAMPLES[label] ?? ''
       expect(
-        BAD_SAMPLES[label],
+        sample.length,
         `形态「${label}」在 BAD_SAMPLES 里没有样本 ⇒ 该形态可能永远不判红`
-      ).toBeTruthy()
-      expect(probeLabels(String(BAD_SAMPLES[label]))).toContain(label)
+      ).toBeGreaterThan(0)
+      expect(probeLabels(sample)).toContain(label)
     }
   })
 
   it('判别力自证（反向对照）：正确形态 / 算术中性元 / 注释里的反例都**不**报', () => {
     // ① 正确形态：缺值 ⇒ `—`（本单实现）
-    expect(probeLabels('function formatAmount(a?: number) { if (a === undefined) return MISSING; return a.toFixed(2) }')).toEqual([])
+    expect(
+      probeLabels(
+        'function formatAmount(a?: number) { if (a === undefined) return MISSING; return a.toFixed(2) }'
+      )
+    ).toEqual([])
     // ② 真 0 的合法写法：值来自已判定「读到了」的数
     expect(probeLabels('const v = amount.toLocaleString("zh-CN")')).toEqual([])
     // ③ 🔴 算术中性元：累加器的 `|| 0` 不是「把坏值印成读数」（缺值语义由 `lineSubtotal` 的 `null` 承担）
     expect(probeLabels('return items.reduce((sum, it) => sum + (it.processingFee || 0), 0)')).toEqual([])
     expect(probeLabels('return (item.subtotal || 0) + (item.processingFee || 0)')).toEqual([])
     // ④ 注释里的反例（本仓三个文件的文件头都在解释旧写法）—— 判据只看去注释后的代码
-    expect(probeLabels('// 旧写法 (amount ?? 0).toLocaleString(...) 会让纸面恒印 0.00\nconst v = 1')).toEqual([])
+    expect(
+      probeLabels('// 旧写法 (amount ?? 0).toLocaleString(...) 会让纸面恒印 0.00\nconst v = 1')
+    ).toEqual([])
     expect(stripTsComments('/* (a ?? 0).toLocaleString() */ const v = 1')).not.toContain('toLocaleString')
     // ⑤ 非纸面射程的取数 / 状态聚合
     expect(probeLabels('setTotal(rows.reduce((s, r) => s + (r.amount ?? 0), 0))')).toEqual([])
@@ -236,10 +242,7 @@ describe('打印单据族 · 「未知不得印成 0」类级判定面（issue #
     // 注入点 = 该单据的 `formatAmount` 函数体开头（**按符号定位**，不写行号）
     const anchorRe = /export function formatAmount\([^)]*\): string \{/
     expect(anchorRe.test(original), `\`${rel}\` 里找不到 \`formatAmount\`（注入点已漂移）`).toBe(true)
-    const injected = original.replace(
-      anchorRe,
-      (m) => `${m}\n  return (amount ?? 0).toLocaleString("zh-CN")`
-    )
+    const injected = original.replace(anchorRe, (m) => `${m}\n  return (amount ?? 0).toLocaleString("zh-CN")`)
     expect(injected, `\`${rel}\` 里找不到注入点 ⇒ 本红证会**空跑**`).not.toBe(original)
     expect(
       printDocZeroFillSitesFromSource(injected, { file: rel }),

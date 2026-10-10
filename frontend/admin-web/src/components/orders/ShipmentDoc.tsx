@@ -48,7 +48,7 @@ import { cn, formatFullDateTime } from '@/lib/utils'
  *    在缺值时一律印 `—`（`SHIPMENT_DOC_MISSING`），**不印 `0.00` / `0`**；**真 0 仍印 `0.00`**。
  *    范式就地照抄：第 6 条（无物流 ⇒ 留空供手写）、第 7 条（发货人缺 ⇒ `-`）、
  *    `SalesDoc` 的 `SALES_DOC_MISSING`。判据 = `frontend/admin-web/tests/unit/components/ShipmentDoc.test.tsx`
- *    的「缺值不印 0」一组 + 类级守卫 `frontend/admin-web/tests/unit/print-doc-zero-fallback-guard.test.ts`。
+ *    的「缺值不印 0」一组 + 类级守卫 `frontend/admin-web/tests/unit/lib/print-doc-paper.test.ts`。
  */
 interface ShipmentDocProps {
   order: Order
