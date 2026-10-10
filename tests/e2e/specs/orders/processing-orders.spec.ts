@@ -507,17 +507,32 @@ test.describe('订单详情页加工单块（唯一入口）', () => {
     await expect(block.getByRole('button', { name: '发加工' })).not.toBeVisible()
   })
 
-  test('开始加工：confirm → PATCH(start) → 徽标「加工中」+「加工完成」按钮出现', async ({ page }) => {
+  test('开始加工：自研确认弹框 → PATCH(start) → 徽标「加工中」+「加工完成」按钮出现', async ({ page }) => {
     const block = page.locator('.po-print-area')
-    // 先发加工（块上 generated 态只有「发加工/取消加工单」）
+    // issue #6664 第 4 条：「开始加工 / 加工完成」从原生 `window.confirm` 改成**自研 Modal**。
+    // 本 spec 同步驱动新弹框（弹框在组件根、`.po-print-area` **之外** ⇒ 用 page 级定位）。
+    // 同时把「不得再走原生弹窗」变成**可观察判据**：注册 dialog 监听并断言一次都没触发。
+    let nativeDialogs = 0
     page.on('dialog', async (dialog) => {
+      nativeDialogs += 1
       await dialog.accept()
     })
+    // 先发加工（块上 generated 态只有「发加工/取消加工单」）
     await block.getByRole('button', { name: '发加工' }).click()
     await block.getByRole('button', { name: '确认发加工' }).click()
     await expect(block.locator('span.bg-primary-50').first()).toHaveText('已发加工', { timeout: 5_000 })
 
     await block.getByRole('button', { name: '开始加工' }).click()
+
+    // 弹框可见 + 写清动作与不可撤销（issue #6664 第 4 条）
+    const dialog = page.getByRole('dialog', { name: '确认状态流转' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toContainText('开始加工')
+    await expect(dialog).toContainText('不可撤销')
+    // **弹框是闸门**：未点确认之前，请求一个都不许发
+    expect(api.patchBodies.find((b) => b.action === 'start' && b.id === 'po-001')).toBeFalsy()
+
+    await dialog.getByRole('button', { name: '确认', exact: true }).click()
     await page.waitForTimeout(500)
 
     const patch = api.patchBodies.find((b) => b.action === 'start' && b.id === 'po-001')
@@ -525,11 +540,15 @@ test.describe('订单详情页加工单块（唯一入口）', () => {
     await expect(block.locator('span.bg-primary-50').first()).toHaveText('加工中', { timeout: 5_000 })
     await expect(block.getByRole('button', { name: '加工完成' })).toBeVisible()
     await expect(block.getByRole('button', { name: '开始加工' })).not.toBeVisible()
+    // 原生弹窗零触发（改回 `window.confirm` ⇒ 本条红）
+    expect(nativeDialogs).toBe(0)
   })
 
-  test('加工完成：confirm → PATCH(complete) → 徽标「加工完成」+ 发货提示', async ({ page }) => {
+  test('加工完成：自研确认弹框 → PATCH(complete) → 徽标「加工完成」+ 发货提示', async ({ page }) => {
     const block = page.locator('.po-print-area')
+    let nativeDialogs = 0
     page.on('dialog', async (dialog) => {
+      nativeDialogs += 1
       await dialog.accept()
     })
     // generated → issued → in_processing → completed（状态机主链逐级走，非法迁移会被后端拒绝）
@@ -537,15 +556,24 @@ test.describe('订单详情页加工单块（唯一入口）', () => {
     await block.getByRole('button', { name: '确认发加工' }).click()
     await expect(block.locator('span.bg-primary-50').first()).toHaveText('已发加工', { timeout: 5_000 })
     await block.getByRole('button', { name: '开始加工' }).click()
+    await page.getByRole('dialog', { name: '确认状态流转' })
+      .getByRole('button', { name: '确认', exact: true }).click()
     await expect(block.locator('span.bg-primary-50').first()).toHaveText('加工中', { timeout: 5_000 })
 
     await block.getByRole('button', { name: '加工完成' }).click()
+    const dialog = page.getByRole('dialog', { name: '确认状态流转' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toContainText('加工完成')
+    expect(api.patchBodies.find((b) => b.action === 'complete' && b.id === 'po-001')).toBeFalsy()
+
+    await dialog.getByRole('button', { name: '确认', exact: true }).click()
     await page.waitForTimeout(500)
 
     const patch = api.patchBodies.find((b) => b.action === 'complete' && b.id === 'po-001')
     expect(patch).toBeTruthy()
     await expect(block.locator('span.bg-primary-50').first()).toHaveText('加工完成', { timeout: 5_000 })
     await expect(block.getByText('加工已完成，可发货')).toBeVisible()
+    expect(nativeDialogs).toBe(0)
   })
 
   test('取消加工单：原因必填 → PATCH(cancel, reason) → 徽标「已取消」+ 原因可见', async ({ page }) => {

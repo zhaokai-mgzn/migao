@@ -639,6 +639,9 @@ export default function ProcessingOrderBlock({
         <p className="text-sm text-neutral-600">
           将加工单 {po?.processingOrderNo} 标记为「{simpleAction === 'start' ? '开始加工' : '加工完成'}」。
         </p>
+        <p className="mt-2 text-sm text-neutral-500">
+          该动作会写入加工单状态、不可撤销，请确认后再提交。
+        </p>
         {error && <div className="mt-2">{errorBlock}</div>}
       </Modal>
     </div>
