@@ -1,0 +1,19 @@
+{
+  "why": "issue #6668 盲区④的类级台账：`src/app/(dashboard)` 下凡渲染**空态字面量**的页面，都必须同时有**失败态锚点**（`data-testid` 带 `-error` 或失败态文案）—— 「四态齐备、失败 ≠ 空」。未登记即红；台账只许缩短（页面补上失败态 ⇒ 删条目）。判据 = frontend/admin-web/tests/unit/design-baseline-page-state-contract.test.ts。与 UI-057/058（catch 只清空读数）分工：那条扫 catch 块，本条扫「渲染出来的态」。",
+  "scope": "src/app/(dashboard)/**/*.tsx",
+  "ledger": {
+    "src/app/(dashboard)/finance/page.tsx": {
+      "kind": "gap",
+      "reason": "**修前现场（已知缺口，未修）**：三张表（收支汇总 / 资金流水 / 应收对账）读失败走 `toast.error('加载收支汇总失败')` 一族 —— toast 一会儿就消失，而**表体照旧印「暂无数据」** ⇒ 商家看到「这个月没有收支」而不是「没读到」。缺口形态与 `read-failure-empty-state-guard.test.ts` 治的那一族同源（都是「故障伪装成空态」），但**它扫不到本处**：本页的 catch 并不清空读数（读数本就为空），所以没有 setter 命中。修法 = 照抄 `src/app/(dashboard)/dashboard/page.tsx` 的失败/空态分离（`data-testid` + 可行动文案 + 重试出口）。本包**不改业务页面实现**（那是已合并包的文件族）⇒ 登记为缺口，修复另单。"
+    },
+    "src/app/(dashboard)/customers/page.tsx": {
+      "kind": "gap",
+      "reason": "**修前现场（已知缺口，未修）**：标签清单读失败时 `catch` 只有 `console.error('加载标签失败')`，**连 toast 都没有** ⇒ `tags` 保持空数组，筛选区照旧印「暂无标签」——商家会以为「这个企业还没建标签」，真相是没读到。修法 = 加失败态（`data-testid` + 可行动文案 + 重试出口），别只 `console.error`。"
+    },
+    "src/app/(dashboard)/customers/[id]/CustomerDetail.tsx": {
+      "kind": "gap",
+      "reason": "**修前现场（已知缺口，未修）**：详情面有三处纯空态（「暂无标签」/「暂无订单记录」/「暂无会话记录」），而客户信息读失败只走 `toast.error('加载客户信息失败')` ⇒ 三个列表同时印空态，商家分不清「这个客户没有订单」与「订单没读到」。修法 = 同 finance：失败态与空态分离（哪一块没读到就点名那一块）。"
+    }
+  },
+  "boundary": "只扫商家后台（`src/app/(dashboard)`），只认源码文本形态：空态字面量清单 = `暂无数据 / 暂无记录 / 暂无订单 / 暂无库存 / 暂无发货单 / 暂无标签 / 暂无权限`。**有意不收 `还没有`**：实测在本仓它是「计算不可用」的描述（`—（还没有可算的数据）`），收它只会制造假红。**加载态（第三态）没有机械判据**（`loading` 变量名五花八门），本判据只钉「失败态与空态必须可区分」—— 那正是用户看得见的那一半。"
+}

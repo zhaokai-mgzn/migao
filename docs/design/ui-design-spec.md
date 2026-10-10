@@ -1,8 +1,20 @@
-# AI 客服系统 UI 设计规范
+# AI 客服系统 UI 设计规范（**已降级：颜色/字号/阴影以 code token 为准**）
 
-> 版本：v8.0  
-> 日期：2026-04-12  
-> 适用范围：C 端客服对话页 / 客服员工工作台 / 企业管理后台
+> 版本：v8.0（2026-04-12 首次成文）
+> 🔴 **降级说明（2026-10-10，issue #6668）**：本文件的**颜色 / 字号 / 阴影 / 状态色**四章
+> **不再是真值源** —— 它们写于 AntD 时代，与现行「织物质感」token 已经漂移
+> （最典型：本文说主色 `#2F54EB`，而代码是 `#48618f`）。
+> **现行真值 = [design-baseline.md](design-baseline.md)**（它指向
+> `frontend/admin-web/tailwind.config.ts` 与 `frontend/admin-web/src/lib/design-tokens.ts`）。
+> 凡本文与 `design-baseline.md` 冲突：**以 design-baseline.md 为准**；
+> 凡 design-baseline.md 与代码冲突：**以代码为准**。
+>
+> ⚠️ **适用范围（此前从未写明）**：本文件覆盖的是 **C 端客服对话页 / 客服员工工作台 / 企业管理后台**
+> 三个面，**从未覆盖官网**（`frontend/admin-web/src/app/(corporate)/**` —— 2026-10-04 才落地，
+> 见 [corporate-site-redesign.md](corporate-site-redesign.md)）。不要把本文当成官网规范。
+>
+> 本文仍然有效的部分：**布局 / 组件形态 / 响应式 / 动画**（那些与 token 无关，
+> 且今天没有替代品）—— 但其中的色值引用一律按下面的「现行 token」理解。
 
 ---
 
@@ -17,63 +29,34 @@
 - **温暖感**：C 端对话页体现亲切、可信赖的客服体验
 - **布艺质感**：色彩柔和、圆角适度、阴影轻盈，避免生硬的工业感
 
-### 1.2 色彩系统
+### 1.2 色彩系统（现行口径）
 
-#### 主色（Primary）
+#### 现行 token（**唯一真值源** = `frontend/admin-web/tailwind.config.ts`）
 
-| 色阶 | 色值 | 用途 |
+以下是现行口径的**摘录**（完整色阶与用途见 [design-baseline.md](design-baseline.md) §2；
+页面一律写**类名**，不要写 hex）：
+
+| token | 现行值 | 用途 |
 |------|------|------|
-| Primary-50 | `#F0F5FF` | 浅背景、选中态底色 |
-| Primary-100 | `#D6E4FF` | 悬浮背景、标签底色 |
-| Primary-200 | `#ADC6FF` | 分割线、边框 |
-| Primary-300 | `#85A5FF` | 次要按钮、图标 |
-| Primary-400 | `#597EF7` | 次要按钮 Hover |
-| Primary-500 | `#2F54EB` | **主色**：主按钮、链接、选中态 |
-| Primary-600 | `#1D39C4` | 主按钮 Hover |
-| Primary-700 | `#10239E` | 主按钮 Active |
-| Primary-800 | `#061178` | 深色文字链接 |
-| Primary-900 | `#030852` | 极深色强调 |
+| `primary-500` | `#48618f` | **主色**：主按钮、链接、选中态（靛蓝） |
+| `primary-600` / `primary-700` | `#3a4e75` / `#2e3d5c` | 主按钮 hover / active |
+| `accent-500` | `#c06a3e` | 点缀（陶土）：次要强调、图表销售额 |
+| `neutral-50` | `#faf7f2` | **页面底色**（暖亚麻） |
+| `neutral-700` / `neutral-900` | `#625545` / `#312c26` | 正文 / 标题 |
+| `gold-*` | 见 `frontend/admin-web/src/lib/brand-palette.ts` | 织金点缀（官网 hero、深色区块图标） |
+| 语义色 | emerald / amber / red / primary 四族（`frontend/admin-web/src/lib/status-chip.ts`） | 成功 / 警示 / 危险 / 信息 |
 
-#### 辅助色（Fabric 色系）
+#### 历史（**已作废**，仅用于追溯「为什么不是蓝色」）
 
-| 色阶 | 色值 | 名称 | 用途 |
-|------|------|------|------|
-| Warm-50 | `#FFF7E6` | 暖纱黄 | 警告浅背景、推荐标签底色 |
-| Warm-400 | `#FAAD14` | 琥珀金 | 警告图标、VIP 标识 |
-| Warm-500 | `#D48806` | 织金 | 警告文字 |
-| Success-50 | `#F6FFED` | 新绿 | 成功浅背景 |
-| Success-500 | `#52C41A` | 春绿 | 成功状态、在线标识 |
-| Success-600 | `#389E0D` | 深绿 | 成功文字 |
-| Error-50 | `#FFF1F0` | 浅粉 | 错误浅背景 |
-| Error-500 | `#FF4D4F` | 珊瑚红 | 错误状态、库存预警飘红 |
-| Error-600 | `#CF1322` | 殷红 | 错误文字、删除按钮 |
+2026-04 的首版用的是 **AntD 蓝**主色 `#2F54EB`（配 `#F0F5FF` / `#D6E4FF` / `#ADC6FF` /
+`#85A5FF` / `#597EF7` / `#1D39C4` / `#10239E` / `#061178` / `#030852` 九阶）与平灰
+`#FAFAFA` / `#D9D9D9` 一族的占位与边框。**这些值已全部作废**（issue #2534 的「织物质感」
+迁移把它们换掉）：照历史色值做的新页面会与既有页面**不一致**（这就是本文件降级的原因）。
 
-#### 中性色（Gray）
+#### 状态色映射（现行）
 
-| 色阶 | 色值 | 用途 |
-|------|------|------|
-| Gray-50 | `#FAFAFA` | 页面背景、卡片内背景 |
-| Gray-100 | `#F5F5F5` | 分割线、禁用态背景 |
-| Gray-200 | `#E8E8E8` | 表格边框、输入框默认边框 |
-| Gray-300 | `#D9D9D9` | 占位文字、禁用态边框 |
-| Gray-400 | `#BFBFBF` | 图标禁用态 |
-| Gray-500 | `#8C8C8C` | 辅助文字（时间戳、备注）|
-| Gray-600 | `#595959` | 次要正文文字 |
-| Gray-700 | `#434343` | 正文文字 |
-| Gray-800 | `#262626` | 标题文字 |
-| Gray-900 | `#141414` | 强强调文字 |
-
-#### 状态色映射
-
-| 状态 | 色值 | 应用场景 |
-|------|------|---------|
-| 出售中 / 已发货 / 已完成 | `#52C41A` | 绿色 Badge |
-| 草稿 | `#8C8C8C` | 灰色 Badge |
-| 审核中 / 待付款 | `#FAAD14` | 金色 Badge |
-| 退款中 / 异常 | `#FF4D4F` | 红色 Badge |
-| 在线 | `#52C41A` + 呼吸圆点 | 客服状态 |
-| 忙碌 | `#FAAD14` + 实心圆 | 客服状态 |
-| 离线 | `#8C8C8C` + 空心圆 | 客服状态 |
+见 [design-baseline.md](design-baseline.md) §5「四态契约」与
+`frontend/admin-web/src/lib/status-chip.ts`（语义色 tone 的**唯一**映射表）。
 
 ### 1.3 字体系统
 
@@ -86,19 +69,22 @@ font-family: -apple-system, BlinkMacSystemFont, "SF Pro SC", "SF Pro Text",
 ```
 
 **中文优先**：PingFang SC（macOS）/ Microsoft YaHei（Windows）作为中文主字体。
+**真值源** = `frontend/admin-web/tailwind.config.ts` 的 `theme.extend.fontFamily.sans`。
 
-#### 字号阶梯
+#### 字号阶梯（**真值源** = `frontend/admin-web/src/lib/design-tokens.ts` 的 `TYPE_SCALE`）
 
 | 级别 | 字号 | 行高 | 字重 | 用途 |
 |------|------|------|------|------|
-| H1 | 24px | 32px | 600 | 页面标题 |
-| H2 | 20px | 28px | 600 | 区块标题 |
-| H3 | 16px | 24px | 600 | 卡片标题、Modal 标题 |
-| Body-L | 15px | 24px | 400 | 管理后台正文 |
-| Body | 14px | 22px | 400 | **默认正文** |
-| Body-S | 13px | 20px | 400 | 表格内容、表单文字 |
-| Caption | 12px | 18px | 400 | 辅助说明、时间戳 |
-| Caption-XS | 11px | 16px | 400 | 极小标签、角标数字 |
+| `text-2xl` | 24px | 36px | 600 | 页面标题（h1） |
+| `text-xl` | 20px | 30px | 600 | 区块标题（h2） |
+| `text-lg` | 18px | 27px | 600 | 卡片标题、Modal 标题（h3） |
+| `text-base` | 16px | 24px | 400 | 强调正文（不常用） |
+| `text-sm` | 14px | 21px | 400 | **默认正文**、表格内容、表单文字 |
+| `text-xs` | 12px | 18px | 400 | 辅助说明、时间戳、角标 |
+
+**下限 12px**：低于它的字号不进阶梯；行高比固定 1.5。
+⚠️ 移动端（Taro 两 app）另有**设计尺度**下限 24（= 12.8 CSS px @390），
+由 `tests/unit_ci_workflows/test_bmini_mobile_typography_floor.py` 守 —— 两套坐标系，勿混。
 
 #### 数字字体
 
@@ -110,24 +96,26 @@ font-variant-numeric: tabular-nums;
 
 ### 1.4 圆角与阴影
 
-#### 圆角
+#### 圆角（基数 = Tailwind 默认阶；**不写任意值**）
 
 | 级别 | 值 | 用途 |
 |------|-----|------|
-| XS | 4px | 按钮、输入框、Tag、Badge |
-| S | 6px | 下拉菜单、Popover |
-| M | 8px | 卡片、消息气泡 |
-| L | 12px | Modal、Drawer |
-| XL | 16px | C 端欢迎区卡片 |
+| `rounded-sm` | 2px | Tag、小标签 |
+| `rounded-md` | 6px | 下拉菜单、Popover |
+| `rounded-lg` | 8px | **按钮、输入框、卡片**（最常用） |
+| `rounded-xl` | 12px | Modal、Drawer、大卡片 |
 
-#### 阴影
+#### 阴影（**真值源** = `frontend/admin-web/tailwind.config.ts` 的 `theme.extend.boxShadow`）
 
-| 级别 | 值 | 用途 |
-|------|-----|------|
-| Shadow-1 | `0 1px 2px rgba(0,0,0,0.04), 0 1px 4px rgba(0,0,0,0.06)` | 卡片默认 |
-| Shadow-2 | `0 2px 6px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.08)` | 卡片悬浮、下拉菜单 |
-| Shadow-3 | `0 4px 12px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.12)` | Modal、Drawer |
-| Shadow-4 | `0 8px 24px rgba(0,0,0,0.12), 0 16px 48px rgba(0,0,0,0.16)` | C 端对话页 AI 消息气泡（轻盈上浮感） |
+| 级别 | 类名 | 用途 |
+|------|------|------|
+| 卡片默认 | `shadow-card` | `0 1px 2px rgba(36,31,24,.04), 0 4px 16px rgba(36,31,24,.06)` |
+| 卡片悬浮 | `shadow-card-hover` | `0 2px 6px rgba(36,31,24,.06), 0 8px 24px rgba(36,31,24,.10)` |
+| 弹层 | `shadow-modal` | `0 12px 40px rgba(36,31,24,.16)` |
+| 浮窗 | `shadow-float` | `0 8px 30px rgba(36,31,24,.14)` |
+
+**色相取自暖中性** `rgba(36,31,24,…)`（不用纯黑）—— 这是「织物质感」的一部分。
+
 
 ---
 
@@ -135,13 +123,16 @@ font-variant-numeric: tabular-nums;
 
 ### 2.1 按钮
 
+> 下表里的色值 = **现行 token**（真值见 [design-baseline.md](design-baseline.md) §2）；
+> 页面写类名（如 `bg-primary-500`），不要写 hex。
+
 | 类型 | 背景 | 文字 | 边框 | 场景 |
 |------|------|------|------|------|
-| Primary | `#2F54EB` | `#FFF` | 无 | 主操作（搜索、提交并上架、发货）|
-| Default | `#FFF` | `#595959` | `#D9D9D9` | 次要操作（重置、存草稿）|
-| Text | 透明 | `#2F54EB` | 无 | 行内操作（查看、编辑、下架）|
-| Danger | `#FFF` | `#FF4D4F` | `#FF4D4F` | 危险操作（删除、关闭订单）|
-| Link | 透明 | `#2F54EB` | 无 | 纯文字链接 |
+| Primary | ``primary-500`` | `#FFF` | 无 | 主操作（搜索、提交并上架、发货）|
+| Default | `#FFF` | ``neutral-600`` | ``neutral-300`` | 次要操作（重置、存草稿）|
+| Text | 透明 | ``primary-500`` | 无 | 行内操作（查看、编辑、下架）|
+| Danger | `#FFF` | ``red-500`` | ``red-500`` | 危险操作（删除、关闭订单）|
+| Link | 透明 | ``primary-500`` | 无 | 纯文字链接 |
 
 **按钮尺寸**：
 
@@ -154,27 +145,27 @@ font-variant-numeric: tabular-nums;
 ### 2.2 输入框
 
 ```
-默认态：边框 #D9D9D9，背景 #FFF
-悬浮态：边框 #597EF7
-聚焦态：边框 #2F54EB，外发光 0 0 0 2px rgba(47,84,235,0.15)
-错误态：边框 #FF4D4F，外发光 0 0 0 2px rgba(255,77,79,0.15)
-禁用态：边框 #D9D9D9，背景 #F5F5F5，文字 #BFBFBF
+默认态：边框 `neutral-300`，背景 #FFF
+悬浮态：边框 `primary-400`
+聚焦态：边框 `primary-500`，外发光 0 0 0 2px rgba(72,97,143,0.15)
+错误态：边框 `red-500`，外发光 0 0 0 2px rgba(255,77,79,0.15)
+禁用态：边框 `neutral-300`，背景 `neutral-100`，文字 `neutral-400`
 ```
 
 **高度**：32px（Default）/ 24px（Small）  
 **圆角**：4px  
-**占位文字颜色**：`#BFBFBF`
+**占位文字颜色**：``neutral-400``
 
 ### 2.3 表格
 
 | 元素 | 样式 |
 |------|------|
-| 表头 | 背景 `#FAFAFA`，文字 `#595959` 600 字重，高度 48px |
+| 表头 | 背景 ``neutral-50``，文字 ``neutral-600`` 600 字重，高度 48px |
 | 行 | 高度 56px（默认）/ 72px（含多行文字的商品行）|
-| 行悬浮 | 背景 `#F0F5FF` |
-| 行选中 | 背景 `#E6F0FF`，左侧 3px `#2F54EB` 边框 |
+| 行悬浮 | 背景 ``primary-50`` |
+| 行选中 | 背景 ``primary-100``，左侧 3px ``primary-500`` 边框 |
 | 分割线 | `#E8E8E8` 1px |
-| 排序图标 | 表头右侧，未排序 `#BFBFBF`，激活 `#2F54EB` |
+| 排序图标 | 表头右侧，未排序 ``neutral-400``，激活 ``primary-500`` |
 
 ### 2.4 状态标签（Badge）
 
@@ -192,30 +183,30 @@ font-variant-numeric: tabular-nums;
 
 /* 成功态 */
 .badge-success {
-  background: #F6FFED;
-  color: #389E0D;
-  border: 1px solid #B7EB8F;
+  background: `emerald-50`;
+  color: `emerald-600`;
+  border: 1px solid `emerald-200`;
 }
 
 /* 警告态 */
 .badge-warning {
-  background: #FFF7E6;
-  color: #D48806;
-  border: 1px solid #FFE58F;
+  background: `amber-50`;
+  color: `gold-600`;
+  border: 1px solid `amber-200`;
 }
 
 /* 错误态 */
 .badge-error {
-  background: #FFF1F0;
-  color: #CF1322;
-  border: 1px solid #FFA39E;
+  background: `red-50`;
+  color: `red-600`;
+  border: 1px solid `red-200`;
 }
 
 /* 默认态 */
 .badge-default {
-  background: #FAFAFA;
-  color: #595959;
-  border: 1px solid #D9D9D9;
+  background: `neutral-50`;
+  color: `neutral-600`;
+  border: 1px solid `neutral-300`;
 }
 ```
 
@@ -229,7 +220,7 @@ font-variant-numeric: tabular-nums;
 - 左侧显示 AI 头像（圆形 32px，主色渐变背景 + 元元文字）
 
 **用户消息**：
-- 背景：`#2F54EB`
+- 背景：``primary-500``
 - 文字：`#FFF`
 - 圆角：16px（左上 16px、右上 16px、左下 4px、右下 16px）
 - 最大宽度：70% 屏幕宽度
@@ -256,7 +247,7 @@ font-variant-numeric: tabular-nums;
 │  [商品图片]  │  ← 1:1 比例，圆角 8px
 │             │
 │  商品标题    │  ← 14px, 最多两行，超出省略
-│  ¥268/米    │  ← 16px, #FF4D4F, 加粗
+│  ¥268/米    │  ← 16px, `red-500`, 加粗
 │  已售 520   │  ← 12px, Gray-500
 └─────────────┘
 ```
@@ -275,7 +266,7 @@ font-variant-numeric: tabular-nums;
 │  右侧：[历史对话] [用户头像]          │
 ├──────────────────────────────────────┤
 │  消息区（flex: 1，可滚动）            │
-│  背景：#F5F5F5（浅灰，区分消息气泡）  │
+│  背景：`neutral-100`（浅灰，区分消息气泡）  │
 │  内边距：16px                         │
 │  消息间距：12px                       │
 ├──────────────────────────────────────┤
@@ -287,7 +278,7 @@ font-variant-numeric: tabular-nums;
 │  输入区（固定底部，含安全区域）       │
 │  背景：#FFF，顶部 1px #E8E8E8         │
 │  高度：自适应（56px ~ 120px）         │
-│  底部声明文字：11px, #BFBFBF          │
+│  底部声明文字：11px, `neutral-400`          │
 └──────────────────────────────────────┘
 ```
 
@@ -296,7 +287,7 @@ font-variant-numeric: tabular-nums;
 首次访问时显示欢迎区，背景使用柔和渐变色：
 
 ```
-background: linear-gradient(135deg, #F0F5FF 0%, #FFF7E6 100%);
+background: linear-gradient(135deg, `primary-50` 0%, `amber-50` 100%);
 ```
 
 四个快捷功能入口为卡片式按钮，2×2 网格布局：
@@ -304,10 +295,10 @@ background: linear-gradient(135deg, #F0F5FF 0%, #FFF7E6 100%);
 ```
 ┌──────────────────┬──────────────────┐
 │  📦 查订单       │  🛍️ 找产品       │
-│  14px, #595959   │  14px, #595959   │
+│  14px, `neutral-600`   │  14px, `neutral-600`   │
 ├──────────────────┼──────────────────┤
 │  🔄 退换货       │  📞 转人工       │
-│  14px, #595959   │  14px, #595959   │
+│  14px, `neutral-600`   │  14px, `neutral-600`   │
 └──────────────────┴──────────────────┘
 ```
 
@@ -317,7 +308,7 @@ background: linear-gradient(135deg, #F0F5FF 0%, #FFF7E6 100%);
 
 AI 回复时使用打字机效果：
 - 逐字出现，间隔 20ms/字
-- 光标闪烁动画（`|`，宽度 2px，颜色 `#2F54EB`）
+- 光标闪烁动画（`|`，宽度 2px，颜色 ``primary-500``）
 - 流式输出时不等待完整消息，收到 SSE `text` 事件即追加
 
 ### 3.4 订单卡片样式
@@ -332,7 +323,7 @@ AI 返回订单信息时使用卡片组件：
 │  顺丰 SF1234567890                     │
 │  预计明天送达                          │
 │  ──────────────────────────────────    │
-│  [查物流]      [申请售后]              │  ← Text 按钮，#2F54EB
+│  [查物流]      [申请售后]              │  ← Text 按钮，`primary-500`
 └────────────────────────────────────────┘
 ```
 
@@ -352,10 +343,10 @@ AI 返回订单信息时使用卡片组件：
 │  右侧：[🔔 3] [👤 张三 ▼]                                      │
 ├────────────┬───────────────────────────────────────────────────┤
 │  侧边栏     │  主内容区                                          │
-│  (220px)   │  背景：#F5F5F5                                     │
+│  (220px)   │  背景：`neutral-100`                                     │
 │            │  内边距：24px                                      │
 │  背景：     │                                                    │
-│  #001529   │  ┌─────────────────────────────────────────────┐  │
+│  `neutral-900`   │  ┌─────────────────────────────────────────────┐  │
 │  (深蓝)    │  │  页面内容区                                    │  │
 │            │  │  背景：#FFF                                    │  │
 │  菜单文字：  │  │  圆角：8px                                     │  │
@@ -424,7 +415,7 @@ AI 返回订单信息时使用卡片组件：
 ### 4.4 商品列表特殊样式
 
 **库存预警**：
-- 库存数字低于阈值（默认 100）时，数字变 `#FF4D4F` 并添加脉冲动画
+- 库存数字低于阈值（默认 100）时，数字变 ``red-500`` 并添加脉冲动画
 - 动画：`opacity: 1 → 0.6 → 1`，持续 1.5s，无限循环
 
 **商品标题 + 首图**：
@@ -522,8 +513,8 @@ AI 返回订单信息时使用卡片组件：
 ```
 
 - 每个 Tab 显示数量（Gray-500）
-- 选中态：底部 2px `#2F54EB` 下划线，文字 `#2F54EB` 600 字重
-- 有未处理数量时显示红色圆点（`#FF4D4F`，直径 6px）
+- 选中态：底部 2px ``primary-500`` 下划线，文字 ``primary-500`` 600 字重
+- 有未处理数量时显示红色圆点（``red-500``，直径 6px）
 
 **订单行展示**：
 ```
@@ -547,10 +538,10 @@ AI 返回订单信息时使用卡片组件：
 ### 4.7 Dashboard 数据可视化
 
 **趋势图配色**：
-- 订单量：`#2F54EB`（主色蓝）
-- 会话量：`#52C41A`（春绿）
-- 营收：`#FAAD14`（琥珀金）
-- 转人工率：`#FF4D4F`（珊瑚红）
+- 订单量：``primary-500``（主色蓝）
+- 会话量：``emerald-500``（春绿）
+- 营收：``amber-500``（琥珀金）
+- 转人工率：``red-500``（珊瑚红）
 
 **环形图**：
 - 外环展示各渠道/分类占比
@@ -564,10 +555,10 @@ AI 返回订单信息时使用卡片组件：
 ### 5.1 小程序端
 
 **整体风格**：
-- 背景：`#F5F5F5`
+- 背景：``neutral-100``
 - 卡片：`#FFF`，圆角 12px，Shadow-1
 - Tab 栏：`#FFF`，顶部 1px `#E8E8E8`
-- 主色按钮：`#2F54EB`
+- 主色按钮：``primary-500``
 - 状态标识与上文一致
 
 **会话列表卡片**：
@@ -579,9 +570,9 @@ AI 返回订单信息时使用卡片组件：
 └─────────────────────────────┘
 ```
 
-- 新会话：左侧 3px `#FF4D4F` 竖线
-- 进行中：左侧 3px `#52C41A` 竖线
-- 已结束：左侧 3px `#8C8C8C` 竖线
+- 新会话：左侧 3px ``red-500`` 竖线
+- 进行中：左侧 3px ``emerald-500`` 竖线
+- 已结束：左侧 3px ``neutral-500`` 竖线
 
 ### 5.2 PC 端 H5
 
@@ -628,7 +619,7 @@ AI 返回订单信息时使用卡片组件：
 | 元素 | 交互 |
 |------|------|
 | 按钮 Hover | 背景色深 10%，上浮 1px |
-| 表格行 Hover | 背景变为 `#F0F5FF` |
+| 表格行 Hover | 背景变为 ``primary-50`` |
 | 卡片 Hover | 阴影加深（Shadow-1 → Shadow-2），上浮 2px |
 | 库存预警数字 | 脉冲动画（opacity 1 → 0.6 → 1，1.5s 循环）|
 | 在线客服状态 | 绿色圆点呼吸动画（scale 1 → 1.2 → 1，2s 循环）|
@@ -644,13 +635,13 @@ AI 返回订单信息时使用卡片组件：
 
 | 元素 | 亮色 | 暗色 |
 |------|------|------|
-| 页面背景 | `#F5F5F5` | `#141414` |
+| 页面背景 | ``neutral-100`` | ``neutral-900`` |
 | 卡片背景 | `#FFF` | `#1F1F1F` |
-| 侧边栏背景 | `#001529` | `#0A0A0A` |
-| 正文文字 | `#262626` | `#E8E8E8` |
-| 次要文字 | `#595959` | `#8C8C8C` |
+| 侧边栏背景 | ``neutral-900`` | `#0A0A0A` |
+| 正文文字 | ``neutral-800`` | `#E8E8E8` |
+| 次要文字 | ``neutral-600`` | ``neutral-500`` |
 | 边框/分割线 | `#E8E8E8` | `#303030` |
-| 主色 | `#2F54EB` | `#597EF7`（提亮）|
+| 主色 | ``primary-500`` | ``primary-400``（提亮）|
 
 ---
 
@@ -674,45 +665,11 @@ AI 返回订单信息时使用卡片组件：
 
 ### 9.2 设计 Token 输出
 
-建议将色彩、字号、间距等设计 Token 输出为 Tailwind 配置：
+🔴 **这一节已过时（2026-10-10，issue #6668）**：token **已经落地**，不再需要「输出为 Tailwind 配置」。
+真值源 = `frontend/admin-web/tailwind.config.ts`（颜色 / 字体 / 阴影）+
+`frontend/admin-web/src/lib/design-tokens.ts`（字号阶梯）。**不要照抄下面的示例**（它是 AntD 时代的草案）：
 
 ```js
-// tailwind.config.js
-module.exports = {
-  theme: {
-    extend: {
-      colors: {
-        primary: {
-          50: '#F0F5FF',
-          100: '#D6E4FF',
-          // ... 完整色阶
-          900: '#030852',
-        },
-        warm: {
-          50: '#FFF7E6',
-          400: '#FAAD14',
-          500: '#D48806',
-        },
-        // ... success, error, gray
-      },
-      fontSize: {
-        'h1': ['24px', { lineHeight: '32px', fontWeight: '600' }],
-        'h2': ['20px', { lineHeight: '28px', fontWeight: '600' }],
-        // ... 完整阶梯
-      },
-      borderRadius: {
-        'xs': '4px',
-        'sm': '6px',
-        'md': '8px',
-        'lg': '12px',
-        'xl': '16px',
-      },
-      boxShadow: {
-        'card': '0 1px 2px rgba(0,0,0,0.04), 0 1px 4px rgba(0,0,0,0.06)',
-        'card-hover': '0 2px 6px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.08)',
-        'modal': '0 4px 12px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.12)',
-      },
-    },
-  },
-}
+// ❌ 历史草案（AntD 蓝 + 字号 h1/h2 + 圆角 xs..xl）—— 已作废，仅留档
+// 现行值见 frontend/admin-web/tailwind.config.ts 与 docs/design/design-baseline.md
 ```

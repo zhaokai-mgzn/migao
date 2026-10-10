@@ -1,0 +1,200 @@
+{
+  "why": "issue #6668 盲区①的类级台账：凡「查表兜底 = 原始值」（`LABELS[x] || x` / `LABELS[x] ?? x`）都必须在此登记。未登记即红；台账只许缩短（本条不再命中 ⇒ 删条目，不留僵尸豁免）。判据 = frontend/admin-web/tests/unit/design-baseline-expression-fallback.test.ts，扫描器 = frontend/admin-web/scripts/enum-fallback-scan.mjs。",
+  "ledger": {
+    "src/app/(dashboard)/after-sales/[id]/AfterSalesDetail.tsx": {
+      "kind": "risk",
+      "reason": "售后单类型：`AfterSalesType` 是服务端枚举（`src/types/index.ts` 的 `AfterSalesTypeLabels`），未命中会把服务端标识直接印在详情页。修法 = `displayEnum(AfterSalesTypeLabels, ticket.ticketType)`（`src/lib/enum-display.ts`）。",
+      "sites": {
+        "EF-row-raw-value": 2
+      }
+    },
+    "src/app/(dashboard)/after-sales/page.tsx": {
+      "kind": "risk",
+      "reason": "同上（列表页那一处）。",
+      "sites": {
+        "EF-row-raw-value": 1
+      }
+    },
+    "src/app/(dashboard)/customers/page.tsx": {
+      "kind": "risk",
+      "reason": "顾客渠道：`CustomerChannel` 是服务端枚举（`src/types/index.ts` 的 `CustomerChannelLabels`），列表徽标会印出 `wechat` / `douyin` 一类标识。",
+      "sites": {
+        "EF-jsx-raw-value": 1
+      }
+    },
+    "src/app/(dashboard)/dashboard/page.tsx": {
+      "kind": "risk",
+      "reason": "失败态里点名「哪几块失败」的模块名（`BLOCK_LABELS[key] ?? key`）：`key` 是前端自建键，但**漏登记一块就会把字段名印进告警**（`setBlockErrors` 的调用点逐块列举，漏一个即命中此兜底）。口径 = 兜底改成人话（`其他区块`）并补 fan-out 守卫。",
+      "sites": {
+        "EF-jsx-raw-value": 1
+      }
+    },
+    "src/app/(dashboard)/employees/page.tsx": {
+      "kind": "risk",
+      "reason": "员工权限徽标：`permissionLabelMap[c] || c` —— `c` 是权限码（`product:read` 一类），未命中即把权限码上屏。",
+      "sites": {
+        "EF-jsx-raw-value": 1
+      }
+    },
+    "src/app/(dashboard)/finance/page.tsx": {
+      "kind": "risk",
+      "reason": "财务三类枚举（交易类型 / 交易状态 / 订单状态）+ 支付方式：全部是服务端枚举，未命中即把标识印进表格。",
+      "sites": {
+        "EF-jsx-raw-value": 1,
+        "EF-row-raw-value": 2
+      }
+    },
+    "src/app/(dashboard)/notifications/page.tsx": {
+      "kind": "risk",
+      "reason": "通知渠道（`NotificationChannel`）：未命中即把渠道标识印进列表。",
+      "sites": {
+        "EF-row-raw-value": 1
+      }
+    },
+    "src/app/(dashboard)/orders/[id]/OrderDetail.tsx": {
+      "kind": "risk",
+      "reason": "行级销售方式（`sm[pi.sellingMethod] || pi.sellingMethod`）：服务端枚举，未命中即把标识印进订单行。",
+      "sites": {
+        "EF-row-raw-value": 1
+      }
+    },
+    "src/app/(dashboard)/orders/new/page.tsx": {
+      "kind": "risk",
+      "reason": "取费来源（`FEE_SOURCE_LABELS[feeSource] ?? feeSource`）：涉钱面，未命中即把标识印在费用明细。",
+      "sites": {
+        "EF-row-raw-value": 1
+      }
+    },
+    "src/app/(dashboard)/production/pool/page.tsx": {
+      "kind": "risk",
+      "reason": "派单结果里的订单号兜底（`orderNoById[r.orderRef] ?? r.orderRef`）：`orderRef` 是**内部引用键**（`*Ref` 机器键指纹），查不到单号时会把内部键印给商家。",
+      "sites": {
+        "EF-machine-key-value": 1
+      }
+    },
+    "src/app/(dashboard)/production/remnants/page.tsx": {
+      "kind": "risk",
+      "reason": "余料「小件类型 / 状态」两列：服务端枚举，未命中即把标识印进表格单元格。",
+      "sites": {
+        "EF-jsx-raw-value": 1,
+        "EF-row-raw-value": 1
+      }
+    },
+    "src/app/(dashboard)/products/[id]/ProductDetail.tsx": {
+      "kind": "risk",
+      "reason": "销售方式（`SellingMethodLabels[m] || m`）：服务端枚举，未命中即把标识印进商品详情。",
+      "sites": {
+        "EF-jsx-raw-value": 1
+      }
+    },
+    "src/components/dashboard/ActiveSessions.tsx": {
+      "kind": "risk",
+      "reason": "活跃会话渠道：未命中即把渠道标识印进看板卡片。",
+      "sites": {
+        "EF-row-raw-value": 1
+      }
+    },
+    "src/components/orders/OrderCraftFields.tsx": {
+      "kind": "risk",
+      "reason": "算料公式名（`CRAFT_CALC_FORMULA_LABELS[formula] ?? formula`）：未命中即把公式标识印在下单表单。",
+      "sites": {
+        "EF-row-raw-value": 2
+      }
+    },
+    "src/components/orders/OrderItemList.tsx": {
+      "kind": "risk",
+      "reason": "行级销售方式（`sellingMethodLabel[rawSellingMethod] || rawSellingMethod`）：同上第二种渲染路径。",
+      "sites": {
+        "EF-row-raw-value": 1
+      }
+    },
+    "src/components/orders/ProcessingOrderBlock.tsx": {
+      "kind": "risk",
+      "reason": "加工单状态（`STATUS_TEXT[po.status] ?? po.status`，两处）：服务端枚举，未命中即把标识印进订单详情区块。",
+      "sites": {
+        "EF-row-raw-value": 3
+      }
+    },
+    "src/components/orders/QuotationDoc.tsx": {
+      "kind": "risk",
+      "reason": "报价单收款码类型（`PAYMENT_TYPE_LABELS[type] || type`）：**纸面**输出，未命中即把 `wechat` / `alipay` 印到客户手上的单据。",
+      "sites": {
+        "EF-row-raw-value": 1
+      }
+    },
+    "src/components/orders/SalesDoc.tsx": {
+      "kind": "risk",
+      "reason": "销售单收款码类型：同上（同一族，两张纸面各写一份）。",
+      "sites": {
+        "EF-row-raw-value": 1
+      }
+    },
+    "src/components/production-config/ProcessConfigBoard.tsx": {
+      "kind": "risk",
+      "reason": "触发方式 / 档位显示名（`TRIGGER_KIND_LABEL[...] ?? ...`、`TIER_DISPLAY_LABEL[name] ?? name`）：未命中即把配置标识印进工艺配置页。",
+      "sites": {
+        "EF-row-raw-value": 2
+      }
+    },
+    "src/components/production-config/utils.tsx": {
+      "kind": "risk",
+      "reason": "同上（`TRIGGER_KIND_LABEL` 的第二份消费点）。",
+      "sites": {
+        "EF-row-raw-value": 1
+      }
+    },
+    "src/components/products/ProductTable.tsx": {
+      "kind": "risk",
+      "reason": "商品状态徽标（`ProductStatusLabels[record.status] || record.status`）：未命中即把状态标识印进商品列表。",
+      "sites": {
+        "EF-row-raw-value": 1
+      }
+    },
+    "src/config/menu-icons.ts": {
+      "kind": "benign",
+      "reason": "图标表兜底（`menuIconMap[name] || fallback`）：兜底值是**图标组件常量**，不是展示文本 ⇒ 不可能把机器值印上屏。",
+      "sites": {
+        "EF-row-raw-value": 1
+      }
+    },
+    "src/lib/attribute-keys.ts": {
+      "kind": "benign",
+      "reason": "规格键的中英**别名表**：兜底值 `key` 是前端自己的规格中文键（本就是人话），不是服务端标识。",
+      "sites": {
+        "EF-row-raw-value": 1
+      }
+    },
+    "src/lib/craft-calc-request.ts": {
+      "kind": "benign",
+      "reason": "算料候选 / 缺省档：兜底值来自前端自建的常量表（`CRAFT_CALC_TIER` 一族），不是服务端下发的标识。",
+      "sites": {
+        "EF-row-raw-value": 2
+      }
+    },
+    "src/lib/craft-display.ts": {
+      "kind": "benign",
+      "reason": "公式 / 档位显示名格式化器：入参是前端自建的算料符号（`text`），兜底仍是可读符号 —— 该模块本身就是「符号 → 人话」的那一层。",
+      "sites": {
+        "EF-row-raw-value": 2
+      }
+    },
+    "src/lib/order-craft-fields.ts": {
+      "kind": "benign",
+      "reason": "工艺名别名表（`CRAFT_ITEM_NAME_ALIASES[text] ?? text`）：兜底值是**工艺名本身**（人话），不是标识。",
+      "sites": {
+        "EF-row-raw-value": 1
+      }
+    },
+    "src/lib/stock-ledger.ts": {
+      "kind": "benign",
+      "reason": "库存流水的 `reason` 兜底：前端自建原因词表，兜底值是可读词。",
+      "sites": {
+        "EF-row-raw-value": 1
+      }
+    }
+  },
+  "syntax_benign": {
+    "src/app/(dashboard)/after-sales/[id]/AfterSalesDetail.tsx": "该文件另有两处兜底值是**图标组件常量**与**同表另一项**（`statusTimelineIcon[history.status] || AlertCircle`、`statusTimelineColor[history.status] || statusTimelineColor.pending`）⇒ 不是展示文本，不判。"
+  },
+  "boundary": "只认源码文本形态（二元表达式 + 查表 + 裸值）。`if (!L[x]) y = x` / 三元 `L[x] ? L[x] : x` / `x || L[x]`（兜底在左）不在面内 —— 换写法可绕过，这是**有意**的射程限制。`kind: risk` 的条目需要逐条改成 `displayEnum(…)`（人话兜底）；在那之前本台账就是这份清单的**真值**。"
+}
