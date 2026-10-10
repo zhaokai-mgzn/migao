@@ -1,6 +1,6 @@
-/* case_ids: UI-002, UI-057, UI-058 —— 本包（issue #6703）只复用既有用例号，不新开用例；
-   合并原声明 UI-002，避免同文件两处声明（第二处会被遮蔽）。声明落在前 50 行内
-   （.github/growth_gate.py 的 extract_case_ids 只扫前 50 行）。 */
+// case_ids: UI-002, UI-057, UI-058
+// 本包（issue #6703）只复用既有用例号，不新开用例；合并原声明 UI-002（同文件两处声明时第二处会被遮蔽）。
+// ⚠️ 声明行必须是 `//` / `#` / ` * ` 起始（`CASE_IDS_RE` 不认 `/* ` 起始），且其后不得再出现 case_ids 字样。
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
