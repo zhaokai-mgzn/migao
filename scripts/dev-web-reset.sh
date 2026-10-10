@@ -18,7 +18,14 @@ set -euo pipefail
 
 PORT="${1:-3001}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WEB="${WEB_DIR:-$ROOT/frontend/admin-web}"   # 可用 WEB_DIR 指定别的工作树（便于从任意 worktree 复位主工作树的服务）
+# ⚠️ 默认必须指向**主检出**，不是"本脚本所在的 checkout"（2026-10-11 实测的根因）：
+#    验收承载面住在 `migao-wt/ui-trial-acceptance` 这个 **worktree** 里，而 worktree 里**没有 node_modules**
+#    ⇒ 按 `$ROOT/frontend/admin-web` 解析会指到 worktree 里的空树 ⇒ 起服务时报
+#    `sh: next: command not found`（我一度误判成 PATH / npm 注入问题，接连两次归错因；真相是被指到了错的树）。
+#    改用 git 的 common dir 反解主检出 ⇒ **从任意 worktree 调用都落到主检出**；仍可用 WEB_DIR 显式覆盖。
+COMMON="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+MAIN_ROOT="$(dirname "${COMMON:-$ROOT/.git}")"
+WEB="${WEB_DIR:-$MAIN_ROOT/frontend/admin-web}"
 LOG="${TMPDIR:-/tmp}/admin-web-dev-$PORT.log"
 WAIT_SECS="${WAIT_SECS:-180}"
 
@@ -65,10 +72,8 @@ if [ "${NO_START:-0}" = "1" ]; then
 fi
 
 echo "== ③ 只起一个实例（日志：${LOG}）"
-# ⚠️ 不要依赖 `npm run dev` 的 `.bin` 注入（2026-10-11 三次实测）：在某些调用环境（后台作业的 nohup 子壳）里
-#    它会以 `sh: next: command not found` 失败 —— 而本脚本只在**等不到就绪**时报警，表现为"清理成功但服务没起来"。
-#    实测：同一个 `npm run dev` 在**前台**能解析 `next`、在那个后台环境里不能；而**直接调 bin** 两边都能起。
-#    `package.json` 的 dev 脚本就是 `next dev -p 3001` ⇒ 这里等价地跑 `next dev -p $PORT`（改动 dev 脚本时要同步这里）。
+# 起服务直接调 next 二进制（不经 npm）：少一层间接、失败信息更直白（缺 node_modules 时会当场说清是哪棵树）。
+# `package.json` 的 dev 脚本就是 `next dev -p 3001` ⇒ 这里等价地跑 `next dev -p $PORT`（若将来 dev 脚本变了要同步这里）。
 NEXT_BIN="$WEB/node_modules/next/dist/bin/next"
 [ -f "$NEXT_BIN" ] || { echo "✗ 找不到 ${NEXT_BIN}（node_modules 不完整？）" >&2; exit 1; }
 # setsid（若可用）脱离调用方的**进程组** —— 否则调用方被 SIGTERM（或 shell 退出）时会把 dev server 一起带走
