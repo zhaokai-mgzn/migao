@@ -38,3 +38,4 @@
 {"id":"1791592849.59006.8432","ts":"2026-10-10T00:40:49Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6635-worker-report-picker","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1791593585.98552.24256","ts":"2026-10-10T00:53:06Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6635-worker-report-picker","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1791594612.32218.26296","ts":"2026-10-10T01:10:13Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6638-worker-picker-parity","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1791597392.13423.8691","ts":"2026-10-10T01:56:33Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6656-direct-print-label-parity","why":"子包 worktree 直跑全量（无批次标记）"}
