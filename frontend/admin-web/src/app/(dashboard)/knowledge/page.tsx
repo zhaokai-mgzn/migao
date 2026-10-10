@@ -8,6 +8,7 @@ import { Table, Pagination, Modal, Button, Badge, SearchBar } from '@/components
 import type { TableColumn } from '@/components/ui'
 import type { KnowledgeCard, KnowledgeCardStatus, KnowledgeCandidate, KnowledgeTemplateInfo } from '@/types'
 import DateTimeCell from '@/components/common/DateTimeCell'
+import ListLoadError from '@/components/common/ListLoadError'
 import { cn } from '@/lib/utils'
 import { usePermission } from '@/lib/permission'
 
@@ -52,6 +53,10 @@ export default function KnowledgePage() {
   const [entries, setEntries] = useState<KnowledgeCard[]>([])
   const [loading, setLoading] = useState(false)
   const [total, setTotal] = useState(0)
+  /** 卡片列表读面失败标记（issue #6703）：读失败时计数行不得照旧印 0 */
+  const [entriesError, setEntriesError] = useState(false)
+  /** 待确认队列读面失败标记（issue #6703）：读失败时不得说「暂无待确认候选」 */
+  const [candidatesError, setCandidatesError] = useState(false)
   const [current, setCurrent] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [keyword, setKeyword] = useState('')
@@ -108,7 +113,9 @@ export default function KnowledgePage() {
       })
       setEntries(res.data?.data?.items ?? [])
       setTotal(res.data?.data?.total ?? 0)
+      setEntriesError(false)
     } catch {
+      setEntriesError(true)
       toast.error('加载知识卡片失败')
     } finally {
       setLoading(false)
@@ -213,7 +220,9 @@ export default function KnowledgePage() {
       setCandidates(list.data?.data?.items ?? [])
       setCandidatesTotal(list.data?.data?.total ?? 0)
       setPendingCount(count.data?.data?.pending ?? 0)
+      setCandidatesError(false)
     } catch {
+      setCandidatesError(true)
       toast.error('加载待确认队列失败')
     }
   }, [])
@@ -496,12 +505,30 @@ export default function KnowledgePage() {
               </select>
             </div>
 
-            <Table columns={columns} dataSource={entries} loading={loading} rowKey="id" emptyText="暂无知识卡片，点击「新建知识卡片」或从行业模板一键套用" highlightRowKey={highlightCardId} />
+            {entriesError && (
+              // 失败态 ≠ 空态（issue #6703）：说清「不是没有知识卡片，是没读到」+ 真重发出口
+              <ListLoadError
+                testId="knowledge-load-error"
+                message="知识卡片加载失败 —— 没读到数据，下面的条数不可信。请检查网络后重试。"
+                onRetry={() => void loadEntries()}
+                retrying={loading}
+              />
+            )}
+
+            <Table
+              columns={columns}
+              dataSource={entries}
+              loading={loading}
+              rowKey="id"
+              emptyText={entriesError ? '知识卡片没读到 —— 见上方失败提示' : '暂无知识卡片，点击「新建知识卡片」或从行业模板一键套用'}
+              highlightRowKey={highlightCardId}
+            />
 
             <Pagination
               current={current}
               pageSize={pageSize}
               total={total}
+              totalReliable={!entriesError}
               onChange={(page) => { setCurrent(page) }}
             />
           </div>
@@ -512,7 +539,15 @@ export default function KnowledgePage() {
         <div className="p-5 space-y-3">
           <p className="text-sm text-neutral-500">AI 从客服会话/文档中提炼的候选知识卡片，采纳后立即发布为知识卡片并跳转列表顶部（可直接编辑，AI 只产生候选，发布权在您）。人工客服会话结束后自动提炼（纯 AI 接待不提炼）</p>
           <div className="divide-y">
-            {candidates.length === 0 && (
+            {candidatesError && (
+              // 失败态 ≠ 空态（issue #6703）：读不到时不说「暂无待确认候选」
+              <ListLoadError
+                testId="knowledge-candidates-load-error"
+                message="待确认队列加载失败 —— 没读到数据，这里的「暂无」不可信。请检查网络后重试。"
+                onRetry={() => void loadCandidates()}
+              />
+            )}
+            {candidates.length === 0 && !candidatesError && (
               <p className="py-4 text-sm text-neutral-500">暂无待确认候选。人工客服会话结束后将自动提炼知识；也可通过「文档提炼」从资料中提炼。</p>
             )}
             {candidates.map((c) => (

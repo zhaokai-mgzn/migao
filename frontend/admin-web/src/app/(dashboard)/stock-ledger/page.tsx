@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { ClipboardList, Layers, RefreshCw, Search, X } from 'lucide-react'
 import { InlineMarkdown } from '@/lib/inline-markdown'
 import { Button } from '@/components/ui'
+import ListLoadError from '@/components/common/ListLoadError'
 import { batchStockApi, productApi, stockLedgerApi } from '@/lib/api'
 import { formatCost, formatDelta, formatQty, formatTime, reasonLabel } from '@/lib/stock-ledger'
 import type { BatchRemaining, StockLedgerEntry } from '@/types'
@@ -114,7 +115,8 @@ export default function StockLedgerPage() {
       setTotal(Number(data?.total ?? 0))
     } catch {
       setRows([])
-      setTotal(0)
+      // 🔴 issue #6703：**不清 total** —— 清零会把「读不到」印成「共 0 条」；
+      // 计数行改由 `error` 门控（印 `—`），与下面那处 `stock-ledger-error` 同源。
       setError('库存明细读取失败（可能是当前岗位没有「商品管理」权限）—— 请联系管理员开权限后重试')
     }
     setLoading(false)
@@ -370,9 +372,9 @@ export default function StockLedgerPage() {
       </div>
 
       {view === 'flow' && error && (
-        <div data-testid="stock-ledger-error" className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
+        // 读面失败的**常驻**锚点 + 真重发出口（issue #6691 起；#6703 补上「重试」按钮：
+        // 改前这里只印一句「请稍后重试」，屏上没有任何可点的出口）
+        <ListLoadError testId="stock-ledger-error" message={error} onRetry={() => void load()} retrying={loading} />
       )}
 
       {view === 'batch' && batchError && (
@@ -443,7 +445,7 @@ export default function StockLedgerPage() {
 
           {/* 分页 */}
           <div className="flex items-center justify-between text-sm text-neutral-500">
-            <span data-testid="ledger-total">共 {total} 条</span>
+            <span data-testid="ledger-total">共 {error ? '—' : total} 条</span>
             <div className="flex items-center gap-2">
               <Button
                 variant="secondary"

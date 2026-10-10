@@ -13,6 +13,7 @@ import type {
   FinanceSummary,
   ReceivableReconciliationItem,
 } from '@/types'
+import ListLoadError from '@/components/common/ListLoadError'
 import {
   FinanceTransactionTypeLabels,
   FinancePaymentMethodLabels,
@@ -90,6 +91,14 @@ export default function FinancePage() {
   const [recs, setRecs] = useState<ReceivableReconciliationItem[]>([])
   const [recLoading, setRecLoading] = useState(false)
   const [recTotal, setRecTotal] = useState(0)
+  /**
+   * 读面失败标记（issue #6703）：三段读（汇总 / 流水 / 对账）各自的 `total` / 金额初值都是 0，
+   * 读失败时若照旧印「¥0.00」/「共 0 条记录」，商家会读成「今天没进账 / 没有流水」。
+   * 失败 ⇒ 常驻失败锚点 + **计数位印 `—`**（不印 0）。
+   */
+  const [summaryError, setSummaryError] = useState(false)
+  const [txnError, setTxnError] = useState(false)
+  const [recError, setRecError] = useState(false)
   const [recPage, setRecPage] = useState(1)
   const [recSize, setRecSize] = useState(20)
   const [recKeyword, setRecKeyword] = useState('')
@@ -120,7 +129,10 @@ export default function FinancePage() {
       const hasRange = appliedRange.startDate || appliedRange.endDate
       const res = await financeApi.getSummary(hasRange ? appliedRange : undefined)
       setSummary(res.data?.data ?? null)
+      setSummaryError(false)
     } catch {
+      // 读不到 ⇒ 常驻失败面（issue #6703）：金额位会保持 0，不能只靠 ~4s 的 toast
+      setSummaryError(true)
       toast.error('加载收支汇总失败')
     } finally {
       setSummaryLoading(false)
@@ -142,7 +154,9 @@ export default function FinancePage() {
       const res = await financeApi.getTransactions(params as never)
       setTxns(res.data?.data?.items ?? [])
       setTxnTotal(res.data?.data?.total ?? 0)
+      setTxnError(false)
     } catch {
+      setTxnError(true)
       toast.error('加载资金流水失败')
     } finally {
       setTxnLoading(false)
@@ -161,7 +175,9 @@ export default function FinancePage() {
       })
       setRecs(res.data?.data?.items ?? [])
       setRecTotal(res.data?.data?.total ?? 0)
+      setRecError(false)
     } catch {
+      setRecError(true)
       toast.error('加载应收对账失败')
     } finally {
       setRecLoading(false)
@@ -291,32 +307,42 @@ export default function FinancePage() {
         <SummaryCard
           title="本期收入"
           icon={<ArrowDownCircle className="w-5 h-5 text-green-600" />}
-          value={summaryLoading ? null : summary?.totalIncome}
+          value={summaryError ? undefined : summaryLoading ? null : summary?.totalIncome}
           hint={`${summary?.incomeCount ?? 0} 笔`}
           accent="text-green-600"
         />
         <SummaryCard
           title="本期退款"
           icon={<ArrowUpCircle className="w-5 h-5 text-red-500" />}
-          value={summaryLoading ? null : summary?.totalRefund}
+          value={summaryError ? undefined : summaryLoading ? null : summary?.totalRefund}
           hint={`${summary?.refundCount ?? 0} 笔`}
           accent="text-red-600"
         />
         <SummaryCard
           title="净收入"
           icon={<TrendingUp className="w-5 h-5 text-primary-600" />}
-          value={summaryLoading ? null : summary?.netIncome}
+          value={summaryError ? undefined : summaryLoading ? null : summary?.netIncome}
           hint="收入 - 退款"
           accent="text-primary-600"
         />
         <SummaryCard
           title="待收款"
           icon={<Wallet className="w-5 h-5 text-amber-500" />}
-          value={summaryLoading ? null : summary?.pendingReceivable}
+          value={summaryError ? undefined : summaryLoading ? null : summary?.pendingReceivable}
           hint="累计未收差额"
           accent="text-amber-600"
         />
       </div>
+
+      {summaryError && (
+        // 失败态 ≠ 空态（issue #6703）：上面四张卡片的金额位此刻印 `—`，这里说清为什么 + 真重发出口
+        <ListLoadError
+          testId="finance-summary-load-error"
+          message="收支汇总加载失败 —— 没读到数据，上面四张卡片的金额不可信。请检查网络后重试。"
+          onRetry={() => void loadSummary()}
+          retrying={summaryLoading}
+        />
+      )}
 
       {/* Tab 栏 */}
       <div className="flex items-center gap-0 bg-white border border-neutral-200 rounded-t-lg overflow-x-auto">
@@ -378,6 +404,18 @@ export default function FinancePage() {
             <Button variant="secondary" onClick={handleTxnSearch}>查询</Button>
           </div>
 
+          {txnError && (
+            // 失败态 ≠ 空态（issue #6703）：说清「不是没有流水，是没读到」+ 真重发出口
+            <div className="px-4 pt-4">
+              <ListLoadError
+                testId="finance-load-error"
+                message="资金流水加载失败 —— 没读到数据，下面的条数不可信。请检查网络后重试。"
+                onRetry={() => void loadTxns()}
+                retrying={txnLoading}
+              />
+            </div>
+          )}
+
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -397,7 +435,7 @@ export default function FinancePage() {
                 {txnLoading ? (
                   <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">加载中...</td></tr>
                 ) : txns.length === 0 ? (
-                  <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">暂无资金流水</td></tr>
+                  <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">{txnError ? '流水没读到 —— 见上方失败提示' : '暂无资金流水'}</td></tr>
                 ) : (
                   txns.map((t) => (
                     <tr key={t.id} className="hover:bg-neutral-50/50 transition-colors">
@@ -432,6 +470,7 @@ export default function FinancePage() {
             current={txnPage}
             pageSize={txnSize}
             total={txnTotal}
+            totalReliable={!txnError}
             onChange={setTxnPage}
             onPageSizeChange={(size) => { setTxnSize(size); setTxnPage(1) }}
           />
@@ -524,6 +563,18 @@ export default function FinancePage() {
             </label>
           </div>
 
+          {recError && (
+            // 失败态 ≠ 空态（issue #6703）
+            <div className="px-4 pt-4">
+              <ListLoadError
+                testId="finance-reconciliation-load-error"
+                message="应收对账加载失败 —— 没读到数据，下面的条数不可信。请检查网络后重试。"
+                onRetry={() => void loadRecs()}
+                retrying={recLoading}
+              />
+            </div>
+          )}
+
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
@@ -543,7 +594,7 @@ export default function FinancePage() {
                 {recLoading ? (
                   <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">加载中...</td></tr>
                 ) : visibleRecs.length === 0 ? (
-                  <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">暂无对账数据</td></tr>
+                  <tr><td colSpan={9} className="px-4 py-12 text-center text-neutral-400">{recError ? '对账数据没读到 —— 见上方失败提示' : '暂无对账数据'}</td></tr>
                 ) : (
                   visibleRecs.map((r) => (
                     <tr key={r.orderId} className="hover:bg-neutral-50/50 transition-colors">
@@ -572,6 +623,7 @@ export default function FinancePage() {
             current={recPage}
             pageSize={recSize}
             total={recTotal}
+            totalReliable={!recError}
             onChange={setRecPage}
             onPageSizeChange={(size) => { setRecSize(size); setRecPage(1) }}
           />
@@ -679,7 +731,8 @@ function SummaryCard({ title, icon, value, hint, accent }: {
         {icon}
       </div>
       <div className={cn('text-2xl font-semibold', accent ?? 'text-neutral-900')}>
-        {value === null ? '...' : fmtMoney(value ?? 0)}
+        {/* `undefined` = 读面失败（issue #6703）⇒ 印 `—`，不印 ¥0.00（那是「本期没进账」的假读数） */}
+        {value === undefined ? '—' : value === null ? '...' : fmtMoney(value)}
       </div>
       {hint && <div className="text-xs text-neutral-400 mt-1">{hint}</div>}
     </div>

@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { orderApi } from '@/lib/api'
 import { OrderTable, CloseOrderModal, RemarkModal, RefundOrderModal } from '@/components/orders'
 import { Button, Modal } from '@/components/ui'
+import ListLoadError from '@/components/common/ListLoadError'
 import { usePermission } from '@/lib/permission'
 import type { Order, OrderStatus, OrderStatusTab } from '@/types'
 import { FrontendToBackendStatus, OrderStatusTabs, ORDER_CATEGORIES, OrderStatusLabels, toBackendStatusParam } from '@/types'
@@ -160,6 +161,12 @@ export default function OrdersPage() {
   const [current, setCurrent] = useState(1)
   const pageSize = 20
   const [total, setTotal] = useState(0)
+  /**
+   * 读面失败标记（issue #6703）：`total` 初值 0，读失败时若照旧印「共 0 条」，
+   * 商家回到屏幕会把它读成「今天没有订单」—— 与 #6691「读面故障不得画成空态」同族。
+   * 失败 ⇒ 计数位印 `—` + 常驻失败锚点（`orders-load-error`）+ 真重发出口。
+   */
+  const [loadError, setLoadError] = useState(false)
 
   // 列表
   const [orders, setOrders] = useState<Order[]>([])
@@ -243,8 +250,11 @@ export default function OrdersPage() {
 
       setOrders(items)
       setTotal(pageData?.total || 0)
+      setLoadError(false)
     } catch (e) {
       console.error(e)
+      // 读不到 ⇒ 屏上必须留一处**常驻**的失败面（toast 约 4s 就没了）
+      setLoadError(true)
       toastRequestError(e, '加载订单失败')
     } finally {
       setLoading(false)
@@ -576,6 +586,17 @@ export default function OrdersPage() {
 
       {/* 表格 + Tab */}
       <div className="bg-white rounded-lg border border-neutral-200">
+        {loadError && (
+          // 失败态 ≠ 空态（issue #6703 / #6691）：说清「不是今天没有订单，是没读到」+ 真重发出口
+          <div className="p-4 pb-0">
+            <ListLoadError
+              testId="orders-load-error"
+              message="订单加载失败 —— 没读到数据，下面的条数与列表都不可信。请检查网络后重试。"
+              onRetry={() => void loadOrders()}
+              retrying={loading}
+            />
+          </div>
+        )}
         {/* Tab 栏 */}
         <div className="flex items-center gap-6 px-5 pt-3 border-b border-neutral-200 overflow-x-auto">
           {OrderStatusTabs.map((tab) => {
@@ -616,7 +637,7 @@ export default function OrdersPage() {
 
         {/* 分页 */}
         <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-neutral-100">
-          <span className="text-sm text-neutral-500 mr-2">共 {total} 条</span>
+          <span className="text-sm text-neutral-500 mr-2">共 {loadError ? '—' : total} 条</span>
           <button
             type="button"
             onClick={() => setCurrent(Math.max(1, current - 1))}

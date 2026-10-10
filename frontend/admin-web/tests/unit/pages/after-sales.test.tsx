@@ -1,3 +1,5 @@
+// case_ids: UI-057, UI-058  // 本包（issue #6703）只复用既有用例号，不新开用例
+// （声明落在前 50 行内 —— .github/growth_gate.py 的 extract_case_ids 只扫前 50 行）
 // case_ids: UI-002
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
