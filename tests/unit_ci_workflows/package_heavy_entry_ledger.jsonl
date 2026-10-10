@@ -36,3 +36,4 @@
 {"id":"1791592208.24560.9817","ts":"2026-10-10T00:30:08Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6635-worker-report-picker","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1791592237.24909.17705","ts":"2026-10-10T00:30:37Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6635-worker-report-picker","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1791592849.59006.8432","ts":"2026-10-10T00:40:49Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6635-worker-report-picker","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1791593585.98552.24256","ts":"2026-10-10T00:53:06Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6635-worker-report-picker","why":"--allow-package-heavy（命令行显式）"}
