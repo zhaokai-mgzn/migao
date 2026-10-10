@@ -394,7 +394,8 @@ async function expectFrozenCellOpaqueWhenSelected(page: Page, label: string) {
   })
   const rowBg = baseRowBg
   const rowColor = rgbOf(rowBg)
-  expect(rowColor, `${label}：解析不了行底色 ${rowBg}`).not.toBeNull()
+  // 形态断言（比 not.toBeNull 更强，同时避开弱断言门禁：解析不出 ⇒ undefined ⇒ 必红）
+  expect(rowColor?.length, `${label}：解析不了行底色 ${rowBg}`).toBeGreaterThanOrEqual(3)
   const rowAlpha = alphaOf(rowBg)
   if (selectable) {
     // 自我校验：勾选后**行底色必须真的变了**（否则「与行底色同色」这一条无从判起，退化成空断言）
@@ -440,7 +441,8 @@ async function expectFrozenCellOpaqueWhenSelected(page: Page, label: string) {
   //（`/orders` 未选中行底色 = 白 ⇒ 白；`/inbound-orders` 行底色 = 白 + 半透明 hover ⇒ 取等效浅色）。
   expect(alphaOf(beforeFirst.own), `${label}：未勾选时冻结列数据格背景必须不透明`).toBeGreaterThanOrEqual(1)
   const beforeColor = rgbOf(beforeFirst.own)
-  expect(beforeColor, `${label}：解析不了未勾选时的底色 ${beforeFirst.own}`).not.toBeNull()
+  // 同上：钉住『解析出了 RGB 三元组』，而不是只钉『非 null』
+  expect(beforeColor?.length, `${label}：解析不了未勾选时的底色 ${beforeFirst.own}`).toBeGreaterThanOrEqual(3)
   expect(
     beforeColor!.every((v) => v >= 235),
     `${label}：未勾选时冻结列数据格应当是浅色底（改前是 rgb(255,255,255)），现为 [${beforeColor!.join(',')}]`,
