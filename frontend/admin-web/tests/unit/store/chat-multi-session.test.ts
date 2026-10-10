@@ -145,7 +145,6 @@ describe('chat 多会话并发流 (issue #2906, CH-028)', () => {
         abortController: null,
         quickActions: [],
         isLoadingQuickActions: false,
-        error: null,
         choiceSelections: {},
       })
     })

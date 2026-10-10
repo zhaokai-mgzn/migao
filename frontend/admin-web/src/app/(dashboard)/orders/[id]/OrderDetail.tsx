@@ -6,6 +6,7 @@ import { ChevronRight, Printer, Zap, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
 import dayjs from 'dayjs'
+import DateTimeCell from '@/components/common/DateTimeCell'
 import { orderApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, Modal } from '@/components/ui'
@@ -36,11 +37,6 @@ function formatAmount(amount?: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`
-}
-
-function formatDateTime(time?: string): string {
-  if (!time) return '-'
-  return dayjs(time).format('YYYY-MM-DD HH:mm:ss')
 }
 
 // 倒计时计算
@@ -318,11 +314,11 @@ export default function OrderDetailPage() {
       <SectionCard title="基础信息">
         <div className="grid grid-cols-3 gap-y-4 gap-x-8 text-sm">
           <InfoRow label="订单编号" value={order.orderNo} />
-          <InfoRow label="下单时间" value={formatDateTime(order.createdAt)} />
-          <InfoRow label="支付时间" value={formatDateTime(order.paidAt)} />
+          <InfoRow label="下单时间" value={<DateTimeCell value={order.createdAt} />} />
+          <InfoRow label="支付时间" value={<DateTimeCell value={order.paidAt} />} />
           <InfoRow label="支付交易号" value={order.paymentNo || '-'} />
-          <InfoRow label="发货时间" value={formatDateTime(order.shippedAt)} />
-          <InfoRow label="确认收货时间" value={formatDateTime(order.receivedAt)} />
+          <InfoRow label="发货时间" value={<DateTimeCell value={order.shippedAt} />} />
+          <InfoRow label="确认收货时间" value={<DateTimeCell value={order.receivedAt} />} />
         </div>
       </SectionCard>
 
@@ -639,7 +635,7 @@ function StatusSection({
           <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-red-50 text-red-600 text-xs font-semibold">
             已退款 {formatAmount(order.refundAmount)}
           </span>
-          {order.refundAt && <span className="text-xs text-neutral-500">退款时间：{formatDateTime(order.refundAt)}</span>}
+          {order.refundAt && <span className="text-xs text-neutral-500">退款时间：<DateTimeCell value={order.refundAt} /></span>}
         </div>
       )}
       {status === 'pending_payment' && (
@@ -1011,7 +1007,7 @@ function AmountSummary({
               <span className="text-neutral-500">已退款</span>
               <span className="text-red-600 font-semibold">{formatAmount(refundAmount)}</span>
               {refundAt && (
-                <span className="text-xs font-normal text-neutral-400">({formatDateTime(refundAt)})</span>
+                <span className="text-xs font-normal text-neutral-400">(<DateTimeCell value={refundAt} />)</span>
               )}
             </div>
           </>

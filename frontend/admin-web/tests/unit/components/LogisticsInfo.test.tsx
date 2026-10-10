@@ -109,9 +109,11 @@ describe('LogisticsInfo — #686 logisticsCompany 字段名修复', () => {
 
     render(<LogisticsInfo logistics={logistics} />)
 
-    // component uses dayjs(track.time).format('YYYY-MM-DD HH:mm:ss'), compute dynamically
-    const expected = dayjs('2025-06-20T10:30:00Z').format('YYYY-MM-DD HH:mm:ss')
-    expect(screen.getByText(expected)).toBeInTheDocument()
+    // issue #6664 第 7 条：改走唯一真值源 DateTimeCell（两行：YYYY-MM-DD + HH:mm），
+    // 断言日期行 + 时刻行（时区无关，不写死换算后的钟点）
+    const d = dayjs('2025-06-20T10:30:00Z')
+    expect(screen.getByText(d.format('YYYY-MM-DD'))).toBeInTheDocument()
+    expect(screen.getByText(d.format('HH:mm'))).toBeInTheDocument()
   })
 
   it('does not render tracks section when tracks is empty array', () => {

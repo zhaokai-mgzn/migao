@@ -193,7 +193,22 @@ export default function RemarkPopover({ remark, remarks, children }: RemarkPopov
   return (
     <span
       ref={triggerRef}
+      // issue #6664 第 8 条：改前只有 `onMouseEnter` ⇒ **触屏 / 键盘读不到备注**。
+      // 现在聚焦 / 点击 / Enter / Space 都能开（平板试用是常态），Esc 收起。
       className="block w-full cursor-default"
+      role="button"
+      tabIndex={0}
+      aria-expanded={visible}
+      onClick={() => setVisible(v => !v)}
+      onFocus={() => setVisible(true)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          setVisible(v => !v)
+        } else if (e.key === 'Escape') {
+          setVisible(false)
+        }
+      }}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >

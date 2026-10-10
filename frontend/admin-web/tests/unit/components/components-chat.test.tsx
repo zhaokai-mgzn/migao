@@ -115,7 +115,6 @@ function makeDefaultChatState(overrides: Record<string, unknown> = {}) {
     abortController: null,
     quickActions: [],
     isLoadingQuickActions: false,
-    error: null,
     choiceSelections: {},
     toggleChoiceSelection: vi.fn(),
     clearChoiceSelections: vi.fn(),

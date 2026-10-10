@@ -16,6 +16,7 @@ import type {
   ProcessingOrderGenerateBatch,
   ProcessingOrderItem,
 } from '@/types'
+import { SellingMethodLabels } from '@/types'
 
 interface Props {
   /**
@@ -49,6 +50,21 @@ function todayLocal(): string {
   const mm = String(d.getMonth() + 1).padStart(2, '0')
   const dd = String(d.getDate()).padStart(2, '0')
   return `${d.getFullYear()}-${mm}-${dd}`
+}
+
+/**
+ * 售卖方式展示名（issue #6664 第 5 条）：真值源 = `types` 的 `SellingMethodLabels`
+ * （与 `OrderItemList` / `OrderDetail` 同一份映射），**未知值落人话兜底**、不裸奔英文键。
+ */
+const SELLING_METHOD_EXTRA: Record<string, string> = {
+  per_meter: '按米',
+  per_piece: '按件',
+}
+
+function sellingMethodLabel(value: string): string {
+  return (SellingMethodLabels as Record<string, string>)[value]
+    ?? SELLING_METHOD_EXTRA[value]
+    ?? '未知方式'
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -130,7 +146,7 @@ function toPlainText(po: ProcessingOrder): string {
     lines.push(`【${i + 1}】${it.productName ?? ''}${it.colorName ? `（${it.colorName}）` : ''}`)
     const attrs = [
       it.doorWidth ? `门幅:${it.doorWidth}` : '',
-      it.sellingMethod ? `方式:${it.sellingMethod}` : '',
+      it.sellingMethod ? `方式:${sellingMethodLabel(it.sellingMethod)}` : '',
       it.width ? `宽:${it.width}m` : '',
       it.height ? `高:${it.height}m` : '',
       it.quantity != null ? `数量:${it.quantity}${it.unit ?? ''}` : '',
@@ -170,6 +186,9 @@ export default function ProcessingOrderBlock({
   const [errorHint, setErrorHint] = useState('')
   /** 批次指派对话框；null = 未打开（一行都指派不了时**不开**，直接按原路径生成） */
   const [assign, setAssign] = useState<AssignRow[] | null>(null)
+  /** 简单流转（开始加工 / 加工完成）待确认的那个动作（issue #6664 第 4 条） */
+  const [simpleAction, setSimpleAction] = useState<'start' | 'complete' | null>(null)
+  const [simpleBusy, setSimpleBusy] = useState(false)
   const [picks, setPicks] = useState<Record<string, string>>({})
 
   const load = useCallback(async () => {
@@ -314,23 +333,29 @@ export default function ProcessingOrderBlock({
     }
   }
 
-  /** start/complete 简单流转（轻量 confirm 后直接调用） */
-  const handleSimpleAction = async (action: 'start' | 'complete') => {
+  /** start/complete 简单流转：先弹框确认（issue #6664 第 4 条：不再用 window.confirm），
+   *  在飞时按钮 disabled（防连点重复请求） */
+  const handleSimpleAction = (action: 'start' | 'complete') => {
     if (!po) return
-    const label = action === 'start' ? '开始加工' : '加工完成'
-    if (!window.confirm(`确认将加工单 ${po.processingOrderNo} 标记为「${label}」？`)) return
-    setBusy(true)
+    setSimpleAction(action)
+  }
+
+  const runSimpleAction = async () => {
+    if (!po || !simpleAction) return
+    if (simpleBusy) return
+    setSimpleBusy(true)
     setError('')
     setErrorHint('')
     try {
-      const res = await processingOrderApi.update(po.id, { action })
+      const res = await processingOrderApi.update(po.id, { action: simpleAction })
       const data = res.data?.data
       setPo(data ?? po)
       onStatusChange?.(data ?? po)
+      setSimpleAction(null)
     } catch {
       setError('操作失败，请确认加工单状态')
     } finally {
-      setBusy(false)
+      setSimpleBusy(false)
     }
   }
 
@@ -478,7 +503,7 @@ export default function ProcessingOrderBlock({
                 <div className="mt-1 text-xs text-neutral-500">
                   {[
                     it.doorWidth && `门幅 ${it.doorWidth}`,
-                    it.sellingMethod && `方式 ${it.sellingMethod}`,
+                    it.sellingMethod && `方式 ${sellingMethodLabel(it.sellingMethod)}`,
                     it.width != null && `宽 ${it.width}m`,
                     it.height != null && `高 ${it.height}m`,
                     it.quantity != null && `数量 ${it.quantity}${it.unit ?? ''}`,
@@ -539,10 +564,10 @@ export default function ProcessingOrderBlock({
               <Button size="sm" onClick={() => setForm({ action: 'issue' })}>发加工</Button>
             )}
             {canAct && po.status === 'issued' && (
-              <Button size="sm" onClick={() => handleSimpleAction('start')}>开始加工</Button>
+              <Button size="sm" disabled={simpleBusy} onClick={() => handleSimpleAction('start')}>开始加工</Button>
             )}
             {canAct && po.status === 'in_processing' && (
-              <Button size="sm" onClick={() => handleSimpleAction('complete')}>加工完成</Button>
+              <Button size="sm" disabled={simpleBusy} onClick={() => handleSimpleAction('complete')}>加工完成</Button>
             )}
             {canAct && (
               <Button variant="secondary" size="sm" onClick={() => setForm({ action: 'cancel' })}>取消加工单</Button>
@@ -597,6 +622,25 @@ export default function ProcessingOrderBlock({
           )}
         </div>
       )}
+
+      {/* 简单流转确认弹框（issue #6664 第 4 条）：与仓内自研 Modal 同一世界观；
+          取消 ⇒ 不发请求；在飞 ⇒ 按钮 disabled（防连点重复请求） */}
+      <Modal
+        open={simpleAction !== null}
+        onClose={() => { if (!simpleBusy) setSimpleAction(null) }}
+        title="确认状态流转"
+        footer={
+          <>
+            <Button variant="secondary" disabled={simpleBusy} onClick={() => setSimpleAction(null)}>取消</Button>
+            <Button loading={simpleBusy} onClick={() => void runSimpleAction()}>确认</Button>
+          </>
+        }
+      >
+        <p className="text-sm text-neutral-600">
+          将加工单 {po?.processingOrderNo} 标记为「{simpleAction === 'start' ? '开始加工' : '加工完成'}」。
+        </p>
+        {error && <div className="mt-2">{errorBlock}</div>}
+      </Modal>
     </div>
   )
 }
