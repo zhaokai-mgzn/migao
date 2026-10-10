@@ -1,0 +1,61 @@
+{
+  "before": {
+    "statusVisible": true,
+    "statusLeft": 485,
+    "hits": [
+      {
+        "t": "发货",
+        "hitSelf": true,
+        "why": "BUTTON"
+      },
+      {
+        "t": "处理退款",
+        "hitSelf": true,
+        "why": "BUTTON"
+      },
+      {
+        "t": "发货",
+        "hitSelf": true,
+        "why": "BUTTON"
+      },
+      {
+        "t": "处理退款",
+        "hitSelf": true,
+        "why": "BUTTON"
+      }
+    ],
+    "stickyCount": 21,
+    "scrollX": 0,
+    "docScrollW": 1280
+  },
+  "after": {
+    "statusVisible": true,
+    "statusLeft": 485,
+    "hits": [
+      {
+        "t": "发货",
+        "hitSelf": false,
+        "why": "视口外"
+      },
+      {
+        "t": "处理退款",
+        "hitSelf": false,
+        "why": "视口外"
+      },
+      {
+        "t": "发货",
+        "hitSelf": false,
+        "why": "视口外"
+      },
+      {
+        "t": "处理退款",
+        "hitSelf": false,
+        "why": "视口外"
+      }
+    ],
+    "stickyCount": 0,
+    "scrollX": 0,
+    "docScrollW": 1280
+  },
+  "note": "V20（宽表状态列可见 + 操作列按钮自击）的**判别力红证**：按本批纪律\"不会红的断言=空断言\"，我注入复现 #6717 修前形态（把 21 个 sticky 列改回 static）⇒ 4 个操作按钮全部 hitSelf=false、原因逐条是「视口外」⇒ 判据当场翻红；还原（修后）则 21 个 sticky、4 个按钮 hitSelf=true ⇒ 绿。读数：修后 statusLeft=485 两档一致；注入后 stickyCount=0。边界：这是**DOM 级注入**（证明判据对\"冻结列机制\"敏感），不等于\"我重跑过修前的代码\"——修前的真实读数在 #6717 的 PR 与其判据里。"
+}
