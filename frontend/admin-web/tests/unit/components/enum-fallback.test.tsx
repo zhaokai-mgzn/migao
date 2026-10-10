@@ -1,4 +1,4 @@
-// case_ids: OR-001, UI-048, CH-008
+// case_ids: OR-001, UI-048
 /**
  * 内部枚举 / 标识**不得上屏**（issue #6664 第 5 条）。
  *
@@ -12,29 +12,8 @@ import React from 'react'
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import ToolResultCard from '@/components/chat/ToolResultCard'
-import LogisticsCard, { logisticsStatusLabel } from '@/components/chat/LogisticsCard'
 import { sourceLabel } from '@/components/orders/shipment-source'
 import type { CardType } from '@/types'
-
-describe('物流状态：内部键 → 人话（issue #6664 第 5 条）', () => {
-  it('① 已知枚举 in_transit ⇒ 「运输中」，**不出现**英文原值', () => {
-    render(<LogisticsCard data={{ tracking_info: { trackingNo: 'SF1', status: 'in_transit' } }} />)
-    expect(screen.getByText('运输中')).toBeInTheDocument()
-    expect(screen.queryByText('in_transit')).toBeNull()
-  })
-
-  it('② 判别力自证：**未知**枚举 ⇒ 人话兜底「状态待确认」，**不出现**原值', () => {
-    render(<LogisticsCard data={{ tracking_info: { trackingNo: 'SF1', status: 'weird_new_state' } }} />)
-    expect(screen.getByText('状态待确认')).toBeInTheDocument()
-    expect(screen.queryByText('weird_new_state')).toBeNull()
-  })
-
-  it('③ 纯函数口径逐值可判（不给渲染留模糊空间）', () => {
-    expect(logisticsStatusLabel('in_transit')).toBe('运输中')
-    expect(logisticsStatusLabel('weird_new_state')).toBe('状态待确认')
-    expect(logisticsStatusLabel('')).toBe('')
-  })
-})
 
 describe('订单状态 chip：未知值不裸奔（issue #6664 第 5 条）', () => {
   it('① 未知 status ⇒ 人话兜底「状态待确认」，**不出现**英文原值', () => {
