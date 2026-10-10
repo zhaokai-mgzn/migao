@@ -1866,6 +1866,11 @@ export default function NewOrderPage() {
   // issue #4371：加工项与商品解耦 —— 目录只加载一次，商品选择不再过滤/触发加工项请求
   const [processingCatalog, setProcessingCatalog] = useState<ProcessingItem[]>([])
   const [processingCatalogLoading, setProcessingCatalogLoading] = useState(false)
+  /**
+   * 加工项目录读失败（issue #6691）：改前只 `setProcessingCatalog([])` ⇒ 行上的加工项列表空着、
+   * 与「这家店根本没配加工项」**看不出区别**（商家会去加工项管理白建一遍）。
+   */
+  const [processingCatalogFailed, setProcessingCatalogFailed] = useState(false)
 
   /**
    * 处理一条明细（选品面板的回调）—— **建行的唯一入口**（issue #5345 判据 1/7）。
@@ -1934,24 +1939,29 @@ export default function NewOrderPage() {
    */
   const [calcConfig, setCalcConfig] = useState<CraftCalcConfig | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      setProcessingCatalogLoading(true)
-      try {
-        const res = await processingItemApi.getProcessingItems({ page: 1, size: 100 })
-        if (!cancelled) setProcessingCatalog(res.data?.data?.items || [])
-      } catch (e) {
-        if (!cancelled) setProcessingCatalog([])
-      } finally {
-        if (!cancelled) setProcessingCatalogLoading(false)
-      }
-    }
-    load()
-    return () => {
-      cancelled = true
+  /**
+   * 加工项目录读面（店铺级，只加载一次）。读失败 ⇒ 标 `processingCatalogFailed`（issue #6691），
+   * 屏上给「目录加载失败 + 重试」；**不**把故障画成「目录是空的」。
+   * 抽成 `useCallback` 是为了重试按钮能重跑同一份读面（不复制一遍请求代码）。
+   */
+  const loadProcessingCatalog = useCallback(async () => {
+    setProcessingCatalogLoading(true)
+    setProcessingCatalogFailed(false)
+    try {
+      const res = await processingItemApi.getProcessingItems({ page: 1, size: 100 })
+      setProcessingCatalog(res.data?.data?.items || [])
+    } catch (e) {
+      // 拦截器已 toast（`e` 保留给 console 调试）；只标失败态，不清成「空目录」
+      console.error('加载加工项目录失败:', e)
+      setProcessingCatalogFailed(true)
+    } finally {
+      setProcessingCatalogLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    void loadProcessingCatalog()
+  }, [loadProcessingCatalog])
 
   // 目录到达后同步到各行项（行项可能在目录加载完成前就已选好商品）
   useEffect(() => {
@@ -1978,8 +1988,11 @@ export default function NewOrderPage() {
         if (cancelled) return
         setCalcConfig(res.data?.data?.config ?? null)
       } catch (e) {
-        // 读不到 ⇒ 保持 `null`（页面按缺省口径走 + 「工艺规格」里显式提示配置未加载）
-        if (!cancelled) setCalcConfig(null)
+        // 读不到 ⇒ 保持 `null`（issue #6691 口径：**不清成空** —— `calcConfig` 初值就是「没读到」的语义，
+        // 而下游 `OrderCraftFields` 把 `null` 渲染成显式「算料配置未加载」提示）。
+        // ⚠️ 本 catch **不得**再写 `setCalcConfig(null)`：那会被类级守卫（issue #6663）
+        // 读成「清空读数且不表达失败」的病灶形态。
+        console.error('加载算料配置失败:', e)
       }
     }
     load()
@@ -3161,6 +3174,20 @@ export default function NewOrderPage() {
           不把整条撑高。 */}
       <div className="space-y-6">
           {/* ============= 商品信息（多行项） ============= */}
+          {/* 加工项目录读失败（issue #6691）：常驻面**一行**（§31 P1），不随数据增长占屏 */}
+          {processingCatalogFailed && (
+            <div
+              data-testid="orders-new-processing-catalog-error"
+              role="alert"
+              className="flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800"
+            >
+              <span>加工项目录加载失败 —— 行上的加工项列表会显示为空，请重试</span>
+              <Button variant="secondary" size="sm" data-testid="orders-new-processing-catalog-retry" onClick={() => void loadProcessingCatalog()}>
+                重试
+              </Button>
+            </div>
+          )}
+
           <Card>
             <div className="p-6">
               {/* 识别入口挂在**商品信息**标题行（2026-09-28 用户裁定，红框即本行）——
