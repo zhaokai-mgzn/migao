@@ -49,7 +49,9 @@ const probe = (page) => page.evaluate(() => {
 const ctx1 = await browser.newContext({ viewport: { width: 1440, height: 980 } })
 const p1 = await ctx1.newPage()
 await login(p1)
-for (const path of ['/chat', '/employees', '/notifications', '/products', '/shipments']) {
+// ⚠️ `/customers` 是 #6728 用**调用图普查**发现的同类第三例（同一形态同一根因：早有常驻失败面，
+//    唯独共享 `ui/Table` 仍继承默认「暂无数据」）⇒ 一并纳入重放，否则本批的"类普查"成果就没人重放。
+for (const path of ['/chat', '/employees', '/notifications', '/products', '/shipments', '/customers']) {
   await p1.route('**/api/admin/**', INJ)
   await p1.goto(BASE + path, { waitUntil: 'domcontentloaded' })
   await p1.waitForTimeout(6000)

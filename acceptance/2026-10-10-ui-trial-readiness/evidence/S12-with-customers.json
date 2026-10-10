@@ -1,0 +1,15 @@
+{
+  "when": "2026-10-10T18:46:54.332Z",
+  "phase": "with-customers（仪器纳入 #6728 的同类第三例 /customers；此时 #6730 尚未合并）",
+  "fails": [
+    "读失败⇄空态 /employees 空态=[\"暂无数据\"] 零值=[] 失败词=1 锚点=employees-load-failed,employees-load-failed-retry",
+    "读失败⇄空态 /products 空态=[\"暂无数据\"] 零值=[] 失败词=1 锚点=products-load-failed,products-load-failed-retry",
+    "读失败⇄空态 /customers 空态=[\"暂无数据\"] 零值=[] 失败词=1 锚点=customers-load-error,customers-load-error-retry"
+  ],
+  "independent_red_proof": {
+    "/employees": "空态=[\"暂无数据\"] 失败锚已在 ⇒ 同屏两种断言打架（继承 ui/Table 默认 emptyText）",
+    "/products": "同上",
+    "/customers": "同上（失败锚=customers-load-error）—— 这是集成侧仪器对\"同类第三例\"的独立复现，与该包自己的 stash 单例红证互不依赖"
+  },
+  "expect_after_6730": "#6730 合并后这 3 条应同时转绿（成对读数）"
+}
