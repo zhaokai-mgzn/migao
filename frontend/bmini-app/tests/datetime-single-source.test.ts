@@ -48,10 +48,20 @@ const SURFACES = [
 ]
 
 describe('formatMessageTime（issue #6666 判据 8）', () => {
-  it('今天的消息 ⇒ 只给 HH:MM（与「今天」比较，不带日期）', () => {
-    const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 5).toISOString()
-    expect(formatMessageTime(today)).toBe('09:05')
+  afterEach(() => {
+    // 冻结时间只在本用例内有效（别把假时钟漏给后面的用例）
+    jest.useRealTimers()
+  })
+
+  it('今天的消息 ⇒ 只给 HH:MM（系统时间**冻结到显式时刻**，不读墙钟造期望值）', () => {
+    // 🔴「今天」这条语义必须有「现在」这个参照物 ⇒ 用 jest 冻结系统时间（守卫 time_flaky_guard
+    //    的冻结豁免形态）；**不要**改成 `const now = new Date()` 那种读墙钟造期望值的写法 ——
+    //    那正是 issue #4717 那条机械守卫（`tests/unit_ci_workflows/time_flaky_guard.py`）判红的形态，
+    //    而且真会在跨零点/跨时区时随机红（本包实测被它拦过一次）。
+    jest.useFakeTimers()
+    jest.setSystemTime(new Date(2026, 9, 10, 8, 0, 0))
+    const input = new Date(2026, 9, 10, 9, 5, 0).toISOString()
+    expect(formatMessageTime(input)).toBe('09:05')
   })
 
   it('非今天 ⇒ MM-DD HH:MM', () => {
