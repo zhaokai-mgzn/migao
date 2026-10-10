@@ -49,6 +49,18 @@ aliyun rds DescribeDBInstanceIPArrayList --DBInstanceId pgm-bp1p7w92k81ob5to
 （`review_source=system`，且**不进 24h 冷却** ⇒ 同一个用户会反复撞同一句）；
 而同一时刻 `curl http://127.0.0.1:8001/health` 是 `{"status":"healthy"}` —— **服务是好的，坏的是接线**。
 
+### 首次准备（新克隆 / 新队友；已建过就跳过）
+
+```bash
+# ai-agent：虚拟环境 + 依赖 + .env（.env 不进版本库，按 .env.example 建）
+cd backend/ai-agent-service
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+cp .env.example .env          # PRIMARY_API_KEY 本地可留空，见文末「本地跑不了的边界」
+
+# admin-api：.env（Spring Boot **不读** .env，启动时要 set -a && . ./.env 显式导出）
+cd ../admin-api && cp .env.example .env
+```
+
 ### 三件套启动命令（顺序：先 ai-agent，再 admin-api）
 
 ```bash
