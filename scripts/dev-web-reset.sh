@@ -65,14 +65,18 @@ if [ "${NO_START:-0}" = "1" ]; then
 fi
 
 echo "== ③ 只起一个实例（日志：${LOG}）"
-# setsid：脱离调用方的**进程组** —— 否则调用方被 SIGTERM（或 shell 退出）时会把 dev server 一起带走
-# ⚠️ 必须**显式**把 `node_modules/.bin` 放进 PATH（2026-10-11 实测）：依赖 npm 自行注入时，
-#    某些调用环境（nohup 子壳）下 `npm run dev` 会以 `sh: next: command not found` 失败 ——
-#    而本脚本的断言只在**等不到就绪**时报警，于是表现为"清理成功但服务根本没起来"。
+# ⚠️ 不要依赖 `npm run dev` 的 `.bin` 注入（2026-10-11 三次实测）：在某些调用环境（后台作业的 nohup 子壳）里
+#    它会以 `sh: next: command not found` 失败 —— 而本脚本只在**等不到就绪**时报警，表现为"清理成功但服务没起来"。
+#    实测：同一个 `npm run dev` 在**前台**能解析 `next`、在那个后台环境里不能；而**直接调 bin** 两边都能起。
+#    `package.json` 的 dev 脚本就是 `next dev -p 3001` ⇒ 这里等价地跑 `next dev -p $PORT`（改动 dev 脚本时要同步这里）。
+NEXT_BIN="$WEB/node_modules/next/dist/bin/next"
+[ -f "$NEXT_BIN" ] || { echo "✗ 找不到 ${NEXT_BIN}（node_modules 不完整？）" >&2; exit 1; }
+# setsid（若可用）脱离调用方的**进程组** —— 否则调用方被 SIGTERM（或 shell 退出）时会把 dev server 一起带走
+# macOS 没有 setsid ⇒ 退回 nohup + disown（实测同样能活过调用方退出）
 if command -v setsid >/dev/null 2>&1; then
-  ( cd "$WEB" && PATH="$WEB/node_modules/.bin:$PATH" setsid nohup npm run dev -- --port "$PORT" >"$LOG" 2>&1 < /dev/null & )
+  ( cd "$WEB" && PATH="$WEB/node_modules/.bin:$PATH" setsid nohup node "$NEXT_BIN" dev -p "$PORT" >"$LOG" 2>&1 < /dev/null & )
 else
-  ( cd "$WEB" && PATH="$WEB/node_modules/.bin:$PATH" nohup npm run dev -- --port "$PORT" >"$LOG" 2>&1 < /dev/null & disown )
+  ( cd "$WEB" && PATH="$WEB/node_modules/.bin:$PATH" nohup node "$NEXT_BIN" dev -p "$PORT" >"$LOG" 2>&1 < /dev/null & disown )
 fi
 
 echo "== ④ 等就绪（最多 ${WAIT_SECS}s；首请求要现编译，慢是正常的）"

@@ -20,7 +20,7 @@ FAILS=0
 run_one() {
   local name="$1"; shift
   echo ""; echo "============================== $name =============================="
-  # ⚠️ 必须用 ${name} 大括号：`$name（` 会把全角「（」的字节折进变量名 ⇒ set -u 下 unbound variable。
+  # ⚠️ 必须用 ${name} 大括号：`${name}（` 会把全角「（」的字节折进变量名 ⇒ set -u 下 unbound variable。
   #    本脚本首跑实测：**绿的路能走、红的路当场崩**（而它存在的意义就是报红）。
   if "$@"; then echo "✅ ${name}"; else echo "❌ ${name}（退出码非零）"; FAILS=$((FAILS + 1)); fi
 }
