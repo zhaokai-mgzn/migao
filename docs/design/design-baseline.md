@@ -100,7 +100,7 @@ hero 标题单行、眉标 / 正文 / 法务三级分布与后台不同），但
 
 | 读数 | 基线 | 谁守 |
 |---|---|---|
-| 桌面后台**主控件**高度 | **≥ 36**（= `h-9`，与 `Button`/`Input` 逐字一致） | `acceptance/2026-10-10-admin-web-6668/admin-web-geometry-probe.mjs` + `frontend/admin-web/tests/unit/design-baseline-geometry.test.ts` |
+| 桌面后台**主控件**高度 | **≥ 36**（= `h-9`，与 `Button`/`Input` 逐字一致） | `frontend/admin-web/scripts/design-baseline-geometry-probe.mjs` + `frontend/admin-web/tests/unit/design-baseline-geometry.test.ts` |
 | 触屏门面触达区 | **≥ 40**（Apple HIG 44 / Material 48 的下沿；射程 = `worker-h5` / Taro，另有 `bmini-geometry-probe.mjs`） | 同上（备查，不在 admin 探针射程） |
 | 单条常驻面高度 | **≤ 96**（超过即「横幅式告警」，违反常驻面克制） | 同上 |
 | 首屏被常驻面占掉 | **≤ 0.4**（1440×980） | 同上 |
@@ -150,7 +150,7 @@ hero 标题单行、眉标 / 正文 / 法务三级分布与后台不同），但
 |---|---|---|---|---|
 | ① | **表达式兜底** | `LABELS[x] \|\| x` 既不是字面量（UI-093 扫不到）也不是纯成员链（UI-094 扫不到） | `frontend/admin-web/tests/unit/design-baseline-expression-fallback.test.ts` + 扫描器 `frontend/admin-web/scripts/enum-fallback-scan.mjs` + 台账 `frontend/admin-web/tests/unit/enum-fallback-ledger.json` | 5 个历史坏形态各自命中；5 个好形态（人话兜底 / 字面量 / 破折号 / 同表缺省 / 数组）不命中 |
 | ② | **服务端下发字符串** | 前端自切服务端复合串；`error.details[{"field":"requiredPermission","message":"<权限码>"}]` 的 `message` 里装的是**机读权限码**；服务端只下发机器键 | `frontend/admin-web/tests/unit/design-baseline-server-strings.test.ts` + 台账 `frontend/admin-web/tests/unit/server-string-display-ledger.json` + **「只改展示」负控**（`materialKey` 仍承载 React key；`materialLabel` 仍是展示名；DTO 两字段都在） | 切串 / 权限码进提示语 / 进 JSX 三种坏形态判红；展示名与判定式不红 |
-| ③ | **几何** | 条高 / 被常驻面遮住 / 触达区 / 首屏被常驻面占掉 —— **0 条常驻判据** | `frontend/admin-web/tests/unit/design-baseline-geometry.test.ts`（守读数入口与判别力）+ 探针 `acceptance/2026-10-10-admin-web-6668/admin-web-geometry-probe.mjs`（真读数） | 四条判据各自有坏/好对照；`judge` 综合判据逐条具名 |
+| ③ | **几何** | 条高 / 被常驻面遮住 / 触达区 / 首屏被常驻面占掉 —— **0 条常驻判据** | `frontend/admin-web/tests/unit/design-baseline-geometry.test.ts`（守读数入口与判别力）+ 探针 `frontend/admin-web/scripts/design-baseline-geometry-probe.mjs`（真读数；2026-10-11 由 `acceptance/…6668/` **搬进包内**，见 issue #6744） | 四条判据各自有坏/好对照；`judge` 综合判据逐条具名 |
 | ④ | **状态机** | 失败态与空态在页面间各写一套（有的页面显示「暂无」） | `frontend/admin-web/tests/unit/design-baseline-page-state-contract.test.ts` + 台账 `frontend/admin-web/tests/unit/page-state-contract-ledger.json`（**未登记即红、只许缩短**） | 只有空态判红；空态+失败态放行；「计算不可用」的描述不判红 |
 
 ---

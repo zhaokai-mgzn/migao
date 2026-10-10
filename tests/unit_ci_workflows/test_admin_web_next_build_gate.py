@@ -33,6 +33,8 @@ Next 的 **route 文件**（`page.tsx` / `layout.tsx` / `template.tsx` / `route.
 **读 YAML 真值，不扫正则**（同 `test_workflow_issue_permissions.py` 的口径）：
 按 `jobs.<id>.steps` 结构取，避免「注释里提一句就算数」的假绿。
 """
+import posixpath
+import re
 from pathlib import Path
 
 import pytest
@@ -109,3 +111,56 @@ def test_checkout_has_full_history():
             )
             return
     pytest.fail("admin-web job 里找不到 actions/checkout 步")
+
+
+# ── 部署构建上下文自足性（issue #6744）──────────────────────────────────────────
+# 为什么挂在本文件：本文件锁的就是「部署 Docker 里的构建不许红」。2026-10-11 的红**既不是** route 文件导出、
+# **也不是**预渲染，而是**包外静态 import**：`tests/unit/design-baseline-geometry.test.ts` 静态 import 了
+# `acceptance/2026-10-10-admin-web-6668/admin-web-geometry-probe.mjs`。CI 在**整仓检出**里跑 tsc ⇒ 过；
+# `deploy-frontend` 的 Docker 只 `COPY frontend/admin-web` ⇒ `TS2307` ⇒ 服务器侧构建失败 ⇒ 镜像 sha-<HEAD>
+# 未产出 ⇒ 当日**所有** push 部署红（实测 19:44/19:58/21:06Z 三连红，线上停在 23:26 +08 的旧包），
+# 而**没有任何 CI 腿会红**。同族前科见本文件头部（#4412）。
+_CONTEXT_ROOT = "frontend/admin-web"
+# 台账：**只许缩短**（当前为空 = 零豁免）。登记形态：(文件相对路径, 逃逸目标)
+_ESCAPE_LEDGER = []
+_ESCAPE_LEDGER_FLOOR = 0
+_IMPORT_FROM_RE = re.compile(r"""(?:^|\n)\s*(?:import|export)\b[^;\n]*?from\s*['"]([^'"]+)['"]""")
+_SKIP_DIRS = {".next", "node_modules", ".turbo", "coverage", "dist"}
+
+
+def _escape_target(rel_file, spec):
+    """纯函数（判别力自证与真扫描**共用同一条规则**）：相对寻址逃出上下文则返回目标，否则空。"""
+    if not spec.startswith("."):
+        return ""            # 包名与 ts 路径别名（@/…）都落在上下文内
+    target = posixpath.normpath(posixpath.join(posixpath.dirname(rel_file), spec))
+    return target if target == ".." or target.startswith("../") else ""
+
+
+def _scan_context_escapes(repo_root):
+    base = repo_root / _CONTEXT_ROOT
+    hits = []
+    for f in sorted(base.rglob("*")):
+        if f.suffix not in {".ts", ".tsx", ".mjs", ".js"} or not f.is_file():
+            continue
+        parts = f.relative_to(base).parts
+        if any(part in _SKIP_DIRS for part in parts[:-1]):
+            continue
+        rel = "/".join(parts)
+        for spec in _IMPORT_FROM_RE.findall(f.read_text(encoding="utf-8", errors="ignore")):
+            tgt = _escape_target(rel, spec)
+            if tgt:
+                hits.append((rel, tgt))
+    return sorted(hits)
+
+
+def test_deploy_build_context_is_self_contained():
+    # 判别力自证：合成样本必须被**同一条规则**判出 / 上下文内样本不许被判出（否则就是空断言或误报）
+    assert _escape_target("tests/unit/a.test.ts", "../../../../acceptance/x/probe.mjs"), "逃逸样本必须被判出"
+    assert not _escape_target("tests/unit/a.test.ts", "../../scripts/probe.mjs"), "上下文内样本不许被判出"
+    assert not _escape_target("tests/unit/a.test.ts", "@/lib/x"), "路径别名不许被判出"
+    assert len(_ESCAPE_LEDGER) >= _ESCAPE_LEDGER_FLOOR, "台账只许缩短（下限不许上调）"
+    hits = _scan_context_escapes(Path(__file__).resolve().parents[2])
+    assert hits == sorted(_ESCAPE_LEDGER), (
+        "部署构建上下文不自足：以下文件静态 import 了 frontend/admin-web 之外的路径，"
+        "而 deploy-frontend 的 Docker 只 COPY 该目录 ⇒ 服务器侧构建会红、镜像产出不了（issue #6744）："
+        f"{hits}")

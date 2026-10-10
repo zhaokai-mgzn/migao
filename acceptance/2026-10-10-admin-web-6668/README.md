@@ -12,7 +12,8 @@ cd frontend/admin-web && npm ci && npm run build && npm start &   # :3001
 cd ../../tests && npm ci && npx playwright install chromium
 
 # ③ 跑探针（默认 http://localhost:3001；也可传 URL 参数）
-node acceptance/2026-10-10-admin-web-6668/admin-web-geometry-probe.mjs http://localhost:3001
+# ⚠️ 2026-10-11（issue #6744）探针**已搬进包内**（原路径会让部署 Docker 构建红）：
+node frontend/admin-web/scripts/design-baseline-geometry-probe.mjs http://localhost:3001
 ```
 
 - 输出：stdout 一行 JSON（机器读数）+ `out/*.png`（三页截图，1440×980）+ `out/report.json`；

@@ -9,7 +9,7 @@
  * ```bash
  * cd frontend/admin-web && npm run build
  * cd ../../tests && npm ci && npx playwright install chromium   # 首次
- * node ../../acceptance/2026-10-10-admin-web-6668/admin-web-geometry-probe.mjs http://localhost:3001
+ * node frontend/admin-web/scripts/design-baseline-geometry-probe.mjs http://localhost:3001   # 2026-10-11 起在包内（issue #6744）
  * ```
  * 输出：stdout 一行 JSON（机器读数）+ `out/*.png` 截图 + `out/report.json`。
  *

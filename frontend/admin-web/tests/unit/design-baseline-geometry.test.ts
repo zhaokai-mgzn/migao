@@ -5,7 +5,7 @@
  * ## 为什么 jsdom 判不了、本文件判什么
  *
  * jsdom **不做布局** ⇒ 真几何只能在真浏览器里取。复算入口 =
- * `acceptance/2026-10-10-admin-web-6668/admin-web-geometry-probe.mjs`（真 Chrome / 1440×980 /
+ * `frontend/admin-web/scripts/design-baseline-geometry-probe.mjs`（真 Chrome / 1440×980 /
  * 滚到底后取读数）。本文件守的是**那套读数的入口与判别力**（同族先例 =
  * `frontend/bmini-app/tests/tabbar-inset-geometry.test.ts`）：
  *
@@ -39,11 +39,11 @@ import {
   firstScreenShare,
   judge,
   occludedPx,
-} from '../../../../acceptance/2026-10-10-admin-web-6668/admin-web-geometry-probe.mjs'
+} from '../../scripts/design-baseline-geometry-probe.mjs' // 包内（部署上下文自足，issue #6744）
 
 const ROOT = process.cwd()
 const REPO = join(ROOT, '..', '..')
-const PROBE = join(REPO, 'acceptance/2026-10-10-admin-web-6668/admin-web-geometry-probe.mjs')
+const PROBE = join(ROOT, 'scripts', 'design-baseline-geometry-probe.mjs') // 包内路径：仓库内外都可解析（#6744）
 const BASELINE = join(REPO, 'docs/design/design-baseline.md')
 
 describe('几何读数必须可复算（探针在场 + 量的还是那四对读数）', () => {
@@ -152,7 +152,7 @@ describe('阈值与基线文档逐值一致（文档说 36 而探针用 40 ⇒ �
   })
 
   it('基线文档把「谁守这段几何」指到探针与判据（不是复制一份阈值就完事）', () => {
-    expect(baseline).toContain('acceptance/2026-10-10-admin-web-6668/admin-web-geometry-probe.mjs')
+    expect(baseline).toContain('frontend/admin-web/scripts/design-baseline-geometry-probe.mjs')
     expect(baseline).toContain('frontend/admin-web/tests/unit/design-baseline-geometry.test.ts')
   })
 })
