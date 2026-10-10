@@ -1,4 +1,4 @@
-// case_ids: UI-012
+// case_ids: UI-012, UI-057, UI-058
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -144,5 +144,31 @@ describe('Pagination Component', () => {
       />
     )
     expect(screen.queryByText(/共/)).not.toBeInTheDocument()
+  })
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 计数不可信态（issue #6703）：读接口失败 ⇒ 调用方的 `total` 还停在初值 0
+  // ══════════════════════════════════════════════════════════════════════════
+  // 病灶（集成侧注入实测）：后端不可用时这一行会把「读不到」印成「共 0 条记录」，
+  // 而失败提示只是 ~4s 的 toast ⇒ 商家回到屏幕只看到零，读成「今天没有订单」。
+  describe('totalReliable=false（读失败）', () => {
+    it('印 `—`，**不**印「共 0 条记录」（默认 totalReliable=true 的正常路径一字不改）', () => {
+      render(<Pagination current={1} pageSize={10} total={0} onChange={vi.fn()} totalReliable={false} />)
+      const total = screen.getByTestId('pagination-total')
+      expect(total).toHaveTextContent('共 — 条记录')
+      expect(total.textContent).not.toMatch(/共\s*0\s*条/)
+    })
+
+    it('不显示「第 X-Y 条」（范围为 0，说了就是假读数）', () => {
+      render(<Pagination current={2} pageSize={10} total={30} onChange={vi.fn()} totalReliable={false} />)
+      expect(screen.queryByText(/第 \d+-\d+ 条/)).not.toBeInTheDocument()
+    })
+
+    it('对照读数：同一份 props 在 totalReliable 缺省时照旧印真实 total', () => {
+      render(<Pagination current={1} pageSize={10} total={30} onChange={vi.fn()} />)
+      const total = screen.getByTestId('pagination-total')
+      expect(total).toHaveTextContent('共 30 条记录')
+      expect(total).toHaveTextContent('第 1-10 条')
+    })
   })
 })

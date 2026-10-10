@@ -11,6 +11,7 @@ import type { TableColumn } from '@/components/ui'
 import type { Customer, CustomerTag, CustomerTagFormData, CustomerChannel, CustomerListParams } from '@/types'
 import { CustomerChannelLabels } from '@/types'
 import DateTimeCell from '@/components/common/DateTimeCell'
+import ListLoadError from '@/components/common/ListLoadError'
 
 // 柔和标签颜色
 const TAG_COLORS = [
@@ -74,6 +75,8 @@ export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(false)
   const [total, setTotal] = useState(0)
+  /** 读面失败标记（issue #6703）：读失败时计数行不得照旧印 0（会被读成「没有客户」） */
+  const [loadError, setLoadError] = useState(false)
   const [current, setCurrent] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [searchParams, setSearchParams] = useState({ keyword: '', channel: '', vipLevel: '' })
@@ -111,7 +114,9 @@ export default function CustomersPage() {
       const data = res.data.data
       setCustomers(data?.items || [])
       setTotal(data?.total || 0)
+      setLoadError(false)
     } catch (error) {
+      setLoadError(true)
       toast.error('加载客户数据失败')
       console.error('加载数据失败:', error)
     } finally {
@@ -363,6 +368,17 @@ export default function CustomersPage() {
 
       {/* 数据表格 */}
       <div className="bg-white rounded-lg border border-neutral-200">
+        {loadError && (
+          // 失败态 ≠ 空态（issue #6703）：说清「不是没有客户，是没读到」+ 真重发出口
+          <div className="p-4 pb-0">
+            <ListLoadError
+              testId="customers-load-error"
+              message="客户列表加载失败 —— 没读到数据，下面的条数不可信。请检查网络后重试。"
+              onRetry={() => void loadData()}
+              retrying={loading}
+            />
+          </div>
+        )}
         <Table
           columns={columns}
           dataSource={customers}
@@ -370,7 +386,14 @@ export default function CustomersPage() {
           rowKey="id"
           onRowClick={(record) => router.push(`/customers/${record.id}`)}
         />
-        <Pagination current={current} pageSize={pageSize} total={total} onChange={setCurrent} onPageSizeChange={setPageSize} />
+        <Pagination
+          current={current}
+          pageSize={pageSize}
+          total={total}
+          totalReliable={!loadError}
+          onChange={setCurrent}
+          onPageSizeChange={setPageSize}
+        />
       </div>
 
       {/* 标签管理模态框 */}

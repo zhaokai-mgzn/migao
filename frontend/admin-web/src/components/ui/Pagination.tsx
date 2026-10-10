@@ -13,6 +13,17 @@ interface PaginationProps {
   pageSizeOptions?: number[]
   showTotal?: boolean
   showSizeChanger?: boolean
+  /**
+   * `total` 是否来自**成功**的读响应（issue #6703）。
+   *
+   * 读接口失败时调用方的 `total` 还停在初值 0 ⇒ 这一行会把「读不到」印成
+   * 「共 0 条记录」—— 与 #6691「读面故障不得画成空态」同族的**事实性断言**：
+   * 商家看一眼 toast 回到屏幕，只看到零，会读成「今天没有订单 / 没有客户」。
+   * 传 `false` ⇒ 计数位印 `—`（不是 0、也不是空），与调用方的失败面同源。
+   *
+   * 默认 `true`：**不改**既有正常路径的显示（其余调用方零改动）。
+   */
+  totalReliable?: boolean
 }
 
 const Pagination = ({
@@ -24,6 +35,7 @@ const Pagination = ({
   pageSizeOptions = [10, 20, 50, 100],
   showTotal = true,
   showSizeChanger = true,
+  totalReliable = true,
 }: PaginationProps) => {
   const totalPages = Math.ceil(total / pageSize) || 1
   const startItem = (current - 1) * pageSize + 1
@@ -53,9 +65,9 @@ const Pagination = ({
     <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200">
       {/* 左侧：总数信息 */}
       {showTotal && (
-        <div className="text-sm text-gray-600">
-          共 <span className="font-medium">{total}</span> 条记录
-          {total > 0 && (
+        <div className="text-sm text-gray-600" data-testid="pagination-total">
+          共 <span className="font-medium">{totalReliable ? total : '—'}</span> 条记录
+          {totalReliable && total > 0 && (
             <span className="ml-1">
               (第 {startItem}-{endItem} 条)
             </span>

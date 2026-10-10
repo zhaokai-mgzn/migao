@@ -609,6 +609,98 @@ describe('DashboardPage', () => {
     expect(screen.queryByText('暂无近期订单')).not.toBeInTheDocument()
   })
 
+  // ── #6701 读面失败不得把金额画成 0（涉钱 + 商家第一屏）──
+  // 复用既有用例号（不新开）：DA-005（经营看板）/ UI-003（admin-web 前端单测）/ DA-006（dashboard_stats 派生展示）。
+
+  it('#6701 读面失败 ⇒ 金额/计数卡**不得出现 ¥0**，一律渲染读不到占位且与失败面同一口径', async () => {
+    // ⚠️ 用 `*Once`：`mockRejectedValue` 会**渗到下一个用例**（vitest 的实现优先于 mockResolvedValue）
+    mockGetStats.mockRejectedValueOnce(new Error('Network error'))
+    render(<DashboardPage />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dashboard-load-failed')).toBeInTheDocument()
+    })
+    // 失败面必须在（本单的前提：屏上**同时**有失败面与假 0 —— 只治后者会留下两处打架的信号）
+    const EMPTY = '—' // 读不到占位（与 bmini 侧 DASHBOARD_EMPTY_VALUE 同口径）
+    expect(screen.getByTestId('stats-card-today-sales')).toHaveTextContent(EMPTY)
+    expect(screen.getByTestId('stats-card-month-revenue')).toHaveTextContent(EMPTY)
+    expect(screen.getByTestId('stats-card-today-orders')).toHaveTextContent(EMPTY)
+    expect(screen.getByTestId('stats-card-avg-order-value')).toHaveTextContent(EMPTY)
+
+    // 🔴 核心判据：**金额/读数面不得出现 ¥0**（改前这里是「¥0、¥0」两处 + 洞察句一处，共 3 处）
+    // 边界（实测定界）：只查**非 SVG 面** —— `TrendChart` 的 y 轴刻度会画 `¥0` 基线（坐标轴下限，
+    // 不是读数卡），那是合法形态；本判据要治的是「把读不到的读数印成 0」。
+    const nonSvg = document.body.innerHTML.replace(/<svg[\s\S]*?<\/svg>/g, '')
+    expect(nonSvg.match(/¥\s*0(?![.\d])/g)).toBeNull() // `¥0` / `¥0万`；真读数如 `¥650.00` 不在此列
+
+    // 洞察条（同一屏的「一句话经营解读」）口径必须与金额卡一致：说「没读到」，不说 ¥0
+    expect(screen.getByTestId('today-overview-sentence')).toHaveTextContent('今日订单数 —、销售额 —')
+    // 且不得把「读不到」说成「今天没卖出去」（那是错误经营判断的源头）
+    expect(screen.queryByText(/今日暂无新订单/)).not.toBeInTheDocument()
+  })
+
+  it('#6701 点「只重试失败项」（放开失败）⇒ 变回**真实数值**，占位消失', async () => {
+    // ⚠️ 不能用 `mockRejectedValueOnce` + `mockApiSuccess()`（后者会 `mockReset`，把 pending 的
+    //    once 实现一并清掉 ⇒ 首屏直接成功、判据在空处变绿）。用「实现只失败一次」的写法。
+    let first = true
+    const real = mockGetStats.getMockImplementation()
+    mockGetStats.mockImplementation((...args: any[]) => {
+      if (first) {
+        first = false
+        return Promise.reject(new Error('Network error'))
+      }
+      return real!(...args)
+    })
+    render(<DashboardPage />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('stats-card-today-sales')).toHaveTextContent('—')
+    })
+
+    // 放开失败（下一次 getStats 成功返回 beforeEach 里的 mock 值）
+    fireEvent.click(screen.getByTestId('dashboard-retry-block'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('stats-card-today-sales')).toHaveTextContent('¥3.98万')
+    })
+    expect(screen.getByTestId('stats-card-today-sales')).not.toHaveTextContent('—')
+    expect(screen.getByTestId('stats-card-month-revenue')).toHaveTextContent('¥500万')
+    expect(screen.getByTestId('today-overview-sentence')).toHaveTextContent(/今日订单 10 单、销售额 ¥3\.98万/)
+    expect(screen.queryByTestId('dashboard-load-failed')).not.toBeInTheDocument()
+  })
+
+  it('#6701 真 0 仍显示 0（别把真实零销售变成 `--`）', async () => {
+    // 统计接口**成功**但今天真的没有销售（不是读不到）
+    mockGetStats.mockResolvedValue({
+      data: {
+        data: {
+          todayOrders: 0,
+          todayOrdersChange: 0,
+          todaySales: 0,
+          todaySalesChange: 0,
+          monthRevenue: 0,
+          monthRevenueChange: 0,
+          lowStockItems: 0,
+          pendingShipOrders: 0,
+          pendingPaymentOrders: 0,
+          overdueTickets: 0,
+          processingPendingOrders: 0,
+        },
+      },
+    })
+    render(<DashboardPage />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('stats-card-today-sales')).toHaveTextContent('¥0')
+    })
+    expect(screen.getByTestId('stats-card-today-sales')).not.toHaveTextContent('—')
+    expect(screen.getByTestId('stats-card-month-revenue')).toHaveTextContent('¥0')
+    expect(screen.getByTestId('stats-card-today-orders')).toHaveTextContent('0')
+    // 真 0 时洞察条说「今日暂无新订单」（这是**事实**），不是「—」
+    expect(screen.getByTestId('today-overview-sentence')).toHaveTextContent('今日暂无新订单')
+    expect(screen.queryByTestId('dashboard-load-failed')).not.toBeInTheDocument()
+  })
+
   // ── #5792 可插拔：能力位决定卡片**在不在**（端侧不判权限码）──
 
   it('🔴 `capabilities.aiService = true` ⇒ 渲染「AI 接待占比」卡，数字取服务端 `aiSessionRate`', async () => {

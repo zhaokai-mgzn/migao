@@ -3,16 +3,19 @@
 import { Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+/** 读不到 / 无有效值时的占位（口径同 `formatOrderChange` 的「—」，也同 bmini 侧 `DASHBOARD_EMPTY_VALUE`） */
+const DASHBOARD_EMPTY_VALUE = '—'
+
 /** 今日经营速览洞察条 props（数值均由页面从 API 返回值派生传入，组件内无硬编码） */
 export interface TodayOverviewBarProps {
-  /** 今日订单数 */
-  todayOrders: number
-  /** 今日销售额 */
-  todaySales: number
-  /** 订单环比（百分比，正=较昨日上涨）；`null` = 无上期可比 */
-  orderChange: number | null | null
-  /** 销售额环比（百分比，正=较昨日上涨）；`null` = 无上期可比 */
-  salesChange: number | null | null
+  /** 今日订单数；`null` = **读不到**（不是 0 —— 见 issue #6701） */
+  todayOrders: number | null
+  /** 今日销售额；`null` = **读不到**（不是 0 —— 见 issue #6701） */
+  todaySales: number | null
+  /** 订单环比（百分比，正=较昨日上涨）；`null` = 无上期可比 / 读不到 */
+  orderChange: number | null
+  /** 销售额环比（百分比，正=较昨日上涨）；`null` = 无上期可比 / 读不到 */
+  salesChange: number | null
   /** 含加工待发货数 */
   processingCount: number
   /** 待发货订单数 */
@@ -57,8 +60,10 @@ function fmtCurrency(n: number): string {
 }
 
 export interface InsightParams {
-  todayOrders: number
-  todaySales: number
+  /** `null` = **读不到**（与「真 0」不同：真 0 才说「今日暂无新订单」—— issue #6701） */
+  todayOrders: number | null
+  /** `null` = **读不到**（同上） */
+  todaySales: number | null
   orderChange: number | null
   salesChange: number | null
   /** 含加工占比百分比（0-100） */
@@ -69,10 +74,21 @@ export interface InsightParams {
 /**
  * 生成一句话经营解读：把今日订单/销售额/环比/提醒串联成一句人话。
  * 全部由 API 派生数值生成，无硬编码假数据；非有限值一律规避。
+ *
+ * 🔴 issue #6701：`todayOrders` / `todaySales` 为 `null` = **读不到**（不是 0）——
+ * 改前页面传 `?? 0` 进来，这句话就变成「今日暂无新订单，销售额 ¥0」，
+ * 与同屏的「数据加载失败」**互相打架**，且会把商家读成「今天没卖出去」。
+ * 现在读不到 ⇒ `—`（与金额卡同一占位），**真 0 仍走原分支**（那是事实）。
  */
 export function buildInsightSentence(p: InsightParams): string {
   const { todayOrders, todaySales, orderChange, salesChange, processingRatioPct, lowStockCount } = p
 
+  // 读不到（任一侧为 `null`）⇒ 说「没取到」，**不说**「¥0 / 0 单」—— 那是编造的经营事实
+  if (todayOrders === null || todaySales === null) {
+    return `今日订单数 ${todayOrders === null ? DASHBOARD_EMPTY_VALUE : todayOrders}、销售额 ${todaySales === null ? DASHBOARD_EMPTY_VALUE : fmtCurrency(todaySales)}（经营数据没读到，详见上方提示）`
+  }
+
+  // 真 0 是**事实**（今天确实没卖出去）—— 与「读不到」是两件事，不走上一条分支
   if (todayOrders <= 0 && todaySales <= 0) {
     return '今日暂无新订单，销售额 ¥0'
   }
@@ -125,7 +141,7 @@ export default function TodayOverviewBar({
           </span>
           <span className="text-[11px] text-neutral-400">AI 生成内容仅供参考</span>
         </div>
-        <p className={cn('text-sm leading-relaxed text-neutral-700')}>{sentence}</p>
+        <p data-testid="today-overview-sentence" className={cn('text-sm leading-relaxed text-neutral-700')}>{sentence}</p>
       </div>
     </section>
   )
