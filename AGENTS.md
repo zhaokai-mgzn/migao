@@ -180,4 +180,8 @@ head -3 "$HOME/.dsh/.agent-presets/migao/skills/migao-dev-flow/SKILL.md"
 ## 环境
 
 - 本地只启 3 组件：admin-api(:8080) + ai-agent-service(:8001) + admin-web(:3001)；DB/Redis 用云 dev
+  ⚠️ **起 admin-api 必须显式给 `AI_AGENT_BASE_URL=http://localhost:8001` 与 `AI_AGENT_SERVICE_TOKEN`**
+  （`application.yml` 的两个默认值是坏的：8000 = 容器内端口 / 空 token）—— 不给 ⇒ 真实入驻**静默**
+  fail-closed 回「系统繁忙」（`review_source=system`），而 ai-agent 看着是健康的。
+  启动命令 / 验证命令 / 排查口径见 [docs/wiki/Quick-Start.md](docs/wiki/Quick-Start.md) 的「本地开发」。
 - DSH 专用技能：`migao-dev-flow`（三把工具/提交流程/QA 门禁 §3.4）、`migao-acceptance`（验收/评测协议）——由「观星台研发」preset 自动加载
