@@ -28,7 +28,10 @@ const TEST_PHONE = process.env.E2E_ADMIN_PHONE || '13800138000'
 const TEST_SMS_CODE = process.env.E2E_SMS_CODE || '123456'
 
 setup('authenticate as admin', async ({ page, baseURL }) => {
-  setup.setTimeout(120_000)
+  // issue #6729：本机负载高时（实测 load average 14~36 / 8 核）`(dashboard)` 组**首次**编译
+  // 76~151s；原 120s 的**测试级**上限会先于导航超时到点（报错形态 = net::ERR_ABORTED /
+  // frame detached，很容易被误读成「页面坏了」）⇒ 测试级预算随之放宽。**断言一字未放宽**（aside 必须可见）。
+  setup.setTimeout(600_000)
 
   // 从 baseURL 提取域名，与应用的 COOKIE_DOMAIN 对齐
   let cookieDomain = 'localhost'
@@ -113,7 +116,13 @@ setup('authenticate as admin', async ({ page, baseURL }) => {
   // 用 load 而非 networkidle — SSE 会阻止 network idle
   // 注意：/dashboard 是路由组 (dashboard) 的布局，无独立 page.tsx，需导航到子页面
   // aside 超时 60s：Next.js dev 冷启动首屏编译慢（CI 曾 20s 超时 flaky，2026-08-29 加固）
-  await page.goto('/products', { waitUntil: 'load', timeout: 60_000 })
-  await expect(page.locator('aside')).toBeVisible({ timeout: 60_000 })
+  // 🔴 issue #6729 实测：**只放宽时间预算，断言一字未放宽**。本机高负载时 `next dev` 对
+  // `(dashboard)` 组的**首次**编译实测 76~151s（curl 直测 `/products`：76.7s / 87.3s / 150.9s），
+  // 而这里原来是 60s ⇒ **本地任何 E2E 都跑不起来**，且失败信息指向 `/products` 超时
+  // （看起来像「页面坏了」，实际是「编译没编完」）。CI 跑的是构建后的静态服务，不受影响。
+  // `domcontentloaded` 而非 `load`：本判据只要求「仪表盘外壳渲染出来（aside 可见）」，
+  // 不必等全部子资源（图片/字体/SSE）—— 后者在 dev 下的等待时长不可控。
+  await page.goto('/products', { waitUntil: 'domcontentloaded', timeout: 300_000 })
+  await expect(page.locator('aside')).toBeVisible({ timeout: 120_000 })
   await page.context().storageState({ path: AUTH_FILE })
 })
