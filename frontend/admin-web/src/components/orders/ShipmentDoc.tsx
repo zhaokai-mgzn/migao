@@ -49,6 +49,10 @@ import { cn, formatFullDateTime } from '@/lib/utils'
  *    范式就地照抄：第 6 条（无物流 ⇒ 留空供手写）、第 7 条（发货人缺 ⇒ `-`）、
  *    `SalesDoc` 的 `SALES_DOC_MISSING`。判据 = `frontend/admin-web/tests/unit/components/ShipmentDoc.test.tsx`
  *    的「缺值不印 0」一组 + 类级守卫 `frontend/admin-web/tests/unit/lib/print-doc-paper.test.ts`。
+ *    🔴 **聚合求和要区分「未知」与「0」**（issue #6731）：数量 / 金额两个合计走 `sumOrUnknown`
+ *    （任一行不可知 ⇒ 合计印 `—`），**不得**用 `reduce(… || 0)` 把缺的那行摊成 0。
+ *    但 **加工费合计有意仍是 `reduce(… || 0)`** —— 加工费缺席的含义**就是 0**（存量单没有该
+ *    字段），后端同口径；改它会把已知的 0 报成不可知（假 `—`）。差别写在下面那行的注释里。
  */
 interface ShipmentDocProps {
   order: Order
@@ -140,6 +144,12 @@ export default function ShipmentDoc({
   // ⚠️ 不得再按 `processingItems[].amount` 求和 —— issue #4882 起该字段已从后端
   // `ProcessingItemBrief` 退场（只剩 id/name/quantity）⇒ 旧写法会让纸面恒印 0.00
   // （「本来就不收加工费」与「算不出来」长得一样，属静默改钱的外观）。
+  //    ⚠️ 这里是 `reduce(… || 0)` 而**不是** `sumOrUnknown`，是有意的（issue #6731 同类普查的结论）：
+  //    加工费**缺席的含义就是 0**（存量单没有该字段 ⇒ 当时没有加工费这回事），后端也是同一口径
+  //    （`OrderService.convertToDetailResponse`：`fee == null ⇒ BigDecimal.ZERO` 照样 set）
+  //    ⇒ 对它折 0 是**正确**的算术；改成「缺 ⇒ 合计印 —」反而是把已知的 0 报成不可知（假 —）。
+  //    与上面两个合计的区别：`quantity` / `amount` 缺席的含义是「**没记过这个数**」（后端 non_null
+  //    让键整个缺席）⇒ 那两个必须走 `sumOrUnknown`。
   const processingFeeTotal = items.reduce((sum, it) => sum + (it.processingFee || 0), 0)
 
   const shipper = (shipperName || logistics?.shipperName || '').trim()
