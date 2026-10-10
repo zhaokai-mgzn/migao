@@ -265,6 +265,9 @@ export default function ProductionBoardPage() {
         {canViewOrder ? '' : '（当前账号无订单查看权限，请联系管理员）'}
       </p>
 
+      {/* issue #6717：本表 `rounded-lg border ... overflow-x-auto` —— 边框在**滚动容器自己**身上。
+          `position: sticky` 在带 `border-radius` 的滚动容器内**不**失效（圆角只影响裁剪形状，
+          不影响 sticky 的包含块）⇒ 右缘冻结照常生效；两档视口按钮中心点实测均命中自身。 */}
       <div className="rounded-lg border border-neutral-200 bg-white overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -276,7 +279,10 @@ export default function ProductionBoardPage() {
               <th className="px-4 py-3 font-medium whitespace-nowrap">状态</th>
               <th className="px-4 py-3 font-medium whitespace-nowrap">工序进度</th>
               <th className="px-4 py-3 font-medium whitespace-nowrap">计件合计</th>
-              <th className="px-4 py-3 font-medium whitespace-nowrap">操作</th>
+              {/* 操作（issue #6717）：右缘冻结 —— 改前 1280×800 实测本列表头 left = 1368
+                  （容器右缘 1280）⇒ 「订单详情 / 生产明细」两个按钮都够不到。
+                  冻结后 `z-20` + **不透明** `bg-white`（本表头行没有底色，取卡片底色同值）。 */}
+              <th className="sticky right-0 z-20 border-l border-neutral-200 bg-white px-4 py-3 font-medium whitespace-nowrap">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -320,7 +326,9 @@ export default function ProductionBoardPage() {
                 return (
                   <tr
                     key={po.id}
-                    className="border-b border-neutral-100 last:border-0 align-top transition-colors hover:bg-neutral-50/60"
+                    // issue #6717：行背景**显式**声明 —— `bg-inherit` 的 sticky「操作」格只认
+                    // `<tr>` 自己声明的背景（靠祖先链上的白底会继承成**透明** ⇒ 滚动时穿透）。
+                    className="border-b border-neutral-100 last:border-0 bg-white align-top transition-colors hover:bg-neutral-50/60"
                     data-testid={`production-row-${po.id}`}
                   >
                     <td className="pl-5 pr-4 py-4 whitespace-nowrap font-medium text-neutral-900">{po.processingOrderNo}</td>
@@ -367,7 +375,10 @@ export default function ProductionBoardPage() {
                     <td className="px-4 py-4 whitespace-nowrap text-neutral-900" data-testid={`production-row-piecework-${po.id}`}>
                       {formatMoney(total)}
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
+                    {/* 操作（issue #6717）：右缘冻结。`bg-inherit` ⇒ 背景随 `<tr>`（`bg-white` + hover）。
+                        ⚠️ 本单元格内容是 `flex-wrap`（窄列宽时按钮会换到第二行）⇒ 冻结后**列宽会收窄到
+                        按钮的 max-content**，不再把整表撑出容器；这正是「操作列不再需要横向滚动」的形态。 */}
+                    <td className="sticky right-0 z-10 border-l border-neutral-100 bg-inherit px-4 py-4 whitespace-nowrap">
                       <div className="flex flex-wrap items-center gap-2">
                         {/* 订单详情（订单详情已含加工单块：快照 + 状态流转 + 打印）。
                             issue #5913：文案由「查看」正名为「订单详情」—— 本行主键是**加工单**，

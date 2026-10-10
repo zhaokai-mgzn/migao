@@ -295,12 +295,17 @@ export default function InboundOrdersPage() {
               <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">批次号</th>
               <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">金额</th>
               <th className="text-left px-3 py-2.5 font-medium whitespace-nowrap">状态</th>
-              <th className="text-right px-3 py-2.5 font-medium whitespace-nowrap">操作</th>
+              {/* 操作（issue #6717）：右缘冻结 —— 改前 1280×800 实测本列表头 left = 1317
+                  （容器右缘 1280）⇒ 出屏，「详情」按钮够不到。`bg-neutral-50` 与 `thead` 同色
+                  （不透明，横向滚过的内容不会穿透）；数据格用 `bg-inherit` 随 `<tr>` 的 hover 变色。 */}
+              <th className="sticky right-0 z-20 border-l border-neutral-200 bg-neutral-50 text-right px-3 py-2.5 font-medium whitespace-nowrap">操作</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.id} className="border-t border-neutral-100 hover:bg-neutral-50">
+              // issue #6717：行背景**显式**声明（`bg-white` + hover）—— `bg-inherit` 的 sticky 格
+              // 只认 `<tr>` 自己声明的背景；靠祖先链上的白底会继承成**透明** ⇒ 穿透。
+              <tr key={row.id} className="border-t border-neutral-100 bg-white hover:bg-neutral-50">
                 <td className="px-3 py-2.5 font-mono text-neutral-900 whitespace-nowrap">{row.inboundNo}</td>
                 <td className="px-3 py-2.5 text-neutral-600 whitespace-nowrap">{row.inboundDate}</td>
                 <td className="px-3 py-2.5 text-neutral-600 whitespace-nowrap">{row.supplier || '-'}</td>
@@ -325,7 +330,8 @@ export default function InboundOrdersPage() {
                     {STATUS_LABEL[row.status]}
                   </Badge>
                 </td>
-                <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                {/* 操作（issue #6717）：右缘冻结（背景随 `<tr>`，见行上的注释） */}
+                <td className="sticky right-0 z-10 border-l border-neutral-100 bg-inherit px-3 py-2.5 text-right whitespace-nowrap">
                   <Button variant="ghost" size="sm" onClick={() => void openDetail(row.id)}>
                     详情
                   </Button>

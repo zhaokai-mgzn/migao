@@ -136,10 +136,12 @@ describe('计数行不得从一个可能失败的读派生数字（类级元守�
     ).toEqual([])
   })
 
-  it('台账非空且**逐条兑现**（不许被删空消红；当前读数 = 3 条同族存量债）', () => {
+  it('台账非空且**逐条兑现**（不许被删空消红；当前读数 = 1 条同族存量债）', () => {
     // 🔴 防「有人把台账清空来消红」：这条钉住当前**取数**（LEDGER 的条目必须真的还在命中）。
-    // 条目归零的正确路径 = 把那三页也修掉（同批删条目），**不是**删台账。
-    expect(LEDGER.length, 'LEDGER 被清空 = 用删台账代替修码；正确路径见扫描脚本注释').toBeGreaterThanOrEqual(3)
+    // 条目归零的正确路径 = 把那页也修掉（同批删条目），**不是**删台账。
+    // 读数沿革：3 → 1（**issue #6714 本包**修好 `employees` / `notifications` 两页的读面失败面，
+    // 同批删条目并**下调这条基线** —— 台账只许缩短）。
+    expect(LEDGER.length, 'LEDGER 被清空 = 用删台账代替修码；正确路径见扫描脚本注释').toBeGreaterThanOrEqual(1)
     const live = new Set(sites.filter((s) => !s.guarded).map((s) => s.key))
     for (const key of LEDGER) {
       expect(live.has(key), `LEDGER 条目「${key}」在扫描面里已不命中 ⇒ 必须同批删掉`).toBe(true)

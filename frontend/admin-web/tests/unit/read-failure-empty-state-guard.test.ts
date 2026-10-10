@@ -1,285 +1,264 @@
-// case_ids: UI-057, UI-058
+// case_ids: UI-011, CH-028, UI-046, UI-057, UI-058
 /**
- * 类级元守卫（issue #6663 起，issue #6669 扩第二条）：**读面失败的两种坏形态** ——
- * ① 失败**看不见**（伪装成空态）；② 失败**看见了好几遍**（同一次故障多处信号）。
+ * 类级元守卫：**读面失败不得与空态同屏**（issue #6713 + #6714，**一把尺子**）。
  *
- * ## 病灶一（2026-10-10 三维审计，配置与权限面）：失败伪装成空态
+ * ## 为什么是类级 / 为什么两单合并
  *
- * 同一个病在三页各写了一遍：读接口失败时 catch **只把读数清空**——
- * `roles/page.tsx` 岗位清单读了失败 ⇒ 页面**像**「这个企业没有岗位」；
- * `employees/page.tsx` 岗位下拉读了失败 ⇒ 下拉空着、`Select` 又不能手输 ⇒ **建不出员工**，
- * 而页面没有任何一句话说「读不到」；`settings/page.tsx` 通知开关读了失败 ⇒
- * 开关**画成「关闭」**（`notificationEnabled` 保持 `false`）—— **谎报状态**：
- * 商家以为通知是关的，而真相是**读不到**。
+ * `/chat`（#6713）与 `/employees` `/notifications` `/products` `/shipments`（#6714）是**同一个形态**：
+ * 注入读接口 500、等 6s（越过拦截器 toast 的 ≈4s 生存期）后，持久面上留着**事实性断言**
+ * 「暂无会话 / 暂无数据 / 暂无通知」或「表头在、零行」。各立一把尺子会互相把对方判成僵尸条目、
+ * 同一份文件被两份台账各记一次 ⇒ 按集成侧口径合并进
+ * `frontend/admin-web/scripts/read-failure-empty-state-scan.mjs`（**判据单一源**）。
  *
- * 这是本仓「状态必须真实（故障不得伪装成空态 / 成功态）」纪律的反面，
- * 也是 `dashboard/page.tsx`（issue #5792 ④）早就立好的范式：**失败态与空态可区分** ——
- * 空态说「暂无数据」，失败态说「加载失败 + 是哪几块 + 重试」。
- * 本判据把那个范式**类级化**：单个页面改一次不解决复发。
+ * ## 判据（各自能单独变红）
  *
- * ## 判据与单一源
+ * ① **未登记即红**：`REQUIRED_SURFACES`（票据点名的 5 页 + chat）必须在
+ *    `READ_SURFACES` / `PENDING_AUDIT` / `OUT_OF_SCOPE` **三张表之一**出现 ——
+ *    未分类项（`/agent-workspace` `/briefing` `/categories`）**显式登记为待判**，不静默放行；
+ * ② **接线不可摘**：每条登记读面必须逐字含「常驻失败锚 + 重试出口 + 空态锚 + 失败读数 key + `role="alert"`」
+ *    —— 摘掉锚点 / 把守卫删了 ⇒ 当场红并**具名**报出缺哪条；
+ * ③ **空态文案不许静默通过**：面内出现空态断言的每个文件要么带失败锚、要么在
+ *    `EMPTY_STATE_LEDGER` 登记；台账**只许缩短**（超过冻结基线 ⇒ 红）、条目**不再命中 ⇒ 僵尸红**；
+ * ④ **失败读数必须真落地**：store 承载的读面（`chat-sessions`）的 `failureKey` 必须在 store 里被
+ *    **写成 true** —— 这正是 #6664 删掉的那个「全仓无消费点」假承诺的**反面保证**；
+ * ⑤ **判别力自证**（本文件）：修前的逐字坏形态必红、修后形态不红、**真为空**的空态不红、
+ *    注释里的同形态不误伤 —— 守卫自己退化成绿时先在这里红。
  *
- * 判据（`swallowSites`）与台账（`LEDGER` / `FAILURE_ANCHORS`）都在
- * **`scripts/read-failure-empty-state-scan.mjs`**（命令行 `node scripts/read-failure-empty-state-scan.mjs`
- * 与本测试**共用**它，不写第二份规则）。三条：
+ * ## 边界（照实登记，`migao-dev-flow` §19.1）
  *
- * 1. **扫描判据**：凡「catch 清空读数且不表达失败」的形态 ⇒ 必须登记进 `LEDGER`，**未登记即红**；
- * 2. **正向核**（`FAILURE_ANCHORS`）：本包已改对的页面必须**逐字**含失败态锚点
- *    （`data-testid` + 可行动文案）⇒ 锚点被删（页面退回空态）当场红。
- *    ⚠️ 只有扫描判据会**假绿**：把 catch 改成 `setError('')` 也能「不再命中」——正向核堵住这条路。
- * 3. **台账只许缩短**：`LEDGER` 里不再命中的条目当场红（逼着删干净，不留僵尸豁免）。
- *
- * ## 病灶二（issue #6669 未完成 1）：失败**看见了好几遍**
- *
- * `/settings` 的算料域读失败时同一故障在**一屏之内**报了好几遍（红条 / 徽标 / 数值位 / 底部再一行）。
- * #6663 撤掉本域三处，最后一处在 `components/production-config/CalcFormulaPanel.tsx`（**别的文件族**）。
- * 本文件新增第二组判据（`duplicateSignalSites` 一族）堵同类复发：**同一 catch 内既有内联失败文案、
- * 又 `toast.error()` 播报同一次失败** ⇒ 必须登记进 `DUP_LEDGER`（未登记即红 / 台账只许缩短）。
- * 射程只到 `src/components/production-config`（见该组 describe 的局限声明）。
- *
- * ## 边界（照实登记，§19.1）
- *
- * - 第一条只扫**商家后台**（`src/app/(dashboard)`），第二条只扫 `src/components/production-config`；
- *   两者都只认**源码文本形态**；
- * - **有意不判**「空 catch + 注释『拦截器已提示』」的**写面** catch（过账 / 作废 / 提交）：
- *   `request.ts` 拦截器已 toast，且**读面读数不变** ⇒ 不产生假的空态；
- * - **有意不判**「清提示语 / 清过程量」的 setter（`setSearchHint('')` / `setLoading(false)` 一族，
- *   理由逐条写在扫描器的 `NOT_READING_STATE`）；
- * - 「服务端下发的 `message` 里带字段名」不在本条射程（那是展示字段分离，另单）。
+ * - 只扫**源码文本 / AST**：判不了「失败面够不够显眼」（§15.7 读图面）、
+ *   也判不了「按**路由**渲染出来的整页」（路由级核对由 #6714 的普查表承担）；
+ * - 共享 `frontend/admin-web/src/components/ui/Table.tsx` 的**默认** `emptyText = 暂无数据` **判不了**
+ *   （改默认值会波及全站调用方）⇒ `/employees` `/products` 的机械认定来自 `READ_SURFACES` 的**登记**，
+ *   不是文本命中；本包改的是**页面级失败面**；
+ * - **不跑真实浏览器**：真机读数由集成侧复跑（见 PR 报告）。
  */
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import {
-  LEDGER,
-  FAILURE_ANCHORS,
-  SCOPE,
-  swallowSites,
-  swallowSitesFromSource,
-  findOffenders,
-  staleLedger,
-  DUP_SCOPE,
-  DUP_LEDGER,
-  duplicateSignalSites,
-  duplicateSignalSitesFromSource,
-  dupOffenders,
-  dupStaleLedger,
+  SYNC_SCOPES,
+  REQUIRED_SURFACES,
+  READ_SURFACES,
+  POSITIVE_ANCHORS,
+  PENDING_AUDIT,
+  OUT_OF_SCOPE,
+  EMPTY_STATE_LEDGER,
+  EMPTY_STATE_LEDGER_FLOOR,
+  STORE_FILES,
+  emptyStateOffenders,
+  emptyStateSitesFromSource,
+  hasFailureAnchor,
+  missingWiring,
+  renderGuardsFromSource,
+  storeActionsFromSource,
+  storeFailureKeyOffenders,
+  unregisteredSurfaces,
 } from '../../scripts/read-failure-empty-state-scan.mjs'
 
-const ROOT = process.cwd()
+const ADMIN_WEB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
+const read = (rel: string) => fs.readFileSync(path.join(ADMIN_WEB_ROOT, rel), 'utf8')
 
-describe('读面失败不得伪装成空态（类级元守卫，issue #6663）', () => {
-  const { files, sites } = swallowSites(ROOT)
+/**
+ * 修前的**逐字**坏形态（`SessionList.tsx` 的三层三元；`git show origin/main:<path>` 可核）：
+ * 失败后 `sessions` 仍是 `[]` ⇒ 落到「暂无会话」那一支 —— **失败与空态同屏**。
+ */
+const PRE_FIX_SNIPPET = `
+  const { sessions, isLoadingSessions, searchKeyword } = useChatStore()
+  return (
+    <div className="flex-1 overflow-y-auto">
+      {isLoadingSessions ? (
+        <div className="flex items-center justify-center py-8">转圈</div>
+      ) : filteredSessions.length === 0 ? (
+        <div className="text-center py-8 text-neutral-400 text-xs">
+          {searchKeyword ? '没有匹配的会话' : '暂无会话'}
+        </div>
+      ) : (
+        <div className="py-1">{filteredSessions.map((s) => <SessionItem key={s.session_id} />)}</div>
+      )}
+    </div>
+  )`
 
-  it('普查面非空（扫不到文件 ⇒ 本判据在扫空气，而不是"没问题"）', () => {
-    expect(files.length, `${SCOPE} 下应有一批页面`).toBeGreaterThanOrEqual(30)
-    // 三个病灶页必须在扫描面里（否则改了目录名就会「静默全绿」）
-    for (const anchor of [
-      'src/app/(dashboard)/roles/page.tsx',
-      'src/app/(dashboard)/employees/page.tsx',
-      'src/app/(dashboard)/settings/page.tsx',
-    ]) {
-      expect(files, `扫描面必须含 ${anchor}`).toContain(anchor)
-    }
-  })
+/** 修后形态（**不判红**的对照夹具；与工作树里的 `SessionList.tsx` 同构） */
+const POST_FIX_SNIPPET = `
+  const { sessions, isLoadingSessions, sessionsLoadFailed, fetchSessions } = useChatStore()
+  return (
+    <div className="flex-1 overflow-y-auto">
+      {!isLoadingSessions && sessionsLoadFailed && (
+        <div data-testid="chat-sessions-load-failed" role="alert">
+          <span>会话列表读取失败 —— 请检查网络后重试</span>
+          <button data-testid="chat-sessions-load-failed-retry" onClick={() => void fetchSessions()}>重试</button>
+        </div>
+      )}
+      {isLoadingSessions ? (
+        <div className="flex items-center justify-center py-8">转圈</div>
+      ) : !sessionsLoadFailed && filteredSessions.length === 0 ? (
+        <div data-testid="chat-sessions-empty" className="text-center py-8">暂无会话</div>
+      ) : (
+        <div className="py-1">{filteredSessions.map((s) => <SessionItem key={s.session_id} />)}</div>
+      )}
+    </div>
+  )`
 
-  it('本包三页**不再命中**「清空读数且不表达失败」的 catch（实例判据的类级面）', () => {
-    for (const page of [
-      'src/app/(dashboard)/roles/page.tsx',
-      'src/app/(dashboard)/employees/page.tsx',
-      'src/app/(dashboard)/settings/page.tsx',
-      // issue #6691：LEDGER 清空后，这 6 条也要**逐页**钉住（它们的实例判据在
-      // tests/unit/pages/read-failure-empty-state-instances.test.tsx，类级面在这里）
-      'src/app/(dashboard)/inbound-orders/page.tsx',
-      'src/app/(dashboard)/inbound-orders/new/page.tsx',
-      'src/app/(dashboard)/orders/[id]/OrderDetail.tsx',
-      'src/app/(dashboard)/orders/new/page.tsx',
-      'src/app/(dashboard)/stock-ledger/page.tsx',
-    ]) {
-      const hit = sites.filter((s) => s.file === page)
-      expect(
-        hit.map((s) => `${s.key} (L${s.line} 清空 ${s.cleared.join('/')})`),
-        `${page} 仍有「读失败只清空读数、不表达失败」的 catch —— 故障会伪装成空态。\n`
-          + '出口：照抄 `src/app/(dashboard)/dashboard/page.tsx` 的失败/空态分离（issue #5792 ④）'
-          + '—— 加一个失败态行（`data-testid` + 可行动文案 + 重试出口），别只清列表。',
-      ).toEqual([])
-    }
-  })
+/** **反向对照**夹具：真为空（读成功、零条）⇒ 「暂无会话」照旧（不许把空态也判红） */
+const EMPTY_ONLY_SNIPPET = `
+  const { sessions, isLoadingSessions, sessionsLoadFailed } = useChatStore()
+  return (
+    <div className="flex-1 overflow-y-auto">
+      {!isLoadingSessions && sessionsLoadFailed && (
+        <div data-testid="chat-sessions-load-failed" role="alert">
+          <button data-testid="chat-sessions-load-failed-retry">重试</button>
+        </div>
+      )}
+      {isLoadingSessions ? null : !sessionsLoadFailed && sessions.length === 0 ? (
+        <div data-testid="chat-sessions-empty">暂无会话</div>
+      ) : null}
+    </div>
+  )`
 
-  it('未登记即红：命中点必须逐条登记进 LEDGER（含本包文件族之外的存量债）', () => {
-    const { offenders } = findOffenders(ROOT)
-    expect(
-      offenders.map((o) => o.key + `  (L${o.line} 清空 ${o.cleared.join('/')})`),
-      '这些 catch 读失败只清空读数、且没有失败态 —— 要么修（首选，见 dashboard/page.tsx 范式），'
-        + '要么在 scripts/read-failure-empty-state-scan.mjs 的 LEDGER 里**具名登记**（只许缩短）：\n'
-        + offenders.map((o) => `  ${o.key}`).join('\n'),
-    ).toEqual([])
-  })
-
-  it('正向核：已改对的页面必须**逐字**含失败态锚点（删了锚点 ⇒ 当场红）', () => {
-    expect(FAILURE_ANCHORS.length, '正向核台账不许被删空').toBeGreaterThanOrEqual(5)
-    for (const entry of FAILURE_ANCHORS) {
-      const source = readFileSync(join(ROOT, entry.file), 'utf-8')
-      for (const anchor of entry.anchors) {
-        expect(
-          source.includes(anchor),
-          `${entry.file} 缺失败态锚点「${anchor}」（${entry.name}）—— `
-            + '页面退回「读失败 = 空态 / 关闭态」了。失败态必须自己渲染出来：'
-            + '`data-testid` + 可行动文案（照抄 dashboard/page.tsx）。',
-        ).toBe(true)
-      }
-    }
-  })
-
-  it('台账只许缩短：不再命中的条目当场红（逼着删干净）', () => {
-    const stale = staleLedger(ROOT)
-    expect(
-      stale,
-      'LEDGER 里这些条目**不再命中**（对应 catch 已改对/已删）—— 台账只许缩短，请删掉这几条：\n'
-        + stale.join('\n'),
-    ).toEqual([])
-  })
-
-  it('判别力自证：坏形态判红、好形态不红（守卫退化成绿 ⇒ 这里先红）', () => {
-    const BAD = [
-      // ① 病灶原形（roles/page.tsx 改前）：读失败只清空列表
-      `const load = async () => {
-         try { const res = await roleApi.getRoles(); setRoles(res.data.data) }
-         catch (e) { setRoles([]) }
-       }`,
-      // ② 通知开关形态（settings/page.tsx 改前）：读失败保持「关闭」= false
-      `const load = async () => {
-         try { const res = await settingsApi.getSettings(); setNotificationEnabled(!!res.data.data.enabled) }
-         catch { setNotificationEnabled(false) }
-       }`,
-      // ③ 下拉选项清空（employees/page.tsx 改前）
-      `const load = async () => { try { await p() } catch { setPositionOptions([]) } }`,
-      // ④ prompt 里撒个谎：既有失败文案变量，但 catch 也没用它 ⇒ 仍判红
-      `const load = async () => { try { await p() } catch { setRows([]); setHint('') } }`,
-      // ⑤ 只有「提示语」、没有**读数类**失败态 ⇒ 仍判红（提示语会被下一条成功读数冲掉）
-      `const search = async () => { try { await p() } catch { setOptions([]); setSearchHint('商品搜索失败') } }`,
-    ]
-    for (const source of BAD) {
-      expect(hits(source), `坏形态应判红：\n${source}`).toBeGreaterThan(0)
-    }
-    const GOOD = [
-      // ① 正确范式（dashboard/page.tsx）：失败**记进失败集**，读数**不清零**
-      `const load = async () => {
-         try { setStats(await p()) }
-         catch { setBlockErrors((prev) => ({ ...prev, stats: true })) }
-       }`,
-      // ② 读失败 ⇒ 显式错误话术（stock-ledger 范式）
-      `const load = async () => { try { await p() } catch { setError('读取失败 —— 请稍后重试') } }`,
-      // ③ 写面 catch + 拦截器已 toast（读面读数不变）⇒ 不判
-      `const doPost = async () => { try { await p() } catch { /* 拦截器已提示 */ } finally { setActing(false) } }`,
-      // ④ 过程量清空（不是读数）⇒ 不判
-      `const search = async () => { try { await p() } catch { /* 拦截器已提示 */ } finally { setSearching(false) } }`,
-      // ⑤ 读失败 ⇒ 置「读不到」的显式标记（读数**不**清成空）
-      `const load = async () => { try { setRows(await p()) } catch { setLoadFailed(true) } }`,
-    ]
-    for (const source of GOOD) {
-      expect(hits(source), `好形态不该判红：\n${source}`).toBe(0)
-    }
-  })
-
-  it('只改注释不红（对照读数：守卫不得被自己的说明文案喂红）', () => {
-    const commented = `// 读失败只清空读数（setRoles([])）会让故障伪装成空态 —— 这段文字本身不该判红
-      /* catch { setRows([]) } 也是 —— 块注释里的示例不是真形态 */
-      const x = 1`
-    expect(hits(commented)).toBe(0)
-  })
-})
-
-/** 内存变异：把一段源码当**真语料**喂给**生产判据**（不落盘、不改仓内文件、不抄第二份正则） */
-function hits(source: string): number {
-  return swallowSitesFromSource(source, { file: 'probe.tsx' }).length
+/** 登记册条目的形状（`retryAnchor` 可选：既有页面的重试 testid 可能不叫 `<锚>-retry`） */
+type SurfaceSpec = {
+  issue: string
+  file: string
+  anchor: string
+  retryAnchor?: string
+  emptyTestId: string
+  failureKey: string
+  failureFrom?: { file: string }
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// 第二条类级判据：**同一次读失败的重复信号**（issue #6669 未完成 1 / §31 P1 常驻面克制 · P2 信息不重复）
-//
-// 第一条判「失败**看不见**（伪装成空态）」；本条判「失败**看见了好几遍**」——
-// 同一个 catch 里既有**内联**失败文案（`setX('…')`，X 命中 error/fail/problem），
-// 又 `toast.error(...)` 播报同一件事 ⇒ 一屏两处。判据本体与台账（`DUP_LEDGER`）都在
-// **同一份** `scripts/read-failure-empty-state-scan.mjs`（不写第二份规则）。
-//
-// 射程（**照实登记的局限，不假装覆盖全站**）：只扫 `src/components/production-config`
-// —— 实测全仓 `src` 按本条形态也只命中该目录里的 2 处（`CalcFormulaPanel` 已修 /
-// `ProcessConfigBoard` 已登记）。其它目录的同族形态不会有东西变红。
-// ══════════════════════════════════════════════════════════════════════════════
-describe('同一次读失败不得多处信号（类级元守卫，issue #6669）', () => {
-  const dup = duplicateSignalSites(ROOT)
+const GUARD_OPTS = {
+  failureKey: 'sessionsLoadFailed',
+  anchorTestId: 'chat-sessions-load-failed',
+  emptyTestId: 'chat-sessions-empty',
+}
 
-  it('普查面非空（扫不到文件 ⇒ 本判据在扫空气，而不是"没问题"）', () => {
-    expect(dup.files.length, `${DUP_SCOPE} 下应有一批面板`).toBeGreaterThanOrEqual(5)
-    expect(dup.files, '扫描面必须含本条的实测发生地').toContain(
-      'src/components/production-config/CalcFormulaPanel.tsx',
-    )
-  })
+describe('类级守卫：读面失败不得与空态同屏（issue #6713 + #6714）', () => {
+  it('① 未登记即红：票据点名的每个读面都必须在三张表之一（含「未分类」显式登记）', () => {
+    // 面自证：票据点名的读面清单不许空（判据被自己扫成空集 = 假绿）
+    expect(REQUIRED_SURFACES.length).toBeGreaterThanOrEqual(6)
+    expect(unregisteredSurfaces()).toEqual([])
 
-  it('已修的面板**不再命中**「内联 + toast 同一次失败报两遍」（实例判据的类级面）', () => {
-    const hit = dup.sites.filter((s) => s.file === 'src/components/production-config/CalcFormulaPanel.tsx')
-    expect(
-      hit.map((s) => `${s.key} (L${s.line} 内联「${s.inlineMsg}」+ toast×${s.toastCount})`),
-      'CalcFormulaPanel 又把同一句读失败同时内联 + toast 了 —— 一屏两处重复信号。\n'
-        + '出口：撤掉 `toast.error` 那一次播报（`lib/request.ts` 拦截器已统一播报），'
-        + '**保留**内联摘要 + 「重试」出口（撤的是重复，不是可见性）。',
-    ).toEqual([])
-  })
-
-  it('未登记即红：命中点必须逐条登记进 DUP_LEDGER', () => {
-    const { offenders } = dupOffenders(ROOT)
-    expect(
-      offenders.map((o) => o.key + `  (L${o.line} 内联「${o.inlineMsg}」+ toast×${o.toastCount})`),
-      '这些 catch 对同一次读失败既画内联文案、又 toast 播报 —— 要么修（首选，撤 toast 留内联），'
-        + '要么在 scripts/read-failure-empty-state-scan.mjs 的 DUP_LEDGER 里**具名登记**（只许缩短）：\n'
-        + offenders.map((o) => `  ${o.key}`).join('\n'),
-    ).toEqual([])
-  })
-
-  it('台账只许缩短：不再命中的条目当场红（逼着删干净）', () => {
-    const stale = dupStaleLedger(ROOT)
-    expect(
-      stale,
-      'DUP_LEDGER 里这些条目**不再命中**（对应 catch 已改对/已删）—— 台账只许缩短，请删掉这几条：\n'
-        + stale.join('\n'),
-    ).toEqual([])
-  })
-
-  it('判别力自证：坏形态判红、好形态不红（守卫退化成绿 ⇒ 这里先红）', () => {
-    const n = (source: string) => duplicateSignalSitesFromSource(source, { file: 'probe.tsx' }).length
-    const BAD = [
-      // ① 病灶原形（CalcFormulaPanel / ProcessConfigBoard 改前）：内联失败文案 + 同一句 toast
-      `function load() { try { await p() } catch (e) { setCalcError('算料配置加载失败，请稍后重试'); if (!isErrorToastShown(e)) toast.error('算料配置加载失败') } }`,
-      // ② 内联文案写在 toast 之后（顺序无关）
-      `function load() { try { await p() } catch { toast.error('加载失败'); setRowsError('加载失败，请稍后重试') } }`,
-    ]
-    for (const source of BAD) {
-      expect(n(source), `坏形态应判红：\n${source}`).toBeGreaterThan(0)
+    // #6714 点名的「未分类」三页**必须**显式登记为待判（不许默认放行）
+    const pendingAudit = PENDING_AUDIT as Record<string, { observed: string; evidence: string }>
+    for (const key of ['agent-workspace', 'briefing', 'categories']) {
+      expect(Object.keys(pendingAudit), `${key} 未登记为「未分类」`).toContain(key)
+      expect(pendingAudit[key].evidence.length).toBeGreaterThan(20)
     }
-    const GOOD = [
-      // ① 修好的形态：只留内联一处（本包对 CalcFormulaPanel 的处置）
-      `function load() { try { await p() } catch { setCalcError('算料配置加载失败，请稍后重试') } }`,
-      // ② 只有 toast、没有常驻内联面 ⇒ 不是「多处」（toast 是拦截器统一播报的那一处）
-      `function load() { try { await p() } catch (e) { toast.error('加载失败') } }`,
-      // ③ 内联是**清空/哨兵**（不是文案字面量）⇒ 属第一条判据的射程，本条不判
-      `function load() { try { await p() } catch { setCalcError('') } }`,
-      // ④ toast.success 不算失败播报（写面成功的祝贺）
-      `function save() { try { await p() } catch { setRowsError('保存失败，请稍后重试'); toast.success('已保存') } }`,
-    ]
-    for (const source of GOOD) {
-      expect(n(source), `好形态不该判红：\n${source}`).toBe(0)
+    // 超范围项必须点名归属单（不是"放过"），且每条都给证据
+    expect(OUT_OF_SCOPE['stock-ledger'].owner).toBe('#6707')
+    expect(OUT_OF_SCOPE['dashboard-amounts'].owner).toBe('#6715')
+    for (const [key, v] of Object.entries(OUT_OF_SCOPE)) {
+      expect(v.evidence, `${key} 缺证据`).toBeTruthy()
+    }
+    // 登记册的每条都要有接线锚（不许只登记不接线）
+    for (const key of Object.keys(READ_SURFACES)) {
+      expect(POSITIVE_ANCHORS[key], `${key} 缺正向核`).toBeTruthy()
     }
   })
 
-  it('台账非空且**逐条兑现**（现状读数 = 兄弟挂载 ProcessConfigBoard 一条；不许被删空消红）', () => {
-    // 🔴 防「有人把台账清空来消红」：这条钉住当前**取数**（DUP_LEDGER 的条目必须真的还在命中）。
-    // 条目归零的正确路径 = 把那个 catch 也修掉（同批删条目），**不是**删台账。
-    expect(DUP_LEDGER.length, 'DUP_LEDGER 被清空 = 用删台账代替修码；正确路径见扫描脚本注释').toBeGreaterThanOrEqual(1)
-    const live = new Set(dup.sites.map((s) => s.key))
-    for (const key of DUP_LEDGER) {
-      expect(live.has(key), `DUP_LEDGER 条目「${key}」在扫描面里已不命中 ⇒ 必须同批删掉`).toBe(true)
+  it('② 接线不可摘：每条登记读面逐字含 失败锚 + 重试出口 + 空态锚 + 失败读数 key', () => {
+    for (const [key, surf] of Object.entries(READ_SURFACES) as [string, SurfaceSpec][]) {
+      const source = read(surf.file)
+      const retryAnchor = surf.retryAnchor || `${surf.anchor}-retry`
+      expect(source, `${surf.file} 缺常驻失败锚`).toContain(`data-testid="${surf.anchor}"`)
+      expect(source, `${surf.file} 缺重试出口`).toContain(`data-testid="${retryAnchor}"`)
+      expect(source, `${surf.file} 缺空态锚`).toContain(`data-testid="${surf.emptyTestId}"`)
+      expect(source, `${surf.file} 缺失败读数 key`).toContain(surf.failureKey)
+      // 失败面必须是 role=alert（读屏器会播报，不是视觉装饰）
+      expect(source, `${surf.file} 的失败面缺 role="alert"`).toContain('role="alert"')
+      expect(key).toBeTruthy()
     }
+    // 扫描器与守卫**同一份接线口径**（不写第二份清单）
+    expect(missingWiring(ADMIN_WEB_ROOT).filter((w) => w.missing.length > 0)).toEqual([])
+  })
+
+  it('③ 空态文案不许静默通过：未登记即红、台账只许缩短、僵尸条目即红', () => {
+    const { files, sites, unregistered, stale } = emptyStateOffenders(ADMIN_WEB_ROOT)
+
+    // 面自证：扫描面非空、且候选非空（空集 = 判据在扫空气）
+    expect(files.length).toBeGreaterThanOrEqual(50)
+    expect(sites.length).toBeGreaterThan(0)
+    // 两个单的病灶页必须在面里（否则改目录名就会「静默全绿」）
+    expect(files).toContain('src/components/chat/SessionList.tsx')
+    expect(files).toContain('src/app/(dashboard)/notifications/page.tsx')
+    expect(files).toContain('src/app/(dashboard)/shipments/page.tsx')
+    expect(files).toContain('src/app/(dashboard)/production/remnants/page.tsx')
+    // 判红面必须为空
+    expect(unregistered).toEqual([])
+    // 台账只许缩短 + 无僵尸条目
+    expect(EMPTY_STATE_LEDGER.length).toBeLessThanOrEqual(EMPTY_STATE_LEDGER_FLOOR)
+    expect(stale).toEqual([])
+  })
+
+  it('④ 失败读数必须真落地（#6664 那个「全仓无消费点」假承诺的反面保证）', () => {
+    // store 面自证：真的扫到了 `fetchSessions`
+    const storeSource = read(STORE_FILES[0])
+    expect(storeActionsFromSource(storeSource).map((a) => a.name)).toContain('fetchSessions')
+    // 登记里声明了 `failureFrom` 的（= 失败读数**产生**在 store）必须被真的写成 true
+    expect(storeFailureKeyOffenders(ADMIN_WEB_ROOT)).toEqual([])
+
+    // 🔴 反向对照：把 `set({ sessionsLoadFailed: true })` 摘掉 ⇒ 当场判红
+    //（**内存变异**喂给**同一份**生产判据 `storeFailureKeyOffenders`，不另抄一份正则、不碰真文件）
+    const broken = [{ file: STORE_FILES[0], source: storeSource.replace('sessionsLoadFailed: true', '') }]
+    const offenders = storeFailureKeyOffenders(ADMIN_WEB_ROOT, READ_SURFACES, broken)
+    expect(offenders.length).toBe(1)
+    expect(offenders[0].reason).toContain('sessionsLoadFailed')
+
+    // 对照读数：不改坏 ⇒ 不报（否则这条自证是假红）
+    expect(
+      storeFailureKeyOffenders(ADMIN_WEB_ROOT, READ_SURFACES, [{ file: STORE_FILES[0], source: storeSource }]),
+    ).toEqual([])
+  })
+
+  it('⑤ 判别力自证：修前坏形态必红、修后与「真为空」不红、注释不误伤', () => {
+    // 🔴 修前形态：**没有任何失败锚** ⇒ 判据 3 当场红
+    expect(hasFailureAnchor(PRE_FIX_SNIPPET)).toBe(false)
+    // …而它的空态文案确实被判据识别到（是「失败与空态同屏」，不是「没有空态」）
+    expect(
+      emptyStateSitesFromSource(PRE_FIX_SNIPPET, { file: 'src/components/chat/SessionList.tsx' }).map((s) => s.text),
+    ).toEqual(['没有匹配的会话', '暂无会话'])
+    // …接线检查逐条判红（各自缺什么，具名）
+    const preGuards = renderGuardsFromSource(PRE_FIX_SNIPPET, GUARD_OPTS)
+    expect(preGuards.anchor).toBe(false)
+    expect(preGuards.retry).toBe(false)
+    expect(preGuards.emptyGuarded).toBe(false)
+    expect(preGuards.ok).toBe(false)
+
+    // ✅ 修后形态：五条全过（`ok` = 五条同时成立）
+    expect(renderGuardsFromSource(POST_FIX_SNIPPET, GUARD_OPTS)).toEqual({
+      anchor: true,
+      retry: true,
+      emptyGuarded: true,
+      emptyAnchorClean: true,
+      ok: true,
+    })
+
+    // ✅ 反向对照：真为空（读成功、零条）⇒ 空态文案仍被识别，但守卫不判红
+    expect(emptyStateSitesFromSource(EMPTY_ONLY_SNIPPET, { file: 'probe.tsx' }).map((s) => s.text)).toContain('暂无会话')
+    expect(renderGuardsFromSource(EMPTY_ONLY_SNIPPET, GUARD_OPTS)).toEqual({
+      anchor: true,
+      retry: true,
+      emptyGuarded: true,
+      emptyAnchorClean: true,
+      ok: true,
+    })
+
+    // 注释里的同形态不误伤（AST 里没有注释节点 —— 本仓注释惯例会引用这些串）
+    const commented = `// 改前这里印「暂无会话」，失败时不该出现\n/* 旧形态：暂无数据 */\nconst x = 1`
+    expect(emptyStateSitesFromSource(commented, { file: 'probe.tsx' })).toEqual([])
+
+    // 失败文案**不算**空态断言（判据治的是「把读不到说成没有」，不是「把读不到说出来」）
+    expect(
+      emptyStateSitesFromSource(`<div data-testid="x-load-failed">列表加载失败 —— 请检查网络后重试</div>`, { file: 'probe.tsx' }),
+    ).toEqual([])
+
+    // 行内字段占位不误伤（`暂无消息` 是单条会话的占位，不是列表体空态）
+    expect(emptyStateSitesFromSource(`<p>{m.last_message || '暂无消息'}</p>`, { file: 'probe.tsx' })).toEqual([])
+
+    // 扫描面自证（不各说各话）
+    expect(SYNC_SCOPES).toEqual(['src/app/(dashboard)', 'src/components/chat'])
   })
 })

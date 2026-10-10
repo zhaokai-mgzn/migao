@@ -209,12 +209,23 @@ export default function ShipmentsPage() {
                     '加载中…'
                   ) : loadError ? (
                     // 失败态与空态**分离**（issue #6664 第 3 条）：故障说「加载失败」+ 重试出口
-                    <span role="alert" className="inline-flex items-center gap-3">
+                    <span
+                      data-testid="shipments-load-failed"
+                      role="alert"
+                      className="inline-flex items-center gap-3"
+                    >
                       <span className="text-neutral-600">发货单加载失败，请检查网络后重试</span>
-                      <Button variant="secondary" size="sm" onClick={() => void load()}>重试</Button>
+                      <Button
+                        data-testid="shipments-load-failed-retry"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void load()}
+                      >
+                        重试
+                      </Button>
                     </span>
                   ) : (
-                    '暂无发货单'
+                    <span data-testid="shipments-empty">暂无发货单</span>
                   )}
                 </td>
               </tr>

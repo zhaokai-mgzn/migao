@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// case_ids: UI-057, UI-058
+// case_ids: UI-011, CH-028, UI-046, UI-057, UI-058
 /**
  * 「读面失败不得伪装成空态」判据**单一源**（issue #6663）。
  *
@@ -14,6 +14,14 @@
  * `stock-ledger/page.tsx` 的 `*-error` 行）⇒ 本文件是那条**类级收口**：
  * 判据（`swallowSites`）与台账（`LEDGER`）都只有这一份，守卫
  * `tests/unit/read-failure-empty-state-guard.test.ts` 与命令行**共用**它（不写第二份规则）。
+ *
+ * ## 🔴 本文件同时是 issue #6713 + #6714 的**同一把尺子**（2026-10-11 合并）
+ *
+ * #6713（`/chat`）与 #6714（`/employees` `/notifications` `/products` `/shipments`）
+ * 是**同一个形态**：**读面失败被渲染成一句事实性断言**（「暂无会话 / 暂无数据 / 暂无通知」，
+ * 或表头在、零行、无失败面）。两单各自立一把尺子会互相把对方判成僵尸条目、
+ * 且同一份文件会被两份台账各记一次 ⇒ 按「一把尺子」合并到本文件。
+ * `/production/remnants` 的遗留空态（失败横幅在、底下仍印「还没有余料记录」）同批纳入。
  *
  * ## 判的是哪个形态（口径）
  *
@@ -427,6 +435,413 @@ export function dupStaleLedger(root) {
   return DUP_LEDGER.filter((k) => !live.has(k))
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 第三条判据：「**读面失败与空态同屏**」（issue #6713 + #6714，一把尺子）
+//
+// 病灶（真机注入 `/api/admin/**` ⇒ 500、每页等 6s 看持久面，main `2adad8660`）：
+//   /chat          「暂无会话」
+//   /employees     「暂无数据」+「共 0 条」
+//   /notifications 「暂无通知」
+//   /products      「暂无数据」
+//   /shipments     表头在、零行、无失败面（与「没有发货单」不可区分）
+//   /production/remnants  失败横幅在，底下仍印「还没有余料记录（…）」
+// ⇒ 读不到 = 被说成「没有」。同族 #6691/#6702/#6703 各扫各的，这几页**不在任何尺子的面里**。
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** 「读面失败 ⇄ 空态同屏」条的判据面（与第一条同面 + chat 组件族） */
+export const SYNC_SCOPES = ['src/app/(dashboard)', 'src/components/chat']
+
+/**
+ * **空态断言**文案形态（**有意收窄**，只认三种措辞：见文件头「边界」）。
+ * 🔴 **失败文案不算**空态断言 —— 本判据治的是「把读不到说成没有」，不是「把读不到说出来」。
+ */
+export const EMPTY_TEXT_RE = /暂无|没有匹配的|还没有[^\n]{0,24}(记录|数据|内容)/
+/** 行内字段占位（不是列表体空态）：`暂无消息` 一类，判它 = 假红 */
+const INLINE_PLACEHOLDER_RE = /暂无(消息|物流轨迹|生产进度|订单数据|标签)/
+/** 失败文案（读不到被**正确**说出来的形态）—— 从「空态断言」里排除 */
+const FAILURE_COPY_RE = /加载失败|读取失败|不可用|不可信/
+/**
+ * **读面失败锚**：`data-testid="<读面>-load-failed"` / `"-load-error"`（本仓命名规范）
+ * 及其重试出口。取自共享件 `frontend/admin-web/src/components/common/ListLoadError.tsx`
+ * 的约定（`testId` + `${testId}-retry`）与既有页面（`orders-load-error` 一族）。
+ */
+export const FAILURE_ANCHOR_RE = /data-testid=\{?["'`][A-Za-z0-9_-]*(?:-(?:error|failed|retry)|load-(?:error|failed))["'`]\}?/
+
+/**
+ * **修复登记册**（本包改对的读面）。
+ *
+ * ⚠️ 键是**可读名**（不是判据），机器核的对象是 `file` / `anchor` / `emptyTestId` / `failureKey`：
+ *   · `anchor` / `emptyTestId` ⇒ 判据 2 的逐字接线锚（缺一即红并**具名**报出缺哪条）；
+ *   · `failureKey` ⇒ 「这次读失败了」的**前端读数**（必须是 store/state 里真的存在的那个 key）。
+ */
+export const READ_SURFACES = {
+  'chat-sessions': {
+    issue: '#6713',
+    file: 'src/components/chat/SessionList.tsx',
+    anchor: 'chat-sessions-load-failed',
+    emptyTestId: 'chat-sessions-empty',
+    failureKey: 'sessionsLoadFailed',
+    // 失败读数**产生**在 store（其余读面的失败态是页面本地 state）⇒ 判据 4 才核它
+    failureFrom: { file: 'src/store/chat.ts' },
+  },
+  'shipments-list': {
+    issue: '#6714',
+    file: 'src/app/(dashboard)/shipments/page.tsx',
+    anchor: 'shipments-load-failed',
+    emptyTestId: 'shipments-empty',
+    failureKey: 'loadError',
+  },
+  'remnant-ledger': {
+    issue: '#6714',
+    file: 'src/app/(dashboard)/production/remnants/page.tsx',
+    anchor: 'remnant-ledger-load-failed',
+    // 该页的重试出口沿用 #6702 已立的 testid（既有名字不改造）
+    retryAnchor: 'remnant-ledger-retry',
+    emptyTestId: 'remnant-empty',
+    failureKey: 'error',
+  },
+  'employees-list': {
+    issue: '#6714',
+    file: 'src/app/(dashboard)/employees/page.tsx',
+    anchor: 'employees-load-failed',
+    emptyTestId: 'employees-empty',
+    failureKey: 'loadFailed',
+  },
+  'notifications-list': {
+    issue: '#6714',
+    file: 'src/app/(dashboard)/notifications/page.tsx',
+    anchor: 'notifications-load-failed',
+    emptyTestId: 'notifications-empty',
+    failureKey: 'loadFailed',
+  },
+  'products-list': {
+    issue: '#6714',
+    file: 'src/app/(dashboard)/products/page.tsx',
+    anchor: 'products-load-failed',
+    emptyTestId: 'products-empty',
+    failureKey: 'loadFailed',
+  },
+}
+
+/**
+ * **正向核**：每条登记读面必须逐字含这些接线（**单一源**：由 `READ_SURFACES` 派生，不写第二份）。
+ * 删掉任一处（把失败分支的守卫摘了、把锚点换回空态）⇒ 当场红。
+ */
+export const POSITIVE_ANCHORS = /** @type {Record<string, string[]>} */ ({})
+for (const [name, surf] of Object.entries(READ_SURFACES)) {
+  POSITIVE_ANCHORS[name] = [
+    `data-testid="${surf.anchor}"`,
+    `data-testid="${surf.retryAnchor || `${surf.anchor}-retry`}"`,
+    `data-testid="${surf.emptyTestId}"`,
+    // 「失败 key 参与空态那一支的判据」由 `renderGuardsFromSource` 判（形态无关，见其注释）
+    surf.failureKey,
+  ]
+}
+
+/**
+ * **未判 / 待另单 / 已判为非缺陷**（普查到、本包不动）：登记在这里，**不许**静默放行。
+ * 每条必须给 `observed`（用户可见面名）+ `evidence`（为什么现在不判 / 归谁）。
+ */
+export const PENDING_AUDIT = {
+  'agent-workspace': {
+    observed: '/agent-workspace（180 字壳页）',
+    evidence: '极小的壳页（无表格 / 无表单控件、未观察到数据区）⇒ 本次**不判**它是不是缺陷（需先知道它的预期形态）。登记口径 = 「未分类」，**不是**放行（#6714 的普查表同款）。',
+  },
+  briefing: {
+    observed: '/briefing（204 字壳页）',
+    evidence: '同 `/agent-workspace`：无数据区可观察 ⇒ 登记为「未分类 / 待判」，既不判红也不放行。',
+  },
+  categories: {
+    observed: '/categories（153 字壳页）',
+    evidence: '同 `/agent-workspace`：无数据区可观察 ⇒ 登记为「未分类 / 待判」，既不判红也不放行。',
+  },
+  'customers-detail-sessions': {
+    observed: 'src/app/(dashboard)/customers/[id]/CustomerDetail.tsx 的「暂无订单记录 / 暂无会话记录」',
+    evidence: '明细页内嵌的两个列表空态（读面失败只 toast ⇒ 两个列表同时印空态）。**存量债**：票据未点名，是否按同范式修由后续单裁定 ⇒ 登记待另单。',
+  },
+  'after-sales-detail-records': {
+    observed: 'src/app/(dashboard)/after-sales/[id]/AfterSalesDetail.tsx 的「暂无处理记录」',
+    evidence: '同 `customers-detail-sessions`：明细页内嵌列表空态，票据未点名 ⇒ 登记待另单。',
+  },
+  'products-detail-images': {
+    observed: 'src/app/(dashboard)/products/[id]/ProductDetail.tsx 的「暂无图片」',
+    evidence: '商品图集随商品载荷下发（**没有独立读接口**）⇒ 不产生「读不到 vs 真是空」的分歧，本形态不成立；归零判据 = 该区接入独立读接口时同批修。',
+  },
+  'chat-insight-panels': {
+    observed: 'src/components/chat/SessionInsight.tsx 的「暂无待办 / 本会话还没有记录」',
+    evidence: '洞察抽屉的待办与消息区来自**当前会话消息里的载荷**（无独立读接口）⇒ 无分歧面；归零判据 = 接入独立读接口时同批修。',
+  },
+  'chat-customer-panel': {
+    observed: 'src/components/chat/CustomerPanel.tsx 的「暂无」（电话 / 注册天数）',
+    evidence: '客户信息随当前会话载荷下发（`customerInfo`），无独立读接口 ⇒ 行内缺失占位，非列表体空态。',
+  },
+  'finance-fund-flow-rows': {
+    observed: 'src/app/(dashboard)/finance/page.tsx 的「暂无资金流水 / 暂无数据 / 暂无对账数据」',
+    evidence: '该页已有 `finance-summary-load-error` 一族失败锚（#6703 已修），但**表体空态**与失败态是否同屏**未复核**（本包不碰 finance 面）⇒ 登记待复核单。',
+  },
+  'knowledge-cards': {
+    observed: 'src/app/(dashboard)/knowledge/page.tsx 的「暂无知识卡片 / 暂无待确认候选 / 暂无可用模板」',
+    evidence: '该页已有 `knowledge-load-error` + 逐区失败文案（#6703 已修）；表体空态的互斥性**未复核** ⇒ 登记待复核单。',
+  },
+  'ship-order-items': {
+    observed: 'src/app/(dashboard)/orders/[id]/ship/ShipOrder.tsx 的「暂无商品」',
+    evidence: '发货页明细随订单载荷下发（无独立读接口）⇒ 无分歧面。',
+  },
+}
+
+/**
+ * **有主 / 有意不动**（超范围）：每条必须给 `owner`（哪个单的面）+ `evidence`。
+ * 🔴 这是**如实声明边界**，不是「判过了」。
+ */
+export const OUT_OF_SCOPE = {
+  'stock-ledger': {
+    owner: '#6707',
+    evidence: '该页的**权限归因**属 #6707 的面（本包明确不碰，避免撞写面）。',
+  },
+  'dashboard-amounts': {
+    owner: '#6715',
+    evidence: '工作台金额 / 图表口径属 #6715 的面（本包明确不碰）。',
+  },
+  'shared-table-default-empty': {
+    owner: '#6714（本包，有意不改）',
+    evidence: '共享 `frontend/admin-web/src/components/ui/Table.tsx` 的**默认** `emptyText = 暂无数据` 不在本包射程（改默认值会波及全站所有调用方）⇒ 本包改的是**页面级失败面**（见 `READ_SURFACES`）。',
+  },
+}
+
+/**
+ * 票据点名的读面（**未登记即红**）：必须在 `READ_SURFACES` / `PENDING_AUDIT` / `OUT_OF_SCOPE`
+ * **三张表之一**出现。
+ */
+export const REQUIRED_SURFACES = [
+  { key: 'chat-sessions', issue: '#6713', required: true },
+  { key: 'employees-list', issue: '#6714', required: true },
+  { key: 'notifications-list', issue: '#6714', required: true },
+  { key: 'products-list', issue: '#6714', required: true },
+  { key: 'shipments-list', issue: '#6714', required: true },
+  { key: 'remnant-ledger', issue: '#6714', required: true },
+]
+
+/**
+ * 台账：**已判为非缺陷 / 待另单**的空态文案（**只许缩短**）。
+ * 键 = `仓库相对路径::文案`（**不写行号**：活跃文件的裸行号几分钟就失效）。
+ * 条目一旦不再命中其声明的文案 ⇒ `emptyStateStale` 判红 ⇒ 逼着删干净。
+ */
+export const EMPTY_STATE_LEDGER = [
+  'src/app/(dashboard)/customers/[id]/CustomerDetail.tsx::暂无订单记录',
+  'src/app/(dashboard)/customers/[id]/CustomerDetail.tsx::暂无会话记录',
+  'src/app/(dashboard)/after-sales/[id]/AfterSalesDetail.tsx::暂无处理记录',
+  'src/app/(dashboard)/products/[id]/ProductDetail.tsx::暂无图片',
+  'src/components/chat/SessionInsight.tsx::暂无待办',
+  'src/components/chat/SessionInsight.tsx::本会话还没有记录',
+  'src/components/chat/CustomerPanel.tsx::暂无',
+  'src/app/(dashboard)/finance/page.tsx::暂无资金流水',
+  'src/app/(dashboard)/finance/page.tsx::暂无数据',
+  'src/app/(dashboard)/finance/page.tsx::暂无对账数据',
+  'src/app/(dashboard)/knowledge/page.tsx::暂无知识卡片，点击「新建知识卡片」或从行业模板一键套用',
+  'src/app/(dashboard)/knowledge/page.tsx::暂无待确认候选。人工客服会话结束后将自动提炼知识；也可通过「文档提炼」从资料中提炼。',
+  'src/app/(dashboard)/knowledge/page.tsx::暂无可用模板',
+  'src/app/(dashboard)/orders/[id]/ship/ShipOrder.tsx::暂无商品',
+  'src/app/(dashboard)/after-sales/page.tsx::暂无售后工单',
+  'src/app/(dashboard)/agent-workspace/human-sessions/page.tsx::暂无转人工会话',
+]
+
+/** 台账冻结基线（**只许缩短**；`EMPTY_STATE_LEDGER.length > EMPTY_STATE_LEDGER_FLOOR` ⇒ 红） */
+export const EMPTY_STATE_LEDGER_FLOOR = 16
+
+/** 判据 1：票据点名的读面三张表都没登记的（**未登记即红**） */
+export function unregisteredSurfaces(surfaces = READ_SURFACES, pending = PENDING_AUDIT, outOfScope = OUT_OF_SCOPE) {
+  const known = new Set([...Object.keys(surfaces), ...Object.keys(pending), ...Object.keys(outOfScope)])
+  return REQUIRED_SURFACES.filter((x) => x.required && !known.has(x.key))
+}
+
+/** 判据 2：登记读面缺哪条接线（返回 `{ key, file, missing }`；`missing` 空 = 通过） */
+export function missingWiring(root, surfaces = READ_SURFACES, positive = POSITIVE_ANCHORS) {
+  const out = []
+  for (const [key, surf] of Object.entries(surfaces)) {
+    let source = ''
+    try {
+      source = readFileSync(join(root, surf.file), 'utf8')
+    } catch {
+      out.push({ key, file: surf.file, missing: [`文件不存在：${surf.file}`] })
+      continue
+    }
+    out.push({ key, file: surf.file, missing: (positive[key] || []).filter((needle) => !source.includes(needle)) })
+  }
+  return out
+}
+
+/**
+ * 一段**渲染源码**是否把失败态与空态分开了（判据 2 的判别力自证夹具 / 页面实例判据的共用口径）。
+ *
+ * 五条同时成立才算分开：
+ *   ① 有读面失败锚；② 有重试出口；③ **失败 key 参与空态那一支的判据**
+ *   （`!k && …` / `k ? … :` / `k && …`）；④ 空态锚那个元素里**不夹失败文案**（互斥位）；
+ *   ⑤ 失败 key 进了共享失败件的 props（`readFailed={k}` / `error={k}` 一族）。
+ *
+ * @param {string} source 渲染源码（**只吃文本**：守卫用内存假源码做自证）
+ * @param {{failureKey: string, anchorTestId: string, emptyTestId: string}} opts
+ */
+export function renderGuardsFromSource(source, { failureKey, anchorTestId, emptyTestId }) {
+  const checks = {
+    anchor: source.includes(`data-testid="${anchorTestId}"`),
+    retry: source.includes(`data-testid="${anchorTestId}-retry"`),
+    emptyGuarded: new RegExp(`(!\\s*${failureKey}\\b)|(\\b${failureKey}\\s*\\?)|(\\b${failureKey}\\s*&&)`).test(source),
+    emptyAnchorClean: (() => {
+      const i = source.indexOf(`data-testid="${emptyTestId}"`)
+      if (i < 0) return false
+      return !/加载失败|读取失败|不可信/.test(source.slice(i, i + 400))
+    })(),
+  }
+  return { ...checks, ok: Object.values(checks).every(Boolean) }
+}
+
+/** 台账键 = `仓库相对路径::文案` */
+export function emptyStateKey(site) {
+  return `${site.file}::${site.text.replace(/\s+/g, ' ')}`
+}
+
+/**
+ * 一段源码里的**空态断言**出现位置（行号 + 文案）。
+ *
+ * 取两种承载：① JSX 文本节点；② JSX 属性值 / 三元里的字符串字面量
+ * （`{loading ? … : loadFailed ? … : '暂无会话'}`、`emptyText: '暂无通知'`）。
+ * 注释天然不在内（AST 无注释节点）—— 不会被本文件自己的文案喂红。
+ *
+ * @param {string} source
+ * @param {{file?: string, tsModule?: typeof ts}} [opts]
+ */
+export function emptyStateSitesFromSource(source, { file = '<probe>.tsx', tsModule = ts } = {}) {
+  const sf = tsModule.createSourceFile(file, source, tsModule.ScriptTarget.Latest, true, tsModule.ScriptKind.TSX)
+  const out = []
+  const ok = (t) => Boolean(t) && !INLINE_PLACEHOLDER_RE.test(t) && !FAILURE_COPY_RE.test(t) && EMPTY_TEXT_RE.test(t)
+  const visit = (node) => {
+    if (tsModule.isJsxText(node) && ok(node.text.trim())) {
+      out.push({ file, line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1, text: node.text.trim() })
+    } else if (
+      tsModule.isJsxAttribute(node) &&
+      node.initializer &&
+      tsModule.isStringLiteral(node.initializer) &&
+      ok(node.initializer.text)
+    ) {
+      out.push({ file, line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1, text: node.initializer.text })
+    } else if (tsModule.isStringLiteral(node) && ok(node.text)) {
+      const parent = node.parent
+      if (
+        parent &&
+        (tsModule.isConditionalExpression(parent) ||
+          tsModule.isBinaryExpression(parent) ||
+          tsModule.isParenthesizedExpression(parent) ||
+          tsModule.isPropertyAssignment(parent) ||
+          tsModule.isArrayLiteralExpression(parent))
+      ) {
+        out.push({ file, line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1, text: node.text })
+      }
+    }
+    tsModule.forEachChild(node, visit)
+  }
+  tsModule.forEachChild(sf, visit)
+  return out
+}
+
+/** 该文件是否带**读面失败锚** */
+export function hasFailureAnchor(source) {
+  return FAILURE_ANCHOR_RE.test(source)
+}
+
+/** 命中清单（**单一源**）：面内每个文件的空态断言 + 该文件有没有失败锚 */
+export function emptyStateSites(root, scopes = SYNC_SCOPES) {
+  const files = []
+  for (const scope of scopes) {
+    for (const f of walk(join(root, scope))) {
+      const rel = relative(root, f).split('\\').join('/')
+      if (/\.test\.tsx?$/.test(rel)) continue
+      files.push(rel)
+    }
+  }
+  files.sort()
+  const sites = []
+  for (const file of files) {
+    const source = readFileSync(join(root, file), 'utf8')
+    const guarded = hasFailureAnchor(source)
+    for (const m of emptyStateSitesFromSource(source, { file })) {
+      sites.push({ ...m, guarded, key: emptyStateKey({ file, text: m.text }) })
+    }
+  }
+  return { files, sites }
+}
+
+/**
+ * **store 文件面**（`read*` / `fetch*` 动作所在）：判据 4 的扫描对象。
+ * 为什么单列：`SessionList` 只是**消费**失败读数，**产生**它的是 `store/chat.ts` 的
+ * `fetchSessions` —— 只核消费方会让「store 又改回只 console.error」静默通过。
+ */
+export const STORE_FILES = ['src/store/chat.ts']
+
+/** 取一段源码里全部 `fetch*` / `load*` 动作的 `{ name, line, body }` */
+export function storeActionsFromSource(source, { tsModule = ts } = {}) {
+  const sf = tsModule.createSourceFile('store.ts', source, tsModule.ScriptTarget.Latest, true, tsModule.ScriptKind.TS)
+  const out = []
+  const visit = (node) => {
+    if (ts.isPropertyAssignment(node) && node.name && ts.isIdentifier(node.name) && /^(fetch|load)[A-Z]/.test(node.name.text)) {
+      const init = node.initializer
+      if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) {
+        out.push({
+          name: node.name.text,
+          line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
+          body: init.getText(sf),
+        })
+      }
+    }
+    tsModule.forEachChild(node, visit)
+  }
+  tsModule.forEachChild(sf, visit)
+  return out
+}
+
+/**
+ * 判据 4：登记读面的 `failureKey` 必须**在 store 里真的被写成 true**（在同一动作体内）。
+ *
+ * 🔴 这是「**有消费点**」的反面保证：`#6664` 删掉的那个 `error` 字段之所以是**假承诺**，
+ * 就因为全仓没有消费点；本判据同时核两半 —— **产生**（store 写入）与**消费**
+ * （`POSITIVE_ANCHORS` 的接线）—— 只留一半就会重新长出「假承诺」。
+ */
+export function storeFailureKeyOffenders(root, surfaces = READ_SURFACES, storeSources = /** @type {{file: string, source: string}[] | null} */ (null)) {
+  // `storeSources` 可注入（判别力自证用**内存变异**，不必碰真文件 —— 见守卫判据 ④）
+  const sources = storeSources || STORE_FILES.map((file) => ({ file, source: readFileSync(join(root, file), 'utf8') }))
+  const allActions = sources.flatMap((s) => storeActionsFromSource(s.source).map((a) => ({ file: s.file, ...a })))
+  const fullSource = sources.map((s) => s.source).join('\n')
+  const out = []
+  for (const [key, surf] of Object.entries(surfaces)) {
+    // 只有「失败读数产生在 store」的读面才走这条（其余读面的失败态是页面本地 state，
+    // 由 `POSITIVE_ANCHORS` 的正向核 + 页面实例判据承担）
+    if (!surf.failureFrom) continue
+    if (!new RegExp(`\\b${surf.failureKey}\\b`).test(fullSource)) {
+      out.push({ key, file: surf.file, reason: `store 里没有声明 failureKey「${surf.failureKey}」（消费方读不到东西）` })
+      continue
+    }
+    const producer = allActions.find((a) => new RegExp(`${surf.failureKey}\\s*:\\s*true`).test(a.body))
+    if (!producer) {
+      out.push({
+        key,
+        file: surf.file,
+        reason: `没有任何 store 动作把「${surf.failureKey}」置 true ⇒ 失败时消费方永远看不到（假承诺）`,
+      })
+    }
+  }
+  return out
+}
+
+/** 判据 3 的判红面（未登记即红）+ 台账空转 */
+export function emptyStateOffenders(root, ledger = EMPTY_STATE_LEDGER) {
+  const { files, sites } = emptyStateSites(root)
+  const keys = new Set(ledger)
+  const unregistered = sites.filter((s) => !s.guarded && !keys.has(s.key))
+  const live = new Set(sites.map((s) => s.key))
+  const stale = ledger.filter((k) => !live.has(k))
+  return { files, sites, unregistered, stale }
+}
+
 const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop())
 if (isMain) {
   const root = process.env.MIGAO_SCAN_ROOT || join(process.cwd())
@@ -442,6 +857,32 @@ if (isMain) {
   }
   console.log(`\n未登记命中 ${offenders.length} 条 · 僵尸条目 ${stale.length} 条`)
 
+  // ── 第三条判据：读面失败 ⇄ 空态同屏（issue #6713 + #6714） ──
+  const empty = emptyStateOffenders(root)
+  const missingSurfaces = unregisteredSurfaces()
+  const wiring = missingWiring(root).filter((w) => w.missing.length > 0)
+  console.log(
+    `\n扫描 ${empty.files.length} 个文件（${SYNC_SCOPES.join(' + ')}）· ` +
+      `命中「空态断言」${empty.sites.length} 处 · 台账豁免 ${EMPTY_STATE_LEDGER.length} 条（基线 ${EMPTY_STATE_LEDGER_FLOOR}）\n`,
+  )
+  for (const e of empty.sites) {
+    const mark = e.guarded ? '✅ 有失败锚' : EMPTY_STATE_LEDGER.includes(e.key) ? '📝 已登记' : '❌ 未登记'
+    console.log(`  ${mark} [${e.file}] 第 ${e.line} 行「${e.text}」`)
+  }
+  for (const k of empty.stale) console.log(`  🔴 僵尸台账条目（不再命中，必须删）：${k}`)
+  for (const x of missingSurfaces) console.log(`  🔴 票据点名的读面未登记：${x.key}（${x.issue}）`)
+  for (const w of wiring) console.log(`  🔴 接线缺失 ${w.key}（${w.file}）：${w.missing.join(' / ')}`)
+  const storeBad = storeFailureKeyOffenders(root)
+  for (const x of storeBad) console.log(`  🔴 失败读数未落地 ${x.key}（${x.file}）：${x.reason}`)
+  const badSync =
+    empty.unregistered.length > 0 ||
+    empty.stale.length > 0 ||
+    missingSurfaces.length > 0 ||
+    wiring.length > 0 ||
+    storeBad.length > 0 ||
+    EMPTY_STATE_LEDGER.length > EMPTY_STATE_LEDGER_FLOOR
+  console.log(badSync ? '  🔴 判红：未登记空态 / 僵尸条目 / 读面未登记 / 接线缺失 / 台账超基线' : '  ✅ 空态与读面失败互斥、读面已登记、台账未超基线')
+
   // ── 第二条判据：同一次读失败的重复信号（issue #6669） ──
   const dup = dupOffenders(root)
   console.log(`\n扫描 ${dup.files.length} 个 (${DUP_SCOPE}) 文件 · 命中「同一次读失败多处信号」${dup.sites.length} 处 · 台账豁免 ${DUP_LEDGER.length} 条\n`)
@@ -454,5 +895,7 @@ if (isMain) {
     console.log(`\n重复信号台账里这些条目**不再命中**，请删掉：\n  ${dupStale.join('\n  ')}`)
   }
   console.log(`\n未登记命中 ${dup.offenders.length} 条 · 僵尸条目 ${dupStale.length} 条`)
-  process.exit(offenders.length || stale.length || dup.offenders.length || dupStale.length ? 1 : 0)
+  process.exit(
+    offenders.length || stale.length || badSync || dup.offenders.length || dupStale.length ? 1 : 0,
+  )
 }
