@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Bell, CheckCheck, Trash2, Mail, MailOpen, Inbox } from 'lucide-react'
+import { AlertCircle, Bell, CheckCheck, Trash2, Mail, MailOpen, Inbox } from 'lucide-react'
 import { toast } from 'sonner'
 import { notificationApi } from '@/lib/api'
 import { Pagination, Modal, Button } from '@/components/ui'
@@ -58,6 +58,8 @@ export default function NotificationsPage() {
   // 删除确认
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [deletingNotification, setDeletingNotification] = useState<Notification | null>(null)
+  /** 列表读失败（与「暂无通知」互斥，issue #6714）：故障不是业务事实 */
+  const [loadFailed, setLoadFailed] = useState(false)
 
   // 加载通知列表
   const loadNotifications = useCallback(async () => {
@@ -73,9 +75,11 @@ export default function NotificationsPage() {
       const pageData = res.data?.data
       setNotifications(pageData?.items || [])
       setTotal(pageData?.total || 0)
+      setLoadFailed(false)
     } catch (error) {
+      // 读面失败**不清零**（保留上次成功值）、只标失败态 —— 故障 ≠「没有通知」（issue #6714）
       console.error('加载通知失败:', error)
-      toast.error('加载通知失败')
+      setLoadFailed(true)
     } finally {
       setLoading(false)
     }
@@ -195,15 +199,36 @@ export default function NotificationsPage() {
         ))}
       </div>
 
+      {/* 🔴 issue #6714：读失败 ⇒ 常驻失败面 + 真重发（与下面的空态**互斥**）。
+          修前失败只 toast（≈4s 消失），屏上留着「暂无通知」——一句事实性断言。 */}
+      {!loading && loadFailed && (
+        <div
+          data-testid="notifications-load-failed"
+          role="alert"
+          className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 mb-4 text-sm text-red-700"
+        >
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span className="flex-1">通知加载失败 —— 不是没有通知，是没读到。请检查网络后重试</span>
+          <button
+            type="button"
+            data-testid="notifications-load-failed-retry"
+            onClick={() => void loadNotifications()}
+            className="flex-shrink-0 rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+          >
+            重试
+          </button>
+        </div>
+      )}
+
       {/* 通知列表 */}
       <div className="bg-white rounded-b-lg border border-t-0 border-neutral-200">
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="w-6 h-6 border-2 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
           </div>
-        ) : notifications.length === 0 ? (
-          /* 空状态 */
-          <div className="flex flex-col items-center justify-center py-20 text-neutral-400">
+        ) : !loadFailed && notifications.length === 0 ? (
+          /* 空状态（**真为空**时才出现） */
+          <div data-testid="notifications-empty" className="flex flex-col items-center justify-center py-20 text-neutral-400">
             <Inbox className="w-12 h-12 mb-3 stroke-[1.5]" />
             <p className="text-sm">{getEmptyText()}</p>
           </div>

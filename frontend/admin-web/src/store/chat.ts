@@ -48,6 +48,14 @@ interface ChatState {
   isStreaming: boolean
   abortController: AbortController | null
   isLoadingSessions: boolean
+  /**
+   * 会话列表**读面失败**（issue #6713）：与「真的没有会话」互斥。
+   *
+   * 为什么必须是**状态**而不是 toast：`lib/request.ts` 拦截器的 toast ≈4s 后消失，
+   * 商家回到屏幕只剩「暂无会话」——一句**事实性断言**，而真相是**读不到**。
+   * 这里只记「这次读失败了」，画什么由消费方决定（`SessionList` 给常驻失败面 + 重试出口）。
+   */
+  sessionsLoadFailed: boolean
   isLoadingMessages: boolean
   searchKeyword: string
   quickActions: QuickAction[]
@@ -159,6 +167,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   isStreaming: false,
   abortController: null,
   isLoadingSessions: false,
+  sessionsLoadFailed: false,
   isLoadingMessages: false,
   searchKeyword: '',
   quickActions: [],
@@ -259,7 +268,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         }
       }
 
-      set({ sessions: finalSessions })
+      set({ sessions: finalSessions, sessionsLoadFailed: false })
 
       // 如果没有选中会话且无未完成交互，自动选中第一个
       if (!get().currentSessionId && sessions.length > 0 && !hasPendingTools(get().messages)) {
@@ -269,6 +278,10 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       // 不弹 toast 刷屏：拦截器已展示后端错误（`lib/api-error`）。
       // 🔴 issue #6664 第 2 条：改前这里 `set({ error: message })` 写进一个**全仓无消费点**的字段
       //（注释写着「在页面上友好提示」，而没有任何组件读它）—— 那是**假承诺**，已整字段删除。
+      // 🔴 issue #6713：删掉假承诺不等于不用表达失败 —— 这里补上**有消费点**的常驻读数
+      //（消费点 = `components/chat/SessionList.tsx` 的常驻失败面 + 重试出口）。
+      // 失败**不清零**（保留上次成功值）：故障 ≠ 空。
+      set({ sessionsLoadFailed: true })
       console.error('获取会话列表失败:', error)
     } finally {
       set({ isLoadingSessions: false })

@@ -5,6 +5,7 @@ import {
   Plus,
   Search,
   X,
+  AlertCircle,
   MoreHorizontal,
   Trash2,
   RotateCcw,
@@ -33,6 +34,9 @@ export default function SessionList() {
     sessions,
     currentSessionId,
     isLoadingSessions,
+    // 读面失败读数（issue #6713）：与「暂无会话」互斥，见下面的三层三元
+    sessionsLoadFailed,
+    fetchSessions,
     searchKeyword,
     setSearchKeyword,
     createSession,
@@ -147,12 +151,33 @@ export default function SessionList() {
 
           {/* 会话列表（单列表：无 tab、无筛选控件，状态只靠排序与灰化表达） */}
           <div className="flex-1 overflow-y-auto">
+            {/* 🔴 issue #6713：读面失败 ⇒ **常驻**失败面 + 真重发（不再是「暂无会话」）；
+                「读不到」与「真的没有会话」是两件事，与 #6691 立的范式同口径。
+                重试入口挂在 `.px-3 py-2` 里 —— 与搜索框同一条内边距，不额外占高度。 */}
+            {!isLoadingSessions && sessionsLoadFailed && (
+              <div
+                data-testid="chat-sessions-load-failed"
+                role="alert"
+                className="m-2 flex items-start gap-2 rounded border border-red-200 bg-red-50 px-2.5 py-2 text-xs text-red-700"
+              >
+                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-px" />
+                <span className="flex-1">会话列表读取失败 —— 请检查网络后重试</span>
+                <button
+                  type="button"
+                  data-testid="chat-sessions-load-failed-retry"
+                  onClick={() => void fetchSessions()}
+                  className="flex-shrink-0 rounded border border-red-300 px-1.5 py-0.5 font-medium hover:bg-red-100"
+                >
+                  重试
+                </button>
+              </div>
+            )}
             {isLoadingSessions ? (
               <div className="flex items-center justify-center py-8">
                 <div className="w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
               </div>
-            ) : filteredSessions.length === 0 ? (
-              <div className="text-center py-8 text-neutral-400 text-xs">
+            ) : !sessionsLoadFailed && filteredSessions.length === 0 ? (
+              <div data-testid="chat-sessions-empty" className="text-center py-8 text-neutral-400 text-xs">
                 {searchKeyword ? '没有匹配的会话' : '暂无会话'}
               </div>
             ) : (

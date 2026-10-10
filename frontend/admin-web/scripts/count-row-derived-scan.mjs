@@ -206,8 +206,11 @@ export function countRowSites(root) {
  */
 export const LEDGER = [
   // ── 存量债（`setXxxTotal` 由读响应赋值；文件里无读面失败标记）──
-  'src/app/(dashboard)/employees/page.tsx', // 员工列表：`setTotal(data?.total || 0)`，catch 只 toast
-  'src/app/(dashboard)/notifications/page.tsx', // 通知列表：同上
+  //
+  // 归零沿革（**只许缩短**，条目**删除**而非注释掉）：
+  //   · `employees/page.tsx` / `notifications/page.tsx` —— **issue #6714 本包**补上
+  //     `employees-load-failed` / `notifications-load-failed` 失败锚 + 重试出口
+  //     （`totalReliable={!loadFailed}` 同步标「计数不可信」）⇒ 两条**同批删掉**；
   'src/components/employees/WorkerProfilesPanel.tsx', // 工人档案面板：同上
 ]
 
