@@ -21,7 +21,8 @@
  *
  * ```bash
  * node scripts/fab-overlap-check.mjs --site http://localhost:3001 --path /products
- * node scripts/fab-overlap-check.mjs --site http://localhost:3001 --path /orders --path /customers
+ * node scripts/fab-overlap-check.mjs --site http://localhost:3001 --paths /products,/inbound-orders,/stock-ledger
+ * # 不带 --path/--paths 时默认跑：4 个已实测中招的页 + 2 个负控页（见下方 PATHS 注释）
  * # 只读探针：不改任何源码，注入一段 CSS 以对照「修前 / 修后」两种几何
  * node scripts/fab-overlap-check.mjs --path /products --inject-css 'main{padding-right:80px !important}'
  * ```
@@ -51,8 +52,16 @@ const argOf = (name, dflt) => {
   return i >= 0 && argv[i + 1] ? argv[i + 1] : dflt
 }
 const allOf = (name) => argv.reduce((acc, a, i) => (a === name && argv[i + 1] ? [...acc, argv[i + 1]] : acc), [])
+const csvOf = (name) => allOf(name).flatMap((v) => v.split(',')).map((v) => v.trim()).filter(Boolean)
 const SITE = argOf('--site', 'http://localhost:3001').replace(/\/$/, '')
-const PATHS = allOf('--path').length ? allOf('--path') : ['/products']
+// 判定面默认**不止 /products**：本缺陷是**一类**（满宽列表页的表尾「操作」列落在浮球矩形里）。
+// 2026-10-10 实测（1440×980，main `8bf197ef4`，判定口径 = 摘掉浮球后该点是否属于该元素）：
+//   /products 5 处 · /inbound-orders 3 · /production/remnants 3 · /stock-ledger 1（分页「下一页」）；
+//   /orders /customers /after-sales /finance /notifications /production/piecework = 0（负控）。
+// 默认跑「中招的 4 页 + 2 个负控」，多页用 `--paths a,b,c`（或重复 `--path`）。
+const PATHS = csvOf('--path').length
+  ? csvOf('--path')
+  : ['/products', '/inbound-orders', '/production/remnants', '/stock-ledger', '/orders', '/customers']
 const INJECT_CSS = argOf('--inject-css', '')
 const ALLOW_CORNER_PX = Number(argOf('--allow-corner-px', '0'))
 const VIEWPORT = { width: Number(argOf('--width', '1440')), height: Number(argOf('--height', '980')) }
@@ -108,19 +117,39 @@ const PROBE = (allowCornerPx) => {
   for (const el of clickables) {
     const b = box(el)
     if (!overlaps(fb, b)) continue
-    // 取重叠区域中心（+1 避开边界奇点）
-    const mx = Math.max(b.x, fb.x) + Math.max(1, Math.floor((Math.min(b.right, fb.right) - Math.max(b.x, fb.x)) / 2))
-    const my = Math.max(b.y, fb.y) + Math.max(1, Math.floor((Math.min(b.bottom, fb.bottom) - Math.max(b.y, fb.y)) / 2))
-    const hitWithFab = document.elementFromPoint(mx, my)
-    fab.remove()
-    const hitWithoutFab = document.elementFromPoint(mx, my)
-    fabParent.insertBefore(fab, fabNext)
+    // 🔴 采样取**重叠区域的 3×3 网格**，不是只取中心：只取中心会**漏报**
+    // （实测：`/production/remnants` 的「报废」、`/stock-ledger` 的分页「下一页」在"只取中心"的
+    //  口径下读成 0，网格采样才读到真被吃 ⇒ 判定面必须够密，宁多采几点）。
+    const x0 = Math.max(b.x, fb.x), x1 = Math.min(b.right, fb.right)
+    const y0 = Math.max(b.y, fb.y), y1 = Math.min(b.bottom, fb.bottom)
+    const pts = []
+    for (const fx of [0.08, 0.5, 0.92]) for (const fy of [0.08, 0.5, 0.92]) {
+      pts.push([Math.round(x0 + (x1 - x0) * fx), Math.round(y0 + (y1 - y0) * fy)])
+    }
+    let hitWithFab = null
+    let hitWithoutFab = null
+    let stolenAt = null
+    for (const [px, py] of pts) {
+      const withFab = document.elementFromPoint(px, py)
+      const eaten = !!(withFab && fab.contains(withFab))
+      if (!eaten) continue
+      fab.remove()
+      const withoutFab = document.elementFromPoint(px, py)
+      fabParent.insertBefore(fab, fabNext)
+      if (withoutFab && el.contains(withoutFab)) {
+        hitWithFab = withFab; hitWithoutFab = withoutFab; stolenAt = { x: px, y: py }; break
+      }
+      if (!hitWithFab) { hitWithFab = withFab; hitWithoutFab = withoutFab }
+    }
+    const mx = stolenAt ? stolenAt.x : Math.round((x0 + x1) / 2)
+    const my = stolenAt ? stolenAt.y : Math.round((y0 + y1) / 2)
     const eatenByFab = !!(hitWithFab && fab.contains(hitWithFab))
     const reachableWithoutFab = !!(hitWithoutFab && el.contains(hitWithoutFab))
     violations.push({
       element: desc(el),
       box: b,
       overlapPoint: { x: mx, y: my },
+      sampledPoints: pts.length,
       hitAtOverlap: desc(hitWithFab),
       hitWithoutFab: desc(hitWithoutFab),
       clickOwner: eatenByFab ? '浮球（黄金策）' : el.contains(hitWithFab) ? '该元素自身' : '其他元素',
