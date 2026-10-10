@@ -146,6 +146,7 @@
     "V148__add_order_shipped_at.sql": "sha256:8a7c4470a5328625b06b45d18fe3931bd7f09ea085ed820bfc7aeaac389adb31",
     "V149__create_scheduled_tasks.sql": "sha256:ffbcc65ebfd432d2aae3e44ef9a6ebfafa60d0d85a60ed72622fb46b18dfb22a",
     "V150__rename_brand_display_names.sql": "sha256:2d96c84d786dcbb35d0718d3ae19dfd36226e3cada4bde9736baf447197353a8",
+    "V151__backfill_order_logistics_shipped_at.sql": "sha256:bd4c1a4b3edbac99e051157237c7cf063e0a8f11fab70df1275c9324de2b70ae",
     "schema.sql": "sha256:58b5e9bc31457f79d82297558318d8093758597b04815da6ae64586409955a15"
   }
 }

@@ -1,398 +1,405 @@
 {
-  "_note": "issue #5079「用例断言可机器判红率过低」的**锚点 + 读数复核**。\n\n原文读数（用 `.github/assertion_taxonomy.py` 的 `scoring_assertion_count()` 复算，数字与原文逐字吻合）：`scoring_assertion_count == 0` 的用例 = **53**（分布 processing-order 19 / order 12 / api 9 / ui 5 / data 4 / product 3 / processing 1）。\n\n**但原文的 53 不等于 53 条债务**：`Case Trust Gate` 的规则 a1 还有一层**计分通道分流**（#4244 / PR #4276，落码早于本次审计基线）—— `[backend-contract]` 用例**不进 agent-eval**，其机器判红通道是 `traces.tests`（Java / pytest 单测）。实测复核：那 53 条**全部**是 `[backend-contract]`，`traces.tests` **全部非空**且引用的文件**全部真实存在** ⇒ 「无任何机器判红通道」的用例 = **0**。\n\n⇒ 把 53 当债务「燃尽」等于 `migao-acceptance` 明令禁止的**纸面修复**（把散文改写成含 `success=true` 的形态、运行期零变化）。故本锚点把**真债务**（`no_channel_total`）锁死为 0，把 53 作为**读数**留档。\n\n**豁免通道健全性另行复核（防豁免自身是假绿）**：53 条的 `traces.ci` 全部非空且指向**真实存在**的 workflow（`pr-check.yml` 52 条 / `ai-agent-tests.yml` 2 条），且每条都有**至少一个像测试文件**的 `traces.tests` 引用（代码扩展名 + 名含 test｜spec）。⚠️ 复核中抓到一处**必须留住**的真实形态，否则守卫会过严：`DA-010` 的 `traces.tests` 并引 `DailyBriefingServiceTest.java`（真测试）**与** `V44__create_daily_briefings.sql`（被契约的迁移产物）⇒ 判据只能是「**≥1 条**像测试」而不是「全部」；形状判定与 `growth_gate._is_test_file` 同口径（不另造一套）。",
-  "_metric_note": "① `no_channel_total` = 既无 runner 计分断言（`scoring_assertion_count == 0`）**也不走** `[backend-contract]` 的 `traces.tests` 通道的用例数 —— 这才是「恒绿、且没有任何东西会红」的真债务，**绝对下界 0**，history 链上恒为 0。\n② `backend_contract_scoring_zero` = `scoring_assertion_count == 0` 的用例数（含走豁免通道的），= #5079 的原始读数。它是**读数不是天花板**：把它设成只许非增会误伤合法新增（`[backend-contract]` 用例设计上就不进 agent-eval；同族摩擦已逐条记在 `.github/skip-exemption-baseline.json` 的 `history` 里：「每新增一条此类用例都要重锚 ⇒ 摩擦力归零」）。故只锁「变更必须留 note」。",
-  "_scope_note": "只许非增：`history` 链的 `no_channel_total` 必须恒为 0（回归必须**修**，不许抬锚点）；`entries` 必须 == `history` 末行；相邻两行任一度量有变却无 `note` ⇒ 红。判据本体 = `tests/unit_ci_workflows/test_case_machine_fail_channel.py` 的 `anchor_drift()`（含 4 条注入式红证）。",
-  "_how_to_regen": "读数变化时**同一 PR** 内追加一行 `history`（写明 `note` 说明来由）+ 把 `entries` 对齐到新末行。`no_channel_total` 不许 > 0：那是真债务，要修不要锚。",
-  "_anchor_sha": "2f4f14224bd3007e9ffcc1f260303cef07f19796",
-  "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
-  "entries": {
-    "no_channel_total": 0,
-    "backend_contract_scoring_zero": 136
+ "_note": "issue #5079「用例断言可机器判红率过低」的**锚点 + 读数复核**。\n\n原文读数（用 `.github/assertion_taxonomy.py` 的 `scoring_assertion_count()` 复算，数字与原文逐字吻合）：`scoring_assertion_count == 0` 的用例 = **53**（分布 processing-order 19 / order 12 / api 9 / ui 5 / data 4 / product 3 / processing 1）。\n\n**但原文的 53 不等于 53 条债务**：`Case Trust Gate` 的规则 a1 还有一层**计分通道分流**（#4244 / PR #4276，落码早于本次审计基线）—— `[backend-contract]` 用例**不进 agent-eval**，其机器判红通道是 `traces.tests`（Java / pytest 单测）。实测复核：那 53 条**全部**是 `[backend-contract]`，`traces.tests` **全部非空**且引用的文件**全部真实存在** ⇒ 「无任何机器判红通道」的用例 = **0**。\n\n⇒ 把 53 当债务「燃尽」等于 `migao-acceptance` 明令禁止的**纸面修复**（把散文改写成含 `success=true` 的形态、运行期零变化）。故本锚点把**真债务**（`no_channel_total`）锁死为 0，把 53 作为**读数**留档。\n\n**豁免通道健全性另行复核（防豁免自身是假绿）**：53 条的 `traces.ci` 全部非空且指向**真实存在**的 workflow（`pr-check.yml` 52 条 / `ai-agent-tests.yml` 2 条），且每条都有**至少一个像测试文件**的 `traces.tests` 引用（代码扩展名 + 名含 test｜spec）。⚠️ 复核中抓到一处**必须留住**的真实形态，否则守卫会过严：`DA-010` 的 `traces.tests` 并引 `DailyBriefingServiceTest.java`（真测试）**与** `V44__create_daily_briefings.sql`（被契约的迁移产物）⇒ 判据只能是「**≥1 条**像测试」而不是「全部」；形状判定与 `growth_gate._is_test_file` 同口径（不另造一套）。",
+ "_metric_note": "① `no_channel_total` = 既无 runner 计分断言（`scoring_assertion_count == 0`）**也不走** `[backend-contract]` 的 `traces.tests` 通道的用例数 —— 这才是「恒绿、且没有任何东西会红」的真债务，**绝对下界 0**，history 链上恒为 0。\n② `backend_contract_scoring_zero` = `scoring_assertion_count == 0` 的用例数（含走豁免通道的），= #5079 的原始读数。它是**读数不是天花板**：把它设成只许非增会误伤合法新增（`[backend-contract]` 用例设计上就不进 agent-eval；同族摩擦已逐条记在 `.github/skip-exemption-baseline.json` 的 `history` 里：「每新增一条此类用例都要重锚 ⇒ 摩擦力归零」）。故只锁「变更必须留 note」。",
+ "_scope_note": "只许非增：`history` 链的 `no_channel_total` 必须恒为 0（回归必须**修**，不许抬锚点）；`entries` 必须 == `history` 末行；相邻两行任一度量有变却无 `note` ⇒ 红。判据本体 = `tests/unit_ci_workflows/test_case_machine_fail_channel.py` 的 `anchor_drift()`（含 4 条注入式红证）。",
+ "_how_to_regen": "读数变化时**同一 PR** 内追加一行 `history`（写明 `note` 说明来由）+ 把 `entries` 对齐到新末行。`no_channel_total` 不许 > 0：那是真债务，要修不要锚。",
+ "_anchor_sha": "2f4f14224bd3007e9ffcc1f260303cef07f19796",
+ "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
+ "entries": {
+  "no_channel_total": 0,
+  "backend_contract_scoring_zero": 137
+ },
+ "history": [
+  {
+   "sha": "2f4f14224bd3007e9ffcc1f260303cef07f19796",
+   "date": "2026-09-21",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 53,
+   "note": "首次锚定（issue #5079）。实测：390 用例 / 1361 条 data_checks（机器计分 73、纯散文 1288）/ `scoring_assertion_count == 0` 53 条（**全部**为 `[backend-contract]` 且 `traces.tests` 完整 ⇒ 真债务 0）。同时把 #5079 的读数口径修正为「runner 计分 OR 豁免通道」——原文漏了 #4244 的分流，故 53 → 0。"
   },
-  "history": [
-    {
-      "sha": "2f4f14224bd3007e9ffcc1f260303cef07f19796",
-      "date": "2026-09-21",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 53,
-      "note": "首次锚定（issue #5079）。实测：390 用例 / 1361 条 data_checks（机器计分 73、纯散文 1288）/ `scoring_assertion_count == 0` 53 条（**全部**为 `[backend-contract]` 且 `traces.tests` 完整 ⇒ 真债务 0）。同时把 #5079 的读数口径修正为「runner 计分 OR 豁免通道」——原文漏了 #4244 的分流，故 53 → 0。"
-    },
-    {
-      "sha": "10df5db60987e05d5d9abf163209f8068c7b02ea",
-      "date": "2026-09-22",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 60,
-      "note": "issue #5063（库存米数小数化，1 位小数）新增 7 条 `[backend-contract]` 用例（PR-046~PR-051 + OR-047）—— 它们按设计**不进 agent-eval**（`expectations: []`），机器判红通道是 `traces.tests` 里的 Java 单测 / pytest / admin-web vitest（逐条非空：InboundOrderServiceTest / OrderStockLedgerTest / AgentProductServiceTest / ProductServiceTest / StockQuantityTest / ProductSkuMapperTest / test_stock_quantity_decimal_migration.py / test_tools_inventory_decimal.py / frontend admin-web vitest）⇒ 读数 53 → 60 是**合法新增**（`[backend-contract]` 用例本就不进 agent-eval，这是 #5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。按本文件 `_how_to_regen` 在同一 PR 内重锚。"
-    },
-    {
-      "sha": "08bbe81fbf24bd50cbcb02df6a88081aa757dfe6",
-      "date": "2026-09-22",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 61,
-      "note": "issue #5150（#5063 同族残留：AI 侧商品级 `stock_quantity` 仍是 `integer` + `int()` 强转）新增 1 条 `[backend-contract]` 用例（PR-052）—— 按设计**不进 agent-eval**（`expectations: []`），机器判红通道是 `traces.tests` 里的 pytest（`backend/ai-agent-service/tests/test_tools_product_stock_decimal.py`，非空且真实存在；`traces.ci` = ai-agent-tests.yml，实际跑该 pytest 的 job）⇒ 读数 60 → 61 是**合法新增**（同上一行的口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。按本文件 `_how_to_regen` 在同一 PR 内重锚。"
-    },
-    {
-      "sha": "adfbda6a1d169ef33e35f9fe84523117047cc2fb",
-      "date": "2026-09-22",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 66,
-      "note": "issue #5145 阶段 1（派加工单扣批次库存 + 消耗台账 + 余量/分布/对账读面）新增 5 条 `[backend-contract]` 用例（PG-060 / PR-055 / PR-056 / PR-057 / BM-007）—— 它们按设计**不进 agent-eval**（`expectations: []`），机器判红通道是 `traces.tests` 里的 Java 单测 / admin-web vitest / bmini jest（逐条非空：ProcessingOrderServiceTest / OrderServiceTest / ProductionServiceTest / StockBatchConsumptionServiceTest / StockBatchControllerTest / StockBatchConsumptionMapperTest / frontend admin-web ProcessingOrderBlock+BatchStockPanel+batch-stock 请求层 / frontend bmini-app tests/production-batch-assignment.test.tsx）⇒ 读数 61 → 66 是**合法新增**（`[backend-contract]` 用例本就不进 agent-eval，这是 #5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。按本文件 `_how_to_regen` 在同一 PR 内重锚。注：本行取号在 rebase 到含 #5150/#5152 的 main 之后顺延（原 PR-052/053/054 + PG-059 与他人撞号 ⇒ 改 PR-055/056/057 + PG-060，BM-007 不变）。"
-    },
-    {
-      "sha": "690e4d02cf33b6ddbdb37bd6a60aa1190a4265cc",
-      "date": "2026-09-22",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 67,
-      "note": "issue #5142（裁剪智能排料 v1：A 类「完整布并排」纯函数 + 判据）新增 1 条 `[backend-contract]` 用例（PG-061）—— 它按设计**不进 agent-eval**（`expectations: []`），机器判红通道是 `traces.tests` 里的 Java 单测 `backend/admin-api/src/test/java/com/migao/admin/service/CuttingPlanCalculatorTest.java`（非空且真实存在，7 条逐值断言；`traces.ci` = pr-check.yml 的 admin-api unit tests job 实际跑它）⇒ 读数 66 → 67 是**合法新增**（`[backend-contract]` 用例本就不进 agent-eval，这是 #5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。按本文件 `_how_to_regen` 在同一 PR 内重锚。注：取号在 rebase 到含 #5145 的 main 之后顺延（PG-059 被 #5145 先取，本单取 PG-061）。"
-    },
-    {
-      "sha": "51d2352cb",
-      "date": "2026-09-22",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 69,
-      "note": "issue #5154（商品 + SKU 批量导入）新增 2 条 `[backend-contract]` 用例（PR-059 后端契约 / PR-060 前端可见面）—— 它们按设计**不进 agent-eval**（`expectations: []`），机器判红通道是 `traces.tests` 里的 Java 单测（ProductBulkImportServiceTest / ProductImportControllerTest）与 admin-web vitest（tests/unit/pages/products-import.test.tsx），三者均非空且真实存在，且各自都带可单独变红的注入式红证（本 PR 实测 4 处变异：静默跳过 / 查重恒空 / 库存静默取整 / 数字单元格截断，各自只让对应判据变红）⇒ 读数为**合法新增**（同 #5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**。按本文件 `_how_to_regen` 在同一 PR 内重锚。"
-    },
-    {
-      "sha": "pending-pr-5182",
-      "date": "2026-09-23",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 73,
-      "note": "issue #5182（事件驱动自动成批派单，阶段 2b-3）新增 4 条 `[backend-contract]` 用例（PR-086 事件驱动与挂载点纪律 / PR-087 成批条件与加急与兜底算式 / PR-088 真库落账与对称回补 / PR-089 真库兜底必派）—— 它们按设计**不进 agent-eval**（`expectations: []`），机器判红通道是 `traces.tests` 里的 Java 单测（AutoBatchDispatchTest / AutoBatchMountPointTest / AutoBatchDispatchRealDbTest，三条均非空且真实存在，其中两条跑真 PG）⇒ 读数 69 → 73 是**合法新增**（#5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。按本文件 `_how_to_regen` 在同一 PR 内重锚。"
-    },
-    {
-      "sha": "pending-pr-5184",
-      "date": "2026-09-23",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 76,
-      "note": "issue #5184（自动派单兜底的「到点自愈」运行载体）新增 3 条 `[backend-contract]` 用例（PR-090 到点自愈的真库判据 / PR-091 并发与幂等 + 逐租户隔离 / PR-092 只查业务约束 + 默认关 + 心跳可见）—— 它们按设计**不进 agent-eval**（`expectations: []`），机器判红通道是 `traces.tests` 里的 Java 单测与真 PG 判据（逐条非空且真实存在：AutoBatchDueScanRealDbTest / AutoBatchDueScanTest；`traces.ci` = pr-check.yml，实际跑这两个类的 job）⇒ 读数 73 → 76 是**合法新增**（同 #5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。按本文件 `_how_to_regen` 在同一 PR 内重锚；`sha` 沿用上一行的 `pending-pr-*` 约定（合并前没有可引用的提交）。"
-    },
-    {
-      "sha": "pending-pr-5159",
-      "date": "2026-09-23",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 80,
-      "note": "issue #5159（省料度量 L2/L3 汇总读面与看板）新增 4 条 `[backend-contract]` 用例（PR-093 汇总一致与单价口径 / PR-094 存量导入单列成组 / PR-095 空数据不冒充 0 与文案不写死数字 / PR-096 两条指标并用与不损失客户）。取号区间 PR-093~PR-096 为本单硬分配（#5184 的 PR-090~PR-092 已先取，本单 rebase 后以 main 侧为基追加，**未越界、未占用他人号**）。机器判红通道 = `traces.tests` 里的真 PG Java 判据 `backend/admin-api/src/test/java/com/migao/admin/service/SavingMetricsBoardRealDbTest.java`（非空且真实存在，6 条真库断言）与 admin-web vitest `frontend/admin-web/tests/unit/components/SavingBoard.test.tsx` / `frontend/admin-web/tests/unit/lib/saving-board.test.ts`（均非空且真实存在，17 条断言）⇒ 读数为**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**。按本文件 `_how_to_regen` 在同一 PR 内重锚（本行在 rebase 到含 #5184/#5186 的 main 之后**实测重跑**得出，非按号推算）。注：本单 10 处注入式红证全部实测变红（后端 5 + 前端 5），其中「单价口径」一条**首轮实测假绿**（MyBatis 一级缓存按 SqlSession ⇒ 复读拿到改前值 = 空断言），已在判据里补 `session.clearCache()` 并复测变红。"
-    },
-    {
-      "sha": "pending-pr-5146",
-      "date": "2026-09-23",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 83,
-      "note": "issue #5146（余料成本回收：非资产台账 + 可配小件尺寸 + 优先匹配 + 回收记账 + 报废留痕）新增 3 条 `[backend-contract]` 用例（PR-097 非资产守门 / PR-098 优先匹配与未配置不静默 / PR-099 客户带走与报废留痕）—— 它们按设计**不进 agent-eval**（`expectations: []`），机器判红通道是 `traces.tests` 里的 Java 真 PG 单测（RemnantRecoveryRealDbTest 8 条 / RemnantNonAssetGuardTest 2 条 / RemnantServiceTest 7 条 / FabricRemnantMapperTest 3 条 / RemnantItemSizeMapperTest 3 条 / RemnantControllerTest 4 条，均非空且真实存在、本机全绿）与 admin-web vitest（remnant-params / RemnantItemSizesPanel / TenantParamsPanel，共 35 条全绿）⇒ 读数为**合法新增**（#5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` **实测重锚**（rebase 到含 #5185 的 main 之后实测读数即为 83）。"
-    },
-    {
-      "sha": "pending-pr-5194",
-      "date": "2026-09-23",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 85,
-      "note": "issue #5194 + #5191（同一 PR）新增 2 条 `[backend-contract]` 用例（PR-105 商家可见文案 `**` 收口 / PR-106 余料台账进侧边栏）—— 它们按设计**不进 agent-eval**（`expectations: []`），机器判红通道 = admin-web vitest 的 AST 静态守卫 + 组件渲染断言（`copy-no-markdown-emphasis.test.ts` 4 条 / `CraftCalcGlossary.test.tsx` 渲染面整块断言 / `production-routings.test.tsx` 面板整块断言）与 Java 节点表（`MenuControllerTest` / `AuthServiceTest`）与三源同构守卫（`tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`），逐条 `traces.tests` 非空且真实存在。⚠️ 本次同时修掉一处**真实缺漏**：PR-105 原本没有 `traces.ci`（豁免通道不健全 ⇒ I2 判红「走了豁免通道却没指明哪个 CI job 跑它」），已补 `pr-check.yml`（其在 `admin-web typecheck + unit tests` 里真跑 vitest）。⇒ 读数 83 → 85 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**（rebase 到含 #5207/#5208/#5209/#5215 的 main 之后实测读数即为 85）。"
-    },
-    {
-      "sha": "pending-pr-5203",
-      "date": "2026-09-23",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 86,
-      "note": "2026-09-23 新增 1 条 `[backend-contract]` 用例（PR-107 Python 侧真库判据 fail-closed / skip 可见性，issue #5203）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1）。机器判红通道 = `traces.tests` 的 `tests/unit_ci_workflows/test_realdb_failclosed.py`（判据⑤~⑧，真实存在、本机 9 passed）与 `traces.ci` 的 `pr-check.yml`（`ci workflow helper unit tests` 真跑该文件）⇒ 读数为**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变）。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（`render_cases.py` 连跑两次逐字节相同后，由 `test_i3_*` 实测读数 = 86）。"
-    },
-    {
-      "sha": "pending-pr-5322",
-      "date": "2026-09-24",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 90,
-      "note": "issue #5322（族 1 主动发现包 1：规则引擎确定性扫描 + 日报集成）新增 5 条用例（DA-011 确定性 / DA-012 三件套 / DA-013 无处置入口不发（注入式红证）/ DA-014 日报只含当天异常 / DA-015 阈值可配 + 边界值）—— 其中 4 条按设计**不进 agent-eval**（DA-011/012/013/015 的 `expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +4；DA-014 带 `expectations` 的 briefing_query 契约 ⇒ 不计入本读数）。机器判红通道 = `traces.tests` 的 `backend/ai-agent-service/tests/test_briefing_proactive.py`（引擎五条验收判据：确定性双侧、三件套、注入式红证、历史异常双侧、阈值边界两侧）与 `backend/ai-agent-service/tests/test_tools_briefing_query.py`（集成面），逐条非空且真实存在；`traces.ci` = pr-check.yml（`ai-agent-service unit tests` 真跑这两个文件）⇒ 读数 86 → 90 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变）。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（CI 实测读数 = 90，非按号推算）。"
-    },
-    {
-      "sha": "pending-pr-5314",
-      "date": "2026-09-24",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 91,
-      "note": "2026-09-24 新增 1 条 `[backend-contract]` 用例（PR-109 批量更新的阈值 / batchType 白名单 / 两段确认结构锁 / 撤销端点归属，issue #5314 的 Agent 侧包）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1）。机器判红通道 = `traces.tests` 的 `backend/ai-agent-service/tests/test_product_batch_update.py`（确定性判据，零 LLM / 零网络）+ `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` / `tests/unit_ci_workflows/test_agent_permission_parity.py`（写面白名单与在飞端点登记），`traces.ci` = `pr-check.yml`（`ci workflow helper unit tests` 真跑那两个文件）⇒ 读数为**合法新增**（#5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（合并 main（读数 90）后由 `test_i3_*` 实测读数 = 91）。"
-    },
-    {
-      "sha": "pending-pr-5359",
-      "date": "2026-09-24",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 94,
-      "note": "issue #5358（族 3 跨域视图内核 · 包 1：装配行级快照 orders/skus/returns + 逐规则接线状态）新增 3 条 `[backend-contract]` 用例（DA-016 行级快照装配契约与有界租户 / DA-017 逐规则接线状态含「截断必须显式」/ DA-018 未接线与本次不完整如实说明）—— 它们按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +3）。机器判红通道 = `traces.tests` 的三个文件：`backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingServiceTest.java`（SnapshotRows：行键集 == 声明、有界、显式 tenantId、截断显式、JSONB 可序列化、行数组不进提示词）与 `backend/ai-agent-service/tests/test_briefing_proactive.py`（三态接线状态 + 截断 / 维度缺值的注入式红证 + `reason is None ⟺ wired` 不变式）与 `backend/ai-agent-service/tests/test_tools_briefing_query.py`（未接线 / 不完整话术与条数少报的红证），逐条非空且真实存在；`traces.ci` = `pr-check.yml`（`admin-api unit tests` / `ai-agent-service unit tests` 真跑这三个文件）⇒ 读数 91 → 94 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变）。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（CI 实测读数 = 94：`ci workflow helper unit tests` 报 `{'backend_contract_scoring_zero': 94}` vs 锚点 91，非按号推算；本 PR 早一轮 CI 就是被这条挡住才发现的）。"
-    },
-    {
-      "sha": "pending-pr-5420",
-      "date": "2026-09-24",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 95,
-      "note": "issue #5345（族 5 包 3：订单侧图片识别「明细 → 匹配候选 → 选品 → 建订单行」）新增 1 条 `[backend-contract]` 用例（OR-048）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1）。机器判红通道 = `traces.tests` 的四个文件：`frontend/admin-web/tests/unit/lib/order-line-match.test.ts`（29 条：不猜商品 / 候选可解释 / 不落库 / 门幅只来自所选 SKU / 单价只来自 SKU ＋ 类级元守卫 ＋ 注入式红证）、`frontend/admin-web/tests/unit/pages/orders-new-image-lines.test.tsx`（4 条页面接线）、`frontend/admin-web/tests/unit/components/OrderLinePicker.test.tsx`（7 条组件面）与 `tests/unit_ci_workflows/test_fabric_width_truth_source.py`（识别 → 建行 面零门幅标识符 ＋ 豁免台账只许缩短 ＋ 扫描器判别力自证），逐条非空且真实存在；`traces.ci` = `pr-check.yml`（`admin-web typecheck + unit tests` 真跑前三个 vitest 文件、`ci workflow helper unit tests` 真跑最后一个）⇒ 读数 94 → 95 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变）。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（CI 实测读数 = 95：`ci workflow helper unit tests` 报 `{backend_contract_scoring_zero: 95}` vs 锚点 94，非按号推算）。本 PR 首轮 CI 正是被这条挡住才发现的。"
-    },
-    {
-      "sha": "pending-pr-5466",
-      "date": "2026-09-25",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 96,
-      "note": "issue #5462（用例面补录：#5456 / PR #5458 交付的 `customer_profile` 视图与 `customer_manage(profile_view)` action 此前没有专属用例条目 ⇒ 将来做行为改动算不出该跑哪几条）新增 2 条用例（CU-010 客户画像视图 / CU-011 画像 action）—— 其中 **CU-010 按设计不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1），CU-011 带 `expectations`（`customer_manage(action=profile_view)` ⇒ 计分断言 = 1）⇒ **不计入**本读数。机器判红通道 = `traces.tests`，逐条非空且真实存在：CU-010 = `backend/ai-agent-service/tests/test_briefing_customer_profile.py`（视图语义：逐字段三态 / 「未知」≠「0」/ 口径同源 / fail-closed ＋ 5 条注入式红证）＋ `backend/admin-api/src/test/java/com/migao/admin/service/CustomerProfileViewSnapshotTest.java`（装配契约：行键集 ≡ 声明字段集、读面遮蔽、有界截断）＋ `backend/admin-api/src/test/java/com/migao/admin/service/CustomerProfileTruthExposureTest.java` ＋ `backend/admin-api/src/test/java/com/migao/admin/support/fieldtruth/CustomerProfileFieldTruthGateTest.java`；CU-011 = `backend/ai-agent-service/tests/test_customer_manage.py`（profile_view 三条：未知≠0 披露 / 缺声明披露 / 失败可归因）。`traces.ci` = `pr-check.yml`（`ai-agent-service unit tests` 与 `admin-api unit tests` 真跑上列文件）⇒ 读数 95 → 96 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变；本机实测：`scoring_zero = 96` / `no_channel = 0`）。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（CI 实测读数 = 96：`ci workflow helper unit tests` 报 `{backend_contract_scoring_zero: 96}` vs 锚点 95，非按号推算）—— 本 PR 首轮 CI 正是被这条挡住才发现的。"
-    },
-    {
-      "sha": "pending-pr-5758",
-      "date": "2026-09-28",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 97,
-      "note": "人为要求（用户 2026-09-28 会话逐字：下单页版面重排 + 「拍照 / 上传识别」移到商品信息卡；会话内零新开 issue）新增 1 条 `[backend-contract]` 用例（OR-052：下单页版面重排的七条确定性 DOM 判据）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1）。机器判红通道 = `traces.tests` 的两个文件：`frontend/admin-web/tests/unit/pages/orders-new-layout.test.tsx`（9 条：净尺寸前置的 DOM 顺序 / 识别入口挂商品信息卡 / 推导读数默认只读 + 就地「改」/ 门幅只读摘要与来源 / 推荐组合预选 · 采纳 · 全不采纳 / 手改留痕 / 「其他」折叠）与 `tests/e2e/specs/orders/order-create.spec.ts`（真浏览器：三个步骤区块 + 反证第四步不存在 + 净尺寸先于用料 + `readonly`/「改」+ 识别入口在商品信息卡 + 黄金策 FAB 遮挡几何探针），逐条非空且真实存在；`traces.ci` = `pr-check.yml`（`admin-web typecheck + unit tests` 跑前者、`E2E quality gate` 跑后者）⇒ 读数 96 → 97 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变）。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（CI 实测读数 = 97：`ci workflow helper unit tests` 报 `{'backend_contract_scoring_zero': 97}` vs 锚点 96，非按号推算）—— 本 PR 首轮 CI 正是被这条挡住才发现的。"
-    },
-    {
-      "sha": "pending-pr-5759",
-      "date": "2026-09-28",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 98,
-      "note": "人为要求（用户 2026-09-28 会话逐字：「把加工项和加工费组合里面叫韩折的都改成韩褶」；会话内零新开 issue）新增 1 条 `[backend-contract]` 用例（PG-044：加工项目录名与加工费组合键统一为「韩褶」—— 改名 + 组合键重算 + 不改价 + 历史不改 + 撞键 fail-closed）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，上一行 97 是同一分支上的下单页版面用例 OR-052）。机器判红通道 = `traces.tests` 的三个文件：`tests/unit_ci_workflows/test_v139_rename_hanzhe_item_and_fee_keys.py`（真 PG 执行 12 条：目录改名 / 组合成员名与键按码点序重算 / 价格·状态·source·sort_order 逐值不变 / 幂等 / 撞键 fail-closed 且整份回滚 / 终态对账有牙）、`tests/unit_ci_workflows/test_processing_catalog_seed.py`（V83 冻结面 + V139 净效果 == fixture，改名映射恰好 `{韩折: 韩褶}` 且真的作用在 V83 上）、`tests/unit_ci_workflows/test_option_fee_seed.py`（V77 冻结组合价目按 V139 改名后 == 生成器），逐条非空且真实存在；`traces.ci` = `pr-check.yml`（`ci workflow helper unit tests` 真跑前两者；`admin-api unit tests` 承载迁移的真库链路）⇒ 读数 97 → 98 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（CI 实测口径下的读数 = 98：本机实测 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 98}`，非按号推算）。"
-    },
-    {
-      "sha": "pending-pr-5835",
-      "date": "2026-09-30",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 99,
-      "note": "新业务需求（用户 2026-09-30 逐字：「制单人这个字段可以不用加到订单详情中，但是要加到订单列表中，并且支持根据制单人过滤」；issue #5835 —— 这是铁律 12 同日改判「新业务需求直接开单」后的**第一张**按新口径开的单）新增 1 条 `[backend-contract]` 用例（OR-053：订单列表「制单人」列 + 按制单人模糊过滤）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，98 → 99）。机器判红通道 = `traces.tests` 的两个文件：`frontend/admin-web/tests/unit/pages/orders-creator-filter.test.tsx`（5 条：列与缺值「—」/ 请求带独立 `creator` 参数 / 重置清空 / 不全并入 keyword / 行渲染后端值）与 `backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java`（建单落 `created_by`+`created_by_name` / 取不到 ⇒ 两列 NULL / `creator` 落 `created_by_name` 的 LIKE / 缺参不加条件）+ `UserServiceTest.java`（昵称优先、缺失回落 username；占位身份 internal-service ⇒ null）。真值登记 = `.github/templates/order.yml` 的 `order.creator-snapshot`。`no_channel_total` 仍为 0（两条通道都有）。"
-    },
-    {
-      "sha": "pending-pr-5845",
-      "date": "2026-10-01",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 100,
-      "note": "新业务需求（用户 2026-10-01 逐字：「买家未付款的订单要允许修改，现在缺失了」；issue #5842）新增 1 条 `[backend-contract]` 用例（OR-055：未付款（待付款）订单允许修改内容 —— 只有 pending 可改 / 金额服务端重算 / 按新明细重跑库存校验 / 审计留痕 / 同批落 #3352 选项 B 的加工单快照漂移发货守卫 / tripwire PG-014 改判）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1；上一行 99 是 #5835 的订单列表制单人用例 OR-053）。机器判红通道 = `traces.tests` 的四个文件：`backend/admin-api/src/test/java/com/migao/admin/service/OrderContentEditTest.java`（12 条：状态闸门 422 且零写入 / 金额服务端重算 / 应收−优惠≈实收 / 新明细库存重跑且不回滚 / 已有加工单拒绝 / 审计 before-after / 漂移守卫四态 / 发货路接线）、`backend/admin-api/src/test/java/com/migao/admin/controller/OrderItemImmutabilityTest.java`（4 条：编辑通道存在 ⇒ 守卫必须存在（PG-014 改判后的形态）+ Agent 侧两条原判据）、`frontend/admin-web/tests/unit/components/EditOrderContentModal.test.tsx`（5 条：初值 / payload 不含 subtotal·totalAmount / 加工项改而其余键原样带回 / 客户端闸门 / 失败不关弹窗）、`frontend/admin-web/tests/unit/pages/order-detail.test.tsx`（入口仅在待付款出现、点击挂载弹窗），逐条非空且真实存在；`traces.ci` = `pr-check.yml`（`admin-api unit tests` 跑前两者、`admin-web typecheck + unit tests` 跑后两者）⇒ 读数 99 → 100 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变）。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（读数取自本 PR 的本地 gate 实跑：`ci workflow helper` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 100}` vs 锚点 99，非按号推算）—— 该轮 gate 正是被这条挡住才发现的。"
-    },
-    {
-      "sha": "pending-pr-5840",
-      "date": "2026-10-01",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 101,
-      "note": "用户报障 + 新业务需求（用户 2026-10-01 逐字：「新增订单时，未输入加工费组合价格但是提交成功了，缺少了必要的校验」；issue #5840）新增 1 条 `[backend-contract]` 用例（OR-054：管理端「新增订单」提交准入 —— 加工费未定价阻断 / 客户信息 + 物流两项必填 / 折叠态下报错可定位）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1）。机器判红通道 = `traces.tests` 的两个文件：`frontend/admin-web/tests/unit/pages/orders-new-submit-gate.test.tsx`（8 条：未定价阻断 / 缺选配放行 / 物流必填 + 折叠区自动展开 / 汇总逐条可点 / 组卡收起时自动展开 / 用料来源收起态可见 / 死键可见 / **类级元守卫**「汇总必须全量派生自 errors」）与 `backend/admin-api/src/test/java/com/migao/admin/controller/OrderCreateRequiredFieldsTest.java`（5 条：三字段各缺一 ⇒ 422 且不调 service / 空白串同样拒 / 齐备 ⇒ 200）。真值登记 = `.github/templates/order.yml` 的 `order.admin-new-order-submit-gate`。`no_channel_total` 仍为 0。"
-    },
-    {
-      "sha": "pending-pr-5913",
-      "date": "2026-10-01",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 102,
-      "note": "用户走查 + 新业务需求（用户 2026-10-01 逐字：「点击查看跳转到订单详情，这设计合理吗」→ 裁定改法 A；issue #5913）新增 1 条 `[backend-contract]` 用例（UI-026：跨权限域跳转入口按目标域守卫码显隐 —— 生产看板「订单详情」+ 售后工单「订单号」）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1；上一行 101 是 #5840 的 OR-054）。机器判红通道 = `traces.tests` 的三个文件：`frontend/admin-web/tests/unit/cross-domain-nav-permission-guard.test.ts`（4 条：普查面非空 + 判别力自证（跨域未 gating 必红 / gating 放行 / 同域不在射程 / 源不在守卫组不在射程）+ 全仓扫描 + 豁免台账不腐坏）、`frontend/admin-web/tests/unit/pages/production-board.test.tsx`（订单详情按钮跳转 / 无 order:list 不渲染 + 反向对照 / 文案全页恰 1 条且不在 table 内）、`frontend/admin-web/tests/unit/pages/after-sales-detail.test.tsx`（订单号：无 order:list 时不再是入口 + 持码时可点），逐条非空且真实存在；`traces.ci` = `pr-check.yml`（admin-web 腿跑这三个 vitest）⇒ 读数 101 → 102 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（读数取自本 PR 的本地 gate 实跑：`ci workflow helper` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 102}` vs 锚点 101，非按号推算）—— 该轮 gate 正是被这条挡住才发现的。"
-    },
-    {
-      "sha": "pending-pr-5923",
-      "date": "2026-10-01",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 103,
-      "note": "新业务需求（用户 2026-10-01 走查截图裁定：「放到新增商品标题右侧合适位置」+ 建单页同步对齐；issue #5918）新增 1 条 `[backend-contract]` 用例（PR-120：商品页「拍照 / 上传识别」入口进「新增商品」标题卡片内的标题行右侧、识别在重置前；含类级元守卫「渲染点必须登记落点 + 容器锚与运行期证据双向可查」）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，102 → 103）。机器判红通道 = `traces.tests` 的三个文件：`frontend/admin-web/tests/unit/pages/products-new-recognize-entry.test.tsx`（3 条：落点在标题卡片内且与重置同排 / 选图→上传→识别→回填且零 createProduct / 回填后仍留在标题卡片内）、`frontend/admin-web/tests/unit/recognize-entry-placement-guard.test.ts`（6 条：未登记即红 / 台账双向 / 容器锚与运行期证据逐字可查 / 判别力自证）、`frontend/admin-web/tests/unit/pages/orders-new-layout.test.tsx`（既有判据 2：建单页不退化），逐条非空且真实存在。同一 PR 还**改判**了 PR-044（卷长文案正名为标称值：新增判据 5 + 补 `traces.tests` 的前端三条）—— 它本就是计入本读数的存量条目（`[backend-contract]` + `expectations: []`）⇒ 读数不变。改前实测读数（本包 5 个测试文件）：`9 failed / 43 passed`。真债务 `no_channel_total` 仍为 **0**。"
-    },
-    {
-      "sha": "pending-pr-5944",
-      "date": "2026-10-02",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 104,
-      "note": "issue #5944（deploy 腿 `set -u` 未定义变量 lint **把 shell 注释一起扫** ⇒ 注释里写 `$foo` 假红；实测把 PR #5943 挡了两次、作者只能把注释改写成不含 `$` 的措辞）新增 1 条 `[backend-contract]` 用例（MC-059）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，103 → 104）。机器判红通道 = `traces.tests` 的 `tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py`（判据 4~5：注释语料 ⇒ `[]` / 可执行行 ⇒ 具名红 / 4 条负例锚 / 注入式双向自证 / 同源单一实现；修前红实测 3 failed / 12 passed），非空且真实存在；`traces.ci` = `pr-check.yml` 的 `ci workflow helper unit tests` job（实际跑该 pytest）。真债务 `no_channel_total` 仍为 **0**（不变）。"
-    },
-    {
-      "sha": "pending-pr-5948",
-      "date": "2026-10-02",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 105,
-      "note": "issue #5948（「剥注释实现全仓只许一份」的唯一性守卫扫描面只有 `.github/**` ⇒ `tests/**` 里可静默再写一份同名同义实现）新增 1 条 `[backend-contract]` 用例（MC-060）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，104 → 105）。机器判红通道 = `traces.tests` 的 `tests/unit_ci_workflows/test_automerge_bot_safe_path.py`（判据 11 系列 8 条：整仓扫描面 + 只许缩短的活豁免台账 + 陈旧红 + 四条注入式红证，含反向对照），非空且真实存在；`traces.ci` = `pr-check.yml` 的 `ci workflow helper unit tests` job（实际跑该 pytest）。真债务 `no_channel_total` 仍为 **0**（不变）。"
-    },
-    {
-      "sha": "pending-pr-5967",
-      "date": "2026-10-02",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 106,
-      "note": "issue #5955（日报卡片面 proactive 四态可视化）新增 1 条 `[backend-contract]` 用例（DA-021）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，105 → 106）。机器判红通道 = `traces.tests` 的四处真测试文件（`backend/ai-agent-service/tests/test_briefing_proactive_status_visibility.py`、`backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingServiceTest.java`、`backend/admin-api/src/test/java/com/migao/admin/controller/BriefingControllerTest.java`、`frontend/admin-web/tests/unit/components/ProactiveStatusPanel.test.tsx` + `frontend/admin-web/tests/unit/components/BriefingProactiveStatus.test.tsx`），非空且逐条真实存在；`traces.ci` = `pr-check.yml`。真债务 `no_channel_total` 仍为 **0**（不变）。"
-    },
-    {
-      "sha": "pending-pr-5982",
-      "date": "2026-10-02",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 107,
-      "note": "issue #5982（缺必填 @RequestParam 一律 500：GlobalExceptionHandler 缺 MissingServletRequestParameterException 分支）新增 1 条 `[backend-contract]` 用例（API-008）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，106 → 107）。机器判红通道 = `traces.tests` 的两个真测试文件（`backend/admin-api/src/test/java/com/migao/admin/config/GlobalExceptionHandlerCoverageTest.java`：分支台账 ⇄ 反射双向一致 / 绑定族豁免台账只许缩短 / 真 Spring 分发链 4xx 行为判据 / 判别力自证；`backend/admin-api/src/test/java/com/migao/admin/controller/InboundOrderOpeningImportRequiredParamTest.java`：真端点缺 importRunId ⇒ 400 + 字段名，修前实测 `Status expected:<400> but was:<500>`），非空且逐条真实存在；`traces.ci` = `pr-check.yml`（`admin-api unit tests` 跑这两个类）。`sha` 沿用 `pending-pr-*` 约定（合并前没有可引用的提交；此处填 issue 号）。真债务 `no_channel_total` 仍为 **0**（不变）。"
-    },
-    {
-      "sha": "pending-pr-5987",
-      "date": "2026-10-02",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 108,
-      "note": "issue #5987（API 建号缺省岗位/角色 = operator 的 fail-open 默认：仅 API 直连可达，页面强制选岗位走不到）新增 1 条 `[backend-contract]` 用例（API-023）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，107 → 108）。机器判红通道 = `traces.tests` 的三个真测试文件：`backend/admin-api/src/test/java/com/migao/admin/controller/AdminUserControllerPostMissingPositionTest.java`（真端点 + 真 @RestControllerAdvice：缺 position 且缺 role/roleIds ⇒ 422 且 `verifyNoInteractions(userService)`；显式 role 空白 ⇒ 422；只带 position / 只带 role 两条正向对照），`backend/admin-api/src/test/java/com/migao/admin/service/EmployeeGrantDefaultRoleMetaGuardTest.java`（服务侧空白 role ⇒ 422 且 insert 一次都不发生 + 正向对照；类级元守卫「缺省/授权角色字面量赋值点 ⇄ 台账双向相等、只许缩短、条数现取」+「建号缺省位不得含写权限字面量」+ 扫描器判别力与注释掩码自证），`backend/admin-api/src/test/java/com/migao/admin/service/UserServiceTest.java`（`createUser_BlankRole_Rejected` 反回归：修前 1 failed / 修后全绿）。修前实测（注入 = 只 stash 两个 main 文件、测试保留）：`Tests run: 68, Failures: 7`（其中 HTTP 两条 `expected:<422> but was:<200>`）⇒ 该读数**有牙**。`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`（真跑这三个类）⇒ 读数为**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**（本机实跑 `test_i3_*` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 108}` vs 锚点 107，非按号推算）。"
-    },
-    {
-      "sha": "pending-pr-6090",
-      "date": "2026-10-03",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 109,
-      "note": "issue #6090（图片能力 A 档补齐：B 端 image_recognize 用例销账 + 恒真式期望收缩 + 设计文档回填）—— 读数 +1（108 → 109）的**唯一**来源是 **CH-023**：它的恒真式期望 `product_search or interact or direct_reply` 被删除后，`expectations: []` 且无机器计分型 `data_check` ⇒ `scoring_assertion_count` 1 → 0。CH-023 **按设计不进 agent-eval**（`skip_reason` 以 `[backend-contract]` 开头；`traces.tests` 非空且逐条真实存在：`backend/ai-agent-service/tests/test_graph_skills.py`（TestVisionGroundedGuide 契约断言）+ `backend/ai-agent-service/tests/test_clarify_grounded.py`（关键词提取纯函数））⇒ 机器判红通道 = `traces.tests` 豁免通道，**不是**真债务（真债务 `no_channel_total` 仍为 **0**）。本 PR 另两条改动**不进**本读数：CH-021 收缩后 `scoring_assertion_count` 仍为 1（保留 1 条机器计分型 data_check：发图轮 `success=true`），CH-044 非 `[backend-contract]`（`scoring_assertion_count` ≥ 1）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机按 CI 读数复算 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 109}`（CI run 37073342290 的 `ci workflow helper unit tests` 首轮报 109 vs 锚点 108）——**不是**按号推算。"
-    },
-    {
-      "date": "2026-10-03",
-      "backend_contract_scoring_zero": 110,
-      "no_channel_total": 0,
-      "note": "issue #6114（默认配置下纱帘单勾任一特殊选项整单 fail-closed：开租种子的规则级部位限定缺口）新增 1 条 `[backend-contract]` 用例（PG-066）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，109 → 110）。机器判红通道 = `traces.tests` 的两个真测试文件（`backend/admin-api/src/test/java/com/migao/admin/service/ProductionSeedOptionRulePositionTest.java`：内容腿 3 条 + 行为腿 3 条，覆盖「开租种子逐条 position='布帘'」「纱帘单能派工且不出布帘变体」「布帘单照旧插花边-布」；`tests/unit_ci_workflows/test_production_catalog_seed.py`：类级元守卫读生产源码 planRouteRules 的特殊选项分支 + 注入式判别力自证），两者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `test_i3_anchor_matches_reality_and_is_only_shrinking` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 110}` vs 锚点 109（并用 `assertion_taxonomy.scoring_assertion_count` 逐条复算：PG-066 = 0）——**不是**按号推算。"
-    },
-    {
-      "sha": "pending-pr-6123",
-      "date": "2026-10-03",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 111,
-      "note": "issue #6123（#6114 的同类未固化面：**加工项触发**维引用的工序同样只有布帘变体，position=NULL ⇒ 带 `花边`/`扣环`/`接高` 的**纱帘单**整单 fail-closed）新增 1 条 `[backend-contract]` 用例（PG-067）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，110 → 111）。机器判红通道 = `traces.tests` 的两个真测试文件（`backend/admin-api/src/test/java/com/migao/admin/service/ProductionSeedProcessingItemRulePositionTest.java`：内容腿 2 条 + 行为腿 2 条（纱帘/布帘两侧夹住）+ 类级判据 2 条（每条种子规则的 (operation, position) 在其适用形态下必须解析出变体；两条触发维都在射程）；`tests/unit_ci_workflows/test_processing_item_rule_position.py`：读生产源码 `planRouteRules` 的加工项分支 `position` 实参 + 命名常量声明 + 注入式判别力自证，另有「两条触发维都必须被守卫钉住」的类级判据），两者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py` 的 `test_i3_*` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 111}` vs 锚点 110 —— **不是**按号推算。"
-    },
-    {
-      "sha": "pending-pr-6226",
-      "date": "2026-10-03",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 112,
-      "note": "issue #6226（P3·读面：`Map.of()` 空表 + **未经判空的空键索引** ⇒ 加工项列表 / 加工单列表潜在 500）新增 1 条 `[backend-contract]` 用例（PG-069）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，111 → 112）。机器判红通道 = `traces.tests` 的三个真测试文件，均非空且真实存在：`backend/admin-api/src/test/java/com/migao/admin/service/ProcessingItemServiceTest.java`（getProcessingItems_AllCategoryIdsBlank_RendersInsteadOf500：键全空夹具 ⇒ 修前 `ImmutableCollections$MapN.get` 抛 NPE、修后正常渲染 null 且零次 IN 查询）、`backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java`（listWithAllNullOrderIdsRendersInsteadOfFiveHundred：同形）、`tests/unit_ci_workflows/test_mapof_family_null_key_index.py`（类级元守卫：未登记即红 / 台账只许缩短 / `safe-literal` 声明须机械为真 / 已修站点回归锁 / 6 条判别力自证）。`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`（另有 `ci workflow helper unit tests` 跑元守卫）。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的 `test_i3_*` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 112}` vs 锚点 111 —— **不是**按号推算。"
-    },
-    {
-      "sha": "pending-pr-6231",
-      "date": "2026-10-03",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 114,
-      "note": "issue #6221（第三轮深度测试 P2·涉钱·精度：退款金额 `0.001` 被接受却在写库时被静默舍成 `0`）新增 2 条 `[backend-contract]` 用例（AS-013 / AS-014）—— 它们按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +2）。本次重锚的基线是**已含 main 侧** `backend_contract_scoring_zero: 112` 的那一行（112 里已含 #6234 的 PG-069；本分支 rebase 到 `644e98dc6` 后**实测**值 = 112 + 2 = **114**，不是按号从 111 推算）。机器判红通道 = `traces.tests` 的三个真测试文件（`backend/admin-api/src/test/java/com/migao/admin/service/MoneyScaleTest.java`：准入本体 5 条（≤2 位合法且**原样返回** / 按**有效**小数位判（`2.700`、`0.010` 合法）/ 3 位 ⇒ 422 可行动文案 / `null` 不归一成 0 / PG 半进位方向登记）；`backend/admin-api/src/test/java/com/migao/admin/service/OrderRefundMoneyPrecisionTest.java`：7 条（`0.001` 与 `0.004`/`0.005`/`0.009` ⇒ 422 且**订单与资金流水零写入**、`refund_at` 不写；HTTP 入口同判据；`0.01` 正对照两侧逐字相等；累计封顶与状态白名单正对照）；`backend/admin-api/src/test/java/com/migao/admin/service/MoneyEntryPrecisionMetaGuardTest.java`：11 条（全仓金额入口台账 19 文件 / 39 处写面 + 6 类注入式判别力自证 + 反向对照 + DEBT 现取 ≤ 冻结上限）），三者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的 `test_i3_*` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 114}` vs 锚点 112 —— **不是**按号推算。⚠️ 先后顺序：本 PR rebase 期间 main 连续前进（#6233 / #6234 / #6236），本行取的是**当时实测**；若 #6230（其新增 AS-011 / AS-012 亦为同类用例）先合入 main，main 会变成 114，本 PR 再同步后实测将是 116，届时**按那时的实测值**再追加一行（不预判别人的号）。"
-    },
-    {
-      "sha": "pending-pr-6240",
-      "date": "2026-10-03",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 116,
-      "note": "issue #6224（P3·售后：`refundMethod` 是零生产者字段 —— DB 列无写点、响应里只有「实体 getter → DTO setter」直通；用户 2026-10-03 逐字裁定「退款方式 不用记」⇒ 下线该字段）新增 2 条 `[backend-contract]` 用例（AS-015 实例判据 / MC-076 类级元守卫）—— 它们按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 114 + 2 = **116**）。机器判红通道 = `traces.tests` 的两个真测试文件（`backend/admin-api/src/test/java/com/migao/admin/controller/AfterSalesRefundMethodRetiredTest.java`：3 条（三个 Java 载体上 refundMethod 字段/getter/setter 全无 + 列表响应体无该键 + 详情响应体无该键，两条响应判据各带正对照）；`backend/admin-api/src/test/java/com/migao/admin/contract/FrontendUnionFieldProducerMetaGuardTest.java`：12 条（语料 19 个联合类型字段 ⇄ 零生产者台账双向相等 + 真语料注入红证 + 6 类内存注入红证 + 反向对照 + 扫描面 fail-closed + 台账只许缩短）），两者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的 `test_i3_*` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 116}` vs 锚点 114 —— **不是**按号推算。"
-    },
-    {
-      "sha": "pending-pr-6242",
-      "date": "2026-10-03",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 117,
-      "note": "issue #6222（P3·读面：列表端点 `size < 0` ⇒ `total=0` 却返回整页行，自相矛盾）新增 **1** 条 `[backend-contract]` 用例（PG-070）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 116 + 1 = **117**）。机器判红通道 = `traces.tests` 的四个真测试文件：`backend/admin-api/src/test/java/com/migao/admin/validation/PaginationParamGateTest.java`（判定本体：size<0 ⇒ 400 与 `error.details[0].field=size`、非整数形态 ⇒ 400、**正向钉子** `nonPositivePage_isAccepted` / `zeroSize_isAccepted`、白名单外不判、参数集入口）；`backend/admin-api/src/test/java/com/migao/admin/controller/PaginationParamGateEndpointTest.java`（真 MVC 分发链：三个端点 size=-5 ⇒ 400 + service 零调用、正对照 size=20/0/无参数 ⇒ 200、摘线对照，10 条）；`backend/admin-api/src/test/java/com/migao/admin/validation/PaginationParamGateWiringTest.java`（接线：WebConfig 注册 + 排在授权/归属之后，2 条）；`backend/admin-api/src/test/java/com/migao/admin/security/PermissionPreHandleGateTest.java`（类级注册判据同批扩到三条闸）；四者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 117}` vs 锚点 116 —— **不是**按号推算。"
-    },
-    {
-      "sha": "pending-pr-6246",
-      "date": "2026-10-03",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 117,
-      "note": "issue #6237（P2·待核验·涉库存：核验 #6220 台账观察项『入库过账无条件置 POSTED ⇒ 并发重复建批次 / 重复入库』）新增 1 条 `[backend-contract]` 用例（OR-057）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 116 + 1 = **117**）。机器判红通道 = `traces.tests` 的两个真测试文件（`backend/admin-api/src/test/java/com/migao/admin/service/InboundPostConcurrentRealDbTest.java`：3 条真库并发判据（N=4 并发过账同一 draft 单 ⇒ 恰一个赢家 / 库存恰加一次 / 批次与台账各恰 2 行，另带串行正对照与带 Idempotency-Key 的工人入口）；`backend/admin-api/src/test/java/com/migao/admin/service/AfterSalesSideEffectConcurrencyMetaGuardTest.java`：类级元守卫，本单把 `InboundOrderService#post` 从豁免改成在册且兑现），两者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `MIGAO_REQUIRE_REALDB=1 python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -p no:cacheprovider` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 117}` vs 锚点 116 —— **不是**按号推算。"
-    },
-    {
-      "sha": "pending-pr-6242",
-      "date": "2026-10-03",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 118,
-      "note": "issue #6222（P3·读面：列表端点 `size < 0` ⇒ `total=0` 却返回整页行）的 PG-070 是**本读数增量的原因（+1）**；本行另一部分增量（117 → 118 里的 +1）来自 rebase 期间 main 前进带入的 `[backend-contract]` 用例 —— **按 `_how_to_regen` 取实测值，不按号推算**（本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 118}`）。PG-070 的机器判红通道 = `traces.tests` 的四个真测试文件（`backend/admin-api/src/test/java/com/migao/admin/validation/PaginationParamGateTest.java` 判定本体 / `backend/admin-api/src/test/java/com/migao/admin/controller/PaginationParamGateEndpointTest.java` 真 MVC 分发链 / `backend/admin-api/src/test/java/com/migao/admin/validation/PaginationParamGateWiringTest.java` 接线 / `backend/admin-api/src/test/java/com/migao/admin/security/PermissionPreHandleGateTest.java` 类级注册判据），四者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**。"
-    },
-    {
-      "sha": "pending-pr-6249",
-      "date": "2026-10-03",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 119,
-      "note": "issue #6238（P2·待核验·涉钱：工序改价**并发重复记账** —— `ProductionOperationCommandService#update` 是「读旧价 → 判『价变了吗』 → 条件追加版本行」的读-判-写，同一次调价被并发重复提交 ⇒ 各追加一行；真库实测 N=4 × 3 轮全为「版本账 5 行 / 新价行 4 行」）新增 1 条 `[backend-contract]` 用例（PP-022：并发面核验 + 修法 = 先取工序行排他锁再读旧价）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 118 + 1 = **119**；118 = 本单 rebase 到含 #6242（PG-070）/ #6246（OR-057）的 main 之后**实测**的基线）。机器判红通道 = `traces.tests` 的两个真测试文件，均非空且真实存在：`backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationPriceVersionConcurrentRealDbTest.java`（4 条：并发主判据（库内事实 → 版本账恰追加 1 行、当前价 = 最新版本行）/ 串行正对照 + 同价重复提交幂等 / 库层零兜底实测（除主键外无唯一约束）/ 入口面无 Idempotency-Key；注入式红证 = 摘掉 `FOR UPDATE` ⇒ 3 轮全红）与 `backend/admin-api/src/test/java/com/migao/admin/service/AfterSalesSideEffectConcurrencyMetaGuardTest.java`（本单把台账该条 `unverified` → `entries`，元守卫窄跑 2/0/0）；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的 `test_i3_*` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 119}` vs 锚点 118 —— **不是**按号推算。"
-    },
-    {
-      "sha": "pending-pr-6254",
-      "date": "2026-10-03",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 120,
-      "note": "issue #6254（P3·发货方式 shippingMethod **半接线**收口：工人/商家发货写面 `shipping_method` 恒为 NULL，而前端兜底把 NULL 当 `logistics`）新增 **1** 条 `[backend-contract]` 用例（OR-059）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 119 + 1 = **120**）。机器判红通道 = `traces.tests` 的两个真测试文件，均非空且真实存在：`frontend/admin-web/tests/unit/lib/data-adapter.test.ts`（未采集 ⇒ 不下发该键 / 正对照真 logistics 仍下发 / `shippingMethodForEdit` 的 NULL ⇒ undefined 与 none·logistics 原样透传 / 接线判据（订单详情回填点真走本函数且不再有旧兜底表达式））与 `frontend/admin-web/tests/unit/components/LogisticsForm.test.tsx`（未采集 ⇒ 省略该键 / 已记录 none ⇒ 仍 none / 正对照 logistics ⇒ 仍 logistics）；`traces.ci` = `pr-check.yml` 的 `admin-web typecheck + unit tests`（真跑这两个 vitest）。修前红实测 = `6 failed / 41 passed`（两个文件），修后绿 = `111 passed`（4 个文件）。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 120}` vs 锚点 119 —— **不是**按号推算。"
-    },
-    {
-      "sha": "pending-pr-6248",
-      "date": "2026-10-03",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 121,
-      "note": "issue #6248（P3·涉库存核验包：入库批次号 `nextFreeBatchNo` 跨请求取号竞争）新增 1 条 `[backend-contract]` 用例（OR-060）—— 它按设计**不进 agent-eval**（无 LLM 写路径：入库过账不经黄金策 Agent 工具，B 端 PATCH action=post 与工人入口都是 admin-api 服务层；`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1）。机器判红通道 = `traces.tests` 的两个真测试文件：`backend/admin-api/src/test/java/com/migao/admin/service/BatchNoTakeRaceRealDbTest.java`（真 PG 六条：单实例并发 4×3 轮零重号 / 串行正对照 / 重启落在已占头部 fail-closed 409 / 会合点注入双向（修前 500×2、修后 200×2）/ 号段耗尽 409 / 零注入对照）与 `backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderServiceTest.java`（写号被抢 ⇒ 换号取下一个候选、最终号三处同源同值），两者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**：rebase 到 main（`674a56f02`，`#6263` 合入后其读数为 **120**）之后跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` ⇒ **6 passed**，`entries` 与实测读数同为 **121**（= rebase 后 main 的 120 + 本单新增的这 1 条；不按号推算，CI 是权威）。⚠️ 本单的用例号原取 **OR-060** 之前曾与在飞 PR #6263（`fix/6254-shipment-path-wiring`）**同占 OR-059** ⇒ 按「PR 号小 / 先开者保留」裁定（#6263 createdAt 11:48:13Z 早于 #6264 的 12:00:51Z），本单改用 **OR-060**（全 refs 复核空闲）。"
-    },
-    {
-      "sha": "pending-pr-6267",
-      "date": "2026-10-03",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 122,
-      "note": "issue #6262（P3·订单流：发货后 N 天自动完成订单，用户 2026-10-03 逐字裁定 B）新增 1 条 `[backend-contract]` 用例（**OR-061**）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 121 + 1 = **122**）。机器判红通道 = `traces.tests` 的三个真测试文件，均非空且真实存在：`backend/admin-api/src/test/java/com/migao/admin/service/AutoCompleteShippedScanServiceTest.java`（12 条判定本体：死线/静默/幂等/隔离/副作用绑定 RETURNING/可观测/失败显式）、`backend/admin-api/src/test/java/com/migao/admin/service/OrderAutoCompleteSqlGuardTest.java`（5 条结构判据：单条带谓词 SQL + RETURNING + 两条发货路都写 shipped_at）、`backend/admin-api/src/test/java/com/migao/admin/service/AutoCompleteShippedRealDbTest.java`（6 条真库：满期才完成/未满不动/非 shipped 不动/逐租户隔离 + 反向对照/集群双连接并发只生效一次/幂等）；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 122}` vs 锚点 121 —— **不是**按号推算。⚠️ **跨 refs 撞号两次（本单实测，逐条登记）**：本包 19:45 取号时 main 侧最大为 OR-058 ⇒ 分配器给 **OR-059**；20:31 main 的 #6263 也取了 OR-059 ⇒ 让号改 **OR-060**；21:12 起 `.github/cases/claims/6264-OR-060.json`（#6264）显示 OR-060 也已被占 ⇒ 再让号为 **OR-061**（origin/main 用例库与 claim 台账均 0 命中；在飞 PR 面手工核过：无任何 open PR 的 claim 目录或 order.yml 提到 OR-061）。"
-    },
-    {
-      "sha": "pending-pr-6253",
-      "date": "2026-10-03",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 123,
-      "note": "包级定点清单包（issue #6250，本 PR #6253，rebase 到含 #6267 的 main 后实测）新增 1 条 `[backend-contract]` 用例 **PK-001**（`scripts/pkg-narrow-check.sh` 的判据；`expectations: []` ⇒ 按设计**不进 agent-eval**），机器判红通道 = `traces.tests` 里的 `tests/unit_ci_workflows/test_pkg_narrow_check.py`（真脚本 + runner 桩，双向自证 + 只读 + fail-closed）⇒ 读数 122 → **123** 是**合法新增**（同上一行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内**追加：取值 = 本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 的实测读数 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 123}`（**不是**按号推算）。"
-    },
-    {
-      "sha": "pending-pr-6311",
-      "date": "2026-10-04",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 124,
-      "note": "issue #6301（P2·幂等并发：同 runId 并发盘点 ⇒ 幂等回执而非 500）新增 1 条 `[backend-contract]` 用例 **MC-081**（类级元守卫 `tests/unit_ci_workflows/test_idempotent_unique_write_guard.py` + 冻结台账 `tests/unit_ci_workflows/unique_write_ledger.json`；`expectations: []` ⇒ 按设计**不进 agent-eval**）⇒ 读数 123 → **124** 是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内**追加：取值 = rebase 到 main（`6933602b7`）后本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 的实测读数 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 124}`（**不是**按号推算）。"
-    },
-    {
-      "sha": "pending-pr-6313",
-      "date": "2026-10-04",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 125,
-      "note": "issue #6299 + #6300（P1·库存并发超卖 / P2·台账并发同基）新增 **2** 条 `[backend-contract]` 用例（**OR-062** / **PR-123**）—— 两条按设计**不进 agent-eval**（无 LLM 写路径：确认收款与入库过账都是 admin-api 服务层，不经黄金策 Agent 工具）。**本读数 +1（124 → 125）**：`scoring_zero_total()` 数的是 `scoring_assertion_count == 0` 的用例，其中 **OR-062 的 `expectations: []` ⇒ 计数 0**（+1），而 **PR-123 带 `expectations: [direct_reply]` ⇒ 计数 1**（与同批 #6302 的 PR-122 同形 ⇒ 不进本读数）；现取 `assertion_taxonomy.scoring_assertion_count()` 复核：OR-062 = 0 / PR-123 = 1。机器判红通道 = `traces.tests` 的真测试文件，均非空且真实存在：`backend/admin-api/src/test/java/com/migao/admin/service/OrderConfirmPaymentStockRaceRealDbTest.java`（真 PG：3 轮并发恰一个赢家 + 落败 422 + 库存不为负且 == 独立算式 + 台账链首尾相接 + 串行正对照）、`backend/admin-api/src/test/java/com/migao/admin/service/InboundPostLedgerChainRaceRealDbTest.java`（真 PG：净增量正对照 + 链式相接 + 行内自洽 + 串行正对照）、`backend/admin-api/src/test/java/com/migao/admin/service/StockDeductionAndLedgerAtomicityMetaGuardTest.java`（类级元守卫 4 条 + 判别力自证）、`backend/admin-api/src/test/java/com/migao/admin/service/StockChangeTest.java`（唯一工厂 = mapper 的 RETURNING 行）、`backend/admin-api/src/test/java/com/migao/admin/mapper/ProductSkuMapperTest.java`（SQL 形态契约：`GREATEST` 判据反向翻转 + 下限谓词）、`InboundOrderServiceTest.java` / `OrderStockSkuKeyFamilyTest.java`（调用点契约）；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`（本单实测 4045 passed / 0 failed / 1 skipped）。红证（注入式双向对照，真 PG，rebase 后同树复现）：把 `deductStock` 退回 `GREATEST(…,0)` + 无下限谓词 ⇒ `成功数=2 库存=10.0→0.0`；把 `post` 的台账读数退回快照 ⇒ 两行同基、`assertChain` 判红。真债务 `no_channel_total` 仍为 **0**（不变）。**本行按 `_how_to_regen` 在同一 PR 内实测重锚**：rebase 到 `dd98b0016`（main 侧末行 = `pending-pr-6311` 的 124）之后实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 报 125 vs 锚点 124 ⇒ 本行取 **125**（**不是**按号推算）。⚠️ 本单用例号在 rebase 时**让号**：原取 **PR-122**，与已合并的 #6302（PR #6310）撞号 ⇒ 按仓内裁定「PR 号小 / 先开者保留」让为 **PR-123**（`test_case_header_ids_match_block_ids` 也据此纠出并已修正围栏头）。"
-    },
-    {
-      "sha": "pending-pr-6318",
-      "date": "2026-10-04",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 126,
-      "note": "issue #6318（服务级绿 ≠ 端点级绿：端点级并发判据 + 日志面判据 + 类级元守卫）新增 1 条 `[backend-contract]` 用例 **MC-082**（端点级判据 `backend/admin-api/src/test/java/com/migao/admin/service/StockBatchStocktakeEndpointRaceRealDbTest.java` + 元守卫 `tests/unit_ci_workflows/test_endpoint_receipt_race_guard.py` + 冻结台账 `tests/unit_ci_workflows/endpoint_receipt_race_ledger.json`；`expectations: []` ⇒ 按设计**不进 agent-eval**，机器判红通道在 `traces.tests` 的两个真测试文件里）⇒ 读数 125 → **126** 是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内**追加：取值 = rebase 到含 #6313 的 main（`843bed933`）后重渲染 `.github/render_cases.py`，再本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 的实测读数 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 126}`（**不是**按号推算）。"
-    },
-    {
-      "sha": "pending-pr-6295",
-      "date": "2026-10-04",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 127,
-      "note": "issue #6295（新租户入驻不种商品分类 ⇒ 开箱首建商品 422）新增 2 条 `[backend-contract]` 用例 —— **OB-006**（开租即种默认商品分类：真库判据 `backend/admin-api/src/test/java/com/migao/admin/service/NewTenantOnboardingCategoryRealDbTest.java` + mock 面 `ProductCategorySeedServiceTest.java` / `RegistrationServiceTest.java`）与 **MC-083**（类级元守卫 `tests/unit_ci_workflows/test_onboarding_required_seed_guard.py` + 豁免台账 `tests/unit_ci_workflows/onboarding_required_seed_ledger.json`）。两条 `expectations: []` ⇒ 按设计**不进 agent-eval**，机器判红通道在 `traces.tests` 里（逐条非空且真实存在）⇒ 读数 126 → **127**（两条里只有一条计入本指标：另一条带机器计分断言，不进 `scoring_assertion_count == 0` 集合）是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内**追加：取值 = 重渲染 `.github/render_cases.py` 后本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 的实测读数 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 127}`（**不是**按号推算）。"
-    },
-    {
-      "sha": "pending-pr-6422",
-      "date": "2026-10-06",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 128,
-      "note": "issue #6418（部署三腿 push 触发已死：合并凭据改用非内置 PAT）新增 1 条 `[backend-contract]` 用例 **MC-084**（判据 = `tests/unit_ci_workflows/test_automerge_merge_credential.py` 的实例判据 + 类级元守卫 + 8 条注入式红证与对照，以及 `tests/unit_ci_workflows/test_danger_scan.py::TestNewSecretAckChannel` 的 11 条；`expectations: []` ⇒ 按设计**不进 agent-eval**，机器判红通道在 `traces.tests`（两个文件均非空且真实存在）/ `traces.ci` = `pr-check.yml`）⇒ 读数 127 → **128** 是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变，且**不含**任何「改散文就能绿」的纸面项）。本行按 `_how_to_regen` 在**同一 PR 内**追加：取值 = **实测**（本单新增用例 ⇒ 重渲染 `.github/render_cases.py` 后，CI run `37423069355` 的 `ci workflow helper unit tests（后半）` 实测读数 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 128}`，本机同判据实跑一致），**不是**按号推算。"
-    },
-    {
-      "sha": "pending-pr-6436",
-      "date": "2026-10-06",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 129,
-      "note": "issue #6434（订单详情打印入口只在已发货/已完成：待付款 / 待发货 / 生产中补入口 + 入口矩阵类级守卫）新增 1 条 `[backend-contract]` 用例 **MC-085**（类级元守卫 = `tests/unit_ci_workflows/test_order_print_entry_matrix.py`：4 条真语料判据 + 5 条注入式判别力自证，含「只加注释 ⇒ 不红」的对照读数；实例判据 = `frontend/admin-web/tests/unit/pages/order-detail.test.tsx` 的表驱动六条）。同 PR 的另一条用例 **UI-090** 带机器计分断言 ⇒ **不**进 `scoring_assertion_count == 0` 集合，故计入本指标的只有 MC-085 一条 ⇒ 读数 128 → **129** 是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内**追加：取值 = 重渲染 `.github/render_cases.py` 之后本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 的实测读数 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 129}`（**不是**按号推算）。"
-    },
-    {
-      "sha": "pending-pr-6438",
-      "date": "2026-10-06",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 130,
-      "note": "issue #6432（工人档案「重置 PIN」：管理员拿到工人 PIN 的唯一出口）新增 2 条 `[backend-contract]` 用例 —— **UI-091**（实例判据：后端恢复重置/端点/前端弹窗 + 红证）与 **MC-086**（类级元守卫 = `tests/unit_ci_workflows/test_credential_rotation_pairing.py`：未配对即红 / 台账只许缩短 / 零命中即红 + 5 条内存判别力自证）。按 `scoring_assertion_count == 0` 口径**净 +1** ⇒ 读数 129 → **130** 是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。取值 = **实测**：本机 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 与 CI run（`ci workflow helper unit tests（后半）`）同读数 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 130}`，**不是**按号推算。"
-    },
-    {
-      "sha": "pending-pr-6437",
-      "date": "2026-10-06",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 131,
-      "note": "issue #6430（省料看板重设计）新增 **PR-127**（`[backend-contract]`、`expectations: []` ⇒ 按设计不进 agent-eval）⇒ `backend_contract_scoring_zero` 130 → 131；同批新增的 **UI-092**（原 UI-090，合并 main 时因 #6434 占用而重取号）走 `direct_reply` 通道 ⇒ 不计入本读数。本单实测读数 = 131，`entries` 已对齐末行（`no_channel_total` 仍恒为 0）。"
-    },
-    {
-      "sha": "pending-pr-6511",
-      "date": "2026-10-07",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 132,
-      "note": "issue #6508（磁盘水位×回收联动）+ issue #6505（被前置闸门挡住时的收口归因）新增 **MC-087**（`[backend-contract]`、`expectations: []` ⇒ 按设计不进 agent-eval，故按 `scoring_assertion_count == 0`口径计入本指标）⇒ `backend_contract_scoring_zero` 131 → 132 是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。取值 = **实测**：`python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` ⇒ `{'no_channel_total': 0, 'backend_contract_scoring_zero': 132}`，**不是**按号推算。"
-    },
-    {
-      "sha": "pending-pr-6616",
-      "date": "2026-10-09",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 134,
-      "note": "issue #6209（建品写面接入服务端幂等）新增 **PR-128** + **MC-088** 两条用例（均 `[backend-contract]`、`expectations: []` ⇒ 按设计不进 agent-eval，故按 `scoring_assertion_count == 0` 口径计入本指标）⇒ `backend_contract_scoring_zero` 132 → 134 是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。两条的机器判红通道 = `traces.tests`：PR-128 = `backend/admin-api/src/test/java/com/migao/admin/service/ProductCreateIdempotencyTest.java` + `…/ProductCreateIdempotencyRealDbTest.java` + `…/controller/ProductCreateIdempotencyEndpointTest.java`（逐条非空且真实存在，CI 腿 = pr-check.yml 的 `admin-api unit tests`）；MC-088 = `tests/unit_ci_workflows/test_idempotency_writeface_coverage.py`（CI 腿 = pr-check.yml 的 `ci workflow helper unit tests`）。取值 = **实测**：`python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` ⇒ `{'no_channel_total': 0, 'backend_contract_scoring_zero': 134}`，**不是**按号推算。"
-    },
-    {
-      "sha": "pending-pr-6621",
-      "date": "2026-10-09",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 135,
-      "note": "issue #6243（dev-worktree `list` 存在会话锁时 exit 1）新增 **MC-089**（`[backend-contract]`、`expectations: []` ⇒ 按设计不进 agent-eval，故按 `scoring_assertion_count == 0` 口径计入本指标）。⚠️ 本行是**合并 origin/main（4aa77136a，含 #6616）后**的读数：同批由 #6616 落地的 **MC-088** 与 **PR-128** 也走同一通道（132 → 134），本包再 +1 ⇒ 132 → **135** 全部是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。取值 = **实测**：`python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` ⇒ `{'no_channel_total': 0, 'backend_contract_scoring_zero': 135}`，**不是**按号推算。"
-    },
-    {
-      "sha": "pending-pr-6626",
-      "date": "2026-10-09",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 136,
-      "note": "issue #6210（外键违例归口 4xx）新增 **MC-090**（`[backend-contract]`、`expectations: []`、`scoring_assertion_count == 0` ⇒ 按设计不进 agent-eval，按本指标口径计入）。⚠️ 本行是**合并 origin/main（4a9e5110c）后**的读数：上一行（#6621 的 MC-089）为 135，本包 +1 ⇒ **136**，属**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。取值 = **实测**：`python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` ⇒ `{'no_channel_total': 0, 'backend_contract_scoring_zero': 136}`，**不是**按号推算。同 PR 顺带补齐 **MC-089 缺失的 `traces.ci`**（#6621 落到 main 时漏了该格 ⇒ 豁免通道健全性判据 `test_i2_exempt_channel_is_actually_complete` 判「走了豁免通道却没有 traces.ci」= 假绿）—— 只补声明，不改判据。"
-    }
-  ]
+  {
+   "sha": "10df5db60987e05d5d9abf163209f8068c7b02ea",
+   "date": "2026-09-22",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 60,
+   "note": "issue #5063（库存米数小数化，1 位小数）新增 7 条 `[backend-contract]` 用例（PR-046~PR-051 + OR-047）—— 它们按设计**不进 agent-eval**（`expectations: []`），机器判红通道是 `traces.tests` 里的 Java 单测 / pytest / admin-web vitest（逐条非空：InboundOrderServiceTest / OrderStockLedgerTest / AgentProductServiceTest / ProductServiceTest / StockQuantityTest / ProductSkuMapperTest / test_stock_quantity_decimal_migration.py / test_tools_inventory_decimal.py / frontend admin-web vitest）⇒ 读数 53 → 60 是**合法新增**（`[backend-contract]` 用例本就不进 agent-eval，这是 #5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。按本文件 `_how_to_regen` 在同一 PR 内重锚。"
+  },
+  {
+   "sha": "08bbe81fbf24bd50cbcb02df6a88081aa757dfe6",
+   "date": "2026-09-22",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 61,
+   "note": "issue #5150（#5063 同族残留：AI 侧商品级 `stock_quantity` 仍是 `integer` + `int()` 强转）新增 1 条 `[backend-contract]` 用例（PR-052）—— 按设计**不进 agent-eval**（`expectations: []`），机器判红通道是 `traces.tests` 里的 pytest（`backend/ai-agent-service/tests/test_tools_product_stock_decimal.py`，非空且真实存在；`traces.ci` = ai-agent-tests.yml，实际跑该 pytest 的 job）⇒ 读数 60 → 61 是**合法新增**（同上一行的口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。按本文件 `_how_to_regen` 在同一 PR 内重锚。"
+  },
+  {
+   "sha": "adfbda6a1d169ef33e35f9fe84523117047cc2fb",
+   "date": "2026-09-22",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 66,
+   "note": "issue #5145 阶段 1（派加工单扣批次库存 + 消耗台账 + 余量/分布/对账读面）新增 5 条 `[backend-contract]` 用例（PG-060 / PR-055 / PR-056 / PR-057 / BM-007）—— 它们按设计**不进 agent-eval**（`expectations: []`），机器判红通道是 `traces.tests` 里的 Java 单测 / admin-web vitest / bmini jest（逐条非空：ProcessingOrderServiceTest / OrderServiceTest / ProductionServiceTest / StockBatchConsumptionServiceTest / StockBatchControllerTest / StockBatchConsumptionMapperTest / frontend admin-web ProcessingOrderBlock+BatchStockPanel+batch-stock 请求层 / frontend bmini-app tests/production-batch-assignment.test.tsx）⇒ 读数 61 → 66 是**合法新增**（`[backend-contract]` 用例本就不进 agent-eval，这是 #5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。按本文件 `_how_to_regen` 在同一 PR 内重锚。注：本行取号在 rebase 到含 #5150/#5152 的 main 之后顺延（原 PR-052/053/054 + PG-059 与他人撞号 ⇒ 改 PR-055/056/057 + PG-060，BM-007 不变）。"
+  },
+  {
+   "sha": "690e4d02cf33b6ddbdb37bd6a60aa1190a4265cc",
+   "date": "2026-09-22",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 67,
+   "note": "issue #5142（裁剪智能排料 v1：A 类「完整布并排」纯函数 + 判据）新增 1 条 `[backend-contract]` 用例（PG-061）—— 它按设计**不进 agent-eval**（`expectations: []`），机器判红通道是 `traces.tests` 里的 Java 单测 `backend/admin-api/src/test/java/com/migao/admin/service/CuttingPlanCalculatorTest.java`（非空且真实存在，7 条逐值断言；`traces.ci` = pr-check.yml 的 admin-api unit tests job 实际跑它）⇒ 读数 66 → 67 是**合法新增**（`[backend-contract]` 用例本就不进 agent-eval，这是 #5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。按本文件 `_how_to_regen` 在同一 PR 内重锚。注：取号在 rebase 到含 #5145 的 main 之后顺延（PG-059 被 #5145 先取，本单取 PG-061）。"
+  },
+  {
+   "sha": "51d2352cb",
+   "date": "2026-09-22",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 69,
+   "note": "issue #5154（商品 + SKU 批量导入）新增 2 条 `[backend-contract]` 用例（PR-059 后端契约 / PR-060 前端可见面）—— 它们按设计**不进 agent-eval**（`expectations: []`），机器判红通道是 `traces.tests` 里的 Java 单测（ProductBulkImportServiceTest / ProductImportControllerTest）与 admin-web vitest（tests/unit/pages/products-import.test.tsx），三者均非空且真实存在，且各自都带可单独变红的注入式红证（本 PR 实测 4 处变异：静默跳过 / 查重恒空 / 库存静默取整 / 数字单元格截断，各自只让对应判据变红）⇒ 读数为**合法新增**（同 #5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**。按本文件 `_how_to_regen` 在同一 PR 内重锚。"
+  },
+  {
+   "sha": "pending-pr-5182",
+   "date": "2026-09-23",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 73,
+   "note": "issue #5182（事件驱动自动成批派单，阶段 2b-3）新增 4 条 `[backend-contract]` 用例（PR-086 事件驱动与挂载点纪律 / PR-087 成批条件与加急与兜底算式 / PR-088 真库落账与对称回补 / PR-089 真库兜底必派）—— 它们按设计**不进 agent-eval**（`expectations: []`），机器判红通道是 `traces.tests` 里的 Java 单测（AutoBatchDispatchTest / AutoBatchMountPointTest / AutoBatchDispatchRealDbTest，三条均非空且真实存在，其中两条跑真 PG）⇒ 读数 69 → 73 是**合法新增**（#5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。按本文件 `_how_to_regen` 在同一 PR 内重锚。"
+  },
+  {
+   "sha": "pending-pr-5184",
+   "date": "2026-09-23",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 76,
+   "note": "issue #5184（自动派单兜底的「到点自愈」运行载体）新增 3 条 `[backend-contract]` 用例（PR-090 到点自愈的真库判据 / PR-091 并发与幂等 + 逐租户隔离 / PR-092 只查业务约束 + 默认关 + 心跳可见）—— 它们按设计**不进 agent-eval**（`expectations: []`），机器判红通道是 `traces.tests` 里的 Java 单测与真 PG 判据（逐条非空且真实存在：AutoBatchDueScanRealDbTest / AutoBatchDueScanTest；`traces.ci` = pr-check.yml，实际跑这两个类的 job）⇒ 读数 73 → 76 是**合法新增**（同 #5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。按本文件 `_how_to_regen` 在同一 PR 内重锚；`sha` 沿用上一行的 `pending-pr-*` 约定（合并前没有可引用的提交）。"
+  },
+  {
+   "sha": "pending-pr-5159",
+   "date": "2026-09-23",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 80,
+   "note": "issue #5159（省料度量 L2/L3 汇总读面与看板）新增 4 条 `[backend-contract]` 用例（PR-093 汇总一致与单价口径 / PR-094 存量导入单列成组 / PR-095 空数据不冒充 0 与文案不写死数字 / PR-096 两条指标并用与不损失客户）。取号区间 PR-093~PR-096 为本单硬分配（#5184 的 PR-090~PR-092 已先取，本单 rebase 后以 main 侧为基追加，**未越界、未占用他人号**）。机器判红通道 = `traces.tests` 里的真 PG Java 判据 `backend/admin-api/src/test/java/com/migao/admin/service/SavingMetricsBoardRealDbTest.java`（非空且真实存在，6 条真库断言）与 admin-web vitest `frontend/admin-web/tests/unit/components/SavingBoard.test.tsx` / `frontend/admin-web/tests/unit/lib/saving-board.test.ts`（均非空且真实存在，17 条断言）⇒ 读数为**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**。按本文件 `_how_to_regen` 在同一 PR 内重锚（本行在 rebase 到含 #5184/#5186 的 main 之后**实测重跑**得出，非按号推算）。注：本单 10 处注入式红证全部实测变红（后端 5 + 前端 5），其中「单价口径」一条**首轮实测假绿**（MyBatis 一级缓存按 SqlSession ⇒ 复读拿到改前值 = 空断言），已在判据里补 `session.clearCache()` 并复测变红。"
+  },
+  {
+   "sha": "pending-pr-5146",
+   "date": "2026-09-23",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 83,
+   "note": "issue #5146（余料成本回收：非资产台账 + 可配小件尺寸 + 优先匹配 + 回收记账 + 报废留痕）新增 3 条 `[backend-contract]` 用例（PR-097 非资产守门 / PR-098 优先匹配与未配置不静默 / PR-099 客户带走与报废留痕）—— 它们按设计**不进 agent-eval**（`expectations: []`），机器判红通道是 `traces.tests` 里的 Java 真 PG 单测（RemnantRecoveryRealDbTest 8 条 / RemnantNonAssetGuardTest 2 条 / RemnantServiceTest 7 条 / FabricRemnantMapperTest 3 条 / RemnantItemSizeMapperTest 3 条 / RemnantControllerTest 4 条，均非空且真实存在、本机全绿）与 admin-web vitest（remnant-params / RemnantItemSizesPanel / TenantParamsPanel，共 35 条全绿）⇒ 读数为**合法新增**（#5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` **实测重锚**（rebase 到含 #5185 的 main 之后实测读数即为 83）。"
+  },
+  {
+   "sha": "pending-pr-5194",
+   "date": "2026-09-23",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 85,
+   "note": "issue #5194 + #5191（同一 PR）新增 2 条 `[backend-contract]` 用例（PR-105 商家可见文案 `**` 收口 / PR-106 余料台账进侧边栏）—— 它们按设计**不进 agent-eval**（`expectations: []`），机器判红通道 = admin-web vitest 的 AST 静态守卫 + 组件渲染断言（`copy-no-markdown-emphasis.test.ts` 4 条 / `CraftCalcGlossary.test.tsx` 渲染面整块断言 / `production-routings.test.tsx` 面板整块断言）与 Java 节点表（`MenuControllerTest` / `AuthServiceTest`）与三源同构守卫（`tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`），逐条 `traces.tests` 非空且真实存在。⚠️ 本次同时修掉一处**真实缺漏**：PR-105 原本没有 `traces.ci`（豁免通道不健全 ⇒ I2 判红「走了豁免通道却没指明哪个 CI job 跑它」），已补 `pr-check.yml`（其在 `admin-web typecheck + unit tests` 里真跑 vitest）。⇒ 读数 83 → 85 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**（rebase 到含 #5207/#5208/#5209/#5215 的 main 之后实测读数即为 85）。"
+  },
+  {
+   "sha": "pending-pr-5203",
+   "date": "2026-09-23",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 86,
+   "note": "2026-09-23 新增 1 条 `[backend-contract]` 用例（PR-107 Python 侧真库判据 fail-closed / skip 可见性，issue #5203）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1）。机器判红通道 = `traces.tests` 的 `tests/unit_ci_workflows/test_realdb_failclosed.py`（判据⑤~⑧，真实存在、本机 9 passed）与 `traces.ci` 的 `pr-check.yml`（`ci workflow helper unit tests` 真跑该文件）⇒ 读数为**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变）。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（`render_cases.py` 连跑两次逐字节相同后，由 `test_i3_*` 实测读数 = 86）。"
+  },
+  {
+   "sha": "pending-pr-5322",
+   "date": "2026-09-24",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 90,
+   "note": "issue #5322（族 1 主动发现包 1：规则引擎确定性扫描 + 日报集成）新增 5 条用例（DA-011 确定性 / DA-012 三件套 / DA-013 无处置入口不发（注入式红证）/ DA-014 日报只含当天异常 / DA-015 阈值可配 + 边界值）—— 其中 4 条按设计**不进 agent-eval**（DA-011/012/013/015 的 `expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +4；DA-014 带 `expectations` 的 briefing_query 契约 ⇒ 不计入本读数）。机器判红通道 = `traces.tests` 的 `backend/ai-agent-service/tests/test_briefing_proactive.py`（引擎五条验收判据：确定性双侧、三件套、注入式红证、历史异常双侧、阈值边界两侧）与 `backend/ai-agent-service/tests/test_tools_briefing_query.py`（集成面），逐条非空且真实存在；`traces.ci` = pr-check.yml（`ai-agent-service unit tests` 真跑这两个文件）⇒ 读数 86 → 90 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变）。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（CI 实测读数 = 90，非按号推算）。"
+  },
+  {
+   "sha": "pending-pr-5314",
+   "date": "2026-09-24",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 91,
+   "note": "2026-09-24 新增 1 条 `[backend-contract]` 用例（PR-109 批量更新的阈值 / batchType 白名单 / 两段确认结构锁 / 撤销端点归属，issue #5314 的 Agent 侧包）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1）。机器判红通道 = `traces.tests` 的 `backend/ai-agent-service/tests/test_product_batch_update.py`（确定性判据，零 LLM / 零网络）+ `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` / `tests/unit_ci_workflows/test_agent_permission_parity.py`（写面白名单与在飞端点登记），`traces.ci` = `pr-check.yml`（`ci workflow helper unit tests` 真跑那两个文件）⇒ 读数为**合法新增**（#5079 已裁定的口径），真债务 `no_channel_total` 仍为 **0**（不变）。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（合并 main（读数 90）后由 `test_i3_*` 实测读数 = 91）。"
+  },
+  {
+   "sha": "pending-pr-5359",
+   "date": "2026-09-24",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 94,
+   "note": "issue #5358（族 3 跨域视图内核 · 包 1：装配行级快照 orders/skus/returns + 逐规则接线状态）新增 3 条 `[backend-contract]` 用例（DA-016 行级快照装配契约与有界租户 / DA-017 逐规则接线状态含「截断必须显式」/ DA-018 未接线与本次不完整如实说明）—— 它们按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +3）。机器判红通道 = `traces.tests` 的三个文件：`backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingServiceTest.java`（SnapshotRows：行键集 == 声明、有界、显式 tenantId、截断显式、JSONB 可序列化、行数组不进提示词）与 `backend/ai-agent-service/tests/test_briefing_proactive.py`（三态接线状态 + 截断 / 维度缺值的注入式红证 + `reason is None ⟺ wired` 不变式）与 `backend/ai-agent-service/tests/test_tools_briefing_query.py`（未接线 / 不完整话术与条数少报的红证），逐条非空且真实存在；`traces.ci` = `pr-check.yml`（`admin-api unit tests` / `ai-agent-service unit tests` 真跑这三个文件）⇒ 读数 91 → 94 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变）。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（CI 实测读数 = 94：`ci workflow helper unit tests` 报 `{'backend_contract_scoring_zero': 94}` vs 锚点 91，非按号推算；本 PR 早一轮 CI 就是被这条挡住才发现的）。"
+  },
+  {
+   "sha": "pending-pr-5420",
+   "date": "2026-09-24",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 95,
+   "note": "issue #5345（族 5 包 3：订单侧图片识别「明细 → 匹配候选 → 选品 → 建订单行」）新增 1 条 `[backend-contract]` 用例（OR-048）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1）。机器判红通道 = `traces.tests` 的四个文件：`frontend/admin-web/tests/unit/lib/order-line-match.test.ts`（29 条：不猜商品 / 候选可解释 / 不落库 / 门幅只来自所选 SKU / 单价只来自 SKU ＋ 类级元守卫 ＋ 注入式红证）、`frontend/admin-web/tests/unit/pages/orders-new-image-lines.test.tsx`（4 条页面接线）、`frontend/admin-web/tests/unit/components/OrderLinePicker.test.tsx`（7 条组件面）与 `tests/unit_ci_workflows/test_fabric_width_truth_source.py`（识别 → 建行 面零门幅标识符 ＋ 豁免台账只许缩短 ＋ 扫描器判别力自证），逐条非空且真实存在；`traces.ci` = `pr-check.yml`（`admin-web typecheck + unit tests` 真跑前三个 vitest 文件、`ci workflow helper unit tests` 真跑最后一个）⇒ 读数 94 → 95 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变）。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（CI 实测读数 = 95：`ci workflow helper unit tests` 报 `{backend_contract_scoring_zero: 95}` vs 锚点 94，非按号推算）。本 PR 首轮 CI 正是被这条挡住才发现的。"
+  },
+  {
+   "sha": "pending-pr-5466",
+   "date": "2026-09-25",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 96,
+   "note": "issue #5462（用例面补录：#5456 / PR #5458 交付的 `customer_profile` 视图与 `customer_manage(profile_view)` action 此前没有专属用例条目 ⇒ 将来做行为改动算不出该跑哪几条）新增 2 条用例（CU-010 客户画像视图 / CU-011 画像 action）—— 其中 **CU-010 按设计不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1），CU-011 带 `expectations`（`customer_manage(action=profile_view)` ⇒ 计分断言 = 1）⇒ **不计入**本读数。机器判红通道 = `traces.tests`，逐条非空且真实存在：CU-010 = `backend/ai-agent-service/tests/test_briefing_customer_profile.py`（视图语义：逐字段三态 / 「未知」≠「0」/ 口径同源 / fail-closed ＋ 5 条注入式红证）＋ `backend/admin-api/src/test/java/com/migao/admin/service/CustomerProfileViewSnapshotTest.java`（装配契约：行键集 ≡ 声明字段集、读面遮蔽、有界截断）＋ `backend/admin-api/src/test/java/com/migao/admin/service/CustomerProfileTruthExposureTest.java` ＋ `backend/admin-api/src/test/java/com/migao/admin/support/fieldtruth/CustomerProfileFieldTruthGateTest.java`；CU-011 = `backend/ai-agent-service/tests/test_customer_manage.py`（profile_view 三条：未知≠0 披露 / 缺声明披露 / 失败可归因）。`traces.ci` = `pr-check.yml`（`ai-agent-service unit tests` 与 `admin-api unit tests` 真跑上列文件）⇒ 读数 95 → 96 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变；本机实测：`scoring_zero = 96` / `no_channel = 0`）。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（CI 实测读数 = 96：`ci workflow helper unit tests` 报 `{backend_contract_scoring_zero: 96}` vs 锚点 95，非按号推算）—— 本 PR 首轮 CI 正是被这条挡住才发现的。"
+  },
+  {
+   "sha": "pending-pr-5758",
+   "date": "2026-09-28",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 97,
+   "note": "人为要求（用户 2026-09-28 会话逐字：下单页版面重排 + 「拍照 / 上传识别」移到商品信息卡；会话内零新开 issue）新增 1 条 `[backend-contract]` 用例（OR-052：下单页版面重排的七条确定性 DOM 判据）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1）。机器判红通道 = `traces.tests` 的两个文件：`frontend/admin-web/tests/unit/pages/orders-new-layout.test.tsx`（9 条：净尺寸前置的 DOM 顺序 / 识别入口挂商品信息卡 / 推导读数默认只读 + 就地「改」/ 门幅只读摘要与来源 / 推荐组合预选 · 采纳 · 全不采纳 / 手改留痕 / 「其他」折叠）与 `tests/e2e/specs/orders/order-create.spec.ts`（真浏览器：三个步骤区块 + 反证第四步不存在 + 净尺寸先于用料 + `readonly`/「改」+ 识别入口在商品信息卡 + 黄金策 FAB 遮挡几何探针），逐条非空且真实存在；`traces.ci` = `pr-check.yml`（`admin-web typecheck + unit tests` 跑前者、`E2E quality gate` 跑后者）⇒ 读数 96 → 97 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变）。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（CI 实测读数 = 97：`ci workflow helper unit tests` 报 `{'backend_contract_scoring_zero': 97}` vs 锚点 96，非按号推算）—— 本 PR 首轮 CI 正是被这条挡住才发现的。"
+  },
+  {
+   "sha": "pending-pr-5759",
+   "date": "2026-09-28",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 98,
+   "note": "人为要求（用户 2026-09-28 会话逐字：「把加工项和加工费组合里面叫韩折的都改成韩褶」；会话内零新开 issue）新增 1 条 `[backend-contract]` 用例（PG-044：加工项目录名与加工费组合键统一为「韩褶」—— 改名 + 组合键重算 + 不改价 + 历史不改 + 撞键 fail-closed）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，上一行 97 是同一分支上的下单页版面用例 OR-052）。机器判红通道 = `traces.tests` 的三个文件：`tests/unit_ci_workflows/test_v139_rename_hanzhe_item_and_fee_keys.py`（真 PG 执行 12 条：目录改名 / 组合成员名与键按码点序重算 / 价格·状态·source·sort_order 逐值不变 / 幂等 / 撞键 fail-closed 且整份回滚 / 终态对账有牙）、`tests/unit_ci_workflows/test_processing_catalog_seed.py`（V83 冻结面 + V139 净效果 == fixture，改名映射恰好 `{韩折: 韩褶}` 且真的作用在 V83 上）、`tests/unit_ci_workflows/test_option_fee_seed.py`（V77 冻结组合价目按 V139 改名后 == 生成器），逐条非空且真实存在；`traces.ci` = `pr-check.yml`（`ci workflow helper unit tests` 真跑前两者；`admin-api unit tests` 承载迁移的真库链路）⇒ 读数 97 → 98 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（CI 实测口径下的读数 = 98：本机实测 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 98}`，非按号推算）。"
+  },
+  {
+   "sha": "pending-pr-5835",
+   "date": "2026-09-30",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 99,
+   "note": "新业务需求（用户 2026-09-30 逐字：「制单人这个字段可以不用加到订单详情中，但是要加到订单列表中，并且支持根据制单人过滤」；issue #5835 —— 这是铁律 12 同日改判「新业务需求直接开单」后的**第一张**按新口径开的单）新增 1 条 `[backend-contract]` 用例（OR-053：订单列表「制单人」列 + 按制单人模糊过滤）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，98 → 99）。机器判红通道 = `traces.tests` 的两个文件：`frontend/admin-web/tests/unit/pages/orders-creator-filter.test.tsx`（5 条：列与缺值「—」/ 请求带独立 `creator` 参数 / 重置清空 / 不全并入 keyword / 行渲染后端值）与 `backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java`（建单落 `created_by`+`created_by_name` / 取不到 ⇒ 两列 NULL / `creator` 落 `created_by_name` 的 LIKE / 缺参不加条件）+ `UserServiceTest.java`（昵称优先、缺失回落 username；占位身份 internal-service ⇒ null）。真值登记 = `.github/templates/order.yml` 的 `order.creator-snapshot`。`no_channel_total` 仍为 0（两条通道都有）。"
+  },
+  {
+   "sha": "pending-pr-5845",
+   "date": "2026-10-01",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 100,
+   "note": "新业务需求（用户 2026-10-01 逐字：「买家未付款的订单要允许修改，现在缺失了」；issue #5842）新增 1 条 `[backend-contract]` 用例（OR-055：未付款（待付款）订单允许修改内容 —— 只有 pending 可改 / 金额服务端重算 / 按新明细重跑库存校验 / 审计留痕 / 同批落 #3352 选项 B 的加工单快照漂移发货守卫 / tripwire PG-014 改判）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1；上一行 99 是 #5835 的订单列表制单人用例 OR-053）。机器判红通道 = `traces.tests` 的四个文件：`backend/admin-api/src/test/java/com/migao/admin/service/OrderContentEditTest.java`（12 条：状态闸门 422 且零写入 / 金额服务端重算 / 应收−优惠≈实收 / 新明细库存重跑且不回滚 / 已有加工单拒绝 / 审计 before-after / 漂移守卫四态 / 发货路接线）、`backend/admin-api/src/test/java/com/migao/admin/controller/OrderItemImmutabilityTest.java`（4 条：编辑通道存在 ⇒ 守卫必须存在（PG-014 改判后的形态）+ Agent 侧两条原判据）、`frontend/admin-web/tests/unit/components/EditOrderContentModal.test.tsx`（5 条：初值 / payload 不含 subtotal·totalAmount / 加工项改而其余键原样带回 / 客户端闸门 / 失败不关弹窗）、`frontend/admin-web/tests/unit/pages/order-detail.test.tsx`（入口仅在待付款出现、点击挂载弹窗），逐条非空且真实存在；`traces.ci` = `pr-check.yml`（`admin-api unit tests` 跑前两者、`admin-web typecheck + unit tests` 跑后两者）⇒ 读数 99 → 100 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变）。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（读数取自本 PR 的本地 gate 实跑：`ci workflow helper` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 100}` vs 锚点 99，非按号推算）—— 该轮 gate 正是被这条挡住才发现的。"
+  },
+  {
+   "sha": "pending-pr-5840",
+   "date": "2026-10-01",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 101,
+   "note": "用户报障 + 新业务需求（用户 2026-10-01 逐字：「新增订单时，未输入加工费组合价格但是提交成功了，缺少了必要的校验」；issue #5840）新增 1 条 `[backend-contract]` 用例（OR-054：管理端「新增订单」提交准入 —— 加工费未定价阻断 / 客户信息 + 物流两项必填 / 折叠态下报错可定位）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1）。机器判红通道 = `traces.tests` 的两个文件：`frontend/admin-web/tests/unit/pages/orders-new-submit-gate.test.tsx`（8 条：未定价阻断 / 缺选配放行 / 物流必填 + 折叠区自动展开 / 汇总逐条可点 / 组卡收起时自动展开 / 用料来源收起态可见 / 死键可见 / **类级元守卫**「汇总必须全量派生自 errors」）与 `backend/admin-api/src/test/java/com/migao/admin/controller/OrderCreateRequiredFieldsTest.java`（5 条：三字段各缺一 ⇒ 422 且不调 service / 空白串同样拒 / 齐备 ⇒ 200）。真值登记 = `.github/templates/order.yml` 的 `order.admin-new-order-submit-gate`。`no_channel_total` 仍为 0。"
+  },
+  {
+   "sha": "pending-pr-5913",
+   "date": "2026-10-01",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 102,
+   "note": "用户走查 + 新业务需求（用户 2026-10-01 逐字：「点击查看跳转到订单详情，这设计合理吗」→ 裁定改法 A；issue #5913）新增 1 条 `[backend-contract]` 用例（UI-026：跨权限域跳转入口按目标域守卫码显隐 —— 生产看板「订单详情」+ 售后工单「订单号」）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1；上一行 101 是 #5840 的 OR-054）。机器判红通道 = `traces.tests` 的三个文件：`frontend/admin-web/tests/unit/cross-domain-nav-permission-guard.test.ts`（4 条：普查面非空 + 判别力自证（跨域未 gating 必红 / gating 放行 / 同域不在射程 / 源不在守卫组不在射程）+ 全仓扫描 + 豁免台账不腐坏）、`frontend/admin-web/tests/unit/pages/production-board.test.tsx`（订单详情按钮跳转 / 无 order:list 不渲染 + 反向对照 / 文案全页恰 1 条且不在 table 内）、`frontend/admin-web/tests/unit/pages/after-sales-detail.test.tsx`（订单号：无 order:list 时不再是入口 + 持码时可点），逐条非空且真实存在；`traces.ci` = `pr-check.yml`（admin-web 腿跑这三个 vitest）⇒ 读数 101 → 102 是**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**（读数取自本 PR 的本地 gate 实跑：`ci workflow helper` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 102}` vs 锚点 101，非按号推算）—— 该轮 gate 正是被这条挡住才发现的。"
+  },
+  {
+   "sha": "pending-pr-5923",
+   "date": "2026-10-01",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 103,
+   "note": "新业务需求（用户 2026-10-01 走查截图裁定：「放到新增商品标题右侧合适位置」+ 建单页同步对齐；issue #5918）新增 1 条 `[backend-contract]` 用例（PR-120：商品页「拍照 / 上传识别」入口进「新增商品」标题卡片内的标题行右侧、识别在重置前；含类级元守卫「渲染点必须登记落点 + 容器锚与运行期证据双向可查」）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，102 → 103）。机器判红通道 = `traces.tests` 的三个文件：`frontend/admin-web/tests/unit/pages/products-new-recognize-entry.test.tsx`（3 条：落点在标题卡片内且与重置同排 / 选图→上传→识别→回填且零 createProduct / 回填后仍留在标题卡片内）、`frontend/admin-web/tests/unit/recognize-entry-placement-guard.test.ts`（6 条：未登记即红 / 台账双向 / 容器锚与运行期证据逐字可查 / 判别力自证）、`frontend/admin-web/tests/unit/pages/orders-new-layout.test.tsx`（既有判据 2：建单页不退化），逐条非空且真实存在。同一 PR 还**改判**了 PR-044（卷长文案正名为标称值：新增判据 5 + 补 `traces.tests` 的前端三条）—— 它本就是计入本读数的存量条目（`[backend-contract]` + `expectations: []`）⇒ 读数不变。改前实测读数（本包 5 个测试文件）：`9 failed / 43 passed`。真债务 `no_channel_total` 仍为 **0**。"
+  },
+  {
+   "sha": "pending-pr-5944",
+   "date": "2026-10-02",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 104,
+   "note": "issue #5944（deploy 腿 `set -u` 未定义变量 lint **把 shell 注释一起扫** ⇒ 注释里写 `$foo` 假红；实测把 PR #5943 挡了两次、作者只能把注释改写成不含 `$` 的措辞）新增 1 条 `[backend-contract]` 用例（MC-059）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，103 → 104）。机器判红通道 = `traces.tests` 的 `tests/unit_ci_workflows/test_deploy_leg_run_undefined_vars.py`（判据 4~5：注释语料 ⇒ `[]` / 可执行行 ⇒ 具名红 / 4 条负例锚 / 注入式双向自证 / 同源单一实现；修前红实测 3 failed / 12 passed），非空且真实存在；`traces.ci` = `pr-check.yml` 的 `ci workflow helper unit tests` job（实际跑该 pytest）。真债务 `no_channel_total` 仍为 **0**（不变）。"
+  },
+  {
+   "sha": "pending-pr-5948",
+   "date": "2026-10-02",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 105,
+   "note": "issue #5948（「剥注释实现全仓只许一份」的唯一性守卫扫描面只有 `.github/**` ⇒ `tests/**` 里可静默再写一份同名同义实现）新增 1 条 `[backend-contract]` 用例（MC-060）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，104 → 105）。机器判红通道 = `traces.tests` 的 `tests/unit_ci_workflows/test_automerge_bot_safe_path.py`（判据 11 系列 8 条：整仓扫描面 + 只许缩短的活豁免台账 + 陈旧红 + 四条注入式红证，含反向对照），非空且真实存在；`traces.ci` = `pr-check.yml` 的 `ci workflow helper unit tests` job（实际跑该 pytest）。真债务 `no_channel_total` 仍为 **0**（不变）。"
+  },
+  {
+   "sha": "pending-pr-5967",
+   "date": "2026-10-02",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 106,
+   "note": "issue #5955（日报卡片面 proactive 四态可视化）新增 1 条 `[backend-contract]` 用例（DA-021）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，105 → 106）。机器判红通道 = `traces.tests` 的四处真测试文件（`backend/ai-agent-service/tests/test_briefing_proactive_status_visibility.py`、`backend/admin-api/src/test/java/com/migao/admin/service/DailyBriefingServiceTest.java`、`backend/admin-api/src/test/java/com/migao/admin/controller/BriefingControllerTest.java`、`frontend/admin-web/tests/unit/components/ProactiveStatusPanel.test.tsx` + `frontend/admin-web/tests/unit/components/BriefingProactiveStatus.test.tsx`），非空且逐条真实存在；`traces.ci` = `pr-check.yml`。真债务 `no_channel_total` 仍为 **0**（不变）。"
+  },
+  {
+   "sha": "pending-pr-5982",
+   "date": "2026-10-02",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 107,
+   "note": "issue #5982（缺必填 @RequestParam 一律 500：GlobalExceptionHandler 缺 MissingServletRequestParameterException 分支）新增 1 条 `[backend-contract]` 用例（API-008）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，106 → 107）。机器判红通道 = `traces.tests` 的两个真测试文件（`backend/admin-api/src/test/java/com/migao/admin/config/GlobalExceptionHandlerCoverageTest.java`：分支台账 ⇄ 反射双向一致 / 绑定族豁免台账只许缩短 / 真 Spring 分发链 4xx 行为判据 / 判别力自证；`backend/admin-api/src/test/java/com/migao/admin/controller/InboundOrderOpeningImportRequiredParamTest.java`：真端点缺 importRunId ⇒ 400 + 字段名，修前实测 `Status expected:<400> but was:<500>`），非空且逐条真实存在；`traces.ci` = `pr-check.yml`（`admin-api unit tests` 跑这两个类）。`sha` 沿用 `pending-pr-*` 约定（合并前没有可引用的提交；此处填 issue 号）。真债务 `no_channel_total` 仍为 **0**（不变）。"
+  },
+  {
+   "sha": "pending-pr-5987",
+   "date": "2026-10-02",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 108,
+   "note": "issue #5987（API 建号缺省岗位/角色 = operator 的 fail-open 默认：仅 API 直连可达，页面强制选岗位走不到）新增 1 条 `[backend-contract]` 用例（API-023）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，107 → 108）。机器判红通道 = `traces.tests` 的三个真测试文件：`backend/admin-api/src/test/java/com/migao/admin/controller/AdminUserControllerPostMissingPositionTest.java`（真端点 + 真 @RestControllerAdvice：缺 position 且缺 role/roleIds ⇒ 422 且 `verifyNoInteractions(userService)`；显式 role 空白 ⇒ 422；只带 position / 只带 role 两条正向对照），`backend/admin-api/src/test/java/com/migao/admin/service/EmployeeGrantDefaultRoleMetaGuardTest.java`（服务侧空白 role ⇒ 422 且 insert 一次都不发生 + 正向对照；类级元守卫「缺省/授权角色字面量赋值点 ⇄ 台账双向相等、只许缩短、条数现取」+「建号缺省位不得含写权限字面量」+ 扫描器判别力与注释掩码自证），`backend/admin-api/src/test/java/com/migao/admin/service/UserServiceTest.java`（`createUser_BlankRole_Rejected` 反回归：修前 1 failed / 修后全绿）。修前实测（注入 = 只 stash 两个 main 文件、测试保留）：`Tests run: 68, Failures: 7`（其中 HTTP 两条 `expected:<422> but was:<200>`）⇒ 该读数**有牙**。`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`（真跑这三个类）⇒ 读数为**合法新增**（#5079 已裁定的口径：`[backend-contract]` 用例本就不进 agent-eval），真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**（本机实跑 `test_i3_*` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 108}` vs 锚点 107，非按号推算）。"
+  },
+  {
+   "sha": "pending-pr-6090",
+   "date": "2026-10-03",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 109,
+   "note": "issue #6090（图片能力 A 档补齐：B 端 image_recognize 用例销账 + 恒真式期望收缩 + 设计文档回填）—— 读数 +1（108 → 109）的**唯一**来源是 **CH-023**：它的恒真式期望 `product_search or interact or direct_reply` 被删除后，`expectations: []` 且无机器计分型 `data_check` ⇒ `scoring_assertion_count` 1 → 0。CH-023 **按设计不进 agent-eval**（`skip_reason` 以 `[backend-contract]` 开头；`traces.tests` 非空且逐条真实存在：`backend/ai-agent-service/tests/test_graph_skills.py`（TestVisionGroundedGuide 契约断言）+ `backend/ai-agent-service/tests/test_clarify_grounded.py`（关键词提取纯函数））⇒ 机器判红通道 = `traces.tests` 豁免通道，**不是**真债务（真债务 `no_channel_total` 仍为 **0**）。本 PR 另两条改动**不进**本读数：CH-021 收缩后 `scoring_assertion_count` 仍为 1（保留 1 条机器计分型 data_check：发图轮 `success=true`），CH-044 非 `[backend-contract]`（`scoring_assertion_count` ≥ 1）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机按 CI 读数复算 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 109}`（CI run 37073342290 的 `ci workflow helper unit tests` 首轮报 109 vs 锚点 108）——**不是**按号推算。"
+  },
+  {
+   "date": "2026-10-03",
+   "backend_contract_scoring_zero": 110,
+   "no_channel_total": 0,
+   "note": "issue #6114（默认配置下纱帘单勾任一特殊选项整单 fail-closed：开租种子的规则级部位限定缺口）新增 1 条 `[backend-contract]` 用例（PG-066）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，109 → 110）。机器判红通道 = `traces.tests` 的两个真测试文件（`backend/admin-api/src/test/java/com/migao/admin/service/ProductionSeedOptionRulePositionTest.java`：内容腿 3 条 + 行为腿 3 条，覆盖「开租种子逐条 position='布帘'」「纱帘单能派工且不出布帘变体」「布帘单照旧插花边-布」；`tests/unit_ci_workflows/test_production_catalog_seed.py`：类级元守卫读生产源码 planRouteRules 的特殊选项分支 + 注入式判别力自证），两者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `test_i3_anchor_matches_reality_and_is_only_shrinking` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 110}` vs 锚点 109（并用 `assertion_taxonomy.scoring_assertion_count` 逐条复算：PG-066 = 0）——**不是**按号推算。"
+  },
+  {
+   "sha": "pending-pr-6123",
+   "date": "2026-10-03",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 111,
+   "note": "issue #6123（#6114 的同类未固化面：**加工项触发**维引用的工序同样只有布帘变体，position=NULL ⇒ 带 `花边`/`扣环`/`接高` 的**纱帘单**整单 fail-closed）新增 1 条 `[backend-contract]` 用例（PG-067）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，110 → 111）。机器判红通道 = `traces.tests` 的两个真测试文件（`backend/admin-api/src/test/java/com/migao/admin/service/ProductionSeedProcessingItemRulePositionTest.java`：内容腿 2 条 + 行为腿 2 条（纱帘/布帘两侧夹住）+ 类级判据 2 条（每条种子规则的 (operation, position) 在其适用形态下必须解析出变体；两条触发维都在射程）；`tests/unit_ci_workflows/test_processing_item_rule_position.py`：读生产源码 `planRouteRules` 的加工项分支 `position` 实参 + 命名常量声明 + 注入式判别力自证，另有「两条触发维都必须被守卫钉住」的类级判据），两者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py` 的 `test_i3_*` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 111}` vs 锚点 110 —— **不是**按号推算。"
+  },
+  {
+   "sha": "pending-pr-6226",
+   "date": "2026-10-03",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 112,
+   "note": "issue #6226（P3·读面：`Map.of()` 空表 + **未经判空的空键索引** ⇒ 加工项列表 / 加工单列表潜在 500）新增 1 条 `[backend-contract]` 用例（PG-069）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，111 → 112）。机器判红通道 = `traces.tests` 的三个真测试文件，均非空且真实存在：`backend/admin-api/src/test/java/com/migao/admin/service/ProcessingItemServiceTest.java`（getProcessingItems_AllCategoryIdsBlank_RendersInsteadOf500：键全空夹具 ⇒ 修前 `ImmutableCollections$MapN.get` 抛 NPE、修后正常渲染 null 且零次 IN 查询）、`backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java`（listWithAllNullOrderIdsRendersInsteadOfFiveHundred：同形）、`tests/unit_ci_workflows/test_mapof_family_null_key_index.py`（类级元守卫：未登记即红 / 台账只许缩短 / `safe-literal` 声明须机械为真 / 已修站点回归锁 / 6 条判别力自证）。`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`（另有 `ci workflow helper unit tests` 跑元守卫）。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的 `test_i3_*` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 112}` vs 锚点 111 —— **不是**按号推算。"
+  },
+  {
+   "sha": "pending-pr-6231",
+   "date": "2026-10-03",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 114,
+   "note": "issue #6221（第三轮深度测试 P2·涉钱·精度：退款金额 `0.001` 被接受却在写库时被静默舍成 `0`）新增 2 条 `[backend-contract]` 用例（AS-013 / AS-014）—— 它们按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +2）。本次重锚的基线是**已含 main 侧** `backend_contract_scoring_zero: 112` 的那一行（112 里已含 #6234 的 PG-069；本分支 rebase 到 `644e98dc6` 后**实测**值 = 112 + 2 = **114**，不是按号从 111 推算）。机器判红通道 = `traces.tests` 的三个真测试文件（`backend/admin-api/src/test/java/com/migao/admin/service/MoneyScaleTest.java`：准入本体 5 条（≤2 位合法且**原样返回** / 按**有效**小数位判（`2.700`、`0.010` 合法）/ 3 位 ⇒ 422 可行动文案 / `null` 不归一成 0 / PG 半进位方向登记）；`backend/admin-api/src/test/java/com/migao/admin/service/OrderRefundMoneyPrecisionTest.java`：7 条（`0.001` 与 `0.004`/`0.005`/`0.009` ⇒ 422 且**订单与资金流水零写入**、`refund_at` 不写；HTTP 入口同判据；`0.01` 正对照两侧逐字相等；累计封顶与状态白名单正对照）；`backend/admin-api/src/test/java/com/migao/admin/service/MoneyEntryPrecisionMetaGuardTest.java`：11 条（全仓金额入口台账 19 文件 / 39 处写面 + 6 类注入式判别力自证 + 反向对照 + DEBT 现取 ≤ 冻结上限）），三者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的 `test_i3_*` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 114}` vs 锚点 112 —— **不是**按号推算。⚠️ 先后顺序：本 PR rebase 期间 main 连续前进（#6233 / #6234 / #6236），本行取的是**当时实测**；若 #6230（其新增 AS-011 / AS-012 亦为同类用例）先合入 main，main 会变成 114，本 PR 再同步后实测将是 116，届时**按那时的实测值**再追加一行（不预判别人的号）。"
+  },
+  {
+   "sha": "pending-pr-6240",
+   "date": "2026-10-03",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 116,
+   "note": "issue #6224（P3·售后：`refundMethod` 是零生产者字段 —— DB 列无写点、响应里只有「实体 getter → DTO setter」直通；用户 2026-10-03 逐字裁定「退款方式 不用记」⇒ 下线该字段）新增 2 条 `[backend-contract]` 用例（AS-015 实例判据 / MC-076 类级元守卫）—— 它们按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 114 + 2 = **116**）。机器判红通道 = `traces.tests` 的两个真测试文件（`backend/admin-api/src/test/java/com/migao/admin/controller/AfterSalesRefundMethodRetiredTest.java`：3 条（三个 Java 载体上 refundMethod 字段/getter/setter 全无 + 列表响应体无该键 + 详情响应体无该键，两条响应判据各带正对照）；`backend/admin-api/src/test/java/com/migao/admin/contract/FrontendUnionFieldProducerMetaGuardTest.java`：12 条（语料 19 个联合类型字段 ⇄ 零生产者台账双向相等 + 真语料注入红证 + 6 类内存注入红证 + 反向对照 + 扫描面 fail-closed + 台账只许缩短）），两者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的 `test_i3_*` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 116}` vs 锚点 114 —— **不是**按号推算。"
+  },
+  {
+   "sha": "pending-pr-6242",
+   "date": "2026-10-03",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 117,
+   "note": "issue #6222（P3·读面：列表端点 `size < 0` ⇒ `total=0` 却返回整页行，自相矛盾）新增 **1** 条 `[backend-contract]` 用例（PG-070）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 116 + 1 = **117**）。机器判红通道 = `traces.tests` 的四个真测试文件：`backend/admin-api/src/test/java/com/migao/admin/validation/PaginationParamGateTest.java`（判定本体：size<0 ⇒ 400 与 `error.details[0].field=size`、非整数形态 ⇒ 400、**正向钉子** `nonPositivePage_isAccepted` / `zeroSize_isAccepted`、白名单外不判、参数集入口）；`backend/admin-api/src/test/java/com/migao/admin/controller/PaginationParamGateEndpointTest.java`（真 MVC 分发链：三个端点 size=-5 ⇒ 400 + service 零调用、正对照 size=20/0/无参数 ⇒ 200、摘线对照，10 条）；`backend/admin-api/src/test/java/com/migao/admin/validation/PaginationParamGateWiringTest.java`（接线：WebConfig 注册 + 排在授权/归属之后，2 条）；`backend/admin-api/src/test/java/com/migao/admin/security/PermissionPreHandleGateTest.java`（类级注册判据同批扩到三条闸）；四者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 117}` vs 锚点 116 —— **不是**按号推算。"
+  },
+  {
+   "sha": "pending-pr-6246",
+   "date": "2026-10-03",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 117,
+   "note": "issue #6237（P2·待核验·涉库存：核验 #6220 台账观察项『入库过账无条件置 POSTED ⇒ 并发重复建批次 / 重复入库』）新增 1 条 `[backend-contract]` 用例（OR-057）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 116 + 1 = **117**）。机器判红通道 = `traces.tests` 的两个真测试文件（`backend/admin-api/src/test/java/com/migao/admin/service/InboundPostConcurrentRealDbTest.java`：3 条真库并发判据（N=4 并发过账同一 draft 单 ⇒ 恰一个赢家 / 库存恰加一次 / 批次与台账各恰 2 行，另带串行正对照与带 Idempotency-Key 的工人入口）；`backend/admin-api/src/test/java/com/migao/admin/service/AfterSalesSideEffectConcurrencyMetaGuardTest.java`：类级元守卫，本单把 `InboundOrderService#post` 从豁免改成在册且兑现），两者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `MIGAO_REQUIRE_REALDB=1 python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -p no:cacheprovider` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 117}` vs 锚点 116 —— **不是**按号推算。"
+  },
+  {
+   "sha": "pending-pr-6242",
+   "date": "2026-10-03",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 118,
+   "note": "issue #6222（P3·读面：列表端点 `size < 0` ⇒ `total=0` 却返回整页行）的 PG-070 是**本读数增量的原因（+1）**；本行另一部分增量（117 → 118 里的 +1）来自 rebase 期间 main 前进带入的 `[backend-contract]` 用例 —— **按 `_how_to_regen` 取实测值，不按号推算**（本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 118}`）。PG-070 的机器判红通道 = `traces.tests` 的四个真测试文件（`backend/admin-api/src/test/java/com/migao/admin/validation/PaginationParamGateTest.java` 判定本体 / `backend/admin-api/src/test/java/com/migao/admin/controller/PaginationParamGateEndpointTest.java` 真 MVC 分发链 / `backend/admin-api/src/test/java/com/migao/admin/validation/PaginationParamGateWiringTest.java` 接线 / `backend/admin-api/src/test/java/com/migao/admin/security/PermissionPreHandleGateTest.java` 类级注册判据），四者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**。"
+  },
+  {
+   "sha": "pending-pr-6249",
+   "date": "2026-10-03",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 119,
+   "note": "issue #6238（P2·待核验·涉钱：工序改价**并发重复记账** —— `ProductionOperationCommandService#update` 是「读旧价 → 判『价变了吗』 → 条件追加版本行」的读-判-写，同一次调价被并发重复提交 ⇒ 各追加一行；真库实测 N=4 × 3 轮全为「版本账 5 行 / 新价行 4 行」）新增 1 条 `[backend-contract]` 用例（PP-022：并发面核验 + 修法 = 先取工序行排他锁再读旧价）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 118 + 1 = **119**；118 = 本单 rebase 到含 #6242（PG-070）/ #6246（OR-057）的 main 之后**实测**的基线）。机器判红通道 = `traces.tests` 的两个真测试文件，均非空且真实存在：`backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationPriceVersionConcurrentRealDbTest.java`（4 条：并发主判据（库内事实 → 版本账恰追加 1 行、当前价 = 最新版本行）/ 串行正对照 + 同价重复提交幂等 / 库层零兜底实测（除主键外无唯一约束）/ 入口面无 Idempotency-Key；注入式红证 = 摘掉 `FOR UPDATE` ⇒ 3 轮全红）与 `backend/admin-api/src/test/java/com/migao/admin/service/AfterSalesSideEffectConcurrencyMetaGuardTest.java`（本单把台账该条 `unverified` → `entries`，元守卫窄跑 2/0/0）；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的 `test_i3_*` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 119}` vs 锚点 118 —— **不是**按号推算。"
+  },
+  {
+   "sha": "pending-pr-6254",
+   "date": "2026-10-03",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 120,
+   "note": "issue #6254（P3·发货方式 shippingMethod **半接线**收口：工人/商家发货写面 `shipping_method` 恒为 NULL，而前端兜底把 NULL 当 `logistics`）新增 **1** 条 `[backend-contract]` 用例（OR-059）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 119 + 1 = **120**）。机器判红通道 = `traces.tests` 的两个真测试文件，均非空且真实存在：`frontend/admin-web/tests/unit/lib/data-adapter.test.ts`（未采集 ⇒ 不下发该键 / 正对照真 logistics 仍下发 / `shippingMethodForEdit` 的 NULL ⇒ undefined 与 none·logistics 原样透传 / 接线判据（订单详情回填点真走本函数且不再有旧兜底表达式））与 `frontend/admin-web/tests/unit/components/LogisticsForm.test.tsx`（未采集 ⇒ 省略该键 / 已记录 none ⇒ 仍 none / 正对照 logistics ⇒ 仍 logistics）；`traces.ci` = `pr-check.yml` 的 `admin-web typecheck + unit tests`（真跑这两个 vitest）。修前红实测 = `6 failed / 41 passed`（两个文件），修后绿 = `111 passed`（4 个文件）。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 120}` vs 锚点 119 —— **不是**按号推算。"
+  },
+  {
+   "sha": "pending-pr-6248",
+   "date": "2026-10-03",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 121,
+   "note": "issue #6248（P3·涉库存核验包：入库批次号 `nextFreeBatchNo` 跨请求取号竞争）新增 1 条 `[backend-contract]` 用例（OR-060）—— 它按设计**不进 agent-eval**（无 LLM 写路径：入库过账不经黄金策 Agent 工具，B 端 PATCH action=post 与工人入口都是 admin-api 服务层；`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1）。机器判红通道 = `traces.tests` 的两个真测试文件：`backend/admin-api/src/test/java/com/migao/admin/service/BatchNoTakeRaceRealDbTest.java`（真 PG 六条：单实例并发 4×3 轮零重号 / 串行正对照 / 重启落在已占头部 fail-closed 409 / 会合点注入双向（修前 500×2、修后 200×2）/ 号段耗尽 409 / 零注入对照）与 `backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderServiceTest.java`（写号被抢 ⇒ 换号取下一个候选、最终号三处同源同值），两者均非空且真实存在；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**。本行按本文件 `_how_to_regen` 在同一 PR 内**实测重锚**：rebase 到 main（`674a56f02`，`#6263` 合入后其读数为 **120**）之后跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` ⇒ **6 passed**，`entries` 与实测读数同为 **121**（= rebase 后 main 的 120 + 本单新增的这 1 条；不按号推算，CI 是权威）。⚠️ 本单的用例号原取 **OR-060** 之前曾与在飞 PR #6263（`fix/6254-shipment-path-wiring`）**同占 OR-059** ⇒ 按「PR 号小 / 先开者保留」裁定（#6263 createdAt 11:48:13Z 早于 #6264 的 12:00:51Z），本单改用 **OR-060**（全 refs 复核空闲）。"
+  },
+  {
+   "sha": "pending-pr-6267",
+   "date": "2026-10-03",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 122,
+   "note": "issue #6262（P3·订单流：发货后 N 天自动完成订单，用户 2026-10-03 逐字裁定 B）新增 1 条 `[backend-contract]` 用例（**OR-061**）—— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 121 + 1 = **122**）。机器判红通道 = `traces.tests` 的三个真测试文件，均非空且真实存在：`backend/admin-api/src/test/java/com/migao/admin/service/AutoCompleteShippedScanServiceTest.java`（12 条判定本体：死线/静默/幂等/隔离/副作用绑定 RETURNING/可观测/失败显式）、`backend/admin-api/src/test/java/com/migao/admin/service/OrderAutoCompleteSqlGuardTest.java`（5 条结构判据：单条带谓词 SQL + RETURNING + 两条发货路都写 shipped_at）、`backend/admin-api/src/test/java/com/migao/admin/service/AutoCompleteShippedRealDbTest.java`（6 条真库：满期才完成/未满不动/非 shipped 不动/逐租户隔离 + 反向对照/集群双连接并发只生效一次/幂等）；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 122}` vs 锚点 121 —— **不是**按号推算。⚠️ **跨 refs 撞号两次（本单实测，逐条登记）**：本包 19:45 取号时 main 侧最大为 OR-058 ⇒ 分配器给 **OR-059**；20:31 main 的 #6263 也取了 OR-059 ⇒ 让号改 **OR-060**；21:12 起 `.github/cases/claims/6264-OR-060.json`（#6264）显示 OR-060 也已被占 ⇒ 再让号为 **OR-061**（origin/main 用例库与 claim 台账均 0 命中；在飞 PR 面手工核过：无任何 open PR 的 claim 目录或 order.yml 提到 OR-061）。"
+  },
+  {
+   "sha": "pending-pr-6253",
+   "date": "2026-10-03",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 123,
+   "note": "包级定点清单包（issue #6250，本 PR #6253，rebase 到含 #6267 的 main 后实测）新增 1 条 `[backend-contract]` 用例 **PK-001**（`scripts/pkg-narrow-check.sh` 的判据；`expectations: []` ⇒ 按设计**不进 agent-eval**），机器判红通道 = `traces.tests` 里的 `tests/unit_ci_workflows/test_pkg_narrow_check.py`（真脚本 + runner 桩，双向自证 + 只读 + fail-closed）⇒ 读数 122 → **123** 是**合法新增**（同上一行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内**追加：取值 = 本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 的实测读数 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 123}`（**不是**按号推算）。"
+  },
+  {
+   "sha": "pending-pr-6311",
+   "date": "2026-10-04",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 124,
+   "note": "issue #6301（P2·幂等并发：同 runId 并发盘点 ⇒ 幂等回执而非 500）新增 1 条 `[backend-contract]` 用例 **MC-081**（类级元守卫 `tests/unit_ci_workflows/test_idempotent_unique_write_guard.py` + 冻结台账 `tests/unit_ci_workflows/unique_write_ledger.json`；`expectations: []` ⇒ 按设计**不进 agent-eval**）⇒ 读数 123 → **124** 是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内**追加：取值 = rebase 到 main（`6933602b7`）后本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 的实测读数 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 124}`（**不是**按号推算）。"
+  },
+  {
+   "sha": "pending-pr-6313",
+   "date": "2026-10-04",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 125,
+   "note": "issue #6299 + #6300（P1·库存并发超卖 / P2·台账并发同基）新增 **2** 条 `[backend-contract]` 用例（**OR-062** / **PR-123**）—— 两条按设计**不进 agent-eval**（无 LLM 写路径：确认收款与入库过账都是 admin-api 服务层，不经黄金策 Agent 工具）。**本读数 +1（124 → 125）**：`scoring_zero_total()` 数的是 `scoring_assertion_count == 0` 的用例，其中 **OR-062 的 `expectations: []` ⇒ 计数 0**（+1），而 **PR-123 带 `expectations: [direct_reply]` ⇒ 计数 1**（与同批 #6302 的 PR-122 同形 ⇒ 不进本读数）；现取 `assertion_taxonomy.scoring_assertion_count()` 复核：OR-062 = 0 / PR-123 = 1。机器判红通道 = `traces.tests` 的真测试文件，均非空且真实存在：`backend/admin-api/src/test/java/com/migao/admin/service/OrderConfirmPaymentStockRaceRealDbTest.java`（真 PG：3 轮并发恰一个赢家 + 落败 422 + 库存不为负且 == 独立算式 + 台账链首尾相接 + 串行正对照）、`backend/admin-api/src/test/java/com/migao/admin/service/InboundPostLedgerChainRaceRealDbTest.java`（真 PG：净增量正对照 + 链式相接 + 行内自洽 + 串行正对照）、`backend/admin-api/src/test/java/com/migao/admin/service/StockDeductionAndLedgerAtomicityMetaGuardTest.java`（类级元守卫 4 条 + 判别力自证）、`backend/admin-api/src/test/java/com/migao/admin/service/StockChangeTest.java`（唯一工厂 = mapper 的 RETURNING 行）、`backend/admin-api/src/test/java/com/migao/admin/mapper/ProductSkuMapperTest.java`（SQL 形态契约：`GREATEST` 判据反向翻转 + 下限谓词）、`InboundOrderServiceTest.java` / `OrderStockSkuKeyFamilyTest.java`（调用点契约）；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`（本单实测 4045 passed / 0 failed / 1 skipped）。红证（注入式双向对照，真 PG，rebase 后同树复现）：把 `deductStock` 退回 `GREATEST(…,0)` + 无下限谓词 ⇒ `成功数=2 库存=10.0→0.0`；把 `post` 的台账读数退回快照 ⇒ 两行同基、`assertChain` 判红。真债务 `no_channel_total` 仍为 **0**（不变）。**本行按 `_how_to_regen` 在同一 PR 内实测重锚**：rebase 到 `dd98b0016`（main 侧末行 = `pending-pr-6311` 的 124）之后实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 报 125 vs 锚点 124 ⇒ 本行取 **125**（**不是**按号推算）。⚠️ 本单用例号在 rebase 时**让号**：原取 **PR-122**，与已合并的 #6302（PR #6310）撞号 ⇒ 按仓内裁定「PR 号小 / 先开者保留」让为 **PR-123**（`test_case_header_ids_match_block_ids` 也据此纠出并已修正围栏头）。"
+  },
+  {
+   "sha": "pending-pr-6318",
+   "date": "2026-10-04",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 126,
+   "note": "issue #6318（服务级绿 ≠ 端点级绿：端点级并发判据 + 日志面判据 + 类级元守卫）新增 1 条 `[backend-contract]` 用例 **MC-082**（端点级判据 `backend/admin-api/src/test/java/com/migao/admin/service/StockBatchStocktakeEndpointRaceRealDbTest.java` + 元守卫 `tests/unit_ci_workflows/test_endpoint_receipt_race_guard.py` + 冻结台账 `tests/unit_ci_workflows/endpoint_receipt_race_ledger.json`；`expectations: []` ⇒ 按设计**不进 agent-eval**，机器判红通道在 `traces.tests` 的两个真测试文件里）⇒ 读数 125 → **126** 是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内**追加：取值 = rebase 到含 #6313 的 main（`843bed933`）后重渲染 `.github/render_cases.py`，再本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 的实测读数 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 126}`（**不是**按号推算）。"
+  },
+  {
+   "sha": "pending-pr-6295",
+   "date": "2026-10-04",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 127,
+   "note": "issue #6295（新租户入驻不种商品分类 ⇒ 开箱首建商品 422）新增 2 条 `[backend-contract]` 用例 —— **OB-006**（开租即种默认商品分类：真库判据 `backend/admin-api/src/test/java/com/migao/admin/service/NewTenantOnboardingCategoryRealDbTest.java` + mock 面 `ProductCategorySeedServiceTest.java` / `RegistrationServiceTest.java`）与 **MC-083**（类级元守卫 `tests/unit_ci_workflows/test_onboarding_required_seed_guard.py` + 豁免台账 `tests/unit_ci_workflows/onboarding_required_seed_ledger.json`）。两条 `expectations: []` ⇒ 按设计**不进 agent-eval**，机器判红通道在 `traces.tests` 里（逐条非空且真实存在）⇒ 读数 126 → **127**（两条里只有一条计入本指标：另一条带机器计分断言，不进 `scoring_assertion_count == 0` 集合）是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内**追加：取值 = 重渲染 `.github/render_cases.py` 后本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 的实测读数 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 127}`（**不是**按号推算）。"
+  },
+  {
+   "sha": "pending-pr-6422",
+   "date": "2026-10-06",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 128,
+   "note": "issue #6418（部署三腿 push 触发已死：合并凭据改用非内置 PAT）新增 1 条 `[backend-contract]` 用例 **MC-084**（判据 = `tests/unit_ci_workflows/test_automerge_merge_credential.py` 的实例判据 + 类级元守卫 + 8 条注入式红证与对照，以及 `tests/unit_ci_workflows/test_danger_scan.py::TestNewSecretAckChannel` 的 11 条；`expectations: []` ⇒ 按设计**不进 agent-eval**，机器判红通道在 `traces.tests`（两个文件均非空且真实存在）/ `traces.ci` = `pr-check.yml`）⇒ 读数 127 → **128** 是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变，且**不含**任何「改散文就能绿」的纸面项）。本行按 `_how_to_regen` 在**同一 PR 内**追加：取值 = **实测**（本单新增用例 ⇒ 重渲染 `.github/render_cases.py` 后，CI run `37423069355` 的 `ci workflow helper unit tests（后半）` 实测读数 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 128}`，本机同判据实跑一致），**不是**按号推算。"
+  },
+  {
+   "sha": "pending-pr-6436",
+   "date": "2026-10-06",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 129,
+   "note": "issue #6434（订单详情打印入口只在已发货/已完成：待付款 / 待发货 / 生产中补入口 + 入口矩阵类级守卫）新增 1 条 `[backend-contract]` 用例 **MC-085**（类级元守卫 = `tests/unit_ci_workflows/test_order_print_entry_matrix.py`：4 条真语料判据 + 5 条注入式判别力自证，含「只加注释 ⇒ 不红」的对照读数；实例判据 = `frontend/admin-web/tests/unit/pages/order-detail.test.tsx` 的表驱动六条）。同 PR 的另一条用例 **UI-090** 带机器计分断言 ⇒ **不**进 `scoring_assertion_count == 0` 集合，故计入本指标的只有 MC-085 一条 ⇒ 读数 128 → **129** 是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内**追加：取值 = 重渲染 `.github/render_cases.py` 之后本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 的实测读数 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 129}`（**不是**按号推算）。"
+  },
+  {
+   "sha": "pending-pr-6438",
+   "date": "2026-10-06",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 130,
+   "note": "issue #6432（工人档案「重置 PIN」：管理员拿到工人 PIN 的唯一出口）新增 2 条 `[backend-contract]` 用例 —— **UI-091**（实例判据：后端恢复重置/端点/前端弹窗 + 红证）与 **MC-086**（类级元守卫 = `tests/unit_ci_workflows/test_credential_rotation_pairing.py`：未配对即红 / 台账只许缩短 / 零命中即红 + 5 条内存判别力自证）。按 `scoring_assertion_count == 0` 口径**净 +1** ⇒ 读数 129 → **130** 是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。取值 = **实测**：本机 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 与 CI run（`ci workflow helper unit tests（后半）`）同读数 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 130}`，**不是**按号推算。"
+  },
+  {
+   "sha": "pending-pr-6437",
+   "date": "2026-10-06",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 131,
+   "note": "issue #6430（省料看板重设计）新增 **PR-127**（`[backend-contract]`、`expectations: []` ⇒ 按设计不进 agent-eval）⇒ `backend_contract_scoring_zero` 130 → 131；同批新增的 **UI-092**（原 UI-090，合并 main 时因 #6434 占用而重取号）走 `direct_reply` 通道 ⇒ 不计入本读数。本单实测读数 = 131，`entries` 已对齐末行（`no_channel_total` 仍恒为 0）。"
+  },
+  {
+   "sha": "pending-pr-6511",
+   "date": "2026-10-07",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 132,
+   "note": "issue #6508（磁盘水位×回收联动）+ issue #6505（被前置闸门挡住时的收口归因）新增 **MC-087**（`[backend-contract]`、`expectations: []` ⇒ 按设计不进 agent-eval，故按 `scoring_assertion_count == 0`口径计入本指标）⇒ `backend_contract_scoring_zero` 131 → 132 是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。取值 = **实测**：`python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` ⇒ `{'no_channel_total': 0, 'backend_contract_scoring_zero': 132}`，**不是**按号推算。"
+  },
+  {
+   "sha": "pending-pr-6616",
+   "date": "2026-10-09",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 134,
+   "note": "issue #6209（建品写面接入服务端幂等）新增 **PR-128** + **MC-088** 两条用例（均 `[backend-contract]`、`expectations: []` ⇒ 按设计不进 agent-eval，故按 `scoring_assertion_count == 0` 口径计入本指标）⇒ `backend_contract_scoring_zero` 132 → 134 是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。两条的机器判红通道 = `traces.tests`：PR-128 = `backend/admin-api/src/test/java/com/migao/admin/service/ProductCreateIdempotencyTest.java` + `…/ProductCreateIdempotencyRealDbTest.java` + `…/controller/ProductCreateIdempotencyEndpointTest.java`（逐条非空且真实存在，CI 腿 = pr-check.yml 的 `admin-api unit tests`）；MC-088 = `tests/unit_ci_workflows/test_idempotency_writeface_coverage.py`（CI 腿 = pr-check.yml 的 `ci workflow helper unit tests`）。取值 = **实测**：`python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` ⇒ `{'no_channel_total': 0, 'backend_contract_scoring_zero': 134}`，**不是**按号推算。"
+  },
+  {
+   "sha": "pending-pr-6621",
+   "date": "2026-10-09",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 135,
+   "note": "issue #6243（dev-worktree `list` 存在会话锁时 exit 1）新增 **MC-089**（`[backend-contract]`、`expectations: []` ⇒ 按设计不进 agent-eval，故按 `scoring_assertion_count == 0` 口径计入本指标）。⚠️ 本行是**合并 origin/main（4aa77136a，含 #6616）后**的读数：同批由 #6616 落地的 **MC-088** 与 **PR-128** 也走同一通道（132 → 134），本包再 +1 ⇒ 132 → **135** 全部是**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。取值 = **实测**：`python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` ⇒ `{'no_channel_total': 0, 'backend_contract_scoring_zero': 135}`，**不是**按号推算。"
+  },
+  {
+   "sha": "pending-pr-6626",
+   "date": "2026-10-09",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 136,
+   "note": "issue #6210（外键违例归口 4xx）新增 **MC-090**（`[backend-contract]`、`expectations: []`、`scoring_assertion_count == 0` ⇒ 按设计不进 agent-eval，按本指标口径计入）。⚠️ 本行是**合并 origin/main（4a9e5110c）后**的读数：上一行（#6621 的 MC-089）为 135，本包 +1 ⇒ **136**，属**合法新增**（同前几行口径，非回归），真债务 `no_channel_total` 仍为 **0**（不变）。取值 = **实测**：`python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` ⇒ `{'no_channel_total': 0, 'backend_contract_scoring_zero': 136}`，**不是**按号推算。同 PR 顺带补齐 **MC-089 缺失的 `traces.ci`**（#6621 落到 main 时漏了该格 ⇒ 豁免通道健全性判据 `test_i2_exempt_channel_is_actually_complete` 判「走了豁免通道却没有 traces.ci」= 假绿）—— 只补声明，不改判据。"
+  },
+  {
+   "sha": "pending-pr-6276",
+   "date": "2026-10-10",
+   "no_channel_total": 0,
+   "backend_contract_scoring_zero": 137,
+   "note": "issue #6276（order_logistics.shipped_at = 首次发货时刻）新增 **OR-064** 一条用例（`[backend-contract]`、`expectations: []` ⇒ 按设计不进 agent-eval，其机器判红通道 = `traces.tests` 三个文件：OrderLogisticsWriterTest / OrderLogisticsShippedAtBackfillRealDbTest / test_order_logistics_first_ship_backfill_guard.py）。读数**实跑现取**（不按号推算）：`python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` ⇒ `{'no_channel_total': 0, 'backend_contract_scoring_zero': 137}` ⇒ 只 +1（136 → 137）。`no_channel_total` 仍为 0（本用例有真实机器判红通道，不是恒绿散文）。"
+  }
+ ]
 }

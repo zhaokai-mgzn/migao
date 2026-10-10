@@ -126,6 +126,17 @@ REALDB_FILES: dict[str, str] = {
     # ② `ON CONFLICT … DO NOTHING` 的**影响行数**（1 = 本次生效 / 0 = 已记过）是「谁先到」的唯一依据；
     # ③ 「阈退的批次不再重复动 SKU 库存」是**并发下的落库读数**（库存链恰好一条 `60.0→58.5`）。
     _SVC + "BatchStocktakeConcurrentRealDbTest.java": "direct",
+    # issue #6276：物流「首次发货时刻」（`order_logistics.shipped_at` = **首次发货时刻**，
+    # 用户 2026-10-10 裁定）的补写真库判据 —— 四条只真 PG 能证的事：
+    # ① **「已有值不被覆盖」是 SQL 谓词的行为**（`UPDATE … SET shipped_at = created_at
+    #    WHERE … AND shipped_at IS NULL`）：mock 的 mapper 恒返回 stub 的东西 ⇒「已有值时那一行
+    #    真的没被改」在 mock 面上不可证（而那正是本单要守的全部内容）；
+    # ② **补进去的值取的是「该行自己的 `created_at`」**（列对列），不是调用方时钟 ——
+    #    判据把建行时刻种成**一个月前**，若实现写成 `now()` 当场红（实测注入 A）；
+    # ③ **只补一次**（幂等）：第二次补写 0 行 —— 谓词对自己已补的行不成立（实测注入 A′）；
+    # ④ **补写必须发生在 `updateById` 之前**：顺序写反时实体里的非 null 旧值会把结果盖回去
+    #    （判据 ③ 直接复刻坏顺序）。
+    _SVC + "OrderLogisticsShippedAtBackfillRealDbTest.java": "direct",
     # issue #6318：**端点级**（真 MockMvc 栈）的同 run id 并发判据 —— 只真 PG 能证的两条：
     # ① TOCTOU 窗口在**端点路径**上同样存在（6 个请求全部越过「查已记批次」后争抢
     #    `uk_batch_consumption_stocktake`）⇒ 「服务级绿、端点级红」这条差只有真库 + 真栈能照出来；

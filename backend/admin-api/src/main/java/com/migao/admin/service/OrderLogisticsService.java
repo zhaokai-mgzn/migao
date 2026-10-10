@@ -105,6 +105,7 @@ public class OrderLogisticsService extends ServiceImpl<OrderLogisticsMapper, Ord
             }
         }
 
+        orderLogisticsMapper.backfillShippedAtIfAbsent(logistics.getOrderId(), logistics.getTenantId());
         orderLogisticsMapper.updateById(logistics);
         log.info("更新物流信息成功: id={}, status={}", id, status);
         return logistics;
@@ -140,6 +141,20 @@ public class OrderLogisticsService extends ServiceImpl<OrderLogisticsMapper, Ord
         }
         orderLogisticsMapper.deleteById(id);
         log.info("删除物流记录成功: id={}", id);
+    }
+
+    /**
+     * 给**缺发货时刻**的物流行补上**首次发货时刻**（issue #6276）。
+     *
+     * <p>口径与本表两个写入方（{@link OrderLogisticsWriter}、
+     * {@code OrderController.updateLogistics}）共用**同一份**实现
+     * （{@link OrderLogisticsMapper#backfillShippedAtIfAbsent}）—— 两个「读-改-写」写面都必须在
+     * {@code updateById} 之前调它，否则 `shipped_at IS NULL` 的老行永远补不上。</p>
+     *
+     * @return 本次真正补到的行数（0 = 无需补 / 已经补过）
+     */
+    public int backfillShippedAtIfAbsent(String orderId, Long tenantId) {
+        return orderLogisticsMapper.backfillShippedAtIfAbsent(orderId, tenantId);
     }
 
     /**

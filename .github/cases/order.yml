@@ -4290,3 +4290,39 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: OR-064
+    legacy_id: ""
+    title: "物流「首次发货时刻」（order_logistics.shipped_at）：更新路径**只在为空时**补、已有值一律不覆盖（issue #6276）"
+    domains:
+      - order
+      - api
+      - backend
+    tier: normal
+    tags:
+      - order
+      - logistics
+      - shipped-at
+      - data-quality
+      - backend-contract
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-10 裁定（issue #6276）：shipped_at = **首次发货时刻**（排除「最近一次改物流时刻」那条口径）"
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 **已有值不得被覆盖**（改一次运单号 ≠ 改发货时刻）：① 真库直调补写语句（不经 updateById ⇒ 不被掩盖）⇒ 影响行数 **0**、该列逐字不变；② 端到端走生产 upsert 之后仍逐字等于原值（夹具刻意让 created_at 与真实首次发货时刻**不同** ⇒ 用 created_at 或 now() 顶掉会当场红）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderLogisticsShippedAtBackfillRealDbTest.java 的 existingShippedAtIsNeverOverwrittenByAnUpdate"
+      - "判据 2·🔴 **空值 + 一次更新 ⇒ 补上且只补一次**：`shipped_at IS NULL` 的行经生产 upsert 后取值 = **该行自己的 created_at**（夹具把它种成一个月前 ⇒ 写成 now() 当场红）；第二次更新不改变它，且补写语句第二次返回 0 行（幂等）。执行点 = 同文件 nullShippedAtIsBackfilledWithFirstShipMomentExactlyOnce"
+      - "判据 3·**补写必须发生在 updateById 之前**：真库复刻「先 updateById 再补写」的坏顺序 ⇒ 实体里的非 null 旧值被原样写回（顺序不可互换）。执行点 = 同文件 badOrderingLosesTheBackfill"
+      - "判据 4·**多租户隔离**：补写带显式 tenant_id 谓词 + 租户拦截器 ⇒ 在 A 上下文里对 B 的行调用返回 0 行、B 的行逐值不动（反向对照）。执行点 = 同文件 backfillIsTenantScoped"
+      - "判据 5·**写入路径两级守卫**（mock 面）：更新分支必须调补写锚点、新建分支**不得**多调（实体已带 shippedAt）；应用层不得自己填 now()。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderLogisticsWriterTest.java 的 updateNeverOverwritesExistingShippedAt / updateBackfillsWhenShippedAtIsNull / createPathDoesNotNeedBackfill"
+      - "判据 6·**类级元守卫**（新写面忘记补写即红）：现取 backend/admin-api/src/main/java/** 源码面，凡有 `order_logistics` 更新写面（变量名含 logistics 的 updateById）的文件都必须出现补写锚点 backfillShippedAtIfAbsent；含反空跑 + 四种坏形态的判别力自证 + 非物流 updateById 不得误伤。执行点 = tests/unit_ci_workflows/test_order_logistics_first_ship_backfill_guard.py"
+    skip_reason: "[backend-contract] 纯后端写面 + 数据迁移（无 LLM 环节 ⇒ 不进 agent-eval）：由 admin-api 单测 OrderLogisticsWriterTest 与真库 OrderLogisticsShippedAtBackfillRealDbTest 执行（机器判红通道 = traces.tests）"
+    merge_log: "2026-10-10 新增（issue #6276；口径由用户 2026-10-10 裁定 = 首次发货时刻）。根因（V148/issue #6262 已现取登记、但当时只绕开未修）：OrderLogisticsWriter.upsert 的 shipped_at 只在**新建物流行**的分支里写，走 update 分支（已有物流行、再改物流/发货）时不补写 ⇒ 真库 order_logistics 全表 29 行、shipped_at 非空仅 16 行（13 行为空）。修法：① 新增 OrderLogisticsMapper#backfillShippedAtIfAbsent —— 一条条件 UPDATE（SET shipped_at = created_at WHERE … AND shipped_at IS NULL），取值**列对列**（建行那一刻就是首次发货时刻，三条建行路径都写 shipped_at = now() 且 created_at 与它同刻）⇒ 不需要外部真值、不猜；② 两个「读-改-写」写面（OrderLogisticsWriter 更新分支、OrderController.updateLogistics 更新分支）都在 updateById **之前**调它，OrderLogisticsService.updateLogistics 同样补上；③ 新增迁移 V151 把历史空值按同一条 SQL 回填（幂等、只影响 IS NULL、走新迁移不动已冻结的历史迁移）。边界：不动 orders.shipped_at(V148) 的存量 NULL 裁定；created_at 与首次发货时刻同刻是既有实装事实（本单不引入新语义）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderLogisticsWriterTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderLogisticsShippedAtBackfillRealDbTest.java"
+        - "tests/unit_ci_workflows/test_order_logistics_first_ship_backfill_guard.py"
+      ci:
+        - pr-check.yml
+      verifies: []

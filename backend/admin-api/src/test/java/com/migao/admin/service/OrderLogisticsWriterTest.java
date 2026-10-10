@@ -12,12 +12,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -118,5 +121,54 @@ class OrderLogisticsWriterTest {
         when(orderLogisticsMapper.selectByOrderId("o1", TENANT)).thenReturn(nullRows);
         OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF5", "张三", () -> null);
         verify(orderLogisticsMapper).insert(any(OrderLogistics.class));
+    }
+
+    // ────────────────────────────────────────────── 首次发货时刻（issue #6276）
+
+    @Test
+    @DisplayName("🔴 判据 ①：已有 shipped_at + 一次更新 ⇒ 补写调用**照样发**（但由 SQL 的 IS NULL 谓词挡住）")
+    void updateNeverOverwritesExistingShippedAt() {
+        OffsetDateTime firstShip = OffsetDateTime.parse("2026-09-09T18:00:00+08:00");
+        givenExisting(OrderLogistics.builder().id("l1").tenantId(TENANT).orderId("o1")
+                .shippedAt(firstShip).status("in_transit").build());
+
+        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF-NEW", null, () -> null);
+
+        ArgumentCaptor<OrderLogistics> c = ArgumentCaptor.forClass(OrderLogistics.class);
+        verify(orderLogisticsMapper).updateById(c.capture());
+        assertThat(c.getValue().getShippedAt())
+                .as("实体里带上的是**已存在的**首次发货时刻 ⇒ updateById 写回同值（不许清掉、不许换成 now）")
+                .isEqualTo(firstShip);
+        // 补写点必须发（真正拦住覆盖的是那条条件 UPDATE 的 `shipped_at IS NULL` 谓词，
+        // 不是「应用层判空」—— 真库侧判据 ① 证明这一点）
+        verify(orderLogisticsMapper).backfillShippedAtIfAbsent("o1", TENANT);
+        verify(orderLogisticsMapper, never()).insert(any(OrderLogistics.class));
+    }
+
+    @Test
+    @DisplayName("🔴 判据 ②：shipped_at 为空 + 一次更新 ⇒ 走上补写路径（取值 = 该行 created_at，由 SQL 取）")
+    void updateBackfillsWhenShippedAtIsNull() {
+        givenExisting(OrderLogistics.builder().id("l1").tenantId(TENANT).orderId("o1")
+                .shippedAt(null).status("in_transit").build());
+
+        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF-NEW", null, () -> null);
+
+        verify(orderLogisticsMapper).backfillShippedAtIfAbsent("o1", TENANT);
+        ArgumentCaptor<OrderLogistics> c = ArgumentCaptor.forClass(OrderLogistics.class);
+        verify(orderLogisticsMapper).updateById(c.capture());
+        assertThat(c.getValue().getShippedAt())
+                .as("应用层**不许**自己填一个值（填 now() = 采用被否掉的「最近一次改物流时刻」口径）")
+                .isNull();
+    }
+
+    @Test
+    @DisplayName("🔴 首次发货时刻**只在更新路径**补：新建路径不得多调一次（实体已带 shippedAt）")
+    void createPathDoesNotNeedBackfill() {
+        givenExisting();
+        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF1", "张三", () -> null);
+        verify(orderLogisticsMapper, never()).backfillShippedAtIfAbsent(anyString(), anyLong());
+        ArgumentCaptor<OrderLogistics> c = ArgumentCaptor.forClass(OrderLogistics.class);
+        verify(orderLogisticsMapper).insert(c.capture());
+        assertThat(c.getValue().getShippedAt()).as("新建即首次发货时刻").isNotNull();
     }
 }

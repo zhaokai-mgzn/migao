@@ -466,6 +466,11 @@ public class OrderController {
             if (org.springframework.util.StringUtils.hasText(providedShipper)) {
                 logistics.setShipperName(shipperName);
             }
+            // 🔴 首次发货时刻（issue #6276）：与 OrderLogisticsWriter 的更新分支**同一份口径** ——
+            // 本行没有首次发货时刻时补上（取值 = 该行自己的 created_at），已有值绝不覆盖。
+            // 本路是**第二个**「读-改-写」物流写面：只修 writer 一处，会在本路留下同一个缺口。
+            // ⚠️ 必须在 updateById **之前**（否则实体里读到的旧值会把刚补的盖回去）。
+            orderLogisticsService.backfillShippedAtIfAbsent(id, tenantId);
             orderLogisticsService.updateById(logistics);
         } else {
             // 创建新的物流记录

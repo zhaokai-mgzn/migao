@@ -7749,6 +7749,24 @@ _CASE_OR_063 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── OR-064 [NORMAL] 物流「首次发货时刻」（order_logistics.shipped_at）：更新路径**只在为空时**补、已有值一律不覆盖（issue #6276）（源: cases/order.yml）──
+_CASE_OR_064 = EvalCase(
+    id='OR-064',
+    legacy_id='',
+    title='物流「首次发货时刻」（order_logistics.shipped_at）：更新路径**只在为空时**补、已有值一律不覆盖（issue #6276）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-10 裁定（issue #6276）：shipped_at = **首次发货时刻**（排除「最近一次改物流时刻」那条口径）'],
+    expectations=[],
+    data_checks=['判据 1·🔴 **已有值不得被覆盖**（改一次运单号 ≠ 改发货时刻）：① 真库直调补写语句（不经 updateById ⇒ 不被掩盖）⇒ 影响行数 **0**、该列逐字不变；② 端到端走生产 upsert 之后仍逐字等于原值（夹具刻意让 created_at 与真实首次发货时刻**不同** ⇒ 用 created_at 或 now() 顶掉会当场红）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderLogisticsShippedAtBackfillRealDbTest.java 的 existingShippedAtIsNeverOverwrittenByAnUpdate', '判据 2·🔴 **空值 + 一次更新 ⇒ 补上且只补一次**：`shipped_at IS NULL` 的行经生产 upsert 后取值 = **该行自己的 created_at**（夹具把它种成一个月前 ⇒ 写成 now() 当场红）；第二次更新不改变它，且补写语句第二次返回 0 行（幂等）。执行点 = 同文件 nullShippedAtIsBackfilledWithFirstShipMomentExactlyOnce', '判据 3·**补写必须发生在 updateById 之前**：真库复刻「先 updateById 再补写」的坏顺序 ⇒ 实体里的非 null 旧值被原样写回（顺序不可互换）。执行点 = 同文件 badOrderingLosesTheBackfill', '判据 4·**多租户隔离**：补写带显式 tenant_id 谓词 + 租户拦截器 ⇒ 在 A 上下文里对 B 的行调用返回 0 行、B 的行逐值不动（反向对照）。执行点 = 同文件 backfillIsTenantScoped', '判据 5·**写入路径两级守卫**（mock 面）：更新分支必须调补写锚点、新建分支**不得**多调（实体已带 shippedAt）；应用层不得自己填 now()。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderLogisticsWriterTest.java 的 updateNeverOverwritesExistingShippedAt / updateBackfillsWhenShippedAtIsNull / createPathDoesNotNeedBackfill', '判据 6·**类级元守卫**（新写面忘记补写即红）：现取 backend/admin-api/src/main/java/** 源码面，凡有 `order_logistics` 更新写面（变量名含 logistics 的 updateById）的文件都必须出现补写锚点 backfillShippedAtIfAbsent；含反空跑 + 四种坏形态的判别力自证 + 非物流 updateById 不得误伤。执行点 = tests/unit_ci_workflows/test_order_logistics_first_ship_backfill_guard.py'],
+    skip_reason='[backend-contract] 纯后端写面 + 数据迁移（无 LLM 环节 ⇒ 不进 agent-eval）：由 admin-api 单测 OrderLogisticsWriterTest 与真库 OrderLogisticsShippedAtBackfillRealDbTest 执行（机器判红通道 = traces.tests）',
+    tags=['order', 'logistics', 'shipped-at', 'data-quality', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -14087,6 +14105,7 @@ ALL_CASES = (
     _CASE_OR_060,
     _CASE_OR_062,
     _CASE_OR_063,
+    _CASE_OR_064,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,
