@@ -1,0 +1,197 @@
+{
+  "generatedAt": "2026-10-10T10:40:45.326Z",
+  "chrome": "Chrome/154.0.8037.98",
+  "screens": [
+    {
+      "screen": "report",
+      "items": {
+        "loginLink": null,
+        "switchWorker": null,
+        "#wh5-report": {
+          "selector": "#wh5-report",
+          "touchAction": "manipulation",
+          "cursor": "pointer",
+          "minHeight": 44,
+          "height": 44,
+          "width": 700,
+          "background": "rgb(15, 118, 110)",
+          "disabled": false,
+          "text": "开 工"
+        },
+        "#wh5-rescan": {
+          "selector": "#wh5-rescan",
+          "touchAction": "manipulation",
+          "cursor": "default",
+          "minHeight": 44,
+          "height": 44,
+          "width": 700,
+          "background": "rgb(255, 255, 255)",
+          "disabled": false,
+          "text": "重扫"
+        },
+        ".wh5-ghost": {
+          "selector": ".wh5-ghost",
+          "touchAction": "manipulation",
+          "cursor": "default",
+          "minHeight": 44,
+          "height": 44,
+          "width": 60,
+          "background": "rgb(255, 255, 255)",
+          "disabled": false,
+          "text": "切换"
+        },
+        "#wh5-report:active": {
+          "selector": "#wh5-report:active(forced)",
+          "background": "rgb(17, 94, 89)",
+          "transform": "matrix(1, 0, 0, 1, 0, 1)"
+        }
+      }
+    },
+    {
+      "screen": "report-busy",
+      "items": {
+        "loginLink": null,
+        "switchWorker": null,
+        "#wh5-report": {
+          "selector": "#wh5-report",
+          "touchAction": "manipulation",
+          "cursor": "default",
+          "minHeight": 44,
+          "height": 44,
+          "width": 700,
+          "background": "rgb(148, 163, 184)",
+          "disabled": true,
+          "text": "提交中…"
+        },
+        "#wh5-rescan": {
+          "selector": "#wh5-rescan",
+          "touchAction": "manipulation",
+          "cursor": "default",
+          "minHeight": 44,
+          "height": 44,
+          "width": 700,
+          "background": "rgb(255, 255, 255)",
+          "disabled": false,
+          "text": "重扫"
+        },
+        ".wh5-ghost": {
+          "selector": ".wh5-ghost",
+          "touchAction": "manipulation",
+          "cursor": "default",
+          "minHeight": 44,
+          "height": 44,
+          "width": 60,
+          "background": "rgb(255, 255, 255)",
+          "disabled": false,
+          "text": "切换"
+        }
+      }
+    },
+    {
+      "screen": "machine",
+      "items": {
+        "loginLink": {
+          "selector": "#wh5-machine-login",
+          "touchAction": "manipulation",
+          "cursor": "pointer",
+          "minHeight": 44,
+          "height": 48,
+          "width": 64,
+          "background": "rgba(0, 0, 0, 0)",
+          "transition": "all"
+        },
+        "switchWorker": null,
+        "#wh5-machine-login": {
+          "selector": "#wh5-machine-login",
+          "touchAction": "manipulation",
+          "cursor": "pointer",
+          "minHeight": 44,
+          "height": 48,
+          "width": 64,
+          "background": "rgba(0, 0, 0, 0)",
+          "disabled": false,
+          "text": "登录"
+        }
+      }
+    },
+    {
+      "screen": "machine-worker",
+      "items": {
+        "loginLink": null,
+        "switchWorker": {
+          "selector": "#wh5-machine-switch-worker",
+          "touchAction": "manipulation",
+          "cursor": "default",
+          "minHeight": 72,
+          "height": 72,
+          "width": 152,
+          "background": "rgb(51, 65, 85)",
+          "transition": "all"
+        },
+        "#wh5-machine-switch-worker": {
+          "selector": "#wh5-machine-switch-worker",
+          "touchAction": "manipulation",
+          "cursor": "default",
+          "minHeight": 72,
+          "height": 72,
+          "width": 152,
+          "background": "rgb(51, 65, 85)",
+          "disabled": false,
+          "text": "切换工人"
+        }
+      }
+    }
+  ],
+  "checks": [
+    {
+      "name": "report #wh5-report · 存在且 touch-action=manipulation",
+      "ok": true,
+      "reading": "manipulation"
+    },
+    {
+      "name": "report #wh5-rescan · 存在且 touch-action=manipulation",
+      "ok": true,
+      "reading": "manipulation"
+    },
+    {
+      "name": "report .wh5-ghost · 存在且 touch-action=manipulation",
+      "ok": true,
+      "reading": "manipulation"
+    },
+    {
+      "name": "machine #wh5-machine-login · 存在且 touch-action=manipulation",
+      "ok": true,
+      "reading": "manipulation"
+    },
+    {
+      "name": "machine-worker #wh5-machine-switch-worker · 存在且 touch-action=manipulation",
+      "ok": true,
+      "reading": "manipulation"
+    },
+    {
+      "name": "report #wh5-report · 触控目标高度 ≥44px",
+      "ok": true,
+      "reading": 44
+    },
+    {
+      "name": "machine #wh5-machine-login · 触控目标高度 ≥44px",
+      "ok": true,
+      "reading": 48
+    },
+    {
+      "name": "machine-worker #wh5-machine-switch-worker · 触控目标高度 ≥44px",
+      "ok": true,
+      "reading": 72
+    },
+    {
+      "name": "report #wh5-report:active · 按下有视觉变化（背景或位移）",
+      "ok": true,
+      "reading": "{\"selector\":\"#wh5-report:active(forced)\",\"background\":\"rgb(17, 94, 89)\",\"transform\":\"matrix(1, 0, 0, 1, 0, 1)\"}"
+    },
+    {
+      "name": "report-busy #wh5-report · 提交中 disabled 且视觉可分（背景与空闲态不同）",
+      "ok": true,
+      "reading": "{\"disabled\":true,\"busyBg\":\"rgb(148, 163, 184)\",\"idleBg\":\"rgb(15, 118, 110)\",\"text\":\"提交中…\"}"
+    }
+  ]
+}

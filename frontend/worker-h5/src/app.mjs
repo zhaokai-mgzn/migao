@@ -356,12 +356,17 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     on('wh5-report', async () => {
       const v = state.view
       if (!v?.operation?.operation_id) return
+      // 🔴 in-flight 闸（issue #6667 第 4 条，**涉计件正确性**）：车间里戴手套、弱网下答复要等几秒
+      //    ⇒ 没有闸就会被连点。抄机台页那一把（machine-app.mjs::reportWork 的 `if (state.reporting) return`）。
+      //    叠在既有幂等键之上：键保证「服务端只算一次」，闸保证「客户端只发一次」——两道都要。
+      if (state.reporting) return
       // 🔴 幂等键**同一屏复用**（重试 = 服务端回放首次结果，绝不重复计件）；成功换屏 ⇒ 换新键。
       // 刻意**不**每次点击都新造一个：那样「第一次其实成功了、响应丢了，工人再点一次」= 第二笔报工。
       // 🔴 跨刷新（#4814）：屏上的键随刷新消失 ⇒ 补第二条通道 —— 上次**没收到服务端答复**的那一次
       //    提交已落盘，同一工人 + 同一张码 ⇒ 复用同一个键（服务端回放，不会二次记账）。
       const clientRequestId = v.__requestId ?? resumedRequestId(v.__token) ?? newRequestId()
       state = { ...state, view: { ...v, __requestId: clientRequestId } }
+      dispatch({ type: 'reportStart' }) // 置 in-flight 闸 + 重绘（按钮变 `disabled` + 「提交中…」）
       // 发出**之前**落盘：否则「已发出、答复丢了」这段窗口在刷新后无据可查
       writePending({ token: v.__token, workerId: api.worker()?.workerId ?? null, requestId: clientRequestId })
       try {
