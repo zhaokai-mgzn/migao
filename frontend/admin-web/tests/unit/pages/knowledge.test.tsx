@@ -1,5 +1,6 @@
-// case_ids: UI-057, UI-058  // 本包（issue #6703）只复用既有用例号，不新开用例
-// （声明落在前 50 行内 —— .github/growth_gate.py 的 extract_case_ids 只扫前 50 行）
+/* case_ids: UI-057, UI-058 —— 本包（issue #6703）只复用既有用例号，不新开用例；
+   声明落在前 50 行内（.github/growth_gate.py 的 extract_case_ids 只扫前 50 行）。
+   ⚠️ 声明行之后**不要**紧跟以 `// ` 开头的说明行 —— gate 会把注释串当号继续解析。 */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
