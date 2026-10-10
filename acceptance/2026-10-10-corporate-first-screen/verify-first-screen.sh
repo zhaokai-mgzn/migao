@@ -63,6 +63,14 @@ if [ -z "$PORT" ]; then
   exit 1
 fi
 
+# 预热：dev server 是**按需编译**的，第一次请求某个路由时它还在编译 ⇒ 首个响应可能是半截
+# （实测：直连路由的 JSON 读数已对，但 `fetch` 拿到的 HTML 里正文缺失、canonical 读不到）。
+# 每个路由先打一遍（时间不参与判据），让真正的检查跑在**编译完成**之后。
+echo "▶ 预热六条路由（dev server 按需编译）"
+for _p in / /about /services /contact /login /register; do
+  curl -fsS -o /dev/null "http://localhost:${PORT}${_p}" 2>/dev/null || true
+done
+
 node --input-type=module - "$PORT" <<'NODE'
 const port = process.argv[2]
 const decode = (s) => s.replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
