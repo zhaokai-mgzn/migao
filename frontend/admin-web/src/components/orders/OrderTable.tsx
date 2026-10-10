@@ -192,6 +192,17 @@ export default function OrderTable({
               />
             </th>
             <th className="pl-0 pr-4 py-3 font-medium whitespace-nowrap">订单ID</th>
+            {/* 状态 / 加急（issue #6717）：**决策列前置**。改前它们在第 10、11 位（真机实测
+                1440×980 下「状态」表头 left = 1542，而容器右缘 2181、横向可视区只有 1044px
+                ⇒ 出屏）—— 商家要横滚 791px 才看得到「这单什么状态、要不要插队」。
+                现在紧跟「订单ID」：`table-layout: auto` 下列宽随数据浮动，但前两列的累积宽度
+                远小于可视区 ⇒ 1440×980 与 1280×800 两档实测都在可视区内。
+                ⚠️ 只改**顺序**，列**集合与数据口径一字未动**（判据 =
+                tests/e2e/specs/orders/key-columns-reachability.spec.ts 的列集合冻结断言）。 */}
+            <th className="px-4 py-3 font-medium whitespace-nowrap">状态</th>
+            {/* 加急 / 到货日（issue #5177）：列表面就能看出哪些单要插队、承诺哪天到。
+                🔴 显示的是**服务端值**（`isUrgent` 缺省即库列默认 FALSE）—— 不写死客户端默认。 */}
+            <th className="px-4 py-3 font-medium whitespace-nowrap">加急</th>
             <th className="pl-0 pr-4 py-3 font-medium whitespace-nowrap">采购商品</th>
             <th className="px-4 py-3 font-medium">
               <div className="flex flex-col">
@@ -212,13 +223,16 @@ export default function OrderTable({
                 🔴 缺值渲染「—」—— 存量单 / 内部服务占位 / C 端自助下单从未采集过这个事实，
                 **不留空**（「没采集」也是一条要看得见的读数）。 */}
             <th className="px-4 py-3 font-medium whitespace-nowrap">制单人</th>
-            <th className="px-4 py-3 font-medium whitespace-nowrap">状态</th>
-            {/* 加急 / 到货日（issue #5177）：列表面就能看出哪些单要插队、承诺哪天到。
-                🔴 显示的是**服务端值**（`isUrgent` 缺省即库列默认 FALSE）—— 不写死客户端默认。 */}
-            <th className="px-4 py-3 font-medium whitespace-nowrap">加急</th>
             <th className="px-4 py-3 font-medium whitespace-nowrap">到货日</th>
             <th className="px-4 py-3 font-medium whitespace-nowrap">备注</th>
-            <th className="px-4 py-3 font-medium whitespace-nowrap">操作</th>
+            {/* 操作（issue #6717）：**右缘冻结** —— 改前本列表头 left = 1929（容器右缘 2181），
+                宽表一律溢出 ⇒ 行操作（查看/备注/发货/处理退款…）够不到。
+                `sticky right-0` + **不透明背景**（表头取 50 灰阶，与既有一致；数据格用
+                `bg-inherit` 继承 `<tr>` 的背景 ⇒ 选中 / hover 变色仍然生效且**不透明**：
+                sticky 格必须挡住在它下面横向滚过的单元格，透明就是「穿透」的假修）。
+                `z-20` / 数据格 `z-10`：都在表内内容之上。左分隔线 `border-l`：滚动时与左侧
+                内容之间有一条缝（否则会看成两列粘在一起）。 */}
+            <th className="sticky right-0 z-20 border-l border-neutral-200 bg-neutral-50 px-4 py-3 font-medium whitespace-nowrap">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -242,7 +256,11 @@ export default function OrderTable({
                   key={order.id}
                   className={cn(
                     'border-b border-neutral-100 align-top transition-colors',
-                    checked ? 'bg-primary-50/40' : 'hover:bg-neutral-50'
+                    // issue #6717：「操作」列是 `sticky right-0`，而 sticky 格的背景**只能**继承
+                    // `<tr>` 的背景（用祖先链上的 `.bg-white` 让 `bg-inherit` 变透明 ⇒ 横向滚过它
+                    // 下面的单元格会**穿透**显示）。故行背景必须**显式**声明在这里：
+                    // 未被选中 ⇒ `bg-white`（与卡片底色同值，外观不变）；选中 ⇒ 既有的 50/40。
+                    checked ? 'bg-primary-50/40' : 'bg-white hover:bg-neutral-50'
                   )}
                 >
                   <td className="pl-2 pr-3 py-4">
@@ -258,6 +276,21 @@ export default function OrderTable({
                   {/* 订单ID */}
                   <td className="pl-0 pr-4 py-4 font-mono text-neutral-800 whitespace-nowrap">
                     {order.orderNo || order.id}
+                  </td>
+
+                  {/* 状态（issue #6717：决策列前置 —— 与表头同序） */}
+                  <td className="px-4 py-4 whitespace-nowrap">
+                    {/* 传原始后端状态（issue #3889）：producing 由 chip 展示为「生产中」而非归一为待发货 */}
+                    <OrderStatusBadge status={order.status} />
+                  </td>
+
+                  {/* 加急（issue #5177 / #6717：订单级真值，与售后工单的 priority **零联动**） */}
+                  <td className="px-4 py-4 whitespace-nowrap" data-testid={`order-urgent-${order.id}`}>
+                    {isUrgentFlag(order) ? (
+                      <Badge variant="warning">{urgentBadgeText(order)}</Badge>
+                    ) : (
+                      <span className="text-xs text-neutral-400">{urgentBadgeText(order)}</span>
+                    )}
                   </td>
 
                   {/* 采购商品（与「采购明细」同源：N 条明细 ⇒ N 组「名称 + 货号」；
@@ -347,21 +380,6 @@ export default function OrderTable({
                     {order.createdByName || <span className="text-xs text-neutral-400">—</span>}
                   </td>
 
-                  {/* 状态 */}
-                  <td className="px-4 py-4 whitespace-nowrap">
-                    {/* 传原始后端状态（issue #3889）：producing 由 chip 展示为「生产中」而非归一为待发货 */}
-                    <OrderStatusBadge status={order.status} />
-                  </td>
-
-                  {/* 加急（issue #5177）：订单级真值，与售后工单的 priority **零联动** */}
-                  <td className="px-4 py-4 whitespace-nowrap" data-testid={`order-urgent-${order.id}`}>
-                    {isUrgentFlag(order) ? (
-                      <Badge variant="warning">{urgentBadgeText(order)}</Badge>
-                    ) : (
-                      <span className="text-xs text-neutral-400">{urgentBadgeText(order)}</span>
-                    )}
-                  </td>
-
                   {/* 到货日（issue #5177）：`null` = 未指定（不猜、不写死默认） */}
                   <td className="px-4 py-4 whitespace-nowrap text-neutral-700" data-testid={`order-delivery-${order.id}`}>
                     {order.requiredDeliveryDate || <span className="text-xs text-neutral-400">未指定</span>}
@@ -380,8 +398,11 @@ export default function OrderTable({
                     </RemarkPopover>
                   </td>
 
-                  {/* 操作 */}
-                  <td className="pl-2 pr-3 py-4">{renderActions(order)}</td>
+                  {/* 操作（issue #6717）：右缘冻结。`bg-inherit` ⇒ 背景随 `<tr>`（含选中 / hover）；
+                      `border-l` 与表头同位置，滚动时与左侧内容之间有分隔。 */}
+                  <td className="sticky right-0 z-10 border-l border-neutral-100 bg-inherit pl-2 pr-3 py-4">
+                    {renderActions(order)}
+                  </td>
                 </tr>
               )
             })

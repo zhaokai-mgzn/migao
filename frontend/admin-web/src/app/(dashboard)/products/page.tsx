@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Plus, RotateCcw, Search, Calendar } from 'lucide-react'
+import { AlertTriangle, Plus, RotateCcw, Search, Calendar } from 'lucide-react'
 import { Button, Modal } from '@/components/ui'
 import ProductTable, { ProductSortField, ProductSortOrder } from '@/components/products/ProductTable'
 import { productApi } from '@/lib/api'
@@ -101,6 +101,8 @@ export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  /** 列表读失败（与「暂无数据」互斥，issue #6714）：故障不是业务事实 */
+  const [loadFailed, setLoadFailed] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   // ===== 弹窗 =====
@@ -179,8 +181,12 @@ export default function ProductsPage() {
       const data = res.data.data
       setProducts(data?.items || [])
       setTotal(data?.total || 0)
-    } catch (e) {
-      // Error handled by API layer
+      setLoadFailed(false)
+    } catch {
+      // 🔴 issue #6714：改前这里是「Error handled by API layer」的**空 catch** ——
+      // 拦截器 toast ≈4s 后消失，屏上留着「暂无数据」+「共 0 条」；现在标失败态、
+      // **不清零**（保留上次成功值），由下面的常驻失败面承接。
+      setLoadFailed(true)
     } finally {
       setLoading(false)
     }
@@ -625,7 +631,28 @@ export default function ProductsPage() {
         </div>
       </div>
 
+      {/* 🔴 issue #6714：读失败 ⇒ 常驻失败面 + 真重发（与表格的「暂无数据」**互斥**） */}
+      {!loading && loadFailed && (
+        <div
+          data-testid="products-load-failed"
+          role="alert"
+          className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 mb-4 text-sm text-red-700"
+        >
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span className="flex-1">商品加载失败 —— 不是没有商品，是没读到。请检查网络后重试</span>
+          <button
+            type="button"
+            data-testid="products-load-failed-retry"
+            onClick={() => void loadProducts()}
+            className="flex-shrink-0 rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+          >
+            重试
+          </button>
+        </div>
+      )}
+
       {/* 表格 */}
+      <div data-testid="products-empty">
       <ProductTable
         products={products}
         loading={loading}
@@ -646,7 +673,12 @@ export default function ProductsPage() {
         onRecommend={handleRecommend}
         onUnrecommend={handleUnrecommend}
         onDelete={handleDeleteSingle}
+        /* 🔴 issue #6728：读失败 ⇒ 表体**不得**印「暂无数据」（那是「没有商品」的事实性断言，
+           而真相是**没读到**）。共享 `ui/Table` 的默认 `emptyText` 是**全站默认值**（不动它）⇒
+           本单**页面级**覆盖：失败时空串，读成功才回落到默认「暂无数据」。 */
+        emptyText={loadFailed ? '' : '暂无数据'}
       />
+      </div>
 
       {/* 确认弹窗（批量 / 单条共用） */}
       <Modal

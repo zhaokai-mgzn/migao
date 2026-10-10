@@ -367,7 +367,7 @@ export default function CustomersPage() {
       <SearchBar fields={searchFields} onSearch={handleSearch} onReset={handleReset} loading={loading} className="mb-4" />
 
       {/* 数据表格 */}
-      <div className="bg-white rounded-lg border border-neutral-200">
+      <div data-testid="customers-empty" className="bg-white rounded-lg border border-neutral-200">
         {loadError && (
           // 失败态 ≠ 空态（issue #6703）：说清「不是没有客户，是没读到」+ 真重发出口
           <div className="p-4 pb-0">
@@ -385,6 +385,11 @@ export default function CustomersPage() {
           loading={loading}
           rowKey="id"
           onRowClick={(record) => router.push(`/customers/${record.id}`)}
+          /* 🔴 issue #6728：读失败 ⇒ 表体**不得**印「暂无数据」（那是「没有客户」的事实性断言，
+             而真相是**没读到** —— 失败面已在上面，且条数已标不可信）。共享 `ui/Table` 的默认
+             `emptyText` 是**全站默认值**（不动它）⇒ 本单**页面级**覆盖：失败时空串，
+             读成功才回落到默认「暂无数据」。 */
+          emptyText={loadError ? '' : '暂无数据'}
         />
         <Pagination
           current={current}

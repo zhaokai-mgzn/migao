@@ -430,7 +430,9 @@ function ItemRow({ item }: { item: OrderItem }) {
       </div>
       <div className="col-span-2 text-right">
         <div className="text-sm font-medium text-neutral-900">
-          {formatAmount(lineSubtotal(item))}
+          {/* #6720：`lineSubtotal` 现在可能返回 `null`（= 算不出来，不折成 0）。
+              🔴 **屏幕侧口径有意不变**（本单只改纸面）：这里保持原样 `¥0.00`。 */}
+          {formatAmount(lineSubtotal(item) ?? 0)}
         </div>
         {/* 算式（issue #4426）：商家据此对上报价单与加工单 */}
         <div className="mt-0.5 text-xs text-neutral-400 tabular-nums">

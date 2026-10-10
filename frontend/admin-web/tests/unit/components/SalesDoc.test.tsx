@@ -2,7 +2,7 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi } from 'vitest'
-import { render, cleanup, act } from '@testing-library/react'
+import { render, cleanup, act, within } from '@testing-library/react'
 
 const mockGetPaymentQrcodes = vi.fn()
 vi.mock('@/lib/api', () => ({
@@ -23,6 +23,12 @@ import {
   SALES_QTY_STATES,
   type OrderShipmentRead,
 } from '@/lib/sales-shipment'
+import {
+  PAPER_MISSING,
+  assertNoPaperZeroFill,
+  assertPaperKeepsMissingDistinct,
+  paperNumericColumn,
+} from '@/lib/print-doc-paper'
 import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
 
 /**
@@ -229,6 +235,37 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
     // 纸面若有 `0.00` 就说明编数了（判据要求 `未采集`，且不许出现数字）
     expect(text('sales-account-balance')).not.toBe(fabricated)
     expect(text('sales-account-balance')).not.toMatch(/[0-9]/)
+  })
+
+  it('类级不变量（issue #6720）：本单据纸面不得出现「未知 ⇒ 0」的回退形态', () => {
+    render(
+      <SalesDoc
+        order={buildOrder({
+          items: [
+            buildItem({
+              amount: undefined as unknown as number,
+              unitPrice: undefined as unknown as number,
+            }),
+            // 真 0 的对照行（issue #6720 明令：真 0 仍印 0，不许把真值判红）
+            buildItem({ id: 'item-0', amount: 0, unitPrice: 0 }),
+          ],
+        })}
+        shipments={NO_SHIPMENT}
+        paymentQrcodes={{}}
+      />
+    )
+    // 判据面 = **缺值那一行**（真 0 的对照行在另一行：缺值行不得有 0.00，真 0 行不得有「—」）
+    const amountColumn = paperNumericColumn(doc(), { column: 5 })
+    // 单据：销售单 SalesDoc
+    assertNoPaperZeroFill(amountColumn.slice(0, 1), {
+      label: '销售单 SalesDoc',
+      presence: ['缺 amount 的订单行（金额列第 1 行）'],
+    })
+    // 单据：销售单 SalesDoc
+    assertPaperKeepsMissingDistinct(amountColumn, {
+      label: '销售单 SalesDoc',
+      presence: ['金额列：缺值行（—）与真 0 行（0.00）'],
+    })
   })
 
   it('🔴 ⑤ 缺值**可见**：客户 / 电话 / 地址缺失 ⇒ 显式占位 `—`（不是空单元格）', () => {

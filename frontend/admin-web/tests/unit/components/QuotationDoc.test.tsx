@@ -15,6 +15,15 @@ vi.mock('@/lib/api', () => ({
 import QuotationDoc from '@/components/orders/QuotationDoc'
 import ShipmentDoc from '@/components/orders/ShipmentDoc'
 import { dataTables, collectTableIntegrity } from '@/components/orders/doc-tables'
+import {
+  PAPER_MISSING,
+  assertAggregateUnknownIsContagious,
+  assertNoPaperZeroFill,
+  paperNumberCells,
+  paperNumericColumn,
+  paperTextOf,
+} from '@/lib/print-doc-paper'
+import { paperLineSubtotal } from '@/lib/order-amount'
 import type { Order, OrderItem } from '@/types'
 /**
  * 报价单（可打印纸质文档，issue #4965）—— 照真实报价单 A4 制式（亿家纺织 CSO260918-03182）。
@@ -291,6 +300,138 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       expect(docText()).not.toContain('第1套')
       expect(docText()).not.toContain('undefined')
     })
+  })
+
+  // ===== 🔴 缺值不许在纸面上印成 0（issue #6720）=====
+  // 可达性：后端 `OrderItemResponse.amount` = `unitPrice × quantity`，两者都为 null 时回落
+  // `subtotal`；全局 Jackson `default-property-inclusion: non_null` ⇒ null 的键**整个缺席**，
+  // 前端拿到的是 `undefined`（真形态）。判据两条一起钉：缺值印 `—`；**真 0 仍印 `0.00`**。
+  it('红证：缺 amount / unitPrice / subtotal 的订单行 ⇒ 纸面**不得**出现 0.00（修前红在这里）', () => {
+    render(
+      <QuotationDoc
+        order={buildOrder({
+          items: [
+            buildItem({
+              quantity: undefined as unknown as number,
+              unitPrice: undefined as unknown as number,
+              amount: undefined as unknown as number,
+              subtotal: undefined as unknown as number,
+              processingFee: undefined,
+            }),
+          ],
+        })}
+      />
+    )
+    // 判据面 = **缺值那一行**（整页子串判会把真值 `100.00` 里的 `0.00` 判成假 0 = 假红，
+    // 正是 issue #6720 明令的「不许把真值 0 判红」反例）
+    const missingRow = doc()!.querySelector('.quotation-set tbody tr') as HTMLElement
+    const cells = Array.from(missingRow.querySelectorAll('td')).map((td) => td.textContent ?? '')
+    // 修前形态 = 价格/小计两栏印 `0.00` ⇒ 下面这条红；修后 = 显式占位 `—`
+    expect(cells).not.toContain('0.00')
+    expect(cells.filter((c) => c === '—')).toHaveLength(2)
+    expect(paperTextOf(doc())).toContain('本套金额 —')
+  })
+
+  it('反向对照：**真 0 仍印 0**（0 元是明确读数，不是「未知」）', () => {
+    render(
+      <QuotationDoc
+        order={buildOrder({
+          items: [buildItem({ quantity: 0, unitPrice: 0, amount: 0, subtotal: 0, processingFee: 0 })],
+        })}
+      />
+    )
+    expect(docText()).toContain('本套金额 0.00')
+    // 反向对照：真 0 行**不许**出现缺值占位（把「真 0」误判成「未知」同样错）
+    expect(paperNumberCells(doc())).not.toContain(PAPER_MISSING)
+  })
+
+  // ===== 🔴 段头「本套金额」必须与它自己那一行说同一句话（issue #6731）=====
+  //
+  // 可达性（源码链，逐字）：存量行 `order_items.subtotal` 可为 NULL ——
+  // `backend/admin-api/src/main/resources/db/init/schema.sql` 的 `subtotal DECIMAL(12,2)` 无
+  // NOT NULL / DEFAULT；2026-05-31 的 `e1f31f351`（"修复订单金额显示为0的问题"）之前
+  // `OrderService.createOrder` 把请求里的 subtotal **原样落库**（diff 逐字：
+  // `- item.setSubtotal(itemRequest.getSubtotal())`），而其提交说明写的就是「subtotal 为 null 时回退…」
+  // ⇒ NULL 是**被观察到过的**形态；该提交**不带任何回填迁移**（`git show e1f31f351 --stat` 无 sql）
+  // ⇒ 那些行至今仍是 NULL。而 `processingFee` **恒为 number**（`OrderService.convertToDetailResponse`：
+  // `fee == null ⇒ BigDecimal.ZERO` 也照样 `set`）⇒ 前端拿到的是
+  // **`subtotal` 键缺席（Jackson `non_null`）+ `processingFee: 0`（真 number）** 这一对。
+  //
+  // 修前：`lineSubtotal` 只在「两者都缺」时判不可知 ⇒ 返回 `0 + 0 = 0` ⇒ 段头印「本套金额 0.00」
+  // 而**同一张纸**那一行的「小计」栏印 `—`（#6720 已修）= 自相矛盾（未知被印成确定值）。
+  it('🔴 红证（issue #6731）：subtotal 缺席 + processingFee = 0（真 0）⇒ 段头印「本套金额 —」', () => {
+    render(
+      <QuotationDoc
+        order={buildOrder({
+          items: [buildItem({ subtotal: undefined as unknown as number, processingFee: 0 })],
+        })}
+      />
+    )
+    // 判据两面都钉：**印了 `—`**，且**没有**印 `0.00`（只判后者会被「不印这一栏」蒙混）
+    expect(paperTextOf(doc())).toContain('本套金额 —')
+    expect(docText()).not.toContain('本套金额 0.00')
+    // 同一张纸自洽：这一行的小计栏也是 `—`（#6720 的修复），段头不得比它更「确定」
+    expect(paperNumericColumn(doc(), { column: 8 })).toEqual(['—'])
+  })
+
+  it('🔴 红证（issue #6731）：subtotal 缺席 + processingFee > 0 ⇒ 仍是「不可知 + 已知 = 不可知」', () => {
+    render(
+      <QuotationDoc
+        order={buildOrder({
+          items: [buildItem({ subtotal: undefined as unknown as number, processingFee: 250 })],
+        })}
+      />
+    )
+    // 「未知 + 0 = 未知」的加强形态：加数**非 0** 也不改变「和不可知」
+    expect(paperTextOf(doc())).toContain('本套金额 —')
+    expect(docText()).not.toContain('本套金额 250.00')
+  })
+
+  it('反向对照（issue #6731 要求 2）：两个加数都已知 ⇒ 照常印数值（真 0 不许改成 —）', () => {
+    // `subtotal = 0, processingFee = 0`（真 0）⇒ `0.00`
+    render(
+      <QuotationDoc
+        order={buildOrder({ items: [buildItem({ subtotal: 0, processingFee: 0, amount: 0, unitPrice: 0 })] })}
+      />
+    )
+    expect(docText()).toContain('本套金额 0.00')
+    cleanup()
+    // `subtotal = 100, processingFee = 0` ⇒ `100.00`
+    render(
+      <QuotationDoc order={buildOrder({ items: [buildItem({ subtotal: 100, processingFee: 0 })] })} />
+    )
+    expect(docText()).toContain('本套金额 100.00')
+    expect(docText()).not.toContain('本套金额 —')
+  })
+
+  it('类级不变量（issue #6720）：本单据纸面不得出现「未知 ⇒ 0」的回退形态', () => {
+    render(
+      <QuotationDoc
+        order={buildOrder({
+          items: [buildItem({ subtotal: undefined as unknown as number, processingFee: undefined })],
+          totalAmount: undefined as unknown as number,
+          actualAmount: undefined as unknown as number,
+          // 优惠金额同样缺 ⇒ 该行不印（否则 `100.00` 这种**真值**里的 `0.00` 会被判成假 0 = 假红）
+          discountAmount: undefined as unknown as number,
+        })}
+      />
+    )
+    // 判据面 = 10 列表的**小计列**（index 8，唯一由「金额是否算得出」决定的那一格）
+    // —— 不做整页子串判：汇总里的 `100.00` 是**真值**，整页判会把真值判红
+    // （issue #6720 明令的反向对照失败形态）。
+    // 单据：报价单 QuotationDoc
+    assertNoPaperZeroFill(paperNumericColumn(doc(), { column: 8 }), {
+      label: '报价单 QuotationDoc',
+      presence: ['缺 subtotal/processingFee 的行（小计列）'],
+    })
+  })
+
+  it('类级不变量（issue #6731）：段头聚合必须区分「未知」与「0」（任一加数不可知 ⇒ 不输出数值）', () => {
+    // 这条钉的是**口径本身**（而不是某一次渲染）：把实现改回「两者都缺才判不可知」⇒ 当场红。
+    // 单据：报价单 QuotationDoc
+    expect(
+      assertAggregateUnknownIsContagious(paperLineSubtotal, { label: '报价单 QuotationDoc' })
+    ).toBeUndefined()
   })
 
   describe('③ 汇总：只读订单字段，不自己求和（用户裁定 ①）', () => {

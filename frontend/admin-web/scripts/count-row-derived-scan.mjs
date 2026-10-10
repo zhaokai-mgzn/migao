@@ -16,10 +16,12 @@
  *
  * ## 判的是哪个形态（口径）
  *
- * 一条「计数行」= 屏上印着**读面派生数字**的那一行。两种承载体：
- *   - 本仓两种形态：① 字面量 `共 … 条` / `共 … 条记录`（含 JSX 里的模板串）；
- *     ② 共享 `Pagination`（它内部就印「共 N 条记录」）。
- *   文件同时**存在计数行** 且 **有 `total` 类读数状态**（`setTotal` / `setXxxTotal`）时，
+ * 一条「计数行」= 屏上印着**读面派生数字**的那一行。三种承载体：
+ *   - 本仓三种形态：① 字面量 `共 … 条` / `共 … 条记录`（含 JSX 里的模板串）；
+ *     ② 共享 `Pagination`（它内部就印「共 N 条记录」）；
+ *     ③ **派生计数格**（issue #6721）：`value={sessions.length}` 一类**格子里的计数**
+ *        —— 集合来自 `useXxxStore()` 的一次**可能失败的读**（见下面第三种的完整口径）。
+ *   前两种：文件同时**存在计数行** 且 **有 `total` 类读数状态**（`setTotal` / `setXxxTotal`）时，
  *   该计数行印的就是**可能失败的读**派生来的数字。
  *   门槛（实测校准，防假红）：只有 `setXxxTotal`（`Xxx` 非空）而**没有**字面量 `共` 的页面
  *   不算命中 —— 例如 `/production/remnants` 的「共 N 块」由 `data?.page?.total` **内联**读，
@@ -40,7 +42,9 @@
  * - 与并发包的**扫描面边界**（各扫各的，不互判）：
  *   · **#6701** = 工作台**金额面**（`scripts/derived-zero-fallback-scan.mjs`）；
  *   · **#6702** = 余料页（`/production/remnants`）的读失败文案 / 计数 —— 另建；
- *   · **本判据（#6703）** = **列表页计数行 + 共享 `Pagination`**；
+ *   · **#6713/#6714** = 「读失败不得画成**空态**（`暂无…` 文案）」—— `scripts/read-failure-empty-state-scan.mjs`
+ *     （判据面 = **空态文案**有没有在场门；本页**没有任何空态文案** ⇒ 本页属本判据，不挂那支）；
+ *   · **本判据（#6703 + #6721）** = **列表页计数行 + 共享 `Pagination` + 派生计数格**；
  * - 集成侧的同族普查（A 涉钱展示位 4 / B 图表 3 / C 分页计数 8 / D 正例 1 = `piecework` 的
  *   `!error` 守卫，**不许判红**）记在 **#6701** 的评论里，本文件**不重复**那份清单；
  * - **有意不判**「屏上印的是服务端返回的**行数**（`rows.length` / `items.length`）」——
@@ -153,6 +157,59 @@ export function stripComments(source) {
   return out
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// 第三种承载体：**派生计数格**（issue **#6721**，`/agent-workspace/sessions` 顶部监控统计条）
+//
+// 与上面两种的关系：① `共 N 条` 文本、② 共享 `Pagination` —— 都靠**一个 `setXxxTotal` 读数**判定。
+// 本页两样都没有：它把「活跃 / 已结束 / 共 N」**直接**从 `store.sessions` 派生（`过滤 .length` / `.length`）
+// 印在**格子里** ⇒ 上面两种字形都判不到它 —— 这正是它当初漏网的原因（#6718 的修复包如实报了「未改、未登记」）。
+// ⇒ 本判据补第三种字形，**不新立第三把尺子**（issue #6721 的口径：挂已有的那一支）。
+//
+// 🔴 **口径与实测校准**（全仓实测，不是凭感觉）：
+//   · **认**两种字形：「JSX 属性值 = 集合的 `.length`」**或**「文件里有一个统计条锚」
+//     （`data-testid="…stats-bar"`）—— 后者是「这一族页面把多个读数并排印出来」的稳定结构锚；
+//   · **集合必须来自 `useXxxStore()` 的解构**（`const { sessions } = useChatStore()`）——
+//     这一条同时排掉两类假红：① 组件 props 里的数组（它的失败由调用方自己的读面负责）；
+//     ② 页面本地 `useState([])`（没有外部读面，`.length` 是读数本身）。
+//   · 实测射程：全仓命中 **1 个文件**（就是本页）。
+//     两个「邻格」的实测对照（都在射程外，**不许**把它们判红）：
+//     · `components/chat/SessionInsight.tsx` 的 `value={String(messageCount)}` 是**中转表达式**
+//       （读不到时印 `''` 而不是 `0`，形态不同类）⇒ 有意不认；
+//     · `components/products/SkuMatrix.tsx` 等 4 处 `rows.length` 来自**组件 props** ⇒ 有意不认。
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** 「JSX 属性 = 集合的 `.length`」字形 */
+const VALUE_LENGTH = /\b(?:value|count|total)=\{\s*([A-Za-z_$][\w$]*)\.length\s*\}/g
+/** 集合名来自一个**可能失败的读**（store hook 的返回物：`const { sessions } = useChatStore()`） */
+const STORE_DESTRUCT = /\{([^}]*)\}\s*=\s*use[A-Za-z]*Store\s*\(/g
+/** 统计条结构锚：`data-testid/TestId="…stats-bar"`（JSX 属性两种写法大小写不同） */
+const STATS_BAR_ANCHOR = /[Tt]est[Ii]d=["'`][A-Za-z0-9_-]*stats-bar["'`]/
+
+/**
+ * 该文件是否「把某个集合的**派生计数**印在屏上」。
+ *
+ * 成立条件（两条同时）：
+ *   ① 文件从 store hook 解构出集合（`useXxxStore()`）—— 集合来自一次**可能失败的读**；
+ *   ② 屏上印了这个集合的派生计数（`value={X.length}`，或文件有统计条锚）；
+ * 另有 `isGuarded` 那条出口（见 `countRowSitesFromSource`）：**有**规范化失败锚 ⇒ 该读数已有可信度信号
+ * ⇒ 不判红。缺锚 ⇒ 判红（本页病灶原形：读失败时把「读不到」印成 `0`）。
+ */
+export function hasUnguardedDerivedCountCell(source) {
+  const code = stripComments(source)
+  const storeNames = new Set()
+  for (const m of code.matchAll(STORE_DESTRUCT)) {
+    for (const p of m[1].split(',')) {
+      // `const { sessions, fetchSessions } = useChatStore()` / `const { sessions: rows } = …`
+      const name = p.split(':').pop()?.trim()
+      if (name) storeNames.add(name)
+    }
+  }
+  if (!storeNames.size) return false
+  // ② 「属性 = 集合的 .length」或「有统计条锚」都算「印了派生计数」
+  const directCount = [...code.matchAll(VALUE_LENGTH)].some((m) => storeNames.has(m[1]))
+  return directCount || STATS_BAR_ANCHOR.test(code)
+}
+
 /** 源码文本 → 命中点（**只吃一段源码**：守卫用它做判别力自证，不抄第二份正则） */
 export function countRowSitesFromSource(source, { file = '<probe>.tsx' } = {}) {
   const code = stripComments(source)
@@ -165,7 +222,10 @@ export function countRowSitesFromSource(source, { file = '<probe>.tsx' } = {}) {
   const prints = []
   if (LITERAL_COUNT.test(code) && totals.size > 0) prints.push('literal-count')
   if (SHARED_PAGINATION.test(code) && totals.size > 0) prints.push('shared-pagination')
-  // 判据：印了「共 N 条」**且**这个 N 来自 `setXxxTotal`（= 一个可能失败的读）
+  // issue #6721：第三种承载体 —— 派生计数**格**（`value={sessions.length}`，无「共 N 条」文本、无 Pagination）
+  if (hasUnguardedDerivedCountCell(source)) prints.push('derived-count-cell')
+  // 判据：印了「共 N 条」**且**这个 N 来自 `setXxxTotal`（= 一个可能失败的读）；
+  // 或印了「派生计数格」且该读数**没有**可信度信号（见 `hasUnguardedDerivedCountCell`）
   if (prints.length === 0) return []
 
   const guarded = isGuarded(source)
@@ -206,8 +266,11 @@ export function countRowSites(root) {
  */
 export const LEDGER = [
   // ── 存量债（`setXxxTotal` 由读响应赋值；文件里无读面失败标记）──
-  'src/app/(dashboard)/employees/page.tsx', // 员工列表：`setTotal(data?.total || 0)`，catch 只 toast
-  'src/app/(dashboard)/notifications/page.tsx', // 通知列表：同上
+  //
+  // 归零沿革（**只许缩短**，条目**删除**而非注释掉）：
+  //   · `employees/page.tsx` / `notifications/page.tsx` —— **issue #6714 本包**补上
+  //     `employees-load-failed` / `notifications-load-failed` 失败锚 + 重试出口
+  //     （`totalReliable={!loadFailed}` 同步标「计数不可信」）⇒ 两条**同批删掉**；
   'src/components/employees/WorkerProfilesPanel.tsx', // 工人档案面板：同上
 ]
 
@@ -227,6 +290,8 @@ export const FAILURE_ANCHORS = [
   { name: '知识卡片计数行读失败', file: 'src/app/(dashboard)/knowledge/page.tsx', anchors: ['testId="knowledge-load-error"'] },
   { name: '库存明细计数行读失败', file: 'src/app/(dashboard)/stock-ledger/page.tsx', anchors: ['testId="stock-ledger-error"'] },
   { name: '共享分页的「不可信」标志', file: 'src/components/ui/Pagination.tsx', anchors: ['totalReliable'] },
+  // ── issue #6721：派生计数**格**（第三种承载体）──────
+  { name: '会话监控统计条派生计数格读失败', file: 'src/app/(dashboard)/agent-workspace/sessions/page.tsx', anchors: ['data-testid="agent-sessions-load-failed"', 'data-testid="agent-sessions-load-failed-retry"', 'sessionsLoadFailed'] },
 ]
 
 /** 命中清单（台账过滤后）：**未登记即红** */

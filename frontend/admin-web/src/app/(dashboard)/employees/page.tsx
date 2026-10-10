@@ -120,6 +120,9 @@ export default function EmployeesPage() {
     return { permissionLabelMap: map, totalLeafCount: count }
   }, [menuTree])
 
+  /** 列表读失败（与「暂无数据」互斥，issue #6714）：故障不是业务事实 */
+  const [loadFailed, setLoadFailed] = useState(false)
+
   // 加载员工列表
   const loadEmployees = useCallback(async () => {
     setLoading(true)
@@ -135,8 +138,10 @@ export default function EmployeesPage() {
       const data = res.data.data
       setEmployees(data?.items || [])
       setTotal(data?.total || 0)
+      setLoadFailed(false)
     } catch (e) {
-      toast.error('加载员工列表失败')
+      // 读面失败**不清零**（保留上次成功值）、只标失败态 —— 故障 ≠「没有员工」（issue #6714）
+      setLoadFailed(true)
     } finally {
       setLoading(false)
     }
@@ -510,18 +515,45 @@ export default function EmployeesPage() {
         </div>
       </div>
 
+      {/* 🔴 issue #6714：读失败 ⇒ 常驻失败面 + 真重发（与表格的「暂无数据」**互斥**）。
+          修前失败只 toast（≈4s 消失），屏上留着「暂无数据」+「共 0 条」两处事实性断言。 */}
+      {!loading && loadFailed && (
+        <div
+          data-testid="employees-load-failed"
+          role="alert"
+          className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 mb-4 text-sm text-red-700"
+        >
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span className="flex-1">员工加载失败 —— 不是没有员工，是没读到。请检查网络后重试</span>
+          <button
+            type="button"
+            data-testid="employees-load-failed-retry"
+            onClick={() => void loadEmployees()}
+            className="flex-shrink-0 rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+          >
+            重试
+          </button>
+        </div>
+      )}
+
       {/* 表格 */}
-      <div className="bg-white rounded-lg border border-neutral-200">
+      <div data-testid="employees-empty" className="bg-white rounded-lg border border-neutral-200">
         <Table<Employee>
           columns={columns}
           dataSource={employees}
           loading={loading}
           rowKey="id"
+          /* 🔴 issue #6728：读失败 ⇒ 表体**不得**印「暂无数据」（那是「没有员工」的事实性断言，
+             而真相是**没读到**）。共享 `frontend/admin-web/src/components/ui/Table.tsx` 的默认
+             `emptyText = '暂无数据'` 是**全站默认值**（改它会波及几十张表）⇒ 本单只在**页面级**覆盖：
+             失败时空串（失败原因由上方常驻失败面说），读成功才回落到默认「暂无数据」。 */
+          emptyText={loadFailed ? '' : '暂无数据'}
         />
         <Pagination
           current={current}
           pageSize={pageSize}
           total={total}
+          totalReliable={!loadFailed}
           onChange={setCurrent}
           onPageSizeChange={(size) => { setPageSize(size); setCurrent(1) }}
         />

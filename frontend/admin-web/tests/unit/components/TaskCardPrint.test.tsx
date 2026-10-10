@@ -34,7 +34,10 @@ import { describe, expect, it } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import TaskCardPrint from '@/components/production/TaskCardPrint'
 import { washLabelRows } from '@/lib/wash-label-content'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { dataTables, collectTableIntegrity } from '@/components/orders/doc-tables'
+import { assertNoPaperZeroFill, paperTextOf } from '@/lib/print-doc-paper'
 import type { ProcessingOrderItem, ProductionPosition } from '@/types'
 
 const PROCESSING_ORDER_NO = 'JG-20260921-8237'
@@ -146,6 +149,43 @@ const printCard = (overrides: Partial<ComponentProps<typeof TaskCardPrint>> = {}
 const printArea = () => document.querySelector('.task-card-print-area') as HTMLElement
 
 describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → 纸宽改判 #5646）', () => {
+  it('类级不变量（issue #6720）：本单据纸面不得出现「未知 ⇒ 0」的回退形态（今天它不印任何金额/数量）', () => {
+    // 缺码部位**真的**渲染出来（否则下面的判据面可能是空的）：
+    // 判据面 = **短码格**的取值（本单据唯一可能承载「缺值」的人可读位）
+    printCard({
+      positions: [
+        { ...positions[0] },
+        { position_name: '纱帘B', order_item_id: 'item-2', part_token: null, part_short_code: null, scan_url: null, operations: [] },
+      ],
+      qrPlaceholderHint: '二维码已撤销（旧码已失效）',
+    })
+    const shortCodes = Array.from(printArea().querySelectorAll('[data-testid^="task-card-label-short-code-"]')).map(
+      (el) => (el.textContent || '').trim(),
+    )
+    // 单据：任务卡 TaskCardPrint
+    assertNoPaperZeroFill(shortCodes, {
+      label: '任务卡 TaskCardPrint',
+      presence: ['缺码部位（占位「—」，不是假码，更不是 0）'],
+    })
+    // ✅ 正向证据锚：缺码位真的渲染了占位（否则上面的判据面可能是空的）
+    expect(shortCodes).toContain('—')
+    // 纸面不得出现 `undefined` / `null` / `NaN`
+    expect(paperTextOf(printArea())).not.toMatch(/undefined|null|NaN/)
+  })
+
+  it('「本单据不印数值」是**结构事实**而非漏判：纸面组件源码里没有任何数值格式化（一开印就红）', () => {
+    // 这条钉住 SCOPE 里对洗水码「天然免疫」的判断（见
+    // frontend/admin-web/scripts/print-doc-zero-fallback-scan.mjs 的 SCOPE 注释与死亡条件）：
+    // 一旦它开始把 amount / quantity 印上纸，本判据立刻红 ⇒ 必须同批登记进判据面。
+    const src = readFileSync(
+      join(process.cwd(), 'src/components/production/TaskCardPrint.tsx'),
+      'utf-8',
+    )
+    for (const call of ['toLocaleString', 'toFixed', 'formatAmount', 'formatQty']) {
+      expect(src, `洗水码开始使用 ${call} ⇒ 它进了「印数值的纸面」判据面，请同步登记`).not.toContain(call)
+    }
+  })
+
   // 类级固化（issue #6595）：本单据的每一张表逐行自洽（Σ(colSpan) = 表头列数）。
   it('表格列数不变量：逐行 Σ(colSpan) 与表头列数一致（issue #6595）', () => {
     render(<TaskCardPrint processingOrderNo={PROCESSING_ORDER_NO} />)

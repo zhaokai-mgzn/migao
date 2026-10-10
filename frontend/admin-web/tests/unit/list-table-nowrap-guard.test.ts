@@ -67,7 +67,10 @@ const FROZEN_TABLES: string[] = [
   'src/app/(dashboard)/shipments/page.tsx::表[发货单号|订单号|客户|来源|发货人|发货时间|实发|操作]',
   'src/components/dashboard/RecentOrders.tsx::表[订单号|客户|金额|状态|时间]',
   // ⚠️ 本条的锚里带 `~`（`{...}` 表达式被归一化成 `~`）：表头里嵌了受控复选框（跨行 JSX）⇒ 锚较长但仍是**稳定文本锚**。
-  'src/components/orders/OrderTable.tsx::表[~} onChange=~ className="w-4 h-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500" />|订单ID|采购商品|采购明细 (名称:单价×数量+加工费)|累计金额(元)|实收款(元)|收货人信息|下单时间|制单人|状态|加急|到货日|备注|操作]',
+  // 2026-10-11（issue #6717）：**列序变更**（状态/加急前置到「订单ID」右侧）⇒ 锚里的表头顺序同步。
+  // ⚠️ 这一条**仍是缺陷**（本表「采购明细」表头缺 `whitespace-nowrap`，与本单的可达性修复正交）
+  // ⇒ 条目**不删**、`TABLE_BASELINE` **不变**（只改了「表头顺序」这部分的文本，条数未动）。
+  'src/components/orders/OrderTable.tsx::表[~} onChange=~ className="w-4 h-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500" />|订单ID|状态|加急|采购商品|采购明细 (名称:单价×数量+加工费)|累计金额(元)|实收款(元)|收货人信息|下单时间|制单人|到货日|备注|操作]',
   'src/components/production/CutPlanTable.tsx::表[套号|部位|组件 / 货号|用料（米）|裁多长（米） × 几片|备注]',
   'src/components/production/CuttingHeightConfigPanel.tsx::表[名称|取值（米）|触发|触发值|部位|启用|~]',
   'src/components/products/BatchStockPanel.tsx::表[批次号|货号|入库量|已消耗|余量|收货日期]',

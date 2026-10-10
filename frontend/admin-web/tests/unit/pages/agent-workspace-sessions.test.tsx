@@ -10,6 +10,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
+/** 页面把「上一次读的结果」当读数读回（issue #6721）⇒ mock 必须返回它，不能是 `undefined` */
+const READ_OK = { sessionsLoadFailed: false }
+
 // ── Mock chat store（提供真实形状的 sessions 数据，派生统计）──
 const mockFetchSessions = vi.fn()
 const mockSessions = [
@@ -55,6 +58,7 @@ import AgentSessionsPage from '@/app/(dashboard)/agent-workspace/sessions/page'
 describe('AgentSessionsPage — 会话管理工作台', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockFetchSessions.mockResolvedValue(READ_OK)
   })
 
   it('进入页面时拉取会话列表', () => {
