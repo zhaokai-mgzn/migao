@@ -398,9 +398,24 @@ export default function OrderTable({
                     </RemarkPopover>
                   </td>
 
-                  {/* 操作（issue #6717）：右缘冻结。`bg-inherit` ⇒ 背景随 `<tr>`（含选中 / hover）；
-                      `border-l` 与表头同位置，滚动时与左侧内容之间有分隔。 */}
-                  <td className="sticky right-0 z-10 border-l border-neutral-100 bg-inherit pl-2 pr-3 py-4">
+                  {/* 操作（issue #6717）：右缘冻结。`border-l` 与表头同位置，滚动时与左侧内容之间有分隔。
+                      issue #6729（**#6717 的回归修复**）：原来写 `bg-inherit` —— 它继承的是 `<tr>` 的背景，
+                      而**选中态的行背景就是半透明的**（`bg-primary-50/40` = `rgba(238,242,248,0.4)`）
+                      ⇒ 继承到的也半透明 ⇒ 横滚时下层列的内容（姓名/电话/地址）**穿透**进冻结列
+                      （真机 `getComputedStyle` alpha=0.4 + 读图双重实证）。
+                      修法 = **把「继承」换成「同一个颜色的不透明版」**：
+                        · 未选中：行底色是 `bg-white` ⇒ 本格也 `bg-white`（逐像素一致）；
+                        · 选中：用 `bg-primary-50-lit`（= `bg-primary-50/40` 叠在白底上的**已合成色**
+                          `#f8fafc`）⇒ 与同行其它格**逐像素同色**；不能直接用 `bg-primary-50`
+                          （那是**未合成**的原色 `#eef2f8`，比同行其它格深一档 = 视觉不一致）。
+                      ⇒ 冻结格任何交互态下 alpha 恒为 1，而**行底色机制一字未改**（未选中 / hover 观感不变）。
+                      🔴 不要再退回 `bg-inherit`：行底色一旦半透明，冻结列必然穿透（类级判据会拦住）。 */}
+                  <td
+                    className={cn(
+                      'sticky right-0 z-10 border-l border-neutral-100 pl-2 pr-3 py-4',
+                      checked ? 'bg-primary-50-lit' : 'bg-white',
+                    )}
+                  >
                     {renderActions(order)}
                   </td>
                 </tr>

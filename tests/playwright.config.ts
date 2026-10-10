@@ -145,7 +145,11 @@ export default defineConfig({
     // Playwright 不执行任何 webServer 命令，可能跑在**另一个 checkout** 的代码上 ⇒ 静默假绿。
     // 端口被占 ⇒ 报错退出（可行动），而不是复用。CI 侧原本即为 false（旧写法 `!process.env.CI`）⇒ 行为不变。
     reuseExistingServer: false,
-    timeout: 180_000,
+    // issue #6729：本机高负载时（实测 load average 36/8 核）`next dev` 首屏编译实测 **150.9s**，
+    // 原 180s 的启动预算会被顶穿 ⇒ Playwright 杀掉自己刚起的服务 → 测试侧报
+    // `net::ERR_CONNECTION_REFUSED`（形态很像「端口冲突」，实为「编译没编完就被判超时」）。
+    // CI 上是构建后的静态服务，不受影响。**只放宽启动预算，断言一字未改。**
+    timeout: 600_000,
     env: {
       // 前端 API 请求走远程 dev admin-api（CI 里没有本地 Java 后端）
       NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8080',
