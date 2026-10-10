@@ -23,8 +23,18 @@
  * - 匹配入口要求选**订单明细行**：余料匹配是**逐明细行**的事（小件需求来自该行勾的特殊选项）。
  *   自 issue #6669 起商家**不必手输内部 id** —— 按订单号/客户搜索 → 选订单 → 点一行明细即可
  *   （id 只留在状态里，不上屏）。派工页内嵌匹配**不在本单范围**（登记为边界，见 PR 报告）；
- * - 回收 / 报废的**权限**与算料配置同码（`processing:manage`）—— 无权限时读面会失败，
+ * - 回收 / 报废的**权限**与算料配置同码（`processing:manage`）—— 无权限时写面会失败，
  *   页面按「权限拒绝是终态」给可行动话术（同族实证：issue #4103）。
+ *
+ * ## 读面失败（issue #6702）
+ *
+ * 真机注入 `GET /api/admin/production/remnants**` ⇒ 500 时，修前屏上同时出现三样东西：
+ * ① 文案一律说「可能是当前岗位没有「工艺配置」权限」（**误归因**：500 被说成权限）；
+ * ② 计数行照旧印「共 **0** 块」（读不到 ⇒ 计数是**未知**，印 0 是界面在撒谎）；
+ * ③ 没有任何失败锚点（`failAnchors: []`）⇒ 也没有「真重发」的出口。
+ * 修后：话术按 `403` / 其余**分流**（`remnantReadErrorCopy`）、失败时计数印 `—`、
+ * 失败锚点 `remnant-ledger-load-failed` + 重试出口 `remnant-ledger-retry`（点击真再发请求）。
+ * 类级元守卫 = `frontend/admin-web/tests/unit/lib/read-failure-copy-attribution-guard.test.ts`。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, RefreshCw, Search } from 'lucide-react'
@@ -53,6 +63,29 @@ const KIND_LABEL: Record<string, string> = { width: '门幅余料', end: '端部
 
 /** 每页条数选项（与共享 `Pagination` 的默认档一致；默认 100 = 本页修前的一次拉取量，不变差） */
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
+
+/**
+ * 读面失败的**归因话术**（issue #6702；集成侧真机注入实测的缺陷）。
+ *
+ * 判据只有一条：**话术说的原因必须是真原因**。
+ * · `403` ⇒ 是权限（终态，给去处：找管理员开**本页**对应的读码 `production:view`）；
+ * · 其余（服务未起 / 超时 / 5xx / 网络）⇒ 是**服务侧**，只说事实 + 下一步（稍后重试），
+ *   **不得**提权限 —— 修前一律说「可能是当前岗位没有「工艺配置」权限」，把 500 说成权限，
+ *   让商家去找管理员开一个**跟本页无关**的权限（「工艺配置」属算料配置域），真因被话术掩盖。
+ *
+ * 同族既有范式 = `frontend/admin-web/src/app/(dashboard)/settings/page.tsx` 的 `calcReadErrorCopy`
+ * （issue #6580 真机验收后按状态分流）。类级元守卫 =
+ * `frontend/admin-web/tests/unit/lib/read-failure-copy-attribution-guard.test.ts`。
+ */
+export function remnantReadErrorCopy(err: unknown): string {
+  const status =
+    (err as { response?: { status?: number } })?.response?.status ??
+    (err as { status?: number })?.status
+  if (status === 403) {
+    return '你没有查看「余料台账」的权限（本页属于生产管理）—— 请联系管理员开通「生产管理」查看权限后重试'
+  }
+  return '余料台账暂时读不到（读数服务暂时不可用）—— 请稍后重试'
+}
 
 /**
  * 选择器候选 = **订单的一行明细**（issue #6669 第 2 条）。
@@ -129,9 +162,10 @@ export default function RemnantLedgerPage() {
     try {
       const res = await remnantApi.ledger({ status: status || undefined, page, size: pageSize })
       setData(res.data?.data ?? null)
-    } catch {
+    } catch (e) {
       setData(null)
-      setError('余料台账读取失败（可能是当前岗位没有「工艺配置」权限）—— 请联系管理员开权限后重试')
+      // 🔴 issue #6702：按**状态**分流，不再一律归因成权限（修前 500 也这么说 ⇒ 商家白跑一趟）
+      setError(remnantReadErrorCopy(e))
     }
     setLoading(false)
   }, [status, page, pageSize])
@@ -287,9 +321,24 @@ export default function RemnantLedgerPage() {
       </div>
 
       {error && (
-        <div className="flex items-start gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">
+        <div
+          data-testid="remnant-ledger-load-failed"
+          role="alert"
+          className="flex items-start gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2"
+        >
           <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          <span>{error}</span>
+          <span className="flex-1">{error}</span>
+          {/* 真重发（不是只把文案抹掉）—— 修前本页 22 个 testid 里没有任何重试出口 */}
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            data-testid="remnant-ledger-retry"
+            onClick={() => void load()}
+          >
+            <RefreshCw className="w-4 h-4 mr-1" />
+            重试
+          </Button>
         </div>
       )}
 
@@ -501,7 +550,9 @@ export default function RemnantLedgerPage() {
             </option>
           ))}
         </select>
-        <span className="text-xs text-neutral-500">共 {data?.page?.total ?? 0} 块</span>
+        {/* 🔴 issue #6702：读失败 ⇒ 计数是**未知**，印 `—`（修前 `?? 0` 把它印成「共 0 块」，
+            与左边那句「读取失败」同屏自相矛盾，商家据此以为「没有余料」） */}
+        <span className="text-xs text-neutral-500">共 {error ? '—' : (data?.page?.total ?? 0)} 块</span>
       </div>
 
       <div className="bg-white border border-neutral-200 rounded-lg overflow-x-auto">
