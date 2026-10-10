@@ -73,6 +73,16 @@ const FROZEN_ACTION_OFFSCREEN: string[] = [
 /** 冻结读数：台账条数（**只许缩短**；修好一处必须同时下调本数字）。 */
 const ACTION_OFFSCREEN_BASELINE = 3
 
+/**
+ * 存量台账·规则 ①b（冻结格背景不透明）：**当前为空**（归零基线）。
+ *
+ * 为什么现在可以是空的：`bg-inherit` 是 #6717 引入的**新**写法，只出现在本次修的 3 处，
+ * 本包一次性收口 ⇒ 现取集合应为空。留这个数组（而不是直接断言 `[]`）= 让「确需豁免」的
+ * 条目有**显式登记**的地方（未登记即红；登记了也不许增加 `FROZEN_INHERIT_BG_BASELINE`）。
+ */
+const FROZEN_INHERIT_BG: string[] = []
+const FROZEN_INHERIT_BG_BASELINE = 0
+
 /** 前 N 列之内算「无需冻结也够得到」（N = 3：checkbox / 首列标识 / 次列）。 */
 const FRONT_COLUMNS = 3
 
@@ -92,10 +102,25 @@ const stripTags = (s: string): string =>
     .replace(/\s+/g, ' ')
     .trim()
 
-/** 表头元素的 class 文本（`class` / `className` 两种写法都认）。 */
+/**
+ * 元素的 class 文本。三种写法都认：
+ *   `class="…"` / `className="…"` / `className={cn('…', x ? '…' : '…')}`。
+ *
+ * ⚠️ issue #6729 实测踩过：只认带引号的写法时，`className={cn('sticky right-0 …', checked ? 'bg-primary-50' : 'bg-white')}`
+ * 会解析成**空串** ⇒ 判据把「明明声明了不透明底色」的格子判红（**假红**，比漏判更坏：会逼人乱改）。
+ * 花括号写法取整个 `{…}` 里的全部字符串字面量（条件类的两个分支都算「用过」——
+ * 判据只问「有没有声明不透明背景」，不判哪个分支此刻生效）。
+ */
 function classOf(tag: string): string {
-  const m = /\bclass(?:Name)?\s*=\s*"([^"]*)"/.exec(tag) ?? /\bclass(?:Name)?\s*=\s*'([^']*)'/.exec(tag)
-  return m ? m[1] : ''
+  const quoted = /\bclass(?:Name)?\s*=\s*"([^"]*)"/.exec(tag) ?? /\bclass(?:Name)?\s*=\s*'([^']*)'/.exec(tag)
+  if (quoted) return quoted[1]
+  // 花括号写法可能**换行**（prettier 会把长 className 折成多行）⇒ 贪婪吃到行尾/标签尾，
+  // 并优先保留**最后一个** `{…}`（属性值本身），避免把条件表达式外层当成属性值
+  const braced = /\bclass(?:Name)?\s*=\s*\{([\s\S]*)\}\s*\/?>/.exec(tag)
+  if (!braced) return ''
+  return Array.from(braced[1].matchAll(/'([^']*)'|"([^"]*)"/g))
+    .map((m) => m[1] ?? m[2] ?? '')
+    .join(' ')
 }
 
 /**
@@ -127,6 +152,106 @@ export function scanActionColumns(relPath: string, source: string): ActionColumn
   return out
 }
 
+// ── issue #6729：**冻结列在任何交互态下有效背景必须不透明**（覆盖层那一半的判据） ──
+//
+// 病灶（#6717 的回归）：`sticky right-0` 的「操作」格写 `bg-inherit`，继承的是 `<tr>` 的背景，
+// 而**选中态的行背景本身就是半透明**（`bg-primary-50/40` = `rgba(238,242,248,0.4)`）
+// ⇒ 继承到的也半透明 ⇒ 横滚时下层列的内容（姓名/电话/地址）**穿透**进冻结列
+// （真机 `getComputedStyle` 读数 alpha=0.4 + 读图双重实证）。
+//
+// 判据：冻结列的数据格**必须自己声明一个不透明的背景类**；`bg-inherit` **一律判红**
+// —— 它是「把不透明性外包给祖先」的形态，而祖先（`<tr>`）的底色可以（且确实）是半透明的。
+//
+// 🔴 为什么静态只认白名单里的类：Tailwind 的 `bg-primary-50/40` 这类**透明度后缀**在类名里，
+// 但 `bg-white` / `bg-primary-50` 是不是不透明只有调色板知道。白名单 = 已知不透明的调色板值；
+// 换用别的既有不透明色（如 `bg-neutral-50`）⇒ 加进白名单即可（`KNOWN_OPAQUE_BG`）；
+// 新写一个**不在白名单**的背景类 ⇒ 判红并具名报出 —— 这是 **fail-closed**（宁可让作者显式登记，
+// 也不放一个可能半透明的背景进去）。
+const KNOWN_OPAQUE_BG = new Set([
+  'bg-white',
+  'bg-neutral-50',
+  'bg-neutral-100',
+  'bg-slate-50',
+  'bg-primary-50-lit',
+  'bg-primary-50',
+  'bg-primary-100',
+])
+
+/** 该 class 文本里有没有「确实不透明」的背景类。 */
+function hasOpaqueBackground(classText: string): boolean {
+  const tokens = classText.split(/\s+/).filter(Boolean)
+  if (tokens.some((t) => KNOWN_OPAQUE_BG.has(t))) return true
+  // 任意值写法：`bg-[#faf7f2]` / `bg-[rgb(250,247,242)]` —— **只接受不带透明度通道**的形态。
+  // `bg-[#faf7f2]/40`、`rgba(...)`、`color-mix(...)` 一律不放行（它们可能是半透明的）。
+  return tokens.some(
+    (t) =>
+      /^bg-\[(#[0-9a-fA-F]{3}|#[0-9a-fA-F]{6}|#[0-9a-fA-F]{8}|rgb\(\s*\d+\s*[,\s]+\d+\s*[,\s]+\d+\s*\)|white)\]$/.test(t) &&
+      !/#[0-9a-fA-F]{8}/.test(t),
+  )
+}
+
+export interface FrozenCellFinding {
+  /** 台账锚：`<相对路径>::冻结格[<表头…>]` */
+  key: string
+  /** 违规的单元格个数（缺失 / 半透明背景） */
+  badCells: number
+  /** 命中的形态说明（给判红信息用） */
+  reasons: string[]
+}
+
+/**
+ * 规则本体·之二（**纯函数**）：扫一份源码里**所有 `sticky` 单元格**的 `className`，
+ * 要求每个都自己声明**不透明**背景。
+ *
+ * 纯函数（内存可注入取证）。`bg-inherit` 与「一个背景类都没有」都判红：
+ * 前者把不透明性外包给祖先（祖先可能半透明），后者直接透明。
+ */
+export function scanFrozenCellOpacity(relPath: string, source: string): FrozenCellFinding[] {
+  const out: FrozenCellFinding[] = []
+  const seen = new Map<string, number>()
+  const tableOpen = /<table\b[^>]*>/g
+  let m: RegExpExecArray | null
+  while ((m = tableOpen.exec(source)) !== null) {
+    const close = source.indexOf('</table>', m.index)
+    const body = source.slice(m.index + m[0].length, close === -1 ? source.length : close)
+    const headers = Array.from(body.matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>/g)).map((t) => stripTags(t[1]) || '~')
+    // 表头里的「冻结」列（本仓约定：合并成一行写法）
+    const thFindings = Array.from(body.matchAll(/<th\b([\s\S]*?)\/?>/g)).filter(
+      (t) => /sticky/.test(t[1]) && /right-0/.test(t[1]),
+    )
+    // 单元格：sticky 的 `td`（className 可能是 "…" 或 {cn('…', …)}）
+    const tdFindings = Array.from(body.matchAll(/<td\b([\s\S]*?)(?:\/>|>)/g)).filter((t) =>
+      /sticky/.test(t[1]),
+    )
+    if (thFindings.length === 0 && tdFindings.length === 0) continue
+    const reasons: string[] = []
+    let bad = 0
+    for (const t of thFindings) {
+      const cls = classOf(`<th${t[1]}>`)
+      if (!hasOpaqueBackground(cls)) {
+        bad += 1
+        reasons.push(`th 背景不透明性未声明：className=${JSON.stringify(cls)}`)
+      }
+    }
+    for (const t of tdFindings) {
+      const cls = classOf(`<td${t[1]}>`)
+      if (/bg-inherit/.test(cls)) {
+        bad += 1
+        reasons.push(`td 用 bg-inherit 把不透明性外包给祖先（祖先可能是半透明的选中行）：className=${JSON.stringify(cls)}`)
+      } else if (!hasOpaqueBackground(cls)) {
+        bad += 1
+        reasons.push(`td 未声明不透明背景类：className=${JSON.stringify(cls)}`)
+      }
+    }
+    if (bad === 0) continue
+    const base = `${relPath}::冻结格[${headers.join('|')}]`
+    const n = (seen.get(base) ?? 0) + 1
+    seen.set(base, n)
+    out.push({ key: n === 1 ? base : `${base}#${n}`, badCells: bad, reasons })
+  }
+  return out
+}
+
 function walk(dir: string): string[] {
   const files: string[] = []
   for (const name of readdirSync(dir)) {
@@ -142,6 +267,7 @@ const CORPUS = SCAN_DIRS.flatMap((d) => walk(d))
   .map((full) => ({ path: rel(full), source: readFileSync(full, 'utf-8') }))
   .filter((f) => !OUT_OF_SCOPE.some((p) => f.path.startsWith(p)))
 const OFFENDERS = CORPUS.flatMap((f) => scanActionColumns(f.path, f.source).map((t) => t.key)).sort()
+const OPACITY_OFFENDERS = CORPUS.flatMap((f) => scanFrozenCellOpacity(f.path, f.source).map((t) => t.key)).sort()
 
 describe('宽表「操作」列可达性守卫（issue #6717）', () => {
   it('普查面非空且覆盖已知对象（改名/搬走 ⇒ 本判据先红，而不是静默空跑）', () => {
@@ -173,6 +299,19 @@ describe('宽表「操作」列可达性守卫（issue #6717）', () => {
     ).toEqual([])
   })
 
+  it('①b 冻结列（sticky）单元格必须自己声明**不透明**背景（issue #6729：选中态不许半透明）', () => {
+    const unexpected = OPACITY_OFFENDERS.filter((k) => !FROZEN_INHERIT_BG.includes(k))
+    expect(
+      unexpected,
+      '这些 `sticky` 冻结单元格把不透明性外包给了祖先（`bg-inherit`）或根本没声明背景 ⇒ ' +
+        '行底色一旦是半透明（如选中态 `bg-primary-50/40`），冻结列就会**透出**横向滚过的下层列内容：\n' +
+        unexpected.join('\n') +
+        '\n\n出口：给冻结格自己声明**不透明**背景（既有色如 `bg-white` / `bg-primary-50`），' +
+        '或在 `KNOWN_OPAQUE_BG` 里登记你用的那个不透明色；**`bg-inherit` 一律不接受**（它继承的可能是半透明行色）。\n' +
+        `现取集合（供登记）= ${JSON.stringify(OPACITY_OFFENDERS)}`,
+    ).toEqual([])
+  })
+
   it('② 台账不得腐坏：登记的条目必须仍是缺陷（双向相等）+ 只许缩短', () => {
     const dead = FROZEN_ACTION_OFFSCREEN.filter((k) => !OFFENDERS.includes(k))
     expect(
@@ -183,6 +322,12 @@ describe('宽表「操作」列可达性守卫（issue #6717）', () => {
       FROZEN_ACTION_OFFSCREEN.length,
       '台账只许缩短：修好一处必须同时下调 ACTION_OFFSCREEN_BASELINE（不留松弛量）',
     ).toBe(ACTION_OFFSCREEN_BASELINE)
+    const deadInherit = FROZEN_INHERIT_BG.filter((k) => !OPACITY_OFFENDERS.includes(k))
+    expect(deadInherit, `这些冻结格台账条目已不是缺陷 ⇒ 死条目，请从 FROZEN_INHERIT_BG 删除：${deadInherit.join('、')}`).toEqual([])
+    expect(
+      FROZEN_INHERIT_BG.length,
+      '冻结格台账只许缩短：修好一处必须同时下调 FROZEN_INHERIT_BG_BASELINE（不留松弛量）',
+    ).toBe(FROZEN_INHERIT_BG_BASELINE)
   })
 
   it('③ 判别力自证：内存注入的六种形态各自判定正确（不落盘）', () => {
@@ -211,5 +356,44 @@ describe('宽表「操作」列可达性守卫（issue #6717）', () => {
     expect(scanActionColumns('x.tsx', table(['单号', '客户', '状态', '金额', '备注', '日期'].map(plain).concat(split)))).toEqual([])
     // ⑥ 不含「操作」列的表（如看板汇总表）⇒ 不在本规则面内（**有意**：没有行操作就没有这个形态）
     expect(scanActionColumns('x.tsx', table(['日期', '收入', '退款', '净额'].map(plain)))).toEqual([])
+  })
+
+  it('④ 判别力自证·冻结格不透明（issue #6729）：半透明形态在内存里必红', () => {
+    const page = (cell: string, row = '<tr className="group">') =>
+      `<div className="overflow-x-auto"><table className="w-full"><thead><tr>`
+      + `<th className="px-3 whitespace-nowrap">单号</th>`
+      + `<th className="sticky right-0 z-20 bg-white px-3 whitespace-nowrap">操作</th>`
+      + `</tr></thead><tbody><tr>${row}<td className="px-3">A</td>${cell}</tr></tbody></table></div>`
+    // ① 违规形态（= #6717 的写法）：`bg-inherit` ⇒ 必红
+    expect(scanFrozenCellOpacity('x.tsx', page('<td className="sticky right-0 z-10 border-l bg-inherit px-3">查看</td>'))).toHaveLength(1)
+    // ② 违规形态：一个背景类都没有（透明）⇒ 必红
+    expect(scanFrozenCellOpacity('x.tsx', page('<td className="sticky right-0 z-10 px-3">查看</td>'))).toHaveLength(1)
+    // ③ 修好的形态：自己声明不透明背景 ⇒ 绿
+    expect(scanFrozenCellOpacity('x.tsx', page('<td className="sticky right-0 z-10 border-l bg-white px-3">查看</td>'))).toEqual([])
+    // ④ 选中态取不透明等效色（本包用的 `bg-slate-50`）⇒ 也算绿（这是本包采用的修法）
+    expect(scanFrozenCellOpacity('x.tsx', page('<td className="sticky right-0 z-10 border-l bg-slate-50 px-3">查看</td>'))).toEqual([])
+    // ④b `bg-primary-50`（既有不透明色）同样算绿
+    expect(scanFrozenCellOpacity('x.tsx', page('<td className="sticky right-0 z-10 border-l bg-primary-50 px-3">查看</td>'))).toEqual([])
+    // ⑤ `cn(...)` 写法（条件类）⇒ 仍能被解析（本仓真实写法）
+    expect(
+      scanFrozenCellOpacity('x.tsx', page("<td className={cn('sticky right-0 z-10 border-l px-3', checked ? 'bg-slate-50' : 'bg-white')}>查看</td>")),
+    ).toEqual([])
+    // ⑤b 任意值写法的不透明色（如 `bg-[#faf7f2]`）⇒ 算绿（本仓 /inbound-orders 用的就是它）
+    expect(
+      scanFrozenCellOpacity('x.tsx', page('<td className="sticky right-0 z-10 border-l bg-[#faf7f2] px-3">查看</td>')),
+    ).toEqual([])
+    // ⑤c 任意值 + 透明度后缀 ⇒ **仍必红**（`/40` 不在 `]` 里，但 rgba/8 位 hex 要拦住）
+    expect(
+      scanFrozenCellOpacity('x.tsx', page('<td className="sticky right-0 z-10 border-l bg-[#faf7f2]/40 px-3">查看</td>')),
+    ).toHaveLength(1)
+    expect(
+      scanFrozenCellOpacity('x.tsx', page('<td className="sticky right-0 z-10 border-l bg-[rgba(250,247,242,0.4)] px-3">查看</td>')),
+    ).toHaveLength(1)
+    // ⑥ 半透明后缀（`bg-primary-50/40`）**不是**白名单里的不透明色 ⇒ 必红（fail-closed）
+    expect(
+      scanFrozenCellOpacity('x.tsx', page('<td className="sticky right-0 z-10 border-l bg-primary-50/40 px-3">查看</td>')),
+    ).toHaveLength(1)
+    // ⑦ 反向对照：不带 sticky 的普通格（它由行底色负责）**不在本规则面内**
+    expect(scanFrozenCellOpacity('x.tsx', page('<td className="px-3 bg-inherit">查看</td>'))).toEqual([])
   })
 })

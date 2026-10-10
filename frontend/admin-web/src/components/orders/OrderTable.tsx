@@ -39,6 +39,15 @@ export interface OrderTableProps {
   onRefund?: (order: Order) => void
   onConfirmPayment?: (order: Order) => void
   onConfirmReceive?: (order: Order) => void
+  /**
+   * 表体空态文案（issue #6733）。
+   *
+   * 🔴 本组件用的是**自有表体空态行**（不是共享 `ui/Table`），而「这次读到底成没成」是**页面**的事
+   * （`/orders` 的 `loadError`）—— 组件自己看不见它。默认 `'暂无数据'` 保持改前行为不变；
+   * 页面在读失败时传**空串**（失败原因由常驻失败面说），否则一屏会出现三种说法打架：
+   * 计数「共 — 条」（不可知）+ 表体「暂无数据」（没有数据）+ 横幅「读失败」。
+   */
+  emptyText?: string
 }
 
 function formatNumber(value: number | undefined): string {
@@ -113,6 +122,7 @@ export default function OrderTable({
   onRefund,
   onConfirmPayment,
   onConfirmReceive,
+  emptyText = '暂无数据',
 }: OrderTableProps) {
   const allSelected = orders.length > 0 && orders.every((o) => selectedIds.includes(o.id))
   const someSelected = orders.some((o) => selectedIds.includes(o.id)) && !allSelected
@@ -244,8 +254,9 @@ export default function OrderTable({
             </tr>
           ) : orders.length === 0 ? (
             <tr>
-              <td colSpan={14} className="px-4 py-16 text-center text-neutral-400">
-                暂无数据
+              <td data-testid="orders-empty" colSpan={14} className="px-4 py-16 text-center text-neutral-400">
+                {/* 🔴 issue #6733：`emptyText` 由页面传入 —— 读失败时传空串（别把「读不到」说成「没有订单」）。 */}
+                {emptyText}
               </td>
             </tr>
           ) : (
@@ -398,9 +409,24 @@ export default function OrderTable({
                     </RemarkPopover>
                   </td>
 
-                  {/* 操作（issue #6717）：右缘冻结。`bg-inherit` ⇒ 背景随 `<tr>`（含选中 / hover）；
-                      `border-l` 与表头同位置，滚动时与左侧内容之间有分隔。 */}
-                  <td className="sticky right-0 z-10 border-l border-neutral-100 bg-inherit pl-2 pr-3 py-4">
+                  {/* 操作（issue #6717）：右缘冻结。`border-l` 与表头同位置，滚动时与左侧内容之间有分隔。
+                      issue #6729（**#6717 的回归修复**）：原来写 `bg-inherit` —— 它继承的是 `<tr>` 的背景，
+                      而**选中态的行背景就是半透明的**（`bg-primary-50/40` = `rgba(238,242,248,0.4)`）
+                      ⇒ 继承到的也半透明 ⇒ 横滚时下层列的内容（姓名/电话/地址）**穿透**进冻结列
+                      （真机 `getComputedStyle` alpha=0.4 + 读图双重实证）。
+                      修法 = **把「继承」换成「同一个颜色的不透明版」**：
+                        · 未选中：行底色是 `bg-white` ⇒ 本格也 `bg-white`（逐像素一致）；
+                        · 选中：用 `bg-primary-50-lit`（= `bg-primary-50/40` 叠在白底上的**已合成色**
+                          `#f8fafc`）⇒ 与同行其它格**逐像素同色**；不能直接用 `bg-primary-50`
+                          （那是**未合成**的原色 `#eef2f8`，比同行其它格深一档 = 视觉不一致）。
+                      ⇒ 冻结格任何交互态下 alpha 恒为 1，而**行底色机制一字未改**（未选中 / hover 观感不变）。
+                      🔴 不要再退回 `bg-inherit`：行底色一旦半透明，冻结列必然穿透（类级判据会拦住）。 */}
+                  <td
+                    className={cn(
+                      'sticky right-0 z-10 border-l border-neutral-100 pl-2 pr-3 py-4',
+                      checked ? 'bg-primary-50-lit' : 'bg-white',
+                    )}
+                  >
                     {renderActions(order)}
                   </td>
                 </tr>

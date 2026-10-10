@@ -330,8 +330,11 @@ export default function InboundOrdersPage() {
                     {STATUS_LABEL[row.status]}
                   </Badge>
                 </td>
-                {/* 操作（issue #6717）：右缘冻结（背景随 `<tr>`，见行上的注释） */}
-                <td className="sticky right-0 z-10 border-l border-neutral-100 bg-inherit px-3 py-2.5 text-right whitespace-nowrap">
+                {/* 操作（issue #6717）：右缘冻结。issue #6729（回归修复）：`bg-inherit` 继承行底色，
+                    而本表行底色含**半透明** hover（`hover:bg-neutral-50/60`）⇒ 横滚时下层列内容穿透。
+                    修法 = 用「行底色叠在卡片白底上」的**等效不透明色**：`#faf7f2`（实测同值）
+                    ⇒ alpha=1，且与行底色在同一像素上等色（观感不变）。 */}
+                <td className="sticky right-0 z-10 border-l border-neutral-100 bg-[#faf7f2] px-3 py-2.5 text-right whitespace-nowrap">
                   <Button variant="ghost" size="sm" onClick={() => void openDetail(row.id)}>
                     详情
                   </Button>
