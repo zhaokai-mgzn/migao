@@ -677,12 +677,15 @@ ai_agent_face_paths() {
   grep -E '^backend/ai-agent-service/' || true
 }
 admin_web_face_paths() {
-  # ⚠️ 后 8 条是**现取**（判据 C5 的 escaping_inputs）的跨目录输入：admin-web 的**测试**直接读这些
+  # ⚠️ 后 9 条是**现取**（判据 C5 的 escaping_inputs）的跨目录输入：admin-web 的**测试**直接读这些
   #    后端源码做逐值比对（例：tests/unit/lib/craft-calc-glossary.test.ts 读 CraftCalcConfig*.java /
   #    schema.sql / routing.py；craft-auto-features.test.ts 读 curtain_calc.py）⇒ 改了它们而
   #    node_modules 缺，那些比对一条都不会跑 = 同一形态的静默绿。`migration-archive` 是**目录**形态，
   #    故不写尾斜杠：它自身与它下面的文件都被命中。
-  grep -E '^(frontend/admin-web/|backend/ai-agent-service/app/(tools/curtain_calc|production/routing|vision/targets)\.py|backend/admin-api/src/main/(resources/db/(init/schema\.sql|migration-archive)|java/com/migao/admin/(entity/CraftCalcConfig|service/CraftCalcConfigService)\.java))' || true
+  #    #6668 追加：几何判据（tests/unit/design-baseline-geometry.test.ts）读**验收探针**
+  #    （acceptance/2026-10-10-admin-web-6668/admin-web-geometry-probe.mjs）核「读数入口还在 + 阈值一致」
+  #    ⇒ 探针被改而这条腿不跑 = 漏面（同款静默绿），故纳入本面。
+  grep -E '^(frontend/admin-web/|acceptance/2026-10-10-admin-web-6668/|backend/ai-agent-service/app/(tools/curtain_calc|production/routing|vision/targets)\.py|backend/admin-api/src/main/(resources/db/(init/schema\.sql|migration-archive)|java/com/migao/admin/(entity/CraftCalcConfig|service/CraftCalcConfigService)\.java))' || true
 }
 worker_h5_face_paths() {
   # frontend/shared 是本腿的跨目录输入（operation-display.mjs 被 render.mjs 与测试执行）。
