@@ -32,8 +32,11 @@ WAIT_SECS="${WAIT_SECS:-180}"
 [ -d "$WEB" ] || { echo "✗ 找不到 $WEB" >&2; exit 1; }
 
 echo "== ① 杀掉全部 next dev / next-server 实例"
-pkill -f "next-server" 2>/dev/null || true
-pkill -f "next dev" 2>/dev/null || true
+# 🔴 只杀**占着本端口**的实例。早先这里是 `pkill -f "next-server"` / `pkill -f "next dev"`，
+#    它会杀掉**全机器**的 next 实例 —— 实测把并发修复包自己的 dev server（跑在别的端口，如 3023）
+#    一起带走，直接干扰对方的红/绿验证（跨包误伤）。端口归属 = `lsof -ti:$PORT`，只动它。
+_pids="$(lsof -ti:"$PORT" 2>/dev/null || true)"
+[ -n "$_pids" ] && kill $_pids 2>/dev/null || true
 for _ in $(seq 1 20); do
   lsof -ti:"$PORT" >/dev/null 2>&1 || break
   sleep 0.5
