@@ -43,7 +43,9 @@
 空态」同族，承载体从**列表**换成了**计数行**）。
 
 - **计数行改成「与失败面同源」**：`/orders` 页尾的「共 N 条」、`/stock-ledger` 的「共 N 条」
-  在**读面失败标记**置位时印 `—`（不再印 0）；共享 `components/ui/Pagination.tsx` 新增
+  在**读面失败标记**置位时印 `—`（不再印 0）；`/finance` 汇总卡片读失败时金额位印 `—`、
+  笔数位说「笔数没读到」（改前是 `¥0.00` + 「0 笔」—— 同一次故障两处都在断言「真的没有」）；
+  共享 `components/ui/Pagination.tsx` 新增
   `totalReliable`（默认 `true`）—— 调用方在读失败时传 `false`，控件印「共 — 条记录」且不再显示
   「第 X-Y 条」。**正常路径的显示一字未改**（缺省即 `true`，其余调用方零改动）。
 - **失败态常驻 + 真重发**：`/orders` `/finance` `/customers` `/after-sales` `/knowledge`
