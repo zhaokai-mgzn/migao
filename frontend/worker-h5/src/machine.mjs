@@ -538,7 +538,7 @@ export function renderScan(state) {
       ${failed
         ? `<p class="wh5-machine__big wh5-machine__big--error">${esc(dataOr(state.error))}</p><p class="wh5-machine__hint">请重新扫一次水洗唛（同一张码再扫 = 领下一道）</p>`
         : '<p class="wh5-machine__big">请扫水洗唛</p><p class="wh5-machine__hint">扫一次即可看到订单详情与裁剪高度（无需点输入框）</p>'}
-      ${hasWorker ? '' : `<p class="wh5-machine__hint">这台屏上扫的活记在**当前工人**名下 ⇒ 请先<a class="wh5-machine__back" id="wh5-machine-login" href="${MACHINE_LOGIN_HREF}">登录</a>（工号 + PIN）</p>`}
+      ${hasWorker ? '' : `<p class="wh5-machine__hint">这台屏上扫的活记在<strong>当前工人</strong>名下 ⇒ 请先<a class="wh5-machine__back" id="wh5-machine-login" href="${MACHINE_LOGIN_HREF}">登录</a>（工号 + PIN）</p>`}
       <p class="wh5-machine__hint"><a class="wh5-machine__back" id="wh5-machine-to-report" href="${MACHINE_REPORT_HREF}">去报工页（本机不记住）</a></p>
       ${noticeBlock(state.notice)}
     </section>`
