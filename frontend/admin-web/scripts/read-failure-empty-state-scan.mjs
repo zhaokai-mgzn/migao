@@ -291,6 +291,142 @@ export function staleLedger(root) {
   return LEDGER.filter((k) => !live.has(k))
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// 第二条判据：**同一次读失败的重复信号**（issue #6669 未完成 1 / §31 P1 常驻面克制 · P2 信息不重复）
+//
+// ## 与第一条（读失败被吞）的区别 —— 同一个病的两级
+//
+// 第一条判「失败**看不见**（伪装成空态）」；本条判「失败**看见了好几遍**」。
+// 两条都属「状态必须真实」，互为补集：一个 catch 既清空读数又不表达失败 ⇒ 第一条红；
+// 一个 catch **表达了失败**却又用 toast 把同一句再说一遍 ⇒ 第二条红。
+//
+// ## 判的是哪个形态（口径）
+//
+// 同一个 catch 里**同时**有：
+//   ① **内联**失败文案 —— `setX(<非空字符串字面量>)` 且 X 命中 `error|fail|problem`
+//      （= 失败画在屏上，是常驻面）；
+//   ② **toast** 播报 —— `toast.error(...)`。
+// ⇒ 同一次故障在屏上报两遍（常驻内联 + 一次性 toast）。
+//
+// 🔴 为什么 ② 是**重复**而不是「双保险」：`frontend/admin-web/src/lib/request.ts` 的响应拦截器对
+// **所有**失败分支（`success:false` 业务错 / 各 HTTP 状态 / 网络错 / 非 axios 错）都已
+// `toast.error(...)` **且** `markErrorToastShown(error)` ⇒ 真 API 失败时页面那句 toast 是
+// **死分支**（`isErrorToastShown(e)` 恒真）；它只在「错误不经拦截器抛出」时执行，而那种情形下
+// ① 同屏也在 ⇒ 仍是两遍。
+// ⇒ 处置 = **撤掉页面自己的那次播报**，**保留**内联那一处（撤的是重复，**不是可见性**：
+// 失败仍看得见，且必须有重试出口 —— 出口那半由实例判据钉住：
+// `tests/unit/components/CalcFormulaPanel.test.tsx` 判据 ③）。
+//
+// ## 射程（**照实登记的局限，不假装覆盖全站**）
+//
+// 只扫 `src/components/production-config`（本条的实测发生地 = `CalcFormulaPanel`，它只在
+// `embedded` 形态下与页面的读面失败同屏；面板单独挂载时要靠内联那处兜底）。
+// 实测：把扫描面换成整个 `src`，按本条形态也只命中这个目录里的 2 处
+// （复算：`node scripts/read-failure-empty-state-scan.mjs`，读数见输出）。
+// ⇒ 其它目录的同族形态（若有）**不会有东西变红**：本条**不声明**全站覆盖。
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** 本条判据的扫描面（见上面「射程」：**有意只覆盖发生地所在目录**） */
+export const DUP_SCOPE = 'src/components/production-config'
+
+/**
+ * 判据本体（**只吃一段源码**）。
+ *
+ * 与 `swallowSitesFromSource` 同口径的设计：抽出来是为了让守卫能用**内存里的假源码**做
+ * 判别力自证（坏形态判红 / 好形态不红），而**不是**在测试里另抄一份正则（抄的那份会漂移）。
+ *
+ * @param {string} source 源码文本
+ * @param {{file?: string, tsModule?: typeof ts}} [opts] `file` 只用于台账键的前缀（自证传 `'probe.tsx'`）
+ */
+export function duplicateSignalSitesFromSource(source, { file = '<probe>.tsx', tsModule = ts } = {}) {
+  const sf = tsModule.createSourceFile(file, source, tsModule.ScriptTarget.Latest, true, tsModule.ScriptKind.TSX)
+  const out = []
+  const perSymbol = new Map()
+  const visit = (node) => {
+    if (tsModule.isCatchClause(node)) {
+      const symbol = ownerOf(node, sf)
+      const ordinal = (perSymbol.get(symbol) || 0) + 1
+      perSymbol.set(symbol, ordinal)
+      let inlineMsg = null
+      let toastCount = 0
+      const dig = (n) => {
+        if (tsModule.isCallExpression(n)) {
+          const callee = n.expression
+          if (tsModule.isPropertyAccessExpression(callee) && callee.getText(sf) === 'toast.error') {
+            toastCount += 1
+          }
+          if (tsModule.isIdentifier(callee) && callee.text.startsWith('set') && FAIL_NAME.test(callee.text.slice(3))) {
+            const arg = n.arguments[0]
+            if (arg && tsModule.isStringLiteral(arg) && arg.text !== '') inlineMsg = arg.text
+          }
+        }
+        tsModule.forEachChild(n, dig)
+      }
+      tsModule.forEachChild(node.block, dig)
+      if (inlineMsg !== null && toastCount > 0) {
+        out.push({
+          file,
+          line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
+          symbol,
+          key: `${file}::${symbol}#${ordinal}`,
+          inlineMsg,
+          toastCount,
+        })
+      }
+    }
+    tsModule.forEachChild(node, visit)
+  }
+  tsModule.forEachChild(sf, visit)
+  return out
+}
+
+/**
+ * 命中清单（**单一源**）：扫 `DUP_SCOPE` 下的每个文件。
+ * 每条 = `{ file, line, symbol, key, inlineMsg, toastCount }`。
+ */
+export function duplicateSignalSites(root) {
+  const files = walk(join(root, DUP_SCOPE)).sort()
+  const out = []
+  for (const file of files) {
+    const rel = relative(root, file)
+    out.push(...duplicateSignalSitesFromSource(readFileSync(file, 'utf8'), { file: rel, tsModule: ts }))
+  }
+  return { files: files.map((f) => relative(root, f)), sites: out }
+}
+
+/**
+ * 豁免台账（**只许缩短**）：登记「确需保留 toast」的命中点。
+ *
+ * 键与 `LEDGER` 同口径 = `仓库相对路径::符号#该符号内第几个 catch`。
+ * **失效即红**（`dupStaleLedger`）：该点改对之后必须**同批删掉**这一条。
+ *
+ * 现状（2026-10-10 取数）：`CalcFormulaPanel` 已修（不再命中）；本台账剩下的这一条是
+ * **兄弟挂载**——`ProcessConfigBoard`（`/production/routings` 页在跑的 v1 板子）的算料 tab
+ * 有**逐字相同**的同族代码（同端点 / 同文案 / 同「toast + 内联」两处）。
+ * 它**有意不在本包修**（如实记账，不收编成「已修」）：
+ *   ① 板子是 v2 要拆掉的那一份（`frontend/admin-web/src/app/(dashboard)/settings/page.tsx`
+ *      头注释「已知 v1 债务」）；
+ *   ② 它属**另一页**（`/production/routings`）的用户可见面 —— 本包只对 `/settings` 的算料域取证。
+ * v2 拆解或另包落地时**同批删条目**（`dupStaleLedger` 会逼着删）。
+ */
+export const DUP_LEDGER = [
+  'src/components/production-config/ProcessConfigBoard.tsx::ProcessConfigBoard#1',
+]
+
+/** 命中清单（台账过滤后）：未登记即红 */
+export function dupOffenders(root) {
+  const { files, sites } = duplicateSignalSites(root)
+  const offenders = sites.filter((s) => !DUP_LEDGER.includes(s.key))
+  return { files, sites, offenders }
+}
+
+/** 台账「空转」检测：登记了但**不再命中**的条目（只许缩短 ⇒ 必须删） */
+export function dupStaleLedger(root) {
+  const { sites } = duplicateSignalSites(root)
+  const live = new Set(sites.map((s) => s.key))
+  return DUP_LEDGER.filter((k) => !live.has(k))
+}
+
 const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop())
 if (isMain) {
   const root = process.env.MIGAO_SCAN_ROOT || join(process.cwd())
@@ -305,5 +441,18 @@ if (isMain) {
     console.log(`\n台账里这些条目**不再命中**，请删掉：\n  ${stale.join('\n  ')}`)
   }
   console.log(`\n未登记命中 ${offenders.length} 条 · 僵尸条目 ${stale.length} 条`)
-  process.exit(offenders.length || stale.length ? 1 : 0)
+
+  // ── 第二条判据：同一次读失败的重复信号（issue #6669） ──
+  const dup = dupOffenders(root)
+  console.log(`\n扫描 ${dup.files.length} 个 (${DUP_SCOPE}) 文件 · 命中「同一次读失败多处信号」${dup.sites.length} 处 · 台账豁免 ${DUP_LEDGER.length} 条\n`)
+  for (const s of dup.sites) {
+    const mark = dup.offenders.includes(s) ? '❌ 未登记' : '✅ 已登记'
+    console.log(`  ${mark} ${s.key}  (L${s.line} 内联「${s.inlineMsg}」+ toast×${s.toastCount})`)
+  }
+  const dupStale = dupStaleLedger(root)
+  if (dupStale.length) {
+    console.log(`\n重复信号台账里这些条目**不再命中**，请删掉：\n  ${dupStale.join('\n  ')}`)
+  }
+  console.log(`\n未登记命中 ${dup.offenders.length} 条 · 僵尸条目 ${dupStale.length} 条`)
+  process.exit(offenders.length || stale.length || dup.offenders.length || dupStale.length ? 1 : 0)
 }
