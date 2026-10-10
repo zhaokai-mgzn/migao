@@ -1,6 +1,6 @@
 {
   "id": "OR-064",
-  "pr": 6276,
+  "pr": 6634,
   "title": "物流「首次发货时刻」（order_logistics.shipped_at）：更新路径只在为空时补、已有值一律不覆盖（issue #6276）",
   "claimed_at": "2026-10-10"
 }
