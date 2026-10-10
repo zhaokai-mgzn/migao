@@ -166,7 +166,14 @@ describe('判别力自证（issue #6666 判据 6）：坏形态必红、合法�
   /** 内存里的合法语料：一个挂了底栏 + 已留位的页面 */
   const okLedger: Ledger = { pages: { 'src/pages/x/index.tsx': { root_class: 'x-page', scss: 'src/pages/x/index.scss' } } }
   const okScss = '.x-page { min-height: 100vh; box-sizing: border-box; padding-bottom: calc(50PX + env(safe-area-inset-bottom)); }'
-  const okTsx = "import MerchantTabBar from '../../components/MerchantTabBar'\n<View className='x-page'>"
+  // 🔴 合成语料里的 import 行**必须**写成「从 tests/ 出发能解析到真身」的形态：
+  //    CI 的触发面元守卫（tests/unit_ci_workflows/test_local_gate_matrix.py 的 C5）把测试源码里
+  //    **字符串字面量**形式的 `../` 相对路径当**真实输入**静态解析。若写成页面视角的
+  //    `../../components/MerchantTabBar` ⇒ 从 tests/ 解析出 `frontend/components/MerchantTabBar`
+  //    （**仓里没有这个目录**）⇒ 判「跨目录输入未登记 = 漏面」并卡合并（issue #6681 实测踩过）。
+  //    写成 `../src/components/MerchantTabBar` ⇒ 解析 = `frontend/bmini-app/src/components/MerchantTabBar`，
+  //    正是真身所在路径、落在触发面 `frontend/bmini-app/` 内 ⇒ 元守卫不报（也**不**去登记假路径）。
+  const okTsx = "import MerchantTabBar from '../src/components/MerchantTabBar'\n<View className='x-page'>"
   const okRead = (p: string) => (p === 'src/pages/x/index.tsx' ? okTsx : okScss)
   const mounts = ['src/pages/x/index.tsx']
 
