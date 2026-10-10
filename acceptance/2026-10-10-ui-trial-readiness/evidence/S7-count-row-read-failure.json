@@ -1,5 +1,5 @@
 {
-  "when": "2026-10-10T20:58:54.871Z",
+  "when": "2026-10-10T21:15:07.564Z",
   "pages": [
     {
       "path": "/orders",
@@ -71,7 +71,7 @@
       "anchors": [
         "stock-ledger-error-retry"
       ],
-      "permBlame": true
+      "permBlame": false
     }
   ]
 }
