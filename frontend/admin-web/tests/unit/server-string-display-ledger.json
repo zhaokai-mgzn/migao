@@ -1,0 +1,11 @@
+{
+  "why": "issue #6668 盲区②的类级台账：凡「前端切服务端复合串」或「把机读标识当展示文案」的位置都必须在此登记。未登记即红；台账只许缩短。判据 = frontend/admin-web/tests/unit/design-baseline-server-strings.test.ts。",
+  "ledger": {
+    "src/components/chat/MessageList.tsx::SS-delimiter-split": {
+      "rule": "SS-delimiter-split",
+      "kind": "benign",
+      "reason": "**前端自有协议**（不是服务端标识）：分隔符 `__PAGE__|tool|params_json` 的生产者（`PageControls` 直调工具）与消费者（本文件 `userMessageDisplay`）都在本仓，且兜底文案是 `翻页查看` —— 协议原文不会上屏（#3043）。它**不是**「服务端展示名/标识分离」的反例：这里没有服务端展示名可分离。重启条件 = 该协议一旦改由服务端下发，此条目必须重判。"
+    }
+  },
+  "boundary": "只认源码文本形态：`.split('|')` / `.split(\"|\")` 与 `requiredPermission` 被赋值当文案两种。模板串拼接、其它分隔符（`:` / `#` / `-`）、以及服务端**没有**展示名字段的形态（如 `materialKey` 只有机器键——今天的 `materialLabel` 已由 #6523 补上，置 JSON 的展示位由 UI-094 守）不在本判据面内。服务端新增展示字段属 admin-api / ai-agent-service 的改动 ⇒ 登记为未固化项（见 docs/design/design-baseline.md 的「未固化项」节）。"
+}
