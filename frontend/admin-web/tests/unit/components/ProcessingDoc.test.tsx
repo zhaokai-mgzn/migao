@@ -21,6 +21,12 @@ import ProcessingDoc, {
 } from '@/components/orders/ProcessingDoc'
 import type { Order, OrderItem, ProcessingOrder, ProcessingOrderItem } from '@/types'
 import { collectTableIntegrity, dataTables } from '@/components/orders/doc-tables'
+import {
+  assertNoPaperZeroFill,
+  assertPaperKeepsMissingDistinct,
+  paperNumericColumn,
+  paperTextOf,
+} from '@/lib/print-doc-paper'
 
 /**
  * 加工单（**A4 可打印纸质文档**，issue #5651）—— 照客户现行实物制式（issue #5651 实证表 #3）。
@@ -124,6 +130,34 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
       expect(table.columns).toBe(PROCESSING_DOC_COLUMNS.length)
       expect(table.rows.every((n) => n === PROCESSING_DOC_COLUMNS.length)).toBe(true)
     }
+  })
+
+  it('类级不变量（issue #6720）：本单据纸面不得出现「未知 ⇒ 0」的回退形态', () => {
+    render(
+      <ProcessingDoc
+        order={buildOrder({
+          items: [
+            buildItem({ quantity: undefined as unknown as number }),
+            // 真 0 的对照行（用料 0 米是明确读数，不是「未知」）
+            buildItem({ id: 'item-0', quantity: 0 }),
+          ],
+        })}
+        processingOrder={buildProcessingOrder()}
+      />
+    )
+    const area = document.querySelector('.processing-print-area')
+    // 判据面 = 8 列表的**用料列**（index 5，唯一由「数量是否算得出」决定的那一格）
+    const metersColumn = paperNumericColumn(area, { column: 5 })
+    // 单据：加工单 ProcessingDoc
+    assertNoPaperZeroFill(metersColumn.slice(0, 1), {
+      label: '加工单 ProcessingDoc',
+      presence: ['缺 quantity 的订单行（用料列第 1 行）'],
+    })
+    // 单据：加工单 ProcessingDoc
+    assertPaperKeepsMissingDistinct(metersColumn, {
+      label: '加工单 ProcessingDoc',
+      presence: ['用料列：缺值行（—）与真 0 行（0）'],
+    })
   })
 
   it('① 表头九栏逐条命中实证 #3 的制式（缺值显式占位，不静默留空）', () => {

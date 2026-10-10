@@ -7,7 +7,14 @@ import { join } from 'node:path'
 import { render, screen, cleanup, within } from '@testing-library/react'
 import ShipmentDoc from '@/components/orders/ShipmentDoc'
 import { dataTables, collectTableIntegrity } from '@/components/orders/doc-tables'
-import type { Order } from '@/types'
+import { SHIPMENT_DOC_MISSING } from '@/components/orders/ShipmentDoc'
+import {
+  PAPER_MISSING,
+  assertNoPaperZeroFill,
+  assertPaperKeepsMissingDistinct,
+  paperNumericColumn,
+} from '@/lib/print-doc-paper'
+import type { Order, OrderItem } from '@/types'
 
 /**
  * 发货单（可打印纸质文档，issue #3768 / UI-040）
@@ -200,6 +207,82 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
     expect(screen.queryByText('undefined')).not.toBeInTheDocument()
     expect(screen.queryByText('null')).not.toBeInTheDocument()
     expect(document.body.textContent).not.toContain('internal-service')
+  })
+
+  // ===== 🔴 缺值不许在纸面上印成 0（issue #6720）=====
+  // 可达性：后端 `OrderDetailResponse.OrderItemResponse.amount` = `unitPrice × quantity`，
+  // 两者都为 null 时回落 `subtotal`；全局 Jackson `default-property-inclusion: non_null`
+  // ⇒ null 的键**整个缺席**，前端拿到的是 `undefined`。故下面这条订单行是**真形态**。
+  // 判据两条一起钉：缺值印 `—`；**真 0 仍印 `0.00`**（反向对照，不许把真值判红）。
+  const missingLine: OrderItem = {
+    id: 'item-missing',
+    productId: 'p-x',
+    productName: '缺值布',
+    productCode: '',
+    color: '',
+    specification: '',
+    quantity: undefined as unknown as number,
+    unitPrice: undefined as unknown as number,
+    amount: undefined as unknown as number,
+    subtotal: undefined as unknown as number,
+  }
+  const zeroLine: OrderItem = { ...buildOrder().items![0], amount: 0, quantity: 0, unitPrice: 0 }
+  /** 某个商品行的 7 个单元格（与被测实现的写法解耦：按品名定位那一行） */
+  const rowCells = (name: string): string[] =>
+    Array.from(
+      (screen.getByText(name).closest('tr') as HTMLElement).querySelectorAll('td')
+    ).map((td) => td.textContent ?? '')
+
+  it('红证：缺 amount / unitPrice / quantity 的订单行 ⇒ 纸面**不得**出现 0.00 / 0（修前红在这里）', () => {
+    render(<ShipmentDoc order={buildOrder({ items: [missingLine] })} />)
+
+    const cells = rowCells('缺值布')
+    // 行本身**必须**在（否则下面几条会退化成「找不到元素」的假红）
+    expect(cells).toHaveLength(7)
+    // 单价格 / 数量 / 金额三栏逐栏判 —— 修前实测印的是 `0.00` / `0` / `0.00`
+    expect(cells.slice(4)).not.toContain('0.00')
+    expect(cells.slice(4)).not.toContain('0')
+    expect(cells.slice(4).filter((c) => c === SHIPMENT_DOC_MISSING)).toHaveLength(3)
+  })
+
+  it('缺值行的合计**不可知** ⇒ 印「—」，不把缺的行当 0 摊进合计（假总额）', () => {
+    render(<ShipmentDoc order={buildOrder({ items: [missingLine] })} />)
+
+    const totalRow = (screen.getByText('合计').closest('tr') as HTMLElement)
+    const totalCells = Array.from(totalRow.querySelectorAll('td')).map((td) => td.textContent ?? '')
+    expect(totalCells).toEqual(['合计', SHIPMENT_DOC_MISSING, SHIPMENT_DOC_MISSING])
+    expect(document.body.textContent).not.toContain('合计0.00')
+  })
+
+  it('反向对照：**真 0 仍印 0**（0 元 / 0 米是明确读数，不是「未知」）', () => {
+    render(<ShipmentDoc order={buildOrder({ items: [zeroLine] })} />)
+
+    const cells = rowCells('布艺遮光帘A')
+    expect(cells.slice(4)).toEqual(['0.00', '0', '0.00'])
+    // 合计同样是**真 0**（逐行都有值 ⇒ 算得出来）
+    const totalRow = screen.getByText('合计').closest('tr') as HTMLElement
+    expect(Array.from(totalRow.querySelectorAll('td')).map((td) => td.textContent)).toEqual([
+      '合计',
+      '0',
+      '0.00',
+    ])
+  })
+
+  it('类级不变量（issue #6720）：本单据纸面不得出现「未知 ⇒ 0」的回退形态', () => {
+    render(<ShipmentDoc order={buildOrder({ items: [missingLine, zeroLine] })} />)
+    // 判据面 = **缺值那一行**（真 0 的对照行在另一行：缺值行不得有 0.00，真 0 行不得有「—」）
+    const area = document.querySelector('.shipment-print-area')
+    const amountColumn = paperNumericColumn(area, { column: 6 })
+    // 单据：发货单 ShipmentDoc
+    assertNoPaperZeroFill(amountColumn.slice(0, 1), {
+      label: '发货单 ShipmentDoc',
+      presence: ['缺 amount 的订单行（金额列第 1 行）'],
+    })
+    // 单据：发货单 ShipmentDoc
+    assertPaperKeepsMissingDistinct(paperNumericColumn(area, { column: 6 }), {
+      label: '发货单 ShipmentDoc',
+      presence: ['金额列：缺值行（—）与真 0 行（0.00）'],
+    })
   })
 
   // ===== 存量已发货订单的发货人栏口径（issue #3818 裁定）=====

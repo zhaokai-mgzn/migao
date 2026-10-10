@@ -2,6 +2,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { lineSubtotal } from '@/lib/order-amount'
+import type { OrderItem } from '@/types'
 
 /**
  * 行金额口径**单一真值**（issue #4965）—— `lineSubtotal` 是屏幕（订单详情明细行
@@ -24,6 +25,18 @@ describe('lineSubtotal 行金额口径（issue #4965）', () => {
 
   it('缺 subtotal 按 0（不 NaN）', () => {
     expect(lineSubtotal({ subtotal: 0, processingFee: 30 })).toBe(30)
+  })
+
+  it('🔴 两个加数都缺 ⇒ `null`（「算不出来」，**不是 0**，issue #6720）', () => {
+    // 纸面（QuotationDoc 的「本套金额」）据此印 `—`；把它改回 `|| 0` ⇒ 纸面恒印 0.00
+    // （客户会把「没有这个数」读成「这一项是零元」）。
+    expect(lineSubtotal({} as Pick<OrderItem, 'subtotal' | 'processingFee'>)).toBeNull()
+    // 反向对照：**单个加数为 0** 是真值 ⇒ 仍算得出数（不得退化成 null）
+    expect(lineSubtotal({ subtotal: 0, processingFee: 0 })).toBe(0)
+    expect(lineSubtotal({ subtotal: 0 })).toBe(0)
+    expect(lineSubtotal({ subtotal: 1250 })).toBe(1250)
+    // 非有限值同样按「算不出来」处理（不 NaN）
+    expect(lineSubtotal({ subtotal: Number.NaN, processingFee: Number.NaN })).toBe(0)
   })
 
   it('与 OrderItemList 的行小计口径同源：屏幕与纸面调用同一实现（不各算一套）', () => {

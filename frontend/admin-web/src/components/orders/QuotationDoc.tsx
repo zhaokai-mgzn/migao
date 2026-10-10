@@ -64,6 +64,11 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  *    并进面料单价，而我们 `unitPrice` 与 `processingFee` 是**两笔真实金额** ⇒ 必须分别列示
  *    （面料行 + 加工费行），否则商家对不上账。
  * 8. **没有收款码 ⇒ 整块不出现、不画假码**（`imageUrl` 缺席即视为无码）。
+ * 9. 🔴 **缺值不许印成 0**（issue #6720）：行级 `unitPrice` / `subtotal`、`本套金额`
+ *    （= `lineSubtotal(item)`，行级 `subtotal` 与 `processingFee` 都缺时它返回 `null`）与汇总三栏
+ *    在缺值时一律印 `—`（`QUOTATION_DOC_MISSING`）；**真 0 仍印 `0.00`**。
+ *    判据 = `frontend/admin-web/tests/unit/components/QuotationDoc.test.tsx` 的「缺值不印 0」一组
+ *    + 类级守卫 `frontend/admin-web/tests/unit/lib/print-doc-paper.test.ts`。
  */
 interface QuotationDocProps {
   order: Order
@@ -91,8 +96,21 @@ interface QuotationDocProps {
 export const QUOTATION_FOOTER_NOTICE =
   '收到货后先验货，若有质量问题务必在七天内联系客服，如已开剪不予退换！'
 
-function formatAmount(amount?: number): string {
-  return (amount ?? 0).toLocaleString('zh-CN', {
+/**
+ * 纸面缺值占位（**显式**：不静默留空、更不印 `0.00`）—— 与 `SalesDoc` 的
+ * `SALES_DOC_MISSING` / `ProcessingDoc` 的 `MISSING` 同一口径（issue #6720）。
+ *
+ * 🔴 `amount` 为 `undefined` **是真形态**：后端
+ * `OrderDetailResponse.OrderItemResponse.amount` = 行 `unitPrice × quantity`，两者都为 null 时
+ * 回落 `subtotal`，而全局 Jackson `default-property-inclusion: non_null` 会让 null 的键
+ * **整个缺席**。纸面把「没有这个数」印成 `0.00`，会被客户读成「这一项是零元」。
+ * 真值 `0` 仍印 `0.00`（真 0 ≠ 未知）。
+ */
+export const QUOTATION_DOC_MISSING = '—'
+
+export function formatAmount(amount?: number | null): string {
+  if (typeof amount !== 'number' || !Number.isFinite(amount)) return QUOTATION_DOC_MISSING
+  return amount.toLocaleString('zh-CN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })

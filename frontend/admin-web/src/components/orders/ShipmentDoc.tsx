@@ -44,6 +44,11 @@ import { cn, formatFullDateTime } from '@/lib/utils'
  * 7. **发货人栏「-」口径**（issue #3818 裁定）：存量已发货订单 `shipper_name` 为 NULL/空
  *    （历史上从未采集）→ 纸面发货人栏显示「-」，与 #3768 判据一致；**不得**留白、
  *    不得 undefined/null。与第 6 条区分：留空只给「运单号/物流公司」（发货前手写用）。
+ * 8. 🔴 **缺值不许印成 0**（issue #6720）：行级 `unitPrice` / `quantity` / `amount` 与合计
+ *    在缺值时一律印 `—`（`SHIPMENT_DOC_MISSING`），**不印 `0.00` / `0`**；**真 0 仍印 `0.00`**。
+ *    范式就地照抄：第 6 条（无物流 ⇒ 留空供手写）、第 7 条（发货人缺 ⇒ `-`）、
+ *    `SalesDoc` 的 `SALES_DOC_MISSING`。判据 = `frontend/admin-web/tests/unit/components/ShipmentDoc.test.tsx`
+ *    的「缺值不印 0」一组 + 类级守卫 `frontend/admin-web/tests/unit/lib/print-doc-paper.test.ts`。
  */
 interface ShipmentDocProps {
   order: Order
@@ -66,15 +71,48 @@ interface ShipmentDocProps {
   className?: string
 }
 
-function formatAmount(amount?: number): string {
-  return (amount ?? 0).toLocaleString('zh-CN', {
+/**
+ * 🔴 **缺值不许在纸面上印成 `0`**（issue #6720）—— 与 `SalesDoc` 的 `SALES_DOC_MISSING`
+ * 同一口径（那一份是纸面族的既有范式）：`0.00` 会被读成「这个数是零」，
+ * 而「没有这个数」是另一件事 —— 这张纸是**客户拿到手的凭证**，两者在纸面上必须可分。
+ *
+ * 可达性（不是纸面洁癖）：后端 `OrderDetailResponse.OrderItemResponse.amount` = 行
+ * `unitPrice × quantity`，两者都为 null 时回落 `subtotal`；而全局 Jackson
+ * `default-property-inclusion: non_null` ⇒ `amount` / `quantity` 为 null 时**键整个缺席**，
+ * 前端拿到的就是 `undefined`。故「缺值」在本系统是**真形态**，不是理论分支。
+ *
+ * 真值 `0` 仍印 `0.00`（真 0 ≠ 未知）—— 判据里两条一起钉（issue #6720 反向对照）。
+ */
+export const SHIPMENT_DOC_MISSING = '—'
+
+/** 纸面取形（`formatAmount` / `formatQty` 共用）：非有限数 ⇒ 「留白」由调用方决定 */
+function paperNumber(value?: number | null): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+export function formatAmount(amount?: number | null): string {
+  const value = paperNumber(amount)
+  if (value === null) return SHIPMENT_DOC_MISSING
+  return value.toLocaleString('zh-CN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
 }
 
-function formatQty(qty?: number): string {
-  return String(qty ?? 0)
+export function formatQty(qty?: number | null): string {
+  const value = paperNumber(qty)
+  return value === null ? SHIPMENT_DOC_MISSING : String(value)
+}
+
+/** 纸面合计：**有任一缺值 ⇒ 合计不可知**（不拿「缺的行按 0 算」的假合计糊纸面，issue #6720） */
+function sumOrUnknown(values: readonly (number | undefined)[]): number | null {
+  let sum = 0
+  for (const value of values) {
+    const n = paperNumber(value)
+    if (n === null) return null
+    sum += n
+  }
+  return sum
 }
 
 export default function ShipmentDoc({
@@ -94,8 +132,10 @@ export default function ShipmentDoc({
   const items = order.items || []
   const processingItems = order.processingItems || []
 
-  const totalQty = items.reduce((sum, it) => sum + (it.quantity || 0), 0)
-  const totalAmount = items.reduce((sum, it) => sum + (it.amount || 0), 0)
+  // 🔴 合计 = 逐行**全有值**才算得出来（issue #6720）：任一行的 `quantity` / `amount` 缺，
+  //    合计就印 `—` —— 否则「一行没数」会被静默摊进合计，纸面报给客户一个**假总额**。
+  const totalQty = sumOrUnknown(items.map((it) => it.quantity))
+  const totalAmount = sumOrUnknown(items.map((it) => it.amount))
   // 加工费合计（元）：真值源 = **行级落库的 `processingFee`**（issue #4406：组合价 × 加工费米数）。
   // ⚠️ 不得再按 `processingItems[].amount` 求和 —— issue #4882 起该字段已从后端
   // `ProcessingItemBrief` 退场（只剩 id/name/quantity）⇒ 旧写法会让纸面恒印 0.00
