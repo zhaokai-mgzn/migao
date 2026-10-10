@@ -21,7 +21,7 @@
  * | L3b | 🔴 **形态在但没人调用也红**（调用点级）：导航语句**所在的函数**必须真的会被执行（组件 / hook / 文件内被引用过的具名函数） | 把 `Taro.redirectTo` 挪进一个**没人调用**的导出函数 ⇒ 红 |
  * | L3c | 🔴 **HTML 注释里的锚点不算入口**：判据先去掉 `<!-- … -->` 再判形态 | 把 `<a href>` 包成 `<!-- … -->` ⇒ 红 |
  * | L4 | `via` 不是路由字面量时，「记号 ⇒ 路由」的绑定必须被 `viaBinding` 钉住（那里出现路由字面量 / 路由常量名） | 把 viaBinding 指向无关文件 ⇒ 红 |
- * | L5 | 跨应用 `href`：`/b/#<路由>` 去掉前缀后必须**逐值等于** bmini 的登记路由（改一边不改另一边 ⇒ 红） | 改 worker-h5 的 href 路由段 ⇒ 红 |
+ * | L5 | 🔴 **跨应用入口已收敛**（2026-10-10，issue #6635）：`/w/` 报工页**不再**承载入库两页的 `<a>`（反向钉住：出现即红），可达性由**工人工作台**承担（`from` 逐值核） | 把 `/w/` 的那两条入口加回去 / 把工作台的入口删掉 ⇒ 红 |
  * | L6 | 平台缺口台账（Taro API 之外那一类）：缺口必须**由真的调用它的文件接线**（`wiredBy` 的**代码**里出现 `wiredToken`） | 只登记不接线 ⇒ 红 |
  *
  * ## 边界（明确的，不要把本守卫读成覆盖面更大的东西）
@@ -55,6 +55,8 @@ import { callSites, reachableFromSpan } from './helpers/inboundCallSites'
 
 const REPO_ROOT = path.join(BMINI_ROOT, '..', '..')
 const APP_CONFIG = 'src/app.config.ts'
+/** 工人工作台 —— 入库两页现在**唯一**的入口承载面（2026-10-10 起，issue #6635）。 */
+const WORKER_HOME = 'src/pages/worker/home/index.tsx'
 const BACKEND_LANDING_PARAM =
   'backend/admin-api/src/main/java/com/migao/admin/service/InboundLabelService.java'
 
@@ -233,8 +235,9 @@ describe('入口可达性：交付物可达性三问之② —— 每个面向�
     expect(input.pages.length).toBeGreaterThanOrEqual(12)
     expect(input.entries.length).toBeGreaterThanOrEqual(10)
     expect(entryProblems(input)).toEqual([])
-    // 两类形态都真的覆盖到了（否则"跨应用 href"或"框架导航"有一侧从没被核过）
-    expect(input.entries.filter((entry) => entry.nav === 'href').length).toBeGreaterThanOrEqual(2)
+    // 🔴 2026-10-10（issue #6635，用户逐字「移除拍照入库和补打入库标签」）后：`/w/` 页头那两条
+    // 跨应用 `href` 条目**已撤** ⇒ 台账里**不再有** `href` 条目（`href` 判定分支由 L5 的合成样本自证）。
+    expect(input.entries.filter((entry) => entry.nav === 'href').length).toBe(0)
     expect(
       input.entries.filter((entry) => entry.nav === 'redirectTo' || entry.nav === 'navigateTo').length,
     ).toBeGreaterThanOrEqual(6)
@@ -247,14 +250,22 @@ describe('入口可达性：交付物可达性三问之② —— 每个面向�
     expect(LANDING_CODE_PARAM).toBe('code')
   })
 
-  it('L5 跨应用入口：`/w/` 上的链接逐值指向 bmini 登记的两页（`/b/#<路由>`）', () => {
+  it('L5 🔴 `/w/` 不再承载入库两页入口（反向钉住），可达性由工人工作台承担', () => {
     // 🔴 去 JS 注释**且**去 HTML 注释：注释里的锚点不是入口（D2）
     const workerH5 = stripHtmlComments(stripComments(readReal('frontend/worker-h5/src/render.mjs')))
     for (const route of [INBOUND_PAGE_ROUTE, REPRINT_PAGE_ROUTE]) {
-      expect({ route, linked: workerH5.includes(`href="/b/#${route}"`) }).toEqual({ route, linked: true })
+      expect({ route, carriedByW: workerH5.includes(`/b/#${route}`) }).toEqual({ route, carriedByW: false })
     }
     // 反向：bmini 侧的路由常量不许被 worker-h5 抄第二份（前缀 `/b/#` 是 Taro h5 的 hash 路由形态）
     expect(workerH5.includes("INBOUND_PAGE_ROUTE")).toBe(false)
+    // 正向：可达性没丢 —— 两条登记都能在**工人工作台**找到真导航（`from` 逐值 + nav 形态）
+    for (const route of [INBOUND_PAGE_ROUTE, REPRINT_PAGE_ROUTE]) {
+      const carriers = PAGE_ENTRY_LEDGER.filter((entry) => entry.route === route && entry.from === WORKER_HOME)
+      expect({ route, carriers: carriers.length }).toEqual({ route, carriers: 1 })
+      expect(carriers[0].nav).toBe('navigateTo')
+    }
+    // 形态覆盖自证：`href` 分支的判定函数没退化（台账里已无 href 条目 ⇒ 用合成样本钉住它）
+    expect(navPattern('href', '/pages/worker/inbound/index').test('<a href="/b/#/pages/worker/inbound/index">x</a>')).toBe(true)
   })
 
   it('L6 平台缺口必须有登记，且由真的调用它的文件接线（Taro API 之外那一类）', () => {
@@ -297,39 +308,20 @@ describe('入口可达性：交付物可达性三问之② —— 每个面向�
     expect(readReal('src/utils/inbound/gaps.ts')).toContain('REPRINT_PAGE_ROUTE')
   })
 
-  it('L3 🔴 红证：把 `/w/` 上的入口删掉 ⇒ 判红（跨应用入口也是真入口）', () => {
+  it('L3 🔴 红证：把**工人工作台**上的入库入口删掉 ⇒ 判红（声明存在 ≠ 可达）', () => {
     const input = realInput()
     const stripped: Reader = (rel) =>
-      rel === 'frontend/worker-h5/src/render.mjs'
-        ? readReal(rel).replace(/\s*<a class="wh5-entry"[^>]*>[^<]*<\/a>/g, '')
+      rel === WORKER_HOME
+        ? readReal(rel).replace(
+            /Taro\.navigateTo\(\{ url: (INBOUND_PAGE_ROUTE|REPRINT_PAGE_ROUTE) \}\)/g,
+            "Taro.navigateTo({ url: '/pages/nonexistent/index' })",
+          )
         : readReal(rel)
-    expectMutationApplied(
-      stripped('frontend/worker-h5/src/render.mjs'),
-      [],
-      'L3 删掉 /w/ 入口锚点',
-    )
-    expect(stripped('frontend/worker-h5/src/render.mjs')).not.toContain('class="wh5-entry"')
+    const mutated = stripped(WORKER_HOME)
+    // 变异生效自证（锚点失配会静默返回原文 ⇒ 红证退化成空断言）
+    expectMutationApplied(mutated, ["Taro.navigateTo({ url: '/pages/nonexistent/index' })"], 'L3 摘掉工人工作台入口')
+    expect(mutated.includes('Taro.navigateTo({ url: INBOUND_PAGE_ROUTE })')).toBe(false)
     const problems = entryProblems({ ...input, read: stripped })
-    expect(problems.join('\n')).toContain('声明存在 ≠ 可达')
-    expect(problems.join('\n')).toContain(INBOUND_PAGE_ROUTE)
-  })
-
-  it('L3c 🔴 红证：把 `/w/` 上的锚点包进 HTML 注释 ⇒ 判红（注释里的链接不是入口）', () => {
-    const input = realInput()
-    // 变异体在**内存里**构造（不改磁盘）：只把那一行锚点包成 HTML 注释
-    const commented: Reader = (rel) =>
-      rel === 'frontend/worker-h5/src/render.mjs'
-        ? readReal(rel).replace(/(<a class="wh5-entry"[^>]*>[^<]*<\/a>)/g, '<!--$1-->')
-        : readReal(rel)
-    // 「变异真的被读到」的自证：变异体里锚点串**还在**（所以"按 includes 判"的那种守卫仍会绿）
-    const mutated = commented('frontend/worker-h5/src/render.mjs')
-    expect(mutated.includes('href="/b/#/pages/worker/inbound/index"')).toBe(true)
-    // 变异生效自证：锚点确实被包进了 HTML 注释（否则下面的「判红」在未变异数据上恒真）
-    expectMutationApplied(mutated, ['<!--<a class="wh5-entry"'], 'L3c 锚点包 HTML 注释')
-    expect(mutated.includes('<!--<a class="wh5-entry"')).toBe(true)
-    // 对照：真仓库下本判据判绿（否则下面那条"红"可能只是读错了文件）
-    expect(entryProblems(input)).toEqual([])
-    const problems = entryProblems({ ...input, read: commented })
     expect(problems.join('\n')).toContain('声明存在 ≠ 可达')
     expect(problems.join('\n')).toContain(INBOUND_PAGE_ROUTE)
   })
@@ -375,23 +367,31 @@ describe('入口可达性：交付物可达性三问之② —— 每个面向�
     expect(problems.join('\n')).toContain(REPRINT_PAGE_ROUTE)
   })
 
-  it('L3b 🔴 红证：`render.mjs` 里 `workerEntriesBar(...)` 定义但调用被摘掉 ⇒ 判红（跨应用侧同族）', () => {
+  it('L3b 🔴 红证：工人工作台的 `Taro.navigateTo` 挪进**没人调用**的导出函数 ⇒ 判红（写了 ≠ 会被执行）', () => {
+    // ⚠️ 2026-10-10（issue #6635）后这条红证的注入点从 `/w/` 的 `render.mjs` 换成了**工人工作台** ——
+    //    台账里已没有 `from: render.mjs` 的条目，再拿它做注入点就与判定对象脱钩（红证会变空断言）。
     const input = realInput()
-    const uncalled: Reader = (rel) =>
-      rel === 'frontend/worker-h5/src/render.mjs'
-        // ⚠️ 锚点只认「定义本身 + 调用本身」，**不写参数**：函数签名（当前 `(state)`）与
-        //    调用点周围的模板（当前 `</header>${pageNoticeBanner(state)}${workerEntriesBar(state)}`）
-        //    都会随上游重构变（#5786 改过一轮）⇒ 写死参数的锚点会**静默失配**，
-        //    把「读到的版本不是我以为的那个」误报成「函数定义丢了」（见 `expectMutationApplied`）。
-        ? readReal(rel).replace('${workerEntriesBar(state)}', '')
+    const orphaned: Reader = (rel) =>
+      rel === WORKER_HOME
+        ? readReal(rel)
+            .replace(/\s*Taro\.navigateTo\(\{ url: INBOUND_PAGE_ROUTE \}\)/, '')
+            .concat(
+              '\nexport function handleInboundNav() {\n  Taro.navigateTo({ url: INBOUND_PAGE_ROUTE })\n}\n',
+            )
         : readReal(rel)
-    const mutated = uncalled('frontend/worker-h5/src/render.mjs')
-    // 🔴 先自证「读到的是**定义完整**的那个文件」：否则下面的断言会把「版本/对象不对」
-    // 报成「函数定义丢了」（实测踩过，见 `expectMutationApplied` 的注释）
-    expectMutationApplied(mutated, ['function workerEntriesBar('], 'L3b 摘掉 workerEntriesBar 调用')
-    expect(mutated.includes('${workerEntriesBar(state)}')).toBe(false)
-    const problems = entryProblems({ ...input, read: uncalled })
+    const mutated = orphaned(WORKER_HOME)
+    expectMutationApplied(mutated, ['export function handleInboundNav'], 'L3b 挪进孤儿函数')
+    {
+      // 自证：**函数体外那一处**真的没了（计数不变：原文 1 处 → 变异后 1 处，从函数体挪进孤儿函数）
+      const CALLEE = 'Taro.navigateTo({ url: INBOUND_PAGE_ROUTE })'
+      const count = (text: string) => (text.match(new RegExp(CALLEE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) ?? []).length
+      if (count(mutated) !== count(readReal(WORKER_HOME))) {
+        throw new Error(`[L3b] 变异形态不符预期：调用句出现次数 before=${count(readReal(WORKER_HOME))} / after=${count(mutated)}`)
+      }
+    }
+    const problems = entryProblems({ ...input, read: orphaned })
     expect(problems.join('\n')).toContain('写了 ≠ 会被执行')
+    expect(problems.join('\n')).toContain(INBOUND_PAGE_ROUTE)
   })
 
   it('L4 🔴 红证：viaBinding 指向无关文件 ⇒ 判红（动态记号必须被钉住）', () => {
@@ -403,19 +403,22 @@ describe('入口可达性：交付物可达性三问之② —— 每个面向�
     expect(problems.join('\n')).toContain('绑定没被钉住')
   })
 
-  it('L5 🔴 红证：跨应用链接改一边不改另一边 ⇒ 判红', () => {
+  it('L5 🔴 红证：把已撤的 `/w/` 入口重新登记回台账 ⇒ 判红（台账不许给不存在的入口盖章）', () => {
     const input = realInput()
-    const tampered: Reader = (rel) =>
-      rel === 'frontend/worker-h5/src/render.mjs'
-        ? readReal(rel).replace('/b/#/pages/worker/inbound/index', '/b/#/pages/worker/inbound/index2')
-        : readReal(rel)
-    expectMutationApplied(
-      tampered('frontend/worker-h5/src/render.mjs'),
-      ['/b/#/pages/worker/inbound/index2'],
-      'L5 改坏跨应用链接一边',
-    )
-    const problems = entryProblems({ ...input, read: tampered })
-    expect(problems.join('\n')).toContain('/pages/worker/inbound/index2')
+    const restored = [
+      ...input.entries,
+      {
+        route: INBOUND_PAGE_ROUTE,
+        from: 'frontend/worker-h5/src/render.mjs',
+        nav: 'href' as const,
+        via: '/pages/worker/inbound/index',
+        audience: '工人身份（合成：把 2026-10-10 已撤的 /w/ 入口重新登记）',
+      },
+    ]
+    // 对照：真台账下判绿（否则下面那条"红"可能只是读错了文件）
+    expect(entryProblems(input)).toEqual([])
+    const problems = entryProblems({ ...input, entries: restored })
+    expect(problems.join('\n')).toContain('声明存在 ≠ 可达')
     expect(problems.join('\n')).toContain(INBOUND_PAGE_ROUTE)
   })
 

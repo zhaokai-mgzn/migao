@@ -1,6 +1,7 @@
 // case_ids: PG-018, BM-006, DF-017
 //
-// 一体机「机台模式」（母单 #5161；设计 docs/design/cutting-height-config-and-terminal.md §2.6）。
+// 一体机「裁高计算」（母单 #5161；设计 docs/design/cutting-height-config-and-terminal.md §2.6）。
+// 文案（2026-10-10 用户裁定，issue #6635）：屏上/入口一律叫「裁高计算（一体机）」——「机台模式」是内部叫法。
 //
 // 形态（用户 2026-09-29 逐字裁定）：机器旁一块屏 + 一把**有线扫码枪**（= HID 键盘楔）。
 //   扫观星台自己的水洗唛（部位级码 `/s/<短码>` 或 token）⇒ **同一屏**给出
@@ -27,6 +28,13 @@ import { operationDisplayName } from './shared/operation-display.mjs'
 
 /** 缺值显示（**显式**：缺就显示这个，绝不猜 0 —— 给机器的值偏小 = 裁短 = 事故）。 */
 export const EMPTY = '—'
+
+/**
+ * 「去报工页」出口（issue #6635）：机台那台屏被本机预设钉在裁高页（`?page=cut_calc`）后，
+ * 工人临时要报普通工时得有**一条**出路 —— `keep=1` = **只本次**，绝不把机台的预设改掉
+ * （改掉 ⇒ 这台屏下次开机就不再是机台模式了）。见 frontend/worker-h5/src/scan-input.mjs。
+ */
+export const MACHINE_REPORT_HREF = '/w/?page=report&keep=1'
 
 /** 机器屏精度（三位小数 = mm；服务端 `rounding.digits` 是唯一真值，这里只是渲染兜底）。 */
 export const DEFAULT_DIGITS = 3
@@ -491,12 +499,13 @@ export function renderScan(state) {
   return `
     <section class="wh5-machine__panel wh5-machine__panel--idle" data-machine-screen="${failed ? 'error' : 'scan'}">
       <header class="wh5-machine__head">
-        <h1>机台模式 · 裁高</h1>
+        <h1>裁高计算（一体机）</h1>
         <span class="wh5-machine__worker">${esc(dataOr(state.worker?.workerName))}</span>
       </header>
       ${failed
         ? `<p class="wh5-machine__big wh5-machine__big--error">${esc(dataOr(state.error))}</p><p class="wh5-machine__hint">请重新扫一次水洗唛（或手工输入短码）</p>`
         : '<p class="wh5-machine__big">请扫水洗唛</p><p class="wh5-machine__hint">扫一次即可看到订单详情与裁剪高度（无需点输入框）</p>'}
+      <p class="wh5-machine__hint"><a class="wh5-machine__back" id="wh5-machine-to-report" href="${MACHINE_REPORT_HREF}">去报工页（本机不记住）</a></p>
       ${noticeBlock(state.notice)}
     </section>`
 }

@@ -1084,18 +1084,18 @@
 
 ### BM-025. 工人面两页的入口可达性 - 入口台账（未登记即红 / 登记了没人指向也红） 🔵
 ```
-你: 工人要拍照入库 / 补打标签时，他手里那个页面（`/w/` 报工页）必须有一条真的能走到的入口；而「路由常量被声明、被 app.config 比对过、却没有任何跳转用它」必须被判红
+你: 工人要拍照入库 / 补打标签时，他必须有一条真的能走到的入口（2026-10-10 起由**工人工作台**承载，`/w/` 报工页不再发射）；而「路由常量被声明、被 app.config 比对过、却没有任何跳转用它」必须被判红
 期望: direct_reply
 数据: 判据 1·🔴 **未登记即红**：`src/app.config.ts` 里每个**非 tabBar** 页面都必须在 `src/utils/pageEntries.ts` 的 `PAGE_ENTRY_LEDGER` 具名（tabBar 页面按 `tabBar.list` 机械豁免，且不许登记 —— 登记它 = 台账里躺着一条假入口）。红证：给 app.config 加一个页面而不登记 ⇒ 判红（证据：frontend/bmini-app/tests/page-entry-reachability.test.ts 的 L2）
 数据: 判据 2·🔴 **登记了没人指向也红**：每条登记都必须在 `from` 里找到真导航形态（`Taro.navigateTo/redirectTo/switchTab/reLaunch` 或跨应用 `href`）**且**跳转里带着目标记号。红证（变异注入实跑）：把入口换回「只声明」（`from` 指向只写着路由常量的 `src/utils/inbound/gaps.ts`）⇒ 判红点名「声明存在 ≠ 可达」；删掉 `/w/` 上的 `<a href>` ⇒ 判红。这是本单要治的形态本身：两条路由常量被声明、被 `tests/inbound-page-platform-gaps.test.ts` 的 G0 比对过 `app.config.ts`，却没有任何跳转用它们（证据：同文件 L3）
 数据: 判据 3·**台账只许缩短**：条目对应的页面从 `app.config.ts` 消失 ⇒ 判红（条目必须活着）；`via` 为动态记号时 `viaBinding` 必须钉住「记号 ⇒ 路由」的绑定。红证：从 app.config 删掉补打页 / 把 viaBinding 指向无关文件 ⇒ 各自判红（证据：同文件 L0 / L4）
-数据: 判据 4·**跨应用入口逐值对齐**：`/w/`（零依赖纯静态）上的两个 `<a>` 必须逐值指向 bmini 登记路由 —— `/b/#/pages/worker/inbound/index` 与 `/b/#/pages/worker/reprint/index`；改一边不改另一边 ⇒ 红。渲染面判据在 frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs（`renderPage` 的**渲染结果**里出现入口；未登录的 login 屏不出现）
+数据: 判据 4·**跨应用入口已收敛**（2026-10-10 用户逐字「移除拍照入库和补打入库标签」，issue #6635）：`/w/` 报工页**不再**承载入库两页的 `<a>`（反向钉住：本页再出现 `/b/#/pages/worker/inbound|reprint` ⇒ 红）—— 可达性**没有丢**：那两页由**工人工作台** `src/pages/worker/home/index.tsx` 承载（台账 `from` 逐值核 + `nav` 形态 + L3b「写了 ≠ 会被执行」），且台账里**不再有** `nav: 'href'` 条目。渲染面判据在 frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs（`renderPage` 的渲染结果；本页只留一条「裁高计算（一体机）」入口）+ 反向面在 frontend/bmini-app/tests/page-entry-reachability.test.ts 的 L5
 数据: 判据 5·**平台缺口必须有登记且被真的接线**：`/b/?code=` 是 h5 专有形态（小程序没有 URL query），登记在 `src/utils/inbound/gaps.ts` 的 `WORKER_SURFACE_PLATFORM_GAPS`，`wiredBy` 的文件**代码**里必须真的出现 `wiredToken`（只登记不接线 ⇒ 红）
 数据: 判据 6·**两平台都要能编译**：`npm run build:h5` 与 `npm run build:weapp` 均退出 0（CI 的 `bmini-app build (h5 + weapp)` 腿）
 跳过: [backend-contract] 确定性入口/台账判据（jest: frontend/bmini-app/tests/page-entry-reachability.test.ts + node --test: frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs + 两平台构建腿），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: inbound-order-flow.worker-narrow-surface, inbound-label-flow.short-code-and-public-entry
-溯源: 2026-09-27 新增（issue #5052 实现 PR，设计 §5.4）：本单最值得固化的一类 —— 「交付物做完了、却没有任何入口能走到它」（验收协议 v1.11 交付物可达性三问之②），落成入口台账 + 语料内省式元守卫（未登记即红、登记了没人指向也红）。 ｜ tags: bmini, inbound, entry-reachability, meta-guard, worker-surface
+溯源: 2026-09-27 新增（issue #5052 实现 PR，设计 §5.4）：本单最值得固化的一类 —— 「交付物做完了、却没有任何入口能走到它」（验收协议 v1.11 交付物可达性三问之②），落成入口台账 + 语料内省式元守卫（未登记即红、登记了没人指向也红）。 ｜ 2026-10-10（issue #6635，用户逐字「移除拍照入库和补打入库标签」）：`/w/` 页头那两条跨应用 `href` 登记**已撤**（该页只留「裁高计算（一体机）」一条），可达性由工人工作台承接 ⇒ 判据 4 改判为**反向钉住 + 工作台 `from` 逐值核**，台账里不再有 `nav:'href'` 条目（`href` 判定分支由 L5 的合成样本自证）；L3 / L3b / L5 的红证注入点同步从 `render.mjs` 换到工人工作台（否则红证与判定对象脱钩 ⇒ 空断言）。判据一格不放宽。 ｜ tags: bmini, inbound, entry-reachability, meta-guard, worker-surface
 
 ### BM-027. 商家 H5 登录可用：同源 API 面（同源 POST 不被 CORS 误判）+ 两入口（员工 / 管理员短信）+ 可读字号与触控目标 🔵
 ```
@@ -6469,7 +6469,7 @@
 真值: processing-manage.scan-position-detail-keys
 溯源: 2026-09-29 新增（母单 #5161，P0-C / PR #5779）：一体机详情面需要这些键，故把「扫码读面补 9 键」钉成可执行判据。**只加不改**是硬要求（既有键改名/改值即红）。⚠️ 契约真值源 `docs/wiki/CONTRACT-LEDGER.md` 的两行由集成侧同批补登（该包边界不含 docs/**）。 ｜ tags: processing, scan, contract, backend-contract
 
-### PG-047. 一体机机台模式：扫水洗唛 ⇒ 详情 + 裁高值 + 一步报工（不写机器；单测覆盖，非 LLM 行为） 🔵
+### PG-047. 一体机裁高计算（机台那台屏）：扫水洗唛 ⇒ 详情 + 裁高值 + 一步报工（不写机器；含设备级预设与「去报工页」逃生门；单测覆盖，非 LLM 行为） 🔵
 ```
 你: 扫一下这个部位，这刀该裁多高？顺手把这道工序报掉。
 期望: direct_reply
@@ -6478,10 +6478,11 @@
 数据: 报工走既有 POST /api/worker/production/scan/complete：**只发 token + 幂等键**，工序/数量/身份由服务端定；手改裁高项不进请求体
 数据: 常驻扫码输入不依赖 focus；兼容 CR+LF / 双 Enter；输入法合成期不吃字符
 数据: 🔴 任何路径都不写机器（无串口 / 无 Modbus 调用面）
+数据: 🔴 屏上 / 入口文案一律 **「裁高计算（一体机）」**（2026-10-10 用户裁定，issue #6635 —— 改前的「机台模式」只有内部人懂）+ **设备级预设**：机台那台屏打开一次 `/w/?page=cut_calc` ⇒ 本机记住（`migao:worker-h5:home`），此后打开 `/w/` 直接落到 `/w/machine.html`（**只在已登录后换页** —— 机台页没有登录面，未登录换过去 = 把人关在门外）；`?page=report`（不带 `keep`）取消钉住；机台屏上的「去报工页」= `?page=report&keep=1`（**只本次**，绝不改机台的预设）。**零后端改动**（不新增字段/端点）。证据：frontend/worker-h5/tests/worker-h5-pages.test.mjs（⑥ 六条：解析 / 钉住 / 逃生门 / 取消 / 存储不可用 / 唯一换页出口）+ frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（⑨ 真装配层三段）
 跳过: [backend-contract] 本条只登记「一体机读面 + 报工链 + 不写机器」这几层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProductionCuttingHeightTest.java、backend/admin-api/src/test/java/com/migao/admin/service/WorkerCuttingHeightServiceTest.java、frontend/worker-h5/tests/worker-h5-machine.test.mjs）⇒ 不进 agent-eval 冒烟。⚠️ 真机（一体机 + 有线扫码枪）的 HID 时序与输入法行为为**注入式单测**覆盖，现场未验。
 ```
 真值: processing-manage.worker-cutting-height-terminal
-溯源: 2026-09-29 新增（母单 #5161，P0-D / PR #5780）：用户裁定「裁高机的报工要支持扫码枪扫水洗唛直接展示订单详情并允许操作裁高计算器」+「报工 + 自动给裁高值（一条链）」；**下发仍不做**（不写机器）。 ｜ tags: processing, worker, cutting_height, terminal, backend-contract
+溯源: 2026-09-29 新增（母单 #5161，P0-D / PR #5780）：用户裁定「裁高机的报工要支持扫码枪扫水洗唛直接展示订单详情并允许操作裁高计算器」+「报工 + 自动给裁高值（一条链）」；**下发仍不做**（不写机器）。 ｜ 2026-10-10 追加（issue #6635，同批 worker-h5 报工页改版）：① 文案由「机台模式」改判为 **「裁高计算（一体机）」**（用户逐字问「机台模式是什么含义」）；② 新增**设备级预设**（用户逐字「让工人拿扫码枪直接扫码就默认为机台模式，而其他工人扫码默认报工」⇒ 裁定 = 设备级、零后端改动）；③ 新增机台屏「去报工页」逃生门（`keep=1`，只本次）。判据面一字不放宽。 ｜ tags: processing, worker, cutting_height, terminal, backend-contract
 
 ### PG-065. 工人端页面开关（租户级）+ 工人会话超时 30 天（权限红线不动；单测覆盖，非 LLM 行为） 🔵
 ```
@@ -6491,6 +6492,7 @@
 数据: 缺行 ⇒ 读面回默认四页全开（report / order / cut_calc / shipment）+ source='default'
 数据: GET /api/worker/me 只回本工人身份与本租户页面集；工人 session/JWT 的 permissions 恒为 []、工人进 /api/admin/** 仍 403
 数据: worker.session.idle-minutes 全局默认 = 43200（30 天，2026-10-07 用户裁定「延长到 1 个月」；上一版 10080 一周）；越界/非法 ⇒ 回落默认并 WARN；换人/切换工人仍立即失效旧会话
+数据: 🔴 页面开关的**前端消费面**（2026-10-10 收口，issue #6635）：`cut_calc` ∈ `pages` ⇔ `/w/` 页头出现**唯一**入口「裁高计算（一体机）」（`/w/machine.html`；文案与商家端「裁高计算器」同源，改前的「机台模式」只有内部人懂）；∉ ⇒ **整条入口栏不渲染**（不留空 `<nav>`）。两条跨应用入口（拍照入库 / 补打入库标签）**已移出 `/w/`**（用户逐字「移除拍照入库和补打入库标签」）⇒ 反向钉住（本页再出现 `/b/#/pages/worker/inbound|reprint` ⇒ 红），可达性由**工人工作台**承担（入口台账 `from` 逐值核）。**设备级预设**（同上裁定，「扫码枪那台屏默认机台模式、其他工人默认报工」）：`/w/?page=cut_calc` ⇒ 本机记住并落到 `/w/machine.html`（**只在已登录后换页**）、`?page=report` 取消、`?page=report&keep=1` = 只本次（机台屏的「去报工页」逃生门）；零后端改动。证据：frontend/worker-h5/tests/worker-h5-pages.test.mjs（① / ④ / ⑥）+ frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs + frontend/bmini-app/tests/page-entry-reachability.test.ts（L5）
 跳过: [backend-contract] 本条只登记「页面开关 + 会话超时」这两层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java、backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java、backend/admin-api/src/test/java/com/migao/admin/worker/WorkerSessionServiceTest.java）⇒ 不进 agent-eval 冒烟。
 ```
 真值: processing-manage.worker-page-config
@@ -6735,6 +6737,7 @@
 数据: 部位语义**已对齐**（issue #4369 真值收口：原写「尚未对齐 / 待订单侧补字段后再对齐」的理由**均已失效**）：processing_position_operations.position_name 仍是**展示名**（只能是「加工产物名[+色号]」，**不是**部位/帘种的载体 —— 帘种取 `position_kind`，读面口径见本行末 #4621 段）；**路线键的帘种/工艺已改直读**：订单侧**已有**显式列（`order_items.curtain_type` / `craft`，V63 迁移 / issue #4362；快照/JSON 侧键名 = `curtainType`）⇒ 路线键判定**先直读**这两列（两维都直读 ⇒ `route_source=direct`，**不查**信号映射表 —— 订单侧真值优先于任何派生），关键字派生（`ProcessingOrderService.deriveRouteKey` + 库表信号映射）**保留为存量单兜底**（老订单没有这两列 ⇒ 仍按派生跑，派生不中落默认路线）—— 它是**永久遗留回退**，**不是**「待删」项。另：route 只取**基准序列**；特殊选项条件工序（拼1次/花边/铅坠/接高/绑带，routing.py SPECIAL_OPTION_ROUTINGS）与应做数量 qty 两处**已于 2026-09-18 接线**（见 PG-022 / PG-023 —— 条件工序按 production_option_routings 插入且 seq 重排、qty 取自算料引擎端点且落 qty_source 列）；**无未接线项** —— `is_shaped` 定型开关**已接线**（issue #4354：`isShaped=false` ⇒ 从基准序列里剔除 `定型` / `复烫`，Java 侧 `UNSHAPED_REMOVED_OPERATIONS` 与 `backend/ai-agent-service/app/production/routing.py` 同判据）⇒ 原写的「尚未接线的只剩 is_shaped 一处」**已作废**。⚠️ 历史口径（防假真值回填）：本句在 #4208/#4230 Java 侧落地前写的是「条件工序与 is_shaped 尚未接线；qty 暂退化为该部位订单数量（缺值兜底 1）」—— 那三个分句里前两个**已作废**，不得再按旧口径写回。2026-09-25（issue #4369 真值收口）：本句另**两句**也已作废、不得再照抄 —— ①「待订单侧补「部位/帘种」字段后再对齐（届时改直读 + 删关键字派生表）」：字段已补（`order_items.curtainType` / `craft`，V63 / issue #4362）、直读已落码（两维直读 ⇒ `route_source=direct`），而**关键字派生有意保留**为存量单兜底（**不是**待删项）；②「尚未接线的只剩 is_shaped 定型开关一处」：`is_shaped` **已接线**（issue #4354）。2026-09-20（issue #4621，读面口径）：**帘种**请取 `position_kind`（= 快照 `curtainType`：布帘/纱帘/帘头）；`position_name` 是**展示名**（加工产物名[+色号]）—— 实体上那行「部位：布帘/纱帘/帘头/外帘」的注释**与实现相反**，已在本单改判（照它取「帘种」会拼出「三边 · 布艺遮光帘A 米白」）。web 面工序显示名 = 逻辑名 · `position_kind`
 数据: 完工判定（issue #4117 修语义：完工 = **加工单**置 completed，**订单状态不动**；🔴 **2026-09-21 改判（issue #4961）**：触发条件由「全部 is_must_finish 工序满足 done_qty ≥ qty」换成「**该加工单的全部活跃工序实例**满足 done_qty ≥ qty」）：全部活跃实例报满时，processing_orders.status 原子置 completed（活跃态条件更新 + completed_at，order_completed=true），订单保持 producing —— 订单状态机无 producing→completed（completed 是终态）⇒ 旧实现直写订单 completed 会让含加工项订单既发不了货也回不去；加工单非活跃（并发取消）时更新 0 行、order_completed=false；**任一活跃实例未报满 ⇒ 不完工**（红证：`ProductionServiceTest#unfinishedNonMustFinishOperationBlocksCompletion` 用一道**非**必完工序未完成 ⇒ 改前实测 `order_completed=true`、期望 `false`）
 数据: 完工→发货贯通（#4117 红证判据；🔴 **2026-09-21 改判（issue #4961）**：触发条件 = **全部活跃工序实例报满**，不再是「必完工序全绿」）：全部活跃实例报满 ⇒ 加工单 status='completed' ⇒ 发货守卫 assertProcessingCompletedBeforeShip 读到的 countCompletedByOrderId > 0 放行，且订单仍为 producing（shipOrderIfApplicable 只在 confirmed/producing 时流转）⇒ 含加工项订单完工后可发货
+数据: 🔴 工人端一屏的**工序选择**（2026-10-10 用户裁定 = 选项 A，issue #6635）：扫一次码后，`GET /api/worker/production/scan` 响应里的 `operation`（系统推断的那道）+ `alternatives`（本套/本部位的其它待领工序）必须**一起**渲染成**正常的工序选择器**（稳定 id `wh5-op-picker`，标签「选工序（点哪道就领哪道）」，当前那道带 `is-on` + `aria-pressed=true`）—— 车间工序本来就**不按固定顺序**做（用户逐字：「工人无法选取某个工序报工，因为工序不是固定顺序的」），改前那排候选挂在「不是这道？」小字下、形态上是**例外入口**。**记账口径一字不动**：点别的候选 ⇒ 仍走既有**一键改**（`GET /scan?operation_id=…`，归属由**服务端**校验 = 防呆④；不属于本次扫码的部位/套 ⇒ 422 零写入），点**当前已选中**那道 ⇒ **一个请求都不发**（no-op）。证据：frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（② 一键改带 operation_id / ②-b 点已选中不发请求）+ frontend/worker-h5/tests/worker-h5-operation-display.test.mjs（候选与选中态）
 数据: 计件：GET /api/admin/production/orders/{orderId}/piecework = Σ(合格数量 × 单价 × 系数)，排除返工/报废；单工序一人制（per_worker 按报工人归集、per_operation 按工序归集）
 数据: 租户隔离与软删：订单/工序实例/报工记录均按 tenant_id + deleted=0 过滤；跨租户订单或不属于该订单加工单的工序 → 404，且不落报工明细
 数据: 订单解析**四形态**（issue #4005 + #4222）：GET/报工/计件的 {orderId} 路径参数支持 ① 内部 order_id ② 订单号 order_no（手输纸质单号）③ 加工单 qr_token（M4-H 打印任务卡二维码的取值来源）④ **加工单号 processing_order_no**（工人端「或手输加工单号」兜底路径 + 任务卡上唯一可抄的号；qr_token 只以二维码图形呈现、无可读文本，issue #4222）——四级都不中才 404；租户隔离/deleted 过滤逐级保持，④ 与 ③ 同构且插在其后（既有三形态优先级不变）。（证据：ProductionServiceTest 4 项含 #4222 的加工单号形态 + ProductionControllerTest「路径参数=qr_token」1 项）

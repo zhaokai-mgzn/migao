@@ -53,7 +53,7 @@ export function initialState() {
 //   · `order`    —— 订单页（⚠️ `/w/` **暂无对应面**：`render.mjs` 里没有订单 UI 入口
 //                   ⇒ 本包**不为它造 UI**，只登记「键存在、`/w/` 暂无对应面」；
 //                   将来 `/w/` 长出订单面时，在这里按 `effectivePages().has(PAGE_ORDER)` 门控）
-//   · `cut_calc` —— 机台模式（`/w/machine.html` 的入口链接）
+//   · `cut_calc` —— 裁高计算（一体机那台屏的页面，`/w/machine.html` 的入口链接）
 //   · `shipment` —— 发货页（⚠️ 同上：`/w/` 暂无对应面 ⇒ 不造 UI；准入面
 //                   `/api/worker/shipment/**` 已在后端，缺的只是入口）
 // ════════════════════════════════════════════════════════════════════════════════
@@ -61,7 +61,7 @@ export function initialState() {
 /** 页面键：报工主流程（本页）。 */
 export const PAGE_REPORT = 'report'
 
-/** 页面键：机台模式（一体机，`/w/machine.html`）。 */
+/** 页面键：裁高计算（一体机那台屏，`/w/machine.html`）。 */
 export const PAGE_CUT_CALC = 'cut_calc'
 
 /** 页面键：订单页 —— **`/w/` 暂无对应面**（登记，不造 UI）。 */
@@ -78,7 +78,8 @@ export const PAGE_SHIPMENT = 'shipment'
  */
 export const DEFAULT_PAGES = [PAGE_REPORT, PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT]
 
-/** 机台模式入口（同源静态页；`/w/` 与 `/w/machine.html` 同一静态根 ⇒ 相对路径、不写死域名）。 */
+/** 裁高计算入口（同源静态页；`/w/` 与 `/w/machine.html` 同一静态根 ⇒ 相对路径、不写死域名）。
+ *  文案 = 「裁高计算（一体机）」（2026-10-10 用户裁定：改前的「机台模式」只有内部人懂，issue #6635）。 */
 export const MACHINE_ENTRY_HREF = '/w/machine.html'
 
 /**
@@ -298,47 +299,29 @@ export function doneNotice(receipt) {
 }
 
 /**
- * 工人面两页的入口（issue #5052 实现 PR；设计 §5.4 路线 (a)）。
+ * 页头入口栏（2026-10-10 改版，issue #6635）。
  *
- * 治的形态：两个功能（拍照入库 / 拍照补打标签）**页面都做完了、都合并了**，而工人
- * **一步也走不到** —— 没有入口的功能按验收口径（交付物可达性三问之②）**不算交付**。
+ * 🔴 **两条跨应用入口已移出本页**（用户 2026-10-10 逐字：「移除拍照入库和补打入库标签」）：
+ * 它们是 bmini-app 的页面，动线由**工人工作台**承载
+ * （frontend/bmini-app/src/pages/worker/home/index.tsx；入口台账 `PAGE_ENTRY_LEDGER` 的
+ * `from` 就是它）⇒ 从 `/w/` 移出**不会**让那两页变成「走不到」。
+ * 本页的反向钉住（页头再出现这两条 ⇒ 红）= frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs。
  *
- * 🔴 为什么入口在这里：`/w/` 是工人在车间**手里唯一常开的那一页**（他一天扫几十次
- * 洗水码报工）；把入口挂在他眼前的那一页，才叫动线。（另一条候选「入库另配短码入口」
- * 需要新造服务端短链面 + 再印一张纸，本单边界明令不新造后端端点 ⇒ 选 (a)。）
+ * 入口栏**只**留 `cut_calc` 那一条，文案与商家端页面开关同源
+ * （frontend/admin-web/src/components/settings/WorkerPageConfigPanel.tsx 的 `cut_calc` = 「裁高计算器」）：
+ * 改前的「机台模式」只有内部人懂（用户 2026-10-10 逐字问「机台模式是什么含义」）。
+ * `cut_calc` ∉ `pages` ⇒ **整条入口栏不渲染**（不留空 `<nav>`）—— 机台那台屏改用**本机预设**直达
+ * （`?page=cut_calc`，见 frontend/worker-h5/src/scan-input.mjs 的 `deviceHomeFromLocation`）。
  *
- * 🔴 跨应用**静态链接**（不是框架路由）：`/w/` 与 `/b/` 同源（同一台 nginx、同一个静态根）
- * ⇒ 用相对路径、**不写死域名**。目标是 bmini-app 的页面路由，Taro h5 默认 hash 路由 ⇒ `/b/#<路由>`。
- * 本文件保持**零依赖**（裁定 13「不重写 worker-h5」）：一行 `<a href>` + 一条 CSS，不引任何包。
- *
- * ⚠️ 登录态**不跨应用**：`/w/` 的工人 session 在 `localStorage['migao:worker-h5:session']`，
- * bmini 侧在 `worker_session_id` —— 两个键、两条链路（各自服务端 `worker_sessions` 行）。
- * 因此工人到 `/b/` 通常**还没有** bmini 侧的工人 session ⇒ 页面显式给「去登录工人身份」
- * （工号 + PIN），登录后回来继续。**刻意不打通**：让一个页面替另一个页面写身份键 =
- * 把两条链路的真值源合成一个，而两侧的闲置登出 / 切换工人语义并不相同。
- *
- * 判据 = `frontend/bmini-app/tests/page-entry-reachability.test.ts`（把这里的路由段与
- * bmini 的路由常量**逐值比对**：改一边不改另一边 ⇒ 红）。
+ * ⚠️ 这是**菜单显隐**语义，不是「访问拦截」（2026-09-29 用户逐字改判，口径以 B 端 H5 为准）：
+ * 链接消失 ≠ 页面不可达 —— `/w/machine.html` 直接敲 URL **仍可进入**（静态页，本包不给它加访问门禁）。
+ * 同款语义的另一半 = 页头的 `pageNoticeBanner`（`report` 关掉时页面**照旧可用**，只多一句话）。
  */
 function workerEntriesBar(state) {
   const { opened } = effectivePages(state)
-  // 🔴 入口栏按页面集**显隐**（本单）：机台模式（`cut_calc`）在**集合里才有链接**。
-  // 🔴 **这是「菜单显隐」语义，不是「访问拦截」**（2026-09-29 用户逐字改判，口径以 B 端 H5 为准：
-  //    「参考现在 B 端 H5 页面的设计，即使关掉了依然能通过菜单进入页面」）⇒ 链接消失 ≠ 页面不可达：
-  //    机台页地址 `/w/machine.html` 直接敲 URL **仍可进入**（静态页，本包不给它加访问门禁）。
-  //    同款语义的另一半 = 页头的 `pageNoticeBanner`（`report` 关掉时页面**照旧可用**，只多一句话）。
-  // 两条跨应用静态入口**不受** `pages` 影响
-  // 🔴 写法纪律：这句里**不得**出现 `/` 紧跟 `*` 的形态（例如写 glob 路径）——
-  //    bmini 的跨应用判据用**朴素注释剥离器**（`tests/helpers/h5PlatformLists.ts::stripComments`
-  //    的 `/\*[\s\S]*?\*/`），它会把 `/*` 与后面任意 `*/` 配对 ⇒ **把这之后的真代码整段删掉**，
-  //    判据随即报「找不到真跳转」而在 main 上恒红（2026-09-29 实证：本句原写「`/b/#/pages/worker/` + 一个星号」）。（`/b/#/pages/worker/<页>` 不属于这四个键
-  // ⇒ 没有对应开关就不该由它决定去留：误删会让 #5052 那两页重新变成「走不到」）。
-  const machine = opened.has(PAGE_CUT_CALC)
-    ? `<a class="wh5-entry" id="wh5-machine-entry" href="${MACHINE_ENTRY_HREF}">机台模式</a>`
-    : ''
+  if (!opened.has(PAGE_CUT_CALC)) return ''
   return `<nav class="wh5-entries" id="wh5-worker-entries" aria-label="工人面入口">
-    <a class="wh5-entry" href="/b/#/pages/worker/inbound/index">拍照入库</a>
-    <a class="wh5-entry" href="/b/#/pages/worker/reprint/index">补打入库标签</a>${machine}
+    <a class="wh5-entry" id="wh5-machine-entry" href="${MACHINE_ENTRY_HREF}">裁高计算（一体机）</a>
   </nav>`
 }
 
@@ -427,9 +410,21 @@ function mainView(state) {
   const price = op.unit_price === null || op.unit_price === undefined
     ? '<span class="wh5-unpriced">未定价</span>'
     : `<span class="wh5-price">${fmtQty(op.unit_price)} 元/${esc(op.unit ?? '')}</span>`
-  const alts = (v.alternatives ?? []).length
-    ? `<div class="wh5-alts">不是这道？
-        ${(v.alternatives ?? []).map((a) => `<button class="wh5-alt" data-operation-id="${esc(a.operation_id)}" type="button">${esc(a.logical_name)}</button>`).join('')}
+  // 工序选择器（issue #6635，用户 2026-10-10 裁定 = 选项 A）：扫完码把**本套/本部位的全部待领工序**
+  // 列出来（含系统推断的那道，默认选中）——「我这次做的是另一道」是**正常动作**，不是例外。
+  // 点别的候选 ⇒ 走既有的**一键改**（`GET /scan?operation_id=…`，归属仍由服务端校验；防呆④ 一字不动）；
+  // 点当前那道 ⇒ 不重发请求（装配层的绑定里 no-op，见 frontend/worker-h5/src/app.mjs）。
+  //
+  // 🔴 改前的形态（已撤，不要改回去）：候选只挂在「不是这道？」这行小字下 —— 而车间工序本来就
+  // **不按固定顺序**做（用户 2026-10-10 逐字：「工人无法选取某个工序报工，因为工序不是固定顺序的」）。
+  const candidates = [op, ...(v.alternatives ?? [])].filter((c) => c && c.operation_id)
+  const picker = candidates.length > 1
+    ? `<div class="wh5-pick" id="wh5-op-picker" role="group" aria-label="选工序">
+        <span class="wh5-pick-label">选工序（点哪道就领哪道）</span>
+        ${candidates.map((c) => {
+          const on = c.operation_id === op.operation_id
+          return `<button data-operation-id="${esc(c.operation_id)}" class="wh5-op-choice${on ? ' is-on' : ''}" aria-pressed="${on}" type="button">${esc(c.logical_name)}</button>`
+        }).join('')}
       </div>`
     : ''
   return `${header(state)}
@@ -441,8 +436,8 @@ function mainView(state) {
     ${v.completed === true ? '<p class="wh5-done" id="wh5-completed">本套工序都已被领走</p>' : ''}
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
     ${state.error ? `<p class="wh5-error" id="wh5-error">${esc(state.error)}</p>` : ''}
+    ${picker}
     ${reportButton(state, v)}
-    ${alts}
     ${overviewView(v)}
     ${cutPlanView(v)}
     <button id="wh5-rescan" class="wh5-ghost" type="button">重扫</button>

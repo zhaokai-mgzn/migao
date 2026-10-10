@@ -11,13 +11,14 @@
 //   ③ 闲置登出 —— 定时器 + `visibilitychange` 双保险（PAD 常被切到别的 App，只靠定时器会漏）。
 
 import { createApi, PAGES_UNREAD, SESSION_EXPIRED } from './api.mjs'
-import { enterpriseCodeFromLocation, parseScanInput } from './scan-input.mjs'
+import { deviceHomeFromLocation, enterpriseCodeFromLocation, parseScanInput } from './scan-input.mjs'
 import {
   afterComplete,
   DEFAULT_WORKER_IDLE_MINUTES,
   doneNotice,
   initialState,
   legacySelection,
+  MACHINE_ENTRY_HREF,
   reduce,
   renderPage,
 } from './render.mjs'
@@ -31,6 +32,67 @@ import {
  * 故把**未收到服务端答复**的那一次提交落盘，跨刷新复用同一个键（服务端回放，不重复记账）。
  */
 export const PENDING_REQUEST_KEY = 'migao:worker-h5:pending-report'
+
+/**
+ * **本机默认页**（设备级预设，issue #6635；用户 2026-10-10 裁定 = 设备级、零后端改动）。
+ *
+ * 机台那台屏（有线扫码枪 + 浏览器）只需要**一次**预设：打开
+ * `https://app.migaozn.com/w/?page=cut_calc` ⇒ 本机记住，此后每次打开 `/w/` 都直接落到裁高页
+ * （`/w/machine.html`）；`?page=report`（不带 `keep`）取消钉住。
+ * 手机工人打开 `/w/`（不带参数、本机没钉过）⇒ 仍是报工页 —— 不需要任何后端字段/端点。
+ *
+ * 🔴 只在**已登录**时才把人换过去（`boot()` 与登录成功那处）：机台页**没有登录面**，
+ * 未登录就把人换过去 = 把他关在门外（`/w/` 才是登录那一页）。
+ */
+export const DEVICE_HOME_KEY = 'migao:worker-h5:home'
+
+/** 读本机默认页（storage 不可用 ⇒ 当没钉过；绝不因为存储而挡住报工）。 */
+function readDeviceHome(storage) {
+  try {
+    return storage?.getItem(DEVICE_HOME_KEY) ?? null
+  } catch {
+    return null
+  }
+}
+
+/** 写/清本机默认页；**返回是否写成**（写不成 ⇒ 不认这次预设，宁可留在报工页）。 */
+function writeDeviceHome(storage, value) {
+  try {
+    if (value) storage?.setItem(DEVICE_HOME_KEY, value)
+    else storage?.removeItem(DEVICE_HOME_KEY)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 把「本机默认页」应用到当前 URL（纯装配动作，可注入替身 ⇒ 被 `node --test` 钉住）。
+ *
+ * @param {object} deps
+ * @param {Location|string} deps.location 当前 URL
+ * @param {object} [deps.storage]
+ * @param {Function} [deps.replace] 换页（`location.replace`）—— 只有真要换页时才被调用
+ * @returns {'cut_calc'|'report'} 本机默认页（`cut_calc` ⇒ 调用方应换到 `/w/machine.html`）
+ */
+export function applyDeviceHome({ location, storage = null, replace } = {}) {
+  const href = typeof location === 'string' ? location : location?.href ?? ''
+  const { page, once } = deviceHomeFromLocation(href)
+  let pinned
+  if (page === 'cut_calc') {
+    pinned = writeDeviceHome(storage, 'cut_calc') // 刚钉上：**存得下**才算钉住
+  } else if (page === 'report') {
+    if (!once) writeDeviceHome(storage, null) // 明确取消钉住（`keep=1` = 只本次 ⇒ 不动预设）
+    pinned = false
+  } else {
+    pinned = readDeviceHome(storage) === 'cut_calc' // 没带参数 ⇒ 按本机记忆
+  }
+  if (pinned) {
+    replace?.(MACHINE_ENTRY_HREF)
+    return 'cut_calc'
+  }
+  return 'report'
+}
 
 /** 造一个「本机唯一」的幂等键（补传必须复用同一个键 ⇒ 绝不能在重发时重新生成）。 */
 function newRequestId() {
@@ -93,6 +155,20 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     const p = readPending()
     return me && p && p.token === token && p.workerId === me ? p.requestId : null
   }
+
+  /**
+   * 本机被钉在裁高页（issue #6635）⇒ 换过去。
+   *
+   * 🔴 只在**已登录**后调用：机台页没有登录面，未登录换过去 = 把人关在门外。
+   */
+  const gotoPinnedHome = () =>
+    applyDeviceHome({
+      location: href,
+      storage,
+      replace: (url) => {
+        if (typeof location !== 'string') location?.replace?.(url)
+      },
+    })
 
   /** 上次提交没收到答复 ⇒ 明说「重扫是安全的」（工人据此才敢再点一次）。 */
   const resumedNotice = (token) =>
@@ -202,6 +278,8 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
         armIdle()
         // 🔴 登录成功也要拉页面集（本单）：换人换权限 —— 上一个人的页面开关不得沿用给当前这位工人
         await refreshPages()
+        // 🔴 本机被钉在裁高页（机台那台屏，issue #6635）⇒ 登录成功直接换过去（不必再点）
+        if (gotoPinnedHome() === 'cut_calc') return
         // 扫码落地：URL 里带码 ⇒ 登录后直接解析（一次扫码 = 1 步）
         const code = parseScanInput(href, href)
         if (code) await doScan(code)
@@ -271,8 +349,11 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     for (const el of doc.querySelectorAll('[data-order-item-id]')) {
       el.addEventListener('click', () => { void pickPosition(el.dataset.orderItemId) })
     }
-    for (const el of doc.querySelectorAll('.wh5-alt[data-operation-id]')) {
+    // 工序选择器（issue #6635）：点**别的**候选 = 反复解析一次（服务端校验归属）；
+    // 点**当前已选中**那道 ⇒ no-op（它不是"再查一次"的开关，也绝不因此多发一次请求）。
+    for (const el of doc.querySelectorAll('.wh5-op-choice[data-operation-id]')) {
       el.addEventListener('click', () => {
+        if (el.classList.contains('is-on')) return
         void doScan(state.view?.__token ?? '', el.dataset.operationId, state.view?.__selection)
       })
     }
@@ -341,6 +422,8 @@ export async function boot() {
   const api = mk({ storage })
   // storage 交给装配层：未确认提交的幂等键要跨刷新活着（#4814）
   const app = createApp({ doc: globalThis.document, api, storage })
+  // 🔴 设备级预设（issue #6635）：本机被钉在裁高页 **且已登录** ⇒ 换页走人（前置：机台页无登录面）
+  if (applyDeviceHome({ location: globalThis.location, storage }) === 'cut_calc' && api.sessionId()) return app
   // 首屏：本地有登录态 ⇒ 与**服务端**对一次账再显示（页头必须服务端来源）
   if (api.sessionId()) {
     try {

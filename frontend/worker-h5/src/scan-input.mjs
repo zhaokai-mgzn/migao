@@ -9,6 +9,12 @@
 /** 只认这三个 query 键；其它参数一律不当码（避免把无关参数当码去扫）。 */
 const CODE_KEYS = ['t', 'token', 'code']
 
+/** 设备级预设（issue #6635）的合法取值：`cut_calc` = 钉在本机裁高计算页；`report` = 取消钉住。 */
+const DEVICE_HOME_PAGES = ['cut_calc', 'report']
+
+/** `keep=1` 之类的「只本次」记号（机台页上的「去报工页」用它，**不许**改掉机台的预设）。 */
+const ONCE_VALUES = ['1', 'true', 'yes']
+
 /** 企业编码：形态与后端 `LoginIdentifiers.TENANT_CODE_PATTERN` 同形（issue #6564）。 */
 const TENANT_CODE_PATTERN = /^[a-z0-9][a-z0-9_-]{1,31}$/
 
@@ -64,6 +70,30 @@ export function parseScanInput(raw) {
  * @param {string} href 当前页面 URL
  * @returns {string|null} 企业编码；URL 里没有 / 形态不合法 ⇒ null
  */
+/**
+ * **本机默认页**的设备级预设（issue #6635；用户 2026-10-10 裁定 = 设备级、零后端改动）。
+ *
+ * `?page=cut_calc` ⇒ 机台那台屏钉在裁高计算页；`?page=report` ⇒ 取消钉住。
+ * `keep=1` ⇒ **只本次**（机台页上的「去报工页」入口用它，绝不把机台的预设改掉）。
+ * 不认识的 `page` 值 ⇒ 当没带（不把任意参数读成设备预设）。
+ *
+ * @param {string} href 当前页面 URL
+ * @returns {{page: 'cut_calc'|'report'|null, once: boolean}}
+ */
+export function deviceHomeFromLocation(href) {
+  let url
+  try {
+    url = new URL(href)
+  } catch {
+    return { page: null, once: false }
+  }
+  const page = url.searchParams.get('page')
+  return {
+    page: DEVICE_HOME_PAGES.includes(page) ? page : null,
+    once: ONCE_VALUES.includes((url.searchParams.get('keep') ?? '').toLowerCase()),
+  }
+}
+
 export function enterpriseCodeFromLocation(href) {
   let url
   try {

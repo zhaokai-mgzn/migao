@@ -39,8 +39,9 @@ html, body {
   margin-bottom: 12px;
 }
 .wh5-worker { flex: 1 1 auto; font-weight: 600; font-size: 16px; }
-/* ---- 工人面两页的入口（issue #5052 实现 PR）：页头下常驻一行 ----
-   工人一天扫几十次码，入口必须在他眼前那一页；触控目标与页头按钮同口径（≥44px）。 */
+/* ---- 页头入口栏（issue #5052 → 2026-10-10 收敛成一条：裁高计算（一体机））----
+   工人一天扫几十次码，入口必须在他眼前那一页；触控目标与页头按钮同口径（≥44px）。
+   两条跨应用入口（拍照入库 / 补打入库标签）已移出本页（issue #6635）⇒ 那里样式也一并撤。 */
 .wh5-entries { display: flex; gap: 8px; margin: 0 0 12px; }
 .wh5-entry {
   flex: 1 1 0;
@@ -139,7 +140,8 @@ html, body {
   font-size: 17px;
 }
 .wh5-choice.is-on { border-color: var(--wh5-brand); background: #ccfbf1; font-weight: 700; }
-.wh5-alts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--wh5-muted); font-size: 15px; }
+.wh5-pick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 15px; }
+.wh5-pick-label { color: var(--wh5-muted); }
 
 /* ---- 本套工序明细（issue #4967 交付物 2）----
    工人一眼看到「这一套还有哪几道没做」；行高 ≥44px 保持可读、不挤压（PAD 断点正文 20px 见上）。 */
@@ -200,14 +202,17 @@ html, body {
 .wh5-ov-name { font-weight: 600; }
 .wh5-ov-status { font-weight: 700; }
 .wh5-ov-op.is-done .wh5-ov-status { color: var(--wh5-brand); }
-.wh5-alt {
+/* 工序选择器（issue #6635）：候选是**正常动作**（点哪道就领哪道），所以是实线可点按钮，
+   不是改前那种"例外入口"的虚线小字；选中那道用 = 既有 .wh5-choice 的同一个品牌色口径。 */
+.wh5-op-choice {
   min-height: 44px;
   padding: 0 12px;
-  border: 1px dashed var(--wh5-line);
+  border: 1px solid var(--wh5-line);
   border-radius: 10px;
   background: #fff;
   font-size: 16px;
 }
+.wh5-op-choice.is-on { border-color: var(--wh5-brand); background: #ccfbf1; font-weight: 700; }
 
 /* ---- PAD 断点（≥768px）：远距离可点（设计 §4.2 的下限建议） ---- */
 @media (min-width: 768px) {
@@ -231,12 +236,12 @@ html, body {
   .wh5-op { font-size: 26px; }
   .wh5-qty { font-size: 26px; }
   .wh5-choice { min-height: 72px; min-width: 140px; font-size: 22px; }
-  .wh5-alt { min-height: 64px; font-size: 20px; }
+  .wh5-op-choice { min-height: 64px; font-size: 20px; }
   .wh5-ghost { min-height: 64px; font-size: 20px; }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   机台模式（一体机 / PAD，母单 #5161；设计 §2.6）—— 横屏大字 + 常驻扫码枪
+   裁高计算（一体机 / PAD，母单 #5161；设计 §2.6；文案 2026-10-10 起用「裁高计算（一体机）」）
    断点沿用上面**既有**的 ≥768px（PAD/一体机），手机窄屏只是同一份布局的缩水版。
    🔴 本面**没有任何可编辑元素**（无 input）：中文输入法没有合成目标 ⇒ 扫码枪字符不被吃。
    ══════════════════════════════════════════════════════════════════════════════ */

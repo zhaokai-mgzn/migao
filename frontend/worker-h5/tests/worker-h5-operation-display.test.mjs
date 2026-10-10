@@ -109,14 +109,20 @@ test('一屏：缺 logical_name（老数据）⇒ 退回快照名原文，不显
   assert.match(html, /id="wh5-operation">定型-布</, '缺 logical_name ⇒ 退回快照名原文')
 })
 
-test('「不是这道？」备选按钮：只显示逻辑名（部位已由同屏「第 N 套 · 部位」给出）', () => {
-  // 为什么备选按钮**不**拼 `· 部位`（与主屏不同口径，是有意的）：
-  //   ① 备选恒与本次扫码**同一部位**（服务端 422 跨部位），逐条重复部位是噪声；
-  //   ② 本页假 DOM 的标签扫描器对文本节点里的 ` · ` 会截断（`.wh5-alt` 的 data-operation-id
+test('工序选择器：候选都列出来，当前那道显式选中（部位由同屏「第 N 套 · 部位」给出）', () => {
+  // 为什么 chip **不**拼 `· 部位`（与主屏不同口径，是有意的）：
+  //   ① 候选恒与本次扫码**同一部位/同一套**（服务端 422 跨部位），逐条重复部位是噪声；
+  //   ② 本页假 DOM 的标签扫描器对文本节点里的 ` · ` 会截断（chip 的 data-operation-id
   //      读成 `op-cloth-2"` ⇒ 一键改把工序 id 拼坏）。生产浏览器不受影响，但为了不把
-  //      测试基础设施的坑带进判据，备选保持逻辑名（与改前逐字一致）。
+  //      测试基础设施的坑带进判据，chip 保持逻辑名。
+  // 🔴 2026-10-10 改版（issue #6635）：改前这排候选挂在「不是这道？」下 = **例外入口**；
+  //    现在它是**正常的工序选择器**（用户逐字：「工人无法选取某个工序报工，因为工序不是固定顺序的」）。
   const html = renderPage(loggedIn(), CLOTH_VIEW)
-  assert.match(html, /data-operation-id="op-cloth-2"[^>]*>打卷</, '备选按钮显示逻辑名')
+  assert.match(html, /id="wh5-op-picker"/, '扫完码要有工序选择器（稳定 id）')
+  assert.match(html, /选工序（点哪道就领哪道）/, '选择器要有面向工人的一句人话标签')
+  assert.match(html, /data-operation-id="op-cloth" class="wh5-op-choice is-on"/, '系统推断的那道必须默认选中（is-on）')
+  assert.match(html, /data-operation-id="op-cloth-2"[^>]*>打卷</, '候选显示逻辑名')
+  assert.ok(!/不是这道/.test(html), '「不是这道？」这个例外口径不得再上屏')
   assert.match(html, /id="wh5-set">第 14 套 · 布帘</, '部位由同屏「第 N 套 · 部位」给出')
 })
 

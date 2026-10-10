@@ -117,14 +117,11 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
     audience:
       '工人身份（入库 / 补打页在**无工人 session** 时给的显式入口；登录成功 navigateBack 回原页再继续）',
   },
-  {
-    route: INBOUND_PAGE_ROUTE,
-    from: 'frontend/worker-h5/src/render.mjs',
-    nav: 'href',
-    via: '/pages/worker/inbound/index',
-    audience:
-      '工人身份（`/w/` 报工页页头入口 —— 跨应用静态链接 → `/b/#<路由>`；工人到达 `/b/` 时通常**还没有** bmini 侧的工人 session ⇒ 页面显式引导去工号 + PIN 登录，登录后回本页继续）',
-  },
+  // 🔴 issue #6635（用户 2026-10-10 逐字：「移除拍照入库和补打入库标签」）：`/w/` 报工页页头
+  // 原本还登记着入库两页的跨应用 `<a>` 入口 —— 已撤（该页只留一条「裁高计算（一体机）」）。
+  // **可达性不受影响**：那两页的动线由**工人工作台**承载（上面那条 `from: WORKER_HOME`）。
+  // 判据 = frontend/bmini-app/tests/page-entry-reachability.test.ts 的 L5（反向钉住：`/w/`
+  // 再出现这两条 ⇒ 红）+ frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs。
   {
     route: REPRINT_PAGE_ROUTE,
     from: 'src/app.tsx',
@@ -134,18 +131,10 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
     audience:
       '公开入口 → 工人身份（扫标签上的码：`GET /i/{短码}` 302 到 `/b/?code=<短码>`，启动器把码原样交给本页；未登录时页面引导去工人登录，登录回来再消费）',
   },
-  {
-    route: REPRINT_PAGE_ROUTE,
-    from: 'frontend/worker-h5/src/render.mjs',
-    nav: 'href',
-    via: '/pages/worker/reprint/index',
-    audience:
-      '工人身份（`/w/` 报工页页头入口；标签不在手边、或要按短码手输时走这条 —— 不必先扫水洗唛）',
-  },
   // issue #6563（用户 2026-10-08 裁定）：「我的」（商家面）原本还登记着工人三件功能的三条入口
   // （扫码报工 / 拍照入库 / 补打入库标签，issue #5747 补的）—— 三件功能已归位到工人登录后的工作台，
-  // 商家面不再发射它们。**三页的可达性不受影响**：上面 `/w/` 页头与扫标签深链各有一条，
-  // 台账末尾的工人工作台还有三条真入口。
+  // 商家面不再发射它们。**三页的可达性不受影响**：扫标签深链各有一条，
+  // 台账末尾的工人工作台还有三条真入口（`/w/` 页头那两条已于 2026-10-10 撤除，见上面的说明）。
   {
     route: '/pages/admin/pool/index',
     from: 'src/pages/profile/index/index.tsx',

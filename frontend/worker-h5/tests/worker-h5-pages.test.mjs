@@ -8,18 +8,21 @@
 // 删掉过滤 / 删掉门控 / 把 fail-open 改成 fail-closed ⇒ 对应断言当场红（红证见每条 test 注释）。
 //
 // 🔴 本文件钉五条（与交付单的五条判据一一对应）：
-//   ① `cut_calc` ∈ pages ⇔ 入口栏出现/消失「机台模式」（`/w/machine.html`）；
+//   ① `cut_calc` ∈ pages ⇔ 入口栏出现/消失「裁高计算（一体机）」（`/w/machine.html`）；
 //   ② `report` ∉ pages ⇒ **显式**「本机未开报工页」视图（不静默留一个扫不动码的页面）；
 //   ③ `me` 失败 / `pages` 缺失 ⇒ **fail-open**（报工页照旧可用）+ 显式提示（降级态要看得见）；
-//   ④ 两条跨应用入口（`/b/#/pages/worker/*`）**不受** `pages` 影响（防误删 #5052 的动线）；
+//   ④ 两条跨应用入口**已移出本页**（2026-10-10 用户裁定，issue #6635）⇒ 反向钉住（出现即红）；
 //   ⑤ 闲置登出兜底与服务端**同源**（`DEFAULT_WORKER_IDLE_MINUTES === 43200`，防回退到 15）。
 //
 // 🔴 前端**不**做权限门禁（本包边界）：`pages` 只决定「页面上看不看得见」，
 // 真正的准入仍在服务端 `/api/worker/**`（后端 `WorkerPages` 类注释是单一真值源）。
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
 import { createApi, PAGES_UNREAD, SESSION_HEADER, STORAGE_KEY } from '../src/api.mjs'
+import { applyDeviceHome, createApp, DEVICE_HOME_KEY } from '../src/app.mjs'
+import { deviceHomeFromLocation } from '../src/scan-input.mjs'
 import {
   DEFAULT_PAGES,
   DEFAULT_WORKER_IDLE_MINUTES,
@@ -37,12 +40,14 @@ import {
 /** 后端 `WorkerPages.ALL` 的逐字镜像（改后端闭词表 ⇒ 本文件红）。 */
 const BACKEND_PAGE_KEYS = [PAGE_REPORT, PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT]
 
-/** 机台模式入口（本单新增的受控入口）。 */
+/** 裁高计算入口（本页唯一的入口；文案 2026-10-10 起用「裁高计算（一体机）」）。 */
 const MACHINE_ENTRY = '/w/machine.html'
 
-/** 两条跨应用静态入口（#5052；**不属于**这四个页面键 ⇒ 不受 `pages` 影响）。 */
-const INBOUND_ENTRY = '/b/#/pages/worker/inbound/index'
-const REPRINT_ENTRY = '/b/#/pages/worker/reprint/index'
+/** 已移出本页的两条跨应用入口（2026-10-10 用户裁定；反向钉住：渲染里出现即红）。 */
+const REMOVED_CROSS_APP = [
+  ['拍照入库', '/b/#/pages/worker/inbound/index'],
+  ['补打入库标签', '/b/#/pages/worker/reprint/index'],
+]
 
 const WORKER = { workerName: '张师傅', workerNo: 'W-001', idleMinutes: 43200 }
 
@@ -119,27 +124,24 @@ test('`pages` 未被读过 / 空数组 ⇒ 按默认全开（fail-open，不是"
 
 // ── 判据 ①：pages ⇔ 机台模式入口 ────────────────────────────────────────────────────────
 
-test('🔴 ① `cut_calc` ∈ pages ⇒ 入口栏出现机台模式链接；∉ ⇒ 链接**消失**', () => {
+test('🔴 ① `cut_calc` ∈ pages ⇒ 入口栏出现「裁高计算（一体机）」链接；∉ ⇒ 入口栏**不渲染**', () => {
   const on = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_CUT_CALC]), null))
-  assert.equal(deglue(on).includes(MACHINE_ENTRY), true, '`cut_calc` 已开却没给机台模式入口（工人走不到机台页）')
+  assert.equal(deglue(on).includes(MACHINE_ENTRY), true, '`cut_calc` 已开却没给裁高计算入口（那台屏走不到裁高页）')
   assert.match(on, /id="wh5-machine-entry"[^>]*href="\/w\/machine\.html"/, '入口必须是真链接（href 在）')
-  assert.match(on, />机台模式<\/a>/, '入口文案要在链接里')
+  assert.match(on, />裁高计算（一体机）<\/a>/, '入口文案要在链接里（且是人话 —— 2026-10-10 用户裁定）')
 
   const off = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_ORDER, PAGE_SHIPMENT]), null))
   // 「变异真的被读到」的自证：把过滤去掉 ⇒ deglue 后**必然**含这条路径（控件句按此判）
-  assert.equal(deglue(off).includes(MACHINE_ENTRY), false, '`cut_calc` 没开却仍在渲染机台模式入口（开关形同虚设）')
-  assert.ok(!/机台模式/.test(off), '入口区不该出现「机台模式」文案')
+  assert.equal(deglue(off).includes(MACHINE_ENTRY), false, '`cut_calc` 没开却仍在渲染入口（开关形同虚设）')
+  assert.ok(!/机台模式|裁高计算/.test(off), '入口区不该出现裁高计算文案')
+  assert.ok(!off.includes('id="wh5-worker-entries"'), '没有可渲染的入口 ⇒ **不留空入口栏**（2026-10-10 改版）')
 })
 
-test('🔴 ① 红证：去掉入口栏的 `cut_calc` 过滤（无条件出机台链接）⇒ 同一条判定必红', () => {
-  const html = renderPage(loggedIn([PAGE_REPORT]), null)
-  const mangled = html.replace('<a class="wh5-entry" href="/b/#/pages/worker/reprint/index">补打入库标签</a>', '')
-  const unfiltered = mangled.replace(
-    '</nav>',
-    `<a class="wh5-entry" id="wh5-machine-entry" href="${MACHINE_ENTRY}">机台模式</a></nav>`,
-  )
-  assert.equal(deglue(visible(mangled)).includes(MACHINE_ENTRY), false, '对照：真渲染下判定判绿')
-  assert.equal(deglue(visible(unfiltered)).includes(MACHINE_ENTRY), true, '变异体确实是"无条件出机台链接"这一形态')
+test('🔴 ① 红证：去掉入口栏的 `cut_calc` 过滤（无条件出裁高链接）⇒ 同一条判定必红', () => {
+  const html = visible(renderPage(loggedIn([PAGE_REPORT]), null))
+  const unfiltered = `${html}<nav class="wh5-entries" id="wh5-worker-entries"><a class="wh5-entry" id="wh5-machine-entry" href="${MACHINE_ENTRY}">裁高计算（一体机）</a></nav>`
+  assert.equal(deglue(html).includes(MACHINE_ENTRY), false, '对照：真渲染下判定判绿（`cut_calc` 没开）')
+  assert.equal(deglue(unfiltered).includes(MACHINE_ENTRY), true, '变异体确实是"无条件出入口链接"这一形态')
   assert.notDeepEqual(
     deglue(visible(unfiltered)).includes(MACHINE_ENTRY),
     deglue(visible(html)).includes(MACHINE_ENTRY),
@@ -151,7 +153,7 @@ test('机台入口在**每一个登录后视图**都在（页头是共用件：�
   const selecting = renderPage(
     loggedIn([PAGE_CUT_CALC], { mode: 'select', view: { needs_selection: [{}], selections: [] } }),
   )
-  assert.equal(deglue(selecting).includes(MACHINE_ENTRY), true, '旧码选套屏丢了机台入口')
+  assert.equal(deglue(selecting).includes(MACHINE_ENTRY), true, '旧码选套屏丢了裁高计算入口')
 })
 
 // ── 判据 ②：**不硬拦截**（菜单显隐语义；2026-09-29 用户逐字改判，口径以 B 端 H5 为准）──────
@@ -254,16 +256,17 @@ test('🔴 ③ 红证：改成 fail-closed ⇒ 判定必红（读数对照）', 
 
 // ── 判据 ④：两条跨应用入口不受 pages 影响（防误删）────────────────────────────────────────
 
-test('🔴 ④ 两条跨应用入口**不受** `pages` 影响（防误删 #5052 的动线）', () => {
+test('🔴 ④ 两条跨应用入口**不再**由本页承载（2026-10-10 用户裁定；反向钉住 + 可达性移交工人工作台）', () => {
   for (const pages of [DEFAULT_PAGES, [PAGE_REPORT], [PAGE_ORDER], [PAGE_CUT_CALC], []]) {
     const html = visible(renderPage(loggedIn(pages, { pagesUnread: pages.length === 0 }), null))
-    for (const [label, href] of [['拍照入库', INBOUND_ENTRY], ['补打入库标签', REPRINT_ENTRY]]) {
-      assert.equal(html.includes(`href="${href}"`), true, `pages=${JSON.stringify(pages)} 时丢了「${label}」入口`)
-      assert.equal(html.includes(`>${label}</a>`), true, `「${label}」的文案不在链接里`)
+    for (const [label, href] of REMOVED_CROSS_APP) {
+      assert.equal(html.includes(href), false, `pages=${JSON.stringify(pages)} 时本页仍带着已移除的「${label}」入口`)
     }
-    // `report` 关掉时这两条也必须还在（显式视图同样带页头入口栏）
-    assert.match(html, /id="wh5-worker-entries"/, '入口栏本身不因页面集为空而消失')
+    assert.ok(!html.includes('/b/#/pages/worker/'), '本页不得再出现任何 `/b/` 跨应用入口')
   }
+  // ⚠️ 可达性**没有丢**：那两页的动线由**工人工作台**承载
+  // （frontend/bmini-app/src/pages/worker/home/index.tsx；入口台账 `PAGE_ENTRY_LEDGER` 的 `from` 就是它），
+  // 跨仓那一条判据在 frontend/bmini-app/tests/page-entry-reachability.test.ts 的 L5。
 })
 
 // ── 判据 ⑤：闲置兜底与服务端同源 ─────────────────────────────────────────────────────────
@@ -353,4 +356,86 @@ test('`permUnreadNotice` 是**显式**文案（不是空串 —— 空串等于�
   assert.equal(typeof permUnreadNotice, 'string')
   assert.ok(permUnreadNotice.trim().length > 0, '提示文案不得为空')
   assert.match(permUnreadNotice, /全开/, '文案要说清降级口径 = 按全开运行')
+})
+
+// ── 判据 ⑥：设备级预设（issue #6635；用户 2026-10-10 裁定 = 设备级、零后端改动）──────────────
+//
+// 「让工人拿扫码枪直接扫码就默认为机台模式，而其他工人扫码默认报工」——落法 = **本机默认页**：
+// 机台那台屏打开一次 `?page=cut_calc` 就记住，此后每次打开 `/w/` 直接落到裁高页；
+// 手机工人不带参数 ⇒ 仍是报工页。**零后端改动**（不新增字段 / 不新增端点）。
+
+test('🔴 ⑥ `?page=` 解析：只认两个值；`keep=1` = 只本次', () => {
+  assert.deepEqual(deviceHomeFromLocation('https://app.migaozn.com/w/?page=cut_calc'), { page: 'cut_calc', once: false })
+  assert.deepEqual(deviceHomeFromLocation('https://app.migaozn.com/w/?page=report'), { page: 'report', once: false })
+  assert.deepEqual(deviceHomeFromLocation('https://app.migaozn.com/w/?page=report&keep=1'), { page: 'report', once: true })
+  // 不认识的取值 ⇒ 当没带（绝不把任意参数读成设备预设）
+  assert.deepEqual(deviceHomeFromLocation('https://app.migaozn.com/w/?page=machine'), { page: null, once: false })
+  assert.deepEqual(deviceHomeFromLocation('https://app.migaozn.com/w/'), { page: null, once: false })
+  assert.deepEqual(deviceHomeFromLocation('不是 URL'), { page: null, once: false })
+})
+
+test('🔴 ⑥ 钉住裁高页 ⇒ 落到 `/w/machine.html`；无参数 + 已钉住 ⇒ 仍然落过去（"开机即机台模式"）', () => {
+  const store = memStorage()
+  const nav = []
+  const replace = (url) => nav.push(url)
+
+  assert.equal(applyDeviceHome({ location: 'https://app.migaozn.com/w/?page=cut_calc', storage: store, replace }), 'cut_calc')
+  assert.equal(nav.at(-1), '/w/machine.html', '钉住后本次就该换到裁高页')
+  assert.equal(store.getItem(DEVICE_HOME_KEY), 'cut_calc', '预设要落盘（否则刷新就丢）')
+
+  nav.length = 0
+  assert.equal(applyDeviceHome({ location: 'https://app.migaozn.com/w/', storage: store, replace }), 'cut_calc')
+  assert.equal(nav.at(-1), '/w/machine.html', '本机已钉住 ⇒ 下次打开 `/w/` 仍落到裁高页')
+})
+
+test('🔴 ⑥ 机台页的「去报工页」= `keep=1`：本次留在报工页，且**不改**本机预设', () => {
+  const store = memStorage({ [DEVICE_HOME_KEY]: 'cut_calc' })
+  const nav = []
+  assert.equal(
+    applyDeviceHome({ location: 'https://app.migaozn.com/w/?page=report&keep=1', storage: store, replace: (u) => nav.push(u) }),
+    'report',
+  )
+  assert.deepEqual(nav, [], 'keep=1 不得跳走')
+  assert.equal(store.getItem(DEVICE_HOME_KEY), 'cut_calc', 'keep=1 不得改机台的预设（改了这台屏下次就不是机台模式了）')
+})
+
+test('🔴 ⑥ 取消钉住：`?page=report`（不带 keep）⇒ 本机回到普通报工页', () => {
+  const store = memStorage({ [DEVICE_HOME_KEY]: 'cut_calc' })
+  const nav = []
+  assert.equal(applyDeviceHome({ location: 'https://app.migaozn.com/w/?page=report', storage: store, replace: (u) => nav.push(u) }), 'report')
+  assert.deepEqual(nav, [], '取消钉住后原地不动（就是报工页）')
+  assert.equal(store.getItem(DEVICE_HOME_KEY), null, '取消钉住要落盘')
+})
+
+test('🔴 ⑥ 没钉过的本机（工人手机）⇒ **永远**留在报工页（不把普通工人带进机台页）', () => {
+  const nav = []
+  assert.equal(applyDeviceHome({ location: 'https://app.migaozn.com/w/', storage: memStorage(), replace: (u) => nav.push(u) }), 'report')
+  assert.deepEqual(nav, [])
+})
+
+test('🔴 ⑥ 存储不可用（隐私模式）⇒ 按"没钉成功"处理，**绝不因此拦住报工**', () => {
+  const nav = []
+  const hostile = {
+    getItem: () => { throw new Error('storage disabled') },
+    setItem: () => { throw new Error('storage disabled') },
+    removeItem: () => { throw new Error('storage disabled') },
+  }
+  assert.equal(applyDeviceHome({ location: 'https://app.migaozn.com/w/?page=cut_calc', storage: hostile, replace: (u) => nav.push(u) }), 'report')
+  assert.deepEqual(nav, [], '存不下 ⇒ 不换页（留在报工页，活照干）')
+})
+
+test('🔴 ⑥ `applyDeviceHome` 是装配层唯一的换页出口（登录成功后也走它）', () => {
+  // 反空跑：页码册里不能出现第二处写死 `/w/machine.html` 的跳转（否则"只此一处"是假的）
+  const src = readFileSync(new URL('../src/app.mjs', import.meta.url), 'utf8')
+  // 只判**代码行**（注释里提到那个路径是文档，不算写死）
+  const code = src.split('\n').filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line)).join('\n')
+  assert.equal((code.match(/machine\.html/g) ?? []).length, 0, 'app.mjs 的代码里不得写死机台页路径（换页只用 MACHINE_ENTRY_HREF）')
+  assert.match(src, /MACHINE_ENTRY_HREF/, '换页用共享常量')
+  assert.match(src, /applyDeviceHome/, '装配层必须接线设备预设')
+  // 登录成功那处也要应用（机台屏的工人一次登录后就落到裁高页）
+  assert.match(src, /gotoPinnedHome\(\)/, '登录成功后没有应用设备预设 ⇒ 机台屏登完还停在报工页')
+})
+
+test('`createApp` 导出面照旧（装配层没被设备预设改坏）', () => {
+  assert.equal(typeof createApp, 'function')
 })

@@ -26,10 +26,13 @@ import { PENDING_REQUEST_KEY } from '../src/app.mjs'
 import {
   createScanBuffer,
   hitRows,
+  initialMachineState,
   machineTotal,
+  MACHINE_REPORT_HREF,
   reduceMachine,
   renderCalc,
   renderMachine,
+  renderScan,
   resumePending,
   unresolvedRows,
 } from '../src/machine.mjs'
@@ -614,4 +617,21 @@ test('失败：缺成品高 ⇒ 指名报缺、**不算数**（页面不出现�
   assert.match(html, /算不出裁剪高度/)
   assert.match(html, /本页不猜数/)
   assert.ok(!/请在机器屏输入/.test(html))
+})
+
+// ── 「去报工页」逃生门（issue #6635）──────────────────────────────────────────
+//
+// 机台那台屏被**本机预设**钉在裁高页（`?page=cut_calc`）之后，工人临时要报普通工时必须有出路；
+// 这条出口**只本次**（`keep=1`）—— 否则这台屏下次开机就不再是机台模式了。
+
+test('🔴 机台屏有「去报工页」出口，且是 keep=1（只本次，不改本机预设）', () => {
+  const idle = renderScan(initialMachineState())
+  assert.equal(idle.includes(`href="${MACHINE_REPORT_HREF}"`), true, '等扫码那一屏没有「去报工页」出口 ⇒ 钉住的机台屏上做不了普通工序')
+  assert.match(MACHINE_REPORT_HREF, /keep=1/, '出口必须是 keep=1（只本次）—— 不带它会把机台的预设改掉')
+  assert.match(idle, /去报工页（本机不记住）/, '出口文案要说清"本机不记住"')
+  assert.ok(!/机台模式/.test(idle), '「机台模式」这个内部叫法不得再上屏（2026-10-10 裁定）')
+})
+
+test('🔴 屏上标题 = 「裁高计算（一体机）」（改前叫「机台模式」）', () => {
+  assert.match(renderScan(initialMachineState()), /<h1>裁高计算（一体机）<\/h1>/, '等扫码那一屏的标题要用人话')
 })
