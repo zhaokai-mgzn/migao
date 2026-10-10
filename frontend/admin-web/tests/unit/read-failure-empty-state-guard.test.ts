@@ -56,6 +56,14 @@ import {
   storeActionsFromSource,
   storeFailureKeyOffenders,
   unregisteredSurfaces,
+  // ── 判据 ④（共享表格的 `emptyText` 必须接住失败读数，issue #6728）──
+  TABLE_EMPTY_LEDGER,
+  TABLE_EMPTY_LEDGER_FLOOR,
+  directTableSitesFromSource,
+  tableEmptyOffenders,
+  tableEmptySitesFromSource,
+  tableEmptyStale,
+  specifierForModule,
 } from '../../scripts/read-failure-empty-state-scan.mjs'
 
 const ADMIN_WEB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -163,12 +171,23 @@ describe('类级守卫：读面失败不得与空态同屏（issue #6713 + #6714
     for (const [key, surf] of Object.entries(READ_SURFACES) as [string, SurfaceSpec][]) {
       const source = read(surf.file)
       const retryAnchor = surf.retryAnchor || `${surf.anchor}-retry`
-      expect(source, `${surf.file} 缺常驻失败锚`).toContain(`data-testid="${surf.anchor}"`)
-      expect(source, `${surf.file} 缺重试出口`).toContain(`data-testid="${retryAnchor}"`)
+      // ⚠️ 失败面走**共享件**（`ListLoadError`）的页面：源码里是 `testId="<锚>"` 这个 prop
+      // （`data-testid` 由组件内部渲染）⇒ 按**该形态**逐字核；其余页面走 `data-testid` 字面量。
+      // 🔴 判定用**源码里实际是哪种**（不是拿 `retryAnchor` 当开关：`remnant-ledger` 有自定义
+      // 重试锚、但它自己渲染 `data-testid`，拿开关判会假红）。
+      if (source.includes(`testId="${surf.anchor}"`)) {
+        expect(source, `${surf.file} 缺共享失败件的重试 prop`).toContain(`onRetry=`)
+      } else {
+        expect(source, `${surf.file} 缺常驻失败锚`).toContain(`data-testid="${surf.anchor}"`)
+        expect(source, `${surf.file} 缺重试出口`).toContain(`data-testid="${retryAnchor}"`)
+      }
       expect(source, `${surf.file} 缺空态锚`).toContain(`data-testid="${surf.emptyTestId}"`)
       expect(source, `${surf.file} 缺失败读数 key`).toContain(surf.failureKey)
-      // 失败面必须是 role=alert（读屏器会播报，不是视觉装饰）
-      expect(source, `${surf.file} 的失败面缺 role="alert"`).toContain('role="alert"')
+      // 失败面必须是 role=alert（读屏器会播报，不是视觉装饰）——共享件 `ListLoadError` 自带
+      expect(
+        source.includes('role="alert"') || source.includes('ListLoadError'),
+        `${surf.file} 的失败面缺 role="alert"`,
+      ).toBe(true)
       expect(key).toBeTruthy()
     }
     // 扫描器与守卫**同一份接线口径**（不写第二份清单）
@@ -260,5 +279,150 @@ describe('类级守卫：读面失败不得与空态同屏（issue #6713 + #6714
 
     // 扫描面自证（不各说各话）
     expect(SYNC_SCOPES).toEqual(['src/app/(dashboard)', 'src/components/chat'])
+  })
+})
+
+/**
+ * 判据 ④（issue #6728）：**渲染共享 `ui/Table` 且带读失败面的页面必须显式把失败读数接进 `emptyText`**。
+ *
+ * 为什么单独一条：它治的形态**不在任何页面的源码里** —— 假绿来源是共享
+ * `frontend/admin-web/src/components/ui/Table.tsx` 的默认 `emptyText = '暂无数据'`
+ * （前三条只能扫页面里的空态断言 ⇒ 对这种「页面源码零命中、屏上却印着暂无数据」**全绿**）。
+ * 判据挂在同一支尺子上（`read-failure-empty-state-scan.mjs`），**不新立第三把**。
+ */
+describe('判据 ④：共享表格的 emptyText 必须接住失败读数（issue #6728）', () => {
+  const FAIL_KEY = 'loadFailed'
+
+  it('⑥ 台账只许缩短 + 未登记即红（面自证 + 真文件读数）', () => {
+    const { sites, unregistered, stale } = tableEmptyOffenders(ADMIN_WEB_ROOT)
+
+    // 面自证：登记读面的闭包**真的被扫到了**（空集 = 判据在扫空气）
+    expect(sites.length).toBeGreaterThan(0)
+    // 台账里那一条真值在面里（把它删了 ⇒ 僵尸条目判红）；本单修好的三层**不在**（见下一条）
+    const keys = sites.map((s) => s.key)
+    expect(keys).toContain('src/components/employees/WorkerProfilesPanel.tsx::WorkerProfilesPanel')
+    // 判红面必须为空（未登记命中 / 僵尸条目都没有）
+    expect(unregistered).toEqual([])
+    expect(stale).toEqual([])
+    // 台账只许缩短（超过冻结基线 ⇒ 红）
+    expect(TABLE_EMPTY_LEDGER.length).toBeLessThanOrEqual(TABLE_EMPTY_LEDGER_FLOOR)
+    // 判据面 = 登记读面（`READ_SURFACES`），**不另立一份清单**（否则两份会漂）
+    // 门槛随本单 +1（`customers-list`）—— 数字是**现取的下界**，不是写死的业务常量
+    expect(Object.keys(READ_SURFACES).length).toBeGreaterThanOrEqual(7)
+    expect(Object.keys(READ_SURFACES)).toContain('customers-list')
+  })
+
+  it('⑦ 反向对照：本单修好的两处**不在**命中面里（不假红）', () => {
+    const { sites } = tableEmptyOffenders(ADMIN_WEB_ROOT)
+    const keys = sites.map((s) => s.key)
+    // `/employees` 页面级传了 `emptyText={loadFailed ? '' : '暂无数据'}`
+    expect(keys).not.toContain('src/app/(dashboard)/employees/page.tsx::EmployeesPage')
+    // `/products` 页面把它透传给 `ProductTable`（页面是**调用方**，判决在组件那一环）
+    expect(keys).not.toContain('src/app/(dashboard)/products/page.tsx::ProductsPage')
+  })
+
+  it('⑧ 判别力自证（真文件 + 内存变异）：摘掉 emptyText / 去掉失败读数 ⇒ **必红且具名**', () => {
+    const page = 'src/app/(dashboard)/employees/page.tsx'
+    const pageSrc = read(page)
+    const opts = { file: page, failureKey: FAIL_KEY, root: ADMIN_WEB_ROOT }
+    const pageKey = `${page}::EmployeesPage`
+
+    // 对照读数：改后**本页不报**（同页那个「工人档案」面在台账里，另算 —— 见 ⑥）
+    expect(tableEmptySitesFromSource(pageSrc, opts).map((s) => s.key)).not.toContain(pageKey)
+
+    // 🔴 摘掉本页传给共享表的 `emptyText`（= 改前形态）⇒ 当场红，且报出**是本页哪一处**
+    const noProp = pageSrc.replace("          emptyText={loadFailed ? '' : '暂无数据'}\n", '')
+    expect(noProp).not.toBe(pageSrc) // 注入**自证生效**（没生效时下面那条会假红在别处）
+    const a = tableEmptySitesFromSource(noProp, opts).filter((s) => s.key === pageKey)
+    expect(a.map((s) => s.key)).toEqual([pageKey])
+    expect(a[0].emptyText).toBeNull() // 「缺席 = 继承共享默认值」
+
+    // 🔴 位子还在、但**失败读数没接进去**（恒真文案 = 失败时照样印「暂无数据」）⇒ 也红
+    const staticText = pageSrc.replace(
+      "emptyText={loadFailed ? '' : '暂无数据'}",
+      "emptyText={'暂无数据'}",
+    )
+    expect(staticText).not.toBe(pageSrc)
+    expect(tableEmptySitesFromSource(staticText, opts).map((s) => s.key)).toContain(pageKey)
+
+    // 🔴 `emptyText` 换成**本文件自己的局部量**（不是形参透传）⇒ 照样红（不拿「透传」当免死金牌）
+    const localVar = pageSrc.replace(
+      "emptyText={loadFailed ? '' : '暂无数据'}",
+      "emptyText={emptyTextLocal}",
+    ).replace('  // 列表状态', "  const emptyTextLocal = '暂无数据'\n  // 列表状态")
+    expect(localVar).toContain('emptyText={emptyTextLocal}')
+    expect(tableEmptySitesFromSource(localVar, opts).map((s) => s.key)).toContain(pageKey)
+
+    // ✅ 三种合法形态：`!k` / `k ? … : …` / `k && …`（与 `renderGuardsFromSource` 同口径）
+    for (const expr of [
+      "emptyText={!loadFailed ? '暂无数据' : ''}",
+      "emptyText={loadFailed ? '' : '暂无数据'}",
+      "emptyText={loadFailed && '读取失败'}",
+    ]) {
+      const mutated = noProp.replace('rowKey="id"', `rowKey="id"\n          ${expr}`)
+      expect(mutated, `${expr} 没注入进去`).toContain(expr)
+      expect(
+        tableEmptySitesFromSource(mutated, opts).map((s) => s.key),
+        `${expr} 被误判`,
+      ).not.toContain(pageKey)
+    }
+
+    // 注释里「提及」不算渲染（AST 里没有注释节点 ⇒ 本仓注释惯例不会把判据喂红）
+    expect(directTableSitesFromSource(`// emptyText={loadFailed ? '' : '暂无数据'}\nconst x = 1`)).toEqual([])
+
+    // 🔴 同类第三例（`/customers`，由判据 ④ 的调用图普查发现）：摘掉它的 `emptyText` ⇒ 同样必红
+    const custPage = 'src/app/(dashboard)/customers/page.tsx'
+    const custSrc = read(custPage)
+    const custOpts = { file: custPage, failureKey: 'loadError', root: ADMIN_WEB_ROOT }
+    const custKey = `${custPage}::CustomersPage`
+    expect(tableEmptySitesFromSource(custSrc, custOpts).map((s) => s.key)).not.toContain(custKey)
+    const custNoProp = custSrc.replace("          emptyText={loadError ? '' : '暂无数据'}\n", '')
+    expect(custNoProp).not.toBe(custSrc)
+    expect(tableEmptySitesFromSource(custNoProp, custOpts).map((s) => s.key)).toContain(custKey)
+  })
+
+  it('⑨ 跨组件透传（内存假模块图）：组件把 emptyText 透传给共享表 **不假红**；摘掉组件的透传 ⇒ 必红', () => {
+    const root = ADMIN_WEB_ROOT
+    const tableAbs = path.join(root, 'src/components/products/ProductTable.tsx')
+    const barrelAbs = path.join(root, 'src/components/ui/index.ts')
+    const pageAbs = path.join(root, 'src/app/(dashboard)/probe/page.tsx')
+    // 假模块说明符由**同一份**解析器给出（证明解析器与判据同源、不各写一份）
+    const tableSpec = specifierForModule(tableAbs, root)
+    const barreled = `${tableSpec.split('/').slice(0, -1).join('/')}` // `@/components/products`
+
+    const pageSrc = `
+      import ProductTable from '${barreled}/ProductTable'
+      export default function ProbePage() {
+        const [loadFailed] = useState(false)
+        return <div>${'<' + 'ProductTable'} products={[]} emptyText={loadFailed ? '' : '暂无数据'} /></div>
+      }`
+    const tableSrc = `
+      import { Table } from '@/components/ui'
+      export default function ProductTable({ emptyText }: { emptyText?: string }) {
+        return ${'<' + 'Table'} dataSource={[]} columns={[]} rowKey="id" emptyText={emptyText} />
+      }`
+    const inMemory = (p: string) => {
+      if (p === tableAbs) return tableSrc
+      if (p === barrelAbs) return `export { default as Table } from './Table'\n`
+      throw new Error(`不该读别的模块：${p}`)
+    }
+    const opts = { file: pageAbs, failureKey: FAIL_KEY, root, readModule: inMemory }
+
+    // ✅ 透传形态不假红（组件的形参值定义在父级 ⇒ 本文件解不动，但透传是合法承载）
+    expect(tableEmptySitesFromSource(pageSrc, opts)).toEqual([])
+
+    // 🔴 把组件的透传摘掉 ⇒ 必红（报出的是**组件**那一环，不是页面）
+    const broken = tableSrc.replace(' emptyText={emptyText}', '')
+    expect(broken).not.toBe(tableSrc)
+    const brokenSites = tableEmptySitesFromSource(pageSrc, {
+      ...opts,
+      readModule: (p: string) => (p === tableAbs ? broken : inMemory(p)),
+    })
+    expect(brokenSites.map((s) => s.key)).toEqual(['src/components/products/ProductTable.tsx::ProductTable'])
+
+    // 🔴 台账空转（只许缩短）在**内存台账**上同样会红（判别力自证）
+    expect(tableEmptyStale(ADMIN_WEB_ROOT, ['src/components/products/ProductTable.tsx::不存在的组件'])).toEqual([
+      'src/components/products/ProductTable.tsx::不存在的组件',
+    ])
   })
 })

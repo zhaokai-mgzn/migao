@@ -673,6 +673,10 @@ export default function ProductsPage() {
         onRecommend={handleRecommend}
         onUnrecommend={handleUnrecommend}
         onDelete={handleDeleteSingle}
+        /* 🔴 issue #6728：读失败 ⇒ 表体**不得**印「暂无数据」（那是「没有商品」的事实性断言，
+           而真相是**没读到**）。共享 `ui/Table` 的默认 `emptyText` 是**全站默认值**（不动它）⇒
+           本单**页面级**覆盖：失败时空串，读成功才回落到默认「暂无数据」。 */
+        emptyText={loadFailed ? '' : '暂无数据'}
       />
       </div>
 
