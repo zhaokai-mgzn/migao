@@ -104,7 +104,7 @@ describe('类级守卫：屏上显示了 total ⇒ 该集合必须可达（issue
   it('④ 判别力自证：修前的逐字坏形态必红；注释里的同形态不误伤', () => {
     // 修前形态 ⇒ 命中 A + B、且没接 Pagination
     const before = classify('fixture/before.tsx', PRE_FIX_REMNANTS)
-    expect(before).not.toBeNull()
+    expect(before?.file).toBe('fixture/before.tsx')
     expect(before?.forms).toEqual(expect.arrayContaining(['A', 'B']))
     expect(before?.hasPagination).toBe(false)
 
