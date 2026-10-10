@@ -219,6 +219,234 @@ async function expectActionsHittable(page: Page, table: Locator, label: string) 
 // 断言一字未放宽（页面渲染不出来时上面的非空前置照样红）。
 test.describe.configure({ timeout: 120_000 })
 
+// ── issue #6729：冻结列的**有效背景不透明度**（触发面 = 选中态，与 hover 无关） ──
+
+/**
+ * `getComputedStyle().backgroundColor` 的 alpha（`rgb(...)` ⇒ 1；`rgba(...,0.4)` ⇒ 0.4）。
+ *
+ * 🔴 判「有效不透明度」而不是「声明了背景色」：`bg-inherit` 在**继承到半透明行色**时
+ * 声明了背景却仍半透明 ⇒ 冻结列会透出下层列的内容（issue #6729 的真机现象：alpha=0.4）。
+ * 所以这里量的是**算出来的 alpha**。
+ */
+function alphaOf(color: string): number {
+  const s = color.trim()
+  if (s === 'none' || s === 'transparent' || s === 'rgba(0, 0, 0, 0)') return 0
+  const m = s.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)\s*(?:[,/]\s*([\d.]+)\s*)?\)$/)
+  if (!m) return -1
+  return m[4] === undefined ? 1 : Number(m[4])
+}
+
+/** `rgb()/rgba()` 字符串 → `[r,g,b]`。 */
+function rgbOf(color: string): number[] | null {
+  const m = color.match(/([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/)
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null
+}
+
+/**
+ * 冻结列数据格的**有效背景 alpha** = 该格自己声明的 `backgroundColor` 的 alpha
+ * **或**其**覆盖整个格子的不透明后代**（`position:absolute` 且铺满）的 alpha。
+ *
+ * 为什么允许「不透明后代」：合法修法之一是「冻结格自己铺不透明底 + 再叠一层继承行色的覆盖层」
+ * —— 那时格子自身的 background 可能就是半透明行色，只有覆盖层不透明。
+ * ⇒ 只看格子自身的 alpha 会把这种**合法**修法误判成红。
+ */
+async function stickyCellOpacity(cell: Locator): Promise<{ own: string; overlay: string; effective: number }> {
+  return cell.evaluate((el) => {
+    const own = getComputedStyle(el).backgroundColor
+    let overlay = 'none'
+    for (const child of Array.from(el.children) as HTMLElement[]) {
+      const cs = getComputedStyle(child)
+      if (cs.position !== 'absolute') continue
+      const r = child.getBoundingClientRect()
+      const host = el.getBoundingClientRect()
+      if (r.width >= host.width - 1 && r.height >= host.height - 1) overlay = cs.backgroundColor
+    }
+    const alpha = (color: string): number => {
+      const s = color.trim()
+      if (s === 'none' || s === 'transparent' || s === 'rgba(0, 0, 0, 0)') return 0
+      const m = s.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)\s*(?:[,/]\s*([\d.]+)\s*)?\)$/)
+      if (!m) return -1
+      return m[4] === undefined ? 1 : Number(m[4])
+    }
+    return { own, overlay, effective: Math.max(alpha(own), alpha(overlay)) }
+  })
+}
+
+/**
+ * 在冻结列的矩形内**布点采样**，返回「命中元素不属于该冻结列」的点。
+ *
+ * ⚠️ 口径沿用本批既有约定：**「命中祖先」不算**（命中 `body` / `main` / `table` ⇒ 该点已不在
+ * 冻结列内，或透明穿过去了）。用的是**最上层**元素（`document.elementFromPoint`）。
+ */
+async function foreignHitsInCell(cell: Locator): Promise<{ x: number; y: number; hit: string }[]> {
+  return cell.evaluate((el) => {
+    const rect = el.getBoundingClientRect()
+    const out: { x: number; y: number; hit: string }[] = []
+    const describe = (n: Element | null) =>
+      !n ? 'null' : `${n.tagName.toLowerCase()}${n.getAttribute('data-testid') ? `[${n.getAttribute('data-testid')}]` : ''}`
+    for (const fx of [0.2, 0.5, 0.8]) {
+      for (const fy of [0.25, 0.6, 0.85]) {
+        const x = Math.round(rect.left + rect.width * fx)
+        const y = Math.round(rect.top + rect.height * fy)
+        const hit = document.elementFromPoint(x, y)
+        if (!hit || !el.contains(hit)) out.push({ x, y, hit: describe(hit) })
+      }
+    }
+    return out
+  })
+}
+
+/** 冻结列的数据格（`tbody` 每行的最后一个 `td`）。 */
+const frozenCells = (page: Page) => page.locator('table').first().locator('tbody tr td:last-child')
+
+/**
+ * issue #6729 的实例判据：冻结列在**选中态**下有效背景必须不透明，且勾选 + 横滚后
+ * 冻结矩形内采不到别的列的节点。
+ *
+ * 触发面**精确到「选中态」**（集成侧实测：仅 hover 时冻结列仍是 `rgb(255,255,255)` / alpha=1
+ * ⇒ hover **不**触发）⇒ 判据锚在「勾选」；**没有行复选框的表本身不存在这个缺陷**，
+ * 那类表只判「底色不透明」（不硬造一个勾选，否则判据会在扫空气）。
+ */
+async function expectFrozenCellOpaqueWhenSelected(page: Page, label: string) {
+  const table = page.locator('table').first()
+  const count = await frozenCells(page).count()
+  expect(count, `${label}：冻结列一行都没扫到 ⇒ 判据在扫空气`).toBeGreaterThan(0)
+
+  // 复位横向滚动，取「未勾选」时的读数（反向对照的基线）
+  await table.evaluate((el) => {
+    const c = el.parentElement as HTMLElement
+    c.scrollLeft = 0
+  })
+  await page.mouse.move(5, 5)
+  const beforeFirst = await stickyCellOpacity(frozenCells(page).first())
+  // 选中**之前**的行底色（这是「冻结格该取哪个色」的真值：选中态的行色就是从这里变过去的）
+  const baseRowBg = await frozenCells(page)
+    .first()
+    .evaluate((el) => getComputedStyle(el.parentElement as HTMLElement).backgroundColor)
+
+  const selectable = (await table.locator('tbody input[type="checkbox"]').count()) > 0
+  if (selectable) {
+    // 用 DOM 事件勾选（`check()` 在本机高负载下 actionability 等待会稳定超时；本判据只关心勾选之后的状态）
+    await table
+      .locator('tbody tr')
+      .first()
+      .locator('input[type="checkbox"]')
+      .evaluate((el: HTMLInputElement) => el.click())
+    await page.mouse.move(5, 5) // 移开鼠标 ⇒ 证明与 hover 无关
+    // 等「选中态真的落到 DOM 上」（React 重渲染是异步的；不等就会读到未选中的行底色，
+    // 本包实测因此得到「冻结格与行底色不一致」的**假红**）
+    await expect(frozenCells(page).first().locator('xpath=..')).not.toHaveClass(/bg-white(?![-\w])/, {
+      timeout: 5_000,
+    })
+  }
+
+  const selected = frozenCells(page).first()
+  const opacity = await stickyCellOpacity(selected)
+  expect(
+    opacity.effective,
+    `${label}：${selectable ? '**勾选后**' : '（本表无行复选框 ⇒ 无选中态）'}冻结列数据格的有效背景 alpha = ` +
+      `${opacity.effective}（本格 ${opacity.own} / 不透明覆盖层 ${opacity.overlay}）` +
+      ` ⇒ < 1 时横滚会看到下层列内容透过来（issue #6729 真机现象：勾选行的冻结列叠印「姓名 / 电话 / 地址」）`,
+  ).toBeGreaterThanOrEqual(1)
+
+  // 横滚一段，让下层列的内容真的滚到冻结列下面
+  await table.evaluate((el) => {
+    const c = el.parentElement as HTMLElement
+    c.scrollLeft = Math.min(300, c.scrollWidth - c.clientWidth)
+  })
+  await page.mouse.move(5, 5)
+  const foreign = await foreignHitsInCell(selected)
+  expect(
+    foreign,
+    `${label}：勾选 + 横滚后，冻结列矩形内有 ${foreign.length} 个采样点命中的**不是**冻结列自身/其后代：\n` +
+      foreign.map((f) => `  · (${f.x},${f.y}) → ${f.hit}`).join('\n'),
+  ).toEqual([])
+
+  // 反向对照①：未勾选的那一行不受影响（不许为了不透明白底化整张表）
+  if (count >= 2) {
+    const unselected = await stickyCellOpacity(frozenCells(page).nth(1))
+    expect(
+      unselected.effective,
+      `${label}：**未勾选**行的冻结列有效背景 alpha = ${unselected.effective}（必须仍是不透明白底）`,
+    ).toBeGreaterThanOrEqual(1)
+  }
+
+  // 反向对照②：**冻结格的观感与「同行其它格」同像素等色**。
+  // 自我校验：可选中时必须真的进了选中态（行底色不再是白），否则这一条退化成空断言。
+  // 改前的可视色 = 行底色叠在卡片白底上（选中行 `rgba(238,242,248,0.4)` over white = 248.2/249.8/252.2）；
+  // 修后允许把它换成**等效不透明色** ⇒ 判「不透明层的层色 ≈ 该可见色」（差 ≤1/255）。
+  // 这一条同时拦住两种坏修法：白底化（层色 → 255/255/255）、把选中色改掉（层色 → 238/242/248）。
+  // ⚠️ 与行底色的**机制**无关（表格无关、自校验）；退回 `bg-inherit` 时它也会红。
+  const parts = await selected.evaluate((el) => {
+    const out: { color: string; alpha: number }[] = []
+    const alpha = (c: string): number => {
+      const s2 = c.trim()
+      if (s2 === 'none' || s2 === 'transparent' || s2 === 'rgba(0, 0, 0, 0)') return 0
+      const mm = s2.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)\s*(?:[,/]\s*([\d.]+)\s*)?\)$/)
+      return mm ? (mm[4] === undefined ? 1 : Number(mm[4])) : -1
+    }
+    const nodes: HTMLElement[] = [el as HTMLElement, ...(Array.from(el.children) as HTMLElement[])]
+    for (const n of nodes) {
+      const c = getComputedStyle(n).backgroundColor
+      out.push({ color: c, alpha: alpha(c) })
+    }
+    return out
+  })
+  const rowBg = baseRowBg
+  const rowColor = rgbOf(rowBg)
+  expect(rowColor, `${label}：解析不了行底色 ${rowBg}`).not.toBeNull()
+  const rowAlpha = alphaOf(rowBg)
+  if (selectable) {
+    // 自我校验：勾选后**行底色必须真的变了**（否则「与行底色同色」这一条无从判起，退化成空断言）
+    const afterRowBg = await selected.evaluate((el) => getComputedStyle(el.parentElement as HTMLElement).backgroundColor)
+    expect(
+      afterRowBg !== baseRowBg,
+      `${label}：勾选后行底色仍是 ${afterRowBg}（= 选中前）⇒ 没进选中态（本判据退化成空断言）`,
+    ).toBe(true)
+    // 并且冻结格必须取「选中色」—— 与**未选中时的行色**不同（否则等于没有为选中态换色）
+    expect(
+      opaque.some((v, i) => Math.abs(v - visible[i]) > 1) === false,
+      `${label}：勾选后冻结格仍是「未选中」的色（层色 = [${opaque.join(',')}]）`,
+    ).toBe(true)
+  }
+  const visible = rowColor!.map((v) => v * rowAlpha + 255 * (1 - rowAlpha))
+  const opaqueLayers = parts
+    .filter((p2) => p2.alpha >= 0.999)
+    .map((p2) => rgbOf(p2.color))
+    .filter((rgb): rgb is number[] => rgb !== null)
+  expect(opaqueLayers.length, `${label}：冻结格没有**不透明**背景层（层栈 ${JSON.stringify(parts)}）`).toBeGreaterThan(0)
+  const opaque = opaqueLayers[opaqueLayers.length - 1]
+  if (selectable) {
+    // 只有「行底色会变」的表才有"同色"对象（本表行底色 = 选中色；无复选框的表行底色恒为白）
+    expect(
+      opaque.every((v, i) => Math.abs(v - visible[i]) <= 1),
+      `${label}：冻结格的观感与行底色不一致 —— 不透明层色 = [${opaque.join(',')}]，行底色 \`${rowBg}\` ` +
+        `叠在白底上的可见色 = [${visible.map((v) => v.toFixed(1)).join(',')}]` +
+        `（容差 1/255：不许为了不透明白底化、也不许改掉选中色）`,
+    ).toBe(true)
+  } else {
+    // 无复选框的表：没有选中态可判（触发面不存在）。此处只判「层色是**浅色**」——
+    // 拦住「为了不透明糊一层深色/彩色」的反向劣化；具体取哪个浅色由各表自己的行底色决定
+    // （本包：`/production` 行底色 `bg-white` ⇒ 取白；`/inbound-orders` 行底色含 hover
+    //  `bg-neutral-50/60` ⇒ 取它的已合成色 `#faf7f2`）。
+    expect(
+      opaque.every((v) => v >= 240),
+      `${label}：冻结格的不透明层色 = [${opaque.join(',')}] 不是浅色（不许为了不透明糊深色/彩色）`,
+    ).toBe(true)
+  }
+
+  // 反向对照③：未勾选时的观感与改前一致。
+  // 判「不透明 + 与该表**选中前**的行底色叠在白底上的可见色同色」——表格无关、自校验
+  //（`/orders` 未选中行底色 = 白 ⇒ 白；`/inbound-orders` 行底色 = 白 + 半透明 hover ⇒ 取等效浅色）。
+  expect(alphaOf(beforeFirst.own), `${label}：未勾选时冻结列数据格背景必须不透明`).toBeGreaterThanOrEqual(1)
+  const beforeColor = rgbOf(beforeFirst.own)
+  expect(beforeColor, `${label}：解析不了未勾选时的底色 ${beforeFirst.own}`).not.toBeNull()
+  expect(
+    beforeColor!.every((v) => v >= 235),
+    `${label}：未勾选时冻结列数据格应当是浅色底（改前是 rgb(255,255,255)），现为 [${beforeColor!.join(',')}]`,
+  ).toBe(true)
+}
+
 // ── 逐页用例：两档视口 ×（关键列可见 + 操作列真可点 + 列集合冻结） ──
 
 test.describe('/orders（issue #6717 现场）', () => {
@@ -270,6 +498,9 @@ test.describe('/orders（issue #6717 现场）', () => {
       ).toBe(true)
       await expectActionsHittable(page, table, `/orders ${vp.width}×${vp.height}（滚到底）`)
 
+      // issue #6729：**勾选（选中态）**后冻结列必须仍不透明（触发面 = 选中，与 hover 无关）
+      await expectFrozenCellOpaqueWhenSelected(page, `/orders ${vp.width}×${vp.height}（选中态）`)
+
       // 截图证据（§15.7 读图）：冻结列**必须不透明** —— 滚到底时它正压在「采购明细」等
       // 内容之上，若背景透明会看到穿过去的文字。`elementFromPoint` 判不了透明度
       // （它按盒模型命中，不理会视觉穿透）⇒ 这一条**只能靠读图**，故落一张裁剪图 + 全图。
@@ -298,6 +529,7 @@ test.describe('/inbound-orders（同形态）', () => {
       await publishReading(testInfo, `inbound-orders-${vp.width}`, r)
       expect(new Set(r.cells.map((c) => c.text))).toEqual(new Set(INBOUND_COLUMNS))
       await expectActionsHittable(page, table, `/inbound-orders ${vp.width}×${vp.height}`)
+      await expectFrozenCellOpaqueWhenSelected(page, `/inbound-orders ${vp.width}×${vp.height}（选中态）`)
     })
   }
 })
@@ -313,6 +545,7 @@ test.describe('/production（同形态；/processing-orders 是它的重定向�
       await publishReading(testInfo, `production-${vp.width}`, r)
       expect(new Set(r.cells.map((c) => c.text))).toEqual(new Set(PRODUCTION_COLUMNS))
       await expectActionsHittable(page, table, `/production ${vp.width}×${vp.height}`)
+      await expectFrozenCellOpaqueWhenSelected(page, `/production ${vp.width}×${vp.height}（选中态）`)
     })
   }
 })
