@@ -576,7 +576,9 @@ export default function RemnantLedgerPage() {
                 </td>
               </tr>
             )}
-            {!loading && rows.length === 0 && (
+            {/* 🔴 issue #6714：`error` 时**不许**再印空态 —— 失败横幅与「还没有记录」
+                是两种语义，同屏会把「读不到」说成「还没有」。空态只在**读成功且真为空**时出现。 */}
+            {!loading && !error && rows.length === 0 && (
               <tr>
                 <td colSpan={9} data-testid="remnant-empty" className="px-3 py-6 text-center text-neutral-400">
                   还没有余料记录（派工生成排料结果时会自动产生）
