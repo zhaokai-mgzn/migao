@@ -39,6 +39,7 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 import { CalcFormulaPanel } from '@/components/production-config/CalcFormulaPanel'
 import { productionApi } from '@/lib/api'
+import { markErrorToastShown } from '@/lib/api-error'
 
 describe('CalcFormulaPanel（算料口径域的一块，issue #6585）', () => {
   it('① 自包含：单独挂载即自读算料配置，并渲染公式编辑面', async () => {
@@ -119,5 +120,33 @@ describe('判据 ③：读失败只留一处失败信号（issue #6669 · 收敛
     await waitFor(() => expect(screen.getByTestId('craft-calc-config-default_formula')).toBeInTheDocument())
     expect(screen.queryByTestId('craft-calc-config-error')).toBeNull()
     expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  /**
+   * 🔴 **两种失败形态的实测读数**（集成侧 2026-10-10 真机注入式验收的观察项：全局 api-error 层
+   * 的泛化 toast「服务器内部错误」与页面内联横幅**同屏**）。
+   *
+   * 本条的射程**只有面板侧**（全局层不属本文件面 —— 见 PR body「未收口的一半」）：
+   * 面板要回答的问题 = 「全局 toast 必然播时，面板还要不要再播一次」。
+   *
+   * | 失败形态 | 全局拦截器（`lib/request.ts`） | 本面板改前 | 本面板改后 |
+   * |---|---|---|---|
+   * | 真 API 失败（`success:false` / 4xx / 5xx / 网络错） | **播**泛化 toast + `markErrorToastShown` | 那句 `if (!isErrorToastShown(e)) toast.error(…)` 是**死分支**（不播） | 不播（代码已删） |
+   * | 错误不经拦截器（本文件这类替身抛的裸 `Error`） | **不播** | **播**「算料配置加载失败」（与内联摘要同屏两处） | 不播（内联摘要即那一处） |
+   *
+   * ⇒ 命名形态（= 真 API 失败）下**必然同时出现**的是「全局泛化 toast + 面板内联摘要」，
+   * 面板自己那次播报两种形态下都**不该**存在 —— 处置 = **不重复播报**（内联摘要 + 「重试」是面板侧那一处）。
+   */
+  it('读数：真 API 失败的命名形态（拦截器已播 + 已打标）⇒ 面板**不重复播报**，但失败仍可见且有出口', async () => {
+    const err = new Error('服务器内部错误')
+    markErrorToastShown(err) // 模拟 `lib/request.ts` 拦截器：已 toast + 已打标
+    vi.mocked(productionApi.getCraftCalcConfig).mockRejectedValue(err)
+    render(<CalcFormulaPanel />)
+
+    const failure = await screen.findByTestId('craft-calc-config-error')
+    expect(failure).toHaveTextContent('算料配置加载失败')
+    expect(within(failure).getByTestId('craft-calc-config-retry')).toBeInTheDocument()
+    // 🟢 **不重复播报**（而不是「保留一处兜底」）：本面板 0 次 toast —— 全局层那次是它自己的
+    expect(toast.error, '拦截器已播泛化 toast ⇒ 面板不得再播一次（同屏两处）').not.toHaveBeenCalled()
   })
 })
