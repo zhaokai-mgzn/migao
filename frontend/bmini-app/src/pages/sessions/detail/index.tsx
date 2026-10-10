@@ -11,6 +11,8 @@ import {
 } from '../../../services/agentSessionService'
 // 商家面身份护栏（issue #6567）：纯工人设备打开本页 ⇒ 送回工人工作台
 import { useMerchantSurfaceGuard } from '../../../utils/roleGuard'
+// 时间口径单一真值（issue #6666 判据 8）
+import { formatMessageTime } from '../../../utils/datetime'
 import './index.scss'
 
 /**
@@ -123,7 +125,7 @@ export default function SessionDetailPage() {
       <View key={`${msg.id}-${idx}`} className={`msg ${isCustomer ? 'msg--customer' : 'msg--agent'}`}>
         <View className='msg__bubble'>
           <Text className='msg__text'>{msg.content}</Text>
-          <Text className='msg__time'>{msg.createdAt ? msg.createdAt.slice(11, 16) : ''}</Text>
+          <Text className='msg__time'>{formatMessageTime(msg.createdAt)}</Text>
         </View>
       </View>
     )
@@ -135,7 +137,9 @@ export default function SessionDetailPage() {
       <View className='detail-header'>
         <View className='detail-header__info'>
           <Text className='detail-header__name'>{detail?.customerName || '匿名客户'}</Text>
-          <Text className='detail-header__status detail-header__status--${detail?.status}'>
+          {/* 🔴 模板串必须用**反引号**（issue #6666 判据 2）：写在单引号里 ⇒ 类名是字面量，
+              `index.scss` 的 waiting/active/ended 三套配色**一次都不会生效**（且页面上看不出来）。 */}
+          <Text className={`detail-header__status detail-header__status--${detail?.status}`}>
             {statusLabel}
           </Text>
           {detail?.reason && <Text className='detail-header__reason'>{detail.reason}</Text>}

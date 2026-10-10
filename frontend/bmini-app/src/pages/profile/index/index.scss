@@ -13,6 +13,11 @@
 
 .profile-page {
   min-height: 100vh;
+  // 为浮层底栏留位（issue #6666 判据 1）：本页实测不溢出（「退出登录」bottom=342.6，远在底栏之上），
+  // 但**挂条就得留位**是类级口径（谁挂 MerchantTabBar 谁留位，台账 tests/tabbar-content-inset-ledger.json）
+  // —— 免得日后往本页加内容时又以同样方式被压住。
+  box-sizing: border-box;
+  padding-bottom: calc(50PX + env(safe-area-inset-bottom));
   background-color: $bg-secondary;
 }
 

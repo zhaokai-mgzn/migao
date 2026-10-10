@@ -7,6 +7,36 @@
 
 ## [Unreleased]
 
+### 员工手机端（bmini）：底栏不再吃掉最后一行 + 坐席会话状态配色生效 + 收起「没做完」的入口（2026-10-10，issue #6666）
+
+试用收尾，按移动端只读审计 + 线上实测（`app.migaozn.com/b/`，390×844，API 全桩、零写请求）逐条修：
+
+- **底栏吃掉最后一行（P0，实测）**：`MerchantTabBar` 是 `position: fixed` 的浮层、**不占流内空间**，而
+  「数据 / 坐席 / 我的」三页只留了 24 设计 px ⇒ 数据页滚到底后最靠下的**叶子文本** bottom = **799.5px**、
+  底栏 top = **794px**（零安全区压 5.5px；按 iPhone 安全区 34px 推算**整行落在底栏之下＝看不见**）。
+  改后三页与聊天页**同源**：`box-sizing: border-box` + `padding-bottom: calc(50PX + env(safe-area-inset-bottom))`。
+  🔴 **类级固化**：谁挂底栏谁留位 —— 未登记即红、台账只许缩短（`frontend/bmini-app/tests/tabbar-content-inset.test.ts`
+  + 台账 `frontend/bmini-app/tests/tabbar-content-inset-ledger.json`）；几何复算 =
+  `acceptance/2026-10-09-bmini-three-fixes/bmini-geometry-probe.mjs` 的 `tabbarInset`。
+- **坐席会话详情的状态配色一次都没生效（确定性缺陷）**：状态类名写在**单引号**里
+  （`className='… detail-header__status--${detail?.status}'`）⇒ 类名是字面量，waiting / active / ended 三套配色
+  一条都没应用过。改为模板串；并补**类级判据**「`className` 里出现 `${` 时承载引号必须是反引号」（全仓扫，
+  台账只许缩短，`tests/className-interpolation.test.ts`）。
+- **商品卡收起「查看详情」入口**：它点了只弹一句「开发中」提示 —— 试用现场点一次就等于把「没做完」写在脸上。
+  卡片唯一动作 = 「去下单」（把商品名带进对话下单流程）。
+- **SSE 失败不再把技术原文拼进 AI 气泡**：原气泡是「抱歉，发生错误: 请求失败: 500」⇒ 改成一句人类可读的
+  「抱歉，这条消息没能回复，请再发一次。」；技术原文只进 console；顶部横幅不再复述同一句（§31 P2 信息不重复）。
+- **「数据」页失败态 ≠ 空态**：经营数字 / 待办两条链改为三态（`ok` / `forbidden` / `error`）—— 403 说「无权限」、
+  失败给一行「点此重试」，不再渲染一排 `--`，也不再拿「暂无待办，AI 正在处理中」冒充失败。
+- **时间口径收敛到一处**：新增 `frontend/bmini-app/src/utils/datetime.ts` 的 `formatMessageTime`
+  （今天 `HH:MM` / 非今天 `MM-DD HH:MM`），替换对话气泡 / 坐席详情 / 坐席列表 / 数据页待办**四份各不相同**的
+  `slice(...)` 写法。
+
+**照实登记（未做 / 边界）**：① 登录页「获取验证码」失败后**不进冷却是有意保留**（既有判据明写「不把失败装成
+成功」，改它等于把失败装成已发送）；② 坐席会话详情页「键盘弹出时输入区是否可见」本机判不了
+（几何实测 `inputBelowViewportPx = 0` ⇒ 静态无遮挡），留 §15.7 真机确认；③ `pages/production/index` 不在
+本轮清单内 —— 它**不挂底栏**（不是 tab 页），审计把它列进来不成立。
+
 ### 工人端报工卡上不再出现「请求失败（HTTP 429）」（2026-10-10，issue #6642）
 
 用户截图：「请求失败（HTTP 429）」，并让去云服务器查日志。

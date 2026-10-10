@@ -11,6 +11,8 @@ import {
 import { useMerchantSurfaceGuard } from '../../../utils/roleGuard'
 // 底栏（issue #6574）：按岗位权限裁剪，端侧自绘 + 收起原生条
 import MerchantTabBar from '../../../components/MerchantTabBar'
+// 时间口径单一真值（issue #6666 判据 8）
+import { formatMessageTime } from '../../../utils/datetime'
 import './index.scss'
 
 /**
@@ -70,7 +72,7 @@ export default function SessionsPage() {
           {item.reason || '转人工会话'}
         </Text>
         <Text className='session-item__time'>
-          {item.createdAt ? item.createdAt.slice(5, 16).replace('T', ' ') : ''}
+          {formatMessageTime(item.createdAt)}
           {item.queuePosition != null && item.status === 'waiting' ? ` · 排位 ${item.queuePosition}` : ''}
         </Text>
       </View>
