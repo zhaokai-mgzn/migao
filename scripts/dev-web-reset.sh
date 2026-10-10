@@ -66,10 +66,13 @@ fi
 
 echo "== ③ 只起一个实例（日志：${LOG}）"
 # setsid：脱离调用方的**进程组** —— 否则调用方被 SIGTERM（或 shell 退出）时会把 dev server 一起带走
+# ⚠️ 必须**显式**把 `node_modules/.bin` 放进 PATH（2026-10-11 实测）：依赖 npm 自行注入时，
+#    某些调用环境（nohup 子壳）下 `npm run dev` 会以 `sh: next: command not found` 失败 ——
+#    而本脚本的断言只在**等不到就绪**时报警，于是表现为"清理成功但服务根本没起来"。
 if command -v setsid >/dev/null 2>&1; then
-  ( cd "$WEB" && setsid nohup npm run dev -- --port "$PORT" >"$LOG" 2>&1 < /dev/null & )
+  ( cd "$WEB" && PATH="$WEB/node_modules/.bin:$PATH" setsid nohup npm run dev -- --port "$PORT" >"$LOG" 2>&1 < /dev/null & )
 else
-  ( cd "$WEB" && nohup npm run dev -- --port "$PORT" >"$LOG" 2>&1 < /dev/null & disown )
+  ( cd "$WEB" && PATH="$WEB/node_modules/.bin:$PATH" nohup npm run dev -- --port "$PORT" >"$LOG" 2>&1 < /dev/null & disown )
 fi
 
 echo "== ④ 等就绪（最多 ${WAIT_SECS}s；首请求要现编译，慢是正常的）"
