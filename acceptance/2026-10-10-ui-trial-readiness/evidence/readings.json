@@ -1,5 +1,5 @@
 {
-  "when": "2026-10-10T16:43:12.027Z",
+  "when": "2026-10-10T17:36:55.727Z",
   "base": "http://localhost:3001",
   "sections": {
     "S1_login": {
@@ -138,10 +138,10 @@
     "200 /api/auth/me",
     "200 /api/admin/notifications/unread-count",
     "200 /api/admin/briefing/config",
-    "200 /api/admin/dashboard/order-trend?days=7",
     "200 /api/admin/dashboard/recent-orders?limit=5",
-    "200 /api/admin/dashboard/order-status",
     "200 /api/admin/dashboard/product-ranking?period=day&limit=10",
+    "200 /api/admin/dashboard/order-trend?days=7",
+    "200 /api/admin/dashboard/order-status",
     "200 /api/admin/dashboard/stats",
     "200 /api/auth/refresh",
     "200 /api/admin/products?page=1&size=10&sortBy=createdAt&sortOrder=desc",

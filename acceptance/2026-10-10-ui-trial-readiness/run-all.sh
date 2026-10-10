@@ -20,7 +20,9 @@ FAILS=0
 run_one() {
   local name="$1"; shift
   echo ""; echo "============================== $name =============================="
-  if "$@"; then echo "✅ $name"; else echo "❌ $name（退出码非零）"; FAILS=$((FAILS + 1)); fi
+  # ⚠️ 必须用 ${name} 大括号：`$name（` 会把全角「（」的字节折进变量名 ⇒ set -u 下 unbound variable。
+  #    本脚本首跑实测：**绿的路能走、红的路当场崩**（而它存在的意义就是报红）。
+  if "$@"; then echo "✅ ${name}"; else echo "❌ ${name}（退出码非零）"; FAILS=$((FAILS + 1)); fi
 }
 
 run_one "S1–S6 真机金路径（登录零额度 / 无菌值 / 浮球 / 分页 / 锚点 / 八页卫生）" node "$HERE/run.mjs"
