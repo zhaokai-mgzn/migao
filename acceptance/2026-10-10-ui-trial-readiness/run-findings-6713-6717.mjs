@@ -145,7 +145,12 @@ for (const vp of [{ w: 1440, h: 980, pages: ['/orders'] }, { w: 1280, h: 800, pa
   await c.close()
 }
 
-writeFileSync(OUT + 'S12-findings-6713-6717.json', JSON.stringify({ when: new Date().toISOString(), fails }, null, 2))
-console.log(`\n${fails.length ? '🔴 红项 ' + fails.length + ' 条' : '✅ 全绿'}`)
+// ⚠️ 文件名必须**按阶段区分**（PHASE 环境变量）：写死一个名字时，下一次运行会**静默覆盖**上一次的读数
+//    ——本次实测把已提交的「修前红基线」覆盖掉了（还得从 git 历史 git show <commit>:<path> 捞回来）。
+//    用法：PHASE=red-baseline node run-findings-6713-6717.mjs / PHASE=after-6715 ...
+const PHASE = process.env.PHASE || 'latest'
+const OUT_FILE = OUT + `S12-${PHASE}.json`
+writeFileSync(OUT_FILE, JSON.stringify({ when: new Date().toISOString(), phase: PHASE, fails }, null, 2))
+console.log(`\n${fails.length ? '🔴 红项 ' + fails.length + ' 条' : '✅ 全绿'}（读数落盘：evidence/S12-${PHASE}.json）`)
 await browser.close()
 process.exit(fails.length ? 1 : 0)
