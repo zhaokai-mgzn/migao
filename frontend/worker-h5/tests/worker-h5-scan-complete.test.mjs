@@ -117,6 +117,17 @@ function fakeDom() {
       const i = l.indexOf(fn)
       if (i >= 0) l.splice(i, 1)
     },
+    /**
+     * 发一个 **document 级**事件（`visibilitychange` 这类）。
+     *
+     * 🔴 本页的接线是 `() => { void checkAlive() }` —— 处理器**立刻返回**，请求在后台飞
+     * ⇒ 只 `await fn()` 会在请求落地/重渲染**之前**就返回（判据会假绿/假红）。
+     * 这里把微任务排空到位（等元素/等请求，不定长 sleep）。
+     */
+    async fireDoc(type) {
+      for (const fn of docListeners.get(type) ?? []) await fn()
+      for (let i = 0; i < 5; i += 1) await new Promise((r) => setImmediate(r))
+    },
     /** 点某个元素（跑它当前挂着的处理器；处理器是 async ⇒ 必须 await）。 */
     async fire(id, type = 'click') {
       const el = byId.get(id)
@@ -1011,4 +1022,68 @@ test('🔴 ⑨ 逃生门 `?page=report&keep=1` ⇒ 登录后**不换页**（机�
 test('🔴 ⑨ 没钉过的本机（工人手机）⇒ 登录后留在报工页', async () => {
   const nav = await loginAndCollectNav('https://app.migaozn.com/w/', memStorage())
   assert.deepEqual(nav, [], '普通工人手机不得被带进机台页')
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 🔴 后台对账（`checkAlive`）：请求有界 + 失败不进报工卡（issue #6642）
+//
+// 线上日志实测（2026-10-10 08:12:10，SWAS `migao-deploy-nginx-1`）：
+//   同一条工人 session 在 ~4 秒里打出 **92 个请求**（15–23 req/s），被 `worker_sess`
+//   （rate=2r/s burst=60）拒了 4 条 —— 被拒的只有 `GET /api/worker/me` 与
+//   `GET /api/worker/production/current-worker` 两个**读面**（写面 `/scan`、`/scan/complete` 一次没被拒），
+//   而 `current-worker` 的失败走了 `fail()` ⇒ 用户截图那行红字「请求失败（HTTP 429）」出现在**报工卡**里。
+//
+// 两条独立病、两条判据（都能红）：
+//   ⑩ 可见性事件风暴 ⇒ 对账请求**有界**（单飞 + 节流），不再放大成 15–23 req/s；
+//   ⑪ 对账失败（非 401）⇒ **不得**占用报工卡错误位，只给一句"不影响报工"的提示；401（身份面）一字不动。
+
+test('🔴 ⑩ 可见性事件风暴 ⇒ 对账请求有界（一次事件风暴只允许一轮），不再放大成 15–23 req/s', async () => {
+  const doc = fakeDom()
+  const f = routeFetch({
+    '/api/worker/production/current-worker': { status: 200, body: { success: true, data: { worker_no: 'A017', worker_name: '张三' } } },
+    '/api/worker/me': { status: 200, body: { success: true, data: { worker_id: 'w-1', worker_name: '张三', pages: ['report', 'cut_calc'] } } },
+  })
+  bootPage({ doc, f })
+
+  // 一轮 checkAlive = 2 个请求（current-worker + /me）。线上那次是 ~18 轮 ⇒ 36 个请求。
+  for (let i = 0; i < 20; i += 1) await doc.fireDoc('visibilitychange')
+
+  const calls = f.calls.filter((c) => c.url.includes('/api/worker/'))
+  assert.equal(
+    calls.length,
+    2,
+    `20 次可见性事件打出了 ${calls.length} 个对账请求（应恰好 1 轮 = 2 个）—— ` +
+      '单飞/节流缺一个，风暴就会原样放大到服务端并被 worker_sess 限流（#6642 线上实测 15–23 req/s）',
+  )
+})
+
+test('🔴 ⑪ 对账失败（429）⇒ 不进报工卡错误位，只给「不影响报工」的提示', async () => {
+  const doc = fakeDom()
+  const f = routeFetch({
+    '/api/worker/production/scan?': resolveOk(CLOTH_VIEW),
+    '/api/worker/production/current-worker': { status: 429, body: { success: false, error: { message: '请求失败（HTTP 429）' } } },
+    '/api/worker/me': { status: 200, body: { success: true, data: { worker_id: 'w-1', worker_name: '张三', pages: ['report'] } } },
+  })
+  bootPage({ doc, f })
+  await scan(doc, 'tok-cloth') // 前提：报工卡在屏上（线上那次正是卡在屏上时报的红字）
+  assert.match(doc.html, /wh5-report/, '前提没满足：报工卡不在屏上')
+
+  await doc.fireDoc('visibilitychange')
+  // 🔴 红证：改前 `checkAlive` 的非 401 失败走 `fail()` ⇒ 这两条断言当场红（= 用户截图那一行红字）
+  assert.equal(doc.html.includes('请求失败'), false, '后台对账的 429 被渲成了报工卡错误（用户截图里的正是这一行）')
+  assert.equal(doc.html.includes('wh5-error'), false, '后台对账失败不得占用报工卡的错误位')
+  assert.ok(doc.html.includes('不影响报工'), '应当给一句"不影响报工"的提示（fail-open 同族的读面降级）')
+})
+
+test('🔴 ⑪ 对账失败（401 = 身份面）⇒ 仍回落未登录，一字不动', async () => {
+  const doc = fakeDom()
+  const f = routeFetch({
+    '/api/worker/production/current-worker': { status: 401, body: { success: false, error: { code: 'SESSION_EXPIRED', message: '登录已过期' } } },
+    '/api/worker/me': { status: 200, body: { success: true, data: { worker_id: 'w-1', worker_name: '张三', pages: ['report'] } } },
+  })
+  bootPage({ doc, f })
+
+  await doc.fireDoc('visibilitychange')
+  assert.equal(doc.html.includes('wh5-login'), true, '401 ⇒ 应回落未登录屏（登录按钮在）')
+  assert.equal(doc.html.includes('wh5-current-worker'), false, '401 ⇒ 不得继续显示已登录的工人')
 })
