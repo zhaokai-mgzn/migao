@@ -7,6 +7,8 @@
  * 「去下单」CTA 触发 onOrder（把商品名带入对话下单流程）。
  */
 import React from 'react'
+import fs from 'fs'
+import path from 'path'
 import '@testing-library/jest-dom'
 import { render, screen, fireEvent } from '@testing-library/react'
 import ProductCard from '../src/components/cards/ProductCard'
@@ -78,5 +80,31 @@ describe('ProductCard — 下单防连点锁（issue #3040 收尾）', () => {
     fireEvent.click(screen.getByText(/去下单/))
     fireEvent.click(screen.getByText(/去下单/))
     expect(onOrder).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('商品卡不摆「没做完」的入口（issue #6666 判据 3）', () => {
+  const baseProduct = { id: 'p-001', name: '遮光窗帘', price: 199 }
+
+  it('🔴 卡上不再有「查看详情」这条空入口（点它只弹一句「功能开发中」= 把没做完写在脸上）', () => {
+    render(<ProductCard data={baseProduct} onOrder={jest.fn()} />)
+    expect(screen.queryByText('查看详情')).toBeNull()
+    // 卡片唯一动作仍是「去下单」（把商品名带进对话下单流程）
+    expect(screen.getByText('去下单')).toBeInTheDocument()
+  })
+
+  it('🔴 该文案在 bmini 源码里零出现（不留第二处占位入口）', () => {
+    const hits: string[] = []
+    const walk = (dir: string) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const p = path.join(dir, e.name)
+        if (e.isDirectory()) walk(p)
+        else if (/\.(ts|tsx|js|jsx|scss)$/.test(p)) {
+          if (fs.readFileSync(p, 'utf-8').includes('功能开发中')) hits.push(p)
+        }
+      }
+    }
+    walk(path.resolve(__dirname, '../src'))
+    expect(hits).toEqual([])
   })
 })

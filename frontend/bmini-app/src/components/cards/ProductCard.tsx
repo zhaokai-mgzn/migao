@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { View, Text, Image } from '@tarojs/components'
-import Taro from '@tarojs/taro'
 import './ProductCard.scss'
 
 interface ProductCardProps {
@@ -66,10 +65,6 @@ export default function ProductCard({ data, onOrder }: ProductCardProps) {
   const showOriginal = originalPrice !== '' && originalPrice !== price
   const specLine = buildSpecLine(data)
 
-  const handleViewDetail = () => {
-    Taro.showToast({ title: '功能开发中', icon: 'none' })
-  }
-
   const handleOrder = () => {
     if (ordered) return
     setOrdered(true)
@@ -118,9 +113,9 @@ export default function ProductCard({ data, onOrder }: ProductCardProps) {
       )}
 
       <View className='product-card__actions'>
-        <View className='product-card__btn product-card__btn--outline' onClick={handleViewDetail}>
-          <Text className='product-card__btn-text product-card__btn-text--outline'>查看详情</Text>
-        </View>
+        {/* issue #6666 判据 3：原「查看详情」点了只弹一句「开发中」提示 —— 试用现场点一次就等于
+            把「没做完」写在脸上 ⇒ **收起入口**（本轮不做详情页）。卡片唯一动作 = 「去下单」，
+            它把商品名带进对话下单流程；要更多商品信息，商家直接在对话里问黄金策。 */}
         <View className={`product-card__btn product-card__btn--primary${ordered ? ' product-card__btn--locked' : ''}`} onClick={handleOrder}>
           <Text className='product-card__btn-text product-card__btn-text--primary'>去下单</Text>
         </View>
