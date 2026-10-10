@@ -39,6 +39,16 @@ export const MACHINE_REPORT_HREF = '/w/?page=report&keep=1'
 /** 机器屏精度（三位小数 = mm；服务端 `rounding.digits` 是唯一真值，这里只是渲染兜底）。 */
 export const DEFAULT_DIGITS = 3
 
+/**
+ * 登录页出口（issue #6667 第 1 条，P0）：机台那台屏**没有登录面**，未登录时只显示
+ * 「请先用工号 + PIN 登录」而屏上**没有任何可点的登录入口** ⇒ 车间里盯着这块屏的人无路可走。
+ *
+ * 修法 = 给一条**真的**链接（`/w/` 才是登录那一页；机台页是同一静态根下的另一张页）。
+ * 🔴 不把登录表单搬进机台页：本页刻意零文本输入元素（扫码枪的字符不被输入法吃掉，
+ * 见 `createScanBuffer` 与 machine.html 的头注释）—— 搬进来等于把那条护栏拆掉。
+ */
+export const MACHINE_LOGIN_HREF = '/w/'
+
 const esc = (v) =>
   String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
 
@@ -346,8 +356,18 @@ export function detailRows(data, position) {
     ['安装工艺', position?.craft, ''],
     ['褶倍', position?.fullness, '倍'],
     ['用料', position?.fabric_meters, '米', 'm'],
-    ['部位备注', position?.position_remark, ''],
+    // 部位备注（issue #6667 第 9 条）：备注是**商家挂在某个商品行上**的自由文本，多部位单里
+    // 只印备注 ⇒ 工人不知道说的是哪一幅帘 ⇒ 印成「商品行名 · 备注」。缺商品行名 ⇒ 只印备注（不塞占位）。
+    ['部位备注', remarkText(position), ''],
   ]
+}
+
+/** 「商品行名 · 部位备注」；两者都缺 ⇒ `null`（由 `dataOr` 兜成「—」）。 */
+function remarkText(position) {
+  const remark = dataOr(position?.position_remark)
+  const product = dataOr(position?.product_name)
+  if (remark === EMPTY) return product === EMPTY ? null : product
+  return product === EMPTY ? remark : `${product} · ${remark}`
 }
 
 function kvRows(rows) {
@@ -493,18 +513,32 @@ export function renderDetail(state) {
     </section>`
 }
 
-/** 等扫码 / 报错两态（大字 + 常驻扫码提示）。 */
+/**
+ * 等扫码 / 报错两态（大字 + 常驻扫码提示）。
+ *
+ * 🔴 两条现场出口（issue #6667）：
+ *   ① **未登录时有登录入口**：改前这块屏只写「请先用工号 + PIN 登录」而**全文件零 `<a>`**
+ *      ⇒ 车间里盯着屏的人无路可走（他连登录那一页都回不去）。修法见 {@link MACHINE_LOGIN_HREF}。
+ *   ② **有工人时有「切换工人」**：机台与手机页共享同一份 `migao:worker-h5:session`，上一班登出后
+ *      下一班扫自己的码，报工可能仍记在上一个人头上（**计件归属错 = 涉钱**）⇒ 给一个人人都会按的出口。
+ *      ⚠️ **未做（如实登记）**：空闲超时自动回登录态**不在本包**——机台是常驻屏，「没人动」不等于
+ *      「没人用」（工人把料搬过来那几分钟也算空闲），自动踢人会把「活干不了」变成新的现场故障；
+ *      本包只落**人主动切**这条最小可行动作，边界与重启条件写在 PR body。
+ */
 export function renderScan(state) {
   const failed = state.mode === 'error'
+  const hasWorker = Boolean(state.worker)
   return `
     <section class="wh5-machine__panel wh5-machine__panel--idle" data-machine-screen="${failed ? 'error' : 'scan'}">
       <header class="wh5-machine__head">
         <h1>裁高计算（一体机）</h1>
-        <span class="wh5-machine__worker">${esc(dataOr(state.worker?.workerName))}</span>
+        ${hasWorker ? `<span class="wh5-machine__worker">${esc(dataOr(state.worker?.workerName))}</span>` : ''}
+        ${hasWorker ? '<button type="button" class="wh5-machine__back" id="wh5-machine-switch-worker">切换工人</button>' : ''}
       </header>
       ${failed
-        ? `<p class="wh5-machine__big wh5-machine__big--error">${esc(dataOr(state.error))}</p><p class="wh5-machine__hint">请重新扫一次水洗唛（或手工输入短码）</p>`
+        ? `<p class="wh5-machine__big wh5-machine__big--error">${esc(dataOr(state.error))}</p><p class="wh5-machine__hint">请重新扫一次水洗唛（同一张码再扫 = 领下一道）</p>`
         : '<p class="wh5-machine__big">请扫水洗唛</p><p class="wh5-machine__hint">扫一次即可看到订单详情与裁剪高度（无需点输入框）</p>'}
+      ${hasWorker ? '' : `<p class="wh5-machine__hint">这台屏上扫的活记在**当前工人**名下 ⇒ 请先<a class="wh5-machine__back" id="wh5-machine-login" href="${MACHINE_LOGIN_HREF}">登录</a>（工号 + PIN）</p>`}
       <p class="wh5-machine__hint"><a class="wh5-machine__back" id="wh5-machine-to-report" href="${MACHINE_REPORT_HREF}">去报工页（本机不记住）</a></p>
       ${noticeBlock(state.notice)}
     </section>`
