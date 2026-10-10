@@ -114,6 +114,12 @@ function mockApiSuccess() {
 describe('DashboardPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // 🔴 issue #6715：`clearAllMocks` **不清实现**（只清调用记录）⇒ 上一用例里改红的
+    // `mockRejectedValue` 会**渗到下一个用例**（实测在同一文件里踩过两次）。
+    // 逐个 `mockReset()` 再 `mockApiSuccess()`，让每个用例都从「全成功」的原状出发。
+    for (const fn of [mockGetStats, mockGetOrderTrend, mockGetRecentOrders, mockGetProductRanking, mockGetOrderStatus]) {
+      fn.mockReset()
+    }
     mockUseAuthStore.mockReturnValue({})
     mockApiSuccess()
   })
@@ -991,5 +997,163 @@ describe('DashboardPage', () => {
       expect(screen.getByText('暂无近期订单')).toBeInTheDocument()
     })
   })
+
+  // ══════════════════════════════════════════════════════════════════════
+  // issue #6715（独立盲复核）：**冷启动读失败**下「读不到」与「0 / 暂无数据」不得同屏
+  //
+  // 场景 = **登录前**就注入全部 dashboard 读面 ⇒ 500（**全程无一次成功加载**）⇒ 等 6s 读屏。
+  // 改前屏上事实：四卡 `—` ＋ 五处「暂无…」＋「共 0 单」，而横幅却承诺
+  // 「下方显示的仍是上次成功取到的值（不是 0，也不是「暂无数据」）」⇒ **两种误读同时都在**。
+  //
+  // 复用既有用例号（不新开）：DA-005（经营看板）/ DA-006（dashboard 派生展示）/ UI-003（admin-web 前端单测）。
+  // ══════════════════════════════════════════════════════════════════════
+
+  /** 五个读面**全部** reject（冷启动：从没有过一次成功）—— 每个用例都从 `beforeEach` 的全成功原状出发 */
+  function mockAllDashboardReadsFail() {
+    for (const fn of [mockGetStats, mockGetOrderTrend, mockGetRecentOrders, mockGetProductRanking, mockGetOrderStatus]) {
+      fn.mockReset()
+      fn.mockImplementation(() => Promise.reject(new Error('Network error')))
+    }
+  }
+
+  it('#6715 冷启动全挂 ⇒ 横幅**只说「没有取到数据」**，不得声称「仍是上次成功取到的值」（N2）', async () => {
+    mockAllDashboardReadsFail()
+    render(<DashboardPage />)
+    const alert = await screen.findByTestId('dashboard-load-failed')
+    // ① 失败面在（本单前提：屏上**同时**有失败面与那两种误读）
+    expect(alert.textContent).toContain('数据加载失败')
+    // ② 冷启动形态：明说「没有取到数据」，且**不得**声称有历史值
+    expect(alert.textContent).toContain('没有取到数据')
+    expect(alert.textContent).not.toContain('仍是上次成功取到的值')
+    expect(screen.getByTestId('dashboard-no-data-yet')).toBeInTheDocument()
+  })
+
+  it('#6715 冷启动全挂 ⇒ 屏上**不得**出现「共 0 单」与任何「暂无…」（N1 + N2 的同屏事实）', async () => {
+    mockAllDashboardReadsFail()
+    render(<DashboardPage />)
+    await screen.findByTestId('dashboard-load-failed')
+    await waitFor(() => {
+      // 屏上确实渲染过（否则下面的否定断言在空页上恒真 —— 空断言）
+      expect(screen.getByText('经营看板')).toBeInTheDocument()
+    })
+    const body = document.body.textContent ?? ''
+    // N1：`total = data.reduce(…)` 的初值是 0 ⇒ 改前这里就是「共 0 单」
+    expect(body).not.toMatch(/共\s*0\s*单/)
+    expect(screen.queryByTestId('order-status-count')).toBeNull()
+    // N2：五处「暂无…」改前与失败横幅同屏
+    expect(body).not.toContain('暂无')
+    // 反向自证：失败面自己必须在（否则「没有 0/暂无」可能只是页面没渲染）
+    expect(screen.getByTestId('dashboard-load-failed')).toBeInTheDocument()
+  })
+
+  it('#6715 反向对照：真为 0 单 / 真无数据 ⇒ 「共 0 单」与「暂无…」**照旧显示**（不吃掉真实空态）', async () => {
+    mockGetOrderStatus.mockResolvedValue({ data: { data: [] } })
+    mockGetOrderTrend.mockResolvedValue({ data: { data: [] } })
+    mockGetRecentOrders.mockResolvedValue({ data: { data: [] } })
+    mockGetProductRanking.mockResolvedValue({ data: { data: [] } })
+    render(<DashboardPage />)
+    // 真无数据：三处空态照旧（多处「暂无」逐字锚 —— 与失败态的「一处都没有」成对照）
+    await waitFor(() => {
+      expect(screen.getByText('暂无销售额数据')).toBeInTheDocument()
+      expect(screen.getByText('暂无近期订单')).toBeInTheDocument()
+      expect(screen.getByText('暂无排行数据')).toBeInTheDocument()
+      // 真为 0 单：计数断言照旧（这是事实，不是「读不到」）
+      expect(screen.getByTestId('order-status-count')).toHaveTextContent('共 0 单')
+    })
+    // 且**不得**出现失败面（读都成功了）
+    expect(screen.queryByTestId('dashboard-load-failed')).toBeNull()
+  }, 20_000)
+
+  it('#6715 有历史值后失败 ⇒ 保留原承诺，但**计数位与「暂无…」必须真的不在屏上**（承诺要有判据守着）', async () => {
+    // 对照 A：读成功
+    render(<DashboardPage />)
+    await waitFor(() => {
+      expect(screen.getByTestId('order-status-count')).toHaveTextContent('共 7 单')
+    })
+    // 让 `orders` 的**最近一次成功读**是「真为空」（这样空态断言确实在屏上 → 失败后必须消失）
+    mockGetRecentOrders.mockResolvedValue({ data: { data: [] } })
+    fireEvent.click(screen.getByRole('button', { name: /刷新/ }))
+    await waitFor(() => {
+      expect(screen.getByText('暂无近期订单')).toBeInTheDocument()
+    })
+
+    // 对照 B：五块全挂 ⇒ 保留上次成功值
+    mockAllDashboardReadsFail()
+    fireEvent.click(screen.getByRole('button', { name: /刷新/ }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dashboard-load-failed')).toBeInTheDocument()
+    })
+    const alert = screen.getByTestId('dashboard-load-failed')
+    // 有历史值 ⇒ 原承诺保留（它在这条路径上是**真的**：最近一次成功读到的就是「没有新订单」）
+    expect(alert.textContent).toContain('仍是上次成功取到的值')
+    expect(screen.queryByTestId('dashboard-no-data-yet')).toBeNull()
+    // 有过历史值 ⇒ 这一块**保持原样**（不清零、不藏数 —— #5792 的既有口径不放宽）：
+    // 最近一次成功读到的就是「真为空」⇒「暂无近期订单」照旧在屏上（那是**事实**，不是误读）
+    expect(screen.getByText('暂无近期订单')).toBeInTheDocument()
+    expect(screen.getByTestId('order-status-count')).toHaveTextContent('共 7 单')
+    // 🔴 反向划界：**冷启动失败**（从没有过一次成功）才是不许出现「共 0 单 / 暂无…」的形态
+    //    —— 见上面两条「冷启动全挂」用例；本条钉住「别把有历史值的形态一起治掉」
+  }, 20_000)
+
+  it('#6715 单块失败：计数断言与空态只在该块缺席，其余块照旧（不连坐）', async () => {
+    // 每个用例都从 beforeEach 的「全成功」原状出发（`clearAllMocks` 不清实现 ⇒ 必须显式复位）
+    // `orderStatus` / `trend` 冷启动就失败（从没有过一次成功）；其余块照常成功
+    mockAllDashboardReadsFail()
+    mockGetStats.mockResolvedValue({ data: { data: { todayOrders: 10, todaySales: 39800, monthRevenue: 5000000 } } })
+    mockGetProductRanking.mockResolvedValue({ data: { data: [] } })
+    // `orders` 这次**读成功且真为空** ⇒ 它的空态照旧显示（对照：失败的两块一处都不显示）
+    mockGetRecentOrders.mockResolvedValue({ data: { data: [] } })
+    render(<DashboardPage />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dashboard-load-failed')).toBeInTheDocument()
+    })
+    // 冷启动失败的两块：计数断言 / 空态断言都缺席
+    expect(screen.queryByTestId('order-status-count')).toBeNull()
+    expect(screen.getByTestId('order-status-read-failed')).toBeInTheDocument()
+    expect(screen.getByTestId('trend-read-failed')).toBeInTheDocument()
+    expect(screen.getByTestId('sales-trend-read-failed')).toBeInTheDocument()
+    expect(screen.queryByText('暂无销售额数据')).toBeNull()
+    // 成功的块：空态照旧（真无数据）
+    expect(screen.getByText('暂无近期订单')).toBeInTheDocument()
+    expect(screen.getByText('暂无排行数据')).toBeInTheDocument()
+  })
+
+  it('#6715 点「只重试失败项」（放开失败）⇒ 计数断言与空态**回到真值**，失败面消失', async () => {
+    // 冷启动：五块全挂；点「只重试失败项」后再放行成功实现。
+    // ⚠️ 顺序 = 先取成功实现、**最后**设失败（`mockAllDashboardReadsFail` 会 `mockReset()`；
+    //    若先设失败再 `mockApiSuccess()`，横幅根本不出现 —— 实测踩过）。
+    mockApiSuccess()
+    mockGetRecentOrders.mockResolvedValue({ data: { data: [] } })
+    const okStats = mockGetStats.getMockImplementation()!
+    const okTrend = mockGetOrderTrend.getMockImplementation()!
+    const okOrders = mockGetRecentOrders.getMockImplementation()!
+    const okRanking = mockGetProductRanking.getMockImplementation()!
+    const okStatus = mockGetOrderStatus.getMockImplementation()!
+    mockAllDashboardReadsFail()
+    mockGetStats.mockImplementationOnce(() => Promise.reject(new Error('Network error'))).mockImplementation(okStats)
+    mockGetOrderTrend.mockImplementationOnce(() => Promise.reject(new Error('Network error'))).mockImplementation(okTrend)
+    mockGetRecentOrders.mockImplementationOnce(() => Promise.reject(new Error('Network error'))).mockImplementation(okOrders)
+    mockGetProductRanking.mockImplementationOnce(() => Promise.reject(new Error('Network error'))).mockImplementation(okRanking)
+    mockGetOrderStatus.mockImplementationOnce(() => Promise.reject(new Error('Network error'))).mockImplementation(okStatus)
+    render(<DashboardPage />)
+
+    // 冷启动失败：计数断言与「暂无」一处都不许有
+    await screen.findByTestId('dashboard-load-failed')
+    expect(screen.queryByTestId('order-status-count')).toBeNull()
+    expect(document.body.textContent ?? '').not.toContain('暂无')
+
+    fireEvent.click(screen.getByTestId('dashboard-retry-block'))
+    await new Promise((r) => setTimeout(r, 50))
+
+    await waitFor(() => {
+      // 重试成功后：真值 / 真空态回来（读到了 ⇒ 计数断言与空态都是事实）
+      expect(screen.getByTestId('order-status-count')).toHaveTextContent('共 7 单')
+      expect(screen.getByText('暂无近期订单')).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('dashboard-load-failed')).toBeNull()
+    expect(screen.queryByTestId('dashboard-no-data-yet')).toBeNull()
+  }, 20_000)
 })
 
