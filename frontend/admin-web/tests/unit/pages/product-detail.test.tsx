@@ -1,4 +1,5 @@
 // case_ids: PR-011, PR-019, PR-042, PR-043, PR-044, OR-046, UI-055
+// #6662：行内改价失焦必须落库 / 未识别规格键不上屏
 // #4371：加工项与商品解耦 —— 商品详情页不再展示商品维度的「加工项」块
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -320,5 +321,90 @@ describe('ProductDetailPage — 行内改价 SkuPriceCell 的数值语义（issu
     const { toast } = await import('sonner')
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('请输入有效价格'))
     expect(mockPatch).not.toHaveBeenCalled()
+  })
+})
+
+// ========== 未识别的规格键不得上屏（issue #6662 判据 ④）==========
+//
+// 缺陷形态：`specEntries.push({ key: k, label: k, ... })` —— specifications 里没登记中文标签的
+// 键（后端 / AI 建品写进来的英文键、历史脏键）被**原样当标签渲染**，商家看到的是内部键名。
+// 判据：未识别键归类到「其他」（值可见、键名不上屏）；负控 = 已识别键的展示逐值不变。
+describe('ProductDetailPage — 未识别规格键不上屏（issue #6662 判据 ④）', () => {
+  const withSpecs = (specifications: Record<string, string>) => {
+    mockGetProduct.mockResolvedValue({
+      data: { data: { ...mockProduct, specifications } },
+    })
+  }
+
+  it('#6662 未识别的键名不得作为标签出现在页面上（值改挂「其他」）', async () => {
+    withSpecs({ weight: '500g', someUnknownKey: '某值' })
+    render(<ProductDetailPage />)
+    await waitFor(() => expect(screen.getByText('商品属性')).toBeInTheDocument())
+
+    // 🔴 键名不得上屏（缺陷形态：<dt>someUnknownKey</dt>）
+    expect(screen.queryByText('someUnknownKey')).toBeNull()
+    // 值不丢：归到「其他」分组，逐条以「键：值」形态承载
+    expect(screen.getByText(/某值/)).toBeInTheDocument()
+  })
+
+  it('#6662 负控：已识别键的展示逐值不变（克重/材质标签与值照旧）', async () => {
+    withSpecs({ weight: '500g', material: '涤纶' })
+    render(<ProductDetailPage />)
+    await waitFor(() => expect(screen.getByText('商品属性')).toBeInTheDocument())
+
+    expect(screen.getByText('克重')).toBeInTheDocument()
+    expect(screen.getByText('500g')).toBeInTheDocument()
+    expect(screen.getByText('材质')).toBeInTheDocument()
+    expect(screen.getByText('涤纶')).toBeInTheDocument()
+    // 全是已识别键 ⇒ 不该出现「其他」分组
+    expect(screen.queryByText('其他')).toBeNull()
+  })
+})
+
+// ========== 行内改价的「显式落库路径」（issue #6662 判据 ①）==========
+//
+// 缺陷形态：`onBlur={() => setEditing(false)}` —— 商家改完价点一下别处（失焦是最自然的结束动作），
+// 改动**无声消失**：没有请求、没有提示、框收起来了，而商家以为存了。
+// 判据：失焦必须走**显式落库路径**（`request.patch`），或至少**保留编辑态 + 明确告知未保存**；
+// 保存失败**不得静默退出编辑态**（否则「改价失败」长得和「改价成功」一模一样）。
+// 红证（注入式）：把 `onBlur` 改回 `setEditing(false)` ⇒ 第一条红；把 `catch` 里的
+// `setEditing(false)` 加回去 ⇒ 第二条红。
+describe('ProductDetailPage — 行内改价失焦必须落库（issue #6662 判据 ①）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetProduct.mockResolvedValue({ data: { data: mockProduct } })
+    mockPatch.mockResolvedValue({ data: { data: {} } })
+  })
+
+  /** 打开第 1 个 SKU 的价格行内编辑框（夹具价 99.5），返回那个 input */
+  async function openEditor() {
+    render(<ProductDetailPage />)
+    const cells = await screen.findAllByTitle('点击编辑价格')
+    fireEvent.click(cells[0])
+    return screen.getByDisplayValue('99.5') as HTMLInputElement
+  }
+
+  it('#6662 改价后失焦 ⇒ 走显式落库路径（PATCH 被调用，且载荷是新价）', async () => {
+    const input = await openEditor()
+    fireEvent.change(input, { target: { value: '88' } })
+    fireEvent.blur(input)
+
+    // 同步断言（不用 waitFor）：缺陷形态下一次请求都不发 ⇒ 立刻红、报错直指「没落库」
+    expect(mockPatch).toHaveBeenCalledTimes(1)
+    expect(mockPatch).toHaveBeenCalledWith('/api/admin/agent/products/test-product-1/skus/1', {
+      price: 88,
+    })
+  })
+
+  it('#6662 保存失败 ⇒ 不得静默退出编辑态（保留已输入的新价 + 明确告知）', async () => {
+    mockPatch.mockRejectedValueOnce(new Error('boom'))
+    const input = await openEditor()
+    fireEvent.change(input, { target: { value: '10' } })
+    fireEvent.blur(input)
+
+    // 编辑态必须还在（值没丢）：商家可以重试，而不是以为存上了
+    expect((screen.getByDisplayValue('10') as HTMLInputElement)).toBeInTheDocument()
+    const { toast } = await import('sonner')
+    await waitFor(() => expect(toast.error).toHaveBeenCalled())
   })
 })

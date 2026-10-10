@@ -14,7 +14,7 @@ import CategoryDialog from './CategoryDialog'
 import { RecognizedBadge } from '@/components/image-recognize/ImageRecognizeButton'
 import { InterpretedBadge } from '@/components/image-recognize/InterpretedBadge'
 import { categoryApi } from '@/lib/api'
-import { ROLL_LENGTH_FORM_NOTE, ROLL_LENGTH_HINT, ROLL_LENGTH_LABEL } from '@/lib/product-roll-length'
+import { ROLL_LENGTH_FORM_NOTE, ROLL_LENGTH_HINT, ROLL_LENGTH_LABEL, STOCK_UNIT } from '@/lib/product-roll-length'
 import { validateProductForm, derivePrice } from '@/lib/product-utils'
 import { toChineseSpecKeys, SPEC_EN_TO_CN } from '@/lib/attribute-keys'
 import type {
@@ -143,6 +143,9 @@ export default function ProductForm({
   const [submitting, setSubmitting] = useState<ProductStatus | null>(null)
   const [categories, setCategories] = useState<Category[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
+  // 校验结果的**同步**副本：`handleSaveDraftAndLeave` 要在 `handleSubmit` 返回后立刻读到
+  // 刚落进去的错误（`setErrors` 是异步的，同 tick 读 state 读到的是旧值）—— issue #6662 判据 ②
+  const errorsRef = useRef<Record<string, string>>({})
   const formRef = useRef<HTMLDivElement>(null)
   const isEdit = !!initialData
 
@@ -167,6 +170,8 @@ export default function ProductForm({
   const [showLeaveModal, setShowLeaveModal] = useState(false)
   const pendingNavRef = useRef<string | null>(null)
   const [draftSaving, setDraftSaving] = useState(false)
+  // 「存草稿并离开」失败时列进弹窗的错误清单（issue #6662 判据 ②）——空数组 = 没失败过
+  const [leaveSaveErrors, setLeaveSaveErrors] = useState<string[]>([])
   const bypassGuardRef = useRef(false)
 
   const markClean = useCallback(() => {
@@ -251,6 +256,7 @@ export default function ProductForm({
 
   const validate = (targetStatus: ProductStatus): boolean => {
     const errs = validateProductForm(form, targetStatus)
+    errorsRef.current = errs
     setErrors(errs)
     if (Object.keys(errs).length > 0) {
       scrollToFirstError(Object.keys(errs))
@@ -260,8 +266,16 @@ export default function ProductForm({
 
   // ========== 提交 ==========
 
-  const handleSubmit = async (targetStatus: ProductStatus) => {
-    if (!validate(targetStatus)) return
+  /**
+   * `true` = 真的提交成功。
+   *
+   * 🔴 issue #6662 判据 ②：改前本函数在**校验失败时裸 `return`**（既不抛、也不回值）⇒
+   * 调用方 `handleSaveDraftAndLeave` 的 `catch` 永不触发、`finally` 无条件关弹窗
+   * ⇒「存草稿并离开」在**最常见路径**（表单本来就不完整）上**谎报已存**。
+   * 现在返回值是唯一判据：**没提交成功就是 `false`**，调用方据此决定关不关弹窗。
+   */
+  const handleSubmit = async (targetStatus: ProductStatus): Promise<boolean> => {
+    if (!validate(targetStatus)) return false
     setSubmitting(targetStatus)
     try {
       const payload: ProductFormData = {
@@ -289,6 +303,7 @@ export default function ProductForm({
       bypassGuardRef.current = true
       markClean()
       router.push('/products')
+      return true
     } catch (error) {
       console.error(`保存商品失败 (${targetStatus}):`, error)
       // Axios 错误已在 request.ts 响应拦截器中统一弹 toast，
@@ -296,6 +311,7 @@ export default function ProductForm({
       if (error instanceof Error && !(error as any).isAxiosError) {
         toast.error(error.message || '保存失败，请重试')
       }
+      return false
     } finally {
       setSubmitting(null)
     }
@@ -363,11 +379,34 @@ export default function ProductForm({
     else if (target) router.push(target)
   }
 
+  /**
+   * 「存草稿并离开」。
+   *
+   * 🔴 issue #6662 判据 ②：**只有真提交成功才关弹窗并离开**。改前是
+   * 改前形态：`try`/`catch` 之后**无条件关弹窗**（把关闭写在 `finally` 里）——
+   * 而校验失败走的是裸 `return`（不抛异常）⇒ 关弹窗照旧执行 ⇒
+   * **弹窗关了、草稿没存、人也没离开**（商家以为存上了）。
+   *
+   * 失败时：弹窗保持打开 + `leaveSaveErrors` 逐条列出还差什么（**指向行动**），
+   * 并明确「草稿未保存」——绝不谎报。
+   */
   const handleSaveDraftAndLeave = async () => {
     setDraftSaving(true)
-    try { await handleSubmit('draft') }
-    catch { /* stay on page */ }
-    finally { setDraftSaving(false); setShowLeaveModal(false) }
+    setLeaveSaveErrors([])
+    try {
+      const ok = await handleSubmit('draft')
+      if (ok) {
+        setShowLeaveModal(false)
+        return
+      }
+      if (dirtyRef.current) {
+        // 未保存（页面上）⇒ 把还差的必填项逐条带进弹窗（商家不用关掉弹窗去猜）
+        setLeaveSaveErrors(Object.values(errorsRef.current))
+      }
+    } finally {
+      // ⚠️ 这里**不**关弹窗：关闭的唯一依据是「提交成功」（上面那条 return）
+      setDraftSaving(false)
+    }
   }
 
   // ========== 管理分类弹窗 (#1403) ==========
@@ -721,7 +760,7 @@ export default function ProductForm({
                   className="w-full h-9 px-3 pr-8 text-sm rounded border border-neutral-200 bg-neutral-50 text-neutral-700 cursor-not-allowed"
                 />
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-400">
-                  件
+                  {STOCK_UNIT}
                 </span>
               </div>
             </div>
@@ -858,6 +897,23 @@ export default function ProductForm({
         <p className="text-sm text-neutral-600">
           当前表单内容尚未保存，离开后将丢失已填写的内容。
         </p>
+        {/* 🔴 存草稿失败后：**留在弹窗里**说明还差什么（issue #6662 判据 ②）——
+            改前这里什么都不显示、弹窗还关了，商家以为已经存上。
+            文案只陈述事实 + 该做什么：不责备、不催促（同 §31 P4）。 */}
+        {leaveSaveErrors.length > 0 && (
+          <div
+            role="alert"
+            data-testid="leave-save-errors"
+            className="mt-3 rounded-md border border-red-300 bg-red-50 px-3 py-2.5"
+          >
+            <p className="text-sm font-medium text-red-700">草稿未保存，还差这些内容：</p>
+            <ul className="mt-1.5 space-y-1 list-disc list-inside">
+              {leaveSaveErrors.map((msg, i) => (
+                <li key={i} className="text-sm text-red-700 leading-relaxed">{msg}</li>
+              ))}
+            </ul>
+          </div>
+        )}
       </Modal>
       {/* ============ 管理分类弹窗 (#1403) ============ */}
       <Modal

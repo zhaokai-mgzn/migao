@@ -1,0 +1,4 @@
+{
+  "claims": [],
+  "notes": "行内编辑「静默退出」形态的登记台账（class-level guard for issue #6662）。claims 里每一条都是 `文件::违规描述`，表示「这一处经评审**有意**保留「onBlur 只关编辑态」。现状为空 = 零豁免；只许缩短（新增条目必须在 PR body 登记理由）。判据 = tests/unit/inline-edit-persistence-guard.test.ts 判据 A。"
+}
