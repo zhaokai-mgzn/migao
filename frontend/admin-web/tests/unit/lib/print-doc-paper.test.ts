@@ -50,7 +50,10 @@ import {
   stripTsComments,
 } from '../../../scripts/print-doc-zero-fallback-scan.mjs'
 import {
+  AGGREGATE_KNOWN_SAMPLES,
+  AGGREGATE_UNKNOWN_SAMPLES,
   PAPER_MISSING,
+  assertAggregateUnknownIsContagious,
   assertNoPaperZeroFill,
   assertPaperKeepsMissingDistinct,
   paperNumberCells,
@@ -58,6 +61,7 @@ import {
   paperTextOf,
   paperZeroFills,
 } from '@/lib/print-doc-paper'
+import { paperLineSubtotal } from '@/lib/order-amount'
 
 const ROOT = process.cwd()
 
@@ -67,11 +71,12 @@ const probeLabels = (source: string) => probe(source).map((s) => s.label)
 
 /**
  * 各单据测试文件里对**纸面判据**的登记：单据标识（`// 单据：<label>`）与判据调用
- * （`assertNoPaperZeroFill` / `assertPaperKeepsMissingDistinct`）在**同一行或相邻行**
+ * （`assertNoPaperZeroFill` / `assertPaperKeepsMissingDistinct` /
+ * `assertAggregateUnknownIsContagious`（issue #6731 的聚合不变量，同一把尺子））在**同一行或相邻行**
  * （标识写在上/下一行注释里都算；本判据的调用**多行**是常态，故窗口 = 相邻行）。
  */
 function registrations(source: string, label: string): string[] {
-  const call = /assert(?:NoPaperZeroFill|PaperKeepsMissingDistinct)\s*\(/
+  const call = /assert(?:NoPaperZeroFill|PaperKeepsMissingDistinct|AggregateUnknownIsContagious)\s*\(/
   const marker = `单据：${label}`
   const lines = source.split('\n')
   for (let i = 0; i < lines.length; i += 1) {
@@ -211,6 +216,58 @@ describe('打印单据族 · 「未知不得印成 0」类级判定面（issue #
     }
   })
 
+  it('🔴 聚合不变量（issue #6731）：任一加数不可知 ⇒ 不得输出数值；两加数都已知（含真 0）⇒ 照常出数', () => {
+    // 判据面 = 纸面口径的真实现（`paperLineSubtotal`）——它必须整张矩阵都过
+    expect(
+      assertAggregateUnknownIsContagious(paperLineSubtotal, {
+        label: '报价单 QuotationDoc · 本套金额',
+      })
+    ).toBeUndefined()
+    // 样本面非空（空矩阵 = 判据在空气上通过）
+    expect(AGGREGATE_UNKNOWN_SAMPLES.length).toBeGreaterThanOrEqual(4)
+    expect(AGGREGATE_KNOWN_SAMPLES.length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('🔴 判别力自证（聚合不变量）：把语义改回「两者都缺才不可知」⇒ **必红**', () => {
+    // 故意写回 issue #6731 的病灶形态（main 上的 `lineSubtotal` 语义：只在两者都缺时 null）
+    const oldSemantics = (item: { subtotal?: number; processingFee?: number }): number | null => {
+      const subtotal = typeof item.subtotal === 'number' && Number.isFinite(item.subtotal) ? item.subtotal : 0
+      const fee =
+        typeof item.processingFee === 'number' && Number.isFinite(item.processingFee) ? item.processingFee : 0
+      if (item.subtotal == null && item.processingFee == null) return null
+      return subtotal + fee
+    }
+    expect(() =>
+      assertAggregateUnknownIsContagious(oldSemantics, { label: '报价单 QuotationDoc · 本套金额' })
+    ).toThrow(/不可知[\s\S]*本套金额|本套金额[\s\S]*不可知/)
+    // 判红要能归因：报出的是**哪一格**（真机形态：面料小计不可知 + 加工费真 0）
+    expect(() => assertAggregateUnknownIsContagious(oldSemantics, { label: '报价单 QuotationDoc' })).toThrow(
+      /加工费真 0/
+    )
+    // 缺 label ⇒ 抛错（判据不许无名单据）
+    expect(() => assertAggregateUnknownIsContagious(paperLineSubtotal)).toThrow(/label/)
+  })
+
+  it('🔴 扫描器新形态「聚合摊零补位」（issue #6731）：列表形聚合的零值摊入必须判红', () => {
+    // 病灶原形（#6720 之前 ShipmentDoc 的合计写法，逐字形态）
+    expect(probeLabels('const t = items.reduce((sum, it) => sum + (it.amount || 0), 0)')).toEqual([
+      '聚合摊零补位',
+    ])
+    // `?? 0` 是同病的另一种写法；`quantity` / `subtotal` / `unitPrice` 同属「缺席 = 不可知」那几列
+    expect(probeLabels('const t = rows.reduce((s, r) => s + (r.quantity ?? 0), 0)')).toEqual(['聚合摊零补位'])
+    expect(probeLabels('const t = rows.reduce((s, r) => s + (r.subtotal || 0), 0)')).toEqual(['聚合摊零补位'])
+    expect(probeLabels('const t = rows.reduce((s, r) => s + (r.unitPrice || 0), 0)')).toEqual(['聚合摊零补位'])
+    // 🔴 反向对照（**这条边界是有实证的**，别"顺手"扩到 processingFee）：加工费缺席的含义**就是 0**
+    // （存量单没有该字段；后端 `fee == null ⇒ ZERO` 同口径）⇒ 对它折 0 是正确算术，不判红
+    expect(probeLabels('const t = items.reduce((sum, it) => sum + (it.processingFee || 0), 0)')).toEqual([])
+    // 其余反向对照：① 正解（任一不可知 ⇒ 合计不可知）② 没有零值摊入的普通求和 ③ 注释里的反例
+    expect(probeLabels('const t = sumOrUnknown(items.map((it) => it.amount))')).toEqual([])
+    expect(probeLabels('const t = items.reduce((sum, it) => sum + it.amount, 0)')).toEqual([])
+    expect(
+      probeLabels('// 旧写法 items.reduce((s, it) => s + (it.amount || 0), 0) 会报假合计\nconst ok = 1')
+    ).toEqual([])
+  })
+
   it('判别力自证（反向对照）：正确形态 / 算术中性元 / 注释里的反例都**不**报', () => {
     // ① 正确形态：缺值 ⇒ `—`（本单实现）
     expect(
@@ -228,8 +285,8 @@ describe('打印单据族 · 「未知不得印成 0」类级判定面（issue #
       probeLabels('// 旧写法 (amount ?? 0).toLocaleString(...) 会让纸面恒印 0.00\nconst v = 1')
     ).toEqual([])
     expect(stripTsComments('/* (a ?? 0).toLocaleString() */ const v = 1')).not.toContain('toLocaleString')
-    // ⑤ 非纸面射程的取数 / 状态聚合
-    expect(probeLabels('setTotal(rows.reduce((s, r) => s + (r.amount ?? 0), 0))')).toEqual([])
+    // ⑤ 计数聚合（不涉及「缺席 = 不可知」的那几列）⇒ 不报
+    expect(probeLabels('setTotal(rows.reduce((s, r) => s + 1, 0))')).toEqual([])
   })
 
   it('判别力自证（注入式）：把 main 上的旧写法注进真源码 ⇒ 判据当真判红（自证坐标：`SCOPE[0]`）', () => {
@@ -247,6 +304,23 @@ describe('打印单据族 · 「未知不得印成 0」类级判定面（issue #
     expect(
       printDocZeroFillSitesFromSource(injected, { file: rel }),
       '注入 main 上的旧写法后判据**没判红** ⇒ 守卫是空判据'
+    ).not.toEqual([])
+
+    // ② 聚合形态的注入式红证（issue #6731）：把「未知摊成 0」的求和注进同一个真源码
+    const aggregateAnchor = /function sumOrUnknown\([\s\S]*?\): number \| null \{/
+    expect(
+      aggregateAnchor.test(original),
+      `\`${rel}\` 里找不到 \`sumOrUnknown\`（聚合注入点已漂移）`
+    ).toBe(true)
+    const injectedAggregate = original.replace(
+      aggregateAnchor,
+      // 注入形态 = #6720 之前真正的写法（字段名在命中面内：`(it.amount || 0)`）
+      (m) => `${m}\n  return items.reduce((sum, it) => sum + (it.amount || 0), 0) as number`
+    )
+    expect(injectedAggregate).not.toBe(original)
+    expect(
+      printDocZeroFillSitesFromSource(injectedAggregate, { file: rel }),
+      '注入「聚合摊零」写法后判据**没判红** ⇒ 新形态是空判据'
     ).not.toEqual([])
   })
 
@@ -271,4 +345,5 @@ const BAD_SAMPLES: Record<string, string> = {
   字符串化补位: 'return String(qty ?? 0)',
   数值化补位: 'const n = Number(row.amount ?? 0)',
   格式化函数实参补位: 'formatAmount(item.amount ?? 0)',
+  聚合摊零补位: 'const t = items.reduce((sum, it) => sum + (it.amount || 0), 0)',
 }

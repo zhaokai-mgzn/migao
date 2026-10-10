@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { craftSpecRows } from '@/lib/craft-display'
-import { lineSubtotal } from '@/lib/order-amount'
+import { paperLineSubtotal } from '@/lib/order-amount'
 import { usePaymentQrcodes } from '@/lib/use-payment-qrcodes'
 import { printBodyFontPt, printPageRule } from '@/lib/print-media'
 import { resolveImageUrl } from '@/lib/utils'
@@ -56,19 +56,23 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  *    两列的切分沿用既有「原始输入 / 算料输出」分组（§4.3 表 B）。
  *    `craftSpecRows` 已丢弃缺值行 ⇒ 键缺席 / null / 空串 / 空数组的行不出现，
  *    纸面**绝不**出现 `undefined` / `null` / `NaN`。
- * 6. **金额口径单一来源**：行小计 = `lib/order-amount.ts` 的 `lineSubtotal(item)`
- *    （= `subtotal + processingFee`，与 `OrderItemList` **同一份**）；汇总三个数字只读订单字段
+ * 6. **金额口径单一来源**：行小计 = `lib/order-amount.ts` 的 `paperLineSubtotal(item)`
+ *    （= `subtotal + processingFee`，与屏幕 `OrderItemList` 同处一个模块、**只在「面料小计不可知」
+ *    那一格分叉**：屏幕折 `0`、本纸面印 `—`）；汇总三个数字只读订单字段
  *    （`totalAmount` / `discountAmount` / `actualAmount`），**不自己求和**。
  * 7. **我们没有的字段一律不印**（用户裁定 ①）：上期余额 / 预存抵扣 / 账户余额 / 交付日期 /
  *    制单人 —— 缺值不渲染，不编值、不留空标签。⚠️ 与参照物的一处**有意差异**：参照物把加工费
  *    并进面料单价，而我们 `unitPrice` 与 `processingFee` 是**两笔真实金额** ⇒ 必须分别列示
  *    （面料行 + 加工费行），否则商家对不上账。
  * 8. **没有收款码 ⇒ 整块不出现、不画假码**（`imageUrl` 缺席即视为无码）。
- * 9. 🔴 **缺值不许印成 0**（issue #6720）：行级 `unitPrice` / `subtotal`、`本套金额`
- *    （= `lineSubtotal(item)`，行级 `subtotal` 与 `processingFee` 都缺时它返回 `null`）与汇总三栏
+ * 9. 🔴 **缺值不许印成 0**（issue #6720）：行级 `unitPrice` / `subtotal`、`本套金额` 与汇总三栏
  *    在缺值时一律印 `—`（`QUOTATION_DOC_MISSING`）；**真 0 仍印 `0.00`**。
  *    判据 = `frontend/admin-web/tests/unit/components/QuotationDoc.test.tsx` 的「缺值不印 0」一组
  *    + 类级守卫 `frontend/admin-web/tests/unit/lib/print-doc-paper.test.ts`。
+ * 10. 🔴 **段头「本套金额」不得比它自己那一行更确定**（issue #6731）：`subtotal` 不可知时
+ *    **整段小计不可知** ⇒ 印 `—`（不许 `0 + 0` 印成 `0.00`）。判据 =
+ *    `frontend/admin-web/tests/unit/components/QuotationDoc.test.tsx` 的「红证（issue #6731）」一组
+ *    + 聚合不变量 `assertAggregateUnknownIsContagious`。
  */
 interface QuotationDocProps {
   order: Order
@@ -328,7 +332,7 @@ function SetBlock({ item, index, total }: { item: OrderItem; index: number; tota
         <span>
           第{index + 1}套/共{total}套
         </span>
-        <span>本套金额 {formatAmount(lineSubtotal(item))}</span>
+        <span>本套金额 {formatAmount(paperLineSubtotal(item))}</span>
       </div>
       {/* table-layout: fixed —— 列宽由表头声明的百分比决定（auto 布局按内容分配，
           长工艺文案会把列撑歪，纸面每单都可能不一样） */}

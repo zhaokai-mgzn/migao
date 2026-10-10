@@ -153,3 +153,74 @@ export function assertPaperKeepsMissingDistinct(
     )
   }
 }
+
+/**
+ * **聚合不变量（issue #6731）**：`聚合求和必须区分「未知」与「0」—— 任一加数不可知则不得输出数值`。
+ *
+ * ## 为什么必须单独有一条（#6720 那把尺子量不到它）
+ *
+ * #6720 的形态判据只认「`?? 0` / `|| 0` **落进印数值的表达式**」；而本形态是**语义**的：
+ * `subtotal` 缺席时 `0 + 0 = 0` —— 代码里一个 `?? 0` 都没有，却把「不可知」印成了确定值
+ * （实证读数：真机形态下纸面印 `本套金额 0.00`，而同一行「小计」栏印 `—`）。
+ *
+ * ## 判据面 = **两加数 × 已知/不可知 的矩阵**（含反例，缺任一侧都是空跑）
+ *
+ * - 任一加数不可知（缺席 / `NaN`）⇒ `sum(...)` 必须返回 `null`；
+ * - 两个加数都已知（**含两个都是真 `0`**）⇒ 必须返回数值（不许把 `0` 判成「不可知」）。
+ *
+ * ⚠️ **登记的一处不对称（有意，不是漏洞）**：`processingFee` **缺席**按 `0` 计
+ * （存量单没有该字段 = 当时没有加工费这回事 ⇒ 真值就是 0）。改它会制造**假 `—`**；
+ * 故样本矩阵里 `{ subtotal: 1250 }`（缺加工费）**必须**返回 `1250`。
+ *
+ * 承载体：`frontend/admin-web/tests/unit/lib/print-doc-paper.test.ts`（**判别力自证**：把实现换回
+ * 旧的「两者都缺才判不可知」⇒ 当场红）+ 各单据测试（`QuotationDoc.test.tsx` 用它钉住真渲染值）。
+ * 静态那一半（列表形聚合 `reduce(… + (x || 0), 0)`）在同一把尺子的形态表里
+ * （`frontend/admin-web/scripts/print-doc-zero-fallback-scan.mjs` 的「聚合摊零补位」）。
+ */
+export interface PaperAddendPair {
+  subtotal?: number
+  processingFee?: number
+}
+
+/** 不可知那一半的样本（**每一格都必须 `null`**）：含 issue #6731 的真机形态 `{ subtotal: 缺席, processingFee: 0 }` */
+export const AGGREGATE_UNKNOWN_SAMPLES: readonly (readonly [PaperAddendPair, string])[] = [
+  [{ subtotal: undefined, processingFee: 0 }, '面料小计不可知 + 加工费真 0（真机形态，修前印 0.00）'],
+  [{ subtotal: undefined, processingFee: 250 }, '面料小计不可知 + 加工费 250'],
+  [{ subtotal: undefined, processingFee: undefined }, '两个加数都不可知'],
+  [{ subtotal: Number.NaN, processingFee: 0 }, '面料小计 NaN + 加工费真 0'],
+  [{ subtotal: undefined, processingFee: Number.NaN }, '面料小计不可知 + 加工费 NaN'],
+]
+
+/** 已知那一半的样本（**每一格都必须返回数值**）：反向对照，防「把所有 0 都改成 —」 */
+export const AGGREGATE_KNOWN_SAMPLES: readonly (readonly [PaperAddendPair, number, string])[] = [
+  [{ subtotal: 0, processingFee: 0 }, 0, '两个真 0 ⇒ 0（不加"不可知"）'],
+  [{ subtotal: 100, processingFee: 0 }, 100, '真 100 + 真 0 ⇒ 100'],
+  [{ subtotal: 1250, processingFee: 250 }, 1500, '两个都有值 ⇒ 相加'],
+  [{ subtotal: 1250 }, 1250, '加工费缺省 ⇒ 按 0（存量单既有口径，登记的不对称）'],
+]
+
+export function assertAggregateUnknownIsContagious(
+  compute: (item: PaperAddendPair) => number | null,
+  { label }: { label?: string } = {}
+): void {
+  if (!label) throw new Error('调用本不变量必须给 label（报红时要点得出是哪份单据）')
+  for (const [sample, why] of AGGREGATE_UNKNOWN_SAMPLES) {
+    const got = compute(sample)
+    if (got !== null) {
+      throw new Error(
+        `${label} 的聚合把「不可知」当成了确定值：${why} ⇒ 得到 ${JSON.stringify(got)}，` +
+          `应当是 ${PAPER_MISSING === '—' ? 'null（纸面印 —）' : 'null'} —— ` +
+          '不确定性的算术是「未知 + 0 = 未知」，不是 0。'
+      )
+    }
+  }
+  for (const [sample, expected, why] of AGGREGATE_KNOWN_SAMPLES) {
+    const got = compute(sample)
+    if (got !== expected) {
+      throw new Error(
+        `${label} 的聚合把「已知」判成了不可知 / 算错：${why} ⇒ 得到 ${JSON.stringify(got)}，应当是 ${expected}` +
+          '（真 0 是合法读数，不许改成缺值占位）。'
+      )
+    }
+  }
+}

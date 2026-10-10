@@ -93,6 +93,19 @@ export const PRINT_FILL_PATTERNS = [
     re: /Number\(\s*[\w$.\[\]'"?]+\s*(?:\?\?|\|\|)\s*0\s*\)/g,
   },
   {
+    // 聚合摊零补位（issue #6731）：`items.reduce((sum, it) => sum + (it.amount || 0), 0)`
+    // —— 把「某一项不可知」静默摊成 0，纸面报出一个**假的确定合计**。
+    // 出口 = 「任一不可知 ⇒ 合计不可知」的求和（`ShipmentDoc` 的 `sumOrUnknown`）。
+    //
+    // ⚠️ **只认「缺席 = 不可知」的那几列**（`amount` / `quantity` / `subtotal` / `unitPrice`）：
+    // 后端 `default-property-inclusion: non_null` ⇒ 它们缺时**键整个缺席**，而缺的含义是
+    // 「没记过这个数」（≠ 0）。刻意**不含** `processingFee` —— 它缺席的含义**就是 0**
+    // （存量单没有该字段；后端 `fee == null ⇒ BigDecimal.ZERO` 同口径）⇒ 对它折 0 是正确的算术。
+    // 这条边界是有实证的（同族注释见 `src/components/orders/ShipmentDoc.tsx` 的加工费合计）。
+    label: '聚合摊零补位',
+    re: /\.reduce\(\s*\([^)]*\)\s*=>[^,;{}]*\+\s*\(\s*[\w$.?[\]]*\.(?:amount|quantity|subtotal|unitPrice)\s*(?:\?\?|\|\|)\s*0\s*\)/g,
+  },
+  {
     // 格式化函数实参补位：`formatAmount(item.amount ?? 0)` —— 没有 `).` 的那种写法。
     // `(?<!\.)` 排除方法调用（`(amount ?? 0).toLocaleString(…)` 已由形态 ① 覆盖；
     // 不排掉会让同一次命中被记成两条 = 台账键重复）。

@@ -120,6 +120,29 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
     expect(screen.getByText('1,500.00')).toBeInTheDocument()
   })
 
+  // ===== issue #6731 同类普查：本单据的聚合口径逐处登记 =====
+  // 结论（源码链，逐字）：加工费**缺席的含义就是 0** —— 存量单没有该字段（当时没有加工费这回事），
+  // 后端同口径（`OrderService.convertToDetailResponse`：`fee == null ⇒ BigDecimal.ZERO` 照样 set）
+  // ⇒ 加工费合计**有意**保持 `reduce(… || 0)`；改成「缺 ⇒ 合计印 —」是把**已知的 0** 报成不可知
+  // （issue #6731 要求 2 明令的反向对照失败形态）。
+  // 与 `quantity` / `amount` 的区别：那两列缺席的含义是「**没记过这个数**」（后端 non_null 让键缺席）
+  // ⇒ 它们必须走 `sumOrUnknown`（判据见上面的「缺值行的合计**不可知**」与「真 0 仍印 0」两条）。
+  it('口径登记（issue #6731）：加工费缺省按 0 ⇒ 合计印数值而**不是**「—」（缺≠不可知）', () => {
+    render(
+      <ShipmentDoc
+        order={buildOrder({
+          items: [
+            { ...buildOrder().items![0], processingFee: 37.5 },
+            { ...buildOrder().items![0], id: 'item-2', processingFee: undefined as unknown as number },
+          ],
+          processingItems: [{ id: 'pi-1', name: '打孔', quantity: 12.5 }],
+        })}
+      />
+    )
+    expect(document.body.textContent).toContain('加工费合计（元）：37.50')
+    expect(document.body.textContent).not.toContain('加工费合计（元）：—')
+  })
+
   it('#4882：加工项表只留「名称 / 数量」，单价与逐项金额列退场；加工费合计走行级落库值', () => {
     const order = buildOrder({
       hasProcessing: true,
