@@ -9,6 +9,8 @@
 RESET=1 PHASE=post-fix bash acceptance/2026-10-10-ui-trial-readiness/run-all.sh
 ```
 
+- 起一个**路由完备**的服务端（自愈，推荐）：`bash acceptance/2026-10-10-ui-trial-readiness/scripts/serve-admin-web-3001.sh`
+  —— 依据：dev server 冷启动时路由扫描会**非确定性残缺**且永不重扫 ⇒ 只校验 `/login` 或 TCP 不算就绪。
 - `RESET=1`：先复位 dev server（`scripts/dev-web-reset.sh`：杀实例 → 三类缓存一起删并**断言清空** → 只起一个 → 等 `/login` **与** `/dashboard` 双 200）；复位失败**直接停**（否则后续读数会假）。
 - `PHASE=<名字>`：本轮读数落到 `evidence/S12-<名字>.json`（**不给则 `latest`**）—— 文件名按阶段区分是硬要求，写死一个名字会让下一次运行**静默覆盖**上一次证据。
 - **不要用管道包住本脚本**（`| tail` 会吞掉退出码 —— 本批实测踩过三次）。
@@ -20,7 +22,9 @@ RESET=1 PHASE=post-fix bash acceptance/2026-10-10-ui-trial-readiness/run-all.sh
 | `run.mjs` | **S1–S6** 真机金路径（登录零额度 / 无菌值 / 浮球几何 / 分页 / 读失败注入 / 八页卫生） |
 | `run-count-row.mjs` | **S7** 列表页计数行（后端整体不可用 6s 后，6 页不得印「共 0 条」） |
 | `run-findings-6713-6717.mjs` | **V17–V20 + 版面**（读失败⇄空态 5 页 / `/chat` 侧栏显眼度 / `/products` 失败面位置 / 工作台冷启动 3 条 / 宽表可达性 5 组 + 两档视口） |
-| `run-all.sh` | 上面三支依次跑、逐支报退出码并汇总（`RESET` / `PHASE` 见上） |
+| `run-print-doc-verify.mjs` | **S21b** 打印纸面（三轮：控制 / 半可知 / 全未知；覆盖报价单·加工单·销售单，加工单不含金额 ⇒ 输出 `⊘ 不可判别` 而非空绿） |
+| `run-live-reprobe.mjs` | **S31** 线上层（官网四页 / bmini / worker-h5 / 商家域：200 / h1 / 字数 / 无转圈 / 0 溢出 / 0 Markdown 记号） |
+| `run-all.sh` | 上面五支依次跑、逐支报退出码并汇总（`RESET` / `PHASE` 见上） |
 
 读数：`evidence/*.json`（按阶段命名，互不覆盖）；截图：`evidence/*.png`（**viewport 截图，不用 `fullPage`** —— 浮球等 `fixed` 元素在全页截图里会被挪位，读数会假）。
 换端口：`ADMIN_WEB_BASE=http://localhost:3002 node run.mjs`。
