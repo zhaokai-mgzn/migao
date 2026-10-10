@@ -18,13 +18,15 @@ if [ "${RESET:-0}" = "1" ]; then
   #    （README 却把它写成了可用路径）。改为指向包内真实存在的自愈脚本，并用 nohup 脱离本 shell（否则它会 `wait` 住、本脚本再也走不到下一步）。
   SRV="$HERE/scripts/serve-admin-web-3001.sh"
   [ -f "$SRV" ] || { echo "❌ 找不到自愈脚本 $SRV ⇒ 不复位就继续跑会得到假绿/假红，故停"; exit 1; }
-  # 版本自证：读数只在"工作树干净且 == origin/main"时可归因
-  TREE_HEAD="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo '?')"
-  TREE_DIRTY="$(git -C "$ROOT" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
-  MAIN_HEAD="$(git -C "$ROOT" rev-parse --short origin/main 2>/dev/null || echo '?')"
+  # 版本自证：读数只在"**服务端真正编译的那棵树**干净且 == origin/main"时可归因。
+  # ⚠️ 归因对象必须是**主检出**（自愈脚本用的就是它）—— 印证据包 worktree 的 HEAD 是错的（我第一版就印错了）。
+  SERVE_DIR="$(git -C "$(dirname "$SRV")" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/../frontend/admin-web"
+  SERVE_HEAD="$(git -C "$SERVE_DIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
+  SERVE_DIRTY="$(git -C "$SERVE_DIR" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+  MAIN_HEAD="$(git -C "$SERVE_DIR" rev-parse --short origin/main 2>/dev/null || echo '?')"
   echo "=== 起一个路由完备的 admin-web（自愈：杀端口→清缓存→起→校验四路由→不齐重来≤3 次）==="
-  echo "    工作树 HEAD=${TREE_HEAD}（脏文件 ${TREE_DIRTY} 个） ｜ origin/main=${MAIN_HEAD}"
-  [ "$TREE_HEAD" != "$MAIN_HEAD" ] && echo "    ⚠️ 工作树与 origin/main 不一致 ⇒ 本轮读数**只能归因到 ${TREE_HEAD}**，别写进 main 的结论里"
+  echo "    服务端来源（主检出）HEAD=${SERVE_HEAD}（脏文件 ${SERVE_DIRTY} 个） ｜ origin/main=${MAIN_HEAD}"
+  [ "$SERVE_HEAD" != "$MAIN_HEAD" ] && echo "    ⚠️ 主检出与 origin/main 不一致 ⇒ 本轮读数**只能归因到 ${SERVE_HEAD}**，别写进 main 的结论里"
   nohup bash "$SRV" > /tmp/srv3001-nohup.log 2>&1 &
   for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
     ok=1
