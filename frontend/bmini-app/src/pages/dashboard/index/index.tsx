@@ -10,6 +10,7 @@ import {
   getProductionTodoOverview,
   formatYuan,
   formatPercent,
+  DASHBOARD_EMPTY_VALUE,
   productionTodoTargetUrl,
   OPERATION_STATE_LABELS,
   thresholdSourceLabel,
@@ -71,19 +72,22 @@ export default function DashboardPage() {
     Taro.stopPullDownRefresh()
   })
 
-  // 数字卡片
-  const MetricCard = ({ label, value, change, sign, unit }: {
+  // 数字卡片（issue #6685）：`unit` 只在**真有读数**时才挂 —— 占位 `--` 后面不许再跟「元」
+  // （`--元` 与 `NaN元` 同族：都是把「没有这个数」装成一个读数）
+  const MetricCard = ({ label, value, change, sign, unit, testId }: {
     label: string
     value: string
     change?: string
     sign?: string
     unit?: string
+    /** 给「读数本身」一个稳定锚（判据要读的是值，不是整张卡的文字） */
+    testId?: string
   }) => (
     <View className='metric-card'>
       <Text className='metric-card__label'>{label}</Text>
       <View className='metric-card__value-row'>
-        <Text className='metric-card__value'>{value}</Text>
-        {unit && <Text className='metric-card__unit'>{unit}</Text>}
+        <Text className='metric-card__value' data-testid={testId}>{value}</Text>
+        {unit && value !== DASHBOARD_EMPTY_VALUE && <Text className='metric-card__unit'>{unit}</Text>}
       </View>
       {change && (
         <Text className={`metric-card__change ${sign === '+' ? 'metric-card__change--up' : sign === '-' ? 'metric-card__change--down' : ''}`}>
@@ -97,7 +101,17 @@ export default function DashboardPage() {
   const stats = statsResult?.status === 'ok' ? statsResult.data : null
   const tasks = tasksResult?.status === 'ok' ? tasksResult.data : []
 
+  // `200 + 空 data`（`{}` / 缺键）时 `stats` 是**真值但一个字段都没有** ⇒ 走格式化层的占位
+  // （issue #6685）：旧形态把 `undefined` 送进算钱路径 ⇒ 商家屏印出 `NaN元`（涉钱面，不许出）
   const totalSalesYuan = stats ? formatYuan(stats.todaySales) : ''
+  /** 数字卡：缺值 / 坏值一律落 `--`（不印 `NaN` / `undefined`），真 `0` 照印 */
+  const cardValue = (value: unknown): string =>
+    typeof value === 'number' && Number.isFinite(value) ? String(value) : DASHBOARD_EMPTY_VALUE
+  /** 涨跌幅：`undefined` 也落到 `--`（旧形态的 `?? 0` 把「没有这个数」说成「持平」） */
+  const cardChange = (value: unknown): { text: string; sign: string } => {
+    const text = formatPercent(value as number)
+    return { text, sign: text.startsWith('+') ? '+' : text.startsWith('-') ? '-' : '' }
+  }
 
   const renderLoading = () => (
     <View className='dashboard-loading'>
@@ -235,39 +249,43 @@ export default function DashboardPage() {
             label='今日销售额'
             value={totalSalesYuan}
             unit='元'
-            change={formatPercent(stats?.todaySalesChange ?? 0)}
-            sign={(stats?.todaySalesChange ?? 0) >= 0 ? '+' : '-'}
+            testId='dashboard-metric-today-sales'
+            change={cardChange(stats?.todaySalesChange).text}
+            sign={cardChange(stats?.todaySalesChange).sign}
           />
           <MetricCard
             label='今日订单'
-            value={String(stats?.todayOrders ?? '--')}
-            change={formatPercent(stats?.todayOrdersChange ?? 0)}
-            sign={(stats?.todayOrdersChange ?? 0) >= 0 ? '+' : '-'}
+            value={cardValue(stats?.todayOrders)}
+            change={cardChange(stats?.todayOrdersChange).text}
+            sign={cardChange(stats?.todayOrdersChange).sign}
           />
           <MetricCard
             label='本月营收'
-            value={stats ? formatYuan(stats.monthRevenue) : '--'}
+            value={stats ? formatYuan(stats.monthRevenue) : DASHBOARD_EMPTY_VALUE}
             unit='元'
-            change={formatPercent(stats?.monthRevenueChange ?? 0)}
-            sign={(stats?.monthRevenueChange ?? 0) >= 0 ? '+' : '-'}
+            testId='dashboard-metric-month-revenue'
+            change={cardChange(stats?.monthRevenueChange).text}
+            sign={cardChange(stats?.monthRevenueChange).sign}
           />
           <MetricCard
             label='AI 接管率'
-            value={`${stats?.aiSessionRate ?? '--'}%`}
+            value={typeof stats?.aiSessionRate === 'number' && Number.isFinite(stats.aiSessionRate)
+              ? `${stats.aiSessionRate}%`
+              : DASHBOARD_EMPTY_VALUE}
           />
           <MetricCard
             label='活跃会话'
-            value={String(stats?.activeSessions ?? '--')}
+            value={cardValue(stats?.activeSessions)}
           />
         </View>
 
         {/* 第二行：客户/商品/售后 */}
         <View className='metric-grid metric-grid--secondary'>
-          <MetricCard label='客户总数' value={String(stats?.totalCustomers ?? '--')} />
-          <MetricCard label='今日新增客户' value={String(stats?.newCustomersToday ?? '--')} />
-          <MetricCard label='在售商品' value={String(stats?.totalProducts ?? '--')} />
-          <MetricCard label='待处理售后' value={String(stats?.totalTickets ?? '--')} />
-          <MetricCard label='待发货' value={String(stats?.pendingShipOrders ?? '--')} />
+          <MetricCard label='客户总数' value={cardValue(stats?.totalCustomers)} />
+          <MetricCard label='今日新增客户' value={cardValue(stats?.newCustomersToday)} />
+          <MetricCard label='在售商品' value={cardValue(stats?.totalProducts)} />
+          <MetricCard label='待处理售后' value={cardValue(stats?.totalTickets)} />
+          <MetricCard label='待发货' value={cardValue(stats?.pendingShipOrders)} />
         </View>
         </>
         ) : (
