@@ -38,6 +38,63 @@ import ts from 'typescript'
 
 /** 用户可见面的三个目录（`src/app` 页面 / `src/components` 组件 / `src/lib` 文案助手） */
 export const SCAN_DIRS = ['src/app', 'src/components', 'src/lib']
+
+/**
+ * **第二个用户可见面**：车间现场端 `frontend/worker-h5/**`（issue #6738）。
+ *
+ * <p>判据源仍然是**这一份** `RULES` / `candidateStrings` / `toCandidate` —— 不新立第二把尺子
+ * （「内部/开发口径字样不得上屏」这条纪律对两端同口径）。两端**布局不同**，所以扫描面分开声明：
+ * 商家后台是三层 TSX（`src/app|components|lib`），工人端是**零构建**的平铺 `.mjs`
+ * （`.mjs` 交给同一个 `candidateStrings` 解析 —— TS 解析器读 JS 是它的正常用法）。</p>
+ *
+ * <p>🔴 只在 `src/` 下扫：`tests/**` 里的断言消息**不上屏**（判据文案不是产品文案），
+ * 两张 `.html` 是空壳（屏面全部由 `src/*.mjs` 渲染）⇒ 不纳入。</p>
+ */
+export const WORKER_H5_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'worker-h5')
+export const WORKER_H5_DIRS = ['src']
+const WORKER_H5_EXT = /\.mjs$/
+
+/**
+ * worker-h5 面的豁免台账（**初始为空数组 = 0 条**；只许缩短、未登记即红）。
+ *
+ * <p>口径 = 本面**不允许**有任何豁免：实测（2026-10-11，同一份 `RULES`）worker-h5 的 `src/**`
+ * 共 9 个文件 / 126 条上屏候选，命中 **0** 条 ⇒ 基线就是 0，加一条就是放宽。</p>
+ */
+export const WORKER_H5_EXEMPT = []
+
+/**
+ * 扫 worker-h5 面（与 `scanProject` 同一把尺子、不同的目录布局）。
+ *
+ * @returns {{files: string[], candidates: object[]}} `files` = 相对**仓根**的路径（判红时可复制）
+ */
+export function scanWorkerH5(workerRoot = WORKER_H5_ROOT) {
+  const files = WORKER_H5_DIRS.flatMap((d) => walk(join(workerRoot, d), [], WORKER_H5_EXT)).sort()
+  const all = []
+  for (const f of files) {
+    for (const item of candidateStrings(readFileSync(f, 'utf-8'), f)) {
+      all.push({ file: relative(resolve(workerRoot, '..', '..'), f), ...item })
+    }
+  }
+  return { files: files.map((f) => relative(resolve(workerRoot, '..', '..'), f)), candidates: all }
+}
+
+/** worker-h5 面的命中清单（豁免后）。 */
+export function findWorkerH5Violations(workerRoot = WORKER_H5_ROOT) {
+  const { files, candidates } = scanWorkerH5(workerRoot)
+  const raw = []
+  for (const item of candidates) {
+    for (const rule of RULES) {
+      // 🔴 谓词与 `findViolations` **逐字同源**：规则收的是**候选对象**（`rule.test(item)`），
+      //    不是裸字符串 —— 判据源只有一份，两端不许各写一遍（本行曾经被误写成 `rule.re`
+      //    ⇒ 每条规则都被短路跳过 ⇒ 假绿「命中 0」，实测踩过）。
+      if (!rule.test(item)) continue
+      if (WORKER_H5_EXEMPT.includes(`${item.file}:${item.line}`) || WORKER_H5_EXEMPT.includes(item.file)) continue
+      raw.push({ file: item.file, line: item.line, rule: rule.id, ruleName: rule.name, text: toCandidate(item).text })
+    }
+  }
+  return { files, candidates, offenders: raw }
+}
+
 const SKIP_DIRS = new Set(['node_modules', '.next', 'dist', 'coverage', '__pycache__'])
 
 /**
@@ -316,12 +373,19 @@ export const EXEMPT = [
   'src/app/(dashboard)/roles/page.tsx:395',
 ]
 
-function walk(dir, out = []) {
+/**
+ * 递归收集源文件。
+ *
+ * @param {string} dir
+ * @param {string[]} [out]
+ * @param {RegExp} [ext] 扩展名（缺省 = 商家后台的 `.tsx`/`.ts`）—— worker-h5 面传 `.mjs`（issue #6738）
+ */
+function walk(dir, out = [], ext = /\.(tsx|ts)$/) {
   for (const entry of readdirSync(dir)) {
     if (SKIP_DIRS.has(entry)) continue
     const full = join(dir, entry)
-    if (statSync(full).isDirectory()) walk(full, out)
-    else if (/\.(tsx|ts)$/.test(entry)) out.push(full)
+    if (statSync(full).isDirectory()) walk(full, out, ext)
+    else if (ext.test(entry)) out.push(full)
   }
   return out
 }
@@ -446,6 +510,19 @@ if (isMain) {
   //    这样 `node frontend/admin-web/scripts/user-copy-scan.mjs` 在**仓库根**也能直接跑
   //    —— 可复算命令必须指涉**存在**的路径（tests/unit_ci_workflows/test_recomputable_command_paths.py）。
   const root = process.env.MIGAO_COPY_ROOT || resolve(dirname(fileURLToPath(import.meta.url)), '..')
+  // 🔴 `--face worker-h5`（issue #6738）：只扫**车间现场端**那一面（同一份 RULES，不同目录布局）。
+  //    与守卫里的 `findWorkerH5Violations` **同源**（本脚本的命令行是守卫之外的第二次入口，判据只一份）。
+  if (process.argv.includes('--face') && process.argv[process.argv.indexOf('--face') + 1] === 'worker-h5') {
+    // 根缺省 = 脚本自身位置 ⇒ 与本仓同树（CI / worktree 里都指向自己那份）；`MIGAO_COPY_WORKER_ROOT`
+    // 只在「拿别的树来对照」时用（例如在同一台机上核对某个 worktree 的改动）。
+    const { files: wFiles, candidates: wCands, offenders: wOff } =
+      findWorkerH5Violations(process.env.MIGAO_COPY_WORKER_ROOT || WORKER_H5_ROOT)
+    console.log(`worker-h5 面：扫描 ${wFiles.length} 个文件 · 上屏候选 ${wCands.length} 条 · 命中 ${wOff.length} 条`
+      + `（豁免台账 ${WORKER_H5_EXEMPT.length} 条）\n`)
+    for (const o of wOff) console.log(`  ${o.file}:${o.line} [${o.rule} ${o.ruleName}] ${o.text.slice(0, 130)}`)
+    for (const r of RULES) console.log(`  ${r.id} ${r.name.padEnd(16)} ${wOff.filter((o) => o.rule === r.id).length}`)
+    process.exit(wOff.length ? 1 : 0)
+  }
   const { files, candidates, offenders } = findViolations(root)
   const jsonAt = process.argv.indexOf('--json')
   if (jsonAt !== -1 && process.argv[jsonAt + 1]) {

@@ -51,6 +51,9 @@ import {
   findSubtitleOffenses,
   pageSubtitles,
   scanProject,
+  WORKER_H5_EXEMPT,
+  WORKER_H5_ROOT,
+  findWorkerH5Violations,
 } from '../../scripts/user-copy-scan.mjs'
 
 const ROOT = process.cwd()
@@ -362,5 +365,54 @@ describe('只读状态不得做成「开关」徽标（#6588）', () => {
   it('只改注释不红（对照读数）：散文里提到状态词不算上屏，徽标形态才有罪', () => {
     expect(STATE_ONLY_BADGE.test('// 旧形态「合并派单开关 未开启」已删')).toBe(false)
     expect(STATE_ONLY_BADGE.test("aria-label=\"启用智能每日经营简报开关\"")).toBe(false)
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 第二个用户可见面：**车间现场端 worker-h5**（issue #6738）
+//
+// 🔴 为什么挂到这一把尺子上、而不是新开一把：判据源（`RULES` / `candidateStrings` / `toCandidate`）
+//    只有**这一份**；「内部/开发口径字样不得上屏」这条纪律对两端同口径（工人与商家都是用户）。
+// 🔴 为什么这几条写在 admin-web 侧：worker-h5 是**零依赖**页面（`node --test` 直接跑 `.mjs`），
+//    而本扫描器依赖 `typescript` 解析源码 ⇒ 只有这边跑得起来（worker-h5 侧只钉「接线已声明」+「台账为 0」，
+//    见 frontend/worker-h5/tests/worker-h5-6738-login-tenant-code.test.mjs 的 ④）。
+//
+// 判红时怎么红：任一条命中 ⇒ 上面那条「零命中」把 `文件:行 + 原文` 逐条打出来；
+// 台账加一条 ⇒ 「只许缩短」那一条红；扫描面被写坏（谓词短路 / 目录写错）⇒
+// 「普查面非空」或「判别力自证」红（本包实测踩过这份假绿，见下）。
+// ══════════════════════════════════════════════════════════════════════════════
+describe('用户可见文案不得含内部词汇 · 车间现场端 worker-h5（#6738）', () => {
+  const { files, candidates, offenders } = findWorkerH5Violations()
+
+  it('普查面非空（扫不到文件 ⇒ 本判据在扫空气，而不是"没问题"）', () => {
+    expect(files.length, 'worker-h5 的 src/** 应有成批 .mjs').toBeGreaterThanOrEqual(6)
+    expect(candidates.length, '应抽出成批「会上屏」的候选文案').toBeGreaterThanOrEqual(80)
+    for (const anchor of [
+      'frontend/worker-h5/src/app.mjs',
+      'frontend/worker-h5/src/machine.mjs',
+      'frontend/worker-h5/src/api.mjs',
+    ]) {
+      expect(files, `扫描面必须含 ${anchor}`).toContain(anchor)
+    }
+  })
+
+  it('🔴 零命中（命中即红，逐条点名 `文件:行 + 原文`）', () => {
+    const lines = offenders.map((o) => `${o.file}:${o.line} [${o.rule}] ${o.text.slice(0, 110)}`)
+    expect(lines, `车间现场端屏上出现了内部/开发口径字样:\n${lines.join('\n')}`).toEqual([])
+  })
+
+  it('🔴 豁免台账只许缩短：worker-h5 面当前必须**零豁免**（台账加一条 = 放宽一格）', () => {
+    expect(WORKER_H5_EXEMPT, '基线实测 0 命中 ⇒ 台账必须是空数组').toEqual([])
+  })
+
+  it('判别力自证：这把尺子**真的会红**（谓词没被短路、面不是空的）', () => {
+    // 🔴 本包实测踩过一次假绿：自写的探针把谓词写成 `rule.re`（规则表其实用 `rule.test`）
+    //    ⇒ 每条规则被短路跳过 ⇒ 8 条真命中读成「0 命中」，看起来全绿。
+    //    这条把「尺子活着」本身钉住（§18「空集比空集是恒等」的同族坑）。
+    const r1 = RULES.find((r) => r.id === 'R1')
+    expect(r1, 'R1（接口/协议细节）规则必须在').toBeTruthy()
+    expect(r1!.test(toCandidate('服务端忙不过来，请过一会儿再按一次')), 'R1 必须判红「服务端」这类开发术语').toBe(true)
+    expect(r1!.test(toCandidate('系统忙不过来，请过一会儿再按一次')), '换成用户视角的话必须不红').toBe(false)
+    expect(WORKER_H5_ROOT.endsWith('worker-h5'), `扫描根必须指向车间现场端：${WORKER_H5_ROOT}`).toBe(true)
   })
 })
