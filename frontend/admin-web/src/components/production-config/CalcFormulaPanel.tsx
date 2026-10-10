@@ -73,11 +73,24 @@ export function CalcFormulaPanel({ embedded = false }: { embedded?: boolean } = 
       setCalcConfig(data)
       setCalcDraft(data?.config ?? null)
       setCalcError('')
-    } catch (e) {
+    } catch {
       setCalcConfig(null)
       setCalcDraft(null)
+      /**
+       * 🔴 **只留这一处**失败信号（issue #6669 未完成 1 / §31 P1 常驻面克制 · P2 信息不重复）。
+       *
+       * 改前这里是**两处**：本行内联摘要 **+**
+       * `if (!isErrorToastShown(e)) toast.error('算料配置加载失败')` —— 同一次读失败报两遍
+       * （改前实测读数见 `tests/unit/components/CalcFormulaPanel.test.tsx` 判据 ③）。
+       *
+       * 撤 toast 的**实测依据**（读码，不是猜）：`frontend/admin-web/src/lib/request.ts` 的响应
+       * 拦截器对**所有**失败分支（`success:false` 业务错 / 各 HTTP 状态 / 网络错 / 非 axios 错）
+       * 都已 `toast.error(...)` **且** `markErrorToastShown(error)` ⇒ 真 API 失败时那句 toast 是
+       * **死分支**（`isErrorToastShown(e)` 恒真）；它只在「错误不经拦截器抛出」时执行，而那种情形下
+       * 本行内联摘要**同屏也在** ⇒ 仍是同一故障报两遍。
+       * ⇒ 撤掉的是**重复**，不是**可见性**：失败仍看得见（本行摘要）且有出口（右侧「重试」）。
+       */
       setCalcError('算料配置加载失败，请稍后重试')
-      if (!isErrorToastShown(e)) toast.error('算料配置加载失败')
     }
   }, [])
 
