@@ -17,10 +17,15 @@ import { cn } from '@/lib/utils'
 interface OrderTrendChartProps {
   data: OrderTrendPoint[]
   loading?: boolean
+  /**
+   * 读面失败（issue #6715）：读不到 ⇒ **不印**「暂无数据」（那是把「读不到」说成「没有订单」）。
+   * 默认 `false`：读成功但真为空 ⇒ 照旧走空态。
+   */
+  readFailed?: boolean
   onRangeChange?: (days: number) => void
 }
 
-export default function OrderTrendChart({ data, loading, onRangeChange }: OrderTrendChartProps) {
+export default function OrderTrendChart({ data, loading, readFailed = false, onRangeChange }: OrderTrendChartProps) {
   const [range, setRange] = useState<7 | 30>(7)
 
   const handleRangeChange = (days: 7 | 30) => {
@@ -53,6 +58,10 @@ export default function OrderTrendChart({ data, loading, onRangeChange }: OrderT
       {loading ? (
         <div className="h-[260px] flex items-center justify-center">
           <div className="animate-spin w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full" />
+        </div>
+      ) : readFailed ? (
+        <div data-testid="order-trend-read-failed" className="h-[260px] flex items-center justify-center text-neutral-400 text-sm">
+          订单趋势没读到
         </div>
       ) : data.length === 0 ? (
         <div className="h-[260px] flex items-center justify-center text-neutral-400 text-sm">

@@ -9,6 +9,12 @@ import { chipToneClasses, orderStatusChipFor } from '@/lib/status-chip'
 interface RecentOrdersProps {
   orders: Order[]
   loading?: boolean
+  /**
+   * 这一块的读面**失败了**（issue #6715）：读不到 ⇒ **不印**「暂无近期订单」
+   * （那是把「读不到」说成「本来就没有订单」；与失败横幅那句承诺同屏会互相打架）。
+   * 默认 `false`：读成功但真为空 ⇒ 照旧走空态。
+   */
+  readFailed?: boolean
   /** 空态主文案（默认「暂无订单数据」）。 */
   emptyText?: string
   /** 空态辅助说明（默认无）。 */
@@ -25,7 +31,7 @@ function formatTime(dateStr?: string): string {
   return `${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`
 }
 
-export default function RecentOrders({ orders, loading, emptyText = '暂无订单数据', emptyHint }: RecentOrdersProps) {
+export default function RecentOrders({ orders, loading, readFailed = false, emptyText = '暂无订单数据', emptyHint }: RecentOrdersProps) {
   return (
     <div className="bg-white rounded-xl border border-neutral-200 shadow-card p-5">
       <div className="flex items-center justify-between mb-4">
@@ -42,6 +48,11 @@ export default function RecentOrders({ orders, loading, emptyText = '暂无订�
       {loading ? (
         <div className="h-40 flex items-center justify-center">
           <div className="animate-spin w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full" />
+        </div>
+      ) : readFailed ? (
+        /* issue #6715：读失败 ⇒ 不印「暂无近期订单」（读不到 ≠ 没有订单） */
+        <div data-testid="recent-orders-read-failed" className="flex items-center justify-center h-40 text-sm text-neutral-400">
+          近期订单没读到
         </div>
       ) : orders.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-10">
