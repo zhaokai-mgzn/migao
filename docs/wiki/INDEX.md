@@ -11,6 +11,7 @@ LLM 开发时按需加载对应页面 (~50 行/页，按场景索引)：
 | **写码最少化（防过度建设/加依赖前）** | **[Code-Minimalism](Code-Minimalism.md)** |
 | **并行开发/契约一致性** | **[CONTRACT-LEDGER](CONTRACT-LEDGER.md)** + **[DEV-FLOW](DEV-FLOW.md)** |
 | 改前端/小程序 | [Frontend](Frontend.md) |
+| **设计基线（颜色/字号/阴影真值源在哪 + 四态契约 + 自检五问）** | **[design-baseline](../design/design-baseline.md)**（真值 = `frontend/admin-web/tailwind.config.ts` + `frontend/admin-web/src/lib/design-tokens.ts`） |
 | 改 AI 服务/Tool/Skill | [AI-Agent](AI-Agent.md) |
 | **Skill/Tool 设计范式** | **[Agent-Design-Standard](agent-design-standard.md)** |
 | **B 端 Agent 写操作边界（去留清单 / 补回前提）** | **[agent-write-boundary](agent-write-boundary.md)** |

@@ -1,5 +1,7 @@
 import type { Config } from 'tailwindcss'
 import { gold } from './src/lib/brand-palette'
+// 字号阶梯的**真值**在 src/lib/design-tokens.ts（issue #6668：规范指过来，不再各写一份）
+import { fontSize } from './src/lib/design-tokens'
 
 /**
  * 经营看板「织物质感」设计 token（issue #2534 子任务 A）。
@@ -68,6 +70,8 @@ const config: Config = {
           gold: '#b8933d',     // 织金 — 毛利/排行
         },
       },
+      // 字号阶梯（真值 = src/lib/design-tokens.ts 的 TYPE_SCALE；docs/design/design-baseline.md 指向它）
+      fontSize,
       fontFamily: {
         sans: [
           '-apple-system',
