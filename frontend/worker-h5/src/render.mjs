@@ -35,6 +35,9 @@ export function initialState() {
     selection: { setId: null, orderItemId: null },
     notice: null,
     error: null,
+    // 报工 in-flight（issue #6667 第 4 条，**涉计件正确性**）：置真期间【开工】禁用 + 说「提交中」，
+    // 且装配层的 handler 直接 return —— 车间戴手套连点两下不再变成两笔提交。
+    reporting: false,
     // 租户口径（issue #6564）：企业编码 —— 初值来自 URL 的 `?tenant_code=`（短链 302 带上），
     // 仍是普通可编辑输入框（打印的码可能没带、也可能看错）
     enterpriseCode: '',
@@ -165,9 +168,19 @@ export function reduce(state, action) {
         selection: { setId: null, orderItemId: null },
         notice: needsSelection ? '这是一张旧码：请先选择套号与部位' : (action.notice ?? null),
         error: null,
-        mode: needsSelection ? 'select' : 'main',
+        // 🔴 `view: null` = **重扫**（`app.mjs` 的 `wh5-rescan` 出口）⇒ 回等扫码态。
+        //    改前这里恒给 `'main'`：`renderPage` 靠 `!s.view` 兜住了屏面，但 `state.mode` 是**错的**
+        //    （`main` 而不是 `scan`）⇒ 任何按 mode 判事的判据/调用方都读到假状态（issue #6667 第 3 条的红证）。
+        mode: !view ? 'scan' : (needsSelection ? 'select' : 'main'),
+        // 新一屏 = 新的一笔 ⇒ in-flight 闸归零（否则上一屏残留的「提交中」会把这一屏的按钮禁死）
+        reporting: false,
       }
     }
+    // 报工在飞（issue #6667 第 4 条）：置位在按钮点下的那一刻、清位在下面三处（换了屏 / 有了结论 / 登出）
+    case 'reportStart':
+      return { ...state, reporting: true, error: null, notice: null }
+    case 'reportFailed':
+      return { ...state, reporting: false }
     case 'pickSet':
       return { ...state, selection: { setId: action.setId, orderItemId: null }, notice: `已选第 ${action.setNo} 套，请再选部位` }
     case 'pickPosition': {
@@ -188,11 +201,12 @@ export function reduce(state, action) {
         notice: action.notice ?? null,
         error: null,
         mode: 'main',
+        reporting: false, // 有了结论 ⇒ 闸放开（否则接着领下一道时按钮是禁的）
       }
     case 'notice':
       return { ...state, notice: action.notice ?? null }
     case 'error':
-      return { ...state, error: action.error ?? null }
+      return { ...state, error: action.error ?? null, reporting: false }
     default:
       return state
   }
@@ -235,11 +249,16 @@ export function canReport(state, view) {
  * 按钮文案随之由【完成】改为【开工】；**id 与动作一字未改**（`wh5-report` + `scan/complete`）
  * —— 端点名是冻结契约，改了会把已发版的客户端打回 404。
  * 记账时点**不变**（仍是点这一下推进进度 + 记计件），所以文案说「领活」而不承诺「完工」。
+ *
+ * 🔴 **in-flight 闸（issue #6667 第 4 条，涉计件正确性）**：提交在飞时按钮 `disabled` + 文案改
+ * 「提交中…」—— 车间里戴手套、弱网下答复要等好几秒，**没有反馈就会被反复按**；
+ * 与机台页 `machine.mjs::reportBlock` 同一把闸（同一份形态，两页两处）。
  */
 function reportButton(state, view) {
-  return canReport(state, view)
-    ? `<button id="wh5-report" class="wh5-primary" type="button">开 工</button>`
-    : ''
+  if (!canReport(state, view)) return ''
+  return state.reporting
+    ? '<button id="wh5-report" class="wh5-primary" type="button" disabled>提交中…</button>'
+    : '<button id="wh5-report" class="wh5-primary" type="button">开 工</button>'
 }
 
 /**
@@ -384,6 +403,7 @@ function selectView(state) {
     ${set ? `<div class="wh5-group"><span class="wh5-group-label">选部位</span>${posHtml}</div>` : ''}
     <p class="wh5-sub" id="wh5-legacy-pending">本单：${esc(state.view?.processing_order_no ?? '')}</p>
     <p class="wh5-sub" id="wh5-legacy-hint">选完套 + 部位即可报工 —— 该做哪道工序由系统推断（不用你找）。</p>
+    <button id="wh5-rescan" class="wh5-ghost" type="button">重扫</button>
   </section>`
 }
 

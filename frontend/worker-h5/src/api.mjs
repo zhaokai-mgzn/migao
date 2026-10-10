@@ -35,6 +35,31 @@ export const PAGES_UNREAD = 'PAGES_UNREAD'
 /** 默认 baseUrl：同源（页面与 API 同在 app.migaozn.com ⇒ 无跨域）。 */
 const SAME_ORIGIN = ''
 
+/**
+ * 传输层失败 ⇒ 给工人一句**人话**（issue #6667 第 5 条；#6642 收口了主路径的 429，
+ * 这里是 `resolveScan` / `login` / `currentWorker` 等**残留路径**）。
+ *
+ * 🔴 为什么必须映射：`请求失败（HTTP 429）` 是**内部实现细节**（状态码 = 摆内部标识），
+ *    而且它**不说该干什么** —— 现场实测（#6642）用户截图里就这一行，工人唯一的动作是来问人。
+ * 🔴 技术原文**不丢**：原样留在 `err.technical`（日志面），屏上只出现人话。
+ * 🔴 服务端给了业务 message 时**一律优先**（业务语义比兜底话术有用，如「这张码已作废」）。
+ */
+const HTTP_KIND = {
+  408: '网络超时，请再按一次',
+  425: '请求太频繁，请过几秒再按一次',
+  429: '网络繁忙，请再按一次',
+  500: '服务端忙不过来，请过一会儿再按一次',
+  502: '服务端暂时联系不上，请过一会儿再按一次',
+  503: '服务端正在忙，请过一会儿再按一次',
+  504: '服务端响应超时，请再按一次',
+}
+
+/** 传输层错误的屏上文案：先看服务端业务 message，再按状态码给一句可行动作。 */
+function transportMessage(status, serverMessage) {
+  if (serverMessage) return serverMessage
+  return HTTP_KIND[status] ?? '操作没成功（请再试一次；若反复如此请找管理员）'
+}
+
 function readStore(storage) {
   try {
     return JSON.parse(storage.getItem(STORAGE_KEY) ?? 'null')
@@ -100,9 +125,11 @@ export function createApi(opts = {}) {
       throw err
     }
     if (!res.ok || payload?.success === false) {
-      const err = new Error(payload?.error?.message ?? `请求失败（HTTP ${res.status}）`)
+      const err = new Error(transportMessage(res.status, payload?.error?.message))
       err.code = payload?.error?.code ?? 'REQUEST_FAILED'
       err.status = res.status
+      // 技术原文只进日志面（诊断/上报用），**不上屏**
+      err.technical = payload?.error?.message ?? `HTTP ${res.status}`
       throw err
     }
     return payload?.data ?? {}

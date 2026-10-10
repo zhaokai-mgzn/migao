@@ -14,7 +14,7 @@
 
 import { createApi, SESSION_EXPIRED } from './api.mjs'
 import { parseScanInput } from './scan-input.mjs'
-import { createScanBuffer, initialMachineState, reduceMachine, renderMachine, resumePending } from './machine.mjs'
+import { createScanBuffer, initialMachineState, MACHINE_LOGIN_HREF, reduceMachine, renderMachine, resumePending } from './machine.mjs'
 // 未确认提交的幂等键**与手机报工页共用同一把**（同一个 storage 契约、同一份判据）⇒ 键名只有一处
 import { PENDING_REQUEST_KEY } from './app.mjs'
 
@@ -74,7 +74,9 @@ export function createMachineApp({ doc, api, location = globalThis.location, sto
   async function readScanned(raw) {
     const token = parseScanInput(raw)
     if (!token) {
-      dispatch({ type: 'failed', error: '没有识别到码：请扫一次水洗唛（或手工输入短码）' })
+      // 🔴 不提「手工输入短码」（issue #6667 第 2 条）：本页**没有任何文本输入元素**（刻意的护栏，
+      //    见 machine.html 头注释）⇒ 让工人去按一个不存在的出口 = 把他卡在屏前。
+      dispatch({ type: 'failed', error: '没有识别到码：请扫一次水洗唛' })
       return
     }
     try {
@@ -112,6 +114,40 @@ export function createMachineApp({ doc, api, location = globalThis.location, sto
     if (back) back.addEventListener('click', () => dispatch({ type: 'back' }))
     const report = doc.querySelector('[data-machine-report]')
     if (report) report.addEventListener('click', () => { void reportWork() })
+    const login = doc.querySelector('#wh5-machine-login')
+    if (login) login.addEventListener('click', () => { replaceToLogin() }) // 真链接：这行只是兜底（鼠标中键 / 键盘）
+    const switchWorker = doc.querySelector('#wh5-machine-switch-worker')
+    if (switchWorker) switchWorker.addEventListener('click', () => { void switchWorkerAndLeave() })
+  }
+
+  /**
+   * 清掉本机工人身份并回登录页（issue #6667 第 6 条，**涉计件归属**）。
+   *
+   * 🔴 为什么必须有这个人主动的出口：机台与手机页共享同一份 `migao:worker-h5:session`
+   * ⇒ 上一班工人登出后，下一班在这台屏上扫自己的码，报工可能仍记在**上一个人**头上（= 他的钱记到别人名下）。
+   * 🔴 顺序 = **先清本地身份、再走人**（`api.logout()` 内部先请服务端注销、无论结果都清本地）：
+   *    任何一步失败都不得把人留在「已登录但身份是上一位」的状态里。
+   * 🔴 **未做（如实登记）**：空闲超时自动回登录态不在本包 —— 机台是常驻屏，「没人动」≠「没人用」，
+   *    自动踢人会把计件归属问题换成一个"活干不了"的新现场故障；边界与重启条件见 PR body。
+   */
+  async function switchWorkerAndLeave() {
+    try {
+      await api.logout()
+    } catch {
+      /* 登出以「清本地」优先（api.logout 内部已保证）；这里绝不因为服务端失败而把人留下 */
+    }
+    dispatch({ type: 'worker', worker: null })
+    dispatch({ type: 'failed', error: '已切换工人：请先用工号 + PIN 登录，再扫码' })
+    replaceToLogin()
+  }
+
+  /** 换到登录页（`/w/` 是唯一有登录面的那一页）。`location.replace` 缺省做不了就只更新屏面。 */
+  function replaceToLogin() {
+    try {
+      location?.replace?.(MACHINE_LOGIN_HREF)
+    } catch {
+      /* 换页失败 ⇒ 屏上已经有登录入口（`renderScan` 的未登录态），人仍能走 */
+    }
   }
 
   /**
