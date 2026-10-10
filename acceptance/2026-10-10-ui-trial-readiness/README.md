@@ -76,7 +76,6 @@ rm -rf .next node_modules/.cache .turbo   # ⚠️ 三类一起删：只删 .nex
 | `readings.json` / `S1..S6-*.png` | S1–S6 读数与截图 |
 | `S7-count-row-read-failure.json` | S7 计数行 |
 | `S9-outage-census.json` | **35 路由** × 后端整体不可用的**运行期类普查**（修复后重跑：有失败面 25、重定向 6、**只画成 0/空 = 0**；并定性了两处 `¥0.00` 为**真 0**） |
-| `S10-retry-403.json` / `S11-layout-reach.json` | 重试真再发请求 + 403 分流文案 / 布局可达性类普查（14 页 × 两档视口） |
 | `S17-live-reprobe.json` | **线上**复探复核（官网四页 h1=1 与字数 4148/1886/3509/1152、bmini、worker-h5） |
 | `S18-print-doc-verify.md` | #6720 合并后的**源码/判据层**核验（5 文件 / 90 用例）+ 两次自我更正 |
 | `S19-design-pass2.json` `S19-*.png` `S19-note.md` | 导航链接普查（16 条全可达）+ 设计面读图第二轮（`/customers` `/production/remnants`） |
