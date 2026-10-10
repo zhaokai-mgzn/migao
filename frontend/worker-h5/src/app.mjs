@@ -120,6 +120,22 @@ function newRequestId() {
  *        缺省 null ⇒ 不做跨刷新复用（与改前同级；测试注入用）
  * @returns {{state: object, dispatch: Function, destroy: Function}}
  */
+/**
+ * `checkAlive()`（后台对账）的两条护栏 —— issue #6642，2026-10-10 线上日志实测。
+ *
+ * **实测现场**（SWAS `migao-deploy-nginx-1`，2026/10/10 08:12:10）：同一条工人 session
+ * 在 ~4 秒里打出 **92 个请求**（15–23 req/s），被 nginx `worker_sess`（rate=2r/s burst=60）拒了 4 条 ——
+ * 被拒的只有 `GET /api/worker/me` 与 `GET /api/worker/production/current-worker` 两个**读面**
+ * （写面 `/scan`、`/scan/complete` 一次都没被拒），而 `current-worker` 的失败走了 `fail()`
+ * ⇒ 报工卡上出现了用户截图那行红字「请求失败（HTTP 429）」。
+ *
+ * ⇒ ① 请求**有界**（单飞 + 最小间隔）；② 失败**不进报工卡**（身份面 401 除外）。
+ */
+const ALIVE_MIN_INTERVAL_MS = 5000
+
+/** 后台对账失败（**非**身份面）时的屏上措辞：说事实 + 说清**不影响报工**（§31：不摆内部标识、不吓人）。 */
+const ALIVE_UNREACHABLE_NOTICE = '与服务器核对没成功（网络不稳）：不影响报工，回到本页会自动再核对'
+
 export function createApp({ doc, api, location = globalThis.location, storage = null }) {
   const href = typeof location === 'string' ? location : location?.href ?? ''
   // 企业编码（issue #6564）：短链 302 的 `?tenant_code=` 只是**初值**（预填进输入框，可编辑）
@@ -127,6 +143,8 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
   const root = doc.getElementById('worker-h5-root')
   let state = { ...initialState(), enterpriseCode: urlEnterpriseCode ?? '' }
   let idleTimer = null
+  let aliveInFlight = false // 单飞：同一时刻最多一个对账在飞
+  let lastAliveAt = 0 // 节流：两次对账的最小间隔（毫秒）
 
   // ── 未确认提交（issue #4814）：读/写/清都是「尽力而为」——存不下就当没有，
   //    绝不因为存储不可用而挡住报工（那会把「钱记不上」变成「活报不上」）。
@@ -244,16 +262,39 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     }
   }
 
-  /** 与**服务端**对一次账：401 ⇒ 回落未登录（绝不静默按上一个人记账）。 */
+  /**
+   * 与**服务端**对一次账（`current-worker` + `/me`）。挂在 `visibilitychange` 与闲置定时器上。
+   *
+   * 🔴 ① **有界**（issue #6642 线上实测）：一次可见性事件风暴会把「一事件一轮」放大成
+   * 15–23 req/s（同一条 session 4 秒 92 个请求）⇒ 单飞 + `ALIVE_MIN_INTERVAL_MS` 节流，
+   * 把风暴塌缩成有界请求。**不依赖"先查清事件从哪来"**才能止血。
+   *
+   * 🔴 ② **失败不进报工卡**：对账是**后台**动作（工人没点任何东西）⇒ 它的失败（429 / 5xx / 断网）
+   * 不得占用报工卡的错误位，只给一句"不影响报工"的提示。唯一例外 = **401 / 会话过期**：
+   * 那是身份面的事，仍走 `fail()` 回落未登录（绝不静默按上一个人继续记账）。
+   */
   async function checkAlive() {
     if (!api.sessionId()) return
+    if (aliveInFlight) return
+    const now = Date.now()
+    if (now - lastAliveAt < ALIVE_MIN_INTERVAL_MS) return
+    aliveInFlight = true
+    lastAliveAt = now
     try {
       const w = await api.currentWorker()
       dispatch({ type: 'worker', worker: { workerName: w.workerName, workerNo: w.workerNo } })
       await refreshPages() // 页面开关可能被商家在中途改过 ⇒ 每次对账顺带刷新（换人换权限）
       armIdle()
+      // 上一轮失败留下的提示：这一轮通了 ⇒ 撤掉（不留常驻噪音）
+      if (state.notice === ALIVE_UNREACHABLE_NOTICE) dispatch({ type: 'notice', notice: null })
     } catch (e) {
-      fail(e)
+      if (e?.code === SESSION_EXPIRED) {
+        fail(e)
+        return
+      }
+      dispatch({ type: 'notice', notice: ALIVE_UNREACHABLE_NOTICE })
+    } finally {
+      aliveInFlight = false
     }
   }
 

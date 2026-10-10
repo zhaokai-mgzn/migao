@@ -80,14 +80,24 @@ function ownedSourceFiles(): string[] {
     .sort()
 }
 
-/** 逐行找命中，返回 `相对路径:行号`（行号只用于**报错信息**，不写进判据锚） */
+/**
+ * 在**整个文件内容**上找命中，返回 `相对路径:行号`（行号只用于**报错信息**，不写进判据锚）。
+ *
+ * 🔴 为什么不能逐行扫（本包实测踩过）：JSX 里的模板串常跨行 ——
+ * `¥{formatAmount(order.actualAmount)}` 与紧跟其后的「元」**不在同一行**，
+ * 逐行扫会**漏报**（注入式红证实测：把「元」拼回去，逐行版判据照样绿 = 假绿）。
+ * 行号由命中下标换算，判据仍逐条具名。
+ */
 function findHits(files: string[], re: RegExp): string[] {
   const hits: string[] = []
   for (const file of files) {
     const rel = relative(ROOT, file)
-    readFileSync(file, 'utf8').split('\n').forEach((line, idx) => {
-      if (re.test(line)) hits.push(`${rel}:${idx + 1}`)
-    })
+    const content = readFileSync(file, 'utf8')
+    const global = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`)
+    for (const match of content.matchAll(global)) {
+      const line = content.slice(0, match.index ?? 0).split('\n').length
+      hits.push(`${rel}:${line}`)
+    }
   }
   return hits
 }
@@ -152,5 +162,66 @@ describe('类级不变式 B：射程内日期只有一个真值源（DateTimeCel
     expect(AD_HOC_DATE.test("dayjs(x).format('HH:mm')")).toBe(false)
     // <input type="date"> 的值格式化（formatDate 拼 YYYY-MM-DD）不是日期展示 ⇒ 不命中
     expect(AD_HOC_DATE.test('return `${y}-${m}-${day}`')).toBe(false)
+  })
+})
+
+/**
+ * ## 不变式 C：射程内金额**不出现币符重复**
+ *
+ * issue #6664 第 6 条：`formatAmount` 系列**已经带 `¥`**，调用处再拼「元」⇒
+ * 屏幕上就变成 `¥3,500.00元`（同一个金额，发货页与纸质发货单/订单详情两个口径）。
+ * 形态 = 「`¥` 与 `元` 之间只有代码/数字」（`¥${x}元` / `¥{formatAmount(x)}元` / `¥100.00元`），
+ * 扫源码即可机械判定；`单价（元）` / `¥23.80/米` 这类**单位标注**不在此列（见判据 ③ 的误伤边界）。
+ *
+ * 🔴 配套的**真渲染**判据不在这里（本文件只扫源码）：
+ * `tests/unit/pages/ship-order.test.tsx::金额渲染不出现「币符 + 数字 + 元」形态` ——
+ * 它对**渲染结果**做同一形态检查，且**注入式红证**实测过（把 `元` 拼回去 ⇒ 必红，报出 `¥3,500.00元`）。
+ */
+describe('类级不变式 C：射程内金额不出现币符重复（¥ + 数字 + 元）', () => {
+  const files = ownedSourceFiles()
+  /**
+   * 「币符重复」的两种**代码形态**（issue #6664 第 6 条的实测缺陷是第二种）：
+   *
+   * ① **字面/模板同现**：`¥` 与 `元` 之间只有代码与数字（`¥{x}元` / `¥100.00元`）；
+   * ② **格式化器组合**：`formatAmount(x)}元` —— ⚠️ 这一形态**行内没有 `¥`**
+   *    （币符在 `formatAmount` 的返回模板里），所以只扫「¥…元」会**漏报**（本包实测踩过：
+   *    把「元」拼回去，只扫 ¥ 的那版判据照样绿 = 假绿）。
+   *
+   * 边界（逐条见判据 ③）：`单价（元）` / `¥23.80/米` / `加工费合计（元）` / `累计金额(元)` /
+   * `¥100.00（元/米）` / `formatNumber(x)}元`（`formatNumber` **不带**币符）都不命中 ——
+   * 那些「元」要么是单位标注，要么币符本来就在别处，不是本形态。
+   */
+  const DUPLICATE_CURRENCY = /(?:¥(?=[\s\d,${}\n])[\s\d,.()A-Za-z_${}\n]{0,60}?元)|(?:(?:formatAmount|formatNumber|formatMoney|formatCurrency)\s*\([^)]*\)\s*\}?\s*元)/
+  const CURRENCY_LEDGER: string[] = []
+
+  it('① 扫描面非空（防空断言假绿）', () => {
+    expect(files.length).toBeGreaterThan(20)
+  })
+
+  it('② 射程内没有「币符 + 数字 + 元」形态；台账（只许缩短）为空', () => {
+    const hits = findHits(files, DUPLICATE_CURRENCY)
+      .filter((hit) => !CURRENCY_LEDGER.some((allowed) => hit.startsWith(allowed)))
+    expect(CURRENCY_LEDGER).toHaveLength(0)
+    expect(hits, `币符重复（formatAmount 已带 ¥，不要再拼「元」）。命中：${hits.join('、')}`).toEqual([])
+  })
+
+  it('③ 判别力自证：坏形态必命中，好形态不误伤', () => {
+    // 坏形态 ①：`¥` 与「元」同现（改前 ShipOrder 的模板串形态）
+    expect(DUPLICATE_CURRENCY.test('¥{formatAmount(order.actualAmount)}元')).toBe(true)
+    expect(DUPLICATE_CURRENCY.test('¥3,500.00元')).toBe(true)
+    expect(DUPLICATE_CURRENCY.test('¥{Number(order.total).toFixed(2)} 元')).toBe(true)
+    // 坏形态 ②：**行内没有 `¥`** 的格式化器组合 —— 这是本包真实缺陷的形态，
+    // 只扫「¥…元」会漏报它（注入式红证实测过）
+    expect(DUPLICATE_CURRENCY.test('{formatAmount(order.actualAmount)}元')).toBe(true)
+    expect(DUPLICATE_CURRENCY.test('{formatMoney(x)}元')).toBe(true)
+    // 好形态：单位标注 / 币符单独出现 / 不带币符的格式化器
+    expect(DUPLICATE_CURRENCY.test('单价（元）')).toBe(false)
+    expect(DUPLICATE_CURRENCY.test('¥23.80/米')).toBe(false)
+    expect(DUPLICATE_CURRENCY.test('加工费合计（元）：37.50')).toBe(false)
+    expect(DUPLICATE_CURRENCY.test('¥{amount.toFixed(2)}')).toBe(false)
+    expect(DUPLICATE_CURRENCY.test('累计金额(元)')).toBe(false)
+    expect(DUPLICATE_CURRENCY.test('¥100.00（元/米）')).toBe(false)
+    // `formatNumber` **不带**币符 ⇒ `123元` 是「123 元」，不是币符重复
+    expect(DUPLICATE_CURRENCY.test('{formatNumber(item.unitPrice)}</span>元')).toBe(false)
   })
 })
