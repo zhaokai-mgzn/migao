@@ -727,9 +727,12 @@ function EnterpriseDomainPanel() {
             ) : (
               /* 🔴 issue #6663：改前这里写的是给运维看的话（env 名 `NEXT_PUBLIC_BMINI_H5_URL` +
                  「部署时设置后重新构建」）—— 商家**既改不了也不该看到**构建细节（§31 P3 不摆内部标识）。
-                 改成商家可行动的话：说清「还没开通」+「找谁」。 */
+                 改成商家可行动的话：说清「还没开通」+「找谁」。
+                 ⚠️ **保留「未配置」逐字**：`tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py`
+                 的判据 4 要求无值分支**逐字**说明「未配置」（不许静默什么都不画）——
+                 去运维腔 ≠ 可以把这个锚点删掉（既有元守卫的张力，本包只动措辞、不动锚点）。 */
               <p className="text-sm text-neutral-500" data-testid="bmini-h5-unconfigured">
-                尚未开通手机版 —— 需要开通时请联系服务方；开通后这里会出现扫码入口。
+                手机端入口未配置 —— 尚未开通手机版，需要开通时请联系服务方；开通后这里会出现扫码入口。
               </p>
             )}
           </div>

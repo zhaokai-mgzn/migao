@@ -864,9 +864,19 @@ describe('判据 8：读面失败 ≠ 空态 / 关闭态（issue #6663）', () =
       const entry = await screen.findByTestId('bmini-h5-unconfigured')
       expect(entry).toHaveTextContent('尚未开通手机版')
       expect(entry).toHaveTextContent('请联系服务方')
-      // 环境变量名 / 构建指令 / 「未配置」这类内部口径都不得上屏
+      // 环境变量名 / 构建指令不得上屏（§31 P3「不摆内部标识」）
       expect(entry.textContent).not.toMatch(/NEXT_PUBLIC_/)
       expect(entry.textContent).not.toMatch(/重新构建|部署|环境变量/)
+      /**
+       * 🔴 **同时**必须保留「未配置」逐字 —— 这两条约束是**一对张力**，本包实测踩过：
+       * 我第一轮只做了「去运维腔」，把「未配置」一起删掉 ⇒ CI 的既有元守卫
+       * `tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py` 判据 4 当场红
+       * （「无值分支必须逐字说明『未配置』（不许静默什么都不画）」）。
+       * ⇒ 口径是「**换措辞，不删锚点**」：商家看的是人话，而「未配置」是**状态锚点**。
+       * 这里把两条一起钉住，谁再单边改动都会当面红。
+       */
+      expect(entry.textContent).toContain('未配置')
+      expect(screen.queryByTestId('bmini-h5-qr')).toBeNull()
     } finally {
       vi.unstubAllEnvs()
     }
