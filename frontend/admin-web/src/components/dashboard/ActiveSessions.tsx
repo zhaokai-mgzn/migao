@@ -8,6 +8,11 @@ import type { ActiveSession } from '@/types'
 interface ActiveSessionsProps {
   sessions: ActiveSession[]
   loading?: boolean
+  /**
+   * 读面失败（issue #6715）：读不到 ⇒ **不印**「暂无活跃会话」
+   * （那是把「读不到」说成「本来就没有会话」）。默认 `false`：读成功但真为空 ⇒ 照旧走空态。
+   */
+  readFailed?: boolean
 }
 
 const channelLabels: Record<string, string> = {
@@ -17,7 +22,7 @@ const channelLabels: Record<string, string> = {
   app: 'APP',
 }
 
-export default function ActiveSessions({ sessions, loading }: ActiveSessionsProps) {
+export default function ActiveSessions({ sessions, loading, readFailed = false }: ActiveSessionsProps) {
   return (
     <div className="bg-white rounded-xl border border-neutral-100 shadow-sm p-5">
       <div className="flex items-center justify-between mb-4">
@@ -39,6 +44,10 @@ export default function ActiveSessions({ sessions, loading }: ActiveSessionsProp
       {loading ? (
         <div className="h-40 flex items-center justify-center">
           <div className="animate-spin w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full" />
+        </div>
+      ) : readFailed ? (
+        <div data-testid="active-sessions-read-failed" className="h-40 flex items-center justify-center text-sm text-neutral-400">
+          活跃会话没读到
         </div>
       ) : sessions.length === 0 ? (
         <div className="h-40 flex items-center justify-center text-sm text-neutral-400">
