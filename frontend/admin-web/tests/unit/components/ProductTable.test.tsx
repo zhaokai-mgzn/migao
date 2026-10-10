@@ -1,4 +1,4 @@
-// case_ids: PR-001, PR-002
+// case_ids: PR-001, PR-002, PR-010, UI-055
 /**
  * ProductTable 组件测试
  * 覆盖：#646 移除 in_warehouse — 状态徽章映射无仓库中、操作按钮正确
@@ -54,6 +54,22 @@ const defaultProps = {
   onUnrecommend: vi.fn(),
   onDelete: vi.fn(),
 }
+
+// ========== 长标题可读全（issue #6662 判据 ⑤ 后半）==========
+//
+// `line-clamp-2` 是**有意的**版式（行高固定、不随标题长度长高），但必须给一个**读全程**的出口：
+// `title` 属性（鼠标悬停可见全文）。改前只有 `line-clamp-2`、没有 `title`。
+describe('ProductTable — 长标题可读全（issue #6662）', () => {
+  const LONG_NAME = '2026新款高遮光免打孔客厅卧室双面同色加厚隔热遮阳窗帘布定制款'
+
+  it('#6662 标题单元格带 title（悬停可见全文），且截断版式不变', () => {
+    render(<ProductTable {...defaultProps} products={[{ ...baseProduct, name: LONG_NAME }]} />)
+    const cell = screen.getByText(LONG_NAME)
+    expect(cell.getAttribute('title')).toBe(LONG_NAME)
+    // 负控：截断版式仍在（不是把 clamp 删了了事）
+    expect(cell.className).toContain('line-clamp-2')
+  })
+})
 
 describe('ProductTable (#646 — 移除 in_warehouse)', () => {
   it('应渲染商品名称', () => {

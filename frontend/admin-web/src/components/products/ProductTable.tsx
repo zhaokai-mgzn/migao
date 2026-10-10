@@ -149,7 +149,13 @@ export default function ProductTable({
             })()}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm text-neutral-900 leading-snug break-words line-clamp-2">{record.name}</div>
+            {/* issue #6662 判据 ⑤：`line-clamp-2` 会截断长标题 —— 给 `title` 让鼠标悬停可读全 */}
+            <div
+              className="text-sm text-neutral-900 leading-snug break-words line-clamp-2"
+              title={record.name || undefined}
+            >
+              {record.name}
+            </div>
           </div>
         </div>
       ),
