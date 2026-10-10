@@ -1,5 +1,5 @@
 {
-  "when": "2026-10-10T20:23:12.116Z",
+  "when": "2026-10-10T20:59:03.917Z",
   "base": "http://localhost:3001",
   "sections": {
     "S1_login": {
@@ -137,14 +137,46 @@
     "200 /api/auth/sms/login",
     "200 /api/auth/me",
     "200 /api/admin/notifications/unread-count",
-    "200 /api/admin/dashboard/recent-orders?limit=5",
     "200 /api/admin/briefing/config",
-    "200 /api/admin/dashboard/order-trend?days=7",
+    "200 /api/admin/dashboard/recent-orders?limit=5",
     "200 /api/admin/dashboard/product-ranking?period=day&limit=10",
     "200 /api/admin/dashboard/order-status",
+    "200 /api/admin/dashboard/order-trend?days=7",
     "200 /api/admin/dashboard/stats",
     "200 /api/auth/refresh",
     "200 /api/admin/products?page=1&size=10&sortBy=createdAt&sortOrder=desc",
     "200 /api/admin/production/remnants?page=1&size=100"
+  ],
+  "assertions": [
+    {
+      "id": "S1 登录落在 /dashboard 且未触发短信",
+      "ok": true,
+      "detail": "{\"landedOn\":\"/dashboard\",\"smsSendCalled\":false}"
+    },
+    {
+      "id": "S2 工作台无塞值 / 无失败横幅 / 无残留加载",
+      "ok": true,
+      "detail": "{\"bad\":[],\"banner\":false,\"loading\":0}"
+    },
+    {
+      "id": "S3 悬浮球不抢点击且页面有行",
+      "ok": true,
+      "detail": "{\"stolen\":0,\"rows\":10}"
+    },
+    {
+      "id": "S4 翻页真的换了行（不是同一页复述）",
+      "ok": true,
+      "detail": "remnant-row-936 → remnant-row-836"
+    },
+    {
+      "id": "S5 读失败有锚点与可行动文案、且不印假 0",
+      "ok": true,
+      "detail": "{\"anchors\":[\"remnant-ledger-load-failed\",\"remnant-ledger-retry\"],\"fakeZero\":[]}"
+    },
+    {
+      "id": "S6 八页无内部标识 / 无残留加载",
+      "ok": true,
+      "detail": "页数=8"
+    }
   ]
 }

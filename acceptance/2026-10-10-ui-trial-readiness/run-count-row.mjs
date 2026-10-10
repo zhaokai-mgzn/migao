@@ -42,3 +42,13 @@ for (const p of PAGES) {
 }
 writeFileSync(OUT + 'S7-count-row-read-failure.json', JSON.stringify({ when: new Date().toISOString(), pages: rows }, null, 2))
 await browser.close()
+// ── 断言 + 退出码（本脚本此前只打印、**永不失败** ⇒ 外壳报"全绿"却可能含着红；2026-10-11 补）
+const fails = []
+for (const r of rows) {
+  if (r.countZero.length) fails.push(`${r.path} 读失败时印了「共 0 条」`)
+  if (!r.countDash.length) fails.push(`${r.path} 计数位不是「—」（读不到就该留白，不许编数）`)
+  if (r.permBlame) fails.push(`${r.path} 读失败被归因成「没有权限」（#6707 类）`)
+}
+if (!rows.some((r) => r.anchors.length)) fails.push('没有任何页面出现失败锚点 ⇒ 探针可能没生效（先自证再读数）')
+console.log(fails.length ? `\n🔴 红项 ${fails.length} 条：\n  - ` + fails.join('\n  - ') : '\n✅ 全绿')
+process.exit(fails.length ? 1 : 0)

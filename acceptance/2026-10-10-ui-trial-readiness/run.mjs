@@ -144,3 +144,32 @@ R.apiSeenSample = [...new Set(apiSeen)].slice(0, 12)
 writeFileSync(`${OUT}/readings.json`, JSON.stringify(R, null, 2))
 console.log(JSON.stringify(R, null, 1))
 await browser.close()
+
+// ── 断言 + 退出码（2026-10-11 补）：本脚本此前只是**记录器** —— 只打 JSON、永不失败，
+//    于是外壳 `run-all.sh` 会报「五支全绿」而里面可能含着红（我自查时发现：S7 那支行有 ❌ 却 exit 0）。
+//    判据从 R.sections 现取，不做任何额外请求。
+const A = []
+const chk = (id, ok, detail) => { A.push({ id, ok, detail }); console.log(`${ok ? '✅' : '❌'} ${id} ${detail || ''}`) }
+const S = R.sections || {}
+chk('S1 登录落在 /dashboard 且未触发短信', S.S1_login?.landedOn === '/dashboard' && S.S1_login?.smsSendCalled === false, JSON.stringify(S.S1_login))
+chk('S2 工作台无塞值 / 无失败横幅 / 无残留加载',
+  (S.S2_dashboard?.badValues || []).length === 0 && S.S2_dashboard?.failBanner === false && S.S2_dashboard?.loadingLeft === 0,
+  JSON.stringify({ bad: S.S2_dashboard?.badValues, banner: S.S2_dashboard?.failBanner, loading: S.S2_dashboard?.loadingLeft }))
+chk('S3 悬浮球不抢点击且页面有行', S.S3_products_fab?.stolen === 0 && (S.S3_products_fab?.rows || 0) > 0,
+  JSON.stringify({ stolen: S.S3_products_fab?.stolen, rows: S.S3_products_fab?.rows }))
+chk('S4 翻页真的换了行（不是同一页复述）',
+  !!S.S4_remnants_paging?.page1 && !!S.S4_remnants_paging?.page2 && (S.S4_remnants_paging.page1.rows || 0) > 0 &&
+  S.S4_remnants_paging.page1.first !== S.S4_remnants_paging.page2.first,
+  `${S.S4_remnants_paging?.page1?.first} → ${S.S4_remnants_paging?.page2?.first}`)
+chk('S5 读失败有锚点与可行动文案、且不印假 0',
+  (S.S5_read_failure?.failAnchors || []).length > 0 && (S.S5_read_failure?.fakeZero || []).length === 0 && (S.S5_read_failure?.actionable || []).length > 0,
+  JSON.stringify({ anchors: S.S5_read_failure?.failAnchors, fakeZero: S.S5_read_failure?.fakeZero }))
+const hy = S.S6_hygiene || []
+chk('S6 八页无内部标识 / 无残留加载',
+  hy.length > 0 && hy.every((h) => h.uuid === 0 && h.objectId === 0 && (h.snake || []).length === 0 && (h.bad || []).length === 0 && h.loading === 0),
+  `页数=${hy.length}`)
+R.assertions = A
+writeFileSync(`${OUT}/readings.json`, JSON.stringify(R, null, 2))
+const reds = A.filter((a) => !a.ok)
+console.log(reds.length ? `\n🔴 红项 ${reds.length} 条` : '\n✅ 全绿')
+process.exit(reds.length ? 1 : 0)

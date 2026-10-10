@@ -44,3 +44,16 @@ try {
   }
 } finally { await b.close() }
 writeFileSync(new URL('./evidence/S31-live-reprobe.json', import.meta.url), JSON.stringify(out, null, 2))
+// ── 断言 + 退出码（同上：此前只打印读数）
+const CORPORATE = ['migaozn-home', 'migaozn-about', 'migaozn-services', 'migaozn-contact']
+const fails = []
+for (const [name, r] of Object.entries(out)) {
+  if (r.error) { fails.push(`${name} 打开失败：${r.error}`); continue }
+  if (r.status !== 200) fails.push(`${name} 状态码 ${r.status}`)
+  if (CORPORATE.includes(name) && r.h1 !== 1) fails.push(`${name} h1=${r.h1}（官网页应恰好 1 个）`)
+  if (r.spinner) fails.push(`${name} 仍在「加载中」`)
+  if (r.overflow > 0) fails.push(`${name} 横向溢出 ${r.overflow}px`)
+  if (r.md > 0) fails.push(`${name} 出现 ${r.md} 处 Markdown 记号（P10 类）`)
+}
+console.log(fails.length ? `\n🔴 红项 ${fails.length} 条：\n  - ` + fails.join('\n  - ') : '\n✅ 全绿')
+process.exit(fails.length ? 1 : 0)
