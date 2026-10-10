@@ -358,7 +358,17 @@ describe('#6703 ⑤ /finance：资金流水 / 对账 / 汇总三段读失败，�
     expect(alert).toHaveTextContent('收支汇总加载失败')
     // 🔴 改前这四张卡片的金额位会印 ¥0.00 ⇒ 会被读成「本期没进账」
     expect(container.textContent).not.toContain('¥0.00')
+    // 🔴 改前笔数位会印「0 笔」（同样是「没读到」被画成「真 0」）
+    expect(container.textContent).not.toMatch(/0\s*笔/)
+    expect(container.textContent).toContain('笔数没读到')
     expect(container.textContent).toContain('—')
+  }, TEST_TIMEOUT)
+
+  it('对照读数：汇总读成功 ⇒ 金额与笔数照旧印真值（失败态没把正常路径吃掉）', async () => {
+    const { container } = render(<FinancePage />)
+    await waitFor(() => expect(container.textContent).toContain('¥1,999.00'))
+    expect(container.textContent).toContain('1 笔')
+    expect(screen.queryByTestId('finance-summary-load-error')).toBeNull()
   }, TEST_TIMEOUT)
 
   it('对账读失败：零「共 0 条记录」+ finance-reconciliation-load-error（切到对账 tab）', async () => {

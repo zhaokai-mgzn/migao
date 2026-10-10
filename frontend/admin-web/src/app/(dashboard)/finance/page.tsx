@@ -308,28 +308,28 @@ export default function FinancePage() {
           title="本期收入"
           icon={<ArrowDownCircle className="w-5 h-5 text-green-600" />}
           value={summaryError ? undefined : summaryLoading ? null : summary?.totalIncome}
-          hint={`${summary?.incomeCount ?? 0} 笔`}
+          hint={summaryError ? '笔数没读到' : `${summary?.incomeCount ?? 0} 笔`}
           accent="text-green-600"
         />
         <SummaryCard
           title="本期退款"
           icon={<ArrowUpCircle className="w-5 h-5 text-red-500" />}
           value={summaryError ? undefined : summaryLoading ? null : summary?.totalRefund}
-          hint={`${summary?.refundCount ?? 0} 笔`}
+          hint={summaryError ? '笔数没读到' : `${summary?.refundCount ?? 0} 笔`}
           accent="text-red-600"
         />
         <SummaryCard
           title="净收入"
           icon={<TrendingUp className="w-5 h-5 text-primary-600" />}
           value={summaryError ? undefined : summaryLoading ? null : summary?.netIncome}
-          hint="收入 - 退款"
+          hint={summaryError ? '没读到' : '收入 - 退款'}
           accent="text-primary-600"
         />
         <SummaryCard
           title="待收款"
           icon={<Wallet className="w-5 h-5 text-amber-500" />}
           value={summaryError ? undefined : summaryLoading ? null : summary?.pendingReceivable}
-          hint="累计未收差额"
+          hint={summaryError ? '没读到' : '累计未收差额'}
           accent="text-amber-600"
         />
       </div>
