@@ -54,6 +54,39 @@ const HTTP_KIND = {
   504: '系统响应超时，请再按一次',
 }
 
+/** 认证失败的错误码（后端：企业不存在 / 工号不存在 / PIN 错 ⇒ **同一个** 401、**同一句**）。 */
+export const AUTH_FAILED = 'AUTH_FAILED'
+
+/**
+ * 认证失败的屏上文案（issue #6747）：**服务端已给的确定原因 + 一句可行动作**。
+ *
+ * <p>病灶（真机读数，2026-10-11 生产 `/api/worker/login`）：改前 401 只有服务端那句判定
+ * （`工号或 PIN 不正确`，**不说该干什么**），响应体缺 message 时落到
+ * 「登录已失效，请重新用工号 + PIN 登录」（对**刚按下登录按钮**的工人是错的归因：他没"失效"，他是**打错了**），
+ * 更泛的形态是「操作没成功（请再试一次；若反复如此请找管理员）」⇒ 打了错 PIN 的工人**反复重试**，
+ * 而不是去核对工号 / PIN（现场表现为"点不动 / 是不是坏了"，最后来问人）。</p>
+ *
+ * <p>取值顺序（与 #6738 的 `shapeMessage` 同口径：**服务端点名的原因优先**）：</p>
+ * <ol>
+ *   <li><b>服务端 message 可读</b> ⇒ **逐字保留那句判定**（`[^。；;!?！？]+` 到句读为止）+ 动作。
+ *       🔴 "保留"同时是**反枚举**要求：企业不存在 / 工号不存在 / PIN 错三种原因，屏上**逐字相同** ——
+ *       一个字都不许分辨"是哪一项错了"。</li>
+ *   <li><b>服务端没写 message</b>（或只是一个内部标识）⇒ 用兜底判定「工号或 PIN 不正确」+ 动作
+ *       —— **绝不**回落到泛化重试（那正是本条要治的形态）。</li>
+ *   <li>服务端 message 里**已经**带「请核对」⇒ 不再叠一句（同一句话说两遍 = 噪音）。</li>
+ * </ol>
+ *
+ * @param {object} error 响应体里的 `error`
+ * @returns {string} 屏上文案
+ */
+export function authFailureMessage(error) {
+  const m = typeof error?.message === 'string' ? error.message.trim() : ''
+  const notice = '请核对工号与 PIN 后重试'
+  if (!m || /请核|核对|重新输入|重输/.test(m) || !/数字?\s*PIN/.test(m)) return `工号或 PIN 不正确，${notice}`
+  const determination = m.match(/^[^。；;!?！？]+/)[0]
+  return `${determination}，${notice}`
+}
+
 /** 传输层错误的屏上文案：先看服务端业务 message，再按状态码给一句可行动作。 */
 function transportMessage(status, serverMessage) {
   if (serverMessage) return serverMessage
@@ -140,7 +173,7 @@ export function createApi(opts = {}) {
    *    优先服务端逐字段理由，**绝不**把顶层那句内部术语「参数校验失败」端给工人。
    * 其余失败 ⇒ 带服务端 `error.message` 的普通 Error（页面直接显示给工人）。
    */
-  async function request(path, { method = 'GET', body, extraHeaders } = {}) {
+  async function request(path, { method = 'GET', body, extraHeaders, credentials = false } = {}) {
     const res = await fetchImpl(`${baseUrl}${path}`, {
       method,
       headers: headers(extraHeaders),
@@ -154,7 +187,16 @@ export function createApi(opts = {}) {
     }
     if (res.status === 401) {
       clear()
-      const err = new Error(payload?.error?.message ?? '登录已失效，请重新用工号 + PIN 登录')
+      // 🔴 401 里 **`AUTH_FAILED` 单独一条通道**（issue #6747）：服务端已经给了确定原因
+      //    （`工号或 PIN 不正确`）⇒ 透那句判定 + 一句动作；缺 message 时也不许落到泛化重试。
+      //    其余 401（闲置超时 / 已被切换 / 读面 token 失效）**逐字保持**改前的会话过期口径
+      //    （连兜底那句也不动 —— 本单的口径是"服务端**点名的**原因才走认证通道"）。
+      //    🔴 401 且**响应体什么都没说**时，靠调用方带上来的语境（`credentials`）分辨：
+      //    送凭据的请求（登录）= 凭据不对；其余（读面 / 报工）= 会话没了。
+      const authFailure = payload?.error?.code === AUTH_FAILED || (!payload?.error?.message && credentials)
+      const err = new Error(
+        authFailure ? authFailureMessage(payload?.error) : (payload?.error?.message ?? '登录已失效，请重新用工号 + PIN 登录'),
+      )
       err.code = SESSION_EXPIRED
       err.status = 401
       throw err
@@ -187,6 +229,9 @@ export function createApi(opts = {}) {
     async login({ workerNo, pin, enterpriseCode }) {
       const data = await request('/api/worker/login', {
         method: 'POST',
+        // 🔴 `credentials: true` = 「这一次请求送的是凭据」⇒ 401 时 100% 是凭据不对
+        //    （issue #6747：让「刚按下登录按钮」这一语境能分辨 401 的两种语义）
+        credentials: true,
         body: { workerNo, pin, deviceLabel, enterpriseCode },
       })
       const s = {
