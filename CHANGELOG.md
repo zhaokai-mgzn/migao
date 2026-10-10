@@ -26,7 +26,10 @@
 - 🔴 **403 页把内部权限码原样摆给商家**（「当前账号缺少权限 `production:view`」）⇒ 改成
   「你的岗位没有这个功能的权限，请联系管理员在「员工管理」中调整」；权限码只进日志 / 工单。
 - **计件工资金额与财务域两套写法**（`¥123456.78` vs `¥123,456.78`）⇒ 涉钱读数口径收敛到
-  `frontend/admin-web/src/lib/money.ts` 一处真值（千分位 + 固定两位小数），两个域都 import 它。
+  `frontend/admin-web/src/lib/money.ts` 一处真值（千分位 + 固定两位小数），
+  三个域（财务 / 计件 / 商品列表「销售额」）都 import 它。
+- **商品列表「销售额」列同一列两种小数位**（`¥25,049` 与 `¥26,099.8` 并存 —— 只给了
+  `maximumFractionDigits` 上限、没有下限）⇒ 同上收敛到 `¥25,049.00` / `¥26,099.80`。
 
 **判据**（`frontend/admin-web/tests/unit/**`，定点 vitest）：
 
@@ -35,16 +38,18 @@
   （删标签确认 + 日期带年份）、`pages/customer-detail.test.tsx`（未完成页签不出入口）、
   `pages/notifications.test.tsx`（在飞行态禁用 + 连点只发一次 + 无未读不出入口）、
   `lib/auth-guard.test.tsx`（403 面**不含**权限码）、`lib/money.test.ts`（口径 + 两域同一真值源）、
-  `pages/production-piecework.test.tsx`（页面级：六位数金额带千分位）。
+  `pages/production-piecework.test.tsx`（页面级：六位数金额带千分位）、
+  `components/ProductTable.test.tsx`（销售额列：`26099.8` 与 `25049` 同列 ⇒ 同形态）。
 - **类级固化**：`lib/no-native-dialog-for-destructive-copy-guard.test.ts` —— `src/**` 全域
   「破坏性动作不得走原生 `window.prompt`」，**未登记即红 + 台账只许缩短 + 判别力自证**
   （历史坏形态必检出、注释/字符串里的同形态不误伤、裸 `prompt(` 也算）。
 - 连带修正：`scripts/user-copy-scan.mjs` 的 `SUBTITLE_EXEMPT` **清空**（403 长文案随提取搬到
   `components/common/AccessDenied.tsx`，已在 `SUBTITLE_SCOPE` 之外 ⇒ 不再需要豁免；台账只许缩短）。
 
-**边界（如实登记）**：本单**未做**三条依赖在飞包的条目（`components/production-config/CalcFormulaPanel.tsx`
-属 #6662 族、`components/products/ProductTable.tsx` 销售额小数位属 #6662 族、读面失败元守卫的 8 条存量债
-删除属 #6664/#6663）—— 它们的 PR（#6676 / #6677 / #6673）**尚未合入 main**，故照实留待后续包收口。
+**边界（如实登记）**：追加任务 1（`components/production-config/CalcFormulaPanel.tsx` 的第四处重复失败信号，
+属 #6662 文件族）与追加任务 2（读面失败元守卫的 8 条存量债删除，依赖 #6663 的 PR #6677 + #6664 的 PR #6673）
+**未做** —— #6663 / #6664 两个包**尚未合入 main**（现读数：两条 PR 均 `OPEN`），照实留待后续包收口；
+追加任务 3（商品列表销售额小数位）在 #6676 合入 main **之后**完成（本包已 rebase 到它上面）。
 
 ### 机台屏上不再字面显示 Markdown 记号（2026-10-10，issue #6679）
 
