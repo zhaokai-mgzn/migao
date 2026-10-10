@@ -175,6 +175,38 @@ for (const vp of [{ w: 1440, h: 980, pages: ['/orders'] }, { w: 1280, h: 800, pa
   await c.close()
 }
 
+// ── V22 冻结列在**选中态**必须不透明（#6729）
+//    ⚠️ 触发面 = **选中态**（#6717 给冻结格写的是 `bg-inherit`，继承 `<tr>` 的半透明选中底色
+//    `bg-primary-50/40` ⇒ alpha 0.4 ⇒ 横滚时下层列穿透叠印）。**hover 不触发**（实测），
+//    所以判据必须打在选中态上；打在 hover 或未选中态上是**永远绿的空断言**。
+{
+  const c = await browser.newContext({ viewport: { width: 1440, height: 980 } })
+  const pg = await c.newPage()
+  await login(pg)
+  await pg.goto(BASE + '/orders', { waitUntil: 'domcontentloaded' })
+  await pg.waitForTimeout(4500)
+  const readAlpha = () => pg.evaluate(() => {
+    const row = document.querySelector('tbody tr')
+    if (!row) return { err: '无数据行' }
+    const cells = Array.from(row.querySelectorAll('td'))
+    const frozen = cells[cells.length - 1]
+    const alphaOf = (el) => {
+      const m = (getComputedStyle(el).backgroundColor || '').match(/rgba?\(([^)]+)\)/)
+      if (!m) return null
+      const parts = m[1].split(',').map((x) => parseFloat(x.trim()))
+      return parts.length === 4 ? parts[3] : 1
+    }
+    return { checked: !!row.querySelector('input[type=checkbox]:checked'), frozenAlpha: alphaOf(frozen), frozenText: (frozen.innerText || '').replace(/\s+/g, ' ').slice(0, 20) }
+  })
+  const before = await readAlpha()
+  const box = pg.locator('tbody tr').first().locator('input[type=checkbox]').first()
+  if (await box.count()) { await box.check({ timeout: 6000 }).catch(() => {}); await pg.waitForTimeout(1500) }
+  const after = await readAlpha()
+  rep('冻结列选中态不透明', after.frozenAlpha === 1, `未选中 alpha=${before.frozenAlpha} ⇒ 勾选后 checked=${after.checked} alpha=${after.frozenAlpha}（须为 1；0.4 即半透明穿透）`)
+  await pg.screenshot({ path: OUT + 'S30-frozen-col-selected.png' })
+  await c.close()
+}
+
 // ⚠️ 文件名必须**按阶段区分**（PHASE 环境变量）：写死一个名字时，下一次运行会**静默覆盖**上一次的读数
 //    ——本次实测把已提交的「修前红基线」覆盖掉了（还得从 git 历史 git show <commit>:<path> 捞回来）。
 //    用法：PHASE=red-baseline node run-findings-6713-6717.mjs / PHASE=after-6715 ...
