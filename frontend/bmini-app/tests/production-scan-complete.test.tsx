@@ -1,4 +1,4 @@
-// case_ids: BM-006, PG-058
+// case_ids: BM-006, PG-058, PG-018
 /**
  * 工人端「扫码 ⇒ 一屏 ⇒ 开工/领活」主闭环（切片 ②，issue #4698；设计 `set-code-and-scan-loop.md` §4）。
  *
@@ -74,7 +74,9 @@ jest.mock('../src/store/authStore', () => ({
 }))
 
 import Taro from '@tarojs/taro'
-import ProductionPage from '../src/pages/production/index/index'
+import ProductionPage, { SCAN_OPERATION_PICKER_TITLE } from '../src/pages/production/index/index'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 import {
   completeByScan,
   getOrderOperations,
@@ -318,6 +320,40 @@ describe('ProductionPage（扫码 ⇒ 一屏 ⇒ 开工/领活，切片 ②；is
 
     await waitFor(() => expect(mockScan).toHaveBeenCalledWith(TOKEN, 'op-alt'))
     expect(await screen.findByText('打卷 · 布帘 · 应做 11米')).toBeTruthy()
+  })
+
+  it('🔴 工序选择器：候选含系统推断那道并显式选中；点已选中那道 ⇒ 一个请求都不发（issue #6638）', async () => {
+    mockScan.mockResolvedValue({
+      success: true,
+      data: makeScan({
+        alternatives: [{ operation_id: 'op-alt', logical_name: '打卷', position: '布帘', qty: 11, unit: '米' }],
+      }),
+    })
+
+    render(<ProductionPage />)
+    fireEvent.click(screen.getByText('扫一扫'))
+
+    // 标题 = 正常口径（改前的「不是这道？改」把正常动作写成例外，已撤）
+    expect(await screen.findByText('选工序（点哪道就领哪道）')).toBeTruthy()
+    expect(screen.queryByText('不是这道？改')).toBeNull()
+    // 候选 = 当前那道（定型，带选中类）+ 备选（打卷，不带）
+    const current = screen.getByText('定型 · 布帘 · 11米')
+    expect(current.className).toContain('production-scan-screen__alt--on')
+    const other = screen.getByText('打卷 · 布帘 · 11米')
+    expect(other.className).not.toContain('--on')
+    // 点已选中那道 ⇒ 不发请求（它不是"再查一次"的开关 —— 服务端那一趟是白跑的）
+    const before = mockScan.mock.calls.length
+    fireEvent.click(current)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mockScan.mock.calls.length).toBe(before)
+  })
+
+  it('🔴 与 `/w/`（worker-h5）**文案同源**：工序选择器标题逐字相同（改一侧不改另一侧 ⇒ 红，issue #6638）', () => {
+    const workerH5Render = readFileSync(
+      join(__dirname, '..', '..', 'worker-h5', 'src', 'render.mjs'),
+      'utf8',
+    )
+    expect(workerH5Render).toContain(SCAN_OPERATION_PICKER_TITLE)
   })
 
   // ============================================================ 按套展示工序细节（issue #4967 交付物 2）

@@ -390,6 +390,13 @@
     font-size: 24px;
     color: #1a73e8;
   }
+
+  // 当前选中那道（issue #6638）：与 `/w/` 同一条口径 —— 工人要一眼看出系统给他推的是哪道
+  &__alt--on {
+    border: 2px solid #1a73e8;
+    background: #e8f1fd;
+    font-weight: 600;
+  }
 }
 
 /* 本套工序明细（issue #4967 交付物 2）：工人一眼看到「这一套还有哪几道没做」。
