@@ -35,3 +35,4 @@
 {"id":"1791592192.24244.22827","ts":"2026-10-10T00:29:53Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6635-worker-report-picker","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791592208.24560.9817","ts":"2026-10-10T00:30:08Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6635-worker-report-picker","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1791592237.24909.17705","ts":"2026-10-10T00:30:37Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6635-worker-report-picker","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1791592849.59006.8432","ts":"2026-10-10T00:40:49Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6635-worker-report-picker","why":"--allow-package-heavy（命令行显式）"}
