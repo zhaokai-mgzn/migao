@@ -193,6 +193,15 @@ EXEMPT_FACES: tuple[tuple[str, str], ...] = (
         "必须**同时**把它加回本文件的 `MANAGED_FACES` 与 S1 的 `FACES`。",
     ),
     (
+        "frontend/admin-web/src/lib/wash-label-content.ts",
+        "**水洗唛纸面内容**的单一真值（issue #6656）：它命中标记只是因为入参面要取**部位**的展示字段"
+        "（件名 / 部位类型 / 宽高 / 码）与**套序**（`groupBySet` 读 `set_no`）—— 同 `TaskCardPrint.tsx` 的形态。"
+        "纸面**不印工序**（用户 2026-09-21 字段裁定把「工序摘要」列为退场项，见 issue #4964/#4967）；"
+        "本文件里 0 处工序名读面（`operations` / `operation_name` / `operation`），也 0 处直接渲染形态。"
+        "**过期即红**：一旦它开始渲染工序名（`operationDisplayName` / 裸快照名 / 「工序」字样）⇒ "
+        "本文件的 `_direct_render_hits` 命中，必须销账并转 `MANAGED_FACES`。",
+    ),
+    (
         "frontend/admin-web/src/components/production-config/features.ts",
         "**数据/取数模块**（issue #6585 从 `ProcessConfigBoard` 拆出的 `use*Feature` 钩子集合）："
         "它对 `CatalogOperation` 的引用**全是类型与取值**（建索引 `Map<string, CatalogOperation>`、"

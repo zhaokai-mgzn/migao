@@ -26,7 +26,7 @@ import TaskCardPrint from '@/components/production/TaskCardPrint'
 // 免驱动直连打印（issue #6439）：**不做打印机定制功能** —— 通道层与机型无关，本页只接一条
 // 「直连打印机」入口；部位 ⇒ 洗水码数据的映射走单一处 `toWashLabelInputs`（页面不另写一份）
 import DirectLabelPrint from '@/components/production/DirectLabelPrint'
-import { toWashLabelInputs } from '@/lib/label-print/wash-label'
+import { toWashLabelInputs } from '@/lib/wash-label-content'
 import type {
   PieceworkSummary,
   ProcessingOrder,
@@ -249,8 +249,22 @@ export default function ProcessingOrderProductionPage() {
     requestPrint('labels')
   }
 
-  /** 直连通道要的洗水码数据（部位 ⇒ 数据走**单一处**映射；issue #6439） */
-  const washLabels = useMemo(() => toWashLabelInputs(operations?.positions), [operations])
+  /** 直连通道要的水洗唛数据（部位 + 快照行 ⇒ 纸面行清单，走**单一处**映射；issue #6439 → #6656）
+   *
+   * 🔴 与系统打印（`TaskCardPrint`）传的是**同一份**数据源：改动前这里只传了 4 个键
+   * （码 / 短码 / 件名 / 部位）⇒ 直连打出来的纸面比预览少十行（issue #6656 的根因）。 */
+  const washLabels = useMemo(
+    () =>
+      toWashLabelInputs({
+        processingOrderNo: po?.processingOrderNo,
+        orderNo: po?.orderNo,
+        customerName: po?.customerName,
+        expectedDeliveryDate: po?.expectedDeliveryDate,
+        positions: operations?.positions,
+        items: po?.items,
+      }),
+    [operations, po],
+  )
 
   /** 点「打印任务卡」：先看纸面自检（标签纸型没配好 = 整卷打废） */
   const handlePrint = () => openPreview('labels')

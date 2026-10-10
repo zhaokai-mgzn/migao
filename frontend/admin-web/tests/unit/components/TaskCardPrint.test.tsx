@@ -33,6 +33,7 @@ import type { ComponentProps } from 'react'
 import { describe, expect, it } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import TaskCardPrint from '@/components/production/TaskCardPrint'
+import { washLabelRows } from '@/lib/wash-label-content'
 import { dataTables, collectTableIntegrity } from '@/components/orders/doc-tables'
 import type { ProcessingOrderItem, ProductionPosition } from '@/types'
 
@@ -387,6 +388,51 @@ describe('TaskCardPrint（洗水码 竖版 50mm×60mm 单列，issue #4964 → �
     )
     const bottomRow = screen.getAllByTestId('task-card-qr')[0].parentElement as HTMLElement
     expect(bottomRow.className).toContain('shrink-0')
+  })
+
+  it('🔴 纸面**内容与行序** = 唯一真值模块 `washLabelRows`（issue #6656；直连通道读同一份）', () => {
+    printCard()
+
+    // 正向锚点（避免「查不到元素」被读成「断言通过」的空跑）：整块逐行文本必须与真值模块逐字相等
+    const rendered = Array.from(screen.getByTestId('task-card-label-rows-0').children).map(
+      (el) => el.textContent,
+    )
+    const expected = washLabelRows({
+      position: positions[0],
+      item: items[0],
+      setNo: 1,
+      setCount: 2,
+      customerName: CUSTOMER,
+      orderNo: ORDER_NO,
+      expectedDeliveryDate: DELIVERY,
+    })
+    expect(expected.length).toBeGreaterThan(5)
+    expect(rendered).toEqual(expected.map((row) => row.text))
+    // 行序本身就是纸面契约（照真实工单）：首行客户、次行套序（改序 ⇒ 必红）
+    expect(rendered[0]).toBe(`客户 ${CUSTOMER}`)
+    expect(rendered[1]).toBe('第 1 套 / 共 2 套')
+  })
+
+  it('🔴 缺值不渲染在**两条通道上同一条口径**（无快照行 ⇒ DOM 与真值模块同时少那几行）', () => {
+    printCard({ items: [] })
+
+    const rendered = Array.from(screen.getByTestId('task-card-label-rows-0').children).map(
+      (el) => el.textContent,
+    )
+    const expected = washLabelRows({
+      position: positions[0],
+      item: null,
+      setNo: 1,
+      setCount: 2,
+      customerName: CUSTOMER,
+      orderNo: ORDER_NO,
+      expectedDeliveryDate: DELIVERY,
+    })
+    // 正反对照：缺快照行时**确实**少了行（否则「相等」是空断言）
+    expect(expected.map((row) => row.text)).not.toContain('色号 米白')
+    expect(rendered).toEqual(expected.map((row) => row.text))
+    // 缺值不渲染 = 纸面上不得只剩前缀（`宽高 ` / `用料 ` 这种空壳行）
+    expect(rendered.some((text) => text === '宽高' || text === '用料')).toBe(false)
   })
 
   it('色号已包含在件名里 ⇒ 不重复渲染（信息重复问题不再带进 50×60）', () => {
