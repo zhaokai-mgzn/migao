@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/auth'
+import { isPublicRoute } from '@/lib/auth-redirect'
 
 // 注：公开路由清单只在 lib/auth-redirect.ts 维护（PUBLIC_ROUTES 单一源）。
 // 这里若再抄一份（历史上抄过一份且从未被使用），漏配时不会有任何东西变红 ——
@@ -28,7 +29,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const rawPathname = usePathname()
   const pathname = normalizePath(rawPathname)
   const router = useRouter()
-  const [isChecking, setIsChecking] = useState(true)
+  // 公开路由首屏直接放行（不返回 null）：SSR 与水合前都要有正文（issue #6665）。
+  // 受保护路由仍然从「检查中」开始 —— 那三条跳转（已登录去 dashboard / 首登改密 / 未登录去登录）
+  // 一条不放宽，因为它们由 useEffect 在**每次路由变化**时重新判定。
+  const [isChecking, setIsChecking] = useState(() => !isPublicRoute(pathname))
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const _hasHydrated = useAuthStore((s) => s._hasHydrated)
   const mustChangePassword = useAuthStore((s) => s.user?.mustChangePassword)
