@@ -99,6 +99,12 @@ export default function OrderDetailPage() {
    * **不**退回「未发货」的无标记形态。
    */
   const [shipments, setShipments] = useState<OrderShipmentRead | null>(null)
+  /**
+   * 发货明细读失败（issue #6691）：`shipments === null` 本身**分不出**「还没取到」与「没取到」
+   * ⇒ 单独一个失败标记，屏上给「读不到 + 重试」的出口（改前只有 `console.error`，
+   * 商家在页面上看不出「销售单数量列印的是订单数量而不是实发」是故障）。
+   */
+  const [shipmentsReadError, setShipmentsReadError] = useState(false)
   const [closeModalOpen, setCloseModalOpen] = useState(false)
   const [closeSubmitting, setCloseSubmitting] = useState(false)
 
@@ -135,6 +141,27 @@ export default function OrderDetailPage() {
   // 的 effect —— 在 target 提交进 DOM **之后**才开印（同 tick 调 print = 首次打印空白纸）。
   const { printTarget, previewTarget, requestPrint, openPreview, closePreview } = usePrintDoc()
 
+  /**
+   * 发货明细读面（issue #5651 收口）：销售单数量列要印**实发**（真值 owner = `order_shipment_items`）。
+   * 🔴 取不到 ⇒ `null`（**不是** `{shipments: []}`）：纸面会显式标「发货明细未取到」，
+   * 绝不把读面故障显示成「未发货」（用缺数据冒充业务状态）。
+   *
+   * 抽成独立回调是为了给**重试出口**（issue #6691）：`shipments === null` 时页面说不清
+   * 是「还在取」还是「没取到」，重试按钮要能**只**重发这一条读面。
+   */
+  const loadShipments = useCallback(async () => {
+    if (!orderId) return
+    setShipmentsReadError(false)
+    try {
+      const shipmentsRes = await orderApi.getOrderShipments(orderId)
+      setShipments(shipmentsRes.data?.data ?? null)
+    } catch (e) {
+      // 拦截器已 toast（issue #6691）：此处只标**失败态**并保留 `null`（=「没取到」的语义）
+      console.error('加载发货明细失败:', e)
+      setShipmentsReadError(true)
+    }
+  }, [orderId])
+
   // 加载订单
   const loadOrder = useCallback(async () => {
     if (!orderId) return
@@ -143,23 +170,14 @@ export default function OrderDetailPage() {
       const res = await orderApi.getOrder(orderId)
       const data = res.data?.data
       if (data) setOrder(data)
-      // 发货读面（issue #5651 收口）：销售单数量列要印**实发**（真值 owner = order_shipment_items）。
-      // 🔴 取不到 ⇒ `null`（**不是** `{shipments: []}`）：纸面会显式标「发货明细未取到」，
-      // 绝不把读面故障显示成「未发货」（用缺数据冒充业务状态）。
-      try {
-        const shipmentsRes = await orderApi.getOrderShipments(orderId)
-        setShipments(shipmentsRes.data?.data ?? null)
-      } catch (e) {
-        console.error('加载发货明细失败:', e)
-        setShipments(null)
-      }
+      await loadShipments()
     } catch (e) {
       console.error('加载订单失败:', e)
       toastRequestError(e, '加载订单详情失败')
     } finally {
       setLoading(false)
     }
-  }, [orderId])
+  }, [orderId, loadShipments])
 
   useEffect(() => {
     loadOrder()
@@ -294,6 +312,21 @@ export default function OrderDetailPage() {
 
       {/* 页面标题 */}
       <h1 className="text-xl font-semibold text-neutral-900 mb-5">订单详情</h1>
+
+      {/* 发货明细读失败（issue #6691）：与「还没取到」分开说 —— 这一块读不到时，
+          销售单的数量列印的是**订单数量**（不是实发），必须让商家知道 + 给重试出口。 */}
+      {shipmentsReadError && (
+        <div
+          data-testid="order-shipments-read-error"
+          role="alert"
+          className="mb-4 flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800"
+        >
+          <span>发货明细读取失败 —— 单据数量列会按订单数量打印（不是实发口径），请稍后重试</span>
+          <Button variant="secondary" size="sm" data-testid="order-shipments-retry" onClick={() => void loadShipments()}>
+            重试
+          </Button>
+        </div>
+      )}
 
       {/* 订单状态区域 */}
       <StatusSection

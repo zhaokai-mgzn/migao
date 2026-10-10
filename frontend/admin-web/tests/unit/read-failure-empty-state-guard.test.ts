@@ -73,6 +73,13 @@ describe('读面失败不得伪装成空态（类级元守卫，issue #6663）',
       'src/app/(dashboard)/roles/page.tsx',
       'src/app/(dashboard)/employees/page.tsx',
       'src/app/(dashboard)/settings/page.tsx',
+      // issue #6691：LEDGER 清空后，这 6 条也要**逐页**钉住（它们的实例判据在
+      // tests/unit/pages/read-failure-empty-state-instances.test.tsx，类级面在这里）
+      'src/app/(dashboard)/inbound-orders/page.tsx',
+      'src/app/(dashboard)/inbound-orders/new/page.tsx',
+      'src/app/(dashboard)/orders/[id]/OrderDetail.tsx',
+      'src/app/(dashboard)/orders/new/page.tsx',
+      'src/app/(dashboard)/stock-ledger/page.tsx',
     ]) {
       const hit = sites.filter((s) => s.file === page)
       expect(

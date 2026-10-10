@@ -81,6 +81,13 @@ export default function StockLedgerPage() {
   const [options, setOptions] = useState<ProductOption[]>([])
   const [searching, setSearching] = useState(false)
   const [searchHint, setSearchHint] = useState('')
+  /**
+   * 商品搜索**读失败**（issue #6691，灰区裁定）：`searchHint` 已经**分两句**
+   * （失败 = 「商品搜索失败 —— 请稍后重试」；搜到 0 条 = 「没有匹配的商品 —— 换个关键词试试」）
+   * —— 失败**可见**这一半本来就成立。本标记只补另一半：**重试出口** + `role="alert"`
+   * （失败说给读屏器听，且与「换个关键词」的引导型提示区分开）。
+   */
+  const [searchFailed, setSearchFailed] = useState(false)
 
   const [rows, setRows] = useState<StockLedgerEntry[]>([])
   const [total, setTotal] = useState(0)
@@ -149,14 +156,16 @@ export default function StockLedgerPage() {
     }
     setSearching(true)
     setSearchHint('')
+    setSearchFailed(false)
     try {
       const res = await productApi.getProducts({ keyword: kw, page: 1, size: 20 })
       const items = (res.data?.data?.items ?? []) as ProductOption[]
       setOptions(items)
       if (items.length === 0) setSearchHint('没有匹配的商品 —— 换个关键词试试')
     } catch {
-      setOptions([])
+      // 读失败 ⇒ 说清是**没读到**（与「没有匹配的商品」两句话、两种语义），并置重试出口标记
       setSearchHint('商品搜索失败 —— 请稍后重试')
+      setSearchFailed(true)
     }
     setSearching(false)
   }, [keyword])
@@ -339,7 +348,25 @@ export default function StockLedgerPage() {
             ))}
           </div>
         )}
-        {searchHint && <p className="text-xs text-amber-600">{searchHint}</p>}
+        {searchHint && (
+          <p
+            data-testid="stock-ledger-search-hint"
+            role={searchFailed ? 'alert' : undefined}
+            className="text-xs text-amber-600"
+          >
+            {searchHint}
+            {searchFailed && (
+              <button
+                type="button"
+                aria-label="重试商品搜索"
+                onClick={() => void searchProducts()}
+                className="ml-2 text-primary-600 underline"
+              >
+                重试
+              </button>
+            )}
+          </p>
+        )}
       </div>
 
       {view === 'flow' && error && (
