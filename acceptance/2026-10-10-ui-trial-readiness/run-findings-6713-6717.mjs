@@ -51,7 +51,10 @@ const p1 = await ctx1.newPage()
 await login(p1)
 // ⚠️ `/customers` 是 #6728 用**调用图普查**发现的同类第三例（同一形态同一根因：早有常驻失败面，
 //    唯独共享 `ui/Table` 仍继承默认「暂无数据」）⇒ 一并纳入重放，否则本批的"类普查"成果就没人重放。
-for (const path of ['/chat', '/employees', '/notifications', '/products', '/shipments', '/customers']) {
+// ⚠️ `/orders` 是**运行期类普查**（35 路由失败注入）抓出来的同族第 4 处：它用的是**自定义表**，
+//    不在「共享 ui/Table」的调用图射程内 ⇒ #6728 的调用图普查自然看不到（射程盲区，不是判据写错）。
+//    并入重放：本页读失败时**不得**印「暂无数据」（同屏「共 — 条」已在说"不可知"）。
+for (const path of ['/chat', '/employees', '/notifications', '/products', '/shipments', '/customers', '/orders']) {
   await p1.route('**/api/admin/**', INJ)
   await p1.goto(BASE + path, { waitUntil: 'domcontentloaded' })
   await p1.waitForTimeout(6000)

@@ -43,7 +43,6 @@ rm -rf .next node_modules/.cache .turbo   # ⚠️ 三类一起删：只删 .nex
 ## 场景与断言
 
 | # | 场景 | 断言（判据） |
-|---|---|---|
 | S1 | 登录（不点发送验证码） | 落到非 `/login`；**未调用 `/api/auth/sms/send`** |
 | S2 | 工作台 `/dashboard` | 无 `undefined`/`NaN`/`[object Object]`；无残留「加载中」；无失败横幅误报 |
 | S3 | 商品 `/products` + **浮球几何** | 列表有行；`真被吃 = 0`（判定见下「几何口径」） |
@@ -74,10 +73,19 @@ rm -rf .next node_modules/.cache .turbo   # ⚠️ 三类一起删：只删 .nex
 ## 证据清单（`evidence/`）
 
 | 文件 | 内容 |
-|---|---|
 | `readings.json` / `S1..S6-*.png` | S1–S6 读数与截图 |
 | `S7-count-row-read-failure.json` | S7 计数行 |
-| `S9-outage-census.json` | 21 路由 × 后端整体不可用的类普查（读失败⇄空态） |
+| `S9-outage-census.json` | **35 路由** × 后端整体不可用的**运行期类普查**（修复后重跑：有失败面 25、重定向 6、**只画成 0/空 = 0**；并定性了两处 `¥0.00` 为**真 0**） |
+| `S10-retry-403.json` / `S11-layout-reach.json` | 重试真再发请求 + 403 分流文案 / 布局可达性类普查（14 页 × 两档视口） |
+| `S17-live-reprobe.json` | **线上**复探复核（官网四页 h1=1 与字数 4148/1886/3509/1152、bmini、worker-h5） |
+| `S18-print-doc-verify.md` | #6720 合并后的**源码/判据层**核验（5 文件 / 90 用例）+ 两次自我更正 |
+| `S19-design-pass2.json` `S19-*.png` `S19-note.md` | 导航链接普查（16 条全可达）+ 设计面读图第二轮（`/customers` `/production/remnants`） |
+| `S20-login-*.png` `S20-note.md` | **登录页**设计判定（强通过） |
+| `S21-*.png` `S21-print-doc.json` `S21-note.md` | 打印纸面**真机**验证（#6720 成立）+ 由此抓出的同族残留 **#6731** |
+| `S22-ledger-and-empty-row.md` | 宽表台账 3 条路径核验 + **空态行骗过行数统计**的自我更正 |
+| `S23-sessions-device-and-adjudication.md` | #6721 真机读数 + 「同屏两条失败面」裁决 + 一条被解释掉的假缺陷（含线上产物核验） |
+| `S24-realdata-halfknown.json` | #6731 的**真实数据**核查（20 张真订单未命中 ⇒ 属潜在风险修复）+ 静默假阴性的自我更正 |
+| `S12-with-customers.*` `S12-with-v21.json` | 仪器扩面后的各阶段读数（同类第三例 `/customers` 的**独立红证**、V21 会话页） |
 | `S10-retry-403.json` | 六页重试真再发请求 + 403 分流文案（含一次**自我证伪**：`/finance` 页上两个重试键，点错按钮会假红） |
 | `S11-layout-reach.json` | 布局可达性类普查（14 页 × 两档视口逐列坐标） |
 | `S12-findings-6713-6717.json` | **修前红基线（16 条）** |
@@ -101,7 +109,6 @@ rm -rf .next node_modules/.cache .turbo   # ⚠️ 三类一起删：只删 .nex
 ## 跨面证据索引（其他面不在本运行器内）
 
 | 面 | 载体 |
-|---|---|
 | `bmini` 空数据不再印 `NaN元`（#6685） | 组件级读数 + 修前/修后截图（见 #6685 / #6696） |
 | `worker-h5` + 机台 | **线上复探**：`https://app.migaozn.com/w/` ⇒ 200、标题「工人报工」、登录面人话、**屏上 Markdown 记号 = 0**（#6679 在部署上已生效）、4xx 无；**登录后的内容级未覆盖**（线上无登录态） |
 | 官网四页（`migaozn.com`） | **线上复探**：`/` `/about` `/services` `/contact` ⇒ 均 200、各 **1 个 `<h1>`**、`加载中`=0、**无横向溢出**、可见字数 1152–4148；`robots.txt`（`Allow: /` + 对商家面显式 `Disallow`）与 `sitemap.xml` 均 200 有效。⚠️ 真值 URL 取自站点自身导航 —— 曾把产品页猜成 `/products`（实为商家面，被 `Disallow`）而**误读成"官网产品页变成登录页"** |
