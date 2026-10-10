@@ -121,17 +121,34 @@ export async function getActiveSessions(limit = 5): Promise<ActiveSession[]> {
   }
 }
 
-/** 金额展示：元（后端分 → 元） */
-export function formatYuan(cents: number): string {
-  return (cents / 100).toLocaleString('zh-CN', {
+/**
+ * 「没有这个数」的**唯一**占位（涉钱面，issue #6685）。
+ *
+ * 🔴 与服务端 `200 + 空 data`（`{}` / 缺键）同口径：**不得**把 `undefined` 送进算钱/格式化路径
+ * —— 那会在商家屏上印出 `NaN元`，读起来是「系统坏了」，且**这是钱**。
+ * `--` = 「没有这个数」；真给 `0` ⇒ 印 `0.00`（「没有数」≠「数是 0」，两者不许混成一个样子）。
+ */
+export const DASHBOARD_EMPTY_VALUE = '--'
+
+/** 金额展示：元（后端分 → 元）；空 / 缺值 / 非有限数 ⇒ `--`（绝不出 `NaN` / `Infinity`） */
+export function formatYuan(cents: number | null | undefined): string {
+  const n = Number(cents)
+  if (cents === null || cents === undefined || !Number.isFinite(n)) return DASHBOARD_EMPTY_VALUE
+  return (n / 100).toLocaleString('zh-CN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
 }
 
-/** 百分比展示（后端已算好百分数值，如 12.5 = 12.5%） */
-export function formatPercent(value: number): string {
-  return `${value > 0 ? '+' : ''}${value.toFixed(1)}%`
+/**
+ * 百分比展示（后端已算好百分数值，如 12.5 = 12.5%）。
+ *
+ * 空 / 缺值 / 非有限数 ⇒ `--`（同 {@link formatYuan} 口径：不把坏值当读数印出来）。
+ */
+export function formatPercent(value: number | null | undefined): string {
+  const n = Number(value)
+  if (value === null || value === undefined || !Number.isFinite(n)) return DASHBOARD_EMPTY_VALUE
+  return `${n > 0 ? '+' : ''}${n.toFixed(1)}%`
 }
 
 // ══════════════════════════════════════════════════════════════════

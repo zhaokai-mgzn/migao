@@ -321,7 +321,13 @@ export default function ProductTable({
           sortField={sortField}
           sortOrder={sortOrder}
           onSort={(field) => onSortChange(field as ProductSortField)}
-          minWidth={1200}
+          // 🔴 issue #6687：最小宽度由 1200 收窄到 1120 —— 1200 是**硬撑出来的**宽度：
+          // 在 1440×980 上容器只有 ~1100px，多出来的 100px 全部落在横向滚动区里，
+          // 而「操作」列正好在表尾 ⇒ **滚到右端时那一列被右下角黄金策浮球（56×56，fixed z-50）压住**
+          // （命中测试实测：点「推荐」被浮球吃掉）。layout 的 `<main>` 同时预留 `pr-20` 安全区；
+          // 两者合起来把「操作」列的可点区域推到浮球矩形之外（几何判据见
+          // frontend/admin-web/tests/unit/floating-assistant-safe-zone.test.ts）。
+          minWidth={1120}
         />
         {/* 浮动定位的全选 checkbox（落在第一列表头里） */}
         {products.length > 0 && (
