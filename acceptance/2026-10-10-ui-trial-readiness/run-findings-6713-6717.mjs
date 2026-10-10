@@ -106,6 +106,31 @@ rep('冷启动不印共 0 单', d.zero === 0, `屏上「共 0 单」=${d.zero} �
 rep('冷启动横幅不与屏上事实矛盾', !(d.banner && (d.empty > 0 || d.zero > 0)), `横幅承诺"上次成功值"=${d.banner} 而屏上「暂无…」=${d.empty} 处、「共 0 单」=${d.zero} 处`)
 rep('冷启动不印 ¥0', d.yuan0 === 0, `¥0=${d.yuan0} 次；失败面=${d.failBanner}`)
 
+// ── V21 会话监控页读失败（#6721）
+{
+  const c = await browser.newContext({ viewport: { width: 1440, height: 980 } })
+  const pg = await c.newPage()
+  // ⚠️ 该读面**直连 ai-agent**（`lib/api.ts` 的 `NEXT_PUBLIC_AI_API_BASE_URL || http://localhost:8001`），
+  //    不走同源 `/api/admin/**` ⇒ 注入必须打这个 URL；打错面 ⇒ 判据**永远绿**（空断言，本批已踩过同类）。
+  await pg.route('**/api/chat/sessions*', INJ)
+  await login(pg)
+  await pg.goto(BASE + '/agent-workspace/sessions', { waitUntil: 'domcontentloaded' })
+  await pg.waitForTimeout(6500)
+  const s = await pg.evaluate(() => {
+    const t = document.body.innerText || ''
+    // ⚠️ 数字与标签之间**可能有空白/换行**（实测屏上是 `0\n活跃`）⇒ 正则必须容忍，否则"0 活跃"读成 0 处（假绿）
+    return {
+      zeroCells: (t.match(/0\s*活跃|0\s*已结束|0\s*共/g) || []).length,
+      dashCells: (t.match(/—\s*活跃|—\s*已结束|—\s*共/g) || []).length,
+      anchors: Array.from(document.querySelectorAll('[data-testid$="-load-failed"]')).map((e) => e.getAttribute('data-testid')),
+      retries: document.querySelectorAll('[data-testid$="-load-failed-retry"]').length,
+    }
+  })
+  rep('会话页读失败不印 0', s.zeroCells === 0 && s.dashCells >= 3, `零值格=${s.zeroCells} 破折号格=${s.dashCells}`)
+  rep('会话页有常驻失败面与重试', s.anchors.length >= 1 && s.retries >= 1, `锚点=${s.anchors.join(',') || '无'} 重试=${s.retries}`)
+  await c.close()
+}
+
 // ── V20 宽表可达性
 for (const vp of [{ w: 1440, h: 980, pages: ['/orders'] }, { w: 1280, h: 800, pages: ['/orders', '/inbound-orders', '/processing-orders', '/production'] }]) {
   const c = await browser.newContext({ viewport: { width: vp.w, height: vp.h } })
