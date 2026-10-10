@@ -89,7 +89,8 @@ export function buildInsightSentence(p: InsightParams): string {
   }
 
   // 真 0 是**事实**（今天确实没卖出去）—— 与「读不到」是两件事，不走上一条分支
-  if (todayOrders <= 0 && todaySales <= 0) {
+  // （`todayOrders ?? 0`：上面那条 `=== null` 已先返回 ⇒ 走到这里两侧都**读到了**，这句才是事实）
+  if ((todayOrders ?? 0) <= 0 && (todaySales ?? 0) <= 0) {
     return '今日暂无新订单，销售额 ¥0'
   }
 

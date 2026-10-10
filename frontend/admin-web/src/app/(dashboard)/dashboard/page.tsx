@@ -311,6 +311,14 @@ export default function DashboardPage() {
   // 智能每日经营简报：企业开关状态（默认关，关闭不渲染简报卡，红线 3）
   const [briefingEnabled, setBriefingEnabled] = useState(false)
   const [orderStatus, setOrderStatus] = useState<OrderStatusDistribution[]>([])
+  /**
+   * **有过历史成功值**的块（issue #6715）：`blockErrors` 只说明「这一块**这次**读失败了」，
+   * 说明不了「屏上是否还留着上次取到的值」—— 而失败横幅那句承诺（「下方显示的仍是上次成功
+   * 取到的值」）**只在真有过历史值时才成立**。冷启动失败（全程没有一次成功）时它是一句**假话**
+   * （同屏事实是四卡占位符 ＋ 五处「暂无…」）⇒ 把「有没有历史值」立成**状态**，
+   * 横幅文案与各处「暂无…」都从它派生（这就是「承诺要有判据守着」）。
+   */
+  const [historicalStats, setHistoricalStats] = useState<Record<string, true>>({})
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -332,6 +340,7 @@ export default function DashboardPage() {
       if (statsRes.status === 'fulfilled') {
         const s = statsRes.value.data.data
         setStats(s)
+        setHistoricalStats((prev) => ({ ...prev, stats: true }))
         setLowStockCount(s.lowStockItems ?? 0)
         setPendingShipment(s.pendingShipOrders ?? 0)
         setPendingPayment(s.pendingPaymentOrders ?? 0)
@@ -350,6 +359,7 @@ export default function DashboardPage() {
       }
       if (trendRes.status === 'fulfilled') {
         setTrendData(Array.isArray(trendRes.value.data.data) ? trendRes.value.data.data : [])
+        setHistoricalStats((prev) => ({ ...prev, trend: true }))
         setBlockErrors((prev) => {
           if (!('trend' in prev)) return prev
           const next = { ...prev }
@@ -363,6 +373,7 @@ export default function DashboardPage() {
       }
       if (ordersRes.status === 'fulfilled') {
         setRecentOrders(ordersRes.value.data.data || [])
+        setHistoricalStats((prev) => ({ ...prev, orders: true }))
         setBlockErrors((prev) => {
           if (!('orders' in prev)) return prev
           const next = { ...prev }
@@ -376,6 +387,7 @@ export default function DashboardPage() {
       }
       if (rkRes.status === 'fulfilled') {
         setRanking((rkRes.value.data as any)?.data || [])
+        setHistoricalStats((prev) => ({ ...prev, ranking: true }))
         setBlockErrors((prev) => {
           if (!('ranking' in prev)) return prev
           const next = { ...prev }
@@ -389,6 +401,7 @@ export default function DashboardPage() {
       }
       if (osRes.status === 'fulfilled') {
         setOrderStatus(Array.isArray(osRes.value.data.data) ? osRes.value.data.data : [])
+        setHistoricalStats((prev) => ({ ...prev, orderStatus: true }))
         setBlockErrors((prev) => {
           if (!('orderStatus' in prev)) return prev
           const next = { ...prev }
@@ -444,6 +457,10 @@ export default function DashboardPage() {
         delete next[key]
         return next
       })
+      // issue #6715：**重试也是一次「真取到」** ⇒ 同样要记进 `historicalStats`，
+      // 否则 `hasBlockValue(key)` 恒假 ⇒「共 N 单 / 暂无…」这两类断言位在重试成功后**再也不出现**
+      // （实测：重试成功后横幅消失、数据也回来了，而计数位仍不渲染 —— 那是**症状漂移**，不是修好）。
+      setHistoricalStats((prev) => ({ ...prev, [key]: true }))
       // issue #6701：同 fetchData —— 只在真取到时刷新（这里 `key` 这块这次成功了）
       setUpdateTime(updateTimeOf(true))
     } catch (error) {
@@ -497,6 +514,19 @@ export default function DashboardPage() {
   const errorKeyOfLabel = (label: string) =>
     Object.keys(BLOCK_LABELS).find((k) => BLOCK_LABELS[k] === label) ?? label
 
+  /**
+   * **这一块有没有过一次成功读**（issue #6715）—— 全页**唯一**的在场门。
+   *
+   * 🔴 为什么判据是「**从没有过**成功读」而不是「这次失败了」：
+   * 失败横幅在有历史值时承诺「下方显示的仍是上次成功取到的值（不是 0，也不是空态结论）」
+   * —— 若一失败就把断言位收起来，那句承诺本身又变成假的（屏上没有「上次成功取到的值」）。
+   * 所以口径是**只治冷启动形态**（从没有过一次成功 ⇒ 屏上任何「0 / 暂无」式结论都不可信），
+   * 有过成功值的块**保持原样**（不清零 / 不藏数 —— #5792 的既有口径不放宽）。
+   */
+  const hasBlockValue = (key: string) => key in historicalStats
+  /** 这一块**有过**历史成功值（横幅那句「仍是上次成功取到的值」只在它为真时才成立） */
+  const hasHistoricalValue = Object.keys(historicalStats).length > 0
+
   return (
     <div className="p-5 sm:p-6">
       {/* 顶部 */}
@@ -514,8 +544,13 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      {/* 🔴 失败态显式告警（issue #5792 ④）：与空态**可区分** —— 空态说「暂无数据」，
-          这里说「加载失败 + 是哪几块 + 上次成功值仍在」。不清零是关键：把故障画成 0 = 误导决策。 */}
+      {/* 🔴 失败态显式告警（issue #5792 ④ + #6715）：与空态**可区分** —— 空态说「暂无…」，
+          这里说「加载失败 + 是哪几块 + 上次成功值还在不在」。不清零是关键：把故障画成 0 = 误导决策。
+          issue #6715（独立盲复核）：**这句承诺本身要有判据守着** —— 改前它无条件写
+          「下方显示的仍是上次成功取到的值（不是 0，也不是空态结论）」，而冷启动失败
+          （从没有过一次成功）时同屏事实是四卡占位符 ＋ 五处「暂无…」＋「共 0 单」
+          ⇒ 两种被否认的误读**同时都在屏上**。现在按**有没有历史成功值**分流：
+          无历史值 ⇒ 只说「没有取到数据」，不声称「仍是上次成功取到的值」。 */}
       {failedBlocks.length > 0 && (
         <div
           data-testid="dashboard-load-failed"
@@ -524,7 +559,11 @@ export default function DashboardPage() {
         >
           <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
           <span className="font-medium">数据加载失败：{failedBlocks.join('、')}</span>
-          <span className="text-amber-700">下方显示的仍是上次成功取到的值（不是 0，也不是「暂无数据」）</span>
+          {hasHistoricalValue ? (
+            <span className="text-amber-700">下方显示的仍是上次成功取到的值（不是 0，也不是空态结论）</span>
+          ) : (
+            <span data-testid="dashboard-no-data-yet" className="text-amber-700">没有取到数据 —— 本次一块都没读到，下方不显示任何读数</span>
+          )}
           <button
             type="button"
             data-testid="dashboard-retry-block"
@@ -604,8 +643,7 @@ export default function DashboardPage() {
                 title="客单价"
                 value={metricText(avgOrderValue, fmtCurrency)}
                 valueTestId="stats-card-avg-order-value"
-                hint={statsMissing ? '经营数据读不到' : avgOrderValue === 0 ? '暂无订单' : '今日每单平均消费'}
-                icon={<TrendingUp className="w-4 h-4 text-accent-600" />}
+                hint={statsMissing ? '经营数据读不到' : avgOrderValue === 0 ? DASHBOARD_EMPTY_VALUE : '今日每单平均消费'}                icon={<TrendingUp className="w-4 h-4 text-accent-600" />}
               />
               <BizStatCard
                 metric="month"
@@ -676,6 +714,12 @@ export default function DashboardPage() {
           <div className="h-[240px]">
             {loading ? (
               <ChartSkeleton bars={7} />
+            ) : !hasBlockValue('trend') ? (
+              /* issue #6715：**读不到**不等于「没有订单」—— 读失败时不许印「暂无订单数据」
+                 （否则与失败横幅那句承诺打架）；只有**读成功且真为空**才走空态。 */
+              <div data-testid="trend-read-failed" className="flex h-full items-center justify-center text-sm text-neutral-400">
+                订单趋势没读到
+              </div>
             ) : trendData.length > 0 ? (
               <TrendChart
                 data={trendData}
@@ -712,6 +756,11 @@ export default function DashboardPage() {
           <div className="h-[240px]">
             {loading ? (
               <ChartSkeleton bars={7} heights={[45, 32, 58, 25, 52, 38, 48]} />
+            ) : !hasBlockValue('trend') ? (
+              /* issue #6715：同订单趋势 —— 读不到 ⇒ 不印「暂无销售额数据」 */
+              <div data-testid="sales-trend-read-failed" className="flex h-full items-center justify-center text-sm text-neutral-400">
+                销售额趋势没读到
+              </div>
             ) : trendData.length > 0 ? (
               <TrendChart
                 data={trendData}
@@ -740,7 +789,9 @@ export default function DashboardPage() {
 
       <div className="mb-6">
 
-        <OrderStatusChart data={orderStatus} loading={loading} />
+        {/* issue #6715：`readFailed` 让计数位与失败面**同源** —— 读不到 ⇒ 不渲染计数断言
+            （N1 改前印「共 0 单」，而健康基线是「共 308 单」） */}
+        <OrderStatusChart data={orderStatus} loading={loading} readFailed={!hasBlockValue('orderStatus')} />
 
       </div>
 
@@ -751,6 +802,7 @@ export default function DashboardPage() {
         <RecentOrders
           orders={recentOrders}
           loading={loading}
+          readFailed={!hasBlockValue('orders')}
           emptyText="暂无近期订单"
           emptyHint="新订单将在此展示"
         />
@@ -763,6 +815,11 @@ export default function DashboardPage() {
           </div>
           {loading ? (
             <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-9 animate-pulse rounded bg-neutral-100" />)}</div>
+          ) : !hasBlockValue('ranking') ? (
+            /* issue #6715：读失败 ⇒ 不印「暂无排行数据」（那是把「读不到」说成「没有销量」） */
+            <div data-testid="ranking-read-failed" className="flex flex-col items-center justify-center py-10 text-sm text-neutral-400">
+              商品销量排行没读到
+            </div>
           ) : ranking.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10">
               <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-amber-50 to-orange-50">
