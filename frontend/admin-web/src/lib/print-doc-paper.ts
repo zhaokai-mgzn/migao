@@ -174,8 +174,14 @@ export function assertPaperKeepsMissingDistinct(
  *
  * 承载体：`frontend/admin-web/tests/unit/lib/print-doc-paper.test.ts`（**判别力自证**：把实现换回
  * 旧的「两者都缺才判不可知」⇒ 当场红）+ 各单据测试（`QuotationDoc.test.tsx` 用它钉住真渲染值）。
- * 静态那一半（列表形聚合 `reduce(… + (x || 0), 0)`）在同一把尺子的形态表里
- * （`frontend/admin-web/scripts/print-doc-zero-fallback-scan.mjs` 的「聚合摊零补位」）。
+ * 静态那一半（**列表形聚合**：把「某一项不可知」摊成 0 的那种求和）在同一把尺子的形态表里
+ * （`frontend/admin-web/scripts/print-doc-zero-fallback-scan.mjs` 的「聚合摊零补位」——
+ * 形态**字面写法只写在那一处**，本文件只描述语义）。
+ *
+ * ⚠️ 本文件**不**出现那个聚合写法的字面源码（注释里也不写）：`src/**` 另有一条既有守卫
+ * （`frontend/admin-web/tests/unit/order-fee-composition-guard.test.ts`，issue #5843）按**原文**
+ * 扫「累加器 + 加工费字段名」同现的形态，它**不看注释** ⇒ 在这里写例子会被误判成「又一套加工费求和」
+ * （实测踩过：注释 + 下面的 `PaperAddendPair` 字段名落进 300 字窗口 ⇒ 该守卫当场红）。
  */
 export interface PaperAddendPair {
   subtotal?: number
