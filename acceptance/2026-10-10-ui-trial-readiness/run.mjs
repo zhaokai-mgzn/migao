@@ -12,10 +12,12 @@
  */
 import { createRequire } from 'node:module'
 import { mkdirSync, writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 const require = createRequire('/Users/guangzhen.zk/ai native/migao/tests/package.json')
 const { chromium } = require('@playwright/test')
 const BASE = process.env.ADMIN_WEB_BASE || 'http://localhost:3001'
-const OUT = new URL('./evidence', import.meta.url).pathname
+// ⚠️ 必须用 fileURLToPath：`URL.pathname` 会把路径里的空格转义成 %20（本机路径含「ai native」）
+const OUT = fileURLToPath(new URL('./evidence/', import.meta.url))
 mkdirSync(OUT, { recursive: true })
 const R = { when: new Date().toISOString(), base: BASE, sections: {} }
 

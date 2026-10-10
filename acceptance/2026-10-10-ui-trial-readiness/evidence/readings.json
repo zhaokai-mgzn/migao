@@ -1,0 +1,150 @@
+{
+  "when": "2026-10-10T16:29:38.073Z",
+  "base": "http://localhost:3001",
+  "sections": {
+    "S1_login": {
+      "landedOn": "/dashboard",
+      "smsSendCalled": false
+    },
+    "S2_dashboard": {
+      "badValues": [],
+      "moneySamples": [
+        "¥0",
+        "¥0",
+        "¥0",
+        "¥12.01",
+        "¥0",
+        "¥5"
+      ],
+      "failBanner": false,
+      "loadingLeft": 0
+    },
+    "S3_products_fab": {
+      "rows": 10,
+      "fab": {
+        "l": 1360,
+        "t": 900
+      },
+      "stolen": 0,
+      "details": []
+    },
+    "S4_remnants_paging": {
+      "page1": {
+        "rows": 100,
+        "first": "remnant-row-936",
+        "last": "remnant-row-837",
+        "pager": true,
+        "pagerText": "共 332 条记录(第 1-100 条)每页102050100条1234",
+        "totalLine": "共 332 块"
+      },
+      "page2": {
+        "rows": 100,
+        "first": "remnant-row-836",
+        "last": "remnant-row-737",
+        "pager": true,
+        "pagerText": "共 332 条记录(第 101-200 条)每页102050100条1234",
+        "totalLine": "共 332 块"
+      },
+      "clickedPage2": true,
+      "page2Requested": true,
+      "rowsChanged": true
+    },
+    "S5_read_failure": {
+      "failAnchors": [
+        "remnant-ledger-load-failed",
+        "remnant-ledger-retry"
+      ],
+      "actionable": [
+        "余料台账暂时读不到（读数服务暂时不可用）—— 请稍后重试",
+        "重试"
+      ],
+      "rows": 0,
+      "fakeZero": [],
+      "earlyToast": [
+        "余料台账暂时读不到（读数服务暂时不可用）—— 请稍后重试重试",
+        "服务器内部错误",
+        "服务器内部错误"
+      ]
+    },
+    "S6_hygiene": [
+      {
+        "path": "/products",
+        "uuid": 0,
+        "objectId": 0,
+        "snake": [],
+        "bad": [],
+        "loading": 0
+      },
+      {
+        "path": "/orders",
+        "uuid": 0,
+        "objectId": 0,
+        "snake": [],
+        "bad": [],
+        "loading": 0
+      },
+      {
+        "path": "/inbound-orders",
+        "uuid": 0,
+        "objectId": 0,
+        "snake": [],
+        "bad": [],
+        "loading": 0
+      },
+      {
+        "path": "/customers",
+        "uuid": 0,
+        "objectId": 0,
+        "snake": [],
+        "bad": [],
+        "loading": 0
+      },
+      {
+        "path": "/finance",
+        "uuid": 0,
+        "objectId": 0,
+        "snake": [],
+        "bad": [],
+        "loading": 0
+      },
+      {
+        "path": "/production/remnants",
+        "uuid": 0,
+        "objectId": 0,
+        "snake": [],
+        "bad": [],
+        "loading": 0
+      },
+      {
+        "path": "/stock-ledger",
+        "uuid": 0,
+        "objectId": 0,
+        "snake": [],
+        "bad": [],
+        "loading": 0
+      },
+      {
+        "path": "/notifications",
+        "uuid": 0,
+        "objectId": 0,
+        "snake": [],
+        "bad": [],
+        "loading": 0
+      }
+    ]
+  },
+  "apiSeenSample": [
+    "200 /api/auth/sms/login",
+    "200 /api/auth/me",
+    "200 /api/admin/dashboard/recent-orders?limit=5",
+    "200 /api/admin/dashboard/order-trend?days=7",
+    "200 /api/admin/briefing/config",
+    "200 /api/admin/dashboard/product-ranking?period=day&limit=10",
+    "200 /api/admin/notifications/unread-count",
+    "200 /api/admin/dashboard/order-status",
+    "200 /api/admin/dashboard/stats",
+    "200 /api/auth/refresh",
+    "200 /api/admin/products?page=1&size=10&sortBy=createdAt&sortOrder=desc",
+    "200 /api/admin/production/remnants?page=1&size=100"
+  ]
+}
