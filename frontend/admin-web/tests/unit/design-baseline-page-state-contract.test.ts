@@ -51,8 +51,8 @@ interface Ledger {
 }
 const ledger = JSON.parse(readFileSync(LEDGER_PATH, 'utf-8')) as Ledger
 
-/** 台账下界（现取 = 3 条；只许缩短 —— 修好一个页面就删一条） */
-const FROZEN_ENTRY_MAX = 3
+/** 台账上界（现取 = 1 条；只许缩短 —— 修好一个页面就删一条；issue #6703 把 finance / customers 两条删掉后由 3 降到 1） */
+const FROZEN_ENTRY_MAX = 1
 
 /**
  * 空态**展示字面量**（判别力来自「它同时承担『真的没有』与『没读到』」）。

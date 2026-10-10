@@ -1,3 +1,5 @@
+// case_ids: UI-057, UI-058
+// 本包（issue #6703）只复用既有用例号，不新开用例（改 .github/cases/** 归别的包）。
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'

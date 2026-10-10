@@ -20,6 +20,7 @@ import {
 } from '@/types'
 import { cn } from '@/lib/utils'
 import DateTimeCell from '@/components/common/DateTimeCell'
+import ListLoadError from '@/components/common/ListLoadError'
 import { afterSalesStatusChipFor, chipToneClasses } from '@/lib/status-chip'
 
 // 状态 Tab 配置
@@ -47,6 +48,8 @@ export default function AfterSalesPage() {
   const [tickets, setTickets] = useState<AfterSalesTicket[]>([])
   const [loading, setLoading] = useState(false)
   const [total, setTotal] = useState(0)
+  /** 读面失败标记（issue #6703）：读失败时计数行不得照旧印 0（会被读成「没有工单」） */
+  const [loadError, setLoadError] = useState(false)
   const [current, setCurrent] = useState(1)
   const [pageSize, setPageSize] = useState(20)
 
@@ -94,7 +97,9 @@ export default function AfterSalesPage() {
       const pageData = res.data?.data
       setTickets(pageData?.items || [])
       setTotal(pageData?.total || 0)
+      setLoadError(false)
     } catch (error) {
+      setLoadError(true)
       console.error('加载售后工单失败:', error)
       toast.error('加载售后工单失败')
     } finally {
@@ -295,6 +300,17 @@ export default function AfterSalesPage() {
 
       {/* 数据表格 */}
       <div className="bg-white rounded-b-lg border border-t-0 border-neutral-200">
+        {/* 失败态 ≠ 空态（issue #6703）：说清「不是没有工单，是没读到」+ 真重发出口 */}
+        {loadError && (
+          <div className="p-4 pb-0">
+            <ListLoadError
+              testId="after-sales-load-error"
+              message="售后工单加载失败 —— 没读到数据，下面的条数不可信。请检查网络后重试。"
+              onRetry={() => void loadTickets()}
+              retrying={loading}
+            />
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -323,8 +339,15 @@ export default function AfterSalesPage() {
               ) : tickets.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-4 py-12 text-center text-neutral-400">
-                    <FileText className="w-8 h-8 mx-auto mb-2 text-neutral-300" />
-                    暂无售后工单
+                    {loadError ? (
+                      // 失败态**不冒充**空态（issue #6703）：读不到时不说「暂无工单」
+                      <span className="text-neutral-500">工单没读到 —— 见上方失败提示</span>
+                    ) : (
+                      <>
+                        <FileText className="w-8 h-8 mx-auto mb-2 text-neutral-300" />
+                        暂无售后工单
+                      </>
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -392,6 +415,7 @@ export default function AfterSalesPage() {
           current={current}
           pageSize={pageSize}
           total={total}
+          totalReliable={!loadError}
           onChange={setCurrent}
           onPageSizeChange={(size) => { setPageSize(size); setCurrent(1) }}
         />
