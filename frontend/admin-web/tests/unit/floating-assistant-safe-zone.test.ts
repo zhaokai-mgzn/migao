@@ -77,6 +77,39 @@ function reservedRightPx(className: string): number {
   return nums.length ? Math.max(...nums.map(spacingPx)) : 0
 }
 
+/**
+ * 右侧安全区在**每个断点**下的最小值（px）—— 这才是真判据。
+ *
+ * 🔴 为什么不能用「最大 pr」：Tailwind 里 `padding-inline`（`px-*`）与 `pr-*` 都作用于
+ * **padding-right**，且媒体查询（`sm:*`）的规则**排在基础规则之后** ⇒ 宽屏下
+ * `sm:px-6`（24px）会把基础 `pr-20`（80px）**覆盖回 24px**（本单实测踩过：
+ * 只写 `pr-20` 时滚动容器 clientWidth 仍是 1100 = 安全区**根本没生效**，而"取最大 pr"的判据照样绿 ⇒ 假绿）。
+ *
+ * 级联口径（Tailwind 生成顺序）：同一断点内 `pr-*` 排在 `px-*` 之后 ⇒ `pr` 胜；
+ * 跨断点时媒体查询规则胜基础规则 ⇒ `sm:px-*` 会压过基础 `pr-*`。
+ */
+function minRightPxAcrossBreakpoints(className: string): number {
+  const tokens = className.split(/\s+/).filter(Boolean)
+  const pick = (bp: string, kind: 'pr' | 'px'): number | null => {
+    const re = bp === 'base' ? /^(pr|px)-(\d+)$/ : new RegExp(`^${bp}:(pr|px)-(\\d+)$`)
+    let v: number | null = null
+    for (const t of tokens) {
+      const m = re.exec(t)
+      if (m && m[1] === kind) v = spacingPx(Number(m[2]))
+    }
+    return v
+  }
+  const baseEff = pick('base', 'pr') ?? pick('base', 'px') ?? 0
+  let min = baseEff
+  let prev = baseEff
+  for (const bp of ['sm', 'md', 'lg', 'xl', '2xl']) {
+    const eff = pick(bp, 'pr') ?? pick(bp, 'px') ?? prev
+    min = Math.min(min, eff)
+    prev = eff
+  }
+  return min
+}
+
 /** FAB 宽度（px）：`w-14` ⇒ 56 */
 function fabWidthPx(classNames: string): number {
   const m = /(?:^|\s)w-(\d+)(?:\s|$)/.exec(classNames)
@@ -85,10 +118,10 @@ function fabWidthPx(classNames: string): number {
 }
 
 describe('常驻浮球安全区：容器让位，二者不相交（issue #6687）', () => {
-  it('🔴 layout 的 <main> 预留右侧安全区 ≥ FAB 宽 + 16px', () => {
+  it('🔴 layout 的 <main> 在**所有断点**下右侧安全区 ≥ FAB 宽 + 16px', () => {
     const main = readMainClassName()
     const fab = readFabClassNames()
-    expect(reservedRightPx(main)).toBeGreaterThanOrEqual(fabWidthPx(fab) + MIN_GUTTER_PX)
+    expect(minRightPxAcrossBreakpoints(main)).toBeGreaterThanOrEqual(fabWidthPx(fab) + MIN_GUTTER_PX)
   })
 
   it('🔴 FAB 仍是右下角 fixed 56×56 实体按钮（锚点没被挪走）', () => {
@@ -99,11 +132,13 @@ describe('常驻浮球安全区：容器让位，二者不相交（issue #6687�
     expect(fabWidthPx(fab)).toBe(56)
   })
 
-  it('安全区不在某个断点里（小屏也生效，否则小屏表格照样被吃）', () => {
+  it('安全区覆盖到宽屏断点（`sm:px-6` 会覆盖基础 `pr-*` ⇒ 必须显式给 `sm:pr-*`）', () => {
     const main = readMainClassName()
-    // `pr-20` 是**无前缀**的基础类（不是 `sm:pr-20` / `lg:pr-20`）—— 主题正则只认 base 刻度
-    expect(main).toContain('pr-20')
-    expect(main).not.toMatch(/(?:sm|lg|md|xl):pr-\d+/)
+    // 这一条是**踩坑固化**：只写基础 `pr-20` 时，`sm:px-6`（媒体查询、排在后面）把它覆盖回 24px
+    expect(main).toMatch(/sm:pr-\d+/)
+    // 负控：基础值与 sm 值都不能小于 FAB 宽
+    const fab = readFabClassNames()
+    expect(minRightPxAcrossBreakpoints(main)).toBeGreaterThanOrEqual(fabWidthPx(fab))
   })
 
   it('🔴 宽表不再硬撑出宽于容器的宽度（ProductTable 的最小宽度 ≤ 原 1200）', () => {
@@ -114,16 +149,27 @@ describe('常驻浮球安全区：容器让位，二者不相交（issue #6687�
 })
 
 describe('判别力自证（issue #6687 判据 3）', () => {
-  it('旧形态（修前 className，无右侧安全区）⇒ 余量为负 ⇒ 判红', () => {
+  it('旧形态（修前 className，右侧只有 `px-4` / `sm:px-6`）⇒ 远小于安全区 ⇒ 判红', () => {
     const legacyMain = 'flex-1 px-4 sm:px-6 pt-4 sm:pt-6 pb-24'
     const fab = readFabClassNames()
-    expect(reservedRightPx(legacyMain)).toBe(0)
-    expect(reservedRightPx(legacyMain)).toBeLessThan(fabWidthPx(fab) + MIN_GUTTER_PX)
+    // 最小值取小屏：`px-4` = 16px（宽屏是 `sm:px-6` = 24px）—— 都远小于 72px 安全区
+    expect(minRightPxAcrossBreakpoints(legacyMain)).toBe(16)
+    expect(minRightPxAcrossBreakpoints(legacyMain)).toBeLessThan(fabWidthPx(fab) + MIN_GUTTER_PX)
+  })
+
+  it('🔴 半修形态（只有基础 `pr-20`、没给 `sm:pr-20`）⇒ 宽屏断点仍是 24px ⇒ 判红', () => {
+    // 这正是本单踩过的假绿：`sm:px-6` 覆盖基础 `pr-20`，而"取最大 pr"的判据照样绿
+    const halfFixed = 'flex-1 px-4 sm:px-6 pr-20 pt-4 sm:pt-6 pb-24'
+    const fab = readFabClassNames()
+    expect(reservedRightPx(halfFixed)).toBe(80) // 老口径（取最大）→ 假绿
+    expect(minRightPxAcrossBreakpoints(halfFixed)).toBe(24) // 真口径 → 宽屏下只有 24px
+    expect(minRightPxAcrossBreakpoints(halfFixed)).toBeLessThan(fabWidthPx(fab) + MIN_GUTTER_PX)
   })
 
   it('修后形态 ⇒ 判绿', () => {
     const main = readMainClassName()
     expect(reservedRightPx(main)).toBe(80)
+    expect(minRightPxAcrossBreakpoints(main)).toBe(80)
   })
 
   it('`sm:pr-2` 这种断点里的刻度**不算**基础安全区（不误判为绿）', () => {
