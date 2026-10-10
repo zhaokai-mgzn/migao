@@ -43,3 +43,4 @@
 {"id":"1791626015.25859.680","ts":"2026-10-10T09:53:36Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6642-alive-storm","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1791652371.97351.20240","ts":"2026-10-10T17:12:52Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6713-chat-session-read-failure","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791653137.4720.15435","ts":"2026-10-10T17:25:37Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6715-dashboard-read-failure-labels","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791654186.18072.20684","ts":"2026-10-10T17:43:07Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6720-print-doc-missing-values","why":"子包 worktree 直跑全量（无批次标记）"}

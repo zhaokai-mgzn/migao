@@ -16,7 +16,23 @@
  */
 import type { OrderItem } from '@/types'
 
-/** 行小计（元）= 面料小计 + 该行加工费。缺 `processingFee` ⇒ 按 0（存量单没有该字段）。 */
-export function lineSubtotal(item: Pick<OrderItem, 'subtotal' | 'processingFee'>): number {
-  return (item.subtotal || 0) + (item.processingFee || 0)
+/**
+ * 行小计（元）= 面料小计 + 该行加工费。缺 `processingFee` ⇒ 按 0（存量单没有该字段）。
+ *
+ * 🔴 **`null` = 「算不出来」，不是 0**（issue #6720）：`subtotal` 也缺（后端
+ * `OrderDetailResponse.OrderItemResponse.amount` 走的是 `unitPrice × quantity`，两者都为
+ * null 时回落 `subtotal`，而 `subtotal` 同样可为 null；全局 Jackson
+ * `default-property-inclusion: non_null` ⇒ 这两个键在响应里**整个缺席**）⇒ 返回 `null`，
+ * 由**展示方**决定怎么印（纸面 `QuotationDoc` 印 `—`；屏幕 `OrderItemList` 保持原有 `¥0.00`
+ * 外观，**本单不改屏幕口径**）。
+ *
+ * ⚠️ 别把这里改回 `|| 0`：那会把「没有这个数」折成「余额为零」，而这张数是**打给客户对账**的
+ * （同族硬约束 = `SalesDoc` 的 `formatAmount`：缺值印 `—`、真 0 仍印 `0.00`）。
+ */
+export function lineSubtotal(item: Pick<OrderItem, 'subtotal' | 'processingFee'>): number | null {
+  const subtotal = typeof item.subtotal === 'number' && Number.isFinite(item.subtotal) ? item.subtotal : 0
+  const processingFee =
+    typeof item.processingFee === 'number' && Number.isFinite(item.processingFee) ? item.processingFee : 0
+  if (item.subtotal == null && item.processingFee == null) return null
+  return subtotal + processingFee
 }

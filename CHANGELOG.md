@@ -24,6 +24,34 @@
   既有 `agent-workspace-sessions.test.tsx`；类级元守卫 = `frontend/admin-web/tests/unit/count-row-derived-guard.test.ts`
   新增两条（坏形态判红 / 摘掉真锚 ⇒ 当场红），判据单一源 = `frontend/admin-web/scripts/count-row-derived-scan.mjs`
   新增第三种承载体 `derived-count-cell`（台账**未加行**：rebase 到 #6718 后的现取值 **1 条**存量债）。
+### 打印单据缺值不再印成 0.00：缺值印「—」、合计不可知也印「—」（2026-10-11，issue #6720）
+
+发货单 / 报价单（**客户拿到手的凭证**）此前把「没有这个数」印成 `0.00` / `0`：行级
+`unitPrice` / `quantity` / `amount` / `subtotal` 缺值时，纸面与「本来就是 0 元」长得一模一样
+—— 客户会把「算不出来」读成「这一项是零元」。修后与打印单据族既有范式一致（`SalesDoc` 的
+`SALES_DOC_MISSING` / `ProcessingDoc` 的 `MISSING`）：**缺值印「—」，真值 0 仍印 `0.00`**；
+**合计**在任一行缺值时印「—」（不拿「缺的行按 0 算」的假总额糊纸面）。
+屏幕侧（订单详情明细行）口径**有意不变**。
+
+**判据**（`frontend/admin-web`，定点 vitest）：
+
+- **实例判据**：`tests/unit/components/ShipmentDoc.test.tsx` 与 `QuotationDoc.test.tsx` 的
+  「缺值不印 0」一组 —— 注入缺 `amount` / `unitPrice` / `quantity` / `subtotal` 的订单行 ⇒
+  逐格断言价格 / 数量 / 金额栏是 `—`（**修前红在「印了 `0.00` / `0`」这条断言上**，不是找不到元素）；
+  **反向对照**同组覆盖：真 0 行仍印 `0.00` 且不得出现 `—`。
+- **类级元守卫**：`tests/unit/lib/print-doc-paper.test.ts` + 单一源
+  `frontend/admin-web/scripts/print-doc-zero-fallback-scan.mjs` —— 「**纸面不得把『未知』印成 0**」
+  落在**打印单据族**（发货单 / 报价单 / 销售单 / 加工单 / 洗水码）的一致判据面：
+  **未登记即红**（受管单据里出现 `(x ?? 0).toLocaleString` / `String(x ?? 0)` / `formatAmount(x ?? 0)`
+  一族 ⇒ 红，并给出复算命令）、**五份单据的测试都必须挂同一条不变量**（未调用即具名报出）、
+  台账**只许缩短**（现取 0 条）、判别力自证（坏形态逐形判红 + 正确形态/算术中性元/注释里的反例不报 +
+  注入式红证）。
+- **行小计口径**（`src/lib/order-amount.ts` 的 `lineSubtotal`）：两个加数都缺 ⇒ 返回 `null`
+  （「算不出来」），纸面据此印 `—`；单个加数为 `0` 仍算得出数（反向对照见
+  `tests/unit/lib/order-amount.test.ts`）。
+
+**边界**（照实登记）：洗水码 `TaskCardPrint` 今天不印任何金额 / 数量 ⇒ 对本形态天然免疫，
+已在判据面登记并注明**死亡条件**（它一旦开始印数值 ⇒ 判据与静态断言同时红）。
 
 ### 订单/入库单/生产看板三张宽表的「状态」与「操作」不再被挤出屏幕（2026-10-11，issue #6717）
 
