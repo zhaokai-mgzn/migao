@@ -1,0 +1,373 @@
+[
+  {
+    "vp": 1440,
+    "path": "/orders",
+    "vw": 1440,
+    "overflow": 791,
+    "nTh": 14,
+    "hidden": [
+      "制单人",
+      "状态",
+      "加急",
+      "到货日",
+      "备注",
+      "操作"
+    ],
+    "lastCol": {
+      "txt": "操作",
+      "left": 1929,
+      "visible": false
+    }
+  },
+  {
+    "vp": 1440,
+    "path": "/products",
+    "vw": 1440,
+    "overflow": 100,
+    "nTh": 10,
+    "hidden": [],
+    "lastCol": {
+      "txt": "操作",
+      "left": 1214,
+      "visible": true
+    }
+  },
+  {
+    "vp": 1440,
+    "path": "/customers",
+    "vw": 1440,
+    "overflow": 0,
+    "nTh": 7,
+    "hidden": [],
+    "lastCol": {
+      "txt": "最后互动",
+      "left": 1194,
+      "visible": true
+    }
+  },
+  {
+    "vp": 1440,
+    "path": "/finance",
+    "vw": 1440,
+    "overflow": 0,
+    "nTh": 9,
+    "hidden": [],
+    "lastCol": {
+      "txt": "备注",
+      "left": 1211,
+      "visible": true
+    }
+  },
+  {
+    "vp": 1440,
+    "path": "/after-sales",
+    "vw": 1440,
+    "overflow": 0,
+    "nTh": 9,
+    "hidden": [],
+    "lastCol": {
+      "txt": "操作",
+      "left": 1259,
+      "visible": true
+    }
+  },
+  {
+    "vp": 1440,
+    "path": "/knowledge",
+    "vw": 1440,
+    "overflow": 0,
+    "nTh": 7,
+    "hidden": [],
+    "lastCol": {
+      "txt": "操作",
+      "left": 1006,
+      "visible": true
+    }
+  },
+  {
+    "vp": 1440,
+    "path": "/stock-ledger",
+    "vw": 1440,
+    "overflow": 0,
+    "nTh": 9,
+    "hidden": [],
+    "lastCol": {
+      "txt": "成本金额",
+      "left": 1247,
+      "visible": true
+    }
+  },
+  {
+    "vp": 1440,
+    "path": "/inbound-orders",
+    "vw": 1440,
+    "overflow": 59,
+    "nTh": 9,
+    "hidden": [],
+    "lastCol": {
+      "txt": "操作",
+      "left": 1317,
+      "visible": true
+    }
+  },
+  {
+    "vp": 1440,
+    "path": "/employees",
+    "vw": 1440,
+    "overflow": 0,
+    "nTh": 9,
+    "hidden": [],
+    "lastCol": {
+      "txt": "操作",
+      "left": 1166,
+      "visible": true
+    }
+  },
+  {
+    "vp": 1440,
+    "path": "/shipments",
+    "vw": 1440,
+    "overflow": 0,
+    "nTh": 8,
+    "hidden": [],
+    "lastCol": {
+      "txt": "操作",
+      "left": 1223,
+      "visible": true
+    }
+  },
+  {
+    "vp": 1440,
+    "path": "/processing-orders",
+    "vw": 1440,
+    "overflow": 148,
+    "nTh": 8,
+    "hidden": [],
+    "lastCol": {
+      "txt": "操作",
+      "left": 1368,
+      "visible": true
+    }
+  },
+  {
+    "vp": 1440,
+    "path": "/production",
+    "vw": 1440,
+    "overflow": 148,
+    "nTh": 8,
+    "hidden": [],
+    "lastCol": {
+      "txt": "操作",
+      "left": 1368,
+      "visible": true
+    }
+  },
+  {
+    "vp": 1440,
+    "path": "/roles",
+    "vw": 1440,
+    "overflow": 0,
+    "nTh": 0,
+    "hidden": [],
+    "lastCol": null
+  },
+  {
+    "vp": 1440,
+    "path": "/notifications",
+    "vw": 1440,
+    "overflow": 0,
+    "nTh": 0,
+    "hidden": [],
+    "lastCol": null
+  },
+  {
+    "vp": 1280,
+    "path": "/orders",
+    "vw": 1280,
+    "overflow": 951,
+    "nTh": 14,
+    "hidden": [
+      "下单时间",
+      "制单人",
+      "状态",
+      "加急",
+      "到货日",
+      "备注",
+      "操作"
+    ],
+    "lastCol": {
+      "txt": "操作",
+      "left": 1929,
+      "visible": false
+    }
+  },
+  {
+    "vp": 1280,
+    "path": "/products",
+    "vw": 1280,
+    "overflow": 260,
+    "nTh": 10,
+    "hidden": [],
+    "lastCol": {
+      "txt": "操作",
+      "left": 1214,
+      "visible": true
+    }
+  },
+  {
+    "vp": 1280,
+    "path": "/customers",
+    "vw": 1280,
+    "overflow": 0,
+    "nTh": 7,
+    "hidden": [],
+    "lastCol": {
+      "txt": "最后互动",
+      "left": 1034,
+      "visible": true
+    }
+  },
+  {
+    "vp": 1280,
+    "path": "/finance",
+    "vw": 1280,
+    "overflow": 22,
+    "nTh": 9,
+    "hidden": [],
+    "lastCol": {
+      "txt": "备注",
+      "left": 1080,
+      "visible": true
+    }
+  },
+  {
+    "vp": 1280,
+    "path": "/after-sales",
+    "vw": 1280,
+    "overflow": 0,
+    "nTh": 9,
+    "hidden": [],
+    "lastCol": {
+      "txt": "操作",
+      "left": 1110,
+      "visible": true
+    }
+  },
+  {
+    "vp": 1280,
+    "path": "/knowledge",
+    "vw": 1280,
+    "overflow": 107,
+    "nTh": 7,
+    "hidden": [],
+    "lastCol": {
+      "txt": "操作",
+      "left": 953,
+      "visible": true
+    }
+  },
+  {
+    "vp": 1280,
+    "path": "/stock-ledger",
+    "vw": 1280,
+    "overflow": 75,
+    "nTh": 9,
+    "hidden": [],
+    "lastCol": {
+      "txt": "成本金额",
+      "left": 1169,
+      "visible": true
+    }
+  },
+  {
+    "vp": 1280,
+    "path": "/inbound-orders",
+    "vw": 1280,
+    "overflow": 219,
+    "nTh": 9,
+    "hidden": [
+      "操作"
+    ],
+    "lastCol": {
+      "txt": "操作",
+      "left": 1317,
+      "visible": false
+    }
+  },
+  {
+    "vp": 1280,
+    "path": "/employees",
+    "vw": 1280,
+    "overflow": 116,
+    "nTh": 9,
+    "hidden": [],
+    "lastCol": {
+      "txt": "操作",
+      "left": 1122,
+      "visible": true
+    }
+  },
+  {
+    "vp": 1280,
+    "path": "/shipments",
+    "vw": 1280,
+    "overflow": 0,
+    "nTh": 8,
+    "hidden": [],
+    "lastCol": {
+      "txt": "操作",
+      "left": 1080,
+      "visible": true
+    }
+  },
+  {
+    "vp": 1280,
+    "path": "/processing-orders",
+    "vw": 1280,
+    "overflow": 308,
+    "nTh": 8,
+    "hidden": [
+      "计件合计",
+      "操作"
+    ],
+    "lastCol": {
+      "txt": "操作",
+      "left": 1368,
+      "visible": false
+    }
+  },
+  {
+    "vp": 1280,
+    "path": "/production",
+    "vw": 1280,
+    "overflow": 308,
+    "nTh": 8,
+    "hidden": [
+      "计件合计",
+      "操作"
+    ],
+    "lastCol": {
+      "txt": "操作",
+      "left": 1368,
+      "visible": false
+    }
+  },
+  {
+    "vp": 1280,
+    "path": "/roles",
+    "vw": 1280,
+    "overflow": 0,
+    "nTh": 0,
+    "hidden": [],
+    "lastCol": null
+  },
+  {
+    "vp": 1280,
+    "path": "/notifications",
+    "vw": 1280,
+    "overflow": 0,
+    "nTh": 0,
+    "hidden": [],
+    "lastCol": null
+  }
+]
