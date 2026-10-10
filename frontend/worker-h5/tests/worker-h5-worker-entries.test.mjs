@@ -76,6 +76,17 @@ test('🔴 ② 红证：把跨应用入口加回页头 ⇒ 本判据必红（反
   )
 })
 
+test('🔴 ① 红证：入口锚点被包进 HTML 注释 ⇒ 判定必红（注释里的链接不算入口，D2）', () => {
+  // 为什么必须保住这条：改前 `/w/` 有两条跨应用锚点，D2 的红证挂在它们身上；那两条撤了之后
+  // **剩下的这一条锚点**必须接过同一份覆盖（否则"注释里的链接被当成入口"这一类就没人拦了）。
+  const html = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_CUT_CALC])))
+  assert.equal(html.includes(`href="${MACHINE_ENTRY}"`), true, '对照：真渲染下本判据判绿')
+  const commented = html.replace(/(<a class="wh5-entry"[^>]*>[^<]*<\/a>)/, '<!--$1-->')
+  assert.ok(commented.includes(`href="${MACHINE_ENTRY}"`), '变异体里锚点串仍在（按 includes 判的那种守卫照样绿）')
+  assert.ok(commented.includes('<!--<a class="wh5-entry"'), '变异体确实是"锚点被注释掉"这一形态')
+  assert.equal(visible(commented).includes(`href="${MACHINE_ENTRY}"`), false, '注释包裹后**本判据用的可见文本**里必须没有它')
+})
+
 test('🔴 入口出现在**每一个登录后视图**（页头是共用件：扫 / 选套 / 主屏都带它）', () => {
   const selecting = renderPage(loggedIn([PAGE_CUT_CALC], {
     mode: 'select',
