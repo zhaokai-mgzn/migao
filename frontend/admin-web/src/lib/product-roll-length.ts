@@ -22,3 +22,15 @@ export const ROLL_LENGTH_HINT = '标称值：仅作建单时的默认值与整�
 /** 表单追加的一句（录入面才有意义：留空 = 未配置，以及未配置时订单怎么算） */
 export const ROLL_LENGTH_FORM_NOTE =
   '留空表示未配置 —— 未配置时订单不会推算整卷发货（例如买 100 米、1 卷 60 米 ⇒ 1 整卷 + 散剪 40 米）'
+
+/**
+ * 库存单位（**单一源**，issue #6662 判据 ⑤）
+ *
+ * 依据 = 库列口径：`admin-api` 的 `schema.sql` 里 `products.stock`（派生冗余列，权威是
+ * `product_skus.stock` 的汇总）与 `product_skus.stock` 都写作「库存数量（**米**，
+ * V115/#5063：1 位小数 = 0.1 米粒度）」，`ProductService.getTotalStock()` 就是它的汇总。
+ *
+ * 三个面一律引用本常量（商品详情 / 商品表单 / SKU 矩阵）—— 改单位只改这一处，
+ * 不再出现「同一份库存三处三种读法」。
+ */
+export const STOCK_UNIT = '米'
