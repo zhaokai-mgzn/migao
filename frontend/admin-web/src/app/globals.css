@@ -101,6 +101,13 @@ body {
   @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-400;
 }
 
+/* 官网（企业站）区块小标签：口径同 .section-kicker，但用强调色。
+   ⚠️ 不带 `uppercase` —— 它只改拉丁字母，对中文小标签零作用、只把汉字拉宽（issue #6665）。
+   `text-accent-600` 走 @apply 让它可被后面的 `text-accent-300` 之类覆盖（深色页头场景）。 */
+.corporate-kicker {
+  @apply text-[11px] font-semibold tracking-[0.14em] text-accent-600;
+}
+
 /* 商品描述富文本渲染样式 */
 .product-description h2 {
   font-size: 18px;

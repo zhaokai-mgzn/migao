@@ -7,8 +7,12 @@ import { isPublicRoute } from '@/lib/auth-redirect'
 
 export default function AuthProvider({ children }: { children: React.ReactNode }) {
   const { initialize, _hasHydrated } = useAuthStore()
-  const [isReady, setIsReady] = useState(false)
   const pathname = usePathname() ?? ''
+  // 公开路由（官网四页 / 登录 / 注册）**不参与会话门控**：初值就按路由算出来，
+  // 于是首屏服务端渲染与首次水合都不经过骨架（issue #6665）。
+  // 机制：`isReady` 原先恒为 false、只在 useEffect 里置真 ⇒ SSR 阶段必然返回「加载中...」，
+  // 服务端 HTML 的可见 DOM 只剩一个转圈（生产实测 curl 恒 503 B / h1=0 / nav=0）。
+  const [isReady, setIsReady] = useState(() => isPublicRoute(pathname))
 
   useEffect(() => {
     if (!_hasHydrated) return

@@ -237,7 +237,7 @@ export default function AboutPage() {
             href="/contact"
             className="inline-flex items-center gap-2 rounded-xl border border-white/25 px-7 py-3.5 text-base font-semibold text-white transition-colors hover:bg-white/10"
           >
-            留言咨询
+            联系我们
           </Link>
         }
       />
