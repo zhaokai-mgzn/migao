@@ -11,7 +11,7 @@
 //   ③ 闲置登出 —— 定时器 + `visibilitychange` 双保险（PAD 常被切到别的 App，只靠定时器会漏）。
 
 import { createApi, PAGES_UNREAD, SESSION_EXPIRED } from './api.mjs'
-import { deviceHomeFromLocation, enterpriseCodeFromLocation, parseScanInput } from './scan-input.mjs'
+import { deviceHomeFromLocation, enterpriseCodeFromLocation, normalizeEnterpriseCode, parseScanInput } from './scan-input.mjs'
 import {
   afterComplete,
   DEFAULT_WORKER_IDLE_MINUTES,
@@ -193,7 +193,7 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
   /** 上次提交没收到答复 ⇒ 明说「重扫是安全的」（工人据此才敢再点一次）。 */
   const resumedNotice = (token) =>
     resumedRequestId(token)
-      ? '上次提交没收到结果：点【完成】会按同一次提交处理（服务端回放，不会重复计件）'
+      ? '上次提交没收到结果：点【完成】会按同一次提交处理（系统不会重复计件）'
       : null
 
   const draw = () => {
@@ -308,7 +308,9 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
       const workerNo = doc.getElementById('wh5-worker-no')?.value?.trim()
       const pin = doc.getElementById('wh5-pin')?.value ?? ''
       // 企业编码：以输入框为准（URL 值已在首屏预填进去，可编辑）—— 租户只由服务端解析
-      const enterpriseCode = doc.getElementById('wh5-enterprise-code')?.value?.trim()
+      // 🔴 提交前**归一为小写**（issue #6738 要求 1）：用户照屏把编码抄成大写是常见手误；
+      //    只归一（小写 + 去空白），**不**重定义格式（字符集仍由服务端裁定）。
+      const enterpriseCode = normalizeEnterpriseCode(doc.getElementById('wh5-enterprise-code')?.value)
       try {
         const s = await api.login({ workerNo, pin, enterpriseCode })
         // idleMinutes 一并进 state：前端定时器与服务端 `idle_expires_at` 用**同一个**数值
