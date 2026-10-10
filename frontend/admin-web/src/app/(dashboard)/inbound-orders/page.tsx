@@ -94,6 +94,11 @@ export default function InboundOrdersPage() {
   const [status, setStatus] = useState<InboundOrderStatus | ''>('')
   const [rows, setRows] = useState<InboundOrderLine[]>([])
   const [loading, setLoading] = useState(false)
+  /**
+   * 读面失败（issue #6691）：与「暂无入库单」**互斥** —— 故障不是业务事实。
+   * 改前 catch 只 `setRows([])` ⇒ 商家以为「我的入库单全不见了」（真实报障形态）。
+   */
+  const [loadError, setLoadError] = useState(false)
 
   // 期初建账批量导入弹窗（V118 / issue #5153）
   const [importOpen, setImportOpen] = useState(false)
@@ -109,12 +114,13 @@ export default function InboundOrdersPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
+    setLoadError(false)
     try {
       const res = await inboundOrderApi.list({ keyword: keyword || undefined, status })
       setRows(res.data.data ?? [])
     } catch {
-      // request 拦截器已 toast；此处只需不留下半截数据
-      setRows([])
+      // request 拦截器已 toast；此处只**标失败态**（不清零、不说空）—— 读面故障 ≠「没有入库单」（issue #6691）
+      setLoadError(true)
     } finally {
       setLoading(false)
     }
@@ -329,7 +335,19 @@ export default function InboundOrdersPage() {
             {rows.length === 0 && (
               <tr>
                 <td colSpan={9} className="px-3 py-10 text-center text-neutral-400">
-                  {loading ? '加载中…' : '暂无入库单'}
+                  {loading ? (
+                    '加载中…'
+                  ) : loadError ? (
+                    // 失败态与空态**分离**（issue #6691）：说清「没读到」+ 重试出口
+                    <span data-testid="inbound-load-error" role="alert" className="inline-flex items-center gap-3">
+                      <span className="text-neutral-600">入库单加载失败 —— 没读到数据，请检查网络后重试</span>
+                      <Button variant="secondary" size="sm" data-testid="inbound-load-retry" onClick={() => void load()}>
+                        重新加载
+                      </Button>
+                    </span>
+                  ) : (
+                    '暂无入库单'
+                  )}
                 </td>
               </tr>
             )}

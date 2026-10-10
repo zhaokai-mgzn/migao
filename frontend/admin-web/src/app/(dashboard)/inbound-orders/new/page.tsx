@@ -19,7 +19,7 @@
 //   草稿**不发号**（批次号 = 「真的收货了」的标识）⇒ 本页明细列的批次号恒为「过账后生成」，
 //   列在这里是为了让商家建单时就知道「这批货将来靠哪个号追溯」。
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, FileText, Layers, Package, Search } from 'lucide-react'
 import { toast } from 'sonner'
@@ -75,9 +75,13 @@ export default function NewInboundOrderPage() {
 
   const [productKeyword, setProductKeyword] = useState('')
   const [productOptions, setProductOptions] = useState<Product[]>([])
+  /** 商品搜索读失败（issue #6691）：与「输入关键词搜索商品」空态**互斥** */
+  const [productSearchFailed, setProductSearchFailed] = useState(false)
   const [pickedProduct, setPickedProduct] = useState<Product | null>(null)
   const [productSkus, setProductSkus] = useState<ProductSku[]>([])
   const [skuLoading, setSkuLoading] = useState(false)
+  /** 规格明细读失败（issue #6691）：与「该商品还没有 SKU」空态**互斥** */
+  const [skuLoadFailed, setSkuLoadFailed] = useState(false)
   const [draftLines, setDraftLines] = useState<DraftLine[]>([])
   const [form, setForm] = useState({
     supplier: '',
@@ -89,34 +93,56 @@ export default function NewInboundOrderPage() {
   })
   const [submitting, setSubmitting] = useState(false)
 
-  // ---- 商品搜索（防抖） ----
-  useEffect(() => {
-    const t = setTimeout(async () => {
-      try {
-        const res = await productApi.getProducts({
-          keyword: productKeyword || undefined,
-          page: 1,
-          size: 20,
-        })
-        setProductOptions(res.data.data?.items ?? [])
-      } catch {
-        setProductOptions([])
-      }
-    }, 300)
-    return () => clearTimeout(t)
+  /**
+   * 商品搜索（防抖）。
+   *
+   * 读失败 ⇒ `productSearchFailed`（issue #6691）：改前只 `setProductOptions([])` ⇒ 那格
+   * 显示「输入关键词搜索商品」，把**故障**说成「你还没搜」。
+   */
+  const searchProducts = useCallback(async () => {
+    try {
+      const res = await productApi.getProducts({
+        keyword: productKeyword || undefined,
+        page: 1,
+        size: 20,
+      })
+      setProductOptions(res.data.data?.items ?? [])
+      setProductSearchFailed(false)
+    } catch {
+      // 拦截器已 toast；此处只标失败态（列表保持不清零 —— 故障不冒充「搜不到」）
+      setProductSearchFailed(true)
+    }
   }, [productKeyword])
 
-  const pickProduct = async (p: Product) => {
-    setPickedProduct(p)
+  useEffect(() => {
+    const t = setTimeout(() => void searchProducts(), 300)
+    return () => clearTimeout(t)
+  }, [searchProducts])
+
+  /**
+   * 选中商品的**规格明细**读面。
+   *
+   * 读失败 ⇒ `skuLoadFailed`（issue #6691）：改前只 `setProductSkus([])` ⇒ 显示
+   * 「该商品还没有 SKU，请先在商品详情维护 SKU」，把**读故障**说成**数据事实**
+   * ⇒ 商家会去商品详情白找一遍。
+   */
+  const loadSkus = useCallback(async (p: Product) => {
     setSkuLoading(true)
     try {
       const res = await productApi.getProduct(p.id)
       setProductSkus(res.data.data?.skus ?? [])
+      setSkuLoadFailed(false)
     } catch {
-      setProductSkus([])
+      // 拦截器已 toast；只标失败态（不冒充「没有规格」）
+      setSkuLoadFailed(true)
     } finally {
       setSkuLoading(false)
     }
+  }, [])
+
+  const pickProduct = async (p: Product) => {
+    setPickedProduct(p)
+    await loadSkus(p)
   }
 
   /** 勾选 SKU ⇒ 加入/移出草稿行（保留已填的数量/单价/缸号/旧系统批次号） */
@@ -343,10 +369,27 @@ export default function NewInboundOrderPage() {
                       {p.skuCode ? <span className="text-neutral-400 ml-2">({p.skuCode})</span> : null}
                     </button>
                   ))}
-                  {productOptions.length === 0 && (
-                    <div className="px-3 py-6 text-sm text-neutral-400 text-center">
-                      输入关键词搜索商品
+                  {productSearchFailed ? (
+                    // 失败态与空态**分离**（issue #6691）：说清「没读到」+ 重试出口
+                    <div
+                      data-testid="inbound-product-search-error"
+                      role="alert"
+                      className="px-3 py-6 text-sm text-center text-neutral-600"
+                    >
+                      商品搜索失败 —— 没读到数据，请检查网络后重试
+                      <button
+                        type="button"
+                        data-testid="inbound-product-search-retry"
+                        onClick={() => void searchProducts()}
+                        className="ml-2 text-primary-600 underline"
+                      >
+                        重试
+                      </button>
                     </div>
+                  ) : (
+                    productOptions.length === 0 && (
+                      <div className="px-3 py-6 text-sm text-neutral-400 text-center">输入关键词搜索商品</div>
+                    )
                   )}
                 </div>
               </div>
@@ -382,7 +425,25 @@ export default function NewInboundOrderPage() {
                         </label>
                       )
                     })}
-                  {pickedProduct && !skuLoading && productSkus.length === 0 && (
+                  {pickedProduct && !skuLoading && skuLoadFailed && (
+                    // 读失败 ⇒ 说「没读到」（**不**说「该商品还没有 SKU」——那是数据事实，issue #6691）
+                    <div
+                      data-testid="inbound-sku-error"
+                      role="alert"
+                      className="px-3 py-6 text-sm text-center text-neutral-600"
+                    >
+                      规格读取失败 —— 没读到这个商品的规格，请检查网络后重试
+                      <button
+                        type="button"
+                        data-testid="inbound-sku-retry"
+                        onClick={() => pickedProduct && void loadSkus(pickedProduct)}
+                        className="ml-2 text-primary-600 underline"
+                      >
+                        重试
+                      </button>
+                    </div>
+                  )}
+                  {pickedProduct && !skuLoading && !skuLoadFailed && productSkus.length === 0 && (
                     <div className="px-3 py-6 text-sm text-neutral-400 text-center">
                       该商品还没有 SKU，请先在商品详情维护 SKU
                     </div>
