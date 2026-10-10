@@ -91,14 +91,23 @@ export default function NotificationsPage() {
     setCurrent(1)
   }
 
+  // 全部标记已读：在飞行态 + 禁用（issue #6669 第 5 条）。
+  // 修前没有 in-flight 闸 —— 连点两次就发两次请求，商家看到的是随机成功/失败。
+  const [markingAll, setMarkingAll] = useState(false)
+  const unreadCount = notifications.filter((n) => n.status !== 'read').length
+
   // 全部标记已读
   const handleMarkAllAsRead = async () => {
+    if (markingAll) return
+    setMarkingAll(true)
     try {
       await notificationApi.markAllAsRead()
       toast.success('已全部标记为已读')
       loadNotifications()
     } catch (e) {
       toast.error('操作失败')
+    } finally {
+      setMarkingAll(false)
     }
   }
 
@@ -150,10 +159,19 @@ export default function NotificationsPage() {
           <h1 className="text-xl font-semibold text-neutral-900">通知中心</h1>
           <p className="text-sm text-neutral-500 mt-1">管理和查看系统通知</p>
         </div>
-        <Button onClick={handleMarkAllAsRead}>
-          <CheckCheck className="w-4 h-4 mr-1.5" />
-          全部标记已读
-        </Button>
+        {/* 🔴 issue #6669 第 5 条：一条未读都没有时这个动作无意义 ⇒ **不出入口**（不是留个点了没反应的按钮）；
+            有未读时 in-flight 期间 disabled + loading（连点不发第二次请求）。 */}
+        {unreadCount > 0 && (
+          <Button
+            data-testid="mark-all-read"
+            onClick={handleMarkAllAsRead}
+            disabled={markingAll}
+            loading={markingAll}
+          >
+            <CheckCheck className="w-4 h-4 mr-1.5" />
+            全部标记已读
+          </Button>
+        )}
       </div>
 
       {/* 状态 Tab 栏 */}

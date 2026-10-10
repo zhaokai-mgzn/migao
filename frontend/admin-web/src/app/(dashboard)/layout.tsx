@@ -9,6 +9,7 @@ import { usePermission } from '@/lib/permission'
 import { useChatStore } from '@/store/chat'
 import { cn } from '@/lib/utils'
 import FloatingAssistant from '@/components/ai-assistant/FloatingAssistant'
+import AccessDenied from '@/components/common/AccessDenied'
 
 // 路由 → 所需权限码映射（与后端 @RequirePermission 口径一致，前端作为第二道防线；
 // 后端仍会 403 拒绝无权限请求，此处仅优化体验避免空白/报错页）。
@@ -160,18 +161,10 @@ export default function DashboardLayout({
   }
 
   if (permissionDenied) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-50">
-        <div className="rounded-2xl border border-neutral-200 bg-white p-10 text-center shadow-card max-w-md">
-          <div className="text-4xl mb-3">🔒</div>
-          <h1 className="text-lg font-semibold text-neutral-900">无权访问该页面</h1>
-          <p className="mt-2 text-sm text-neutral-500">
-            当前账号缺少权限 <code className="rounded bg-neutral-100 px-1.5 py-0.5 text-primary-600">{requiredPermission}</code>，
-            如需开通请联系管理员在「员工管理」中调整权限。
-          </p>
-        </div>
-      </div>
-    )
+    // 🔴 issue #6669 第 6 条：403 终态面提到 `@/components/common/AccessDenied`（**纯展示、不吃权限码**
+    // —— 结构上就没有回显内部标识的入口）。权限码仍在上面 `ROUTE_PERMISSION_MAP` 的判定里，
+    // 那是它的正当用途；**不上商家屏**。
+    return <AccessDenied />
   }
 
   return (

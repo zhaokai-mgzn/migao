@@ -8,6 +8,10 @@ import { productionApi } from '@/lib/api'
 import { operationDisplayName } from '@/lib/operation-display'
 import UnpricedNotice from '@/components/production/UnpricedNotice'
 import { cn } from '@/lib/utils'
+// 🔴 issue #6669 第 7 条：涉钱读数的**唯一**展示口径（千分位 + 固定两位小数）——
+// 修前本页是 `toFixed(2)`（`¥123456.78`，无千分位），财务域是 `toLocaleString('zh-CN')`
+// （`¥123,456.78`）⇒ 同一笔钱两页长得不一样。现两页共用 `@/lib/money` 一处真值。
+import { money } from '@/lib/money'
 import type { PieceworkReport } from '@/types'
 
 /**
@@ -34,8 +38,10 @@ function currentPeriod(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
+// 缺失值 ⇒ `¥0.00`（本页是**报表读数**：合计为 0 与「没有数据」由空态分开表达，
+// 见本页 `isEmpty` —— 故这里不为缺失值改印藏头，只是不许出现两份格式实现）。
 function formatMoney(value?: number): string {
-  return `¥${Number(value ?? 0).toFixed(2)}`
+  return money(value ?? 0)
 }
 
 function formatQty(value?: number): string {

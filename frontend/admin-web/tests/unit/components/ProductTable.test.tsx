@@ -1,9 +1,11 @@
 // case_ids: PR-001, PR-002, PR-010, UI-055
+// 追加（issue #6669 追加任务 3）：「销售额」列小数位唯一口径。
 /**
  * ProductTable 组件测试
  * 覆盖：#646 移除 in_warehouse — 状态徽章映射无仓库中、操作按钮正确
  *       #1200 库存飘红阈值
  *       #5877 移除「商品ID」列 — 表头不再有该列，且 colSpan（列数）随之收敛
+ *       #6669 追加任务 3 — 「销售额」列小数位口径（同一列不得并存 `¥25,049` 与 `¥26,099.8`）
  */
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
@@ -68,6 +70,48 @@ describe('ProductTable — 长标题可读全（issue #6662）', () => {
     expect(cell.getAttribute('title')).toBe(LONG_NAME)
     // 负控：截断版式仍在（不是把 clamp 删了了事）
     expect(cell.className).toContain('line-clamp-2')
+  })
+})
+
+// ========== 「销售额」列小数位口径（issue #6669 追加任务 3）==========
+//
+// 缺陷（真机读图实测）：`¥${value.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}`
+// —— **只给上限没给下限** ⇒ **同一列**并存 `¥25,049` 与 `¥26,099.8` 两种形态
+// （小数位跟着实际值截断，整数不带两位）。
+// 口径 = 与财务域/计件域**同一处真值** `@/lib/money`（千分位 + **固定**两位小数）。
+//
+// 🔴 判别力：给一个 `26099.8` 与一个 `25049`，让它们在**同一列**渲染 ⇒ 逐条断言同形态。
+// 红证（修前实测）：`expected '¥26,099.8' to be '¥26,099.80'`。
+describe('ProductTable — 「销售额」列小数位唯一口径（issue #6669 追加任务 3）', () => {
+  it('同列多行 ⇒ 同形态：固定两位小数 + 千分位（26099.8 与 25049 并存也不许两种写法）', () => {
+    render(
+      <ProductTable
+        {...defaultProps}
+        total={2}
+        products={[
+          { ...baseProduct, id: 'a', name: '甲', salesAmount: 26099.8 },
+          { ...baseProduct, id: 'b', name: '乙', salesAmount: 25049 },
+        ]}
+      />,
+    )
+    // 逐值断言（不只断言「带逗号」—— 那是弱断言）
+    expect(screen.getByText('¥26,099.80')).toBeTruthy()
+    expect(screen.getByText('¥25,049.00')).toBeTruthy()
+    // 负控：截断形态**必须不存在**
+    expect(screen.queryByText('¥26,099.8')).toBeNull()
+    expect(screen.queryByText('¥25,049')).toBeNull()
+    expect(screen.queryByText('¥0')).toBeNull()
+  })
+
+  it('缺失销售额 ⇒ ¥0.00（不是 ¥0 / 空白）', () => {
+    render(
+      <ProductTable
+        {...defaultProps}
+        products={[{ ...baseProduct, salesAmount: undefined as unknown as number }]}
+      />,
+    )
+    expect(screen.getByText('¥0.00')).toBeTruthy()
+    expect(screen.queryByText('¥0')).toBeNull()
   })
 })
 

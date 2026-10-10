@@ -20,9 +20,11 @@ import {
 } from '@/types'
 import { cn } from '@/lib/utils'
 import DateTimeCell from '@/components/common/DateTimeCell'
+import { money } from '@/lib/money'
 
-const fmtMoney = (n?: number) =>
-  '¥' + (n ?? 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+// 🔴 issue #6669 第 7 条：格式规则**不再在这里维护** —— 收敛到 `@/lib/money`（与计件工资页共用一处真值）。
+// 本包装只保留财务域的**缺失值口径**（`null` ⇒ `¥0.00`，见各表格调用点）。
+const fmtMoney = (n?: number) => money(n ?? 0)
 
 // 将 Date 格式化为 YYYY-MM-DD（与 <input type="date"> 及后端时间参数一致）
 function formatDate(d: Date): string {

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Phone, MapPin, Star, Plus, X, MessageSquare, ShoppingCart, StickyNote, Save } from 'lucide-react'
+import { ArrowLeft, Phone, MapPin, Star, Plus, X, MessageSquare, ShoppingCart, Save } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button, Badge } from '@/components/ui'
 import { useRouteId } from '@/lib/use-route-id'
@@ -67,7 +67,12 @@ export default function CustomerDetailPage() {
 
   const [customer, setCustomer] = useState<CustomerDetail | null>(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'orders' | 'sessions' | 'notes'>('orders')
+  // 🔴 只有「订单历史 / 会话历史」两个页签（issue #6669 第 1 条）：原第三个页签「跟进记录」的正文
+  // 逐字是「暂无跟进记录，功能开发中...」—— 试用现场点一次就等于把「没做完」写在商家脸上。
+  // 该功能**本期不做** ⇒ 直接**收起页签**（判据：`queryByText('跟进记录')` 取不到，见
+  // frontend/admin-web/tests/unit/pages/customer-detail.test.tsx 的「未完成页签不出入口」）。
+  // ⚠️ 别只把文案改软 —— 「点得到但永远说没有」仍是同一个缺陷形态。
+  const [activeTab, setActiveTab] = useState<'orders' | 'sessions'>('orders')
   const [remark, setRemark] = useState('')
   const [savingRemark, setSavingRemark] = useState(false)
 
@@ -476,7 +481,6 @@ export default function CustomerDetailPage() {
               {[
                 { key: 'orders' as const, label: '订单历史', icon: ShoppingCart, count: customer.orders?.length },
                 { key: 'sessions' as const, label: '会话历史', icon: MessageSquare, count: customer.sessions?.length },
-                { key: 'notes' as const, label: '跟进记录', icon: StickyNote },
               ].map((tab) => (
                 <button
                   key={tab.key}
@@ -552,13 +556,6 @@ export default function CustomerDetailPage() {
                       </div>
                     ))
                   )}
-                </div>
-              )}
-
-              {/* 跟进记录 */}
-              {activeTab === 'notes' && (
-                <div className="text-center text-neutral-500 py-8 text-sm">
-                  暂无跟进记录，功能开发中...
                 </div>
               )}
             </div>

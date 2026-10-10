@@ -10,7 +10,7 @@ import { Table, Pagination, Modal, Button, Badge, SearchBar } from '@/components
 import type { TableColumn } from '@/components/ui'
 import type { Customer, CustomerTag, CustomerTagFormData, CustomerChannel, CustomerListParams } from '@/types'
 import { CustomerChannelLabels } from '@/types'
-import dayjs from 'dayjs'
+import DateTimeCell from '@/components/common/DateTimeCell'
 
 // 柔和标签颜色
 const TAG_COLORS = [
@@ -219,6 +219,10 @@ export default function CustomersPage() {
     }
   }
 
+  // 删除标签：客户会绑标签 ⇒ 破坏性动作必须先确认（issue #6669 第 4 条）。
+  // 修前是「点 ✕ 当场删」，没有任何二次确认，也没有「不可撤销」说明。
+  const [deletingTag, setDeletingTag] = useState<CustomerTag | null>(null)
+
   const handleDeleteTag = async (tag: CustomerTag) => {
     try {
       await customerApi.deleteCustomerTag(tag.id)
@@ -226,6 +230,8 @@ export default function CustomersPage() {
       toast.success('标签已删除')
     } catch (error) {
       toast.error('删除失败')
+    } finally {
+      setDeletingTag(null)
     }
   }
 
@@ -306,8 +312,10 @@ export default function CustomersPage() {
       key: 'lastActiveAt',
       title: '最后互动',
       width: '140px',
-      render: (record) =>
-        record.lastActiveAt ? dayjs(record.lastActiveAt).format('MM-DD HH:mm') : '-',
+      // 🔴 issue #6669 第 4 条：本域日期**收敛到既有唯一展示组件** DateTimeCell（YYYY-MM-DD / HH:mm 两行）。
+      // 修前这里是 `dayjs(...).format('MM-DD HH:mm')` —— **无年份**，而同域客户详情页是 `YYYY-MM-DD HH:mm`，
+      // 同一个「最后互动」在两页长得不一样（跨年的单看起来像今年）。别再就地写 format 字符串。
+      render: (record) => <DateTimeCell value={record.lastActiveAt} />,
     },
   ]
 
@@ -438,7 +446,9 @@ export default function CustomersPage() {
                       </button>
                       <button
                         className="p-1 text-neutral-400 hover:text-red-600 transition-colors"
-                        onClick={() => handleDeleteTag(tag)}
+                        aria-label={`删除标签 ${tag.name}`}
+                        data-testid={`tag-delete-${tag.id}`}
+                        onClick={() => setDeletingTag(tag)}
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -449,6 +459,33 @@ export default function CustomersPage() {
             )}
           </div>
         </div>
+      </Modal>
+
+      {/* 删除标签确认（issue #6669 第 4 条）：标签会被客户绑定 ⇒ 破坏性动作先说清后果再动手 */}
+      <Modal
+        open={deletingTag !== null}
+        onClose={() => setDeletingTag(null)}
+        title="确认删除标签"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDeletingTag(null)}>取消</Button>
+            <Button
+              variant="danger"
+              data-testid="tag-delete-confirm"
+              onClick={() => deletingTag && void handleDeleteTag(deletingTag)}
+            >
+              确认删除
+            </Button>
+          </>
+        }
+      >
+        <p className="text-neutral-600">
+          删除标签 <span className="font-medium text-neutral-900">{deletingTag?.name}</span>
+          {deletingTag?.customerCount !== undefined && deletingTag.customerCount > 0
+            ? `（当前有 ${deletingTag.customerCount} 位客户绑着它）`
+            : ''}
+          ：客户档案上的这个标签会一并解除，删除后无法恢复。如需继续使用，请改用「编辑」。
+        </p>
       </Modal>
     </div>
   )
