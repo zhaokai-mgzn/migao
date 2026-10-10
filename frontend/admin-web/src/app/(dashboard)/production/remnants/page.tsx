@@ -28,7 +28,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, RefreshCw, Search } from 'lucide-react'
-import { Button, Modal } from '@/components/ui'
+import { Button, Modal, Pagination } from '@/components/ui'
 import { orderApi, remnantApi } from '@/lib/api'
 import { InlineMarkdown } from '@/lib/inline-markdown'
 // 🔴 issue #6669 第 7 条：涉钱读数口径收敛到一处真值（本页缺失值印 `—`，不是 `¥0.00`）
@@ -50,6 +50,9 @@ const STATUS_CLASS: Record<string, string> = {
 }
 
 const KIND_LABEL: Record<string, string> = { width: '门幅余料', end: '端部余料' }
+
+/** 每页条数选项（与共享 `Pagination` 的默认档一致；默认 100 = 本页修前的一次拉取量，不变差） */
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
 /**
  * 选择器候选 = **订单的一行明细**（issue #6669 第 2 条）。
@@ -110,18 +113,28 @@ export default function RemnantLedgerPage() {
   const [scrapTarget, setScrapTarget] = useState<number | null>(null)
   const [scrapReason, setScrapReason] = useState('')
 
+  // ── 分页（issue #6697）──
+  //
+  // 🔴 修前：请求逐字硬编码 `page: 1, size: 100`，而屏上仍渲染服务端给的 `page.total`
+  // （实测租户 25：`total = 332`）⇒ **232 条（70%）没有任何可达路径**，
+  // 而「共 332 块」那句话让商家以为能数到全部 —— 界面承诺与可达集合不一致。
+  // 修后：`page` / `pageSize` 进 state，页面真请求（复用共享 `Pagination`，不新造控件）；
+  // 屏上「共 N 块」= 服务端 total，且 `Pagination` 会把「第 X-Y 条 / 共 N 条」一并说清。
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[3])
+
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      const res = await remnantApi.ledger({ status: status || undefined, page: 1, size: 100 })
+      const res = await remnantApi.ledger({ status: status || undefined, page, size: pageSize })
       setData(res.data?.data ?? null)
     } catch {
       setData(null)
       setError('余料台账读取失败（可能是当前岗位没有「工艺配置」权限）—— 请联系管理员开权限后重试')
     }
     setLoading(false)
-  }, [status])
+  }, [status, page, pageSize])
 
   useEffect(() => {
     void load()
@@ -474,7 +487,11 @@ export default function RemnantLedgerPage() {
         <select
           value={status}
           aria-label="按状态筛选"
-          onChange={(e) => setStatus(e.target.value)}
+          onChange={(e) => {
+            setStatus(e.target.value)
+            // 换筛选条件 ⇒ 回到第 1 页（否则停在第 N 页的筛选结果短于 N 页时 = 空表）
+            setPage(1)
+          }}
           className="px-2 py-1 text-xs border border-neutral-300 rounded"
         >
           <option value="">全部状态</option>
@@ -575,6 +592,24 @@ export default function RemnantLedgerPage() {
           </tbody>
         </table>
       </div>
+
+      {/* ── 分页（issue #6697）：复用共享 `Pagination` —— 上面那行「共 N 块」= 服务端 total，
+          这里给它的可达出口（第 X-Y 条 / 共 N 条 + 页码 + 每页条数）。total 为 0 时不显示。── */}
+      {!loading && !error && (data?.page?.total ?? 0) > 0 && (
+        <div data-testid="remnant-pagination" className="rounded-lg border border-neutral-200 bg-white">
+          <Pagination
+            current={page}
+            pageSize={pageSize}
+            total={data?.page?.total ?? 0}
+            onChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size)
+              setPage(1)
+            }}
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
+          />
+        </div>
+      )}
 
       {/* 报废确认（issue #6669 第 3 条）：自研 Modal —— 带上下文（哪一块 / 尺寸 / 来源）+ 不可撤销说明 */}
       <Modal
