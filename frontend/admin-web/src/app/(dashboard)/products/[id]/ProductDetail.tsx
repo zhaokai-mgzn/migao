@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Edit, ArrowUpCircle, ArrowDownCircle } from 'lucide-react'
 import Image from 'next/image'
 import { Button, Badge, Loading } from '@/components/ui'
 import BatchStockPanel from '@/components/products/BatchStockPanel'
 import { productApi } from '@/lib/api'
-import { ROLL_LENGTH_HINT, ROLL_LENGTH_LABEL } from '@/lib/product-roll-length'
+import { ROLL_LENGTH_HINT, ROLL_LENGTH_LABEL, STOCK_UNIT } from '@/lib/product-roll-length'
 import request from '@/lib/request'
 import { useRouteId } from '@/lib/use-route-id'
 import { resolveImageUrl } from '@/lib/utils'
@@ -20,24 +20,40 @@ function SkuPriceCell({ productId, sku, onUpdated }: {
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState('')
   const [loading, setLoading] = useState(false)
+  // 保存路径**有且只有一条**（`save`）：Enter 与失焦都走它 —— 退出口不落库是这条缺陷的形态
+  // （issue #6662 判据 ①）。`savingRef` 防「Enter 触发卸载 → unmount 再触发一次 blur」的重复提交。
+  const savingRef = useRef(false)
 
   const startEdit = () => {
     setValue(sku.price?.toString() || '')
     setEditing(true)
   }
 
+  const closeEditor = () => setEditing(false)
+
   const save = async () => {
-    const num = parseFloat(value)
+    if (savingRef.current) return
+    const raw = value.trim()
+    // 原样不动 ⇒ 不是改动，直接收起（不为「点开又点走」发一次请求）。
+    // ⚠️ 必须与「清空」分开判：`parseFloat('')` 是 NaN，拿值比较会把『清空』也当成「原样」。
+    if (raw !== '' && Number(raw) === sku.price) { closeEditor(); return }
+    const num = parseFloat(raw)
+    // 坏值（清空 / 非数字 / 负数）⇒ 明确拒绝 + **保持编辑态**（不静默退出，商家能接着改）
     if (isNaN(num) || num < 0) { toast.error('请输入有效价格'); return }
+    savingRef.current = true
     setLoading(true)
     try {
       await request.patch(`/api/admin/agent/products/${productId}/skus/${sku.id}`, { price: num })
       toast.success(`SKU 价格已更新`)
-      setEditing(false)
+      closeEditor()
       onUpdated()
     } catch (e: any) {
-      toast.error(e?.response?.data?.error?.message || '更新失败')
-    } finally { setLoading(false) }
+      // 🔴 失败**不得静默退出编辑态**（保持框开着 + 值还在，商家知道自己还没存上）
+      toast.error(apiErrorMessage(e, '改价失败'))
+    } finally {
+      savingRef.current = false
+      setLoading(false)
+    }
   }
 
   if (editing) {
@@ -50,8 +66,9 @@ function SkuPriceCell({ productId, sku, onUpdated }: {
           className="w-20 h-7 px-1.5 text-xs border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-400 text-right"
           value={value}
           onChange={e => setValue(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setEditing(false) }}
-          onBlur={() => setEditing(false)}
+          onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') closeEditor() }}
+          // issue #6662 判据 ①：**失焦 = 落库**（或坏值显式拒绝并保留编辑态），不再无声丢弃改动
+          onBlur={save}
           disabled={loading}
         />
       </div>
@@ -72,6 +89,11 @@ function SkuPriceCell({ productId, sku, onUpdated }: {
 import { toast } from 'sonner'
 import type { Product, ProductStatus, ProductSku } from '@/types'
 import { ProductStatusLabels, PricingTypeLabels, SellingMethodLabels } from '@/types'
+
+/** 从 axios 错误里取商家能读的文案（取不到就用兜底句，不把内部错误裸露上屏） */
+function apiErrorMessage(e: any, fallback: string): string {
+  return e?.response?.data?.error?.message || fallback
+}
 
 // specifications 中常见 key 的中文标签映射
 const SPEC_LABELS: Record<string, string> = {
@@ -161,6 +183,10 @@ export default function ProductDetailPage() {
 
   // 商品属性条目（过滤空值）
   const specEntries: Array<{ key: string; label: string; value: string }> = []
+  // 🔴 未识别的键**不单独立项**（issue #6662 判据 ④）：内部键名不得当标签上屏
+  // （商家看到的是 `someUnknownKey` 这种内部标识）。值不丢 —— 归到「其他」一行，
+  // 以「键：值」形态承载，商家据此能去商品表单里找回是哪一格。
+  const otherSpecs: Array<{ key: string; value: string }> = []
   const specs = product.specifications || {}
   // 优先按预定义 key 顺序展示
   const orderedKeys = Object.keys(SPEC_LABELS)
@@ -172,12 +198,11 @@ export default function ProductDetailPage() {
       seen.add(k)
     }
   }
-  // 其他未识别的 key 原样展示（如 unit 等已在基本信息展示则跳过）
   const SKIP_SPEC_KEYS = new Set(['unit'])
   for (const [k, v] of Object.entries(specs)) {
     if (seen.has(k) || SKIP_SPEC_KEYS.has(k)) continue
     if (v && String(v).trim()) {
-      specEntries.push({ key: k, label: k, value: String(v) })
+      otherSpecs.push({ key: k, value: String(v) })
     }
   }
 
@@ -258,7 +283,7 @@ export default function ProductDetailPage() {
                 </div>
               )}
               <div>
-                <dt className="text-xs text-neutral-500">库存</dt>
+                <dt className="text-xs text-neutral-500">库存（{STOCK_UNIT}）</dt>
                 <dd className="text-sm text-neutral-900 mt-0.5">{product.totalStock ?? product.stock ?? '-'}</dd>
               </div>
               {stockDeductionLabel && (
@@ -342,7 +367,7 @@ export default function ProductDetailPage() {
           </div>
 
           {/* 商品属性 */}
-          {specEntries.length > 0 && (
+          {(specEntries.length > 0 || otherSpecs.length > 0) && (
             <div className="bg-neutral-50 rounded-lg p-4">
               <h3 className="text-sm font-semibold text-neutral-700 mb-3">商品属性</h3>
               <dl className="grid grid-cols-2 gap-x-6 gap-y-3">
@@ -352,6 +377,15 @@ export default function ProductDetailPage() {
                     <dd className="text-sm text-neutral-900 mt-0.5">{item.value}</dd>
                   </div>
                 ))}
+                {/* 未识别的规格：**一行「其他」**承载全部（键名不进标签位，只进「键：值」文本） */}
+                {otherSpecs.length > 0 && (
+                  <div className="col-span-2">
+                    <dt className="text-xs text-neutral-500">其他</dt>
+                    <dd className="text-sm text-neutral-900 mt-0.5 break-words">
+                      {otherSpecs.map((item) => `${item.key}：${item.value}`).join('；')}
+                    </dd>
+                  </div>
+                )}
               </dl>
             </div>
           )}
@@ -373,7 +407,7 @@ export default function ProductDetailPage() {
                       <th className="px-3 py-2 text-left font-medium">颜色</th>
                       <th className="px-3 py-2 text-left font-medium">门幅</th>
                       <th className="px-3 py-2 text-left font-medium">货号</th>
-                      <th className="px-3 py-2 text-right font-medium">库存</th>
+                      <th className="px-3 py-2 text-right font-medium">库存（{STOCK_UNIT}）</th>
                       <th className="px-3 py-2 text-right font-medium">价格</th>
                     </tr>
                   </thead>

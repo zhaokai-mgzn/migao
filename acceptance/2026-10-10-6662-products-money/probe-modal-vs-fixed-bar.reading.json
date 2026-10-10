@@ -1,0 +1,37 @@
+{
+ "geo": {
+  "submitCenter": {
+   "x": 1232,
+   "y": 956
+  },
+  "hitAtSubmitCenter": {
+   "tag": "DIV",
+   "id": "tracker",
+   "cls": "absolute inset-0 flex items-center justify-center p-4 o"
+  },
+  "hitIsSubmit": false,
+  "z": {
+   "bar": "30",
+   "modal": "50"
+  }
+ },
+ "pwClick": "TimeoutError: page.click: Timeout 2500ms exceeded.",
+ "afterPw": {
+  "submit": 0,
+  "mask": 0,
+  "tracker": 0,
+  "dialog": 0
+ },
+ "afterCenter": {
+  "submit": 0,
+  "mask": 0,
+  "tracker": 1,
+  "dialog": 0
+ },
+ "afterMask": {
+  "submit": 0,
+  "mask": 0,
+  "tracker": 2,
+  "dialog": 0
+ }
+}
