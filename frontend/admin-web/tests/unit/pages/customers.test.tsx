@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 // Mock API
@@ -39,12 +39,10 @@ vi.mock('lucide-react', () => {
   }
 })
 
-// Mock dayjs
-vi.mock('dayjs', () => ({
-  default: (date?: string) => ({
-    format: (fmt: string) => date ? '04-20 14:30' : '2026-04-25',
-  }),
-}))
+// 🔴 不再 mock dayjs（issue #6669 第 4 条）：原来的 mock 把**任何** format 都返回 `04-20 14:30`
+// —— 那恰好是修前的坏形态（无年份），而「日期口径是否收敛到 DateTimeCell」正是本包要判的东西。
+// 留着这个 mock 会把判据变成空的（新旧两种形态渲染成同一串）⇒ 用真 dayjs，让日期列**真的**被断言。
+// （本文件其它用例只查客户名/手机号/标签/pagination，不依赖日期文本。）
 
 // Mock types
 vi.mock('@/types', () => ({
@@ -68,8 +66,10 @@ vi.mock('@/components/ui', async (importOriginal) => {
             data-testid={`customer-${record.id}`}
             onClick={() => onRowClick?.(record)}
           >
-            <span>{record.name}</span>
-            <span>{record.phone}</span>
+            {/* 逐列调用真实的 column.render（issue #6669 第 4 条的日期口径判据就落在这一层） */}
+            {columns.map((c: any) => (
+              <span key={c.key}>{c.render ? c.render(record, 0) : String(record[c.key] ?? '')}</span>
+            ))}
           </div>
         ))}
       </div>
@@ -106,13 +106,14 @@ describe('CustomersPage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mockDeleteCustomerTag.mockResolvedValue({ data: { success: true } })
 
     // Mock API responses
     mockGetCustomers.mockResolvedValue({
       data: {
         data: {
           items: [
-            { id: '1', name: '张美丽', phone: '138****1234', channel: 'wechat_mini', vipLevel: 'gold', totalOrders: 5, totalSpent: 12000, createdAt: '2026-04-20T14:30:00Z' },
+            { id: '1', name: '张美丽', phone: '138****1234', channel: 'wechat_mini', vipLevel: 'gold', totalOrders: 5, totalSpent: 12000, createdAt: '2026-04-20T14:30:00Z', lastActiveAt: '2026-04-20T14:30:00Z' },
             { id: '2', name: '李优雅', phone: '139****5678', channel: 'wechat_mp', vipLevel: 'silver', totalOrders: 3, totalSpent: 8000, createdAt: '2026-04-21T10:00:00Z' },
           ],
           total: 2,
@@ -192,5 +193,47 @@ describe('CustomersPage', () => {
     expect(screen.getByText('关键词')).toBeInTheDocument()
     expect(screen.getByText('来源渠道')).toBeInTheDocument()
     expect(screen.getByText('VIP 等级')).toBeInTheDocument()
+  })
+
+  /**
+   * 🔴 issue #6669 第 4 条（破坏性动作要有二次确认）：
+   * 标签会被**客户绑定**，修前点 ✕ 当场就删（没有确认、没有「不可撤销」说明）。
+   * 红证：把 `onClick={() => setDeletingTag(tag)}` 改回 `onClick={() => handleDeleteTag(tag)}` ⇒
+   * 本条的 `expect(mockDeleteCustomerTag).not.toHaveBeenCalled()` 当场红。
+   */
+  it('删标签先确认：点 ✕ 不发请求，确认后才调 API；取消则什么都不做', async () => {
+    render(<CustomersPage />)
+    await user.click(screen.getByText('标签管理'))
+    await waitFor(() => expect(screen.getByTestId('tag-delete-1')).toBeInTheDocument())
+
+    await user.click(screen.getByTestId('tag-delete-1'))
+    expect(mockDeleteCustomerTag).not.toHaveBeenCalled()
+    expect(screen.getByText(/无法恢复/)).toBeInTheDocument()
+
+    // 取消 ⇒ 关闭、不发请求
+    await user.click(screen.getByText('取消'))
+    expect(mockDeleteCustomerTag).not.toHaveBeenCalled()
+
+    // 再点一次并确认 ⇒ 才真的删
+    await user.click(screen.getByTestId('tag-delete-1'))
+    await user.click(screen.getByTestId('tag-delete-confirm'))
+    await waitFor(() => expect(mockDeleteCustomerTag).toHaveBeenCalledWith('1'))
+  })
+
+  /**
+   * 🔴 issue #6669 第 4 条（日期口径收敛）：修前「最后互动」是 `MM-DD HH:mm`（**无年份**），
+   * 而同域客户详情页是 `YYYY-MM-DD HH:mm` ⇒ 跨年的单看起来像今年。
+   * 现收敛到既有唯一组件 `@/components/common/DateTimeCell`（YYYY-MM-DD + HH:mm 两行）。
+   *
+   * ⚠️ 本文件把 dayjs mock 成 `'04-20 14:30'`（见文件头）—— 那正是**修前的坏形态**；
+   * DateTimeCell 走原生 Date 合法性检查 + dayjs 格式化 ⇒ 断言"含 4 位年份"即可把两者分开。
+   * 红证：把 render 改回 `dayjs(record.lastActiveAt).format('MM-DD HH:mm')` ⇒ 本条红（读数是 `04-20 14:30`）。
+   */
+  it('「最后互动」带年份（收敛到 DateTimeCell，不再是无年份的 MM-DD HH:mm）', async () => {
+    render(<CustomersPage />)
+    await waitFor(() => expect(screen.getByTestId('customer-1')).toBeInTheDocument())
+    const cell = within(screen.getByTestId('customer-1')).getByText(/^\d{4}-\d{2}-\d{2}$/)
+    expect(cell).toBeInTheDocument()
+    expect(within(screen.getByTestId('customer-1')).queryByText(/^\d{2}-\d{2} \d{2}:\d{2}$/)).toBeNull()
   })
 })

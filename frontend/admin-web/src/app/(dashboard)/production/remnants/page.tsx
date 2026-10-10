@@ -20,17 +20,20 @@
  *
  * ## 边界（照实登记）
  *
- * - 匹配入口要求填**明细行 id**：余料匹配是**逐明细行**的事（小件需求来自该行勾的特殊选项）。
- *   派工页内嵌匹配**不在本单范围**（登记为边界，见 PR 报告）；
+ * - 匹配入口要求选**订单明细行**：余料匹配是**逐明细行**的事（小件需求来自该行勾的特殊选项）。
+ *   自 issue #6669 起商家**不必手输内部 id** —— 按订单号/客户搜索 → 选订单 → 点一行明细即可
+ *   （id 只留在状态里，不上屏）。派工页内嵌匹配**不在本单范围**（登记为边界，见 PR 报告）；
  * - 回收 / 报废的**权限**与算料配置同码（`processing:manage`）—— 无权限时读面会失败，
  *   页面按「权限拒绝是终态」给可行动话术（同族实证：issue #4103）。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, RefreshCw, Search } from 'lucide-react'
-import { Button } from '@/components/ui'
-import { remnantApi } from '@/lib/api'
+import { Button, Modal } from '@/components/ui'
+import { orderApi, remnantApi } from '@/lib/api'
 import { InlineMarkdown } from '@/lib/inline-markdown'
-import type { RemnantLedgerView, RemnantMatchView } from '@/types'
+// 🔴 issue #6669 第 7 条：涉钱读数口径收敛到一处真值（本页缺失值印 `—`，不是 `¥0.00`）
+import { moneyOrDash } from '@/lib/money'
+import type { Order, RemnantLedgerView, RemnantMatchView } from '@/types'
 
 const STATUS_LABEL: Record<string, string> = {
   available: '可用',
@@ -48,12 +51,29 @@ const STATUS_CLASS: Record<string, string> = {
 
 const KIND_LABEL: Record<string, string> = { width: '门幅余料', end: '端部余料' }
 
+/**
+ * 选择器候选 = **订单的一行明细**（issue #6669 第 2 条）。
+ *
+ * `itemId`（= 后端要的 `order_items.id`）与 `orderId` 是**内部标识**：只在状态与请求里流转，
+ * **不上屏**（商家看到的是订单号 / 商品 / 数量）。
+ */
+interface LineChoice {
+  orderId: string
+  orderNo: string
+  customerName: string
+  itemId: string
+  productName: string
+  color?: string
+  specification?: string
+  quantity: number
+}
+
 function num(value?: number | null, digits = 2): string {
   return value === undefined || value === null ? '—' : Number(value).toFixed(digits)
 }
 
 function money(value?: number | null): string {
-  return value === undefined || value === null ? '—' : `¥${Number(value).toFixed(2)}`
+  return moneyOrDash(value)
 }
 
 function time(value?: string | null): string {
@@ -70,11 +90,25 @@ export default function RemnantLedgerPage() {
   const [busyId, setBusyId] = useState<number | null>(null)
   const [actionMsg, setActionMsg] = useState('')
 
-  // 小件优先匹配（只读查询）：明细行 id + 可选的该行实际领料批次号
+  // 小件优先匹配（只读查询）：**订单/明细行选择器** + 可选的该行实际领料批次号
+  //
+  // 🔴 issue #6669 第 2 条（P0）：修前这里是一个让商家**手输「订单明细行 id」**的输入框，
+  // 而界面上**无处能看到/选到**这个 id（它是 order_items 的 UUID）⇒ 该功能对商家实际不可用。
+  // 修后：按订单号/客户搜索 → 选中订单 → 列出该订单的明细行（商品名 / 颜色 / 规格 / 数量）→ 点一行。
+  // id **只留在状态里**，不上屏（`aria-label` 只描述动作，不回显标识）。
   const [orderItemId, setOrderItemId] = useState('')
+  const [lineQuery, setLineQuery] = useState('')
+  const [lineCandidates, setLineCandidates] = useState<LineChoice[]>([])
+  const [lineSearching, setLineSearching] = useState(false)
+  const [linePickError, setLinePickError] = useState('')
+  const [selectedLine, setSelectedLine] = useState<LineChoice | null>(null)
   const [batchNo, setBatchNo] = useState('')
   const [match, setMatch] = useState<RemnantMatchView | null>(null)
   const [matchError, setMatchError] = useState('')
+
+  // 报废留痕：自研 Modal（不用 window.prompt —— 无上下文、无「不可撤销」说明、样式不可控）
+  const [scrapTarget, setScrapTarget] = useState<number | null>(null)
+  const [scrapReason, setScrapReason] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -93,23 +127,85 @@ export default function RemnantLedgerPage() {
     void load()
   }, [load])
 
+  /** 搜索订单，并把每个订单的明细行摊平成候选（明细 id 只在内部传递） */
+  const searchLines = useCallback(async () => {
+    const kw = lineQuery.trim()
+    setLinePickError('')
+    setLineCandidates([])
+    if (!kw) {
+      setLinePickError('请先填订单号或客户名（也可以直接搜「全部」看最近订单）')
+      return
+    }
+    setLineSearching(true)
+    try {
+      const res = await orderApi.getOrders({ keyword: kw, page: 1, size: 20 })
+      const orders = (res.data?.data?.items ?? []) as Order[]
+      setLineCandidates(
+        orders.flatMap((o) =>
+          (o.items ?? [])
+            .filter((it) => !!it.id)
+            .map((it) => ({
+              orderId: o.id,
+              orderNo: o.orderNo,
+              customerName: o.customerName,
+              itemId: it.id,
+              productName: it.productName,
+              color: it.color,
+              specification: it.specification,
+              quantity: it.quantity,
+            })),
+        ),
+      )
+    } catch {
+      setLinePickError('订单查询失败 —— 请稍后重试')
+    }
+    setLineSearching(false)
+  }, [lineQuery])
+
+  /** 选中一行 ⇒ 只把明细 id 记进状态（上屏的是「订单号 + 商品 + 数量」） */
+  const pickLine = useCallback((c: LineChoice) => {
+    setOrderItemId(c.itemId)
+    setSelectedLine(c)
+    setLinePickError('')
+    setMatchError('')
+    setMatch(null)
+  }, [])
+
   const runMatch = useCallback(async () => {
     setMatchError('')
     setMatch(null)
     if (!orderItemId.trim()) {
-      setMatchError('请先填订单明细行 id（小件需求来自该行勾选的特殊选项）')
+      setMatchError('请先选一个订单明细行（小件需求来自该行勾选的特殊选项）')
+      return
+    }
+    // 只对**选中的那一行**取详情（搜索面摊平出的行不带 id ⇒ 不能用它直接查匹配）
+    if (!selectedLine) {
+      setMatchError('该明细行已失效 —— 请重新搜索订单并选一行')
       return
     }
     try {
-      const res = await remnantApi.match({
-        orderItemId: orderItemId.trim(),
+      const res = await orderApi.getOrder(selectedLine.orderId)
+      const order = res.data?.data as Order | undefined
+      const itemId = (order?.items ?? []).find(
+        (it) =>
+          it.productName === selectedLine.productName &&
+          it.color === selectedLine.color &&
+          it.specification === selectedLine.specification &&
+          Number(it.quantity) === Number(selectedLine.quantity),
+      )?.id
+      if (!itemId) {
+        setMatchError('这行已不在该订单里（订单可能被改过）—— 请重新搜索并选一行')
+        return
+      }
+      const matchRes = await remnantApi.match({
+        orderItemId: itemId,
         batchNo: batchNo.trim() || undefined,
       })
-      setMatch(res.data?.data ?? null)
+      setMatch(matchRes.data?.data ?? null)
     } catch {
-      setMatchError('匹配查询失败 —— 请确认该明细行 id 属于本企业')
+      setMatchError('匹配查询失败 —— 请确认这一行属于本企业，或稍后重试')
     }
-  }, [orderItemId, batchNo])
+  }, [orderItemId, selectedLine, batchNo])
 
   const recover = useCallback(
     async (remnantId: number, itemKey: string) => {
@@ -118,6 +214,7 @@ export default function RemnantLedgerPage() {
       try {
         await remnantApi.recover(remnantId, {
           orderItemId: orderItemId.trim() || undefined,
+          orderNo: selectedLine?.orderNo,
           itemKey,
         })
         setActionMsg('已记回收 —— 该小件不新领料（不新增批次消耗），回收额冲减用它的那张单的面料成本')
@@ -130,28 +227,35 @@ export default function RemnantLedgerPage() {
       }
       setBusyId(null)
     },
-    [orderItemId, load, runMatch]
+    [orderItemId, selectedLine, load, runMatch]
   )
 
-  const scrap = useCallback(
-    async (remnantId: number) => {
-      const reason = window.prompt('报废原因（报废要留痕：谁、何时、为什么）')
-      if (!reason || !reason.trim()) return
-      setBusyId(remnantId)
-      setActionMsg('')
-      try {
-        await remnantApi.scrap(remnantId, reason.trim())
-        setActionMsg('已报废并留痕（状态 / 原因 / 操作人 / 时刻都可查）')
-        await load()
-      } catch (e) {
-        const detail = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data
-          ?.error?.message
-        setActionMsg(detail || '报废失败 —— 请刷新后重试')
-      }
-      setBusyId(null)
-    },
-    [load]
-  )
+  /**
+   * 报废留痕：**自研 Modal**（issue #6669 第 3 条）。
+   *
+   * 修前走 `window.prompt('报废原因…')` —— 原生弹层的代价：① 没有上下文（看不到要报废的是哪一块）；
+   * ② 没有「不可撤销」说明（报废是不可逆的账）；③ 样式/可访问性不可控、且**不可测**。
+   * 类级固化见 `tests/unit/lib/no-native-dialog-for-destructive-copy-guard.test.ts`（台账只许缩短）。
+   */
+  const confirmScrap = useCallback(async () => {
+    const reason = scrapReason.trim()
+    if (!scrapTarget || !reason) return
+    const id = scrapTarget
+    setBusyId(id)
+    setActionMsg('')
+    setScrapTarget(null)
+    setScrapReason('')
+    try {
+      await remnantApi.scrap(id, reason)
+      setActionMsg('已报废并留痕（状态 / 原因 / 操作人 / 时刻都可查）')
+      await load()
+    } catch (e) {
+      const detail = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data
+        ?.error?.message
+      setActionMsg(detail || '报废失败 —— 请刷新后重试')
+    }
+    setBusyId(null)
+  }, [scrapTarget, scrapReason, load])
 
   const summary = data?.summary
   const rows = data?.page?.items ?? []
@@ -209,17 +313,29 @@ export default function RemnantLedgerPage() {
       <div className="bg-white border border-neutral-200 rounded-lg p-4 space-y-3">
         <div className="text-sm font-medium text-neutral-900">小件优先匹配</div>
         <p className="text-xs text-neutral-500">
-          填订单明细行 id：系统按该行勾选的特殊选项（余料做绑带 / 余料做帘头 / 抱枕 …）算出小件需求，
-          再从<InlineMarkdown text="**可用余料**" />里挑装得下的余料（同缸号优先、其次同色）；找到就不新领料。
+          按订单号或客户搜出订单，再点一行明细：系统按该行勾选的特殊选项（余料做绑带 / 余料做帘头 / 抱枕 …）
+          算出小件需求，再从<InlineMarkdown text="**可用余料**" />里挑装得下的余料（同缸号优先、其次同色）；
+          找到就不新领料。
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <input
-            value={orderItemId}
-            aria-label="订单明细行 id"
-            placeholder="订单明细行 id"
-            onChange={(e) => setOrderItemId(e.target.value)}
+            value={lineQuery}
+            aria-label="搜索订单或客户"
+            placeholder="订单号 / 客户名"
+            onChange={(e) => setLineQuery(e.target.value)}
             className="w-64 px-2 py-1 text-xs border border-neutral-300 rounded"
           />
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            data-testid="remnant-line-search"
+            loading={lineSearching}
+            onClick={() => void searchLines()}
+          >
+            <Search className="w-4 h-4 mr-1" />
+            搜订单
+          </Button>
           <input
             value={batchNo}
             aria-label="批次号"
@@ -227,11 +343,72 @@ export default function RemnantLedgerPage() {
             onChange={(e) => setBatchNo(e.target.value)}
             className="w-64 px-2 py-1 text-xs border border-neutral-300 rounded"
           />
-          <Button type="button" size="sm" onClick={() => void runMatch()}>
-            <Search className="w-4 h-4 mr-1" />
+          <Button
+            type="button"
+            size="sm"
+            data-testid="remnant-match-run"
+            disabled={!selectedLine}
+            onClick={() => void runMatch()}
+          >
             查匹配
           </Button>
         </div>
+
+        {/* 选中态：**上屏的是订单号 + 商品 + 数量**（明细 id 不上屏） */}
+        {selectedLine && (
+          <div
+            data-testid="remnant-line-selected"
+            className="flex items-center gap-2 text-xs text-neutral-700 bg-neutral-50 border border-neutral-200 rounded p-2"
+          >
+            <span>
+              已选：{selectedLine.orderNo} · {selectedLine.productName}
+              {selectedLine.color ? ` · ${selectedLine.color}` : ''}
+              {selectedLine.specification ? ` · ${selectedLine.specification}` : ''} ·{' '}
+              {selectedLine.quantity} 米
+            </span>
+            <button
+              type="button"
+              data-testid="remnant-line-clear"
+              className="text-primary-700 hover:underline"
+              onClick={() => {
+                setSelectedLine(null)
+                setOrderItemId('')
+                setMatch(null)
+                setMatchError('')
+              }}
+            >
+              换一行
+            </button>
+          </div>
+        )}
+
+        {linePickError && <p className="text-xs text-red-700">{linePickError}</p>}
+
+        {/* 候选明细行：折叠封顶 + 可滚动，**不随条数增长**占页面高度（§31 P1） */}
+        {lineCandidates.length > 0 && !selectedLine && (
+          <div
+            data-testid="remnant-line-candidates"
+            className="max-h-56 overflow-y-auto divide-y divide-neutral-100 border border-neutral-200 rounded"
+          >
+            {lineCandidates.map((c) => (
+              <button
+                key={`${c.orderNo}-${c.productName}-${c.color ?? ''}-${c.specification ?? ''}`}
+                type="button"
+                data-testid="remnant-line-option"
+                className="w-full text-left px-3 py-2 text-xs hover:bg-neutral-50"
+                onClick={() => pickLine(c)}
+              >
+                <span className="font-medium text-neutral-900">{c.orderNo}</span>
+                <span className="ml-2 text-neutral-600">
+                  {c.productName}
+                  {c.color ? ` · ${c.color}` : ''}
+                  {c.specification ? ` · ${c.specification}` : ''} · {c.quantity} 米
+                </span>
+                <span className="ml-2 text-neutral-400">{c.customerName}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {matchError && <p className="text-xs text-red-700">{matchError}</p>}
         {match && (
           <div data-testid="remnant-match-result" className="space-y-2">
@@ -383,7 +560,10 @@ export default function RemnantLedgerPage() {
                         type="button"
                         data-testid={`remnant-scrap-btn-${row.id}`}
                         disabled={busyId === row.id}
-                        onClick={() => void scrap(row.id)}
+                        onClick={() => {
+                          setScrapReason('')
+                          setScrapTarget(row.id)
+                        }}
                         className="text-primary-700 hover:underline"
                       >
                         报废
@@ -395,6 +575,51 @@ export default function RemnantLedgerPage() {
           </tbody>
         </table>
       </div>
+
+      {/* 报废确认（issue #6669 第 3 条）：自研 Modal —— 带上下文（哪一块 / 尺寸 / 来源）+ 不可撤销说明 */}
+      <Modal
+        open={scrapTarget !== null}
+        onClose={() => setScrapTarget(null)}
+        title="报废留痕"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setScrapTarget(null)}>取消</Button>
+            <Button
+              variant="danger"
+              data-testid="remnant-scrap-confirm"
+              disabled={!scrapReason.trim()}
+              onClick={() => void confirmScrap()}
+            >
+              确认报废
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3 text-sm text-neutral-600">
+          <p>
+            把这一块余料标记为「已报废」：
+            {(() => {
+              const row = rows.find((r) => r.id === scrapTarget)
+              return row
+                ? ` ${row.sourceOrderNo} 的 ${num(row.lengthM)} × ${num(row.widthM)} 米（来源批次 ${row.sourceBatchNo} · 缸号 ${row.dyeLot || '—'}）。`
+                : ''
+            })()}
+            报废后<strong className="font-medium text-neutral-900">无法撤销</strong>，
+            状态 / 原因 / 操作人 / 时刻都会留下记录。
+          </p>
+          <label className="block">
+            <span className="block text-xs font-medium text-neutral-700 mb-1">报废原因</span>
+            <textarea
+              value={scrapReason}
+              aria-label="报废原因"
+              rows={3}
+              onChange={(e) => setScrapReason(e.target.value)}
+              placeholder="例如：受潮发霉 / 尺寸不足无法再用"
+              className="w-full px-2 py-1 text-sm border border-neutral-300 rounded resize-none"
+            />
+          </label>
+        </div>
+      </Modal>
     </div>
   )
 }

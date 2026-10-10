@@ -1,4 +1,4 @@
-// case_ids: PG-021
+// case_ids: PG-021, CU-010. 计件金额千分位口径与财务域同源（issue #6669 第 7 条）
 // PG-021（issue #4205，前端半边）：计件工资报表页 /production/piecework ——
 // 消费 GET /api/admin/production/piecework/summary?period=YYYY-MM[&worker_name=]，
 // 按期间（月份选择）+ 按工人 / 按工序两档展示；默认期间 = 当前月（不空查）。
@@ -126,8 +126,33 @@ describe('计件工资报表页 /production/piecework', () => {
     expect(within(workers).getByTestId('worker-row-李红梅')).toHaveTextContent('¥43.45')
   })
 
-  it('切「按工序」档：展示工序聚合（工序名/金额/数量）', async () => {
+  /**
+   * 🔴 issue #6669 第 7 条（**页面级**，不是只测工具函数）：计件金额与财务域**同口径** ——
+   * 千分位 + 固定两位小数。修前这里是 `¥${n.toFixed(2)}` ⇒ 六位数印成 `¥123456.78`（无千分位），
+   * 而财务域印 `¥123,456.78` ⇒ **同一条用例在两个域给出两种形态**。
+   *
+   * 红证：把 `formatMoney` 改回 `¥${Number(v ?? 0).toFixed(2)}` ⇒ 本条红
+   * （实测读数 `expected '¥123456.78' to contain '¥123,456.78'`）。
+   */
+  it('金额带千分位（与财务域同口径）：合计 123456.78 ⇒ ¥123,456.78', async () => {
+    mockGetPieceworkSummary.mockImplementation(() =>
+      laggedOk({
+        ...REPORT,
+        total: 123456.78,
+        per_worker: [{ worker_name: '张三', amount: 123456.78, qty: 200 }],
+        per_operation: [{ operation: '韩褶', logical_name: '韩褶 · 布帘', position: '布帘', amount: 98765.4, qty: 100 }],
+      }),
+    )
     render(<PieceworkReportPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('piecework-report-total')).toHaveTextContent('¥123,456.78'),
+    )
+    expect(within(screen.getByTestId('piecework-by-worker')).getByTestId('worker-row-张三')).toHaveTextContent(
+      '¥123,456.78',
+    )
+  })
+
+  it('切「按工序」档：展示工序聚合（工序名/金额/数量）', async () => {    render(<PieceworkReportPage />)
     await waitFor(() => expect(screen.getByTestId('piecework-by-worker')).toBeInTheDocument())
 
     await userEvent.click(screen.getByTestId('piecework-tab-operation'))

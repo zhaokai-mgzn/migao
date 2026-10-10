@@ -1,4 +1,4 @@
-// case_ids: CU-001, CU-002, CU-009
+// case_ids: CU-002, CU-009, CU-010. 客户详情「未完成页签不出入口」（issue #6669 第 1 条）
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
@@ -143,13 +143,32 @@ describe('CustomerDetailPage', () => {
     })
   })
 
-  it('displays tab bar with Orders, Sessions, Notes', async () => {
+  it('displays tab bar with Orders and Sessions', async () => {
     render(<CustomerDetailPage />)
     await waitFor(() => {
       expect(screen.getByText('订单历史')).toBeInTheDocument()
       expect(screen.getByText('会话历史')).toBeInTheDocument()
-      expect(screen.getByText('跟进记录')).toBeInTheDocument()
     })
+  })
+
+  /**
+   * 🔴 issue #6669 第 1 条（类级固化在 `tests/unit/lib/incomplete-feature-copy-guard.test.ts`）。
+   *
+   * 修前形态：第三个页签正文逐字「暂无跟进记录，功能开发中...」—— 商家点一次就看到「没做完」。
+   * 修后：该页签**不出入口**（功能本期不做 ⇒ 收起，不是把文案改软）。
+   *
+   * 判别力：把 `{{ key: 'notes', label: '跟进记录' }}` 那一行加回 CustomerDetail.tsx 的 TABS ⇒
+   * 本条当场红（`getByText('跟进记录')` 又能取到）。**负控**：另两个真页签必须仍在（防「整块 tab 栏被删」也判绿）。
+   */
+  it('未完成页签不出入口：「跟进记录」取不到，且它不是被整块 tab 栏带走（负控）', async () => {
+    render(<CustomerDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /订单历史/ })).toBeInTheDocument()
+    })
+    expect(screen.queryByText('跟进记录')).not.toBeInTheDocument()
+    expect(screen.queryByText(/功能开发中/)).not.toBeInTheDocument()
+    // 负控：真页签仍在 ⇒ 「tab 栏整体消失」这种坏形态不会让本条假绿
+    expect(screen.getByRole('button', { name: /会话历史/ })).toBeInTheDocument()
   })
 
   it('displays order list by default', async () => {
