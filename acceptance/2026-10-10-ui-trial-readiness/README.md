@@ -11,7 +11,8 @@ RESET=1 PHASE=post-fix bash acceptance/2026-10-10-ui-trial-readiness/run-all.sh
 
 - 起一个**路由完备**的服务端（自愈，推荐）：`bash acceptance/2026-10-10-ui-trial-readiness/scripts/serve-admin-web-3001.sh`
   —— 依据：dev server 冷启动时路由扫描会**非确定性残缺**且永不重扫 ⇒ 只校验 `/login` 或 TCP 不算就绪。
-- `RESET=1`：先复位 dev server（`scripts/dev-web-reset.sh`：杀实例 → 三类缓存一起删并**断言清空** → 只起一个 → 等 `/login` **与** `/dashboard` 双 200）；复位失败**直接停**（否则后续读数会假）。
+- `RESET=1`：先复位 dev server —— 调用包内的 `scripts/serve-admin-web-3001.sh`（杀端口 → 清三类缓存 → 起 → 校验 `/login` `/dashboard` `/products` `/about` **四路由** → 不齐重来 ≤3 次），并打印**工作树 HEAD vs origin/main**（不一致时明确提示：本轮读数只能归因到工作树那个提交）。复位失败**直接停**。
+  ⚠️ 2026-10-11 更正：此处原先写的 `scripts/dev-web-reset.sh` **在本仓与包里都不存在** ⇒ `RESET=1` 一按就停（已改）。
 - `PHASE=<名字>`：本轮读数落到 `evidence/S12-<名字>.json`（**不给则 `latest`**）—— 文件名按阶段区分是硬要求，写死一个名字会让下一次运行**静默覆盖**上一次证据。
 - **不要用管道包住本脚本**（`| tail` 会吞掉退出码 —— 本批实测踩过三次）。
 

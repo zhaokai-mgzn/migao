@@ -13,9 +13,29 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 
 if [ "${RESET:-0}" = "1" ]; then
-  echo "=== 复位 dev server（清 .next / node_modules/.cache / .turbo，起单实例并等 /login 与 /dashboard 双 200）==="
-  WEB_DIR="${WEB_DIR:-/Users/guangzhen.zk/ai native/migao/frontend/admin-web}" bash "$ROOT/scripts/dev-web-reset.sh" || {
-    echo "❌ 复位失败（它自带断言，失败会非零退出）—— 不复位就继续跑会得到**假绿/假红**，故此处直接停"; exit 1; }
+  # 复位 = 用**自愈脚本**起一个"路由完备"的实例（它自带：杀端口 → 清三类缓存 → 起 → 校验**四个业务路由** → 不齐重来 ≤3 次）。
+  # ⚠️ 2026-10-11 修：本行原先指向 `$ROOT/scripts/dev-web-reset.sh` —— 那个文件**在本仓与包里都不存在** ⇒ `RESET=1` 一按就停
+  #    （README 却把它写成了可用路径）。改为指向包内真实存在的自愈脚本，并用 nohup 脱离本 shell（否则它会 `wait` 住、本脚本再也走不到下一步）。
+  SRV="$HERE/scripts/serve-admin-web-3001.sh"
+  [ -f "$SRV" ] || { echo "❌ 找不到自愈脚本 $SRV ⇒ 不复位就继续跑会得到假绿/假红，故停"; exit 1; }
+  # 版本自证：读数只在"工作树干净且 == origin/main"时可归因
+  TREE_HEAD="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo '?')"
+  TREE_DIRTY="$(git -C "$ROOT" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+  MAIN_HEAD="$(git -C "$ROOT" rev-parse --short origin/main 2>/dev/null || echo '?')"
+  echo "=== 起一个路由完备的 admin-web（自愈：杀端口→清缓存→起→校验四路由→不齐重来≤3 次）==="
+  echo "    工作树 HEAD=${TREE_HEAD}（脏文件 ${TREE_DIRTY} 个） ｜ origin/main=${MAIN_HEAD}"
+  [ "$TREE_HEAD" != "$MAIN_HEAD" ] && echo "    ⚠️ 工作树与 origin/main 不一致 ⇒ 本轮读数**只能归因到 ${TREE_HEAD}**，别写进 main 的结论里"
+  nohup bash "$SRV" > /tmp/srv3001-nohup.log 2>&1 &
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    ok=1
+    for p in /login /dashboard /products /about; do
+      c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://localhost:3001${p}" 2>/dev/null || true)
+      [ "${c}" = "200" ] || ok=0
+    done
+    [ "$ok" = "1" ] && { echo "    ✅ 四路由全 200（/login /dashboard /products /about）"; break; }
+    sleep 10
+  done
+  [ "$ok" = "1" ] || { echo "❌ 复位后四路由仍不齐 ⇒ 拒绝继续（否则读数假）—— 看 /tmp/srv3001-nohup.log"; exit 1; }
 fi
 
 FAILS=0
