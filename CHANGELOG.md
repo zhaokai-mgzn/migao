@@ -7,6 +7,7 @@
 
 ## [Unreleased]
 
+
 ### 宽表冻结的「操作」列在勾选后不再透出下层列内容（2026-10-11，issue #6729）
 
 `/orders`、`/inbound-orders`、`/production` 三张宽表的「操作」列是 `sticky right-0` 的**冻结列**。
@@ -34,6 +35,77 @@
   **一律判红**、台账（`FROZEN_INHERIT_BG`）**当前为空且只许缩短**、
   判别力自证含「改回 `bg-inherit` ⇒ 必红」「半透明后缀 `bg-primary-50/40` ⇒ 必红」。
 
+### 订单列表读不到时不再说「暂无数据」：一屏三种说法收敛成一种（2026-10-11，issue #6733）
+
+`/orders` 读接口失败时**同一屏三种说法打架**：计数行「共 **—** 条」（#6703 的修正在位、诚实地说
+"不可知"）、表体「**暂无数据**」（说"没有订单"）、失败横幅「读失败」。根因是订单列表用的是**自定义表**
+（`frontend/admin-web/src/components/orders/OrderTable.tsx` 手写 `<tbody>` 空态行），
+它**看不见页面侧的读失败标记** ⇒ 表体那句事实性断言照旧上屏。
+
+- **修后**：`OrderTable` 新增可选 `emptyText`（默认「暂无数据」= 改前行为），`/orders` 读失败时传**空串**
+  ⇒ 失败态下屏上**只有**「读失败 + 共 — 条」（两种说法都对同一件事：没读到）；
+  **读成功且确实为空** ⇒ 「暂无数据」与「共 0 条」**照旧显示**（真实空态没有被判红）。
+- **类级固化（补的是 #6728 的射程盲区，不新立第三把尺子）**：`/orders` 这种**自有空态行**的形态，
+  调用图普查（判据 ④）**看不见** —— 所以同一支尺子
+  `frontend/admin-web/scripts/read-failure-empty-state-scan.mjs` 里新增**判据 ⑤（运行期）**：
+  「注入读面失败 → 渲染页面 → 屏上不得出现任何『没有数据』断言」，**不管那张表是不是共享组件**；
+  口径单一源 = `findEmptyDataAssertions()`（运行期用例 import 它，不抄第二份正则）；
+  覆盖面登记表 + 台账**只许缩短** + **未登记即红** + 判别力自证（内存里喂坏形态各自判红）。
+  判据 = `frontend/admin-web/tests/unit/pages/read-failure-no-empty-assertion-runtime.test.tsx`（运行期）
+  + `frontend/admin-web/tests/unit/read-failure-empty-state-guard.test.ts` 判据 ⑤（元守卫）。
+- **未做（如实登记）**：同形态的**其它**自有空态行（日志 / 看板类页面）**未逐页取证** ⇒ 登记在判据 ⑤ 的
+  `RUNTIME_PENDING_AUDIT`（既不判红也不放行，归零判据 = 下一轮运行期普查逐路由取读数）。
+
+### 报价单段头「本套金额」不再在半可知时印 0.00（缺值印「—」，聚合不得把「未知」摊成 0）（2026-10-11，issue #6731）
+
+**同一张纸自相矛盾**：行「价格」「小计」都印 `—`（#6720 已修），段头却断言「本套金额 **0.00**」
+—— 而这正是本批从头治到尾的形态（**未知被印成确定值**），报价单是发给客户的纸面。
+根因是**不确定性的算术**：`本套金额 = 面料小计 + 加工费` 的老实现只在「两个加数都缺」时判不可知
+⇒ `未知 + 0 = 0`；正确口径是 `未知 + 0 = 未知`。
+
+可达性是**存量数据**（不是理论分支）：`order_items.subtotal` 无 NOT NULL / DEFAULT，2026-05-31 的
+`e1f31f351` 之前建单把请求里的 `subtotal` 原样落库（请求侧当时可选）且**没有回填迁移**；而
+`processingFee` 后端**恒为 number**（`fee == null ⇒ BigDecimal.ZERO` 也照样下发）⇒
+前端真会拿到「`subtotal` 键缺席 + `processingFee: 0`」这一对（全局 Jackson `non_null` 让缺席的键消失）。
+
+改后：**任一加数不可知 ⇒ 和不可知**（印 `—`）；两个加数都已知（**含两个真 0**）⇒ 照常印数值
+（`0.00` / `100.00`）。屏幕侧订单明细行的既有口径**有意不动**（两个口径只在「面料小计不可知」
+这一格分叉，由一条表驱动判据钉住）。
+
+**判据**（`frontend/admin-web`，定点 vitest）：
+
+- **实例判据**：`tests/unit/components/QuotationDoc.test.tsx` 的「红证（issue #6731）」一组 ——
+  修前实测读数 = 段头印 `本套金额 0.00`（同一行小计栏 `—`）；修后印 `本套金额 —`，并含反向对照
+  （`subtotal=0, processingFee=0 ⇒ 0.00`；`subtotal=100, processingFee=0 ⇒ 100.00`）。
+- **类级固化（同一把尺子，不新立第三把）**：口径扩展在 `frontend/admin-web/src/lib/print-doc-paper.ts`
+  的聚合不变量 `assertAggregateUnknownIsContagious`（矩阵含反例：任一加数不可知 ⇒ `null`；
+  两加数都已知含真 0 ⇒ 数值）；静态形态扩展在
+  `frontend/admin-web/scripts/print-doc-zero-fallback-scan.mjs` 的「聚合摊零补位」
+  （`reduce(… + (x.amount || 0), 0)` 一族 ⇒ 红）。**判别力自证**：把实现改回「两者都缺才判不可知」
+  ⇒ 当场红；另含注入式红证（把两种旧写法分别注进真源码 ⇒ 判据当真判红）。
+- **同类普查**（issue #6731 要求 3，逐处）：纸面家族无第二处「部分未知 ⇒ 印 0」。唯一形似的是
+  发货单加工费合计 `reduce(… || 0)` —— **口径上正确**（加工费缺席的含义**就是 0**，后端同口径），
+  改它反而会把已知的 0 报成不可知，故**有意不改**并把这条不对称写进形态表的反向对照。
+
+
+### 会话监控页读不到会话时，顶部统计条不再断言「共 0」（2026-10-11，issue #6721）
+
+`/agent-workspace/sessions` 顶部监控统计条（活跃 / 已结束 / 共 N）是**从 `store.sessions` 派生**的读数，
+而 `sessions` 的初值是 `[]` —— 读接口失败时**没有任何东西**告诉它这个空数组不可信，屏上就留下
+「**0活跃0已结束0共**」这类**事实性断言**（改后仍可复现：`node frontend/admin-web/scripts/count-row-derived-scan.mjs`
+在摘掉锚点后判红）。与 #6691（读面故障不得画成空态）、#6703（读失败不得印派生零值）同族：
+**读不到被画成"就是 0"**。
+- **改后**：读面失败 ⇒ 统计条三格一律印 `—`（**不印 0**，也不整格不渲染：留着格子才看得出"少了一个读数"），
+  统计条整体带 `role="alert"`（**不印 ≠ 不告知**）；并在标题栏上方给一条**常驻**失败面
+  （`agent-sessions-load-failed`）+ 重试出口（`agent-sessions-load-failed-retry`，点了**真再发一次**请求）。
+  失败面占一行、不随数据增长（§31 P1 常驻面克制）。
+- **反向对照（不吃掉真实 0）**：读成功且**真没有会话**（或真只有 0 个活跃）⇒ 照旧显示 `0`。
+- **重试仍失败**有可读说法（「重试仍未成功」），不静默；成功后统计条恢复真实计数。
+- **判据**：实例判据 = `frontend/admin-web/tests/unit/pages/agent-sessions-read-failure.test.tsx`（5 条）+
+  既有 `agent-workspace-sessions.test.tsx`；类级元守卫 = `frontend/admin-web/tests/unit/count-row-derived-guard.test.ts`
+  新增两条（坏形态判红 / 摘掉真锚 ⇒ 当场红），判据单一源 = `frontend/admin-web/scripts/count-row-derived-scan.mjs`
+  新增第三种承载体 `derived-count-cell`（台账**未加行**：rebase 到 #6718 后的现取值 **1 条**存量债）。
+
 ### 打印单据缺值不再印成 0.00：缺值印「—」、合计不可知也印「—」（2026-10-11，issue #6720）
 
 发货单 / 报价单（**客户拿到手的凭证**）此前把「没有这个数」印成 `0.00` / `0`：行级
@@ -60,8 +132,30 @@
   （「算不出来」），纸面据此印 `—`；单个加数为 `0` 仍算得出数（反向对照见
   `tests/unit/lib/order-amount.test.ts`）。
 
-**边界**（照实登记）：洗水码 `TaskCardPrint` 今天不印任何金额 / 数量 ⇒ 对本形态天然免疫，
-已在判据面登记并注明**死亡条件**（它一旦开始印数值 ⇒ 判据与静态断言同时红）。
+**边界**（照实登记）：洗水码 `TaskCardPrint` 今天不印任何金额 / 数量 ⇒ 对本形态天然免疫，已在判据面登记并注明**死亡条件**（它一旦开始印数值 ⇒ 判据与静态断言同时红）。
+
+### 读不到时不再说「暂无数据」：员工 / 商品列表的失败态与空态彻底分开（2026-10-11，issue #6728）
+
+`/employees` 与 `/products` 在**读接口失败**时，同屏既显示失败面（「加载失败 —— 不是没有员工，是没读到」+ 重试）
+**又**显示表体的「暂无数据」—— 同一屏两种互相矛盾的说法，商家会据此认定「这个企业没有商品 / 没有员工」。
+
+**根因**：两页渲染共享 `frontend/admin-web/src/components/ui/Table.tsx` 时**没有传 `emptyText`**，
+于是继承了它的默认值「暂无数据」（默认值是**全站几十张表**共用的口径，本单**不动**它）。
+
+- **页面级覆盖（三处）**：`/employees` 自己、`/products` 经 `ProductTable`、以及**同类第三例 `/customers`**
+  （由判据 ④ 的调用图普查发现：它早在 #6703 就有常驻失败面与「条数不可信」，**唯独**共享表继承默认文案），
+  都显式传 `emptyText={<读失败读数> ? '' : '暂无数据'}` ⇒ 读失败时表体**不再**出现「暂无数据」
+  （失败原因由上方常驻失败面说），**读成功且确实为空**时「暂无数据」**照旧显示**（真实空态没有被判红）。
+- **类级固化（挂现有那把尺子，不新立第三把）**：新判据 =
+  `frontend/admin-web/scripts/read-failure-empty-state-scan.mjs` 的
+  「**凡渲染共享 `ui/Table` 且带读失败面的页面（含其本地组件闭包）必须显式把失败读数接进 `emptyText`**」
+  —— 未登记即红、台账只许缩短；守卫 =
+  `frontend/admin-web/tests/unit/read-failure-empty-state-guard.test.ts` 判据 ④（含判别力自证：把某页的
+  `emptyText` 摘掉 ⇒ 当场红并具名）。实例判据 =
+  `frontend/admin-web/tests/unit/pages/read-failure-table-emptytext-instances.test.tsx`。
+- **未做（如实登记）**：`WorkerProfilesPanel`（`/employees` 的「工人档案」页签）同形态但**没有常驻失败面**
+  ⇒ 已记进该判据的台账（只许缩短），等它自己的失败面单子收口时**同批删条目**。
+  `ui/Table.tsx` 的默认值**有意不动**（全站影响，本单范围内无法验证）。
 
 ### 订单/入库单/生产看板三张宽表的「状态」与「操作」不再被挤出屏幕（2026-10-11，issue #6717）
 

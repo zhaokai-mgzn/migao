@@ -17,11 +17,13 @@ import ShipmentDoc from '@/components/orders/ShipmentDoc'
 import { dataTables, collectTableIntegrity } from '@/components/orders/doc-tables'
 import {
   PAPER_MISSING,
+  assertAggregateUnknownIsContagious,
   assertNoPaperZeroFill,
   paperNumberCells,
   paperNumericColumn,
   paperTextOf,
 } from '@/lib/print-doc-paper'
+import { paperLineSubtotal } from '@/lib/order-amount'
 import type { Order, OrderItem } from '@/types'
 /**
  * 报价单（可打印纸质文档，issue #4965）—— 照真实报价单 A4 制式（亿家纺织 CSO260918-03182）。
@@ -343,6 +345,65 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
     expect(paperNumberCells(doc())).not.toContain(PAPER_MISSING)
   })
 
+  // ===== 🔴 段头「本套金额」必须与它自己那一行说同一句话（issue #6731）=====
+  //
+  // 可达性（源码链，逐字）：存量行 `order_items.subtotal` 可为 NULL ——
+  // `backend/admin-api/src/main/resources/db/init/schema.sql` 的 `subtotal DECIMAL(12,2)` 无
+  // NOT NULL / DEFAULT；2026-05-31 的 `e1f31f351`（"修复订单金额显示为0的问题"）之前
+  // `OrderService.createOrder` 把请求里的 subtotal **原样落库**（diff 逐字：
+  // `- item.setSubtotal(itemRequest.getSubtotal())`），而其提交说明写的就是「subtotal 为 null 时回退…」
+  // ⇒ NULL 是**被观察到过的**形态；该提交**不带任何回填迁移**（`git show e1f31f351 --stat` 无 sql）
+  // ⇒ 那些行至今仍是 NULL。而 `processingFee` **恒为 number**（`OrderService.convertToDetailResponse`：
+  // `fee == null ⇒ BigDecimal.ZERO` 也照样 `set`）⇒ 前端拿到的是
+  // **`subtotal` 键缺席（Jackson `non_null`）+ `processingFee: 0`（真 number）** 这一对。
+  //
+  // 修前：`lineSubtotal` 只在「两者都缺」时判不可知 ⇒ 返回 `0 + 0 = 0` ⇒ 段头印「本套金额 0.00」
+  // 而**同一张纸**那一行的「小计」栏印 `—`（#6720 已修）= 自相矛盾（未知被印成确定值）。
+  it('🔴 红证（issue #6731）：subtotal 缺席 + processingFee = 0（真 0）⇒ 段头印「本套金额 —」', () => {
+    render(
+      <QuotationDoc
+        order={buildOrder({
+          items: [buildItem({ subtotal: undefined as unknown as number, processingFee: 0 })],
+        })}
+      />
+    )
+    // 判据两面都钉：**印了 `—`**，且**没有**印 `0.00`（只判后者会被「不印这一栏」蒙混）
+    expect(paperTextOf(doc())).toContain('本套金额 —')
+    expect(docText()).not.toContain('本套金额 0.00')
+    // 同一张纸自洽：这一行的小计栏也是 `—`（#6720 的修复），段头不得比它更「确定」
+    expect(paperNumericColumn(doc(), { column: 8 })).toEqual(['—'])
+  })
+
+  it('🔴 红证（issue #6731）：subtotal 缺席 + processingFee > 0 ⇒ 仍是「不可知 + 已知 = 不可知」', () => {
+    render(
+      <QuotationDoc
+        order={buildOrder({
+          items: [buildItem({ subtotal: undefined as unknown as number, processingFee: 250 })],
+        })}
+      />
+    )
+    // 「未知 + 0 = 未知」的加强形态：加数**非 0** 也不改变「和不可知」
+    expect(paperTextOf(doc())).toContain('本套金额 —')
+    expect(docText()).not.toContain('本套金额 250.00')
+  })
+
+  it('反向对照（issue #6731 要求 2）：两个加数都已知 ⇒ 照常印数值（真 0 不许改成 —）', () => {
+    // `subtotal = 0, processingFee = 0`（真 0）⇒ `0.00`
+    render(
+      <QuotationDoc
+        order={buildOrder({ items: [buildItem({ subtotal: 0, processingFee: 0, amount: 0, unitPrice: 0 })] })}
+      />
+    )
+    expect(docText()).toContain('本套金额 0.00')
+    cleanup()
+    // `subtotal = 100, processingFee = 0` ⇒ `100.00`
+    render(
+      <QuotationDoc order={buildOrder({ items: [buildItem({ subtotal: 100, processingFee: 0 })] })} />
+    )
+    expect(docText()).toContain('本套金额 100.00')
+    expect(docText()).not.toContain('本套金额 —')
+  })
+
   it('类级不变量（issue #6720）：本单据纸面不得出现「未知 ⇒ 0」的回退形态', () => {
     render(
       <QuotationDoc
@@ -363,6 +424,14 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       label: '报价单 QuotationDoc',
       presence: ['缺 subtotal/processingFee 的行（小计列）'],
     })
+  })
+
+  it('类级不变量（issue #6731）：段头聚合必须区分「未知」与「0」（任一加数不可知 ⇒ 不输出数值）', () => {
+    // 这条钉的是**口径本身**（而不是某一次渲染）：把实现改回「两者都缺才判不可知」⇒ 当场红。
+    // 单据：报价单 QuotationDoc
+    expect(
+      assertAggregateUnknownIsContagious(paperLineSubtotal, { label: '报价单 QuotationDoc' })
+    ).toBeUndefined()
   })
 
   describe('③ 汇总：只读订单字段，不自己求和（用户裁定 ①）', () => {

@@ -39,6 +39,15 @@ export interface OrderTableProps {
   onRefund?: (order: Order) => void
   onConfirmPayment?: (order: Order) => void
   onConfirmReceive?: (order: Order) => void
+  /**
+   * 表体空态文案（issue #6733）。
+   *
+   * 🔴 本组件用的是**自有表体空态行**（不是共享 `ui/Table`），而「这次读到底成没成」是**页面**的事
+   * （`/orders` 的 `loadError`）—— 组件自己看不见它。默认 `'暂无数据'` 保持改前行为不变；
+   * 页面在读失败时传**空串**（失败原因由常驻失败面说），否则一屏会出现三种说法打架：
+   * 计数「共 — 条」（不可知）+ 表体「暂无数据」（没有数据）+ 横幅「读失败」。
+   */
+  emptyText?: string
 }
 
 function formatNumber(value: number | undefined): string {
@@ -113,6 +122,7 @@ export default function OrderTable({
   onRefund,
   onConfirmPayment,
   onConfirmReceive,
+  emptyText = '暂无数据',
 }: OrderTableProps) {
   const allSelected = orders.length > 0 && orders.every((o) => selectedIds.includes(o.id))
   const someSelected = orders.some((o) => selectedIds.includes(o.id)) && !allSelected
@@ -244,8 +254,9 @@ export default function OrderTable({
             </tr>
           ) : orders.length === 0 ? (
             <tr>
-              <td colSpan={14} className="px-4 py-16 text-center text-neutral-400">
-                暂无数据
+              <td data-testid="orders-empty" colSpan={14} className="px-4 py-16 text-center text-neutral-400">
+                {/* 🔴 issue #6733：`emptyText` 由页面传入 —— 读失败时传空串（别把「读不到」说成「没有订单」）。 */}
+                {emptyText}
               </td>
             </tr>
           ) : (
