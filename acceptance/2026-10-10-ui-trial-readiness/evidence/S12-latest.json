@@ -1,0 +1,13 @@
+{
+  "when": "2026-10-10T18:13:13.781Z",
+  "phase": "post-fix 全量验收（run-all.sh；main 含 #6715+#6718+#6723）",
+  "fails": [
+    "读失败⇄空态 /employees 空态=[\"暂无数据\"] 零值=[] 失败词=1 锚点=employees-load-failed,employees-load-failed-retry",
+    "读失败⇄空态 /products 空态=[\"暂无数据\"] 零值=[] 失败词=1 锚点=products-load-failed,products-load-failed-retry"
+  ],
+  "full_run": {
+    "S1_S6": "✅ 全绿",
+    "S7": "✅ 全绿",
+    "V17-V20": "红 2 条 = /employees 与 /products 仍印「暂无数据」（#6728，包在跑）"
+  }
+}

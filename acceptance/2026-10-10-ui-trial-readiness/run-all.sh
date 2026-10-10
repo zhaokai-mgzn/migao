@@ -3,6 +3,7 @@
 #
 #   bash acceptance/2026-10-10-ui-trial-readiness/run-all.sh            # 直接跑（假定 3001 上已有一份健康实例）
 #   RESET=1 bash acceptance/2026-10-10-ui-trial-readiness/run-all.sh    # 先复位 dev server（清缓存 + 单实例 + 等 200）再跑
+#   PHASE=post-fix RESET=1 bash acceptance/.../run-all.sh                # 给本轮读数起名（落到 evidence/S12-<PHASE>.json；不给则 latest）
 #
 # 退出码：0 = 三支运行器全绿；1 = 有红（逐支列出）。
 # ⚠️ 不要用管道包住本脚本（`| tail` 会吞掉退出码 —— 本批实测踩过两次）。
