@@ -135,7 +135,50 @@ try {
   rep('C 轮：任何金额都不许再印数字（未知必须传染到整张纸）', cNums.length === 0, `C 轮数字=${JSON.stringify(cNums)}`)
   await page.screenshot({ path: `${OUT}S21b-injected-C.png` })
 
-  payload = { phase: PHASE, orderNo: firstNo, uuid, A, B, C, results }
+  // ── 纸面**家族**：同一张订单上挂着三份单据（报价单/加工单/销售单）⇒ 用**与标签无关**的判据一次覆盖整族：
+  //    控制轮该纸有金额（证明真读到） ＋ 全未知轮该纸**一个数字都没有**（未知传染整张纸）
+  const docFamily = []
+  const readPaperOf = async (docButton) => {
+    await page.goto(detailUrl, { waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(4000)
+    const c = page.locator('[data-testid="print-preview-close"]')
+    if (await c.count()) { await c.first().click({ timeout: 5000 }).catch(() => {}); await page.waitForTimeout(600) }
+    await page.getByRole('button', { name: docButton }).first().click({ timeout: 12000 })
+    await page.waitForSelector('[data-testid="print-preview-paper"]', { timeout: 20000 })
+    await page.waitForTimeout(1000)
+    return page.evaluate(() => (document.querySelector('[data-testid="print-preview-paper"]')?.innerText || '').replace(/\n{2,}/g, '\n'))
+  }
+  const installScrub = async (scrubber) => {
+    await page.unroute('**/api/admin/orders/**').catch(() => {})
+    if (!scrubber) return
+    await page.route('**/api/admin/orders/**', async (route) => {
+      const resp = await route.fetch()
+      let body
+      try { body = await resp.json() } catch { return route.fulfill({ response: resp }) }
+      scrubber(body)
+      return route.fulfill({ response: resp, json: body })
+    })
+  }
+  for (const doc of ['打印报价单', '打印加工单', '打印销售单']) {
+    await installScrub(null)
+    const ctrl = await readPaperOf(doc)
+    await installScrub(scrubAllMoney)
+    const unk = await readPaperOf(doc)
+    await page.screenshot({ path: `${OUT}S21b-family-${doc}.png` })
+    docFamily.push({ doc, controlPaper: ctrl, unknownPaper: unk, controlNums: moneyNumbers(ctrl), unknownNums: moneyNumbers(unk) })
+    // 三态，**禁止空绿**：控制轮无金额 ⇒ 本判据对该单据**不可判别**（如实登记 ⊘），不许记成通过
+    const cN = moneyNumbers(ctrl).length
+    const uN = moneyNumbers(unk).length
+    if (cN === 0) {
+      rep(`纸面家族「${doc}」：⊘ 不可判别（该单据不含金额字段，本判据对它不适用）`, true, `控制轮金额数=0 ⇒ 全未知轮的"无数字"是空绿，已如实登记而非记通过`)
+      results[results.length - 1].notApplicable = true
+    } else {
+      rep(`纸面家族「${doc}」：控制轮有金额(${cN}) + 全未知轮无数字`, uN === 0, `全未知数字=${JSON.stringify(moneyNumbers(unk))}`)
+    }
+  }
+  await installScrub(null)
+
+  payload = { phase: PHASE, orderNo: firstNo, uuid, A, B, C, docFamily, results }
 } finally { await browser.close() }
 writeFileSync(`${OUT}S21b-print-doc-${PHASE}.json`, JSON.stringify(payload, null, 2))
 const red = results.filter((r) => !r.ok)
