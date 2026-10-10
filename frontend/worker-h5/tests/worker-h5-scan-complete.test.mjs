@@ -357,11 +357,11 @@ test('🔴 ② 一键改（alternatives）⇒ body 带 operation_id（防呆④ 
   const app = bootPage({ doc, f })
   await scan(doc, 'tok-cloth')
 
-  // 「不是这道？」⇒ 工人显式指定打卷（一键改）
-  await fireEl(doc.querySelectorAll('.wh5-alt[data-operation-id]')[0])
+  // 工序选择器 ⇒ 工人显式指定打卷（一键改；点的是**没选中**的那个候选）
+  await fireEl(doc.querySelectorAll('.wh5-op-choice[data-operation-id]').find((el) => !el.classList.contains('is-on')))
   // 接线是 `void doScan(...)` ⇒ 等**新的一屏**落地（等元素，不定长 sleep）。
-  // ⚠️ 判据必须是「打卷 · 布帘」这种**只在新的主屏上**才有的串：改前的 `alternatives` 里
-  // 本来就有「打卷」⇒ 拿它当判据会立刻通过（假绿）。
+  // ⚠️ 判据必须是「打卷 · 布帘」这种**只在新的主屏上**才有的串：候选 chip 里
+  // 本来就有「打卷」（逻辑名）⇒ 拿它当判据会立刻通过（假绿）。
   await waitFor(() => doc.html.includes('打卷 · 布帘'), '一键改后的一屏')
   assert.equal(f.calls.filter((c) => c.method === 'GET').length, 2, '一键改 = 再解析一次（GET /scan?operation_id=…）')
 
@@ -370,6 +370,22 @@ test('🔴 ② 一键改（alternatives）⇒ body 带 operation_id（防呆④ 
   assert.equal(posts.length, 1)
   // 显式指定 ⇒ 带 operation_id；服务端会校验它属不属于本次扫码的部位（不属于 ⇒ 422，零写入）
   assert.deepEqual(posts[0].body, { token: 'tok-cloth', operation_id: 'op-cloth-2' })
+  app.destroy()
+})
+
+test('🔴 ② 点**当前已选中**那道工序 ⇒ 一个请求都不发（选择器不是"再查一次"的开关）', async () => {
+  const doc = fakeDom()
+  const f = routeFetch({ '/api/worker/production/scan?': resolveOk(CLOTH_VIEW) })
+  const app = bootPage({ doc, f })
+  await scan(doc, 'tok-cloth')
+  const gets = () => f.calls.filter((c) => c.method === 'GET').length
+  const before = gets()
+
+  const on = doc.querySelectorAll('.wh5-op-choice[data-operation-id]').find((el) => el.classList.contains('is-on'))
+  assert.ok(on, '当前选中那道必须在选择器里（带 is-on）')
+  await fireEl(on)
+  assert.equal(gets(), before, '点已选中的那道 ⇒ 不重发解析请求（也不该换屏）')
+  assert.match(doc.html, /id="wh5-op-picker"/, '选择器照旧在屏上')
   app.destroy()
 })
 
@@ -942,4 +958,57 @@ test('🔴 ⑧ 共用 PAD：另一个工人不得复用上一个人的未确认�
   assert.notEqual(key, 'key-of-w-9',
     '🔴 未确认记录必须绑**工人**：跨人复用的键会让第二个人的报工被回放成第一个人那次（漏记计件）')
   app.destroy()
+})
+
+// ============================================================ ⑨ 设备级预设：机台那台屏落到裁高页
+//
+// issue #6635（用户 2026-10-10 裁定 = 设备级）：本机被钉在裁高页 ⇒ 登录成功后**换页走人**；
+// 🔴 只在**已登录**后换（机台页没有登录面 —— 未登录换过去 = 把人关在门外），
+// 且 `?page=report&keep=1`（机台页的「去报工页」）是**逃生门**（只本次，不改预设）。
+
+const LOGIN_ROUTE = {
+  '/api/worker/login': {
+    status: 200,
+    body: {
+      success: true,
+      data: { session_id: 'sess-1', worker_id: 'w-1', worker_no: 'A017', worker_name: '张三', idle_minutes: 30 },
+    },
+  },
+  '/api/worker/me': {
+    status: 200,
+    body: { success: true, data: { worker_id: 'w-1', worker_name: '张三', pages: ['report', 'cut_calc'] } },
+  },
+}
+
+/** 在指定 URL 上登录一次，返回「被 replace 到的 URL 列表」。 */
+async function loginAndCollectNav(href, storage) {
+  const doc = fakeDom()
+  const f = routeFetch(LOGIN_ROUTE)
+  const nav = []
+  const api = createApi({ fetchImpl: f, storage, baseUrl: '' })
+  const app = createApp({ doc, api, location: { href, replace: (url) => nav.push(url) }, storage })
+  app.dispatch({ type: 'notice', notice: null }) // 绑一次事件（装配层在 draw() 里 bind）
+  doc.getElementById('wh5-worker-no').value = 'A017'
+  doc.getElementById('wh5-pin').value = '1234'
+  await doc.fire('wh5-login')
+  app.destroy()
+  return nav
+}
+
+test('🔴 ⑨ 本机钉在裁高页 ⇒ 登录成功后换到 `/w/machine.html`（机台那台屏不必再点）', async () => {
+  const nav = await loginAndCollectNav('https://app.migaozn.com/w/', memStorage({ 'migao:worker-h5:home': 'cut_calc' }))
+  assert.deepEqual(nav, ['/w/machine.html'], '钉在裁高页的机台屏：登录成功后就该换过去')
+})
+
+test('🔴 ⑨ 逃生门 `?page=report&keep=1` ⇒ 登录后**不换页**（机台屏临时报普通工）', async () => {
+  const nav = await loginAndCollectNav(
+    'https://app.migaozn.com/w/?page=report&keep=1',
+    memStorage({ 'migao:worker-h5:home': 'cut_calc' }),
+  )
+  assert.deepEqual(nav, [], 'keep=1 是只本次 ⇒ 不得把人换到裁高页')
+})
+
+test('🔴 ⑨ 没钉过的本机（工人手机）⇒ 登录后留在报工页', async () => {
+  const nav = await loginAndCollectNav('https://app.migaozn.com/w/', memStorage())
+  assert.deepEqual(nav, [], '普通工人手机不得被带进机台页')
 })

@@ -827,18 +827,18 @@ cases:
       - inbound-order-flow.worker-narrow-surface
       - inbound-label-flow.short-code-and-public-entry
     user_inputs:
-      - "工人要拍照入库 / 补打标签时，他手里那个页面（`/w/` 报工页）必须有一条真的能走到的入口；而「路由常量被声明、被 app.config 比对过、却没有任何跳转用它」必须被判红"
+      - "工人要拍照入库 / 补打标签时，他必须有一条真的能走到的入口（2026-10-10 起由**工人工作台**承载，`/w/` 报工页不再发射）；而「路由常量被声明、被 app.config 比对过、却没有任何跳转用它」必须被判红"
     expectations:
       - tool: direct_reply
     data_checks:
       - "判据 1·🔴 **未登记即红**：`src/app.config.ts` 里每个**非 tabBar** 页面都必须在 `src/utils/pageEntries.ts` 的 `PAGE_ENTRY_LEDGER` 具名（tabBar 页面按 `tabBar.list` 机械豁免，且不许登记 —— 登记它 = 台账里躺着一条假入口）。红证：给 app.config 加一个页面而不登记 ⇒ 判红（证据：frontend/bmini-app/tests/page-entry-reachability.test.ts 的 L2）"
       - "判据 2·🔴 **登记了没人指向也红**：每条登记都必须在 `from` 里找到真导航形态（`Taro.navigateTo/redirectTo/switchTab/reLaunch` 或跨应用 `href`）**且**跳转里带着目标记号。红证（变异注入实跑）：把入口换回「只声明」（`from` 指向只写着路由常量的 `src/utils/inbound/gaps.ts`）⇒ 判红点名「声明存在 ≠ 可达」；删掉 `/w/` 上的 `<a href>` ⇒ 判红。这是本单要治的形态本身：两条路由常量被声明、被 `tests/inbound-page-platform-gaps.test.ts` 的 G0 比对过 `app.config.ts`，却没有任何跳转用它们（证据：同文件 L3）"
       - "判据 3·**台账只许缩短**：条目对应的页面从 `app.config.ts` 消失 ⇒ 判红（条目必须活着）；`via` 为动态记号时 `viaBinding` 必须钉住「记号 ⇒ 路由」的绑定。红证：从 app.config 删掉补打页 / 把 viaBinding 指向无关文件 ⇒ 各自判红（证据：同文件 L0 / L4）"
-      - "判据 4·**跨应用入口逐值对齐**：`/w/`（零依赖纯静态）上的两个 `<a>` 必须逐值指向 bmini 登记路由 —— `/b/#/pages/worker/inbound/index` 与 `/b/#/pages/worker/reprint/index`；改一边不改另一边 ⇒ 红。渲染面判据在 frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs（`renderPage` 的**渲染结果**里出现入口；未登录的 login 屏不出现）"
+      - "判据 4·**跨应用入口已收敛**（2026-10-10 用户逐字「移除拍照入库和补打入库标签」，issue #6635）：`/w/` 报工页**不再**承载入库两页的 `<a>`（反向钉住：本页再出现 `/b/#/pages/worker/inbound|reprint` ⇒ 红）—— 可达性**没有丢**：那两页由**工人工作台** `src/pages/worker/home/index.tsx` 承载（台账 `from` 逐值核 + `nav` 形态 + L3b「写了 ≠ 会被执行」），且台账里**不再有** `nav: 'href'` 条目。渲染面判据在 frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs（`renderPage` 的渲染结果；本页只留一条「裁高计算（一体机）」入口）+ 反向面在 frontend/bmini-app/tests/page-entry-reachability.test.ts 的 L5"
       - "判据 5·**平台缺口必须有登记且被真的接线**：`/b/?code=` 是 h5 专有形态（小程序没有 URL query），登记在 `src/utils/inbound/gaps.ts` 的 `WORKER_SURFACE_PLATFORM_GAPS`，`wiredBy` 的文件**代码**里必须真的出现 `wiredToken`（只登记不接线 ⇒ 红）"
       - "判据 6·**两平台都要能编译**：`npm run build:h5` 与 `npm run build:weapp` 均退出 0（CI 的 `bmini-app build (h5 + weapp)` 腿）"
     skip_reason: "[backend-contract] 确定性入口/台账判据（jest: frontend/bmini-app/tests/page-entry-reachability.test.ts + node --test: frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs + 两平台构建腿），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-27 新增（issue #5052 实现 PR，设计 §5.4）：本单最值得固化的一类 —— 「交付物做完了、却没有任何入口能走到它」（验收协议 v1.11 交付物可达性三问之②），落成入口台账 + 语料内省式元守卫（未登记即红、登记了没人指向也红）。"
+    merge_log: "2026-09-27 新增（issue #5052 实现 PR，设计 §5.4）：本单最值得固化的一类 —— 「交付物做完了、却没有任何入口能走到它」（验收协议 v1.11 交付物可达性三问之②），落成入口台账 + 语料内省式元守卫（未登记即红、登记了没人指向也红）。 ｜ 2026-10-10（issue #6635，用户逐字「移除拍照入库和补打入库标签」）：`/w/` 页头那两条跨应用 `href` 登记**已撤**（该页只留「裁高计算（一体机）」一条），可达性由工人工作台承接 ⇒ 判据 4 改判为**反向钉住 + 工作台 `from` 逐值核**，台账里不再有 `nav:'href'` 条目（`href` 判定分支由 L5 的合成样本自证）；L3 / L3b / L5 的红证注入点同步从 `render.mjs` 换到工人工作台（否则红证与判定对象脱钩 ⇒ 空断言）。判据一格不放宽。"
     traces:
       tests:
         - "frontend/bmini-app/tests/page-entry-reachability.test.ts"
