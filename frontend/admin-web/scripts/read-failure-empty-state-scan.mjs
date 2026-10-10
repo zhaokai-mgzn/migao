@@ -198,7 +198,9 @@ export const LEDGER = [
   'src/app/(dashboard)/orders/[id]/OrderDetail.tsx::OrderDetailPage#1',   // 归属 #6664：发货明细读失败 setShipments(null)，渲染面对 null 另说
   'src/app/(dashboard)/orders/new/page.tsx::load#1',                       // 归属 #6664：加工项目录读失败 setProcessingCatalog([])
   'src/app/(dashboard)/orders/new/page.tsx::load#2',                       // 归属 #6664：算料配置读失败 setCalcConfig(null)
-  'src/app/(dashboard)/shipments/page.tsx::ShipmentsPage#1',               // 归属 #6664：发货单读失败 setRows([]) ⇒ 画成「没有发货单」
+  // ✅ 已于 2026-10-10 删条目：`src/app/(dashboard)/shipments/page.tsx::ShipmentsPage#1`
+  //    —— #6664 包（PR #6673）把发货单读失败改成「说真话」，该点不再命中 ⇒ 按「台账只许缩短」同批删掉。
+  //    （删条目是本台账的**唯一**合法方向；守卫会逼着删，不会让人留着僵尸豁免。）
   // 归属待定（既不在本包、也不在上面两个包的文件族里 ⇒ 单独跟一条）：
   'src/app/(dashboard)/stock-ledger/page.tsx::StockLedgerPage#3',          // 商品搜索失败 setOptions([])（同一 catch 已有 setSearchHint 话术，属灰区，登记待裁）
 ]
