@@ -7,6 +7,24 @@
 
 ## [Unreleased]
 
+### 会话监控页读不到会话时，顶部统计条不再断言「共 0」（2026-10-11，issue #6721）
+
+`/agent-workspace/sessions` 顶部监控统计条（活跃 / 已结束 / 共 N）是**从 `store.sessions` 派生**的读数，
+而 `sessions` 的初值是 `[]` —— 读接口失败时**没有任何东西**告诉它这个空数组不可信，屏上就留下
+「**0活跃0已结束0共**」这类**事实性断言**（改后仍可复现：`node frontend/admin-web/scripts/count-row-derived-scan.mjs`
+在摘掉锚点后判红）。与 #6691（读面故障不得画成空态）、#6703（读失败不得印派生零值）同族：
+**读不到被画成"就是 0"**。
+- **改后**：读面失败 ⇒ 统计条三格一律印 `—`（**不印 0**，也不整格不渲染：留着格子才看得出"少了一个读数"），
+  统计条整体带 `role="alert"`（**不印 ≠ 不告知**）；并在标题栏上方给一条**常驻**失败面
+  （`agent-sessions-load-failed`）+ 重试出口（`agent-sessions-load-failed-retry`，点了**真再发一次**请求）。
+  失败面占一行、不随数据增长（§31 P1 常驻面克制）。
+- **反向对照（不吃掉真实 0）**：读成功且**真没有会话**（或真只有 0 个活跃）⇒ 照旧显示 `0`。
+- **重试仍失败**有可读说法（「重试仍未成功」），不静默；成功后统计条恢复真实计数。
+- **判据**：实例判据 = `frontend/admin-web/tests/unit/pages/agent-sessions-read-failure.test.tsx`（5 条）+
+  既有 `agent-workspace-sessions.test.tsx`；类级元守卫 = `frontend/admin-web/tests/unit/count-row-derived-guard.test.ts`
+  新增两条（坏形态判红 / 摘掉真锚 ⇒ 当场红），判据单一源 = `frontend/admin-web/scripts/count-row-derived-scan.mjs`
+  新增第三种承载体 `derived-count-cell`（台账**未加行**：rebase 到 #6718 后的现取值 **1 条**存量债）。
+
 ### 订单/入库单/生产看板三张宽表的「状态」与「操作」不再被挤出屏幕（2026-10-11，issue #6717）
 
 真机实测（1440×980）：`/orders` 表格宽 1835px、横向容器只有 1044px ⇒ **溢出 791px**，

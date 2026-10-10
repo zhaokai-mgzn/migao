@@ -1,4 +1,5 @@
 // case_ids: UI-057, UI-058
+// case_ids: UI-057, UI-058
 /**
  * 类级元守卫（issue #6703）：**计数行不得从一个可能失败的读派生数字**。
  *
@@ -222,5 +223,102 @@ describe('计数行不得从一个可能失败的读派生数字（类级元守�
       /* 另一处示例：共 0 条也是 —— 块注释里的示例不是真形态 */
       const x = 1`
     expect(n(commented)).toBe(0)
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 第三种承载体：**派生计数格**（issue #6721，`/agent-workspace/sessions` 顶部监控统计条）
+  //
+  // 与上面两节的关系：上面判的是「`共 N 条` 文本 / 共享 `Pagination` + `setXxxTotal`」；
+  // 本页两样都没有（它把「活跃 / 已结束 / 共 N」直接从 `store.sessions` 派生成格子）
+  // ⇒ 上面两种字形判不到它。本节把第三种字形钉住，**不新立第三把尺子**（挂同一支扫描器）。
+  // ═══════════════════════════════════════════════════════════════════════════
+  it('派生计数格：store 派生 + 有失败读数但**无失败锚** ⇒ 判红（本页病灶原形）', () => {
+    const BAD = [
+      // ① 病灶原形（`/agent-workspace/sessions` 改前）：集合来自 store、屏上直接印 `.length`，
+      //    store 里已经有失败读数（`setSessionsFailed`），而**本页没有任何失败锚**
+      `export default function P() {
+         const { sessions, fetchSessions } = useChatStore()
+         useEffect(() => { fetchSessions() }, [fetchSessions])
+         return <div data-testid="session-stats-bar">
+           <Cell label="活跃" value={sessions.filter(s => s.status === 'active').length} />
+           <Cell label="共" value={sessions.length} />
+         </div>
+       }`,
+      // ② 只有统计条锚 + 用 `.length` 派生的本地变量 ⇒ 同样判红（读失败时印 0）
+      `export default function P() {
+         const { sessions } = useChatStore()
+         const total = sessions.length
+         return <div data-testid="session-stats-bar"><Cell value={total} /></div>
+       }`,
+    ]
+    for (const source of BAD) {
+      expect(n(source), `派生计数格坏形态应判红：\n${source}`).toBeGreaterThan(0)
+    }
+
+    const GOOD = [
+      // ① 改后形态（本页真实形态）：失败锚 + 三格印 `—`（`null` 门控）
+      `export default function P() {
+         const { sessions, sessionsLoadFailed, fetchSessions } = useChatStore()
+         const untrusted = sessionsLoadFailed
+         return <div>
+           <ListLoadError testId="agent-sessions-load-failed" onRetry={fetchSessions} />
+           <div data-testid="session-stats-bar" role={untrusted ? 'alert' : undefined}>
+             <Cell label="共" value={untrusted ? null : sessions.length} />
+           </div>
+         </div>
+       }`,
+      // ② **组件 props 里的数组不算**：失败由调用方自己的读面负责 ⇒ 不判（判它 = 假红）
+      `export default function Cell({ rows }: { rows: Row[] }) {
+         return <div data-testid="table-stats-bar"><span>{rows.length}</span></div>
+       }`,
+      // ③ 有 `value={X.length}` 但 X **不是** store 解构物（本地 state）⇒ 不判
+      `export default function P() {
+         const [rows, setRows] = useState([])
+         return <div data-testid="local-stats-bar"><Cell value={rows.length} /></div>
+       }`,
+      // ④ store 解构物**只用于非计数处**（列表体 / 按钮文案）⇒ 没有派生计数格 ⇒ 不判
+      `export default function P() {
+         const { sessions, setSearchKeyword } = useChatStore()
+         return <div data-testid="session-panel">
+           <input onChange={(e) => setSearchKeyword(e.target.value)} />
+           {sessions.map((s) => <Row key={s.session_id} session={s} />)}
+         </div>
+       }`,
+      // ⑤ store 解构物 + **本地累计量**（不是该集合的计数）⇒ 不判
+      `export default function P() {
+         const { sessions } = useChatStore()
+         const [page, setPage] = useState(1)
+         return <div><Pager page={page} pageSize={20} onChange={setPage} /><span>{sessions[0]?.title}</span></div>
+       }`,
+    ]
+    for (const source of GOOD) {
+      expect(n(source), `派生计数格好形态不该判红：\n${source}`).toBe(0)
+    }
+  })
+
+  it('派生计数格：真语料上的双向自证（摘掉失败锚 ⇒ 当场红；未摘 ⇒ 不报）', () => {
+    const PAGE = 'src/app/(dashboard)/agent-workspace/sessions/page.tsx'
+    const real = sites.filter((s) => s.file === PAGE)
+    expect(real, `${PAGE} 不在扫描面内 ⇒ 本判据判不到它（改目录名会静默全绿）`).not.toEqual([])
+    expect(
+      real.map((s) => `${s.prints.join('/')} guarded=${s.guarded}`),
+      `${PAGE} 的派生计数格必须有失败锚（agent-sessions-load-failed 一族）`,
+    ).toEqual([`${real[0].prints.join('/')} guarded=true`])
+
+    // 内存变异（**不落盘**）：把该页**真实的失败锚那一行**从源码里摘掉（其余逐字不动）
+    // ⇒ 该文件退回「印派生计数、且没有可信度信号」⇒ 当场判红。
+    // ⚠️ 有意**不**用「把锚改名」那种变异：改名后锚还在，`hasUnguardedDerivedCountCell` 的
+    //   条件③（`setXxxFailed(` / 失败锚）仍成立，反而**判绿** —— 那是假绿形态，不是红证。
+    const source = readFileSync(join(ROOT, PAGE), 'utf-8')
+    const stripped = source
+      .split('\n')
+      .filter((line) => !line.includes('agent-sessions-load-failed'))
+      .join('\n')
+    expect(stripped, '变异必须真的摘掉了锚（否则本自证在空跑）').not.toContain('agent-sessions-load-failed')
+
+    const hit = countRowSitesFromSource(stripped, { file: PAGE })
+    expect(hit.map((s) => `${s.prints.join('/')} guarded=${s.guarded}`), '摘掉失败锚后必须判红').toEqual([
+      `${real[0].prints.join('/')} guarded=false`,
+    ])
   })
 })
