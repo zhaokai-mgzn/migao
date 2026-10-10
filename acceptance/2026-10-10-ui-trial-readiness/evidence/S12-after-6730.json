@@ -1,0 +1,13 @@
+{
+  "when": "2026-10-10T19:17:46.054Z",
+  "phase": "after-6730（#6728 合并后重放；服务端 = 9fba97dab）",
+  "fails": [
+    "读失败⇄空态 /orders 空态=[\"暂无数据\"] 零值=[] 失败词=1 锚点=orders-load-error,orders-load-error-retry"
+  ],
+  "paired_reading": {
+    "前": "with-customers：/employees /products /customers 三页读失败仍印「暂无数据」（3 红）",
+    "后": "after-6730：三页 空态=[]（0 红）⇒ #6728 家族成对闭环 ✅"
+  },
+  "only_remaining_red": "/orders 空态=[\"暂无数据\"] —— 我发现的同族第 4 处（#6733，尚未派/未修）",
+  "note": "同时 #6731 的修已合并（31d7e9c30，03:15+08）；会话页 V21 两项仍绿。"
+}

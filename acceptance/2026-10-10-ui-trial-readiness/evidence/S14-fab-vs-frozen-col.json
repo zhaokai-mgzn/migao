@@ -1,0 +1,434 @@
+[
+  {
+    "vp": 1440,
+    "path": "/orders",
+    "fab": {
+      "x": 1360,
+      "y": 900,
+      "w": 56
+    },
+    "rows": 20,
+    "btns": [
+      {
+        "txt": "处理退款",
+        "y": 585,
+        "x": 1266,
+        "hitSelf": true,
+        "hitWhat": "BUTTON.text-primary-600 h",
+        "fabInterPx2": 0
+      },
+      {
+        "txt": "处理退款",
+        "y": 692,
+        "x": 1266,
+        "hitSelf": true,
+        "hitWhat": "BUTTON.text-primary-600 h",
+        "fabInterPx2": 0
+      },
+      {
+        "txt": "处理退款",
+        "y": 799,
+        "x": 1266,
+        "hitSelf": true,
+        "hitWhat": "BUTTON.text-primary-600 h",
+        "fabInterPx2": 0
+      },
+      {
+        "txt": "处理退款",
+        "y": 906,
+        "x": 1266,
+        "hitSelf": true,
+        "hitWhat": "BUTTON.text-primary-600 h",
+        "fabInterPx2": 0
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      }
+    ]
+  },
+  {
+    "vp": 1440,
+    "path": "/production",
+    "fab": {
+      "x": 1360,
+      "y": 900,
+      "w": 56
+    },
+    "rows": 20,
+    "btns": [
+      {
+        "txt": "生产明细",
+        "y": 402,
+        "x": 1236,
+        "hitSelf": true,
+        "hitWhat": "BUTTON.inline-flex items-",
+        "fabInterPx2": 0
+      },
+      {
+        "txt": "生产明细",
+        "y": 507,
+        "x": 1236,
+        "hitSelf": true,
+        "hitWhat": "BUTTON.inline-flex items-",
+        "fabInterPx2": 0
+      },
+      {
+        "txt": "生产明细",
+        "y": 612,
+        "x": 1236,
+        "hitSelf": true,
+        "hitWhat": "BUTTON.inline-flex items-",
+        "fabInterPx2": 0
+      },
+      {
+        "txt": "生产明细",
+        "y": 717,
+        "x": 1236,
+        "hitSelf": true,
+        "hitWhat": "BUTTON.inline-flex items-",
+        "fabInterPx2": 0
+      },
+      {
+        "txt": "生产明细",
+        "y": 822,
+        "x": 1236,
+        "hitSelf": true,
+        "hitWhat": "BUTTON.inline-flex items-",
+        "fabInterPx2": 0
+      },
+      {
+        "txt": "生产明细",
+        "y": 927,
+        "x": 1236,
+        "hitSelf": true,
+        "hitWhat": "BUTTON.inline-flex items-",
+        "fabInterPx2": 0
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      }
+    ]
+  },
+  {
+    "vp": 1280,
+    "path": "/orders",
+    "fab": {
+      "x": 1200,
+      "y": 720,
+      "w": 56
+    },
+    "rows": 20,
+    "btns": [
+      {
+        "txt": "处理退款",
+        "y": 585,
+        "x": 1106,
+        "hitSelf": true,
+        "hitWhat": "BUTTON.text-primary-600 h",
+        "fabInterPx2": 0
+      },
+      {
+        "txt": "处理退款",
+        "y": 692,
+        "x": 1106,
+        "hitSelf": true,
+        "hitWhat": "BUTTON.text-primary-600 h",
+        "fabInterPx2": 0
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "处理退款",
+        "note": "按钮在视口外"
+      }
+    ]
+  },
+  {
+    "vp": 1280,
+    "path": "/production",
+    "fab": {
+      "x": 1200,
+      "y": 720,
+      "w": 56
+    },
+    "rows": 20,
+    "btns": [
+      {
+        "txt": "生产明细",
+        "y": 402,
+        "x": 1076,
+        "hitSelf": true,
+        "hitWhat": "BUTTON.inline-flex items-",
+        "fabInterPx2": 0
+      },
+      {
+        "txt": "生产明细",
+        "y": 507,
+        "x": 1076,
+        "hitSelf": true,
+        "hitWhat": "BUTTON.inline-flex items-",
+        "fabInterPx2": 0
+      },
+      {
+        "txt": "生产明细",
+        "y": 612,
+        "x": 1076,
+        "hitSelf": true,
+        "hitWhat": "BUTTON.inline-flex items-",
+        "fabInterPx2": 0
+      },
+      {
+        "txt": "生产明细",
+        "y": 717,
+        "x": 1076,
+        "hitSelf": true,
+        "hitWhat": "BUTTON.inline-flex items-",
+        "fabInterPx2": 0
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      },
+      {
+        "txt": "生产明细",
+        "note": "按钮在视口外"
+      }
+    ]
+  }
+]

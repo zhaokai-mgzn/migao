@@ -1,0 +1,10 @@
+{
+  "when": "2026-10-10T19:41:26.841Z",
+  "phase": "with-v22（新增 V22 冻结列选中态；服务端 = 31d7e9c30 的**陈旧**实例）",
+  "fails": [
+    "读失败⇄空态 /orders 空态=[\"暂无数据\"] 零值=[] 失败词=1 锚点=orders-load-error,orders-load-error-retry",
+    "冻结列选中态不透明 未选中 alpha=1 ⇒ 勾选后 checked=true alpha=0.4（须为 1；0.4 即半透明穿透）"
+  ],
+  "v22_red_proof": "❌ 冻结列选中态不透明：未选中 alpha=1 ⇒ 勾选后 checked=true **alpha=0.4**（须为 1）—— 独立复现 #6737 的根因（bg-inherit 继承 <tr> 的半透明选中底色 rgba(238,242,248,0.4)）。该判据打在**选中态**（hover 不触发，打在 hover/未选中上是永远绿的空断言）。",
+  "stale_server_caveat": "⚠️ 本次 /orders 仍红是**服务端陈旧**所致：dev server 03:15 起于 31d7e9c30，而 #6736（P27）03:36 才合入 8a2aabee3 ⇒ 该红不代表 P27 未修。下次读数必须重启到最新 main。"
+}

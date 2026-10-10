@@ -1,0 +1,31 @@
+{
+  "when": "2026-10-10T18:05:59.276Z",
+  "phase": "AFTER #6718 + #6717（真机复放，main 含 #6715/#6718/#6723）—— 红项 16 → 2",
+  "fails": [
+    "读失败⇄空态 /employees 空态=[\"暂无数据\"] 零值=[] 失败词=1 锚点=employees-load-failed,employees-load-failed-retry",
+    "读失败⇄空态 /products 空态=[\"暂无数据\"] 零值=[] 失败词=1 锚点=products-load-failed,products-load-failed-retry"
+  ],
+  "paired_reading": {
+    "turned_green": [
+      "V17/V18 读失败⇄空态：/chat /notifications /shipments（空态消失 + 常驻锚点）",
+      "chat 侧栏版面：hostW=255 failW=239 failH=54 未裁切 列表仍 819px（包 A 唯一没把握的 §31 P1 项 → 通过）",
+      "products 版面：失败面 top=349 < 表格 top=420（在表之上、不抖）",
+      "V19 冷启动三条（#6715）",
+      "V20 宽表：状态列 left=485 两档可见 + 5 组操作按钮全部 hitSelf=true（#6717）"
+    ],
+    "still_red": [
+      {
+        "page": "/employees",
+        "why": "屏上仍有「暂无数据」",
+        "cause": "未传 emptyText ⇒ 继承 ui/Table.tsx:41 默认值",
+        "issue": "#6728"
+      },
+      {
+        "page": "/products",
+        "why": "同上",
+        "cause": "同上",
+        "issue": "#6728"
+      }
+    ]
+  }
+}

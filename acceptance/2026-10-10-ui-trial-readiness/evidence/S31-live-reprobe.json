@@ -1,0 +1,86 @@
+{
+  "migaozn-home": {
+    "url": "https://migaozn.com/",
+    "status": 200,
+    "finalUrl": "https://migaozn.com/",
+    "h1": 1,
+    "textLen": 3651,
+    "spinner": false,
+    "overflow": 0,
+    "md": 0,
+    "head": "观星台 首页 产品服务 关于我们 联系方式 商家登录 商家入驻 杭州词元通达科技有限公司 · 布艺行业 AI 经营平台 AI 客服与经营系统 覆盖布艺经营全流程 顾客侧由元元承接：",
+    "errors": []
+  },
+  "migaozn-about": {
+    "url": "https://migaozn.com/about",
+    "status": 200,
+    "finalUrl": "https://migaozn.com/about",
+    "h1": 1,
+    "textLen": 1699,
+    "spinner": false,
+    "overflow": 0,
+    "md": 0,
+    "head": "观星台 首页 产品服务 关于我们 联系方式 商家登录 商家入驻 关于我们 关于观星台 观星台是杭州词元通达科技有限公司旗下的 AI 经营平台。产品目标明确：由 AI 承接客户接待，",
+    "errors": []
+  },
+  "migaozn-services": {
+    "url": "https://migaozn.com/services",
+    "status": 200,
+    "finalUrl": "https://migaozn.com/services",
+    "h1": 1,
+    "textLen": 3052,
+    "spinner": false,
+    "overflow": 0,
+    "md": 0,
+    "head": "观星台 首页 产品服务 关于我们 联系方式 商家登录 商家入驻 产品与服务 元元与黄金策，以及全链路经营平台 顾客侧由元元承接服务，经营侧由黄金策承接管理；后端由商品、客户、交易、",
+    "errors": []
+  },
+  "migaozn-contact": {
+    "url": "https://migaozn.com/contact",
+    "status": 200,
+    "finalUrl": "https://migaozn.com/contact",
+    "h1": 1,
+    "textLen": 1035,
+    "spinner": false,
+    "overflow": 0,
+    "md": 0,
+    "head": "观星台 首页 产品服务 关于我们 联系方式 商家登录 商家入驻 联系方式 联系我们 产品咨询、演示预约、成本评估或合作洽谈，按下面四类诉求说明您的情况即可；开通本身不需要等回复。 ",
+    "errors": []
+  },
+  "bmini": {
+    "url": "https://app.migaozn.com/b/",
+    "status": 200,
+    "finalUrl": "https://app.migaozn.com/b/#/pages/auth/login/index",
+    "h1": 0,
+    "textLen": 105,
+    "spinner": false,
+    "overflow": 0,
+    "md": 0,
+    "head": "米 黄金策 · 企业智能生产管家 经营数据 · AI 客服 · 移动坐席 员工登录 管理员登录 工人登录 用户名@企业编码 密码 账号由企业管理员在管理后台「员工管理」中分配（用户",
+    "errors": []
+  },
+  "worker-h5": {
+    "url": "https://app.migaozn.com/w/",
+    "status": 200,
+    "finalUrl": "https://app.migaozn.com/w/",
+    "h1": 1,
+    "textLen": 45,
+    "spinner": false,
+    "overflow": 0,
+    "md": 0,
+    "head": "工人领活 工号 + PIN 登录（手机 / PAD 均可，无需微信） 企业编码（向商家索取） 工号 PIN 登 录",
+    "errors": []
+  },
+  "merchant-root": {
+    "url": "https://merchant.migaozn.com/",
+    "status": 200,
+    "finalUrl": "https://merchant.migaozn.com/login",
+    "h1": 1,
+    "textLen": 146,
+    "spinner": false,
+    "overflow": 0,
+    "md": 0,
+    "head": "观星台 企业级AI经营管理平台 员工登录 账号密码 管理员登录 手机验证码 员工请用管理员分配的账号登录。账号形态为「用户名@企业编码」， 企业编码见企业管理员设置页（例如 zha",
+    "errors": []
+  }
+}

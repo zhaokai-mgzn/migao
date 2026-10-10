@@ -1,0 +1,28 @@
+{
+  "when": "2026-10-10T17:55:13.971Z",
+  "fails": [
+    "读失败⇄空态 /chat 空态=[\"暂无会话\"] 零值=[] 失败词=0 锚点=无",
+    "chat 失败面在侧栏内够显眼 {\"hostW\":null,\"failW\":null,\"failH\":null,\"failClipped\":null,\"listH\":819,\"failText\":null}",
+    "读失败⇄空态 /employees 空态=[\"暂无数据\"] 零值=[\"共 0 条\"] 失败词=0 锚点=无",
+    "读失败⇄空态 /notifications 空态=[\"暂无通知\"] 零值=[] 失败词=0 锚点=无",
+    "读失败⇄空态 /products 空态=[\"暂无数据\"] 零值=[] 失败词=0 锚点=无",
+    "products 失败面在表之上（版式不抖） {\"failTop\":null,\"tableTop\":350,\"above\":null,\"rows\":1}",
+    "读失败⇄空态 /shipments 空态=[] 零值=[] 失败词=1 锚点=无",
+    "状态列可见 1440px 下 状态列 left=1542",
+    "操作列按钮自击 1440px /orders 命中=[{\"txt\":\"发货\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"处理退款\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"发货\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"处理退款\",\"hitSelf\":false,\"why\":\"在视口外\"}]",
+    "状态列可见 1280px 下 状态列 left=1542",
+    "操作列按钮自击 1280px /orders 命中=[{\"txt\":\"发货\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"处理退款\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"发货\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"处理退款\",\"hitSelf\":false,\"why\":\"在视口外\"}]",
+    "操作列按钮自击 1280px /inbound-orders 命中=[{\"txt\":\"详情\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"详情\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"详情\",\"hitSelf\":false,\"why\":\"在视口外\"}]",
+    "操作列按钮自击 1280px /processing-orders 命中=[{\"txt\":\"订单详情\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"生产明细\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"订单详情\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"生产明细\",\"hitSelf\":false,\"why\":\"在视口外\"}]",
+    "操作列按钮自击 1280px /production 命中=[{\"txt\":\"订单详情\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"生产明细\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"订单详情\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"生产明细\",\"hitSelf\":false,\"why\":\"在视口外\"}]"
+  ],
+  "phase": "AFTER #6715（main 173b5f4e8，真机复放）—— 红项 16 → 14，转绿的两条恰好是 #6715 的两条",
+  "paired_reading": {
+    "before": "冷启动「共 0 单」=1 次；横幅承诺\"上次成功值\"=true 而屏上「暂无…」=5 处",
+    "after": "冷启动「共 0 单」=0 次；横幅承诺\"上次成功值\"=false（走冷启动分流）、屏上「暂无…」=0 处",
+    "still_red": [
+      "V17/V18 /chat /employees /notifications /products（#6718 未合）",
+      "V20 宽表可达性（#6717 未合）"
+    ]
+  }
+}

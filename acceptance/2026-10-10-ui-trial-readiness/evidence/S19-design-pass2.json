@@ -1,0 +1,54 @@
+[
+  {
+    "path": "/customers",
+    "h1": 1,
+    "h1text": "客户管理",
+    "widths": [
+      1096,
+      1094,
+      1046
+    ],
+    "chars": 1578,
+    "jargo": 0,
+    "loading": 0,
+    "buttons": 28
+  },
+  {
+    "path": "/inventory",
+    "h1": 1,
+    "h1text": "404",
+    "widths": [],
+    "chars": 33,
+    "jargo": 0,
+    "loading": 0,
+    "buttons": 0
+  },
+  {
+    "path": "/production/remnants",
+    "h1": 1,
+    "h1text": "余料台账",
+    "widths": [
+      1096,
+      1094,
+      1046
+    ],
+    "chars": 8744,
+    "jargo": 0,
+    "loading": 0,
+    "buttons": 127
+  },
+  {
+    "path": "/employees",
+    "h1": 1,
+    "h1text": "员工管理",
+    "widths": [
+      1096,
+      1094,
+      1046
+    ],
+    "chars": 938,
+    "jargo": 0,
+    "loading": 0,
+    "buttons": 58
+  }
+]

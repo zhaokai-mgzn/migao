@@ -1,0 +1,79 @@
+{
+  "when": "2026-10-10T18:18:19.376Z",
+  "pages": [
+    {
+      "name": "官网/",
+      "url": "https://migaozn.com/",
+      "title": "观星台 — 布艺行业 AI 经营平台：顾客服务与生产管理",
+      "h1": 1,
+      "chars": 4148,
+      "loading": 0,
+      "nan": 0,
+      "md": 0,
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "name": "官网/about",
+      "url": "https://migaozn.com/about",
+      "title": "关于观星台 — 布艺行业的 AI 经营平台 — 观星台",
+      "h1": 1,
+      "chars": 1886,
+      "loading": 0,
+      "nan": 0,
+      "md": 0,
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "name": "官网/services",
+      "url": "https://migaozn.com/services",
+      "title": "产品与服务 — AI 客服、经营助手与全链路经营平台 — 观",
+      "h1": 1,
+      "chars": 3509,
+      "loading": 0,
+      "nan": 0,
+      "md": 0,
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "name": "官网/contact",
+      "url": "https://migaozn.com/contact",
+      "title": "联系我们 — 产品演示、落地评估与合作咨询 — 观星台",
+      "h1": 1,
+      "chars": 1152,
+      "loading": 0,
+      "nan": 0,
+      "md": 0,
+      "overflow": false,
+      "bad": []
+    },
+    {
+      "name": "bmini",
+      "url": "https://app.migaozn.com/b/",
+      "title": "登录",
+      "h1": 0,
+      "chars": 125,
+      "loading": 0,
+      "nan": 0,
+      "md": 0,
+      "overflow": false,
+      "bad": [
+        "401 https://app.migaozn.com/api/auth/me"
+      ]
+    },
+    {
+      "name": "worker-h5",
+      "url": "https://app.migaozn.com/w/",
+      "title": "工人报工",
+      "h1": 1,
+      "chars": 59,
+      "loading": 0,
+      "nan": 0,
+      "md": 0,
+      "overflow": false,
+      "bad": []
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "when": "2026-10-10T18:43:28.798Z",
+  "phase": "with-v21（仪器扩到 V21，覆盖本批全部 6 个缺陷页）",
+  "fails": [
+    "读失败⇄空态 /employees 空态=[\"暂无数据\"] 零值=[] 失败词=1 锚点=employees-load-failed,employees-load-failed-retry",
+    "读失败⇄空态 /products 空态=[\"暂无数据\"] 零值=[] 失败词=1 锚点=products-load-failed,products-load-failed-retry"
+  ],
+  "v21": {
+    "会话页读失败不印 0": "✅ 零值格=0 破折号格=3",
+    "常驻失败面+重试": "✅ 锚点=agent-sessions-load-failed,chat-sessions-load-failed 重试=2"
+  },
+  "still_red": [
+    "/employees 与 /products 仍印「暂无数据」（继承 ui/Table emptyText）=> #6728（包在跑）"
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "A_retry_truth": [
+    {
+      "path": "/orders",
+      "retryFound": 0,
+      "clicked": true,
+      "newRequests": 1,
+      "count": [
+        "共 308 条"
+      ]
+    },
+    {
+      "path": "/finance",
+      "retryFound": 1,
+      "clicked": true,
+      "newRequests": 1,
+      "count": [
+        "共 — 条"
+      ]
+    },
+    {
+      "path": "/customers",
+      "retryFound": 0,
+      "clicked": true,
+      "newRequests": 1,
+      "count": [
+        "共 340 条"
+      ]
+    },
+    {
+      "path": "/after-sales",
+      "retryFound": 0,
+      "clicked": true,
+      "newRequests": 1,
+      "count": [
+        "共 1 条"
+      ]
+    },
+    {
+      "path": "/knowledge",
+      "retryFound": 0,
+      "clicked": true,
+      "newRequests": 1,
+      "count": [
+        "共 27 条"
+      ]
+    },
+    {
+      "path": "/stock-ledger",
+      "retryFound": 0,
+      "clicked": true,
+      "newRequests": 1,
+      "count": [
+        "共 326 条"
+      ]
+    }
+  ],
+  "B_403": {
+    "text": [
+      "你没有查看「余料台账」的权限（本页属于生产管理）—— 请联系管理员开通「生产管理」查看权限后重试"
+    ],
+    "zeroBlock": false,
+    "craftBlame": false,
+    "anchors": [
+      "remnant-ledger-load-failed",
+      "remnant-ledger-retry"
+    ]
+  },
+  "_note": "补盲复核自报的未验项：A) 六页重试真再发请求且计数恢复（/finance 需点「流水列表」那个 finance-load-error-retry，页上另有 finance-summary-load-error-retry 只管汇总卡 —— 首次探针点错按钮，已证伪）；B) 403 分流文案指向本页自己的权限（生产管理），无「工艺配置」、无「共 0 块」。"
+}

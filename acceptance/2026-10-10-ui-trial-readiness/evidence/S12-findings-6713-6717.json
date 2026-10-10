@@ -1,0 +1,23 @@
+{
+  "when": "2026-10-10T17:30:12.840Z",
+  "fails": [
+    "读失败⇄空态 /chat 空态=[\"暂无会话\"] 零值=[] 失败词=0 锚点=无",
+    "chat 失败面在侧栏内够显眼 {\"asideW\":64,\"failW\":null,\"failH\":null,\"failClipped\":null,\"failText\":null}",
+    "读失败⇄空态 /employees 空态=[\"暂无数据\"] 零值=[\"共 0 条\"] 失败词=0 锚点=无",
+    "读失败⇄空态 /notifications 空态=[\"暂无通知\"] 零值=[] 失败词=0 锚点=无",
+    "读失败⇄空态 /products 空态=[\"暂无数据\"] 零值=[] 失败词=0 锚点=无",
+    "products 失败面在表之上（版式不抖） {\"failTop\":null,\"tableTop\":350,\"above\":null,\"rows\":1}",
+    "读失败⇄空态 /shipments 空态=[] 零值=[] 失败词=1 锚点=无",
+    "冷启动不印共 0 单 屏上「共 0 单」=1 次",
+    "冷启动横幅不与屏上事实矛盾 横幅承诺\"上次成功值\"=true 而屏上「暂无…」=5 处、「共 0 单」=1 处",
+    "状态列可见 1440px 下 状态列 left=1542",
+    "操作列按钮自击 1440px /orders 命中=[{\"txt\":\"发货\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"处理退款\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"发货\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"处理退款\",\"hitSelf\":false,\"why\":\"在视口外\"}]",
+    "状态列可见 1280px 下 状态列 left=1542",
+    "操作列按钮自击 1280px /orders 命中=[{\"txt\":\"发货\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"处理退款\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"发货\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"处理退款\",\"hitSelf\":false,\"why\":\"在视口外\"}]",
+    "操作列按钮自击 1280px /inbound-orders 命中=[{\"txt\":\"详情\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"详情\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"详情\",\"hitSelf\":false,\"why\":\"在视口外\"}]",
+    "操作列按钮自击 1280px /processing-orders 命中=[{\"txt\":\"订单详情\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"生产明细\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"订单详情\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"生产明细\",\"hitSelf\":false,\"why\":\"在视口外\"}]",
+    "操作列按钮自击 1280px /production 命中=[{\"txt\":\"订单详情\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"生产明细\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"订单详情\",\"hitSelf\":false,\"why\":\"在视口外\"},{\"txt\":\"生产明细\",\"hitSelf\":false,\"why\":\"在视口外\"}]"
+  ],
+  "phase": "RED baseline（升级版仪器；#6718 未合时）—— 红项 16 条 = 原 14 条 + 两条版面检查（/chat 失败面显眼度、/products 失败面在表之上）",
+  "_selector_fix": "首跑时 /chat 那条量到 asideW=64 —— 那是**左侧主导航的收起态**，不是包说的 256px 会话列表侧栏 ⇒ 断言瞄错元素（修完也会假红）。已改为以失败块的**父容器**为参照，并加「列表区残余高度 >= 120px」防\"失败块把列表吃光\"。"
+}

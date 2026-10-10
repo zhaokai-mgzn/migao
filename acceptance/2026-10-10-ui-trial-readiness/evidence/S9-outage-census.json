@@ -1,0 +1,379 @@
+{
+  "when": "2026-10-10T18:55:24.915Z",
+  "phase": "post-fix 重跑（main 36ae6f01a 系）",
+  "routes": [
+    {
+      "path": "/after-sales",
+      "landed": "/after-sales",
+      "anchors": [
+        "after-sales-load-error",
+        "after-sales-load-error-retry"
+      ],
+      "failWords": 3,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/agent-workspace",
+      "landed": "/agent-workspace/human-sessions",
+      "anchors": [],
+      "failWords": 3,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "REDIRECT→/agent-workspace/human-sessions"
+    },
+    {
+      "path": "/agent-workspace/human-sessions",
+      "landed": "/agent-workspace/human-sessions",
+      "anchors": [],
+      "failWords": 3,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/agent-workspace/sessions",
+      "landed": "/agent-workspace/sessions",
+      "anchors": [
+        "agent-sessions-load-failed",
+        "agent-sessions-load-failed-retry",
+        "chat-sessions-load-failed",
+        "chat-sessions-load-failed-retry"
+      ],
+      "failWords": 5,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/briefing",
+      "landed": "/briefing",
+      "anchors": [],
+      "failWords": 0,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "无失败面（页可能无读面）"
+    },
+    {
+      "path": "/categories",
+      "landed": "/categories",
+      "anchors": [],
+      "failWords": 0,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "无失败面（页可能无读面）"
+    },
+    {
+      "path": "/chat",
+      "landed": "/chat",
+      "anchors": [
+        "chat-sessions-load-failed",
+        "chat-sessions-load-failed-retry"
+      ],
+      "failWords": 3,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/customers",
+      "landed": "/customers",
+      "anchors": [
+        "customers-load-error",
+        "customers-load-error-retry"
+      ],
+      "failWords": 3,
+      "zeroClaims": 0,
+      "emptyClaims": 1,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/dashboard",
+      "landed": "/dashboard",
+      "anchors": [
+        "dashboard-load-failed"
+      ],
+      "failWords": 2,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/employees",
+      "landed": "/employees",
+      "anchors": [
+        "employees-load-failed",
+        "employees-load-failed-retry",
+        "employees-empty"
+      ],
+      "failWords": 3,
+      "zeroClaims": 0,
+      "emptyClaims": 1,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/finance",
+      "landed": "/finance",
+      "anchors": [
+        "finance-summary-load-error",
+        "finance-summary-load-error-retry",
+        "finance-load-error",
+        "finance-load-error-retry"
+      ],
+      "failWords": 6,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/inbound-orders",
+      "landed": "/inbound-orders",
+      "anchors": [
+        "inbound-load-error"
+      ],
+      "failWords": 2,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/inbound-orders/new",
+      "landed": "/inbound-orders/new",
+      "anchors": [],
+      "failWords": 2,
+      "zeroClaims": 1,
+      "emptyClaims": 0,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/knowledge",
+      "landed": "/knowledge",
+      "anchors": [
+        "knowledge-load-error",
+        "knowledge-load-error-retry"
+      ],
+      "failWords": 3,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/notifications",
+      "landed": "/notifications",
+      "anchors": [
+        "notifications-load-failed",
+        "notifications-load-failed-retry"
+      ],
+      "failWords": 3,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/orders",
+      "landed": "/orders",
+      "anchors": [
+        "orders-load-error",
+        "orders-load-error-retry"
+      ],
+      "failWords": 3,
+      "zeroClaims": 0,
+      "emptyClaims": 1,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/orders/new",
+      "landed": "/orders/new",
+      "anchors": [],
+      "failWords": 3,
+      "zeroClaims": 1,
+      "emptyClaims": 0,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/processing",
+      "landed": "/production/processing",
+      "anchors": [
+        "fee-combinations-empty"
+      ],
+      "failWords": 3,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "REDIRECT→/production/processing"
+    },
+    {
+      "path": "/processing-orders",
+      "landed": "/production",
+      "anchors": [],
+      "failWords": 2,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "REDIRECT→/production"
+    },
+    {
+      "path": "/production",
+      "landed": "/production",
+      "anchors": [],
+      "failWords": 2,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/production/operations",
+      "landed": "/production/routings",
+      "anchors": [],
+      "failWords": 3,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "REDIRECT→/production/routings"
+    },
+    {
+      "path": "/production/piecework",
+      "landed": "/production/piecework",
+      "anchors": [],
+      "failWords": 3,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/production/pool",
+      "landed": "/production/pool",
+      "anchors": [],
+      "failWords": 0,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "无失败面（页可能无读面）"
+    },
+    {
+      "path": "/production/processing",
+      "landed": "/production/processing",
+      "anchors": [
+        "fee-combinations-empty"
+      ],
+      "failWords": 3,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/production/processing-fees",
+      "landed": "/production/processing",
+      "anchors": [
+        "fee-combinations-empty"
+      ],
+      "failWords": 5,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "REDIRECT→/production/processing"
+    },
+    {
+      "path": "/production/remnants",
+      "landed": "/production/remnants",
+      "anchors": [
+        "remnant-ledger-load-failed"
+      ],
+      "failWords": 3,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/production/routings",
+      "landed": "/production/routings",
+      "anchors": [],
+      "failWords": 3,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/production/saving-board",
+      "landed": "/production/saving-board",
+      "anchors": [
+        "saving-batch-trend-empty",
+        "saving-saved-groups-empty"
+      ],
+      "failWords": 1,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/products",
+      "landed": "/products",
+      "anchors": [
+        "products-load-failed",
+        "products-load-failed-retry",
+        "products-empty"
+      ],
+      "failWords": 3,
+      "zeroClaims": 0,
+      "emptyClaims": 1,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/products/new",
+      "landed": "/products/new",
+      "anchors": [],
+      "failWords": 0,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "无失败面（页可能无读面）"
+    },
+    {
+      "path": "/roles",
+      "landed": "/roles",
+      "anchors": [
+        "roles-load-error"
+      ],
+      "failWords": 1,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/settings",
+      "landed": "/settings",
+      "anchors": [],
+      "failWords": 7,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/settings/params",
+      "landed": "/settings",
+      "anchors": [],
+      "failWords": 7,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "REDIRECT→/settings"
+    },
+    {
+      "path": "/shipments",
+      "landed": "/shipments",
+      "anchors": [
+        "shipments-load-failed",
+        "shipments-load-failed-retry"
+      ],
+      "failWords": 3,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "有失败面"
+    },
+    {
+      "path": "/stock-ledger",
+      "landed": "/stock-ledger",
+      "anchors": [],
+      "failWords": 2,
+      "zeroClaims": 0,
+      "emptyClaims": 0,
+      "kind": "有失败面"
+    }
+  ],
+  "summary": "35 个 dashboard 路由（路由表取自源码树，不猜）：有失败面 25、重定向 6、**只画成 0/空 = 0**",
+  "note": "修复后重跑。此前 README 里列过 S9 这个文件名却**没落盘**（凭记忆写的清单）⇒ 本文件即补齐；同时新增两条定性结论：/orders 的「暂无数据」= #6728 同族第 4 处（自定义表 ⇒ 调用图普查射程盲区，已开 #6733）；/orders/new 与 /inbound-orders/new 的 ¥0.00 / 共 0 行 = 表单自身购物车为空，属**真 0**，不是缺陷。"
+}

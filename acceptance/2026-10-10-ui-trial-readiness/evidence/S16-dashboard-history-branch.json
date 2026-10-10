@@ -1,0 +1,16 @@
+{
+  "healthy": {
+    "count": "共 308 单",
+    "emptyN": 1,
+    "promise": false,
+    "coldCopy": false,
+    "zeroCount": false
+  },
+  "after": {
+    "count": "共 308 单",
+    "emptyN": 1,
+    "promise": true,
+    "coldCopy": false,
+    "zeroCount": false
+  }
+}
