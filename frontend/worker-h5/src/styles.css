@@ -80,6 +80,28 @@ html, body {
   font-size: 15px;
 }
 
+/* ---- 现场触屏（issue #6667：手套 + 弱光下的点击反馈）----
+   🔴 `touch-action: manipulation`：双击缩放会把第二下点击"吃掉"（现场表现为**点不动**）——
+   工人戴手套按不准，于是反复按 ⇒ 更需要这一条。
+   🔴 `:active`：按下去必须**看得见**（车间的屏常有反光/粉尘，没反馈就以为没点上）。
+   逐个元素显式给（不合并成一条选择器列表：合并后改一处会静默覆盖另一处的口径）。 */
+.wh5-primary { touch-action: manipulation; }
+.wh5-ghost { touch-action: manipulation; }
+.wh5-choice { touch-action: manipulation; }
+.wh5-op-choice { touch-action: manipulation; }
+.wh5-entry { touch-action: manipulation; }
+.wh5-primary:active { background: #115e59; transform: translateY(1px); }
+.wh5-ghost:active { background: #f1f5f9; transform: translateY(1px); }
+.wh5-choice:active { background: #f1f5f9; transform: translateY(1px); }
+.wh5-op-choice:active { background: #f1f5f9; transform: translateY(1px); }
+
+/* 提交中（in-flight）：**视觉可分**，不只靠 `disabled` 属性 —— 弱网下这是唯一的反馈 */
+.wh5-primary[disabled] {
+  background: #94a3b8;
+  cursor: default;
+  transform: none;
+}
+
 /* ---- 卡片 ---- */
 .wh5-card {
   background: var(--wh5-card);
@@ -315,13 +337,29 @@ html, body {
   min-height: 72px; padding: 0 28px; border-radius: 14px; border: 0;
   background: var(--wh5-brand); color: #fff; font-size: 24px; font-weight: 700;
 }
+/* 机台那台屏同样是**触摸屏**（issue #6667）：手套 + 弱光 ⇒ 同一条触屏纪律。
+   🔴 `.wh5-machine__back` 既是**按钮**（切换工人 / ◀ 订单详情）也是**链接**（`.wh5-machine__back` 的包装）
+   ⇒ 两种形态都要覆盖（真浏览器探针实测：只给 `a.` 那条会漏掉按钮形态）。 */
+.wh5-machine__cta { touch-action: manipulation; }
+.wh5-machine__back { touch-action: manipulation; }
+.wh5-machine__tab { touch-action: manipulation; }
+.wh5-machine__hit { touch-action: manipulation; }
+.wh5-machine__cta:active { background: #115e59; }
+.wh5-machine__back:active { background: #1e293b; }
 .wh5-machine__back { background: #334155; font-weight: 400; }
-/* 「去报工页」出口（issue #6635）：它是**链接**、不是动作按钮 ⇒ 不套按钮底色（套了在机台深色屏上
-   就是"深底深字"= 读不出来，2026-10-10 真浏览器截图实测）—— 用与 `.wh5-machine__hint` 同族的浅色 + 下划线。 */
+/* 「去报工页」/「登录」出口（issue #6635 / #6667）：它们是**链接**、不是动作按钮 ⇒ 不套按钮底色
+   （套了在机台深色屏上就是"深底深字"= 读不出来，2026-10-10 真浏览器截图实测）—— 用与
+   `.wh5-machine__hint` 同族的浅色 + 下划线。
+   🔴 两条现场纪律（issue #6667 探针实测）：① 它必须**够大**（真浏览器读数 23px 的纯内联文字，
+   戴手套点不中）⇒ `inline-block` + `padding` 把命中区撑到 ≥44px；② 同为触屏目标 ⇒ `touch-action`。 */
 a.wh5-machine__back {
+  display: inline-block;
   background: none; color: #94a3b8; text-decoration: underline;
-  font-size: 20px; font-weight: 400; padding: 0; min-height: 0;
+  font-size: 20px; font-weight: 400; padding: 10px 12px; min-height: 44px;
+  line-height: 1.4; box-sizing: border-box;
+  touch-action: manipulation;
 }
+a.wh5-machine__back:active { color: #e2e8f0; }
 
 /* 一体机 / PAD（≥768px，沿用既有断点）：远距离可读的大字 */
 @media (min-width: 768px) {
