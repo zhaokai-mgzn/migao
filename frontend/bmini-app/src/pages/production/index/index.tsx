@@ -155,6 +155,37 @@ function operationLabel(operation: {
   return operationDisplayName(operation)
 }
 
+/**
+ * 工序选择器的标题 —— **与 `/w/`（worker-h5）逐字同源**（issue #6638）。
+ *
+ * <p>两个工人面是**同一个交互的两份实现**：老形态是「系统推一道 + 一行小字『不是这道？改』」，
+ * 而车间工序本来就**不按固定顺序**做（用户 2026-10-10 逐字：「工人无法选取某个工序报工，
+ * 因为工序不是固定顺序的」）—— 把正常动作写成「例外」入口是错的。这里改判为**正常的工序选择器**：
+ * 候选含系统推断那道（显式选中）+ 全部备选，点哪道就领哪道。</p>
+ *
+ * <p>🔴 判据 = `frontend/bmini-app/tests/production-scan-complete.test.tsx` 的两条
+ * （候选与选中态 / 与 `/w/` 文案逐字同源）—— 任一侧改文案而另一侧没改 ⇒ 红。</p>
+ */
+export const SCAN_OPERATION_PICKER_TITLE = '选工序（点哪道就领哪道）'
+
+/** 选择器里的一个候选 = 系统推断那道 或 服务端给的备选。 */
+type OperationChoice =
+  | NonNullable<ScanResolveResult['operation']>
+  | ScanResolveResult['alternatives'][number]
+
+/**
+ * 可选的工序候选 = **系统推断的那道 + 服务端给的备选**（与 `/w/` 同口径）。
+ *
+ * <p>🔴 选择器里必须**包含当前这道**：不含它，工人就看不出系统给他推的是哪道，
+ * 也就无从判断"要不要改成别的"。改前只列备选，正是这个毛病。</p>
+ */
+function pickableOperations(view: ScanResolveResult): OperationChoice[] {
+  const candidates: OperationChoice[] = []
+  if (view.operation) candidates.push(view.operation)
+  for (const alternative of view.alternatives ?? []) candidates.push(alternative)
+  return candidates.filter((candidate) => !!candidate?.operation_id)
+}
+
 /** 按 id 在本单工序列表里找该工序（A 模式离线兜底要用它的 `done_qty` 算剩余数量）。 */
 function findOperation(
   detail: OrderOperations | null,
@@ -796,7 +827,7 @@ export default function ProductionPage() {
         </View>
       )}
 
-      {/* A 模式一屏（切片 ② / 设计 §4.1）：工序 + 应做数量 ⇒【完成】；「不是这道？改」只在需要时点 */}
+      {/* A 模式一屏（切片 ② / 设计 §4.1）：工序 + 应做数量 ⇒【开工】；工序选择器**常驻**（不是"例外"入口） */}
       {scanScreen && (
         <View className='production-scan-screen'>
           <Text className='production-scan-screen__title'>
@@ -834,20 +865,28 @@ export default function ProductionPage() {
                   {reportingId === scanScreen.view.operation.operation_id ? '领活中…' : '开工'}
                 </Button>
               ) : null}
-              {scanScreen.view.alternatives.length > 0 && (
+              {/* 工序选择器（issue #6638，与 `/w/` 同形）：候选 = 系统推断那道 + 全部备选，
+                  当前那道显式选中。点别的候选 ⇒ 既有「一键改」（归属仍由**服务端**校验）；
+                  点**当前已选中**那道 ⇒ 不发请求（它不是"再查一次"的开关）。 */}
+              {pickableOperations(scanScreen.view).length > 1 && (
                 <View className='production-scan-screen__alts'>
-                  <Text className='production-scan-screen__alts-title'>不是这道？改</Text>
-                  {scanScreen.view.alternatives.map((alternative) => (
-                    <Text
-                      key={alternative.operation_id}
-                      className='production-scan-screen__alt'
-                      onClick={() => handlePickAlternative(alternative.operation_id)}
-                    >
-                      {`${operationLabel(alternative)} · ${formatQty(alternative.qty)}${
-                        alternative.unit || ''
-                      }`}
-                    </Text>
-                  ))}
+                  <Text className='production-scan-screen__alts-title'>{SCAN_OPERATION_PICKER_TITLE}</Text>
+                  {pickableOperations(scanScreen.view).map((choice) => {
+                    const selected = choice.operation_id === scanScreen.view.operation?.operation_id
+                    return (
+                      <Text
+                        key={choice.operation_id}
+                        className={`production-scan-screen__alt${
+                          selected ? ' production-scan-screen__alt--on' : ''
+                        }`}
+                        onClick={() => {
+                          if (!selected) handlePickAlternative(choice.operation_id)
+                        }}
+                      >
+                        {`${operationLabel(choice)} · ${formatQty(choice.qty)}${choice.unit || ''}`}
+                      </Text>
+                    )
+                  })}
                 </View>
               )}
             </View>
