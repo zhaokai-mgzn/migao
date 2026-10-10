@@ -17,13 +17,11 @@ vi.mock('next/link', () => ({
   default: ({ children, href, ...props }: any) => <a href={href} {...props}>{children}</a>,
 }))
 
-// Mock next/navigation（callbackUrl 可逐用例控制）
+// Mock next/navigation（登录后的落点由用例通过地址栏控制，见 installCallbackUrl）
 const mockPush = vi.fn()
 const mockReplace = vi.fn()
-const mockSearchParamsGet = vi.fn()
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush, replace: mockReplace }),
-  useSearchParams: () => ({ get: (...args: any[]) => mockSearchParamsGet(...args) }),
 }))
 
 // Mock sonner
@@ -58,12 +56,23 @@ async function switchToAdminTab(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('tab', { name: /管理员登录/ }))
 }
 
+/**
+ * 把地址栏设成带 `callbackUrl` 的形态。
+ *
+ * 口径与登录页一致（`src/app/login/page.tsx` 的 `callbackUrlFromLocation`）：登录页**只在提交成功的
+ * 点击处理器里**读一次 URL，所以用地址栏控制落点；禁用 `useSearchParams()` 是**有意**的 ——
+ * 它会让 `/login` 在静态预渲染阶段失败（见 anonymous-first-screen-pages.ssr.test.tsx 的源码判据）。
+ */
+function installCallbackUrl(url = '/login') {
+  window.history.replaceState(null, '', url)
+}
+
 describe('LoginPage', () => {
   const user = userEvent.setup()
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mockSearchParamsGet.mockReturnValue(null)
+    window.history.replaceState(null, '', '/login')
     mockSendSmsCode.mockResolvedValue(undefined)
     mockUseAuthStore.mockReturnValue({
       employeeLogin: mockEmployeeLogin,
@@ -127,7 +136,7 @@ describe('LoginPage', () => {
 
   it('员工登录成功且无需改密 → 回 callbackUrl', async () => {
     mockEmployeeLogin.mockResolvedValue({ mustChangePassword: false })
-    mockSearchParamsGet.mockReturnValue('/orders')
+    installCallbackUrl('/login?callbackUrl=%2Forders')
     render(<LoginPage />)
     await user.type(screen.getByPlaceholderText('用户名@企业编码'), 'zhangsan@migao')
     await user.type(screen.getByPlaceholderText('请输入密码'), 'Init#12345')
@@ -199,7 +208,7 @@ describe('LoginPage', () => {
 
   it('管理员登录：手机号 + 短信验证码仍可登录并回 callbackUrl', async () => {
     mockSmsLogin.mockResolvedValue({ mustChangePassword: false })
-    mockSearchParamsGet.mockReturnValue('/dashboard')
+    installCallbackUrl('/login?callbackUrl=%2Fdashboard')
     render(<LoginPage />)
     await switchToAdminTab(user)
     await user.type(screen.getByPlaceholderText('请输入手机号'), '13800138000')

@@ -11,6 +11,8 @@
 // ⇒ 可见 DOM 恒 503 B、`h1/h2/nav` 各 0、正文只有「加载中...」。
 import { describe, it, expect, vi } from 'vitest'
 import { renderToString } from 'react-dom/server'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 import type { ComponentType, ReactNode } from 'react'
 
 let mockPathname = '/'
@@ -133,5 +135,25 @@ describe('匿名可见面首屏：真实根布局 + 真实页面 ⇒ 必须有 h
       /<h1[\s>]/.test(injected),
       '注入对照失效：受保护路径下本该被门控拦住（h1 不出现），却出现了 —— 说明本自证写错了',
     ).toBe(false)
+  })
+
+  it('登录页不得用 useSearchParams（它会让 /login 的静态预渲染失败 ⇒ 首屏又变空壳）', () => {
+    // 红证（实测）：把 `useSearchParams()` 放回登录页 ⇒ `next build` 在静态预渲染阶段直接失败，
+    //   `Error occurred prerendering page "/login" ... Export encountered an error on /login/page`
+    //   （Next 的 missing-suspense-with-csr-bailout），而包进 `<Suspense>` 后首屏 HTML 只剩 fallback
+    //   ⇒ 与本文件第 2 条「首屏要有 h1」直接冲突。所以口径是：**只在提交处理器里读地址栏**。
+    const raw = readFileSync(join(process.cwd(), 'src/app/login/page.tsx'), 'utf-8')
+    // 只看**代码行**：说明性文字里提这个符号名不算「用上了」（同 git 引用纪律：注解不是指令）
+    const code = raw
+      .split(/\r?\n/)
+      .filter((line) => !/^\s*(\/\/|\/\*|\*)/.test(line))
+      .join('\n')
+    expect(
+      code.includes('useSearchParams'),
+      '登录页又用上了 useSearchParams ⇒ `next build` 会在 /login 的静态预渲染阶段失败（首屏退回空壳）。' +
+        '改用 src/app/login/page.tsx 的 callbackUrlFromLocation()（读 window.location.search）。',
+    ).toBe(false)
+    // 正向锚：落点仍然可配（不是把 callbackUrl 一起删掉）
+    expect(code).toContain(`new URLSearchParams(window.location.search).get('callbackUrl')`)
   })
 })
