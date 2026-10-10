@@ -232,21 +232,21 @@ export default function HomePage() {
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute -top-32 right-0 h-96 w-96 rounded-full bg-primary-500/25 blur-3xl" />
           <div className="absolute -bottom-40 -left-24 h-96 w-96 rounded-full bg-accent-500/20 blur-3xl" />
-          <div className="absolute left-1/3 top-1/4 h-72 w-72 rounded-full bg-[#d48806]/10 blur-3xl" />
+          <div className="absolute left-1/3 top-1/4 h-72 w-72 rounded-full bg-gold-600/10 blur-3xl" />
         </div>
 
         <div className="relative mx-auto max-w-7xl px-4 pb-24 pt-20 sm:px-6 sm:pb-32 sm:pt-28 lg:px-8">
           <div className="grid grid-cols-1 gap-14 lg:grid-cols-12 lg:items-center">
             <div className="lg:col-span-7">
               <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-xs text-neutral-200 sm:text-sm">
-                <Sparkles className="h-4 w-4 text-[#e8b04b]" />
+                <Sparkles className="h-4 w-4 text-gold-500" />
                 <span>杭州词元通达科技有限公司 · 布艺行业 AI 经营平台</span>
               </div>
 
               <h1 className="mt-7 text-3xl font-extrabold leading-tight tracking-tight sm:text-5xl lg:text-[3.4rem]">
                 AI 客服与经营系统
                 <br />
-                <span className="bg-gradient-to-r from-[#f6d27a] via-[#e8b04b] to-accent-300 bg-clip-text text-transparent">
+                <span className="bg-gradient-to-r from-gold-300 via-gold-500 to-accent-300 bg-clip-text text-transparent">
                   覆盖布艺经营全流程
                 </span>
               </h1>
@@ -293,7 +293,7 @@ export default function HomePage() {
                   className="rounded-2xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-sm"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-[#f6d27a] to-[#d48806]">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-gold-300 to-gold-600">
                       <agent.icon className="h-6 w-6 text-neutral-900" />
                     </div>
                     <div>
@@ -388,7 +388,7 @@ export default function HomePage() {
           <div className="mx-auto mt-14 grid max-w-6xl grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {industryDepth.map((item) => (
               <div key={item.title} className="rounded-2xl bg-neutral-900 p-6 text-white">
-                <item.icon className="h-6 w-6 text-[#e8b04b]" />
+                <item.icon className="h-6 w-6 text-gold-500" />
                 <h3 className="mt-4 text-base font-semibold">{item.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-neutral-300">{item.description}</p>
               </div>
@@ -583,7 +583,7 @@ export default function HomePage() {
                 <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500 to-primary-700">
                   <item.icon className="h-6 w-6 text-white" />
                 </div>
-                <span className="mt-5 inline-block text-xs font-bold uppercase tracking-[0.18em] text-accent-600">
+                <span className="corporate-kicker mt-5 inline-block">
                   第 {item.step} 步
                 </span>
                 <h3 className="mt-2 text-lg font-semibold text-neutral-900">{item.title}</h3>
@@ -619,7 +619,7 @@ export default function HomePage() {
               href="/contact"
               className="inline-flex items-center gap-2 rounded-xl border border-white/25 px-7 py-3.5 text-base font-semibold text-white transition-colors hover:bg-white/10"
             >
-              留言咨询
+              联系我们
             </Link>
           </div>
         </div>

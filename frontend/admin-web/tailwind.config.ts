@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss'
+import { gold } from './src/lib/brand-palette'
 
 /**
  * 经营看板「织物质感」设计 token（issue #2534 子任务 A）。
@@ -54,6 +55,11 @@ const config: Config = {
           800: '#484036',
           900: '#312c26',
         },
+        // 织金：官网点缀色的**唯一真值源**（issue #6665 第 6 条 —— 此前三份官网页面 +
+        // components/ui/Logo.tsx 各写一份 hex，改一处必然漂移）。
+        // 数值本体在 src/lib/brand-palette.ts（SVG 属性也读那一份）；这里只把它接成调色板，
+        // 页面用类名（bg-gold-600 / text-gold-500 / from-gold-300），不再写任意值。
+        gold,
         // 图表语义色：经营看板折线/面积图专用，与「织物质感」主色系同源
         chart: {
           order: '#48618f',    // 靛蓝 — 订单量

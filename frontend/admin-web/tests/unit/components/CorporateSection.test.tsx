@@ -76,7 +76,7 @@ describe('CorporateSection（官网共用版式）', () => {
         title="想看清楚它能不能接住你的生意？"
         lead="提交入驻申请"
         primary={<a href="/register">立即入驻</a>}
-        secondary={<a href="/contact">留言咨询</a>}
+        secondary={<a href="/contact">联系我们</a>}
       />
     )
     expect(
@@ -84,7 +84,7 @@ describe('CorporateSection（官网共用版式）', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('提交入驻申请')).toBeInTheDocument()
     expect(screen.getByText('立即入驻')).toBeInTheDocument()
-    expect(screen.getByText('留言咨询')).toBeInTheDocument()
+    expect(screen.getByText('联系我们')).toBeInTheDocument()
   })
 
   it('CallToAction 无行动按钮时不渲染按钮容器', () => {

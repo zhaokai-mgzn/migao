@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { Smartphone, ShieldCheck, User, Lock, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -12,6 +12,21 @@ import { extractApiErrorMessage } from '@/lib/api-error'
 
 const SMS_CODE_LENGTH = 6
 const COUNTDOWN_SECONDS = 60
+
+/**
+ * 登录成功后要回的地址（`?callbackUrl=/orders`）。
+ *
+ * ⚠️ **刻意不用 `useSearchParams()`**（issue #6665 的连带修复）：它会让整页在**静态预渲染**阶段
+ * 直接失败/退化成空壳 —— 实测 `next build` 报
+ * `Error occurred prerendering page "/login" ... Export encountered an error on /login/page`
+ * （根因见 Next 的 `missing-suspense-with-csr-bailout`：`useSearchParams` 必须包在 `<Suspense>` 里，
+ * 而包了之后首屏 HTML 就只剩 fallback ⇒ 与「匿名可见面首屏要有正文」直接冲突）。
+ * 这里只在**提交成功后的点击处理器**里读一次 URL —— 那时一定在客户端，读 `window.location.search` 语义等价。
+ */
+function callbackUrlFromLocation(): string {
+  if (typeof window === 'undefined') return '/dashboard'
+  return new URLSearchParams(window.location.search).get('callbackUrl') || '/dashboard'
+}
 
 /**
  * 登录页两个入口（issue #5485）—— 谁用哪个要一眼看懂：
@@ -27,7 +42,6 @@ type LoginMode = 'employee' | 'admin'
 
 export default function LoginPage() {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const {
     employeeLogin: storeEmployeeLogin,
     smsLogin: storeSmsLogin,
@@ -109,7 +123,7 @@ export default function LoginPage() {
       router.push('/change-password')
       return
     }
-    router.push(searchParams.get('callbackUrl') || '/dashboard')
+    router.push(callbackUrlFromLocation())
   }
 
   const handleEmployeeLogin = async (e: React.FormEvent) => {
