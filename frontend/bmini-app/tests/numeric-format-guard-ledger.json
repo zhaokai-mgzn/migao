@@ -1,0 +1,11 @@
+{
+  "_comment": "issue #6685 类级守卫台账：bmini 侧「形参含 number 且返回 string」的格式化函数库存。**只许缩短**；新增函数必须同时带有限性守卫并登记在此（未登记即红，判据 = frontend/bmini-app/tests/money-format-guard.test.ts::未登记的 numeric 格式化函数**未登记即红**）。guard = 函数体里必须逐字出现的守卫记号。",
+  "inventory": [
+    { "file": "src/services/adminOpsService.ts", "fn": "formatMeters", "guard": "Number.isFinite" },
+    { "file": "src/services/adminOpsService.ts", "fn": "formatWaitHours", "guard": "Number.isFinite" },
+    { "file": "src/services/adminOpsService.ts", "fn": "formatYuanAmount", "guard": "Number.isFinite" },
+    { "file": "src/services/dashboardService.ts", "fn": "formatPercent", "guard": "Number.isFinite" },
+    { "file": "src/services/dashboardService.ts", "fn": "formatYuan", "guard": "Number.isFinite" }
+  ],
+  "exempt": []
+}
