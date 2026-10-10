@@ -5,12 +5,18 @@
 | 服务 | 默认端口 | 配置文件 |
 |------|---------|---------|
 | admin-api | 8080 | `application.yml` → `server.port` |
-| ai-agent-service | 8000 | `config.py` → `PORT` |
+| ai-agent-service | **8001**（本地直起；容器内 8000 —— 见 `deploy/docker-compose.yml` 的 `8001:8000`） | `app/config.py` → `PORT`（容器内默认 8000） |
 | admin-web | 3001 | `package.json` → `next dev -p` |
 
-> ai-agent 启动命令可通过 `--port` 覆盖默认端口，wiki 文档以代码默认端口为准。
+> ai-agent 启动命令可通过 `--port` 覆盖默认端口；**本地栈约定 = 8001**（`AGENTS.md`「环境」段）。
+> 接线细节（含 `admin-api` 必须显式给的两个变量、以及入驻「系统繁忙」的真因）见
+> [Quick-Start](Quick-Start.md) 的「先做一次 AI 接线」。
 
 ## 启动问题
+
+**看到任何失败态（尤其 500 / 入驻「系统繁忙」）先问一句：「依赖的服务在不在跑？」**
+- 「ai-agent-service 没起」与「页面坏了」在观感上**无法区分**（2026-10-10 实测，issue #6674）
+  ⇒ 先 `lsof -i :8001`（ai-agent）/ `lsof -i :8080`（admin-api）。
 
 **admin-api 启动失败**
 - 检查 `application.yml` 中 DB_URL / REDIS_URL 指向云 dev
