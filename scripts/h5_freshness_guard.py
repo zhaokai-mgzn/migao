@@ -6,7 +6,7 @@
 ```
 $ curl -sI https://app.migaozn.com/js/app.js | grep -i last-modified
 last-modified: Sun, 30 Aug 2026 06:54:48 GMT      # = 08-30 14:54 +08
-$ git log -1 --format=%cI origin/main -- frontend/mini-app
+$ git log -1 --format=%cI origin/main -- frontend/mini-app ':(exclude)frontend/mini-app/tests'
 2026-09-21T06:13:46Z                              # = 09-21 14:13 +08
 ```
 
@@ -53,6 +53,11 @@ from pathlib import Path
 URL_ENV = "MIGAO_H5_URL"
 DEFAULT_URL = "https://app.migaozn.com/js/app.js"
 SOURCE_PATH = "frontend/mini-app"
+
+# 🔴 **产物来源面**（issue #6672，2026-10-10 实测）：`tests/**` **不进** Taro 构建产物 ⇒
+# 只改测试**不能**让线上产物"陈旧"。实测：PR #6659 只改了 `frontend/mini-app/tests/setup.ts`，
+# 就把 main 上这条腿判红，并要求人工跑一次 `c-end-h5-publish.yml` —— 发布出来的字节与上一版**完全一样**（纯浪费）。
+SOURCE_EXCLUDES = ("frontend/mini-app/tests",)
 EXIT_OK, EXIT_USAGE, EXIT_STALE, EXIT_UNKNOWN = 0, 1, 2, 3
 
 
@@ -74,8 +79,10 @@ def fetch_last_modified(url: str, timeout: int = 20) -> datetime | None:
 
 
 def last_source_change(ref: str, cwd: Path, path: str = SOURCE_PATH) -> datetime | None:
-    """`ref` 上最近一次改到 `path` 的提交时间（committer date）。取不到 ⇒ None。"""
-    proc = subprocess.run(["git", "log", "-1", "--format=%cI", ref, "--", path],
+    """`ref` 上最近一次改到 `path`（**不含**产物来源之外的 `tests/**`，issue #6672）的提交时间。取不到 ⇒ None。"""
+    # 只排除落在本次 `path` 之下的那些排除项（path 可被调用方覆盖 ⇒ 不误伤）
+    excludes = [f":(exclude){e}" for e in SOURCE_EXCLUDES if e == path or e.startswith(path.rstrip("/") + "/")]
+    proc = subprocess.run(["git", "log", "-1", "--format=%cI", ref, "--", path, *excludes],
                           cwd=str(cwd), capture_output=True, text=True)
     if proc.returncode != 0 or not proc.stdout.strip():
         return None

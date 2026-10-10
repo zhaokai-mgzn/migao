@@ -17,6 +17,8 @@
 | 3 | **取不到** `Last-Modified`（无该头 / 连不上）⇒ `unknown` + exit 3（**不等于**新鲜） | 把 fail-closed 改成 `fresh` ⇒ 本组红 |
 | 4 | 宽限边界：差恰好 = 宽限 ⇒ `fresh`（不苛刻） | 把 `>=` 改成 `>` ⇒ 本组红 |
 | 5 | `--no-gate` ⇒ 报告型（`::warning::` + exit 0），**仅**人工诊断用 | 把 `--no-gate` 也判红 ⇒ 本组红 |
+| 6 | **只改 `frontend/mini-app/tests/**`** ⇒ **不算**源码改动（不判陈旧、不逼生产发布，issue #6672） | 把排除项去掉 ⇒ 第 6 条红（实测：真仓库里造"只改测试"的提交） |
+| 7 | 真改 `frontend/mini-app/src/**` ⇒ **仍**算源码改动（收窄不漏报） | 把 `path` 改空 ⇒ 第 7 条红 |
 
 ## 口径沿革（issue #4184，用户 2026-09-27 裁定 B）
 
@@ -193,3 +195,37 @@ def test_cli_fails_closed_when_live_unreachable(tmp_path):
     out = _run_cli(repo, "http://127.0.0.1:9/js/app.js")
     assert out.returncode == 3, (out.returncode, out.stdout, out.stderr)
     assert "rc=3" in out.stdout and "无法判定" in out.stderr, (out.stdout, out.stderr)
+
+# ── 6) 产物来源面：只改测试不算「陈旧」（issue #6672）────────────────────────────
+#
+# 实测现场：PR #6659 对 `frontend/mini-app` 的改动**只有** `tests/setup.ts`，
+# 却把 main 侧这条腿判红，并要求人工跑一次 `c-end-h5-publish.yml`（发布字节与上一版完全一样）。
+
+def _commit(repo: Path, rel: str, content: str, when: str, msg: str) -> None:
+    f = repo / rel
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(content, encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, env=GIT_ENV)
+    subprocess.run(["git", "commit", "-qm", msg], cwd=repo, check=True,
+                   env={**GIT_ENV, "GIT_COMMITTER_DATE": when, "GIT_AUTHOR_DATE": when})
+
+
+def test_source_change_ignores_tests_only_commit(tmp_path):
+    """只改 `tests/**` ⇒ 最近改动时间仍停在**上一次 src 改动**（红证：去掉排除项 ⇒ 本判据红）。"""
+    repo = _repo_with_mini_app_commit(tmp_path, "2026-09-21T06:13:46+00:00")
+    _commit(repo, "frontend/mini-app/tests/setup.ts", "// 只改测试", "2026-10-10T03:25:28+00:00", "test(frontend): 只改测试")
+
+    got = mod.last_source_change("HEAD", repo)
+    assert got == datetime(2026, 9, 21, 6, 13, 46, tzinfo=UTC), (
+        f"只改测试被当成了源码改动（取到 {got}）⇒ 会判「线上产物陈旧」并逼一次**字节完全相同**的生产发布（issue #6672）"
+    )
+
+
+def test_source_change_still_counts_src_commit(tmp_path):
+    """收窄**不得漏报**：真改 `src/**` ⇒ 最近改动时间跟着走。"""
+    repo = _repo_with_mini_app_commit(tmp_path, "2026-09-21T06:13:46+00:00")
+    _commit(repo, "frontend/mini-app/tests/setup.ts", "// 只改测试", "2026-10-10T03:25:28+00:00", "test(frontend): 只改测试")
+    _commit(repo, "frontend/mini-app/src/a.ts", "y", "2026-10-10T04:00:00+00:00", "feat(frontend): 真改源码")
+
+    got = mod.last_source_change("HEAD", repo)
+    assert got == datetime(2026, 10, 10, 4, 0, 0, tzinfo=UTC), f"真改 src 却没被算作源码改动（取到 {got}）"
