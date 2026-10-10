@@ -33,7 +33,7 @@ redis==7.4.1
 # 工具库
 python-dotenv==1.2.3
 pyjwt[crypto]==2.15.1
-cryptography==50.0.1
+cryptography==50.0.2
 python-multipart==0.0.32
 
 # 日志
