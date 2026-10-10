@@ -316,6 +316,12 @@ html, body {
   background: var(--wh5-brand); color: #fff; font-size: 24px; font-weight: 700;
 }
 .wh5-machine__back { background: #334155; font-weight: 400; }
+/* 「去报工页」出口（issue #6635）：它是**链接**、不是动作按钮 ⇒ 不套按钮底色（套了在机台深色屏上
+   就是"深底深字"= 读不出来，2026-10-10 真浏览器截图实测）—— 用与 `.wh5-machine__hint` 同族的浅色 + 下划线。 */
+a.wh5-machine__back {
+  background: none; color: #94a3b8; text-decoration: underline;
+  font-size: 20px; font-weight: 400; padding: 0; min-height: 0;
+}
 
 /* 一体机 / PAD（≥768px，沿用既有断点）：远距离可读的大字 */
 @media (min-width: 768px) {

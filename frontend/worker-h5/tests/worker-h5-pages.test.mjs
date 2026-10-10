@@ -379,12 +379,12 @@ test('🔴 ⑥ 钉住裁高页 ⇒ 落到 `/w/machine.html`；无参数 + 已钉
   const nav = []
   const replace = (url) => nav.push(url)
 
-  assert.equal(applyDeviceHome({ location: 'https://app.migaozn.com/w/?page=cut_calc', storage: store, replace }), 'cut_calc')
+  assert.equal(applyDeviceHome({ location: 'https://app.migaozn.com/w/?page=cut_calc', storage: store, replace, navigate: true }), 'cut_calc')
   assert.equal(nav.at(-1), '/w/machine.html', '钉住后本次就该换到裁高页')
   assert.equal(store.getItem(DEVICE_HOME_KEY), 'cut_calc', '预设要落盘（否则刷新就丢）')
 
   nav.length = 0
-  assert.equal(applyDeviceHome({ location: 'https://app.migaozn.com/w/', storage: store, replace }), 'cut_calc')
+  assert.equal(applyDeviceHome({ location: 'https://app.migaozn.com/w/', storage: store, replace, navigate: true }), 'cut_calc')
   assert.equal(nav.at(-1), '/w/machine.html', '本机已钉住 ⇒ 下次打开 `/w/` 仍落到裁高页')
 })
 
@@ -392,7 +392,7 @@ test('🔴 ⑥ 机台页的「去报工页」= `keep=1`：本次留在报工页�
   const store = memStorage({ [DEVICE_HOME_KEY]: 'cut_calc' })
   const nav = []
   assert.equal(
-    applyDeviceHome({ location: 'https://app.migaozn.com/w/?page=report&keep=1', storage: store, replace: (u) => nav.push(u) }),
+    applyDeviceHome({ location: 'https://app.migaozn.com/w/?page=report&keep=1', storage: store, replace: (u) => nav.push(u), navigate: true }),
     'report',
   )
   assert.deepEqual(nav, [], 'keep=1 不得跳走')
@@ -402,15 +402,44 @@ test('🔴 ⑥ 机台页的「去报工页」= `keep=1`：本次留在报工页�
 test('🔴 ⑥ 取消钉住：`?page=report`（不带 keep）⇒ 本机回到普通报工页', () => {
   const store = memStorage({ [DEVICE_HOME_KEY]: 'cut_calc' })
   const nav = []
-  assert.equal(applyDeviceHome({ location: 'https://app.migaozn.com/w/?page=report', storage: store, replace: (u) => nav.push(u) }), 'report')
+  assert.equal(applyDeviceHome({ location: 'https://app.migaozn.com/w/?page=report', storage: store, replace: (u) => nav.push(u), navigate: true }), 'report')
   assert.deepEqual(nav, [], '取消钉住后原地不动（就是报工页）')
   assert.equal(store.getItem(DEVICE_HOME_KEY), null, '取消钉住要落盘')
 })
 
 test('🔴 ⑥ 没钉过的本机（工人手机）⇒ **永远**留在报工页（不把普通工人带进机台页）', () => {
   const nav = []
-  assert.equal(applyDeviceHome({ location: 'https://app.migaozn.com/w/', storage: memStorage(), replace: (u) => nav.push(u) }), 'report')
+  assert.equal(applyDeviceHome({ location: 'https://app.migaozn.com/w/', storage: memStorage(), replace: (u) => nav.push(u), navigate: true }), 'report')
   assert.deepEqual(nav, [])
+})
+
+test('🔴 ⑥ 不传 `replace` ⇒ 换页动作缺省取 `location.replace`（真浏览器那一条路径）', () => {
+  // 红证（真浏览器验收实测过的形态）：把缺省 `go()` 去掉 ⇒ 本断言当场红 —— 而 `boot()` 只有一个
+  // `globalThis.location`，它**不会**替调用方传 `replace` ⇒ 那条路径上的人再也换不过去（页面停在 `/w/`）。
+  const nav = []
+  const location = { href: 'https://app.migaozn.com/w/', replace: (url) => nav.push(url) }
+  assert.equal(applyDeviceHome({ location, storage: memStorage({ [DEVICE_HOME_KEY]: 'cut_calc' }), navigate: true }), 'cut_calc')
+  assert.deepEqual(nav, ['/w/machine.html'], '缺省换页动作没生效 ⇒ boot() 那处只拿到返回值、什么也没跳')
+})
+
+test('🔴 ⑥ **未登录不得换页**（机台页没有登录面 ⇒ 换过去 = 把人关在门外）', () => {
+  // 红证（真浏览器验收实测踩过）：`navigate` 这道门去掉 ⇒ 未登录的机台屏被换到 `/w/machine.html`，
+  // 而那一页**没有登录表单**（`#wh5-worker-no` 取不到）⇒ 工人连登录都做不到。
+  const nav = []
+  const location = { href: 'https://app.migaozn.com/w/?page=cut_calc', replace: (url) => nav.push(url) }
+  const store = memStorage()
+  assert.equal(
+    applyDeviceHome({ location, storage: store, navigate: false }),
+    'cut_calc',
+    '返回值仍是"该落裁高页"（登录后由登录成功那处补跳），但**现在不跳**',
+  )
+  assert.deepEqual(nav, [], '未登录就换页 = 把人关在门外（机台页没有登录面）')
+  assert.equal(store.getItem(DEVICE_HOME_KEY), 'cut_calc', '预设照旧落盘（登录成功后据此补跳）')
+
+  // 接线判据：`boot()` 那道门必须真的接上 session
+  const src = readFileSync(new URL('../src/app.mjs', import.meta.url), 'utf8')
+  assert.match(src, /navigate: hasSession/, 'boot() 里 `navigate` 必须由「有没有工人 session」决定')
+  assert.match(src, /const hasSession = Boolean\(api\.sessionId\(\)\)/, '门的值必须真来自 session')
 })
 
 test('🔴 ⑥ 存储不可用（隐私模式）⇒ 按"没钉成功"处理，**绝不因此拦住报工**', () => {
@@ -420,7 +449,7 @@ test('🔴 ⑥ 存储不可用（隐私模式）⇒ 按"没钉成功"处理，**
     setItem: () => { throw new Error('storage disabled') },
     removeItem: () => { throw new Error('storage disabled') },
   }
-  assert.equal(applyDeviceHome({ location: 'https://app.migaozn.com/w/?page=cut_calc', storage: hostile, replace: (u) => nav.push(u) }), 'report')
+  assert.equal(applyDeviceHome({ location: 'https://app.migaozn.com/w/?page=cut_calc', storage: hostile, replace: (u) => nav.push(u), navigate: true }), 'report')
   assert.deepEqual(nav, [], '存不下 ⇒ 不换页（留在报工页，活照干）')
 })
 
