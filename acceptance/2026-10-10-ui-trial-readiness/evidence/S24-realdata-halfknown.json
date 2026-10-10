@@ -1,0 +1,12 @@
+{
+  "checked": 20,
+  "unreadable": 0,
+  "hits": [],
+  "stats": {
+    "withSubtotal": 20,
+    "withoutSubtotal": 0,
+    "pfZero": 20,
+    "pfNonZero": 0
+  },
+  "note": "对 #6731 的**真实数据**核查：订单列表页取 20 张真实订单 id，逐张开详情页、用应用自身鉴权上下文截获 /api/admin/orders/<id> 的响应，检查 items 的 subtotal 是否存在、processingFee 是否 0。结果：20/20 读到、0 张未读到；withSubtotal=20、withoutSubtotal=0、pfZero=20 ⇒ **真实命中 0 处**。⇒ 准确表述：该组合的**可达性成立在\"历史遗留行\"**（列可空 + 历史提交写过 NULL + 无回填），而**本租户当前数据未命中** ⇒ 属**潜在风险修复**，不是正在发生的缺陷。纪律：第一版探针用 localStorage 取 token 失败（token 不在那里）⇒ 未带鉴权拿回 HTML ⇒ 脚本把\"读不到\"打成\"未命中\"（静默假阴性，正是本批在治的形态）⇒ 改为截获应用自身响应，并把\"未读到\"单列统计。"
+}
