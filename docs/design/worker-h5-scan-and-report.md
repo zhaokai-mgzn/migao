@@ -319,6 +319,7 @@ users (role='worker', permissions=[], worker_no=<工号>, password_hash=<PIN 的
 | 落点 | `worker_sessions.idle_expires_at`；每次成功请求刷新 `last_seen_at` + 顺延 `idle_expires_at` |
 | 服务端 | 过期 session ⇒ 报工 **401**（**不静默续期**） |
 | 前端 | 定时器 + `visibilitychange` 双保险（PAD 常被切到别的 App ⇒ **不能只靠定时器**） |
+| 对账（回到本页） | **有界**：单飞 + 最小间隔 5s（一次可见性事件风暴只允许一轮 = 2 个请求）· 失败**不进报工卡**（只提示「不影响报工」）· 唯一例外 401 ⇒ 回落未登录（2026-10-10 线上日志实测，issue #6642） |
 | 断网时 | 离线队列的**补传**若因 session 过期被拒 ⇒ **出队 + 显式回报**（不得静默丢单，复用 `productionOffline.ts` 的 `RejectedReport` 口径） |
 
 > 🔴 **断言（红证）**：过期 session 报工 ⇒ **401**；若成功 ⇒ **红**。
