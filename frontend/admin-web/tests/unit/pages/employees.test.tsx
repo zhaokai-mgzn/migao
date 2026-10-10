@@ -132,6 +132,8 @@ vi.mock('lucide-react', () => {
   return {
     Plus: stub('plus'),
     Search: stub('search'),
+    // issue #6663：失败态行用的图标
+    AlertTriangle: stub('alert-triangle'),
   }
 })
 
@@ -509,5 +511,55 @@ describe('EmployeesPage', () => {
       expect(screen.getAllByText('编辑').length).toBeGreaterThan(0)
     })
     expect(screen.getAllByText('删除').length).toBeGreaterThan(0)
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// issue #6663：岗位下拉读失败 ≠ 空下拉（三维审计逐条复核）
+//
+// 改前 `employeeApi.loadPositions()` 的 catch 是**空的**（注释还写着「岗位为空时可手输」——
+// 而反：岗位用 `Select`，**不能手输**）⇒ 下拉空 ⇒ **建不出员工**，页面一言不发。
+// 类级收口 = tests/unit/read-failure-empty-state-guard.test.ts（本文件是它的实例面）。
+// ══════════════════════════════════════════════════════════════════════════════
+describe('EmployeesPage 岗位下拉读失败态（issue #6663）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockUseAuthStore.mockReturnValue({
+      user: { id: '1', name: '管理员', roles: ['admin'], permissions: ['*'] },
+    })
+    mockGetEmployees.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
+    mockRequestGet.mockResolvedValue({ data: { data: [] } })
+  })
+
+  it('岗位清单读失败 ⇒ 弹窗里显示失败态 + 重试出口（不再一言不发）', async () => {
+    mockGetAllRoles.mockRejectedValue(new Error('500'))
+    render(<EmployeesPage />)
+
+    await waitFor(() => expect(screen.getByText('新增员工')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('新增员工'))
+
+    const failure = await screen.findByTestId('employees-positions-error')
+    expect(failure).toHaveTextContent('岗位清单读取失败')
+    // 重试出口真可点（这次成功 ⇒ 失败态退场、下拉有选项）
+    mockGetAllRoles.mockResolvedValue({
+      data: { data: [{ id: 'r1', name: '客服', code: 'customer_service', permissions: [] }] },
+    })
+    fireEvent.click(within(failure).getByRole('button', { name: '重新加载' }))
+    await waitFor(() =>
+      expect(screen.queryByTestId('employees-positions-error')).not.toBeInTheDocument(),
+    )
+    expect(screen.getByRole('option', { name: '客服' })).toBeInTheDocument()
+  })
+
+  it('岗位清单读成功 ⇒ 不显示失败态（对照读数：失败态不是恒显）', async () => {
+    mockGetAllRoles.mockResolvedValue({
+      data: { data: [{ id: 'r1', name: '客服', code: 'customer_service', permissions: [] }] },
+    })
+    render(<EmployeesPage />)
+
+    await waitFor(() => expect(screen.getByText('新增员工')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('新增员工'))
+    await waitFor(() => expect(screen.getByRole('option', { name: '客服' })).toBeInTheDocument())
+    expect(screen.queryByTestId('employees-positions-error')).not.toBeInTheDocument()
   })
 })

@@ -46,6 +46,7 @@ import {
   SUBTITLE_RULES,
   SUBTITLE_EXEMPT,
   candidateStrings,
+  toCandidate,
   findViolations,
   findSubtitleOffenses,
   pageSubtitles,
@@ -67,7 +68,9 @@ describe('用户可见文案不得含内部词汇 / 研发腔（#5565 · #5576 �
   })
 
   it('规则表不许被悄悄删空（九条一条都不许少；每条必须给得出可行动的出口）', () => {
-    expect(RULES.map((r) => r.id)).toEqual(['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8', 'R9'])
+    expect(RULES.map((r) => r.id)).toEqual([
+      'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8', 'R9', 'R10', 'R11',
+    ])
     for (const rule of RULES) {
       expect(rule.name.length, `${rule.id} 缺名字`).toBeGreaterThan(1)
       expect(rule.出口.length, `${rule.id} 的出口必须写到「改成什么」，否则判红时读的人无从下手`).toBeGreaterThan(15)
@@ -95,8 +98,7 @@ describe('用户可见文案不得含内部词汇 / 研发腔（#5565 · #5576 �
   })
 
   it('判别力自证：坏形态各自判红、好文案一条不红（守卫退化成绿 ⇒ 这里先红）', () => {
-    const fires = (text: string) => RULES.filter((r) => r.test(text)).map((r) => r.id)
-    // 逐族取样：都是 2026-10-07 现场逐字摘录的**真实**坏文案
+    const fires = (text: string) => RULES.filter((r) => r.test(text)).map((r) => r.id)    // 逐族取样：都是 2026-10-07 现场逐字摘录的**真实**坏文案
     expect(fires('请先输入商品关键词（端点没有关键词参数，商品必须先选中才能按它查流水）')).toContain('R1')
     expect(fires('本页宁可不查，也不做「一次拉全量」的假方便')).toContain('R1')
     expect(fires('「剩余米数」是派生值（= 入库米数 − 已派工消耗）')).toContain('R2')
@@ -121,6 +123,59 @@ describe('用户可见文案不得含内部词汇 / 研发腔（#5565 · #5576 �
     expect(candidateStrings(source, 'probe.tsx')).toEqual([])
   })
 
+  /**
+   * 🔴 issue #6663 扩网的自证：**表达式兜底 + 内部标识**。
+   *
+   * 为什么必须自证：改前 R1~R9 只扫**字面量**，`{param.key}` / env 名这类形态
+   * **永远不判红** —— 一个不判红的判据等于没有判据（`migao-acceptance`「空断言」同族）。
+   * 这里逐族取样：坏形态各自判红，**好形态一条不红**（否则判据会逼人把好码改坏）。
+   */
+  it('判别力自证②：R10「内部键兜底」/ R11「直接渲染内部键与 env 名」各自判红，好形态不红', () => {
+    const R = (id: string) => RULES.find((r) => r.id === id)!
+    const fires = (kind: string, text: string) =>
+      RULES.filter((r) => r.test({ kind, text })).map((r) => r.id)
+
+    // ── 坏形态（都是本轮/邻近轮真实摘录）──
+    // R10：映射表兜底把**键本身**端给商家（`customer_service` 这种内部值上屏）
+    expect(R('R10').test({ kind: 'jsx-text', text: 'CustomerChannelLabels[channel] || channel' })).toBe(true)
+    expect(R('R10').test({ kind: 'jsx-text', text: 'permissionLabelMap[c] || c' })).toBe(true)
+    // R11 ①：`{param.key}` —— 引擎标量参数的键名直接渲染（本包病灶，CalcCaliberPanel）
+    expect(fires('jsx-member', 'param.key')).toContain('R11')
+    expect(fires('jsx-member', 'p.key')).toContain('R11')
+    expect(fires('jsx-member', 'field.key')).toContain('R11')
+    // ⚠️ 反面（**有意不判**）：`rec.itemKey` 是服务端下发的**数据值**（余料台账的料组键），
+    //    不是代码标识符 —— 判它会逼人把正常的数据渲染改坏。
+    expect(R('R11').test({ kind: 'jsx-member', text: 'rec.itemKey' })).toBe(false)
+    // R11 ②：环境变量名上屏（本包病灶，设置页「手机端入口」）
+    expect(fires('jsx-text', '部署时设置 NEXT_PUBLIC_BMINI_H5_URL 后重新构建即可')).toContain('R11')
+
+    /**
+     * 🔴 **入参形态自证**（本包实测踩过的坑）：规则表要同时吃得下**裸字符串**（判别力自证、
+     * 以及任何 `RULES[i].test('一句文案')` 的老写法）与**候选对象** `{kind, text}`（真扫描面）。
+     * 只吃一种 ⇒ 要么真扫描 `TypeError`，要么规则**静默不命中**（「加了规则却零命中」的假绿）。
+     */
+    for (const rule of RULES) {
+      const asString = () => rule.test('这是一句没有内部词汇的普通商家文案')
+      const asCandidate = () => rule.test({ kind: 'jsx-text', text: '这是一句没有内部词汇的普通商家文案' })
+      expect(asString, `${rule.id} 吃不下裸字符串（旧写法会崩）`).not.toThrow()
+      expect(asCandidate, `${rule.id} 吃不下候选对象（真扫描面会崩）`).not.toThrow()
+    }
+
+    // ── 好形态：一条规则都不许红（否则判据会逼人把好码改坏）──
+    // `key={x.key}` / `data-testid={`x-${x.key}`}` 里的成员访问是**控件属性**，不是上屏文本
+    // （实测：放宽到属性面会从 3 条涨到 51 条**全假红**）
+    expect(R('R11').test({ kind: 'attr:key', text: 'param.key' })).toBe(false)
+    // 数据字段（服务端内容）不是代码标识符
+    expect(R('R11').test({ kind: 'jsx-member', text: 'zone.label' })).toBe(false)
+    expect(R('R11').test({ kind: 'jsx-member', text: 'domain.advanced.length' })).toBe(false)
+    // 整句里出现 env 名（不是**只**渲染它）也不判 —— 那是散文，不是「直接渲染标识」
+    expect(R('R11').test({ kind: 'string', text: '地址取自单一配置（唯一读取点 = @/lib/bmini-h5-url）' })).toBe(false)
+    // R10 的好形态：兜底换成人话（`?? 「其他」`）
+    expect(R('R10').test({ kind: 'string', text: 'LABELS[k] ?? 「其他」' })).toBe(false)
+    // R10 不误伤数组下标取值本身（没有 `|| 键` 兜底）
+    expect(R('R10').test({ kind: 'string', text: 'CustomerChannelLabels[channel]' })).toBe(false)
+  })
+
   it('真声明面自证：源码里的**坏文案**确实被抽出来（否则上面全绿 = 假绿）', () => {
     const source = [
       'export const a = () => <p>请先输入商品关键词（端点没有关键词参数）</p>',
@@ -129,6 +184,41 @@ describe('用户可见文案不得含内部词汇 / 研发腔（#5565 · #5576 �
     const found = candidateStrings(source, 'probe.tsx').map((c) => c.text)
     expect(found.some((t) => t.includes('端点'))).toBe(true)
     expect(found.some((t) => t.includes('派生值'))).toBe(true)
+  })
+
+  /**
+   * issue #6663 扩网的**抽取面**自证：`{param.key}` 与 env 名必须被**抽出来**。
+   *
+   * 为什么单独一条：抽取（`candidateStrings`）与判定（`RULES`）是两跳 ——
+   * 抽不出来，规则再准也是空跑（这正是改前「表达式形态永远不判红」的机制）。
+   */
+  it('扩网抽取自证：表达式成员访问与 env 名都进了候选面（抽不出来 ⇒ 规则空跑）', () => {
+    const source = [
+      'export const a = ({ param }: any) => <div><span>{param.key}</span></div>',
+      'export const b = () => <p>设置 NEXT_PUBLIC_BMINI_H5_URL 后重新构建</p>',
+      // 控件属性里的同一形态**不该**被当成文案（否则假红 51 条，见判别力自证②）
+      'export const c = ({ param }: any) => <div key={param.key} data-testid={`x-${param.key}`} />',
+    ].join('\n')
+    const found = candidateStrings(source, 'probe.tsx')
+    expect(
+      found.filter((c) => c.kind === 'jsx-member').map((c) => c.text),
+      '`{param.key}` 必须被抽成 jsx-member 候选',
+    ).toContain('param.key')
+    expect(
+      found.some((c) => c.kind === 'jsx-text' && c.text.includes('NEXT_PUBLIC_BMINI_H5_URL')),
+      'env 名必须被抽成 jsx-text 候选',
+    ).toBe(true)
+    // 属性里的 `param.key`（`key=` / `data-testid=`）一个都不抽
+    expect(found.filter((c) => c.kind === 'jsx-member' && c.text === 'param.key')).toHaveLength(1)
+  })
+
+  it('扩网后的**真实扫描面**自身清白：R10 / R11 零命中（含本包刚修的两处）', () => {
+    const { offenders } = findViolations(ROOT)
+    const exprHits = offenders.filter((o) => o.rule === 'R10' || o.rule === 'R11')
+    expect(
+      exprHits.map((o) => `${o.where}  ${o.text.slice(0, 120)}`),
+      '表达式面命中 —— 内部键 / 兜底键 / env 名不得上屏（改法见 R10/R11 的出口）',
+    ).toEqual([])
   })
 
   it('扫描面只认三个目录下的 ts/tsx（口径自证）', () => {

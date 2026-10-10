@@ -109,8 +109,43 @@ describe('WorkerPageConfigPanel 工人端页面开关（V141 / 母单 #5161）',
     fireEvent.click(screen.getByText('保存'))
 
     await waitFor(() => expect(screen.getByTestId('worker-page-config-error')).toBeTruthy())
-    expect(screen.getByTestId('worker-page-config-error').textContent).toContain('pages[1]')
+    // 2026-10-10（issue #6663）：判据面**只收紧不放宽** —— 服务端**语义**照旧贴出来
+    //（「不是工人端页面键」+ 哪个值不行），但**字段名 `pages[1]` 不上屏**（§31 P3 不摆内部标识）。
+    expect(screen.getByTestId('worker-page-config-error').textContent).toContain('不是工人端页面键')
     expect(screen.getByTestId('worker-page-config-error').textContent).toContain('stock')
+    expect(screen.getByTestId('worker-page-config-error').textContent).not.toContain('pages[')
     expect(screen.queryByTestId('worker-page-config-saved')).toBeNull()
+  })
+
+  it('⑤b 保存失败（422）⇒ 字段名与 JSON 示例都不上屏，但**逐条理由**一条不少（issue #6663）', async () => {
+    mockGet.mockResolvedValue(readResponse('stored', ['report', 'shipment']))
+    mockUpdate.mockRejectedValue({
+      response: {
+        data: {
+          error: {
+            message: '工人端页面配置有 2 处不合法',
+            details: [
+              // 服务端原文形态（`WorkerPageConfigService` 的 422）：字段名 + JSON 示例
+              { field: 'pages', message: '必须是数组（如 ["report","order"]）' },
+              { field: 'pages[0]', message: '不是工人端页面键：stock（合法页面键：[report, order]）' },
+            ],
+          },
+        },
+      },
+    })
+
+    render(<WorkerPageConfigPanel />)
+    await waitFor(() => expect(screen.getByTestId('worker-page-report')).toBeTruthy())
+    fireEvent.click(screen.getByText('保存'))
+    await waitFor(() => expect(screen.getByTestId('worker-page-config-error')).toBeTruthy())
+
+    const text = screen.getByTestId('worker-page-config-error').textContent ?? ''
+    // ① 逐条理由仍在（没有静默丢弃被拒的键）
+    expect(text).toContain('必须是数组')
+    expect(text).toContain('不是工人端页面键')
+    // ② 内部标识与代码示例不上屏
+    expect(text).not.toContain('pages')
+    expect(text).not.toContain('"report"')
+    expect(text).not.toContain('["')
   })
 })

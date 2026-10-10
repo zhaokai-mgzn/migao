@@ -32,6 +32,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, Check, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui'
 import { workerPageConfigApi } from '@/lib/api'
+import { merchantReasonsOf } from '@/lib/settings/server-reason'
 import type { WorkerPageConfigResponse } from '@/types'
 
 /** 每个页面一句口径（键是机器码；文案是给商家人读的）。 */
@@ -181,20 +182,7 @@ export function WorkerPageConfigPanel() {
   )
 }
 
-/** 服务端 422 的逐条理由 ⇒ 人读行（读不到 details ⇒ 退回一句话摘要，不编理由）。 */
+/** 服务端 422 的逐条理由 ⇒ 人读行（字段名与 JSON 示例不上屏；读不到 details ⇒ 退回一句话摘要，不编理由）。 */
 function problemLinesOf(error: unknown): string[] {
-  const err = (error as { response?: { data?: { error?: { message?: string; details?: unknown } } } })
-    ?.response?.data?.error
-  const details = err?.details
-  if (Array.isArray(details)) {
-    const lines = details
-      .map((d) => {
-        const item = d as { field?: string; message?: string }
-        if (!item?.message) return ''
-        return item.field ? `${item.field}：${item.message}` : item.message
-      })
-      .filter(Boolean)
-    if (lines.length > 0) return lines
-  }
-  return [err?.message || '保存失败（请检查页面清单后重试）']
+  return merchantReasonsOf(error, '保存失败（请检查页面清单后重试）')
 }

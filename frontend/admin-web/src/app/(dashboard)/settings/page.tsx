@@ -56,7 +56,7 @@
  * 五个生产域读面与三个企业级读面**全部**在本文的 effect 里发起（不藏进子组件）。
  */
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Building2, Bot, Bell, Newspaper, Smartphone, HardHat } from 'lucide-react'
+import { Building2, Bot, Bell, Newspaper, Smartphone, HardHat, AlertCircle } from 'lucide-react'
 import Image from 'next/image'
 import { QRCodeSVG } from 'qrcode.react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -377,7 +377,13 @@ export default function SettingsPage() {
 
             {activeDomain.key === 'calc' && (
               <div className="space-y-6">
-                <CalcCaliberPanel calc={calc} calcError={calcError} loading={readinessLoading} />
+                <CalcCaliberPanel
+                  calc={calc}
+                  calcError={calcError}
+                  loading={readinessLoading}
+                  // 失败行的重试出口 = 重跑本页那次读面（取数在页面，见 `load`）
+                  onRetry={() => void load()}
+                />
                 {/* 公式编辑：v1 时它在功能体的「算料配置」页签里，与左栏「算料口径」域编辑同一份配置
                     （`craft-calc-config`）⇒ 设计判死线第 1 条。v2 把它并进本域，功能体那份随之删除。 */}
                 <CalcFormulaPanel embedded />
@@ -436,9 +442,16 @@ function EnterpriseDomainPanel() {
   // ============ 智能每日经营简报（issue #3468）============
   const [briefingConfig, setBriefingConfig] = useState<BriefingConfig>(EMPTY_BRIEFING)
   const [loadingBriefing, setLoadingBriefing] = useState(false)
+  /**
+   * 简报开关**读失败**的显式状态（issue #6663）。
+   * 为什么必须有它：改前 catch 是空的 ⇒ `briefingConfig` 保持 `EMPTY_BRIEFING`（`enabled:false`）
+   * ⇒ 页面把「读不到」画成「**是关闭的**」—— 谎报状态（商家据此以为简报没开，去点一次反而把它打开）。
+   */
+  const [briefingReadError, setBriefingReadError] = useState(false)
 
   const loadBriefingConfig = useCallback(async () => {
     setLoadingBriefing(true)
+    setBriefingReadError(false)
     try {
       const res = await briefingApi.getConfig()
       if (res.data.data) {
@@ -448,7 +461,9 @@ function EnterpriseDomainPanel() {
         })
       }
     } catch {
-      // 简报配置读取失败保持默认（关闭态），不阻塞设置页
+      // 🔴 issue #6663：失败**不得**保持「关闭态」冒充真实状态 —— 显式说出来，并给重试出口
+      // （失败不阻塞设置页其余部分，所以这里只标记，不 toast）
+      setBriefingReadError(true)
     } finally {
       setLoadingBriefing(false)
     }
@@ -710,9 +725,14 @@ function EnterpriseDomainPanel() {
                 </div>
               </div>
             ) : (
+              /* 🔴 issue #6663：改前这里写的是给运维看的话（env 名 `NEXT_PUBLIC_BMINI_H5_URL` +
+                 「部署时设置后重新构建」）—— 商家**既改不了也不该看到**构建细节（§31 P3 不摆内部标识）。
+                 改成商家可行动的话：说清「还没开通」+「找谁」。
+                 ⚠️ **保留「未配置」逐字**：`tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py`
+                 的判据 4 要求无值分支**逐字**说明「未配置」（不许静默什么都不画）——
+                 去运维腔 ≠ 可以把这个锚点删掉（既有元守卫的张力，本包只动措辞、不动锚点）。 */
               <p className="text-sm text-neutral-500" data-testid="bmini-h5-unconfigured">
-                移动端地址未配置 —— 部署时设置 <code className="text-neutral-700">NEXT_PUBLIC_BMINI_H5_URL</code>
-                后重新构建即可。未配置时这里不显示二维码，以免扫到无效地址。
+                手机端入口未配置 —— 尚未开通手机版，需要开通时请联系服务方；开通后这里会出现扫码入口。
               </p>
             )}
           </div>
@@ -732,6 +752,25 @@ function EnterpriseDomainPanel() {
             </div>
             {loadingBriefing ? (
               <div className="text-sm text-neutral-500 py-4 text-center">加载中...</div>
+            ) : briefingReadError ? (
+              /* 🔴 失败态 ≠ 关闭态（issue #6663）：读不到时**不画开关** ——
+                 画一个「关」的开关等于告诉商家「简报没开」，而真相是「不知道」。 */
+              <div
+                data-testid="settings-briefing-read-error"
+                className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+              >
+                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <span className="flex-1">
+                  简报设置读取失败 —— 可能是网络或服务暂时不可用。这不代表简报是关闭的，请重新加载后再看。
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void loadBriefingConfig()}
+                  className="flex-shrink-0 rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+                >
+                  重新加载
+                </button>
+              </div>
             ) : (
               <div className="space-y-4">
                 {/* 企业开关（即时保存） */}
@@ -924,6 +963,12 @@ function AiDomainPanel() {
 function NotificationsDomainPanel() {
   const [notificationEnabled, setNotificationEnabled] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  /**
+   * 通知开关**读失败**的显式状态（issue #6663）—— 本包最典型的「谎报状态」：
+   * 改前 catch 是空的 ⇒ `notificationEnabled` 保持 `false` ⇒ 页面把「读不到」画成
+   * 「**通知是关闭的**」。商家据此以为通知没开；而真相是**不知道**。
+   */
+  const [readError, setReadError] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -932,7 +977,8 @@ function NotificationsDomainPanel() {
         const res = await settingsApi.getSettings()
         if (alive && res.data.data) setNotificationEnabled(!!res.data.data.notificationEnabled)
       } catch {
-        // 读失败保持关闭态展示（开关本身仍可点，失败会 toast + 回滚）
+        // 🔴 issue #6663：读失败 ⇒ 标记出来；**不画开关**（画成「关」就是谎报状态）
+        if (alive) setReadError(true)
       } finally {
         if (alive) setLoaded(true)
       }
@@ -958,26 +1004,41 @@ function NotificationsDomainPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-sm font-medium text-neutral-700">启用系统通知</div>
-          <div className="text-xs text-neutral-500">控制订单、客服等重要事件站内通知的发送；关闭后不再产生新的站内通知（历史通知保留）</div>
-        </div>
-        <button
-          aria-label="启用系统通知开关"
-          className={`relative w-11 h-6 shrink-0 rounded-full transition-colors ${
-            notificationEnabled ? 'bg-primary-600' : 'bg-neutral-300'
-          }`}
-          onClick={handleToggleNotification}
+      {readError ? (
+        /* 🔴 失败态 ≠ 关闭态（issue #6663）：读不到 ⇒ **不画开关**，并说清「不是关着，是读不到」 */
+        <div
+          data-testid="settings-notification-read-error"
+          className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
         >
-          <span
-            className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow ${
-              notificationEnabled ? 'translate-x-5' : 'translate-x-0'
-            }`}
-          />
-        </button>
-      </div>
-      {!loaded && <p className="text-xs text-neutral-400">开关状态读取中…</p>}
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span className="flex-1">
+            通知设置读取失败 —— 可能是网络或服务暂时不可用。这不代表通知是关闭的，请刷新页面后再看。
+          </span>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium text-neutral-700">启用系统通知</div>
+              <div className="text-xs text-neutral-500">控制订单、客服等重要事件站内通知的发送；关闭后不再产生新的站内通知（历史通知保留）</div>
+            </div>
+            <button
+              aria-label="启用系统通知开关"
+              className={`relative w-11 h-6 shrink-0 rounded-full transition-colors ${
+                notificationEnabled ? 'bg-primary-600' : 'bg-neutral-300'
+              }`}
+              onClick={handleToggleNotification}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform shadow ${
+                  notificationEnabled ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+          {!loaded && <p className="text-xs text-neutral-400">开关状态读取中…</p>}
+        </>
+      )}
     </div>
   )
 }

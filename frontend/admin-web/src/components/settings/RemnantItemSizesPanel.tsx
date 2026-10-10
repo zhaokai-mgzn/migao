@@ -30,6 +30,7 @@ import { AlertCircle, Check, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui'
 import { remnantApi } from '@/lib/api'
 import { REMNANT_TERMS, glossaryRemnantAnchorOf } from '@/lib/craft-calc-glossary'
+import { merchantReasonsOf } from '@/lib/settings/server-reason'
 import { InlineMarkdown } from '@/lib/inline-markdown'
 import type { ParamCopy } from '@/lib/tenant-params'
 import type { RemnantSpecsView } from '@/types'
@@ -51,6 +52,17 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [savedAt, setSavedAt] = useState('')
+  /** 行内校验结果（issue #6663）：`{ 行号: { 格: 提示 } }` —— 逐格说「填什么」，不整表一条报错 */
+  const [rowErrors, setRowErrors] = useState<Record<number, { itemKey?: string; lengthM?: string; widthM?: string }>>({})
+
+  /** 编辑某行任一格 ⇒ 清掉该行的校验标记（改了就重新判，不把红标粘在已改的行上） */
+  const clearRowError = (index: number) =>
+    setRowErrors((prev) => {
+      if (!prev[index]) return prev
+      const next = { ...prev }
+      delete next[index]
+      return next
+    })
 
   const apply = useCallback((next: RemnantSpecsView) => {
     setView(next)
@@ -86,18 +98,33 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
   }, [load])
 
   const save = useCallback(async () => {
+    // 🔴 issue #6663：**先做行内校验**，不发 NaN 出去。
+    // 改前：`Number('')` ⇒ `NaN` 直接进 payload，校验只在服务端 → 提交后整表一条报错，
+    // 商家不知道是哪一行；而 `JSON.stringify(NaN)` 会静默变成 `null`，两边口径还漂。
+    const rowErrors: Record<number, { itemKey?: string; lengthM?: string; widthM?: string }> = {}
+    rows.forEach((r, index) => {
+      const rowErr: { itemKey?: string; lengthM?: string; widthM?: string } = {}
+      if (!r.itemKey.trim()) rowErr.itemKey = '填工序名'
+      if (!(Number(r.lengthM) > 0)) rowErr.lengthM = '填大于 0 的数'
+      if (!(Number(r.widthM) > 0)) rowErr.widthM = '填大于 0 的数'
+      if (Object.keys(rowErr).length > 0) rowErrors[index] = rowErr
+    })
+    setRowErrors(rowErrors)
+    if (Object.keys(rowErrors).length > 0) {
+      // 行内已经逐格标红并写了「填什么」⇒ 这里只给一句总述，不重复念是哪一行
+      setError('有未填完或填写不正确的行 —— 请按每格下方的提示补齐后再保存（未提交任何改动）')
+      return
+    }
     setSaving(true)
     setError('')
     setSavedAt('')
     try {
-      const items = rows
-        .filter((r) => r.itemKey.trim())
-        .map((r) => ({
-          itemKey: r.itemKey.trim(),
-          lengthM: Number(r.lengthM),
-          widthM: Number(r.widthM),
-          note: r.note.trim() || undefined,
-        }))
+      const items = rows.map((r) => ({
+        itemKey: r.itemKey.trim(),
+        lengthM: Number(r.lengthM),
+        widthM: Number(r.widthM),
+        note: r.note.trim() || undefined,
+      }))
       const res = await remnantApi.putSmallItemSpecs(items)
       const data = res.data?.data
       if (data) {
@@ -109,10 +136,8 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
         )
       }
     } catch (e) {
-      // 服务端逐条理由**原样**显示（不自己编文案）：键必须是工序库里真有的工序名、尺寸必须为正
-      const detail = (e as { response?: { data?: { error?: { message?: string } } } })?.response?.data
-        ?.error?.message
-      setError(detail || '保存失败（请检查：每一行都要填用料长与用料宽，且都为正数）')
+      // 服务端逐条理由**原样**显示（不自己编文案），但**去掉字段名与 JSON 示例**（§31 P3 不摆内部标识）
+      setError(merchantReasonsOf(e, '保存失败（请检查：每一行都要填用料长与用料宽，且都为正数）').join('；'))
     }
     setSaving(false)
   }, [rows, apply])
@@ -200,39 +225,74 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
         </div>
         {rows.map((row, index) => (
           <div key={index} data-testid={`remnant-spec-row-${index}`} className="flex flex-wrap gap-2">
-            <input
-              value={row.itemKey}
-              aria-label="小件（工序名）"
-              placeholder="工序名，须与工序库逐字一致"
-              onChange={(e) =>
-                setRows((prev) =>
-                  prev.map((r, i) => (i === index ? { ...r, itemKey: e.target.value } : r))
-                )
-              }
-              className="w-40 px-2 py-1 text-xs border border-neutral-300 rounded"
-            />
-            <input
-              value={row.lengthM}
-              aria-label="用料长"
-              placeholder="用料长（米）"
-              onChange={(e) =>
-                setRows((prev) =>
-                  prev.map((r, i) => (i === index ? { ...r, lengthM: e.target.value } : r))
-                )
-              }
-              className="w-28 px-2 py-1 text-xs border border-neutral-300 rounded"
-            />
-            <input
-              value={row.widthM}
-              aria-label="用料宽"
-              placeholder="用料宽（米）"
-              onChange={(e) =>
-                setRows((prev) =>
-                  prev.map((r, i) => (i === index ? { ...r, widthM: e.target.value } : r))
-                )
-              }
-              className="w-28 px-2 py-1 text-xs border border-neutral-300 rounded"
-            />
+            <div className="w-40">
+              <input
+                value={row.itemKey}
+                aria-label="小件（工序名）"
+                aria-invalid={rowErrors[index]?.itemKey ? true : undefined}
+                placeholder="工序名，须与工序库逐字一致"
+                onChange={(e) => {
+                  clearRowError(index)
+                  setRows((prev) =>
+                    prev.map((r, i) => (i === index ? { ...r, itemKey: e.target.value } : r))
+                  )
+                }}
+                className={`w-full px-2 py-1 text-xs border rounded ${
+                  rowErrors[index]?.itemKey ? 'border-red-400' : 'border-neutral-300'
+                }`}
+              />
+              {rowErrors[index]?.itemKey && (
+                <p data-testid={`remnant-spec-row-${index}-itemKey-error`} className="mt-0.5 text-[11px] text-red-600">
+                  {rowErrors[index].itemKey}
+                </p>
+              )}
+            </div>
+            <div className="w-28">
+              <input
+                value={row.lengthM}
+                aria-label="用料长"
+                aria-invalid={rowErrors[index]?.lengthM ? true : undefined}
+                inputMode="decimal"
+                placeholder="用料长（米）"
+                onChange={(e) => {
+                  clearRowError(index)
+                  setRows((prev) =>
+                    prev.map((r, i) => (i === index ? { ...r, lengthM: e.target.value } : r))
+                  )
+                }}
+                className={`w-full px-2 py-1 text-xs border rounded ${
+                  rowErrors[index]?.lengthM ? 'border-red-400' : 'border-neutral-300'
+                }`}
+              />
+              {rowErrors[index]?.lengthM && (
+                <p data-testid={`remnant-spec-row-${index}-lengthM-error`} className="mt-0.5 text-[11px] text-red-600">
+                  {rowErrors[index].lengthM}
+                </p>
+              )}
+            </div>
+            <div className="w-28">
+              <input
+                value={row.widthM}
+                aria-label="用料宽"
+                aria-invalid={rowErrors[index]?.widthM ? true : undefined}
+                inputMode="decimal"
+                placeholder="用料宽（米）"
+                onChange={(e) => {
+                  clearRowError(index)
+                  setRows((prev) =>
+                    prev.map((r, i) => (i === index ? { ...r, widthM: e.target.value } : r))
+                  )
+                }}
+                className={`w-full px-2 py-1 text-xs border rounded ${
+                  rowErrors[index]?.widthM ? 'border-red-400' : 'border-neutral-300'
+                }`}
+              />
+              {rowErrors[index]?.widthM && (
+                <p data-testid={`remnant-spec-row-${index}-widthM-error`} className="mt-0.5 text-[11px] text-red-600">
+                  {rowErrors[index].widthM}
+                </p>
+              )}
+            </div>
             <input
               value={row.note}
               aria-label="备注"
@@ -242,14 +302,17 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
                   prev.map((r, i) => (i === index ? { ...r, note: e.target.value } : r))
                 )
               }
-              className="flex-1 min-w-32 px-2 py-1 text-xs border border-neutral-300 rounded"
+              className="flex-1 min-w-32 px-2 py-1 text-xs border border-neutral-300 rounded self-start"
             />
             <button
               type="button"
               aria-label={`删除第 ${index + 1} 行`}
               data-testid={`remnant-spec-remove-${index}`}
-              onClick={() => setRows((prev) => prev.filter((_, i) => i !== index))}
-              className="px-2 text-neutral-400 hover:text-red-600"
+              onClick={() => {
+                clearRowError(index)
+                setRows((prev) => prev.filter((_, i) => i !== index))
+              }}
+              className="px-2 text-neutral-400 hover:text-red-600 self-start"
             >
               <Trash2 className="w-4 h-4" />
             </button>
