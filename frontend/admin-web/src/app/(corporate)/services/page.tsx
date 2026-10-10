@@ -114,7 +114,7 @@ const delivery = [
     icon: Wallet,
     title: '价格与合同另行沟通',
     description:
-      '本页面不公示价格；套餐、开通范围与交付内容请在入驻申请或留言中说明，由团队与您确认。',
+      '本页面不公示价格；套餐、开通范围与交付内容请在入驻申请中说明，由团队与您确认。',
   },
 ]
 
@@ -285,7 +285,7 @@ export default function ServicesPage() {
                 className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-card"
               >
                 <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-neutral-900">
-                  <item.icon className="h-5 w-5 text-[#e8b04b]" />
+                  <item.icon className="h-5 w-5 text-gold-500" />
                 </div>
                 <h3 className="mt-5 text-base font-semibold text-neutral-900">{item.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-neutral-600">{item.description}</p>
@@ -335,7 +335,7 @@ export default function ServicesPage() {
             href="/contact"
             className="inline-flex items-center gap-2 rounded-xl border border-white/25 px-7 py-3.5 text-base font-semibold text-white transition-colors hover:bg-white/10"
           >
-            留言咨询
+            联系我们
           </Link>
         }
       />

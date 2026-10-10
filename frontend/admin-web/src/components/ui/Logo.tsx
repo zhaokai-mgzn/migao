@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { gold } from '@/lib/brand-palette'
 
 const sizeMap = {
   small: { size: 28 },
@@ -25,8 +26,8 @@ export default function Logo({ size = 'medium', className }: LogoProps) {
     >
       <defs>
         <linearGradient id="logo-grad" x1="2" y1="2" x2="46" y2="46" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#FFC53D" />
-          <stop offset="100%" stopColor="#D48806" />
+          <stop offset="0%" stopColor={gold[400]} />
+          <stop offset="100%" stopColor={gold[600]} />
         </linearGradient>
       </defs>
       {/* 织金暖底 */}

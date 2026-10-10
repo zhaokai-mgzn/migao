@@ -10,6 +10,19 @@ const nextConfig = {
   // 生产环境可通过 NEXT_PUBLIC_ASSET_PREFIX 配置 CDN 前缀
   assetPrefix: process.env.NEXT_PUBLIC_ASSET_PREFIX || undefined,
 
+  // `www` → 裸域 301 归一（issue #6665 第 4 条）：两个主机名都能 200 ⇒ 同一份内容两个地址。
+  // 301（而非 308）是长期规范：让浏览器与搜索引擎把这层归一缓存下来。
+  async redirects() {
+    return [
+      {
+        source: '/:path*',
+        has: [{ type: 'host', value: 'www.migaozn.com' }],
+        destination: 'https://migaozn.com/:path*',
+        permanent: true,
+      },
+    ]
+  },
+
   // ── 已删除两个**无效**顶层键：`trustHost` / `hosts` ────────────────────────────
   // 它们从未是 Next 的配置项（Next 14.2.35 与 16.3.5 的 config schema 里都没有；
   // 旧版只是**静默忽略**，Next 16 起每次构建都会告警：

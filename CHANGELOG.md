@@ -7,6 +7,33 @@
 
 ## [Unreleased]
 
+### 官网四页与登录 / 注册的首屏不再是「加载中...」空壳（2026-10-10，issue #6665）
+
+用户可见面：`migaozn.com` 的 `/`、`/about`、`/services`、`/contact`，以及 `/login`、`/register`，
+**水合完成前**的可见 DOM 此前恒为 6 字符「加载中...」（生产 `curl` 恒 503 B、`h1/h2/nav` 各 0）
+—— 分享预览、搜索引擎、无 JS / 慢网环境第一眼看到的都是转圈。
+
+**改后**：根布局的会话门控按 `frontend/admin-web/src/lib/auth-redirect.ts` 的 `PUBLIC_ROUTES`
+（**既有单一真值源**）在首屏就放行公开面 ⇒ 正文与 `h1` 进初始 HTML；
+**受保护业务页的跳转行为一条不放宽**（未登录访问 `/orders` 仍跳登录，首屏仍不吐业务正文）。
+
+### 官网静态资源与抓取指引不再被 307 吞掉 + 分享元数据单一真值源（2026-10-10，issue #6665）
+
+- `robots.txt` / `sitemap.xml` / `favicon.svg` / `og-image.png` 此前在裸域上**全部 307 回首页**
+  （`proxy.ts` 的 matcher 没排除静态路径）⇒ 现在直达 `public/`；裸域上不存在的路径改为 **404**
+  （此前静默回首页，把所有 404 变成假 200）。
+- 分享预览补上**真实存在**的 `public/og-image.png`（1200×630，可用 `node scripts/gen-og-image.mjs` 复算）；
+  站点地址收敛到 `(corporate)/layout.tsx` 的 `metadataBase` + `alternates.canonical` 一处真值源，
+  `www.migaozn.com` → 裸域 **301** 归一。
+- 官网小标签不再套对中文无效的 `uppercase`；金色收敛到 `src/lib/brand-palette.ts` 一份
+  （页面用 token 类，观感逐值不变）。
+
+### 联系页不再出现「留言提交成功」假成功（2026-10-10，issue #6665）
+
+留言表单按用户裁定**隐藏**（原表单只做本地 `setTimeout` 800ms 就渲染绿框「留言提交成功」并清空，
+全仓无任何留言接口）⇒ 页面保留四类常见诉求、常见问题与入驻通道，并去掉指向留言的承诺句与
+「留言咨询」CTA（改为「联系我们」）。重启条件 = 用户提供真实联系方式或留言后端接口上线。
+
 ### 工人端报工卡上不再出现「请求失败（HTTP 429）」（2026-10-10，issue #6642）
 
 用户截图：「请求失败（HTTP 429）」，并让去云服务器查日志。

@@ -63,7 +63,7 @@ describe('CorporateAboutPage（官网关于页 v4：产品原则 + 主体事实�
   it('renders 底部 CTA', () => {
     render(<AboutPage />)
     expect(screen.getByText('立即入驻')).toBeInTheDocument()
-    expect(screen.getByText('留言咨询')).toBeInTheDocument()
+    expect(screen.getByText('联系我们')).toBeInTheDocument()
   })
 
   it('宣传真实性：不出现占位联系方式与浮夸表述', () => {

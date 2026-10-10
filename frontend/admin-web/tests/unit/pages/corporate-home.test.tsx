@@ -52,7 +52,7 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
     render(<HomePage />)
     expect(screen.getAllByText('立即入驻')).toHaveLength(2)
     expect(screen.getByText('查看产品能力')).toBeInTheDocument()
-    expect(screen.getByText('留言咨询')).toBeInTheDocument()
+    expect(screen.getByText('联系我们')).toBeInTheDocument()
   })
 
   // ── 双 AI 分工 ──
