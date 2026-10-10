@@ -64,10 +64,10 @@ interface Ledger {
 const ledger = JSON.parse(readFileSync(LEDGER_PATH, 'utf-8')) as Ledger
 
 /**
- * 🔴 **冻结基线（只许缩短）**：现取读数 = `risk 21 / benign 5`。
+ * 🔴 **冻结基线（只许缩短）**：现取读数 = `risk 21 / benign 6`。
  * 放宽这两条 = 把已知漏点合法化 ⇒ 必须同时在 PR body 说明并**下调**，不能上调。
  */
-const FROZEN_RISK_MAX = 22
+const FROZEN_RISK_MAX = 21
 const FROZEN_BENIGN_MAX = 6
 
 const { files, sites } = scanFallbackSites(ROOT)
