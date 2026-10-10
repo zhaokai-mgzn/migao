@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Plus, Search } from 'lucide-react'
+import { Plus, Search, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
+import { toastRequestError } from '@/lib/api-error'
 import { employeeApi } from '@/lib/api'
 import request from '@/lib/request'
 import { usePermission } from '@/lib/permission'
@@ -34,6 +35,12 @@ export default function EmployeesPage() {
 
   // 岗位下拉数据源（岗位=角色体系 #2969，role.permissions 即岗位默认权限）
   const [positionOptions, setPositionOptions] = useState<{ name: string; code: string; permissionCodes: string[] }[]>([])
+  /**
+   * 岗位清单**读失败**的显式状态（issue #6663）。
+   * 为什么必须有它：岗位用 `Select`（**不能手输**）⇒ 读失败时下拉空着 ⇒ **建不出员工**，
+   * 而改前这里是**空 catch**（注释还写着「岗位为空时可手输」—— 与事实相反）。
+   */
+  const [positionsError, setPositionsError] = useState('')
 
   // 新增/编辑对话框
   const [formOpen, setFormOpen] = useState(false)
@@ -78,18 +85,29 @@ export default function EmployeesPage() {
   }, [])
 
   // 加载岗位列表（#2969：岗位=角色体系，岗位默认权限 = role.permissions 的 code 列表）
-  useEffect(() => {
-    employeeApi.loadPositions().then((res: any) => {
+  // ⚠️ 抽成 useCallback 是为了给失败态一个**重试出口**（`employees-positions-retry`）—— 见下面渲染面
+  const loadPositions = useCallback(async () => {
+    try {
+      const res: any = await employeeApi.loadPositions()
       const data = Array.isArray(res?.data?.data) ? res.data.data : (Array.isArray(res?.data) ? res.data : [])
       setPositionOptions((data as any[]).map((r: any) => ({
         name: r.name || r.code,
         code: r.code,
         permissionCodes: (r.permissions || []).map((p: any) => p.code).filter(Boolean),
       })))
-    }).catch(() => {
-      // 岗位列表加载失败不阻塞页面，岗位为空时可手输（兼容既有自由输入岗位）
-    })
+      setPositionsError('')
+    } catch (e) {
+      // 🔴 issue #6663：改前这里是**空 catch**，注释说「岗位为空时可手输」—— 而现实相反：
+      // 岗位用的是 `Select`（**不能手输**）⇒ 岗位选项空 ⇒ **建不出员工**，且页面一言不发。
+      // 读失败必须说出来 + 给重试出口（范式：dashboard/page.tsx 的失败/空态分离）。
+      setPositionsError('岗位清单读取失败 —— 可能是网络或服务暂时不可用')
+      toastRequestError(e, '岗位清单读取失败，请稍后重试')
+    }
   }, [])
+
+  useEffect(() => {
+    void loadPositions()
+  }, [loadPositions])
 
   // 从 menuTree 中提取 code → 中文 label 的映射 + 叶子节点总数
   const { permissionLabelMap, totalLeafCount } = useMemo(() => {
@@ -564,7 +582,27 @@ export default function EmployeesPage() {
               value={formData.position}
               onChange={(e) => handlePositionChange(e.target.value)}
             />
-            <p className="text-xs text-neutral-400 mt-1">选择岗位后自动带出该岗位默认权限，可再手动调整</p>
+            {positionsError ? (
+              /* 🔴 失败态 ≠ 空态（issue #6663）：下拉读不到 ⇒ 必须说出来 + 重试，
+                 否则商家只会看到「请选择岗位」却一个选项都没有，且**根本建不出员工**。 */
+              <div
+                data-testid="employees-positions-error"
+                className="mt-1.5 flex items-start gap-2 rounded border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-700"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                <span className="flex-1">岗位清单读取失败 —— 可能是网络或服务暂时不可用</span>
+                <button
+                  type="button"
+                  data-testid="employees-positions-retry"
+                  onClick={() => void loadPositions()}
+                  className="flex-shrink-0 rounded border border-red-300 px-1.5 py-0.5 font-medium text-red-700 hover:bg-red-100"
+                >
+                  重新加载
+                </button>
+              </div>
+            ) : (
+              <p className="text-xs text-neutral-400 mt-1">选择岗位后自动带出该岗位默认权限，可再手动调整</p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-neutral-700 mb-2">账号权限 *</label>

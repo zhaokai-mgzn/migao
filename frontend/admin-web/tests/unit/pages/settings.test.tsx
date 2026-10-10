@@ -639,7 +639,7 @@ describe('判据 7：原四个 tab 的能力迁入域后零回归', () => {
     try {
       render(<SettingsPage />)
       const entry = await screen.findByTestId('bmini-h5-entry')
-      expect(screen.getByTestId('bmini-h5-unconfigured')).toHaveTextContent('移动端地址未配置')
+      expect(screen.getByTestId('bmini-h5-unconfigured')).toHaveTextContent('尚未开通手机版')
       expect(entry.querySelector('svg')).toBeNull()
       expect(screen.queryByTestId('bmini-h5-qr')).toBeNull()
     } finally {
@@ -803,5 +803,115 @@ describe('判据 4b：拆域后的旧 `?domain=` 兼容（不许点开一个链�
     expect(resolveDomainKey('calc')).toBe('calc')
     expect(resolveDomainKey('nope')).toBeUndefined()
     expect(resolveDomainKey(null)).toBeUndefined()
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 判据 8：读面失败 ≠ 空态 / 关闭态（issue #6663）
+//
+// 病灶（三维审计逐条复核）：改前两处 catch **什么都不设** ⇒ 页面把「读不到」画成业务事实：
+//   ① 通知开关读失败 ⇒ `notificationEnabled` 保持 `false` ⇒ **画成「关闭」**（谎报状态）；
+//   ② 简报开关读失败 ⇒ `briefingConfig` 保持 `EMPTY_BRIEFING` ⇒ 同样画成「关闭」。
+// 口径 = `dashboard/page.tsx` 的失败/空态分离（issue #5792 ④）：失败要显式说出来，并给重试出口。
+// 类级收口 = `tests/unit/read-failure-empty-state-guard.test.ts`（本文件是它的实例面）。
+// ══════════════════════════════════════════════════════════════════════════════
+describe('判据 8：读面失败 ≠ 空态 / 关闭态（issue #6663）', () => {
+  it('通知设置读失败 ⇒ **不画开关**、显式说明「这不代表通知是关闭的」（不谎报状态）', async () => {
+    mockGetSettings.mockRejectedValue(new Error('500'))
+    mockSearchParams.mockReturnValue(new URLSearchParams('domain=notifications'))
+    render(<SettingsPage />)
+
+    const failure = await screen.findByTestId('settings-notification-read-error')
+    expect(failure).toHaveTextContent('通知设置读取失败')
+    expect(failure).toHaveTextContent('不代表通知是关闭的')
+    // 🔴 核心：失败时**没有**开关 —— 有开关就等于告诉商家「通知是关的」
+    expect(screen.queryByRole('button', { name: '启用系统通知开关' })).not.toBeInTheDocument()
+  })
+
+  it('通知设置读成功 ⇒ 开关在，且不再显示失败态（对照读数：不是恒显失败）', async () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams('domain=notifications'))
+    render(<SettingsPage />)
+
+    const toggle = await screen.findByRole('button', { name: '启用系统通知开关' })
+    expect(toggle).toBeInTheDocument()
+    expect(screen.queryByTestId('settings-notification-read-error')).not.toBeInTheDocument()
+  })
+
+  it('简报设置读失败 ⇒ 显式失败态 + 重试出口（不得画成「关闭」）', async () => {
+    mockBriefingGetConfig.mockRejectedValue(new Error('500'))
+    // 简报开关挂在「企业信息」域里（key=`enterprise`，没有独立的 briefing 域）
+    mockSearchParams.mockReturnValue(new URLSearchParams('domain=enterprise'))
+    render(<SettingsPage />)
+
+    const failure = await screen.findByTestId('settings-briefing-read-error')
+    expect(failure).toHaveTextContent('简报设置读取失败')
+    expect(failure).toHaveTextContent('不代表简报是关闭的')
+    // 重试出口真可点（点了重新发请求）
+    const retry = within(failure).getByRole('button', { name: '重新加载' })
+    mockBriefingGetConfig.mockResolvedValue(ok({ enabled: true, generateTime: '06:00' }))
+    fireEvent.click(retry)
+    await waitFor(() => expect(mockBriefingGetConfig).toHaveBeenCalledTimes(2))
+    await waitFor(() =>
+      expect(screen.queryByTestId('settings-briefing-read-error')).not.toBeInTheDocument(),
+    )
+  })
+
+  it('手机端入口未开通：说商家能行动的话，**不出现 env 名与构建指令**（§31 P3）', async () => {
+    vi.stubEnv('NEXT_PUBLIC_BMINI_H5_URL', '')
+    mockSearchParams.mockReturnValue(new URLSearchParams('domain=enterprise'))
+    try {
+      render(<SettingsPage />)
+      const entry = await screen.findByTestId('bmini-h5-unconfigured')
+      expect(entry).toHaveTextContent('尚未开通手机版')
+      expect(entry).toHaveTextContent('请联系服务方')
+      // 环境变量名 / 构建指令 / 「未配置」这类内部口径都不得上屏
+      expect(entry.textContent).not.toMatch(/NEXT_PUBLIC_/)
+      expect(entry.textContent).not.toMatch(/重新构建|部署|环境变量/)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 判据 9：同一次读面失败**只许一处失败信号**（issue #6663 / §31 P1 常驻面克制 · P2 信息不重复）
+//
+// 真机截图实证（2026-10-10，1440×980，`/settings` 算料口径域）：同一次 `craft-calc-config` 失败
+// 在**一屏之内渲染了四处重复信号** —— ① 面板顶部红条；② 参数数值位一排 `—`；
+// ③ 每个参数卡下方印引擎键名；④ 面板底部又一行「加载失败 + 重试」。
+// 本判据锚住「**一处**」这件事（②③ 已在 `CalcCaliberPanel.test.tsx` 逐条钉住）。
+// ══════════════════════════════════════════════════════════════════════════════
+describe('判据 9：同一次读面失败只留一处失败信号（issue #6663）', () => {
+  it('算料读失败 ⇒ 一处失败行（含重试）+ **不画**参数卡、**不印**任何 `—` 冒充读数', async () => {
+    mockGetCraftCalcConfig.mockRejectedValue(new Error('500'))
+    mockSearchParams.mockReturnValue(new URLSearchParams('domain=calc'))
+    render(<SettingsPage />)
+
+    const failure = await screen.findByTestId('param-calc-error')
+    expect(failure).toHaveTextContent('读不到')
+    // 失败态有出口（真可点一次重跑读面）
+    expect(within(failure).getByRole('button', { name: '重试' })).toBeInTheDocument()
+    // ① 参数卡整片不渲染 ⇒ 没有「一排 `—` 冒充读数」
+    expect(screen.queryByTestId('param-per_fold_single')).toBeNull()
+    expect(screen.queryByText('—')).toBeNull()
+    // ② 引擎键名不上屏（§31 P3）
+    expect(screen.queryByText('per_fold_single')).toBeNull()
+    expect(screen.queryByText('oversize_width_threshold')).toBeNull()
+    // ③ 同一屏里失败类文案**恰好一处**（改前是红条 + 徽标 + 一排 `—` + 底部重试行四处）
+    expect(screen.getAllByTestId('param-calc-error')).toHaveLength(1)
+  })
+
+  it('读成功 ⇒ 失败行不在，参数卡与机器锚点齐备（对照读数：不是恒显失败）', async () => {
+    // 用哨兵值给「有读数」的形态：值位显示的必须是**服务端那个数**（硬编码 / 占位符都必红）
+    mockGetCraftCalcConfig.mockResolvedValue(ok({ source: 'stored', config: { per_fold_single: 0.37 } }))
+    mockSearchParams.mockReturnValue(new URLSearchParams('domain=calc'))
+    render(<SettingsPage />)
+
+    expect(await screen.findByTestId('param-per_fold_single')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByTestId('param-calc-error')).toBeNull())
+    expect(screen.getByTestId('param-value-per_fold_single')).toHaveTextContent('0.37')
+    // 对照：**这个键**有读数 ⇒ 值位必须是那个数，不是 `—`
+    //（⚠️ 不能全页断言「没有 `—`」：读成功的响应里没下发的键本来就渲染 `—`，那是「该键没值」）
+    expect(screen.getByTestId('param-value-per_fold_single').textContent).not.toBe('—')
   })
 })

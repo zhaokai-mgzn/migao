@@ -49,6 +49,8 @@ export default function LoginPage() {
 
   const [isLoading, setIsLoading] = useState(false)
   const [loginError, setLoginError] = useState('')
+  /** 验证码发送失败的行内提示（**不得**说成「已发送」—— 那会让商家等一条永远不来的短信） */
+  const [codeError, setCodeError] = useState('')
   const [errors, setErrors] = useState<{ identifier?: string; password?: string; phone?: string; code?: string }>({})
 
   const mustChangePassword = !!user?.mustChangePassword
@@ -146,13 +148,15 @@ export default function LoginPage() {
       setErrors({ phone: '请输入正确的11位手机号' })
       return
     }
+    setCodeError('')
     try {
       await authApi.sendSmsCode(phone.trim())
       toast.success('验证码已发送')
+      // 倒计时**只在真发出去之后**启动：失败还倒计时会让商家干等 60 秒再重试
       setCountdown(COUNTDOWN_SECONDS)
-    } catch (e) {
-      setCountdown(COUNTDOWN_SECONDS)
-      toast.success('验证码已发送（测试模式）')
+    } catch {
+      // 🔴 失败必须**说出来**，且给可行动的下一步；不要把失败画成成功（这条短信永远不来）。
+      setCodeError('验证码发送失败 —— 请稍后重试；若一直失败，请联系企业管理员核对手机号')
     }
   }
 
@@ -163,7 +167,7 @@ export default function LoginPage() {
     )
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-50 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-neutral-100 px-4">
       <div className="w-full max-w-[420px] relative z-10">
         <div className="flex flex-col items-center mb-8">
           <Logo size="large" className="mb-4" />
@@ -282,6 +286,12 @@ export default function LoginPage() {
                     </button>
                   </div>
                   {errors.code && <p className="mt-1.5 text-xs text-red-500">{errors.code}</p>}
+                  {/* 发送失败的行内提示：与倒计时**互斥**（失败不启动倒计时 ⇒ 可立刻重试） */}
+                  {codeError && (
+                    <p data-testid="login-sms-code-error" className="mt-1.5 text-xs text-red-500">
+                      {codeError}
+                    </p>
+                  )}
                 </div>
 
                 <button type="submit" disabled={isLoading}

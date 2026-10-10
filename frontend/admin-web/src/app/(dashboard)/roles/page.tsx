@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Plus, Pencil, Trash2, Shield } from 'lucide-react'
+import { Plus, Pencil, Trash2, Shield, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
+import { toastRequestError } from '@/lib/api-error'
 import { roleApi, permissionApi } from '@/lib/api'
 import { Button, Input, Modal, Badge } from '@/components/ui'
 import type { Role, Permission } from '@/types'
@@ -15,6 +16,15 @@ export default function RolesPage() {
   // 岗位列表
   const [roles, setRoles] = useState<Role[]>([])
   const [loading, setLoading] = useState(false)
+  /**
+   * 岗位清单**读失败**的显式状态（issue #6663）。
+   * 为什么必须有它：改前 catch 只 `toast.error` 而 `roles` 保持 `[]` ⇒ 页面落到「暂无岗位」，
+   * **故障被画成业务事实**（商家以为这个企业没有岗位）。范式照抄
+   * `src/app/(dashboard)/dashboard/page.tsx` 的失败/空态分离（issue #5792 ④）。
+   */
+  const [loadError, setLoadError] = useState('')
+  /** 权限目录读失败的显式状态 —— 目录读不到 ⇒ 权限树勾不出东西，也不得装作「没有权限可分配」 */
+  const [permError, setPermError] = useState('')
 
   // 所有权限
   const [allPermissions, setAllPermissions] = useState<Permission[]>([])
@@ -37,6 +47,7 @@ export default function RolesPage() {
   // 加载岗位列表
   const loadRoles = useCallback(async () => {
     setLoading(true)
+    setLoadError('')
     try {
       const res = await roleApi.getRoles({ page: 1, size: 100 })
       const data = res.data.data
@@ -47,7 +58,9 @@ export default function RolesPage() {
         setRoles(data?.items || [])
       }
     } catch (e) {
-      toast.error('加载岗位列表失败')
+      // 🔴 读失败 ⇒ 显式失败态（**不要**只 toast 就把清单留空：那会画成「暂无岗位」）
+      setLoadError('岗位加载失败 —— 可能是网络或服务暂时不可用')
+      toastRequestError(e, '岗位加载失败，请稍后重试')
     } finally {
       setLoading(false)
     }
@@ -55,13 +68,16 @@ export default function RolesPage() {
 
   // 加载权限列表
   const loadPermissions = useCallback(async () => {
+    setPermError('')
     try {
       const res = await permissionApi.getPermissions()
       const perms = (res.data.data || []) as any[]
       // RBAC 修复：后端字段为 resourceType，roles 页分组/展示用 resource/action 别名
       setAllPermissions(perms.map((p: any) => ({ ...p, resource: p.resource || p.resourceType || 'other' })))
     } catch (e) {
-      // ignore
+      // 🔴 读失败 ⇒ 显式失败态：权限树会**整片空**，不说出来就与「这个企业没有可分配权限」不可区分
+      setPermError('权限目录读取失败 —— 可能是网络或服务暂时不可用')
+      toastRequestError(e, '权限目录读取失败，请稍后重试')
     }
   }, [])
 
@@ -272,7 +288,26 @@ export default function RolesPage() {
       </div>
 
       {/* 岗位列表 - 卡片 */}
-      {loading ? (
+      {loadError ? (
+        /* 🔴 失败态 ≠ 空态（issue #6663）：说清「不是没有岗位，是读不到」+ 给重试出口。
+           范式：`src/app/(dashboard)/dashboard/page.tsx` 的 `dashboard-load-failed`。 */
+        <div
+          data-testid="roles-load-error"
+          className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span className="flex-1">
+            岗位加载失败 —— 可能是网络或服务暂时不可用。这不是「没有岗位」：读不到时清单不该显示成空。
+          </span>
+          <button
+            type="button"
+            onClick={() => void loadRoles()}
+            className="flex-shrink-0 rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+          >
+            重新加载
+          </button>
+        </div>
+      ) : loading ? (
         <div className="flex items-center justify-center py-20">
           <div className="w-6 h-6 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
           <span className="ml-2 text-neutral-500">加载中...</span>
@@ -375,7 +410,24 @@ export default function RolesPage() {
           {/* 权限树 */}
           <div>
             <label className="block text-sm font-medium text-neutral-700 mb-2">权限分配</label>
-            {allPermissions.length === 0 ? (
+            {permError ? (
+              /* 🔴 失败态 ≠ 空态（issue #6663）：目录读不到时权限树整片空，若不说明就与
+                 「这个企业没有可分配的权限」不可区分 —— 而这是**两个完全不同**的处境。 */
+              <div
+                data-testid="roles-permissions-error"
+                className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+              >
+                <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <span className="flex-1">权限目录读取失败 —— 可能是网络或服务暂时不可用</span>
+                <button
+                  type="button"
+                  onClick={() => void loadPermissions()}
+                  className="flex-shrink-0 rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+                >
+                  重新加载
+                </button>
+              </div>
+            ) : allPermissions.length === 0 ? (
               <p className="text-sm text-neutral-400">暂无权限数据</p>
             ) : (
               <div className="border border-neutral-200 rounded-lg max-h-[300px] overflow-y-auto" data-testid="perm-menu-sections">

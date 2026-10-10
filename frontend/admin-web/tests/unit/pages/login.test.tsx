@@ -30,6 +30,7 @@ vi.mock('next/navigation', () => ({
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }))
+import { toast } from 'sonner'
 
 // Mock authApi (still used for handleSendCode)
 const mockSendSmsCode = vi.fn()
@@ -274,6 +275,47 @@ describe('LoginPage', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /重新发送/ })).toBeInTheDocument()
     })
+  })
+
+  // ── issue #6663：发送失败**不得**说成成功（那条短信永远不来）──
+
+  it('发送验证码失败：不出现成功提示、**不启动倒计时**、给出可行动的失败文案', async () => {
+    mockSendSmsCode.mockRejectedValue(new Error('500 短信服务不可用'))
+    render(<LoginPage />)
+    await switchToAdminTab(user)
+    await user.type(screen.getByPlaceholderText('请输入手机号'), '13800138000')
+    await user.click(screen.getByRole('button', { name: '获取验证码' }))
+
+    // ① 失败说出来了（可行动：稍后重试 / 找管理员核对手机号）
+    const failure = await screen.findByTestId('login-sms-code-error')
+    expect(failure).toHaveTextContent('验证码发送失败')
+    expect(failure).toHaveTextContent('请稍后重试')
+    // ② 绝不说成「已发送」（改前的 `toast.success('验证码已发送（测试模式）')` 形态）
+    expect(toast.success).not.toHaveBeenCalled()
+    expect(screen.queryByText(/已发送/)).not.toBeInTheDocument()
+    // ③ 倒计时**没**启动：按钮仍可点、没有「重新发送」文案（否则商家要干等 60 秒才能重试）
+    expect(screen.getByRole('button', { name: '获取验证码' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: /重新发送/ })).not.toBeInTheDocument()
+    // ④ 「测试模式」这类内部态不得进商家可见面（§31 P3）
+    expect(screen.queryByText(/测试模式/)).not.toBeInTheDocument()
+  })
+
+  it('发送失败后重试成功：失败提示消失、这次才启动倒计时（状态每轮真实）', async () => {
+    mockSendSmsCode.mockRejectedValueOnce(new Error('网络错误'))
+    render(<LoginPage />)
+    await switchToAdminTab(user)
+    await user.type(screen.getByPlaceholderText('请输入手机号'), '13800138000')
+    await user.click(screen.getByRole('button', { name: '获取验证码' }))
+    await screen.findByTestId('login-sms-code-error')
+
+    mockSendSmsCode.mockResolvedValue(undefined)
+    await user.click(screen.getByRole('button', { name: '获取验证码' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /重新发送/ })).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('login-sms-code-error')).not.toBeInTheDocument()
+    expect(toast.success).toHaveBeenCalledWith('验证码已发送')
   })
 
   it('登录中：按钮禁用并显示登录中', async () => {
