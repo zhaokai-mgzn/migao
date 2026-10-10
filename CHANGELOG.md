@@ -7,6 +7,38 @@
 
 ## [Unreleased]
 
+### 余料台账「共 N 块」现在真能翻到底：接上共享分页（页码 + 每页条数），不再只拉前 100 条（2026-10-10，issue #6697）
+
+`/production/remnants` 修前请求里钉死 `page: 1, size: 100`，而屏上照旧渲染服务端给的
+`page.total`（租户 25 实测「**共 332 块**」）⇒ **232 条（70%）没有任何入口**：
+商家按那行字去数、去找，找不到就以为数据丢了（与本批「读失败伪装成空态」同族：界面承诺与事实不符）。
+
+- **改后**：复用仓里已有的共享 `Pagination`（`customers` / `after-sales` / `knowledge` /
+  `production` / `finance` / `notifications` 六页已在用，不新造控件）—— 表格下方给
+  「共 N 条记录（第 X-Y 条）」+ 页码 + 「每页条数」（10/20/50/100，**默认 100 = 修前的一次拉取量，
+  首屏观感不变差**）；**翻页真发请求**，全部 `total` 条都可达。
+- **两个口径同源**：上面那行「共 332 块」与分页控件的 total 都是**服务端**回的同一个读数
+  （前端不重算、不猜）；改筛选条件时回到第 1 页（不把商家停在一个不存在的页上 = 空表）。
+- **同形态两处只登记不修**（issue #6697 正文口径；实测该租户 `roles.total = 7`、  `processing-items.total = 3`，均远小于 100 ⇒ 当前无可见危害）：`roles` / `orders/new`；
+  类级台账里逐条登记，条目只许缩短。
+
+**判据**（`frontend/admin-web`，定点 vitest）：
+
+- **实例判据**：`tests/unit/pages/production-remnants-paging.test.tsx` —— mock `remnantApi.ledger`
+  回 `total = 250 / size = 100`（服务端按页回**不同**的行）⇒ ① 屏上出现分页控件（真 `Pagination`，
+  不 stub）；② 点第 2 页 ⇒ **最后一次请求参数 `page` 从 1 变 2**、渲染换成第 2 页的行；
+  ③ 换每页条数 ⇒ 回第 1 页且真发新 `size`。修前红证：源码逐字 `page: 1, size: 100` 且零分页引入。
+- **类级元守卫**：`tests/unit/lib/displayed-total-reachability-guard.test.ts` + 单一源
+  `frontend/admin-web/scripts/displayed-total-reachability-scan.mjs` ——
+  「**屏上显示了 total ⇒ 该集合必须可达**」：`production/**` 里命中 A（分页信封 total 上屏）/
+  B（请求钉死 `page:1, size:100`）/ C（屏上写「共 … 条」且引 `.total`）且**没接**共享分页的页面
+  ⇒ **未登记即红**；已改对的页面还做**正向核**（接线锚被拆 ⇒ 红）；台账**只许缩短**（现取条数 +
+  条目须仍真命中其声明的形态）。
+
+**边界（如实登记）**：类级判据只扫 `src/app/(dashboard)/production`（本缺陷所在族），
+**不声明全站覆盖** —— `roles` / `orders/new` 两处 B 形态在面外、机器核不了（由条数上界 + PR 评审兜底）；
+只认源码文本形态（多行 JSX / 自造分页控件会漏判）。
+
 ### 手机端「数据」页：服务端返回 200 但数据为空时，金额卡不再印出 `NaN元`（2026-10-10，issue #6685）
 
 员工手机端 bmini「数据」页在**服务端 200 + 空 data**（`{}` / 缺键）时，「今日销售额」「本月营收」
