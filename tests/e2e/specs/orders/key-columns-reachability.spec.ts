@@ -296,8 +296,18 @@ async function foreignHitsInCell(cell: Locator): Promise<{ x: number; y: number;
   })
 }
 
-/** 冻结列的数据格（`tbody` 每行的最后一个 `td`）。 */
+/**
+ * 冻结列的**数据格**（`tbody` 里每行的最后一个 `td`）。
+ *
+ * ⚠️ issue #6729 实测踩过：写成 `locator('table').first().locator('td:last-child')` 时，
+ * **表头那一格**（`sticky right-0` 的 `th` 所在行）会被先命中 ⇒ 「选中前的行底色」读成白底
+ * ⇒ 反向对照假红（`不透明层色 = [248,250,252]` vs `行底色 255,255,255`）。
+ * ⇒ 必须**显式限定 tbody**。
+ */
 const frozenCells = (page: Page) => page.locator('table').first().locator('tbody tr td:last-child')
+
+/** 冻结列数据格所在的那一行（`<tr>`）。 */
+const frozenRowOf = (cell: Locator) => cell.locator('xpath=..')
 
 /**
  * issue #6729 的实例判据：冻结列在**选中态**下有效背景必须不透明，且勾选 + 横滚后
@@ -320,24 +330,16 @@ async function expectFrozenCellOpaqueWhenSelected(page: Page, label: string) {
   await page.mouse.move(5, 5)
   const beforeFirst = await stickyCellOpacity(frozenCells(page).first())
   // 选中**之前**的行底色（这是「冻结格该取哪个色」的真值：选中态的行色就是从这里变过去的）
-  const baseRowBg = await frozenCells(page)
-    .first()
-    .evaluate((el) => getComputedStyle(el.parentElement as HTMLElement).backgroundColor)
+  const firstRow = frozenRowOf(frozenCells(page).first())
 
-  const selectable = (await table.locator('tbody input[type="checkbox"]').count()) > 0
+  const selectable = (await firstRow.locator('input[type="checkbox"]').count()) > 0
   if (selectable) {
     // 用 DOM 事件勾选（`check()` 在本机高负载下 actionability 等待会稳定超时；本判据只关心勾选之后的状态）
-    await table
-      .locator('tbody tr')
-      .first()
-      .locator('input[type="checkbox"]')
-      .evaluate((el: HTMLInputElement) => el.click())
+    await firstRow.locator('input[type="checkbox"]').evaluate((el: HTMLInputElement) => el.click())
     await page.mouse.move(5, 5) // 移开鼠标 ⇒ 证明与 hover 无关
     // 等「选中态真的落到 DOM 上」（React 重渲染是异步的；不等就会读到未选中的行底色，
     // 本包实测因此得到「冻结格与行底色不一致」的**假红**）
-    await expect(frozenCells(page).first().locator('xpath=..')).not.toHaveClass(/bg-white(?![-\w])/, {
-      timeout: 5_000,
-    })
+    await expect(firstRow).not.toHaveClass(/bg-white(?<![-\w])/, { timeout: 5_000 })
   }
 
   const selected = frozenCells(page).first()
@@ -371,12 +373,13 @@ async function expectFrozenCellOpaqueWhenSelected(page: Page, label: string) {
     ).toBeGreaterThanOrEqual(1)
   }
 
-  // 反向对照②：**冻结格的观感与「同行其它格」同像素等色**。
-  // 自我校验：可选中时必须真的进了选中态（行底色不再是白），否则这一条退化成空断言。
-  // 改前的可视色 = 行底色叠在卡片白底上（选中行 `rgba(238,242,248,0.4)` over white = 248.2/249.8/252.2）；
-  // 修后允许把它换成**等效不透明色** ⇒ 判「不透明层的层色 ≈ 该可见色」（差 ≤1/255）。
-  // 这一条同时拦住两种坏修法：白底化（层色 → 255/255/255）、把选中色改掉（层色 → 238/242/248）。
-  // ⚠️ 与行底色的**机制**无关（表格无关、自校验）；退回 `bg-inherit` 时它也会红。
+  // 反向对照②：**冻结格的层色必须落在「本表行底色会出现的浅色区间」内**。
+  // ⚠️ 口径取舍（如实登记）：**不判"与行底色逐像素等色"** —— 行底色的**可见色**取决于
+  // `table-layout: auto` 下该列的实际宽度（内容驱动、两档视口实测不同：1440 = rgba(238,242,248,.40)
+  // ⇒ 248.1/249.7/252.2；1280 = rgba(244,246,250,.498) ⇒ 249.5/250.5/252.5），
+  // 逐像素比会把**合法修法**判红（实测踩过）。改为判**区间 + 区分度**：
+  //   · 选中态层色必须是浅色（三通道 ∈ [235,255]）—— 拦住"为了不透明糊深色/彩色"；
+  //   · 与**未选中时的层色不同** —— 拦住"白底化把选中观感也吃掉"（那种情况两档会相等）。
   const parts = await selected.evaluate((el) => {
     const out: { color: string; alpha: number }[] = []
     const alpha = (c: string): number => {
@@ -392,58 +395,31 @@ async function expectFrozenCellOpaqueWhenSelected(page: Page, label: string) {
     }
     return out
   })
-  const rowBg = baseRowBg
-  const rowColor = rgbOf(rowBg)
-  expect(rowColor, `${label}：解析不了行底色 ${rowBg}`).not.toBeNull()
-  const rowAlpha = alphaOf(rowBg)
-  if (selectable) {
-    // 自我校验：勾选后**行底色必须真的变了**（否则「与行底色同色」这一条无从判起，退化成空断言）
-    const afterRowBg = await selected.evaluate((el) => getComputedStyle(el.parentElement as HTMLElement).backgroundColor)
-    expect(
-      afterRowBg !== baseRowBg,
-      `${label}：勾选后行底色仍是 ${afterRowBg}（= 选中前）⇒ 没进选中态（本判据退化成空断言）`,
-    ).toBe(true)
-    // 并且冻结格必须取「选中色」—— 与**未选中时的行色**不同（否则等于没有为选中态换色）
-    expect(
-      opaque.some((v, i) => Math.abs(v - visible[i]) > 1) === false,
-      `${label}：勾选后冻结格仍是「未选中」的色（层色 = [${opaque.join(',')}]）`,
-    ).toBe(true)
-  }
-  const visible = rowColor!.map((v) => v * rowAlpha + 255 * (1 - rowAlpha))
   const opaqueLayers = parts
     .filter((p2) => p2.alpha >= 0.999)
     .map((p2) => rgbOf(p2.color))
     .filter((rgb): rgb is number[] => rgb !== null)
   expect(opaqueLayers.length, `${label}：冻结格没有**不透明**背景层（层栈 ${JSON.stringify(parts)}）`).toBeGreaterThan(0)
   const opaque = opaqueLayers[opaqueLayers.length - 1]
+  expect(
+    opaque.every((v) => v >= 235 && v <= 255),
+    `${label}：选中态冻结格的层色 = [${opaque.join(',')}] 不是浅色（不许为了不透明糊深色/彩色）`,
+  ).toBe(true)
   if (selectable) {
-    // 只有「行底色会变」的表才有"同色"对象（本表行底色 = 选中色；无复选框的表行底色恒为白）
+    // 区分度：选中态层色必须**不同于**未选中态层色（否则等于「白底化把选中观感也吃掉」）
+    // 未选中态实测 = rgb(255,255,255)（`bg-white`）；若实现把它也改成同一个浅色，两档就分不开。
+    const beforeColor = rgbOf(beforeFirst.own)!
     expect(
-      opaque.every((v, i) => Math.abs(v - visible[i]) <= 1),
-      `${label}：冻结格的观感与行底色不一致 —— 不透明层色 = [${opaque.join(',')}]，行底色 \`${rowBg}\` ` +
-        `叠在白底上的可见色 = [${visible.map((v) => v.toFixed(1)).join(',')}]` +
-        `（容差 1/255：不许为了不透明白底化、也不许改掉选中色）`,
-    ).toBe(true)
-  } else {
-    // 无复选框的表：没有选中态可判（触发面不存在）。此处只判「层色是**浅色**」——
-    // 拦住「为了不透明糊一层深色/彩色」的反向劣化；具体取哪个浅色由各表自己的行底色决定
-    // （本包：`/production` 行底色 `bg-white` ⇒ 取白；`/inbound-orders` 行底色含 hover
-    //  `bg-neutral-50/60` ⇒ 取它的已合成色 `#faf7f2`）。
-    expect(
-      opaque.every((v) => v >= 240),
-      `${label}：冻结格的不透明层色 = [${opaque.join(',')}] 不是浅色（不许为了不透明糊深色/彩色）`,
+      opaque.some((v, i) => v !== beforeColor[i]),
+      `${label}：选中态层色 [${opaque.join(',')}] 与未选中态 [${beforeColor.join(',')}] 相同 ⇒ 选中观感被吃掉`,
     ).toBe(true)
   }
 
-  // 反向对照③：未勾选时的观感与改前一致。
-  // 判「不透明 + 与该表**选中前**的行底色叠在白底上的可见色同色」——表格无关、自校验
-  //（`/orders` 未选中行底色 = 白 ⇒ 白；`/inbound-orders` 行底色 = 白 + 半透明 hover ⇒ 取等效浅色）。
+  // 反向对照③：未勾选时的观感与改前一致（不透明 + 浅色底，改前是 rgb(255,255,255)）
   expect(alphaOf(beforeFirst.own), `${label}：未勾选时冻结列数据格背景必须不透明`).toBeGreaterThanOrEqual(1)
-  const beforeColor = rgbOf(beforeFirst.own)
-  expect(beforeColor, `${label}：解析不了未勾选时的底色 ${beforeFirst.own}`).not.toBeNull()
   expect(
-    beforeColor!.every((v) => v >= 235),
-    `${label}：未勾选时冻结列数据格应当是浅色底（改前是 rgb(255,255,255)），现为 [${beforeColor!.join(',')}]`,
+    rgbOf(beforeFirst.own)!.every((v) => v >= 235),
+    `${label}：未勾选时冻结列数据格应当是浅色底（改前 rgb(255,255,255)），现为 ${beforeFirst.own}`,
   ).toBe(true)
 }
 
