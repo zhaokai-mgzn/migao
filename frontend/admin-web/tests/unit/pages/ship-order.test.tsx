@@ -522,4 +522,26 @@ describe('ShipOrder', () => {
     expect(screen.getByText('加工费合计（元）：37.50')).toBeInTheDocument()
     expect(screen.getByText('12.5')).toBeInTheDocument()
   })
+  /**
+   * issue #6664 第 6 条：**币符重复** —— `formatAmount` 已带 `¥`，调用处再拼「元」。
+   *
+   * 改前：`订单实收款：{formatAmount(order.actualAmount)}元` ⇒ 屏幕渲染成 `¥3,500.00元`，
+   * 而**同一页的纸质发货单**与**订单详情页**都只写 `¥3,500.00` ⇒ 同一笔钱两个口径。
+   *
+   * 判据 = 对**真渲染结果**做形态检查（不是扫源码字符串）：
+   * 全文不得出现「币符 + 数字 + 元」形态。
+   * **注入式红证**：把 `元` 拼回去（`{formatAmount(order.actualAmount)}元`）⇒ 本条必红。
+   */
+  it('金额渲染不出现「币符 + 数字 + 元」形态（issue #6664 第 6 条）', async () => {
+    render(<ShipOrder />)
+    await screen.findAllByText('商品发货')
+
+    const DUPLICATE_CURRENCY = /¥\s*[\d,]+\.\d{2}\s*元/
+    const text = document.body.textContent ?? ''
+    // 前置条件（触发确认）：页面上**确实**印了这笔钱（否则下面的零命中断言是空断言）
+    expect(text).toContain('¥3,500.00')
+    expect(text, `出现币符重复：${text.match(DUPLICATE_CURRENCY)?.[0] ?? ''}`).not.toMatch(DUPLICATE_CURRENCY)
+    // 判别力自证：同一条正则对**改前**的字符串必命中
+    expect(`订单实收款：¥3,500.00元`).toMatch(DUPLICATE_CURRENCY)
+  })
 })

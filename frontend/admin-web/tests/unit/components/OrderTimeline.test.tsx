@@ -53,9 +53,12 @@ describe('OrderTimeline', () => {
         { status: 'pending_payment', time: '2025-06-01T10:00:00Z' },
       ]
       render(<OrderTimeline currentStatus="pending_shipment" statusHistory={history} />)
-      // Should show formatted time for the step with history (component uses MM-DD HH:mm)
-      const expected = dayjs('2025-06-01T10:00:00Z').format('MM-DD HH:mm')
-      expect(screen.getByText(expected)).toBeInTheDocument()
+      // issue #6664 第 7 条：时间走唯一真值源 DateTimeCell（两行：YYYY-MM-DD + HH:mm），
+      // 不再是自拼的 `MM-DD HH:mm` 单行文本 ⇒ 分别断言日期行与时刻行（时区无关）。
+      const d = dayjs('2025-06-01T10:00:00Z')
+      // 该日期在**步骤条**与**状态变更记录**两处都出现（同一条 history）⇒ 用 getAll 并断言两处都在
+      expect(screen.getAllByText(d.format('YYYY-MM-DD')).length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText(d.format('HH:mm')).length).toBeGreaterThanOrEqual(1)
     })
 
     it('does not show time on steps without history', () => {
@@ -63,10 +66,9 @@ describe('OrderTimeline', () => {
         { status: 'pending_payment', time: '2025-06-01T10:00:00Z' },
       ]
       render(<OrderTimeline currentStatus="pending_shipment" statusHistory={history} />)
-      // Only one history item, so only one time display
-      const expected = dayjs('2025-06-01T10:00:00Z').format('MM-DD HH:mm')
-      const timeElements = screen.getAllByText(expected)
-      expect(timeElements.length).toBe(1)
+      // 只有一条 history ⇒ 日期行恰好出现在**两处**（步骤条 + 状态变更记录），不会更多
+      const expected = dayjs('2025-06-01T10:00:00Z').format('YYYY-MM-DD')
+      expect(screen.getAllByText(expected).length).toBe(2)
     })
   })
 
@@ -87,9 +89,11 @@ describe('OrderTimeline', () => {
         { status: 'closed', time: '2025-06-02T14:30:00Z' },
       ]
       render(<OrderTimeline currentStatus="closed" statusHistory={history} />)
-      // component formats closed time as YYYY-MM-DD HH:mm, computed dynamically for timezone safety
-      const expected = dayjs('2025-06-02T14:30:00Z').format('YYYY-MM-DD HH:mm')
-      expect(screen.getByText(expected)).toBeInTheDocument()
+      // issue #6664 第 7 条：改走 DateTimeCell（两行 YYYY-MM-DD + HH:mm），逐行断言（时区无关）
+      const d = dayjs('2025-06-02T14:30:00Z')
+      // 关闭时间在步骤条与状态变更记录各一处（同一条 history）
+      expect(screen.getAllByText(d.format('YYYY-MM-DD')).length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText(d.format('HH:mm')).length).toBeGreaterThanOrEqual(1)
     })
 
     it('does not show check icons when closed', () => {

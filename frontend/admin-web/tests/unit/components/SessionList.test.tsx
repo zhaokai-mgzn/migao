@@ -58,7 +58,6 @@ function makeDefaultChatState(overrides: Record<string, unknown> = {}) {
     abortController: null,
     quickActions: [],
     isLoadingQuickActions: false,
-    error: null,
     ...overrides,
   }
 }

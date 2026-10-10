@@ -2,7 +2,7 @@
 
 import { Truck, Package, MapPin } from 'lucide-react'
 import type { LogisticsInfo as LogisticsInfoType } from '@/types'
-import dayjs from 'dayjs'
+import DateTimeCell from '@/components/common/DateTimeCell'
 
 interface LogisticsInfoProps {
   logistics?: LogisticsInfoType
@@ -97,9 +97,10 @@ export default function LogisticsInfo({ logistics, className, onEdit }: Logistic
                   <p className={`text-sm ${index === 0 ? 'text-neutral-900 font-medium' : 'text-neutral-600'}`}>
                     {track.description}
                   </p>
-                  <p className="text-xs text-neutral-400 mt-0.5">
-                    {dayjs(track.time).format('YYYY-MM-DD HH:mm:ss')}
-                  </p>
+                  <div className="text-xs text-neutral-400 mt-0.5">
+                    {/* 日期口径唯一真值源（issue #6664 第 7 条） */}
+                    <DateTimeCell value={typeof track.time === 'string' ? track.time : undefined} />
+                  </div>
                 </div>
               </div>
             ))}

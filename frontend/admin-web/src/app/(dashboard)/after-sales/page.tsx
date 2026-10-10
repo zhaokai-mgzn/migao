@@ -71,6 +71,8 @@ export default function AfterSalesPage() {
   const [orderSearchKeyword, setOrderSearchKeyword] = useState('')
   const [orderSearchResults, setOrderSearchResults] = useState<Order[]>([])
   const [orderSearching, setOrderSearching] = useState(false)
+  /** 已经搜过一次（issue #6664 第 9 条）：空态只在「搜过且没结果」时出现，不是一开弹窗就说没有 */
+  const [orderSearched, setOrderSearched] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [newTicketType, setNewTicketType] = useState<AfterSalesType>('return')
   const [newDescription, setNewDescription] = useState('')
@@ -130,10 +132,15 @@ export default function AfterSalesPage() {
   const handleOrderSearch = async () => {
     if (!orderSearchKeyword.trim()) return
     setOrderSearching(true)
+    setOrderSearched(true)
     try {
       const res = await orderApi.getOrders({ keyword: orderSearchKeyword, page: 1, size: 10 })
       setOrderSearchResults(res.data?.data?.items || [])
     } catch (e) {
+      // 失败不当成「没有匹配订单」（那是把故障画成业务事实）—— 结果清空但空态交给下面的
+      // `orderSearched` 分支会误报「没有找到」⇒ 失败时把标记撤回，只留拦截器 toast
+      setOrderSearched(false)
+      setOrderSearchResults([])
       toast.error('搜索订单失败')
     } finally {
       setOrderSearching(false)
@@ -446,6 +453,7 @@ export default function AfterSalesPage() {
                         onClick={() => {
                           setSelectedOrder(order)
                           setOrderSearchResults([])
+                          setOrderSearched(false)
                         }}
                         className="w-full text-left px-3 py-2 hover:bg-neutral-50 transition-colors"
                       >
@@ -454,6 +462,13 @@ export default function AfterSalesPage() {
                       </button>
                     ))}
                   </div>
+                )}
+                {/* 搜过且没结果 ⇒ 说清「没有找到匹配订单」（issue #6664 第 9 条）；
+                    改前这里什么都不显示，用户分不清「没搜」和「没这条单」 */}
+                {orderSearched && !orderSearching && orderSearchResults.length === 0 && (
+                  <p role="status" className="px-3 py-2 text-xs text-neutral-500">
+                    没有找到匹配订单，请确认订单号 / 客户姓名 / 手机号
+                  </p>
                 )}
               </div>
             )}

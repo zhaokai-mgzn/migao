@@ -7,6 +7,28 @@ interface LogisticsCardProps {
   data: Record<string, unknown>
 }
 
+/**
+ * 物流状态**展示名**（issue #6664 第 5 条）：服务端下发的是 `in_transit` 这类内部键，
+ * **不得**原样上屏（商家用户读不懂英文键）。未知值落人话兜底「状态待确认」，**不裸奔原值**。
+ */
+const LOGISTICS_STATUS_LABEL: Record<string, string> = {
+  pending: '待揽收',
+  collected: '已揽收',
+  in_transit: '运输中',
+  out_for_delivery: '派送中',
+  delivered: '已签收',
+  signed: '已签收',
+  exception: '异常',
+  returned: '已退回',
+}
+
+export function logisticsStatusLabel(status: string): string {
+  if (!status) return ''
+  // 已经是中文展示值（服务端历史上两种口径都下发过）⇒ 原样放行，不吞
+  if (/[\u4e00-\u9fa5]/.test(status)) return status
+  return LOGISTICS_STATUS_LABEL[status] ?? '状态待确认'
+}
+
 export default function LogisticsCard({ data }: LogisticsCardProps) {
   const tracking = (data.tracking_info as Record<string, unknown>) || data
   const trackingNo = (tracking.trackingNo as string) || (tracking.tracking_no as string) || ''
@@ -31,7 +53,7 @@ export default function LogisticsCard({ data }: LogisticsCardProps) {
         </div>
         {status && (
           <span className="text-[10px] px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">
-            {status}
+            {logisticsStatusLabel(status)}
           </span>
         )}
       </div>

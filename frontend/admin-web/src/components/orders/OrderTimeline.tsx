@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils'
 import { Check } from 'lucide-react'
 import type { OrderStatus, StatusHistory } from '@/types'
 import { OrderStatusLabels, OrderStatusFlow } from '@/types'
-import dayjs from 'dayjs'
+import DateTimeCell from '@/components/common/DateTimeCell'
 
 interface OrderTimelineProps {
   currentStatus: OrderStatus
@@ -69,7 +69,8 @@ export default function OrderTimeline({ currentStatus, statusHistory, className 
                 </span>
                 {historyItem && (
                   <span className="mt-0.5 text-[10px] text-neutral-400">
-                    {dayjs(historyItem.time).format('MM-DD HH:mm')}
+                    {/* 日期口径唯一真值源（issue #6664 第 7 条） */}
+                    <DateTimeCell value={historyItem.time} />
                   </span>
                 )}
               </div>
@@ -98,7 +99,7 @@ export default function OrderTimeline({ currentStatus, statusHistory, className 
             <span className="text-sm font-medium text-red-700">订单已关闭</span>
             {getHistoryItem('closed') && (
               <span className="ml-2 text-xs text-red-500">
-                {dayjs(getHistoryItem('closed')!.time).format('YYYY-MM-DD HH:mm')}
+                <DateTimeCell value={getHistoryItem('closed')!.time} />
               </span>
             )}
           </div>
@@ -126,7 +127,8 @@ export default function OrderTimeline({ currentStatus, statusHistory, className 
                         {OrderStatusLabels[item.status]}
                       </span>
                       <span className="text-xs text-neutral-400">
-                        {dayjs(item.time).format('YYYY-MM-DD HH:mm:ss')}
+                        {/* 日期口径唯一真值源（issue #6664 第 7 条） */}
+                        <DateTimeCell value={item.time} />
                       </span>
                     </div>
                     {item.operator && (

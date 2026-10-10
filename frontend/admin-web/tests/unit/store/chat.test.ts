@@ -138,7 +138,6 @@ describe('useChatStore (Zustand chat store) — #571', () => {
         abortController: null,
         quickActions: [],
         isLoadingQuickActions: false,
-        error: null,
         choiceSelections: {},
         // CH-027/CH-028：每会话消息存储 + 在途流（issue #2901/#2906）——每个测试从空态开始，防跨测试泄漏
         messageStore: {},
@@ -166,7 +165,6 @@ describe('useChatStore (Zustand chat store) — #571', () => {
       expect(state.abortController).toBeNull()
       expect(state.quickActions).toEqual([])
       expect(state.isLoadingQuickActions).toBe(false)
-      expect(state.error).toBeNull()
       expect(state.choiceSelections).toEqual({})
     })
   })
@@ -248,7 +246,6 @@ describe('useChatStore (Zustand chat store) — #571', () => {
         useChatStore.setState({
           currentSessionId: 's1',
           messages: [makeMsg()],
-          error: 'some error',
         })
       })
 
@@ -259,7 +256,6 @@ describe('useChatStore (Zustand chat store) — #571', () => {
       const state = useChatStore.getState()
       expect(state.currentSessionId).toBeNull()
       expect(state.messages).toEqual([])
-      expect(state.error).toBeNull()
     })
   })
 
@@ -425,7 +421,6 @@ describe('useChatStore (Zustand chat store) — #571', () => {
       expect(sessions[0].session_id).toBe('s1')
       expect(sessions[0].customer_name).toBe('张三')
       expect(sessions[0].status).toBe('active')
-      expect(useChatStore.getState().error).toBeNull()
     })
 
     it('should handle data.data.sessions format', async () => {
@@ -485,15 +480,23 @@ describe('useChatStore (Zustand chat store) — #571', () => {
       expect(useChatStore.getState().currentSessionId).toBe('s99')
     })
 
-    it('should set error on failure', async () => {
-      mockGetSessions.mockRejectedValue(new Error('Network error'))
+    // issue #6664 第 2 条：`error` 字段（全仓无消费点的「假承诺」）已整字段删除。
+    // 失败时的可观察契约 = 不留在「加载中」+ **不把故障画成空列表**（保留上次成功值）。
+    it('should not stay loading on failure (error field removed, issue #6664)', async () => {
+      mockGetSessions.mockResolvedValue({ data: { items: [{ id: 's-keep', title: '保留' }] } })
+      await act(async () => {
+        await useChatStore.getState().fetchSessions()
+      })
+      expect(useChatStore.getState().sessions).toHaveLength(1)
 
+      mockGetSessions.mockRejectedValue(new Error('Network error'))
       await act(async () => {
         await useChatStore.getState().fetchSessions()
       })
 
-      expect(useChatStore.getState().error).toBe('Network error')
       expect(useChatStore.getState().isLoadingSessions).toBe(false)
+      // 失败不清零：故障≠空
+      expect(useChatStore.getState().sessions).toHaveLength(1)
     })
 
     it('should set isLoadingSessions during fetch', async () => {

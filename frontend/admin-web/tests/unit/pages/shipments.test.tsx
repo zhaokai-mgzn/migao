@@ -1,7 +1,7 @@
 // case_ids: UI-078
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 /**
@@ -137,16 +137,33 @@ describe('发货单列表页（issue #5939 / UI-078）', () => {
     await waitFor(() => expect(mockList).toHaveBeenLastCalledWith({ keyword: undefined }))
   })
 
-  it('⑤ 空列表 ⇒「暂无发货单」；读面失败 ⇒ 空态（不显示假数据）', async () => {
+  it('⑤ 空列表 ⇒「暂无发货单」；读面失败 ⇒ **失败态**（不是空态，issue #6664 第 3 条）', async () => {
     mockList.mockResolvedValue({ data: { data: [] } })
     const { unmount } = render(<Shipments />)
     expect(await screen.findByText('暂无发货单')).toBeInTheDocument()
+    // 空态不得同时说「加载失败」（两态互斥）
+    expect(screen.queryByText(/加载失败/)).toBeNull()
     unmount()
 
+    // 读面故障 ≠「没有发货单」—— 故障说「加载失败」+ 重试出口，且不留半截数据
     mockList.mockRejectedValue(new Error('boom'))
     render(<Shipments />)
-    expect(await screen.findByText('暂无发货单')).toBeInTheDocument()
+    expect(await screen.findByText(/加载失败/)).toBeInTheDocument()
+    expect(screen.queryByText('暂无发货单')).toBeNull()
     expect(screen.queryAllByTestId('shipment-row')).toHaveLength(0)
+    expect(screen.getByRole('button', { name: /重试/ })).toBeEnabled()
+  })
+
+  it('⑤b 失败后点重试 ⇒ 重新取数并渲染出列表（重试不是摆设）', async () => {
+    mockList.mockRejectedValueOnce(new Error('boom'))
+    render(<Shipments />)
+    await screen.findByText(/加载失败/)
+
+    mockList.mockResolvedValue({ data: { data: [shippedRow] } })
+    fireEvent.click(screen.getByRole('button', { name: /重试/ }))
+
+    expect(await screen.findByText('FH-20261002120000-A001')).toBeInTheDocument()
+    expect(screen.queryByText(/加载失败/)).toBeNull()
   })
 
   it('⑥ 补打：取订单 → 打开纸面自检层（真尺寸 A4 发货单）；取不到订单 ⇒ 不弹预览层', async () => {

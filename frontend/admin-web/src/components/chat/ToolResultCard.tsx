@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import type { ChatCard } from '@/types'
+import DateTimeCell from '@/components/common/DateTimeCell'
 import ProductCard from './ProductCard'
 import LogisticsCard from './LogisticsCard'
 import ProductionProgressCard, { type ProductionProgressCardData } from './ProductionProgressCard'
@@ -108,9 +109,10 @@ function OrderRow({ order }: { order: Record<string, unknown> }) {
         </p>
       )}
       {typeof createdAt === 'string' && createdAt && (
-        <p className="text-[10px] text-neutral-400 mt-1">
-          {new Date(createdAt).toLocaleDateString('zh-CN')}
-        </p>
+        <div className="mt-1">
+          {/* 日期口径收敛到唯一真值源（issue #6664 第 7 条） */}
+          <DateTimeCell value={createdAt} />
+        </div>
       )}
     </div>
   )
@@ -140,7 +142,11 @@ function OrderStatusBadge({ status }: { status: string }) {
     cancelled: { label: '已取消', className: 'bg-neutral-50 text-neutral-600 border-neutral-200' },
   }
 
-  const info = statusMap[status] || { label: status, className: 'bg-neutral-50 text-neutral-600 border-neutral-200' }
+  const info = statusMap[status] || {
+    // 未知状态：**不裸奔英文键**（issue #6664 第 5 条），落人话兜底「状态待确认」
+    label: '状态待确认',
+    className: 'bg-neutral-50 text-neutral-600 border-neutral-200',
+  }
 
   return (
     <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${info.className}`}>

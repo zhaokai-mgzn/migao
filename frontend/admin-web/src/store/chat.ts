@@ -52,7 +52,6 @@ interface ChatState {
   searchKeyword: string
   quickActions: QuickAction[]
   isLoadingQuickActions: boolean
-  error: string | null
   // choice 多选勾选（key = `${sessionId}:${tool}`，跨页保留）
   // 加工项选择场景：点击选项仅本地勾选累积，不触发 agent 回复，
   // 用户点「完成选择」后一次性提交；翻页后新卡片从 store 恢复已选（issue #2896）
@@ -164,14 +163,12 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   searchKeyword: '',
   quickActions: [],
   isLoadingQuickActions: false,
-  error: null,
   choiceSelections: {},
 
   setSearchKeyword: (keyword: string) => set({ searchKeyword: keyword }),
 
   clearCurrentSession: () => set(state => withView(state, {
     currentSessionId: null,
-    error: null,
     choiceSelections: {},
   })),
 
@@ -262,16 +259,17 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         }
       }
 
-      set({ sessions: finalSessions, error: null })
+      set({ sessions: finalSessions })
 
       // 如果没有选中会话且无未完成交互，自动选中第一个
       if (!get().currentSessionId && sessions.length > 0 && !hasPendingTools(get().messages)) {
         get().selectSession(sessions[0].session_id)
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : '获取会话列表失败'
-      set({ error: message })
-      // 不弹 toast 刷屏，在页面上友好提示
+      // 不弹 toast 刷屏：拦截器已展示后端错误（`lib/api-error`）。
+      // 🔴 issue #6664 第 2 条：改前这里 `set({ error: message })` 写进一个**全仓无消费点**的字段
+      //（注释写着「在页面上友好提示」，而没有任何组件读它）—— 那是**假承诺**，已整字段删除。
+      console.error('获取会话列表失败:', error)
     } finally {
       set({ isLoadingSessions: false })
     }

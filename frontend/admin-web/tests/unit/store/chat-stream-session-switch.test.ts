@@ -151,7 +151,6 @@ describe('chat 流式回复 × 会话切换 (issue #2901, CH-027)', () => {
         abortController: null,
         quickActions: [],
         isLoadingQuickActions: false,
-        error: null,
         // CH-027/CH-028：每会话消息存储 + 在途流 —— 每个测试从空态开始
         messageStore: {},
         streams: {},

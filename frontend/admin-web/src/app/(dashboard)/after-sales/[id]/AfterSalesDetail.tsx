@@ -27,7 +27,7 @@ import {
   AfterSalesTypeLabels,
   AfterSalesPriorityLabels,
 } from '@/types'
-import dayjs from 'dayjs'
+import DateTimeCell from '@/components/common/DateTimeCell'
 import { cn } from '@/lib/utils'
 
 // 工单来源中文标签（issue #3686）：后端 source 表示工单**真实来源**
@@ -235,7 +235,7 @@ export default function AfterSalesDetailPage() {
                 <div>
                   <p className="text-xs text-neutral-500 mb-1">创建时间</p>
                   <p className="text-sm font-medium text-neutral-900">
-                    {ticket.createdAt ? dayjs(ticket.createdAt).format('YYYY-MM-DD HH:mm') : '-'}
+                    {<DateTimeCell value={ticket.createdAt} />}
                   </p>
                 </div>
                 {ticket.refundAmount !== undefined && ticket.refundAmount !== null && (
@@ -250,7 +250,7 @@ export default function AfterSalesDetailPage() {
                   <div>
                     <p className="text-xs text-neutral-500 mb-1">处理截止时间</p>
                     <p className="text-sm font-medium text-neutral-900">
-                      {dayjs(ticket.deadline).format('YYYY-MM-DD HH:mm')}
+                      {<DateTimeCell value={ticket.deadline} />}
                     </p>
                   </div>
                 )}
@@ -312,7 +312,7 @@ export default function AfterSalesDetailPage() {
                                 {AfterSalesStatusLabels[history.status]}
                               </span>
                               <span className="text-xs text-neutral-400">
-                                {history.time ? dayjs(history.time).format('YYYY-MM-DD HH:mm:ss') : ''}
+                                {<DateTimeCell value={history.time} />}
                               </span>
                             </div>
                             {history.operator && (
@@ -423,27 +423,27 @@ export default function AfterSalesDetailPage() {
                   <div className="flex justify-between text-sm">
                     <span className="text-neutral-500">分配时间</span>
                     <span className="text-neutral-700">
-                      {dayjs(ticket.assignedAt).format('YYYY-MM-DD HH:mm')}
+                      {<DateTimeCell value={ticket.assignedAt} />}
                     </span>
                   </div>
                 )}
                 <div className="flex justify-between text-sm">
                   <span className="text-neutral-500">创建时间</span>
                   <span className="text-neutral-700">
-                    {ticket.createdAt ? dayjs(ticket.createdAt).format('YYYY-MM-DD HH:mm') : '-'}
+                    {<DateTimeCell value={ticket.createdAt} />}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-neutral-500">更新时间</span>
                   <span className="text-neutral-700">
-                    {ticket.updatedAt ? dayjs(ticket.updatedAt).format('YYYY-MM-DD HH:mm') : '-'}
+                    {<DateTimeCell value={ticket.updatedAt} />}
                   </span>
                 </div>
                 {ticket.closedAt && (
                   <div className="flex justify-between text-sm">
                     <span className="text-neutral-500">关闭时间</span>
                     <span className="text-neutral-700">
-                      {dayjs(ticket.closedAt).format('YYYY-MM-DD HH:mm')}
+                      {<DateTimeCell value={ticket.closedAt} />}
                     </span>
                   </div>
                 )}

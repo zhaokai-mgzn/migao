@@ -8,6 +8,7 @@ import { Search, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { orderApi } from '@/lib/api'
 import { OrderTable, CloseOrderModal, RemarkModal, RefundOrderModal } from '@/components/orders'
+import { Button, Modal } from '@/components/ui'
 import { usePermission } from '@/lib/permission'
 import type { Order, OrderStatus, OrderStatusTab } from '@/types'
 import { FrontendToBackendStatus, OrderStatusTabs, ORDER_CATEGORIES, OrderStatusLabels, toBackendStatusParam } from '@/types'
@@ -171,6 +172,13 @@ export default function OrdersPage() {
   const [refundModalOpen, setRefundModalOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
+  /**
+   * 确认动作弹框（issue #6664 第 4 条）：改前这两个动作走 `window.confirm` ——
+   * 与仓内自研 `Modal`（UI-048 家族）**同一个动作两个世界观**，且**没有在飞行态**。
+   * 现在统一走 Modal，弹框就是**闸门**（取消 ⇒ 一个请求都不发）。
+   */
+  const [confirmAction, setConfirmAction] = useState<{ kind: 'payment' | 'receive'; order: Order } | null>(null)
+  const [confirming, setConfirming] = useState(false)
 
   const loadOrders = useCallback(async (pageOverride?: number) => {
     const pageNum = pageOverride ?? current
@@ -308,29 +316,35 @@ export default function OrdersPage() {
     router.push(`/orders/${order.id}/ship`)
   }
 
-  const handleConfirmPayment = async (order: Order) => {
-    if (!window.confirm('确认已收到客户付款？')) return
-    const toastId = toast.loading('操作中…')
-    try {
-      await orderApi.confirmPayment(order.id)
-      toast.success('付款已确认', { id: toastId })
-      loadOrders()
-    } catch (e) {
-      console.error(e)
-      toastRequestError(e, '确认付款失败', { id: toastId })
-    }
+  const handleConfirmPayment = (order: Order) => {
+    setConfirmAction({ kind: 'payment', order })
   }
 
-  const handleConfirmReceive = async (order: Order) => {
-    if (!window.confirm('确认客户已收到货物？')) return
+  const handleConfirmReceive = (order: Order) => {
+    setConfirmAction({ kind: 'receive', order })
+  }
+
+  /** 弹框里点「确认」才真发请求（在飞时按钮 disabled，防连点重复请求） */
+  const runConfirmAction = async () => {
+    if (!confirmAction || confirming) return
+    const { kind, order } = confirmAction
+    setConfirming(true)
     const toastId = toast.loading('操作中…')
     try {
-      await orderApi.updateOrderStatus(order.id, { status: 'completed' })
-      toast.success('订单已完成', { id: toastId })
+      if (kind === 'payment') {
+        await orderApi.confirmPayment(order.id)
+        toast.success('付款已确认', { id: toastId })
+      } else {
+        await orderApi.updateOrderStatus(order.id, { status: 'completed' })
+        toast.success('订单已完成', { id: toastId })
+      }
+      setConfirmAction(null)
       loadOrders()
     } catch (e) {
       console.error(e)
-      toastRequestError(e, '确认收货失败', { id: toastId })
+      toastRequestError(e, kind === 'payment' ? '确认付款失败' : '确认收货失败', { id: toastId })
+    } finally {
+      setConfirming(false)
     }
   }
 
@@ -678,6 +692,35 @@ export default function OrdersPage() {
         onConfirm={handleConfirmRefund}
         loading={actionLoading}
       />
+
+      {/* 确认动作弹框（issue #6664 第 4 条）：与仓内自研 Modal 同一世界观；
+          取消 ⇒ 不发请求；在飞 ⇒ 按钮 disabled（防连点重复请求） */}
+      <Modal
+        open={confirmAction !== null}
+        onClose={() => {
+          if (!confirming) setConfirmAction(null)
+        }}
+        title={confirmAction?.kind === 'payment' ? '确认已收到客户付款' : '确认客户已收到货物'}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setConfirmAction(null)} disabled={confirming}>
+              取消
+            </Button>
+            <Button onClick={() => void runConfirmAction()} loading={confirming}>
+              确认
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-neutral-600">
+          {confirmAction?.kind === 'payment'
+            ? `将订单 ${confirmAction?.order.orderNo ?? ''} 标记为「已付款」，并进入待发货。`
+            : `将订单 ${confirmAction?.order.orderNo ?? ''} 标记为「已完成」。`}
+        </p>
+        <p className="mt-2 text-sm text-neutral-500">
+          该动作会写入订单状态、不可撤销，请确认后再提交。
+        </p>
+      </Modal>
     </div>
   )
 }

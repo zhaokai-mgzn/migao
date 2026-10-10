@@ -13,6 +13,8 @@ import { Printer, RotateCcw, Search, Truck } from 'lucide-react'
 import { orderApi, shipmentApi } from '@/lib/api'
 import { Button, Input } from '@/components/ui'
 import { PRINT_TARGET_SPECS, PrintDocPreview, ShipmentDoc, usePrintDoc } from '@/components/orders'
+// 来源展示口径（内部键不上屏，issue #6664 第 5 条）：与判据同一份模块
+import { sourceLabel } from '@/components/orders/shipment-source'
 import type { Order, ShipmentListRow } from '@/types'
 import { formatFullDateTime } from '@/lib/utils'
 
@@ -33,12 +35,6 @@ import { formatFullDateTime } from '@/lib/utils'
 // 🔴 「实发」不在前端重算：数字来自服务端 `shippedTotals`（与按单读面 `orderApi.getOrderShipments`
 // **同一份实现** `OrderShipmentService.totals()`）—— 前端只负责显示，不做第三套口径。
 
-/** 发货单来源 → 中文（与写面 `OrderShipment.source` 的三态逐字对应；未知值原样显示，不吞） */
-const SOURCE_LABEL: Record<string, string> = {
-  worker_photo: '工人拍照',
-  worker: '工人手工',
-  admin: '商家',
-}
 
 /**
  * 实发汇总 → 一行短文案（**缺值不填 0**）。
@@ -67,6 +63,8 @@ export default function ShipmentsPage() {
   const [keyword, setKeyword] = useState('')
   const [rows, setRows] = useState<ShipmentListRow[]>([])
   const [loading, setLoading] = useState(false)
+  /** 读面失败（与「暂无发货单」互斥）：故障不是业务事实，issue #6664 第 3 条 */
+  const [loadError, setLoadError] = useState(false)
   /** 补打：正在取订单的发货单 id（按钮转圈，避免连点取两次） */
   const [printingId, setPrintingId] = useState<string | null>(null)
   /** 补打所依据的订单（`ShipmentDoc` 的数据源 = 订单本身，见 Doc 文件头第 5 条） */
@@ -78,9 +76,10 @@ export default function ShipmentsPage() {
     try {
       const res = await shipmentApi.list({ keyword: keyword.trim() || undefined })
       setRows(res.data.data ?? [])
+      setLoadError(false)
     } catch {
-      // request 拦截器已 toast；此处只需不留下半截数据（读面故障 ≠ 「没有发货单」）
-      setRows([])
+      // request 拦截器已 toast；此处只标**失败态**、**不清零**（读面故障 ≠「没有发货单」）
+      setLoadError(true)
     } finally {
       setLoading(false)
     }
@@ -170,7 +169,7 @@ export default function ShipmentsPage() {
                 <td className="px-4 py-2.5 font-mono text-neutral-600">{row.orderNo || '-'}</td>
                 <td className="px-4 py-2.5 text-neutral-700">{row.customerName || '-'}</td>
                 <td className="px-4 py-2.5 text-neutral-600">
-                  {SOURCE_LABEL[row.source] || row.source}
+                  {sourceLabel(row.source)}
                 </td>
                 <td className="px-4 py-2.5 text-neutral-600" data-testid="shipment-shipper">
                   {shipperCell(row)}
@@ -206,7 +205,17 @@ export default function ShipmentsPage() {
             {rows.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-4 py-10 text-center text-neutral-400">
-                  {loading ? '加载中…' : '暂无发货单'}
+                  {loading ? (
+                    '加载中…'
+                  ) : loadError ? (
+                    // 失败态与空态**分离**（issue #6664 第 3 条）：故障说「加载失败」+ 重试出口
+                    <span role="alert" className="inline-flex items-center gap-3">
+                      <span className="text-neutral-600">发货单加载失败，请检查网络后重试</span>
+                      <Button variant="secondary" size="sm" onClick={() => void load()}>重试</Button>
+                    </span>
+                  ) : (
+                    '暂无发货单'
+                  )}
                 </td>
               </tr>
             )}

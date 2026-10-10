@@ -30,7 +30,6 @@ vi.mock('@/store/chat', () => ({
     searchKeyword: '',
     quickActions: [],
     isLoadingQuickActions: false,
-    error: null,
     createSession: vi.fn(),
     selectSession: vi.fn(),
     sendMessage: vi.fn(),

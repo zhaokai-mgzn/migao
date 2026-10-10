@@ -337,7 +337,7 @@ export default function ShipOrder() {
             <h2 className="text-base font-semibold text-neutral-900">商品信息</h2>
           </div>
           <span className="text-sm text-primary-600 font-medium">
-            订单实收款：{formatAmount(order.actualAmount)}元
+            订单实收款：{formatAmount(order.actualAmount)}
           </span>
         </div>
         <div className="px-6 py-5">
