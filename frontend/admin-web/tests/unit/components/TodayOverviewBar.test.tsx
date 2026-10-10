@@ -59,6 +59,25 @@ describe('TodayOverviewBar 组件（一句话经营解读）', () => {
     expect(screen.queryByText(/库存偏低/)).not.toBeInTheDocument()
   })
 
+  // issue #6701：**读不到**（null）与**真 0**（0）是两件事 —— 前者说「—」，后者才说「今日暂无新订单」。
+  it('#6701 读不到（null）⇒ 金额位显示 `--`，不得印成 ¥0、也不得说「今天没卖出去」', () => {
+    render(
+      <TodayOverviewBar
+        todayOrders={null}
+        todaySales={null}
+        orderChange={null}
+        salesChange={null}
+        processingCount={0}
+        pendingCount={0}
+        lowStockCount={0}
+      />,
+    )
+    const sentence = screen.getByTestId('today-overview-sentence')
+    expect(sentence).toHaveTextContent('今日订单数 —、销售额 —')
+    expect(sentence).not.toHaveTextContent(/¥0/)
+    expect(screen.queryByText(/今日暂无新订单/)).not.toBeInTheDocument()
+  })
+
   it('今日无订单且无销售额时展示空态解读', () => {
     render(
       <TodayOverviewBar
