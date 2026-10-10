@@ -55,32 +55,52 @@ export interface ActiveSession {
 /**
  * 获取核心经营数据一屏
  */
-export async function getDashboardStats(): Promise<DashboardStats | null> {
+/**
+ * 拉取结果：**「无权限 / 失败」必须与「空」可区分**（issue #6666 判据 6）。
+ *
+ * 🔴 旧形态返回 `null` / `[]` ⇒ 页面把「拉不到」渲染成「五张卡全是 `--`」与
+ * 「暂无待办，AI 正在处理中」= 把「看不到」说成「没有」。与同页
+ * `getProductionTodoOverview` 的 `ProductionTodoResult` 同款三态（单一范式，不新造第二套）。
+ */
+export type DashboardStatsResult =
+  | { status: 'ok'; data: DashboardStats }
+  | { status: 'forbidden' }
+  | { status: 'error' }
+
+export async function getDashboardStats(): Promise<DashboardStatsResult> {
   try {
     const res = await get<ApiResponse<DashboardStats>>('/api/admin/dashboard/stats', {
       baseURL: API_BASE_URL,
     })
-    if (!res.success || !res.data) return null
-    return res.data
-  } catch (e) {
+    if (!res.success || !res.data) return { status: 'error' }
+    return { status: 'ok', data: res.data }
+  } catch (e: any) {
+    if (e?.statusCode === 403) return { status: 'forbidden' }
     console.error('获取经营数据失败:', e)
-    return null
+    return { status: 'error' }
   }
 }
+
+/** 待办拉取结果（三态口径同上） */
+export type PendingTasksResult =
+  | { status: 'ok'; data: PendingTask[] }
+  | { status: 'forbidden' }
+  | { status: 'error' }
 
 /**
  * 获取待办任务（待支付订单 / 待处理售后）
  */
-export async function getPendingTasks(): Promise<PendingTask[]> {
+export async function getPendingTasks(): Promise<PendingTasksResult> {
   try {
     const res = await get<ApiResponse<PendingTask[]>>('/api/admin/dashboard/pending-tasks', {
       baseURL: API_BASE_URL,
     })
-    if (!res.success || !res.data) return []
-    return res.data
-  } catch (e) {
+    if (!res.success || !res.data) return { status: 'error' }
+    return { status: 'ok', data: res.data }
+  } catch (e: any) {
+    if (e?.statusCode === 403) return { status: 'forbidden' }
     console.error('获取待办失败:', e)
-    return []
+    return { status: 'error' }
   }
 }
 

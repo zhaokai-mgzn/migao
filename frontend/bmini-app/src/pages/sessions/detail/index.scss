@@ -2,6 +2,10 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
+  // 与聊天页同源（issue #6666 判据 5）：`100vh` 是 content-box 口径 ⇒ 根级任何 padding
+  // 都会**加在** 100vh 之上把底部输入区顶出视口（聊天页实测 864/844）。本页实测 bottom == 视口底边
+  // （inputBelowViewportPx = 0），补 border-box 是**同源口径**，不是「修了一个正在发生的遮挡」。
+  box-sizing: border-box;
   background: #f5f7fa;
 }
 

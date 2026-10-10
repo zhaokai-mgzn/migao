@@ -1,7 +1,11 @@
 .dashboard-page {
   min-height: 100vh;
+  // 浮层底栏（MerchantTabBar 是 `position: fixed`）不占流内空间 ⇒ 页面必须自己按条高留位，
+  // 否则内容溢出视口时**最后一行被底栏压住**（issue #6666 判据 1，线上实测压 5.5px；
+  // iPhone 安全区 34px 下整行不可见）。算式与 components/MerchantTabBar.scss 的条高**逐字同源**。
+  box-sizing: border-box;
+  padding-bottom: calc(50PX + env(safe-area-inset-bottom));
   background: #f5f7fa;
-  padding-bottom: 24px;
 }
 
 .dashboard-header {
