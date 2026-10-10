@@ -198,6 +198,20 @@ async function main() {
       return json({ todaySales: 0, todayOrders: 0, monthRevenue: 0, todaySalesChange: 0, todayOrdersChange: 0, monthRevenueChange: 0 })
     }
     if (url.includes('/api/dashboard/tasks') || url.includes('/pending-tasks')) return json([])
+    // issue #6666 判据 5：坐席会话详情页（须 status≠ended + employeeId 才渲染输入区）
+    if (/\/api\/admin\/agent-sessions\/[^/]+$/.test(url)) {
+      return json({
+        id: 'probe-1',
+        status: 'active',
+        employeeId: 'e1',
+        customerName: '探针客户',
+        reason: '探针：查物流',
+        messages: [
+          { id: 'm1', senderType: 'customer', content: '你好，问一下窗帘', createdAt: new Date(Date.now() - 600000).toISOString() },
+          { id: 'm2', senderType: 'employee', content: '您好，请稍等', createdAt: new Date(Date.now() - 300000).toISOString() },
+        ],
+      })
+    }
     return json({})
   })
 
@@ -382,6 +396,112 @@ async function main() {
   })
   orderDetail.stuckPointRequests = stuckPointRequests
 
+  // ── ⑥ 内容溢出页：滚到底后「最靠下的叶子文本」vs 自绘底栏顶边（issue #6666 判据 1）──
+  //    判据口径由主会话钉死：取「滚到底后最靠下的**叶子文本** bottom」与「底栏 top」比，
+  //    **不是**「有没有留 50px」。> 0 ⇒ 那一行落在底栏之下 ⇒ 永久不可读。
+  const TAB_PAGES = [
+    { name: 'dashboard', hash: '/pages/dashboard/index/index', root: '.dashboard-page' },
+    { name: 'sessions', hash: '/pages/sessions/index/index', root: '.sessions-page' },
+    { name: 'profile', hash: '/pages/profile/index/index', root: '.profile-page' },
+  ]
+  const tabbarInset = []
+  for (const tp of TAB_PAGES) {
+    await page.goto(`${BASE}${PREFIX}/#${tp.hash}`, { waitUntil: 'domcontentloaded' })
+    // ⚠️ 不能等 `.merchant-tabbar` —— Taro 把来过的页面**留在 DOM 里但隐藏**，
+    //    `waitForSelector` 默认只看**第一个**匹配（往往是上一页那条）⇒ 必超时（本探针实测踩过）。
+    await page.waitForFunction(
+      (sel) =>
+        [...document.querySelectorAll(sel)].some((el) => {
+          const r = el.getBoundingClientRect()
+          return r.width > 0 && r.height > 0
+        }),
+      '.merchant-tabbar',
+      { timeout: 20000 },
+    )
+    await page.waitForTimeout(1200)
+    const reading = await page.evaluate(async (rootSel) => {
+      const vis = (el) => {
+        const r = el.getBoundingClientRect()
+        return r.width > 0 && r.height > 0
+      }
+      const roots = [...document.querySelectorAll(rootSel)].filter(vis)
+      const root = roots[roots.length - 1]
+      if (!root) return { rendered: false }
+      // 滚到底：找 root 内（或 root 自身）真正可滚的那个容器
+      let sc = root
+      for (const el of [root, ...root.querySelectorAll('*')]) {
+        const cs = getComputedStyle(el)
+        if (/(auto|scroll)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 1) sc = el
+      }
+      sc.scrollTop = sc.scrollHeight
+      await new Promise((r) => setTimeout(r, 400))
+      const bar = [...document.querySelectorAll('.merchant-tabbar')].filter(vis).pop()
+      const barRect = bar ? bar.getBoundingClientRect() : null
+      // 最靠下的**叶子文本**（无子元素 + 非空文本 + 可见；底栏自身排除）
+      let lowest = null
+      for (const el of root.querySelectorAll('*')) {
+        if (bar && bar.contains(el)) continue
+        if (el.children.length > 0) continue
+        const text = (el.textContent || '').trim()
+        if (!text) continue
+        const r = el.getBoundingClientRect()
+        if (r.width <= 0 || r.height <= 0) continue
+        if (!lowest || r.bottom > lowest.bottom) {
+          lowest = { text: text.slice(0, 30), bottom: +r.bottom.toFixed(1), top: +r.top.toFixed(1) }
+        }
+      }
+      return {
+        rendered: true,
+        viewportHeight: window.innerHeight,
+        scrollContainer: sc === root ? rootSel : `${sc.className || sc.tagName}`,
+        scrollTop: +sc.scrollTop.toFixed(1),
+        scrollHeight: sc.scrollHeight,
+        clientHeight: sc.clientHeight,
+        rootBottom: +root.getBoundingClientRect().bottom.toFixed(1),
+        tabbarTop: barRect ? +barRect.top.toFixed(1) : null,
+        lowestLeaf: lowest,
+        /** > 0 ⇒ 滚到底后最靠下的叶子文本仍被底栏压住（永久不可读的像素数） */
+        lowestLeafCoveredPx: lowest && barRect ? +(lowest.bottom - barRect.top).toFixed(1) : null,
+      }
+    }, tp.root)
+    await page.screenshot({ path: path.join(OUT_DIR, `tabbar-inset-${tp.name}.png`) })
+    tabbarInset.push({ page: tp.name, ...reading })
+  }
+
+  // ── ⑦ 坐席会话详情页：原生导航条 + 页面盒 + 输入区是否留在视口内（issue #6666 判据 5）──
+  await page.goto(`${BASE}${PREFIX}/#/pages/sessions/detail/index?id=probe-1`, { waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(2500)
+  await page.screenshot({ path: path.join(OUT_DIR, 'session-detail.png') })
+  const sessionDetail = await page.evaluate(() => {
+    const vis = (el) => {
+      const r = el.getBoundingClientRect()
+      return r.width > 0 && r.height > 0
+    }
+    const box = (sel) => {
+      const el = [...document.querySelectorAll(sel)].filter(vis).pop()
+      if (!el) return null
+      const r = el.getBoundingClientRect()
+      return { top: +r.top.toFixed(1), bottom: +r.bottom.toFixed(1), height: +r.height.toFixed(1) }
+    }
+    const detailPage = box('.detail-page')
+    const input = box('.detail-input')
+    const nav = box('#taro-navigation-bar, .taro-navigation-bar-show')
+    // 会话状态那一格（issue #6666 判据 2）：**类名与算出来的颜色**一起取 ——
+    // 类名写在单引号里 ⇒ 类名是字面量（`--${…}`）⇒ 三套配色不生效（颜色停在继承值）。
+    const statusEl = [...document.querySelectorAll('.detail-header__status')].filter(vis).pop()
+    return {
+      viewportHeight: window.innerHeight,
+      navbar: nav,
+      detailPage,
+      detailInput: input,
+      hasInput: !!input,
+      statusClass: statusEl ? statusEl.className : null,
+      statusColor: statusEl ? getComputedStyle(statusEl).color : null,
+      /** > 0 ⇒ 输入区底边落在视口之下（被原生导航条 / 键盘挤出去） */
+      inputBelowViewportPx: input ? +(input.bottom - window.innerHeight).toFixed(1) : null,
+    }
+  })
+
   await browser.close()
 
   const overlap =
@@ -405,6 +525,10 @@ async function main() {
     },
     todoTags: tags,
     dashboardBottomReach: bottom,
+    /** issue #6666 判据 1：内容溢出 tab 页「最靠下叶子文本 vs 底栏顶边」 */
+    tabbarInset,
+    /** issue #6666 判据 5：坐席会话详情页的视口内可见性 */
+    sessionDetail,
     orderDetail: orderDetail,
     inputBar: inputBar,
     tagWrapVerdict: tags.length === 0 ? 'UNDECIDABLE' : tags.some((t) => t.lineBoxes > 1 || t.lines > 1 || t.overflow) ? 'WRAPPED' : 'OK',

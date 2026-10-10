@@ -13,11 +13,13 @@ import {
   productionTodoTargetUrl,
   OPERATION_STATE_LABELS,
   thresholdSourceLabel,
-  type DashboardStats,
-  type PendingTask,
   type ProductionTodo,
   type ProductionTodoResult,
+  type DashboardStatsResult,
+  type PendingTasksResult,
 } from '../../../services/dashboardService'
+// 时间口径单一真值（issue #6666 判据 8）
+import { formatMessageTime } from '../../../utils/datetime'
 // 手机端菜单（issue #6570）：生产待办块的开关在**服务端**（`mobileSurfaces` 的 `production-todos`）
 import { useMobileMenu } from '../../../components/admin/useMobileMenu'
 // 商家面身份护栏（issue #6567）：纯工人设备打开本页 ⇒ 送回工人工作台
@@ -41,8 +43,8 @@ import './index.scss'
 export default function DashboardPage() {
   useMerchantSurfaceGuard()
   const { user } = useAuthStore()
-  const [stats, setStats] = useState<DashboardStats | null>(null)
-  const [tasks, setTasks] = useState<PendingTask[]>([])
+  const [statsResult, setStatsResult] = useState<DashboardStatsResult | null>(null)
+  const [tasksResult, setTasksResult] = useState<PendingTasksResult | null>(null)
   const [todoResult, setTodoResult] = useState<ProductionTodoResult | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -53,8 +55,8 @@ export default function DashboardPage() {
       getPendingTasks(),
       getProductionTodoOverview(),
     ])
-    setStats(s)
-    setTasks(t)
+    setStatsResult(s)
+    setTasksResult(t)
     setTodoResult(todo)
     setLoading(false)
   }, [])
@@ -91,7 +93,11 @@ export default function DashboardPage() {
     </View>
   )
 
-  const totalSalesYuan = stats ? formatYuan(stats.todaySales) : '--'
+  // 三态消费（issue #6666 判据 6）：`ok` 才拿数据；`forbidden` / `error` 各自有话说（不摆一排 `--`）
+  const stats = statsResult?.status === 'ok' ? statsResult.data : null
+  const tasks = tasksResult?.status === 'ok' ? tasksResult.data : []
+
+  const totalSalesYuan = stats ? formatYuan(stats.todaySales) : ''
 
   const renderLoading = () => (
     <View className='dashboard-loading'>
@@ -133,7 +139,7 @@ export default function DashboardPage() {
           ? '今天没有待处理'
           : '正在加载…'
 
-  if (loading && !stats) return renderLoading()
+  if (loading && !statsResult) return renderLoading()
 
   return (
     <>
@@ -221,6 +227,9 @@ export default function DashboardPage() {
         )}
 
         {/* ═══════════ 第二屏：经营数字 ═══════════ */}
+        {/* 三态（issue #6666 判据 6）：拿不到就说拿不到 —— 不摆一排 `--` 把「看不到」说成「没有」 */}
+        {statsResult?.status === 'ok' ? (
+        <>
         <View className='metric-grid'>
           <MetricCard
             label='今日销售额'
@@ -260,11 +269,38 @@ export default function DashboardPage() {
           <MetricCard label='待处理售后' value={String(stats?.totalTickets ?? '--')} />
           <MetricCard label='待发货' value={String(stats?.pendingShipOrders ?? '--')} />
         </View>
+        </>
+        ) : (
+          <View className='dashboard-section'>
+            <Text className='dashboard-section__title'>经营数据</Text>
+            <View className='dashboard-empty'>
+              <Text
+                data-testid={statsResult?.status === 'forbidden' ? 'dashboard-stats-forbidden' : 'dashboard-stats-error'}
+                onClick={statsResult?.status === 'error' ? load : undefined}
+              >
+                {statsResult?.status === 'forbidden'
+                  ? '无权限查看经营数据（需数据看板权限）'
+                  : '经营数据加载失败，点此重试'}
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* 经营待办（数字 → 一个动作） */}
         <View className='dashboard-section'>
           <Text className='dashboard-section__title'>待办事项</Text>
-          {tasks.length === 0 ? (
+          {tasksResult?.status !== 'ok' ? (
+            <View className='dashboard-empty'>
+              <Text
+                data-testid={tasksResult?.status === 'forbidden' ? 'dashboard-tasks-forbidden' : 'dashboard-tasks-error'}
+                onClick={tasksResult?.status === 'error' ? load : undefined}
+              >
+                {tasksResult?.status === 'forbidden'
+                  ? '无权限查看待办（需订单 / 售后权限）'
+                  : '待办加载失败，点此重试'}
+              </Text>
+            </View>
+          ) : tasks.length === 0 ? (
             <View className='dashboard-empty'>
               <Text>暂无待办，AI 正在处理中</Text>
             </View>
@@ -278,7 +314,7 @@ export default function DashboardPage() {
                 </View>
                 <View className='task-item__body'>
                   <Text className='task-item__title'>{task.title}</Text>
-                  <Text className='task-item__time'>{task.createdAt ? task.createdAt.slice(0, 16).replace('T', ' ') : ''}</Text>
+                  <Text className='task-item__time'>{formatMessageTime(task.createdAt)}</Text>
                 </View>
                 {task.priority === 'high' && (
                   <View className='task-item__urgent'>
