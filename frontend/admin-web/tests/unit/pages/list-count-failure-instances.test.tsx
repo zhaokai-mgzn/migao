@@ -389,7 +389,10 @@ describe('#6703 ⑥ /stock-ledger：流水读失败 ⇒ 「共 — 条」+ 真�
     const { container } = render(<StockLedgerPage />)
 
     const alert = await screen.findByTestId('stock-ledger-error')
-    expect(alert).toHaveTextContent('库存明细读取失败')
+    // 话术口径自 issue #6707 起**按状态分流**（本用例注入的是无状态码的通用失败 ⇒ 服务侧那一支）：
+    // 不再逐字锚「库存明细读取失败」，改锚「服务侧事实 + 不许把失败归因成权限」。
+    expect(alert).toHaveTextContent('库存明细暂时读不到')
+    expect(alert.textContent || '').not.toMatch(/没有[^。，；]*权限/)
     expect(container.textContent).not.toMatch(NO_FAKE_ZERO)
     expect(screen.queryByText('暂无库存流水')).toBeNull()
 

@@ -48,16 +48,49 @@ const HTTP_KIND = {
   408: '网络超时，请再按一次',
   425: '请求太频繁，请过几秒再按一次',
   429: '网络繁忙，请再按一次',
-  500: '服务端忙不过来，请过一会儿再按一次',
-  502: '服务端暂时联系不上，请过一会儿再按一次',
-  503: '服务端正在忙，请过一会儿再按一次',
-  504: '服务端响应超时，请再按一次',
+  500: '系统忙不过来，请过一会儿再按一次',
+  502: '系统暂时联系不上，请过一会儿再按一次',
+  503: '系统正在忙，请过一会儿再按一次',
+  504: '系统响应超时，请再按一次',
 }
 
 /** 传输层错误的屏上文案：先看服务端业务 message，再按状态码给一句可行动作。 */
 function transportMessage(status, serverMessage) {
   if (serverMessage) return serverMessage
   return HTTP_KIND[status] ?? '操作没成功（请再试一次；若反复如此请找管理员）'
+}
+
+/**
+ * **形状校验失败**（422 / `VALIDATION_ERROR`）的屏上文案 —— issue #6738 要求 2。
+ *
+ * <p>🔴 病灶（真机读数，2026-10-11 生产 `/api/worker/login` 实测）：`@Valid` 形状失败时，服务端的
+ * 顶层 `error.message` 是**写死的开发术语** `参数校验失败`（`GlobalExceptionHandler` 的
+ * `MethodArgumentNotValidException` / `ConstraintViolationException` 两个分支），而**真正可行动**的
+ * 逐字段理由在 `error.details[].message` 里（实测 `{"field":"pin","message":"PIN 不能为空"}`）。
+ * 前端改前只读顶层 message ⇒ 工人看到「参数校验失败」，**不知道该改哪一格**。</p>
+ *
+ * <p>取值顺序（每一档都有实测依据）：</p>
+ * <ol>
+ *   <li><b>`details[].message`</b> —— 逐字段、已经写给人看（`工号不能为空` / `PIN 不能为空`）。
+ *       有它就**一律用它**：这种响应的顶层 message **按构造**就是那句内部术语，
+ *       所以「有 details ⇒ 顶层那句无论写成什么都不会上屏」（判据钉的就是这个不变量，不是某一句话）。</li>
+ *   <li><b>服务端 `error.message`</b> —— 无 details 时它来自 `BusinessException`，
+ *       本身就有信息量且可行动（实测：「无法识别租户：请填写企业编码（向商家索取，例如 migao）」）。
+ *       🔴 反枚举口径**不经这里**：企业不存在/工号不存在/PIN 错走的是 `AUTH_FAILED`（401），
+ *       本函数不碰它 ⇒ 不泄露企业是否存在。</li>
+ *   <li><b>兜底</b> —— 两档都空时的可行动话（指到该核对的那几格）。</li>
+ * </ol>
+ *
+ * @param {object} error 响应体里的 `error`
+ * @returns {string} 屏上文案
+ */
+function shapeMessage(error) {
+  const fields = (Array.isArray(error?.details) ? error.details : [])
+    .map((d) => (typeof d?.message === 'string' ? d.message.trim() : ''))
+    .filter(Boolean)
+  if (fields.length) return [...new Set(fields)].join('；')
+  const serverMessage = typeof error?.message === 'string' ? error.message.trim() : ''
+  return serverMessage || '登录信息有缺项或格式不对：请核对企业编码（小写字母、数字、- 和 _）、工号与 PIN'
 }
 
 function readStore(storage) {
@@ -103,6 +136,8 @@ export function createApi(opts = {}) {
    * 统一请求 + 统一错误面。
    *
    * 🔴 401 ⇒ 抛 `SESSION_EXPIRED` 并**清本地**（不静默续期、不重试）。
+   * 🔴 **形状校验失败**（422 / `VALIDATION_ERROR`）走 {@link shapeMessage}（issue #6738）：
+   *    优先服务端逐字段理由，**绝不**把顶层那句内部术语「参数校验失败」端给工人。
    * 其余失败 ⇒ 带服务端 `error.message` 的普通 Error（页面直接显示给工人）。
    */
   async function request(path, { method = 'GET', body, extraHeaders } = {}) {
@@ -125,8 +160,11 @@ export function createApi(opts = {}) {
       throw err
     }
     if (!res.ok || payload?.success === false) {
-      const err = new Error(transportMessage(res.status, payload?.error?.message))
-      err.code = payload?.error?.code ?? 'REQUEST_FAILED'
+      const code = payload?.error?.code ?? 'REQUEST_FAILED'
+      // 形状校验失败（422 / VALIDATION_ERROR）**单独一条通道**：顶层那句开发术语不上屏（issue #6738）
+      const shape = code === 'VALIDATION_ERROR' || res.status === 422
+      const err = new Error(shape ? shapeMessage(payload?.error) : transportMessage(res.status, payload?.error?.message))
+      err.code = code
       err.status = res.status
       // 技术原文只进日志面（诊断/上报用），**不上屏**
       err.technical = payload?.error?.message ?? `HTTP ${res.status}`

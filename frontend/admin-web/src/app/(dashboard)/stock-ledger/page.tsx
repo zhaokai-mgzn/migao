@@ -58,6 +58,34 @@ import type { BatchRemaining, StockLedgerEntry } from '@/types'
  */
 const PAGE_SIZE = 20
 
+/**
+ * 读面失败的**归因话术**（issue #6707；与 #6702 的 `remnantReadErrorCopy` 同一范式）。
+ *
+ * 判据只有一条：**话术说的原因必须是真原因**。
+ * · `403` ⇒ 是权限（终态，给去处：找管理员开**本页**对应的读码 —— 本页两个读面
+ *   （`GET /api/admin/stock-ledger` / `GET /api/admin/batch-stock/batches`）的方法级读码
+ *   都是 `product:list`，对商家的可见名 = 菜单「商品管理」）；
+ * · 其余（服务未起 / 超时 / 5xx / 网络）⇒ 是**服务侧**，只说事实 + 下一步，并**明说不是权限问题**
+ *   —— 改前两处 `catch` 一律说「可能是当前岗位没有「商品管理」权限」，把 500 说成权限，
+ *   让商家去找管理员开一个**本来就有的**权限，真因被话术掩盖（同族实证：#6580 / #6702）。
+ *
+ * 同族既有范式 = `frontend/admin-web/src/app/(dashboard)/settings/page.tsx` 的 `calcReadErrorCopy`
+ * （issue #6580 真机验收后按状态分流）。类级元守卫 =
+ * `frontend/admin-web/tests/unit/read-failure-copy-attribution-guard.test.ts`。
+ *
+ * @param err 读接口抛出的错误（axios 风格 `response.status` 或裸 `status`）
+ * @param subject 出问题的读面名（上屏用：`库存明细` / `批次余量`）
+ */
+export function stockLedgerReadErrorCopy(err: unknown, subject = '库存明细'): string {
+  const status =
+    (err as { response?: { status?: number } })?.response?.status ??
+    (err as { status?: number })?.status
+  if (status === 403) {
+    return `你没有查看「${subject}」的权限（本页读码同「商品管理」）—— 请联系管理员开通「商品管理」查看权限后重试`
+  }
+  return `${subject}暂时读不到（读数服务暂时不可用，不是你的权限问题）—— 请稍后重试`
+}
+
 interface ProductOption {
   id: string
   name: string
@@ -113,11 +141,12 @@ export default function StockLedgerPage() {
       const data = res.data?.data
       setRows(data?.items ?? [])
       setTotal(Number(data?.total ?? 0))
-    } catch {
+    } catch (e) {
       setRows([])
       // 🔴 issue #6703：**不清 total** —— 清零会把「读不到」印成「共 0 条」；
       // 计数行改由 `error` 门控（印 `—`），与下面那处 `stock-ledger-error` 同源。
-      setError('库存明细读取失败（可能是当前岗位没有「商品管理」权限）—— 请联系管理员开权限后重试')
+      // 🔴 issue #6707：话术按**状态**分流（只有 `403` 才谈权限，且点名本页读码；其余只说服务侧事实）。
+      setError(stockLedgerReadErrorCopy(e, '库存明细'))
     }
     setLoading(false)
   }, [product, appliedRefNo, page])
@@ -134,9 +163,10 @@ export default function StockLedgerPage() {
     try {
       const res = await batchStockApi.batches({ productId: product.id })
       setBatches((res.data?.data ?? []) as BatchRemaining[])
-    } catch {
+    } catch (e) {
       setBatches([])
-      setBatchError('批次余量读取失败（可能是当前岗位没有「商品管理」权限）—— 请联系管理员开权限后重试')
+      // 🔴 issue #6707：与流水读面**同一范式**（本页两个读面同一读码 `product:list`）。
+      setBatchError(stockLedgerReadErrorCopy(e, '批次余量'))
     }
     setBatchLoading(false)
   }, [product])

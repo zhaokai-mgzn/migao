@@ -314,10 +314,13 @@ test('③′ 手改只改本次显示：取消一项 ⇒ 合计变了、规则�
 
   const html = renderCalc(edited)
   assert.match(html, /手改/)
-  assert.match(html, /规则值/, '规则值（服务端）必须同时显示 —— 手改只是显示层的取舍')
+  assert.match(html, /规则值/, '规则值（系统算的）必须同时显示 —— 手改只是显示层的取舍')
   assert.match(html, /2\.828/, '3.028 − 0.2（加高拼接被取消）')
   assert.equal(machineTotal(screen().positions[0], ['jiagao']), 2.828)
-  assert.match(html, /不落库、不留痕/)
+  // 2026-10-11（issue #6738）：改前这句是「不落库、不留痕」= **开发术语上屏**（被既有尺子 R1 判红）。
+  // 语义**一格不放宽**：仍要明说"只影响本屏显示、不会写进订单"。
+  assert.match(html, /只影响本屏显示/)
+  assert.match(html, /不会写进订单/)
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -481,7 +484,9 @@ test('⑥‴ 成功回执是服务端回放 ⇒ 明说「未重复计件」（�
   doc.click('[data-machine-report]')
   await once()
 
-  assert.match(doc.root.innerHTML, /服务端回放，未重复计件/)
+  // 2026-10-11（issue #6738）：改前是「服务端回放，未重复计件」= 开发术语上屏（尺子 R1 判红）。
+  // 语义不放宽：回放必须**明说未重复计件**（不能假装是新记的一笔）。
+  assert.match(doc.root.innerHTML, /未重复计件/)
 })
 
 test('⑥⁗ 幂等键跨刷新复用：同码 + 同工人 ⇒ 复用**同一把**键（跨刷新也是）', async () => {

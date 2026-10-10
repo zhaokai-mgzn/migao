@@ -126,6 +126,16 @@ describe('类级守卫：读面失败不得印零值 / 不得归因成权限（i
       .split('\n')
       .filter((l) => !l.trim().startsWith('*') && !l.trim().startsWith('//'))
     expect(codeLines.some((l) => l.includes('工艺配置'))).toBe(false)
+
+    // 同族第二处（issue #6707）：库存明细页的**活文件**同样零命中，且两个读面的分流接线逐字在位。
+    // （该页原先在 `LEDGER` 里，本单修好后**同批删除条目 + 基线降到 0** —— 见 ③ 的读数。）
+    const ledgerSource = fs.readFileSync(
+      path.join(ADMIN_WEB_ROOT, 'src/app/(dashboard)/stock-ledger/page.tsx'),
+      'utf8',
+    )
+    expect(classifySource('src/app/(dashboard)/stock-ledger/page.tsx', ledgerSource)).toEqual([])
+    expect(ledgerSource).toContain("setError(stockLedgerReadErrorCopy(e, '库存明细'))")
+    expect(ledgerSource).toContain("setBatchError(stockLedgerReadErrorCopy(e, '批次余量'))")
   })
 
   it('③ 台账只许缩短：条目数不得超过冻结基线，且每条仍须真命中其声明的形态', () => {
@@ -134,11 +144,13 @@ describe('类级守卫：读面失败不得印零值 / 不得归因成权限（i
   })
 
   it('④ 判别力自证：修前的逐字坏形态必红；修后形态与注释里的同形态不误伤', () => {
-    // 修前形态 ⇒ 命中 A（零值上屏）。🔴 **只命中 A**：B 形态的措辞判据**检不出**修前那句
-    //（「没有」与「权限」之间夹了「「工艺配置」」），放宽就会引入 2 处假红 —— 如实登记在
-    // 扫描器头部「B 形态对本单修前那句 500 文案检不出」；修前那句由**实例判据**逐字承担。
+    // 修前形态 ⇒ **A + B 都命中**（issue #6707 校准）：A = 零值上屏（`共 {data?.page?.total ?? 0} 块`）；
+    // B = 把 500 说成权限的 `setError('…没有「工艺配置」权限…')`。
+    // 🔴 校准前这里读到的是 `['A']`，而扫描器头部当时登记的理由是「B 的措辞判据检不出这句」
+    // —— **那个归因是错的**（实测：措辞判据本来就命中，真正看不见它的是 `ERROR_SET_RE` 对
+    // **朴素 `setError(`** 的假阴性，issue #6707 同批修掉，见该常量的注释）。
     const before = classifySource('fixture/before.tsx', PRE_FIX_SNIPPET)
-    expect(before.map((h) => h.form).sort()).toEqual(['A'])
+    expect(before.map((h) => h.form).sort()).toEqual(['A', 'B'])
 
     // 修后形态 ⇒ 零命中（`?? 0` 仍在，但它被 `error ? '—' :` 守着；文案不再提权限）
     expect(classifySource('fixture/after.tsx', POST_FIX_SNIPPET)).toEqual([])
@@ -152,6 +164,10 @@ describe('类级守卫：读面失败不得印零值 / 不得归因成权限（i
     // B 形态的判别力自证（用**同类更露骨的形态**：stock-ledger 的逐字写法）
     const stockForm = `setBatchError('批次余量读取失败（可能是当前岗位没有「商品管理」权限）—— 请联系管理员开权限后重试')`
     expect(classifySource('fixture/stock.tsx', stockForm).map((h) => h.form)).toEqual(['B'])
+    // 🔴 issue #6707：**朴素 `setError(` 曾经判据看不见**（假阴性，实测）—— 只把流水那处
+    // 抄到新页面不会有任何东西变红。加宽后两者都认：
+    const plainSetError = `setError('库存明细读取失败（可能是当前岗位没有「商品管理」权限）—— 请联系管理员开权限后重试')`
+    expect(classifySource('fixture/plain.tsx', plainSetError).map((h) => h.form)).toEqual(['B'])
     // …而按状态分流（同行有 `403`）不算命中
     const routed = `if (status === 403) { setError('你没有查看「余料台账」的权限 —— 请联系管理员开通后重试') }`
     expect(classifySource('fixture/routed.tsx', routed)).toEqual([])

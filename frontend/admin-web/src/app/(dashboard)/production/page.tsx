@@ -375,10 +375,12 @@ export default function ProductionBoardPage() {
                     <td className="px-4 py-4 whitespace-nowrap text-neutral-900" data-testid={`production-row-piecework-${po.id}`}>
                       {formatMoney(total)}
                     </td>
-                    {/* 操作（issue #6717）：右缘冻结。`bg-inherit` ⇒ 背景随 `<tr>`（`bg-white` + hover）。
+                    {/* 操作（issue #6717）：右缘冻结。issue #6729（回归修复）：`bg-inherit` 继承行底色，
+                        而本表行底色含**半透明** hover（`hover:bg-neutral-50/60`）⇒ 横滚时穿透；
+                        修法 = 用「行底色叠在卡片白底上」的等效不透明色 `bg-white`（alpha=1，观感不变）。
                         ⚠️ 本单元格内容是 `flex-wrap`（窄列宽时按钮会换到第二行）⇒ 冻结后**列宽会收窄到
                         按钮的 max-content**，不再把整表撑出容器；这正是「操作列不再需要横向滚动」的形态。 */}
-                    <td className="sticky right-0 z-10 border-l border-neutral-100 bg-inherit px-4 py-4 whitespace-nowrap">
+                    <td className="sticky right-0 z-10 border-l border-neutral-100 bg-white px-4 py-4 whitespace-nowrap">
                       <div className="flex flex-wrap items-center gap-2">
                         {/* 订单详情（订单详情已含加工单块：快照 + 状态流转 + 打印）。
                             issue #5913：文案由「查看」正名为「订单详情」—— 本行主键是**加工单**，

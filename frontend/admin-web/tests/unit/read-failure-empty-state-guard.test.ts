@@ -64,6 +64,15 @@ import {
   tableEmptySitesFromSource,
   tableEmptyStale,
   specifierForModule,
+  // ── 判据 ⑤（**运行期**：读失败后屏上不得出现任何「没有数据」断言，issue #6733）──
+  RUNTIME_READ_FAILURE_SURFACES,
+  RUNTIME_READ_FAILURE_LEDGER,
+  RUNTIME_READ_FAILURE_LEDGER_FLOOR,
+  RUNTIME_PENDING_AUDIT,
+  findEmptyDataAssertions,
+  runtimeGuardOffenders,
+  runtimeGuardStale,
+  unregisteredRuntimeSurfaces,
 } from '../../scripts/read-failure-empty-state-scan.mjs'
 
 const ADMIN_WEB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
@@ -424,5 +433,91 @@ describe('判据 ④：共享表格的 emptyText 必须接住失败读数（issu
     expect(tableEmptyStale(ADMIN_WEB_ROOT, ['src/components/products/ProductTable.tsx::不存在的组件'])).toEqual([
       'src/components/products/ProductTable.tsx::不存在的组件',
     ])
+  })
+})
+
+/**
+ * 判据 ⑤（issue #6733）：**运行期**「读失败后屏上不得出现任何『没有数据』断言」。
+ *
+ * 为什么必须有它 —— 判据 ④ 是**调用图**普查（只看渲染共享 `ui/Table` 的页面），而 `/orders` 用的是
+ * **自定义表**（`OrderTable` 手写 `<tbody>` 空态行）⇒ **调用图看不见**。这不是判据写错，是
+ * **手段的射程盲区**：静态手段能看见「谁渲染了共享组件」，看不见「谁自己手写了空态行」；
+ * 只有**渲染后读屏**（注入失败 → 渲染 → 断言屏上文本）才覆盖得了。
+ *
+ * 本节判的是**覆盖面与口径**（是否有那条运行期判据、是否用同一份文案口径）；
+ * **真的跑一次渲染断言**在 `tests/unit/pages/read-failure-no-empty-assertion-runtime.test.tsx`。
+ */
+describe('判据 ⑤：运行期「读失败后屏上不得有『没有数据』断言」（issue #6733）', () => {
+  it('⑩ 覆盖面未登记即红 + 台账只许缩短 + 运行期用例真的落地（真文件读数）', () => {
+    // 面自证：登记表非空、且票据点名的那个在里面（空集 = 判据在扫空气）
+    expect(Object.keys(RUNTIME_READ_FAILURE_SURFACES).length).toBeGreaterThan(0)
+    expect(Object.keys(RUNTIME_READ_FAILURE_SURFACES)).toContain('orders')
+    // 未登记即红
+    expect(unregisteredRuntimeSurfaces()).toEqual([])
+    // 登记的运行期用例必须真的落地：文件在 + 用**单一源口径** + 驱动该页的**读失败**
+    expect(runtimeGuardOffenders(ADMIN_WEB_ROOT)).toEqual([])
+    // 台账只许缩短 + 无僵尸条目
+    expect(RUNTIME_READ_FAILURE_LEDGER.length).toBeLessThanOrEqual(RUNTIME_READ_FAILURE_LEDGER_FLOOR)
+    expect(runtimeGuardStale(ADMIN_WEB_ROOT)).toEqual([])
+    // 已普查到、本单不动的形态要**显式登记为待判**（不许静默放行）
+    expect(Object.keys(RUNTIME_PENDING_AUDIT).length).toBeGreaterThan(0)
+
+    // 该用例文件**真的**做了运行期断言（不是只登记了一个空壳）
+    const runtimeTest = read(RUNTIME_READ_FAILURE_SURFACES.orders.testFile)
+    expect(runtimeTest).toContain('findEmptyDataAssertions')
+    expect(runtimeTest).toContain('orders-load-error')
+    expect(runtimeTest).toContain('render(')
+    // 且它驱动的是**页面**（不是只渲染组件就收工）
+    expect(runtimeTest).toContain('@/app/(dashboard)/orders/page')
+  })
+
+  it('⑪ 判别力自证（内存变异）：用例壳 / 缺口径 / 缺失败驱动 / 台账僵尸 / 假绿窗口 —— 各自判红', () => {
+    const surf = RUNTIME_READ_FAILURE_SURFACES.orders
+    const good = `import { findEmptyDataAssertions } from '...'\nrender(<OrdersPage />)\nexpect(findEmptyDataAssertions(document.body.textContent)).toEqual([])\n// ${surf.failureTestId}`
+    const readWith = (text: string | null) => () => {
+      if (text === null) throw new Error('ENOENT')
+      return text
+    }
+
+    // 对照读数：好用例 ⇒ 不报（否则下面的「红」分不清是注入还是判据自己坏）
+    expect(runtimeGuardOffenders(ADMIN_WEB_ROOT, RUNTIME_READ_FAILURE_SURFACES, [], readWith(good))).toEqual([])
+
+    // ① 用例文件不存在 ⇒ 红
+    const missing = runtimeGuardOffenders(ADMIN_WEB_ROOT, RUNTIME_READ_FAILURE_SURFACES, [], readWith(null))
+    expect(missing).toHaveLength(1)
+    expect(missing[0].reason).toContain('不存在')
+    // ② 用例没用单一源口径（自己抄一份正则 ⇒ 会漂的第二份真值）⇒ 红
+    const noMarker = good.split('findEmptyDataAssertions').join('自己抄的断言')
+    const markerOff = runtimeGuardOffenders(ADMIN_WEB_ROOT, RUNTIME_READ_FAILURE_SURFACES, [], readWith(noMarker))
+    expect(markerOff.map((o) => o.reason).join('|')).toContain('单一源口径')
+    // ③ 用例没有驱动该页的读失败（渲染了但没注入失败 ⇒ 断言恒真）⇒ 红
+    const noFailure = good.split(surf.failureTestId).join('没注入失败')
+    const failOff = runtimeGuardOffenders(ADMIN_WEB_ROOT, RUNTIME_READ_FAILURE_SURFACES, [], readWith(noFailure))
+    expect(failOff.map((o) => o.reason).join('|')).toContain('读失败')
+    // ④ 台账僵尸（登记了但不在登记表里）⇒ 红；台账只许缩短
+    expect(runtimeGuardStale(ADMIN_WEB_ROOT, RUNTIME_READ_FAILURE_SURFACES, ['不存在的页面'])).toEqual(['不存在的页面'])
+    // ⑤ 覆盖面未登记（票据点名了、三张表都没有）⇒ 红
+    expect(
+      unregisteredRuntimeSurfaces({} as Record<string, never>, [], {} as Record<string, never>),
+    ).toEqual([{ key: 'orders', issue: '#6733', required: true }])
+
+    // ⑥ 🔴 **口径自证（本单实测踩到的假绿）**：`document.body.textContent` 把同屏不同元素连成一串，
+    //    失败横幅那句「…不可信。请检查网络后重试。」与表体空态行**只隔几十个字符** ——
+    //    若按「窗口内含失败文案就不算」排除，**真缺陷会被当场漏掉**（判据恒绿）。
+    const preFixDom = '订单加载失败 —— 没读到数据，下面的条数与列表都不可信。请检查网络后重试。重试'
+      + '采购商品采购明细累计金额(元)实收款(元)收货人信息下单时间制单人到货日备注操作暂无数据共 — 条‹1›'
+    const hits = findEmptyDataAssertions(preFixDom)
+    expect(hits.length).toBeGreaterThan(0)
+    expect(hits[0].text).toContain('暂无数据')
+    // 反向：失败文案本身**不算**空态断言（正则层就不命中，不靠窗口）
+    expect(findEmptyDataAssertions('订单加载失败 —— 没读到数据，下面的条数与列表都不可信。')).toEqual([])
+    expect(findEmptyDataAssertions('商品加载失败 —— 不是没有商品，是没读到。请检查网络后重试')).toEqual([])
+    // 行内字段占位不算（`暂无消息` 一族）；真空态断言必命中，且**不绑死「暂无数据」四个字**
+    expect(findEmptyDataAssertions('暂无消息')).toEqual([])
+    expect(findEmptyDataAssertions('暂无数据').length).toBe(1)
+    expect(findEmptyDataAssertions('暂无订单').length).toBe(1)
+    expect(findEmptyDataAssertions('还没有订单记录').length).toBe(1)
+    // 修后形态：空串空态 + 失败横幅同屏 ⇒ 不命中（这正是页面级修法要达到的读数）
+    expect(findEmptyDataAssertions('订单加载失败 —— 没读到数据，下面的条数与列表都不可信。重试共 — 条‹1›')).toEqual([])
   })
 })

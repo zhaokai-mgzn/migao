@@ -104,3 +104,22 @@ export function enterpriseCodeFromLocation(href) {
   const q = url.searchParams.get('tenant_code')
   return q && TENANT_CODE_PATTERN.test(q) ? q : null
 }
+
+/**
+ * 企业编码**归一**（issue #6738）：提交前统一转小写 + 去首尾空白。
+ *
+ * <p>🔴 <b>不重定义格式</b>：字符集与长度仍由服务端 `LoginIdentifiers.TENANT_CODE_PATTERN`
+ * （本文件的 {@link TENANT_CODE_PATTERN} 是同形镜像）唯一裁定 —— 本函数只处理「用户把屏上的编码
+ * 抄成大写 / 多打了空格」这一种手误，`-` 与 `_` **原样保留**，不做替换、不做补全。</p>
+ *
+ * <p>⚠️ 现场读数（2026-10-11，生产 `/api/worker/login` 实测）：大写企业编码**不会**被判格式错 ——
+ * 服务端 `WorkerTenantResolver.resolve` 先过 `LoginIdentifiers.normalize()` 再解析，
+ * 所以「大写 ⇒ 422」**不成立**（实测返回的是反枚举 401）。本归一的价值 = **前后端一致**：
+ * 屏上填什么、请求里就是什么（对账/日志不再出现大小写两副面孔）。</p>
+ *
+ * @param {*} value 输入框的值（可能是 null / undefined）
+ * @returns {string} 归一小写后的编码；空 / 空白 / 非字符串 ⇒ `''`（照旧原样提交，由服务端判）
+ */
+export function normalizeEnterpriseCode(value) {
+  return String(value ?? '').trim().toLowerCase()
+}

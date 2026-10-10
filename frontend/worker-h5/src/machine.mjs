@@ -315,7 +315,7 @@ export function reportNotice(receipt) {
   const next = receipt.nextOperation
   const nextLabel = next ? operationDisplayName(next) : null
   const tail = nextLabel ? `下一道 = ${nextLabel}` : (receipt.setCompleted ? '本套工序都已被领走' : '本套已无待做工序')
-  return `已报工 · ${tail}${receipt.replayed === true ? '（服务端回放，未重复计件）' : ''}`
+  return `已报工 · ${tail}${receipt.replayed === true ? '（系统按同一次提交处理，未重复计件）' : ''}`
 }
 
 /**
@@ -462,7 +462,7 @@ export function renderCalc(state) {
       <nav class="wh5-machine__tabs">${positionTabs(state)}</nav>
       <div class="wh5-machine__body">
         <div class="wh5-machine__col">
-          <h2>命中项（服务端预勾，可手改本次显示）</h2>
+          <h2>命中项（系统预勾，可手改本次显示）</h2>
           <div class="wh5-machine__hits">${hitList || '<p class="wh5-machine__empty">本部位没有任何命中的增量项</p>'}</div>
           ${unresolved ? `<h2>未配置取值（标黄：不计入）</h2><ul class="wh5-machine__warns">${unresolved}</ul>` : ''}
         </div>
@@ -470,10 +470,10 @@ export function renderCalc(state) {
           <dl class="wh5-machine__sum">
             <div><dt>成品高</dt><dd>${esc(fmtNumber(position?.base, digits))}</dd></div>
             <div><dt>本次合计${edited ? '（手改）' : ''}</dt><dd>${esc(fmtNumber(total, digits))}</dd></div>
-            <div><dt>规则值（服务端）</dt><dd>${esc(fmtNumber(serverValue, digits))}</dd></div>
+            <div><dt>规则值（系统）</dt><dd>${esc(fmtNumber(serverValue, digits))}</dd></div>
             <div><dt>取整</dt><dd>${esc(dataOr(position?.rounding?.mode))} · ${esc(dataOr(digits))} 位</dd></div>
           </dl>
-          ${edited ? '<p class="wh5-machine__edited">本次手改只影响本屏显示：不落库、不留痕，刷新即回到规则值</p>' : ''}
+          ${edited ? '<p class="wh5-machine__edited">本次手改只影响本屏显示：不会写进订单，刷新即回到规则值</p>' : ''}
           ${reportBlock(state, { value: total, digits, missingNote: missingText(missing) })}
         </div>
       </div>

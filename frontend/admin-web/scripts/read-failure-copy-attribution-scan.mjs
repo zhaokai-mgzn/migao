@@ -34,16 +34,21 @@
  * - **B 形态 = 非 403 的失败被归因成权限**：一行里有**权限因果措辞**（「(没有|无|缺少|不足|未获|不具备)…
  *   权限」/「权限不足」/「未授权」/「没有权限」）且这一行**不读状态码**
  *   （`status` / `403` / `code` / `forbidden` 一个都没有）。
- *   典型形态：`setError('批次余量读取失败（可能是当前岗位没有「商品管理」权限）—— 请联系管理员开权限后重试')`
- *   （该页见 `LEDGER`）。修后形态（两条分开）：`if (status === 403) { setError('…没有「生产管理」…权限…') }`
+ *   典型形态：`setError('库存明细读取失败（可能是当前岗位没有「商品管理」权限）—— 请联系管理员开权限后重试')`
+ *   （该页原先见 `LEDGER`，issue #6707 修好后条目已删、基线归 0）。
+ *   修后形态（两条分开）：`if (status === 403) { setError('…没有「生产管理」…权限…') }`
  *   这一行含 `403` ⇒ 不红；服务侧那条 `setError('余料台账暂时读不到（读数服务暂时不可用）—— 请稍后重试')`
  *   无权限因果措辞 ⇒ 不红。
  *
- * 🔴 **B 形态对本单修前那句 500 文案检不出**（实测，如实登记）：`可能是当前岗位没有「工艺配置」权限`
- * 里「没有」与「权限」之间夹了「「工艺配置」」⇒ 要检它得放宽到「出现『权限』二字」（第一版就是那样，
- * 代价 = 2 处假红，见 `PERMISSION_CAUSE_RE` 的注释）。⇒ **修前那句的守卫靠实例判据**
- * （`tests/unit/pages/production-remnants-read-failure.test.tsx` ② 逐字锚在用户可见面上），
- * B 形态只作**类级补充**（覆盖更露骨的「没有权限」式归因，如 `stock-ledger`）。
+ * 🔴 **2026-10-11（issue #6707）校准一处错误的登记**：本条原先写着「B 形态对本单修前那句
+ * `可能是当前岗位没有「工艺配置」权限` 检不出（因为『没有』与『权限』之间夹了『「工艺配置」』）」——
+ * **那个归因是错的**。实测：措辞判据 `PERMISSION_CAUSE_RE`（`[^。，；]*?` 允许中间夹字）**本来就命中**
+ * 这句；真正看不见它的是 `ERROR_SET_RE` 对**朴素 `setError(` 的假阴性**（详见该常量注释）。
+ * 修掉假阴性后，B 形态**同时**覆盖 #6702 与 #6707 两处修前文案（判别力自证 =
+ * `tests/unit/read-failure-copy-attribution-guard.test.ts` ④，读数 `['A','B']`）。
+ * 实例判据（`tests/unit/pages/production-remnants-read-failure.test.tsx` ②、
+ * `tests/unit/pages/stock-ledger-read-failure-attribution.test.tsx` ①③）仍逐字锚在**用户可见面**上 ——
+ * 类级判据与实例判据各自独立红，谁也替代不了谁。
  *
  * ## 两级判据（缺一不可）
  *
@@ -110,8 +115,20 @@ const FAILURE_GUARD_RE = /(!\s*(error|err|failed|loadError|readError)\b)|(\b(err
 const PERMISSION_CAUSE_RE = /((没有|无|缺少|不足|未获|不具备)[^。，；]*?权限)|(权限不足)|(未授权)|(没有权限)/
 /** B 形态：这一行读了状态码 / 权限码（读到了就不算「一律归因成权限」） */
 const STATUS_READ_RE = /(\bstatus\b|\b403\b|\bcode\b|forbidden|PASSWORD_CHANGE_REQUIRED)/i
-/** B 形态：只认**错误话术**（避免把「为什么不渲染：不持码不进入」这类注释/文案误判） */
-const ERROR_SET_RE = /(set[A-Z]\w*(Error|Err|Msg|Message|Hint|Fail\w*)\s*\(|catch\s*\(|catch\s*\{|toast\.error\s*\()/
+/**
+ * B 形态：只认**错误话术**（避免把「为什么不渲染：不持码不进入」这类注释/文案误判）。
+ *
+ * 🔴 **2026-10-11（issue #6707）修掉一个实测到的假阴性**：原式只认 `set[A-Z]\w*(Error|…)`
+ * —— 它对 `setBatchError(` 命中，对**朴素 `setError(` 不命中**（`set` 后紧跟的 `Error`
+ * 没有可被 `[A-Z]\w*` 再吃掉的驼峰前缀，回溯后匹配不上）。
+ * 实证（`git show HEAD:frontend/admin-web/src/app/(dashboard)/stock-ledger/page.tsx`
+ * 喂 `classifySource`）：该页两处同形态 `catch` 里**只有批次那处被判出**（第 139 行），
+ * 流水那处（`setError('库存明细读取失败（可能是当前岗位没有「商品管理」权限）…')`）**判据看不见**
+ * ⇒ 若有人只把流水那行抄到新页面，**不会有任何东西变红**（这正是「只修一处 = 没修」的形态）。
+ * 加宽后 `setError(` 也认；**加宽当日在 `(dashboard)/**` 全量复算：新增命中 0 处**
+ * （判据 = 本文件 CLI，改前/改后读数见 PR body）⇒ 纯强度提升，不带出新的待修项。
+ */
+const ERROR_SET_RE = /(set[A-Z]\w*(Error|Err|Msg|Message|Hint|Fail\w*)\s*\(|setError\s*\(|catch\s*\(|catch\s*\{|toast\.error\s*\()/
 
 /**
  * 单文件判据（纯函数：守卫的判别力自证直接喂文本进来）。
@@ -173,25 +190,24 @@ export function ledgerKey(site) {
  * 台账（**只许缩短**）：命中而**本包不修**的条目，逐条给理由。
  * 新增任何条目 ⇒ 「台账只许缩短」判据红 ⇒ 必须先在 PR body 说明为什么。
  *
- * ⚠️ 现有 1 条是**如实记账**（**不收编成「已修」**）：`stock-ledger/page.tsx` 两处 `catch`
- * 与 issue #6702 的修前形态**同族**（一律说「可能是当前岗位没有「商品管理」权限」，不提状态），
- * 而它的写面**不在本包**（issue #6702 的边界 = 只改 `production/remnants`）
- * ⇒ 已开跟踪单 **#6707**，登记待另包修。**归零判据**：该页按状态分流后**必须同批删掉这一条**
- * （不删 ⇒ `staleLedger` 判红，逼着删干净）。
+ * 🔴 **2026-10-11（issue #6707）归零**：原先唯一一条
+ * `src/app/(dashboard)/stock-ledger/page.tsx::B`（两处 `catch` 一律说「可能是当前岗位没有
+ * 「商品管理」权限」，不提状态）**已按状态分流修好** ⇒ 同批删条目 + **把基线降到 0**：
+ * 该页现在命中 0 处（`403` 才谈权限，其余只说服务侧事实 + 下一步），留下条目就成了僵尸
+ * （`staleLedger` 判红），留着虚高的基线则等于给下一个同类留了免检额度（「只许缩短」被绕过）。
+ * 该页已转入 `POSITIVE_ANCHORS` 做**正向核**（锚被拆 ⇒ 当场红）。
  */
-export const LEDGER = ['src/app/(dashboard)/stock-ledger/page.tsx::B']
+export const LEDGER = []
 
 /**
  * 每条台账的**理由**（与 `LEDGER` 一一对应；守卫核「键 ⇄ 理由」双向都在）。
  * 形态 = `<仓库相对路径>::<形态>`（**不写行号**：活跃文件的裸行号几分钟就失效）。
+ * 台账归零 ⇒ 本表同批归零（守卫核双向，留孤儿理由也会红）。
  */
-export const LEDGER_REASONS = /** @type {Record<string, string>} */ ({
-  'src/app/(dashboard)/stock-ledger/page.tsx::B':
-    '库存明细 / 批次余量两处 catch 一律说「可能是当前岗位没有「商品管理」权限」—— 与 issue #6702 修前形态同族；写面不在本包（只改 production/remnants），已开跟踪单 #6707，登记待另包修',
-})
+export const LEDGER_REASONS = /** @type {Record<string, string>} */ ({})
 
-/** 台账冻结基线（只许缩短；`LEDGER.length > LEDGER_FLOOR` ⇒ 红） */
-export const LEDGER_FLOOR = 1
+/** 台账冻结基线（只许缩短；`LEDGER.length > LEDGER_FLOOR` ⇒ 红）。#6707 起 = 0 */
+export const LEDGER_FLOOR = 0
 
 /**
  * **正向核**：本包已改对的页面 ⇒ 必须逐字含这些锚（删掉 ⇒ 当场红）。
@@ -207,6 +223,25 @@ export const POSITIVE_ANCHORS = [
       'remnantReadErrorCopy',
       // 计数行**逐字**锚（含失败态三元）：修前是 `共 {data?.page?.total ?? 0} 块`
       '<span className="text-xs text-neutral-500">共 {error ? \'—\' : (data?.page?.total ?? 0)} 块</span>',    ],
+  },
+  {
+    name: '库存明细 / 批次余量读失败（issue #6707）',
+    file: 'src/app/(dashboard)/stock-ledger/page.tsx',
+    anchors: [
+      // 两个读面各自的**常驻失败锚点**（⚠️ 流水那处走共享件 `ListLoadError` 的 `testId` prop，
+      // 页面源码里**没有** `data-testid=` 字样 —— 逐字锚必须是 prop 形态，否则是假红）
+      'testId="stock-ledger-error"',
+      'data-testid="batch-error"',
+      // **按状态分流**的判据函数 + 两个读面各自的调用点（谁把分流换回硬编码文案 ⇒ 当场红）
+      'stockLedgerReadErrorCopy',
+      "setError(stockLedgerReadErrorCopy(e, '库存明细'))",
+      "setBatchError(stockLedgerReadErrorCopy(e, '批次余量'))",
+      'onRetry={() => void load()}',
+      // 计数行**逐字**锚（含失败态三元）：读不到 ⇒ 印 `—`，不许印「共 0 条」（issue #6703 口径）
+      '<span data-testid="ledger-total">共 {error ? \'—\' : total} 条</span>',
+      // 空态行的**失败守卫**：失败时不许说「暂无库存流水」（读不到 ≠ 没有）
+      '{!loading && rows.length === 0 && !error && (',
+    ],
   },
 ]
 

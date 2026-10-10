@@ -37,14 +37,17 @@
  *   - **catch 里赋一个「读不到」的哨兵值**（`return null` / `setX(undefined)` 之外的显式失败态）
  *     —— 那是**正确**形态，不该判红。
  *
- * ## 本文件的**四条**判据（各自独立红、各自独立台账，互不收编）
+ * ## 本文件的**五条**判据（各自独立红、各自独立台账，互不收编）
  *
  * 1. **读失败被吞**（`swallowSites` + `LEDGER`，issue #6663）；
  * 2. **同一次读失败多处信号**（`duplicateSignalSites` + `DUP_LEDGER`，issue #6669）；
  * 3. **读面失败 ⇄ 空态同屏**（`emptyStateSites` + `EMPTY_STATE_LEDGER` + `READ_SURFACES`，issue #6713/#6714）；
  * 4. **渲染共享 `ui/Table` 且带读失败面的页面必须显式传 `emptyText`**
  *    （`tableEmptySites` + `TABLE_EMPTY_LEDGER`，issue #6728）——见本文件下部该节的「与
- *    `count-row-derived-scan.mjs` 的边界」。
+ *    `count-row-derived-scan.mjs` 的边界」；
+ * 5. **运行期**「读失败后屏上不得出现任何『没有数据』断言」（`findEmptyDataAssertions` +
+ *    `RUNTIME_READ_FAILURE_SURFACES`，issue #6733）——判据 ④ 的**射程盲区**收口：
+ *    判据 ④ 是调用图（只看得见**渲染共享表**的页面），**自定义表 / 自有空态行**要渲染后读屏才判得了。
  *
  * ## 两级判据（缺一不可）
  *
@@ -1207,6 +1210,171 @@ export function tableEmptyStale(root, ledger = TABLE_EMPTY_LEDGER, surfaces = RE
   return stale
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// 第五条判据：**运行期**「读失败后屏上不得出现任何『没有数据』断言」（issue #6733）
+//
+// ## 为什么静态 / 调用图判据不够（**射程盲区** —— 本单最值得固化的点）
+//
+// 判据 ④ 是**调用图**普查：从「带读失败面的页面」出发，沿本地组件闭包找**渲染共享 `ui/Table`** 的调用点。
+// ⇒ 它天然只覆盖**用共享表**的页面（`/employees` `/products` `/customers`）。而 `/orders` 用的是
+// **自定义表**（`frontend/admin-web/src/components/orders/OrderTable.tsx` 手写 `<tbody>` 空态行）
+// ⇒ **调用图看不见这种形态**。这不是判据写错，是**手段的射程盲区**。
+// 同类盲区还有：日志 / 看板类页面里的自有空态行、手写在 `<tbody>` 里的「暂无…」行。
+//
+// ⇒ 覆盖它只能靠**渲染后读屏**：注入读面失败 → 渲染页面 → 断言**屏上文本里不出现任何
+//   「没有数据」断言**，**不管那张表是不是共享组件**。本条是那件事的**单一源**：
+//   ① 文案口径 = `findEmptyDataAssertions()`（运行期用例 import 它，不自己写第二份正则）；
+//   ② 覆盖面 = `RUNTIME_READ_FAILURE_SURFACES` 登记表（**未登记即红**、台账**只许缩短**）；
+//   ③ 判别力自证 = 元守卫在**内存**里喂坏形态（台账僵尸 / 用例文件丢失 / 用例没用单一源口径 /
+//      屏上文本含空态断言）⇒ 各自判红。
+//
+// ## 边界（照实登记，§19.1）
+//
+// - **只判文本**：判得了「屏上有没有『没有数据』这句话」，判不了「失败面够不够显眼」（§15.7 读图面）；
+// - **列表级与行内占位在纯文本上不可分**：`OrderTable` 在「有行但该行没有明细」时也印「暂无数据」
+//   （那是**行内**占位，不是"读不到"）⇒ 本判据的实例用例钉的是**首屏读失败**（此时列表必为空、
+//   不会有行）这一态；存量行场景的判别由各自的静态判据承担。**这是有意取舍，不是漏网**；
+// - **不跑真机**：jsdom 渲染 + mock 读接口失败（真机读数由集成侧复跑）。
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 一段**渲染出来的屏上文本**里有没有「没有数据」断言（运行期口径的**单一源**）。
+ *
+ * 复用判据 ③ 的空态文案口径（`EMPTY_TEXT_RE`）作为**触发**，并把短语**补全**（`暂无` ⇒ `暂无数据` /
+ * `暂无消息`），再按行内占位口径排除。
+ *
+ * 🔴 **为什么不做「窗口内含失败文案就不算」的排除**（实测踩过）：`document.body.textContent` 把同屏
+ * 不同元素**连成一串**，失败横幅那句「…不可信。请检查网络后重试。」与表体空态行只隔几十个字符
+ * ⇒ 按 ±N 字符窗口排除会把**真缺陷（失败面 + 空态同框）当场漏掉**（判据变成恒绿）。
+ * 而失败文案**本来就不会**命中 `EMPTY_TEXT_RE`（「加载失败 / 没读到数据 / 不是没有商品」都不含
+ * `暂无` / `没有匹配的` / `还没有…(记录|数据|内容)`）⇒ 排除在**正则层**就完成了，不需要窗口。
+ *
+ * @param {string} renderedText 屏上文本（`document.body.textContent` 一类）
+ * @returns {{text: string, index: number, context: string}[]} 命中的断言（空 = 通过）
+ */
+export function findEmptyDataAssertions(renderedText) {
+  const text = String(renderedText || '')
+  const re = new RegExp(EMPTY_TEXT_RE.source, 'g')
+  const out = []
+  let m
+  while ((m = re.exec(text)) !== null) {
+    // 取命中处起 12 个字符的窗口：既够判「是列表体断言还是行内字段占位」（`暂无消息` 一族），
+    // 也让报出来的读数**自带上下文**（`暂无数据共 — 条` 这种同屏打架一眼可见）。
+    const window12 = text.slice(m.index, m.index + 12)
+    re.lastIndex = m.index + 1 // 逐字符推进：短语重叠时也不漏
+    if (INLINE_PLACEHOLDER_RE.test(window12)) continue
+    out.push({ text: window12.trim(), index: m.index, context: text.slice(Math.max(0, m.index - 30), m.index + 42).trim() })
+  }
+  return out
+}
+
+/**
+ * **运行期判据登记表**（单一源）：每个「必须有『读失败后屏上无空态断言』运行期用例」的页面一条。
+ *
+ * 键 = 可读名；机器核的对象 = `pageFile`（被渲染的页面）/ `testFile`（运行期用例）/
+ * `failureTestId`（用例必须驱动该页的**读失败**）/ `testMarker`（用例必须用 `findEmptyDataAssertions`
+ * 这一份口径，不许自己抄正则）。缺一即红并**具名**报缺哪条。
+ */
+export const RUNTIME_READ_FAILURE_SURFACES = {
+  orders: {
+    issue: '#6733',
+    // 本单的形态：**自定义表**（`OrderTable` 手写 `<tbody>` 空态行）⇒ 判据 ④ 的调用图看不见它
+    pageFile: 'src/app/(dashboard)/orders/page.tsx',
+    testFile: 'tests/unit/pages/read-failure-no-empty-assertion-runtime.test.tsx',
+    failureTestId: 'orders-load-error',
+    failureKey: 'loadError',
+    testMarker: 'findEmptyDataAssertions',
+  },
+}
+
+/** 票据点名的运行期覆盖面（**未登记即红**）：必须在 `RUNTIME_READ_FAILURE_SURFACES` / 台账 / 待判表之一 */
+export const REQUIRED_RUNTIME_SURFACES = [{ key: 'orders', issue: '#6733', required: true }]
+
+/**
+ * 豁免台账（**只许缩短**）：登记「已确认需要运行期判据、但用例还没落地」的页面。
+ * 键 = `RUNTIME_READ_FAILURE_SURFACES` 的键。**目标形态 = 空数组**。
+ */
+export const RUNTIME_READ_FAILURE_LEDGER = []
+
+/** 台账冻结基线（**只许缩短**） */
+export const RUNTIME_READ_FAILURE_LEDGER_FLOOR = 0
+
+/**
+ * **已普查到、本单不动**（同形态但未登记为必须）：如实登记，**不静默放行**。
+ * 每条给 `observed` + `evidence`（为什么现在不登记 / 归谁）。
+ */
+export const RUNTIME_PENDING_AUDIT = {
+  'log-board-own-empty-rows': {
+    observed: '日志 / 看板类页面里手写的 `<tbody>` 空态行（调用图普查同样看不见）',
+    evidence:
+      '集成侧 35 路由的运行期普查只点名了 `/orders`；其余路由**未逐页取证** ⇒ 登记为「未分类 / 待普查」，'
+      + '既不判红也不放行（同 `PENDING_AUDIT` 的既有口径）。归零判据 = 下一轮运行期普查逐路由取读数。',
+  },
+}
+
+/**
+ * 判据 5：票据点名的运行期覆盖面没登记的（**未登记即红**）。
+ *
+ * 三个参数都可注入（守卫用**内存里的空表**做自证：三张表都空 ⇒ 必须报出未登记项）。
+ *
+ * @param {Record<string, any>} [surfaces]
+ * @param {string[]} [ledger]
+ * @param {Record<string, any>} [pending]
+ */
+export function unregisteredRuntimeSurfaces(
+  surfaces = RUNTIME_READ_FAILURE_SURFACES,
+  ledger = RUNTIME_READ_FAILURE_LEDGER,
+  pending = RUNTIME_PENDING_AUDIT,
+) {
+  const known = new Set([...Object.keys(surfaces), ...ledger, ...Object.keys(pending)])
+  return REQUIRED_RUNTIME_SURFACES.filter((x) => x.required && !known.has(x.key))
+}
+
+/**
+ * 判据 5 的判红面：登记表中的每条运行期判据**必须真的落地**（用例文件在、用单一源口径、驱动该页读失败）。
+ *
+ * `readFile` 可注入（相对 `root`）⇒ 守卫用**内存里的假用例文本**做判别力自证，不必碰真文件。
+ *
+ * @param {string} root
+ * @param {Record<string, any>} [surfaces]
+ * @param {string[]} [ledger]
+ * @param {(rel: string) => string} [readFile]
+ */
+export function runtimeGuardOffenders(
+  root,
+  surfaces = RUNTIME_READ_FAILURE_SURFACES,
+  ledger = RUNTIME_READ_FAILURE_LEDGER,
+  readFile = (rel) => readFileSync(join(root, rel), 'utf8'),
+) {
+  const out = []
+  for (const [key, surf] of Object.entries(surfaces)) {
+    if (ledger.includes(key)) continue
+    let test = null
+    try {
+      test = readFile(surf.testFile)
+    } catch {
+      out.push({ key, file: surf.testFile, reason: `运行期判据文件不存在（${surf.testFile}）` })
+      continue
+    }
+    if (!test.includes(surf.testMarker)) {
+      out.push({
+        key,
+        file: surf.testFile,
+        reason: `没有用单一源口径 \`${surf.testMarker}\`（自己抄一份正则 = 会漂的第二份真值）`,
+      })
+    }
+    if (!test.includes(surf.failureTestId)) {
+      out.push({ key, file: surf.testFile, reason: `没有驱动该页的读失败（缺 \`${surf.failureTestId}\`）` })
+    }
+  }
+  return out
+}
+
+/** 判据 5 的**僵尸条目**（登记了但已不在登记表里 ⇒ 必须删；台账只许缩短） */
+export function runtimeGuardStale(root, surfaces = RUNTIME_READ_FAILURE_SURFACES, ledger = RUNTIME_READ_FAILURE_LEDGER) {
+  return ledger.filter((k) => !(k in surfaces))
+}
+
 const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop())
 if (isMain) {
   const root = process.env.MIGAO_SCAN_ROOT || join(process.cwd())
@@ -1282,13 +1450,40 @@ if (isMain) {
       : '  ✅ 登记读面的共享表格都已显式把失败读数接进 emptyText、台账未超基线',
   )
 
+  // ── 第五条判据：运行期「读失败后屏上不得出现任何"没有数据"断言」（issue #6733） ──
+  const runtimeUnregistered = unregisteredRuntimeSurfaces()
+  const runtimeBad = runtimeGuardOffenders(root)
+  const runtimeStale = runtimeGuardStale(root)
+  console.log(
+    `\n运行期覆盖面：登记 ${Object.keys(RUNTIME_READ_FAILURE_SURFACES).length} 个页面 · ` +
+      `台账豁免 ${RUNTIME_READ_FAILURE_LEDGER.length} 条（基线 ${RUNTIME_READ_FAILURE_LEDGER_FLOOR}）· ` +
+      `待判 ${Object.keys(RUNTIME_PENDING_AUDIT).length} 条\n`,
+  )
+  for (const [key, s] of Object.entries(RUNTIME_READ_FAILURE_SURFACES)) {
+    console.log(`  ${runtimeBad.some((x) => x.key === key) ? '❌' : '✅'} ${key}（${s.issue}）→ ${s.testFile}`)
+  }
+  for (const x of runtimeBad) console.log(`  🔴 运行期判据未落地 ${x.key}（${x.file}）：${x.reason}`)
+  for (const x of runtimeUnregistered) console.log(`  🔴 票据点名的运行期覆盖面未登记：${x.key}（${x.issue}）`)
+  for (const k of runtimeStale) console.log(`  🔴 僵尸台账条目（不再命中，必须删）：${k}`)
+  const badRuntime =
+    runtimeBad.length > 0 ||
+    runtimeUnregistered.length > 0 ||
+    runtimeStale.length > 0 ||
+    RUNTIME_READ_FAILURE_LEDGER.length > RUNTIME_READ_FAILURE_LEDGER_FLOOR
+  console.log(
+    badRuntime
+      ? '  🔴 判红：运行期判据未落地 / 覆盖面未登记 / 僵尸条目 / 台账超基线'
+      : '  ✅ 票据点名的页面都有「读失败后屏上无空态断言」的运行期判据、台账未超基线',
+  )
+
   process.exit(
     offenders.length ||
       stale.length ||
       badSync ||
       dup.offenders.length ||
       dupStale.length ||
-      badTableEmpty
+      badTableEmpty ||
+      badRuntime
       ? 1
       : 0,
   )

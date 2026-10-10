@@ -633,6 +633,10 @@ export default function OrdersPage() {
           onRefund={handleOpenRefund}
           onConfirmPayment={handleConfirmPayment}
           onConfirmReceive={handleConfirmReceive}
+          /* 🔴 issue #6733：读失败 ⇒ 表体**不得**印「暂无数据」（那是「今天没有订单」的事实性断言，
+             而真相是**没读到** —— 上面那行「共 — 条」已经在诚实地说"不可知"，横幅也说了读失败；
+             三处说法不能打架）。读成功才回落到默认的「暂无数据」。 */
+          emptyText={loadError ? '' : '暂无数据'}
         />
 
         {/* 分页 */}
