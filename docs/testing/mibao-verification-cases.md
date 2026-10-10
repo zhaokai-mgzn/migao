@@ -4946,7 +4946,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（63 case）
+## 订单域（64 case）
 
 ### OR-061. 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262） 🔵
 ```
@@ -6090,6 +6090,19 @@
 ```
 真值: inbound-order-flow.draft-then-post
 溯源: 2026-10-05 新增（issue #6340）：本类从「只点名两个 DTO」升级为「实例参数化 + 源码面类级元守卫 + 反空跑 + 判别力自证」——原形态下新 DTO 漏标不会红（#6340 就是这样落进来的）。同 PR 补齐被约束对象 6 个字段。边界如实登记：射程 = 该 6 个文件（issue #6340 清点的同族 + 同一入库读面的 InboundLabelView.itemId）；射程外新增雪花 id DTO 不拦（有意：不做全包枚举以免既有业务 Long 成为噪声），扩射程 = 加一行 + 同 PR 补注解。 ｜ tags: inventory, inbound, backend-contract, serialization
+
+### OR-064. 物流「首次发货时刻」（order_logistics.shipped_at）：更新路径**只在为空时**补、已有值一律不覆盖（issue #6276） 🔵
+```
+你: 用户 2026-10-10 裁定（issue #6276）：shipped_at = **首次发货时刻**（排除「最近一次改物流时刻」那条口径）
+数据: 判据 1·🔴 **已有值不得被覆盖**（改一次运单号 ≠ 改发货时刻）：① 真库直调补写语句（不经 updateById ⇒ 不被掩盖）⇒ 影响行数 **0**、该列逐字不变；② 端到端走生产 upsert 之后仍逐字等于原值（夹具刻意让 created_at 与真实首次发货时刻**不同** ⇒ 用 created_at 或 now() 顶掉会当场红）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderLogisticsShippedAtBackfillRealDbTest.java 的 existingShippedAtIsNeverOverwrittenByAnUpdate
+数据: 判据 2·🔴 **空值 + 一次更新 ⇒ 补上且只补一次**：`shipped_at IS NULL` 的行经生产 upsert 后取值 = **该行自己的 created_at**（夹具把它种成一个月前 ⇒ 写成 now() 当场红）；第二次更新不改变它，且补写语句第二次返回 0 行（幂等）。执行点 = 同文件 nullShippedAtIsBackfilledWithFirstShipMomentExactlyOnce
+数据: 判据 3·**补写必须发生在 updateById 之前**：真库复刻「先 updateById 再补写」的坏顺序 ⇒ 实体里的非 null 旧值被原样写回（顺序不可互换）。执行点 = 同文件 badOrderingLosesTheBackfill
+数据: 判据 4·**多租户隔离**：补写带显式 tenant_id 谓词 + 租户拦截器 ⇒ 在 A 上下文里对 B 的行调用返回 0 行、B 的行逐值不动（反向对照）。执行点 = 同文件 backfillIsTenantScoped
+数据: 判据 5·**写入路径两级守卫**（mock 面）：更新分支必须调补写锚点、新建分支**不得**多调（实体已带 shippedAt）；应用层不得自己填 now()。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderLogisticsWriterTest.java 的 updateNeverOverwritesExistingShippedAt / updateBackfillsWhenShippedAtIsNull / createPathDoesNotNeedBackfill
+数据: 判据 6·**类级元守卫**（新写面忘记补写即红）：现取 backend/admin-api/src/main/java/** 源码面，凡有 `order_logistics` 更新写面（变量名含 logistics 的 updateById）的文件都必须出现补写锚点 backfillShippedAtIfAbsent；含反空跑 + 四种坏形态的判别力自证 + 非物流 updateById 不得误伤。执行点 = tests/unit_ci_workflows/test_order_logistics_first_ship_backfill_guard.py
+跳过: [backend-contract] 纯后端写面 + 数据迁移（无 LLM 环节 ⇒ 不进 agent-eval）：由 admin-api 单测 OrderLogisticsWriterTest 与真库 OrderLogisticsShippedAtBackfillRealDbTest 执行（机器判红通道 = traces.tests）
+```
+溯源: 2026-10-10 新增（issue #6276；口径由用户 2026-10-10 裁定 = 首次发货时刻）。根因（V148/issue #6262 已现取登记、但当时只绕开未修）：OrderLogisticsWriter.upsert 的 shipped_at 只在**新建物流行**的分支里写，走 update 分支（已有物流行、再改物流/发货）时不补写 ⇒ 真库 order_logistics 全表 29 行、shipped_at 非空仅 16 行（13 行为空）。修法：① 新增 OrderLogisticsMapper#backfillShippedAtIfAbsent —— 一条条件 UPDATE（SET shipped_at = created_at WHERE … AND shipped_at IS NULL），取值**列对列**（建行那一刻就是首次发货时刻，三条建行路径都写 shipped_at = now() 且 created_at 与它同刻）⇒ 不需要外部真值、不猜；② 两个「读-改-写」写面（OrderLogisticsWriter 更新分支、OrderController.updateLogistics 更新分支）都在 updateById **之前**调它，OrderLogisticsService.updateLogistics 同样补上；③ 新增迁移 V151 把历史空值按同一条 SQL 回填（幂等、只影响 IS NULL、走新迁移不动已冻结的历史迁移）。边界：不动 orders.shipped_at(V148) 的存量 NULL 裁定；created_at 与首次发货时刻同刻是既有实装事实（本单不引入新语义）。 ｜ tags: order, logistics, shipped-at, data-quality, backend-contract
 
 ## 加工项域（27 case）
 
@@ -10587,8 +10600,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：731（活跃 134，跳过 597）
-- tier 分布：smoke 12 / normal 677 / adversarial 32
+- 用例总数：732（活跃 134，跳过 598）
+- tier 分布：smoke 12 / normal 678 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10606,7 +10619,7 @@
 - 杂项域：91
 - 商家入驻域：6
 - 领域本体域：4
-- 订单域：63
+- 订单域：64
 - 加工项域：27
 - 加工单域：62
 - 商品域：120
@@ -10753,6 +10766,7 @@
 - OR-057: 入库过账并发面核验（N=4 并发过账同一 draft 单）：恰一个赢家、库存恰加一次、批次/台账各恰 2 行（issue #6237）
 - OR-060: 入库批次号跨请求取号核验（issue #6248）：单实例并发不撞 / 多实例同起点撞唯一索引 ⇒ 用户侧 500（已改成原子取号）/ 20 次耗尽 409
 - OR-062: 并发确认收款不得超卖：扣库存改原子条件更新（WHERE … AND COALESCE(stock,0) >= #{quantity}）+ 受影响行数判定 ⇒ 恰一个赢家、库存不为负、台账链相接（issue #6299）
+- OR-064: 物流「首次发货时刻」（order_logistics.shipped_at）：更新路径**只在为空时**补、已有值一律不覆盖（issue #6276）
 - PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）

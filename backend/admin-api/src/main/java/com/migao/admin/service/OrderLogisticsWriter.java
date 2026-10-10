@@ -33,6 +33,12 @@ public final class OrderLogisticsWriter {
      * 更新时**仅**在显式传入非空时覆盖 —— 后续改运单号/纠错不等于换发货人，
      * 也不能因为「别人来改单号」就把经手人改成那个人，更不能为存量历史数据猜一个经手人。</p>
      *
+     * <p><b>首次发货时刻（issue #6276）</b>：{@code shipped_at} = <b>首次发货时刻</b>
+     * （用户 2026-10-10 裁定；「最近一次改物流时刻」那条口径已被否掉）⇒ 新建时写
+     * {@code now()}；**更新时只在它为 null 时补**（取值 = 该行的 {@code created_at}），
+     * 已有值逐字不动 —— 见
+     * {@link OrderLogisticsMapper#backfillShippedAtIfAbsent}。</p>
+     *
      * @param currentUserDisplayName 新建且未显式给发货人时的兜底来源（延迟求值：更新路径**不调用**它，
      *                               否则「改一次运单号」就会把经手人换成当次操作人）
      */
@@ -71,6 +77,11 @@ public final class OrderLogisticsWriter {
             if (latest.getStatus() == null) {
                 latest.setStatus("in_transit");
             }
+            // 🔴 首次发货时刻（issue #6276，用户裁定 2026-10-10）：本行**没有**首次发货时刻时补上，
+            // 取值 = 该行自己的 created_at（= 建行那一刻 = 首次发货时刻，依据见 mapper 的注释）。
+            // **已有值一律不覆盖**（改一次运单号 ≠ 改发货时刻），且补出来的值恒等于建行时刻。
+            // ⚠️ 必须在 updateById **之前**：否则实体里读到的旧值会把刚补的盖回去。
+            orderLogisticsMapper.backfillShippedAtIfAbsent(orderId, tenantId);
             orderLogisticsMapper.updateById(latest);
             log.info("更新物流信息成功: id={}, trackingNo={}", latest.getId(), trackingNo);
         }

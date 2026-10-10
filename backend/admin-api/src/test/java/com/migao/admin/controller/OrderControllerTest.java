@@ -1,4 +1,4 @@
-// case_ids: OR-001, OR-002, OR-003, OR-004, OR-005, OR-006, OR-011, OR-058
+// case_ids: OR-001, OR-002, OR-003, OR-004, OR-005, OR-006, OR-011, OR-058, OR-064
 
 package com.migao.admin.controller;
 
@@ -579,6 +579,26 @@ class OrderControllerTest extends BaseControllerTest {
 
             verify(orderLogisticsService).updateById(org.mockito.ArgumentMatchers.<OrderLogistics>argThat(l ->
                     "DB20260915003".equals(l.getTrackingNo()) && "李四".equals(l.getShipperName())));
+        }
+
+        @Test
+        @DisplayName("🔴 已有物流：更新前必须补「首次发货时刻」（issue #6276，本路是第二个读-改-写写面）")
+        void existingLogisticsUpdateBackfillsFirstShipMoment() throws Exception {
+            OrderLogistics existing = OrderLogistics.builder()
+                    .id("log-005").orderId(ORDER_ID).tenantId(TEST_TENANT_ID)
+                    .logisticsCompany("顺丰速运").trackingNo("SFOLD").status("in_transit").build();
+
+            when(orderService.getOrderById(ORDER_ID)).thenReturn(orderWithStatus("shipped"));
+            when(orderLogisticsService.getByOrderId(ORDER_ID)).thenReturn(List.of(existing));
+
+            mockMvc.perform(put(BASE + "/" + ORDER_ID + "/logistics")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(logisticsBody("顺丰速运", "SF20260915005", null)))
+                    .andExpect(status().isOk());
+
+            // 只修 OrderLogisticsWriter 一处 ⇒ 本路会成为同一个缺口的第二个入口（老行永远补不上）
+            verify(orderLogisticsService).backfillShippedAtIfAbsent(ORDER_ID, TEST_TENANT_ID);
+            verify(orderLogisticsService).updateById(any(OrderLogistics.class));
         }
 
         @Test
