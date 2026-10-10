@@ -56,6 +56,33 @@ for (const path of ['/chat', '/employees', '/notifications', '/products', '/ship
   const m = await probe(p1)
   const hasSurface = m.anchors.length > 0 || m.failWords >= 2
   rep('读失败⇄空态', hasSurface && m.empty.length === 0, `${path} 空态=${JSON.stringify(m.empty)} 零值=${JSON.stringify(m.zero)} 失败词=${m.failWords} 锚点=${m.anchors.slice(0, 2).join(',') || '无'}`)
+  // 修复包点名的两项「判据判不了」的版面检查（§31 P1）
+  if (path === '/chat') {
+    const g = await p1.evaluate(() => {
+      const aside = document.querySelector('aside')
+      const fail = document.querySelector('[data-testid*="load-failed"],[data-testid*="load-error"]')
+      const fr = fail ? fail.getBoundingClientRect() : null
+      return {
+        asideW: aside ? Math.round(aside.getBoundingClientRect().width) : null,
+        failW: fr ? Math.round(fr.width) : null, failH: fr ? Math.round(fr.height) : null,
+        failClipped: fail ? fail.scrollHeight > fail.clientHeight + 2 : null,
+        failText: fail ? (fail.innerText || '').replace(/\n/g, ' ').slice(0, 70) : null,
+      }
+    })
+    rep('chat 失败面在侧栏内够显眼', !!g.asideW && !!g.failW && g.failW <= g.asideW + 4 && g.failH >= 24 && g.failClipped === false, JSON.stringify(g))
+    await p1.screenshot({ path: OUT + 'S13-chat-failure-sidebar.png' })
+  }
+  if (path === '/products') {
+    const g = await p1.evaluate(() => {
+      const fail = document.querySelector('[data-testid*="load-failed"],[data-testid*="load-error"]')
+      const table = document.querySelector('table')
+      const fy = fail ? Math.round(fail.getBoundingClientRect().top) : null
+      const ty = table ? Math.round(table.getBoundingClientRect().top) : null
+      return { failTop: fy, tableTop: ty, above: fy !== null && ty !== null ? fy < ty : null, rows: document.querySelectorAll('tbody tr').length }
+    })
+    rep('products 失败面在表之上（版式不抖）', g.above === true, JSON.stringify(g))
+    await p1.screenshot({ path: OUT + 'S13-products-failure.png' })
+  }
   await p1.unroute('**/api/admin/**')
 }
 
