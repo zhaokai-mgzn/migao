@@ -59,17 +59,23 @@ for (const path of ['/chat', '/employees', '/notifications', '/products', '/ship
   // 修复包点名的两项「判据判不了」的版面检查（§31 P1）
   if (path === '/chat') {
     const g = await p1.evaluate(() => {
-      const aside = document.querySelector('aside')
+      // ⚠️ 不要用 document.querySelector('aside')：那是**左侧主导航**（收起态仅 64px），
+      //    而本判据要的是**会话列表侧栏**（`w-64` ≈ 256px）。改用失败块的**父容器**当参照，
+      //    否则断言瞄错元素 ⇒ 修完也假红（实测踩过）。
       const fail = document.querySelector('[data-testid*="load-failed"],[data-testid*="load-error"]')
       const fr = fail ? fail.getBoundingClientRect() : null
+      const host = fail && fail.parentElement ? fail.parentElement.getBoundingClientRect() : null
+      const list = document.querySelector('[data-testid*="session-list"],[class*="overflow-y-auto"]')
+      const lr = list ? list.getBoundingClientRect() : null
       return {
-        asideW: aside ? Math.round(aside.getBoundingClientRect().width) : null,
+        hostW: host ? Math.round(host.width) : null,
         failW: fr ? Math.round(fr.width) : null, failH: fr ? Math.round(fr.height) : null,
         failClipped: fail ? fail.scrollHeight > fail.clientHeight + 2 : null,
+        listH: lr ? Math.round(lr.height) : null,          // 列表区残余高度：失败块不许把它吃光
         failText: fail ? (fail.innerText || '').replace(/\n/g, ' ').slice(0, 70) : null,
       }
     })
-    rep('chat 失败面在侧栏内够显眼', !!g.asideW && !!g.failW && g.failW <= g.asideW + 4 && g.failH >= 24 && g.failClipped === false, JSON.stringify(g))
+    rep('chat 失败面在侧栏内够显眼', !!g.failW && g.failW <= (g.hostW || 0) + 4 && g.failH >= 24 && g.failClipped === false && (g.listH === null || g.listH >= 120), JSON.stringify(g))
     await p1.screenshot({ path: OUT + 'S13-chat-failure-sidebar.png' })
   }
   if (path === '/products') {
