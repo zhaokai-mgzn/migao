@@ -144,3 +144,95 @@ describe('判据 4：术语**就地**查（§22 P5）—— 锚点真的在面�
     }
   })
 })
+
+// ══════════════════════════════════════════════════════════════════════════════
+// issue #6663：小件用料尺寸表 —— 行内必填校验（不得把 NaN 发出去）
+//
+// 改前：`Number('')` ⇒ `NaN` 直接进 payload；校验只在服务端 ⇒ 提交后整表一条报错，
+// 商家不知道是哪一行（而 `JSON.stringify(NaN)` 会静默变 `null`，两边口径还漂）。
+// ══════════════════════════════════════════════════════════════════════════════
+describe('判据 6：行内必填 + 行内校验，不发 NaN（issue #6663）', () => {
+  it('空尺寸/负数 ⇒ **行内**逐格提示、不发请求、不出现 NaN', async () => {
+    render(<RemnantItemSizesPanel copy={REMNANT_PARAM_COPY} />)
+    await waitFor(() => expect(screen.getByTestId('remnant-spec-add')).toBeTruthy())
+
+    // 加一行，只填工序名 —— 长/宽留空（改前会发 `lengthM: NaN`）
+    fireEvent.click(screen.getByTestId('remnant-spec-add'))
+    fireEvent.change(screen.getByLabelText('小件（工序名）'), { target: { value: '绑带-布' } })
+    fireEvent.click(screen.getByTestId('remnant-spec-save'))
+
+    await waitFor(() => expect(screen.getByTestId('remnant-spec-row-0-lengthM-error')).toBeTruthy())
+    expect(screen.getByTestId('remnant-spec-row-0-lengthM-error')).toHaveTextContent('填大于 0 的数')
+    expect(screen.getByTestId('remnant-spec-row-0-widthM-error')).toHaveTextContent('填大于 0 的数')
+    // 🔴 核心：**一个请求都没发**（改前会把 NaN 发出去）
+    expect(putSmallItemSpecs).not.toHaveBeenCalled()
+    expect(screen.getByTestId('remnant-specs-error').textContent).not.toMatch(/NaN/)
+  })
+
+  it('工序名留空也逐格提示（不许提交一个没有名字的小件）', async () => {
+    render(<RemnantItemSizesPanel copy={REMNANT_PARAM_COPY} />)
+    await waitFor(() => expect(screen.getByTestId('remnant-spec-add')).toBeTruthy())
+
+    fireEvent.click(screen.getByTestId('remnant-spec-add'))
+    fireEvent.change(screen.getByLabelText('用料长'), { target: { value: '0.5' } })
+    fireEvent.change(screen.getByLabelText('用料宽'), { target: { value: '0.2' } })
+    fireEvent.click(screen.getByTestId('remnant-spec-save'))
+
+    await waitFor(() => expect(screen.getByTestId('remnant-spec-row-0-itemKey-error')).toBeTruthy())
+    expect(putSmallItemSpecs).not.toHaveBeenCalled()
+  })
+
+  it('改正后就地清掉红标，保存发出去的是**数字**（不是 NaN / 字符串）', async () => {
+    render(<RemnantItemSizesPanel copy={REMNANT_PARAM_COPY} />)
+    await waitFor(() => expect(screen.getByTestId('remnant-spec-add')).toBeTruthy())
+
+    fireEvent.click(screen.getByTestId('remnant-spec-add'))
+    fireEvent.click(screen.getByTestId('remnant-spec-save'))
+    await waitFor(() => expect(screen.getByTestId('remnant-spec-row-0-lengthM-error')).toBeTruthy())
+
+    fireEvent.change(screen.getByLabelText('小件（工序名）'), { target: { value: '绑带-布' } })
+    fireEvent.change(screen.getByLabelText('用料长'), { target: { value: '0.5' } })
+    fireEvent.change(screen.getByLabelText('用料宽'), { target: { value: '0.2' } })
+    // 改过的行红标就地消失（不把红标粘在已改的行上）
+    expect(screen.queryByTestId('remnant-spec-row-0-lengthM-error')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('remnant-spec-save'))
+    await waitFor(() => expect(putSmallItemSpecs).toHaveBeenCalledTimes(1))
+    const payload = putSmallItemSpecs.mock.calls[0][0] as Array<Record<string, unknown>>
+    expect(payload).toEqual([
+      { itemKey: '绑带-布', lengthM: 0.5, widthM: 0.2, note: undefined },
+    ])
+    // 逐值硬断言：真数字，不是 NaN / 字符串
+    expect(payload[0].lengthM).toBe(0.5)
+    expect(typeof payload[0].lengthM).toBe('number')
+    expect(Number.isNaN(payload[0].lengthM as number)).toBe(false)
+  })
+
+  it('服务端 422 的字段名与 JSON 示例不上屏，但**理由**一条不少（issue #6663）', async () => {
+    putSmallItemSpecs.mockRejectedValue({
+      response: {
+        data: {
+          error: {
+            message: '小件配置有 1 处不合法',
+            details: [{ field: 'items[0].lengthM', message: '必须为正数（item_key = 「绑带-布」）' }],
+          },
+        },
+      },
+    })
+    render(<RemnantItemSizesPanel copy={REMNANT_PARAM_COPY} />)
+    await waitFor(() => expect(screen.getByTestId('remnant-spec-add')).toBeTruthy())
+
+    fireEvent.click(screen.getByTestId('remnant-spec-add'))
+    fireEvent.change(screen.getByLabelText('小件（工序名）'), { target: { value: '绑带-布' } })
+    fireEvent.change(screen.getByLabelText('用料长'), { target: { value: '0.5' } })
+    fireEvent.change(screen.getByLabelText('用料宽'), { target: { value: '0.2' } })
+    fireEvent.click(screen.getByTestId('remnant-spec-save'))
+
+    await waitFor(() => expect(screen.getByTestId('remnant-specs-error')).toBeTruthy())
+    const text = screen.getByTestId('remnant-specs-error').textContent ?? ''
+    expect(text).toContain('必须为正数')       // 理由在
+    expect(text).not.toContain('items[')       // 字段名不在
+    expect(text).not.toContain('lengthM')
+    expect(text).not.toContain('item_key')
+  })
+})

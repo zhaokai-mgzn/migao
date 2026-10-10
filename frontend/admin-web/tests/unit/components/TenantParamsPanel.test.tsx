@@ -205,13 +205,17 @@ describe('判据 4：高级参数默认收起（渐进披露）', () => {
 })
 
 describe('判据 5：读面失败给**可行动话术**（不是静默空白）', () => {
-  it('算料读面失败 ⇒ 渲染「请联系管理员」话术，且值位不谎报成配置值（是「—」）', () => {
+  it('算料读面失败 ⇒ 渲染「请联系管理员」话术，且**不画参数卡**（不拿一排 `—` 冒充读数）', () => {
     renderPanel({ calc: null, calcError: PAGE_CALC_ERROR })
     const err = screen.getByTestId('param-calc-error')
     expect(err).toHaveTextContent('请联系管理员')
     expect(err).toHaveTextContent(PAGE_CALC_ERROR)
-    // 读不到 ⇒ 值位是「—」（不是 0.4 这类配置值，也不是空字符串）
-    expect(screen.getByTestId('param-value-hem_margin')).toHaveTextContent('—')
+    // 2026-10-10（issue #6663）改判：读不到 ⇒ **整片参数卡不渲染**。
+    // 旧口径（值位渲染 `—`）是病灶本身 —— 一屏 6 个 `—` 看着像「这些参数是空的」，
+    // 而真相是整个读面失败（§31 P1 常驻面克制 / P2 信息不重复）。
+    expect(screen.queryByTestId('param-value-hem_margin')).toBeNull()
+    expect(screen.queryByTestId('param-hem_margin')).toBeNull()
+    expect(screen.queryByText('—')).toBeNull()
   })
 
   it('AI 客服读面失败**不影响**算料区（两读面相互独立）', async () => {
