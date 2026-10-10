@@ -55,6 +55,16 @@ const NOT_COPY = /@media|display\s*:|<style|box-sizing|@page|^\s*[\w-]+\s*:\s*[^
 const CJK = /[\u4e00-\u9fff]/
 
 /**
+ * 取一条规则入参的**文案字符串**。
+ *
+ * 🔴 规则入参的两种形态都要吃：**候选对象** `{kind, text}`（扫描面的真实入参）与
+ * **裸字符串**（判别力自证 `RULES[i].test('一句坏文案')` 的写法，也是本文件长期以来的调用口径）。
+ * 不统一的话就会出「同一句话，自证能判红、真扫描却报 `t.trim is not a function`」——
+ * 判据与自证**两套口径**正是本仓反复治的那个病（issue #4239 的教训同族）。
+ */
+export const textOf = (t) => (typeof t === 'string' ? t : t.text)
+
+/**
  * 研发腔判据（单一源）。每条 = `{ id, name, test, 出口 }`：
  * - `test` 收**一条候选文案**，命中即返回 true；
  * - `出口` 是给改的人看的那句话（守卫判红时逐条打印，必须**真可行动**）。
@@ -69,14 +79,14 @@ export const RULES = [
     id: 'R1',
     name: '接口/协议细节',
     // 「端点 / 入参 / 返回体 / 分页参数 / 拉全量 / 读面 / 写面」这类是**开发者视角**的词
-    test: (t) => /端点|入参|返回体|分页参数|拉全量|读面|写面|幂等|落库|数据库|服务端|内核/.test(t),
+    test: (t) => /端点|入参|返回体|分页参数|拉全量|读面|写面|幂等|落库|数据库|服务端|内核/.test(textOf(t)),
     出口: '换成商家视角：「系统查不到 / 请先选中商品 / 这一列是只读的」；接口与参数细节留在注释里。',
   },
   {
     id: 'R2',
     name: '内部机制名',
     // 组合键 / 派生值 / 真值源 / 快照 / 状态机 / 兜底 / 插值 / 落账 —— 都是实现里的名词
-    test: (t) => /组合键|派生值|真值源|单一源|快照|状态机|兜底|插值|落账|静默/.test(t),
+    test: (t) => /组合键|派生值|真值源|单一源|快照|状态机|兜底|插值|落账|静默/.test(textOf(t)),
     出口: '换成它**对商家的后果**：「会走另一档加工费 / 这个数是算出来的 / 改完只影响之后的单」。',
   },
   {
@@ -84,8 +94,8 @@ export const RULES = [
     name: '研发过程编号与判据语',
     test: (t) =>
       // ⚠️ 先排掉**十六进制颜色**（`#6366f1` 会被 `#\d{3,}` 误判成 issue 号，实测假红）
-      !/^#[0-9a-fA-F]{3,8}$/.test(t.trim()) &&
-      /issue\s*#?\s*\d+|#\d{3,}|PR\s*#?\s*\d+|\bV\d{2,}\b|判据|待查明|死亡条件|回归测试/.test(t),
+      !/^#[0-9a-fA-F]{3,8}$/.test(textOf(t).trim()) &&
+      /issue\s*#?\s*\d+|#\d{3,}|PR\s*#?\s*\d+|\bV\d{2,}\b|判据|待查明|死亡条件|回归测试/.test(textOf(t)),
     出口: '整句删掉（商家不关心是哪张单哪条判据）；要留追溯就写进注释 / PR body。',
   },
   {
@@ -93,22 +103,22 @@ export const RULES = [
     name: '代码标识符上屏',
     // snake_case / 点号字段名 / 后端产物名 —— 出现在给商家看的句子里就是泄漏
     test: (t) =>
-      /(^|[^A-Za-z0-9_.])[a-z][a-z0-9]*(_[a-z0-9]+)+([^A-Za-z0-9_]|$)/.test(t) ||
-      /dotGeometry|scan_url|part_token|pending_review|materials_json|yyyyMMdd|PC-yyyyMM/.test(t),
+      /(^|[^A-Za-z0-9_.])[a-z][a-z0-9]*(_[a-z0-9]+)+([^A-Za-z0-9_]|$)/.test(textOf(t)) ||
+      /dotGeometry|scan_url|part_token|pending_review|materials_json|yyyyMMdd|PC-yyyyMM/.test(textOf(t)),
     出口: '用中文名（「超高阈值」而不是 `oversize_height_threshold`）；键名留给注释与文档。',
   },
   {
     id: 'R5',
     name: '行内代码片里塞标识符',
     // `` `x` `` 会被 InlineMarkdown 渲染成代码小片（issue #5194）；里面只该放**商家看得懂的名字**
-    test: (t) => /`[^`]*[A-Za-z][^`]*`/.test(t),
+    test: (t) => /`[^`]*[A-Za-z][^`]*`/.test(textOf(t)),
     出口: '代码片改成商家的说法（`超高阈值`），或整段去掉反引号。',
   },
   {
     // 以下三条由既有守卫（issue #5565 / #5576 / #6459）**原样搬来**（同一份规则表，不写第二份正则）
     id: 'R6',
     name: '度量分层代号（L1/L2/L3）',
-    test: (t) => /[（(]\s*L[123]\s*[）)]/.test(t) || /L[123][ 　](?=[\u4e00-\u9fff])/.test(t),
+    test: (t) => /[（(]\s*L[123]\s*[）)]/.test(textOf(t)) || /L[123][ 　](?=[\u4e00-\u9fff])/.test(textOf(t)),
     出口:
       '换成"这个数是什么"的人话（如「每批布用剩多少」「每平方米成品用掉多少米布」），'
       + '代号留在注释 / 文档里（issue #5565）。',
@@ -116,7 +126,7 @@ export const RULES = [
   {
     id: 'R7',
     name: '机制隐喻「池」',
-    test: (t) => /池/.test(t),
+    test: (t) => /池/.test(textOf(t)),
     出口:
       '改成商家的话（待派订单 / 合并派单 / 可合并的待派订单 / 加急订单（不参与合并）…）；'
       + '机制名留在注释、字段名（`pooled` / `poolingEnabled`）与内部文档里（issue #5576）。',
@@ -124,7 +134,7 @@ export const RULES = [
   {
     id: 'R8',
     name: '服务端分组标签（切换后 / 存量导入 / 来源未知）',
-    test: (t) => /切换后|存量导入|来源未知/.test(t),
+    test: (t) => /切换后|存量导入|来源未知/.test(textOf(t)),
     出口:
       '**口径不动、呈现改说人话** —— 分组照旧（历史导入不进趋势的分子分母），'
       + '但页面上用商家的话说（如「趋势只统计系统里采购入库的批次：开业时导入的老库存不算」）；'
@@ -139,7 +149,7 @@ export const RULES = [
     //    `A4` / `GB/T 47746` / `W-1002`（与 `-` `/` 数字相邻）、`B 端`/`C 端`（行业就这么叫）、
     //    `拼N次`（**选项名 = 匹配键**，改了会动行为）**都不判**。
     test: (t) => {
-      const stripped = t.replace(/[A-Z]\s?端/g, '')
+      const stripped = textOf(t).replace(/[A-Z]\s?端/g, '')
       return (
         /(?:^|[^A-Za-z0-9\-/._])[XYZ](?![A-Za-z0-9\-/._])/.test(stripped) ||
         /[A-Z]\s?模式/.test(stripped)
@@ -147,6 +157,39 @@ export const RULES = [
     },
     出口: '把变量换成商家的话（「库存为什么从 X 变成 Y」→「库存为什么变，按时间往下看」）；'
       + '模式代号（A 模式 / C 模式）留在类型定义与设计文档里，屏上只留商家语义。',
+  },
+  {
+    id: 'R10',
+    name: '「内部键兜底」表达式上屏',
+    // `Label[key] || key` —— 映射表里没有这个键时，**把内部键本身端给商家**
+    // （如 `CustomerChannelLabels[channel] || channel` 会漏出 `customer_service`）。
+    // 这是 issue #6663 扩的网：改前 R1~R9 只扫**字面量**，表达式形态**永远不判红**。
+    // ⚠️ 实测覆盖面：全量扫面里只有 7 处命中（keyed-by 映射的兜底），零假红。
+    test: (t) => /^\s*[A-Za-z_$][\w$]*\s*\[[^\]]+\]\s*\|\|\s*[A-Za-z_$][\w$]*\s*$/.test(textOf(t)),
+    出口: '兜底也要说人话：`LABELS[k] ?? 「其他」`（或用服务端下发的展示名）；'
+      + '**绝不要**把键本身当兜底 —— 它与「不摆内部标识」（§31 P3）相抵。',
+  },
+  {
+    id: 'R11',
+    name: '直接渲染内部键 / 环境变量名',
+    // ① `{param.key}`：把**引擎标量参数的键**（`per_fold_single` …）原样印在商家脸上；
+    // ② `NEXT_PUBLIC_BMINI_H5_URL` 这类**环境变量名**（部署细节，商家改不了）。
+    // 这是 issue #6663 扩的网的第二半：**表达式兜底 + 内部标识**（改前只扫字面量）。
+    //
+    // ⚠️ 判的是「**直接渲染位置**」—— 只看**裸成员访问**（`{x.key}`）与 **JsxText 里的 env 名**：
+    //    `key={x.key}` / `data-testid={`x-${x.key}`}` / `valueOf(x.key)` 都是**控件属性或函数实参**，
+    //    不是上屏文本（实测：放宽到属性面会从 3 条涨到 51 条**全假红**，见守卫的判别力自证）。
+    //    只认属性名 **以 `key` 结尾**（`key` / `itemKey` / `fieldKey`）或 `ENV_NAME` 形态，
+    //    不去追 `{item.title}` 这类**数据字段**（那是服务端内容，不是代码标识符）。
+    test: (t) =>
+      // ⚠️ 前面那个字符**不能是字母**（`pageKey` 这种整体驼峰名不算「读到键」），
+      //    但可以是 `.`：`param.key` / `rec.itemKey` 都要命中（实测：写成 `[a-z]` 会漏掉 `param.key`）。
+      (t.kind === 'jsx-member'
+        && /(^|[^A-Za-z])[Kk]ey$/.test(textOf(t))
+        && /^[A-Za-z_$][\w$]*(\??\.[A-Za-z_$][\w$]*)+$/.test(textOf(t)))
+      || (t.kind === 'jsx-text' && /\b[A-Z][A-Z0-9]*(_[A-Z0-9]+){2,}\b/.test(textOf(t))),
+    出口: '删掉它（商家不需要看键名）；要说明「这个参数是什么」就用人话标签 + 可就地查的口径说明。'
+      + '环境变量名与构建指令改成商家可行动的话（「尚未开通手机版，请联系服务方」）。',
   },
 ]
 
@@ -269,7 +312,9 @@ export function findSubtitleOffenses(root) {
 export const EXEMPT = [
   // 岗位编码输入框的 placeholder —— 这里的 `admin、customer_service` **就是内容本身**
   // （商家要照着填的编码），不是把代码标识符写进了散文里。
-  'src/app/(dashboard)/roles/page.tsx:360',
+  // ⚠️ 本台账按 `文件:行` 索引 ⇒ 同一文件任何加删行都要同批改号（issue #6663 在 `loadRoles`
+  // 里加了失败态，把本行从 360 推到 395 ⇒ 本条同步改号。失效即红，不会静默漂走）。
+  'src/app/(dashboard)/roles/page.tsx:395',
 ]
 
 function walk(dir, out = []) {
@@ -324,11 +369,31 @@ export function candidateStrings(source, fileName = 'x.tsx') {
       const chunks = [node.head, ...node.templateSpans.map((s) => s.literal)].map((l) => l.text)
       const inner = chunks.join(' ')
       if (CJK.test(inner)) push(node, inner, 'template')
+    } else if (ts.isJsxExpression(node) && node.expression) {
+      // 🔴 issue #6663 扩网：**表达式兜底**。改前只抽字面量 ⇒ `{param.key}` 这类
+      //    「内部键当文案渲染」的形态**永远不判红**（判据射程外）。
+      //    口径 = **直接渲染位置**：`{x.key}` 的父必须是 JSX 子内容，**不是**属性值
+      //    （`key={x.key}` / `data-testid={`x-${x.key}`}` 里的成员访问是**控件属性**，
+      //     不该判红 —— 实测放宽到属性面会从 3 条涨到 51 条全假红）。
+      const e = stripParens(node.expression)
+      const isAttrValueExpr = ts.isJsxAttribute(node.parent)
+      // ⚠️ 模板串已被上面 `ts.isTemplateExpression` 分支按**字面块**抽过（R5 判的是它）；
+      //    这里再抽一次会让同一个插值算两条规则 ⇒ 显式排除。
+      if (!isAttrValueExpr && !ts.isTemplateExpression(e) && ts.isPropertyAccessExpression(e)) {
+        push(node, e.getText(sf), 'jsx-member')
+      }
     }
     ts.forEachChild(node, visit)
   }
   visit(sf)
   return found
+}
+
+/** 剥掉括号 / 非空断言（`{(x.key)}` / `{x.key!}` 也是同一个形态） */
+function stripParens(node) {
+  let cur = node
+  while (cur && (ts.isParenthesizedExpression(cur) || ts.isNonNullExpression(cur))) cur = cur.expression
+  return cur
 }
 
 /** 全量候选（含未命中的） */
@@ -344,6 +409,14 @@ export function scanProject(root) {
 }
 
 /**
+ * 候选 → `{kind, text}`。**两条入口都走它**（守卫与命令行 / 扫描面与判别力自证），
+ * 保证「传字符串」的旧用法（`RULES[i].test('一句文案')`）与「传候选对象」的新用法同一口径。
+ */
+export function toCandidate(item) {
+  return typeof item === 'string' ? { kind: 'string', text: item } : item
+}
+
+/**
  * 命中清单（按规则 × 文件排序）。
  * `raw` = **豁免前**的全部命中（守卫用它判「豁免台账有没有空转」），`offenders` = 豁免后的。
  */
@@ -352,7 +425,11 @@ export function findViolations(root) {
   const raw = []
   for (const item of candidates) {
     for (const rule of RULES) {
-      if (!rule.test(item.text)) continue
+      // 🔴 规则收**候选对象** `{kind, text}`：R1~R9 只用 `text`，
+      //    R10/R11（issue #6663 扩网）还要按 `kind` 区分「直接渲染」与「控件属性」。
+      //    ⚠️ 曾经只传 `item.text`（裸字符串）⇒ 带 `kind` 的规则**永远不判红**
+      //    （实测踩过：加了规则却零命中，而全绿看起来像「没问题」）。
+      if (!rule.test(item)) continue
       raw.push({ ...item, rule: rule.id, ruleName: rule.name, where: `${item.file}:${item.line}` })
     }
   }

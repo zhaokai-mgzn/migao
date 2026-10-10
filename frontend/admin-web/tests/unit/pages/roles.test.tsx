@@ -63,6 +63,8 @@ vi.mock('lucide-react', () => {
     Pencil: stub('pencil'),
     Trash2: stub('trash2'),
     Shield: stub('shield'),
+    // issue #6663：失败态行用的图标
+    AlertTriangle: stub('alert-triangle'),
   }
 })
 
@@ -365,5 +367,61 @@ describe('RolesPage', () => {
         permissionIds: expect.arrayContaining(['p-product-list']),
       }))
     })
+  })
+})
+// ══════════════════════════════════════════════════════════════════════════════
+// issue #6663：读面失败 ≠ 空态（三维审计逐条复核）
+//
+// 改前 `loadRoles` 的 catch 只 `toast.error` 而 `roles` 保持 `[]` ⇒ 页面落到「暂无岗位」，
+// **故障被画成业务事实**（商家以为这个企业没有岗位）。范式 = dashboard/page.tsx（#5792 ④）。
+// 类级收口 = tests/unit/read-failure-empty-state-guard.test.ts（本文件是它的实例面）。
+// ══════════════════════════════════════════════════════════════════════════════
+describe('RolesPage 读面失败态（issue #6663）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetPermissions.mockResolvedValue({ data: { data: PERMISSION_CATALOG } })
+  })
+
+  it('岗位清单读失败 ⇒ 显示失败态（**不是**「暂无岗位」）+ 重试出口', async () => {
+    mockGetRoles.mockRejectedValue(new Error('500'))
+    render(<RolesPage />)
+
+    const failure = await screen.findByTestId('roles-load-error')
+    expect(failure).toHaveTextContent('岗位加载失败')
+    // 🔴 核心：不得落到空态那句 —— 否则商家读成「这个企业没有岗位」
+    expect(screen.queryByText('暂无岗位，点击上方按钮新增')).not.toBeInTheDocument()
+    // 重试出口真可点（点了重新发请求；这次成功 ⇒ 失败态退场、清单出来）
+    mockGetRoles.mockResolvedValue({
+      data: { data: { items: [{ id: 'r9', name: '新岗位', code: 'new_role', permissions: [], createdAt: '2026-06-03' }] } },
+    })
+    fireEvent.click(within(failure).getByRole('button', { name: '重新加载' }))
+    await waitFor(() => expect(mockGetRoles).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.getByText('新岗位')).toBeInTheDocument())
+    expect(screen.queryByTestId('roles-load-error')).not.toBeInTheDocument()
+  })
+
+  it('岗位清单读成功且为空 ⇒ 仍是空态那句（对照读数：失败态不吞掉真空态）', async () => {
+    mockGetRoles.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
+    render(<RolesPage />)
+
+    await waitFor(() => expect(screen.getByText('暂无岗位，点击上方按钮新增')).toBeInTheDocument())
+    expect(screen.queryByTestId('roles-load-error')).not.toBeInTheDocument()
+  })
+
+  it('权限目录读失败 ⇒ 权限分配里显示失败态（**不是**「暂无权限数据」），且权限树不渲染', async () => {
+    mockGetRoles.mockResolvedValue({
+      data: { data: { items: [{ id: 'r1', name: '管理员', code: 'admin', permissions: [], createdAt: '2026-06-01' }] } },
+    })
+    mockGetPermissions.mockRejectedValue(new Error('500'))
+    render(<RolesPage />)
+
+    // 新增岗位 ⇒ 打开弹窗（权限分配是弹窗内容）
+    await waitFor(() => expect(screen.getByText('新增岗位')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('新增岗位'))
+
+    const failure = await screen.findByTestId('roles-permissions-error')
+    expect(failure).toHaveTextContent('权限目录读取失败')
+    expect(screen.queryByText('暂无权限数据')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('perm-menu-sections')).not.toBeInTheDocument()
   })
 })

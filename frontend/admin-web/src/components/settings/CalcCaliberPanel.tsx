@@ -105,7 +105,11 @@ export function ParamScalarRow({
           <div data-testid={`param-value-${param.key}`} className="text-sm font-mono text-neutral-900">
             {value}
           </div>
-          <div className="text-[11px] text-neutral-400 mt-0.5 font-mono">{param.key}</div>
+          {/* 🔴 issue #6663（§31 P3「不摆内部标识」）：改前这里印的是**引擎键名**
+              （`per_fold_single` / `oversize_width_threshold` …，`font-mono` 渲染）——
+              那是引擎的实现细节，商家既读不懂也用不上。
+              删掉即可；要说明「这个参数是什么」用**人话标签 + 口径说明**（本行上方已各有其一）。
+              ⚠️ 有意**不**在前端切字符串冒充展示名：展示名与标识分离要在服务端（同 §31 P3）。 */}
         </div>
       </div>
       <p className="text-xs text-neutral-600 mt-2 pt-2 border-t border-neutral-100">
@@ -122,10 +126,28 @@ export interface CalcCaliberPanelProps {
   calcError: string
   /** 算料读面是否仍在路上（**不谎报**：加载中不把任何参数画成「未配置」） */
   loading: boolean
+  /**
+   * 失败行的重试出口（由**页面**提供 —— 取数在页面，见头注释「取数仍在页面里」）。
+   * 失败态必须给出口，否则商家只能刷整页（墙上那句「配置类页面要给下一步」）。
+   */
+  onRetry?: () => void
 }
 
-export function CalcCaliberPanel({ calc, calcError, loading }: CalcCaliberPanelProps) {
+export function CalcCaliberPanel({ calc, calcError, loading, onRetry }: CalcCaliberPanelProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false)
+
+  /**
+   * 读面失败 —— 本面板**只画一条失败行**，其余三处重复信号全部撤掉（issue #6663 / §31 P1·P2）。
+   *
+   * 真机截图实证（2026-10-10，1440×980）：同一次读面失败在**一屏之内渲染了四处** ——
+   * ① 本面板顶部红条；② 标题行右侧「读不到」徽标；③ 每个参数数值位一个 `—`；
+   * ④ 面板底部又一行「算料配置加载失败，请稍后重试 [重试]」（那句来自同域的
+   * `production-config/CalcFormulaPanel`，由它那条**保存失败的**提示一并承载）。
+   *
+   * 本面板的处置：**留面板顶部这一条**（它是本域失败的第一现场），
+   * ③ 数值位不再用 `—` 冒充读数（读不到就说读不到，不要摆一个看起来像值的占位符）。
+   */
+  const failed = Boolean(calcError)
 
   /** 本组件只管算料域（域定义取自单一真值模块，不在这里写第二份清单） */
   const domain: ParamDomain =
@@ -166,7 +188,9 @@ export function CalcCaliberPanel({ calc, calcError, loading }: CalcCaliberPanelP
     <ParamScalarRow
       key={p.key}
       param={p}
-      value={loading ? '…' : valueOf(p.key)}
+      // 🔴 读失败 ⇒ **空位**（不是 `—`）：`—` 长得像「这个参数没有值」，而真相是**整个读面失败**。
+      //    加载中仍给 `…`（那是「还在读」，与失败是两件事）。
+      value={failed ? '' : loading ? '…' : valueOf(p.key)}
       unset={usingDefault}
       changedFromDefault={changedFromDefaultOf(p.key)}
     />
@@ -174,13 +198,25 @@ export function CalcCaliberPanel({ calc, calcError, loading }: CalcCaliberPanelP
 
   return (
     <div data-testid="calc-caliber-panel" className="space-y-4">
-      {calcError && (
+      {/* 🔴 读面失败 —— 本域**唯一**那条失败行（§31 P1 常驻面克制 / P2 信息不重复）。
+          其余三处重复信号已撤：数值位的 `—`（见 renderScalar）、底部那行重复的「加载失败 + 重试」。 */}
+      {failed && (
         <div
           data-testid="param-calc-error"
-          className="flex items-start gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2"
+          className="flex items-start gap-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2"
         >
           <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          <span>{calcError}</span>
+          <span className="flex-1">{calcError}</span>
+          {onRetry && (
+            <button
+              type="button"
+              data-testid="param-calc-retry"
+              onClick={onRetry}
+              className="flex-shrink-0 rounded border border-red-300 px-2 py-0.5 font-medium text-red-700 hover:bg-red-100"
+            >
+              重试
+            </button>
+          )}
         </div>
       )}
 
@@ -204,33 +240,41 @@ export function CalcCaliberPanel({ calc, calcError, loading }: CalcCaliberPanelP
         </div>
       )}
 
-      {/* P2 三件套（常用 / 高级渐进披露） */}
-      {domain.common && domain.common.length > 0 && (
-        <div className="space-y-3">{domain.common.map((p) => renderScalar(p))}</div>
-      )}
+      {/* 读面失败 ⇒ **不画参数卡**（画一排空值卡等于把「读不到」伪装成「这些参数是空的」）。
+          保留一个锚点，让「失败态发生过」这件事在 DOM 里可断言。 */}
+      {failed ? (
+        <div data-testid="param-calc-read-failed" />
+      ) : (
+        <>
+          {/* P2 三件套（常用 / 高级渐进披露） */}
+          {domain.common && domain.common.length > 0 && (
+            <div className="space-y-3">{domain.common.map((p) => renderScalar(p))}</div>
+          )}
 
-      {domain.advanced && domain.advanced.length > 0 && (
-        <div>
-          <button
-            type="button"
-            data-testid={`param-advanced-toggle-${domain.key}`}
-            aria-expanded={advancedOpen}
-            onClick={() => setAdvancedOpen((v) => !v)}
-            className="flex items-center gap-1 text-xs font-medium text-neutral-600 hover:text-neutral-900"
-          >
-            {advancedOpen ? (
-              <ChevronDown className="w-4 h-4" />
-            ) : (
-              <ChevronRight className="w-4 h-4" />
-            )}
-            高级（{domain.advanced.length}）—— 一般不常改
-          </button>
-          {advancedOpen && (
-            <div data-testid={`param-advanced-${domain.key}`} className="mt-3 space-y-3">
-              {domain.advanced.map((p) => renderScalar(p))}
+          {domain.advanced && domain.advanced.length > 0 && (
+            <div>
+              <button
+                type="button"
+                data-testid={`param-advanced-toggle-${domain.key}`}
+                aria-expanded={advancedOpen}
+                onClick={() => setAdvancedOpen((v) => !v)}
+                className="flex items-center gap-1 text-xs font-medium text-neutral-600 hover:text-neutral-900"
+              >
+                {advancedOpen ? (
+                  <ChevronDown className="w-4 h-4" />
+                ) : (
+                  <ChevronRight className="w-4 h-4" />
+                )}
+                高级（{domain.advanced.length}）—— 一般不常改
+              </button>
+              {advancedOpen && (
+                <div data-testid={`param-advanced-${domain.key}`} className="mt-3 space-y-3">
+                  {domain.advanced.map((p) => renderScalar(p))}
+                </div>
+              )}
             </div>
           )}
-        </div>
+        </>
       )}
 
       {/* §22 P4：改钱的参数给预览（本域唯一能做**真预演**的两个阈值 —— 见 TenantParamsPanel 头注释） */}

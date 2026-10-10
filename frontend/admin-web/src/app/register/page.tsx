@@ -164,11 +164,11 @@ export default function RegisterPage() {
     )
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-50 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-neutral-100 px-4">
       {/* 背景装饰 */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary-100 rounded-full opacity-30 blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-indigo-100 rounded-full opacity-30 blur-3xl" />
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-accent-100 rounded-full opacity-30 blur-3xl" />
       </div>
 
       <div className="w-full max-w-[480px] relative z-10">
@@ -480,7 +480,7 @@ export default function RegisterPage() {
               </div>
 
               {/* AI 甄别提示 */}
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50/70 border border-blue-100">
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-neutral-50 border border-neutral-200">
                 <ShieldCheck className="w-4 h-4 text-primary-600 shrink-0 mt-0.5" />
                 <p className="text-xs text-neutral-600 leading-relaxed">
                   提交即视为同意平台服务条款。您的资料将由 AI 自动甄别，仅用于入驻审核，
@@ -550,8 +550,8 @@ export default function RegisterPage() {
                   <div className="mb-8 w-full max-w-md mx-auto">
                     <p className="text-sm text-neutral-500 text-center mb-4">您已获得</p>
                     <div className="grid grid-cols-1 gap-3">
-                      <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
-                        <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                      <div className="flex items-center gap-3 p-3 bg-primary-50 rounded-lg">
+                        <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
                           <Bot className="w-4 h-4 text-primary-600" />
                         </div>
                         <div className="text-left">
@@ -568,9 +568,9 @@ export default function RegisterPage() {
                           <p className="text-xs text-neutral-500">7×24小时AI客服，精准服务您的客户</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 p-3 bg-purple-50 rounded-lg">
-                        <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
-                          <LayoutDashboard className="w-4 h-4 text-purple-600" />
+                      <div className="flex items-center gap-3 p-3 bg-accent-50 rounded-lg">
+                        <div className="w-8 h-8 bg-accent-100 rounded-full flex items-center justify-center flex-shrink-0">
+                          <LayoutDashboard className="w-4 h-4 text-accent-600" />
                         </div>
                         <div className="text-left">
                           <p className="text-sm font-medium text-neutral-900">全功能管理后台</p>
@@ -627,7 +627,7 @@ export default function RegisterPage() {
                 </>
               ) : (
                 <>
-                  <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4">
                     <Loader2 className="w-8 h-8 text-primary-600 animate-spin" />
                   </div>
                   <h2 className="text-lg font-semibold text-neutral-900 mb-2">
