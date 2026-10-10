@@ -24,9 +24,22 @@ import { canvasTextMeasure, renderWashLabelJobs } from '@/lib/label-print/render
 import { resolveLabelGeometry, type WashLabelInput } from '@/lib/label-print/wash-label'
 
 const LABELS: WashLabelInput[] = [
-  { qrValue: 'https://app.migaozn.com/s/7Q2M4K8P', shortCode: '7Q2M4K8P', pieceName: '客厅窗帘A', positionKind: '布帘' },
+  {
+    qrValue: 'https://app.migaozn.com/s/7Q2M4K8P',
+    shortCode: '7Q2M4K8P',
+    processingOrderNo: 'JG-20260921-8237',
+    rows: [
+      { key: 'customer', text: '客户 赵凯', maxLines: 1 },
+      { key: 'pieceName', text: '客厅窗帘A', maxLines: 2 },
+    ],
+  },
   // 该部位被撤销（无码）⇒ 这一张**不许** drawImage
-  { qrValue: null, shortCode: 'ABCDEFGH', pieceName: '卧室窗帘', positionKind: '纱帘' },
+  {
+    qrValue: null,
+    shortCode: 'ABCDEFGH',
+    processingOrderNo: 'JG-20260921-8237',
+    rows: [{ key: 'pieceName', text: '卧室窗帘', maxLines: 2 }],
+  },
 ]
 
 /**
@@ -39,10 +52,14 @@ function installCanvasStub() {
   const canvases: Array<{ width: number; height: number }> = []
   const ctx = {
     fillStyle: '',
+    strokeStyle: '',
     font: '',
+    lineWidth: 1,
     textAlign: 'left',
     textBaseline: 'alphabetic',
     fillRect: (x: number, y: number, w: number, h: number) => calls.push(`fillRect:${x},${y},${w},${h}`),
+    strokeRect: () => calls.push('strokeRect'),
+    setLineDash: () => calls.push('setLineDash'),
     fillText: (text: string) => calls.push(`fillText:${text}`),
     drawImage: () => calls.push('drawImage'),
     // 0.6em/字符的等宽近似：与纯函数判据里的量字替身同口径

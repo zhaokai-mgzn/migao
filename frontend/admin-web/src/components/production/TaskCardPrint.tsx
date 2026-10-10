@@ -6,9 +6,11 @@ import { QRCodeSVG } from 'qrcode.react'
 import { printPageRule } from '@/lib/print-media'
 import { cn } from '@/lib/utils'
 import type { PrintTarget } from '@/lib/print-doc'
-// 工艺规格展示的单一真值定义（设计文档 §4.9「一份 spec，三处渲染」）—— 纸面**只取它的值**，
-// 不另写一份推导（否则就是第二份口径，漂移的那一份不会变红）。
-import { craftSpecRows, type CraftSpecRow } from '@/lib/craft-display'
+// 纸面**内容**的单一真值（issue #6656）：本组件与免驱动直连通道（`lib/label-print/*`）读
+// **同一份**有序行清单 —— 两条通道各派生一份字段 = 改一处另一处不红，
+// 而那正是「直连打印机打出来的和这里预览的不一样」的根因。
+// 取值口径（工艺规格 → `lib/craft-display.ts`、套序 → `groupBySet`）全在这个模块里，本文件不再自己派生。
+import { washLabelRows, type WashLabelRowKey } from '@/lib/wash-label-content'
 // 「第 N 套 / 共 M 套」的**唯一实现**：与进度表**同一份**口径 —— 纸面与屏幕不得各算一套
 import { groupBySet } from './ProductionProgressTable'
 import type { ProcessingOrderItem, ProductionPosition } from '@/types'
@@ -110,23 +112,46 @@ interface TaskCardPrintProps {
  */
 type SnapshotItem = ProcessingOrderItem & { itemId?: string }
 
-/** 用料 = 面料米数优先；没有则退回加工费米数（两者都是「要用多少料」的同一件事） */
-const METERS_LABELS = ['面料米数', '加工费米数']
-
-/** 取工艺规格行的值（只按标签取，不重算 —— 格式化真值在 `craft-display`） */
-function specValue(rows: CraftSpecRow[], ...labels: string[]): string {
-  for (const label of labels) {
-    const hit = rows.find((row) => row.label === label)
-    if (hit) return hit.value
-  }
-  return ''
+/** 行 ⇒ `data-testid` 的中段（与 issue #5646 起的既有 testid 逐字一致，别改名） */
+const WASH_LABEL_TESTID_SEGMENT: Record<WashLabelRowKey, string> = {
+  customer: 'customer',
+  setNo: 'set-no',
+  positionKind: 'kind',
+  pieceName: 'position',
+  color: 'color',
+  meters: 'meters',
+  size: 'size',
+  craft: 'craft',
+  orderNo: 'order-no',
+  delivery: 'delivery',
+  remark: 'remark',
+  formula: 'formula',
 }
 
-/** 宽高（= 窗宽 × 窗高；成品宽 = 窗宽、成品高 = 窗高，用户 2026-09-21 裁定 issue #5030）：
- * 两边都必须是有限数才出（半个尺寸没有意义）⇒ `3×2.75米` */
-function sizeText(width?: number | null, height?: number | null): string {
-  const ok = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
-  return ok(width) && ok(height) ? `${width}×${height}米` : ''
+/** 行 ⇒ `data-testid`（订单号是加工单级的**单**一处，不带张序） */
+function washLabelRowTestId(key: WashLabelRowKey, index: number): string {
+  return key === 'orderNo' ? 'task-card-order-no' : `task-card-label-${WASH_LABEL_TESTID_SEGMENT[key]}-${index}`
+}
+
+/**
+ * 行 ⇒ 本渲染器（CSS）的样式。
+ *
+ * 🔴 **只在本文件里**决策：折行 / `line-clamp` 是**排版**，不进单一真值模块
+ * （位图渲染器读行里的 `maxLines` 自己排）。
+ */
+const WASH_LABEL_ROW_CLASS: Record<WashLabelRowKey, string> = {
+  customer: 'truncate',
+  setNo: 'whitespace-nowrap',
+  positionKind: 'truncate',
+  pieceName: '',
+  color: 'truncate',
+  meters: 'truncate',
+  size: 'truncate',
+  craft: 'line-clamp-2',
+  orderNo: 'whitespace-nowrap',
+  delivery: 'whitespace-nowrap',
+  remark: 'line-clamp-2',
+  formula: 'line-clamp-2 text-neutral-600',
 }
 
 export default function TaskCardPrint({
@@ -191,41 +216,22 @@ export default function TaskCardPrint({
 
       {labels.map((position, index) => {
         const setView = position ? setViews[index] : undefined
-        const setNo = setView ? setView.setIndex + 1 : 1
-        const setCount = setView ? setView.setCount : 1
         const qrValue = position ? (position.scan_url ?? position.part_token ?? null) : null
-
         const item = position?.order_item_id ? itemsById.get(position.order_item_id) : undefined
-        const specRows = craftSpecRows(item)
-        // 加工方式 = 工艺 · 加工类型 · 打开方式 · 定型（**值**一律取自 `craft-display` 的同一份格式化，不重算）。
-        // 其中「是否定型」在纸面上按**行业措辞**收成「定型 / 不定型」—— 真实工单就是这么写的
-        // （图1「单开-韩褶-定型」、图3「双开韩褶 定高买宽 定型」）；单印一个「是」在纸面上读不出
-        // 是哪个字段的「是」。**只映射展示形态，不改值本身**。
-        // 版心 47.599mm ≈ 22.5em/行（issue #5646 实测）⇒ 实测最长形态
-        // 「加工方式 罗马帘 · 定宽买高 · 三开 · 定型」(≈22em) **恰好 1 行**；`line-clamp-2` 只作预算上界。
-        const shaped = specValue(specRows, '是否定型')
-        const craftMode = [
-          specValue(specRows, '工艺'),
-          specValue(specRows, '加工类型'),
-          specValue(specRows, '打开方式'),
-          shaped === '是' ? '定型' : shaped === '否' ? '不定型' : '',
-        ]
-          .filter((value) => value !== '')
-          .join(' · ')
-        const meters = specValue(specRows, ...METERS_LABELS)
-        const formula = specValue(specRows, '算料公式')
-        // 备注 = 特殊选项（真实工单的「防翘扣 / 花边」那一类）+ 快照备注（缺值不渲染）
-        const remark = [specValue(specRows, '特殊选项'), (item?.remark ?? '').trim()]
-          .filter((value) => value !== '')
-          .join('；')
-        // 件名：部位名优先，退回商品名（纸面要能认出「这一张是给哪一件的」）
-        const pieceName = position ? position.position_name || position.product_name || '' : ''
-        const colorName = typeof item?.colorName === 'string' ? item.colorName.trim() : ''
-        // 色号已含在件名里 ⇒ 不重复渲染。**50mm 下仍保留这条去重**（issue #5646 按实测裁定）：
-        // 版心由 27.6mm 抬到 47.599mm 后空间虽宽裕，但恢复独立渲染只会把同一个色号多印一遍、
-        // 白吃 2.538mm（一行）高度预算，而预算已用到 58.878/60mm。
-        const showColor = colorName !== '' && !pieceName.includes(colorName)
-        const size = sizeText(position?.width, position?.height)
+        // 🔴 纸面**内容与行序**的唯一来源（issue #6656；与免驱动直连通道同一份）：
+        // 客户 / 套序 / 部位 / 件名 / 色号（去重）/ 用料 / 宽高 / 加工方式 / 订单 / 交期 / 备注 / 算料公式
+        // 的取值口径全在 `washLabelRows` 里面 —— 本文件**不再自己派生**（派生两份 = 两条通道会画得不一样）。
+        const rows = position
+          ? washLabelRows({
+              position,
+              item,
+              setNo: (setView?.setIndex ?? 0) + 1,
+              setCount: setView?.setCount ?? 1,
+              customerName,
+              orderNo,
+              expectedDeliveryDate,
+            })
+          : []
 
         return (
           <div
@@ -242,73 +248,26 @@ export default function TaskCardPrint({
               {processingOrderNo}
             </div>
 
-            {/* 中部文字块：空间不够时**只裁这里**（底部码与短码 shrink-0，绝不裁） */}
-            <div className="mt-[0.5mm] min-h-0 flex-1 overflow-hidden">
+            {/* 中部文字块：空间不够时**只裁这里**（底部码与短码 shrink-0，绝不裁）。
+                `data-testid` 是给「纸面内容 = 唯一真值模块」那条判据读**整块逐行文本**用的：
+                在本块里内联多写一行（绕过 `washLabelRows`）⇒ 那条判据必红。 */}
+            <div
+              className="mt-[0.5mm] min-h-0 flex-1 overflow-hidden"
+              data-testid={`task-card-label-rows-${index}`}
+            >
               {position ? (
                 <>
-                  {customerName && (
-                    <div className="truncate" data-testid={`task-card-label-customer-${index}`}>
-                      客户 {customerName}
+                  {/* ② 有序行清单（`washLabelRows`）：内容与行序的单一真值，两条打印通道共用。
+                      折行 / clamp 由本文件的 `WASH_LABEL_ROW_CLASS` 决定（排版不进真值模块）。 */}
+                  {rows.map((row) => (
+                    <div
+                      key={row.key}
+                      className={WASH_LABEL_ROW_CLASS[row.key] || undefined}
+                      data-testid={washLabelRowTestId(row.key, index)}
+                    >
+                      {row.text}
                     </div>
-                  )}
-                  {/* ② 套序：真值源 §1 的行业措辞（`第 N 套 / 共 M 套`） */}
-                  <div className="whitespace-nowrap" data-testid={`task-card-label-set-no-${index}`}>
-                    第 {setNo} 套 / 共 {setCount} 套
-                  </div>
-                  {position.position_kind && (
-                    <div className="truncate" data-testid={`task-card-label-kind-${index}`}>
-                      部位 {position.position_kind}
-                    </div>
-                  )}
-                  {/* ③ 件名（可折行、不再 clamp；认件） */}
-                  <div data-testid={`task-card-label-position-${index}`}>
-                    {pieceName || '—'}
-                  </div>
-                  {showColor && (
-                    <div className="truncate" data-testid={`task-card-label-color-${index}`}>
-                      色号 {colorName}
-                    </div>
-                  )}
-                  {meters && (
-                    <div className="truncate" data-testid={`task-card-label-meters-${index}`}>
-                      用料 {meters}
-                    </div>
-                  )}
-                  {size && (
-                    <div className="truncate" data-testid={`task-card-label-size-${index}`}>
-                      宽高 {size}
-                    </div>
-                  )}
-                  {craftMode && (
-                    <div className="line-clamp-2" data-testid={`task-card-label-craft-${index}`}>
-                      加工方式 {craftMode}
-                    </div>
-                  )}
-                  <div className="whitespace-nowrap" data-testid="task-card-order-no">
-                    订单 {orderNo ?? '—'}
-                  </div>
-                  <div className="whitespace-nowrap" data-testid={`task-card-label-delivery-${index}`}>
-                    交期 {expectedDeliveryDate ?? '—'}
-                  </div>
-                  {remark && (
-                    <div className="line-clamp-2" data-testid={`task-card-label-remark-${index}`}>
-                      备注 {remark}
-                    </div>
-                  )}
-                  {/* 算料公式（用户字段裁定里的「备注（工艺备注 / 算料公式）」）：
-                      形态 = `韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米`；
-                      另一登记形态 = `褶倍数公式：(5.5÷2)×2 → 每片 2.75×2=5.5米 ×2片 = 11米`。
-                      🔴 issue #5646 实测改判 **clamp 3 行 → 2 行**：两条真公式串在 47.599mm 版心
-                      （≈22.5em/行）下都**恰好 2 行**（30mm 时代「韩褶公式」串要 3 行）。
-                      容量不退反增：2 × 22.5em = **45em** > 旧口径 3 × 13em = **39em**；
-                      高度预算同时省下 2.538mm（这正是最坏情况能收进 60mm 的原因）。
-                      ⚠️ 不许再回到 3 行：最坏构成（件名 2 + 加工方式 2 + 备注 2 + 公式 3 行）
-                      实测需 61.4mm > 60mm ⇒ 会把中部文字挤出纸外。 */}
-                  {formula && (
-                    <div className="line-clamp-2 text-neutral-600" data-testid={`task-card-label-formula-${index}`}>
-                      {formula}
-                    </div>
-                  )}
+                  ))}
                 </>
               ) : (
                 <div className="text-neutral-600">

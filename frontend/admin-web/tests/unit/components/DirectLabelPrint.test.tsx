@@ -29,8 +29,21 @@ vi.mock('qrcode.react', () => ({
 }))
 
 const LABELS: WashLabelInput[] = [
-  { qrValue: 'https://app.migaozn.com/s/7Q2M4K8P', shortCode: '7Q2M4K8P', pieceName: '客厅窗帘A', positionKind: '布帘' },
-  { qrValue: 'https://app.migaozn.com/s/3N8R5T1W', shortCode: '3N8R5T1W', pieceName: '卧室窗帘B', positionKind: '布帘' },
+  {
+    qrValue: 'https://app.migaozn.com/s/7Q2M4K8P',
+    shortCode: '7Q2M4K8P',
+    processingOrderNo: 'JG-20260921-8237',
+    rows: [
+      { key: 'customer', text: '客户 赵凯', maxLines: 1 },
+      { key: 'pieceName', text: '客厅窗帘A', maxLines: 2 },
+    ],
+  },
+  {
+    qrValue: 'https://app.migaozn.com/s/3N8R5T1W',
+    shortCode: '3N8R5T1W',
+    processingOrderNo: 'JG-20260921-8237',
+    rows: [{ key: 'pieceName', text: '卧室窗帘B', maxLines: 2 }],
+  },
 ]
 
 const JOB: PrintJob[] = [
