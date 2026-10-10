@@ -1,8 +1,9 @@
 // case_ids: UI-057, UI-058
 /**
- * 类级元守卫（issue #6663）：**读面失败不得伪装成空态**。
+ * 类级元守卫（issue #6663 起，issue #6669 扩第二条）：**读面失败的两种坏形态** ——
+ * ① 失败**看不见**（伪装成空态）；② 失败**看见了好几遍**（同一次故障多处信号）。
  *
- * ## 病灶（2026-10-10 三维审计，配置与权限面）
+ * ## 病灶一（2026-10-10 三维审计，配置与权限面）：失败伪装成空态
  *
  * 同一个病在三页各写了一遍：读接口失败时 catch **只把读数清空**——
  * `roles/page.tsx` 岗位清单读了失败 ⇒ 页面**像**「这个企业没有岗位」；
@@ -28,9 +29,18 @@
  *    ⚠️ 只有扫描判据会**假绿**：把 catch 改成 `setError('')` 也能「不再命中」——正向核堵住这条路。
  * 3. **台账只许缩短**：`LEDGER` 里不再命中的条目当场红（逼着删干净，不留僵尸豁免）。
  *
+ * ## 病灶二（issue #6669 未完成 1）：失败**看见了好几遍**
+ *
+ * `/settings` 的算料域读失败时同一故障在**一屏之内**报了好几遍（红条 / 徽标 / 数值位 / 底部再一行）。
+ * #6663 撤掉本域三处，最后一处在 `components/production-config/CalcFormulaPanel.tsx`（**别的文件族**）。
+ * 本文件新增第二组判据（`duplicateSignalSites` 一族）堵同类复发：**同一 catch 内既有内联失败文案、
+ * 又 `toast.error()` 播报同一次失败** ⇒ 必须登记进 `DUP_LEDGER`（未登记即红 / 台账只许缩短）。
+ * 射程只到 `src/components/production-config`（见该组 describe 的局限声明）。
+ *
  * ## 边界（照实登记，§19.1）
  *
- * - 只扫**商家后台**（`src/app/(dashboard)`），只认**源码文本形态**；
+ * - 第一条只扫**商家后台**（`src/app/(dashboard)`），第二条只扫 `src/components/production-config`；
+ *   两者都只认**源码文本形态**；
  * - **有意不判**「空 catch + 注释『拦截器已提示』」的**写面** catch（过账 / 作废 / 提交）：
  *   `request.ts` 拦截器已 toast，且**读面读数不变** ⇒ 不产生假的空态；
  * - **有意不判**「清提示语 / 清过程量」的 setter（`setSearchHint('')` / `setLoading(false)` 一族，
@@ -49,6 +59,12 @@ import {
   swallowSitesFromSource,
   findOffenders,
   staleLedger,
+  DUP_SCOPE,
+  DUP_LEDGER,
+  duplicateSignalSites,
+  duplicateSignalSitesFromSource,
+  dupOffenders,
+  dupStaleLedger,
 } from '../../scripts/read-failure-empty-state-scan.mjs'
 
 const ROOT = process.cwd()
@@ -179,3 +195,91 @@ describe('读面失败不得伪装成空态（类级元守卫，issue #6663）',
 function hits(source: string): number {
   return swallowSitesFromSource(source, { file: 'probe.tsx' }).length
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 第二条类级判据：**同一次读失败的重复信号**（issue #6669 未完成 1 / §31 P1 常驻面克制 · P2 信息不重复）
+//
+// 第一条判「失败**看不见**（伪装成空态）」；本条判「失败**看见了好几遍**」——
+// 同一个 catch 里既有**内联**失败文案（`setX('…')`，X 命中 error/fail/problem），
+// 又 `toast.error(...)` 播报同一件事 ⇒ 一屏两处。判据本体与台账（`DUP_LEDGER`）都在
+// **同一份** `scripts/read-failure-empty-state-scan.mjs`（不写第二份规则）。
+//
+// 射程（**照实登记的局限，不假装覆盖全站**）：只扫 `src/components/production-config`
+// —— 实测全仓 `src` 按本条形态也只命中该目录里的 2 处（`CalcFormulaPanel` 已修 /
+// `ProcessConfigBoard` 已登记）。其它目录的同族形态不会有东西变红。
+// ══════════════════════════════════════════════════════════════════════════════
+describe('同一次读失败不得多处信号（类级元守卫，issue #6669）', () => {
+  const dup = duplicateSignalSites(ROOT)
+
+  it('普查面非空（扫不到文件 ⇒ 本判据在扫空气，而不是"没问题"）', () => {
+    expect(dup.files.length, `${DUP_SCOPE} 下应有一批面板`).toBeGreaterThanOrEqual(5)
+    expect(dup.files, '扫描面必须含本条的实测发生地').toContain(
+      'src/components/production-config/CalcFormulaPanel.tsx',
+    )
+  })
+
+  it('已修的面板**不再命中**「内联 + toast 同一次失败报两遍」（实例判据的类级面）', () => {
+    const hit = dup.sites.filter((s) => s.file === 'src/components/production-config/CalcFormulaPanel.tsx')
+    expect(
+      hit.map((s) => `${s.key} (L${s.line} 内联「${s.inlineMsg}」+ toast×${s.toastCount})`),
+      'CalcFormulaPanel 又把同一句读失败同时内联 + toast 了 —— 一屏两处重复信号。\n'
+        + '出口：撤掉 `toast.error` 那一次播报（`lib/request.ts` 拦截器已统一播报），'
+        + '**保留**内联摘要 + 「重试」出口（撤的是重复，不是可见性）。',
+    ).toEqual([])
+  })
+
+  it('未登记即红：命中点必须逐条登记进 DUP_LEDGER', () => {
+    const { offenders } = dupOffenders(ROOT)
+    expect(
+      offenders.map((o) => o.key + `  (L${o.line} 内联「${o.inlineMsg}」+ toast×${o.toastCount})`),
+      '这些 catch 对同一次读失败既画内联文案、又 toast 播报 —— 要么修（首选，撤 toast 留内联），'
+        + '要么在 scripts/read-failure-empty-state-scan.mjs 的 DUP_LEDGER 里**具名登记**（只许缩短）：\n'
+        + offenders.map((o) => `  ${o.key}`).join('\n'),
+    ).toEqual([])
+  })
+
+  it('台账只许缩短：不再命中的条目当场红（逼着删干净）', () => {
+    const stale = dupStaleLedger(ROOT)
+    expect(
+      stale,
+      'DUP_LEDGER 里这些条目**不再命中**（对应 catch 已改对/已删）—— 台账只许缩短，请删掉这几条：\n'
+        + stale.join('\n'),
+    ).toEqual([])
+  })
+
+  it('判别力自证：坏形态判红、好形态不红（守卫退化成绿 ⇒ 这里先红）', () => {
+    const n = (source: string) => duplicateSignalSitesFromSource(source, { file: 'probe.tsx' }).length
+    const BAD = [
+      // ① 病灶原形（CalcFormulaPanel / ProcessConfigBoard 改前）：内联失败文案 + 同一句 toast
+      `function load() { try { await p() } catch (e) { setCalcError('算料配置加载失败，请稍后重试'); if (!isErrorToastShown(e)) toast.error('算料配置加载失败') } }`,
+      // ② 内联文案写在 toast 之后（顺序无关）
+      `function load() { try { await p() } catch { toast.error('加载失败'); setRowsError('加载失败，请稍后重试') } }`,
+    ]
+    for (const source of BAD) {
+      expect(n(source), `坏形态应判红：\n${source}`).toBeGreaterThan(0)
+    }
+    const GOOD = [
+      // ① 修好的形态：只留内联一处（本包对 CalcFormulaPanel 的处置）
+      `function load() { try { await p() } catch { setCalcError('算料配置加载失败，请稍后重试') } }`,
+      // ② 只有 toast、没有常驻内联面 ⇒ 不是「多处」（toast 是拦截器统一播报的那一处）
+      `function load() { try { await p() } catch (e) { toast.error('加载失败') } }`,
+      // ③ 内联是**清空/哨兵**（不是文案字面量）⇒ 属第一条判据的射程，本条不判
+      `function load() { try { await p() } catch { setCalcError('') } }`,
+      // ④ toast.success 不算失败播报（写面成功的祝贺）
+      `function save() { try { await p() } catch { setRowsError('保存失败，请稍后重试'); toast.success('已保存') } }`,
+    ]
+    for (const source of GOOD) {
+      expect(n(source), `好形态不该判红：\n${source}`).toBe(0)
+    }
+  })
+
+  it('台账非空且**逐条兑现**（现状读数 = 兄弟挂载 ProcessConfigBoard 一条；不许被删空消红）', () => {
+    // 🔴 防「有人把台账清空来消红」：这条钉住当前**取数**（DUP_LEDGER 的条目必须真的还在命中）。
+    // 条目归零的正确路径 = 把那个 catch 也修掉（同批删条目），**不是**删台账。
+    expect(DUP_LEDGER.length, 'DUP_LEDGER 被清空 = 用删台账代替修码；正确路径见扫描脚本注释').toBeGreaterThanOrEqual(1)
+    const live = new Set(dup.sites.map((s) => s.key))
+    for (const key of DUP_LEDGER) {
+      expect(live.has(key), `DUP_LEDGER 条目「${key}」在扫描面里已不命中 ⇒ 必须同批删掉`).toBe(true)
+    }
+  })
+})
