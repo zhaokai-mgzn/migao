@@ -20,6 +20,25 @@ import OrderStatusChart from '@/components/dashboard/OrderStatusChart'
 // 格式化
 // ═══════════════════════════════════════════════════════
 
+/**
+ * 工作台读数位的三种形态（issue #6701）。
+ *
+ * 🔴 **为什么要有这个类型**：改前金额/计数展示位一律 `stats?.todaySales ?? 0`
+ * ⇒ 经营数据读面失败时屏上同时出现「数据加载失败」**和**「今日销售额 ¥0」
+ * —— 「¥0」会被读成「今天没卖出去」⇒ **错误经营判断**（涉钱 + 商家第一屏）。
+ * 三态把「读不到」与「真 0」在**类型上**分开：
+ *   · `number`   = **读到了**（含真 0 —— 真 0 仍显示 `0`，别把真实零销售画成 `--`）；
+ *   · `'—'`      = **读不到**（与失败面同一措辞口径）；
+ *   · `'loading'`= 还没回来。
+ * （`metricText(v, fmt)` 的 `v === null` ⇒ 调用方**不渲染**这一位，如可插拔卡未取到时。）
+ * 口径与 bmini 侧 `frontend/bmini-app/src/services/dashboardService.ts` 的 `formatYuan` 一致
+ * （只有 `null` / `undefined` / 非有限值才落空值占位）。
+ */
+type MetricState = number | typeof DASHBOARD_EMPTY_VALUE | 'loading'
+
+/** 读不到 / 无有效值时的占位（全页统一；与失败面「加载失败」同一措辞口径：都不说 0） */
+const DASHBOARD_EMPTY_VALUE = '—'
+
 function fmtCurrency(n: number): string {
   if (n >= 10000) {
     const w = parseFloat((n / 10000).toFixed(2))
@@ -33,6 +52,25 @@ function fmtNum(n: number): string {
   return n.toLocaleString('zh-CN')
 }
 
+/**
+ * 「数据更新时间」（issue #6701）：只在**真有块取到**时刷新；全挂 ⇒ 明说「没取到」，
+ * 不把本次**尝试**的时刻印成新鲜度（那是假信号）。
+ */
+function updateTimeOf(succeeded: boolean): string {
+  return succeeded ? formatFullDateTime(new Date().toISOString()) : '—（本次未能取到数据）'
+}
+
+/**
+ * 读数位格式化（issue #6701）：`null` ⇒ **不渲染**（调用方负责显示占位）；
+ * `'loading'` ⇒ 省略号；`'—'`（读不到）⇒ 原样；`number` ⇒ 真读数（**真 0 就是 `0`**）。
+ */
+function metricText(v: MetricState | null | undefined, fmt: (n: number) => string): string | null {
+  if (v == null) return null
+  if (v === 'loading') return '…'
+  // 非有限值（NaN / Infinity）同「读不到」处置 —— 绝不印成数字
+  return v === DASHBOARD_EMPTY_VALUE || !Number.isFinite(v) ? DASHBOARD_EMPTY_VALUE : fmt(v)
+}
+
 /** 涨跌百分比带符号：+25.5% / -12.3% / 0% */
 function fmtSigned(n: number): string {
   if (!Number.isFinite(n)) return '—'
@@ -41,7 +79,6 @@ function fmtSigned(n: number): string {
   return `${sign}${Math.abs(n)}%`
 }
 
-/** 分块失败告警里显示的**人话块名**（键 = Promise.allSettled 的四块） */
 const BLOCK_LABELS: Record<string, string> = {
   stats: '经营数据与待处理',
   trend: '趋势图',
@@ -66,10 +103,6 @@ function changeBadge(
     return { text: `${prefix} —`, up: false, neutral: true, title: '无上期可比（上期为 0）—— 这不是「与上期持平」' }
   }
   return { text: `${prefix} ${fmtSigned(v)}`, up: v > 0, neutral: false, title: '' }
-}
-
-function now(): string {
-  return formatFullDateTime(new Date().toISOString())
 }
 
 // ═══════════════════════════════════════════════════════
@@ -148,8 +181,8 @@ const METRIC_STYLES: Record<string, { tile: string; icon: string; spark: string 
   month:   { tile: 'bg-amber-50',    icon: 'text-amber-600',    spark: '#b8933d' },
 }
 
-function BizStatCard({ title, value, change, hint, icon, sparkline, chartType, metric = 'orders' }: {
-  title: string; value: string; change?: { text: string; up: boolean; title?: string; neutral?: boolean }; hint?: string; icon: React.ReactNode; sparkline?: number[]; chartType?: 'line' | 'bar'; metric?: keyof typeof METRIC_STYLES
+function BizStatCard({ title, value, change, hint, icon, sparkline, chartType, metric = 'orders', valueTestId }: {
+  title: string; value: string | null; change?: { text: string; up: boolean; title?: string; neutral?: boolean }; hint?: string; icon: React.ReactNode; sparkline?: number[]; chartType?: 'line' | 'bar'; metric?: keyof typeof METRIC_STYLES; valueTestId?: string
 }) {
   const style = METRIC_STYLES[metric] || METRIC_STYLES.orders
   return (
@@ -179,7 +212,10 @@ function BizStatCard({ title, value, change, hint, icon, sparkline, chartType, m
       </div>
       <div className="flex items-end justify-between">
         <div>
-          <p className="tnum text-[26px] font-bold leading-none text-neutral-900">{value}</p>
+          {/* issue #6701：`value` 为 `null` ⇒ 该卡**不渲染读数**（可插拔卡未取到时用它） */}
+          {value !== null && (
+            <p data-testid={valueTestId} className="tnum text-[26px] font-bold leading-none text-neutral-900">{value}</p>
+          )}
           {hint && <p className="mt-1.5 text-xs text-neutral-400">{hint}</p>}
         </div>
         {sparkline && (chartType === 'bar'
@@ -216,14 +252,15 @@ const PENDING_COLORS: Record<string, { tile: string; icon: string }> = {
  * 判据：`frontend/admin-web/tests/unit/pages/dashboard.test.tsx` 的 #5881 用例
  * （形态判据 + 标题 ≤ 6 字的类级上限；像素读数由真浏览器截图复核，见 `migao-dev-flow` §15.7）。
  */
-function PendingCard({ title, count, icon, color }: { title: string; count: number; icon: React.ReactNode; color: string }) {
+function PendingCard({ title, count, icon, color }: { title: string; count: MetricState; icon: React.ReactNode; color: string }) {
   const c = PENDING_COLORS[color] || PENDING_COLORS.blue
   return (
     <div data-testid="pending-card" className="group flex h-full items-center gap-3.5 rounded-xl border border-neutral-200 bg-white p-4 shadow-card transition-all hover:-translate-y-0.5 hover:shadow-card-hover">
       <span className={cn('p-2.5 rounded-lg transition-transform group-hover:scale-105', c.tile)}>{icon}</span>
       <div className="flex-1 min-w-0">
         <p data-testid="pending-card-title" className="truncate text-xs text-neutral-500" title={title}>{title}</p>
-        <p className="tnum text-2xl font-bold leading-tight text-neutral-900">{fmtNum(count)}</p>
+        {/* issue #6701：读不到（`'—'`）⇒ 不出数字（**不是 0** —— 「0 条待发货」会被当成真实待办） */}
+        <p className="tnum text-2xl font-bold leading-tight text-neutral-900">{metricText(count, fmtNum)}</p>
       </div>
       <ArrowRight className="w-4 h-4 text-neutral-300 transition-all group-hover:translate-x-0.5 group-hover:text-primary-500" />
     </div>
@@ -277,6 +314,8 @@ export default function DashboardPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true)
+    // 本次**真取到**的块（issue #6701）：时间戳只在非空时刷新，全挂 ⇒ 不伪造新鲜度
+    const succeeded: string[] = []
     try {
       // #2886: 4 个接口一次并发（原 3 波串行 → 1 波，整页接口等待从 ~640ms 降到单波 max）
       //   pendingShipOrders / processingPendingOrders / lowStockItems 均由 stats 聚合返回，
@@ -304,6 +343,7 @@ export default function DashboardPage() {
           delete next.stats
           return next
         })
+        succeeded.push('stats')
       } else {
         console.error('Dashboard stats:', statsRes.reason)
         setBlockErrors((prev) => ({ ...prev, stats: BLOCK_LABELS.stats }))
@@ -316,6 +356,7 @@ export default function DashboardPage() {
           delete next.trend
           return next
         })
+        succeeded.push('trend')
       } else {
         console.error('Dashboard trend:', trendRes.reason)
         setBlockErrors((prev) => ({ ...prev, trend: BLOCK_LABELS.trend }))
@@ -328,6 +369,7 @@ export default function DashboardPage() {
           delete next.orders
           return next
         })
+        succeeded.push('orders')
       } else {
         console.error('Dashboard recent orders:', ordersRes.reason)
         setBlockErrors((prev) => ({ ...prev, orders: BLOCK_LABELS.orders }))
@@ -340,6 +382,7 @@ export default function DashboardPage() {
           delete next.ranking
           return next
         })
+        succeeded.push('ranking')
       } else {
         console.error('Dashboard ranking:', rkRes.reason)
         setBlockErrors((prev) => ({ ...prev, ranking: BLOCK_LABELS.ranking }))
@@ -352,11 +395,14 @@ export default function DashboardPage() {
           delete next.orderStatus
           return next
         })
+        succeeded.push('orderStatus')
       } else {
         console.error('Dashboard order status:', osRes.reason)
         setBlockErrors((prev) => ({ ...prev, orderStatus: BLOCK_LABELS.orderStatus }))
       }
-      setUpdateTime(now())
+      // issue #6701：**只在有块真取到时**刷新时间戳 —— 整页读面失败却把时间戳改成本次尝试时刻
+      // ⇒ 屏上出现**假的新鲜度**（与「失败面 + 假 0」同族的信号打架）。全挂 ⇒ 明说「没取到」。
+      setUpdateTime(updateTimeOf(succeeded.length > 0))
     } catch (error) {
       // Promise.allSettled 不会整体 reject，此分支仅兜底
       console.error('Dashboard load:', error)
@@ -398,6 +444,8 @@ export default function DashboardPage() {
         delete next[key]
         return next
       })
+      // issue #6701：同 fetchData —— 只在真取到时刷新（这里 `key` 这块这次成功了）
+      setUpdateTime(updateTimeOf(true))
     } catch (error) {
       console.error('Dashboard retry:', key, error)
       setBlockErrors((prev) => ({ ...prev, [key]: BLOCK_LABELS[key] ?? key }))
@@ -421,11 +469,26 @@ export default function DashboardPage() {
   // 销售额序列（真实 amount 字段，单位分；不再用 23.8 假乘数估算）
   const salesSeries = trendData.map(d => d.amount || 0)
 
-  // 客单价 = 今日销售额 ÷ 今日订单数（数字自洽：订单数 × 客单价 ≈ 销售额）
-  const avgOrderValue = (stats?.todayOrders ?? 0) > 0
-    ? Math.round((stats?.todaySales ?? 0) / (stats?.todayOrders ?? 1))
-    : 0
+  // 🔴 issue #6701：读派生的展示位**不许 `?? 0`** —— 读不到就渲染读不到，别折成 0。
+  // 「stats 块读了失败」的判据 = `stats === null`（口径同 `blockErrors.stats`；重启条件：
+  // 若哪天真支持「失败但保留了上次成功值」，把这里的判据改成 `'stats' in blockErrors`）。
+  const statsMissing = stats === null
+  // `v ?? DASHBOARD_EMPTY_VALUE` 的右半边是**防御**：字段在契约里是必填（`DashboardStats`），
+  // 但「读面回了个残缺对象」在真机上发生过 ⇒ 宁可显示「读不到」，也不许印成 0。
+  const todayOrdersState: MetricState = loading ? 'loading' : statsMissing ? DASHBOARD_EMPTY_VALUE : stats.todayOrders ?? DASHBOARD_EMPTY_VALUE
+  const todaySalesState: MetricState = loading ? 'loading' : statsMissing ? DASHBOARD_EMPTY_VALUE : stats.todaySales ?? DASHBOARD_EMPTY_VALUE
+  const monthRevenueState: MetricState = loading ? 'loading' : statsMissing ? DASHBOARD_EMPTY_VALUE : stats.monthRevenue ?? DASHBOARD_EMPTY_VALUE
+  const pendingPaymentState: MetricState = loading ? 'loading' : statsMissing ? DASHBOARD_EMPTY_VALUE : pendingPayment
+  const pendingShipmentState: MetricState = loading ? 'loading' : statsMissing ? DASHBOARD_EMPTY_VALUE : pendingShipment
+  const processingShipmentState: MetricState = loading ? 'loading' : statsMissing ? DASHBOARD_EMPTY_VALUE : processingShipment
+  const overdueTicketsState: MetricState = loading ? 'loading' : statsMissing ? DASHBOARD_EMPTY_VALUE : overdueTickets
+  const lowStockState: MetricState = loading ? 'loading' : statsMissing ? DASHBOARD_EMPTY_VALUE : lowStockCount
+  // 客单价 = 今日销售额 ÷ 今日订单数（数字自洽：订单数 × 客单价 ≈ 销售额）。读不到 ⇒ `'—'`（**不是 0**）
+  const avgOrderValue: MetricState = loading || statsMissing
+    ? DASHBOARD_EMPTY_VALUE
+    : stats.todayOrders > 0 ? Math.round(stats.todaySales / stats.todayOrders) : 0
 
+  // 销量排行最大值（进度条基准）
   // 销量排行最大值（进度条基准）
   const maxSalesQty = Math.max(...ranking.map(r => r.salesQty || 0), 1)
 
@@ -473,11 +536,12 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 黄金策「今日经营速览」洞察条 — 一句话经营解读，置于页面顶部 */}
+      {/* 黄金策「今日经营速览」洞察条 — 一句话经营解读，置于页面顶部。
+          issue #6701：传**未取到**（null）而不是 0 —— 否则读面失败时这句话会说
+          「今日暂无新订单，销售额 ¥0」（把「读不到」说成「今天没卖出去」）。 */}
       <TodayOverviewBar
-        todayOrders={stats?.todayOrders ?? 0}
-        todaySales={stats?.todaySales ?? 0}
-        orderChange={stats?.todayOrdersChange ?? null}
+        todayOrders={stats?.todayOrders ?? null}
+        todaySales={stats?.todaySales ?? null}        orderChange={stats?.todayOrdersChange ?? null}
         salesChange={stats?.todaySalesChange ?? null}
         processingCount={processingShipment}
         pendingCount={pendingShipment}
@@ -493,17 +557,17 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {/* issue #5792 第二阶段：待支付订单（钱还没到）。下钻用**端点枚举值**
               （`resolveStatusParam` 直接匹配 `pending_payment`），不依赖中文标签映射。 */}
-          <Link href="/orders?status=pending_payment"><PendingCard title="待支付订单" count={pendingPayment} icon={<DollarSign className="w-4 h-4 text-amber-600" />} color="amber" /></Link>
-          <Link href="/orders?status=待发货"><PendingCard title="待发货订单" count={pendingShipment} icon={<Package className="w-4 h-4 text-primary-600" />} color="blue" /></Link>
+          <Link href="/orders?status=pending_payment"><PendingCard title="待支付订单" count={pendingPaymentState} icon={<DollarSign className="w-4 h-4 text-amber-600" />} color="amber" /></Link>
+          <Link href="/orders?status=待发货"><PendingCard title="待发货订单" count={pendingShipmentState} icon={<Package className="w-4 h-4 text-primary-600" />} color="blue" /></Link>
           {/* issue #5881：文案「含加工待发货订单」（8 字）是同行最长的一项，恰好卡在换行临界点上
               ⇒ 把该卡撑高、与其余四张不一致。缩为「含加工待发货」（6 字，语义不变），
               同排不再换行；`<Link>` 的查询参数 `category=含加工订单` 是**端点契约**，一字不动。 */}
-          <Link href="/orders?category=含加工订单&status=待发货"><PendingCard title="含加工待发货" count={processingShipment} icon={<Settings className="w-4 h-4 text-accent-600" />} color="purple" /></Link>
+          <Link href="/orders?category=含加工订单&status=待发货"><PendingCard title="含加工待发货" count={processingShipmentState} icon={<Settings className="w-4 h-4 text-accent-600" />} color="purple" /></Link>
           {/* issue #5792：超时工单卡 —— 下钻 `?overdue=1` 与计数**同源**
               （`AfterSalesTicketMapper.applyOverdue`）：列表页会真的筛（已实装可见指示 + 可清除），
               不会出现「卡说 3 条、点进去一屏」。 */}
-          <Link href="/after-sales?overdue=1"><PendingCard title="超时工单" count={overdueTickets} icon={<ClipboardList className="w-4 h-4 text-red-600" />} color="red" /></Link>
-          <Link href="/products?low_stock=true"><PendingCard title="待补库存商品" count={lowStockCount} icon={<Package className="w-4 h-4 text-red-600" />} color="red" /></Link>
+          <Link href="/after-sales?overdue=1"><PendingCard title="超时工单" count={overdueTicketsState} icon={<ClipboardList className="w-4 h-4 text-red-600" />} color="red" /></Link>
+          <Link href="/products?low_stock=true"><PendingCard title="待补库存商品" count={lowStockState} icon={<Package className="w-4 h-4 text-red-600" />} color="red" /></Link>
         </div>
       </div>
 
@@ -518,8 +582,9 @@ export default function DashboardPage() {
               <BizStatCard
                 metric="orders"
                 title="今日订单数"
-                value={stats?.todayOrders?.toLocaleString() || '0'}
-                change={changeBadge('较昨日', stats?.todayOrdersChange)}
+                value={metricText(todayOrdersState, fmtNum)}
+                valueTestId="stats-card-today-orders"
+                change={statsMissing ? undefined : changeBadge('较昨日', stats?.todayOrdersChange)}
                 icon={<ClipboardList className="w-4 h-4 text-primary-600" />}
                 sparkline={sparkline}
                 chartType="line"
@@ -527,8 +592,9 @@ export default function DashboardPage() {
               <BizStatCard
                 metric="sales"
                 title="今日销售额"
-                value={fmtCurrency(stats?.todaySales || 0)}
-                change={changeBadge('较昨日', stats?.todaySalesChange)}
+                value={metricText(todaySalesState, fmtCurrency)}
+                valueTestId="stats-card-today-sales"
+                change={statsMissing ? undefined : changeBadge('较昨日', stats?.todaySalesChange)}
                 icon={<DollarSign className="w-4 h-4 text-emerald-600" />}
                 sparkline={salesSeries.slice(-14)}
                 chartType="bar"
@@ -536,15 +602,17 @@ export default function DashboardPage() {
               <BizStatCard
                 metric="month"
                 title="客单价"
-                value={avgOrderValue > 0 ? fmtCurrency(avgOrderValue) : '—'}
-                hint={avgOrderValue > 0 ? '今日每单平均消费' : '暂无订单'}
+                value={metricText(avgOrderValue, fmtCurrency)}
+                valueTestId="stats-card-avg-order-value"
+                hint={statsMissing ? '经营数据读不到' : avgOrderValue === 0 ? '暂无订单' : '今日每单平均消费'}
                 icon={<TrendingUp className="w-4 h-4 text-accent-600" />}
               />
               <BizStatCard
                 metric="month"
                 title="本月销售额"
-                value={fmtCurrency(stats?.monthRevenue || 0)}
-                change={changeBadge('较上月', stats?.monthRevenueChange)}
+                value={metricText(monthRevenueState, fmtCurrency)}
+                valueTestId="stats-card-month-revenue"
+                change={statsMissing ? undefined : changeBadge('较上月', stats?.monthRevenueChange)}
                 icon={<DollarSign className="w-4 h-4 text-accent-600" />}
               />
             </>
@@ -571,7 +639,7 @@ export default function DashboardPage() {
                   <div>
                     <p className="text-xs text-neutral-400">{card.title}</p>
                     <p className="mt-1 text-2xl font-semibold text-neutral-900">
-                      {stats ? `${stats.aiSessionRate ?? 0}%` : '—'}
+                      {stats ? `${stats.aiSessionRate ?? 0}%` : DASHBOARD_EMPTY_VALUE}
                     </p>
                   </div>
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-50">
