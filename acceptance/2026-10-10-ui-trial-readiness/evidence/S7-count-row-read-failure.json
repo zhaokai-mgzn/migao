@@ -1,0 +1,77 @@
+{
+  "when": "2026-10-10T16:44:50.015Z",
+  "pages": [
+    {
+      "path": "/orders",
+      "countZero": [],
+      "countDash": [
+        "共 — 条"
+      ],
+      "anchors": [
+        "orders-load-error",
+        "orders-load-error-retry"
+      ],
+      "permBlame": false
+    },
+    {
+      "path": "/finance",
+      "countZero": [],
+      "countDash": [
+        "共 — 条"
+      ],
+      "anchors": [
+        "finance-summary-load-error",
+        "finance-summary-load-error-retry",
+        "finance-load-error"
+      ],
+      "permBlame": false
+    },
+    {
+      "path": "/customers",
+      "countZero": [],
+      "countDash": [
+        "共 — 条"
+      ],
+      "anchors": [
+        "customers-load-error",
+        "customers-load-error-retry"
+      ],
+      "permBlame": false
+    },
+    {
+      "path": "/after-sales",
+      "countZero": [],
+      "countDash": [
+        "共 — 条"
+      ],
+      "anchors": [
+        "after-sales-load-error",
+        "after-sales-load-error-retry"
+      ],
+      "permBlame": false
+    },
+    {
+      "path": "/knowledge",
+      "countZero": [],
+      "countDash": [
+        "共 — 条"
+      ],
+      "anchors": [
+        "knowledge-load-error",
+        "knowledge-load-error-retry"
+      ],
+      "permBlame": false
+    },
+    {
+      "path": "/stock-ledger",
+      "countZero": [],
+      "countDash": [
+        "共 — 条"
+      ],
+      "anchors": [
+        "stock-ledger-error-retry"
+      ],
+      "permBlame": true
+    }
+  ]
+}

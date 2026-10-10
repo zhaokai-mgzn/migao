@@ -10,7 +10,8 @@
 
 ```bash
 # 前置：admin-web dev server 在 :3001，且**已确认服务的就是 HEAD**（见下「自证」）
-node acceptance/2026-10-10-ui-trial-readiness/run.mjs
+node acceptance/2026-10-10-ui-trial-readiness/run.mjs        # S1–S6
+node acceptance/2026-10-10-ui-trial-readiness/run-count-row.mjs # S7（计数行；需先登录态，跑完写 evidence/S7-*.json）
 # 换端口：ADMIN_WEB_BASE=http://localhost:3002 node run.mjs
 ```
 
@@ -34,6 +35,7 @@ npm run dev                                   # ⚠️ 只起一个实例（多�
 | S4 | 余料台账 `/production/remnants` 分页（#6697） | 屏上「共 N 块」与分页 total 一致；点第 2 页 ⇒ **真发 `page=2`** 且行集合真换 |
 | S5 | 读失败注入（#6691/#6702 口径） | 持久失败锚点在场 + 可行动文案 + 重试出口；**不得**把失败画成 0/空 |
 | S6 | 屏面卫生（8 页，§31） | `UUID` / 24 位 ObjectId / `snake_case` 内部键 / `undefined｜NaN｜[object Object]` / 残留「加载中」全为 **0** |
+| S7 | 列表页计数行（#6703，独立运行器 `run-count-row.mjs`） | 后端整体不可用（`/api/admin/**`→500）**6s 后**复查 ⇒ 6 页**不得**含「共 0 条」、计数位为 `—`、每页有**常驻**失败锚点 |
 
 ## 判定口径（本轮实测踩出来的 4 条，判据/探针照此写）
 
