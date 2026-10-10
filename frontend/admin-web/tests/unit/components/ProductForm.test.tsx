@@ -2,10 +2,11 @@
  * ProductForm 组件测试
  * 覆盖：#646 移除 in_warehouse — 按钮数量、labelMap 无仓库中
  * #4371：加工项与商品解耦 —— 表单不再有「是否支持加工」与加工项配置编辑区
- * case_ids: PR-008, PR-017, PR-042, PR-043, PR-044, OR-046
+ * case_ids: PR-008, PR-017, PR-042, PR-043, PR-044, OR-046, UI-055
+ * #6662：存草稿并离开不得谎报已存（校验失败 ⇒ 弹窗保持打开 + 错误逐条可见）
  */
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import ProductForm from '@/components/products/ProductForm'
 
 // Mock 子组件以减少依赖
@@ -396,5 +397,79 @@ describe('售卖方式与卷长：商品基础属性（PR-042 / PR-043）', () =
 
     expect(await screen.findByText('请至少添加 1 种售卖方式')).toBeTruthy()
     expect(onSubmit).not.toHaveBeenCalled()
+  })
+})
+
+// ========== 「存草稿并离开」不得谎报已存 / 不得静默关弹窗（issue #6662 判据 ②）==========
+//
+// 缺陷形态：`handleSaveDraftAndLeave` 的 `finally { setShowLeaveModal(false) }` —— `validate()`
+// 失败时是**早退 return、不抛异常** ⇒ `catch` 永不触发、`finally` 无条件关弹窗。
+// 而弹窗恰恰只在「表单本来就不完整」时才出现 ⇒ 最常见路径上 100% 命中：
+// **弹窗关了、草稿没存、人也没离开**，商家以为存上了。
+// 判据：校验失败 ⇒ 弹窗**保持打开** + 错误**可见**、明确「未保存」，且一个请求都不发。
+// 红证（注入式）：把 `finally` 里的 `setShowLeaveModal(false)` 加回去 ⇒ 本组判据红。
+describe('ProductForm — 存草稿并离开：校验失败不得谎报已存（issue #6662 判据 ②）', () => {
+  // ⚠️ 必须清 spy：同文件前面的用例（PR-043）已经真实走通过一次「存草稿」⇒
+  // `toast.success('已存为草稿')` 的调用记录会跨用例累积，`not.toHaveBeenCalledWith` 会假红。
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    const { toast } = await import('sonner')
+    vi.mocked(toast.success).mockClear()
+  })
+
+  /**
+   * 脏表单 + 浏览器后退 ⇒ 触发「确认离开」弹窗。
+   * ⚠️ 两个坑（本会话实测）：
+   * ① 必须**先让 effect 挂上 `popstate` 监听**（dirty 的 effect 在 commit 之后才跑）；
+   * ② dispatch 必须包在 `act()` 里（React 19 下裸 dispatch 的状态更新会被丢弃/告警）。
+   */
+  async function triggerLeaveModal() {
+    const { act } = await import('@testing-library/react')
+    Element.prototype.scrollIntoView = vi.fn()
+    await new Promise((r) => setTimeout(r, 0))
+    history.replaceState(null, '', '/products/new')
+    history.pushState({ __leave_block: true }, '', '/products/new')
+    await act(async () => {
+      window.dispatchEvent(new PopStateEvent('popstate', { state: {} }))
+    })
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeTruthy())
+  }
+
+  it('#6662 校验失败时点「存草稿」⇒ 弹窗仍在、错误可见、且绝不谎报已存', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<ProductForm onSubmit={onSubmit} />)
+
+    // ⚠️ 只需「脏」**不需**填标题：draft 的校验规则**只要求标题** —— 真填了标题反而校验通过、
+    // 弹窗就该正常关闭（那是负控那条）。缺陷现场是**本来就不完整**的表单：
+    // 填一个与校验无关的字段（这里是卷长）把表单改脏即可。
+    const rollInput = within(screen.getByTestId('pf-roll-length')).getByRole('textbox')
+    fireEvent.change(rollInput, { target: { value: '60' } })
+    await triggerLeaveModal()
+
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('存草稿'))
+    await new Promise((r) => setTimeout(r, 0))
+    // ① 弹窗不关（缺陷形态：finally 无条件关 ⇒ 这里红）
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    // ② 错误逐条可见（指向行动）
+    expect(screen.getByTestId('leave-save-errors').textContent).toContain('请输入商品标题')
+    // ③ 不谎报已存、不调提交
+    const { toast } = await import('sonner')
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(toast.success).not.toHaveBeenCalledWith('已存为草稿')
+  })
+
+  it('#6662 校验通过时点「存草稿」⇒ 照常提交（负控：不能为了不谎报而卡死正常路径）', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<ProductForm onSubmit={onSubmit} />)
+
+    // 填标题（draft 的唯一必填项）+ 改脏 ⇒ 校验通过
+    fireEvent.change(screen.getByPlaceholderText('最多可输入50汉字（100字符）'), {
+      target: { value: '遮光窗帘' },
+    })
+    await triggerLeaveModal()
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('存草稿'))
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1))
+    expect(onSubmit.mock.calls[0][1]).toBe('draft')
   })
 })

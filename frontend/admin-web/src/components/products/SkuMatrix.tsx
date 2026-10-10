@@ -11,6 +11,7 @@ import { rebuildSkus, nextTempId, DOOR_WIDTH_OPTIONS, doorWidthSelectOptions, no
 // 三处上限抽到 `lib/product-limits.ts`（issue #6354）：图片识别预填按**同一个数**裁剪识别结果，
 // 不再是「组件里一份、预填侧再写一份」的第二份口径。
 import { COLOR_NAME_MAX, MAX_COLORS, MAX_SKUS } from '@/lib/product-limits'
+import { STOCK_UNIT } from '@/lib/product-roll-length'
 
 interface SkuMatrixProps {
   value: {
@@ -632,7 +633,7 @@ export default function SkuMatrix({ value, onChange, errors, recognizedFields }:
                     <span className="text-red-500 mr-0.5">*</span>价格（元）
                   </th>
                   <th className="px-3 py-2.5 text-left font-medium border-b border-neutral-200 w-[25%]">
-                    <span className="text-red-500 mr-0.5">*</span>库存（米）
+                    <span className="text-red-500 mr-0.5">*</span>库存（{STOCK_UNIT}）
                   </th>
                 </tr>
               </thead>
