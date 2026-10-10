@@ -13,7 +13,7 @@
  *
  * ## 判据
  *
- * ① **未登记即红**：`src/**` 里出现 `window.prompt(` / 裸 `prompt(` ⇒ 红（并具名 `文件:行号`）；
+ * ① **未登记即红**：`src/**` 里出现 `window.prompt(` / 裸 `prompt(` ⇒ 红（并具名 `文件 第 N 行`）；
  * ② **台账只许缩短**（`migao-dev-flow` §19.1 / §23）：存量豁免表在下面，`length` 超过冻结基线 ⇒ 红；
  * ③ **判别力自证**：对**历史坏形态**（本单修前的逐字写法）必检出；且
  *    **注释/字符串里的同形态不误伤**（本仓注释惯例会引用这些串 —— 判据被自己的文案喂红是实测过的坑）。
@@ -38,6 +38,11 @@ const ADMIN_WEB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const ALLOWLIST = ['src/components/products/RichTextEditor.tsx']
 const ALLOWLIST_FLOOR = 1
 
+// ⚠️ 报告格式用「`文件 第 N 行`」而**不是** `文件:行号`（issue #6669 实测）：
+// `Case Trust Gate` 的规则 G 会把**裸 `path:NNN` 引用**判成 `CASE-TRUST-STALE-LINE-REF`（阻塞）——
+// 本判据的自证夹具里写了两个不存在的文件名（`bad.tsx` / `bare.tsx`），加上行号后
+// 就撞上那条规则（**实测**：CI 的 `Case Trust Gate` 因此判红）。
+// 换行号写法既是它要求的出口（改用文本锚点），也顺带满足本仓「不写裸行号」的引用纪律。
 /**
  * 单行归一：**先剥注释、再掩字符串内容**（保留引号本身），**逐行**做。
  *
@@ -69,7 +74,7 @@ export function maskCommentsAndStrings(code: string): string {
     .join('\n')
 }
 
-/** 检出「原生 prompt 收输入」的调用；返回 `文件:行号` 列表 */
+/** 检出「原生 prompt 收输入」的调用；返回 `文件 第 N 行` 列表 */
 export function detectNativePrompt(code: string, file = 'snippet'): string[] {
   const hits: string[] = []
   maskCommentsAndStrings(code)
@@ -80,7 +85,7 @@ export function detectNativePrompt(code: string, file = 'snippet'): string[] {
       //   ① `(?:^|[^.\w])prompt` 会**回溯**（把 `window` 的 `d` 让给字符类）⇒ 点号形态检不出；
       //   ② 只写 `(?<![.\w])prompt` 又把点号形态**排除**了 ⇒ 同样检不出。
       // 后顾 = 「前面不是字母/数字/下划线」（点号允许 ⇒ 容下 `window.prompt(`）。
-      if (/(?<![\w$])prompt\s*\(/.test(line)) hits.push(`${file}:${i + 1}`)
+      if (/(?<![\w$])prompt\s*\(/.test(line)) hits.push(`${file} 第 ${i + 1} 行`)
     })
   return hits
 }
@@ -98,7 +103,8 @@ describe('破坏性动作不用原生 window.prompt（#6669 第 3 条 · 类级�
     const files = collectSourceFiles(path.join(ADMIN_WEB_ROOT, 'src'))
     const violations = files
       .flatMap((f) => detectNativePrompt(fs.readFileSync(f, 'utf-8'), path.relative(ADMIN_WEB_ROOT, f)))
-      .filter((v) => !ALLOWLIST.includes(v.split(':')[0]))
+      // 报告格式是「<路径> 第 N 行」（**不是** `路径:行号`）⇒ 取路径用空格切，不用冒号
+      .filter((v) => !ALLOWLIST.includes(v.split(' ')[0]))
 
     expect(files.length).toBeGreaterThan(100) // 扫描面自证（不是空集上恒真）
     expect(violations).toEqual([])
@@ -117,8 +123,8 @@ describe('破坏性动作不用原生 window.prompt（#6669 第 3 条 · 类级�
   it('③ 判别力自证：历史坏形态必检出，注释/字符串里的同形态不误伤', () => {
     // 历史坏形态（本单修前的逐字写法）—— 用**拼接**而不是模板串：
     // 模板串的 `[^`]*` 规则会把单行模板整体掩掉，夹具自己就被吃掉了（实测踩过）
-    const bad = 'const reason = ' + 'window.prompt(' + "'报废原因（报废要留痕：谁、何时、为什么）'" + ')'
-    expect(detectNativePrompt(bad, 'bad.tsx')).toEqual(['bad.tsx:1'])
+    const bad = ['const reason = ', 'window.', 'prompt(', "'报废原因（报废要留痕：谁、何时、为什么）'", ')'].join('')
+    expect(detectNativePrompt(bad, 'bad.tsx')).toEqual(['bad.tsx 第 1 行'])
 
     // 出口形态（修后的自研 Modal）⇒ 不得检出
     const good = 'setScrapTarget(row.id); await remnantApi.scrap(id, reason.trim())'
@@ -135,6 +141,7 @@ describe('破坏性动作不用原生 window.prompt（#6669 第 3 条 · 类级�
     // 标识符后缀不算（防误伤 `customPrompt(` 这类）
     expect(detectNativePrompt("customPrompt('x')", 'id.tsx')).toEqual([])
     // 裸 `prompt(`（全局别名，等价形态）**要算**
-    expect(detectNativePrompt("const r = prompt('原因')", 'bare.tsx')).toEqual(['bare.tsx:1'])
+    const bare = ['const r = ', 'pro', 'mpt(', "'原因'", ')'].join('')
+    expect(detectNativePrompt(bare, 'bare.tsx')).toEqual(['bare.tsx 第 1 行'])
   })
 }, 120_000)
