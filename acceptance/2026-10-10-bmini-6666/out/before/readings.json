@@ -1,0 +1,248 @@
+{
+  "base": "https://app.migaozn.com",
+  "servedIndexSha256_16": "b1f3a2ef2929ec66",
+  "servedAppJsSha256_16": "52cbdcbd34812c4b",
+  "viewport": {
+    "w": 390,
+    "h": 844
+  },
+  "chatInput": {
+    "rendered": true,
+    "tabbarTop": 794,
+    "inputBottom": 794,
+    "inputHeight": 63.4,
+    "coveredPx": 0,
+    "coveredVerdict": "OK",
+    "viewportHeight": 844,
+    "chatPageHeight": 844
+  },
+  "todoTags": [
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "待排产",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    },
+    {
+      "lineBoxes": 1,
+      "label": "卡在哪",
+      "lines": 1,
+      "rects": 1,
+      "textWidth": 37.5,
+      "tagWidth": 49.9,
+      "overflow": false,
+      "tagHeight": 20.8
+    }
+  ],
+  "dashboardBottomReach": {
+    "scrollContainer": "taro_page taro_tabbar_page taro_navigation_page taro_page_show taro_page_stationed",
+    "lastItemBottom": 115.1,
+    "tabbarTop": 794,
+    "lastItemCoveredPx": -678.9
+  },
+  "tabbarInset": [
+    {
+      "page": "dashboard",
+      "rendered": true,
+      "viewportHeight": 844,
+      "scrollContainer": ".dashboard-page",
+      "scrollTop": 0,
+      "scrollHeight": 2067,
+      "clientHeight": 2067,
+      "rootBottom": 844.4,
+      "tabbarTop": 794,
+      "lowestLeaf": {
+        "text": "暂无待办，AI 正在处理中",
+        "bottom": 799.5,
+        "top": 782.5
+      },
+      "lowestLeafCoveredPx": 5.5
+    },
+    {
+      "page": "sessions",
+      "rendered": true,
+      "viewportHeight": 844,
+      "scrollContainer": ".sessions-page",
+      "scrollTop": 0,
+      "scrollHeight": 856,
+      "clientHeight": 856,
+      "rootBottom": 856.5,
+      "tabbarTop": 794,
+      "lowestLeaf": {
+        "text": "队列空闲，AI 正在处理中",
+        "bottom": 179.5,
+        "top": 162.5
+      },
+      "lowestLeafCoveredPx": -614.5
+    },
+    {
+      "page": "profile",
+      "rendered": true,
+      "viewportHeight": 844,
+      "scrollContainer": ".profile-page",
+      "scrollTop": 0,
+      "scrollHeight": 844,
+      "clientHeight": 844,
+      "rootBottom": 844,
+      "tabbarTop": 794,
+      "lowestLeaf": {
+        "text": "退出登录",
+        "bottom": 342.6,
+        "top": 317.7
+      },
+      "lowestLeafCoveredPx": -451.4
+    }
+  ],
+  "sessionDetail": {
+    "viewportHeight": 844,
+    "navbar": null,
+    "detailPage": {
+      "top": 0,
+      "bottom": 844,
+      "height": 844
+    },
+    "detailInput": {
+      "top": 788.9,
+      "bottom": 844,
+      "height": 55.1
+    },
+    "hasInput": true,
+    "statusClass": "detail-header__status detail-header__status--${detail?.status}",
+    "statusColor": "rgb(10, 37, 64)",
+    "inputBelowViewportPx": 0
+  },
+  "orderDetail": {
+    "rendered": true,
+    "text": "加工单号 JG-20261006-8477 订单号 20261006497350118 客户 SD07演示客814127-095 交期 2026-10-20 工序进度 已完成 6/9 布帘 精裁 · 布帘 应做 6.2米 · 已报 6.2米 打包 应做 1套 · 已报 0套 外帘装袋 应做 1套 · 已报 0套 卡在哪 这单有 1 道卡住了（上道已交、这道没人开工，等待超过 4 小时就列在这里；系统兜底默认值） 打包 等了 74.6 小时",
+    "mentionsStuck": true,
+    "hasHeader": true,
+    "hasOperations": true,
+    "stuckPointRequests": 1
+  },
+  "inputBar": {
+    "hasToggle": true,
+    "hasAttach": true,
+    "hasSend": true,
+    "voiceModeByHold": true,
+    "holdText": "按住说话",
+    "textareaVisible": false,
+    "controlsSameRow": true,
+    "controlCenters": [
+      764.890625,
+      764.890625,
+      764.890625,
+      764.890625
+    ],
+    "canInputBarFound": true
+  },
+  "tagWrapVerdict": "OK",
+  "screenshots": [
+    "/Users/guangzhen.zk/ai native/migao-wt/6666-bmini/acceptance/2026-10-10-bmini-6666/out/before/chat-page.png",
+    "/Users/guangzhen.zk/ai native/migao-wt/6666-bmini/acceptance/2026-10-10-bmini-6666/out/before/dashboard-todo.png"
+  ],
+  "note": null
+}

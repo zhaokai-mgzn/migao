@@ -3,6 +3,8 @@ import { View, Text, Image } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import type { Message, CardData, InteractiveData } from '../../types'
 import { parseRichText } from '../../utils/richText'
+// 时间口径单一真值（issue #6666 判据 8）：本文件原有私有 formatTime 已并入共享实现
+import { formatMessageTime } from '../../utils/datetime'
 import ProductCard from '../cards/ProductCard'
 import ProductFormList from '../cards/ProductFormList'
 import LogisticsCard from '../cards/LogisticsCard'
@@ -19,29 +21,6 @@ interface MessageBubbleProps {
   message: Message
   /** 交互回调：点击确认/取消/追问/下单按钮时，发送对应文本作为用户消息 */
   onInteract?: (value: string) => void
-}
-
-/** 格式化时间 */
-function formatTime(dateStr: string): string {
-  const date = new Date(dateStr)
-  if (Number.isNaN(date.getTime())) return ''
-
-  const now = new Date()
-  const isToday =
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate()
-
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-
-  if (isToday) {
-    return `${hours}:${minutes}`
-  }
-
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${month}-${day} ${hours}:${minutes}`
 }
 
 /** 渲染单张卡片 */
@@ -190,7 +169,7 @@ export default function MessageBubble({ message, onInteract }: MessageBubbleProp
     interactiveAnswered,
   } = message
 
-  const timeStr = useMemo(() => formatTime(created_at), [created_at])
+  const timeStr = useMemo(() => formatMessageTime(created_at), [created_at])
 
   // 兜底剥离 LLM 幻觉伪代码块（issue #3038 / CH-032）：后端已实时剥离，
   // 此处兜底历史残留 —— <interact>…</interact> XML 与 ```tool_call 代码块

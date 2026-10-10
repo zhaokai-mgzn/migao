@@ -1,0 +1,21 @@
+{
+  "why": "issue #6666 判据 1 的类级台账：**挂了 MerchantTabBar 的页面**必须按底栏条高留位（padding-bottom: calc(50PX + env(safe-area-inset-bottom)) + box-sizing: border-box）。未登记即红；台账只许缩短（页面不再挂底栏 ⇒ 删条目）。判据 = tests/tabbar-content-inset.test.ts。几何复算 = acceptance/2026-10-09-bmini-three-fixes/bmini-geometry-probe.mjs 的 tabbarInset。",
+  "pages": {
+    "src/pages/chat/index/index.tsx": {
+      "root_class": "chat-page",
+      "scss": "src/pages/chat/index/index.scss"
+    },
+    "src/pages/dashboard/index/index.tsx": {
+      "root_class": "dashboard-page",
+      "scss": "src/pages/dashboard/index/index.scss"
+    },
+    "src/pages/profile/index/index.tsx": {
+      "root_class": "profile-page",
+      "scss": "src/pages/profile/index/index.scss"
+    },
+    "src/pages/sessions/index/index.tsx": {
+      "root_class": "sessions-page",
+      "scss": "src/pages/sessions/index/index.scss"
+    }
+  }
+}
