@@ -1,4 +1,5 @@
-// case_ids: DF-007
+// case_ids: DF-007, CU-010
+// 追加（issue #6669 第 6 条）：403 面不摆内部权限码。
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { act } from '@testing-library/react'
@@ -110,7 +111,11 @@ describe('Auth Guard (Dashboard Layout)', () => {
     // 路由级权限守卫（第二道防线）：无 employee:list 时渲染 403 而非子内容
     expect(screen.queryByTestId('child-content')).not.toBeInTheDocument()
     expect(screen.getByText(/无权访问该页面/)).toBeInTheDocument()
-    expect(screen.getByText('employee:list')).toBeInTheDocument()
+    // 🔴 issue #6669 第 6 条：**权限码不上商家屏**（修前这里逐字断言 `employee:list` 出现在页面上，
+    // 那正是被本包撤掉的「不摆内部标识」形态 —— 判定仍用权限码，但显示只说人话）。
+    expect(screen.queryByText('employee:list')).not.toBeInTheDocument()
+    expect(screen.getByText(/你的岗位没有这个功能的权限/)).toBeInTheDocument()
+    expect(screen.getByText(/员工管理/)).toBeInTheDocument()
   })
 })
 

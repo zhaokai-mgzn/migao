@@ -8,6 +8,8 @@ import { cn, resolveImageUrl } from '@/lib/utils'
 import type { Product, ProductStatus } from '@/types'
 import DateTimeCell from '@/components/common/DateTimeCell'
 import { ProductStatusLabels } from '@/types'
+// 🔴 issue #6669 追加任务 3：涉钱读数口径收敛到 `@/lib/money` 一处真值（与财务域/计件域同源）
+import { money } from '@/lib/money'
 
 export type ProductSortField = 'stock' | 'salesCount' | 'salesAmount' | 'createdAt'
 export type ProductSortOrder = 'asc' | 'desc'
@@ -48,9 +50,16 @@ function formatNumber(value?: number): string {
   return value.toLocaleString('zh-CN')
 }
 
+/**
+ * 「销售额」= **钱** ⇒ 走唯一口径 `@/lib/money`（千分位 + **固定**两位小数）。
+ *
+ * 修前是 `¥${value.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}` —— **只给上限没给下限**
+ * ⇒ 同一列并存 `¥25,049`（整数不带两位）与 `¥26,099.8`（小数跟实际值截断）两种形态
+ * （issue #6669 追加任务 3 的真机读图证据）。
+ */
 function formatCurrency(value?: number): string {
-  if (value === undefined || value === null) return '¥0'
-  return `¥${value.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}`
+  if (value === undefined || value === null) return money(0)
+  return money(value)
 }
 
 export default function ProductTable({
