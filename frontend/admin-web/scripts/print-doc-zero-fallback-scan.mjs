@@ -62,14 +62,6 @@ import { join } from 'node:path'
 
 // 纸面判定的**口径常量与实例不变量**在 `src/lib/print-doc-paper.ts`（非测试模块 ⇒ 组件测试
 // 可以直接 import，不必 import 一个 `*.test.ts`）—— 本文件只放**静态判据面**（SCOPE / 台账 / 形态）。
-export {
-  PAPER_MISSING,
-  assertNoPaperZeroFill,
-  assertPaperKeepsMissingDistinct,
-  paperNumberCells,
-  paperTextOf,
-  paperZeroFills,
-} from '../src/lib/print-doc-paper.ts'
 
 /** 仓库相对路径（判据面：**印数值的纸面单据**）；新增单据必须同步登记，否则守卫的「未登记即红」判据发不出声 */
 export const SCOPE = [
