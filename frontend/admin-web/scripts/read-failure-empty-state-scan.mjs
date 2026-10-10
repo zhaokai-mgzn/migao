@@ -38,6 +38,13 @@
  *
  * ⚠️ 边界（照实登记，issue #6663）：只扫**商家后台**(`src/app/(dashboard)`)，只认**源码文本形态**；
  * 「服务端下发的 message 里带字段名」不在本判据射程（那是展示字段分离，另单）。
+ *
+ * ## 台账现状（issue #6691，2026-10-10）
+ *
+ * `LEDGER` 已**归零**（空数组 = 目标形态）：#6663 立的账、#6664 修好 shipments 后删一条、
+ * #6691 把剩下 6 条逐点修好并删条目、第 7 条（stock-ledger 灰区）裁定为「失败可见**已满足**」
+ * 后删条目并补齐重试出口。此后新增命中一律**先修**（照 `dashboard/page.tsx` 范式），
+ * 确需豁免再登记 —— 且登记后修好必须同批删。
  */
 import { readdirSync, statSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
@@ -185,24 +192,22 @@ export function swallowSites(root) {
  * 本包不改它们的码；登记是**如实记账**（不收编成「已修」），归零靠后续包逐批删条目。
  */
 export const LEDGER = [
-  // ── 本包（#6663）**已修**的三页：不再命中 ⇒ 条目为空（**空台账是目标**，不是漏登记）──
+  // ── 空数组是本台账的**目标形态**（issue #6663 立的规矩：只许缩短）──
   //
-  // ── 存量债：本包文件族**之外**（写面属并发包 ⇒ §17.2 零共享写路径，本包不改它们的码）──
-  //    登记是**如实记账**（不收编成「已修」）；对应包落地后必须回来**删掉**这几条
-  //    （失效即红 ⇒ 逼着删干净）。每条后面的「归属」是判定依据：文件路径落在谁的文件族里。
+  // 归零沿革（逐批，条目**删除**而非注释掉）：
+  //   · `shipments/page.tsx::ShipmentsPage#1` —— #6664（PR #6673）修好，同批删条目；
+  //   · `roles` / `employees` / `settings` 三页 —— #6663 本包修好（本来就未登记）；
+  //   · 其余 7 条（`inbound-orders` ×3 / `orders/[id]` / `orders/new` ×2 / `stock-ledger`）
+  //     —— **#6691 本包**逐点修好（失败态可见 + 重试出口），同批删条目 ⇒ 台账清零。
   //
-  // #6664 的盘（chat / orders / shipments 面）：
-  'src/app/(dashboard)/inbound-orders/page.tsx::InboundOrdersPage#1',      // 归属 #6664：读失败 setRows([]) ⇒ 画成「没有入库单」
-  'src/app/(dashboard)/inbound-orders/new/page.tsx::NewInboundOrderPage#1', // 归属 #6664：商品搜索失败 setProductOptions([]) ⇒ 画成「搜不到」
-  'src/app/(dashboard)/inbound-orders/new/page.tsx::pickProduct#1',        // 归属 #6664：明细读失败 setProductSkus([]) ⇒ 画成「这个商品没有规格」
-  'src/app/(dashboard)/orders/[id]/OrderDetail.tsx::OrderDetailPage#1',   // 归属 #6664：发货明细读失败 setShipments(null)，渲染面对 null 另说
-  'src/app/(dashboard)/orders/new/page.tsx::load#1',                       // 归属 #6664：加工项目录读失败 setProcessingCatalog([])
-  'src/app/(dashboard)/orders/new/page.tsx::load#2',                       // 归属 #6664：算料配置读失败 setCalcConfig(null)
-  // ✅ 已于 2026-10-10 删条目：`src/app/(dashboard)/shipments/page.tsx::ShipmentsPage#1`
-  //    —— #6664 包（PR #6673）把发货单读失败改成「说真话」，该点不再命中 ⇒ 按「台账只许缩短」同批删掉。
-  //    （删条目是本台账的**唯一**合法方向；守卫会逼着删，不会让人留着僵尸豁免。）
-  // 归属待定（既不在本包、也不在上面两个包的文件族里 ⇒ 单独跟一条）：
-  'src/app/(dashboard)/stock-ledger/page.tsx::StockLedgerPage#3',          // 商品搜索失败 setOptions([])（同一 catch 已有 setSearchHint 话术，属灰区，登记待裁）
+  // ⚠️ 第 7 条（`stock-ledger/page.tsx::StockLedgerPage#3`）的**灰区裁定**（issue #6691）：
+  //   同一 `catch` 里**已经有** `setSearchHint('商品搜索失败 —— 请稍后重试')` —— 与「没有匹配的商品
+  //   —— 换个关键词试试」**两句、两种语义** ⇒ 「失败**可见**」这一半本来就成立（不是「清空读数且
+  //   不表达失败」）。裁定 = **满足**，据此删条目；同时补上缺的那一半（`role="alert"` + 「重试商品搜索」
+  //   出口），判据 = `tests/unit/pages/read-failure-empty-state-instances.test.tsx` 的 ⑦ 组。
+  //
+  // 新增命中 ⇒ 先修（照 `dashboard/page.tsx` 失败/空态分离范式，首选），确需豁免再登记；
+  // 已修的条目必须**同批删掉**（留着 ⇒ `staleLedger` 判红，逼着删干净）。
 ]
 
 /**
@@ -237,6 +242,38 @@ export const FAILURE_ANCHORS = [
     name: '权限目录读失败（岗位页）',
     file: 'src/app/(dashboard)/roles/page.tsx',
     anchors: ["data-testid=\"roles-permissions-error\"", '权限目录读取失败'],
+  },
+  // ── issue #6691（#6664 的未收口余项）：这 6 条从 LEDGER 挪到**正向核** ──
+  // 扫描判据只证明「不再命中清空形态」；把它们逐字锚在这里 ⇒ 删掉失败态（页面退回空态）当场红。
+  {
+    name: '入库单列表读失败（issue #6691）',
+    file: 'src/app/(dashboard)/inbound-orders/page.tsx',
+    anchors: ["data-testid=\"inbound-load-error\"", '入库单加载失败', "data-testid=\"inbound-load-retry\""],
+  },
+  {
+    name: '入库单建单页 · 商品搜索读失败（issue #6691）',
+    file: 'src/app/(dashboard)/inbound-orders/new/page.tsx',
+    anchors: ["data-testid=\"inbound-product-search-error\"", '商品搜索失败', "data-testid=\"inbound-product-search-retry\""],
+  },
+  {
+    name: '入库单建单页 · 规格明细读失败（issue #6691）',
+    file: 'src/app/(dashboard)/inbound-orders/new/page.tsx',
+    anchors: ["data-testid=\"inbound-sku-error\"", '规格读取失败', "data-testid=\"inbound-sku-retry\""],
+  },
+  {
+    name: '订单详情 · 发货明细读失败（issue #6691）',
+    file: 'src/app/(dashboard)/orders/[id]/OrderDetail.tsx',
+    anchors: ["data-testid=\"order-shipments-read-error\"", '发货明细读取失败', "data-testid=\"order-shipments-retry\""],
+  },
+  {
+    name: '新建订单 · 加工项目录读失败（issue #6691）',
+    file: 'src/app/(dashboard)/orders/new/page.tsx',
+    anchors: ["data-testid=\"orders-new-processing-catalog-error\"", '加工项目录加载失败', "data-testid=\"orders-new-processing-catalog-retry\""],
+  },
+  {
+    name: '库存明细 · 商品搜索读失败（issue #6691，灰区裁定后补出口）',
+    file: 'src/app/(dashboard)/stock-ledger/page.tsx',
+    anchors: ["data-testid=\"stock-ledger-search-hint\"", '商品搜索失败', '重试商品搜索'],
   },
 ]
 
