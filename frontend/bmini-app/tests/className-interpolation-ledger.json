@@ -1,0 +1,4 @@
+{
+  "why": "issue #6666 判据 2 的类级台账：`className` 属性值用引号承载却含 `${` ⇒ 类名恒为字面量（坐席详情状态配色失效的根因）。修完必须为**空**（只许缩短：修好一处就删一处）。判据 = tests/className-interpolation.test.ts。",
+  "known_offenders": []
+}

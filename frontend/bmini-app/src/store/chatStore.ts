@@ -31,6 +31,12 @@ import { SSEClient } from '../utils/sse'
 const generateId = () =>
   Math.random().toString(36).substring(2, 15) + Date.now().toString(36)
 
+/**
+ * SSE 失败时**给商家看的那一句**（issue #6666 判据 4）。
+ * 技术原文（`请求失败: 500` / `errMsg`）**只进日志** —— 拼进 AI 气泡 = 让商家读栈。
+ */
+export const SSE_FAILURE_TEXT = '抱歉，这条消息没能回复，请再发一次。'
+
 interface ChatState {
   // 状态
   currentSessionId: string | null
@@ -404,17 +410,19 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       },
 
       onError: (error) => {
-        console.error('SSE 错误:', error)
+        // 技术原文**只进日志**（issue #6666 判据 4）。§31 P2「同一个失败不在同屏说两遍」：
+        // 这条失败的承载面就是**那条 AI 气泡**（它就在出错的位置上），故顶部横幅不再复述同一句。
+        console.error('SSE 错误:', error.message || error)
         set(state => ({
           isStreaming: false,
           streamingContent: '',
           _sseClient: null,
-          error: error.message,
+          error: null,
           messages: state.messages.map(msg =>
             msg.id === aiMsgId
               ? {
                   ...msg,
-                  content: msg.content || `抱歉，发生错误: ${error.message}`,
+                  content: msg.content || SSE_FAILURE_TEXT,
                   isStreaming: false,
                 }
               : msg
