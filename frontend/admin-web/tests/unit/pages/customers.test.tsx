@@ -1,3 +1,5 @@
+// case_ids: CU-001, CU-010
+// 追加（issue #6669 第 4 条）：删标签二次确认 + 「最后互动」日期口径收敛到 DateTimeCell。
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'

@@ -1,4 +1,5 @@
-// case_ids: ST-004, CU-010. 通知页「全部标记已读」在飞行态 + 无未读不出入口（issue #6669 第 5 条）
+// case_ids: ST-004, CU-010
+// 追加（issue #6669 第 5 条）：通知页「全部标记已读」在飞行态 + 无未读不出入口。
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'

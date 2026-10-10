@@ -1,4 +1,5 @@
-// case_ids: DF-007, CU-010. 403 面不摆内部权限码（issue #6669 第 6 条）
+// case_ids: DF-007, CU-010
+// 追加（issue #6669 第 6 条）：403 面不摆内部权限码。
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { act } from '@testing-library/react'

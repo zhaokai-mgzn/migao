@@ -1,4 +1,5 @@
-// case_ids: CU-010, UI-046. 破坏性动作不得走原生 window.prompt（issue #6669 第 3 条）
+// case_ids: CU-010, UI-046
+// 破坏性动作不得走原生 window.prompt（issue #6669 第 3 条）。
 /**
  * 类级元守卫：**破坏性动作不得用原生 `window.prompt` 收原因**（issue #6669 第 3 条）。
  *

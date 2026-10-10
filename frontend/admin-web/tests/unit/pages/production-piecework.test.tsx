@@ -1,4 +1,5 @@
-// case_ids: PG-021, CU-010. 计件金额千分位口径与财务域同源（issue #6669 第 7 条）
+// case_ids: PG-021, CU-010
+// 追加（issue #6669 第 7 条）：计件金额千分位口径与财务域同源。
 // PG-021（issue #4205，前端半边）：计件工资报表页 /production/piecework ——
 // 消费 GET /api/admin/production/piecework/summary?period=YYYY-MM[&worker_name=]，
 // 按期间（月份选择）+ 按工人 / 按工序两档展示；默认期间 = 当前月（不空查）。
