@@ -43,7 +43,7 @@ export default function CorporateNav() {
       )}
     >
       {/* 顶部织金细线：把品牌色带进导航 */}
-      <div className="h-0.5 bg-gradient-to-r from-[#d48806] via-accent-500 to-primary-600" />
+      <div className="h-0.5 bg-gradient-to-r from-gold-600 via-accent-500 to-primary-600" />
 
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">

@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /products
+Disallow: /orders
+Disallow: /customers
+Disallow: /chat
+Disallow: /finance
+Disallow: /settings
+Disallow: /login
+Disallow: /register
+
+# 抓取指引（issue #6665：此前被 proxy 吞成 307 回首页，爬虫根本读不到本站的 sitemap）
+Sitemap: https://www.migaozn.com/sitemap.xml

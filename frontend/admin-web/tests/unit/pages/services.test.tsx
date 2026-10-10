@@ -152,7 +152,7 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能�
   it('renders 底部 CTA', () => {
     render(<ServicesPage />)
     expect(screen.getByText('立即入驻')).toBeInTheDocument()
-    expect(screen.getByText('留言咨询')).toBeInTheDocument()
+    expect(screen.getByText('联系我们')).toBeInTheDocument()
   })
 
   // ── 视觉与真实性 ──

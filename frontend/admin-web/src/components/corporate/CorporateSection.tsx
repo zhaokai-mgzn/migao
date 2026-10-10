@@ -12,6 +12,15 @@ import { cn } from '@/lib/utils'
  * 暖亚麻底 neutral-50/100、靛蓝 primary、陶土 accent，配 Logo 的织金；不再用通用蓝色渐变模板。
  */
 
+/**
+ * 区块小标签的统一字面量（issue #6665）。
+ *
+ * 为什么不再是 `uppercase tracking-[0.18em]`：`uppercase` 只改拉丁字母，作用在**中文**上完全无效，
+ * 只把汉字段落**拉宽**（审计判为 P2）。口径收敛到 globals.css 的 `.corporate-kicker`
+ * （与既有 `.section-kicker` 同一套写法，只差一个强调色）⇒ 官网各页不再各写一遍任意值。
+ */
+const KICKER = 'corporate-kicker'
+
 /** 区块小标签 + 标题 + 导语（四页统一） */
 export function SectionHeading({
   kicker,
@@ -31,9 +40,7 @@ export function SectionHeading({
         align === 'center' ? 'mx-auto text-center' : 'text-left'
       )}
     >
-      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent-600">
-        {kicker}
-      </span>
+      <span className={KICKER}>{kicker}</span>
       <h2 className="mt-3 text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-neutral-900">
         {title}
       </h2>
@@ -62,12 +69,10 @@ export function PageHero({
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute -top-24 -right-16 h-72 w-72 rounded-full bg-primary-500/25 blur-3xl" />
         <div className="absolute -bottom-28 -left-20 h-72 w-72 rounded-full bg-accent-500/20 blur-3xl" />
-        <div className="absolute top-1/3 left-1/2 h-56 w-56 -translate-x-1/2 rounded-full bg-[#d48806]/10 blur-3xl" />
+        <div className="absolute top-1/3 left-1/2 h-56 w-56 -translate-x-1/2 rounded-full bg-gold-600/10 blur-3xl" />
       </div>
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-14 sm:py-20">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent-300">
-          {kicker}
-        </span>
+        <span className={`${KICKER} text-accent-300`}>{kicker}</span>
         <h1 className="mt-3 text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight">
           {title}
         </h1>
