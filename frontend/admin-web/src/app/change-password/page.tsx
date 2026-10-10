@@ -64,7 +64,7 @@ export default function ChangePasswordPage() {
     )
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-50 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-neutral-100 px-4">
       <div className="w-full max-w-[420px] relative z-10">
         <div className="flex flex-col items-center mb-8">
           <Logo size="large" className="mb-4" />

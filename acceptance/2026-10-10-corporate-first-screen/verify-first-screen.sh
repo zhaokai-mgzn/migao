@@ -16,22 +16,60 @@
 # 前置：本机已 `npm ci`；脚本自己起 dev server 并在结束时关掉。
 set -euo pipefail
 
-PORT="${PORT:-3901}"
 PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../frontend/admin-web" && pwd)"
 cd "$PKG_DIR"
 
-echo "▶ 启动 dev server（${PKG_DIR}，端口 ${PORT}）"
-npx next dev -p "$PORT" > /tmp/next-dev-6665-acceptance.log 2>&1 &
-SERVER_PID=$!
-trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+# 取数环境（按顺序，每种**先探端口**取不到就换）：
+#   ① 该 worktree 已有 dev server 在跑（Next 把地址写在自己的开发日志里）⇒ 复用，不杀别人的进程
+#   ② 自己起 `next dev`（默认 3901，可用 PORT 覆盖）
+# ⚠️ Next 的 dev server **同一目录只跑一个**：同目录已有实例时 ② 会立刻退出（日志里写明
+#    「Another next dev server is already running … You can access the existing server at …」）。
+#    那种情况下先停掉那个实例（或用 PORT 换端口）再跑本脚本 —— 本脚本**不**替你杀别人的进程。
+SERVER_PID=""
+PORT=""
+probe() { curl -fsS -o /dev/null "http://localhost:$1/robots.txt" 2>/dev/null; }
 
-for _ in $(seq 1 60); do
+existing_dev_port() {
+  local log="${PKG_DIR}/.next/dev/logs/next-development.log"
+  [ -f "$log" ] || return 0
+  grep -oE "http://localhost:[0-9]+" "$log" 2>/dev/null | tail -1 | grep -oE "[0-9]+$" || true
+}
+
+if HINT=$(existing_dev_port) && [ -n "$HINT" ] && probe "$HINT"; then
+  PORT="$HINT"
+  echo "▶ 复用已在跑的 dev server（端口 ${PORT}）"
+fi
+
+if [ -z "$PORT" ]; then
+  DEV_PORT="${PORT:-3901}"
+  : > /tmp/next-dev-6665-acceptance.log
   # ⚠️ 变量名后面紧跟 CJK 时**必须**写 `${VAR}`：丢掉花括号，bash 会把多字节字节当成变量名的一部分
-  # ⇒ `PKG_DIR<U+FF0C>: unbound variable`（本脚本实测踩过一次，见 PR body 的未固化项）。
-  if curl -fsS -o /dev/null "http://localhost:${PORT}/robots.txt" 2>/dev/null; then break; fi
-  sleep 1
+  # ⇒ `PKG_DIR<U+FF0C>: unbound variable`（本脚本实测踩过一次）。
+  echo "▶ 启动 dev server（${PKG_DIR}，端口 ${DEV_PORT}）"
+  npx next dev -p "$DEV_PORT" > /tmp/next-dev-6665-acceptance.log 2>&1 &
+  SERVER_PID=$!
+  # 只杀**自己起的**那个（含 npx 包出来的子进程）：复用时 SERVER_PID 为空 ⇒ 不碰别人的进程
+  trap '[ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null; [ -n "$SERVER_PID" ] && pkill -P "$SERVER_PID" 2>/dev/null; true' EXIT
+  for _ in $(seq 1 20); do
+    HINT=$(grep -oE "http://localhost:[0-9]+" /tmp/next-dev-6665-acceptance.log 2>/dev/null | tail -1 | grep -oE "[0-9]+$" || true)
+    if [ -n "$HINT" ] && probe "$HINT"; then PORT="$HINT"; break; fi
+    sleep 1
+  done
+  echo "  就绪（PID ${SERVER_PID:-?}，端口 ${PORT:-未就绪}）"
+fi
+
+if [ -z "$PORT" ]; then
+  echo "❌ dev server 没起来 —— 先看 /tmp/next-dev-6665-acceptance.log（同目录可能已有 dev server：先停掉它，或用 PORT=<别的端口> 重跑）" >&2
+  exit 1
+fi
+
+# 预热：dev server 是**按需编译**的，第一次请求某个路由时它还在编译 ⇒ 首个响应可能是半截
+# （实测：直连路由的 JSON 读数已对，但 `fetch` 拿到的 HTML 里正文缺失、canonical 读不到）。
+# 每个路由先打一遍（时间不参与判据），让真正的检查跑在**编译完成**之后。
+echo "▶ 预热六条路由（dev server 按需编译）"
+for _p in / /about /services /contact /login /register; do
+  curl -fsS -o /dev/null "http://localhost:${PORT}${_p}" 2>/dev/null || true
 done
-echo "  就绪（PID ${SERVER_PID}），日志 /tmp/next-dev-6665-acceptance.log"
 
 node --input-type=module - "$PORT" <<'NODE'
 const port = process.argv[2]
