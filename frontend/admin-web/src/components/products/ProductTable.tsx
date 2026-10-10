@@ -34,6 +34,14 @@ interface ProductTableProps {
   onRecommend: (product: Product) => void
   onUnrecommend: (product: Product) => void
   onDelete: (product: Product) => void
+  /**
+   * 表体空态文案（**透传**给共享 `ui/Table`）。
+   *
+   * 🔴 issue #6728：本组件渲染的是共享表（默认 `emptyText = '暂无数据'`），而**失败态是页面的事**
+   * （`/products` 的 `loadFailed`）—— 组件自己看不见它 ⇒ 由页面**显式传入**（失败态传空串，
+   * 不让「读不到」被说成「没有商品」）。不传 = 沿用共享默认值（其它消费方不受影响）。
+   */
+  emptyText?: string
 }
 
 // 状态底色框颜色映射（A2: 出售中=绿/已下架=灰/审核中=橙/草稿=蓝）
@@ -82,6 +90,7 @@ export default function ProductTable({
   onRecommend,
   onUnrecommend,
   onDelete,
+  emptyText,
 }: ProductTableProps) {
   const [brokenImages, setBrokenImages] = useState<Set<string>>(new Set())
 
@@ -321,6 +330,9 @@ export default function ProductTable({
           sortField={sortField}
           sortOrder={sortOrder}
           onSort={(field) => onSortChange(field as ProductSortField)}
+          // 🔴 issue #6728：透传页面给的 `emptyText`（`undefined` ⇒ 共享表用默认「暂无数据」，
+          // 对不传的消费方 = 改前行为，零影响）。
+          emptyText={emptyText}
           // 🔴 issue #6687：最小宽度由 1200 收窄到 1120 —— 1200 是**硬撑出来的**宽度：
           // 在 1440×980 上容器只有 ~1100px，多出来的 100px 全部落在横向滚动区里，
           // 而「操作」列正好在表尾 ⇒ **滚到右端时那一列被右下角黄金策浮球（56×56，fixed z-50）压住**
