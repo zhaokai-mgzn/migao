@@ -147,6 +147,24 @@ describe('LoginPage', () => {
     })
   })
 
+  it('「带 query 直接打开登录页」仍是既有行为：地址栏在 setTimeout 前后都不变时，落点照样是该 query（issue #6665 的负控）', async () => {
+    // 为什么单列一条：`/login` 从 `useSearchParams()` 改成读 `window.location.search` 是**连接性修复**
+    // （前者会让 `next build` 的静态预渲染失败）。口径必须等价 —— 这条钉的是「进入页面时地址栏就带 query」
+    // 这个**真实用户路径**（auth-guard 跳登录时会写 `?callbackUrl=…`），不是只在点击前才塞进去。
+    mockEmployeeLogin.mockResolvedValue({ mustChangePassword: false })
+    installCallbackUrl('/login?callbackUrl=%2Fafter-sales%3Ftab%3Dopen')
+    render(<LoginPage />)
+    // 自证「进入时就带着」：渲染之后地址栏仍是这条 URL（不是被某处 replaceState 洗掉）
+    expect(window.location.search).toContain('callbackUrl=%2Fafter-sales%3Ftab%3Dopen')
+    await user.type(screen.getByPlaceholderText('用户名@企业编码'), 'zhangsan@migao')
+    await user.type(screen.getByPlaceholderText('请输入密码'), 'Init#12345')
+    await user.click(screen.getByRole('button', { name: /登 录/ }))
+    await waitFor(() => {
+      // 逐字：含 query 的 callbackUrl 必须整条还原（不得被截断成 /after-sales?tab=open 之外的东西）
+      expect(mockPush).toHaveBeenCalledWith('/after-sales?tab=open')
+    })
+  })
+
   it('员工登录成功但 mustChangePassword → **直接**去改密页（不进业务页，AU-006 的前端半边）', async () => {
     mockEmployeeLogin.mockResolvedValue({ mustChangePassword: true })
     render(<LoginPage />)

@@ -11,7 +11,7 @@
 // ⇒ 可见 DOM 恒 503 B、`h1/h2/nav` 各 0、正文只有「加载中...」。
 import { describe, it, expect, vi } from 'vitest'
 import { renderToString } from 'react-dom/server'
-import { readFileSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import type { ComponentType, ReactNode } from 'react'
 
@@ -135,6 +135,46 @@ describe('匿名可见面首屏：真实根布局 + 真实页面 ⇒ 必须有 h
       /<h1[\s>]/.test(injected),
       '注入对照失效：受保护路径下本该被门控拦住（h1 不出现），却出现了 —— 说明本自证写错了',
     ).toBe(false)
+  })
+
+  it('（有 next build 产物时）六条路由的**静态预渲染 HTML** 里就有 h1 与正文、且没有「加载中...」', () => {
+    // 这是 `next build` 那一层的判据：`renderToString` 证明不了「静态预渲染是否成功」——
+    // 实测（issue #6665）：门控放行公开面后 `next build` 直接失败在
+    // `Error occurred prerendering page "/login"`（`/login` 用了 useSearchParams），
+    // 而 vitest / tsc **都看不见**这一层。
+    // 口径：无 `.next/server/app/**` 产物时跳过（本地默认 `npm test` 不该逼一次全量构建；
+    // CI 的 admin-web 腿按 `next build` → `vitest` 的顺序 ⇒ 这条在那里是真跑的）。
+    const artifacts = ANONYMOUS_SURFACE.map(({ pathname }) => ({
+      pathname,
+      file: join(
+        process.cwd(),
+        '.next/server/app',
+        pathname === '/' ? 'index.html' : `${pathname.slice(1)}.html`,
+      ),
+    }))
+    if (!artifacts.some((a) => existsSync(a.file))) {
+      console.log('[skip] 无 next build 产物（先跑一次 npx next build 再看这条）')
+      return
+    }
+
+    const bad: string[] = []
+    for (const { pathname, file } of artifacts) {
+      if (!existsSync(file)) {
+        bad.push(`${pathname}（缺产物 ${file}）`)
+        continue
+      }
+      const html = readFileSync(file, 'utf-8')
+      const hasH1 = /<h1[\s>]/.test(html)
+      if (!hasH1 || html.includes(SHELL_LITERAL)) {
+        bad.push(`${pathname}（h1=${hasH1}，骨架=${html.includes(SHELL_LITERAL)}）`)
+      }
+    }
+    expect(
+      bad,
+      `这些路由的静态预渲染产物不达标：${bad.join('；')}。` +
+        `修法：客户端页面不得用 useSearchParams（会触发 Next 的 missing-suspense-with-csr-bailout ` +
+        `⇒ 预渲染失败或首屏只剩 fallback）。`,
+    ).toEqual([])
   })
 
   it('登录页不得用 useSearchParams（它会让 /login 的静态预渲染失败 ⇒ 首屏又变空壳）', () => {

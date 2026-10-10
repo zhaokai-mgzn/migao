@@ -20,16 +20,18 @@ PORT="${PORT:-3901}"
 PKG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../frontend/admin-web" && pwd)"
 cd "$PKG_DIR"
 
-echo "▶ 启动 dev server（$PKG_DIR，端口 $PORT）"
+echo "▶ 启动 dev server（${PKG_DIR}，端口 ${PORT}）"
 npx next dev -p "$PORT" > /tmp/next-dev-6665-acceptance.log 2>&1 &
 SERVER_PID=$!
 trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
 
 for _ in $(seq 1 60); do
-  if curl -fsS -o /dev/null "http://localhost:$PORT/robots.txt" 2>/dev/null; then break; fi
+  # ⚠️ 变量名后面紧跟 CJK 时**必须**写 `${VAR}`：丢掉花括号，bash 会把多字节字节当成变量名的一部分
+  # ⇒ `PKG_DIR<U+FF0C>: unbound variable`（本脚本实测踩过一次，见 PR body 的未固化项）。
+  if curl -fsS -o /dev/null "http://localhost:${PORT}/robots.txt" 2>/dev/null; then break; fi
   sleep 1
 done
-echo "  就绪（PID $SERVER_PID），日志 /tmp/next-dev-6665-acceptance.log"
+echo "  就绪（PID ${SERVER_PID}），日志 /tmp/next-dev-6665-acceptance.log"
 
 node --input-type=module - "$PORT" <<'NODE'
 const port = process.argv[2]
