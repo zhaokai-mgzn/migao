@@ -146,7 +146,19 @@ export function reduce(state, action) {
   switch (action.type) {
     case 'worker': {
       const worker = action.worker ?? null
-      return { ...state, worker, mode: worker ? (state.view ? state.mode : 'scan') : 'login' }
+      // 🔴 **成功迁移必须清错误位**（issue #6749）：登录成功（worker 非空）⇒ 屏上那句
+      //    「上一次失败」的结论必须消失，否则工人第二次输对了 PIN、页头都换成「当前工人」了，
+      //    红字还留着 ⇒ 「明明登进去了却还说我不对」。
+      //    同族口径：`resolved` / `reportStart` / `completed` 都写 `error: null`、`logout` 回初值
+      //    —— 改前这一处是**漏网的一处**（不是有意口径）。
+      //    ⚠️ 只清**成功**那一路（`worker` 非空）；`worker = null`（回落未登录）留着错误位，
+      //    好让"为什么被踢回来"的原因仍然可见。
+      return {
+        ...state,
+        worker,
+        mode: worker ? (state.view ? state.mode : 'scan') : 'login',
+        ...(worker ? { error: null } : {}),
+      }
     }
     // 页面权限读到（或**读不到**）：`action.pages` = 数组 ⇒ 用它；null/缺省 ⇒ fail-open 并按全开跑
     // 🔴 换人换权限：登录成功 / 切换工人后必须**重拉**（app.mjs），`logout` 会把这两个键一并清回初值
