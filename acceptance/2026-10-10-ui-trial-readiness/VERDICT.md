@@ -1,4 +1,6 @@
-# 客户试用前 UI 收尾 —— 裁决书 v4（终版，2026-10-11，**P1–P29 全部闭环**，main `b59fb6a0e`）
+# 客户试用前 UI 收尾 —— 裁决书 v5（终版＋收口补记，2026-10-11 08:3x +08，**P1–P32 闭环**，main `159157939`）
+
+> v5 = v4 正文（P1–P29）**逐字未动** + 新增 **§八 收口补记**（两条试用阻断项的处置、车间端新覆盖、四张派生单、新增未验项、自查记账）。
 
 > 范围（用户勾选）：**商家电脑端 admin-web** ＋ **员工手机端 bmini** ＋ **车间现场端 worker-h5 / 机台 / 打印** ＋ **官网四页**。
 > **C 端元元（frontend/mini-app）不在本轮。** 追踪总账：issue **#6671**。
@@ -176,3 +178,72 @@ node acceptance/2026-10-10-ui-trial-readiness/run-print-doc-verify.mjs    # S21b
 node acceptance/2026-10-10-ui-trial-readiness/run-live-reprobe.mjs        # S31 线上层（7 目标）
 gh issue list --search "试用收尾 in:title" --state all                    # 逐条查状态
 ```
+
+
+## 八、收口补记（2026-10-11 08:2x~08:3x +08）—— 两条试用阻断项的处置
+
+> 本节是 v4 之后的**增量**；v4 正文（P1–P29）与本文件其它章节未改动字句，新读数只登记在本节。
+
+### 8.1 阻断项②「线上商家控制台是旧包」—— **已消除**（内容级红→绿，两次独立取用）
+根因**不是**没触发部署，而是**部署腿全天红**：`frontend/admin-web/tests/unit/design-baseline-geometry.test.ts`
+**静态 import** 了**包外**的 `acceptance/2026-10-10-admin-web-6668/admin-web-geometry-probe.mjs`；而
+`deploy-frontend` 的 Docker 构建上下文只有 `frontend/admin-web`（`COPY . .`）⇒ 服务器侧 `npm run build` 类型检查红：
+```
+error TS2307: Cannot find module '../../../../acceptance/…/admin-web-geometry-probe.mjs'
+⇒ 镜像 sha-1a86d37 未产出 ⇒ 部署失败 + 自动回滚（sha-31d7e9c）也失败（19:44Z / 19:58Z / 21:06Z 三连红）
+```
+**CI 为什么是绿的**：CI 在**整仓检出**里跑 `tsc`（`acceptance/…` 在场）⇒ 过；部署在**只有包的上下文**里跑 ⇒ 红 ⇒
+典型「**CI 绿 / 部署红**」，且**没有任何 CI 腿会红**。
+处置：**#6744**（单）→ **#6745**（修：探针搬进包内 `frontend/admin-web/scripts/`、引用同步、**类级守卫**
+`tests/unit_ci_workflows/test_admin_web_next_build_gate.py::test_deploy_build_context_is_self_contained`「部署构建上下文自足」+ 注入式红证）。
+
+| 时点 | CSS | Last-Modified | `primary-50-lit` |
+|---|---|---|---|
+| 改前 | `/_next/static/chunks/20-cmro0iexep.css`（79125 B） | `Sat, 10 Oct 2026 15:26:37 GMT` | **0 命中** |
+| 改后 | `/_next/static/chunks/2wiwgb4b_50hp.css`（79393 B） | `Sat, 10 Oct 2026 23:32:50 GMT` | **1 命中** |
+
+补充：`/login /dashboard /products /orders /stock-ledger` **五路由全 200 且指向同一构建**；部署 run `38095126993`
+conclusion=success sha=`85908e59`。
+**校准记录**：`f8fafc` 在构建产物里本就不出现 ⇒ **不能**当"旧包"判据（我第一版判据里带了它，属过度断言）；本批以 `primary-50-lit` 为准。
+
+### 8.2 阻断项①「车间端拿不到可用凭据」—— **已解除**（凭据链真机走通）
+- 企业编码现为 **`migao`**（设置页「企业信息」分栏 fresh 读到的值即如此 ⇒ 已落库；设置页原文警告「修改后员工需改用新编码登录（原「用户名@旧编码」立即失效）」可见）。
+- **真实形状（更正 v4 的措辞）**：租户**本来就有**工人档案（`/employees` → 「工人档案」：`UITEST01` / `cy-acc-verify` / `W-PIN6432-CHK`），**三条全是「停用」** ⇒ 实际是「**企业编码缺失 ＋ 工人档案全部停用**」两条叠加，不是我先前说的"缺工人档案"。
+- 启用 `UITEST01`（我上一批建的、名字即「UI验收-可删除」）后，**真机凭据打接口成功**：
+```
+POST /api/worker/login {"workerNo":"UITEST01","pin":"246810","deviceLabel":"H5","enterpriseCode":"migao"}
+→ HTTP 200 {"success":true,"data":{"worker_no":"UITEST01","worker_name":"UI验收-可删除",
+   "idle_minutes":43200,"idle_expires_at":"2026-11-10T07:38:32+08:00", …}}
+```
+- **判据（不是缺陷）**：`/api/admin/users`（员工管理）建的是**员工账号**（登录用户名 + 初始密码）；**worker-h5 认的是「工人档案」的 工号 + PIN** —— 两套凭据**不可互换**（工人档案页自述逐字如此）。字段契约 = `workerNo` + `pin`（`employeeNo`/`workNo` 被 422 打回）。
+
+### 8.3 车间现场端的新覆盖（v4 列为"未验"的其中两条）
+- **机台页真机通过**（同一份线上源码 + 本机 API 代理）：`/machine.html` 200 · **0 溢出**（390×844）· **0 Markdown 记号**；文案为 P6/P10 修后形态（「本台设备还没登录：请先用工号 + PIN 登录，再扫码」「请重新扫一次水洗唛（同一张码再扫 = 领下一道）」）。
+- **worker-h5 两处修复已上线，并由我独立复核**（不采信转述）：
+
+| 单 | 改后屏上形态 | 我的独立线上复核 |
+|---|---|---|
+| **#6747 / PR #6748** | 401 `AUTH_FAILED` ⇒「工号或 PIN 不正确，**请核对工号与 PIN 后重试**」（不再落到「操作没成功（请再试一次…）」） | `/w/src/api.mjs` `last-modified` **08:23:22 +08**；新串命中 1、`AUTH_FAILED` 命中 4 |
+| **#6749 / PR #6752** | 登录失败后再登录**成功** ⇒ `#wh5-error` **整块消失**（只清成功那一路；被踢回 `worker=null` 仍保留错误位） | `/w/src/render.mjs` `last-modified` **08:33:21 +08**；第 160 行 = `...(worker ? { error: null } : {})` |
+
+**更强的一条**：线上 `src/render.mjs` 与 `src/api.mjs` 与 `origin/main`（`159157939`）**逐字相同**（`diff` 无输出）。
+
+### 8.4 收口派生出的新单（都已开；**均非试用阻断**）
+| 单 | 内容 | 为什么值得单独立单 |
+|---|---|---|
+| **#6746** | `deploy-frontend` 的 schedule 兜底判据是「**镜像是否存在**」⇒ 今天镜像存在（构建过但未部署）⇒ 对账**报 success**（实测该 run 只跑 **22 秒**） | 「绿」不等于「交付」：**镜像存在 ≠ 线上是它**；本类缺陷不会让任何东西变红 |
+| **#6750** | 元守卫「引号定界取值」（`test_guard_parsing_is_comment_aware.py` / MC-012）缺**事前可见**：作者不知道就白烧一轮 required 腿 | 机制已有，缺"作者事前看得到" |
+| **#6751** | 孤儿临时 postgres 活了 **23.5 小时**无人喊；清点器 `scripts/pg_orphan_sweep.py` 与判据**都已存在**，缺的是**接线**（没有东西会调用它） | 同上：机制齐了但"没有东西会红" |
+
+### 8.5 本节新增的"仍未验"（如实）
+- **worker-h5 登录后界面**：真机流程卡在**我的本地代理**上（浏览器 `Origin` 不在 API 的 CORS 白名单 ⇒ `403 Invalid CORS request`；同一条请求体**直连 API 就是 200**）⇒ **仪器限制，不是产品缺陷**；真验需 `--host-resolver-rules` + 自签 TLS，本批判为**投入产出不划算** ⇒ 如实留作未验项（人在浏览器里点一次即可，1 分钟）。
+- `UITEST01` 现为**启用**态（本租户当前唯一可用的车间端凭据，试用当天可直接演示）；名字是可识别临时件 ⇒ **正式使用前建议给真实工人建档，并停用/删除它**。
+- 前批"仍未验"清单（真机硬件：打印机/扫码枪/短信；写提交步骤；1680×1050；`shipments` / `after-sales` / `production/pool` 运行时几何；发货单纸面；服务端下发文案；内容驱动列宽）**不变**。
+- `case 'pages'` 与 `case 'worker'` 同形态但**有意不动**（它是每次登录/对账都发生的**常态路径**，不是"行为成功"的语义边界；理由与重启条件登记在 #6752 的 PR body 与本批 CHANGELOG）。
+
+### 8.6 我在这一段里被自己推翻的东西（继续记账）
+1. 「企业编码缺失」只是**部分**原因 —— 真实形状还有「工人档案全部停用」（见 8.2）。
+2. 我曾断言 `run-all.sh` 引用的 `scripts/dev-web-reset.sh`「在本仓与包里都不存在」——**错**：我只查了**主检出**，它在 **worktree 的 `scripts/`** 下确实存在。该脚本已删（理由是"两套做同一件事必然漂移 ＋ 它带 `pkill -f next-server` 会误杀同机其它 worktree"），措辞已在承载面内更正（#6712 内）。
+3. 我复核线上 `api.mjs` 时预设「改前那句泛化文案应 **0** 命中」——**错**：1 处在 JSDoc 注释里、1 处是 `transportMessage` 对**未登记状态码**的最后兜底，而 `HTTP_KIND` **没有 401**（401 在其之前被独立分支接走）⇒ **登录路径上不可达**，修复是完整的。
+4. 我一度把「403」当成产品缺陷 —— 那是**我的代理**没带允许的 `Origin`（见 8.5）。
+5. 承载面工作区 `migao-wt/ui-trial-acceptance` 在收口期间**消失**（目录与登记项都没了，登记表无漂移；`dev-worktree.sh rm` 已确认只移除指定路径、无"顺手删别人"副作用）⇒ 本 v5 是在**从 `origin/main` 重建的** `migao-wt/verdict-v5` 上做的；**内容在 main 上一直安全**（`git show origin/main:…/VERDICT.md` 可复算）。删除者未知，留作未解问题。
