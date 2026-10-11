@@ -71,7 +71,9 @@ const FROZEN_TABLES: string[] = [
   // ⚠️ 这一条**仍是缺陷**（本表「采购明细」表头缺 `whitespace-nowrap`，与本单的可达性修复正交）
   // ⇒ 条目**不删**、`TABLE_BASELINE` **不变**（只改了「表头顺序」这部分的文本，条数未动）。
   'src/components/orders/OrderTable.tsx::表[~} onChange=~ className="w-4 h-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500" />|订单ID|状态|加急|采购商品|采购明细 (名称:单价×数量+加工费)|累计金额(元)|实收款(元)|收货人信息|下单时间|制单人|到货日|备注|操作]',
-  'src/components/production/CutPlanTable.tsx::表[套号|部位|组件 / 货号|用料（米）|裁多长（米） × 几片|备注]',
+  // 2026-10-11（issue #6754）：`CutPlanTable`（精裁输出清单）**补 nowrap ⇒ 缺陷已修** ⇒ 条目**删除**、
+  // 基线下调（23 → 22）。⚠️ 与上面 #6717 那条相反：那条只是**表头顺序**变了、缺陷仍在（不删）；
+  // 本条是**真修好**（每个 th 都补了 `whitespace-nowrap`）⇒ 留着就是死条目，本判据「台账不得腐坏」那一条会具名报红。
   'src/components/production/CuttingHeightConfigPanel.tsx::表[名称|取值（米）|触发|触发值|部位|启用|~]',
   'src/components/products/BatchStockPanel.tsx::表[批次号|货号|入库量|已消耗|余量|收货日期]',
   'src/components/products/BatchStockPanel.tsx::表[档位|批次数|占比]',
@@ -80,7 +82,7 @@ const FROZEN_TABLES: string[] = [
   // 同上（issue #6662）：`库存（米）` → `库存（{STOCK_UNIT}）`，锚同步；条数不变（缺陷仍在）
   'src/components/products/SkuMatrix.tsx::表[颜色分类|规格尺寸|*价格（元）|*库存（~）]',
 ]
-const TABLE_BASELINE = 23
+const TABLE_BASELINE = 22
 
 /**
  * 存量台账·规则 ②（手写药丸）：同上，冻结于 2026-10-06（issue #6398），**改前** 6 条 → **5**。

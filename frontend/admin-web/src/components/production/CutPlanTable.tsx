@@ -51,13 +51,17 @@ export default function CutPlanTable({ sets }: { sets?: ProcessingOrderSetRow[] 
       <table className="w-full text-sm" data-testid="cut-plan-table">
         <thead>
           <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
-            <th className="py-2 pr-3 font-normal">套号</th>
-            <th className="py-2 pr-3 font-normal">部位</th>
-            <th className="py-2 pr-3 font-normal">组件 / 货号</th>
-            <th className="py-2 pr-3 font-normal">用料（米）</th>
-            <th className="py-2 pr-3 font-normal">裁多长（米） × 几片</th>
-            <th className="py-2 pr-3 font-normal">批次号</th>
-            <th className="py-2 font-normal">备注</th>
+            {/* ⚠️ 表头单元格必须带 `whitespace-nowrap`（issue #6754 顺手修掉存量缺陷）：
+                不加 ⇒ 列被压到 CJK min-content = 一个汉字 ⇒「裁多长（米） × 几片」表头折行。
+                类级守卫 = `frontend/admin-web/tests/unit/list-table-nowrap-guard.test.ts`（本表因此从它的
+                存量台账里**除名**、基线 23 → 22）。 */}
+            <th className="py-2 pr-3 font-normal whitespace-nowrap">套号</th>
+            <th className="py-2 pr-3 font-normal whitespace-nowrap">部位</th>
+            <th className="py-2 pr-3 font-normal whitespace-nowrap">组件 / 货号</th>
+            <th className="py-2 pr-3 font-normal whitespace-nowrap">用料（米）</th>
+            <th className="py-2 pr-3 font-normal whitespace-nowrap">裁多长（米） × 几片</th>
+            <th className="py-2 pr-3 font-normal whitespace-nowrap">批次号</th>
+            <th className="py-2 font-normal whitespace-nowrap">备注</th>
           </tr>
         </thead>
         <tbody>
