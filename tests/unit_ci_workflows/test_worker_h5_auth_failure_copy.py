@@ -100,23 +100,40 @@ def _js_string_literals(text: str) -> set[str]:
 
     🔴 刻意**不**把反引号模板串算进来：模板串里含插值（`${notice}` 之类），
     直接整体匹配会把"前端另造了一句判定"这种形态也放过（`_determination_phrases` 管那一半）。
+    🔴 **纯字符串操作，不用正则**（不是洁癖）：本仓的元守卫
+    `tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py` 钉的正是「按引号扫源码原文取值」这一族
+    —— 判据把「原文文本」当「代码」读（注释里的假声明就能喂中）。本单实测被它判红（CI run 38096003684），
+    现按它给的出口改写：取值只用**字符串操作**（`split` / 索引），正则只用于**结构性**匹配（不留引号捕获组）。
     """
-    return set(re.findall(r"'([^'\"\n]*)'", text)) | set(re.findall(r'"([^"\n]*)"', text))
+    lits: set[str] = set()
+    for q in ("'", '"'):
+        chunks = text.split(q)
+        if len(chunks) >= 3:  # 奇数段 = 闭合的引号对（第 0 / 末段在引号外）
+            lits.update(chunks[1:-1:2])
+    return lits
 
 
 def _determination_phrases(code: str) -> set[str]:
-    """模板串里 `，${…}` 之前的判定短语（前端"判定 + 动作"的合成点）。"""
-    return {m.strip() for m in re.findall(r"`([^`$]*?)，\$\{", code)}
+    """模板串里 `，${…}` 之前的判定短语（前端"判定 + 动作"的合成点）。
+
+    正则**只做结构性匹配**（反引号定界 + `${` 插值起点），**不含引号捕获组**
+    ⇒ 不在元守卫 `test_guard_parsing_is_comment_aware.py` 的"按引号扫原文"面内（实测判绿）。
+    """
+    return {m.split("，")[0].strip() for m in code.split("`") if "，${" in m}
 
 
 def _production_auth_failed_message() -> str:
-    """生产响应体里 `AUTH_FAILED` 的那句 `message`（用例数据集 = 逐字实测，见文件头）。"""
+    """生产响应体里 `AUTH_FAILED` 的那句 `message`（用例数据集 = 逐字实测，见文件头）。
+
+    取法 = **字符串操作**（本仓 `frontend/worker-h5/tests/worker-h5-6747-login-payloads.mjs` 的写法
+    固定为一行 `error: { code: 'AUTH_FAILED', message: '<逐字>' }`）⇒ 不引第二套解析器。
+    """
     text = PAYLOADS.read_text(encoding="utf-8")
-    block = re.search(r"AUTH_FAILED_401\s*=\s*\{(?P<body>.*?)\n\}", text, re.S)
-    assert block, "数据集里必须有 AUTH_FAILED_401（生产实测响应体）"
-    msg = re.search(r"message:\s*'([^']*)'", block.group("body"))
-    assert msg, "AUTH_FAILED_401 里必须有 message（服务端给的确定原因）"
-    return msg.group(1)
+    marker = "'AUTH_FAILED', message: '"
+    assert marker in text, "数据集里必须有 AUTH_FAILED 的 `code` + `message` 对（生产实测响应体）"
+    rest = text.split(marker, 1)[1]
+    assert "'" in rest, "AUTH_FAILED 的 message 引号未闭合（数据集被改坏了）"
+    return rest.split("'", 1)[0]
 
 
 def copy_defects(api_text: str, auth_failed_message: str) -> list[str]:
@@ -158,7 +175,8 @@ def copy_defects(api_text: str, auth_failed_message: str) -> list[str]:
         )
 
     # ④b 登录调用必须**显式**带语境（只在分支里"提到" credentials 不算接线）
-    if not re.search(r"request\('/api/worker/login'[\s\S]{0,400}?credentials:\s*true", code):
+    login_call = code[code.find("'/api/worker/login'"):] if "'/api/worker/login'" in code else ""
+    if "credentials: true" not in login_call[:400]:
         problems.append("`/api/worker/login` 的请求没带 `credentials: true` ⇒ 无响应体的 401 无法分辨凭据不对 / 会话没了")
 
     # ⑤ 判据真的接上去（实例判据存在 + case_ids + CI glob 覆盖）
@@ -166,13 +184,25 @@ def copy_defects(api_text: str, auth_failed_message: str) -> list[str]:
         problems.append(f"实例判据缺失：{CASE_FILE.relative_to(REPO_ROOT)} 不存在")
     else:
         head = CASE_FILE.read_text(encoding="utf-8").splitlines()[:50]
-        if not any(re.match(r"\s*(#|//|\*)\s*case_ids\s*[:=]", ln) for ln in head):
+        if not any(ln.lstrip().startswith(('# case_ids', '// case_ids', '* case_ids', '#case_ids')) for ln in head):
             problems.append("实例判据文件前 50 行没有 `case_ids:` 声明（QA Growth Gate 会 block）")
     wf = WORKFLOW.read_text(encoding="utf-8")
     if "node --test frontend/worker-h5/tests/*.test.mjs" not in wf:
         problems.append("worker-h5-tests.yml 不再跑 `node --test frontend/worker-h5/tests/*.test.mjs`（实例判据会退回死文件）")
 
     return problems
+
+
+def _mutate_plain(api_text: str, old: str, new: str) -> str:
+    """注入变异（**纯字符串**替换 + 自证生效）。
+
+    🔴 为什么不用正则：本仓元守卫 `test_guard_parsing_is_comment_aware.py` 把「按引号扫原文取值」判红
+    ⇒ 凡是要替换的锚点里**含引号**的，一律走字符串操作（与 `_js_string_literals` 同一处置）。
+    """
+    assert old in api_text, f"变异注入点不存在（字符串未命中）：{old!r} ⇒ 该用例会退化成空断言"
+    mutated = api_text.replace(old, new, 1)
+    assert mutated != api_text, "变异注入没有改变文本"
+    return mutated
 
 
 def _mutate_re(api_text: str, pattern: str, repl: str) -> str:
@@ -203,8 +233,10 @@ def test_production_message_is_the_single_source() -> None:
     assert msg in _js_string_literals(code) or msg in _determination_phrases(code), (
         "api.mjs 的兜底判定必须与生产响应体那句逐字相同"
     )
-    assert msg in CASE_FILE.read_text(encoding="utf-8"), "实例判据必须引用同一句（不许另有副本）"
-    assert msg in PAYLOADS.read_text(encoding="utf-8"), "数据集必须写明生产那句（单一真值）"
+    payloads = PAYLOADS.read_text(encoding="utf-8")
+    assert msg in payloads, "数据集必须写明生产那句（单一真值）"
+    assert PRE_FIX_401_PLAIN not in _api_code(), "改前的错归因兜底不得回到 401 通道"
+    assert "PIN 不能为空" in payloads and "'pin'" in payloads, "数据集必须写明 422 的逐字段形状（#6738 消费它）"
 
 
 # ── 判别力自证：改前三种形态各自注入 ⇒ 必须各自判红 ──────────────────────────────
@@ -240,7 +272,7 @@ def test_injection_frontend_invents_its_own_determination_is_red() -> None:
 
 def test_injection_login_call_without_credentials_context_is_red() -> None:
     """形态：登录请求不再带 `credentials` 语境 ⇒ 无响应体的 401 退回错归因 ⇒ 必红。"""
-    mutated = _mutate_re(_api_text(), r"\n\s*credentials: true,", "")
+    mutated = _mutate_plain(_api_text(), "credentials: true,", "")
     problems = copy_defects(mutated, _production_auth_failed_message())
     assert any("credentials" in p for p in problems), f"撤掉登录语境没被判红：{problems}"
 
