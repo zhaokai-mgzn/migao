@@ -732,15 +732,8 @@ public class ProductionService {
      */
     private void stampBatchAssignments(Map<String, Map<String, Object>> specByItemId,
                                        ProcessingOrder po, Long tenantId) {
-        if (stockBatchConsumptionService == null) {
-            log.warn("StockBatchConsumptionService 未装配 —— 工人端不显示派工批次（issue #5145，只读面降级）");
-            return;
-        }
-        if (po == null || po.getProcessingOrderNo() == null) {
-            return;
-        }
         Map<String, StockBatchConsumptionService.BatchAssignment> assignments =
-                stockBatchConsumptionService.assignmentsOf(tenantId, po.getProcessingOrderNo());
+                batchAssignmentsOf(po, tenantId);
         if (assignments.isEmpty()) {
             return;
         }
@@ -752,6 +745,31 @@ public class ProductionService {
             entry.getValue().put("batch_no", assignment.batchNo());
             entry.getValue().put("batch_meters", assignment.meters());
         }
+    }
+
+    /**
+     * 该加工单的**派工指定批次**（逐面料行；真值源 = 批次消耗台账，口径见 {@link #stampBatchAssignments}）。
+     *
+     * <p>🔴 全仓**唯一**一份批次指派取数（issue #6754）：部位规格面（{@link #stampBatchAssignments}）
+     * 与**精裁输出清单**（{@code ProcessingSetReadService#cutPlan} 的 {@code batch_no}）都调它 ⇒
+     * 两处不会给出不同的批次（各写一份 = 迟早不同：一处按台账净额、一处按加工单快照，
+     * 作废之后就会打架 —— 而「告知去裁 A 批、实际扣的是 B 批」正是要防的静默不一致）。</p>
+     *
+     * <p>只读面 ⇒ 未装配时**降级**成空表并打 WARN 让它看得见（不是静默）：调用方按「没有批次指派」渲染
+     * （清单印 {@code —} / 规格面不加键）。</p>
+     *
+     * @return {@code order_item_id → {批次号, 净额米数}}；未指派 / 作废后净额归零的行**不出现**
+     */
+    Map<String, StockBatchConsumptionService.BatchAssignment> batchAssignmentsOf(ProcessingOrder po,
+                                                                                 Long tenantId) {
+        if (stockBatchConsumptionService == null) {
+            log.warn("StockBatchConsumptionService 未装配 —— 不显示派工批次（issue #5145 / #6754，只读面降级）");
+            return Map.of();
+        }
+        if (po == null || po.getProcessingOrderNo() == null) {
+            return Map.of();
+        }
+        return stockBatchConsumptionService.assignmentsOf(tenantId, po.getProcessingOrderNo());
     }
 
     /**

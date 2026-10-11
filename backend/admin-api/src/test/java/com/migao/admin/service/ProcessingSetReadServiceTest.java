@@ -41,6 +41,8 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -86,10 +88,10 @@ class ProcessingSetReadServiceTest {
      */
     private static final List<String> OVERVIEW_KEYS =
             List.of("set_no", "set_index", "positions", "cut_plan");
-    /** 精裁输出清单的一行（issue #5693）：九键**恒在**，算不出来 ⇒ null + `missing_reason`。 */
+    /** 精裁输出清单的一行（issue #5693 + issue #6754）：十键**恒在**，算不出来 ⇒ null + `missing_reason`。 */
     private static final List<String> CUT_PLAN_ROW_KEYS = List.of("order_item_id", "position_kind",
-            "position_name", "component", "fabric_meters", "panel_count", "panel_length_m", "remark",
-            "missing_reason");
+            "position_name", "component", "batch_no", "fabric_meters", "panel_count", "panel_length_m",
+            "remark", "missing_reason");
     /** ⚠️ `remark`（issue #5685）为**新增键**（部位级备注，未填 ⇒ null）：键恒在。 */
     private static final List<String> POSITION_KEYS =
             List.of("order_item_id", "position_kind", "position_name", "remark", "operations");
@@ -496,7 +498,7 @@ class ProcessingSetReadServiceTest {
     // ══════════════════ 精裁输出清单（issue #5693：给裁床的「裁多长 × 几片」）
 
     @Test
-    @DisplayName("🔴 清单行键集冻结（九键恒在）+ 定宽买高 = panels 片 × (用料 / panels)")
+    @DisplayName("🔴 清单行键集冻结（十键恒在）+ 定宽买高 = panels 片 × (用料 / panels)")
     void cutPlanFreezesKeySetsAndDecomposesFixedWidth() {
         stubDetail();
         when(orderItemMapper.selectById(ITEM_CLOTH)).thenReturn(orderItemWithCutting(ITEM_CLOTH, "定宽买高", 2));
@@ -617,6 +619,38 @@ class ProcessingSetReadServiceTest {
     }
 
     @Test
+    @DisplayName("🔴 派工指定批次（issue #6754）：清单行带 batch_no（真值源 = 批次消耗台账），未指派 ⇒ null")
+    void cutPlanCarriesAssignedBatchFromLedger() {
+        stubScan();
+        when(orderItemMapper.selectById(ITEM_CLOTH)).thenReturn(orderItemWithCutting(ITEM_CLOTH, "定宽买高", 2));
+        when(orderItemMapper.selectById(ITEM_GAUZE)).thenReturn(orderItemWithCutting(ITEM_GAUZE, "定宽买高", 4));
+        when(orderSetMapper.selectPage(any(), any())).thenReturn(setPage());
+        when(processingOrderMapper.selectOne(any())).thenReturn(po());
+        // 台账里**只有布帘那一行**被指派过（纱帘未指派）—— 只顶替**唯一取数**那一处
+        // （`ProductionService#batchAssignmentsOf`，即部位规格面与清单共用的同一份）：
+        // 若清单自己另查一份台账（第二份口径），本判据的两次断言会各走各的、立刻红。
+        ProductionService ledger = spy(productionService);
+        doReturn(Map.of(ITEM_CLOTH, new StockBatchConsumptionService.BatchAssignment(
+                "PC-20261008-0003", new BigDecimal("12.30"))))
+                .when(ledger).batchAssignmentsOf(any(), any());
+        ProcessingSetReadService scoped = new ProcessingSetReadService(orderSetMapper,
+                positionOperationMapper, orderItemMapper, processingOrderMapper, orderMapper, ledger);
+
+        List<Map<String, Object>> rows = cutPlanOf(scoped.setDetail(SET_ID, TENANT));
+
+        assertThat(cutPlanRowOf(rows, ITEM_CLOTH).get("batch_no"))
+                .as("指派过的行 ⇒ 批次号上屏（裁床据此知道去哪一卷拿料）").isEqualTo("PC-20261008-0003");
+        assertThat(cutPlanRowOf(rows, ITEM_GAUZE).get("batch_no"))
+                .as("未指派（台账没有这一行）⇒ null（**键恒在**，不省键、也不拿快照 batchNo 顶）").isNull();
+
+        // 批次号同样只经共享聚合一处 ⇒ 工人扫码面 / 商家列表行与商家详情**逐值相等**
+        assertThat(cutPlanOf(scanService(scoped).resolve(TOKEN, null, TENANT)))
+                .as("工人扫码面跟着带批次号").isEqualTo(rows);
+        assertThat(scoped.listSets(null, PO_NO, 1, 20, TENANT).getItems().get(0).get("cut_plan"))
+                .as("商家列表行跟着带批次号").isEqualTo(rows);
+    }
+
+    @Test
     @DisplayName("🔴 注入式（会红）：单点改 cutPlan ⇒ 工人扫码面与商家读面**同时**变")
     void mutatingCutPlanChangesBothReadFaces() {
         stubScan();
@@ -666,8 +700,9 @@ class ProcessingSetReadServiceTest {
         @Override
         public Map<String, Object> setOverview(ProcessingOrderSet set,
                                                List<ProcessingPositionOperation> setOperations,
+                                               ProcessingOrder po,
                                                Long tenantId) {
-            Map<String, Object> overview = super.setOverview(set, setOperations, tenantId);
+            Map<String, Object> overview = super.setOverview(set, setOperations, po, tenantId);
             overview.put("set_no", "MUTATED-5247");
             return overview;
         }
@@ -685,7 +720,9 @@ class ProcessingSetReadServiceTest {
         }
 
         @Override
-        List<Map<String, Object>> cutPlan(List<ProcessingPositionOperation> setOperations, Long tenantId) {
+        List<Map<String, Object>> cutPlan(List<ProcessingPositionOperation> setOperations,
+                                          Map<String, StockBatchConsumptionService.BatchAssignment> batchAssignments,
+                                          Long tenantId) {
             Map<String, Object> marker = new LinkedHashMap<>();
             marker.put("marker", "MUTATED-5693");
             return List.of(marker);

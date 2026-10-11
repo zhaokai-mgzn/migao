@@ -548,6 +548,11 @@ function overviewView(v) {
  * （算料没给用料米数或幅数）⇒ 该项显示 `—`，**不**显示 0 / 1；`fabric_meters` 为 `null`
  * 同理。`missing_reason` 只在真缺时渲染一行小字（「缺什么」要看得见）。
  * `cut_plan` 缺失 / 非数组 / 为空 ⇒ 整块**一个字节都不出现**。</p>
+ *
+ * <p><b>派工指定批次（issue #6754）</b>：`batch_no` = 这一行「**从哪一批裁**」（真值源 = 批次消耗台账，
+ * 与商家端精裁清单、工人端部位规格面**同一份**取数）—— 裁床据此去拿料。**未指派（`null`）
+ * ⇒ 这一格不渲染**（与上面的 `component` 同款：工人端只摆「照着干活要用」的信息，不摆空占位；
+ * 服务端也只在真指派过时才给值）。</p>
  */
 function cutPlanView(v) {
   const rows = Array.isArray(v?.set_overview?.cut_plan)
@@ -568,10 +573,14 @@ function cutPlanView(v) {
         typeof r.missing_reason === 'string' && r.missing_reason.trim()
           ? `<p class="wh5-cut-reason">${esc(r.missing_reason)}</p>`
           : ''
+      // 派工指定批次（issue #6754）：未指派 / 作废后净额归零 ⇒ `null` ⇒ 这一格不出现
+      // （与 `component` 同款；工人端不摆「批次 —」这种空占位）
+      const batch = typeof r.batch_no === 'string' && r.batch_no.trim() ? esc(r.batch_no.trim()) : ''
       return `<li class="wh5-cut-row">
         <span class="wh5-cut-size">裁 ${size}</span>
         <span class="wh5-cut-name">${esc(name)}${component}</span>
         <span class="wh5-cut-meters">用料 ${meters}</span>
+        ${batch ? `<span class="wh5-cut-batch">批次 ${batch}</span>` : ''}
         ${reason}
       </li>`
     })

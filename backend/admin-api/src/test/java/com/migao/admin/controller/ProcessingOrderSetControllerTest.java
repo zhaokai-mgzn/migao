@@ -99,10 +99,10 @@ class ProcessingOrderSetControllerTest extends BaseControllerTest {
             "set_overview", "progress");
     /** ⚠️ `cut_plan`（issue #5693）= 精裁输出清单（给裁床的「裁多长 × 几片」），**新增键**。 */
     private static final List<String> OVERVIEW_KEYS = List.of("set_no", "set_index", "positions", "cut_plan");
-    /** 精裁输出清单的一行（issue #5693）：九键恒在，缺值 null。 */
+    /** 精裁输出清单的一行（issue #5693 + issue #6754）：十键恒在，缺值 null。 */
     private static final List<String> CUT_PLAN_ROW_KEYS = List.of("order_item_id", "position_kind",
-            "position_name", "component", "fabric_meters", "panel_count", "panel_length_m", "remark",
-            "missing_reason");
+            "position_name", "component", "batch_no", "fabric_meters", "panel_count", "panel_length_m",
+            "remark", "missing_reason");
     /** ⚠️ `remark`（issue #5685）为**新增键**（部位级备注，未填 ⇒ null）：键恒在。 */
     private static final List<String> POSITION_KEYS =
             List.of("order_item_id", "position_kind", "position_name", "remark", "operations");
@@ -267,6 +267,8 @@ class ProcessingOrderSetControllerTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.data.set_overview.cut_plan[0].position_kind").value("布帘"))
                 .andExpect(jsonPath("$.data.set_overview.cut_plan[0].component").value("主布"))
                 .andExpect(jsonPath("$.data.set_overview.cut_plan[0].missing_reason").value(nullValue()))
+                // 派工指定批次（issue #6754）：**键恒在**（本夹具没有台账消耗 ⇒ null，不是省键）
+                .andExpect(jsonPath("$.data.set_overview.cut_plan[0].batch_no").value(nullValue()))
                 .andReturn().getResponse().getContentAsString();
         String listBody = mockMvc.perform(get("/api/admin/processing-order-sets"))
                 .andExpect(status().isOk())

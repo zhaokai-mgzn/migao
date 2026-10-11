@@ -200,6 +200,7 @@ html, body {
 .wh5-cut-size { font-size: 20px; font-weight: 700; }
 .wh5-cut-name { font-size: 16px; }
 .wh5-cut-meters { font-size: 16px; color: var(--wh5-muted); }
+.wh5-cut-batch { font-size: 16px; font-weight: 600; }
 .wh5-cut-reason {
   margin: 0;
   width: 100%;

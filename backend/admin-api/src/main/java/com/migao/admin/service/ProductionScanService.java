@@ -451,7 +451,7 @@ public class ProductionScanService {
         //    ⇒ 页面不再另写一份聚合（第二份口径）。🔴 实现自 issue #5247 起在
         //    `ProcessingSetReadService`（全仓唯一一份），与商家/agent 套件读面**同一份**。
         result.put("set_overview", scanDetailOverview(po, processingSetReadService
-                .setOverview(set, setOperations, tenantId), tenantId));
+                .setOverview(set, setOperations, po, tenantId), tenantId));
         result.put("operation", chosen == null
                 ? null
                 : operationView(chosen, determinedBy, rerouted));

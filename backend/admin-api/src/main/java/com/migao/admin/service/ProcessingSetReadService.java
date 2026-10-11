@@ -155,9 +155,12 @@ public class ProcessingSetReadService {
         Map<String, List<ProcessingPositionOperation>> operationsBySet = operationsBySet(rows, tenantId);
         Map<String, ProcessingOrder> poCache = new LinkedHashMap<>();
         Map<String, String> orderNoCache = new LinkedHashMap<>();
+        // 派工指定批次（issue #6754）：与 poCache 同款 —— 一页 N 套常挂同一张单 ⇒ 台账**只查一次**
+        Map<String, Map<String, StockBatchConsumptionService.BatchAssignment>> batchCache =
+                new LinkedHashMap<>();
         List<Map<String, Object>> items = new ArrayList<>();
         for (ProcessingOrderSet set : rows) {
-            items.add(setRowView(set, operationsBySet, poCache, orderNoCache, tenantId));
+            items.add(setRowView(set, operationsBySet, poCache, orderNoCache, batchCache, tenantId));
         }
         return PageResponse.of(result == null ? 0L : result.getTotal(), current, limit, items);
     }
@@ -195,7 +198,7 @@ public class ProcessingSetReadService {
         result.put("order_no", orderNoOf(po.getOrderId(), tenantId));
         result.put("completed", isCompleted(progress));
         result.put("completed_at", completedAt(setOperations));
-        result.put("set_overview", setOverview(set, setOperations, tenantId));
+        result.put("set_overview", setOverview(set, setOperations, po, tenantId));
         result.put("progress", progress);
         return result;
     }
@@ -285,7 +288,8 @@ public class ProcessingSetReadService {
      * <p><b>形状</b>：{@code {set_no, set_index, positions: [{order_item_id, position_kind,
      * position_name, remark, operations: [{operation_id, logical_name, position, seq, qty, unit,
      * unit_price, status, done_qty}]}], cut_plan: [{order_item_id, position_kind, position_name,
-     * component, fabric_meters, panel_count, panel_length_m, remark, missing_reason}]}}。</p>
+     * component, batch_no, fabric_meters, panel_count, panel_length_m, remark,
+     * missing_reason}]}}。</p>
      *
      * <p>🔴 {@code cut_plan}（issue #5693）= **精裁输出清单**（给裁床的「裁多长 × 几片」），
      * 与 {@code positions} 同源同序；取值来源与缺值口径见 {@link #cutPlan}。挂在**本键之内**
@@ -299,9 +303,14 @@ public class ProcessingSetReadService {
      * ② {@code unit_price} 为 {@code null} = <b>未定价</b>（≠ 0 元，V90 / #4696），读面**不折 0**；
      * ③ 排序沿用 {@link #listSetOperations} 的既有读面序（部位名 → seq），**不另排**；
      * ④ 工序按 {@code order_item_id} 分组（缺值落「未归属部位」一组，**不丢行**）。</p>
+     *
+     * @param po 本套所属加工单 —— **派工指定批次**（{@code cut_plan[].batch_no}）的真值源要它的
+     *           加工单号；调用方手上都有（详情路径已 {@code requireProcessingOrder}、
+     *           扫码路径已解析出加工单、列表路径在 {@code poCache} 里），故**不再查一次库**
      */
     public Map<String, Object> setOverview(ProcessingOrderSet set,
                                            List<ProcessingPositionOperation> setOperations,
+                                           ProcessingOrder po,
                                            Long tenantId) {
         Map<String, List<ProcessingPositionOperation>> byItem = byOrderItem(setOperations);
         List<Map<String, Object>> positions = new ArrayList<>();
@@ -326,7 +335,11 @@ public class ProcessingSetReadService {
         // **同一份** `setOperations`、**同一份**分组（`byOrderItem`）⇒ 本键随 `set_overview`
         // 自动出现在**两个**读面上（工人扫码 `GET /api/worker/production/scan` /
         // 商家 `GET /api/admin/processing-order-sets/{id}`），**零额外接线**。
-        overview.put("cut_plan", cutPlan(setOperations, tenantId));
+        // 派工指定批次（issue #6754）：取数与工人端**部位规格面**同一份
+        // （`ProductionService#batchAssignmentsOf`，真值源 = 批次消耗台账）—— 不在这里另查一份台账。
+        Map<String, StockBatchConsumptionService.BatchAssignment> batchAssignments =
+                productionService.batchAssignmentsOf(po, tenantId);
+        overview.put("cut_plan", cutPlan(setOperations, batchAssignments, tenantId));
         return overview;
     }
 
@@ -352,26 +365,37 @@ public class ProcessingSetReadService {
      *       源头 = 引擎 {@code plan.panels}；定高买宽**无定义 ⇒ 键缺席**）；
      *       <b>加工类型</b> = 订单行列 {@code cutting_mode}（缺则回落 {@code processing_info.cuttingMode}，
      *       优先级与 {@code OrderLineCraftFields.toSnapshotKeys} 逐字一致）。</li>
+     *   <li><b>派工指定批次</b>{@code batch_no}（issue #6754）= 该行**从哪一批裁**：取数与工人端
+     *       <b>部位规格面</b>同一份（{@code ProductionService#batchAssignmentsOf}，真值源 = **批次消耗台账**）；
+     *       <b>未指派 / 作废后净额归零 ⇒ {@code null}</b>（键恒在）。<b>不</b>读加工单快照的
+     *       {@code batchNo} —— 那是纸面「批号」那一列的口径（两颗批次概念各有消费者，不互相冒充）。</li>
      * </ul>
      *
      * <h2>缺值口径（不渲染假数据）</h2>
-     * <p>九键**恒在**；算不出来时 {@code fabric_meters} / {@code panel_count} /
+     * <p>十键**恒在**；算不出来时 {@code fabric_meters} / {@code panel_count} /
      * {@code panel_length_m} 一律 {@code null}（**不用 0 / 1 冒充**），并由
      * {@code missing_reason} 指名缺的是什么。<b>片数与每片长同生同灭</b>（同一份分解：
      * 拿不到用料就报不出「裁多长」，半截数据比空更危险）。</p>
      *
-     * @param setOperations 本套的活跃工序实例（既有读面序；与 {@link #setOverview} 同一份入参）
+     * @param setOperations    本套的活跃工序实例（既有读面序；与 {@link #setOverview} 同一份入参）
+     * @param batchAssignments 派工指定批次（{@code order_item_id → 批次}；与部位规格面**同一份**
+     *                         {@code ProductionService#batchAssignmentsOf}）—— 缺键 = 该行未指派批次
      */
-    List<Map<String, Object>> cutPlan(List<ProcessingPositionOperation> setOperations, Long tenantId) {
+    List<Map<String, Object>> cutPlan(List<ProcessingPositionOperation> setOperations,
+                                      Map<String, StockBatchConsumptionService.BatchAssignment> batchAssignments,
+                                      Long tenantId) {
+        Map<String, StockBatchConsumptionService.BatchAssignment> batches =
+                batchAssignments == null ? Map.of() : batchAssignments;
         List<Map<String, Object>> rows = new ArrayList<>();
         for (Map.Entry<String, List<ProcessingPositionOperation>> entry : byOrderItem(setOperations).entrySet()) {
-            rows.add(cutPlanRow(entry.getKey(), entry.getValue(), tenantId));
+            rows.add(cutPlanRow(entry.getKey(), entry.getValue(), batches, tenantId));
         }
         return rows;
     }
 
-    /** 清单一行（键集见 {@link #cutPlan}；九键恒在，缺值 null）。 */
+    /** 清单一行（键集见 {@link #cutPlan}；十键恒在，缺值 null）。 */
     private Map<String, Object> cutPlanRow(String orderItemId, List<ProcessingPositionOperation> ops,
+                                           Map<String, StockBatchConsumptionService.BatchAssignment> batchAssignments,
                                            Long tenantId) {
         OrderItem item = aliveItem(orderItemId, tenantId);
         // 🔴 存量行：`order_items.processing_info` **可为 NULL**（真库实证 issue #5550：待派明细 15/29 为 NULL），
@@ -399,6 +423,10 @@ public class ProcessingSetReadService {
         row.put("position_kind", ops.get(0).getPositionKind());
         row.put("position_name", positionNameOf(orderItemId, ops.get(0), ops, tenantId));
         row.put("component", textOrNull(info.get("componentRole")));
+        // 派工指定批次（issue #6754）：**键恒在**；未指派 / 作废后净额归零 ⇒ null
+        //（**不**拿加工单快照的 batchNo 顶 —— 那是纸面「批号」的口径，见 cutPlan 的 javadoc）
+        StockBatchConsumptionService.BatchAssignment assignment = batchAssignments.get(orderItemId);
+        row.put("batch_no", assignment == null ? null : assignment.batchNo());
         row.put("fabric_meters", fabricMeters);
         row.put("panel_count", lengths.isEmpty() ? null : lengths.size());
         row.put("panel_length_m", lengths.isEmpty() ? null : lengths.get(0));
@@ -630,6 +658,7 @@ public class ProcessingSetReadService {
                                            Map<String, List<ProcessingPositionOperation>> operationsBySet,
                                            Map<String, ProcessingOrder> poCache,
                                            Map<String, String> orderNoCache,
+                                           Map<String, Map<String, StockBatchConsumptionService.BatchAssignment>> batchCache,
                                            Long tenantId) {
         String poId = set.getProcessingOrderId();
         ProcessingOrder po;
@@ -667,7 +696,14 @@ public class ProcessingSetReadService {
         view.put("completed", isCompleted(progress));
         // 精裁输出清单（issue #5693）：与套件详情 `set_overview.cut_plan` **同一个**
         // {@link #cutPlan}（同一份分解、同一份取值口径）⇒ 列表行与详情行逐字段一致。
-        view.put("cut_plan", cutPlan(operationsBySet.getOrDefault(set.getId(), List.of()), tenantId));
+        // 批次指派（issue #6754）按加工单缓存：同一张单的套共用一次台账查询。
+        Map<String, StockBatchConsumptionService.BatchAssignment> batchAssignments = batchCache.get(poId);
+        if (batchAssignments == null) {
+            batchAssignments = productionService.batchAssignmentsOf(po, tenantId);
+            batchCache.put(poId, batchAssignments);
+        }
+        view.put("cut_plan", cutPlan(operationsBySet.getOrDefault(set.getId(), List.of()),
+                batchAssignments, tenantId));
         return view;
     }
 

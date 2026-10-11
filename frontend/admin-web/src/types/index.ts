@@ -1042,7 +1042,7 @@ export interface PieceworkSummary {
  * 精裁输出清单的一行（issue #5693）—— 给裁床的「**裁多长（米）× 几片**」。
  *
  * 服务端唯一实现在后端 `ProcessingSetReadService`，与工人端扫码详情**同一份**
- * （同一实现 ⇒ 两处读面逐字段一致）。🔴 九键**恒在**：算不出来时
+ * （同一实现 ⇒ 两处读面逐字段一致）。🔴 十键**恒在**（issue #6754 起含 `batch_no`）：算不出来时
  * `fabric_meters` / `panel_count` / `panel_length_m` 一律 `null`（服务端**不用 0 / 1 冒充**），
  * 并由 `missing_reason` 指名缺的是什么 ⇒ 前端按「显式留空」渲染，不造值。
  */
@@ -1054,6 +1054,14 @@ export interface CutPlanRow {
   position_name?: string | null
   /** 组件（明细行角色：主布 / 配布边 / 纱） */
   component?: string | null
+  /**
+   * **派工指定批次**（issue #6754）：这一行「**从哪一批裁**」（`PC-yyyyMMdd-NNNN`）。
+   *
+   * 真值源 = 批次消耗台账（与工人端**部位规格面**的 `batch_no` **同一份取数**）；
+   * `null` = **未指派 / 作废后净额归零**（≠「本系统没有这个字段」）⇒ 界面印 `—`。
+   * ⚠️ 与加工单**快照**行的 `batchNo`（纸面「批号」列读的那一个）**是两件事**，不得互相冒充。
+   */
+  batch_no?: string | null
   /** 用料（米）—— 唯一来源 = 「精裁」工序实例的 qty（且 qty_source = fabric_meters） */
   fabric_meters?: number | null
   /** 几片（定高买宽 = 1 片整窗；定宽买高 = 算料输出的 panels） */

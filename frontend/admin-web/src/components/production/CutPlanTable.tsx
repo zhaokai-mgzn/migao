@@ -17,9 +17,16 @@ import type { CutPlanRow, ProcessingOrderSetRow } from '@/types'
  *
  * <h2>行粒度</h2>
  * 行 = **套 × 部位**（服务端的清单就是按套给的）⇒ 本表按套平铺并保留「套号」列，
- * 表头顺序照 issue 正文的字段面：`部位 | 组件/货号 | 用料（米） | 裁多长（米） × 几片 | 备注`。
+ * 表头顺序照 issue 正文的字段面，并带服务端下发的 `batch_no`：
+ * `部位 | 组件/货号 | 用料（米） | 裁多长（米） × 几片 | 批次号 | 备注`。
  * 数量显示口径与工人端 `render.mjs` 的 `fmtQty` 一致（`toFixed(2)`）——两边同一份清单，
  * 不该出现「商家看 12.3 / 工人看 12.30」这种差。
+ *
+ * <h2>批次号（issue #6754）</h2>
+ * 裁床拿到「裁多长 × 几片」还要知道**去哪一批拿料**：`batch_no` = 服务端下发的**派工指定批次**
+ * （真值源 = 批次消耗台账，与工人端**部位规格面**同一份取数）。**未指派 ⇒ `null` ⇒ 印 `—`**
+ * （与同表 `component` / `remark` 同款「缺值显式占位」：不猜、不省列）。这一列**不**读加工单快照的
+ * `batchNo` —— 那是纸面「批号」那一列的口径，两颗概念各有消费者、互不冒充。
  */
 export default function CutPlanTable({ sets }: { sets?: ProcessingOrderSetRow[] }) {
   const rows = (sets ?? []).flatMap((set) =>
@@ -49,6 +56,7 @@ export default function CutPlanTable({ sets }: { sets?: ProcessingOrderSetRow[] 
             <th className="py-2 pr-3 font-normal">组件 / 货号</th>
             <th className="py-2 pr-3 font-normal">用料（米）</th>
             <th className="py-2 pr-3 font-normal">裁多长（米） × 几片</th>
+            <th className="py-2 pr-3 font-normal">批次号</th>
             <th className="py-2 font-normal">备注</th>
           </tr>
         </thead>
@@ -84,6 +92,14 @@ export default function CutPlanTable({ sets }: { sets?: ProcessingOrderSetRow[] 
                   {row.missing_reason ? (
                     <span className="mt-0.5 block text-xs text-neutral-500">{row.missing_reason}</span>
                   ) : null}
+                </td>
+                {/* 批次号（issue #6754）：派工指定批次 —— 裁床据此知道去哪一批拿料；
+                    未指派（服务端 null）⇒ 与同表 `component` / `remark` 同款印 `—` */}
+                <td
+                  className="py-2 pr-3 whitespace-nowrap text-neutral-700"
+                  data-testid={`cut-plan-batch-${setNo}-${row.order_item_id}`}
+                >
+                  {row.batch_no ?? '—'}
                 </td>
                 <td className="py-2 text-neutral-500">{row.remark ?? '—'}</td>
               </tr>

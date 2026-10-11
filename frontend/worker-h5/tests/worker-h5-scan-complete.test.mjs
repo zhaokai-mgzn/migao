@@ -787,12 +787,15 @@ test('🔴 ⑩-c 长备注窄屏不破版：全文进 DOM（不截断成省略�
 // ============================================================ ⑪ 精裁输出清单（issue #5693）
 
 /**
- * 判据（每条都能红 —— 红证：删掉 `render.mjs` 的 `${cutPlanView(v)}` 两行 ⇒ ⑪ 三红）：
+ * 判据（每条都能红 —— 红证：删掉 `render.mjs` 的 `${cutPlanView(v)}` 两行 ⇒ ⑪ 三红；
+ *   删掉 `batch` 那一行 ⇒ ④ 红）：
  *   ① 有清单 ⇒ 逐条上屏，形如「裁 6.15 米 × 2 片」+ 用料米数 + 该部位的组件；
  *   ② 🔴 **缺值不渲染假数据**：`panel_count` / `panel_length_m` 为 null ⇒ 显式留空（`—`），
  *      屏上**不得**出现 `裁 0.00 米 × 0 片` / `… × 1 片` 这类由 null 折出来的假数字；
  *      缺值原因（`missing_reason`）必须可见；
- *   ③ `cut_plan` 缺失 / null / 空数组 / 非数组 ⇒ 整块（`wh5-cut-plan`）**一个字节都不出现**。
+ *   ③ `cut_plan` 缺失 / null / 空数组 / 非数组 ⇒ 整块（`wh5-cut-plan`）**一个字节都不出现**；
+ *   ④ **派工指定批次**（issue #6754）：指派过的行屏上要看到批次号（`批次 PC-…`）；
+ *      未指派（`null`）⇒ 这一格**不出现**（不摆「批次 —」空占位，也不拿别的值顶）。
  *
  * 为什么钉在**装配层**（真实页面渲染 `doc.html`）：清单是「给裁床照着裁」的数字 ——
  * 渲染成假数字就是裁错料；而块的位置/存在性只有真实渲染路径才判得出。
@@ -804,12 +807,12 @@ const CUT_PLAN_VIEW = {
     cut_plan: [
       {
         order_item_id: 'oi-cloth', position_kind: '布帘', position_name: '布艺遮光帘A',
-        component: '主布', fabric_meters: 12.3, panel_count: 2, panel_length_m: 6.15,
-        remark: null, missing_reason: null,
+        component: '主布', batch_no: 'PC-20261008-0003', fabric_meters: 12.3, panel_count: 2,
+        panel_length_m: 6.15, remark: null, missing_reason: null,
       },
       {
         order_item_id: 'oi-gauze', position_kind: '纱帘', position_name: '纱帘-白',
-        component: '纱', fabric_meters: null, panel_count: null, panel_length_m: null,
+        component: '纱', batch_no: null, fabric_meters: null, panel_count: null, panel_length_m: null,
         remark: null, missing_reason: '本套该部位没有「精裁」工序实例：用料米数无从取（不猜）',
       },
     ],
@@ -826,6 +829,9 @@ test('🔴 ⑪ 精裁输出清单（issue #5693）：逐条渲染「裁 6.15 米
   assert.match(doc.html, /裁 6\.15 米 × 2 片/, '「裁多长 × 几片」逐字上屏（米 / 片）')
   assert.match(doc.html, /用料 12\.30 米/, '用料米数显示口径与商家端一致（toFixed(2)）')
   assert.match(doc.html, /布艺遮光帘A · 主布/, '该部位的组件要跟着部位名一起出现')
+  // ④ 派工指定批次（issue #6754）：裁床据此知道去哪一批拿料；未指派的那一行**不摆空占位**
+  assert.match(doc.html, /批次 PC-20261008-0003/, '指派过的行 ⇒ 批次号上屏')
+  assert.ok(!/批次 —/.test(doc.html), '未指派 ⇒ 这一格不出现（不拿 — 顶、不造值）')
 
   assert.match(doc.html, /裁 —/, '算不出来 ⇒ 显式留空（—），不留半截数据')
   assert.ok(!/裁 0\.00 米 × 0 片/.test(doc.html), '不得把 null 折成 0 冒充')
