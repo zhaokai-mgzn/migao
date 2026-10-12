@@ -465,13 +465,16 @@ describe('RolesPage', () => {
     for (const code of codes) {
       expect(visibleText(container), code).not.toContain(code)
     }
+    // 负控：同一把尺子对**真的**权限码会命中（否则上面两条是空断言）
+    expect(codes, '真配置里应有带码菜单项').not.toHaveLength(0)
+    expect(codes[0]).toMatch(/[a-z_]+:[a-z_]+/)
 
     // ② 非可见面：每个带码节点的 label 上仍有 `title` + `sr-only` 文本（可及性 / hover 不降级）
     for (const code of ['product:list', 'production:view', 'inbound:view']) {
-      const span = container.querySelector(`[data-testid="roles-code-${code}"]`)
-      expect(span, code).not.toBeNull()
-      expect(span!.className).toContain('sr-only')
-      expect(span!.closest('label')!.getAttribute('title')).toBe(code)
+      const span = container.querySelector(`[data-testid="roles-code-${code}"]`) as HTMLElement | null
+      expect(span?.className, code).toContain('sr-only')
+      expect(span?.textContent, code).toBe(code)
+      expect(span?.closest('label')?.getAttribute('title'), code).toBe(code)
     }
   })
 
