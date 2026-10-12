@@ -3435,7 +3435,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（91 case）
+## 杂项域（92 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4801,6 +4801,21 @@
 跳过: [backend-contract] 处理器级直调判据（断言 HTTP 状态码 / 响应体 / logback 真实日志事件）+ 既有类级元守卫（纯静态：反射取 `@ExceptionHandler` ⇄ 台账双向相等）：判定层在 Java 单测，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-09 新增（issue #6210）。取号 = `python3 scripts/next_case_id.py mc` ⇒ 候选 main(MC-001~088) ∪ 在飞 PR #6621(MC-089) ∪ 工作区 ⇒ **MC-090**（工具口径 = 最小空闲号 + 同一次调用断言号 ∉ 候选集）。**红证（改造前逐字）**：同一个外键违例走改前兜底 ⇒ `PRE-FIX status=500 code=INTERNAL_ERROR msg=服务器内部错误` + `logHasConstraintName=true logHasTableName=true`；改后 ⇒ `POST-FIX status=422 code=VALIDATION_ERROR msg=请求引用的数据不存在或已被删除` + `logHasConstraintName=false throwableProxy=null`。**反向对照**：非约束类未知异常仍 `500` 且 `throwableProxy` 非空。类级元守卫红证：新分支不登记台账 ⇒ `分支未登记到台账: org.springframework.dao.DataIntegrityViolationException`（实测）。⚠️ **射程收窄（实测驱动，逐字）**：初版按「整族（外键+唯一+非空+检查）⇒ 422」写，CI `admin-api unit tests`（job `113894868123`）当场判红两条 —— `MerchantShipmentAtomicityTest.thirdStepFailureRollsBackTheWholeMerchantShipRoute:197` 与 `failingInjectionReallyFires:239`，读数 `Range for response status value 422 expected:<SERVER_ERROR> but was:<CLIENT_ERROR>`（注入的是 `DuplicateKeyException`，它**是** `DataIntegrityViolationException` 的子类）。⇒ 改为**只认外键（23503）**、其余交回兜底，既有 5xx 契约零变化；本地 35 条（处理器族 + 发货族）全绿。⚠️ 未固化（照实登记）：见 data_checks 末条覆盖边界四条（未连真库 / 射程只到外键 / 入口校验不在射程 / 无端点级判据）。 ｜ tags: backend-contract, exception-mapping, log-sanitization, schema-leak, fail-closed, red-proof, class-level-guard, blast-radius
+
+### MC-091. 手机端可见面标注只有一份真值（issue #6759）：面清单只许在 `MobileSurfaces` 声明、`admin-web` 不许自备「码 → 手机端面」映射表、动作节点台账 ⇄ 服务端真值源 ⇄ `rbac/manifest.json` 四向相等，且标注**必须接线**在 `GET /api/admin/menus` 上 🔵
+```
+你: 管理员在权限勾选树上要能看出「勾这个权限码 = 员工手机上多一个入口」，而这个对应关系**只许有一份出处**（服务端按权限码投影的手机端菜单），前端不许自己再抄一张表。
+数据: **判据 1·面清单只许一处**：`backend/admin-api/src/main/java/com/migao/admin/service/MobileSurfaces.java` 是手机端可见面（面名 + 读码）的**唯一**声明处；别的 `backend/admin-api/src/main/java/**/*.java` 文件里出现「面构造形态（`new Surface(` + 字符串）+ 面中文名」即**具名**判红。执行点 = tests/unit_ci_workflows/test_mobile_surface_annotation_single_source.py::test_mobile_surface_truth_lives_in_exactly_one_java_file。
+数据: **判据 2·四向相等（未登记即红 / 陈旧亦红）**：动作节点台账（tests/unit_ci_workflows/test_rbac_derived_pages.py 的 `ACTION_NODE_CODES`）⇄ 服务端真值源（`MenuController` 的节点声明，由既有解析器 `_iter_menu_controller` 现取）⇄ `rbac/manifest.json` 的 `menus.controller` ⇄ 三源同构守卫的 `ACTION_NODES`（组内多出节点）**逐条逐值相等**；只改一处 ⇒ 报出是哪一个节点、差在哪。执行点 = 同文件 ::test_action_nodes_are_registered_in_both_ledgers_and_the_manifest。
+数据: **判据 3·前端没有第二张表**：`frontend/admin-web/src/**` 里**没有任何**生产源文件同时出现「**只可能是手机端面**的名字」（= 面名 − PC 菜单项名，现取 = 入库过账 / 售后处理 / 坐席 / 数据 / 生产待办 / 计件工资报表）与「手机端读码」；扫描面 268 个文件、命中 0。执行点 = 同文件 ::test_frontend_has_no_code_to_mobile_surface_table（附「唯一渲染实现 = frontend/admin-web/src/lib/mobile-surface-label.ts 必须在」的声音点，防空真）。
+数据: **判据 4·标注必须接线**：`GET /api/admin/menus` 返回的常量**不得**是裸 `MENU_TREE`（形态级：必须是 `annotateMobileTitles(...)` 的产物）—— 防「标注只活在单测的想象里」。执行点 = 同文件 ::test_mobile_surface_annotation_is_wired_to_the_menu_endpoint。
+数据: **判别力自证（红证，内存构造、不读磁盘）**：① 别处抄一份面清单 ⇒ 判据 1 具名红；② 前端一张映射表 ⇒ 判据 3 具名红；③ 台账码漂移 / 新节点未登记 / 清单缺项 / 清单值不等 / 陈旧登记 ⇒ 判据 2 **各自**判红；对照读数 = 只把面名与读码写进**注释** ⇒ **不红**、两者**各自独立出现**（不共现）⇒ **不红**、只引用读码而无面构造形态 ⇒ **不红**。执行点 = 同文件 ::test_guard_discriminates_bad_shapes。
+数据: **渲染面判据（前端）**：**有**手机端面的码渲染 ` · 手机端：X`（多个面用 `、` 连接、顺序 = 服务端给的顺序），**没有**的（空数组 / 缺字段）**一个字符都不追加**。执行点 = frontend/admin-web/tests/unit/pages/employees.test.tsx（服务端下发什么就渲染什么 + 不下发即零标注的对照读数）与 frontend/admin-web/tests/unit/components/TreeCheckbox.test.tsx（真组件的三条判据）。
+数据: 🔴 **覆盖边界（照实登记，不粉饰）**：① 判据 3 的扫描面**有意只到 `frontend/admin-web/src/**`** —— `frontend/bmini-app` 早有一张端侧镜像台账（frontend/bmini-app/src/utils/adminPermission.ts 的 `ADMIN_SURFACES`，由 BM-046 判据 5 与 `MobileSurfaces` 逐值比对守着），本单**一字未改**它，纳入扫描面会把存量债误算成本单引入；② 判据 3 的判别力依赖「面名 ≠ 菜单名」这一**现取事实**（差分清单在判据里现算并打印）—— 若将来把某个面改成与 PC 菜单项同名，它会退化为漏报（**已知边界，登记不修**）；③ **判不了**「服务端下发的面名被前端改写」（如加后缀）与运行期才可见的第二份真值（localStorage 之类）。
+跳过: [backend-contract] 源码形态 + 台账逐值 + 接线（Python 标准库现取解析，复用既有守卫的解析器）+ 前端 vitest 渲染断言（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.vitest
+溯源: 2026-10-12 新增（issue #6759 需求①）。取号 MC-091（`python3 scripts/next_case_id.py MC` ⇒ main 现取 MC-001~090、在飞 PR 均未改 `.github/cases/**` ⇒ 最小空闲 **MC-091**）。本单的类级固化 = 「手机端可见面标注只有一份真值」四条判据（面清单唯一 / 四向登记 / 前端无第二张表 / 标注已接线）+ 判别力自证（四种坏形态各自红 + 三条对照读数）。⚠️ 未固化（照实登记）：见 data_checks 末条覆盖边界三条。 ｜ 2026-10-12 **返工补登**：`QA Growth Gate` 对**新增生产文件**要求同名单测 —— `frontend/admin-web/src/lib/mobile-surface-label.ts` ⇒ 补同名测试 `frontend/admin-web/tests/unit/lib/mobile-surface-label.test.ts`（5 条：undefined/null/空/全空白 ⇒ 空串、单面逐字形态、多面用顿号连接且顺序 = 服务端顺序、输出不含权限码字面量 + 负控、空白项过滤不残留分隔符），并同批登记进本用例的 `traces.tests`。 ｜ tags: rbac, permission-tree, mobile-surfaces, single-source, class-level-guard, red-proof, admin-web
 
 ## 商家入驻域（6 case）
 
@@ -10605,8 +10620,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：732（活跃 134，跳过 598）
-- tier 分布：smoke 12 / normal 678 / adversarial 32
+- 用例总数：733（活跃 134，跳过 599）
+- tier 分布：smoke 12 / normal 679 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10621,7 +10636,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：91
+- 杂项域：92
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：64

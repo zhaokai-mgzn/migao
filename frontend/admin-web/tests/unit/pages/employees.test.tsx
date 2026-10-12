@@ -2,6 +2,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
+import { formatMobileTitles } from '@/lib/mobile-surface-label'
 
 // Mock sonner toast
 const mockToastError = vi.fn()
@@ -50,16 +51,20 @@ vi.mock('@/lib/request', () => ({
 }))
 
 // Mock TreeCheckbox — 暴露 selected 以便断言岗位默认权限预填（#2969）
+// 🔴 issue #6759：本假组件也必须渲染**手机端标注**（真组件按下发的 `node.mobileTitles` 追加
+// ` · 手机端：X`）—— 否则「标注有没有渲染出来」在本文件里是**测不到的**（假绿）。
+// 拼接串与真组件**同一实现**（`@/lib/mobile-surface-label`）。
 const mockTreeOnChange = vi.fn()
 vi.mock('@/components/ui/TreeCheckbox', () => ({
   TreeCheckbox: ({ tree, selected, onChange }: any) => {
     mockTreeOnChange.mockImplementation(onChange || (() => {}))
+    const label = (node: any) => `${node.label}${formatMobileTitles(node.mobileTitles)}`
     return (
       <div data-testid="tree-checkbox" data-selected={JSON.stringify(selected || [])}>
         {tree.map((node: any) => (
           <div key={node.code}>
-            <span>{node.label}</span>
-            {node.children?.map((child: any) => <span key={child.code}>{child.label}</span>)}
+            <span>{label(node)}</span>
+            {node.children?.map((child: any) => <span key={child.code}>{label(child)}</span>)}
           </div>
         ))}
       </div>
@@ -474,6 +479,79 @@ describe('EmployeesPage', () => {
     fireEvent.change(posSelect, { target: { value: '运营' } })
     expect(JSON.parse(screen.getByTestId('tree-checkbox').getAttribute('data-selected') || '[]'))
       .toEqual(expect.arrayContaining(['dashboard:view']))
+  })
+
+  // ==================== 员工管理权限全链路（按钮级权限） ====================
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // issue #6759 需求①：权限树标注「手机端可见面」（真值 = 服务端派生下发的 mobileTitles）
+  //
+  // 🔴 本用例的**唯一输入**是 `GET /api/admin/menus` 的响应 —— 服务端给什么就渲染什么；
+  //    前端**没有任何**「码 → 手机端面」的常量表（判据 =
+  //    tests/unit_ci_workflows/test_mobile_surface_annotation_single_source.py）。
+  // ══════════════════════════════════════════════════════════════════════════
+  it('#6759: 权限树渲染服务端下发的手机端标注；没有手机端面的码**不渲染**（负控）', async () => {
+    mockRequestGet.mockResolvedValue({
+      data: {
+        data: [
+          {
+            code: 'production-center',
+            label: '生产管理',
+            children: [
+              // 手机端有面 ⇒ 必须出现标注
+              { code: 'processing:view', label: '智能派单', mobileTitles: ['智能派单'] },
+              // 手机端没有面 ⇒ 不得出现标注（纯 PC 权限）
+              { code: 'production:view', label: '生产看板', mobileTitles: [] },
+            ],
+          },
+          {
+            code: 'inventory-center',
+            label: '仓储与物料',
+            children: [
+              { code: 'inbound:view', label: '入库单', mobileTitles: ['入库过账'] },
+              // 缺字段（老服务端 / 尚未下发）⇒ 同样不得出现标注
+              { code: 'order:list', label: '发货单' },
+            ],
+          },
+        ],
+      },
+    })
+    render(<EmployeesPage />)
+    fireEvent.click(screen.getByText('新增员工'))
+    await waitFor(() => expect(screen.getByTestId('modal')).toBeInTheDocument())
+
+    // ① 有手机端面的码 ⇒ 渲染「 · 手机端：X」标注（逐字）
+    await waitFor(() => {
+      expect(screen.getByText('智能派单 · 手机端：智能派单')).toBeInTheDocument()
+    })
+    expect(screen.getByText('入库单 · 手机端：入库过账')).toBeInTheDocument()
+
+    // ② 没有手机端面的码 ⇒ **不追加任何标注**（不摆内部标识、不产生噪音）
+    expect(screen.getByText('生产看板')).toBeInTheDocument()
+    expect(screen.queryByText(/生产看板 · 手机端/)).not.toBeInTheDocument()
+    expect(screen.getByText('发货单')).toBeInTheDocument()
+    expect(screen.queryByText(/发货单 · 手机端/)).not.toBeInTheDocument()
+    // ③ 反向自证：整个树上「手机端：」只出现**两处**（= 服务端给了 mobileTitles 的那两个码）
+    expect(screen.queryAllByText(/手机端：/)).toHaveLength(2)
+  })
+
+  it('#6759 对照读数: 服务端**没有**下发任何 mobileTitles ⇒ 树上零标注（标注不是前端自造的）', async () => {
+    mockRequestGet.mockResolvedValue({
+      data: {
+        data: [
+          {
+            code: 'production-center',
+            label: '生产管理',
+            children: [{ code: 'processing:view', label: '智能派单' }],
+          },
+        ],
+      },
+    })
+    render(<EmployeesPage />)
+    fireEvent.click(screen.getByText('新增员工'))
+    await waitFor(() => expect(screen.getByTestId('modal')).toBeInTheDocument())
+    expect(screen.getByText('智能派单')).toBeInTheDocument()
+    expect(screen.queryAllByText(/手机端：/)).toHaveLength(0)
   })
 
   // ==================== 员工管理权限全链路（按钮级权限） ====================

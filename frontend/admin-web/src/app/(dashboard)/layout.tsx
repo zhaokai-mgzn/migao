@@ -160,13 +160,6 @@ export default function DashboardLayout({
     setCollapsed(prev => !prev)
   }
 
-  if (permissionDenied) {
-    // 🔴 issue #6669 第 6 条：403 终态面提到 `@/components/common/AccessDenied`（**纯展示、不吃权限码**
-    // —— 结构上就没有回显内部标识的入口）。权限码仍在上面 `ROUTE_PERMISSION_MAP` 的判定里，
-    // 那是它的正当用途；**不上商家屏**。
-    return <AccessDenied />
-  }
-
   return (
     <div className="min-h-screen bg-neutral-50">
       {/* 侧边栏（issue #5271：桌面端常驻栏 / 移动端抽屉） */}
@@ -210,7 +203,17 @@ export default function DashboardLayout({
             判据钉的是「**所有断点下**右侧安全区 ≥ FAB 宽度 + 16px」（见同页测试），别随手改小。 */}
         <main className="flex-1 px-4 sm:px-6 pr-20 sm:pr-20 pt-4 sm:pt-6 pb-24">
           <div className="min-h-[calc(100vh-184px)] rounded-2xl border border-neutral-200/80 bg-white shadow-card">
-            {children}
+            {/* 🔴 issue #6758：403 **只替换主内容区**，不再吞掉整个外壳。
+                修前这里是 `if (permissionDenied) return <AccessDenied />`（早于 Sidebar 渲染）⇒
+                缺 `dashboard:view` 的账号（客服岗位 / 员工个人权限没勾「经营看板」）登录后落
+                `/dashboard` 时**整页只剩一张 403 卡片**：侧边栏、Header 全没了 ⇒ 该员工明明持
+                `agent:session` / `knowledge:view` / `after_sales:view` / `customer:view`，
+                **却没有任何导航出口**（只能手输 URL）。
+                外壳留住 ⇒ 菜单照常渲染、照常按权限过滤，用户从侧边栏能走到自己有权限的功能。
+                🔴 issue #6669 第 6 条：403 终态面 = `@/components/common/AccessDenied`
+                （**纯展示、不吃权限码** —— 结构上就没有回显内部标识的入口）；权限码仍只在上面
+                `ROUTE_PERMISSION_MAP` 的判定里用，**不上商家屏**。 */}
+            {permissionDenied ? <AccessDenied /> : children}
           </div>
         </main>
       </div>

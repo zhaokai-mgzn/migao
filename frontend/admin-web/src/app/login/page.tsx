@@ -9,6 +9,7 @@ import Logo from '@/components/ui/Logo'
 import { useAuthStore } from '@/store/auth'
 import { authApi } from '@/lib/api'
 import { extractApiErrorMessage } from '@/lib/api-error'
+import { landingPath } from '@/lib/menu-nav'
 
 const SMS_CODE_LENGTH = 6
 const COUNTDOWN_SECONDS = 60
@@ -22,10 +23,19 @@ const COUNTDOWN_SECONDS = 60
  * （根因见 Next 的 `missing-suspense-with-csr-bailout`：`useSearchParams` 必须包在 `<Suspense>` 里，
  * 而包了之后首屏 HTML 就只剩 fallback ⇒ 与「匿名可见面首屏要有正文」直接冲突）。
  * 这里只在**提交成功后的点击处理器**里读一次 URL —— 那时一定在客户端，读 `window.location.search` 语义等价。
+ *
+ * 🔴 issue #6758：**没有** `callbackUrl` 时不再硬编码 `/dashboard` —— 落点改由权限算
+ * （`landingPath` = 第一个可见菜单项）。写死 `/dashboard` 的现场形态：客服岗位（自建岗位 /
+ * 员工个人权限没勾「经营看板」⇒ 无 `dashboard:view`）登录即落 403 面，而 403 修前还吞掉
+ * 整个外壳 ⇒ 该员工**没有任何导航出口**。
+ * 显式 `callbackUrl` 仍**优先**（用户明确说要去哪一页就去哪一页；那一页现在会渲染 403 + 完整外壳）。
  */
-function callbackUrlFromLocation(): string {
-  if (typeof window === 'undefined') return '/dashboard'
-  return new URLSearchParams(window.location.search).get('callbackUrl') || '/dashboard'
+function callbackUrlFromLocation(permissions: string[], roles: string[]): string {
+  const explicit =
+    typeof window === 'undefined'
+      ? null
+      : new URLSearchParams(window.location.search).get('callbackUrl')
+  return explicit || landingPath({ permissions, roles })
 }
 
 /**
@@ -76,8 +86,9 @@ export default function LoginPage() {
       router.replace('/change-password')
       return
     }
-    router.replace('/dashboard')
-  }, [isAuthenticated, mustChangePassword, router])
+    // 已登录访问登录页：同样按**权限**算落点（issue #6758）
+    router.replace(landingPath({ permissions: user?.permissions || [], roles: user?.roles || [] }))
+  }, [isAuthenticated, mustChangePassword, router, user])
 
   useEffect(() => {
     if (countdown <= 0) return
@@ -115,7 +126,7 @@ export default function LoginPage() {
   }
 
   /**
-   * 登录成功后的落点：需改密 ⇒ 改密页；否则回 `callbackUrl`（默认 dashboard）。
+   * 登录成功后的落点：需改密 ⇒ 改密页；否则回 `callbackUrl`（无则 = 第一个**可见菜单项**，issue #6758）。
    * 两条登录路共用 —— 管理员也可能被要求改密（管理员由他人创建时同样置了标记）。
    */
   const goAfterLogin = (needChangePassword: boolean) => {
@@ -123,7 +134,11 @@ export default function LoginPage() {
       router.push('/change-password')
       return
     }
-    router.push(callbackUrlFromLocation())
+    // 🔴 issue #6758：user **从 store 现取** —— 本函数所在闭包里的 `user` 还是登录前那一份
+    // （store 的 set 尚未触发这次重渲染），拿它算落点只会得到空权限 ⇒ 又回落 `/dashboard`
+    // （正是本单要修的那个死页）。
+    const currentUser = useAuthStore.getState().user
+    router.push(callbackUrlFromLocation(currentUser?.permissions || [], currentUser?.roles || []))
   }
 
   const handleEmployeeLogin = async (e: React.FormEvent) => {

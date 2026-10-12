@@ -370,7 +370,9 @@ export const EXEMPT = [
   // （商家要照着填的编码），不是把代码标识符写进了散文里。
   // ⚠️ 本台账按 `文件:行` 索引 ⇒ 同一文件任何加删行都要同批改号（issue #6663 在 `loadRoles`
   // 里加了失败态，把本行从 360 推到 395 ⇒ 本条同步改号。失效即红，不会静默漂走）。
-  'src/app/(dashboard)/roles/page.tsx:395',
+  // 🔴 issue #6759：本页新增「手机端可见面标注」（一处 state + 一个 effect + 渲染分支）⇒
+  // placeholder 由 395 推到 **441**，本条同步改号（纯位置变更，命中的文案一字未动）。
+  'src/app/(dashboard)/roles/page.tsx:441',
 ]
 
 /**
