@@ -3507,12 +3507,13 @@ cases:
       - "**渲染面判据（前端）**：**有**手机端面的码渲染 ` · 手机端：X`（多个面用 `、` 连接、顺序 = 服务端给的顺序），**没有**的（空数组 / 缺字段）**一个字符都不追加**。执行点 = frontend/admin-web/tests/unit/pages/employees.test.tsx（服务端下发什么就渲染什么 + 不下发即零标注的对照读数）与 frontend/admin-web/tests/unit/components/TreeCheckbox.test.tsx（真组件的三条判据）。"
       - "🔴 **覆盖边界（照实登记，不粉饰）**：① 判据 3 的扫描面**有意只到 `frontend/admin-web/src/**`** —— `frontend/bmini-app` 早有一张端侧镜像台账（frontend/bmini-app/src/utils/adminPermission.ts 的 `ADMIN_SURFACES`，由 BM-046 判据 5 与 `MobileSurfaces` 逐值比对守着），本单**一字未改**它，纳入扫描面会把存量债误算成本单引入；② 判据 3 的判别力依赖「面名 ≠ 菜单名」这一**现取事实**（差分清单在判据里现算并打印）—— 若将来把某个面改成与 PC 菜单项同名，它会退化为漏报（**已知边界，登记不修**）；③ **判不了**「服务端下发的面名被前端改写」（如加后缀）与运行期才可见的第二份真值（localStorage 之类）。"
     skip_reason: "[backend-contract] 源码形态 + 台账逐值 + 接线（Python 标准库现取解析，复用既有守卫的解析器）+ 前端 vitest 渲染断言（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-12 新增（issue #6759 需求①）。取号 MC-091（`python3 scripts/next_case_id.py MC` ⇒ main 现取 MC-001~090、在飞 PR 均未改 `.github/cases/**` ⇒ 最小空闲 **MC-091**）。本单的类级固化 = 「手机端可见面标注只有一份真值」四条判据（面清单唯一 / 四向登记 / 前端无第二张表 / 标注已接线）+ 判别力自证（四种坏形态各自红 + 三条对照读数）。⚠️ 未固化（照实登记）：见 data_checks 末条覆盖边界三条。"
+    merge_log: "2026-10-12 新增（issue #6759 需求①）。取号 MC-091（`python3 scripts/next_case_id.py MC` ⇒ main 现取 MC-001~090、在飞 PR 均未改 `.github/cases/**` ⇒ 最小空闲 **MC-091**）。本单的类级固化 = 「手机端可见面标注只有一份真值」四条判据（面清单唯一 / 四向登记 / 前端无第二张表 / 标注已接线）+ 判别力自证（四种坏形态各自红 + 三条对照读数）。⚠️ 未固化（照实登记）：见 data_checks 末条覆盖边界三条。 ｜ 2026-10-12 **返工补登**：`QA Growth Gate` 对**新增生产文件**要求同名单测 —— `frontend/admin-web/src/lib/mobile-surface-label.ts` ⇒ 补同名测试 `frontend/admin-web/tests/unit/lib/mobile-surface-label.test.ts`（5 条：undefined/null/空/全空白 ⇒ 空串、单面逐字形态、多面用顿号连接且顺序 = 服务端顺序、输出不含权限码字面量 + 负控、空白项过滤不残留分隔符），并同批登记进本用例的 `traces.tests`。"
     traces:
       tests:
         - "tests/unit_ci_workflows/test_mobile_surface_annotation_single_source.py"
         - "tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py"
         - "tests/unit_ci_workflows/test_rbac_derived_pages.py"
+        - "frontend/admin-web/tests/unit/lib/mobile-surface-label.test.ts"
         - "frontend/admin-web/tests/unit/pages/employees.test.tsx"
         - "frontend/admin-web/tests/unit/components/TreeCheckbox.test.tsx"
       ci:

@@ -4815,7 +4815,7 @@
 跳过: [backend-contract] 源码形态 + 台账逐值 + 接线（Python 标准库现取解析，复用既有守卫的解析器）+ 前端 vitest 渲染断言（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.vitest
-溯源: 2026-10-12 新增（issue #6759 需求①）。取号 MC-091（`python3 scripts/next_case_id.py MC` ⇒ main 现取 MC-001~090、在飞 PR 均未改 `.github/cases/**` ⇒ 最小空闲 **MC-091**）。本单的类级固化 = 「手机端可见面标注只有一份真值」四条判据（面清单唯一 / 四向登记 / 前端无第二张表 / 标注已接线）+ 判别力自证（四种坏形态各自红 + 三条对照读数）。⚠️ 未固化（照实登记）：见 data_checks 末条覆盖边界三条。 ｜ tags: rbac, permission-tree, mobile-surfaces, single-source, class-level-guard, red-proof, admin-web
+溯源: 2026-10-12 新增（issue #6759 需求①）。取号 MC-091（`python3 scripts/next_case_id.py MC` ⇒ main 现取 MC-001~090、在飞 PR 均未改 `.github/cases/**` ⇒ 最小空闲 **MC-091**）。本单的类级固化 = 「手机端可见面标注只有一份真值」四条判据（面清单唯一 / 四向登记 / 前端无第二张表 / 标注已接线）+ 判别力自证（四种坏形态各自红 + 三条对照读数）。⚠️ 未固化（照实登记）：见 data_checks 末条覆盖边界三条。 ｜ 2026-10-12 **返工补登**：`QA Growth Gate` 对**新增生产文件**要求同名单测 —— `frontend/admin-web/src/lib/mobile-surface-label.ts` ⇒ 补同名测试 `frontend/admin-web/tests/unit/lib/mobile-surface-label.test.ts`（5 条：undefined/null/空/全空白 ⇒ 空串、单面逐字形态、多面用顿号连接且顺序 = 服务端顺序、输出不含权限码字面量 + 负控、空白项过滤不残留分隔符），并同批登记进本用例的 `traces.tests`。 ｜ tags: rbac, permission-tree, mobile-surfaces, single-source, class-level-guard, red-proof, admin-web
 
 ## 商家入驻域（6 case）
 
