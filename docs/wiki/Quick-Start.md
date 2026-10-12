@@ -9,11 +9,23 @@
 curl -s https://ifconfig.me
 ```
 
-### 添加方式（优先：aliyun CLI 自服务，无需进控制台）
-
-本机 aliyun CLI 已配置运维权限账号（`aliyun configure list` 显示 Valid，区域 cn-hangzhou），**AI 可直接自服务**（2026-09-06 实证 TaskId 707541181）：
+### 添加方式（**一条命令**，issue #6789）
 
 ```bash
+./scripts/dev-db-whitelist.sh          # 诊断：打印当前 IP / 是否在列 / TCP 结果（不写云资源）
+./scripts/dev-db-whitelist.sh --yes    # 不在列 ⇒ 只追加（--ModifyMode Append）+ 回读确认 + TCP 复测
+./scripts/dev-db-whitelist.sh --check  # 只诊断不写：0 = 已在列且可达，1 = 不在列/不可达
+```
+
+脚本自己取公网 IP（多源兜底）、从 `backend/admin-api/.env` 读 `RDS_HOST`/`RDS_PORT`、从主机名推实例 id
+（可用 `RDS_INSTANCE_ID` 覆盖），**只动 `dev_local` 组**（`default` 组一个字不动），不打印任何凭据。
+`scripts/ui_smoke_merchant.sh` 起栈前也会自动做这条 TCP 预检 —— 白名单不对时它直接点名本命令，
+不再把 7403 行 Spring 栈甩给人当第一现场。
+
+手动方式（**仅在脚本不可用时**，需要自服务 aliyun CLI：`aliyun configure list` 显示 Valid，区域 cn-hangzhou）：
+
+```bash
+# ⚠️ 以下三步是**历史形态**，手工合并旧列表极易误删他人 IP —— 优先用上面的一条命令
 # 1) 查当前白名单（必须：ModifySecurityIps 是整体覆盖语义，先取完整旧列表）
 aliyun rds DescribeDBInstanceIPArrayList --DBInstanceId pgm-bp1p7w92k81ob5to
 
