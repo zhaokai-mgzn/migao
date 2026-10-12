@@ -81,7 +81,24 @@ public class AdminWorkerController {
     @RequirePermission("employee:create")
     public ApiResponse<Map<String, Object>> createWorker(@RequestBody Map<String, Object> body) {
         User worker = workerAdminService.createWorker(
-                text(body, "workerNo"), text(body, "name"), text(body, "pin"));
+                text(body, "workerNo"), text(body, "name"), text(body, "pin"),
+                body == null ? null : body.get("workerPages"));
+        return ApiResponse.success(toWorkerView(worker));
+    }
+
+    /**
+     * 设工人**工人端页面收窄**（issue #6788，用户 2026-10-13 裁定）：Body {@code {"workerPages":["report","cut_calc"]}}。
+     *
+     * <p>{@code workerPages} 可省 / 为 {@code null} ⇒ <b>清回收窄</b>（= 跟随企业设置，全开）。
+     * 权限：{@code employee:create}（与建号／重置 PIN 同档写权限）。
+     * 未知页面键 / 非数组 / 重复键 ⇒ 422 + 逐条理由（{@code error.details}），**不静默忽略**。</p>
+     */
+    @PutMapping("/{id}/pages")
+    @RequirePermission("employee:create")
+    @TenantOwnedResource("worker")
+    public ApiResponse<Map<String, Object>> updateWorkerPages(@PathVariable String id,
+                                                              @RequestBody(required = false) Map<String, Object> body) {
+        User worker = workerAdminService.updateWorkerPages(id, body == null ? null : body.get("workerPages"));
         return ApiResponse.success(toWorkerView(worker));
     }
 
@@ -119,6 +136,8 @@ public class AdminWorkerController {
         view.put("name", worker.getNickname());
         view.put("role", worker.getRole());
         view.put("status", worker.getStatus());
+        // 工人端页面收窄（issue #6788）：null = 未收窄（跟随企业设置）⇒ 前端据此显示「全部」
+        view.put("workerPages", worker.getWorkerPages());
         view.put("createdAt", worker.getCreatedAt() == null ? null : worker.getCreatedAt().toString());
         return view;
     }

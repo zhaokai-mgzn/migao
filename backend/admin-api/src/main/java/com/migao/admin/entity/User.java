@@ -1,12 +1,14 @@
 package com.migao.admin.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
 /**
  * 用户实体类
@@ -16,7 +18,7 @@ import java.time.OffsetDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@TableName("users")
+@TableName(value = "users", autoResultMap = true)
 public class User {
 
     @TableId(type = IdType.ASSIGN_UUID)
@@ -64,6 +66,20 @@ public class User {
 
     /** 菜单权限码列表（JSON 数组，如 ["orders.list","products.create"]） */
     private String permissions;
+
+    /**
+     * 工人档案级**工人端页面收窄**（V152，issue #6788；{@code role=worker} 的行才用）。
+     *
+     * <p>三态：{@code null} = <b>未收窄</b>（跟随企业设置 = 该企业开的全部工人端页面 —— 存量与新建的默认值）·
+     * 空列表 = 显式「一页都不给」· 非空列表 = 收窄到这几页（闭词表 = {@code WorkerPages.ALL}）。
+     * 实际下发 = 企业页（{@code worker_page_configs}）∩ 本列 ⇒ 企业级仍是天花板。</p>
+     *
+     * <p>🔴 <b>不是权限码</b>，所以**另开一列**而不是塞进 {@link #permissions}
+     * （那是商家 RBAC 权限快照）：工人 session 的 {@code permissions} 恒为 {@code []}，
+     * 可达面恒为 {@code /api/worker/**}；本列只影响「页面上看不看得见」，不参与任何授权判定。</p>
+     */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private List<String> workerPages;
 
     private Integer sessionTtl;
 

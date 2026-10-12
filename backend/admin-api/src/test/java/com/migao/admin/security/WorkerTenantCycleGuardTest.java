@@ -157,6 +157,11 @@ class WorkerTenantCycleGuardTest {
                 // selectActiveUsersByPhoneIgnoreTenant 已把这两列列进投影 ⇒ 夹具 DDL 缺列会
                 // 让本守卫在「Column \"username\" not found」上假红（实测踩中）。
                 + "username VARCHAR(64), must_change_password BOOLEAN NOT NULL DEFAULT FALSE,"
+                // V152（issue #6788）：工人档案级工人端页面收窄。真 Mapper 的 `selectById`
+                // （`WorkerAdminService.findOwnedWorker` → `GET /api/worker/me` 也走它）是 `SELECT *`
+                // ⇒ 夹具 DDL 缺列会让本守卫在「Column "worker_pages" not found」上假红
+                // （与上面 username 同款，实测踩中）。
+                + "worker_pages VARCHAR(2048),"
                 + "created_at TIMESTAMP WITH TIME ZONE, updated_at TIMESTAMP WITH TIME ZONE,"
                 + "deleted INTEGER NOT NULL DEFAULT 0)");
         // 与 V98 逐列同形（生产 PG 的 DDL；H2 的 PostgreSQL 模式接受同一份类型）

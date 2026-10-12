@@ -1,5 +1,6 @@
 package com.migao.admin.worker;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -24,6 +25,15 @@ import java.util.Set;
  * <h3>缺行 = 默认全开</h3>
  * <p>默认集合只在 {@link #defaultPages()} <b>一处</b>；库里再种一份 = 第二份会漂的默认值
  * （同族先例：{@code CuttingHeightDefaults} / {@code craft_calc_configs}）。</p>
+ *
+ * <h3>两层页集（issue #6788）</h3>
+ * <ol>
+ *   <li><b>企业级</b>（{@code worker_page_configs} 单行/租户）：本企业工人端开哪几页 —— <b>天花板</b>；</li>
+ *   <li><b>工人档案级</b>（{@code users.worker_pages}，可空）：这位工人<b>再收窄</b>到哪几页 ——
+ *       <b>不是</b>授权、也与 {@code users.permissions} <b>不同格</b>。{@code NULL} = <b>未收窄 =
+ *       跟随企业设置</b>（2026-10-13 用户裁定：默认零回归）。</li>
+ * </ol>
+ * <p>实际下发 = {@link #effectiveFor}：企业页 ∩ 个人收窄 —— 企业关掉的页，逐人勾了也<b>不</b>出现。</p>
  */
 public final class WorkerPages {
 
@@ -63,5 +73,106 @@ public final class WorkerPages {
         labels.put(CUT_CALC, "裁高计算器");
         labels.put(SHIPMENT, "发货");
         return labels;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // 工人档案级收窄（issue #6788）—— 读侧归一 / 求交 / 写侧校验
+    // ════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 读侧归一工人档案上的收窄值（{@code users.worker_pages}）。
+     *
+     * <p>三态：{@code null} = <b>未收窄</b>（跟随企业设置）· 非空集 = 收窄到这几页 ·
+     * 空集 = 显式「一页都不给」。<b>未知键一律裁掉</b> ⇒ 脏数据只会让工人少看一页（可见性面可接受），
+     * 绝不超出企业页集；形态不对（非数组 / 元素非字符串）⇒ 当<b>未收窄</b>（fail-open，
+     * 与工人端 {@code effectivePages} 的「读不到就全开」同口径：不因存储异常把活挡在外面）。</p>
+     */
+    public static Set<String> restrictedOrNull(Object raw) {
+        if (!(raw instanceof List<?> list)) {
+            return null;
+        }
+        Set<String> out = new LinkedHashSet<>();
+        for (Object item : list) {
+            if (item instanceof String key && ALL.contains(key)) {
+                out.add(key);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 本工人实际可看到的页面集（<b>唯一判据</b>）：企业页 ∩ 个人收窄。
+     *
+     * <p>红证：取并集 / 以个人为准 ⇒ 企业关掉的页又冒出来 ⇒
+     * {@code WorkerPagesTest#workerRestrictionNeverWidensTheEnterpriseSet} 红。</p>
+     *
+     * @param tenantPages 企业级页面集（{@code WorkerPageConfigService.pagesFor}）
+     * @param workerPages {@code users.worker_pages} 原值（{@code null} = 未收窄）
+     */
+    public static List<String> effectiveFor(List<String> tenantPages, Object workerPages) {
+        List<String> tenant = tenantPages == null ? List.of() : tenantPages;
+        Set<String> restricted = restrictedOrNull(workerPages);
+        if (restricted == null) {
+            return List.copyOf(tenant);
+        }
+        List<String> out = new ArrayList<>();
+        for (String page : tenant) {
+            if (restricted.contains(page)) {
+                out.add(page);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 写侧校验 + 归一（供 {@code WorkerAdminService} 组装 422 的 {@code error.details}）。
+     *
+     * <p>规则：{@code null} = 未收窄（合法）· 必须是数组 · 每项是闭词表内的字符串（未知键<b>点名下标</b>）·
+     * 不得重复 · 允许空数组（= 显式一页都不给）。</p>
+     *
+     * @return {@code errors} 非空 ⇒ 调用方抛 422（本次写入整体不生效，没有部分更新）；
+     *         {@code pages} = 归一后的收窄集（保留请求顺序、去重），{@code errors} 为空时可信
+     */
+    public static Validation validateRestriction(Object raw) {
+        if (raw == null) {
+            return new Validation(null, List.of());
+        }
+        List<Map.Entry<String, String>> errors = new ArrayList<>();
+        if (!(raw instanceof List<?> list)) {
+            errors.add(Map.entry("workerPages", "必须是数组（如 [\"report\",\"cut_calc\"]）"));
+            return new Validation(null, errors);
+        }
+        List<String> pages = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        int index = 0;
+        for (Object item : list) {
+            String field = "workerPages[" + index + "]";
+            // 非字符串**不**做 String.valueOf 兜底：那会把 数字/对象 静默变成一个不存在的页面键
+            if (!(item instanceof String key)) {
+                errors.add(Map.entry(field, "必须是页面键字符串，合法页面键：" + ALL));
+                index++;
+                continue;
+            }
+            String page = key.trim();
+            if (!ALL.contains(page)) {
+                errors.add(Map.entry(field, "不是工人端页面键：" + page + "（合法页面键：" + ALL
+                        + "；未知键会被静默忽略 ⇒ 商家以为设了却没设）"));
+            } else if (!seen.add(page)) {
+                errors.add(Map.entry(field, "页面键重复：" + page));
+            } else {
+                pages.add(page);
+            }
+            index++;
+        }
+        return new Validation(pages, errors);
+    }
+
+    /** 写侧校验结果：{@code pages}（归一后的收窄集，可为 {@code null} = 未收窄）+ {@code errors}（逐条理由）。 */
+    public record Validation(List<String> pages, List<Map.Entry<String, String>> errors) {
+
+        /** 无非法项。 */
+        public boolean ok() {
+            return errors.isEmpty();
+        }
     }
 }

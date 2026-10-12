@@ -1647,6 +1647,13 @@ export const workerApi = {
   /** 停用/启用：**复用**既有员工状态端点 PUT /api/admin/users/{id}/status（不另造一套）。 */
   setWorkerStatus: (id: string, status: EmployeeStatus) =>
     request.put<ApiResponse<void>>(`/api/admin/users/${id}/status`, { status }),
+
+  /**
+   * 设这位工人的工人端页面收窄（issue #6788）：`workerPages` 省略 / `null` ⇒ 清回收窄
+   * （= 跟随企业设置）。未知页面键 ⇒ 服务端 422 + 逐条理由（前端不自己过滤要提交的键）。
+   */
+  updateWorkerPages: (id: string, workerPages: string[] | null) =>
+    request.put<ApiResponse<WorkerProfile>>(`/api/admin/workers/${id}/pages`, { workerPages }),
 }
 
 // 角色管理 API

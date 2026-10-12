@@ -2,8 +2,11 @@ package com.migao.admin.controller;
 
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
+import com.migao.admin.entity.User;
+import com.migao.admin.service.WorkerAdminService;
 import com.migao.admin.service.WorkerPageConfigService;
 import com.migao.admin.worker.WorkerIdentity;
+import com.migao.admin.worker.WorkerPages;
 import com.migao.admin.worker.WorkerSessionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,6 +51,7 @@ public class WorkerProfileController {
 
     private final WorkerSessionService workerSessionService;
     private final WorkerPageConfigService workerPageConfigService;
+    private final WorkerAdminService workerAdminService;
 
     /**
      * 当前工人身份 + 本租户开通的工人端页面。
@@ -65,8 +69,16 @@ public class WorkerProfileController {
         data.put("worker_name", identity.workerName());
         data.put("session_id", identity.sessionId());
         data.put("identity_source", identity.source());
-        // 页面集：只回**本租户本工人**的那一份（无行 ⇒ 默认全开）。
-        data.put("pages", workerPageConfigService.pagesFor(tenantId));
+        // 页面集：只回**本租户本工人**的那一份 = 企业页（无行 ⇒ 默认全开）∩ 工人档案上的收窄（issue #6788；
+        // 未设收窄 ⇒ 全跟随企业设置）。工人档案查不到 ⇒ 只回企业页（fail-open：绝不把工人挡在活外面）。
+        data.put("pages", WorkerPages.effectiveFor(
+                workerPageConfigService.pagesFor(tenantId), workerPagesOf(identity.workerId())));
         return ApiResponse.success(data);
+    }
+
+    /** 本工人档案上的页面收窄原值（{@code null} = 未收窄）；查不到档案 ⇒ {@code null}（fail-open）。 */
+    private Object workerPagesOf(String workerId) {
+        User worker = workerAdminService.findOwnedWorker(workerId);
+        return worker == null ? null : worker.getWorkerPages();
     }
 }

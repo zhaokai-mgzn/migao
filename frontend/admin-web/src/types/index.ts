@@ -2783,6 +2783,13 @@ export interface WorkerProfile {
   name: string
   role: string
   status: EmployeeStatus
+  /**
+   * 工人端页面**收窄**（issue #6788）：
+   * `null` / 缺省 = 未收窄（跟随企业设置 = 企业开的全部工人端页面）；
+   * `[]` = 显式一页都不给；`[...]` = 只给这几页。实际下发 = 企业页 ∩ 本字段。
+   * 🔴 不是权限码（工人 `permissions` 恒为 `[]`）—— 只决定「菜单/入口显不显」。
+   */
+  workerPages?: string[] | null
   createdAt?: string
 }
 
@@ -2791,6 +2798,8 @@ export interface WorkerFormData {
   workerNo: string
   name: string
   pin: string
+  /** 工人端页面收窄（issue #6788）：`null` / 缺省 = 跟随企业设置（默认，零回归）。 */
+  workerPages?: string[] | null
 }
 
 // 员工列表查询参数
