@@ -1,0 +1,13 @@
+{
+  "why": "issue #6760 判据 2 的类级台账：`src/pages/**/*.scss` 里**卡片形态**（`*__card` / `*-card` / `*__entry` / `*__gate`）却**没有可见边界**的类。可见边界只认**描边**与**阴影**（`border` / `border-{top,right,bottom,left}[-{width,style,color}]` / `box-shadow`）—— `border-radius` **不算**（白卡片上的圆角落白底页容器里完全不可见，正是本次缺陷的形态）。卡片形状靠「与页面底色的色差」表达，一旦落在同色页容器上就整个消失：工人工作台的白卡片落在 Taro H5 恒为 `#fff` 的 `.taro_page` 上，就是用户报告的「登录后页面样式全无」。**只许缩短**：修好一处就删一处；新增无边界卡片 ⇒ 未登记即红（判据 1）；登记条目不能在语料里兑现 ⇒ 红（判据 2）；台账结构坏掉 ⇒ fail-closed 判红（判据 4）。判据 = tests/worker-card-contrast-guard.test.ts。",
+  "known_exceptions": [
+    {
+      "class": "metric-card",
+      "reason": "**与 worker home 同族但落在有色差的底上**：`frontend/bmini-app/src/pages/dashboard/index/index.scss` 的 `.metric-card` 只有 `background: #ffffff` + `border-radius: 16px`（无描边无阴影），但它落在同页 `.dashboard-page { background: #f5f7fa }` 上 ⇒ 白卡与底色有色差、形状可见（与「白卡落白底」不是同一现场）。**本单有意不扩面**：改它 = 改商家看板观感，按 `migao-dev-flow` §31.4 需单独读图验收（本单不做读图）。重启条件 = 单独开单做看板卡片收紧（判据同本守卫），做完把本条从台账删除（台账只许缩短）。"
+    },
+    {
+      "class": "order-detail__card",
+      "reason": "**与 worker home 同族但落在有色差的底上**：`frontend/bmini-app/src/pages/production/order-detail/index.scss` 的 `.order-detail__card` 只有 `background: #ffffff` + `border-radius: 16px`，落在同页 `.order-detail { background: #f5f7fa }` 上 ⇒ 形状可见。**本单有意不扩面**（同 `metric-card`，改它需单独读图验收）。重启条件同 `metric-card`。"
+    }
+  ]
+}

@@ -5,6 +5,10 @@
     padding: 32px;
     background: #ffffff;
     border-radius: 12px;
+    // 可见边界：H5 的 `.taro_page` 恒为白底（本仓零规则）⇒ 白卡片必须靠自身阴影
+    // 与页面底色区分开，否则屏上只剩「白底上一堆裸文本」（issue #6760）。
+    // 口径复用 `src/styles/admin-surfaces.scss::.admin-card` 的阴影色（同一颗设计 token）。
+    box-shadow: 0 2px 8px rgba(10, 37, 64, 0.06);
     margin-bottom: 32px;
   }
 
@@ -47,6 +51,9 @@
     border-radius: 12px;
     display: flex;
     align-items: center;
+    // 入口行：细边界比阴影更克制（§31 常驻面克制），阴影与卡片同一颗 token
+    border: 1px solid #eaeef3;
+    box-shadow: 0 1px 4px rgba(10, 37, 64, 0.04);
   }
 
   &__entry-text {
@@ -69,6 +76,8 @@
     padding: 32px;
     background: #ffffff;
     border-radius: 12px;
+    // 未登录引导块同样是白底卡 ⇒ 同一颗可见边界（issue #6760）
+    box-shadow: 0 2px 8px rgba(10, 37, 64, 0.06);
   }
 
   &__gate-text {
