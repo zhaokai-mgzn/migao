@@ -138,6 +138,25 @@ export const WORKER_HOME_PAGE_FILE = 'src/pages/worker/home/index.tsx'
  */
 export const PRODUCTION_PAGE_ROUTE = '/pages/production/index/index'
 
+/**
+ * **拍照发货**页路由（issue #6761）—— 工人工作台的第 **4** 条入口（#5648 的 UI 面收口）。
+ *
+ * 为什么要有它：#5648 把后端（`/api/worker/shipment/**`）与纯逻辑都落了码，
+ * 而**从来没有页面入口**（`gh pr view 5664` §9 逐字登记为**半成品**）⇒ 商家端
+ * `WorkerPageConfigPanel` 对商家承诺的「发货（工人拍照发货的那一面）」一直是空头支票。
+ *
+ * 🔴 路由字面量是**单一真值**：`src/app.config.ts` 的 pages 必须逐字含它
+ * （没登记 = 死链；守卫 = `tests/page-entry-reachability.test.ts` 的 L2「未登记即红」）。
+ */
+export const SHIPMENT_PAGE_ROUTE = '/pages/worker/shipment/index'
+
+/** 拍照发货页文件（入口台账 `from` 要核的落点） */
+export const SHIPMENT_PAGE_FILE = 'src/pages/worker/shipment/index.tsx'
+
+/** 拍照发货页未登录时的引导（与入库页同一口径，但说清本页是"发货"） */
+export const SHIPMENT_WORKER_LOGIN_REQUIRED =
+  '请先用工号 + PIN 登录工人身份，再拍照发货（商家账号不能走这条路径）。'
+
 /** 工人首页未登录工人身份时的引导（与入库页同一口径，说清本页是「工人功能」） */
 export const WORKER_HOME_LOGIN_REQUIRED =
   '请先用工号 + PIN 登录工人身份，再使用工人功能（商家账号不能走这条路径）。'

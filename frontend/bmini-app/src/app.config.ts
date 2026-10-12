@@ -31,6 +31,14 @@ export default defineAppConfig({
     // 版面 / 渲染 / 打印三件与入库页**共用**（`src/utils/inbound/labelLayout|labelCanvas|labelPrint`）
     // ⇒ 只换数据源（过账回执 ⇒ 按短码读详情）。路由字面量同上：gaps.ts 的 `REPRINT_PAGE_ROUTE` 必须逐字等于它。
     'pages/worker/reprint/index',
+    // 工人**拍照发货**（issue #6761，#5648 的 UI 面收口）：拍订单行 / 商品标签 → 识别候选
+    // → **工人核对**（不确定的格子留空、绝不预填 0）→ 用单号经 `GET /api/worker/production/scan?token=`
+    // 定位订单（拿 `order_id`）→ 生成发货单（实发明细 + 运单号，幂等键 `X-Client-Request-Id`）
+    // → 实发读面（套 / 件 / 卷说人话）。
+    // 走 `/api/worker/shipment/**`（工人零商家权限码，不是管理面）；**零后端改动**。
+    // 路由字面量是**单一真值**：`src/utils/inbound/gaps.ts` 的 `SHIPMENT_PAGE_ROUTE` 必须逐字等于它
+    // （守卫 tests/page-entry-reachability.test.ts 的 L2：没登记进这里 = 死链 ⇒ 红）
+    'pages/worker/shipment/index',
     // ── 管理面 4 项（issue #5654）：管理员离店后也要能办的事 ──
     // 路由字面量是**单一真值**：`src/utils/adminPermission.ts` 的 `ADMIN_SURFACES[].route`
     // 必须逐字等于这里的字符串（守卫 tests/admin-surfaces-platform-guard.test.ts 核验：

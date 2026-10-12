@@ -1726,16 +1726,16 @@ _CASE_BM_033 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── BM-034 [NORMAL] 工人首页（新页 pages/worker/home/index）- 身份卡读服务端 + 三件工人功能 + 退出工人身份；不出现任何商家面入口（源: cases/bmini.yml）──
+# ── BM-034 [NORMAL] 工人首页（新页 pages/worker/home/index）- 身份卡读服务端 + 四件工人功能（扫码报工 / 拍照入库 / 补打入库标签 / 拍照发货）+ 退出工人身份；不出现任何商家面入口（源: cases/bmini.yml）──
 _CASE_BM_034 = EvalCase(
     id='BM-034',
     legacy_id='',
-    title='工人首页（新页 pages/worker/home/index）- 身份卡读服务端 + 三件工人功能 + 退出工人身份；不出现任何商家面入口',
+    title='工人首页（新页 pages/worker/home/index）- 身份卡读服务端 + 四件工人功能（扫码报工 / 拍照入库 / 补打入库标签 / 拍照发货）+ 退出工人身份；不出现任何商家面入口',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['工人用「工号 + PIN」登录成功后落在**工人工作台**：页头显示当前工人（工号 + 姓名，来自服务端 `GET /api/worker/production/current-worker`）→ 三件功能：扫码报工 / 拍照入库 / 补打入库标签；底部「退出工人身份」→ 回登录页的工人入口'],
+    user_inputs=['工人用「工号 + PIN」登录成功后落在**工人工作台**：页头显示当前工人（工号 + 姓名，来自服务端 `GET /api/worker/production/current-worker`）→ 四件功能：扫码报工 / 拍照入库 / 补打入库标签 / 拍照发货（第 4 条为 issue #6761 补，见 BM-050）；底部「退出工人身份」→ 回登录页的工人入口'],
     expectations=['direct_reply'],
-    data_checks=['判据 1·**身份卡读服务端**：工号 + 姓名来自 `fetchCurrentWorker()`（服务端工人 session，页头显示的正是「这笔活会记到谁头上」= 计件工资凭证）；服务端读不到（session 失效）⇒ 回落成「未登录工人身份」并清本机工人态，**不**静默保留上一个人的名字。红证（实跑）：把身份卡改读 `getCachedWorker()`（不调服务端）⇒ 1 failed', '判据 2·**三件工人功能入口各自跳对路由**：扫码报工 → `/pages/production/index/index`；拍照入库 / 补打入库标签 → 路由常量真值在 frontend/bmini-app/src/utils/inbound/gaps.ts（`INBOUND_PAGE_ROUTE` / `REPRINT_PAGE_ROUTE`，页面不写第二份字面量）', '判据 3·🔴 **不出现任何商家面入口**：问黄金策 / 数据 / 坐席 / 我的 四个 tabBar 文案与管理面 4 项（标签取自 frontend/bmini-app/src/utils/adminPermission.ts 的 `ADMIN_SURFACES`）一个都不渲染 —— 工人零商家权限（`/api/admin/**` 拒绝集合含 `worker`），点了只会 403/空页。红证（实跑）：往页面混入一行「问黄金策」⇒ 1 failed', '判据 4·**退出工人身份**：`workerLogout()`（服务端留 `end_reason=logout` 痕）+ `clearWorkerSession()` 清本机 ⇒ `redirectTo` 登录页的工人入口（共用 PAD 场景：下一个人接着用；只清本机会让下一个人记到上一个人头上）', '判据 5·**新页必须在册**：`WORKER_HOME_ROUTE` 逐字出现在 frontend/bmini-app/src/app.config.ts 的 pages 里（没登记 = 死链），并登记进 frontend/bmini-app/src/utils/pageEntries.ts 的入口台账（「登记了没人指向也红 / 没登记即红」）。证据：frontend/bmini-app/tests/page-entry-reachability.test.ts'],
+    data_checks=['判据 1·**身份卡读服务端**：工号 + 姓名来自 `fetchCurrentWorker()`（服务端工人 session，页头显示的正是「这笔活会记到谁头上」= 计件工资凭证）；服务端读不到（session 失效）⇒ 回落成「未登录工人身份」并清本机工人态，**不**静默保留上一个人的名字。红证（实跑）：把身份卡改读 `getCachedWorker()`（不调服务端）⇒ 1 failed', "判据 2·**四件工人功能入口各自跳对路由**：扫码报工 → `/pages/production/index/index`；拍照入库 / 补打入库标签 / 拍照发货 → 路由常量真值在 frontend/bmini-app/src/utils/inbound/gaps.ts（`INBOUND_PAGE_ROUTE` / `REPRINT_PAGE_ROUTE` / `SHIPMENT_PAGE_ROUTE`，页面不写第二份字面量）。2026-10-12（issue #6761）由**三件**扩为**四件**：第 4 条「拍照发货」指向 `/pages/worker/shipment/index`。红证（实跑过）：把第 4 条入口从 frontend/bmini-app/src/pages/worker/home/index.tsx 摘掉 ⇒ frontend/bmini-app/tests/worker-home-page.test.tsx 的「四件…各自跳对路由」1 failed（`getByText('拍照发货')` 取不到）", '判据 3·🔴 **不出现任何商家面入口**：问黄金策 / 数据 / 坐席 / 我的 四个 tabBar 文案与管理面 4 项（标签取自 frontend/bmini-app/src/utils/adminPermission.ts 的 `ADMIN_SURFACES`）一个都不渲染 —— 工人零商家权限（`/api/admin/**` 拒绝集合含 `worker`），点了只会 403/空页。红证（实跑）：往页面混入一行「问黄金策」⇒ 1 failed', '判据 4·**退出工人身份**：`workerLogout()`（服务端留 `end_reason=logout` 痕）+ `clearWorkerSession()` 清本机 ⇒ `redirectTo` 登录页的工人入口（共用 PAD 场景：下一个人接着用；只清本机会让下一个人记到上一个人头上）', '判据 5·**新页必须在册**：`WORKER_HOME_ROUTE` 逐字出现在 frontend/bmini-app/src/app.config.ts 的 pages 里（没登记 = 死链），并登记进 frontend/bmini-app/src/utils/pageEntries.ts 的入口台账（「登记了没人指向也红 / 没登记即红」）。证据：frontend/bmini-app/tests/page-entry-reachability.test.ts'],
     skip_reason='[backend-contract] 确定性页面链路判据（jest: frontend/bmini-app/tests/worker-home-page.test.tsx + tests/page-entry-reachability.test.ts），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['bmini', 'worker', 'page-flow'],
     persona='',
@@ -2008,6 +2008,24 @@ _CASE_BM_049 = EvalCase(
     data_checks=['判据 1·**单行结构**：四个控件（键盘/语音切换键、中间区、加图、主动作键）都在同一条 `message-input__row` 内；`__row` 定高 88px（44pt）且行内 `nowrap`；证据：frontend/bmini-app/tests/chat-input-bar-layout.test.tsx', '判据 2·**默认语音模式 + 可切换**：首屏中间是「按住说话」且**没有**输入框；点键盘图标 ⇒ 中间换成输入框（placeholder 是键盘措辞）且「按住说话」消失，再点 ⇒ 变回；键盘模式下打字后主动作键变「发送」并发出输入的文字。红证（实跑过）：把默认态改回键盘 ⇒ 该文件多条判红；证据：同判据 1', '判据 3·🔴 **底栏留位（遮挡的根因之一）**：`.chat-page` 底部预留 == 底栏高（`50PX + 安全区`，且**取自同一条算式**，不是随手写的数）；`.chat-page` 是 `border-box`（状态栏 `padding-top` 不许把整页顶出视口 —— 改前它把 844 的视口顶成 864）；**安全区只补一次**（输入条自己不再补 `env(safe-area-inset-bottom)`，两处都补 ⇒ 底部留缝）；证据：同判据 1', '判据 4·🔴 **H5 语音是**真**实现的，不是空承诺**：能力探测不假绿（缺 `MediaRecorder` 或 `getUserMedia` ⇒ 判不支持）；`startRecording` 真请求麦克风并开录（不是只探测）；`stopRecording` 交回**可上传**的 blob（mime → 后端认得的扩展名，后端 `_get_audio_format` 认 webm/opus）；**麦克风被拒 ⇒ 抛出可行动的提示**（说清去哪开权限 + 还能怎么办）。红证（实跑过）：让探测只判 `MediaRecorder` 存在 ⇒ 该条判红；证据：frontend/bmini-app/tests/voice-browser-recorder.test.ts', '判据 5·**几何读数（常驻 e2e，承载体）**：真浏览器 390×844 下默认态是「按住说话」单行条，且 `coveredPx ≤ 0`、整页不高于视口；证据：tests/e2e/specs/bmini/bmini-chat-input-geometry.spec.ts', '判据 6·**独立探针读数（不进 CI）**：acceptance/2026-10-09-bmini-three-fixes/out/after-6596 —— 线上 BEFORE `coveredPx=70` / 整页 864（视口 844）；修后 `coveredPx=0` / 整页 844 / 默认 `按住说话` / 四控件纵向中心完全相等（`764.89`）。⚠️ 该目录同时记了一条坑：`index.html` 只引用固定名 chunk、不含应用代码 ⇒ 两个不同分支的构建它的 sha 竟逐字节相同，故探针另取 `app.js` 代码指纹'],
     skip_reason='[backend-contract] 确定性前端判据（jest 结构/DOM + playwright 几何），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['bmini', 'chat', 'message-input', 'voice', 'layout', 'safe-area'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── BM-050 [NORMAL] 工人工作台第 4 条「拍照发货」：拍照 → 识别候选 → 工人核对（不确定的格子留空、绝不预填 0）→ 定位订单 → 生成发货单 → 实发读面说人话（源: cases/bmini.yml）──
+_CASE_BM_050 = EvalCase(
+    id='BM-050',
+    legacy_id='',
+    title='工人工作台第 4 条「拍照发货」：拍照 → 识别候选 → 工人核对（不确定的格子留空、绝不预填 0）→ 定位订单 → 生成发货单 → 实发读面说人话',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['工人（工号 + PIN 登录后）在工人工作台点第 4 条「拍照发货」：拍订单行 / 商品标签 → 识别出订单号等候选 → 逐格核对（没认出来的格子是**空的**，并说清要手输）→ 用单号定位订单 → 填实发数量 / 单位 / 运单号 → 生成发货单 → 看到「实发多少」（米 / 套 / 卷 + 经手人 + 照片张数）'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**页面存在且可达**：新页 frontend/bmini-app/src/pages/worker/shipment/index 三件（`index.tsx` / `index.config.ts` / `index.scss`）在位、路由 `SHIPMENT_PAGE_ROUTE` 逐字出现在 frontend/bmini-app/src/app.config.ts 的 pages 里、并登记进 frontend/bmini-app/src/utils/pageEntries.ts 的入口台账（`from = src/pages/worker/home/index.tsx`，`nav = navigateTo`）。红证（实跑过）：从 PAGE_ENTRY_LEDGER 撤掉该条 ⇒ frontend/bmini-app/tests/page-entry-reachability.test.ts 判红（L2「面向用户的页面没有任何入口登记」）；把台账 `from` 指向只写着常量的 gaps.ts ⇒ 同文件 L3「声明存在 ≠ 可达」红。证据：frontend/bmini-app/tests/page-entry-reachability.test.ts', '判据 2·🔴 **不预填**（#5648 已落码的既有判据，一格未放松）：识别回执里 `value` 为 null / 空串的格子 ⇒ 输入框**留空**（**不是** 0、不是猜测值），并逐格列出「这一格要手输」（键 + 中文名 + 为什么）。红证（实跑过）：把 frontend/bmini-app/src/utils/inbound/shipment.ts 的 `prefillFromRecognition` 里 null 折成 `\'0\'` ⇒ frontend/bmini-app/tests/worker-shipment-service.test.ts 的「null / 空串 ⇒ 空串」1 failed + frontend/bmini-app/tests/worker-shipment-page.test.tsx 的判据 P3 1 failed（`Expected: "" Received: "0"`）。证据：frontend/bmini-app/tests/worker-shipment-page.test.tsx + frontend/bmini-app/tests/worker-shipment-service.test.ts', '判据 3·🔴 **请求体白名单**：`worker_id` / `worker_name` **一个字节都不进**发货 body（身份只由 `X-Worker-Session-Id` 解 —— 发货留痕是**责任凭证**）；白名单是**构造式**的（混入的额外键进不了 body）。红证（实跑过）：往 `buildShipBody` 里加一行 `worker_id: ...` ⇒ frontend/bmini-app/tests/worker-shipment-service.test.ts 的「请求体白名单」1 failed（Key 集合多出 `worker_id`）。证据：frontend/bmini-app/tests/worker-shipment-service.test.ts', '判据 4·🔴 **幂等键 `X-Client-Request-Id` 重试复用同一把**（超时重发不许重复发货）：一次发货动作生成一把、重试**不换键**（页面在 ref 里持有）。红证（实跑过）：把页面里的键改成每次提交新生成（`newShipmentRequestId()` 移进 `onSubmit` 内）⇒ frontend/bmini-app/tests/worker-shipment-page.test.tsx 的判据 P5「重试复用同一把幂等键」1 failed。证据：同判据 3 + frontend/bmini-app/tests/worker-shipment-page.test.tsx', '判据 5·**端点与字段面照后端逐字同名（零后端改动）**：`/api/worker/shipment/recognize`（body 只有 `images`，**不落库、不提交**）/ `/api/worker/shipment/orders/{orderId}/ship` / `/api/worker/shipment/orders/{orderId}`；识别字段面 = `order_no / product_name / quantity / width / height`（= 后端 `backend/ai-agent-service/app/vision/targets.py` 的 shipment target）。🔴 **定位订单不新造端点**：识别出的单号直接当 token 走既有读面 `GET /api/worker/production/scan?token=` 拿 `order_id`。证据：frontend/bmini-app/tests/worker-shipment-service.test.ts（S1）+ frontend/bmini-app/tests/worker-shipment-page.test.tsx（P4）', '判据 6·**实发读面说人话**：单位 / 套 / 卷三样来自服务端 `shipped_totals`；`set_count` / `roll_count` 为 null（这一维不适用）⇒ **不印 0**（三样都空 ⇒ 「—」）；读面没有发货单 ⇒ **不渲染空壳**面板。红证（实跑过）：把 `formatShippedTotals` 里的 null 折成 0 并照印 ⇒ frontend/bmini-app/tests/worker-shipment-service.test.ts 的「全空 ⇒ —」1 failed（收到 `0套 / 0卷`）。证据：同判据 3', '判据 7·**身份分流**：无工人 session ⇒ 只渲染引导（「请先用工号 + PIN 登录工人身份，再拍照发货」）+ 指向登录页工人入口的按钮，**一个发货写入口都不渲染**（商家设备点了只会 401）。红证（实跑过）：把页面的 `if (!workerReady)` 分支删掉 ⇒ frontend/bmini-app/tests/worker-shipment-page.test.tsx 的判据 P1 1 failed（`shipment-pick` 仍取得到）。证据：同判据 3', '判据 8·**复用既有通道，不新造第二条链**：照片上传走既有 `POST /api/worker/inbound/upload`（`uploadInboundPhoto`，multipart）；识别只走 vision 的 `shipment` target（端侧**没有** target 参数 ⇒ 工人面开不出 product / order 识别入口）。证据：frontend/bmini-app/tests/worker-shipment-page.test.tsx（P2）'],
+    skip_reason='[backend-contract] 确定性前端判据（jest: frontend/bmini-app/tests/worker-shipment-page.test.tsx + frontend/bmini-app/tests/worker-shipment-service.test.ts），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['bmini', 'worker', 'shipment', 'page-flow'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -13947,6 +13965,7 @@ ALL_CASES = (
     _CASE_BM_047,
     _CASE_BM_048,
     _CASE_BM_049,
+    _CASE_BM_050,
     _CASE_CT_001,
     _CASE_CT_002,
     _CASE_CT_003,

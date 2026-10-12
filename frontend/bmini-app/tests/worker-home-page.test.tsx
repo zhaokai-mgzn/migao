@@ -66,6 +66,7 @@ import { ADMIN_SURFACES } from '../src/utils/adminPermission'
 import {
   INBOUND_PAGE_ROUTE,
   REPRINT_PAGE_ROUTE,
+  SHIPMENT_PAGE_ROUTE,
   WORKER_TAB_LOGIN_ROUTE,
 } from '../src/utils/inbound/gaps'
 import {
@@ -109,7 +110,7 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     // 红证：身份卡改读 `getCachedWorker()`（不调服务端）⇒ 本断言收到 0 次调用（红）
   })
 
-  it('三件工人功能入口各自跳对路由（后两个走 gaps.ts 的路由常量，不写字面量）', async () => {
+  it('四件工人功能入口各自跳对路由（后三个走 gaps.ts 的路由常量，不写字面量）', async () => {
     await renderLoggedIn()
 
     fireEvent.click(screen.getByText('扫码报工'))
@@ -120,9 +121,14 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
 
     fireEvent.click(screen.getByText('补打入库标签'))
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: REPRINT_PAGE_ROUTE })
+
+    // 第 4 条（issue #6761）：#5648 的后端早已就绪，缺的就是这个入口
+    fireEvent.click(screen.getByText('拍照发货'))
+    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: SHIPMENT_PAGE_ROUTE })
     // 路由常量本身与 app.config 的登记逐字一致（守卫 page-entry-reachability / G0 另核）
     expect(INBOUND_PAGE_ROUTE).toBe('/pages/worker/inbound/index')
     expect(REPRINT_PAGE_ROUTE).toBe('/pages/worker/reprint/index')
+    expect(SHIPMENT_PAGE_ROUTE).toBe('/pages/worker/shipment/index')
   })
 
   it('🔴 不出现任何商家面入口（问黄金策 / 数据 / 坐席 / 管理面 4 项 + 「我的」）', async () => {
@@ -165,6 +171,7 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
 
     expect(await screen.findByText(/请先用工号 \+ PIN 登录工人身份/)).toBeTruthy()
     expect(screen.queryByText('扫码报工')).toBeNull()
+    expect(screen.queryByText('拍照发货')).toBeNull()
     expect(screen.queryByText('退出工人身份')).toBeNull()
 
     fireEvent.click(screen.getByText('去登录工人身份'))

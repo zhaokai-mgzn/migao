@@ -39,6 +39,7 @@ import {
   INBOUND_PAGE_ROUTE,
   PRODUCTION_PAGE_ROUTE,
   REPRINT_PAGE_ROUTE,
+  SHIPMENT_PAGE_ROUTE,
   WORKER_HOME_ROUTE,
   WORKER_LOGIN_ROUTE,
   WORKER_TAB_LOGIN_ROUTE,
@@ -233,5 +234,17 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
     via: 'REPRINT_PAGE_ROUTE',
     viaBinding: 'src/utils/inbound/gaps.ts',
     audience: '工人身份（工人首页 →「补打入库标签」；标签贴丢 / 磨花时用）',
+  },
+  // issue #6761：工人工作台的**第 4** 条入口（「拍照发货」）—— #5648 的 UI 面收口。
+  // 为什么必须有这一条：#5648 的后端与纯逻辑早已就绪，而**从来没有页面入口**
+  // （`gh pr view 5664` §9 逐字登记为半成品）⇒ 不登记它，这一页就是一条死链（L2 未登记即红）。
+  {
+    route: SHIPMENT_PAGE_ROUTE,
+    from: 'src/pages/worker/home/index.tsx',
+    nav: 'navigateTo',
+    via: 'SHIPMENT_PAGE_ROUTE',
+    viaBinding: 'src/utils/inbound/gaps.ts',
+    audience:
+      '工人身份（工人首页 →「拍照发货」；未登录时该页自身引导去工号 + PIN 登录，先登录再发货）',
   },
 ]

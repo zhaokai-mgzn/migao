@@ -1,0 +1,71 @@
+/**
+ * 拍照发货页的补充样式（issue #6761）
+ *
+ * 复用管理面的既有视觉语言（`src/styles/admin-surfaces.scss` 的 `admin-surface` / `admin-card` /
+ * `admin-action` / `admin-notice` / `admin-input`），这里只补管理面没有的三件：
+ * 不确定格的提示块、宽高成对行、发货单行。
+ * 🔴 不新增颜色 / 字号 token（`check-ui-regression.sh` 判 UI 回退）。
+ */
+.shipment-uncertain {
+  display: block;
+  margin: 8px 0 16px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: #fff8e6;
+
+  &__title {
+    display: block;
+    font-size: 26px;
+    color: #8a6d1f;
+    margin-bottom: 6px;
+  }
+
+  &__item {
+    display: block;
+    font-size: 26px;
+    color: #8a6d1f;
+    line-height: 1.5;
+  }
+}
+
+.shipment-pair {
+  display: block;
+}
+
+.shipment-units {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 8px 0;
+}
+
+.shipment-row {
+  display: block;
+  margin: 12px 0;
+  padding: 16px;
+  border: 1px solid rgba(10, 37, 64, 0.12);
+  border-radius: 8px;
+
+  &__title {
+    display: block;
+    font-size: 28px;
+    color: #0a2540;
+    margin-bottom: 6px;
+  }
+
+  &__item {
+    display: block;
+    font-size: 26px;
+    color: #3d4d5c;
+    line-height: 1.6;
+  }
+}
+
+.shipment-photo {
+  display: block;
+  width: 100%;
+  margin: 8px 0;
+  border: 1px solid rgba(10, 37, 64, 0.12);
+  border-radius: 6px;
+  background: #ffffff;
+}

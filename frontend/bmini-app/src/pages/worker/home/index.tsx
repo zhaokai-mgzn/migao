@@ -12,7 +12,7 @@
  * 1. **身份卡读服务端**（`fetchCurrentWorker()`）：页头显示的正是「这笔活会记到谁头上」
  *    = 计件工资的凭证 ⇒ 前端自己拼一个名字就是把凭证交给客户端。服务端读不到就**回落成未登录**
  *    （绝不静默留着上一个人的名字）；
- * 2. **三件工人功能**（扫码报工 / 拍照入库 / 补打入库标签）都走既有页面与既有路由常量
+ * 2. **四件工人功能**（扫码报工 / 拍照入库 / 补打入库标签 / 拍照发货）都走既有页面与既有路由常量
  *    （`utils/inbound/gaps.ts` 是路由单一真值，本页不写第二份字面量）；
  * 3. **一件商家面都不出现**：问黄金策 / 数据 / 坐席 / 管理面 4 项都不在本页（工人点了只会 403）；
  * 4. **退出工人身份** = `workerLogout()`（服务端留 `end_reason=logout` 痕）+ `clearWorkerSession()`
@@ -31,6 +31,7 @@ import {
   INBOUND_PAGE_ROUTE,
   PRODUCTION_PAGE_ROUTE,
   REPRINT_PAGE_ROUTE,
+  SHIPMENT_PAGE_ROUTE,
   WORKER_HOME_LOGIN_REQUIRED,
   WORKER_TAB_LOGIN_ROUTE,
 } from '../../../utils/inbound/gaps'
@@ -107,6 +108,13 @@ export default function WorkerHomePage() {
               onClick={() => Taro.navigateTo({ url: REPRINT_PAGE_ROUTE })}
             >
               <Text className='worker-home__entry-text'>补打入库标签</Text>
+            </View>
+            {/* 第 4 条（issue #6761）：#5648 的后端与纯逻辑早已就绪，缺的就是这个入口 */}
+            <View
+              className='worker-home__entry'
+              onClick={() => Taro.navigateTo({ url: SHIPMENT_PAGE_ROUTE })}
+            >
+              <Text className='worker-home__entry-text'>拍照发货</Text>
             </View>
           </View>
 
