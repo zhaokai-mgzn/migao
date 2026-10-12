@@ -10,9 +10,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 菜单权限控制器 — 返回一级+二级菜单树，供前端权限多选用
@@ -250,11 +252,23 @@ public class MenuController {
      * 判据必须能喂一份**改过的**清单来证明「标注是派生的、不是硬编码的」——即改某个面的
      * {@code readPermission} ⇒ 对应节点的标注随之改变 / 消失。生产路径只调
      * {@link #annotateMobileTitles(List)}（清单固定 = 服务端真值）。</p>
+     *
+     * <p><b>落到哪些节点</b>（issue #6781 修法 1）：每个码**只**标注它在**树序上的首个承载节点** ——
+     * 逐节点复制会踩 §31 P2（同屏重复：两个 {@code dashboard:view} 节点各带一遍「手机端：数据」）
+     * 与 P4（名实不符：与生产面共用 {@code production:view} 的「企业基础设置」被告知会开通手机端报表）。
+     * 规则是**确定的**（深度优先顺序 + 「该码是否已标注过」一个集合），不含任何名字匹配启发式。</p>
      */
     public static void annotateMobileTitles(List<MenuNode> tree, List<MobileSurfaces.Surface> surfaces) {
         Map<String, List<String>> byCode = mobileTitlesByCode(surfaces);
+        // 🔴 issue #6781（修法 1）：一个权限码在树上有多个承载节点（#5699/#5291 的有意设计面，
+        // 如 workspace 组两个 dashboard:view、production-center 组三个 production:view）——
+        // 标注**只落到该码在树序上的首个承载节点**。逐节点复制会同时踩两条 §31：
+        //   · P2 信息不重复：「经营看板 · 手机端：数据 / 每日简报 · 手机端：数据」同屏两条一模一样的标注；
+        //   · P4 可据以行动：「企业基础设置 · 手机端：计件工资报表、生产待办」名实不符
+        //     （勾它的真实意图是配置生产面，与手机端报表无关）。
+        Set<String> annotatedCodes = new HashSet<>();
         for (MenuNode node : tree) {
-            annotate(node, byCode);
+            annotateFirstCarrierOnly(node, byCode, annotatedCodes);
         }
     }
 
@@ -284,14 +298,23 @@ public class MenuController {
         return byCode;
     }
 
-    private static void annotate(MenuNode node, Map<String, List<String>> byCode) {
-        for (String title : byCode.getOrDefault(node.getCode(), List.of())) {
-            node.addMobileTitle(title);
+    /**
+     * 深度优先（= 树序 / 渲染顺序）把标注写到**该码的首个承载节点**上（issue #6781 修法 1）。
+     *
+     * <p>读不到手机端面的码不进 {@code byCode}；同码后继节点直接跳过（不再追加任何标注）。</p>
+     */
+    private static void annotateFirstCarrierOnly(MenuNode node, Map<String, List<String>> byCode,
+                                                 Set<String> annotatedCodes) {
+        String code = node.getCode();
+        if (byCode.containsKey(code) && annotatedCodes.add(code)) {
+            for (String title : byCode.get(code)) {
+                node.addMobileTitle(title);
+            }
         }
         List<MenuNode> children = node.getChildren();
         if (children != null) {
             for (MenuNode child : children) {
-                annotate(child, byCode);
+                annotateFirstCarrierOnly(child, byCode, annotatedCodes);
             }
         }
     }
