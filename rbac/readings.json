@@ -339,7 +339,9 @@
       "员工管理": "employee:list",
       "岗位权限": "system:view",
       "企业基础设置（经营域）": "system:manage",
-      "新增员工": "employee:create"
+      "新增员工": "employee:create",
+      "加工单操作": "processing:update",
+      "入库单操作": "inbound:create"
     },
     "auth": {
       "经营看板": "dashboard:view",

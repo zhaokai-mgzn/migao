@@ -3,6 +3,8 @@ package com.migao.admin.controller;
 // case_ids: PG-021
 
 import com.migao.admin.config.GlobalExceptionHandler;
+import com.migao.admin.dto.MenuNode;
+import com.migao.admin.service.MobileSurfaces;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,7 +18,9 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -87,9 +91,15 @@ class MenuControllerTest {
     /** 动作码节点（非菜单项）2 个，**统一追加在组尾**：order:detail / employee:create。
      *  🔴 2026-09-29（#5778）：原 4 个 → **2 个** —— 「新增商品」/「商品分类管理」两个节点原挂在
      *  已撤销的 `product-center` 组下，组撤销后它们在权限树上**无处安放** ⇒ 同批删除
-     *（权限码本身仍在权限目录里，删的是「菜单树上有这两个勾选项」这一事实）。 */
-    private static final List<String> ACTION_NODE_LABELS = List.of(
-            "订单详情", "新增员工");
+     *（权限码本身仍在权限目录里，删的是「菜单树上有这两个勾选项」这一事实）。
+     *  🔴 2026-10-12（issue #6759）：**2 个 → 4 个** —— 补两个**手机端写码**节点
+     *  「加工单操作」（`processing:update`，挂生产管理组尾）与
+     *  「入库单操作」（`inbound:create`，挂仓储与物料组尾）。 */
+    private static final List<String> ACTION_NODE_LABELS = new ArrayList<>(List.of(
+            "订单详情", "新增员工",
+            // 🔴 2026-10-12（issue #6759）：两个手机端写码的动作节点（中文名逐字取
+            // `rbac/manifest.json` 的 `codes.names`）。
+            "加工单操作", "入库单操作"));
 
     /** 顶层**一级项**名（`children` 为空、直接跳转的那些，**不属于任何组**）。
      *  🔴 #6580 起两个：商品管理 / 企业基础设置（原「参数总览」的席位）—— 它们不参与
@@ -267,30 +277,34 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("生产管理组（#6580 收拢为 3 项 + #5291/#5699 P4）：生产看板/计件工资 production:view、智能派单 processing:view")
+    @DisplayName("生产管理组（#6580 收拢为 3 项 + #5291/#5699 P4 + #6759 组尾动作码）：生产看板/计件工资 production:view、智能派单 processing:view、加工单操作 processing:update")
     void productionCenterGroupMirrorsMenuTs() throws Exception {
         JsonNode production = group(fetchTree(), "production-center");
         assertEquals("生产管理", production.path("label").asText());
         // 🔴 2026-10-09（issue #6580）：本组**由 5 项收拢为 3 项** —— 「加工项管理」「工艺配置」
         // 两个菜单项按用户裁定移除 ⇒ 只剩「生产看板 → 智能派单 → 计件工资」。
-        assertEquals(List.of("生产看板", "智能派单", "计件工资"),
+        // 🔴 2026-10-12（issue #6759）：**组尾**追加动作码节点「加工单操作」（`processing:update`
+        // = 手机端派单的写码）—— 动作节点统一追加在组尾，导航项仍是它之前的连续前缀。
+        assertEquals(List.of("生产看板", "智能派单", "计件工资", "加工单操作"),
                 labels(production.path("children")));
         // issue #5699（P4，子菜单粒度）：每个节点码 ≡ 该页第一屏读码 —— 智能派单 = processing:view
         //（ProductionPoolController 两个读端点同码）；工艺配置 = production:view（该页第一屏 6 个读端点
         // 本次整页收敛到该码；两码持有岗位集合逐值相同 ⇒ 零 delta）；#5291 的 production:view
         // 仍覆盖生产看板与计件工资。
-        // 🔴 #6580：两项移除后组内码为 [生产看板, 智能派单, 计件工资]。
-        assertEquals(List.of("production:view", "processing:view", "production:view"),
+        // 🔴 #6580：两项移除后组内码为 [生产看板, 智能派单, 计件工资]；#6759 追加 processing:update。
+        assertEquals(List.of("production:view", "processing:view", "production:view", "processing:update"),
                 codes(production.path("children")));
     }
 
     @Test
-    @DisplayName("仓储与物料组（#5271 新组；#5939 加「发货单」；#6404 加「库存明细」）：入库单(inbound:view) + 发货单(order:list) + 余料台账 + 省料看板/库存明细(product:list)")
+    @DisplayName("仓储与物料组（#5271 新组；#5939 加「发货单」；#6404 加「库存明细」；#6759 组尾加动作码）：入库单(inbound:view) + 发货单(order:list) + 余料台账 + 省料看板/库存明细(product:list) + 入库单操作(inbound:create)")
     void inventoryCenterGroupMirrorsMenuTs() throws Exception {
         JsonNode inventory = group(fetchTree(), "inventory-center");
         assertEquals("仓储与物料", inventory.path("label").asText());
         // 🔴 2026-10-06（issue #6457，方案 A1）：单据（进 → 账 → 出）→ 台账 → 分析。
-        assertEquals(List.of("入库单", "库存明细", "发货单", "余料台账", "省料看板"),
+        // 🔴 2026-10-12（issue #6759）：**组尾**追加动作码节点「入库单操作」（`inbound:create`
+        // = 手机端过账的写码）。
+        assertEquals(List.of("入库单", "库存明细", "发货单", "余料台账", "省料看板", "入库单操作"),
                 labels(inventory.path("children")));
         // 入库单是**仓储**动作、权限码独立为 inbound:view —— 并进 processing:manage 会让
         // 「有 inbound:view、没有 processing:manage」的仓管看不到菜单（#4203 点名的同族坑）。
@@ -298,7 +312,8 @@ class MenuControllerTest {
         // issue #5939：「发货单」取**既有** order:list（与订单列表同码、与页面/端点同码）⇒ 零授权 delta。
         // 🔴 issue #6404：「库存明细」同样取**既有** product:list（与省料看板同码；
         // 码不唯一是有意的 —— 两个页面各自的读端点注解就是这个码）。
-        assertEquals(List.of("inbound:view", "product:list", "order:list", "processing:manage", "product:list"),
+        assertEquals(List.of("inbound:view", "product:list", "order:list", "processing:manage", "product:list",
+                        "inbound:create"),
                 codes(inventory.path("children")));
     }
 
@@ -341,7 +356,7 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("菜单项一项不少不减（**18 组内项** + **1 个组内权限码节点** + **2 顶层一级项**各恰好一次）+ 2 个动作码节点")
+    @DisplayName("菜单项一项不少不减（21 组内菜单项 + 1 个组内权限码节点 + 2 顶层一级项各恰好一次）+ 4 个动作码节点（#6759 起）")
     void everyMenuItemAppearsExactlyOnce() throws Exception {
         List<String> all = labels(allChildren(fetchTree()));
         for (String name : MENU_ITEM_LABELS) {
@@ -363,14 +378,18 @@ class MenuControllerTest {
             assertEquals(1, all.stream().filter(action::equals).count(),
                     "动作码节点「" + action + "」缺失或重复（实得全表 = " + all + "）");
         }
-        // 组内节点总数 = 18 个**组内**菜单项（21 项 − **2 个**顶层一级项「商品管理」「企业基础设置」）
-        // + 2 动作码节点 = 23。
-        // （#5939：菜单项 21 → 22；#6404：菜单项 22 → 23，组内项 21 → 22；#6573：菜单项 23 → 24，
-        //   组内项**不变**（新增的是顶层一级项）⇒ 总数 24 → 25，组内 22 → 21 + 2 动作码。）
+        // 组内节点总数 = **21 个组内菜单项**（`MENU_ITEM_LABELS` 23 项 − 2 个顶层一级项
+        // 「商品管理」「企业基础设置」）+ **4 个动作码节点** = 25。
+        // （#5939：菜单项 21 → 22；#6404：+「库存明细」；#6573：新增的是顶层一级项 ⇒ 组内项不变；
+        //   🔴 #6759：动作码节点 2 → 4 —— 运行时追加「加工单操作」/「入库单操作」⇒ 这里按**现取表长**
+        //   算，两处都不会漏算或重复计数。）
         // ⚠️ 顶层一级项是**叶子**（不在任何组内）⇒ 不被 `allChildren` 收录，它们的存在由
         // `topLevelStandaloneItemMirrorsFrontend` 单独断言（避免两处都算它 ⇒ 重复计数）。
         assertEquals(MENU_ITEM_LABELS.size() - 2 + ACTION_NODE_LABELS.size(), all.size(),
-                "组内节点总数 = 21 组内菜单项 + 2 动作码节点（实得全表 = " + all + "）");
+                "组内节点总数 = 21 组内菜单项 + 4 动作码节点（实得全表 = " + all + "）");
+        // 🔴 #6759：动作码节点由 2 → 4（+「加工单操作」`processing:update` / 「入库单操作」`inbound:create`）
+        assertEquals(4, ACTION_NODE_LABELS.size(),
+                "动作码节点台账应恰有 4 条（订单详情 / 新增员工 / 加工单操作 / 入库单操作）");
     }
 
     @Test
@@ -382,5 +401,147 @@ class MenuControllerTest {
         var data1 = objectMapper.readTree(result1.getResponse().getContentAsString()).get("data");
         var data2 = objectMapper.readTree(result2.getResponse().getContentAsString()).get("data");
         assertEquals(data1, data2);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // issue #6759 需求②：两个手机端写码进权限勾选树（动作码节点，挂各自业务域组尾）
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("🔴 #6759：手机端两个写码节点已在树上 —— label 与 `rbac/manifest.json` 的 `codes.names` 逐字相等、码逐字相等、且都在各自组尾")
+    void mobileWriteCodesAreInTheTreeWithManifestLabels() throws Exception {
+        JsonNode tree = fetchTree();
+
+        // ① 中文名逐字取自 `rbac/manifest.json` 的 `codes.names`：加工单操作 / 入库单操作
+        //   （真值面由 test_rbac_derived_pages.py 的 ACTION_NODE_CODES 与
+        //    rbac/readings.json 的 codes.names 同批钉住；这里是最靠近读面的一道）。
+        JsonNode processed = group(tree, "production-center").path("children");
+        assertEquals("加工单操作", processed.get(processed.size() - 1).path("label").asText(),
+                "生产管理组组尾必须是动作码节点「加工单操作」（codes.names['processing:update']）");
+        assertEquals("processing:update", processed.get(processed.size() - 1).path("code").asText(),
+                "「加工单操作」的码必须是 processing:update（手机端派单写码）");
+
+        JsonNode inventory = group(tree, "inventory-center").path("children");
+        assertEquals("入库单操作", inventory.get(inventory.size() - 1).path("label").asText(),
+                "仓储与物料组组尾必须是动作码节点「入库单操作」（codes.names['inbound:create']）");
+        assertEquals("inbound:create", inventory.get(inventory.size() - 1).path("code").asText(),
+                "「入库单操作」的码必须是 inbound:create（手机端过账写码）");
+
+        // ② 它在权限树上是**恰好一次**（重复节点 = 员工权限页上的重复勾选项）
+        List<String> all = labels(allChildren(tree));
+        for (String label : List.of("加工单操作", "入库单操作")) {
+            assertEquals(1, all.stream().filter(label::equals).count(),
+                    "动作码节点「" + label + "」在权限树上的出现次数不是 1（实得全表 = " + all + "）");
+        }
+
+        // ③ 两个**导航项**仍是动作节点之前的连续前缀（动作节点只许在组尾）
+        assertEquals(List.of("生产看板", "智能派单", "计件工资"),
+                labels(processed).subList(0, processed.size() - 1));
+        assertEquals(List.of("入库单", "库存明细", "发货单", "余料台账", "省料看板"),
+                labels(inventory).subList(0, inventory.size() - 1));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // issue #6759 需求①：手机端可见面标注**派生**自 MobileSurfaces（唯一真值）
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("🔴 #6759：树上手机端标注 = `MobileSurfaces` 的现取派生（逐码相等，不是我抄的表）")
+    void mobileTitlesAreDerivedFromMobileSurfaces() throws Exception {
+        JsonNode tree = fetchTree();
+
+        // 真值 = 由 MobileSurfaces.ALL + TABS 现取（判据自己算一遍，不看实现里的中间量）
+        Map<String, List<String>> expected = new LinkedHashMap<>();
+        for (MobileSurfaces.Surface surface : MOBILE_SURFACES) {
+            if (surface.readPermission() == null) {
+                continue;
+            }
+            List<String> titles = expected.computeIfAbsent(surface.readPermission(), key -> new ArrayList<>());
+            if (!titles.contains(surface.title())) {
+                titles.add(surface.title());
+            }
+        }
+        assertFalse(expected.isEmpty(),
+                "MobileSurfaces 一个带码的面都没有 ⇒ 本判据会空跑（fail-closed）");
+
+        Map<String, List<String>> actual = mobileTitlesOf(tree);
+        assertEquals(expected, actual,
+                "树上「权限码 → 手机端面」与 MobileSurfaces 现取派生不一致"
+                        + "（不等即说明有人抄了第二份映射，或派生没接上）");
+
+        // 逐点读数（防「两边都是空」这类假绿）：确有标注、且只出现在**手机端有面**的码上
+        assertEquals(List.of("智能派单"), actual.get("processing:view"),
+                "`processing:view` 的手机端面必须是「智能派单」（MobileSurfaces 的 pool）");
+        assertEquals(List.of("入库过账"), actual.get("inbound:view"),
+                "`inbound:view` 的手机端面必须是「入库过账」（MobileSurfaces 的 inbound）");
+        assertFalse(actual.containsKey("order:list"),
+                "`order:list`（订单列表 / 发货单）在手机端没有任何面 ⇒ 不得有标注（不在手机上多一个入口）");
+        assertFalse(actual.containsKey("employee:create"),
+                "`employee:create`（新增员工）在手机端没有任何面 ⇒ 不得有标注");
+    }
+
+    @Test
+    @DisplayName("🔴 #6759 红证：改／删 MobileSurfaces 某个面的 readPermission ⇒ 标注随之改变／消失（标注不是我抄的表）")
+    void mobileTitleAnnotationFollowsTheSurfacesCatalog() throws Exception {
+        // 注入面①：把 inbound 面的读码改到 `processing:view`（模拟「改 MobileSurfaces 里某个面的 readPermission」）
+        // 注入面②：`production-todos`（能力位）直接删掉
+        List<MobileSurfaces.Surface> mutated = new ArrayList<>();
+        for (MobileSurfaces.Surface surface : MOBILE_SURFACES) {
+            if ("inbound".equals(surface.key())) {
+                mutated.add(new MobileSurfaces.Surface("inbound", "入库过账", surface.route(), "processing:view"));
+            } else if (!"production-todos".equals(surface.key())) {
+                mutated.add(surface);
+            }
+        }
+        List<MenuNode> scratch = List.of(
+                new MenuNode("inventory-center", "仓储与物料", List.of(
+                        new MenuNode("inbound:view", "入库单"),
+                        new MenuNode("order:list", "发货单"))),
+                new MenuNode("production-center", "生产管理", List.of(
+                        new MenuNode("processing:view", "智能派单"),
+                        new MenuNode("production:view", "生产看板"))));
+        MenuController.annotateMobileTitles(scratch, mutated);
+
+        Map<String, List<String>> got = new LinkedHashMap<>();
+        scratch.get(0).getChildren().forEach(n -> got.put(n.getCode(), n.getMobileTitles()));
+        scratch.get(1).getChildren().forEach(n -> got.put(n.getCode(), n.getMobileTitles()));
+        Map<String, List<String>> want = new LinkedHashMap<>();
+        want.put("inbound:view", List.of());
+        want.put("order:list", List.of());
+        want.put("processing:view", List.of("智能派单", "入库过账"));
+        want.put("production:view", List.of("计件工资报表"));
+        assertEquals(want, got,
+                "喂一份改过的面清单 ⇒ 标注必须跟着变：`inbound:view` 的标注**消失**、"
+                        + "`processing:view` **多出**「入库过账」、`production:view` 随 production-todos 被删"
+                        + "**只剩**「计件工资报表」（同一码还有另一个面时不跟着消失）");
+
+        // 反向对照：生产入口（真清单）**零变化** —— 证明上面那次变异进的是判据的入参，不是全局态
+        JsonNode tree = fetchTree();
+        assertEquals(List.of("入库过账"), mobileTitlesOf(tree).get("inbound:view"),
+                "真清单下 `inbound:view` 仍应是「入库过账」⇒ 现场那次注入没有污染全局真值");
+    }
+
+    /** 面清单（`MobileSurfaces.ALL + TABS`）—— 与实现同一个真值源，判据侧现取。 */
+    private static final List<MobileSurfaces.Surface> MOBILE_SURFACES = mobileSurfaces();
+
+    private static List<MobileSurfaces.Surface> mobileSurfaces() {
+        List<MobileSurfaces.Surface> all = new ArrayList<>(MobileSurfaces.ALL);
+        all.addAll(MobileSurfaces.TABS);
+        return List.copyOf(all);
+    }
+
+    /** 从响应树里现取「权限码 → [手机端面名…]」（只收**非空**的那些 —— 空 = 「没有手机端入口」）。 */
+    private static Map<String, List<String>> mobileTitlesOf(JsonNode tree) {
+        Map<String, List<String>> out = new LinkedHashMap<>();
+        for (JsonNode group : tree) {
+            for (JsonNode node : group.path("children")) {
+                List<String> titles = new ArrayList<>();
+                node.path("mobileTitles").forEach(t -> titles.add(t.asText()));
+                if (!titles.isEmpty()) {
+                    out.put(node.path("code").asText(), titles);
+                }
+            }
+        }
+        return out;
     }
 }
