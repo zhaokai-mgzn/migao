@@ -15,8 +15,10 @@
 # 服务：admin-api(:8090) + admin-web(:3001) + ai-agent(:8001，可选) —— 端口与 §2.3 隔离
 # 注意：本脚本需兼容 macOS 自带 bash 3.2 —— `$var` 后紧跟非 ASCII 字符会被并入变量名
 # （如 `$path（` → `path<0xE3>` 报 unbound variable，本机实测 exit 127），因此所有后跟中文的
-# 变量一律用 ${var} 显式包裹（同 scripts/dev-worktree.sh、scripts/sync-main.sh 的既有约定；
-# 判据 = tests/unit_ci_workflows/test_ui_smoke_worktree_deps.py 的类级回归锁）。
+# 变量一律用 ${var} 显式包裹（同 scripts/dev-worktree.sh、scripts/sync-main.sh 的既有约定）；
+# 同一版本下**空数组**的 `"${arr[@]}"` 也报 unbound variable（issue #6777）⇒ 一律写成
+# `${arr[@]+"${arr[@]}"}`（同 scripts/preset-anchor-check.sh 的既有约定）；
+# 判据 = tests/unit_ci_workflows/test_ui_smoke_worktree_deps.py 的类级回归锁（含这两条）。
 # ============================================================================
 set -euo pipefail
 
@@ -147,17 +149,43 @@ echo "  [stack] 等待 SMS 防刷窗口 62s…"
 sleep 62
 
 # ── 4. 跑冒烟 spec ──
-echo "==> 执行冒烟 spec（31 旅程）..."
+# 「没跑」必须长得像「没跑」（issue #6777；§19.1）：入口不可用 / spec 没产出汇总时**不得**印
+# 「spec 退出码: N」—— 那会把「一行旅程都没跑」说成「有旅程失败」，并把人指向**不存在**的
+# smoke-summary.md / smoke-results.json。判据 = tests/unit_ci_workflows/test_ui_smoke_worktree_deps.py
+# （含 `EXTRA_ARGS` 的空数组护栏，防 #6777 的 bash 3.2 形态再回来）。
+SPEC="$SCRIPT_DIR/ui-smoke-merchant/spec.mjs"
 LOG="$OUT_DIR/smoke.log"
-set +e
-BASE_URL="http://localhost:$WEB_PORT" \
-REPO_ROOT="$MAIN_REPO" \
-OUT_DIR="$OUT_DIR" \
-PHONE="$PHONE" SMS_CODE="$SMS_CODE" \
-node "$SCRIPT_DIR/ui-smoke-merchant/spec.mjs" "${EXTRA_ARGS[@]}" 2>&1 | tee "$LOG"
-EXIT=${PIPESTATUS[0]}
-set -e
-echo "==> spec 退出码: ${EXIT}（0=全绿；见 $OUT_DIR/smoke-summary.md / smoke-results.json）"
+SPEC_NOT_RUN_WHY=""
+if [ ! -f "$SPEC" ]; then
+  SPEC_NOT_RUN_WHY="找不到 spec 文件：${SPEC}"
+elif ! command -v node >/dev/null 2>&1; then
+  SPEC_NOT_RUN_WHY="PATH 里没有 node（spec 是 .mjs，没有 node 跑不起来）"
+fi
+if [ -n "$SPEC_NOT_RUN_WHY" ]; then
+  echo "==> ✗ spec **未执行**（${SPEC_NOT_RUN_WHY}）"
+  echo "    ⇒ 一行旅程都没跑 —— 这不是「31 旅程里某几条失败」，本轮的 UI 验收**没有发生**。"
+  EXIT=1
+else
+  echo "==> 执行冒烟 spec（31 旅程）..."
+  set +e
+  # `${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}` 的花括号与 `+` **不能省**：macOS bash 3.2 在 `set -u` 下把
+  # **空数组**的 `"${EXTRA_ARGS[@]}"` 判成 unbound variable ⇒ spec 一行都没跑（issue #6777；
+  # 实测 `bash -c 'set -u; A=(); echo "${A[@]}"'` ⇒ exit 127）。非空时逐字转发，语义不变。
+  BASE_URL="http://localhost:$WEB_PORT" \
+  REPO_ROOT="$MAIN_REPO" \
+  OUT_DIR="$OUT_DIR" \
+  PHONE="$PHONE" SMS_CODE="$SMS_CODE" \
+  node "$SPEC" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} 2>&1 | tee "$LOG"
+  EXIT=${PIPESTATUS[0]}
+  set -e
+  if [ -f "$OUT_DIR/smoke-summary.md" ] && [ -f "$OUT_DIR/smoke-results.json" ]; then
+    echo "==> spec 退出码: ${EXIT}（0=全绿；见 $OUT_DIR/smoke-summary.md / smoke-results.json）"
+  else
+    echo "==> ✗ spec **未执行**（node 退出码 ${EXIT}，但没产出 smoke-summary.md / smoke-results.json）"
+    echo "    ⇒ 一行旅程都没跑（0 字节的 ${LOG} = 连 spec 启动都没走到）；这不是「有旅程失败」。"
+    EXIT=1
+  fi
+fi
 
 # ── 5. 停栈（默认）──
 if [ "$KEEP" = "1" ]; then
