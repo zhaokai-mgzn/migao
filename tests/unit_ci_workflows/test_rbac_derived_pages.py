@@ -18,9 +18,9 @@ P3 做三件事，**都不改行为**（零 delta）：
 | 面 | 派生（本文件的被测对象） | 现值（对照） |
 |---|---|---|
 | `pages[]`（**新进清单**） | 21 页：`gate` 菜单可见码 + `units` 第一屏读码 → 端点 + 逐页 `visibility_rule` | 四跳现取（菜单节点 → 页面锚点 → `lib/api.ts` → Java 生效码） |
-| C1 / C3 码列 | `menu_node_codes`（28 节点）/ `auth_menu_codes`（14 条） | `parse_menu_ts_nodes` / `parse_menus()['auth']` |
-| C4 守卫码列 | `route_guard_codes`（每页 `path → gate`） | `parse_route_guard`（19 条前缀） |
-| 页面面两张台账 | `multi_code_pages`（一页多码）/ `parity_residual_pages`（节点码 ≠ 页面读码） | `MULTI_READ_ENDPOINT_PAGES`（3）/ `MENU_READ_PARITY_RESIDUALS`（6） |
+| C1 / C3 码列 | `menu_node_codes`（27 节点）/ `auth_menu_codes`（20 条） | `parse_menu_ts_nodes` / `parse_menus()['auth']` |
+| C4 守卫码列 | `route_guard_codes`（每页 `path → gate`） | `parse_route_guard`（26 条前缀） |
+| 页面面两张台账 | `multi_code_pages`（一页多码）/ `parity_residual_pages`（节点码 ≠ 页面读码） | `MULTI_READ_ENDPOINT_PAGES`（0）/ `MENU_READ_PARITY_RESIDUALS`（0） |
 | 可见性 | `visibility`（按 `visibility_rule` 把 units 投影成「看得见该菜单的岗位集」） | 现值岗位集（`seed` ∪ `fallback` 的持码者） |
 
 ## 🔴 零 delta 是本阶段唯一的验收口径（违反即返工）
@@ -30,19 +30,34 @@ P3 做三件事，**都不改行为**（零 delta）：
 **完整不一致清单**（每项一行），不是一个布尔量。
 
 **特别地：多端点页与已登记残留不许被「压平」。** #5675 / #5682 已确立 `MULTI_READ_ENDPOINT_PAGES`
-（多端点页必须具名 + 码集逐值冻结）与 6 条菜单残留；P3 的派生**必须保留「一页多码」**（3 页：
-`/production/processing` 3 码、`/production/routings` 2 码、`/settings` 2 码）**与 6 条具名残留**
-（`/dashboard`、`/production/pool`、`/production/saving-board`、`/production/processing`、
-`/production/routings`、`/settings`）—— 把它们压成「一个页面一个码」是本判据要抓的第一坏形态。
+（多端点页必须具名 + 码集逐值冻结）与 `MENU_READ_PARITY_RESIDUALS`（节点码 ≠ 页面读码的逐条残留）；
+P3 的派生**必须保留「一页多码」这一结构事实**（一页并发**两个以上**读码 ⇒ 逐项具名报出，不许压成
+「一个页面一个码」）**与残留集的逐值相等**（两侧都只许缩短）。🔴 两者的**当前条数不写进散文**
+（issue #6580 后都为 0）—— 写死一次就漂一次，读数现取见打印（`PROSE_READINGS` 的登记项）。
+#5675 时点的具名残留是 `/dashboard`、`/production/pool`、`/production/saving-board`、
+`/production/processing`、`/production/routings`、`/settings`（**已随 P4 与 issue #6580 全部销账**）。
 
 ## `visibility_rule`（逐页 `any|all`，默认 `all`）
 
 设计 §3.4 问题 3 的结论：`/production/processing` 需要「任一 unit 可用即可见」，而 `/settings` 的语义是
 「整页管理」——「允许半个页面可见」会造出新的「看得见做不了」⇒ **逐页声明 + 默认 `all`（fail-closed）**。
 本判据把「现值要求」机械算出来（`all` ∩ / `any` ∪ 能否复现现值岗位集），并要求清单声明**逐页相等**：
-现取 = `all` **18** 页 / `any` **0** 页 / `node-code` **4** 页（后者 = 投影复现不了现值，进
+现取 = `all` **20** 页 / `any` **0** 页 / `node-code` **1** 页（后者 = 投影复现不了现值，进
 `PAGE_VISIBILITY_GAPS`，只许缩短，出口由 P4 逐条人裁定）。
 ⇒ 任何人把某页改成 `any`（放宽）而现值不要求它 ⇒ **红**。
+
+## 数字纪律（issue #6771）：**写死的条数 ⇒ 要么现取、要么显式冻结**
+
+本文件里出现的每一个「条数读数」都是**登记项**，三张表各管一类（漂了**必红**，且判红可归因）：
+
+| 表 | 管什么 | 判据 |
+|---|---|---|
+| `PROSE_READINGS` | 散文 / 字符串字面量里**对当前状态的读数** | `prose_reading_problems`：逐条**现取复算**，不等 ⇒ 红（报出「写的是几 / 现取是几」）；锚被改写 / 命中不唯一 ⇒ 红；**未登记即红**（按 `READING_SHAPES` 扫全文） |
+| `NARRATIVE_NUMBERS` | **沿革 / 结构叙事**里的历史数字（`X → Y` 形态） | 同上判据：锚必须仍逐字在文本里（只许缩短）——它们**不是**当前读数，故不禁写死 |
+| `FROZEN_CEILINGS` | **只能写死**的那一类：冻结上界（只许缩短） | `frozen_ceiling_problems`：现取 > 上界 ⇒ 红（具名 + 读数 + 出口）；上界与侧真值不一致 ⇒ 红 |
+
+🔴 **口径**：真实集合增长而台账没更新 ⇒ **明确判红**（不是自动接受）——每条冻结上界的 `grew_by`
+逐字写明由哪个判据**具名**报出，禁止「悄悄变大」。
 
 ## 覆盖面（**覆盖不到什么**，与设计 §5.3 逐条对齐）
 
@@ -56,7 +71,7 @@ P3 做三件事，**都不改行为**（零 delta）：
   （散文与展示属性；要它们时由 P4 的 `partial_visibility_ack` 带理由引入）。
 - **只覆盖 `frontend/admin-web` 的页面**：bmini / worker-h5 的页面不在本面内（`frontend/worker-h5` 另有裁定 13）。
 - **不判「现值对不对」**：投影再准也只证明**零 delta**，不证明现值**对**（设计 §5.3 的 M3 边界同款）；
-  4 条 gap 与 6 条残留的存废是**授权裁定**，归 P4。
+  gap 台账与残留台账的存废是**授权裁定**，归 P4。
 - **运行时未取证**：真实租户的 `role_permissions` 与自定义岗位读不到（本机无库/无环境），本判据只覆盖
   仓内可读的两个岗位来源。
 
@@ -80,6 +95,16 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+#: **本文件自己** —— 散文读数的扫描面（`prose_reading_problems` 读它，不是读工作树里的别的东西）。
+THIS_FILE = Path(__file__).resolve()
+
+#: **冻结下界**（与 `FROZEN_CEILINGS` 相对的那一类）：**只防清空**、**不防**「删掉任意一项」。
+#: `dashboard_page_routes()` 扫 `app/(dashboard)/**/page.tsx`；这个下界防的是「判据在扫空气」
+#: （路径漂移 / 目录改名会让它扫到**零条**而**恒真通过**）。落地时现取 = 42，下界留出余量 = 30。
+#: 🔴 它**不**随数据漂，也**不**被 `FROZEN_CEILINGS` 管（那是「只许缩短」的上界，语义不同）；
+#: 另一半（「页面缺文件」= 删掉任意一项）由**现取**的 ⊆ 判据 `dashboard_route_coverage_problems`
+#: 逐条具名负责。
+DASHBOARD_PAGE_ROUTES_FLOOR = 30
 RBAC_DIR = REPO_ROOT / "rbac"
 MANIFEST_PATH = RBAC_DIR / "manifest.json"
 DERIVE_PATH = RBAC_DIR / "derive.py"
@@ -231,7 +256,7 @@ VISIBILITY_GAP_REASONS = {
 #: **不由 `pages[]` 派生**的面（**只许缩短**）：每条写清为什么它不属「页面 → 码」。
 NON_DERIVED_FACES = (
     {
-        "face": "C2：`backend/admin-api/src/main/java/com/migao/admin/controller/MenuController.java` 的 `MENU_TREE` 码列（26 条）",
+        "face": "C2：`backend/admin-api/src/main/java/com/migao/admin/controller/MenuController.java` 的 `MENU_TREE` 码列（24 条）",
         "reason": (
             "它有 5 个**动作节点**（新增员工 / 订单详情 / 企业基础设置（经营域）/ 加工单操作 / 入库单操作 —— 不是页面，没有 `path`）"
             "且「经营看板」节点无码而控制器给 `dashboard:view` ⇒ 它的码列是「权限目录」语义，"
@@ -241,9 +266,8 @@ NON_DERIVED_FACES = (
         "issue": "#5699",
     },
 )
-NON_DERIVED_FACE_CAP = 1
 
-#: P3 的**未覆盖面台账**（只许缩短）：照实验登记，不假装覆盖。
+#: **未覆盖面台账**（只许缩短）：照实验登记，不假装覆盖。
 UNCOVERED_FACES: tuple[dict[str, str], ...] = (
     {
         "face": "租户**自建岗位**（`roles` 表里新建的角色）的可见性",
@@ -274,7 +298,7 @@ UNCOVERED_FACES: tuple[dict[str, str], ...] = (
         "issue": "#5699",
     },
     {
-        "face": "「可见面 == 可做面」的**产品裁定**（6 条残留与 4 条 gap 的存废）",
+        "face": "「可见面 == 可做面」的**产品裁定**（残留台账与 gap 台账的存废）",
         "reason": (
             "P1–P3 全部是「让结构对，但不让人察觉」；每一条残留的出口都是一次**授权变更**（放宽或收窄），"
             "必须由人在看过 §3.3(c) 的逐行 census 后点头 ⇒ P3 只登记、不消解"
@@ -292,7 +316,210 @@ UNCOVERED_FACES: tuple[dict[str, str], ...] = (
         "issue": "#5699",
     },
 )
-UNCOVERED_FACE_CAP = 5
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 数字纪律（issue #6771）：**写死的条数** ⇒ 要么现取、要么显式冻结
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# 病灶（#6771）：本文件的**打印文本 / 散文 / 台账字符串**里写死了一批条数，随真实数据漂移而
+# **没有任何东西会红**（issue #6768 新增两个动作节点后：`MENU_TREE` 的 26 → 24、
+# `auth_menu_codes` 的 14 → 20、`PAGE_VISIBILITY_GAPS` 从 4 → 1 …… 复核者读到的「现状」全是旧的，
+# 而那个包正因为信了其中一个数字先报了错读数、再发更正）。
+# 处置 = 三张表 + 两条纯函数判据：
+#   · 能现取的一律现取 —— `present_readings()` 是**唯一**取数口径（清单 / 派生器 / P1 守卫 / 既有解析器）；
+#   · **只能写死**的（冻结上界）逐条登记：现取侧 + 上界 + 「增长时谁具名红」+ 理由；
+#   · 沿革 / 结构叙事里的历史数字登记进 `NARRATIVE_NUMBERS`（不是当前读数，故不禁写死）。
+# 🔴 本包**只治读数漂移**：不改任何判定逻辑与门禁通过条件（冻结上界一律沿用落地值）。
+
+#: 「条数读数」的**写法**（扫描面 = 本文件全文；**未登记即红**）。
+#: 只认读数的三种写法（加粗 / 裸写 / 括号单列），分类词 = 条 / 页 / 个 / 项 / 节点 ——
+#: **不**扫叙述句里的中文数字（「三条」不在射程），**不**扫 `第 N 条`（引用文档条款号，不是读数）。
+#: 🔴 **扫描面边界（如实登记，§19.1）**：分类词只有上述五个 —— `N 码` / `N 份` 形态**有意排除**
+#: （它们会命中 `C3 码列`、「同一事实的第 2/3 份副本」这类**不是读数**的写法，噪声会淹掉判据），
+#: 故这两个形态里的写死读数**不在机器射程**（靠人核 / 靠 `PROSE_READINGS` 主动登记）。
+READING_SHAPES: tuple[re.Pattern, ...] = (
+    re.compile(r"\*\*(\d+)\*\*\s*(?:条|页|个|项|节点)"),
+    re.compile(r"(?<!第 )(\d+)\s*(?:条|页|个|项|节点)"),
+    re.compile(r"（(\d+)）"),
+)
+
+#: **只能写死的那一类数字**（冻结快照 / 只许缩短）—— 显式台账，每条五段：
+#:   · `id`      —— **可归因的名字**（判红时逐字报出它，不让接手的人再去猜是哪一个数）；
+#:   · `count`   —— **现取条数**（零参函数，每次当场算；**不读缓存**，否则内存注入验不动）；
+#:   · `ceiling` —— **冻结上界**（只许缩短：现取 > 上界 ⇒ 红）；
+#:   · `grew_by` —— **「真实集合增长而台账没更新」时谁具名红**（口径 = **明确判红**，不是自动接受）；
+#:                 写 `None` 的两条是**纯声明面**：没有独立的现取侧 ⇒ 本上界就是唯一的闸（如实登记）；
+#:   · `reason`  —— **这个数字为什么只能写死**（哪来的；放宽要谁点头）。
+#: 🔴 **禁止「悄悄变大」**：现取 > 上界 ⇒ 红，报出的是「哪个上界 / 现取是几 / 上界是几 / 出口」。
+#: 🔴 **上界下调**（收紧）永远合法；**上调**必须在同一个 PR 里改本表并在 `reason` 里补一句为什么。
+FROZEN_CEILINGS: tuple[dict, ...] = (
+    {
+        "id": "PAGE_VISIBILITY_GAPS",
+        "count": lambda: len(visibility_gap_pages()),
+        "ceiling": 4,
+        # 侧真值 = P1 守卫的 `LEDGER_CEILINGS`：**两处冻结**（本表 + P1 守卫）比一处更难被悄悄放宽。
+        "ceiling_from": lambda: load_manifest_guard().LEDGER_CEILINGS["PAGE_VISIBILITY_GAPS"],
+        "ceiling_from_where": "P1 守卫的 `LEDGER_CEILINGS['PAGE_VISIBILITY_GAPS']`",
+        "grew_by": "`visibility_problems`（『未登记即红』具名报出是哪一页；陈旧条目同样红）",
+        "reason": (
+            "P3 的 gap 台账：**可见性投影复现不了现值**的页面（每条的出口都是一次授权裁定，归 P4）"
+            "⇒ 只许缩短。**上界落地值 = 4**（P4 后现取 = 1）。"
+        ),
+    },
+    {
+        "id": "VISIBILITY_GAP_REASONS",
+        "count": lambda: len(VISIBILITY_GAP_REASONS),
+        "ceiling": 4,
+        "grew_by": "`visibility_problems`（同上）",
+        "reason": (
+            "gap 台账的**具名条目**（理由 + 谁负责）；与 `PAGE_VISIBILITY_GAPS` 同生共死"
+            "（条目集与现取 gap 页集由 `visibility_problems` 双向闭合）。**上界落地值 = 4**（P4 后现取 = 1）。"
+        ),
+    },
+    {
+        "id": "ACTION_NODE_CODES",
+        "count": lambda: len(ACTION_NODE_CODES),
+        "ceiling": 5,
+        "grew_by": "`menu_column_problems`（『动作节点必须具名登记』具名报出是哪一个节点；已销账的陈旧条目同样红）",
+        "reason": (
+            "C2/C3 里**不是页面**的菜单节点（没有 `path`）必须逐条具名 + 码冻结 ⇒ 条目数就是"
+            "「菜单树上挂了几个动作码」。落地值 = 5（新增员工 / 订单详情 / 企业基础设置（经营域） / "
+            "加工单操作 / 入库单操作；末两条 = issue #6759 的手机端写码，本次由 4 显式抬到 5）。"
+        ),
+    },
+    {
+        "id": "MENU_CODE_MISMATCHES",
+        "count": lambda: len(MENU_CODE_MISMATCHES),
+        "ceiling": 1,
+        "grew_by": "`menu_column_problems`（『未登记即红』+『两侧已一致 ⇒ 销账』双向）",
+        "reason": (
+            "『页面节点上码列 ≠ 该页 `gate`』的具名不一致：P4 的目标形态是**零**，上界 = 1 是"
+            "**存量余量**（不是许可额）。落地时现取 = 0 ⇒ 任何新不一致都要具名 + 理由才可能绿。"
+        ),
+    },
+    {
+        "id": "ROUTE_PREFIX_EXCEPTIONS",
+        "count": lambda: len(ROUTE_PREFIX_EXCEPTIONS),
+        "ceiling": 7,
+        "grew_by": "`route_guard_problems`（『既不是某页 `path`、也没有别名 / 例外登记 ⇒ 新增页面守卫必须先登记』具名报出）",
+        "reason": (
+            "C4 面里**不以页面 `path` 出现**的前缀（入口在别的页面里 / 旧深链兼容 / 子树父前缀）："
+            "逐条具名 + 理由，只许缩短。落地值 = 7。"
+        ),
+    },
+    {
+        "id": "ROUTE_PREFIX_ALIASES",
+        "count": lambda: len(ROUTE_PREFIX_ALIASES),
+        "ceiling": 1,
+        "grew_by": "`route_guard_problems`（别名目标必须仍解析成同码；该前缀已变成某页 `path` ⇒ 销账即红）",
+        "reason": (
+            "「同一页的第二前缀」只许一条（`/processing` → `/production/processing`）；多一条就意味着"
+            "有页面被拆成了两个入口 —— 那必须改成真的页面 / 真的例外。落地值 = 1。"
+        ),
+    },
+    {
+        "id": "ROUTE_GUARD_GATE_MISMATCHES",
+        "count": lambda: len(ROUTE_GUARD_GATE_MISMATCHES),
+        "ceiling": 1,
+        "grew_by": "`route_guard_problems`（『未登记即红』+『两侧同码 ⇒ 删掉这条登记』双向）",
+        "reason": (
+            "页面存在、但守卫码 ≠ 该页 `gate` 的前缀：P4 的目标形态是**零**，上界 = 1 是存量余量。"
+            "落地时现取 = 0。"
+        ),
+    },
+    {
+        "id": "NON_DERIVED_FACES",
+        "count": lambda: len(NON_DERIVED_FACES),
+        "ceiling": 1,
+        "grew_by": None,
+        "reason": (
+            "**不由 `pages[]` 派生**的面（C2 的 `MENU_TREE` 码列）：**纯声明面** —— 没有独立的现取侧"
+            "（面本身不在任何解析器的读数里）⇒ 本上界就是唯一的闸；要加一条必须显式改本表。落地值 = 1。"
+        ),
+    },
+    {
+        "id": "UNCOVERED_FACES",
+        "count": lambda: len(UNCOVERED_FACES),
+        "ceiling": 5,
+        "grew_by": None,
+        "reason": (
+            "**未覆盖面**（照实验登记，不假装覆盖）：同上，**纯声明面**。落地值 = 5。"
+        ),
+    },
+    {
+        "id": "MULTI_READ_ENDPOINT_PAGES",
+        "count": lambda: len(derived_faces()["multi_code_pages"]),
+        "ceiling": 0,
+        "grew_by": "`test_multi_code_pages_and_residuals_are_not_flattened`（派生 vs 现值冻结**逐值**比 + 具名报出是哪一页）",
+        "reason": (
+            "P4 的目标形态：**每页恰好一个码** ⇒ 多码页现取必须为 0；又长回来必须在同一个 PR 里具名登记"
+            "并说明为什么这页真的多码（禁止悄悄变大）。"
+        ),
+    },
+    {
+        "id": "MENU_READ_PARITY_RESIDUALS",
+        "count": lambda: len(derived_faces()["parity_residual_pages"]),
+        "ceiling": 0,
+        "grew_by": "`test_multi_code_pages_and_residuals_are_not_flattened`（同上，残留集逐值比）",
+        "reason": (
+            "同上：节点码 ≠ 页面读码的残留集现取必须为 0（issue #6580 后每个子菜单恰好一个码）。"
+        ),
+    },
+)
+
+#: **散文 / 字符串字面量里对「当前状态」的条数读数**：(读数 id, 锚)。
+#: 锚 = **全文件唯一**的正则（**恰好一个**捕获组）；读数 id 必须能在 `present_readings()` 里取到值。
+#: 🔴 **为什么不干脆把数字删掉**：复核者读的就是这句话里的数字（`migao-dev-flow` §19.1「转述即未核实」
+#: 的同族，本单就是这么发现的）—— 数字留着、但**必须与现取逐值相等**，这才既让读者看到读数、
+#: 又让漂移当场红（并报出「写的是几 / 现取是几」）。
+PROSE_READINGS: tuple[tuple[str, str], ...] = (
+    # 模块 docstring：各投影面的现取条数（P3 的三件事 / 覆盖面）
+    ("anchors", r"`MENU_READ_ENDPOINT_ANCHORS` 的 (\d+) 条「页面 → 第一屏调用」"),
+    ("pages", r"\*\*新进清单\*\*） \| (\d+) 页"),
+    ("menu_node_codes", r"`menu_node_codes`（(\d+) 节点）"),
+    ("auth_menu_codes", r"`auth_menu_codes`（(\d+) 条）"),
+    ("route_guard_prefixes", r"`parse_route_guard`（(\d+) 条前缀）"),
+    ("multi_code_pages", r"`MULTI_READ_ENDPOINT_PAGES`（(\d+)）"),
+    ("parity_residual_pages", r"`MENU_READ_PARITY_RESIDUALS`（(\d+)）"),
+    ("visibility_all", r"现取 = `all` \*\*(\d+)\*\* 页"),
+    ("visibility_any", r"/ `any` \*\*(\d+)\*\* 页"),
+    ("visibility_node_code", r"`node-code` \*\*(\d+)\*\* 页"),
+    ("action_nodes", r"不由 `pages\[\]` 派生\*\*：它有 (\d+) 个\*\*动作节点\*\*"),
+    ("role_names", r"\*\*岗位全集 = 种子 ∪ 回退\*\*（(\d+) 个）"),
+    # 覆盖面台账里的读数（`NON_DERIVED_FACES` / `UNCOVERED_FACES`）
+    ("menu_controller_codes", r"`MENU_TREE` 码列（(\d+) 条）"),
+    ("action_nodes", r"它有 (\d+) 个\*\*动作节点\*\*（新增员工"),
+    ("role_names", r"现取只有\*\*种子 ∪ 回退\*\*（(\d+) 个）"),
+    # 台账注释里的「当前条数」声明
+    ("menu_code_mismatches", r"具名不一致（只许缩短；\*\*P4 后 (\d+) 条\*\*）"),
+    ("route_guard_gate_mismatches", r"逐条具名（只许缩短；\*\*P4 后 (\d+) 条\*\*）"),
+    # 判据 docstring / C5 段的读数
+    ("menu_controller_codes", r"C2 只有 \*\*(\d+)\*\* 个节点"),
+    ("auth_menu_codes", r"C3 只有 \*\*(\d+)\*\* 个"),
+    ("page_visibility_gaps_ceiling", r"LEDGER_CEILINGS\['PAGE_VISIBILITY_GAPS'\] == (\d+)"),
+    ("gate_free_pages", r"声明该页 `gate` 为空的页（现取 (\d+) 条：`/notifications`"),
+)
+
+#: **沿革 / 结构叙事里的历史数字**（`X → Y` 形态，或对**当时**形态的引用）—— **不是**当前读数
+#: ⇒ 允许写死，但**锚必须仍逐字在文本里**（只许缩短：条目对应的句子被删掉 ⇒ 红）。
+NARRATIVE_NUMBERS: tuple[dict, ...] = (
+    {
+        "anchor": "仓里有 **4 份手写副本**",
+        "reason": (
+            "结构叙事：设计 §1.3 的 C 类四份副本（`menu.ts` / `MenuController` / `AuthService` / "
+            "本判据锚点表）；其真实性由 M1 形态面登记（`rbac/sources.json`）承担，不由这个数字承担。"
+        ),
+    },
+    {
+        "anchor": "同 issue #5977 的 4 条那次",
+        "reason": "沿革：#5977 当次新登记的前缀数（当时读数）。当前条数由 `ROUTE_PREFIX_EXCEPTIONS` 的现取复算负责。",
+    },
+    {
+        "anchor": "4 条 **→ 1 条** ——",
+        "reason": "沿革：issue #5699（P4）前后 gap 台账的形态变化；当前条数由 `VISIBILITY_GAP_REASONS` 的现取复算负责。",
+    },
+)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -345,6 +572,83 @@ def present_faces() -> dict:
 def derived_faces() -> dict:
     """由**清单**派生的各投影面（缓存：清单是只读输入）。"""
     return load_derive().derive_page_faces(load_manifest())
+
+
+@functools.lru_cache(maxsize=1)
+def present_readings() -> dict[str, int]:
+    """本文件**所有条数读数的唯一取数口径** —— 每一次都**当场现取**（issue #6771）。
+
+    输入 = 清单 / 派生器（`rbac/derive.py`）/ P1 守卫 / 既有解析器（**不新造第二套读数**）；
+    输出 = 「读数 id → 条数」。`PROSE_READINGS` 与各判据的打印**只许**引用这里的 id
+    （`prose_reading_problems` 会自证：登记的 id 都取得到值）。
+    """
+    manifest, derived, present = load_manifest(), derived_faces(), present_faces()
+    p1, parity = load_manifest_guard(), load_parity_guard()
+    derive = load_derive()
+    node_gates = dict(derived["menu_node_codes"])
+    action_nodes = {
+        name
+        for column in (present["menu_controller_codes"], present["auth_menu_codes"])
+        for name in column
+        if name not in node_gates
+    }
+    entries = dict(present["route_guard"])
+    page_gates = dict(derived["route_guard_codes"])
+    by_rule: dict[str, int] = {}
+    for entry in derived["visibility"].values():
+        by_rule[entry["rule"]] = by_rule.get(entry["rule"], 0) + 1
+    leaf_counts = {face: len(leaves({face: derived[face]})) for face in RECONCILED_FACES}
+    routes = dashboard_page_routes()
+    readings = {
+        "pages": len(manifest["pages"]),
+        "menu_node_codes": len(derived["menu_node_codes"]),
+        "menu_controller_codes": len(present["menu_controller_codes"]),
+        "auth_menu_codes": len(present["auth_menu_codes"]),
+        "action_nodes": len(action_nodes),
+        "action_node_ledger": len(ACTION_NODE_CODES),
+        "route_guard_prefixes": len(entries),
+        "route_guard_codes": len(page_gates),
+        "C4_direct": len([p for p in entries if p in page_gates]),
+        "C4_alias": len(
+            [p for p in entries if p not in page_gates and p in ROUTE_PREFIX_ALIASES]
+        ),
+        "C4_unmapped": len(
+            [p for p in entries if p not in page_gates and p not in ROUTE_PREFIX_ALIASES]
+        ),
+        "first_screen_codes": len(derived["first_screen_codes"]),
+        "units": len(derived["units"]),
+        "multi_code_pages": len(derived["multi_code_pages"]),
+        "parity_residual_pages": len(derived["parity_residual_pages"]),
+        "visibility_pages": len(derived["visibility"]),
+        "visibility_all": by_rule.get(derive.VISIBILITY_ALL, 0),
+        "visibility_any": by_rule.get(derive.VISIBILITY_ANY, 0),
+        "visibility_node_code": by_rule.get(derive.VISIBILITY_NODE_CODE, 0),
+        "visibility_gap_reasons": len(VISIBILITY_GAP_REASONS),
+        "menu_code_mismatches": len(MENU_CODE_MISMATCHES),
+        "route_guard_gate_mismatches": len(ROUTE_GUARD_GATE_MISMATCHES),
+        "route_prefix_exceptions": len(ROUTE_PREFIX_EXCEPTIONS),
+        "route_prefix_aliases": len(ROUTE_PREFIX_ALIASES),
+        "non_derived_faces": len(NON_DERIVED_FACES),
+        "uncovered_faces": len(UNCOVERED_FACES),
+        "role_names": len(manifest["roles"]["seed"]),
+        "anchors": len(parity.MENU_READ_ENDPOINT_ANCHORS),
+        "gate_free_pages": len([p for p in present["pages"] if not p["gate"]]),
+        "dashboard_routes": len(routes),
+        "guarded_dashboard_routes": len(
+            [r for r in routes if effective_guard_code(r, guard_entries(present))]
+        ),
+        "page_visibility_gaps_ceiling": int(p1.LEDGER_CEILINGS["PAGE_VISIBILITY_GAPS"]),
+        **{f"leaves_{face}": count for face, count in leaf_counts.items()},
+        "leaves_total": sum(leaf_counts.values()),
+    }
+    # 自证（读数不许两边各说一套）：清单页数 == 现值页数；岗位全集 = 种子 ∪ 回退（两侧逐值同规模）
+    assert readings["pages"] == len(present["pages"]), (
+        f"清单 `pages[]` = {readings['pages']} / 现值 = {len(present['pages'])} ⇒ 读数自证失败（fail-closed）"
+    )
+    assert readings["role_names"] == len(manifest["roles"]["fallback"]), (
+        "岗位全集 = 种子 ∪ 回退：两侧岗位数不等 ⇒ 读数自证失败（fail-closed）"
+    )
+    return readings
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -412,7 +716,7 @@ def menu_column_problems(derived: dict, present: dict) -> list[str]:
          （理由 + 谁的负责 + 码**冻结**：涨跌都要同 PR 更新）；
       ③ **只许缩短**：两张台账里登记了却已对不上 / 已不在码列里 ⇒ 红。
 
-    ⚠️ **节点集不属本面**：C2 只有 24 个节点、C3 只有 14 个（登录菜单是页面的**子集**）——
+    ⚠️ **节点集不属本面**：C2 只有 **24** 个节点、C3 只有 **20** 个（登录菜单是页面的**子集**）——
     「哪些节点进哪一列」是菜单结构的事实，不由 `pages[]` 决定；本函数只判**码**（逐条点名）。
     """
     node_gates = dict(derived["menu_node_codes"])
@@ -564,8 +868,28 @@ def dashboard_page_routes() -> list[str]:
     for page in sorted(root.rglob("page.tsx")):
         rel = page.parent.relative_to(root).as_posix()
         routes.append("/" if rel == "." else f"/{rel}")
-    assert len(routes) >= 30, f"只扫到 {len(routes)} 条页面路由 ⇒ 判据在扫空气（fail-closed）"
+    # 🔻 **下界**（防清空 / 防「扫空气」）：它是**与 `FROZEN_CEILINGS` 相对的那一类** ——
+    # 写死并**写明理由**（不是放宽门禁：这个数字一字未动，见 `DASHBOARD_PAGE_ROUTES_FLOOR`）。
+    # 它**只防清空**、**不防**「删掉任意一项」⇒ 由 `dashboard_route_coverage_problems`（**现取**的
+    # ⊆ 判据，逐条具名）补上那一半。
+    assert len(routes) >= DASHBOARD_PAGE_ROUTES_FLOOR, (
+        f"只扫到 {len(routes)} 条页面路由（冻结下界 = {DASHBOARD_PAGE_ROUTES_FLOOR}）⇒ 判据在扫空气"
+        "（路径漂移 / 目录改名会让它扫到零条而恒真通过）"
+    )
     return routes
+
+
+def dashboard_route_coverage_problems(routes: list[str]) -> list[str]:
+    """**现取的 ⊆ 判据**（纯函数，可注入）：清单 `pages[]` 的每条页面都必须有对应的路由文件。
+
+    这是下界（`DASHBOARD_PAGE_ROUTES_FLOOR`）补不上的那一半：下界只防「整片扫空」，
+    本判据防「**删掉任意一项**」—— 且**逐条具名**报出缺的是哪一页。
+    """
+    pages = {str(page["path"]) for page in present_faces()["pages"]}
+    return [
+        f"在册页面 `{path}` 没有对应的路由文件 ⇒ 路由面缺页 / 清单与文件系统脱钩（fail-closed）"
+        for path in sorted(pages - set(routes))
+    ]
 
 
 def menu_code_route_guard_problems(present: dict) -> list[str]:
@@ -617,13 +941,29 @@ def unguarded_dashboard_routes(present: dict, manifest: dict) -> list[str]:
     return out
 
 
+def visibility_gap_pages(derived: dict | None = None, present: dict | None = None) -> list[str]:
+    """**现取**的 gap 页：`visibility_rule` 的投影复现不了现值（现值要求 `node-code`）的页面。
+
+    唯一一份口径 —— `visibility_problems` 与 `FROZEN_CEILINGS['PAGE_VISIBILITY_GAPS']` 都调它
+    （否则同一个「gap 有几页」会有两份实现，正是本单要治的形态）。
+    """
+    derive = load_derive()
+    derived = derived_faces() if derived is None else derived
+    present = present_faces() if present is None else present
+    return [
+        path
+        for path in sorted(set(derived["visibility"]) & set(present["visibility"]))
+        if present["visibility"][path]["rule"] == derive.VISIBILITY_NODE_CODE
+    ]
+
+
 def visibility_problems(derived: dict, present: dict, manifest: dict) -> list[str]:
     """逐页可见性：**规则合法性 + 派生 == 现值要求 + gap 台账双向闭合 + 投影岗位集逐值**。"""
     derive = load_derive()
     out: list[str] = []
     derived_visibility = dict(derived["visibility"])
     present_visibility = dict(present["visibility"])
-    gaps: list[str] = []
+    gaps: list[str] = visibility_gap_pages(derived, present)
     for path in sorted(set(derived_visibility) | set(present_visibility)):
         if path not in present_visibility:
             out.append(f"[派生多出] 可见性面多出一页 `{path}`（现值页面表里没有）")
@@ -643,8 +983,6 @@ def visibility_problems(derived: dict, present: dict, manifest: dict) -> list[st
             out.append(
                 f"[值不等] visibility.{path}.roles: 派生={want['roles']!r} / 现值={got['roles']!r}"
             )
-        if got["rule"] == derive.VISIBILITY_NODE_CODE:
-            gaps.append(path)
     ledger = set(VISIBILITY_GAP_REASONS)
     for path in sorted(set(gaps) - ledger):
         out.append(
@@ -669,55 +1007,135 @@ def visibility_problems(derived: dict, present: dict, manifest: dict) -> list[st
     return out
 
 
+def frozen_ceiling_problems(entries: tuple[dict, ...] | None = None) -> list[str]:
+    """**冻结上界台账**（`FROZEN_CEILINGS`）：现取 ≤ 上界 + 两处冻结逐值一致 + 每条把口径写清。
+
+    纯函数（`entries` 可注入 ⇒ 红证在内存里构造坏形态、**不碰磁盘**）；**不改任何判定逻辑**：
+    上界一律沿用落地值（本包只治读数漂移）。三条：
+      ① **现取 > 上界 ⇒ 红**（具名 + 现取 / 上界读数 + 出口）；「真实集合增长而台账没更新」= **明确判红**；
+      ② **上界与侧真值不一致 ⇒ 红**（两处冻结：谁被悄悄放宽了）；
+      ③ **不许空转**：每条必须写清 `id` / `count` / `ceiling` / `grew_by` / `reason`（缺一 ⇒ 红）。
+    """
+    out: list[str] = []
+    for entry in FROZEN_CEILINGS if entries is None else entries:
+        missing = [k for k in ("id", "count", "ceiling", "grew_by", "reason") if k not in entry]
+        name = entry.get("id", "<缺 id>")
+        if missing:
+            out.append(
+                f"冻结上界条目 `{name}` 缺字段 {missing}"
+                "（id / 现取 / 上界 / 增长时谁具名红 / 理由 缺一即红 —— 缺 `grew_by` 就是「悄悄变大」）"
+            )
+            continue
+        count, ceiling = int(entry["count"]()), int(entry["ceiling"])
+        if entry.get("ceiling_from") is not None:
+            side = int(entry["ceiling_from"]())
+            if side != ceiling:
+                out.append(
+                    f"冻结上界 `{name}`：侧真值 `{entry.get('ceiling_from_where', '?')}` = {side} ≠ 本表 = {ceiling}"
+                    " ⇒ **上界被悄悄放宽**（两处冻结必须逐值相等；要放宽就同 PR 改两处，diff 里看得见）"
+                )
+        if count > ceiling:
+            oracle = entry["grew_by"] or "**本上界自身**（纯声明面：没有独立的现取侧）"
+            out.append(
+                f"冻结上界 `{name}`：**现取 = {count} > 上界 = {ceiling}**（只许缩短）——"
+                "「真实集合增长而台账没更新」在本条的口径 = **明确判红**（不是自动接受）。"
+                f"谁具名报出：{oracle}。出口：① 修小（首选）；② 若增长是有意的，同 PR 改本表 `{name}` 的"
+                "`ceiling`（diff 里看得见）并在 `reason` 里补一句为什么。"
+                f"这个数字为什么只能写死：{entry['reason']}"
+            )
+    return out
+
+
+def prose_reading_problems(text: str | None = None) -> list[str]:
+    """**散文 / 字面量里的条数读数 vs 现取**（issue #6771 的正题）—— 纯函数（`text` 可注入）。
+
+    四段（缺任何一段就有漏网形态）：
+      ① **登记项逐条复算**：锚必须在文本里**恰好命中一次**（0 = 锚被改写 / 删除 ⇒ 红；>1 = 锚不唯一 ⇒ 红），
+         命中里的数字必须 == 现取（不等 ⇒ 红，报出「写的是几 / 现取是几」+ 行号）；
+      ② **未登记即红**：按 `READING_SHAPES` 扫全文，凡「条数读数写法」命中而**既没登记、也不在
+         `NARRATIVE_NUMBERS`（沿革 / 结构叙事）**⇒ 红（带行号 + 逐字命中 + 三条出口）；
+      ③ **沿革台账不许陈旧**：`NARRATIVE_NUMBERS` 的锚必须仍逐字在文本里（只许缩短）；
+      ④ **口径自证**：登记的 `id` 必须都能在 `present_readings()` 里取到值（否则「现取」是假的）。
+    """
+    body = THIS_FILE.read_text(encoding="utf-8") if text is None else text
+    readings = present_readings()
+    lines = body.splitlines()
+    out: list[str] = []
+    covered: list[tuple[int, int]] = []
+    for rid, pattern in PROSE_READINGS:
+        if rid not in readings:
+            out.append(f"散文读数 `{rid}` 不在 `present_readings()` 里 ⇒ 这条登记取不到现取值（假现取）")
+            continue
+        found = list(re.finditer(pattern, body))
+        if len(found) != 1:
+            out.append(
+                f"散文读数 `{rid}` 的锚命中 {len(found)} 次（必须**恰好一次**）⇒ 锚被改写 / 删除 / 不唯一"
+                f"（锚 = {pattern!r}）—— 出口：把锚改回逐字形态，或同步改 `PROSE_READINGS` 的这一行"
+            )
+            continue
+        match = found[0]
+        covered.append(match.span())
+        written = int(match.group(1))
+        if written != readings[rid]:
+            line_no = body[: match.start()].count("\n") + 1
+            out.append(
+                f"散文读数 `{rid}` **漂了**：第 {line_no} 行写的是 `{written}` / **现取**是 `{readings[rid]}`"
+                f"（锚 = {pattern!r}）⇒ 数字必须由现取复算得到。出口：把该处字面量改成现取值，"
+                "或在打印处以现取值插值（`present_readings()` 是唯一取数口径）"
+            )
+    allowed = tuple(entry["anchor"] for entry in NARRATIVE_NUMBERS)
+    for entry in NARRATIVE_NUMBERS:
+        if not entry.get("reason"):
+            out.append(f"沿革台账条目缺 `reason`：{entry['anchor']!r}（写死了就必须写清为什么）")
+        if entry["anchor"] not in body:
+            out.append(
+                f"沿革台账 `NARRATIVE_NUMBERS` 的锚已不在文本里：{entry['anchor']!r} ⇒ 销账（只许缩短）；"
+                f"原理由：{entry.get('reason', '')}"
+            )
+    for shape in READING_SHAPES:
+        for match in shape.finditer(body):
+            if any(lo <= match.start() and match.end() <= hi for lo, hi in covered):
+                continue
+            line_no = body[: match.start()].count("\n") + 1
+            line = lines[line_no - 1].strip()
+            if any(anchor in line for anchor in allowed):
+                continue
+            out.append(
+                f"第 {line_no} 行出现**未登记的条数读数** `{match.group(0)}`（{line}）⇒ 未登记即红："
+                "对**当前状态**的读数要进 `PROSE_READINGS`（判据会逐条现取复算）；沿革 / 结构叙事要进"
+                "`NARRATIVE_NUMBERS`（带理由）；也可以直接删掉这个数字（改成引用打印的现取读数）"
+            )
+    return out
+
+
 def coverage_problems() -> list[str]:
-    """覆盖面与**只许缩短**的机械形态：台账条数上限 + 每条写清「覆盖不到什么、谁看」。"""
+    """覆盖面与**只许缩短**的机械形态：**冻结上界台账**（现取 + 上界 + 增长时谁具名红）+ 每条写清「覆盖不到什么、谁看」。"""
     p1, derive = load_manifest_guard(), load_derive()
     manifest = load_manifest()
     out: list[str] = []
-    for name, cap in (("PAGE_VISIBILITY_GAPS", 4),):
-        if p1.LEDGER_CEILINGS.get(name) != cap:
-            out.append(
-                f"P1 守卫的 `LEDGER_CEILINGS['{name}']` = {p1.LEDGER_CEILINGS.get(name)!r} ≠ {cap}"
-                " ⇒ 台账的增长无人管或上限被悄悄放宽"
-            )
-        if manifest["ledger_counts"].get(name, 0) > p1.LEDGER_CEILINGS.get(name, 0):
+    out += frozen_ceiling_problems()
+    # 清单 `ledger_counts` 的口径（P1 守卫那份：上限登记 + 清单 <= 上限）—— 与 `FROZEN_CEILINGS`
+    # 的现取复算**互补**：前者判「清单里那份读数」，后者判「真值侧现取」。两者都只许缩短。
+    for name in sorted(set(p1.LEDGER_CEILINGS) & {entry["id"] for entry in FROZEN_CEILINGS}):
+        if manifest["ledger_counts"].get(name, 0) > p1.LEDGER_CEILINGS[name]:
             out.append(f"台账 {name} 现取条数 > 上限（只许缩短）")
     if "pages" not in p1.RECONCILED_SEGMENTS:
         out.append(
             "P1 守卫的 `RECONCILED_SEGMENTS` 里没有 `pages` ⇒ 新段逃出了「清单 == 生成物」的对账"
             "（那正是新造并行真值的形态）"
         )
-    if len(derive.VISIBILITY_RULES) != 3:
-        out.append(f"`VISIBILITY_RULES` = {derive.VISIBILITY_RULES}（逐页规则集被人改动）")
+    # 规则集规模：`3` 由**命名常量**现取而来（口径与原实现逐字等价，只是不再写死一个数字）
+    expected_rules = {derive.VISIBILITY_ALL, derive.VISIBILITY_ANY, derive.VISIBILITY_NODE_CODE}
+    if len(derive.VISIBILITY_RULES) != len(expected_rules):
+        out.append(
+            f"`VISIBILITY_RULES` = {derive.VISIBILITY_RULES}（逐页规则集被人改动：新规则要显式登记，"
+            f"不许悄悄多出一种；现取口径 = 命名常量集 {sorted(expected_rules)}）"
+        )
     if derive.DEFAULT_VISIBILITY_RULE != derive.VISIBILITY_ALL:
         out.append(
             f"默认规则 = {derive.DEFAULT_VISIBILITY_RULE!r} ≠ {derive.VISIBILITY_ALL!r}"
             " ⇒ 默认不再是 fail-closed（设计 §3.4 问题 3 末注）"
         )
-    if len(VISIBILITY_GAP_REASONS) > 4:
-        out.append(f"gap 台账 {len(VISIBILITY_GAP_REASONS)} 条 > 上限 4（只许缩短）")
-    if len(ACTION_NODE_CODES) > 5:
-        # 🔴 2026-10-12（issue #6759）：上限 4 → **5**（同 PR 显式放宽、diff 里看得见）。
-        # 现取：main 上 3 条（新增员工 / 订单详情 / 企业基础设置（经营域））+ 本单 2 条
-        # （加工单操作 `processing:update` / 入库单操作 `inbound:create`）= **5**。
-        # 为什么必须加这两条：它们原先是「**只能在岗位权限页的『其它权限』区授予**」的写码，
-        # 而手机端「智能派单 / 入库过账」两个写面就挂它们（issue #6759 需求②）——
-        # 补进员工个人权限树 = 多两个勾选项（**授权口径零变化**：没有岗位因此多码）。
-        # ⚠️ 这不是「把台账放宽」：台账机制 = 「非页面节点必须逐条具名」，不登记才是假绿；
-        # 本表仍**只许缩短**（销掉任一条 ⇒ 红）。
-        out.append(f"动作节点台账 {len(ACTION_NODE_CODES)} 条 > 上限 5（只许缩短）")
-    if len(MENU_CODE_MISMATCHES) > 1:
-        out.append(f"码列不一致台账 {len(MENU_CODE_MISMATCHES)} 条 > 上限 1（只许缩短）")
-    if len(ROUTE_PREFIX_EXCEPTIONS) > 7:
-        out.append(f"无页面前缀台账 {len(ROUTE_PREFIX_EXCEPTIONS)} 条 > 上限 7（只许缩短）")
-    if len(ROUTE_PREFIX_ALIASES) > 1:
-        out.append(f"前缀别名台账 {len(ROUTE_PREFIX_ALIASES)} 条 > 上限 1（只许缩短）")
-    if len(ROUTE_GUARD_GATE_MISMATCHES) > 1:
-        out.append(f"守卫码不一致台账 {len(ROUTE_GUARD_GATE_MISMATCHES)} 条 > 上限 1（只许缩短）")
-    if len(NON_DERIVED_FACES) > NON_DERIVED_FACE_CAP:
-        out.append(f"非派生面 {len(NON_DERIVED_FACES)} 条 > 上限 {NON_DERIVED_FACE_CAP}（只许缩短）")
-    if len(UNCOVERED_FACES) > UNCOVERED_FACE_CAP:
-        out.append(f"未覆盖面 {len(UNCOVERED_FACES)} 条 > 上限 {UNCOVERED_FACE_CAP}（只许缩短）")
     for face in NON_DERIVED_FACES:
         for key in ("face", "reason", "owner", "issue"):
             if not face.get(key):
@@ -749,21 +1167,34 @@ def test_manifest_pages_match_present_values():
 
 
 def test_derived_page_faces_match_present_values():
-    """**P3 主判据之二（零 delta）**：各投影面的派生结果与现值**逐值相等**，逐项点名 + 口径读数。"""
+    """**P3 主判据之二（零 delta）**：各投影面的派生结果与现值**逐值相等**，逐项点名 + 口径读数。
+
+    🔴 打印里的每个条数都由 `present_readings()` **现取插值**（issue #6771：写死的读数会漂，
+    而漂了没有东西会红）—— 本打印**不许**再出现字面量条数。
+    """
     derived, present = derived_faces(), present_faces()
     counted = 0
     for face in RECONCILED_FACES:
         for key, value in leaves({face: derived[face]}):
             counted += 1
             print(f"  {key} = {value!r}")
+    r = present_readings()
+    assert counted == r["leaves_total"], (
+        f"逐项点名的项数 {counted} ≠ 现取摊平项数 {r['leaves_total']} ⇒ 打印与判据读的不是同一份数据"
+    )
     print(
         f"── P3 逐值比对项数 = {counted}（**口径**：六个投影面摊平到叶的 `(路径, 值)` 对总数 ——"
-        "C1 按「节点 → 码」逐节点一项（28）、第一屏码按「页 → 逐码」展开（24）、"
-        "units 按「页 → 码 → 逐端点」展开（27）、多码页 3 项、残留页 6 项、可见性按「页 → 规则 + 岗位集」"
-        "逐页一项（21）。**另有两条不走摊平的面**：C4 按前缀逐条比（22 条 = 17 直接命中 + 1 别名 +"
-        " 4 无页面 —— 末一条是 issue #5977 新登记的 `/agent-workspace`），C2/C3 的码列逐条比"
-        "（25 + 14 = 39 条，含 5 个**动作节点**与 1 处具名不一致）"
-        "⇒ 全部逐项点名，**不一致 = 0**）──"
+        f"C1 按「节点 → 码」逐节点一项（{r['leaves_menu_node_codes']}）、"
+        f"第一屏码按「页 → 逐码」展开（{r['leaves_first_screen_codes']}）、"
+        f"units 按「页 → 码 → 逐端点」展开（{r['leaves_units']}）、"
+        f"多码页 {r['leaves_multi_code_pages']} 项、残留页 {r['leaves_parity_residual_pages']} 项、"
+        f"可见性按「页 → 规则 + 岗位集」逐页一项（{r['leaves_visibility']}）。"
+        "**另有两条不走摊平的面**：C4 按前缀逐条比"
+        f"（{r['route_guard_prefixes']} = {r['C4_direct']} 直接命中 + {r['C4_alias']} 别名 + "
+        f"{r['C4_unmapped']} 无页面 —— 末一族是 issue #5977 登记的 `/agent-workspace` 同款），"
+        f"C2/C3 的码列逐条比（{r['menu_controller_codes']} + {r['auth_menu_codes']} = "
+        f"{r['menu_controller_codes'] + r['auth_menu_codes']}，含 {r['action_nodes']} 个**动作节点**与 "
+        f"{r['menu_code_mismatches']} 处具名不一致）⇒ 全部逐项点名，**不一致 = 0**）──"
     )
     problems = (
         face_problems(derived, present)
@@ -812,13 +1243,18 @@ def test_multi_code_pages_and_residuals_are_not_flattened():
             f"残留页集不等：派生={residuals} / 现值台账={ledger}"
             "（两侧都只许缩短：不一致消失而条目还在 ⇒ 红；新增不一致未登记 ⇒ 红）"
         )
-    # 🔴 2026-10-09（issue #6580）：上限 1 → **0**（P4 的目标形态达成：每个子菜单恰好一个码）。
+    # 🔴 2026-10-09（issue #6580）：冻结上界 1 → **0**（P4 的目标形态达成：每个子菜单恰好一个码）。
     # 判据方向不变（**只许缩短**）：多码页 / 残留页**又长回来** ⇒ 当场红，必须在同一个 PR 里
-    # 具名登记进 `MULTI_READ_ENDPOINT_PAGES` / `MENU_READ_PARITY_RESIDUALS` 并说明为什么这页真的多码。
-    if len(multi) != 0 or len(residuals) != 0:
+    # 具名登记进 `MULTI_READ_ENDPOINT_PAGES` / `MENU_READ_PARITY_RESIDUALS`，并改
+    # `FROZEN_CEILINGS` 的对应上界 + 说明为什么这页真的多码（**禁止悄悄变大**）。
+    caps = {entry["id"]: entry for entry in FROZEN_CEILINGS}
+    multi_cap = caps["MULTI_READ_ENDPOINT_PAGES"]["ceiling"]
+    residual_cap = caps["MENU_READ_PARITY_RESIDUALS"]["ceiling"]
+    if len(multi) != multi_cap or len(residuals) != residual_cap:
         problems.append(
-            f"结构性条数漂移：多码页 {len(multi)}（期望 **0** —— issue #6580 后每页恰好一个码，只许缩短）"
-            f"/ 残留页 {len(residuals)}（期望 0）"
+            f"结构性条数漂移：多码页 {len(multi)}（冻结上界 = {multi_cap} —— issue #6580 后每页恰好一个码，"
+            f"只许缩短）/ 残留页 {len(residuals)}（冻结上界 = {residual_cap}）"
+            " ⇒ 谁长出来了见上面逐条报出；出口 = 修小，或同 PR 改 `FROZEN_CEILINGS` 的对应上界并说明理由"
         )
     assert problems == [], "多端点页 / 残留台账不合规：\n" + "\n".join(f"  · {p}" for p in problems)
 
@@ -979,6 +1415,127 @@ def test_non_derived_and_uncovered_faces_are_registered():
     print(f"非派生面 {len(NON_DERIVED_FACES)} 条 / 未覆盖面 {len(UNCOVERED_FACES)} 条 / "
           f"gap 台账 {len(VISIBILITY_GAP_REASONS)} 条")
     assert problems == [], "覆盖面台账不合规：\n" + "\n".join(f"  · {p}" for p in problems)
+
+
+def test_frozen_ceilings_are_explicit_and_load_bearing():
+    """**冻结上界台账**（`FROZEN_CEILINGS`）可归因 + 会红：落地态不超界 / 三种坏形态当场判红（内存）。
+
+    口径（issue #6771 要求写清的那一条）：**「真实集合增长而台账没更新」= 明确判红**，不是自动接受
+    —— 每条上界的 `grew_by` 逐字写明由哪个判据**具名**报出是哪些条目。
+    """
+    problems = frozen_ceiling_problems()
+    assert problems == [], "冻结上界台账不合规：\n" + "\n".join(f"  · {p}" for p in problems)
+    ids = [entry["id"] for entry in FROZEN_CEILINGS]
+    assert len(ids) == len(set(ids)), f"冻结上界的 id 必须唯一（否则判红归因不到具体哪一个）：{ids}"
+    pure = ("NON_DERIVED_FACES", "UNCOVERED_FACES")
+    assert all(entry["grew_by"] or entry["id"] in pure for entry in FROZEN_CEILINGS), (
+        "只有**纯声明面**（无独立现取侧）才允许 `grew_by = None`，且必须在 `reason` 里如实登记 —— "
+        "其余每一条都要写清「增长时谁具名红」（缺了它就是「悄悄变大」）"
+    )
+
+    # ① 现取 > 上界 ⇒ **具名红**（内存合成：把某条上界压到现取之下 =「真实集合长出来了」的等价形态）
+    squeezed = []
+    for entry in FROZEN_CEILINGS:
+        if entry["id"] != "ACTION_NODE_CODES":
+            squeezed.append(entry)
+            continue
+        bad = {k: v for k, v in entry.items() if k != "ceiling_from"}
+        bad["ceiling"] = entry["count"]() - 1
+        squeezed.append(bad)
+    hits = frozen_ceiling_problems(tuple(squeezed))
+    assert any("ACTION_NODE_CODES" in h and "明确判红" in h for h in hits), (
+        f"现取 > 上界没有被具名报出 ⇒ 冻结上界是空断言：{hits}"
+    )
+
+    # ② 上界被悄悄放宽 ⇒ 红（两处冻结：本表 vs 侧真值）
+    widened = tuple(
+        {**entry, "ceiling": entry["ceiling"] + 1} if entry["id"] == "PAGE_VISIBILITY_GAPS" else entry
+        for entry in FROZEN_CEILINGS
+    )
+    hits = frozen_ceiling_problems(widened)
+    assert any("悄悄放宽" in h for h in hits), f"上界被放宽而侧真值没变 ⇒ 没报出：{hits}"
+
+    # ③ **真实集合**（内存里真的长出一位）⇒ 红 + 具名；还原 ⇒ 必绿（对照臂）
+    grown_to = len(ACTION_NODE_CODES) + 1
+    original = dict(ACTION_NODE_CODES)
+    try:
+        ACTION_NODE_CODES["合成的动作节点"] = {
+            "code": "synthetic:act",
+            "reason": "红证用（内存合成，不碰磁盘）",
+            "owner": "本判据的冻结上界红证",
+        }
+        hits = frozen_ceiling_problems()
+    finally:
+        ACTION_NODE_CODES.clear()
+        ACTION_NODE_CODES.update(original)
+    assert any("ACTION_NODE_CODES" in h and f"现取 = {grown_to}" in h for h in hits), (
+        f"真实集合长出一位后冻结上界没判红 ⇒「增长而台账没更新」是空断言：{hits}"
+    )
+    assert frozen_ceiling_problems() == [], "还原后必须绿（红证的对照臂）"
+
+
+def test_prose_readings_match_present_values():
+    """**散文 / 打印里的条数读数 vs 现取**（issue #6771 的正题）：落地态全绿 + 五种坏形态当场红。
+
+    判据本身是纯函数（文本可注入）；本用例的注入**全部在内存文本**上做（不改磁盘）。
+    """
+    readings = present_readings()
+    problems = prose_reading_problems()
+    assert problems == [], (
+        "散文读数与现取不一致（**这就是本单要治的形态**）：\n" + "\n".join(f"  · {p}" for p in problems)
+    )
+    print(
+        f"── 现取读数 = {len(readings)} 项 / 登记散文读数 = {len(PROSE_READINGS)} 项 / "
+        f"沿革台账 = {len(NARRATIVE_NUMBERS)} 项 ──"
+    )
+    for rid in sorted({rid for rid, _ in PROSE_READINGS}):
+        print(f"  {rid} = {readings[rid]}")
+
+    body = THIS_FILE.read_text(encoding="utf-8")
+    rid, pattern = PROSE_READINGS[0]
+    hits_before = list(re.finditer(pattern, body))
+    assert len(hits_before) == 1, (
+        f"登记项 `{rid}` 的锚在本文件里命中 {len(hits_before)} 次（必须恰好一次）⇒ 红证前提不成立"
+    )
+    anchor = hits_before[0]
+
+    # ① 把散文里的数字**就地改错** ⇒ 必须具名红，并报出「写的是几 / 现取是几」
+    wrong = (
+        body[: anchor.start()]
+        + anchor.group(0).replace(str(readings[rid]), str(readings[rid] + 1))
+        + body[anchor.end():]
+    )
+    assert wrong != body, "变异注入未生效（自证失败）"
+    hits = prose_reading_problems(wrong)
+    assert any(rid in h and "漂了" in h for h in hits), f"改错一个读数后没报出 ⇒ 空断言：{hits}"
+
+    # ② 锚被改写 / 删除 ⇒ 红（命中 0 次）
+    erased = body[: anchor.start()] + "（这段读数被改写了，锚不再逐字命中）" + body[anchor.end():]
+    hits = prose_reading_problems(erased)
+    assert any("恰好一次" in h for h in hits), f"锚被改写后没报出 ⇒「锚是承载体」是空话：{hits}"
+
+    # ③ 锚不唯一 ⇒ 红（同一句读数被复制到第二处）
+    doubled = body + "\n#: 对照臂：" + anchor.group(0) + "\n"
+    hits = prose_reading_problems(doubled)
+    assert any(rid in h and "命中 2 次" in h for h in hits), f"锚不唯一没报出：{hits}"
+
+    # ④ **未登记即红**：塞一句新的写死读数（数字拆开拼，免得本判据被自己扫成未登记读数）
+    injected = body + "\n#: 合成的未登记读数：共 " + "99" + " 条（红证用）\n"
+    hits = prose_reading_problems(injected)
+    assert any("未登记的条数读数" in h and "99" in h for h in hits), (
+        f"未登记的写死读数没报出 ⇒「未登记即红」是空断言：{hits}"
+    )
+
+    # ⑤ 沿革台账陈旧 ⇒ 红（锚对应的句子被删了 ⇒ 只许缩短）
+    stale = body.replace(NARRATIVE_NUMBERS[0]["anchor"], "（这段沿革被删了）")
+    assert stale != body, "沿革锚的删除变异未生效（自证失败）"
+    hits = prose_reading_problems(stale)
+    assert any("只许缩短" in h for h in hits), f"沿革锚被删后没报出：{hits}"
+
+    # 对照读数：只改**与读数无关**的散文 ⇒ 不红（判据判的是读数，不是「文件变了没有」）
+    control = body.replace("## 数字纪律", "## 数字纪律（对照臂）", 1)
+    assert control != body, "对照变异未生效（自证失败）"
+    assert prose_reading_problems(control) == [], "只改无关散文竟然红了 ⇒ 判据在扫错东西"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1167,6 +1724,9 @@ def test_every_dashboard_page_route_resolves_to_a_guard_code():
     present, manifest = present_faces(), load_manifest()
     problems = unguarded_dashboard_routes(present, manifest)
     routes = dashboard_page_routes()
+    # **现取的 ⊆ 判据**（`DASHBOARD_PAGE_ROUTES_FLOOR` 那个下界补不上的那一半：防「删掉任意一项」）
+    coverage = dashboard_route_coverage_problems(routes)
+    assert coverage == [], "清单 `pages[]` 与路由文件面不一致：\n" + "\n".join(f"  · {p}" for p in coverage)
     guarded = sum(1 for r in routes if effective_guard_code(r, guard_entries(present)))
     print(
         f"── (dashboard) 页面路由 = {len(routes)} 条 / 有守卫码 = {guarded} 条 / 无守卫码 = {len(problems)} 条 ──"
@@ -1177,6 +1737,13 @@ def test_every_dashboard_page_route_resolves_to_a_guard_code():
         + "\n出口：进 `ROUTE_PERMISSION_MAP`（有码页）或在 `rbac/manifest.json` 的 `pages[]` 里"
         "声明该页 `gate` 为空（全员可见页，须与菜单节点「无 permissionCode」一致）。"
     )
+
+    # 判别力自证（内存）：摘掉**一条在册页面的路由** ⇒ ⊆ 判据必须具名报出是它
+    victim = sorted(str(page["path"]) for page in present["pages"])[0]
+    slashed = [r for r in routes if r != victim]
+    assert slashed != routes, f"变异注入未生效（`{victim}` 不在扫描到的路由里 ⇒ 自证失败）"
+    hits = dashboard_route_coverage_problems(slashed)
+    assert any(victim in h for h in hits), f"摘掉一条在册页面的路由后没被判红：{hits}"
 
     mutated = copy.deepcopy(present)
     mutated["route_guard"] = [
