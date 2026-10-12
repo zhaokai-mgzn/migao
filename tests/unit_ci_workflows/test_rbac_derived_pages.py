@@ -364,7 +364,7 @@ FROZEN_CEILINGS: tuple[dict, ...] = (
         "grew_by": "`visibility_problems`（『未登记即红』具名报出是哪一页；陈旧条目同样红）",
         "reason": (
             "P3 的 gap 台账：**可见性投影复现不了现值**的页面（每条的出口都是一次授权裁定，归 P4）"
-            "⇒ 只许缩短。落地值 = 4（P4 后现取 = 1）。"
+            "⇒ 只许缩短。**上界落地值 = 4**（P4 后现取 = 1）。"
         ),
     },
     {
@@ -374,7 +374,7 @@ FROZEN_CEILINGS: tuple[dict, ...] = (
         "grew_by": "`visibility_problems`（同上）",
         "reason": (
             "gap 台账的**具名条目**（理由 + 谁负责）；与 `PAGE_VISIBILITY_GAPS` 同生共死"
-            "（条目集与现取 gap 页集由 `visibility_problems` 双向闭合）。落地值 = 4（P4 后现取 = 1）。"
+            "（条目集与现取 gap 页集由 `visibility_problems` 双向闭合）。**上界落地值 = 4**（P4 后现取 = 1）。"
         ),
     },
     {
