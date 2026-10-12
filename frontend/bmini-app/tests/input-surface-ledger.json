@@ -82,6 +82,12 @@
       "className": "admin-input",
       "label": "工人补打标签页：手输 8 位短码",
       "case_ids": ["BM-042"]
+    },
+    {
+      "file": "src/pages/worker/shipment/index.tsx",
+      "className": "admin-input",
+      "label": "工人拍照发货页的字段组（订单号 / 商品名称 / 宽 / 高 / 实发数量 / 实发单位 / 货运单号 / 承运商 8 处）",
+      "case_ids": ["BM-042"]
     }
   ]
 }

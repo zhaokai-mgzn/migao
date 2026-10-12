@@ -2,10 +2,19 @@
  * 拍照发货页的补充样式（issue #6761）
  *
  * 复用管理面的既有视觉语言（`src/styles/admin-surfaces.scss` 的 `admin-surface` / `admin-card` /
- * `admin-action` / `admin-notice` / `admin-input`），这里只补管理面没有的三件：
+ * `admin-action` / `admin-notice`），这里只补管理面没有的三件：
  * 不确定格的提示块、宽高成对行、发货单行。
+ *
+ * 🔴 输入面 `.admin-input` 的定义在 `src/pages/worker/inbound/index.scss`（**Taro 的 scss 不跨页面共享**）
+ * ⇒ 与补打页（issue #5640）同款 `@import` 那一份，不重写第二份取值
+ * （三页的类名与取值必须逐字一致，改动时三处一起看）。
+ * 该输入面本身由**全局共享层** `src/styles/input-center.scss`（`app.scss` 引入）负责竖向居中，
+ * 并已在 frontend/bmini-app/tests/input-surface-ledger.json 登记
+ * （判据 = frontend/bmini-app/tests/input-center-guard.test.ts 判据 4「未登记即红」）。
+ *
  * 🔴 不新增颜色 / 字号 token（`check-ui-regression.sh` 判 UI 回退）。
  */
+@import '../inbound/index.scss';
 .shipment-uncertain {
   display: block;
   margin: 8px 0 16px;
