@@ -1,0 +1,15 @@
+{
+  "_comment": [
+    "商家冒烟 spec（scripts/ui-smoke-merchant/spec.mjs）里**确实取不到**的文案字面量的登记式豁免。",
+    "判据本体 = tests/unit_ci_workflows/test_ui_smoke_selector_liveness.py（issue #6779）。",
+    "纪律（与 §23 G 系列同口径）：只许缩短、每条必须带理由；条目引用的字面量若从 spec 里消失 ⇒ 判红（台账不得空转）。",
+    "**未登记即红**（不许用「扫不到就跳过」的静默口径）；本台账只裁「文案选择器」，不裁 CSS / xpath 选择器（见文件的未固化项）。"
+  ],
+  "baseline_count": 1,
+  "exemptions": [
+    {
+      "literal": "13911113333",
+      "reason": "测试数据（动态生成）：员工手机号由 spec 自造，主号在编辑分支的假值与此不同步 ⇒ 被驱动的 admin-web 源码里不可能有它，属动态生成面。"
+    }
+  ]
+}
