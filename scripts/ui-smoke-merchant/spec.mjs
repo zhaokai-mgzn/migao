@@ -121,9 +121,13 @@ async function adminApi(page) {
 //
 // ⚠️ 文案**就地取字面量**（不抽 `const`）：抽成常量后 `expectText(page, C)` 在静态面上就看不到
 // 「等的是哪句文案」⇒ 活性判据（issue #6779）失效。重复三处的代价 ≪ 判据失效的代价。
-/** 切到「管理员登录」tab（默认 tab 是「员工登录」；用精确文案定位 tab，避免命中其它同名节点）。 */
+// ⚠️ 名字**不得**用 `exact: true`：登录页 tab 按钮的可及名字 = 标题 + 副标题（「管理员登录 手机验证码」，
+// 见 frontend/admin-web/src/app/login/page.tsx 的 `label`/`hint` 两个文本节点）⇒ `exact` 恒匹配不到
+// （issue #6785 真栈实测：`{ name: '管理员登录', exact: true }` count=0、`{ name: /管理员登录/ }` count=1）。
+// 角色面本来就是对的（容器 `role="tablist"` + 两个按钮 `role="tab"`）⇒ 这里只放宽**名字**口径。
+/** 切到「管理员登录」tab（默认 tab 是「员工登录」；用正则子串定位，避免 exact 匹配不到「标题+副标题」）。 */
 async function openAdminLoginTab(page) {
-  const tab = page.getByRole('tab', { name: '管理员登录', exact: true }).first()
+  const tab = page.getByRole('tab', { name: /管理员登录/ }).first()
   await tab.waitFor({ state: 'visible', timeout: 8000 })
   await tab.click()
 }

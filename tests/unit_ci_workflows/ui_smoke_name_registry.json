@@ -1,0 +1,89 @@
+{
+  "_comment": [
+    "商家冒烟 spec（scripts/ui-smoke-merchant/spec.mjs）里 `getByRole(role, { name })` 的**名字**台账。",
+    "判据本体 = tests/unit_ci_workflows/test_ui_smoke_selector_liveness.py 的判据 N（issue #6785）。",
+    "为什么需要它：`exact: true` 只认**完整可及名字**；页面元素的文本由多个文本节点拼成时（标题+副标题），",
+    "写个真子串 + exact **永远匹配不到**，而「文案在不在源码里」这一层看不到它（issue #6779 判据 A 的射程外）。",
+    "纪律：① 未登记即红（exact 与「非 exact」两类都要登记）；② 每条必须带理由；③ 条目不得空转",
+    "（declared 必须还能在被驱动面现取到、composed_of 拼出的名字必须仍包含 declared、matcher 必须仍在 spec 里）；",
+    "④ **只许缩短**（条数 ≤ baseline_count，现取复算）；⑤ exact_single_node 的「一致」由**现取**",
+    "（字面量所在 JSX 元素的完整文本）核，不信台账自述。",
+    "被驱动面 = frontend/admin-web/src/** + scripts/ui-smoke-merchant/**（不含 spec.mjs 自身）。"
+  ],
+  "baseline_count": {
+    "exact": 2,
+    "registered_matchers": 34
+  },
+  "exact": [
+    {
+      "declared": "确定",
+      "line_anchor": "constconfirmBtn=page.getByRole('button',{name:'确定',exact:true})",
+      "kind": "exact_single_node",
+      "driver": [
+        "frontend/admin-web/src/components/ui/Modal.tsx::<Button>确定</Button>"
+      ],
+      "reason": "模态框确认按钮的文案是**该元素唯一的文本节点**（Modal.tsx 的 `<Button onClick={onClose}>确定</Button>`）⇒ 完整可及名字就是「确定」，exact 合法；名字比页面更长（如注入成「确定提交」）时判据 N 当场红。",
+      "driver_files": [
+        "frontend/admin-web/src/components/ui/Modal.tsx"
+      ]
+    },
+    {
+      "declared": "管理员登录",
+      "line_anchor": "consttab=page.getByRole('tab',{name:'管理员登录',exact:true}).first()",
+      "kind": "exact_substring_of_composed",
+      "composed_of": [
+        "管理员登录",
+        "手机验证码"
+      ],
+      "driver": [
+        "role=\"tablist\"",
+        "管理员登录",
+        "手机验证码"
+      ],
+      "reason": "登录页 tab 按钮（frontend/admin-web/src/app/login/page.tsx）内含**两个**文本节点：标题「管理员登录」+ 副标题「手机验证码」⇒ 真 DOM 可及名字 = 「管理员登录 手机验证码」（2026-10-12 19:04 +08 真栈现取：getByRole('tab',{name:'管理员登录',exact:true}) count=0，非 exact count=1）。这条是**未修形态的入口**：spec 改回 exact 时判据 N 具名红。",
+      "driver_files": [
+        "frontend/admin-web/src/app/login/page.tsx"
+      ]
+    }
+  ],
+  "registered_matchers": {
+    "_comment": "非 exact（正则/子串）名字匹配的**显式登记**：登记式豁免，只许缩短。非 exact 是有意的「多备选」口径（同一个按钮在不同页面上的可及名字可能是「保存」/「确 定」等），逐字可及名字在这里做不到 —— 登记出来而不是静默放过。",
+    "baseline_count": 34,
+    "matchers": [
+      "/^搜索$/",
+      "/下一页|next/",
+      "/保存/",
+      "/修改密码/",
+      "/全部已读|标记已读/",
+      "/关闭工单/",
+      "/创建|确 定|保存/",
+      "/删除/",
+      "/取消/",
+      "/存草稿|存为草稿/",
+      "/接受处理/",
+      "/提交订单/",
+      "/新增分类|添加分类|新建分类/",
+      "/新增加工项|新建加工项|添加加工项/",
+      "/新增员工|新建员工|添加员工/",
+      "/添加|保存|确 定|创建/",
+      "/生成|立即生成|重新生成/",
+      "/生成加工单/",
+      "/登\\s*录|登录/",
+      "/确 定|保存/",
+      "/确 定|保存|提交/",
+      "/确 定|保存|提交|创建/",
+      "/确 认|确认付款|确定/",
+      "/确认/",
+      "/确认付款/",
+      "/确认删除|确定|确认/",
+      "/确认发加工/",
+      "/确认发货/",
+      "/管理员登录/",
+      "/编辑/",
+      "/编辑|权限/",
+      "/获取验证码/",
+      "/选择商品/",
+      "/通知设置|系统通知/"
+    ]
+  }
+}
