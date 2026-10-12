@@ -8,9 +8,13 @@ const mockEmployeeLogin = vi.fn()
 const mockSmsLogin = vi.fn()
 const mockUseAuthStore = vi.fn()
 
-vi.mock('@/store/auth', () => ({
-  useAuthStore: (...args: any[]) => mockUseAuthStore(...args),
-}))
+vi.mock('@/store/auth', () => {
+  const useAuthStore: any = (...args: any[]) => mockUseAuthStore(...args)
+  // issue #6758：登录落点按权限算 ⇒ 登录页从 store **现取**登录后的 user（本函数所在闭包里的
+  // `user` 还是登录前那一份）。替身必须照实现真 store 的 API（zustand 的 `getState`）。
+  useAuthStore.getState = () => mockUseAuthStore()
+  return { useAuthStore }
+})
 
 // Mock next/link
 vi.mock('next/link', () => ({

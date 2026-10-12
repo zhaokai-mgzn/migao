@@ -2,13 +2,17 @@ package com.migao.admin.controller;
 
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.dto.MenuNode;
+import com.migao.admin.service.MobileSurfaces;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 菜单权限控制器 — 返回一级+二级菜单树，供前端权限多选用
@@ -23,6 +27,11 @@ import java.util.List;
  * 该组菜单项（顺序一致）+ 同域**动作码**节点（统一追加在组尾）。改这里必须同批改 menu.ts 与
  * {@link com.migao.admin.service.AuthService#buildMenusByPermissions}，
  * 判据见 tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py（#5271 起比对**全树**）。</p>
+ *
+ * <p>issue #6759：节点上的**手机端可见面标注**（{@link MenuNode#getMobileTitles()}）**派生**自
+ * {@link MobileSurfaces}（手机端菜单的服务端投影，唯一真值 = issue #6570/#6574）——
+ * 本类**不写**任何「码 → 手机端面」的字面表。管理员在权限勾选树上因此看得见
+ * 「勾这个码 = 员工手机上多一个入口」（员工管理页 / 岗位权限页都渲染它）。</p>
  */
 @Slf4j
 @RestController
@@ -31,6 +40,24 @@ import java.util.List;
 public class MenuController {
 
     private static final List<MenuNode> MENU_TREE = buildMenuTree();
+
+    /**
+     * 送往 {@code GET /api/admin/menus} 的那棵树（= {@link #MENU_TREE} **加**手机端可见面标注，
+     * issue #6759）。
+     *
+     * <p>⚠️ 为什么要单开一个常量而不是在 {@code buildMenuTree()} 里就地标注：
+     * {@code tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py} 的**顶层布局序列**
+     * 解析器锚的是「{@code buildMenuTree()} 里**最终**那个 {@code return List.of(}」这一字面形态
+     * （它按括号深度切顶层条目）。把返回值改成「先赋给局部变量、标注后再 return」会让那个锚
+     * **找不到** ⇒ 判据当场报「解析失配」（红）。这里改成**工厂方法 + 独立常量**：解析面零变化，
+     * 标注仍是**同一棵树对象的原地标注**（{@link MenuNode#addMobileTitle} 是 setter 语义）。</p>
+     */
+    private static final List<MenuNode> ANNOTATED_MENU_TREE = annotatedMenuTree();
+
+    private static List<MenuNode> annotatedMenuTree() {
+        annotateMobileTitles(MENU_TREE);
+        return MENU_TREE;
+    }
 
     private static List<MenuNode> buildMenuTree() {
         // 权限码格式: 模块:操作 — 与 DB permissions.code 格式一致。
@@ -152,6 +179,15 @@ public class MenuController {
         MenuNode s1 = new MenuNode("system:manage", "企业基础设置（经营域）");
         // 动作码节点：组尾追加
         MenuNode e2 = new MenuNode("employee:create", "新增员工");
+        // 🔴 2026-10-12（issue #6759）：两个**手机端写码**补进权限勾选树（用户当日裁定
+        // 「手机端两个写动作码要补进员工管理的个人权限勾选树」）—— 它们是**动作**（不是菜单项），
+        // 所以按本树既有口径**追加在各自业务域的组尾**（导航项必须保持为它们之前的连续前缀）。
+        // 中文名逐字取 `rbac/manifest.json` 的 `codes.names`（改这里必须同批改
+        // `tests/unit_ci_workflows/test_rbac_derived_pages.py` 的 `ACTION_NODE_CODES` 与
+        // `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py` 的 `ACTION_NODES`，
+        // 并重生成 `rbac/readings.json` —— 缺一即红）。
+        MenuNode prUpdate = new MenuNode("processing:update", "加工单操作");
+        MenuNode iCreate = new MenuNode("inbound:create", "入库单操作");
 
         return List.of(
             new MenuNode("workspace", "工作台", List.of(d1, d2)),
@@ -165,9 +201,10 @@ public class MenuController {
             // 生产管理（用户 2026-10-06 组内重排后，再随 issue #6580 收拢为**生产看板 → 智能派单
             // → 计件工资**三项 —— 「加工项管理」「工艺配置」两个菜单项按用户裁定**移除**，
             // 功能体并入 `/settings`（企业基础设置）页内的配置域；旧路径保留为重定向）。
-            new MenuNode("production-center", "生产管理", List.of(pr1, prPool, pr3)),
+            new MenuNode("production-center", "生产管理", List.of(pr1, prPool, pr3, prUpdate)),
             // 仓储与物料（用户 2026-10-06 组内重排：单据（进 → 账 → 出）→ 台账 → 分析）
-            new MenuNode("inventory-center", "仓储与物料", List.of(i1, prLedger, i2, prRemnants, prSaving)),
+            // 🔴 issue #6759：组尾追加动作码节点「入库单操作」（`inbound:create` = 手机端过账的写码）。
+            new MenuNode("inventory-center", "仓储与物料", List.of(i1, prLedger, i2, prRemnants, prSaving, iCreate)),
             new MenuNode("org-center", "组织管理", List.of(e1, r1, s1, e2)),
             // 🔴 尾部独立项（不属于任何组）：**排在所有分组之后**（用户 2026-10-06 裁定，原为「工作台组之后」）
             // —— 组名即「分组」，渲染在组与组之间会让「大菜单并列」自相矛盾。
@@ -198,6 +235,64 @@ public class MenuController {
 
     @GetMapping
     public ApiResponse<List<MenuNode>> getMenuTree() {
-        return ApiResponse.success(MENU_TREE);
+        return ApiResponse.success(ANNOTATED_MENU_TREE);
+    }
+
+    // ══════════════════════════ 手机端可见面标注（issue #6759） ══════════════════════════
+
+    /**
+     * 把「权限码 → 手机端可见面中文名」写到树上每个节点上（{@link MenuNode#addMobileTitle}）。
+     *
+     * <p><b>真值只有一份</b>：清单来自 {@code MobileSurfaces.ALL + TABS}（手机端菜单的服务端投影，
+     * issue #6570/#6574 的用户裁定「走 B」）⇒ 本类只做**投影**，没有任何「码 → 手机端面」字面表。</p>
+     *
+     * <p><b>为什么是 public static 且收 {@code List<Surface>}</b>（issue #6759 的红证要求）：
+     * 判据必须能喂一份**改过的**清单来证明「标注是派生的、不是硬编码的」——即改某个面的
+     * {@code readPermission} ⇒ 对应节点的标注随之改变 / 消失。生产路径只调
+     * {@link #annotateMobileTitles(List)}（清单固定 = 服务端真值）。</p>
+     */
+    public static void annotateMobileTitles(List<MenuNode> tree, List<MobileSurfaces.Surface> surfaces) {
+        Map<String, List<String>> byCode = mobileTitlesByCode(surfaces);
+        for (MenuNode node : tree) {
+            annotate(node, byCode);
+        }
+    }
+
+    /**
+     * 生产入口：用**服务端真值**（{@code MobileSurfaces.ALL + TABS}）标注整棵树。
+     * 顺序 = {@code ALL} 在前、{@code TABS} 在后（只在「同一码既开页面入口又开底栏」时可见）。
+     */
+    public static void annotateMobileTitles(List<MenuNode> tree) {
+        List<MobileSurfaces.Surface> surfaces = new ArrayList<>(MobileSurfaces.ALL);
+        surfaces.addAll(MobileSurfaces.TABS);
+        annotateMobileTitles(tree, surfaces);
+    }
+
+    /** 面清单 → `权限码 → [面中文名…]`（无码的面 —— 如底栏「问黄金策 / 我的」—— 不进索引）。 */
+    private static Map<String, List<String>> mobileTitlesByCode(List<MobileSurfaces.Surface> surfaces) {
+        Map<String, List<String>> byCode = new LinkedHashMap<>();
+        for (MobileSurfaces.Surface surface : surfaces) {
+            String code = surface.readPermission();
+            if (code == null || code.isBlank()) {
+                continue;
+            }
+            List<String> titles = byCode.computeIfAbsent(code, key -> new ArrayList<>());
+            if (!titles.contains(surface.title())) {
+                titles.add(surface.title());
+            }
+        }
+        return byCode;
+    }
+
+    private static void annotate(MenuNode node, Map<String, List<String>> byCode) {
+        for (String title : byCode.getOrDefault(node.getCode(), List.of())) {
+            node.addMobileTitle(title);
+        }
+        List<MenuNode> children = node.getChildren();
+        if (children != null) {
+            for (MenuNode child : children) {
+                annotate(child, byCode);
+            }
+        }
     }
 }
