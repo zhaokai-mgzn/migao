@@ -244,8 +244,11 @@ run_leg "轻量门禁③真库判据防回退锁（缺 PG ⇒ 静默变绿）" \
 
 echo
 echo "── 结果表：跑 $RUN_N 条 / 未跑 ${#SKIP_LABELS[@]} 条"
-for l in "${RUN_LABELS[@]}"; do [ -n "$l" ] && echo "   ▶ $l"; done
-for l in "${SKIP_LABELS[@]}"; do [ -n "$l" ] && echo "   ⏭️  未跑：$l"; done
+# ⚠️ 下面两行的 `${X[@]+"${X[@]}"}` **不能简化**：macOS bash 3.2 在 `set -u` 下把空数组的
+#    `"${X[@]}"` 判成 unbound variable ⇒ 结果表那两行整个没机会打印（issue #6777，同族形态；
+#    `--dry-run --java-tests --new-cases` 时 SKIP_LABELS 就是空的）。非空时逐字等价。
+for l in ${RUN_LABELS[@]+"${RUN_LABELS[@]}"}; do [ -n "$l" ] && echo "   ▶ $l"; done
+for l in ${SKIP_LABELS[@]+"${SKIP_LABELS[@]}"}; do [ -n "$l" ] && echo "   ⏭️  未跑：$l"; done
 echo "   本入口**不做全量**：全量属于批次（scripts/batch-gate.sh）；CI 仍是权威。"
 echo "   两条必然项的窄跑命令（逐字，便于人照抄）："
 echo "     $JAVA_CMD_VERBATIM"

@@ -113,18 +113,50 @@ async function adminApi(page) {
   return { get: (p) => call('GET', p), post: (p, b) => call('POST', p, b) }
 }
 
+// ────────────────────────── UI 登录步骤（唯一入口）──────────────────────────
+// issue #6779：登录步骤原本在**三处**各写一遍（本函数 / `loginJourney` / `main` 的 `01-login`），
+// 三处**同步腐烂**且任一处失败都只表现为「后续旅程各自超时」。
+// 现在：① 选择器**只此一份**（现取 `frontend/admin-web/src/app/login/page.tsx`）；
+//       ② 失败一律带 `登录步骤失败[<位置>]` 前缀 ⇒ 27 条旅程不再各自背锅（归因到第一步）。
+//
+// ⚠️ 文案**就地取字面量**（不抽 `const`）：抽成常量后 `expectText(page, C)` 在静态面上就看不到
+// 「等的是哪句文案」⇒ 活性判据（issue #6779）失效。重复三处的代价 ≪ 判据失效的代价。
+/** 切到「管理员登录」tab（默认 tab 是「员工登录」；用精确文案定位 tab，避免命中其它同名节点）。 */
+async function openAdminLoginTab(page) {
+  const tab = page.getByRole('tab', { name: '管理员登录', exact: true }).first()
+  await tab.waitFor({ state: 'visible', timeout: 8000 })
+  await tab.click()
+}
+
+/** 登录步骤的失败归因包装：抛出的错误**必须**自报「登录步骤失败」+ 位置（判据见 §归因）。 */
+async function loginStep(where, fn) {
+  try {
+    return await fn()
+  } catch (e) {
+    throw new Error(`登录步骤失败[${where}]: ${String(e && e.message ? e.message : e).slice(0, 300)}`)
+  }
+}
+
+/** 手机号 + 短信验证码登录（管理员 tab）→ 等落点 /dashboard。三处调用点共用，选择器只有这一份。 */
+async function smsLogin(page, { where, settleMs }) {
+  return loginStep(where, async () => {
+    await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded', timeout: 25000 })
+    await openAdminLoginTab(page)
+    await expectText(page, '管理员登录')
+    await page.fill('#phone', PHONE)
+    await safeClick(page, page.getByRole('button', { name: /获取验证码/ }), '获取验证码')
+    await page.waitForTimeout(settleMs)
+    await page.fill('#code', SMS_CODE)
+    await safeClick(page, page.getByRole('button', { name: /登\s*录|登录/ }).last(), '登录')
+    await page.waitForURL('**/dashboard**', { timeout: 20000 })
+  })
+}
+
 // 登录态自补：`--group 32-` 会把 01-login 一并过滤掉 ⇒ 本旅程单跑时自补一次 UI 登录
 // （全量跑时 cookie 已在，直接跳过，不重复发码）
 async function ensureLoggedIn(page) {
   if ((await page.context().cookies()).some((c) => c.name === 'access_token')) return
-  await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded', timeout: 25000 })
-  await expectText(page, '手机号登录')
-  await page.fill('#phone', PHONE)
-  await safeClick(page, page.getByRole('button', { name: /获取验证码/ }), '获取验证码')
-  await page.waitForTimeout(1200)
-  await page.fill('#code', SMS_CODE)
-  await safeClick(page, page.getByRole('button', { name: /登\s*录|登录/ }).last(), '登录')
-  await page.waitForURL('**/dashboard**', { timeout: 20000 })
+  await smsLogin(page, { where: 'ensureLoggedIn', settleMs: 1200 })
 }
 
 // ────────────────────────── 登录 ──────────────────────────
@@ -132,15 +164,8 @@ async function loginJourney(browser) {
   const page = await browser.newPage()
   const h = await journey('01-login')(await Promise.resolve(page))
   try {
-    await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded', timeout: 20000 })
-    await expectText(page, '手机号登录')
-    await page.fill('#phone', PHONE)
-    await safeClick(page, page.getByRole('button', { name: /获取验证码/ }), '获取验证码')
-    await page.waitForTimeout(800)
-    await page.fill('#code', SMS_CODE)
-    await safeClick(page, page.getByRole('button', { name: /登\s*录|登录/ }), '登录')
+    await smsLogin(page, { where: '01-login', settleMs: 800 })
     // 登录成功后跳转 /dashboard
-    await page.waitForURL('**/dashboard**', { timeout: 15000 })
     await expectText(page, '经营看板')
     // 会话保持：刷新后仍在看板（仍登录）
     await page.reload({ waitUntil: 'domcontentloaded' })
@@ -148,7 +173,7 @@ async function loginJourney(browser) {
     await expectText(page, '经营看板')
     await h.done(true, '', 'login → /dashboard，刷新后会话保持')
   } catch (e) {
-    await h.done(false, `登录失败: ${String(e).slice(0, 300)}`)
+    await h.done(false, String(e && e.message ? e.message : e).slice(0, 300))
   }
   return page
 }
@@ -1094,14 +1119,7 @@ async function main() {
   // 登录 + 会话保持（同一上下文内完成，保证后续旅程带登录态）
   await jrun('01-login', async (p) => {
     const h = await journey('01-login')(p)
-    await p.goto(BASE + '/login', { waitUntil: 'domcontentloaded', timeout: 25000 })
-    await expectText(p, '手机号登录')
-    await p.fill('#phone', PHONE)
-    await safeClick(p, p.getByRole('button', { name: /获取验证码/ }), '获取验证码')
-    await p.waitForTimeout(1200)
-    await p.fill('#code', SMS_CODE)
-    await safeClick(p, p.getByRole('button', { name: /登\s*录|登录/ }).last(), '登录')
-    await p.waitForURL('**/dashboard**', { timeout: 20000 })
+    await smsLogin(p, { where: '01-login/main', settleMs: 1200 })
     await expectText(p, '经营看板')
     await p.reload({ waitUntil: 'domcontentloaded' })
     await p.waitForURL('**/dashboard**', { timeout: 10000 })
