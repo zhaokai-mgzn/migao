@@ -12,7 +12,14 @@
 //   · 高亮 = **最长前缀胜出**（`/dashboard` 同时命中 `/` 与 `/dashboard`）；
 //   · 空组剔除（组内一项不剩 ⇒ 整组不渲染）。
 
-import { STANDALONE_TOP_AFTER_GROUP_KEY, type MenuGroup, type MenuItem } from '@/config/menu'
+import {
+  menuGroups,
+  standaloneTopItems,
+  standaloneItems,
+  STANDALONE_TOP_AFTER_GROUP_KEY,
+  type MenuGroup,
+  type MenuItem,
+} from '@/config/menu'
 
 export interface MenuFilterOptions {
   permissions: string[]
@@ -312,6 +319,39 @@ export function flattenMenu(
     gs.flatMap((g) => g.children.map((c) => ({ ...c, groupKey: g.key, groupName: g.name })))
   const flat = (items: MenuItem[]) => items.map((c) => ({ ...c, groupKey: '', groupName: '' }))
   return [...fromGroups(head), ...flat(standaloneTop), ...fromGroups(tail), ...flat(standaloneBottom)]
+}
+
+/** 登录落点兜底（issue #6758）：一个可见菜单项都没有 ⇒ 落到这里（见 `landingPath`） */
+export const FALLBACK_LANDING_PATH = '/dashboard'
+
+/**
+ * 登录（含已登录访问 `/login`）后的落点 = **第一个可见菜单项的 `path`**（issue #6758）。
+ *
+ * ## 为什么不写死 `/dashboard`
+ *
+ * 现场形态：客服岗位（`agent:session` / `knowledge:view` / `after_sales:view` / `customer:view`，
+ * 自建岗位或员工个人权限**没勾「经营看板」**⇒ 不含 `dashboard:view`）登录后落 `/dashboard`，
+ * 而该路由的守卫码就是 `dashboard:view` ⇒ 整页 403；修前 403 还**吞掉整个外壳** ⇒
+ * 该员工明明持客服全套权限，**却没有任何导航出口**（只能手输 URL）。
+ *
+ * 落点取**菜单本身** ⇒ 与侧边栏的渲染顺序**同源**（`visibleMenuGroups` / `filterMenuItems` /
+ * `flattenMenu` 是菜单顺序与可见性的唯一实现，这里**只组合、不重写**）：
+ * 「第一个可见菜单项」按定义就是「用户第一眼能去、且真的进得去」的那一页。
+ *
+ * ## 零可见项的边界（有意）
+ *
+ * 一个可见项都没有（零权限码账号）⇒ 回 `FALLBACK_LANDING_PATH`（`/dashboard`）。
+ * 此时**无路可走是事实** —— 但那里渲染的是「403 面 + 完整外壳」（同样的导航出口仍在），
+ * 🔴 且**不做自动重定向**：落点算出来是什么就跳什么，不做「跳过去发现 403 再跳下一处」
+ * 的循环（那正是 `(dashboard)/layout.tsx` 当初「403 不重定向」这条取舍要防的东西）。
+ */
+export function landingPath(opts: MenuFilterOptions): string {
+  const first = flattenMenu(
+    visibleMenuGroups(menuGroups, opts),
+    filterMenuItems(standaloneTopItems, opts),
+    filterMenuItems(standaloneItems, opts),
+  )[0]
+  return first?.path ?? FALLBACK_LANDING_PATH
 }
 
 /**
