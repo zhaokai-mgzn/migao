@@ -87,6 +87,22 @@ fi
 PYTHON_BIN="${PYTHON_BIN:-$MAIN_REPO/backend/ai-agent-service/.venv/bin/python}"
 [ -x "$PYTHON_BIN" ] || PYTHON_BIN="$(command -v python3)"
 
+# ── 1.5 云 dev DB 预检：把**症状**接到**处置**（issue #6789）──
+# 本机公网 IP 不在 RDS 白名单时，下游 admin-api 会吐 7403 行 Spring 栈、第一现场是
+# `PSQLException 尝试连线已失败` / `SocketTimeoutException` —— 那**不是**根因现场。
+# ⇒ 起 admin-api **之前**先 TCP 探一次；不可达就打**一行**可行动提示 + 非零退出。
+# ⚠️ 顺序即价值：这段必须在「启动 admin-api」之前（判据 = MC-092 的接线检查）。
+if [ -f "$REPO_ROOT/backend/admin-api/.env" ]; then
+  RDS_HOST_PRE="$(sed -n 's/^RDS_HOST=//p' "$REPO_ROOT/backend/admin-api/.env" | head -1)"
+  RDS_PORT_PRE="$(sed -n 's/^RDS_PORT=//p' "$REPO_ROOT/backend/admin-api/.env" | head -1)"
+  if [ -n "$RDS_HOST_PRE" ] && ! nc -G 5 -z "$RDS_HOST_PRE" "${RDS_PORT_PRE:-5432}" >/dev/null 2>&1; then
+    echo "✗ 连不上云 dev DB（${RDS_HOST_PRE}:${RDS_PORT_PRE:-5432}）：本机公网 IP 可能在 RDS 白名单之外"
+    echo "  ⇒ 处置：./scripts/dev-db-whitelist.sh（诊断）/ ./scripts/dev-db-whitelist.sh --yes（追加）"
+    echo "     —— 不修白名单就起栈，只会把 Spring 启动失败的下游噪音甩给人当第一现场"
+    exit 1
+  fi
+fi
+
 # ── 2. 起栈（已在跑则复用；端口检查 §2.3）──
 started_api=0; started_web=0; started_agent=0
 api_health() { curl -s -m 3 -o /dev/null -w "%{http_code}" "http://127.0.0.1:$API_PORT/actuator/health" 2>/dev/null || echo 000; }
@@ -118,6 +134,25 @@ if [ "$(web_health)" != "200" ]; then
   echo "  ✓ admin-web ready"
 else
   echo "  [stack] admin-web 已在运行，复用"
+fi
+
+# ── 2.5 业务路由自检：防「陈旧 .next 缓存」被读成产品大面积故障 ──
+# 实测（2026-10-13，worktree 形态）：admin-api / admin-web 都 ready，`curl :3001/login` = 200，
+# 而 `(dashboard)` 组每个路由 **404**（dev 日志 `GET /dashboard 404` / `/products 404`）⇒ 34 条旅程全灭，
+# 看着像产品挂了；真因 = **worktree 里的 `.next` 是别处/旧上下文留下的**（Turbopack 拿着陈旧路由清单）
+# ⇒ `rm -rf frontend/admin-web/.next` 后重启 dev，全部恢复（/dashboard /products /employees = 200）。
+# ⚠️ `/login` 不在那一组里 ⇒ **健康检查看不出来**，所以这里必须探**业务组**路由。
+# 只报不动手：删缓存是有副作用的动作（默认交给人/上层决定），本脚本**不自动**清。
+ROUTE_CHECK_404=""
+for route in /employees /dashboard; do
+  code="$(curl -s -m 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1:$WEB_PORT$route" 2>/dev/null || echo 000)"
+  if [ "$code" = "404" ]; then ROUTE_CHECK_404="$route"; break; fi
+done
+if [ -n "$ROUTE_CHECK_404" ]; then
+  echo "✗ admin-web 业务路由 404（${ROUTE_CHECK_404}）：疑似 **陈旧 .next 缓存**（非产品故障 —— /login 仍 200）"
+  echo "  ⇒ 处置：rm -rf $REPO_ROOT/frontend/admin-web/.next 后重启 admin-web dev，再跑本脚本"
+  echo "     —— 不修缓存就跑 spec，只会产出 N 条假故障读数（每旅程一条）"
+  exit 1
 fi
 
 # ai-agent（可选，session/chat 旅程需要；缺省自动起，失败不阻塞商家页面旅程）
