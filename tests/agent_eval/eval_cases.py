@@ -6297,6 +6297,24 @@ _CASE_MC_090 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-091 [NORMAL] 手机端可见面标注只有一份真值（issue #6759）：面清单只许在 `MobileSurfaces` 声明、`admin-web` 不许自备「码 → 手机端面」映射表、动作节点台账 ⇄ 服务端真值源 ⇄ `rbac/manifest.json` 四向相等，且标注**必须接线**在 `GET /api/admin/menus` 上（源: cases/misc.yml）──
+_CASE_MC_091 = EvalCase(
+    id='MC-091',
+    legacy_id='',
+    title='手机端可见面标注只有一份真值（issue #6759）：面清单只许在 `MobileSurfaces` 声明、`admin-web` 不许自备「码 → 手机端面」映射表、动作节点台账 ⇄ 服务端真值源 ⇄ `rbac/manifest.json` 四向相等，且标注**必须接线**在 `GET /api/admin/menus` 上',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['管理员在权限勾选树上要能看出「勾这个权限码 = 员工手机上多一个入口」，而这个对应关系**只许有一份出处**（服务端按权限码投影的手机端菜单），前端不许自己再抄一张表。'],
+    expectations=[],
+    data_checks=['**判据 1·面清单只许一处**：`backend/admin-api/src/main/java/com/migao/admin/service/MobileSurfaces.java` 是手机端可见面（面名 + 读码）的**唯一**声明处；别的 `backend/admin-api/src/main/java/**/*.java` 文件里出现「面构造形态（`new Surface(` + 字符串）+ 面中文名」即**具名**判红。执行点 = tests/unit_ci_workflows/test_mobile_surface_annotation_single_source.py::test_mobile_surface_truth_lives_in_exactly_one_java_file。', '**判据 2·四向相等（未登记即红 / 陈旧亦红）**：动作节点台账（tests/unit_ci_workflows/test_rbac_derived_pages.py 的 `ACTION_NODE_CODES`）⇄ 服务端真值源（`MenuController` 的节点声明，由既有解析器 `_iter_menu_controller` 现取）⇄ `rbac/manifest.json` 的 `menus.controller` ⇄ 三源同构守卫的 `ACTION_NODES`（组内多出节点）**逐条逐值相等**；只改一处 ⇒ 报出是哪一个节点、差在哪。执行点 = 同文件 ::test_action_nodes_are_registered_in_both_ledgers_and_the_manifest。', '**判据 3·前端没有第二张表**：`frontend/admin-web/src/**` 里**没有任何**生产源文件同时出现「**只可能是手机端面**的名字」（= 面名 − PC 菜单项名，现取 = 入库过账 / 售后处理 / 坐席 / 数据 / 生产待办 / 计件工资报表）与「手机端读码」；扫描面 268 个文件、命中 0。执行点 = 同文件 ::test_frontend_has_no_code_to_mobile_surface_table（附「唯一渲染实现 = frontend/admin-web/src/lib/mobile-surface-label.ts 必须在」的声音点，防空真）。', '**判据 4·标注必须接线**：`GET /api/admin/menus` 返回的常量**不得**是裸 `MENU_TREE`（形态级：必须是 `annotateMobileTitles(...)` 的产物）—— 防「标注只活在单测的想象里」。执行点 = 同文件 ::test_mobile_surface_annotation_is_wired_to_the_menu_endpoint。', '**判别力自证（红证，内存构造、不读磁盘）**：① 别处抄一份面清单 ⇒ 判据 1 具名红；② 前端一张映射表 ⇒ 判据 3 具名红；③ 台账码漂移 / 新节点未登记 / 清单缺项 / 清单值不等 / 陈旧登记 ⇒ 判据 2 **各自**判红；对照读数 = 只把面名与读码写进**注释** ⇒ **不红**、两者**各自独立出现**（不共现）⇒ **不红**、只引用读码而无面构造形态 ⇒ **不红**。执行点 = 同文件 ::test_guard_discriminates_bad_shapes。', '**渲染面判据（前端）**：**有**手机端面的码渲染 ` · 手机端：X`（多个面用 `、` 连接、顺序 = 服务端给的顺序），**没有**的（空数组 / 缺字段）**一个字符都不追加**。执行点 = frontend/admin-web/tests/unit/pages/employees.test.tsx（服务端下发什么就渲染什么 + 不下发即零标注的对照读数）与 frontend/admin-web/tests/unit/components/TreeCheckbox.test.tsx（真组件的三条判据）。', '🔴 **覆盖边界（照实登记，不粉饰）**：① 判据 3 的扫描面**有意只到 `frontend/admin-web/src/**`** —— `frontend/bmini-app` 早有一张端侧镜像台账（frontend/bmini-app/src/utils/adminPermission.ts 的 `ADMIN_SURFACES`，由 BM-046 判据 5 与 `MobileSurfaces` 逐值比对守着），本单**一字未改**它，纳入扫描面会把存量债误算成本单引入；② 判据 3 的判别力依赖「面名 ≠ 菜单名」这一**现取事实**（差分清单在判据里现算并打印）—— 若将来把某个面改成与 PC 菜单项同名，它会退化为漏报（**已知边界，登记不修**）；③ **判不了**「服务端下发的面名被前端改写」（如加后缀）与运行期才可见的第二份真值（localStorage 之类）。'],
+    skip_reason='[backend-contract] 源码形态 + 台账逐值 + 接线（Python 标准库现取解析，复用既有守卫的解析器）+ 前端 vitest 渲染断言（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'permission-tree', 'mobile-surfaces', 'single-source', 'class-level-guard', 'red-proof', 'admin-web'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -14032,6 +14050,7 @@ ALL_CASES = (
     _CASE_MC_088,
     _CASE_MC_089,
     _CASE_MC_090,
+    _CASE_MC_091,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

@@ -46,8 +46,8 @@ P3 做三件事，**都不改行为**（零 delta）：
 
 ## 覆盖面（**覆盖不到什么**，与设计 §5.3 逐条对齐）
 
-- 🔴 **C2（`MenuController` 的 `MENU_TREE` 码列）不由 `pages[]` 派生**：它有 4 个**动作节点**
-  （新增商品 / 商品分类管理 / 新增员工 / 订单详情 —— 不是页面）且「经营看板」节点无码而控制器有码
+- 🔴 **C2（`MenuController` 的 `MENU_TREE` 码列）不由 `pages[]` 派生**：它有 5 个**动作节点**
+  （新增员工 / 订单详情 / 企业基础设置（经营域）/ 加工单操作 / 入库单操作 —— 不是页面）且「经营看板」节点无码而控制器有码
   ⇒ 它的码列不属「页面 → 码」面（现值由 M1 形态面 `menu-tree` 登记）。登记在 `NON_DERIVED_FACES`。
 - **岗位全集 = 种子 ∪ 回退**（7 个）。租户自建的岗位（`roles` 表里新建的角色）**读不到** ⇒ 可见性投影
   对它们**未取证** —— 设计 §3.4 问题 3 第 1 行登记的 `/dashboard` delta 正落在这里（零权限的自定义岗位
@@ -180,6 +180,23 @@ ACTION_NODE_CODES: dict[str, dict[str, str]] = {
         "reason": "只为让经营域的权限码**仍可授予**而保留的权限码节点（不是菜单项、没有 path）：菜单项 `/settings` 已改挂 `production:view`，该码在本页经营域（企业信息 / AI 客服 / 工人端页面 / 通知设置）上仍是实际生效码",
         "owner": "企业基础设置页的经营域 + `MenuController` 的 org-center 组 + 本判据的动作节点台账",
     },
+    # 🔴 2026-10-12（issue #6759）新增两条：**手机端写码**进权限勾选树（用户当日裁定）。
+    # 两条都**没有 `path`**、不是菜单项 ⇒ 不属「页面 → 码」面（按本台账口径必须具名）。
+    # 它们今天只能靠「岗位权限」页的「其它权限」区（`/api/admin/permissions` 差集）授予，
+    # 而手机端「智能派单 / 入库过账」两个写面**就挂这两个码**
+    #（`frontend/bmini-app/src/utils/adminPermission.ts` 的 `processing:update` / `inbound:create`）
+    # ⇒ 补进员工个人权限树 = 管理员能直接给员工勾这两个写动作。
+    # ⚠️ 只加**勾选项**：两条码的授权口径与 `roles.seed` **零 delta**（没有岗位因此多码）。
+    "加工单操作": {
+        "code": "processing:update",
+        "reason": "「加工单操作」是手机端派单的**写码**（PC 侧 = `ProductionPoolController` 的成批派单 / `ProcessingOrderController` 的生成与状态更新），不是页面",
+        "owner": "生产管理组菜单面（组尾动作码节点）+ 本判据的动作节点台账",
+    },
+    "入库单操作": {
+        "code": "inbound:create",
+        "reason": "「入库单操作」是手机端过账的**写码**（PC 侧 = `InboundOrderController` 的建单 / 过账 / 作废 / 期初导入），不是页面",
+        "owner": "仓储与物料组菜单面（组尾动作码节点）+ 本判据的动作节点台账",
+    },
 }
 
 #: **页面节点**上「码列 ≠ 该页 `gate`」的具名不一致（只许缩短；**P4 后 0 条**）。
@@ -214,9 +231,9 @@ VISIBILITY_GAP_REASONS = {
 #: **不由 `pages[]` 派生**的面（**只许缩短**）：每条写清为什么它不属「页面 → 码」。
 NON_DERIVED_FACES = (
     {
-        "face": "C2：`backend/admin-api/src/main/java/com/migao/admin/controller/MenuController.java` 的 `MENU_TREE` 码列（24 条）",
+        "face": "C2：`backend/admin-api/src/main/java/com/migao/admin/controller/MenuController.java` 的 `MENU_TREE` 码列（26 条）",
         "reason": (
-            "它有 4 个**动作节点**（新增商品 / 商品分类管理 / 新增员工 / 订单详情 —— 不是页面，没有 `path`）"
+            "它有 5 个**动作节点**（新增员工 / 订单详情 / 企业基础设置（经营域）/ 加工单操作 / 入库单操作 —— 不是页面，没有 `path`）"
             "且「经营看板」节点无码而控制器给 `dashboard:view` ⇒ 它的码列是「权限目录」语义，"
             "不属「页面 → 码」面（设计 §2.4 把 C2 与 C1/C3/C4 分开列）。现值由 M1 形态面 `menu-tree` 登记。"
         ),
@@ -679,8 +696,16 @@ def coverage_problems() -> list[str]:
         )
     if len(VISIBILITY_GAP_REASONS) > 4:
         out.append(f"gap 台账 {len(VISIBILITY_GAP_REASONS)} 条 > 上限 4（只许缩短）")
-    if len(ACTION_NODE_CODES) > 4:
-        out.append(f"动作节点台账 {len(ACTION_NODE_CODES)} 条 > 上限 4（只许缩短）")
+    if len(ACTION_NODE_CODES) > 5:
+        # 🔴 2026-10-12（issue #6759）：上限 4 → **5**（同 PR 显式放宽、diff 里看得见）。
+        # 现取：main 上 3 条（新增员工 / 订单详情 / 企业基础设置（经营域））+ 本单 2 条
+        # （加工单操作 `processing:update` / 入库单操作 `inbound:create`）= **5**。
+        # 为什么必须加这两条：它们原先是「**只能在岗位权限页的『其它权限』区授予**」的写码，
+        # 而手机端「智能派单 / 入库过账」两个写面就挂它们（issue #6759 需求②）——
+        # 补进员工个人权限树 = 多两个勾选项（**授权口径零变化**：没有岗位因此多码）。
+        # ⚠️ 这不是「把台账放宽」：台账机制 = 「非页面节点必须逐条具名」，不登记才是假绿；
+        # 本表仍**只许缩短**（销掉任一条 ⇒ 红）。
+        out.append(f"动作节点台账 {len(ACTION_NODE_CODES)} 条 > 上限 5（只许缩短）")
     if len(MENU_CODE_MISMATCHES) > 1:
         out.append(f"码列不一致台账 {len(MENU_CODE_MISMATCHES)} 条 > 上限 1（只许缩短）")
     if len(ROUTE_PREFIX_EXCEPTIONS) > 7:
@@ -737,7 +762,7 @@ def test_derived_page_faces_match_present_values():
         "units 按「页 → 码 → 逐端点」展开（27）、多码页 3 项、残留页 6 项、可见性按「页 → 规则 + 岗位集」"
         "逐页一项（21）。**另有两条不走摊平的面**：C4 按前缀逐条比（22 条 = 17 直接命中 + 1 别名 +"
         " 4 无页面 —— 末一条是 issue #5977 新登记的 `/agent-workspace`），C2/C3 的码列逐条比"
-        "（24 + 14 = 38 条，含 4 个**动作节点**与 1 处具名不一致）"
+        "（25 + 14 = 39 条，含 5 个**动作节点**与 1 处具名不一致）"
         "⇒ 全部逐项点名，**不一致 = 0**）──"
     )
     problems = (

@@ -47,10 +47,10 @@
     {
       "face": "menu-tree",
       "file": "backend/admin-api/src/main/java/com/migao/admin/controller/MenuController.java",
-      "hits": 1,
+      "hits": 2,
       "kind": "declaration",
       "derived_from": "manifest.menus.controller",
-      "note": "C2 权限目录菜单树（GET /api/admin/menus）"
+      "note": "C2 权限目录菜单树（GET /api/admin/menus）。🔴 2026-10-12（issue #6759）hits 1 → **2**：同 PR 新增 `ANNOTATED_MENU_TREE = annotatedMenuTree()`（= 原 `MENU_TREE` 加手机端可见面标注后**送往接口**的那棵树）——形态面 `MENU_TREE\\s*=` 命中两处声明，**有意新增、不是漂移**（判据口径 = 「登记命中数必须 == 现取」，涨跌都必须在同 PR 更新本表）。"
     },
     {
       "face": "menu-auth-build",

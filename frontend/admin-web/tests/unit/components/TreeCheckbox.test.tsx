@@ -157,3 +157,56 @@ describe('TreeCheckbox #6083 同码多节点', () => {
     expect(cb('每日简报').checked).toBe(true)
   })
 })
+
+// ==================== issue #6759: 手机端可见面标注 ====================
+// 真值只在服务端：`GET /api/admin/menus` 的节点带 `mobileTitles`（由 MobileSurfaces 派生）。
+// 组件**只渲染服务端给的**：有就追加 ` · 手机端：X`，没有（缺字段 / 空数组）**一个字符都不追加**。
+// 语料里的手机端面名是**判据夹具**（模拟服务端下发），不是前端映射表。
+describe('TreeCheckbox #6759 手机端可见面标注', () => {
+  const MOBILE_TREE: TreeNode[] = [
+    { code: 'production-center', label: '生产管理', children: [
+      { code: 'processing:view', label: '智能派单', mobileTitles: ['智能派单'] },
+      { code: 'production:view', label: '生产看板', mobileTitles: [] },
+    ]},
+    { code: 'inventory-center', label: '仓储与物料', children: [
+      { code: 'inbound:view', label: '入库单', mobileTitles: ['入库过账'] },
+      // 同一码挂两个手机端面 ⇒ 用 `、` 连接
+      { code: 'dashboard:view', label: '经营看板', mobileTitles: ['数据'] },
+      { code: 'order:list', label: '发货单' },
+    ]},
+  ]
+
+  it('#6759 判据 1: 有手机端面的码渲染 ` · 手机端：X`；空数组 / 缺字段的码**不渲染**', () => {
+    render(<TreeCheckbox tree={MOBILE_TREE} selected={[]} onChange={() => {}} />)
+    // 有面 ⇒ 逐字渲染（含前置分隔符，与员工管理页一致）
+    expect(screen.getByTestId('tree-mobile-processing:view')).toHaveTextContent('· 手机端：智能派单')
+    expect(screen.getByTestId('tree-mobile-inbound:view')).toHaveTextContent('· 手机端：入库过账')
+    expect(screen.getByTestId('tree-mobile-dashboard:view')).toHaveTextContent('· 手机端：数据')
+    // 空数组 / 缺字段 ⇒ 零标注（负控：不是「一律加个空标注」）
+    expect(screen.queryByTestId('tree-mobile-production:view')).toBeNull()
+    expect(screen.queryByTestId('tree-mobile-order:list')).toBeNull()
+  })
+
+  it('#6759 判据 2: 多个手机端面用 `、` 连接（顺序 = 服务端给的顺序）', () => {
+    const tree: TreeNode[] = [
+      { code: 'g', label: '组', children: [
+        { code: 'production:view', label: '计件工资', mobileTitles: ['计件工资报表', '生产待办'] },
+      ]},
+    ]
+    render(<TreeCheckbox tree={tree} selected={[]} onChange={() => {}} />)
+    expect(screen.getByTestId('tree-mobile-production:view'))
+      .toHaveTextContent('· 手机端：计件工资报表、生产待办')
+  })
+
+  it('#6759 判据 3（对照读数）: 服务端不下发 mobileTitles ⇒ 树上零改动（标注不是前端自造的）', () => {
+    const bare: TreeNode[] = [
+      { code: 'production-center', label: '生产管理', children: [
+        { code: 'processing:view', label: '智能派单' },
+      ]},
+    ]
+    render(<TreeCheckbox tree={bare} selected={[]} onChange={() => {}} />)
+    expect(screen.getByText('智能派单')).toBeInTheDocument()
+    expect(screen.queryAllByText(/手机端：/)).toHaveLength(0)
+    expect(screen.queryByTestId(/^tree-mobile-/)).toBeNull()
+  })
+})
