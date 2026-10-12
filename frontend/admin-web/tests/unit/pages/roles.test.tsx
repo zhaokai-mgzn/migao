@@ -25,6 +25,12 @@ vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }))
 
+// 手机端可见面标注（issue #6759/#6781）走 `GET /api/admin/menus` —— 本文件按测试给**真语料**
+const mockRequestGet = vi.fn()
+vi.mock('@/lib/request', () => ({
+  default: { get: (...args: any[]) => mockRequestGet(...args) },
+}))
+
 // Mock UI components
 vi.mock('@/components/ui', () => ({
   Button: ({ children, onClick, ...props }: any) => (
@@ -96,6 +102,19 @@ import RolesPage from '@/app/(dashboard)/roles/page'
 // #5895：菜单梯队的**真值源**（判据直接遍历它，而不是抄一份清单 —— 抄的那份会漂移）
 import * as menuConfig from '@/config/menu'
 
+/** 商家**可见**文本 = 元素树里「直属文本节点」的拼接（`sr-only` 元素整棵跳过 —— 它不上屏）。 */
+const visibleText = (root: HTMLElement): string => {
+  let out = ''
+  const walk = (el: Element) => {
+    el.childNodes.forEach(n => {
+      if (n.nodeType === 3) out += n.textContent || ''
+      else if (n.nodeType === 1 && !(n as Element).classList.contains('sr-only')) walk(n as Element)
+    })
+  }
+  walk(root)
+  return out
+}
+
 describe('RolesPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -112,6 +131,8 @@ describe('RolesPage', () => {
     mockGetPermissions.mockResolvedValue({
       data: { data: PERMISSION_CATALOG },
     })
+    // 缺省：菜单接口读不到 ⇒ 零手机端标注（本文件绝大多数用例与本单无关，不喂语料）
+    mockRequestGet.mockRejectedValue(new Error('not mocked'))
   })
 
   it('renders page title', () => {
@@ -326,8 +347,10 @@ describe('RolesPage', () => {
     render(<RolesPage />)
     fireEvent.click(await screen.findByText('新增岗位'))
     const container = await screen.findByTestId('perm-menu-sections')
-    // 菜单行 = 「菜单名 + 权限码」的 label；「操作权限」节渲染的是「权限名(action)」、不含码
-    // ⇒ 同名条目（如旧大类码 product:manage 也叫「商品管理」）**不会**把漏接的菜单项伪装成已接线。
+    // 菜单行 = 「菜单名 + 权限码」的 label（码在 `sr-only` 文本里 —— 不上可见面，但仍在
+    // accessible name / `label.textContent` 里 ⇒ 本条接线判据照旧可判）；
+    // 「操作权限」节渲染的是「权限名(action)」、不含码 ⇒ 同名条目（如旧大类码 product:manage
+    // 也叫「商品管理」）**不会**把漏接的菜单项伪装成已接线。
     const rows = Array.from(container.querySelectorAll('label')).map(l => l.textContent || '')
     const coded = [
       ...menuConfig.menuGroups.flatMap(g => g.children),
@@ -350,6 +373,128 @@ describe('RolesPage', () => {
     expect(within(top).getByText('product:list')).toBeInTheDocument()
     // 位置与侧边栏同序：一级项 → 分组 → 尾部项 ⇒ 一级项块是权限树的**第一个**子块
     expect(container.firstElementChild).toBe(top)
+  })
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // issue #6781：权限树里的手机端标注「一个码只出现一处」+ 落点在树序首个承载节点
+  //
+  // 语料 = 真配置（`@/config/menu` 的梯队）+ **未修形态**的菜单接口下发（每个承载节点上
+  // 各带一遍该码的 `mobileTitles`）。判据只数「可见面渲染了几处标注」—— 与后端
+  // `annotateMobileTitles` 的「首承载节点」是同一个可观察口径（前端只渲染服务端给的）。
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * 「码 → 手机端面名」**夹具**（= 服务端 `MobileSurfaces` 真值在这 6 个码上的读数，
+   * 逐字取自 issue #6781 的实测读数）。⚠️ 它**只存在于测试夹具**（模拟服务端下发），
+   * 不是前端的映射表 —— 生产源码里没有第二份真值（判据 =
+   * tests/unit_ci_workflows/test_mobile_surface_annotation_single_source.py 判据 3）。
+   */
+  const MOBILE_SURFACES_FIXTURE: Record<string, string[]> = {
+    'dashboard:view': ['数据'],
+    'agent:session': ['坐席'],
+    'after_sales:view': ['售后处理'],
+    'production:view': ['计件工资报表', '生产待办'],
+    'processing:view': ['智能派单'],
+    'inbound:view': ['入库过账'],
+  }
+
+  /**
+   * 菜单接口下发（真 `GET /api/admin/menus` 的形状）：`onlyFirstCarrier` = 本单修后形态
+   * （同一个码只在**树序首个承载节点**上带 `mobileTitles`，其余同码节点为空）。
+   *
+   * ⚠️ 承载节点**不止在组内**：`standaloneTopItems`（「商品管理」`product:list` /
+   * 「企业基础设置」`production:view`）是顶层的**叶子节点**，服务端树里同样是带着 `mobileTitles`
+   * 的顶层条目（`production:view` 因此有 3 个承载节点 —— 本单「名实不符」的那一个就在其中）。
+   */
+  const menuPayload = (onlyFirstCarrier: boolean) => {
+    const seen = new Set<string>()
+    const node = (c: { key: string; name: string; permissionCode?: string }) => {
+      const code = c.permissionCode || c.key
+      const titles = MOBILE_SURFACES_FIXTURE[code] || []
+      const firstOfCode = !seen.has(code)
+      seen.add(code)
+      return { code, label: c.name, mobileTitles: onlyFirstCarrier && !firstOfCode ? [] : titles }
+    }
+    return [
+      ...menuConfig.menuGroups.map(g => ({
+        code: g.key,
+        label: g.name,
+        children: g.children.map(node),
+      })),
+      ...menuConfig.standaloneTopItems.map(c => ({ code: c.key, label: c.name, children: [node(c)] })),
+    ]
+  }
+
+  it('🔴 #6781：未修形态（一个码在每个承载节点上各标注一次）⇒ 同屏出现重复/名实不符标注 ⇒ 红', async () => {
+    mockRequestGet.mockResolvedValue({ data: { data: menuPayload(false) } })
+    render(<RolesPage />)
+    fireEvent.click(await screen.findByText('新增岗位'))
+    const container = await screen.findByTestId('perm-menu-sections')
+
+    // 锚定：未修形态下「同一个码 = 同一串标注」在**多个**节点上被渲染（同屏重复 §31 P2）
+    expect(container.querySelectorAll('[data-testid^="roles-mobile-production:view"]')).toHaveLength(3)
+    expect(container.querySelectorAll('[data-testid="roles-mobile-dashboard:view"]')).toHaveLength(2)
+  })
+
+  it('🔴 #6781 修后形态：每个权限码**只**在树序首个承载节点上渲染一处手机端标注（同屏重复与名实不符都归零）', async () => {
+    // 修后形态的语料 = 服务端只把标注放在**树序首个承载节点**上（其余同码节点 `mobileTitles` 为空）
+    // 🔴 判别力自证（不读磁盘）：同一份真配置下，**未修形态**的语料必然在同屏渲染出**重复**标注
+    //（`production:view` 三处 / `dashboard:view` 两处）；修后形态收敛为每码一处。
+    const legacyCodes = menuPayload(false).flatMap(g => g.children)
+      .filter(c => (c.mobileTitles || []).length > 0).map((c: any) => c.code)
+    expect(legacyCodes.filter(c => c === 'production:view')).toHaveLength(3)
+    expect(legacyCodes.filter(c => c === 'dashboard:view')).toHaveLength(2)
+    expect(new Set(legacyCodes).size).toBeLessThan(legacyCodes.length)
+    const fixedCodes = menuPayload(true).flatMap(g => g.children)
+      .filter(c => (c.mobileTitles || []).length > 0).map((c: any) => c.code)
+    expect(fixedCodes).toHaveLength(6)
+    expect(new Set(fixedCodes).size).toBe(fixedCodes.length)
+    mockRequestGet.mockResolvedValue({ data: { data: menuPayload(true) } })
+    render(<RolesPage />)
+    fireEvent.click(await screen.findByText('新增岗位'))
+    const container = await screen.findByTestId('perm-menu-sections')
+
+    // ① 可见文本（元素直属文本节点）里**不得**出现 `模块:动作` 形态的内部码。
+    //    ⚠️ 必须按文本节点数，不能用 `container.textContent` —— `sr-only` 文本在 textContent 里仍可见
+    //    （那正是「不上屏但保留可及性」的落点，本判据有意放行）。
+    const codes = Array.from(container.querySelectorAll('label[title]'))
+      .map(l => l.getAttribute('title')!)
+    expect(codes.length).toBeGreaterThan(0)  // 反空跑：真配置里确实有带码菜单项
+    expect(visibleText(container)).not.toMatch(/[a-z_]+:[a-z_]+/)
+    // 「操作权限」节同样不得回显码（该节在同一个容器内，原本渲染 `(view)` 这类内部动作名以外的码）
+    for (const code of codes) {
+      expect(visibleText(container), code).not.toContain(code)
+    }
+    // 负控：同一把尺子对**真的**权限码会命中（否则上面两条是空断言）
+    expect(codes, '真配置里应有带码菜单项').not.toHaveLength(0)
+    expect(codes[0]).toMatch(/[a-z_]+:[a-z_]+/)
+
+    // ② 非可见面：每个带码节点的 label 上仍有 `title` + `sr-only` 文本（可及性 / hover 不降级）
+    for (const code of ['product:list', 'production:view', 'inbound:view']) {
+      const span = container.querySelector(`[data-testid="roles-code-${code}"]`) as HTMLElement | null
+      expect(span?.className, code).toContain('sr-only')
+      expect(span?.textContent, code).toBe(code)
+      expect(span?.closest('label')?.getAttribute('title'), code).toBe(code)
+    }
+  })
+
+  it('#6770 红证（判别力自证·真语料）：把可见的码 span 加回去 ⇒ ①当场红；只改 title/sr-only ⇒ 不红', async () => {
+    mockRequestGet.mockResolvedValue({ data: { data: menuPayload(false) } })
+    render(<RolesPage />)
+    fireEvent.click(await screen.findByText('新增岗位'))
+    const container = await screen.findByTestId('perm-menu-sections')
+
+    // 逐字复刻未修形态的那一行（`<span className="text-xs text-neutral-400" title={code}>{code}</span>`）
+    const row = container.querySelector('label[title="inbound:view"]')!
+    const legacy = document.createElement('span')
+    legacy.className = 'text-xs text-neutral-400'
+    legacy.setAttribute('title', 'inbound:view')
+    legacy.textContent = 'inbound:view'
+    row.appendChild(legacy)
+
+    expect(visibleText(container)).toMatch(/[a-z_]+:[a-z_]+/)   // 注入生效 ⇒ 判据①必红
+    legacy.remove()
+    expect(visibleText(container)).not.toMatch(/[a-z_]+:[a-z_]+/) // 撤掉注入 ⇒ 绿（判别力自证）
   })
 
   it('#5895 勾选一级项「商品管理」→ 创建岗位时 permissionIds 含 product:list 的权限ID（勾得动）', async () => {

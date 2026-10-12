@@ -101,6 +101,11 @@ export default function RolesPage() {
 
   // 手机端可见面标注（issue #6759）：**真值只在服务端**（`MobileSurfaces` 派生自
   // `GET /api/admin/menus` 的 `mobileTitles`）—— 本页只把它挂到对应权限码上，不自造映射。
+  //
+  // 🔴 issue #6781：一个权限码在树上可以有**多个承载节点**（#5699/#5291 的有意设计面）⇒
+  // 这个 `码 → 面` 表**首见优先**（先到先得，后来的同码节点不覆盖）。同一张表要喂给
+  // `menuGroups` 与 `standaloneTopItems` 两个梯队，只有首见优先才能保证「每行渲染出的标注
+  // 与树序首个承载节点一致」（服务端 `annotateMobileTitles` 也是这个语义；两边同一条规则）。
   useEffect(() => {
     let alive = true
     request.get('/api/admin/menus')
@@ -110,7 +115,8 @@ export default function RolesPage() {
         const map: Record<string, string[]> = {}
         for (const group of Array.isArray(data) ? data : []) {
           for (const node of group?.children || []) {
-            if (node?.code && Array.isArray(node.mobileTitles) && node.mobileTitles.length > 0) {
+            if (node?.code && Array.isArray(node.mobileTitles) && node.mobileTitles.length > 0
+                && !(node.code in map)) {
               map[node.code] = node.mobileTitles
             }
           }
@@ -198,10 +204,16 @@ export default function RolesPage() {
   )
 
   // 菜单项行（权限树里**所有**菜单节点共用同一份渲染：一级项 / 组内项）—— 勾选即授予该权限码
+  //
+  // 🔴 issue #6770（§31 P3「不摆内部标识」）：权限码**不上商家可见面**（原形态是把 `inbound:view`
+  // 这样的内部串直接印在行尾）。它与左侧菜单名（label）表达同一件事、对商家零信息量，而同族先例
+  // （issue #6669 第 6 条：403 页撤掉权限码回显）已按「看不懂也无从行动」处理过。
+  // 保留**非可见面**两个入口（不降可及性）：① hover 的 `title`；② 屏幕阅读器可见的 `sr-only` 文本
+  // （它同时让 label 的 accessible name 含码，故**不**另加 `aria-label` —— 那会遮蔽可见名）。
   const renderCodeItem = (code: string, label: string) => {
     const mobile = formatMobileTitles(mobileTitlesByCode[code])
     return (
-      <label key={`${code}-${label}`} className="flex items-center gap-2 cursor-pointer">
+      <label key={`${code}-${label}`} className="flex items-center gap-2 cursor-pointer" title={code}>
         <input
           type="checkbox"
           checked={isCodeGranted(code)}
@@ -215,8 +227,8 @@ export default function RolesPage() {
               {mobile}
             </span>
           )}
+          <span className="sr-only" data-testid={`roles-code-${code}`}>{code}</span>
         </span>
-        <span className="text-xs text-neutral-400" title={code}>{code}</span>
       </label>
     )
   }

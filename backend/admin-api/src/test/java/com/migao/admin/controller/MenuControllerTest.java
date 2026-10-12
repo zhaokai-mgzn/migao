@@ -1,6 +1,6 @@
 package com.migao.admin.controller;
 
-// case_ids: PG-021
+// case_ids: PG-021, MC-091
 
 import com.migao.admin.config.GlobalExceptionHandler;
 import com.migao.admin.dto.MenuNode;
@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -519,6 +520,216 @@ class MenuControllerTest {
         JsonNode tree = fetchTree();
         assertEquals(List.of("入库过账"), mobileTitlesOf(tree).get("inbound:view"),
                 "真清单下 `inbound:view` 仍应是「入库过账」⇒ 现场那次注入没有污染全局真值");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // issue #6781：手机端标注**只落在该权限码在树序上的首个承载节点**（修法 1）
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("🔴 #6781：每个权限码在树上**只**标注一处（树序首个承载节点）—— 同屏重复与名实不符两条口径都不得命中")
+    void mobileTitlesAnnotateOnlyTheFirstCarrierOfEachCode() throws Exception {
+        JsonNode tree = fetchTree();
+        Map<String, List<String>> carriers = carrierLabelsByCode(tree);
+        Map<String, List<String>> annotated = mobileTitlesByLabel(tree);
+
+        // ① 同屏重复：同一个码被标注了不止一处 ⇒ 同屏出现两条一模一样的标注（§31 P2）
+        List<String> codesWithSeveralAnnotations = annotated.keySet().stream()
+                .collect(Collectors.groupingBy(MenuControllerTest::codeOf, LinkedHashMap::new, Collectors.counting()))
+                .entrySet().stream().filter(e -> e.getValue() > 1)
+                .map(e -> e.getKey() + " × " + e.getValue()).toList();
+        assertTrue(codesWithSeveralAnnotations.isEmpty(),
+                "这些权限码在树上被标注了不止一处（同屏重复）：" + codesWithSeveralAnnotations
+                        + "（实得标注 = " + annotated + "）");
+
+        // ② 判定基准 = 该码在**树序上的首个承载节点**（这是本实现声明的语义；逐字对照见本类
+        //    `injectedPerNodeCopyIsCaughtByTheFirstCarrierRule`）—— 标注落在别的节点上就是名实不符
+        Map<String, String> firstCarrier = new LinkedHashMap<>();
+        carriers.forEach((code, labels) -> firstCarrier.put(code, labels.get(0)));
+        // 名实不符（issue #6781 的逐字定义）：某节点被标注了面 X，而该码还有**别的承载节点**，
+        // 且节点 label 与面名 X **无任何公共子串** ⇒ 红（具名报出「哪个节点 / 哪个标注」）
+        List<String> mislabeled = new ArrayList<>();
+        for (Map.Entry<String, List<String>> entry : annotated.entrySet()) {
+            String label = entry.getKey();
+            List<String> others = carriers.getOrDefault(codeOf(label), List.of()).stream()
+                    .filter(other -> !other.equals(label)).toList();
+            if (others.isEmpty()) {
+                continue;   // 只有它一个承载节点 ⇒ 标注说的就是它，不存在名实不符
+            }
+            for (String title : entry.getValue()) {
+                if (!label.equals(firstCarrier.get(codeOf(label))) && !sharesAChar(label, title)) {
+                    mislabeled.add("「" + label + "」· 手机端：" + title
+                            + "（码 " + codeOf(label) + " 还有承载节点 " + others + "）");
+                }
+            }
+        }
+        assertTrue(mislabeled.isEmpty(),
+                "名实不符的标注（节点名与面名没有任何公共子串，却把该面挂在它头上）：" + mislabeled);
+
+        // ③ 真语料读数：真树上被标注的恰好是这 6 处（同码后继节点一个都不许再带标注）
+        assertEquals(List.of("经营看板", "在线接待", "售后工单", "生产看板", "智能派单", "入库单"),
+                new ArrayList<>(annotated.keySet()),
+                "真树上的标注点必须收敛到这 6 处（实得 = " + annotated + "）");
+        assertEquals(List.of("经营看板", "每日简报"), carriers.get("dashboard:view"),
+                "`dashboard:view` 在真树上的承载节点（本单「同屏重复」的语料）");
+        assertEquals(List.of("生产看板", "计件工资", "企业基础设置"), carriers.get("production:view"),
+                "`production:view` 在真树上的承载节点（本单「名实不符」的语料）");
+        // 逐点反向对照：三个同码后继节点在树上存在、但不得带任何标注
+        for (String label : List.of("每日简报", "计件工资", "企业基础设置")) {
+            List<JsonNode> flat = allNodes(tree);
+            assertEquals(1, flat.stream().filter(n -> label.equals(n.path("label").asText())).count(),
+                    "前置：真树上应恰有一个「" + label + "」节点（没有它这条对照就没有对象）");
+            assertFalse(annotated.containsKey(label),
+                    "同码后继节点「" + label + "」不得再带手机端标注（它的码 " + codeOf(label)
+                            + " 已在树序首个承载节点上标注）");
+        }
+    }
+
+    @Test
+    @DisplayName("🔴 #6781 红证①：未修形态的**真语料**（按码复制到每个承载节点）⇒ 同屏重复 2 个码 + 名实不符 3 条当场红")
+    void mobileTitlesCopiedPerNodeAreRejected() throws Exception {
+        // 未修形态的**真语料**（issue #6781 的逐字实测读数：真栈上 40 行里 9 行带标注）
+        Map<String, List<String>> perNodeAnnotations = new LinkedHashMap<>();
+        perNodeAnnotations.put("经营看板", List.of("数据"));
+        perNodeAnnotations.put("每日简报", List.of("数据"));
+        perNodeAnnotations.put("生产看板", List.of("计件工资报表", "生产待办"));
+        perNodeAnnotations.put("计件工资", List.of("计件工资报表", "生产待办"));
+        perNodeAnnotations.put("企业基础设置", List.of("计件工资报表", "生产待办"));
+
+        // 真值（承载关系）现取自真树 —— 注入的只是「标注怎么落」，不是另抄一张承载表
+        Map<String, List<String>> carriers = carrierLabelsByCode(fetchTree());
+
+        // 判据①（同屏重复）当场红：`dashboard:view` 两处、`production:view` 三处（= 同屏两条一模一样的标注）
+        Map<String, Long> perCode = new LinkedHashMap<>();
+        for (String label : perNodeAnnotations.keySet()) {
+            perCode.merge(codeOf(label), 1L, Long::sum);
+        }
+        assertEquals(List.of("dashboard:view × 2", "production:view × 3"),
+                perCode.entrySet().stream().filter(e -> e.getValue() > 1)
+                        .map(e -> e.getKey() + " × " + e.getValue()).toList(),
+                "未修形态下同码必然多处标注 —— 判据①必须当场红");
+
+        // 判据②（名实不符）当场红：未修形态下，**树序非首承载节点**（= 该码还有别的承载节点、
+        // 本该什么都不标的节点）恰好是这三个 —— 逐字取自真树（承载关系现取，不另抄一张表）。
+        List<String> offenders = perNodeAnnotations.keySet().stream()
+                .filter(label -> !carriers.getOrDefault(codeOf(label), List.of()).isEmpty())
+                .filter(label -> carriers.get(codeOf(label)).indexOf(label) > 0)
+                .toList();
+        assertEquals(List.of("每日简报", "计件工资", "企业基础设置"), offenders,
+                "名实不符的**非首承载节点**必须恰是这三个（实得 = " + offenders + "）");
+        List<String> unrelated = offenders.stream()
+                .filter(label -> perNodeAnnotations.get(label).stream().noneMatch(title -> sharesAChar(label, title)))
+                .toList();
+        assertEquals(List.of("每日简报", "企业基础设置"), unrelated,
+                "三条 issue 语料里「无任何公共子串」的两个节点（企业基础设置命中两个面）—— 判据②当场红");
+
+        // 判据④（相关的一律不许判红）：节点名与面名有公共子串 ⇒ 不在上面任何一份清单里
+        for (String[] related : List.of(new String[]{"售后工单", "售后处理"}, new String[]{"入库单", "入库过账"})) {
+            assertTrue(sharesAChar(related[0], related[1]),
+                    "「" + related[0] + "↔" + related[1] + "」是**相关**的（有公共子串）⇒ 不许被判红");
+            assertFalse(unrelated.contains(related[0]),
+                    "相关形态「" + related[0] + "↔" + related[1] + "」被误判成名实不符");
+        }
+    }
+
+    @Test
+    @DisplayName("🔴 #6781 红证②（注入式 · 不读磁盘）：把标注按码复制到每个承载节点 ⇒ 落在非首承载节点上即刻可判红；改回修后形态 ⇒ 绿")
+    void injectedPerNodeCopyIsCaughtByTheFirstCarrierRule() {
+        // 用真机制（`annotateMobileTitles`）造两棵树：同一组「承载节点」，唯一变量 = **回落策略**
+        List<MenuNode> duplicated = List.of(
+                new MenuNode("workspace", "工作台", List.of(
+                        new MenuNode("dashboard:view", "经营看板"),
+                        new MenuNode("dashboard:view", "每日简报"))));
+        MenuController.annotateMobileTitles(duplicated, MOBILE_SURFACES);
+        // 注入「未修形态」：把树序首承载节点的标注按**同一个码**复制到它的同码后继节点上
+        MenuNode first = duplicated.get(0).getChildren().get(0);
+        MenuNode second = duplicated.get(0).getChildren().get(1);
+        first.getMobileTitles().forEach(second::addMobileTitle);
+
+        // 判据（注入形态）：同一个码 → 两处一模一样的标注（同屏重复）+ 后一处是**非首承载节点**（名实不符）
+        assertEquals(List.of("数据"), first.getMobileTitles());
+        assertEquals(List.of("数据"), second.getMobileTitles(),
+                "前置：注入式复制已生效（同码后继节点上出现了同一串标注）");
+        assertEquals(2, duplicated.get(0).getChildren().stream()
+                        .filter(n -> !n.getMobileTitles().isEmpty()).count(),
+                "注入形态下被标注的节点数 = 2 ⇒ 判据①当场红");
+
+        // 修后形态（本单实现）：同一个码只标注树序首个承载节点 ⇒ 后继节点零标注
+        List<MenuNode> fixed = List.of(
+                new MenuNode("workspace", "工作台", List.of(
+                        new MenuNode("dashboard:view", "经营看板"),
+                        new MenuNode("dashboard:view", "每日简报"))));
+        MenuController.annotateMobileTitles(fixed, MOBILE_SURFACES);
+        assertEquals(List.of("数据"), fixed.get(0).getChildren().get(0).getMobileTitles());
+        assertTrue(fixed.get(0).getChildren().get(1).getMobileTitles().isEmpty(),
+                "修后形态：非首承载节点「每日简报」不得带任何标注（实得 = "
+                        + fixed.get(0).getChildren().get(1).getMobileTitles() + "）");
+        assertEquals(1, fixed.get(0).getChildren().stream()
+                        .filter(n -> !n.getMobileTitles().isEmpty()).count(),
+                "修后形态下被标注的节点数 = 1");
+    }
+
+    /** 现取「权限码 → 该码在树上的**承载节点 label** 清单」（深度优先；组节点 / 空码不进）。 */
+    private static Map<String, List<String>> carrierLabelsByCode(JsonNode tree) {
+        Map<String, List<String>> out = new LinkedHashMap<>();
+        for (JsonNode node : allNodes(tree)) {
+            String code = node.path("code").asText();
+            if (code.isBlank() || node.path("children").size() > 0) {
+                continue;   // 组节点（有 children）不是权限码承载节点
+            }
+            out.computeIfAbsent(code, key -> new ArrayList<>()).add(node.path("label").asText());
+        }
+        return out;
+    }
+
+    /** 现取「被标注的节点 label → 面名清单」（深度优先 = 渲染顺序；**不带标注的节点不进**）。 */
+    private static Map<String, List<String>> mobileTitlesByLabel(JsonNode tree) {
+        Map<String, List<String>> out = new LinkedHashMap<>();
+        for (JsonNode node : allNodes(tree)) {
+            List<String> titles = new ArrayList<>();
+            node.path("mobileTitles").forEach(t -> titles.add(t.asText()));
+            if (!titles.isEmpty()) {
+                out.put(node.path("label").asText(), titles);
+            }
+        }
+        return out;
+    }
+
+    /** 深度优先拍平整棵树（组 → 组内节点 → 顶层一级项，顺序 = 树序 / 渲染顺序）。 */
+    private static List<JsonNode> allNodes(JsonNode tree) {
+        List<JsonNode> out = new ArrayList<>();
+        for (JsonNode group : tree) {
+            flatten(group, out);
+        }
+        return out;
+    }
+
+    private static void flatten(JsonNode node, List<JsonNode> out) {
+        out.add(node);
+        for (JsonNode child : node.path("children")) {
+            flatten(child, out);
+        }
+    }
+
+    /** 两个串是否有**任何公共子串** = 至少共享一个字符（空串 / null 一律不算公共）。 */
+    private static boolean sharesAChar(String left, String right) {
+        if (left == null || right == null || left.isEmpty() || right.isEmpty()) {
+            return false;
+        }
+        return left.codePoints().anyMatch(cp -> right.contains(new String(Character.toChars(cp))));
+    }
+
+    /** 真语料里用到的码（与真树逐值一致；写在判据侧的**语料**，不是实现里的映射表）。 */
+    private static String codeOf(String label) {
+        return switch (label) {
+            case "经营看板", "每日简报" -> "dashboard:view";
+            case "生产看板", "计件工资", "企业基础设置" -> "production:view";
+            case "智能派单" -> "processing:view";
+            case "入库单" -> "inbound:view";
+            case "在线接待" -> "agent:session";
+            case "售后工单" -> "after_sales:view";
+            default -> throw new IllegalArgumentException("真语料里没有这个节点：" + label);
+        };
     }
 
     /** 面清单（`MobileSurfaces.ALL + TABS`）—— 与实现同一个真值源，判据侧现取。 */

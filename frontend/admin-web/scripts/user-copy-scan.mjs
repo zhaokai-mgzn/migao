@@ -372,7 +372,9 @@ export const EXEMPT = [
   // 里加了失败态，把本行从 360 推到 395 ⇒ 本条同步改号。失效即红，不会静默漂走）。
   // 🔴 issue #6759：本页新增「手机端可见面标注」（一处 state + 一个 effect + 渲染分支）⇒
   // placeholder 由 395 推到 **441**，本条同步改号（纯位置变更，命中的文案一字未动）。
-  'src/app/(dashboard)/roles/page.tsx:441',
+  // 🔴 issue #6770：本页权限码从可见面撤下 + `码 → 面` 表改「首见优先」⇒ placeholder 由 441 再推到
+  // **453**，本条同步改号（同样只是位置变更；本条豁免的文案与判据一字未动）。
+  'src/app/(dashboard)/roles/page.tsx:453',
 ]
 
 /**
