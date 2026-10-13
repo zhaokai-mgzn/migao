@@ -135,15 +135,20 @@ function Host({
   onSave,
   config,
   source = 'stored',
+  defaults,
+  defaultsSource,
 }: {
   onSave: (draft: CraftCalcConfig) => Promise<void>
   config: CraftCalcConfig
   source?: 'stored' | 'default'
+  /** 引擎默认值整份（`defaults_source='engine'` 时后端才附）—— issue #6857「恢复为默认值」用 */
+  defaults?: Partial<CraftCalcConfig>
+  defaultsSource?: 'engine' | 'unavailable'
 }) {
   const [draft, setDraft] = useState<CraftCalcConfig>(config)
   return (
     <CalcCaliberPanel
-      calc={{ source, config } as never}
+      calc={{ source, config, defaults, defaults_source: defaultsSource } as never}
       loading={false}
       calcDraft={draft}
       onCalcDraftChange={setDraft}
@@ -157,8 +162,19 @@ function Host({
 let READ_CONFIG: CraftCalcConfig = ENGINE_DEFAULT_CALC_CONFIG as unknown as CraftCalcConfig
 let READ_SOURCE: 'stored' | 'default' = 'stored'
 
-async function renderPanel(onSave: (draft: CraftCalcConfig) => Promise<void> = async () => {}) {
-  render(<Host onSave={onSave} config={READ_CONFIG} source={READ_SOURCE} />)
+async function renderPanel(
+  onSave: (draft: CraftCalcConfig) => Promise<void> = async () => {},
+  opts: { defaults?: Partial<CraftCalcConfig>; defaultsSource?: 'engine' | 'unavailable' } = {},
+) {
+  render(
+    <Host
+      onSave={onSave}
+      config={READ_CONFIG}
+      source={READ_SOURCE}
+      defaults={opts.defaults}
+      defaultsSource={opts.defaultsSource}
+    />,
+  )
   await screen.findByTestId('calc-caliber-scalar-per_fold_single')
 }
 
@@ -547,4 +563,93 @@ it('调用方传只读读数（无 `onCalcChange`）⇒ 只渲染读数，不出
   expect(screen.queryByTestId('calc-caliber-scalar-per_fold_single')).toBeNull()
   expect(screen.queryByTestId('calc-caliber-save')).toBeNull()
   // §31 P2 的对照面：只读形态**保留**右列值（可写形态才不渲染 —— 见上面那对判据）
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 判据 8（issue #6857，用户裁定）：**行式紧凑版式** + 「恢复为默认值」
+//
+// 病灶（用户逐字「输入框也太长了点吧？如此糟糕的设计」「不要每行都写个默认，太丑了」）：
+// #6825 把写面搬回来时沿用了**只读时代**的卡片（名称/提示/影响三段 + 右列只读值），
+// 可编辑输入只能**另起一行**、且 `inputCls` 是 `w-full` ⇒ 两位数字被拉满整列（真机 ≈670px）。
+// 判据 = 「输入框与名称**同一行**」+「定宽、非 `w-full`」+「行内不再有默认态徽标」。
+// ══════════════════════════════════════════════════════════════════════════════
+describe('判据 8（#6857）：行式紧凑 —— 控件与名称同行、定宽、行内不标默认态', () => {
+  it('🔴 输入框与**名称同一行**（退回「另起一行」⇒ 红）', async () => {
+    await renderPanel()
+    const input = screen.getByTestId('calc-caliber-scalar-per_fold_single')
+    const labelRow = input.parentElement as HTMLElement
+    expect(
+      labelRow.textContent,
+      '输入框必须与名称在同一个行容器里（判据按「同一行」钉死，不是「页面上有」）',
+    ).toContain('单色每折吃布')
+    expect(labelRow.className).toContain('flex')
+    // 🔴 更紧的一刀：输入框的**紧邻前一个兄弟**就是名称 `<span>`（退回「另起一行」时它会变成行 div ⇒ 红）
+    const prev = input.previousElementSibling as HTMLElement
+    expect(prev?.tagName, '输入框紧邻前一个兄弟必须是名称元素（不是外层行容器）').toBe('SPAN')
+    expect(prev.textContent).toContain('单色每折吃布')
+    // 行容器（卡片形态带 border/rounded/p-4；紧凑形态不带）
+    const row = input.closest('[data-testid="param-per_fold_single"]') as HTMLElement
+    expect(row.className, '本域不再用卡片（改回卡片 ⇒ 行高与边框又回来了）').not.toContain('border')
+  })
+
+  it('🔴 本域**所有**数值输入定宽（`w-full` 回归 ⇒ 红）', async () => {
+    await renderPanel()
+    fireEvent.click(screen.getByTestId('param-advanced-toggle-calc'))
+    const bounded = ['calc-caliber-scalar-per_fold_single', 'calc-caliber-scalar-min_fullness', 'calc-caliber-tier-economy-fullness', 'calc-caliber-mixed-1']
+    for (const id of bounded) {
+      const el = screen.getByTestId(id)
+      const cls = el.className
+      expect(cls, `${id} 必须带定宽 token（w-28）`).toMatch(/\bw-28\b/)
+      expect(cls, `${id} 不得是整列宽（w-full）—— 正是 #6857 的病灶`).not.toMatch(/\bw-full\b/)
+    }
+    // 文本类与下拉也是定宽（显示名 w-40 / 备用公式 w-64）
+    expect(screen.getByTestId('calc-caliber-tier-economy-label').className).toMatch(/\bw-40\b/)
+    expect(screen.getByTestId('calc-caliber-default_formula').className).toMatch(/\bw-64\b/)
+  })
+
+  it('🔴 行内**一个默认态徽标都不标**（含 source=default 与 defaults 可用两种情形）', async () => {
+    // 情形 1：整份读面就是默认值（旧形态会在每个键上挂「未配置（正在用引擎默认值）」）
+    READ_SOURCE = 'default'
+    await renderPanel()
+    for (const key of ['per_fold_single', 'hem_margin', 'oversize_width_threshold']) {
+      expect(screen.queryByTestId(`param-unset-${key}`), '行内不得再标未配置徽标').toBeNull()
+      expect(screen.queryByTestId(`param-is-default-${key}`)).toBeNull()
+      expect(screen.queryByTestId(`param-changed-${key}`)).toBeNull()
+    }
+    // 域级信号仍在（改判的是「逐行重复」，不是「看不见」）
+    expect(screen.getByTestId('param-calc-using-default')).toBeInTheDocument()
+    cleanup()
+
+    // 情形 2：引擎默认值可用（旧形态会标「默认」/「已改（默认 X）」）
+    READ_SOURCE = 'stored'
+    await renderPanel(async () => {}, {
+      defaults: { ...ENGINE_DEFAULT_CALC_CONFIG, hem_margin: 0.9 },
+      defaultsSource: 'engine',
+    })
+    expect(screen.queryByTestId('param-is-default-hem_margin')).toBeNull()
+    expect(screen.queryByTestId('param-changed-hem_margin')).toBeNull()
+  })
+
+  it('「恢复为默认值」：整份草稿写回引擎默认值，且**不自动保存**（必须还点「保存」）', async () => {
+    const onSave = vi.fn(async () => {})
+    READ_CONFIG = { ...ENGINE_DEFAULT_CALC_CONFIG, hem_margin: 0.9, default_formula: 'fullness' } as never
+    mockRead({ hem_margin: 0.9, default_formula: 'fullness' })
+    await renderPanel(onSave, {
+      defaults: { ...ENGINE_DEFAULT_CALC_CONFIG } as Partial<CraftCalcConfig>,
+      defaultsSource: 'engine',
+    })
+    // 改前：草稿 = 读面（0.9 / fullness）
+    expect(screen.getByTestId('calc-caliber-scalar-hem_margin')).toHaveValue('0.9')
+    fireEvent.click(screen.getByTestId('calc-caliber-restore-defaults'))
+    // 恢复后：草稿 = 引擎默认值（含档位 / 拼色 / 公式 —— 整份，不是只回标量）
+    expect(screen.getByTestId('calc-caliber-scalar-hem_margin')).toHaveValue('0.3')
+    expect(screen.getByTestId('calc-caliber-default_formula')).toHaveValue('pleat')
+    // 🔴 不自动保存：写面只在显式点「保存」时发 PUT
+    expect(productionApi.updateCraftCalcConfig).not.toHaveBeenCalled()
+  })
+
+  it('引擎默认值**本次取不到** ⇒ 「恢复为默认值」禁用（不拿猜的值冒充默认值）', async () => {
+    await renderPanel(async () => {}, { defaultsSource: 'unavailable' })
+    expect(screen.getByTestId('calc-caliber-restore-defaults')).toBeDisabled()
+  })
 })

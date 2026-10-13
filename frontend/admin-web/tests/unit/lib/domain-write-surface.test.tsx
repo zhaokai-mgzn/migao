@@ -38,7 +38,7 @@
  *   不是静默放行。这就是本判据的**判别力**所在 —— 它不会给「恰好有一个搜索框」的页面盖章。
  */
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 
 const mockSearchParams = vi.fn()
 vi.mock('next/navigation', () => ({
@@ -154,6 +154,7 @@ vi.mock('@/lib/image-dimensions', () => ({
 }))
 
 import SettingsPage from '@/app/(dashboard)/settings/page'
+import { boundedInputCls, inputCls } from '@/components/production-config/utils'
 import { CONFIG_DOMAINS } from '@/lib/config-center-domains'
 import {
   DOMAIN_WRITE_SURFACES,
@@ -243,3 +244,41 @@ describe('判据 4：每个登记域的写面**真的可交互**（域退回展�
     ).toEqual([])
   })
 })
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 判据 5（issue #6857）：**配置页的数值输入必须定宽**（`w-full` 回归 ⇒ 红）
+//
+// 病灶：配置页的数值框里只有两三位数字，`inputCls` 的 `w-full` 会把它拉满整列
+// （真机实测 ≈670px 宽 / 整页 ≈2900px 高）。仓内既有基准 = 余料尺寸域的 `w-40`/`w-28`。
+// 这条守护钉的是**形态**，不是某一个文件：本域任何数值输入/下拉再写回 `w-full` 即红。
+// ══════════════════════════════════════════════════════════════════════════════
+describe('判据 5：算料域的数值输入必须**定宽**（不得整列宽）', () => {
+  it('自证：`boundedInputCls` 的替换真的生效（`inputCls` 丢了 `w-full` 时会静默退化成整列宽）', () => {
+    expect(inputCls).toMatch(/\bw-full\b/)
+    const bounded = boundedInputCls('w-28')
+    expect(bounded).toMatch(/\bw-28\b/)
+    expect(bounded, '替换没生效 ⇒ 所有定宽调用点静默变整列宽').not.toMatch(/\bw-full\b/)
+  })
+
+  it('🔴 本域所有输入/下拉都带定宽 token（写回 `w-full` ⇒ 红）', async () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams('domain=calc'))
+    render(<SettingsPage />)
+    const panel = await screen.findByTestId('config-domain-panel-calc')
+    // 展开「高级」把两个折叠参数也纳入（否则只覆盖 6 个）
+    fireEvent.click(await within(panel).findByTestId('param-advanced-toggle-calc'))
+
+    const fields = Array.from(panel.querySelectorAll<HTMLElement>('input, select')).filter((el) =>
+      (el.getAttribute('data-testid') ?? '').startsWith('calc-caliber-'),
+    )
+    expect(fields.length, '本域必须真有可编辑字段（否则本判据在对空气放行）').toBeGreaterThanOrEqual(8)
+    const offenders = fields
+      .filter((el) => /\bw-full\b/.test(el.className))
+      .map((el) => el.getAttribute('data-testid'))
+    expect(offenders, '这些字段是整列宽（`w-full`）—— #6857 的病灶形态').toEqual([])
+    const unbounded = fields
+      .filter((el) => !/\bw-(28|40|64)\b/.test(el.className))
+      .map((el) => el.getAttribute('data-testid'))
+    expect(unbounded, '这些字段没有定宽 token ⇒ 宽度靠父容器决定，改布局就会变宽').toEqual([])
+  })
+})
+

@@ -42,7 +42,7 @@
  *
  * 旧 `type="number"` 会吞 `0.` 中间态、清空会把框渲染成字面量 `NaN` 且清不掉。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { AlertCircle, ChevronDown, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { NumberInput } from '@/components/ui'
@@ -54,7 +54,7 @@ import { InlineMarkdown } from '@/lib/inline-markdown'
 import { CRAFT_CALC_FORMULA_LABELS } from '@/lib/craft-calc-request'
 import { CALC_PARAM_COPY, CALC_SCALAR_KEYS, glossaryAnchorOf } from '@/lib/craft-calc-glossary'
 import { craftCalcConfigGuardReasons } from '@/lib/production-guard-reasons'
-import { inputCls } from '@/components/production-config/utils'
+import { boundedInputCls, inputCls } from '@/components/production-config/utils'
 import {
   PARAM_DOMAINS,
   isUsingEngineDefault,
@@ -77,6 +77,8 @@ export function ParamScalarRow({
   hideValue = false,
   unset = false,
   changedFromDefault,
+  compact = false,
+  control,
 }: {
   param: ScalarParam
   /** 右列显示的值；**读面未落地时调用方传 `'…'`**（不谎报） */
@@ -103,7 +105,54 @@ export function ParamScalarRow({
    * `null` = 该键的引擎默认值没取到（同样不标）；`string` = 默认值 ⇒ 与 `value` 比对后标「已改 / 默认」。
    */
   changedFromDefault?: string | null
+  /**
+   * **行式紧凑**（issue #6857，用户裁定；只有算料口径域传）：名称与控件**同一行**，
+   * 提示/影响降为一行小字，行间靠 `divide-y` 细线分隔（不再用卡片）。
+   * 不传 ⇒ 保持既有卡片形态（旧消费者 `TenantParamsPanel` 走这条，行为逐字不变）。
+   */
+  compact?: boolean
+  /**
+   * 紧凑形态下与名称同行的**控件**（可编辑时给 `NumberInput`；不传 ⇒ 只读，同位置印值）。
+   * 与 `compact` 搭配使用。
+   */
+  control?: ReactNode
 }) {
+  // ── 行式紧凑（issue #6857）────────────────────────────────────────────────
+  // 用户裁定（2026-10-13）：「输入框直接放在名称后面」「不要每行都写个默认」。
+  // 默认态**一个徽标都不标**：域级已有 `calc-caliber-source` 徽标 + 顶部「下表全部为引擎默认值」
+  // 横幅承担（§31 P2 信息不重复），逐行再标一次只是噪音。
+  if (compact) {
+    return (
+      <div data-testid={`param-${param.key}`} className="py-3">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium text-neutral-900">
+            <InlineMarkdown text={param.copy.label} />
+          </span>
+          {control ?? (
+            <div data-testid={`param-value-${param.key}`} className="text-sm text-neutral-900">
+              {value}
+            </div>
+          )}
+        </div>
+        <p className="mt-1 text-xs text-neutral-500">
+          <InlineMarkdown text={param.copy.hint} />
+        </p>
+        <p className="mt-1 text-xs text-neutral-600">
+          改它会怎样：<InlineMarkdown text={param.copy.impact} />
+          {docHref !== undefined && (
+            <a
+              href={`#${docHref}`}
+              data-testid={`param-doc-${param.key}`}
+              className="ml-2 text-primary-600 hover:underline"
+            >
+              说明
+            </a>
+          )}
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div data-testid={`param-${param.key}`} className="border border-neutral-200 rounded-lg p-4">
       <div className="flex items-start justify-between gap-4">
@@ -293,6 +342,23 @@ export function CalcCaliberPanel({
     }
   }
 
+  /**
+   * 「恢复为默认值」（issue #6857，用户裁定）：把**整份**草稿写回引擎默认值。
+   *
+   * 后端 `defaults` = 引擎 `defaultConfig()` 的**整份配置**（含档位 / 拼色 / 备用公式，
+   * 见 `CraftCalcConfigService` 的 `withDefaults` 分支）；`defaults_source !== 'engine'`
+   * （本次取不到）⇒ **禁用并说明**，不拿一份猜的值冒充默认值。
+   *
+   * 🔴 **不自动保存**：本页的保存语义是显式点「保存」（整份替换 + 422 逐条理由），
+   *    恢复默认只改草稿 ⇒ 商家还有反悔余地（这正是不把默认态逐行标出来的补偿）。
+   */
+  const engineDefaults = calc?.defaults_source === 'engine' ? (calc?.defaults ?? null) : null
+  function restoreDefaults() {
+    if (!engineDefaults || !displayConfig) return
+    patchDraft({ ...displayConfig, ...engineDefaults })
+    toast.success('已恢复为引擎默认值（还没保存 —— 点「保存」后生效）')
+  }
+
   /** 本组件只管算料域（域定义取自单一真值模块，不在这里写第二份清单） */
   const domain: ParamDomain = PARAM_DOMAINS.find((d) => d.key === 'calc') ?? PARAM_DOMAINS[0]
 
@@ -313,46 +379,32 @@ export function CalcCaliberPanel({
     return v === undefined || v === null || v === '' ? '—' : String(v)
   }
 
-  /** 引擎默认值里该键的值（**只在 `defaults_source='engine'` 时有意义**；否则 `null`） */
-  const defaultOf = (key: string): string | null => {
-    const v = (calc?.defaults as Record<string, unknown> | undefined)?.[key]
-    return v === undefined || v === null ? null : String(v)
-  }
-
-  /** §22 P3 逐键「我改过没有」：只在**引擎默认值真取到**时才给比对值（拿不到就一条都不标） */
-  const perKeyComparable = calc?.defaults_source === 'engine' && !!calc?.defaults
-  const changedFromDefaultOf = (key: string): string | null | undefined =>
-    perKeyComparable ? defaultOf(key) : undefined
-
   const renderScalar = (p: ScalarParam) => (
-    <div key={p.key} className="space-y-1">
-      <ParamScalarRow
-        param={p}
-        // 「说明」锚点指到**同页**的术语与口径区块条目（issue #4975：指路要指得着）
-        docHref={displayConfig ? glossaryAnchorOf(p.key) : undefined}
-        // 🔴 读失败 ⇒ **空位**（不是 `—`）：`—` 长得像「这个参数没有值」，而真相是**整个读面失败**。
-        //    加载中仍给 `…`（那是「还在读」，与失败是两件事）。
-        value={failed ? '' : loading && !displayConfig ? '…' : valueOf(p.key)}
-        // 🔴 §31 P2（真机复核返修，2026-10-13）：**输入框在屏上时不渲染右列值** ——
-        //    两者同源（都读 `displayConfig`）⇒ 同一行把同一个数印两遍，且分不清哪个是「要改的」。
-        //    条件与下面那个 `NumberInput` 的渲染条件**逐字相同**（有输入框 ⇔ 没有右列值）。
-        hideValue={writable && !!displayConfig}
-        unset={usingDefault}
-        changedFromDefault={changedFromDefaultOf(p.key)}
-      />
-      {/* 就地可改（写面）：`NumberInput`（issue #5198 —— `type="number"` 会吞 `0.` / 清空变 `NaN`） */}
-      {writable && displayConfig && (
-        <NumberInput
-          className={inputCls}
-          aria-label={`${p.copy.label}`}
-          data-testid={`calc-caliber-scalar-${p.key}`}
-          value={numberOf(displayConfig, p.key)}
-          onChange={(v) =>
-            patchDraft({ ...displayConfig, [p.key]: v === null ? Number.NaN : v } as CraftCalcConfig)
-          }
-        />
-      )}
-    </div>
+    <ParamScalarRow
+      key={p.key}
+      param={p}
+      compact
+      // 「说明」锚点指到**同页**的术语与口径区块条目（issue #4975：指路要指得着）
+      docHref={displayConfig ? glossaryAnchorOf(p.key) : undefined}
+      // 🔴 读失败 ⇒ **空位**（不是 `—`）：`—` 长得像「这个参数没有值」，而真相是**整个读面失败**。
+      //    加载中仍给 `…`（那是「还在读」，与失败是两件事）。
+      value={failed ? '' : loading && !displayConfig ? '…' : valueOf(p.key)}
+      // 可写形态：控件与名称**同一行**（issue #6857）；不可写 ⇒ 同位置印只读值。
+      control={
+        writable && displayConfig ? (
+          // `NumberInput`（issue #5198 —— `type="number"` 会吞 `0.` / 清空变 `NaN`）
+          <NumberInput
+            className={boundedInputCls('w-28 text-right tabular-nums')}
+            aria-label={`${p.copy.label}`}
+            data-testid={`calc-caliber-scalar-${p.key}`}
+            value={numberOf(displayConfig, p.key)}
+            onChange={(v) =>
+              patchDraft({ ...displayConfig, [p.key]: v === null ? Number.NaN : v } as CraftCalcConfig)
+            }
+          />
+        ) : undefined
+      }
+    />
   )
 
   const tiers = displayConfig?.tiers ?? {}
@@ -422,7 +474,7 @@ export function CalcCaliberPanel({
         <>
           {/* P2 三件套（常用 / 高级渐进披露） */}
           {domain.common && domain.common.length > 0 && (
-            <div className="space-y-3">{domain.common.map((p) => renderScalar(p))}</div>
+            <div className="divide-y divide-neutral-100">{domain.common.map((p) => renderScalar(p))}</div>
           )}
 
           {domain.advanced && domain.advanced.length > 0 && (
@@ -442,7 +494,7 @@ export function CalcCaliberPanel({
                 高级（{domain.advanced.length}）—— 一般不常改
               </button>
               {advancedOpen && (
-                <div data-testid={`param-advanced-${domain.key}`} className="mt-3 space-y-3">
+                <div data-testid={`param-advanced-${domain.key}`} className="mt-3 divide-y divide-neutral-100">
                   {domain.advanced.map((p) => renderScalar(p))}
                 </div>
               )}
@@ -460,7 +512,7 @@ export function CalcCaliberPanel({
                 {/* 取值域与文案 = **单一真值** `CRAFT_CALC_FORMULA_LABELS`（不另写一份映射） */}
                 <select
                   id="calc-caliber-formula"
-                  className={inputCls}
+                  className={boundedInputCls('w-64')}
                   data-testid="calc-caliber-default_formula"
                   value={displayConfig.default_formula}
                   onChange={(e) => patchDraft({ ...displayConfig, default_formula: e.target.value })}
@@ -491,7 +543,7 @@ export function CalcCaliberPanel({
                           </td>
                           <td className="py-1.5 pr-3">
                             <input
-                              className={inputCls}
+                              className={boundedInputCls('w-40')}
                               aria-label={`${tierLabelOf(name)} 显示名`}
                               data-testid={`calc-caliber-tier-${name}-label`}
                               value={tier.label ?? ''}
@@ -505,7 +557,7 @@ export function CalcCaliberPanel({
                           </td>
                           <td className="py-1.5">
                             <NumberInput
-                              className={inputCls}
+                              className={boundedInputCls('w-28 text-right tabular-nums')}
                               aria-label={`${tierLabelOf(name)} 褶倍`}
                               data-testid={`calc-caliber-tier-${name}-fullness`}
                               value={
@@ -540,7 +592,7 @@ export function CalcCaliberPanel({
                           <td className="py-1.5 pr-3 text-neutral-600">拼{times}次</td>
                           <td className="py-1.5">
                             <NumberInput
-                              className={inputCls}
+                              className={boundedInputCls('w-28 text-right tabular-nums')}
                               aria-label={`拼${times}次 每折吃布`}
                               data-testid={`calc-caliber-mixed-${times}`}
                               value={
@@ -586,6 +638,20 @@ export function CalcCaliberPanel({
                   className="rounded bg-primary-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
                 >
                   {busy ? '保存中…' : '保存'}
+                </button>
+                <button
+                  type="button"
+                  data-testid="calc-caliber-restore-defaults"
+                  disabled={busy || !engineDefaults}
+                  title={
+                    engineDefaults
+                      ? '把全部算料口径恢复成算料引擎默认值（改完还要点「保存」）'
+                      : '本次没取到引擎默认值 ⇒ 无法恢复（重新打开本页可再试）'
+                  }
+                  onClick={restoreDefaults}
+                  className="rounded border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                >
+                  恢复为默认值
                 </button>
                 <span className="text-xs text-neutral-500">
                   保存后按当前配置计算；非法值会被整份拒绝并逐条说明理由。
