@@ -1164,4 +1164,81 @@ class InboundOrderServiceTest {
             assertThat(itemCap.getValue().getAmount().toPlainString()).isEqualTo("31.250");
         }
     }
+
+    // ════════════════ issue #6812：拍照入库的**单位口径**（数量 = 卷数、卷长 = 每卷米数）════════════
+
+    @Nested
+    @DisplayName("拍照入库单位口径（issue #6812）")
+    class PhotoUnitSemantics {
+
+        @Test
+        @DisplayName("🔴 metersFor：photo 单 = 卷数 × 卷长；purchase 单 = 数量（卷长仍是记录列，不参与换算）")
+        void metersForPhotoMultipliesAndPurchaseDoesNot() {
+            assertThat(InboundOrderService.metersFor(InboundOrder.SOURCE_PHOTO,
+                    new BigDecimal("1"), new BigDecimal("67.2")))
+                    .isEqualByComparingTo("67.2");
+            assertThat(InboundOrderService.metersFor(InboundOrder.SOURCE_PHOTO,
+                    new BigDecimal("3"), new BigDecimal("60.5")))
+                    .isEqualByComparingTo("181.5");
+            assertThat(InboundOrderService.metersFor(InboundOrder.SOURCE_PURCHASE,
+                    new BigDecimal("60.5"), new BigDecimal("60")))
+                    .as("采购/期初单：#5034 的「卷长仅记录」逐字保留 —— 60.5 米不能变成 3630 米")
+                    .isEqualByComparingTo("60.5");
+        }
+
+        @Test
+        @DisplayName("🔴 metersFor：photo 缺卷长 / 米数不是 0.1 米整数倍 ⇒ 显式拒绝（不静默取整）")
+        void metersForPhotoFailsClosed() {
+            assertThatThrownBy(() -> InboundOrderService.metersFor(
+                    InboundOrder.SOURCE_PHOTO, new BigDecimal("1"), null))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("卷长");
+            assertThatThrownBy(() -> InboundOrderService.metersFor(
+                    InboundOrder.SOURCE_PHOTO, new BigDecimal("3"), new BigDecimal("0.33")))
+                    .as("3 × 0.33 = 0.99 米 —— 0.1 米粒度之外的值必须显式拒绝")
+                    .isInstanceOf(BusinessException.class);
+        }
+
+        @Test
+        @DisplayName("🔴 请求体自称 source=photo ⇒ 422（单位口径不可被客户端伪造）")
+        void requestBodyCannotClaimPhotoSource() {
+            InboundOrderCreateRequest req = request(item("prod-1", 11L, 30, "12.50"));
+            req.setSource(InboundOrder.SOURCE_PHOTO);
+
+            assertThatThrownBy(() -> service.create(req, TENANT, "13800000000"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("单据来源只支持");
+
+            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+        }
+
+        @Test
+        @DisplayName("🔴 服务端强制 photo 建单：数量按**卷数**落库、卷长按每卷米数落库、行金额按**米数**算")
+        void forcedPhotoOrderStoresRollFieldsAndComputesAmountByMeters() {
+            when(productMapper.selectById("prod-1")).thenReturn(new Product());
+            when(productSkuMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenReturn(List.of(sku(11L, "prod-1", 0, null)));
+            when(inboundOrderMapper.selectOne(any(LambdaQueryWrapper.class)))
+                    .thenAnswer(inv -> lastInsertedOrder);
+            when(inboundOrderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                    .thenAnswer(inv -> lastInsertedLines);
+
+            InboundOrderCreateRequest.Item line = itemQty("prod-1", 11L, "1", "38.00");
+            line.setRollLengthM(new BigDecimal("67.2"));
+            service.create(request(line), TENANT, "worker-zhang", InboundOrder.SOURCE_PHOTO);
+
+            ArgumentCaptor<InboundOrder> orderCap = ArgumentCaptor.forClass(InboundOrder.class);
+            verify(inboundOrderMapper).insert(orderCap.capture());
+            assertThat(orderCap.getValue().getSource()).isEqualTo(InboundOrder.SOURCE_PHOTO);
+
+            ArgumentCaptor<InboundOrderItem> lineCap = ArgumentCaptor.forClass(InboundOrderItem.class);
+            verify(inboundOrderItemMapper).insert(lineCap.capture());
+            InboundOrderItem saved = lineCap.getValue();
+            assertThat(saved.getQuantity()).as("数量列 = 卷数（1 卷）").isEqualByComparingTo("1");
+            assertThat(saved.getRollLengthM()).isEqualByComparingTo("67.2");
+            assertThat(saved.getAmount())
+                    .as("行金额 = 米数 × 单价 = 67.2 × 38.00（不是 1 × 38.00）")
+                    .isEqualByComparingTo("2553.60");
+        }
+    }
 }
