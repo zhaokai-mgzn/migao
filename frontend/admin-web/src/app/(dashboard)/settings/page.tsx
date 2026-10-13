@@ -71,7 +71,6 @@ import FeeCombinationsPanel from '@/components/production-config/FeeCombinations
 import { OperationPricePanel } from '@/components/production-config/OperationPricePanel'
 import { RoutingsPanel } from '@/components/production-config/RoutingsPanel'
 import { CuttingHeightPanel } from '@/components/production-config/CuttingHeightPanel'
-import { CalcFormulaPanel } from '@/components/production-config/CalcFormulaPanel'
 import { readImageDimensions } from '@/lib/image-dimensions'
 import { getBminiH5Url } from '@/lib/bmini-h5-url'
 import { usePermission } from '@/lib/permission'
@@ -99,7 +98,13 @@ import {
   worstState,
   MAINLINE_STEPS,
 } from '@/lib/config-readiness'
-import type { SystemSettings, AiConfig, BriefingConfig, CraftCalcConfigResponse } from '@/types'
+import type {
+  SystemSettings,
+  AiConfig,
+  BriefingConfig,
+  CraftCalcConfig,
+  CraftCalcConfigResponse,
+} from '@/types'
 
 /** `request.get` 的返回壳（`{ data: { data: 载荷 } }`）；取不到一律 `null`（**不区分失败与空**） */
 type Settled = PromiseSettledResult<{ data?: { data?: unknown } }>
@@ -219,6 +224,14 @@ export default function SettingsPage() {
   const [states, setStates] = useState<Record<string, ReadinessState>>({})
   const [calc, setCalc] = useState<CraftCalcConfigResponse | null>(null)
   const [calcError, setCalcError] = useState('')
+  /**
+   * 算料口径的**写面草稿**（issue #6825）：读面给整份配置、写面 `PUT` 是**全量替换**
+   * ⇒ 草稿必须持**整份**（缺键会被后端静默回默认值）。
+   *
+   * 读面落地时用 `useEffect` 同步草稿（**只在读面刚落地 / 保存成功后**同步 —— 编辑中的草稿不许被
+   * 读面回写冲掉，那会让商家敲到一半的值自己变回去）。
+   */
+  const [calcDraft, setCalcDraft] = useState<CraftCalcConfig | null>(null)
 
   /**
    * 域徽标的三态（设计 G4：**与主线同源**）。
@@ -304,6 +317,29 @@ export default function SettingsPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  /**
+   * 读面落地 ⇒ 同步写面草稿（issue #6825）。
+   *
+   * 依赖用 `calc` 的**对象标识**（每次读面落地都是新对象）：编辑中的草稿不在依赖里
+   * ⇒ 商家敲到一半不会被读面回写冲掉；保存成功后 `saveCalcConfig` 会把草稿重置为服务端回的整份。
+   */
+  useEffect(() => {
+    setCalcDraft(calc?.config ?? null)
+  }, [calc])
+
+  /**
+   * 保存算料口径（`PUT` = **全量替换**）。
+   *
+   * 失败 ⇒ **原样抛出**（面板负责把 `error.details[].message` 逐条上屏、且**不回滚草稿**）——
+   * 写面的错误归因口径只在这里一处（同 `production-config/features.ts` 的既有形态）。
+   */
+  const saveCalcConfig = useCallback(async () => {
+    const res = await productionApi.updateCraftCalcConfig(calcDraft as CraftCalcConfig)
+    const data = res.data?.data ?? null
+    setCalc(data)
+    setCalcDraft(data?.config ?? calcDraft)
+  }, [calcDraft])
 
   return (
     <div className="p-6">
@@ -400,16 +436,19 @@ export default function SettingsPage() {
 
             {activeDomain.key === 'calc' && (
               <div className="space-y-6">
+                {/* 算料口径 = 算料配置的**唯一写面**（issue #6825）：8 标量 + 档位 + 拼色 + 公式就地可改，
+                    保存出口全域只有一个。取数仍在本页（`load` 已读 `craft-calc-config`），
+                    草稿与写面分别由本页持有 / 提供 —— 设计判死线第 1 条：同一份配置不许两个入口。 */}
                 <CalcCaliberPanel
                   calc={calc}
                   calcError={calcError}
                   loading={readinessLoading}
+                  calcDraft={calcDraft}
+                  onCalcDraftChange={setCalcDraft}
+                  onCalcSave={saveCalcConfig}
                   // 失败行的重试出口 = 重跑本页那次读面（取数在页面，见 `load`）
                   onRetry={() => void load()}
                 />
-                {/* 公式编辑：v1 时它在功能体的「算料配置」页签里，与左栏「算料口径」域编辑同一份配置
-                    （`craft-calc-config`）⇒ 设计判死线第 1 条。v2 把它并进本域，功能体那份随之删除。 */}
-                <CalcFormulaPanel embedded />
               </div>
             )}
             {activeDomain.key === 'processing-items' && <ProcessingItemsPanel embedded />}
@@ -643,6 +682,12 @@ function EnterpriseDomainPanel() {
             <input
               type="text"
               aria-label="公司名称"
+              /* 机器锚点（issue #6825）：类级守卫「域是可写的」按各域面板里的**可编辑控件锚点**
+                 判「这一域今天还能不能改」（台账 =
+                 `frontend/admin-web/tests/unit/lib/domain-write-surface-ledger.ts`）。 */
+              data-testid="settings-enterprise-name"
+              /* 域写面出口标记（issue #6825）：本域失焦即保存（`commitCompanyName`）⇒ 输入框自身就是写出口 */
+              data-write-exit="enterprise"
               className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
               value={settings.companyName}
               onChange={(e) => setSettings({ ...settings, companyName: e.target.value })}
@@ -956,6 +1001,9 @@ function AiDomainPanel() {
               type="text"
               className="w-full h-9 px-3 rounded border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
               placeholder="元元"
+              data-testid="settings-ai-bot-name"
+              /* 域写面出口标记（issue #6825）：本域失焦即保存（`commitAiConfig`）⇒ 输入框自身就是写出口 */
+              data-write-exit="ai"
               value={aiConfig.botName}
               onChange={(e) => setAiConfig({ ...aiConfig, botName: e.target.value })}
               onBlur={() => void commitAiConfig('botName')}
@@ -969,6 +1017,7 @@ function AiDomainPanel() {
               rows={3}
               className="w-full px-3 py-2 rounded border border-neutral-300 text-sm placeholder:text-neutral-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 resize-none"
               placeholder="您好，我是元元，有什么可以帮您？"
+              data-testid="settings-ai-greeting"
               value={aiConfig.greetingTemplate}
               onChange={(e) => setAiConfig({ ...aiConfig, greetingTemplate: e.target.value })}
               onBlur={() => void commitAiConfig('greetingTemplate')}
@@ -1046,6 +1095,9 @@ function NotificationsDomainPanel() {
             </div>
             <button
               aria-label="启用系统通知开关"
+              data-testid="settings-notification-toggle"
+              /* 域写面出口标记（issue #6825）：开关点击即保存（`handleToggleNotification`） */
+              data-write-exit="notifications"
               className={`relative w-11 h-6 shrink-0 rounded-full transition-colors ${
                 notificationEnabled ? 'bg-primary-600' : 'bg-neutral-300'
               }`}

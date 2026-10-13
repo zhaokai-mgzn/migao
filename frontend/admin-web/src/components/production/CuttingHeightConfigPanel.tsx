@@ -279,6 +279,8 @@ export function CuttingHeightConfigPanel() {
                 type="button"
                 className="rounded border border-neutral-300 px-2 py-1 text-sm"
                 data-testid="cutting-height-add"
+                /* 域写面出口标记（issue #6825）：类级守卫要求「可编辑控件 + 本域写出口」成对出现 */
+                data-write-exit="cutting-height"
                 onClick={() =>
                   setConfig((prev) =>
                     prev ? { ...prev, items: [...prev.items, newItem((prev.items.length + 1) * 10)] } : prev,

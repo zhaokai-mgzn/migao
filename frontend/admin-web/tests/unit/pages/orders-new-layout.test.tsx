@@ -481,7 +481,9 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
     // 「要改参数去哪改」——用户口径「如果用户要修改参数也知道去改什么」
     const where = screen.getByTestId('meters-formula-legend-where')
     expect(where.textContent).toContain('净尺寸')
-    expect(where.textContent).toContain('工艺配置 → 算料配置')
+    // issue #6825：算料配置只有一个写面 ⇒ 这条深链必须落到「算料口径」域（不再指旧路由）
+    expect(where.textContent).toContain('算料口径')
+    expect(screen.getByTestId('craft-calc-entry')).toHaveAttribute('href', '/settings?domain=calc')
   })
 
   it('判据 10（🔴 2026-09-30 第六批改判）：推导细节**收拢为一个折叠区**、默认收起、不折叠套折叠', async () => {

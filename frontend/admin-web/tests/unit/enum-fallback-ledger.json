@@ -133,7 +133,7 @@
       "kind": "risk",
       "reason": "触发方式 / 档位显示名（`TRIGGER_KIND_LABEL[...] ?? ...`、`TIER_DISPLAY_LABEL[name] ?? name`）：未命中即把配置标识印进工艺配置页。",
       "sites": {
-        "EF-row-raw-value": 2
+        "EF-row-raw-value": 1
       }
     },
     "src/components/production-config/utils.tsx": {

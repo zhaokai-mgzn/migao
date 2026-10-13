@@ -229,13 +229,6 @@ EXEMPT_FACES: tuple[tuple[str, str], ...] = (
         "⇒ 没有可管的渲染面。它命中标记只是因为「引用了读面的元素类型」这个形态本身",
     ),
     (
-        "frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx",
-        "**薄壳**（issue #6580）：本文件现在只渲染 `ProcessConfigBoard`，"
-        "**不渲染任何工序名**（模块文档 + 保留的 import 里出现 `CatalogOperation` ⇒ 命中标记只是 import 残留，"
-        "无 JSX 渲染面）。它**过期即红**的判据：一旦这里又长出渲染代码，"
-        "`_direct_render_hits` 会命中且本表的理由不再成立。",
-    ),
-    (
         "frontend/admin-web/src/components/production-config/ProcessConfigBoard.tsx",
         "**商家配置功能体**（issue #6580 起由 `/settings` 的「工艺与路线」域挂载；"
         "原宿主 `production/routings/page.tsx` 已变只渲染它的薄壳 ⇒ 豁免随功能体走）。"

@@ -41,10 +41,11 @@ describe('用料公式参数说明（2026-09-29 用户裁定）', () => {
     // 「要改去哪改」——用户口径「如果用户要修改参数也知道去改什么」；末段是**可点深链**
     expect(legend!.where.prefix).toContain('净尺寸')
     expect(legend!.where.prefix).toContain('打开方式')
-    expect(legend!.where.linkLabel).toBe('工艺配置 → 算料配置')
+    expect(legend!.where.linkLabel).toBe('算料口径')
     expect(legend!.where.linkHref).toBe(CRAFT_CALC_ENTRY)
-    // 入口常量本身也钉死（深链必须与工艺配置页认的参数一致：`?tab=calc`）
-    expect(CRAFT_CALC_ENTRY).toBe('/production/routings?tab=calc')
+    // 入口常量本身也钉死（issue #6825：算料配置的唯一写面 = `/settings?domain=calc`；
+    // 旧值 `/production/routings?tab=calc` 那条落在一个已退役的 tab 上）
+    expect(CRAFT_CALC_ENTRY).toBe('/settings?domain=calc')
   })
 
   it('判据 ①b：余量按**开数**取键（单开 ⇒ margin_single；多开 ⇒ margin_multi），与引擎同口径', () => {

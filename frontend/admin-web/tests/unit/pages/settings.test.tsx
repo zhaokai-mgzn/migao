@@ -99,6 +99,7 @@ const mockGetRoutings = vi.fn()
 const mockGetFeeCombinations = vi.fn()
 const mockGetFeeGaps = vi.fn()
 const mockGetCraftCalcConfig = vi.fn()
+const mockUpdateCraftCalcConfig = vi.fn()
 const mockGetSmallItemSpecs = vi.fn()
 const mockBriefingGetConfig = vi.fn()
 const mockBriefingUpdateConfig = vi.fn()
@@ -120,6 +121,7 @@ vi.mock('@/lib/api', () => ({
     getFeeCombinations: (...args: any[]) => mockGetFeeCombinations(...args),
     getFeeGaps: (...args: any[]) => mockGetFeeGaps(...args),
     getCraftCalcConfig: (...args: any[]) => mockGetCraftCalcConfig(...args),
+    updateCraftCalcConfig: (...args: any[]) => mockUpdateCraftCalcConfig(...args),
     // 两个 board 的读面（替身不由这里取，但模块形状必须完整 —— 页面 import 了它们）
     getOperationsCatalog: vi.fn().mockResolvedValue({ data: { data: null } }),
     getRouteRules: vi.fn().mockResolvedValue({ data: { data: [] } }),
@@ -218,12 +220,6 @@ vi.mock('@/components/production-config/CuttingHeightPanel', () => ({
     <div data-testid="stub-cutting-height-panel" data-embedded={String(!!embedded)} />
   ),
 }))
-vi.mock('@/components/production-config/CalcFormulaPanel', () => ({
-  CalcFormulaPanel: ({ embedded }: { embedded?: boolean }) => (
-    <div data-testid="stub-calc-formula-panel" data-embedded={String(!!embedded)} />
-  ),
-}))
-
 import SettingsPage from '@/app/(dashboard)/settings/page'
 import { calcReadErrorCopy } from '@/app/(dashboard)/settings/page'
 import {
@@ -258,7 +254,26 @@ function mockApiSuccess() {
   )
   mockGetFeeCombinations.mockResolvedValue(ok({ total: 3, combinations: [] }))
   mockGetFeeGaps.mockResolvedValue(ok({ unpriced_combination_total: 0 }))
-  mockGetCraftCalcConfig.mockResolvedValue(ok({ source: 'stored', config: { hem_margin: 0.4 } }))
+  // ⚠️ 读面**整份 11 键**（issue #6825）：改前只回 { hem_margin } 一个键 —— 那是「后端只回一个键」
+  // 的假形状，会让本页保存那一跳的「全量键」判据**恒真**（缺键是因为夹具本来就缺，不是因为代码对）。
+  mockGetCraftCalcConfig.mockResolvedValue(
+    ok({
+      source: 'stored',
+      config: {
+        per_fold_single: 0.25,
+        per_fold_mixed_times: { '1': 0.65, '2': 0.7 },
+        margin_single: 0.2,
+        margin_multi: 0.3,
+        min_fullness: 1.5,
+        tiers: { standard: { fullness: 2, label: '标准工艺' }, economy: { fullness: 1.8, label: '经济工艺' } },
+        default_formula: 'pleat',
+        hem_margin: 0.4,
+        meters_rounding_step: 0.1,
+        oversize_width_threshold: 6,
+        oversize_height_threshold: 4,
+      },
+    }),
+  )
   mockGetSmallItemSpecs.mockResolvedValue(
     ok({ configured: false, items: [], notice: '未配置小件用料尺寸 ⇒ 不产生匹配建议' }),
   )
@@ -458,11 +473,23 @@ describe('判据 4：URL —— `?domain=` 直达 + 旧 `?tab=` 逐条映射且*
     expect(mockRouterReplace).not.toHaveBeenCalled()
   })
 
-  it('旧深链 `?tab=notification` ⇒ 映射到通知域（不跳走）', async () => {
-    mockSearchParams.mockReturnValue(new URLSearchParams('tab=notification'))
-    render(<SettingsPage />)
-    expect(await screen.findByTestId('config-domain-panel-notifications')).toBeInTheDocument()
-    expect(mockRouterReplace).not.toHaveBeenCalled()
+  it('旧深链 `?tab=basic` / `?tab=notification` ⇒ 各自映射（不跳走）', async () => {
+    // ⚠️ 两条**都要跑**（改前标题写了 `?tab=basic` 却只跑后两条 —— 标题比断言强，
+    //    独立复核抓到的形态；`?tab=workerPages` 已由 #6828/#6830 整层移除 ⇒ 它的落点
+    //    由下面那条**专门的**「送到员工管理」判据承担，此处不再混进「各自映射」这一族）
+    for (const [tab, domain] of [
+      ['basic', 'enterprise'],
+      ['notification', 'notifications'],
+    ] as const) {
+      mockSearchParams.mockReturnValue(new URLSearchParams(`tab=${tab}`))
+      const { unmount } = render(<SettingsPage />)
+      expect(
+        await screen.findByTestId(`config-domain-panel-${domain}`),
+        `?tab=${tab} 应落到「${domain}」域`,
+      ).toBeInTheDocument()
+      expect(mockRouterReplace, `?tab=${tab} 是旧链兼容 ⇒ 不许跳走`).not.toHaveBeenCalled()
+      unmount()
+    }
   })
 
   it('🔴 旧深链 `?tab=workerPages`：该域已整层移除 ⇒ 送到「员工管理」（有确定落点，不落空白、不复活该域）', async () => {
@@ -771,11 +798,69 @@ describe('判据 7：域内零 tab（两层导航并存 = 用户说的「分不�
     }
   })
 
-  it('台账无幽灵：登记的未拆域必须仍是**真实存在**的域 key（拼错 ⇒ 判据在对空气放行）', () => {
+  it('算料口径域保存：PUT 正文是**全量键**（页面这一跳也不许缺键 —— 后端整份替换，缺键静默回默认）', async () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams('domain=calc'))
+    render(<SettingsPage />)
+    const input = await screen.findByTestId('calc-caliber-scalar-per_fold_single')
+    fireEvent.change(input, { target: { value: '0.42' } })
+
+    await userEvent.click(screen.getByTestId('calc-caliber-save'))
+    await waitFor(() => expect(mockUpdateCraftCalcConfig).toHaveBeenCalledTimes(1))
+
+    // 🔴 红证：页面把 `calcDraft` 解构掉一个键再发（「只发改过的那个键」那种写法）⇒ 本断言当场红。
+    //    面板侧的同类判据用的是测试自建的宿主，**盖不到页面这一跳**（实测：注入丢键 ⇒ 页面用例全绿）。
+    const body = mockUpdateCraftCalcConfig.mock.calls[0][0] as Record<string, unknown>
+    expect(Object.keys(body).sort()).toEqual(
+      [
+        'per_fold_single',
+        'per_fold_mixed_times',
+        'margin_single',
+        'margin_multi',
+        'min_fullness',
+        'tiers',
+        'default_formula',
+        'hem_margin',
+        'meters_rounding_step',
+        'oversize_width_threshold',
+        'oversize_height_threshold',
+      ].sort(),
+    )
+    expect(body.per_fold_single).toBe(0.42)
+  })
+
+  it('算料口径域：域内有**就地可改**的写面（issue #6825）—— 只剩只读展示即违规', async () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams('domain=calc'))
+    render(<SettingsPage />)
+    const panel = await screen.findByTestId('config-domain-panel-calc')
+    // 8 个标量里至少有一个输入框常驻（类级守卫逐域遍历在
+    // frontend/admin-web/tests/unit/lib/domain-write-surface.test.tsx）
+    expect(within(panel).getByTestId('calc-caliber-scalar-per_fold_single')).toBeInTheDocument()
+    expect(within(panel).getByTestId('calc-caliber-save')).toBeInTheDocument()
+  })
+
+  it('台账无幽灵 + 🔴 判别力自证（台账清零后循环体不执行 ⇒ 必须另有自证）', () => {
     const keys = CONFIG_DOMAINS.map((d) => d.key)
-    for (const k of TABS_NOT_YET_SPLIT) {
-      expect(keys, `台账里的「未拆域」${k} 已不是域 key ⇒ 判据在空跑，请删掉该条目`).toContain(k)
-    }
+    /**
+     * 判定式（真路径与自证**共用同一段**）：台账里每个 key 都必须是现役域 key。
+     * 返回「幽灵」清单而不是布尔，是为了让自证能**具名**报出是哪个 key。
+     */
+    const ghostsOf = (ledger: readonly string[]) => ledger.filter((k) => !keys.includes(k))
+
+    // 真路径：台账非空时逐条核；台账为空（#6585 清零后就是这一态）⇒ 这个数组恒空
+    expect(
+      ghostsOf(TABS_NOT_YET_SPLIT),
+      '台账里的「未拆域」已不是域 key ⇒ 判据在空跑，请删掉该条目',
+    ).toEqual([])
+
+    // 🔴 **判别力自证**（migao-acceptance「空断言」形态的处置口径）：
+    // 台账清零后**循环体一次都不执行** ⇒ 上面那条**自己证明不了自己还有判别力**（vacuous truth）。
+    // ⇒ 用**内存里的假输入**证明同一段判定式**会响**：含一个非域 key ⇒ 必须报出它。
+    expect(ghostsOf(['enterprise', 'not-a-domain']), '自证：判定式对幽灵 key 不响 ⇒ 判据是空断言').toEqual([
+      'not-a-domain',
+    ])
+    expect(ghostsOf(['__probe__'])).toEqual(['__probe__'])
+    // 反向对照：全是现役 key ⇒ 一个都不报（防「一律报警」那种反向假绿）
+    expect(ghostsOf(['enterprise', 'calc'])).toEqual([])
   })
 })
 
@@ -919,9 +1004,9 @@ describe('判据 9：同一次读面失败只留一处失败信号（issue #6663
 
     expect(await screen.findByTestId('param-per_fold_single')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByTestId('param-calc-error')).toBeNull())
-    expect(screen.getByTestId('param-value-per_fold_single')).toHaveTextContent('0.37')
-    // 对照：**这个键**有读数 ⇒ 值位必须是那个数，不是 `—`
-    //（⚠️ 不能全页断言「没有 `—`」：读成功的响应里没下发的键本来就渲染 `—`，那是「该键没值」）
-    expect(screen.getByTestId('param-value-per_fold_single').textContent).not.toBe('—')
+    // ⚠️ 2026-10-13（§31 P2 返修）：本页算料域是**可写形态** ⇒ 值只由**输入框**承载
+    //（改前这里断言右列值 `param-value-*` —— 那条判据测的是「同屏第二遍」，返修后按新形态改判）
+    expect(screen.getByTestId('calc-caliber-scalar-per_fold_single')).toHaveValue('0.37')
+    expect(screen.queryByTestId('param-value-per_fold_single')).toBeNull()
   })
 })

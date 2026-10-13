@@ -335,12 +335,13 @@ export function staleLedger(root) {
 // ① 同屏也在 ⇒ 仍是两遍。
 // ⇒ 处置 = **撤掉页面自己的那次播报**，**保留**内联那一处（撤的是重复，**不是可见性**：
 // 失败仍看得见，且必须有重试出口 —— 出口那半由实例判据钉住：
-// `tests/unit/components/CalcFormulaPanel.test.tsx` 判据 ③）。
+// `tests/unit/components/CalcCaliberPanel.test.tsx` 判据 ④）。
 //
 // ## 射程（**照实登记的局限，不假装覆盖全站**）
 //
-// 只扫 `src/components/production-config`（本条的实测发生地 = `CalcFormulaPanel`，它只在
-// `embedded` 形态下与页面的读面失败同屏；面板单独挂载时要靠内联那处兜底）。
+// 只扫 `src/components/production-config`（本条的实测发生地 = 原 `CalcFormulaPanel`；
+// issue #6825 起该写面已并入 `src/components/settings/CalcCaliberPanel.tsx`（不再挂在
+// `production-config` 目录下），故本目录今天的命中点只剩兄弟挂载的那一条）。
 // 实测：把扫描面换成整个 `src`，按本条形态也只命中这个目录里的 2 处
 // （复算：`node scripts/read-failure-empty-state-scan.mjs`，读数见输出）。
 // ⇒ 其它目录的同族形态（若有）**不会有东西变红**：本条**不声明**全站覆盖。
@@ -420,18 +421,16 @@ export function duplicateSignalSites(root) {
  * 键与 `LEDGER` 同口径 = `仓库相对路径::符号#该符号内第几个 catch`。
  * **失效即红**（`dupStaleLedger`）：该点改对之后必须**同批删掉**这一条。
  *
- * 现状（2026-10-10 取数）：`CalcFormulaPanel` 已修（不再命中）；本台账剩下的这一条是
- * **兄弟挂载**——`ProcessConfigBoard`（`/production/routings` 页在跑的 v1 板子）的算料 tab
- * 有**逐字相同**的同族代码（同端点 / 同文案 / 同「toast + 内联」两处）。
- * 它**有意不在本包修**（如实记账，不收编成「已修」）：
- *   ① 板子是 v2 要拆掉的那一份（`frontend/admin-web/src/app/(dashboard)/settings/page.tsx`
- *      头注释「已知 v1 债务」）；
- *   ② 它属**另一页**（`/production/routings`）的用户可见面 —— 本包只对 `/settings` 的算料域取证。
- * v2 拆解或另包落地时**同批删条目**（`dupStaleLedger` 会逼着删）。
+ * 现状（**2026-10-13 取数，issue #6825 清零**）：那条**兄弟挂载**豁免已随被测对象消失 ——
+ * 板子的「算料配置」tab 退役（写面收敛进 `/settings` 的「算料口径」域），
+ * `ProcessConfigBoard` 里那段逐字同族的「toast + 内联」代码**已整体删除**
+ * ⇒ 本台账**清空**（`dupStaleLedger` 的「失效即红」正是逼出这一步的机制）。
+ * ⚠️ 新写面 `src/components/settings/CalcCaliberPanel.tsx` **不在**本条的扫描面内
+ * （`DUP_SCOPE` 有意只覆盖 `src/components/production-config`，见上面的「射程」）；
+ * 它自己的「只留一处失败信号」判据在
+ * `tests/unit/components/CalcCaliberPanel.test.tsx`（判据 ④，含 toast 零次断言）。
  */
-export const DUP_LEDGER = [
-  'src/components/production-config/ProcessConfigBoard.tsx::ProcessConfigBoard#1',
-]
+export const DUP_LEDGER = []
 
 /** 命中清单（台账过滤后）：未登记即红 */
 export function dupOffenders(root) {

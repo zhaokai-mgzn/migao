@@ -59,10 +59,15 @@ const SERVER_FIXED_WIDTH = [
 const CALC_SRC = resolve(__dirname, '../../../../../backend/ai-agent-service/app/tools/curtain_calc.py')
 const engineSrc = readFileSync(CALC_SRC, 'utf8')
 
-/** 「算料配置」tab 所在页面（第二份口径的**可能落点**，必须钉住） */
-// issue #6580：算料配置的**编辑面**从「工艺配置」页搬进配置指挥台的「算料口径」域
-// （`settings/CalcCaliberPanel.tsx`）⇒ 判据 3 的宿主随**功能体**走，不随旧路由走（旧路由现在只是薄壳）。
-const PAGE_SRC = resolve(__dirname, '../../../src/components/production-config/ProcessConfigBoard.tsx')
+/**
+ * 算料配置的**编辑面**所在文件（第二份口径的**可能落点**，必须钉住）。
+ *
+ * 宿主沿革（判据 3 跟着**功能体**走，不跟着旧路由走 —— 旧路由今天只是薄壳）：
+ * `production/routings/page.tsx`（原页内 tab）→ `production-config/ProcessConfigBoard.tsx`（issue #6585
+ * 抽板子）→ **`components/settings/CalcCaliberPanel.tsx`**（issue #6825：唯一写面搬进「算料口径」域，
+ * 板子那个 tab 退役）。
+ */
+const PAGE_SRC = resolve(__dirname, '../../../src/components/settings/CalcCaliberPanel.tsx')
 const pageSrc = readFileSync(PAGE_SRC, 'utf8')
 
 /** 后端契约类型（`hem_margin` 的口径注释在守卫范围内；`side_margin` 应已整体退场） */
@@ -243,16 +248,19 @@ describe('算料配置页·口径与术语说明（issue #4975）', () => {
     expect(javaService).toContain('hem_margin')
   })
 
-  it('判据 3：页面不再自带第二份口径（改成引用说明模块 + 文案由模块派生）', () => {
-    // 注入：把页面里的 CALC_PARAM_COPY 换回自带数组 ⇒ 第一条红
-    expect(pageSrc).toContain('CALC_PARAM_COPY')
-    // 注入：把 `CALC_SCALAR_KEYS.map(...)` 换回手写数组（= 页面又持有第二份文案）⇒ 红
-    expect(pageSrc).toContain('CALC_SCALAR_KEYS.map')
+  it('判据 3：编辑面不再自带第二份口径（文案一律由说明模块派生）', () => {
+    // 判据面**跟着目录定义走**（不钉 `XXX.map` 这种写法）：只要页面 import 了模块的两件真值，
+    // 就说明文案不是本文件自带的；再钉住「键集不是页面手抄的」这一形态。
+    expect(pageSrc).toMatch(/from '@\/lib\/craft-calc-glossary'/)
+    // 注入：把文案换回页面自带对象（`label: '单色每折吃布（米）'` 之类）⇒ 红
+    expect(pageSrc).not.toMatch(/label:\s*'[^']*折吃布/)
     // 注入：把旧 hint 抄回页面（`hint: '定宽买高的上下卷边合计'`）⇒ 红
     //（页面注释里**引用**旧文案作为历史记录是允许的 ⇒ 只钉"作为字段值出现"这一形态）
     expect(pageSrc).not.toContain("hint: '定宽买高的上下卷边合计'")
-    // 参数旁的「说明」锚点必须由 f.anchor 驱动（而不是手写死的 id 列表）
-    expect(pageSrc).toContain('f.anchor')
+    // 参数旁的「说明」锚点必须由模块函数驱动（而不是手写死的 id 列表）
+    expect(pageSrc).not.toMatch(/id="glossary-term-(per_fold|margin|min_fullness)/)
+    // 自证非空（空文件上的「不含 X」恒真）
+    expect(pageSrc).toContain('calc-caliber-panel')
   })
 
   // 🔴 #5030 改判：原判据 3b 钉的是「types 里 `side_margin` 的注释口径」—— 该字段已删 ⇒
