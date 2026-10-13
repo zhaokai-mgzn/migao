@@ -7,6 +7,25 @@
 
 ## [Unreleased]
 
+### 工人拍照入库 / 拍照发货不再恒报「照片上传失败」（2026-10-14，issue #6864）
+
+线上实测（工人端 H5 `/b/`）：每次上传都被判失败，而**服务端每次都成功了** ——
+nginx 对 `POST /api/worker/inbound/upload` 全回 200，admin-api 同时刻逐条打
+「[工人入库] 照片已上传: count=1, storage=oss」，照片早已落 OSS。屏幕那句
+「照片上传失败，请重试」是**端侧读错回执形状**后的兜底文案。
+
+- **根因**：服务端 `WorkerInboundUploadController#upload` 回的是
+  `ApiResponse<List<UploadedFileInfo>>` —— `data` 是**数组**；端侧 `uploadInboundPhoto` 按**对象**读
+  `data.url` ⇒ 恒 `undefined` ⇒ 每次上传都落进失败分支（`ApiResponse` 又没有 `message` 字段，
+  于是取到兜底文案）。自拍照入库 P3（#5052，2026-09-27）引入端侧消费以来**从未成功过**。
+- **改后**：端侧在**服务层一处**把回执归一成单张（一次只传一张 ⇒ 取第 0 张），
+  两个消费方（拍照入库 / 拍照发货）不再各判一次形状；**空数组不静默成功**；传输层失败与非 JSON
+  响应的既有分诊不变。
+- **判据**：`frontend/bmini-app/tests/worker-inbound-upload-receipt.test.ts`（喂服务端**逐字**回执形状）
+  + `frontend/bmini-app/tests/inbound-api-contract.test.ts` 判据 **C6**（类级守卫：端点 `ApiResponse<T>`
+  的 `T` 是容器时端侧必须有归一化；同族其余 5 个端点为对象 —— 两侧任改一边 ⇒ 红）。
+- **不受影响**：服务端契约不动（`List` 与「一次 1~3 张」的设计一致，后端用例已钉住）。
+
 ### 「算料口径」域改成行式紧凑：输入框不再整列拉满，行内不再逐项标「默认」（2026-10-13，issue #6857）
 
 用户看到 #6825 交付的形态后逐字：「输入框也太长了吧？如此糟糕的设计」为原话大意；本单逐字裁定为

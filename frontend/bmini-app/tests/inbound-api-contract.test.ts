@@ -13,6 +13,7 @@
  * | C3 | 每个端点的 **HTTP 方法**与后端注解一致（GET/POST 写反 ⇒ 405） | 把详情读面改成 post ⇒ 红 |
  * | C4 | 幂等头名逐字等于 `WorkerInboundController.IDEMPOTENCY_HEADER` | 沿用报工那条链的 `X-Client-Request-Id` ⇒ 红 |
  * | C5 | 短码字母表 / 长度逐值等于 `WorkerShortLinkService.ALPHABET` / `CODE_LENGTH` | 把字母表写成含 `I` 的 ⇒ 红 |
+ * | C6 | **回执形状两侧一致**：端点 `ApiResponse<T>` 的 `T` 是容器（`List<…>`）时端侧必须做容器归一化 | 上传端点的 `data` 是数组而端侧按对象读 `data.url` ⇒ 红（issue #6864 线上 P0） |
  */
 import fs from 'fs'
 import path from 'path'
@@ -39,6 +40,16 @@ function read(rel: string): string {
 /** 占位符归一化（`{id}` / `{shortCode}` ⇒ `{}`）：两侧写法不同但语义相同 */
 function normalize(endpoint: string): string {
   return endpoint.replace(/\{[^}]+\}/g, '{}')
+}
+
+/**
+ * 解析某个方法声明的 `ApiResponse<T>` 的 `T`（`ApiResponse<List<UploadedFileInfo>> upload(` ⇒
+ * `List<UploadedFileInfo>`）。一层泛型嵌套足够（本控制器族即此形态）；匹配不到 ⇒ `null`
+ * （调用方判红，**不静默放过** —— 解析失败必须是红，不是"没有发现问题"）。
+ */
+function declaredDataType(source: string, method: string): string | null {
+  const re = new RegExp(`ApiResponse<((?:[^<>]|<[^<>]*>)*)>\\s*${method}\\s*\\(`)
+  return source.match(re)?.[1]?.trim() ?? null
 }
 
 interface Endpoint {
@@ -133,6 +144,26 @@ describe('工人入库端点/头名与后端逐值一致', () => {
     for (const ch of ['I', 'L', 'O', 'U']) {
       expect(SHORT_CODE_ALPHABET.includes(ch)).toBe(false)
     }
+  })
+
+  it('C6 上传回执 data 是**数组** ⇒ 端侧必须做容器归一化（形状分叉 ⇒ 每次上传都报「照片上传失败」）', () => {
+    // 服务端真值：`List<UploadedFileInfo>`（后端用例逐字断言 `$.data[0].url`）
+    expect(declaredDataType(read(CONTROLLERS[2]), 'upload')).toBe('List<UploadedFileInfo>')
+    // 端侧：把数组当对象读 ⇒ `data.url` 恒 undefined（issue #6864 线上实证，2026-10-14）
+    expect(fs.readFileSync(SERVICE_FILE, 'utf8')).toMatch(/Array\.isArray\(body\?\.data\)/)
+    // 同族其余 5 个端点的 data 是**对象**：谁改成容器而端侧没跟上 ⇒ 这里当场红
+    expect(declaredDataType(read(CONTROLLERS[0]), 'recognize')).toBe('WorkerInboundRecognizeResponse')
+    expect(declaredDataType(read(CONTROLLERS[0]), 'createDraft')).toBe('WorkerInboundDraftView')
+    expect(declaredDataType(read(CONTROLLERS[0]), 'post')).toBe('WorkerInboundDraftView')
+    expect(declaredDataType(read(CONTROLLERS[1]), 'detail')).toBe('InboundLabelView')
+    expect(declaredDataType(read(CONTROLLERS[1]), 'print')).toBe('InboundLabelPrintView')
+  })
+
+  it('C6 红证：形状解析器认得出容器 / 非容器（判据不空转）', () => {
+    expect(declaredDataType('public ApiResponse<List<X>> upload(', 'upload')).toBe('List<X>')
+    expect(declaredDataType('public ApiResponse<X> upload(', 'upload')).toBe('X')
+    // 方法名对不上 ⇒ null（调用方判红）：解析器不许"匹配到别的方法"就算数
+    expect(declaredDataType('public ApiResponse<X> other(', 'upload')).toBeNull()
   })
 
   it('C1 红证：把端点字面量改坏 ⇒ C1 的判定函数必须判红', () => {

@@ -375,11 +375,13 @@ cases:
       - "判据 2·**HTTP 方法一致**（GET 详情读面写成 POST ⇒ 405）：从 service 源码就近取每个端点常量实际用的方法，与后端注解比对。"
       - "判据 3·**幂等头名逐字**：`INBOUND_IDEMPOTENCY_HEADER` == `WorkerInboundController.IDEMPOTENCY_HEADER`（写成报工链的 `X-Client-Request-Id` ⇒ 幂等**静默失效**，重复提交真的入两次库而两次都 200）。"
       - "判据 4·**短码字母表 / 长度逐值**：`SHORT_CODE_ALPHABET` / `SHORT_CODE_LENGTH` == `WorkerShortLinkService.ALPHABET` / `CODE_LENGTH`，且不含 I/L/O/U（客户端只校验、不生成）。"
+      - "判据 5·**回执形状两侧一致**（issue #6864，线上 P0）：上传端点的 `ApiResponse<T>` 的 `T` 是**容器**（`List<UploadedFileInfo>`，后端用例逐字断言 `$.data[0].url`）⇒ 端侧必须做容器归一化；同族其余 5 个端点为**对象**。红证：端侧按对象读 `data.url`（修复前形态）= 每一次上传都报「照片上传失败，请重试」而服务端其实成功落 OSS（2026-10-14 线上实测）；把 `upload` 的返回类型改成对象而端侧没跟上亦 ⇒ 红。证据：frontend/bmini-app/tests/inbound-api-contract.test.ts（判据 C6）+ frontend/bmini-app/tests/worker-inbound-upload-receipt.test.ts"
     skip_reason: "[backend-contract] 确定性契约判据（jest: frontend/bmini-app/tests/inbound-api-contract.test.ts 解析后端 Java 源逐值比对），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-27 新增（issue #5052 P3）：端侧契约字面量（端点/方法/幂等头/短码字母表）改为**解析后端 Java 源逐值比对**，防「凭语义推测」写错端点而类型检查与单测都不报。"
+    merge_log: "2026-09-27 新增（issue #5052 P3）：端侧契约字面量（端点/方法/幂等头/短码字母表）改为**解析后端 Java 源逐值比对**，防「凭语义推测」写错端点而类型检查与单测都不报。2026-10-14 扩（issue #6864）：补判据 5 —— 回执 `data` 的**容器形状**同属契约字面量（上传回执是数组而端侧按对象读，曾让拍照入库/发货全链路恒报失败）。"
     traces:
       tests:
         - "frontend/bmini-app/tests/inbound-api-contract.test.ts"
+        - "frontend/bmini-app/tests/worker-inbound-upload-receipt.test.ts"
       ci:
         - bmini-app.yml
       verifies: []
