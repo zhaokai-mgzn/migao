@@ -1,0 +1,68 @@
+{
+  "_comment": [
+    "「组件被渲染在 `<p>` 里」的**运行期认证台账**（issue #6799 判据 ② 的边界登记）。",
+    "",
+    "为什么需要它：`<p>{<SomeComponent/>}</p>` 这种**运行期组合**在源码面上判不了 —— 组件渲染出块级还是",
+    "短语内容，字面扫描看不见（真栈缺陷 `DateTimeCell` 正是这一形态：`AfterSalesDetail.tsx` 里 0 个字面",
+    "`<div>` 落在 `<p>` 里）。所以判据分两层：",
+    "  ① 源码扫描（`scripts/jsx-p-tag-nesting-scan.mjs`）现取「谁被放进 `<p>` 里」的清单；",
+    "  ② 本台账给出「该组件渲染的是**短语内容**」的认证，并由 `p-tag-inline-components-guard.test.tsx`",
+    "     **真渲染一次**（`runtime: instantiated`）后断言 DOM 里 `<p>` 下无块级后代。",
+    "两层对不上即红（双向：**新组件未登记 ⇒ 红**；台账里有而语料里没有 ⇒ 红 —— 台账只许缩短）。",
+    "",
+    "判据 = `frontend/admin-web/tests/unit/p-tag-block-nesting-guard.test.ts`（清单与台账对账）",
+    "     + `frontend/admin-web/tests/unit/p-tag-inline-components-guard.test.tsx`（逐条真渲染）。",
+    "🔴 本台账**不是**「容忍列表」：每条都必须是**渲染短语内容**的组件；把渲染块级的组件塞进来",
+    "   = 把 hydration 缺陷合法化（守卫会真渲染并判红）。"
+  ],
+  "entries": [
+    {
+      "component": "AlertCircle",
+      "source": "lucide-react",
+      "fn": "AlertCircle",
+      "runtime": "instantiated",
+      "renders": "root:svg",
+      "evidence": "lucide 图标统一渲染 `<svg>`（短语内容，`<p>` 里合法）。"
+    },
+    {
+      "component": "Check",
+      "source": "lucide-react",
+      "fn": "Check",
+      "runtime": "instantiated",
+      "renders": "root:svg",
+      "evidence": "同上（lucide 图标 ⇒ `<svg>`）。"
+    },
+    {
+      "component": "RefreshCw",
+      "source": "lucide-react",
+      "fn": "RefreshCw",
+      "runtime": "instantiated",
+      "renders": "root:svg",
+      "evidence": "同上（lucide 图标 ⇒ `<svg>`）。"
+    },
+    {
+      "component": "ShieldOff",
+      "source": "lucide-react",
+      "fn": "ShieldOff",
+      "runtime": "instantiated",
+      "renders": "root:svg",
+      "evidence": "同上（lucide 图标 ⇒ `<svg>`）。"
+    },
+    {
+      "component": "InlineMarkdown",
+      "source": "@/lib/inline-markdown",
+      "fn": "InlineMarkdown",
+      "runtime": "instantiated",
+      "renders": "fragment(strong|code|text)",
+      "evidence": "只做行内替换并返回 fragment —— `src/lib/inline-markdown.tsx` 的模块注释即为此（「不复用 react-markdown：它默认输出块级 `<p>`，而这些文案嵌在 `<p>`/`<span>`/`<td>` 里 ⇒ 非法嵌套」）。"
+    },
+    {
+      "component": "Link",
+      "source": "next/link",
+      "fn": "Link",
+      "runtime": "declared",
+      "renders": "anchor",
+      "evidence": "next/link 渲染 `<a>`（短语内容）。⚠️ `runtime: declared` 的理由：它是 Next 运行时组件，在 vitest 里必须走 mock 才能渲染（mock 断言的是 mock 自己，不是它）⇒ 这里**如实登记为未真渲染**；真渲染面由 `hydration-witness`（`next/link` 在全局 setup 里被 mock 成 `<a>`）与真栈冒烟旅程承接。"
+    }
+  ]
+}

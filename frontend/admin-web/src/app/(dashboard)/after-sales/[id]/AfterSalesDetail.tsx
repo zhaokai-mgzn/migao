@@ -234,9 +234,15 @@ export default function AfterSalesDetailPage() {
                 </div>
                 <div>
                   <p className="text-xs text-neutral-500 mb-1">创建时间</p>
-                  <p className="text-sm font-medium text-neutral-900">
+                  {/* issue #6799：DateTimeCell 渲染的是 `<div>`（两行 YYYY-MM-DD / HH:mm），
+                      不能再挂在 `<p>` 里 —— `<p>` 只允许短语内容，浏览器解析时会把 `<p>` 就地闭合，
+                      于是服务端 HTML 与 React 树的形状不一致 ⇒ hydration 报
+                      「In HTML, <div> cannot be a descendant of <p>」并**整页 hydration 失败**。
+                      换 `<div>` 而非把 DateTimeCell 改成 `<span>`：两行布局（leading-snug + 第二行
+                      弱化色）依赖块级子元素，改成内联会动版式（截图对照见 PR）。 */}
+                  <div className="text-sm font-medium text-neutral-900">
                     {<DateTimeCell value={ticket.createdAt} />}
-                  </p>
+                  </div>
                 </div>
                 {ticket.refundAmount !== undefined && ticket.refundAmount !== null && (
                   <div>
@@ -249,9 +255,9 @@ export default function AfterSalesDetailPage() {
                 {ticket.deadline && (
                   <div>
                     <p className="text-xs text-neutral-500 mb-1">处理截止时间</p>
-                    <p className="text-sm font-medium text-neutral-900">
+                    <div className="text-sm font-medium text-neutral-900">
                       {<DateTimeCell value={ticket.deadline} />}
-                    </p>
+                    </div>
                   </div>
                 )}
               </div>

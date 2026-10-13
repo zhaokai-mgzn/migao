@@ -7,20 +7,12 @@
     "口径（fail-closed）：**逐字**正则 + **必须带 issue 归口** + why 写明「为什么不推翻行为面结论」；",
     "倒挂立即红（台账里有、spec 里没有）；`SMOKE_STRICT_CONSOLE=1` 可整体关闭本机制做单变量复核。",
     "🔴 边界：本台账**不是**「容忍列表」——entries 里的每一条都必须是**已归口 issue 的真实缺陷**；",
-    "把新缺陷塞进来 = 放宽门禁（守卫会用 `id/pattern/issue/why` 与 spec 逐字对账，改一处必须同批改两处）。"
+    "把新缺陷塞进来 = 放宽门禁（守卫会用 `id/pattern/issue/why` 与 spec 逐字对账，改一处必须同批改两处）。",
+    "",
+    "🔻 现状（2026-10-13，issue #6799）：**entries 已清空** —— 原两条（AFTERSALES_HYDRATION / PROCESSING_MEASURE_NEGATIVE）的缺陷都已修好",
+    "（售后详情页两处 `<p>` 容器改 `<div>`；`performance.measure` 负区间守卫接线在 `src/app/layout.tsx`）⇒ 按「台账只许缩短」删除。",
+    "空台账 = 「已知产品面 console 错误 = 0 条」：这两条再出现即**真失败**（不再进 notes）。",
+    "机制（spec 侧的 isKnownConsoleError / knownConsoleIssue / allowKnownConsole / SMOKE_STRICT_CONSOLE）**保留原样**。"
   ],
-  "entries": [
-    {
-      "id": "AFTERSALES_HYDRATION",
-      "pattern": "cannot be a descendant of|cannot contain a nested",
-      "issue": "#6799",
-      "why": "售后详情页 React hydration 报错（`<div>` 被渲染进 `<p>`）—— 归口 #6799；报错在 hydration 层，而 19- 的行为面（工单打开 → 受理 → 关闭 + 状态落库）由页面文本与 API 读数**独立**验证。"
-    },
-    {
-      "id": "PROCESSING_MEASURE_NEGATIVE",
-      "pattern": "negative time stamp|ProcessingRedirectPage",
-      "issue": "#6799",
-      "why": "加工页 `performance.measure` 负时间戳（Next/React 首帧时序）—— 归口 #6799；**偶发**（同一 commit 上一轮为 ✅），不影响加工项 CRUD 的行为面（新项入列 → 改名 → 删除后消失）。"
-    }
-  ]
+  "entries": []
 }

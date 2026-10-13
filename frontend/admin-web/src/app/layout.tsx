@@ -2,6 +2,10 @@ import type { Metadata } from 'next'
 import { Toaster } from 'sonner'
 import AuthProvider from '@/components/providers/AuthProvider'
 import { AuthGuard } from '@/components/auth-guard'
+// issue #6799 ②：`performance.measure` 区间守卫（React 开发态埋点在极端时序下取到负区间 ⇒
+// 浏览器抛 `cannot have a negative time stamp` ⇒ 冒烟把 pageerror 当旅程失败）。
+// 这里 import 即装上（模块顶层，早于 React hydrate）—— 判据与边界见 `src/lib/user-timing-guard.ts`。
+import '../lib/user-timing-guard'
 import './globals.css'
 
 export const metadata: Metadata = {
