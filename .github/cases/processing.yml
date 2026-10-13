@@ -1350,9 +1350,10 @@ cases:
     merge_log: "2026-09-29 新增（母单 #5161，P0-E / PR 见集成 PR）。⚠️ 编号订正：初稿取 PG-048，而 PG 号**横跨** .github/cases/processing.yml 与 .github/cases/processing-order.yml 两个文件（那里已占 PG-048）⇒ 按**全仓最大号 + 1** 改为 PG-065（判据：Case Contract 的重复 ID 检查）：用户裁定「租户级页面开关起步」+「让工人提前登录我们的 H5 页面，把登录 Session 的过期时间设置长一点」（数值后续裁定为**一周 10080 分钟**）。⚠️ 照实登记后果：闲置保护基本不再生效 ⇒ 共用设备上防串人的**唯一护栏 = 手动「切换工人」**（用户已知情并裁定）。🔴 2026-10-07 追加（issue #6473）：用户逐字「把工人的登录 Session 过期时间设置久一点，可以延长到 1 个月」⇒ 全局默认改 **43200（30 天）**、区间 `5 ~ 43200`，bmini/worker-h5 两侧的降级兜底常量同步，bmini 界面改按量级说人话（去掉 `?? 15`）。🔴 2026-10-10 追加（issue #6642）：线上日志核查（SWAS `migao-deploy-nginx-1`，2026/10/10 08:12:10）发现**同一 session 4 秒打出 92 个请求**（15–23 req/s），被 `worker_sess` 拒 4 条 —— 全是 `checkAlive` 的「一事件一轮」被放大；且 `current-worker` 的 429 走了 `fail()` ⇒ 报工卡出现「请求失败（HTTP 429）」。⇒ 本单给 `checkAlive` 加**单飞 + 5s 节流**、并把**非身份面失败**从报工卡错误位挪到「不影响报工」提示；写面（`/scan`、`/scan/complete`）现场**一次都没被限流**（照实登记：风暴的触发源仍未定，本次只保证有界 + 不污染）。🔴 2026-10-13 追加（issue #6788）：租户级之下的**工人档案级收窄**落地（`users.worker_pages` + `PUT /api/admin/workers/{id}/pages`），默认「跟随企业设置」⇒ 存量与新建档案行为**零变化**；判据面**未放宽**（企业级天花板、`users.permissions` 一字不动、工人 `/api/admin/**` 仍 403 三条都新增了会红的断言）。🔴 **2026-10-13 改判（issue #6828，用户逐字「是不是可以移除工人端页面的配置，我们已经通过权限控制 工人的菜单可见问题了」⇒ 裁定「一步到位移除」）**：企业级那一层**整层退场** —— 表 `worker_page_configs`（迁移 `V154__drop_worker_page_configs.sql` DROP）、`GET/PUT /api/admin/worker-page-config` 端点、`WorkerPageConfig*` 服务/实体/mapper、设置页「工人端页面」域与面板全部删除；逐人勾选的选项来源改由只读目录端点 `GET /api/admin/worker-pages` 供词表。⇒ 本条**只剩工人会话超时**这一半（页面集口径改判见 PG-072）；同批**整条删除 PG-073**（企业级写面非法形态枚举 —— 它的被测对象已不存在，保留它会让「机器判红通道」指向一个已删文件）⇒ 读数 143 → 142（已记入 `tests/unit_ci_workflows/case_machine_fail_channel_baseline.json` 的 history）。"
     traces:
       tests:
-        - "backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/worker/WorkerPagesTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/worker/WorkerSessionServiceTest.java"
+        - "tests/unit_ci_workflows/test_worker_page_layer_removed.py"
         - "frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs"
       ci:
         - pr-check.yml

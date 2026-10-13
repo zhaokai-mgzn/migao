@@ -367,7 +367,7 @@ export const standaloneTopItems: MenuItem[] = [
   //   `operator` / `product_manager`（见 `rbac/manifest.json` 的 `roles.seed`）持
   //   `production:view`、**不持** `system:manage` ⇒ 不换码 = 菜单对他们恒不可见（#4203 同族坑）。
   //   复算：seed 里唯一天然持全码的是 `admin: ["*"]` ⇒ **改码对现有角色零损失**（既无人掉码、
-  //   也没有人凭空多出写面）；页内**经营域**（企业信息 / AI 客服 / 工人端页面 / 通知设置）仍按
+  //   也没有人凭空多出写面）；页内**经营域**（企业信息 / AI 客服 / 通知设置）仍按
   //   各自的 `system:manage` 域级显隐 ⇒ 该码的**可授予面**不缩水（由 `MenuController` 的
   //   org-center 组承载那一个权限码节点，见 `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`
   //   的 `ACTION_NODES['org-center']` 登记）。

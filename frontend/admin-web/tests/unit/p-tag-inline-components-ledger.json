@@ -25,14 +25,6 @@
       "evidence": "lucide 图标统一渲染 `<svg>`（短语内容，`<p>` 里合法）。"
     },
     {
-      "component": "Check",
-      "source": "lucide-react",
-      "fn": "Check",
-      "runtime": "instantiated",
-      "renders": "root:svg",
-      "evidence": "同上（lucide 图标 ⇒ `<svg>`）。"
-    },
-    {
       "component": "RefreshCw",
       "source": "lucide-react",
       "fn": "RefreshCw",
