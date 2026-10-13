@@ -152,6 +152,17 @@ def test_false_exits_no_longer_name_a_nonexistent_coordinate():
     assert any("下单时给出工艺" in t for t in order), "改写不得把**真出路**（下单时给出工艺）一起删掉"
 
 
+def test_merchant_copy_leaks_no_internal_api_path():
+    """判据 3b（§31 P3「不摆内部标识」）：商家可见 suggestion 里**不得**出现内部端点字面量。
+
+    本包顺手销掉 `ProcessingOrderService` 里 4 处存量泄漏（`查看入口 GET /api/admin/...`）——
+    它们是**内部标识上屏**：商家看到一条 API 路径既不可点、也读不懂；而「默认工艺」在商家面
+    **确实没有页面**（本包已登记为能力缺口）⇒ 正确处置是**不指路**，**不许**换成任何页面坐标。
+    """
+    leaks = [t for t in literals_of(sources()["ProcessingOrderService.java"]) if "GET /api/" in t]
+    assert leaks == [], "商家可见 suggestion 里仍有内部端点标识（§31 P3）：\n" + "\n".join(repr(t) for t in leaks)
+
+
 # ── 判据 4：台账清零的真读数 ───────────────────────────────────────────────────
 
 

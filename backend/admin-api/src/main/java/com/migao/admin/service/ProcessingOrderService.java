@@ -2390,8 +2390,7 @@ public class ProcessingOrderService {
             throw new BusinessException(ERR_OPERATION_NOT_FOUND,
                     String.format("特殊选项引用的条件工序 %s 在工序库中不存在，无法实例化工序", missing),
                     422,
-                    String.format("请在工序库补上 %s（或停用引用它的特殊选项映射）；"
-                                    + "工序库目录查看入口 GET /api/admin/production/operations-catalog",
+                    String.format("请在工序库补上 %s（或停用引用它的特殊选项映射）",
                             String.join("、", missing)));
         }
     }
@@ -2659,7 +2658,7 @@ public class ProcessingOrderService {
                     String.format("订单未给出工艺（craft），且该租户没有配置默认工艺，无法实例化工序"),
                     422,
                     "该租户没有设过默认工艺（商家面无此维护入口，需服务方配置），"
-                            + "或在下单时给出工艺；查看入口 GET /api/admin/production/routings");
+                            + "或在下单时给出工艺");
         }
         // T1：全无派生信号 ⇒ 直接取默认路线模板（**该租户的**默认，不是常量）
         if ("default".equals(source)) {
@@ -2700,8 +2699,7 @@ public class ProcessingOrderService {
                                     + "（工序来源为工序库，不回退加工项目录）", usedKey),
                     422,
                     String.format("请在「企业基础设置 → 工艺路线」建一条路线并设为默认（当前库中路线模板 %s）；"
-                                    + "若为空库，先确认 V71/V72 种子迁移已执行；"
-                                    + "查看入口 GET /api/admin/production/routings",
+                                    + "若为空库，先确认 V71/V72 种子迁移已执行",
                             available.isEmpty() ? "**为空**" : "有：" + String.join("、", available)));
         }
         Map<String, Object> route = buildRoute(template, routePosition, routeCraft, entry,
@@ -2718,8 +2716,7 @@ public class ProcessingOrderService {
                     String.format("工艺路线「%s」（产品形态「%s」）引用的工序 %s 在工序库中不存在，"
                                     + "无法实例化工序", template.getName(), routePosition, missing),
                     422,
-                    String.format("请在工序库补上 %s（或改这条路线不再引用它们）；"
-                                    + "工序库目录查看入口 GET /api/admin/production/operations-catalog",
+                    String.format("请在工序库补上 %s（或改这条路线不再引用它们）",
                             String.join("、", missing)));
         }
         // `route_key` = **实际使用的那条路线的身份**。新结构里路线 = 具名模板（工艺已降为规则触发键）
