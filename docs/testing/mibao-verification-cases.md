@@ -6137,7 +6137,7 @@
 ```
 溯源: 2026-10-10 新增（issue #6276；口径由用户 2026-10-10 裁定 = 首次发货时刻）。根因（V148/issue #6262 已现取登记、但当时只绕开未修）：OrderLogisticsWriter.upsert 的 shipped_at 只在**新建物流行**的分支里写，走 update 分支（已有物流行、再改物流/发货）时不补写 ⇒ 真库 order_logistics 全表 29 行、shipped_at 非空仅 16 行（13 行为空）。修法：① 新增 OrderLogisticsMapper#backfillShippedAtIfAbsent —— 一条条件 UPDATE（SET shipped_at = created_at WHERE … AND shipped_at IS NULL），取值**列对列**（建行那一刻就是首次发货时刻，三条建行路径都写 shipped_at = now() 且 created_at 与它同刻）⇒ 不需要外部真值、不猜；② 两个「读-改-写」写面（OrderLogisticsWriter 更新分支、OrderController.updateLogistics 更新分支）都在 updateById **之前**调它，OrderLogisticsService.updateLogistics 同样补上；③ 新增迁移 V151 把历史空值按同一条 SQL 回填（幂等、只影响 IS NULL、走新迁移不动已冻结的历史迁移）。边界：不动 orders.shipped_at(V148) 的存量 NULL 裁定；created_at 与首次发货时刻同刻是既有实装事实（本单不引入新语义）。 ｜ tags: order, logistics, shipped-at, data-quality, backend-contract
 
-## 加工项域（28 case）
+## 加工项域（29 case）
 
 ### PP-002. 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query） 🔵
 ```
@@ -6550,6 +6550,19 @@
 ```
 真值: processing-manage.worker-page-config
 溯源: 2026-10-13 新增（issue #6788，PR 随集成）：用户逐字「工人档案上也应该设置 h5 工人端的菜单权限，这样让不同岗位的工人只关注他自己有权限的功能了」。默认口径由用户当场选定 = **「跟随企业设置」（全开、零回归）**。⚠️ 评审（独立 subagent）实测出三个真缺陷并已修：① 清回收窄走「塞 null 再 updateById」在 NOT_NULL 策略下**静默不生效**（改成显式 set）；② JacksonTypeHandler 对坏 JSONB **抛异常**（不是回 null）⇒ 一行脏数据让 GET /api/worker/me 500（改成存原样 JSON 文本 + 宽容解析）；③ `[]` 在工人端会被读成「没读到权限 ⇒ 全开」⇒ 写面 422 + 读面求交为空时回落企业页集。**未固化项（照实登记）**：逐人收窄目前**只在建号时可写**（改收窄走 API，UI 上暂无编辑入口）；企业关掉某页后，已收窄到该页的档案里那一项**不自动清理**（有意保留：企业页 ∩ 个人页 ⇒ 该页本就不下发）。 ｜ tags: processing, worker, rbac, tenant_config, backend-contract
+
+### PG-073. 工人端页面开关写面：pages 非法形态枚举表逐条 422（null 与缺键同罪；单测覆盖，非 LLM 行为） 🟡
+```
+你: 商家在「工人端页面」设置页点了保存，但表单没勾任何页（前端把「没选」发成了 null）
+数据: 🔴 `{"pages":null}` ⇒ **422** + `error.details` 点名 `pages`（issue #6803，云测试环境实测形态）：null 走的是与**缺键同一条**「静默回到默认全开」的路 —— 落库时被归一成**空数组**（`WorkerPageConfig#toPages` 对 null 与非数组一律回空列表），而工人端 H5（`frontend/worker-h5/src/render.mjs` 的 `effectivePages`）把空数组读成「没读到权限 ⇒ 全开」⇒ 一个 HTTP 200 就把企业级对页面的关闭静默撤销。判据 = `backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java` 的 nullPagesIsRejectedExplicitly（范例判据）
+数据: 🔴 **类级元守卫（让「新增一种非法形态忘了拒」当场红）**：把 `pages` 的非法形态**枚举成一张表**逐条断言「422 + details 点名 pages + 零落库」——缺键 / null / 非数组（字符串、对象、数字）/ 未知页面键 / 重复页面键 / 含空串项 / 数字项 / 未知配置键（共 10 种）。判据 = 同文件 everyIllegalShapeIsRejectedAndNothingIsWritten（@ParameterizedTest，参数源 illegalPayloadShapes）：表里每加一行就多一条断言；任何一行被放行 ⇒ 当场红
+数据: **理由与出口都必须在响应里**（只说「不许」= 商家只能猜）：null 的理由**复用缺键那句话术**（含「静默回到默认全开」逐字），并给出明确出口 —— 想全开发四页全集 `["report","order","cut_calc","shipment"]`、想全关发 `{"pages":[]}`
+数据: ⚠️ **`null` vs `[]` 的落库/读面口径（issue #6803 要求先钉死）**：两者在 `WorkerPageConfig#toPages()` 归一成**同一个空列表** ⇒ 读面（`GET /api/admin/worker-page-config`）都回 `source=stored` + `pages=[]` —— 即 **null 落库 ≠ NULL，而是空数组**。佐证 = 同文件 nullAndEmptyListNormalizeToTheSameStoredShape（不依赖本次修复，修前修后都绿）
+数据: **`[]` 的语义本单不动**（显式全关是既有合法选择，判据 = 同文件 emptyListIsAnExplicitValidChoice 仍绿）；**但照实登记一个未固化的缺口**：工人端 H5 对空数组同样 fail-open（`effectivePages` 的 `pages.length === 0` 分支）⇒ 今天发 `{"pages":[]}` 在 H5 侧**并不会真的全关**。该缺口**本单只报告不改**，交人工裁定（属产品口径 = 会改变工人端可见行为）
+跳过: [backend-contract] 本条只登记写面**校验形态**这一层确定性行为，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java）⇒ 不进 agent-eval 冒烟。
+```
+真值: processing-manage.worker-page-config
+溯源: 2026-10-13 新增（issue #6803）。取号 = PG-073（跨 .github/cases/processing.yml 与 .github/cases/processing-order.yml 两个文件现取全仓最大号 PG-072 + 1；PG 号横跨这两个文件，历史上曾因只核一个文件而重号判红）。修复 = `WorkerPageConfigService#validate` 的键循环里补「键在、值为 null」分支（原实现 `if (rawPages != null)` 让 null 跳过整段类型/内容校验 ⇒ pages 保持空 List ⇒ 落库成空数组）。固化 = 范例判据（null）＋ 10 行非法形态枚举表（类级元守卫）＋ null/[] 落库口径钉死。**未固化项（照实登记）**：① 线上仍是旧行为（部署才生效，CI 绿 ≠ 线上已修）；② 企业级 `[]` 在工人端 H5 侧 fail-open（只报告，未改，待人工裁定）。 ｜ tags: processing, worker, tenant_config, backend-contract
 
 ### PG-059. 裁高读面 - 明细 product_id 为空时 brand 如实回 null 而不是 500（不可变表 get(null) 抛 NPE；单测覆盖，非 LLM 行为） 🔵
 ```
@@ -10656,7 +10669,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：735（活跃 134，跳过 601）
+- 用例总数：736（活跃 134，跳过 602）
 - tier 分布：smoke 12 / normal 681 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
@@ -10676,7 +10689,7 @@
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：64
-- 加工项域：28
+- 加工项域：29
 - 加工单域：62
 - 商品域：120
 - 工具注册器域：1
