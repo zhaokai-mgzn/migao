@@ -24,8 +24,9 @@ r"""云 dev DB 白名单：**一条命令**（幂等 / 只追加 / fail-closed /
 | 6 | **`--check` 只读**：任何形态下都**不产生** Modify 调用；在列且可达 ⇒ exit 0、不在列 ⇒ 非零 | `--check` 偷偷写 / 恒 0 ⇒ 红 |
 | 7b | **业务路由自检（起栈后）**：桩 dev 对 `(dashboard)` 组路由回 **404** ⇒ 输出含「`.next`」+ 可行动命令、非零退出、**没开始跑 spec**；可达 ⇒ 正常继续 | 泛化「产品大面积挂」⇒ 红 |
 | 7 | **起栈入口预检（接线 + 时序）**：`scripts/ui_smoke_merchant.sh` 在启动 admin-api **之前** TCP 探 RDS；桩 `nc` 不可达 ⇒ wrapper **非零退出**、输出含 `dev-db-whitelist.sh`、**不含** `PSQLException`、且**没走到**起栈 | 预检被摘掉 / 挪到起栈之后 ⇒ 红 |
+| 7c | **顺序判据的锚是「结构锚」**（issue #6802）：启动行 = `backend/admin-api` + `mvnw spring-boot:run` 的**代码行**（`LAUNCH_LINE_RE`），注释行不算；定位不到 ⇒ fail-closed 且**具名**（`ordering_verdict`）。负控：预检块**之前**插含「启动 admin-api」的注释 ⇒ **不变**；块后插代码 ⇒ 仍绿；正控：块整块移到启动行**之后** ⇒ 红且报「之后」；启动行被注释掉 ⇒ 红 | 退回 `text.find("启动 admin-api")`（文本首现）⇒ 注释负控红 |
 | 8 | **判别力自证（注入式，实跑）**：`Append`→`Overwrite` / 删掉整段 `--ModifyMode` 参数 / 摘掉预检块 ⇒ 同名判据**当场红**；还原 ⇒ 绿；**只改注释** ⇒ 不红 | 判据恒绿（空断言）⇒ 红 |
-| 9 | **类级元守卫**：① `--ModifyMode Append` 承载体**唯一**（只许 `scripts/dev-db-whitelist.sh` 一处）② 覆盖语义（`Overwrite`）禁入 ③ 空数组展开必须写 `${A[@]+"${A[@]}"}`（bash 3.2 + `set -u`，issue #6777） | 再抄一份命令 / 引入覆盖语义 / 裸展开空数组 ⇒ 红 |
+| 9 | **类级元守卫**：① `--ModifyMode Append` 承载体**唯一**（只许 `scripts/dev-db-whitelist.sh` 一处）② 覆盖语义（`Overwrite`）禁入 ③ 空数组展开必须写 `${A[@]+"${A[@]}"}`（bash 3.2 + `set -u`，issue #6777）④ **同族位置锚**：`tests/unit_ci_workflows/test_*.py` 里「中文/注释级文案当结构位置」的形态必须逐条登记（判据 = `tests/unit_ci_workflows/test_cjk_position_anchor_guard.py`） | 再抄一份命令 / 引入覆盖语义 / 裸展开空数组 / 新写一处中文位置锚而不登记 ⇒ 红 |
 
 ## 边界（照实登记，§19.1）
 
@@ -66,6 +67,23 @@ DEFAULT_GROUP_IPS = "10.0.0.1/32,10.0.0.2/32"
 DEV_LOCAL_OTHER = "198.51.100.5/32,198.51.100.6/32"
 STUB_HOST = "pgm-bp1stub0000stub-pub.pg.rds.aliyuncs.com"
 
+#: 起 admin-api 那一行的**结构锚**（issue #6802）：只认**代码行**里的「进 `backend/admin-api` + 跑 `mvnw spring-boot:run`」这一对特征。
+#: ⛔ **不许**退回 `text.find("启动 admin-api")` —— 那是**文本首现**：`#6790` 的 ai-agent 配置块注释里有一句
+#: 「⇒ 启动 admin-api 时**显式传**这两个变量」，比真正的启动行更靠前 ⇒ 判据判红，而报错把归因指成「顺序写错了」
+#: （真因 = 注释里出现了一个词）。同族 = issue #5323「把原文当代码读」，本处形态是「把原文当**代码位置**读」。
+LAUNCH_LINE_RE = re.compile(
+    r'^[ \t]*\([ \t]*cd[ \t]+"[^"]*\bbackend/admin-api\b"[^\n]*\bmvnw[ \t]+spring-boot:run\b',
+    re.MULTILINE,
+)
+
+#: 判据 7/8 的**注释负控**样本（issue #6802）：注释里逐字含「启动 admin-api」。
+#: 它不是启动行（`#` 起行、无 `mvnw spring-boot:run`）⇒ 顺序判定必须**不受它影响**。
+PRELAUNCH_DECOY_COMMENT = "# ⇒ 启动 admin-api 时显式传这两个变量（ai-agent 配置块现场，#6790）\n"
+
+#: 预检块的两条 marker（**块边界的锚**；`find` 的**首现**语义在此是有意的 —— marker 只出现一次）。
+PREFLIGHT_MARKER = "# ── 1.5 云 dev DB 预检"
+STACK_MARKER = "# ── 2. 起栈"
+
 #: Modify 调用台账行里记录「被改动的分组」
 MODIFY_RE = re.compile(r"--DBInstanceIPArrayName (\S+)")
 #: 空数组裸展开（bash 3.2 + `set -u` ⇒ unbound variable，issue #6777）
@@ -95,14 +113,64 @@ def bare_empty_expansions(text: str) -> list:
 
 
 def preflight_block(text: str) -> str:
-    """`ui_smoke_merchant.sh` 的云 dev DB 预检块（marker 取不到 ⇒ 空串，调用方 fail-closed）。"""
-    start = text.find("# ── 1.5 云 dev DB 预检")
+    """`ui_smoke_merchant.sh` 的云 dev DB 预检块（marker 取不到 ⇒ 空串，调用方 fail-closed）。
+
+    块边界用**显式 marker 常量**（`PREFLIGHT_MARKER` / `STACK_MARKER`）—— 这两条 marker 在脚本里
+    **只出现一次**，故 `find` 的首现语义在这里是有意的；会被喂红的是**位置比较**那一侧（见
+    `preflight_ordering_ok`）。
+    """
+    start = text.find(PREFLIGHT_MARKER)
     if start < 0:
         return ""
-    end = text.find("# ── 2. 起栈", start)
+    end = text.find(STACK_MARKER, start)
     if end < 0:
         return ""
     return text[start:end]
+
+
+def launch_line_spans(text: str) -> list:
+    """起 admin-api 的**结构锚**（issue #6802）：`LAUNCH_LINE_RE` 命中行的 `(起, 止)`，**注释行不算**。
+
+    「只认代码行」正是本判据的判别力所在：注释里逐字出现「启动 admin-api」不改变命中集
+    （`#6790` 的 ai-agent 配置块就是这么把旧判据喂红的）。
+    """
+    spans = []
+    for m in LAUNCH_LINE_RE.finditer(text):
+        line_start = text.rfind("\n", 0, m.start()) + 1
+        if text[line_start:m.start()].strip().startswith("#"):
+            continue  # 整行注释：不是启动行
+        spans.append((line_start, text.find("\n", m.end())))
+    return spans
+
+
+def ordering_verdict(text: str) -> str:
+    """判据 7 的**可归因**出口：返回 `""` = 绿；否则返回**具名**原因（定位不到什么 / 差多少）。
+
+    ⚠️ 比较的是「**预检 marker 的位置** vs **启动行行首的位置**」—— 两个都是**块/行的起点**；
+    若拿块尾去比（或只比「块在不在」），「把块整体挪到启动行之后」这一形态就判不出来
+    （实测踩过：只改 marker 位置会判绿，必须整块移动才复现判别力）。
+    """
+    block_at = text.find(PREFLIGHT_MARKER)
+    if block_at < 0:
+        return f"找不到预检块：marker {PREFLIGHT_MARKER!r} 取不到 —— fail-closed"
+    spans = launch_line_spans(text)
+    if not spans:
+        return ("找不到**启动行**结构锚（`backend/admin-api` + `mvnw spring-boot:run` 的代码行）"
+                "—— fail-closed")
+    launch_at = spans[0][0]
+    if block_at > launch_at:
+        return f"预检块在启动行**之后**（block@{block_at} > launch@{launch_at}）—— 顺序即价值"
+    return ""
+
+
+def preflight_ordering_ok(text: str) -> bool:
+    """预检块必须在**真正的启动行**之前（顺序即价值）。
+
+    定位用**结构锚**（`LAUNCH_LINE_RE`），⛔ **不用** `text.find("启动 admin-api")` ——
+    后者取的是**文本首现**，一句注释就能把它顶到预检块之前（issue #6802 的实际误伤现场；
+    同族 = #5323）。定位失败一律 **fail-closed**（判 False），失败原因见 `ordering_verdict()`。
+    """
+    return ordering_verdict(text) == ""
 
 
 def route_check_block(text: str) -> str:
@@ -127,17 +195,6 @@ def route_check_ordering_ok(text: str) -> bool:
         return False
     pos = text.find(block)
     return ready < pos < spec
-
-
-def preflight_ordering_ok(text: str) -> bool:
-    """预检块必须在「启动 admin-api」那一行**之前**（顺序即价值）。"""
-    block = preflight_block(text)
-    if not block:
-        return False
-    launch = text.find("启动 admin-api")
-    if launch < 0:
-        return False
-    return text.find(block) < launch
 
 
 # ── 桩 ──────────────────────────────────────────────────────────────────────
@@ -524,20 +581,76 @@ def test_guard_discriminates_bad_shapes(tmp_path):
     assert modify_modes(env2.modify_calls()[0]) == [], "注入未生效：ModifyMode 还在"
     assert env2.groups_after()["dev_local"] == IP, "无 ModifyMode ⇒ 桩按覆盖语义处理（旧条目被删）"
 
-    # ③ 摘掉预检块 ⇒ 接线/时序断言必须红
+    # ③ 摘掉预检块 ⇒ 接线/时序断言必须红（fail-closed 且**具名**）
     smoke = SMOKE.read_text(encoding="utf-8")
     block = preflight_block(smoke)
     assert block, "预检块 marker 取不到（接线被摘？）"
     stripped = smoke.replace(block, "")
     assert preflight_block(stripped) == ""
     assert not preflight_ordering_ok(stripped), "摘掉预检后 ordering 判定必须为假（否则判据 7 是空断言）"
+    assert "找不到预检块" in ordering_verdict(stripped), ordering_verdict(stripped)
 
     # ④ 还原：原文必须绿；只改注释 ⇒ 不红
-    assert preflight_ordering_ok(smoke), "还原后必须绿"
+    assert preflight_ordering_ok(smoke), f"还原后必须绿：{ordering_verdict(smoke)}"
     comment_only = smoke.replace("# ── 1.5 云 dev DB 预检", "# ── 1.5 云 dev DB 预检（注释改写）")
     assert preflight_ordering_ok(comment_only), "只改注释不得判红"
     assert bare_empty_expansions('# "${A[@]}"\n') == [], "注释里的裸展开不算（不吃自己的说明文字）"
     assert bare_empty_expansions('echo "${A[@]}"\n') == ['"${A[@]}"']
+
+
+# ── 判据 7c：顺序判据的**结构性锚** + 四条正/负控（issue #6802） ────────────────
+
+def test_preflight_ordering_anchor_is_structural_and_comment_proof(tmp_path):
+    """顺序判据按**结构锚**定位启动行 —— 注释里的同名词不再误伤（issue #6802）。
+
+    现场（2026-10-13 合并 main）：`#6790` 的 ai-agent 配置块注释里写了「⇒ 启动 admin-api 时显式传这两个
+    变量」，比真正的启动行更靠前 ⇒ 旧的 `text.find("启动 admin-api")`（**文本首现**）把启动位置指到了那行
+    注释上 ⇒ 判据判红，且归因指成「你的顺序写错了」（真因 = 注释里出现了一个词）。同族 = issue #5323。
+    """
+    smoke = SMOKE.read_text(encoding="utf-8")
+    assert preflight_ordering_ok(smoke), ordering_verdict(smoke)
+
+    # 结构锚真的取到「代码行」（不是靠那行注释）：命中行逐字含启动特征
+    spans = launch_line_spans(smoke)
+    assert spans, "结构锚一行都没命中 ⇒ 判据会恒绿（fail-closed 方向相反，必须红）"
+    launch_src = smoke[spans[0][0]:spans[0][1]]
+    assert "backend/admin-api" in launch_src and "mvnw spring-boot:run" in launch_src, launch_src
+
+    # 负控①（**本单核心**）：预检块**之前**插入含「启动 admin-api」的注释 ⇒ 判定**不变**（仍绿）
+    # 注入点 = 预检块 marker 正上方（即 `#6790` 那种「更靠前的块」的位置）
+    decoy = smoke.replace(PREFLIGHT_MARKER, PRELAUNCH_DECOY_COMMENT + PREFLIGHT_MARKER, 1)
+    assert PRELAUNCH_DECOY_COMMENT in decoy, "注入未生效：注释没进去"
+    assert decoy.index("启动 admin-api") < decoy.index(PREFLIGHT_MARKER), (
+        "注入未生效：注释不在预检块之前")
+    # 注释不得改变启动行的**命中集**（位置随插入整体后移，比的是命中行的原文）
+    assert [decoy[a:b] for a, b in launch_line_spans(decoy)] == \
+           [smoke[a:b] for a, b in launch_line_spans(smoke)], "注释不得改变启动行的命中集"
+    assert preflight_ordering_ok(decoy), f"注释负控失败（这正是 #6802 的误伤）：{ordering_verdict(decoy)}"
+
+    # 负控②：预检块**之后**、启动行**之前**再插一段**代码**（非注释）⇒ 判定仍绿
+    mid = spans[0][0]
+    between = smoke[:mid] + "echo '夹在预检与启动之间的代码' >/dev/null\n" + smoke[mid:]
+    assert preflight_block(between) and preflight_ordering_ok(between), ordering_verdict(between)
+
+    # 正控（判别力仍在）：把预检块整块切出来，重新插到启动行**之后** ⇒ 红且报「之后」
+    # （块内自带 `STACK_MARKER` ⇒ `preflight_block` 仍能取出它，判红走的就是位置比较那条路径）
+    block = preflight_block(smoke)
+    start = smoke.index(block)
+    head_at, head_end = spans[0]
+    relocated = (smoke[:start] + smoke[start + len(block):head_end]
+                 + block + smoke[head_end:])
+    assert relocated.find(PREFLIGHT_MARKER) > relocated.find(smoke[head_at:head_end]), (
+        f"注入未生效：块没被移到启动行之后"
+        f"（marker@{relocated.find(PREFLIGHT_MARKER)} / launch@{relocated.find(smoke[head_at:head_end])}）")
+    assert not preflight_ordering_ok(relocated), "顺序正控失败：判据已被改成恒真"
+    assert "之后" in ordering_verdict(relocated), ordering_verdict(relocated)
+
+    # fail-closed：启动行被注释掉（只剩注释里那句话）⇒ 定位不到 ⇒ 红且具名
+    commented_out = smoke.replace("  ( cd \"$REPO_ROOT/backend/admin-api\"",
+                                  "  # ( cd \"$REPO_ROOT/backend/admin-api\"", 1)
+    assert launch_line_spans(commented_out) == [], "注入未生效：被注释掉的启动行仍被算作启动行"
+    assert not preflight_ordering_ok(commented_out), "定位不到启动行必须 fail-closed（判红）"
+    assert "结构锚" in ordering_verdict(commented_out), ordering_verdict(commented_out)
 
 
 def _mutate_script(tmp_path: Path, name: str, old: str, new: str, expect: str = "") -> Path:

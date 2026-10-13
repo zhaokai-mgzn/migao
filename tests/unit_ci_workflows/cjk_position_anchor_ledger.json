@@ -1,0 +1,259 @@
+{
+    "note": "「用中文/注释级文案当**结构位置**」的登记台账（issue #6802；同族 issue #5323「把原文当代码读」的**位置**形态）。判据 = tests/unit_ci_workflows/test_cjk_position_anchor_guard.py。口径：`.find/.index/.rfind/.rindex(<含中日韩/制表符/全角字符的字符串字面量>)` 的结果被用于**位置语义**（切片端 / 顺序比较端 / `sorted` 键 / 先落到变量再当上述位置用）⇒ 该处**必须**登记且给 reason 现取证据；**未登记即红**；检出集 ↔ 登记集 **双向相等**（两边任一多出条目都判红）；条数 ≤ 判据里的 `FROZEN_MAX_SITES`（**只许缩短**，加条目 = 在 diff 里显式改大它 + PR body 说明为什么不能改结构锚）。⚠️ 本台账**不为存量的安全性背书**：它只裁「新增的位置锚」这一形态。",
+    "issue": "#6802",
+    "frozen_max_sites": 42,
+    "sites": [
+        {
+            "file": "tests/unit_ci_workflows/test_deploy_leg_failure_reaction.py",
+            "anchor": "值守面（超时未部署 ⇒ 判红 + 开/清值守 issue）",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 1 次，其中注释行 0 次。 判定 = `cmp`（assert names.index(\"值守面（超时未部署 ⇒ 判红 + 开/清值守 issue）\") < names.index(STEP）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_deploy_skip_is_not_success.py",
+            "anchor": "（判据：跳过 CLI 安装）",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 3 次，其中注释行 0 次。 判定 = `cmp`（assert body.index(\"swas_deploy_running_tag.sh\") < body.index(\"（判据：跳过 C）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_deposition_total_migration.py",
+            "anchor": "回滚 SQL",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 4 次，其中注释行 0 次。 判定 = `slice`（tail = body[body.index(\"回滚 SQL\"):]）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_dev_db_whitelist_one_command.py",
+            "anchor": "# ── 2.5 业务路由自检",
+            "kind": "prose-output",
+            "reason": "业务路由自检块（判据 7b）的**块边界 marker**：`# ── 2.5 业务路由自检` 在脚本里只出现一次，故这里的 `find` 首现语义是有意的（同 `preflight_block`；会被喂红的是**位置比较**那一侧，已按 #6802 改结构锚）。现取证据：该锚在本判据文件内出现 2 次，其中注释行 0 次。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_dev_db_whitelist_one_command.py",
+            "anchor": "启动 admin-api",
+            "kind": "neg-control",
+            "reason": "本包（#6802）判据 7c 的**注释负控**：测试**有意**断言「运行期文本里这个串在注释里」这件事（`decoy.index(\"启动 admin-api\") < decoy.index(PREFLIGHT_MARKER)`），不是在拿它当结构位置 —— 被判据守的结构位置已改用 `LAUNCH_LINE_RE`（`backend/admin-api` + `mvnw spring-boot:run` 的**代码行**）。现取证据：该锚在本判据文件内出现 13 次，其中注释行 4 次。（13 次里有 4 行注释，正是它把旧判据的首现顶到注释上）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_land_tool_provenance.py",
+            "anchor": "旧副本：没有守卫",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 3 次，其中注释行 0 次。 判定 = `cmp`（assert proc.stdout.index(TOOL_MARK) < proc.stdout.index(\"旧副本：没有守卫\"), (）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_post_merge_verify_leg.py",
+            "anchor": "判定（定向跑判据面）",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 2 次，其中注释行 0 次。 判定 = `cmp`（assert names.index(str(step[\"name\"])) < names.index(\"判定（定向跑判据面）\"), (）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_production_catalog_seed.py",
+            "anchor": "外帘装袋",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 21 次，其中注释行 3 次。 判定 = `dataflow`（idx = steps.index(\"外帘装袋\")）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_schema_integrity.py",
+            "anchor": "回落 docker compose up --build",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 3 次，其中注释行 0 次。 判定 = `dataflow`（i = src.index(\"回落 docker compose up --build\")）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_schema_integrity.py",
+            "anchor": "镜像构建完成（buildx + GHA cache）",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 2 次，其中注释行 0 次。 判定 = `dataflow`（i = src.index(\"镜像构建完成（buildx + GHA cache）\")）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_schema_integrity.py",
+            "anchor": "回落 docker compose up --build",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 3 次，其中注释行 0 次。 判定 = `dataflow`（i = src.index(\"回落 docker compose up --build\")）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_schema_integrity.py",
+            "anchor": "镜像构建完成（buildx + GHA cache）",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 2 次，其中注释行 0 次。 判定 = `dataflow`（i = src.index(\"镜像构建完成（buildx + GHA cache）\")）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_schema_integrity.py",
+            "anchor": "回落 docker compose up --build",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 3 次，其中注释行 0 次。 判定 = `dataflow`（j = src.index(\"回落 docker compose up --build\", i)）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_suite_self_lock.py",
+            "anchor": "## 机器级重活并发准入",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 1 次，其中注释行 0 次。 判定 = `dataflow`（head = text.index(\"## 机器级重活并发准入\")）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_suite_self_lock.py",
+            "anchor": "## 批次统一验证",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 1 次，其中注释行 0 次。 判定 = `slice`（section = text[head:text.index(\"## 批次统一验证\", head)]）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_deploy_blue_green.py",
+            "anchor": "2.5 严格蓝绿",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 6 次，其中注释行 0 次。 判定 = `dataflow`（i_bg = text.find(\"2.5 严格蓝绿\")）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_deploy_blue_green.py",
+            "anchor": "== 3. 健康检查",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 1 次，其中注释行 0 次。 判定 = `dataflow`（i_hc3 = text.find(\"== 3. 健康检查\")）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_deploy_blue_green.py",
+            "anchor": "2.5 严格蓝绿",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 6 次，其中注释行 0 次。 判定 = `dataflow`（i_bg = text.find(\"2.5 严格蓝绿\")）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_deploy_blue_green.py",
+            "anchor": "# ══",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 11 次，其中注释行 10 次。 判定 = `dataflow`（i_sec_start = text.rfind(\"# ══\", 0, text.find(\"2.5 严格蓝绿\"))）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_deploy_blue_green.py",
+            "anchor": "# ── 2.6 nginx",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 1 次，其中注释行 0 次。 判定 = `dataflow`（i_sec_end = text.find(\"# ── 2.6 nginx\")）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_deploy_blue_green.py",
+            "anchor": "echo \"== 2.5 严格蓝绿预验证",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 2 次，其中注释行 0 次。 判定 = `dataflow`（i_start = text.find('echo \"== 2.5 严格蓝绿预验证')）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_deploy_config_pinning.py",
+            "anchor": "❌ 取不到 tag=${TAG} 对应的配置",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 2 次，其中注释行 0 次。 判定 = `dataflow`（i = sec.find(\"❌ 取不到 tag=${TAG} 对应的配置\")）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_deploy_disk_recovery.py",
+            "anchor": "::error::**未开始部署**",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 3 次，其中注释行 1 次。 判定 = `dataflow`（i = text.find(\"::error::**未开始部署**\")）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_deploy_disk_recovery.py",
+            "anchor": "== 1.4 C′ 服务器侧构建",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 2 次，其中注释行 0 次。 判定 = `dataflow`（i = out.find(\"== 1.4 C′ 服务器侧构建\")）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_deploy_disk_recovery.py",
+            "anchor": "== 1.9 磁盘水位预检",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 1 次，其中注释行 0 次。 判定 = `dataflow`（j = out.find(\"== 1.9 磁盘水位预检\", i)）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_deploy_disk_recovery.py",
+            "anchor": "say \"::error::部署失败（tag=",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 1 次，其中注释行 0 次。 判定 = `dataflow`（nxt = text.find('say \"::error::部署失败（tag=', k + 1)）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_deploy_disk_retention.py",
+            "anchor": "echo \"== 2.7 镜像保留策略清理",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 1 次，其中注释行 0 次。 判定 = `dataflow`（i = text.find(\"echo \\\"== 2.7 镜像保留策略清理\")）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_deploy_disk_retention.py",
+            "anchor": "echo \"== 3. 健康检查",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 2 次，其中注释行 0 次。 判定 = `dataflow`（j = text.find('echo \"== 3. 健康检查')）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_deploy_disk_retention.py",
+            "anchor": "else\n  echo \"  磁盘水位 ${DISK_PCT}%（≤90%，OK）\"",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 0 次，其中注释行 0 次。 判定 = `dataflow`（b = text.find('else\\n  echo \"  磁盘水位 ${DISK_PCT}%（≤90%，OK）\"')）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_deploy_disk_retention.py",
+            "anchor": "echo \"== 2.7 镜像保留策略清理",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 1 次，其中注释行 0 次。 判定 = `dataflow`（c = old.find('echo \"== 2.7 镜像保留策略清理')）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_deploy_disk_retention.py",
+            "anchor": "echo \"== 3. 健康检查",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 2 次，其中注释行 0 次。 判定 = `dataflow`（d = old.find('echo \"== 3. 健康检查')）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_deploy_disk_retention.py",
+            "anchor": "清理后磁盘: ",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 3 次，其中注释行 0 次。 判定 = `cmp`（assert proc.stdout.index(\"清理后磁盘: \") < proc.stdout.index(\"补回顺序：深度清理**已完）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_deploy_disk_retention.py",
+            "anchor": "补回顺序：深度清理**已完成**",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 2 次，其中注释行 0 次。 判定 = `cmp`（assert proc.stdout.index(\"清理后磁盘: \") < proc.stdout.index(\"补回顺序：深度清理**已完）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_deploy_no_downgrade.py",
+            "anchor": "2.5 严格蓝绿",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 4 次，其中注释行 0 次。 判定 = `dataflow`（i_bg = text.find(\"2.5 严格蓝绿\")）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_deploy_no_downgrade.py",
+            "anchor": "# ── 2.1 ",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 1 次，其中注释行 0 次。 判定 = `dataflow`（i_eff_c = text.find(\"# ── 2.1 \", i_pull)               # 生效 tag 段的注释头）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_deploy_no_downgrade.py",
+            "anchor": "2.5 严格蓝绿",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 4 次，其中注释行 0 次。 判定 = `dataflow`（i_bg_anchor = text.find(\"2.5 严格蓝绿\", i_eff)）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_server_side_build.py",
+            "anchor": "echo \"== 2. 拉取镜像",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 1 次，其中注释行 0 次。 判定 = `dataflow`（i = text.find('echo \"== 2. 拉取镜像')）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_server_side_build.py",
+            "anchor": "并发部署互踩",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 3 次，其中注释行 0 次。 判定 = `dataflow`（i = doc.find(\"并发部署互踩\")）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_swas_server_side_build.py",
+            "anchor": "并发部署互踩",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 3 次，其中注释行 0 次。 判定 = `dataflow`（i = text.find(\"并发部署互踩\")）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_verify_all_tri_state_noop.py",
+            "anchor": "无变更 ⇒ 未执行任何检查",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 4 次，其中注释行 0 次。 判定 = `dataflow`（guard = _SCRIPT.index(\"无变更 ⇒ 未执行任何检查\")）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_xiaobu_case_set.py",
+            "anchor": "return await _retry_502(\"登录\", _do_login)",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 2 次，其中注释行 0 次。 判定 = `dataflow`（i_retry = src.find('return await _retry_502(\"登录\", _do_login)')）。"
+        },
+        {
+            "file": "tests/unit_ci_workflows/test_xiaobu_case_set.py",
+            "anchor": "return await _retry_502(\"登录\", _do_login)",
+            "kind": "prose-output",
+            "reason": "锚取的是**该对象自身的真值文本**（输出行 / YAML 步名 / 文档章标题 / 用例真相串），没有比它更「结构」的锚可取；风险面 = 将来有人在**同一语料**里加注释引用同一句。现取证据：该锚在本判据文件内出现 2 次，其中注释行 0 次。 判定 = `dataflow`（i_call = src.find('return await _retry_502(\"登录\", _do_login)')）。"
+        }
+    ]
+}

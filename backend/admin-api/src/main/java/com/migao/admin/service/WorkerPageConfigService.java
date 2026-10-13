@@ -139,6 +139,16 @@ public class WorkerPageConfigService {
             if (!in.containsKey(key)) {
                 details.add(BusinessException.detail(key,
                         "缺少配置键（PUT 是**全量替换**：缺键会让页面集合静默回到默认全开 ⇒ 显式拒绝，不静默回退）"));
+            } else if (in.get(key) == null) {
+                // 🔴 issue #6803：键在、值是 null。它走的是与缺键**同一条**「静默回到默认全开」的路 ——
+                //    null 落库时被归一成**空数组**（见 WorkerPageConfig#toPages 的空列表口径），而工人端 H5
+                //    把空数组读成「没读到权限 ⇒ 全开」（frontend/worker-h5/src/render.mjs 的 effectivePages）
+                //    ⇒ 一个 200 就把企业级对页面的**关闭静默撤销**。文案复用缺键那句，并给**明确出口**
+                //    （只说「不许」而不说该发什么 = 商家只能猜）。
+                details.add(BusinessException.detail(key,
+                        "值不能为 null（null 会让页面集合静默回到默认全开 ⇒ 显式拒绝，不静默回退。"
+                                + "想全开发四页全集 [\"report\",\"order\",\"cut_calc\",\"shipment\"]；"
+                                + "想全关发 {\"pages\":[]}）"));
             }
         }
 

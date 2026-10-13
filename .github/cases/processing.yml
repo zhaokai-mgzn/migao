@@ -1399,6 +1399,39 @@ cases:
         - pr-check.yml
       verifies: []
 
+  - id: PG-073
+    legacy_id: ""
+    title: "工人端页面开关写面：pages 非法形态枚举表逐条 422（null 与缺键同罪；单测覆盖，非 LLM 行为）"
+    domains:
+      - processing
+      - backend
+    tier: edge
+    persona: ""
+    tags:
+      - processing
+      - worker
+      - tenant_config
+      - backend-contract
+    truths_ref:
+      - processing-manage.worker-page-config
+    user_inputs:
+      - "商家在「工人端页面」设置页点了保存，但表单没勾任何页（前端把「没选」发成了 null）"
+    expectations: []
+    data_checks:
+      - "🔴 `{\"pages\":null}` ⇒ **422** + `error.details` 点名 `pages`（issue #6803，云测试环境实测形态）：null 走的是与**缺键同一条**「静默回到默认全开」的路 —— 落库时被归一成**空数组**（`WorkerPageConfig#toPages` 对 null 与非数组一律回空列表），而工人端 H5（`frontend/worker-h5/src/render.mjs` 的 `effectivePages`）把空数组读成「没读到权限 ⇒ 全开」⇒ 一个 HTTP 200 就把企业级对页面的关闭静默撤销。判据 = `backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java` 的 nullPagesIsRejectedExplicitly（范例判据）"
+      - "🔴 **类级元守卫（让「新增一种非法形态忘了拒」当场红）**：把 `pages` 的非法形态**枚举成一张表**逐条断言「422 + details 逐条有理由 + 零落库」——缺键 / null / 非数组（字符串、对象、数字）/ 未知页面键 / 重复页面键 / 含空串项 / 数字项 / 未知配置键（共 10 种）。判据 = 同文件 `everyIllegalShapeIsRejectedAndNothingIsWritten`（走 `illegalPayloadShapes` 这张表的参数化用例）+ everyIllegalShapeNamesAConfigKey（逐条理由只许点名 `pages`/`pages[i]`/请求里真出现的拼错键名）：表里每加一行就多一条断言；任何一行被放行 ⇒ 当场红"
+      - "**理由与出口都必须在响应里**（只说「不许」= 商家只能猜）：null 的理由**复用缺键那句话术**（含「静默回到默认全开」逐字），并给出明确出口 —— 想全开发四页全集 `[\"report\",\"order\",\"cut_calc\",\"shipment\"]`、想全关发 `{\"pages\":[]}`"
+      - "⚠️ **`null` vs `[]` 的落库/读面口径（issue #6803 要求先钉死）**：两者在 `WorkerPageConfig#toPages()` 归一成**同一个空列表** ⇒ 读面（`GET /api/admin/worker-page-config`）都回 `source=stored` + `pages=[]` —— 即 **null 落库 ≠ NULL，而是空数组**。佐证 = 同文件 nullAndEmptyListNormalizeToTheSameStoredShape（不依赖本次修复，修前修后都绿）"
+      - "**`[]` 的语义本单不动**（显式全关是既有合法选择，判据 = 同文件 emptyListIsAnExplicitValidChoice 仍绿）；**但照实登记一个未固化的缺口**：工人端 H5 对空数组同样 fail-open（`effectivePages` 的 `pages.length === 0` 分支）⇒ 今天发 `{\"pages\":[]}` 在 H5 侧**并不会真的全关**。该缺口**本单只报告不改**，交人工裁定（属产品口径 = 会改变工人端可见行为）"
+    skip_reason: "[backend-contract] 本条只登记写面**校验形态**这一层确定性行为，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java）⇒ 不进 agent-eval 冒烟。"
+    merge_log: "2026-10-13 新增（issue #6803）。取号 = PG-073（跨 .github/cases/processing.yml 与 .github/cases/processing-order.yml 两个文件现取全仓最大号 PG-072 + 1；PG 号横跨这两个文件，历史上曾因只核一个文件而重号判红）。修复 = `WorkerPageConfigService#validate` 的键循环里补「键在、值为 null」分支（原实现 `if (rawPages != null)` 让 null 跳过整段类型/内容校验 ⇒ pages 保持空 List ⇒ 落库成空数组）。固化 = 范例判据（null）＋ 10 行非法形态枚举表（类级元守卫）＋ null/[] 落库口径钉死。**未固化项（照实登记）**：① 线上仍是旧行为（部署才生效，CI 绿 ≠ 线上已修）；② 企业级 `[]` 在工人端 H5 侧 fail-open（只报告，未改，待人工裁定）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
   # ── 裁高读面空值容忍（issue #6219）────────────────────────────────────────────
   - id: PG-059
     legacy_id: ""
