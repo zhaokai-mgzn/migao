@@ -1,0 +1,203 @@
+{
+  "_comment": [
+    "商家冒烟 spec（scripts/ui-smoke-merchant/spec.mjs）里 `getByRole(...).first()` 的**首个匹配即目标**台账（issue #6790 判据 F）。",
+    "判据本体 = tests/unit_ci_workflows/test_ui_smoke_selector_liveness.py 的 `first_match_failures`（F 判据）。",
+    "为什么需要它：`/编辑|权限/` 在整页里的**首个匹配是侧边栏「加入常用」控件**（探针实测",
+    "`[\"0|title=加入常用\",\"1|title=编辑\",…]`）⇒ 点了它只切换收藏、行内编辑按钮一个都没点到、等弹窗 6s 超时。",
+    "而「文案/role/名字在不在源码里」这一层**结构上**看不到「谁先命中」（判据 A/R/N 的射程外）。",
+    "口径：① 凡 `getByRole(...).first()` 落在**动作/门控**上（`.first().click()` / `.first().isVisible()` / 变量随后被点）",
+    "**必须登记**（未登记即红）；② 每条要给出**锚**（`anchor`，必须是**被驱动面源码里逐字可取**的离散标识 ——",
+    "按钮文案 / `title=` / `data-testid`），证明「首个匹配就是目标」在**静态面**有落点；",
+    "③ 锚取不到 ⇒ 红并具名；④ 理由过短 ⇒ 红；⑤ **只许缩短**（条数 ≤ baseline_count）；⑥ **豁免必须有理由**。",
+    "🔴 **边界（照实登记，§19.1）**：① 锚的**唯一性**在静态面**判不了**（`编辑` 在整仓出现 174 次）——",
+    "「运行时首个匹配到底是谁」的终判仍是**真栈探针**（`page.getByRole(...).evaluateAll(...)` 取出匹配序列）；",
+    "本判据锁的是「**这个动作有没有被显式登记过 + 登记的锚在被驱动面还在不在**」这一层腐烂；",
+    "② **豁免只覆盖 `getByRole` 形态**；`locator('xpath=…')` / `locator('text=…')` 链上的 `.first()` 由判据 C 的登记面承担；",
+    "③ 动作面口径 = `.first().<click|fill|selectOption|check|press>(` 或「该变量随后被点」——见 `_first_match_action_sites`。"
+  ],
+  "baseline_count": 20,
+  "entries": [
+    {
+      "journey": "01-login",
+      "matcher": "/管理员登录/",
+      "anchor": "管理员登录",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/app/login/page.tsx::role=\"tablist\"",
+      "note": "登录页 `role=tablist` 下恰 2 个 tab（员工登录 / 管理员登录）⇒ 正则只命中管理员那个。"
+    },
+    {
+      "journey": "03-briefing",
+      "matcher": "/生成|立即生成|重新生成/",
+      "anchor": "立即生成",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/app/(dashboard)/briefing/page.tsx",
+      "note": "简报页的主操作按钮（三种文案 = 同一入口的备选写法）；`立即生成` 是被驱动面现取到的那一个。"
+    },
+    {
+      "journey": "09-products-new",
+      "matcher": "/存草稿|存为草稿/",
+      "anchor": "存草稿",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/components/products/ProductForm.tsx",
+      "note": "表单底部唯一的草稿提交入口（`存草稿并离开` 是另一个按钮、文案更长，正则 `存草稿` 子串会同时命中两者 ⇒ 由 `.first()` 取先渲染的那个；真栈读数见 PR body）。"
+    },
+    {
+      "journey": "12-processing",
+      "matcher": "/新增加工项|新建加工项|添加加工项/",
+      "anchor": "新增加工项",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/app/(dashboard)/processing/page.tsx",
+      "note": "加工项页头部唯一新增按钮（三种文案 = 历史写法）。"
+    },
+    {
+      "journey": "12-processing",
+      "matcher": "/编辑/",
+      "anchor": "编辑",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/components/production-config/ProcessingItemsPanel.tsx",
+      "note": "⚠️ **宽正则**：`编辑` 在整仓出现上百次。本条目登记的是「该动作在加工项页上下文里、由 `isVisible()` 门控」；真栈实测（首个匹配 = 加工项详情里的编辑）见 PR body —— 这是**有意保留**的宽形态，不是漏网。"
+    },
+    {
+      "journey": "12-processing",
+      "matcher": "/删除/",
+      "anchor": "删除",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/components/production-config/ProcessingItemsPanel.tsx",
+      "note": "⚠️ 同上（宽正则 + `isVisible()` 门控）。"
+    },
+    {
+      "journey": "13-categories",
+      "matcher": "/新增分类|添加分类|新建分类/",
+      "anchor": "添加分类",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/app/(dashboard)/categories/page.tsx",
+      "note": "分类页头部唯一新增入口（现取字面量 = `添加分类`，见 frontend/admin-web/src/app/(dashboard)/categories/page.tsx）；`新增分类`/`新建分类` 是不再存在的历史写法 ⇒ 正则的另两半已逸，`isVisible()` 门控仍在。"
+    },
+    {
+      "journey": "14-orders-list",
+      "matcher": "/下一页|next/",
+      "anchor": "下一页",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/components/ui/Pagination.tsx",
+      "note": "分页组件唯一的下一页按钮（末页不渲染 ⇒ 有 `isVisible()` 门控）。"
+    },
+    {
+      "journey": "15-orders-new",
+      "matcher": "/选择商品/",
+      "anchor": "选择商品",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx",
+      "note": "建单页商品信息卡的唯一入口按钮（「选择客户」是另一个按钮，文案不同）⇒ 首个匹配即目标。"
+    },
+    {
+      "journey": "15-orders-new",
+      "matcher": "/提交订单/",
+      "anchor": "提交订单",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx",
+      "note": "建单页底部唯一的提交按钮（全仓唯一字面量，`grep -c` 实测 1 命中）⇒ 首个匹配即目标。"
+    },
+    {
+      "journey": "16-order-detail-processing-order",
+      "matcher": "/确认付款/",
+      "anchor": "确认付款",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx",
+      "note": "订单详情页收款闸门按钮（pending 才渲染）。"
+    },
+    {
+      "journey": "16-order-detail-processing-order",
+      "matcher": "/生成加工单/",
+      "anchor": "生成加工单",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx",
+      "note": "加工单块内生成按钮（confirmed 后才渲染）。"
+    },
+    {
+      "journey": "16-order-detail-processing-order",
+      "matcher": "/确认发加工/",
+      "anchor": "确认发加工",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx",
+      "note": "发加工内联表单的确认键（全仓唯一字面量，实测 1 命中）；同一屏的「发加工」是另一个按钮，文案不同 ⇒ 首个匹配即目标。"
+    },
+    {
+      "journey": "17-order-ship",
+      "matcher": "/确认发货/",
+      "anchor": "确认发货",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/app/(dashboard)/orders/[id]/ship/ShipOrder.tsx",
+      "note": "发货页唯一提交按钮（被加工单守阻断时不渲染 ⇒ 有 `waitVisible` 门控）。"
+    },
+    {
+      "journey": "19-after-sales-detail",
+      "matcher": "/接受处理/",
+      "anchor": "接受处理",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/app/(dashboard)/after-sales/[id]/page.tsx",
+      "note": "工单详情页受理按钮（pending 才渲染；全仓唯一）。"
+    },
+    {
+      "journey": "19-after-sales-detail",
+      "matcher": "/关闭工单/",
+      "anchor": "关闭工单",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/app/(dashboard)/after-sales/[id]/page.tsx",
+      "note": "工单详情页关闭按钮（processing 才渲染）。"
+    },
+    {
+      "journey": "21-customer-detail",
+      "matcher": "/编辑/",
+      "anchor": "编辑",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/app/(dashboard)/customers/[id]/CustomerDetail.tsx",
+      "note": "客户详情页唯一的编辑入口（宽正则，但只在详情页上下文里用、且结果只记进证据不驱动断言）。"
+    },
+    {
+      "journey": "23-employees",
+      "matcher": "/新增员工|新建员工|添加员工/",
+      "anchor": "新增员工",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/app/(dashboard)/employees/page.tsx",
+      "note": "员工管理页头部唯一新增按钮（三种文案 = 历史写法）。"
+    },
+    {
+      "journey": "23-employees",
+      "matcher": "/编辑/",
+      "anchor": "编辑",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/app/(dashboard)/employees/page.tsx",
+      "note": "⚠️ 宽正则：本旅程**先收窄到行**（`empRow.locator('button:has-text(\"编辑\")')`），`.getByRole(...).first()` 只是 `click({force:true})` 失败后的兜底 ⇒ 兜底仍可能命中侧边栏「加入常用」（同 24-roles 的病灶形态）。**有意保留**（行为面由真栈读数承担），见 PR body。"
+    },
+    {
+      "journey": "25-settings",
+      "matcher": "/修改密码/",
+      "anchor": "修改密码",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/app/(dashboard)/settings/page.tsx",
+      "note": "设置页 Tab（`修改密码`），由 `isVisible()` 门控。"
+    },
+    {
+      "journey": "26-notifications",
+      "matcher": "/全部已读|标记已读/",
+      "anchor": "全部已读",
+      "anchor_kind": "text",
+      "where": "frontend/admin-web/src/app/(dashboard)/notifications/page.tsx",
+      "note": "通知中心顶部唯一批量已读按钮（全仓唯一）。"
+    }
+  ],
+  "exemptions": [
+    {
+      "selector": "page.getByRole('button', { name: new RegExp(btn) }).first()",
+      "reason": "`16-` 的加工单状态流转循环：`btn` 是**循环变量**，静态面看不到字面量；其取值来自 spec 内**静态 tuple** `[['发加工','已发加工'],['开始加工','加工中'],['加工完成','加工完成']]`（三个字面量都在被驱动面取到）⇒ 「首个匹配」由该单的状态驱动、且每步都有 `waitVisible` 门控。行为面证据 = 真栈读数（PR body）。"
+    },
+    {
+      "selector": "page.getByRole('button', { name: new RegExp(nextBtn) }).first()",
+      "reason": "同上：`nextBtn` 来自同一静态 map（`发加工→开始加工→加工完成`），是「按钮切换」这一效果层断言的读取点，不是点击目标。"
+    },
+    {
+      "selector": "page.getByRole('button', { name: /^保存$/ }).first()",
+      "reason": "**负控**：断言设置页**没有**底部「保存」按钮（#5899 取消底部保存 ⇒ 首个匹配本就该不存在）。它不点任何东西、且「匹配到了」会让断言失败 —— 与「首个匹配是错的元素」相反方向。"
+    }
+  ]
+}

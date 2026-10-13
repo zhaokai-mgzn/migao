@@ -1,0 +1,97 @@
+{
+  "_comment": [
+    "商家冒烟 spec（scripts/ui-smoke-merchant/spec.mjs）里 `locator('<css>')` 的**选择器活性**台账（issue #6790 判据 C）。",
+    "判据本体 = tests/unit_ci_workflows/test_ui_smoke_selector_liveness.py 的 `css_failures`。",
+    "为什么需要它：判据 A/R/N 只看文案 / role / 名字；`locator('select')` / `locator('input[placeholder*=\"X\"]')`",
+    "这类 **CSS 选择器**枪口完全不同（旧形态：`select` 落在 0 个 `<select>` 的页面上 ⇒ selector 永不命中却无人报红）。",
+    "两层口径：① **能自动核的族**（data-testid / placeholder / role / title / type / aria-label / :has-text）逐条现取，取不到 ⇒ 红且具名；",
+    "② 本台账登记**族外形态**（结构性表格行 / 裸标签 / `[class*=…]` / 属性存在性 / 复合选择器）。",
+    "纪律：未登记即红 / 条目不得空转（必须还在 spec 里）/ 理由 ≥30 字 / **只许缩短**（条数 ≤ baseline_count）。",
+    "🔴 **边界（照实登记，§19.1）**：子串现取**不是**权威 DOM 活性 —— 静态面判不了「运行期真有匹配」；",
+    "本判据锁的是「这个字面量在被驱动面源码里还在不在」这一层腐烂；运行期命中数 / 页面是否真渲染该控件，由真栈读数承担（PR body）。",
+    "被驱动面 = frontend/admin-web/src/**（不含 scripts/ —— `locator()` 驱动的是产品 DOM）。"
+  ],
+  "baseline_count": 16,
+  "registered": [
+    {
+      "selector": ".grid",
+      "reason": "Tailwind 工具类，只出现在 `className` 拼接里（不在任何单文件里成独立类名）⇒ 静态面按字面量核不到；「看板首屏有卡片网格」由真栈读数承担。",
+      "anchor": "frontend/admin-web/src/app/(dashboard)/dashboard/page.tsx"
+    },
+    {
+      "selector": ".po-print-area",
+      "reason": "加工单打印区类名（`ProcessingOrderBlock`）——打印专用容器，页面非打印态也算「存在」，静态面看不到它**当前**是否挂在 DOM 上；真栈读数承担。",
+      "anchor": "frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx"
+    },
+    {
+      "selector": "a[href*=\"/customers/\"]",
+      "reason": "属性**存在性/子串**形态：href 由路由模板拼出（`href={`/customers/${id}`}`）⇒ 没有可核的字面属性；真栈读数承担「客户列表真有详情链接」。",
+      "anchor": "frontend/admin-web/src/app/(dashboard)/customers/page.tsx"
+    },
+    {
+      "selector": "button[title]",
+      "reason": "**属性存在性**（任何带 title 的按钮）：只在「找不到行内编辑按钮时把页面带 title 的按钮打出来」的诊断里用，不驱动断言 ⇒ 静态面核不了「哪个 title 该在」。",
+      "anchor": "frontend/admin-web/src/app/(dashboard)/roles/page.tsx"
+    },
+    {
+      "selector": "div.group",
+      "reason": "Tailwind `group` 类（hover 联动分组）——类名短、只在 `className` 里，静态按字面量核会假阴性；该 selector 只用于「定位新建分类那一行」，属**兜底定位**。",
+      "anchor": "frontend/admin-web/src/app/(dashboard)/categories/page.tsx"
+    },
+    {
+      "selector": "form input",
+      "reason": "复合形态（先 `form` 再 `input`）：`<form>` 与 `<input>` 都由共享 `Input` 组件 + 各自页面渲染，静态面看不到「这个表单里真有输入框」；真栈读数承担。",
+      "anchor": "frontend/admin-web/src/components/ui/Input.tsx"
+    },
+    {
+      "selector": "input",
+      "reason": "裸标签形态（`locator('input')`）：判「页面上有没有任何输入控件」，静态面只能核到「被驱动面有 `<input`」；运行期是否有由真栈读数承担。",
+      "anchor": "frontend/admin-web/src/components/ui/Input.tsx"
+    },
+    {
+      "selector": "input, textarea, select",
+      "reason": "同上（三引擎并集）：判「发货页有没有表单控件」，静态面核的是「三类控件在被驱动面都存在」。",
+      "anchor": "frontend/admin-web/src/components/ui/Select.tsx"
+    },
+    {
+      "selector": "option",
+      "reason": "裸标签形态：`<option>` 只由共享 `Select` 组件渲染（外层页面文件里取不到）⇒ 静态面按「被驱动面存在 `<option`」核；某个具体下拉里有没有选项由真栈读数承担。",
+      "anchor": "frontend/admin-web/src/components/ui/Select.tsx"
+    },
+    {
+      "selector": "select",
+      "reason": "裸标签形态：`<select>` 只由共享 `Select` 组件渲染。**本单的病根形态就是它**（旧读数：「页面 `<select` 数 = 0」）⇒ 现取被驱动面仍存在 `<select`；某个具体页面（如员工弹窗里的岗位下拉）是否真渲染，由真栈读数承担。",
+      "anchor": "frontend/admin-web/src/components/ui/Select.tsx"
+    },
+    {
+      "selector": "span.bg-primary-50",
+      "reason": "**动态拼接**的状态徽标类名（`ProcessingOrderBlock` 的状态徽标，类名可能由 `cn()` 拼出）⇒ 静态面按字面量核会假阴性；「徽标文案 == 期望状态」这一效果层断言的真实性由真栈读数承担。",
+      "anchor": "frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx"
+    },
+    {
+      "selector": "tbody tr",
+      "reason": "结构性表格行：`<tbody>`/`<tr>` 由共享 `Table` 组件渲染（各页面文件里取不到）⇒ 静态面核不到；「这一页到底有没有行」正是它要判的东西，只能由真栈读数承担（也是本单 10- 旅程「草稿行没有查看按钮」的现场）。",
+      "anchor": "frontend/admin-web/src/components/ui/Table.tsx"
+    },
+    {
+      "selector": "tbody tr, [role=\"row\"], [class*=\"card\"]",
+      "reason": "结构性表格行 / 卡片三写法并集（岗位页是卡片布局）：静态面核不到「运行期用哪一种」；由真栈读数承担。",
+      "anchor": "frontend/admin-web/src/app/(dashboard)/roles/page.tsx"
+    },
+    {
+      "selector": "tbody tr, [role=\"row\"]",
+      "reason": "结构性表格行（含 ARIA row 备选）：静态面核不到；由真栈读数承担。",
+      "anchor": "frontend/admin-web/src/components/ui/Table.tsx"
+    },
+    {
+      "selector": "tbody tr, [class*=\"Table\"] [class*=\"row\"], [role=\"row\"]",
+      "reason": "结构性表格行三写法并集（含 `[class*=…]` 子串形态）：静态面核不到；由真栈读数承担。",
+      "anchor": "frontend/admin-web/src/components/products/ProductTable.tsx"
+    },
+    {
+      "selector": "button:text-is(\"查看\")",
+      "reason": "Playwright 专有伪类 `:text-is()`（**DOM 里没有可现取的属性**，只有元素文本）：用于在列表里精确挑「文案**正好是**『查看』」的行内按钮。静态面核不到「运行期有没有这一行」⇒ 本租户列表全为草稿时旅程自造一张 `on_sale` 商品；命中数由真栈读数承担。",
+      "anchor": "frontend/admin-web/src/components/products/ProductTable.tsx"
+    }
+  ]
+}
