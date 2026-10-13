@@ -74,6 +74,7 @@ export function ParamScalarRow({
   param,
   value,
   docHref,
+  hideValue = false,
   unset = false,
   changedFromDefault,
 }: {
@@ -86,6 +87,15 @@ export function ParamScalarRow({
    * 算料口径域给 `glossaryAnchorOf(key)`；域面板（`TenantParamsPanel`）不给。
    */
   docHref?: string
+  /**
+   * 🔴 **不渲染右列值**（§31 P2「信息不重复」；2026-10-13 真机读图复核逼出来的返修）。
+   *
+   * 可写形态下右列值与输入框**同源**（都读同一份草稿）⇒ 同一行把同一个数印两遍，
+   * 而两次都不可解释「谁是**要改的**那个」（是纯回声，**不是**「已保存 vs 正在改」的对照）。
+   * ⇒ 可写形态的值只由**输入框**一处承载；右列值只在**只读形态**保留
+   * （`TenantParamsPanel` 那条路上没有输入框，值只能靠它显示）。
+   */
+  hideValue?: boolean
   /** 是否标「未配置（正在用引擎默认值）」 */
   unset?: boolean
   /**
@@ -131,14 +141,16 @@ export function ParamScalarRow({
             <InlineMarkdown text={param.copy.hint} />
           </p>
         </div>
-        <div className="text-right flex-shrink-0">
-          <div data-testid={`param-value-${param.key}`} className="text-sm font-mono text-neutral-900">
-            {value}
+        {!hideValue && (
+          <div className="text-right flex-shrink-0">
+            <div data-testid={`param-value-${param.key}`} className="text-sm font-mono text-neutral-900">
+              {value}
+            </div>
+            {/* 🔴 issue #6663（§31 P3「不摆内部标识」）：改前这里印的是**引擎键名**
+                （`per_fold_single` / `oversize_width_threshold` …）—— 那是引擎的实现细节，
+                商家既读不懂也用不上。要说明「这个参数是什么」用**人话标签 + 口径说明**（上方已各有其一）。 */}
           </div>
-          {/* 🔴 issue #6663（§31 P3「不摆内部标识」）：改前这里印的是**引擎键名**
-              （`per_fold_single` / `oversize_width_threshold` …）—— 那是引擎的实现细节，
-              商家既读不懂也用不上。要说明「这个参数是什么」用**人话标签 + 口径说明**（上方已各有其一）。 */}
-        </div>
+        )}
       </div>
       <p className="text-xs text-neutral-600 mt-2 pt-2 border-t border-neutral-100">
         改它会怎样：<InlineMarkdown text={param.copy.impact} />
@@ -312,6 +324,10 @@ export function CalcCaliberPanel({
         // 🔴 读失败 ⇒ **空位**（不是 `—`）：`—` 长得像「这个参数没有值」，而真相是**整个读面失败**。
         //    加载中仍给 `…`（那是「还在读」，与失败是两件事）。
         value={failed ? '' : loading && !displayConfig ? '…' : valueOf(p.key)}
+        // 🔴 §31 P2（真机复核返修，2026-10-13）：**输入框在屏上时不渲染右列值** ——
+        //    两者同源（都读 `displayConfig`）⇒ 同一行把同一个数印两遍，且分不清哪个是「要改的」。
+        //    条件与下面那个 `NumberInput` 的渲染条件**逐字相同**（有输入框 ⇔ 没有右列值）。
+        hideValue={writable && !!displayConfig}
         unset={usingDefault}
         changedFromDefault={changedFromDefaultOf(p.key)}
       />

@@ -974,9 +974,9 @@ describe('判据 9：同一次读面失败只留一处失败信号（issue #6663
 
     expect(await screen.findByTestId('param-per_fold_single')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByTestId('param-calc-error')).toBeNull())
-    expect(screen.getByTestId('param-value-per_fold_single')).toHaveTextContent('0.37')
-    // 对照：**这个键**有读数 ⇒ 值位必须是那个数，不是 `—`
-    //（⚠️ 不能全页断言「没有 `—`」：读成功的响应里没下发的键本来就渲染 `—`，那是「该键没值」）
-    expect(screen.getByTestId('param-value-per_fold_single').textContent).not.toBe('—')
+    // ⚠️ 2026-10-13（§31 P2 返修）：本页算料域是**可写形态** ⇒ 值只由**输入框**承载
+    //（改前这里断言右列值 `param-value-*` —— 那条判据测的是「同屏第二遍」，返修后按新形态改判）
+    expect(screen.getByTestId('calc-caliber-scalar-per_fold_single')).toHaveValue('0.37')
+    expect(screen.queryByTestId('param-value-per_fold_single')).toBeNull()
   })
 })

@@ -182,7 +182,7 @@ describe('算料口径域面板（issue #6580 抽取后的行为面）', () => {
     expect(screen.getAllByText(/改它会怎样/).length).toBeGreaterThan(0)
   })
 
-  it('🔴 引擎键名不上屏（§31 P3）—— 但机器锚点 `param-<key>` / `param-value-<key>` 全部保留', async () => {
+  it('🔴 引擎键名不上屏（§31 P3）—— `param-<key>` 锚点在，但值**只由输入框承载**（§31 P2）', async () => {
     renderPanel()
     // 展示面：键名一个字都不许出现（改前 6 个键名原样印在数值位下方）
     for (const key of ['per_fold_single', 'margin_single', 'oversize_width_threshold']) {
@@ -190,7 +190,42 @@ describe('算料口径域面板（issue #6580 抽取后的行为面）', () => {
     }
     // 机器锚点在（判据依赖它们，删了就是把判据一起删了）
     expect(screen.getByTestId('param-per_fold_single')).toBeInTheDocument()
-    expect(screen.getByTestId('param-value-per_fold_single')).toHaveTextContent('0.25')
+    // 🔴 §31 P2（返修）：可写形态下右列值**不渲染** —— 它与输入框同源，是纯粹的第二遍
+    expect(screen.queryByTestId('param-value-per_fold_single')).toBeNull()
+    // 值本身没有丢：由输入框承载（唯一一处）
+    expect(screen.getByTestId('calc-caliber-scalar-per_fold_single')).toHaveValue('0.25')
+  })
+
+  /**
+   * §31 P2「信息不重复」的**成对判据**（2026-10-13 真机读图复核逼出来的返修）。
+   *
+   * 改前 `renderScalar` 里右列值 `valueOf(p.key)` 与输入框 `numberOf(displayConfig, p.key)`
+   * **同源**（都读草稿）⇒ 同一行把同一个数印两遍（真机：8 个标量逐行同款），
+   * 而两次都不可解释「谁是**要改的**那个」（是回声，不是「已保存 vs 正在改」的对照）。
+   *
+   * ⇒ 判据必须**成对**，否则「把右列值一律删掉」这种改法也能绿 —— 那会把**只读形态**
+   * （`TenantParamsPanel`，没有输入框、值只能靠右列显示）一起砍掉。
+   */
+  describe('§31 P2：同一个数不许同屏印两遍（值只由一处承载）', () => {
+    it('可写形态 ⇒ 右列值不渲染（输入框就是值）', async () => {
+      await renderPanel()
+      for (const key of CALC_SCALAR_KEYS) {
+        expect(screen.queryByTestId(`param-value-${key}`)).toBeNull()
+      }
+      // 反向自证：输入框**在**（否则「没有右列值」可以靠「整块没渲染」蒙过去）
+      fireEvent.click(screen.getByTestId('param-advanced-toggle-calc'))
+      for (const key of CALC_SCALAR_KEYS) {
+        expect(screen.getByTestId(`calc-caliber-scalar-${key}`)).toBeInTheDocument()
+      }
+    })
+
+    it('只读形态（无写面回调）⇒ 右列值**在**（没有输入框，值只能靠它）', () => {
+      render(
+        <CalcCaliberPanel calc={{ source: 'stored', config: READ_CONFIG } as never} loading={false} />,
+      )
+      expect(screen.getByTestId('param-value-per_fold_single')).toHaveTextContent('0.25')
+      expect(screen.queryByTestId('calc-caliber-scalar-per_fold_single')).toBeNull()
+    })
   })
 
   it('加载中 ⇒ 不出现「未配置（正在用引擎默认值）」这类结论（三态不互画）', () => {
@@ -490,4 +525,5 @@ it('调用方传只读读数（无 `onCalcChange`）⇒ 只渲染读数，不出
   expect(screen.getByTestId('param-value-per_fold_single')).toHaveTextContent('0.25')
   expect(screen.queryByTestId('calc-caliber-scalar-per_fold_single')).toBeNull()
   expect(screen.queryByTestId('calc-caliber-save')).toBeNull()
+  // §31 P2 的对照面：只读形态**保留**右列值（可写形态才不渲染 —— 见上面那对判据）
 })
