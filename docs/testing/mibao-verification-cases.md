@@ -9366,7 +9366,7 @@
 跳过: [backend-contract] 纯前端设计 token 由 vitest 单测验证（tests/unit/tailwind.config.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.ui-token
-溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 A（issue #2534） ｜ tags: ui, token, tailwind
+溯源: 2026-08-25 新增：经营看板织物质感重设计子任务 A（issue #2534） ｜ 2026-10-13（issue #6857，用户裁定**方案 B + C**）**交付形态返工**：用户逐字「不要每行都写个默认，太丑了」+ 「输入框太长」——#6825 搬运写面时沿用了**只读时代**的卡片，可编辑输入只能另起一行、且 `inputCls` 是 `w-full` ⇒ 两位数字被拉满整列（真机几何探针实测 **748px**、整页 3475px）。本轮改为**行式紧凑**（控件与名称同行；提示/影响降为一行小字；行间 `divide-y` 细线）+ **所有数值输入定宽**（`boundedInputCls`；实测 112/160/256px）+ **行内撤掉全部默认态徽标** + 新增「恢复为默认值」（整份 `defaults` 写回草稿、**不自动保存**）。判据 = `CalcCaliberPanel.test.tsx` 判据 8 + `lib/domain-write-surface.test.tsx` 判据 5（类级定宽守护 + `boundedInputCls` 自证）+ 真机几何探针与截图。 ｜ tags: ui, token, tailwind
 
 ### UI-002. 订单/售后状态语义色 chips + 数据空态「暂无数据」治理 🔵
 ```
@@ -10053,7 +10053,7 @@
 数据: **配置主线**（issue #6573）：常驻面只有**一行摘要**（完成数 + 缺口 + 下一步）；逐项明细按需展开且**折叠态下逐项 DOM 不渲染**（§31 P1）；每步三态 = 已配置 / 待配置 / **读不到**（读失败 ⇒ unknown，绝不画成「待配置」）
 数据: **域级权限**（issue #6573）：算料域需 `production:view`、AI 客服域需 `system:manage`、余料**尺寸**域需 `processing:manage`；不持该码的域**不渲染也不请求**（域 label 真值源 = `frontend/admin-web/src/lib/config-center-domains.ts` 的 `remnant-sizes`；issue #6827 起因旧文案仍写「余料回收」域 ⇒ 判据行同批改准）
 数据: 域清单按 PARAM_DOMAINS 渲染（算料 / AI 客服 / 加工费 / 工艺）；每个标量参数渲染 label + hint + impact 三件套
-数据: 算料域当读面 source 不等于 stored ⇒ 每键渲染「未配置（正在用引擎默认值）」标记；source 等于 stored ⇒ 不渲染该标记
+数据: 算料域当读面 source 不等于 stored ⇒ **域级**说明「下表全部为引擎默认值」（横幅 + 标题下口径徽标）；**逐键不再渲染任何默认态徽标**（issue #6857 改判，用户逐字「不要每行都写个默认，太丑了」⇒ §31 P2 信息不重复）
 数据: 「高级」默认收起：初始不渲染其中参数，点开后渲染
 数据: 参数文案里不出现数字字符（扫描 tenant-params.ts 全部文案）；算料域 common 并 advanced 与 CALC_SCALAR_KEYS 双向相等
 数据: 算料口径读面失败（权限拒绝等）⇒ 渲染可行动话术（含「请联系管理员」），不静默空白
@@ -10062,6 +10062,9 @@
 数据: **算料口径域 = 算料配置的唯一写面**（issue #6825）：域内就地可改 8 标量 + 档位表（显示名 + 满度逐行可改）+ 拼色每折吃布表 + `default_formula` select，**只有一个**保存按钮；保存 `PUT` 带**全量 11 键**（缺键 ⇒ 后端静默回默认值）；422 ⇒ `details[].message` 逐条上屏、**草稿不回滚**、不谎报「已保存」；数字格清空 ⇒ 空框（不得出现字面量 `NaN`）
 数据: **板子退役**（issue #6825）：`/production/routings` 的 tab 收敛为「工序管理 / 裁高配置」两个（`process-config-tab-calc` 与全部 `craft-calc-config-*` DOM 不得存在）；就绪度第 ④ 步「去处理」是**跨页链接** `/settings?domain=calc`（不是页内切 tab、不是死按钮）；旧深链 `?tab=calc` ⇒ `router.replace` 到 `/settings?domain=calc` **恰好一次**、不 404 不落空白
 数据: **类级守卫：每个配置域都有写面**（issue #6825 判据 6）：遍历 `CONFIG_DOMAINS`（含 `mainlineSteps`）断言 `config-domain-panel-*` 内有可交互控件，且该域有 `[data-write-exit]` 写出口（两者成对 ⇒ **只留试算框**那种「有输入框、没保存」的形态必红）；台账未登记即抛错（fail-closed）
+数据: **行式紧凑版式**（issue #6857，用户裁定方案 B）：算料域的数值输入**与名称同一行**（输入框紧邻的前一个兄弟 = 名称元素）、定宽 `w-28` + 数字右对齐（`tabular-nums`）、**不得** `w-full`；行间细分割线、**不再用卡片**；档位表 显示名 `w-40` / 褶倍 `w-28`、拼色表 `w-28`、备用公式 `select` `w-64`
+数据: **行内不标默认态**（issue #6857，用户裁定方案 C）：`param-unset-*` / `param-is-default-*` / `param-changed-*` **一个都不在**；替代 = 域级信号（横幅 + 口径徽标）+ 「恢复为默认值」按钮（把**整份**草稿写回 `defaults`；`defaults_source !== 'engine'` ⇒ 禁用；**不自动保存**）
+数据: **类级守护：配置页数值输入必须定宽**（issue #6857 判据 5）：本域每个 `calc-caliber-*` 输入/下拉都带定宽 token（`w-28`/`w-40`/`w-64`）且**不得** `w-full`；`boundedInputCls` 的替换必须真的生效（`inputCls` 丢了 `w-full` ⇒ 自证红，防静默退化成整列宽）
 前置: 本用例是 [backend-contract] 纯前端用例：前置（算料配置读面与 AI 配置读面）由单测 mock `@/lib/api` 自建（#6573 起算料域读面由**页面**发起、以 props 注入面板），不依赖共享夹具 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它
 跳过: [backend-contract] 纯前端页面与只读展示（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx（算料口径域面板；它承接的是 #6826 删掉的那个死代码组件的面）、frontend/admin-web/tests/unit/pages/settings-params.test.tsx（新页面 + 配置主线）、frontend/admin-web/tests/unit/lib/config-readiness.test.ts（三态判据）、frontend/admin-web/tests/unit/lib/tenant-params.test.ts 执行
 ```
