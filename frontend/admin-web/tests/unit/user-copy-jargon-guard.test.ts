@@ -361,8 +361,9 @@ describe('R12：上屏字面量不得出现已移除的页面名（#6826 · B2 �
       const corrupted = src.replace(old, bad)
       const hits = candidateStrings(corrupted, rel).filter((c) => removedPageNameHit(c.text) !== null)
       expect(hits.length, `${rel} 注入旧串后 R12 必须命中（命中 ${hits.length} 条）`).toBe(1)
-      // 命中的候选里确实带着旧页名（`bad` 在 `linkLabel: '…'` 那种形态下，抽出来的候选是**串内容**）
-      expect(removedPageNameHit(hits[0].text), `${rel} 命中的候选应含旧页名`).not.toBeNull()
+      // 命中的候选里确实带着**已移除集合里的那个名**（`bad` 在 `linkLabel: '…'` 形态下抽出来的是**串内容**）
+      const hitName = removedPageNameHit(hits[0].text)
+      expect(deadPageNames(), `${rel} 命中的候选应含已移除页名，实得 ${hitName}`).toContain(hitName)
       // 反向对照：同一份源码**不注入**时 R12 命中 0（说明上面那条命中的确是注入带来的）
       expect(candidateStrings(src, rel).filter((c) => removedPageNameHit(c.text) !== null)).toEqual([])
     }
