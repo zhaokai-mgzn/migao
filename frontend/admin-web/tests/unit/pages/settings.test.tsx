@@ -99,6 +99,7 @@ const mockGetRoutings = vi.fn()
 const mockGetFeeCombinations = vi.fn()
 const mockGetFeeGaps = vi.fn()
 const mockGetCraftCalcConfig = vi.fn()
+const mockUpdateCraftCalcConfig = vi.fn()
 const mockGetSmallItemSpecs = vi.fn()
 const mockBriefingGetConfig = vi.fn()
 const mockBriefingUpdateConfig = vi.fn()
@@ -120,6 +121,7 @@ vi.mock('@/lib/api', () => ({
     getFeeCombinations: (...args: any[]) => mockGetFeeCombinations(...args),
     getFeeGaps: (...args: any[]) => mockGetFeeGaps(...args),
     getCraftCalcConfig: (...args: any[]) => mockGetCraftCalcConfig(...args),
+    updateCraftCalcConfig: (...args: any[]) => mockUpdateCraftCalcConfig(...args),
     // 两个 board 的读面（替身不由这里取，但模块形状必须完整 —— 页面 import 了它们）
     getOperationsCatalog: vi.fn().mockResolvedValue({ data: { data: null } }),
     getRouteRules: vi.fn().mockResolvedValue({ data: { data: [] } }),
@@ -252,7 +254,26 @@ function mockApiSuccess() {
   )
   mockGetFeeCombinations.mockResolvedValue(ok({ total: 3, combinations: [] }))
   mockGetFeeGaps.mockResolvedValue(ok({ unpriced_combination_total: 0 }))
-  mockGetCraftCalcConfig.mockResolvedValue(ok({ source: 'stored', config: { hem_margin: 0.4 } }))
+  // ⚠️ 读面**整份 11 键**（issue #6825）：改前只回 { hem_margin } 一个键 —— 那是「后端只回一个键」
+  // 的假形状，会让本页保存那一跳的「全量键」判据**恒真**（缺键是因为夹具本来就缺，不是因为代码对）。
+  mockGetCraftCalcConfig.mockResolvedValue(
+    ok({
+      source: 'stored',
+      config: {
+        per_fold_single: 0.25,
+        per_fold_mixed_times: { '1': 0.65, '2': 0.7 },
+        margin_single: 0.2,
+        margin_multi: 0.3,
+        min_fullness: 1.5,
+        tiers: { standard: { fullness: 2, label: '标准工艺' }, economy: { fullness: 1.8, label: '经济工艺' } },
+        default_formula: 'pleat',
+        hem_margin: 0.4,
+        meters_rounding_step: 0.1,
+        oversize_width_threshold: 6,
+        oversize_height_threshold: 4,
+      },
+    }),
+  )
   mockGetSmallItemSpecs.mockResolvedValue(
     ok({ configured: false, items: [], notice: '未配置小件用料尺寸 ⇒ 不产生匹配建议' }),
   )
@@ -763,6 +784,36 @@ describe('判据 7：域内零 tab（两层导航并存 = 用户说的「分不�
         `域「${d.label}」内部还有一套 tab —— 左栏已经有一套导航了（设计 §2 判死线第 3 条）`,
       ).toBe(0)
     }
+  })
+
+  it('算料口径域保存：PUT 正文是**全量键**（页面这一跳也不许缺键 —— 后端整份替换，缺键静默回默认）', async () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams('domain=calc'))
+    render(<SettingsPage />)
+    const input = await screen.findByTestId('calc-caliber-scalar-per_fold_single')
+    fireEvent.change(input, { target: { value: '0.42' } })
+
+    await userEvent.click(screen.getByTestId('calc-caliber-save'))
+    await waitFor(() => expect(mockUpdateCraftCalcConfig).toHaveBeenCalledTimes(1))
+
+    // 🔴 红证：页面把 `calcDraft` 解构掉一个键再发（「只发改过的那个键」那种写法）⇒ 本断言当场红。
+    //    面板侧的同类判据用的是测试自建的宿主，**盖不到页面这一跳**（实测：注入丢键 ⇒ 页面用例全绿）。
+    const body = mockUpdateCraftCalcConfig.mock.calls[0][0] as Record<string, unknown>
+    expect(Object.keys(body).sort()).toEqual(
+      [
+        'per_fold_single',
+        'per_fold_mixed_times',
+        'margin_single',
+        'margin_multi',
+        'min_fullness',
+        'tiers',
+        'default_formula',
+        'hem_margin',
+        'meters_rounding_step',
+        'oversize_width_threshold',
+        'oversize_height_threshold',
+      ].sort(),
+    )
+    expect(body.per_fold_single).toBe(0.42)
   })
 
   it('算料口径域：域内有**就地可改**的写面（issue #6825）—— 只剩只读展示即违规', async () => {
