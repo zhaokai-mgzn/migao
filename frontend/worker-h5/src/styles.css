@@ -78,6 +78,12 @@ html, body {
   background: #fff;
   color: var(--wh5-ink);
   font-size: 15px;
+  /* issue #6763：页头（`.wh5-header`）是 flex 行，默认 `flex: 0 1 auto` 让**按钮先被压缩**
+     —— 工人姓名一长（`当前工人：<名字>（工号 X）`，它是 `flex: 1 1 auto`），按钮被压到 50~55px，
+     小于内容宽度（2 字 × 15px + 左右 padding 14px×2 = 58px）⇒ 浏览器在字符间断行，
+     按钮里出现「切 / 换」。要压缩的是**名字**：按钮显式声明不可收缩 + 不折行。 */
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 /* ---- 现场触屏（issue #6667：手套 + 弱光下的点击反馈）----

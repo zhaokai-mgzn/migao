@@ -1,6 +1,6 @@
 // case_ids: PG-065, BM-006
 //
-// 车间现场端触屏几何探针（issue #6667）—— **真实浏览器**读计算样式与盒子尺寸。
+// 车间现场端几何探针（issue #6667 触屏反馈 + issue #6763 页头折行）—— **真实浏览器**读计算样式与盒子尺寸。
 //
 // 为什么必须真浏览器：`touch-action` / `:active` / 触控目标尺寸这类读数在 Node 里**没有布局引擎**，
 // 静态判据（tests/worker-h5-6667-field-usability.test.mjs 的触屏两条）只能判「CSS 里写没写」——
@@ -33,6 +33,15 @@ const PORT = Number(process.env.CDP_PORT ?? 9223)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
+// ── 页头折行（issue #6763）：为什么**不能**用 height / scrollWidth 判 ────────────────
+// `.wh5-ghost` 有 `min-height: 44px`，折成两行（约 2×21px）仍被 44px 包住 ⇒ **高度不是判别量**；
+// 而「折行」本身也没有横向溢出（`scrollWidth <= clientWidth` 照样成立）⇒ 它也不是。
+// 判别量 = **文字节点的行盒数**：`Range.getClientRects()` 一行一个矩形，折行 ⇒ 2 个。
+// 视口取 issue 现场那三个；名字取现场同款长名字（**它**才是把按钮挤扁的原因，短名字复现不出来）。
+const HEADER_VIEWPORTS = [360, 390, 430]
+const HEADER_LONG_NAME = 'UI验收-可删除'
+const HEADER_LONG_NO = 'UITEST01'
+
 /** 等 DevTools 端点起来（最多 ~15s）；起不来 ⇒ `null`。 */
 async function waitForDevtools() {
   for (let i = 0; i < 60; i += 1) {
@@ -55,7 +64,13 @@ async function waitForDevtools() {
  */
 function buildFixture() {
   return (html, ready) => `<!DOCTYPE html>
-<html lang="zh-CN"><head><meta charset="utf-8" /><style>${CSS}</style></head>
+<html lang="zh-CN"><head><meta charset="utf-8" />
+  <!-- 🔴 与真页 frontend/worker-h5/index.html **同一条 viewport**（issue #6763 实测踩过）：
+       少了它，CDP 的 Emulation.setDeviceMetricsOverride({mobile:true}) 不会把**布局宽度**设成手机宽
+       —— 页面按默认 980px 排版，页头空间富余 ⇒ **缺陷根本复现不出来**（探针假绿）。
+       夹具必须与真页同口径，否则「量到的」不是「线上的」。 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <style>${CSS}</style></head>
 <body>
   <main id="worker-h5-root" class="wh5-root">${html}</main>
   <main id="machine-root" class="wh5-machine">${html}</main>
@@ -206,6 +221,41 @@ async function main() {
       }
       results.push({ screen: screen.name, items })
     }
+
+    // ── 页头折行读数（issue #6763）：三个视口 × 真渲染输出 × 真 styles.css ──────────
+    const headerHtml = renderPage(
+      { ...initialState(), worker: { workerName: HEADER_LONG_NAME, workerNo: HEADER_LONG_NO } },
+      { set_no: 1, position: { position_name: '左窗' }, operation: { operation_id: 'op-1', logical_name: '打卷', qty: 2, unit: '片', unit_price: 3.5 }, alternatives: [], needs_selection: [] },
+    )
+    const headerReadings = {}
+    for (const width of HEADER_VIEWPORTS) {
+      await send('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 2, mobile: true })
+      await send('Page.navigate', {
+        url: `data:text/html;charset=utf-8,${encodeURIComponent(buildFixture()(headerHtml, 'wh5-report'))}`,
+      })
+      await sleep(400) // 样式解析 + 一次布局
+      const raw = await send('Runtime.evaluate', {
+        expression: `JSON.stringify((() => {
+          const name = document.querySelector('.wh5-worker')
+          const buttons = {}
+          for (const btn of document.querySelectorAll('.wh5-header .wh5-ghost')) {
+            const range = document.createRange()
+            range.selectNodeContents(btn)
+            buttons[btn.id || (btn.textContent || '').trim()] = {
+              text: (btn.textContent || '').trim(),
+              lines: [...range.getClientRects()].length,
+              scrollWidth: btn.scrollWidth,
+              clientWidth: btn.clientWidth,
+              height: Math.round(btn.getBoundingClientRect().height * 10) / 10,
+            }
+          }
+          return { workerWidth: name ? Math.round(name.getBoundingClientRect().width * 10) / 10 : null, buttons }
+        })())`,
+        returnByValue: true,
+      })
+      headerReadings[width] = JSON.parse(raw.result.value)
+    }
+    await send('Emulation.clearDeviceMetricsOverride')
     ws.close()
 
     // ── 判据（每条都会红：读数不达标 ⇒ 非零退出并逐条打印） ──────────────────────
@@ -253,7 +303,30 @@ async function main() {
       JSON.stringify({ disabled: busy?.disabled, busyBg: busy?.background, idleBg: idle?.background, text: busy?.text }),
     )
 
-    const payload = { generatedAt: new Date().toISOString(), chrome: version.Browser, screens: results, checks }
+    // ⑤ 页头不折行（issue #6763）：三个视口下，页头每个按钮都必须是**单行**、不溢出，
+    //    且仍是 ≥44px 的触控目标（修「折行」不许把触控目标弄坏）
+    for (const width of HEADER_VIEWPORTS) {
+      const reading = headerReadings[width]
+      const buttons = reading?.buttons ?? {}
+      const ids = Object.keys(buttons)
+      add(
+        `页头 ${width}px · 夹具渲染出两个页头按钮（当前工人宽 ${reading?.workerWidth}）`,
+        ids.length === 2,
+        ids.join(' / ') || '一个都没有',
+      )
+      for (const id of ids) {
+        const b = buttons[id]
+        add(
+          `页头 ${width}px ${id}「${b.text}」· 文字单行（不折行）`,
+          b.lines === 1,
+          `${b.lines} 个行盒 / 按钮宽 ${b.clientWidth} / 滚动宽 ${b.scrollWidth}`,
+        )
+        add(`页头 ${width}px ${id}「${b.text}」· 无横向溢出`, b.scrollWidth <= b.clientWidth, `${b.scrollWidth} <= ${b.clientWidth}`)
+        add(`页头 ${width}px ${id}「${b.text}」· 触控目标高 ≥44px`, b.height >= 44, b.height)
+      }
+    }
+
+    const payload = { generatedAt: new Date().toISOString(), chrome: version.Browser, screens: results, headerReadings, checks }
     if (OUT) writeFileSync(OUT, `${JSON.stringify(payload, null, 2)}\n`)
     for (const c of checks) console.log(`${c.ok ? '✅' : '❌'} ${c.name} → ${JSON.stringify(c.reading)}`)
     const failed = checks.filter((c) => !c.ok)
