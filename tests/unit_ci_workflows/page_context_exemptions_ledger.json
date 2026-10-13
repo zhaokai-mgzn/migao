@@ -132,6 +132,11 @@
         "face": "判不了**注释 / docstring** 里的旧页名（那正是它要排除的面）",
         "reason": "`page_registry.py` 里逐字保留着解释 issue #6580 撤项的注释（「参数总览」「工艺配置」）—— 那是**历史说明**，属 §19.1 豁免面。判据只吃**字段字面量**；对照读数为证：只往注释/docstring 里塞旧名 ⇒ **不红**（执行点 = `test_control_revoked_name_only_in_comment_or_docstring_is_green`）。",
         "recompute": "python3 -m pytest tests/unit_ci_workflows/test_page_context_registry_coverage.py -q -k comment_or_docstring"
+      },
+      {
+        "face": "真值源读法**变宽 = 判据变松**（注释掉的 `name:` / `label:` 进现存名 ⇒ 旧名被放行）",
+        "reason": "「现存页面名」这个真值源若按**裸文本正则**扫全文件，注释里写一句 `name: '工艺配置'` 就会让旧名进集合 ⇒ 判据 10 反而**放行**它（假绿方向）。⇒ 两个真值源各自走**结构性读法**：`menu.ts` 复用 `test_agent_permission_parity.py::parse_menu_ts_nodes`（「不另起第二个 menu.ts 解析器」= issue #3570 的教训）；域 label 只取 `CONFIG_DOMAINS` 真值数组里的域对象。自证 = `test_domain_labels_ignore_commented_out_entries`（把该块整段注释掉 ⇒ 读到 0 个）。另：本判据的 pattern 必须是**逐字字面量** —— f-string 拼接会在 `test_guard_parsing_is_comment_aware.py` 的 AST 重建里退化成「引号紧跟捕获组」形态而**命中那条元守卫**（CI 实测红过一轮，读数见 PR）。",
+        "recompute": "python3 -m pytest tests/unit_ci_workflows/test_page_context_registry_coverage.py -q -k commented_out ; python3 -m pytest tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py -q"
       }
     ],
     "frozen_extensions": 0

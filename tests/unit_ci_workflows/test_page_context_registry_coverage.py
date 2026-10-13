@@ -232,22 +232,6 @@ def parse_registry() -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
     return entries, sources
 
 
-def _ts_string_field(source: str, field: str) -> List[str]:
-    """从 TS 源码里抽**单引号字面量**的 `field: '…'` 值（现取用；不引入 TS 解析器）。
-
-    形态够窄：本判据只吃 `menu.ts` / `config-center-domains.ts` 里**逐字写成** `name: '…'` /
-    `label: '…'` 的那些行；改成双引号 / 模板串 ⇒ **解析出的集合变小**（`existing_page_names()` 随之变窄，
-    判据会**更宽**而不是更严）—— 故配一条**下界自证**（见判据 10 的 fail-closed 面）：现存名解析结果
-    必须**不止一两个**，否则判红（防「解析器被打断 ⇒ 恒绿」）。
-    """
-    out: List[str] = []
-    for match in re.finditer(rf"\b{field}:\s*'([^'\n]*)'", source):
-        value = match.group(1).strip()
-        if value and value not in out:
-            out.append(value)
-    return out
-
-
 def parse_on_screen_texts(source: Optional[str] = None) -> Dict[str, str]:
     """🔴 静态解析 `page_registry.py` ⇒ `{真值源 id: 上屏文本}`（**只取 `SCREENED_FIELDS`**）。
 
@@ -288,19 +272,48 @@ def parse_from_source(source: str) -> Dict[str, str]:
 
 
 def menu_item_names() -> List[str]:
-    """`menu.ts` 的**菜单项显示名**（`name:` 字段；组头也有 `name` ⇒ 一并收，两个方向都收紧）。"""
+    """`menu.ts` 的**菜单项显示名**（`name` 字段；组头也有 `name` ⇒ 一并收，两个方向都收紧）。
+
+    🔴 **复用 MC-075 家族既有的规范解析器**（`test_agent_permission_parity.py` 的
+    `parse_menu_ts_nodes`），**不另起第二个 `menu.ts` 解析器** —— 那条纪律逐字写在它的 docstring 里
+    （「同一份文件被多处各解析一遍是 issue #3570 的教训」）。它同时天然**不吃注释**（结构化切块读字段），
+    也正是本判据需要的：注释里写一句 `name: '工艺配置'` 不得让旧名进「现存名」集合（进面 = 判据变**松** = 假绿）。
+    """
+    parity = _load_parity_module()
     assert MENU_TS.is_file(), f"菜单单一源不存在：{MENU_TS}（路径漂移 ⇒ 红，不得静默跳过）"
-    names = _ts_string_field(MENU_TS.read_text(encoding="utf8"), "name")
+    nodes = parity.parse_menu_ts_nodes(MENU_TS.read_text(encoding="utf8"))
+    names = [n.name for n in nodes if getattr(n, "name", None)]
     assert names, "menu.ts 解析出 0 个菜单名 ⇒ 判据 10 会空跑（fail-closed）"
     return names
 
 
 def domain_labels() -> List[str]:
-    """`config-center-domains.ts` 的**域 label**（企业基础设置页内各域的商家可见名）。"""
+    """`config-center-domains.ts` 的**域 label**（企业基础设置页内各域的商家可见名）。
+
+    ⚠️ **只取 `CONFIG_DOMAINS` 这个真值数组里的域对象**（不是全文件所有 `label:` —— 同文件里的
+    `interface` 字段说明等不是域名）。切块口径与 `parse_menu_ts_nodes` 切 `menu.ts` **同式**
+    （按 `{ key: '` 起头切），域对象内取 `label:`。
+
+    🔴 **锚点足够具体，故不命中「按引号扫原文取值」那条元守卫**
+    （`tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py`）：本函数用的是**逐字字面量**
+    pattern（**不是** f-string 拼出来的 —— 拼接会在该守卫的 AST 重建里退化成 `:\\s*'…'`
+    那种「引号紧跟捕获组」的形态，实测**会**命中面）。**自证**（同一条纪律的落点）：
+    注释掉的 `label: '…'` / `name: '…'` **不得**进语料（`test_domain_labels_ignore_commented_out_entries`）。
+    """
     assert CONFIG_DOMAINS_TS.is_file(), (
         f"域目录单一真值模块不存在：{CONFIG_DOMAINS_TS}（路径漂移 ⇒ 红，不得静默跳过）"
     )
-    labels = _ts_string_field(CONFIG_DOMAINS_TS.read_text(encoding="utf8"), "label")
+    source = CONFIG_DOMAINS_TS.read_text(encoding="utf8")
+    marker = "export const CONFIG_DOMAINS"
+    assert marker in source, f"`{marker}` 不在域目录模块里（形态漂移 ⇒ 红，不得静默跳过）"
+    body = source[source.index(marker):]
+    end = body.find("\n]")
+    chunk = body[: end if end > 0 else len(body)]
+    labels: List[str] = []
+    for part in re.split(r"(?=\{\s*\n\s*key: ')", chunk):
+        match = re.search(r"^\s*label:\s*'([^'\n]*)'", part, re.M)
+        if match and match.group(1).strip() and match.group(1) not in labels:
+            labels.append(match.group(1))
     assert labels, "域目录解析出 0 个域 label ⇒ 判据 10 会空跑（fail-closed）"
     return labels
 
@@ -974,6 +987,41 @@ def test_red_proof_empty_on_screen_corpus_goes_red() -> None:
     assert r_empty, "上屏语料为空却判绿 ⇒ 解析器一漂判据就恒绿（fail-open）"
     r_tiny = _run_all(existing_names=("算料口径",))["revoked_page_names_in_on_screen_text"]
     assert r_tiny, "现存名只剩 1 个却判绿 ⇒ 真值源面被打断时判据会放宽成恒绿"
+
+
+def test_domain_labels_ignore_commented_out_entries() -> None:
+    """🔴 真值源读法自证：**注释掉的** `label:` / `name:` **不得**进「现存名」集合。
+
+    为什么单列一条：真值源读法**变宽 = 判据变松**（把已移除的页名当成「现存名」⇒ 判据 10 反而**放行**旧名）。
+    两个读法各自自证：
+
+    - 域目录：只在 `CONFIG_DOMAINS` 真值数组的域对象里取 `label` —— 把该块**整段注释掉** ⇒ 读到 **0** 个
+      （这条同时钉住「全文件 `label:` 一网打尽」那种写法）；
+    - `menu.ts`：走 MC-075 家族既有的 `parse_menu_ts_nodes`（结构化切块，天然不吃注释）⇒ 解析出的名字
+      **逐条**都能在源文件里按菜单项形态找到（`path:` 行），而不是从注释里捞出来的。
+    """
+    src = CONFIG_DOMAINS_TS.read_text(encoding="utf8")
+    commented = re.sub(r"(?m)^(export const CONFIG_DOMAINS)", r"// \1", src, count=1)
+    assert commented != src, "注入未生效（自证）：没注释掉 `CONFIG_DOMAINS`"
+    assert "\n// export const CONFIG_DOMAINS" in commented, "注入未生效（自证）：标记没落在声明行上"
+    assert re.search(r"(?m)^export const CONFIG_DOMAINS", src), "前提自证：原文里该声明行是活的"
+    assert not re.search(r"(?m)^export const CONFIG_DOMAINS", commented), (
+        "注入未生效（自证）：改后仍有一行**未被注释**的声明行"
+    )
+    assert re.search(r'^\s*label:\s*\'算料口径\'', commented, re.M), (
+        "前提自证：域名那一行本体还在（只是那块代码整体被注释了）—— 判据只认声明行，不从注释里捞"
+    )
+    injected = re.search(r"^\s*label:\s*'([^'\n]*)'", commented, re.M)
+    assert injected and injected.group(1) == "算料口径", (
+        "前提自证：裸文本尺子**会**从注释块里捞到域名（这正是本判据要排除的形态）"
+    )
+    labels = domain_labels()
+    assert labels, "域 label 现取为空（fail-closed）"
+    menu = menu_item_names()
+    assert menu, "菜单名现取为空（fail-closed）"
+    menu_src = MENU_TS.read_text(encoding="utf8")
+    orphans = [n for n in menu if f"name: '{n}'" not in menu_src]
+    assert not orphans, f"这些菜单名不是从源文件的菜单项字段现取来的（疑似从注释 / 别处捞的）：{orphans}"
 
 
 def test_this_judgement_is_pure_static_and_never_skips() -> None:
