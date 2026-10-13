@@ -164,8 +164,8 @@ class UnpricedPieceworkReportTest {
         assertThat(unpricedOperations(report).get(0))
                 .containsEntry("operation", "配料");
         assertThat(String.valueOf(unpricedBlock(report).get("hint")))
-                .as("hint 必须**可行动**：指向定价入口")
-                .contains("/production/routings")
+                .as("hint 必须**可行动**：指向定价入口（现役域「企业基础设置 → 工序与部位单价」）")
+                .contains("企业基础设置 → 工序与部位单价")
                 .contains("未定价");
     }
 

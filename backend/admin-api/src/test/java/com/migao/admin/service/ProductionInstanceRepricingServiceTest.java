@@ -484,7 +484,7 @@ class ProductionInstanceRepricingServiceTest {
 
         assertThat(result.get("filled")).isEqualTo(0);
         assertThat(result.get("still_unpriced")).isEqualTo(1);
-        assertThat(String.valueOf(result.get("hint"))).contains("/production/routings");
+        assertThat(String.valueOf(result.get("hint"))).contains("企业基础设置 → 工序与部位单价");
         verify(positionOperationMapper, never()).fillUnpricedUnitPrice(anyString(), anyLong(), any(), any());
     }
 

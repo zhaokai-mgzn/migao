@@ -476,8 +476,9 @@ class ProcessingFeeCalculatorTest {
         assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("6.00");
         assertThat(fee.lineAmount()).isEqualByComparingTo("86.00");
         // **可行动** hint（指向定价入口）—— 静默按 0 收 ⇒ hint 为 null ⇒ 红
+        // （指向的是**现役域**「企业基础设置 → 加工费组合」，不是内部端点/旧路径 —— 见 #6839）
         assertThat(fee.hint()).isNotBlank().contains("接高").contains("未定价")
-                .contains("/production/processing-fees");
+                .contains("企业基础设置 → 加工费组合");
         assertThat(fee.detail()).containsEntry("hint", fee.hint());
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> rows = (List<Map<String, Object>>) fee.detail().get("special_options");

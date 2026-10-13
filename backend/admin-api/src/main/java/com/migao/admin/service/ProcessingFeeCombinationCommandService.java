@@ -112,7 +112,7 @@ public class ProcessingFeeCombinationCommandService {
             throw BusinessException.validationError(
                     String.format("加工费组合未通过校验（%d 条问题）", details.size()),
                     details,
-                    "逐条修好后重新提交；加工项目录查看入口 GET /api/admin/processing/items");
+                    "逐条修好后重新提交");
         }
         String key = compositionKey(canonical);
         rejectDuplicate(key, null, tenantId);

@@ -7,6 +7,8 @@
   它判的是「**有没有漏网的旧页名**」——**判不了**「那个新指针指向的域对不对」。
 - **本文件** = **实例判据**：判「① 本包那 6 个文件**确实**改指了**正确**的域」（正控，逐域断言）
   与「② 台账被清到**只剩能力名**那 3 条」（清零的**真读数**，不是嘴说）。
+- 另含**内部端点泄漏**那一族（§31 P3）的**类级**判据 + 只许缩短台账
+  （`restricted_literal_leaks_ledger.json`；跟踪单 = issue #6841）。
 
 ⇒ 合起来才有意义：只跑 MC-096，把旧指针**删掉**（或改指另一个错域）它一样绿。
 
@@ -19,12 +21,17 @@
 | 3 | **两处假出口**改写后**不再含**该页名、且给出的是**真边界**（工艺词的写面不存在 ⇒ 不许出现新的页面坐标） |
 | 4 | 台账 = **3 条 / 3 处**（只剩能力名）且 `FROZEN_MAX_*` 与台账**逐值一致**（常量与台账不许各说一套） |
 | 5 | 域 label 真值源现取非空（fail-closed；域被改名 ⇒ 红而不是静默空集） |
+| 6 | **§31 P3 类级**：admin-api 字面量里「商家答复型提示 + 内部端点」的命中必须逐条在 `restricted_literal_leaks_ledger.json` 里（未登记即红 / 幽灵条目即红 / 条数 ≤ 冻结基线） |
+| 7 | `REMOVED_NAMES` 与 MC-096 守卫的 `REMOVED_PAGE_NAMES` **逐值相等**（本文件是镜像 ⇒ 镜像漂了要红，不许静默用旧集合） |
 
 ## 边界（照实登记，`migao-dev-flow` §19.1）
 
 ① 判**文本**不判**上屏**（真机截图那一半要 §15.7）；② 判不了「假出口真的不可达」——
 那需要遍历商家面写能力的**语义**判断，本文件只判「不再给出那个不存在的坐标」；
-③ 能力名 3 处（`PermissionService` / `RegistrationService`）**有意不改** ⇒ 不在正控里，也不进判据 1 的必改集。
+③ 能力名 3 处（`PermissionService` / `RegistrationService`）**有意不改** ⇒ 不在正控里，也不进判据 1 的必改集；
+④ 判据 6 的判据面是「**商家答复型**提示里的端点」（`GET/POST/PUT/DELETE/PATCH /api/...` 或「查看入口 / 读面 + 路径」）——
+**不是**「所有字面量里的端点」（端点注释 / 开发者面 / 无操作动词的裸路径**不在面内**），
+故它**判不了**「某个 hit 到底会不会上屏给商家」；⑤ 台账里剩的条目是**跨单债务**（跟踪 issue #6841），本文件不为它们背书。
 """
 
 from __future__ import annotations
@@ -39,11 +46,13 @@ sys.path.append(str(REPO_ROOT / "tests"))
 from unit_ci_workflows._source_parsing import java_literals  # noqa: E402
 
 LEDGER_PATH = REPO_ROOT / "tests" / "unit_ci_workflows" / "removed_page_copy_ledger.json"
+LEAK_LEDGER_PATH = REPO_ROOT / "tests" / "unit_ci_workflows" / "restricted_literal_leaks_ledger.json"
 GUARD_PATH = REPO_ROOT / "tests" / "unit_ci_workflows" / "test_removed_page_copy_guard.py"
 DOMAINS_TS = REPO_ROOT / "frontend" / "admin-web" / "src" / "lib" / "config-center-domains.ts"
 SERVICE_REL = "backend/admin-api/src/main/java/com/migao/admin/service"
 
-#: 已移除页面名（与 MC-096 的 `REMOVED_PAGE_NAMES` **同一份集合语义**，取法 = 现读守卫，见判据 5）。
+#: 🔴 **本文件里的已移除页面名是镜像** —— 真值源 = MC-096 守卫的 `REMOVED_PAGE_NAMES`，
+#: 由判据 `test_removed_names_mirror_mc096_guard` **逐值核**（漂了要红，见该判据的 docstring）。
 REMOVED_NAMES = ("参数总览", "工艺配置", "加工项管理", "加工费管理")
 
 #: 本包承包的**必改**文件（页名指针）。
@@ -72,6 +81,15 @@ DOMAIN_POSITIVE_CONTROLS = {
 #: 台账清到只剩能力名（3 条 / 3 处）。
 EXPECTED_LEDGER_ENTRIES = 3
 EXPECTED_LEDGER_HITS = 3
+
+#: 内部端点泄漏台账的冻结基线（**只许缩短**；跟踪单 issue #6841）。
+LEAK_LEDGER_BASELINE = 9
+
+#: §31 P3 判据面（**收紧**，见文件头「边界 ④」）：字面量里出现「HTTP 动词 + `/api/` 路径」**且**含中文字符
+#: —— 即**人话提示里夹着端点**。端点常量 / worker 端点文档串 / 路由声明字面量**有意不在面内**
+#: （台账 `_doc` 里具名登记了这三类）。
+API_CALL_RE = re.compile(r"\b(GET|POST|PUT|DELETE|PATCH)\s+/api/")
+CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 
 
 def sources() -> dict[str, str]:
@@ -152,17 +170,6 @@ def test_false_exits_no_longer_name_a_nonexistent_coordinate():
     assert any("下单时给出工艺" in t for t in order), "改写不得把**真出路**（下单时给出工艺）一起删掉"
 
 
-def test_merchant_copy_leaks_no_internal_api_path():
-    """判据 3b（§31 P3「不摆内部标识」）：商家可见 suggestion 里**不得**出现内部端点字面量。
-
-    本包顺手销掉 `ProcessingOrderService` 里 4 处存量泄漏（`查看入口 GET /api/admin/...`）——
-    它们是**内部标识上屏**：商家看到一条 API 路径既不可点、也读不懂；而「默认工艺」在商家面
-    **确实没有页面**（本包已登记为能力缺口）⇒ 正确处置是**不指路**，**不许**换成任何页面坐标。
-    """
-    leaks = [t for t in literals_of(sources()["ProcessingOrderService.java"]) if "GET /api/" in t]
-    assert leaks == [], "商家可见 suggestion 里仍有内部端点标识（§31 P3）：\n" + "\n".join(repr(t) for t in leaks)
-
-
 # ── 判据 4：台账清零的真读数 ───────────────────────────────────────────────────
 
 
@@ -206,6 +213,97 @@ def test_capability_names_stay_out_of_the_pointer_rewrite():
     assert problems == [], "能力名误改为坐标：\n" + "\n".join(problems)
 
 
+# ── 判据 6：§31 P3 类级（内部端点泄漏 + 只许缩短台账）────────────────────────────
+
+
+def leak_hits() -> list[dict]:
+    """扫描面上「商家答复型提示 + 内部端点」的字面量（`文件 + 行 + 串`）。"""
+    out: list[dict] = []
+    root = REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "java"
+    files = sorted(root.rglob("*.java"))
+    assert files, f"扫描面为空：{root} —— 射程塌了 ⇒ 红（fail-closed）"
+    for path in files:
+        source = path.read_text(encoding="utf8")
+        for pos, literal in java_literals(source):
+            if API_CALL_RE.search(literal) and CJK_RE.search(literal):
+                out.append({
+                    "path": path.relative_to(REPO_ROOT).as_posix(),
+                    "line": source[:pos].count("\n") + 1,
+                    "literal": literal,
+                })
+    return out
+
+
+def leak_key(hit: dict) -> str:
+    """台账键 = `文件::行::字面量原文`。
+
+    ⚠️ **必须带行**（本仓实测坑）：`AgentBatchService` 有**两条字面量完全相同**的提示
+    （「用 GET /api/admin/agent/batches/」×2）—— 只用 `文件::字面量` 会把两条**合并成一条**，
+    于是「未登记 / 台账未被兑现」两侧都可能对不上（一条登记、另一条被判幽灵）。
+    """
+    return f"{hit['path']}::{hit['line']}::{hit['literal']}"
+
+
+def leak_ledger() -> dict:
+    assert LEAK_LEDGER_PATH.is_file(), f"泄漏台账不存在：{LEAK_LEDGER_PATH} —— fail-closed"
+    return json.loads(LEAK_LEDGER_PATH.read_text(encoding="utf8"))
+
+
+def test_merchant_hint_endpoint_leaks_are_all_registered():
+    """判据 6：未登记即红 + 幽灵条目即红 + 条数 ≤ 冻结基线（**只许缩短**）。
+
+    改前实测（本包修 6 处**之前**）命中 16 处；修掉 `ProductionOrderService` 4 处 +
+    `ProductionRoutingCommandService` 5 处 + `ProcessingFeeCombinationCommandService` 1 处后，
+    仍剩本台账登记的条目（跟踪 issue #6841）。
+    """
+    hits = leak_hits()
+    entries = list(leak_ledger().get("entries", []))
+    assert len(entries) == LEAK_LEDGER_BASELINE, (
+        f"泄漏台账条数 {len(entries)} ≠ 冻结基线 {LEAK_LEDGER_BASELINE}（**只许缩短**；"
+        "加条目必须同 PR 改大基线并在 PR body 说明为什么它是跨单债务）"
+    )
+    detected = {leak_key(h): h for h in hits}
+    registered = {leak_key(e): e for e in entries}
+    problems: list[str] = []
+    for key, hit in sorted(detected.items()):
+        if key not in registered:
+            problems.append(
+                f"未登记：{hit['path']}:{hit['line']} 的商家答复型字面量含内部端点 ⇒ {hit['literal']!r}"
+                f"（请删掉端点从句**不指路**，或按只许缩短登记进台账 + 跟踪单 #6841）"
+            )
+    for key, entry in sorted(registered.items()):
+        if key not in detected:
+            problems.append(
+                f"台账未被兑现：{entry.get('path')} 的 {entry.get('literal')!r} 在扫描面上**已不存在**"
+                f" ⇒ 该条陈旧（销账即删，台账只许缩短）"
+            )
+    assert problems == [], "内部端点泄漏台账对不上：\n" + "\n".join(problems)
+    for entry in entries:
+        assert entry.get("issue", "").strip(), f"泄漏台账条目缺跟踪单：{entry!r}"
+        assert entry.get("reason", "").strip(), f"泄漏台账条目缺 reason：{entry!r}"
+
+
+# ── 判据 7：镜像一致性（本文件 vs MC-096 守卫）────────────────────────────────────
+
+
+def test_removed_names_mirror_mc096_guard():
+    """判据 7：`REMOVED_NAMES` 必须与 MC-096 守卫的 `REMOVED_PAGE_NAMES` **逐值相等**。
+
+    ⚠️ 为什么必须有这条（本仓点名的「注释漂移」形态）：本文件的名字集合是**本地镜像** ——
+    守卫那边加/删一个页名而这里没跟，本判据会**静默**用旧集合 ⇒ **假绿**。
+    取法 = 读源码文本（**不 import 守卫**，避免把守卫的模块级副作用带进来）。
+    """
+    text = GUARD_PATH.read_text(encoding="utf8")
+    match = re.search(r"^REMOVED_PAGE_NAMES = \(([^)]*)\)", text, re.M)
+    assert match, "守卫里读不到 `REMOVED_PAGE_NAMES` —— 解析器被改坏 ⇒ 红（fail-closed，不是「无对象可判」）"
+    guard_names = tuple(re.findall(r'"([^"]+)"', match.group(1)))
+    assert guard_names, f"守卫的 `REMOVED_PAGE_NAMES` 解析出空集：{match.group(1)!r}"
+    assert REMOVED_NAMES == guard_names, (
+        f"本文件的 REMOVED_NAMES={REMOVED_NAMES} 与守卫的 REMOVED_PAGE_NAMES={guard_names} 不一致 —— "
+        "镜像是本地硬编码的，漂了这条判据才是唯一会响的东西"
+    )
+
+
 # ── 判据 5 + 判别力自证 ────────────────────────────────────────────────────────
 
 
@@ -234,3 +332,12 @@ def test_injection_comment_only_change_is_not_red():
     source = sources()["ProcessingFeeCalculator.java"]
     commented = source + "\n// 沿革：这里曾指向「加工费管理」（issue #6839 已改指「企业基础设置 → 加工费组合」）\n"
     assert removed_name_literals(commented) == [], "只改注释却被判红（与 MC-096 的对照读数应一致）"
+
+
+def test_injection_leak_endpoint_is_detected():
+    """判别力自证（判据 6 那一族）：把端点从句**写回**一个字面量 ⇒ 判据 6 当场判「未登记」。"""
+    literal = "请在工序库补上 韩褶（或改这条路线不再引用它们）；工序库目录查看入口 GET /api/admin/production/operations-catalog"
+    assert API_CALL_RE.search(literal), "判据 6 的判据面读不到端点 ⇒ 判据会假绿"
+    hit = {"path": f"{SERVICE_REL}/X.java", "line": 1, "literal": literal}
+    registered = {leak_key(e) for e in leak_ledger().get("entries", [])}
+    assert leak_key(hit) not in registered, "这条注入串不该已经在台账里（否则注入无效）"

@@ -144,7 +144,7 @@ public class ProductionRoutingCommandService {
             if (Objects.equals(existing.getName(), name)) {
                 throw BusinessException.conflict(
                         String.format("工艺路线「%s」已存在", name),
-                        "请直接编辑既有路线，或换一个路线名（查看入口 GET /api/admin/production/routings）");
+                        "请直接编辑既有路线，或换一个路线名");
             }
         }
         boolean isDefault = Boolean.TRUE.equals(body == null ? null : body.get("is_default"));
@@ -202,7 +202,7 @@ public class ProductionRoutingCommandService {
                 if (!Objects.equals(other.getId(), template.getId()) && Objects.equals(other.getName(), name)) {
                     throw BusinessException.conflict(
                             String.format("工艺路线「%s」已存在", name),
-                            "换一个路线名（查看入口 GET /api/admin/production/routings）");
+                            "换一个路线名");
                 }
             }
             template.setName(name);
@@ -362,7 +362,7 @@ public class ProductionRoutingCommandService {
                     List.of(BusinessException.detail("trigger_kind",
                             String.format("这条规则的触发维是「%s」，不是特殊选项（option）—— "
                                     + "工艺变体按工序单价计件，不按套收费", rule.getTriggerKind()))),
-                    "只给 trigger_kind='option' 的规则定价（读面 GET /api/admin/production/route-rules 带 trigger_kind）");
+                    "只给 trigger_kind='option' 的规则定价");
         }
         Object raw = body == null ? null : body.get("customer_unit_price");
         BigDecimal price = optionalCustomerPrice(raw);
@@ -502,8 +502,8 @@ public class ProductionRoutingCommandService {
                 throw BusinessException.conflict(
                         String.format("「%s」触发的规则已存在（同一条「%s %s」的规则）",
                                 triggerValue, actionText(action), operation),
-                        "要换目标工序 / 锚点请先停用旧规则（查看入口 GET /api/admin/production/route-rules）；"
-                                + "特殊选项改单价请用 PUT /api/admin/production/route-rules/{id}/customer-unit-price");
+                        "要换目标工序 / 锚点请先停用旧规则；"
+                                + "特殊选项改单价请编辑那条规则的对客单价");
             }
         }
 
@@ -806,7 +806,7 @@ public class ProductionRoutingCommandService {
             throw BusinessException.validationError(
                     String.format("工艺路线主线未通过校验（%d 条问题）", details.size()),
                     details,
-                    "逐条修好后重新提交；工序库目录查看入口 GET /api/admin/production/operations-catalog");
+                    "逐条修好后重新提交");
         }
     }
 
