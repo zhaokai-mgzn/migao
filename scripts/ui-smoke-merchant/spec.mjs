@@ -33,6 +33,9 @@ const failReasons = new Map()
 //   skipped      —— 前置数据/依赖不满足（`depends_on`）⇒ 没跑，不是失败也不是通过。
 // ⚠️ 「没跑」必须长得像「没跑」：这两种都不算 pass，也不与真实失败混在一张表里。
 const UNCONFIGURED = process.env.SMOKE_UNCONFIGURED === '1'
+// 未配置的**具体成因**（起栈脚本按形态给出，例如 #6801 的验签公钥失配）——
+// 没有它，「未配置」只剩一个笼统标签，排查还得回去翻日志。
+const UNCONFIGURED_WHY = (process.env.SMOKE_UNCONFIGURED_WHY || '').trim()
 // 依赖 ai-agent 的旅程（判据：失败原因 = ai-agent 未配置 ⇒ 记 unconfigured，不记产品失败）。
 // `12-processing` 不在其中（加工项 CRUD 是纯 admin-api；它是本轮真 B 类，要与 A 类分开看）。
 const AI_AGENT_JOURNEYS = new Set(['06-agent-sessions', '07-chat', '09-products-new', '32-production-qr-and-piecework'])
@@ -104,7 +107,8 @@ function journey(name, opts = {}) {
         rec.unconfigured = true
         rec.pass = false
         if (errs.length) rec.errors.push(...errs)
-        console.log(`➖ ${name} [未配置] ai-agent 未按 AGENTS.md 传 AI_AGENT_BASE_URL / AI_AGENT_SERVICE_TOKEN`)
+        console.log(`➖ ${name} [未配置] ${UNCONFIGURED_WHY || 'ai-agent 未按 AGENTS.md 传 AI_AGENT_BASE_URL / AI_AGENT_SERVICE_TOKEN'}`)
+        if (UNCONFIGURED_WHY) rec.notes.push(`[未配置] ${UNCONFIGURED_WHY}`)
       } else if (klass === 'skip') {
         rec.skipped = true
         rec.pass = false

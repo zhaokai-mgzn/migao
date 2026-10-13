@@ -377,19 +377,19 @@ job 名随 persona 参数化也不适合做 required 名）。
 `LLMFactory.create_skill_llm` 的思考开关写法来自 MiniMax-M3 时代
 （`app/llm/factory.py` 的 `create_skill_llm`）：`enable_thinking=True` 发
 `extra_body={"thinking": {"type": "enabled"}}`，`force_no_think=True` 发
-`{"thinking": {"type": "disabled"}}`；**两个都不传 → 不传 `extra_body`**（`tests/test_llm_factory.py:41` 钉死）。
+`{"thinking": {"type": "disabled"}}`；**两个都不传 → 不传 `extra_body`**（`tests/test_llm_factory.py` 第 41 行@a86668ba 钉死）。
 
 矛盾证据（仓库内已确证，这是本账的起点）：
 
 - 同一 provider（`api.deepseek.com` / `deepseek-flash`）的**视觉路径**在
-  `tests/test_llm_factory.py:81-82` 明确断言
+  `tests/test_llm_factory.py` 第 81-82 行@a86668ba 明确断言
   「DeepSeek vision（OpenAI 兼容）不传 MiniMax 专属 thinking extra_body」+
   `assert "extra_body" not in kwargs`（PR #2547 / commit `f7cd3ba9` 引入）；
-- 而 **skill 路径仍在传**（`factory.py:64/67`）；
+- 而 **skill 路径仍在传**（`app/llm/factory.py` 第 64/67 行@a86668ba）；
 - `app/llm/factory.py` 里那句「不传参时 M3 默认仍开思考」的注释是 MiniMax-M3 时代产物，当前模型是
-  `deepseek-flash`（`app/config.py:41,111-112`）。
+  `deepseek-flash`（`app/config.py` 第 41、111-112 行@a86668ba）。
 
-`_THINKING_INTENTS` / `_MULTI_TURN_THINKING_INTENTS`（`app/graph/skills/base_skill.py:198-224`）
+`_THINKING_INTENTS` / `_MULTI_TURN_THINKING_INTENTS`（`app/graph/skills/base_skill.py` 第 198-224 行@a86668ba）
 与 issue #3153（把 5 个写意图纳入 thinking）的全部收益，都以「该开关真的生效」为前提；
 若为静默 no-op，则 #3153 的收益必须重新归因。
 
@@ -454,13 +454,13 @@ that says I should think before answering」—— 疑似 provider 在思考模�
 
 ### 7.3 探针顺带发现的能力缺口（属于后续包，本账只记录）
 
-1. **视觉路径缺该开关**：`factory.py:82-105`（`create_vision_llm`）**不传任何 thinking 参数**
+1. **视觉路径缺该开关**：`app/llm/factory.py` 第 82-105 行@a86668ba（`create_vision_llm`）**不传任何 thinking 参数**
    → 按 §7.2 结论 3，**每次图片识别都在默认开思考**（拍照找同款/识别面料这类任务，
    推理 token 纯属浪费）。与 skill 路径一致化的做法：显式传
    `extra_body={"thinking": {"type": "disabled"}}`（或按任务分级）。
 2. **轻量文本路径的 `disabled` 是有效省钱**：`create_intent_llm` / `create_summary_llm` /
    `create_suggestion_llm` / `create_registration_review_llm` / `create_briefing_llm`
-   （`factory.py:114/137/206/223/240`）都传 `disabled` —— 实测该参数确实生效，这些路径的
+   （`app/llm/factory.py` 第 114/137/206/223/240 行@a86668ba）都传 `disabled` —— 实测该参数确实生效，这些路径的
    省 token 设计**成立**（此前无法证实）。
 3. **写法用的是「未文档化的兼容形态」**：`{"thinking": {"type": ...}}` 是 MiniMax 形态，
    DeepSeek 官方 Thinking Mode 文档（https://api-docs.deepseek.com/guides/thinking_mode/）

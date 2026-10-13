@@ -6351,6 +6351,24 @@ _CASE_MC_093 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-094 [NORMAL] 验签公钥失配**不得伪装成产品失败**（issue #6801）：admin-api 签发密钥 ⇄ ai-agent 校验公钥的指纹对齐（`scripts/align_agent_jwt_key.py` 是唯一真值源），起栈预检在跑 spec 之前把「环境失配」与「产品缺陷」分开（源: cases/misc.yml）──
+_CASE_MC_094 = EvalCase(
+    id='MC-094',
+    legacy_id='',
+    title='验签公钥失配**不得伪装成产品失败**（issue #6801）：admin-api 签发密钥 ⇄ ai-agent 校验公钥的指纹对齐（`scripts/align_agent_jwt_key.py` 是唯一真值源），起栈预检在跑 spec 之前把「环境失配」与「产品缺陷」分开',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['全量冒烟只剩 `06-agent-sessions` / `07-chat` 两条报 401，而同一个浏览器会话里别的页面全 ✅ —— 我要知道这是**产品鉴权坏了**还是**我机器上的配置烂了**，而不是被一句 `401 Unauthorized` 引着去改产品代码；如果是环境，起栈入口就该在跑 spec 之前把成因和处置命令告诉我。'],
+    expectations=[],
+    data_checks=['**判据 1·识别**：两侧公钥同指纹 ⇒ `--state` 印 `aligned:<fp>`、单行、exit 0。执行点 = tests/unit_ci_workflows/test_agent_jwt_key_alignment.py ::test_aligned_reports_fingerprint_and_exit_zero', '**判据 2·失配**：`.env` 是陈旧键 ⇒ `mismatch:<api_fp>:<agent_fp>`，**两个指纹都印**且可区分。执行点 = 同文件 ::test_mismatch_names_both_fingerprints_and_exit_one', '**判据 3·判不了 ≠ 通过**：任一侧取不到 / 非法 PEM / 私钥当公钥 ⇒ `unknown:…`。执行点 = 同文件 ::test_unjudgeable_is_three_not_green（四形态参数化，**一条也不 skip**）', '**判据 4·形态兼容**：`JWT_PUBLIC_KEY=` 与 `export JWT_PUBLIC_KEY=` 两种写法都认。执行点 = 同文件 ::test_env_key_forms_both_recognized', '**判据 5·写盘安全**：修完该键仍是**单行**（`\\n` 转义）+ 留 `.bak-align`；连跑两次逐字节一致。执行点 = 同文件 ::test_write_keeps_single_line_key_and_is_idempotent', '**判据 6·起栈预检接线**：`scripts/ui_smoke_merchant.sh` 在跑 spec **之前**调 `align_agent_jwt_key.py --state`；失配 ⇒ 印可行动处置 + `SMOKE_UNCONFIGURED=1` + `SMOKE_UNCONFIGURED_WHY`（带指纹）。执行点 = 同文件 ::test_preflight_wired_before_spec_in_smoke_script / ::test_preflight_flags_mismatch_as_unconfigured_not_product / 负控 ::test_preflight_aligned_is_quiet', '**判据 7·严格档**：`SMOKE_STRICT_KEY_ALIGNMENT=1` + 失配 ⇒ 非零退出且**不越过预检**。执行点 = 同文件 ::test_strict_mode_refuses_to_run_on_mismatch', '**判据 8·判别力自证（注入式）**：注入另一对公钥 ⇒ 判据 2 当场红；还原 ⇒ 绿；只改注释 ⇒ 不红。执行点 = 同文件 ::test_guard_discriminates_injected_bad_key / ::test_negative_control_private_key_and_comment_only', '**判据 9·类级元守卫（单一真值源）**：指纹解析**只在** `scripts/align_agent_jwt_key.py` 一处，起栈脚本的预检块里不得再出现 `hashlib` / `b64decode`。执行点 = 同文件 ::test_fingerprint_logic_has_single_source'],
+    skip_reason='[backend-contract] 指纹三态 + 起栈预检接线 + 输出分类，由 pytest 子进程真跑（沙箱假仓，零网络 / 零真栈）；真栈两向读数（401 → 200）见 PR body 取证段',
+    tags=['dev-env', 'jwt', 'key-alignment', 'smoke-attribution', 'fail-closed', 'red-proof', 'class-level-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -14143,6 +14161,7 @@ ALL_CASES = (
     _CASE_MC_091,
     _CASE_MC_092,
     _CASE_MC_093,
+    _CASE_MC_094,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

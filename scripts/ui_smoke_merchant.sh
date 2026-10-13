@@ -213,6 +213,59 @@ if ! curl -s -m 2 -o /dev/null "http://127.0.0.1:$AGENT_PORT/health" 2>/dev/null
   fi
 fi
 
+# ── 2.6 验签公钥对齐预检（issue #6801）──
+# 病（2026-10-13 真栈实测，两次复跑一致）：同一浏览器会话里其余旅程全 ✅，只有
+# `06-agent-sessions` / `07-chat` 报 console `401 (Unauthorized)` ×3，读起来像**产品鉴权缺陷**。
+# 真因在**环境**：ai-agent 校验 JWT 用的 `JWT_PUBLIC_KEY` 与 admin-api 签发所用的私钥**不是同一对**
+# —— ai-agent 日志逐字 `JWT verification failed: invalid token - Signature verification failed`。
+# 两个键**各自独立下发**（admin-api 用 `classpath:rsa/public.pem`；ai-agent 用 `.env` 的 `JWT_PUBLIC_KEY`），
+# 而本机 `backend/ai-agent-service/.env` 是 **gitignored** 的 ⇒ 仓库里换过密钥对之后，本地这份会**静默陈旧**
+# （2026-08-13 的 #360 换过密钥对；.env 停在更早那对）。
+# ⇒ 判据：起栈后**立即**比指纹（比对的是公钥内容，**不涉及任何私钥 / 凭据**）。
+#   不齐 ⇒ 命名两个指纹 + 给一条可行动处置，并把会话类旅程按「未配置」单列
+#   （**不许**让它继续伪装成产品失败 —— #6790 判据 ③ 的同族）。
+# 边界（照实登记）：只裁「admin-api 的 classpath 公钥 vs ai-agent 生效公钥」这一对；
+#   admin-api 用 `JWT_PUBLIC_KEY_PEM`/`JWT_PRIVATE_KEY_PEM` 注入**其余对**时本预检不覆盖。
+# 严格档（默认关）：`SMOKE_STRICT_KEY_ALIGNMENT=1` ⇒ 不齐即非零退出，防「静默降级成未配置」被当绿。
+# 单一真值源 = `scripts/align_agent_jwt_key.py --state`（同一份逻辑既供人修、又供本预检读；
+# 不在这里再抄一份解析 —— 抄第二份就会漂，而漂了没有任何东西会红）。
+# ⚠️ 本块**自成一体**（`REPO_ROOT` / `MAIN_REPO` / `SCRIPT_DIR` 都带 `:-` 兜底）：它会被判据在沙箱里
+#    整块 `source` 真跑（tests/unit_ci_workflows/test_agent_jwt_key_alignment.py）——
+#    依赖外部恰好赋过值，会让「整块当单元跑」炸在 unbound variable 上。
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)}"
+MAIN_REPO="${MAIN_REPO:-$(dirname "$REPO_ROOT")/migao}"
+[ -d "$MAIN_REPO" ] || MAIN_REPO="$REPO_ROOT"
+SCRIPT_DIR="${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)}"
+AGENT_KEY_ALIGN="$(ALIGN_ENV="$REPO_ROOT/backend/ai-agent-service/.env" \
+  ALIGN_ENV_FALLBACK="$MAIN_REPO/backend/ai-agent-service/.env" \
+  ALIGN_PEM="$REPO_ROOT/backend/admin-api/src/main/resources/rsa/public.pem" \
+  ALIGN_PEM_FALLBACK="$MAIN_REPO/backend/admin-api/src/main/resources/rsa/public.pem" \
+  "${PYTHON_BIN:-python3}" "$SCRIPT_DIR/align_agent_jwt_key.py" --state 2>/dev/null || echo 'unknown:na:na')"
+AGENT_KEY_STATE="${AGENT_KEY_ALIGN%%:*}"
+AGENT_KEY_API_FP="$(printf '%s' "$AGENT_KEY_ALIGN" | cut -d: -f2)"
+AGENT_KEY_AGENT_FP="$(printf '%s' "$AGENT_KEY_ALIGN" | cut -d: -f3)"
+if [ "$AGENT_KEY_STATE" = "mismatch" ]; then
+  echo "  ⚠️ [未配置] admin-api 签发密钥与 ai-agent 校验公钥**不是同一对**（issue #6801）"
+  echo "      admin-api classpath 公钥指纹: ${AGENT_KEY_API_FP}"
+  echo "      ai-agent .env 生效公钥指纹 : ${AGENT_KEY_AGENT_FP}"
+  echo "      ⇒ 06-agent-sessions / 07-chat 会收到 401（ai-agent 日志：Signature verification failed）；"
+  echo "        这是**环境**失配，不是产品缺陷。处置（step1 复原 .env 该键 → step2 重启 ai-agent）："
+  echo "        step1: python3 scripts/align_agent_jwt_key.py   （就地重写 ai-agent .env 的该键）"
+  echo "        step2: 杀 :$AGENT_PORT 后重起 ai-agent（.env 不热加载）"
+  echo "        复算: 本脚本的「[prep] 验签公钥对齐」一行必须印 aligned 指纹"
+  SMOKE_UNCONFIGURED=1
+  SMOKE_UNCONFIGURED_WHY="admin-api 签发密钥与 ai-agent 校验公钥不是同一对（#6801）：${AGENT_KEY_API_FP} vs ${AGENT_KEY_AGENT_FP}"
+  export SMOKE_UNCONFIGURED SMOKE_UNCONFIGURED_WHY
+  if [ "${SMOKE_STRICT_KEY_ALIGNMENT:-0}" = "1" ]; then
+    echo "  ✗ SMOKE_STRICT_KEY_ALIGNMENT=1：验签密钥不齐 ⇒ 非零退出（不跑 spec，避免 401 被读成产品失败）"
+    exit 1
+  fi
+elif [ "$AGENT_KEY_STATE" = "unknown" ]; then
+  echo "  [prep] 验签公钥对齐：**判不了**（取不到 admin-api classpath 公钥或 ai-agent .env）—— 不当通过读"
+else
+  echo "  [prep] 验签公钥对齐：admin-api 与 ai-agent 同一对（指纹 ${AGENT_KEY_API_FP}）"
+fi
+
 # ── 3. SMS 限流清理 + 防刷窗口（登录旅程需要发码）──
 "${PYTHON_BIN:-python3}" - "$REPO_ROOT/backend/admin-api/.env" << 'EOF' >/dev/null 2>&1 || true
 import sys, redis
@@ -257,6 +310,7 @@ else
   OUT_DIR="$OUT_DIR" \
   PHONE="$PHONE" SMS_CODE="$SMS_CODE" \
   SMOKE_UNCONFIGURED="${SMOKE_UNCONFIGURED:-0}" \
+  SMOKE_UNCONFIGURED_WHY="${SMOKE_UNCONFIGURED_WHY:-}" \
   node "$SPEC" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} 2>&1 | tee "$LOG"
   EXIT=${PIPESTATUS[0]}
   set -e
@@ -283,8 +337,12 @@ PYEOF
 )"
     [ -n "$summary_breakdown" ] && printf '    分类: %s\n' "$summary_breakdown"
     if [ "${SMOKE_UNCONFIGURED:-0}" = "1" ]; then
-      echo "    ⚠️ 本轮 ai-agent **未配置**（token 空）：「➖ 未配置」那几条的成因不在产品；"
+      echo "    ⚠️ 本轮 ai-agent **未配置**：「➖ 未配置」那几条的成因不在产品；"
       echo "       判据 U（.github/cases 的 UI-AI-AGENT-CONFIG）要求汇总把它们单列，本轮已单列。"
+      if [ -n "${SMOKE_UNCONFIGURED_WHY:-}" ]; then
+        echo "       形态: ${SMOKE_UNCONFIGURED_WHY}"
+        echo "       （#6801 起：这类**环境**失配必须与产品失败分开看 —— 401 不是产品缺陷）"
+      fi
     fi
   else
     echo "==> ✗ spec **未执行**（node 退出码 ${EXIT}，但没产出 smoke-summary.md / smoke-results.json）"
