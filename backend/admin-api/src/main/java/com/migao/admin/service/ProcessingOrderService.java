@@ -2284,7 +2284,7 @@ public class ProcessingOrderService {
         throw new BusinessException(ERR_ROUTING_NOT_FOUND,
                 String.format("条件工序规则「%s」的触发类型「%s」尚未实现，无法实例化工序", rule.getId(), kind),
                 422,
-                "请在「工艺配置 → 工艺路线」停用该规则，或联系研发实现该触发类型");
+                "请在「企业基础设置 → 工艺路线」停用该规则，或联系研发实现该触发类型");
     }
 
     /**
@@ -2658,7 +2658,7 @@ public class ProcessingOrderService {
             throw new BusinessException(ERR_ROUTING_NOT_FOUND,
                     String.format("订单未给出工艺（craft），且该租户没有配置默认工艺，无法实例化工序"),
                     422,
-                    "请在「工艺配置」把一条工艺设为默认（缺 craft 的订单取它），"
+                    "该租户没有设过默认工艺（商家面无此维护入口，需服务方配置），"
                             + "或在下单时给出工艺；查看入口 GET /api/admin/production/routings");
         }
         // T1：全无派生信号 ⇒ 直接取默认路线模板（**该租户的**默认，不是常量）
@@ -2699,7 +2699,7 @@ public class ProcessingOrderService {
                     String.format("工序库缺少「%s」的工艺路线模板，且该租户没有默认路线，无法实例化工序"
                                     + "（工序来源为工序库，不回退加工项目录）", usedKey),
                     422,
-                    String.format("请在「工艺配置 → 工艺路线」建一条路线并设为默认（当前库中路线模板 %s）；"
+                    String.format("请在「企业基础设置 → 工艺路线」建一条路线并设为默认（当前库中路线模板 %s）；"
                                     + "若为空库，先确认 V71/V72 种子迁移已执行；"
                                     + "查看入口 GET /api/admin/production/routings",
                             available.isEmpty() ? "**为空**" : "有：" + String.join("、", available)));
@@ -2857,7 +2857,7 @@ public class ProcessingOrderService {
                         String.format("工艺路线规则「%s」的触发类型「%s」尚未实现，无法实例化工序",
                                 rule.getId(), kind),
                         422,
-                        "请在「工艺配置 → 工艺路线」停用该规则，或联系研发实现该触发类型");
+                        "请在「企业基础设置 → 工艺路线」停用该规则，或联系研发实现该触发类型");
             }
             // 🔴 **规则级部位限定**（issue #4962 加回；#4937 / O2 曾整块退场）：`position` 为空 /
             // NULL = **不限部位**；否则必须逐字匹配当前实例化部位。与真值源
@@ -3011,7 +3011,7 @@ public class ProcessingOrderService {
      * <p><b>⚠️ P2b：缺 {@code craft} 取「商户级默认工艺」，不再写死常量（issue #4459 §1②）</b>：
      * {@code production_crafts} 的 {@code is_default} 行是**商家可配**的（改默认工艺 ⇒ 后续订单
      * 插入的工序与计件系数随之变）；该租户**没有**默认工艺 ⇒ 返回 {@code null}，
-     * 由 {@link #resolveRoute} 走 T3 fail-closed（错误码 + suggestion 指名去「工艺配置」设默认），
+     * 由 {@link #resolveRoute} 走 T3 fail-closed（错误码 + suggestion 说清「商家面无默认工艺维护入口」），
      * **绝不**静默取常量 {@code 韩褶}（商户只做打孔时会插错工序 + 算错计件系数 = 错发工资）。</p>
      *
      * <p><b>⚠️ 派生路径**不退场**（用户裁定 2026-09-19「部位不是必填的」）</b>：S1 的字段全部可空

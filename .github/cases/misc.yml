@@ -3684,3 +3684,38 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+
+  - id: MC-097
+    legacy_id: ""
+    title: "已移除页面名的**旧指针**改指「企业基础设置 → <域 label>」（issue #6839 = #6826 的 B1 包·admin-api 面）：按**动作**拆指针、假出口改写动作、能力名显式不改"
+    domains:
+      - misc
+      - ui
+    tier: normal
+    tags: [copy, removed-page, config-center, domain-label, false-exit, capability-name, ledger-only-shrink, red-proof]
+    truths_ref: []
+    # ⚠️ 真值暂缺：判据是**零 LLM 的确定性读数**（词法扫 admin-api 的 Java 字符串字面量 + 域 label 真值源现取
+    # + 台账只许缩短），由 pytest / JUnit 真跑给出，不需要自然语言真值反推。
+    user_inputs:
+      - "后台提示我「请在「工艺配置 → 工艺路线」把一条工艺设为默认」——可「工艺配置」这个菜单早没了，我在「企业基础设置」里到底该点哪个域？"
+    expectations: []
+    data_checks:
+      - "🔴 **判据 1·本包承包文件零已移除页面名**：`ProcessingFeeCalculator` / `ProcessingFeeCombinationCommandService` / `ProductionRoutingCommandService` / `ProcessingOrderService` / `ProductionInstanceRepricingService` / `ProductionService` 的**字符串字面量**里不再出现 `REMOVED_PAGE_NAMES`（参数总览 / 工艺配置 / 加工项管理 / 加工费管理）。执行点 = tests/unit_ci_workflows/test_removed_page_pointer_targets.py::test_contract_files_carry_no_removed_page_name（**改前红**：逐条具名报出旧串）"
+      - "🔴 **判据 2·逐域正控（指对域，不只是「不含旧名」）**：4 个目标域 label 各被对应服务逐字读到 —— `ProcessingFeeCalculator` ⇒ 「企业基础设置 → 加工费组合」（域 `fee-combinations`）、`ProcessingFeeCombinationCommandService` + `ProductionRoutingCommandService` ⇒ 「企业基础设置 → 加工项与分类」（域 `processing-items`）、`ProcessingOrderService` ⇒ 「企业基础设置 → 工艺路线」（域 `craft-route`）、`ProductionInstanceRepricingService` + `ProductionService` ⇒ 「企业基础设置 → 工序与部位单价」（域 `operation-prices`，**矩阵格 = 该域**）。执行点 = 同文件 ::test_each_domain_pointer_is_the_current_domain_label + ::test_domain_truth_source_is_live"
+      - "🔴 **判据 3·两处假出口改写动作（不是换个页面名）**：① `ProductionRoutingCommandService` 的 craft 触发值提示不再写「工艺词表」（商家面无该页、**也无写能力**：`production_crafts` 只经 `GET /route-rule-options` 供触发值下拉取值）⇒ 改写后说清**真边界**（触发值只能取自本店**已有的活跃工艺** / 换一个已有的 / 新增请联系服务方）；② `ProcessingOrderService` 的「缺 craft」提示不再写「工艺配置」，但**保留真出路**「下单时给出工艺」。执行点 = 同文件 ::test_false_exits_no_longer_name_a_nonexistent_coordinate"
+      - "🔴 **判据 4·台账只许缩短 + 常量与台账一致**：`removed_page_copy_ledger.json` 清到 **3 条 / 3 处**（只剩**能力名**：`PermissionService` ×1 / `RegistrationService` ×2），且每条的 `reason` 必须具名说清它是**能力名（不是坐标）**；守卫的 `FROZEN_MAX_ENTRIES` / `FROZEN_MAX_HITS` 与台账**逐值一致**（3 / 3）。执行点 = 同文件 ::test_ledger_shrunk_to_capability_names_only + tests/unit_ci_workflows/test_removed_page_copy_guard.py::test_ledger_entries_are_live_and_only_shrink"
+      - "🔴 **判据 4b·负控（能力名不得被改成坐标）**：`PermissionService` / `RegistrationService` 的字面量里**不得**出现「企业基础设置 →」（改成页面坐标 = 把岗位职责读成导航路径）。执行点 = 同文件 ::test_capability_names_stay_out_of_the_pointer_rewrite"
+      - "🔴 **判据 5·判别力自证（注入式）**：把真语料里 `ProductionService` 的新指针改回「工艺配置 → 工艺路线」⇒ 判据 1 当场红；**只加注释**（含旧页名）⇒ 一条判据都不红（沿革注释合法，与 MC-096 的对照读数同口径）。执行点 = 同文件 ::test_injection_detects_a_reverted_pointer / ::test_injection_comment_only_change_is_not_red"
+      - "**实例判据·Java 契约面**：`ProductionRoutingCommandServiceOptionCreateTest::craftTriggerValueOutsideVocabularyIsRejected` 的断言随文案同步（旧断言判的是旧词表名 ⇒ 新断言判的是新措辞（「已有的活跃工艺」），**判据不放宽**：仍是 422 + `field=trigger_value` + 零写入）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionRoutingCommandServiceOptionCreateTest.java"
+      - "**边界（照实登记）**：① **能力名 3 处有意不改**（岗位/权限显示名，理由 + 重启条件写进台账 `reason` 与 PR body）；② **商家面无工艺维护入口**是**能力缺口**（是否补一个工艺维护入口 = 产品范围决策 ⇒ 有意不改 + 重启条件，**不许**读成已解决）；③ 判不了「假出口真的不可达」（那要遍历商家面写能力的语义判断）；④ 判不了「该文案会不会真的上屏」（要 `migao-dev-flow` §15.7 真机截图）；⑤ 前端字面量（B2）与 Agent 侧导航知识（B3）**不在本用例射程**。"
+    skip_reason: "[backend-contract] 判据是零 LLM 的确定性读数（词法扫 admin-api Java 字面量 + 域 label 真值源现取 + 台账现取 + JUnit 契约面），pytest / JUnit 真跑，零网络，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-13 新增（issue #6839 = #6826 的 B1 包）。取号 = `python3 scripts/next_case_id.py MC` ⇒ main 现取 MC-001~096 ⇒ **MC-097**（返回码 0）。病：`#6580` 撤掉「加工项管理」「工艺配置」两个菜单项后，admin-api 的服务端文案仍指向它们；#6827 建立类级守卫 + 12 条 / 13 处台账后，本包逐条判死并改净。**红证（逐字）**：改前 `python3 -m pytest tests/unit_ci_workflows/test_removed_page_pointer_targets.py -q` = **6 failed / 2 passed**（判据 1 具名报出 10 处旧指针、判据 2 四条正控全无、判据 3 假出口未改写、判据 4 台账 12≠3）；同批 `test_removed_page_copy_guard.py` 因台账未销账同步红。改后两个文件合计 = **18 passed**。注入式对照：`ProductionService.java` 的新指针改回旧串 ⇒ 判据 1 红；只加含旧名的注释 ⇒ 不红。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_removed_page_pointer_targets.py"
+        - "tests/unit_ci_workflows/test_removed_page_copy_guard.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionRoutingCommandServiceOptionCreateTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

@@ -902,7 +902,7 @@ cases:
     data_checks:
       - "success=true"
       - "（散文、不计分）逐项来自服务端：配置项与数值只能来自工具返回（`GET /api/admin/production/craft-calc-config`），不得用行业常识 / 代码里的默认常量顶替，也不得编造服务端没返回的键；取不到时如实说「暂未取到算料配置」"
-      - "（散文、不计分）只读边界：本工具**不做算料**（不给某一单算米数 / 报价）⇒ 要算具体一单必须引导到后台算料页填尺寸；配置修改不在能力内 ⇒ 引导后台「工艺配置」页，**不得声称已修改**（工具 read_only=true，无任何写 action）"
+      - "（散文、不计分）只读边界：本工具**不做算料**（不给某一单算米数 / 报价）⇒ 要算具体一单必须引导到后台算料页填尺寸；配置修改不在能力内 ⇒ 引导「企业基础设置 → 算料口径」，**不得声称已修改**（工具 read_only=true，无任何写 action）"
     skip_reason: ""
     merge_log: "2026-09-26 新增（issue #3592 销账）：#5247 新接入的只读工具 craft_calc_config_query 首次获得 LLM 行为面覆盖（原缺口 = .github/eval-coverage-baseline.yml 的 craft_calc_config_query/uncovered，同 PR 删除该条目）。取号 PP-015：库内 PP-001~PP-014（PP-002/003/004/005 为历史空号，不复用已发布的号段习惯）—— PP-015 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。"
     traces:
@@ -964,7 +964,7 @@ cases:
       - "调用参数 action=routing_gaps（缺口面；工序库目录是 operation_catalog_query 的 operations，两者不得混用）"
       - "（散文、不计分）缺口逐条来自服务端：`unrouted_operations` / `unrouted_operation_total` / `pending_confirmation_total` / `signal_keys_without_route` 只能原样转述 `GET /api/admin/production/routing-gaps` 的返回，不得自行推断「哪道工序该进哪条路线」，也不得编造服务端没返回的数量"
       - "（散文、不计分）「有意挂起 ≠ 系统漏了」：`pending_confirmation=true` 的工序（等客户输入）必须如实说明**是有意挂起**，不得报成系统缺口；必要时可用 `note` 字段的口径解释"
-      - "（散文、不计分）只读边界：本工具 read_only=true，无任何写 action ⇒ 不得声称已把工序加进路线 / 已新建路线，只能引导商家去后台「工艺配置」页处理"
+      - "（散文、不计分）只读边界：本工具 read_only=true，无任何写 action ⇒ 不得声称已把工序加进路线 / 已新建路线，只能引导商家去「企业基础设置 → 工艺路线」处理"
     skip_reason: ""
     merge_log: "2026-10-02 新增（issue #4923）：工艺配置读面 6 个零覆盖读端点中的 routing_gaps 首次获得 LLM 行为面覆盖。取号 PP-016：库内 PP-001~PP-015（PP-002/003/004/005 为历史空号，不复用已发布的号段）—— PP-016~PP-021 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。"
     traces:
@@ -1084,7 +1084,7 @@ cases:
       - "success=true"
       - "调用参数 action=fee_combinations（组合定价表面）"
       - "（散文、不计分）逐条来自服务端：`combinations[]` 的 items / composition_key / unit_price / unit / status 只能原样转述 `GET /api/admin/production/processing-fee-combinations` 的返回；**不得用行业常识或代码默认常量编一个价**，也不得把 `unit_price` 与加工项自己的单价混为一谈"
-      - "（散文、不计分）只读边界：改价 / 新建 / 停用组合都不在能力内（工具 read_only=true）⇒ 只能引导后台「加工项管理 → 加工费组合」页，不得声称已改价"
+      - "（散文、不计分）只读边界：改价 / 新建 / 停用组合都不在能力内（工具 read_only=true）⇒ 只能引导「企业基础设置 → 加工费组合」，不得声称已改价"
     skip_reason: ""
     merge_log: "2026-10-02 新增（issue #4923）：六个零覆盖读端点中的 fee_combinations 首次获得 LLM 行为面覆盖。"
     traces:
@@ -1447,7 +1447,7 @@ cases:
       - backend-contract
     truths_ref: []
     user_inputs:
-      - "商家在「工艺配置」页改了工序单价，手抖点了两次保存（或两个管理员同时点了保存）"
+      - "商家在「企业基础设置 → 工序与部位单价」改了工序单价，手抖点了两次保存（或两个管理员同时点了保存）"
     expectations: []
     data_checks:
       - "**核验结论 = 真**（台账 after-sales-sideeffect-concurrency-ledger.json 的 unverified 观察项逐字称「⚠️ **涉钱面**：价格版本**追加 insert** + 可选状态写 ⇒ 并发重复提交可能重复追加版本行」）：该主张**在当前代码上成立** —— 修前 N=4 并发提交同一次调价（旧价 100.00 → 新价 200.00）**3 轮全部**读到「版本账总行数 5 / 其中新价行 4」，即同一次调价被记了 4 次。"

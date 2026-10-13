@@ -30,7 +30,10 @@
   扩集合必须同 PR 改这里并在 PR body 说明；`CLEARED_NAMES`（本单已清零的面）**不是**可选项。
 - **未固化（照实登记）**：① 本判据判的是**文本**，判不了「该文案会不会真的上屏」（那要 §15.7 的真机截图）；
   ② 判不了「新指针指向的域 label 与 `frontend/admin-web/src/lib/config-center-domains.ts` 逐字一致」
-  （域真值源自己的判据管那一半）；③ 台账里剩下的条目是**跨单债务**（跟踪 issue #6826），本文件不为它们背书。
+  （域真值源自己的判据管那一半；**实例判据** = `tests/unit_ci_workflows/test_removed_page_pointer_targets.py`，MC-097）；
+  ③ 台账里剩下的 3 条是**能力名**（岗位/权限显示名，不是坐标）—— 跟踪 issue #6826，本文件不为它们背书；
+  ④ 判不了「假出口」（指向一个**不存在写能力**的页面坐标）—— 它只看页名，改写后的文案是否**真可行动**
+  由 `docs/design/user-facing-copy-standard.md` 的评审口径 + MC-097 的实例判据承担。
 - 复算：`python3 -m pytest tests/unit_ci_workflows/test_removed_page_copy_guard.py -q -s`
 """
 
@@ -62,8 +65,10 @@ REMOVED_PAGE_NAMES = ("参数总览", "工艺配置", "加工项管理", "加工
 CLEARED_NAMES = ("参数总览",)
 
 #: 台账冻结上界（**只许缩短**）：加条目必须是「同 PR 改大这里 + PR body 说明」，diff 里显式可见。
-FROZEN_MAX_ENTRIES = 12
-FROZEN_MAX_HITS = 13
+#: 🔻 2026-10-13（issue #6839 = #6826 的 B1 包）：12 条 / 13 处 ⇒ **3 条 / 3 处**（页名指针全部改指
+#: 「企业基础设置 → <域 label>」，只剩**能力名**那 3 条 —— 显式判定「不改」+ 重启条件，见台账 reason）。
+FROZEN_MAX_ENTRIES = 3
+FROZEN_MAX_HITS = 3
 
 #: 正控锚（判据 6）：本单落地的新指针 —— 它必须能被同一把尺子读到（否则说明字面量视图坏了）。
 POSITIVE_CONTROL_LITERAL = "企业基础设置 → 余料尺寸"

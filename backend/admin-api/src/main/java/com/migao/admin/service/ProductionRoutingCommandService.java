@@ -584,12 +584,13 @@ public class ProductionRoutingCommandService {
                     String.join(" / ", ProductionOperationQueryService.POSITION_LIMIT_VOCABULARY));
         }
         if (TRIGGER_KIND_CRAFT.equals(triggerKind)) {
-            return String.format("工艺词表里没有活跃的「%s」—— 触发键查不到 ⇒ 这条规则永远不命中"
-                    + "（商家以为配了、加工单上却没有），请先在「工艺词表」建这个工艺", triggerValue);
+            return String.format("工艺「%s」在本店**已有的活跃工艺**里没有 —— 触发键查不到 ⇒ 这条规则永远不命中"
+                    + "（商家以为配了、加工单上却没有）；工艺词表是**只读**的（商家面没有维护入口）"
+                    + "⇒ 请从已有工艺里换一个（新增工艺请联系服务方）", triggerValue);
         }
         if (TRIGGER_KIND_PROCESSING_ITEM.equals(triggerKind)) {
             return String.format("加工项目录里没有活跃的「%s」—— 触发键 = 订单里的加工项名（**精确相等**），"
-                    + "目录里没有就永远不命中，请先在「加工项管理」建这个加工项", triggerValue);
+                    + "目录里没有就永远不命中，请先在「企业基础设置 → 加工项与分类」建这个加工项", triggerValue);
         }
         return String.format("触发值「%s」不可用", triggerValue);
     }

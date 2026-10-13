@@ -317,7 +317,7 @@ public class ProcessingFeeCombinationCommandService {
             }
             if (!library.containsKey(name)) {
                 details.add(BusinessException.detail(field, String.format(
-                        "加工项「%s」在加工项目录中不存在或已停用：请先在「加工项管理」新增该加工项，"
+                        "加工项「%s」在加工项目录中不存在或已停用：请先在「企业基础设置 → 加工项与分类」新增该加工项，"
                                 + "或从目录里已有的加工项里选", name)));
                 continue;
             }

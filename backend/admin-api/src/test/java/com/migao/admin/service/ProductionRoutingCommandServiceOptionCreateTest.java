@@ -484,7 +484,7 @@ class ProductionRoutingCommandServiceOptionCreateTest {
                     BusinessException e = (BusinessException) thrown;
                     assertThat(e.getHttpStatus()).isEqualTo(422);
                     assertThat(e.getDetails()).extracting("field").containsExactly("trigger_value");
-                    assertThat(e.getDetails().get(0).getMessage()).contains("工艺词表");
+                    assertThat(e.getDetails().get(0).getMessage()).contains("已有的活跃工艺");
                 });
         verify(productionRouteRuleMapper, never()).insert(any(ProductionRouteRule.class));
     }

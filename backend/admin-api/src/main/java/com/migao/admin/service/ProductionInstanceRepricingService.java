@@ -77,8 +77,8 @@ public class ProductionInstanceRepricingService {
 
     /** 补价后仍有工序没补上（矩阵格仍是 {@code NULL}）时的可行动提示。 */
     static final String STILL_UNPRICED_HINT =
-            "仍有工序未定价（矩阵格为空）：请在「工艺配置 → 工艺路线」的部位价目矩阵里为对应"
-                    + "「工序 × 部位」格填入单价（路径 /production/routings），再回来重算一次。";
+            "仍有工序未定价（矩阵格为空）：请在「企业基础设置 → 工序与部位单价」的部位价目矩阵里为对应"
+                    + "「工序 × 部位」格填入单价，再回来重算一次。";
 
     /** 全部补上（或本来就没有未定价实例）时的提示。 */
     static final String FILLED_HINT =

@@ -107,9 +107,6 @@ public class ProcessingFeeCalculator {
     /** 加工费米数的键族（唯一生产者 = 算料侧 {@code curtain_calc}；键名与加工单白名单逐字一致）。 */
     private static final List<String> METER_KEYS = List.of("processingMeters", "fabric_meters");
 
-    /** 可行动提示里的定价入口（商家看到提示要能直接找到地方补价）。 */
-    private static final String PRICING_ENTRY = "/production/processing-fees";
-
     /**
      * 特殊选项**对客单价**所在的规则类型（{@code production_route_rules.trigger_kind}）。
      * 只有这一类的行才有 {@code customer_unit_price}（设计 §4.1：非 option 行一律 NULL）。
@@ -507,9 +504,9 @@ public class ProcessingFeeCalculator {
             return Fee.unpriced(compositionKey, normalizedItems,
                     null, null, meters, metersSource, specialOptions, mixedColor, windowKey,
                     joinHint(String.format("选配组合「%s」在「加工费组合」里没有价 ⇒ 本行**组合那半**按 0 计（未定价），"
-                                    + "**不套任何默认价**。请去「加工费管理」(%s) 为该组合定价，"
+                                    + "**不套任何默认价**。请去「企业基础设置 → 加工费组合」为该组合定价，"
                                     + "或确认这些加工项不该组合收费",
-                            compositionKey, PRICING_ENTRY), mixedHint));
+                            compositionKey), mixedHint));
         }
         if (meters == null) {
             return Fee.unpriced(compositionKey, normalizedItems, row.getUnitPrice(), row.getSource(),
@@ -693,8 +690,8 @@ public class ProcessingFeeCalculator {
             return null;
         }
         return String.format("特殊选项 %s **未定价**（对客元/套为空）⇒ 这几项按 0 计、"
-                        + "**不套任何默认价**。请去「加工费管理」(%s) 为它们定价",
-                unpriced, PRICING_ENTRY);
+                        + "**不套任何默认价**。请去「企业基础设置 → 加工费组合」为它们定价",
+                unpriced);
     }
 
     /** 选中的特殊选项名（{@code processing_info.specialOptions: string[]}；缺失 / 非数组 = 没选）。 */
