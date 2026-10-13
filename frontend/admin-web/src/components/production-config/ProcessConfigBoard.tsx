@@ -1,6 +1,7 @@
 'use client'
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import {
   AlertCircle,
@@ -18,12 +19,10 @@ import { isErrorToastShown, toastRequestError } from '@/lib/api-error'
 import { toast } from 'sonner'
 import { Button, Modal, NumberInput } from '@/components/ui'
 import { productionApi } from '@/lib/api'
-import { craftCalcConfigGuardReasons } from '@/lib/production-guard-reasons'
-import { CALC_PARAM_COPY, CALC_SCALAR_KEYS, glossaryAnchorOf, type CalcScalarKey } from '@/lib/craft-calc-glossary'
 import { InlineMarkdown } from '@/lib/inline-markdown'
-import { CraftCalcGlossary } from '@/components/production/CraftCalcGlossary'
-import { CRAFT_CALC_FORMULA_LABELS } from '@/lib/craft-calc-request'
 import { cn } from '@/lib/utils'
+// 域的 URL 深链**单一口径**（issue #6825）：第 ④ 步「去处理」跨页到算料口径域，不在本页拼字面量
+import { domainHref } from '@/lib/config-center-domains'
 // 共享工具与展示常量（issue #6585 P1）：定义处从本文件挪到模块外**一份**，四个面板同源 import。
 import {
   inputCls,
@@ -39,7 +38,6 @@ import { RoutingsPanel } from '@/components/production-config/RoutingsPanel'
 import { CuttingHeightPanel } from '@/components/production-config/CuttingHeightPanel'
 import type {
   CatalogOperation,
-  CraftCalcConfig,
   CraftCalcConfigResponse,
   OperationPosition,
   ProductionSource,
@@ -359,29 +357,18 @@ function RulePriceCell({
   )
 }
 
-// ────────────────────────── 算料配置（tab「算料配置」，issue #4528 = 包 E） ──────────────────────────
-
-/**
- * 标量键的展示元数据 —— **单一真值** = `@/lib/craft-calc-glossary` 的 `CALC_PARAM_COPY`
- * （issue #4975）。默认值/范围一律由后端给，前端**不持有**。
- *
- * 本页原来自带一份文案，其中 `side_margin` 的 label/hint 与算料引擎**口径相反**（页面说它是
- * 「定宽买高的上下卷边合计」，引擎里它是宽方向余量）⇒ 页面成了第二份口径（issue #4940）。
- * ⇒ 改为**引用同一份**（`tests/unit/lib/craft-calc-glossary.test.ts` 逐条读源守卫）。
- * ⚠️ 用户 2026-09-21 裁定（issue #5030）后该键**整体退场** ⇒ 这一项已从键集里删除，
- * 「左右覆盖余量」不再是可配参数（宽方向没有余量）。
- */
-const CALC_SCALAR_FIELDS: { key: CalcScalarKey; label: string; hint: string; impact: string; anchor: string }[] =
-  CALC_SCALAR_KEYS.map((key) => ({ key, ...CALC_PARAM_COPY[key], anchor: glossaryAnchorOf(key) }))
-
-/**
- * 兜底公式的可读文案（取值域由后端枚举给；这里只做展示映射）。
- *
- * ⚠️ **单一真值** = `@/lib/craft-calc-request` 的 `CRAFT_CALC_FORMULA_LABELS`（issue #4878 独立复核）：
- * 本页原来自带一份**逐字相同、但没有任何守卫**的副本（下单页另有一份）⇒ 改一处忘一处就**静默分叉**
- * （下单页显示「韩褶公式（褶数法）」、这里显示别的字）。⇒ 改为**直接复用同一张表**，不再各写一份。
- */
-const CALC_FORMULA_LABEL: Record<string, string> = CRAFT_CALC_FORMULA_LABELS
+// ────────────────────────── 算料口径（**已迁出本页**，issue #6825） ──────────────────────────
+//
+// 🔴 本页原来还有一个「算料配置」tab（`craft-calc-config-panel`：8 标量 + 档位 + 拼色 + 公式 + 保存），
+// 它与「企业基础设置」页的「算料口径」域编辑的是**同一份配置**
+// （`GET/PUT /api/admin/production/craft-calc-config`）—— 设计真值源
+// `docs/design/enterprise-settings-redesign.md` 判死线第 1 条：**同一份配置不许两个入口**。
+// issue #6825 把唯一写面收敛到 `/settings?domain=calc`
+// （`frontend/admin-web/src/components/settings/CalcCaliberPanel.tsx`），那个 tab 与它的全部
+// `craft-calc-config-*` DOM 一并退役；本页只保留就绪度第 ④ 步的**读数**（算料配没配），
+// 按钮改成**跨页深链**；「口径与术语说明」区块（`components/production/CraftCalcGlossary.tsx`）
+// 随之迁进算料口径域。旧深链 `?tab=calc` 由
+// `frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx` 重定向（不 404、不落空白）。
 
 /**
  * 工艺档位的**显示名**（issue #4567 用户走查②：「英文改中文」）。
@@ -481,11 +468,24 @@ function ReadinessStep({
   /** 覆盖状态词（如读面失败）—— 缺省按 state 取「已完成 / 待完成 / 读取中」 */
   statusText?: string
   hint?: string
-  action?: { testId: string; onClick: () => void }
+  /**
+   * 去处：`onClick` = **页内**滚到本页某个区块（issue #5858）；`href` = **跨页**跳到承载这一步的页面
+   * （issue #6825：算料配置的唯一写面在 `/settings` 的「算料口径」域 —— 本页已没有那个 tab，
+   * 死按钮不许留）。两者只给其一。
+   */
+  action?: { testId: string; onClick?: () => void; href?: string }
 }) {
   const done = state === 'done'
   /** 未知（读面**还没回来** / 读失败）= **中性**呈现：把「没加载」显示成「没配」是误报 */
   const unknown = state === 'unknown'
+  const actionCls = cn(
+    'mt-2 self-start rounded border px-2 py-0.5 text-xs transition-colors',
+    done
+      ? 'border-emerald-300 text-emerald-800 hover:bg-emerald-50'
+      : unknown
+        ? 'border-neutral-300 text-neutral-600 hover:bg-neutral-100'
+        : 'border-amber-300 text-amber-900 hover:bg-amber-50',
+  )
   return (
     <div
       data-testid={testId}
@@ -515,23 +515,16 @@ function ReadinessStep({
       {!done && hint && (
         <p className={cn('mt-1 text-xs', unknown ? 'text-neutral-500' : 'text-amber-800')}>{hint}</p>
       )}
-      {action && (
-        <button
-          type="button"
-          data-testid={action.testId}
-          onClick={action.onClick}
-          className={cn(
-            'mt-2 self-start rounded border px-2 py-0.5 text-xs transition-colors',
-            done
-              ? 'border-emerald-300 text-emerald-800 hover:bg-emerald-50'
-              : unknown
-                ? 'border-neutral-300 text-neutral-600 hover:bg-neutral-100'
-                : 'border-amber-300 text-amber-900 hover:bg-amber-50',
-          )}
-        >
-          {done ? '去查看' : '去处理'}
-        </button>
-      )}
+      {action &&
+        (action.href ? (
+          <Link href={action.href} data-testid={action.testId} className={actionCls}>
+            {done ? '去查看' : '去处理'}
+          </Link>
+        ) : (
+          <button type="button" data-testid={action.testId} onClick={action.onClick} className={actionCls}>
+            {done ? '去查看' : '去处理'}
+          </button>
+        ))}
     </div>
   )
 }
@@ -797,9 +790,10 @@ interface MatrixRow {
  * 形态照 `app/(dashboard)/production/processing/page.tsx` 与 `chat/page.tsx`）——
  * 页面本体是纯客户组件，fallback 留空即可。
  *
- * 为什么需要它（2026-09-29）：下单页「参数说明」把「工艺配置 → 算料配置」做成**可点深链**
- * （`/production/routings?tab=calc`，入口常量 = `frontend/admin-web/src/lib/meters-formula-legend.ts::CRAFT_CALC_ENTRY`）
- * ⇒ 本页必须**认这个参数**，否则点进去停在第一个 tab（用户口径「点击直接跳转过去」）。
+ * 为什么要读它：`?tab=cut` 直接落在「裁高配置」tab。
+ * 🔴 旧深链 `?tab=calc` **不再由本组件消费**（issue #6825）—— 它由
+ * `frontend/admin-web/src/app/(dashboard)/production/routings/page.tsx` 重定向到
+ * `/settings?domain=calc`（算料口径 = 算料配置的唯一写面），所以本组件不认 `calc`。
  */
 /**
  * 挂载形态（issue #6580）：
@@ -812,31 +806,25 @@ interface MatrixRow {
 export default function ProcessConfigBoard({ embedded = false }: { embedded?: boolean } = {}) {
   const searchParams = useSearchParams()
   /**
-   * **两个 tab**：`process` 工序管理 / `calc` 算料配置。默认落在前者（依赖顺序上它在前）。
+   * **两个 tab**：`process` 工序管理 / `cut` 裁高配置。默认落在前者（依赖顺序上它在前）。
    *
    * <p>用户裁定（2026-09-21，附线上截图）：「【打包发货】这里的表单也直接删，把工艺路线的功能放置到
    * 这块区域，两个 tab 合并成一个」⇒ 原 `operations`（工艺项）与 `routes`（工艺路线）合为 `process`
    * 一屏：上面是**唯一**那张「一道工序一个价」表（原【打包发货】那 5 道 `scope='set'` 工序
    * **并回同一张表** —— 删掉那个独立区块**不减少任何定价入口**），原【打包发货】的位置改放
    * **工艺路线**。</p>
+   *
+   * <p>🔴 第三个 tab「算料配置」**已退役**（issue #6825）：它是算料配置的第二个写面，写面已收敛进
+   * `/settings?domain=calc`（设计判死线第 1 条）。故这里不再认 `calc`。</p>
    */
-  const [tab, setTab] = useState<'process' | 'calc' | 'cut'>(() =>
-    searchParams?.get('tab') === 'calc'
-      ? 'calc'
-      : searchParams?.get('tab') === 'cut'
-        ? 'cut'
-        : 'process'
+  const [tab, setTab] = useState<'process' | 'cut'>(() =>
+    searchParams?.get('tab') === 'cut' ? 'cut' : 'process',
   )
 
-  // ── 算料配置（tab「算料配置」，issue #4528 = 包 E）──
+  // ── 算料口径的**读面**（只喂就绪度第 ④ 步；写面在 `/settings?domain=calc`，issue #6825）──
   /** 读面响应（含 `source`：`default` = 系统默认值 / `stored` = 已保存的商家配置） */
   const [calcConfig, setCalcConfig] = useState<CraftCalcConfigResponse | null>(null)
-  /** 表单草稿（切 tab 不丢：state 挂在本组件上） */
-  const [calcDraft, setCalcDraft] = useState<CraftCalcConfig | null>(null)
   const [calcError, setCalcError] = useState('')
-  /** 保存被拒的逐条理由（**不吞**成一句「保存失败」—— 后端一次列出每一处不合法） */
-  const [calcReasons, setCalcReasons] = useState<string[]>([])
-  const [calcBusy, setCalcBusy] = useState(false)
 
   // ── 功能体（工序 / 路线 / 裁高）的**唯一一份**状态与派生视图（issue #6585）──
   // 全在 `features.ts` 里：板子用它算就绪度卡与页头按钮，区块 JSX 由三个面板渲染
@@ -861,26 +849,23 @@ export default function ProcessConfigBoard({ embedded = false }: { embedded?: bo
     await Promise.all([opFeature.load(), cutFeature.load()])
   }
 
-  // ────────────────────────── 算料配置（tab「算料配置」，issue #4528） ──────────────────────────
+  // ────────────────── 算料口径的**读面**（就绪度第 ④ 步，issue #6825） ──────────────────
 
   /**
-   * 读本租户生效的算料配置。
+   * 读本租户生效的算料配置 —— **只**用于就绪度第 ④ 步的「算料配没配」。
    *
-   * 页面**不持有任何默认值**：本租户没配置行时后端回的是**算料引擎默认值**
-   * （`source='default'`）⇒ 直接渲染它（在 TS 侧抄一份默认值 = 第二份会漂的默认值）。
+   * 页面**不持有任何默认值**：本租户没配置行时后端回的是**算料引擎默认值**（`source='default'`）。
+   * 🔴 本页**不再有**保存 / 草稿 / 逐条理由（那些随写面一起迁进 `/settings?domain=calc`）。
    */
   const loadCalcConfig = useCallback(async () => {
     try {
       const res = await productionApi.getCraftCalcConfig()
       const data = res.data?.data ?? null
       setCalcConfig(data)
-      setCalcDraft(data?.config ?? null)
       setCalcError('')
-    } catch (e) {
+    } catch {
       setCalcConfig(null)
-      setCalcDraft(null)
       setCalcError('算料配置加载失败，请稍后重试')
-      if (!isErrorToastShown(e)) toast.error('算料配置加载失败')
     }
   }, [])
 
@@ -894,41 +879,6 @@ export default function ProcessConfigBoard({ embedded = false }: { embedded?: bo
   }, [calcConfig, calcError, loadCalcConfig])
 
 
-  /**
-   * 保存（`PUT` = **全量替换**）。
-   *
-   * 失败 ⇒ **逐条**展示后端理由 + **不**改本地草稿（更不静默写回默认值 —— 静默 = 商家以为改了、
-   * 系统按默认算 ⇒ 算错钱且无人知道）。
-   */
-  async function saveCalcConfig() {
-    if (!calcDraft) return
-    setCalcBusy(true)
-    setCalcReasons([])
-    try {
-      const res = await productionApi.updateCraftCalcConfig(calcDraft)
-      const data = res.data?.data ?? null
-      setCalcConfig(data)
-      setCalcDraft(data?.config ?? calcDraft)
-      toast.success('算料配置已保存，之后的算料按当前配置计算')
-    } catch (e) {
-      setCalcReasons(craftCalcConfigGuardReasons(e))
-      if (!isErrorToastShown(e)) toast.error('算料配置保存失败')
-    } finally {
-      setCalcBusy(false)
-    }
-  }
-
-  /** 草稿里某个数值键的当前值（渲染用；不在这里补默认值）——
-   *  issue #5198：非有限数（清空时落的是 NaN 哨兵）一律返回 null，
-   *  否则 `String(NaN)` 会把输入框渲染成字面量 `NaN`，用户清都清不掉。 */
-  const calcNumber = (key: CalcScalarKey): number | null => {
-    const v = calcDraft?.[key]
-    return typeof v === 'number' && Number.isFinite(v) ? v : null
-  }
-
-  const setCalcNumber = (key: CalcScalarKey, next: number | null) => {
-    setCalcDraft((d) => (d ? { ...d, [key]: next === null ? Number.NaN : next } : d))
-  }
 
   // ────────────────────────── 就绪度（先后依赖显性化；数据全部来自功能体） ──────────────────────────
 
@@ -971,7 +921,7 @@ export default function ProcessConfigBoard({ embedded = false }: { embedded?: bo
     calcError !== '' || calcConfig === null ? 'unknown' : judgeConfigSourceStep(calcConfig.source)
   const calcStepStatus = calcError !== '' ? '读取失败' : calcConfig === null ? '读取中' : undefined
   const calcStepHint = calcError !== ''
-    ? '算料配置没读出来（≠ 没配）：点「去处理」重试。'
+    ? '算料配置没读出来（≠ 没配）：点「去处理」到「企业基础设置」的算料口径域重试。'
     : calcConfig === null
       ? ''
       : calcConfig.source === 'stored'
@@ -1008,13 +958,17 @@ export default function ProcessConfigBoard({ embedded = false }: { embedded?: bo
    * 每一步的**去处**（tab + 区块锚点）：hint 里的「下方…」「切到…tab」改成**可点的按钮**
    * （issue #5858 ④）—— 指路只有在**指得着**的时候才算指路。
    */
-  const READINESS_TARGETS: Record<string, { tab: 'process' | 'calc' | 'cut'; anchor: string }> = {
+  const READINESS_TARGETS: Record<string, { tab: 'process' | 'cut'; anchor: string }> = {
     operations: { tab: 'process', anchor: 'operation-price-matrix' },
     routings: { tab: 'process', anchor: 'routings-list' },
     'default-route': { tab: 'process', anchor: 'routings-list' },
-    calc: { tab: 'calc', anchor: 'craft-calc-config-panel' },
     cut: { tab: 'cut', anchor: 'cutting-height-panel' },
   }
+  /**
+   * 算料口径的去处 = **另一个页面**（issue #6825）：本页已没有「算料配置」tab ⇒ 第 ④ 步的
+   * 「去处理」是跨页深链（不是页内滚动、更不是死按钮）。深链口径单点在
+   * `@/lib/config-center-domains` 的 `domainHref`。
+   */
   /** 待滚动到的锚点：`setTab` 要**下一帧**才渲染出目标区块 ⇒ 用 effect 在渲染后滚（jsdom 无此 API，可选调用） */
   const [pendingAnchor, setPendingAnchor] = useState('')
   const gotoReadinessStep = (key: string) => {
@@ -1131,7 +1085,8 @@ export default function ProcessConfigBoard({ embedded = false }: { embedded?: bo
               />
               {/* 第 4 步（issue #4567 用户走查③）：算料配置 —— 读面**首屏**就发（issue #5858），
                   读到之前是 `unknown`（**中性**「读取中」），**不得**显示成 `todo`
-                  （把「没加载」误报成「没配」）；读失败同样不谎报 done（`statusText` = 读取失败）。 */}
+                  （把「没加载」误报成「没配」）；读失败同样不谎报 done（`statusText` = 读取失败）。
+                  🔴 issue #6825：写面已不在本页 ⇒ 「去处理」是**跨页深链**到算料口径域。 */}
               <ReadinessStep
                 testId="readiness-step-calc-config"
                 index={4}
@@ -1139,7 +1094,7 @@ export default function ProcessConfigBoard({ embedded = false }: { embedded?: bo
                 state={calcStepState}
                 statusText={calcStepStatus}
                 hint={calcStepHint}
-                action={{ testId: 'readiness-goto-calc', onClick: () => gotoReadinessStep('calc') }}
+                action={{ testId: 'readiness-goto-calc', href: domainHref('calc') }}
               />
               {/* 第 5 步（issue #5858）：**裁高配置** —— #5161/#5777 新增的第 5 个配置域，
                   改前的四步向导**完全不知道它存在**（tab 里已经有了，向导里没有）。 */}
@@ -1156,13 +1111,14 @@ export default function ProcessConfigBoard({ embedded = false }: { embedded?: bo
           </div>
           )}
 
-                    {/* ── 两个 tab：工序管理 / 算料配置 ──
+                    {/* ── 两个 tab：工序管理 / 裁高配置 ──
               issue #4886 用户裁定：原「工艺项」与「工艺路线」**合并为一屏**（路线就放在原【打包发货】的位置），
-              选项卡从三项收敛为两项；合并仍是**一个菜单入口、一个页面**，tab 切换**不丢状态**。 */}
+              选项卡从三项收敛为两项；合并仍是**一个菜单入口、一个页面**，tab 切换**不丢状态**。
+              🔴 issue #6825：「算料配置」那一项**已退役**（写面收敛进 `/settings?domain=calc`）——
+              选项卡回到**两个**，旧深链 `?tab=calc` 由路由层重定向。 */}
           <div className="flex items-center gap-1 border-b border-neutral-200" role="tablist" data-testid="process-config-tabs">
             {([
               { key: 'process', label: '工序管理' },
-              { key: 'calc', label: '算料配置' },
               { key: 'cut', label: '裁高配置' },
             ] as const).map((t) => (
               <button
@@ -1195,224 +1151,6 @@ export default function ProcessConfigBoard({ embedded = false }: { embedded?: bo
             {tab === 'process' && <OperationPricePanel store={opFeature} embedded hideActions />}
 
             {tab === 'process' && <RoutingsPanel store={rtFeature} embedded hideActions />}
-
-                        {/* ══════════════ tab「算料配置」：用料公式参数（issue #4528 = 包 E） ══════════════
-                本 tab 只回答一个问题：「算料的公式参数，我这家的口径是多少？」
-                ⚠️ 页面**不持有任何默认值**：本租户没配置行时，后端回的就是算料引擎默认值
-                （`source='default'`）⇒ 直接渲染 + 明确标注「当前使用系统默认值」
-                （把默认值伪装成商家配置 = 让商家以为改过、其实没改）。 */}
-            {tab === 'calc' && (
-              <div className="space-y-4" data-testid="craft-calc-config-panel">
-                <section className="rounded-lg border border-neutral-200 bg-white p-5">
-                  <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="text-base font-medium text-neutral-900">算料公式参数</h2>
-                    <span
-                      className={cn(
-                        'rounded px-2 py-0.5 text-xs',
-                        calcConfig?.source === 'stored'
-                          ? 'bg-primary-50 text-primary-700'
-                          : 'bg-neutral-100 text-neutral-600',
-                      )}
-                      data-testid="craft-calc-config-source"
-                    >
-                      {calcConfig?.source === 'stored' ? '已保存为您的配置' : '当前使用系统默认值'}
-                    </span>
-                  </div>
-                  <p className="text-sm text-neutral-500">
-                    这些参数决定用料米数（褶数法：每折吃布 × 褶数 + 余量）。保存后<strong>新</strong>的算料按当前配置计算，
-                    已生成的单据不受影响。
-                  </p>
-
-                  {calcError !== '' && (
-                    <div className="mt-3 flex items-center gap-3 text-sm text-danger-600" data-testid="craft-calc-config-error">
-                      <AlertCircle className="h-4 w-4" />
-                      <span>{calcError}</span>
-                      <Button size="sm" variant="secondary" data-testid="craft-calc-config-retry" onClick={() => void loadCalcConfig()}>
-                        重试
-                      </Button>
-                    </div>
-                  )}
-
-                  {calcError === '' && !calcDraft && (
-                    <p className="mt-3 text-sm text-neutral-400" data-testid="craft-calc-config-loading">
-                      正在读取算料配置…
-                    </p>
-                  )}
-
-                  {calcDraft && (
-                    <div className="mt-4 space-y-5 text-sm">
-                      {/* 主区：六个标量参数 */}
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                        {CALC_SCALAR_FIELDS.map((f) => (
-                          <label key={f.key} className="block">
-                            <span className="mb-1 block text-neutral-600">
-                              <InlineMarkdown text={f.label} />
-                            </span>
-                            {/* issue #5198：改用 NumberInput（旧形态 `value={String(v ?? '')}` 在清空时
-                                渲染成字面量 `NaN`；`type="number"` 还会把 "0." 中间态吞掉） */}
-                            <NumberInput
-                              className={inputCls}
-                              data-testid={`craft-calc-config-scalar-${f.key}`}
-                              value={calcNumber(f.key)}
-                              onChange={(v) => setCalcNumber(f.key, v)}
-                            />
-                            <span className="mt-1 block text-xs text-neutral-400">
-                              <InlineMarkdown text={f.hint} />{' '}
-                              {/* 参数旁锚点（issue #4975）：跳到同 tab 的「术语与口径说明」对应条目 */}
-                              <a
-                                href={`#${f.anchor}`}
-                                className="text-primary-600 underline"
-                                data-testid={`craft-calc-config-doc-${f.key}`}
-                              >
-                                说明
-                              </a>
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-
-                      {/* 兜底公式（工艺能推导时以工艺为准，这里只是推导表缺失时的兜底） */}
-                      <div>
-                        <label className="mb-1 block text-neutral-600" htmlFor="craft-calc-config-formula">
-                          {CALC_PARAM_COPY.default_formula.label}
-                        </label>
-                        <select
-                          id="craft-calc-config-formula"
-                          className={inputCls}
-                          data-testid="craft-calc-config-default_formula"
-                          value={calcDraft.default_formula}
-                          onChange={(e) => setCalcDraft((d) => (d ? { ...d, default_formula: e.target.value } : d))}
-                        >
-                          {Object.keys(CALC_FORMULA_LABEL).map((k) => (
-                            <option key={k} value={k}>
-                              {CALC_FORMULA_LABEL[k]}
-                            </option>
-                          ))}
-                        </select>
-                        <span className="mt-1 block text-xs text-neutral-400">
-                          韩褶 / 打孔按工艺自动推导公式；推导不适用时，用这条备用公式。
-                        </span>
-                      </div>
-
-                      {/* 次区：档位与拼色系数（表格，逐行可改） */}
-                      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                        <div>
-                          <h3 className="mb-2 text-neutral-700">{CALC_PARAM_COPY.tiers.label}</h3>
-                          <table className="w-full text-sm">
-                            <tbody>
-                              {Object.entries(calcDraft.tiers ?? {}).map(([name, tier]) => (
-                                <tr key={name} className="border-b border-neutral-100">
-                                  <td className="py-1.5 pr-3 text-neutral-600" title={name}>
-                                    {TIER_DISPLAY_LABEL[name] ?? name}
-                                  </td>
-                                  <td className="py-1.5 pr-3">
-                                    <input
-                                      className={inputCls}
-                                      data-testid={`craft-calc-config-tier-${name}-label`}
-                                      value={tier.label ?? ''}
-                                      onChange={(e) =>
-                                        setCalcDraft((d) =>
-                                          d
-                                            ? { ...d, tiers: { ...d.tiers, [name]: { ...d.tiers[name], label: e.target.value } } }
-                                            : d,
-                                        )
-                                      }
-                                    />
-                                  </td>
-                                  <td className="py-1.5">
-                                    <NumberInput
-                                      className={inputCls}
-                                      data-testid={`craft-calc-config-tier-${name}-fullness`}
-                                      value={
-                                        typeof tier.fullness === 'number' && Number.isFinite(tier.fullness)
-                                          ? tier.fullness
-                                          : null
-                                      }
-                                      onChange={(v) =>
-                                        setCalcDraft((d) =>
-                                          d
-                                            ? {
-                                                ...d,
-                                                tiers: {
-                                                  ...d.tiers,
-                                                  [name]: {
-                                                    ...d.tiers[name],
-                                                    fullness: v === null ? Number.NaN : v,
-                                                  },
-                                                },
-                                              }
-                                            : d,
-                                        )
-                                      }
-                                    />
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                        <div>
-                          <h3 className="mb-2 text-neutral-700">{CALC_PARAM_COPY.per_fold_mixed_times.label}</h3>
-                          <table className="w-full text-sm">
-                            <tbody>
-                              {Object.entries(calcDraft.per_fold_mixed_times ?? {}).map(([times, perFold]) => (
-                                <tr key={times} className="border-b border-neutral-100">
-                                  <td className="py-1.5 pr-3 text-neutral-600">拼{times}次</td>
-                                  <td className="py-1.5">
-                                    <NumberInput
-                                      className={inputCls}
-                                      data-testid={`craft-calc-config-mixed-${times}`}
-                                      value={
-                                        typeof perFold === 'number' && Number.isFinite(perFold)
-                                          ? perFold
-                                          : null
-                                      }
-                                      onChange={(v) =>
-                                        setCalcDraft((d) =>
-                                          d
-                                            ? {
-                                                ...d,
-                                                per_fold_mixed_times: {
-                                                  ...d.per_fold_mixed_times,
-                                                  [times]: v === null ? Number.NaN : v,
-                                                },
-                                              }
-                                            : d,
-                                        )
-                                      }
-                                    />
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-3">
-                        <Button loading={calcBusy} data-testid="craft-calc-config-save" onClick={saveCalcConfig}>
-                          保存配置
-                        </Button>
-                        <span className="text-xs text-neutral-400">保存后按当前配置计算；非法值会被整份拒绝并逐条说明理由。</span>
-                      </div>
-
-                      {/* 护栏理由**逐条**展示（后端一次列出每一处不合法）—— 不吞成一句「保存失败」 */}
-                      {calcReasons.length > 0 && (
-                        <ul className="space-y-1 text-danger-600" data-testid="craft-calc-config-reasons">
-                          {calcReasons.map((r) => (
-                            <li key={r}>{r}</li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  )}
-                </section>
-
-                {/* 口径与术语说明（issue #4975）：与参数**同屏** —— 参数回答「我这家的口径是多少」，
-                    说明回答「系统怎么判、拿哪些参数判」。区块里**不写死任何数字**（数值取自本页配置）。 */}
-                {calcDraft && <CraftCalcGlossary config={calcDraft} />}
-              </div>
-            )}
 
             {/* ══════════════ tab「裁高配置」：裁剪高度口径（母单 #5161） ══════════════
                 本 tab 只回答一个问题：「这一刀该多高」——`裁剪高度 = 成品高 + 命中增量项`。
