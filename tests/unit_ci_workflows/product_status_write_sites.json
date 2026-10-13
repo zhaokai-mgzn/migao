@@ -125,6 +125,9 @@
     },
     {
       "path": "tests/e2e/specs/products/product-edit.spec.ts"
+    },
+    {
+      "path": "scripts/ui-smoke-merchant/spec.mjs"
     }
   ]
 }
