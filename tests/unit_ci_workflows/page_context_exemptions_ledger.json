@@ -114,7 +114,7 @@
     "what": "judged 判据 10 的**上屏字段扫描面**（issue #6842 · B3）：`page_registry.py` 的 `TRUTH_SOURCES` 里**给商家看的**字段（`label` / `citation`）不得出现**已移除的页面名**。判据 = `tests/unit_ci_workflows/test_page_context_registry_coverage.py::problems_revoked_page_names_in_on_screen_text`（用例 MC-075）。",
     "why": "MC-075 原有八条判据只核 route / 真值源名 / `path` / 权限码 —— **一个字都不核上屏文本** ⇒ `craft-calc-glossary` 的 label 带着 issue #6580 已撤掉的坐标「工艺配置页」漂了几天而**没有任何东西会红**（登记齐全、判据全绿、话术却把商家指去不存在的页面）。本条把「上屏话术里的页面名必须与当前 IA 一致」落成判据。",
     "scanned_fields": "TruthSource.label / TruthSource.citation（`SCREENED_FIELDS`；`path` 是技术字面量、**不进面**）",
-    "sources": "现存页面名**现取**：frontend/admin-web/src/config/menu.ts 的菜单名 ∪ frontend/admin-web/src/lib/config-center-domains.ts 的域 label（与 MC-075 家族既有的「三源同构」口径同源，不硬编码成新清单）",
+    "sources": "现存页面名**现取**：frontend/admin-web/src/config/menu.ts 的菜单名 ∪ frontend/admin-web/src/lib/config-center-domains.ts 的 **`CONFIG_ZONES` 区名 ∪ `CONFIG_DOMAINS` 域名**（与 MC-075 家族既有的「三源同构」口径同源，不硬编码成新清单）。⚠️ **两个数组都要收**：只收 `CONFIG_DOMAINS` 会让真值源**变窄** ⇒ 一条**正确**的引用（如「企业基础设置 → 生产执行」，`生产执行` 是区名）会被判成「已移除的页面名」= **假红**（假红比假绿更难发现：有人会去「修」那段正确文案或干脆加一条豁免）⇒ `CONFIG_ZONES_EXPECTED` 是这条「不许被收窄」的下界自证。",
     "recompute": "python3 -m pytest tests/unit_ci_workflows/test_page_context_registry_coverage.py -q -s  # 判据 10 + 红证/对照读数，打印现取的语料条数",
     "restart_condition": "① 上屏字段新增（如将来 `TruthSource` 长出 `note` 之类给商家看的字段）⇒ 同批把它加进 `SCREENED_FIELDS` 并复核 `scanned_fields`；② 「候选页面名」的形态扩面（见 candidate_face_boundary）⇒ 同批改判据 + 本条，并把 `frozen_extensions` 从 0 改大（**要有具体理由与红证**）。",
     "candidate_face_boundary": [
@@ -137,6 +137,11 @@
         "face": "真值源读法**变宽 = 判据变松**（注释掉的 `name:` / `label:` 进现存名 ⇒ 旧名被放行）",
         "reason": "「现存页面名」这个真值源若按**裸文本正则**扫全文件，注释里写一句 `name: '工艺配置'` 就会让旧名进集合 ⇒ 判据 10 反而**放行**它（假绿方向）。⇒ 两个真值源各自走**结构性读法**：`menu.ts` 复用 `test_agent_permission_parity.py::parse_menu_ts_nodes`（「不另起第二个 menu.ts 解析器」= issue #3570 的教训）；域 label 只取 `CONFIG_DOMAINS` 真值数组里的域对象。自证 = `test_domain_labels_ignore_commented_out_entries`（把该块整段注释掉 ⇒ 读到 0 个）。另：本判据的 pattern 必须是**逐字字面量** —— f-string 拼接会在 `test_guard_parsing_is_comment_aware.py` 的 AST 重建里退化成「引号紧跟捕获组」形态而**命中那条元守卫**（CI 实测红过一轮，读数见 PR）。",
         "recompute": "python3 -m pytest tests/unit_ci_workflows/test_page_context_registry_coverage.py -q -k commented_out ; python3 -m pytest tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py -q"
+      },
+      {
+        "face": "真值源读法**变窄 = 判据变严 = 假红**（只收域名、漏收 `CONFIG_ZONES` 的区名 ⇒ **正确**的引用被当成旧名）",
+        "reason": "本判据的**假红**面（与上一条镜像）：`config-center-domains.ts` 里**两个数组**的名字都是**同一页上的商家可见名** —— `CONFIG_ZONES`（`报价与计费` / `生产执行` / `余料与省料` / `企业与账号`）与 `CONFIG_DOMAINS`（`算料口径` / `工艺路线` / …）。只收后者 ⇒ 一条**正确**的引用（如某条 label 写「企业基础设置 → 生产执行」）会被判成「已移除的页面名」⇒ 有人会去「修」那段**正确**文案、或给它加一条**豁免**（假红比假绿更难发现，因此**已修**：真值源改为**两个数组的并集**）。下界自证 = `CONFIG_ZONES_EXPECTED`（`test_domain_labels_ignore_commented_out_entries` 里逐条核区名在册）。**重启条件**：若将来该页新增**第三份**商家可见名数组，同批加进 `CONFIG_NAME_ARRAYS` 并复核本条。",
+        "recompute": "python3 -m pytest tests/unit_ci_workflows/test_page_context_registry_coverage.py -q -k commented_out -s  # 断言 CONFIG_ZONES 的四个区名都在现存名里"
       }
     ],
     "frozen_extensions": 0

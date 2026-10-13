@@ -91,6 +91,20 @@ PARITY_GUARD = REPO_ROOT / "tests" / "unit_ci_workflows" / "test_agent_permissio
 CONFIG_DOMAINS_TS = (
     REPO_ROOT / "frontend" / "admin-web" / "src" / "lib" / "config-center-domains.ts"
 )
+#: 该模块里**两个商家可见的名数组** —— **都要收**（只收其中一个 = 真值源被**收窄** ⇒ 将来一条
+#: **正确**的引用（如「企业基础设置 → 生产执行」）会被判成「已移除的页面名」= **假红**，
+#: 而假红比假绿更难发现：有人会去「修」那段正确文案或给它加豁免）。
+#: - `CONFIG_ZONES` = 页面左栏第一层的**区名**（`企业与账号` / `余料与省料` / `报价与计费` / `生产执行`）；
+#: - `CONFIG_DOMAINS` = 第二层的**域名**（`算料口径` / `工艺路线` / …）。
+CONFIG_NAME_ARRAYS = ("CONFIG_ZONES", "CONFIG_DOMAINS")
+#: `CONFIG_ZONES` 的区名 —— **只作真值源「不许被收窄」的下界自证**（**不是**判据的允许名集合：
+#: 允许名集合仍然 100% **现取**）。区名改了 ⇒ 这里红，逼作者同批把真值源读法补齐
+#: （防「悄悄只读域名 ⇒ 区名引用被假红」）。
+CONFIG_ZONES_EXPECTED = ("企业与账号", "余料与省料", "报价与计费", "生产执行")
+#: 取 `label:` 值的 pattern —— 🔴 **逐字字面量，不许 f-string 拼接**：拼接会在
+#: `tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py` 的 AST 重建里退化成
+#: 「引号**紧跟**捕获组」的形态而**命中那条元守卫**（CI 实测红过一轮）。
+CONFIG_LABEL_PATTERN = r"^(?!\s*/).*\blabel:\s*'([^'\n]*)'"
 LEDGER_PATH = Path(__file__).with_name("page_context_exemptions_ledger.json")
 REGISTRATION_SERVICE = (
     REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "java" / "com" / "migao"
@@ -287,34 +301,47 @@ def menu_item_names() -> List[str]:
     return names
 
 
-def domain_labels() -> List[str]:
-    """`config-center-domains.ts` 的**域 label**（企业基础设置页内各域的商家可见名）。
+def _ts_array_labels(source: str, declaration: str) -> List[str]:
+    """`export const <declaration> … = [ … ]` 里**每个对象**的 `label` 值（现取用）。
 
-    ⚠️ **只取 `CONFIG_DOMAINS` 这个真值数组里的域对象**（不是全文件所有 `label:` —— 同文件里的
-    `interface` 字段说明等不是域名）。切块口径与 `parse_menu_ts_nodes` 切 `menu.ts` **同式**
-    （按 `{ key: '` 起头切），域对象内取 `label:`。
-
-    🔴 **锚点足够具体，故不命中「按引号扫原文取值」那条元守卫**
-    （`tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py`）：本函数用的是**逐字字面量**
-    pattern（**不是** f-string 拼出来的 —— 拼接会在该守卫的 AST 重建里退化成 `:\\s*'…'`
-    那种「引号紧跟捕获组」的形态，实测**会**命中面）。**自证**（同一条纪律的落点）：
-    注释掉的 `label: '…'` / `name: '…'` **不得**进语料（`test_domain_labels_ignore_commented_out_entries`）。
+    切块口径与 `parse_menu_ts_nodes` 切 `menu.ts` **同式**（按 `{ key: '` 起头切；
+    `\s*` 同时覆盖**单行**（`CONFIG_ZONES` 写成 `{ key: 'quote', label: … }`）与
+    **多行**（`CONFIG_DOMAINS` 写成 `{\n  key: …`）两种形态），
+    且只取**该声明之后到块结束之前**的范围 ⇒ 同文件里 `interface` 的字段说明等**不会**被捞进来。
     """
-    assert CONFIG_DOMAINS_TS.is_file(), (
-        f"域目录单一真值模块不存在：{CONFIG_DOMAINS_TS}（路径漂移 ⇒ 红，不得静默跳过）"
-    )
-    source = CONFIG_DOMAINS_TS.read_text(encoding="utf8")
-    marker = "export const CONFIG_DOMAINS"
+    marker = f"export const {declaration}"
     assert marker in source, f"`{marker}` 不在域目录模块里（形态漂移 ⇒ 红，不得静默跳过）"
     body = source[source.index(marker):]
     end = body.find("\n]")
     chunk = body[: end if end > 0 else len(body)]
     labels: List[str] = []
-    for part in re.split(r"(?=\{\s*\n\s*key: ')", chunk):
-        match = re.search(r"^\s*label:\s*'([^'\n]*)'", part, re.M)
+    for part in re.split(r"(?=\{\s*key: ')", chunk):
+        match = re.search(CONFIG_LABEL_PATTERN, part, re.M)
         if match and match.group(1).strip() and match.group(1) not in labels:
             labels.append(match.group(1))
-    assert labels, "域目录解析出 0 个域 label ⇒ 判据 10 会空跑（fail-closed）"
+    return labels
+
+
+def domain_labels() -> List[str]:
+    """`config-center-domains.ts` 的**商家可见名**（`CONFIG_ZONES` 区名 ∪ `CONFIG_DOMAINS` 域名）。
+
+    ⚠️ **两个数组都收**（理由见模块级 `CONFIG_NAME_ARRAYS` 的注）：它们都在**同一页**上、
+    都是商家可见名。只收 `CONFIG_DOMAINS` 会让真值源**变窄** ⇒ 一条**正确**的引用
+    （如「企业基础设置 → 生产执行」，`生产执行` 是 `CONFIG_ZONES` 里的区名）会被判成
+    「已移除的页面名」= **假红**（假红比假绿更难发现：有人会去「修」正确文案或干脆加一条豁免）。
+
+    自证 = `test_domain_labels_ignore_commented_out_entries`（**两个数组各自**做注释化对照）。
+    """
+    assert CONFIG_DOMAINS_TS.is_file(), (
+        f"域目录单一真值模块不存在：{CONFIG_DOMAINS_TS}（路径漂移 ⇒ 红，不得静默跳过）"
+    )
+    source = CONFIG_DOMAINS_TS.read_text(encoding="utf8")
+    labels: List[str] = []
+    for declaration in CONFIG_NAME_ARRAYS:
+        for value in _ts_array_labels(source, declaration):
+            if value not in labels:
+                labels.append(value)
+    assert labels, "域目录解析出 0 个商家可见名 ⇒ 判据 10 会空跑（fail-closed）"
     return labels
 
 
@@ -992,31 +1019,46 @@ def test_red_proof_empty_on_screen_corpus_goes_red() -> None:
 def test_domain_labels_ignore_commented_out_entries() -> None:
     """🔴 真值源读法自证：**注释掉的** `label:` / `name:` **不得**进「现存名」集合。
 
-    为什么单列一条：真值源读法**变宽 = 判据变松**（把已移除的页名当成「现存名」⇒ 判据 10 反而**放行**旧名）。
-    两个读法各自自证：
+    为什么单列一条：真值源读法**变宽 = 判据变松**（把已移除的页名当「现存名」⇒ 判据 10 反而**放行**旧名）。
+    三个面各自自证：
 
-    - 域目录：只在 `CONFIG_DOMAINS` 真值数组的域对象里取 `label` —— 把该块**整段注释掉** ⇒ 读到 **0** 个
-      （这条同时钉住「全文件 `label:` 一网打尽」那种写法）；
-    - `menu.ts`：走 MC-075 家族既有的 `parse_menu_ts_nodes`（结构化切块，天然不吃注释）⇒ 解析出的名字
-      **逐条**都能在源文件里按菜单项形态找到（`path:` 行），而不是从注释里捞出来的。
+    - **锚点注释无关**：把 `// label: '…'` / `/* label: '…' */` 那种行喂给 `CONFIG_LABEL_PATTERN` ⇒ 读 **0** 个
+      （`^(?!\s*/)` = 行首**不许**是 `/` ⇒ `//` / `/*` 打头的注释行**结构上**不匹配；`.*` 让它同时吃**单行**与**多行**对象；
+      该 pattern **逐字字面量**、不拼接 —— 拼接会在元守卫的 AST 重建里退化成「引号紧跟捕获组」形态而命中它）；
+    - **注入真语料**：把一条 `// label: '工艺配置页'` 真塞进 `CONFIG_DOMAINS` 块**内部** ⇒
+      规范读法**读不到它**，而所有**真**域名一个不少（对照读数）；
+    - **`menu.ts`**：走既有 `parse_menu_ts_nodes`（结构化切块）⇒ 解析出的每个名字逐条能按
+      `name: '…'` 在源文件里找到（排除「从注释 / 别处捞的」）。
     """
+    assert not re.search(CONFIG_LABEL_PATTERN, "// label: '工艺配置页'", re.M), (
+        "锚点注释无关自证：`// label: '…'` 竟被 pattern 读到了"
+    )
+    assert not re.search(CONFIG_LABEL_PATTERN, "/* label: '参数总览' */", re.M), (
+        "锚点注释无关自证：块注释里的 `label: '…'` 竟被 pattern 读到了"
+    )
+    assert re.search(CONFIG_LABEL_PATTERN, "    label: '算料口径',", re.M), (
+        "前提自证：pattern 对**活**的 `label:` 行是能读的"
+    )
+
     src = CONFIG_DOMAINS_TS.read_text(encoding="utf8")
-    commented = re.sub(r"(?m)^(export const CONFIG_DOMAINS)", r"// \1", src, count=1)
-    assert commented != src, "注入未生效（自证）：没注释掉 `CONFIG_DOMAINS`"
-    assert "\n// export const CONFIG_DOMAINS" in commented, "注入未生效（自证）：标记没落在声明行上"
-    assert re.search(r"(?m)^export const CONFIG_DOMAINS", src), "前提自证：原文里该声明行是活的"
-    assert not re.search(r"(?m)^export const CONFIG_DOMAINS", commented), (
-        "注入未生效（自证）：改后仍有一行**未被注释**的声明行"
+    real = _ts_array_labels(src, "CONFIG_DOMAINS")
+    assert real, "前提自证：现取域名不该为空"
+    anchor = "  {\n    key: 'calc',"
+    assert anchor in src, "前提自证：定位不到 `calc` 域对象（形态漂移）⇒ 换一个锚点再注入"
+    injected_src = src.replace(
+        anchor, "  // label: '工艺配置页'（红证注入：注释行不得进语料）\n" + anchor, 1
     )
-    assert re.search(r'^\s*label:\s*\'算料口径\'', commented, re.M), (
-        "前提自证：域名那一行本体还在（只是那块代码整体被注释了）—— 判据只认声明行，不从注释里捞"
-    )
-    injected = re.search(r"^\s*label:\s*'([^'\n]*)'", commented, re.M)
-    assert injected and injected.group(1) == "算料口径", (
-        "前提自证：裸文本尺子**会**从注释块里捞到域名（这正是本判据要排除的形态）"
-    )
+    assert injected_src != src, "注入未生效（自证）"
+    after = _ts_array_labels(injected_src, "CONFIG_DOMAINS")
+    assert after == real, f"注释行进了语料（假绿方向）：{set(after) ^ set(real)}"
+    assert "工艺配置页" not in after, "注释里的旧页名被当成域名读进来了"
+
     labels = domain_labels()
-    assert labels, "域 label 现取为空（fail-closed）"
+    assert labels, "商家可见名现取为空（fail-closed）"
+    missing = [n for n in CONFIG_ZONES_EXPECTED if n not in labels]
+    assert not missing, (
+        f"`CONFIG_ZONES` 的区名没进真值源（真值源被收窄 ⇒ 正确的引用会被假红）：{missing}"
+    )
     menu = menu_item_names()
     assert menu, "菜单名现取为空（fail-closed）"
     menu_src = MENU_TS.read_text(encoding="utf8")
