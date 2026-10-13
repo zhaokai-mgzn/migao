@@ -35,3 +35,33 @@ cd <repo>/tests && PREVIEW_BASE=http://127.0.0.1:8099 \
 实测读数（390×844）：身份条 `h=109.1`（姓名 33.3 / 工号 21.6 / 退出按钮 72.7×47.8）；
 主按钮 `background=rgb(26, 115, 232)`、`h=141.6`；行卡 3 张 `[拍照入库, 补打入库标签, 拍照发货]`；
 未登录态 `gate=true`、`primary=false`（不渲染写入口）。
+
+## 部署后重放（线上 `app.migaozn.com/b/`，2026-10-13 22:46 +08）
+
+合并 `d6a9cbe6f`（22:42:46 +08）→ 发布腿 `38415730753` success → 探针 `worker-home-6858-replay.mjs` 实测（390×844）：
+
+| 读数 | 值 |
+|---|---|
+| 页面底 | `rgb(245, 247, 250)`（`.taro_page` 仍是 `rgb(255, 255, 255)` —— 本单不动全局） |
+| 身份条 | `h=109.1`、白卡 + `rgba(10,37,64,0.06) 0 1.04px 4.16px`；姓名「UI验收-可删除」/「工号 UITEST01」/「本机登录中」/「退出」`72.7×47.8`（1px 描边） |
+| 主按钮 | `h=141.6`、`background: rgb(26, 115, 232)`、白字标题「扫码领活」+ `rgba(255,255,255,0.86)` 副标 |
+| 分组小标题 | 「其他功能」 |
+| 行卡 ×3 | `h=97.6`：拍照入库（左条 `rgb(232,241,254)`）/ 补打入库标签（`rgb(255,244,224)`）/ 拍照发货（`rgb(230,246,238)`） |
+| 未登录态 | `gate=true`、`primary=false`（不渲染写入口） |
+
+原始读数：`out/worker-home-6858-live-readings.json`（探针 stdout 原样落盘，可复算）。
+
+![线上 · 登录态](out/worker-home-6858-live-390.png)
+
+![线上 · 未登录态](out/worker-home-6858-live-gate-390.png)
+
+**修前对照**（#6847 部署后、本单之前）：同一页只有「当前工人」三行白卡 + 四条等权入口，**没有主按钮、没有副标** ——
+见 `acceptance/2026-10-13-worker-home-6760-replay/out/worker-home-6847-surface-after.png`。
+
+**复算**：
+
+```bash
+cd <repo>/tests
+node ../acceptance/2026-10-13-worker-home-6858-shell-preview/worker-home-6858-replay.mjs https://app.migaozn.com
+# 退出码 0 = 身份条 + 主按钮（#1a73e8）+ 3 张行卡齐备；非零 = fail-closed
+```
