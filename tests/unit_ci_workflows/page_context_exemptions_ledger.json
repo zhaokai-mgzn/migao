@@ -109,5 +109,31 @@
       "reason": "登记面与豁免面都不为文档内容背书：文档写错 ⇒ 黄金策照着错的解释。该面由文档自身的判据（如 `docs/curtain-production-rules.md` 的复核命令）承接，不在本表射程。",
       "recompute": "sed -n '92,110p' docs/curtain-production-process-standard.md  # 该文档的「复核命令」节"
     }
-  ]
+  ],
+  "revoked_names_scan": {
+    "what": "judged 判据 10 的**上屏字段扫描面**（issue #6842 · B3）：`page_registry.py` 的 `TRUTH_SOURCES` 里**给商家看的**字段（`label` / `citation`）不得出现**已移除的页面名**。判据 = `tests/unit_ci_workflows/test_page_context_registry_coverage.py::problems_revoked_page_names_in_on_screen_text`（用例 MC-075）。",
+    "why": "MC-075 原有八条判据只核 route / 真值源名 / `path` / 权限码 —— **一个字都不核上屏文本** ⇒ `craft-calc-glossary` 的 label 带着 issue #6580 已撤掉的坐标「工艺配置页」漂了几天而**没有任何东西会红**（登记齐全、判据全绿、话术却把商家指去不存在的页面）。本条把「上屏话术里的页面名必须与当前 IA 一致」落成判据。",
+    "scanned_fields": "TruthSource.label / TruthSource.citation（`SCREENED_FIELDS`；`path` 是技术字面量、**不进面**）",
+    "sources": "现存页面名**现取**：frontend/admin-web/src/config/menu.ts 的菜单名 ∪ frontend/admin-web/src/lib/config-center-domains.ts 的域 label（与 MC-075 家族既有的「三源同构」口径同源，不硬编码成新清单）",
+    "recompute": "python3 -m pytest tests/unit_ci_workflows/test_page_context_registry_coverage.py -q -s  # 判据 10 + 红证/对照读数，打印现取的语料条数",
+    "restart_condition": "① 上屏字段新增（如将来 `TruthSource` 长出 `note` 之类给商家看的字段）⇒ 同批把它加进 `SCREENED_FIELDS` 并复核 `scanned_fields`；② 「候选页面名」的形态扩面（见 candidate_face_boundary）⇒ 同批改判据 + 本条，并把 `frozen_extensions` 从 0 改大（**要有具体理由与红证**）。",
+    "candidate_face_boundary": [
+      {
+        "face": "判不了**不带中文引用号**的已移除页名（有意收窄，不是漏项）",
+        "reason": "候选页面名只从**成对**引用号里取（`「…」` / `《…》`）。裸写的旧名（如 label 里直接写「工艺配置页」而不加引用号）**不会被判红**。为什么有意收窄：上屏文本里存在**非页面名**的词（如「本店工序」——`工序` 是域名 `工序与部位单价` 的子串）⇒ 改成全文子串匹配会把合法文案喂红（§17.3 假红形态，且按 §19.1「存量基线只许缩短」这类假红**永远缩不掉**）。",
+        "recompute": "python3 -c \"import re;print(re.findall(r'「([^「」]{2,24})」', '本店工序 · 工艺配置页'))\"  # 裸写没有候选 ⇒ 面外"
+      },
+      {
+        "face": "判不了「这句 label 是否**有用** / 是否假出口」",
+        "reason": "判据只核「页面名在不在**当前 IA** 里」。指对了页面但**动作**错了（做这件事的动作不在那个域），以及指向一个**没有写面**的页面（假出口）——两种都判不了，属**评审**（`docs/design/user-facing-copy-standard.md`）而非判据。",
+        "recompute": "python3 -m pytest tests/unit_ci_workflows/test_page_context_registry_coverage.py -q -k on_screen  # 只见「名在不在册」，不见「话有没有用」"
+      },
+      {
+        "face": "判不了**注释 / docstring** 里的旧页名（那正是它要排除的面）",
+        "reason": "`page_registry.py` 里逐字保留着解释 issue #6580 撤项的注释（「参数总览」「工艺配置」）—— 那是**历史说明**，属 §19.1 豁免面。判据只吃**字段字面量**；对照读数为证：只往注释/docstring 里塞旧名 ⇒ **不红**（执行点 = `test_control_revoked_name_only_in_comment_or_docstring_is_green`）。",
+        "recompute": "python3 -m pytest tests/unit_ci_workflows/test_page_context_registry_coverage.py -q -k comment_or_docstring"
+      }
+    ],
+    "frozen_extensions": 0
+  }
 }

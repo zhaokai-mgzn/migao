@@ -103,7 +103,7 @@ TRUTH_SOURCES: Dict[str, TruthSource] = {
         path="docs/curtain-fabric-quote-rules.md",
     ),
     "craft-calc-glossary": TruthSource(
-        label="算料口径与术语说明（工艺配置页·算料配置）",
+        label="算料口径与术语说明（算料口径 · 算料配置）",
         citation="依据：算料口径与术语说明",
         path="frontend/admin-web/src/lib/craft-calc-glossary.ts",
     ),
