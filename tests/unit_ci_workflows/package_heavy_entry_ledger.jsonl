@@ -49,3 +49,4 @@
 {"id":"1791848673.33138.14519","ts":"2026-10-12T23:44:33Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6788-worker-h5-menu-perms","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1791852152.43125.4592","ts":"2026-10-13T00:42:32Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6788-worker-h5-menu-perms","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1791853991.11007.27594","ts":"2026-10-13T01:13:11Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6788-worker-h5-menu-perms","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1791858716.94534.13007","ts":"2026-10-13T02:31:57Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6803-page-config-null","why":"--allow-package-heavy（命令行显式）"}
