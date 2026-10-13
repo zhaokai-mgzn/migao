@@ -53,4 +53,6 @@
 {"id":"1791859959.71147.12623","ts":"2026-10-13T02:52:39Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6803-page-config-null","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1791861246.42628.27256","ts":"2026-10-13T03:14:07Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6799-aftersales-hydration","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791861338.44208.424","ts":"2026-10-13T03:15:38Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6803-page-config-null","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1791882047.35733.20616","ts":"2026-10-13T09:00:48Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6827-remnant-copy-and-itemkey-select","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791882075.36715.20714","ts":"2026-10-13T09:01:15Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6827-remnant-copy-and-itemkey-select","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1791882810.82916.12069","ts":"2026-10-13T09:13:31Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6828-remove-tenant-worker-page-config","why":"子包 worktree 直跑全量（无批次标记）"}
