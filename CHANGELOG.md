@@ -7,6 +7,25 @@
 
 ## [Unreleased]
 
+### 工人工作台整页补上页面底色：白卡片落灰底、不再「白压白」（2026-10-13，issue #6847）
+
+`/b/` 工人工作台登录后，#6760 让卡片看得见了（补了描边 / 阴影），但**整页仍是白的** ——
+白卡落在 Taro H5 恒白的 `.taro_page` 上，只能靠阴影勉强分辨（用户 2026-10-13 真机截图问
+「这就是最终样式？」，并授权我裁定是否改）。
+
+- **口径**：本仓「有卡片的页面」一律自带灰底（`dashboard` / `chat` / `profile` / `production` /
+  `sessions-detail` 的页面根都声明 `background: #f5f7fa`；工人端另三页走共享 `.admin-surface` 同款）
+  —— 工人工作台是**唯一**没跟上的那个（`src/pages/**/index.scss` 全量扫描可复算，判据 8）。
+- **修后**：`.worker-home` 补 `min-height: 100vh` + `background: #f5f7fa`（与 `dashboard` 同写法；
+  内容不足一屏时底色也铺满）。字号 / 类名 / 文案 / 跳转与接口一字未动；#6760 补的卡片边界**保留**。
+- **有意不做（边界）**：**不动** `app.scss` / 全局 `.taro_page` —— 那会改**全站**底色（15+ 屏读图验收），
+  而已经自带底色的页面白拿不到收益。
+- **类级固化**：`frontend/bmini-app/tests/worker-card-contrast-guard.test.ts` 扩到判据 8~11 ——
+  「声明了白底卡片的页面，其**页面根**必须声明非白底色」+ 具名回归 + 内存变异红证
+  （摘掉底色 / 写成白 / 只写进注释 ⇒ 各自判红）+ fail-closed；台账
+  `frontend/bmini-app/tests/worker-card-contrast-ledger.json` 新增 `white_card_pages_without_surface`
+  （**现为空 = 真值**，只许缩短）。
+
 ### 车间现场端页头按钮不再折行：「切换」「登出」保持单行（2026-10-13，issue #6763）
 
 `app.migaozn.com/w/`（工人报工页）**登录后**，页头两个按钮的文字被拆成两行（「切 / 换」「登 / 出」）

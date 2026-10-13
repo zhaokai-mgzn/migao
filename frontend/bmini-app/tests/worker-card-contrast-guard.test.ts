@@ -36,6 +36,19 @@
  * | 6 | 对照读数：`box-shadow` 换 `border` ⇒ 不红；注释里提到类名 / 假声明 ⇒ 不改变判定；边界只写进注释 ⇒ **仍红** | 守卫被文案喂红 / 注释能伪造边界 ⇒ 红 |
  * | 7 | **`border-radius` 不算可见边界**（白卡片上的圆角在白底页容器里完全不可见） | 谓词退回 `border-\w+` 黑名单 ⇒ 修前语料假绿 ⇒ 红 |
  *
+ * ### 判据 8~11：同一族的另一半 —— **白卡片页必须有页面底色**（issue #6760 续，2026-10-13）
+ *
+ * | # | 判据 | 回归时会怎么红 |
+ * |---|---|---|
+ * | 8 | 真语料零违规：声明了白底卡片的页面，其**页面根**必须声明**非白**底色（两侧从语料现算） | 摘掉 `worker-home` 的 `background` ⇒ 具名红 |
+ * | 9 | 具名回归：`worker-home` 声明了页面底色 + `min-height: 100vh`（内容不足一屏也要铺满） | 还原成修前形态 ⇒ 红 |
+ * | 10 | 判别力自证（内存变异）：摘掉底色 / 把底色写成 `#ffffff` / 只把底色写进注释 ⇒ **各自判红** | 守卫退化成绿 ⇒ 红 |
+ * | 11 | fail-closed：台账缺 `white_card_pages_without_surface` 或非数组 ⇒ 红 | 删字段「消红」⇒ 红 |
+ *
+ * **为什么这是独立判据而不是判据 1 的重复**：判据 1 管「卡片有没有边界」，本组管「页面有没有底色」——
+ * 两半各自能单独坏掉（卡片有阴影但页面还是白的 ⇒ 卡片仍然"浮"在白上、观感是没做完的页面；
+ * 页面有灰底但卡片没边界 ⇒ 卡片形状靠色差勉强可见）。修前语料里**两半同时是坏的**。
+ *
  * ## 红证读数（本单实测，可复制；判据 = 本文件）
  *
  * ```
@@ -81,7 +94,12 @@ const PAGES = path.join(ROOT, 'src', 'pages')
 const LEDGER_PATH = path.join(__dirname, 'worker-card-contrast-ledger.json')
 const WORKER_HOME = 'src/pages/worker/home/index.scss'
 
-type Ledger = { why: string; known_exceptions: { class: string; reason: string }[] }
+type Ledger = {
+  why: string
+  known_exceptions: { class: string; reason: string }[]
+  /** 判据 8~11：有白卡片却**没有页面底色**的页面（仓库相对路径；只许缩短） */
+  white_card_pages_without_surface: string[]
+}
 
 /** 规则块：限定名（`&__card` 拼上父选择器） + 本级声明 */
 type Rule = { qualified: string[]; decls: string[] }
@@ -364,4 +382,108 @@ describe('判别力自证（issue #6760 判据 5/6，内存变异 + 对照读数
     for (const [name, ok] of scanCardClasses(source)) if (!ok) bad.push(name)
     return bad.sort()
   }
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 判据 8~11：白卡片页必须有页面底色（issue #6760 的另一半，2026-10-13）
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// 病灶：卡片补了可见边界之后，若**页面自己没有底色**，白卡仍落在 Taro H5 恒白的 `.taro_page` 上
+// —— 与「卡片没有边界」是同一现场的两半。本仓「有卡片的页面」一律自带灰底
+//（`dashboard` / `chat` / `profile` / `production` / `sessions-detail` 的页面根都声明 `#f5f7fa`；
+// 工人端另三页走共享 `.admin-surface` 同款）⇒ 判据落在**页面根**上。
+//
+// 射程（照实登记）：只看 `src/pages/**/*.scss` **本文件内**的声明 —— 走共享样式
+//（`src/styles/admin-surfaces.scss::.admin-surface` / `.admin-card`）的页面不在射程内（同判据 1 的边界）。
+
+/** 页面根类名 = 该文件**第一条**规则的限定名（去掉前导 `.` 与伪类）。`null` = 一条规则都没有。 */
+function pageRootOf(source: string): string | null {
+  const first = extractRules(stripComments(source))[0]
+  if (!first || !first.qualified.length) return null
+  const last = first.qualified[0].split(' ').pop() as string
+  return last.replace(/\./g, '').split(':')[0] || null
+}
+
+/** 该文件里声明了**白底**（`#fff` / `#ffffff` / `white`）的卡片形态类（排序去重）。 */
+function whiteCardClassesOf(source: string): string[] {
+  const found: string[] = []
+  for (const rule of extractRules(stripComments(source))) {
+    for (const qualified of rule.qualified) {
+      const last = qualified.split(' ').pop() as string
+      if (!isCardFormClass(last)) continue
+      const white = rule.decls.some((d) => /^background(?:-color)?\s*:\s*(?:#fff(?:fff)?|white)$/i.test(d))
+      if (white) found.push(last.replace(/\./g, '').split(':')[0])
+    }
+  }
+  return Array.from(new Set(found)).sort()
+}
+
+/** 页面根是否声明了**非白**底色（`background` / `background-color`，且不是白 / 透明 / 无）。 */
+function hasNonWhiteSurface(source: string, rootClass: string): boolean {
+  for (const rule of extractRules(stripComments(source))) {
+    for (const qualified of rule.qualified) {
+      const last = qualified.split(' ').pop() as string
+      if (last.replace(/\./g, '').split(':')[0] !== rootClass) continue
+      const bad = /^background(?:-color)?\s*:\s*(?:#fff(?:fff)?|white|transparent|none|rgba?\(\s*255\s*,\s*255\s*,\s*255)/i
+      if (rule.decls.some((d) => /^background(?:-color)?\s*:/.test(d) && !bad.test(d))) return true
+    }
+  }
+  return false
+}
+
+/** 一个页面源码是不是「有白卡片、页面根却没有非白底色」（纯函数 ⇒ 可对内存变异跑）。 */
+function whiteCardsOnWhiteSurface(source: string): boolean {
+  if (!whiteCardClassesOf(source).length) return false
+  const root = pageRootOf(source)
+  return !root || !hasNonWhiteSurface(source, root)
+}
+
+/** 全页语料里「白卡片落在白底页面上」的页面（仓库相对路径，排序） */
+function findPagesWithWhiteCardsOnWhiteSurface(): string[] {
+  const bad: string[] = []
+  for (const file of scssFiles(PAGES).sort()) {
+    if (whiteCardsOnWhiteSurface(fs.readFileSync(file, 'utf-8'))) bad.push(path.relative(ROOT, file))
+  }
+  return bad.sort()
+}
+
+const whiteSurfaceOffenders = findPagesWithWhiteCardsOnWhiteSurface()
+
+describe('类级守卫：白卡片页必须有页面底色（issue #6760 的另一半，判据 8~11）', () => {
+  it('真语料零违规：白卡片页的页面根都声明了非白底色（两侧从语料现算；空台账也必须两侧同空）', () => {
+    // 红证（本单实测）：把 worker home 改回修前形态（页面根只有 `padding`）⇒
+    // whiteSurfaceOffenders 多出 `src/pages/worker/home/index.scss` ⇒ 与空台账不等 ⇒ 判红。
+    expect(whiteSurfaceOffenders).toEqual(ledger.white_card_pages_without_surface)
+  })
+
+  it('具名回归：worker-home 声明了页面底色 + min-height: 100vh（内容不足一屏也要铺满）', () => {
+    expect(pageRootOf(workerHomeSource)).toBe('worker-home')
+    expect(hasNonWhiteSurface(workerHomeSource, 'worker-home')).toBe(true)
+    expect(/min-height\s*:\s*100vh/.test(stripComments(workerHomeSource))).toBe(true)
+  })
+
+  it('🔴 判别力自证：摘掉底色 / 把底色写成白 / 只把底色写进注释 ⇒ 各自判红（内存变异，不落仓库）', () => {
+    const noSurface = workerHomeSource.replace(/^\s*background:\s*#f5f7fa;\s*$/m, '')
+    expect(noSurface).not.toBe(workerHomeSource) // 注入先自证生效
+    expect(whiteCardsOnWhiteSurface(noSurface)).toBe(true)
+
+    const whiteSurface = workerHomeSource.replace('background: #f5f7fa;', 'background: #ffffff;')
+    expect(whiteSurface).not.toBe(workerHomeSource)
+    expect(whiteCardsOnWhiteSurface(whiteSurface)).toBe(true) // 写白 = 没写
+
+    const commentOnly = workerHomeSource.replace(/^\s*background:\s*#f5f7fa;\s*$/m, '  // background: #f5f7fa;')
+    expect(commentOnly).not.toBe(workerHomeSource)
+    expect(whiteCardsOnWhiteSurface(commentOnly)).toBe(true) // 注释不算声明
+  })
+
+  it('对照读数：没有白卡片的表单页不受本判据波及（不误伤）', () => {
+    const loginForm = fs.readFileSync(path.join(PAGES, 'auth', 'login', 'index.scss'), 'utf-8')
+    expect(whiteCardClassesOf(loginForm)).toEqual([])
+    expect(whiteCardsOnWhiteSurface(loginForm)).toBe(false)
+  })
+
+  it('🔴 fail-closed：台账缺 `white_card_pages_without_surface` / 非数组 ⇒ 红', () => {
+    expect(Array.isArray(ledger.white_card_pages_without_surface)).toBe(true)
+    expect(ledger.white_card_pages_without_surface.every((p) => typeof p === 'string')).toBe(true)
+  })
 })

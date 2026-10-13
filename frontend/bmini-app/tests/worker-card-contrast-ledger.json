@@ -1,5 +1,7 @@
 {
   "why": "issue #6760 判据 2 的类级台账：`src/pages/**/*.scss` 里**卡片形态**（`*__card` / `*-card` / `*__entry` / `*__gate`）却**没有可见边界**的类。可见边界只认**描边**与**阴影**（`border` / `border-{top,right,bottom,left}[-{width,style,color}]` / `box-shadow`）—— `border-radius` **不算**（白卡片上的圆角落白底页容器里完全不可见，正是本次缺陷的形态）。卡片形状靠「与页面底色的色差」表达，一旦落在同色页容器上就整个消失：工人工作台的白卡片落在 Taro H5 恒为 `#fff` 的 `.taro_page` 上，就是用户报告的「登录后页面样式全无」。**只许缩短**：修好一处就删一处；新增无边界卡片 ⇒ 未登记即红（判据 1）；登记条目不能在语料里兑现 ⇒ 红（判据 2）；台账结构坏掉 ⇒ fail-closed 判红（判据 4）。判据 = tests/worker-card-contrast-guard.test.ts。",
+  "white_card_pages_without_surface": [],
+  "white_surface_why": "issue #6760 的**另一半**（2026-10-13）：`src/pages/**/index.scss` 里声明了**白底卡片形态类**（`*__card`/`*-card`/`*__entry`/`*__gate` 且 `background: #fff`）的页面，其**页面根类**必须声明**非白**页面底色 —— 否则白卡仍落在 Taro H5 恒白的 `.taro_page` 上（与「卡片没有可见边界」是同一现场的两半）。空数组 = 真值：此刻每个白卡片页都自带底色（`worker-home` / `dashboard-page` / `order-detail` 各自声明 `background: #f5f7fa`）。未登记即红（判据 8）；**只许缩短**（修好一处删一处）；结构坏掉 fail-closed（判据 11）。判据 = tests/worker-card-contrast-guard.test.ts。",
   "known_exceptions": [
     {
       "class": "metric-card",

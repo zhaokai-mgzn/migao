@@ -1,4 +1,14 @@
 .worker-home {
+  // issue #6760 的**另一半**（2026-10-13）：本页此前只有白卡片、**没有页面底色**，于是落在
+  // Taro H5 恒白的 `.taro_page` 上 —— 白卡与页面逐值同色（255,255,255 = 255,255,255）。
+  // 本仓「有卡片的页面」一律自带灰底（`dashboard` / `chat` / `profile` / `production` /
+  // `sessions-detail` 的页面根都是 `background: #f5f7fa`；工人端另三页走共享 `.admin-surface` 同款）
+  // ⇒ 本页对齐同一口径（取值与 `src/styles/variables.scss` 的 `$bg-secondary` 同源，写法与 `dashboard` 一致）。
+  // 🔴 **不动** `app.scss` / 全局 `.taro_page`：那会改**全站**底色（15+ 屏读图验收），
+  //    而已经自带底色的页面白拿不到收益 —— 本单只补「本页自己那一半」。
+  // `min-height: 100vh`：内容不足一屏时底色必须铺满，否则下半屏仍是 `.taro_page` 的白（同 `dashboard`）。
+  min-height: 100vh;
+  background: #f5f7fa;
   padding: 48px 32px;
 
   &__card {
