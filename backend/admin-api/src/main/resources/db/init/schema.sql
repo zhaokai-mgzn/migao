@@ -48,6 +48,11 @@ CREATE TABLE users (
     -- 工人工号（V98，issue #4733）：非 NULL = 该行是**工人档案**（role=worker）；
     -- NULL = 商家用户（本列引入前的全部存量行）。租户内唯一（部分唯一索引见下）。
     worker_no VARCHAR(64),
+    -- 工人档案级**工人端页面收窄**（V152，issue #6788）：NULL = 未收窄（跟随企业设置，
+    -- 存量/新建默认）；[] = 显式一页都不给；[...] = 收窄到这几页（闭词表 = WorkerPages.ALL）。
+    -- 实际下发 = 企业页（worker_page_configs）∩ 本列。🔴 只承载页面可见性，不是权限码
+    -- ⇒ 不参与授权判定，也不写进 users.permissions（工人 permissions 恒为 []）。
+    worker_pages JSONB,
     session_ttl INTEGER DEFAULT 3600,
     status VARCHAR(32) DEFAULT 'active',
     -- 首登强制改密（V128，issue #5485）：管理员设的初始密码必须首登改掉。
