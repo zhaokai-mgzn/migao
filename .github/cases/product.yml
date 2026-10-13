@@ -3682,7 +3682,7 @@ cases:
         - "backend/admin-api/src/test/java/com/migao/admin/mapper/RemnantItemSizeMapperTest.java"
         - "frontend/admin-web/tests/unit/lib/remnant-params.test.ts"
         - "frontend/admin-web/tests/unit/components/RemnantItemSizesPanel.test.tsx"
-        - "frontend/admin-web/tests/unit/components/TenantParamsPanel.test.tsx"
+        - "frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx"
       ci:
         - pr-check.yml
       verifies: []
@@ -3926,7 +3926,7 @@ cases:
     expectations: []
     data_checks:
       - "判据 1·**改判与理由**（用户 2026-09-23 裁定）：同日合并的 #5206 走的是「把 71 处文案里的 `**` 删掉」；用户裁定「要**渲染**」⇒ 保留标记，新增渲染器 `frontend/admin-web/src/lib/inline-markdown.tsx`（只认 `**x**` 与反引号两种行内标记，其余逐字原样），并把「算料 / 余料回收 / 参数总览 / 余料台账」这几处的文案与渲染点接上。理由：删标记能让星号消失，但**强调本身也没了**，而这几处文案正是「哪几个字是重点」最需要被看见的地方。#5206 的其余部分（菜单 / 余料台账入口）**不回退**。"
-      - "判据 2·**DOM 级（红证实测）**：① `CraftCalcGlossary.test.tsx`：整块 `textContent` 不含 `**` 与反引号，且 `<strong>` 含「净窗高」「不改用料米数、也不改加工类型」、`<code>` 含 `oversize_height_threshold` / `HEM_MARGIN`；② `TenantParamsPanel.test.tsx`：算料域摘要渲染出 `<strong>每一项都直接改米数 = 改钱</strong>` 与 `<code>HEM_MARGIN</code>`，余料域渲染出 `<strong>能再用</strong>`；③ `production-routings.test.tsx`：算料面板同上（`getAllByText(…, { selector })`）。**改前实测三条全红**（渲染层纯文本插值 ⇒ 字面星号原样上屏）。"
+      - "判据 2·**DOM 级（红证实测）**：① `CraftCalcGlossary.test.tsx`：整块 `textContent` 不含 `**` 与反引号，且 `<strong>` 含「净窗高」「不改用料米数、也不改加工类型」、`<code>` 含 `oversize_height_threshold` / `HEM_MARGIN`；② `CalcCaliberPanel.test.tsx`：算料域摘要渲染出 `<strong>每一项都直接改米数 = 改钱</strong>` 与 `<code>HEM_MARGIN</code>`，余料域渲染出 `<strong>能再用</strong>`；③ `production-routings.test.tsx`：算料面板同上（`getAllByText(…, { selector })`）。**改前实测三条全红**（渲染层纯文本插值 ⇒ 字面星号原样上屏）。"
       - "判据 3·**反恒真（两条必须同时成立）**：只判「不含 `**`」是**空判据** —— 把标记删掉同样绿（那正是被改判的方案）⇒ DOM 判据里同时有**正控**「`<strong>` / `<code>` 真的存在」。"
       - "判据 4·**负控（渲染器不吞字）**：`tests/unit/lib/inline-markdown.test.tsx` 逐条判 ① 标记↔元素映射；② 去掉标记后可见文本与原文**逐字相等**；③ 单星号 / 未闭合 `**` / 手机号掩码 / 正则片段**不得**被当强调；④ `<img onerror=…>` 按文本呈现（无注入面：只建元素，不用 `dangerouslySetInnerHTML`）。不复用已装的 `react-markdown` 的理由：它把单星号当斜体、且默认输出块级 `<p>`（嵌在 `<p>`/`<span>`/`<td>` 里非法嵌套）。"
       - "判据 5·**源码面登记/接线（发现面）**：`copy-no-markdown-emphasis.test.ts` ① 正控（检测器对成对/未闭合 `**` 必须报出，含 AST 种类与行号）；② 负控（掩码 / 注释 / JSX 注释不判违规 —— 面是 AST 非全文 grep）；③ **未登记即红**（带 `**` 的文件必须都在 `REGISTERED_MARKER_FILES` 里，本单 8 个）；④ **登记陈旧即红**；⑤ **接线即红**（6 个渲染点必须 import `@/lib/inline-markdown`，按 import 语句判定，不用注释文本）；⑥ 掩码登记表陈旧即红。"
@@ -3940,7 +3940,7 @@ cases:
         - "frontend/admin-web/tests/unit/lib/inline-markdown.test.tsx"
         - "frontend/admin-web/tests/unit/lib/copy-no-markdown-emphasis.test.ts"
         - "frontend/admin-web/tests/unit/components/CraftCalcGlossary.test.tsx"
-        - "frontend/admin-web/tests/unit/components/TenantParamsPanel.test.tsx"
+        - "frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx"
         - "frontend/admin-web/tests/unit/pages/production-routings.test.tsx"
       ci:
         - pr-check.yml
