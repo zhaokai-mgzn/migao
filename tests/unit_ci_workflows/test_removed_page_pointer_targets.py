@@ -36,6 +36,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 import sys
@@ -291,13 +292,26 @@ def test_removed_names_mirror_mc096_guard():
 
     ⚠️ 为什么必须有这条（本仓点名的「注释漂移」形态）：本文件的名字集合是**本地镜像** ——
     守卫那边加/删一个页名而这里没跟，本判据会**静默**用旧集合 ⇒ **假绿**。
-    取法 = 读源码文本（**不 import 守卫**，避免把守卫的模块级副作用带进来）。
+    取法 = **`ast` 读语法单元**（`Module.body` 里的 `Assign` ⇒ `ast.literal_eval`）——
+    **不是**「按引号扫原文」（那种口径被 `test_guard_parsing_is_comment_aware.py` 的元守卫拦，
+    issue #5325：注释 / docstring 里的同形文本会喂中它）；
+    同时**不 import 守卫**，避免把它的模块级副作用带进来。
     """
-    text = GUARD_PATH.read_text(encoding="utf8")
-    match = re.search(r"^REMOVED_PAGE_NAMES = \(([^)]*)\)", text, re.M)
-    assert match, "守卫里读不到 `REMOVED_PAGE_NAMES` —— 解析器被改坏 ⇒ 红（fail-closed，不是「无对象可判」）"
-    guard_names = tuple(re.findall(r'"([^"]+)"', match.group(1)))
-    assert guard_names, f"守卫的 `REMOVED_PAGE_NAMES` 解析出空集：{match.group(1)!r}"
+    tree = ast.parse(GUARD_PATH.read_text(encoding="utf8"), filename=str(GUARD_PATH))
+    value = next(
+        (
+            ast.literal_eval(node.value)
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(t, ast.Name) and t.id == "REMOVED_PAGE_NAMES" for t in node.targets)
+        ),
+        None,
+    )
+    assert value is not None, (
+        "守卫里读不到 `REMOVED_PAGE_NAMES`（AST 里没有该赋值）⇒ 红（fail-closed，不是「无对象可判」）"
+    )
+    guard_names = tuple(value)
+    assert guard_names, f"守卫的 `REMOVED_PAGE_NAMES` 解析出空集：{value!r}"
     assert REMOVED_NAMES == guard_names, (
         f"本文件的 REMOVED_NAMES={REMOVED_NAMES} 与守卫的 REMOVED_PAGE_NAMES={guard_names} 不一致 —— "
         "镜像是本地硬编码的，漂了这条判据才是唯一会响的东西"
