@@ -57,3 +57,5 @@
 {"id":"1791882075.36715.20714","ts":"2026-10-13T09:01:15Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6827-remnant-copy-and-itemkey-select","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1791882810.82916.12069","ts":"2026-10-13T09:13:31Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6828-remove-tenant-worker-page-config","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791888044.47157.21615","ts":"2026-10-13T10:40:45Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6763-worker-h5-header-nowrap","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791886946.80414.741","ts":"2026-10-13T10:22:26Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6828-remove-tenant-worker-page-config","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1791886965.80501.16130","ts":"2026-10-13T10:22:45Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6828-remove-tenant-worker-page-config","why":"--allow-package-heavy（命令行显式）"}
