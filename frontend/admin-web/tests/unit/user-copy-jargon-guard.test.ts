@@ -330,13 +330,15 @@ describe('R12：上屏字面量不得出现已移除的页面名（#6826 · B2 �
     expect(lines, '上屏文案里出现了已移除的页面名（商家按它去点会找不到页面）：\n' + lines.join('\n')).toEqual([])
   })
 
-  it('正控：新指针在五个已修文件里逐字出现（改错了也红）', () => {
+  it('正控：新指针在已修文件里逐字出现（改错了也红）', () => {
     const NEW_POINTERS: Array<[string, string]> = [
       ['src/app/register/page.tsx', '企业基础设置 → 工序与部位单价'],
       ['src/components/orders/OrderCraftFields.tsx', '企业基础设置 → 算料口径'],
       ['src/components/production/UnpricedNotice.tsx', '企业基础设置 → 工序与部位单价'],
       ['src/lib/route-source.ts', '企业基础设置 → 工艺路线'],
-      ['src/lib/meters-formula-legend.ts', '企业基础设置 → 算料口径'],
+      // ⚠️ 用料公式说明的**链接文案**在 #6825 之后**不再是多级导航链**（该域就在本页
+      //    「企业基础设置」内，旧写法「工艺配置 → 算料配置」整条退场）⇒ 正控钉的是**域 label**
+      ['src/lib/meters-formula-legend.ts', "linkLabel: '算料口径'"],
     ]
     for (const [rel, pointer] of NEW_POINTERS) {
       expect(readFileSync(join(ROOT, rel), 'utf-8'), `${rel} 应含新指针 ${pointer}`).toContain(pointer)
@@ -353,7 +355,8 @@ describe('R12：上屏字面量不得出现已移除的页面名（#6826 · B2 �
       ['src/components/orders/OrderCraftFields.tsx', '档位来自「企业基础设置 → 算料口径」', '档位来自「工艺配置 → 算料配置」'],
       ['src/components/production/UnpricedNotice.tsx', '去定价（企业基础设置 → 工序与部位单价）', '去定价（工艺配置 · 工序单价）'],
       ['src/lib/route-source.ts', '补救：到「企业基础设置 → 工艺路线」新建这条路线', '补救：到「工艺配置」页新建这条路线'],
-      ['src/lib/meters-formula-legend.ts', "linkLabel: '企业基础设置 → 算料口径'", "linkLabel: '工艺配置 → 算料配置'"],
+      // ⚠️ #6825 之后该链接文案 = 域 label「算料口径」（不再是多级导航链）；注入的旧串是**更早那版**
+      ['src/lib/meters-formula-legend.ts', "linkLabel: '算料口径'", "linkLabel: '工艺配置 → 算料配置'"],
     ]
     for (const [rel, old, bad] of INJECT) {
       const src = readFileSync(join(ROOT, rel), 'utf-8')
