@@ -51,6 +51,14 @@ SCRIPT_DIR = REPO_ROOT / "scripts"
 SCRIPT = SCRIPT_DIR / "dev-db-whitelist.sh"
 SMOKE = SCRIPT_DIR / "ui_smoke_merchant.sh"
 
+#: 本判据**枚举**的 shell 语料（射程**有意只到 `scripts/`**，不按它枚举全仓）。
+#: ⇒ 按 `tests/unit_ci_workflows/guard_scope_ledger.json` 的出口②以 `kind=mentions` 入册
+#: （`kind=scans` 的契约是「`GUARD_SCOPE` == 全语料普查 == 全仓」）；全仓 `*.sh` 的射程守卫 =
+#: `tests/unit_ci_workflows/test_scripts_bash32_var_brace.py`。
+#: ⚠️ 教训（本单 CI 实测）：**新增测试文件会进「扫语料 / 入册」这类类级判据的射程** ——
+#: 挑本地验证集时不能只按自己文件名挑，要连同「会读到本文件」的守卫一起跑（同族先例 issue #6774）。
+SHELL_CORPUS_GLOB = "*.sh"
+
 #: 桩 `.env` 里的哨兵密码 —— 出现在任何输出里就是泄漏
 SENTINEL_PW = "SENTINEL_PW_zz6789"
 IP = "203.0.113.77"
@@ -551,11 +559,16 @@ def test_class_level_guards_on_script_corpus():
     """一条命令只许有一处承载体；覆盖语义与裸空数组展开禁入。"""
     assert SCRIPT.exists() and os.access(SCRIPT, os.X_OK), f"缺可执行脚本：{SCRIPT}"
 
-    carriers = [p.name for p in sorted(SCRIPT_DIR.glob("*.sh"))
-                if "--ModifyMode Append" in p.read_text(encoding="utf-8")]
-    assert carriers == ["dev-db-whitelist.sh"], f"`--ModifyMode Append` 承载体不唯一：{carriers}"
+    corpus = sorted(SCRIPT_DIR.glob(SHELL_CORPUS_GLOB))
+    assert corpus, f"语料为空（{SCRIPT_DIR}/{SHELL_CORPUS_GLOB}）⇒ 本判据恒绿（fail-closed）"
+    found = {p.name for p in corpus if "--ModifyMode Append" in p.read_text(encoding="utf-8")}
+    assert found == {"dev-db-whitelist.sh"}, f"`--ModifyMode Append` 承载体不唯一：{sorted(found)}"
 
+    # 空真防空：判据 2 的锚串必须真在脚本里（否则「绿」来自「脚本里没这串」而不是「语义对」）
     script_text = SCRIPT.read_text(encoding="utf-8")
+    for anchor in ("--ModifyMode Append", "--DBInstanceIPArrayName", "--SecurityIps"):
+        assert anchor in script_text, f"判据锚串从脚本里消失：{anchor!r} ⇒ 上层判据已退化成空断言"
+
     assert "Overwrite" not in script_text, "覆盖语义禁入（误删他人 IP 的入口）"
     assert modify_modes(script_text) == ["Append"], f"脚本里的 ModifyMode 取值：{modify_modes(script_text)}"
     assert bare_empty_expansions(script_text) == [], '空数组必须写成 ${A[@]+"${A[@]}"}（bash 3.2）'
