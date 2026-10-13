@@ -22,10 +22,25 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
+/**
+ * 以「数字时间戳」的三参形态调用 `performance.measure`（**运行时**合法：Chrome 接受
+ * `measure(name, startTime, endTime)`；而 TS 的 DOM 声明只给 `(name, startMark?, endMark?)`
+ * 字符串形态与 options 形态 ⇒ 调用点必须显式转型，否则 `tsc --noEmit` 判红）。
+ * 每次调用**现取** `performance.measure`，因此守卫的装卸对它同样生效。
+ */
+function measureWithTimestamps(name: string, start: number, end: number): void {
+  const fn = performance.measure as unknown as (n: string, s: number, e: number) => PerformanceMeasure
+  fn(name, start, end)
+}
+
 /** 真栈同款的浏览器行为桩：负区间 ⇒ 抛 TypeError（jsdom 原生不抛，必须显式换掉）。 */
 function installBrowserLikeMeasureStub(): { calls: Array<[string, unknown, unknown]>; restore: () => void } {
   const calls: Array<[string, unknown, unknown]> = []
-  const native = performance.measure.bind(performance)
+  const native = performance.measure.bind(performance) as unknown as (
+    n: string,
+    s?: string | number | PerformanceMeasureOptions,
+    e?: string,
+  ) => PerformanceMeasure
   const stub = (name: string, startOrOptions?: unknown, endMark?: unknown) => {
     calls.push([name, startOrOptions, endMark])
     const start = typeof startOrOptions === 'number'
@@ -63,17 +78,17 @@ describe('performance.measure 区间守卫（issue #6799 ②）', () => {
 
   it('修前形态：不装守卫时，React 埋点同款的「负区间」调用会把页面打成 pageerror', () => {
     guard.uninstallUserTimingGuard()
-    expect(() => performance.measure('\u200bProcessingRedirectPage', 100, 90)).toThrow(/negative time stamp/)
+    expect(() => measureWithTimestamps('\u200bProcessingRedirectPage', 100, 90)).toThrow(/negative time stamp/)
   })
 
   it('装上守卫后：负区间不再抛（该次埋点被丢弃，页面不再出 pageerror）', () => {
-    expect(() => performance.measure('\u200bProcessingRedirectPage', 100, 90)).not.toThrow()
+    expect(() => measureWithTimestamps('\u200bProcessingRedirectPage', 100, 90)).not.toThrow()
     expect(() => performance.measure('\u200bProcessingRedirectPage', { start: 100, end: 90, detail: {} })).not.toThrow()
   })
 
   it('负控：合法区间必须**照旧透传**（不是"靠不记录换不报错"）', () => {
     const before = stub.calls.length
-    performance.measure('\u200bOkComponent', 100, 120)
+    measureWithTimestamps('\u200bOkComponent', 100, 120)
     performance.measure('\u200bOkComponent', { start: 100, end: 120 })
     performance.measure('只有名字')
     expect(stub.calls.length, '合法调用必须到达底层 measure').toBe(before + 3)
@@ -82,21 +97,21 @@ describe('performance.measure 区间守卫（issue #6799 ②）', () => {
 
   it('等值区间（end === start）合法：不得被误丢', () => {
     const before = stub.calls.length
-    performance.measure('\u200bZeroLength', 100, 100)
+    measureWithTimestamps('\u200bZeroLength', 100, 100)
     expect(stub.calls.length).toBe(before + 1)
   })
 
   it('幂等：重复安装不会套娃（第二次返回 false，且合法调用仍只到达底层一次）', () => {
     expect(guard.installUserTimingGuard(), '第二次安装应返回 false（已装）').toBe(false)
     const before = stub.calls.length
-    performance.measure('\u200bOnce', 1, 2)
+    measureWithTimestamps('\u200bOnce', 1, 2)
     expect(stub.calls.length).toBe(before + 1)
   })
 
   it('卸载后可再装：`uninstall` 把原生 measure 还原（判据之间不互相污染）', () => {
     guard.uninstallUserTimingGuard()
-    expect(() => performance.measure('\u200bX', 100, 90)).toThrow(/negative time stamp/)
+    expect(() => measureWithTimestamps('\u200bX', 100, 90)).toThrow(/negative time stamp/)
     expect(guard.installUserTimingGuard()).toBe(true)
-    expect(() => performance.measure('\u200bX', 100, 90)).not.toThrow()
+    expect(() => measureWithTimestamps('\u200bX', 100, 90)).not.toThrow()
   })
 })
