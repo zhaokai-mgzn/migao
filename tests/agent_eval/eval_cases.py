@@ -6333,6 +6333,24 @@ _CASE_MC_092 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-093 [NORMAL] 已知 console 台账**只许缩短**的终态：售后 hydration + 加工页 measure 两条缺陷修好后 clearance 清零（机制保留、判据 H 判别力不依赖台账非空）（issue #6799）（源: cases/misc.yml）──
+_CASE_MC_093 = EvalCase(
+    id='MC-093',
+    legacy_id='',
+    title='已知 console 台账**只许缩短**的终态：售后 hydration + 加工页 measure 两条缺陷修好后 clearance 清零（机制保留、判据 H 判别力不依赖台账非空）（issue #6799）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['台账只许缩短 —— 缺陷修好后必须把那两条从「已知 console 错误」里删掉，并给出「删掉后判据仍绿」的读数；删不掉就说明没修好，不许留着台账当绿。'],
+    expectations=[],
+    data_checks=['🔴 判据 1·**台账已缩短**：`tests/unit_ci_workflows/ui_smoke_known_console.json` 的 `entries` 从 2 条（AFTERSALES_HYDRATION / PROCESSING_MEASURE_NEGATIVE）降到 **0 条**，`scripts/ui-smoke-merchant/spec.mjs` 的 `KNOWN_CONSOLE_ERRORS` 同步清空（逐字对账，改一处必须同批改两处）。执行点 = tests/unit_ci_workflows/test_ui_smoke_selector_liveness.py::test_known_console_registry_matches_spec_and_is_attributed。', '🔴 判据 2·**机制保留（不是把机制砍掉消红）**：spec 里 `isKnownConsoleError` / `knownConsoleIssue` / `allowKnownConsole` / `SMOKE_STRICT_CONSOLE` 四处接线**一字未减**（缺一即红）。执行点同上（判据本体里的接线检查）。', '🔴 判据 3·**判别力不依赖台账非空**：注入夹具改从**内存合成条目** + 逐字镜像进 `KNOWN_CONSOLE_ERRORS` 的 spec 文本构造（不再拿现状台账当夹具）—— id 改名 ⇒ 报「不逐字相等」、归口丢失 ⇒ 报「缺 issue 归口」，原样夹具 ⇒ 绿。判据本体**收窄了「entries 为空即红」**这一条（台账的正常终态就是空：在册缺陷都修好之后），理由逐字写在 `known_console_failures` 的 docstring 里。执行点 = 同文件 ::test_known_console_registry_has_teeth。', '**边界（照实登记）**：空台账**不再**保护「有人把条目删掉来消红」这一形态 —— 该形态在空台账下**不存在**（没有条目可删）；新的坏形态（把已修好的缺陷重新登记回去）由判据 1 的逐字对账承接不到（登记是合法动作）⇒ 由真栈冒烟本身承接（报错若真消失，登记反而会让它变 noise、而非变绿）。'],
+    skip_reason='[backend-contract] 台账 ⇄ spec 文本对账 + 注入式判别力自证（pytest，非 LLM 行为），不进入 agent-eval 冒烟',
+    tags=['ui-smoke', 'console-ledger', 'shrink-only', 'fail-closed', 'class-level-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -13731,6 +13749,24 @@ _CASE_UI_096 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-097 [NORMAL] 块级元素落在 <p> 里的 hydration 缺陷：售后详情页实例判据（SSR→hydrate 见证）+ 两条类级元守卫（字面嵌套扫描 / 运行期组合台账）（issue #6799）（源: cases/ui.yml）──
+_CASE_UI_097 = EvalCase(
+    id='UI-097',
+    legacy_id='',
+    title='块级元素落在 <p> 里的 hydration 缺陷：售后详情页实例判据（SSR→hydrate 见证）+ 两条类级元守卫（字面嵌套扫描 / 运行期组合台账）（issue #6799）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['售后详情页整页 hydration 失败（console 打 `In HTML, <div> cannot be a descendant of <p>`）—— 我要的是**这一族再也进不来**，不是修好这一处：同一形态（组件把块级渲染进 <p>）在别的页面同样是整页 hydration 失败。'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 判据 1·**实例**（会红）：`frontend/admin-web/tests/unit/pages/after-sales-detail-hydration.test.tsx` 用 `renderToString` → 浏览器式解析 → `hydrateRoot` 走一轮，断言 ① 服务端 HTML 里没有 `<p …>` 直接包块级标签；② hydrate 的 `console.error` 里没有 `cannot be a descendant of` / `cannot contain a nested` / `Hydration failed`（React 的 `validateDOMNesting`）。修前实测：该文件红（React 逐字打印上述两条，客户端渲染面 `expected [ …(2) ] to deeply equal []`）；修后 3 passed。', '🔴 判据 2·**类级（字面嵌套，零浏览器）**：`scripts/jsx-p-tag-nesting-scan.mjs` 扫 `src/**` 的 `.tsx`，块级/未知 HTML 元素直接落在 `<p>` 里即判红；判别力自证 = 扫描器 `--self-test` 的 10 条**内存注入**形态（坏必红 / 好不报），由 `frontend/admin-web/tests/unit/p-tag-block-nesting-guard.test.ts` 现跑并另做一次真语料变异注入（临时目录，不写工作树）。实测：硬命中 0 / 软命中（组件落在 `<p>` 里）6 类。', '🔴 判据 3·**类级（运行期组合，双向对齐）**：`frontend/admin-web/tests/unit/p-tag-inline-components-guard.test.tsx` 现取「谁被放进 `<p>` 里」的清单（同源跑扫描器），与 `tests/unit/p-tag-inline-components-ledger.json` 逐条对账：**新组件未登记即红**、**台账里有而语料无即红**（只许缩短）；台账 `runtime: instantiated` 的条目**逐个真渲染**在 `<p>` 里，断言 DOM 无块级后代。实测 5 passed（含判别力自证：`<p><div/></p>` 报 div、`<p><span/></p>` 不报）。', '**不回归**：只把 `frontend/admin-web/src/app/(dashboard)/after-sales/[id]/AfterSalesDetail.tsx` 的两处 `<p>` 容器换成 `<div>`（`DateTimeCell` 的两行布局依赖块级子元素，改内联会动版式）；其余 `<p>`（含同类文案 `售后类型` / `退款金额`）一字未动，样式类名逐字保留（`text-sm font-medium text-neutral-900`）。'],
+    skip_reason='[backend-contract] 纯前端 DOM 形状 + SSR/hydrate 判据（vitest，零 LLM 环节），不进 agent-eval 冒烟',
+    tags=['ui', 'hydration', 'dom-nesting', 'ssr', 'class-level-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -14106,6 +14142,7 @@ ALL_CASES = (
     _CASE_MC_090,
     _CASE_MC_091,
     _CASE_MC_092,
+    _CASE_MC_093,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
@@ -14502,6 +14539,7 @@ ALL_CASES = (
     _CASE_UI_094,
     _CASE_UI_095,
     _CASE_UI_096,
+    _CASE_UI_097,
     _CASE_UT_001,
     _CASE_UT_002,
 )

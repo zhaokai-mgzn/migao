@@ -3588,3 +3588,39 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: UI-097
+    legacy_id: ""
+    title: "块级元素落在 <p> 里的 hydration 缺陷：售后详情页实例判据（SSR→hydrate 见证）+ 两条类级元守卫（字面嵌套扫描 / 运行期组合台账）（issue #6799）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - hydration
+      - dom-nesting
+      - ssr
+      - class-level-guard
+      - red-proof
+    truths_ref:
+      - frontend-fix.no-api-change
+      - frontend-fix.vitest
+    user_inputs:
+      - "售后详情页整页 hydration 失败（console 打 `In HTML, <div> cannot be a descendant of <p>`）—— 我要的是**这一族再也进不来**，不是修好这一处：同一形态（组件把块级渲染进 <p>）在别的页面同样是整页 hydration 失败。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 判据 1·**实例**（会红）：`frontend/admin-web/tests/unit/pages/after-sales-detail-hydration.test.tsx` 用 `renderToString` → 浏览器式解析 → `hydrateRoot` 走一轮，断言 ① 服务端 HTML 里没有 `<p …>` 直接包块级标签；② hydrate 的 `console.error` 里没有 `cannot be a descendant of` / `cannot contain a nested` / `Hydration failed`（React 的 `validateDOMNesting`）。修前实测：该文件红（React 逐字打印上述两条，客户端渲染面 `expected [ …(2) ] to deeply equal []`）；修后 3 passed。"
+      - "🔴 判据 2·**类级（字面嵌套，零浏览器）**：`scripts/jsx-p-tag-nesting-scan.mjs` 扫 `src/**` 的 `.tsx`，块级/未知 HTML 元素直接落在 `<p>` 里即判红；判别力自证 = 扫描器 `--self-test` 的 10 条**内存注入**形态（坏必红 / 好不报），由 `frontend/admin-web/tests/unit/p-tag-block-nesting-guard.test.ts` 现跑并另做一次真语料变异注入（临时目录，不写工作树）。实测：硬命中 0 / 软命中（组件落在 `<p>` 里）6 类。"
+      - "🔴 判据 3·**类级（运行期组合，双向对齐）**：`frontend/admin-web/tests/unit/p-tag-inline-components-guard.test.tsx` 现取「谁被放进 `<p>` 里」的清单（同源跑扫描器），与 `tests/unit/p-tag-inline-components-ledger.json` 逐条对账：**新组件未登记即红**、**台账里有而语料无即红**（只许缩短）；台账 `runtime: instantiated` 的条目**逐个真渲染**在 `<p>` 里，断言 DOM 无块级后代。实测 5 passed（含判别力自证：`<p><div/></p>` 报 div、`<p><span/></p>` 不报）。"
+      - "**不回归**：只把 `frontend/admin-web/src/app/(dashboard)/after-sales/[id]/AfterSalesDetail.tsx` 的两处 `<p>` 容器换成 `<div>`（`DateTimeCell` 的两行布局依赖块级子元素，改内联会动版式）；其余 `<p>`（含同类文案 `售后类型` / `退款金额`）一字未动，样式类名逐字保留（`text-sm font-medium text-neutral-900`）。"
+    skip_reason: "[backend-contract] 纯前端 DOM 形状 + SSR/hydrate 判据（vitest，零 LLM 环节），不进 agent-eval 冒烟"
+    merge_log: "2026-10-13 新增（issue #6799 ①）。取号 = `python3 scripts/next_case_id.py UI` ⇒ main 现取 UI-001~096、在飞 PR 未占 ⇒ **UI-097**。病：真栈 `19-after-sales-detail` 打 React 两条 hydration error（`<div>` 落在 `<p>` 里）⇒ 整页 hydration 失败（后续交互走未 hydrate 的 SSR DOM）。根因定位：先按**字面 JSX 嵌套**扫全树（0 命中）⇒ 判定为**运行期组合**；本页 `<p>` 里唯一的被引用组件是 `components/common/DateTimeCell`（根节点 `<div>`，两行日期）⇒ 两处命中。修法 = 两处容器换 `<div>`（不动 DateTimeCell：其两行布局依赖块级子元素）。判据 = ① 实例（SSR→hydrate 见证，修前红）；② 字面嵌套扫描器 + 自证；③ 运行期组件台账（双向对齐 + 逐条真渲染）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/after-sales-detail-hydration.test.tsx"
+        - "frontend/admin-web/tests/unit/p-tag-block-nesting-guard.test.ts"
+        - "frontend/admin-web/tests/unit/p-tag-inline-components-guard.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
