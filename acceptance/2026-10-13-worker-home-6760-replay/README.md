@@ -57,3 +57,31 @@ node ../acceptance/2026-10-13-worker-home-6760-replay/worker-home-6760-replay.mj
   P3 无内部标识上屏（屏上是工号 / 姓名等业务数据）；P4 文案为陈述式
   （「扫码报工 / 拍照入库 / 补打入库标签 / 拍照发货 / 退出工人身份」）。**审美终判仍属人**。
 - 相关：批次 gate 的集成工作区缺 `node_modules` ⇒ 命中前端面的批次必判红（真因指向错误对象），见 issue #6834。
+
+## 7. 另一半：#6847 —— 整页补页面底色（2026-10-13 19:46 +08）
+
+#6760 让卡片看得见了，但**整页仍是白的**（白卡落在 Taro H5 恒白的 `.taro_page` 上，只能靠阴影分辨）。
+用户当日拿真机截图问「这就是最终样式？」并**授权 AI 裁定** ⇒ 裁定：改，但**只改本页那一半** ——
+`.worker-home` 补 `min-height: 100vh` + `background: #f5f7fa`（与 `dashboard` 同写法），
+**不动**全局 `.taro_page` / `app.scss`。
+
+依据（全部 `origin/main` 可查）：本仓「有卡片的页面」一律自带灰底 —— `dashboard` / `chat` / `profile` /
+`production` / `sessions-detail` 的页面根都声明 `background: #f5f7fa`，工人端另三页走共享
+`.admin-surface` 同款；工人工作台是**唯一**没跟上的那个（`src/pages/**/index.scss` 全量扫描可复算 =
+守卫新判据 8）。修法 = `cbd03de2` 之后的 PR #6849 → `66ac7a33`。
+
+| 读数（390×844，真工人身份） | 修前 19:26 +08 | 修后 19:51 +08 |
+|---|---|---|
+| `.worker-home` backgroundColor（页面根） | **`rgba(0, 0, 0, 0)`** | **`rgb(245, 247, 250)`** |
+| `.worker-home` 高度 | 526.6（不足一屏） | **893.9**（≥844，底色铺满） |
+| `.worker-home__card` | `rgb(255,255,255)` + shadow `0 1.04px 4.16px rgba(10,37,64,0.06)` | 同左（#6760 的边界**保留**） |
+| `.taro_page`（Taro 注入页容器） | `rgb(255,255,255)` | `rgb(255,255,255)`（**有意不动**） |
+| 白卡 vs 页面有色差 | false | **true** |
+
+截图：`out/worker-home-6847-surface-after.png`（灰底页 + 悬浮白卡；灰底一路铺到视口底部）。
+复算：`cd <repo>/tests && node ../acceptance/2026-10-13-worker-home-6760-replay/worker-home-surface-6847-replay.mjs https://app.migaozn.com`。
+
+**探针教训（照实登记）**：`/b/` 工人登录页的成功分支是 `Taro.navigateBack({ delta: 1 })`
+—— 它是为「从工作台被弹到登录页」设计的；**直接打开登录页**时无 history 可回 ⇒
+登录接口 200 但页面停在登录页（本探针第一版就这样卡住，`home` / `card` 全为 `null`）。
+⇒ 重放探针登录成功后必须**显式 `goto` 工人工作台**再读数。
