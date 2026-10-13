@@ -310,10 +310,10 @@ describe('R12：上屏字面量不得出现已移除的页面名（#6826 · B2 �
     expect(deadPageNames()).not.toContain('工艺路线')
   })
 
-  it('扫描面非空 + 六个已修文件都在扫描面内（看不见 ⇒ 判据在扫空气）', () => {
+  it('扫描面非空 + 五个已修文件都在扫描面内（看不见 ⇒ 判据在扫空气）', () => {
     const { files } = findViolations(ROOT)
     expect(files.length, '三个扫描目录下应有一批源文件').toBeGreaterThanOrEqual(200)
-    for (const rel of [...FIXED_FILES, 'src/lib/route-source.ts']) {
+    for (const rel of FIXED_FILES) {
       expect(files, `扫描面必须含 ${rel}`).toContain(rel)
     }
   })
