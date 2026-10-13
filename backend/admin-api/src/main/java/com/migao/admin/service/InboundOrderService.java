@@ -117,7 +117,20 @@ public class InboundOrderService {
      */
     @Transactional(rollbackFor = Exception.class)
     public InboundOrderResponse create(InboundOrderCreateRequest req, Long tenantId, String operator) {
-        Validated validated = validateRequest(req, tenantId);
+        return create(req, tenantId, operator, null);
+    }
+
+    /**
+     * 建单（草稿态，**不动库存**）—— 带**服务端强制来源**的重载（issue #6812）。
+     *
+     * <p>工人拍照入库走这条：{@code forcedSource = photo} ⇒ 明细行「数量」按**卷数**记账
+     * （入库米数 = 卷数 × 每卷米数）。为什么强制而不让客户端传：单位口径一旦能被请求体左右，
+     * 同一张表就会同时存在两种读法 —— 而这正是本轮要消灭的东西。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public InboundOrderResponse create(InboundOrderCreateRequest req, Long tenantId, String operator,
+                                       String forcedSource) {
+        Validated validated = validateRequest(req, tenantId, forcedSource);
         List<InboundOrderCreateRequest.Item> items = validated.items();
         String source = validated.source();
         String importRunId = trimToNull(req.getImportRunId());
@@ -176,7 +189,8 @@ public class InboundOrderService {
                     .doorWidth(sku.getDoorWidth())
                     .quantity(item.getQuantity())
                     .unitCost(item.getUnitCost())
-                    .amount(amountOf(item.getQuantity(), item.getUnitCost()))
+                    // 行金额按**入库米数**算（issue #6812）：photo 单 = 卷数 × 卷长 × 单价；其余来源 = 数量 × 单价
+                    .amount(amountOf(metersFor(source, item.getQuantity(), item.getRollLengthM()), item.getUnitCost()))
                     .dyeLot(trimToNull(item.getDyeLot()))
                     // 旧系统批次号（V118 / issue #5153）：**外部事实**，原样透传 —— 与 batch_no
                     // （服务端生成的系统号）两列两义，永不互相赋值（V111 明令不得互相冒充）
@@ -262,7 +276,9 @@ public class InboundOrderService {
             // issue #5063（V115）：库存列与入库行数量同为 NUMERIC(12,1) ⇒ 全程 BigDecimal
             // （改前 `int beforeQty = sku.getStock()` / `int quantity = line.getQuantity()`
             //  在入库量是 60.5 米时根本走不到这里 —— 校验阶段就显式拒绝了；本单把两侧一起放开）
-            BigDecimal quantity = StockQuantity.orZero(line.getQuantity());
+            // 🔴 入库米数 = 库存/批次/台账/成本的**唯一换算源**（issue #6812）：photo 单 = 卷数 × 每卷米数；
+            //    其余来源 = 数量（米，逐字保持现状）。明细行的「数量」列本身不改写 —— photo 单它存的就是卷数。
+            BigDecimal meters = metersFor(order.getSource(), line.getQuantity(), line.getRollLengthM());
             BigDecimal unitCost = line.getUnitCost();
 
             // ① 批次台账 + **原子取号**（issue #6248）：一个 SKU 行 = 一个批次（V111 裁定）——
@@ -281,9 +297,9 @@ public class InboundOrderService {
                     .inboundOrderId(order.getId())
                     .inboundItemId(line.getId())
                     .inboundNo(order.getInboundNo())
-                    .quantity(quantity)
+                    .quantity(meters)
                     .unitCost(unitCost)
-                    .amount(amountOf(quantity, unitCost))
+                    .amount(amountOf(meters, unitCost))
                     .dyeLot(line.getDyeLot())
                     // 旧系统批次号（V118 / issue #5153）：明细行 → 批次行**透传**。建单与过账是两次
                     // 请求 ⇒ 明细行不落这一列，建单时填的旧号在过账那一刻就丢了
@@ -331,8 +347,8 @@ public class InboundOrderService {
             //    与改动发生在同一行锁下 ⇒ 两张同 SKU 的草稿单并发过账时，台账两行不会「同基」。
             //    均价仍用本服务算出的 afterAvg（与下面台账里的 avg_cost_after **同源同值**）。
             BigDecimal beforeAvg = sku.getAvgCost();
-            StockChange change = StockChange.from(productSkuMapper.receiveStock(sku.getId(), quantity,
-                    movingAverage(StockQuantity.orZero(sku.getStock()), beforeAvg, quantity, unitCost), batchNo,
+            StockChange change = StockChange.from(productSkuMapper.receiveStock(sku.getId(), meters,
+                    movingAverage(StockQuantity.orZero(sku.getStock()), beforeAvg, meters, unitCost), batchNo,
                     tenantId));
             if (change == null) {
                 throw BusinessException.validationError(
@@ -343,7 +359,7 @@ public class InboundOrderService {
             // 均价按**权威的**变更前库存重算（与落库那条 SQL 里算 cost_amount 用的是同一个数）：
             // 并发下 sku.getStock() 可能是别人改之前的旧快照，用它算会让台账 avg_cost_after 与
             // SKU 上的 avg_cost 不一致（只在事后对账时看得见的账实不符）。
-            BigDecimal afterAvg = movingAverage(beforeQty, beforeAvg, quantity, unitCost);
+            BigDecimal afterAvg = movingAverage(beforeQty, beforeAvg, meters, unitCost);
 
             // ③ 落库存台账（reason=inbound；成本快照一并落，使「库存/成本为什么变了」在同一张账上可对账）
             stockLedgerService.record(tenantId, line.getProductId(), sku.getId(), sku.getSkuCode(),
@@ -460,11 +476,13 @@ public class InboundOrderService {
      *
      * @return 校验通过的明细行 + 各行 SKU（原样返回，避免调用方再查一次库）+ 归一后的单据来源
      */
-    private Validated validateRequest(InboundOrderCreateRequest req, Long tenantId) {
+    private Validated validateRequest(InboundOrderCreateRequest req, Long tenantId, String forcedSource) {
         if (req == null || req.getItems() == null || req.getItems().isEmpty()) {
             throw BusinessException.validationError("入库单至少要有 1 行明细");
         }
-        String source = normalizeSource(req.getSource());
+        // 来源口径：**只有**服务端强制值（工人拍照链）能给出 photo；请求体里的 source 仍只认
+        // purchase / opening（客户端无法自称「拍照单」⇒ 「数量 = 卷数」这条单位口径不可被伪造）
+        String source = forcedSource != null ? forcedSource : normalizeSource(req.getSource());
         // 按商品缓存 SKU：同一商品多行时不重复查库
         Map<String, Map<Long, ProductSku>> skuCache = new HashMap<>();
         List<InboundOrderCreateRequest.Item> items = new ArrayList<>();
@@ -481,6 +499,13 @@ public class InboundOrderService {
             // 数量/单价判据**只有一处**（requireItemNumbers）：建单与批量建账导入共用同一条口径
             item.setQuantity(requireItemNumbers(item.getQuantity(), item.getUnitCost(),
                     "商品明细第 " + idx + " 项的数量", "商品明细第 " + idx + " 项的入库单价"));
+            if (InboundOrder.SOURCE_PHOTO.equals(source)) {
+                // 拍照入库（issue #6812）：数量 = **卷数**（正整数）、卷长 = **每卷米数** ⇒ 米数 = 两者之积。
+                // 卷数/卷长的可读拒绝放在这里（requireItemNumbers 的下限文案是按米写的）；
+                // 米数的 0.1 米粒度由 metersFor 里的 requireOneDecimal 统一守。
+                item.setQuantity(requireRollCount(item.getQuantity(), "商品明细第 " + idx + " 项的卷数"));
+                item.setRollLengthM(requireRollLength(item.getRollLengthM(), "商品明细第 " + idx + " 项的卷长"));
+            }
             // 单价小数位准入（issue #6228）：`inbound_order_items.unit_cost` / `stock_batches.unit_cost`
             // 是 NUMERIC(·,2)，超 2 位有效小数会被 PG 静默四舍五入（占成本、算均价都按被改掉的值）。
             // 判在**本入口**（校验阶段，早于任何写）；`null` = 不记单价 ⇒ 原样透传（不归一成 0）。
@@ -489,8 +514,9 @@ public class InboundOrderService {
             // 金额精度准入（issue #6228）：行金额是**计算值**（"积"）—— 单价 2 位小数 × 数量 1 位小数
             // 可出 3 位小数（`1.5 × 0.01 = 0.015`），而列是 NUMERIC(·,2) ⇒ 逐行显式拒绝。
             // 判在本方法（= 校验阶段，`create()` 的第一条语句）⇒ 拒绝对**任何写**之前。
-            MoneyScale.requireTwoDecimalsOrNull(amountOf(item.getQuantity(), item.getUnitCost()),
-                    "商品明细第 " + idx + " 项的入库金额（数量 × 单价）");
+            MoneyScale.requireTwoDecimalsOrNull(amountOf(metersFor(source, item.getQuantity(), item.getRollLengthM()), item.getUnitCost()),
+                    "商品明细第 " + idx + " 项的入库金额（"
+                            + (InboundOrder.SOURCE_PHOTO.equals(source) ? "卷数 × 卷长 × 单价" : "数量 × 单价") + "）");
             item.setLegacyBatchNo(legacyBatchNoOf(item.getLegacyBatchNo(), source, idx));
             Map<Long, ProductSku> skuById = skuCache.computeIfAbsent(item.getProductId(), this::skusOfProduct);
             if (!skuById.containsKey(item.getSkuId())) {
@@ -552,6 +578,54 @@ public class InboundOrderService {
             throw BusinessException.validationError(unitCostLabel + "必须大于 0（不记单价请留空）");
         }
         return normalized;
+    }
+
+    /**
+     * 明细行的**入库米数** —— 库存 / 批次 / 台账 / 成本的**唯一换算源**（issue #6812）。
+     *
+     * <p>{@code source=photo}（工人拍照入库）：数量是**卷数**、{@code roll_length_m} 是**每卷米数**
+     * ⇒ 米数 = 数量 × 卷长。其余来源（purchase / opening）**逐字保持现状**：数量即米数，
+     * 卷长仍是「仅记录 / 打印卷标」的记录列（用户 2026-09-23 裁定 #5034）。</p>
+     *
+     * <p>米数仍按 <b>0.1 米粒度</b> fail-closed（{@link StockQuantity#requireOneDecimal}）：
+     * 「3 卷 × 0.33 米」这种乘出来不是 0.1 整数倍的组合**显式拒绝**，不静默取整。</p>
+     */
+    static BigDecimal metersFor(String source, BigDecimal quantity, BigDecimal rollLengthM) {
+        BigDecimal meters;
+        if (InboundOrder.SOURCE_PHOTO.equals(source)) {
+            if (rollLengthM == null || rollLengthM.signum() <= 0) {
+                throw BusinessException.validationError("拍照入库的明细行缺少卷长（每卷米数），无法换算入库米数");
+            }
+            meters = StockQuantity.orZero(quantity).multiply(rollLengthM);
+        } else {
+            meters = StockQuantity.orZero(quantity);
+        }
+        return StockQuantity.requireOneDecimal(meters, "入库米数");
+    }
+
+    /** 卷数准入（photo 单）：**正整数** —— 半卷不成卷；散米 / 尾料走 purchase 单（数量填米数）。 */
+    private static BigDecimal requireRollCount(BigDecimal rollCount, String label) {
+        BigDecimal count = StockQuantity.orZero(rollCount);
+        if (count.signum() <= 0 || count.stripTrailingZeros().scale() > 0) {
+            throw BusinessException.validationError(
+                    label + "必须是正整数（收到 " + count.toPlainString() + "）：拍照入库按「卷数 × 每卷米数」记账；"
+                            + "散米 / 尾料请走商家端手工入库（数量填米数）");
+        }
+        return count;
+    }
+
+    /** 卷长准入（photo 单）：&gt; 0 且最多 2 位小数（列 = {@code roll_length_m NUMERIC(8,2)}）。 */
+    private static BigDecimal requireRollLength(BigDecimal rollLengthM, String label) {
+        if (rollLengthM == null) {
+            throw BusinessException.validationError(
+                    label + "不能为空：拍照入库按「卷数 × 每卷米数」记账（识别到的米数就是这一卷的卷长）");
+        }
+        BigDecimal len = rollLengthM.stripTrailingZeros();
+        if (len.signum() <= 0 || len.scale() > 2) {
+            throw BusinessException.validationError(
+                    label + "必须大于 0 且最多 2 位小数（每卷米数，收到 " + rollLengthM.toPlainString() + "）");
+        }
+        return len;
     }
 
     /**
@@ -689,9 +763,14 @@ public class InboundOrderService {
     }
 
     /**
-     * 单据来源归一：缺失 ⇒ {@code purchase}（V111 时期只有采购收货这一种来源）；取值只许
-     * {@code purchase} / {@code opening}（与 V117 的 {@code ck_inbound_orders_source} 同口径，
-     * 应用层先拒是为了给出可行动文案，而不是把 DB 的 23514 透传成 500）。
+     * 单据来源归一（**请求体这一侧**）：缺失 ⇒ {@code purchase}；取值只许 {@code purchase} / {@code opening}
+     * （与 {@code ck_inbound_orders_source} 同口径，应用层先拒是为了给出可行动文案，
+     * 而不是把 DB 的 23514 透传成 500）。
+     *
+     * <p>{@code photo}（issue #6812，V153）**不经过本方法** —— 它只能由服务端强制给出
+     * （{@code create(req, tenant, operator, forcedSource)} 的 4 参重载，调用方 =
+     * {@code WorkerInboundService#createDraft}）。请求体里写 {@code source=photo} 一律按
+     * 「不支持的来源」拒绝 ⇒ 客户端无法把一张单自称成「数量 = 卷数」的口径。</p>
      */
     private static String normalizeSource(String source) {
         if (!StringUtils.hasText(source)) {

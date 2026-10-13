@@ -35,11 +35,18 @@ public interface ProductSkuMapper extends BaseMapper<ProductSku> {
      *       并发下两单都改到、库存被钳到 0，调用方从返回值上<b>根本看不出「扣不动」</b>
      *       （实测：库存 10 米、两单各 8 米并发确认收款 ⇒ {@code [200,200]}、库存 {@code 10.0→0.0}，
      *       少扣 6 米且无任何 4xx —— {@code acceptance/2026-10-04/replay-postdeploy/race/probe-write-raw.json::cases.W4}）。</li>
-     *   <li><b>台账读数与扣减同源</b>：{@code RETURNING ceil(stock + qty) AS beforeQuantity, stock AS afterQuantity}
+     *   <li><b>台账读数与扣减同源</b>：{@code RETURNING stock + #{quantity} AS "beforeQuantity", stock AS "afterQuantity"}
      *       —— 这两个值是<b>同一条语句在同一行锁下</b>取的，调用方拿它落
      *       {@code stock_ledger_entries} ⇒ 并发下台账仍首尾相接。若让调用方另取快照
      *       （{@code SELECT stock}）再比对，两单会读到<b>同一个 before</b>（同基、链断裂，
      *       见 issue #6300 的同族现场读数）。</li>
+     *   <li><b>库存读数是精确值，不得取整（issue #6816）</b>：{@code beforeQuantity}/{@code afterQuantity}
+     *       是<b>数量语义</b>，而 {@code product_skus.stock} 自 V115（issue #5063）起是
+     *       {@code NUMERIC(12,1)}（0.1 米粒度）⇒ {@code CEIL}/{@code FLOOR}/{@code ROUND} 在这里
+     *       <b>没有语义</b>，只会让 {@code StockLedger.delta = after − before} 偏小（现场读数：
+     *       库存 67.2 米入库 1.0 米被记成 {@code 68.0 → 68.2 / delta 0.2}）。
+     *       类级元守卫 = {@code com.migao.admin.service.LedgerBeforeQuantityRoundingMetaGuardTest}，
+     *       真库判据 = {@code LedgerBeforeQuantityPrecisionRealDbTest}。</li>
      *   <li><b>与既有同族形态一致</b>：{@code OrderMapper.autoCompleteShippedOrders} 同款
      *       （{@code @Select} + CTE + {@code RETURNING}）。</li>
      * </ul>
@@ -73,7 +80,7 @@ public interface ProductSkuMapper extends BaseMapper<ProductSku> {
             + "UPDATE product_skus SET stock = COALESCE(stock, 0) - #{quantity} "
             + "WHERE id = #{skuId} AND tenant_id = #{tenantId} AND COALESCE(stock, 0) >= #{quantity} "
             + "RETURNING sku_code AS \"skuCode\", "
-            + "          CEIL(stock + #{quantity}) AS \"beforeQuantity\", "
+            + "          stock + #{quantity} AS \"beforeQuantity\", "
             + "          stock AS \"afterQuantity\""
             + ") SELECT \"skuCode\", \"beforeQuantity\", \"afterQuantity\" FROM updated")
     Map<String, Object> deductStock(@Param("skuId") Long skuId, @Param("quantity") BigDecimal quantity,
@@ -119,7 +126,7 @@ public interface ProductSkuMapper extends BaseMapper<ProductSku> {
             + "                   ELSE ROUND((COALESCE(stock, 0) + #{quantity}) * #{newAvgCost,jdbcType=NUMERIC}, 4) END, "
             + "latest_batch_no = #{batchNo} "
             + "WHERE id = #{skuId} AND tenant_id = #{tenantId} "
-            + "RETURNING CEIL(stock - #{quantity}) AS \"beforeQuantity\", "
+            + "RETURNING COALESCE(stock, 0) - #{quantity} AS \"beforeQuantity\", "
             + "          stock AS \"afterQuantity\""
             + ") SELECT \"beforeQuantity\", \"afterQuantity\" FROM updated")
     Map<String, Object> receiveStock(@Param("skuId") Long skuId, @Param("quantity") BigDecimal quantity,

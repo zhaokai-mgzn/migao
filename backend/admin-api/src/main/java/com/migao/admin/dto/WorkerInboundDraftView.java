@@ -59,7 +59,7 @@ public class WorkerInboundDraftView {
         /** 货号快照 */
         private String skuCode;
 
-        /** 入库数量（米） */
+        /** 卷数（工人拍照入库口径，issue #6812；卷长在入库单明细行上，本视图只回显工人填的卷数） */
         private BigDecimal quantity;
 
         /** 系统批次号 {@code PC-yyyyMMdd-NNNN}：草稿态为 null（过账才生成，V111 裁定） */

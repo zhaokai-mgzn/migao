@@ -114,12 +114,15 @@ export interface InboundDraftRequest {
   productId: string
   /** 雪花号 id：**原样字符串**透传，禁止 Number()/parseInt()（后端出参形态，issue #6340） */
   skuId: string
+  /** **卷数**（issue #6812 起「数量」= 卷数，默认 `1`；服务端要求正整数） */
   quantity: string | number
   unitCost?: string | number | null
   dyeLot?: string | null
   supplier?: string | null
   supplierDocNo?: string | null
   warehouse?: string | null
+  /** **每卷米数**（issue #6812；字段名逐字等于后端 `WorkerInboundDraftRequest.rollLengthM`）。
+   * 空 ⇒ 传 `null`；数值口径（`> 0`、≤2 位小数、乘积为 0.1 的整数倍）由服务端判，端侧原样透传 */
   rollLengthM?: string | number | null
   remark?: string | null
 }

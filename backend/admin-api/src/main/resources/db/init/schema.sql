@@ -1673,9 +1673,10 @@ CREATE TABLE IF NOT EXISTS inbound_orders (
     status VARCHAR(16) NOT NULL DEFAULT 'draft',     -- draft / posted / cancelled
     total_amount NUMERIC(16,4) NOT NULL DEFAULT 0,
     remark TEXT,
-    -- 单据来源（V117）：purchase 采购收货 / opening 期初建账（迁移导入）
+    -- 单据来源（V117）：purchase 采购收货 / opening 期初建账（迁移导入）；photo 工人拍照入库（V153 / issue #6812：
+    -- 该来源的明细行「数量」是**卷数**、roll_length_m 是**每卷米数**，入库米数 = 数量 × 卷长）
     source VARCHAR(16) NOT NULL DEFAULT 'purchase' CONSTRAINT ck_inbound_orders_source
-        CHECK (source IN ('purchase', 'opening')),
+        CHECK (source IN ('purchase', 'opening', 'photo')),
     -- 建单运行级幂等键（V117）：同一 (tenant_id, import_run_id) 至多一张未软删的单
     import_run_id VARCHAR(128),
     posted_at TIMESTAMP WITH TIME ZONE,
