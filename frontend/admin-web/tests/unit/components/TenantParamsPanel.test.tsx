@@ -33,7 +33,12 @@ const getAiConfig = vi.fn()
 const getRemnantSpecs = vi.fn()
 
 vi.mock('@/lib/api', () => ({
-  productionApi: { getCraftCalcConfig: () => getCraftCalcConfig() },
+  productionApi: {
+    getCraftCalcConfig: () => getCraftCalcConfig(),
+    // issue #6827：余料域的内联面板（`RemnantItemSizesPanel`）会给「小件（工序名）」读一次工序库
+    // ⇒ 替身必须给得出**这条**读面（形状同 tests/unit/pages/settings.test.tsx：`data.data = null`）。
+    getOperationsCatalog: () => Promise.resolve({ data: { data: null } }),
+  },
   settingsApi: { getAiConfig: () => getAiConfig() },
   // §22 P4 阈值试算（issue #5131）：算料域会挂载试算块 ⇒ 该读面必须可用
   autoFeaturesApi: {

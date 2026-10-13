@@ -1847,7 +1847,7 @@ cases:
     data_checks:
       - "「参数总览」的**一级菜单项席位已撤掉**（issue #6580：内容并入 `/settings`「企业基础设置」页内的配置域，席位改由「企业基础设置」占用）；旧深链 `/settings/params` 与 `settings?tab=params` 仍**不 404**（重定向到 `/settings`）。#6573 那一轮的形态（独立一级项 `/settings/params`，节点码 = 路由守卫码 = 该页第一屏读码 `production:view`）**已退场**，保留为历史口径"
       - "**配置主线**（issue #6573）：常驻面只有**一行摘要**（完成数 + 缺口 + 下一步）；逐项明细按需展开且**折叠态下逐项 DOM 不渲染**（§31 P1）；每步三态 = 已配置 / 待配置 / **读不到**（读失败 ⇒ unknown，绝不画成「待配置」）"
-      - "**域级权限**（issue #6573）：算料域需 `production:view`、AI 客服域需 `system:manage`、余料回收域需 `processing:manage`；不持该码的域**不渲染也不请求**"
+      - "**域级权限**（issue #6573）：算料域需 `production:view`、AI 客服域需 `system:manage`、余料**尺寸**域需 `processing:manage`；不持该码的域**不渲染也不请求**（域 label 真值源 = `frontend/admin-web/src/lib/config-center-domains.ts` 的 `remnant-sizes`；issue #6827 起因旧文案仍写「余料回收」域 ⇒ 判据行同批改准）"
       - "域清单按 PARAM_DOMAINS 渲染（算料 / AI 客服 / 加工费 / 工艺）；每个标量参数渲染 label + hint + impact 三件套"
       - "算料域当读面 source 不等于 stored ⇒ 每键渲染「未配置（正在用引擎默认值）」标记；source 等于 stored ⇒ 不渲染该标记"
       - "「高级」默认收起：初始不渲染其中参数，点开后渲染"
