@@ -90,11 +90,16 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+
+from unit_ci_workflows._source_parsing import java_code  # noqa: E402  （#5323：Java/TS 剥注释的唯一实现）
 SPEC = REPO_ROOT / "scripts" / "ui-smoke-merchant" / "spec.mjs"
 LEDGER = Path(__file__).resolve().parent / "ui_smoke_selector_exemptions.json"
 ADMIN_WEB_SRC = REPO_ROOT / "frontend" / "admin-web" / "src"
@@ -1224,17 +1229,50 @@ _KNOWN_CONSOLE_BLOCK_RE = re.compile(r"\{\s*id:\s*'([^']+)',\s*test:\s*/([^/]+)/
 _KNOWN_CONSOLE_WHY_RE = re.compile(r"why:\s*((?:'[^']*'\s*\+?\s*)+)")
 
 
+def js_single_quoted_values(text: str) -> list[str]:
+    """JS 文本里**单引号字面量**的值（转义感知的词法走查）。
+
+    为什么不用正则取下界（`#5323` / `test_guard_parsing_is_comment_aware.py` 的 RULE_QUOTE）：
+    形如 `r"'([^']*)'"` 的「取值型正则 + 引号定界捕获组」把**原文**当代码读 ——
+    注释里写一个引号串就能喂中判据（本案 `why` 的取值正是这种形态）。
+    ⇒ 调用方必须先 `java_code()` 剥注释（Java/TS 引号感知：`_source_parsing.py` 的唯一实现），
+    本函数只做转义感知扫描，**不使用任何引号定界捕获正则**。
+    """
+    out: list[str] = []
+    i = 0
+    while i < len(text):
+        if text[i] != "'":
+            i += 1
+            continue
+        j = i + 1
+        buf: list[str] = []
+        while j < len(text) and text[j] != "'":
+            if text[j] == "\\" and j + 1 < len(text):
+                buf.append(text[j + 1])
+                j += 2
+                continue
+            buf.append(text[j])
+            j += 1
+        out.append("".join(buf))
+        i = j + 1
+    return out
+
+
 def spec_known_console_entries(spec_text: str) -> list[dict]:
-    """从 spec 源码里现取 `KNOWN_CONSOLE_ERRORS` 的条目（id / pattern / issue / why）。"""
-    if "const KNOWN_CONSOLE_ERRORS = [" not in spec_text:
+    """从 spec 源码里现取 `KNOWN_CONSOLE_ERRORS` 的条目（id / pattern / issue / why）。
+
+    ⚠️ 先 `java_code()` **剥注释**再取值（顺序不许反）：否则注释里的同形文本会被读成条目。
+    """
+    code = java_code(spec_text)
+    if "const KNOWN_CONSOLE_ERRORS = [" not in code:
         return []
-    block = spec_text[spec_text.index("const KNOWN_CONSOLE_ERRORS = ["):]
+    block = code[code.index("const KNOWN_CONSOLE_ERRORS = ["):]
     block = block[: block.index("const isKnownConsoleError =")] if "const isKnownConsoleError =" in block else block
     out = []
     for m in _KNOWN_CONSOLE_BLOCK_RE.finditer(block):
         tail = block[m.end():]
         wm = _KNOWN_CONSOLE_WHY_RE.search(tail)
-        why = "".join(re.findall(r"'([^']*)'", wm.group(1))) if wm else ""
+        why = "".join(js_single_quoted_values(wm.group(1))) if wm else ""
         out.append({"id": m.group(1), "pattern": m.group(2), "issue": m.group(3), "why": why})
     return out
 
