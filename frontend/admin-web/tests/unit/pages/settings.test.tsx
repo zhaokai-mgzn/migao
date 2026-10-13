@@ -491,7 +491,6 @@ describe('判据 4：URL —— `?domain=` 直达 + 旧 `?tab=` 逐条映射且*
       unmount()
     }
   })
-  })
 
   it('🔴 旧深链 `?tab=workerPages`：该域已整层移除 ⇒ 送到「员工管理」（有确定落点，不落空白、不复活该域）', async () => {
     mockSearchParams.mockReturnValue(new URLSearchParams('tab=workerPages'))

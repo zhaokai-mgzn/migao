@@ -146,14 +146,6 @@ vi.mock('@/lib/api', () => ({
       Promise.resolve(ok({ configured: true, items: [{ itemKey: '帘头', lengthM: 1, widthM: 1 }] })),
     putSmallItemSpecs: () => Promise.resolve(ok(null)),
   },
-  // 工人端页面：页面清单与键**来自服务端** `labels`（夹具键取真读面的那一族）
-  workerPageConfigApi: {
-    get: () =>
-      Promise.resolve({
-        data: { success: true, data: { source: 'default', pages: [], labels: { report: '报工', order: '订单', shipment: '发货' } } },
-      }),
-    update: () => Promise.resolve({ data: { success: true, data: null } }),
-  },
   briefingApi: { getConfig: () => Promise.resolve(ok({ enabled: false, generateTime: '06:00' })) },
 }))
 

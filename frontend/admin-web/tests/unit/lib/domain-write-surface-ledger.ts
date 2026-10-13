@@ -57,8 +57,6 @@ export const DOMAIN_WRITE_SURFACES: Readonly<Partial<Record<ConfigDomainKey, str
   enterprise: 'settings-enterprise-name',
   // AI 客服（`AiDomainPanel`）：AI 客服名称
   ai: 'settings-ai-bot-name',
-  // 工人端页面（`WorkerPageConfigPanel`）：页面显隐勾选（键来自服务端 `labels`，取真读面那一族）
-  'worker-pages': 'worker-page-toggle-report',
   // 通知设置（`NotificationsDomainPanel`）：系统通知开关
   notifications: 'settings-notification-toggle',
 }
