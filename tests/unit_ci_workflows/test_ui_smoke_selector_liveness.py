@@ -927,6 +927,9 @@ CSS_FAMILY_PATTERNS: dict[str, str] = {
     "type": r'\btype=\s*"([^"]*)"',
     "has-text": r':has-text\(\s*"([^"]*)"',
     "aria-label": r'\baria-label=\s*"([^"]*)"',
+    # 裸 id 选择器（`#phone`）：被驱动面必须有 `id="phone"` 属性 —— 登录页三个输入就是这种形态
+    # （`frontend/admin-web/src/app/login/page.tsx` 的 `id="identifier"` / `id="phone"` / `id="code"`）
+    "id": r'(?:^|[\s,>(~+])#([A-Za-z][\w-]*)',
 }
 # 伪选择器/文本引擎：不属 CSS 选择器面（`text=` / `xpath=` 是 Playwright 专有引擎，另单另判）。
 CSS_NON_SELECTOR_PREFIXES = ("text=", "xpath=", "$")
@@ -1064,6 +1067,8 @@ def _css_family_hit(part: str, sources: dict[str, str]) -> bool:
             return lit in hay
         if fam == "aria-label":
             return ('aria-label="' + lit + '"') in hay
+        if fam == "id":
+            return ('id="' + lit + '"') in hay
     return False
 
 
@@ -1605,6 +1610,16 @@ class Loc {
   }
   async fill() { return true }
   async count() { return 1 }
+  // ↓ issue #6790 起 spec 用到的新形态（链式定位 / 取值 / 等待）：桩必须跟上，
+  //   否则「归因判据」会因**桩自身缺件**而红，把判据变成噪声（这正是本判据要防的反面）。
+  locator(sel) { return new Loc(this.page, this.label + ' >> ' + sel) }
+  filter() { return this }
+  nth() { return this }
+  async selectOption() { return true }
+  async inputValue() { return '' }
+  async innerText() { return '' }
+  async textContent() { return '' }
+  async getAttribute() { return null }
 }
 class Page {
   constructor(context) { this.ctx = context; this.url = ''; this.handlers = [] }
@@ -1625,6 +1640,9 @@ class Page {
   getByRole(_role, opts) { return new Loc(this, 'role:' + ((opts || {}).name || '')) }
   locator(sel) { return new Loc(this, 'css:' + sel) }
   getByTestId(t) { return new Loc(this, 'testid:' + t) }
+  // 登录前的 hydration 等待（`openAdminLoginTab` 新增）：桩直接放行
+  async waitForFunction() { return true }
+  async title() { return 'stub' }
   fill(sel, value) {
     if (sel === '#phone' && FAIL === '') throw new Error("桩：登录步骤注入失败（fill('#phone')）")
     return Promise.resolve(true)

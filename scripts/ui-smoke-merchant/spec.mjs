@@ -310,7 +310,21 @@ async function adminApi(page) {
 async function openAdminLoginTab(page) {
   const tab = page.getByRole('tab', { name: /管理员登录/ }).first()
   await tab.waitFor({ state: 'visible', timeout: 8000 })
+  // 🔴 真实栈偶发（探针实测 + 本单多轮复现）：`/login` 的 SSR 骨架先到，React **还没 hydrate** 就点 tab
+  //    ⇒ 点击不改变 tab 状态 ⇒ `#phone` 永远不出现 ⇒ `page.fill('#phone')` 30s 超时
+  //    （全量跑里表现为 01-login ❌，随后所有旅程连锁 ❌；单跑时表现为 ensureLoggedIn 超时）。
+  //    修法 = **等 hydration 再点**（`Object.keys(document.body)` 上出现 `__react*` 私有键），
+  //    点完再确认手机号输入真的出现；仍不在 ⇒ 重点一次（tab 状态机可能被路由跳转重置）。
+  await page.waitForFunction(
+    () => Object.keys(document.body).some((k) => k.startsWith('__react')),
+    null, { timeout: 30000 },
+  ).catch(() => {})  // 拿不到也不静默成功：下面的 `#phone` 等待仍是硬门禁
   await tab.click()
+  const phone = page.locator('#phone')
+  if (!(await waitVisible(phone, 5000))) {
+    await tab.click().catch(() => {})
+    await waitVisible(phone, 8000)
+  }
 }
 
 /** 登录步骤的失败归因包装：抛出的错误**必须**自报「登录步骤失败」+ 位置（判据见 §归因）。 */
@@ -980,7 +994,12 @@ async function productionQrJourney(page) {
   const h = await journey('32-production-qr-and-piecework')(page)
   try {
     const api = await adminApi(page)
-    // 前置**依赖**（登记式，与 16- 同源）：本租户要能实例化加工单
+    // 前置**依赖**（登记式，与 16-/17- 同源）：本租户要能**实例化加工单**（生产路线 / 默认工艺已配），
+    // 否则本旅程的判据（加工单二维码 / 报工）无从谈起。⚠️ 必须在**建单之前**探：旧位置在建单之后
+    // ⇒ 未配路线时旅程先撞别的错（真栈实测 `[③ qr_token] 非 32 位十六进制：undefined`），
+    // 把「前置缺失」读成了业务失败。
+    const dep = await processingRouteAvailable(page)
+    if (!dep.ok) { await markSkipped(h, `前置不满足（生产路线/默认工艺未配置）：${dep.why}`); return }
 
     // ① 建单（含加工项）—— 独立数据，不污染存量
     const created = await api.post('/api/admin/orders', {
