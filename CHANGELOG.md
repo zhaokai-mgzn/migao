@@ -7,6 +7,26 @@
 
 ## [Unreleased]
 
+### 库存台账的「变更前库存」记录精确值：小数库存下 delta 重新等于本次实际变更量（2026-10-13，issue #6816）
+
+库存流水（台账）的「变更前库存」原先被**向上取整到整数**：入库/扣减那条 SQL 取变更前读数时套了
+`CEIL(...)`（`CEIL(stock - 数量)` / `CEIL(stock + 数量)`）。而库存列自 V115（issue #5063）起已是
+`NUMERIC(12,1)`（0.1 米粒度，本来就带小数）⇒ 只要库存带小数，「变更前」就偏大（最多 +0.9），
+`delta = 变更后 − 变更前` 随之偏小 —— 台账不再是「这次到底变了多少」。真库实证（租户 25 /
+SKU `MG-JGM-280-14`）：库存 67.2 米入库 1.0 米，台账记成 `68.0 → 68.2 / delta 0.2`（应为
+`67.2 → 68.2 / delta 1.0`）；接着入库 67.2 米又记成 `69.0 → 135.4 / delta 66.4`（应为 67.2）。
+相邻两行也因此不首尾相接（上一行 after 68.2 ≠ 下一行 before 69.0）。
+
+- **改后形态**：台账的「变更前/后库存」一律记**精确值**，`delta` 等于本次实际变更量，
+  相邻两行首尾相接（链式可对账）；库存总数、`delta` 的既有语义（仍是「变更后 − 变更前」）
+  与整数/零起点路径的读数**零变化**（0 → 67.2 的首次入库照旧记 `before 0.0 / delta 67.2`）。
+- **存量数据不回填**：台账是 append-only 事实账；本次只改**此后新写入**的行的读数口径，
+  已经写进去的历史行（含上述三条**证据单** RK-20261013-0001/0002/0003）**原样保留、不回填**。
+- 判据：真库 `backend/admin-api/src/test/java/com/migao/admin/service/LedgerBeforeQuantityPrecisionRealDbTest.java`
+  （小数入库/扣减 before 精确 + 链式相接 + 零起点正对照）；类级元守卫
+  `backend/admin-api/src/test/java/com/migao/admin/service/LedgerBeforeQuantityRoundingMetaGuardTest.java`
+  （`ProductSkuMapper` 的库存 `RETURNING` 再出现 `CEIL(`/`FLOOR(`/`ROUND(` 即红，未登记即红、登记台账只许缩短）。
+
 ### 工人端页面开关发 `pages:null` 不再被静默接受（2026-10-13，issue #6803）
 
 企业级「工人端页面」设置（设置 → 工人端页面）的保存请求若把 `pages` 发成 `null`（表单未初始化、
