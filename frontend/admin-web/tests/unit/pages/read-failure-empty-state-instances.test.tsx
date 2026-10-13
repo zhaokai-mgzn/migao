@@ -332,6 +332,8 @@ describe('#6691 ⑥ 新建订单：算料配置读失败 ⇒ 显式「配置未�
     expect(hint).toHaveTextContent('算料配置未加载')
     expect(hint).toHaveTextContent('读取失败')
     expect(hint).toHaveTextContent('缺省口径')
+    // #6826：失败提示里的坐标必须是**现存域**（旧页名「工艺配置」已撤）
+    expect(hint).toHaveTextContent('企业基础设置 → 算料口径')
   }, TEST_TIMEOUT)
 
   it('对照读数：配置读成功 ⇒ 同一块工艺规格渲染出来 + **没有**「配置未加载」（不误报）', async () => {

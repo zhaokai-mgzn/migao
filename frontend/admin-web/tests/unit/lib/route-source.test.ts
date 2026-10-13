@@ -37,14 +37,17 @@ describe('routeSourceNotice — 加工单路线来源提示（四态）', () => 
     expect(n?.detail).toContain('本单实际使用：纱帘×韩褶')
   })
 
-  it('missing_route：两维都命中但库里没路线 ⇒ 报 route_requested_key + 去工艺配置页建', () => {
+  it('missing_route：两维都命中但库里没路线 ⇒ 报 route_requested_key + 按动作给出两个现存域的出口', () => {
     const n = routeSourceNotice('missing_route', '布帘×韩褶', '罗马帘×韩褶')
     expect(n?.key).toBe('missing_route')
     expect(n?.tone).toBe('warning')
     expect(n?.title).toContain('没有对应路线')
     expect(n?.detail).toContain('本单识别的是 罗马帘×韩褶')
     expect(n?.detail).toContain('本单实际使用：布帘×韩褶')
-    expect(n?.detail).toContain('工艺配置')
+    // #6826：旧页名「工艺配置」已撤 ⇒ 建路线 / 新增工序各指**承载该动作**的两个域
+    expect(n?.detail).toContain('企业基础设置 → 工艺路线')
+    expect(n?.detail).toContain('企业基础设置 → 工序与部位单价')
+    expect(n?.detail).not.toContain('工艺配置')
   })
 
   it('missing_route 但缺 route_requested_key：不编造识别键，其余文案照给', () => {

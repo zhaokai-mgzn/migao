@@ -63,7 +63,7 @@ export default function UnpricedNotice({ unpriced, className }: UnpricedNoticePr
         data-testid="piecework-unpriced-pricing-link"
         className="mt-2 inline-block rounded border border-amber-400 bg-white px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
       >
-        去定价（工艺配置 · 工序单价）
+        去定价（企业基础设置 → 工序与部位单价）
       </Link>
     </div>
   )
