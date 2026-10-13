@@ -1,20 +1,27 @@
-# 工人工作台「管理面外壳」的合并前预览（issue #6858）
+# 工人工作台「菜单」重排的合并前预览（issue #6858）
 
-用户 2026-10-13 反馈「这版本的菜单主页不太符合我们整体样式设计，为什么搞成纯白色背景了？」
+用户 2026-10-13 逐字：「这版本的**菜单主页**不太符合我们整体样式设计，为什么搞成纯白色背景了？」
++「为什么不能管理员登录后的主页菜单设计风格保持一致呢」+「工人登录后的页面菜单很少，通常只能看到 1-4 个菜单」。
 
-**归因**：#6847 只补了**页面底色**（`#f5f7fa`，别的页面也在用的"底"），而工人工作台**连页头都没有**
-—— 同族三页（拍照入库 / 补打入库标签 / 拍照发货）都是 `src/styles/admin-surfaces.scss` 的
-**深蓝→蓝渐变页头 + 灰底 + 白卡**。只有底色时它落在灰白底上仍然「看着是白的、没有层次」。
+## 结论链（怎么走到 V1 的）
 
-**本目录** = 合并前给人看的预览（真实 Taro H5 构建产物 + 打桩工人接口，390×844）：
+1. **根因**：这一页还停在「三行白卡」的老结构 —— #6760 补了卡片边界、#6847 补了页面底色，**结构没动**；
+   而 2026-10-12 已裁定的菜单设计（`docs/design/worker-home-menu.md` + `assets/worker-home-menu-390.png`）
+   的语言是**身份条 + 主按钮 + 卡片**，**一直没落码**（#6764 停在「待派」）。
+2. 我第一版猜的**渐变页头**（工人端「任务页」外壳）方向不对 —— 已撤掉。
+3. 按「1~4 条」这个现实出三个候选（原型 `docs/design/prototypes/worker-home-menu-6858.html`：
+   `?v=1|2|3&n=1|2|4`），用户选定 **V1 大卡列表**：
+   - V1 行卡对 1~4 条都成立（行高固定、主按钮永远在第一屏）；
+   - V2 宫格在 3 条时出「2+1」孤儿格、副标易折行；V3 分组在 1~2 条时「标题底下孤零零一张卡」。
+
+## 本目录
 
 | 文件 | 是什么 |
 |---|---|
-| `out/worker-home-after-390.png` | 改后 · 登录态（渐变页头 + 身份卡 + 四条入口 + 退出） |
-| `out/worker-home-after-gate-390.png` | 改后 · 未登录态（页头在，引导块不被挤坏） |
-| `preview-6858.mjs` | 可复算的预览探针（打桩接口，不需要真后端） |
-
-对照「现状」（同页面今日线上）：`acceptance/2026-10-13-worker-home-6760-replay/out/worker-home-6847-surface-after.png`。
+| `out/worker-home-v1-390.png` | **改后**（真实 Taro H5 构建产物）· 登录态 |
+| `out/worker-home-v1-gate-390.png` | 改后 · 未登录态 |
+| `preview-6858-v1.mjs` | 可复算的预览探针（打桩工人接口，不需要真后端） |
+| `out/worker-home-menu-6858-v{1,2,3}-*.png` | 三个候选的对比图（选型记录，`docs/design/assets/` 同源） |
 
 ## 复算
 
@@ -22,8 +29,9 @@
 cd frontend/bmini-app && npm run build:h5
 python3 -m http.server 8099 --directory dist &
 cd <repo>/tests && PREVIEW_BASE=http://127.0.0.1:8099 \
-  node ../acceptance/2026-10-13-worker-home-6858-shell-preview/preview-6858.mjs
+  node ../acceptance/2026-10-13-worker-home-6858-shell-preview/preview-6858-v1.mjs
 ```
 
-读数（预览实测）：`__header` 的 `background-image` = `linear-gradient(135deg, rgb(10, 37, 64), rgb(26, 115, 232))`，
-高 71.5；`__title` 白字；`__subtitle` `rgba(255,255,255,0.78)`；`__card` 仍白、`entryCount=4`。
+实测读数（390×844）：身份条 `h=109.1`（姓名 33.3 / 工号 21.6 / 退出按钮 72.7×47.8）；
+主按钮 `background=rgb(26, 115, 232)`、`h=141.6`；行卡 3 张 `[拍照入库, 补打入库标签, 拍照发货]`；
+未登录态 `gate=true`、`primary=false`（不渲染写入口）。

@@ -36,7 +36,7 @@
     {
       "page": "src/pages/worker/home/index.tsx",
       "call": "workerLogout(",
-      "label": "退出工人身份",
+      "label": "退出",
       "requires_worker_session": true,
       "gate_tokens": [
         "const workerReady = hasWorkerSession()",

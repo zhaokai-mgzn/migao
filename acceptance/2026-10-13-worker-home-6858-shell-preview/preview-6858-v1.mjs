@@ -58,7 +58,7 @@ try {
   result.login = { url: page.url() }
 
   await page.goto(`${BASE}/#/pages/worker/home/index`, { waitUntil: 'domcontentloaded' })
-  await page.waitForSelector('.worker-home__title', { timeout: 20000 })
+  await page.waitForSelector('.worker-home__primary-title', { timeout: 20000 })
   await page.waitForTimeout(1200)
 
   result.reads = await page.evaluate(() => {
@@ -77,13 +77,15 @@ try {
       }
     }
     return {
-      header: pick('.worker-home__header'),
-      title: pick('.worker-home__title'),
-      subtitle: pick('.worker-home__subtitle'),
-      body: pick('.worker-home__body'),
       card: pick('.worker-home__card'),
+      name: pick('.worker-home__worker-name'),
+      no: pick('.worker-home__worker-no'),
+      ghost: pick('.worker-home__ghost'),
+      primary: pick('.worker-home__primary'),
+      primaryTitle: pick('.worker-home__primary-title'),
+      section: pick('.worker-home__section'),
       entryCount: document.querySelectorAll('.worker-home__entry').length,
-      exit: pick('.worker-home__exit'),
+      entryTitles: [...document.querySelectorAll('.worker-home__entry-text')].map((e) => e.textContent.trim()),
     }
   })
   const shot = `${OUT}/worker-home-after-390.png`
@@ -99,7 +101,7 @@ try {
   result.shots.push(gateShot)
   result.gate = await page.evaluate(() => ({
     gate: Boolean(document.querySelector('.worker-home__gate')),
-    header: Boolean(document.querySelector('.worker-home__header')),
+    primary: Boolean(document.querySelector('.worker-home__primary')),
   }))
 } catch (e) {
   result.fatal = String(e && e.message ? e.message : e)
@@ -108,4 +110,4 @@ try {
 }
 result.log = log.slice(0, 5)
 console.log(JSON.stringify(result, null, 2))
-process.exit(result.fatal || !result.reads?.header ? 1 : 0)
+process.exit(result.fatal || !result.reads?.primary ? 1 : 0)
