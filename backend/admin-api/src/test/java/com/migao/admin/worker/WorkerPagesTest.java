@@ -1,6 +1,6 @@
 package com.migao.admin.worker;
 
-// case_ids: PG-072, BM-006, HR-001, HR-002, UI-091
+// case_ids: PG-072, PG-065, BM-006, HR-001, HR-002, UI-091
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,18 +14,20 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 工人端页面闭词表测试（V141，母单 #5161）—— 默认值**只在一处**。
+ * 工人端页面闭词表测试 —— 默认值**只在一处**；页面集**只有一层**（issue #6828）。
  *
  * <p>判据（每条都能红）：</p>
  * <ol>
- *   <li>默认 = 全部页面（4 个，逐字）；改词表 / 加页面 ⇒ 本条与
- *       {@code WorkerPageConfigServiceTest} 的默认判据同时红（两份默认值会漂）；</li>
- *   <li>每个页面键都有商家面人话名（配置面板按它渲染；缺名 ⇒ 面板会显示机器码）；</li>
+ *   <li>默认 = 全部页面（4 个，逐字）；改词表 / 加页面 ⇒ 本条红（默认值只有一处）；</li>
+ *   <li>每个页面键都有商家面人话名（档案面板按它渲染；缺名 ⇒ 面板会显示机器码）；</li>
  *   <li><b>本类不提供任何权限相关 API</b>：工人页面码是**页面可见性**，不是权限码 ——
- *       一旦这里长出 {@code permissions} / {@code roles} 之类的方法，本条红（红线护栏）。</li>
+ *       一旦这里长出 {@code permissions} / {@code roles} 之类的方法，本条红（红线护栏）；</li>
+ *   <li><b>单层求值</b>：{@code effectiveFor} 只认工人档案上的收窄（未收窄 ⇒ 全部页面），
+ *       <b>不存在</b>「企业级 ∩ 个人」的两层入口（issue #6828 移除了企业级层；
+ *       在参数表里加回第二层 ⇒ 本文件末条判据红）。</li>
  * </ol>
  */
-@DisplayName("WorkerPages 工人端页面闭词表（V141 / 母单 #5161）")
+@DisplayName("WorkerPages 工人端页面闭词表 + 单层求值（V141 / #6788 / #6828）")
 class WorkerPagesTest {
 
     @Test
@@ -45,7 +47,7 @@ class WorkerPagesTest {
     }
 
     @Test
-    @DisplayName("每个页面键都有人话名（面板显示用；键是机器码）")
+    @DisplayName("每个页面键都有人话名（档案面板显示用；键是机器码）")
     void everyPageKeyHasAHumanLabel() {
         assertThat(WorkerPages.labels()).containsOnlyKeys(WorkerPages.defaultPages().toArray(String[]::new));
         assertThat(WorkerPages.labels().values()).allSatisfy(label -> assertThat(label).isNotBlank());
@@ -64,53 +66,50 @@ class WorkerPagesTest {
     }
 
     // ════════════════════════════════════════════════════════════════════════════
-    // 工人档案级收窄（issue #6788；用户 2026-10-13 逐字「工人档案上也应该设置 h5 工人端的
-    // 菜单权限，这样让不同岗位的工人只关注他自己有权限的功能了」）—— 几何 / 默认值 / fail 方向
+    // 单层求值（issue #6828：企业级页面开关整层移除；真值 = users.worker_pages 一处）
     // ════════════════════════════════════════════════════════════════════════════
 
-    /** 企业页（四页全开）—— 求交判据的基准。 */
-    private static final List<String> TENANT = List.of("report", "order", "cut_calc", "shipment");
-
     @Test
-    @DisplayName("① 未收窄（null）⇒ 下发 = 企业页逐值复制（存量与新建工人的默认行为零变化）")
-    void nullRestrictionFollowsTheEnterpriseSet() {
-        assertThat(WorkerPages.effectiveFor(TENANT, null)).containsExactlyElementsOf(TENANT);
-        // 企业只开两页时同样逐值跟随（不补回「默认四页」—— 默认值只有 defaultPages() 一处）
-        assertThat(WorkerPages.effectiveFor(List.of("report", "cut_calc"), null))
-                .containsExactly("report", "cut_calc");
+    @DisplayName("① 未收窄（null）⇒ 全部页面（存量与新建工人的默认行为零变化）")
+    void nullRestrictionMeansAllPages() {
+        assertThat(WorkerPages.effectiveFor(null)).containsExactlyElementsOf(WorkerPages.defaultPages());
     }
 
     @Test
-    @DisplayName("② 企业级是天花板：企业页 ∩ 个人收窄（企业只开 report/cut_calc + 个人勾 report/shipment ⇒ 只剩 report）")
-    void workerRestrictionNeverWidensTheEnterpriseSet() {
-        assertThat(WorkerPages.effectiveFor(List.of("report", "cut_calc"), List.of("report", "shipment")))
-                .containsExactly("report");
-        // 个人勾的页企业一页都没开 ⇒ 空集（**不是**把个人那份放出去）
-        assertThat(WorkerPages.effectiveFor(List.of("report"), List.of("shipment"))).isEmpty();
-        // 顺序按**企业页**（读面原样下发，前端不再自己排一遍）
-        assertThat(WorkerPages.effectiveFor(TENANT, List.of("shipment", "report")))
+    @DisplayName("② 档案收窄 ⇒ 只下发收窄集，顺序按闭词表（前端不再自己排一遍）")
+    void restrictionNarrowsToTheSelectedPages() {
+        assertThat(WorkerPages.effectiveFor(List.of("report", "cut_calc")))
+                .containsExactly("report", "cut_calc");
+        // 存储顺序与闭词表顺序无关：下发顺序恒按闭词表（避免「同一个人两次进页面菜单顺序不同」）
+        assertThat(WorkerPages.effectiveFor(List.of("shipment", "report")))
                 .containsExactly("report", "shipment");
     }
 
     @Test
     @DisplayName("③ **不是数组** ⇒ 当未收窄（fail-open）：字符串 / 映射 / 截断的 JSON 文本")
-    void malformedStoredValueFallsBackToFollowTheEnterprise() {
-        assertThat(WorkerPages.effectiveFor(TENANT, "report")).containsExactlyElementsOf(TENANT);
-        assertThat(WorkerPages.effectiveFor(TENANT, Map.of("report", true))).containsExactlyElementsOf(TENANT);
+    void malformedStoredValueFallsBackToAllPages() {
+        assertThat(WorkerPages.effectiveFor("report")).containsExactlyElementsOf(WorkerPages.defaultPages());
+        assertThat(WorkerPages.effectiveFor(Map.of("report", true)))
+                .containsExactlyElementsOf(WorkerPages.defaultPages());
         assertThat(WorkerPages.restrictedOrNull("report")).isNull();
         // 库里存的是原样 JSON 文本（String）：截断 / 非数组 ⇒ 同样当未收窄（不抛异常 —— 抛的话
         // GET /api/worker/me 会 500，把工人的活挡在外面，正是 fail-open 要避免的方向）
         assertThat(WorkerPages.restrictedOrNull("[\"report\"")).isNull();
         assertThat(WorkerPages.restrictedOrNull("{\"report\":true}")).isNull();
-        assertThat(WorkerPages.effectiveFor(TENANT, "[oops]")).containsExactlyElementsOf(TENANT);
+        assertThat(WorkerPages.effectiveFor("[oops]")).containsExactlyElementsOf(WorkerPages.defaultPages());
     }
 
     @Test
-    @DisplayName("③ 是数组但元素全非字符串 ⇒ 空集（**不是**未收窄）：只有「整体不是数组」才 fail-open")
-    void allNonStringElementsMeanNothingVisible() {
-        assertThat(WorkerPages.effectiveFor(TENANT, List.of(1, 2))).isEmpty();
-        assertThat(WorkerPages.restrictedOrNull(List.of(1, 2))).isEmpty();
-        assertThat(WorkerPages.effectiveForOrFallback(TENANT, List.of(1, 2))).containsExactlyElementsOf(TENANT);
+    @DisplayName("③ 归一后为空集（全未知键 / 空数组文本）⇒ 回落全部页面，**不是**空数组"
+            + "（工人端把空数组读成「没读到权限 ⇒ 全开」，原样下发等于服务端与端侧口径分叉）")
+    void dirtyRestrictionFallsBackToAllPages() {
+        // 全是未知键 ⇒ 归一为空集（只裁不放宽）⇒ 下发侧回落全开（fail-open，与 H5 的 effectivePages 同口径）
+        assertThat(WorkerPages.restrictedOrNull(List.of("stock"))).isEmpty();
+        assertThat(WorkerPages.effectiveFor(List.of("stock")))
+                .containsExactlyElementsOf(WorkerPages.defaultPages());
+        assertThat(WorkerPages.effectiveFor("[]")).containsExactlyElementsOf(WorkerPages.defaultPages());
+        assertThat(WorkerPages.effectiveFor(List.of(1, 2)))
+                .containsExactlyElementsOf(WorkerPages.defaultPages());
     }
 
     @Test
@@ -125,35 +124,12 @@ class WorkerPagesTest {
     }
 
     @Test
-    @DisplayName("③ 求交为空 ⇒ 回落企业页集（否则工人端把空集读成「没读到权限」而**全开**，与收窄相反）")
-    void emptyIntersectionFallsBackInsteadOfOpeningEverything() {
-        // 工人被收窄到 cut_calc，而企业把 cut_calc 关了 ⇒ 交集为空
-        assertThat(WorkerPages.effectiveFor(List.of("report", "order"), List.of("cut_calc"))).isEmpty();
-        assertThat(WorkerPages.effectiveForOrFallback(List.of("report", "order"), List.of("cut_calc")))
-                .containsExactly("report", "order");
-        // 未收窄 / 企业一页没开：两条都回企业页集（后者本身就是空 ⇒ 工人端按全开跑，由调用方记日志）
-        assertThat(WorkerPages.effectiveForOrFallback(List.of("report"), null)).containsExactly("report");
-        assertThat(WorkerPages.effectiveForOrFallback(List.of(), List.of("report"))).isEmpty();
-    }
-
-    @Test
     @DisplayName("④ 未知键 / 非字符串元素 ⇒ 裁掉；剩余真键照旧生效（只少不多，绝不放宽）")
     void unknownKeysAreDroppedAndNeverWiden() {
-        assertThat(WorkerPages.effectiveFor(TENANT, Arrays.asList("report", "not_a_page", "resport")))
+        assertThat(WorkerPages.effectiveFor(Arrays.asList("report", "not_a_page", "resport")))
                 .containsExactly("report");
-        // 全是未知键 ⇒ 空集（企业页一页都不露），绝不退化成「全开」
-        assertThat(WorkerPages.effectiveFor(TENANT, List.of("not_a_page"))).isEmpty();
         assertThat(WorkerPages.restrictedOrNull(Arrays.asList("cut_calc", 7, null)))
                 .containsExactly("cut_calc");
-    }
-
-    @Test
-    @DisplayName("④ 空数组 = 显式「一页都不给」（读侧能表达；**写侧**已拒，见 invalidRestrictions）")
-    void emptyListMeansExplicitlyNothing() {
-        assertThat(WorkerPages.effectiveFor(TENANT, List.of())).isEmpty();
-        assertThat(WorkerPages.restrictedOrNull(List.of())).isEmpty();
-        // 库里的空数组文本同样读成空集（脏数据方向：只裁不放宽）
-        assertThat(WorkerPages.restrictedOrNull("[]")).isEmpty();
     }
 
     @Test
@@ -198,5 +174,20 @@ class WorkerPagesTest {
         WorkerPages.Validation notArray = WorkerPages.validateRestriction("report");
         assertThat(notArray.ok()).isFalse();
         assertThat(notArray.errors().get(0).getKey()).isEqualTo("workerPages");
+    }
+
+    @Test
+    @DisplayName("🔴 单层求值：本类不得再长出「企业级 ∩ 档案级」的两层入口（issue #6828 移除了企业级层）")
+    void exposesNoTwoLayerEntryPoint() {
+        for (Method method : WorkerPages.class.getDeclaredMethods()) {
+            assertThat(method.getName())
+                    .as("企业级页面开关已整层移除（issue #6828）：两层求值入口 %s 不得复活", method.getName())
+                    .isNotEqualTo("effectiveForOrFallback");
+        }
+        // effectiveFor 的**唯一**入参 = 档案上的收窄原值（没有第二个「企业页集」参数）
+        assertThat(WorkerPages.class.getDeclaredMethods())
+                .filteredOn(m -> m.getName().equals("effectiveFor"))
+                .singleElement()
+                .satisfies(m -> assertThat(m.getParameterCount()).isEqualTo(1));
     }
 }

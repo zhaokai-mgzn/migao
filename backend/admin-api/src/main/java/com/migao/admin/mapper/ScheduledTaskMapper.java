@@ -11,7 +11,7 @@ import java.util.List;
 /**
  * 定时任务（issue #6486 包 1）。对应表：{@code scheduled_tasks}。
  *
- * <p>查询口径**只写一处**（与 {@code WorkerPageConfigMapper#selectActiveByTenant} 同款理由）：
+ * <p>查询口径**只写一处**（与 {@code CuttingHeightConfigMapper#selectActiveByTenant} 同款理由）：
  * 扫描器与商家读面共用这里的 where 条件 —— 各写一遍迟早一处漏 {@code deleted = 0}
  * （软删行被当成生效待办 = 静默投递一条已取消的提醒）。</p>
  */

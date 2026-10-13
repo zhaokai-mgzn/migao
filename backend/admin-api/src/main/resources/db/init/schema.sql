@@ -48,10 +48,10 @@ CREATE TABLE users (
     -- 工人工号（V98，issue #4733）：非 NULL = 该行是**工人档案**（role=worker）；
     -- NULL = 商家用户（本列引入前的全部存量行）。租户内唯一（部分唯一索引见下）。
     worker_no VARCHAR(64),
-    -- 工人档案级**工人端页面收窄**（V152，issue #6788）：NULL = 未收窄（跟随企业设置，
+    -- 工人档案级**工人端页面收窄**（V152，issue #6788）：NULL = 未收窄（= 全部页面，
     -- 存量/新建默认）；[] = 显式一页都不给；[...] = 收窄到这几页（闭词表 = WorkerPages.ALL）。
-    -- 实际下发 = 企业页（worker_page_configs）∩ 本列。🔴 只承载页面可见性，不是权限码
-    -- ⇒ 不参与授权判定，也不写进 users.permissions（工人 permissions 恒为 []）。
+    -- 实际下发 = 本列（issue #6828 起企业级页面开关已整层移除 ⇒ 页面集只有这一层）。
+    -- 🔴 只承载页面可见性，不是权限码 ⇒ 不参与授权判定，也不写进 users.permissions（恒为 []）。
     worker_pages JSONB,
     session_ttl INTEGER DEFAULT 3600,
     status VARCHAR(32) DEFAULT 'active',
@@ -1105,28 +1105,6 @@ COMMENT ON TABLE cutting_height_configs IS
     '（CuttingHeightDefaults，逐字 = 壁达现场弹窗 7 项）—— 不做开租播种。'
     'items = 增量项档案（value=null 表示**有项无值**，如壁达的「画线」）；'
     'rounding = 取整规则（默认保留三位小数 = mm 精度）。';
--- 工人端**页面开关**（V141，母单 #5161 —— 工人端页面/菜单权限的部分交付）
--- 单行/租户，**缺行 = 用默认值（全部页面）** —— 不做开租播种：默认集合唯一来源 =
--- com.migao.admin.worker.WorkerPages（Java 一处）。
--- 🔴 本表只承载**页面可见性**，**不是**权限码：工人 session 的 permissions 恒为 []，
--- 工人可达面恒为 /api/worker/**，/api/admin/** 对 worker 一律 403。
-CREATE TABLE IF NOT EXISTS worker_page_configs (
-    id VARCHAR(64) PRIMARY KEY,
-    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
-    pages JSONB NOT NULL DEFAULT '[]'::jsonb,
-    status VARCHAR(16) NOT NULL DEFAULT 'active',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    deleted INTEGER NOT NULL DEFAULT 0
-);
--- 租户级**单行**（部分唯一索引：软删行不占位）
-CREATE UNIQUE INDEX IF NOT EXISTS uk_worker_page_configs_tenant
-    ON worker_page_configs (tenant_id)
-    WHERE deleted = 0;
-COMMENT ON TABLE worker_page_configs IS
-    '工人端**页面开关**（V141，母单 #5161）。单行/租户，缺行 = 默认全开（WorkerPages，Java 一处）'
-    '—— 不做开租播种。🔴 只承载页面可见性，**不是**权限码：'
-    '工人 session 的 permissions 恒为 []，工人可达面恒为 /api/worker/**。';
 COMMENT ON TABLE craft_calc_configs IS
     '算料公式**租户级配置**（V80，issue #4528 = 包 E）。单行/租户，**缺行 = 用引擎默认值**'
     '（source=''default''）—— 不做开租播种：默认值唯一来源是算料引擎 '

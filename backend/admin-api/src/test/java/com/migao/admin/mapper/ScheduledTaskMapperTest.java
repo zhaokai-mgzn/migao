@@ -45,7 +45,7 @@ class ScheduledTaskMapperTest {
     /**
      * LambdaQueryWrapper 的列名解析要走 MyBatis-Plus 的 TableInfo 缓存 —— 纯单测里没有 MP 运行时
      * ⇒ 不初始化会抛「can not find lambda cache for this entity」，断言会退化成**错误**而不是结论
-     * （既有先例：WorkerPageConfigMapperTest / CuttingHeightConfigMapperTest）。
+     * （既有先例：CuttingHeightConfigMapperTest）。
      */
     @BeforeAll
     static void initTableInfo() {

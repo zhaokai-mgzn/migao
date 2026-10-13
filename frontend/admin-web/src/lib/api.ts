@@ -91,8 +91,7 @@ import type {
   CuttingHeightConfigBody,
   CuttingHeightConfigResponse,
   CuttingHeightPreview,
-  WorkerPageConfigBody,
-  WorkerPageConfigResponse,
+  WorkerPageCatalogResponse,
   RoutingGaps,
   // 加工费组合定价（issue #4386）
   FeeCombination,
@@ -1650,7 +1649,7 @@ export const workerApi = {
 
   /**
    * 设这位工人的工人端页面收窄（issue #6788）：`workerPages` 省略 / `null` ⇒ 清回收窄
-   * （= 跟随企业设置）。未知页面键 ⇒ 服务端 422 + 逐条理由（前端不自己过滤要提交的键）。
+   * （= 不限制，看全部页面）。未知页面键 ⇒ 服务端 422 + 逐条理由（前端不自己过滤要提交的键）。
    */
   updateWorkerPages: (id: string, workerPages: string[] | null) =>
     request.put<ApiResponse<WorkerProfile>>(`/api/admin/workers/${id}/pages`, { workerPages }),
@@ -1894,12 +1893,11 @@ export const cuttingHeightApi = {
 }
 
 
-// ── 工人端页面开关（V141，母单 #5161）──
-// 读面挂生产域读码 production:view；写面是 processing:manage（类级）。
-// 🔴 页面键的合法性**由服务端判**（闭词表 + 422 逐条理由）：前端不自己过滤要提交的键
-//（静默丢键 = 商家以为改了却没改）。
-export const workerPageConfigApi = {
-  get: () => request.get<ApiResponse<WorkerPageConfigResponse>>('/api/admin/worker-page-config'),
-  update: (data: WorkerPageConfigBody) =>
-    request.put<ApiResponse<WorkerPageConfigResponse>>('/api/admin/worker-page-config', data),
+// ── 工人端页面目录（issue #6828）──
+// 逐人配菜单时的**选项来源**：页键 + 人话名都由服务端给（读挂生产域读码 production:view）。
+// 🔴 前端**不自己维护**页面清单 —— 那是第二份会漂的真值（#6788 验收标准 6）。
+// 企业级页面开关（`/api/admin/worker-page-config`）随整层移除退役，本面**只读**：
+// 页面的开放范围由每位工人档案上的收窄决定（`PUT /api/admin/workers/{id}/pages`）。
+export const workerPageCatalogApi = {
+  get: () => request.get<ApiResponse<WorkerPageCatalogResponse>>('/api/admin/worker-pages'),
 }

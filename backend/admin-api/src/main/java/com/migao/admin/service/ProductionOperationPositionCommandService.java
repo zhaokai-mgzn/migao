@@ -66,7 +66,7 @@ public class ProductionOperationPositionCommandService {
     /**
      * 写面**可写键的显式枚举**（issue #6127）—— 词表外一律 422，不静默忽略。
      *
-     * <p>形态复用本仓既有的「未知键即 422」口径（{@code WorkerPageConfigService} /
+     * <p>形态复用本仓既有的「未知键即 422」口径（{@code WorkerPages} /
      * {@code CuttingHeightConfigService} / {@code CraftCalcConfigService} 的 {@code validate}
      * 里同一句：「拼错的键会被静默忽略 ⇒ 商家以为改了却没改；合法键：…」）。⚠️ 本端点是**部分更新**
      * （只写 body 里出现的键），故**不**照抄那三处的「缺键也拒」那一半（那是全量替换语义）——
@@ -129,7 +129,7 @@ public class ProductionOperationPositionCommandService {
         List<ApiResponse.ErrorDetail> details = new ArrayList<>();
         // ⛔ **显式拒绝**（不是静默忽略）：词表外一律 422 —— issue #6127 把 #4937 的「只钉
         // `applicable` 一个词」推广到**整个可写键集合**（`WRITABLE_KEYS`）；文案形态照抄本仓既有的
-        // 「未知键即 422」口径（WorkerPageConfigService / CuttingHeightConfigService /
+        // 「未知键即 422」口径（WorkerPages / CuttingHeightConfigService /
         // CraftCalcConfigService 的 validate 里同一句）—— 静默 no-op 是「商家以为改了却没改」的载体。
         if (body != null) {
             for (String key : body.keySet()) {

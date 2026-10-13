@@ -91,7 +91,7 @@ public class AdminWorkerController {
     /**
      * 设工人**工人端页面收窄**（issue #6788，用户 2026-10-13 裁定）：Body {@code {"workerPages":["report","cut_calc"]}}。
      *
-     * <p>{@code workerPages} 可省 / 为 {@code null} ⇒ <b>清回收窄</b>（= 跟随企业设置，全开）。
+     * <p>{@code workerPages} 可省 / 为 {@code null} ⇒ <b>清回收窄</b>（= 不限制，看全部页面）。
      * 权限：{@code employee:create}（与建号／重置 PIN 同档写权限）。
      * 未知页面键 / 非数组 / 重复键 ⇒ 422 + 逐条理由（{@code error.details}），**不静默忽略**。</p>
      */
@@ -138,7 +138,7 @@ public class AdminWorkerController {
         view.put("name", worker.getNickname());
         view.put("role", worker.getRole());
         view.put("status", worker.getStatus());
-        // 工人端页面收窄（issue #6788）：null = 未收窄（跟随企业设置）⇒ 前端据此显示「全部」。
+        // 工人端页面收窄（issue #6788）：null = 未收窄（不限制）⇒ 前端据此显示「全部」。
         // 库里存的是**原样 JSON 文本**（见 User#workerPages 的「为什么不用 JacksonTypeHandler」），
         // 归一后按数组下发（脏值 ⇒ null = 未收窄，与读侧 fail-open 同口径）。
         Set<String> restricted = WorkerPages.normalizeStored(worker.getWorkerPages());

@@ -514,7 +514,7 @@ class WorkerAdminServiceTest {
     // ════════════════════════════════════════════════════════════════════════════
 
     @Test
-    @DisplayName("⑥ 不传收窄 ⇒ 落库为 null = 跟随企业设置（存量/新建工人的默认行为零变化）")
+    @DisplayName("⑥ 不传收窄 ⇒ 落库为 null = 全部页面（存量/新建工人的默认行为零变化）")
     void createWorkerWithoutPagesFollowsTheEnterpriseSetting() {
         User created = service.createWorker(WORKER_NO, NAME, PIN);
 
@@ -581,7 +581,7 @@ class WorkerAdminServiceTest {
         service.updateWorkerPages("worker-1", null);
 
         // 清空必须**显式 set 成 NULL**（wrapper 的 SET 子句里带上这一列且值为 null）——
-        // 否则 SQL 里根本没它，接口回 200「跟随企业设置」而库里留着旧收窄（评审实测的静默失效形态）
+        // 否则 SQL 里根本没它，接口回 200「不限制」而库里留着旧收窄（评审实测的静默失效形态）
         LambdaUpdateWrapper<User> wrapper = capturedPagesWrapper();
         assertThat(wrapper.getSqlSet()).contains("worker_pages");
         assertThat(storedPagesOf(wrapper)).isNull();

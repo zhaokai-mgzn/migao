@@ -109,7 +109,7 @@ public class WorkerAdminService {
     /**
      * 建一个工人档案 + 可选的**工人端页面收窄**（issue #6788）。
      *
-     * @param workerPages 工人端页面收窄（{@code null} = 未收窄 = 跟随企业设置 —— 默认，零回归）；
+     * @param workerPages 工人端页面收窄（{@code null} = 未收窄 = 全部页面 —— 默认，零回归）；
      *                    非法键 / 非数组 / 重复键 ⇒ 422 + 逐条理由（**不静默忽略**）
      * @see #createWorker(String, String, String)
      */
@@ -142,7 +142,7 @@ public class WorkerAdminService {
 
         assertWorkerNoAvailable(no);
 
-        // 工人端页面收窄（issue #6788）：null = 未收窄（跟随企业设置）。与 `users.permissions`
+        // 工人端页面收窄（issue #6788）：null = 未收窄（= 全部页面）。与 `users.permissions`
         // **不是同一格** —— 那是商家 RBAC 权限快照，工人页面码永不写进去（V141/V152 红线）。
         List<String> restrictedPages = validateWorkerPages(workerPages);
 
@@ -233,10 +233,10 @@ public class WorkerAdminService {
      * 可达面恒为 {@code /api/worker/**}。所以本方法只写 {@code users.worker_pages}，
      * **一字不动** {@code users.permissions}。</p>
      *
-     * <p>几何：实际下发 = 企业页（{@code worker_page_configs}）∩ 本列 ⇒ 企业级是天花板；
-     * {@code null} ⇒ 清回收窄 = 跟随企业设置（默认）。</p>
+     * <p>口径（issue #6828 起单层）：实际下发 = 本列 —— 非空数组 = 只给这几页；
+     * {@code null} ⇒ 清回收窄 = 全部页面（默认）。</p>
      *
-     * @param workerPages {@code null} = 清回收窄（跟随企业设置）；非空数组 = 收窄到这几页
+     * @param workerPages {@code null} = 清回收窄（= 全部页面）；非空数组 = 收窄到这几页
      *                    （空数组 ⇒ 422，见 {@link WorkerPages#validateRestriction}）
      * @return 落库后的档案视图（{@code passwordHash} 已清空）
      * @throws BusinessException 422 页面键非法（逐条理由）· 404 目标不是本租户的工人档案
@@ -258,14 +258,14 @@ public class WorkerAdminService {
 
         // 只更新 worker_pages —— 与建号/重置 PIN 同款的部分更新（别的列一律不动）。
         // 🔴 **必须走显式 set**：MyBatis-Plus 的默认更新策略是 NOT_NULL ⇒ 「把 null 塞进实体再 updateById」
-        // 生成的 SQL 里根本没有这一列（静默不生效，接口却回 200「跟随企业设置」）。
+        // 生成的 SQL 里根本没有这一列（静默不生效，接口却回 200「不限制」）。
         String stored = WorkerPages.storedJson(restrictedPages);
         userMapper.update(null, new LambdaUpdateWrapper<User>()
                 .eq(User::getId, worker.getId())
                 .eq(User::getTenantId, tenantId)
                 .set(User::getWorkerPages, stored));
         log.info("[工人档案] 工人端菜单已更新：tenantId={}, workerNo={}, workerPages={}",
-                tenantId, worker.getWorkerNo(), restrictedPages == null ? "跟随企业设置" : restrictedPages);
+                tenantId, worker.getWorkerNo(), restrictedPages == null ? "全部页面" : restrictedPages);
         worker.setWorkerPages(stored);
         worker.setPasswordHash(null);
         return worker;
@@ -274,7 +274,7 @@ public class WorkerAdminService {
     /**
      * 校验 + 归一工人端页面收窄（闭词表 {@link WorkerPages#ALL}）。
      *
-     * <p>{@code null} = 未收窄（合法，跟随企业设置）· 未知键 / 非字符串项 / 重复键 / <b>空数组</b>
+     * <p>{@code null} = 未收窄（合法，= 全部页面）· 未知键 / 非字符串项 / 重复键 / <b>空数组</b>
      * ⇒ 422 + {@code error.details} 逐条理由，本次写入整体不生效。</p>
      */
     private static List<String> validateWorkerPages(Object raw) {
@@ -286,7 +286,7 @@ public class WorkerAdminService {
             }
             throw BusinessException.validationError(
                     "工人端菜单有 " + details.size() + " 处不合法", details,
-                    "按逐条理由修正后重试；留空 = 跟随企业设置（工人端看企业开的全部页面）");
+                    "按逐条理由修正后重试；留空 = 不限制（工人端看到全部页面）");
         }
         return check.pages();
     }

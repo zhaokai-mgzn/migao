@@ -107,10 +107,6 @@
     "backend/admin-api/src/main/java/com/migao/admin/service/WorkerAdminService.java::userMapper": {
       "table": "users",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/service/WorkerAdminService.java"
-    },
-    "backend/admin-api/src/main/java/com/migao/admin/service/WorkerPageConfigService.java::workerPageConfigMapper": {
-      "table": "worker_page_configs",
-      "handling": "none"
     }
   }
 }

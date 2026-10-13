@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 工人端**页面开关**的闭词表与默认值（V141，母单 #5161）—— <b>全仓唯一来源</b>。
+ * 工人端**页面键**的闭词表与默认值 —— <b>全仓唯一来源</b>。
  *
  * <h3>它回答什么</h3>
  * <p>工人端 H5 / 车间一体机上**出现哪些页面**（报工页 / 订单页 / 裁高计算器 / 发货页）。</p>
@@ -18,22 +18,22 @@ import java.util.Set;
  * （{@code WorkerSessionService} 只签发 {@code roles=["worker"]}、{@code permissions=[]}），
  * 工人可达面恒为 {@code /api/worker/**}，{@code /api/admin/**} 对 {@code worker} 一律 403
  * （{@code SecurityConfig.ADMIN_API_REJECTED_ROLES}）。</p>
- * <p>⇒ <b>禁止</b>把这里的页面码写进 {@code users.permissions}，也<b>禁止</b>让
- * {@link com.migao.admin.service.WorkerPageConfigService} 参与任何授权判定 —— 本表只决定
- * 「页面上看不看得见」，服务端对每个工人都仍然按同一套授权判。</p>
+ * <p>⇒ <b>禁止</b>把这里的页面码写进 {@code users.permissions}。本表只决定「页面上看不看得见」，
+ * 服务端对每个工人都仍然按同一套授权判。</p>
  *
- * <h3>缺行 = 默认全开</h3>
+ * <h3>一层真值（issue #6828，2026-10-13 用户裁定「一步到位移除」）</h3>
+ * <p>企业级页面开关（V141 / 表 {@code worker_page_configs} / 设置页「工人端页面」域）<b>已整层移除</b>
+ * —— 页面集合只由**工人档案**上的 {@code users.worker_pages}（V152，issue #6788）决定：</p>
+ * <ul>
+ *   <li>{@code null} / 坏值 = <b>未收窄 = 全部页面</b>（fail-open：存储异常不该把工人挡在活外面）；</li>
+ *   <li>非空集 = <b>收窄到这几页</b>（闭词表 {@link #ALL} 内的键；未知键按只裁不放宽的既有方向裁掉）。</li>
+ * </ul>
+ * <p>逐人勾选的**选项来源** = 只读目录端点 {@code GET /api/admin/worker-pages}
+ * （{@link #defaultPages()} + {@link #labels()}）—— 前端因此不需要维护第二份会漂的页面清单。</p>
+ *
+ * <h3>默认值只在一处</h3>
  * <p>默认集合只在 {@link #defaultPages()} <b>一处</b>；库里再种一份 = 第二份会漂的默认值
  * （同族先例：{@code CuttingHeightDefaults} / {@code craft_calc_configs}）。</p>
- *
- * <h3>两层页集（issue #6788）</h3>
- * <ol>
- *   <li><b>企业级</b>（{@code worker_page_configs} 单行/租户）：本企业工人端开哪几页 —— <b>天花板</b>；</li>
- *   <li><b>工人档案级</b>（{@code users.worker_pages}，可空）：这位工人<b>再收窄</b>到哪几页 ——
- *       <b>不是</b>授权、也与 {@code users.permissions} <b>不同格</b>。{@code NULL} = <b>未收窄 =
- *       跟随企业设置</b>（2026-10-13 用户裁定：默认零回归）。</li>
- * </ol>
- * <p>实际下发 = {@link #effectiveFor}：企业页 ∩ 个人收窄 —— 企业关掉的页，逐人勾了也<b>不</b>出现。</p>
  */
 public final class WorkerPages {
 
@@ -60,7 +60,12 @@ public final class WorkerPages {
     private WorkerPages() {
     }
 
-    /** 默认页面集合（缺行读面回的那一份 = 全部页面）。每次调用返回新列表，调用方不许改共享实例。 */
+    /**
+     * 全部页面键（= 默认集合：未收窄的工人看全部）。
+     *
+     * <p>也是只读目录端点（{@code GET /api/admin/worker-pages}）回给商家配置面的可选页清单
+     * —— 可选页与默认值同源，前端不另抄一份。</p>
+     */
     public static List<String> defaultPages() {
         return List.of(REPORT, ORDER, CUT_CALC, SHIPMENT);
     }
@@ -76,13 +81,13 @@ public final class WorkerPages {
     }
 
     // ════════════════════════════════════════════════════════════════════════════
-    // 工人档案级收窄（issue #6788）—— 读侧归一 / 求交 / 写侧校验
+    // 工人档案级收窄（issue #6788 / 单层口径 issue #6828）—— 读侧归一 / 求值 / 写侧校验
     // ════════════════════════════════════════════════════════════════════════════
 
     /**
      * 读侧归一工人档案上的收窄值（{@code users.worker_pages}）—— <b>宽容解析，坏值一律当「未收窄」</b>。
      *
-     * <p>三态：{@code null} = <b>未收窄</b>（跟随企业设置）· 非空集 = 收窄到这几页（其它一律丢弃，见下）。</p>
+     * <p>三态：{@code null} = <b>未收窄</b>（看全部页面）· 非空集 = 收窄到这几页（其它一律丢弃，见下）。</p>
      *
      * <p>🔴 <b>为什么坏值当「未收窄」而不是当「一页都不给」</b>：读侧 fail-open —— 存储形态异常时
      * 把工人挡在活外面的代价，远大于「他多看见一个入口」（后者是本表设计上就接受的边界：页面可见性
@@ -96,8 +101,7 @@ public final class WorkerPages {
      *   <li><b>不是数组 / 解析不出来</b>（{@code "report"}、{@code {"report":true}}、截断的 JSON…）⇒
      *       当<b>未收窄</b>（fail-open）：存储形态异常不该把工人的活挡在外面。</li>
      *   <li><b>是数组、但一个真键都没有</b>（元素非字符串 / 全是未知键）⇒ <b>空集</b>（= 什么都不露）：
-     *       这是「收窄了，但收窄到的东西都不存在」—— 若退回全开，就等于**放宽**（企业关掉的页又冒出来），
-     *       与「只裁不放宽」的红线相反。</li>
+     *       这是「收窄了，但收窄到的东西都不存在」—— 若退回全开，就等于**放宽**（与「只裁不放宽」相反）。</li>
      * </ul>
      *
      * @return {@code null} = 未收窄（含解析失败）；否则 = 归一后的收窄集（**可为空集**）
@@ -130,7 +134,7 @@ public final class WorkerPages {
     }
 
     /**
-     * 库里的原样文本 → 已归一集合（**只读商品**：给 {@code toWorkerView} / 求交用，不做校验）。
+     * 库里的原样文本 → 已归一集合（**只读商品**：给 {@code toWorkerView} 用，不做校验）。
      *
      * @return {@code null} = 未收窄（含脏值）
      */
@@ -171,43 +175,32 @@ public final class WorkerPages {
     }
 
     /**
-     * 本工人实际可看到的页面集（<b>唯一判据</b>）：企业页 ∩ 个人收窄。
+     * 本工人实际可看到的页面集（<b>唯一判据</b>）：未收窄 ⇒ 全部页面；收窄 ⇒ 收窄集（按闭词表顺序）。
      *
-     * <p>红证：取并集 / 以个人为准 ⇒ 企业关掉的页又冒出来 ⇒
-     * {@code WorkerPagesTest#workerRestrictionNeverWidensTheEnterpriseSet} 红。</p>
+     * <p>🔴 <b>为什么归一后为空集时回落「全部页面」</b>：写面已拒空数组、也拒未知键
+     * （{@link #validateRestriction}）⇒ 能走到这里的空集只有**存量脏数据**（例如 {@code ["stock"]}）。
+     * 而工人端 H5 对空数组的口径是 **fail-open = 按全开运行**
+     * （{@code frontend/worker-h5/src/render.mjs} 的 {@code effectivePages}：空集只可能来自「没读到权限」）
+     * ⇒ 服务端若原样下发空集，端侧**反而会全开**，与服务端读数不一致。回落后两侧口径一致，
+     * 且只影响这一位工人的菜单显隐（不是授权放宽，见类注释的红线）。</p>
      *
-     * @param tenantPages 企业级页面集（{@code WorkerPageConfigService.pagesFor}）
+     * <p>红证：把回落去掉 ⇒ 脏数据（如 {@code ["stock"]}）下发的 {@code pages} 变成空数组 ⇒
+     * {@code WorkerPagesTest#dirtyRestrictionFallsBackToAllPages} 红。</p>
+     *
      * @param workerPages {@code users.worker_pages} 原值（{@code null} / 脏值 = 未收窄）
      */
-    public static List<String> effectiveFor(List<String> tenantPages, Object workerPages) {
-        List<String> tenant = tenantPages == null ? List.of() : tenantPages;
+    public static List<String> effectiveFor(Object workerPages) {
         Set<String> restricted = restrictedOrNull(workerPages);
         if (restricted == null) {
-            return List.copyOf(tenant);
+            return defaultPages();
         }
         List<String> out = new ArrayList<>();
-        for (String page : tenant) {
+        for (String page : defaultPages()) {
             if (restricted.contains(page)) {
                 out.add(page);
             }
         }
-        return out;
-    }
-
-    /**
-     * 求交的**兜底**：交集为空（工人被收窄到的页面恰好都被企业关掉了）⇒ 回落企业页集。
-     *
-     * <p>🔴 为什么兜底方向是「回落」而不是「回空」：工人端 H5 对**空数组**的口径是
-     * <b>fail-open = 按全开运行</b>（{@code frontend/worker-h5/src/render.mjs} 的 {@code effectivePages}：
-     * 空集只可能来自「没读到权限」，故与「读不到」同口径）。⇒ 服务端若把「交集为空」原样下发，
-     * 工人端**反而会全开** —— 那是「收窄」的**反向**效果（issue #6788 评审实测形态）。
-     * 回落到企业页集则与服务端可见的实际权限一致，且只影响这一位工人的菜单显隐（不是授权放宽，
-     * 见类注释的红线）。</p>
-     */
-    public static List<String> effectiveForOrFallback(List<String> tenantPages, Object workerPages) {
-        List<String> tenant = tenantPages == null ? List.of() : tenantPages;
-        List<String> effective = effectiveFor(tenantPages, workerPages);
-        return effective.isEmpty() ? List.copyOf(tenant) : effective;
+        return out.isEmpty() ? defaultPages() : out;
     }
 
     /**
@@ -231,7 +224,7 @@ public final class WorkerPages {
         }
         List<Map.Entry<String, String>> errors = new ArrayList<>();
         if (!(raw instanceof List<?> list)) {
-            errors.add(Map.entry("workerPages", "必须是数组（如 [\"report\",\"cut_calc\"]）"));
+            errors.add(Map.entry("workerPages", "必须是数组（如 [\"report\",\"cut_calc\"])"));
             return new Validation(null, errors);
         }
         List<String> pages = new ArrayList<>();
