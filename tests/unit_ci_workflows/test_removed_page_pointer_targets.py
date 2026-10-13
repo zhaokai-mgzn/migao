@@ -307,9 +307,13 @@ def test_removed_names_mirror_mc096_guard():
         ),
         None,
     )
-    assert value is not None, (
-        "守卫里读不到 `REMOVED_PAGE_NAMES`（AST 里没有该赋值）⇒ 红（fail-closed，不是「无对象可判」）"
+    # 判红可归因（且**不是**裸存在性弱断言）：把「没读到 / 读到的不是字符串元组 / 读到空集」三态各自报出来。
+    assert isinstance(value, tuple), (
+        f"守卫里读不到 `REMOVED_PAGE_NAMES` 的字符串元组（AST 里没有该赋值，或它已不是元组字面量）：{value!r}"
+        " ⇒ 红（fail-closed，不是「无对象可判」）"
     )
+    assert value, f"守卫的 `REMOVED_PAGE_NAMES` 是空元组：{value!r}（集合塌了 ⇒ 红，不是「无需判」）"
+    assert all(isinstance(x, str) for x in value), f"`REMOVED_PAGE_NAMES` 成员不全是字符串：{value!r}"
     guard_names = tuple(value)
     assert guard_names, f"守卫的 `REMOVED_PAGE_NAMES` 解析出空集：{value!r}"
     assert REMOVED_NAMES == guard_names, (
