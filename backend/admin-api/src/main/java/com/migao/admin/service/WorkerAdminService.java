@@ -1,12 +1,15 @@
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.migao.admin.config.TenantContext;
+import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.User;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.UserMapper;
+import com.migao.admin.worker.WorkerPages;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
@@ -16,6 +19,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
@@ -96,8 +102,19 @@ public class WorkerAdminService {
      * @return 新建的档案（{@code passwordHash} 已清空，与 {@code UserService.createUser} 同口径）
      * @throws BusinessException 422 入参非法 / 409 工号已被占用（两种都是**明确拒绝**）
      */
-    @Transactional(rollbackFor = Exception.class)
     public User createWorker(String workerNo, String name, String pin) {
+        return createWorker(workerNo, name, pin, null);
+    }
+
+    /**
+     * 建一个工人档案 + 可选的**工人端页面收窄**（issue #6788）。
+     *
+     * @param workerPages 工人端页面收窄（{@code null} = 未收窄 = 跟随企业设置 —— 默认，零回归）；
+     *                    非法键 / 非数组 / 重复键 ⇒ 422 + 逐条理由（**不静默忽略**）
+     * @see #createWorker(String, String, String)
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public User createWorker(String workerNo, String name, String pin, Object workerPages) {
         Long tenantId = TenantContext.getTenantId();
         if (tenantId == null) {
             throw BusinessException.tenantInvalid();
@@ -125,6 +142,10 @@ public class WorkerAdminService {
 
         assertWorkerNoAvailable(no);
 
+        // 工人端页面收窄（issue #6788）：null = 未收窄（跟随企业设置）。与 `users.permissions`
+        // **不是同一格** —— 那是商家 RBAC 权限快照，工人页面码永不写进去（V141/V152 红线）。
+        List<String> restrictedPages = validateWorkerPages(workerPages);
+
         // 刻意**不**设：phone（工人不用手机号登录）／username（那是员工登录名，V128）／
         // permissions（工人零菜单权限）／position／mustChangePassword（工人没有可改的密码语义，
         // 置 true 会让这个账号被强制改密流程永久锁死）。
@@ -135,6 +156,7 @@ public class WorkerAdminService {
                 .role(WORKER_ROLE)
                 .passwordHash(passwordEncoder.encode(normalizedPin))
                 .status("active")
+                .workerPages(WorkerPages.storedJson(restrictedPages))
                 .build();
 
         try {
@@ -201,6 +223,72 @@ public class WorkerAdminService {
         log.info("[工人档案] PIN 已重置：tenantId={}, workerNo={}, workerId={}",
                 tenantId, worker.getWorkerNo(), worker.getId());
         return normalizedPin;
+    }
+
+    /**
+     * 设这位工人的**工人端页面收窄**（issue #6788）—— 用户 2026-10-13 裁定：不同岗位的工人只看见自己有份的功能。
+     *
+     * <p><b>为什么不是「权限」</b>：页面集决定「菜单/入口显不显」（{@code frontend/worker-h5} 的
+     * {@code effectivePages}），<b>不是</b>准入 —— 工人 session 的 {@code permissions} 恒为 {@code []}、
+     * 可达面恒为 {@code /api/worker/**}。所以本方法只写 {@code users.worker_pages}，
+     * **一字不动** {@code users.permissions}。</p>
+     *
+     * <p>几何：实际下发 = 企业页（{@code worker_page_configs}）∩ 本列 ⇒ 企业级是天花板；
+     * {@code null} ⇒ 清回收窄 = 跟随企业设置（默认）。</p>
+     *
+     * @param workerPages {@code null} = 清回收窄（跟随企业设置）；非空数组 = 收窄到这几页
+     *                    （空数组 ⇒ 422，见 {@link WorkerPages#validateRestriction}）
+     * @return 落库后的档案视图（{@code passwordHash} 已清空）
+     * @throws BusinessException 422 页面键非法（逐条理由）· 404 目标不是本租户的工人档案
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public User updateWorkerPages(String workerId, Object workerPages) {
+        Long tenantId = TenantContext.getTenantId();
+        if (tenantId == null) {
+            throw BusinessException.tenantInvalid();
+        }
+        List<String> restrictedPages = validateWorkerPages(workerPages);
+
+        // 目标限定工人档案（fail-closed）：查不到 / 不是工人 / 不是本租户 ⇒ 一律拒绝，且零写入
+        User worker = findOwnedWorker(workerId);
+        if (worker == null) {
+            throw BusinessException.notFound("工人档案",
+                    "请在「工人档案」列表里按工号找到这位工人，再设置他的工人端菜单");
+        }
+
+        // 只更新 worker_pages —— 与建号/重置 PIN 同款的部分更新（别的列一律不动）。
+        // 🔴 **必须走显式 set**：MyBatis-Plus 的默认更新策略是 NOT_NULL ⇒ 「把 null 塞进实体再 updateById」
+        // 生成的 SQL 里根本没有这一列（静默不生效，接口却回 200「跟随企业设置」）。
+        String stored = WorkerPages.storedJson(restrictedPages);
+        userMapper.update(null, new LambdaUpdateWrapper<User>()
+                .eq(User::getId, worker.getId())
+                .eq(User::getTenantId, tenantId)
+                .set(User::getWorkerPages, stored));
+        log.info("[工人档案] 工人端菜单已更新：tenantId={}, workerNo={}, workerPages={}",
+                tenantId, worker.getWorkerNo(), restrictedPages == null ? "跟随企业设置" : restrictedPages);
+        worker.setWorkerPages(stored);
+        worker.setPasswordHash(null);
+        return worker;
+    }
+
+    /**
+     * 校验 + 归一工人端页面收窄（闭词表 {@link WorkerPages#ALL}）。
+     *
+     * <p>{@code null} = 未收窄（合法，跟随企业设置）· 未知键 / 非字符串项 / 重复键 / <b>空数组</b>
+     * ⇒ 422 + {@code error.details} 逐条理由，本次写入整体不生效。</p>
+     */
+    private static List<String> validateWorkerPages(Object raw) {
+        WorkerPages.Validation check = WorkerPages.validateRestriction(raw);
+        if (!check.ok()) {
+            List<ApiResponse.ErrorDetail> details = new ArrayList<>(check.errors().size());
+            for (Map.Entry<String, String> error : check.errors()) {
+                details.add(BusinessException.detail(error.getKey(), error.getValue()));
+            }
+            throw BusinessException.validationError(
+                    "工人端菜单有 " + details.size() + " 处不合法", details,
+                    "按逐条理由修正后重试；留空 = 跟随企业设置（工人端看企业开的全部页面）");
+        }
+        return check.pages();
     }
 
     /**

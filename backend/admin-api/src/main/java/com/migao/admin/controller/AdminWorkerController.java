@@ -6,6 +6,7 @@ import com.migao.admin.entity.User;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.security.TenantOwnedResource;
 import com.migao.admin.service.WorkerAdminService;
+import com.migao.admin.worker.WorkerPages;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -81,7 +83,24 @@ public class AdminWorkerController {
     @RequirePermission("employee:create")
     public ApiResponse<Map<String, Object>> createWorker(@RequestBody Map<String, Object> body) {
         User worker = workerAdminService.createWorker(
-                text(body, "workerNo"), text(body, "name"), text(body, "pin"));
+                text(body, "workerNo"), text(body, "name"), text(body, "pin"),
+                body == null ? null : body.get("workerPages"));
+        return ApiResponse.success(toWorkerView(worker));
+    }
+
+    /**
+     * 设工人**工人端页面收窄**（issue #6788，用户 2026-10-13 裁定）：Body {@code {"workerPages":["report","cut_calc"]}}。
+     *
+     * <p>{@code workerPages} 可省 / 为 {@code null} ⇒ <b>清回收窄</b>（= 跟随企业设置，全开）。
+     * 权限：{@code employee:create}（与建号／重置 PIN 同档写权限）。
+     * 未知页面键 / 非数组 / 重复键 ⇒ 422 + 逐条理由（{@code error.details}），**不静默忽略**。</p>
+     */
+    @PutMapping("/{id}/pages")
+    @RequirePermission("employee:create")
+    @TenantOwnedResource("worker")
+    public ApiResponse<Map<String, Object>> updateWorkerPages(@PathVariable String id,
+                                                              @RequestBody(required = false) Map<String, Object> body) {
+        User worker = workerAdminService.updateWorkerPages(id, body == null ? null : body.get("workerPages"));
         return ApiResponse.success(toWorkerView(worker));
     }
 
@@ -119,6 +138,11 @@ public class AdminWorkerController {
         view.put("name", worker.getNickname());
         view.put("role", worker.getRole());
         view.put("status", worker.getStatus());
+        // 工人端页面收窄（issue #6788）：null = 未收窄（跟随企业设置）⇒ 前端据此显示「全部」。
+        // 库里存的是**原样 JSON 文本**（见 User#workerPages 的「为什么不用 JacksonTypeHandler」），
+        // 归一后按数组下发（脏值 ⇒ null = 未收窄，与读侧 fail-open 同口径）。
+        Set<String> restricted = WorkerPages.normalizeStored(worker.getWorkerPages());
+        view.put("workerPages", restricted == null ? null : List.copyOf(restricted));
         view.put("createdAt", worker.getCreatedAt() == null ? null : worker.getCreatedAt().toString());
         return view;
     }

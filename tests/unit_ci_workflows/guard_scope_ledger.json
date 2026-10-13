@@ -76,6 +76,11 @@
             "kind": "mentions",
             "issue": "#6243",
             "reason": "类级「末命令退出码」守卫的射程**有意收窄**：只扫 `scripts/*.sh`（issue #6243 的判据面就是这一族），不扫全仓 shell 语料。故不声明 `GUARD_SCOPE`/`declaration`（那会要求 roots=[\".\"] 全仓射程），按 mentions 入册并写明收窄理由；全仓 `*.sh` 语料自身的射程守卫 = tests/unit_ci_workflows/test_scripts_bash32_var_brace.py。收窄是**声明面**的取舍（未声称为全仓），不是「声称全仓却只扫 scripts」。"
+        },
+        "tests/unit_ci_workflows/test_dev_db_whitelist_one_command.py": {
+            "kind": "mentions",
+            "issue": "#6789",
+            "reason": "**射程有意收窄，故不声称全仓射程**（#6774 同族：**新增测试文件会进「扫语料 / 入册」这类类级判据的射程** —— 本单正是被 `test_guard_scope_declaration.py::test_every_corpus_referencing_module_is_registered` 判红的）。本模块只在 schema 常量 `SHELL_CORPUS_GLOB` 与类级守卫 `test_class_level_guards_on_script_corpus` 里枚举 `scripts/*.sh`（判「`--ModifyMode Append` 的承载体唯一」），**不**按 `*.sh` 枚举全仓 ⇒ 按 mentions 入册（`kind=scans` 的契约是「`GUARD_SCOPE` == 全语料普查 == 全仓」，本模块刻意只扫 `scripts/`，同 test_dev_worktree_list_exit_code.py / test_ui_smoke_worktree_deps.py 的收窄口径）。全仓 `*.sh` 语料的射程守卫 = tests/unit_ci_workflows/test_scripts_bash32_var_brace.py。收窄是**声明面**的取舍（未声称为全仓），不是「声称全仓却只扫 scripts」。"
         }
     }
 }

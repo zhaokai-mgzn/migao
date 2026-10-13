@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Plus, Search } from 'lucide-react'
 import { toast } from 'sonner'
-import { workerApi } from '@/lib/api'
+import { workerApi, workerPageConfigApi } from '@/lib/api'
 import { toastRequestError } from '@/lib/api-error'
 import { Button, Input, Select, Modal, Table, Badge, Pagination } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
@@ -16,9 +16,14 @@ import type { EmployeeStatus, WorkerProfile } from '@/types'
  * ⇒ 工号 + PIN 登录（#4733，早已落码）在真实部署里**永远没有可登录的对象**。
  *
  * 与员工的关系（本组件存在的理由）：
- * - 工人**不是**员工：零菜单权限、无登录用户名、只能用工号 + PIN 进工人端扫码报工
- *   ⇒ 不能混进员工列表（那会「看起来像员工」，点编辑还能改岗位/权限，而那条路根本不成立）。
+ * - 工人**不是**员工：零**商家后台**菜单权限（工人端菜单是另一回事，见下）、无登录用户名、
+ *   只能用工号 + PIN 进工人端扫码报工 ⇒ 不能混进员工列表（那会「看起来像员工」，
+ *   点编辑还能改岗位/权限，而那条路根本不成立）。
  *   本面板独立成 Tab；服务端也在 `UserService.getUserPage` 里排除 `role=worker`。
+ * - **工人端菜单**（issue #6788）：这一位工人在工人端看得见哪几页 = 企业级页面开关 ∩ 本档案上的
+ *   收窄（不勾 = 跟随企业设置）。本面板只做**选项与回显**，词表与校验全在服务端
+ *   （`WorkerPages` + `WorkerAdminService`），且这**不是**权限码 —— 工人 session 的
+ *   `permissions` 恒为 `[]`，藏起菜单 ≠ 挡住接口。
  * - 权限码**复用**员工域（`employee:create` / `employee:list`）—— 新增权限码要走迁移 + 全租户回填，
  *   而工人在产品上就是人事管理的一部分。
  * - 停用 / 启用**复用**既有 `PUT /api/admin/users/{id}/status`（`workerApi.setWorkerStatus`），不另造端点。
@@ -41,9 +46,23 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
   const [searchStatus, setSearchStatus] = useState<'' | EmployeeStatus>('')
 
   const [formOpen, setFormOpen] = useState(false)
-  const [form, setForm] = useState({ workerNo: '', name: '', pin: '' })
+  // 工人端菜单（issue #6788）：建号时默认**全勾** = 跟随企业设置（零回归）；少勾一个 ⇒ 收窄。
+  // 工人端菜单（issue #6788）：`pages === null` = **未收窄** = 全勾（跟随企业设置，零回归）。
+  // 🔴 用 null 而不是 `menuPages.map(...)` 快照：配置还没拉回来时不会把「跟随企业设置」误判成空集
+  // （空集在工人端会被读成「没读到权限 ⇒ 全开」，与「一页都不给」正好相反）。
+  const [form, setForm] = useState<{ workerNo: string; name: string; pin: string; pages: string[] | null }>(
+    { workerNo: '', name: '', pin: '', pages: null },
+  )
   const [creating, setCreating] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
+
+  /**
+   * 企业级已开的工人端页面（键 + 人话名）—— 逐人收窄的**选项来源**。
+   *
+   * 🔴 页面词表与名称都取**服务端**（`GET /api/admin/worker-page-config`）⇒ 前端不维护第二份会漂的
+   * 页面清单；读不到（如当前岗位没有生产域读码）⇒ 留空 = 这一节不显示（**不**自己编一份默认页集）。
+   */
+  const [menuPages, setMenuPages] = useState<{ key: string; label: string }[]>([])
 
   // 重置 PIN（issue #6432）：弹窗两态 —— ① 输入 / 随机生成新 PIN ② 明文展示新 PIN（只显示这一次）
   const [pinTarget, setPinTarget] = useState<WorkerProfile | null>(null)
@@ -74,6 +93,19 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
     loadWorkers()
   }, [loadWorkers])
 
+  /** 拉企业级已开的工人端页面（只读配置面）。失败 ⇒ 静默留空（这一节不显示，不影响建号主流程）。 */
+  useEffect(() => {
+    let alive = true
+    workerPageConfigApi.get()
+      .then((res) => {
+        const data = res.data?.data
+        if (!alive || !data?.pages) return
+        setMenuPages(data.pages.map((key) => ({ key, label: data.labels?.[key] || key })))
+      })
+      .catch(() => { if (alive) setMenuPages([]) })
+    return () => { alive = false }
+  }, [])
+
   const handleSearch = () => {
     setCurrent(1)
     setSearchKeyword(keyword)
@@ -89,16 +121,34 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
   }
 
   const handleOpenCreate = () => {
-    setForm({ workerNo: '', name: '', pin: '' })
+    // 默认**未收窄**（= 跟随企业设置）。存 null 而不是 menuPages 的快照 ⇒ 配置还没拉回来、
+    // 或配置在弹窗打开后到达，都不会把「跟随企业设置」误判成「一页都没勾」。
+    setForm({ workerNo: '', name: '', pin: '', pages: null })
     setFormOpen(true)
   }
 
-  /** 建号：工号（租户内唯一）+ 姓名 + PIN。冲突由服务端 409 明确拒绝，页面**不**替它改写文案。 */
+  /** 勾选态：`null` = 未收窄 = 全勾（跟随企业设置）。 */
+  const isChecked = (key: string) => form.pages === null || form.pages.includes(key)
+
+  /** 这一位工人被收窄到哪几页（人话名）；`null` = 跟随企业设置。 */
+  const menuSummary = (record: WorkerProfile): string | null => {
+    const assigned = record.workerPages
+    if (assigned == null) return null
+    if (assigned.length === 0) return '未开放任何页面'
+    return assigned.map((key) => menuPages.find((p) => p.key === key)?.label || key).join('、')
+  }
+
+  /** 建号：工号（租户内唯一）+ 姓名 + PIN + 工人端菜单。冲突由服务端 409 明确拒绝，页面**不**替它改写文案。 */
   const handleCreate = async () => {
     if (!form.workerNo.trim()) { toast.error('请输入工号'); return }
     if (!form.name.trim()) { toast.error('请输入工人姓名'); return }
     // 与后端同一条形态判据：工人端 PIN 输入框是数字键盘（inputmode=numeric）⇒ 含字母的 PIN 打不出来
     if (!/^\d{4,12}$/.test(form.pin.trim())) { toast.error('PIN 必须是 4~12 位数字'); return }
+    // 与后端同一条写入判据（422 是兜底，不是第一次告知）：空集在工人端会被读成「没读到权限 ⇒ 全开」
+    if (form.pages !== null && form.pages.length === 0) {
+      toast.error('至少要留一个页面；要让这位工人不干活，请用「停用」')
+      return
+    }
 
     setCreating(true)
     try {
@@ -106,10 +156,12 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
         workerNo: form.workerNo.trim(),
         name: form.name.trim(),
         pin: form.pin.trim(),
+        // null（未收窄）或全勾 ⇒ 发 null = 跟随企业设置；只勾了一部分 ⇒ 发那一部分
+        workerPages: form.pages === null || form.pages.length === menuPages.length ? null : form.pages,
       })
       toast.success('工人档案已创建，请把工号与 PIN 告知本人')
       setFormOpen(false)
-      setForm({ workerNo: '', name: '', pin: '' })
+      setForm({ workerNo: '', name: '', pin: '', pages: null })
       loadWorkers()
     } catch (e) {
       // 失败**不关弹窗**：工号冲突是可修正的错误；文案由拦截器统一展示服务端原文（UI-024 去重口径）
@@ -172,6 +224,25 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
     },
     { key: 'name', title: '姓名', width: '140px', dataIndex: 'name' },
     {
+      key: 'workerPages',
+      title: '工人端菜单',
+      render: (record) => {
+        const summary = menuSummary(record)
+        if (summary === null) {
+          // 未设收窄 = 跟随企业设置（默认口径；也是存量档案的形态）
+          return <span className="text-sm text-neutral-500" data-testid={`worker-menu-${record.id}`}>全部（跟随企业设置）</span>
+        }
+        return (
+          <span
+            className={record.workerPages?.length ? 'text-sm text-neutral-700' : 'text-sm text-amber-700'}
+            data-testid={`worker-menu-${record.id}`}
+          >
+            {summary}
+          </span>
+        )
+      },
+    },
+    {
       key: 'status',
       title: '状态',
       width: '100px',
@@ -212,7 +283,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
     <div>
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-neutral-500">
-          工人用工号 + PIN 登录工人端扫码报工，不进入管理后台、没有菜单权限；与员工账号分开管理，不会出现在员工列表里。
+          工人用工号 + PIN 登录工人端扫码报工，不进入管理后台；与员工账号分开管理，不会出现在员工列表里。
         </p>
         {canWrite ? (
           <Button onClick={handleOpenCreate}>
@@ -317,6 +388,59 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
             工号在您的企业内不能重复；PIN 请当面告知工人（工人端用「工号 + PIN」登录扫工牌报工）。
             工人不会进入管理后台，也拿不到任何菜单权限。
           </p>
+
+          {menuPages.length > 0 && (
+            <div className="pt-3 border-t border-neutral-100" data-testid="worker-pages-picker">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-sm font-medium text-neutral-700">工人端菜单</span>
+                <button
+                  type="button"
+                  data-testid="worker-pages-select-all"
+                  onClick={() => setForm({ ...form, pages: null })}
+                  className="text-xs text-primary-600 hover:text-primary-700 hover:underline"
+                >
+                  全部（跟随企业设置）
+                </button>
+              </div>
+              <div className="space-y-1">
+                {menuPages.map((page) => (
+                  <label
+                    key={page.key}
+                    className="flex items-center gap-3 p-1.5 rounded hover:bg-neutral-50 cursor-pointer"
+                    data-testid={`worker-page-option-${page.key}`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4"
+                      checked={isChecked(page.key)}
+                      onChange={() => setForm({
+                        ...form,
+                        pages: (() => {
+                          // 从「未收窄（全勾）」取消一项 ⇒ 展开成「除这一项外全勾」，而不是空集
+                          const current = form.pages === null ? menuPages.map((p) => p.key) : form.pages
+                          return current.includes(page.key)
+                            ? current.filter((k) => k !== page.key)
+                            : [...current, page.key]
+                        })(),
+                      })}
+                    />
+                    <span className="text-sm text-neutral-800">{page.label}</span>
+                  </label>
+                ))}
+              </div>
+              {form.pages !== null && form.pages.length === 0 ? (
+                <p className="text-xs text-amber-700 mt-1.5" data-testid="worker-pages-empty-hint">
+                  至少要留一个页面。一页都不留并不是「什么都不显示」——工人端会当成「没读到权限」按全开运行；
+                  要让这位工人不干活，请改用「停用」。
+                </p>
+              ) : (
+                <p className="text-xs text-neutral-400 mt-1.5">
+                  只勾这一位工人要用的页面，他就只在工人端看到这些入口；全部勾选 = 跟随企业设置。
+                  企业级已关掉的页面在这里不会出现（企业设置是上限）。
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </Modal>
 

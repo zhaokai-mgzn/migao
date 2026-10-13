@@ -44,3 +44,8 @@
 {"id":"1791652371.97351.20240","ts":"2026-10-10T17:12:52Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6713-chat-session-read-failure","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791653137.4720.15435","ts":"2026-10-10T17:25:37Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6715-dashboard-read-failure-labels","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791654186.18072.20684","ts":"2026-10-10T17:43:07Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6720-print-doc-missing-values","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791847725.63819.5610","ts":"2026-10-12T23:28:45Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6788-worker-h5-menu-perms","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1791847742.63997.12280","ts":"2026-10-12T23:29:02Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6788-worker-h5-menu-perms","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1791848673.33138.14519","ts":"2026-10-12T23:44:33Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6788-worker-h5-menu-perms","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1791852152.43125.4592","ts":"2026-10-13T00:42:32Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6788-worker-h5-menu-perms","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1791853991.11007.27594","ts":"2026-10-13T01:13:11Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6788-worker-h5-menu-perms","why":"--allow-package-heavy（命令行显式）"}

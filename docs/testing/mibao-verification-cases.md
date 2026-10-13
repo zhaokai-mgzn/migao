@@ -3435,7 +3435,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（92 case）
+## 杂项域（93 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4817,6 +4817,24 @@
 真值: frontend-fix.vitest
 溯源: 2026-10-12 新增（issue #6759 需求①）。取号 MC-091（`python3 scripts/next_case_id.py MC` ⇒ main 现取 MC-001~090、在飞 PR 均未改 `.github/cases/**` ⇒ 最小空闲 **MC-091**）。本单的类级固化 = 「手机端可见面标注只有一份真值」四条判据（面清单唯一 / 四向登记 / 前端无第二张表 / 标注已接线）+ 判别力自证（四种坏形态各自红 + 三条对照读数）。⚠️ 未固化（照实登记）：见 data_checks 末条覆盖边界三条。 ｜ 2026-10-12 **返工补登**：`QA Growth Gate` 对**新增生产文件**要求同名单测 —— `frontend/admin-web/src/lib/mobile-surface-label.ts` ⇒ 补同名测试 `frontend/admin-web/tests/unit/lib/mobile-surface-label.test.ts`（5 条：undefined/null/空/全空白 ⇒ 空串、单面逐字形态、多面用顿号连接且顺序 = 服务端顺序、输出不含权限码字面量 + 负控、空白项过滤不残留分隔符），并同批登记进本用例的 `traces.tests`。 ｜ tags: rbac, permission-tree, mobile-surfaces, single-source, class-level-guard, red-proof, admin-web
 
+### MC-092. 云 dev DB 白名单**一条命令**（幂等 / 只追加 / fail-closed / 不泄漏）+ 起栈入口预检与业务路由自检（issue #6789）：`scripts/dev-db-whitelist.sh` 是 `--ModifyMode Append` 的唯一承载体，覆盖语义与 `default` 组零改动，起栈入口在失败前就把处置命令说出来 🔵
+```
+你: 本机公网 IP 不在云 dev DB（阿里云 RDS）白名单时，本地起栈会失败 —— 这时我要**一条命令**把「当前 IP / 是否在列 / 追加 / 复测」走完，而不是人肉查实例号、手拼旧列表（手拼即整体覆盖语义，会误删别人的 IP）；并且起栈入口在失败前就该把这条命令告诉我，而不是甩 7403 行 Spring 栈给我当第一现场。
+数据: **判据 1·幂等**：IP 已在 `dev_local` 组 ⇒ 正常模式 exit 0 且 `ModifySecurityIps` **调用次数 = 0**（只做 TCP 复测）。执行点 = tests/unit_ci_workflows/test_dev_db_whitelist_one_command.py::test_already_listed_is_idempotent_zero_modify。
+数据: **判据 2·只追加**：不在列 + 显式 `--yes` ⇒ Modify 参数含 `--ModifyMode Append`、`--SecurityIps` **恰为新 IP**（不手拼旧列表）、`--DBInstanceIPArrayName dev_local`；`default` 组逐字未动、`dev_local` 旧条目保留。执行点 = 同文件 ::test_missing_ip_appends_and_never_overwrites。
+数据: **判据 3·默认只诊断**：不在列且未给 `--yes` ⇒ 非零退出、**零** Modify 调用、文案点名 `./scripts/dev-db-whitelist.sh --yes`（不静默写云资源）。执行点 = 同文件 ::test_missing_ip_without_yes_writes_nothing。
+数据: **判据 4·fail-closed 五形态**：`aliyun` 缺失 / Describe 失败 / Modify 失败 / 追加后回读读不到 / TCP 复测不可达 ⇒ **各自**非零退出。执行点 = 同文件 ::test_fail_closed_aliyun_missing / ::test_fail_closed_describe_failure / ::test_fail_closed_modify_failure / ::test_fail_closed_readback_miss / ::test_fail_closed_tcp_unreachable。
+数据: **判据 5·不泄漏**：桩 `.env` 里放哨兵密码 `SENTINEL_PW_zz6789`，脚本在 9 种（形态 × 参数）组合下的全部输出（stdout+stderr）都不得含它。执行点 = 同文件 ::test_credentials_never_leak。
+数据: **判据 6·`--check` 只读**：任何形态都不产生 Modify 调用；在列且可达 ⇒ exit 0、不在列 ⇒ 非零（0/1 语义）。执行点 = 同文件 ::test_check_is_readonly_and_reports_state。
+数据: **判据 7·起栈入口预检（接线 + 时序）**：`scripts/ui_smoke_merchant.sh` 在启动 admin-api **之前** TCP 探 `RDS_HOST:RDS_PORT`（读同一个 .env）；桩 `nc` 不可达 ⇒ wrapper **非零退出**、输出含 `dev-db-whitelist.sh`、**不含** `PSQLException`、且**没走到**起栈。执行点 = 同文件 ::test_smoke_preflight_reports_actionable_line_not_spring_noise（负控 ::test_smoke_preflight_passes_through_when_reachable）。
+数据: **判据 7b·业务路由自检（起栈后）**：桩 dev 对 `(dashboard)` 组路由（`/employees` / `/dashboard`）回 **404** ⇒ 输出含「`.next`」+ 可行动命令（`rm -rf frontend/admin-web/.next`）、非零退出、**没开始跑 spec**；只把 404 算坏（200/307/302 = 路由存在）；**只报不动手**（脚本不得执行清理）。执行点 = 同文件 ::test_smoke_route_check_catches_stale_next_cache / ::test_smoke_route_check_absent_before_web_and_spec。
+数据: **判据 8·判别力自证（注入式，实跑）**：① `Append`→`Overwrite`（覆盖语义删掉旧条目）② 删掉整段 `--ModifyMode` 参数（回到手拼覆盖时代）③ 摘掉预检块 ⇒ 对应判据**各自**变红；还原 ⇒ 绿；**只改注释** ⇒ 不红。执行点 = 同文件 ::test_guard_discriminates_bad_shapes。
+数据: **判据 9·类级元守卫**：`--ModifyMode Append` 的承载体在 `scripts/*.sh` 里**唯一**（再抄一份同名命令 ⇒ 红）；脚本文本不得出现 `Overwrite`（覆盖语义禁入）；空数组展开必须写成 `${A[@]+"${A[@]}"}`（macOS bash 3.2 + `set -u`，issue #6777）；预检与路由自检的**接线时序**（admin-api 之前 / admin-web ready 与 spec 之间）逐条钉住。执行点 = 同文件 ::test_class_level_guards_on_script_corpus。
+数据: 🔴 **覆盖边界（照实登记，不粉饰）**：① 判据全用**桩**（`aliyun`/`nc`/`curl`），**不真调 aliyun、不真改云资源** —— 真语料绿证 = issue #6789 的一次实测（`--ModifyMode Append` / TaskId 713392864 / `dev_local` 21→22 条 / `nc` succeeded）；② 判不了「真 RDS 上白名单到底写进去没有」；③ 预检只覆盖 `scripts/ui_smoke_merchant.sh` 这一条入口（有意的最小射程）；④ 「`.next` 跨上下文复用」在主仓侧没有机械判据（本判据只覆盖起栈这一条路径）。
+跳过: [backend-contract] 脚本分支语义 + 参数形态 + 接线时序，由 pytest 子进程真跑（桩 aliyun / nc / curl）+ 注入式红证验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-13 新增（issue #6789，P3 研发工具）。取号 = `python3 scripts/next_case_id.py MC` ⇒ main 现取 MC-001~091、在飞 PR 未占 ⇒ **MC-092**。病：云 dev DB 白名单反复漏加本机公网 IP ⇒ 起栈失败的第一现场是 7403 行 Spring 栈（`PSQLException 尝试连线已失败` / `SocketTimeoutException`），而预设 §10 的处置是**三条手工命令 + 手工合并旧列表**（整体覆盖语义 = 误删他人 IP 的入口）；`dev_local` 组堆到 21 条历次 IP 本身就是「同一动作反复做过很多次」的化石。落码 = ① `scripts/dev-db-whitelist.sh`（多源取公网 IP / 从 .env 读 RDS_HOST:PORT / 主机名推实例 id / Describe 幂等判定 / **只** `--ModifyMode Append` / 回读确认 / TCP 复测 / `--check` 只读 / 不打印凭据）；② `scripts/ui_smoke_merchant.sh` 起 admin-api **之前**的 TCP 预检 + 起 admin-web 之后的业务路由自检；③ 判据 tests/unit_ci_workflows/test_dev_db_whitelist_one_command.py（16 条）+ 类级元守卫。⚠️ **不入 CHANGELOG**（铁律 7 豁免：纯研发工具 / `scripts/` 改动，对用户无可观察影响）。 ｜ tags: dev-env, rds-whitelist, one-command, idempotent, fail-closed, no-credential-leak, preflight, red-proof, class-level-guard
+
 ## 商家入驻域（6 case）
 
 ### OB-001. 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员 🔵
@@ -6119,7 +6137,7 @@
 ```
 溯源: 2026-10-10 新增（issue #6276；口径由用户 2026-10-10 裁定 = 首次发货时刻）。根因（V148/issue #6262 已现取登记、但当时只绕开未修）：OrderLogisticsWriter.upsert 的 shipped_at 只在**新建物流行**的分支里写，走 update 分支（已有物流行、再改物流/发货）时不补写 ⇒ 真库 order_logistics 全表 29 行、shipped_at 非空仅 16 行（13 行为空）。修法：① 新增 OrderLogisticsMapper#backfillShippedAtIfAbsent —— 一条条件 UPDATE（SET shipped_at = created_at WHERE … AND shipped_at IS NULL），取值**列对列**（建行那一刻就是首次发货时刻，三条建行路径都写 shipped_at = now() 且 created_at 与它同刻）⇒ 不需要外部真值、不猜；② 两个「读-改-写」写面（OrderLogisticsWriter 更新分支、OrderController.updateLogistics 更新分支）都在 updateById **之前**调它，OrderLogisticsService.updateLogistics 同样补上；③ 新增迁移 V151 把历史空值按同一条 SQL 回填（幂等、只影响 IS NULL、走新迁移不动已冻结的历史迁移）。边界：不动 orders.shipped_at(V148) 的存量 NULL 裁定；created_at 与首次发货时刻同刻是既有实装事实（本单不引入新语义）。 ｜ tags: order, logistics, shipped-at, data-quality, backend-contract
 
-## 加工项域（27 case）
+## 加工项域（28 case）
 
 ### PP-002. 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query） 🔵
 ```
@@ -6510,10 +6528,28 @@
 数据: worker.session.idle-minutes 全局默认 = 43200（30 天，2026-10-07 用户裁定「延长到 1 个月」；上一版 10080 一周）；越界/非法 ⇒ 回落默认并 WARN；换人/切换工人仍立即失效旧会话
 数据: 🔴 后台对账（`checkAlive` = `current-worker` + `/me`）的两条硬约束（2026-10-10 收口，issue #6642；线上日志实测）：① **请求有界** —— 单飞 + 最小间隔 5s ⇒ 一次可见性事件风暴只允许**一轮**（2 个请求），不再放大成 15–23 req/s（现场：同一条 session 4 秒 92 个请求、被 nginx `worker_sess` rate=2r/s burst=60 拒 4 条）；② **失败不进报工卡** —— 对账是后台动作，它的失败（429 / 5xx / 断网）只给一句「不影响报工」的提示（现场：`current-worker` 被拒 429 ⇒ 报工卡出现红字「请求失败（HTTP 429）」= 用户截图），唯一例外 = 401/会话过期（身份面）仍回落未登录。证据：frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（⑩ / ⑪）
 数据: 🔴 页面开关的**前端消费面**（2026-10-10 收口，issue #6635）：`cut_calc` ∈ `pages` ⇔ `/w/` 页头出现**唯一**入口「裁高计算（一体机）」（`/w/machine.html`；文案与商家端「裁高计算器」同源，改前的「机台模式」只有内部人懂）；∉ ⇒ **整条入口栏不渲染**（不留空 `<nav>`）。两条跨应用入口（拍照入库 / 补打入库标签）**已移出 `/w/`**（用户逐字「移除拍照入库和补打入库标签」）⇒ 反向钉住（本页再出现 `/b/#/pages/worker/inbound|reprint` ⇒ 红），可达性由**工人工作台**承担（入口台账 `from` 逐值核）。**设备级预设**（同上裁定，「扫码枪那台屏默认机台模式、其他工人默认报工」）：`/w/?page=cut_calc` ⇒ 本机记住并落到 `/w/machine.html`（**只在已登录后换页**）、`?page=report` 取消、`?page=report&keep=1` = 只本次（机台屏的「去报工页」逃生门）；零后端改动。证据：frontend/worker-h5/tests/worker-h5-pages.test.mjs（① / ④ / ⑥）+ frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs + frontend/bmini-app/tests/page-entry-reachability.test.ts（L5）
+数据: 🔴 逐人收窄（issue #6788；用户 2026-10-13 逐字「工人档案上也应该设置 h5 工人端的菜单权限，这样让不同岗位的工人只关注他自己有权限的功能了」）：本条的 `data_checks` 上方那条即租户级开关；**工人档案级**收窄的完整口径见用例 **PG-072**（逐条判据在那里，本行只登记「两层并存」这一层关系）
+数据: 🔴 求交为空 ⇒ **回落企业页集**（issue #6788 评审实测形态）：工人被收窄到的页恰好都被企业关掉时，交集为空 ⇒ 若原样下发空数组，工人端 `effectivePages` 会把空集读成「没读到权限 ⇒ **全开**」—— 收窄反而变成放宽。回落方向 = 企业页集（服务端口径与工人端读法一致）。证据：backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java
 跳过: [backend-contract] 本条只登记「页面开关 + 会话超时」这两层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java、backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java、backend/admin-api/src/test/java/com/migao/admin/worker/WorkerSessionServiceTest.java）⇒ 不进 agent-eval 冒烟。
 ```
 真值: processing-manage.worker-page-config
-溯源: 2026-09-29 新增（母单 #5161，P0-E / PR 见集成 PR）。⚠️ 编号订正：初稿取 PG-048，而 PG 号**横跨** .github/cases/processing.yml 与 .github/cases/processing-order.yml 两个文件（那里已占 PG-048）⇒ 按**全仓最大号 + 1** 改为 PG-065（判据：Case Contract 的重复 ID 检查）：用户裁定「租户级页面开关起步」+「让工人提前登录我们的 H5 页面，把登录 Session 的过期时间设置长一点」（数值后续裁定为**一周 10080 分钟**）。⚠️ 照实登记后果：闲置保护基本不再生效 ⇒ 共用设备上防串人的**唯一护栏 = 手动「切换工人」**（用户已知情并裁定）。🔴 2026-10-07 追加（issue #6473）：用户逐字「把工人的登录 Session 过期时间设置久一点，可以延长到 1 个月」⇒ 全局默认改 **43200（30 天）**、区间 `5 ~ 43200`，bmini/worker-h5 两侧的降级兜底常量同步，bmini 界面改按量级说人话（去掉 `?? 15`）。🔴 2026-10-10 追加（issue #6642）：线上日志核查（SWAS `migao-deploy-nginx-1`，2026/10/10 08:12:10）发现**同一 session 4 秒打出 92 个请求**（15–23 req/s），被 `worker_sess` 拒 4 条 —— 全是 `checkAlive` 的「一事件一轮」被放大；且 `current-worker` 的 429 走了 `fail()` ⇒ 报工卡出现「请求失败（HTTP 429）」。⇒ 本单给 `checkAlive` 加**单飞 + 5s 节流**、并把**非身份面失败**从报工卡错误位挪到「不影响报工」提示；写面（`/scan`、`/scan/complete`）现场**一次都没被限流**（照实登记：风暴的触发源仍未定，本次只保证有界 + 不污染）。 ｜ tags: processing, worker, rbac, tenant_config, backend-contract
+溯源: 2026-09-29 新增（母单 #5161，P0-E / PR 见集成 PR）。⚠️ 编号订正：初稿取 PG-048，而 PG 号**横跨** .github/cases/processing.yml 与 .github/cases/processing-order.yml 两个文件（那里已占 PG-048）⇒ 按**全仓最大号 + 1** 改为 PG-065（判据：Case Contract 的重复 ID 检查）：用户裁定「租户级页面开关起步」+「让工人提前登录我们的 H5 页面，把登录 Session 的过期时间设置长一点」（数值后续裁定为**一周 10080 分钟**）。⚠️ 照实登记后果：闲置保护基本不再生效 ⇒ 共用设备上防串人的**唯一护栏 = 手动「切换工人」**（用户已知情并裁定）。🔴 2026-10-07 追加（issue #6473）：用户逐字「把工人的登录 Session 过期时间设置久一点，可以延长到 1 个月」⇒ 全局默认改 **43200（30 天）**、区间 `5 ~ 43200`，bmini/worker-h5 两侧的降级兜底常量同步，bmini 界面改按量级说人话（去掉 `?? 15`）。🔴 2026-10-10 追加（issue #6642）：线上日志核查（SWAS `migao-deploy-nginx-1`，2026/10/10 08:12:10）发现**同一 session 4 秒打出 92 个请求**（15–23 req/s），被 `worker_sess` 拒 4 条 —— 全是 `checkAlive` 的「一事件一轮」被放大；且 `current-worker` 的 429 走了 `fail()` ⇒ 报工卡出现「请求失败（HTTP 429）」。⇒ 本单给 `checkAlive` 加**单飞 + 5s 节流**、并把**非身份面失败**从报工卡错误位挪到「不影响报工」提示；写面（`/scan`、`/scan/complete`）现场**一次都没被限流**（照实登记：风暴的触发源仍未定，本次只保证有界 + 不污染）。🔴 2026-10-13 追加（issue #6788）：租户级之下的**工人档案级收窄**落地（`users.worker_pages` + `PUT /api/admin/workers/{id}/pages`），默认「跟随企业设置」⇒ 存量与新建档案行为**零变化**；判据面**未放宽**（企业级天花板、`users.permissions` 一字不动、工人 `/api/admin/**` 仍 403 三条都新增了会红的断言）。 ｜ tags: processing, worker, rbac, tenant_config, backend-contract
+
+### PG-072. 工人档案级「H5 工人端菜单」逐人收窄（两层页集：企业级是天花板；单测覆盖，非 LLM 行为） 🔵
+```
+你: 车间里只会裁高的工人，能只让他看到裁高计算器吗？
+期望: direct_reply
+数据: 🔴 两层页集（issue #6788；用户 2026-10-13 逐字「工人档案上也应该设置 h5 工人端的菜单权限，这样让不同岗位的工人只关注他自己有权限的功能了」）：企业级开关（PG-065）是**天花板**，`users.worker_pages`（V152）是**逐人收窄** —— 实际下发 = 企业页 ∩ 本列（企业关掉的页，逐人勾了也不出现）
+数据: 三态：NULL / 缺省 = **未收窄 = 跟随企业设置**（存量与新建的默认值 ⇒ **零回归**）· `[...]` = 收窄到这几页（闭词表 = WorkerPages.ALL）· 空数组在**写面被拒**（422 + 指路「停用」而不是清空菜单）
+数据: 写面：`PUT /api/admin/workers/{id}/pages`（挂 `employee:create`）+ 建号 `POST /api/admin/workers` 可带；未知键 / 非数组 / 重复键 / 空数组 ⇒ **422 + error.details 点名下标**（不静默忽略）；清回收窄（null）必须**显式 set**（MyBatis-Plus 默认 NOT_NULL 策略下「塞 null 再 updateById」SQL 里根本没有这一列 ⇒ 静默不生效而接口回 200，评审实测形态）
+数据: 读面：存储值是**原样 JSON 文本**（不用 JacksonTypeHandler：手写 select 未绑 resultMap 时 JSONB 会落成字符串、且坏值会**抛异常**让 /me 500 —— 类级守卫 = backend/admin-api/src/test/java/com/migao/admin/mapper/JacksonTypeHandlerMappingGuardTest.java）；**不是数组 / 解析不出来** ⇒ 当未收窄（fail-open）· **是数组但无真键** ⇒ 空集（只裁不放宽）· 未知键只裁不放宽
+数据: 🔴 求交为空 ⇒ **回落企业页集**：工人被收窄到的页恰好都被企业关掉时，原样下发空数组会被工人端 `frontend/worker-h5/src/render.mjs` 的 effectivePages 读成「没读到权限 ⇒ **全开**」—— 收窄反而变放宽
+数据: 🔴 页面码**不是权限码**：`users.permissions` 一字不动、工人 session 的 permissions 恒为 `[]`、`/api/admin/**` 对 worker 仍 403；工人端语义仍是**菜单/入口显隐**（2026-09-29 用户裁定），藏起菜单 ≠ 挡住接口
+数据: 商家面：工人档案列表新增「工人端菜单」列（未收窄 ⇒「全部（跟随企业设置）」单列一处；收窄 ⇒ 逐个人话名），建号弹窗按**企业已开**的页勾选（默认全勾 = 发 null；全取消 ⇒ 就地拦住不发请求）；企业级页面配置读不到 ⇒ 菜单一节不显示，建号主流程照旧
+跳过: [backend-contract] 本条只登记「逐人收窄 + 两层求交」这几层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/worker/WorkerPagesTest.java、backend/admin-api/src/test/java/com/migao/admin/service/WorkerAdminServiceTest.java、backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java、frontend/admin-web/tests/unit/components/WorkerProfilesPanel.test.tsx）⇒ 不进 agent-eval 冒烟。⚠️ 工人端 H5 的**渲染面**消费口径（菜单/入口显隐、非阻断提示）沿用 2026-09-29 裁定，本单**未改** frontend/worker-h5。
+```
+真值: processing-manage.worker-page-config
+溯源: 2026-10-13 新增（issue #6788，PR 随集成）：用户逐字「工人档案上也应该设置 h5 工人端的菜单权限，这样让不同岗位的工人只关注他自己有权限的功能了」。默认口径由用户当场选定 = **「跟随企业设置」（全开、零回归）**。⚠️ 评审（独立 subagent）实测出三个真缺陷并已修：① 清回收窄走「塞 null 再 updateById」在 NOT_NULL 策略下**静默不生效**（改成显式 set）；② JacksonTypeHandler 对坏 JSONB **抛异常**（不是回 null）⇒ 一行脏数据让 GET /api/worker/me 500（改成存原样 JSON 文本 + 宽容解析）；③ `[]` 在工人端会被读成「没读到权限 ⇒ 全开」⇒ 写面 422 + 读面求交为空时回落企业页集。**未固化项（照实登记）**：逐人收窄目前**只在建号时可写**（改收窄走 API，UI 上暂无编辑入口）；企业关掉某页后，已收窄到该页的档案里那一项**不自动清理**（有意保留：企业页 ∩ 个人页 ⇒ 该页本就不下发）。 ｜ tags: processing, worker, rbac, tenant_config, backend-contract
 
 ### PG-059. 裁高读面 - 明细 product_id 为空时 brand 如实回 null 而不是 500（不可变表 get(null) 抛 NPE；单测覆盖，非 LLM 行为） 🔵
 ```
@@ -10620,8 +10656,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：733（活跃 134，跳过 599）
-- tier 分布：smoke 12 / normal 679 / adversarial 32
+- 用例总数：735（活跃 134，跳过 601）
+- tier 分布：smoke 12 / normal 681 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10636,11 +10672,11 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：92
+- 杂项域：93
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：64
-- 加工项域：27
+- 加工项域：28
 - 加工单域：62
 - 商品域：120
 - 工具注册器域：1
@@ -10763,6 +10799,7 @@
 - MC-088: 写面幂等接线覆盖率的类级元守卫（issue #6209）：凡消费同一份 ClientRequestIdService 的写面必须登记；读了 X-Client-Request-Id 却不接点位 ⇒ 红；豁免只许缩短；禁新造第二套幂等框架
 - MC-089: dev-worktree 的退出码：`list` 不许因存在会话锁（哪怕全是失效锁）而 exit 1；`scripts/*.sh` 里函数体末命令不得是会被当成返回值的 `[ … ] && …` 复合形态（issue #6243）
 - MC-090: 数据库**外键违例**的归口与日志面（issue #6210）：外键违例 ⇒ 4xx（VALIDATION_ERROR）且**不落兜底 500**，且这一类日志**不打异常本体与堆栈**（约束名 / 表名 / schema 不进日志）；射程**刻意只到外键** —— 唯一 / 非空 / 检查违例保持既有 500 契约（两向反向对照：非约束类未知异常仍 500 带堆栈、唯一键失败仍 500 带堆栈）；类级元守卫 = 分支台账 ⇄ 反射双向相等（新分支未登记即红）
+- MC-092: 云 dev DB 白名单**一条命令**（幂等 / 只追加 / fail-closed / 不泄漏）+ 起栈入口预检与业务路由自检（issue #6789）：`scripts/dev-db-whitelist.sh` 是 `--ModifyMode Append` 的唯一承载体，覆盖语义与 `default` 组零改动，起栈入口在失败前就把处置命令说出来
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

@@ -1,4 +1,4 @@
-// case_ids: HR-002, HR-001, UI-091
+// case_ids: PG-072, HR-002, HR-001, UI-091
 package com.migao.admin.controller;
 
 import com.migao.admin.config.GlobalExceptionHandler;
@@ -36,6 +36,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -89,10 +90,19 @@ class AdminWorkerControllerTest {
                 .role("worker").status("active").createdAt(OffsetDateTime.now()).build();
     }
 
+    /** 带工人端页面收窄（issue #6788）的档案：库里存的是**原样 JSON 文本**（见 {@code User#workerPages}）。 */
+    private static User workerWithPages(String storedJson) {
+        return User.builder().id("w-1").tenantId(1L).workerNo("W-1001").nickname("张三")
+                .role("worker").status("active").createdAt(OffsetDateTime.now())
+                .workerPages(storedJson).build();
+    }
+
     @Test
     @DisplayName("建号：工号 + 姓名 + PIN ⇒ 200，且响应体**不含任何口令字段**")
     void createWorkerReturnsRedactedPayload() throws Exception {
-        when(workerAdminService.createWorker("W-1001", "张三", "246810"))
+        // 控制器调的是**带页面收窄**的那个重载（issue #6788）⇒ 必须按 4 参签名打桩
+        // （只桩 3 参重载 ⇒ Mockito 返回 null ⇒ 500 —— 那正是「mock 掉了真行为」的经典坑）
+        when(workerAdminService.createWorker(eq("W-1001"), eq("张三"), eq("246810"), any()))
                 .thenReturn(worker("w-1", "W-1001", "张三"));
 
         mockMvc.perform(post("/api/admin/workers")
@@ -108,13 +118,36 @@ class AdminWorkerControllerTest {
                 .andExpect(jsonPath("$.data.passwordHash").doesNotExist())
                 .andExpect(jsonPath("$.data.password").doesNotExist());
 
-        verify(workerAdminService).createWorker("W-1001", "张三", "246810");
+        verify(workerAdminService).createWorker("W-1001", "张三", "246810", null);
+    }
+
+    @Test
+    @DisplayName("设工人端菜单（#6788）：PUT /{id}/pages ⇒ 200 + 回显 workerPages，且带 employee:create")
+    void updateWorkerPagesEndpointReturnsTheRestriction() throws Exception {
+        when(workerAdminService.updateWorkerPages(eq("w-1"), any()))
+                .thenReturn(workerWithPages("[\"report\",\"cut_calc\"]"));
+
+        mockMvc.perform(put("/api/admin/workers/w-1/pages")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"workerPages\":[\"report\",\"cut_calc\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.workerPages[0]").value("report"))
+                .andExpect(jsonPath("$.data.workerPages[1]").value("cut_calc"));
+        // 请求体原样透传给服务层（控制器不自己过滤 / 不改写要校验的东西）
+        verify(workerAdminService).updateWorkerPages(eq("w-1"), eq(List.of("report", "cut_calc")));
+
+        assertThat(AdminWorkerController.class
+                .getDeclaredMethod("updateWorkerPages", String.class, Map.class)
+                .getAnnotation(RequirePermission.class).value())
+                .as("与建号 / 重置 PIN 同档写权限（不新增权限码）")
+                .isEqualTo("employee:create");
     }
 
     @Test
     @DisplayName("重复工号 ⇒ 409 + error.code=CONFLICT + 文案含工号（**不是 500**）")
     void duplicateWorkerNoReturnsConflictNotServerError() throws Exception {
-        when(workerAdminService.createWorker(any(), any(), any()))
+        when(workerAdminService.createWorker(any(), any(), any(), any()))
                 .thenThrow(BusinessException.conflict("工号已被占用：W-1001（本企业内工号必须唯一）",
                         "换一个工号，或先在列表里找到这位工人并启用其档案"));
 
@@ -131,7 +164,7 @@ class AdminWorkerControllerTest {
     @Test
     @DisplayName("字段缺失 ⇒ 422（服务端校验是唯一真值源，控制器不吞异常、不 500）")
     void missingFieldsReturnValidationError() throws Exception {
-        when(workerAdminService.createWorker(any(), any(), any()))
+        when(workerAdminService.createWorker(any(), any(), any(), any()))
                 .thenThrow(BusinessException.validationError("工号不能为空"));
 
         mockMvc.perform(post("/api/admin/workers")
@@ -144,7 +177,7 @@ class AdminWorkerControllerTest {
     @Test
     @DisplayName("非字符串入参（如 workerNo 传数字）⇒ 422 而不是 500（不把 ClassCastException 抛给用户）")
     void nonStringFieldReturnsValidationError() throws Exception {
-        when(workerAdminService.createWorker(any(), any(), any()))
+        when(workerAdminService.createWorker(any(), any(), any(), any()))
                 .thenThrow(BusinessException.validationError("工号不能为空"));
 
         mockMvc.perform(post("/api/admin/workers")
@@ -198,8 +231,8 @@ class AdminWorkerControllerTest {
                     .isNotBlank();
         }
         assertThat(handlers)
-                .as("建号 + 列表 + 重置 PIN 三个端点是本面交付面，缺一即红")
-                .isEqualTo(3);
+                .as("建号 + 列表 + 重置 PIN + 设工人端菜单（#6788）四个端点是本面交付面，缺一即红")
+                .isEqualTo(4);
     }
 
     @Test

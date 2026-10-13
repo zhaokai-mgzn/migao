@@ -3519,3 +3519,37 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: MC-092
+    legacy_id: ""
+    title: "云 dev DB 白名单**一条命令**（幂等 / 只追加 / fail-closed / 不泄漏）+ 起栈入口预检与业务路由自检（issue #6789）：`scripts/dev-db-whitelist.sh` 是 `--ModifyMode Append` 的唯一承载体，覆盖语义与 `default` 组零改动，起栈入口在失败前就把处置命令说出来"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags: [dev-env, rds-whitelist, one-command, idempotent, fail-closed, no-credential-leak, preflight, red-proof, class-level-guard]
+    truths_ref: []
+    # ⚠️ 真值暂缺：本用例的判据是**脚本分支语义 + 参数形态 + 接线时序**（零 LLM 判定），
+    # 真值由桩 `aliyun` / 桩 `nc` / 桩 `curl` 的调用台账直接给出读数，不需要自然语言真值反推。
+    user_inputs:
+      - "本机公网 IP 不在云 dev DB（阿里云 RDS）白名单时，本地起栈会失败 —— 这时我要**一条命令**把「当前 IP / 是否在列 / 追加 / 复测」走完，而不是人肉查实例号、手拼旧列表（手拼即整体覆盖语义，会误删别人的 IP）；并且起栈入口在失败前就该把这条命令告诉我，而不是甩 7403 行 Spring 栈给我当第一现场。"
+    expectations: []
+    data_checks:
+      - "**判据 1·幂等**：IP 已在 `dev_local` 组 ⇒ 正常模式 exit 0 且 `ModifySecurityIps` **调用次数 = 0**（只做 TCP 复测）。执行点 = tests/unit_ci_workflows/test_dev_db_whitelist_one_command.py::test_already_listed_is_idempotent_zero_modify。"
+      - "**判据 2·只追加**：不在列 + 显式 `--yes` ⇒ Modify 参数含 `--ModifyMode Append`、`--SecurityIps` **恰为新 IP**（不手拼旧列表）、`--DBInstanceIPArrayName dev_local`；`default` 组逐字未动、`dev_local` 旧条目保留。执行点 = 同文件 ::test_missing_ip_appends_and_never_overwrites。"
+      - "**判据 3·默认只诊断**：不在列且未给 `--yes` ⇒ 非零退出、**零** Modify 调用、文案点名 `./scripts/dev-db-whitelist.sh --yes`（不静默写云资源）。执行点 = 同文件 ::test_missing_ip_without_yes_writes_nothing。"
+      - "**判据 4·fail-closed 五形态**：`aliyun` 缺失 / Describe 失败 / Modify 失败 / 追加后回读读不到 / TCP 复测不可达 ⇒ **各自**非零退出。执行点 = 同文件 ::test_fail_closed_aliyun_missing / ::test_fail_closed_describe_failure / ::test_fail_closed_modify_failure / ::test_fail_closed_readback_miss / ::test_fail_closed_tcp_unreachable。"
+      - "**判据 5·不泄漏**：桩 `.env` 里放哨兵密码 `SENTINEL_PW_zz6789`，脚本在 9 种（形态 × 参数）组合下的全部输出（stdout+stderr）都不得含它。执行点 = 同文件 ::test_credentials_never_leak。"
+      - "**判据 6·`--check` 只读**：任何形态都不产生 Modify 调用；在列且可达 ⇒ exit 0、不在列 ⇒ 非零（0/1 语义）。执行点 = 同文件 ::test_check_is_readonly_and_reports_state。"
+      - "**判据 7·起栈入口预检（接线 + 时序）**：`scripts/ui_smoke_merchant.sh` 在启动 admin-api **之前** TCP 探 `RDS_HOST:RDS_PORT`（读同一个 .env）；桩 `nc` 不可达 ⇒ wrapper **非零退出**、输出含 `dev-db-whitelist.sh`、**不含** `PSQLException`、且**没走到**起栈。执行点 = 同文件 ::test_smoke_preflight_reports_actionable_line_not_spring_noise（负控 ::test_smoke_preflight_passes_through_when_reachable）。"
+      - "**判据 7b·业务路由自检（起栈后）**：桩 dev 对 `(dashboard)` 组路由（`/employees` / `/dashboard`）回 **404** ⇒ 输出含「`.next`」+ 可行动命令（`rm -rf frontend/admin-web/.next`）、非零退出、**没开始跑 spec**；只把 404 算坏（200/307/302 = 路由存在）；**只报不动手**（脚本不得执行清理）。执行点 = 同文件 ::test_smoke_route_check_catches_stale_next_cache / ::test_smoke_route_check_absent_before_web_and_spec。"
+      - "**判据 8·判别力自证（注入式，实跑）**：① `Append`→`Overwrite`（覆盖语义删掉旧条目）② 删掉整段 `--ModifyMode` 参数（回到手拼覆盖时代）③ 摘掉预检块 ⇒ 对应判据**各自**变红；还原 ⇒ 绿；**只改注释** ⇒ 不红。执行点 = 同文件 ::test_guard_discriminates_bad_shapes。"
+      - "**判据 9·类级元守卫**：`--ModifyMode Append` 的承载体在 `scripts/*.sh` 里**唯一**（再抄一份同名命令 ⇒ 红）；脚本文本不得出现 `Overwrite`（覆盖语义禁入）；空数组展开必须写成 `${A[@]+\"${A[@]}\"}`（macOS bash 3.2 + `set -u`，issue #6777）；预检与路由自检的**接线时序**（admin-api 之前 / admin-web ready 与 spec 之间）逐条钉住。执行点 = 同文件 ::test_class_level_guards_on_script_corpus。"
+      - "🔴 **覆盖边界（照实登记，不粉饰）**：① 判据全用**桩**（`aliyun`/`nc`/`curl`），**不真调 aliyun、不真改云资源** —— 真语料绿证 = issue #6789 的一次实测（`--ModifyMode Append` / TaskId 713392864 / `dev_local` 21→22 条 / `nc` succeeded）；② 判不了「真 RDS 上白名单到底写进去没有」；③ 预检只覆盖 `scripts/ui_smoke_merchant.sh` 这一条入口（有意的最小射程）；④ 「`.next` 跨上下文复用」在主仓侧没有机械判据（本判据只覆盖起栈这一条路径）。"
+    skip_reason: "[backend-contract] 脚本分支语义 + 参数形态 + 接线时序，由 pytest 子进程真跑（桩 aliyun / nc / curl）+ 注入式红证验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-13 新增（issue #6789，P3 研发工具）。取号 = `python3 scripts/next_case_id.py MC` ⇒ main 现取 MC-001~091、在飞 PR 未占 ⇒ **MC-092**。病：云 dev DB 白名单反复漏加本机公网 IP ⇒ 起栈失败的第一现场是 7403 行 Spring 栈（`PSQLException 尝试连线已失败` / `SocketTimeoutException`），而预设 §10 的处置是**三条手工命令 + 手工合并旧列表**（整体覆盖语义 = 误删他人 IP 的入口）；`dev_local` 组堆到 21 条历次 IP 本身就是「同一动作反复做过很多次」的化石。落码 = ① `scripts/dev-db-whitelist.sh`（多源取公网 IP / 从 .env 读 RDS_HOST:PORT / 主机名推实例 id / Describe 幂等判定 / **只** `--ModifyMode Append` / 回读确认 / TCP 复测 / `--check` 只读 / 不打印凭据）；② `scripts/ui_smoke_merchant.sh` 起 admin-api **之前**的 TCP 预检 + 起 admin-web 之后的业务路由自检；③ 判据 tests/unit_ci_workflows/test_dev_db_whitelist_one_command.py（16 条）+ 类级元守卫。⚠️ **不入 CHANGELOG**（铁律 7 豁免：纯研发工具 / `scripts/` 改动，对用户无可观察影响）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_dev_db_whitelist_one_command.py"
+      ci:
+        - pr-check.yml
+      verifies: []
