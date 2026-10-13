@@ -61,20 +61,13 @@ const ALL_JOURNEY_NAMES = [
 //   且**只在行为面已达成**时（调用方传 `allowKnownConsole: true`）才把该条从 errors 移到 notes
 //   —— **照实印出、不隐藏**（notes 会进 smoke-results.json）。`SMOKE_STRICT_CONSOLE=1` 关闭本机制。
 const KNOWN_CONSOLE_ERRORS = [
-  {
-    id: 'AFTERSALES_HYDRATION',
-    test: /cannot be a descendant of|cannot contain a nested/,
-    issue: '#6799',
-    why: '售后详情页 React hydration 报错（`<div>` 被渲染进 `<p>`）—— 归口 #6799；报错在 hydration 层，'
-       + '而 19- 的行为面（工单打开 → 受理 → 关闭 + 状态落库）由页面文本与 API 读数**独立**验证。',
-  },
-  {
-    id: 'PROCESSING_MEASURE_NEGATIVE',
-    test: /negative time stamp|ProcessingRedirectPage/,
-    issue: '#6799',
-    why: '加工页 `performance.measure` 负时间戳（Next/React 首帧时序）—— 归口 #6799；**偶发**（同一 commit 上一轮为 ✅），'
-       + '不影响加工项 CRUD 的行为面（新项入列 → 改名 → 删除后消失）。',
-  },
+  // 🔴 2026-10-13 清空（issue #6799）：两条登记（AFTERSALES_HYDRATION / PROCESSING_MEASURE_NEGATIVE）
+  // 的缺陷**都已修好**（`AfterSalesDetail.tsx` 的两处 `<p>` 容器换成 `<div>`；`performance.measure`
+  // 区间守卫接线在 `src/app/layout.tsx`）⇒ 按「台账只许缩短」把它们**删掉**：
+  // `entries` 为空 = 「已知产品面 console 错误 = 0 条」，此后这两条再出现就是**真失败**（不再是 notes）。
+  // ⚠️ 机制本身**保留**（`isKnownConsoleError` / `knownConsoleIssue` / `allowKnownConsole` /
+  // `SMOKE_STRICT_CONSOLE` 都在）：将来若另有**已归口**的真实缺陷需要临时承接，按同口径登记——
+  // 台账 ⇄ spec 逐字对账由 `tests/unit_ci_workflows/test_ui_smoke_selector_liveness.py` 的判据 H 盯着。
 ]
 const isKnownConsoleError = (e) =>
   process.env.SMOKE_STRICT_CONSOLE !== '1' && KNOWN_CONSOLE_ERRORS.some((k) => k.test.test(String(e)))

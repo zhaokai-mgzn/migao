@@ -1278,11 +1278,21 @@ def spec_known_console_entries(spec_text: str) -> list[dict]:
 
 
 def known_console_failures(ledger: dict, spec_text: str) -> list[str]:
-    """判据 H 本体：台账 ⇄ spec 逐字相等；每条必须有 issue 归口与 why；机制必须在 spec 里真的接线。"""
+    """判据 H 本体：台账 ⇄ spec 逐字相等；每条必须有 issue 归口与 why；机制必须在 spec 里真的接线。
+
+    🔻 issue #6799（2026-10-13）**收窄了"非空"这一条**（判据 H 的 §19.1 边界登记）：
+    原实现把「`entries` 为空」直接判红（fail-closed），用意是「别让人清空台账消红」。而台账的
+    **正常终态就是空** —— 在册缺陷都修好之后按「只许缩短」删条目。本单修好
+    `AFTERSALES_HYDRATION` / `PROCESSING_MEASURE_NEGATIVE` 两条 ⇒ 空台账 = 「已知产品面 console 错误 = 0 条」，
+    此后同样的报错再次出现会被**真判红**（不再进 notes）。现状：
+    ① 台账非空时，逐条仍必须有 issue 归口 + why + 合法正则；
+    ② 台账与 spec **任何时刻**都必须逐字相等（空 ⇄ 空 也必须是**现取**来的，不许"台账清了、spec 没清"）；
+    ③ 机制链条的接线检查**一字不减**（`isKnownConsoleError` / `allowKnownConsole` / `SMOKE_STRICT_CONSOLE`）。
+    「台账不是橡皮图章」的判别力由 `test_known_console_registry_has_teeth`（注入式红证）承担 ——
+    它**不依赖**真实台账里有条目（用内存变异的夹具）。
+    """
     failures: list[str] = []
     entries = ledger.get("entries", [])
-    if not entries:
-        failures.append("已知 console 台账被清空（entries 为空）—— fail-closed 判红")
     live = spec_known_console_entries(spec_text)
     led = [{"id": e.get("id", ""), "pattern": e.get("pattern", ""), "issue": e.get("issue", ""), "why": e.get("why", "")} for e in entries]
     if led != live:
@@ -1314,22 +1324,55 @@ def test_known_console_registry_has_teeth():
     """㉙ 判别力自证（注入式红证）：把台账里某条的 issue 写坏 / id 改名 ⇒ 当场红且具名。
 
     这一步是「台账不是橡皮图章」的证明：只要 spec 与台账不再逐字相等，或归口/理由缺失，判据立即红。
+    🔻 issue #6799：注入夹具**不再取自现状台账**（真实台账在缺陷修好后**合法为空** —— 拿它当夹具会
+    让本自证跟着"没东西可注"而失效）。夹具 = **内存里的合成条目** + 一份把该条目**逐字镜像**进
+    `KNOWN_CONSOLE_ERRORS` 的 spec 文本 ⇒ 判别力与"现在还有没有在册缺陷"解耦。
     """
-    ledger = json.loads(KNOWN_CONSOLE_LEDGER.read_text(encoding="utf-8"))
-    spec = SPEC.read_text(encoding="utf-8")
-    assert ledger["entries"], "夹具不成立：台账为空"
+    entry = {
+        "id": "FIXTURE_ENTRY",
+        "pattern": "synthetic-fixture-pattern",
+        "issue": "#6799",
+        "why": "判别力自证用的合成条目：它只存在于本用例的内存里，绝不写盘、也不进真实台账。",
+    }
+    spec = _spec_with_known_console([entry])
+    ledger = {"entries": [dict(entry)]}
     # ① 台账与 spec 不一致 ⇒ 红
-    broken = json.loads(json.dumps(ledger))
+    broken = copy.deepcopy(ledger)
     broken["entries"][0]["id"] = "RENAMED_BY_TEST"
     f1 = known_console_failures(broken, spec)
     assert any("不逐字相等" in f for f in f1), f"台账与 spec 不一致时未红：{f1}"
     # ② 归口丢失 ⇒ 红且具名
-    broken2 = json.loads(json.dumps(ledger))
+    broken2 = copy.deepcopy(ledger)
     broken2["entries"][0]["issue"] = "无归口"
     f2 = known_console_failures(broken2, spec)
     assert any("缺 issue 归口" in f for f in f2), f"归口丢失时未红：{f2}"
     # ③ 负控：**原样**台账必须绿（否则上面的红可能是「恒红」）
     assert known_console_failures(ledger, spec) == []
+    # ④ 现状台账（现在合法为空）对**真 spec** 必须绿
+    assert known_console_failures(json.loads(KNOWN_CONSOLE_LEDGER.read_text(encoding="utf-8")),
+                                  SPEC.read_text(encoding="utf-8")) == []
+
+
+def _spec_with_known_console(entries: list[dict]) -> str:
+    """把合成条目**逐字**渲染进一份 spec 文本的 `KNOWN_CONSOLE_ERRORS`（只改内存字符串，不写盘）。
+
+    切片的**末端**与取值端（`spec_known_console_entries`）用同一标记 `const isKnownConsoleError =`，
+    这样夹具与取值口径同源（避免"夹具按另一种切法写、取值按另一种切法读"）。
+    """
+    spec = SPEC.read_text(encoding="utf-8")
+    rendered = ",\n".join(
+        "  {\n"
+        f"    id: {e['id']!r},\n"
+        f"    test: /{e['pattern']}/,\n"
+        f"    issue: {e['issue']!r},\n"
+        f"    why: {e['why']!r},\n"
+        "  }" for e in entries
+    )
+    start_marker = "const KNOWN_CONSOLE_ERRORS = ["
+    end_marker = "const isKnownConsoleError ="
+    start = spec.index(start_marker)
+    end = spec.index(end_marker, start)
+    return spec[:start] + start_marker + "\n" + rendered + "\n]\n" + spec[end:]
 
 
 def test_known_console_registry_is_not_vacuous_on_comment_only_edit():

@@ -3435,7 +3435,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（93 case）
+## 杂项域（94 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4834,6 +4834,17 @@
 跳过: [backend-contract] 脚本分支语义 + 参数形态 + 接线时序，由 pytest 子进程真跑（桩 aliyun / nc / curl）+ 注入式红证验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-13 新增（issue #6789，P3 研发工具）。取号 = `python3 scripts/next_case_id.py MC` ⇒ main 现取 MC-001~091、在飞 PR 未占 ⇒ **MC-092**。病：云 dev DB 白名单反复漏加本机公网 IP ⇒ 起栈失败的第一现场是 7403 行 Spring 栈（`PSQLException 尝试连线已失败` / `SocketTimeoutException`），而预设 §10 的处置是**三条手工命令 + 手工合并旧列表**（整体覆盖语义 = 误删他人 IP 的入口）；`dev_local` 组堆到 21 条历次 IP 本身就是「同一动作反复做过很多次」的化石。落码 = ① `scripts/dev-db-whitelist.sh`（多源取公网 IP / 从 .env 读 RDS_HOST:PORT / 主机名推实例 id / Describe 幂等判定 / **只** `--ModifyMode Append` / 回读确认 / TCP 复测 / `--check` 只读 / 不打印凭据）；② `scripts/ui_smoke_merchant.sh` 起 admin-api **之前**的 TCP 预检 + 起 admin-web 之后的业务路由自检；③ 判据 tests/unit_ci_workflows/test_dev_db_whitelist_one_command.py（16 条）+ 类级元守卫。⚠️ **不入 CHANGELOG**（铁律 7 豁免：纯研发工具 / `scripts/` 改动，对用户无可观察影响）。 ｜ tags: dev-env, rds-whitelist, one-command, idempotent, fail-closed, no-credential-leak, preflight, red-proof, class-level-guard
+
+### MC-093. 已知 console 台账**只许缩短**的终态：售后 hydration + 加工页 measure 两条缺陷修好后 clearance 清零（机制保留、判据 H 判别力不依赖台账非空）（issue #6799） 🔵
+```
+你: 台账只许缩短 —— 缺陷修好后必须把那两条从「已知 console 错误」里删掉，并给出「删掉后判据仍绿」的读数；删不掉就说明没修好，不许留着台账当绿。
+数据: 🔴 判据 1·**台账已缩短**：`tests/unit_ci_workflows/ui_smoke_known_console.json` 的 `entries` 从 2 条（AFTERSALES_HYDRATION / PROCESSING_MEASURE_NEGATIVE）降到 **0 条**，`scripts/ui-smoke-merchant/spec.mjs` 的 `KNOWN_CONSOLE_ERRORS` 同步清空（逐字对账，改一处必须同批改两处）。执行点 = tests/unit_ci_workflows/test_ui_smoke_selector_liveness.py::test_known_console_registry_matches_spec_and_is_attributed。
+数据: 🔴 判据 2·**机制保留（不是把机制砍掉消红）**：spec 里 `isKnownConsoleError` / `knownConsoleIssue` / `allowKnownConsole` / `SMOKE_STRICT_CONSOLE` 四处接线**一字未减**（缺一即红）。执行点同上（判据本体里的接线检查）。
+数据: 🔴 判据 3·**判别力不依赖台账非空**：注入夹具改从**内存合成条目** + 逐字镜像进 `KNOWN_CONSOLE_ERRORS` 的 spec 文本构造（不再拿现状台账当夹具）—— id 改名 ⇒ 报「不逐字相等」、归口丢失 ⇒ 报「缺 issue 归口」，原样夹具 ⇒ 绿。判据本体**收窄了「entries 为空即红」**这一条（台账的正常终态就是空：在册缺陷都修好之后），理由逐字写在 `known_console_failures` 的 docstring 里。执行点 = 同文件 ::test_known_console_registry_has_teeth。
+数据: **边界（照实登记）**：空台账**不再**保护「有人把条目删掉来消红」这一形态 —— 该形态在空台账下**不存在**（没有条目可删）；新的坏形态（把已修好的缺陷重新登记回去）由判据 1 的逐字对账承接不到（登记是合法动作）⇒ 由真栈冒烟本身承接（报错若真消失，登记反而会让它变 noise、而非变绿）。
+跳过: [backend-contract] 台账 ⇄ spec 文本对账 + 注入式判别力自证（pytest，非 LLM 行为），不进入 agent-eval 冒烟
+```
+溯源: 2026-10-13 新增（issue #6799 ③ 台账收口）。取号 = `python3 scripts/next_case_id.py MC` ⇒ main 现取 MC-001~092、在飞 PR 未占 ⇒ **MC-093**。背景：#6790 曾把这两条登记为「已知 console 错误」作**临时**承接面；#6799 把两条缺陷都修好后按「台账只许缩短」清零。改动 = ① 台账与 spec 的 `KNOWN_CONSOLE_ERRORS` 同步清空（机制保留）；② 判据 H 的 `known_console_failures` 收窄「非空」这一条（台账正常终态就是空）+ 自证夹具改为内存合成（与现状台账解耦）。⚠️ **不入 CHANGELOG**（铁律 7 豁免：纯研发工具 / 台账滚动，对用户无可观察影响）。 ｜ tags: ui-smoke, console-ledger, shrink-only, fail-closed, class-level-guard
 
 ## 商家入驻域（6 case）
 
@@ -9252,7 +9263,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（96 case）
+## 前端 UI 域（97 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -10640,6 +10651,19 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-10-09 新增（issue #6600）：用户同意加宽批号列后的版面重排。改宽 = 8/26/11/9/14/8/10/14 → 8/22/11/9/14/8/16/12（批号 10%→16%，货号与备注各让 2，部位信息 26%→22%）。真浏览器读数：批号 3 行→2 行、数据行高 63→45px、内容总高 81.8→77.0mm。**有意不追单行**（需 ≈20%，会把部位信息压垮并逼近 A4 可用高度）—— 重启条件写在 issue #6600 的「边界」节。取号 UI-096（本包 rebase 在 #6595/UI-095 之上，故顺延）。 ｜ tags: ui, print, processing-doc, column-width, admin-web
 
+### UI-097. 块级元素落在 <p> 里的 hydration 缺陷：售后详情页实例判据（SSR→hydrate 见证）+ 两条类级元守卫（字面嵌套扫描 / 运行期组合台账）（issue #6799） 🔵
+```
+你: 售后详情页整页 hydration 失败（console 打 `In HTML, <div> cannot be a descendant of <p>`）—— 我要的是**这一族再也进不来**，不是修好这一处：同一形态（组件把块级渲染进 <p>）在别的页面同样是整页 hydration 失败。
+期望: direct_reply
+数据: 🔴 判据 1·**实例**（会红）：`frontend/admin-web/tests/unit/pages/after-sales-detail-hydration.test.tsx` 用 `renderToString` → 浏览器式解析 → `hydrateRoot` 走一轮，断言 ① 服务端 HTML 里没有 `<p …>` 直接包块级标签；② hydrate 的 `console.error` 里没有 `cannot be a descendant of` / `cannot contain a nested` / `Hydration failed`（React 的 `validateDOMNesting`）。修前实测：该文件红（React 逐字打印上述两条，客户端渲染面 `expected [ …(2) ] to deeply equal []`）；修后 3 passed。
+数据: 🔴 判据 2·**类级（字面嵌套，零浏览器）**：`scripts/jsx-p-tag-nesting-scan.mjs` 扫 `src/**` 的 `.tsx`，块级/未知 HTML 元素直接落在 `<p>` 里即判红；判别力自证 = 扫描器 `--self-test` 的 10 条**内存注入**形态（坏必红 / 好不报），由 `frontend/admin-web/tests/unit/p-tag-block-nesting-guard.test.ts` 现跑并另做一次真语料变异注入（临时目录，不写工作树）。实测：硬命中 0 / 软命中（组件落在 `<p>` 里）6 类。
+数据: 🔴 判据 3·**类级（运行期组合，双向对齐）**：`frontend/admin-web/tests/unit/p-tag-inline-components-guard.test.tsx` 现取「谁被放进 `<p>` 里」的清单（同源跑扫描器），与 `tests/unit/p-tag-inline-components-ledger.json` 逐条对账：**新组件未登记即红**、**台账里有而语料无即红**（只许缩短）；台账 `runtime: instantiated` 的条目**逐个真渲染**在 `<p>` 里，断言 DOM 无块级后代。实测 5 passed（含判别力自证：`<p><div/></p>` 报 div、`<p><span/></p>` 不报）。
+数据: **不回归**：只把 `frontend/admin-web/src/app/(dashboard)/after-sales/[id]/AfterSalesDetail.tsx` 的两处 `<p>` 容器换成 `<div>`（`DateTimeCell` 的两行布局依赖块级子元素，改内联会动版式）；其余 `<p>`（含同类文案 `售后类型` / `退款金额`）一字未动，样式类名逐字保留（`text-sm font-medium text-neutral-900`）。
+跳过: [backend-contract] 纯前端 DOM 形状 + SSR/hydrate 判据（vitest，零 LLM 环节），不进 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-10-13 新增（issue #6799 ①）。取号 = `python3 scripts/next_case_id.py UI` ⇒ main 现取 UI-001~096、在飞 PR 未占 ⇒ **UI-097**。病：真栈 `19-after-sales-detail` 打 React 两条 hydration error（`<div>` 落在 `<p>` 里）⇒ 整页 hydration 失败（后续交互走未 hydrate 的 SSR DOM）。根因定位：先按**字面 JSX 嵌套**扫全树（0 命中）⇒ 判定为**运行期组合**；本页 `<p>` 里唯一的被引用组件是 `components/common/DateTimeCell`（根节点 `<div>`，两行日期）⇒ 两处命中。修法 = 两处容器换 `<div>`（不动 DateTimeCell：其两行布局依赖块级子元素）。判据 = ① 实例（SSR→hydrate 见证，修前红）；② 字面嵌套扫描器 + 自证；③ 运行期组件台账（双向对齐 + 逐条真渲染）。 ｜ tags: ui, hydration, dom-nesting, ssr, class-level-guard, red-proof
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -10669,8 +10693,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：736（活跃 134，跳过 602）
-- tier 分布：smoke 12 / normal 681 / adversarial 32
+- 用例总数：738（活跃 134，跳过 604）
+- tier 分布：smoke 12 / normal 683 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10685,7 +10709,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：93
+- 杂项域：94
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：64
@@ -10695,7 +10719,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：96
+- 前端 UI 域：97
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -10813,6 +10837,7 @@
 - MC-089: dev-worktree 的退出码：`list` 不许因存在会话锁（哪怕全是失效锁）而 exit 1；`scripts/*.sh` 里函数体末命令不得是会被当成返回值的 `[ … ] && …` 复合形态（issue #6243）
 - MC-090: 数据库**外键违例**的归口与日志面（issue #6210）：外键违例 ⇒ 4xx（VALIDATION_ERROR）且**不落兜底 500**，且这一类日志**不打异常本体与堆栈**（约束名 / 表名 / schema 不进日志）；射程**刻意只到外键** —— 唯一 / 非空 / 检查违例保持既有 500 契约（两向反向对照：非约束类未知异常仍 500 带堆栈、唯一键失败仍 500 带堆栈）；类级元守卫 = 分支台账 ⇄ 反射双向相等（新分支未登记即红）
 - MC-092: 云 dev DB 白名单**一条命令**（幂等 / 只追加 / fail-closed / 不泄漏）+ 起栈入口预检与业务路由自检（issue #6789）：`scripts/dev-db-whitelist.sh` 是 `--ModifyMode Append` 的唯一承载体，覆盖语义与 `default` 组零改动，起栈入口在失败前就把处置命令说出来
+- MC-093: 已知 console 台账**只许缩短**的终态：售后 hydration + 加工页 measure 两条缺陷修好后 clearance 清零（机制保留、判据 H 判别力不依赖台账非空）（issue #6799）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
