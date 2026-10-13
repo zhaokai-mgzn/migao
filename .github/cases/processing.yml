@@ -1332,7 +1332,7 @@ cases:
       - tenant_config
       - backend-contract
     truths_ref:
-      - processing-manage.worker-page-config
+      - processing-manage.worker-menu-pages
     user_inputs:
       - "工人手机上该看到哪几页？一体机也一样吗？"
     expectations:
@@ -1373,7 +1373,7 @@ cases:
       - tenant_config
       - backend-contract
     truths_ref:
-      - processing-manage.worker-page-config
+      - processing-manage.worker-menu-pages
     user_inputs:
       - "车间里只会裁高的工人，能只让他看到裁高计算器吗？"
     expectations:
