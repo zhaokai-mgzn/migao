@@ -3452,7 +3452,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（97 case）
+## 杂项域（98 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4910,6 +4910,21 @@
 跳过: [backend-contract] 判据是零 LLM 的确定性读数（词法扫 Java 字面量 ⇄ 台账 + 真库实例判据 + admin-web vitest 渲染判据），pytest / vitest / JUnit 真跑，零网络，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-13 新增（issue #6827）。取号 = `python3 scripts/next_case_id.py MC` ⇒ main 现取 MC-001~095、在飞 PR 未占 ⇒ **MC-096**。病（用户 2026-10-13 现场报的）：#6580 把「参数总览」一级项撤掉、配置面收口进「企业基础设置」页内的配置域，而 `RemnantService` 的未配置提示与 422 suggestion 仍逐字写着「参数总览 → 余料回收」⇒ 商家照着点找不到页面。同批修：① 两处指针改为「企业基础设置 → 余料尺寸」（域 label 真值源 = `frontend/admin-web/src/lib/config-center-domains.ts` 的 `remnant-sizes`）+ 两处沿革注释说清撤销单号；② 「小件（工序名）」改原生 `input[list]` + `datalist` 下拉辅助（选项来自**既有读面** `productionApi.getOperationsCatalog()`，取 `name` 保序去重、**不取** `library_name`、fail-open 不新增错误条、**不新增端点 / 不改权限码**）；③ 读失败话术由「工艺配置」权限名改为商家面**显示名**「加工管理」+ 指向「岗位权限」（真值源 = `rbac/manifest.json` 的 `names`）；④ 类级守卫 + 只许缩短台账。**红证（逐字）**：改前 `python3 -m pytest tests/unit_ci_workflows/test_removed_page_copy_guard.py -q` = **5 failed / 5 passed**（具名报出 `RemnantService.java::NOTICE_SPECS_UNCONFIGURED` 与 `::ERR_REMNANT_SPEC_REQUIRED` 的旧指针）；改后 = **10 passed**。前端改前 `npx vitest run frontend/admin-web/tests/unit/components/RemnantItemSizesPanel.test.tsx` = **3 failed / 11 passed**（判据 7 三条），改后与 `TenantParamsPanel.test.tsx` / `settings.test.tsx` 三文件合计 = **79 passed**。后端注入式红证（把新指针改回旧指针）：`MIGAO_REQUIRE_REALDB=1 ./mvnw -q test -Dtest=RemnantServiceTest` = **Tests run: 8, Failures: 2**（`RemnantServiceTest.java::recoverFailsClosedInFourWays` / `::specsDefaultToEmptyWithAVisibleNotice` 两条各自报出旧串），恢复后 = **Tests run: 8, Failures: 0**。⚠️ 守卫那一半**不入 CHANGELOG**（铁律 7 豁免：判据面）；商家可见文案 + 交互变更**同 PR 入了** `## [Unreleased]`。 ｜ tags: copy, removed-page, config-center, class-level-guard, ledger-only-shrink, comment-vs-literal, red-proof
+
+### MC-097. 已移除页面名的**旧指针**改指「企业基础设置 → <域 label>」（issue #6839 = #6826 的 B1 包·admin-api 面）：按**动作**拆指针、假出口改写动作、能力名显式不改 🔵
+```
+你: 后台提示我「请在「工艺配置 → 工艺路线」把一条工艺设为默认」——可「工艺配置」这个菜单早没了，我在「企业基础设置」里到底该点哪个域？
+数据: 🔴 **判据 1·本包承包文件零已移除页面名**：`ProcessingFeeCalculator` / `ProcessingFeeCombinationCommandService` / `ProductionRoutingCommandService` / `ProcessingOrderService` / `ProductionInstanceRepricingService` / `ProductionService` 的**字符串字面量**里不再出现 `REMOVED_PAGE_NAMES`（参数总览 / 工艺配置 / 加工项管理 / 加工费管理）。执行点 = tests/unit_ci_workflows/test_removed_page_pointer_targets.py::test_contract_files_carry_no_removed_page_name（**改前红**：逐条具名报出旧串）
+数据: 🔴 **判据 2·逐域正控（指对域，不只是「不含旧名」）**：4 个目标域 label 各被对应服务逐字读到 —— `ProcessingFeeCalculator` ⇒ 「企业基础设置 → 加工费组合」（域 `fee-combinations`）、`ProcessingFeeCombinationCommandService` + `ProductionRoutingCommandService` ⇒ 「企业基础设置 → 加工项与分类」（域 `processing-items`）、`ProcessingOrderService` ⇒ 「企业基础设置 → 工艺路线」（域 `craft-route`）、`ProductionInstanceRepricingService` + `ProductionService` ⇒ 「企业基础设置 → 工序与部位单价」（域 `operation-prices`，**矩阵格 = 该域**）。执行点 = 同文件 ::test_each_domain_pointer_is_the_current_domain_label + ::test_domain_truth_source_is_live
+数据: 🔴 **判据 3·两处假出口改写动作（不是换个页面名）**：① `ProductionRoutingCommandService` 的 craft 触发值提示不再写「工艺词表」（商家面无该页、**也无写能力**：`production_crafts` 只经 `GET /route-rule-options` 供触发值下拉取值）⇒ 改写后说清**真边界**（触发值只能取自本店**已有的活跃工艺** / 换一个已有的 / 新增请联系服务方）；② `ProcessingOrderService` 的「缺 craft」提示不再写「工艺配置」，但**保留真出路**「下单时给出工艺」。执行点 = 同文件 ::test_false_exits_no_longer_name_a_nonexistent_coordinate
+数据: 🔴 **判据 4·台账只许缩短 + 常量与台账一致**：`removed_page_copy_ledger.json` 清到 **3 条 / 3 处**（只剩**能力名**：`PermissionService` ×1 / `RegistrationService` ×2），且每条的 `reason` 必须具名说清它是**能力名（不是坐标）**；守卫的 `FROZEN_MAX_ENTRIES` / `FROZEN_MAX_HITS` 与台账**逐值一致**（3 / 3）。执行点 = 同文件 ::test_ledger_shrunk_to_capability_names_only + tests/unit_ci_workflows/test_removed_page_copy_guard.py::test_ledger_entries_are_live_and_only_shrink
+数据: 🔴 **判据 4b·负控（能力名不得被改成坐标）**：`PermissionService` / `RegistrationService` 的字面量里**不得**出现「企业基础设置 →」（改成页面坐标 = 把岗位职责读成导航路径）。执行点 = 同文件 ::test_capability_names_stay_out_of_the_pointer_rewrite
+数据: 🔴 **判据 5·判别力自证（注入式）**：把真语料里 `ProductionService` 的新指针改回「工艺配置 → 工艺路线」⇒ 判据 1 当场红；**只加注释**（含旧页名）⇒ 一条判据都不红（沿革注释合法，与 MC-096 的对照读数同口径）。执行点 = 同文件 ::test_injection_detects_a_reverted_pointer / ::test_injection_comment_only_change_is_not_red
+数据: **实例判据·Java 契约面**：`ProductionRoutingCommandServiceOptionCreateTest::craftTriggerValueOutsideVocabularyIsRejected` 的断言随文案同步（旧断言判的是旧词表名 ⇒ 新断言判的是新措辞（「已有的活跃工艺」），**判据不放宽**：仍是 422 + `field=trigger_value` + 零写入）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionRoutingCommandServiceOptionCreateTest.java
+数据: **边界（照实登记）**：① **能力名 3 处有意不改**（岗位/权限显示名，理由 + 重启条件写进台账 `reason` 与 PR body）；② **商家面无工艺维护入口**是**能力缺口**（是否补一个工艺维护入口 = 产品范围决策 ⇒ 有意不改 + 重启条件，**不许**读成已解决）；③ 判不了「假出口真的不可达」（那要遍历商家面写能力的语义判断）；④ 判不了「该文案会不会真的上屏」（要 `migao-dev-flow` §15.7 真机截图）；⑤ 前端字面量（B2）与 Agent 侧导航知识（B3）**不在本用例射程**。
+跳过: [backend-contract] 判据是零 LLM 的确定性读数（词法扫 admin-api Java 字面量 + 域 label 真值源现取 + 台账现取 + JUnit 契约面），pytest / JUnit 真跑，零网络，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-13 新增（issue #6839 = #6826 的 B1 包）。取号 = `python3 scripts/next_case_id.py MC` ⇒ main 现取 MC-001~096 ⇒ **MC-097**（返回码 0）。病：`#6580` 撤掉「加工项管理」「工艺配置」两个菜单项后，admin-api 的服务端文案仍指向它们；#6827 建立类级守卫 + 12 条 / 13 处台账后，本包逐条判死并改净。**红证（逐字）**：改前 `python3 -m pytest tests/unit_ci_workflows/test_removed_page_pointer_targets.py -q` = **6 failed / 2 passed**（判据 1 具名报出 10 处旧指针、判据 2 四条正控全无、判据 3 假出口未改写、判据 4 台账 12≠3）；同批 `test_removed_page_copy_guard.py` 因台账未销账同步红。改后两个文件合计 = **18 passed**。注入式对照：`ProductionService.java` 的新指针改回旧串 ⇒ 判据 1 红；只加含旧名的注释 ⇒ 不红。 ｜ tags: copy, removed-page, config-center, domain-label, false-exit, capability-name, ledger-only-shrink, red-proof
 
 ## 商家入驻域（6 case）
 
@@ -6446,7 +6461,7 @@
 期望: craft_calc_config_query
 数据: success=true
 数据: （散文、不计分）逐项来自服务端：配置项与数值只能来自工具返回（`GET /api/admin/production/craft-calc-config`），不得用行业常识 / 代码里的默认常量顶替，也不得编造服务端没返回的键；取不到时如实说「暂未取到算料配置」
-数据: （散文、不计分）只读边界：本工具**不做算料**（不给某一单算米数 / 报价）⇒ 要算具体一单必须引导到后台算料页填尺寸；配置修改不在能力内 ⇒ 引导后台「工艺配置」页，**不得声称已修改**（工具 read_only=true，无任何写 action）
+数据: （散文、不计分）只读边界：本工具**不做算料**（不给某一单算米数 / 报价）⇒ 要算具体一单必须引导到后台算料页填尺寸；配置修改不在能力内 ⇒ 引导「企业基础设置 → 算料口径」，**不得声称已修改**（工具 read_only=true，无任何写 action）
 必须成功: craft_calc_config_query
 ```
 真值: fabric-calc.craft-calc-config, ai-chat.tool-classes
@@ -6461,7 +6476,7 @@
 数据: 调用参数 action=routing_gaps（缺口面；工序库目录是 operation_catalog_query 的 operations，两者不得混用）
 数据: （散文、不计分）缺口逐条来自服务端：`unrouted_operations` / `unrouted_operation_total` / `pending_confirmation_total` / `signal_keys_without_route` 只能原样转述 `GET /api/admin/production/routing-gaps` 的返回，不得自行推断「哪道工序该进哪条路线」，也不得编造服务端没返回的数量
 数据: （散文、不计分）「有意挂起 ≠ 系统漏了」：`pending_confirmation=true` 的工序（等客户输入）必须如实说明**是有意挂起**，不得报成系统缺口；必要时可用 `note` 字段的口径解释
-数据: （散文、不计分）只读边界：本工具 read_only=true，无任何写 action ⇒ 不得声称已把工序加进路线 / 已新建路线，只能引导商家去后台「工艺配置」页处理
+数据: （散文、不计分）只读边界：本工具 read_only=true，无任何写 action ⇒ 不得声称已把工序加进路线 / 已新建路线，只能引导商家去「企业基础设置 → 工艺路线」处理
 必须成功: craft_config_query
 ```
 真值: processing-manage.craft-config-routing-gaps, ai-chat.tool-classes
@@ -6503,7 +6518,7 @@
 数据: success=true
 数据: 调用参数 action=fee_combinations（组合定价表面）
 数据: （散文、不计分）逐条来自服务端：`combinations[]` 的 items / composition_key / unit_price / unit / status 只能原样转述 `GET /api/admin/production/processing-fee-combinations` 的返回；**不得用行业常识或代码默认常量编一个价**，也不得把 `unit_price` 与加工项自己的单价混为一谈
-数据: （散文、不计分）只读边界：改价 / 新建 / 停用组合都不在能力内（工具 read_only=true）⇒ 只能引导后台「加工项管理 → 加工费组合」页，不得声称已改价
+数据: （散文、不计分）只读边界：改价 / 新建 / 停用组合都不在能力内（工具 read_only=true）⇒ 只能引导「企业基础设置 → 加工费组合」，不得声称已改价
 必须成功: craft_config_query
 ```
 真值: processing-manage.craft-config-fee-combinations, ai-chat.tool-classes
@@ -6641,7 +6656,7 @@
 
 ### PP-022. 工序改价并发面核验（N=4 并发提交同一工序的同一次调价）：价格版本账恰追加 1 行、当前价 = 最新版本行（issue #6238） 🟡
 ```
-你: 商家在「工艺配置」页改了工序单价，手抖点了两次保存（或两个管理员同时点了保存）
+你: 商家在「企业基础设置 → 工序与部位单价」改了工序单价，手抖点了两次保存（或两个管理员同时点了保存）
 数据: **核验结论 = 真**（台账 after-sales-sideeffect-concurrency-ledger.json 的 unverified 观察项逐字称「⚠️ **涉钱面**：价格版本**追加 insert** + 可选状态写 ⇒ 并发重复提交可能重复追加版本行」）：该主张**在当前代码上成立** —— 修前 N=4 并发提交同一次调价（旧价 100.00 → 新价 200.00）**3 轮全部**读到「版本账总行数 5 / 其中新价行 4」，即同一次调价被记了 4 次。
 数据: **主判据（取库内事实）**：并发提交后 `unit_price = 新价` 的版本行恰 1 行，总行数 == 独立算式（基线 1 + 追加 1 = 2）；断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationPriceVersionConcurrentRealDbTest.java 的 concurrentSamePriceSubmissionAppendsExactlyOneVersionRow（N=4 × 3 轮，逐轮打印「真重叠」证据：4 个请求的时间区间逐对求交 6/6 + 并集跨度 < 各历时之和）。
 数据: **账目自洽**：`production_operations.unit_price` == 新价，且 `created_at` 最新那行版本账的价 == 当前价（「当前价 = 最新版本行」这条冻结契约在并发下仍成立）。
@@ -10748,8 +10763,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：741（活跃 134，跳过 607）
-- tier 分布：smoke 12 / normal 687 / adversarial 32
+- 用例总数：742（活跃 134，跳过 608）
+- tier 分布：smoke 12 / normal 688 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10764,7 +10779,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：97
+- 杂项域：98
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：64
@@ -10896,6 +10911,7 @@
 - MC-094: 验签公钥失配**不得伪装成产品失败**（issue #6801）：admin-api 签发密钥 ⇄ ai-agent 校验公钥的指纹对齐（`scripts/align_agent_jwt_key.py` 是唯一真值源），起栈预检在跑 spec 之前把「环境失配」与「产品缺陷」分开
 - MC-095: 冲突态**不许静默**（issue #6815）：PR 与 base 冲突 ⇒ GitHub 造不出合并提交 ⇒ `pull_request` 工作流**连 run 都不创建**；判据必须把 ① 未创建 / ② pending / ③ 失败 **三态分开读**
 - MC-096: 已移除的页面名不得出现在**服务端面向商家的文案**里（issue #6827）：#6580 收口后未配置提示与 422 理由仍指向「参数总览 → 余料回收」—— 类级守卫只扫**字符串字面量**（沿革注释合法），未登记即红 + 台账只许缩短
+- MC-097: 已移除页面名的**旧指针**改指「企业基础设置 → <域 label>」（issue #6839 = #6826 的 B1 包·admin-api 面）：按**动作**拆指针、假出口改写动作、能力名显式不改
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

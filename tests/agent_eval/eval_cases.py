@@ -6423,6 +6423,24 @@ _CASE_MC_096 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-097 [NORMAL] 已移除页面名的**旧指针**改指「企业基础设置 → <域 label>」（issue #6839 = #6826 的 B1 包·admin-api 面）：按**动作**拆指针、假出口改写动作、能力名显式不改（源: cases/misc.yml）──
+_CASE_MC_097 = EvalCase(
+    id='MC-097',
+    legacy_id='',
+    title='已移除页面名的**旧指针**改指「企业基础设置 → <域 label>」（issue #6839 = #6826 的 B1 包·admin-api 面）：按**动作**拆指针、假出口改写动作、能力名显式不改',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['后台提示我「请在「工艺配置 → 工艺路线」把一条工艺设为默认」——可「工艺配置」这个菜单早没了，我在「企业基础设置」里到底该点哪个域？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·本包承包文件零已移除页面名**：`ProcessingFeeCalculator` / `ProcessingFeeCombinationCommandService` / `ProductionRoutingCommandService` / `ProcessingOrderService` / `ProductionInstanceRepricingService` / `ProductionService` 的**字符串字面量**里不再出现 `REMOVED_PAGE_NAMES`（参数总览 / 工艺配置 / 加工项管理 / 加工费管理）。执行点 = tests/unit_ci_workflows/test_removed_page_pointer_targets.py::test_contract_files_carry_no_removed_page_name（**改前红**：逐条具名报出旧串）', '🔴 **判据 2·逐域正控（指对域，不只是「不含旧名」）**：4 个目标域 label 各被对应服务逐字读到 —— `ProcessingFeeCalculator` ⇒ 「企业基础设置 → 加工费组合」（域 `fee-combinations`）、`ProcessingFeeCombinationCommandService` + `ProductionRoutingCommandService` ⇒ 「企业基础设置 → 加工项与分类」（域 `processing-items`）、`ProcessingOrderService` ⇒ 「企业基础设置 → 工艺路线」（域 `craft-route`）、`ProductionInstanceRepricingService` + `ProductionService` ⇒ 「企业基础设置 → 工序与部位单价」（域 `operation-prices`，**矩阵格 = 该域**）。执行点 = 同文件 ::test_each_domain_pointer_is_the_current_domain_label + ::test_domain_truth_source_is_live', '🔴 **判据 3·两处假出口改写动作（不是换个页面名）**：① `ProductionRoutingCommandService` 的 craft 触发值提示不再写「工艺词表」（商家面无该页、**也无写能力**：`production_crafts` 只经 `GET /route-rule-options` 供触发值下拉取值）⇒ 改写后说清**真边界**（触发值只能取自本店**已有的活跃工艺** / 换一个已有的 / 新增请联系服务方）；② `ProcessingOrderService` 的「缺 craft」提示不再写「工艺配置」，但**保留真出路**「下单时给出工艺」。执行点 = 同文件 ::test_false_exits_no_longer_name_a_nonexistent_coordinate', '🔴 **判据 4·台账只许缩短 + 常量与台账一致**：`removed_page_copy_ledger.json` 清到 **3 条 / 3 处**（只剩**能力名**：`PermissionService` ×1 / `RegistrationService` ×2），且每条的 `reason` 必须具名说清它是**能力名（不是坐标）**；守卫的 `FROZEN_MAX_ENTRIES` / `FROZEN_MAX_HITS` 与台账**逐值一致**（3 / 3）。执行点 = 同文件 ::test_ledger_shrunk_to_capability_names_only + tests/unit_ci_workflows/test_removed_page_copy_guard.py::test_ledger_entries_are_live_and_only_shrink', '🔴 **判据 4b·负控（能力名不得被改成坐标）**：`PermissionService` / `RegistrationService` 的字面量里**不得**出现「企业基础设置 →」（改成页面坐标 = 把岗位职责读成导航路径）。执行点 = 同文件 ::test_capability_names_stay_out_of_the_pointer_rewrite', '🔴 **判据 5·判别力自证（注入式）**：把真语料里 `ProductionService` 的新指针改回「工艺配置 → 工艺路线」⇒ 判据 1 当场红；**只加注释**（含旧页名）⇒ 一条判据都不红（沿革注释合法，与 MC-096 的对照读数同口径）。执行点 = 同文件 ::test_injection_detects_a_reverted_pointer / ::test_injection_comment_only_change_is_not_red', '**实例判据·Java 契约面**：`ProductionRoutingCommandServiceOptionCreateTest::craftTriggerValueOutsideVocabularyIsRejected` 的断言随文案同步（旧断言判的是旧词表名 ⇒ 新断言判的是新措辞（「已有的活跃工艺」），**判据不放宽**：仍是 422 + `field=trigger_value` + 零写入）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionRoutingCommandServiceOptionCreateTest.java', '**边界（照实登记）**：① **能力名 3 处有意不改**（岗位/权限显示名，理由 + 重启条件写进台账 `reason` 与 PR body）；② **商家面无工艺维护入口**是**能力缺口**（是否补一个工艺维护入口 = 产品范围决策 ⇒ 有意不改 + 重启条件，**不许**读成已解决）；③ 判不了「假出口真的不可达」（那要遍历商家面写能力的语义判断）；④ 判不了「该文案会不会真的上屏」（要 `migao-dev-flow` §15.7 真机截图）；⑤ 前端字面量（B2）与 Agent 侧导航知识（B3）**不在本用例射程**。'],
+    skip_reason='[backend-contract] 判据是零 LLM 的确定性读数（词法扫 admin-api Java 字面量 + 域 label 真值源现取 + 台账现取 + JUnit 契约面），pytest / JUnit 真跑，零网络，不进入 agent-eval 冒烟',
+    tags=['copy', 'removed-page', 'config-center', 'domain-label', 'false-exit', 'capability-name', 'ledger-only-shrink', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -9282,7 +9300,7 @@ _CASE_PP_015 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['我们店的算料配置现在是什么？'],
     expectations=['craft_calc_config_query'],
-    data_checks=['success=true', '（散文、不计分）逐项来自服务端：配置项与数值只能来自工具返回（`GET /api/admin/production/craft-calc-config`），不得用行业常识 / 代码里的默认常量顶替，也不得编造服务端没返回的键；取不到时如实说「暂未取到算料配置」', '（散文、不计分）只读边界：本工具**不做算料**（不给某一单算米数 / 报价）⇒ 要算具体一单必须引导到后台算料页填尺寸；配置修改不在能力内 ⇒ 引导后台「工艺配置」页，**不得声称已修改**（工具 read_only=true，无任何写 action）'],
+    data_checks=['success=true', '（散文、不计分）逐项来自服务端：配置项与数值只能来自工具返回（`GET /api/admin/production/craft-calc-config`），不得用行业常识 / 代码里的默认常量顶替，也不得编造服务端没返回的键；取不到时如实说「暂未取到算料配置」', '（散文、不计分）只读边界：本工具**不做算料**（不给某一单算米数 / 报价）⇒ 要算具体一单必须引导到后台算料页填尺寸；配置修改不在能力内 ⇒ 引导「企业基础设置 → 算料口径」，**不得声称已修改**（工具 read_only=true，无任何写 action）'],
     skip_reason='',
     tags=['craft_calc', 'config', 'mibao', 'readonly', 'llm_behavior'],
     persona='mibao',
@@ -9301,7 +9319,7 @@ _CASE_PP_016 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['工艺路线现在有没有缺口？哪些工序还没进路线？'],
     expectations=['craft_config_query(action=routing_gaps)'],
-    data_checks=['success=true', '调用参数 action=routing_gaps（缺口面；工序库目录是 operation_catalog_query 的 operations，两者不得混用）', '（散文、不计分）缺口逐条来自服务端：`unrouted_operations` / `unrouted_operation_total` / `pending_confirmation_total` / `signal_keys_without_route` 只能原样转述 `GET /api/admin/production/routing-gaps` 的返回，不得自行推断「哪道工序该进哪条路线」，也不得编造服务端没返回的数量', '（散文、不计分）「有意挂起 ≠ 系统漏了」：`pending_confirmation=true` 的工序（等客户输入）必须如实说明**是有意挂起**，不得报成系统缺口；必要时可用 `note` 字段的口径解释', '（散文、不计分）只读边界：本工具 read_only=true，无任何写 action ⇒ 不得声称已把工序加进路线 / 已新建路线，只能引导商家去后台「工艺配置」页处理'],
+    data_checks=['success=true', '调用参数 action=routing_gaps（缺口面；工序库目录是 operation_catalog_query 的 operations，两者不得混用）', '（散文、不计分）缺口逐条来自服务端：`unrouted_operations` / `unrouted_operation_total` / `pending_confirmation_total` / `signal_keys_without_route` 只能原样转述 `GET /api/admin/production/routing-gaps` 的返回，不得自行推断「哪道工序该进哪条路线」，也不得编造服务端没返回的数量', '（散文、不计分）「有意挂起 ≠ 系统漏了」：`pending_confirmation=true` 的工序（等客户输入）必须如实说明**是有意挂起**，不得报成系统缺口；必要时可用 `note` 字段的口径解释', '（散文、不计分）只读边界：本工具 read_only=true，无任何写 action ⇒ 不得声称已把工序加进路线 / 已新建路线，只能引导商家去「企业基础设置 → 工艺路线」处理'],
     skip_reason='',
     tags=['craft_config', 'production', 'routing_gaps', 'readonly', 'llm_behavior'],
     persona='mibao',
@@ -9358,7 +9376,7 @@ _CASE_PP_019 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['我们店现在的加工费组合是怎么定价的？有哪些组合、多少钱一米？'],
     expectations=['craft_config_query(action=fee_combinations)'],
-    data_checks=['success=true', '调用参数 action=fee_combinations（组合定价表面）', '（散文、不计分）逐条来自服务端：`combinations[]` 的 items / composition_key / unit_price / unit / status 只能原样转述 `GET /api/admin/production/processing-fee-combinations` 的返回；**不得用行业常识或代码默认常量编一个价**，也不得把 `unit_price` 与加工项自己的单价混为一谈', '（散文、不计分）只读边界：改价 / 新建 / 停用组合都不在能力内（工具 read_only=true）⇒ 只能引导后台「加工项管理 → 加工费组合」页，不得声称已改价'],
+    data_checks=['success=true', '调用参数 action=fee_combinations（组合定价表面）', '（散文、不计分）逐条来自服务端：`combinations[]` 的 items / composition_key / unit_price / unit / status 只能原样转述 `GET /api/admin/production/processing-fee-combinations` 的返回；**不得用行业常识或代码默认常量编一个价**，也不得把 `unit_price` 与加工项自己的单价混为一谈', '（散文、不计分）只读边界：改价 / 新建 / 停用组合都不在能力内（工具 read_only=true）⇒ 只能引导「企业基础设置 → 加工费组合」，不得声称已改价'],
     skip_reason='',
     tags=['craft_config', 'production', 'fee_combinations', 'readonly', 'llm_behavior'],
     persona='mibao',
@@ -9539,7 +9557,7 @@ _CASE_PP_022 = EvalCase(
     title='工序改价并发面核验（N=4 并发提交同一工序的同一次调价）：价格版本账恰追加 1 行、当前价 = 最新版本行（issue #6238）',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.EDGE,
-    user_inputs=['商家在「工艺配置」页改了工序单价，手抖点了两次保存（或两个管理员同时点了保存）'],
+    user_inputs=['商家在「企业基础设置 → 工序与部位单价」改了工序单价，手抖点了两次保存（或两个管理员同时点了保存）'],
     expectations=[],
     data_checks=['**核验结论 = 真**（台账 after-sales-sideeffect-concurrency-ledger.json 的 unverified 观察项逐字称「⚠️ **涉钱面**：价格版本**追加 insert** + 可选状态写 ⇒ 并发重复提交可能重复追加版本行」）：该主张**在当前代码上成立** —— 修前 N=4 并发提交同一次调价（旧价 100.00 → 新价 200.00）**3 轮全部**读到「版本账总行数 5 / 其中新价行 4」，即同一次调价被记了 4 次。', '**主判据（取库内事实）**：并发提交后 `unit_price = 新价` 的版本行恰 1 行，总行数 == 独立算式（基线 1 + 追加 1 = 2）；断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationPriceVersionConcurrentRealDbTest.java 的 concurrentSamePriceSubmissionAppendsExactlyOneVersionRow（N=4 × 3 轮，逐轮打印「真重叠」证据：4 个请求的时间区间逐对求交 6/6 + 并集跨度 < 各历时之和）。', '**账目自洽**：`production_operations.unit_price` == 新价，且 `created_at` 最新那行版本账的价 == 当前价（「当前价 = 最新版本行」这条冻结契约在并发下仍成立）。', '**库层零兜底（可复核判据）**：`production_operation_price_versions` 除主键外**无唯一约束**（`pg_indexes` 实测 + 「同一个未提交事务里直接插两行同 (operation_id, unit_price) 被库接受」的反向自证，事务回滚零残留）⇒ 重复记账不可能由 DDL 挡住。若将来加了唯一索引，本判据转红（撞约束是 500 还是 409 须重新裁定）。', '**正对照（闸不误杀）**：单请求串行改价真追加 1 行；随后**同价重复提交**仍是 1 行（既有的「价没变 ⇒ 不追加」幂等路径没被改坏）—— 断言 = 同文件 serialPriceChangeStillAppendsExactlyOneRow。', '**入口面（实测登记）**：`PUT /api/admin/production/operations/{id}` **没有** Idempotency-Key 请求头 ⇒ 并发 / 重复提交的唯一防线就是服务层自己的闸（断言 = 同文件 updateEndpointOffersNoIdempotencyKeyEntry）。', '**判别力（红证，注入式 · 双向）**：把 `ProductionOperationMapper#lockById` 的 SQL 里的 `FOR UPDATE` 摘掉（= 退回「不加锁读旧价」的修前形态）⇒ 本判据 3 轮全部必红，实测读数 = 成功数 4 / 版本账总行数 5 / 其中新价行 4；注入撤回后复绿。注入方式与成对读数见 PR body（注入是手动、一次性动作，不落成常驻判据）。'],
     skip_reason='[backend-contract] 纯后端并发落库判据（无 LLM 写路径：工序改价走 admin-api 服务层的 PUT /api/admin/production/operations/{id}，不经黄金策 Agent 工具）⇒ 不进 agent-eval 冒烟：由 admin-api 真库并发单测 ProductionOperationPriceVersionConcurrentRealDbTest 执行',
@@ -14201,6 +14219,7 @@ ALL_CASES = (
     _CASE_MC_094,
     _CASE_MC_095,
     _CASE_MC_096,
+    _CASE_MC_097,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
