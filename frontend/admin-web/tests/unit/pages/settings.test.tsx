@@ -473,11 +473,24 @@ describe('判据 4：URL —— `?domain=` 直达 + 旧 `?tab=` 逐条映射且*
     expect(mockRouterReplace).not.toHaveBeenCalled()
   })
 
-  it('旧深链 `?tab=notification` ⇒ 映射到通知域（不跳走）', async () => {
-    mockSearchParams.mockReturnValue(new URLSearchParams('tab=notification'))
-    render(<SettingsPage />)
-    expect(await screen.findByTestId('config-domain-panel-notifications')).toBeInTheDocument()
-    expect(mockRouterReplace).not.toHaveBeenCalled()
+  it('旧深链 `?tab=basic` / `?tab=notification` ⇒ 各自映射（不跳走）', async () => {
+    // ⚠️ 两条**都要跑**（改前标题写了 `?tab=basic` 却只跑后两条 —— 标题比断言强，
+    //    独立复核抓到的形态；`?tab=workerPages` 已由 #6828/#6830 整层移除 ⇒ 它的落点
+    //    由下面那条**专门的**「送到员工管理」判据承担，此处不再混进「各自映射」这一族）
+    for (const [tab, domain] of [
+      ['basic', 'enterprise'],
+      ['notification', 'notifications'],
+    ] as const) {
+      mockSearchParams.mockReturnValue(new URLSearchParams(`tab=${tab}`))
+      const { unmount } = render(<SettingsPage />)
+      expect(
+        await screen.findByTestId(`config-domain-panel-${domain}`),
+        `?tab=${tab} 应落到「${domain}」域`,
+      ).toBeInTheDocument()
+      expect(mockRouterReplace, `?tab=${tab} 是旧链兼容 ⇒ 不许跳走`).not.toHaveBeenCalled()
+      unmount()
+    }
+  })
   })
 
   it('🔴 旧深链 `?tab=workerPages`：该域已整层移除 ⇒ 送到「员工管理」（有确定落点，不落空白、不复活该域）', async () => {
@@ -826,11 +839,29 @@ describe('判据 7：域内零 tab（两层导航并存 = 用户说的「分不�
     expect(within(panel).getByTestId('calc-caliber-save')).toBeInTheDocument()
   })
 
-  it('台账无幽灵：登记的未拆域必须仍是**真实存在**的域 key（拼错 ⇒ 判据在对空气放行）', () => {
+  it('台账无幽灵 + 🔴 判别力自证（台账清零后循环体不执行 ⇒ 必须另有自证）', () => {
     const keys = CONFIG_DOMAINS.map((d) => d.key)
-    for (const k of TABS_NOT_YET_SPLIT) {
-      expect(keys, `台账里的「未拆域」${k} 已不是域 key ⇒ 判据在空跑，请删掉该条目`).toContain(k)
-    }
+    /**
+     * 判定式（真路径与自证**共用同一段**）：台账里每个 key 都必须是现役域 key。
+     * 返回「幽灵」清单而不是布尔，是为了让自证能**具名**报出是哪个 key。
+     */
+    const ghostsOf = (ledger: readonly string[]) => ledger.filter((k) => !keys.includes(k))
+
+    // 真路径：台账非空时逐条核；台账为空（#6585 清零后就是这一态）⇒ 这个数组恒空
+    expect(
+      ghostsOf(TABS_NOT_YET_SPLIT),
+      '台账里的「未拆域」已不是域 key ⇒ 判据在空跑，请删掉该条目',
+    ).toEqual([])
+
+    // 🔴 **判别力自证**（migao-acceptance「空断言」形态的处置口径）：
+    // 台账清零后**循环体一次都不执行** ⇒ 上面那条**自己证明不了自己还有判别力**（vacuous truth）。
+    // ⇒ 用**内存里的假输入**证明同一段判定式**会响**：含一个非域 key ⇒ 必须报出它。
+    expect(ghostsOf(['enterprise', 'not-a-domain']), '自证：判定式对幽灵 key 不响 ⇒ 判据是空断言').toEqual([
+      'not-a-domain',
+    ])
+    expect(ghostsOf(['__probe__'])).toEqual(['__probe__'])
+    // 反向对照：全是现役 key ⇒ 一个都不报（防「一律报警」那种反向假绿）
+    expect(ghostsOf(['enterprise', 'calc'])).toEqual([])
   })
 })
 

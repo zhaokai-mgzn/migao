@@ -58,6 +58,7 @@ import CalcCaliberPanel from '@/components/settings/CalcCaliberPanel'
 import { productionApi } from '@/lib/api'
 import { markErrorToastShown } from '@/lib/api-error'
 import { CALC_SCALAR_KEYS } from '@/lib/craft-calc-glossary'
+import { PARAM_DOMAINS } from '@/lib/tenant-params'
 import type { CraftCalcConfig } from '@/types'
 
 /**
@@ -390,7 +391,7 @@ describe('判据 2（#6825）：保存发**全量键**（后端是整份替换�
     expect(body.default_formula).toBe('pleat')
   })
 
-  it('保存成功 ⇒ 成功回执 + 不出现理由块；口径徽标由页面侧的读面回答（`source` 变「已保存」）', async () => {
+  it('保存成功 ⇒ 成功回执 + 不出现理由块（徽标**不**由本面板翻转：本形态下 `source` 仍是「当前使用系统默认值」）', async () => {
     READ_SOURCE = 'default'
     await renderPanel(async (draft) => {
       await productionApi.updateCraftCalcConfig(draft)
@@ -501,7 +502,20 @@ describe('判据 4（#6825）：读失败 ⇒ 无写面、不冒充「未配置�
 // ══════════════════════════════════════════════════════════════════════════════
 // 判据 5（冻结）：域自己就是编辑面 ⇒ 不许再把人送出本页
 // ══════════════════════════════════════════════════════════════════════════════
-it('不再挂「去算料配置」外链（域自己就是编辑面，不许把人送出页面）', () => {
+it('不再挂「去算料配置」外链：判据落在**数据层**（calc 域定义里没有向外指路的 `edit`）', () => {
+  // 🔴 **改判**（独立复核 B 抓到的「无法红的断言」）：改前只断言 DOM 里没有 `param-edit-calc`，
+  //    而那个链接由 `{domain.edit && …}` 把守、calc 域**从来没有过** `edit` 字段
+  //    ⇒ **把删掉的代码原样放回，那条断言仍然绿**（恒真）。
+  //    ⇒ 判据上移到域定义：有人（重新）给 calc 挂上外链 ⇒ 这里当场红。
+  const calc = PARAM_DOMAINS.find((d) => d.key === 'calc')
+  expect(calc, 'calc 域必须存在（域清单是单一真值源）').toBeDefined()
+  expect(
+    calc?.edit,
+    '算料口径域**自己就是编辑面**（issue #6585 / #6825）⇒ 域定义里不许再有「把人送出本页」的 `edit` 入口',
+  ).toBeUndefined()
+
+  // 附带（DOM / 文案层）：本面板也不出现「去算料配置」字样 + 机器锚点 `param-edit-calc` 不在
+  //（这两条单独不足以判红 —— 见上；留着是为了文案回归时先看见）
   render(<CalcCaliberPanel calc={null} calcError="" loading={false} />)
   expect(screen.queryByTestId('param-edit-calc')).toBeNull()
   expect(screen.queryByText(/去算料配置/)).toBeNull()
