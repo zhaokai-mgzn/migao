@@ -3452,7 +3452,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（98 case）
+## 杂项域（99 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4929,6 +4929,16 @@
 ```
 溯源: 2026-10-13 新增（issue #6839 = #6826 的 B1 包）。取号 = `python3 scripts/next_case_id.py MC` ⇒ main 现取 MC-001~096 ⇒ **MC-097**（返回码 0）。病：`#6580` 撤掉「加工项管理」「工艺配置」两个菜单项后，admin-api 的服务端文案仍指向它们；#6827 建立类级守卫 + 12 条 / 13 处台账后，本包逐条判死并改净。**红证（逐字）**：改前 `python3 -m pytest tests/unit_ci_workflows/test_removed_page_pointer_targets.py -q` = **6 failed / 2 passed**（判据 1 具名报出 10 处旧指针、判据 2 四条正控全无、判据 3 假出口未改写、判据 4 台账 12≠3）；同批 `test_removed_page_copy_guard.py` 因台账未销账同步红。改后两个文件合计 = **18 passed**。注入式对照：`ProductionService.java` 的新指针改回旧串 ⇒ 判据 1 红；只加含旧名的注释 ⇒ 不红。 ｜ tags: copy, removed-page, config-center, domain-label, false-exit, capability-name, ledger-only-shrink, red-proof
 
+### MC-098. **跨包指针消费者 ⇄ 后端下发面**双向核对：删锚点必红（issue #6853 的类级固化） 🔵
+```
+你: 后端删掉一个指针常量时，凭什么相信「已无消费者」—— 包作者自己 grep 一遍就算数吗？
+数据: 🔴 **判据 8·双向核对**：`backend/admin-api/src/main/java/com/migao/admin/service/**` 的**字面量**里现取全部「企业基础设置 → <域>」指针（不写死清单，面塌了 fail-closed）⇄ `CROSS_PACKAGE_POINTER_CONSUMERS` 登记的每个消费者文件必须（a）**代码区**里逐字带着该指针、（b）其所指指针**仍被后端下发**。执行点 = tests/unit_ci_workflows/test_removed_page_pointer_targets.py::test_cross_package_pointer_consumers_still_exist
+数据: 🔴 **判别力自证（注入式）**：① 消费者换坐标 ⇒ 红；② 后端不再下发 ⇒ 红；③ 消费者文件被删/改名 ⇒ 红；④ **只写在注释里**不算消费者仍带着它（否则这条判据就是空断言；`_ts_code_only` 先剥块注释再剥行注释）。执行点 = 同文件 ::test_injection_cross_package_pointer_guard_discriminates
+数据: **边界（照实登记）**：① 登记的是**已发现的**消费者（未登记的跨包消费者仍然无牙 —— 这是台账型守卫的固有射程，不粉饰）；② 剥注释**不做字符串字面量级解析**（字符串里的 `//` 会被当注释切掉；域指针串里没有 `//` ⇒ 对本判据无影响）；③ 判不了「消费者真的会跑」（那是 CI 腿的事 —— 本判据的价值正是**在前端腿之外**也能红）
+跳过: [backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 字面量 + 读两个前端文件 + 纯函数判定 + 注入自证），pytest 真跑、零网络、不进 agent-eval 冒烟
+```
+溯源: 2026-10-13 新增（issue #6853）。为什么必须有这条（本次事故的形状）：B1 删掉后端 `PRICING_ENTRY` 后，前端跨包判据仍抽它 ⇒ **只有 admin-web 腿会红**，而那条腿**不在 main 的 push 腿里** ⇒ 断点在合并前**没有任何东西会响**。本判据把「消费者 ⇄ 后端下发面」搬到 **Python 腿**上判，删任一侧都会在 `ci workflow helper unit tests` 里红。取号 = main 现取 MC-001~097 ⇒ **MC-098**。读数：本判据落地后 `pytest tests/unit_ci_workflows/test_removed_page_pointer_targets.py -q` 全绿（含注入式自证）。 ｜ tags: cross-package-anchor, liveness, ledger, backend-contract, red-proof
+
 ## 商家入驻域（6 case）
 
 ### OB-001. 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员 🔵
@@ -5073,7 +5083,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（64 case）
+## 订单域（65 case）
 
 ### OR-061. 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262） 🔵
 ```
@@ -6230,6 +6240,16 @@
 跳过: [backend-contract] 纯后端写面 + 数据迁移（无 LLM 环节 ⇒ 不进 agent-eval）：由 admin-api 单测 OrderLogisticsWriterTest 与真库 OrderLogisticsShippedAtBackfillRealDbTest 执行（机器判红通道 = traces.tests）
 ```
 溯源: 2026-10-10 新增（issue #6276；口径由用户 2026-10-10 裁定 = 首次发货时刻）。根因（V148/issue #6262 已现取登记、但当时只绕开未修）：OrderLogisticsWriter.upsert 的 shipped_at 只在**新建物流行**的分支里写，走 update 分支（已有物流行、再改物流/发货）时不补写 ⇒ 真库 order_logistics 全表 29 行、shipped_at 非空仅 16 行（13 行为空）。修法：① 新增 OrderLogisticsMapper#backfillShippedAtIfAbsent —— 一条条件 UPDATE（SET shipped_at = created_at WHERE … AND shipped_at IS NULL），取值**列对列**（建行那一刻就是首次发货时刻，三条建行路径都写 shipped_at = now() 且 created_at 与它同刻）⇒ 不需要外部真值、不猜；② 两个「读-改-写」写面（OrderLogisticsWriter 更新分支、OrderController.updateLogistics 更新分支）都在 updateById **之前**调它，OrderLogisticsService.updateLogistics 同样补上；③ 新增迁移 V151 把历史空值按同一条 SQL 回填（幂等、只影响 IS NULL、走新迁移不动已冻结的历史迁移）。边界：不动 orders.shipped_at(V148) 的存量 NULL 裁定；created_at 与首次发货时刻同刻是既有实装事实（本单不引入新语义）。 ｜ tags: order, logistics, shipped-at, data-quality, backend-contract
+
+### OR-065. 未定价告警的定价入口：**可见文案与后端下发的域指针逐字同源** + href 落在真实定价面（issue #6853 修 #6848 的卡点） 🔵
+```
+你: 未定价告警里那个「去定价」入口，跟后台提示里说的那个地方（「企业基础设置 → 加工费组合」）是同一个吗？
+数据: 🔴 **判据 1·同源（前端文案 = 后端下发的指针）**：`ProcessingFeeCalculator.java` 的**字符串字面量**里现取域指针（`「企业基础设置 → <域>」`，不写死），断言页面里**每一处**定价入口链接的**可见文案逐字包含**它（改坏前端文案 ⇒ 红；后端改指别处 ⇒ 红）。执行点 = frontend/admin-web/tests/unit/pages/orders-new-fee-preview.test.tsx 的 `expectPricingEntriesAreSameSourced`（#4590 组两条用例）
+数据: 🔴 **判据 2·落点真实**：每个入口的 `href` 必须是**仍解析**的定价面（现取重定向页 frontend/admin-web/src/app/(dashboard)/production/processing-fees/page.tsx 的 `redirect('/production/processing?tab=fees')`）—— 删重定向页 / 改落点 ⇒ 红
+数据: **判据 3·判别力（红证，逐字）**：① **修前红**（在**已合并的 main** 上现取）：在 `frontend/admin-web/tests/unit/pages/orders-new-fee-preview.test.tsx` 所在目录跑 vitest ⇒ `2 failed | 18 passed`，两条都报 `Error: 后端 ProcessingFeeCalculator 里找不到 PRICING_ENTRY —— 判据前提失效`；② **负向注入**：把链接文案改成另一个坐标（「工艺配置 → 工艺路线」）⇒ 同一条命令 `2 failed | 18 passed`（断言不是空断言）；③ **修后**：`20 passed`；④ 同族 5 个文件（UnpricedNotice / ProductionProgressTable / PieceworkTable / production-routings / production-piecework）合计 `224 passed` 无回退
+跳过: [backend-contract] 跨包同源判据（admin-web vitest 真读 admin-api Java 源码取真值；零 LLM 环节 ⇒ 不进 agent-eval 冒烟）
+```
+溯源: 2026-10-13 新增（issue #6853）。病根：B1（#6839 / 合并 `de7ccd6f5`）删除后端常量 `ProcessingFeeCalculator.PRICING_ENTRY` 时判定「已无消费者」，而本文件的跨包判据仍抽它 ⇒ admin-web 腿必红、卡住 #6848；且 **main 的 push 腿看不见 admin-web 腿**（核过 `de7ccd6f5` 的 check-runs）⇒ 合并后才炸。修法：真值源从 **URL** 换成**后端下发的域指针**（意图一字未变：前端入口必须与后端同源、不另写第二份坐标），并把前端链接文案改成带该指针（逐字），href 那半换成「重定向页现取」的真值源。舱内另加类级守卫（MC-098）。 ｜ tags: order, pricing, cross-package-anchor, same-source, backend-contract, red-proof
 
 ## 加工项域（28 case）
 
@@ -10766,8 +10786,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：742（活跃 134，跳过 608）
-- tier 分布：smoke 12 / normal 688 / adversarial 32
+- 用例总数：744（活跃 134，跳过 610）
+- tier 分布：smoke 12 / normal 690 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10782,10 +10802,10 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：98
+- 杂项域：99
 - 商家入驻域：6
 - 领域本体域：4
-- 订单域：64
+- 订单域：65
 - 加工项域：28
 - 加工单域：62
 - 商品域：120
@@ -10915,6 +10935,7 @@
 - MC-095: 冲突态**不许静默**（issue #6815）：PR 与 base 冲突 ⇒ GitHub 造不出合并提交 ⇒ `pull_request` 工作流**连 run 都不创建**；判据必须把 ① 未创建 / ② pending / ③ 失败 **三态分开读**
 - MC-096: 已移除的页面名不得出现在**服务端面向商家的文案**里（issue #6827）：#6580 收口后未配置提示与 422 理由仍指向「参数总览 → 余料回收」—— 类级守卫只扫**字符串字面量**（沿革注释合法），未登记即红 + 台账只许缩短
 - MC-097: 已移除页面名的**旧指针**改指「企业基础设置 → <域 label>」（issue #6839 = #6826 的 B1 包·admin-api 面）：按**动作**拆指针、假出口改写动作、能力名显式不改
+- MC-098: **跨包指针消费者 ⇄ 后端下发面**双向核对：删锚点必红（issue #6853 的类级固化）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
@@ -10939,6 +10960,7 @@
 - OR-060: 入库批次号跨请求取号核验（issue #6248）：单实例并发不撞 / 多实例同起点撞唯一索引 ⇒ 用户侧 500（已改成原子取号）/ 20 次耗尽 409
 - OR-062: 并发确认收款不得超卖：扣库存改原子条件更新（WHERE … AND COALESCE(stock,0) >= #{quantity}）+ 受影响行数判定 ⇒ 恰一个赢家、库存不为负、台账链相接（issue #6299）
 - OR-064: 物流「首次发货时刻」（order_logistics.shipped_at）：更新路径**只在为空时**补、已有值一律不覆盖（issue #6276）
+- OR-065: 未定价告警的定价入口：**可见文案与后端下发的域指针逐字同源** + href 落在真实定价面（issue #6853 修 #6848 的卡点）
 - PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）

@@ -6441,6 +6441,24 @@ _CASE_MC_097 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-098 [NORMAL] **跨包指针消费者 ⇄ 后端下发面**双向核对：删锚点必红（issue #6853 的类级固化）（源: cases/misc.yml）──
+_CASE_MC_098 = EvalCase(
+    id='MC-098',
+    legacy_id='',
+    title='**跨包指针消费者 ⇄ 后端下发面**双向核对：删锚点必红（issue #6853 的类级固化）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['后端删掉一个指针常量时，凭什么相信「已无消费者」—— 包作者自己 grep 一遍就算数吗？'],
+    expectations=[],
+    data_checks=['🔴 **判据 8·双向核对**：`backend/admin-api/src/main/java/com/migao/admin/service/**` 的**字面量**里现取全部「企业基础设置 → <域>」指针（不写死清单，面塌了 fail-closed）⇄ `CROSS_PACKAGE_POINTER_CONSUMERS` 登记的每个消费者文件必须（a）**代码区**里逐字带着该指针、（b）其所指指针**仍被后端下发**。执行点 = tests/unit_ci_workflows/test_removed_page_pointer_targets.py::test_cross_package_pointer_consumers_still_exist', '🔴 **判别力自证（注入式）**：① 消费者换坐标 ⇒ 红；② 后端不再下发 ⇒ 红；③ 消费者文件被删/改名 ⇒ 红；④ **只写在注释里**不算消费者仍带着它（否则这条判据就是空断言；`_ts_code_only` 先剥块注释再剥行注释）。执行点 = 同文件 ::test_injection_cross_package_pointer_guard_discriminates', '**边界（照实登记）**：① 登记的是**已发现的**消费者（未登记的跨包消费者仍然无牙 —— 这是台账型守卫的固有射程，不粉饰）；② 剥注释**不做字符串字面量级解析**（字符串里的 `//` 会被当注释切掉；域指针串里没有 `//` ⇒ 对本判据无影响）；③ 判不了「消费者真的会跑」（那是 CI 腿的事 —— 本判据的价值正是**在前端腿之外**也能红）'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 字面量 + 读两个前端文件 + 纯函数判定 + 注入自证），pytest 真跑、零网络、不进 agent-eval 冒烟',
+    tags=['cross-package-anchor', 'liveness', 'ledger', 'backend-contract', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -7905,6 +7923,24 @@ _CASE_OR_064 = EvalCase(
     data_checks=['判据 1·🔴 **已有值不得被覆盖**（改一次运单号 ≠ 改发货时刻）：① 真库直调补写语句（不经 updateById ⇒ 不被掩盖）⇒ 影响行数 **0**、该列逐字不变；② 端到端走生产 upsert 之后仍逐字等于原值（夹具刻意让 created_at 与真实首次发货时刻**不同** ⇒ 用 created_at 或 now() 顶掉会当场红）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderLogisticsShippedAtBackfillRealDbTest.java 的 existingShippedAtIsNeverOverwrittenByAnUpdate', '判据 2·🔴 **空值 + 一次更新 ⇒ 补上且只补一次**：`shipped_at IS NULL` 的行经生产 upsert 后取值 = **该行自己的 created_at**（夹具把它种成一个月前 ⇒ 写成 now() 当场红）；第二次更新不改变它，且补写语句第二次返回 0 行（幂等）。执行点 = 同文件 nullShippedAtIsBackfilledWithFirstShipMomentExactlyOnce', '判据 3·**补写必须发生在 updateById 之前**：真库复刻「先 updateById 再补写」的坏顺序 ⇒ 实体里的非 null 旧值被原样写回（顺序不可互换）。执行点 = 同文件 badOrderingLosesTheBackfill', '判据 4·**多租户隔离**：补写带显式 tenant_id 谓词 + 租户拦截器 ⇒ 在 A 上下文里对 B 的行调用返回 0 行、B 的行逐值不动（反向对照）。执行点 = 同文件 backfillIsTenantScoped', '判据 5·**写入路径两级守卫**（mock 面）：更新分支必须调补写锚点、新建分支**不得**多调（实体已带 shippedAt）；应用层不得自己填 now()。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderLogisticsWriterTest.java 的 updateNeverOverwritesExistingShippedAt / updateBackfillsWhenShippedAtIsNull / createPathDoesNotNeedBackfill', '判据 6·**类级元守卫**（新写面忘记补写即红）：现取 backend/admin-api/src/main/java/** 源码面，凡有 `order_logistics` 更新写面（变量名含 logistics 的 updateById）的文件都必须出现补写锚点 backfillShippedAtIfAbsent；含反空跑 + 四种坏形态的判别力自证 + 非物流 updateById 不得误伤。执行点 = tests/unit_ci_workflows/test_order_logistics_first_ship_backfill_guard.py'],
     skip_reason='[backend-contract] 纯后端写面 + 数据迁移（无 LLM 环节 ⇒ 不进 agent-eval）：由 admin-api 单测 OrderLogisticsWriterTest 与真库 OrderLogisticsShippedAtBackfillRealDbTest 执行（机器判红通道 = traces.tests）',
     tags=['order', 'logistics', 'shipped-at', 'data-quality', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── OR-065 [NORMAL] 未定价告警的定价入口：**可见文案与后端下发的域指针逐字同源** + href 落在真实定价面（issue #6853 修 #6848 的卡点）（源: cases/order.yml）──
+_CASE_OR_065 = EvalCase(
+    id='OR-065',
+    legacy_id='',
+    title='未定价告警的定价入口：**可见文案与后端下发的域指针逐字同源** + href 落在真实定价面（issue #6853 修 #6848 的卡点）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['未定价告警里那个「去定价」入口，跟后台提示里说的那个地方（「企业基础设置 → 加工费组合」）是同一个吗？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·同源（前端文案 = 后端下发的指针）**：`ProcessingFeeCalculator.java` 的**字符串字面量**里现取域指针（`「企业基础设置 → <域>」`，不写死），断言页面里**每一处**定价入口链接的**可见文案逐字包含**它（改坏前端文案 ⇒ 红；后端改指别处 ⇒ 红）。执行点 = frontend/admin-web/tests/unit/pages/orders-new-fee-preview.test.tsx 的 `expectPricingEntriesAreSameSourced`（#4590 组两条用例）', "🔴 **判据 2·落点真实**：每个入口的 `href` 必须是**仍解析**的定价面（现取重定向页 frontend/admin-web/src/app/(dashboard)/production/processing-fees/page.tsx 的 `redirect('/production/processing?tab=fees')`）—— 删重定向页 / 改落点 ⇒ 红", '**判据 3·判别力（红证，逐字）**：① **修前红**（在**已合并的 main** 上现取）：在 `frontend/admin-web/tests/unit/pages/orders-new-fee-preview.test.tsx` 所在目录跑 vitest ⇒ `2 failed | 18 passed`，两条都报 `Error: 后端 ProcessingFeeCalculator 里找不到 PRICING_ENTRY —— 判据前提失效`；② **负向注入**：把链接文案改成另一个坐标（「工艺配置 → 工艺路线」）⇒ 同一条命令 `2 failed | 18 passed`（断言不是空断言）；③ **修后**：`20 passed`；④ 同族 5 个文件（UnpricedNotice / ProductionProgressTable / PieceworkTable / production-routings / production-piecework）合计 `224 passed` 无回退'],
+    skip_reason='[backend-contract] 跨包同源判据（admin-web vitest 真读 admin-api Java 源码取真值；零 LLM 环节 ⇒ 不进 agent-eval 冒烟）',
+    tags=['order', 'pricing', 'cross-package-anchor', 'same-source', 'backend-contract', 'red-proof'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -14220,6 +14256,7 @@ ALL_CASES = (
     _CASE_MC_095,
     _CASE_MC_096,
     _CASE_MC_097,
+    _CASE_MC_098,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
@@ -14294,6 +14331,7 @@ ALL_CASES = (
     _CASE_OR_062,
     _CASE_OR_063,
     _CASE_OR_064,
+    _CASE_OR_065,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,

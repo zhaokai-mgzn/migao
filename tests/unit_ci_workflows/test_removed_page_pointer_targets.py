@@ -1,4 +1,4 @@
-# case_ids: MC-097
+# case_ids: MC-097, MC-098
 """**已移除页面名的旧指针改指「企业基础设置 → <域 label>」** 的实例判据（issue #6839 = #6826 的 B1 包）。
 
 ## 与 `test_removed_page_copy_guard.py`（MC-096）的分工（**不是第二份守卫**）
@@ -23,6 +23,7 @@
 | 5 | 域 label 真值源现取非空（fail-closed；域被改名 ⇒ 红而不是静默空集） |
 | 6 | **§31 P3 类级**：admin-api 字面量里「商家答复型提示 + 内部端点」的命中必须逐条在 `restricted_literal_leaks_ledger.json` 里（未登记即红 / 幽灵条目即红 / 条数 ≤ 冻结基线） |
 | 7 | `REMOVED_NAMES` 与 MC-096 守卫的 `REMOVED_PAGE_NAMES` **逐值相等**（本文件是镜像 ⇒ 镜像漂了要红，不许静默用旧集合） |
+| 8 | **跨包指针消费者 ⇄ 后端下发面**双向核对（issue #6853）：登记的消费者文件代码区里必须逐字带着后端下发的域指针，且该指针**仍在下发**（删任一侧 ⇒ 在**本 Python 腿**就红，不必等前端腿） |
 
 ## 边界（照实登记，`migao-dev-flow` §19.1）
 
@@ -359,3 +360,92 @@ def test_injection_leak_endpoint_is_detected():
     hit = {"path": f"{SERVICE_REL}/X.java", "line": 1, "literal": literal}
     registered = {leak_key(e) for e in leak_ledger().get("entries", [])}
     assert leak_key(hit) not in registered, "这条注入串不该已经在台账里（否则注入无效）"
+
+
+# ── 判据 8：跨包指针消费者（issue #6853）──────────────────────────────────────────
+
+#: 🔴 **跨包锚点登记**（issue #6853）：后端下发的「企业基础设置 → <域>」指针的**跨包消费者**。
+#: 为什么必须在**前端腿之外**另守一层：B1（#6839）删掉后端常量 `PRICING_ENTRY` 时，
+#: `frontend/admin-web/tests/unit/pages/orders-new-fee-preview.test.tsx` 仍在抽它 ⇒ **admin-web 腿**必红，
+#: 而 main 的 push 腿**看不见** admin-web 腿（核过 `de7ccd6f5` 的 check-runs）⇒ 合并后才炸、还卡住在飞的 PR。
+#: ⇒ 「已无消费者」这种判断必须**由机器**代答，不能靠包作者的 grep。
+#: 键 = (消费者文件, 该文件**代码区**里必须逐字出现的指针串)。
+CROSS_PACKAGE_POINTER_CONSUMERS = (
+    ("frontend/admin-web/tests/unit/pages/orders-new-fee-preview.test.tsx", "企业基础设置 → 加工费组合"),
+    ("frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx", "企业基础设置 → 加工费组合"),
+)
+
+_TS_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+_TS_LINE_COMMENT = re.compile(r"(?m)//.*$")
+_DOMAIN_POINTER_RE = re.compile(r"「(企业基础设置 → [^」]+)」")
+
+
+def _ts_code_only(text: str) -> str:
+    """TS/TSX 的**非注释**区（先剥块注释、再剥行注释）。
+
+    边界（照实登记）：不做字符串字面量级解析 ⇒ 字符串里的 `//`（如 URL）也会被当注释切掉 ——
+    对本判据无影响（域指针串里没有 `//`）。这么做是为了让「只在注释里提到指针」**不算**消费者仍带着它。
+    """
+    return _TS_LINE_COMMENT.sub("", _TS_BLOCK_COMMENT.sub("", text))
+
+
+def emitted_domain_pointers() -> set[str]:
+    """后端 `service/` 目录**字面量**里下发的全部域指针（现取，不写死清单）。"""
+    out: set[str] = set()
+    for path in sorted((REPO_ROOT / SERVICE_REL).glob("*.java")):
+        for _pos, literal in java_literals(path.read_text(encoding="utf8")):
+            out.update(_DOMAIN_POINTER_RE.findall(literal))
+    return out
+
+
+def _read_consumer_code(rel: str) -> str | None:
+    path = REPO_ROOT / rel
+    if not path.is_file():
+        return None
+    return _ts_code_only(path.read_text(encoding="utf8"))
+
+
+def cross_package_pointer_problems(consumers, emitted, read_code) -> list[str]:
+    """纯函数判定（便于注入式自证）：消费者 ⇄ 后端下发面**双向**核对。"""
+    problems: list[str] = []
+    for rel, pointer in consumers:
+        code = read_code(rel)
+        if code is None:
+            problems.append(f"{rel}：文件不存在（改名 / 删除 ⇒ 红；别只改台账）")
+            continue
+        if pointer not in code:
+            problems.append(f"{rel}：代码区里不再带着后端下发的指针「{pointer}」")
+        if pointer not in emitted:
+            problems.append(
+                f"{rel}：后端**已不再下发**指针「{pointer}」（现取 = {sorted(emitted)}）⇒ 消费者悬空"
+            )
+    return problems
+
+
+def test_cross_package_pointer_consumers_still_exist():
+    """判据 8：**跨包指针消费者**必须与后端下发面同时成立（issue #6853 的类级固化）。"""
+    emitted = emitted_domain_pointers()
+    assert emitted, (
+        "后端 service 目录里读不到任何「企业基础设置 → <域>」指针 ⇒ 红（fail-closed，不是「无对象可判」）"
+        " —— 本判据的判据面塌了"
+    )
+    problems = cross_package_pointer_problems(
+        CROSS_PACKAGE_POINTER_CONSUMERS, emitted, _read_consumer_code
+    )
+    assert problems == [], "跨包指针消费者对不上：\n" + "\n".join(problems)
+
+
+def test_injection_cross_package_pointer_guard_discriminates():
+    """判别力自证（判据 8）：三种坏形态各自判红 + 一条对照读数。"""
+    consumers = (("x.tsx", "企业基础设置 → 加工费组合"),)
+    ok_code = "… 企业基础设置 → 加工费组合 …"
+    ok_emitted = {"企业基础设置 → 加工费组合"}
+    assert cross_package_pointer_problems(consumers, ok_emitted, lambda _r: ok_code) == []
+    # ① 消费者换了坐标（真注入实测：把链接文案改成「工艺配置 → 工艺路线」⇒ admin-web 腿 2 failed）
+    assert cross_package_pointer_problems(consumers, ok_emitted, lambda _r: "工艺配置 → 工艺路线") != []
+    # ② 后端不再下发该指针（= B1 删锚点那一半）
+    assert cross_package_pointer_problems(consumers, set(), lambda _r: ok_code) != []
+    # ③ 消费者文件被删 / 改名
+    assert cross_package_pointer_problems(consumers, ok_emitted, lambda _r: None) != []
+    # ④ 对照读数：**只在注释里**出现 ≠ 消费者仍带着它（否则这条判据就是空断言）
+    assert "企业基础设置 → 加工费组合" not in _ts_code_only("// 企业基础设置 → 加工费组合\n")
