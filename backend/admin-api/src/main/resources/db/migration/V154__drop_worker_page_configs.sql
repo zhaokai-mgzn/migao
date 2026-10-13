@@ -18,6 +18,16 @@
 -- `DROP TABLE IF EXISTS` ⇒ 第二遍净效果相同。
 DROP TABLE IF EXISTS worker_page_configs;
 
+-- 顺带把 `users.worker_pages` 的**列注释**同步成单层口径（issue #6828 复核发现的分叉）：
+-- V152 里那条 `COMMENT ON COLUMN` 写的是「实际下发 = 企业页（worker_page_configs）∩ 本列 ⇒ 企业级仍是天花板」，
+-- 而企业级层已由本迁移移除 ⇒ 存量库（走过迁移链）的列注释必须改写，否则与 `db/init/schema.sql`
+-- （新建库路径）的 DB 元数据分叉：两条建库路径给出**互相矛盾**的列说明，而元守卫只查表名、覆盖不到。
+-- ⚠️ 已发布迁移不可改（V152 保持原样）；这是**唯一**一处补注释的落点。
+COMMENT ON COLUMN users.worker_pages IS
+    '工人端页面收窄（issue #6788）：NULL = 未收窄 = 全部页面（默认，零回归）；数组 = 收窄到这几页'
+    '（闭词表 = WorkerPages.ALL）。实际下发 = 本列（issue #6828 起企业级页面开关已整层移除 ⇒ 页面集只有这一层）；'
+    '🔴 不是权限码：工人 session 的 permissions 恒为 []。';
+
 -- ── 回滚段（可执行；逐句幂等）───────────────────────────────────────────────
 -- 形状逐字取自 V141__create_worker_page_configs.sql（含部分唯一索引与表注释），
 -- 便于回滚后与 V141 的终态逐项一致。

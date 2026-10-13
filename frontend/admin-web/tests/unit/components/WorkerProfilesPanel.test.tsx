@@ -267,8 +267,9 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
 
     expect(await screen.findByTestId('worker-menu-w-1')).toHaveTextContent('全部页面')
     expect(screen.getByTestId('worker-menu-w-2')).toHaveTextContent('裁高计算器')
-    // 空数组（历史脏数据）与「未收窄」显示得不一样（否则管理员分不清「没设」与「一页都不给」）
-    expect(screen.getByTestId('worker-menu-w-3')).toHaveTextContent('未开放任何页面')
+    // 🔴 空数组（历史脏数据）显示成「全部页面」—— 与**读面契约**一致（`WorkerPages.effectiveFor`
+    // 对归一后为空集一律回落全部页面，issue #6828 复核发现旧的「未开放任何页面」与契约相反）
+    expect(screen.getByTestId('worker-menu-w-3')).toHaveTextContent('全部页面')
   })
 
   it('⑧ 企业级页面读不到（如岗位没有生产域读码）⇒ 建号主流程照旧，只是不显示菜单一节', async () => {

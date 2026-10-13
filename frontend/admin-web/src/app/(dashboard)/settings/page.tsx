@@ -138,6 +138,15 @@ const LEGACY_TAB_TO_DOMAIN: Record<string, ConfigDomainKey> = {
 const LEGACY_TAB_REDIRECTS: Record<string, string> = { workerPages: '/employees' }
 
 /**
+ * 已整域移除的 `?domain=<key>` ⇒ 同一个落点（issue #6828）。
+ *
+ * 为什么不能只处理 `?tab=`：`?domain=` 是**本页自己产出**的地址形态（切域时写进 URL，见 `selectDomain`），
+ * 被移除的 `worker-pages` 域同样留下过可分享 / 可收藏的链接；不处理 ⇒ `findDomain` 找不到 ⇒ 静默落到
+ * **第一个可见域**（算料口径）—— 用户以为打开了「工人端页面」，实际看到的是别的东西。
+ */
+const REMOVED_DOMAIN_REDIRECTS: Record<string, string> = { 'worker-pages': '/employees' }
+
+/**
  * 算料读面失败的**归因话术**（issue #6580；真实浏览器验收实测的缺陷）。
  *
  * 判据只有一条：**话术说的原因必须是真原因** ——
@@ -189,11 +198,13 @@ export default function SettingsPage() {
     visibleDomains[0] ??
     CONFIG_DOMAINS[0]
 
-  /** 旧深链 `?tab=workerPages`（已移除的域）⇒ 送到工人档案页；不落空白、不复活该域 */
+  /** 旧深链（`?tab=workerPages` / `?domain=worker-pages`，都已移除的域）⇒ 送到工人档案页 */
   useEffect(() => {
-    const target = urlTab ? LEGACY_TAB_REDIRECTS[urlTab] : null
+    const target =
+      (urlTab ? LEGACY_TAB_REDIRECTS[urlTab] : null) ??
+      (urlDomain ? REMOVED_DOMAIN_REDIRECTS[urlDomain] : null)
     if (target) router.replace(target)
-  }, [urlTab, router])
+  }, [urlTab, urlDomain, router])
 
   /** 切域 = 页内跳转 + 高亮（设计 G3）：URL 带 `?domain=<key>` 与 `#domain-<key>` 锚点 */
   const selectDomain = (key: string) => {

@@ -131,11 +131,17 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
   /** 勾选态：`null` = 未收窄 = 全勾（全部页面）。 */
   const isChecked = (key: string) => form.pages === null || form.pages.includes(key)
 
-  /** 这一位工人被收窄到哪几页（人话名）；`null` = 未收窄（全部页面）。 */
+  /**
+   * 这一位工人被收窄到哪几页（人话名）；`null` = **全部页面**。
+   *
+   * 🔴 空数组（`[]`）也按「全部页面」显示（issue #6828 复核发现显示与契约相反）：写面本就 422 拒空数组
+   * （只能来自脏数据 / 直连 DB），而读面 `WorkerPages.effectiveFor` 对「归一后为空集」一律**回落全部页面**
+   * （与 worker-h5 的 fail-open 同口径）⇒ 显示必须跟着读面口径走，否则商家看到「未开放任何页面」
+   * 而工人实际看到全部四页。
+   */
   const menuSummary = (record: WorkerProfile): string | null => {
     const assigned = record.workerPages
-    if (assigned == null) return null
-    if (assigned.length === 0) return '未开放任何页面'
+    if (assigned == null || assigned.length === 0) return null
     return assigned.map((key) => menuPages.find((p) => p.key === key)?.label || key).join('、')
   }
 
@@ -234,10 +240,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
           return <span className="text-sm text-neutral-500" data-testid={`worker-menu-${record.id}`}>全部页面</span>
         }
         return (
-          <span
-            className={record.workerPages?.length ? 'text-sm text-neutral-700' : 'text-sm text-amber-700'}
-            data-testid={`worker-menu-${record.id}`}
-          >
+          <span className="text-sm text-neutral-700" data-testid={`worker-menu-${record.id}`}>
             {summary}
           </span>
         )

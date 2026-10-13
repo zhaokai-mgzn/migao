@@ -22,7 +22,8 @@ issue #6828 把「工人端出现哪些页面」从**两层**（企业级 `worke
 ## 判据（1~6）
 
 1. **符号与文件面**：已退场的类 / 组件 / API 客户端符号在受扫源码里**零命中**，且它们**自己的文件不存在**；
-2. **端点面**：源码里不得再出现**带引号的** `/api/admin/worker-page-config`（注释里追述历史不算 —— 本判据只认字符串字面量）；
+2. **端点面**：源码的**代码行**里不得再出现**带引号的** `/api/admin/worker-page-config`
+   （与符号判据同口径：整行注释 / 单行块注释里追述历史不算，见 `_code_only`）；
 3. **DB 面**：`db/init/schema.sql` 基线不得再有 `worker_page_configs`；且**必须**有一条迁移 `DROP TABLE IF EXISTS worker_page_configs`（表回来了却没有 drop ⇒ 红）；
 4. **商家面**：域目录 `config-center-domains.ts` 不得再有 `'worker-pages'` 域；设置页必须给出旧深链 `?tab=workerPages` 的确定性落点；
 5. **替代面在场**：目录端点（`WorkerPageCatalogController` + `production:view`）与档案面板的消费点（`workerPageCatalogApi`）都必须真实存在（**否则「移除」会变成「工人菜单配不了」**）；
@@ -145,14 +146,38 @@ def migrations_drop_the_table(migration_texts: list) -> bool:
     return sum(1 for t in migration_texts if DROP_STATEMENT in t) == 1
 
 
+def endpoint_literal_hits(sources: dict, endpoint=RETIRED_ENDPOINT) -> list:
+    """带引号的旧端点字面量在**代码行**里的残留（行注释里追述历史不算 —— 与符号判据同口径）。"""
+    return [name for name, text in sources.items() if endpoint in _code_only(text)]
+
+
+def config_domains_block(domains_ts: str) -> str:
+    """取出 `CONFIG_DOMAINS` 数组字面量（域目录的**唯一**真值处；取不到 ⇒ 空串 = fail-closed）。"""
+    m = re.search(r"CONFIG_DOMAINS[^=]*=\s*\[(.*?)\n\]", domains_ts, re.S)
+    return m.group(1) if m else ""
+
+
 def domain_is_gone(domains_ts: str) -> bool:
-    """域目录里不再有 `worker-pages` 域（字符串字面量形态）。"""
-    return "'worker-pages'" not in domains_ts
+    """`CONFIG_DOMAINS` 里不再有 `worker-pages` 域。
+
+    ⚠️ 只判**域目录数组**（不是整文件字符串）：这个文件同时承载 `LEGACY_DOMAIN_ALIASES`
+    （兼容旧链接的别名表）—— 若将来要给已移除的域补一条别名 / 落点，整文件字符串判据会把
+    **正确的修法**判红（判据与修复路径互相打架）。
+    """
+    block = config_domains_block(domains_ts)
+    if not block:
+        return False  # 取不到数组 ⇒ 判红（fail-closed：路径/写法漂移不许静默变绿）
+    return "key: 'worker-pages'" not in block and "label: '工人端页面'" not in block
 
 
 def legacy_link_has_a_landing(settings_page: str) -> bool:
     """旧深链 `?tab=workerPages` 有确定性落点（`LEGACY_TAB_REDIRECTS` 里有 workerPages）。"""
     return bool(re.search(r"LEGACY_TAB_REDIRECTS[^=]*=\s*\{[^}]*workerPages\s*:\s*'/[^']+'", settings_page, re.S))
+
+
+def legacy_domain_link_has_a_landing(settings_page: str) -> bool:
+    """旧深链 `?domain=worker-pages` 也有落点（这一形态是**本页自己产出**的，见 `selectDomain`）。"""
+    return bool(re.search(r"REMOVED_DOMAIN_REDIRECTS[^=]*=\s*\{[^}]*'worker-pages'\s*:\s*'/[^']+'", settings_page, re.S))
 
 
 def replacement_surface_is_wired(catalog_controller: str, panel_tsx: str) -> list:
@@ -207,9 +232,8 @@ def test_retired_symbols_and_files_are_gone():
 
 
 def test_retired_endpoint_literal_is_gone():
-    """判据 2：源码里不得再有**带引号**的旧端点字面量（注释追述历史不算）。"""
-    sources = _source_texts()
-    hits = [name for name, text in sources.items() if RETIRED_ENDPOINT in text]
+    """判据 2：源码的**代码行**里不得再有**带引号**的旧端点字面量（注释追述历史不算）。"""
+    hits = endpoint_literal_hits(_source_texts())
     assert not hits, (
         f"旧端点 {RETIRED_ENDPOINT} 又被挂上了：{hits}\n"
         "⇒ 企业级页面开关已整层移除（issue #6828）；商家面只需要只读目录端点 /api/admin/worker-pages。"
@@ -242,7 +266,15 @@ def test_settings_domain_removed_and_legacy_link_lands_somewhere():
     assert legacy_link_has_a_landing(settings), (
         "旧深链 `?tab=workerPages` 没有确定性落点（`LEGACY_TAB_REDIRECTS` 缺条目）⇒ 收藏了这一页的商家会落到空白"
     )
-    assert "'worker-pages'" not in settings, "设置页不得再渲染/引用已移除的 `worker-pages` 域"
+    assert legacy_domain_link_has_a_landing(settings), (
+        "旧深链 `?domain=worker-pages` 没有落点 ⇒ 该域已移除而 `findDomain` 找不到它 ⇒ 商家以为打开了"
+        "「工人端页面」，实际被静默送到**第一个可见域**（算料口径）"
+    )
+    # 判据只认「**渲染/引用该域**」，不认「提到这个 key」：落点表里出现 `'worker-pages'` 是**正确**的
+    # （不然判据会把唯一正确的修法判红 —— 这就是它早期版本的形态，2026-10-13 复核发现）
+    assert "config-domain-worker-pages" not in settings, (
+        "设置页仍在渲染已移除的 `worker-pages` 域（testid 还在）"
+    )
 
 
 def test_replacement_surface_is_present():
@@ -270,11 +302,27 @@ def test_guard_has_discriminating_power_on_mutated_corpus():
     # 两条迁移各 DROP 一次（重复登记）也算异常形态
     assert migrations_drop_the_table(["DROP TABLE IF EXISTS worker_page_configs;"] * 2) is False
 
-    assert domain_is_gone("export const CONFIG_DOMAINS = []") is True
-    assert domain_is_gone("key: 'worker-pages',") is False
+    endpoint_clean = {"a.java": '// 历史：旧端点 "/api/admin/worker-page-config" 已移除（issue #6828）'}
+    assert endpoint_literal_hits(clean) == []
+    assert endpoint_literal_hits(endpoint_clean) == [], "注释里的旧端点被当成活代码 ⇒ 假红"
+    assert endpoint_literal_hits({"a.java": 'mapping("/api/admin/worker-page-config")'}) != [], (
+        "端点判据恒绿（把旧端点挂回去也不红）"
+    )
+
+    assert domain_is_gone("export const CONFIG_DOMAINS: X[] = [\n  { key: 'calc' },\n]") is True
+    assert domain_is_gone("export const CONFIG_DOMAINS: X[] = [\n  { key: 'worker-pages' },\n]") is False
+    assert domain_is_gone("没有数组字面量") is False, "取不到域目录数组时不许静默变绿（fail-closed）"
+    # 同文件里的**别名表**（兼容旧链接）不算复活该域 —— 判据只认 CONFIG_DOMAINS 数组
+    aliased = "export const CONFIG_DOMAINS: X[] = [\n  { key: 'calc' },\n]\nconst LEGACY_DOMAIN_ALIASES = { 'worker-pages': 'x' }"
+    assert domain_is_gone(aliased) is True
 
     assert legacy_link_has_a_landing("const LEGACY_TAB_REDIRECTS: Record<string,string> = { workerPages: '/employees' }") is True
     assert legacy_link_has_a_landing("const LEGACY_TAB_TO_DOMAIN = {}") is False
+
+    assert legacy_domain_link_has_a_landing("const REMOVED_DOMAIN_REDIRECTS: Record<string,string> = { 'worker-pages': '/employees' }") is True
+    assert legacy_domain_link_has_a_landing("const REMOVED_DOMAIN_REDIRECTS = {}") is False, (
+        "`?domain=worker-pages` 的落点判据恒绿（删掉落点也不红）"
+    )
 
     assert replacement_surface_is_wired('production:view "/api/admin/worker-pages"', "workerPageCatalogApi.get()") == []
     assert replacement_surface_is_wired('"/api/admin/worker-pages"', "workerPageCatalogApi.get()") != []

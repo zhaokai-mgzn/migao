@@ -476,6 +476,13 @@ describe('判据 4：URL —— `?domain=` 直达 + 旧 `?tab=` 逐条映射且*
     expect(screen.getByTestId('config-domain-panel-calc')).toBeInTheDocument()
   })
 
+  it('🔴 旧深链 `?domain=worker-pages`（本页自己产出过的形态）：同样送到「员工管理」，不退到第一个可见域', async () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams('domain=worker-pages'))
+    render(<SettingsPage />)
+    await waitFor(() => expect(mockRouterReplace).toHaveBeenCalledWith('/employees'))
+    expect(screen.queryByTestId('config-domain-panel-worker-pages')).toBeNull()
+  })
+
   it('点左栏域 ⇒ 页内跳转 + 高亮（G3）：`?domain=<key>` 与 `#domain-<key>` 都写进 URL', async () => {
     render(<SettingsPage />)
     await screen.findByTestId('config-domain-enterprise')
