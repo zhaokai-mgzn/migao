@@ -200,11 +200,12 @@ export function pageNameTokens(text) {
 /** 一条文案命中的已移除页面名（`null` = 不命中；判别力自证与规则共用这一份实现） */
 export function removedPageNameHit(text) {
   const t = textOf(text)
-  for (const name of deadPageNames()) {
+  const dead = deadPageNames()
+  for (const name of dead) {
     if (t.includes(name)) return name
   }
   for (const token of pageNameTokens(t)) {
-    if (deadPageNames().includes(token)) return token
+    if (dead.includes(token)) return token
   }
   return null
 }
@@ -212,10 +213,11 @@ export function removedPageNameHit(text) {
 /**
  * R12 的**具名豁免台账**（issue #6826 的 B2 面，**只许缩短**：条目被删/改名而不再命中即红）。
  *
- * <p>四条**有意保留**的实例，逐条给理由与重启条件（`#6826` 的判定项，不是漏项）：
+ * <p>**三条 / 四个实例**，逐条给理由与重启条件（`#6826` 的判定项，不是漏项）：
  * ① 两个 `!embedded` 页头 = 旧路径 `/production/routings`、`/production/processing` 的**兼容页**
  *    （菜单项已移除、路由有意保留不 404，后端未定价提示仍链到旧路径）—— 改标题会让「旧链能到哪」变模糊；
- * ② `session-insight` 的两条是**审计/会话洞察的动作标签**（不是导航指针）；
+ * ② `session-insight` 的两条是**审计/会话洞察的动作标签**（不是导航指针；它确实上屏在会话洞察抽屉里
+ *    ⇒ 这是「有意不改 + 重启条件」，**不是**「无影响」）；
  * ③ `TenantParamsPanel` 的「参数总览」**已删组件**（无生产渲染点）⇒ 台账里**不得**再有它（删了还留着 = 红）。</p>
  */
 export const DEAD_PAGE_NAME_EXEMPT = [
