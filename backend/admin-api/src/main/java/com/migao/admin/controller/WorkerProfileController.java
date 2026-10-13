@@ -7,7 +7,6 @@ import com.migao.admin.worker.WorkerIdentity;
 import com.migao.admin.worker.WorkerPages;
 import com.migao.admin.worker.WorkerSessionService;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -44,7 +43,6 @@ import java.util.Map;
  * <p>⚠️ 本控制器**独立**于 {@code WorkerProductionController}（报工面）：报工面只回答「这笔活记到谁头上」，
  * 本面只回答「工人端有哪些页面」—— 两件事分开，改一处不影响另一处的判据。</p>
  */
-@Slf4j
 @RestController
 @RequestMapping("/api/worker")
 @RequiredArgsConstructor

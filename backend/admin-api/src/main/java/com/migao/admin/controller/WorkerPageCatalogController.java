@@ -4,7 +4,6 @@ import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.worker.WorkerPages;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -31,7 +30,6 @@ import java.util.Map;
  *
  * <p>🔴 本控制器不签发任何权限、不参与授权判定：工人 session 的 {@code permissions} 恒为 {@code []}。</p>
  */
-@Slf4j
 @RestController
 @RequestMapping("/api/admin/worker-pages")
 @RequiredArgsConstructor
