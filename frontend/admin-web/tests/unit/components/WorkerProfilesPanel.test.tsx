@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// case_ids: PG-066, HR-001, HR-002, UI-024, UI-091
+// case_ids: PG-072, HR-001, HR-002, UI-024, UI-091
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { toast } from 'sonner'

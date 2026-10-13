@@ -1,6 +1,6 @@
 package com.migao.admin.controller;
 
-// case_ids: PG-066, PG-018, BM-006, DF-017, HR-001, HR-002
+// case_ids: PG-072, PG-018, BM-006, DF-017, HR-001, HR-002
 
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.entity.User;

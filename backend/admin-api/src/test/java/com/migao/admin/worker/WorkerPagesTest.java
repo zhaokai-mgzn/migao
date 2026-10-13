@@ -1,6 +1,6 @@
 package com.migao.admin.worker;
 
-// case_ids: PG-066, BM-006, HR-001, HR-002, UI-091
+// case_ids: PG-072, BM-006, HR-001, HR-002, UI-091
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
