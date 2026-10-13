@@ -238,6 +238,25 @@ class InboundLabelServiceTest {
     }
 
     @Test
+    @DisplayName("🔴 #6812 拍照单（source=photo）的标签写**米数**：1 卷 × 67.2 米 ⇒ 标签数量 67.2（不是 1）")
+    void photoOrderLabelCarriesMetersNotRollCount() {
+        when(inboundLabelMapper.selectByCode(LIVE_CODE))
+                .thenReturn(label(LIVE_CODE, TENANT, ITEM_ID, 0));
+        InboundOrderResponse photoOrder = orderWithItem();
+        photoOrder.setSource(com.migao.admin.entity.InboundOrder.SOURCE_PHOTO);
+        photoOrder.getItems().get(0).setQuantity(BigDecimal.ONE);
+        photoOrder.getItems().get(0).setRollLengthM(new BigDecimal("67.2"));
+        when(inboundOrderService.detail(ORDER_ID, TENANT)).thenReturn(photoOrder);
+        when(productMapper.selectById("p-1")).thenReturn(Product.builder().id("p-1").name("遮光布").build());
+
+        InboundLabelView view = service.detail(LIVE_CODE, TENANT);
+
+        assertThat(view.getQuantity())
+                .as("贴在布卷上的标签必须写米数（卷数 × 卷长）；写 1 会让工人以为这一卷只有 1 米")
+                .isEqualByComparingTo("67.2");
+    }
+
+    @Test
     @DisplayName("🔴 跨租户 / 不存在 ⇒ 404（**不是 403**：403 等于告诉对方「这码存在，只是不归你」）")
     void crossTenantIsNotFoundNotForbidden() {
         when(inboundLabelMapper.selectByCode(LIVE_CODE)).thenReturn(label(LIVE_CODE, OTHER_TENANT, ITEM_ID));

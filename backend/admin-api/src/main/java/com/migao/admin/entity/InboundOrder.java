@@ -38,6 +38,15 @@ public class InboundOrder {
     public static final String SOURCE_PURCHASE = "purchase";
     /** 期初建账（迁移导入的历史库存；下游「批次建账」单凭它做基线冻结点 —— V117 / issue #5148） */
     public static final String SOURCE_OPENING = "opening";
+    /**
+     * 工人**拍照入库**（issue #6812，用户 2026-10-13 裁定）：该来源单据的明细行「数量」是**卷数**、
+     * {@code roll_length_m} 是**每卷米数**，入库米数 = 数量 × 卷长。
+     *
+     * <p>为什么用 source 而不是「卷长填没填」做分界：卷长在 {@code purchase} 单上也能填（那是**记录列**，
+     * 用户 2026-09-23 裁定 #5034 明确「不参与任何换算」），拿它当单位开关会把商家手建单与存量行一起改读法。
+     * 分界必须是**可机械判定**、且**只由这条链写**的列值 —— 该值不由客户端给（见 {@code normalizeSource}）。</p>
+     */
+    public static final String SOURCE_PHOTO = "photo";
 
     @TableId(type = IdType.ASSIGN_UUID)
     private String id;
@@ -65,7 +74,7 @@ public class InboundOrder {
     /** 单据总额 = Σ 行金额（过账时冻结） */
     private BigDecimal totalAmount;
 
-    /** 单据来源：见 {@link #SOURCE_PURCHASE} / {@link #SOURCE_OPENING}（V117 起；CHECK 约束限定取值） */
+    /** 单据来源：见 {@link #SOURCE_PURCHASE} / {@link #SOURCE_OPENING} / {@link #SOURCE_PHOTO}（V117 起；CHECK 约束限定取值） */
     private String source;
 
     /**

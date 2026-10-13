@@ -14,17 +14,19 @@ import java.math.BigDecimal;
  * <ul>
  *   <li><b>没有 {@code adjustment} / {@code delta} / {@code setStock}</b> —— 只表达「这一次收货收了多少米」，
  *       不存在「把库存改成 N」或「任意增减」的键；</li>
- *   <li><b>没有 {@code source} / {@code importRunId}</b> —— 来源由服务端固定为
- *       {@code purchase}（V117 的 {@code ck_inbound_orders_source} 只认 purchase / opening；
- *       工人拍照收货**语义上就是采购收货**）⇒ 工人**结构上**传不出第三取值，
- *       不需要一条迁移去放行新值；</li>
+ *   <li><b>没有 {@code source} / {@code importRunId}</b> —— 来源由**服务端强制**为
+ *       {@code photo}（issue #6812，V153 已放宽 {@code ck_inbound_orders_source}）；
+ *       请求体里写 {@code source} 也**读不到**，且商家面那条 {@code normalizeSource} 仍只认
+ *       purchase / opening ⇒ 客户端无法把一张单自称成「数量 = 卷数」的口径；</li>
  *   <li><b>没有 {@code operator} / {@code tenantId}</b> —— 身份只来自工人 session
  *       （{@code X-Worker-Session-Id}），租户来自 {@code TenantContext}；body 里的同名字段
  *       **连读取代码都没有**（同 {@code WorkerProductionController} 的既有纪律）。</li>
  * </ul>
  *
- * <p>数量准入（{@code > 0} 且最多 1 位小数）不在本类，也**不**在工人侧另写一份：口径本体
- * 全仓唯一一处 = {@code InboundOrderService.requireItemNumbers}（#5063 / #5153）。</p>
+ * <p>数量准入不在本类，也**不**在工人侧另写一份：口径本体全仓唯一一处 =
+ * {@code InboundOrderService.requireItemNumbers}（#5063 / #5153）＋ photo 单的
+ * 卷数 / 卷长 / 米数三条判据（{@code requireRollCount} / {@code requireRollLength} /
+ * {@code metersFor}，issue #6812）。</p>
  */
 @Data
 public class WorkerInboundDraftRequest {
@@ -35,7 +37,13 @@ public class WorkerInboundDraftRequest {
     /** SKU ID（必填；库存权威是 SKU 级，issue #4038） */
     private Long skuId;
 
-    /** 入库数量（米）：{@code > 0} 且最多 1 位小数（#5063 的 0.1 米粒度；超 1 位小数显式拒绝、不静默取整） */
+    /**
+     * **卷数**（issue #6812；工人端默认 1）：必须是**正整数**。
+     *
+     * <p>工人拍的是**一卷布** ⇒ 这一格记「几卷」；识别到的米数落在 {@link #rollLengthM}。
+     * 入库米数 = 本值 × {@link #rollLengthM}（由 {@code InboundOrderService.metersFor} 一处换算，
+     * 驱动库存 / 批次 / 台账 / 成本）。</p>
+     */
     private BigDecimal quantity;
 
     /** 入库单价（可空；给了必须 {@code > 0} —— 不记单价请留空） */
@@ -53,7 +61,12 @@ public class WorkerInboundDraftRequest {
     /** 仓库/仓位（可空） */
     private String warehouse;
 
-    /** 每卷米数（可空，仅记录/打印卷标） */
+    /**
+     * **每卷米数（卷长）**：photo 单**必填**（{@code > 0} 且最多 2 位小数 —— 列是
+     * {@code roll_length_m NUMERIC(8,2)}），识别到的米数就填这里（issue #6812）。
+     *
+     * <p>入库米数 = {@code quantity} × 本值，且必须落在 0.1 米粒度上（否则显式拒绝）。</p>
+     */
     private BigDecimal rollLengthM;
 
     /** 备注（可空） */

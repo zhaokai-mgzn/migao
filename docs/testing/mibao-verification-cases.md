@@ -3435,7 +3435,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（94 case）
+## 杂项域（95 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4845,6 +4845,22 @@
 跳过: [backend-contract] 台账 ⇄ spec 文本对账 + 注入式判别力自证（pytest，非 LLM 行为），不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-13 新增（issue #6799 ③ 台账收口）。取号 = `python3 scripts/next_case_id.py MC` ⇒ main 现取 MC-001~092、在飞 PR 未占 ⇒ **MC-093**。背景：#6790 曾把这两条登记为「已知 console 错误」作**临时**承接面；#6799 把两条缺陷都修好后按「台账只许缩短」清零。改动 = ① 台账与 spec 的 `KNOWN_CONSOLE_ERRORS` 同步清空（机制保留）；② 判据 H 的 `known_console_failures` 收窄「非空」这一条（台账正常终态就是空）+ 自证夹具改为内存合成（与现状台账解耦）。⚠️ **不入 CHANGELOG**（铁律 7 豁免：纯研发工具 / 台账滚动，对用户无可观察影响）。 ｜ tags: ui-smoke, console-ledger, shrink-only, fail-closed, class-level-guard
+
+### MC-094. 验签公钥失配**不得伪装成产品失败**（issue #6801）：admin-api 签发密钥 ⇄ ai-agent 校验公钥的指纹对齐（`scripts/align_agent_jwt_key.py` 是唯一真值源），起栈预检在跑 spec 之前把「环境失配」与「产品缺陷」分开 🔵
+```
+你: 全量冒烟只剩 `06-agent-sessions` / `07-chat` 两条报 401，而同一个浏览器会话里别的页面全 ✅ —— 我要知道这是**产品鉴权坏了**还是**我机器上的配置烂了**，而不是被一句 `401 Unauthorized` 引着去改产品代码；如果是环境，起栈入口就该在跑 spec 之前把成因和处置命令告诉我。
+数据: **判据 1·识别**：两侧公钥同指纹 ⇒ `--state` 印 `aligned:<fp>`、单行、exit 0。执行点 = tests/unit_ci_workflows/test_agent_jwt_key_alignment.py ::test_aligned_reports_fingerprint_and_exit_zero
+数据: **判据 2·失配**：`.env` 是陈旧键 ⇒ `mismatch:<api_fp>:<agent_fp>`，**两个指纹都印**且可区分。执行点 = 同文件 ::test_mismatch_names_both_fingerprints_and_exit_one
+数据: **判据 3·判不了 ≠ 通过**：任一侧取不到 / 非法 PEM / 私钥当公钥 ⇒ `unknown:…`。执行点 = 同文件 ::test_unjudgeable_is_three_not_green（四形态参数化，**一条也不 skip**）
+数据: **判据 4·形态兼容**：`JWT_PUBLIC_KEY=` 与 `export JWT_PUBLIC_KEY=` 两种写法都认。执行点 = 同文件 ::test_env_key_forms_both_recognized
+数据: **判据 5·写盘安全**：修完该键仍是**单行**（`\n` 转义）+ 留 `.bak-align`；连跑两次逐字节一致。执行点 = 同文件 ::test_write_keeps_single_line_key_and_is_idempotent
+数据: **判据 6·起栈预检接线**：`scripts/ui_smoke_merchant.sh` 在跑 spec **之前**调 `align_agent_jwt_key.py --state`；失配 ⇒ 印可行动处置 + `SMOKE_UNCONFIGURED=1` + `SMOKE_UNCONFIGURED_WHY`（带指纹）。执行点 = 同文件 ::test_preflight_wired_before_spec_in_smoke_script / ::test_preflight_flags_mismatch_as_unconfigured_not_product / 负控 ::test_preflight_aligned_is_quiet
+数据: **判据 7·严格档**：`SMOKE_STRICT_KEY_ALIGNMENT=1` + 失配 ⇒ 非零退出且**不越过预检**。执行点 = 同文件 ::test_strict_mode_refuses_to_run_on_mismatch
+数据: **判据 8·判别力自证（注入式）**：注入另一对公钥 ⇒ 判据 2 当场红；还原 ⇒ 绿；只改注释 ⇒ 不红。执行点 = 同文件 ::test_guard_discriminates_injected_bad_key / ::test_negative_control_private_key_and_comment_only
+数据: **判据 9·类级元守卫（单一真值源）**：指纹解析**只在** `scripts/align_agent_jwt_key.py` 一处，起栈脚本的预检块里不得再出现 `hashlib` / `b64decode`。执行点 = 同文件 ::test_fingerprint_logic_has_single_source
+跳过: [backend-contract] 指纹三态 + 起栈预检接线 + 输出分类，由 pytest 子进程真跑（沙箱假仓，零网络 / 零真栈）；真栈两向读数（401 → 200）见 PR body 取证段
+```
+溯源: 2026-10-13 新增（issue #6801，P2 归因单）。取号 = `python3 scripts/next_case_id.py MC` ⇒ main 现取 MC-001~092、**在飞 #6809 已占 MC-093** ⇒ **MC-094**。病（真栈两次复跑一致）：全量冒烟**唯一**两类真实失败 = `06-agent-sessions` / `07-chat` 的 console `401 (Unauthorized)` ×3 + `获取会话列表失败: 401`，而**同一个浏览器会话**里 `02-dashboard` / `05-human-sessions` / `18-after-sales-list` 全 ✅ ⇒ 读起来像产品鉴权缺陷。真因在**环境**：ai-agent 日志逐字 `JWT verification failed: invalid token - Signature verification failed`；同一枚真 token 只换校验公钥 —— 入仓的 `backend/admin-api/src/main/resources/rsa/public.pem`（prod swas compose 同源）**验签通过**，而本机 gitignored 的 `backend/ai-agent-service/.env` 那份**签名无效**（两侧公钥**各自独立下发** ⇒ 仓库换过密钥对之后本地这份静默陈旧，两个服务都不报错）。落码 = ① `scripts/align_agent_jwt_key.py`（`--state` 纯报告三态单行 / `--check` / 写盘带写坏防护与 `.bak-align`；指纹逻辑**唯一承载体**）；② `scripts/ui_smoke_merchant.sh` 起栈后的 2.6 预检块（指纹比对 + 命名两个指纹 + 一条命令处置 + 置「未配置」并带成因；严格档 `SMOKE_STRICT_KEY_ALIGNMENT=1` 直接非零退出）；③ `scripts/ui-smoke-merchant/spec.mjs` 的未配置文案带上成因；④ 判据 tests/unit_ci_workflows/test_agent_jwt_key_alignment.py（16 条）。⚠️ **不入 CHANGELOG**（铁律 7 豁免：纯研发工具 / `scripts/` 改动，对用户无可观察影响）。 ｜ tags: dev-env, jwt, key-alignment, smoke-attribution, fail-closed, red-proof, class-level-guard
 
 ## 商家入驻域（6 case）
 
@@ -10693,8 +10709,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：738（活跃 134，跳过 604）
-- tier 分布：smoke 12 / normal 683 / adversarial 32
+- 用例总数：739（活跃 134，跳过 605）
+- tier 分布：smoke 12 / normal 684 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10709,7 +10725,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：94
+- 杂项域：95
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：64
@@ -10838,6 +10854,7 @@
 - MC-090: 数据库**外键违例**的归口与日志面（issue #6210）：外键违例 ⇒ 4xx（VALIDATION_ERROR）且**不落兜底 500**，且这一类日志**不打异常本体与堆栈**（约束名 / 表名 / schema 不进日志）；射程**刻意只到外键** —— 唯一 / 非空 / 检查违例保持既有 500 契约（两向反向对照：非约束类未知异常仍 500 带堆栈、唯一键失败仍 500 带堆栈）；类级元守卫 = 分支台账 ⇄ 反射双向相等（新分支未登记即红）
 - MC-092: 云 dev DB 白名单**一条命令**（幂等 / 只追加 / fail-closed / 不泄漏）+ 起栈入口预检与业务路由自检（issue #6789）：`scripts/dev-db-whitelist.sh` 是 `--ModifyMode Append` 的唯一承载体，覆盖语义与 `default` 组零改动，起栈入口在失败前就把处置命令说出来
 - MC-093: 已知 console 台账**只许缩短**的终态：售后 hydration + 加工页 measure 两条缺陷修好后 clearance 清零（机制保留、判据 H 判别力不依赖台账非空）（issue #6799）
+- MC-094: 验签公钥失配**不得伪装成产品失败**（issue #6801）：admin-api 签发密钥 ⇄ ai-agent 校验公钥的指纹对齐（`scripts/align_agent_jwt_key.py` 是唯一真值源），起栈预检在跑 spec 之前把「环境失配」与「产品缺陷」分开
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

@@ -1,14 +1,16 @@
 // case_ids: BM-017
 /**
- * **SKU 匹配门禁 / 不确定不预填 / 数量口径**（issue #5052 P3；设计 §6.3 / §6.4，验收判据 2 / 3）
+ * **SKU 匹配门禁 / 不确定不预填 / 卷数·卷长口径**（issue #5052 P3；设计 §6.3 / §6.4，验收判据 2 / 3；
+ * 口径改判见 issue #6812）
  *
  * | # | 判据 | 红证（怎么让它单独变红） |
  * |---|---|---|
  * | C1 | **零命中 ⇒ 不落库、不建品、不建 SKU**：门禁返回 `none`，且提交闸拒绝 | 允许无 sku 提交 ⇒ 红 |
- * | C2 | **不确定不预填**：`degraded` / `requiresManualEntry` / 零命中 ⇒ 三格全空 + 可行动提示 | 降级也预填 ⇒ 红 |
+ * | C2 | **不确定不预填**：`degraded` / `requiresManualEntry` / 零命中 ⇒ 品名/色号/**卷长**留空 + 可行动提示（卷数恒为默认 `1`） | 降级也预填 ⇒ 红 |
  * | C3 | **多命中由工人消歧**：不替工人挑（不返回 matched） | 自动取第一条 ⇒ 红 |
- * | C4 | 端侧**只拦结构上不可能成功**的（缺 SKU / 缺米数 / 未确认）；数值口径唯一真值在服务端，端侧不重写 | 端侧另写一套数值规则 ⇒ 红（源码面） |
+ * | C4 | 端侧**只拦结构上不可能成功**的（缺 SKU / 缺**卷长** / 未确认）；数值口径唯一真值在服务端，端侧不重写 | 端侧另写一套数值规则 ⇒ 红（源码面） |
  * | C5 | 「不自动建品」在端侧是**结构事实**：入库模块里不存在任何建品 / 建 SKU 的调用 | 加一个 `POST /api/admin/products` ⇒ 红 |
+ * | C6 | **口径改判（#6812）**：识别到的 `quantityMeters` 落进**卷长**、**卷数恒 '1'** | 米数仍填「数量」⇒ 红（`quantity==='1'` / `rollLengthM==='60.5'` 两条断言同时红） |
  */
 import fs from 'fs'
 import path from 'path'
@@ -28,12 +30,16 @@ import { BMINI_ROOT } from './helpers/h5PlatformLists'
 const SINGLE = { skuId: '9', productId: 'p1', productName: '遮光布', skuCode: 'MG-1001', colorName: '米白' }
 const OTHER = { skuId: '10', productId: 'p2', productName: '遮光布', skuCode: 'MG-1002', colorName: '米白' }
 
-/** 与 C2 同口径的纯判定（注入式红证用） */
+/**
+ * 与 C2 同口径的纯判定（注入式红证用）。
+ * 注意第 3 格是 **`rollLengthM`**（issue #6812 起「数量」= 卷数，卷数恒为默认 `1`
+ * ⇒ 它**不参与**"不预填"判定：留 `'1'` 是默认值，不是预填了识别结果）。
+ */
 function prefillProblems(response: RecognizeLike, out: PrefillResult): string[] {
   const mustBeBlank =
     !!response.degraded || !!response.requiresManualEntry || (response.skuMatches || []).length === 0
   const problems: string[] = []
-  if (mustBeBlank && (out.productName || out.colorName || out.quantity)) {
+  if (mustBeBlank && (out.productName || out.colorName || out.rollLengthM)) {
     problems.push('不确定 / 零命中却预填了候选')
   }
   if (mustBeBlank && out.prefillUsed) problems.push('不确定 / 零命中却标了 prefillUsed')
@@ -55,11 +61,11 @@ describe('SKU 匹配门禁与预填口径', () => {
   })
 
   it('C1 零命中时提交闸拒绝（没有 skuId 就没有入库）', () => {
-    const check = checkDraftInput({ productId: null, skuId: null, quantity: '60.5', confirmed: true })
+    const check = checkDraftInput({ productId: null, skuId: null, quantity: '1', rollLengthM: '60.5', confirmed: true })
     expect(check.ok).toBe(false)
     expect(check.message).toContain('不会自动建品')
     // 只有 productId 没有 skuId（库存权威在 SKU 级）也不放行
-    const half = checkDraftInput({ productId: 'p1', skuId: null, quantity: '60.5', confirmed: true })
+    const half = checkDraftInput({ productId: 'p1', skuId: null, quantity: '1', rollLengthM: '60.5', confirmed: true })
     expect(half.ok).toBe(false)
   })
 
@@ -73,7 +79,7 @@ describe('SKU 匹配门禁与预填口径', () => {
     }
   })
 
-  it('C2 degraded ⇒ 三格全空 + 提示人工录入（不编造）', () => {
+  it('C2 degraded ⇒ 三格全空（品名/色号/卷长）+ 卷数是默认 1 + 提示人工录入（不编造）', () => {
     const response: RecognizeLike = {
       path: 'vision',
       degraded: true,
@@ -86,7 +92,8 @@ describe('SKU 匹配门禁与预填口径', () => {
     }
     const out = prefillFromRecognize(response)
     expect(out.prefillUsed).toBe(false)
-    expect([out.productName, out.colorName, out.quantity]).toEqual(['', '', ''])
+    expect([out.productName, out.colorName, out.rollLengthM]).toEqual(['', '', ''])
+    expect(out.quantity).toBe('1')
     expect(out.notice).toContain('手工录入')
   })
 
@@ -121,6 +128,40 @@ describe('SKU 匹配门禁与预填口径', () => {
     expect(prefillProblems(degraded, { ...correct, prefillUsed: true, productName: '遮光布' })).not.toEqual([])
   })
 
+  it('C2 🔴 红证：降级时把识别到的米数预填进「卷长」⇒ 同一判定必判红（#6812 新口径的靶心）', () => {
+    const degraded: RecognizeLike = {
+      degraded: true,
+      productName: '遮光布',
+      quantityMeters: '60.5',
+      skuMatches: [SINGLE],
+    }
+    const out = prefillFromRecognize(degraded)
+    expect(out.rollLengthM).toBe('')
+    expect(prefillProblems(degraded, out)).toEqual([])
+    // 注入：降级却把米数预填进卷长（旧口径的形态：识别结果照样往输入框塞）
+    expect(prefillProblems(degraded, { ...out, rollLengthM: '60.5' })).not.toEqual([])
+  })
+
+  it('C6 识别到的米数落进**卷长**、卷数恒为 `1`（#6812 口径改判的靶心）', () => {
+    const res: RecognizeLike = {
+      path: 'barcode_decode',
+      barcode: 'MG-1001',
+      skuMatches: [SINGLE],
+      productName: '遮光布',
+      colorName: '米白',
+      quantityMeters: '60.5',
+      message: '条码命中已有货号，请核对后填写米数。',
+    }
+    const out = prefillFromRecognize(res)
+    expect(out.rollLengthM).toBe('60.5')
+    expect(out.quantity).toBe('1')
+    // 反向：识别不到米数 ⇒ 卷长留空（不许在端侧"猜"一个卷长），卷数仍是默认 1
+    const noMeters = prefillFromRecognize({ skuMatches: [SINGLE], productName: '遮光布' })
+    expect(noMeters.rollLengthM).toBe('')
+    expect(noMeters.prefillUsed).toBe(true)
+    expect(noMeters.quantity).toBe('1')
+  })
+
   it('唯一命中 ⇒ 预填（供工人核对），且提示「请核对」而非「已入库」', () => {
     const out = prefillFromRecognize({
       path: 'barcode_decode',
@@ -133,24 +174,23 @@ describe('SKU 匹配门禁与预填口径', () => {
     })
     expect(out.prefillUsed).toBe(true)
     expect(out.productName).toBe('遮光布')
-    expect(out.quantity).toBe('60.5')
     expect(out.gate.kind).toBe('matched')
     expect(out.notice).toContain('核对')
   })
 
-  it('C4 端侧只拦"结构上不可能成功"的：缺 SKU / 缺米数 / 未确认', () => {
+  it('C4 端侧只拦"结构上不可能成功"的：缺 SKU / 缺卷长 / 未确认', () => {
     const base = { productId: 'p1', skuId: '9', confirmed: true }
-    expect(checkDraftInput({ ...base, quantity: '60.5' }).ok).toBe(true)
+    expect(checkDraftInput({ ...base, quantity: '1', rollLengthM: '67.2' }).ok).toBe(true)
     for (const empty of ['', '   ']) {
-      const check = checkDraftInput({ ...base, quantity: empty })
+      const check = checkDraftInput({ ...base, quantity: '1', rollLengthM: empty })
       expect(check.ok).toBe(false)
-      expect(check.message).toContain('请填写入库米数')
+      expect(check.message).toContain('请填写卷长')
     }
-    expect(checkDraftInput({ productId: null, skuId: null, quantity: '60.5', confirmed: true }).ok).toBe(false)
-    expect(checkDraftInput({ ...base, quantity: '60.5', confirmed: false }).ok).toBe(false)
+    expect(checkDraftInput({ productId: null, skuId: null, quantity: '1', rollLengthM: '67.2', confirmed: true }).ok).toBe(false)
+    expect(checkDraftInput({ ...base, quantity: '1', rollLengthM: '67.2', confirmed: false }).ok).toBe(false)
   })
 
-  it('C4 数量口径**不在端侧重写**（服务端是唯一真值：> 0 且最多 1 位小数，超 1 位显式拒绝）', () => {
+  it('C4 数值口径**不在端侧重写**（服务端是唯一真值：卷数为正整数 / 卷长 > 0 且最多 2 位小数 / 米数 0.1 粒度）', () => {
     const code = fs
       .readFileSync(path.join(BMINI_ROOT, 'src/utils/inbound/recognizeGate.ts'), 'utf8')
       .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -159,12 +199,12 @@ describe('SKU 匹配门禁与预填口径', () => {
     for (const pattern of [/Number\(/, /parseFloat/, /\\\\d\+\\\\.\\\\d/, /toFixed/, /\*\s*10\b/]) {
       expect({ pattern: String(pattern), hit: pattern.test(code) }).toEqual({ pattern: String(pattern), hit: false })
     }
-    // 也不许把服务端的规则文案抄一份（文案唯一生成处 = 服务端 400 的 message）
+    // 也不许把服务端的规则文案抄一份（文案唯一生成处 = 服务端 400/422 的 message）
     expect(code).not.toContain('最多 1 位小数（库存按')
   })
 
   it('C4 未勾选「我确认」⇒ 不提交（§6.5 不做免确认）', () => {
-    const check = checkDraftInput({ productId: 'p1', skuId: '9', quantity: '60.5', confirmed: false })
+    const check = checkDraftInput({ productId: 'p1', skuId: '9', quantity: '1', rollLengthM: '67.2', confirmed: false })
     expect(check.ok).toBe(false)
     expect(check.message).toContain('我确认')
   })
@@ -199,5 +239,7 @@ describe('SKU 匹配门禁与预填口径', () => {
     for (const key of ['adjustment', 'delta', 'setStock', 'operator', 'tenantId']) {
       expect({ key, present: new RegExp(`\\b${key}\\b`).test(requestBlock) }).toEqual({ key, present: false })
     }
+    // 反向对照：卷长必须在契约里（否则"透了但没声明"会被上一条判据掩盖）
+    expect(requestBlock).toContain('rollLengthM')
   })
 })

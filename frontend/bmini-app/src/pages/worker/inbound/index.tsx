@@ -18,6 +18,13 @@
  * 3. **不许**替工人决定过账（§6.5 + 不可逆 ⇒ `confirmAdminAction` 二次确认，且 `confirmed: true` 由工人勾选）；
  * 4. **不许**绕过服务端直接打印（§7.3；送打印只有一个入口 `printInboundLabel`，它**先调留痕**）。
  *
+ * ## 两格数字：**卷数** × **卷长**（issue #6812）
+ *
+ * 「数量」= **卷数**（默认 `1`）、「卷长」= **每卷米数**，入库米数 = 两者之乘 —— 这个乘法的
+ * **真值在服务端**：端侧只把两格照原样提交（`quantity` + `rollLengthM`），**不换算、不校验数值口径**
+ * （卷数正整数 / 卷长上限 / 米数粒度全由服务端判，400/422 文案原样上屏）。
+ * 识别到的 `quantityMeters` 现在落在**卷长**那格（见 `utils/inbound/recognizeGate.ts`）。
+ *
  * 能力缺口**动手前**说清楚：打印区在任何操作之前就先渲染 `probePrintCapability()` 的结论
  * （iOS / 非 HTTPS / 无蓝牙 / 非 h5 各有各的文案），而不是等点了打印才失败。
  */
@@ -86,7 +93,8 @@ export default function WorkerInboundPage() {
   const [prefill, setPrefill] = useState<PrefillResult | null>(null)
   const [matches, setMatches] = useState<SkuMatch[]>([])
   const [chosenSku, setChosenSku] = useState<SkuMatch | null>(null)
-  const [quantity, setQuantity] = useState('')
+  const [quantity, setQuantity] = useState('1')
+  const [rollLengthM, setRollLengthM] = useState('')
   const [dyeLot, setDyeLot] = useState('')
   const [supplier, setSupplier] = useState('')
   const [supplierDocNo, setSupplierDocNo] = useState('')
@@ -155,6 +163,7 @@ export default function WorkerInboundPage() {
       // 唯一命中时**预选**（仍要工人核对）；多命中/零命中都不替工人挑
       setChosenSku(next.gate.kind === 'matched' ? next.gate.match : null)
       setQuantity(next.quantity)
+      setRollLengthM(next.rollLengthM)
       setStep('confirm')
     } catch (e: any) {
       setError(e?.message || '识别失败，请重试')
@@ -169,6 +178,7 @@ export default function WorkerInboundPage() {
       productId: chosenSku?.productId || null,
       skuId: chosenSku?.skuId ?? null,
       quantity,
+      rollLengthM,
       confirmed,
     }
     const check = checkDraftInput(input)
@@ -176,10 +186,12 @@ export default function WorkerInboundPage() {
       setError(check.message)
       return
     }
-    // 过账**不可逆** ⇒ 二次确认（复用 #5654 的一步动作护栏；文案说清后果）
+    // 过账**不可逆** ⇒ 二次确认（复用 #5654 的一步动作护栏；文案把两格说清）
+    // 🔴 端侧**不在这里算乘积**（issue #6812）：入库米数 = 卷数 × 卷长 的真值在服务端，
+    //    端侧再算一份就是第二份会漂的口径（精度/粒度都可能有差）⇒ 只把两格原样念给工人听。
     const ok = await confirmAdminAction(
       '确认过账',
-      `${prefill?.productName || chosenSku?.skuCode || '这批货'} ${quantity} 米过账后将立即加库存、生成批次号，且不可撤销`,
+      `${prefill?.productName || chosenSku?.skuCode || '这批货'} ${quantity} 卷 × ${rollLengthM} 米/卷过账后将立即加库存、生成批次号，且不可撤销`,
     )
     if (!ok) return
     setBusy(true)
@@ -191,6 +203,8 @@ export default function WorkerInboundPage() {
           // 🔴 雪花号 id **原样字符串**回传：Number() 会丢精度（> 2^53），服务端查不到该 SKU（issue #6340）
           skuId: String(chosenSku?.skuId),
           quantity,
+          // 空字符串 ⇒ null（与 dyeLot / supplier 同款写法）
+          rollLengthM: rollLengthM || null,
           dyeLot: dyeLot || null,
           supplier: supplier || null,
           supplierDocNo: supplierDocNo || null,
@@ -215,7 +229,7 @@ export default function WorkerInboundPage() {
     } finally {
       setBusy(false)
     }
-  }, [chosenSku, quantity, confirmed, prefill, dyeLot, supplier, supplierDocNo, remark])
+  }, [chosenSku, quantity, rollLengthM, confirmed, prefill, dyeLot, supplier, supplierDocNo, remark])
 
   const onPrint = useCallback(async () => {
     setError('')
@@ -373,9 +387,17 @@ export default function WorkerInboundPage() {
               className='admin-input'
               data-testid='inbound-quantity'
               type='digit'
-              placeholder='入库米数（大于 0，最多 1 位小数）'
+              placeholder='卷数（默认 1；正整数）'
               value={quantity}
               onInput={(e: any) => setQuantity(e?.detail?.value ?? '')}
+            />
+            <Input
+              className='admin-input'
+              data-testid='inbound-roll-length'
+              type='digit'
+              placeholder='卷长（米/卷，如 67.2）'
+              value={rollLengthM}
+              onInput={(e: any) => setRollLengthM(e?.detail?.value ?? '')}
             />
             <Input
               className='admin-input'

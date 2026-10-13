@@ -58,7 +58,13 @@ public class InboundOrderCreateRequest {
         /** SKU ID（必填 —— 库存权威是 SKU 级，见 issue #4038） */
         private Long skuId;
 
-        /** 入库数量（米）：必填，≥1 且最多 1 位小数（V115/#5063）；超过 1 位小数由服务端显式拒绝 */
+        /**
+         * 数量：{@code purchase} / {@code opening} 单 = **入库米数**（必填，&gt;0 且最多 1 位小数，
+         * V115/#5063）；{@code photo} 单（工人拍照入库，issue #6812）= **卷数**（正整数）。
+         *
+         * <p>单位由**来源**决定（服务端强制，请求体无法自称 photo）：photo 单的入库米数 =
+         * 本值 × {@link #rollLengthM}，见 {@code InboundOrderService.metersFor}。</p>
+         */
         private BigDecimal quantity;
 
         /** 入库单价（可空 = 未记单价 ⇒ 只加数量不算成本）；给了必须 > 0 */
@@ -77,7 +83,10 @@ public class InboundOrderCreateRequest {
          */
         private String legacyBatchNo;
 
-        /** 每卷米数（可空，仅记录/打印卷标） */
+        /**
+         * 每卷米数（卷长）：一般来源**可空、仅记录 / 打印卷标**（#5034 不参与换算）；
+         * {@code photo} 单（issue #6812）**必填**且用参与换算（入库米数 = 数量 × 本值）。
+         */
         private BigDecimal rollLengthM;
 
         private String remark;

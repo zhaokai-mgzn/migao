@@ -138,7 +138,7 @@ class InboundOrderMigrationTest {
     }
 
     @Test
-    @DisplayName("V117（#5148）终态已同步 backend/admin-api/src/main/resources/db/init/schema.sql：单号租户内唯一 + 幂等键部分唯一索引 + source 取值约束")
+    @DisplayName("V117（#5148）+ V153（#6812）终态已同步 backend/admin-api/src/main/resources/db/init/schema.sql：单号租户内唯一 + 幂等键部分唯一索引 + source 取值约束")
     void schemaSqlIsSyncedWithV117() throws IOException {
         String schema = read(SCHEMA_SQL);
         // 单号唯一索引**租户内**（与 V111 建表注释「租户内唯一」一致 —— 改前是全局唯一，两者矛盾）
@@ -147,8 +147,13 @@ class InboundOrderMigrationTest {
         assertThat(schema).contains("uk_inbound_orders_tenant_import_run");
         assertThat(schema).contains("WHERE import_run_id IS NOT NULL AND deleted = 0");
         assertThat(schema).contains("import_run_id VARCHAR(128)");
-        // 来源列 + 取值约束（期初导入与正常采购必须可区分）
+        // 来源列 + 取值约束（期初导入与正常采购必须可区分；V153 / issue #6812 起多一个 photo）
         assertThat(schema).contains("source VARCHAR(16) NOT NULL DEFAULT 'purchase'");
-        assertThat(schema).contains("source IN ('purchase', 'opening')");
+        assertThat(schema).contains("source IN ('purchase', 'opening', 'photo')");
+        // 两条路径（新建库 = schema.sql / 存量升级 = 迁移）的**终态必须一致**：只改一边 ⇒ 新建库缺 photo
+        // （#3270 形态：bootstrap 库与存量库两份真相）⇒ 这里把两边都钉住。
+        assertThat(read("backend/admin-api/src/main/resources/db/migration/V153__inbound_source_photo.sql"))
+                .as("存量升级路径（V153）必须真的放行 photo")
+                .contains("'photo'");
     }
 }
