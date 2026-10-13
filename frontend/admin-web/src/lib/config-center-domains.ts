@@ -96,8 +96,11 @@ export const CONFIG_ZONES: readonly ConfigZone[] = [
 /** 域的稳定键（**逐字**；页面 URL 与测试都取它，不写字面量）。 */
 export type ConfigDomainKey =
   | 'calc'
-  | 'processing-fee'
+  | 'processing-items'
+  | 'fee-combinations'
+  | 'operation-prices'
   | 'craft-route'
+  | 'cutting-height'
   | 'remnant-sizes'
   | 'enterprise'
   | 'ai'
@@ -252,4 +255,16 @@ export function domainsOfZone(zoneKey: string): ConfigDomain[] {
  */
 export function domainOfMainlineStep(stepKey: string): ConfigDomain | undefined {
   return CONFIG_DOMAINS.find((d) => d.mainlineSteps.includes(stepKey))
+}
+
+/**
+ * 域的 **URL 深链**（`/settings?domain=<key>`）—— 跨页指路时的**单一口径**（issue #6825）。
+ *
+ * 为什么要有它：改前同一句深链在多处各写一份字面量（板子的就绪度按钮、下单页的参数说明、
+ * `tenant-params.ts` 的域入口），改一处忘一处就是死链 —— 而深链**恰恰是本单的病灶**
+ * （`/production/routings?tab=calc` 那条旧深链落到了一个已退役 tab）。
+ * 域 key 是**可分享的 URL 契约**（见 {@link CONFIG_DOMAINS}），所以拼链这件事只在这里一处。
+ */
+export function domainHref(key: ConfigDomainKey): string {
+  return `/settings?domain=${key}`
 }

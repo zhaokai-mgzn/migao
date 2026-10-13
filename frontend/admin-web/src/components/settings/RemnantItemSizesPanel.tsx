@@ -280,6 +280,8 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
               <input
                 value={row.itemKey}
                 aria-label="小件（工序名）"
+                /* 机器锚点（issue #6825）：域写面台账（本域的写面 = 这一格 + 长 / 宽 / 备注） */
+                data-testid={`remnant-size-item-${index}`}
                 aria-invalid={rowErrors[index]?.itemKey ? true : undefined}
                 list={OPERATION_LIST_ID}
                 placeholder="从工序库里选，或逐字输入工序名"
@@ -381,6 +383,8 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
         <button
           type="button"
           data-testid="remnant-spec-add"
+          /* 域写面出口标记（issue #6825）：类级守卫要求「可编辑控件 + 本域写出口」成对出现 */
+          data-write-exit="remnant-sizes"
           onClick={() => setRows((prev) => [...prev, { ...EMPTY_ROW }])}
           className="inline-flex items-center gap-1 text-xs font-medium text-primary-700 hover:underline"
         >

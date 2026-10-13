@@ -221,7 +221,14 @@ export function OperationPricePanel({
             <RefreshCw className={cn('w-4 h-4 mr-1.5', loading && 'animate-spin')} />
             刷新
           </Button>
-          <Button variant="secondary" size="sm" data-testid="routings-new-operation" onClick={openCreateOperation}>
+          <Button
+            variant="secondary"
+            size="sm"
+            data-testid="routings-new-operation"
+            /* 域写面出口标记（issue #6825）：类级守卫要求「可编辑控件 + 本域写出口」成对出现 */
+            data-write-exit="operation-prices"
+            onClick={openCreateOperation}
+          >
             <Plus className="w-4 h-4 mr-1.5" />
             新增工序
           </Button>

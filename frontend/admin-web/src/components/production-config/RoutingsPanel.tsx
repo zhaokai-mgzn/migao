@@ -82,7 +82,13 @@ export function RoutingsPanel({
             <RefreshCw className={cn('w-4 h-4 mr-1.5', loading && 'animate-spin')} />
             刷新
           </Button>
-          <Button size="sm" data-testid="routings-new-route" onClick={() => setNewRouteOpen(true)}>
+          <Button
+            size="sm"
+            data-testid="routings-new-route"
+            /* 域写面出口标记（issue #6825）：类级守卫要求「可编辑控件 + 本域写出口」成对出现 */
+            data-write-exit="craft-route"
+            onClick={() => setNewRouteOpen(true)}
+          >
             <Plus className="w-4 h-4 mr-1.5" />
             新建路线
           </Button>
