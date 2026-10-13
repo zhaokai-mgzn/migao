@@ -75,61 +75,70 @@ export default function WorkerHomePage() {
 
   return (
     <View className='worker-home'>
-      <View className='worker-home__card'>
-        <Text className='worker-home__card-title'>当前工人</Text>
+      {/* 管理面外壳（2026-10-13 用户反馈「不符合整体样式设计」）：与工人端同族三页同一套视觉语言
+          —— 深蓝→蓝渐变页头 + 灰底 + 白卡（`src/styles/admin-surfaces.scss` 的 `.admin-surface*`）。
+          本页此前只有白卡、连页头都没有 ⇒ 落在灰白底上「看着还是白的」。 */}
+      <View className='worker-home__header'>
+        <Text className='worker-home__title'>工人工作台</Text>
+        <Text className='worker-home__subtitle'>扫码报工 · 拍照入库 · 补打标签 · 拍照发货</Text>
+      </View>
+      <View className='worker-home__body'>
+        <View className='worker-home__card'>
+          <Text className='worker-home__card-title'>当前工人</Text>
+          {worker ? (
+            <>
+              <Text className='worker-home__worker-no'>{`工号 ${worker.worker_no || '—'}`}</Text>
+              <Text className='worker-home__worker-name'>{worker.worker_name || '未署名'}</Text>
+            </>
+          ) : (
+            <Text className='worker-home__worker-name'>未登录工人身份</Text>
+          )}
+          {message ? <Text className='worker-home__message'>{message}</Text> : null}
+        </View>
+
         {worker ? (
           <>
-            <Text className='worker-home__worker-no'>{`工号 ${worker.worker_no || '—'}`}</Text>
-            <Text className='worker-home__worker-name'>{worker.worker_name || '未署名'}</Text>
+            <View className='worker-home__entries'>
+              <View
+                className='worker-home__entry'
+                onClick={() => Taro.navigateTo({ url: PRODUCTION_PAGE_ROUTE })}
+              >
+                <Text className='worker-home__entry-text'>扫码报工</Text>
+              </View>
+              <View
+                className='worker-home__entry'
+                onClick={() => Taro.navigateTo({ url: INBOUND_PAGE_ROUTE })}
+              >
+                <Text className='worker-home__entry-text'>拍照入库</Text>
+              </View>
+              <View
+                className='worker-home__entry'
+                onClick={() => Taro.navigateTo({ url: REPRINT_PAGE_ROUTE })}
+              >
+                <Text className='worker-home__entry-text'>补打入库标签</Text>
+              </View>
+              {/* 第 4 条（issue #6761）：#5648 的后端与纯逻辑早已就绪，缺的就是这个入口 */}
+              <View
+                className='worker-home__entry'
+                onClick={() => Taro.navigateTo({ url: SHIPMENT_PAGE_ROUTE })}
+              >
+                <Text className='worker-home__entry-text'>拍照发货</Text>
+              </View>
+            </View>
+
+            <Button className='worker-home__exit' onClick={exitWorker}>
+              退出工人身份
+            </Button>
           </>
         ) : (
-          <Text className='worker-home__worker-name'>未登录工人身份</Text>
-        )}
-        {message ? <Text className='worker-home__message'>{message}</Text> : null}
-      </View>
-
-      {worker ? (
-        <>
-          <View className='worker-home__entries'>
-            <View
-              className='worker-home__entry'
-              onClick={() => Taro.navigateTo({ url: PRODUCTION_PAGE_ROUTE })}
-            >
-              <Text className='worker-home__entry-text'>扫码报工</Text>
-            </View>
-            <View
-              className='worker-home__entry'
-              onClick={() => Taro.navigateTo({ url: INBOUND_PAGE_ROUTE })}
-            >
-              <Text className='worker-home__entry-text'>拍照入库</Text>
-            </View>
-            <View
-              className='worker-home__entry'
-              onClick={() => Taro.navigateTo({ url: REPRINT_PAGE_ROUTE })}
-            >
-              <Text className='worker-home__entry-text'>补打入库标签</Text>
-            </View>
-            {/* 第 4 条（issue #6761）：#5648 的后端与纯逻辑早已就绪，缺的就是这个入口 */}
-            <View
-              className='worker-home__entry'
-              onClick={() => Taro.navigateTo({ url: SHIPMENT_PAGE_ROUTE })}
-            >
-              <Text className='worker-home__entry-text'>拍照发货</Text>
-            </View>
+          <View className='worker-home__gate'>
+            <Text className='worker-home__gate-text'>{WORKER_HOME_LOGIN_REQUIRED}</Text>
+            <Button className='worker-home__login' onClick={goWorkerLogin}>
+              去登录工人身份
+            </Button>
           </View>
-
-          <Button className='worker-home__exit' onClick={exitWorker}>
-            退出工人身份
-          </Button>
-        </>
-      ) : (
-        <View className='worker-home__gate'>
-          <Text className='worker-home__gate-text'>{WORKER_HOME_LOGIN_REQUIRED}</Text>
-          <Button className='worker-home__login' onClick={goWorkerLogin}>
-            去登录工人身份
-          </Button>
-        </View>
-      )}
+        )}
+      </View>
     </View>
   )
 }

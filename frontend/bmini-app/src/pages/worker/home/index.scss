@@ -7,9 +7,42 @@
   // 🔴 **不动** `app.scss` / 全局 `.taro_page`：那会改**全站**底色（15+ 屏读图验收），
   //    而已经自带底色的页面白拿不到收益 —— 本单只补「本页自己那一半」。
   // `min-height: 100vh`：内容不足一屏时底色必须铺满，否则下半屏仍是 `.taro_page` 的白（同 `dashboard`）。
+  //
+  // 🔴 2026-10-13 用户反馈：「这版本的**菜单主页**不太符合我们整体样式设计，为什么搞成纯白色背景了？」
+  //    ⇒ 上面那一半（补底色）**不够**：工人工作台此前**连页头都没有**，而同族三页
+  //    （拍照入库 / 补打入库标签 / 拍照发货）都是 `admin-surface` 那一套
+  //    **深蓝→蓝渐变页头 + 灰底 + 白卡**（`src/styles/admin-surfaces.scss`）⇒ 只有底色时
+  //    它落在灰白底上仍然「看着是白的、没有层次」。本单把同一套外壳补齐：`__header`（渐变页头）
+  //    + `__body`（灰底内容区）。取值与 `admin-surfaces.scss::.admin-surface__*` **逐字同源**，
+  //    不新增任何颜色 token（`check-ui-regression.sh` 判 UI 回退）。
   min-height: 100vh;
   background: #f5f7fa;
-  padding: 48px 32px;
+  padding-bottom: 40px;
+
+  // ── 页头：一句话说清「这一页是什么」（口径同 `.admin-surface__header`）──
+  &__header {
+    padding: 28px 24px 12px;
+    background: linear-gradient(135deg, #0a2540 0%, #1a73e8 100%);
+  }
+
+  &__title {
+    display: block;
+    font-size: 34px;
+    font-weight: 600;
+    color: #ffffff;
+  }
+
+  &__subtitle {
+    display: block;
+    margin-top: 8px;
+    font-size: 22px;
+    color: rgba(255, 255, 255, 0.78);
+  }
+
+  // ── 内容区：灰底之内的留白（口径同 `.admin-surface__body`）──
+  &__body {
+    padding: 16px 24px;
+  }
 
   &__card {
     padding: 32px;
