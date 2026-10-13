@@ -3647,3 +3647,38 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: MC-096
+    legacy_id: ""
+    title: "已移除的页面名不得出现在**服务端面向商家的文案**里（issue #6827）：#6580 收口后未配置提示与 422 理由仍指向「参数总览 → 余料回收」—— 类级守卫只扫**字符串字面量**（沿革注释合法），未登记即红 + 台账只许缩短"
+    domains:
+      - misc
+      - ui
+    tier: normal
+    tags: [copy, removed-page, config-center, class-level-guard, ledger-only-shrink, comment-vs-literal, red-proof]
+    truths_ref: []
+    # ⚠️ 真值暂缺：本用例的判据是**零 LLM 的确定性读数**（词法扫 `backend/admin-api/src/main/java/**/*.java`
+    # 的字符串字面量 ⇄ 只许缩短的台账），由 pytest / vitest / JUnit 真跑给出，不需要自然语言真值反推。
+    user_inputs:
+      - "我在「企业基础设置 → 余料尺寸」域看到黄色未配置提示，文案让我去「参数总览 → 余料回收」填明细 —— 可那个一级项早就被撤掉了，照着点根本找不到地方；同一屏的「小件（工序名）」还得逐字手打，打错一个字这个部件就永远匹配不上。"
+    expectations: []
+    data_checks:
+      - "🔴 **判据 1·未登记即红**：`backend/admin-api/src/main/java/**/*.java` 的**字符串字面量**里出现已移除页面名（判据里的 `REMOVED_PAGE_NAMES` = 参数总览 / 工艺配置 / 加工项管理 / 加工费管理），而台账 `tests/unit_ci_workflows/removed_page_copy_ledger.json` 里没有同键同数的条目 ⇒ 红，并具名报出 `文件 + 行 + 该串`。取法 = 共享词法实现 `tests/unit_ci_workflows/_source_parsing.py::java_literals`（注释不算）。执行点 = tests/unit_ci_workflows/test_removed_page_copy_guard.py::test_no_removed_page_name_in_server_copy_without_ledger_entry"
+      - "🔴 **判据 2·余料面永久清零（本单靶心）**：现取命中与台账条目的名字都不得是「参数总览」（判据里的 `CLEARED_NAMES`，**永不缩短**）。执行点 = 同文件 ::test_remnant_face_stays_cleared"
+      - "🔴 **判据 3·台账未被兑现即红 + 只许缩短**：台账每条必须在现取命中里有同键同数的对应（幽灵条目 / 命中数涨跌都红）；条数与命中数 ≤ `FROZEN_MAX_ENTRIES=12` / `FROZEN_MAX_HITS=13`（**精确现取读数**，两者都是「加条目必须同 PR 改大它」的显式动作）。执行点 = 同文件 ::test_ledger_entries_are_live_and_only_shrink / ::test_ledger_is_well_formed"
+      - "🔴 **判据 4·只扫字面量、不扫注释（对照读数）**：同一份真语料里加一行 `// 沿革：这里曾指向「参数总览 → 余料回收」` ⇒ **一条判据都不红**；把字面量里的新指针改回旧指针 ⇒ 判据 1/2 立刻红。真值源 = `_source_parsing.java_literals` 的**词法分段**（`//` / `/* */` / 字符串各自成段，`#5323` 的唯一实现）。执行点 = 同文件 ::test_injection_comment_only_change_is_not_red / ::test_injection_real_corpus_comment_vs_literal"
+      - "🔴 **判据 5·判别力自证（注入式：坏形态各自红 + 一条对照）**：未登记命中 / 台账幽灵条目 / 同键命中数漂移 / 余料面复发 / 台账清空各自判红；只改注释不红；台账键 = **文件 + 字面量原文** ⇒ 行号漂移不炸台账。执行点 = 同文件 ::test_injection_unregistered_hit_is_red / ::test_injection_ghost_ledger_entry_and_count_drift_are_red / ::test_corpus_key_is_stable_across_line_shifts"
+      - "🔴 **判据 6·射程非空 + 正控（fail-closed）**：扫描面 0 文件 ⇒ 红；正控 = `backend/admin-api/src/main/java/com/migao/admin/service/RemnantService.java` 的**新指针**「企业基础设置 → 余料尺寸」必须被同一把尺子读到（读不到 ⇒ 此时「零命中」是假绿）。执行点 = 同文件 ::test_scan_surface_is_live_and_detector_reads_literals"
+      - "**实例判据·服务端文案（读面 + 写面各一处 —— 读面改了写面没改 = 没修）**：未配置提示 `NOTICE_SPECS_UNCONFIGURED` 与 422 `ERR_REMNANT_SPEC_REQUIRED` 的 suggestion 都含「企业基础设置 → 余料尺寸」且**不含**「参数总览」。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/RemnantServiceTest.java::specsDefaultToEmptyWithAVisibleNotice / ::recoverFailsClosedInFourWays（真库夹具 `PgCluster`，跑法 = `cd backend/admin-api && MIGAO_REQUIRE_REALDB=1 ./mvnw -q test -Dtest=RemnantServiceTest`）"
+      - "**实例判据·交互（下拉辅助：正控 + 两条负控）**：正控 = 「小件（工序名）」输入框的 `list` 指向同屏 `datalist`（id = 组件导出的 `OPERATION_LIST_ID`），`option` 值逐字等于工序库 `name`、**保序去重**、不渲染库口径旧名 `library_name`、placeholder = 「从工序库里选，或逐字输入工序名」；负控 ① = 目录 403 ⇒ 仍可逐字输入且**不新增错误条**（`remnant-specs-error` 取不到）；负控 ② = 目录回 `data.data = null`（既有替身形状）⇒ 同上，且读面失败那条红条的路径不受影响。执行点 = frontend/admin-web/tests/unit/components/RemnantItemSizesPanel.test.tsx 的判据 7 三条"
+      - "**边界（照实登记）**：① 射程 = admin-api 的 Java **字符串字面量**面 —— 前端字面量与 `backend/ai-agent-service/**` **不在面内**（前端面由跟踪单 #6826 承担：本单**不建第二份会漂的口径**）；② 判不了「该文案会不会真的上屏」（那要 `migao-dev-flow` §15.7 的真机截图）；③ 判不了新指针与域 label 真值源逐字一致（`frontend/admin-web/src/lib/config-center-domains.ts` 的 `remnant-sizes`，由域自己的判据管）；④ 台账里剩下的 12 条 / 13 处是**跨单债务**（跟踪单 #6826），本用例不为它们的文案正确性背书。"
+    skip_reason: "[backend-contract] 判据是零 LLM 的确定性读数（词法扫 Java 字面量 ⇄ 台账 + 真库实例判据 + admin-web vitest 渲染判据），pytest / vitest / JUnit 真跑，零网络，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-13 新增（issue #6827）。取号 = `python3 scripts/next_case_id.py MC` ⇒ main 现取 MC-001~095、在飞 PR 未占 ⇒ **MC-096**。病（用户 2026-10-13 现场报的）：#6580 把「参数总览」一级项撤掉、配置面收口进「企业基础设置」页内的配置域，而 `RemnantService` 的未配置提示与 422 suggestion 仍逐字写着「参数总览 → 余料回收」⇒ 商家照着点找不到页面。同批修：① 两处指针改为「企业基础设置 → 余料尺寸」（域 label 真值源 = `frontend/admin-web/src/lib/config-center-domains.ts` 的 `remnant-sizes`）+ 两处沿革注释说清撤销单号；② 「小件（工序名）」改原生 `input[list]` + `datalist` 下拉辅助（选项来自**既有读面** `productionApi.getOperationsCatalog()`，取 `name` 保序去重、**不取** `library_name`、fail-open 不新增错误条、**不新增端点 / 不改权限码**）；③ 读失败话术由「工艺配置」权限名改为商家面**显示名**「加工管理」+ 指向「岗位权限」（真值源 = `rbac/manifest.json` 的 `names`）；④ 类级守卫 + 只许缩短台账。**红证（逐字）**：改前 `python3 -m pytest tests/unit_ci_workflows/test_removed_page_copy_guard.py -q` = **5 failed / 5 passed**（具名报出 `RemnantService.java::NOTICE_SPECS_UNCONFIGURED` 与 `::ERR_REMNANT_SPEC_REQUIRED` 的旧指针）；改后 = **10 passed**。前端改前 `npx vitest run frontend/admin-web/tests/unit/components/RemnantItemSizesPanel.test.tsx` = **3 failed / 11 passed**（判据 7 三条），改后与 `TenantParamsPanel.test.tsx` / `settings.test.tsx` 三文件合计 = **79 passed**。后端注入式红证（把新指针改回旧指针）：`MIGAO_REQUIRE_REALDB=1 ./mvnw -q test -Dtest=RemnantServiceTest` = **Tests run: 8, Failures: 2**（`RemnantServiceTest.java::recoverFailsClosedInFourWays` / `::specsDefaultToEmptyWithAVisibleNotice` 两条各自报出旧串），恢复后 = **Tests run: 8, Failures: 0**。⚠️ 守卫那一半**不入 CHANGELOG**（铁律 7 豁免：判据面）；商家可见文案 + 交互变更**同 PR 入了** `## [Unreleased]`。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_removed_page_copy_guard.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/RemnantServiceTest.java"
+        - "frontend/admin-web/tests/unit/components/RemnantItemSizesPanel.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

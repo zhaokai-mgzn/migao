@@ -101,10 +101,16 @@ public class RemnantService {
     public static final String OPTION_TAKE_AWAY_FABRIC = "余料带回-布";
     public static final String OPTION_TAKE_AWAY_SHEER = "余料带回-纱";
 
-    /** 未配置小件尺寸时的**显式**说明（判据 4：不得静默） */
+    /**
+     * 未配置小件尺寸时的**显式**说明（判据 4：不得静默）。
+     *
+     * <p>指针 = 「企业基础设置 → 余料尺寸」（issue #6827）：「参数总览」一级项已由 #6580 撤掉，
+     * 配置面收口进 {@code /settings}（企业基础设置）页内的配置域；域 label 真值源 =
+     * {@code frontend/admin-web/src/lib/config-center-domains.ts} 的 {@code remnant-sizes}。</p>
+     */
     public static final String NOTICE_SPECS_UNCONFIGURED =
             "未配置小件用料尺寸 ⇒ 不产生匹配建议。本参数默认值为空（未启用），"
-                    + "请在「参数总览 → 余料回收」里为需要的小件填上「用料长 × 用料宽」后再看匹配。";
+                    + "请在「企业基础设置 → 余料尺寸」里为需要的小件填上「用料长 × 用料宽」后再看匹配。";
 
     /** 取不到批次上下文时的**显式**说明 */
     public static final String NOTICE_NO_BATCH_CONTEXT =
@@ -568,7 +574,7 @@ public class RemnantService {
         if (spec == null) {
             throw new BusinessException(ERR_REMNANT_SPEC_REQUIRED,
                     String.format("小件 %s 未配置用料尺寸 ⇒ 无法判定这块余料装不装得下", itemKey), 422,
-                    "请先在「参数总览 → 余料回收」里为它填上用料尺寸（长 × 宽）");
+                    "请先在「企业基础设置 → 余料尺寸」里为它填上用料尺寸（长 × 宽）");
         }
         if (!spec.fits(remnant.getLengthM(), remnant.getWidthM())) {
             throw new BusinessException(ERR_REMNANT_TOO_SMALL,

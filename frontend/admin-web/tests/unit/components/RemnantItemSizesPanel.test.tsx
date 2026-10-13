@@ -11,18 +11,21 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { RemnantItemSizesPanel } from '@/components/settings/RemnantItemSizesPanel'
+import { RemnantItemSizesPanel, OPERATION_LIST_ID } from '@/components/settings/RemnantItemSizesPanel'
 import { REMNANT_PARAM_COPY } from '@/lib/tenant-params'
 import { REMNANT_TERMS, glossaryRemnantAnchorOf } from '@/lib/craft-calc-glossary'
 
 const smallItemSpecs = vi.fn()
 const putSmallItemSpecs = vi.fn()
+/** issue #6827：工序名下拉辅助的**既有读面**（`GET /api/admin/production/operations-catalog`）。 */
+const getOperationsCatalog = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   remnantApi: {
     smallItemSpecs: () => smallItemSpecs(),
     putSmallItemSpecs: (items: unknown) => putSmallItemSpecs(items),
   },
+  productionApi: { getOperationsCatalog: () => getOperationsCatalog() },
 }))
 
 /** 服务端读面形状（未配置）：`configured=false` + **非空** notice（判据 4「未配置不静默」的载体）。 */
@@ -50,8 +53,11 @@ const SET = {
 beforeEach(() => {
   smallItemSpecs.mockReset()
   putSmallItemSpecs.mockReset()
+  getOperationsCatalog.mockReset()
   smallItemSpecs.mockResolvedValue(UNSET)
   putSmallItemSpecs.mockResolvedValue(SET)
+  // 缺省（未配置目录）：`data.data = null` —— 与仓内既有同族替身同形（tests/unit/pages/settings.test.tsx）
+  getOperationsCatalog.mockResolvedValue({ data: { data: null } })
 })
 
 describe('判据 1：三件套上屏（§22 P2）', () => {
@@ -234,5 +240,76 @@ describe('判据 6：行内必填 + 行内校验，不发 NaN（issue #6663）',
     expect(text).not.toContain('items[')       // 字段名不在
     expect(text).not.toContain('lengthM')
     expect(text).not.toContain('item_key')
+  })
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// issue #6827：小件（工序名）从**纯自由文本**改成**下拉辅助**（原生 `input[list]` + `datalist`）。
+//
+// 为什么：服务端 `RemnantService.putSpecs` 按 `production_operations.name` **逐字**校验 ⇒
+// 打错一个字，这一行永远不会被命中（配了等于没配）。选项来自**既有读面**
+// `productionApi.getOperationsCatalog()` —— **不新造第二份工序清单、不新增端点**。
+// 🔴 fail-open：目录读不到（403 / 空）⇒ 静默退回纯文本输入，**不新增错误条**（功能不降级）。
+// ══════════════════════════════════════════════════════════════════════════════
+describe('判据 7：「小件（工序名）」接工序库下拉辅助（issue #6827）', () => {
+  /** 读面形状照 `OperationsCatalog`：`groups[].operations[].name`（**不取** `library_name`）。 */
+  const CATALOG = {
+    data: {
+      data: {
+        total: 3,
+        groups: [
+          { group: '裁剪', operations: [{ name: '精裁', library_name: '精裁-布' }, { name: '裁剪-布' }] },
+          { group: '车位', operations: [{ name: '帘头制作' }, { name: '精裁' }] },
+        ],
+      },
+    },
+  }
+
+  it('正控：输入框的 `list` 指向同屏 datalist，option 值 = 工序名（保序去重、库口径旧名不上屏）', async () => {
+    getOperationsCatalog.mockResolvedValue(CATALOG)
+    const { container } = render(<RemnantItemSizesPanel copy={REMNANT_PARAM_COPY} />)
+    // 先等**规格读面**落地再交互：它落地时会把 rows 重置为服务端值（早点击会被冲掉）
+    await waitFor(() => expect(smallItemSpecs).toHaveBeenCalled())
+    fireEvent.click(screen.getByTestId('remnant-spec-add'))
+
+    expect(screen.getByLabelText('小件（工序名）').getAttribute('list')).toBe(OPERATION_LIST_ID)
+    await waitFor(() =>
+      expect(
+        Array.from(container.querySelectorAll(`#${OPERATION_LIST_ID} option`)).map((o) =>
+          o.getAttribute('value')
+        )
+      ).toEqual(['精裁', '裁剪-布', '帘头制作'])
+    )
+    // 库口径旧名（`library_name`）**不得**上屏（web 界面禁止渲染该键）
+    expect(container.querySelector(`#${OPERATION_LIST_ID}`)?.innerHTML).not.toContain('精裁-布')
+    expect(screen.getByLabelText('小件（工序名）').getAttribute('placeholder')).toBe(
+      '从工序库里选，或逐字输入工序名'
+    )
+  })
+
+  it('负控：目录读不到（403）⇒ 静默退化，仍可逐字输入且**不新增错误条**', async () => {
+    getOperationsCatalog.mockRejectedValue({ response: { status: 403 } })
+    const { container } = render(<RemnantItemSizesPanel copy={REMNANT_PARAM_COPY} />)
+    await waitFor(() => expect(getOperationsCatalog).toHaveBeenCalled())
+    await waitFor(() => expect(smallItemSpecs).toHaveBeenCalled())
+
+    fireEvent.click(screen.getByTestId('remnant-spec-add'))
+    fireEvent.change(screen.getByLabelText('小件（工序名）'), { target: { value: '手工输入的小件' } })
+
+    expect(screen.getByDisplayValue('手工输入的小件')).toBeInTheDocument()
+    expect(screen.queryByTestId('remnant-specs-error')).toBeNull()
+    expect(container.querySelectorAll(`#${OPERATION_LIST_ID} option`)).toHaveLength(0)
+  })
+
+  it('负控：读面回 `data.data = null`（目录拿不到）⇒ 同上，且读面失败的红条路径不受影响', async () => {
+    getOperationsCatalog.mockResolvedValue({ data: { data: null } })
+    const { container } = render(<RemnantItemSizesPanel copy={REMNANT_PARAM_COPY} />)
+    await waitFor(() => expect(getOperationsCatalog).toHaveBeenCalled())
+    await waitFor(() => expect(smallItemSpecs).toHaveBeenCalled())
+    fireEvent.click(screen.getByTestId('remnant-spec-add'))
+
+    expect(container.querySelectorAll(`#${OPERATION_LIST_ID} option`)).toHaveLength(0)
+    expect(screen.queryByTestId('remnant-specs-error')).toBeNull()
+    expect(smallItemSpecs).toHaveBeenCalled()
   })
 })

@@ -1,7 +1,13 @@
 'use client'
 
 /**
- * 小件用料尺寸表（**行式可配参数**）—— 挂在「参数总览 → 余料回收」域**页内**（issue #5146）。
+ * 小件用料尺寸表（**行式可配参数**）—— 挂在「企业基础设置 → 余料尺寸」域**页内**（issue #5146）。
+ *
+ * ⚠️ **指针**：本域原写作「参数总览 → 余料回收」——「参数总览」一级项已由 issue #6580 撤掉，
+ * 配置面收口进 `/settings`（企业基础设置）页内的配置域（域 label 真值源 =
+ * `frontend/admin-web/src/lib/config-center-domains.ts` 的 `remnant-sizes`）。
+ * 「小件（工序名）」自 issue #6827 起带**下拉辅助**（原生 `input[list]` + `datalist`，
+ * 选项来自**既有读面** `productionApi.getOperationsCatalog()`）。
  *
  * ## 为什么不另开一个配置页（`migao-dev-flow` §22 P1）
  *
@@ -28,7 +34,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, Check, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui'
-import { remnantApi } from '@/lib/api'
+import { productionApi, remnantApi } from '@/lib/api'
 import { REMNANT_TERMS, glossaryRemnantAnchorOf } from '@/lib/craft-calc-glossary'
 import { merchantReasonsOf } from '@/lib/settings/server-reason'
 import { InlineMarkdown } from '@/lib/inline-markdown'
@@ -45,6 +51,9 @@ interface DraftRow {
 
 const EMPTY_ROW: DraftRow = { itemKey: '', lengthM: '', widthM: '', note: '' }
 
+/** 工序名下拉辅助的 `datalist` id（原生 `input[list]` 接线；测试按它取选项，**不要**另起一份）。 */
+export const OPERATION_LIST_ID = 'remnant-item-key-options'
+
 export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
   const [view, setView] = useState<RemnantSpecsView | null>(null)
   const [rows, setRows] = useState<DraftRow[]>([])
@@ -54,6 +63,8 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
   const [savedAt, setSavedAt] = useState('')
   /** 行内校验结果（issue #6663）：`{ 行号: { 格: 提示 } }` —— 逐格说「填什么」，不整表一条报错 */
   const [rowErrors, setRowErrors] = useState<Record<number, { itemKey?: string; lengthM?: string; widthM?: string }>>({})
+  /** 工序库工序名（下拉辅助的选项，issue #6827）；目录读不到 ⇒ 空数组 = 纯文本输入 */
+  const [operationNames, setOperationNames] = useState<string[]>([])
 
   /** 编辑某行任一格 ⇒ 清掉该行的校验标记（改了就重新判，不把红标粘在已改的行上） */
   const clearRowError = (index: number) =>
@@ -87,8 +98,11 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
     } catch {
       // 读面受 `processing:manage` 门控：**权限拒绝是终态**，不是「参数有问题」——
       // 给可行动话术（同族实证：issue #4103 的 P0 形态）。
+      // issue #6827：「工艺配置」页已由 #6580 撤掉，且**权限名**也不该指页面 —— 码 `processing:manage`
+      // 在商家面「岗位权限」里的显示名 = 「加工管理」（真值源 = `rbac/manifest.json` 的 `names`，
+      // 与 `RegistrationService` / `PermissionService` 的权限种子同源）⇒ 指向**权限显示名 + 去哪配**。
       setView(null)
-      setError('小件用料尺寸读取失败（可能是当前岗位没有「工艺配置」权限）—— 请联系管理员开权限后重试')
+      setError('小件用料尺寸读取失败（可能是当前岗位没有「加工管理」权限）—— 请联系管理员在「岗位权限」里开权限后重试')
     }
     setLoading(false)
   }, [apply])
@@ -96,6 +110,36 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
   useEffect(() => {
     void load()
   }, [load])
+
+  /**
+   * 工序名选项（issue #6827）：来自**既有读面** `GET /api/admin/production/operations-catalog`
+   * （`productionApi.getOperationsCatalog()`，`production:view`）—— **不造第二份工序清单、不新增端点**。
+   *
+   * 取 `name`（**不取** `library_name`：那是库口径旧名，web 界面禁止渲染，见 `@/types` 的
+   * `CatalogOperation`），保序去重。🔴 **fail-open**：目录读不到（403 / 空 / 网络）⇒ 静默退化为
+   * 原来的纯文本输入，**不新增错误条**（读面失败那条红条是 `load()` 的路径，两者不许混）。
+   */
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      try {
+        const res = await productionApi.getOperationsCatalog()
+        if (!alive) return
+        const names: string[] = []
+        for (const group of res.data?.data?.groups ?? []) {
+          for (const operation of group.operations ?? []) {
+            if (operation.name && !names.includes(operation.name)) names.push(operation.name)
+          }
+        }
+        setOperationNames(names)
+      } catch {
+        // fail-open（有意静默）：目录拿不到不影响逐字输入，也不占用错误条
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [])
 
   const save = useCallback(async () => {
     // 🔴 issue #6663：**先做行内校验**，不发 NaN 出去。
@@ -150,6 +194,13 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
       data-testid="param-remnant-specs"
       className="border border-neutral-200 rounded-lg p-4 space-y-3"
     >
+      {/* 🔴 issue #6827：工序名**下拉辅助**（原生 `input[list]` + `datalist`，不加依赖）。
+          选项来自**既有读面**（`production:view`）；目录读不到 ⇒ 本 `datalist` 为空 ⇒ 退化为纯文本输入。 */}
+      <datalist id={OPERATION_LIST_ID} data-testid={OPERATION_LIST_ID}>
+        {operationNames.map((name) => (
+          <option key={name} value={name} />
+        ))}
+      </datalist>
       {/* ── §22 P2 三件套 ── */}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
@@ -230,7 +281,8 @@ export function RemnantItemSizesPanel({ copy }: { copy: ParamCopy }) {
                 value={row.itemKey}
                 aria-label="小件（工序名）"
                 aria-invalid={rowErrors[index]?.itemKey ? true : undefined}
-                placeholder="工序名，须与工序库逐字一致"
+                list={OPERATION_LIST_ID}
+                placeholder="从工序库里选，或逐字输入工序名"
                 onChange={(e) => {
                   clearRowError(index)
                   setRows((prev) =>

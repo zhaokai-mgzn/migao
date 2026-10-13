@@ -67,7 +67,8 @@ public class RemnantController {
     /**
      * 小件用料尺寸表（§22 P3 的读面：{@code configured=false} ⇒ {@code notice} 说明「未启用」）。
      *
-     * <p>前端「参数总览 → 余料回收」用它渲染**当前值**与**默认值可见**两件事。</p>
+     * <p>前端「企业基础设置 → 余料尺寸」域用它渲染**当前值**与**默认值可见**两件事
+     * （issue #6827：#6580 已撤掉「参数总览」一级项，配置面收口进 `/settings` 页内的配置域）。</p>
      */
     @GetMapping("/small-item-specs")
     public ApiResponse<RemnantViews.SpecsView> smallItemSpecs() {

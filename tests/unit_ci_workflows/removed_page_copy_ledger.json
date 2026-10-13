@@ -1,0 +1,111 @@
+{
+  "_doc": [
+    "「服务端面向商家的文案里仍指向已移除页面」的**只许缩短**燃尽台账（issue #6827）。数据文件 —— 判据只读它，不读注释。",
+    "判据 = tests/unit_ci_workflows/test_removed_page_copy_guard.py：① 现取命中 ⇄ 本台账**双向相等**（未登记即红 / 台账未被兑现即红）；",
+    "② 条数与命中数 ≤ 判据里的 FROZEN_MAX_ENTRIES / FROZEN_MAX_HITS（**只许缩短**：加条目必须同 PR 改大它们，diff 里显式可见）；",
+    "③ **「参数总览」永不入册**（本单已清零面，判据 2 的 CLEARED_NAMES）。",
+    "键 = 「文件::字面量原文」（同文件同串的多处命中按 hits 计数合并 ⇒ 行号漂移不炸台账）；每条必须有 name / literal / hits / issue / reason。",
+    "跟踪单 = #6826（同类存量收敛 + 前端字面量面）。⚠️ 本台账**不为**这些条目的文案正确性背书，只登记「已核实的现存债务」。"
+  ],
+  "frozen_at": "2026-10-13",
+  "tracking_issue": "#6826",
+  "frozen_note": "冻结读数（2026-10-13，issue #6827 落地时现取）：12 条 / 13 处命中。修好一处必须同 PR 删对应条目（判据会判「台账未被兑现」）。",
+  "entries": [
+    {
+      "path": "backend/admin-api/src/main/java/com/migao/admin/service/PermissionService.java",
+      "name": "工艺配置",
+      "literal": "查看生产看板/加工项/工艺配置/计件",
+      "hits": 1,
+      "issue": "#6826",
+      "reason": "#6580 收掉该菜单项 / 一级项后，这句服务端文案仍指向已移除的页面名「工艺配置」（现取命中 1 处）—— 本单（#6827）只清余料面，其余按只许缩短挂账，跟踪 #6826。"
+    },
+    {
+      "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingFeeCalculator.java",
+      "name": "加工费管理",
+      "literal": "**不套任何默认价**。请去「加工费管理」(%s) 为它们定价",
+      "hits": 1,
+      "issue": "#6826",
+      "reason": "#6580 收掉该菜单项 / 一级项后，这句服务端文案仍指向已移除的页面名「加工费管理」（现取命中 1 处）—— 本单（#6827）只清余料面，其余按只许缩短挂账，跟踪 #6826。"
+    },
+    {
+      "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingFeeCalculator.java",
+      "name": "加工费管理",
+      "literal": "**不套任何默认价**。请去「加工费管理」(%s) 为该组合定价，",
+      "hits": 1,
+      "issue": "#6826",
+      "reason": "#6580 收掉该菜单项 / 一级项后，这句服务端文案仍指向已移除的页面名「加工费管理」（现取命中 1 处）—— 本单（#6827）只清余料面，其余按只许缩短挂账，跟踪 #6826。"
+    },
+    {
+      "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingFeeCombinationCommandService.java",
+      "name": "加工项管理",
+      "literal": "加工项「%s」在加工项目录中不存在或已停用：请先在「加工项管理」新增该加工项，",
+      "hits": 1,
+      "issue": "#6826",
+      "reason": "#6580 收掉该菜单项 / 一级项后，这句服务端文案仍指向已移除的页面名「加工项管理」（现取命中 1 处）—— 本单（#6827）只清余料面，其余按只许缩短挂账，跟踪 #6826。"
+    },
+    {
+      "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
+      "name": "工艺配置",
+      "literal": "请在「工艺配置 → 工艺路线」停用该规则，或联系研发实现该触发类型",
+      "hits": 2,
+      "issue": "#6826",
+      "reason": "#6580 收掉该菜单项 / 一级项后，这句服务端文案仍指向已移除的页面名「工艺配置」（现取命中 2 处）—— 本单（#6827）只清余料面，其余按只许缩短挂账，跟踪 #6826。"
+    },
+    {
+      "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
+      "name": "工艺配置",
+      "literal": "请在「工艺配置 → 工艺路线」建一条路线并设为默认（当前库中路线模板 %s）；",
+      "hits": 1,
+      "issue": "#6826",
+      "reason": "#6580 收掉该菜单项 / 一级项后，这句服务端文案仍指向已移除的页面名「工艺配置」（现取命中 1 处）—— 本单（#6827）只清余料面，其余按只许缩短挂账，跟踪 #6826。"
+    },
+    {
+      "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
+      "name": "工艺配置",
+      "literal": "请在「工艺配置」把一条工艺设为默认（缺 craft 的订单取它），",
+      "hits": 1,
+      "issue": "#6826",
+      "reason": "#6580 收掉该菜单项 / 一级项后，这句服务端文案仍指向已移除的页面名「工艺配置」（现取命中 1 处）—— 本单（#6827）只清余料面，其余按只许缩短挂账，跟踪 #6826。"
+    },
+    {
+      "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionInstanceRepricingService.java",
+      "name": "工艺配置",
+      "literal": "仍有工序未定价（矩阵格为空）：请在「工艺配置 → 工艺路线」的部位价目矩阵里为对应",
+      "hits": 1,
+      "issue": "#6826",
+      "reason": "#6580 收掉该菜单项 / 一级项后，这句服务端文案仍指向已移除的页面名「工艺配置」（现取命中 1 处）—— 本单（#6827）只清余料面，其余按只许缩短挂账，跟踪 #6826。"
+    },
+    {
+      "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java",
+      "name": "加工项管理",
+      "literal": "目录里没有就永远不命中，请先在「加工项管理」建这个加工项",
+      "hits": 1,
+      "issue": "#6826",
+      "reason": "#6580 收掉该菜单项 / 一级项后，这句服务端文案仍指向已移除的页面名「加工项管理」（现取命中 1 处）—— 本单（#6827）只清余料面，其余按只许缩短挂账，跟踪 #6826。"
+    },
+    {
+      "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java",
+      "name": "工艺配置",
+      "literal": "以下工序**未定价**（≠ ¥0.00，已从计件合计中排除）：请在「工艺配置 → 工艺路线」",
+      "hits": 1,
+      "issue": "#6826",
+      "reason": "#6580 收掉该菜单项 / 一级项后，这句服务端文案仍指向已移除的页面名「工艺配置」（现取命中 1 处）—— 本单（#6827）只清余料面，其余按只许缩短挂账，跟踪 #6826。"
+    },
+    {
+      "path": "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java",
+      "name": "加工项管理",
+      "literal": "商品与加工项管理（POC 期历史岗位，issue #5699 的 P6 正式定义）",
+      "hits": 1,
+      "issue": "#6826",
+      "reason": "#6580 收掉该菜单项 / 一级项后，这句服务端文案仍指向已移除的页面名「加工项管理」（现取命中 1 处）—— 本单（#6827）只清余料面，其余按只许缩短挂账，跟踪 #6826。"
+    },
+    {
+      "path": "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java",
+      "name": "工艺配置",
+      "literal": "查看生产看板/加工项/工艺配置/计件",
+      "hits": 1,
+      "issue": "#6826",
+      "reason": "#6580 收掉该菜单项 / 一级项后，这句服务端文案仍指向已移除的页面名「工艺配置」（现取命中 1 处）—— 本单（#6827）只清余料面，其余按只许缩短挂账，跟踪 #6826。"
+    }
+  ]
+}

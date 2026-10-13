@@ -3452,7 +3452,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（96 case）
+## 杂项域（97 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4892,6 +4892,22 @@
 跳过: [backend-contract] 判据是零 LLM 的确定性读数（真脚本 + `gh` 替身 + 真 YAML + 注入式变异），pytest 子进程真跑，零网络
 ```
 溯源: 2026-10-13 新增（issue #6815，CI 可见性面）。取号 = `python3 scripts/next_case_id.py MC` 现取（main 的 MC 现取到 094，候选集之外）⇒ **MC-095**。现场逐字：PR 与 base 冲突时 GitHub 造不出 `refs/pull/<n>/merge` ⇒ `pull_request` 事件的工作流**不创建 run**，而 `pull_request_target` 跑在 base 上照常触发 ⇒ `gh pr checks` 里只有 `Auto Merge` 一行、required 检查**连行都没有**；本仓 `Detect dangling PRs` 那条检测器在 `mergeStateStatus=DIRTY` 上 `skipping` ⇒ 浪费约 1 小时。改动 = `scripts/dangling_pr_scan.py` 新增冲突态判据（`head_runs` 取 `event` 字段 → 按 `event=pull_request` 区分「需要合并提交的那一族」→ 三态分类 → 具名 required 名单（复用 `merge_gate.py::scan_pr_jobs` 的映射 + 仓内快照/API 两条腿）+ 出口命令），并把 ②/③ 分栏进 step summary；判据 = tests/unit_ci_workflows/test_dangling_pr_scan.py（新增 8 条，共 19 条）。同批按「**跳过也要长得像跳过**」补 `draft ∧ 冲突` 的可见面 —— 现场 #6809 在冲突窗口内**全程是 draft**（`isDraft ⇒ ok` 让整条扫描不出声），这是静默的**第二个**成因；实测真仓扫到 **2 条** `::warning::已跳过`。⚠️ **不入 CHANGELOG**（铁律 7 豁免：纯 CI / `scripts/` 判据面改动，对用户无可观察影响）。 ｜ tags: ci, dangling-pr, merge-conflict, event-delivery, tri-state, fail-closed, red-proof, class-level-guard
+
+### MC-096. 已移除的页面名不得出现在**服务端面向商家的文案**里（issue #6827）：#6580 收口后未配置提示与 422 理由仍指向「参数总览 → 余料回收」—— 类级守卫只扫**字符串字面量**（沿革注释合法），未登记即红 + 台账只许缩短 🔵
+```
+你: 我在「企业基础设置 → 余料尺寸」域看到黄色未配置提示，文案让我去「参数总览 → 余料回收」填明细 —— 可那个一级项早就被撤掉了，照着点根本找不到地方；同一屏的「小件（工序名）」还得逐字手打，打错一个字这个部件就永远匹配不上。
+数据: 🔴 **判据 1·未登记即红**：`backend/admin-api/src/main/java/**/*.java` 的**字符串字面量**里出现已移除页面名（判据里的 `REMOVED_PAGE_NAMES` = 参数总览 / 工艺配置 / 加工项管理 / 加工费管理），而台账 `tests/unit_ci_workflows/removed_page_copy_ledger.json` 里没有同键同数的条目 ⇒ 红，并具名报出 `文件 + 行 + 该串`。取法 = 共享词法实现 `tests/unit_ci_workflows/_source_parsing.py::java_literals`（注释不算）。执行点 = tests/unit_ci_workflows/test_removed_page_copy_guard.py::test_no_removed_page_name_in_server_copy_without_ledger_entry
+数据: 🔴 **判据 2·余料面永久清零（本单靶心）**：现取命中与台账条目的名字都不得是「参数总览」（判据里的 `CLEARED_NAMES`，**永不缩短**）。执行点 = 同文件 ::test_remnant_face_stays_cleared
+数据: 🔴 **判据 3·台账未被兑现即红 + 只许缩短**：台账每条必须在现取命中里有同键同数的对应（幽灵条目 / 命中数涨跌都红）；条数与命中数 ≤ `FROZEN_MAX_ENTRIES=12` / `FROZEN_MAX_HITS=13`（**精确现取读数**，两者都是「加条目必须同 PR 改大它」的显式动作）。执行点 = 同文件 ::test_ledger_entries_are_live_and_only_shrink / ::test_ledger_is_well_formed
+数据: 🔴 **判据 4·只扫字面量、不扫注释（对照读数）**：同一份真语料里加一行 `// 沿革：这里曾指向「参数总览 → 余料回收」` ⇒ **一条判据都不红**；把字面量里的新指针改回旧指针 ⇒ 判据 1/2 立刻红。真值源 = `_source_parsing.java_literals` 的**词法分段**（`//` / `/* */` / 字符串各自成段，`#5323` 的唯一实现）。执行点 = 同文件 ::test_injection_comment_only_change_is_not_red / ::test_injection_real_corpus_comment_vs_literal
+数据: 🔴 **判据 5·判别力自证（注入式：坏形态各自红 + 一条对照）**：未登记命中 / 台账幽灵条目 / 同键命中数漂移 / 余料面复发 / 台账清空各自判红；只改注释不红；台账键 = **文件 + 字面量原文** ⇒ 行号漂移不炸台账。执行点 = 同文件 ::test_injection_unregistered_hit_is_red / ::test_injection_ghost_ledger_entry_and_count_drift_are_red / ::test_corpus_key_is_stable_across_line_shifts
+数据: 🔴 **判据 6·射程非空 + 正控（fail-closed）**：扫描面 0 文件 ⇒ 红；正控 = `backend/admin-api/src/main/java/com/migao/admin/service/RemnantService.java` 的**新指针**「企业基础设置 → 余料尺寸」必须被同一把尺子读到（读不到 ⇒ 此时「零命中」是假绿）。执行点 = 同文件 ::test_scan_surface_is_live_and_detector_reads_literals
+数据: **实例判据·服务端文案（读面 + 写面各一处 —— 读面改了写面没改 = 没修）**：未配置提示 `NOTICE_SPECS_UNCONFIGURED` 与 422 `ERR_REMNANT_SPEC_REQUIRED` 的 suggestion 都含「企业基础设置 → 余料尺寸」且**不含**「参数总览」。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/RemnantServiceTest.java::specsDefaultToEmptyWithAVisibleNotice / ::recoverFailsClosedInFourWays（真库夹具 `PgCluster`，跑法 = `cd backend/admin-api && MIGAO_REQUIRE_REALDB=1 ./mvnw -q test -Dtest=RemnantServiceTest`）
+数据: **实例判据·交互（下拉辅助：正控 + 两条负控）**：正控 = 「小件（工序名）」输入框的 `list` 指向同屏 `datalist`（id = 组件导出的 `OPERATION_LIST_ID`），`option` 值逐字等于工序库 `name`、**保序去重**、不渲染库口径旧名 `library_name`、placeholder = 「从工序库里选，或逐字输入工序名」；负控 ① = 目录 403 ⇒ 仍可逐字输入且**不新增错误条**（`remnant-specs-error` 取不到）；负控 ② = 目录回 `data.data = null`（既有替身形状）⇒ 同上，且读面失败那条红条的路径不受影响。执行点 = frontend/admin-web/tests/unit/components/RemnantItemSizesPanel.test.tsx 的判据 7 三条
+数据: **边界（照实登记）**：① 射程 = admin-api 的 Java **字符串字面量**面 —— 前端字面量与 `backend/ai-agent-service/**` **不在面内**（前端面由跟踪单 #6826 承担：本单**不建第二份会漂的口径**）；② 判不了「该文案会不会真的上屏」（那要 `migao-dev-flow` §15.7 的真机截图）；③ 判不了新指针与域 label 真值源逐字一致（`frontend/admin-web/src/lib/config-center-domains.ts` 的 `remnant-sizes`，由域自己的判据管）；④ 台账里剩下的 12 条 / 13 处是**跨单债务**（跟踪单 #6826），本用例不为它们的文案正确性背书。
+跳过: [backend-contract] 判据是零 LLM 的确定性读数（词法扫 Java 字面量 ⇄ 台账 + 真库实例判据 + admin-web vitest 渲染判据），pytest / vitest / JUnit 真跑，零网络，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-13 新增（issue #6827）。取号 = `python3 scripts/next_case_id.py MC` ⇒ main 现取 MC-001~095、在飞 PR 未占 ⇒ **MC-096**。病（用户 2026-10-13 现场报的）：#6580 把「参数总览」一级项撤掉、配置面收口进「企业基础设置」页内的配置域，而 `RemnantService` 的未配置提示与 422 suggestion 仍逐字写着「参数总览 → 余料回收」⇒ 商家照着点找不到页面。同批修：① 两处指针改为「企业基础设置 → 余料尺寸」（域 label 真值源 = `frontend/admin-web/src/lib/config-center-domains.ts` 的 `remnant-sizes`）+ 两处沿革注释说清撤销单号；② 「小件（工序名）」改原生 `input[list]` + `datalist` 下拉辅助（选项来自**既有读面** `productionApi.getOperationsCatalog()`，取 `name` 保序去重、**不取** `library_name`、fail-open 不新增错误条、**不新增端点 / 不改权限码**）；③ 读失败话术由「工艺配置」权限名改为商家面**显示名**「加工管理」+ 指向「岗位权限」（真值源 = `rbac/manifest.json` 的 `names`）；④ 类级守卫 + 只许缩短台账。**红证（逐字）**：改前 `python3 -m pytest tests/unit_ci_workflows/test_removed_page_copy_guard.py -q` = **5 failed / 5 passed**（具名报出 `RemnantService.java::NOTICE_SPECS_UNCONFIGURED` 与 `::ERR_REMNANT_SPEC_REQUIRED` 的旧指针）；改后 = **10 passed**。前端改前 `npx vitest run frontend/admin-web/tests/unit/components/RemnantItemSizesPanel.test.tsx` = **3 failed / 11 passed**（判据 7 三条），改后与 `TenantParamsPanel.test.tsx` / `settings.test.tsx` 三文件合计 = **79 passed**。后端注入式红证（把新指针改回旧指针）：`MIGAO_REQUIRE_REALDB=1 ./mvnw -q test -Dtest=RemnantServiceTest` = **Tests run: 8, Failures: 2**（`RemnantServiceTest.java::recoverFailsClosedInFourWays` / `::specsDefaultToEmptyWithAVisibleNotice` 两条各自报出旧串），恢复后 = **Tests run: 8, Failures: 0**。⚠️ 守卫那一半**不入 CHANGELOG**（铁律 7 豁免：判据面）；商家可见文案 + 交互变更**同 PR 入了** `## [Unreleased]`。 ｜ tags: copy, removed-page, config-center, class-level-guard, ledger-only-shrink, comment-vs-literal, red-proof
 
 ## 商家入驻域（6 case）
 
@@ -8574,7 +8590,7 @@
 数据: 🔴 判据·**未配置不静默**：清空尺寸表 ⇒ 匹配 `configured=false`、**推荐为空**、`notice` **非空**（含「未配置」）；配置读面同样显式说明「未启用」。**红证**：配一行 ⇒ `configured=true` 且 `notice` 消失、**真的开始匹配**（同一份夹具 ⇒ 差别只在配置）。渲染面同判据：未配置 ⇒ 面板显式徽标「未配置（正在用默认值：空 ⇒ 未启用）」+ 服务端说明**原样**上屏；已配置 ⇒ 两个「未配置」信号都不许出现。
 数据: 判据·**不凭空推荐**：余料宽 / 长任一不足 ⇒ **无推荐**且给出可读原因；同夹具把需求改小 ⇒ 必须命中（正向对照，证明「空」是因为尺寸而不是别的原因）。
 数据: 🔴 存量行特殊选项读面（issue #5550）：`processing_info` 为 **NULL** 的明细行 ⇒ `specialOptionsOf` 必须返回**空列表**（缺值就是这一行没带特殊选项，不猜），而**不是** NPE —— 原写法 `normalize(...).get(...)` 是直连解引用，余料回收（`orderTakesRemnantsAway` / `match`）对同样的存量行随时 500。**红证** = 还原直连解引用 ⇒ `RemnantServiceTest#specialOptionsOfLegacyItemWithoutProcessingInfo` 当场 NPE 红；类级元守卫同上（`ProcessingInfoNullSafetyMetaGuardTest`）。
-数据: 判据·**配置面合规**（`migao-dev-flow` §22）：小件尺寸表挂在**既有企业参数中心**的「余料回收」域**页内**（不新造第二个配置入口）、三件套齐全且**文案里不出现数字**、术语**就地**可查（独立锚点命名空间，与算料域不抢 id）、`impact` 明确写出「不改对客价 / 不改加工费 / 不改成品尺寸」（用户裁定「不能损失客户」）。
+数据: 判据·**配置面合规**（`migao-dev-flow` §22）：小件尺寸表挂在**既有企业参数中心**的「余料**尺寸**」域**页内**（不新造第二个配置入口；域 label 真值源 = `frontend/admin-web/src/lib/config-center-domains.ts` 的 `remnant-sizes`，issue #6827 起不再写作「余料回收」）、三件套齐全且**文案里不出现数字**、术语**就地**可查（独立锚点命名空间，与算料域不抢 id）、`impact` 明确写出「不改对客价 / 不改加工费 / 不改成品尺寸」（用户裁定「不能损失客户」）。
 跳过: [backend-contract] 真 PG 判据 + admin-web vitest 渲染/静态守卫，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: remnant-recovery.small-item-specs-configurable, remnant-recovery.match-and-recovery
@@ -8661,7 +8677,7 @@
 
 ### PR-105. 🔴 商家可见文案里的 markdown 强调不得漏出字面标记：**保留标记 + 渲染层解析**（`**x**` ⇒ 加粗、反引号 ⇒ 等宽）—— DOM 级判据（渲染后无裸标记 ∧ 强调真的以元素呈现）+ 源码面登记/接线守卫（承 issue #5033；2026-09-23 由「去掉标记」改判为「渲染」） 🔵
 ```
-你: 打开「工艺配置 → 算料口径与术语说明」/「参数总览 → 余料回收」：术语与参数说明里的重点词是**加粗**、配置键是等宽代码，屏幕上不该出现字面 `**` 或反引号
+你: 打开「企业基础设置 → 算料口径」/「企业基础设置 → 余料尺寸」：术语与参数说明里的重点词是**加粗**、配置键是等宽代码，屏幕上不该出现字面 `**` 或反引号（issue #6827 起因改准指针：#6580 已撤掉「工艺配置」/「参数总览」两个入口，配置面收口进 `/settings` 页内的配置域）
 数据: 判据 1·**改判与理由**（用户 2026-09-23 裁定）：同日合并的 #5206 走的是「把 71 处文案里的 `**` 删掉」；用户裁定「要**渲染**」⇒ 保留标记，新增渲染器 `frontend/admin-web/src/lib/inline-markdown.tsx`（只认 `**x**` 与反引号两种行内标记，其余逐字原样），并把「算料 / 余料回收 / 参数总览 / 余料台账」这几处的文案与渲染点接上。理由：删标记能让星号消失，但**强调本身也没了**，而这几处文案正是「哪几个字是重点」最需要被看见的地方。#5206 的其余部分（菜单 / 余料台账入口）**不回退**。
 数据: 判据 2·**DOM 级（红证实测）**：① `CraftCalcGlossary.test.tsx`：整块 `textContent` 不含 `**` 与反引号，且 `<strong>` 含「净窗高」「不改用料米数、也不改加工类型」、`<code>` 含 `oversize_height_threshold` / `HEM_MARGIN`；② `TenantParamsPanel.test.tsx`：算料域摘要渲染出 `<strong>每一项都直接改米数 = 改钱</strong>` 与 `<code>HEM_MARGIN</code>`，余料域渲染出 `<strong>能再用</strong>`；③ `production-routings.test.tsx`：算料面板同上（`getAllByText(…, { selector })`）。**改前实测三条全红**（渲染层纯文本插值 ⇒ 字面星号原样上屏）。
 数据: 判据 3·**反恒真（两条必须同时成立）**：只判「不含 `**`」是**空判据** —— 把标记删掉同样绿（那正是被改判的方案）⇒ DOM 判据里同时有**正控**「`<strong>` / `<code>` 真的存在」。
@@ -9995,7 +10011,7 @@
 期望: direct_reply
 数据: 「参数总览」的**一级菜单项席位已撤掉**（issue #6580：内容并入 `/settings`「企业基础设置」页内的配置域，席位改由「企业基础设置」占用）；旧深链 `/settings/params` 与 `settings?tab=params` 仍**不 404**（重定向到 `/settings`）。#6573 那一轮的形态（独立一级项 `/settings/params`，节点码 = 路由守卫码 = 该页第一屏读码 `production:view`）**已退场**，保留为历史口径
 数据: **配置主线**（issue #6573）：常驻面只有**一行摘要**（完成数 + 缺口 + 下一步）；逐项明细按需展开且**折叠态下逐项 DOM 不渲染**（§31 P1）；每步三态 = 已配置 / 待配置 / **读不到**（读失败 ⇒ unknown，绝不画成「待配置」）
-数据: **域级权限**（issue #6573）：算料域需 `production:view`、AI 客服域需 `system:manage`、余料回收域需 `processing:manage`；不持该码的域**不渲染也不请求**
+数据: **域级权限**（issue #6573）：算料域需 `production:view`、AI 客服域需 `system:manage`、余料**尺寸**域需 `processing:manage`；不持该码的域**不渲染也不请求**（域 label 真值源 = `frontend/admin-web/src/lib/config-center-domains.ts` 的 `remnant-sizes`；issue #6827 起因旧文案仍写「余料回收」域 ⇒ 判据行同批改准）
 数据: 域清单按 PARAM_DOMAINS 渲染（算料 / AI 客服 / 加工费 / 工艺）；每个标量参数渲染 label + hint + impact 三件套
 数据: 算料域当读面 source 不等于 stored ⇒ 每键渲染「未配置（正在用引擎默认值）」标记；source 等于 stored ⇒ 不渲染该标记
 数据: 「高级」默认收起：初始不渲染其中参数，点开后渲染
@@ -10727,8 +10743,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：740（活跃 134，跳过 606）
-- tier 分布：smoke 12 / normal 686 / adversarial 32
+- 用例总数：741（活跃 134，跳过 607）
+- tier 分布：smoke 12 / normal 687 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10743,7 +10759,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：96
+- 杂项域：97
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：64
@@ -10874,6 +10890,7 @@
 - MC-093: 已知 console 台账**只许缩短**的终态：售后 hydration + 加工页 measure 两条缺陷修好后 clearance 清零（机制保留、判据 H 判别力不依赖台账非空）（issue #6799）
 - MC-094: 验签公钥失配**不得伪装成产品失败**（issue #6801）：admin-api 签发密钥 ⇄ ai-agent 校验公钥的指纹对齐（`scripts/align_agent_jwt_key.py` 是唯一真值源），起栈预检在跑 spec 之前把「环境失配」与「产品缺陷」分开
 - MC-095: 冲突态**不许静默**（issue #6815）：PR 与 base 冲突 ⇒ GitHub 造不出合并提交 ⇒ `pull_request` 工作流**连 run 都不创建**；判据必须把 ① 未创建 / ② pending / ③ 失败 **三态分开读**
+- MC-096: 已移除的页面名不得出现在**服务端面向商家的文案**里（issue #6827）：#6580 收口后未配置提示与 422 理由仍指向「参数总览 → 余料回收」—— 类级守卫只扫**字符串字面量**（沿革注释合法），未登记即红 + 台账只许缩短
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

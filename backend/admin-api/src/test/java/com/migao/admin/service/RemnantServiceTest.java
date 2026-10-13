@@ -138,8 +138,14 @@ class RemnantServiceTest {
                 "i", "ORD-5147-R1", "绑带-布")))).isEqualTo(RemnantService.ERR_REMNANT_NOT_FOUND);
         assertThat(codeOf(catchThrowable(() -> service.recover(RemnantTestDb.TENANT_ID, taken,
                 "i", "ORD-5147-R2", "绑带-布")))).isEqualTo(RemnantService.ERR_REMNANT_NOT_AVAILABLE);
-        assertThat(codeOf(catchThrowable(() -> service.recover(RemnantTestDb.TENANT_ID, usable,
-                "i", "ORD-5147-R1", "帘头制作")))).isEqualTo(RemnantService.ERR_REMNANT_SPEC_REQUIRED);
+        // issue #6827：未配置小件的 422 —— 码 + **指针**都要钉住（读面改了、写面没改 = 没修）
+        Throwable specRequired = catchThrowable(() -> service.recover(RemnantTestDb.TENANT_ID, usable,
+                "i", "ORD-5147-R1", "帘头制作"));
+        assertThat(codeOf(specRequired)).isEqualTo(RemnantService.ERR_REMNANT_SPEC_REQUIRED);
+        assertThat(((BusinessException) specRequired).getSuggestion())
+                .as("指针必须是**现存**的域（#6580 已撤掉「参数总览」一级项）")
+                .contains("企业基础设置 → 余料尺寸")
+                .doesNotContain("参数总览");
         assertThat(codeOf(catchThrowable(() -> service.recover(RemnantTestDb.TENANT_ID, tiny,
                 "i", "ORD-5147-R3", "绑带-布")))).isEqualTo(RemnantService.ERR_REMNANT_TOO_SMALL);
 
@@ -248,6 +254,10 @@ class RemnantServiceTest {
         assertThat(empty.configured()).isFalse();
         assertThat(empty.notice()).isEqualTo(RemnantService.NOTICE_SPECS_UNCONFIGURED);
         assertThat(empty.notice()).contains("不产生匹配建议");
+        // issue #6827：未配置提示的指针必须是**现存**的域（#6580 撤掉「参数总览」后配置面收口进
+        // 「企业基础设置」页内的配置域；域 label 真值源 = frontend/admin-web/src/lib/config-center-domains.ts）
+        assertThat(empty.notice()).contains("企业基础设置 → 余料尺寸");
+        assertThat(empty.notice()).doesNotContain("参数总览");
 
         // 同一读面：配了行之后必须**不再**说「未配置」（否则是把已配置报成未配置）
         RemnantItemSize saved = RemnantItemSize.builder().tenantId(RemnantTestDb.TENANT_ID)
