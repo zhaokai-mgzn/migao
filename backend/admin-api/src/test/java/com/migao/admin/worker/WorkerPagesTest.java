@@ -1,6 +1,6 @@
 package com.migao.admin.worker;
 
-// case_ids: BM-006, HR-001, HR-002, UI-091
+// case_ids: PG-066, BM-006, HR-001, HR-002, UI-091
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -93,18 +93,47 @@ class WorkerPagesTest {
     }
 
     @Test
-    @DisplayName("③ 形态不对 ⇒ 当未收窄（fail-open）：非数组（字符串 / 映射）")
+    @DisplayName("③ **不是数组** ⇒ 当未收窄（fail-open）：字符串 / 映射 / 截断的 JSON 文本")
     void malformedStoredValueFallsBackToFollowTheEnterprise() {
         assertThat(WorkerPages.effectiveFor(TENANT, "report")).containsExactlyElementsOf(TENANT);
         assertThat(WorkerPages.effectiveFor(TENANT, Map.of("report", true))).containsExactlyElementsOf(TENANT);
         assertThat(WorkerPages.restrictedOrNull("report")).isNull();
+        // 库里存的是原样 JSON 文本（String）：截断 / 非数组 ⇒ 同样当未收窄（不抛异常 —— 抛的话
+        // GET /api/worker/me 会 500，把工人的活挡在外面，正是 fail-open 要避免的方向）
+        assertThat(WorkerPages.restrictedOrNull("[\"report\"")).isNull();
+        assertThat(WorkerPages.restrictedOrNull("{\"report\":true}")).isNull();
+        assertThat(WorkerPages.effectiveFor(TENANT, "[oops]")).containsExactlyElementsOf(TENANT);
     }
 
     @Test
-    @DisplayName("③ 元素全非字符串 ⇒ 空集（**不是**未收窄）：只有「整体不是数组」才 fail-open")
+    @DisplayName("③ 是数组但元素全非字符串 ⇒ 空集（**不是**未收窄）：只有「整体不是数组」才 fail-open")
     void allNonStringElementsMeanNothingVisible() {
         assertThat(WorkerPages.effectiveFor(TENANT, List.of(1, 2))).isEmpty();
         assertThat(WorkerPages.restrictedOrNull(List.of(1, 2))).isEmpty();
+        assertThat(WorkerPages.effectiveForOrFallback(TENANT, List.of(1, 2))).containsExactlyElementsOf(TENANT);
+    }
+
+    @Test
+    @DisplayName("③ 存储往返：真键集合 → JSON 文本 → 归一集合（原样、保序）")
+    void storedJsonRoundTripsThroughTheNormalizer() {
+        String stored = WorkerPages.storedJson(List.of("cut_calc", "report"));
+        assertThat(stored).isEqualTo("[\"cut_calc\",\"report\"]");
+        assertThat(WorkerPages.normalizeStored(stored)).containsExactly("cut_calc", "report");
+        // null = 未收窄（不写空数组 —— 空数组在工人端会被读成「没读到权限 ⇒ 全开」）
+        assertThat(WorkerPages.storedJson(null)).isNull();
+        assertThat(WorkerPages.normalizeStored(null)).isNull();
+    }
+
+    @Test
+    @DisplayName("③ 求交为空 ⇒ 回落企业页集（否则工人端把空集读成「没读到权限」而**全开**，与收窄相反）")
+    void emptyIntersectionFallsBackInsteadOfOpeningEverything() {
+        // 工人被收窄到 cut_calc，而企业把 cut_calc 关了 ⇒ 交集为空
+        assertThat(WorkerPages.effectiveFor(List.of("report", "order"), List.of("cut_calc"))).isEmpty();
+        assertThat(WorkerPages.effectiveForOrFallback(List.of("report", "order"), List.of("cut_calc")))
+                .containsExactly("report", "order");
+        // 未收窄 / 企业一页没开：两条都回企业页集（后者本身就是空 ⇒ 工人端按全开跑，由调用方记日志）
+        assertThat(WorkerPages.effectiveForOrFallback(List.of("report"), null)).containsExactly("report");
+        assertThat(WorkerPages.effectiveForOrFallback(List.of(), List.of("report"))).isEmpty();
     }
 
     @Test
@@ -119,24 +148,33 @@ class WorkerPagesTest {
     }
 
     @Test
-    @DisplayName("④ 空数组 = 显式「一页都不给」（合法配置，不是错误、也不等于未收窄）")
+    @DisplayName("④ 空数组 = 显式「一页都不给」（读侧能表达；**写侧**已拒，见 invalidRestrictions）")
     void emptyListMeansExplicitlyNothing() {
         assertThat(WorkerPages.effectiveFor(TENANT, List.of())).isEmpty();
         assertThat(WorkerPages.restrictedOrNull(List.of())).isEmpty();
+        // 库里的空数组文本同样读成空集（脏数据方向：只裁不放宽）
+        assertThat(WorkerPages.restrictedOrNull("[]")).isEmpty();
     }
 
     @Test
-    @DisplayName("⑤ 合法输入归一：null ⇒ 未收窄；空数组 ⇒ 空集；真键 ⇒ 保留请求顺序")
+    @DisplayName("⑤ 合法输入归一：null ⇒ 未收窄；真键 ⇒ 保留请求顺序")
     void validRestrictionsAreNormalized() {
         assertThat(WorkerPages.validateRestriction(null).ok()).isTrue();
         assertThat(WorkerPages.validateRestriction(null).pages()).isNull();
 
-        assertThat(WorkerPages.validateRestriction(new ArrayList<>()).ok()).isTrue();
-        assertThat(WorkerPages.validateRestriction(new ArrayList<>()).pages()).isEmpty();
-
         WorkerPages.Validation two = WorkerPages.validateRestriction(List.of("cut_calc", "report"));
         assertThat(two.ok()).isTrue();
         assertThat(two.pages()).containsExactly("cut_calc", "report");
+    }
+
+    @Test
+    @DisplayName("⑤ 空数组 ⇒ 422（工人端把它读成「没读到权限 ⇒ 全开」，允许它 = 让商家点出相反的结果）")
+    void emptyRestrictionIsRejectedOnTheWriteSide() {
+        WorkerPages.Validation empty = WorkerPages.validateRestriction(new ArrayList<>());
+        assertThat(empty.ok()).isFalse();
+        assertThat(empty.errors()).hasSize(1);
+        assertThat(empty.errors().get(0).getKey()).isEqualTo("workerPages");
+        assertThat(empty.errors().get(0).getValue()).contains("停用");
     }
 
     @Test
@@ -152,8 +190,9 @@ class WorkerPagesTest {
         assertThat(duplicate.errors().get(0).getKey()).isEqualTo("workerPages[1]");
         assertThat(duplicate.errors().get(0).getValue()).contains("重复");
 
-        WorkerPages.Validation wrongType = WorkerPages.validateRestriction(List.of(7));
-        assertThat(wrongType.errors().get(0).getKey()).isEqualTo("workerPages[0]");
+        WorkerPages.Validation wrongType = WorkerPages.validateRestriction(List.of("report", 7));
+        assertThat(wrongType.errors()).hasSize(1);
+        assertThat(wrongType.errors().get(0).getKey()).isEqualTo("workerPages[1]");
         assertThat(wrongType.errors().get(0).getValue()).contains("字符串");
 
         WorkerPages.Validation notArray = WorkerPages.validateRestriction("report");

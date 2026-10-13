@@ -1,6 +1,7 @@
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
@@ -155,7 +156,7 @@ public class WorkerAdminService {
                 .role(WORKER_ROLE)
                 .passwordHash(passwordEncoder.encode(normalizedPin))
                 .status("active")
-                .workerPages(restrictedPages)
+                .workerPages(WorkerPages.storedJson(restrictedPages))
                 .build();
 
         try {
@@ -235,7 +236,8 @@ public class WorkerAdminService {
      * <p>几何：实际下发 = 企业页（{@code worker_page_configs}）∩ 本列 ⇒ 企业级是天花板；
      * {@code null} ⇒ 清回收窄 = 跟随企业设置（默认）。</p>
      *
-     * @param workerPages {@code null} = 清回收窄；空数组 = 显式一页都不给；非空数组 = 收窄到这几页
+     * @param workerPages {@code null} = 清回收窄（跟随企业设置）；非空数组 = 收窄到这几页
+     *                    （空数组 ⇒ 422，见 {@link WorkerPages#validateRestriction}）
      * @return 落库后的档案视图（{@code passwordHash} 已清空）
      * @throws BusinessException 422 页面键非法（逐条理由）· 404 目标不是本租户的工人档案
      */
@@ -254,14 +256,17 @@ public class WorkerAdminService {
                     "请在「工人档案」列表里按工号找到这位工人，再设置他的工人端菜单");
         }
 
-        // 只更新 worker_pages —— 与建号/重置 PIN 同款的部分更新（别的列一律不动）
-        User update = new User();
-        update.setId(worker.getId());
-        update.setWorkerPages(restrictedPages);
-        userMapper.updateById(update);
+        // 只更新 worker_pages —— 与建号/重置 PIN 同款的部分更新（别的列一律不动）。
+        // 🔴 **必须走显式 set**：MyBatis-Plus 的默认更新策略是 NOT_NULL ⇒ 「把 null 塞进实体再 updateById」
+        // 生成的 SQL 里根本没有这一列（静默不生效，接口却回 200「跟随企业设置」）。
+        String stored = WorkerPages.storedJson(restrictedPages);
+        userMapper.update(null, new LambdaUpdateWrapper<User>()
+                .eq(User::getId, worker.getId())
+                .eq(User::getTenantId, tenantId)
+                .set(User::getWorkerPages, stored));
         log.info("[工人档案] 工人端菜单已更新：tenantId={}, workerNo={}, workerPages={}",
                 tenantId, worker.getWorkerNo(), restrictedPages == null ? "跟随企业设置" : restrictedPages);
-        worker.setWorkerPages(restrictedPages);
+        worker.setWorkerPages(stored);
         worker.setPasswordHash(null);
         return worker;
     }
@@ -269,8 +274,8 @@ public class WorkerAdminService {
     /**
      * 校验 + 归一工人端页面收窄（闭词表 {@link WorkerPages#ALL}）。
      *
-     * <p>{@code null} = 未收窄（合法，跟随企业设置）· 空数组 = 显式一页都不给（合法）·
-     * 未知键 / 非字符串项 / 重复键 ⇒ 422 + {@code error.details} 逐条理由，本次写入整体不生效。</p>
+     * <p>{@code null} = 未收窄（合法，跟随企业设置）· 未知键 / 非字符串项 / 重复键 / <b>空数组</b>
+     * ⇒ 422 + {@code error.details} 逐条理由，本次写入整体不生效。</p>
      */
     private static List<String> validateWorkerPages(Object raw) {
         WorkerPages.Validation check = WorkerPages.validateRestriction(raw);

@@ -1,6 +1,6 @@
 package com.migao.admin.controller;
 
-// case_ids: PG-018, BM-006, DF-017, HR-001, HR-002
+// case_ids: PG-066, PG-018, BM-006, DF-017, HR-001, HR-002
 
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.entity.User;
@@ -146,7 +146,8 @@ class WorkerProfileControllerTest extends BaseControllerTest {
         when(workerPageConfigService.pagesFor(7L)).thenReturn(List.of("report", "cut_calc", "shipment"));
         User narrow = new User();
         narrow.setId(ZHANG.workerId());
-        narrow.setWorkerPages(List.of("cut_calc", "shipment"));
+        // 库里存的是原样 JSON 文本（见 User#workerPages 的「为什么不用 JacksonTypeHandler」）
+        narrow.setWorkerPages("[\"cut_calc\",\"shipment\"]");
         when(workerAdminService.findOwnedWorker(ZHANG.workerId())).thenReturn(narrow);
 
         mockMvc.perform(get(URL).header(WorkerSessionService.SESSION_HEADER, SESSION))
@@ -172,5 +173,41 @@ class WorkerProfileControllerTest extends BaseControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.pages[0]").value("report"))
                 .andExpect(jsonPath("$.data.pages[1]").value("cut_calc"));
+    }
+
+    @Test
+    @DisplayName("🔴 交集为空（收窄的页恰好被企业关了）⇒ 回落企业页，**不是**空数组"
+            + "（工人端把空集读成「没读到权限 ⇒ 全开」，原样下发等于反向放宽）")
+    void emptyIntersectionFallsBackToTheEnterpriseSetInsteadOfOpeningEverything() throws Exception {
+        when(workerSessionService.resolveIdentity(SESSION)).thenReturn(ZHANG);
+        when(workerSessionService.tenantIdOf(SESSION)).thenReturn(7L);
+        when(workerPageConfigService.pagesFor(7L)).thenReturn(List.of("report", "order"));
+        User narrow = new User();
+        narrow.setId(ZHANG.workerId());
+        narrow.setWorkerPages("[\"cut_calc\"]");
+        when(workerAdminService.findOwnedWorker(ZHANG.workerId())).thenReturn(narrow);
+
+        mockMvc.perform(get(URL).header(WorkerSessionService.SESSION_HEADER, SESSION))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.pages[0]").value("report"))
+                .andExpect(jsonPath("$.data.pages[1]").value("order"))
+                .andExpect(jsonPath("$.data.pages.length()").value(2));
+    }
+
+    @Test
+    @DisplayName("脏数据（形态不对的存储值）⇒ 当未收窄：照旧下发企业页（读侧 fail-open，不抛 500）")
+    void malformedStoredPagesFallBackToTheEnterpriseSet() throws Exception {
+        when(workerSessionService.resolveIdentity(SESSION)).thenReturn(ZHANG);
+        when(workerSessionService.tenantIdOf(SESSION)).thenReturn(7L);
+        when(workerPageConfigService.pagesFor(7L)).thenReturn(List.of("report"));
+        User broken = new User();
+        broken.setId(ZHANG.workerId());
+        broken.setWorkerPages("[not json");
+        when(workerAdminService.findOwnedWorker(ZHANG.workerId())).thenReturn(broken);
+
+        mockMvc.perform(get(URL).header(WorkerSessionService.SESSION_HEADER, SESSION))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.pages[0]").value("report"))
+                .andExpect(jsonPath("$.data.pages.length()").value(1));
     }
 }

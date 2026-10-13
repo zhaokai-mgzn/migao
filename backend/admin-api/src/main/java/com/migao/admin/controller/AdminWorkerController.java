@@ -6,6 +6,7 @@ import com.migao.admin.entity.User;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.security.TenantOwnedResource;
 import com.migao.admin.service.WorkerAdminService;
+import com.migao.admin.worker.WorkerPages;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -136,8 +138,11 @@ public class AdminWorkerController {
         view.put("name", worker.getNickname());
         view.put("role", worker.getRole());
         view.put("status", worker.getStatus());
-        // 工人端页面收窄（issue #6788）：null = 未收窄（跟随企业设置）⇒ 前端据此显示「全部」
-        view.put("workerPages", worker.getWorkerPages());
+        // 工人端页面收窄（issue #6788）：null = 未收窄（跟随企业设置）⇒ 前端据此显示「全部」。
+        // 库里存的是**原样 JSON 文本**（见 User#workerPages 的「为什么不用 JacksonTypeHandler」），
+        // 归一后按数组下发（脏值 ⇒ null = 未收窄，与读侧 fail-open 同口径）。
+        Set<String> restricted = WorkerPages.normalizeStored(worker.getWorkerPages());
+        view.put("workerPages", restricted == null ? null : List.copyOf(restricted));
         view.put("createdAt", worker.getCreatedAt() == null ? null : worker.getCreatedAt().toString());
         return view;
     }

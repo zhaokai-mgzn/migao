@@ -1,4 +1,4 @@
-// case_ids: HR-002, HR-001, UI-091
+// case_ids: PG-066, HR-002, HR-001, UI-091
 package com.migao.admin.controller;
 
 import com.migao.admin.config.GlobalExceptionHandler;
@@ -90,11 +90,11 @@ class AdminWorkerControllerTest {
                 .role("worker").status("active").createdAt(OffsetDateTime.now()).build();
     }
 
-    /** 带工人端页面收窄（issue #6788）的档案。 */
-    private static User workerWithPages(List<String> pages) {
+    /** 带工人端页面收窄（issue #6788）的档案：库里存的是**原样 JSON 文本**（见 {@code User#workerPages}）。 */
+    private static User workerWithPages(String storedJson) {
         return User.builder().id("w-1").tenantId(1L).workerNo("W-1001").nickname("张三")
                 .role("worker").status("active").createdAt(OffsetDateTime.now())
-                .workerPages(pages).build();
+                .workerPages(storedJson).build();
     }
 
     @Test
@@ -125,7 +125,7 @@ class AdminWorkerControllerTest {
     @DisplayName("设工人端菜单（#6788）：PUT /{id}/pages ⇒ 200 + 回显 workerPages，且带 employee:create")
     void updateWorkerPagesEndpointReturnsTheRestriction() throws Exception {
         when(workerAdminService.updateWorkerPages(eq("w-1"), any()))
-                .thenReturn(workerWithPages(List.of("report", "cut_calc")));
+                .thenReturn(workerWithPages("[\"report\",\"cut_calc\"]"));
 
         mockMvc.perform(put("/api/admin/workers/w-1/pages")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -134,6 +134,8 @@ class AdminWorkerControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.workerPages[0]").value("report"))
                 .andExpect(jsonPath("$.data.workerPages[1]").value("cut_calc"));
+        // 请求体原样透传给服务层（控制器不自己过滤 / 不改写要校验的东西）
+        verify(workerAdminService).updateWorkerPages(eq("w-1"), eq(List.of("report", "cut_calc")));
 
         assertThat(AdminWorkerController.class
                 .getDeclaredMethod("updateWorkerPages", String.class, Map.class)

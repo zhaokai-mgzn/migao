@@ -1,8 +1,9 @@
-// case_ids: HR-002, HR-001, HR-007, UI-091
+// case_ids: PG-066, HR-002, HR-001, HR-007, UI-091
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.PageResponse;
@@ -42,6 +43,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -388,29 +390,35 @@ class WorkerAdminServiceTest {
             if (patch.getPasswordHash() != null) {
                 row.setPasswordHash(patch.getPasswordHash());
             }
-            // 工人端页面收窄（issue #6788）：只有**真的带了这一格**才落库（部分更新语义）
-            if (patch.getWorkerPages() != null) {
-                row.setWorkerPages(patch.getWorkerPages());
-            }
             return 1;
         });
     }
 
-    /**
-     * 页面收窄的落库口径与「重置 PIN」**不同**：{@code worker_pages} 是**整格替换**
-     * （{@code null} 也要写进去 = 清回收窄）⇒ 需要一条自己的 update 替身
-     * （共用的那条只认 {@code passwordHash}，照它写会把「清回收窄」判成没生效）。
-     */
-    private void stubWorkerPagesUpdate() {
-        when(userMapper.updateById(any(User.class))).thenAnswer(inv -> {
-            User patch = inv.getArgument(0);
-            User row = workersTable.get();
-            if (row == null || patch.getId() == null || !patch.getId().equals(row.getId())) {
-                return 0;
+    /** 页面收窄的**真写点**：{@code update(null, LambdaUpdateWrapper)} 的 SET 值（已解析回真值）。 */
+    private static String storedPagesOf(LambdaUpdateWrapper<User> wrapper) {
+        for (String fragment : wrapper.getSqlSet().split(",")) {
+            String part = fragment.trim();
+            if (!part.startsWith("worker_pages")) {
+                continue;
             }
-            row.setWorkerPages(patch.getWorkerPages());
-            return 1;
-        });
+            String value = part.substring(part.indexOf('=') + 1).trim();
+            if (value.startsWith("#{") && value.endsWith("}")) {
+                // 占位符形如 `#{ew.paramNameValuePairs.MPGENVAL1}` ⇒ 键是**最后一个点**之后那一段
+                String placeholder = value.substring(2, value.length() - 1);
+                String key = placeholder.substring(placeholder.lastIndexOf('.') + 1);
+                Object param = wrapper.getParamNameValuePairs().get(key);
+                return param == null ? null : param.toString();
+            }
+            return "null".equals(value) ? null : value;
+        }
+        return null;
+    }
+
+    private LambdaUpdateWrapper<User> capturedPagesWrapper() {
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaUpdateWrapper<User>> captor = ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(userMapper).update(isNull(), captor.capture());
+        return captor.getValue();
     }
 
     @Test
@@ -510,14 +518,18 @@ class WorkerAdminServiceTest {
     void createWorkerWithoutPagesFollowsTheEnterpriseSetting() {
         User created = service.createWorker(WORKER_NO, NAME, PIN);
 
+        // 建号走 insert：实体上那一格**原样**入库（库里存 JSON 文本，见 User#workerPages）
         assertThat(created.getWorkerPages()).isNull();
-        assertThat(workersTable.get().getWorkerPages()).isNull();
+        ArgumentCaptor<User> inserted = ArgumentCaptor.forClass(User.class);
+        verify(userMapper).insert(inserted.capture());
+        assertThat(inserted.getValue().getWorkerPages()).isNull();
         // 🔴 页面收窄**不是**权限码：无论怎么配，这一格恒为 null（V141/V152 红线）
-        assertThat(workersTable.get().getPermissions()).isNull();
+        assertThat(inserted.getValue().getPermissions()).isNull();
+        assertThat(inserted.getValue().getRole()).isEqualTo("worker");
     }
 
     @Test
-    @DisplayName("⑥ 建号即可带收窄：真键落库，未知键 ⇒ 422 逐条理由 + **不建号**（fail-closed）")
+    @DisplayName("⑥ 建号即可带收窄：真键落库（JSON 文本），未知键 ⇒ 422 逐条理由 + **不建号**（fail-closed）")
     void createWorkerCanCarryWorkerPages() {
         // 非法配置 ⇒ 连号都不建（不留下「半份配置」的档案）
         assertThatThrownBy(() -> service.createWorker(WORKER_NO, NAME, PIN, List.of("resport")))
@@ -531,55 +543,65 @@ class WorkerAdminServiceTest {
 
         User created = service.createWorker(WORKER_NO, NAME, PIN, List.of("report", "cut_calc"));
 
-        assertThat(created.getWorkerPages()).containsExactly("report", "cut_calc");
-        assertThat(workersTable.get().getWorkerPages()).containsExactly("report", "cut_calc");
+        // 存储形态 = JSON 文本（**不是** JacksonTypeHandler 的对象：手写 select 必须绑 resultMap 才认，
+        // 见 JacksonTypeHandlerMappingGuardTest 与 User#workerPages 的说明）
+        assertThat(created.getWorkerPages()).isEqualTo("[\"report\",\"cut_calc\"]");
+        ArgumentCaptor<User> inserted = ArgumentCaptor.forClass(User.class);
+        verify(userMapper).insert(inserted.capture());
+        assertThat(inserted.getValue().getWorkerPages()).isEqualTo("[\"report\",\"cut_calc\"]");
+        assertThat(inserted.getValue().getPermissions()).isNull();
     }
 
     @Test
-    @DisplayName("⑥ 改收窄：真键落库、可见性生效（不碰任何授权面）")
+    @DisplayName("⑥ 改收窄：显式 set 落库、可见性生效（不碰任何授权面）")
     void updateWorkerPagesStoresTheRestriction() {
         service.createWorker(WORKER_NO, NAME, PIN);
         stubWorkerRowById();
 
         User updated = service.updateWorkerPages("worker-1", List.of("report"));
 
-        assertThat(updated.getWorkerPages()).containsExactly("report");
+        assertThat(updated.getWorkerPages()).isEqualTo("[\"report\"]");
         assertThat(updated.getPasswordHash()).isNull();
-        assertThat(workersTable.get().getWorkerPages()).containsExactly("report");
+        // 真写点 = wrapper 的 SET 值（**不是** updateById 的实体：那一路在 NOT_NULL 策略下会漏掉这一列）
+        LambdaUpdateWrapper<User> wrapper = capturedPagesWrapper();
+        assertThat(storedPagesOf(wrapper)).isEqualTo("[\"report\"]");
+        // 部分更新：SET 子句只有 worker_pages 一列（没有第二个字段被顺手改掉）
+        assertThat(wrapper.getSqlSet().split(",")).hasSize(1);
         // 授权面（permissions）一字未动：页面码永不进权限快照
         assertThat(workersTable.get().getPermissions()).isNull();
-
-        // 部分更新：本次写面只带 id + worker_pages（没有第二个字段被顺手改掉）
-        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
-        verify(userMapper).updateById(captor.capture());
-        assertThat(captor.getValue().getId()).isEqualTo("worker-1");
-        assertThat(captor.getValue().getWorkerPages()).containsExactly("report");
-        assertThat(captor.getValue().getRole()).isNull();
-        assertThat(captor.getValue().getNickname()).isNull();
+        assertThat(updated.getRole()).isEqualTo("worker");
     }
 
     @Test
-    @DisplayName("⑥ 清回收窄：传 null ⇒ 落回 null（= 跟随企业设置，可回退）")
+    @DisplayName("⑥ 清回收窄：传 null ⇒ **真的写进 NULL**（NOT_NULL 策略下「塞 null 再 updateById」会静默不生效）")
     void nullClearsTheRestriction() {
         service.createWorker(WORKER_NO, NAME, PIN, List.of("report"));
         stubWorkerRowById();
-        stubWorkerPagesUpdate();
 
         service.updateWorkerPages("worker-1", null);
 
-        assertThat(workersTable.get().getWorkerPages()).isNull();
+        // 清空必须**显式 set 成 NULL**（wrapper 的 SET 子句里带上这一列且值为 null）——
+        // 否则 SQL 里根本没它，接口回 200「跟随企业设置」而库里留着旧收窄（评审实测的静默失效形态）
+        LambdaUpdateWrapper<User> wrapper = capturedPagesWrapper();
+        assertThat(wrapper.getSqlSet()).contains("worker_pages");
+        assertThat(storedPagesOf(wrapper)).isNull();
     }
 
     @Test
-    @DisplayName("⑥ 空数组 = 显式一页都不给（合法：与「未收窄」是两件事）")
-    void emptyListIsALegalRestriction() {
+    @DisplayName("⑥ 空数组 ⇒ 422（**不是**「一页都不给」：工人端把空集读成「没读到权限 ⇒ 全开」，与意图相反）")
+    void emptyListIsRejectedBecauseTheWorkerSideWouldOpenEverything() {
         service.createWorker(WORKER_NO, NAME, PIN);
         stubWorkerRowById();
-        stubWorkerPagesUpdate();
 
-        service.updateWorkerPages("worker-1", List.of());
+        assertThatThrownBy(() -> service.updateWorkerPages("worker-1", List.of()))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "VALIDATION_ERROR")
+                .satisfies(e -> assertThat(((BusinessException) e).getDetails())
+                        .extracting("field").containsExactly("workerPages"));
 
-        assertThat(workersTable.get().getWorkerPages()).isEmpty();
+        // 零写入：老值原样保留（不是「被清成未收窄」）
+        assertThat(workersTable.get().getWorkerPages()).isNull();
+        verify(userMapper, never()).update(isNull(), any());
     }
 
     @Test
@@ -587,7 +609,6 @@ class WorkerAdminServiceTest {
     void invalidPagesAreRejectedWithoutWriting() {
         service.createWorker(WORKER_NO, NAME, PIN);
         stubWorkerRowById();
-        stubWorkerPagesUpdate();
 
         assertThatThrownBy(() -> service.updateWorkerPages("worker-1", List.of("resport")))
                 .isInstanceOf(BusinessException.class)
@@ -601,7 +622,7 @@ class WorkerAdminServiceTest {
                 .satisfies(e -> assertThat(((BusinessException) e).getDetails())
                         .extracting("field").containsExactly("workerPages"));
 
-        verify(userMapper, never()).updateById(any(User.class));
+        verify(userMapper, never()).update(isNull(), any());
         assertThat(workersTable.get().getWorkerPages()).isNull();
     }
 
@@ -616,6 +637,6 @@ class WorkerAdminServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("code", "NOT_FOUND");
 
-        verify(userMapper, never()).updateById(any(User.class));
+        verify(userMapper, never()).update(isNull(), any());
     }
 }

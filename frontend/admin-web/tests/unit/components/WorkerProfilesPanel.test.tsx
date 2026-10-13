@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// case_ids: HR-001, HR-002, UI-024, UI-091
+// case_ids: PG-066, HR-001, HR-002, UI-024, UI-091
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { toast } from 'sonner'
@@ -270,7 +270,7 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
 
     expect(await screen.findByTestId('worker-menu-w-1')).toHaveTextContent('全部（跟随企业设置）')
     expect(screen.getByTestId('worker-menu-w-2')).toHaveTextContent('裁高计算器')
-    // 空数组 ≠ 未收窄（两者必须长得不一样，否则管理员分不清「没设」与「一页都不给」）
+    // 空数组（历史脏数据）与「未收窄」显示得不一样（否则管理员分不清「没设」与「一页都不给」）
     expect(screen.getByTestId('worker-menu-w-3')).toHaveTextContent('未开放任何页面')
   })
 
@@ -292,6 +292,47 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     await waitFor(() => {
       expect(mockCreateWorker).toHaveBeenCalledWith({
         workerNo: 'W-1005', name: '孙八', pin: '246810', workerPages: null,
+      })
+    })
+  })
+
+  it('⑨ 全部取消勾选 ⇒ 就地拦住、**不发请求**（空集在工人端会被读成「没读到权限 ⇒ 全开」，与意图相反）', async () => {
+    render(<WorkerProfilesPanel canWrite />)
+
+    fireEvent.click(await screen.findByText('新建工人档案'))
+    fireEvent.change(screen.getByPlaceholderText(/W-1002/), { target: { value: 'W-1006' } })
+    fireEvent.change(screen.getByPlaceholderText(/李四/), { target: { value: '周九' } })
+    fireEvent.change(screen.getByPlaceholderText(/位数字/), { target: { value: '246810' } })
+    for (const key of ['report', 'order', 'cut_calc', 'shipment']) {
+      fireEvent.click(await screen.findByTestId(`worker-page-option-${key}`))
+    }
+    // 就地给一句人话（不是等 422 回来才说），并指路既有出口「停用」
+    expect(screen.getByTestId('worker-pages-empty-hint')).toHaveTextContent(/停用/)
+    fireEvent.click(screen.getByText('创建'))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('至少要留一个页面')))
+    expect(mockCreateWorker).not.toHaveBeenCalled()
+  })
+
+  it('⑨ 弹窗打开后才拿到页面配置 ⇒ 仍是「全勾 = 跟随企业设置」（不发空集）', async () => {
+    let resolveConfig: (v: unknown) => void = () => {}
+    mockGetWorkerPageConfig.mockReturnValue(new Promise((resolve) => { resolveConfig = resolve }))
+    mockCreateWorker.mockResolvedValue({ data: { data: worker({ id: 'w-7' }) } })
+    render(<WorkerProfilesPanel canWrite />)
+
+    // 配置还没回来就打开弹窗（真实网络下很常见）
+    fireEvent.click(await screen.findByText('新建工人档案'))
+    resolveConfig(pageConfig(['report', 'order', 'cut_calc', 'shipment']))
+    await screen.findByTestId('worker-page-option-report')
+
+    fireEvent.change(screen.getByPlaceholderText(/W-1002/), { target: { value: 'W-1007' } })
+    fireEvent.change(screen.getByPlaceholderText(/李四/), { target: { value: '吴十' } })
+    fireEvent.change(screen.getByPlaceholderText(/位数字/), { target: { value: '246810' } })
+    fireEvent.click(screen.getByText('创建'))
+
+    await waitFor(() => {
+      expect(mockCreateWorker).toHaveBeenCalledWith({
+        workerNo: 'W-1007', name: '吴十', pin: '246810', workerPages: null,
       })
     })
   })

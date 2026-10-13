@@ -47,8 +47,11 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
 
   const [formOpen, setFormOpen] = useState(false)
   // 工人端菜单（issue #6788）：建号时默认**全勾** = 跟随企业设置（零回归）；少勾一个 ⇒ 收窄。
-  const [form, setForm] = useState<{ workerNo: string; name: string; pin: string; pages: string[] }>(
-    { workerNo: '', name: '', pin: '', pages: [] },
+  // 工人端菜单（issue #6788）：`pages === null` = **未收窄** = 全勾（跟随企业设置，零回归）。
+  // 🔴 用 null 而不是 `menuPages.map(...)` 快照：配置还没拉回来时不会把「跟随企业设置」误判成空集
+  // （空集在工人端会被读成「没读到权限 ⇒ 全开」，与「一页都不给」正好相反）。
+  const [form, setForm] = useState<{ workerNo: string; name: string; pin: string; pages: string[] | null }>(
+    { workerNo: '', name: '', pin: '', pages: null },
   )
   const [creating, setCreating] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
@@ -118,10 +121,14 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
   }
 
   const handleOpenCreate = () => {
-    // 默认全勾 = 跟随企业设置（不把工人默认收窄成「什么都看不到」）
-    setForm({ workerNo: '', name: '', pin: '', pages: menuPages.map((p) => p.key) })
+    // 默认**未收窄**（= 跟随企业设置）。存 null 而不是 menuPages 的快照 ⇒ 配置还没拉回来、
+    // 或配置在弹窗打开后到达，都不会把「跟随企业设置」误判成「一页都没勾」。
+    setForm({ workerNo: '', name: '', pin: '', pages: null })
     setFormOpen(true)
   }
+
+  /** 勾选态：`null` = 未收窄 = 全勾（跟随企业设置）。 */
+  const isChecked = (key: string) => form.pages === null || form.pages.includes(key)
 
   /** 这一位工人被收窄到哪几页（人话名）；`null` = 跟随企业设置。 */
   const menuSummary = (record: WorkerProfile): string | null => {
@@ -137,6 +144,11 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
     if (!form.name.trim()) { toast.error('请输入工人姓名'); return }
     // 与后端同一条形态判据：工人端 PIN 输入框是数字键盘（inputmode=numeric）⇒ 含字母的 PIN 打不出来
     if (!/^\d{4,12}$/.test(form.pin.trim())) { toast.error('PIN 必须是 4~12 位数字'); return }
+    // 与后端同一条写入判据（422 是兜底，不是第一次告知）：空集在工人端会被读成「没读到权限 ⇒ 全开」
+    if (form.pages !== null && form.pages.length === 0) {
+      toast.error('至少要留一个页面；要让这位工人不干活，请用「停用」')
+      return
+    }
 
     setCreating(true)
     try {
@@ -144,12 +156,12 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
         workerNo: form.workerNo.trim(),
         name: form.name.trim(),
         pin: form.pin.trim(),
-        // 全勾 = 跟随企业设置 ⇒ 发 null（不收窄）；菜单没读到（menuPages 为空）同样发 null
-        workerPages: menuPages.length > 0 && form.pages.length < menuPages.length ? form.pages : null,
+        // null（未收窄）或全勾 ⇒ 发 null = 跟随企业设置；只勾了一部分 ⇒ 发那一部分
+        workerPages: form.pages === null || form.pages.length === menuPages.length ? null : form.pages,
       })
       toast.success('工人档案已创建，请把工号与 PIN 告知本人')
       setFormOpen(false)
-      setForm({ workerNo: '', name: '', pin: '', pages: [] })
+      setForm({ workerNo: '', name: '', pin: '', pages: null })
       loadWorkers()
     } catch (e) {
       // 失败**不关弹窗**：工号冲突是可修正的错误；文案由拦截器统一展示服务端原文（UI-024 去重口径）
@@ -384,7 +396,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
                 <button
                   type="button"
                   data-testid="worker-pages-select-all"
-                  onClick={() => setForm({ ...form, pages: menuPages.map((p) => p.key) })}
+                  onClick={() => setForm({ ...form, pages: null })}
                   className="text-xs text-primary-600 hover:text-primary-700 hover:underline"
                 >
                   全部（跟随企业设置）
@@ -400,22 +412,33 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
                     <input
                       type="checkbox"
                       className="w-4 h-4"
-                      checked={form.pages.includes(page.key)}
+                      checked={isChecked(page.key)}
                       onChange={() => setForm({
                         ...form,
-                        pages: form.pages.includes(page.key)
-                          ? form.pages.filter((k) => k !== page.key)
-                          : [...form.pages, page.key],
+                        pages: (() => {
+                          // 从「未收窄（全勾）」取消一项 ⇒ 展开成「除这一项外全勾」，而不是空集
+                          const current = form.pages === null ? menuPages.map((p) => p.key) : form.pages
+                          return current.includes(page.key)
+                            ? current.filter((k) => k !== page.key)
+                            : [...current, page.key]
+                        })(),
                       })}
                     />
                     <span className="text-sm text-neutral-800">{page.label}</span>
                   </label>
                 ))}
               </div>
-              <p className="text-xs text-neutral-400 mt-1.5">
-                只勾这一位工人要用的页面，他就只在工人端看到这些入口；全部勾选 = 跟随企业设置。
-                企业级已关掉的页面在这里不会出现（企业设置是上限）。
-              </p>
+              {form.pages !== null && form.pages.length === 0 ? (
+                <p className="text-xs text-amber-700 mt-1.5" data-testid="worker-pages-empty-hint">
+                  至少要留一个页面。一页都不留并不是「什么都不显示」——工人端会当成「没读到权限」按全开运行；
+                  要让这位工人不干活，请改用「停用」。
+                </p>
+              ) : (
+                <p className="text-xs text-neutral-400 mt-1.5">
+                  只勾这一位工人要用的页面，他就只在工人端看到这些入口；全部勾选 = 跟随企业设置。
+                  企业级已关掉的页面在这里不会出现（企业设置是上限）。
+                </p>
+              )}
             </div>
           )}
         </div>

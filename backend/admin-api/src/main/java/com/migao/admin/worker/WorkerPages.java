@@ -80,15 +80,39 @@ public final class WorkerPages {
     // ════════════════════════════════════════════════════════════════════════════
 
     /**
-     * 读侧归一工人档案上的收窄值（{@code users.worker_pages}）。
+     * 读侧归一工人档案上的收窄值（{@code users.worker_pages}）—— <b>宽容解析，坏值一律当「未收窄」</b>。
      *
-     * <p>三态：{@code null} = <b>未收窄</b>（跟随企业设置）· 非空集 = 收窄到这几页 ·
-     * 空集 = 显式「一页都不给」。<b>未知键一律裁掉</b> ⇒ 脏数据只会让工人少看一页（可见性面可接受），
-     * 绝不超出企业页集；形态不对（非数组 / 元素非字符串）⇒ 当<b>未收窄</b>（fail-open，
-     * 与工人端 {@code effectivePages} 的「读不到就全开」同口径：不因存储异常把活挡在外面）。</p>
+     * <p>三态：{@code null} = <b>未收窄</b>（跟随企业设置）· 非空集 = 收窄到这几页（其它一律丢弃，见下）。</p>
+     *
+     * <p>🔴 <b>为什么坏值当「未收窄」而不是当「一页都不给」</b>：读侧 fail-open —— 存储形态异常时
+     * 把工人挡在活外面的代价，远大于「他多看见一个入口」（后者是本表设计上就接受的边界：页面可见性
+     * 不是访问控制，藏起菜单 ≠ 挡住接口，见类注释）。</p>
+     *
+     * <p>接受两种入参：{@code List<?>}（测试 / 直连调用）与库里的**原样 JSON 文本**（{@code String}，
+     * 见 {@code User#workerPages} 的「为什么不用 JacksonTypeHandler」）。</p>
+     *
+     * <p>🔴 <b>两种失败要分开</b>（都写在这里，免得后人合并）：</p>
+     * <ul>
+     *   <li><b>不是数组 / 解析不出来</b>（{@code "report"}、{@code {"report":true}}、截断的 JSON…）⇒
+     *       当<b>未收窄</b>（fail-open）：存储形态异常不该把工人的活挡在外面。</li>
+     *   <li><b>是数组、但一个真键都没有</b>（元素非字符串 / 全是未知键）⇒ <b>空集</b>（= 什么都不露）：
+     *       这是「收窄了，但收窄到的东西都不存在」—— 若退回全开，就等于**放宽**（企业关掉的页又冒出来），
+     *       与「只裁不放宽」的红线相反。</li>
+     * </ul>
+     *
+     * @return {@code null} = 未收窄（含解析失败）；否则 = 归一后的收窄集（**可为空集**）
      */
     public static Set<String> restrictedOrNull(Object raw) {
-        if (!(raw instanceof List<?> list)) {
+        List<?> list;
+        if (raw instanceof List<?> l) {
+            list = l;
+        } else if (raw instanceof String s) {
+            List<String> parsed = parseJsonArray(s);
+            if (parsed == null) {
+                return null;
+            }
+            list = parsed;
+        } else {
             return null;
         }
         Set<String> out = new LinkedHashSet<>();
@@ -100,6 +124,52 @@ public final class WorkerPages {
         return out;
     }
 
+    /** 工人档案列的存储形态：收窄集 → 入库 JSON 文本（{@code null} = 未收窄 = 库里 NULL）。 */
+    public static String storedJson(List<String> pages) {
+        return pages == null ? null : toJson(pages);
+    }
+
+    /**
+     * 库里的原样文本 → 已归一集合（**只读商品**：给 {@code toWorkerView} / 求交用，不做校验）。
+     *
+     * @return {@code null} = 未收窄（含脏值）
+     */
+    public static Set<String> normalizeStored(String storedJson) {
+        return restrictedOrNull(storedJson);
+    }
+
+    private static String toJson(List<String> pages) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < pages.size(); i++) {
+            if (i > 0) {
+                sb.append(',');
+            }
+            sb.append('"').append(pages.get(i).replace("\"", "")).append('"');
+        }
+        return sb.append(']').toString();
+    }
+
+    /** 极简 JSON 数组解析（**零依赖**）：只认 {@code ["a","b"]} 这一种形态，其余返回 {@code null}。 */
+    private static List<String> parseJsonArray(String raw) {
+        String s = raw == null ? "" : raw.trim();
+        if (s.length() < 2 || s.charAt(0) != '[' || s.charAt(s.length() - 1) != ']') {
+            return null;
+        }
+        List<String> out = new ArrayList<>();
+        String body = s.substring(1, s.length() - 1).trim();
+        if (body.isEmpty()) {
+            return out;
+        }
+        for (String part : body.split(",")) {
+            String t = part.trim();
+            if (t.length() < 2 || t.charAt(0) != '"' || t.charAt(t.length() - 1) != '"') {
+                return null;
+            }
+            out.add(t.substring(1, t.length() - 1));
+        }
+        return out;
+    }
+
     /**
      * 本工人实际可看到的页面集（<b>唯一判据</b>）：企业页 ∩ 个人收窄。
      *
@@ -107,7 +177,7 @@ public final class WorkerPages {
      * {@code WorkerPagesTest#workerRestrictionNeverWidensTheEnterpriseSet} 红。</p>
      *
      * @param tenantPages 企业级页面集（{@code WorkerPageConfigService.pagesFor}）
-     * @param workerPages {@code users.worker_pages} 原值（{@code null} = 未收窄）
+     * @param workerPages {@code users.worker_pages} 原值（{@code null} / 脏值 = 未收窄）
      */
     public static List<String> effectiveFor(List<String> tenantPages, Object workerPages) {
         List<String> tenant = tenantPages == null ? List.of() : tenantPages;
@@ -125,10 +195,32 @@ public final class WorkerPages {
     }
 
     /**
+     * 求交的**兜底**：交集为空（工人被收窄到的页面恰好都被企业关掉了）⇒ 回落企业页集。
+     *
+     * <p>🔴 为什么兜底方向是「回落」而不是「回空」：工人端 H5 对**空数组**的口径是
+     * <b>fail-open = 按全开运行</b>（{@code frontend/worker-h5/src/render.mjs} 的 {@code effectivePages}：
+     * 空集只可能来自「没读到权限」，故与「读不到」同口径）。⇒ 服务端若把「交集为空」原样下发，
+     * 工人端**反而会全开** —— 那是「收窄」的**反向**效果（issue #6788 评审实测形态）。
+     * 回落到企业页集则与服务端可见的实际权限一致，且只影响这一位工人的菜单显隐（不是授权放宽，
+     * 见类注释的红线）。</p>
+     */
+    public static List<String> effectiveForOrFallback(List<String> tenantPages, Object workerPages) {
+        List<String> tenant = tenantPages == null ? List.of() : tenantPages;
+        List<String> effective = effectiveFor(tenantPages, workerPages);
+        return effective.isEmpty() ? List.copyOf(tenant) : effective;
+    }
+
+    /**
      * 写侧校验 + 归一（供 {@code WorkerAdminService} 组装 422 的 {@code error.details}）。
      *
      * <p>规则：{@code null} = 未收窄（合法）· 必须是数组 · 每项是闭词表内的字符串（未知键<b>点名下标</b>）·
-     * 不得重复 · 允许空数组（= 显式一页都不给）。</p>
+     * 不得重复 · <b>不得为空数组</b>。</p>
+     *
+     * <p>🔴 <b>为什么空数组非法</b>（与 {@link #restrictedOrNull} 的读侧宽容是**一对**）：
+     * 「一页都不给」在工人端不是「什么都不显示」而是 <b>fail-open = 全开</b>
+     * （{@code effectivePages} 把空数组读成「没读到权限」）⇒ 允许它等于让管理员点出一个
+     * **与意图相反**的结果。产品上「让这个人别干活」的既有入口是**停用档案**
+     * （{@code PUT /api/admin/users/{id}/status}），不是把页面清空 ⇒ 这里 422 并指路。</p>
      *
      * @return {@code errors} 非空 ⇒ 调用方抛 422（本次写入整体不生效，没有部分更新）；
      *         {@code pages} = 归一后的收窄集（保留请求顺序、去重），{@code errors} 为空时可信
@@ -163,6 +255,11 @@ public final class WorkerPages {
                 pages.add(page);
             }
             index++;
+        }
+        if (errors.isEmpty() && pages.isEmpty()) {
+            errors.add(Map.entry("workerPages",
+                    "至少要留一个页面：一页都不留时工人端会按「没读到权限」全开运行（与意图相反）。"
+                            + "要让这位工人不干活，请用「停用」而不是清空菜单"));
         }
         return new Validation(pages, errors);
     }
