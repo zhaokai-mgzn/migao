@@ -6297,6 +6297,96 @@ _CASE_MC_090 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-091 [NORMAL] 手机端可见面标注只有一份真值（issue #6759）：面清单只许在 `MobileSurfaces` 声明、`admin-web` 不许自备「码 → 手机端面」映射表、动作节点台账 ⇄ 服务端真值源 ⇄ `rbac/manifest.json` 四向相等，且标注**必须接线**在 `GET /api/admin/menus` 上（源: cases/misc.yml）──
+_CASE_MC_091 = EvalCase(
+    id='MC-091',
+    legacy_id='',
+    title='手机端可见面标注只有一份真值（issue #6759）：面清单只许在 `MobileSurfaces` 声明、`admin-web` 不许自备「码 → 手机端面」映射表、动作节点台账 ⇄ 服务端真值源 ⇄ `rbac/manifest.json` 四向相等，且标注**必须接线**在 `GET /api/admin/menus` 上',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['管理员在权限勾选树上要能看出「勾这个权限码 = 员工手机上多一个入口」，而这个对应关系**只许有一份出处**（服务端按权限码投影的手机端菜单），前端不许自己再抄一张表。'],
+    expectations=[],
+    data_checks=['**判据 1·面清单只许一处**：`backend/admin-api/src/main/java/com/migao/admin/service/MobileSurfaces.java` 是手机端可见面（面名 + 读码）的**唯一**声明处；别的 `backend/admin-api/src/main/java/**/*.java` 文件里出现「面构造形态（`new Surface(` + 字符串）+ 面中文名」即**具名**判红。执行点 = tests/unit_ci_workflows/test_mobile_surface_annotation_single_source.py::test_mobile_surface_truth_lives_in_exactly_one_java_file。', '**判据 2·四向相等（未登记即红 / 陈旧亦红）**：动作节点台账（tests/unit_ci_workflows/test_rbac_derived_pages.py 的 `ACTION_NODE_CODES`）⇄ 服务端真值源（`MenuController` 的节点声明，由既有解析器 `_iter_menu_controller` 现取）⇄ `rbac/manifest.json` 的 `menus.controller` ⇄ 三源同构守卫的 `ACTION_NODES`（组内多出节点）**逐条逐值相等**；只改一处 ⇒ 报出是哪一个节点、差在哪。执行点 = 同文件 ::test_action_nodes_are_registered_in_both_ledgers_and_the_manifest。', '**判据 3·前端没有第二张表**：`frontend/admin-web/src/**` 里**没有任何**生产源文件同时出现「**只可能是手机端面**的名字」（= 面名 − PC 菜单项名，现取 = 入库过账 / 售后处理 / 坐席 / 数据 / 生产待办 / 计件工资报表）与「手机端读码」；扫描面 268 个文件、命中 0。执行点 = 同文件 ::test_frontend_has_no_code_to_mobile_surface_table（附「唯一渲染实现 = frontend/admin-web/src/lib/mobile-surface-label.ts 必须在」的声音点，防空真）。', '**判据 4·标注必须接线**：`GET /api/admin/menus` 返回的常量**不得**是裸 `MENU_TREE`（形态级：必须是 `annotateMobileTitles(...)` 的产物）—— 防「标注只活在单测的想象里」。执行点 = 同文件 ::test_mobile_surface_annotation_is_wired_to_the_menu_endpoint。', '**判别力自证（红证，内存构造、不读磁盘）**：① 别处抄一份面清单 ⇒ 判据 1 具名红；② 前端一张映射表 ⇒ 判据 3 具名红；③ 台账码漂移 / 新节点未登记 / 清单缺项 / 清单值不等 / 陈旧登记 ⇒ 判据 2 **各自**判红；对照读数 = 只把面名与读码写进**注释** ⇒ **不红**、两者**各自独立出现**（不共现）⇒ **不红**、只引用读码而无面构造形态 ⇒ **不红**。执行点 = 同文件 ::test_guard_discriminates_bad_shapes。', '**渲染面判据（前端）**：**有**手机端面的码渲染 ` · 手机端：X`（多个面用 `、` 连接、顺序 = 服务端给的顺序），**没有**的（空数组 / 缺字段）**一个字符都不追加**。执行点 = frontend/admin-web/tests/unit/pages/employees.test.tsx（服务端下发什么就渲染什么 + 不下发即零标注的对照读数）与 frontend/admin-web/tests/unit/components/TreeCheckbox.test.tsx（真组件的三条判据）。', '🔴 **覆盖边界（照实登记，不粉饰）**：① 判据 3 的扫描面**有意只到 `frontend/admin-web/src/**`** —— `frontend/bmini-app` 早有一张端侧镜像台账（frontend/bmini-app/src/utils/adminPermission.ts 的 `ADMIN_SURFACES`，由 BM-046 判据 5 与 `MobileSurfaces` 逐值比对守着），本单**一字未改**它，纳入扫描面会把存量债误算成本单引入；② 判据 3 的判别力依赖「面名 ≠ 菜单名」这一**现取事实**（差分清单在判据里现算并打印）—— 若将来把某个面改成与 PC 菜单项同名，它会退化为漏报（**已知边界，登记不修**）；③ **判不了**「服务端下发的面名被前端改写」（如加后缀）与运行期才可见的第二份真值（localStorage 之类）。'],
+    skip_reason='[backend-contract] 源码形态 + 台账逐值 + 接线（Python 标准库现取解析，复用既有守卫的解析器）+ 前端 vitest 渲染断言（零 LLM、秒级），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['rbac', 'permission-tree', 'mobile-surfaces', 'single-source', 'class-level-guard', 'red-proof', 'admin-web'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-092 [NORMAL] 云 dev DB 白名单**一条命令**（幂等 / 只追加 / fail-closed / 不泄漏）+ 起栈入口预检与业务路由自检（issue #6789）：`scripts/dev-db-whitelist.sh` 是 `--ModifyMode Append` 的唯一承载体，覆盖语义与 `default` 组零改动，起栈入口在失败前就把处置命令说出来（源: cases/misc.yml）──
+_CASE_MC_092 = EvalCase(
+    id='MC-092',
+    legacy_id='',
+    title='云 dev DB 白名单**一条命令**（幂等 / 只追加 / fail-closed / 不泄漏）+ 起栈入口预检与业务路由自检（issue #6789）：`scripts/dev-db-whitelist.sh` 是 `--ModifyMode Append` 的唯一承载体，覆盖语义与 `default` 组零改动，起栈入口在失败前就把处置命令说出来',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['本机公网 IP 不在云 dev DB（阿里云 RDS）白名单时，本地起栈会失败 —— 这时我要**一条命令**把「当前 IP / 是否在列 / 追加 / 复测」走完，而不是人肉查实例号、手拼旧列表（手拼即整体覆盖语义，会误删别人的 IP）；并且起栈入口在失败前就该把这条命令告诉我，而不是甩 7403 行 Spring 栈给我当第一现场。'],
+    expectations=[],
+    data_checks=['**判据 1·幂等**：IP 已在 `dev_local` 组 ⇒ 正常模式 exit 0 且 `ModifySecurityIps` **调用次数 = 0**（只做 TCP 复测）。执行点 = tests/unit_ci_workflows/test_dev_db_whitelist_one_command.py::test_already_listed_is_idempotent_zero_modify。', '**判据 2·只追加**：不在列 + 显式 `--yes` ⇒ Modify 参数含 `--ModifyMode Append`、`--SecurityIps` **恰为新 IP**（不手拼旧列表）、`--DBInstanceIPArrayName dev_local`；`default` 组逐字未动、`dev_local` 旧条目保留。执行点 = 同文件 ::test_missing_ip_appends_and_never_overwrites。', '**判据 3·默认只诊断**：不在列且未给 `--yes` ⇒ 非零退出、**零** Modify 调用、文案点名 `./scripts/dev-db-whitelist.sh --yes`（不静默写云资源）。执行点 = 同文件 ::test_missing_ip_without_yes_writes_nothing。', '**判据 4·fail-closed 五形态**：`aliyun` 缺失 / Describe 失败 / Modify 失败 / 追加后回读读不到 / TCP 复测不可达 ⇒ **各自**非零退出。执行点 = 同文件 ::test_fail_closed_aliyun_missing / ::test_fail_closed_describe_failure / ::test_fail_closed_modify_failure / ::test_fail_closed_readback_miss / ::test_fail_closed_tcp_unreachable。', '**判据 5·不泄漏**：桩 `.env` 里放哨兵密码 `SENTINEL_PW_zz6789`，脚本在 9 种（形态 × 参数）组合下的全部输出（stdout+stderr）都不得含它。执行点 = 同文件 ::test_credentials_never_leak。', '**判据 6·`--check` 只读**：任何形态都不产生 Modify 调用；在列且可达 ⇒ exit 0、不在列 ⇒ 非零（0/1 语义）。执行点 = 同文件 ::test_check_is_readonly_and_reports_state。', '**判据 7·起栈入口预检（接线 + 时序）**：`scripts/ui_smoke_merchant.sh` 在启动 admin-api **之前** TCP 探 `RDS_HOST:RDS_PORT`（读同一个 .env）；桩 `nc` 不可达 ⇒ wrapper **非零退出**、输出含 `dev-db-whitelist.sh`、**不含** `PSQLException`、且**没走到**起栈。执行点 = 同文件 ::test_smoke_preflight_reports_actionable_line_not_spring_noise（负控 ::test_smoke_preflight_passes_through_when_reachable）。', '**判据 7b·业务路由自检（起栈后）**：桩 dev 对 `(dashboard)` 组路由（`/employees` / `/dashboard`）回 **404** ⇒ 输出含「`.next`」+ 可行动命令（`rm -rf frontend/admin-web/.next`）、非零退出、**没开始跑 spec**；只把 404 算坏（200/307/302 = 路由存在）；**只报不动手**（脚本不得执行清理）。执行点 = 同文件 ::test_smoke_route_check_catches_stale_next_cache / ::test_smoke_route_check_absent_before_web_and_spec。', '**判据 8·判别力自证（注入式，实跑）**：① `Append`→`Overwrite`（覆盖语义删掉旧条目）② 删掉整段 `--ModifyMode` 参数（回到手拼覆盖时代）③ 摘掉预检块 ⇒ 对应判据**各自**变红；还原 ⇒ 绿；**只改注释** ⇒ 不红。执行点 = 同文件 ::test_guard_discriminates_bad_shapes。', '**判据 9·类级元守卫**：`--ModifyMode Append` 的承载体在 `scripts/*.sh` 里**唯一**（再抄一份同名命令 ⇒ 红）；脚本文本不得出现 `Overwrite`（覆盖语义禁入）；空数组展开必须写成 `${A[@]+"${A[@]}"}`（macOS bash 3.2 + `set -u`，issue #6777）；预检与路由自检的**接线时序**（admin-api 之前 / admin-web ready 与 spec 之间）逐条钉住。执行点 = 同文件 ::test_class_level_guards_on_script_corpus。', '🔴 **覆盖边界（照实登记，不粉饰）**：① 判据全用**桩**（`aliyun`/`nc`/`curl`），**不真调 aliyun、不真改云资源** —— 真语料绿证 = issue #6789 的一次实测（`--ModifyMode Append` / TaskId 713392864 / `dev_local` 21→22 条 / `nc` succeeded）；② 判不了「真 RDS 上白名单到底写进去没有」；③ 预检只覆盖 `scripts/ui_smoke_merchant.sh` 这一条入口（有意的最小射程）；④ 「`.next` 跨上下文复用」在主仓侧没有机械判据（本判据只覆盖起栈这一条路径）。'],
+    skip_reason='[backend-contract] 脚本分支语义 + 参数形态 + 接线时序，由 pytest 子进程真跑（桩 aliyun / nc / curl）+ 注入式红证验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['dev-env', 'rds-whitelist', 'one-command', 'idempotent', 'fail-closed', 'no-credential-leak', 'preflight', 'red-proof', 'class-level-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-093 [NORMAL] 已知 console 台账**只许缩短**的终态：售后 hydration + 加工页 measure 两条缺陷修好后 clearance 清零（机制保留、判据 H 判别力不依赖台账非空）（issue #6799）（源: cases/misc.yml）──
+_CASE_MC_093 = EvalCase(
+    id='MC-093',
+    legacy_id='',
+    title='已知 console 台账**只许缩短**的终态：售后 hydration + 加工页 measure 两条缺陷修好后 clearance 清零（机制保留、判据 H 判别力不依赖台账非空）（issue #6799）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['台账只许缩短 —— 缺陷修好后必须把那两条从「已知 console 错误」里删掉，并给出「删掉后判据仍绿」的读数；删不掉就说明没修好，不许留着台账当绿。'],
+    expectations=[],
+    data_checks=['🔴 判据 1·**台账已缩短**：`tests/unit_ci_workflows/ui_smoke_known_console.json` 的 `entries` 从 2 条（AFTERSALES_HYDRATION / PROCESSING_MEASURE_NEGATIVE）降到 **0 条**，`scripts/ui-smoke-merchant/spec.mjs` 的 `KNOWN_CONSOLE_ERRORS` 同步清空（逐字对账，改一处必须同批改两处）。执行点 = tests/unit_ci_workflows/test_ui_smoke_selector_liveness.py::test_known_console_registry_matches_spec_and_is_attributed。', '🔴 判据 2·**机制保留（不是把机制砍掉消红）**：spec 里 `isKnownConsoleError` / `knownConsoleIssue` / `allowKnownConsole` / `SMOKE_STRICT_CONSOLE` 四处接线**一字未减**（缺一即红）。执行点同上（判据本体里的接线检查）。', '🔴 判据 3·**判别力不依赖台账非空**：注入夹具改从**内存合成条目** + 逐字镜像进 `KNOWN_CONSOLE_ERRORS` 的 spec 文本构造（不再拿现状台账当夹具）—— id 改名 ⇒ 报「不逐字相等」、归口丢失 ⇒ 报「缺 issue 归口」，原样夹具 ⇒ 绿。判据本体**收窄了「entries 为空即红」**这一条（台账的正常终态就是空：在册缺陷都修好之后），理由逐字写在 `known_console_failures` 的 docstring 里。执行点 = 同文件 ::test_known_console_registry_has_teeth。', '**边界（照实登记）**：空台账**不再**保护「有人把条目删掉来消红」这一形态 —— 该形态在空台账下**不存在**（没有条目可删）；新的坏形态（把已修好的缺陷重新登记回去）由判据 1 的逐字对账承接不到（登记是合法动作）⇒ 由真栈冒烟本身承接（报错若真消失，登记反而会让它变 noise、而非变绿）。'],
+    skip_reason='[backend-contract] 台账 ⇄ spec 文本对账 + 注入式判别力自证（pytest，非 LLM 行为），不进入 agent-eval 冒烟',
+    tags=['ui-smoke', 'console-ledger', 'shrink-only', 'fail-closed', 'class-level-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-094 [NORMAL] 验签公钥失配**不得伪装成产品失败**（issue #6801）：admin-api 签发密钥 ⇄ ai-agent 校验公钥的指纹对齐（`scripts/align_agent_jwt_key.py` 是唯一真值源），起栈预检在跑 spec 之前把「环境失配」与「产品缺陷」分开（源: cases/misc.yml）──
+_CASE_MC_094 = EvalCase(
+    id='MC-094',
+    legacy_id='',
+    title='验签公钥失配**不得伪装成产品失败**（issue #6801）：admin-api 签发密钥 ⇄ ai-agent 校验公钥的指纹对齐（`scripts/align_agent_jwt_key.py` 是唯一真值源），起栈预检在跑 spec 之前把「环境失配」与「产品缺陷」分开',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['全量冒烟只剩 `06-agent-sessions` / `07-chat` 两条报 401，而同一个浏览器会话里别的页面全 ✅ —— 我要知道这是**产品鉴权坏了**还是**我机器上的配置烂了**，而不是被一句 `401 Unauthorized` 引着去改产品代码；如果是环境，起栈入口就该在跑 spec 之前把成因和处置命令告诉我。'],
+    expectations=[],
+    data_checks=['**判据 1·识别**：两侧公钥同指纹 ⇒ `--state` 印 `aligned:<fp>`、单行、exit 0。执行点 = tests/unit_ci_workflows/test_agent_jwt_key_alignment.py ::test_aligned_reports_fingerprint_and_exit_zero', '**判据 2·失配**：`.env` 是陈旧键 ⇒ `mismatch:<api_fp>:<agent_fp>`，**两个指纹都印**且可区分。执行点 = 同文件 ::test_mismatch_names_both_fingerprints_and_exit_one', '**判据 3·判不了 ≠ 通过**：任一侧取不到 / 非法 PEM / 私钥当公钥 ⇒ `unknown:…`。执行点 = 同文件 ::test_unjudgeable_is_three_not_green（四形态参数化，**一条也不 skip**）', '**判据 4·形态兼容**：`JWT_PUBLIC_KEY=` 与 `export JWT_PUBLIC_KEY=` 两种写法都认。执行点 = 同文件 ::test_env_key_forms_both_recognized', '**判据 5·写盘安全**：修完该键仍是**单行**（`\\n` 转义）+ 留 `.bak-align`；连跑两次逐字节一致。执行点 = 同文件 ::test_write_keeps_single_line_key_and_is_idempotent', '**判据 6·起栈预检接线**：`scripts/ui_smoke_merchant.sh` 在跑 spec **之前**调 `align_agent_jwt_key.py --state`；失配 ⇒ 印可行动处置 + `SMOKE_UNCONFIGURED=1` + `SMOKE_UNCONFIGURED_WHY`（带指纹）。执行点 = 同文件 ::test_preflight_wired_before_spec_in_smoke_script / ::test_preflight_flags_mismatch_as_unconfigured_not_product / 负控 ::test_preflight_aligned_is_quiet', '**判据 7·严格档**：`SMOKE_STRICT_KEY_ALIGNMENT=1` + 失配 ⇒ 非零退出且**不越过预检**。执行点 = 同文件 ::test_strict_mode_refuses_to_run_on_mismatch', '**判据 8·判别力自证（注入式）**：注入另一对公钥 ⇒ 判据 2 当场红；还原 ⇒ 绿；只改注释 ⇒ 不红。执行点 = 同文件 ::test_guard_discriminates_injected_bad_key / ::test_negative_control_private_key_and_comment_only', '**判据 9·类级元守卫（单一真值源）**：指纹解析**只在** `scripts/align_agent_jwt_key.py` 一处，起栈脚本的预检块里不得再出现 `hashlib` / `b64decode`。执行点 = 同文件 ::test_fingerprint_logic_has_single_source'],
+    skip_reason='[backend-contract] 指纹三态 + 起栈预检接线 + 输出分类，由 pytest 子进程真跑（沙箱假仓，零网络 / 零真栈）；真栈两向读数（401 → 200）见 PR body 取证段',
+    tags=['dev-env', 'jwt', 'key-alignment', 'smoke-attribution', 'fail-closed', 'red-proof', 'class-level-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-095 [NORMAL] 冲突态**不许静默**（issue #6815）：PR 与 base 冲突 ⇒ GitHub 造不出合并提交 ⇒ `pull_request` 工作流**连 run 都不创建**；判据必须把 ① 未创建 / ② pending / ③ 失败 **三态分开读**（源: cases/misc.yml）──
+_CASE_MC_095 = EvalCase(
+    id='MC-095',
+    legacy_id='',
+    title='冲突态**不许静默**（issue #6815）：PR 与 base 冲突 ⇒ GitHub 造不出合并提交 ⇒ `pull_request` 工作流**连 run 都不创建**；判据必须把 ① 未创建 / ② pending / ③ 失败 **三态分开读**',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['PR 推了新提交后必需检查**连行都没有**（不是 pending），而 Auto Merge 每次都照常跑 —— 我熬了一小时在怀疑「CI 哑了 / 队列堵了」。我要的是机制**当场说出**：这些检查在这条 HEAD 上**不存在**（不是还在跑），以及一条能直接粘走的出口命令。'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·态 ①（run 未创建）必红**：`mergeStateStatus=DIRTY`（`mergeable=CONFLICTING`）∧ head SHA 上**没有** `event=pull_request` 的 run ⇒ 退出码 1 + `::error::`；读数点名「**不存在，不是 pending**」+ 具名报出在 head SHA 上读不到 run 的工作流与 required 检查名 + 出口命令（`gh pr view <n> --json mergeable` / `gh pr update-branch <n>`）。执行点 = tests/unit_ci_workflows/test_dangling_pr_scan.py::test_conflict_no_pr_run_is_state_one_and_red', '🔴 **判据 2·三态分清（本单核心语义）**：① 未创建 ⇒ 红；② 创建但 pending ⇒ 不红且读数说「确实已创建」；③ 创建且失败 ⇒ 不红且读数说「已判红」⇒ 四夹具并列 `rc = 1/0/0/0`，且 ②/③ 也**分栏**出现在 step summary（报告面与判定面不许错开）。执行点 = 同文件 ::test_conflict_states_are_three_distinct_readings', '🔴 **判据 3·负控**：非 `DIRTY`（`CLEAN`/`UNSTABLE`/`BEHIND`）⇒ 不得红；`DIRTY` 但 `pull_request` run 已创建（pending / 红 / 绿）⇒ 不得红。**单变量差分对**：同 run 形状、只把 `mergeStateStatus` 从 `DIRTY` 换成 `BLOCKED` ⇒ 两列读数必须**各自归因**（冲突 ⇄ required 未达可合）且不相等。执行点 = 同文件 ::test_conflict_detector_does_not_false_positive / ::test_state_one_needs_the_conflict_condition_is_non_dirty_control', '🔴 **判据 4·不许放宽既有判据**：`BLOCKED` + 无 check + 无 run（族 B / `on.pull_request.paths` 过滤形态）仍判红，读数逐字保留 `on.pull_request.paths`，且**不得**被归因成「冲突」。执行点 = 同文件 ::test_blocked_dangling_is_unchanged（常驻判据本体仍是 tests/unit_ci_workflows/test_required_check_no_paths_filter.py）', '🔴 **判据 5·判别力自证（注入式）**：打掉冲突态闸 `if state in CONFLICT_STATES:` ⇒ 同一夹具**不再红**（复现原缺陷的静默）；把 `MERGE_REF_EVENT` 从 `pull_request` 换成 `pull_request_target` ⇒ 现场形状不再红、而「只有 `pull_request` run」的形状反被判红（**两个方向都翻**）。执行点 = 同文件 ::test_state_one_gate_has_discriminating_power / ::test_conflict_event_discriminator_has_discriminating_power', '**判据 6·第四态（判不了 ≠ 通过）**：run 读不到 `event` 字段 ⇒ 记未判定 + `::warning::`（不当 ① 乐观跳闸，也不当 0）。执行点 = 同文件 ::test_cannot_tell_when_event_field_is_missing_is_unjudged', '**边界（照实登记）**：① `DIRTY` 时 GitHub **不保证**每个 check 都进 rollup ⇒ 本判据**不**用 rollup 的 pending 面判 ②（否则「check 对象滞后」会被读成 ①）；② required 名单两条腿（`gh api …/protection` 需 admin / 仓内快照）都读不到时，读数**不列名单但判定照旧**（不降级）；③ `DIRTY` 在 PR 页面另有冲突横幅 + 本判据的 `--minutes` 阈值同时约束它（年龄 < 阈值不报）；④ 本判据只在 `schedule` / `workflow_dispatch` 上跑（挂在 PR 事件上会给每个 PR 刷一条无关的红）；⑤ **具名清单的边界**：required 名 → 工作流的映射走静态 `name:` ⇒ matrix 派生的名映射不上（现取：16 条 required 里 14 条可映射，`ci workflow helper unit tests` 与「（后半）」两条是 `pr-check.yml` 的 `${{ matrix.shard_suffix }}` 派生）—— **不影响判定**（判红看 `event=pull_request` 的 run 在不在），只是具名清单少列两条，同 HEAD 上 `pr-check.yml` 的 run 本来就在清单里。'],
+    skip_reason='[backend-contract] 判据是零 LLM 的确定性读数（真脚本 + `gh` 替身 + 真 YAML + 注入式变异），pytest 子进程真跑，零网络',
+    tags=['ci', 'dangling-pr', 'merge-conflict', 'event-delivery', 'tri-state', 'fail-closed', 'red-proof', 'class-level-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -9361,9 +9451,45 @@ _CASE_PG_065 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['工人手机上该看到哪几页？一体机也一样吗？'],
     expectations=['direct_reply'],
-    data_checks=['GET/PUT /api/admin/worker-page-config：读挂 production:view、写挂 processing:manage；PUT 全量替换，缺键/未知键/非法页名 ⇒ 422 逐条理由（不静默回退默认）', "缺行 ⇒ 读面回默认四页全开（report / order / cut_calc / shipment）+ source='default'", 'GET /api/worker/me 只回本工人身份与本租户页面集；工人 session/JWT 的 permissions 恒为 []、工人进 /api/admin/** 仍 403', 'worker.session.idle-minutes 全局默认 = 43200（30 天，2026-10-07 用户裁定「延长到 1 个月」；上一版 10080 一周）；越界/非法 ⇒ 回落默认并 WARN；换人/切换工人仍立即失效旧会话', '🔴 后台对账（`checkAlive` = `current-worker` + `/me`）的两条硬约束（2026-10-10 收口，issue #6642；线上日志实测）：① **请求有界** —— 单飞 + 最小间隔 5s ⇒ 一次可见性事件风暴只允许**一轮**（2 个请求），不再放大成 15–23 req/s（现场：同一条 session 4 秒 92 个请求、被 nginx `worker_sess` rate=2r/s burst=60 拒 4 条）；② **失败不进报工卡** —— 对账是后台动作，它的失败（429 / 5xx / 断网）只给一句「不影响报工」的提示（现场：`current-worker` 被拒 429 ⇒ 报工卡出现红字「请求失败（HTTP 429）」= 用户截图），唯一例外 = 401/会话过期（身份面）仍回落未登录。证据：frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（⑩ / ⑪）', '🔴 页面开关的**前端消费面**（2026-10-10 收口，issue #6635）：`cut_calc` ∈ `pages` ⇔ `/w/` 页头出现**唯一**入口「裁高计算（一体机）」（`/w/machine.html`；文案与商家端「裁高计算器」同源，改前的「机台模式」只有内部人懂）；∉ ⇒ **整条入口栏不渲染**（不留空 `<nav>`）。两条跨应用入口（拍照入库 / 补打入库标签）**已移出 `/w/`**（用户逐字「移除拍照入库和补打入库标签」）⇒ 反向钉住（本页再出现 `/b/#/pages/worker/inbound|reprint` ⇒ 红），可达性由**工人工作台**承担（入口台账 `from` 逐值核）。**设备级预设**（同上裁定，「扫码枪那台屏默认机台模式、其他工人默认报工」）：`/w/?page=cut_calc` ⇒ 本机记住并落到 `/w/machine.html`（**只在已登录后换页**）、`?page=report` 取消、`?page=report&keep=1` = 只本次（机台屏的「去报工页」逃生门）；零后端改动。证据：frontend/worker-h5/tests/worker-h5-pages.test.mjs（① / ④ / ⑥）+ frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs + frontend/bmini-app/tests/page-entry-reachability.test.ts（L5）'],
+    data_checks=['GET/PUT /api/admin/worker-page-config：读挂 production:view、写挂 processing:manage；PUT 全量替换，缺键/未知键/非法页名 ⇒ 422 逐条理由（不静默回退默认）', "缺行 ⇒ 读面回默认四页全开（report / order / cut_calc / shipment）+ source='default'", 'GET /api/worker/me 只回本工人身份与本租户页面集；工人 session/JWT 的 permissions 恒为 []、工人进 /api/admin/** 仍 403', 'worker.session.idle-minutes 全局默认 = 43200（30 天，2026-10-07 用户裁定「延长到 1 个月」；上一版 10080 一周）；越界/非法 ⇒ 回落默认并 WARN；换人/切换工人仍立即失效旧会话', '🔴 后台对账（`checkAlive` = `current-worker` + `/me`）的两条硬约束（2026-10-10 收口，issue #6642；线上日志实测）：① **请求有界** —— 单飞 + 最小间隔 5s ⇒ 一次可见性事件风暴只允许**一轮**（2 个请求），不再放大成 15–23 req/s（现场：同一条 session 4 秒 92 个请求、被 nginx `worker_sess` rate=2r/s burst=60 拒 4 条）；② **失败不进报工卡** —— 对账是后台动作，它的失败（429 / 5xx / 断网）只给一句「不影响报工」的提示（现场：`current-worker` 被拒 429 ⇒ 报工卡出现红字「请求失败（HTTP 429）」= 用户截图），唯一例外 = 401/会话过期（身份面）仍回落未登录。证据：frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（⑩ / ⑪）', '🔴 页面开关的**前端消费面**（2026-10-10 收口，issue #6635）：`cut_calc` ∈ `pages` ⇔ `/w/` 页头出现**唯一**入口「裁高计算（一体机）」（`/w/machine.html`；文案与商家端「裁高计算器」同源，改前的「机台模式」只有内部人懂）；∉ ⇒ **整条入口栏不渲染**（不留空 `<nav>`）。两条跨应用入口（拍照入库 / 补打入库标签）**已移出 `/w/`**（用户逐字「移除拍照入库和补打入库标签」）⇒ 反向钉住（本页再出现 `/b/#/pages/worker/inbound|reprint` ⇒ 红），可达性由**工人工作台**承担（入口台账 `from` 逐值核）。**设备级预设**（同上裁定，「扫码枪那台屏默认机台模式、其他工人默认报工」）：`/w/?page=cut_calc` ⇒ 本机记住并落到 `/w/machine.html`（**只在已登录后换页**）、`?page=report` 取消、`?page=report&keep=1` = 只本次（机台屏的「去报工页」逃生门）；零后端改动。证据：frontend/worker-h5/tests/worker-h5-pages.test.mjs（① / ④ / ⑥）+ frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs + frontend/bmini-app/tests/page-entry-reachability.test.ts（L5）', '🔴 逐人收窄（issue #6788；用户 2026-10-13 逐字「工人档案上也应该设置 h5 工人端的菜单权限，这样让不同岗位的工人只关注他自己有权限的功能了」）：本条的 `data_checks` 上方那条即租户级开关；**工人档案级**收窄的完整口径见用例 **PG-072**（逐条判据在那里，本行只登记「两层并存」这一层关系）', '🔴 求交为空 ⇒ **回落企业页集**（issue #6788 评审实测形态）：工人被收窄到的页恰好都被企业关掉时，交集为空 ⇒ 若原样下发空数组，工人端 `effectivePages` 会把空集读成「没读到权限 ⇒ **全开**」—— 收窄反而变成放宽。回落方向 = 企业页集（服务端口径与工人端读法一致）。证据：backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java'],
     skip_reason='[backend-contract] 本条只登记「页面开关 + 会话超时」这两层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java、backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java、backend/admin-api/src/test/java/com/migao/admin/worker/WorkerSessionServiceTest.java）⇒ 不进 agent-eval 冒烟。',
     tags=['processing', 'worker', 'rbac', 'tenant_config', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-072 [NORMAL] 工人档案级「H5 工人端菜单」逐人收窄（两层页集：企业级是天花板；单测覆盖，非 LLM 行为）（源: cases/processing.yml）──
+_CASE_PG_072 = EvalCase(
+    id='PG-072',
+    legacy_id='',
+    title='工人档案级「H5 工人端菜单」逐人收窄（两层页集：企业级是天花板；单测覆盖，非 LLM 行为）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['车间里只会裁高的工人，能只让他看到裁高计算器吗？'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 两层页集（issue #6788；用户 2026-10-13 逐字「工人档案上也应该设置 h5 工人端的菜单权限，这样让不同岗位的工人只关注他自己有权限的功能了」）：企业级开关（PG-065）是**天花板**，`users.worker_pages`（V152）是**逐人收窄** —— 实际下发 = 企业页 ∩ 本列（企业关掉的页，逐人勾了也不出现）', '三态：NULL / 缺省 = **未收窄 = 跟随企业设置**（存量与新建的默认值 ⇒ **零回归**）· `[...]` = 收窄到这几页（闭词表 = WorkerPages.ALL）· 空数组在**写面被拒**（422 + 指路「停用」而不是清空菜单）', '写面：`PUT /api/admin/workers/{id}/pages`（挂 `employee:create`）+ 建号 `POST /api/admin/workers` 可带；未知键 / 非数组 / 重复键 / 空数组 ⇒ **422 + error.details 点名下标**（不静默忽略）；清回收窄（null）必须**显式 set**（MyBatis-Plus 默认 NOT_NULL 策略下「塞 null 再 updateById」SQL 里根本没有这一列 ⇒ 静默不生效而接口回 200，评审实测形态）', '读面：存储值是**原样 JSON 文本**（不用 JacksonTypeHandler：手写 select 未绑 resultMap 时 JSONB 会落成字符串、且坏值会**抛异常**让 /me 500 —— 类级守卫 = backend/admin-api/src/test/java/com/migao/admin/mapper/JacksonTypeHandlerMappingGuardTest.java）；**不是数组 / 解析不出来** ⇒ 当未收窄（fail-open）· **是数组但无真键** ⇒ 空集（只裁不放宽）· 未知键只裁不放宽', '🔴 求交为空 ⇒ **回落企业页集**：工人被收窄到的页恰好都被企业关掉时，原样下发空数组会被工人端 `frontend/worker-h5/src/render.mjs` 的 effectivePages 读成「没读到权限 ⇒ **全开**」—— 收窄反而变放宽', '🔴 页面码**不是权限码**：`users.permissions` 一字不动、工人 session 的 permissions 恒为 `[]`、`/api/admin/**` 对 worker 仍 403；工人端语义仍是**菜单/入口显隐**（2026-09-29 用户裁定），藏起菜单 ≠ 挡住接口', '商家面：工人档案列表新增「工人端菜单」列（未收窄 ⇒「全部（跟随企业设置）」单列一处；收窄 ⇒ 逐个人话名），建号弹窗按**企业已开**的页勾选（默认全勾 = 发 null；全取消 ⇒ 就地拦住不发请求）；企业级页面配置读不到 ⇒ 菜单一节不显示，建号主流程照旧'],
+    skip_reason='[backend-contract] 本条只登记「逐人收窄 + 两层求交」这几层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/worker/WorkerPagesTest.java、backend/admin-api/src/test/java/com/migao/admin/service/WorkerAdminServiceTest.java、backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java、frontend/admin-web/tests/unit/components/WorkerProfilesPanel.test.tsx）⇒ 不进 agent-eval 冒烟。⚠️ 工人端 H5 的**渲染面**消费口径（菜单/入口显隐、非阻断提示）沿用 2026-09-29 裁定，本单**未改** frontend/worker-h5。',
+    tags=['processing', 'worker', 'rbac', 'tenant_config', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-073 [EDGE] 工人端页面开关写面：pages 非法形态枚举表逐条 422（null 与缺键同罪；单测覆盖，非 LLM 行为）（源: cases/processing.yml）──
+_CASE_PG_073 = EvalCase(
+    id='PG-073',
+    legacy_id='',
+    title='工人端页面开关写面：pages 非法形态枚举表逐条 422（null 与缺键同罪；单测覆盖，非 LLM 行为）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['商家在「工人端页面」设置页点了保存，但表单没勾任何页（前端把「没选」发成了 null）'],
+    expectations=[],
+    data_checks=['🔴 `{"pages":null}` ⇒ **422** + `error.details` 点名 `pages`（issue #6803，云测试环境实测形态）：null 走的是与**缺键同一条**「静默回到默认全开」的路 —— 落库时被归一成**空数组**（`WorkerPageConfig#toPages` 对 null 与非数组一律回空列表），而工人端 H5（`frontend/worker-h5/src/render.mjs` 的 `effectivePages`）把空数组读成「没读到权限 ⇒ 全开」⇒ 一个 HTTP 200 就把企业级对页面的关闭静默撤销。判据 = `backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java` 的 nullPagesIsRejectedExplicitly（范例判据）', '🔴 **类级元守卫（让「新增一种非法形态忘了拒」当场红）**：把 `pages` 的非法形态**枚举成一张表**逐条断言「422 + details 逐条有理由 + 零落库」——缺键 / null / 非数组（字符串、对象、数字）/ 未知页面键 / 重复页面键 / 含空串项 / 数字项 / 未知配置键（共 10 种）。判据 = 同文件 `everyIllegalShapeIsRejectedAndNothingIsWritten`（走 `illegalPayloadShapes` 这张表的参数化用例）+ everyIllegalShapeNamesAConfigKey（逐条理由只许点名 `pages`/`pages[i]`/请求里真出现的拼错键名）：表里每加一行就多一条断言；任何一行被放行 ⇒ 当场红', '**理由与出口都必须在响应里**（只说「不许」= 商家只能猜）：null 的理由**复用缺键那句话术**（含「静默回到默认全开」逐字），并给出明确出口 —— 想全开发四页全集 `["report","order","cut_calc","shipment"]`、想全关发 `{"pages":[]}`', '⚠️ **`null` vs `[]` 的落库/读面口径（issue #6803 要求先钉死）**：两者在 `WorkerPageConfig#toPages()` 归一成**同一个空列表** ⇒ 读面（`GET /api/admin/worker-page-config`）都回 `source=stored` + `pages=[]` —— 即 **null 落库 ≠ NULL，而是空数组**。佐证 = 同文件 nullAndEmptyListNormalizeToTheSameStoredShape（不依赖本次修复，修前修后都绿）', '**`[]` 的语义本单不动**（显式全关是既有合法选择，判据 = 同文件 emptyListIsAnExplicitValidChoice 仍绿）；**但照实登记一个未固化的缺口**：工人端 H5 对空数组同样 fail-open（`effectivePages` 的 `pages.length === 0` 分支）⇒ 今天发 `{"pages":[]}` 在 H5 侧**并不会真的全关**。该缺口**本单只报告不改**，交人工裁定（属产品口径 = 会改变工人端可见行为）'],
+    skip_reason='[backend-contract] 本条只登记写面**校验形态**这一层确定性行为，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java）⇒ 不进 agent-eval 冒烟。',
+    tags=['processing', 'worker', 'tenant_config', 'backend-contract'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -13659,6 +13785,24 @@ _CASE_UI_096 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-097 [NORMAL] 块级元素落在 <p> 里的 hydration 缺陷：售后详情页实例判据（SSR→hydrate 见证）+ 两条类级元守卫（字面嵌套扫描 / 运行期组合台账）（issue #6799）（源: cases/ui.yml）──
+_CASE_UI_097 = EvalCase(
+    id='UI-097',
+    legacy_id='',
+    title='块级元素落在 <p> 里的 hydration 缺陷：售后详情页实例判据（SSR→hydrate 见证）+ 两条类级元守卫（字面嵌套扫描 / 运行期组合台账）（issue #6799）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['售后详情页整页 hydration 失败（console 打 `In HTML, <div> cannot be a descendant of <p>`）—— 我要的是**这一族再也进不来**，不是修好这一处：同一形态（组件把块级渲染进 <p>）在别的页面同样是整页 hydration 失败。'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 判据 1·**实例**（会红）：`frontend/admin-web/tests/unit/pages/after-sales-detail-hydration.test.tsx` 用 `renderToString` → 浏览器式解析 → `hydrateRoot` 走一轮，断言 ① 服务端 HTML 里没有 `<p …>` 直接包块级标签；② hydrate 的 `console.error` 里没有 `cannot be a descendant of` / `cannot contain a nested` / `Hydration failed`（React 的 `validateDOMNesting`）。修前实测：该文件红（React 逐字打印上述两条，客户端渲染面 `expected [ …(2) ] to deeply equal []`）；修后 3 passed。', '🔴 判据 2·**类级（字面嵌套，零浏览器）**：`scripts/jsx-p-tag-nesting-scan.mjs` 扫 `src/**` 的 `.tsx`，块级/未知 HTML 元素直接落在 `<p>` 里即判红；判别力自证 = 扫描器 `--self-test` 的 10 条**内存注入**形态（坏必红 / 好不报），由 `frontend/admin-web/tests/unit/p-tag-block-nesting-guard.test.ts` 现跑并另做一次真语料变异注入（临时目录，不写工作树）。实测：硬命中 0 / 软命中（组件落在 `<p>` 里）6 类。', '🔴 判据 3·**类级（运行期组合，双向对齐）**：`frontend/admin-web/tests/unit/p-tag-inline-components-guard.test.tsx` 现取「谁被放进 `<p>` 里」的清单（同源跑扫描器），与 `tests/unit/p-tag-inline-components-ledger.json` 逐条对账：**新组件未登记即红**、**台账里有而语料无即红**（只许缩短）；台账 `runtime: instantiated` 的条目**逐个真渲染**在 `<p>` 里，断言 DOM 无块级后代。实测 5 passed（含判别力自证：`<p><div/></p>` 报 div、`<p><span/></p>` 不报）。', '**不回归**：只把 `frontend/admin-web/src/app/(dashboard)/after-sales/[id]/AfterSalesDetail.tsx` 的两处 `<p>` 容器换成 `<div>`（`DateTimeCell` 的两行布局依赖块级子元素，改内联会动版式）；其余 `<p>`（含同类文案 `售后类型` / `退款金额`）一字未动，样式类名逐字保留（`text-sm font-medium text-neutral-900`）。'],
+    skip_reason='[backend-contract] 纯前端 DOM 形状 + SSR/hydrate 判据（vitest，零 LLM 环节），不进 agent-eval 冒烟',
+    tags=['ui', 'hydration', 'dom-nesting', 'ssr', 'class-level-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -14032,6 +14176,11 @@ ALL_CASES = (
     _CASE_MC_088,
     _CASE_MC_089,
     _CASE_MC_090,
+    _CASE_MC_091,
+    _CASE_MC_092,
+    _CASE_MC_093,
+    _CASE_MC_094,
+    _CASE_MC_095,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
@@ -14193,6 +14342,8 @@ ALL_CASES = (
     _CASE_PG_046,
     _CASE_PG_047,
     _CASE_PG_065,
+    _CASE_PG_072,
+    _CASE_PG_073,
     _CASE_PG_059,
     _CASE_PP_022,
     _CASE_PR_001,
@@ -14426,6 +14577,7 @@ ALL_CASES = (
     _CASE_UI_094,
     _CASE_UI_095,
     _CASE_UI_096,
+    _CASE_UI_097,
     _CASE_UT_001,
     _CASE_UT_002,
 )

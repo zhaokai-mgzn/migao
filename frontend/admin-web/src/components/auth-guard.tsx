@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/auth'
 import { isPublicRoute } from '@/lib/auth-redirect'
+import { landingPath } from '@/lib/menu-nav'
 
 // 注：公开路由清单只在 lib/auth-redirect.ts 维护（PUBLIC_ROUTES 单一源）。
 // 这里若再抄一份（历史上抄过一份且从未被使用），漏配时不会有任何东西变红 ——
@@ -36,6 +37,9 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const _hasHydrated = useAuthStore((s) => s._hasHydrated)
   const mustChangePassword = useAuthStore((s) => s.user?.mustChangePassword)
+  // 落点按权限算要用到（issue #6758）；与 `usePermission()` 同源（permissions / roles 都在 user 上）
+  const permissions = useAuthStore((s) => s.user?.permissions)
+  const roles = useAuthStore((s) => s.user?.roles)
 
   useEffect(() => {
     if (!_hasHydrated) return
@@ -44,9 +48,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
     const isProtectedRoute = protectedRoutePrefixes.some(prefix => pathname.startsWith(prefix))
 
-    // 已登录用户访问登录页 -> 跳转 dashboard
+    // 已登录用户访问登录页 -> 去**他能进得去的第一页**（issue #6758：此前硬编码 `/dashboard`，
+    // 无 `dashboard:view` 的账号会被送到一个自己无权访问的路由 ⇒ 403 死页）。
     if (isLoggedIn && (pathname === '/login' || pathname === '/register')) {
-      router.replace('/dashboard')
+      router.replace(landingPath({ permissions: permissions || [], roles: roles || [] }))
       return
     }
 
@@ -65,7 +70,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
 
     setIsChecking(false)
-  }, [pathname, router, isAuthenticated, _hasHydrated, mustChangePassword])
+  }, [pathname, router, isAuthenticated, _hasHydrated, mustChangePassword, permissions, roles])
 
   // 检查中不渲染内容，避免闪烁
   if (isChecking) {

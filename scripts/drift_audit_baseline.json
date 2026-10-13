@@ -1,61 +1,54 @@
 {
-  "_burn_down_note": "`burn_down` 块 = 每 PR 最低净消减（默认 ≥1 条）。**不设 `deadline` / `priority_deadline`**（未设 = 该两条不生效）：本门禁的存量是**跨目录**条目（`docs/**` / `tests/**` / `scripts/**` / `.github/workflows/**` …；**现值不写死** —— 现取 `python3 scripts/drift_audit.py --check --base origin/main` 末行的「现剩 条目 N / 违规码 M」），没有单一 owner 能在某个日期前清零；照抄 case-trust 的到期日只会造出一条**必然红且无人能修**的判据（到期日一旦写进 `--base` 那一份，按『只许收紧』还改不回来）。何时设：存量缩到可归属的范围、或用户明确给定日期时。（实证：首个版本照抄了 `_date()` 的 fail-closed 默认值 ⇒ 未设的日期被当成 `0000-00-00` = **已到期** ⇒ 每个 PR 都红。）（**生效配置读 `--base` 那一份**，本 PR 改不动本次判定）。`scope=case_touching_prs` 沿用 `case_trust_gate` 的**同一套取值**（那边=『本 PR 改了用例文件』，这边=『本 PR 动了**判据面**』：基线文件本身，或引入新的存量条目）—— 判据本体是 `case_trust_gate.burn_down_verdict`，**本脚本不复制、也不另造 scope 名**（实证：自造一个 gate 不认识的 scope 名会被静默判成「不在范围内」= 预算形同虚设）。范围放大到「任何改了受管面的 PR」会让无关 PR 全红（假红）。",
-  "_comment": "漂移审计的**存量**违规清单（burn-down）。计数是「该 SHA 上判出的存量漂移」，**不是**『这些永远豁免』。",
-  "_entry_key_note": "条目 key 为 `<文件或分量>|<判据内部标识>`，**不含行号** —— 否则改一行就换 key，『只许缩短』会退化成随机红。",
-  "_scope_note": "「已不再漂移 ⇒ 必须移除」是**全量对账**（#4045）：清单里任何条目都必须在**全库重算**里仍然真的漂移，**不再限于本次 diff 命中的文件**；反向同样成立 ——`origin/main` 记着、现在仍漂移却被删掉的条目会**阻塞**（删条目 = 偷偷缩短）。判据本体在 `.github/case_trust_gate.py` 的 `reconcile_baseline`（本脚本 import 复用，不复制第二套口径）。",
-  "_when_to_regen": "① 你修好了某条存量漂移（门禁会告诉你：**全量对账**，不再限于你 diff 命中的文件）；② 别人合并了漂移修复 ⇒ 重跑审计后重生成，把已修好的条目删掉；③ 判据集合本身变化（新增/改名）⇒ 必须重生成。",
-  "anchor_sha": "9e72a8972e1bacc2eeaaf47660c4500e06baf02d",
-  "burn_down": {
-    "metric": "entries",
-    "per_pr_min": 1,
-    "scope": "case_touching_prs"
+ "_burn_down_note": "`burn_down` 块 = 每 PR 最低净消减（默认 ≥1 条）。**不设 `deadline` / `priority_deadline`**（未设 = 该两条不生效）：本门禁的存量是**跨目录**条目（`docs/**` / `tests/**` / `scripts/**` / `.github/workflows/**` …；**现值不写死** —— 现取 `python3 scripts/drift_audit.py --check --base origin/main` 末行的「现剩 条目 N / 违规码 M」），没有单一 owner 能在某个日期前清零；照抄 case-trust 的到期日只会造出一条**必然红且无人能修**的判据（到期日一旦写进 `--base` 那一份，按『只许收紧』还改不回来）。何时设：存量缩到可归属的范围、或用户明确给定日期时。（实证：首个版本照抄了 `_date()` 的 fail-closed 默认值 ⇒ 未设的日期被当成 `0000-00-00` = **已到期** ⇒ 每个 PR 都红。）（**生效配置读 `--base` 那一份**，本 PR 改不动本次判定）。`scope=case_touching_prs` 沿用 `case_trust_gate` 的**同一套取值**（那边=『本 PR 改了用例文件』，这边=『本 PR 动了**判据面**』：基线文件本身，或引入新的存量条目）—— 判据本体是 `case_trust_gate.burn_down_verdict`，**本脚本不复制、也不另造 scope 名**（实证：自造一个 gate 不认识的 scope 名会被静默判成「不在范围内」= 预算形同虚设）。范围放大到「任何改了受管面的 PR」会让无关 PR 全红（假红）。",
+ "_comment": "漂移审计的**存量**违规清单（burn-down）。计数是「该 SHA 上判出的存量漂移」，**不是**『这些永远豁免』。",
+ "_entry_key_note": "条目 key 为 `<文件或分量>|<判据内部标识>`，**不含行号** —— 否则改一行就换 key，『只许缩短』会退化成随机红。",
+ "_scope_note": "「已不再漂移 ⇒ 必须移除」是**全量对账**（#4045）：清单里任何条目都必须在**全库重算**里仍然真的漂移，**不再限于本次 diff 命中的文件**；反向同样成立 ——`origin/main` 记着、现在仍漂移却被删掉的条目会**阻塞**（删条目 = 偷偷缩短）。判据本体在 `.github/case_trust_gate.py` 的 `reconcile_baseline`（本脚本 import 复用，不复制第二套口径）。",
+ "_when_to_regen": "① 你修好了某条存量漂移（门禁会告诉你：**全量对账**，不再限于你 diff 命中的文件）；② 别人合并了漂移修复 ⇒ 重跑审计后重生成，把已修好的条目删掉；③ 判据集合本身变化（新增/改名）⇒ 必须重生成。",
+ "anchor_sha": "4d676e591021f43794b836a345beee8450ee1b7a",
+ "burn_down": {
+  "metric": "entries",
+  "per_pr_min": 1,
+  "scope": "case_touching_prs"
+ },
+ "cases_fingerprint": "7f7b45516b2e9c7f",
+ "entries": {
+  "generated-freshness": {},
+  "heartbeat": {
+   "e2e-real.yml|paused": 1,
+   "fixture-record.yml|never-succeeded": 1,
+   "nightly-verification.yml|paused": 1
   },
-  "cases_fingerprint": "984febe72c30f841",
-  "entries": {
-    "generated-freshness": {},
-    "heartbeat": {
-      "e2e-real.yml|paused": 1,
-      "fixture-record.yml|never-succeeded": 1,
-      "nightly-verification.yml|paused": 1
-    },
-    "mutable-locator": {
-      "component|amount_verify.product_name": 1,
-      "component|db_verify.name": 1,
-      "component|namespaces.employee_name": 1,
-      "component|namespaces.product_name": 1,
-      "component|pre_clean.customer_keyword": 1,
-      "component|pre_clean.employee_name": 1,
-      "component|pre_clean.product_keyword": 1,
-      "component|pre_clean.tag_name": 1,
-      "component|turn.auto_select": 1
-    },
-    "preset-monotonic": {},
-    "ref-freshness": {
-      ".github/workflows/llm-thinking-probe.yml|ai-agent-tests.yml#73|bare": 1,
-      ".github/workflows/llm-thinking-probe.yml|deploy-ai-agent-service.yml#99|bare": 1,
-      ".github/workflows/llm-thinking-probe.yml|e2e-real.yml#47|bare": 1,
-      ".github/workflows/pr-check.yml|verify-all.sh#66|bare": 1,
-      "docs/testing/demo-readiness.md|e2e/specs/orders/shipment-doc.spec.ts#145|bare": 1,
-      "docs/testing/demo-readiness.md|e2e/specs/orders/shipment-doc.spec.ts#173|bare": 1,
-      "docs/testing/demo-readiness.md|e2e/specs/orders/shipment-doc.spec.ts#92|bare": 2,
-      "docs/testing/eval-pipeline-performance.md|app/config.py#41|bare": 1,
-      "docs/testing/eval-pipeline-performance.md|app/graph/skills/base_skill.py#198|bare": 1,
-      "docs/testing/eval-pipeline-performance.md|factory.py#114|bare": 1,
-      "docs/testing/eval-pipeline-performance.md|factory.py#64|bare": 1,
-      "docs/testing/eval-pipeline-performance.md|factory.py#82|bare": 1,
-      "docs/testing/eval-pipeline-performance.md|tests/test_llm_factory.py#41|bare": 1,
-      "docs/testing/eval-pipeline-performance.md|tests/test_llm_factory.py#81|bare": 1
-    },
-    "regression-guard": {},
-    "skill-anchor": {},
-    "sync-copy": {
-      "sections-diverged": 1,
-      "version": 1
-    }
+  "mutable-locator": {
+   "component|amount_verify.product_name": 1,
+   "component|db_verify.name": 1,
+   "component|namespaces.employee_name": 1,
+   "component|namespaces.product_name": 1,
+   "component|pre_clean.customer_keyword": 1,
+   "component|pre_clean.employee_name": 1,
+   "component|pre_clean.product_keyword": 1,
+   "component|pre_clean.tag_name": 1,
+   "component|turn.auto_select": 1
   },
-  "generated_at": "2026-09-24T05:26:40.696592+00:00",
-  "policy_version": 1,
-  "reason": "issue #5309（第一批改锚 + 第二批扩面；同步 main 后重生成）：本单把 .github/cases/** 与 tests/agent_eval/ 的 29 条裸行号/越界引用改成符号/文本锚 ⇒ 生成物 docs/testing/mibao-verification-cases.md 里源自 product.yml merge_log 的 3 条 ref-freshness 存量真的归零（inventory_manage.py#66/#359、product_search.py#26）⇒ 按 _when_to_regen ① 销账。main 已前进（#5338 重生成过基线）⇒ 元数据以本次重算为准。只删这 3 条、零新增、零改写。",
-  "regenerate_command": "python3 scripts/drift_audit.py --regen-baseline --reason '<理由>'",
-  "schema": "migao.drift-audit-baseline/1"
+  "preset-monotonic": {},
+  "ref-freshness": {
+   ".github/workflows/llm-thinking-probe.yml|ai-agent-tests.yml#73|bare": 1,
+   ".github/workflows/llm-thinking-probe.yml|deploy-ai-agent-service.yml#99|bare": 1,
+   ".github/workflows/llm-thinking-probe.yml|e2e-real.yml#47|bare": 1,
+   ".github/workflows/pr-check.yml|verify-all.sh#66|bare": 1,
+   "docs/testing/demo-readiness.md|e2e/specs/orders/shipment-doc.spec.ts#145|bare": 1,
+   "docs/testing/demo-readiness.md|e2e/specs/orders/shipment-doc.spec.ts#173|bare": 1,
+   "docs/testing/demo-readiness.md|e2e/specs/orders/shipment-doc.spec.ts#92|bare": 2
+  },
+  "regression-guard": {},
+  "skill-anchor": {},
+  "sync-copy": {
+   "sections-diverged": 1,
+   "version": 1
+  }
+ },
+ "generated_at": "2026-10-13T05:57:07.785710+00:00",
+ "policy_version": 1,
+ "reason": "PR #6810（issue #6801 会话面 401 归因）：按 §16.7 引用纪律把 docs/testing/eval-pipeline-performance.md 的 7 条裸 `path:NNN` 存量引用改成「仓库相对全路径 + 第 N 行@<sha>」限定形态（行号不再是无主现值 ⇒ ref-freshness 全量对账下真的不再漂移）⇒ 按 `_when_to_regen` ① 销账这 7 条，只删不增。另：本 PR 新增的 tests/unit_ci_workflows/test_agent_jwt_key_alignment.py 按判据自己的出口声明 `# drift-audit: refs-are-fixtures`（红证夹具里的 console 栈行号字面量按定义就是失效引用），未放宽任何判据、未新增任何豁免。；**另**：重生成时机器把本 PR **面外**的两条新增心跳漂移（`c-end-h5-publish.yml|never-succeeded`、`drift-audit.yml|stale`，来自并行包/定时腿，本 PR 改动面内无新增）也抄了进来 —— 已**手工移除**：豁免面只许缩短、不因一次重生成而扩大（它们是面外新增，按判据口径不阻塞本 PR，由定时腿 `--strict-stale` 承接）。",
+ "regenerate_command": "python3 scripts/drift_audit.py --regen-baseline --reason '<理由>'",
+ "schema": "migao.drift-audit-baseline/1"
 }

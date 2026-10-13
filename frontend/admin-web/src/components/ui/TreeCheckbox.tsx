@@ -1,17 +1,40 @@
 'use client'
 
 import React, { useMemo, forwardRef } from 'react'
+import { formatMobileTitles } from '@/lib/mobile-surface-label'
 
 export interface TreeNode {
   code: string
   label: string
   children?: TreeNode[]
+  /**
+   * 该节点权限码对应的**手机端可见面中文名**（服务端 `GET /api/admin/menus` 派生下发，
+   * issue #6759）。前端只渲染它，**不自备**「码 → 手机端面」映射
+   *（第二份真值必漂；判据 = tests/unit_ci_workflows/test_mobile_surface_annotation_single_source.py）。
+   * 缺省 / 空 = 该码在手机端没有入口 ⇒ **不追加任何标注**（不摆内部标识、不产生噪音）。
+   */
+  mobileTitles?: string[]
 }
 
 // 后端菜单树允许同码多节点（#5699/#5291 设计面，如 workspace 组两个 dashboard:view），
 // code 不唯一 ⇒ React key 必须由 code+label 派生（issue #6083）；
 // 同码同 label 的极端形态仍会撞 key —— 已知接受的边界。
 export const treeNodeKey = (node: TreeNode): string => `${node.code}:${node.label}`
+
+/** 节点名 + 手机端标注（**唯一渲染点**：树上每个层级都走它，形态各处一致）。 */
+function NodeLabel({ node }: { node: TreeNode }) {
+  const mobile = formatMobileTitles(node.mobileTitles)
+  return (
+    <span className="text-sm">
+      {node.label}
+      {mobile && (
+        <span className="text-xs text-neutral-400" data-testid={`tree-mobile-${node.code}`}>
+          {mobile}
+        </span>
+      )}
+    </span>
+  )
+}
 
 interface TreeCheckboxProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'onChange'> {
   tree: TreeNode[]
@@ -80,7 +103,7 @@ export const TreeCheckbox = forwardRef<HTMLDivElement, TreeCheckboxProps>(
                     }}
                     className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                   />
-                  <span className="text-sm">{node.label}</span>
+                  <NodeLabel node={node} />
                 </label>
 
                 {node.children && node.children.length > 0 && (
@@ -98,7 +121,7 @@ export const TreeCheckbox = forwardRef<HTMLDivElement, TreeCheckboxProps>(
                           }}
                           className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                         />
-                        <span className="text-sm">{child.label}</span>
+                        <NodeLabel node={child} />
                       </label>
                     ))}
                   </div>

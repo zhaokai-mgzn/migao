@@ -207,6 +207,12 @@ REALDB_FILES: dict[str, str] = {
     # issue #4157：库存台账**第三条变更路径**（建品/改品直写 SKU 库存）的真库判据 ——
     # 证的是「一行真的进了 stock_ledger_entries」（含 ck_stock_ledger_reason 约束与 NUMERIC(12,1) 列）。
     _SVC + "ProductStockLedgerRealDbTest.java": "direct",
+    # issue #6816：小数库存（0.1 米粒度，V115/#5063 起合法）下台账 before_qty 必须是**精确值**、
+    # `delta` 必须等于本次实际变更量。为什么必须真 PG：缺陷在 `RETURNING` 的**表达式**上
+    # （`CEIL(stock - #{quantity})` 把小数读数向上取整到整数）—— mock 恒返回自己造的数，
+    # 「PG 的取整函数改了读数」结构上不可见；而「同一 SKU 三张单的台账行首尾相接 / delta 逐值
+    # 等于本次变更量」也只能从真库读（本判据走真 `InboundOrderService.post` + 真 mapper）。
+    _SVC + "LedgerBeforeQuantityPrecisionRealDbTest.java": "direct",
     _SVC + "ProductSkuReceiveStockNullCostRealDbTest.java": "direct",
     # issue #6209：建品写面的**并发同键**判据（N=4 同 X-Client-Request-Id ⇒ 恰 1 条商品 +
     # `client_request_keys` 恰 1 行）。为什么必须真 PG：去重的原子性来源是 DDL 的

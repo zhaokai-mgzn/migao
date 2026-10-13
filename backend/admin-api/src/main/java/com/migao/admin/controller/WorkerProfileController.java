@@ -2,8 +2,11 @@ package com.migao.admin.controller;
 
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
+import com.migao.admin.entity.User;
+import com.migao.admin.service.WorkerAdminService;
 import com.migao.admin.service.WorkerPageConfigService;
 import com.migao.admin.worker.WorkerIdentity;
+import com.migao.admin.worker.WorkerPages;
 import com.migao.admin.worker.WorkerSessionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -48,6 +52,7 @@ public class WorkerProfileController {
 
     private final WorkerSessionService workerSessionService;
     private final WorkerPageConfigService workerPageConfigService;
+    private final WorkerAdminService workerAdminService;
 
     /**
      * 当前工人身份 + 本租户开通的工人端页面。
@@ -65,8 +70,26 @@ public class WorkerProfileController {
         data.put("worker_name", identity.workerName());
         data.put("session_id", identity.sessionId());
         data.put("identity_source", identity.source());
-        // 页面集：只回**本租户本工人**的那一份（无行 ⇒ 默认全开）。
-        data.put("pages", workerPageConfigService.pagesFor(tenantId));
+        // 页面集：只回**本租户本工人**的那一份 = 企业页（无行 ⇒ 默认全开）∩ 工人档案上的收窄（issue #6788；
+        // 未设收窄 ⇒ 全跟随企业设置）。工人档案查不到 ⇒ 只回企业页（fail-open：绝不把工人挡在活外面）。
+        // 🔴 交集为空时**回落企业页集**：工人端 H5 把「空数组」读成「没读到权限 ⇒ 全开」
+        // （frontend/worker-h5/src/render.mjs 的 effectivePages）⇒ 原样下发空集反而会让工人**全开**，
+        // 与「收窄」的意图相反（issue #6788 评审实测）。回落后服务端与工人端读到的口径一致。
+        List<String> effective = WorkerPages.effectiveForOrFallback(
+                workerPageConfigService.pagesFor(tenantId), workerPagesOf(identity.workerId()));
+        if (effective.isEmpty()) {
+            // 企业级一页都没开（worker_page_configs = []）：工人端会按全开运行 —— 照实记一条，
+            // 这是企业设置本身的效果，不是本单引入的形态。
+            log.warn("[工人端页面] 企业页集为空：tenantId={}, workerId={}（工人端按全开运行）",
+                    tenantId, identity.workerId());
+        }
+        data.put("pages", effective);
         return ApiResponse.success(data);
+    }
+
+    /** 本工人档案上的页面收窄原值（{@code null} = 未收窄）；查不到档案 ⇒ {@code null}（fail-open）。 */
+    private String workerPagesOf(String workerId) {
+        User worker = workerAdminService.findOwnedWorker(workerId);
+        return worker == null ? null : worker.getWorkerPages();
     }
 }

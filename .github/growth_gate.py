@@ -1142,6 +1142,36 @@ def render_pr_comment(payload):
                       f"**Blockers**: {b} | **Warnings**: {w}", *detail]) + "\n"
 
 
+def render_verdict_line(blocker_count, warning_count, exit_on_block=False):
+    """判定收尾行 —— **只看最后几行的人也拿到真判定**（issue #6774）。
+
+    病根（2026-10-12 实证）：包内不允许跑全量 `verify-all.sh gate` ⇒ 包内只能直接调本脚本，
+    而 `blocker_count = 1` 时**退出码仍是 0**（判定只在 `--json-file` 字段里）⇒ 有一个包据
+    `exit 0` 报了「通过」，被 CI 的 `QA Growth Gate` 抓红（PR #6768）。本行把判定**打出来**
+    并带上数字：`BLOCKERS=<n>` + `blocker_count` 字样（**逐字**），让「判定在哪」不再需要猜。
+
+    - **不改任何语义**：数字直接取 `len(blockers)`（与 JSON 的 `blocker_count` 同一份真值，
+      ⇒ 单源，不会漂移）；退出码语义由 `main()` 的 `--exit-on-block` 决定（**默认关**）。
+    - **复用既有开关**（issue #6774 返工口径，铁律 5：复用先于最小实现）：**不新增**第二个
+      fail-closed 开关 —— `--exit-on-block` 早已存在（本地/CLI 用，有 blocker 即退 1；全仓零
+      调用方），两个开关做同一件事 = 第二份会漂的口径。文案只**引用**它，让人知道「想
+      fail-closed 该加哪一个」。issue 原文提议的 `--fail-on-blocker` 已按此口径作废。
+    - 文案里的 `blocker_count` 是**字段名**，不是数值 —— 判据按结构断言（`BLOCKERS=<数字>` +
+      字段名 + 在 stdout 末段），不整行钉死文案。
+    """
+    if blocker_count > 0:
+        head = f"❌ BLOCKERS={blocker_count} —— 判定未通过（缺测/G5）"
+    else:
+        head = f"✅ BLOCKERS=0 —— 判定通过"
+    if exit_on_block:
+        tail = (f"本进程将退出 {1 if blocker_count > 0 else 0}（已加 --exit-on-block）；"
+                f"判定亦可读本行的 blocker_count")
+    else:
+        tail = (f"本进程 exit 仍为 0（未加 --exit-on-block，与既有语义逐字一致）；"
+                f"判定请读本行的 blocker_count 或 --json-file 的 blocker_count")
+    return f"{head}｜WARNINGS={warning_count}｜{tail}"
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="QA Growth Gate（数据驱动）")
     parser.add_argument("--base", default="origin/main")
@@ -1398,8 +1428,21 @@ def main(argv=None):
         if cov_verdict == "block":
             cov_block = True
 
+    # 判定收尾行（issue #6774）：**只看最后几行的人也能拿到真判定**。
+    # 数字取自与 `--json-file` 同一份真值（`len(blockers)` / `len(warnings)`，单源不漂移）；
+    # 打印位置 = 本函数返回点之前 ⇒ 它就是 stdout 的最后一段（`--exit-on-block` 只改退出码）。
+    verdict = render_verdict_line(len(blockers), len(warnings), args.exit_on_block)
+    print(verdict)
+    if summary_file:
+        try:
+            with open(summary_file, "a") as f:
+                f.write("\n" + verdict + "\n")
+        except OSError:
+            pass
+
     # 默认 exit 0 = 成功（blocker 由 JSON 判定，CI fail-closed 靠崩溃时非零退出 + set -e）。
-    # --exit-on-block 供本地/CLI 便捷使用（有 blocker 即退出 1）。
+    # --exit-on-block 供本地/CLI 便捷使用（有 blocker 即退出 1）—— **既有语义一字未动**
+    # （它同时看 `cov_block`；本单不新增第二个开关，issue #6774 的返工口径 = 复用这一个）。
     if args.exit_on_block:
         return 1 if (blockers or cov_block) else 0
     return 0

@@ -65,6 +65,31 @@ public class User {
     /** 菜单权限码列表（JSON 数组，如 ["orders.list","products.create"]） */
     private String permissions;
 
+    /**
+     * 工人档案级**工人端页面收窄**（V152，issue #6788；{@code role=worker} 的行才用）。
+     *
+     * <p>三态：{@code null} = <b>未收窄</b>（跟随企业设置 = 该企业开的全部工人端页面 —— 存量与新建的默认值）·
+     * 收窄到闭词表 {@code WorkerPages.ALL} 里的某几页。实际下发 = 企业页
+     * （{@code worker_page_configs}）∩ 本列 ⇒ 企业级仍是天花板。</p>
+     *
+     * <p>🔴 <b>不是权限码</b>，所以**另开一列**而不是塞进 {@link #permissions}
+     * （那是商家 RBAC 权限快照）：工人 session 的 {@code permissions} 恒为 {@code []}，
+     * 可达面恒为 {@code /api/worker/**}；本列只影响「页面上看不看得见」，不参与任何授权判定。</p>
+     *
+     * <p>🔴 <b>为什么是 {@code String} 而不是 {@code List<String>} + {@code JacksonTypeHandler}</b>
+     * （与 {@link #permissions} 同形态）：① 手写 {@code select} 返回带类型处理器的实体**必须绑
+     * {@code @ResultMap}**，否则 JSONB 列落成字符串、判据静默为假（本仓复发过两次：issue #3340 / #4865，
+     * 类级守卫 {@code JacksonTypeHandlerMappingGuardTest} 就此而设）；② 类型处理器对**形态不对**的入库值
+     * 会**抛异常**（不是回 {@code null}）⇒ 一行脏数据会让 {@code GET /api/worker/me} 500，
+     * 把工人的活挡在外面 —— 与「读侧 fail-open」正好相反。故这里存**原样 JSON 文本**、
+     * 由 {@link com.migao.admin.worker.WorkerPages#restrictedOrNull} 自己做**宽容解析**（坏值 ⇒ 当未收窄）。</p>
+     *
+     * <p>⚠️ 与 {@code NOT_NULL} 更新策略的交互：{@code null} 字段**不会**进 {@code UPDATE} 的 SET
+     * ⇒ 「清回收窄」必须走 {@code WorkerAdminService.updateWorkerPages} 的显式 {@code set}（不要用
+     * 「更新一个 null 字段」表达清空）。</p>
+     */
+    private String workerPages;
+
     private Integer sessionTtl;
 
     private String status;

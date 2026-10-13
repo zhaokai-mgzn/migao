@@ -211,7 +211,10 @@ public class WorkerInboundService {
             return replay(tenantId, idempotencyKey, "入库单草稿");
         }
         try {
-            InboundOrderResponse created = inboundOrderService.create(toCreateRequest(req), tenantId, operator);
+            InboundOrderResponse created = inboundOrderService.create(toCreateRequest(req), tenantId, operator,
+                    // 服务端**强制**来源 = photo（issue #6812）：这条链一次收一卷布 ⇒ 明细行「数量」是
+                    // **卷数**、「卷长」是每卷米数，入库米数 = 卷数 × 卷长。走 4 参重载 ⇒ 客户端传什么都不生效。
+                    InboundOrder.SOURCE_PHOTO);
             WorkerInboundDraftView view = viewOf(created, null);
             clientRequestIdService.complete(tenantId, idempotencyKey, view);
             log.info("[工人入库] 草稿已建（未动库存）: tenant={}, inboundNo={}, skuId={}, operator={}",
@@ -386,7 +389,8 @@ public class WorkerInboundService {
         create.setSupplierDocNo(trimToNull(req.getSupplierDocNo()));
         create.setWarehouse(trimToNull(req.getWarehouse()));
         create.setRemark(trimToNull(req.getRemark()));
-        // 🔴 source / importRunId 一律不设：工人面**结构上**没有这两个键 ⇒ 归一为 purchase（V117 口径）
+        // 🔴 importRunId 不设（工人面结构上没有这个键）；source 由调用方**服务端强制**为 photo（issue #6812）
+        //    ⇒ 这里的 item.quantity 是**卷数**、item.rollLengthM 是**每卷米数**（入库米数 = 两者之积）
         InboundOrderCreateRequest.Item item = new InboundOrderCreateRequest.Item();
         item.setProductId(req.getProductId());
         item.setSkuId(req.getSkuId());

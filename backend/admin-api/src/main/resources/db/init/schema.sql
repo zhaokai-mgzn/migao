@@ -48,6 +48,11 @@ CREATE TABLE users (
     -- 工人工号（V98，issue #4733）：非 NULL = 该行是**工人档案**（role=worker）；
     -- NULL = 商家用户（本列引入前的全部存量行）。租户内唯一（部分唯一索引见下）。
     worker_no VARCHAR(64),
+    -- 工人档案级**工人端页面收窄**（V152，issue #6788）：NULL = 未收窄（跟随企业设置，
+    -- 存量/新建默认）；[] = 显式一页都不给；[...] = 收窄到这几页（闭词表 = WorkerPages.ALL）。
+    -- 实际下发 = 企业页（worker_page_configs）∩ 本列。🔴 只承载页面可见性，不是权限码
+    -- ⇒ 不参与授权判定，也不写进 users.permissions（工人 permissions 恒为 []）。
+    worker_pages JSONB,
     session_ttl INTEGER DEFAULT 3600,
     status VARCHAR(32) DEFAULT 'active',
     -- 首登强制改密（V128，issue #5485）：管理员设的初始密码必须首登改掉。
@@ -1668,9 +1673,10 @@ CREATE TABLE IF NOT EXISTS inbound_orders (
     status VARCHAR(16) NOT NULL DEFAULT 'draft',     -- draft / posted / cancelled
     total_amount NUMERIC(16,4) NOT NULL DEFAULT 0,
     remark TEXT,
-    -- 单据来源（V117）：purchase 采购收货 / opening 期初建账（迁移导入）
+    -- 单据来源（V117）：purchase 采购收货 / opening 期初建账（迁移导入）；photo 工人拍照入库（V153 / issue #6812：
+    -- 该来源的明细行「数量」是**卷数**、roll_length_m 是**每卷米数**，入库米数 = 数量 × 卷长）
     source VARCHAR(16) NOT NULL DEFAULT 'purchase' CONSTRAINT ck_inbound_orders_source
-        CHECK (source IN ('purchase', 'opening')),
+        CHECK (source IN ('purchase', 'opening', 'photo')),
     -- 建单运行级幂等键（V117）：同一 (tenant_id, import_run_id) 至多一张未软删的单
     import_run_id VARCHAR(128),
     posted_at TIMESTAMP WITH TIME ZONE,

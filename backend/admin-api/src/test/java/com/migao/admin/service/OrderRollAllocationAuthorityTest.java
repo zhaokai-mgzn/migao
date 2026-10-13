@@ -89,7 +89,8 @@ class OrderRollAllocationAuthorityTest {
     /** 给 `rollCount` / `rollLengthM` 赋值的**允许集合**（未登记即红 / 登记了扫不到也红）。 */
     private static final Map<String, String> REGISTERED_WRITERS = new LinkedHashMap<>() {{
         put("OrderService.java", "order_items.roll_count / roll_length_m —— 订单行分配（本包唯一权威）");
-        put("WorkerInboundService.java", "inbound_order_items.roll_length_m —— 入库「仅记录/打印」，不参与换算（本包不改）");
+        put("WorkerInboundService.java", "inbound_order_items.roll_length_m —— 工人面请求原样落行（issue #6812 起该来源=photo，卷长是**每卷米数**、参与米数换算）");
+        put("InboundOrderService.java", "inbound_order_items.roll_length_m —— photo 单的卷长准入（requireRollLength）+ 米数换算（metersFor，issue #6812）");
         put("ProductService.java", "products.roll_length_m —— 商品货号级卷长配置（默认值的来源）");
     }};
 

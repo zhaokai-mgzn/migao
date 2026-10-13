@@ -194,13 +194,25 @@ class WorkerInboundServiceTest {
         return req;
     }
 
-    private static WorkerInboundDraftRequest draftRequest(String rawQuantity) {
+    /**
+     * 工人面草稿请求（issue #6812 之后的口径）：参数是**每卷米数（卷长）**，卷数恒为工人端默认的 **1**
+     * ⇒ 入库米数 = 1 × 卷长。理由：工人拍的是**一卷布**，标签上的米数是这一卷的卷长。
+     */
+    private static WorkerInboundDraftRequest draftRequest(String rollLengthMeters) {
         WorkerInboundDraftRequest req = new WorkerInboundDraftRequest();
         req.setProductId(PRODUCT_ID);
         req.setSkuId(SKU_ID);
-        req.setQuantity(rawQuantity == null ? null : new BigDecimal(rawQuantity));
+        req.setQuantity(BigDecimal.ONE);
+        req.setRollLengthM(rollLengthMeters == null ? null : new BigDecimal(rollLengthMeters));
         req.setUnitCost(new BigDecimal("12.5"));
         req.setSupplierDocNo("DN-20260926-01");
+        return req;
+    }
+
+    /** 显式给卷数（一张单收多卷 / 非法卷数）时的请求形态。 */
+    private static WorkerInboundDraftRequest draftRequestOfRolls(String rollCount, String rollLengthMeters) {
+        WorkerInboundDraftRequest req = draftRequest(rollLengthMeters);
+        req.setQuantity(rollCount == null ? null : new BigDecimal(rollCount));
         return req;
     }
 
@@ -341,7 +353,7 @@ class WorkerInboundServiceTest {
     class CreateDraft {
 
         @Test
-        @DisplayName("🔴 建草稿只写单据与明细：不加库存、不落台账、不写批次、来源恒 purchase")
+        @DisplayName("🔴 建草稿只写单据与明细：不加库存、不落台账、不写批次、来源恒 photo（工人链强制）")
         void draftNeverTouchesStock() {
             WorkerInboundDraftView view = createDraft("60.5");
 
@@ -350,11 +362,12 @@ class WorkerInboundServiceTest {
                     any(), any(), anyString(), anyString(), anyString(), any(), any(), any());
             verify(stockBatchMapper, never()).insert(any(StockBatch.class));
             assertThat(view.getStatus()).isEqualTo(InboundOrder.STATUS_DRAFT);
-            assertThat(view.getSource()).isEqualTo(InboundOrder.SOURCE_PURCHASE);
+            assertThat(view.getSource()).isEqualTo(InboundOrder.SOURCE_PHOTO);
             assertThat(view.getNeedsConfirmation()).isTrue();
             assertThat(view.getItems()).hasSize(1);
             assertThat(view.getItems().get(0).getBatchNo()).isNull();
-            assertThat(view.getItems().get(0).getQuantity()).isEqualByComparingTo("60.5");
+            // #6812：「数量」列是**卷数**（工人端默认 1），识别到的米数落在**卷长**上
+            assertThat(view.getItems().get(0).getQuantity()).isEqualByComparingTo("1");
         }
 
         @Test
@@ -373,11 +386,66 @@ class WorkerInboundServiceTest {
         }
 
         @Test
-        @DisplayName("0.5 米的尾料可以如实登记（下限是 > 0，不是 ≥ 1）")
+        @DisplayName("0.5 米的尾料可以如实登记（1 卷 × 0.5 米；下限仍是 > 0，不是 ≥ 1）")
         void halfMeterTailIsAccepted() {
-            WorkerInboundDraftView view = createDraft("0.5");
+            createDraft("0.5");
 
-            assertThat(view.getItems().get(0).getQuantity()).isEqualByComparingTo("0.5");
+            org.mockito.ArgumentCaptor<InboundOrderItem> lineCap =
+                    org.mockito.ArgumentCaptor.forClass(InboundOrderItem.class);
+            verify(inboundOrderItemMapper).insert(lineCap.capture());
+            assertThat(lineCap.getValue().getQuantity()).isEqualByComparingTo("1");
+            assertThat(lineCap.getValue().getRollLengthM()).isEqualByComparingTo("0.5");
+        }
+
+        @Test
+        @DisplayName("🔴 #6812 拍照单：来源由**服务端**强制 photo，明细行「数量」= 卷数、「卷长」= 每卷米数")
+        void photoDraftIsServerForcedWithRollFields() {
+            createDraft("67.2");
+
+            org.mockito.ArgumentCaptor<InboundOrder> orderCap =
+                    org.mockito.ArgumentCaptor.forClass(InboundOrder.class);
+            verify(inboundOrderMapper).insert(orderCap.capture());
+            assertThat(orderCap.getValue().getSource())
+                    .as("工人链的服务端强制来源：请求体里没有被客户端写入口")
+                    .isEqualTo(InboundOrder.SOURCE_PHOTO);
+
+            org.mockito.ArgumentCaptor<InboundOrderItem> lineCap =
+                    org.mockito.ArgumentCaptor.forClass(InboundOrderItem.class);
+            verify(inboundOrderItemMapper).insert(lineCap.capture());
+            assertThat(lineCap.getValue().getQuantity()).isEqualByComparingTo("1");
+            assertThat(lineCap.getValue().getRollLengthM()).isEqualByComparingTo("67.2");
+        }
+
+        @Test
+        @DisplayName("🔴 #6812 卷数必须是正整数（2.5 / 0 / -1 卷 ⇒ 400）；缺卷长 ⇒ 400（不许按「1 米」入账）")
+        void rollCountAndRollLengthAreFailClosed() {
+            for (String bad : List.of("2.5", "0", "-1")) {
+                assertThatThrownBy(() -> service.createDraft(
+                        draftRequestOfRolls(bad, "60"), TENANT, WORKER_ID, null))
+                        .as("卷数 %s 必须被拒（400）", bad)
+                        .isInstanceOf(BusinessException.class)
+                        .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(400));
+            }
+            assertThatThrownBy(() -> service.createDraft(
+                    draftRequestOfRolls("1", null), TENANT, WORKER_ID, null))
+                    .as("缺卷长必须被拒 —— 否则「1 卷」会被当成「1 米」真加进库存")
+                    .isInstanceOf(BusinessException.class)
+                    .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(400));
+
+            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
+        }
+
+        @Test
+        @DisplayName("🔴 #6812 米数不是 0.1 米的整数倍（3 卷 × 0.33 米 = 0.99）⇒ 400，不静默取整")
+        void metersOffTenthGranularityAreRejected() {
+            assertThatThrownBy(() -> service.createDraft(
+                    draftRequestOfRolls("3", "0.33"), TENANT, WORKER_ID, null))
+                    .isInstanceOf(BusinessException.class)
+                    .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(400));
+
+            verify(inboundOrderMapper, never()).insert(any(InboundOrder.class));
+            verify(productSkuMapper, never()).receiveStock(anyLong(), any(), any(), anyString(), any());
         }
 
         @Test
@@ -438,6 +506,36 @@ class WorkerInboundServiceTest {
             assertThat(posted.getStatus()).isEqualTo(InboundOrder.STATUS_POSTED);
             assertThat(posted.getNeedsConfirmation()).isFalse();
             assertThat(posted.getItems().get(0).getBatchNo()).startsWith("PC-");
+        }
+
+        @Test
+        @DisplayName("🔴 #6812 过账按**米数**加库存：2 卷 × 30 米 ⇒ 库存 +60（不是 +2 卷）")
+        void photoPostAddsMetersNotRollCount() {
+            WorkerInboundDraftView draft = service.createDraft(
+                    draftRequestOfRolls("2", "30"), TENANT, WORKER_ID, null);
+
+            service.postDraft(draft.getDraftId(), confirmed(), TENANT, WORKER_ID, null);
+
+            verify(productSkuMapper, times(1))
+                    .receiveStock(eq(SKU_ID), eq(new BigDecimal("60")), any(), anyString(), any());
+            org.mockito.ArgumentCaptor<BigDecimal> beforeCap =
+                    org.mockito.ArgumentCaptor.forClass(BigDecimal.class);
+            org.mockito.ArgumentCaptor<BigDecimal> afterCap =
+                    org.mockito.ArgumentCaptor.forClass(BigDecimal.class);
+            verify(stockLedgerService, times(1)).record(
+                    eq(TENANT), eq(PRODUCT_ID), eq(SKU_ID), eq(SKU_CODE),
+                    beforeCap.capture(), afterCap.capture(),
+                    eq(StockLedger.REASON_INBOUND), eq(draft.getInboundNo()), anyString(),
+                    any(), any(), any());
+            assertThat(afterCap.getValue().subtract(beforeCap.getValue()))
+                    .as("台账 delta 必须是**米数**（卷数 × 卷长），不是卷数")
+                    .isEqualByComparingTo("60");
+            // 明细行的「数量」列仍是卷数（口径列与换算列分开）
+            org.mockito.ArgumentCaptor<InboundOrderItem> lineCap =
+                    org.mockito.ArgumentCaptor.forClass(InboundOrderItem.class);
+            verify(inboundOrderItemMapper).insert(lineCap.capture());
+            assertThat(lineCap.getValue().getQuantity()).isEqualByComparingTo("2");
+            assertThat(lineCap.getValue().getRollLengthM()).isEqualByComparingTo("30");
         }
 
         @Test

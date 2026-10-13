@@ -5,9 +5,11 @@ import { Plus, Pencil, Trash2, Shield, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
 import { roleApi, permissionApi } from '@/lib/api'
+import request from '@/lib/request'
 import { Button, Input, Modal, Badge } from '@/components/ui'
 import type { Role, Permission } from '@/types'
 import DateTimeCell from '@/components/common/DateTimeCell'
+import { formatMobileTitles } from '@/lib/mobile-surface-label'
 // #3002 权限分配与真实菜单一致：复用侧边栏菜单配置做单一来源，
 // 弹窗分组/名称 = 侧边栏菜单分组/菜单项，避免展示旧口径权限目录
 import { menuGroups, standaloneTopItems } from '@/config/menu'
@@ -28,6 +30,17 @@ export default function RolesPage() {
 
   // 所有权限
   const [allPermissions, setAllPermissions] = useState<Permission[]>([])
+
+  /**
+   * `权限码 → 手机端可见面中文名`（issue #6759）。
+   *
+   * 🔴 **它不是第二份真值**：这里**只在运行时持有服务端下发的**标注
+   * （`GET /api/admin/menus` 的 `mobileTitles`，服务端由 `MobileSurfaces` 派生），
+   * 前端**没有任何**「码 → 手机端面」的常量表（判据 =
+   * tests/unit_ci_workflows/test_mobile_surface_annotation_single_source.py）。
+   * 读不到 ⇒ 空表 ⇒ 权限树照常渲染、只是没有手机端标注（**不阻塞权限分配**）。
+   */
+  const [mobileTitlesByCode, setMobileTitlesByCode] = useState<Record<string, string[]>>({})
 
   // 新增/编辑对话框
   const [formOpen, setFormOpen] = useState(false)
@@ -85,6 +98,35 @@ export default function RolesPage() {
     loadRoles()
     loadPermissions()
   }, [loadRoles, loadPermissions])
+
+  // 手机端可见面标注（issue #6759）：**真值只在服务端**（`MobileSurfaces` 派生自
+  // `GET /api/admin/menus` 的 `mobileTitles`）—— 本页只把它挂到对应权限码上，不自造映射。
+  //
+  // 🔴 issue #6781：一个权限码在树上可以有**多个承载节点**（#5699/#5291 的有意设计面）⇒
+  // 这个 `码 → 面` 表**首见优先**（先到先得，后来的同码节点不覆盖）。同一张表要喂给
+  // `menuGroups` 与 `standaloneTopItems` 两个梯队，只有首见优先才能保证「每行渲染出的标注
+  // 与树序首个承载节点一致」（服务端 `annotateMobileTitles` 也是这个语义；两边同一条规则）。
+  useEffect(() => {
+    let alive = true
+    request.get('/api/admin/menus')
+      .then((res: any) => {
+        if (!alive) return
+        const data = res?.data?.data || res?.data || []
+        const map: Record<string, string[]> = {}
+        for (const group of Array.isArray(data) ? data : []) {
+          for (const node of group?.children || []) {
+            if (node?.code && Array.isArray(node.mobileTitles) && node.mobileTitles.length > 0
+                && !(node.code in map)) {
+              map[node.code] = node.mobileTitles
+            }
+          }
+        }
+        setMobileTitlesByCode(map)
+      })
+      // 读不到 ⇒ 权限分配照常可用，只是没有手机端标注（不弹错、不阻塞）
+      .catch(() => { if (alive) setMobileTitlesByCode({}) })
+    return () => { alive = false }
+  }, [])
 
   // ── #3002 菜单化权限树：分组/名称来自真实侧边栏菜单（menuGroups 单源）──
   // 🔴 #5895：侧边栏是**三个梯队** —— `standaloneTopItems`（一级项）→ `menuGroups`（分组）
@@ -162,18 +204,34 @@ export default function RolesPage() {
   )
 
   // 菜单项行（权限树里**所有**菜单节点共用同一份渲染：一级项 / 组内项）—— 勾选即授予该权限码
-  const renderCodeItem = (code: string, label: string) => (
-    <label key={`${code}-${label}`} className="flex items-center gap-2 cursor-pointer">
-      <input
-        type="checkbox"
-        checked={isCodeGranted(code)}
-        onChange={() => toggleCode(code)}
-        className="w-4 h-4 text-primary-600 rounded border-neutral-300 focus:ring-primary-500"
-      />
-      <span className="text-sm text-neutral-600">{label}</span>
-      <span className="text-xs text-neutral-400" title={code}>{code}</span>
-    </label>
-  )
+  //
+  // 🔴 issue #6770（§31 P3「不摆内部标识」）：权限码**不上商家可见面**（原形态是把 `inbound:view`
+  // 这样的内部串直接印在行尾）。它与左侧菜单名（label）表达同一件事、对商家零信息量，而同族先例
+  // （issue #6669 第 6 条：403 页撤掉权限码回显）已按「看不懂也无从行动」处理过。
+  // 保留**非可见面**两个入口（不降可及性）：① hover 的 `title`；② 屏幕阅读器可见的 `sr-only` 文本
+  // （它同时让 label 的 accessible name 含码，故**不**另加 `aria-label` —— 那会遮蔽可见名）。
+  const renderCodeItem = (code: string, label: string) => {
+    const mobile = formatMobileTitles(mobileTitlesByCode[code])
+    return (
+      <label key={`${code}-${label}`} className="flex items-center gap-2 cursor-pointer" title={code}>
+        <input
+          type="checkbox"
+          checked={isCodeGranted(code)}
+          onChange={() => toggleCode(code)}
+          className="w-4 h-4 text-primary-600 rounded border-neutral-300 focus:ring-primary-500"
+        />
+        <span className="text-sm text-neutral-600">
+          {label}
+          {mobile && (
+            <span className="text-xs text-neutral-400" data-testid={`roles-mobile-${code}`}>
+              {mobile}
+            </span>
+          )}
+          <span className="sr-only" data-testid={`roles-code-${code}`}>{code}</span>
+        </span>
+      </label>
+    )
+  }
 
   // 菜单组全选/取消全选（组内权限码去重后一并授予/移除）
   const toggleMenuGroup = useCallback(

@@ -542,7 +542,11 @@ def test_v117_is_idempotent_on_a_real_database(psql):
 
 
 def test_bootstrap_schema_sql_is_already_terminal():
-    """bootstrap 路径（新建库**不跑迁移链**）必须与 V117 终态同形，否则新库与老库行为分叉。"""
+    """bootstrap 路径（新建库**不跑迁移链**）必须与**迁移链终态**同形，否则新库与老库行为分叉。
+
+    V117 给了 source 的两个取值；V153（issue #6812）加了第三个 `photo` ⇒ 两条路径都要放行它，
+    只改一边就是「bootstrap 库与存量库两份真相」（#3270 形态）。
+    """
     schema = _read(SCHEMA_SQL)
     assert re.search(r"uk_inbound_orders_no\s*\n?\s*ON inbound_orders \(tenant_id, inbound_no\)",
                      schema), "schema.sql 的单号唯一索引不是租户内口径（仍是全局唯一）"
@@ -550,4 +554,8 @@ def test_bootstrap_schema_sql_is_already_terminal():
     assert re.search(r"import_run_id\s+VARCHAR\(128\)", schema), "schema.sql 缺 import_run_id 列"
     assert re.search(r"source\s+VARCHAR\(16\)\s+NOT NULL DEFAULT 'purchase'", schema), (
         "schema.sql 缺 source 列（或丢了 NOT NULL + 缺省值）")
-    assert "source IN ('purchase', 'opening')" in schema, "schema.sql 缺 source 取值约束"
+    assert "source IN ('purchase', 'opening', 'photo')" in schema, (
+        "schema.sql 缺 source 取值约束（V117 的 purchase/opening + V153/#6812 的 photo）")
+    v153 = REPO / "backend/admin-api/src/main/resources/db/migration/V153__inbound_source_photo.sql"
+    assert v153.exists(), "存量升级路径缺 V153（photo 来源）—— 只有新建库路径放行 photo = 两份真相"
+    assert "'photo'" in _read(v153), "V153 没真的放行 photo"
