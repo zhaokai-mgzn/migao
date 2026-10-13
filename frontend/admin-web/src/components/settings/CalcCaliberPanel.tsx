@@ -31,12 +31,16 @@
  * 本组件**不产出任何就绪度判断** —— 那是 `@/lib/config-readiness` 的 `judge*` 系列（唯一真值源）。
  * 默认值**不落前端**：本租户没配置行时后端回的就是引擎默认值（`source='default'`）。
  *
- * ## 两种挂载形态
+ * ## 挂载形态（**只有一个**：算料口径域）
  *
  * - **取数形态**（`/settings` 的算料域）：**不传** `calc` ⇒ 本组件自己读、**就地可写**；
- * - **受控只读形态**（`frontend/admin-web/src/components/settings/TenantParamsPanel.tsx`）：
- *   传 `calc` / `calcError` / `loading`、**不给** `onCalcChange` ⇒ 只渲染读数，**一个输入框都不渲染**
+ * - **受控形态**（`/settings` 的算料域带草稿/保存回调）：传 `calc` / `calcError` / `loading` +
+ *   `calcDraft` / `onCalcDraftChange` / `onCalcSave`；**不给写回调** ⇒ 只读退化，**一个输入框都不渲染**
  *   （读面不由本组件取 ⇒ 它没有可写的东西；渲染一个「保存」在那里等于造第二个写面）。
+ *
+ * 🔴 **旧「受控只读」消费者 `TenantParamsPanel`（旧参数总览页）已由 #6848 整体退场** ⇒
+ * 本组件与 `ParamScalarRow` 现在**只有算料口径域一个挂载点**：可选的「紧凑 / 卡片」二形态
+ * 与逐键默认态徽标一并删除（留着就是死代码；issue #6857）。
  *
  * ## 数字输入一律用 `NumberInput`（issue #5198 / #5218）
  *
@@ -74,134 +78,48 @@ export function ParamScalarRow({
   param,
   value,
   docHref,
-  hideValue = false,
-  unset = false,
-  changedFromDefault,
-  compact = false,
   control,
 }: {
   param: ScalarParam
-  /** 右列显示的值；**读面未落地时调用方传 `'…'`**（不谎报） */
+  /** 只读值（`control` 缺省时印在名称右侧）；**读面未落地时调用方传 `'…'`**（不谎报） */
   value: string
   /**
-   * 「参数旁的**说明**」锚点目标（issue #4975）。
+   * 「参数旁的**说明**」锚点目标（issue #4975：指路要指得着）。
    * ⚠️ 只有**同屏真的渲染了术语区块**的调用方才能给（否则就是指向空处的死锚点）——
-   * 算料口径域给 `glossaryAnchorOf(key)`；域面板（`TenantParamsPanel`）不给。
+   * 算料口径域给 `glossaryAnchorOf(key)`。
    */
   docHref?: string
-  /**
-   * 🔴 **不渲染右列值**（§31 P2「信息不重复」；2026-10-13 真机读图复核逼出来的返修）。
-   *
-   * 可写形态下右列值与输入框**同源**（都读同一份草稿）⇒ 同一行把同一个数印两遍，
-   * 而两次都不可解释「谁是**要改的**那个」（是纯回声，**不是**「已保存 vs 正在改」的对照）。
-   * ⇒ 可写形态的值只由**输入框**一处承载；右列值只在**只读形态**保留
-   * （`TenantParamsPanel` 那条路上没有输入框，值只能靠它显示）。
-   */
-  hideValue?: boolean
-  /** 是否标「未配置（正在用引擎默认值）」 */
-  unset?: boolean
-  /**
-   * 逐键「我改过没有」：`undefined` = 本次不可比（**一个徽标都不标**）；
-   * `null` = 该键的引擎默认值没取到（同样不标）；`string` = 默认值 ⇒ 与 `value` 比对后标「已改 / 默认」。
-   */
-  changedFromDefault?: string | null
-  /**
-   * **行式紧凑**（issue #6857，用户裁定；只有算料口径域传）：名称与控件**同一行**，
-   * 提示/影响降为一行小字，行间靠 `divide-y` 细线分隔（不再用卡片）。
-   * 不传 ⇒ 保持既有卡片形态（旧消费者 `TenantParamsPanel` 走这条，行为逐字不变）。
-   */
-  compact?: boolean
-  /**
-   * 紧凑形态下与名称同行的**控件**（可编辑时给 `NumberInput`；不传 ⇒ 只读，同位置印值）。
-   * 与 `compact` 搭配使用。
-   */
+  /** 与名称**同一行**的控件（可编辑时给 `NumberInput`；不传 ⇒ 只读，同位置印值） */
   control?: ReactNode
 }) {
-  // ── 行式紧凑（issue #6857）────────────────────────────────────────────────
-  // 用户裁定（2026-10-13）：「输入框直接放在名称后面」「不要每行都写个默认」。
-  // 默认态**一个徽标都不标**：域级已有 `calc-caliber-source` 徽标 + 顶部「下表全部为引擎默认值」
-  // 横幅承担（§31 P2 信息不重复），逐行再标一次只是噪音。
-  if (compact) {
-    return (
-      <div data-testid={`param-${param.key}`} className="py-3">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-medium text-neutral-900">
-            <InlineMarkdown text={param.copy.label} />
-          </span>
-          {control ?? (
-            <div data-testid={`param-value-${param.key}`} className="text-sm text-neutral-900">
-              {value}
-            </div>
-          )}
-        </div>
-        <p className="mt-1 text-xs text-neutral-500">
-          <InlineMarkdown text={param.copy.hint} />
-        </p>
-        <p className="mt-1 text-xs text-neutral-600">
-          改它会怎样：<InlineMarkdown text={param.copy.impact} />
-          {docHref !== undefined && (
-            <a
-              href={`#${docHref}`}
-              data-testid={`param-doc-${param.key}`}
-              className="ml-2 text-primary-600 hover:underline"
-            >
-              说明
-            </a>
-          )}
-        </p>
-      </div>
-    )
-  }
-
+  /**
+   * 形态 = **行式紧凑**（issue #6857，用户裁定 2026-10-13）：
+   * 「输入框直接放在名称后面」（方案 B）+「不要每行都写个默认，太丑了」（方案 C）。
+   *
+   * - 控件与名称**同一行**；提示 / 「改它会怎样」降为一行小字；行间靠调用方的 `divide-y` 细线分隔；
+   * - 行内**一个默认态徽标都不标**（旧「未配置 / 默认 / 已改（默认 X）」三件套一并退场）：
+   *   默认态由**域级**信号承担 —— 顶部横幅「下表全部为引擎默认值」+ 标题下口径徽标
+   *   （§31 P2「信息不重复」），改动与回退由「恢复为默认值」按钮兜住；
+   * - 🔴 旧**卡片**形态（名称/提示/影响三段 + 右列只读值 + 三个徽标 prop）随旧参数总览页
+   *   （`TenantParamsPanel`，#6848 退场）一起**删除** —— 本组件只剩算料口径域一个挂载点，
+   *   留着那条分支即死代码。
+   */
   return (
-    <div data-testid={`param-${param.key}`} className="border border-neutral-200 rounded-lg p-4">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-neutral-900">
-              <InlineMarkdown text={param.copy.label} />
-            </span>
-            {unset && (
-              <span
-                data-testid={`param-unset-${param.key}`}
-                className="text-xs px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200"
-              >
-                未配置（正在用引擎默认值）
-              </span>
-            )}
-            {changedFromDefault != null &&
-              (value !== changedFromDefault ? (
-                <span
-                  data-testid={`param-changed-${param.key}`}
-                  className="text-xs px-1.5 py-0.5 rounded bg-primary-50 text-primary-700 border border-primary-200"
-                >
-                  已改（默认 {changedFromDefault}）
-                </span>
-              ) : (
-                <span
-                  data-testid={`param-is-default-${param.key}`}
-                  className="text-xs px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600 border border-neutral-200"
-                >
-                  默认
-                </span>
-              ))}
-          </div>
-          <p className="text-xs text-neutral-500 mt-1">
-            <InlineMarkdown text={param.copy.hint} />
-          </p>
-        </div>
-        {!hideValue && (
-          <div className="text-right flex-shrink-0">
-            <div data-testid={`param-value-${param.key}`} className="text-sm font-mono text-neutral-900">
-              {value}
-            </div>
-            {/* 🔴 issue #6663（§31 P3「不摆内部标识」）：改前这里印的是**引擎键名**
-                （`per_fold_single` / `oversize_width_threshold` …）—— 那是引擎的实现细节，
-                商家既读不懂也用不上。要说明「这个参数是什么」用**人话标签 + 口径说明**（上方已各有其一）。 */}
+    <div data-testid={`param-${param.key}`} className="py-3">
+      <div className="flex items-center gap-3">
+        <span className="text-sm font-medium text-neutral-900">
+          <InlineMarkdown text={param.copy.label} />
+        </span>
+        {control ?? (
+          <div data-testid={`param-value-${param.key}`} className="text-sm text-neutral-900">
+            {value}
           </div>
         )}
       </div>
-      <p className="text-xs text-neutral-600 mt-2 pt-2 border-t border-neutral-100">
+      <p className="mt-1 text-xs text-neutral-500">
+        <InlineMarkdown text={param.copy.hint} />
+      </p>
+      <p className="mt-1 text-xs text-neutral-600">
         改它会怎样：<InlineMarkdown text={param.copy.impact} />
         {docHref !== undefined && (
           <a
@@ -383,7 +301,6 @@ export function CalcCaliberPanel({
     <ParamScalarRow
       key={p.key}
       param={p}
-      compact
       // 「说明」锚点指到**同页**的术语与口径区块条目（issue #4975：指路要指得着）
       docHref={displayConfig ? glossaryAnchorOf(p.key) : undefined}
       // 🔴 读失败 ⇒ **空位**（不是 `—`）：`—` 长得像「这个参数没有值」，而真相是**整个读面失败**。
