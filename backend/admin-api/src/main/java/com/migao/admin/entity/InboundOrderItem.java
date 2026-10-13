@@ -73,7 +73,14 @@ public class InboundOrderItem {
      */
     private String legacyBatchNo;
 
-    /** 每卷米数（仅记录/打印卷标，不参与任何换算） */
+    /**
+     * 每卷米数（卷长）。
+     *
+     * <p>一般来源（{@code purchase} / {@code opening}）下**仅记录 / 打印卷标，不参与任何换算**
+     * （用户 2026-09-23 裁定 #5034）；而 {@code source=photo}（工人拍照入库，issue #6812）下它是
+     * **换算的一半**：入库米数 = {@link #quantity}（卷数）× 本值 —— 由
+     * {@code InboundOrderService.metersFor} 一处换算，库存 / 批次 / 台账 / 成本都用那个米数。</p>
+     */
     private BigDecimal rollLengthM;
 
     private String remark;

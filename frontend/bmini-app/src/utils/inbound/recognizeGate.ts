@@ -13,9 +13,11 @@
  * ⚠️ 「不自动建品」在端侧是**结构事实**：本文件与 `services/workerInboundService.ts` 里
  * **不存在**任何建商品 / 建 SKU 的端点调用（守卫扫源码面；新增一个 ⇒ 红）。
  *
- * ⚠️ 数量口径**不在端侧重写**（照实登记）：真值 = 服务端 `InboundOrderService.requireItemNumbers`
- * （`> 0` 且最多 1 位小数，超 1 位**显式拒绝、不静默取整**）⇒ 端侧只做「填没填」这一层，
- * 数值判定与服务端 400 的文案**原样上屏**（理由见 `./truth` 文件头的 TS6059 实测）。
+ * ⚠️ 数量口径**不在端侧重写**（照实登记；issue #6812 起**数量 = 卷数**、**卷长 = 每卷米数**，
+ * 入库米数 = 卷数 × 卷长）：真值 = 服务端（卷数为**正整数**、卷长 `> 0` 且最多 2 位小数、
+ * 乘积必须是 0.1 米的整数倍；缺卷长 / 非整数卷数 ⇒ 422 带可行动文案）⇒ 端侧只做
+ * 「填没填」这一层，**既不换算乘积、也不做数值判定**，服务端 400/422 的文案**原样上屏**
+ * （理由见 `./truth` 文件头的 TS6059 实测）。
  */
 
 /** 命中的既有 SKU（读面 = `WorkerInboundSkuMatch`） */
@@ -70,11 +72,14 @@ export interface RecognizeLike {
 }
 
 export interface PrefillResult {
-  /** 是否**预填**了候选（false ⇒ 输入框留空，工人手输） */
+  /** 是否**预填**了候选（false ⇒ 输入框留空，工人手输；卷数那格恒为默认 `1`，不算"预填"） */
   prefillUsed: boolean
   productName: string
   colorName: string
+  /** 🔴 **卷数**（issue #6812 起「数量」= 卷数）—— **恒为默认 `'1'`**，端侧不预填别的卷数 */
   quantity: string
+  /** 每卷米数（**识别到的 `quantityMeters` 填这里**，不再填"数量"）；空 = 工人手输 */
+  rollLengthM: string
   /** 给工人看的说明（永远非空：说清本次是「已预填，请核对」还是「不确定，请手输」） */
   notice: string
   gate: SkuGateOutcome
@@ -83,7 +88,8 @@ export interface PrefillResult {
 /**
  * 识别回执 ⇒ 表单初值（§6.4「不确定 = 不预填」）。
  *
- * 🔴 三条不预填的触发条件（任一命中 ⇒ **三个字段全部留空**，只保留条码原文给工人对照）：
+ * 🔴 三条不预填的触发条件（任一命中 ⇒ **品名 / 色号 / 卷长三格全部留空**，只保留条码原文
+ * 给工人对照；卷数那格仍是**默认 1**——它本来就有值，与"预填识别结果"是两件事）：
  * ① `degraded`（vision 降级 / 一格都没认出来）；② `requiresManualEntry`；③ **SKU 零命中**。
  * 红证：让降级分支也预填 ⇒ 判据必红。
  */
@@ -94,8 +100,9 @@ export function prefillFromRecognize(response: RecognizeLike | null | undefined)
     prefillUsed: false,
     productName: '',
     colorName: '',
-    quantity: '',
-    notice: String(res.message || '').trim() || '识别不确定，请手工录入品名、色号与米数（系统不猜、不编造）。',
+    quantity: '1',
+    rollLengthM: '',
+    notice: String(res.message || '').trim() || '识别不确定，请手工录入品名、色号与每卷米数（系统不猜、不编造）。',
     gate,
   })
 
@@ -106,16 +113,18 @@ export function prefillFromRecognize(response: RecognizeLike | null | undefined)
   const match = gate.kind === 'matched' ? gate.match : null
   const productName = String(res.productName || match?.productName || '').trim()
   const colorName = String(res.colorName || match?.colorName || '').trim()
-  const quantity = String(res.quantityMeters ?? '').trim()
+  // 识别到的米数 ⇒ **卷长**（issue #6812：语义从「入库米数」改成「每卷米数」；卷数不由识别结果决定）
+  const rollLengthM = String(res.quantityMeters ?? '').trim()
 
   // 三格全空 = 没有可预填的内容 ⇒ 视作「不预填」（避免"预填了一个空表单"的假动作）
-  if (!productName && !colorName && !quantity) return blank()
+  if (!productName && !colorName && !rollLengthM) return blank()
 
   return {
     prefillUsed: true,
     productName,
     colorName,
-    quantity,
+    quantity: '1',
+    rollLengthM,
     notice:
       gate.kind === 'ambiguous'
         ? AMBIGUOUS_SKU_MESSAGE
@@ -129,7 +138,11 @@ export interface DraftInput {
   productId?: string | null
   /** 雪花号 id（字符串，原样回传；后端出参形态，issue #6340） */
   skuId?: string | null
+  /** **卷数**（issue #6812 起「数量」= 卷数；页面默认 `'1'`） */
   quantity?: string | number | null
+  /** **每卷米数**（issue #6812）—— 端侧只判「填没填」，数值口径（正整数卷数 / >0 且 ≤2 位小数 /
+   * 乘积为 0.1 的整数倍）唯一真值在服务端，服务端 400/422 文案原样上屏 */
+  rollLengthM?: string | number | null
   /** 工人是否已点过「我确认」（§6.5「不做免确认」） */
   confirmed?: boolean
 }
@@ -142,15 +155,17 @@ export interface DraftCheck {
 /**
  * 建草稿的准入（**端侧只拦"结构上不可能成功"的那几种**）：
  * ① 必须已选**既有** SKU（零命中 ⇒ `evaluateSkuGate` 已拦；这里再兜一次结构性判断）；
- * ② 米数必须**填了**（数值口径由服务端判定，400 的文案原样上屏 —— 端侧不重写第二份口径）；
+ * ② **卷长必须填了**（issue #6812：识别不到米数时就是这格空着 ⇒ 端侧先拦，省一次 422）。
+ * 数值口径（卷数正整数 / 卷长上限 / 米数粒度）由服务端判定，400/422 的文案原样上屏
+ * —— 端侧不重写第二份口径、**也不在端侧算乘积**；
  * ③ 必须已人工确认（未确认 ⇒ 不提交；服务端另有 409）。
  */
 export function checkDraftInput(input: DraftInput): DraftCheck {
   if (!input.productId || input.skuId === undefined || input.skuId === null) {
     return { ok: false, message: NO_SKU_MATCH_MESSAGE }
   }
-  if (String(input.quantity ?? '').trim() === '') {
-    return { ok: false, message: '请填写入库米数（数量按米记，服务端会校验「大于 0 且最多 1 位小数」）' }
+  if (String(input.rollLengthM ?? '').trim() === '') {
+    return { ok: false, message: '请填写卷长（米/卷），入库米数 = 卷数 × 卷长（服务端会校验数值口径）' }
   }
   if (!input.confirmed) {
     return { ok: false, message: '请先核对实物并勾选「我确认」后再提交（过账不可撤销）' }
