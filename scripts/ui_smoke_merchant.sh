@@ -103,6 +103,46 @@ if [ -f "$REPO_ROOT/backend/admin-api/.env" ]; then
   fi
 fi
 
+# ── 1b. ai-agent 配置显式化（issue #6790 判据 ③ / AGENTS.md 铁律「环境」节）──
+# 🔴 `application.yml` 的两个默认值都是**坏的**：`AI_AGENT_BASE_URL=http://localhost:8000`
+#    （容器内端口，本机 ai-agent 在 :8001）、`AI_AGENT_SERVICE_TOKEN` 默认空。
+#    不给 ⇒ api 侧真实链路**静默 fail-closed**，而 ai-agent 看着是健康的；实测 api 日志逐字：
+#    `[CRAFT_CALC_UNAVAILABLE] 算料服务（ai-agent）不可用…未配置 ai-agent.service-token（当前服务地址 http://localhost:8000/…）`。
+#    ⇒ 启动 admin-api 时**显式传**这两个变量（判据：本脚本的启动命令里必须出现，见判据 U）。
+# 取值优先级：环境变量 → 本仓 ai-agent .env → 主仓 ai-agent .env / 根 .env。
+# ⚠️ **绝不打印凭据本身**（只打印「取到 / 没取到」与长度）。
+AI_AGENT_BASE_URL="${AI_AGENT_BASE_URL:-http://localhost:8001}"
+
+# 读某个 .env 的一行值（只回显值供变量赋值；不打印到日志）
+env_value() { # $1=文件 $2=键
+  [ -f "$1" ] || return 1
+  sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*//p" "$1" | head -1 | tr -d '\r'
+}
+AI_AGENT_SERVICE_TOKEN="${AI_AGENT_SERVICE_TOKEN:-}"
+AI_AGENT_TOKEN_SOURCE="环境变量 AI_AGENT_SERVICE_TOKEN"
+if [ -z "$AI_AGENT_SERVICE_TOKEN" ]; then
+  for f in "$REPO_ROOT/backend/ai-agent-service/.env" "$MAIN_REPO/backend/ai-agent-service/.env" "$MAIN_REPO/.env" "$REPO_ROOT/.env"; do
+    v="$(env_value "$f" AI_AGENT_SERVICE_TOKEN || true)"
+    [ -z "$v" ] && v="$(env_value "$f" SERVICE_TOKEN || true)"
+    if [ -n "$v" ]; then AI_AGENT_SERVICE_TOKEN="$v"; AI_AGENT_TOKEN_SOURCE="$f 的 SERVICE_TOKEN"; break; fi
+  done
+fi
+export AI_AGENT_BASE_URL AI_AGENT_SERVICE_TOKEN
+# ai-agent 自身要 .env 才起得来（worktree 形态缺件，与 admin-api 的 .env / rsa 同法补齐）
+if [ ! -f "$REPO_ROOT/backend/ai-agent-service/.env" ] && [ -f "$MAIN_REPO/backend/ai-agent-service/.env" ]; then
+  cp "$MAIN_REPO/backend/ai-agent-service/.env" "$REPO_ROOT/backend/ai-agent-service/.env"
+  echo "  [prep] 补齐 ai-agent .env（worktree 缺件，来自主仓）"
+fi
+SMOKE_UNCONFIGURED=0
+if [ -z "$AI_AGENT_SERVICE_TOKEN" ]; then
+  SMOKE_UNCONFIGURED=1
+  echo "  ⚠️ [未配置] 未取到 ai-agent service token（查了环境变量 / 本仓与主仓 ai-agent .env / 根 .env）"
+  echo "      ⇒ base-url=${AI_AGENT_BASE_URL}、token **空** ⇒ 算料 / 会话面会 fail-closed（api 日志打 CRAFT_CALC_UNAVAILABLE）。"
+  echo "      这类旅程在本轮汇总里记为「➖ 未配置」，**不与真实失败混在一张表里**。"
+else
+  echo "  [prep] ai-agent 配置：base-url=${AI_AGENT_BASE_URL}、token 已取到（长度 ${#AI_AGENT_SERVICE_TOKEN}，来源：${AI_AGENT_TOKEN_SOURCE}）"
+fi
+export SMOKE_UNCONFIGURED
 # ── 2. 起栈（已在跑则复用；端口检查 §2.3）──
 started_api=0; started_web=0; started_agent=0
 api_health() { curl -s -m 3 -o /dev/null -w "%{http_code}" "http://127.0.0.1:$API_PORT/actuator/health" 2>/dev/null || echo 000; }
@@ -120,6 +160,12 @@ if [ "$(api_health)" != "200" ]; then
   echo "  ✓ admin-api ready"
 else
   echo "  [stack] admin-api 已在运行，复用"
+  # 复用形态下「这轮到底带没带 ai-agent 配置」**取决于那个实例的启动参数**（脚本看不见）
+  # ⇒ 如实说明，避免把复用实例的配置缺口读成「本脚本没传」（判据 U 的边界，issue #6790 判据 ③）
+  if [ "${SMOKE_UNCONFIGURED:-0}" = "0" ]; then
+    echo "      ⚠️ 复用实例：本轮 ai-agent 配置是否生效取决于**该实例**的启动参数；"
+    echo "         若汇总出现 CRAFT_CALC_UNAVAILABLE / 未配置，先杀掉旧实例再跑以取得单变量读数。"
+  fi
 fi
 
 if [ "$(web_health)" != "200" ]; then
@@ -168,7 +214,7 @@ if ! curl -s -m 2 -o /dev/null "http://127.0.0.1:$AGENT_PORT/health" 2>/dev/null
 fi
 
 # ── 3. SMS 限流清理 + 防刷窗口（登录旅程需要发码）──
-"$PYTHON_BIN" - "$REPO_ROOT/backend/admin-api/.env" << 'EOF' >/dev/null 2>&1 || true
+"${PYTHON_BIN:-python3}" - "$REPO_ROOT/backend/admin-api/.env" << 'EOF' >/dev/null 2>&1 || true
 import sys, redis
 env = open(sys.argv[1]).read()
 pw = [l for l in env.split('\n') if l.startswith('REDIS_PASSWORD=')][0].split('=',1)[1]
@@ -210,11 +256,36 @@ else
   REPO_ROOT="$MAIN_REPO" \
   OUT_DIR="$OUT_DIR" \
   PHONE="$PHONE" SMS_CODE="$SMS_CODE" \
+  SMOKE_UNCONFIGURED="${SMOKE_UNCONFIGURED:-0}" \
   node "$SPEC" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} 2>&1 | tee "$LOG"
   EXIT=${PIPESTATUS[0]}
   set -e
   if [ -f "$OUT_DIR/smoke-summary.md" ] && [ -f "$OUT_DIR/smoke-results.json" ]; then
-    echo "==> spec 退出码: ${EXIT}（0=全绿；见 $OUT_DIR/smoke-summary.md / smoke-results.json）"
+    echo "==> spec 退出码: ${EXIT}（0=无真实失败；见 $OUT_DIR/smoke-summary.md / smoke-results.json）"
+    # 汇总里**单独标一类**（issue #6790 判据 ③）：未配置 / skip **不与真实失败混在一张表**
+    summary_breakdown="$("${PYTHON_BIN:-python3}" - "$OUT_DIR/smoke-results.json" <<'PYEOF' 2>/dev/null || true
+import json, sys
+try:
+    rows = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    sys.exit(0)
+unc = [r["journey"] for r in rows if r.get("unconfigured")]
+skip = [r["journey"] for r in rows if r.get("skipped")]
+fail = [r["journey"] for r in rows if not r.get("pass") and not r.get("unconfigured") and not r.get("skipped")]
+print(f"通过 {sum(1 for r in rows if r.get('pass'))} / 失败 {len(fail)} / 未配置 {len(unc)} / skip {len(skip)}")
+if fail:
+    print("  真实失败: " + " ".join(fail))
+if unc:
+    print("  ➖ 未配置（ai-agent 未配置，不是产品失败）: " + " ".join(unc))
+if skip:
+    print("  ⏭️  skip（前置/依赖不满足，未跑）: " + " ".join(skip))
+PYEOF
+)"
+    [ -n "$summary_breakdown" ] && printf '    分类: %s\n' "$summary_breakdown"
+    if [ "${SMOKE_UNCONFIGURED:-0}" = "1" ]; then
+      echo "    ⚠️ 本轮 ai-agent **未配置**（token 空）：「➖ 未配置」那几条的成因不在产品；"
+      echo "       判据 U（.github/cases 的 UI-AI-AGENT-CONFIG）要求汇总把它们单列，本轮已单列。"
+    fi
   else
     echo "==> ✗ spec **未执行**（node 退出码 ${EXIT}，但没产出 smoke-summary.md / smoke-results.json）"
     echo "    ⇒ 一行旅程都没跑（0 字节的 ${LOG} = 连 spec 启动都没走到）；这不是「有旅程失败」。"

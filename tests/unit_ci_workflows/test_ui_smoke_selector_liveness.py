@@ -90,11 +90,16 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+
+from unit_ci_workflows._source_parsing import java_code  # noqa: E402  （#5323：Java/TS 剥注释的唯一实现）
 SPEC = REPO_ROOT / "scripts" / "ui-smoke-merchant" / "spec.mjs"
 LEDGER = Path(__file__).resolve().parent / "ui_smoke_selector_exemptions.json"
 ADMIN_WEB_SRC = REPO_ROOT / "frontend" / "admin-web" / "src"
@@ -903,6 +908,537 @@ def spec_text() -> str:
     return SPEC.read_text(encoding="utf-8")
 
 
+# ────────────────────────── 判据 C（CSS 选择器活性，issue #6790）──────────────────────────
+# 判据 A/R/N 的射程是**文案 / role / 名字**；`locator('<css>')` 走的是 CSS 引擎、枪口完全不同
+# （旧形态：`dlg.locator('select')` 在页面上 0 个 `<select>`、`input[placeholder*="收货人姓名"]`
+# 等一个不存在的 placeholder ⇒ selector **永不命中**，而 A/R/N 一条都看不见它）。
+#
+# 两层判定：
+#   ① **能自动核的族**（`data-testid` / `placeholder` / `role` / `title` / `type` 的字面量）逐条现取，
+#      取不到 ⇒ 红且具名（哪个选择器 / 哪一行 / 哪个旅程）；
+#   ② **族外形态**（裸标签 / `tbody tr` / `[class*=…]` / 复合选择器 / 动态拼接类名）走**登记式**
+#      （`ui_smoke_css_registry.json`）：未登记即红、条目不得空转、组内 `selector_family` 唯一、**只许缩短**。
+#
+# 🔴 边界（照实登记，§19.1）：子串现取**不是**权威 DOM 活性 —— 静态面判不了「运行期这个选择器真的有匹配」；
+#    它判的是「这个字面量在被驱动面源码里还在不在」。运行期命中数由真栈读数承担（PR body）。
+CSS_REGISTRY = Path(__file__).resolve().parent / "ui_smoke_css_registry.json"
+
+# 每族一个字面量抽取器（`part` = 逗号切开的一段选择器）。
+CSS_FAMILY_PATTERNS: dict[str, str] = {
+    "placeholder": r'placeholder\*?=\s*"([^"]*)"',
+    "data-testid": r'data-testid\^?=\s*"([^"]*)"',
+    "role": r'\brole=\s*"([^"]*)"',
+    "title": r'\btitle=\s*"([^"]*)"',
+    "type": r'\btype=\s*"([^"]*)"',
+    "has-text": r':has-text\(\s*"([^"]*)"',
+    "aria-label": r'\baria-label=\s*"([^"]*)"',
+    # 裸 id 选择器（`#phone`）：被驱动面必须有 `id="phone"` 属性 —— 登录页三个输入就是这种形态
+    # （`frontend/admin-web/src/app/login/page.tsx` 的 `id="identifier"` / `id="phone"` / `id="code"`）
+    "id": r'(?:^|[\s,>(~+])#([A-Za-z][\w-]*)',
+}
+# 伪选择器/文本引擎：不属 CSS 选择器面（`text=` / `xpath=` 是 Playwright 专有引擎，另单另判）。
+CSS_NON_SELECTOR_PREFIXES = ("text=", "xpath=", "$")
+
+
+def _spec_lines_with_journey(spec_text: str) -> list[tuple[int, str]]:
+    """给 spec 的每一行标注「当前所在的旅程名」（`journey('<name>')` 就近归属）。"""
+    out: list[tuple[int, str]] = []
+    cur = ""
+    for no, line in enumerate(spec_text.splitlines(), 1):
+        m = re.search(r"journey\('([^']+)'\)", line)
+        if m:
+            cur = m.group(1)
+        out.append((no, cur))
+    return out
+
+
+def locator_call_sites(spec_text: str) -> list[dict]:
+    """`locator(<literal>)` 的**调用点**（带行号 / 旅程 / 括号配对切出的完整实参）。
+
+    用「扫描全文 + 括号配对」而不是逐行正则 —— `.locator(` 的实参可能跨行，逐行会切半。
+    """
+    text = spec_text
+    sites: list[dict] = []
+    journey_of = {no: j for no, j in _spec_lines_with_journey(spec_text)}
+    for m in re.finditer(r"\.locator\(", text):
+        i, depth = m.end(), 1
+        while i < len(text) and depth:
+            if text[i] in "'\"`":
+                q = text[i]
+                j = i + 1
+                while j < len(text):
+                    if text[j] == "\\":
+                        j += 2
+                        continue
+                    if text[j] == q:
+                        break
+                    j += 1
+                i = j + 1
+                continue
+            if text[i] in "([{":
+                depth += 1
+            elif text[i] in ")]}":
+                depth -= 1
+            i += 1
+        args = text[m.end():i - 1].strip()
+        line = text.count("\n", 0, m.start()) + 1
+        sites.append({
+            "line": line,
+            "journey": journey_of.get(line, ""),
+            "arg": args,
+            "dynamic": "$" in args,
+            "literal": args[1:-1] if len(args) >= 2 and args[0] == args[-1] == "'" else "",
+        })
+    return sites
+
+
+def _css_parts(selector: str) -> list[str]:
+    return [p.strip() for p in selector.split(",") if p.strip()]
+
+
+def _hay(sources: dict[str, str]) -> str:
+    return "\n".join(sources.values())
+
+
+def css_registry_failures(registry: dict, spec_text: str, sources: dict[str, str]) -> list[str]:
+    """判据 C 第 ② 层：**族外形态必须登记**（未登记即红 / 条目不得空转 / 理由过短即红 / 只许缩短）。"""
+    failures: list[str] = []
+    entries = registry.get("registered", [])
+    if not entries:
+        failures.append("判据 C 台账被清空（registered 为空）——那是「静默放过」的口径，fail-closed 判红")
+    if len(entries) > registry.get("baseline_count", 0):
+        failures.append(f"判据 C 台账条目 {len(entries)} 条 > 冻结基线 {registry.get('baseline_count')}（只许缩短）")
+    literals = {s["literal"] for s in locator_call_sites(spec_text) if s["literal"]}
+    registered: set[str] = set()
+    for e in entries:
+        sel = e.get("selector", "")
+        if not sel:
+            failures.append(f"判据 C 台账条目缺 selector：{e}")
+            continue
+        if sel in registered:
+            failures.append(f"判据 C 台账条目重复登记：{sel!r}")
+        registered.add(sel)
+        if len(str(e.get("reason", "")).strip()) < 30:
+            failures.append(f"判据 C 台账条 {sel!r} 的理由太短（等于没写理由）")
+        anchor = e.get("anchor", "")
+        if not anchor:
+            failures.append(f"判据 C 台账条 {sel!r} 缺 anchor（必须指出「现取到哪」）")
+        elif anchor not in sources and not (REPO_ROOT / anchor).exists():
+            failures.append(f"判据 C 台账条 {sel!r} 的 anchor 在被驱动面不存在：{anchor}")
+        if sel not in literals:
+            failures.append(f"判据 C 台账条 {sel!r} 已从 spec 消失（空转，必须删掉）")
+    # 未登记即红：spec 里出现的**族外**选择器必须能在台账里逐字找到
+    for site in locator_call_sites(spec_text):
+        if site["dynamic"] or not site["literal"]:
+            continue
+        sel = site["literal"]
+        if sel.startswith(CSS_NON_SELECTOR_PREFIXES):
+            continue
+        parts = _css_parts(sel)
+        if any(_css_family_hit(p, sources) for p in parts):
+            continue  # 能自动核 ⇒ 归第 ① 层
+        if sel not in registered:
+            failures.append(
+                f"第 {site['line']} 行（{site['journey']}）locator({sel!r}) 是**族外 CSS 形态**且未登记"
+                f"（未登记即红）：补进 {CSS_REGISTRY.name} 的 registered（并写清为什么静态面核不了）"
+            )
+    return failures
+
+
+def _css_family_hit(part: str, sources: dict[str, str]) -> bool:
+    """第 ① 层：该段选择器是否落在「能自动核的族」且**通过**现取。
+
+    通过口径与 Playwright 语义对齐：`placeholder*="X"` ⇒ 被驱动面必须有含 X 的 placeholder；
+    `[data-testid^="X"]` ⇒ 必须有含 X 的 testid（模板字面量去掉尾部 `-${…}` 的字面前缀也算）。
+    """
+    hay = _hay(sources)
+    for fam, pat in CSS_FAMILY_PATTERNS.items():
+        m = re.search(pat, part)
+        if not m:
+            continue
+        lit = m.group(1)
+        if fam == "data-testid":
+            key = lit.rstrip("-")
+            return bool(key) and key in hay
+        if fam == "placeholder":
+            return bool(re.search(r'placeholder="[^"]*' + re.escape(lit), hay))
+        if fam == "role":
+            return ('role="' + lit + '"') in hay
+        if fam == "title":
+            return ('title="' + lit + '"') in hay
+        if fam == "type":
+            return ('type="' + lit + '"') in hay
+        if fam == "has-text":
+            return lit in hay
+        if fam == "aria-label":
+            return ('aria-label="' + lit + '"') in hay
+        if fam == "id":
+            return ('id="' + lit + '"') in hay
+    return False
+
+
+# `[role="X"]` 的**隐式** role（静态面判据 R 的 `ROLE_DOM_PATTERNS` 未覆盖表格族，而 CSS 选择器会用到）：
+#   `role="row"` ⇒ `<tr`；`role="rowgroup"` ⇒ `<thead`/`<tbody`/`<tfoot`。
+CSS_IMPLICIT_ROLE_PATTERNS: dict[str, str] = {
+    "row": r"<tr\b",
+    "rowgroup": r"<(?:thead|tbody|tfoot)\b",
+}
+
+
+def _css_role_hit(lit: str, sources: dict[str, str]) -> bool:
+    """`[role="X"]` 的活性：显式 `role="X"` **或**隐式 role（与判据 R 的 `ROLE_DOM_PATTERNS` 同源）。"""
+    hay = _hay(sources)
+    if ('role="' + lit + '"') in hay:
+        return True
+    pat = ROLE_DOM_PATTERNS.get(lit) or CSS_IMPLICIT_ROLE_PATTERNS.get(lit)
+    return bool(pat) and re.search(pat, hay) is not None
+
+
+def css_failures(spec_text: str, sources: dict[str, str], registry: dict) -> list[str]:
+    """判据 C 本体：① 可自动核的族逐条现取；② 族外形态走登记式。空 = 合规。"""
+    failures = css_registry_failures(registry, spec_text, sources)
+    hay = _hay(sources)
+    for site in locator_call_sites(spec_text):
+        if site["dynamic"] or not site["literal"]:
+            continue
+        sel = site["literal"]
+        if sel.startswith(CSS_NON_SELECTOR_PREFIXES):
+            continue
+        for part in _css_parts(sel):
+            for fam, pat in CSS_FAMILY_PATTERNS.items():
+                m = re.search(pat, part)
+                if not m:
+                    continue
+                # 逐族核（不是「任一命中即放行」）：一段选择器里可以同时有可核与不可核的字面量
+                lit = m.group(1)
+                ok = _css_family_hit(part, sources)
+                # `[data-testid^="X"]` 与裸 `role="row"` 这类：只要**该族**的字面量在被驱动面取到即算活
+                if fam == "role":
+                    ok = _css_role_hit(lit, sources)
+                if ok:
+                    continue
+                failures.append(
+                    f"第 {site['line']} 行（{site['journey']}）locator({sel!r}) 的 {fam} 字面量 {lit!r}"
+                    f"在**被驱动面取不到**（现取 0 命中）⇒ 该 selector 永不命中；被驱动面 = "
+                    f"{ADMIN_WEB_SRC.relative_to(REPO_ROOT)}/**"
+                )
+    # 去重（同一字面量多处出现只在首次报出）
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for f in failures:
+        if f not in seen:
+            seen.add(f)
+            uniq.append(f)
+    return uniq
+
+
+# ────────────────────────── 判据 F（首个匹配即目标，issue #6790）──────────────────────────
+# `getByRole(...).first()` 的动作面**必须**能证明首个匹配就是目标元素（`/编辑|权限/` 的首个匹配
+# 实测是侧边栏「加入常用」控件 ⇒ 点了它只切换收藏、弹窗永不开）。
+# 静态面能证明的只有「登记过 + 登记的锚还在被驱动面」；「运行时到底谁先命中」由真栈探针承担。
+FIRST_MATCH_LEDGER = Path(__file__).resolve().parent / "ui_smoke_first_match.json"
+# 动作面口径：`.first()` 后紧跟这些方法 —— 否则只是读值/等可见（读值不改变状态）
+FIRST_MATCH_ACTIONS = ("click", "fill", "selectOption", "check", "uncheck", "press", "dblclick", "tap")
+# 变量随后被点 = 动作面（`const b = page.getByRole(...).first()` 后 `await b.click()`）
+_FIRST_ASSIGN_RE = re.compile(r"(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*[^\n]*\.first\(\)")
+
+
+def first_match_action_sites(spec_text: str) -> list[dict]:
+    """`getByRole(...).first()` 落在**动作面**的调用点（带行号 / 旅程 / 该行原文）。"""
+    sites: list[dict] = []
+    lines = spec_text.splitlines()
+    journey_of = {no: j for no, j in _spec_lines_with_journey(spec_text)}
+    for no, line in enumerate(lines, 1):
+        if not re.search(r"getByRole\(.*\)\s*\.first\(\)", line):
+            continue
+        action = any(re.search(r"\.first\(\)\s*\.\s*" + a + r"\s*\(", line) for a in FIRST_MATCH_ACTIONS)
+        var = ""
+        m = _FIRST_ASSIGN_RE.search(line)
+        if m:
+            var = m.group(1)
+            tail = "\n".join(lines[no - 1:no + 12])
+            if re.search(r"\b" + re.escape(var) + r"\.(?:click|fill|selectOption|check|uncheck|press)\s*\(", tail):
+                action = True
+        if action:
+            sites.append({"line": no, "journey": journey_of.get(no, ""), "text": line.strip(), "var": var})
+    return sites
+
+
+def first_match_failures(ledger: dict, spec_text: str, sources: dict[str, str]) -> list[str]:
+    """判据 F 本体：动作面的每个 `getByRole(...).first()` 都要登记 + 锚必须还在被驱动面。"""
+    failures: list[str] = []
+    hay = _hay(sources)
+    entries = ledger.get("entries", [])
+    exemptions = ledger.get("exemptions", [])
+    sites = first_match_action_sites(spec_text)
+    if len(sites) > ledger.get("baseline_count", 0):
+        failures.append(
+            f"判据 F：动作面的 `getByRole(...).first()` 站点 {len(sites)} 个 > 冻结基线 "
+            f"{ledger.get('baseline_count')} 个（只许缩短）——新增动作站点必须同批登记"
+        )
+    if not exemptions:
+        failures.append("判据 F 的 exemptions 被清空（fail-closed）：豁免条目本身是「有意保留」的承载体")
+    # ① 每条登记必须带锚，且锚**逐字现取**得到（锚 = 证明「首个匹配是目标」的离散标识）
+    keys = set()
+    for e in entries:
+        key = (e.get("journey", ""), e.get("matcher", ""))
+        if key in keys:
+            failures.append(f"判据 F 台账条目重复（同一 journey+matcher 登记两次）：{key}")
+        keys.add(key)
+        if len(str(e.get("note", "")).strip()) < 20:
+            failures.append(f"判据 F 条目 {key} 的 note 太短（等于没写证据）")
+        anchor = e.get("anchor", "")
+        if not anchor:
+            failures.append(f"判据 F 条目 {key} 缺 anchor（必须给出可现取的离散标识，如按钮文案 / title）")
+        elif anchor not in hay:
+            failures.append(
+                f"判据 F 条目 {key} 的锚 {anchor!r} 在**被驱动面取不到**（现取 0 命中）⇒ 该登记已漂："
+                f"`getByRole(...).first()` 的首个匹配不再有证据支撑"
+            )
+    # ② 未登记即红：动作面的每个站点必须能被某条登记认领（或命中豁免）
+    for site in sites:
+        claimed = any(e.get("matcher", "") and e["matcher"] in site["text"] for e in entries)
+        if not claimed:
+            exempt = any(x.get("selector", "") and x["selector"] in site["text"] for x in exemptions)
+            if exempt:
+                continue
+            failures.append(
+                f"第 {site['line']} 行（{site['journey']}）的 `getByRole(...).first()` 落在**动作面**却未登记"
+                f"（未登记即红）：`{site['text'][:90]}` ⇒ 补进 {FIRST_MATCH_LEDGER.name} 的 entries"
+                f"（写清「首个匹配为什么就是目标」+ 可现取的锚），或登记豁免并写理由"
+            )
+    # ③ 豁免不得空转：登记的豁免形态必须仍在 spec 里
+    for x in exemptions:
+        sel = x.get("selector", "")
+        if not sel:
+            failures.append(f"判据 F 豁免条目缺 selector：{x}")
+            continue
+        if sel not in spec_text:
+            failures.append(f"判据 F 豁免条目 {sel!r} 已从 spec 消失（空转，必须删掉）")
+        if len(str(x.get("reason", "")).strip()) < 20:
+            failures.append(f"判据 F 豁免条目 {sel!r} 的理由太短（等于没写理由）")
+    return failures
+
+
+# ────────── 判据 H（已知产品面 console/pageerror 台账，issue #6790 判据 ③ 的边界登记）──────────
+# spec 的 `KNOWN_CONSOLE_ERRORS` 会把「已归口的真实产品缺陷」从 errors 移到 notes（**照实印出**、不算绿）。
+# 这是放宽门禁的形态 ⇒ 必须有**独立判据**盯着它：台账 ⇄ spec **逐字相等**、必须有 issue 归口与理由、
+# 且「不登记就会把该旅程判红」这条**判别力**必须能证明（见 test_known_console_registry_has_teeth）。
+KNOWN_CONSOLE_LEDGER = Path(__file__).resolve().parent / "ui_smoke_known_console.json"
+_KNOWN_CONSOLE_BLOCK_RE = re.compile(r"\{\s*id:\s*'([^']+)',\s*test:\s*/([^/]+)/,\s*issue:\s*'([^']+)',")
+_KNOWN_CONSOLE_WHY_RE = re.compile(r"why:\s*((?:'[^']*'\s*\+?\s*)+)")
+
+
+def js_single_quoted_values(text: str) -> list[str]:
+    """JS 文本里**单引号字面量**的值（转义感知的词法走查）。
+
+    为什么不用正则取下界（`#5323` / `test_guard_parsing_is_comment_aware.py` 的 RULE_QUOTE）：
+    形如 `r"'([^']*)'"` 的「取值型正则 + 引号定界捕获组」把**原文**当代码读 ——
+    注释里写一个引号串就能喂中判据（本案 `why` 的取值正是这种形态）。
+    ⇒ 调用方必须先 `java_code()` 剥注释（Java/TS 引号感知：`_source_parsing.py` 的唯一实现），
+    本函数只做转义感知扫描，**不使用任何引号定界捕获正则**。
+    """
+    out: list[str] = []
+    i = 0
+    while i < len(text):
+        if text[i] != "'":
+            i += 1
+            continue
+        j = i + 1
+        buf: list[str] = []
+        while j < len(text) and text[j] != "'":
+            if text[j] == "\\" and j + 1 < len(text):
+                buf.append(text[j + 1])
+                j += 2
+                continue
+            buf.append(text[j])
+            j += 1
+        out.append("".join(buf))
+        i = j + 1
+    return out
+
+
+def spec_known_console_entries(spec_text: str) -> list[dict]:
+    """从 spec 源码里现取 `KNOWN_CONSOLE_ERRORS` 的条目（id / pattern / issue / why）。
+
+    ⚠️ 先 `java_code()` **剥注释**再取值（顺序不许反）：否则注释里的同形文本会被读成条目。
+    """
+    code = java_code(spec_text)
+    if "const KNOWN_CONSOLE_ERRORS = [" not in code:
+        return []
+    block = code[code.index("const KNOWN_CONSOLE_ERRORS = ["):]
+    block = block[: block.index("const isKnownConsoleError =")] if "const isKnownConsoleError =" in block else block
+    out = []
+    for m in _KNOWN_CONSOLE_BLOCK_RE.finditer(block):
+        tail = block[m.end():]
+        wm = _KNOWN_CONSOLE_WHY_RE.search(tail)
+        why = "".join(js_single_quoted_values(wm.group(1))) if wm else ""
+        out.append({"id": m.group(1), "pattern": m.group(2), "issue": m.group(3), "why": why})
+    return out
+
+
+def known_console_failures(ledger: dict, spec_text: str) -> list[str]:
+    """判据 H 本体：台账 ⇄ spec 逐字相等；每条必须有 issue 归口与 why；机制必须在 spec 里真的接线。"""
+    failures: list[str] = []
+    entries = ledger.get("entries", [])
+    if not entries:
+        failures.append("已知 console 台账被清空（entries 为空）—— fail-closed 判红")
+    live = spec_known_console_entries(spec_text)
+    led = [{"id": e.get("id", ""), "pattern": e.get("pattern", ""), "issue": e.get("issue", ""), "why": e.get("why", "")} for e in entries]
+    if led != live:
+        failures.append(f"台账与被驱动源码**不逐字相等**（改一处必须同批改两处）：\n      台账={led}\n      spec={live}")
+    for e in entries:
+        if not re.fullmatch(r"#[0-9]+", str(e.get("issue", ""))):
+            failures.append(f"条目 {e.get('id')!r} 缺 issue 归口（必须形如 `#6799`）：{e.get('issue')!r}")
+        if len(str(e.get("why", "")).strip()) < 30:
+            failures.append(f"条目 {e.get('id')!r} 的 why 太短（必须写明「为什么不推翻本旅程的行为面结论」）")
+        try:
+            re.compile(str(e.get("pattern", "")))
+        except re.error as exc:
+            failures.append(f"条目 {e.get('id')!r} 的 pattern 不是合法正则：{exc}")
+    # 机制必须真的接线（否则台账只是装饰）
+    for must in ("isKnownConsoleError", "allowKnownConsole", "SMOKE_STRICT_CONSOLE"):
+        if must not in spec_text:
+            failures.append(f"spec 里找不到 `{must}` ⇒ 台账没有真的接线（台账成装饰）")
+    return failures
+
+
+def test_known_console_registry_matches_spec_and_is_attributed():
+    """㉘ 判据 H：台账 ⇄ spec 逐字相等；每条有 issue 归口 + why；机制确实接线。"""
+    failures = known_console_failures(json.loads(KNOWN_CONSOLE_LEDGER.read_text(encoding="utf-8")),
+                                      SPEC.read_text(encoding="utf-8"))
+    assert failures == [], "已知 console 台账不合规：\n" + "\n".join(f"  - {f}" for f in failures)
+
+
+def test_known_console_registry_has_teeth():
+    """㉙ 判别力自证（注入式红证）：把台账里某条的 issue 写坏 / id 改名 ⇒ 当场红且具名。
+
+    这一步是「台账不是橡皮图章」的证明：只要 spec 与台账不再逐字相等，或归口/理由缺失，判据立即红。
+    """
+    ledger = json.loads(KNOWN_CONSOLE_LEDGER.read_text(encoding="utf-8"))
+    spec = SPEC.read_text(encoding="utf-8")
+    assert ledger["entries"], "夹具不成立：台账为空"
+    # ① 台账与 spec 不一致 ⇒ 红
+    broken = json.loads(json.dumps(ledger))
+    broken["entries"][0]["id"] = "RENAMED_BY_TEST"
+    f1 = known_console_failures(broken, spec)
+    assert any("不逐字相等" in f for f in f1), f"台账与 spec 不一致时未红：{f1}"
+    # ② 归口丢失 ⇒ 红且具名
+    broken2 = json.loads(json.dumps(ledger))
+    broken2["entries"][0]["issue"] = "无归口"
+    f2 = known_console_failures(broken2, spec)
+    assert any("缺 issue 归口" in f for f in f2), f"归口丢失时未红：{f2}"
+    # ③ 负控：**原样**台账必须绿（否则上面的红可能是「恒红」）
+    assert known_console_failures(ledger, spec) == []
+
+
+def test_known_console_registry_is_not_vacuous_on_comment_only_edit():
+    """㉚ 对照读数（判据 H）：**只改注释** ⇒ 不红。"""
+    commented = "// 说明：判据 H 盯的是 KNOWN_CONSOLE_ERRORS 台账（issue #6790）\n" + SPEC.read_text(encoding="utf-8")
+    ledger = json.loads(KNOWN_CONSOLE_LEDGER.read_text(encoding="utf-8"))
+    assert known_console_failures(ledger, commented) == []
+
+
+def load_css_registry() -> dict:
+    return json.loads(CSS_REGISTRY.read_text(encoding="utf-8"))
+
+
+def load_first_match_ledger() -> dict:
+    return json.loads(FIRST_MATCH_LEDGER.read_text(encoding="utf-8"))
+
+
+# ────────────────────────── 判据 C / F 的判据与自证 ──────────────────────────
+def test_css_selectors_are_live_on_the_driven_surface():
+    """⑳ 判据 C：spec 里 `locator('<css>')` 的字面量族必须现取到，族外形态必须登记。"""
+    failures = css_failures(SPEC.read_text(encoding="utf-8"), driven_sources(), load_css_registry())
+    assert failures == [], "冒烟 spec 里有取不到/未登记的 CSS 选择器（改 UI 结构后必须同批改 selector）：\n" + "\n".join(
+        f"  - {f}" for f in failures
+    )
+
+
+def test_css_criterion_catches_dead_select():
+    """㉑ 判别力自证（注入式红证）：把 `select[aria-label="规格尺寸"]` 的名字改成**不存在的** ⇒ 当场红且具名。
+
+    这正是 issue #6790 判据 ① 要的形态：`locator('<css>')` 的**字面量**必须在被驱动面现取到
+    （旧形态的 `select` 落在 0 个 `<select>` 的页面上 = 同一族）。
+    """
+    spec = SPEC.read_text(encoding="utf-8")
+    stale = spec.replace('select[aria-label="规格尺寸"]', 'select[aria-label="冒烟不存在的门幅"]')
+    assert stale != spec, '注入未生效：spec 里找不到 `select[aria-label="规格尺寸"]` ⇒ 本条自证不成立'
+    # 夹具自证：原形态**确实是活的**（否则「红」可能只是两边都取不到）
+    assert _css_family_hit('select[aria-label="规格尺寸"]', driven_sources()), (
+        "夹具不成立：规格尺寸 的 aria-label 在被驱动面也取不到"
+    )
+    failures = css_failures(stale, driven_sources(), load_css_registry())
+    assert any("冒烟不存在的门幅" in f for f in failures), f"注入后判据 C 未红（判别力失效）：{failures}"
+
+
+def test_css_criterion_catches_missing_placeholder():
+    """㉒ 判别力自证：`input[placeholder*="收货地址"]` 的现取字面量被摘掉 ⇒ 红且具名。
+
+    用**真 corpus 的内存变异**（把 `orders/new` 页的那个 placeholder 改名），不动磁盘。
+    `请输入详细收货地址` 全仓唯一 ⇒ 改名后该族真的取不到。
+    """
+    spec = SPEC.read_text(encoding="utf-8")
+    sources = driven_sources()
+    target = "frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx"
+    assert target in sources, "夹具不成立：orders/new 页不在被驱动面"
+    mutated = dict(sources)
+    mutated[target] = sources[target].replace("请输入详细收货地址", "请输入联系地址")
+    assert mutated[target] != sources[target], "注入未生效：orders/new 页里找不到 `请输入详细收货地址`"
+    assert "请输入详细收货地址" not in _hay(mutated).replace(sources[target], ""), (
+        "夹具不成立：该 placeholder 在被驱动面**别处**也存在 ⇒ 改名后仍判活"
+    )
+    failures = css_failures(spec, mutated, load_css_registry())
+    assert any("收货地址" in f for f in failures), f"摘掉 placeholder 后判据 C 未红（判别力失效）：{failures}"
+
+
+def test_css_registry_is_not_vacuous_on_comment_only_edit():
+    """㉓ 对照读数（判据 C）：**只改注释** ⇒ 不红（判据不吃自己的说明文字）。"""
+    commented = "// 说明：判据 C 看的是 locator('<css>') 的字面量，注释不参与（issue #6790）\n" + SPEC.read_text(encoding="utf-8")
+    assert css_failures(commented, driven_sources(), load_css_registry()) == []
+
+
+def test_css_registry_is_live_and_shrink_only():
+    """㉔ 判据 C 台账纪律：组数只许缩短、组名唯一、条目不得空转、anchor 必须存在。"""
+    failures = css_registry_failures(load_css_registry(), SPEC.read_text(encoding="utf-8"), driven_sources())
+    assert failures == [], "判据 C 台账纪律违例：\n" + "\n".join(f"  - {f}" for f in failures)
+
+
+def test_first_match_actions_are_registered():
+    """㉕ 判据 F：动作面的 `getByRole(...).first()` 必须登记 + 锚必须在被驱动面现取到。"""
+    failures = first_match_failures(load_first_match_ledger(), SPEC.read_text(encoding="utf-8"), driven_sources())
+    assert failures == [], "冒烟 spec 里有无证据支撑的 `getByRole(...).first()` 动作站点：\n" + "\n".join(
+        f"  - {f}" for f in failures
+    )
+
+
+def test_first_match_criterion_catches_wide_regex_regression():
+    """㉖ 判别力自证（注入式红证）：把 `24-roles` 的行内编辑**改回**宽正则 `/编辑|权限/` ⇒ 登记失效、当场红。
+
+    注入的是 issue #6790 原文里那条真实病灶形态 —— 它当年能溜过 A/R/N 三条判据。
+    """
+    spec = SPEC.read_text(encoding="utf-8")
+    scoped = "const editBtn = page.locator('button[title=\"编辑\"]').first()"
+    assert scoped in spec, "注入未生效：spec 里找不到 24-roles 的行内收窄形态 ⇒ 本条自证不成立"
+    stale = spec.replace(scoped, "const editBtn = page.getByRole('button', { name: /编辑|权限/ }).first()")
+    assert stale != spec
+    failures = first_match_failures(load_first_match_ledger(), stale, driven_sources())
+    assert any("未登记即红" in f and "24-roles" in f for f in failures), (
+        f"把宽正则换回来之后判据 F 未红（判别力失效）：{failures}"
+    )
+    # 夹具自证：收窄形态本身**不在**动作面站点集合里（它是 `locator(...).first()`、不属 getByRole 面）
+    assert not any(s["journey"] == "24-roles" for s in first_match_action_sites(spec)), (
+        "夹具不成立：24-roles 原本就在 getByRole 动作面上"
+    )
+
+
+def test_first_match_ledger_is_not_vacuous_on_comment_only_edit():
+    """㉗ 对照读数（判据 F）：**只改注释** ⇒ 不红。"""
+    commented = "// 说明：判据 F 看的是 getByRole(...).first() 的动作面登记（issue #6790）\n" + SPEC.read_text(encoding="utf-8")
+    assert first_match_failures(load_first_match_ledger(), commented, driven_sources()) == []
+
+
 def test_role_of_getbyrole_is_live_on_the_driven_surface():
     """⑧ 判据 R（说真话的那条）：spec 里 `getByRole(<role>, …)` 的 role 必须现取到。"""
     failures = role_liveness_failures(spec_text(), driven_sources())
@@ -1112,6 +1648,16 @@ class Loc {
   }
   async fill() { return true }
   async count() { return 1 }
+  // ↓ issue #6790 起 spec 用到的新形态（链式定位 / 取值 / 等待）：桩必须跟上，
+  //   否则「归因判据」会因**桩自身缺件**而红，把判据变成噪声（这正是本判据要防的反面）。
+  locator(sel) { return new Loc(this.page, this.label + ' >> ' + sel) }
+  filter() { return this }
+  nth() { return this }
+  async selectOption() { return true }
+  async inputValue() { return '' }
+  async innerText() { return '' }
+  async textContent() { return '' }
+  async getAttribute() { return null }
 }
 class Page {
   constructor(context) { this.ctx = context; this.url = ''; this.handlers = [] }
@@ -1132,6 +1678,9 @@ class Page {
   getByRole(_role, opts) { return new Loc(this, 'role:' + ((opts || {}).name || '')) }
   locator(sel) { return new Loc(this, 'css:' + sel) }
   getByTestId(t) { return new Loc(this, 'testid:' + t) }
+  // 登录前的 hydration 等待（`openAdminLoginTab` 新增）：桩直接放行
+  async waitForFunction() { return true }
+  async title() { return 'stub' }
   fill(sel, value) {
     if (sel === '#phone' && FAIL === '') throw new Error("桩：登录步骤注入失败（fill('#phone')）")
     return Promise.resolve(true)

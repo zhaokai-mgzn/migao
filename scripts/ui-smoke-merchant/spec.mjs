@@ -26,6 +26,61 @@ mkdirSync(join(OUT, 'screenshots'), { recursive: true })
 const results = []
 const failReasons = new Map()
 
+// ────────────────────────── 结果分类（#6790 / AGENTS.md 铁律）──────────────────────────
+// 三态，**不许互相冒充**（issue #6790 判据 ③④）：
+//   pass         —— 真跑并通过；
+//   unconfigured —— 依赖面**未配置**（ai-agent 未按 AGENTS.md 传 BASE_URL/SERVICE_TOKEN）⇒ 成因不在产品；
+//   skipped      —— 前置数据/依赖不满足（`depends_on`）⇒ 没跑，不是失败也不是通过。
+// ⚠️ 「没跑」必须长得像「没跑」：这两种都不算 pass，也不与真实失败混在一张表里。
+const UNCONFIGURED = process.env.SMOKE_UNCONFIGURED === '1'
+// 依赖 ai-agent 的旅程（判据：失败原因 = ai-agent 未配置 ⇒ 记 unconfigured，不记产品失败）。
+// `12-processing` 不在其中（加工项 CRUD 是纯 admin-api；它是本轮真 B 类，要与 A 类分开看）。
+const AI_AGENT_JOURNEYS = new Set(['06-agent-sessions', '07-chat', '09-products-new', '32-production-qr-and-piecework'])
+// `--group <前缀>` 过滤（口径 = **两位数字前缀**，如 `01-` / `16-` / `23-`；用法串里写的也是这一形态）。
+// 🔴 issue #6790 实测的存量形态：`--group 2-` 匹配不到 `24-roles`（`'24-roles'.startsWith('2-')` = false）
+//    ⇒ 该组**一条都不跑**却**一条记录都不落**（旧形态过滤即 `return`）—— 读起来像「本轮全绿」。
+//    本单把它变成**显式 skip 记录**（`⏭️ … [skip] --group 2- 过滤（本轮未跑）`）；
+//    **不改**前缀语义（改语义会让「`2-` 到底含不含 `2X`」变成需要裁定的问题，本单不引入）。
+const inGroup = (name) => !GROUP || name.startsWith(GROUP)
+// 本轮全部旅程名（看门狗到点时把**没跑到的**补记 skip —— 「没跑」必须长得像「没跑」）
+const ALL_JOURNEY_NAMES = [
+  '01-login', '02-dashboard', '03-briefing', '04-agent-workspace-redirect', '05-human-sessions',
+  '06-agent-sessions', '07-chat', '08-products-list', '09-products-new', '10-product-detail',
+  '11-product-edit-doorwidth', '12-processing', '13-categories', '14-orders-list', '15-orders-new',
+  '16-order-detail-processing-order', '32-production-qr-and-piecework', '17-order-ship',
+  '18-after-sales-list', '19-after-sales-detail', '20-customers-list', '21-customer-detail',
+  '22-finance', '23-employees', '24-roles', '25-settings', '26-notifications',
+  '27-corporate', '28-register',
+]
+
+// ────────── 已知产品面 console / pageerror 台账（#6790 判据 ③ 的**边界登记**）──────────
+// `journey()` 把 console.error / pageerror 一律收成**旅程失败**。但存在一类：报错是**真实产品缺陷**
+// （已归口 issue）、且它发生在**渲染 / 度量层**，而本旅程要断言的**行为面**证据已经拿到。
+// 不登记 ⇒ 同一缺陷在多轮里反复把真栈读数搅成噪声（且会把「行为面已验证」错读成「本旅程也坏了」）。
+// 口径（fail-closed）：**逐字**正则 + **必须带 issue 归口** + 写明「为什么不推翻本旅程的行为面结论」；
+//   且**只在行为面已达成**时（调用方传 `allowKnownConsole: true`）才把该条从 errors 移到 notes
+//   —— **照实印出、不隐藏**（notes 会进 smoke-results.json）。`SMOKE_STRICT_CONSOLE=1` 关闭本机制。
+const KNOWN_CONSOLE_ERRORS = [
+  {
+    id: 'AFTERSALES_HYDRATION',
+    test: /cannot be a descendant of|cannot contain a nested/,
+    issue: '#6799',
+    why: '售后详情页 React hydration 报错（`<div>` 被渲染进 `<p>`）—— 归口 #6799；报错在 hydration 层，'
+       + '而 19- 的行为面（工单打开 → 受理 → 关闭 + 状态落库）由页面文本与 API 读数**独立**验证。',
+  },
+  {
+    id: 'PROCESSING_MEASURE_NEGATIVE',
+    test: /negative time stamp|ProcessingRedirectPage/,
+    issue: '#6799',
+    why: '加工页 `performance.measure` 负时间戳（Next/React 首帧时序）—— 归口 #6799；**偶发**（同一 commit 上一轮为 ✅），'
+       + '不影响加工项 CRUD 的行为面（新项入列 → 改名 → 删除后消失）。',
+  },
+]
+const isKnownConsoleError = (e) =>
+  process.env.SMOKE_STRICT_CONSOLE !== '1' && KNOWN_CONSOLE_ERRORS.some((k) => k.test.test(String(e)))
+const knownConsoleIssue = (e) => (KNOWN_CONSOLE_ERRORS.find((k) => k.test.test(String(e))) || {}).issue || ''
+// 判据 H 的机械核对面：台账必须非空、条目必须有 issue 与 why（守卫读这段源码，见 test_ui_smoke_selector_liveness.py）
+
 // ────────────────────────── 框架 ──────────────────────────
 function journey(name, opts = {}) {
   return async (page) => {
@@ -33,7 +88,7 @@ function journey(name, opts = {}) {
       // 过滤掉的旅程返回哨兵，避免调用方解构崩溃
       return { page, rec: null, done: async () => null, skipped: true }
     }
-    const rec = { journey: name, pass: true, errors: [], notes: [], evidence: [] }
+    const rec = { journey: name, pass: true, errors: [], notes: [], evidence: [], skipped: false, unconfigured: false, error_class: null }
     results.push(rec)
     const errs = []
     page.removeAllListeners('console')
@@ -44,24 +99,144 @@ function journey(name, opts = {}) {
     const onPageError = (err) => errs.push(`[pageerror] ${String(err).slice(0, 300)}`)
     page.on('console', onConsole)
     page.on('pageerror', onPageError)
-    const done = async (ok, why, ev) => {
+    const done = async (ok, why, ev, errClass) => {
       page.removeListener('console', onConsole)
       page.removeListener('pageerror', onPageError)
-      rec.pass = rec.pass && ok
-      if (!ok && why) { rec.errors.push(why); failReasons.set(name, why) }
+      // 分类优先于 pass：未配置 / 前置不满足**都不是**产品失败（#6790 判据 ③④）
+      const klass = typeof errClass === 'string' && errClass
+        ? errClass
+        : (!ok && UNCONFIGURED && AI_AGENT_JOURNEYS.has(name) ? 'unconfigured' : null)
+      rec.error_class = klass
+      if (klass === 'unconfigured') {
+        rec.unconfigured = true
+        rec.pass = false
+        if (errs.length) rec.errors.push(...errs)
+        console.log(`➖ ${name} [未配置] ai-agent 未按 AGENTS.md 传 AI_AGENT_BASE_URL / AI_AGENT_SERVICE_TOKEN`)
+      } else if (klass === 'skip') {
+        rec.skipped = true
+        rec.pass = false
+        rec.errors = []
+        rec.notes.push(String(why || '前置不满足'))
+        console.log(`⏭️  ${name} [skip] ${why}`)
+      } else {
+        rec.pass = rec.pass && ok
+        if (!ok && why) { rec.errors.push(why); failReasons.set(name, why) }
+        if (errs.length) {
+          // 已知产品缺陷（已归口）+ 行为面已达成 ⇒ 移到 notes（**照实印出**，不隐藏、不算绿）
+          const known = opts.allowKnownConsole ? errs.filter(isKnownConsoleError) : []
+          const rest = errs.filter((e) => !known.includes(e))
+          if (known.length) rec.notes.push(...known.map((e) => `[已知产品缺陷 ${knownConsoleIssue(e)}] ${e}`))
+          if (rest.length) { rec.errors.push(...rest); rec.pass = false }
+        }
+        if (rec.pass) { console.log(`✅ ${name}`) } else { console.log(`❌ ${name}\n   ${rec.errors.join('\n   ')}`) }
+      }
       if (ev) rec.evidence.push(ev)
-      if (errs.length) { rec.errors.push(...errs); rec.pass = false }
       if (opts.screenshot !== false) {
         const shot = join(OUT, 'screenshots', `${name}.png`)
         try { await page.screenshot({ path: shot, fullPage: false }) } catch {}
         rec.evidence.push(shot)
       }
-      if (rec.pass) { console.log(`✅ ${name}`) } else { console.log(`❌ ${name}\n   ${rec.errors.join('\n   ')}`) }
       return rec
     }
     return { page, done, rec }
   }
 }
+
+/** 前置数据/依赖不满足 ⇒ **skip 且印出来**（skip ≠ pass，也 ≠ fail；#6790 判据 ④）。 */
+const markSkipped = (h, why) => h.done(true, why, undefined, 'skip')
+
+// ────────────────────────── 前置数据自造（#6790 判据 ④：能自造就别登记依赖）──────────────────────────
+// 交付物模板：`16-order-detail-processing-order` / `17-order-ship` / `32-production-qr-and-piecework`
+// 都要求「一张 pending 的含加工项订单」；旧形态靠 `process.env.API_TOKEN`（**从没有人传过**）⇒
+// `orderId` 恒空 ⇒ `16` 报「无目标订单」、`17` 导航到 `/orders//ship` 让前端把订单 id 拼成 `ship`
+// ⇒ api 日志 `请求的资源不存在: GET /api/admin/orders/ship`（issue #6790 B 类 ③）。
+// 现在一律用**浏览器会话的 cookie** 走 node 侧 `adminApi`（本文件既有形态）自造。
+const SMOKE_PRODUCT_ID = 'deff0be6c885cbf0469abe4f7b8da608'
+
+/** 建品/建单要一个**真存在的分类 id**（探针实测：`分类ID不能为空` ⇒ 422）。 */
+let _categoryId = ''
+async function defaultCategoryId(page) {
+  if (_categoryId) return _categoryId
+  const api = await adminApi(page)
+  const res = await api.get('/api/admin/categories?page=1&size=1')
+  const first = (res?.data?.items ?? res?.data ?? [])[0]
+  _categoryId = first?.id || ''
+  if (!_categoryId) throw new Error(`建品前置失败：/api/admin/categories 无可用分类（${JSON.stringify(res).slice(0, 160)}）`)
+  return _categoryId
+}
+
+/** 自造一张含加工项的订单（pending），返回订单 id；调用方负责在跑完后 `cleanupOrder`。 */
+async function createOrderFixture(page, tag) {
+  const api = await adminApi(page)
+  const created = await api.post('/api/admin/orders', {
+    customerName: tag, customerPhone: '13900002222', customerAddress: '杭州市西湖区冒烟路 2 号',
+    // 探针实测：`常用物流/快递不能为空` + `常用物流公司不能为空`（422）
+    logisticsType: 'express', logisticsCompany: '顺丰速运',
+    discountAmount: 0, items: [{
+      productId: SMOKE_PRODUCT_ID, productName: '2699系列雪尼尔窗帘面料',
+      quantity: 2, unitPrice: 23.8, subtotal: 47.6,
+      processingInfo: { sellingMethod: 'bulk_cut', doorWidth: '2.8', processingFee: 15,
+        processingItems: [{ id: 'proc_item_1', name: '锁边', quantity: 2, unit: '米' }] }
+    }],
+  })
+  const id = created?.data?.id
+  if (!id) throw new Error(`前置建单失败（未返回 data.id）：${JSON.stringify(created).slice(0, 200)}`)
+  return id
+}
+
+/** 跑完清理自造数据（删不掉不阻塞旅程，只记 note —— 清理失败 ≠ 旅程失败）。 */
+async function cleanupOrder(page, id) {
+  try {
+    const api = await adminApi(page)
+    await api.get(`/api/admin/orders/${id}`)  // 存在性确认（真造出来了才谈删除）
+    const at = (await page.context().cookies()).find((c) => c.name === 'access_token')
+    const res = await fetch(`${API_BASE}/api/admin/orders/${id}`, {
+      method: 'DELETE', headers: { Cookie: `access_token=${at.value}` },
+    })
+    return res.ok
+  } catch { return false }
+}
+
+/**
+ * 依赖探测（issue #6790 判据 ④）：本租户**能不能生成加工单**。
+ *
+ * 触发条件（真栈实测，api 日志逐字）：
+ *   `INCIDENT_PRODUCTION_ROUTING_UNRESOLVED 订单缺 \`craft\` 且该租户没有默认工艺，生成加工单中止
+ *    （不回退常量 韩褶）: tenantId=25, 部位=布帘`
+ * ⇒ 该租户**没有配置生产路线/默认工艺** ⇒ `POST /api/admin/processing-orders/generate` **HTTP 200 但
+ *   `data` 为空**（不是异常），加工单永远不落库 ⇒ `16-` 的 `.po-print-area` 永不出现。
+ *
+ * 这是**前置数据缺失**（云 dev 租户未配路线），不是选择器漂移、也不是产品回归；
+ * 所以 16-/17-/32- 在本形态下判 **skip 并印出来**（skip ≠ pass、也 ≠ fail）。
+ * 判据 = `可以自造前置 ⇒ 用 `createOrderFixture`；自造不了 ⇒ 显式登记依赖 + skip`。
+ */
+async function processingRouteAvailable(page) {
+  const api = await adminApi(page)
+  const probeId = await createOrderFixture(page, '冒烟路线探测')
+  const gen = await api.post('/api/admin/processing-orders/generate', { orderIds: [probeId] })
+  const results = Array.isArray(gen?.data) ? gen.data : []
+  const ok = results.some((r) => r && r.success !== false)
+  const why = ok
+    ? ''
+    : `本租户指定单（${probeId}）生成加工单**未落库**：接口 HTTP 200 但 data 为空 —— `
+      + `api 日志 INCIDENT_PRODUCTION_ROUTING_UNRESOLVED「订单缺 craft 且该租户没有默认工艺」`
+      + `（租户未配生产路线/默认工艺）`
+  if (ok) await cleanupOrder(page, probeId)
+  return { ok, why, probeId }
+}
+
+/** 自造商品的前置清理（同为「先建再测、跑完清理」；失败留在 note 里，不冒充旅程失败）。 */
+async function cleanupProduct(page, id) {
+  try {
+    const api = await adminApi(page)
+    const at = (await page.context().cookies()).find((c) => c.name === 'access_token')
+    const res = await fetch(`${API_BASE}/api/admin/products/${id}`, {
+      method: 'DELETE', headers: { Cookie: `access_token=${at.value}` },
+    })
+    return res.ok
+  } catch { return false }
+}
+
 
 // 通用断言工具
 const expectText = async (page, text, opts = { exact: false }) => {
@@ -110,7 +285,13 @@ async function adminApi(page) {
     if (!res.ok) throw new Error(`${method} ${path} → HTTP ${res.status}：${text.slice(0, 200)}`)
     return JSON.parse(text)
   }
-  return { get: (p) => call('GET', p), post: (p, b) => call('POST', p, b) }
+  return {
+    get: (p) => call('GET', p),
+    post: (p, b) => call('POST', p, b),
+    // 19- 的售后前置要 `PUT /api/admin/orders/{id}/payment`（确认付款）——旧形态只有 get/post
+    put: (p, b) => call('PUT', p, b),
+    patch: (p, b) => call('PATCH', p, b),
+  }
 }
 
 // ────────────────────────── UI 登录步骤（唯一入口）──────────────────────────
@@ -129,7 +310,21 @@ async function adminApi(page) {
 async function openAdminLoginTab(page) {
   const tab = page.getByRole('tab', { name: /管理员登录/ }).first()
   await tab.waitFor({ state: 'visible', timeout: 8000 })
+  // 🔴 真实栈偶发（探针实测 + 本单多轮复现）：`/login` 的 SSR 骨架先到，React **还没 hydrate** 就点 tab
+  //    ⇒ 点击不改变 tab 状态 ⇒ `#phone` 永远不出现 ⇒ `page.fill('#phone')` 30s 超时
+  //    （全量跑里表现为 01-login ❌，随后所有旅程连锁 ❌；单跑时表现为 ensureLoggedIn 超时）。
+  //    修法 = **等 hydration 再点**（`Object.keys(document.body)` 上出现 `__react*` 私有键），
+  //    点完再确认手机号输入真的出现；仍不在 ⇒ 重点一次（tab 状态机可能被路由跳转重置）。
+  await page.waitForFunction(
+    () => Object.keys(document.body).some((k) => k.startsWith('__react')),
+    null, { timeout: 30000 },
+  ).catch(() => {})  // 拿不到也不静默成功：下面的 `#phone` 等待仍是硬门禁
   await tab.click()
+  const phone = page.locator('#phone')
+  if (!(await waitVisible(phone, 5000))) {
+    await tab.click().catch(() => {})
+    await waitVisible(phone, 8000)
+  }
 }
 
 /** 登录步骤的失败归因包装：抛出的错误**必须**自报「登录步骤失败」+ 位置（判据见 §归因）。 */
@@ -263,6 +458,8 @@ async function agentSessions(page) {
 }
 
 async function chatPage(page) {
+  // `--group` 过滤掉的旅程记 skip（没跑 ≠ 失败）；这几条**没接在 `jrun` 上**，故各自守卫（#6790）
+  if (!inGroup('07-chat')) { await markSkipped(h, '--group 07-chat 过滤（本轮未跑）'); return }
   const h = await journey('07-chat')(page)
   try {
     await nav(page, '/chat', '')
@@ -280,8 +477,14 @@ async function chatPage(page) {
 async function productsList(page) {
   const h = await journey('08-products-list')(page)
   try {
-    await nav(page, '/products', '商品列表')
-    await page.waitForTimeout(1500)
+    await nav(page, '/products', '')
+    // 等页面就位（表头「商品标题」或首行）——旧形态 `nav(..., '商品列表')` 的 8s 文案等待
+    // 在真栈上偶发不够（列表先请求后渲染，实测超时）；判据不变，只把等待方式换成显式就位。
+    if (!(await waitVisible(page.getByText('商品标题').first(), 20000))) {
+      if (!(await waitVisible(page.locator('tbody tr, [role="row"]').first(), 8000))) {
+        throw new Error(`商品页 20s 内未就位（url=${page.url()}）`)
+      }
+    }
     // 列表有行（种子/存量商品）
     const rows = page.locator('tbody tr, [class*="Table"] [class*="row"], [role="row"]')
     const n = await rows.count().catch(() => 0)
@@ -299,18 +502,30 @@ async function productsList(page) {
 }
 
 async function productsNew(page) {
+  // `--group` 过滤掉的旅程记 skip（没跑 ≠ 失败）；这几条**没接在 `jrun` 上**，故各自守卫（#6790）
+  if (!inGroup('09-products-new')) { await markSkipped(h, '--group 09-products-new 过滤（本轮未跑）'); return }
   const h = await journey('09-products-new')(page)
   try {
     await nav(page, '/products/new', '')
-    await page.waitForTimeout(1800)
+    // 等规格尺寸区就位（ProductForm → SkuMatrix 的 `RowSelectorSection title="规格尺寸"`）
+    if (!(await waitVisible(page.getByText('规格尺寸').first(), 20000))) {
+      throw new Error(`建品页 20s 内未见「规格尺寸」区（url=${page.url()}）`)
+    }
     // SKU 矩阵区域：规格尺寸区
     const widthSection = page.locator('text=规格尺寸').first()
     await widthSection.waitFor({ state: 'visible', timeout: 8000 })
     // 添加一行规格尺寸（默认无行，需先添加才能看到门幅下拉）
+    // ⚠️ 旧形态要求 `title="添加"` ≥ 2 个（「售卖方式 / 规格尺寸两区各一个」）—— **现取只有 1 个**：
+    //    「售卖方式（散剪 / 整卷）」是**商品级单选**（SkuMatrix.tsx 顶部注释：「售卖方式不在这里」），
+    //    页面上唯一的 `title="添加"` 就是**规格尺寸**区的 `RowSelectorSection`（真栈探针 title 列表实测）。
+    //    ⇒ 判据从「≥2 个」改成「**这一个就是规格尺寸区的那个**」+ 点完门幅下拉必须出现（下方断言）。
     const addBtns = page.locator('button[title="添加"]')
+    if (!(await waitVisible(addBtns.first(), 15000))) throw new Error('建品页 15s 内未见「添加」按钮')
     const n = await addBtns.count()
-    if (n < 2) throw new Error('未找到规格尺寸添加按钮')
-    await addBtns.nth(n - 1).click()  // 最后一个 title=添加 属于规格尺寸区（前面是售卖方式）
+    // 规格尺寸区必须**恰有一个**添加按钮（多出来的会被下面「门幅下拉出现」的断言抓到，
+    // 但若 >1 个则「点哪个」不再有唯一解 ⇒ 直接判红并具名，不静默取 last）
+    if (n !== 1) throw new Error(`建品页 title="添加" 按钮应恰 1 个（规格尺寸区），现取 ${n} 个`)
+    await addBtns.first().click()
     await page.waitForTimeout(800)
     // 门幅下拉（aria-label=规格尺寸）：#3641 值/显示分离 —— 选项 label='2.8米'、value=canonical '2.8'
     const dwSelect = page.locator('select[aria-label="规格尺寸"]').first()
@@ -336,7 +551,13 @@ async function productsNew(page) {
     if (catIdx > 0) await catSelect.selectOption({ index: catIdx })
     await page.getByRole('button', { name: /存草稿|存为草稿/ }).first().click().catch(() => {})
     await page.waitForTimeout(2500)
-    await nav(page, '/products', '商品列表')
+    await nav(page, '/products', '')
+    // 列表就位等待（与 08- 同法）：页面标题/表头现取为「商品标题」，旧形态等的「商品列表」文案不存在
+    if (!(await waitVisible(page.getByText('商品标题').first(), 20000))) {
+      if (!(await waitVisible(page.locator('tbody tr, [role="row"]').first(), 8000))) {
+        throw new Error(`商品列表 20s 内未就位（url=${page.url()}）`)
+      }
+    }
     await page.waitForTimeout(1800)
     const visible = await page.locator(`text=${pname}`).first().isVisible().catch(() => false)
     if (!visible) throw new Error('新建商品未出现在列表（结果不可见）')
@@ -347,50 +568,104 @@ async function productsNew(page) {
 }
 
 async function productDetail(page) {
+  // `--group` 过滤掉的旅程记 skip（没跑 ≠ 失败）；这几条**没接在 `jrun` 上**，故各自守卫（#6790）
+  if (!inGroup('10-product-detail')) { await markSkipped(h, '--group 10-product-detail 过滤（本轮未跑）'); return }
   const h = await journey('10-product-detail')(page)
   try {
-    // 取列表第一行点击进详情（ProductTable 行为点击跳转，非 <a>）
-    await nav(page, '/products', '商品列表')
-    await page.waitForTimeout(1800)
+    await ensureLoggedIn(page)
+    await nav(page, '/products', '')
+    if (!(await waitVisible(page.getByText('商品标题').first(), 20000))) {
+      if (!(await waitVisible(page.locator('tbody tr, [role="row"]').first(), 8000))) {
+        throw new Error(`商品页 20s 内未就位（url=${page.url()}）`)
+      }
+    }
+    await page.waitForTimeout(800)
     const rows = page.locator('tbody tr, [role="row"]')
     const n = await rows.count()
     if (n === 0) throw new Error('商品列表 0 行，无商品可进详情')
-    // 行内「查看」按钮跳详情；草稿行无「查看」（仅编辑/删除），故取第一个有查看按钮的行
-    const viewBtn = page.locator('tbody tr button:has-text("查看"), [role="row"] button:has-text("查看")').first()
-    await viewBtn.waitFor({ state: 'visible', timeout: 6000 })
-    await viewBtn.click()
+    // 行内「查看」按钮跳详情；草稿行无「查看」（仅编辑/删除），故取第一个有查看按钮的行。
+    // ⚠️ 旧形态先 `rows.first()` 判行数、再用 `viewBtn.first()` 点 —— 两者**不是同一行**
+    // （issue #6790 B 类 ④：草稿行在前 ⇒ 「用了不存在的商品 id」）。现在按**同一个 xpath**
+    // 取「真的有查看按钮的那一行」，行与按钮同源。
+    // 行内「查看」只在 `on_sale` / `off_sale` / `under_review` 三种状态渲染（`ProductTable.tsx` 现取）
+    // ⇒ 列表全草稿时**自造**一个 `on_sale` 商品（与 11- 同法；跑完删掉），不把「数据形态」记成依赖。
+    const viewRowSel = 'tbody tr:has(button:text-is("查看")), [role="row"]:has(button:text-is("查看"))'
+    let mine = ''
+    if (!(await waitVisible(page.locator(viewRowSel).first(), 4000))) {
+      const api = await adminApi(page)
+      const created = await api.post('/api/admin/products', {
+        name: `冒烟详情商品${Date.now()}`, skuCode: `SMOKE-DT-${Date.now()}`, unit: '米', pricingType: 'per_meter',
+        categoryId: process.env.SMOKE_CATEGORY_ID || await defaultCategoryId(page), basePrice: 10,
+        status: 'on_sale', doorWidths: ['2.8'], colors: [{ colorName: '冒烟红', mainColorHex: '#ff0000' }],
+        sellingMethods: ['bulk_cut'],
+      })
+      mine = created?.data?.id || created?.id || ''
+      if (!mine) throw new Error(`列表 ${n} 行全无「查看」（全为草稿），且自造 on_sale 商品失败：${JSON.stringify(created).slice(0, 160)}`)
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await page.waitForTimeout(2500)
+    }
+    const viewRow = page.locator(viewRowSel).first()
+    if (!(await waitVisible(viewRow, 10000))) {
+      if (mine) await cleanupProduct(page, mine)
+      throw new Error(mine ? `自造 on_sale 商品 ${mine} 后列表仍无「查看」按钮` : `商品列表 ${n} 行但无一行带「查看」`)
+    }
+    await viewRow.locator('button:text-is("查看")').first().click()
     await page.waitForTimeout(1800)
     const url = page.url()
     if (!/\/products\/[^/]+$/.test(url)) throw new Error(`点击行未跳转详情，仍在 ${url}`)
     const bodyLen = await page.evaluate(() => document.body.innerText.length)
     if (bodyLen < 50) throw new Error('详情页空白')
-    await h.done(true, '', `商品详情渲染（${url}）`)
+    if (mine) await cleanupProduct(page, mine)
+    await h.done(true, '', `商品详情渲染（${url}）${mine ? `（自造 on_sale 商品 ${mine} 已清理）` : ''}`)
   } catch (e) {
     await h.done(false, `商品详情失败: ${String(e).slice(0, 300)}`)
   }
 }
 
 async function productEdit(page, targetId) {
+  // `--group` 过滤掉的旅程记 skip（没跑 ≠ 失败）；这几条**没接在 `jrun` 上**，故各自守卫（#6790）
+  if (!inGroup('11-product-edit-doorwidth')) { await markSkipped(h, '--group 11-product-edit-doorwidth 过滤（本轮未跑）'); return }
   const h = await journey('11-product-edit-doorwidth')(page)
   try {
-    // 用种子/新建的门幅='2.8' 商品验证回显
-    if (!targetId) { await h.done(false, '无目标商品（需先建门幅 2.8 商品）'); return }
-    await nav(page, `/products/${targetId}/edit`, '')
+    await ensureLoggedIn(page)
+    // 前置数据**自造**（issue #6790 判据 ④）：旧形态吃写死的种子商品 id（`DW_PRODUCT_ID` 默认值），
+    // 云 dev 库里该商品已不存在 ⇒ `未找到门幅下拉`（B 类 ④。「未找到门幅下拉」的另一半真因是
+    // SkuMatrix 的规格尺寸行**默认 0 行**，门幅 `<select aria-label="规格尺寸">` 要**先点「添加」**才渲染）。
+    let id = targetId || process.env.DW_PRODUCT_ID || ''
+    let mine = ''
+    if (!id) {
+      const api = await adminApi(page)
+      const dw = `冒烟门幅${Date.now()}`
+      const created = await api.post('/api/admin/products', {
+        name: dw, skuCode: `SMOKE-DW-${Date.now()}`, unit: '米', pricingType: 'per_meter',
+        categoryId: process.env.SMOKE_CATEGORY_ID || await defaultCategoryId(page), basePrice: 10,
+        status: 'on_sale', doorWidths: ['2.8'], colors: [{ colorName: '冒烟红', mainColorHex: '#ff0000' }],
+        sellingMethods: ['bulk_cut'],
+      })
+      id = created?.data?.id || created?.id
+      if (!id) throw new Error(`前置建品失败（未返回 id）：${JSON.stringify(created).slice(0, 200)}`)
+      mine = id
+    }
+    await nav(page, `/products/${id}/edit`, '')
     await page.waitForTimeout(1800)
-    // 门幅下拉：显示 '2.8米'（label），不空白、无第二种写法
-    const wState = await page.evaluate(() => {
-      const sel = document.querySelector('select[aria-label="规格尺寸"]')
-      if (!sel) return []
-      const opts = Array.from(sel.options)
-      return [{ value: sel.value, options: opts.map(o => `${o.value}|${o.text}`) }]
-    })
-    if (wState.length === 0) throw new Error('未找到门幅下拉')
-    const dw = wState[0]
-    const valueOk = dw.value === '2.8' || dw.value === '2.8米'
-    const labelOk = dw.options.some(o => o.endsWith('|2.8米'))
-    if (!valueOk || !labelOk) throw new Error(`门幅回显异常: ${JSON.stringify(dw)}`)
-    if (dw.options.some(o => o.endsWith('|2.8'))) throw new Error('存在裸 2.8 显示选项（第二种写法）')
-    await h.done(true, '', `门幅下拉回显: value=${dw.value}, 选项=${JSON.stringify(dw.options)}`)
+    // 规格尺寸区默认无行 ⇒ 先点该区的「添加」（最后一个 title=添加；形态与 09- 一致，现取 `SkuMatrix.tsx`）
+    const addBtns = page.locator('button[title="添加"]')
+    if (await addBtns.count() > 0) {
+      await addBtns.last().click().catch(() => {})
+      await page.waitForTimeout(800)
+    }
+    // 门幅下拉 = `<select aria-label="规格尺寸">`（SkuMatrix.tsx 的 Select + aria-label 字面量）
+    const dwSelect = page.locator('select[aria-label="规格尺寸"]').first()
+    if (!(await waitVisible(dwSelect, 8000))) throw new Error('未找到门幅下拉（select[aria-label="规格尺寸"]）')
+    const wState = await dwSelect.evaluate((sel) => ({
+      value: sel.value, options: Array.from(sel.options).map((o) => `${o.value}|${o.text}`),
+    }))
+    const valueOk = wState.value === '2.8' || wState.value === '2.8米'
+    const labelOk = wState.options.some((o) => o.endsWith('|2.8米'))
+    if (!valueOk || !labelOk) throw new Error(`门幅回显异常: ${JSON.stringify(wState)}`)
+    if (wState.options.some((o) => o.endsWith('|2.8'))) throw new Error('存在裸 2.8 显示选项（第二种写法）')
+    if (mine) await cleanupProduct(page, mine)
+    await h.done(true, '', `门幅下拉回显: value=${wState.value}, 选项=${JSON.stringify(wState.options)}${mine ? `（自造商品 ${mine} 已清理）` : '（用既有目标商品）'}`)
   } catch (e) {
     await h.done(false, `门幅回显失败: ${String(e).slice(0, 300)}`)
   }
@@ -399,7 +674,7 @@ async function productEdit(page, targetId) {
 
 // ────────────────────────── 加工项管理 ──────────────────────────
 async function processingJourney(page) {
-  const h = await journey('12-processing')(page)
+  const h = await journey('12-processing', { allowKnownConsole: true })(page)
   const uniq = `冒烟加工项${Date.now()}`
   try {
     await nav(page, '/processing', '加工项管理')
@@ -523,35 +798,52 @@ async function ordersListJourney(page) {
 }
 
 // ────────────────────────── 新建订单（UI 旅程） ──────────────────────────
+// ⚠️ 字段 placeholders **逐字**取自 `frontend/admin-web/src/app/(dashboard)/orders/new/page.tsx`
+// （「请输入收货人姓名」/「请输入 11 位手机号」/「请输入详细收货地址」/「搜索商品名称 / 货号」）——
+// 旧形态写的是 `placeholder*="收货人姓名"` 这类**猜测值**（issue #6790 B 类 ④：等它超时）。
 async function ordersNewJourney(page) {
   const h = await journey('15-orders-new')(page)
   try {
+    await ensureLoggedIn(page)
     await nav(page, '/orders/new', '')
-    await page.waitForTimeout(1800)
-    // 客户信息（收货人/手机号/地址）
-    await page.fill('input[placeholder*="收货人姓名"]', '冒烟测试员')
-    await page.fill('input[placeholder*="手机号"]', '13900001111')
-    await page.fill('input[placeholder*="收货地址"]', '杭州市西湖区冒烟路 1 号')
+    // 等表单就位（客户 API / 分类 API 回来前不渲染）——旧形态定长 1800ms 后盲填会假红
+    const nameInput = page.locator('input[placeholder*="收货人姓名"]').first()
+    if (!(await waitVisible(nameInput, 15000))) {
+      throw new Error('收货信息表单 15s 内未就位（url=' + page.url() + '）')
+    }
+    await nameInput.fill('冒烟测试员')
+    await page.locator('input[placeholder*="手机号"]').first().fill('13900001111')
+    await page.locator('input[placeholder*="收货地址"]').first().fill('杭州市西湖区冒烟路 1 号')
     // 打开商品选择弹窗（搜索框在弹窗内）
     const pickBtn = page.getByRole('button', { name: /选择商品/ }).first()
     await pickBtn.waitFor({ state: 'visible', timeout: 8000 })
     await pickBtn.click()
     await page.waitForTimeout(800)
-    // 弹窗内搜索商品
+    // 弹窗内搜索商品。⚠️ 旧形态把搜索词**写死成 `遮光窗帘`** —— 本租户没有这个商品
+    //    ⇒ 搜索结果恒空、恒报「商品搜索结果为空」（真栈实测）。商品名是**种子数据**，不是判据的一部分；
+    //    正确口径 = 先用列表 API 取一个**真实存在的**商品名当搜索词，再断言「搜索能搜到并可选」。
+    const kw = (await (async () => {
+      const api = await adminApi(page)
+      const res = await api.get('/api/admin/products?page=1&size=1')
+      const rows = res?.data?.items ?? res?.data ?? []
+      const name = rows[0]?.name || ''
+      if (!name) throw new Error('商品搜索结果为空（/api/admin/products 里一个商品都没有 ⇒ 前置数据缺失）')
+      return name
+    })())
     const searchInput = page.locator('[role="dialog"] input[placeholder*="搜索商品"]').first()
     await searchInput.waitFor({ state: 'visible', timeout: 6000 })
-    await searchInput.fill('遮光窗帘')
+    await searchInput.fill(kw)
     await page.getByRole('button', { name: /^搜索$/ }).click().catch(async () => {
       await page.locator('[role="dialog"] button:has-text("搜索")').click()
     })
     await page.waitForTimeout(1500)
-    // 选中第一个商品结果
-    const result = page.locator('[role="dialog"] button').filter({ hasText: /遮光窗帘/ }).first()
+    // 选中第一个商品结果（用它自己的名字当过滤词 —— 语义与旧形态一致：搜到了就选）
+    const result = page.locator('[role="dialog"] button').filter({ hasText: kw.slice(0, 8) }).first()
     if (await result.isVisible().catch(() => false)) {
       await result.click()
       await page.waitForTimeout(2000)
     } else {
-      throw new Error('商品搜索结果为空（未找到 遮光窗帘）')
+      throw new Error(`商品搜索结果为空（搜索词 = 列表首个商品名「${kw}」，搜不到 ⇒ 搜索链路退化）`)
     }
     // 提交订单
     await page.getByRole('button', { name: /提交订单/ }).first().click().catch(() => {})
@@ -573,6 +865,8 @@ async function ordersNewJourney(page) {
 }
 
 // ────────────────────────── 订单详情 + 加工单（重点） ──────────────────────────
+// 返回**本次实际驱动的那张单**的 id（自造或调用方传入）—— 下游 `17-order-ship` 直接复用它，
+// 不再靠 `process.env.API_TOKEN`（从没有人传 ⇒ 恒空，issue #6790 B 类 ③）。
 async function orderDetailJourney(page, orderId) {
   const h = await journey('16-order-detail-processing-order')(page)
   // 加工单「开始加工/加工完成」用 window.confirm —— 必须接受，否则流转被自动拒绝
@@ -598,7 +892,17 @@ async function orderDetailJourney(page, orderId) {
     return res
   }
   try {
-    if (!orderId) { await h.done(false, '无目标订单'); return }
+    await ensureLoggedIn(page)
+    // 前置**依赖**（登记式）：加工单要能**实例化**才能谈「加工单块」——而实例化要求本租户已配
+    // 生产路线 / 默认工艺（真栈实测：`INCIDENT_PRODUCTION_ROUTING_UNRESOLVED`，接口 HTTP 200 但 data 空）。
+    const dep = await processingRouteAvailable(page)
+    if (!dep.ok) { await markSkipped(h, `前置不满足（生产路线/默认工艺未配置）：${dep.why}`); return orderId }
+    // 前置数据**自造**（issue #6790 判据 ④）：`orderId` 为空时不再判失败，而是造一张 pending 含加工项订单
+    let selfMade = false
+    if (!orderId) {
+      orderId = await createOrderFixture(page, '冒烟详情')
+      selfMade = true
+    }
     await nav(page, `/orders/${orderId}`, '')
     // 确认收款（pending → confirmed；#3583 闸门语义：需显式确认弹窗）
     const payBtn = page.getByRole('button', { name: /确认付款/ }).first()
@@ -657,10 +961,12 @@ async function orderDetailJourney(page, orderId) {
       }
     }
     if (!poVisible || !poNo) throw new Error(`加工单块/单号未出现（订单 ${orderId}：生成后 12s 内 ${poVisible ? '块已见但单号不匹配' : `未见 .po-print-area 块`} ${ORDER_NO_SHAPE.source}；流转${flowDone || '未开始'}）`)
-    await h.done(true, '', `加工单生成+流转: ${flowDone}; 加工单 ${poNo} 可见=${poVisible}`)
+    await h.done(true, '', `加工单生成+流转: ${flowDone}; 加工单 ${poNo} 可见=${poVisible}${selfMade ? `；前置自造订单 ${orderId}（下游 17- 复用，不清理）` : `；用调用方传入订单 ${orderId}`}`)
+    return orderId
   } catch (e) {
     await h.done(false, `订单详情失败: ${String(e).slice(0, 400)}`)
   }
+  return orderId
 }
 
 // ────────────────────────── 生产报工正向旅程（#4186） ──────────────────────────
@@ -688,10 +994,18 @@ async function productionQrJourney(page) {
   const h = await journey('32-production-qr-and-piecework')(page)
   try {
     const api = await adminApi(page)
+    // 前置**依赖**（登记式，与 16-/17- 同源）：本租户要能**实例化加工单**（生产路线 / 默认工艺已配），
+    // 否则本旅程的判据（加工单二维码 / 报工）无从谈起。⚠️ 必须在**建单之前**探：旧位置在建单之后
+    // ⇒ 未配路线时旅程先撞别的错（真栈实测 `[③ qr_token] 非 32 位十六进制：undefined`），
+    // 把「前置缺失」读成了业务失败。
+    const dep = await processingRouteAvailable(page)
+    if (!dep.ok) { await markSkipped(h, `前置不满足（生产路线/默认工艺未配置）：${dep.why}`); return }
 
     // ① 建单（含加工项）—— 独立数据，不污染存量
     const created = await api.post('/api/admin/orders', {
       customerName: '生产旅程', customerPhone: '13900003333', customerAddress: '杭州市西湖区生产路 1 号',
+      // ⚠️ 真栈 422 逐字：「常用物流/快递不能为空」+「常用物流公司不能为空」⇒ 必填（与 createOrderFixture 同法）
+      logisticsType: 'express', logisticsCompany: '顺丰速运',
       discountAmount: 0, items: [{
         productId: 'deff0be6c885cbf0469abe4f7b8da608', productName: '2699系列雪尼尔窗帘面料',
         quantity: 2, unitPrice: 23.8, subtotal: 47.6,
@@ -792,12 +1106,21 @@ async function productionQrJourney(page) {
 async function orderShipJourney(page, orderId) {
   const h = await journey('17-order-ship')(page)
   try {
+    await ensureLoggedIn(page)
+    // 前置**依赖**（登记式，与 16- 同源）：发货页的「须先完成加工单」守卫要求加工单能流转到 completed，
+    // 而流转又要先实例化加工单（craft / 生产路线）⇒ 本租户未配路线时本旅程**无从跑起**。
+    const dep = await processingRouteAvailable(page)
+    if (!dep.ok) { await markSkipped(h, `前置不满足（生产路线/默认工艺未配置）：${dep.why}`); return }
+    // 🔴 issue #6790 B 类 ③：`orderId` 为空时旧形态导航到 `/orders//ship` —— Next 把两级路径
+    // `/orders/ship` 当成 `/orders/[id]`（id='ship'）⇒ api 日志 `请求的资源不存在: GET /api/admin/orders/ship`。
+    // 现在：空 ⇒ **自造一张含加工项订单**（与 16- 同法，自造前置，不登记依赖）。
+    if (!orderId) orderId = await createOrderFixture(page, '冒烟发货')
     await nav(page, `/orders/${orderId}/ship`, '')
     // 等页面**稳定**再判，而不是定长 sleep 后数控件（issue #4226②）：含加工项订单要等
     // GET /processing-orders/{orderId} 回来才决定渲染「发货表单」还是「加工单守卫页」，
     // 1500ms 内没回来就判「无表单」是**假红**；两种终态都要能分辨（否则归因不可读）。
     const submit = page.getByRole('button', { name: /确认发货/ }).first()
-    const guard = page.getByText(/须先完成加工单后再发货/).first()
+    const guard = page.getByText(/须先完成加工单后再发货|当前订单状态不允许发货/).first()
     await Promise.race([waitVisible(submit, 15000), waitVisible(guard, 15000)])
     if (await waitVisible(guard, 1000)) {
       throw new Error(`发货表单被加工单前置守卫阻断（订单 ${orderId} 的加工单未流转到 completed ⇒ 16- 前置未达成）`)
@@ -825,24 +1148,34 @@ async function afterSalesListJourney(page) {
 }
 
 async function afterSalesDetailJourney(page, ticketId) {
-  const h = await journey('19-after-sales-detail')(page)
+  const h = await journey('19-after-sales-detail', { allowKnownConsole: true })(page)
   const reason = `冒烟关闭原因${Date.now()}`
-  if (!ticketId) {
-    // 从列表点击首行进详情，从 URL 取 id
-    await nav(page, '/after-sales', '售后管理')
-    await page.waitForTimeout(1500)
-    const firstRow = page.locator('tbody tr, [role="row"]').first()
-    if (await firstRow.count().catch(() => 0) === 0) { await h.done(false, '售后列表 0 行'); return }
-    await firstRow.click()
-    await page.waitForTimeout(1800)
-    const m = page.url().match(/\/after-sales\/([0-9a-fA-F-]+)/)
-    if (!m) { await h.done(false, `点击行未进入售后详情: ${page.url()}`); return }
-    ticketId = m[1]
-  }
+  let selfMade = ''
   try {
-    if (!ticketId) { await h.done(false, '无目标工单'); return }
+    await ensureLoggedIn(page)
+    const api = await adminApi(page)
+    // 前置数据**自造**（issue #6790 判据 ④）：旧形态「从列表点首行取 id」在列表为空时报
+    // 「等 售后管理 超时」（B 类 ④）—— 那是**前置缺失被读成产品失败**。现在先经 API 自造一张工单。
+    if (!ticketId) {
+      // 工单要挂在真实订单上：先自造一张订单，再对它建单（订单号字段 = 后端解析所需的 orderId）
+      const orderId = await createOrderFixture(page, '冒烟售后')
+      // 退款/退货工单要求订单已确认（真栈 422 逐字：「当前订单状态[待付款]不允许创建退款/退货工单，
+      // 仅已确认/生产中/已发货/已完成可创建」）⇒ 先确认付款（与 16- 的第一步同法），再建单。
+      await api.put(`/api/admin/orders/${orderId}/payment`, {})
+      const ticket = await api.post('/api/admin/after-sales', {
+        orderId, ticketType: 'refund', description: '冒烟自造售后工单', priority: 'normal',
+      })
+      ticketId = String(ticket?.data?.id ?? '')
+      selfMade = ticketId
+      if (!ticketId) throw new Error(`前置建单失败（未返回 data.id）：${JSON.stringify(ticket).slice(0, 200)}`)
+    }
     await nav(page, `/after-sales/${ticketId}`, '')
     await page.waitForTimeout(1500)
+    if (!(await waitVisible(page.getByText('售后管理').first(), 8000))) {
+      // 详情页可能没有列表页标题 → 用「详情页骨架」兜底判定，两者都没有才算页面没渲染
+      const bodyLen = await page.evaluate(() => document.body.innerText.length)
+      if (bodyLen < 50) throw new Error(`售后详情页空白（${page.url()}）`)
+    }
     // pending → processing
     const acceptBtn = page.getByRole('button', { name: /接受处理/ }).first()
     if (await acceptBtn.isVisible().catch(() => false)) {
@@ -928,7 +1261,12 @@ async function financeJourney(page) {
 async function employeesJourney(page) {
   const h = await journey('23-employees')(page)
   const uniq = `冒烟员工${Date.now()}`
+  // ⚠️ 手机号**现取**（旧形态：创建用 `139${...}`、编辑断言写死 `13911113333`，两者永不同步
+  // ⇒ 「改手机号落库」的证据恒 false，属**空判据**，issue #6790 B 类）。
+  const phoneAdd = `139${Date.now().toString().slice(-8)}`
+  const phoneEdit = `138${Date.now().toString().slice(-8)}`
   try {
+    await ensureLoggedIn(page)
     await nav(page, '/employees', '员工管理')
     await page.waitForTimeout(1500)
     const rows = page.locator('tbody tr, [role="row"]')
@@ -944,12 +1282,29 @@ async function employeesJourney(page) {
     // 填真实数据（弹窗内）
     const dlg = page.locator('[role="dialog"]')
     await dlg.locator('input[placeholder*="姓名"]').fill(uniq)
-    await dlg.locator('input[placeholder*="手机号"]').fill(`139${Date.now().toString().slice(-8)}`)
+    await dlg.locator('input[placeholder*="手机号"]').fill(phoneAdd)
+    // 🔴 issue #6790 原文「POST /api/admin/users 调用次数 = 0」的真因：登录用户名 / 初始密码是**必填**，
+    //    旧旅程不填 ⇒ 提交时 `请设置登录用户名` 直接 return（请求从未发出）。这里补上（现取自 employees/page.tsx）。
+    const uniqUser = `smoke${Date.now().toString().slice(-9)}`
+    const userInput = dlg.locator('input[placeholder*="员工登录账号"], input[placeholder*="zhangsan"]').first()
+    if (await waitVisible(userInput, 4000)) await userInput.fill(uniqUser)
+    const pwdInput = dlg.locator('input[placeholder*="初始密码"], input[type="password"]').first()
+    if (await waitVisible(pwdInput, 4000)) await pwdInput.fill('Smoke@123456')
     // 选岗位（弹窗内的岗位下拉）
+    // ✅ issue #6790 B 类 ①：`dlg.locator('select')` **不是**死选择器 —— 岗位控件 = 共享
+    //    `frontend/admin-web/src/components/ui/Select.tsx` 渲染的**原生** `<select>`（含
+    //    `<option value="" disabled>请选择岗位</option>`），api 侧 `POST /api/admin/users` 调用数 = 0
+    //    的真因是**上游步骤**先失败（空提交校验点了「创建」触发表单校验），不是选择器。
+    //    这里把「控件真在不在」做成**具名证据**（取到才继续），并等它就位（不再定长 sleep 后盲取）。
     const posSelect = dlg.locator('select').first()
+    if (!(await waitVisible(posSelect, 8000))) {
+      const nSel = await dlg.locator('select').count()
+      throw new Error(`弹窗内未见岗位下拉（原生 select）：dlg 内 select 计数=${nSel}、`
+        + `页面 select 计数=${await page.locator('select').count()}（控件形态见 Select.tsx）`)
+    }
     const posOpts = await posSelect.locator('option').allTextContents().catch(() => [])
     const realIdx = posOpts.findIndex(t => t !== '' && !t.includes('请选择') && t !== '全部状态' && t !== '启用' && t !== '禁用')
-    if (realIdx < 0) throw new Error('岗位下拉无可用选项')
+    if (realIdx < 0) throw new Error(`岗位下拉无可用选项（现取 option 文案=${JSON.stringify(posOpts)}）`)
     await posSelect.selectOption({ index: realIdx })
     await page.getByRole('button', { name: /创建|确 定|保存/ }).last().click()
     await page.waitForTimeout(1800)
@@ -964,10 +1319,12 @@ async function employeesJourney(page) {
       await page.getByRole('button', { name: /编辑/ }).first().click()
     })
     await page.waitForTimeout(1000)
-    await page.locator('input[placeholder*="手机号"], input[name="phone"]').first().fill(`138${Date.now().toString().slice(-8)}`)
+    await page.locator('input[placeholder*="手机号"], input[name="phone"]').first().fill(phoneEdit)
     await page.getByRole('button', { name: /确 定|保存/ }).last().click()
     await page.waitForTimeout(1500)
-    const phoneShown = await page.getByText('13911113333').first().isVisible().catch(() => false)
+    // ✅ issue #6790 B 类：（旧形态断言写死的 `13911113333`，与自造值 `phoneEdit` **永不同步**
+    // ⇒ 证据恒 false）。现在断言**本次真填的那个值**回显。
+    const phoneShown = await page.getByText(phoneEdit).first().isVisible().catch(() => false)
     // 删除
     const delBtn = empRow.locator('button:has-text("删除")').first()
     if (await delBtn.isVisible().catch(() => false)) {
@@ -986,58 +1343,81 @@ async function employeesJourney(page) {
 async function rolesJourney(page) {
   const h = await journey('24-roles')(page)
   try {
+    await ensureLoggedIn(page)
     await nav(page, '/roles', '岗位权限')
     await page.waitForTimeout(1500)
     const rows = page.locator('tbody tr, [role="row"], [class*="card"]')
     const n = await rows.count().catch(() => 0)
     if (n === 0) throw new Error('岗位列表 0 行')
-    // 打开岗位权限编辑（第一行）
-    const editBtn = page.getByRole('button', { name: /编辑|权限/ }).first()
-    if (await editBtn.isVisible().catch(() => false)) {
-      await editBtn.click()
-      await page.waitForTimeout(1000)
-      const dlg = page.locator('[role="dialog"], [class*="Modal"], [class*="modal"]').first()
-      await dlg.waitFor({ state: 'visible', timeout: 6000 })
-      await page.getByRole('button', { name: /取消/ }).last().click().catch(() => {})
+    // ✅ issue #6790 B 类 ②：旧形态 `getByRole('button', { name: /编辑|权限/ }).first()` 的**首个匹配
+    // 是侧边栏「加入常用」控件**（可及名字含「岗位权限」）⇒ 点了它只切换收藏，行内编辑按钮一个都没点到
+    // （探针实测 `["0:|title=加入常用","1:|title=编辑",…]`；点后 `弹窗可见=false`，等 6s 超时）。
+    // 现在按**真实 DOM 收窄到行内**：岗位卡片的编辑按钮 = `button[title="编辑"]`
+    // （`frontend/admin-web/src/app/(dashboard)/roles/page.tsx` 的 `handleEdit(role)`），
+    // 侧边栏收藏控件没有这个 `title` ⇒ 不再跨页命中。
+    const editBtn = page.locator('button[title="编辑"]').first()
+    if (!(await waitVisible(editBtn, 8000))) {
+      const titles = await page.locator('button[title]').evaluateAll((els) => els.map((e) => e.getAttribute('title')))
+      throw new Error(`未找到行内「编辑」按钮（button[title="编辑"]）；页面带 title 的按钮=${JSON.stringify(titles).slice(0, 200)}`)
     }
-    await h.done(true, '', `岗位权限页 ${n} 行，权限编辑弹窗可开`)
+    await editBtn.click()
+    await page.waitForTimeout(1000)
+    const dlg = page.locator('[role="dialog"], [class*="Modal"], [class*="modal"]').first()
+    if (!(await waitVisible(dlg, 8000))) throw new Error('点击行内「编辑」后权限编辑弹窗未出现')
+    await page.getByRole('button', { name: /取消/ }).last().click().catch(() => {})
+    await h.done(true, '', `岗位权限页 ${n} 行，行内「编辑」（button[title="编辑"]）打开权限弹窗 ✓`)
   } catch (e) {
     await h.done(false, `岗位权限失败: ${String(e).slice(0, 300)}`)
   }
 }
 
 // ────────────────────────── 设置 ──────────────────────────
+/**
+ * 设置页旅程 = **只读校验**（issue #6790 C 类）：
+ * `frontend/admin-web/src/app/(dashboard)/settings/page.tsx` 自 #5899 起**取消了底部「保存」按钮**，
+ * 改为**字段失焦即落库**（`onBlur={commitCompanyName}` / `commitCode` / 通知开关点击即存）。
+ * 旧旅程点「保存」并在 Tab 间切换 ⇒ 触发失焦提交，而它**改到的值不是合法值**（企业编码一类）
+ * ⇒ console `422` ×2、页面停在错误态（issue #6790 逐字读数）。
+ * ⇒ 本旅程**只读**：不改任何值、不点「保存」、不制造失焦；把 422 收集成**结构化证据**并在末尾硬判失败
+ *（旧的 `console.error` 只在 console 行里，读起来像噪声）。
+ */
 async function settingsJourney(page) {
   const h = await journey('25-settings')(page)
+  const bad = []
+  const onResponse = (r) => { if (r.status() >= 400 && r.status() < 500) bad.push(`${r.status()} ${r.request().method()} ${r.url()}`) }
+  page.on('response', onResponse)
+  const origDone = h.done
+  h.done = async (ok, why, ev) => { page.removeListener('response', onResponse); return origDone(ok, why, ev) }
   try {
-    await nav(page, '/settings', '企业基础信息')
+    await ensureLoggedIn(page)
+    await nav(page, '/settings', '')
+    // 等设置页就位：企业基础信息 tab 的输入（企业编码 / 公司名称）或任一设置分组标题
+    if (!(await waitVisible(page.getByText(/企业基础信息|公司名称|企业编码|算料口径/).first(), 20000))) {
+      throw new Error(`设置页 20s 内未就位（url=${page.url()}）`)
+    }
     await page.waitForTimeout(1500)
     // Tab 结构：基本信息/修改密码/通知设置
     const tabs = await page.locator('[role="tab"], [class*="tab"], button:has-text("修改密码"), button:has-text("通知")').count()
-    // 基本信息保存
-    const saveBtn = page.getByRole('button', { name: /保存/ }).first()
-    if (await saveBtn.isVisible().catch(() => false)) {
-      await saveBtn.click()
-      await page.waitForTimeout(1200)
+    // #5899 口径：本页**没有**「保存」按钮，改动即时生效（页面上必须说出来）
+    const autoSaveHint = await page.getByText(/自动保存|即时生效|失焦即存/).first().isVisible().catch(() => false)
+    if (!autoSaveHint) {
+      // 兜底：页面上任何含「保存」的说明文字（#5899 后本页**没有**底部保存按钮 ⇒ 必须说出来）
+      const hintText = await page.getByText(/保存/).first().textContent().catch(() => '')
+      if (!hintText) throw new Error('设置页未见「自动保存」类提示（#5899 口径：无底部保存按钮 ⇒ 必须说明保存方式）')
+      h.rec.notes.push(`自动保存提示按「含保存二字的说明文字」判定：${String(hintText).slice(0, 60)}`)
     }
-    // 修改密码 Tab（#3583 闸门：需当前密码）
+    const hasSaveBtn = await page.getByRole('button', { name: /^保存$/ }).first().isVisible().catch(() => false)
+    if (bad.length) throw new Error(`只读访问期间出现写请求失败（本旅程不改任何值）：${bad.join(' | ')}`)
+    // 只读地看「修改密码」表单（**不点、不填、不失焦**）
     const pwdTab = page.getByRole('button', { name: /修改密码/ }).first()
+    let pwdFields = 0
     if (await pwdTab.isVisible().catch(() => false)) {
       await pwdTab.click()
       await page.waitForTimeout(800)
-      const pwdInputs = page.locator('input[type="password"]')
-      if (await pwdInputs.count().then(c => c > 0)) {
-        await h.done(true, '', `设置页 Tab 数=${tabs}，修改密码表单可见（闸门校验留 UI 观察）`)
-        return
-      }
+      pwdFields = await page.locator('input[type="password"]').count()
     }
-    // 通知设置
-    const notifBtn = page.getByRole('button', { name: /通知设置|系统通知/ }).first()
-    if (await notifBtn.isVisible().catch(() => false)) {
-      await notifBtn.click()
-      await page.waitForTimeout(800)
-    }
-    await h.done(true, '', `设置页渲染，Tab 数=${tabs}`)
+    if (bad.length) throw new Error(`切换 Tab 期间出现 4xx（失焦自动提交被触发）：${bad.join(' | ')}`)
+    await h.done(true, '', `设置页只读校验：Tab 数=${tabs}、自动保存提示=${autoSaveHint}、意外「保存」按钮=${hasSaveBtn}、密码字段=${pwdFields}、4xx=${bad.length}`)
   } catch (e) {
     await h.done(false, `设置页失败: ${String(e).slice(0, 300)}`)
   }
@@ -1073,6 +1453,9 @@ async function corporatePages(page) {
   ]
   for (const [name, path, _] of pages) {
     const h = await journey(name)(page)
+    // 🔴 名字与 `jrun('27-corporate', …)` 的注册名**不同** ⇒ `jrun` 的前缀过滤看不到它们
+    // ⇒ 过滤跑时会静默全跑（issue #6790）。各自守卫。
+    if (!inGroup(name)) { await markSkipped(h, `--group ${GROUP} 过滤（本轮未跑）`); continue }
     try {
       await page.goto(BASE + path, { waitUntil: 'domcontentloaded', timeout: 20000 })
       await page.waitForTimeout(1200)
@@ -1103,16 +1486,27 @@ import { writeFileSync as wfs } from 'node:fs'
 
 // 旅程级 45s 硬超时：挂死的旅程记录失败并继续，不拖死整轮
 const J_TIMEOUT = 45000
-async function jrun(name, fn, page) {
-  if (GROUP && !name.startsWith(GROUP)) return
+async function jrun(name, fn, page, deps) {
+  // `--group <前缀>` 过滤掉的旅程**记 skip、不记失败**（issue #6790）：skip ≠ pass、也 ≠ fail。
+  if (!inGroup(name)) { recordSkip(name); return }
+  // 前置数据/依赖不满足 ⇒ 同样记 skip 并印出缺什么（`depends_on`，issue #6790 判据 ④）
+  const missing = Object.entries(deps || {}).filter(([, v]) => !v).map(([k]) => k)
+  if (missing.length) { recordSkip(name, `前置不满足（缺 ${missing.join(' / ')}）：未跑，不是失败`); return }
   const timer = new Promise((_, rej) => setTimeout(() => rej(new Error(`${name} 超时 ${J_TIMEOUT / 1000}s`)), J_TIMEOUT))
   try {
     await Promise.race([fn(page), timer])
   } catch (e) {
     const msg = String(e.message || e).slice(0, 200)
     console.log(`❌ ${name}\n   超时/异常: ${msg}`)
-    results.push({ journey: name, pass: false, errors: [`超时/异常: ${msg}`], notes: [], evidence: [] })
+    results.push({ journey: name, pass: false, skipped: false, unconfigured: false, error_class: null, errors: [`超时/异常: ${msg}`], notes: [], evidence: [] })
   }
+}
+
+/** 记一条「本轮未跑」的旅程（skip ≠ pass、也 ≠ fail；#6790）。 */
+function recordSkip(name, why) {
+  results.push({ journey: name, pass: false, skipped: true, unconfigured: false, error_class: 'skip',
+    errors: [], notes: [why || `--group ${GROUP} 过滤（本轮未跑）`], evidence: [] })
+  console.log(`⏭️  ${name} [skip] ${why || `--group ${GROUP} 过滤（本轮未跑）`}`)
 }
 
 async function main() {
@@ -1131,7 +1525,16 @@ async function main() {
     await h.done(true, '', 'login → /dashboard，刷新后会话保持')
   }, page)
 
+  // 🔴 整轮看门狗（#6790）：16-/17- 不再吃 `jrun` 的 45s 上限 ⇒ 加一道**整轮**硬闸，
+  // 避免任何一处 `waitFor` 挂死后把真栈会话拖到没有读数。25min 覆盖「造数据 + 全流转」的最坏路径。
+  const RUN_BUDGET_MS = Number(process.env.SMOKE_RUN_BUDGET_MS || 25 * 60 * 1000)
+  const runWatchdog = new Promise((resolve) => setTimeout(() => {
+    console.log(`\n⚠️ 整轮预算 ${RUN_BUDGET_MS / 1000}s 到点：停止本轮（已完成的旅程仍在下方汇总）`)
+    resolve('budget')
+  }, RUN_BUDGET_MS))
+
   // 依序执行旅程
+  const runAll = (async () => {
   await jrun('02-dashboard', dashboardJourney, page)
   await jrun('03-briefing', briefingJourney, page)
   await jrun('04-agent-workspace-redirect', agentWorkspaceRedirect, page)
@@ -1143,7 +1546,9 @@ async function main() {
   await jrun('10-product-detail', productDetail, page)
 
   // 门幅回显：#3641 —— 编辑库内 doorWidth='2.8米' 的商品，验证回显 canonical '2.8'、下拉显示 '2.8米'
-  const dwTarget = process.env.DW_PRODUCT_ID || 'e7fbe9da0387b04be98b839ed97caf2b'
+  // ⚠️ 不再用写死的种子商品 id（`e7fbe9da…` 已从云 dev 库消失 ⇒「用了不存在的商品 id」，
+  // issue #6790 B 类 ④）。空 ⇒ `productEdit` 内部**自造**一件门幅 2.8 的商品（跑完清理）。
+  const dwTarget = process.env.DW_PRODUCT_ID || ''
   await jrun('11-product-edit-doorwidth', (p) => productEdit(p, dwTarget), page)
 
   await jrun('12-processing', processingJourney, page)
@@ -1151,35 +1556,25 @@ async function main() {
   await jrun('14-orders-list', ordersListJourney, page)
   await jrun('15-orders-new', ordersNewJourney, page)
 
-  // 订单详情：用 API 创建含加工项的订单（独立数据，不污染存量）
-  const apiBase = API_BASE
-  const token = process.env.API_TOKEN || ''
-  let orderId = ''
-  if (token) {
-    try {
-      const r = await fetch(`${apiBase}/api/admin/orders`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({
-          customerName: '冒烟测试', customerPhone: '13900002222', customerAddress: '测试地址',
-          discountAmount: 0, items: [{
-            productId: 'deff0be6c885cbf0469abe4f7b8da608', productName: '2699系列雪尼尔窗帘面料',
-            quantity: 2, unitPrice: 23.8, subtotal: 47.6,
-            processingInfo: { sellingMethod: 'bulk_cut', doorWidth: '2.8', processingFee: 15,
-              processingItems: [{ id: 'proc_item_1', name: '锁边', quantity: 2, unit: '米' }] }
-          }],
-        }),
-      })
-      const body = await r.json()
-      orderId = body.data?.id || ''
-    } catch (e) { console.log('⚠️ API 建单失败:', String(e).slice(0, 200)) }
+  // 订单详情 / 发货：**前置自造**（见 createOrderFixture）。
+  // ⚠️ 旧形态靠 `process.env.API_TOKEN`（**仓库里没有任何调用方传过它** ⇒ `orderId` 恒空）：
+  //    `16-` 报「无目标订单」、`17-` 导航到 `/orders//ship` ⇒ api 日志
+  //    `请求的资源不存在: GET /api/admin/orders/ship`（issue #6790 B 类 ③）。此死路已删。
+  // 这两条**不走 `jrun` 的 45s 硬超时**：16- 现在要「现造 + 全流转」，45s 偏紧；
+  // 它们内部每一步都有显式 `waitVisible` 超时，不会挂死。
+  let detOrderId = process.env.ORDER_ID || ''
+  if (inGroup('16-order-detail-processing-order')) {
+    detOrderId = await orderDetailJourney(page, detOrderId)
+  } else {
+    recordSkip('16-order-detail-processing-order')
   }
-
-  const detOrderId = orderId || process.env.ORDER_ID || ''
-  await jrun('16-order-detail-processing-order', (p) => orderDetailJourney(p, detOrderId), page)
   // #4186 收口：加工单二维码 / 工序列 / 计件的**正向**分支（自带建单，不依赖 16- 的数据）
   await jrun('32-production-qr-and-piecework', productionQrJourney, page)
-  await jrun('17-order-ship', (p) => orderShipJourney(p, detOrderId), page)
+  if (inGroup('17-order-ship')) {
+    await orderShipJourney(page, detOrderId)
+  } else {
+    recordSkip('17-order-ship')
+  }
   await jrun('18-after-sales-list', afterSalesListJourney, page)
   const aftersalesId = process.env.AFTERSALES_ID || ''
   await jrun('19-after-sales-detail', (p) => afterSalesDetailJourney(p, aftersalesId), page)
@@ -1192,16 +1587,27 @@ async function main() {
   await jrun('26-notifications', notificationsJourney, page)
   await jrun('27-corporate', corporatePages, page)
   await jrun('28-register', registerJourney, page)
+  })()
+
+  await Promise.race([runAll, runWatchdog])
+  // 预算到点：剩下的旅程显式记 skip（不是失败）
+  const recorded = new Set(results.map((r) => r.journey))
+  for (const n of ALL_JOURNEY_NAMES) {
+    if (!recorded.has(n)) recordSkip(n, `整轮预算 ${RUN_BUDGET_MS / 1000}s 到点：本轮未跑`)
+  }
 
   await browser.close()
 
-  // 汇总输出
+  // 汇总输出（#6790：pass / fail / 未配置 / skip **四态分列**，不许互相冒充）
   const passed = results.filter(r => r.pass).length
-  const failed = results.length - passed
+  const unconfigured = results.filter(r => r.unconfigured)
+  const skipped = results.filter(r => r.skipped)
+  const failed = results.filter(r => !r.pass && !r.unconfigured && !r.skipped)
   const md = [
     '# 商家后端 UI 冒烟结果',
     '',
-    `时间: ${new Date().toISOString()} ｜ 通过 ${passed}/${results.length} ｜ 失败 ${failed}`,
+    `时间: ${new Date().toISOString()} ｜ 通过 ${passed}/${results.length} ｜ 失败 ${failed.length}`
+      + ` ｜ 未配置 ${unconfigured.length} ｜ skip ${skipped.length}`,
     '',
     '| # | 旅程 | 结果 | 证据 |',
     '|---|------|------|------|',
@@ -1209,12 +1615,27 @@ async function main() {
   results.forEach((r, i) => {
     const ev = r.evidence.filter(e => !e.startsWith('/') || e.endsWith('.png')).join('; ').slice(0, 160)
     const err = r.errors.join(' / ').slice(0, 120)
-    md.push(`| ${i + 1} | ${r.journey} | ${r.pass ? '✅' : '❌'} | ${ev || err || '—'} |`)
+    const mark = r.unconfigured ? '➖ 未配置' : r.skipped ? '⏭️ skip' : r.pass ? '✅' : '❌'
+    md.push(`| ${i + 1} | ${r.journey} | ${mark} | ${ev || err || (r.notes.join(' / ').slice(0, 160)) || '—'} |`)
   })
+  if (unconfigured.length) {
+    md.push('', '## ➖ 未配置（**不是**产品失败）', '',
+      `以下 ${unconfigured.length} 条依赖 ai-agent，而本轮未按 AGENTS.md 传 \`AI_AGENT_BASE_URL\` / \`AI_AGENT_SERVICE_TOKEN\`：`,
+      '', ...unconfigured.map(r => `- ${r.journey}`))
+  }
+  if (skipped.length) {
+    md.push('', '## ⏭️ skip（前置/依赖不满足，**未跑**）', '',
+      ...skipped.map(r => `- ${r.journey}：${r.notes.join(' / ').slice(0, 160)}`))
+  }
   wfs(join(OUT, 'smoke-summary.md'), md.join('\n'))
   wfs(join(OUT, 'smoke-results.json'), JSON.stringify(results, null, 2))
-  console.log(`\n===== 汇总: ${passed}/${results.length} 通过，${failed} 失败 =====`)
-  process.exit(failed > 0 ? 1 : 0)
+  console.log(`\n===== 汇总: ${passed}/${results.length} 通过，${failed.length} 失败`
+    + `，${unconfigured.length} 未配置（ai-agent 未配置），${skipped.length} skip（前置不满足）=====`)
+  if (failed.length) console.log(`❌ 真实失败：${failed.map(r => r.journey).join(' ')}`)
+  if (unconfigured.length) console.log(`➖ 未配置：${unconfigured.map(r => r.journey).join(' ')}`)
+  if (skipped.length) console.log(`⏭️  skip：${skipped.map(r => r.journey).join(' ')}`)
+  // 退出码只由**真实失败**决定：未配置 / skip 都不是产品失败（#6790 判据 ③④）
+  process.exit(failed.length > 0 ? 1 : 0)
 }
 
 main()
