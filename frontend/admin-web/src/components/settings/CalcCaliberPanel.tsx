@@ -201,6 +201,15 @@ const TIER_DISPLAY_LABEL: Record<string, string> = {
   economy: '经济档',
 }
 
+/**
+ * 档位**显示名**（未知档 ⇒ 人话兜底，**不**把服务端机器键印上屏）。
+ *
+ * 🔴 改判（issue #6825）：改前是 `TIER_DISPLAY_LABEL[name] ?? name` —— 服务端新增档位时
+ * 会把 `economy` 这类标识直接显示给商家/顾客。守卫 `design-baseline-expression-fallback.test.ts`
+ * （issue #6668 盲区①）的首选处置 = 换人话兜底（不是登记豁免）。
+ */
+const tierLabelOf = (name: string): string => TIER_DISPLAY_LABEL[name] ?? '未命名档位'
+
 /** 草稿里某个数值键的当前值（**不在这里补默认值**）—— 非有限数（清空时落的 `NaN` 哨兵）一律 `null` */
 function numberOf(config: CraftCalcConfig, key: string): number | null {
   const v = (config as unknown as Record<string, unknown>)[key]
@@ -478,12 +487,12 @@ export function CalcCaliberPanel({
                       {Object.entries(tiers).map(([name, tier]) => (
                         <tr key={name} className="border-b border-neutral-100">
                           <td className="py-1.5 pr-3 text-neutral-600">
-                            {TIER_DISPLAY_LABEL[name] ?? name}
+                            {tierLabelOf(name)}
                           </td>
                           <td className="py-1.5 pr-3">
                             <input
                               className={inputCls}
-                              aria-label={`${TIER_DISPLAY_LABEL[name] ?? name} 显示名`}
+                              aria-label={`${tierLabelOf(name)} 显示名`}
                               data-testid={`calc-caliber-tier-${name}-label`}
                               value={tier.label ?? ''}
                               onChange={(e) =>
@@ -497,7 +506,7 @@ export function CalcCaliberPanel({
                           <td className="py-1.5">
                             <NumberInput
                               className={inputCls}
-                              aria-label={`${TIER_DISPLAY_LABEL[name] ?? name} 褶倍`}
+                              aria-label={`${tierLabelOf(name)} 褶倍`}
                               data-testid={`calc-caliber-tier-${name}-fullness`}
                               value={
                                 typeof tier.fullness === 'number' && Number.isFinite(tier.fullness)

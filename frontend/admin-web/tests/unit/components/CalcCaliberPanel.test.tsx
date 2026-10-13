@@ -57,7 +57,7 @@ vi.mock('next/link', () => ({
 import CalcCaliberPanel from '@/components/settings/CalcCaliberPanel'
 import { productionApi } from '@/lib/api'
 import { markErrorToastShown } from '@/lib/api-error'
-import { CALC_SCALAR_KEYS } from '@/lib/craft-calc-glossary'
+import { CALC_PARAM_COPY, CALC_SCALAR_KEYS } from '@/lib/craft-calc-glossary'
 import { PARAM_DOMAINS } from '@/lib/tenant-params'
 import type { CraftCalcConfig } from '@/types'
 
@@ -262,7 +262,7 @@ describe('判据 1（#6825）：域内就地可改 —— 逐键在位', () => {
     expect(screen.getByTestId('param-advanced-calc')).toBeInTheDocument()
   })
 
-  it('档位表逐行可改：显示名中文化（标准档 / 经济档），但**键**仍是 standard / economy', async () => {
+  it('档位表逐行可改：显示名中文化（标准档 / 经济档），但**键**仍是 standard / economy；未知档给人话兜底', async () => {
     await renderPanel()
     const rowOf = (name: string) =>
       screen.getByTestId(`calc-caliber-tier-${name}-fullness`).closest('tr') as HTMLElement
@@ -271,14 +271,19 @@ describe('判据 1（#6825）：域内就地可改 —— 逐键在位', () => {
     // 提交给 API 的 tiers 键仍是英文键（中文只是显示名）
     expect(screen.getByTestId('calc-caliber-tier-standard-fullness')).toHaveValue('2')
     expect(screen.getByTestId('calc-caliber-tier-standard-label')).toHaveValue('标准工艺')
-    // 未知档 ⇒ 回退原键（不吞掉、不猜中文）
+    // 未知档 ⇒ **人话兜底「未命名档位」**：不把服务端机器键（`custom`）印上屏。
+    // 🔴 改判（issue #6825）：改前是 `TIER_DISPLAY_LABEL[name] ?? name`，服务端新增档位时会把
+    //    `economy` / `custom` 一类标识直接显示给商家；守卫 `design-baseline-expression-fallback.test.ts`
+    //    （issue #6668 盲区①）的首选处置 = 换人话兜底，而不是登记豁免。
     cleanup()
     READ_CONFIG = {
       ...ENGINE_DEFAULT_CALC_CONFIG,
       tiers: { ...ENGINE_DEFAULT_CALC_CONFIG.tiers, custom: { fullness: 2.4, label: '' } },
     } as unknown as CraftCalcConfig
     await renderPanel()
-    expect(screen.getByTestId('calc-caliber-tier-custom-fullness').closest('tr')).toHaveTextContent('custom')
+    const customRow = screen.getByTestId('calc-caliber-tier-custom-fullness').closest('tr') as HTMLElement
+    expect(customRow).toHaveTextContent('未命名档位')
+    expect(customRow).not.toHaveTextContent('custom')
   })
 
   it('拼色每折吃布表逐行可改（拼 N 次 → 每折吃布）', async () => {
@@ -358,7 +363,9 @@ describe('判据 1b：术语说明区块与参数同屏（口径与术语不丢�
     for (const key of ['per_fold_single', 'margin_single', 'margin_multi'] as const) {
       const href = screen.getByTestId(`param-doc-${key}`).getAttribute('href') ?? ''
       expect(href).toBe(`#glossary-param-${key}`)
-      expect(document.getElementById(href.replace('#', ''))).not.toBeNull()
+      // 锚点必须落在**该参数自己的术语行**上（只断「有元素」= 存在性弱断言，换不来判别力）
+      const row = document.getElementById(href.replace('#', ''))
+      expect(row?.textContent, `「说明」锚点须落在「${key}」的术语行`).toContain(CALC_PARAM_COPY[key].label)
     }
   })
 })
@@ -508,7 +515,7 @@ it('不再挂「去算料配置」外链：判据落在**数据层**（calc 域�
   //    ⇒ **把删掉的代码原样放回，那条断言仍然绿**（恒真）。
   //    ⇒ 判据上移到域定义：有人（重新）给 calc 挂上外链 ⇒ 这里当场红。
   const calc = PARAM_DOMAINS.find((d) => d.key === 'calc')
-  expect(calc, 'calc 域必须存在（域清单是单一真值源）').toBeDefined()
+  expect(calc?.key, 'calc 域必须存在（域清单是单一真值源）').toBe('calc')
   expect(
     calc?.edit,
     '算料口径域**自己就是编辑面**（issue #6585 / #6825）⇒ 域定义里不许再有「把人送出本页」的 `edit` 入口',
