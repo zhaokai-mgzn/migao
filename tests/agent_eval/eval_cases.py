@@ -6369,6 +6369,24 @@ _CASE_MC_094 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-095 [NORMAL] 冲突态**不许静默**（issue #6815）：PR 与 base 冲突 ⇒ GitHub 造不出合并提交 ⇒ `pull_request` 工作流**连 run 都不创建**；判据必须把 ① 未创建 / ② pending / ③ 失败 **三态分开读**（源: cases/misc.yml）──
+_CASE_MC_095 = EvalCase(
+    id='MC-095',
+    legacy_id='',
+    title='冲突态**不许静默**（issue #6815）：PR 与 base 冲突 ⇒ GitHub 造不出合并提交 ⇒ `pull_request` 工作流**连 run 都不创建**；判据必须把 ① 未创建 / ② pending / ③ 失败 **三态分开读**',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['PR 推了新提交后必需检查**连行都没有**（不是 pending），而 Auto Merge 每次都照常跑 —— 我熬了一小时在怀疑「CI 哑了 / 队列堵了」。我要的是机制**当场说出**：这些检查在这条 HEAD 上**不存在**（不是还在跑），以及一条能直接粘走的出口命令。'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·态 ①（run 未创建）必红**：`mergeStateStatus=DIRTY`（`mergeable=CONFLICTING`）∧ head SHA 上**没有** `event=pull_request` 的 run ⇒ 退出码 1 + `::error::`；读数点名「**不存在，不是 pending**」+ 具名报出在 head SHA 上读不到 run 的工作流与 required 检查名 + 出口命令（`gh pr view <n> --json mergeable` / `gh pr update-branch <n>`）。执行点 = tests/unit_ci_workflows/test_dangling_pr_scan.py::test_conflict_no_pr_run_is_state_one_and_red', '🔴 **判据 2·三态分清（本单核心语义）**：① 未创建 ⇒ 红；② 创建但 pending ⇒ 不红且读数说「确实已创建」；③ 创建且失败 ⇒ 不红且读数说「已判红」⇒ 四夹具并列 `rc = 1/0/0/0`，且 ②/③ 也**分栏**出现在 step summary（报告面与判定面不许错开）。执行点 = 同文件 ::test_conflict_states_are_three_distinct_readings', '🔴 **判据 3·负控**：非 `DIRTY`（`CLEAN`/`UNSTABLE`/`BEHIND`）⇒ 不得红；`DIRTY` 但 `pull_request` run 已创建（pending / 红 / 绿）⇒ 不得红。**单变量差分对**：同 run 形状、只把 `mergeStateStatus` 从 `DIRTY` 换成 `BLOCKED` ⇒ 两列读数必须**各自归因**（冲突 ⇄ required 未达可合）且不相等。执行点 = 同文件 ::test_conflict_detector_does_not_false_positive / ::test_state_one_needs_the_conflict_condition_is_non_dirty_control', '🔴 **判据 4·不许放宽既有判据**：`BLOCKED` + 无 check + 无 run（族 B / `on.pull_request.paths` 过滤形态）仍判红，读数逐字保留 `on.pull_request.paths`，且**不得**被归因成「冲突」。执行点 = 同文件 ::test_blocked_dangling_is_unchanged（常驻判据本体仍是 tests/unit_ci_workflows/test_required_check_no_paths_filter.py）', '🔴 **判据 5·判别力自证（注入式）**：打掉冲突态闸 `if state in CONFLICT_STATES:` ⇒ 同一夹具**不再红**（复现原缺陷的静默）；把 `MERGE_REF_EVENT` 从 `pull_request` 换成 `pull_request_target` ⇒ 现场形状不再红、而「只有 `pull_request` run」的形状反被判红（**两个方向都翻**）。执行点 = 同文件 ::test_state_one_gate_has_discriminating_power / ::test_conflict_event_discriminator_has_discriminating_power', '**判据 6·第四态（判不了 ≠ 通过）**：run 读不到 `event` 字段 ⇒ 记未判定 + `::warning::`（不当 ① 乐观跳闸，也不当 0）。执行点 = 同文件 ::test_cannot_tell_when_event_field_is_missing_is_unjudged', '**边界（照实登记）**：① `DIRTY` 时 GitHub **不保证**每个 check 都进 rollup ⇒ 本判据**不**用 rollup 的 pending 面判 ②（否则「check 对象滞后」会被读成 ①）；② required 名单两条腿（`gh api …/protection` 需 admin / 仓内快照）都读不到时，读数**不列名单但判定照旧**（不降级）；③ `DIRTY` 在 PR 页面另有冲突横幅 + 本判据的 `--minutes` 阈值同时约束它（年龄 < 阈值不报）；④ 本判据只在 `schedule` / `workflow_dispatch` 上跑（挂在 PR 事件上会给每个 PR 刷一条无关的红）；⑤ **具名清单的边界**：required 名 → 工作流的映射走静态 `name:` ⇒ matrix 派生的名映射不上（现取：16 条 required 里 14 条可映射，`ci workflow helper unit tests` 与「（后半）」两条是 `pr-check.yml` 的 `${{ matrix.shard_suffix }}` 派生）—— **不影响判定**（判红看 `event=pull_request` 的 run 在不在），只是具名清单少列两条，同 HEAD 上 `pr-check.yml` 的 run 本来就在清单里。'],
+    skip_reason='[backend-contract] 判据是零 LLM 的确定性读数（真脚本 + `gh` 替身 + 真 YAML + 注入式变异），pytest 子进程真跑，零网络',
+    tags=['ci', 'dangling-pr', 'merge-conflict', 'event-delivery', 'tri-state', 'fail-closed', 'red-proof', 'class-level-guard'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -14162,6 +14180,7 @@ ALL_CASES = (
     _CASE_MC_092,
     _CASE_MC_093,
     _CASE_MC_094,
+    _CASE_MC_095,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

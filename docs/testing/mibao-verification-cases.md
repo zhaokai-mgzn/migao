@@ -3435,7 +3435,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（95 case）
+## 杂项域（96 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4861,6 +4861,20 @@
 跳过: [backend-contract] 指纹三态 + 起栈预检接线 + 输出分类，由 pytest 子进程真跑（沙箱假仓，零网络 / 零真栈）；真栈两向读数（401 → 200）见 PR body 取证段
 ```
 溯源: 2026-10-13 新增（issue #6801，P2 归因单）。取号 = `python3 scripts/next_case_id.py MC` ⇒ main 现取 MC-001~092、**在飞 #6809 已占 MC-093** ⇒ **MC-094**。病（真栈两次复跑一致）：全量冒烟**唯一**两类真实失败 = `06-agent-sessions` / `07-chat` 的 console `401 (Unauthorized)` ×3 + `获取会话列表失败: 401`，而**同一个浏览器会话**里 `02-dashboard` / `05-human-sessions` / `18-after-sales-list` 全 ✅ ⇒ 读起来像产品鉴权缺陷。真因在**环境**：ai-agent 日志逐字 `JWT verification failed: invalid token - Signature verification failed`；同一枚真 token 只换校验公钥 —— 入仓的 `backend/admin-api/src/main/resources/rsa/public.pem`（prod swas compose 同源）**验签通过**，而本机 gitignored 的 `backend/ai-agent-service/.env` 那份**签名无效**（两侧公钥**各自独立下发** ⇒ 仓库换过密钥对之后本地这份静默陈旧，两个服务都不报错）。落码 = ① `scripts/align_agent_jwt_key.py`（`--state` 纯报告三态单行 / `--check` / 写盘带写坏防护与 `.bak-align`；指纹逻辑**唯一承载体**）；② `scripts/ui_smoke_merchant.sh` 起栈后的 2.6 预检块（指纹比对 + 命名两个指纹 + 一条命令处置 + 置「未配置」并带成因；严格档 `SMOKE_STRICT_KEY_ALIGNMENT=1` 直接非零退出）；③ `scripts/ui-smoke-merchant/spec.mjs` 的未配置文案带上成因；④ 判据 tests/unit_ci_workflows/test_agent_jwt_key_alignment.py（16 条）。⚠️ **不入 CHANGELOG**（铁律 7 豁免：纯研发工具 / `scripts/` 改动，对用户无可观察影响）。 ｜ tags: dev-env, jwt, key-alignment, smoke-attribution, fail-closed, red-proof, class-level-guard
+
+### MC-095. 冲突态**不许静默**（issue #6815）：PR 与 base 冲突 ⇒ GitHub 造不出合并提交 ⇒ `pull_request` 工作流**连 run 都不创建**；判据必须把 ① 未创建 / ② pending / ③ 失败 **三态分开读** 🔵
+```
+你: PR 推了新提交后必需检查**连行都没有**（不是 pending），而 Auto Merge 每次都照常跑 —— 我熬了一小时在怀疑「CI 哑了 / 队列堵了」。我要的是机制**当场说出**：这些检查在这条 HEAD 上**不存在**（不是还在跑），以及一条能直接粘走的出口命令。
+数据: 🔴 **判据 1·态 ①（run 未创建）必红**：`mergeStateStatus=DIRTY`（`mergeable=CONFLICTING`）∧ head SHA 上**没有** `event=pull_request` 的 run ⇒ 退出码 1 + `::error::`；读数点名「**不存在，不是 pending**」+ 具名报出在 head SHA 上读不到 run 的工作流与 required 检查名 + 出口命令（`gh pr view <n> --json mergeable` / `gh pr update-branch <n>`）。执行点 = tests/unit_ci_workflows/test_dangling_pr_scan.py::test_conflict_no_pr_run_is_state_one_and_red
+数据: 🔴 **判据 2·三态分清（本单核心语义）**：① 未创建 ⇒ 红；② 创建但 pending ⇒ 不红且读数说「确实已创建」；③ 创建且失败 ⇒ 不红且读数说「已判红」⇒ 四夹具并列 `rc = 1/0/0/0`，且 ②/③ 也**分栏**出现在 step summary（报告面与判定面不许错开）。执行点 = 同文件 ::test_conflict_states_are_three_distinct_readings
+数据: 🔴 **判据 3·负控**：非 `DIRTY`（`CLEAN`/`UNSTABLE`/`BEHIND`）⇒ 不得红；`DIRTY` 但 `pull_request` run 已创建（pending / 红 / 绿）⇒ 不得红。**单变量差分对**：同 run 形状、只把 `mergeStateStatus` 从 `DIRTY` 换成 `BLOCKED` ⇒ 两列读数必须**各自归因**（冲突 ⇄ required 未达可合）且不相等。执行点 = 同文件 ::test_conflict_detector_does_not_false_positive / ::test_state_one_needs_the_conflict_condition_is_non_dirty_control
+数据: 🔴 **判据 4·不许放宽既有判据**：`BLOCKED` + 无 check + 无 run（族 B / `on.pull_request.paths` 过滤形态）仍判红，读数逐字保留 `on.pull_request.paths`，且**不得**被归因成「冲突」。执行点 = 同文件 ::test_blocked_dangling_is_unchanged（常驻判据本体仍是 tests/unit_ci_workflows/test_required_check_no_paths_filter.py）
+数据: 🔴 **判据 5·判别力自证（注入式）**：打掉冲突态闸 `if state in CONFLICT_STATES:` ⇒ 同一夹具**不再红**（复现原缺陷的静默）；把 `MERGE_REF_EVENT` 从 `pull_request` 换成 `pull_request_target` ⇒ 现场形状不再红、而「只有 `pull_request` run」的形状反被判红（**两个方向都翻**）。执行点 = 同文件 ::test_state_one_gate_has_discriminating_power / ::test_conflict_event_discriminator_has_discriminating_power
+数据: **判据 6·第四态（判不了 ≠ 通过）**：run 读不到 `event` 字段 ⇒ 记未判定 + `::warning::`（不当 ① 乐观跳闸，也不当 0）。执行点 = 同文件 ::test_cannot_tell_when_event_field_is_missing_is_unjudged
+数据: **边界（照实登记）**：① `DIRTY` 时 GitHub **不保证**每个 check 都进 rollup ⇒ 本判据**不**用 rollup 的 pending 面判 ②（否则「check 对象滞后」会被读成 ①）；② required 名单两条腿（`gh api …/protection` 需 admin / 仓内快照）都读不到时，读数**不列名单但判定照旧**（不降级）；③ `DIRTY` 在 PR 页面另有冲突横幅 + 本判据的 `--minutes` 阈值同时约束它（年龄 < 阈值不报）；④ 本判据只在 `schedule` / `workflow_dispatch` 上跑（挂在 PR 事件上会给每个 PR 刷一条无关的红）；⑤ **具名清单的边界**：required 名 → 工作流的映射走静态 `name:` ⇒ matrix 派生的名映射不上（现取：16 条 required 里 14 条可映射，`ci workflow helper unit tests` 与「（后半）」两条是 `pr-check.yml` 的 `${{ matrix.shard_suffix }}` 派生）—— **不影响判定**（判红看 `event=pull_request` 的 run 在不在），只是具名清单少列两条，同 HEAD 上 `pr-check.yml` 的 run 本来就在清单里。
+跳过: [backend-contract] 判据是零 LLM 的确定性读数（真脚本 + `gh` 替身 + 真 YAML + 注入式变异），pytest 子进程真跑，零网络
+```
+溯源: 2026-10-13 新增（issue #6815，CI 可见性面）。取号 = `python3 scripts/next_case_id.py MC` 现取（main 的 MC 现取到 094，候选集之外）⇒ **MC-095**。现场逐字：PR 与 base 冲突时 GitHub 造不出 `refs/pull/<n>/merge` ⇒ `pull_request` 事件的工作流**不创建 run**，而 `pull_request_target` 跑在 base 上照常触发 ⇒ `gh pr checks` 里只有 `Auto Merge` 一行、required 检查**连行都没有**；本仓 `Detect dangling PRs` 那条检测器在 `mergeStateStatus=DIRTY` 上 `skipping` ⇒ 浪费约 1 小时。改动 = `scripts/dangling_pr_scan.py` 新增冲突态判据（`head_runs` 取 `event` 字段 → 按 `event=pull_request` 区分「需要合并提交的那一族」→ 三态分类 → 具名 required 名单（复用 `merge_gate.py::scan_pr_jobs` 的映射 + 仓内快照/API 两条腿）+ 出口命令），并把 ②/③ 分栏进 step summary；判据 = tests/unit_ci_workflows/test_dangling_pr_scan.py（新增 8 条，共 19 条）。同批按「**跳过也要长得像跳过**」补 `draft ∧ 冲突` 的可见面 —— 现场 #6809 在冲突窗口内**全程是 draft**（`isDraft ⇒ ok` 让整条扫描不出声），这是静默的**第二个**成因；实测真仓扫到 **2 条** `::warning::已跳过`。⚠️ **不入 CHANGELOG**（铁律 7 豁免：纯 CI / `scripts/` 判据面改动，对用户无可观察影响）。 ｜ tags: ci, dangling-pr, merge-conflict, event-delivery, tri-state, fail-closed, red-proof, class-level-guard
 
 ## 商家入驻域（6 case）
 
@@ -10709,8 +10723,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：739（活跃 134，跳过 605）
-- tier 分布：smoke 12 / normal 684 / adversarial 32
+- 用例总数：740（活跃 134，跳过 606）
+- tier 分布：smoke 12 / normal 685 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10725,7 +10739,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：95
+- 杂项域：96
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：64
@@ -10855,6 +10869,7 @@
 - MC-092: 云 dev DB 白名单**一条命令**（幂等 / 只追加 / fail-closed / 不泄漏）+ 起栈入口预检与业务路由自检（issue #6789）：`scripts/dev-db-whitelist.sh` 是 `--ModifyMode Append` 的唯一承载体，覆盖语义与 `default` 组零改动，起栈入口在失败前就把处置命令说出来
 - MC-093: 已知 console 台账**只许缩短**的终态：售后 hydration + 加工页 measure 两条缺陷修好后 clearance 清零（机制保留、判据 H 判别力不依赖台账非空）（issue #6799）
 - MC-094: 验签公钥失配**不得伪装成产品失败**（issue #6801）：admin-api 签发密钥 ⇄ ai-agent 校验公钥的指纹对齐（`scripts/align_agent_jwt_key.py` 是唯一真值源），起栈预检在跑 spec 之前把「环境失配」与「产品缺陷」分开
+- MC-095: 冲突态**不许静默**（issue #6815）：PR 与 base 冲突 ⇒ GitHub 造不出合并提交 ⇒ `pull_request` 工作流**连 run 都不创建**；判据必须把 ① 未创建 / ② pending / ③ 失败 **三态分开读**
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
