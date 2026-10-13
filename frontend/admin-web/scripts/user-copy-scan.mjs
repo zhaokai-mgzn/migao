@@ -121,6 +121,111 @@ const CJK = /[\u4e00-\u9fff]/
  */
 export const textOf = (t) => (typeof t === 'string' ? t : t.text)
 
+/** admin-web 包根（判据源真值文件都从**脚本自身位置**解析，worktree / CI 里都指向自己那份） */
+const APP_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+
+/**
+ * **已移除的页面名**（issue #6826 的 B2 面；`#6580` 撤掉的一级项 / 菜单项）。
+ *
+ * <p>与 `backend` 侧同类守卫的集合同源（`tests/unit_ci_workflows/test_removed_page_copy_guard.py`
+ * 的 `REMOVED_PAGE_NAMES`）；**只许缩短** —— 要扩先改这里并在 PR body 说明为什么它是跨单债务。</p>
+ */
+export const REMOVED_PAGE_NAMES = ['参数总览', '工艺配置', '加工项管理', '加工费管理']
+
+/**
+ * **现取**导航真值源 = `src/config/menu.ts` 的菜单名 ∪ `src/lib/config-center-domains.ts` 的域 label。
+ *
+ * <p>🔴 不许把「企业基础设置 → …」这类目标名**硬编码**进规则：真值源自己会漂，
+ * 硬编码的真值源与规则同生共死 —— 那正是这类缺陷的成因（页名改了，文案没人知道要改）。</p>
+ *
+ * <p>🔴 也不许用「按名字 grep」的写法：`menu.ts` 里那四个旧页名各有十几处**沿革注释**
+ * （实测 24 处），文本 grep 会把它们读成「现役菜单名」⇒ 规则当场哑掉（把旧页名当合法名放行）。</p>
+ *
+ * <p>切分口径与**仓内既有实现逐字一致**：`tests/unit_ci_workflows/test_agent_permission_parity.py`
+ * 的 `parse_menu_ts_nodes`（以 `key:` 为界切块，块内取 `name` / `path` —— 只认**带 `path` 的真菜单项**，
+ * 组头不取）。那边是 Python（本仓 `menu.ts` 的**权威**解析），本文件是 Node 且要能被 vitest 直接
+ * 以 `RULES[i].test()` 同步调用 ⇒ 不是「第二份解析」而是同一口径的移植；**改口径要两边同改**，
+ * 并有 `R12` 的判别力自证钉住（旧页名混进来 ⇒ 规则哑掉 ⇒ 自证第一条红）。</p>
+ *
+ * <p>刻意用正则而不是 TS AST：扫描器在 `describe` 期跑一遍全量候选（数千条）⇒ 每个候选都
+ * 重解析会被读成性能事故，因此这里按需读一次再**记忆化**（判别力自证的裸字符串调用也吃这份缓存）。</p>
+ */
+let livePageNamesCache = null
+export function livePageNames() {
+  if (livePageNamesCache) return livePageNamesCache
+  const names = new Set()
+  // ① 菜单名：与 `parse_menu_ts_nodes` 同口径（按 `key:` 切块 ⇒ 注释里的同形文本不会被读到）
+  const menu = readFileSync(join(APP_ROOT, 'src', 'config', 'menu.ts'), 'utf-8')
+  const keyAt = [...menu.matchAll(/key:\s*'([^']+)'/g)]
+  for (let i = 0; i < keyAt.length; i++) {
+    const chunk = menu.slice(keyAt[i].index + keyAt[i][0].length, i + 1 < keyAt.length ? keyAt[i + 1].index : menu.length)
+    const nm = chunk.match(/name:\s*'([^']+)'/)
+    if (!nm) continue
+    if (!/path:\s*'[^']+'/.test(chunk)) continue // 组头（无 `path`）不是页面名
+    names.add(nm[1])
+  }
+  // ② 域 label：`config-center-domains.ts` 的顶层域标题（缩进四格的 `label: '…'` = 域对象属性）
+  const domains = readFileSync(join(APP_ROOT, 'src', 'lib', 'config-center-domains.ts'), 'utf-8')
+  for (const m of domains.matchAll(/^\s{4}label:\s*'([^']+)'/gm)) names.add(m[1])
+  // ③ `企业基础设置` 是这些域所在页的**一级菜单名**，也是所有新指针的公共前缀 —— 它必须可判
+  return (livePageNamesCache = names)
+}
+
+/**
+ * 已移除页面名的**现取**集合：在冻结集合 `REMOVED_PAGE_NAMES` 里、且**不再**出现在导航真值源里。
+ *
+ * <p>这半条让真值源成为**活的**：某个名字被重新启用（或本包改错了）⇒ 它不再是「已移除」，
+ * 判据不会逼人改回旧样子。</p>
+ */
+export function deadPageNames() {
+  return REMOVED_PAGE_NAMES.filter((name) => !livePageNames().has(name))
+}
+
+/**
+ * 从一段上屏文案里抽**页面名 token**（`「…」` 引号内的首个名字，取 `→` 链的**头**）。
+ *
+ * <p>口径 = 「商家按这句话去点的那个页面叫什么」。所以只看 `「」` 里的指针：
+ * `「企业基础设置 → 工艺路线」` 取 `企业基础设置`（在多级导航里，商家先看到的就是它）；
+ * 而 `「剩余米数」` 这类行内强调取到 `剩余米数` —— 它不在已移除集合里，**不命中**（不会假红）。</p>
+ */
+export function pageNameTokens(text) {
+  const out = []
+  for (const m of textOf(text).matchAll(/「([^」]*)」/g)) {
+    const token = (m[1].split(/→|⇒|->|>/)[0] || '').replace(/[·\s]+$/g, '').trim()
+    if (token) out.push(token)
+  }
+  return out
+}
+
+/** 一条文案命中的已移除页面名（`null` = 不命中；判别力自证与规则共用这一份实现） */
+export function removedPageNameHit(text) {
+  const t = textOf(text)
+  const dead = deadPageNames()
+  for (const name of dead) {
+    if (t.includes(name)) return name
+  }
+  for (const token of pageNameTokens(t)) {
+    if (dead.includes(token)) return token
+  }
+  return null
+}
+
+/**
+ * R12 的**具名豁免台账**（issue #6826 的 B2 面，**只许缩短**：条目被删/改名而不再命中即红）。
+ *
+ * <p>**三条 / 四个实例**，逐条给理由与重启条件（`#6826` 的判定项，不是漏项）：
+ * ① 两个 `!embedded` 页头 = 旧路径 `/production/routings`、`/production/processing` 的**兼容页**
+ *    （菜单项已移除、路由有意保留不 404，后端未定价提示仍链到旧路径）—— 改标题会让「旧链能到哪」变模糊；
+ * ② `session-insight` 的两条是**审计/会话洞察的动作标签**（不是导航指针；它确实上屏在会话洞察抽屉里
+ *    ⇒ 这是「有意不改 + 重启条件」，**不是**「无影响」）；
+ * ③ `TenantParamsPanel` 的「参数总览」**已删组件**（无生产渲染点）⇒ 台账里**不得**再有它（删了还留着 = 红）。</p>
+ */
+export const DEAD_PAGE_NAME_EXEMPT = [
+  'src/components/production-config/ProcessConfigBoard.tsx',
+  'src/components/production-config/ProcessingBoard.tsx',
+  'src/lib/session-insight.ts',
+]
+
 /**
  * 研发腔判据（单一源）。每条 = `{ id, name, test, 出口 }`：
  * - `test` 收**一条候选文案**，命中即返回 true；
@@ -247,6 +352,28 @@ export const RULES = [
       || (t.kind === 'jsx-text' && /\b[A-Z][A-Z0-9]*(_[A-Z0-9]+){2,}\b/.test(textOf(t))),
     出口: '删掉它（商家不需要看键名）；要说明「这个参数是什么」就用人话标签 + 可就地查的口径说明。'
       + '环境变量名与构建指令改成商家可行动的话（「尚未开通手机版，请联系服务方」）。',
+  },
+  {
+    id: 'R12',
+    name: '已移除的页面名',
+    // 商家照着这句话去点，**页面根本不存在**（`#6580` 把「参数总览」一级项与「加工项管理」/
+    // 「工艺配置」两个菜单项撤掉，功能体并入 `/settings` =「企业基础设置」页内的配置域）。
+    // 判据 = 文案里出现**已移除集合**里的页面名（集合现取，见 `deadPageNames`）。
+    // 口径 = 「商家按这句话去找的那个页面」⇒ **不要求**它被 `「」` 包起来：
+    // 实测两个真实病灶（`去定价（工艺配置 · 工序单价）` / `linkLabel: '工艺配置 → 算料配置'`）
+    // 就**没有**引号 —— 只认引号的话这两条**永远不判红**（改前实测：引号形态在修正后语料里命中 0，
+    // 但放宽到「出现即命中」也只有 3 个文件 / 5 条，全部是**有意保留**（见台账）。
+    test: (t) => {
+      const hit = removedPageNameHit(t)
+      // 免赔点按**文件**键控：扫描面不传文件（判别力自证传裸字符串）⇒ 不豁免，规则本身必须会红
+      return hit !== null && !(t && typeof t === 'object' && DEAD_PAGE_NAME_EXEMPT.includes(t.file))
+    },
+    出口: '按**动作**改指现存域（不是 1:1 换名）：建工序 / 维护计件单价 ⇒ 「企业基础设置 → 工序与部位单价」；'
+      + '建路线 / 加进路线 ⇒ 「企业基础设置 → 工艺路线」；算料档位与口径 ⇒ 「企业基础设置 → 算料口径」；'
+      + '加工项与分类 ⇒ 「企业基础设置 → 加工项与分类」；加工费组合 ⇒ 「企业基础设置 → 加工费组合」；'
+      + '余料尺寸 ⇒ 「企业基础设置 → 余料尺寸」。'
+      + '域 label 的逐字真值源 = `src/lib/config-center-domains.ts`（**别自造页名**）。'
+      + '一句话里有两个动作 ⇒ **两个出口都要指对**。旧路径 `href`（机器跳转）允许保留。',
   },
 ]
 

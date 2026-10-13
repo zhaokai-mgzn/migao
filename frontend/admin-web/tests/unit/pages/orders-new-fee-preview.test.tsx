@@ -1,4 +1,4 @@
-// case_ids: OR-009, OR-014, UI-038, OR-039
+// case_ids: OR-009, OR-014, UI-038, OR-039, OR-065
 // @vitest-environment jsdom
 /**
  * 下单页「加工费计价预览」接线（issue #4450 · 前置 #4406）。
@@ -506,10 +506,20 @@ describe('下单页加工费计价预览接线（#4450）', () => {
 // ═══════════════════════════════════════════════════════════════════════════════════════════
 
 /**
- * 后端「加工费组合」定价入口（`ProcessingFeeCalculator.PRICING_ENTRY`）—— **真值取自源码**，
- * 不写死字符串：前端若自己另写一个定价路径，本断言必红（#4590 的「同源」判据）。
+ * 后端下发给商家的「加工费组合」**域指针** —— **真值取自源码**，不写死字符串。
+ *
+ * ⚠️ 口径沿革（issue #6839 = B1 包）：后端 hint 此前给的是**路径**
+ * （`ProcessingFeeCalculator.PRICING_ENTRY = "/production/processing-fees"`），2026-10-13 起改为
+ * **页名**「企业基础设置 → 加工费组合」（URL 属内部标识，不再下发）。
+ * ⇒ 本判据的**意图一字未变**（前端一键直达的入口必须与**后端下发的**入口同源、不另写第二份坐标），
+ * 变的只是真值形态：**抽指针串**，不再抽 URL。
+ *
+ * 🔴 反面教材（issue #6853）：B1 删掉那个后端常量时，这里仍在抽 `PRICING_ENTRY`
+ * ⇒ `admin-web` 腿必红、卡住 #6848；而 **main 的 push 腿看不见这条腿** ⇒ 合并后才炸。
+ * 现由 `tests/unit_ci_workflows/test_removed_page_pointer_targets.py` 的
+ * `test_cross_package_pointer_consumers_still_exist` 在前端腿**之外**另守一层（Python 腿就能红）。
  */
-const backendPricingEntry = (): string => {
+const backendPricingPointer = (): string => {
   const src = readFileSync(
     join(
       process.cwd(),
@@ -517,9 +527,54 @@ const backendPricingEntry = (): string => {
     ),
     'utf8'
   )
-  const m = /PRICING_ENTRY\s*=\s*"([^"]+)"/.exec(src)
-  if (!m) throw new Error('后端 ProcessingFeeCalculator 里找不到 PRICING_ENTRY —— 判据前提失效')
+  // 只从**字符串字面量**里取（Java 的 hint 是 `"…"` 片段拼接，指针落在其中一段内 ⇒ 不扫注释/javadoc）
+  const literals = [...src.matchAll(/"([^"\n]*)"/g)].map((m) => m[1])
+  const pointers = [
+    ...new Set(
+      literals.flatMap((lit) => [...lit.matchAll(/「(企业基础设置 → [^」]+)」/g)].map((x) => x[1]))
+    ),
+  ]
+  const hit = pointers.find((p) => p === '企业基础设置 → 加工费组合')
+  if (!hit) {
+    throw new Error(
+      `后端 ProcessingFeeCalculator 的字面量里找不到「企业基础设置 → 加工费组合」指针（现取域指针 = ${JSON.stringify(
+        pointers
+      )}）—— 判据前提失效：B1/issue #6839 之后后端口径 = 页名，不再是 URL`
+    )
+  }
+  return hit
+}
+
+/** 「加工费组合」定价面的**落点**（真值 = 重定向页源码，不写死一个"我以为是"的路径） */
+const PRICING_FACE_PATH = '/production/processing-fees'
+
+/**
+ * 落点的**真值源**：旧路径 `/production/processing-fees` 是**仍解析**的兼容入口，
+ * 其 `redirect('/production/processing?tab=fees')` 直达合并页第二个 tab —— 就是商家真正能定价的那一屏。
+ */
+const pricingFaceRedirect = (): string => {
+  const src = readFileSync(
+    join(process.cwd(), 'src/app/(dashboard)/production/processing-fees/page.tsx'),
+    'utf8'
+  )
+  const m = /redirect\('([^']+)'\)/.exec(src)
+  if (!m) throw new Error('定价面重定向页里读不到 `redirect(...)` —— 判据前提失效')
   return m[1]
+}
+
+/**
+ * 定价入口「**每一处**」都必须：① 可见文案与**后端下发的域指针**逐字同源；② `href` 落在该域真实定价面。
+ * ⚠️ 改坏前端文案（换个坐标）或后端改指别处 ⇒ 必红；删重定向页 / 改落点 ⇒ 必红（issue #4590 的原意，issue #6853 修）。
+ */
+const expectPricingEntriesAreSameSourced = () => {
+  const links = screen.getAllByRole('link', { name: /加工费组合/ })
+  expect(links.length).toBeGreaterThanOrEqual(2)
+  const pointer = backendPricingPointer()
+  for (const link of links) {
+    expect(link.textContent).toContain(pointer)
+    expect(link).toHaveAttribute('href', PRICING_FACE_PATH)
+  }
+  expect(pricingFaceRedirect()).toBe('/production/processing?tab=fees')
 }
 
 /** 服务端未定价取价行（`composition` = 归一化组合键；`items` = 展示用加工项名，键名冻结） */
@@ -583,14 +638,11 @@ describe('#4590 未定价告警点名具体加工项组合', () => {
     expect(alert.textContent).toContain('1 行')
     // 「未定价」不得渲染成 ¥0.00（仓库硬纪律）
     expect(alert.textContent).not.toContain('¥0.00')
-    // 一键直达「加工费组合」定价面：href 必须等于**后端** `PRICING_ENTRY`（不另写一个路径）
+    // 一键直达「加工费组合」定价面：**文案**必须与后端下发的域指针逐字同源（改一边必红），
+    // `href` 必须落在该域真实可定价的那一屏（重定向页现取，不写死）
     // ⚠️ issue #4874：加工项区块**新增**了同一入口（未定价行的操作列）⇒ 现在有多处，
-    // 断言从 `getByRole`（唯一）改为「**每一处**都指向后端同源路径」（比原来更强，不是放宽）。
-    const pricingLinks = screen.getAllByRole('link', { name: /加工费组合/ })
-    expect(pricingLinks.length).toBeGreaterThanOrEqual(2)
-    for (const link of pricingLinks) {
-      expect(link).toHaveAttribute('href', backendPricingEntry())
-    }
+    // 断言从 `getByRole`（唯一）改为「**每一处**都同源」（比原来更强，不是放宽）。
+    expectPricingEntriesAreSameSourced()
   })
 
   it('费用明细**行内**也标出是哪个组合未定价（行级可判，不必回看告警）', async () => {
@@ -712,10 +764,8 @@ describe('#4594 组合未定价时已定价的特殊选项照常计入', () => {
     expect(alert.textContent).toContain('组合那半按 0 计')
     expect(alert.textContent).toContain('已定价的特殊选项照常计入')
     expect(alert.textContent).toContain('¥3.00')
-    // ⚠️ issue #4874：加工项区块也加了同一入口 ⇒ 每一处都指向后端同源路径（比唯一断言更强）
-    const links = screen.getAllByRole('link', { name: /加工费组合/ })
-    expect(links.length).toBeGreaterThanOrEqual(2)
-    for (const link of links) expect(link).toHaveAttribute('href', backendPricingEntry())
+    // ⚠️ issue #4874：加工项区块也加了同一入口 ⇒ 每一处都必须与后端域指针同源（比唯一断言更强）
+    expectPricingEntriesAreSameSourced()
   })
 
   it('费用明细逐行之和 === 订单金额（选项那半真的进了总额，不再是 0）', async () => {

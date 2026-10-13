@@ -13,10 +13,11 @@
  * ## 本文件锁四条（每条都有红证）
  * ① **身份卡读服务端**：工号 + 姓名来自 `fetchCurrentWorker()`（服务端 session），
  *    不是前端 state 拼的（页头显示的正是「这笔活会记到谁头上」= 计件工资的凭证）；
- * ② **三件工人功能入口**各自跳对路由（扫码报工 / 拍照入库 / 补打入库标签），
+ * ② **常驻主按钮「扫码领活」+ 三件工人功能入口**各自跳对路由（issue #6858 的 V1 布局：
+ *    主按钮 = `report` 面，其余三件仍是行卡），
  *    且后两个走 `utils/inbound/gaps.ts` 的路由常量（单一真值，不写字面量）；
  * ③ **不出现任何商家面入口**（问黄金策 / 数据 / 坐席 / 管理面 4 项）；
- * ④ **退出工人身份** = `workerLogout()` + 清本机工人态 + 回登录页的工人入口。
+ * ④ **退出工人身份**（身份条里的「退出」）= `workerLogout()` + 清本机工人态 + 回登录页的工人入口。
  *
  * ## 红证（每条判据的失败形态）
  * - 身份卡改读 `getCachedWorker()` 而不调 `fetchCurrentWorker()` ⇒ ①红（服务端真值不取）。
@@ -113,7 +114,7 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
   it('四件工人功能入口各自跳对路由（后三个走 gaps.ts 的路由常量，不写字面量）', async () => {
     await renderLoggedIn()
 
-    fireEvent.click(screen.getByText('扫码报工'))
+    fireEvent.click(screen.getByText('扫码领活'))
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/production/index/index' })
 
     fireEvent.click(screen.getByText('拍照入库'))
@@ -154,7 +155,7 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     expect(getWorkerSessionId()).toBe(WORKER.session_id)
 
     await act(async () => {
-      fireEvent.click(screen.getByText('退出工人身份'))
+      fireEvent.click(screen.getByText('退出'))
     })
 
     // 服务端 session 必须结束（只清本机 ⇒ 下一个人扫码记到上一个人头上）
@@ -170,9 +171,9 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     render(<WorkerHomePage />)
 
     expect(await screen.findByText(/请先用工号 \+ PIN 登录工人身份/)).toBeTruthy()
-    expect(screen.queryByText('扫码报工')).toBeNull()
+    expect(screen.queryByText('扫码领活')).toBeNull()
     expect(screen.queryByText('拍照发货')).toBeNull()
-    expect(screen.queryByText('退出工人身份')).toBeNull()
+    expect(screen.queryByText('退出')).toBeNull()
 
     fireEvent.click(screen.getByText('去登录工人身份'))
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: WORKER_TAB_LOGIN_ROUTE })

@@ -1,0 +1,121 @@
+{
+  "base": "https://app.migaozn.com",
+  "viewport": "390x844",
+  "at": "2026-10-13T14:48:07.174Z",
+  "login": {
+    "error": null
+  },
+  "reads": {
+    "taroPageBg": "rgb(255, 255, 255)",
+    "pageBg": "rgb(245, 247, 250)",
+    "identity": {
+      "text": "UI验收-可删除工号 UITEST01本机登录中退出",
+      "bg": "rgb(255, 255, 255)",
+      "color": "rgb(10, 37, 64)",
+      "border": "0px none rgb(10, 37, 64)",
+      "shadow": "rgba(10, 37, 64, 0.06) 0px 1.04px 4.16px 0px",
+      "h": 109.1,
+      "w": 365.1
+    },
+    "name": {
+      "text": "UI验收-可删除",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(10, 37, 64)",
+      "border": "0px none rgb(10, 37, 64)",
+      "shadow": "none",
+      "h": 33.3,
+      "w": 259.1
+    },
+    "no": {
+      "text": "工号 UITEST01",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(90, 107, 124)",
+      "border": "0px none rgb(90, 107, 124)",
+      "shadow": "none",
+      "h": 21.6,
+      "w": 259.1
+    },
+    "status": {
+      "text": "本机登录中",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(154, 165, 177)",
+      "border": "0px none rgb(154, 165, 177)",
+      "shadow": "none",
+      "h": 20,
+      "w": 259.1
+    },
+    "exit": {
+      "text": "退出",
+      "bg": "rgb(255, 255, 255)",
+      "color": "rgb(10, 37, 64)",
+      "border": "1px solid rgb(234, 238, 243)",
+      "shadow": "none",
+      "h": 47.8,
+      "w": 72.7
+    },
+    "primary": {
+      "text": "扫码领活扫一次码 = 把这道活领走（先领活再生产，做完不用再扫）",
+      "bg": "rgb(26, 115, 232)",
+      "color": "rgb(255, 255, 255)",
+      "border": "0px none rgb(255, 255, 255)",
+      "shadow": "rgba(10, 37, 64, 0.06) 0px 1.04px 4.16px 0px",
+      "h": 141.6,
+      "w": 365.1
+    },
+    "primaryTitle": {
+      "text": "扫码领活",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(255, 255, 255)",
+      "border": "0px none rgb(255, 255, 255)",
+      "shadow": "none",
+      "h": 58.5,
+      "w": 323.5
+    },
+    "primarySub": {
+      "text": "扫一次码 = 把这道活领走（先领活再生产，做完不用再扫）",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgba(255, 255, 255, 0.86)",
+      "border": "0px none rgba(255, 255, 255, 0.86)",
+      "shadow": "none",
+      "h": 40.5,
+      "w": 323.5
+    },
+    "section": {
+      "text": "其他功能",
+      "bg": "rgba(0, 0, 0, 0)",
+      "color": "rgb(154, 165, 177)",
+      "border": "0px none rgb(154, 165, 177)",
+      "shadow": "none",
+      "h": 21.6,
+      "w": 356.8
+    },
+    "entries": [
+      {
+        "title": "拍照入库",
+        "sub": "拍上游标签 ⇒ 过账 ⇒ 打标签",
+        "bar": "rgb(232, 241, 254)",
+        "h": 97.6
+      },
+      {
+        "title": "补打入库标签",
+        "sub": "标签丢了 / 磨花了",
+        "bar": "rgb(255, 244, 224)",
+        "h": 97.6
+      },
+      {
+        "title": "拍照发货",
+        "sub": "拍运单 / 商品标签 ⇒ 生成发货单",
+        "bar": "rgb(230, 246, 238)",
+        "h": 97.6
+      }
+    ]
+  },
+  "shots": [
+    "/Users/guangzhen.zk/ai native/migao-wt/6848-worker-home-shell/acceptance/2026-10-13-worker-home-6858-shell-preview/out/worker-home-6858-live-390.png",
+    "/Users/guangzhen.zk/ai native/migao-wt/6848-worker-home-shell/acceptance/2026-10-13-worker-home-6858-shell-preview/out/worker-home-6858-live-gate-390.png"
+  ],
+  "gate": {
+    "gate": true,
+    "primary": false
+  }
+}

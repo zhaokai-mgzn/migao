@@ -37,7 +37,7 @@
 //    例如黄金策会话卡 `src/components/chat/BatchStockCard.tsx` 直接渲染响应里的 `cohortLabel`，
 //    那三个词会经它上屏而不被本守卫抓到（该面另单跟踪，本单**有意不做**）。
 import { describe, it, expect } from 'vitest'
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
 import {
@@ -54,6 +54,11 @@ import {
   WORKER_H5_EXEMPT,
   WORKER_H5_ROOT,
   findWorkerH5Violations,
+  REMOVED_PAGE_NAMES,
+  DEAD_PAGE_NAME_EXEMPT,
+  deadPageNames,
+  livePageNames,
+  removedPageNameHit,
 } from '../../scripts/user-copy-scan.mjs'
 
 const ROOT = process.cwd()
@@ -72,7 +77,7 @@ describe('用户可见文案不得含内部词汇 / 研发腔（#5565 · #5576 �
 
   it('规则表不许被悄悄删空（九条一条都不许少；每条必须给得出可行动的出口）', () => {
     expect(RULES.map((r) => r.id)).toEqual([
-      'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8', 'R9', 'R10', 'R11',
+      'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8', 'R9', 'R10', 'R11', 'R12',
     ])
     for (const rule of RULES) {
       expect(rule.name.length, `${rule.id} 缺名字`).toBeGreaterThan(1)
@@ -111,6 +116,14 @@ describe('用户可见文案不得含内部词汇 / 研发腔（#5565 · #5576 �
     expect(fires('（L2）每平方米成品用掉多少米布')).toContain('R6')
     expect(fires('池看板里的进池订单')).toContain('R7')
     expect(fires('来源未知（切换前历史包袱）')).toContain('R8')
+    // R12（#6826 的 B2 面）：引号里的旧页名、以及**没有引号**的旧页名都必须判红
+    expect(fires('补救：到「工艺配置」页新建这条路线。')).toContain('R12')
+    expect(fires('去定价（工艺配置 · 工序单价）')).toContain('R12')
+    expect(fires("linkLabel: '工艺配置 → 算料配置'")).toContain('R12')
+    expect(fires('开通后请到「工艺配置 → 工序管理」手工维护工序与工艺路线。')).toContain('R12')
+    // 反侧：新指针与「工序库」面板逐字**都不许**红（域 label 现在是真值源里的一员）
+    expect(fires('到「企业基础设置 → 工艺路线」新建这条路线；先到「企业基础设置 → 工序与部位单价」新增工序。')).toEqual([])
+    expect(fires('工序库 · 计件单价')).toEqual([])
     // **好**文案（同一条纪律的另一侧）：行业术语 + 商家动作 ⇒ 一条规则都不该命中
     expect(fires('净窗高超过你们设的阈值就走特殊工艺档，点「去处理」按你家口径核一遍。')).toEqual([])
     expect(fires('批次余量要按商品查：先在上方搜一个商品再点选。')).toEqual([])
@@ -249,6 +262,126 @@ describe('用户可见文案不得含内部词汇 / 研发腔（#5565 · #5576 �
     findViolations(ROOT)
     expect(readdirSync(join(ROOT, 'scripts')).length).toBe(before)
     expect(statSync(join(ROOT, 'scripts', 'user-copy-scan.mjs')).isFile()).toBe(true)
+  })
+})
+
+/**
+ * R12（issue #6826 的 B2 面，`#6580` 撤掉页面名之后的那一类缺陷）：**上屏字面量不得出现已移除的页面名**。
+ *
+ * 病灶：`#6580` 把「参数总览」一级项与「加工项管理」/「工艺配置」两个菜单项撤掉（功能体并入
+ * `/settings` =「企业基础设置」页内的配置域），而**前端上屏文案**仍逐字写着旧页名 ——
+ * 商家照着提示去点，**找不到那个页面**（这与服务端文案面是同一类，服务端那一半由
+ * `tests/unit_ci_workflows/test_removed_page_copy_guard.py` 承担；两面合起来才覆盖这个类）。
+ *
+ * 判据形态（**会红**，不是空断言）：
+ * ① 扫描面非空 + 六个已修文件都在扫描面内（判据看不见它们 ⇒ 红）；
+ * ② 逐文件现扫 R12 = 0（任一文件里出现旧页名 ⇒ 红，具名到 `文件:行 + 原文`）；
+ * ③ **注入式红证**：把修过的旧串塞回该文件的源码 ⇒ R12 当场命中「现在被修的那一处」；
+ * ④ 正控：新指针（`企业基础设置 → <域 label>`）在六个文件里逐字出现（改错了也红）；
+ * ⑤ 豁免台账只许缩短（条目不再命中 ⇒ 红；六个已修文件**一个都不许**进台账）。
+ *
+ * 边界（照实登记，§19.1）：判不了「文案是否真上屏」（要 §15.7 真机）；判不了「假出口」
+ * （页名对了但按文案做仍做不到 —— 那由 `docs/design/user-facing-copy-standard.md` 的评审口径承担）；
+ * 也判不了服务端下发的字符串（那是上面那半个判据的面）。
+ */
+describe('R12：上屏字面量不得出现已移除的页面名（#6826 · B2 面）', () => {
+  /** 本包逐条修过的五个上屏字面量所在文件（注入式红证的靶子 + 正控 + 台账不许收它们） */
+  const FIXED_FILES = [
+    'src/app/register/page.tsx',
+    'src/components/orders/OrderCraftFields.tsx',
+    'src/components/production/UnpricedNotice.tsx',
+    'src/lib/route-source.ts',
+    'src/lib/meters-formula-legend.ts',
+  ]
+
+  it('判别力自证：R12 在册，且十一个既有规则的语义没被这次追加改掉', () => {
+    const r12 = RULES.find((r) => r.id === 'R12')
+    expect(r12, 'R12（已移除的页面名）必须在规则表里').toBeTruthy()
+    expect(r12!.name).toBe('已移除的页面名')
+    expect(r12!.出口.length, 'R12 的出口必须写到「按动作改指哪个域」').toBeGreaterThan(30)
+    // 已移除集合 = 现取（不是硬编码在规则里）：本期四个名字都不在导航真值源里
+    for (const name of REMOVED_PAGE_NAMES) expect(deadPageNames()).toContain(name)
+    // 真值源是**活的**：域 label 与一级菜单名都在册（新指针指向的名字必须可判）
+    for (const live of ['企业基础设置', '工艺路线', '算料口径', '工序与部位单价', '加工项与分类', '加工费组合']) {
+      expect(livePageNames(), `导航真值源里应有 ${live}`).toContain(live)
+    }
+    // 解析没坏：菜单项（带 path 的真菜单）+ 域 label 都**非空**（读成空集 ⇒ 规则静默放行 ⇒ 红）
+    expect(livePageNames().size, '真值源读成空集 = 规则静默放行').toBeGreaterThanOrEqual(25)
+    expect(deadPageNames()).not.toContain('工艺路线')
+  })
+
+  it('扫描面非空 + 五个已修文件都在扫描面内（看不见 ⇒ 判据在扫空气）', () => {
+    const { files } = findViolations(ROOT)
+    expect(files.length, '三个扫描目录下应有一批源文件').toBeGreaterThanOrEqual(200)
+    for (const rel of FIXED_FILES) {
+      expect(files, `扫描面必须含 ${rel}`).toContain(rel)
+    }
+  })
+
+  it('🔴 已修文件里 R12 逐文件零命中（出现旧页名 ⇒ 红，具名到 文件:行 + 原文）', () => {
+    const lines = []
+    for (const rel of FIXED_FILES) {
+      const src = readFileSync(join(ROOT, rel), 'utf-8')
+      for (const c of candidateStrings(src, rel)) {
+        const hit = removedPageNameHit(c.text)
+        if (hit) lines.push(`${rel}:${c.line} 出现已移除页面名「${hit}」：${c.text.slice(0, 120)}`)
+      }
+    }
+    expect(lines, '上屏文案里出现了已移除的页面名（商家按它去点会找不到页面）：\n' + lines.join('\n')).toEqual([])
+  })
+
+  it('正控：新指针在已修文件里逐字出现（改错了也红）', () => {
+    const NEW_POINTERS: Array<[string, string]> = [
+      ['src/app/register/page.tsx', '企业基础设置 → 工序与部位单价'],
+      ['src/components/orders/OrderCraftFields.tsx', '企业基础设置 → 算料口径'],
+      ['src/components/production/UnpricedNotice.tsx', '企业基础设置 → 工序与部位单价'],
+      ['src/lib/route-source.ts', '企业基础设置 → 工艺路线'],
+      // ⚠️ 用料公式说明的**链接文案**在 #6825 之后**不再是多级导航链**（该域就在本页
+      //    「企业基础设置」内，旧写法「工艺配置 → 算料配置」整条退场）⇒ 正控钉的是**域 label**
+      ['src/lib/meters-formula-legend.ts', "linkLabel: '算料口径'"],
+    ]
+    for (const [rel, pointer] of NEW_POINTERS) {
+      expect(readFileSync(join(ROOT, rel), 'utf-8'), `${rel} 应含新指针 ${pointer}`).toContain(pointer)
+    }
+  })
+
+  it('🔴 注入式红证：把修前的旧指针塞回源码 ⇒ R12 当场命中（「不会红的断言 = 空断言」）', () => {
+    // ⚠️ 注入必须**落在代码里的那一处**（不是注释）：这五个文件的「旧说法」在**注释**里也有
+    //    （沿革注解），拿整份文件 `String.replace(old, bad)` 会先改到注释上 ⇒ 前半句仍是旧串时
+    //    改出来的是**非法 TS**，解析器一崩 `candidateStrings` 就返回空 ⇒ 这条自证读成「注入不生效」
+    //    （本包实测踩过）。所以靶子取**代码里唯一的那一处**，`bad` 写成同形但**仍是合法 TS** 的旧串。
+    const INJECT: Array<[string, string, string]> = [
+      ['src/app/register/page.tsx', '企业基础设置 → 工序与部位单价', '开通后请到「工艺配置 → 工序管理」手工维护工序与工艺路线'],
+      ['src/components/orders/OrderCraftFields.tsx', '档位来自「企业基础设置 → 算料口径」', '档位来自「工艺配置 → 算料配置」'],
+      ['src/components/production/UnpricedNotice.tsx', '去定价（企业基础设置 → 工序与部位单价）', '去定价（工艺配置 · 工序单价）'],
+      ['src/lib/route-source.ts', '补救：到「企业基础设置 → 工艺路线」新建这条路线', '补救：到「工艺配置」页新建这条路线'],
+      // ⚠️ #6825 之后该链接文案 = 域 label「算料口径」（不再是多级导航链）；注入的旧串是**更早那版**
+      ['src/lib/meters-formula-legend.ts', "linkLabel: '算料口径'", "linkLabel: '工艺配置 → 算料配置'"],
+    ]
+    for (const [rel, old, bad] of INJECT) {
+      const src = readFileSync(join(ROOT, rel), 'utf-8')
+      expect(src.split(old).length - 1, `${rel} 的代码版旧指针应恰好出现一次（注入靶必须唯一）`).toBe(1)
+      const corrupted = src.replace(old, bad)
+      const hits = candidateStrings(corrupted, rel).filter((c) => removedPageNameHit(c.text) !== null)
+      expect(hits.length, `${rel} 注入旧串后 R12 必须命中（命中 ${hits.length} 条）`).toBe(1)
+      // 命中的候选里确实带着**已移除集合里的那个名**（`bad` 在 `linkLabel: '…'` 形态下抽出来的是**串内容**）
+      const hitName = removedPageNameHit(hits[0].text)
+      expect(deadPageNames(), `${rel} 命中的候选应含已移除页名，实得 ${hitName}`).toContain(hitName)
+      // 反向对照：同一份源码**不注入**时 R12 命中 0（说明上面那条命中的确是注入带来的）
+      expect(candidateStrings(src, rel).filter((c) => removedPageNameHit(c.text) !== null)).toEqual([])
+    }
+  })
+
+  it('🔴 豁免台账只许缩短：三条具名豁免都必须**仍在命中**，且五个已修文件一个都不许进台账', () => {
+    const { candidates } = findViolations(ROOT)
+    const live = new Set(candidates.filter((c) => removedPageNameHit(c.text) !== null).map((c) => c.file))
+    for (const entry of DEAD_PAGE_NAME_EXEMPT) {
+      expect(existsSync(join(ROOT, entry)), `台账条目指向的文件不存在：${entry}`).toBe(true)
+      expect(live.has(entry), `台账条目不再命中（只许缩短，请删掉）：${entry}`).toBe(true)
+    }
+    for (const rel of FIXED_FILES) {
+      expect(DEAD_PAGE_NAME_EXEMPT, `${rel} 已修 ⇒ 不得进豁免台账`).not.toContain(rel)
+    }
   })
 })
 

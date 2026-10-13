@@ -393,7 +393,7 @@ export default function OrderCraftFields({
             onChange={(next) => onChange({ craftTier: next })}
           />
           <p className="mt-1 text-xs text-neutral-400">
-            档位来自「工艺配置 → 算料配置」的档位表（可增删），随这张单一起保存
+            档位来自「企业基础设置 → 算料口径」的档位表（可增删），随这张单一起保存
           </p>
         </div>
       )}
@@ -402,7 +402,7 @@ export default function OrderCraftFields({
           现在按的是缺省口径（配置读不到时档位可选值也无从展示）。 */}
       {calcConfigMissing && (
         <p data-testid="craft-calc-config-missing" className="mt-3 text-xs text-amber-600">
-          算料配置未加载（「工艺配置 → 算料配置」读取失败）—— 本次按缺省口径试算：
+          算料配置未加载（「企业基础设置 → 算料口径」读取失败）—— 本次按缺省口径试算：
           {CRAFT_CALC_FORMULA_LABELS[CRAFT_CALC_FORMULA_PLEAT] ?? CRAFT_CALC_FORMULA_PLEAT}
           + 档位 {CRAFT_CALC_TIER}；档位可选值需配置加载后才能展示
         </p>

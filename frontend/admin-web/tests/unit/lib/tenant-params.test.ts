@@ -3,7 +3,9 @@
  * 「企业参数中心」参数清单与文案的**跨源守卫**（issue #5131）—— `migao-dev-flow` §22 的三条基线。
  *
  * 分工：本文件判**静态清单与文案**；渲染面在
- * `frontend/admin-web/tests/unit/components/TenantParamsPanel.test.tsx`。
+ * `frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx` 与
+ * `frontend/admin-web/tests/unit/components/RemnantItemSizesPanel.test.tsx`
+ * （旧的 `TenantParamsPanel.test.tsx` 已随该组件在 #6826 删除）。
  *
  * ## 判据（每条都带能**单独**让它变红的红证）
  *

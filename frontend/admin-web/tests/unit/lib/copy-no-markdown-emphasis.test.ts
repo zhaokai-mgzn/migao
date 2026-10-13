@@ -13,7 +13,7 @@
  * ## 判据分工（**DOM 面在别处**，本文件管**源码面**）
  *
  * - **DOM 面**：`tests/unit/components/CraftCalcGlossary.test.tsx` /
- *   `tests/unit/components/TenantParamsPanel.test.tsx` /
+ *   `tests/unit/components/CalcCaliberPanel.test.tsx` /
  *   `tests/unit/pages/production-routings.test.tsx` —— 渲染后整块 `textContent` 不含 `**` 与反引号，
  *   **且** `<strong>` / `<code>` 真的出现。🔴 两条必须同时有：只判「不含 `**`」的话，
  *   把标记删掉（= #5206 的形态）同样绿 ⇒ 那是个**看不见强调丢失**的空判据。
@@ -95,7 +95,8 @@ const WIRED_FILES = [
   // 留着会让「接线」判据读一个不存在的渲染点（陈旧条目即红）。
   'src/components/settings/CalcCaliberPanel.tsx',
   'src/components/production-config/ProcessConfigBoard.tsx',
-  'src/components/settings/TenantParamsPanel.tsx',
+  // ⚠️ `src/components/settings/TenantParamsPanel.tsx` 已从本表销账（#6826 判定死代码后删除：
+  // 零生产渲染点、唯一消费者是它自己的测试）。留着会让「接线」判据读一个不存在的渲染点（陈旧条目即红）。
   'src/components/settings/RemnantItemSizesPanel.tsx',
   'src/components/settings/OversizeThresholdPreview.tsx',
   'src/app/(dashboard)/production/remnants/page.tsx',

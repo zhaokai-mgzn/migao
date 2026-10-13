@@ -4326,3 +4326,33 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: OR-065
+    legacy_id: ""
+    title: "未定价告警的定价入口：**可见文案与后端下发的域指针逐字同源** + href 落在真实定价面（issue #6853 修 #6848 的卡点）"
+    domains:
+      - order
+      - ui
+    tier: normal
+    tags:
+      - order
+      - pricing
+      - cross-package-anchor
+      - same-source
+      - backend-contract
+      - red-proof
+    truths_ref: []
+    user_inputs:
+      - "未定价告警里那个「去定价」入口，跟后台提示里说的那个地方（「企业基础设置 → 加工费组合」）是同一个吗？"
+    expectations: []
+    data_checks:
+      - "🔴 **判据 1·同源（前端文案 = 后端下发的指针）**：`ProcessingFeeCalculator.java` 的**字符串字面量**里现取域指针（`「企业基础设置 → <域>」`，不写死），断言页面里**每一处**定价入口链接的**可见文案逐字包含**它（改坏前端文案 ⇒ 红；后端改指别处 ⇒ 红）。执行点 = frontend/admin-web/tests/unit/pages/orders-new-fee-preview.test.tsx 的 `expectPricingEntriesAreSameSourced`（#4590 组两条用例）"
+      - "🔴 **判据 2·落点真实**：每个入口的 `href` 必须是**仍解析**的定价面（现取重定向页 frontend/admin-web/src/app/(dashboard)/production/processing-fees/page.tsx 的 `redirect('/production/processing?tab=fees')`）—— 删重定向页 / 改落点 ⇒ 红"
+      - "**判据 3·判别力（红证，逐字）**：① **修前红**（在**已合并的 main** 上现取）：在 `frontend/admin-web/tests/unit/pages/orders-new-fee-preview.test.tsx` 所在目录跑 vitest ⇒ `2 failed | 18 passed`，两条都报 `Error: 后端 ProcessingFeeCalculator 里找不到 PRICING_ENTRY —— 判据前提失效`；② **负向注入**：把链接文案改成另一个坐标（「工艺配置 → 工艺路线」）⇒ 同一条命令 `2 failed | 18 passed`（断言不是空断言）；③ **修后**：`20 passed`；④ 同族 5 个文件（UnpricedNotice / ProductionProgressTable / PieceworkTable / production-routings / production-piecework）合计 `224 passed` 无回退"
+    skip_reason: "[backend-contract] 跨包同源判据（admin-web vitest 真读 admin-api Java 源码取真值；零 LLM 环节 ⇒ 不进 agent-eval 冒烟）"
+    merge_log: "2026-10-13 新增（issue #6853）。病根：B1（#6839 / 合并 `de7ccd6f5`）删除后端常量 `ProcessingFeeCalculator.PRICING_ENTRY` 时判定「已无消费者」，而本文件的跨包判据仍抽它 ⇒ admin-web 腿必红、卡住 #6848；且 **main 的 push 腿看不见 admin-web 腿**（核过 `de7ccd6f5` 的 check-runs）⇒ 合并后才炸。修法：真值源从 **URL** 换成**后端下发的域指针**（意图一字未变：前端入口必须与后端同源、不另写第二份坐标），并把前端链接文案改成带该指针（逐字），href 那半换成「重定向页现取」的真值源。舱内另加类级守卫（MC-098）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/orders-new-fee-preview.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

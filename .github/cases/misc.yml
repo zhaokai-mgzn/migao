@@ -3722,3 +3722,32 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: MC-098
+    legacy_id: ""
+    title: "**跨包指针消费者 ⇄ 后端下发面**双向核对：删锚点必红（issue #6853 的类级固化）"
+    domains:
+      - misc
+      - ui
+    tier: normal
+    tags:
+      - cross-package-anchor
+      - liveness
+      - ledger
+      - backend-contract
+      - red-proof
+    truths_ref: []
+    user_inputs:
+      - "后端删掉一个指针常量时，凭什么相信「已无消费者」—— 包作者自己 grep 一遍就算数吗？"
+    expectations: []
+    data_checks:
+      - "🔴 **判据 8·双向核对**：`backend/admin-api/src/main/java/com/migao/admin/service/**` 的**字面量**里现取全部「企业基础设置 → <域>」指针（不写死清单，面塌了 fail-closed）⇄ `CROSS_PACKAGE_POINTER_CONSUMERS` 登记的每个消费者文件必须（a）**代码区**里逐字带着该指针、（b）其所指指针**仍被后端下发**。执行点 = tests/unit_ci_workflows/test_removed_page_pointer_targets.py::test_cross_package_pointer_consumers_still_exist"
+      - "🔴 **判别力自证（注入式）**：① 消费者换坐标 ⇒ 红；② 后端不再下发 ⇒ 红；③ 消费者文件被删/改名 ⇒ 红；④ **只写在注释里**不算消费者仍带着它（否则这条判据就是空断言；`_ts_code_only` 先剥块注释再剥行注释）。执行点 = 同文件 ::test_injection_cross_package_pointer_guard_discriminates"
+      - "**边界（照实登记）**：① 登记的是**已发现的**消费者（未登记的跨包消费者仍然无牙 —— 这是台账型守卫的固有射程，不粉饰）；② 剥注释**不做字符串字面量级解析**（字符串里的 `//` 会被当注释切掉；域指针串里没有 `//` ⇒ 对本判据无影响）；③ 判不了「消费者真的会跑」（那是 CI 腿的事 —— 本判据的价值正是**在前端腿之外**也能红）"
+    skip_reason: "[backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 字面量 + 读两个前端文件 + 纯函数判定 + 注入自证），pytest 真跑、零网络、不进 agent-eval 冒烟"
+    merge_log: "2026-10-13 新增（issue #6853）。为什么必须有这条（本次事故的形状）：B1 删掉后端 `PRICING_ENTRY` 后，前端跨包判据仍抽它 ⇒ **只有 admin-web 腿会红**，而那条腿**不在 main 的 push 腿里** ⇒ 断点在合并前**没有任何东西会响**。本判据把「消费者 ⇄ 后端下发面」搬到 **Python 腿**上判，删任一侧都会在 `ci workflow helper unit tests` 里红。取号 = main 现取 MC-001~097 ⇒ **MC-098**。读数：本判据落地后 `pytest tests/unit_ci_workflows/test_removed_page_pointer_targets.py -q` 全绿（含注入式自证）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_removed_page_pointer_targets.py"
+      ci:
+        - pr-check.yml
+      verifies: []

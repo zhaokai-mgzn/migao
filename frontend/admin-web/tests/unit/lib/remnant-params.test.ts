@@ -3,8 +3,8 @@
  * 「余料回收」域在**企业参数中心**里的跨源守卫（issue #5146）—— `migao-dev-flow` §22 的 P1/P2/P3/P5。
  *
  * 分工：本文件判**静态清单与文案**；渲染面在
- * `tests/unit/components/RemnantItemSizesPanel.test.tsx`（面板）与
- * `tests/unit/components/TenantParamsPanel.test.tsx`（挂载点）。
+ * `frontend/admin-web/tests/unit/components/RemnantItemSizesPanel.test.tsx`
+ * （面板即挂载点；旧的 `TenantParamsPanel.test.tsx` 已随该组件在 #6826 删除）。
  *
  * ## 判据（每条都带能**单独**让它变红的红证）
  *

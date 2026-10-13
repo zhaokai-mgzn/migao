@@ -171,6 +171,18 @@ export const inputCls =
   'h-9 w-full rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400'
 
 /**
+ * 把 `inputCls` 的**整列宽**换成定宽（§22 配置页版式；issue #6857）。
+ *
+ * 为什么需要：`inputCls` 带 `w-full`（在表单/弹窗里是对的），但配置页的数值框里
+ * 只有两三位数字（`0.25` / `6`）—— 拉满整列既难读也把页面撑得很高（真机实测 ≈670px 宽）。
+ * 仓内既有基准：`RemnantItemSizesPanel` 用 `w-40` / `w-28`，`ProcessingItemsPanel` 用 `w-32`。
+ *
+ * ⚠️ 实现是**字符串替换**：`inputCls` 一旦不再含 `w-full`，这里会**静默退化成整列宽**
+ * ⇒ 有守卫钉住（`tests/unit/lib/config-page-field-width.test.tsx` 断言替换真的生效）。
+ */
+export const boundedInputCls = (width: string): string => inputCls.replace(/\bw-full\b/, width)
+
+/**
  * provenance 三态 → 徽标（#4361 冻结取值）。未知/缺省（老实例未升级）**不渲染任何徽标** ——
  * 静默 = 未知，**不得**显示成「实证」（同 route-source 口径）。
  * 「占位待确认」文案要让商家看懂：它说的是**单价是初始占位值，需确认**，而不是工序本身有问题。

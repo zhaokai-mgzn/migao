@@ -445,13 +445,19 @@ const SALE_FORM_FINISHED = '成品帘'
 type SaleForm = typeof SALE_FORM_FABRIC | typeof SALE_FORM_FINISHED
 
 /**
- * 「加工费组合」定价面的入口（issue #4590）—— **与后端同源同值**：后端
- * `ProcessingFeeCalculator.PRICING_ENTRY` 给未定价组合拼的 hint 里就是这条路径。
+ * 「加工费组合」定价面的入口（issue #4590）—— **与后端下发的域指针同源**。
+ *
+ * ⚠️ 口径沿革（issue #6839 = B1 包）：后端 hint 此前给的是**路径**（`ProcessingFeeCalculator.PRICING_ENTRY`），
+ * 2026-10-13 起改为**页名**「企业基础设置 → 加工费组合」——URL 属内部标识、不再下发。
+ * ⇒ 同源判据的**真值源**随之换成页名：本文件里链接的**可见文案**必须逐字带着后端下发的那个指针
+ * （由 `tests/unit/pages/orders-new-fee-preview.test.tsx` 直接读后端源码比对，改一边必红）。
  *
  * 它落点 = 合并页 `/production/processing?tab=fees` 的**第二个 tab「加工费组合」**
  * （`production/processing-fees/page.tsx` 是这条旧路径的重定向入口，见该文件头）
- * ⇒ 就是商家真正能定价的那一屏。⚠️ 前端**不另写**第三个路径：
- * `orders-new-fee-preview.test.tsx` 直接读后端源码比对（同源判据，改一边必红）。
+ * ⇒ 就是商家真正能定价的那一屏。⚠️ 前端**不另写**第三个路径。
+ *
+ * 🔴 反面教材（issue #6853）：上一版注释断言「后端 `PRICING_ENTRY` 给未定价组合拼的 hint 里就是这条路径」，
+ * 而 B1 已把后端那个常量删掉 ⇒ 注释断言了一个**不存在**的后端常量（陈旧跨包前提，已同批改准）。
  */
 const PRICING_ENTRY = '/production/processing-fees'
 
@@ -3856,7 +3862,7 @@ export default function NewOrderPage() {
                         href={PRICING_ENTRY}
                         className="underline underline-offset-2 hover:text-amber-900"
                       >
-                        「加工费组合」
+                        企业基础设置 → 加工费组合
                       </Link>
                     </p>
                   </div>
@@ -6460,7 +6466,7 @@ function LineItemBlock({
                         href={PRICING_ENTRY}
                         className="text-primary-600 underline underline-offset-2 hover:text-primary-700"
                       >
-                        去「加工费组合」定价
+                        去「企业基础设置 → 加工费组合」定价
                       </Link>
                     )}
                   </div>

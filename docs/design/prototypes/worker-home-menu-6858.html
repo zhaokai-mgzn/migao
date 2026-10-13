@@ -1,0 +1,143 @@
+<!doctype html>
+<!--
+  一次性设计原型（throwaway，非线上代码）—— issue #6858 / #6764
+  问题：「工人登录后菜单只有 1~4 条时，这一页该长什么样才像我们产品的设计？」
+  用法：浏览器打开本文件，?v=1|2|3 切换变体，?n=1|2|4 切换条目数，?bar=0 隐藏底部控制条。
+  口径：只用本仓既有设计 token（`src/styles/admin-surfaces.scss` / `dashboard` / `profile`），不新增颜色。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>工人端工作台菜单 · 设计候选</title>
+<style>
+  :root{
+    --page:#f5f7fa; --card:#ffffff; --ink:#0a2540; --muted:#5a6b7c; --muted2:#9aa5b1;
+    --brand:#1a73e8; --brand-weak:#e8f1fe; --gold:#c8a24b; --line:#eaeef3;
+    --shadow:0 2px 8px rgba(10,37,64,.06); --shadow-soft:0 1px 4px rgba(10,37,64,.04);
+    --radius:16px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--page);color:var(--ink);
+       font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;}
+  .page{min-height:100vh;padding-bottom:96px}
+  /* ── 身份条：谁在干活（页头） ── */
+  .idbar{display:flex;align-items:center;gap:12px;background:var(--card);border-radius:var(--radius);
+         box-shadow:var(--shadow);margin:12px 12px 10px;padding:14px 16px}
+  .idbar__who{flex:1 1 auto;min-width:0}
+  .idbar__name{font-size:20px;font-weight:700;letter-spacing:.5px}
+  .idbar__meta{font-size:12px;color:var(--muted2);margin-top:4px}
+  .idbar__btn{flex:0 0 auto;height:34px;padding:0 14px;border:1px solid var(--line);border-radius:10px;
+              background:#fff;color:var(--ink);font-size:13px;white-space:nowrap}
+  /* ── 常驻主按钮：一天几十次的那一下 ── */
+  .primary{display:block;width:100%;text-align:left;margin:0 12px 14px;width:calc(100% - 24px);
+           border:0;border-radius:var(--radius);background:var(--brand);color:#fff;padding:18px 20px;
+           box-shadow:0 6px 18px rgba(26,115,232,.28)}
+  .primary__t{font-size:22px;font-weight:700;letter-spacing:.5px}
+  .primary__s{font-size:13px;color:rgba(255,255,255,.86);margin-top:6px;line-height:1.5}
+  .group__title{font-size:13px;color:var(--muted2);margin:16px 16px 8px}
+  /* ── V1：大卡列表 ── */
+  .row{display:flex;align-items:center;gap:12px;background:var(--card);border-radius:14px;
+       box-shadow:var(--shadow-soft);border:1px solid var(--line);margin:0 12px 10px;padding:16px}
+  .row__bar{flex:0 0 auto;width:4px;height:34px;border-radius:3px;background:var(--brand-weak)}
+  .row__bar--a{background:#cfe0ff}.row__bar--b{background:#ffe6bf}
+  .row__bar--c{background:#cdefdc}.row__bar--d{background:#e3d9ff}
+  .row__body{flex:1 1 auto;min-width:0}
+  .row__t{font-size:17px;font-weight:600}
+  .row__s{font-size:12.5px;color:var(--muted);margin-top:5px;line-height:1.45}
+  .row__go{flex:0 0 auto;color:var(--muted2);font-size:18px}
+  /* ── V2：宫格瓦片 ── */
+  .tiles{display:flex;flex-wrap:wrap;gap:10px;margin:0 12px}
+  .tile{flex:1 1 calc(50% - 5px);min-height:104px;background:var(--card);border-radius:14px;
+        box-shadow:var(--shadow-soft);border:1px solid var(--line);padding:14px}
+  .tile__t{font-size:16.5px;font-weight:600}
+  .tile__s{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.45}
+  .tile--wide{flex-basis:100%}
+  /* ── V3：分组清单（对齐已裁定设计稿 docs/design/worker-home-menu.md） ── */
+  .v3 .row{border-style:solid}
+  .foot{margin:18px 12px 0;font-size:11px;color:var(--muted2);line-height:1.6}
+  /* ── 原型控制条（截图时 ?bar=0 隐藏） ── */
+  .bar{position:fixed;left:0;right:0;bottom:0;display:flex;gap:8px;justify-content:center;
+       padding:10px;background:rgba(10,37,64,.92);color:#fff;font-size:13px}
+  .bar button{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);color:#fff;
+              border-radius:8px;padding:6px 12px;font-size:13px}
+</style>
+</head>
+<body>
+<div class="page" id="page"></div>
+<div class="bar" id="bar"></div>
+<script>
+const Q = new URLSearchParams(location.search)
+const V = Number(Q.get('v') || 1)
+const N = Number(Q.get('n') || 4)
+const WORKER = { name:'王五', no:'W-1024', active:true }
+
+// 条目池：前 N 条 = 工人今天能用的面（与服务端 pages 投影后的集合对应）
+const ITEMS = [
+  { key:'inbound',  t:'拍照入库',     s:'拍上游标签 ⇒ 过账 ⇒ 打标签',      tone:'a' },
+  { key:'reprint',  t:'补打入库标签', s:'标签丢了 / 磨花了',                tone:'b' },
+  { key:'shipment', t:'拍照发货',     s:'拍运单 / 商品标签 ⇒ 生成发货单',   tone:'c' },
+  { key:'cut',      t:'裁高计算',     s:'这块布裁多长（一体机那台屏也在用）', tone:'d' },
+]
+const GROUP_OF = { inbound:'物料', reprint:'物料', shipment:'出货', cut:'干活' }
+
+const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))
+const items = ITEMS.slice(0, Math.max(1, Math.min(4, N)))
+
+const idbar = `
+  <div class="idbar">
+    <div class="idbar__who">
+      <div class="idbar__name">${esc(WORKER.name)}</div>
+      <div class="idbar__meta">工号 ${esc(WORKER.no)} · ${WORKER.active ? '本机登录中' : '未登录'}</div>
+    </div>
+    <button class="idbar__btn">切换</button>
+    <button class="idbar__btn">退出</button>
+  </div>`
+
+const primary = `
+  <button class="primary">
+    <div class="primary__t">扫码领活</div>
+    <div class="primary__s">扫一次码 = 把这道活领走（先领活再生产，做完不用再扫）</div>
+  </button>`
+
+const row = (it) => `
+  <div class="row">
+    <div class="row__bar row__bar--${it.tone}"></div>
+    <div class="row__body">
+      <div class="row__t">${esc(it.t)}</div>
+      <div class="row__s">${esc(it.s)}</div>
+    </div>
+    <div class="row__go">›</div>
+  </div>`
+
+const tile = (it, wide) => `
+  <div class="tile${wide ? ' tile--wide' : ''}">
+    <div class="tile__t">${esc(it.t)}</div>
+    <div class="tile__s">${esc(it.s)}</div>
+  </div>`
+
+let body = ''
+if (V === 1) {
+  body = idbar + primary + `<div class="group__title">今天能用的（${items.length} 项）</div>` + items.map(row).join('')
+} else if (V === 2) {
+  body = idbar + primary +
+    `<div class="tiles">` + items.map((it) => tile(it, items.length === 1)).join('') + `</div>`
+} else {
+  const groups = [...new Set(items.map((it) => GROUP_OF[it.key]))]
+  body = `<div class="v3">` + idbar + primary + groups.map((g) => `
+    <div class="group__title">${esc(g)}</div>` + items.filter((it) => GROUP_OF[it.key] === g).map(row).join('')).join('') + `</div>`
+}
+document.getElementById('page').innerHTML = body +
+  `<div class="foot">原型（throwaway）：实心蓝块 = 一天几十次的主路径；条目数按服务端 pages 投影，
+  只给 1 条时本页也不该显得空。变体 ${V} · ${items.length} 条。</div>`
+
+if (Q.get('bar') !== '0') {
+  document.getElementById('bar').innerHTML =
+    `<button onclick="location.search='?v=${V === 3 ? 1 : V + 1}&n=${N}'">变体 v${V === 3 ? 1 : V + 1}</button>
+     <button onclick="location.search='?v=${V}&n=${N === 4 ? 1 : N === 1 ? 2 : 4}'">条目 ${N === 4 ? 1 : N === 1 ? 2 : 4} 条</button>`
+} else {
+  document.getElementById('bar').remove()
+}
+</script>
+</body>
+</html>

@@ -117,9 +117,9 @@ describe('ProfilePage', () => {
   // ── issue #6563（用户 2026-10-08 裁定）：工人三件功能**不在商家菜单** ──
   // 它们是工人动作（各自页内还会再要求工人身份），归位在工人登录后的工作台
   // （`src/pages/worker/home/index.tsx`）。红证 = 把任一条渲染/写回本页 ⇒ 下面两条各自判红。
-  it('🔴 不渲染工人三件功能（扫码报工 / 拍照入库 / 补打入库标签）', () => {
+  it('🔴 不渲染工人功能（扫码领活 / 拍照入库 / 补打入库标签）', () => {
     render(<ProfilePage />)
-    expect(screen.queryByText('扫码报工')).toBeNull()
+    expect(screen.queryByText('扫码领活')).toBeNull()
     expect(screen.queryByText('拍照入库')).toBeNull()
     expect(screen.queryByText('补打入库标签')).toBeNull()
   })

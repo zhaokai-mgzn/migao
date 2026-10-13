@@ -7,7 +7,7 @@
  * 本文件只判**渲染器本身**（标记 ↔ 元素的映射 + 不许吞字的负控）；
  * 「真实组件把标记喂进来了吗」在
  * `tests/unit/components/CraftCalcGlossary.test.tsx` /
- * `tests/unit/components/TenantParamsPanel.test.tsx` /
+ * `tests/unit/components/CalcCaliberPanel.test.tsx` /
  * `tests/unit/pages/production-routings.test.tsx` 的 DOM 判据里（那三条同时判
  * 「裸标记不上屏」与「强调真的以元素呈现」—— 只判前者的话，把标记删掉也能绿 = 丢强调）。
  *
