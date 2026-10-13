@@ -169,8 +169,10 @@ export const PARAM_DOMAINS: readonly ParamDomain[] = [
     })),
     requiredCode: 'production:view',
     // 🔴 2026-10-09（issue #6585）：**不再给「去算料配置」外链** —— 本域自己就是算料配置的编辑面，
-    // 而它原来指向的 `/production/routings?tab=calc` 是**旧路由**（v2 已把那个 tab 拆掉）。
+    // 而它原来指向的 `/production/routings?tab=calc` 是**旧深链**。
     // 留着就是「把人送出页面去改同一份配置」—— 同族缺陷已在配置主线的「去配置」上修过一次（G3）。
+    // ⚠️ 2026-10-13（issue #6825）事实更新：本域**现在就地可改**（不再是只读展示）；
+    // 板子那个 tab 已退役，`?tab=calc` 由路由层重定向到本域 —— 「不给外链」的结论不变、依据更强。
   },
   {
     key: 'ai',

@@ -218,12 +218,6 @@ vi.mock('@/components/production-config/CuttingHeightPanel', () => ({
     <div data-testid="stub-cutting-height-panel" data-embedded={String(!!embedded)} />
   ),
 }))
-vi.mock('@/components/production-config/CalcFormulaPanel', () => ({
-  CalcFormulaPanel: ({ embedded }: { embedded?: boolean }) => (
-    <div data-testid="stub-calc-formula-panel" data-embedded={String(!!embedded)} />
-  ),
-}))
-
 import SettingsPage from '@/app/(dashboard)/settings/page'
 import { calcReadErrorCopy } from '@/app/(dashboard)/settings/page'
 import {
@@ -769,6 +763,16 @@ describe('判据 7：域内零 tab（两层导航并存 = 用户说的「分不�
         `域「${d.label}」内部还有一套 tab —— 左栏已经有一套导航了（设计 §2 判死线第 3 条）`,
       ).toBe(0)
     }
+  })
+
+  it('算料口径域：域内有**就地可改**的写面（issue #6825）—— 只剩只读展示即违规', async () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams('domain=calc'))
+    render(<SettingsPage />)
+    const panel = await screen.findByTestId('config-domain-panel-calc')
+    // 8 个标量里至少有一个输入框常驻（类级守卫逐域遍历在
+    // frontend/admin-web/tests/unit/lib/domain-write-surface.test.tsx）
+    expect(within(panel).getByTestId('calc-caliber-scalar-per_fold_single')).toBeInTheDocument()
+    expect(within(panel).getByTestId('calc-caliber-save')).toBeInTheDocument()
   })
 
   it('台账无幽灵：登记的未拆域必须仍是**真实存在**的域 key（拼错 ⇒ 判据在对空气放行）', () => {

@@ -31,6 +31,13 @@
 //    不动勾选仍提交**基线三部位**（既有行为逐字不变）。
 // ⑬ **跨形态勾选就地提示**（#4556 产品裁定 (a)；后端机制跟单 #4563）：同勾「`布料` + 帘种部位」⇒
 //    提示「会顶掉布料专用路线 / 可能丢工序」；**只**勾 `布料`（布料专线）或只勾基线三部位 ⇒ **不**提示。
+// ⚠️ **2026-10（issue #6825）迁出登记**：本文件原有一批「算料配置 tab / 算料口径与术语说明」判据
+// （切 tab 渲染引擎默认值 / PUT 全量键 / 422 逐条理由 / 档位中文名 / `NaN` 空框 / 术语锚点 …
+// 原 ⑨b / ⑨d / ⑫ 三组）。算料配置的**唯一写面**已收敛进 `/settings` 的「算料口径」域
+// （同一份配置不许两个入口；板子那个 tab 退役）⇒ 这些判据**逐条迁进**
+// `frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx`（并升级为域内就地可改的形态）。
+// 本文件继续判**留在本页**的那部分：就绪度第 ④ 步的三态与**跨页深链**、以及裁高 / 工序 / 路线各半。
+//
 // ⑭ **用户走查三条**（issue #4567）：
 //    ① 条件工序规则表加「单价（元/套）」列 —— `option` 有价 ⇒ `money()`；`null` ⇒ 「**未定价**」
 //       （**不得**是 `¥0.00`：未定价 ≠ 0 元）；真 0 元 ⇒ 照显示 `¥0.00`；非 `option` ⇒ `—` + `title`；
@@ -342,7 +349,6 @@ const mockUpdateRuleCustomerUnitPrice = vi.fn()
 const mockGetRouteSignals = vi.fn()
 // issue #4528 = 包 E：算料配置读写（tab「算料配置」）
 const mockGetCraftCalcConfig = vi.fn()
-const mockUpdateCraftCalcConfig = vi.fn()
 
 const mockGetCuttingHeightConfig = vi.fn()
 const mockUpdateCuttingHeightConfig = vi.fn()
@@ -373,7 +379,6 @@ vi.mock('@/lib/api', () => ({
     updateRuleCustomerUnitPrice: (...a: unknown[]) => mockUpdateRuleCustomerUnitPrice(...a),
     getRouteSignals: (...a: unknown[]) => mockGetRouteSignals(...a),
     getCraftCalcConfig: (...a: unknown[]) => mockGetCraftCalcConfig(...a),
-    updateCraftCalcConfig: (...a: unknown[]) => mockUpdateCraftCalcConfig(...a),
   },
   // 算料口径说明区块的**算例**自 #5036 包 2a 起由服务端给 ⇒ 本页挂载即发两次判定请求。
   // 本替身逐值复刻引擎 `detect_auto_features` 的判据（示例几何：宽 2 / 高 2.6 / 门幅 2.8）。
@@ -658,23 +663,6 @@ const ENGINE_DEFAULT_CALC_CONFIG = {
   oversize_height_threshold: 4,
 }
 
-/** 后端护栏失败信封（逐条理由；**不**含顶层 `error_messages` —— 那个字段后端不存在） */
-const CALC_GUARD_REJECTION = {
-  response: {
-    data: {
-      success: false,
-      error: {
-        code: 'VALIDATION_ERROR',
-        message: '算料配置有 2 处不合法，已整份拒绝',
-        details: [
-          { field: 'min_fullness', message: '不得低于行业红线 1.5' },
-          { field: 'default_formula', message: '必须是 [pleat, fullness] 之一' },
-        ],
-      },
-    },
-  },
-}
-
 /** 后端护栏失败响应体（**真实**信封：`error.details[].message` 逐条理由 —— issue #4308「冻结补遗 ②」） */
 const guardError = (reasons: string[]) => ({
   response: {
@@ -851,7 +839,6 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
       .mockResolvedValue(ok({ id: 'op-new', created_positions: 3, skipped_positions: 0 }))
     mockCreateOptionRule.mockReset().mockResolvedValue(ok({ id: 31 }))
     mockGetCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'default', config: ENGINE_DEFAULT_CALC_CONFIG }))
-    mockUpdateCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'stored', config: ENGINE_DEFAULT_CALC_CONFIG }))
     // issue #5858：裁高配置的**就绪信号**在首屏就发（就绪度第 ⑤ 步）⇒ 每个用例都要有默认替身
     //（不给 ⇒ `res` 取不到 `data` ⇒ 页面按「读取失败」渲染，第 ⑤ 步恒 unknown = 假红）
     mockGetCuttingHeightConfig
@@ -1139,87 +1126,6 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(screen.getByTestId('readiness-step-default-route')).toHaveTextContent('设为默认')
   })
 
-  // ══════════════════ ⑨b 就绪度第 4 步「算料配置」（issue #4567 用户走查③） ══════════════════
-
-  it('就绪度第 4 步「算料配置」：本租户有保存过的配置（source=stored）⇒ done', async () => {
-    // 该判据必须**先**在「算料配置」tab 把配置读回来 —— 读面是懒加载的，首屏它还不在
-    //（懒加载 → unknown 中性态见下一条；此处判的是「读到 stored 之后」）。
-    mockGetCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'stored', config: ENGINE_DEFAULT_CALC_CONFIG }))
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
-    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
-    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
-
-    const step = screen.getByTestId('readiness-step-calc-config')
-    // 注入：把第 4 步删掉（就绪度回到三步）⇒ getByTestId 直接抛错，断言红
-    expect(step).toHaveAttribute('data-state', 'done')
-    expect(step).toHaveTextContent('算料配置')
-    expect(step).toHaveTextContent('已保存')
-    // 已保存 ⇒ hint 留空（与既有三步 done 态一致）
-    expect(step).not.toHaveTextContent('下一步')
-  })
-
-  it('算料配置面板的说明文案：markdown 强调渲染成元素、裸标记不上屏（issue #5033 → #5194 改判）', async () => {
-    // 红证：把 `保存后<strong>新</strong>的算料` 改回 `保存后**新**的算料` ⇒ 下面两条断言红
-    //（用户截图实证：JSX 纯文本里的 `**` 会**原样渲染**成字面星号，不是加粗）。
-    mockGetCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'stored', config: ENGINE_DEFAULT_CALC_CONFIG }))
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
-    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
-    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
-
-    const panel = screen.getByTestId('craft-calc-config-panel')
-    expect(panel.textContent).not.toContain('保存后**新**')
-    expect(within(panel).getByText('新', { selector: 'strong' })).toBeInTheDocument()
-    expect(panel).toHaveTextContent('保存后新的算料按当前配置计算')
-
-    // 🔴 issue #5194 **改判**（用户 2026-09-23 裁定）：本面板（含术语说明区）的文案里
-    // **保留** `**强调**` / `` `行内代码片` `` 标记，由渲染层解析成 `<strong>` / `<code>` ——
-    // 而不是把标记删掉（删掉 = 丢掉强调，商家看到的是没有层级的散文）。
-    // 🔴 issue #6488：代码片里只放**商家看得懂的名字**（旧文的 `oversize_width_threshold` 这类
-    // 键名已整段去掉）⇒ 正控改钉中文名，仍要求代码片真的以元素呈现。
-    // 红证（改前实测 = 本条判红）：渲染层不做解析 ⇒ 整块 `textContent` 里出现字面 `**` 与反引号。
-    const text = panel.textContent ?? ''
-    expect(text).toContain('术语怎么判') // 自证非空：空面板上的「不含 **」恒真
-    expect(text).not.toContain('**')
-    expect(text).not.toContain('`')
-    // 正控：强调必须以元素形态呈现（删标记也能让「不含 **」变绿 ⇒ 必须另有这条）
-    // ⚠️ 用 `getAllBy*`：同一句强调在术语区与参数表里各出现一次（计数比抓单个更稳）
-    expect(
-      within(panel).getAllByText('净窗高', { selector: 'strong' }).length
-    ).toBeGreaterThan(0)
-    expect(
-      within(panel).getAllByText('超宽阈值', { selector: 'code' }).length
-    ).toBeGreaterThan(0)
-  })
-
-  it('就绪度第 4 步「算料配置」：本租户无配置行（source=default）⇒ todo + 指向「算料配置」tab', async () => {
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
-    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
-    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
-
-    const step = screen.getByTestId('readiness-step-calc-config')
-    // 注入：把 source==='stored' 之外一律判 done ⇒ 本断言红（把「系统默认」谎报成「配好了」）
-    expect(step).toHaveAttribute('data-state', 'todo')
-    expect(step).toHaveTextContent('系统默认')
-    expect(step).toHaveTextContent('算料配置')
-    expect(step).toHaveTextContent('每折吃布')
-  })
-
-  it('就绪度第 4 步「算料配置」：读面还没回来 ⇒ **中性**（不把「没加载」误报成「没配」）', async () => {
-    // 挂起：GET 永不 resolve ⇒ calcConfig 停在 null（首屏真实形态）
-    mockGetCraftCalcConfig.mockReset().mockReturnValue(new Promise(() => {}))
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
-    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
-
-    const step = screen.getByTestId('readiness-step-calc-config')
-    // 注入：把「未加载」并入 todo 分支 ⇒ 本断言红（未加载被误报成「没配」，正是本条的缺陷形态）
-    expect(step).toHaveAttribute('data-state', 'unknown')
-    expect(step).toHaveTextContent('读取中')
-    expect(step).not.toHaveTextContent('待完成')
-  })
 
   // ══════════════════ ⑨c 就绪度向导重构成「五步体检表」（issue #5858）══════════════════
   //
@@ -1294,12 +1200,16 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(step).toHaveTextContent('系统默认值')
   })
 
-  it('⑨c-⑤ 每步的「去处理」**把人带到那儿**（不是只调了个函数）：算料 / 裁高 / 工艺路线', async () => {
+  it('⑨c-⑤ 每步的「去处理」**把人带到那儿**：算料 = 跨页深链到新写面 / 裁高 · 工艺路线 = 页内切 tab（issue #6825 改判）', async () => {
     await renderOperations()
 
-    await userEvent.click(screen.getByTestId('readiness-goto-calc'))
-    expect(await screen.findByTestId('craft-calc-config-panel')).toBeInTheDocument()
-    expect(screen.getByTestId('process-config-tab-calc')).toHaveAttribute('data-state', 'active')
+    // 🔴 issue #6825：「算料配置」tab 已退役（写面收敛进「算料口径」域）⇒ 第 ④ 步的去处
+    //    **不再是页内 tab**，而是跨页深链。判据：它真是链接且指向新写面（死按钮 / 页内切换都必红）。
+    const calcGoto = screen.getByTestId('readiness-goto-calc')
+    expect(calcGoto.tagName).toBe('A')
+    expect(calcGoto).toHaveAttribute('href', '/settings?domain=calc')
+    expect(screen.queryByTestId('craft-calc-config-panel')).toBeNull()
+    expect(screen.queryByTestId('process-config-tab-calc')).toBeNull()
 
     await userEvent.click(screen.getByTestId('readiness-goto-cut'))
     expect(await screen.findByTestId('cutting-height-panel')).toBeInTheDocument()
@@ -1367,64 +1277,10 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(screen.getAllByTestId(/^variant-meta-edit-/)[0]).toHaveTextContent('改分组 / 单位')
   })
 
-  // ══════════════════ ⑨d 算料口径与术语说明（issue #4975） ══════════════════
-  //
-  // 判据的**取值域写死在测试里**（不从实现推导）：六个标量键 / 三个自动推算特征 / 两个手选特征。
-  // 跨源守卫（文案 vs 引擎源）在 `tests/unit/lib/craft-calc-glossary.test.ts`；本段只判**页面渲染**。
-
-  it('⑨d-① 参数旁「说明」锚点指到同 tab 的说明条目（六个标量键各一条，不指空）', async () => {
-    mockGetCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'default', config: ENGINE_DEFAULT_CALC_CONFIG }))
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
-    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
-    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
-
-    for (const key of ['per_fold_single', 'margin_single', 'margin_multi', 'min_fullness', 'hem_margin', 'meters_rounding_step']) {
-      const href = screen.getByTestId(`craft-calc-config-doc-${key}`).getAttribute('href') ?? ''
-      // 注入：把锚点写死成别的 id（或漏渲染该条目）⇒ getElementById 返回 null ⇒ 红
-      expect(document.getElementById(href.replace('#', ''))).not.toBeNull()
-    }
-  })
 
   // 🔴 issue #5030 改判：原判据「`side_margin` 的口径是『左右覆盖余量』」的前提**已消失** ——
   // 用户 2026-09-21 裁定订单宽高 = 窗户宽高 ⇒ 「左右覆盖余量」**整体退场**（常量与配置键一并删除）。
   // ⇒ 改成**同强度的反向守卫**：这一项**已不在页面上**（加回该参数 ⇒ 下面三条红）。
-  it('⑨d-② `side_margin` **已不在页面上**（宽方向无余量；旧文案不得复活）（issue #5030）', async () => {
-    mockGetCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'default', config: ENGINE_DEFAULT_CALC_CONFIG }))
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
-    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
-    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
-
-    // 注入：把 `side_margin` 加回键集（或把旧文案抄回页面）⇒ 下面三条同时红
-    expect(screen.queryByTestId('craft-calc-config-scalar-side_margin')).toBeNull()
-    expect(screen.queryByTestId('craft-calc-config-doc-side_margin')).toBeNull()
-    expect(screen.queryByText(/左右覆盖余量/)).toBeNull()
-    // 反向自证：同一张表单里**仍在场**的高方向参数必须能被看见（否则上面三条是空断言）
-    expect(screen.getByTestId('craft-calc-config-scalar-hem_margin')).toBeInTheDocument()
-    expect(screen.queryByText(/定宽买高的上下卷边合计/)).toBeNull()
-  })
-
-  it('⑨d-③ 说明区块与参数同屏：三个自动推算算例带真实数字 + 手选两项的边界可见', async () => {
-    mockGetCraftCalcConfig.mockReset().mockResolvedValue(ok({ source: 'default', config: ENGINE_DEFAULT_CALC_CONFIG }))
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
-    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
-    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
-
-    // 注入：删掉说明区块 ⇒ 第一条红（区块没跟参数同屏 = 用户还得去别处找）
-    expect(screen.getByTestId('craft-calc-glossary')).toBeInTheDocument()
-    for (const name of ['超高', '超宽']) {
-      // 算例自 #5036 包 2a 起由**服务端**给 ⇒ 异步取，必须 await
-      // 🔴 #5130 改判：依据文案由「> 门幅 … 米」改为「> 超宽/超高阈值 … 米」（旧式依据复活 ⇒ 红）
-      expect(await screen.findByTestId(`glossary-example-${name}`)).toHaveTextContent('阈值')
-    }
-    // `倒幅` 的算例依据 = 加工类型（与阈值 / 门幅无关）
-    expect(await screen.findByTestId('glossary-example-倒幅')).toHaveTextContent('定宽买高')
-    // 死亡条件绑 #4569：加工项特征**当前**只计价、不触发工序
-    expect(screen.getByTestId('glossary-term-拼接')).toHaveTextContent('不触发工序')
-    expect(screen.getByTestId('glossary-term-接高')).toHaveTextContent('还没确认')
-  })
 
   // ══════════════════ ⑨c 适用条件里的「单价（元/套）」（issue #4567 用户走查①；#4650 起随条件搬进抽屉） ══════════════════
   //
@@ -3087,20 +2943,21 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     expect(screen.getByTestId('routing-draft-empty-13')).toHaveTextContent('从工序库选择')
   })
 
-  it('**三个 tab**（工序管理 / 算料配置 / 裁高配置）且默认落第一个；工序表与路线列表**同屏**（用户裁定合并后的形态）', async () => {
+  it('**两个 tab**（工序管理 / 裁高配置）且默认落第一个；算料 tab 已退役（issue #6825）', async () => {
     render(<ProcessConfigPage />)
     await waitFor(() => expect(screen.getByTestId('process-config-tabs')).toBeInTheDocument())
 
     const tabs = screen.getByTestId('process-config-tabs')
-    expect(within(tabs).getAllByRole('tab')).toHaveLength(3)
+    // 🔴 issue #6825：「算料配置」那个 tab 退役（它是算料配置的第二个写面）⇒ 选项卡回到**两个**；
+    //    它的旧深链由路由层重定向到 `/settings?domain=calc`（判据在 production-routings 的重定向用例）。
+    expect(within(tabs).getAllByRole('tab')).toHaveLength(2)
     const processTab = screen.getByTestId('process-config-tab-process')
-    const calcTab = screen.getByTestId('process-config-tab-calc')
     const cutTab = screen.getByTestId('process-config-tab-cut')
     expect(processTab).toHaveTextContent('工序管理')
-    expect(calcTab).toHaveTextContent('算料配置')
-    // 母单 #5161：第三个 tab「裁高配置」（裁剪高度口径）
+    // 母单 #5161：第二个 tab「裁高配置」（裁剪高度口径）
     expect(cutTab).toHaveTextContent('裁高配置')
     expect(processTab).toHaveAttribute('data-state', 'active')
+    expect(screen.queryByTestId('process-config-tab-calc')).toBeNull()
 
     // 合并后的判据：**同一屏里两张都在**（改前是「切换互斥」）
     expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument()
@@ -3115,8 +2972,8 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     )
     expect(rel & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
-    // 切到「算料配置」⇒ 两者都不在（真正互斥的是这一对）
-    await userEvent.click(calcTab)
+    // 切到「裁高配置」⇒ 两者都不在（真正互斥的是这一对）
+    await userEvent.click(cutTab)
     expect(screen.queryByTestId('operation-price-matrix')).not.toBeInTheDocument()
     expect(screen.queryByTestId('routings-total')).not.toBeInTheDocument()
   })
@@ -3374,207 +3231,6 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
     }
   })
 
-/**
- * ══════════════════ ⑫ 算料配置 tab（issue #4528 = 包 E） ══════════════════
- *
- * 判据（每条都能红）：
- * ① 切到本 tab ⇒ 发**一次** `GET`，渲染**引擎默认值**并标注「当前使用系统默认值」
- *    （把默认值伪装成商家配置 ⇒ 红；前端自带一份默认值 ⇒ 与后端逐值比对时红）；
- * ② 改一个参数 ⇒ `PUT` 带**全量键**（**11 键**，issue #5130 起；缺键 = 让后端静默回默认值 ⇒ 红）；
- * ③ 非法值 ⇒ 后端 422 的**逐条**理由可见，且**不静默回退默认值**（草稿保持用户输入、不显示「已保存」⇒ 红）；
- * ④ 切 tab 不丢草稿（state 挂在本组件上）。
- */
-describe('算料配置 tab（issue #4528）', () => {
-  it('切到算料配置 tab ⇒ 渲染引擎默认值 + 标注「当前使用系统默认值」（读面**首屏**就发，issue #5858 改判）', async () => {
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
-    // 🔴 issue #5858 **改判**（用户裁定「首屏就读取算料 + 裁高」）：不再是懒加载 ——
-    // 就绪度第 ④ 步要在一屏之内给出真值。红证：把 `loadCalcConfig` 改回「`tab === 'calc'` 才发」⇒ 本断言红。
-    await waitFor(() => expect(mockGetCraftCalcConfig).toHaveBeenCalled())
-
-    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
-
-    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
-    // 切 tab **不重复**发（已有数据）—— 首屏那一次就是全部
-    expect(mockGetCraftCalcConfig).toHaveBeenCalledTimes(1)
-    expect(screen.getByTestId('craft-calc-config-source')).toHaveTextContent('当前使用系统默认值')
-    // 默认值来自**后端**（逐值渲染，前端不持有）
-    // issue #5198：算料参数改用 NumberInput（`type="text"` + 字符串草稿，否则清空时框里会变字面量 `NaN`）
-    // ⇒ jest-dom 的 `toHaveValue` 对 text 控件按**字符串**比对，逐值钉住的强度不变。
-    expect(screen.getByTestId('craft-calc-config-scalar-per_fold_single')).toHaveValue('0.25')
-    expect(screen.getByTestId('craft-calc-config-scalar-min_fullness')).toHaveValue('1.5')
-    expect(screen.getByTestId('craft-calc-config-default_formula')).toHaveValue('pleat')
-    expect(screen.getByTestId('craft-calc-config-tier-standard-fullness')).toHaveValue('2')
-    expect(screen.getByTestId('craft-calc-config-mixed-1')).toHaveValue('0.65')
-  })
-
-  it('改「单色每折吃布」⇒ PUT 带全量键（缺键会让后端静默回默认值）', async () => {
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
-    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
-    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
-
-    const input = screen.getByTestId('craft-calc-config-scalar-per_fold_single')
-    await userEvent.clear(input)
-    await userEvent.type(input, '0.5')
-    mockUpdateCraftCalcConfig.mockResolvedValueOnce(
-      ok({ source: 'stored', config: { ...ENGINE_DEFAULT_CALC_CONFIG, per_fold_single: 0.5 } }),
-    )
-    await userEvent.click(screen.getByTestId('craft-calc-config-save'))
-
-    await waitFor(() => expect(mockUpdateCraftCalcConfig).toHaveBeenCalledTimes(1))
-    const body = mockUpdateCraftCalcConfig.mock.calls[0][0] as Record<string, unknown>
-    expect(body.per_fold_single).toBe(0.5)
-    expect(Object.keys(body).sort()).toEqual(
-      [
-        'per_fold_single',
-        'per_fold_mixed_times',
-        'margin_single',
-        'margin_multi',
-        'min_fullness',
-        'tiers',
-        'default_formula',
-        'hem_margin',
-        'meters_rounding_step',
-        // 🔴 issue #5130：两个**企业阈值**（超宽 / 超高判据）也是配置键 ⇒ 必须在全量 PUT 里
-        //（少了它们 = 后端按缺键 422，或静默回默认值 ⇒ 商家改的阈值丢失 = 静默失效的形态）
-        'oversize_width_threshold',
-        'oversize_height_threshold',
-      ].sort(),
-    )
-    // 保存成功后口径来源如实变「已保存为您的配置」
-    await waitFor(() =>
-      expect(screen.getByTestId('craft-calc-config-source')).toHaveTextContent('已保存为您的配置'),
-    )
-  })
-
-  it('非法值 ⇒ 422 逐条理由就地可见，且**不静默回退默认值**', async () => {
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
-    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
-    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
-
-    const input = screen.getByTestId('craft-calc-config-scalar-min_fullness')
-    await userEvent.clear(input)
-    await userEvent.type(input, '1')
-    mockUpdateCraftCalcConfig.mockRejectedValueOnce(CALC_GUARD_REJECTION)
-    await userEvent.click(screen.getByTestId('craft-calc-config-save'))
-
-    const reasons = await screen.findByTestId('craft-calc-config-reasons')
-    expect(reasons).toHaveTextContent('不得低于行业红线 1.5')
-    expect(reasons).toHaveTextContent('必须是 [pleat, fullness] 之一')
-    // 不静默回退：用户输入**还在**（没有被悄悄写回默认 1.5），且来源仍标注「系统默认值」
-    expect(screen.getByTestId('craft-calc-config-scalar-min_fullness')).toHaveValue('1')
-    expect(screen.getByTestId('craft-calc-config-source')).toHaveTextContent('当前使用系统默认值')
-  })
-
-  it('切 tab 不丢草稿（编辑中的参数在切走再切回后仍在）', async () => {
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
-    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
-    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
-
-    const input = screen.getByTestId('craft-calc-config-scalar-margin_multi')
-    await userEvent.clear(input)
-    await userEvent.type(input, '0.45')
-
-    await userEvent.click(screen.getByTestId('process-config-tab-process'))
-    await waitFor(() => expect(screen.getByTestId('routings-list')).toBeInTheDocument())
-    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
-
-    expect(screen.getByTestId('craft-calc-config-scalar-margin_multi')).toHaveValue('0.45')
-  })
-
-  // issue #5198：算料参数原形态 `type="number"` + `value={String(v ?? '')}` + 清空落 NaN 哨兵
-  // ⇒ 用户一清空，输入框里就渲染出**字面量 `NaN`**（`String(NaN)`），而且清都清不掉。
-  // 红证：把这几格换回旧形态，本条必红（实测 `toHaveValue('')` 收到 'NaN'）。
-  it('清空算料参数 ⇒ 空框（不许变成字面量 `NaN`），且 0.x 小数能正常录入', async () => {
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
-    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
-    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
-
-    const scalar = screen.getByTestId('craft-calc-config-scalar-per_fold_single')
-    const fullness = screen.getByTestId('craft-calc-config-tier-standard-fullness')
-    const mixed = screen.getByTestId('craft-calc-config-mixed-1')
-
-    // ① 0.x 中间态逐键录得进去（0 → 0. → 0.5，不吞小数点、不把 0 当空）
-    await userEvent.clear(scalar)
-    await userEvent.type(scalar, '0.5')
-    expect(scalar).toHaveValue('0.5')
-
-    // ② 清空 ⇒ 空框（不是 `NaN`）
-    await userEvent.clear(scalar)
-    expect(scalar).toHaveValue('')
-    await userEvent.clear(fullness)
-    expect(fullness).toHaveValue('')
-    await userEvent.clear(mixed)
-    expect(mixed).toHaveValue('')
-
-    // ③ 兜底：面板里任何输入框都不得以 `NaN` 为值
-    const inputs = Array.from(document.querySelectorAll('input')) as HTMLInputElement[]
-    expect(inputs.filter((el) => el.value === 'NaN')).toEqual([])
-  })
-
-  it('工艺档位显示中文（标准档 / 经济档），但**键**仍是 standard / economy（testid + 提交体 + label 初值）', async () => {
-    // 额外挂一个**未知档**：显示名回退原键（不得吞掉、不得猜中文）
-    mockGetCraftCalcConfig.mockReset().mockResolvedValue(
-      ok({
-        source: 'default',
-        config: {
-          ...ENGINE_DEFAULT_CALC_CONFIG,
-          tiers: {
-            standard: { fullness: 2.0, label: '标准工艺' },
-            economy: { fullness: 1.8, label: '经济工艺' },
-            custom: { fullness: 2.4, label: '' },
-          },
-        },
-      }),
-    )
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
-    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
-    await waitFor(() => expect(screen.getByTestId('craft-calc-config-panel')).toBeInTheDocument())
-
-    // ① 显示名中文化：注入（去掉 TIER_DISPLAY_LABEL 映射）⇒ 断言红（界面回到英文键）
-    const rowOf = (name: string) =>
-      screen.getByTestId(`craft-calc-config-tier-${name}-label`).closest('tr') as HTMLElement
-    expect(rowOf('standard')).toHaveTextContent('标准档')
-    expect(rowOf('standard')).not.toHaveTextContent('standard')
-    expect(rowOf('economy')).toHaveTextContent('经济档')
-    expect(rowOf('economy')).not.toHaveTextContent('economy')
-    // ② 未知档 ⇒ 回退原键（不吞掉未知档）
-    expect(rowOf('custom')).toHaveTextContent('custom')
-
-    // ③ 键**不许改**：data-testid 仍是英文键；label 输入框初值 = 后端逐字（不是中文显示名）
-    expect(screen.getByTestId('craft-calc-config-tier-standard-fullness')).toHaveValue('2')
-    expect(screen.getByTestId('craft-calc-config-tier-standard-label')).toHaveValue('标准工艺')
-
-    // ④ 提交给 API 的 tiers 键仍是 standard / economy（中文只是显示名）
-    await userEvent.click(screen.getByTestId('craft-calc-config-save'))
-    await waitFor(() => expect(mockUpdateCraftCalcConfig).toHaveBeenCalledTimes(1))
-    const body = mockUpdateCraftCalcConfig.mock.calls[0][0] as { tiers: Record<string, unknown> }
-    expect(Object.keys(body.tiers).sort()).toEqual(['custom', 'economy', 'standard'])
-    expect(body.tiers).not.toHaveProperty('标准档')
-  })
-
-  it('算料配置加载失败 ⇒ 就地报错 + 重试入口（不白屏、不拿默认值顶替）', async () => {
-    mockGetCraftCalcConfig.mockReset().mockRejectedValueOnce(new Error('500')).mockResolvedValue(ok({
-      source: 'default',
-      config: ENGINE_DEFAULT_CALC_CONFIG,
-    }))
-    render(<ProcessConfigPage />)
-    await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
-    await userEvent.click(screen.getByTestId('process-config-tab-calc'))
-
-    await waitFor(() => expect(screen.getByTestId('craft-calc-config-error')).toHaveTextContent('算料配置加载失败'))
-    expect(screen.queryByTestId('craft-calc-config-scalar-per_fold_single')).toBeNull()
-
-    await userEvent.click(screen.getByTestId('craft-calc-config-retry'))
-    await waitFor(() => expect(screen.getByTestId('craft-calc-config-scalar-per_fold_single')).toHaveValue('0.25'))
-  })
-})
-})
 
 /**
  * 部位价目矩阵的**历史规模**夹具（issue #4529 / V79：30 逻辑工序 × **4** 部位 = **120** 格）。
@@ -4330,4 +3986,5 @@ describe('数量口径缺口可见（issue #6117 字段 / #6128 渲染）', () =
     expect(screen.getByTestId('operations-manage-drawer')).toBeInTheDocument()
     expect(screen.queryByTestId('operations-manage-qty-fallback')).toBeNull()
   })
+})
 })

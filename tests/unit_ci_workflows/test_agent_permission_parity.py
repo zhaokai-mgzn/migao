@@ -2055,7 +2055,12 @@ ROUTE_WITHOUT_MENU_NODE: dict[str, str] = {
     # ⚠️ 判据 11③ 的「无节点必须逐条带理由」正是为这种形态设的：删菜单项时**必须**来这里登记，
     # 否则「地址栏直达不被拦」会静默发生。
     "/production/processing": "「加工项管理」菜单项已移除（issue #6580：功能体并入 `/settings` 企业基础设置页内的配置域）⇒ 本前缀只作旧链兼容（重定向 `/settings?domain=processing-fee`），节点归「企业基础设置」",
-    "/production/routings": "「工艺配置」菜单项已移除（issue #6580：功能体并入 `/settings`）⇒ 本前缀只作旧链兼容（重定向 `/settings?domain=craft-route`），节点归「企业基础设置」",
+    # ⚠️ 2026-10-13（issue #6825）**措辞改准**：改前写「重定向 `/settings?domain=craft-route`」，
+    # 而实测**只有** `?tab=calc` 那一支会重定向（`production/routings/page.tsx` 的 `router.replace`
+    # → `/settings?domain=calc`：算料写面已收敛进算料口径域）；无 `tab` / `tab=process` / `tab=cut`
+    # **仍在本页渲染功能体**（薄壳保留，理由见 `docs/design/enterprise-settings-redesign.md` §6 债务第 4 条）。
+    # 本条的用途不变（该前缀没有菜单节点可钉），但不许再把「部分重定向」写成「整体重定向」。
+    "/production/routings": "「工艺配置」菜单项已移除（issue #6580：功能体并入 `/settings`）⇒ 本前缀没有菜单节点可钉、节点归「企业基础设置」；⚠️ **只有** `?tab=calc` 这一支是旧链兼容重定向（issue #6825 → `/settings?domain=calc`），其余形态仍在 `/production/routings` 渲染本页功能体",
     "/settings/params": "「参数总览」一级项已撤掉（issue #6580：内容回到 `/settings` 页内的配置域）⇒ 本前缀只作旧链兼容（重定向 `/settings`），节点归「企业基础设置」",
 }
 

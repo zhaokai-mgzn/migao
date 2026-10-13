@@ -16,6 +16,7 @@
  *   —— 后一条里的「每片宽 / 每片米 / 总数」是**引擎算出来的中间量**，前端**不复算**
  *   （复算 = 第二份算料逻辑）⇒ 只说明**输入侧**的那三个数（窗宽 / 开数 / 褶倍）。
  */
+import { domainHref } from '@/lib/config-center-domains'
 import type { CraftCalcConfig } from '@/types'
 
 /** 公式串里的一个数 + 它的中文名（`value` 已格式化成与公式串同形的文本） */
@@ -59,16 +60,22 @@ export interface MetersFormulaWhere {
   prefix: string
   /** 链接文案 */
   linkLabel: string
-  /** 链接目标（算料配置页；**深链靠 `?tab=calc`**，由工艺配置页自己消费） */
+  /** 链接目标（`CRAFT_CALC_ENTRY`；issue #6825 起 = `/settings?domain=calc` 的算料口径域） */
   linkHref: string
 }
 
 /**
- * **工艺配置 → 算料配置**页的深链（issue #4528 把算料配置做成 `/production/routings` 的第二个 tab）。
+ * **算料口径**的深链 —— 「企业基础设置」页的「算料口径」域（`/settings?domain=calc`）。
+ *
+ * 🔴 **2026-10（issue #6825）改判**：改前是 `/production/routings?tab=calc`（板子的「算料配置」tab）——
+ * issue #6825 把算料配置的**唯一写面**收敛进「算料口径」域 ⇒ 板子那个 tab 退役
+ * （同一份配置不许两个入口，设计判死线第 1 条）。旧深链仍可用：路由层把它**重定向**到新写面。
+ *
  * ⚠️ 与「加工费组合」的入口 `PRICING_ENTRY`（订单页）同一手法：**入口只有一份**，
- * 页面与文案都从这里取（各写一份 = 死链没人发现）。
+ * 页面与文案都从这里取（各写一份 = 死链没人发现）；拼链走
+ * `@/lib/config-center-domains` 的 `domainHref`（域 key 是 URL 契约，单点）。
  */
-export const CRAFT_CALC_ENTRY = '/production/routings?tab=calc'
+export const CRAFT_CALC_ENTRY = domainHref('calc')
 
 const FORMULA_PLEAT = 'pleat'
 
@@ -114,7 +121,7 @@ export function metersFormulaLegend(
     prefix:
       '改参数：净窗宽 / 净窗高 → 上方「净尺寸」；开数（打开方式）与用料公式 →「改工艺参数」；' +
       '每片余量 / 每折吃布 / 褶倍 → ',
-    linkLabel: '工艺配置 → 算料配置',
+    linkLabel: '算料口径',
     linkHref: CRAFT_CALC_ENTRY,
   }
 
