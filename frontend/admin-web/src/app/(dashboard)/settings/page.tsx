@@ -10,7 +10,7 @@
  * 企业基础设置
  * 配置本企业的口径与生产设置：先定怎么算钱，再定车间怎么干活，最后定料怎么省。
  * [ 配置主线 ]                      ← 常驻一行摘要（折叠态逐项 DOM 不渲染，§31 P1）
- * ┌ 一~四区 + 八个域 ┬ 当前域面板 ┐
+ * ┌ 一~四区 + 十个域 ┬ 当前域面板 ┐
  * ```
  *
  * 🔴 **本页不重造主线**：第一屏读数与三态判据全部来自 `@/lib/config-readiness` 的 `judge*`
@@ -23,7 +23,7 @@
  * |---|---|
  * | `?tab=basic` | `?domain=enterprise` |
  * | `?tab=ai` | `?domain=ai` |
- * | `?tab=workerPages` | `?domain=worker-pages` |
+ * | `?tab=workerPages` | **域已移除**（issue #6828）⇒ `LEGACY_TAB_REDIRECTS` 送到「员工管理」（工人菜单在那里逐人配） |
  * | `?tab=notification` | `?domain=notifications` |
  * | `?tab=params` | `?domain=calc`（原「参数总览」面已并入本页的「算料口径」域） |
  *
@@ -56,14 +56,13 @@
  * 五个生产域读面与三个企业级读面**全部**在本文的 effect 里发起（不藏进子组件）。
  */
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Building2, Bot, Bell, Newspaper, Smartphone, HardHat, AlertCircle } from 'lucide-react'
+import { Building2, Bot, Bell, Newspaper, Smartphone, AlertCircle } from 'lucide-react'
 import Image from 'next/image'
 import { QRCodeSVG } from 'qrcode.react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui'
 import { settingsApi, uploadApi, briefingApi, productionApi } from '@/lib/api'
-import { WorkerPageConfigPanel } from '@/components/settings/WorkerPageConfigPanel'
 import { CalcCaliberPanel } from '@/components/settings/CalcCaliberPanel'
 import { RemnantItemSizesPanel } from '@/components/settings/RemnantItemSizesPanel'
 import { ConfigReadinessBar } from '@/components/settings/ConfigReadinessBar'
@@ -125,11 +124,27 @@ function arr(v: unknown): unknown[] | null {
 const LEGACY_TAB_TO_DOMAIN: Record<string, ConfigDomainKey> = {
   basic: 'enterprise',
   ai: 'ai',
-  workerPages: 'worker-pages',
   notification: 'notifications',
   // 原「参数总览」面已并入本页的「算料口径」域（旧链 → 域，语义等价）
   params: 'calc',
 }
+
+/**
+ * 已**整域移除**的旧 tab ⇒ 有确定落点（不落空白、也不复活该域，issue #6828）。
+ *
+ * 「工人端页面」这一层随企业级页面开关一起退场（表 / 端点 / 面板全删），配置入口收敛到
+ * 「员工管理 → 工人档案」（那里逐人配菜单）⇒ 把人送到那一页，而不是让他落在「企业信息」上再自己找。
+ */
+const LEGACY_TAB_REDIRECTS: Record<string, string> = { workerPages: '/employees' }
+
+/**
+ * 已整域移除的 `?domain=<key>` ⇒ 同一个落点（issue #6828）。
+ *
+ * 为什么不能只处理 `?tab=`：`?domain=` 是**本页自己产出**的地址形态（切域时写进 URL，见 `selectDomain`），
+ * 被移除的 `worker-pages` 域同样留下过可分享 / 可收藏的链接；不处理 ⇒ `findDomain` 找不到 ⇒ 静默落到
+ * **第一个可见域**（算料口径）—— 用户以为打开了「工人端页面」，实际看到的是别的东西。
+ */
+const REMOVED_DOMAIN_REDIRECTS: Record<string, string> = { 'worker-pages': '/employees' }
 
 /**
  * 算料读面失败的**归因话术**（issue #6580；真实浏览器验收实测的缺陷）。
@@ -182,6 +197,14 @@ export default function SettingsPage() {
     visibleDomains.find((d) => d.key === activeKey) ??
     visibleDomains[0] ??
     CONFIG_DOMAINS[0]
+
+  /** 旧深链（`?tab=workerPages` / `?domain=worker-pages`，都已移除的域）⇒ 送到工人档案页 */
+  useEffect(() => {
+    const target =
+      (urlTab ? LEGACY_TAB_REDIRECTS[urlTab] : null) ??
+      (urlDomain ? REMOVED_DOMAIN_REDIRECTS[urlDomain] : null)
+    if (target) router.replace(target)
+  }, [urlTab, urlDomain, router])
 
   /** 切域 = 页内跳转 + 高亮（设计 G3）：URL 带 `?domain=<key>` 与 `#domain-<key>` 锚点 */
   const selectDomain = (key: string) => {
@@ -399,7 +422,6 @@ export default function SettingsPage() {
             )}
             {activeDomain.key === 'enterprise' && <EnterpriseDomainPanel />}
             {activeDomain.key === 'ai' && <AiDomainPanel />}
-            {activeDomain.key === 'worker-pages' && <WorkerPageConfigPanel />}
             {activeDomain.key === 'notifications' && <NotificationsDomainPanel />}
           </div>
         </div>

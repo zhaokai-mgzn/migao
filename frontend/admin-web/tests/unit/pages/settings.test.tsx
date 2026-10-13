@@ -9,8 +9,8 @@
  * `?tab=params` → `router.replace('/settings/params')`）**已随形态退场** —— 本章按新形态逐条改判，
  * **并新增**下面这些更严的判据：
  *
- * - **四区八域逐字在**（`CONFIG_ZONES` / `CONFIG_DOMAINS` 是单一真值源，页面不写死字面量）；
- * - **非当前域不挂载**（§4 首屏纪律：8 个域的表单不能同时上屏）；
+ * - **四区十域逐字在**（`CONFIG_ZONES` / `CONFIG_DOMAINS` 是单一真值源，页面不写死字面量）；
+ * - **非当前域不挂载**（§4 首屏纪律：10 个域的表单不能同时上屏）；
  * - **同一屏只有一个就绪度**（`config-readiness` 恰一个 —— 设计 §2 判死线第 2 条）；
  * - **旧 `?tab=` 深链逐条映射到域且**不**再跳走**（仓内口径：旧深链不 404）；
  * - **不持码的域既不渲染也不发请求**（`/[A-Z]-[0-9]+/` 之外的硬要求：域级「看得见 ⇒ 打得开」）；
@@ -27,7 +27,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-// issue #6580：域按 `requiredCode` 显隐（复用 usePermission）。用可控替身：默认「八个域都看得见」，
+// issue #6580：域按 `requiredCode` 显隐（复用 usePermission）。用可控替身：默认「十个域都看得见」，
 // 单条用例翻面（`mockCanSee` 按码返回）。
 const mockCanSee = vi.fn<(code?: string) => boolean>(() => true)
 vi.mock('@/lib/permission', () => ({
@@ -75,8 +75,6 @@ vi.mock('lucide-react', () => {
     FolderTree: stub('folder-tree'),
     // issue #5668: 「手机端入口」卡片图标
     Smartphone: stub('smartphone'),
-    // V141（母单 #5161）：「工人端页面」图标
-    HardHat: stub('hard-hat'),
   }
 })
 
@@ -102,8 +100,6 @@ const mockGetFeeCombinations = vi.fn()
 const mockGetFeeGaps = vi.fn()
 const mockGetCraftCalcConfig = vi.fn()
 const mockGetSmallItemSpecs = vi.fn()
-const mockGetWorkerPageConfig = vi.fn()
-const mockUpdateWorkerPageConfig = vi.fn()
 const mockBriefingGetConfig = vi.fn()
 const mockBriefingUpdateConfig = vi.fn()
 
@@ -144,11 +140,6 @@ vi.mock('@/lib/api', () => ({
   remnantApi: {
     smallItemSpecs: (...args: any[]) => mockGetSmallItemSpecs(...args),
     putSmallItemSpecs: () => Promise.resolve({ data: { success: true, data: null } }),
-  },
-  // 工人端页面域
-  workerPageConfigApi: {
-    get: (...args: any[]) => mockGetWorkerPageConfig(...args),
-    update: (...args: any[]) => mockUpdateWorkerPageConfig(...args),
   },
   briefingApi: {
     getConfig: (...args: any[]) => mockBriefingGetConfig(...args),
@@ -271,7 +262,6 @@ function mockApiSuccess() {
   mockGetSmallItemSpecs.mockResolvedValue(
     ok({ configured: false, items: [], notice: '未配置小件用料尺寸 ⇒ 不产生匹配建议' }),
   )
-  mockGetWorkerPageConfig.mockResolvedValue(ok({ source: 'default', pages: [], labels: {} }))
 }
 
 /** 左栏的域按钮（用 testid 取，**不靠按钮文字** —— 域标题与导航项文案相同） */
@@ -382,7 +372,6 @@ describe('判据 3：首屏只挂当前域（不把 8 个域的表单全渲染�
     // 非当前域的表单**不挂载**（不是 CSS 藏起来）
     expect(screen.queryByTestId('stub-processing-board')).toBeNull()
     expect(screen.queryByTestId('stub-routings-panel')).toBeNull()
-    expect(screen.queryByTestId('worker-page-config')).toBeNull()
     expect(screen.queryByTestId('param-remnant-specs')).toBeNull()
   })
 
@@ -397,7 +386,7 @@ describe('判据 3：首屏只挂当前域（不把 8 个域的表单全渲染�
     expect(await screen.findByLabelText('公司名称')).toBeInTheDocument()
   })
 
-  it('域 → 组件映射：加工项与分类 / 加工费组合 / 工艺与路线 / 余料尺寸 / 工人端页面 各挂各的', async () => {
+  it('域 → 组件映射：加工项与分类 / 加工费组合 / 工艺与路线 / 余料尺寸 各挂各的', async () => {
     render(<SettingsPage />)
     await screen.findByTestId('config-domain-enterprise')
 
@@ -425,8 +414,6 @@ describe('判据 3：首屏只挂当前域（不把 8 个域的表单全渲染�
     fireEvent.click(domainNav('remnant-sizes'))
     expect(await screen.findByTestId('param-remnant-specs')).toBeInTheDocument()
 
-    fireEvent.click(domainNav('worker-pages'))
-    expect(await screen.findByTestId('worker-page-config')).toBeInTheDocument()
   })
 
   it('切换域后主线的读数**不重来**（同一个就绪度，不因切域重新请求或改变）', async () => {
@@ -471,16 +458,29 @@ describe('判据 4：URL —— `?domain=` 直达 + 旧 `?tab=` 逐条映射且*
     expect(mockRouterReplace).not.toHaveBeenCalled()
   })
 
-  it('旧深链 `?tab=basic` / `?tab=workerPages` / `?tab=notification` ⇒ 各自映射（不跳走）', async () => {
-    mockSearchParams.mockReturnValue(new URLSearchParams('tab=workerPages'))
-    const { unmount } = render(<SettingsPage />)
-    expect(await screen.findByTestId('config-domain-panel-worker-pages')).toBeInTheDocument()
-    unmount()
-
+  it('旧深链 `?tab=notification` ⇒ 映射到通知域（不跳走）', async () => {
     mockSearchParams.mockReturnValue(new URLSearchParams('tab=notification'))
     render(<SettingsPage />)
     expect(await screen.findByTestId('config-domain-panel-notifications')).toBeInTheDocument()
     expect(mockRouterReplace).not.toHaveBeenCalled()
+  })
+
+  it('🔴 旧深链 `?tab=workerPages`：该域已整层移除 ⇒ 送到「员工管理」（有确定落点，不落空白、不复活该域）', async () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams('tab=workerPages'))
+    render(<SettingsPage />)
+    // 落点 = 员工管理（工人菜单在那里逐人配）；页面**不**渲染已移除的域
+    await waitFor(() => expect(mockRouterReplace).toHaveBeenCalledWith('/employees'))
+    expect(screen.queryByTestId('config-domain-worker-pages')).toBeNull()
+    expect(screen.queryByTestId('config-domain-panel-worker-pages')).toBeNull()
+    // 不落空白：右栏仍挂一个**现役**域的面板
+    expect(screen.getByTestId('config-domain-panel-calc')).toBeInTheDocument()
+  })
+
+  it('🔴 旧深链 `?domain=worker-pages`（本页自己产出过的形态）：同样送到「员工管理」，不退到第一个可见域', async () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams('domain=worker-pages'))
+    render(<SettingsPage />)
+    await waitFor(() => expect(mockRouterReplace).toHaveBeenCalledWith('/employees'))
+    expect(screen.queryByTestId('config-domain-panel-worker-pages')).toBeNull()
   })
 
   it('点左栏域 ⇒ 页内跳转 + 高亮（G3）：`?domain=<key>` 与 `#domain-<key>` 都写进 URL', async () => {
@@ -512,7 +512,7 @@ describe('判据 5：域按 requiredCode 显隐（复用 usePermission）', () =
     }
     expect(screen.queryByTestId('calc-caliber-panel')).toBeNull()
     // 三个企业级域仍在（同一个码 `system:manage`）
-    for (const key of ['enterprise', 'ai', 'worker-pages', 'notifications']) {
+    for (const key of ['enterprise', 'ai', 'notifications']) {
       expect(screen.getByTestId(`config-domain-${key}`)).toBeInTheDocument()
     }
   })
@@ -525,12 +525,12 @@ describe('判据 5：域按 requiredCode 显隐（复用 usePermission）', () =
     expect(mockGetSmallItemSpecs).not.toHaveBeenCalled()
   })
 
-  it('不持 `system:manage` ⇒ 四个企业级域全不在；默认域退回第一个**可见**域', async () => {
+  it('不持 `system:manage` ⇒ 三个企业级域全不在；默认域退回第一个**可见**域', async () => {
     mockCanSee.mockImplementation((code?: string) => code !== 'system:manage')
     render(<SettingsPage />)
     // 第一个可见域 = 算料口径（CONFIG_DOMAINS 里第一个 requiredCode 命中的）
     expect(await screen.findByTestId('config-domain-panel-calc')).toBeInTheDocument()
-    for (const key of ['enterprise', 'ai', 'worker-pages', 'notifications']) {
+    for (const key of ['enterprise', 'ai', 'notifications']) {
       expect(screen.queryByTestId(`config-domain-${key}`)).toBeNull()
     }
     expect(screen.queryByTestId('config-domain-panel-enterprise')).toBeNull()
@@ -562,15 +562,15 @@ describe('判据 6：域状态徽标**与主线同源**（G4），且没被主�
     expect(screen.getByTestId('config-domain-state-calc')).toHaveTextContent('已配置')
   })
 
-  it('主线没覆盖的域（企业信息等）**不显示**徽标 —— 不编一个读数出来', async () => {
+  it('主线没覆盖的域（企业信息 / 通知设置）**不显示**徽标 —— 不编一个读数出来', async () => {
     render(<SettingsPage />)
     await screen.findByTestId('config-domain-enterprise')
     expect(screen.queryByTestId('config-domain-state-enterprise')).toBeNull()
-    fireEvent.click(domainNav('worker-pages'))
+    fireEvent.click(domainNav('notifications'))
     // 等它自己的读面落地再断言（否则子面板的异步 setState 会在测试外触发 act 警告）
-    expect(await screen.findByTestId('worker-page-config')).toBeInTheDocument()
+    expect(await screen.findByTestId('config-domain-panel-notifications')).toBeInTheDocument()
     await waitFor(() =>
-      expect(screen.queryByTestId('config-domain-state-worker-pages')).toBeNull(),
+      expect(screen.queryByTestId('config-domain-state-notifications')).toBeNull(),
     )
   })
 })
@@ -753,7 +753,7 @@ describe('判据 7：域内零 tab（两层导航并存 = 用户说的「分不�
    *
    * 每搬完一个域就从这里删一行 —— 留着一个已经拆好的条目 = 台账腐坏（下面的「无幽灵」断言会红）。
    */
-  // 🔴 **2026-10-09（#6585）台账已清零** —— 11 个域全部拆到功能粒度，域内不再有第二层导航。
+  // 🔴 **2026-10-09（#6585）台账已清零** —— 10 个域全部拆到功能粒度，域内不再有第二层导航。
   // 这份清单**只许为空**：将来若真出现「拆不动」的域，必须在这里具名登记 + 在 PR 里说清为什么。
   const TABS_NOT_YET_SPLIT: string[] = []
 

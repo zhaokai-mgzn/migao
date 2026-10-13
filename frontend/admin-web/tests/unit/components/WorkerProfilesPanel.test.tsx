@@ -18,18 +18,18 @@ import { toast } from 'sonner'
  *   ④ 建号失败 ⇒ 弹窗**不关**、列表**不假装刷新**（失败不得冒充成功）；错误提示走统一去重链
  *      （UI-024：拦截器已提示具体错误 ⇒ 页面不再叠加通用 toast）。
  *
- * issue #6788 追加判据（工人端菜单权限）：
- *   ⑥ 选项来自**企业级**已开的页面（服务端 `worker-page-config`）—— 企业关掉的页在选项里不出现；
- *   ⑦ 默认**全勾** ⇒ 建号请求发 `workerPages: null`（= 跟随企业设置，零回归）；
- *      只勾一页 ⇒ 发那一页（**收窄**）；
- *   ⑧ 列表列出每位工人的菜单口径：未收窄 ⇒「全部（跟随企业设置）」；收窄 ⇒ 逐个人话名。
+ * issue #6788 追加判据（工人端菜单权限；单层口径 issue #6828）：
+ *   ⑥ 选项逐值 = 服务端**页面目录**（`GET /api/admin/worker-pages`）—— 页键与人话名都由服务端给，
+ *      前端不自己编一份清单；
+ *   ⑦ 默认**全勾** ⇒ 建号请求发 `workerPages: null`（= 不限制，零回归）；只勾一页 ⇒ 发那一页（**收窄**）；
+ *   ⑧ 列表列出每位工人的菜单口径：未收窄 ⇒「全部页面」；收窄 ⇒ 逐个人话名。
  */
 
 const mockListWorkers = vi.fn()
 const mockCreateWorker = vi.fn()
 const mockSetWorkerStatus = vi.fn()
 const mockResetWorkerPin = vi.fn()
-const mockGetWorkerPageConfig = vi.fn()
+const mockGetWorkerPageCatalog = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   workerApi: {
@@ -38,8 +38,8 @@ vi.mock('@/lib/api', () => ({
     setWorkerStatus: (...a: unknown[]) => mockSetWorkerStatus(...a),
     resetWorkerPin: (...a: unknown[]) => mockResetWorkerPin(...a),
   },
-  workerPageConfigApi: {
-    get: (...a: unknown[]) => mockGetWorkerPageConfig(...a),
+  workerPageCatalogApi: {
+    get: (...a: unknown[]) => mockGetWorkerPageCatalog(...a),
   },
 }))
 
@@ -48,12 +48,11 @@ import { markErrorToastShown } from '@/lib/api-error'
 
 const okPage = (items: unknown[]) => ({ data: { data: { items, total: items.length } } })
 
-/** 企业级页面开关（读面形状：source + pages + labels）。 */
-const pageConfig = (pages: string[]) => ({
+/** 工人端页面目录（读面形状：pages + labels；issue #6828）。 */
+const catalog = () => ({
   data: {
     data: {
-      source: pages.length === 4 ? 'default' : 'stored',
-      pages,
+      pages: ['report', 'order', 'cut_calc', 'shipment'],
       labels: { report: '报工', order: '订单', cut_calc: '裁高计算器', shipment: '发货' },
     },
   },
@@ -74,11 +73,11 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     mockCreateWorker.mockReset()
     mockSetWorkerStatus.mockReset()
     mockResetWorkerPin.mockReset()
-    mockGetWorkerPageConfig.mockReset()
+    mockGetWorkerPageCatalog.mockReset()
     ;(toast.error as ReturnType<typeof vi.fn>).mockClear()
     mockListWorkers.mockResolvedValue(okPage([worker()]))
     // 缺省：企业四页全开（逐人菜单的选项来源）
-    mockGetWorkerPageConfig.mockResolvedValue(pageConfig(['report', 'order', 'cut_calc', 'shipment']))
+    mockGetWorkerPageCatalog.mockResolvedValue(catalog())
   })
 
   it('① 列表列出工人档案：工号 / 姓名 / 状态', async () => {
@@ -109,7 +108,7 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     fireEvent.click(screen.getByText('创建'))
 
     await waitFor(() => {
-      // 默认全勾 = 跟随企业设置 ⇒ 这一格发 null（收窄是**减**，默认不减任何东西）
+      // 默认全勾 = 不限制 ⇒ 这一格发 null（收窄是**减**，默认不减任何东西）
       expect(mockCreateWorker).toHaveBeenCalledWith({
         workerNo: 'W-1002', name: '李四', pin: '135791', workerPages: null,
       })
@@ -204,18 +203,16 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
   //      菜单权限，这样让不同岗位的工人只关注他自己有权限的功能了」）
   // ════════════════════════════════════════════════════════════════════════════
 
-  it('⑥ 选项来自企业级已开的页面：企业关掉的页**不在**选项里（不自己编一份页集）', async () => {
-    // 企业只开了「报工」+「裁高计算器」
-    mockGetWorkerPageConfig.mockResolvedValue(pageConfig(['report', 'cut_calc']))
+  it('⑥ 选项逐值 = 服务端页面目录（页键与人话名都由服务端给，前端不自己编一份）', async () => {
+    mockGetWorkerPageCatalog.mockResolvedValue(catalog())
     render(<WorkerProfilesPanel canWrite />)
 
     fireEvent.click(await screen.findByText('新建工人档案'))
 
-    expect(await screen.findByTestId('worker-page-option-report')).toBeInTheDocument()
-    expect(screen.getByTestId('worker-page-option-cut_calc')).toBeInTheDocument()
-    // 企业没开的页：没有可勾的选项（勾了也不会出现 ⇒ 干脆不给勾）
-    expect(screen.queryByTestId('worker-page-option-shipment')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('worker-page-option-order')).not.toBeInTheDocument()
+    // 目录给的是闭词表全部页 ⇒ 四个选项一个不少、一个不多
+    for (const key of ['report', 'order', 'cut_calc', 'shipment']) {
+      expect(await screen.findByTestId(`worker-page-option-${key}`)).toBeInTheDocument()
+    }
     // 每个选项只有**一份**人话名（服务端给的 label，不另写一套）
     expect(screen.getAllByText('报工')).toHaveLength(1)
   })
@@ -241,7 +238,7 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     })
   })
 
-  it('⑦ 「全部（跟随企业设置）」一键回全勾 ⇒ 又发 null（可回退，不会误收窄）', async () => {
+  it('⑦ 「全部页面」一键回全勾 ⇒ 又发 null（可回退，不会误收窄）', async () => {
     mockCreateWorker.mockResolvedValue({ data: { data: worker({ id: 'w-4' }) } })
     render(<WorkerProfilesPanel canWrite />)
 
@@ -260,7 +257,7 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     })
   })
 
-  it('⑧ 列表标出每位工人的菜单口径：未收窄 ⇒「全部（跟随企业设置）」；收窄 ⇒ 逐个人话名', async () => {
+  it('⑧ 列表标出每位工人的菜单口径：未收窄 ⇒「全部页面」；收窄 ⇒ 逐个人话名', async () => {
     mockListWorkers.mockResolvedValue(okPage([
       worker({ id: 'w-1', workerNo: 'W-1001', name: '张三' }),
       worker({ id: 'w-2', workerNo: 'W-1002', name: '李四', workerPages: ['cut_calc'] }),
@@ -268,19 +265,20 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     ]))
     render(<WorkerProfilesPanel canWrite />)
 
-    expect(await screen.findByTestId('worker-menu-w-1')).toHaveTextContent('全部（跟随企业设置）')
+    expect(await screen.findByTestId('worker-menu-w-1')).toHaveTextContent('全部页面')
     expect(screen.getByTestId('worker-menu-w-2')).toHaveTextContent('裁高计算器')
-    // 空数组（历史脏数据）与「未收窄」显示得不一样（否则管理员分不清「没设」与「一页都不给」）
-    expect(screen.getByTestId('worker-menu-w-3')).toHaveTextContent('未开放任何页面')
+    // 🔴 空数组（历史脏数据）显示成「全部页面」—— 与**读面契约**一致（`WorkerPages.effectiveFor`
+    // 对归一后为空集一律回落全部页面，issue #6828 复核发现旧的「未开放任何页面」与契约相反）
+    expect(screen.getByTestId('worker-menu-w-3')).toHaveTextContent('全部页面')
   })
 
   it('⑧ 企业级页面读不到（如岗位没有生产域读码）⇒ 建号主流程照旧，只是不显示菜单一节', async () => {
-    mockGetWorkerPageConfig.mockRejectedValue(new Error('403'))
+    mockGetWorkerPageCatalog.mockRejectedValue(new Error('403'))
     mockCreateWorker.mockResolvedValue({ data: { data: worker({ id: 'w-5' }) } })
     render(<WorkerProfilesPanel canWrite />)
 
     fireEvent.click(await screen.findByText('新建工人档案'))
-    await waitFor(() => expect(mockGetWorkerPageConfig).toHaveBeenCalled())
+    await waitFor(() => expect(mockGetWorkerPageCatalog).toHaveBeenCalled())
 
     expect(screen.queryByTestId('worker-pages-picker')).not.toBeInTheDocument()
     // PIN / 工号 / 姓名三件套照旧可建号（菜单读不到不得挡住建号）
@@ -314,15 +312,15 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     expect(mockCreateWorker).not.toHaveBeenCalled()
   })
 
-  it('⑨ 弹窗打开后才拿到页面配置 ⇒ 仍是「全勾 = 跟随企业设置」（不发空集）', async () => {
+  it('⑨ 弹窗打开后才拿到页面目录 ⇒ 仍是「全勾 = 不限制」（不发空集）', async () => {
     let resolveConfig: (v: unknown) => void = () => {}
-    mockGetWorkerPageConfig.mockReturnValue(new Promise((resolve) => { resolveConfig = resolve }))
+    mockGetWorkerPageCatalog.mockReturnValue(new Promise((resolve) => { resolveConfig = resolve }))
     mockCreateWorker.mockResolvedValue({ data: { data: worker({ id: 'w-7' }) } })
     render(<WorkerProfilesPanel canWrite />)
 
     // 配置还没回来就打开弹窗（真实网络下很常见）
     fireEvent.click(await screen.findByText('新建工人档案'))
-    resolveConfig(pageConfig(['report', 'order', 'cut_calc', 'shipment']))
+    resolveConfig(catalog())
     await screen.findByTestId('worker-page-option-report')
 
     fireEvent.change(screen.getByPlaceholderText(/W-1002/), { target: { value: 'W-1007' } })

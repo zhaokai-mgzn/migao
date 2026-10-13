@@ -339,7 +339,7 @@ export function doneNotice(receipt) {
  * 本页的反向钉住（页头再出现这两条 ⇒ 红）= frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs。
  *
  * 入口栏**只**留 `cut_calc` 那一条，文案与商家端页面开关同源
- * （frontend/admin-web/src/components/settings/WorkerPageConfigPanel.tsx 的 `cut_calc` = 「裁高计算器」）：
+ * （页面键与商家面人话名的唯一真值 = `backend/admin-api/src/main/java/com/migao/admin/worker/WorkerPages.java`）：
  * 改前的「机台模式」只有内部人懂（用户 2026-10-10 逐字问「机台模式是什么含义」）。
  * `cut_calc` ∉ `pages` ⇒ **整条入口栏不渲染**（不留空 `<nav>`）—— 机台那台屏改用**本机预设**直达
  * （`?page=cut_calc`，见 frontend/worker-h5/src/scan-input.mjs 的 `deviceHomeFromLocation`）。

@@ -147,7 +147,7 @@ describe('merchantReasonsOf：只在服务端没给理由时才回落', () => {
    * ① 它与「商家自己填的值」**无法机械区分** —— 同一个位置的 `stock`（`不是工人端页面键：stock`）
    *    是商家**输入的内容**，擦掉就把可行动的提示改坏了；
    * ② 实务上不会漏：本包射程内两个服务的 422 **摘要**分别是
-   *    「工人端页面配置有 N 处不合法」（`WorkerPageConfigService.java:173`，不带字段名）
+   *    「工人端页面配置有 N 处不合法」（服务端 422 的 `message`，不带字段名）
    *    与 `小件配置缺少 item_key（…）`（`RemnantService.java:292`，带 snake_case ⇒ 已被上面那条擦掉）
    *    ⇒ **字段名只出现在 `details[].field` 与 `details[].message`**，而 `field` 被整个丢掉。
    */

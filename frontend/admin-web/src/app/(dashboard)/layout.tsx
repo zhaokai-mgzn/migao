@@ -75,7 +75,7 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   { prefix: '/settings/params', code: 'production:view' },
   // 🔴 2026-10-09（issue #6580）：`/settings` 的守卫码由 `system:manage` 改为 `production:view` ——
   // 与菜单节点码、该页第一屏生产域读码同源（合并后的入口必须对真实配置者可见：operator /
-  // product_manager 持该读码、不持 `system:manage`）。经营域（企业信息 / AI 客服 / 工人端页面 /
+  // product_manager 持该读码、不持 `system:manage`）。经营域（企业信息 / AI 客服 /
   // 通知设置）仍由各自的 `system:manage` **域级**门控 —— 该有意不一致已具名登记在
   // `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `MENU_READ_PARITY_RESIDUALS`。
   { prefix: '/settings', code: 'production:view' },

@@ -6195,7 +6195,7 @@
 ```
 溯源: 2026-10-10 新增（issue #6276；口径由用户 2026-10-10 裁定 = 首次发货时刻）。根因（V148/issue #6262 已现取登记、但当时只绕开未修）：OrderLogisticsWriter.upsert 的 shipped_at 只在**新建物流行**的分支里写，走 update 分支（已有物流行、再改物流/发货）时不补写 ⇒ 真库 order_logistics 全表 29 行、shipped_at 非空仅 16 行（13 行为空）。修法：① 新增 OrderLogisticsMapper#backfillShippedAtIfAbsent —— 一条条件 UPDATE（SET shipped_at = created_at WHERE … AND shipped_at IS NULL），取值**列对列**（建行那一刻就是首次发货时刻，三条建行路径都写 shipped_at = now() 且 created_at 与它同刻）⇒ 不需要外部真值、不猜；② 两个「读-改-写」写面（OrderLogisticsWriter 更新分支、OrderController.updateLogistics 更新分支）都在 updateById **之前**调它，OrderLogisticsService.updateLogistics 同样补上；③ 新增迁移 V151 把历史空值按同一条 SQL 回填（幂等、只影响 IS NULL、走新迁移不动已冻结的历史迁移）。边界：不动 orders.shipped_at(V148) 的存量 NULL 裁定；created_at 与首次发货时刻同刻是既有实装事实（本单不引入新语义）。 ｜ tags: order, logistics, shipped-at, data-quality, backend-contract
 
-## 加工项域（29 case）
+## 加工项域（28 case）
 
 ### PP-002. 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query） 🔵
 ```
@@ -6576,51 +6576,38 @@
 真值: processing-manage.worker-cutting-height-terminal
 溯源: 2026-09-29 新增（母单 #5161，P0-D / PR #5780）：用户裁定「裁高机的报工要支持扫码枪扫水洗唛直接展示订单详情并允许操作裁高计算器」+「报工 + 自动给裁高值（一条链）」；**下发仍不做**（不写机器）。 ｜ 2026-10-10 追加（issue #6635，同批 worker-h5 报工页改版）：① 文案由「机台模式」改判为 **「裁高计算（一体机）」**（用户逐字问「机台模式是什么含义」）；② 新增**设备级预设**（用户逐字「让工人拿扫码枪直接扫码就默认为机台模式，而其他工人扫码默认报工」⇒ 裁定 = 设备级、零后端改动）；③ 新增机台屏「去报工页」逃生门（`keep=1`，只本次）。判据面一字不放宽。 ｜ tags: processing, worker, cutting_height, terminal, backend-contract
 
-### PG-065. 工人端页面开关（租户级）+ 工人会话超时 30 天（权限红线不动；单测覆盖，非 LLM 行为） 🔵
+### PG-065. 工人会话超时 30 天 + 工人端菜单页集只按档案级收窄（权限红线不动；单测覆盖，非 LLM 行为） 🔵
 ```
 你: 工人手机上该看到哪几页？一体机也一样吗？
 期望: direct_reply
-数据: GET/PUT /api/admin/worker-page-config：读挂 production:view、写挂 processing:manage；PUT 全量替换，缺键/未知键/非法页名 ⇒ 422 逐条理由（不静默回退默认）
-数据: 缺行 ⇒ 读面回默认四页全开（report / order / cut_calc / shipment）+ source='default'
-数据: GET /api/worker/me 只回本工人身份与本租户页面集；工人 session/JWT 的 permissions 恒为 []、工人进 /api/admin/** 仍 403
+数据: 🔴 **页面集只有一层**（issue #6828）：真值 = 工人档案上的 `users.worker_pages`（V152）—— `GET /api/worker/me` 下发 `pages[]` = 该档案上的收窄（未收窄 / 脏值 ⇒ 全部页面 report/order/cut_calc/shipment，fail-open）。判据 = backend/admin-api/src/test/java/com/migao/admin/worker/WorkerPagesTest.java + backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java
+数据: 🔴 **企业级页面开关已整层移除**（issue #6828）：表 `worker_page_configs`（V141）由 `V154__drop_worker_page_configs.sql` DROP；`GET/PUT /api/admin/worker-page-config` 端点与 `WorkerPageConfig*` 服务/实体/mapper、设置页「工人端页面」域与面板全部退场；旧深链 `?tab=workerPages` **与** `?domain=worker-pages`（本页自己产出过的形态）都有确定落点（送到「员工管理」，不被静默送到第一个可见域）。判据 = tests/unit_ci_workflows/test_worker_page_layer_removed.py（未登记即红：源码里再出现那一层的符号 ⇒ 具名报出）+ tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py
+数据: GET /api/worker/me 只回**本工人**身份与**本工人**的页面集（租户 / 工人取自会话行，不接受任何请求入参）；工人 session/JWT 的 permissions 恒为 []、工人进 /api/admin/** 仍 403
 数据: worker.session.idle-minutes 全局默认 = 43200（30 天，2026-10-07 用户裁定「延长到 1 个月」；上一版 10080 一周）；越界/非法 ⇒ 回落默认并 WARN；换人/切换工人仍立即失效旧会话
 数据: 🔴 后台对账（`checkAlive` = `current-worker` + `/me`）的两条硬约束（2026-10-10 收口，issue #6642；线上日志实测）：① **请求有界** —— 单飞 + 最小间隔 5s ⇒ 一次可见性事件风暴只允许**一轮**（2 个请求），不再放大成 15–23 req/s（现场：同一条 session 4 秒 92 个请求、被 nginx `worker_sess` rate=2r/s burst=60 拒 4 条）；② **失败不进报工卡** —— 对账是后台动作，它的失败（429 / 5xx / 断网）只给一句「不影响报工」的提示（现场：`current-worker` 被拒 429 ⇒ 报工卡出现红字「请求失败（HTTP 429）」= 用户截图），唯一例外 = 401/会话过期（身份面）仍回落未登录。证据：frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs（⑩ / ⑪）
 数据: 🔴 页面开关的**前端消费面**（2026-10-10 收口，issue #6635）：`cut_calc` ∈ `pages` ⇔ `/w/` 页头出现**唯一**入口「裁高计算（一体机）」（`/w/machine.html`；文案与商家端「裁高计算器」同源，改前的「机台模式」只有内部人懂）；∉ ⇒ **整条入口栏不渲染**（不留空 `<nav>`）。两条跨应用入口（拍照入库 / 补打入库标签）**已移出 `/w/`**（用户逐字「移除拍照入库和补打入库标签」）⇒ 反向钉住（本页再出现 `/b/#/pages/worker/inbound|reprint` ⇒ 红），可达性由**工人工作台**承担（入口台账 `from` 逐值核）。**设备级预设**（同上裁定，「扫码枪那台屏默认机台模式、其他工人默认报工」）：`/w/?page=cut_calc` ⇒ 本机记住并落到 `/w/machine.html`（**只在已登录后换页**）、`?page=report` 取消、`?page=report&keep=1` = 只本次（机台屏的「去报工页」逃生门）；零后端改动。证据：frontend/worker-h5/tests/worker-h5-pages.test.mjs（① / ④ / ⑥）+ frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs + frontend/bmini-app/tests/page-entry-reachability.test.ts（L5）
-数据: 🔴 逐人收窄（issue #6788；用户 2026-10-13 逐字「工人档案上也应该设置 h5 工人端的菜单权限，这样让不同岗位的工人只关注他自己有权限的功能了」）：本条的 `data_checks` 上方那条即租户级开关；**工人档案级**收窄的完整口径见用例 **PG-072**（逐条判据在那里，本行只登记「两层并存」这一层关系）
-数据: 🔴 求交为空 ⇒ **回落企业页集**（issue #6788 评审实测形态）：工人被收窄到的页恰好都被企业关掉时，交集为空 ⇒ 若原样下发空数组，工人端 `effectivePages` 会把空集读成「没读到权限 ⇒ **全开**」—— 收窄反而变成放宽。回落方向 = 企业页集（服务端口径与工人端读法一致）。证据：backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java
-跳过: [backend-contract] 本条只登记「页面开关 + 会话超时」这两层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java、backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java、backend/admin-api/src/test/java/com/migao/admin/worker/WorkerSessionServiceTest.java）⇒ 不进 agent-eval 冒烟。
+数据: 🔴 逐人收窄（issue #6788；用户 2026-10-13 逐字「工人档案上也应该设置 h5 工人端的菜单权限，这样让不同岗位的工人只关注他自己有权限的功能了」）是页面集的**唯一**来源 —— issue #6828 起企业级那一层（租户级开关）已整层移除，完整口径见用例 **PG-072**；本条只登记「页面集 + 会话超时」这两层确定性行为
+数据: 🔴 归一后为空集（脏数据：全未知键 / 空数组 / 非字符串元素）⇒ **回落全部页面**（issue #6788 评审实测形态 + issue #6828 改判为单层）：若原样下发空数组，工人端 `effectivePages` 会把空集读成「没读到权限 ⇒ **全开**」—— 服务端与端侧口径会分叉；回落与「未收窄 ⇒ 全部页面」同向（fail-open，绝不把工人挡在活外面）。证据：backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java + backend/admin-api/src/test/java/com/migao/admin/worker/WorkerPagesTest.java
+跳过: [backend-contract] 本条只登记「页面集（单层）+ 会话超时」这两层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/worker/WorkerPagesTest.java、backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java、backend/admin-api/src/test/java/com/migao/admin/worker/WorkerSessionServiceTest.java）⇒ 不进 agent-eval 冒烟。
 ```
-真值: processing-manage.worker-page-config
-溯源: 2026-09-29 新增（母单 #5161，P0-E / PR 见集成 PR）。⚠️ 编号订正：初稿取 PG-048，而 PG 号**横跨** .github/cases/processing.yml 与 .github/cases/processing-order.yml 两个文件（那里已占 PG-048）⇒ 按**全仓最大号 + 1** 改为 PG-065（判据：Case Contract 的重复 ID 检查）：用户裁定「租户级页面开关起步」+「让工人提前登录我们的 H5 页面，把登录 Session 的过期时间设置长一点」（数值后续裁定为**一周 10080 分钟**）。⚠️ 照实登记后果：闲置保护基本不再生效 ⇒ 共用设备上防串人的**唯一护栏 = 手动「切换工人」**（用户已知情并裁定）。🔴 2026-10-07 追加（issue #6473）：用户逐字「把工人的登录 Session 过期时间设置久一点，可以延长到 1 个月」⇒ 全局默认改 **43200（30 天）**、区间 `5 ~ 43200`，bmini/worker-h5 两侧的降级兜底常量同步，bmini 界面改按量级说人话（去掉 `?? 15`）。🔴 2026-10-10 追加（issue #6642）：线上日志核查（SWAS `migao-deploy-nginx-1`，2026/10/10 08:12:10）发现**同一 session 4 秒打出 92 个请求**（15–23 req/s），被 `worker_sess` 拒 4 条 —— 全是 `checkAlive` 的「一事件一轮」被放大；且 `current-worker` 的 429 走了 `fail()` ⇒ 报工卡出现「请求失败（HTTP 429）」。⇒ 本单给 `checkAlive` 加**单飞 + 5s 节流**、并把**非身份面失败**从报工卡错误位挪到「不影响报工」提示；写面（`/scan`、`/scan/complete`）现场**一次都没被限流**（照实登记：风暴的触发源仍未定，本次只保证有界 + 不污染）。🔴 2026-10-13 追加（issue #6788）：租户级之下的**工人档案级收窄**落地（`users.worker_pages` + `PUT /api/admin/workers/{id}/pages`），默认「跟随企业设置」⇒ 存量与新建档案行为**零变化**；判据面**未放宽**（企业级天花板、`users.permissions` 一字不动、工人 `/api/admin/**` 仍 403 三条都新增了会红的断言）。 ｜ tags: processing, worker, rbac, tenant_config, backend-contract
+真值: processing-manage.worker-menu-pages
+溯源: 2026-09-29 新增（母单 #5161，P0-E / PR 见集成 PR）。⚠️ 编号订正：初稿取 PG-048，而 PG 号**横跨** .github/cases/processing.yml 与 .github/cases/processing-order.yml 两个文件（那里已占 PG-048）⇒ 按**全仓最大号 + 1** 改为 PG-065（判据：Case Contract 的重复 ID 检查）：用户裁定「租户级页面开关起步」+「让工人提前登录我们的 H5 页面，把登录 Session 的过期时间设置长一点」（数值后续裁定为**一周 10080 分钟**）。⚠️ 照实登记后果：闲置保护基本不再生效 ⇒ 共用设备上防串人的**唯一护栏 = 手动「切换工人」**（用户已知情并裁定）。🔴 2026-10-07 追加（issue #6473）：用户逐字「把工人的登录 Session 过期时间设置久一点，可以延长到 1 个月」⇒ 全局默认改 **43200（30 天）**、区间 `5 ~ 43200`，bmini/worker-h5 两侧的降级兜底常量同步，bmini 界面改按量级说人话（去掉 `?? 15`）。🔴 2026-10-10 追加（issue #6642）：线上日志核查（SWAS `migao-deploy-nginx-1`，2026/10/10 08:12:10）发现**同一 session 4 秒打出 92 个请求**（15–23 req/s），被 `worker_sess` 拒 4 条 —— 全是 `checkAlive` 的「一事件一轮」被放大；且 `current-worker` 的 429 走了 `fail()` ⇒ 报工卡出现「请求失败（HTTP 429）」。⇒ 本单给 `checkAlive` 加**单飞 + 5s 节流**、并把**非身份面失败**从报工卡错误位挪到「不影响报工」提示；写面（`/scan`、`/scan/complete`）现场**一次都没被限流**（照实登记：风暴的触发源仍未定，本次只保证有界 + 不污染）。🔴 2026-10-13 追加（issue #6788）：租户级之下的**工人档案级收窄**落地（`users.worker_pages` + `PUT /api/admin/workers/{id}/pages`），默认「跟随企业设置」⇒ 存量与新建档案行为**零变化**；判据面**未放宽**（企业级天花板、`users.permissions` 一字不动、工人 `/api/admin/**` 仍 403 三条都新增了会红的断言）。🔴 **2026-10-13 改判（issue #6828，用户逐字「是不是可以移除工人端页面的配置，我们已经通过权限控制 工人的菜单可见问题了」⇒ 裁定「一步到位移除」）**：企业级那一层**整层退场** —— 表 `worker_page_configs`（迁移 `V154__drop_worker_page_configs.sql` DROP）、`GET/PUT /api/admin/worker-page-config` 端点、`WorkerPageConfig*` 服务/实体/mapper、设置页「工人端页面」域与面板全部删除；逐人勾选的选项来源改由只读目录端点 `GET /api/admin/worker-pages` 供词表。⇒ 本条**只剩工人会话超时**这一半（页面集口径改判见 PG-072）；同批**整条删除 PG-073**（企业级写面非法形态枚举 —— 它的被测对象已不存在，保留它会让「机器判红通道」指向一个已删文件）⇒ 读数 143 → 142（已记入 `tests/unit_ci_workflows/case_machine_fail_channel_baseline.json` 的 history）。 ｜ tags: processing, worker, rbac, tenant_config, backend-contract
 
-### PG-072. 工人档案级「H5 工人端菜单」逐人收窄（两层页集：企业级是天花板；单测覆盖，非 LLM 行为） 🔵
+### PG-072. 工人档案级「H5 工人端菜单」逐人收窄（单层页集；单测覆盖，非 LLM 行为） 🔵
 ```
 你: 车间里只会裁高的工人，能只让他看到裁高计算器吗？
 期望: direct_reply
-数据: 🔴 两层页集（issue #6788；用户 2026-10-13 逐字「工人档案上也应该设置 h5 工人端的菜单权限，这样让不同岗位的工人只关注他自己有权限的功能了」）：企业级开关（PG-065）是**天花板**，`users.worker_pages`（V152）是**逐人收窄** —— 实际下发 = 企业页 ∩ 本列（企业关掉的页，逐人勾了也不出现）
-数据: 三态：NULL / 缺省 = **未收窄 = 跟随企业设置**（存量与新建的默认值 ⇒ **零回归**）· `[...]` = 收窄到这几页（闭词表 = WorkerPages.ALL）· 空数组在**写面被拒**（422 + 指路「停用」而不是清空菜单）
+数据: 🔴 **单层页集**（issue #6788 起逐人可配；issue #6828 起企业级层移除 ⇒ 真值只有这一处；用户 2026-10-13 逐字「工人档案上也应该设置 h5 工人端的菜单权限，这样让不同岗位的工人只关注他自己有权限的功能了」）：实际下发 = `users.worker_pages`（V152）这一列本身
+数据: 三态：NULL / 缺省 = **未收窄 = 全部页面**（存量与新建的默认值 ⇒ **零回归**）· `[...]` = 收窄到这几页（闭词表 = WorkerPages.ALL）· 空数组在**写面被拒**（422 + 指路「停用」而不是清空菜单）
 数据: 写面：`PUT /api/admin/workers/{id}/pages`（挂 `employee:create`）+ 建号 `POST /api/admin/workers` 可带；未知键 / 非数组 / 重复键 / 空数组 ⇒ **422 + error.details 点名下标**（不静默忽略）；清回收窄（null）必须**显式 set**（MyBatis-Plus 默认 NOT_NULL 策略下「塞 null 再 updateById」SQL 里根本没有这一列 ⇒ 静默不生效而接口回 200，评审实测形态）
 数据: 读面：存储值是**原样 JSON 文本**（不用 JacksonTypeHandler：手写 select 未绑 resultMap 时 JSONB 会落成字符串、且坏值会**抛异常**让 /me 500 —— 类级守卫 = backend/admin-api/src/test/java/com/migao/admin/mapper/JacksonTypeHandlerMappingGuardTest.java）；**不是数组 / 解析不出来** ⇒ 当未收窄（fail-open）· **是数组但无真键** ⇒ 空集（只裁不放宽）· 未知键只裁不放宽
-数据: 🔴 求交为空 ⇒ **回落企业页集**：工人被收窄到的页恰好都被企业关掉时，原样下发空数组会被工人端 `frontend/worker-h5/src/render.mjs` 的 effectivePages 读成「没读到权限 ⇒ **全开**」—— 收窄反而变放宽
+数据: 🔴 归一后为空集（脏数据：全未知键 / 空数组文本 / 非字符串元素）⇒ **回落全部页面**：原样下发空数组会被工人端 `frontend/worker-h5/src/render.mjs` 的 effectivePages 读成「没读到权限 ⇒ **全开**」—— 服务端与端侧口径会分叉；回落只影响这一位工人的菜单显隐（不是授权放宽，见下一条）
 数据: 🔴 页面码**不是权限码**：`users.permissions` 一字不动、工人 session 的 permissions 恒为 `[]`、`/api/admin/**` 对 worker 仍 403；工人端语义仍是**菜单/入口显隐**（2026-09-29 用户裁定），藏起菜单 ≠ 挡住接口
-数据: 商家面：工人档案列表新增「工人端菜单」列（未收窄 ⇒「全部（跟随企业设置）」单列一处；收窄 ⇒ 逐个人话名），建号弹窗按**企业已开**的页勾选（默认全勾 = 发 null；全取消 ⇒ 就地拦住不发请求）；企业级页面配置读不到 ⇒ 菜单一节不显示，建号主流程照旧
-跳过: [backend-contract] 本条只登记「逐人收窄 + 两层求交」这几层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/worker/WorkerPagesTest.java、backend/admin-api/src/test/java/com/migao/admin/service/WorkerAdminServiceTest.java、backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java、frontend/admin-web/tests/unit/components/WorkerProfilesPanel.test.tsx）⇒ 不进 agent-eval 冒烟。⚠️ 工人端 H5 的**渲染面**消费口径（菜单/入口显隐、非阻断提示）沿用 2026-09-29 裁定，本单**未改** frontend/worker-h5。
+数据: 商家面：工人档案列表新增「工人端菜单」列（未收窄 ⇒「全部页面」单列一处；收窄 ⇒ 逐个人话名），建号弹窗按**服务端页面目录**（`GET /api/admin/worker-pages`）逐页勾选（默认全勾 = 发 null；全取消 ⇒ 就地拦住不发请求）；目录读不到 ⇒ 菜单一节不显示，建号主流程照旧
+跳过: [backend-contract] 本条只登记「逐人收窄 + 两层求交」这几层**确定性行为**，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/worker/WorkerPagesTest.java、backend/admin-api/src/test/java/com/migao/admin/service/WorkerAdminServiceTest.java、backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java、frontend/admin-web/tests/unit/components/WorkerProfilesPanel.test.tsx）⇒ 不进 agent-eval 冒烟。⚠️ 工人端 H5 的**渲染面**消费口径（菜单/入口显隐、非阻断提示）沿用 2026-09-29 裁定，2026-10-13 的 issue #6828 **也未改** frontend/worker-h5（契约 `me.pages` 一字不变）。
 ```
-真值: processing-manage.worker-page-config
-溯源: 2026-10-13 新增（issue #6788，PR 随集成）：用户逐字「工人档案上也应该设置 h5 工人端的菜单权限，这样让不同岗位的工人只关注他自己有权限的功能了」。默认口径由用户当场选定 = **「跟随企业设置」（全开、零回归）**。⚠️ 评审（独立 subagent）实测出三个真缺陷并已修：① 清回收窄走「塞 null 再 updateById」在 NOT_NULL 策略下**静默不生效**（改成显式 set）；② JacksonTypeHandler 对坏 JSONB **抛异常**（不是回 null）⇒ 一行脏数据让 GET /api/worker/me 500（改成存原样 JSON 文本 + 宽容解析）；③ `[]` 在工人端会被读成「没读到权限 ⇒ 全开」⇒ 写面 422 + 读面求交为空时回落企业页集。**未固化项（照实登记）**：逐人收窄目前**只在建号时可写**（改收窄走 API，UI 上暂无编辑入口）；企业关掉某页后，已收窄到该页的档案里那一项**不自动清理**（有意保留：企业页 ∩ 个人页 ⇒ 该页本就不下发）。 ｜ tags: processing, worker, rbac, tenant_config, backend-contract
-
-### PG-073. 工人端页面开关写面：pages 非法形态枚举表逐条 422（null 与缺键同罪；单测覆盖，非 LLM 行为） 🟡
-```
-你: 商家在「工人端页面」设置页点了保存，但表单没勾任何页（前端把「没选」发成了 null）
-数据: 🔴 `{"pages":null}` ⇒ **422** + `error.details` 点名 `pages`（issue #6803，云测试环境实测形态）：null 走的是与**缺键同一条**「静默回到默认全开」的路 —— 落库时被归一成**空数组**（`WorkerPageConfig#toPages` 对 null 与非数组一律回空列表），而工人端 H5（`frontend/worker-h5/src/render.mjs` 的 `effectivePages`）把空数组读成「没读到权限 ⇒ 全开」⇒ 一个 HTTP 200 就把企业级对页面的关闭静默撤销。判据 = `backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java` 的 nullPagesIsRejectedExplicitly（范例判据）
-数据: 🔴 **类级元守卫（让「新增一种非法形态忘了拒」当场红）**：把 `pages` 的非法形态**枚举成一张表**逐条断言「422 + details 逐条有理由 + 零落库」——缺键 / null / 非数组（字符串、对象、数字）/ 未知页面键 / 重复页面键 / 含空串项 / 数字项 / 未知配置键（共 10 种）。判据 = 同文件 `everyIllegalShapeIsRejectedAndNothingIsWritten`（走 `illegalPayloadShapes` 这张表的参数化用例）+ everyIllegalShapeNamesAConfigKey（逐条理由只许点名 `pages`/`pages[i]`/请求里真出现的拼错键名）：表里每加一行就多一条断言；任何一行被放行 ⇒ 当场红
-数据: **理由与出口都必须在响应里**（只说「不许」= 商家只能猜）：null 的理由**复用缺键那句话术**（含「静默回到默认全开」逐字），并给出明确出口 —— 想全开发四页全集 `["report","order","cut_calc","shipment"]`、想全关发 `{"pages":[]}`
-数据: ⚠️ **`null` vs `[]` 的落库/读面口径（issue #6803 要求先钉死）**：两者在 `WorkerPageConfig#toPages()` 归一成**同一个空列表** ⇒ 读面（`GET /api/admin/worker-page-config`）都回 `source=stored` + `pages=[]` —— 即 **null 落库 ≠ NULL，而是空数组**。佐证 = 同文件 nullAndEmptyListNormalizeToTheSameStoredShape（不依赖本次修复，修前修后都绿）
-数据: **`[]` 的语义本单不动**（显式全关是既有合法选择，判据 = 同文件 emptyListIsAnExplicitValidChoice 仍绿）；**但照实登记一个未固化的缺口**：工人端 H5 对空数组同样 fail-open（`effectivePages` 的 `pages.length === 0` 分支）⇒ 今天发 `{"pages":[]}` 在 H5 侧**并不会真的全关**。该缺口**本单只报告不改**，交人工裁定（属产品口径 = 会改变工人端可见行为）
-跳过: [backend-contract] 本条只登记写面**校验形态**这一层确定性行为，由单元测试覆盖（backend/admin-api/src/test/java/com/migao/admin/service/WorkerPageConfigServiceTest.java）⇒ 不进 agent-eval 冒烟。
-```
-真值: processing-manage.worker-page-config
-溯源: 2026-10-13 新增（issue #6803）。取号 = PG-073（跨 .github/cases/processing.yml 与 .github/cases/processing-order.yml 两个文件现取全仓最大号 PG-072 + 1；PG 号横跨这两个文件，历史上曾因只核一个文件而重号判红）。修复 = `WorkerPageConfigService#validate` 的键循环里补「键在、值为 null」分支（原实现 `if (rawPages != null)` 让 null 跳过整段类型/内容校验 ⇒ pages 保持空 List ⇒ 落库成空数组）。固化 = 范例判据（null）＋ 10 行非法形态枚举表（类级元守卫）＋ null/[] 落库口径钉死。**未固化项（照实登记）**：① 线上仍是旧行为（部署才生效，CI 绿 ≠ 线上已修）；② 企业级 `[]` 在工人端 H5 侧 fail-open（只报告，未改，待人工裁定）。 ｜ tags: processing, worker, tenant_config, backend-contract
+真值: processing-manage.worker-menu-pages
+溯源: 2026-10-13 新增（issue #6788，PR 随集成）：用户逐字「工人档案上也应该设置 h5 工人端的菜单权限，这样让不同岗位的工人只关注他自己有权限的功能了」。默认口径由用户当场选定 = **「跟随企业设置」（全开、零回归）**。⚠️ 评审（独立 subagent）实测出三个真缺陷并已修：① 清回收窄走「塞 null 再 updateById」在 NOT_NULL 策略下**静默不生效**（改成显式 set）；② JacksonTypeHandler 对坏 JSONB **抛异常**（不是回 null）⇒ 一行脏数据让 GET /api/worker/me 500（改成存原样 JSON 文本 + 宽容解析）；③ `[]` 在工人端会被读成「没读到权限 ⇒ 全开」⇒ 写面 422 + 读面求交为空时回落企业页集。**未固化项（照实登记）**：逐人收窄目前**只在建号时可写**（改收窄走 API，UI 上暂无编辑入口）；企业关掉某页后，已收窄到该页的档案里那一项**不自动清理**（有意保留：企业页 ∩ 个人页 ⇒ 该页本就不下发）。🔴 **2026-10-13 改判（issue #6828）**：企业级层移除 ⇒ 上面的「企业页 ∩ 个人页」与「求交为空回落企业页集」两条**随之改判为单层** —— 实际下发 = 本列；归一为空集（脏数据）⇒ 回落**全部页面**（与 H5 的 fail-open 同口径）；`users.permissions` 一字不动、工人 `/api/admin/**` 仍 403、页面码不是权限码三条红线**一字不改**。选项来源从企业级读面改为只读目录端点 `GET /api/admin/worker-pages`。 ｜ tags: processing, worker, rbac, tenant_config, backend-contract
 
 ### PG-059. 裁高读面 - 明细 product_id 为空时 brand 如实回 null 而不是 500（不可变表 get(null) 抛 NPE；单测覆盖，非 LLM 行为） 🔵
 ```
@@ -10740,7 +10727,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：741（活跃 134，跳过 607）
+- 用例总数：740（活跃 134，跳过 606）
 - tier 分布：smoke 12 / normal 686 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
@@ -10760,7 +10747,7 @@
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：64
-- 加工项域：29
+- 加工项域：28
 - 加工单域：62
 - 商品域：120
 - 工具注册器域：1

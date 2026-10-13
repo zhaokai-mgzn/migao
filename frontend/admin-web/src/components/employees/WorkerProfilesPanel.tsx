@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Plus, Search } from 'lucide-react'
 import { toast } from 'sonner'
-import { workerApi, workerPageConfigApi } from '@/lib/api'
+import { workerApi, workerPageCatalogApi } from '@/lib/api'
 import { toastRequestError } from '@/lib/api-error'
 import { Button, Input, Select, Modal, Table, Badge, Pagination } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
@@ -20,9 +20,10 @@ import type { EmployeeStatus, WorkerProfile } from '@/types'
  *   只能用工号 + PIN 进工人端扫码报工 ⇒ 不能混进员工列表（那会「看起来像员工」，
  *   点编辑还能改岗位/权限，而那条路根本不成立）。
  *   本面板独立成 Tab；服务端也在 `UserService.getUserPage` 里排除 `role=worker`。
- * - **工人端菜单**（issue #6788）：这一位工人在工人端看得见哪几页 = 企业级页面开关 ∩ 本档案上的
- *   收窄（不勾 = 跟随企业设置）。本面板只做**选项与回显**，词表与校验全在服务端
- *   （`WorkerPages` + `WorkerAdminService`），且这**不是**权限码 —— 工人 session 的
+ * - **工人端菜单**（issue #6788；单层口径 issue #6828）：这一位工人在工人端看得见哪几页 = 本档案上的
+ *   收窄（不勾 = 全部页面）。本面板只做**选项与回显**，词表与校验全在服务端
+ *   （目录端点 `GET /api/admin/worker-pages` + `WorkerPages` + `WorkerAdminService`），
+ *   且这**不是**权限码 —— 工人 session 的
  *   `permissions` 恒为 `[]`，藏起菜单 ≠ 挡住接口。
  * - 权限码**复用**员工域（`employee:create` / `employee:list`）—— 新增权限码要走迁移 + 全租户回填，
  *   而工人在产品上就是人事管理的一部分。
@@ -46,9 +47,9 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
   const [searchStatus, setSearchStatus] = useState<'' | EmployeeStatus>('')
 
   const [formOpen, setFormOpen] = useState(false)
-  // 工人端菜单（issue #6788）：建号时默认**全勾** = 跟随企业设置（零回归）；少勾一个 ⇒ 收窄。
-  // 工人端菜单（issue #6788）：`pages === null` = **未收窄** = 全勾（跟随企业设置，零回归）。
-  // 🔴 用 null 而不是 `menuPages.map(...)` 快照：配置还没拉回来时不会把「跟随企业设置」误判成空集
+  // 工人端菜单（issue #6788）：建号时默认**全勾** = 不限制（零回归）；少勾一个 ⇒ 收窄。
+  // 工人端菜单（issue #6788）：`pages === null` = **未收窄** = 全勾（= 全部页面，零回归）。
+  // 🔴 用 null 而不是 `menuPages.map(...)` 快照：目录还没拉回来时不会把「不限制」误判成空集
   // （空集在工人端会被读成「没读到权限 ⇒ 全开」，与「一页都不给」正好相反）。
   const [form, setForm] = useState<{ workerNo: string; name: string; pin: string; pages: string[] | null }>(
     { workerNo: '', name: '', pin: '', pages: null },
@@ -57,9 +58,9 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
   const [togglingId, setTogglingId] = useState<string | null>(null)
 
   /**
-   * 企业级已开的工人端页面（键 + 人话名）—— 逐人收窄的**选项来源**。
+   * 工人端页面目录（键 + 人话名）—— 逐人收窄的**选项来源**（issue #6828）。
    *
-   * 🔴 页面词表与名称都取**服务端**（`GET /api/admin/worker-page-config`）⇒ 前端不维护第二份会漂的
+   * 🔴 页面词表与名称都取**服务端**（`GET /api/admin/worker-pages`）⇒ 前端不维护第二份会漂的
    * 页面清单；读不到（如当前岗位没有生产域读码）⇒ 留空 = 这一节不显示（**不**自己编一份默认页集）。
    */
   const [menuPages, setMenuPages] = useState<{ key: string; label: string }[]>([])
@@ -93,10 +94,10 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
     loadWorkers()
   }, [loadWorkers])
 
-  /** 拉企业级已开的工人端页面（只读配置面）。失败 ⇒ 静默留空（这一节不显示，不影响建号主流程）。 */
+  /** 拉工人端页面目录（只读）。失败 ⇒ 静默留空（这一节不显示，不影响建号主流程）。 */
   useEffect(() => {
     let alive = true
-    workerPageConfigApi.get()
+    workerPageCatalogApi.get()
       .then((res) => {
         const data = res.data?.data
         if (!alive || !data?.pages) return
@@ -121,20 +122,26 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
   }
 
   const handleOpenCreate = () => {
-    // 默认**未收窄**（= 跟随企业设置）。存 null 而不是 menuPages 的快照 ⇒ 配置还没拉回来、
-    // 或配置在弹窗打开后到达，都不会把「跟随企业设置」误判成「一页都没勾」。
+    // 默认**未收窄**（= 不限制，看全部页面）。存 null 而不是 menuPages 的快照 ⇒ 目录还没拉回来、
+    // 或目录在弹窗打开后到达，都不会把「不限制」误判成「一页都没勾」。
     setForm({ workerNo: '', name: '', pin: '', pages: null })
     setFormOpen(true)
   }
 
-  /** 勾选态：`null` = 未收窄 = 全勾（跟随企业设置）。 */
+  /** 勾选态：`null` = 未收窄 = 全勾（全部页面）。 */
   const isChecked = (key: string) => form.pages === null || form.pages.includes(key)
 
-  /** 这一位工人被收窄到哪几页（人话名）；`null` = 跟随企业设置。 */
+  /**
+   * 这一位工人被收窄到哪几页（人话名）；`null` = **全部页面**。
+   *
+   * 🔴 空数组（`[]`）也按「全部页面」显示（issue #6828 复核发现显示与契约相反）：写面本就 422 拒空数组
+   * （只能来自脏数据 / 直连 DB），而读面 `WorkerPages.effectiveFor` 对「归一后为空集」一律**回落全部页面**
+   * （与 worker-h5 的 fail-open 同口径）⇒ 显示必须跟着读面口径走，否则商家看到「未开放任何页面」
+   * 而工人实际看到全部四页。
+   */
   const menuSummary = (record: WorkerProfile): string | null => {
     const assigned = record.workerPages
-    if (assigned == null) return null
-    if (assigned.length === 0) return '未开放任何页面'
+    if (assigned == null || assigned.length === 0) return null
     return assigned.map((key) => menuPages.find((p) => p.key === key)?.label || key).join('、')
   }
 
@@ -156,7 +163,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
         workerNo: form.workerNo.trim(),
         name: form.name.trim(),
         pin: form.pin.trim(),
-        // null（未收窄）或全勾 ⇒ 发 null = 跟随企业设置；只勾了一部分 ⇒ 发那一部分
+        // null（未收窄）或全勾 ⇒ 发 null = 不限制；只勾了一部分 ⇒ 发那一部分
         workerPages: form.pages === null || form.pages.length === menuPages.length ? null : form.pages,
       })
       toast.success('工人档案已创建，请把工号与 PIN 告知本人')
@@ -229,14 +236,11 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
       render: (record) => {
         const summary = menuSummary(record)
         if (summary === null) {
-          // 未设收窄 = 跟随企业设置（默认口径；也是存量档案的形态）
-          return <span className="text-sm text-neutral-500" data-testid={`worker-menu-${record.id}`}>全部（跟随企业设置）</span>
+          // 未设收窄 = 不限制（默认口径；也是存量档案的形态）
+          return <span className="text-sm text-neutral-500" data-testid={`worker-menu-${record.id}`}>全部页面</span>
         }
         return (
-          <span
-            className={record.workerPages?.length ? 'text-sm text-neutral-700' : 'text-sm text-amber-700'}
-            data-testid={`worker-menu-${record.id}`}
-          >
+          <span className="text-sm text-neutral-700" data-testid={`worker-menu-${record.id}`}>
             {summary}
           </span>
         )
@@ -399,7 +403,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
                   onClick={() => setForm({ ...form, pages: null })}
                   className="text-xs text-primary-600 hover:text-primary-700 hover:underline"
                 >
-                  全部（跟随企业设置）
+                  全部页面
                 </button>
               </div>
               <div className="space-y-1">
@@ -435,8 +439,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
                 </p>
               ) : (
                 <p className="text-xs text-neutral-400 mt-1.5">
-                  只勾这一位工人要用的页面，他就只在工人端看到这些入口；全部勾选 = 跟随企业设置。
-                  企业级已关掉的页面在这里不会出现（企业设置是上限）。
+                  只勾这一位工人要用的页面，他就只在工人端看到这些入口；全部勾选 = 不限制（看到全部页面）。
                 </p>
               )}
             </div>

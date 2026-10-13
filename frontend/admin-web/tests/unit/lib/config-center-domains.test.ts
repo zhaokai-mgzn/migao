@@ -5,12 +5,13 @@
  *
  * ## 为什么这份清单值得单独钉
  *
- * 页面左栏的四个区 / 八个域**只从这里渲染**（`frontend/admin-web/src/app/(dashboard)/settings/page.tsx`
+ * 页面左栏的四个区 / 十个域**只从这里渲染**（`frontend/admin-web/src/app/(dashboard)/settings/page.tsx`
  * 不写死任何域名字面量）。若没有本文件，「少了一个域」「域的 key 被改名（旧 URL `?domain=` 就失效）」
  * 「某个区空掉」都不会有任何东西变红 —— 而它们都是**用户直接看得见**的形态缺陷。
  *
  * 红证形态：
- * - 把 `CONFIG_DOMAINS` 少写一个域 ⇒ 判据 1 的「八个 key 逐字齐全」必红；
+ * - 把 `CONFIG_DOMAINS` 少写一个域 ⇒ 判据 1 的「十个 key 逐字齐全」必红；
+ *   （2026-10-13 / issue #6828：`worker-pages` 域已整层移除 ⇒ 清单由 11 收成 10）
  * - 把某个域的 `key` 改名（如 `remnant-sizes` → `remnantSizes`）⇒ 判据 1 必红（URL 契约随之失效）；
  * - 把某一域挂到一个不存在的区 / 让某区没有域 ⇒ 判据 2 必红。
  */
@@ -35,11 +36,10 @@ const EXPECTED_KEYS = [
   'remnant-sizes',
   'enterprise',
   'ai',
-  'worker-pages',
   'notifications',
 ] as const
 
-describe('判据 1：域目录 —— 八个 key **逐字**齐全、顺序即依赖顺序', () => {
+describe('判据 1：域目录 —— 十个 key **逐字**齐全、顺序即依赖顺序', () => {
   it('`CONFIG_DOMAINS` 的 key 序列与设计真值源逐字一致（改名/漏项 ⇒ 红）', () => {
     expect(CONFIG_DOMAINS.map((d) => d.key)).toEqual([...EXPECTED_KEYS])
   })

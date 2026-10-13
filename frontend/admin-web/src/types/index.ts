@@ -2785,8 +2785,9 @@ export interface WorkerProfile {
   status: EmployeeStatus
   /**
    * 工人端页面**收窄**（issue #6788）：
-   * `null` / 缺省 = 未收窄（跟随企业设置 = 企业开的全部工人端页面）；`[...]` = 只给这几页。
-   * 实际下发 = 企业页 ∩ 本字段。**空数组不是合法输入**（写面 422：工人端把空集读成
+   * `null` / 缺省 = 未收窄（= 全部页面）；`[...]` = 只给这几页。
+   * 实际下发 = 本字段（issue #6828 起企业级页面开关已整层移除 ⇒ 页面集只有这一层）。
+   * **空数组不是合法输入**（写面 422：工人端把空集读成
    * 「没读到权限 ⇒ 全开」，与「一页都不给」相反）。
    * 🔴 不是权限码（工人 `permissions` 恒为 `[]`）—— 只决定「菜单/入口显不显」。
    */
@@ -2799,7 +2800,7 @@ export interface WorkerFormData {
   workerNo: string
   name: string
   pin: string
-  /** 工人端页面收窄（issue #6788）：`null` / 缺省 = 跟随企业设置（默认，零回归）。 */
+  /** 工人端页面收窄（issue #6788）：`null` / 缺省 = 全部页面（默认，零回归）。 */
   workerPages?: string[] | null
 }
 
@@ -3980,22 +3981,17 @@ export interface CuttingHeightPreview {
 }
 
 
-// ── 工人端页面开关（V141，母单 #5161）──
+// ── 工人端页面目录（issue #6828）──
 /**
- * 工人端页面集合响应。
+ * 工人端**页面目录**响应 —— 商家面配置逐人菜单时的选项来源。
  *
- * 🔴 `pages` 是**页面可见性**，不是权限码：工人 session 的 `permissions` 恒为 `[]`，
- * 工人可达面恒为 `/api/worker/**`。关掉一个页面 ≠ 挡住对应接口。
+ * 🔴 `pages` 是**页面可见性**的候选键，不是权限码：工人 session 的 `permissions` 恒为 `[]`，
+ * 工人可达面恒为 `/api/worker/**`。发 `PUT /api/admin/workers/{id}/pages` 只改这个人看到的入口，
+ * **不**挡住任何接口。
  */
-export interface WorkerPageConfigResponse {
-  /** `default` = 本租户没配过（正在用默认值 = 全部页面都开）；`stored` = 商家配置。 */
-  source: string
+export interface WorkerPageCatalogResponse {
+  /** 闭词表全部页键（服务端 `WorkerPages` 一处给出，前端不自己维护第二份词表）。 */
   pages: string[]
-  /** 页面键 → 商家面人话名（服务端一处给出，前端不自己维护第二份词表）。 */
+  /** 页面键 → 商家面人话名（同上，服务端一处给出）。 */
   labels: Record<string, string>
-}
-
-/** 写面请求体（**全量替换**：`pages` 必填，缺键 ⇒ 422）。 */
-export interface WorkerPageConfigBody {
-  pages: string[]
 }

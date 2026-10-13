@@ -27,6 +27,26 @@
   `frontend/bmini-app/tests/worker-card-contrast-ledger.json`，各带理由与**重启条件**。
 - **有意不做（边界）**：**不动**全局 `.taro_page` / `app.scss` 的底色 —— 那会改**全站**底色、
   需要全站读图验收，本单只补「卡片自身可见」这一半。
+### 工人端「出现哪几页」只剩工人档案这一层：设置里的「工人端页面」整页退场（2026-10-13，issue #6828）
+
+工人端菜单原先有**两个配置面**：企业级「设置 → 工人端页面」（整厂开关）与工人档案上的**逐人**收窄
+（2026-10-13 落地的 #6788），实际下发 = 两者求交。用户 2026-10-13 裁定「一步到位移除」：企业级那一层
+**整层退场**，页面集只由每位工人档案上的收窄决定。
+
+- **改后形态**：工人端菜单 = 该工人在**工人档案**里被勾选的页面；档案上不勾（默认）⇒ **全部页面**
+  （报工 / 订单 / 裁高计算器 / 发货）。配置入口只剩「员工管理 → 工人档案」，逐人勾选。
+- **设置页少一页**：`设置 → 工人端页面` 不再存在（旧收藏链接 `?tab=workerPages` 与 `?domain=worker-pages` 都会送到「员工管理」，
+  不落空白、也不被静默送到别的域）。原先那一页说的「关掉某页 ≠ 挡住接口」仍然成立，且现在**无处可误解**。
+- **能力变化（照实登记）**：没有「一次性把某一页对全厂关掉」的动作了 —— 想全厂关 ⇒ 逐个工人收窄，
+  且**新建工人默认拿到全部页面**；已经配过「关掉某页」的企业，**那一页会回来**（不可逆，用户已裁定接受）。
+- **授权面一字未动**：工人 session 的 `permissions` 恒为 `[]`、`/api/admin/**` 对工人仍 403；
+  页面键**不是**权限码，语义仍是**菜单/入口显隐**。
+- 判据：`tests/unit_ci_workflows/test_worker_page_layer_removed.py`（类级元守卫：已退场的符号 / 端点 /
+  表 / 设置页域任一复活即具名判红）、`backend/admin-api/src/test/java/com/migao/admin/worker/WorkerPagesTest.java`、
+  `backend/admin-api/src/test/java/com/migao/admin/controller/WorkerProfileControllerTest.java`、
+  `backend/admin-api/src/test/java/com/migao/admin/controller/WorkerPageCatalogControllerTest.java`、
+  `frontend/admin-web/tests/unit/components/WorkerProfilesPanel.test.tsx`。
+- 数据迁移：`V154__drop_worker_page_configs.sql`（DROP 表 `worker_page_configs`，带可执行回滚段）。
 
 ### 库存台账的「变更前库存」记录精确值：小数库存下 delta 重新等于本次实际变更量（2026-10-13，issue #6816）
 

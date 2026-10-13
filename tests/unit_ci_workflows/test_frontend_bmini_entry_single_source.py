@@ -282,26 +282,36 @@ def test_domain_exemptions_are_alive_and_justified():
 
 
 def test_qr_entry_is_on_the_settings_page_and_keeps_existing_tabs():
-    """判据：手机端入口落在「企业基础设置」页，且既有的四块设置内容一块不少（只加不改）。
+    """判据：手机端入口落在「企业基础设置」页，且既有的设置内容一块不少（只加不改）。
 
     ⚠️ 2026-10-09（issue #6580）**第二次改判**：本页重构成「配置指挥台」，
     旧的四个 tab（`label: '<名>'`）改由**域目录单一真值模块**
     （`frontend/admin-web/src/lib/config-center-domains.ts` 的 `CONFIG_DOMAINS`）驱动 ——
     页面不再写死域名字面量（写死 ⇒「域少了一个」不会有任何东西变红）。
-    ⇒ 判据对象随被约束对象移动，**条数只增不减**（4 条 tab 断言 → 4 条域断言 + 3 条迁移断言）：
-      ① 四块设置内容**逐字**在域目录里（现取真值处，不在本判据里另抄一份清单）；
+    🔴 2026-10-13（issue #6828）**第三次改判**：设置页的「工人端页面」域**整层移除**
+    （用户裁定「一步到位移除」：企业级页面开关那一层退场，逐人配菜单收敛到「员工管理 → 工人档案」）
+    ⇒ 断言对象由 4 块内容收成 **3 块**，并**新增**两条更严的判据（移除的域不得复活 + 旧深链必须有落点）：
+      ① 三块设置内容**逐字**在域目录里（现取真值处，不在本判据里另抄一份清单）；
       ② 「参数总览」不得再作为页内域/标签出现（两处入口 = 入口分裂；用户 2026-10-09 口径）；
+         且「工人端页面」域与 `worker-pages` 键**不得**再出现（issue #6828）；
       ③ 旧深链 `?tab=params` 必须被**映射到域**（页内跳转 —— 设计 §0「不把人送出页面」），
-         而**不再**是跳去 `/settings/params`（那个页面已并回本页）。
+         而**不再**是跳去 `/settings/params`（那个页面已并回本页）；
+         旧深链 `?tab=workerPages` 必须**有确定落点**（送到「员工管理」）—— 不落空白、不复活该域。
     """
     src = _read(SETTINGS_PAGE)
     assert isinstance(src, str)
     domains_src = _read(ADMIN_WEB_SRC / "lib" / "config-center-domains.ts")
     assert isinstance(domains_src, str)
-    for label in ("企业信息", "AI 客服", "工人端页面", "通知设置"):
+    for label in ("企业信息", "AI 客服", "通知设置"):
         assert f"label: '{label}'" in domains_src, (
             f"既有设置内容 `{label}` 不见了（域目录 `config-center-domains.ts` 是它的唯一真值处）"
         )
+    assert "label: '工人端页面'" not in domains_src and "'worker-pages'" not in domains_src, (
+        "「工人端页面」域已整层移除（issue #6828）⇒ 它不该再是设置页的域/标签（复活即红）"
+    )
+    assert "workerPages: '/employees'" in src, (
+        "旧深链 `?tab=workerPages` 必须有确定落点（送到「员工管理」）—— 不落空白、不复活该域"
+    )
     assert "label: '参数总览'" not in domains_src, (
         "「参数总览」已并回本页的「算料口径」域（issue #6580）⇒ 它不该再是独立域/标签"
     )

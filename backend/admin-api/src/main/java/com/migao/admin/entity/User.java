@@ -68,9 +68,9 @@ public class User {
     /**
      * 工人档案级**工人端页面收窄**（V152，issue #6788；{@code role=worker} 的行才用）。
      *
-     * <p>三态：{@code null} = <b>未收窄</b>（跟随企业设置 = 该企业开的全部工人端页面 —— 存量与新建的默认值）·
+     * <p>三态：{@code null} = <b>未收窄</b>（= 全部工人端页面 —— 存量与新建的默认值）·
      * 收窄到闭词表 {@code WorkerPages.ALL} 里的某几页。实际下发 = 企业页
-     * （{@code worker_page_configs}）∩ 本列 ⇒ 企业级仍是天花板。</p>
+     * ⇒ 本列是页面集的**唯一**一层（企业级页面开关已整层移除，issue #6828）。</p>
      *
      * <p>🔴 <b>不是权限码</b>，所以**另开一列**而不是塞进 {@link #permissions}
      * （那是商家 RBAC 权限快照）：工人 session 的 {@code permissions} 恒为 {@code []}，
