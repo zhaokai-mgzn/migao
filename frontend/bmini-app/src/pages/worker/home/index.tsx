@@ -48,13 +48,6 @@ import {
 } from '../../../utils/inbound/gaps'
 import './index.scss'
 
-/** 行卡（标题 + 一句「拿它干什么」+ 路由常量）；顺序 = 工人的动作链：物料 → 出货 */
-const WORKER_ENTRIES = [
-  { key: 'inbound', title: '拍照入库', sub: '拍上游标签 ⇒ 过账 ⇒ 打标签', route: INBOUND_PAGE_ROUTE, bar: 'a' },
-  { key: 'reprint', title: '补打入库标签', sub: '标签丢了 / 磨花了', route: REPRINT_PAGE_ROUTE, bar: 'b' },
-  { key: 'shipment', title: '拍照发货', sub: '拍运单 / 商品标签 ⇒ 生成发货单', route: SHIPMENT_PAGE_ROUTE, bar: 'c' },
-] as const
-
 export default function WorkerHomePage() {
   /** 本机有没有工人身份（本地判据，只决定「渲染工人功能」还是「引导去登录」） */
   const workerReady = hasWorkerSession()
@@ -131,20 +124,46 @@ export default function WorkerHomePage() {
 
           <Text className='worker-home__section'>其他功能</Text>
 
-          {WORKER_ENTRIES.map((entry) => (
-            <View
-              key={entry.key}
-              className='worker-home__entry'
-              onClick={() => Taro.navigateTo({ url: entry.route })}
-            >
-              <View className={`worker-home__entry-bar worker-home__entry-bar--${entry.bar}`} />
-              <View className='worker-home__entry-body'>
-                <Text className='worker-home__entry-text'>{entry.title}</Text>
-                <Text className='worker-home__entry-sub'>{entry.sub}</Text>
-              </View>
-              <Text className='worker-home__entry-go'>›</Text>
+          {/* 🔴 三张行卡**逐条显式**写（不走数组 + `.map()`）：本仓的入口可达性守卫
+              （`tests/page-entry-reachability.test.ts`）按 `Taro.navigateTo({ url: <路由常量> })`
+              这类**字面锚点**静态证明「页面有入口」，数据驱动会让它解析不到 ⇒ 5 条判据一起红
+              （实测：本项目 #6858 第一版用 `WORKER_ENTRIES.map()` 时踩到，守卫是对的）。 */}
+          <View
+            className='worker-home__entry'
+            onClick={() => Taro.navigateTo({ url: INBOUND_PAGE_ROUTE })}
+          >
+            <View className='worker-home__entry-bar worker-home__entry-bar--a' />
+            <View className='worker-home__entry-body'>
+              <Text className='worker-home__entry-text'>拍照入库</Text>
+              <Text className='worker-home__entry-sub'>拍上游标签 ⇒ 过账 ⇒ 打标签</Text>
             </View>
-          ))}
+            <Text className='worker-home__entry-go'>›</Text>
+          </View>
+
+          <View
+            className='worker-home__entry'
+            onClick={() => Taro.navigateTo({ url: REPRINT_PAGE_ROUTE })}
+          >
+            <View className='worker-home__entry-bar worker-home__entry-bar--b' />
+            <View className='worker-home__entry-body'>
+              <Text className='worker-home__entry-text'>补打入库标签</Text>
+              <Text className='worker-home__entry-sub'>标签丢了 / 磨花了</Text>
+            </View>
+            <Text className='worker-home__entry-go'>›</Text>
+          </View>
+
+          {/* 第 3 条（issue #6761）：#5648 的后端与纯逻辑早已就绪，缺的就是这个入口 */}
+          <View
+            className='worker-home__entry'
+            onClick={() => Taro.navigateTo({ url: SHIPMENT_PAGE_ROUTE })}
+          >
+            <View className='worker-home__entry-bar worker-home__entry-bar--c' />
+            <View className='worker-home__entry-body'>
+              <Text className='worker-home__entry-text'>拍照发货</Text>
+              <Text className='worker-home__entry-sub'>拍运单 / 商品标签 ⇒ 生成发货单</Text>
+            </View>
+            <Text className='worker-home__entry-go'>›</Text>
+          </View>
         </>
       ) : (
         <View className='worker-home__gate'>
