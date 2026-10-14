@@ -9604,6 +9604,42 @@ _CASE_PP_022 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-074 [EDGE] 工序一键「设为不做并删除」写面并发 exactly-once：5 并发 ⇒ 至多一个赢家 + 无重复副作用 + 终态唯一（issue #6936）（源: cases/processing.yml）──
+_CASE_PG_074 = EvalCase(
+    id='PG-074',
+    legacy_id='',
+    title='工序一键「设为不做并删除」写面并发 exactly-once：5 并发 ⇒ 至多一个赢家 + 无重复副作用 + 终态唯一（issue #6936）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['商家在「企业基础设置 → 工序与部位单价」点「设为不做并删除」时手抖点了两次（或两个管理员同时点）'],
+    expectations=[],
+    data_checks=['**核验结论 = 真**：`DELETE /api/admin/production/operations/{id}/detach-and-delete` 在并发下**不是** exactly-once。修前实测（验收探针 E4，逐字读数见 acceptance/2026-10-14/line1-worker-config/out/batch-writeface-sweep/E4-detach-concurrent.json 与同目录 run.log 的 `[FAIL] [E4.1]` 行）：并发 5 次同一工序 ⇒ HTTP `[200,200,200,422,422]`（成功 **3** 次）；终态**正确**（deleted=1、无半完成）⇒ 这是**并发语义**缺陷，不是账实不符。', '**病根形态**：`ProductionOperationCommandService#deleteDetaching` 是 check-then-act（先读 `op.deleted==0` 判活，再摘格 / 级联软删 / 写工序行），判断与写入不在同一条语句上 ⇒ 并发请求都读到提交前快照、都进写侧。同族参照 = issue #6928 / PR #6931（`InboundOrderService#cancel` 改成与 `#post` 同款条件更新）。', '**主判据（已落码）**：N=5 并发同一工序 ⇒ 成功（200）次数 **≤ 1**；报 `detached_positions=1` 的请求数 ≤ 1；摘格写（`updatePriceAndApplicable`）与级联软删（`softDelete`）对同一个格**各恰一次**；落败方必须是显式 **409 CONFLICT**。断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationDetachConcurrentTest.java 的 `concurrentDetachAndDeleteHasAtMostOneWinner`。', '**谓词完整性**：删除权的 CAS 必须带 `id` + `tenant_id` + `deleted=0` 三条谓词（wrapper SQL 段恰 3 个 AND 分量；实参含本租户与 0）—— 断言 = 同文件 `serialDetachAndDeleteStillSucceeds`。', '**正对照（不误杀）**：单请求串行 `detach-and-delete` 必须成功（200）且摘格/软删各恰一次；护栏命中（主线/规则引用）时仍返回 **422 + details**（CAS 不改变既有 conflict/validation 口径）；已软删的工序仍是 **200 幂等 no-op**（公开契约一字不变）。', '**红证（修前实测，确定性）**：撤掉 CAS（退回修前形态，`git stash` 主源那一处）⇒ 同一条判据实测 `各状态=[200,200,200,200,200] 成功数=5 报 detached_positions=1 的请求数=5 被拒(409)数=0`（5/5 全赢家，比 HTTP 层 3/5 更强）⇒ 判据当场红。修后（CAS）⇒ 成功数=1。', '**边界（如实登记）**：① 本类跑的是 mock 面（服务层只认 CAS 的影响行数）；真 PG 的行锁/条件重估由同族真库判据承担（`InboundOrderCancelRaceRealDbTest`，#6928）；② HTTP 层成对读数见 PR body 的 E4 对照；③ 只覆盖 `deleteDetaching` 一个入口。'],
+    skip_reason='[backend-contract] 纯后端并发落库判据（无 LLM 写路径）⇒ 不进 agent-eval 冒烟：由 admin-api 单测 ProductionOperationDetachConcurrentTest 执行（一并由 ProductionOperationDeleteCasMetaGuardTest 的类级元守卫兜住同族写面）。',
+    tags=['production', 'operation', 'detach', 'concurrency', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PG-075 [EDGE] 类级元守卫（#6936）：工序「删除权」的写路径必须落到 SQL 谓词（CAS）+ 未登记即红 + 豁免只许缩短（源: cases/processing.yml）──
+_CASE_PG_075 = EvalCase(
+    id='PG-075',
+    legacy_id='',
+    title='类级元守卫（#6936）：工序「删除权」的写路径必须落到 SQL 谓词（CAS）+ 未登记即红 + 豁免只许缩短',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['（元守卫，无用户轮次）下一个人在工序族新加一条软删写路径，或把 CAS 的「影响行数 0」判定删掉'],
+    expectations=[],
+    data_checks=['**为什么是类级**（铁律 8）：只修 `deleteDetaching` 一处 = 没修 —— 下一个同族写面照样可以「有谓词但不看影响行数」，而没有任何东西会红。守卫把「写 deleted 列的写路径清单 + 谓词完整性 + 影响行数判定」钉成机械判据。', '**判据 1（扫描器非空跑自证 + 谓词完整性 + 显式写列）**：现取 `ProductionOperationCommandService` 里「写 deleted 列的调用点」（`.set(ProductionXxx::getDeleted, 1)`）必须含 `delete` / `deleteDetaching` 两条软删路径；每个写点**同一条链**上必须同时有 `.eq(…::getId,` + `.eq(…::getTenantId,` + `.eq(…::getDeleted, 0)` 三条谓词，且必须 `.set(…::getUpdatedAt,` 保住审计列（#4608：不得退回无谓词 `updateById` 形态）。断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationDeleteCasMetaGuardTest.java 的 `softDeleteWritesCarryTheFullPredicate`。', '**判据 2（必须判影响行数 + 未登记即红 + 登记必须兑现 + 豁免只许缩短）**：每个行写调用（`*Mapper.update(`）的后 600 字符窗口内必须出现 `== 0)`（只留赋值不判 0 行 = #6936 病根本体）；「写 deleted 列的 service 方法」清单必须逐条登记在台账 backend/admin-api/src/test/resources/production-operation-delete-cas-ledger.json（`entries[].method` + `evidence` 锚逐字兑现，幽灵条目判红）；豁免 `unverified` ≤ `unverified_baseline`（**0**，只许缩短）。断言 = 同文件 `serviceWritePathsAreRegisteredAndLedgerIsFaithful`。', '**判据 3（判别力自证）**：合成语料上六种坏形态各自判红 —— ① 缺 `deleted = 0` 谓词；② 缺 tenant 谓词；③ CAS 谓词齐但不看影响行数；④ 最隐蔽的「赋值留着、`if (… == 0)` 判定删掉」；⑤ 软删写成无谓词 `updateById`；⑥ 缺 `updated_at` 审计列；合规语料（与真源码同形）判绿；只改注释不红。断言 = 同文件 `guardHasDiscriminatingPower`。', '**边界（如实登记）**：见台账 `_boundary` —— 形态判据不做 AST（把三谓词拆成变量 / 跨方法判定会被保守判红）；射程 = `ProductionOperationCommandService` 的工序写面；判不了「不改 deleted 列的写」，也判不了 HTTP 层与读写交接的原子性（那层由 PG-074 的实例判据承担）；不跑被它引用的实例判据；与 `tests/unit_ci_workflows/test_logic_delete_write_shape.py`（#4608 显式写列守卫）**有意重叠**：那条只管形态（不得走 `updateById`），本条另管三谓词 + 影响行数判定 + 未登记即红。'],
+    skip_reason='[backend-contract] 类级形态守卫（读源码文本、零 DB 零网络）⇒ 不进 agent-eval 冒烟：由 admin-api 单测 ProductionOperationDeleteCasMetaGuardTest 执行。',
+    tags=['production', 'operation', 'concurrency', 'meta_guard', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PR-001 [SMOKE] 商品搜索 - 关键词模糊匹配（源: cases/product.yml）──
 _CASE_PR_001 = EvalCase(
     id='PR-001',
@@ -14441,6 +14477,8 @@ ALL_CASES = (
     _CASE_PG_072,
     _CASE_PG_059,
     _CASE_PP_022,
+    _CASE_PG_074,
+    _CASE_PG_075,
     _CASE_PR_001,
     _CASE_PR_002,
     _CASE_PR_003,

@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "_what": "「工序删除权的写路径落在 SQL 谓词（CAS）」的登记台账（issue #6936，铁律 8 的类级元守卫载体）。扫描面 = ProductionOperationCommandService 里「写 deleted 列的调用点」（`.set(ProductionXxx::getDeleted, 1)`）。守卫 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationDeleteCasMetaGuardTest.java。",
+  "_why": "本单的实例缺陷 = detach-and-delete 的写路径是 check-then-act（先读 op.deleted==0 判活、后摘格/级联/写工序行）⇒ 5 并发全部进写侧（实测 HTTP [200,200,200,422,422]，成功 3 次；终态正确但并发语义错）。只改这一处 = 只修一处：下一个同族写面照样可以「有谓词但不看影响行数」或干脆没有谓词，而没有任何东西会红。",
+  "_judged_by": "backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationDeleteCasMetaGuardTest.java",
+  "_detector": "① 软删写点 = `.set(ProductionXxx::getDeleted, 1)`；同一写点之后 700 字符视为**同一条链**，链上必须同时有 `.eq(…::getId,` + `.eq(…::getTenantId,` + `.eq(…::getDeleted, 0)` + `.set(…::getUpdatedAt,`；② 每个行写调用（`*Mapper.update(`）的后 600 字符窗口内必须出现 `== 0)`；③ 同方法体里既有软删写点又有 `*Mapper.updateById(` ⇒ 判红。纯文本形态判据（无 AST）。",
+  "_invariants": [
+    "**写路径未登记即红**：现取「写 deleted 列的 service 方法」必须逐条登记在 entries 里 ⇒ 新加一条软删路径却没登记 = 红。",
+    "**登记未被兑现即红**：每条 evidence = `<仓库相对路径>::<可检索文本>`，左侧文件必须存在、右侧必须逐字出现 ⇒ 台账不许给不存在的保护盖章。",
+    "**台账不许有幽灵条目**：entries 的每个 method 必须仍能被现取到（改名 / 删除 ⇒ 红）。",
+    "**谓词完整性**：软删写点必须带 id + tenant_id + deleted = 0 三条谓词，并保住 updated_at 审计列。",
+    "**CAS 判定**：行写调用必须判「影响行数 == 0 ⇒ 拒绝」⇒ 只留赋值不判 0 行 = 红（#6936 病根本体）。",
+    "**不得退回无谓词写**：同方法体里出现 `updateById` 软删 = 红（#4608 的静默 no-op 形态）。",
+    "**豁免只许缩短**：unverified 条数 ≤ unverified_baseline（条数现取、打印在断言消息里）。",
+    "**判别力自证**：六种坏形态在合成语料上各自判红、合规语料不红（含最隐蔽的「赋值留着但 if 判定删掉」）。"
+  ],
+  "_boundary": "① 形态判据不做 AST 解析：换措辞（如把链拆成变量、跨方法判定）会被判红（保守方向：宁可红在形态上）；② 射程 = admin-api 的 ProductionOperationCommandService（别的模块 / 别的表不在本表射程）；③ 判不了「不改 deleted 列的写」（那不是本表的对象）；④ 判不了 HTTP 层与读写交接的原子性 —— 那一层由实例判据承担；⑤ 本判据不跑被它引用的实例判据（否则「未登记即红」会退化成全量套件再跑一遍）；⑥ 与 tests/unit_ci_workflows/test_logic_delete_write_shape.py（#4608 显式写列守卫）**有意重叠**：那条只管形态（不得走 updateById），本条另管三谓词 + 影响行数判定 + 未登记即红。",
+  "entries": [
+    {
+      "method": "delete",
+      "surface": "DELETE /api/admin/production/operations/{id}（软删工序，两参版本）",
+      "call_anchor": "if (productionOperationMapper.update(null, new LambdaUpdateWrapper<ProductionOperation>()",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionOperationCommandService.java::if (productionOperationMapper.update(null, new LambdaUpdateWrapper<ProductionOperation>()",
+      "case_ids": ["PG-075", "PG-035"]
+    },
+    {
+      "method": "deleteDetaching",
+      "surface": "DELETE /api/admin/production/operations/{id}/detach-and-delete（一键设为不做并删除）",
+      "call_anchor": "if (productionOperationMapper.update(null, new LambdaUpdateWrapper<ProductionOperation>()",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionOperationCommandService.java::.eq(ProductionOperation::getTenantId, tenantId)",
+      "case_ids": ["PG-075", "PG-074"]
+    }
+  ],
+  "_entries_note": "两条路径的 CAS 形态**有意同款**（同族写面必须都带闸）：都走 `if (productionOperationMapper.update(null, new LambdaUpdateWrapper<ProductionOperation>() … .eq(id).eq(tenantId).eq(deleted, 0).set(deleted, 1).set(updatedAt)…) == 0)`。改名 / 摘掉 `if (… == 0)` 判定 / 摘掉任一条谓词 ⇒ 兑现判据或谓词判据当场红。",
+  "unverified": [],
+  "unverified_baseline": 0,
+  "_unverified_note": "本表的豁免面 = 「写 production_operations.deleted 的路径本可以没有闸」。现状 = 两条已注册路径都走带三谓词的条件更新 + 影响行数判定 ⇒ 豁免 0（基线 0，只许缩短）。"
+}

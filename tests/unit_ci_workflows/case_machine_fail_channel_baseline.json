@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 148
+    "backend_contract_scoring_zero": 150
   },
   "history": [
     {
@@ -484,6 +484,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 148,
       "note": "issue #6928（P1·库存台账并发：入库单「过账 × 作废」交叉竞态）新增 **2** 条 `[backend-contract]` 用例：**OR-066**（行为面：真库并发 + 窗口注入，「至多一个赢家 + 已作废的单不得改库存/留台账」）与 **MC-100**（类级元守卫：入库单状态迁移写路径必须落到 SQL 谓词）。两条按设计都**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 本读数 +2（main 侧 146 → 本 PR 后 148）。机器判红通道 = `traces.tests` 的两个真测试文件，均非空且真实存在：`backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderCancelRaceRealDbTest.java`（真 PG：3 轮交叉竞态 + 两条正对照；修前注入读数 `post=200 cancel=200 成功数=2 单终态=cancelled 库存=100.0→105.0 台账行=1`、修后 `post=200 cancel=409 成功数=1 单终态=posted 库存=100.0→105.0 台账行=1`）与 `backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderStatusCasMetaGuardTest.java`（类级元守卫 7 条 + 合成语料判别力自证；红证 = 把 `#cancel` 退回无谓词 `updateById`（哪怕锚串留着）⇒ 具名 `违规=[cancel]`）；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**（不按号推算）：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 147}` vs main 侧锚点 146 ⇒ 差值 2 = 本 PR 新增那两条。"
+    },
+    {
+      "sha": "1dec8de54dd5e210e66dff906eb448a231af7461",
+      "date": "2026-10-14",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 150,
+      "note": "issue #6936（P1·并发：工序「设为不做并删除」不是 exactly-once）新增 **2** 条 `[backend-contract]` 用例：**PG-074**（行为面：5 并发同一工序 ⇒ 成功数 ≤1 + 摘格/级联各恰一次 + 终态唯一 + 落败方 409；正对照串行仍成功）与 **PG-075**（类级元守卫：工序删除权写路径必须落到 SQL 谓词 + 三谓词 + 影响行数判定 + 未登记即红 + 豁免只许缩短）。两条按设计都**不进 agent-eval** （`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 本读数 +2（main 侧 148 → 本 PR 后 150）。机器判红通道 = `traces.tests` 的两个真测试文件（均非空且真实存在）：`backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationDetachConcurrentTest.java`（修前红读数 `各状态=[200,200,200,200,200] 成功数=5 报 detached_positions=1 的请求数=5 被拒(409)数=0`、修后绿 `各状态=[409,409,409,409,200] 成功数=1 被拒(409)数=4`）与 `backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationDeleteCasMetaGuardTest.java`（类级元守卫 + 合成语料判别力自证；红证 = 摘掉 `if (… == 0)` 判定或任一条谓词 ⇒ 当场红，读数 `写 deleted 列的方法=[delete, deleteDetaching] 违规=[] 未判影响行数=[]`）；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**（不按号推算）：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 150}` vs main 侧锚点 148 ⇒ 差值 2 = 本 PR 新增那两条。"
     }
   ]
 }

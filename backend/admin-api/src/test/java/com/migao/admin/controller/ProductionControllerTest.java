@@ -1733,8 +1733,8 @@ class ProductionControllerTest {
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(cell));
         when(productionOperationPositionMapper.updatePriceAndApplicable(
                 any(), any(), any(), any(), any())).thenReturn(1);
-        when(productionOperationPositionMapper.softDelete(any(), any(), any())).thenReturn(1);
         when(productionOperationMapper.update(isNull(), any())).thenReturn(1);
+        when(productionOperationPositionMapper.softDelete(any(), any(), any())).thenReturn(1);
 
         mockMvc.perform(delete("/api/admin/production/operations/op-1/detach-and-delete"))
                 .andExpect(status().isOk())
@@ -1768,8 +1768,8 @@ class ProductionControllerTest {
                         .id("opp-三边-布帘").tenantId(TENANT).logicalName("三边").position("布帘")
                         .unitPrice(new BigDecimal("0.40")).applicable(false).status("active").deleted(0)
                         .build()));
-        when(productionOperationPositionMapper.softDelete(any(), any(), any())).thenReturn(1);
         when(productionOperationMapper.update(isNull(), any())).thenReturn(1);
+        when(productionOperationPositionMapper.softDelete(any(), any(), any())).thenReturn(1);
 
         mockMvc.perform(delete("/api/admin/production/operations/op-1"))
                 .andExpect(status().isOk())
@@ -1806,11 +1806,15 @@ class ProductionControllerTest {
                         .build()));
         // 0 = 行不存在 / 非本租户 / 已软删 ⇒ 必须 fail-closed
         when(productionOperationPositionMapper.softDelete(any(), any(), any())).thenReturn(0);
+        // 删除权 CAS 抢到（issue #6936 起影响行数 0 ⇒ 409；本用例要测的是**级联**那一步的 fail-closed）
+        when(productionOperationMapper.update(isNull(), any())).thenReturn(1);
 
         mockMvc.perform(delete("/api/admin/production/operations/op-1"))
                 .andExpect(status().isUnprocessableEntity());
 
-        verify(productionOperationMapper, never()).update(isNull(), any());
+        // 事务回滚语义：工序行**只**被 CAS 碰过一次（抢到删除权），其后没有第二次写
+        // （改前这里断言 `never()`：那时工序行写发生在级联**之后**；现在 CAS 是唯一写点且在同一事务里回滚）
+        verify(productionOperationMapper, times(1)).update(isNull(), any());
     }
 
     /**
@@ -1846,7 +1850,7 @@ class ProductionControllerTest {
         verify(productionOperationPositionMapper, never())
                 .updatePriceAndApplicable(any(), any(), any(), any(), any());
         verify(productionOperationPositionMapper, never()).softDelete(any(), any(), any());
-        verify(productionOperationMapper, never()).update(isNull(), any());
+        verify(productionOperationMapper, never()).update(any(), any());
     }
 
     @Test

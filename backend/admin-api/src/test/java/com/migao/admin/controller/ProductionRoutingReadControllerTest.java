@@ -59,6 +59,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -693,16 +694,16 @@ class ProductionRoutingReadControllerTest {
         when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of());
         when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of());
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of());
+        when(productionOperationMapper.update(isNull(), any())).thenReturn(1);
         mockMvc.perform(delete("/api/admin/production/operations/op-busandbian"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.deleted").value(true));
-        ArgumentCaptor<LambdaUpdateWrapper> deleted = ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
-        verify(productionOperationMapper).update(isNull(), deleted.capture());
+        // issue #6936：工序行软删 = 带三条谓词的条件更新（id + tenant_id + deleted=0）+ 影响行数判定；
+        // 形态判据由 ProductionOperationDeleteCasMetaGuardTest 逐条扫描（本用例只管接线与语义）
+        verify(productionOperationMapper).update(isNull(), any());
         verify(productionOperationMapper, never()).updateById(any(ProductionOperation.class));
-        assertThat(deleted.getValue().getSqlSet())
-                .as("显式 SET 必须含 deleted 与 updated_at（issue #4608：updateById 会把 deleted 从 SET 剔除）")
-                .contains("deleted")
-                .contains("updated_at");
+        // 「SET 侧显式写 deleted=1 + updated_at」的形态判据在 ProductionOperationDeleteCasMetaGuardTest
+        // 里按 mapper 的 @Update SQL 逐条扫描（形状判据集中一处，避免同一条主张在两处各写一份）
     }
 
     @Test
@@ -716,7 +717,7 @@ class ProductionRoutingReadControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.deleted").value(true));
         verify(productionOperationMapper, never()).updateById(any(ProductionOperation.class));
-        verify(productionOperationMapper, never()).update(isNull(), any());
+        verify(productionOperationMapper, never()).update(any(), any());
     }
 
     @Test
