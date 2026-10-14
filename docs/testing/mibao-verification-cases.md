@@ -9319,7 +9319,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（97 case）
+## 前端 UI 域（98 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -10726,6 +10726,21 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-10-13 新增（issue #6799 ①）。取号 = `python3 scripts/next_case_id.py UI` ⇒ main 现取 UI-001~096、在飞 PR 未占 ⇒ **UI-097**。病：真栈 `19-after-sales-detail` 打 React 两条 hydration error（`<div>` 落在 `<p>` 里）⇒ 整页 hydration 失败（后续交互走未 hydrate 的 SSR DOM）。根因定位：先按**字面 JSX 嵌套**扫全树（0 命中）⇒ 判定为**运行期组合**；本页 `<p>` 里唯一的被引用组件是 `components/common/DateTimeCell`（根节点 `<div>`，两行日期）⇒ 两处命中。修法 = 两处容器换 `<div>`（不动 DateTimeCell：其两行布局依赖块级子元素）。判据 = ① 实例（SSR→hydrate 见证，修前红）；② 字面嵌套扫描器 + 自证；③ 运行期组件台账（双向对齐 + 逐条真渲染）。 ｜ tags: ui, hydration, dom-nesting, ssr, class-level-guard, red-proof
 
+### UI-098. 黄金策对话的中文标点旁强调必须渲染成 <strong>：CommonMark flanking 在「汉字紧邻中文标点」时判 `**` 不能开/不能闭（原样上屏），归一化后星号消失、加粗成立、代码面逐字不动 🔵
+```
+你: 用户 2026-10-14 实测截图（黄金策对话）：「黄金策对话回复的Markdown格式还是未完全正确渲染」—— 回复里 `下单入口：后台的**「订单列表」页**，页面里的「新建订单」入口。` 的 `**` 原样上屏，而同一条回复里 `**下单（新建订单）不在我这边办理——…**`、`**我能帮上忙的部分**` 加粗正常。
+期望: direct_reply
+数据: 🔴 判据 1·**实例（会红，真解析管线）**：`frontend/admin-web/tests/unit/components/MessageList-cjk-emphasis.test.tsx` **不 mock `react-markdown`/`remark-gfm`/`remark-breaks`**（既有 MessageList 测试都把 react-markdown 换成 span ⇒ 替身永远看不见真解析结果），断言两条**同时**成立：① markdown 容器（`div.prose`）的 `textContent` 与 `innerHTML` 都不含 `**`；② `<strong>` 真的在（截图原句 = 1 个、截图全文 = 3 个且逐个点名）。只判 ① 的话「把标记删掉」也能绿 = 空判据。修前实测：本文件 4 条红（`**` 进了 textContent、`<strong>` 数为 0）。
+数据: 🔴 判据 2·**零可见变化 + 负控（不许误伤）**：`frontend/admin-web/tests/unit/lib/cjk-emphasis.test.ts` —— ① 正控：该插 ZWSP 的边界逐个钉死（开侧 `的**「` / 闭侧 `」**文` / 两侧同时）；② 负控：本来能配对的形态与「不是强调」的星号**逐字不动且一个 ZWSP 都不许插**（`**A**：**B**`、`**A**，**B**`、`snake_case_name`、`2*3*4`、掩码 `138****8888`、单星列表、未闭合 `**`、纯 ASCII `abc**"x"**def`、`def f(**kwargs)`）；③ 代码面：行内代码与围栏代码块里的 `**` 逐字保留（既不配对也不插 ZWSP），代码面之外的正文照常修。其中 `**A**：**B**` 是**改了配对策略就会红**的那条（把作 closer 的标记也改成能开 ⇒ 后面的 `**B**` 落单）。
+数据: 🔴 判据 3·**类级元守卫（新渲染点漏接即红）**：同文件判据 ④ 扫 `src/**`，凡 `from 'react-markdown'` 的组件都必须调用 `normalizeCjkEmphasis(`，且扫描面非空自证（面消失 ⇒ 判据在空集上恒真 = 失效）。当下渲染点 = `frontend/admin-web/src/components/chat/MessageList.tsx` 一处。
+数据: **回归面清点（本单边界）**：`frontend/bmini-app/src/utils/richText.ts` 与 `frontend/mini-app/src/utils/richText.ts` 用自写正则 `\*\*([^*]+)\*\*` 解析强调、`frontend/admin-web/src/lib/inline-markdown.tsx` 同样自写 ⇒ **不受 CommonMark flanking 约束**，本单未改它们（黄金策 web 面是唯一用 CommonMark 渲染商家可见正文的地方）。
+数据: **有意收窄（如实登记）**：① 只在 CJK 区动手 —— 纯 ASCII 的同类失效（`abc**"x"**`）不修（否则 `(**kwargs)` 这类代码随笔会被插入 ZWSP），重启用条件 = 真出现非中文语种的商家可见缺陷；② `_` 的词内斜体（`中文_斜体_中文`）不修（那是 CommonMark 对 `_` 的独立规则，修它会连坐 `snake_case`）；③ 跨行内代码的配对（`**中文 <code>…</code> 中文**`）不修（配对按代码面切分后各自独立 ⇒ 不配对 = 保持原样）。
+前置: 本用例是 [backend-contract] 纯前端用例：前置由单测自建 —— `frontend/admin-web/tests/unit/components/MessageList-cjk-emphasis.test.tsx` `vi.mock('@/store/chat')` 注入消息夹具（截图全文逐字复用），另把 `@/hooks/use-typewriter` 替身成直返全文（真实定时器会饿死 waitFor 轮询）。前置不成立时单测直接红（找不到 `div.prose` / 找不到 `<strong>`），不依赖共享夹具；agent-eval 栈不跑它
+跳过: [backend-contract] 纯前端渲染层（服务端一个字未改：LLM 输出的 markdown 原样下发，缺陷在解析/展示面）由 vitest（jsdom）执行，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.vitest, frontend-fix.no-api-change
+溯源: 2026-10-14 新增（issue #6910，用户同日实测截图）。取号 = `python3 scripts/next_case_id.py UI` ⇒ main 现取 UI-001~097、在飞 PR 未占 UI-098 ⇒ **UI-098**。归因：CommonMark 的左/右 flanking 规则都以紧邻字符是否为 Unicode 标点（P/S）为条件，而 `「」（）《》、，。` 都是标点、中文正文里它们前面紧跟汉字 ⇒ `的**「…」**` 判不能开、`**「重点」**文本` 判不能闭，配对不上就按字面输出（英文 `abc**"x"**` 同样如此）。修法 = 交给 react-markdown 之前做一次**零可见变化**的归一化（`frontend/admin-web/src/lib/cjk-emphasis.ts`）：先按「同字符 + 同长度」配对，只给配对里做不到本职（不能开 / 不能闭）的那一侧插零宽空格 U+200B（既非空白也非标点 ⇒ flanking 条件当场成立），代码面（行内代码 / 围栏代码块）逐字跳过。不新增依赖（本仓自写纯函数）。 ｜ tags: ui, chat, markdown, cjk, admin-web, class-level-guard
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -10755,8 +10770,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：741（活跃 134，跳过 607）
-- tier 分布：smoke 12 / normal 687 / adversarial 32
+- 用例总数：742（活跃 134，跳过 608）
+- tier 分布：smoke 12 / normal 688 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10781,7 +10796,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：97
+- 前端 UI 域：98
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
