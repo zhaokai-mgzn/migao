@@ -3,17 +3,17 @@
   "id": "PRE-1",
   "name": "主体自洽性（注入租户 = 登录自述租户）",
   "verdict": "pass",
-  "detail": "A=32/13800138000 B=35/13800138002 C=— P=— 与登录自述逐一对齐（不一致会让「DB 侧 id」与「token 所属租户」错位 ⇒ 全表判据失真）",
+  "detail": "A=32/13800138000 B=36/13800138002 C=— P=— 与登录自述逐一对齐（不一致会让「DB 侧 id」与「token 所属租户」错位 ⇒ 全表判据失真）",
   "evidence": [
    "A 注入=32 登录自述=32 name=米高测试环境",
-   "B 注入=35 登录自述=35 name=6937验收对照-隔离面"
+   "B 注入=36 登录自述=36 name=6937验收对照-隔离面2"
   ]
  },
  {
   "id": "PC-0",
   "name": "主体登录",
   "verdict": "pass",
-  "detail": "已登录主体：A/B（A=32/13800138000 B=35/13800138002 C=— P=—）",
+  "detail": "已登录主体：A/B（A=32/13800138000 B=36/13800138002 C=— P=—）",
   "evidence": [
    "A: token.len=774",
    "B: token.len=774"
@@ -23,31 +23,31 @@
   "id": "INV",
   "name": "资源面枚举",
   "verdict": "pass",
-  "detail": "枚举 27 个有 tenant 维度的资源（A=32 有数据 17，租户 35（B） 有数据 10）",
+  "detail": "枚举 27 个有 tenant 维度的资源（A=32 有数据 18，租户 36（B） 有数据 10）",
   "evidence": [
-   "products(products) A=16 B=2 read=/api/admin/products/:id write=PUT",
+   "products(products) A=18 B=1 read=/api/admin/products/:id write=PUT",
    "customers(customer_profiles) A=72 B=1 read=/api/admin/customers/:id write=PUT",
    "customer_tags(customer_tags) A=0 B=0 read=— write=PUT",
-   "categories(categories) A=14 B=3 read=— write=PUT",
+   "categories(categories) A=14 B=2 read=— write=PUT",
    "operations(production_operations) A=41 B=41 read=— write=PUT",
    "routings(production_route_templates) A=2 B=2 read=— write=PUT",
    "route_rules(production_route_rules) A=27 B=27 read=— write=DELETE",
    "op_positions(production_operation_positions) A=115 B=116 read=— write=PUT",
    "fee_combos(processing_fee_combinations) A=0 B=0 read=— write=PUT",
    "processing_items(processing_items) A=0 B=0 read=/api/admin/processing-items/:id write=PUT",
-   "processing_categories(processing_categories) A=0 B=0 read=/api/admin/processing-categories/:id write=PUT",
-   "orders(orders) A=86 B=1 read=/api/admin/orders/:id write=PUT",
-   "processing_orders(processing_orders) A=80 B=0 read=/api/admin/processing-orders/:id write=PATCH",
-   "inbound_orders(inbound_orders) A=3 B=0 read=/api/admin/inbound-orders/:id write=PATCH",
+   "processing_categories(processing_categories) A=1 B=0 read=/api/admin/processing-categories/:id write=PUT",
+   "orders(orders) A=98 B=1 read=/api/admin/orders/:id write=PUT",
+   "processing_orders(processing_orders) A=90 B=0 read=/api/admin/processing-orders/:id write=PATCH",
+   "inbound_orders(inbound_orders) A=5 B=0 read=/api/admin/inbound-orders/:id write=PATCH",
    "shipments(order_shipments) A=0 B=0 read=— write=—",
-   "stock_batches(stock_batches) A=3 B=0 read=— write=—",
-   "stock_ledger(stock_ledger_entries) A=96 B=0 read=— write=—",
-   "finance_tx(finance_transactions) A=87 B=0 read=— write=—",
+   "stock_batches(stock_batches) A=4 B=0 read=— write=—",
+   "stock_ledger(stock_ledger_entries) A=99 B=0 read=— write=—",
+   "finance_tx(finance_transactions) A=99 B=0 read=— write=—",
    "notif_templates(notification_templates) A=0 B=0 read=— write=PUT",
    "notif_rules(notification_rules) A=0 B=0 read=— write=PUT",
    "knowledge_cards(knowledge_cards) A=27 B=0 read=— write=PUT",
    "roles(roles) A=7 B=7 read=/api/admin/roles/:id write=PUT",
-   "after_sales(after_sales_tickets) A=2 B=0 read=/api/admin/after-sales/:id write=—",
+   "after_sales(after_sales_tickets) A=4 B=0 read=/api/admin/after-sales/:id write=—",
    "users(users) A=1 B=1 read=/api/admin/users/:id write=PUT",
    "agent_sessions(agent_sessions) A=0 B=0 read=/api/admin/agent-sessions/:id write=—",
    "employees(agent_employees) A=0 B=0 read=— write=—",
@@ -57,15 +57,14 @@
  {
   "id": "R-products",
   "name": "跨租户读·商品",
-  "detail": "3 例全部拒绝（404/404/404），无 B 数据泄漏；正对照 200",
+  "detail": "2 例全部拒绝（404/404），无 B 数据泄漏；正对照 200",
   "res": "products",
   "label": "商品",
   "table": "products",
   "evidence": [
-   "正对照 A→A id=09fe710ca7577614e570bbb0696ac853 → 200（reachable=true）",
-   "B_id id=ee083867bc612a5911ed005742582091 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存在\"},\"requestId\":\"req_8f270e4f64bd4d74\",\"timestamp\":1791987773,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 ",
-   "B_id id=e271a5b7be2c95325fe98b6230484afb → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存在\"},\"requestId\":\"req_a16fa11a634148ad\",\"timestamp\":1791987773,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 ",
-   "random id=zz-nonexist-jw11jdyd → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存在\"},\"requestId\":\"req_af250bafd04a4366\",\"timestamp\":1791987773,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 "
+   "正对照 A→A id=0260337248dd35d1d81aab42933fcb9a → 200（reachable=true）",
+   "B_id id=12257d246ae29ab70e3f029bc3f74e22 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存在\"},\"requestId\":\"req_803e14f5c3fd42ca\",\"timestamp\":1791988401,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 ",
+   "random id=zz-nonexist-c3fct0bj → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存在\"},\"requestId\":\"req_096b5b935f544e71\",\"timestamp\":1791988402,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 "
   ],
   "verdict": "pass"
  },
@@ -77,9 +76,9 @@
   "label": "客户",
   "table": "customer_profiles",
   "evidence": [
-   "正对照 A→A id=bacc42b08926a08fb7f15a3448e87355 → 200（reachable=true）",
-   "B_id id=43c3492f6f40f61497e57a8fbb844a93 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"客户不存在\"},\"requestId\":\"req_1c8d60ee51164176\",\"timestamp\":1791987774,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 ",
-   "random id=zz-nonexist-7awdv2pp → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"客户不存在\"},\"requestId\":\"req_0be8732aaacc482b\",\"timestamp\":1791987774,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 "
+   "正对照 A→A id=3e774407360ab462710cbacb820f0b76 → 200（reachable=true）",
+   "B_id id=78145064cd9390e15c79139b7b3ab0ef → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"客户不存在\"},\"requestId\":\"req_185d8b9593b444ed\",\"timestamp\":1791988402,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 ",
+   "random id=zz-nonexist-iut6uwwy → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"客户不存在\"},\"requestId\":\"req_bfdf1713ded04267\",\"timestamp\":1791988402,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 "
   ],
   "verdict": "pass"
  },
@@ -149,7 +148,7 @@
  {
   "id": "R-processing_items",
   "name": "跨租户读·加工项",
-  "detail": "租户 35（B） 该表无存活行 ⇒ 无 B 侧 id 可打；仅做随机 id 段",
+  "detail": "租户 36（B） 该表无存活行 ⇒ 无 B 侧 id 可打；仅做随机 id 段",
   "res": "processing_items",
   "label": "加工项",
   "table": "processing_items",
@@ -170,7 +169,7 @@
  {
   "id": "R-processing_categories",
   "name": "跨租户读·加工分类",
-  "detail": "租户 35（B） 该表无存活行 ⇒ 无 B 侧 id 可打；仅做随机 id 段",
+  "detail": "租户 36（B） 该表无存活行 ⇒ 无 B 侧 id 可打；仅做随机 id 段",
   "res": "processing_categories",
   "label": "加工分类",
   "table": "processing_categories",
@@ -179,14 +178,15 @@
  {
   "id": "R-processing_categories",
   "name": "跨租户读·加工分类",
-  "detail": "🔶探针失效跳过：正对照（A 打自己 id=无）未返回 200，实测 undefined ⇒ 本资源读面**不可判**（不记为通过）",
+  "detail": "1 例全部拒绝（404），无 B 数据泄漏；正对照 200",
   "res": "processing_categories",
   "label": "加工分类",
   "table": "processing_categories",
   "evidence": [
-   "GET — → undefined "
+   "正对照 A→A id=87bc1b0cea90c22ed1ffc69de30803bf → 200（reachable=true）",
+   "random id=zz-nonexist-ljkj4ovc → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"加工分类不存在\"},\"requestId\":\"req_55a867e3146744a0\",\"timestamp\":1791988407,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查"
   ],
-  "verdict": "skip"
+  "verdict": "pass"
  },
  {
   "id": "R-orders",
@@ -197,15 +197,15 @@
   "table": "orders",
   "evidence": [
    "正对照 A→A id=b5e908ea0d705efa57227568696b3b00 → 200（reachable=true）",
-   "B_id id=2587775002d9dfa9871db3b961449693 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"订单不存在\"},\"requestId\":\"req_303b170b73cb4fd5\",\"timestamp\":1791987779,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 ",
-   "random id=zz-nonexist-qpuvdkr3 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"请求的资源不存在: /api/admin/orders/zz-nonexist-qpuvdkr3\"},\"requestId\":\"req_87bfc47109444138\",\"timestamp\":1791987779}"
+   "B_id id=d23f6f22eb67ed01e803fca416a4367e → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"订单不存在\"},\"requestId\":\"req_d84cf4ee6d3540e5\",\"timestamp\":1791988408,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 ",
+   "random id=zz-nonexist-seu72ugj → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"请求的资源不存在: /api/admin/orders/zz-nonexist-seu72ugj\"},\"requestId\":\"req_a4aa10e8b79e4142\",\"timestamp\":1791988408}"
   ],
   "verdict": "pass"
  },
  {
   "id": "R-processing_orders",
   "name": "跨租户读·加工单",
-  "detail": "租户 35（B） 该表无存活行 ⇒ 无 B 侧 id 可打；仅做随机 id 段",
+  "detail": "租户 36（B） 该表无存活行 ⇒ 无 B 侧 id 可打；仅做随机 id 段",
   "res": "processing_orders",
   "label": "加工单",
   "table": "processing_orders",
@@ -220,14 +220,14 @@
   "table": "processing_orders",
   "evidence": [
    "正对照 A→A id=e39b19cc5b67f03fb633f5c1a8a6ac03 → 200（reachable=true）",
-   "random id=zz-nonexist-vs7uf4no → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"加工单不存在\"},\"requestId\":\"req_9c67837848d249c5\",\"timestamp\":1791987780,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出"
+   "random id=zz-nonexist-jxat9sq2 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"加工单不存在\"},\"requestId\":\"req_b938ca830c554e04\",\"timestamp\":1791988408,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出"
   ],
   "verdict": "pass"
  },
  {
   "id": "R-inbound_orders",
   "name": "跨租户读·入库单",
-  "detail": "租户 35（B） 该表无存活行 ⇒ 无 B 侧 id 可打；仅做随机 id 段",
+  "detail": "租户 36（B） 该表无存活行 ⇒ 无 B 侧 id 可打；仅做随机 id 段",
   "res": "inbound_orders",
   "label": "入库单",
   "table": "inbound_orders",
@@ -242,7 +242,7 @@
   "table": "inbound_orders",
   "evidence": [
    "正对照 A→A id=b106bb19804f8da9f4907a8c219e5cee → 200（reachable=true）",
-   "random id=zz-nonexist-o0nbo6tt → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"入库单不存在\"},\"requestId\":\"req_dcb6c3e1b7cb488b\",\"timestamp\":1791987780,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出"
+   "random id=zz-nonexist-ooud11kj → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"入库单不存在\"},\"requestId\":\"req_6fc57ebaf5ec4e9c\",\"timestamp\":1791988409,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出"
   ],
   "verdict": "pass"
  },
@@ -317,17 +317,17 @@
   "label": "角色",
   "table": "roles",
   "evidence": [
-   "正对照 A→A id=6a070c57e7b46d2d4e8c96a3b6672430 → 200（reachable=true）",
-   "B_id id=172d6f2a4eae487df4fa98cf9aeb3eaa → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"角色不存在\"},\"requestId\":\"req_98dde2f774a64b23\",\"timestamp\":1791987784,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 ",
-   "B_id id=aa2581287848236e69ea6fb30f50bb8f → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"角色不存在\"},\"requestId\":\"req_53b8d4b2257948ca\",\"timestamp\":1791987785,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 ",
-   "random id=zz-nonexist-ofg3hpsq → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"角色不存在\"},\"requestId\":\"req_93577a44c8314edc\",\"timestamp\":1791987785,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 "
+   "正对照 A→A id=67328137903f8c50fb034f0541f48d9a → 200（reachable=true）",
+   "B_id id=e5b7483744da30b8d5cdf948d0d82a68 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"角色不存在\"},\"requestId\":\"req_20b6dfdaf57e41bb\",\"timestamp\":1791988413,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 ",
+   "B_id id=5f1fad006256f9317919b992125e072c → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"角色不存在\"},\"requestId\":\"req_9fb2b8a967ba409a\",\"timestamp\":1791988413,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 ",
+   "random id=zz-nonexist-vwrfbtll → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"角色不存在\"},\"requestId\":\"req_268cc04f8d204d99\",\"timestamp\":1791988413,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 "
   ],
   "verdict": "pass"
  },
  {
   "id": "R-after_sales",
   "name": "跨租户读·售后工单",
-  "detail": "租户 35（B） 该表无存活行 ⇒ 无 B 侧 id 可打；仅做随机 id 段",
+  "detail": "租户 36（B） 该表无存活行 ⇒ 无 B 侧 id 可打；仅做随机 id 段",
   "res": "after_sales",
   "label": "售后工单",
   "table": "after_sales_tickets",
@@ -342,7 +342,7 @@
   "table": "after_sales_tickets",
   "evidence": [
    "正对照 A→A id=8012305262d169481d099cba69dfb107 → 200（reachable=true）",
-   "random id=zz-nonexist-ypcde1d3 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"售后工单不存在\"},\"requestId\":\"req_e492f67311d84c51\",\"timestamp\":1791987785,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查"
+   "random id=zz-nonexist-ffsx9bxu → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"售后工单不存在\"},\"requestId\":\"req_d612dcfc24d942eb\",\"timestamp\":1791988414,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查"
   ],
   "verdict": "pass"
  },
@@ -355,15 +355,15 @@
   "table": "users",
   "evidence": [
    "正对照 A→A id=35d75c1f3f08b4024152484ff8bb8bd4 → 200（reachable=true）",
-   "B_id id=44b2c19fbf6a505da5c795eb1cb98dba → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"用户不存在\"},\"requestId\":\"req_03ec8ef33d3d4854\",\"timestamp\":1791987786,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 ",
-   "random id=zz-nonexist-fux65zez → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"用户不存在\"},\"requestId\":\"req_d1b23f1c8f514c25\",\"timestamp\":1791987786,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 "
+   "B_id id=bbdc80ac7210f088f1e87dc08f37c712 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"用户不存在\"},\"requestId\":\"req_fc81eeace88b4f81\",\"timestamp\":1791988414,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 ",
+   "random id=zz-nonexist-r9cjxdd3 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"用户不存在\"},\"requestId\":\"req_ca7efdbdcdaf4614\",\"timestamp\":1791988414,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 "
   ],
   "verdict": "pass"
  },
  {
   "id": "R-agent_sessions",
   "name": "跨租户读·客服会话",
-  "detail": "租户 35（B） 该表无存活行 ⇒ 无 B 侧 id 可打；仅做随机 id 段",
+  "detail": "租户 36（B） 该表无存活行 ⇒ 无 B 侧 id 可打；仅做随机 id 段",
   "res": "agent_sessions",
   "label": "客服会话",
   "table": "agent_sessions",
@@ -402,10 +402,10 @@
  {
   "id": "L-products",
   "name": "列表越界·商品",
-  "detail": "A 列表 ∩ B 全量 = ∅（A 侧 16 条 vs B 侧 2 条）",
+  "detail": "A 列表 ∩ B 全量 = ∅（A 侧 18 条 vs B 侧 1 条）",
   "evidence": [
-   "GET /api/admin/products?page=1&size=1000 → 200，A 侧返回 id 数=16",
-   "租户 35（B） 全量 id 数=2",
+   "GET /api/admin/products?page=1&size=1000 → 200，A 侧返回 id 数=18",
+   "租户 36（B） 全量 id 数=1",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -416,7 +416,7 @@
   "detail": "A 列表 ∩ B 全量 = ∅（A 侧 72 条 vs B 侧 1 条）",
   "evidence": [
    "GET /api/admin/customers?page=1&size=1000 → 200，A 侧返回 id 数=72",
-   "租户 35（B） 全量 id 数=1",
+   "租户 36（B） 全量 id 数=1",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -427,7 +427,7 @@
   "detail": "A 列表 ∩ B 全量 = ∅（A 侧 0 条 vs B 侧 0 条） ⚠️A 侧为空，正对照弱 ⚠️B 侧为空 ⇒ 判别力弱",
   "evidence": [
    "GET /api/admin/customer-tags → 200，A 侧返回 id 数=0",
-   "租户 35（B） 全量 id 数=0",
+   "租户 36（B） 全量 id 数=0",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -435,10 +435,10 @@
  {
   "id": "L-categories",
   "name": "列表越界·商品分类",
-  "detail": "A 列表 ∩ B 全量 = ∅（A 侧 14 条 vs B 侧 3 条）",
+  "detail": "A 列表 ∩ B 全量 = ∅（A 侧 14 条 vs B 侧 2 条）",
   "evidence": [
    "GET /api/admin/categories → 200，A 侧返回 id 数=14",
-   "租户 35（B） 全量 id 数=3",
+   "租户 36（B） 全量 id 数=2",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -449,7 +449,7 @@
   "detail": "A 列表 ∩ B 全量 = ∅（A 侧 41 条 vs B 侧 41 条）",
   "evidence": [
    "GET /api/admin/production/operations-catalog?page=1&size=1000 → 200，A 侧返回 id 数=41",
-   "租户 35（B） 全量 id 数=41",
+   "租户 36（B） 全量 id 数=41",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -460,7 +460,7 @@
   "detail": "A 列表 ∩ B 全量 = ∅（A 侧 2 条 vs B 侧 2 条）",
   "evidence": [
    "GET /api/admin/production/routings → 200，A 侧返回 id 数=2",
-   "租户 35（B） 全量 id 数=2",
+   "租户 36（B） 全量 id 数=2",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -471,7 +471,7 @@
   "detail": "A 列表 ∩ B 全量 = ∅（A 侧 26 条 vs B 侧 27 条）",
   "evidence": [
    "GET /api/admin/production/route-rules → 200，A 侧返回 id 数=26",
-   "租户 35（B） 全量 id 数=27",
+   "租户 36（B） 全量 id 数=27",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -482,7 +482,7 @@
   "detail": "A 列表 ∩ B 全量 = ∅（A 侧 29 条 vs B 侧 116 条）",
   "evidence": [
    "GET /api/admin/production/operation-positions → 200，A 侧返回 id 数=29",
-   "租户 35（B） 全量 id 数=116",
+   "租户 36（B） 全量 id 数=116",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -493,7 +493,7 @@
   "detail": "A 列表 ∩ B 全量 = ∅（A 侧 0 条 vs B 侧 0 条） ⚠️A 侧为空，正对照弱 ⚠️B 侧为空 ⇒ 判别力弱",
   "evidence": [
    "GET /api/admin/production/processing-fee-combinations → 200，A 侧返回 id 数=0",
-   "租户 35（B） 全量 id 数=0",
+   "租户 36（B） 全量 id 数=0",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -504,7 +504,7 @@
   "detail": "A 列表 ∩ B 全量 = ∅（A 侧 0 条 vs B 侧 0 条） ⚠️A 侧为空，正对照弱 ⚠️B 侧为空 ⇒ 判别力弱",
   "evidence": [
    "GET /api/admin/processing-items?query=&page=1&size=1000 → 200，A 侧返回 id 数=0",
-   "租户 35（B） 全量 id 数=0",
+   "租户 36（B） 全量 id 数=0",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -512,10 +512,10 @@
  {
   "id": "L-processing_categories",
   "name": "列表越界·加工分类",
-  "detail": "A 列表 ∩ B 全量 = ∅（A 侧 0 条 vs B 侧 0 条） ⚠️A 侧为空，正对照弱 ⚠️B 侧为空 ⇒ 判别力弱",
+  "detail": "A 列表 ∩ B 全量 = ∅（A 侧 1 条 vs B 侧 0 条） ⚠️B 侧为空 ⇒ 判别力弱",
   "evidence": [
-   "GET /api/admin/processing-categories → 200，A 侧返回 id 数=0",
-   "租户 35（B） 全量 id 数=0",
+   "GET /api/admin/processing-categories → 200，A 侧返回 id 数=1",
+   "租户 36（B） 全量 id 数=0",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -523,10 +523,10 @@
  {
   "id": "L-orders",
   "name": "列表越界·订单",
-  "detail": "A 列表 ∩ B 全量 = ∅（A 侧 87 条 vs B 侧 1 条）",
+  "detail": "A 列表 ∩ B 全量 = ∅（A 侧 98 条 vs B 侧 1 条）",
   "evidence": [
-   "GET /api/admin/orders?page=1&size=1000 → 200，A 侧返回 id 数=87",
-   "租户 35（B） 全量 id 数=1",
+   "GET /api/admin/orders?page=1&size=1000 → 200，A 侧返回 id 数=98",
+   "租户 36（B） 全量 id 数=1",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -534,10 +534,10 @@
  {
   "id": "L-processing_orders",
   "name": "列表越界·加工单",
-  "detail": "A 列表 ∩ B 全量 = ∅（A 侧 81 条 vs B 侧 0 条） ⚠️B 侧为空 ⇒ 判别力弱",
+  "detail": "A 列表 ∩ B 全量 = ∅（A 侧 90 条 vs B 侧 0 条） ⚠️B 侧为空 ⇒ 判别力弱",
   "evidence": [
-   "GET /api/admin/processing-orders → 200，A 侧返回 id 数=81",
-   "租户 35（B） 全量 id 数=0",
+   "GET /api/admin/processing-orders → 200，A 侧返回 id 数=90",
+   "租户 36（B） 全量 id 数=0",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -545,10 +545,10 @@
  {
   "id": "L-inbound_orders",
   "name": "列表越界·入库单",
-  "detail": "A 列表 ∩ B 全量 = ∅（A 侧 3 条 vs B 侧 0 条） ⚠️B 侧为空 ⇒ 判别力弱",
+  "detail": "A 列表 ∩ B 全量 = ∅（A 侧 5 条 vs B 侧 0 条） ⚠️B 侧为空 ⇒ 判别力弱",
   "evidence": [
-   "GET /api/admin/inbound-orders → 200，A 侧返回 id 数=3",
-   "租户 35（B） 全量 id 数=0",
+   "GET /api/admin/inbound-orders → 200，A 侧返回 id 数=5",
+   "租户 36（B） 全量 id 数=0",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -559,7 +559,7 @@
   "detail": "A 列表 ∩ B 全量 = ∅（A 侧 0 条 vs B 侧 0 条） ⚠️A 侧为空，正对照弱 ⚠️B 侧为空 ⇒ 判别力弱",
   "evidence": [
    "GET /api/admin/shipments → 200，A 侧返回 id 数=0",
-   "租户 35（B） 全量 id 数=0",
+   "租户 36（B） 全量 id 数=0",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -570,7 +570,7 @@
   "detail": "A 列表 ∩ B 全量 = ∅（A 侧 0 条 vs B 侧 0 条） ⚠️A 侧为空，正对照弱 ⚠️B 侧为空 ⇒ 判别力弱",
   "evidence": [
    "GET /api/admin/batch-stock/batches → 200，A 侧返回 id 数=0",
-   "租户 35（B） 全量 id 数=0",
+   "租户 36（B） 全量 id 数=0",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -578,10 +578,10 @@
  {
   "id": "L-stock_ledger",
   "name": "列表越界·库存流水",
-  "detail": "A 列表 ∩ B 全量 = ∅（A 侧 96 条 vs B 侧 0 条） ⚠️B 侧为空 ⇒ 判别力弱",
+  "detail": "A 列表 ∩ B 全量 = ∅（A 侧 99 条 vs B 侧 0 条） ⚠️B 侧为空 ⇒ 判别力弱",
   "evidence": [
-   "GET /api/admin/stock-ledger?page=1&size=1000 → 200，A 侧返回 id 数=96",
-   "租户 35（B） 全量 id 数=0",
+   "GET /api/admin/stock-ledger?page=1&size=1000 → 200，A 侧返回 id 数=99",
+   "租户 36（B） 全量 id 数=0",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -589,10 +589,10 @@
  {
   "id": "L-finance_tx",
   "name": "列表越界·财务流水",
-  "detail": "A 列表 ∩ B 全量 = ∅（A 侧 87 条 vs B 侧 0 条） ⚠️B 侧为空 ⇒ 判别力弱",
+  "detail": "A 列表 ∩ B 全量 = ∅（A 侧 99 条 vs B 侧 0 条） ⚠️B 侧为空 ⇒ 判别力弱",
   "evidence": [
-   "GET /api/admin/finance/transactions?page=1&size=1000 → 200，A 侧返回 id 数=87",
-   "租户 35（B） 全量 id 数=0",
+   "GET /api/admin/finance/transactions?page=1&size=1000 → 200，A 侧返回 id 数=99",
+   "租户 36（B） 全量 id 数=0",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -603,7 +603,7 @@
   "detail": "A 列表 ∩ B 全量 = ∅（A 侧 0 条 vs B 侧 0 条） ⚠️A 侧为空，正对照弱 ⚠️B 侧为空 ⇒ 判别力弱",
   "evidence": [
    "GET /api/admin/notification-templates?page=1&size=1000 → 200，A 侧返回 id 数=0",
-   "租户 35（B） 全量 id 数=0",
+   "租户 36（B） 全量 id 数=0",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -614,7 +614,7 @@
   "detail": "A 列表 ∩ B 全量 = ∅（A 侧 0 条 vs B 侧 0 条） ⚠️A 侧为空，正对照弱 ⚠️B 侧为空 ⇒ 判别力弱",
   "evidence": [
    "GET /api/admin/notification-rules?page=1&size=1000 → 200，A 侧返回 id 数=0",
-   "租户 35（B） 全量 id 数=0",
+   "租户 36（B） 全量 id 数=0",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -625,7 +625,7 @@
   "detail": "A 列表 ∩ B 全量 = ∅（A 侧 27 条 vs B 侧 0 条） ⚠️B 侧为空 ⇒ 判别力弱",
   "evidence": [
    "GET /api/admin/knowledge/cards?page=1&size=1000 → 200，A 侧返回 id 数=27",
-   "租户 35（B） 全量 id 数=0",
+   "租户 36（B） 全量 id 数=0",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -636,7 +636,7 @@
   "detail": "A 列表 ∩ B 全量 = ∅（A 侧 7 条 vs B 侧 7 条）",
   "evidence": [
    "GET /api/admin/roles?page=1&size=1000 → 200，A 侧返回 id 数=7",
-   "租户 35（B） 全量 id 数=7",
+   "租户 36（B） 全量 id 数=7",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -644,10 +644,10 @@
  {
   "id": "L-after_sales",
   "name": "列表越界·售后工单",
-  "detail": "A 列表 ∩ B 全量 = ∅（A 侧 2 条 vs B 侧 0 条） ⚠️B 侧为空 ⇒ 判别力弱",
+  "detail": "A 列表 ∩ B 全量 = ∅（A 侧 4 条 vs B 侧 0 条） ⚠️B 侧为空 ⇒ 判别力弱",
   "evidence": [
-   "GET /api/admin/after-sales?page=1&size=1000 → 200，A 侧返回 id 数=2",
-   "租户 35（B） 全量 id 数=0",
+   "GET /api/admin/after-sales?page=1&size=1000 → 200，A 侧返回 id 数=4",
+   "租户 36（B） 全量 id 数=0",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -658,7 +658,7 @@
   "detail": "A 列表 ∩ B 全量 = ∅（A 侧 1 条 vs B 侧 1 条）",
   "evidence": [
    "GET /api/admin/users?page=1&size=1000 → 200，A 侧返回 id 数=1",
-   "租户 35（B） 全量 id 数=1",
+   "租户 36（B） 全量 id 数=1",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -669,7 +669,7 @@
   "detail": "A 列表 ∩ B 全量 = ∅（A 侧 0 条 vs B 侧 0 条） ⚠️A 侧为空，正对照弱 ⚠️B 侧为空 ⇒ 判别力弱",
   "evidence": [
    "GET /api/admin/agent-sessions?page=1&size=1000 → 200，A 侧返回 id 数=0",
-   "租户 35（B） 全量 id 数=0",
+   "租户 36（B） 全量 id 数=0",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -677,10 +677,10 @@
  {
   "id": "L-employees",
   "name": "列表越界·客服员工",
-  "detail": "A 列表 ∩ B 全量 = ∅（A 侧 2 条 vs B 侧 0 条） ⚠️B 侧为空 ⇒ 判别力弱",
+  "detail": "A 列表 ∩ B 全量 = ∅（A 侧 0 条 vs B 侧 0 条） ⚠️A 侧为空，正对照弱 ⚠️B 侧为空 ⇒ 判别力弱",
   "evidence": [
-   "GET /api/admin/workers?page=1&size=1000 → 200，A 侧返回 id 数=2",
-   "租户 35（B） 全量 id 数=0",
+   "GET /api/admin/workers?page=1&size=1000 → 200，A 侧返回 id 数=0",
+   "租户 36（B） 全量 id 数=0",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -691,7 +691,7 @@
   "detail": "A 列表 ∩ B 全量 = ∅（A 侧 0 条 vs B 侧 0 条） ⚠️A 侧为空，正对照弱 ⚠️B 侧为空 ⇒ 判别力弱",
   "evidence": [
    "GET /api/admin/production/remnants → 200，A 侧返回 id 数=0",
-   "租户 35（B） 全量 id 数=0",
+   "租户 36（B） 全量 id 数=0",
    "交集=[]"
   ],
   "verdict": "pass"
@@ -701,9 +701,9 @@
   "name": "跨租户写·商品",
   "detail": "拒绝 404，且库行逐字段未变（unchanged=true）",
   "evidence": [
-   "跨租户写 A→B：PUT /api/admin/products/ee083867bc612a5911ed005742582091 body={} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存在\"},\"requestId\":\"req_0eb5832e14074f03\",\"timestamp\":1791987798,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
-   "DB 前后快照（表 products id=ee083867bc612a5911ed005742582091）：before={\"id\":\"ee083867bc612a5911ed005742582091\",\"name\":\"6937验收对照商品\",\"base_price\":12.5,\"status\":\"on_sale\",\"stock\":0,\"updated_at\":\"2026-10-14T22:22:01.832465+08:00\",\"deleted\":0,\"tenant_id\":35} after={\"id\":\"ee083867bc612a5911ed005742582091\",\"name\":\"6937验收对照商品\",\"base_price\":12.5,\"status\":\"on_sale\",\"stock\":0,\"updated_at\":\"2026-10-14T22:22:01.832465+08:00\",\"deleted\":0,\"tenant_id\":35} unchanged=true",
-   "正对照 A→A 幂等写：PUT /api/admin/products/09fe710ca7577614e570bbb0696ac853 → 422 {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"参数校验失败\",\"details\":[{\"field\":\"name\",\"message\":\"商品名称不能为空\"}]},\"requestId\":\"req_205fb13e6e3d496d\",\"ti"
+   "跨租户写 A→B：PUT /api/admin/products/12257d246ae29ab70e3f029bc3f74e22 body={} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存在\"},\"requestId\":\"req_1e60543d70be481f\",\"timestamp\":1791988426,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
+   "DB 前后快照（表 products id=12257d246ae29ab70e3f029bc3f74e22）：before={\"id\":\"12257d246ae29ab70e3f029bc3f74e22\",\"name\":\"6937验收对照商品\",\"base_price\":12.5,\"status\":\"on_sale\",\"stock\":0,\"updated_at\":\"2026-10-14T22:32:47.884843+08:00\",\"deleted\":0,\"tenant_id\":36} after={\"id\":\"12257d246ae29ab70e3f029bc3f74e22\",\"name\":\"6937验收对照商品\",\"base_price\":12.5,\"status\":\"on_sale\",\"stock\":0,\"updated_at\":\"2026-10-14T22:32:47.884843+08:00\",\"deleted\":0,\"tenant_id\":36} unchanged=true",
+   "正对照 A→A 写：PUT /api/admin/products/0260337248dd35d1d81aab42933fcb9a → 422 {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"参数校验失败\",\"details\":[{\"field\":\"name\",\"message\":\"商品名称不能为空\"}]},\"requestId\":\"req_599f0b79eac84620\",\"ti（探针未改库）"
   ],
   "verdict": "pass"
  },
@@ -712,16 +712,16 @@
   "name": "跨租户写·客户",
   "detail": "拒绝 404，且库行逐字段未变（unchanged=true）",
   "evidence": [
-   "跨租户写 A→B：PUT /api/admin/customers/43c3492f6f40f61497e57a8fbb844a93 body={} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"客户不存在\"},\"requestId\":\"req_89a07c4755094d6f\",\"timestamp\":1791987799,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
-   "DB 前后快照（表 customer_profiles id=43c3492f6f40f61497e57a8fbb844a93）：before={\"id\":\"43c3492f6f40f61497e57a8fbb844a93\",\"wechat_nickname\":\"6937验收对照客户\",\"phone\":\"13800138002\",\"vip_level\":\"normal\",\"customer_status\":\"active\",\"craft_mode\":\"standard\",\"updated_at\":\"2026-10-14T22:22:10.900589+08:00\",\"tenant_id\":35} after={\"id\":\"43c3492f6f40f61497e57a8fbb844a93\",\"wechat_nickname\":\"6937验收对照客户\",\"phone\":\"13800138002\",\"vip_level\":\"normal\",\"customer_status\":\"active\",\"craft_mode\":\"standard\",\"updated_at\":\"2026-10-14T22:22:10.900589+08:00\",\"tenant_id\":35} unchanged=true",
-   "正对照 A→A 幂等写：PUT /api/admin/customers/bacc42b08926a08fb7f15a3448e87355 → 200 {\"success\":true,\"data\":{\"id\":\"bacc42b08926a08fb7f15a3448e87355\",\"tenantId\":32,\"wechatNickname\":\"线B验收客户-RESTOCKON-mv837wmfdvet\",\"phone\":\"13964933066\",\"gender\":\"u"
+   "跨租户写 A→B：PUT /api/admin/customers/78145064cd9390e15c79139b7b3ab0ef body={} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"客户不存在\"},\"requestId\":\"req_2974788f27294654\",\"timestamp\":1791988428,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
+   "DB 前后快照（表 customer_profiles id=78145064cd9390e15c79139b7b3ab0ef）：before={\"id\":\"78145064cd9390e15c79139b7b3ab0ef\",\"wechat_nickname\":\"6937验收对照客户\",\"phone\":\"13800138002\",\"vip_level\":\"normal\",\"customer_status\":\"active\",\"craft_mode\":\"standard\",\"updated_at\":\"2026-10-14T22:32:48.25872+08:00\",\"tenant_id\":36} after={\"id\":\"78145064cd9390e15c79139b7b3ab0ef\",\"wechat_nickname\":\"6937验收对照客户\",\"phone\":\"13800138002\",\"vip_level\":\"normal\",\"customer_status\":\"active\",\"craft_mode\":\"standard\",\"updated_at\":\"2026-10-14T22:32:48.25872+08:00\",\"tenant_id\":36} unchanged=true",
+   "正对照 A→A 写：PUT /api/admin/customers/3e774407360ab462710cbacb820f0b76 → 200 {\"success\":true,\"data\":{\"id\":\"3e774407360ab462710cbacb820f0b76\",\"tenantId\":32,\"wechatNickname\":\"线B验收客户-RB-mv8385asf5qi\",\"phone\":\"13968230127\",\"gender\":\"unknown\"（探针未改库）"
   ],
   "verdict": "pass"
  },
  {
   "id": "WT-customer_tags",
   "name": "跨租户写·客户标签",
-  "detail": "租户 35（B） 无存活行 ⇒ 无对象可打",
+  "detail": "租户 36（B） 无存活行 ⇒ 无对象可打",
   "verdict": "skip"
  },
  {
@@ -729,9 +729,9 @@
   "name": "跨租户写·商品分类",
   "detail": "拒绝 404，且库行逐字段未变（unchanged=true）",
   "evidence": [
-   "跨租户写 A→B：PUT /api/admin/categories/858c193f81024ae2fc8a84ac7149ec63 body={} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"分类不存在\"},\"requestId\":\"req_a9e83c8afb7c437a\",\"timestamp\":1791987800,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
-   "DB 前后快照（表 categories id=858c193f81024ae2fc8a84ac7149ec63）：before={\"id\":\"858c193f81024ae2fc8a84ac7149ec63\",\"name\":\"窗帘成品\",\"parent_id\":null,\"sort_order\":0,\"updated_at\":\"2026-10-14T22:20:42.123877+08:00\",\"deleted\":0,\"tenant_id\":35} after={\"id\":\"858c193f81024ae2fc8a84ac7149ec63\",\"name\":\"窗帘成品\",\"parent_id\":null,\"sort_order\":0,\"updated_at\":\"2026-10-14T22:20:42.123877+08:00\",\"deleted\":0,\"tenant_id\":35} unchanged=true",
-   "正对照 A→A 幂等写：PUT /api/admin/categories/6c4d070dfa439abe165dd7a5a814eb4d → 422 {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"参数校验失败\",\"details\":[{\"field\":\"name\",\"message\":\"分类名称不能为空\"}]},\"requestId\":\"req_6beac86f78c1479b\",\"ti"
+   "跨租户写 A→B：PUT /api/admin/categories/34ba958c8a6296ca932cb728f865875a body={} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"分类不存在\"},\"requestId\":\"req_5ce2647985ad4dee\",\"timestamp\":1791988430,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
+   "DB 前后快照（表 categories id=34ba958c8a6296ca932cb728f865875a）：before={\"id\":\"34ba958c8a6296ca932cb728f865875a\",\"name\":\"窗帘成品\",\"parent_id\":null,\"sort_order\":0,\"updated_at\":\"2026-10-14T22:32:43.567875+08:00\",\"deleted\":0,\"tenant_id\":36} after={\"id\":\"34ba958c8a6296ca932cb728f865875a\",\"name\":\"窗帘成品\",\"parent_id\":null,\"sort_order\":0,\"updated_at\":\"2026-10-14T22:32:43.567875+08:00\",\"deleted\":0,\"tenant_id\":36} unchanged=true",
+   "正对照 A→A 写：PUT /api/admin/categories/87d9784e83b5b6365c938c4d63f3c57c → 422 {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"参数校验失败\",\"details\":[{\"field\":\"name\",\"message\":\"分类名称不能为空\"}]},\"requestId\":\"req_70bb4297b25f4701\",\"ti（探针未改库）"
   ],
   "verdict": "pass"
  },
@@ -740,9 +740,9 @@
   "name": "跨租户写·工序库",
   "detail": "拒绝 404，且库行逐字段未变（unchanged=true）",
   "evidence": [
-   "跨租户写 A→B：PUT /api/admin/production/operations/8bb090493dbd915298ccf3d22ce30f5b body={} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"工序不存在\"},\"requestId\":\"req_e1209d34427c45fa\",\"timestamp\":1791987801,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
-   "DB 前后快照（表 production_operations id=8bb090493dbd915298ccf3d22ce30f5b）：before={\"id\":\"8bb090493dbd915298ccf3d22ce30f5b\",\"name\":\"精裁-布\",\"group_name\":\"裁剪\",\"unit_price\":0.4,\"scope\":\"position\",\"status\":\"active\",\"updated_at\":\"2026-10-14T22:20:42.154773+08:00\",\"deleted\":0,\"tenant_id\":35} after={\"id\":\"8bb090493dbd915298ccf3d22ce30f5b\",\"name\":\"精裁-布\",\"group_name\":\"裁剪\",\"unit_price\":0.4,\"scope\":\"position\",\"status\":\"active\",\"updated_at\":\"2026-10-14T22:20:42.154773+08:00\",\"deleted\":0,\"tenant_id\":35} unchanged=true",
-   "正对照 A→A 幂等写：PUT /api/admin/production/operations/82980fc45a3989ccb4a462af6570435c → 200 {\"success\":true,\"data\":{\"id\":\"82980fc45a3989ccb4a462af6570435c\",\"name\":\"精裁\",\"library_name\":\"精裁-纱\",\"group\":\"裁剪\",\"position\":\"纱帘\",\"scope\":\"position\",\"unit\":\"米\",\"un"
+   "跨租户写 A→B：PUT /api/admin/production/operations/c4cce60a08ec200d2ee126328132eb38 body={} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"工序不存在\"},\"requestId\":\"req_e2c896ba64004c69\",\"timestamp\":1791988432,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
+   "DB 前后快照（表 production_operations id=c4cce60a08ec200d2ee126328132eb38）：before={\"id\":\"c4cce60a08ec200d2ee126328132eb38\",\"name\":\"精裁-布\",\"group_name\":\"裁剪\",\"unit_price\":0.4,\"scope\":\"position\",\"status\":\"active\",\"updated_at\":\"2026-10-14T22:32:43.600252+08:00\",\"deleted\":0,\"tenant_id\":36} after={\"id\":\"c4cce60a08ec200d2ee126328132eb38\",\"name\":\"精裁-布\",\"group_name\":\"裁剪\",\"unit_price\":0.4,\"scope\":\"position\",\"status\":\"active\",\"updated_at\":\"2026-10-14T22:32:43.600252+08:00\",\"deleted\":0,\"tenant_id\":36} unchanged=true",
+   "正对照 A→A 写：PUT /api/admin/production/operations/1fc348ad73d6093d249b7881840e358a → 200 {\"success\":true,\"data\":{\"id\":\"1fc348ad73d6093d249b7881840e358a\",\"name\":\"裁剪\",\"library_name\":\"裁剪-纱\",\"group\":\"裁剪\",\"position\":\"纱帘\",\"scope\":\"position\",\"unit\":\"米\",\"un（⚠️空 body 非幂等 ⇒ 探针写脏了 A ⇒ 逐字段还原：已回到基线）"
   ],
   "verdict": "pass"
  },
@@ -751,9 +751,9 @@
   "name": "跨租户写·工艺路线",
   "detail": "拒绝 404，且库行逐字段未变（unchanged=true）",
   "evidence": [
-   "跨租户写 A→B：PUT /api/admin/production/routings/0f868d1479ccc0bca5c89f2f32faecff body={} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"工艺路线不存在\"},\"requestId\":\"req_a5783cd312804c03\",\"timestamp\":1791987803,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
-   "DB 前后快照（表 production_route_templates id=0f868d1479ccc0bca5c89f2f32faecff）：before={\"id\":\"0f868d1479ccc0bca5c89f2f32faecff\",\"name\":\"窗帘工序路线（默认）\",\"is_default\":true,\"positions\":[\"布帘\",\"纱帘\",\"帘头\"],\"mainline\":[\"精裁\",\"三边\",\"熨烫\",\"定型\",\"复烫\",\"车被\",\"外帘打卷\",\"打包\",\"外帘装袋\",\"外帘发货\"],\"status\":\"active\",\"updated_at\":\"2026-10-14T22:20:43.331655+08:00\",\"deleted\":0,\"tenant_id\":35} after={\"id\":\"0f868d1479ccc0bca5c89f2f32faecff\",\"name\":\"窗帘工序路线（默认）\",\"is_default\":true,\"positions\":[\"布帘\",\"纱帘\",\"帘头\"],\"mainline\":[\"精裁\",\"三边\",\"熨烫\",\"定型\",\"复烫\",\"车被\",\"外帘打卷\",\"打包\",\"外帘装袋\",\"外帘发货\"],\"status\":\"active\",\"updated_at\":\"2026-10-14T22:20:43.331655+08:00\",\"deleted\":0,\"tenant_id\":35} unchanged=true",
-   "正对照 A→A 幂等写：PUT /api/admin/production/routings/ee07fef1fa75e06c4cb473e01bbd0209 → 200 {\"success\":true,\"data\":{\"id\":\"ee07fef1fa75e06c4cb473e01bbd0209\",\"name\":\"窗帘工序路线（默认）\",\"is_default\":true,\"positions\":[\"布帘\",\"纱帘\",\"帘头\"],\"mainline\":[\"精裁\",\"三边\",\"熨烫\",\"定"
+   "跨租户写 A→B：PUT /api/admin/production/routings/fce92471c78b904f458553934f6477ac body={} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"工艺路线不存在\"},\"requestId\":\"req_a06c35b2615c4545\",\"timestamp\":1791988434,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
+   "DB 前后快照（表 production_route_templates id=fce92471c78b904f458553934f6477ac）：before={\"id\":\"fce92471c78b904f458553934f6477ac\",\"name\":\"窗帘工序路线（默认）\",\"is_default\":true,\"positions\":[\"布帘\",\"纱帘\",\"帘头\"],\"mainline\":[\"精裁\",\"三边\",\"熨烫\",\"定型\",\"复烫\",\"车被\",\"外帘打卷\",\"打包\",\"外帘装袋\",\"外帘发货\"],\"status\":\"active\",\"updated_at\":\"2026-10-14T22:32:44.898379+08:00\",\"deleted\":0,\"tenant_id\":36} after={\"id\":\"fce92471c78b904f458553934f6477ac\",\"name\":\"窗帘工序路线（默认）\",\"is_default\":true,\"positions\":[\"布帘\",\"纱帘\",\"帘头\"],\"mainline\":[\"精裁\",\"三边\",\"熨烫\",\"定型\",\"复烫\",\"车被\",\"外帘打卷\",\"打包\",\"外帘装袋\",\"外帘发货\"],\"status\":\"active\",\"updated_at\":\"2026-10-14T22:32:44.898379+08:00\",\"deleted\":0,\"tenant_id\":36} unchanged=true",
+   "正对照 A→A 写：PUT /api/admin/production/routings/ee07fef1fa75e06c4cb473e01bbd0209 → 200 {\"success\":true,\"data\":{\"id\":\"ee07fef1fa75e06c4cb473e01bbd0209\",\"name\":\"窗帘工序路线（默认）\",\"is_default\":true,\"positions\":[\"布帘\",\"纱帘\",\"帘头\"],\"mainline\":[\"精裁\",\"三边\",\"熨烫\",\"定（⚠️空 body 非幂等 ⇒ 探针写脏了 A ⇒ 逐字段还原：已回到基线）"
   ],
   "verdict": "pass"
  },
@@ -762,8 +762,8 @@
   "name": "跨租户写·路线规则",
   "detail": "拒绝 404，且库行逐字段未变（unchanged=true）",
   "evidence": [
-   "跨租户写 A→B：DELETE /api/admin/production/route-rules/1175be1162c0a2da3cd363828403afc4 body= → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"条件工序规则不存在\"},\"requestId\":\"req_cdadba9368634a47\",\"timestamp\":1791987804,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
-   "DB 前后快照（表 production_route_rules id=1175be1162c0a2da3cd363828403afc4）：before={\"id\":\"1175be1162c0a2da3cd363828403afc4\",\"trigger_value\":\"韩褶\",\"operation\":\"韩褶\",\"action\":\"insert\",\"priority\":20,\"status\":\"active\",\"updated_at\":\"2026-10-14T22:20:43.347867+08:00\",\"deleted\":0,\"tenant_id\":35} after={\"id\":\"1175be1162c0a2da3cd363828403afc4\",\"trigger_value\":\"韩褶\",\"operation\":\"韩褶\",\"action\":\"insert\",\"priority\":20,\"status\":\"active\",\"updated_at\":\"2026-10-14T22:20:43.347867+08:00\",\"deleted\":0,\"tenant_id\":35} unchanged=true",
+   "跨租户写 A→B：DELETE /api/admin/production/route-rules/791e267ed5936e3e8fa6a98e79dc8e2b body= → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"条件工序规则不存在\"},\"requestId\":\"req_f71ec6e04a254c7f\",\"timestamp\":1791988436,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
+   "DB 前后快照（表 production_route_rules id=791e267ed5936e3e8fa6a98e79dc8e2b）：before={\"id\":\"791e267ed5936e3e8fa6a98e79dc8e2b\",\"trigger_value\":\"韩褶\",\"operation\":\"韩褶\",\"action\":\"insert\",\"priority\":20,\"status\":\"active\",\"updated_at\":\"2026-10-14T22:32:44.921553+08:00\",\"deleted\":0,\"tenant_id\":36} after={\"id\":\"791e267ed5936e3e8fa6a98e79dc8e2b\",\"trigger_value\":\"韩褶\",\"operation\":\"韩褶\",\"action\":\"insert\",\"priority\":20,\"status\":\"active\",\"updated_at\":\"2026-10-14T22:32:44.921553+08:00\",\"deleted\":0,\"tenant_id\":36} unchanged=true",
    "正对照：无 A 侧对象或 DELETE（不做同租户删除）"
   ],
   "verdict": "pass"
@@ -773,28 +773,28 @@
   "name": "跨租户写·价目矩阵行",
   "detail": "拒绝 404，且库行逐字段未变（unchanged=true）",
   "evidence": [
-   "跨租户写 A→B：PUT /api/admin/production/operation-positions/3af48ab7dd6ca49ee417f91293a5532b body={} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"部位价目行不存在\"},\"requestId\":\"req_025924de57434cd8\",\"timestamp\":1791987805,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
-   "DB 前后快照（表 production_operation_positions id=3af48ab7dd6ca49ee417f91293a5532b）：before={\"id\":\"3af48ab7dd6ca49ee417f91293a5532b\",\"logical_name\":\"精裁\",\"position\":\"布帘\",\"unit_price\":0.4,\"status\":\"active\",\"updated_at\":\"2026-10-14T22:20:43.316161+08:00\",\"deleted\":0,\"tenant_id\":35} after={\"id\":\"3af48ab7dd6ca49ee417f91293a5532b\",\"logical_name\":\"精裁\",\"position\":\"布帘\",\"unit_price\":0.4,\"status\":\"active\",\"updated_at\":\"2026-10-14T22:20:43.316161+08:00\",\"deleted\":0,\"tenant_id\":35} unchanged=true",
-   "正对照 A→A 幂等写：PUT /api/admin/production/operation-positions/3daa0f22e43674aca3d9f1a41b1c22f5 → 200 {\"success\":true,\"data\":{\"id\":\"3daa0f22e43674aca3d9f1a41b1c22f5\",\"operation\":\"精裁\",\"position\":\"纱帘\",\"unit_price\":0.40,\"applicable\":true,\"variant_operation_id\":\"829"
+   "跨租户写 A→B：PUT /api/admin/production/operation-positions/e824d0e26d6a3b043e61d678f9316534 body={} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"部位价目行不存在\"},\"requestId\":\"req_6bed129ed77841b4\",\"timestamp\":1791988437,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
+   "DB 前后快照（表 production_operation_positions id=e824d0e26d6a3b043e61d678f9316534）：before={\"id\":\"e824d0e26d6a3b043e61d678f9316534\",\"logical_name\":\"精裁\",\"position\":\"布帘\",\"unit_price\":0.4,\"status\":\"active\",\"updated_at\":\"2026-10-14T22:32:44.8767+08:00\",\"deleted\":0,\"tenant_id\":36} after={\"id\":\"e824d0e26d6a3b043e61d678f9316534\",\"logical_name\":\"精裁\",\"position\":\"布帘\",\"unit_price\":0.4,\"status\":\"active\",\"updated_at\":\"2026-10-14T22:32:44.8767+08:00\",\"deleted\":0,\"tenant_id\":36} unchanged=true",
+   "正对照 A→A 写：PUT /api/admin/production/operation-positions/e81cb6d7fb5cf5625f4036845a264714 → 200 {\"success\":true,\"data\":{\"id\":\"e81cb6d7fb5cf5625f4036845a264714\",\"operation\":\"精裁\",\"position\":\"帘头\",\"unit_price\":0.40,\"applicable\":true,\"variant_operation_id\":\"739（⚠️空 body 非幂等 ⇒ 探针写脏了 A ⇒ 逐字段还原：已回到基线）"
   ],
   "verdict": "pass"
  },
  {
   "id": "WT-fee_combos",
   "name": "跨租户写·加工费组合",
-  "detail": "租户 35（B） 无存活行 ⇒ 无对象可打",
+  "detail": "租户 36（B） 无存活行 ⇒ 无对象可打",
   "verdict": "skip"
  },
  {
   "id": "WT-processing_items",
   "name": "跨租户写·加工项",
-  "detail": "租户 35（B） 无存活行 ⇒ 无对象可打",
+  "detail": "租户 36（B） 无存活行 ⇒ 无对象可打",
   "verdict": "skip"
  },
  {
   "id": "WT-processing_categories",
   "name": "跨租户写·加工分类",
-  "detail": "租户 35（B） 无存活行 ⇒ 无对象可打",
+  "detail": "租户 36（B） 无存活行 ⇒ 无对象可打",
   "verdict": "skip"
  },
  {
@@ -802,40 +802,40 @@
   "name": "跨租户写·订单",
   "detail": "拒绝 404，且库行逐字段未变（unchanged=true）",
   "evidence": [
-   "跨租户写 A→B：PUT /api/admin/orders/2587775002d9dfa9871db3b961449693/content body= → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"订单不存在\"},\"requestId\":\"req_b6d04bf9292041e5\",\"timestamp\":1791987808,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
-   "DB 前后快照（表 orders id=2587775002d9dfa9871db3b961449693）：before={\"id\":\"2587775002d9dfa9871db3b961449693\",\"order_no\":\"20261014924600010\",\"status\":\"pending\",\"total_amount\":12.5,\"remark\":\"6937 probe\",\"updated_at\":\"2026-10-14T22:22:10.853779+08:00\",\"deleted\":0,\"tenant_id\":35} after={\"id\":\"2587775002d9dfa9871db3b961449693\",\"order_no\":\"20261014924600010\",\"status\":\"pending\",\"total_amount\":12.5,\"remark\":\"6937 probe\",\"updated_at\":\"2026-10-14T22:22:10.853779+08:00\",\"deleted\":0,\"tenant_id\":35} unchanged=true",
-   "正对照 A→A 幂等写：PUT /api/admin/orders/b5e908ea0d705efa57227568696b3b00/content → 400 {\"success\":false,\"error\":{\"code\":\"BAD_REQUEST\",\"message\":\"请求体格式错误或缺失\"},\"requestId\":\"req_8797a0dc352042e2\",\"timestamp\":1791987808}"
+   "跨租户写 A→B：PUT /api/admin/orders/d23f6f22eb67ed01e803fca416a4367e/content body= → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"订单不存在\"},\"requestId\":\"req_5d1a7cdb2f2a4e82\",\"timestamp\":1791988441,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
+   "DB 前后快照（表 orders id=d23f6f22eb67ed01e803fca416a4367e）：before={\"id\":\"d23f6f22eb67ed01e803fca416a4367e\",\"order_no\":\"20261014855320025\",\"status\":\"pending\",\"total_amount\":12.5,\"remark\":\"6937 probe\",\"updated_at\":\"2026-10-14T22:32:48.204129+08:00\",\"deleted\":0,\"tenant_id\":36} after={\"id\":\"d23f6f22eb67ed01e803fca416a4367e\",\"order_no\":\"20261014855320025\",\"status\":\"pending\",\"total_amount\":12.5,\"remark\":\"6937 probe\",\"updated_at\":\"2026-10-14T22:32:48.204129+08:00\",\"deleted\":0,\"tenant_id\":36} unchanged=true",
+   "正对照 A→A 写：PUT /api/admin/orders/b5e908ea0d705efa57227568696b3b00/content → 400 {\"success\":false,\"error\":{\"code\":\"BAD_REQUEST\",\"message\":\"请求体格式错误或缺失\"},\"requestId\":\"req_5de96fb051b64033\",\"timestamp\":1791988441}（探针未改库）"
   ],
   "verdict": "pass"
  },
  {
   "id": "WT-processing_orders",
   "name": "跨租户写·加工单",
-  "detail": "租户 35（B） 无存活行 ⇒ 无对象可打",
+  "detail": "租户 36（B） 无存活行 ⇒ 无对象可打",
   "verdict": "skip"
  },
  {
   "id": "WT-inbound_orders",
   "name": "跨租户写·入库单",
-  "detail": "租户 35（B） 无存活行 ⇒ 无对象可打",
+  "detail": "租户 36（B） 无存活行 ⇒ 无对象可打",
   "verdict": "skip"
  },
  {
   "id": "WT-notif_templates",
   "name": "跨租户写·通知模板",
-  "detail": "租户 35（B） 无存活行 ⇒ 无对象可打",
+  "detail": "租户 36（B） 无存活行 ⇒ 无对象可打",
   "verdict": "skip"
  },
  {
   "id": "WT-notif_rules",
   "name": "跨租户写·通知规则",
-  "detail": "租户 35（B） 无存活行 ⇒ 无对象可打",
+  "detail": "租户 36（B） 无存活行 ⇒ 无对象可打",
   "verdict": "skip"
  },
  {
   "id": "WT-knowledge_cards",
   "name": "跨租户写·知识卡片",
-  "detail": "租户 35（B） 无存活行 ⇒ 无对象可打",
+  "detail": "租户 36（B） 无存活行 ⇒ 无对象可打",
   "verdict": "skip"
  },
  {
@@ -843,9 +843,9 @@
   "name": "跨租户写·角色",
   "detail": "拒绝 404，且库行逐字段未变（unchanged=true）",
   "evidence": [
-   "跨租户写 A→B：PUT /api/admin/roles/172d6f2a4eae487df4fa98cf9aeb3eaa body={} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"角色不存在\"},\"requestId\":\"req_6904516fa36546bc\",\"timestamp\":1791987811,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
-   "DB 前后快照（表 roles id=172d6f2a4eae487df4fa98cf9aeb3eaa）：before={\"id\":\"172d6f2a4eae487df4fa98cf9aeb3eaa\",\"name\":\"管理员\",\"code\":\"admin\",\"status\":\"active\",\"updated_at\":\"2026-10-14T22:20:40.032067+08:00\",\"deleted\":0,\"tenant_id\":35} after={\"id\":\"172d6f2a4eae487df4fa98cf9aeb3eaa\",\"name\":\"管理员\",\"code\":\"admin\",\"status\":\"active\",\"updated_at\":\"2026-10-14T22:20:40.032067+08:00\",\"deleted\":0,\"tenant_id\":35} unchanged=true",
-   "正对照 A→A 幂等写：PUT /api/admin/roles/6a070c57e7b46d2d4e8c96a3b6672430 → 200 {\"success\":true,\"data\":{\"id\":\"6a070c57e7b46d2d4e8c96a3b6672430\",\"tenantId\":32,\"name\":\"管理员\",\"code\":\"admin\",\"description\":\"拥有全部管理权限\",\"status\":\"active\",\"permission"
+   "跨租户写 A→B：PUT /api/admin/roles/e5b7483744da30b8d5cdf948d0d82a68 body={} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"角色不存在\"},\"requestId\":\"req_05560fac09b74bbe\",\"timestamp\":1791988445,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
+   "DB 前后快照（表 roles id=e5b7483744da30b8d5cdf948d0d82a68）：before={\"id\":\"e5b7483744da30b8d5cdf948d0d82a68\",\"name\":\"管理员\",\"code\":\"admin\",\"status\":\"active\",\"updated_at\":\"2026-10-14T22:32:41.417442+08:00\",\"deleted\":0,\"tenant_id\":36} after={\"id\":\"e5b7483744da30b8d5cdf948d0d82a68\",\"name\":\"管理员\",\"code\":\"admin\",\"status\":\"active\",\"updated_at\":\"2026-10-14T22:32:41.417442+08:00\",\"deleted\":0,\"tenant_id\":36} unchanged=true",
+   "正对照 A→A 写：PUT /api/admin/roles/67328137903f8c50fb034f0541f48d9a → 200 {\"success\":true,\"data\":{\"id\":\"67328137903f8c50fb034f0541f48d9a\",\"tenantId\":32,\"name\":\"客服\",\"code\":\"customer_service\",\"description\":\"负责客户服务与咨询\",\"status\":\"active\",（探针未改库）"
   ],
   "verdict": "pass"
  },
@@ -854,9 +854,9 @@
   "name": "跨租户写·员工用户",
   "detail": "拒绝 404，且库行逐字段未变（unchanged=true）",
   "evidence": [
-   "跨租户写 A→B：PUT /api/admin/users/44b2c19fbf6a505da5c795eb1cb98dba body={} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"用户不存在\"},\"requestId\":\"req_5d3251ebdef94f1c\",\"timestamp\":1791987812,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
-   "DB 前后快照（表 users id=44b2c19fbf6a505da5c795eb1cb98dba）：before={\"id\":\"44b2c19fbf6a505da5c795eb1cb98dba\",\"nickname\":\"6937验收对照管理员\",\"role\":\"admin\",\"status\":\"active\",\"updated_at\":\"2026-10-14T22:20:42.066099+08:00\",\"deleted\":0,\"tenant_id\":35} after={\"id\":\"44b2c19fbf6a505da5c795eb1cb98dba\",\"nickname\":\"6937验收对照管理员\",\"role\":\"admin\",\"status\":\"active\",\"updated_at\":\"2026-10-14T22:20:42.066099+08:00\",\"deleted\":0,\"tenant_id\":35} unchanged=true",
-   "正对照 A→A 幂等写：PUT /api/admin/users/35d75c1f3f08b4024152484ff8bb8bd4 → 200 {\"success\":true,\"data\":{\"id\":\"35d75c1f3f08b4024152484ff8bb8bd4\",\"tenantId\":32,\"phone\":\"13800138000\",\"nickname\":\"米高测试\",\"role\":\"admin\",\"mustChangePassword\":false,"
+   "跨租户写 A→B：PUT /api/admin/users/bbdc80ac7210f088f1e87dc08f37c712 body={} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"用户不存在\"},\"requestId\":\"req_81274d85f831426b\",\"timestamp\":1791988447,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
+   "DB 前后快照（表 users id=bbdc80ac7210f088f1e87dc08f37c712）：before={\"id\":\"bbdc80ac7210f088f1e87dc08f37c712\",\"nickname\":\"6937验收对照管理员\",\"role\":\"admin\",\"status\":\"active\",\"updated_at\":\"2026-10-14T22:32:43.508012+08:00\",\"deleted\":0,\"tenant_id\":36} after={\"id\":\"bbdc80ac7210f088f1e87dc08f37c712\",\"nickname\":\"6937验收对照管理员\",\"role\":\"admin\",\"status\":\"active\",\"updated_at\":\"2026-10-14T22:32:43.508012+08:00\",\"deleted\":0,\"tenant_id\":36} unchanged=true",
+   "正对照 A→A 写：PUT /api/admin/users/35d75c1f3f08b4024152484ff8bb8bd4 → 200 {\"success\":true,\"data\":{\"id\":\"35d75c1f3f08b4024152484ff8bb8bd4\",\"tenantId\":32,\"phone\":\"13800138000\",\"nickname\":\"米高测试\",\"role\":\"admin\",\"mustChangePassword\":false,（探针未改库）"
   ],
   "verdict": "pass"
  }

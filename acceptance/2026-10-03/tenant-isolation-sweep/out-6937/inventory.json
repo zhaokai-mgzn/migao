@@ -6,11 +6,10 @@
   "list": "/api/admin/products?page=1&size=1000",
   "read": "/api/admin/products/:id",
   "write": "PUT",
-  "A_ids": 16,
-  "B_ids": 2,
+  "A_ids": 18,
+  "B_ids": 1,
   "B_sample": [
-   "ee083867bc612a5911ed005742582091",
-   "e271a5b7be2c95325fe98b6230484afb"
+   "12257d246ae29ab70e3f029bc3f74e22"
   ]
  },
  {
@@ -23,7 +22,7 @@
   "A_ids": 72,
   "B_ids": 1,
   "B_sample": [
-   "43c3492f6f40f61497e57a8fbb844a93"
+   "78145064cd9390e15c79139b7b3ab0ef"
   ]
  },
  {
@@ -45,10 +44,10 @@
   "read": null,
   "write": "PUT",
   "A_ids": 14,
-  "B_ids": 3,
+  "B_ids": 2,
   "B_sample": [
-   "858c193f81024ae2fc8a84ac7149ec63",
-   "8acf62ca3ea2b9f04c66869ab59b8382"
+   "34ba958c8a6296ca932cb728f865875a",
+   "de780226f84d2f2602f5db972011fb0c"
   ]
  },
  {
@@ -61,8 +60,8 @@
   "A_ids": 41,
   "B_ids": 41,
   "B_sample": [
-   "8bb090493dbd915298ccf3d22ce30f5b",
-   "5765005cd37122d3af90003b1c841ae9"
+   "c4cce60a08ec200d2ee126328132eb38",
+   "c17ada8bf63775532fddc61cad352c1a"
   ]
  },
  {
@@ -75,8 +74,8 @@
   "A_ids": 2,
   "B_ids": 2,
   "B_sample": [
-   "0f868d1479ccc0bca5c89f2f32faecff",
-   "b950daf01aa57b7f394a2e1c9a7d0ba2"
+   "fce92471c78b904f458553934f6477ac",
+   "de2556aee854483ea80ddacb7cebc4d8"
   ]
  },
  {
@@ -89,8 +88,8 @@
   "A_ids": 27,
   "B_ids": 27,
   "B_sample": [
-   "1175be1162c0a2da3cd363828403afc4",
-   "bbf10f378dc609239cdcdf62e7b4773f"
+   "791e267ed5936e3e8fa6a98e79dc8e2b",
+   "e6b34c6a06db406bda9594298d59a95e"
   ]
  },
  {
@@ -103,8 +102,8 @@
   "A_ids": 115,
   "B_ids": 116,
   "B_sample": [
-   "3af48ab7dd6ca49ee417f91293a5532b",
-   "7046dac099e17d4f13bd21d490b24f0b"
+   "e824d0e26d6a3b043e61d678f9316534",
+   "f72f3ce9159db17cbe68cac626d54639"
   ]
  },
  {
@@ -136,7 +135,7 @@
   "list": "/api/admin/processing-categories",
   "read": "/api/admin/processing-categories/:id",
   "write": "PUT",
-  "A_ids": 0,
+  "A_ids": 1,
   "B_ids": 0,
   "B_sample": []
  },
@@ -147,10 +146,10 @@
   "list": "/api/admin/orders?page=1&size=1000",
   "read": "/api/admin/orders/:id",
   "write": "PUT",
-  "A_ids": 86,
+  "A_ids": 98,
   "B_ids": 1,
   "B_sample": [
-   "2587775002d9dfa9871db3b961449693"
+   "d23f6f22eb67ed01e803fca416a4367e"
   ]
  },
  {
@@ -160,7 +159,7 @@
   "list": "/api/admin/processing-orders",
   "read": "/api/admin/processing-orders/:id",
   "write": "PATCH",
-  "A_ids": 80,
+  "A_ids": 90,
   "B_ids": 0,
   "B_sample": []
  },
@@ -171,7 +170,7 @@
   "list": "/api/admin/inbound-orders",
   "read": "/api/admin/inbound-orders/:id",
   "write": "PATCH",
-  "A_ids": 3,
+  "A_ids": 5,
   "B_ids": 0,
   "B_sample": []
  },
@@ -193,7 +192,7 @@
   "list": "/api/admin/batch-stock/batches",
   "read": null,
   "write": null,
-  "A_ids": 3,
+  "A_ids": 4,
   "B_ids": 0,
   "B_sample": []
  },
@@ -204,7 +203,7 @@
   "list": "/api/admin/stock-ledger?page=1&size=1000",
   "read": null,
   "write": null,
-  "A_ids": 96,
+  "A_ids": 99,
   "B_ids": 0,
   "B_sample": []
  },
@@ -215,7 +214,7 @@
   "list": "/api/admin/finance/transactions?page=1&size=1000",
   "read": null,
   "write": null,
-  "A_ids": 87,
+  "A_ids": 99,
   "B_ids": 0,
   "B_sample": []
  },
@@ -262,8 +261,8 @@
   "A_ids": 7,
   "B_ids": 7,
   "B_sample": [
-   "172d6f2a4eae487df4fa98cf9aeb3eaa",
-   "aa2581287848236e69ea6fb30f50bb8f"
+   "e5b7483744da30b8d5cdf948d0d82a68",
+   "5f1fad006256f9317919b992125e072c"
   ]
  },
  {
@@ -273,7 +272,7 @@
   "list": "/api/admin/after-sales?page=1&size=1000",
   "read": "/api/admin/after-sales/:id",
   "write": null,
-  "A_ids": 2,
+  "A_ids": 4,
   "B_ids": 0,
   "B_sample": []
  },
@@ -287,7 +286,7 @@
   "A_ids": 1,
   "B_ids": 1,
   "B_sample": [
-   "44b2c19fbf6a505da5c795eb1cb98dba"
+   "bbdc80ac7210f088f1e87dc08f37c712"
   ]
  },
  {

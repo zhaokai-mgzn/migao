@@ -18,10 +18,17 @@ const cut = (s, n = 400) => (typeof s === 'string' ? s : JSON.stringify(s) ?? ''
 log(`[env] 主体 ${SUBJECTS_LINE}（issue #6937）`)
 const BTAG = S.B ? `租户 ${T.B}（B）` : '对照租户 B（**未注入**）'
 const tok = {}; const info = {}
+const DEAD = {}
 for (const [k, phone] of Object.entries({ A: PH.A, B: PH.B, P: PH.P })) {
   if (!phone) { log(`[subject] ${k} 未注入 ⇒ 不登录`); continue }
-  const r = await loginApi(phone, SMS_CODE); tok[k] = r.token; info[k] = r.raw.user
+  try { const r = await loginApi(phone, SMS_CODE); tok[k] = r.token; info[k] = r.raw.user }
+  catch (e) { DEAD[k] = String(e).replace(/\s+/g, ' ').slice(0, 180); log(`🔴 [PRE-BROKEN] ${k} 注入了（${phone}）但登录失败：${DEAD[k]}`) }
 }
+if (DEAD.A) { console.error(`\n🔴 [ENV-PREFLIGHT #6937] A 侧注入口不可用（${PH.A}）⇒ 本批次无法产出任何判据。\n   ${DEAD.A}\n`); process.exit(2) }
+if (DEAD.B) T.B = null
+if (DEAD.P) T.P = null
+if (Object.keys(DEAD).length) rec({ id: 'PRE-3', name: '注入口可用性（注入了但不可用）', verdict: 'skip',
+  detail: `以下注入口**已注入但当前不可用**（登录失败）⇒ 依赖它的判据具名 skip，本轮记「未覆盖」而非「通过」：${Object.entries(DEAD).map(([k, v]) => `${k}: ${v.slice(0, 70)}`).join('；')}`, evidence: [] })
 const EXPECT_DENY = [401, 403, 404]
 const denied = (st) => (FLIP ? st === 200 : EXPECT_DENY.includes(st))
 const leakIn = (text, ids) => (ids ?? []).filter((id) => text.includes(String(id)))
@@ -177,3 +184,4 @@ writeFileSync(OUT + `sweep2-${FLIP ? 'flip' : 'main'}.json`, JSON.stringify(recs
 const c = (v) => recs.filter((r) => r.verdict === v).length
 log(`=== 批次2 读数（${FLIP ? 'FLIP' : '主跑'}）：pass=${c('pass')} fail=${c('fail')} skip=${c('skip')} total=${recs.length}`)
 if (c('fail') > 0) process.exitCode = 1
+if (Object.keys(DEAD).length) process.exitCode = 3   // 3 = 注入口不可用 ⇒ 未覆盖（不得当 0 读）

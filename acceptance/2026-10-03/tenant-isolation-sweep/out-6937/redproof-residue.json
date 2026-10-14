@@ -5,8 +5,8 @@
   "verdict": "pass",
   "detail": "注入一次行内容改动后，指纹**确实变了** ⇒ 该读数不是空断言",
   "evidence": [
-   "基线：products#35 行数=2 max_updated=2026-10-14 22:22:01.832465+08 rowfp=3b85a75d932c1317ac2f9b7ba8853202",
-   "注入后：行数=2 max_updated=2026-10-14 22:22:01.832465+08 rowfp=0bbe6179b3530edc98b22c5d1fca7940（rowfp 变=true）"
+   "基线：products#36 行数=1 max_updated=2026-10-14 22:32:47.884843+08 rowfp=6d3b1b53804aac28e1b7ed176dfb4665",
+   "注入后：行数=1 max_updated=2026-10-14 22:32:47.884843+08 rowfp=b9e760527710a4a78f858467bb9bf0f7（rowfp 变=true）"
   ]
  },
  {
@@ -15,9 +15,9 @@
   "verdict": "pass",
   "detail": "还原后指纹逐字节回到基线（name 已复原）",
   "evidence": [
-   "基线：products#35 行数=2 max_updated=2026-10-14 22:22:01.832465+08 rowfp=3b85a75d932c1317ac2f9b7ba8853202",
-   "注入后：行数=2 max_updated=2026-10-14 22:22:01.832465+08 rowfp=0bbe6179b3530edc98b22c5d1fca7940（rowfp 变=true）",
-   "还原后：行数=2 max_updated=2026-10-14 22:22:01.832465+08 rowfp=3b85a75d932c1317ac2f9b7ba8853202（回到基线=true）；name 现值=6937验收对照商品"
+   "基线：products#36 行数=1 max_updated=2026-10-14 22:32:47.884843+08 rowfp=6d3b1b53804aac28e1b7ed176dfb4665",
+   "注入后：行数=1 max_updated=2026-10-14 22:32:47.884843+08 rowfp=b9e760527710a4a78f858467bb9bf0f7（rowfp 变=true）",
+   "还原后：行数=1 max_updated=2026-10-14 22:32:47.884843+08 rowfp=6d3b1b53804aac28e1b7ed176dfb4665（回到基线=true）；name 现值=6937验收对照商品"
   ]
  }
 ]

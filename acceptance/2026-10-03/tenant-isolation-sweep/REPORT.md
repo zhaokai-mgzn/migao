@@ -353,3 +353,51 @@ $ node harness/sweep2.mjs --flip
 | `harness/redproof-residue.mjs` | 零写入读数的红证（注入 + 还原） |
 | `harness/t0-probe.mjs` | 主体登录 + 列表返回体形态摸底 |
 | `out/*.json` / `out/*.log` | 全部**逐字**读数（记录含 evidence 数组） |
+
+---
+
+# 附录 A · 环境注入口（issue #6937，2026-10-14）
+
+**病根**：本 sweep 的主体矩阵与手机号曾**写死**（租户 20/21/1 + 3 个手机号）。2026-10-14 环境重建后那些租户已不存在
+⇒ 登录 401 ⇒ **整 sweep 一条判据都没跑出**（被判「未覆盖」，不是「跑过且绿」）。
+
+**唯一注入口** = `acceptance/2026-10-03/lib/subjects.mjs`（两条跨租户 sweep 共用）：
+
+| 变量 | 含义 | 缺省行为 |
+|---|---|---|
+| `TENANT_A` / `PHONE_A` | 被测主体 A | **缺 ⇒ exit 2 大声失败**（打印怎么给） |
+| `TENANT_B` / `PHONE_B` | 对照租户 B（负例来源） | 缺 ⇒ exit 2；**只有显式 `TENANT_B_ALLOW_MISSING=1`** 才降级为 B 侧**具名 skip** |
+| `SMS_CODE` | 短信万能码 | 缺 ⇒ exit 2（**没有隐式 123456**） |
+| `TENANT_C`/`PHONE_C`、`TENANT_P`/`PHONE_P` | 第三租户 / 平台超管（可选） | 缺 ⇒ 依赖它的判据**具名 skip** |
+| `API_BASE`(默认 `http://localhost:8080`)、`AGENT_BASE`、`OUT_DIR`、`API_LOG`、`FIXTURE_PHONE`、`LABEL_A/LABEL_B` | 端点 / 落盘 / 载荷假手机号 | 有默认值（**不是主体身份**） |
+
+**退出码**：`0` 跑完（含 skip）｜`1` 有 fail｜`2` 注入口缺失/不合法｜`3` 注入口**注入了但不可用**（如租户已被清理）
+或 B 缺失被显式放行 ⇒ 「**未覆盖**」，**不得当 0 读**。
+
+**回归判据（会红）**：`lib/subjects.mjs::guardSubjects()` 在 import 时扫描两条 sweep 的 `harness/*.mjs`，命中
+「手机号字面量 / `tenant_id=<数字>` / `dbIds(..., <数字>)` / `X-Tenant-Id: <数字>` / `subj[<数字>]` / 注入口写成 `env || 数字`」
+即 `exit 3` 并打印 `file:line` + 改法。台账 `LEDGER` **现取 0 条（只许缩短）**。
+实测：临时注入一行 `const OLD = "138…"` ⇒ 立即判红 exit 3；删除后 exit 0。
+
+**怎么跑**（2026-10-14 实测）：
+```bash
+REPO_ROOT=<主检出> TENANT_A=32 PHONE_A=13800138000 TENANT_B=<对照租户> PHONE_B=<其管理员手机号> SMS_CODE=123456 \
+  OUT_DIR=<证据目录> node acceptance/2026-10-03/tenant-isolation-sweep/harness/sweep.mjs     # 然后 sweep2.mjs
+```
+对照租户可低成本自造（**真实入驻流程**，副作用与自清见脚本头）：`lib/bootstrap-tenant-b.mjs register | seed | wipe`。
+
+**本轮真跑读数**（A=32 米高测试环境 / B=36 临时对照租户，**两个都是真租户**；证据 = `out-6937/`）：
+- `sweep.mjs`：**pass=49 fail=0 skip=33 total=82**（exit 0）——跨租户读 `R-*` / 列表越界 `L-*` / 跨租户写 `WT-*` 全部真跑
+- `sweep2.mjs`：**pass=14 fail=0 skip=6 total=20**（exit 0）——有效载荷跨租户写 `WV-*` / 4 种伪造 `F-*` / 未认证 `N-*` / 角色越权 `ROLE-*`
+- `poscontrol-write.mjs`：3 pass 1 skip（同租户写正对照可达；**写后逐字段还原，净残留 = 0**）
+- `redproof-residue.mjs`：2 pass（残留读数**注入即变、还原即回** ⇒ 零写入读数不是空断言）
+- skip 真因：**C/P 未注入**（第三租户/平台超管无真账号）；B 侧 15 张表无存活行（新租户只有入驻默认种子 + 1 商品/1 订单）
+- 自清：临时对照租户 B(36) `375 行 → 0 行`，`tenants` 回到只剩 32，`tenant_applications`(phone) 0 行（**逐项现取**）
+
+**⚠️ 同 PR 修正的探针侧缺陷**：`WT`/`PCW` 的「同租户正对照」原先发**空 body**，实测**不是幂等** ——
+部分端点返回 200 且**改写行**（首次运行记到 6 张表）。现改为「写后**逐字段还原**（`jsonb_populate_record`，类型安全）
++ 净残留读数」，并把「载荷非幂等 ⇒ 已还原」写进证据。
+
+**⚠️ 残留读数的外部干扰**：本轮 tenant 32 上有**并发外部写入者**（同窗口内 `product_skus`/`categories`/`orders`/
+`finance_transactions` 等行数与指纹在变）。本 sweep 自己只有「同租户正对照」这一类写，且已逐字段还原；
+`residue-diff` 中不属于本 sweep 的格子（本 harness 无对应写路径）不得记在本 sweep 名下。**注入口明细见 out-6937/run.log 首行。**

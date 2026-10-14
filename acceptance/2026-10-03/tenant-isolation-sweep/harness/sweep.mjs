@@ -26,18 +26,33 @@ const cut = (s, n = 400) => (typeof s === 'string' ? s : JSON.stringify(s) ?? ''
 const RAND = () => 'zz-nonexist-' + Math.random().toString(36).slice(2, 10)
 
 log(`[env] 主体 ${SUBJECTS_LINE}（issue #6937：A=被测 / B=对照 / C=第三租户 / P=超管）`)
-const BTAG = S.B ? `租户 ${T.B}（B）` : '对照租户 B（**未注入**）'
 
 // ────────────────── 前置：登录 + 主体自洽性（注入的 TENANT_* 必须与登录自述一致）
 const SUBJ = { A: PH.A, B: PH.B, C: PH.C, P: PH.P }
 const tok = {}
 const claims = {}
+const DEAD = {}          // 注入了但**登录失败**（如租户已被清理）⇒ 不许抛栈，也不许静默：具名记为「不可用」
+const B_INJECTED = T.B
 for (const [k, phone] of Object.entries(SUBJ)) {
   if (!phone) { log(`[subject] ${k} 未注入 ⇒ 不登录`); continue }
-  const r = await loginApi(phone, SMS_CODE)
-  tok[k] = r.token; claims[k] = r.raw.user
-  log(`[subject] ${k} phone=${phone} tenantId=${r.raw.user.tenantId} tenantName=${r.raw.user.tenantName} role=${r.raw.user.role} user.id=${r.raw.user.id}`)
+  try {
+    const r = await loginApi(phone, SMS_CODE)
+    tok[k] = r.token; claims[k] = r.raw.user
+    log(`[subject] ${k} phone=${phone} tenantId=${r.raw.user.tenantId} tenantName=${r.raw.user.tenantName} role=${r.raw.user.role} user.id=${r.raw.user.id}`)
+  } catch (e) {
+    DEAD[k] = String(e).replace(/\s+/g, ' ').slice(0, 180)
+    log(`🔴 [PRE-BROKEN] ${k} 注入了（${phone}）但登录失败 ⇒ 该注入口当前不可用：${DEAD[k]}`)
+  }
 }
+// A 死 ⇒ 一个可判对象都没有：**大声失败**（exit 2）。B/C/P 死 ⇒ 关掉它的 id，使其判据**具名 skip**，最终 exit 3（未覆盖≠通过）
+if (DEAD.A) {
+  console.error(`\n🔴 [ENV-PREFLIGHT #6937] A 侧注入口不可用（TENANT_A=${T.A} PHONE_A=${PH.A}）⇒ 本 sweep 无法产出任何判据。\n   ${DEAD.A}\n   请重新注入一对**可用的真租户**（TENANT_A/PHONE_A + TENANT_B/PHONE_B）。\n`)
+  process.exit(2)
+}
+if (DEAD.B) T.B = null
+if (DEAD.C) T.C = null
+if (DEAD.P) T.P = null
+const BTAG = tok.B ? `租户 ${T.B}（B）` : (MISSING_B ? '对照租户 B（**未注入**）' : `对照租户 B（注入的 ${B_INJECTED} 登录失败 ⇒ 不可用）`)
 const mismatch = Object.entries(claims).filter(([k, u]) => Number(u.tenantId) !== T[k])
 rec({ id: 'PRE-1', name: '主体自洽性（注入租户 = 登录自述租户）',
   verdict: tok.A && mismatch.length === 0 ? 'pass' : (tok.A ? 'fail' : 'fail'),
@@ -48,6 +63,9 @@ rec({ id: 'PRE-1', name: '主体自洽性（注入租户 = 登录自述租户）
     : `🔴 A 侧登录失败 ⇒ 本 sweep 无法产出任何判据（注入口：${SUBJECTS_LINE}）`,
   evidence: Object.entries(claims).map(([k, u]) => `${k} 注入=${T[k]} 登录自述=${u.tenantId} name=${u.tenantName}`) })
 if (MISSING_B) rec({ id: 'PRE-2', name: '对照租户注入口', verdict: 'skip', detail: B_SKIP, evidence: [SUBJECTS_LINE] })
+if (Object.keys(DEAD).length) rec({ id: 'PRE-3', name: '注入口可用性（注入了但不可用）', verdict: 'skip',
+  detail: `以下注入口**已注入但当前不可用**（登录失败）⇒ 依赖它的判据具名 skip，本轮记「未覆盖」而非「通过」：${Object.entries(DEAD).map(([k, v]) => `${k}(${SUBJ[k]}): ${v.slice(0, 70)}`).join('；')}`,
+  evidence: Object.entries(DEAD).map(([k, v]) => `${k} ${SUBJ[k]} → ${v}`) })
 
 // ────────────────── 0. 正对照可达性（非红证②：证明探针真能到达端点、token 有效、id 形态正确）
 rec({ id: 'PC-0', name: '主体登录', verdict: tok.A ? 'pass' : 'fail',
@@ -186,3 +204,4 @@ writeFileSync(OUT + `sweep-${FLIP ? 'flip' : 'main'}.json`, JSON.stringify(recs,
 const c = (v) => recs.filter((r) => r.verdict === v).length
 log(`=== 阶段读数（${FLIP ? 'FLIP 反向注入' : '主跑'}）：pass=${c('pass')} fail=${c('fail')} skip=${c('skip')} total=${recs.length}`)
 if (c('fail') > 0) process.exitCode = 1
+if (Object.keys(DEAD).length) process.exitCode = 3   // 3 = 注入口不可用 ⇒ 未覆盖（不得当 0 读）

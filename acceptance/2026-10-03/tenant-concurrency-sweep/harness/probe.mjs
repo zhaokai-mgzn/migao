@@ -36,10 +36,29 @@ if (MISSING_B) {
 
 const TA = T.A, TB = T.B
 const subj = {}
+let deadB = null
 for (const s of [A, B]) {
-  const l = await loginApi(s.phone, SMS_CODE)
-  subj[s.tenant] = l
-  log(`主体登录：${s.phone} → tenantId=${l.user.tenantId} role=${l.user.role} user.id=${l.user.id}`)
+  try {
+    const l = await loginApi(s.phone, SMS_CODE)
+    subj[s.tenant] = l
+    log(`主体登录：${s.phone} → tenantId=${l.user.tenantId} role=${l.user.role} user.id=${l.user.id}`)
+  } catch (e) {
+    const msg = String(e).replace(/\s+/g, ' ').slice(0, 180)
+    if (s.tenant === TA) { console.error(`\n🔴 [ENV-PREFLIGHT #6937] A 侧注入口不可用（${A.phone}）⇒ 并发面无法产出任何判据。\n   ${msg}\n`); process.exit(2) }
+    deadB = msg
+    log(`🔴 [PRE-BROKEN] B 注入了（${s.phone}）但登录失败：${msg}`)
+  }
+}
+if (deadB) {
+  for (const [id, name] of [
+    ['P1-并发交错', 'A/B token 交错打同类端点（列表+按 id 读）'],
+    ['P3-切换疲劳', '连续交替 A→B→A→B ≥60 次后仍不得串号'],
+    ['P4-异常路径', '异常/失败请求后不得继承前一请求的租户上下文'],
+    ['P5-并发跨租户读', '并发下按 id 读的跨租户拒绝 + 同租户正对照'],
+  ]) R.skip(id, name, `对照租户 B（${B.phone}）**注入了但登录失败** ⇒ 前提不成立，本轮记「未覆盖」；给法见 lib/subjects.mjs 的 HINT。原因：${deadB}`)
+  writeFileSync(join(OUT, `probe${FLIP ? '-flip' : ''}-summary.json`), JSON.stringify({ flip: FLIP, ...R.summary(), deadB }, null, 2))
+  log(`=== probe 读数（B 注入口不可用）：pass=0 fail=0 skip=${R.summary().skip} ===`)
+  process.exit(3)
 }
 
 // 预取每个资源在 A/B 两侧的全量 id 集合（直连 DB，不靠响应自述）
