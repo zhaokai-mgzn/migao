@@ -86,6 +86,15 @@
     color: #0a2540;
   }
 
+  /* 「商品与加工信息」块（issue #6901 包 B）：抬头下的一句用途说明，然后是逐部位若干行。
+     行样式复用 `&__row` / `&__label` / `&__value`（与页头同字形），不另立第二套。 */
+  &__spec-hint {
+    display: block;
+    margin-top: 8px;
+    font-size: 26px;
+    color: #5b6570;
+  }
+
   &__operation {
     margin-top: 12px;
   }

@@ -16,6 +16,18 @@
  *    与 worker-h5 同源（原报工页已下架，见上）；
  * ③ **三态不混淆**：`无权限(403)` / `这笔订单还没有加工单` / `加载失败` 分开说 ——
  *    把 403 渲染成「没有数据」就是把「看不到」说成「没有」（同「数据」页的三态口径）。
+ *
+ * ## 为什么补「商品身份 / 规格尺寸 / 加工信息」（issue #6901 包 B）
+ * 用户 2026-10-14 逐字「加工单缺乏订单中的规格尺寸和加工信息，**工人需要这些信息+商品信息**
+ * 来决定如何生产」—— 本页原先只有「单号 + 工序进度 + 卡在哪」，工人看不到做的是哪一件、
+ * 按什么规格做。现在**逐部位**多三块，与既有的逐部位进度/卡点**同层**。
+ *
+ * 展示**不新造标签表**：加工信息走 `utils/craft-display.ts::craftSpecRows()` —— 它与
+ * admin-web / mini-app **逐字同源**（守卫 `tests/unit_ci_workflows/test_craft_display_same_source.py`
+ * 判 C1 逐字节相等），因此「标签与 admin-web 单一真值漂移」在仓内**进不来**。
+ *
+ * 缺值口径不变（沿用上面第一条与 §4.9）：**缺值不渲染那一行**，绝不出现
+ * `undefined` / `null` / `NaN`，也不补默认值（缺键 = 未携带，不是错值）。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { View, Text, ScrollView, Button } from '@tarojs/components'
@@ -33,12 +45,87 @@ import {
 } from '../../../services/stuckPointService'
 import { operationDisplayName } from '../../../utils/operationDisplayName'
 import { resolveOrderIdFromParams } from '../../../utils/productionQr'
+import { craftSpecRows } from '../../../utils/craft-display'
+import { sellingMethodLabel } from '../../../utils/selling-method'
 import './index.scss'
 
 type PageState = 'loading' | 'ok' | 'missing-id' | 'forbidden' | 'no-processing-order' | 'error'
 
 /** 权限文案与电脑端同口径（权限码真值在后端 `@RequirePermission`） */
 const PERMISSION_TEXT = '无「生产看板」查看权限（需要权限码 production:view）'
+
+/**
+ * 「商品身份」组的行（issue #6901 包 B）：品名 / 货号 / 颜色 / 售卖方式 / 单位。
+ *
+ * 键名口径与**服务端加工单快照**（`ProcessingOrderService.buildSnapshot` 的逐键透传）一致 ——
+ * 部位规格面（`ProductionService.orderSpecByItemId`）由包 A 补齐同族键；缺键即该行不渲染。
+ */
+const IDENTITY_FIELDS: Array<{ label: string; resolve: (source: Record<string, unknown>) => string | null }> = [
+  { label: '品名', resolve: (source) => text(pick(source, ['product_name', 'productName'])) },
+  { label: '货号', resolve: (source) => text(pick(source, ['sku', 'skuCode'])) },
+  { label: '颜色', resolve: (source) => text(pick(source, ['colorName', 'color_name'])) },
+  // 售卖方式落库的是**内部键**（`bulk_cut` / `full_roll`）⇒ 走展示名单一口径，不把内部键摆上屏
+  {
+    label: '售卖方式',
+    resolve: (source) => sellingMethodLabel(pick(source, ['sellingMethod', 'selling_method'])),
+  },
+  // 计量单位（合同组 1 的「数量 + 单位」）；数量属于**工序**行、这里只印单位，缺键不渲染
+  { label: '单位', resolve: (source) => text(pick(source, ['unit'])) },
+]
+
+/**
+ * 加工信息块里**不重复印**的标签。
+ *
+ * 只剔「部位」（`curtainType`）—— 它**已经**是本部位那一块的标题（`position_name` 就是部位名），
+ * 同一屏再印一行「部位：布帘」是同一真值印两遍（`migao-dev-flow` §31 P2）。
+ * ⚠️ 「门幅」**不剔**：商品身份组没有自己的门幅栏 ⇒ 剔了它门幅就**一次都不显示**
+ * （而门幅是工人下料要核的尺寸，issue #6901 组 3 明确要它）。
+ */
+const OWN_LABELS = new Set(['部位'])
+
+/** 键别名取第一个「存在且非 null/undefined」的值（与 craft-display 的 `pick` 同语义；本页只读标量） */
+function pick(source: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    const value = source[key]
+    if (value !== undefined && value !== null) return value
+  }
+  return undefined
+}
+
+/** 标量文本：空串 / 空白 / 数组 / 对象 / 布尔 ⇒ `null`（该行不渲染，不摆占位） */
+function text(value: unknown): string | null {
+  if (typeof value === 'string') return value.trim() === '' ? null : value.trim()
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : null
+  return null
+}
+
+/**
+ * 规格尺寸（宽 × 高，单位米）：`3.20 × 2.75 米`。
+ *
+ * 仓内米数展示口径是**两位小数 + 单位**（`craft-display.ts::meters` 的 `3.2米` 是「原值 + 米」，
+ * 因为它吃的是门幅那种已格式化原串；宽高来自 `order_items` 的 `BigDecimal` 列 ⇒ 这里按两位小数摆齐）。
+ * 只为**在场**的那一维出数（缺一维 ⇒ 只印一维，绝不印 `3.20 × 米`/`NaN`）；两维都缺 ⇒ `null`。
+ */
+function sizeText(width: unknown, height: unknown): string | null {
+  const dim = (value: unknown): string | null => {
+    const n = typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN
+    return Number.isFinite(n) ? n.toFixed(2) : null
+  }
+  const parts = [dim(width), dim(height)].filter((part): part is string => part !== null)
+  return parts.length > 0 ? `${parts.join(' × ')} 米` : null
+}
+
+/**
+ * 派工（批号 + 指派米数）：**两键都在才显示** —— 缺键 = 未指派，不是缺数据
+ * （口径见 `ProductionService.stampBatchAssignments` 与 `ProductionPosition` 的字段注释）。
+ */
+function batchText(no: unknown, meters: unknown): string | null {
+  const batchNo = text(no)
+  if (batchNo === null) return null
+  const m = typeof meters === 'number' ? meters : typeof meters === 'string' ? Number(meters) : NaN
+  if (!Number.isFinite(m)) return null
+  return `${batchNo} · ${m} 米`
+}
 
 export default function ProcessingOrderDetailPage() {
   // 参数解析走唯一口径（`order_id` / `orderId` / 单号 / 二维码 token 逐个试；解不出 ⇒ null，不瞎猜）
@@ -158,6 +245,64 @@ export default function ProcessingOrderDetailPage() {
               </View>
             ))}
           </View>
+
+          {/* 商品身份 / 规格尺寸 / 加工信息（issue #6901 包 B）：**逐部位**一块，与下面的
+              逐部位工序进度同层。缺值的行整行不渲染（不补默认值、不摆占位）。 */}
+          {positions.length > 0 && (
+            <View className='order-detail__card' data-testid='order-detail-specs'>
+              <Text className='order-detail__section'>商品与加工信息</Text>
+              <Text className='order-detail__spec-hint'>工人按这里的信息备料、下料</Text>
+              {positions.map((position) => {
+                const source = position as unknown as Record<string, unknown>
+                const identityRows: Array<[string, string]> = []
+                for (const field of IDENTITY_FIELDS) {
+                  const value = field.resolve(source)
+                  if (value !== null) identityRows.push([field.label, value])
+                }
+                const craftRows = craftSpecRows(source).filter((row) => !OWN_LABELS.has(row.label))
+                const size = sizeText(source.width, source.height)
+                const batch = batchText(source.batch_no, source.batch_meters)
+                const remark = text(source.remark)
+                const spec: Array<[string, string]> = [
+                  ...(size === null ? [] : ([['规格尺寸', size]] as Array<[string, string]>)),
+                  ...craftRows.map((row) => [row.label, row.value] as [string, string]),
+                ]
+                return (
+                  <View
+                    key={position.order_item_id ?? position.position_name}
+                    className='order-detail__position'
+                    data-testid='order-detail-position-spec'
+                  >
+                    <Text className='order-detail__position-name'>{position.position_name}</Text>
+                    {identityRows.map(([label, value]) => (
+                      <View key={label} className='order-detail__row'>
+                        <Text className='order-detail__label'>{label}</Text>
+                        <Text className='order-detail__value'>{value}</Text>
+                      </View>
+                    ))}
+                    {spec.map(([label, value]) => (
+                      <View key={label} className='order-detail__row'>
+                        <Text className='order-detail__label'>{label}</Text>
+                        <Text className='order-detail__value'>{value}</Text>
+                      </View>
+                    ))}
+                    {batch !== null && (
+                      <View className='order-detail__row'>
+                        <Text className='order-detail__label'>派工</Text>
+                        <Text className='order-detail__value'>{batch}</Text>
+                      </View>
+                    )}
+                    {remark !== null && (
+                      <View className='order-detail__row'>
+                        <Text className='order-detail__label'>备注</Text>
+                        <Text className='order-detail__value'>{remark}</Text>
+                      </View>
+                    )}
+                  </View>
+                )
+              })}
+            </View>
+          )}
 
           <View className='order-detail__card' data-testid='order-detail-operations'>
             <Text className='order-detail__section'>工序进度</Text>
