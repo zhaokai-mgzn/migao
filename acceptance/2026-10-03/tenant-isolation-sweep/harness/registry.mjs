@@ -49,6 +49,7 @@ export const RESOURCES = [
 
 /** 从 DB 取某资源在某租户的**真值 id 集合**（含 tenant_id 直连核对）。 */
 export function dbIds(table, tenantId, limit = 100000) {
+  if (tenantId == null) return []   // 主体未注入 ⇒ 空集（调用方须给具名 skip，不许当 pass）
   const hasDel = psql(`select 1 as x from information_schema.columns where table_schema='public' and table_name='${table}' and column_name='deleted'`).length > 0
   const del = hasDel ? ' and coalesce(deleted,0)=0' : ''
   const rows = psql(`select id::text as id from ${table} where tenant_id=${tenantId}${del} limit ${limit}`)

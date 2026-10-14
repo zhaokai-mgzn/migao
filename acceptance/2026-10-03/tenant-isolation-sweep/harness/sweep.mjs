@@ -1,6 +1,10 @@
 // 跨租户隔离 + 权限横切 —— 差分对照验证主程序
 //
-// 主体：A=租户20 admin（父守卫）；B=租户21 admin（对照租户）；P=平台超管（tenantId=-1）；C=租户1 admin（第二对照租户）
+// 主体：**全部由 env 注入**（issue #6937；唯一注入口 = acceptance/2026-10-03/lib/subjects.mjs）
+//   A = TENANT_A/PHONE_A（被测主体）  B = TENANT_B/PHONE_B（对照租户 = 负例来源）
+//   C = TENANT_C/PHONE_C（可选，第三租户）  P = TENANT_P/PHONE_P（可选，平台超管，租户恒 -1）
+// 缺注入口 ⇒ **大声失败**（exit 2 + 打印怎么给），**不静默回退**；只有一侧真租户时须显式
+// TENANT_B_ALLOW_MISSING=1 ⇒ B 侧判据一律**具名 skip**（印出来，不折算 pass）。
 // 纪律（migao-acceptance 铁律 2/3）：每条判据必须**可红**（--flip 反向注入会把它变红），
 //   每条结论必须带**逐字读数**（状态码 + 返回体片段 + DB 前后快照）。
 // 零写入原则：只做读取 + 必须被拒绝的写尝试（跨租户写）。同租户正对照一律用**幂等 PUT**（值 = 现值）。
@@ -8,8 +12,9 @@ import { writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { api, loginApi, log, psql, one } from '../../config-writeface-sweep/harness/lib.mjs'
 import { RESOURCES, dbIds, rowSnapshot, realCols } from './registry.mjs'
+import { S, T, PH, SMS_CODE, MISSING_B, B_SKIP, SUBJECTS_LINE } from '../../lib/subjects.mjs'
 
-const OUT = fileURLToPath(new URL('../out/', import.meta.url))
+const OUT = process.env.OUT_DIR ? process.env.OUT_DIR.replace(/\/?$/, '/') : fileURLToPath(new URL('../out/', import.meta.url))
 const FLIP = process.argv.includes('--flip')
 const recs = []
 const rec = (o) => { recs.push(o); const i = o.verdict === 'pass' ? '✅' : o.verdict === 'fail' ? '❌' : '⏭️'
@@ -18,20 +23,35 @@ const pass = (o) => rec({ ...o, verdict: 'pass' })
 const fail = (o) => rec({ ...o, verdict: 'fail' })
 const skip = (o) => rec({ ...o, verdict: 'skip' })
 const cut = (s, n = 400) => (typeof s === 'string' ? s : JSON.stringify(s) ?? '').slice(0, n)
-
-const SUBJ = { A: '13870217889', B: '13797101248', P: '13456800919', C: '13800138000' }
-const T = { A: 20, B: 21, P: -1, C: 1 }
-const tok = {}
-for (const [k, phone] of Object.entries(SUBJ)) {
-  const r = await loginApi(phone)
-  tok[k] = r.token
-  log(`[subject] ${k} phone=${phone} tenantId=${r.raw.user.tenantId} tenantName=${r.raw.user.tenantName} role=${r.raw.user.role} user.id=${r.raw.user.id}`)
-}
 const RAND = () => 'zz-nonexist-' + Math.random().toString(36).slice(2, 10)
 
+log(`[env] 主体 ${SUBJECTS_LINE}（issue #6937：A=被测 / B=对照 / C=第三租户 / P=超管）`)
+const BTAG = S.B ? `租户 ${T.B}（B）` : '对照租户 B（**未注入**）'
+
+// ────────────────── 前置：登录 + 主体自洽性（注入的 TENANT_* 必须与登录自述一致）
+const SUBJ = { A: PH.A, B: PH.B, C: PH.C, P: PH.P }
+const tok = {}
+const claims = {}
+for (const [k, phone] of Object.entries(SUBJ)) {
+  if (!phone) { log(`[subject] ${k} 未注入 ⇒ 不登录`); continue }
+  const r = await loginApi(phone, SMS_CODE)
+  tok[k] = r.token; claims[k] = r.raw.user
+  log(`[subject] ${k} phone=${phone} tenantId=${r.raw.user.tenantId} tenantName=${r.raw.user.tenantName} role=${r.raw.user.role} user.id=${r.raw.user.id}`)
+}
+const mismatch = Object.entries(claims).filter(([k, u]) => Number(u.tenantId) !== T[k])
+rec({ id: 'PRE-1', name: '主体自洽性（注入租户 = 登录自述租户）',
+  verdict: tok.A && mismatch.length === 0 ? 'pass' : (tok.A ? 'fail' : 'fail'),
+  detail: tok.A
+    ? (mismatch.length === 0
+      ? `${SUBJECTS_LINE} 与登录自述逐一对齐（不一致会让「DB 侧 id」与「token 所属租户」错位 ⇒ 全表判据失真）`
+      : `🔴 注入租户与登录自述不一致：${mismatch.map(([k, u]) => `${k}: 注入 ${T[k]} vs 登录 ${u.tenantId}`).join('；')}`)
+    : `🔴 A 侧登录失败 ⇒ 本 sweep 无法产出任何判据（注入口：${SUBJECTS_LINE}）`,
+  evidence: Object.entries(claims).map(([k, u]) => `${k} 注入=${T[k]} 登录自述=${u.tenantId} name=${u.tenantName}`) })
+if (MISSING_B) rec({ id: 'PRE-2', name: '对照租户注入口', verdict: 'skip', detail: B_SKIP, evidence: [SUBJECTS_LINE] })
+
 // ────────────────── 0. 正对照可达性（非红证②：证明探针真能到达端点、token 有效、id 形态正确）
-rec({ id: 'PC-0', name: '主体登录', verdict: 'pass',
-  detail: `A(20/${SUBJ.A}) B(21/${SUBJ.B}) P(-1/${SUBJ.P}) C(1/${SUBJ.C}) 均登录成功`,
+rec({ id: 'PC-0', name: '主体登录', verdict: tok.A ? 'pass' : 'fail',
+  detail: `已登录主体：${Object.keys(tok).join('/') || '无'}（${SUBJECTS_LINE}）`,
   evidence: Object.entries(tok).map(([k, v]) => `${k}: token.len=${v.length}`) })
 
 // ────────────────── 资源面：跨租户读（A 的 token 打 B 的 id）
@@ -44,7 +64,7 @@ for (const R of RESOURCES) {
 }
 writeFileSync(OUT + 'inventory.json', JSON.stringify(inv, null, 1))
 rec({ id: 'INV', name: '资源面枚举', verdict: 'pass',
-  detail: `枚举 ${RESOURCES.length} 个有 tenant 维度的资源（A=20 有数据 ${inv.filter((x) => x.A_ids > 0).length}，B=21 有数据 ${inv.filter((x) => x.B_ids > 0).length}）`,
+  detail: `枚举 ${RESOURCES.length} 个有 tenant 维度的资源（A=${T.A} 有数据 ${inv.filter((x) => x.A_ids > 0).length}，${BTAG} 有数据 ${inv.filter((x) => x.B_ids > 0).length}）`,
   evidence: inv.map((x) => `${x.key}(${x.table}) A=${x.A_ids} B=${x.B_ids} read=${x.read ?? '—'} write=${x.write ?? '—'}`) })
 
 const EXPECT_DENY = [401, 403, 404]
@@ -56,12 +76,11 @@ for (const R of RESOURCES) {
   const bIds = dbIds(R.table, T.B)
   const base = { res: R.key, label: R.label, table: R.table }
   if (!R.read) { skip({ id: `R-${R.key}`, name: `跨租户读·${R.label}`, detail: `该资源无「按 id 读」端点（OpenAPI 无 GET /…/{id}）⇒ 读面不可测，改由写面（W-${R.key}）+ 列表越界（L-${R.key}）覆盖`, ...base }); continue }
-  if (bIds.length === 0) { skip({ id: `R-${R.key}`, name: `跨租户读·${R.label}`, detail: `租户21（B）该表无存活行 ⇒ 无 B 侧 id 可打；仅做随机 id 段`, ...base }) }
+  if (bIds.length === 0) { skip({ id: `R-${R.key}`, name: `跨租户读·${R.label}`, detail: `${BTAG} 该表无存活行 ⇒ 无 B 侧 id 可打；仅做随机 id 段${MISSING_B ? `（真因：${B_SKIP}）` : ''}`, ...base }) }
   // 正对照：A 打 A 自己（必须 200）
   const pcId = aIds[0]
   const pc = pcId ? await api('GET', R.read(pcId), { token: tok.A }) : null
   const pcOk = pc?.status === 200
-  const pcZero = pcId == null
   if (!pcOk) {
     skip({ id: `R-${R.key}`, name: `跨租户读·${R.label}`, detail: `🔶探针失效跳过：正对照（A 打自己 id=${pcId ?? '无'}）未返回 200，实测 ${pc?.status} ⇒ 本资源读面**不可判**（不记为通过）`, ...base,
       evidence: [`GET ${pcId ? R.read(pcId) : '—'} → ${pc?.status} ${cut(pc?.text, 200)}`] })
@@ -93,9 +112,9 @@ for (const R of RESOURCES) {
   let ids = []
   try { ids = (R.extract(r.json?.data) ?? []).map(String) } catch (e) { ids = [] }
   const inter = ids.filter((i) => bIds.has(i))
-  const ev = [`GET ${R.list} → 200，A 侧返回 id 数=${ids.length}`, `B(21) 全量 id 数=${bIds.size}`, `交集=${JSON.stringify(inter.slice(0, 10))}`]
+  const ev = [`GET ${R.list} → 200，A 侧返回 id 数=${ids.length}`, `${BTAG} 全量 id 数=${bIds.size}`, `交集=${JSON.stringify(inter.slice(0, 10))}`]
   const flipOk = FLIP ? inter.length > 0 : inter.length === 0
-  if (flipOk) pass({ id: `L-${R.key}`, name: `列表越界·${R.label}`, detail: `A 列表 ∩ B 全量 = ∅（A 侧 ${ids.length} 条 vs B 侧 ${bIds.size} 条）${ids.length === 0 ? ' ⚠️A 侧为空，正对照弱' : ''}`, evidence: ev })
+  if (flipOk) pass({ id: `L-${R.key}`, name: `列表越界·${R.label}`, detail: `A 列表 ∩ B 全量 = ∅（A 侧 ${ids.length} 条 vs B 侧 ${bIds.size} 条）${ids.length === 0 ? ' ⚠️A 侧为空，正对照弱' : ''}${bIds.size === 0 ? ' ⚠️B 侧为空 ⇒ 判别力弱' : ''}`, evidence: ev })
   else fail({ id: `L-${R.key}`, name: `列表越界·${R.label}`, detail: `🔴 A 的列表出现 B 的 id：${JSON.stringify(inter.slice(0, 10))}`, evidence: ev })
 }
 
@@ -104,10 +123,9 @@ const WRES = RESOURCES.filter((R) => R.write)
 for (const R of WRES) {
   const bIds = dbIds(R.table, T.B)
   const aIds = dbIds(R.table, T.A)
-  if (bIds.length === 0) { skip({ id: `WT-${R.key}`, name: `跨租户写·${R.label}`, detail: 'B 侧无存活行 ⇒ 无对象可打' }); continue }
+  if (bIds.length === 0) { skip({ id: `WT-${R.key}`, name: `跨租户写·${R.label}`, detail: `${BTAG} 无存活行 ⇒ 无对象可打${MISSING_B ? `（真因：${B_SKIP}）` : ''}` }); continue }
   const bid = bIds[0]
   R.snap = realCols(R.table, R.snap ?? [])
-  const left = ['id', 'tenant_id', ...(R.snap ?? [])].join(', ')
   const before = rowSnapshot(R.table, bid, R.snap ?? [])
   const body = R.write === 'DELETE' ? undefined : (R.writeBody ? R.writeBody() : undefined)
   const w = await api(R.write, pathFor(R, bid), { token: tok.A, body })
@@ -130,7 +148,7 @@ for (const R of WRES) {
   else fail({ id: `WT-${R.key}`, name: `跨租户写·${R.label}`, detail: `🔴 ${R.write} 打 B 的 id 得到 ${w.status}；库变动=${!unchanged}${!unchanged ? ' ⇒ 需还原！' : ''}`, evidence: ev })
   if (!unchanged) {
     rec({ id: `WT-${R.key}-RESTORE`, name: `🔴跨租户写生效·还原`, verdict: 'fail',
-      detail: `跨租户写**真的改了 B 的数据** ⇒ 已用 psqlWrite 逐字段还原（见 evidence 的 after-restore）`, evidence: [] })
+      detail: `跨租户写**真的改了 ${BTAG} 的数据** ⇒ 需按 evidence 的 before 逐字段还原`, evidence: [cut(before, 300), cut(after, 300)] })
   }
 }
 
@@ -147,3 +165,4 @@ function pathFor(R, id) {
 writeFileSync(OUT + `sweep-${FLIP ? 'flip' : 'main'}.json`, JSON.stringify(recs, null, 1))
 const c = (v) => recs.filter((r) => r.verdict === v).length
 log(`=== 阶段读数（${FLIP ? 'FLIP 反向注入' : '主跑'}）：pass=${c('pass')} fail=${c('fail')} skip=${c('skip')} total=${recs.length}`)
+if (c('fail') > 0) process.exitCode = 1

@@ -1,7 +1,9 @@
 // 判据组 P：并发 × 跨租户串号（真 Promise.all 并打 + 预热 + 双读 DB 对照）
 // 用法：node probe.mjs [--flip] [--n=120] [--conc=60]
+// 主体由 env 注入（issue #6937）：A/B 必须齐；缺 B（且显式 TENANT_B_ALLOW_MISSING=1）⇒ 整组**具名 skip**。
 import { api, loginApi, Recorder, psql, log, OUT } from './lib.mjs'
-import { RESOURCES, dbIds, A, B } from './resources.mjs'
+import { RESOURCES, dbIds, A, B, TENANTS } from './resources.mjs'
+import { S, T, PH, SMS_CODE, MISSING_B, B_SKIP, SUBJECTS_LINE } from '../../lib/subjects.mjs'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -12,18 +14,30 @@ const FLIP = !!args.flip
 const N = Number(args.n || 120)
 const CONC = Number(args.conc || 60)
 const R = new Recorder(`probe${FLIP ? '-flip' : ''}-main.json`)
-log(`=== probe 开始 flip=${FLIP} n=${N} conc=${CONC} ===`)
+log(`=== probe 开始 flip=${FLIP} n=${N} conc=${CONC} 主体 ${SUBJECTS_LINE} ===`)
 
 /** 期望：本租户响应里的对象必须属本租户。FLIP ⇒ 反转成「允许含对方租户对象」以证断言会红。 */
 function judgeLeak(badCount) {
-  // FLIP（红证①）：把「必须全部属本租户」反转成「允许含对方租户对象」⇒ 有越租户才 pass
   return FLIP ? badCount > 0 : badCount === 0
 }
 
-const OWN = {}, FOREIGN = {}
+// 本组判据的定义就是「A 与 B 交错」⇒ B 未注入时**没有**可判对象：具名 skip，不折算 pass
+if (MISSING_B) {
+  for (const [id, name] of [
+    ['P1-并发交错', 'A/B token 交错打同类端点（列表+按 id 读）'],
+    ['P3-切换疲劳', '连续交替 A→B→A→B ≥60 次后仍不得串号'],
+    ['P4-异常路径', '异常/失败请求后不得继承前一请求的租户上下文'],
+    ['P5-并发跨租户读', '并发下按 id 读的跨租户拒绝 + 同租户正对照'],
+  ]) R.skip(id, name, `对照租户 B 未注入 ⇒ 本判据的「A/B 交错」前提不成立。${B_SKIP}`)
+  writeFileSync(join(OUT, `probe${FLIP ? '-flip' : ''}-summary.json`), JSON.stringify({ flip: FLIP, n: N, conc: CONC, ...R.summary(), skippedNoB: true }, null, 2))
+  log(`=== probe 读数（B 未注入，整组具名 skip）：pass=0 fail=0 skip=${R.summary().skip} ===`)
+  process.exit(0)
+}
+
+const TA = T.A, TB = T.B
 const subj = {}
 for (const s of [A, B]) {
-  const l = await loginApi(s.phone)
+  const l = await loginApi(s.phone, SMS_CODE)
   subj[s.tenant] = l
   log(`主体登录：${s.phone} → tenantId=${l.user.tenantId} role=${l.user.role} user.id=${l.user.id}`)
 }
@@ -31,15 +45,15 @@ for (const s of [A, B]) {
 // 预取每个资源在 A/B 两侧的全量 id 集合（直连 DB，不靠响应自述）
 const idSet = {}
 for (const r of RESOURCES) {
-  idSet[r.table] = { 20: new Set(dbIds(r.table, 20)), 21: new Set(dbIds(r.table, 21)) }
+  idSet[r.table] = { [TA]: new Set(dbIds(r.table, TA)), [TB]: new Set(dbIds(r.table, TB)) }
 }
-// 反向对照：判定「响应里的 id 是否属别的租户」还需第三租户（C=1）无关集
-const otherTenants = { 20: [21, 1], 21: [20, 1] }
+// 反向对照：判定「响应里的 id 是否属别的租户」还需注入的其它租户（C）作无关集
+const otherTenants = { [TA]: TENANTS.filter((t) => t !== TA), [TB]: TENANTS.filter((t) => t !== TB) }
 
 function classifyId(table, id, tenant) {
   const s = idSet[table]
   if (!s) return 'unknown'
-  for (const t of [20, 21, 1]) if (s[t]?.has(String(id))) return t === tenant ? 'own' : `FOREIGN:${t}`
+  for (const t of TENANTS) if (s[t]?.has(String(id))) return t === tenant ? 'own' : `FOREIGN:${t}`
   return 'unknown'
 }
 
@@ -54,7 +68,7 @@ function extractIds(res, resource) {
 async function warmup() {
   const warm = []
   for (let i = 0; i < CONC * 2; i++) {
-    const t = i % 2 === 0 ? 20 : 21
+    const t = i % 2 === 0 ? TA : TB
     const r = RESOURCES[i % RESOURCES.length]
     warm.push(api('GET', r.list, { token: subj[t].token }))
   }
@@ -66,8 +80,8 @@ async function warmup() {
 async function concurrentSweep() {
   const tasks = []
   for (let i = 0; i < N; i++) {
-    const tenant = i % 2 === 0 ? 20 : 21
-    const other = tenant === 20 ? 21 : 20
+    const tenant = i % 2 === 0 ? TA : TB
+    const other = tenant === TA ? TB : TA
     const r = RESOURCES[i % RESOURCES.length]
     const tok = subj[tenant].token
     const mode = i % 3 // 0,1=列表 2=按 id 读
@@ -83,7 +97,6 @@ async function concurrentSweep() {
   const t0 = Date.now()
   const results = await Promise.all(tasks.map((t) => t.p))
   const wall = Date.now() - t0
-  const done = results.map((r) => Date.now() - t0)
   const ev = []
   let leaked = 0, nonOk = 0, checked = 0
   for (let k = 0; k < tasks.length; k++) {
@@ -91,7 +104,6 @@ async function concurrentSweep() {
     if (res.status !== 200) { nonOk++; continue }
     const ids = extractIds(res, t.r)
     checked += ids.length
-    // ① 响应自述 tenant_id（若在体里）② 直连 DB 的 id→租户 归属
     let selfTenant = null
     const obj = res.json?.data?.items?.[0] ?? res.json?.data
     if (obj && typeof obj === 'object' && 'tenant_id' in obj) selfTenant = obj.tenant_id
@@ -106,7 +118,6 @@ async function concurrentSweep() {
     }
   }
   const pass = judgeLeak(leaked)
-  // 交错可核性读数：若有 K 个响应在「第 1 个响应到达」之前就已经在飞（并发窗口），说明请求确实重叠
   const msList = results.map((r) => r.ms)
   const firstDone = Math.min(...msList)
   const overlapped = msList.filter((m) => m > firstDone).length
@@ -122,9 +133,8 @@ async function concurrentSweep() {
 async function fatigueSwitch() {
   const seq = []
   const r = RESOURCES.find((x) => x.key === 'orders')
-  // 用同一 keep-alive 连接（fetch 默认复用 undici 连接池）
   for (let i = 0; i < 120; i++) {
-    const tenant = i % 2 === 0 ? 20 : 21
+    const tenant = i % 2 === 0 ? TA : TB
     seq.push({ i, tenant, p: api('GET', r.list, { token: subj[tenant].token }) })
   }
   const out = await Promise.all(seq.map((s) => s.p))
@@ -137,7 +147,7 @@ async function fatigueSwitch() {
     if (foreign.length) { bad++; ev.push({ i: t.i, tenant: t.tenant, status: res.status, foreign: foreign.slice(0, 5) }) }
   }
   const pass = FLIP ? bad > 0 : bad === 0
-  const detail = `交替 120 次（A↔B），异常响应 ${bad} 个`
+  const detail = `交替 120 次（A=${TA}↔B=${TB}），异常响应 ${bad} 个`
   writeFileSync(join(OUT, `probe${FLIP ? '-flip' : ''}-fatigue.json`), JSON.stringify({ bad, ev: ev.slice(0, 10) }, null, 2))
   if (pass) R.pass('P3-切换疲劳', '连续交替 A→B→A→B ≥60 次后仍不得串号', detail, ev.slice(0, 5))
   else R.fail('P3-切换疲劳', '连续交替 A→B→A→B ≥60 次后仍不得串号', '🔴 ' + detail, ev.slice(0, 5))
@@ -148,23 +158,22 @@ async function exceptionPaths() {
   const r = RESOURCES.find((x) => x.key === 'orders')
   const bigBody = 'x'.repeat(3 * 1024 * 1024)
   const cases = [
-    { id: 'X1-非法id', trigger: () => api('GET', '/api/admin/orders/not-a-uuid-@@@', { token: subj[20].token }) },
-    { id: 'X2-超大body', trigger: () => api('POST', '/api/admin/orders', { token: subj[20].token, raw: true, body: '{"remark":"' + bigBody + '"}', headers: { 'Content-Type': 'application/json' }, timeoutMs: 20000 }) },
-    { id: 'X3-删除中读', trigger: () => api('DELETE', '/api/admin/products/00000000000000000000000000000000', { token: subj[20].token }) },
+    { id: 'X1-非法id', trigger: () => api('GET', '/api/admin/orders/not-a-uuid-@@@', { token: subj[TA].token }) },
+    { id: 'X2-超大body', trigger: () => api('POST', '/api/admin/orders', { token: subj[TA].token, raw: true, body: '{"remark":"' + bigBody + '"}', headers: { 'Content-Type': 'application/json' }, timeoutMs: 20000 }) },
+    { id: 'X3-删除中读', trigger: () => api('DELETE', '/api/admin/products/00000000000000000000000000000000', { token: subj[TA].token }) },
     { id: 'X4-无token', trigger: () => api('GET', r.list, {}) },
-    { id: 'X5-篡改token', trigger: () => api('GET', r.list, { token: subj[20].token.slice(0, -3) + 'xyz' }) },
+    { id: 'X5-篡改token', trigger: () => api('GET', r.list, { token: subj[TA].token.slice(0, -3) + 'xyz' }) },
   ]
   const ev = []
   let bad = 0
   for (const c of cases) {
     const trig = await c.trigger()
-    // 紧接着用另一租户(B=21)发同类请求 ⇒ 不得继承 20 的租户上下文
-    const after = await api('GET', r.list, { token: subj[21].token })
+    const after = await api('GET', r.list, { token: subj[TB].token })
     const ids = after.status === 200 ? extractIds(after, r) : []
-    const foreign = ids.filter((id) => classifyId(r.table, id, 21).startsWith('FOREIGN'))
+    const foreign = ids.filter((id) => classifyId(r.table, id, TB).startsWith('FOREIGN'))
     const ok = (after.status === 200 && foreign.length === 0) || after.status === 401 || after.status === 403
     if (!ok) bad++
-    ev.push({ case: c.id, triggerStatus: trig.status, triggerHead: trig.text.slice(0, 120), afterStatus: after.status, afterTenant: 21, foreign: foreign.slice(0, 5), idsSample: ids.slice(0, 3) })
+    ev.push({ case: c.id, triggerStatus: trig.status, triggerHead: trig.text.slice(0, 120), afterStatus: after.status, afterTenant: TB, foreign: foreign.slice(0, 5), idsSample: ids.slice(0, 3) })
   }
   const pass = FLIP ? bad > 0 : bad === 0
   writeFileSync(join(OUT, `probe${FLIP ? '-flip' : ''}-exception.json`), JSON.stringify(ev, null, 2))
@@ -179,8 +188,8 @@ async function crossReadConcurrent() {
   const tasks = []; const ev0 = []
   for (let i = 0; i < 40; i++) {
     const r = pairs[i % pairs.length]
-    const attacker = i % 2 === 0 ? 20 : 21
-    const victim = attacker === 20 ? 21 : 20
+    const attacker = i % 2 === 0 ? TA : TB
+    const victim = attacker === TA ? TB : TA
     const vids = [...idSet[r.table][victim]]
     if (!vids.length) continue
     const vid = vids[i % vids.length]
@@ -222,3 +231,4 @@ async function crossReadRes() { await crossReadConcurrent() }
 const sum = R.summary()
 log(`=== probe 读数：pass=${sum.pass} fail=${sum.fail} skip=${sum.skip} total=${sum.total} ===`)
 writeFileSync(join(OUT, `probe${FLIP ? '-flip' : ''}-summary.json`), JSON.stringify({ flip: FLIP, n: N, conc: CONC, ...sum, sweep: s1 }, null, 2))
+if (sum.fail > 0) process.exitCode = 1
