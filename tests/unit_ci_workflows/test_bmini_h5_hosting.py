@@ -1026,6 +1026,16 @@ def test_every_public_proxy_prefix_has_a_live_probe() -> None:
             continue
         if f'fetch "${{BASE}}${{{var}}}"' not in text:
             problems.append(f"{prefix}：{var} 没被真的请求（写了不用 = 空断言）")
+            continue
+        # 变量真的被请求**还不够** —— 把手改 `O_PROBE=""`（或写成 `O_PROBE="/"`）时上面的
+        # `fetch` 那一行**一字不动**，而探针变成「请求根路径」⇒ 与根页同哈希 ⇒ 看似判红、
+        # 实际判的是**另一个对象**（判据面因此失守）。⇒ 形状也必须判：`<前缀><非空短码段>`。
+        rest = probe[len(prefix):]
+        if not rest or rest.startswith("/"):
+            problems.append(
+                f"{prefix}：{var} 的形状不是 `{prefix}<短码段>`（实为 `{probe}`）"
+                "—— 探针指向了前缀本身/别处（判据会看着红、实际判的是另一个对象）"
+            )
     assert problems == [], (
         "有公开代理前缀没有发布腿活体探针（登记了前缀 ≠ 线上有人探它）：\n  - " + "\n  - ".join(problems)
     )
