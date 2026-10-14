@@ -44,23 +44,6 @@ export function dataOr(value) {
 }
 
 /**
- * 部位对象上**不是规格**的键（服务端给的行标识 / 机台自己的裁高块 / 两屏各自的编排字段）。
- *
- * <p>报工屏的「本部位生产信息」按**这份黑名单之外**的键渲染 ⇒ 服务端将来给 `positions[]`
- * 追加新规格键时，**前端不用同批改**（这正是 issue #6901 要治的「加了一个字段，两屏都要改」）。
- * 黑名单是**闭集**：写在这里的每一个键都必须能说出「它为什么不是工人要看的规格」。</p>
- */
-export const PARAMETER_KEYS = new Set([
-  // 行标识 / 部位名（已在标题行展示）
-  'order_item_id', 'position_kind', 'position_name',
-  // 机台屏的裁高块（与本模块的规格无关）
-  'rounded', 'rounding', 'hits', 'misses', 'missing', 'missing_reason',
-  'base', 'cutting_height', 'brand', 'scanned',
-  // 两屏各自已单独渲染的两件事实（不重复上屏：同一屏同一事实只出现一次）
-  'remark', 'position_remark', 'operations',
-])
-
-/**
  * 一个规格键的展示口径。
  *
  * @typedef {object} PositionSpecKey
@@ -78,6 +61,7 @@ export const POSITION_SPEC_KEYS = [
   { key: 'color_name', label: '颜色' },
   { key: 'door_width', label: '门幅' },
   { key: 'selling_method', label: '售卖方式' },
+  { key: 'unit', label: '数量单位' },
   // ── 组 2 规格尺寸 ──
   { key: 'width', label: '宽', unit: '米', format: 'm' },
   { key: 'height', label: '高', unit: '米', format: 'm' },
@@ -106,6 +90,8 @@ export const POSITION_SPEC_KEYS = [
   { key: 'batch_no', label: '批号' },
   { key: 'batch_meters', label: '指派米数', unit: '米', format: 'm' },
   { key: 'component_role', label: '组件' },
+  // ── 组 6 部位备注（issue #5685；机台面用 `position_remark` 这个键名，本表按扫码面口径登记）──
+  { key: 'remark', label: '部位备注' },
 ]
 
 /** `m` 是**机器精度**（三位小数）的别名 —— 机台屏的既有读数，不得改成两位。 */
@@ -132,7 +118,13 @@ export function formatSpecValue(value, format) {
 /**
  * 一个部位 → **报工屏**的行（缺值**不渲染**：整行不出现 ⇒ 工人手机上不摆空占位）。
  *
- * <p>键集 = 服务端 `set_overview.positions[]` 的规格键（见 {@link PARAMETER_KEYS} 的闭集黑名单）。</p>
+ * <p>键集 = **本表**（{@link POSITION_SPEC_KEYS}，白名单驱动）—— 服务端 `set_overview.positions[]`
+ * 里本表没登记的键**不上屏**：上屏得给它一个人话标签，而「不知道它的人话名」时只能印原始键名
+ * ⇒ 内部标识上工人屏（`migao-dev-flow` §31 P3 明令禁止）。</p>
+ *
+ * <p>🔴 <b>但「没登记」不会静默漏掉</b>：服务端给 `positions[]` 追加新规格键而本表没跟上 ⇒
+ * 判据**变红**（后端 `backend/admin-api/src/test/java/com/migao/admin/service/PositionSpecFieldsSurfacesTest.java`
+ * 拿**真源**的键集逐键比对本表 ⇒ 未登记即红）。这是本单要治的「加了一个字段，某一屏静默缺失」的收口。</p>
  *
  * @param {object} position 服务端下发的部位对象（snake_case 键）
  * @returns {{key: string, label: string, text: string}[]}
@@ -150,9 +142,6 @@ export function specRows(position) {
   // —— 上屏内部键名违反产品口径（`migao-dev-flow` §31 P3 不摆内部标识）。
   return rows
 }
-
-/** 键 → 口径（供将来消费方按 key 取标签；`machine.mjs::detailRows` 用 {@link POSITION_SPEC_KEYS}）。 */
-export const specOf = (key) => POSITION_SPEC_KEYS.find((spec) => spec.key === key) ?? null
 
 /**
  * 裁高值取整位数（服务端 `rounding.digits`；缺 ⇒ 三位小数 —— 机器屏口径）。
