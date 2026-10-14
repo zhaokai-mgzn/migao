@@ -13,8 +13,15 @@
 - PUT    /api/admin/orders/{id}/status 更新订单状态
 
 订单状态合法值：pending / confirmed / producing / shipped / completed / cancelled
+
+🔴 表单路径必填（issue #5840，2026-10-01 用户裁定）：`customerAddress` / `logisticsType` /
+`logisticsCompany` 三项在 `POST /api/admin/orders` 上**必填**（闸门在
+`backend/admin-api/src/main/java/com/migao/admin/controller/OrderController.java` 的
+`requireFormOnlyFields`）—— 本文件的订单载荷**必须**带齐，否则本文件 7 条用例**恒红**
+（2026-10-14 环境重建轮实测：7 failed，逐条 422「常用物流/快递不能为空」）。
 """
 
+# case_ids: OR-006
 import time
 import uuid
 from datetime import datetime, timedelta
@@ -112,8 +119,11 @@ def _build_order_payload(
         "customerPhone": customer_phone,
         "items": [item],
     }
+    # #5840：表单路径三项**必填**（客户地址 / 常用物流 / 常用物流公司）—— 缺一即 422
+    payload["customerAddress"] = "上海市浦东新区张江高科技园区"
+    payload["logisticsType"] = "express"
+    payload["logisticsCompany"] = "顺丰速运"
     if not minimal:
-        payload["customerAddress"] = "上海市浦东新区张江高科技园区"
         payload["remark"] = f"smoke-test-{suffix}"
     return payload
 
@@ -160,11 +170,32 @@ class TestOrderCreation:
             }
 
     def test_create_order_minimal(self, authed_admin_client: SmokeTestClient):
-        """最简订单（最少必填字段）"""
+        """最简订单（只带必填：customerName / customerPhone / items + 表单三项；不带 remark）"""
         payload = _build_order_payload(minimal=True)
-        # 仅保留必填：customerName / customerPhone / items
         order = _create_order(authed_admin_client, payload)
         assert order.get("id"), f"最简订单创建未返回 id: {order}"
+
+    def test_create_order_missing_form_required_fields_rejected(
+        self, authed_admin_client: SmokeTestClient
+    ):
+        """#5840 的**负控**：表单路径必填缺项 ⇒ 422 且**逐条具名**缺哪个字段。
+
+        为什么要有这条：上面的载荷一旦漂移（少带 logisticsType / logisticsCompany），
+        表现是**整批 422**（看起来像产品坏了），而真因是判据侧载荷过期。
+        本条把「必填闸门真的在」钉住 —— 它若被回退成静默放行，这里当场红。
+        """
+        payload = _build_order_payload()
+        payload.pop("logisticsType")
+        payload.pop("logisticsCompany")
+        resp = authed_admin_client.post("/api/admin/orders", json=payload)
+        assert resp.status_code == 422, (
+            f"缺物流两项应被 422 拒绝，实得 {resp.status_code}: {resp.text[:300]}"
+        )
+        details = (resp.json().get("error") or {}).get("details") or []
+        fields = {d.get("field") for d in details}
+        assert {"logisticsType", "logisticsCompany"} <= fields, (
+            f"422 应逐条具名缺哪个字段，实得 details={details}"
+        )
 
     def test_create_order_invalid(self, authed_admin_client: SmokeTestClient):
         """无效数据创建订单应被拒绝"""

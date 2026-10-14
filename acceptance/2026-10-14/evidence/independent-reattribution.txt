@@ -1,0 +1,23 @@
+# 主会话独立复核（推翻子代理初判的 4 条）—— 判别证据
+
+## R1 韩褶→上车布 的 position='布帘' 是有意设计（#4962）
+178-    private static final String[][] CRAFT_RULES = {
+179-            {"韩褶", "NULL", "insert", "韩褶", "三边"},
+180:            // 🔴 issue #4962（加回部位维）：`V71` 的字面量种子里 `韩褶 → 上车布` 就是 `position='布帘'`
+181-            // （26 条里**唯一**一条带部位限定的）—— 开租播种必须与迁移链终态**同值**
+182-            // （迁移链侧由 `V108__restore_route_rule_positions.sql` 写回；本处是同一份种子的 Java 路径）。
+183-            // ⚠️ 历史（照实留痕）：issue #4937 / O2 曾把它改成 `NULL`（部位维退场），本单把它改回来。
+
+## R2 orders.shipped_at 就是发货事实
+backend/admin-api/src/main/java/com/migao/admin/service/AutoCompleteShippedScanService.java:27: * <h2>判定锚点 = {@code orders.shipped_at}（V148）</h2>
+backend/admin-api/src/main/java/com/migao/admin/service/AutoCompleteShippedScanService.java:30: * {@code order_logistics.shipped_at} 只在**新建物流行**时写（{@code OrderLogisticsWriter} 的 insert 分支），
+backend/admin-api/src/main/java/com/migao/admin/service/AutoCompleteShippedScanService.java:32: * {@code order_shipments.shipped_at} 更差（全表 9 行、非空 1 行，只覆盖工人路）。
+backend/admin-api/src/main/java/com/migao/admin/service/AutoCompleteShippedScanService.java:36: * {@code WHERE tenant_id=? AND status='shipped' AND shipped_at <= 死线 ... RETURNING id}。
+backend/admin-api/src/main/java/com/migao/admin/service/DailyBriefingService.java:191:                "shipped_at", "sale_amount", "cost_amount"));
+
+## R3 入驻种默认商品分类（#6295）在位：
+32 | 窗帘成品 | 2026-10-14 20:26:32.414756+08
+
+## R4 UI 06/07 失败响应归因（我本机实测 + 已并入 spec.mjs 账本）：
+[http] 401 POST http://localhost:8080/api/auth/refresh
+[http] 401 GET http://localhost:8080/api/auth/me

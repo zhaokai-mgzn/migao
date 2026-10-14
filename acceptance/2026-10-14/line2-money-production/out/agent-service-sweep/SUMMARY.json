@@ -1,0 +1,83 @@
+{
+  "ranAt": {
+    "cst": "2026-10-14 20:35:58 +08",
+    "utc": "2026-10-14T12:35:58.224Z"
+  },
+  "buildPoints": {
+    "aiAgent": {
+      "worktree": "/Users/guangzhen.zk/ai native/migao",
+      "port": 8001,
+      "sha": "90192bcac",
+      "shaFull": "90192bcac82b1d276d2793986ca9c64f47e47d16",
+      "subject": "chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)",
+      "commitTime": "2026-10-14T11:52:37Z",
+      "dirty": "M acceptance/2026-10-03/piecework-wage-sweep/out/run.log\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U1-login-view.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U2-bad-pin.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U3-logged-in.png\n M frontend/admin-web/package-lock.json\n?? acceptance/2026-10-03/piecework-wage-sweep/out/line2-repro-m8m9.json\n?? acceptance/2026-10-14/",
+      "procStart": "三 10月/14 20:34:43 2026",
+      "observedAt": "2026-10-14 20:35:58 +08"
+    },
+    "adminApi": {
+      "worktree": "/Users/guangzhen.zk/migao-wt/main-live",
+      "port": 8080,
+      "sha": "unknown",
+      "shaFull": "unknown",
+      "subject": "unknown",
+      "commitTime": "unknown",
+      "dirty": "unknown",
+      "procStart": "三 10月/14 20:24:44 2026",
+      "observedAt": "2026-10-14 20:35:58 +08"
+    }
+  },
+  "runs": [
+    {
+      "file": "p0-service-auth.mjs",
+      "ok": true,
+      "last": "2026-10-14 20:35:46 +08 ===== 判据组 A [MODE=debugfalse] 结束：pass=13 fail=5 skip=0 ====="
+    },
+    {
+      "file": "p1-tenant-isolation.mjs",
+      "ok": true,
+      "last": "}"
+    },
+    {
+      "file": "p2-knowledge-cards.mjs",
+      "ok": true,
+      "last": "{\"group\":\"C\",\"summary\":{\"file\":\"probe-knowledge-cards.json\",\"pass\":12,\"fail\":0,\"skip\":0,\"total\":12},\"cardIds\":[\"d08edcabf1c08f671dd91352ff1fe5c2\"],\"tag\":\"cmv83fddk\"}"
+    },
+    {
+      "file": "p3-knowledge-candidates.mjs",
+      "ok": true,
+      "last": "{\"group\":\"D\",\"summary\":{\"file\":\"probe-knowledge-candidates.json\",\"pass\":14,\"fail\":0,\"skip\":0,\"total\":14},\"candIds\":[{\"id\":\"l1canddmv83feif0\",\"kind\":\"adopt\"},{\"id\":\"l1canddmv83feif1\",\"kind\":\"reject\"},{\"id\":\"l1canddmv83feif2\",\"kind\":\"edited\"}],\"tag\":\"dmv83feif\"}"
+    },
+    {
+      "file": "p4-knowledge-templates.mjs",
+      "ok": true,
+      "last": "{\"group\":\"E\",\"summary\":{\"file\":\"probe-knowledge-templates.json\",\"pass\":6,\"fail\":0,\"skip\":0,\"total\":6},\"templates\":[\"curtain\"]}"
+    },
+    {
+      "file": "p5-agent-sessions.mjs",
+      "ok": false,
+      "error": "Command failed: node /Users/guangzhen.zk/ai native/migao/acceptance/2026-10-03/agent-service-sweep/harness/p5-agent-sessions.mjs\nERROR:  insert or update on table \"agent_employees\" violates foreign key constraint \"agent_employees_tenant_id_fkey\"\n描述:  Key (tenant_id)=(999999) is not present in table \"tenants\".\nnode:internal/errors:985\n  const err = new Error(message);\n              ^\n\nError: Command failed: psql -h pgm-bp1p7w92k81ob5to-pub.pg.rds.aliyuncs.com -p 5432 -U migao_admin -d ai_customer"
+    },
+    {
+      "file": "p6-redproof.mjs",
+      "ok": false,
+      "error": "Command failed: node /Users/guangzhen.zk/ai native/migao/acceptance/2026-10-03/agent-service-sweep/harness/p6-redproof.mjs\nERROR:  insert or update on table \"agent_sessions\" violates foreign key constraint \"agent_sessions_tenant_id_fkey\"\n描述:  Key (tenant_id)=(999999) is not present in table \"tenants\".\nnode:internal/errors:985\n  const err = new Error(message);\n              ^\n\nError: Command failed: psql -h pgm-bp1p7w92k81ob5to-pub.pg.rds.aliyuncs.com -p 5432 -U migao_admin -d ai_customer_service"
+    },
+    {
+      "file": "p7-residue.mjs",
+      "ok": false,
+      "error": "Command failed: node /Users/guangzhen.zk/ai native/migao/acceptance/2026-10-03/agent-service-sweep/harness/p7-residue.mjs\nERROR:  insert or update on table \"sessions\" violates foreign key constraint \"sessions_tenant_id_fkey\"\n描述:  Key (tenant_id)=(20) is not present in table \"tenants\".\nnode:internal/errors:985\n  const err = new Error(message);\n              ^\n\nError: Command failed: psql -h pgm-bp1p7w92k81ob5to-pub.pg.rds.aliyuncs.com -p 5432 -U migao_admin -d ai_customer_service -t -A -v ON_ERRO"
+    }
+  ],
+  "residueAfter": {
+    "counts": {
+      "sessions": 0,
+      "sessionMessages": 0,
+      "agentSessions": 2,
+      "knowledgeCards": 4,
+      "knowledgeCandidates": 4
+    },
+    "total": 10
+  },
+  "note": "DEBUG=true 对照批需另起服务：DEBUG=true nohup … uvicorn … --port 8001，然后 MODE=debugtrue node p0-service-auth.mjs"
+}

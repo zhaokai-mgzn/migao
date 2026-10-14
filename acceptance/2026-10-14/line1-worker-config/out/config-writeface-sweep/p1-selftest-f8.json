@@ -1,0 +1,69 @@
+[
+  {
+    "id": "W0-00",
+    "name": "构建点自证（本包全部读数对应的部署点）",
+    "status": "pass",
+    "detail": "main-live HEAD=90192bcac（chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)）；编译产物 mtime=2026-10-14 18:12:05；Java 进程启动=三 10月/14 20:24:44 2026",
+    "evidence": [
+      "git -C /Users/guangzhen.zk/ai native/migao rev-parse --short HEAD",
+      "git -C /Users/guangzhen.zk/ai native/migao log -1 --format='%H %ci %s'",
+      "git -C /Users/guangzhen.zk/ai native/migao merge-base --is-ancestor 1d1fe5e55 HEAD  ⇒ hasFix=true",
+      "stat -f '%Sm' -t '%F %T' .../ProductionOperationCommandService.class ⇒ 2026-10-14 18:12:05",
+      "ps -eo lstart,command | grep AdminApiApplication ⇒ 三 10月/14 20:24:44 2026"
+    ],
+    "at": "2026-10-14T12:34:24.607Z"
+  },
+  {
+    "id": "W0-00b",
+    "name": "构建点**含** #6102 修复 ⇒ F8 的「静默改价」形态预期**已修**（判决由 W1-03 给出）",
+    "status": "pass",
+    "detail": "merge-base --is-ancestor 1d1fe5e55 HEAD ⇒ YES（构建点 90192bcac）",
+    "evidence": [],
+    "at": "2026-10-14T12:34:24.607Z"
+  },
+  {
+    "id": "W0-01",
+    "name": "注入式红证：判据能看见「外部直连 RDS 的改动」（证明 diff 有判别力）",
+    "status": "pass",
+    "detail": "手工 update production_operations.id=aa9fdbf0b6df28629840ed799e1c3c30（logo条-布）unit_price 0.60 → 0.1234；diff 命中=true；判据越界=[\"production_operations.unit_price\"]",
+    "evidence": [
+      "SQL: update production_operations set unit_price=0.1234 where id='aa9fdbf0b6df28629840ed799e1c3c30'",
+      "字段级 diff: production_operations.aa9fdbf0b6df28629840ed799e1c3c30.unit_price: 0.6 → 0.12 [field]"
+    ],
+    "at": "2026-10-14T12:34:25.183Z"
+  },
+  {
+    "id": "W0-02",
+    "name": "注入还原自证：还原后逐字段 == 注入前（主面残留 = 0）",
+    "status": "pass",
+    "detail": "victim=aa9fdbf0b6df28629840ed799e1c3c30；还原动作=1（no-op=0）；主面残留=0",
+    "evidence": [
+      "还原 SQL: unit_price=0.6[affected=1]"
+    ],
+    "at": "2026-10-14T12:34:25.690Z"
+  },
+  {
+    "id": "W1-L0",
+    "name": "清场：清理历史残留的同前缀探针对象（此前被中断的运行）",
+    "status": "pass",
+    "detail": "清理 0 条：（无）；前缀存活矩阵行清空读数=alive=0",
+    "evidence": [],
+    "at": "2026-10-14T12:34:26.294Z"
+  },
+  {
+    "id": "W1-00",
+    "name": "自建探针工序",
+    "status": "fail",
+    "detail": "HTTP 422；resp={\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"新增工序未通过校验（1 条问题）\",\"details\":[{\"field\":\"positions\",\"message\":\"未知部位「通用」：只接受矩阵里已有的部位（布帘/纱帘/帘头/布料）或基线三部位（布帘/纱帘/帘头）\"}]},\"requestId\":\"req_6a5c7ef08dbf4640\",\"timestamp\":1791981266,\"suggestion\":\"把「适用部位」改成矩阵里已有的部位（或基线三部位）后重试\"}",
+    "evidence": [],
+    "at": "2026-10-14T12:34:26.585Z"
+  },
+  {
+    "id": "W1-99",
+    "name": "零残留读数：「写面横切」前缀对象存活数 = 0",
+    "status": "pass",
+    "detail": "存活明细=0（ops/pos/routes/rules/fees 全部 deleted=1 或不存在）",
+    "evidence": [],
+    "at": "2026-10-14T12:34:27.062Z"
+  }
+]

@@ -1,0 +1,18 @@
+{
+  "at": {
+    "cst": "2026-10-14 20:30:38 +08",
+    "utc": "2026-10-14T12:30:38.038Z"
+  },
+  "summary": {
+    "pass": 9,
+    "fail": 9,
+    "skip": 1,
+    "total": 19
+  },
+  "probe": {
+    "skuId": "2110347383571410946",
+    "productId": "ed4da11632f5f9aa7fbd658285f1cb85",
+    "draftId": null,
+    "draftB": null
+  }
+}

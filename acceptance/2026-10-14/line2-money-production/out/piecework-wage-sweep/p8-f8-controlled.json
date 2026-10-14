@@ -1,0 +1,223 @@
+{
+  "at": "2026-10-14T12:31:11.473Z",
+  "run": "071279",
+  "logical": "定型",
+  "worker": "工资验收工人丁071279",
+  "payload": {
+    "positions": [
+      {
+        "position_name": "布帘",
+        "operations": [
+          {
+            "seq": 1,
+            "operation": "定型-布",
+            "group": "后道",
+            "unit": "米",
+            "qty": 10,
+            "unit_price": null,
+            "factor": 1,
+            "is_start_marker": false
+          }
+        ]
+      }
+    ]
+  },
+  "libraryRow": {
+    "id": "b04b165e2644bf9fab45a047cdc76baf",
+    "name": "定型-布",
+    "unit_price": "0.40",
+    "scope": "position",
+    "position": "布帘",
+    "status": "active"
+  },
+  "activeRowsBefore": [
+    {
+      "id": "ef54d2a6bc45e99f74520f15d6b149b5",
+      "position": "布帘",
+      "unit_price": "0.40",
+      "applicable": true,
+      "deleted": 0
+    },
+    {
+      "id": "5c48ba17bc4facfe6483d09f903ecbb0",
+      "position": "布料",
+      "unit_price": null,
+      "applicable": false,
+      "deleted": 0
+    },
+    {
+      "id": "e7ae6c21a92c87a4689c48a4349f22c2",
+      "position": "帘头",
+      "unit_price": "0.40",
+      "applicable": true,
+      "deleted": 0
+    },
+    {
+      "id": "8464a4770c7e5e072a96139625d53dcd",
+      "position": "纱帘",
+      "unit_price": null,
+      "applicable": false,
+      "deleted": 0
+    }
+  ],
+  "orderA": {
+    "tag": "X",
+    "orderId": "ea29d6d4ad106419117ed66fff10dc25",
+    "catId": "edfad17f3c3c0a4908632a900224bdd3",
+    "productId": "521c93b5108691825ab04f9771538a1e"
+  },
+  "genA": 200,
+  "instantiate1": {
+    "http": 200,
+    "body": "{\"success\":true,\"data\":{\"qr_token\":\"9c1f642a266f46a9b1dbce00e9c7b11e\",\"operation_count\":1},\"requestId\":\"req_e8c413b4240f4568\",\"timestamp\":1791981074}"
+  },
+  "instA": [
+    {
+      "id": "3d837cd20dbaea891dab3b63ff7bbe9f",
+      "operation_name": "定型-布",
+      "unit_price": null,
+      "qty": "10.00",
+      "seq": 1,
+      "processing_order_id": "9b55124369a9f3d11fc957b3517eca90",
+      "processing_order_no": "JG-20261014-8432"
+    }
+  ],
+  "X": null,
+  "put": {
+    "http": 200,
+    "sentScope": "position",
+    "body": "{\"success\":true,\"data\":{\"id\":\"b04b165e2644bf9fab45a047cdc76baf\",\"name\":\"定型\",\"library_name\":\"定型-布\",\"group\":\"后道\",\"position\":\"布帘\",\"scope\":\"position\",\"unit\":\"米\",\"unit_price\":0.40,\"is_must_finish\":false,\"is_start_marker\":false,\"source\":\"占位待确认\",\"qty_rule_missing\":false},\"requestId\":\"req_d847f6c7101c48e7\",\"timestamp\":1791981074}"
+  },
+  "activeRowsAfter": [
+    {
+      "id": "ef54d2a6bc45e99f74520f15d6b149b5",
+      "position": "布帘",
+      "unit_price": "0.40",
+      "applicable": true,
+      "deleted": 0
+    },
+    {
+      "id": "5c48ba17bc4facfe6483d09f903ecbb0",
+      "position": "布料",
+      "unit_price": null,
+      "applicable": false,
+      "deleted": 0
+    },
+    {
+      "id": "e7ae6c21a92c87a4689c48a4349f22c2",
+      "position": "帘头",
+      "unit_price": "0.40",
+      "applicable": true,
+      "deleted": 0
+    },
+    {
+      "id": "8464a4770c7e5e072a96139625d53dcd",
+      "position": "纱帘",
+      "unit_price": null,
+      "applicable": false,
+      "deleted": 0
+    }
+  ],
+  "newPositionRows": [],
+  "orderB": {
+    "tag": "Y",
+    "orderId": "dddc66f4e6b30276ded102d6ea5272e1",
+    "catId": "87d9784e83b5b6365c938c4d63f3c57c",
+    "productId": "e6d48cd71087f6657852f4079ebff479"
+  },
+  "genB": 200,
+  "instantiate2": {
+    "http": 200,
+    "body": "{\"success\":true,\"data\":{\"qr_token\":\"000b47b9fb3449e5ba713f2c94892d1f\",\"operation_count\":1},\"requestId\":\"req_970014f0b9454866\",\"timestamp\":1791981077}"
+  },
+  "instB": [
+    {
+      "id": "6ec716cdb3ad27a7ecad9a90a054b090",
+      "operation_name": "定型-布",
+      "unit_price": null,
+      "qty": "10.00",
+      "seq": 1,
+      "processing_order_id": "a993fe703ab5c18cf61f9f271dc1a7f2",
+      "processing_order_no": "JG-20261014-8433"
+    }
+  ],
+  "Y": null,
+  "reportA": {
+    "http": 200,
+    "data": {
+      "operation_id": "3d837cd20dbaea891dab3b63ff7bbe9f",
+      "done_qty": 3,
+      "status": "done",
+      "order_completed": false,
+      "worker_name": "工资验收工人丁071279",
+      "identity_source": "client_body"
+    }
+  },
+  "logA": {
+    "operation_name": "定型-布",
+    "unit_price": null,
+    "price_state": "unpriced",
+    "qualified_qty": "3.00"
+  },
+  "pieceworkA": {
+    "total": 0,
+    "per_worker": {},
+    "per_operation": [],
+    "per_position": [],
+    "per_set": [],
+    "unpriced": {
+      "qty": 3,
+      "operations": [
+        {
+          "operation": "定型-布",
+          "logical_name": "定型",
+          "qty": 3
+        }
+      ],
+      "hint": "以下工序**未定价**（≠ ¥0.00，已从计件合计中排除）：请在「企业基础设置 → 工序与部位单价」的部位价目矩阵中为对应「工序 × 部位」格填入单价；未定价期间工人可照常报工，但不会产生计件金额。"
+    }
+  },
+  "reportB": {
+    "http": 200,
+    "data": {
+      "operation_id": "6ec716cdb3ad27a7ecad9a90a054b090",
+      "done_qty": 2,
+      "status": "done",
+      "order_completed": false,
+      "worker_name": "工资验收工人丁071279",
+      "identity_source": "client_body"
+    }
+  },
+  "logB": {
+    "operation_name": "定型-布",
+    "unit_price": null,
+    "price_state": "unpriced",
+    "qualified_qty": "2.00"
+  },
+  "pieceworkB": {
+    "total": 0,
+    "per_worker": {},
+    "per_operation": [],
+    "per_position": [],
+    "per_set": [],
+    "unpriced": {
+      "qty": 2,
+      "operations": [
+        {
+          "operation": "定型-布",
+          "logical_name": "定型",
+          "qty": 2
+        }
+      ],
+      "hint": "以下工序**未定价**（≠ ¥0.00，已从计件合计中排除）：请在「企业基础设置 → 工序与部位单价」的部位价目矩阵中为对应「工序 × 部位」格填入单价；未定价期间工人可照常报工，但不会产生计件金额。"
+    }
+  },
+  "wageImpact": {
+    "保存后实例单价": null,
+    "保存后报工快照价": null,
+    "保存后价态": "unpriced",
+    "保存后该工序计件金额": null,
+    "保存后未定价数量": 2
+  },
+  "verdict": "未复现：一次普通保存未改写取价来源（实例仍为未定价）"
+}

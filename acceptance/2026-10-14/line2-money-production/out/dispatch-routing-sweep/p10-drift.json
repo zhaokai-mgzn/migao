@@ -1,0 +1,42 @@
+[
+  {
+    "id": "DR-01",
+    "name": "工序库零漂移",
+    "status": "fail",
+    "detail": "新增工序 写面横切工序写面267110",
+    "evidence": [],
+    "at": "2026-10-14T12:34:29.561Z"
+  },
+  {
+    "id": "DR-02",
+    "name": "活跃路线 2 条与基线逐字一致（含默认标记、主线顺序、适用帘种）",
+    "status": "pass",
+    "detail": "[\"布料工序路线\",\"窗帘工序路线（默认）(默认)\"]",
+    "evidence": [],
+    "at": "2026-10-14T12:34:29.631Z"
+  },
+  {
+    "id": "DR-03",
+    "name": "适用条件零漂移",
+    "status": "fail",
+    "detail": "多出 option|加花边|insert|花边|三边|120|null ｜ 缺失 option|加花边|insert|花边|三边|120|布帘",
+    "evidence": [],
+    "at": "2026-10-14T12:34:29.751Z"
+  },
+  {
+    "id": "DR-04",
+    "name": "价目零漂移",
+    "status": "fail",
+    "detail": "多出 写面横切工序写面267110@布帘 ｜ 多出 打包@布料 ｜ 缺失 打包@布帘",
+    "evidence": [],
+    "at": "2026-10-14T12:34:29.837Z"
+  },
+  {
+    "id": "DR-05",
+    "name": "探针残留",
+    "status": "fail",
+    "detail": "{\"ops_alive\":0,\"routes_alive\":0,\"cloth_rows_alive\":29,\"rules_softdeleted\":2}",
+    "evidence": [],
+    "at": "2026-10-14T12:34:29.935Z"
+  }
+]

@@ -1,0 +1,21 @@
+{
+  "at": {
+    "cst": "2026-10-14 20:30:03 +08",
+    "utc": "2026-10-14T12:30:03.860Z"
+  },
+  "tenant": 32,
+  "catsBefore": [],
+  "catsAfter": [
+    {
+      "id": "df257ad497918feb7ba1fb37c8061c7e",
+      "name": "线B验收分类-mv837w29jumh",
+      "status": "active"
+    }
+  ],
+  "probeCategoryCreate": {
+    "requested": "线B验收分类-mv837w29jumh",
+    "status": 200,
+    "text": "{\"success\":true,\"data\":{\"id\":\"df257ad497918feb7ba1fb37c8061c7e\",\"name\":\"线B验收分类-mv837w29jumh\",\"level\":1,\"status\":\"active\",\"children\":[],\"createdAt\":\"2026-10-14 20:29:58\",\"updatedAt\":\"2026-10-14 20:29:58\",\"sort\":1},\"requestId\":\"req_79a2a71bb5b84102\",\"timestamp\":1791980999}",
+    "id": "df257ad497918feb7ba1fb37c8061c7e"
+  }
+}

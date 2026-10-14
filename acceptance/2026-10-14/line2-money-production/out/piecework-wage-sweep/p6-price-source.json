@@ -1,0 +1,107 @@
+{
+  "at": "2026-10-14T12:31:07.548Z",
+  "run": "067383",
+  "probe": "打包",
+  "injectedPrice": "3.33",
+  "activeRowsBefore": [
+    {
+      "id": "bba467f927974add7fb0e46bb1a443fe",
+      "position": "布帘",
+      "unit_price": null,
+      "applicable": true,
+      "deleted": 0
+    },
+    {
+      "id": "6470984cff309319da537ef540964bba",
+      "position": "布料",
+      "unit_price": null,
+      "applicable": true,
+      "deleted": 0
+    },
+    {
+      "id": "5ca49874bc7cd1f76be7468b0a2a0dec",
+      "position": "帘头",
+      "unit_price": null,
+      "applicable": true,
+      "deleted": 0
+    },
+    {
+      "id": "7e3d68561242623092e53f1c436b4d58",
+      "position": "纱帘",
+      "unit_price": null,
+      "applicable": true,
+      "deleted": 0
+    }
+  ],
+  "beforeVerdict": {
+    "br": 1,
+    "total": 4
+  },
+  "baselinePrices": {
+    "布帘": null,
+    "通用": null,
+    "布帘RowId": "bba467f927974add7fb0e46bb1a443fe"
+  },
+  "injected": {
+    "id": "bba467f927974add7fb0e46bb1a443fe",
+    "position": "布帘",
+    "unit_price": "3.33"
+  },
+  "readFaceAfterInject": [],
+  "probeOrder": {
+    "tag": "E",
+    "catId": "5deb770b2e8c0c8164eaa92c3c22edf0",
+    "productId": "88daff50228a431871c5d8479ed53c61",
+    "skuId": "2110347672856752129",
+    "orderId": "081066c51b0e7ae127b1779046b40702",
+    "poId": "7745545be6f5fdea9b7301724c221afa",
+    "poNo": "JG-20261014-8431"
+  },
+  "newInstance": [
+    {
+      "id": "8c67f6e36c3c952d9c0299670442f739",
+      "operation_name": "打包",
+      "unit_price": "3.33",
+      "qty": "1.00"
+    }
+  ],
+  "verdict": "未修（布帘列优先 ⇒ F8 取价口径可达）",
+  "verdictAt": "2026-10-14T12:31:10.611Z",
+  "restoredRows": [
+    {
+      "id": "bba467f927974add7fb0e46bb1a443fe",
+      "position": "布帘",
+      "unit_price": null
+    }
+  ],
+  "activeRowsAfter": [
+    {
+      "id": "bba467f927974add7fb0e46bb1a443fe",
+      "position": "布帘",
+      "unit_price": null,
+      "applicable": true,
+      "deleted": 0
+    },
+    {
+      "id": "6470984cff309319da537ef540964bba",
+      "position": "布料",
+      "unit_price": null,
+      "applicable": true,
+      "deleted": 0
+    },
+    {
+      "id": "5ca49874bc7cd1f76be7468b0a2a0dec",
+      "position": "帘头",
+      "unit_price": null,
+      "applicable": true,
+      "deleted": 0
+    },
+    {
+      "id": "7e3d68561242623092e53f1c436b4d58",
+      "position": "纱帘",
+      "unit_price": null,
+      "applicable": true,
+      "deleted": 0
+    }
+  ]
+}

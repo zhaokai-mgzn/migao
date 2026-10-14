@@ -1,0 +1,71 @@
+[
+  {
+    "id": "F0-1",
+    "name": "夹具：先建真实 AI 会话（:8001）作为转人工源",
+    "status": "fail",
+    "detail": "期望 HTTP 200 且有 session id ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: 转人工正路要求 ai_session_id 指向真实会话（FK 约束，见 PG 报错逐字）",
+      "HTTP/读数: {\"status\":401}",
+      "admin-api 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16",
+      "登录 A=tenant 32 / B=tenant undefined"
+    ],
+    "at": "2026-10-14 20:35:53 +08",
+    "atUtc": "2026-10-14T12:35:53.678Z"
+  },
+  {
+    "id": "F1-1",
+    "name": "转人工建会话 ⇒ 200 且有 id（初始 waiting）",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 data.id 非空且 status==\"waiting\" == 实测 [object Object]",
+    "evidence": [
+      "期望来源: AgentSessionService.createSessionForHandoff —— 初始 status=\"waiting\"",
+      "HTTP/读数: {\"status\":200,\"id\":\"04ef689d66fc7a15fcbb5673e018fc75\",\"s\":\"waiting\",\"body\":\"{\\\"success\\\":true,\\\"data\\\":{\\\"id\\\":\\\"04ef689d66fc7a15fcbb5673e018fc75\\\",\\\"customerId\\\":\\\"probe_line1_f_fmv83fhgn\\\",\\\"status\\\":\\\"waiting\\\",\\\"priority\\\":1,\\\"reason\\\":\\\"线②验收转人工-fmv83fhgn\\\",\\\"queuePosition\\\":0,\\\"messageCount\\\":1,\\\"startedAt\\\":\\\"2026-10-14T20:35:53.721793+08:00\\\",\\\"cre\"}",
+      "admin-api 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16",
+      "登录 A=tenant 32 / B=tenant undefined"
+    ],
+    "at": "2026-10-14 20:35:53 +08",
+    "atUtc": "2026-10-14T12:35:53.808Z"
+  },
+  {
+    "id": "F2-1",
+    "name": "转人工会话 DB 逐字段（tenant/customer/aiSession/status）",
+    "status": "fail",
+    "detail": "期望 tenant_id=32 ∧ customer_id/ai_session_id 与请求一致 ∧ status=waiting ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: 请求体是期望来源；TenantContext 决定 tenant_id（转人工不得跨租户）",
+      "HTTP/读数: {\"mismatches\":[{\"field\":\"ai_session_id\",\"got\":null}],\"row\":{\"id\":\"04ef689d66fc7a15fcbb5673e018fc75\",\"tenant_id\":32,\"customer_id\":\"probe_line1_f_fmv83fhgn\",\"ai_session_id\":null,\"status\":\"waiting\",\"employee_id\":null,\"ai_context_messages\":\"数组(1)\",\"started_at\":\"2026-10-14T20:35:53.721793+08:00\",\"deleted\":0}}",
+      "admin-api 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16",
+      "登录 A=tenant 32 / B=tenant undefined"
+    ],
+    "at": "2026-10-14 20:35:53 +08",
+    "atUtc": "2026-10-14T12:35:53.910Z"
+  },
+  {
+    "id": "F3-1",
+    "name": "工作台会话列表（本租户）能看到该转人工会话",
+    "status": "pass",
+    "detail": "期望 命中 1 条且 tenantId 一致 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: getSessionPage(..., tenantId=TenantContext) ⇒ 列表按租户过滤",
+      "HTTP/读数: {\"httpStatus\":200,\"total\":1,\"mine\":1}",
+      "admin-api 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16",
+      "登录 A=tenant 32 / B=tenant undefined"
+    ],
+    "at": "2026-10-14 20:35:54 +08",
+    "atUtc": "2026-10-14T12:35:54.026Z"
+  },
+  {
+    "id": "F3-2/F3-3",
+    "name": "跨租户工作台判据",
+    "status": "skip",
+    "detail": "租户 B 登录失败 ⇒ 无对照身份；记未覆盖",
+    "evidence": [],
+    "at": "2026-10-14 20:35:54 +08",
+    "atUtc": "2026-10-14T12:35:54.026Z"
+  }
+]

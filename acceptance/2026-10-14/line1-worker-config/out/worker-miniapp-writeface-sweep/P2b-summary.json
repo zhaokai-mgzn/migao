@@ -1,0 +1,17 @@
+{
+  "at": {
+    "cst": "2026-10-14 20:37:17 +08",
+    "utc": "2026-10-14T12:37:17.718Z"
+  },
+  "summary": {
+    "pass": 3,
+    "fail": 2,
+    "skip": 0,
+    "total": 5
+  },
+  "repro": {
+    "itemId": "laitmmv83h661da",
+    "token": "lamv83h661daffffffffffffffffffff",
+    "poId": "lapomv83h661da"
+  }
+}

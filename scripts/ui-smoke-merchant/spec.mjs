@@ -25,6 +25,9 @@ mkdirSync(join(OUT, 'screenshots'), { recursive: true })
 
 const results = []
 const failReasons = new Map()
+// 失败响应账本（本轮新增）：`console.error` 只说「401」不说是**谁**返回的 —— 没有 URL 就无法归因
+// （2026-10-14 实测：单看 console 文案分不清是 admin-api 还是 ai-agent，归因卡死）。
+const failedResponses = []
 
 // ────────────────────────── 结果分类（#6790 / AGENTS.md 铁律）──────────────────────────
 // 三态，**不许互相冒充**（issue #6790 判据 ③④）：
@@ -87,6 +90,7 @@ function journey(name, opts = {}) {
     const rec = { journey: name, pass: true, errors: [], notes: [], evidence: [], skipped: false, unconfigured: false, error_class: null }
     results.push(rec)
     const errs = []
+    const failedFrom = failedResponses.length
     page.removeAllListeners('console')
     page.removeAllListeners('pageerror')
     const onConsole = (msg) => {
@@ -98,6 +102,8 @@ function journey(name, opts = {}) {
     const done = async (ok, why, ev, errClass) => {
       page.removeListener('console', onConsole)
       page.removeListener('pageerror', onPageError)
+      // 把本旅程窗口内的**失败响应**（带 URL）并进错误清单，让 401 可归因（上述账本）
+      for (const f of [...new Set(failedResponses.slice(failedFrom))]) errs.push(`[http] ${f}`)
       // 分类优先于 pass：未配置 / 前置不满足**都不是**产品失败（#6790 判据 ③④）
       const klass = typeof errClass === 'string' && errClass
         ? errClass
@@ -1510,6 +1516,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true })
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const page = await ctx.newPage()
+  page.on('response', (r) => { if (r.status() >= 400) failedResponses.push(`${r.status()} ${r.request().method()} ${r.url()}`) })
 
   // 登录 + 会话保持（同一上下文内完成，保证后续旅程带登录态）
   await jrun('01-login', async (p) => {

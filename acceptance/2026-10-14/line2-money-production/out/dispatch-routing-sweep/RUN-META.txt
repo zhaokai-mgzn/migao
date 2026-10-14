@@ -1,0 +1,4 @@
+RUN_AT 2026-10-14 20:31:13 CST
+BUILD_SHA 90192bcac82b1d276d2793986ca9c64f47e47d16
+TENANT_ID 32
+NOTE harness ships no run-all.mjs; phases = p0 p1 p2 p3 p4 p4b p5 p6 p8 p9 p11 p10

@@ -1,0 +1,271 @@
+{
+  "line": "③ 售后退款 / 租户隔离 / 并发竞态（2026-10-14 环境重建轮）",
+  "buildpoint": {
+    "sha": "90192bcac82b1d276d2793986ca9c64f47e47d16",
+    "shaShort": "90192bcac",
+    "equals_origin_main": true,
+    "generatedAt": "2026-10-14 20:40:47 +08",
+    "note": "被测面 = 本机三件套 localhost 8080/8001/3001（**非**已部署面 api.migaozn.com）"
+  },
+  "api_base": "http://127.0.0.1:8080",
+  "tenant": 32,
+  "counts": {
+    "pass": 83,
+    "fail": 2,
+    "skip": 4,
+    "false_red": 3
+  },
+  "pipeline_counts": {
+    "sweep1_aftersales-refund": {
+      "raw": {
+        "pass": 56,
+        "fail": 3,
+        "skip": 3,
+        "falseRed": 0,
+        "total": 62
+      },
+      "reclassified": {
+        "pass": 56,
+        "fail": 1,
+        "skip": 3,
+        "false_red": 2
+      }
+    },
+    "sweep2_tenant-isolation": {
+      "raw": {
+        "pass": 0,
+        "fail": 0,
+        "skip": 0,
+        "falseRed": 0
+      },
+      "verdict": "blocked(未覆盖) —— 全仓 hardcode 主体矩阵 T={A:20,B:21,P:-1,C:1}/phones，无任何 env 注入口"
+    },
+    "sweep3_tenant-concurrency": {
+      "raw": {
+        "pass": 0,
+        "fail": 0,
+        "skip": 0,
+        "falseRed": 0
+      },
+      "verdict": "blocked(未覆盖) —— resources.mjs 同样 hardcode 20/21/1 + 三个手机号"
+    },
+    "sweep4_race": {
+      "pass": 21,
+      "fail": 1,
+      "skip": 1,
+      "falseRed": 0,
+      "raw_total": 23
+    },
+    "line3_own_probes": {
+      "independent_math": {
+        "pass": 4,
+        "fail": 0,
+        "skip": 0
+      },
+      "cross_tenant": {
+        "pass": 4,
+        "fail": 0,
+        "skip": 0
+      },
+      "w2_repro_rounds": {
+        "N": 20,
+        "product_fail_rounds": 3,
+        "single_winner_rounds": 17
+      }
+    }
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "kind": "fail(产品)",
+      "severity": "高（涉库存台账 · 静默副作用落地）",
+      "title": "入库单「过账 × 作废」并发交叉竞态：post 拿过账权后仍可被 cancel 抹成已作废，库存与台账行留在库里",
+      "evidence": [
+        "out/race/probe-write.json::W2-过账×作废交叉竞态 = fail",
+        "out/race/probe-write-raw.json::cases.W2（statuses [200,200]、window 严格同时起跑 issueSpan=0ms、dbStatus=cancelled、stockBefore 30.0→stockAfter 35.0、ledgerForRef=1）",
+        "out/race/W2-rounds-index.txt（本线独立复现 20 轮：3 轮 post=200&cancel=200 且 db=cancelled delta=5 ledger=1；17 轮 post=409&cancel=200 单赢家）",
+        "out/race/W2-rounds/round-06.json|round-09.json|round-20.json（含逐请求毫秒时间线 + 库侧 posted_at/cancelled_at/台账原文）"
+      ],
+      "minimal_repro": "POST /api/admin/inbound-orders 建草稿单 ⇒ 一个 microtask 门控同时发 PATCH {action:'post'} 与 PATCH {action:'cancel'} ⇒ 读 inbound_orders.status / stock_ledger_entries(ref_no=入库单号) / product_skus.stock",
+      "will_go_red": "① post 返回 200 但库侧 status != posted；② cancel 返回 200 且库存被改动；③ status=cancelled 却存在 ref_no=该单号的入库台账行 —— 三者之一即红",
+      "root_symbol": [
+        "backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java#post —— 有 CAS「抢过账权」：inboundOrderMapper.markPosted(...) == 0 ⇒ 409（互斥生效）",
+        "backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java#cancel —— **无 CAS**：status 校验读 resolveOrder() 的内存旧值，落库走 inboundOrderMapper.updateById(order)（WHERE 仅主键）⇒ 与 post 的 CAS 不互斥"
+      ],
+      "attribution_5layers": [
+        "现象层：作废的单把库存加了 5 米并留下 1 行入库台账（账实不符且无人发现）",
+        "接口层：PATCH action=post 与 action=cancel 对同一张草稿单**都回 200**",
+        "实现层：两条路径互斥强度不对称 —— post 用条件更新（markPosted），cancel 用无谓词 updateById",
+        "类级层：同一服务内已有 CAS 范式，cancel 未复用（与 2026-10-04 线② 的工单 updateById 同族）",
+        "机制层：单据状态机的「状态迁移权」只在 post 一侧落到 SQL 谓词上，cancel 侧没有"
+      ],
+      "evidence_strength": "强 —— 独立于被测 harness 的复现脚本 + 20 轮频率读数 + 严格同时起跑时间线 + 库侧三读数"
+    },
+    {
+      "id": "F2",
+      "kind": "fail(产品)",
+      "severity": "中（新租户可用性前置缺口 · 已有单在跟）",
+      "title": "全新租户 0 个商品分类 ⇒ POST /api/admin/products 的 categoryId 前置不可达（需先手工建分类）",
+      "evidence": [
+        "out/aftersales/B1-setup.json::LB1-SETUP-category-gap = fail",
+        "out/aftersales/B1-category-gap.json（本线命名域「线B验收」初始 active 分类数=0；经真实 API 补建后=1，HTTP 200）",
+        "同时段别线分类 4 条（窗帘成品 / smoke测试分类_1791980976716 / …）只登记不触碰"
+      ],
+      "minimal_repro": "在命名域内 0 分类的租户上 POST /api/admin/products（不带 categoryId）⇒ 422 VALIDATION_ERROR「分类ID不能为空」",
+      "will_go_red": "新租户在不手工造分类的前提下 POST /api/admin/products 被 422 拒",
+      "root_symbol": [
+        "backend/admin-api/src/main/java/com/migao/admin/dto/ProductCreateRequest.java#categoryId（必填）",
+        "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java（入驻只种角色/权限/岗位，不种商品分类）"
+      ],
+      "attribution_5layers": [
+        "现象层：空租户走 API 建不出第一个商品",
+        "接口层：422 文案不指出「去哪里建分类」",
+        "实现层：入驻流程无商品分类种子",
+        "类级层：缺一条「新租户可用性」端到端判据",
+        "机制层：新租户的可用性前置没有被入驻流程覆盖"
+      ],
+      "note": "与 2026-10-04 的 #6295 同族；本轮在 90192bcac 上**仍复现** ⇒ 不是老构建伪影。归因强度：只到「本租户本线命名域」层，未做 UI 级验证。"
+    },
+    {
+      "id": "G1",
+      "kind": "假红(判据缺陷)",
+      "title": "LB0-01 期望值过期：判据写死 EXPECTED='ff655a06c'（2026-10-04 部署台账），本轮被测面是**本机 :8080**，部署台账与它无关",
+      "evidence": [
+        "out/aftersales/B0-env.json::LB0-01 = fail，读数逐字：「远端声明=(ADMIN_API_DEPLOYED_SHA 未设)；最后一个 success 部署=d0efc4e0c @ 2026-10-14T09:41:37Z（UTC）」",
+        "判据源：acceptance/2026-10-04/aftersales-refund-sweep/harness/p0-env.mjs:23 `const EXPECTED = 'ff655a06c'`",
+        "本轮口径源：BRIEF §2「API_BASE 必须指本机 8080（本轮被测面）」"
+      ],
+      "why_judge_side": "判据度量的是「已部署面构建点」，而本轮被测面是本机源码树 HEAD=90192bcac ⇒ 判据对象与被测对象不是同一个；台账 recent success 从 ff655a06c 漂到 d0efc4e0c 也会让它红。与任务书点名的上轮伪影同族。",
+      "recommended_fix": "期望值改为运行时从部署台账取，或改关系式断言；本轮**不改**（改了就是改判据凑绿）"
+    },
+    {
+      "id": "G2",
+      "kind": "假红(判据缺陷)",
+      "title": "LB-Z-02「存量行零改动」把**同租户其他线**的并发写读成本线的改动",
+      "evidence": [
+        "out/aftersales/B9-cleanup.json::LB-Z-02 = fail，逐字：「orders: added=2 removed=0 changed=0」，added id = ['2d90b9e6c67fcb877907eca6c22cfcc4','9d27be2dfb2907cfabd46c141068ecda']",
+        "本线独立归因现取：这两行 customer_name='工序验收客户077598'（非本线命名域「线B验收客户-*」），created_at=20:32:22/20:32:25 +08，落在本段落窗口内、由**别线**探测写面创建",
+        "本线清理后终态：tenant 32 中 线B验收/race-sweep/线③独立 三命名域 products/inbounds/tickets 全 0（现取）"
+      ],
+      "why_judge_side": "判据对象是「整租户 orders 表逐行 diff」，而 BRIEF 纪律 8 只允许断言**本线命名域**对象；该判据自身 evidence 也写明别线在写（并已对流水表做了同款豁免）⇒ 对 orders 表漏了同一豁免。",
+      "recommended_fix": "added 集合按本线命名域过滤（remark/customer_name 前缀）后断言；或只断言 removed/changed=0"
+    },
+    {
+      "id": "G3",
+      "kind": "探针缺陷(非产品)",
+      "title": "sweep#2/sweep#3 完全无 env 注入口 —— 主体矩阵/租户 id 全 hardcode，统一口径无法指向本轮被测面",
+      "evidence": [
+        "acceptance/2026-10-03/tenant-isolation-sweep/harness/sweep.mjs:22-24 `const SUBJ={A:'13870217889',…}` / `const T={A:20,B:21,P:-1,C:1}`（全文件无 process.env.TENANT/PHONE 读取：grep 结果 0 命中）",
+        "acceptance/2026-10-03/tenant-concurrency-sweep/harness/resources.mjs:5-7 `export const A={phone:'13870217889',tenant:20}` / `B={tenant:21}` / `C={tenant:1}`（同样 0 命中）",
+        "实跑读数：sweep.mjs ⇒ `Error: 登录失败 401 该手机号未注册 @ sweep.mjs:26`；probe.mjs ⇒ `登录失败 13870217889 401 @ probe.mjs:26`（见 out/tenant-isolation/run-all.log、out/tenant-concurrency/run-all.log）",
+        "库现取：tenants 只剩 32（+我建的临时 34），users 中三个 hardcode 手机号 0 行"
+      ],
+      "why_judge_side": "被测对象（tenant 32）无法通过 env 注入到这两条 harness；改 harness 源码＝违反「不要修改它们」。故两条 sweep 判**未覆盖**，不得折算 pass。"
+    },
+    {
+      "id": "G4",
+      "kind": "探针缺陷(非产品)",
+      "title": "sweep#1 的 LB-AS-CREATE-02 判据对象写死 tenant=1 的真实订单 ⇒ 结构性 skip",
+      "evidence": [
+        "acceptance/2026-10-04/aftersales-refund-sweep/harness/p2-b1-serial.mjs:37 `select … from orders where tenant_id=1 …`",
+        "out/aftersales/B1-serial.json::LB-AS-CREATE-02 = skip，逐字「库中无 tenant=1 的订单可作跨租户探针」"
+      ],
+      "why_judge_side": "判据未 env 化租户；本轮**不改 harness**，改用本线自建 probe-cross-tenant.mjs 以 32↔34 真租户对补上该覆盖（4/4 pass）"
+    },
+    {
+      "id": "G5",
+      "kind": "判据侧文案过期(不改变 verdict)",
+      "title": "LB-PREC-02 的 evidence 仍写「现状 200 静默归零」，而它自己的 pass 断言要求 422 —— 断言已随产品修复变对，证据串是旧文案",
+      "evidence": [
+        "out/aftersales/B5-refund-precision.json::LB-PREC-02 = pass，extra={status:422, silentZero:false}",
+        "evidence 逐字仍写「⇒ 请求被「成功」接受（HTTP 200 + refund_at 落笔）…」；name 写「现状 200 静默归零」",
+        "产品侧已修：backend/admin-api/src/main/java/com/migao/admin/service/MoneyScale.java（issue #6221，2 位小数 fail-closed 准入）+ OrderService#refundOrder 调用 requireTwoDecimalsOrNull"
+      ],
+      "why_judge_side": "不影响判定（判据用状态码，不用文案），但会让读者误读 ⇒ 登记为文案漂移",
+      "附注": "LB-PREC-03 的 0.004/0.005/0.009 ⇒ 422 与本线独立核算一致（effectiveScale 3 > 2 ⇒ 拒），**不是缺陷**"
+    }
+  ],
+  "residue": {
+    "line3_namespaces_after": {
+      "tenant32_race-sweep_products": 0,
+      "tenant32_race-sweep_inbound_orders": 0,
+      "tenant32_线B验收_products": 0,
+      "tenant32_线③独立_products": 0,
+      "source": "现取（2026-10-14 20:40:20 +08）：select count(*) … tenant_id=32 and name like '<前缀>%' ⇒ 全 0"
+    },
+    "sweep1_selfcheck": {
+      "counts": {
+        "products": 0,
+        "productSkus": 0,
+        "orders": 0,
+        "orderItems": 0,
+        "tickets": 0,
+        "ticketTimeline": 0,
+        "ledger": 0,
+        "finance": 0,
+        "clientKeys": 0,
+        "tempTables": 0,
+        "processingOrders": 0,
+        "positionOperations": 0,
+        "workLogs": 0
+      },
+      "total": 0
+    },
+    "sweep4_cleanup": {
+      "products": 0,
+      "finance_transactions": 0,
+      "processing_orders": 0,
+      "inbound_labels": 0,
+      "stock_batches": 0,
+      "orders": 0,
+      "inbounds": 0,
+      "keys": 0,
+      "ledger": 0,
+      "consumptions": 0
+    },
+    "temp_tenant": {
+      "id": 34,
+      "name": "米高测试环境-隔离对照",
+      "code": "shop-gh42",
+      "before": {
+        "tenants_total": 2,
+        "tenant34_subtable_rows": 391,
+        "products": 2,
+        "orders": 2,
+        "tickets": 2,
+        "users": 1
+      },
+      "wipe": "python3 acceptance/2026-10-14/tools/wipe-tenants.py --tenant-ids 34 --apply",
+      "after": {
+        "tenants_total": 1,
+        "tenant34_subtable_residue": 0,
+        "tenants_named_rows": "无"
+      },
+      "evidence": "acceptance/2026-10-14/evidence/wipe-tenants.json"
+    },
+    "sweep2_3": "无写入（在登录处即失败）⇒ 零残留",
+    "final_reading": {
+      "at": "2026-10-14 20:43:45 +08（最终收尾现取）",
+      "tenants": 1,
+      "probe_products": 0,
+      "probe_productSkus": 0,
+      "probe_inbound_orders": 0,
+      "probe_after_sales_tickets": 0,
+      "probe_orders": 0,
+      "probe_client_request_keys": 0,
+      "probe_ledger": 0,
+      "tenants_named": "32|米高测试环境（只剩它）",
+      "note": "本条为**最终**读数，含 W2 复现残留（lb3-race 供应商 21 张入库单）与线③独立残留（2 商品 + 2 订单 + 2 工单）的第二轮定向清理之后"
+    }
+  },
+  "counts_recipe": {
+    "pass": "sweep1 harness 原始 pass 56 + sweep1 的 LB-Z-02（判据缺陷 ⇒ 其判据对象无产品问题，计 pass）1 + sweep4(race) pass 18 + 本线自建补测 8（独立算式 4 + 跨租户 4）= 83",
+    "fail": "F1(W2 过账×作废) + F2(空租户零分类) = 2",
+    "skip": "sweep1 skip 3（LB-AS-CREATE-02 / LB-AS-CREATE-03 / LB-C4-BULK-READ-1000；CREATE-02 已由本线 32↔34 补测等价覆盖，原条仍计 skip）+ sweep4 skip 1（I5）= 4",
+    "false_red": "LB0-01（期望值过期）+ LB-Z-02（跨包干扰被读成本线问题）+ LB-PREC-02（判据文案漂移，不改变 verdict）= 3",
+    "sweep1_raw": "pass 56 / fail 3 / skip 3 / falseRed 0（harness 原样落盘，未改一个字节）",
+    "sweep4_raw": "pass 18 / fail 1 / skip 1 / falseRed 0（probe-write 7/1/0/0 + probe-idem 5/0/1/0 + probe-cross 5/0/0/0 + probe-redproof 4/0/0/0）",
+    "not_counted": "sweep2(tenant-isolation) 与 sweep3(tenant-concurrency) 未产生任何判据（登录即 401 失败）⇒ 既不计 pass 也不计 skip，单列「未覆盖」",
+    "cross_check": "56+1+18+4+4 = 83 ✓"
+  }
+}

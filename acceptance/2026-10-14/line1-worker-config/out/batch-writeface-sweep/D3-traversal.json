@@ -1,0 +1,23 @@
+{
+  "filenameTraversal": {
+    "http": 200,
+    "url": "https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/10/14/a5e5d30ac72d4430a77f8a805ce470c0.png",
+    "name": "../../l2evil.png"
+  },
+  "directoryTraversal": {
+    "http": 422,
+    "body": {
+      "success": false,
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "非法文件路径"
+      },
+      "requestId": "req_7e80a804c866464d",
+      "timestamp": 1791981251,
+      "suggestion": "请检查必填字段是否完整，字段格式是否正确"
+    }
+  },
+  "uploadsDir": "/Users/guangzhen.zk/ai native/migao/backend/admin-api/uploads",
+  "newLocalFiles": [],
+  "escapedFiles": []
+}

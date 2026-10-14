@@ -1,0 +1,15 @@
+{
+  "at": {
+    "cst": "2026-10-14 20:31:53 +08",
+    "utc": "2026-10-14T12:31:53.139Z"
+  },
+  "N": 4,
+  "withPredicate": {
+    "w": 1,
+    "status": "producing"
+  },
+  "withoutPredicate": {
+    "w": 4,
+    "status": "producing"
+  }
+}

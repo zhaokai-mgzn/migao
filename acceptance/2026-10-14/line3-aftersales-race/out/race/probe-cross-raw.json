@@ -1,0 +1,304 @@
+{
+  "stamp": "20261014123513",
+  "tenantA": 32,
+  "tenantB": 34,
+  "probePrefix": "race-sweep",
+  "cases": {
+    "C1": {
+      "n": 120,
+      "window": {
+        "requests": 120,
+        "overlappedPairs": 7140,
+        "issueSpanMs": 9,
+        "wallMs": 631,
+        "spans": [
+          [
+            0,
+            2778
+          ],
+          [
+            0,
+            543
+          ],
+          [
+            1,
+            2672
+          ],
+          [
+            1,
+            605
+          ],
+          [
+            1,
+            2581
+          ],
+          [
+            1,
+            597
+          ],
+          [
+            1,
+            2744
+          ],
+          [
+            2,
+            517
+          ],
+          [
+            2,
+            2747
+          ],
+          [
+            2,
+            536
+          ],
+          [
+            2,
+            2724
+          ],
+          [
+            2,
+            546
+          ]
+        ]
+      },
+      "checkedProbeObjects": 360,
+      "badCount": 0,
+      "bad": []
+    },
+    "C2": {
+      "pairs": 6,
+      "window": {
+        "requests": 6,
+        "overlappedPairs": 15,
+        "issueSpanMs": 1,
+        "wallMs": 44,
+        "spans": [
+          [
+            0,
+            66
+          ],
+          [
+            0,
+            55
+          ],
+          [
+            0,
+            52
+          ],
+          [
+            0,
+            51
+          ],
+          [
+            0,
+            55
+          ],
+          [
+            1,
+            44
+          ]
+        ]
+      },
+      "rejected": [
+        {
+          "id": "f130d3e6141d51e247c51e68678ad4f4",
+          "status": 404
+        },
+        {
+          "id": "3032e141ff5f2e5378f7131b41c9e96e",
+          "status": 404
+        },
+        {
+          "id": "6cd5dafcabebbae72c9c7b9899da8eac",
+          "status": 404
+        },
+        {
+          "id": "3eec98bd01e59419d8041aff7f851da4",
+          "status": 404
+        },
+        {
+          "id": "3794527a87a927ac1a7936c3ad1887de",
+          "status": 404
+        },
+        {
+          "id": "66bf8e75ff79f305fff7f5887b3a9824",
+          "status": 404
+        }
+      ],
+      "leak": [],
+      "statuses": [
+        404,
+        404,
+        404,
+        404,
+        404,
+        404
+      ]
+    },
+    "C3": {
+      "spoofs": [
+        "A+伪造 B 的 X-Tenant-Id",
+        "B+伪造 A 的 X-Tenant-Id",
+        "A+伪造 X-Tenant-Id=-1",
+        "A+伪造超大 X-Tenant-Id"
+      ],
+      "statuses": [
+        200,
+        200,
+        200,
+        200
+      ],
+      "window": {
+        "requests": 4,
+        "overlappedPairs": 6,
+        "issueSpanMs": 1,
+        "wallMs": 767,
+        "spans": [
+          [
+            0,
+            797
+          ],
+          [
+            1,
+            95
+          ],
+          [
+            1,
+            1011
+          ],
+          [
+            1,
+            767
+          ]
+        ]
+      },
+      "bad": []
+    },
+    "C4": {
+      "window": {
+        "requests": 6,
+        "overlappedPairs": 15,
+        "issueSpanMs": 0,
+        "wallMs": 94,
+        "spans": [
+          [
+            1,
+            462
+          ],
+          [
+            1,
+            287
+          ],
+          [
+            1,
+            70
+          ],
+          [
+            1,
+            57
+          ],
+          [
+            1,
+            810
+          ],
+          [
+            1,
+            95
+          ]
+        ]
+      },
+      "statuses": [
+        200,
+        200,
+        404,
+        404,
+        200,
+        200
+      ],
+      "crossReadStatuses": [
+        404,
+        404
+      ],
+      "crossReadRequestedIds": {
+        "aReadsB": "2470b5898c762346621520311f03208b",
+        "bReadsA": "3032e141ff5f2e5378f7131b41c9e96e"
+      },
+      "positiveControlOwnRead": [
+        200,
+        200
+      ],
+      "leakList": [],
+      "newRows": {
+        "A": 1,
+        "B": 1
+      },
+      "writeStatuses": [
+        200,
+        200
+      ]
+    },
+    "C5": {
+      "n": 160,
+      "window": {
+        "requests": 160,
+        "overlappedPairs": 12720,
+        "issueSpanMs": 12,
+        "wallMs": 805,
+        "spans": [
+          [
+            0,
+            3569
+          ],
+          [
+            0,
+            830
+          ],
+          [
+            0,
+            3792
+          ],
+          [
+            1,
+            491
+          ],
+          [
+            1,
+            3546
+          ],
+          [
+            1,
+            847
+          ],
+          [
+            1,
+            3619
+          ],
+          [
+            1,
+            1016
+          ],
+          [
+            1,
+            3708
+          ],
+          [
+            1,
+            843
+          ],
+          [
+            1,
+            3532
+          ],
+          [
+            1,
+            694
+          ]
+        ]
+      },
+      "checkedProbeObjects": 480,
+      "bad": 0,
+      "ev": []
+    }
+  }
+}

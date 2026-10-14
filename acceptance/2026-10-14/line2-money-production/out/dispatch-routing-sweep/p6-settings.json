@@ -1,0 +1,23 @@
+[
+  {
+    "id": "W-09",
+    "name": "作用域改配（set→position）双向生效：一樘布+纱从 1 行变 2 行，还原回 1 行",
+    "status": "pass",
+    "detail": "打包 scope=set ⇒ 1 行；改 position ⇒ 2 行；还原 ⇒ 1 行（加工单 JG-20261014-8518）",
+    "evidence": [
+      "PUT /api/admin/production/operations/650b27b8b4076c3fda3875c30e92818d {scope:'position'}",
+      "SQL: select operation_name,position_name,set_id from processing_position_operations where processing_order_id='2a83816fb96463cf42f2136d9357cb09'"
+    ],
+    "at": "2026-10-14T12:34:09.676Z"
+  },
+  {
+    "id": "W-10",
+    "name": "「标记生产开始」改配 → 实例 is_start_marker 跟随（开工触发点可配）",
+    "status": "pass",
+    "detail": "打包 is_start_marker=true ⇒ 实例 true（1 行）",
+    "evidence": [
+      "PUT /api/admin/production/operations/650b27b8b4076c3fda3875c30e92818d {is_start_marker:true}"
+    ],
+    "at": "2026-10-14T12:34:11.794Z"
+  }
+]

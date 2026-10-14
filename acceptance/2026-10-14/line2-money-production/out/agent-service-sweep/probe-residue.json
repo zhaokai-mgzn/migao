@@ -1,0 +1,17 @@
+[
+  {
+    "id": "Z1-1",
+    "name": "零残留：本包探针对象全部清除（逐表计数）",
+    "status": "fail",
+    "detail": "期望 probeResidue().total == 0（sessions/session_messages/agentSessions/knowledgeCards/knowledgeCandidates 全 0） ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: 自建自清纪律：本包创建的一切对象用后必须为 0",
+      "HTTP/读数: {\"before\":{\"sessions\":0,\"sessionMessages\":0,\"agentSessions\":2,\"knowledgeCards\":4,\"knowledgeCandidates\":4},\"after\":{\"sessions\":0,\"sessionMessages\":0,\"agentSessions\":2,\"knowledgeCards\":4,\"knowledgeCandidates\":4},\"afterTotal\":10}",
+      "清理 tag: ",
+      "逐表: {\"sessions\":0,\"sessionMessages\":0,\"agentSessions\":2,\"knowledgeCards\":4,\"knowledgeCandidates\":4}",
+      "SQL: delete from sessions where customer_id like 'probe_line1_%' and (customer_id like '%<tag>%')"
+    ],
+    "at": "2026-10-14 20:35:58 +08",
+    "atUtc": "2026-10-14T12:35:58.115Z"
+  }
+]

@@ -1,0 +1,18 @@
+[
+  {
+    "id": "W5-L0",
+    "name": "清场：历史残留同前缀对象",
+    "status": "pass",
+    "detail": "清理 0 条：（无）",
+    "evidence": [],
+    "at": "2026-10-14T12:34:52.044Z"
+  },
+  {
+    "id": "W5-98",
+    "name": "零残留读数：前缀对象存活数 = 0",
+    "status": "pass",
+    "detail": "存活明细=0（ops/pos/routes/rules/fees 全部 deleted=1 或不存在）",
+    "evidence": [],
+    "at": "2026-10-14T12:34:52.906Z"
+  }
+]

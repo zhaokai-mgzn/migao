@@ -1,0 +1,21 @@
+{
+  "from": {
+    "worktree": "/Users/guangzhen.zk/ai native/migao",
+    "sha": "d1c09d02f",
+    "subject": "chore(ci): flaky 台账追加（run 37096947254） (#6183)",
+    "adminApiStart": "2026-10-03 13:09:45 +08",
+    "pid": 99086
+  },
+  "to": {
+    "worktree": "/Users/guangzhen.zk/ai native/migao",
+    "sha": "90192bcac",
+    "subject": "chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)",
+    "adminApiStart": "三 10月/14 20:24:44 2026",
+    "pid": "54364"
+  },
+  "switchAt": "2026-10-03 13:44:16 +08",
+  "observedAt": {
+    "cst": "2026-10-14 20:33:17 +08",
+    "utc": "2026-10-14T12:33:17.902Z"
+  }
+}

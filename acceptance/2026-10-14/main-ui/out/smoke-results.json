@@ -1,0 +1,466 @@
+[
+  {
+    "journey": "01-login",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "login → /dashboard，刷新后会话保持",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/01-login.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "02-dashboard",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "看板渲染数字片段: 1|4|2|3|5",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/02-dashboard.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "03-briefing",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "简报页渲染，body 文本长度 202",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/03-briefing.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "04-agent-workspace-redirect",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "重定向到 /agent-workspace/human-sessions",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/04-agent-workspace-redirect.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "05-human-sessions",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "在线接待页渲染（ai-agent 未起，空态）— UI-only",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/05-human-sessions.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "06-agent-sessions",
+    "pass": false,
+    "errors": [
+      "[console.error] Access to fetch at 'http://localhost:8001/api/chat/quick-actions' from origin 'http://localhost:3001' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+      "[console.error] Failed to load resource: net::ERR_FAILED",
+      "[console.error] Access to fetch at 'http://localhost:8001/api/chat/sessions' from origin 'http://localhost:3001' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+      "[console.error] Failed to load resource: net::ERR_FAILED",
+      "[console.error] 获取会话列表失败: TypeError: Failed to fetch\n    at Object.getSessions (http://localhost:3001/_next/static/chunks/src_0eb4ilf._.js:1610:27)\n    at fetchSessions (http://localhost:3001/_next/static/chunks/src_2140mbf._.js:12623:164)\n    at AgentSessionsPage.useEffect (http://localhost:3001/_next/static/chunk",
+      "[console.error] Access to fetch at 'http://localhost:8001/api/chat/quick-actions' from origin 'http://localhost:3001' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+      "[console.error] Failed to load resource: net::ERR_FAILED",
+      "[console.error] Access to fetch at 'http://localhost:8001/api/chat/sessions' from origin 'http://localhost:3001' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+      "[console.error] Failed to load resource: net::ERR_FAILED",
+      "[console.error] 获取会话列表失败: TypeError: Failed to fetch\n    at Object.getSessions (http://localhost:3001/_next/static/chunks/src_0eb4ilf._.js:1610:27)\n    at fetchSessions (http://localhost:3001/_next/static/chunks/src_2140mbf._.js:12623:164)\n    at AgentSessionsPage.useEffect (http://localhost:3001/_next/static/chunk"
+    ],
+    "notes": [],
+    "evidence": [
+      "会话历史页渲染（ai-agent 未起，空态）— UI-only",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/06-agent-sessions.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "07-chat",
+    "pass": false,
+    "errors": [
+      "[console.error] Access to fetch at 'http://localhost:8001/api/chat/quick-actions' from origin 'http://localhost:3001' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+      "[console.error] Failed to load resource: net::ERR_FAILED",
+      "[console.error] Access to fetch at 'http://localhost:8001/api/chat/sessions' from origin 'http://localhost:3001' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+      "[console.error] Failed to load resource: net::ERR_FAILED",
+      "[console.error] 获取会话列表失败: TypeError: Failed to fetch\n    at Object.getSessions (http://localhost:3001/_next/static/chunks/src_0eb4ilf._.js:1610:27)\n    at fetchSessions (http://localhost:3001/_next/static/chunks/src_2140mbf._.js:12623:164)\n    at ChatPage.useEffect (http://localhost:3001/_next/static/chunks/src_11g",
+      "[console.error] Access to fetch at 'http://localhost:8001/api/chat/quick-actions' from origin 'http://localhost:3001' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+      "[console.error] Failed to load resource: net::ERR_FAILED",
+      "[console.error] Access to fetch at 'http://localhost:8001/api/chat/sessions' from origin 'http://localhost:3001' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+      "[console.error] Failed to load resource: net::ERR_FAILED",
+      "[console.error] 获取会话列表失败: TypeError: Failed to fetch\n    at Object.getSessions (http://localhost:3001/_next/static/chunks/src_0eb4ilf._.js:1610:27)\n    at fetchSessions (http://localhost:3001/_next/static/chunks/src_2140mbf._.js:12623:164)\n    at ChatPage.useEffect (http://localhost:3001/_next/static/chunks/src_11g"
+    ],
+    "notes": [],
+    "evidence": [
+      "对话页输入框可用（ai-agent 未起）— UI-only",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/07-chat.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "08-products-list",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "商品列表渲染 1 行",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/08-products-list.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "09-products-new",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "门幅 值/显示分离 ✓([\"|请选择\",\"2.8|2.8米\",\"3.2|3.2米\",\"3.4|3.4米\"]→'2.8') + 建品可见 ✓(冒烟SKU商品1791981181241)",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/09-products-new.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "10-product-detail",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "商品详情渲染（http://localhost:3001/products/b304e3cef375e205864246b9bb846051）",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/10-product-detail.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "11-product-edit-doorwidth",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "门幅下拉回显: value=2.8, 选项=[\"|请选择\",\"2.8|2.8米\",\"3.2|3.2米\",\"3.4|3.4米\"]（自造商品 e378137946273d983876b78dbe70c1ff 已清理）",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/11-product-edit-doorwidth.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "12-processing",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "加工项 新建→列表可见→编辑→删除 完成；启停toggle可见=false",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/12-processing.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "13-categories",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "分类 新建→可见→行内删除",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/13-categories.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "14-orders-list",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "订单列表 20 行（无分页按钮或单页）",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/14-orders-list.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "15-orders-new",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "新建订单提交后跳转 http://localhost:3001/orders/new",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/15-orders-new.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "16-order-detail-processing-order",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/16-order-detail-processing-order.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "32-production-qr-and-piecework",
+    "pass": false,
+    "errors": [],
+    "notes": [
+      "前置不满足（生产路线/默认工艺未配置）：本租户指定单（81c501b3a5aa383e8df7ed5def9f1f83）生成加工单**未落库**：接口 HTTP 200 但 data 为空 —— api 日志 INCIDENT_PRODUCTION_ROUTING_UNRESOLVED「订单缺 craft 且该租户没有默认工艺」（租户未配生产路线/默认工艺）"
+    ],
+    "evidence": [
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/32-production-qr-and-piecework.png"
+    ],
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip"
+  },
+  {
+    "journey": "17-order-ship",
+    "pass": false,
+    "errors": [],
+    "notes": [
+      "前置不满足（生产路线/默认工艺未配置）：本租户指定单（e909fd6a5e84ce97b816797cfb3f0ef7）生成加工单**未落库**：接口 HTTP 200 但 data 为空 —— api 日志 INCIDENT_PRODUCTION_ROUTING_UNRESOLVED「订单缺 craft 且该租户没有默认工艺」（租户未配生产路线/默认工艺）"
+    ],
+    "evidence": [
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/17-order-ship.png"
+    ],
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip"
+  },
+  {
+    "journey": "18-after-sales-list",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "售后工单列表渲染 1 行",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/18-after-sales-list.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "19-after-sales-detail",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "关闭原因落库回显=true",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/19-after-sales-detail.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "20-customers-list",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "客户列表 20 行",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/20-customers-list.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "21-customer-detail",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/21-customer-detail.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "22-finance",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "财务对账页渲染",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/22-finance.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "23-employees",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "员工 新建→可见→改手机号落库=false→删除；空提交校验=false",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/23-employees.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "24-roles",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "岗位权限页 1 行，行内「编辑」（button[title=\"编辑\"]）打开权限弹窗 ✓",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/24-roles.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "25-settings",
+    "pass": true,
+    "errors": [],
+    "notes": [
+      "自动保存提示按「含保存二字的说明文字」判定：已保存为您的配置"
+    ],
+    "evidence": [
+      "设置页只读校验：Tab 数=11、自动保存提示=false、意外「保存」按钮=true、密码字段=0、4xx=0",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/25-settings.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "26-notifications",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "通知中心渲染，已读操作可用",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/26-notifications.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "27-corporate-home",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/ 渲染（4140 字符）",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/27-corporate-home.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "28-corporate-about",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/about 渲染（1886 字符）",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/28-corporate-about.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "29-corporate-contact",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/contact 渲染（1152 字符）",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/29-corporate-contact.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "30-corporate-services",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/services 渲染（3501 字符）",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/30-corporate-services.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "31-register",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "注册页渲染，输入控件=2",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out/screenshots/31-register.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "27-corporate",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "整轮预算 1500s 到点：本轮未跑"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "28-register",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "整轮预算 1500s 到点：本轮未跑"
+    ],
+    "evidence": []
+  }
+]

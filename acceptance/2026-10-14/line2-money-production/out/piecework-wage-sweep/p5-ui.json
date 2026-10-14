@@ -1,0 +1,12 @@
+[
+  {
+    "id": "U-01",
+    "name": "计件工资页可达（HTTP 探活）",
+    "status": "pass",
+    "detail": "HTTP 200 location=-",
+    "evidence": [
+      "GET http://127.0.0.1:3001/production/piecework"
+    ],
+    "at": "2026-10-14T12:31:07.299Z"
+  }
+]

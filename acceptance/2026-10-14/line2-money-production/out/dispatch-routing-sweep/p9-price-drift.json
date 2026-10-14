@@ -1,0 +1,26 @@
+[
+  {
+    "id": "P9-01",
+    "name": "未定价未被与价格无关的保存改写",
+    "status": "pass",
+    "detail": "读面 NULL(未定价)→NULL(未定价)；实例价 NULL(未定价)→NULL(未定价)",
+    "evidence": [],
+    "at": "2026-10-14T12:34:25.833Z"
+  },
+  {
+    "id": "P9-01",
+    "name": "改价漂移探针",
+    "status": "fail",
+    "detail": "TypeError: Cannot read properties of null (reading 'id')",
+    "evidence": [],
+    "at": "2026-10-14T12:34:25.950Z"
+  },
+  {
+    "id": "P9-02",
+    "name": "还原：读面与派工都回到「未定价」，存活价目行只剩「通用」一行",
+    "status": "pass",
+    "detail": "读面=NULL(未定价)；加工单 JG-20261014-8527 实例价=NULL(未定价)；存活行=[{\"id\":\"6470984cff309319da537ef540964bba\",\"position\":\"布料\",\"p\":null,\"del\":0},{\"id\":\"5ca49874bc7cd1f76be7468b0a2a0dec\",\"position\":\"帘头\",\"p\":null,\"del\":0},{\"id\":\"7e3d68561242623092e53f1c436b4d58\",\"position\":\"纱帘\",\"p\":null,\"del\":0}]",
+    "evidence": [],
+    "at": "2026-10-14T12:34:28.167Z"
+  }
+]

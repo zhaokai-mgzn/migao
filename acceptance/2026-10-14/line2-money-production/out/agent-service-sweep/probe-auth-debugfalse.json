@@ -1,0 +1,236 @@
+[
+  {
+    "id": "A1-1",
+    "name": "/health 存活语义",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 body.status==\"healthy\" == 实测 [object Object]",
+    "evidence": [
+      "期望来源: main.py::health_check 契约（返回 status/service/version）",
+      "HTTP/读数: {\"status\":200,\"body\":{\"status\":\"healthy\",\"service\":\"ai-agent-service\",\"version\":\"1.0.0\"}}",
+      "构建点: worktree=/Users/guangzhen.zk/ai native/migao sha=90192bcac82b1d276d2793986ca9c64f47e47d16 subject=chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655) procStart=三 10月/14 20:34:43 2026 dirty=\"M acceptance/2026-10-03/piecework-wage-sweep/out/run.log\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U1-login-view.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U2-bad-pin.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U3-logged-in.png\n M frontend/admin-web/package-lock.json\n?? acceptance/2026-10-03/piecework-wage-sweep/out/line2-repro-m8m9.json\n?? acceptance/2026-10-14/\""
+    ],
+    "at": "2026-10-14 20:35:44 +08",
+    "atUtc": "2026-10-14T12:35:44.868Z"
+  },
+  {
+    "id": "A1-2",
+    "name": "/ready 就绪语义（fail-closed）",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 body.status==\"ready\"（DB+Redis 均通时） == 实测 [object Object]",
+    "evidence": [
+      "期望来源: main.py::ready_check 契约（check_readiness 失败 ⇒ 503 not_ready）",
+      "HTTP/读数: {\"status\":200,\"body\":{\"status\":\"ready\",\"service\":\"ai-agent-service\"}}",
+      "构建点: worktree=/Users/guangzhen.zk/ai native/migao sha=90192bcac82b1d276d2793986ca9c64f47e47d16 subject=chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655) procStart=三 10月/14 20:34:43 2026 dirty=\"M acceptance/2026-10-03/piecework-wage-sweep/out/run.log\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U1-login-view.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U2-bad-pin.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U3-logged-in.png\n M frontend/admin-web/package-lock.json\n?? acceptance/2026-10-03/piecework-wage-sweep/out/line2-repro-m8m9.json\n?? acceptance/2026-10-14/\""
+    ],
+    "at": "2026-10-14 20:35:45 +08",
+    "atUtc": "2026-10-14T12:35:45.005Z"
+  },
+  {
+    "id": "A1-3",
+    "name": "未注册路径不得 500",
+    "status": "pass",
+    "detail": "期望 HTTP 404 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: FastAPI 路由契约（未注册 ⇒ 404，不得 500/502）",
+      "HTTP/读数: {\"status\":404,\"body\":\"{\\\"detail\\\":\\\"Not Found\\\"}\"}",
+      "构建点: worktree=/Users/guangzhen.zk/ai native/migao sha=90192bcac82b1d276d2793986ca9c64f47e47d16 subject=chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655) procStart=三 10月/14 20:34:43 2026 dirty=\"M acceptance/2026-10-03/piecework-wage-sweep/out/run.log\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U1-login-view.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U2-bad-pin.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U3-logged-in.png\n M frontend/admin-web/package-lock.json\n?? acceptance/2026-10-03/piecework-wage-sweep/out/line2-repro-m8m9.json\n?? acceptance/2026-10-14/\""
+    ],
+    "at": "2026-10-14 20:35:45 +08",
+    "atUtc": "2026-10-14T12:35:45.009Z"
+  },
+  {
+    "id": "A1-4",
+    "name": "错误方法不得 500",
+    "status": "pass",
+    "detail": "期望 HTTP 405 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: HTTP 语义（方法不允许 ⇒ 405）",
+      "HTTP/读数: {\"status\":405}",
+      "构建点: worktree=/Users/guangzhen.zk/ai native/migao sha=90192bcac82b1d276d2793986ca9c64f47e47d16 subject=chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655) procStart=三 10月/14 20:34:43 2026 dirty=\"M acceptance/2026-10-03/piecework-wage-sweep/out/run.log\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U1-login-view.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U2-bad-pin.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U3-logged-in.png\n M frontend/admin-web/package-lock.json\n?? acceptance/2026-10-03/piecework-wage-sweep/out/line2-repro-m8m9.json\n?? acceptance/2026-10-14/\""
+    ],
+    "at": "2026-10-14 20:35:45 +08",
+    "atUtc": "2026-10-14T12:35:45.011Z"
+  },
+  {
+    "id": "A2-notoken-_api_chat_sessions",
+    "name": "无 token 调 /api/chat/sessions [X-Debug-Role=none, DEBUG=false]",
+    "status": "fail",
+    "detail": "期望 HTTP 401 ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::get_current_user —— DEBUG=false 时无 token 必 401（X-Debug-Role 不构成旁路）",
+      "HTTP/读数: {\"status\":200,\"body\":{\"success\":true,\"data\":{\"items\":[],\"page\":1,\"size\":20,\"total\":0},\"requestId\":\"req_ccbf266f876a4fa5\",\"timestamp\":1791981345}}",
+      "构建点: worktree=/Users/guangzhen.zk/ai native/migao sha=90192bcac82b1d276d2793986ca9c64f47e47d16 subject=chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655) procStart=三 10月/14 20:34:43 2026 dirty=\"M acceptance/2026-10-03/piecework-wage-sweep/out/run.log\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U1-login-view.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U2-bad-pin.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U3-logged-in.png\n M frontend/admin-web/package-lock.json\n?? acceptance/2026-10-03/piecework-wage-sweep/out/line2-repro-m8m9.json\n?? acceptance/2026-10-14/\""
+    ],
+    "at": "2026-10-14 20:35:45 +08",
+    "atUtc": "2026-10-14T12:35:45.119Z"
+  },
+  {
+    "id": "A2-notoken-_api_chat_sessions_latest",
+    "name": "无 token 调 /api/chat/sessions/latest [X-Debug-Role=none, DEBUG=false]",
+    "status": "fail",
+    "detail": "期望 HTTP 401 ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::get_current_user —— DEBUG=false 时无 token 必 401（X-Debug-Role 不构成旁路）",
+      "HTTP/读数: {\"status\":200,\"body\":{\"success\":true,\"data\":{\"session\":null},\"requestId\":\"req_c5400ea925504c27\",\"timestamp\":1791981345}}",
+      "构建点: worktree=/Users/guangzhen.zk/ai native/migao sha=90192bcac82b1d276d2793986ca9c64f47e47d16 subject=chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655) procStart=三 10月/14 20:34:43 2026 dirty=\"M acceptance/2026-10-03/piecework-wage-sweep/out/run.log\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U1-login-view.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U2-bad-pin.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U3-logged-in.png\n M frontend/admin-web/package-lock.json\n?? acceptance/2026-10-03/piecework-wage-sweep/out/line2-repro-m8m9.json\n?? acceptance/2026-10-14/\""
+    ],
+    "at": "2026-10-14 20:35:45 +08",
+    "atUtc": "2026-10-14T12:35:45.265Z"
+  },
+  {
+    "id": "A2-notoken-_api_chat_quick_actions",
+    "name": "无 token 调 /api/chat/quick-actions [X-Debug-Role=none, DEBUG=false]",
+    "status": "fail",
+    "detail": "期望 HTTP 401 ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::get_current_user —— DEBUG=false 时无 token 必 401（X-Debug-Role 不构成旁路）",
+      "HTTP/读数: {\"status\":200,\"body\":{\"success\":true,\"data\":{\"actions\":[{\"id\":\"daily_business\",\"name\":\"今日经营\",\"icon\":\"bar-chart-3\",\"emoji\":\"📊\",\"prompt\":\"今天经营怎么样？\"},{\"id\":\"delivery_risk\",\"name\":\"交付风险\",\"icon\":\"clipboard-list\",\"emoji\":\"🚨\",\"prompt\":\"哪些订单快到交期还卡着工序？\"},{\"id\":\"low_stock\",\"name\":\"库存告急\",\"icon\":\"package\",\"emoji\":\"📦\",\"prompt\":\"有哪些低库存的商品？\"},{\"id\":\"product_health\",\"name\":\"商品健康度\",\"icon\":\"tag\",\"emoji\":\"🏷️\",\"prompt\":\"哪些商品卖得好但退货高？\"},{\"id\":\"after_sales_todo\",\"name\":\"售后待办\",\"icon\":\"headphones\",\"emoji\":\"🛠️\",\"prompt\":\"有哪些售后工单还没处理？\"},{\"id\":\"customer_churn\",\"name\":\"客户回访\",\"icon\":\"users\",\"emoji\":\"👥\",\"prompt\":\"哪些老客户最近不下单了？\"}]},\"requestId\":\"req_852dea52ecba48ef\",\"timestamp\":1791981345}}",
+      "构建点: worktree=/Users/guangzhen.zk/ai native/migao sha=90192bcac82b1d276d2793986ca9c64f47e47d16 subject=chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655) procStart=三 10月/14 20:34:43 2026 dirty=\"M acceptance/2026-10-03/piecework-wage-sweep/out/run.log\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U1-login-view.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U2-bad-pin.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U3-logged-in.png\n M frontend/admin-web/package-lock.json\n?? acceptance/2026-10-03/piecework-wage-sweep/out/line2-repro-m8m9.json\n?? acceptance/2026-10-14/\""
+    ],
+    "at": "2026-10-14 20:35:45 +08",
+    "atUtc": "2026-10-14T12:35:45.268Z"
+  },
+  {
+    "id": "A2-badtoken",
+    "name": "畸形 Bearer token 被拒",
+    "status": "pass",
+    "detail": "期望 HTTP 401 且 error.code ∈ {TOKEN_INVALID,AUTH_REQUIRED} == 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::verify_jwt_token 契约（解析失败 ⇒ 401 TOKEN_INVALID）",
+      "HTTP/读数: {\"status\":401,\"code\":\"TOKEN_INVALID\"}",
+      "构建点: worktree=/Users/guangzhen.zk/ai native/migao sha=90192bcac82b1d276d2793986ca9c64f47e47d16 subject=chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655) procStart=三 10月/14 20:34:43 2026 dirty=\"M acceptance/2026-10-03/piecework-wage-sweep/out/run.log\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U1-login-view.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U2-bad-pin.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U3-logged-in.png\n M frontend/admin-web/package-lock.json\n?? acceptance/2026-10-03/piecework-wage-sweep/out/line2-repro-m8m9.json\n?? acceptance/2026-10-14/\""
+    ],
+    "at": "2026-10-14 20:35:45 +08",
+    "atUtc": "2026-10-14T12:35:45.271Z"
+  },
+  {
+    "id": "A2-expired",
+    "name": "过期 JWT 被拒（TOKEN_EXPIRED）",
+    "status": "fail",
+    "detail": "期望 HTTP 401 且 error.code==\"TOKEN_EXPIRED\" ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::verify_jwt_token —— ExpiredSignatureError ⇒ 401 TOKEN_EXPIRED",
+      "HTTP/读数: {\"status\":401,\"code\":\"TOKEN_INVALID\",\"body\":{\"detail\":{\"success\":false,\"error\":{\"code\":\"TOKEN_INVALID\",\"message\":\"Invalid token: Signature verification failed\"}}}}",
+      "构建点: worktree=/Users/guangzhen.zk/ai native/migao sha=90192bcac82b1d276d2793986ca9c64f47e47d16 subject=chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655) procStart=三 10月/14 20:34:43 2026 dirty=\"M acceptance/2026-10-03/piecework-wage-sweep/out/run.log\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U1-login-view.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U2-bad-pin.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U3-logged-in.png\n M frontend/admin-web/package-lock.json\n?? acceptance/2026-10-03/piecework-wage-sweep/out/line2-repro-m8m9.json\n?? acceptance/2026-10-14/\""
+    ],
+    "at": "2026-10-14 20:35:45 +08",
+    "atUtc": "2026-10-14T12:35:45.466Z"
+  },
+  {
+    "id": "A2-foreignkey",
+    "name": "异钥签名的 JWT 被拒",
+    "status": "pass",
+    "detail": "期望 HTTP 401 且 error.code==\"TOKEN_INVALID\" == 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::verify_jwt_token —— RS256 公钥验签失败 ⇒ InvalidTokenError ⇒ 401",
+      "HTTP/读数: {\"status\":401,\"code\":\"TOKEN_INVALID\"}",
+      "构建点: worktree=/Users/guangzhen.zk/ai native/migao sha=90192bcac82b1d276d2793986ca9c64f47e47d16 subject=chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655) procStart=三 10月/14 20:34:43 2026 dirty=\"M acceptance/2026-10-03/piecework-wage-sweep/out/run.log\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U1-login-view.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U2-bad-pin.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U3-logged-in.png\n M frontend/admin-web/package-lock.json\n?? acceptance/2026-10-03/piecework-wage-sweep/out/line2-repro-m8m9.json\n?? acceptance/2026-10-14/\""
+    ],
+    "at": "2026-10-14 20:35:45 +08",
+    "atUtc": "2026-10-14T12:35:45.779Z"
+  },
+  {
+    "id": "A2-aud",
+    "name": "aud 不含 migao 的 JWT 被拒",
+    "status": "pass",
+    "detail": "期望 HTTP 401 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::verify_jwt_token —— 手动校验 aud 含 \"migao\"，否则 InvalidTokenError",
+      "HTTP/读数: {\"status\":401,\"code\":\"TOKEN_INVALID\"}",
+      "构建点: worktree=/Users/guangzhen.zk/ai native/migao sha=90192bcac82b1d276d2793986ca9c64f47e47d16 subject=chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655) procStart=三 10月/14 20:34:43 2026 dirty=\"M acceptance/2026-10-03/piecework-wage-sweep/out/run.log\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U1-login-view.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U2-bad-pin.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U3-logged-in.png\n M frontend/admin-web/package-lock.json\n?? acceptance/2026-10-03/piecework-wage-sweep/out/line2-repro-m8m9.json\n?? acceptance/2026-10-14/\""
+    ],
+    "at": "2026-10-14 20:35:45 +08",
+    "atUtc": "2026-10-14T12:35:45.961Z"
+  },
+  {
+    "id": "A2-positive",
+    "name": "正对照：合法 RS256 token 放行",
+    "status": "fail",
+    "detail": "期望 HTTP 200 且 success==true ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: 正对照（缺它则 A2 各条可能只是「一律 401」的空断言）",
+      "HTTP/读数: {\"status\":401}",
+      "构建点: worktree=/Users/guangzhen.zk/ai native/migao sha=90192bcac82b1d276d2793986ca9c64f47e47d16 subject=chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655) procStart=三 10月/14 20:34:43 2026 dirty=\"M acceptance/2026-10-03/piecework-wage-sweep/out/run.log\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U1-login-view.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U2-bad-pin.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U3-logged-in.png\n M frontend/admin-web/package-lock.json\n?? acceptance/2026-10-03/piecework-wage-sweep/out/line2-repro-m8m9.json\n?? acceptance/2026-10-14/\""
+    ],
+    "at": "2026-10-14 20:35:46 +08",
+    "atUtc": "2026-10-14T12:35:46.151Z"
+  },
+  {
+    "id": "A3-1",
+    "name": "内部面无 Service Token ⇒ 401",
+    "status": "pass",
+    "detail": "期望 HTTP 401 且 code==\"AUTH_REQUIRED\" == 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::verify_service_token —— 缺头 ⇒ 401 AUTH_REQUIRED",
+      "HTTP/读数: {\"status\":401,\"code\":\"AUTH_REQUIRED\"}",
+      "构建点: worktree=/Users/guangzhen.zk/ai native/migao sha=90192bcac82b1d276d2793986ca9c64f47e47d16 subject=chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655) procStart=三 10月/14 20:34:43 2026 dirty=\"M acceptance/2026-10-03/piecework-wage-sweep/out/run.log\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U1-login-view.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U2-bad-pin.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U3-logged-in.png\n M frontend/admin-web/package-lock.json\n?? acceptance/2026-10-03/piecework-wage-sweep/out/line2-repro-m8m9.json\n?? acceptance/2026-10-14/\""
+    ],
+    "at": "2026-10-14 20:35:46 +08",
+    "atUtc": "2026-10-14T12:35:46.155Z"
+  },
+  {
+    "id": "A3-2",
+    "name": "内部面错误 Service Token ⇒ 401（不得 500）",
+    "status": "pass",
+    "detail": "期望 HTTP 401 且 code==\"AUTH_REQUIRED\" == 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::verify_service_token —— compare_digest 不等 ⇒ 401",
+      "HTTP/读数: {\"status\":401,\"code\":\"AUTH_REQUIRED\"}",
+      "构建点: worktree=/Users/guangzhen.zk/ai native/migao sha=90192bcac82b1d276d2793986ca9c64f47e47d16 subject=chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655) procStart=三 10月/14 20:34:43 2026 dirty=\"M acceptance/2026-10-03/piecework-wage-sweep/out/run.log\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U1-login-view.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U2-bad-pin.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U3-logged-in.png\n M frontend/admin-web/package-lock.json\n?? acceptance/2026-10-03/piecework-wage-sweep/out/line2-repro-m8m9.json\n?? acceptance/2026-10-14/\""
+    ],
+    "at": "2026-10-14 20:35:46 +08",
+    "atUtc": "2026-10-14T12:35:46.157Z"
+  },
+  {
+    "id": "A3-3",
+    "name": "正对照：正确 Service Token 放行且工具集非空",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 tools.length>0 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 正对照 + auth.py::verify_service_token 通过分支",
+      "HTTP/读数: {\"status\":200,\"count\":50,\"sample\":[\"product_search\",\"product_detail\",\"logistics_track\",\"customer_logistics_track\",\"knowledge_search\"]}",
+      "构建点: worktree=/Users/guangzhen.zk/ai native/migao sha=90192bcac82b1d276d2793986ca9c64f47e47d16 subject=chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655) procStart=三 10月/14 20:34:43 2026 dirty=\"M acceptance/2026-10-03/piecework-wage-sweep/out/run.log\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U1-login-view.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U2-bad-pin.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U3-logged-in.png\n M frontend/admin-web/package-lock.json\n?? acceptance/2026-10-03/piecework-wage-sweep/out/line2-repro-m8m9.json\n?? acceptance/2026-10-14/\""
+    ],
+    "at": "2026-10-14 20:35:46 +08",
+    "atUtc": "2026-10-14T12:35:46.166Z"
+  },
+  {
+    "id": "A3-4",
+    "name": "内部面拒写工具（order_create）",
+    "status": "pass",
+    "detail": "期望 HTTP 403 且 code==\"WRITE_TOOL_FORBIDDEN\" == 实测 [object Object]",
+    "evidence": [
+      "期望来源: internal.py::execute_tool —— read_only=False ⇒ 403 WRITE_TOOL_FORBIDDEN",
+      "HTTP/读数: {\"status\":403,\"code\":\"WRITE_TOOL_FORBIDDEN\",\"body\":{\"detail\":{\"success\":false,\"error\":{\"code\":\"WRITE_TOOL_FORBIDDEN\",\"message\":\"Tool 'order_create' 是写操作，禁止通过内部接口执行\"}}}}",
+      "构建点: worktree=/Users/guangzhen.zk/ai native/migao sha=90192bcac82b1d276d2793986ca9c64f47e47d16 subject=chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655) procStart=三 10月/14 20:34:43 2026 dirty=\"M acceptance/2026-10-03/piecework-wage-sweep/out/run.log\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U1-login-view.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U2-bad-pin.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U3-logged-in.png\n M frontend/admin-web/package-lock.json\n?? acceptance/2026-10-03/piecework-wage-sweep/out/line2-repro-m8m9.json\n?? acceptance/2026-10-14/\""
+    ],
+    "at": "2026-10-14 20:35:46 +08",
+    "atUtc": "2026-10-14T12:35:46.174Z"
+  },
+  {
+    "id": "A3-5",
+    "name": "内部面未知工具 ⇒ 404 TOOL_NOT_FOUND",
+    "status": "pass",
+    "detail": "期望 HTTP 404 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: internal.py::execute_tool —— registry.get_tool 为 None ⇒ 404",
+      "HTTP/读数: {\"status\":404,\"code\":\"TOOL_NOT_FOUND\"}",
+      "构建点: worktree=/Users/guangzhen.zk/ai native/migao sha=90192bcac82b1d276d2793986ca9c64f47e47d16 subject=chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655) procStart=三 10月/14 20:34:43 2026 dirty=\"M acceptance/2026-10-03/piecework-wage-sweep/out/run.log\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U1-login-view.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U2-bad-pin.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U3-logged-in.png\n M frontend/admin-web/package-lock.json\n?? acceptance/2026-10-03/piecework-wage-sweep/out/line2-repro-m8m9.json\n?? acceptance/2026-10-14/\""
+    ],
+    "at": "2026-10-14 20:35:46 +08",
+    "atUtc": "2026-10-14T12:35:46.181Z"
+  },
+  {
+    "id": "A4-1",
+    "name": "SERVICE_TOKEN 不在无鉴权/错误响应中回显",
+    "status": "pass",
+    "detail": "期望 0 处命中 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 机密不回显（只读判定：扫描 health/ready/openapi 与 401 响应体）",
+      "HTTP/读数: {\"leaked\":[],\"tokenLen\":65}",
+      "构建点: worktree=/Users/guangzhen.zk/ai native/migao sha=90192bcac82b1d276d2793986ca9c64f47e47d16 subject=chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655) procStart=三 10月/14 20:34:43 2026 dirty=\"M acceptance/2026-10-03/piecework-wage-sweep/out/run.log\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U1-login-view.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U2-bad-pin.png\n M acceptance/2026-10-03/worker-miniapp-writeface-sweep/out/shots/U3-logged-in.png\n M frontend/admin-web/package-lock.json\n?? acceptance/2026-10-03/piecework-wage-sweep/out/line2-repro-m8m9.json\n?? acceptance/2026-10-14/\""
+    ],
+    "at": "2026-10-14 20:35:46 +08",
+    "atUtc": "2026-10-14T12:35:46.338Z"
+  }
+]

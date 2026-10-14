@@ -1,0 +1,29 @@
+{
+  "at": {
+    "cst": "2026-10-14 20:31:43 +08",
+    "utc": "2026-10-14T12:31:43.458Z"
+  },
+  "rows": [
+    {
+      "requested": "0.004",
+      "status": 422,
+      "orderRefund": 0,
+      "finance": [],
+      "equal": null
+    },
+    {
+      "requested": "0.005",
+      "status": 422,
+      "orderRefund": 0,
+      "finance": [],
+      "equal": null
+    },
+    {
+      "requested": "0.009",
+      "status": 422,
+      "orderRefund": 0,
+      "finance": [],
+      "equal": null
+    }
+  ]
+}

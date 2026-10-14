@@ -1,0 +1,56 @@
+{
+  "stamp": "20261014123513",
+  "cases": {
+    "RP1": {
+      "runId": "race-sweep-rp1-20261014123513-0c0stl",
+      "batchId": 151,
+      "statuses": [
+        200,
+        200
+      ],
+      "lineStatuses": [
+        "changed=1,replayed=0",
+        "changed=0,replayed=1"
+      ],
+      "consumptionRows": 1,
+      "bodies": [
+        "{\"success\":true,\"data\":{\"runId\":\"race-sweep-rp1-20261014123513-0c0stl\",\"productId\":\"3eec98bd01e59419d8041aff7f851da4\",\"changedCount\":1,\"unchangedCount\":0,\"replayedCount\":0,\"totalDelta\":-1,\"lines\":[{\"b",
+        "{\"success\":true,\"data\":{\"runId\":\"race-sweep-rp1-20261014123513-0c0stl\",\"productId\":\"3eec98bd01e59419d8041aff7f851da4\",\"changedCount\":0,\"unchangedCount\":0,\"replayedCount\":1,\"totalDelta\":0,\"lines\":[{\"ba"
+      ]
+    },
+    "RP2": {
+      "cleanChainBad": [],
+      "brokenChainBad": [
+        {
+          "at": 2,
+          "prevAfter": "15.0",
+          "curBefore": "10.0"
+        }
+      ]
+    },
+    "RP3": {
+      "inboundNo": "RK-20261014-0007",
+      "statuses": [
+        200,
+        409
+      ],
+      "stockBefore": 31,
+      "stockAfter": 32,
+      "ledgerRows": 1,
+      "bodies": [
+        "{\"success\":true,\"data\":{\"id\":\"cb693e2af23f44572d60de7b19d69738\",\"inboundNo\":\"RK-20261014-0007\",\"supplier\":\"race-sweep-rp3\",\"warehouse\":\"race-sweep-wh\",\"inboundD",
+        "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"入库单当前状态为「已过账」，只有草稿可以过账\"},\"requestId\":\"req_83134980f14c4273\",\"timestamp\":1791981348,\"suggestion\":\"已过账的入库单不"
+      ]
+    },
+    "RP4": {
+      "bProbeIds": [
+        "2470b5898c762346621520311f03208b",
+        "f130d3e6141d51e247c51e68678ad4f4"
+      ],
+      "aProbeCount": 6,
+      "syntheticFlagged": [
+        "2470b5898c762346621520311f03208b"
+      ]
+    }
+  }
+}

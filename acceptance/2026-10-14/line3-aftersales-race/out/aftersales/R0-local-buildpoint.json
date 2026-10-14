@@ -1,0 +1,15 @@
+{
+  "worktree": "/Users/guangzhen.zk/ai native/migao",
+  "pid": "54364",
+  "sha": "90192bcac",
+  "shaFull": "90192bcac82b1d276d2793986ca9c64f47e47d16",
+  "subject": "chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)",
+  "commitTime": "2026-10-14T11:52:37Z",
+  "originMain": "03ce17050",
+  "adminApiStart": "三 10月/14 20:24:44 2026",
+  "observedAt": {
+    "cst": "2026-10-14 20:29:54 +08",
+    "utc": "2026-10-14T12:29:54.022Z"
+  },
+  "note": "本地旧构建点（LIVE_WORKTREE），非被测面"
+}

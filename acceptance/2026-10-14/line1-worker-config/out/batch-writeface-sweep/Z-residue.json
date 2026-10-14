@@ -1,0 +1,26 @@
+{
+  "cleanupError": null,
+  "residue": {
+    "counts": {
+      "products": 0,
+      "productsByName": 0,
+      "productSkus": 0,
+      "productColors": 0,
+      "productAttrs": 0,
+      "operations": 0,
+      "opPositions": 0,
+      "opPositionsByName": 0,
+      "opPriceVersions": 0,
+      "routeTemplates": 0,
+      "routeRules": 0,
+      "ledger": 0,
+      "ledgerByProduct": 0
+    },
+    "total": 0
+  },
+  "at": {
+    "cst": "2026-10-14 20:34:24 +08",
+    "utc": "2026-10-14T12:34:24.221Z"
+  },
+  "clean": true
+}

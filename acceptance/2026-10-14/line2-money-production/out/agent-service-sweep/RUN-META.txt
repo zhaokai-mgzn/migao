@@ -1,0 +1,5 @@
+RUN_AT 2026-10-14 20:35:33 CST
+BUILD_SHA 90192bcac82b1d276d2793986ca9c64f47e47d16
+TENANT_A 32
+TENANT_B 999999 (synthetic; no 2nd tenant in this round)
+NOTE DEBUG=true on :8001 (start-stack default) => p0 A-group needs debugfalse; MODE=debugtrue control run

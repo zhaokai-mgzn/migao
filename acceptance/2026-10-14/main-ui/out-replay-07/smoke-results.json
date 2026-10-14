@@ -1,0 +1,357 @@
+[
+  {
+    "journey": "01-login",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "02-dashboard",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "03-briefing",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "04-agent-workspace-redirect",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "05-human-sessions",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "06-agent-sessions",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "07-chat",
+    "pass": false,
+    "errors": [
+      "[console.error] Failed to load resource: the server responded with a status of 401 ()",
+      "[console.error] Failed to load resource: the server responded with a status of 401 ()",
+      "[console.error] Failed to load resource: the server responded with a status of 401 ()",
+      "[console.error] Failed to load resource: the server responded with a status of 401 ()",
+      "[console.error] Failed to load resource: the server responded with a status of 401 ()"
+    ],
+    "notes": [],
+    "evidence": [
+      "对话页输入框可用（ai-agent 未起）— UI-only",
+      "/Users/guangzhen.zk/ai native/migao/acceptance/2026-10-14/main-ui/out-replay-07/screenshots/07-chat.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "08-products-list",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "09-products-new",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "10-product-detail",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "11-product-edit-doorwidth",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "12-processing",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "13-categories",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "14-orders-list",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "15-orders-new",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "16-order-detail-processing-order",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "32-production-qr-and-piecework",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "17-order-ship",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "18-after-sales-list",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "19-after-sales-detail",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "20-customers-list",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "21-customer-detail",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "22-finance",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "23-employees",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "24-roles",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "25-settings",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "26-notifications",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "27-corporate",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "28-register",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 07 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  }
+]

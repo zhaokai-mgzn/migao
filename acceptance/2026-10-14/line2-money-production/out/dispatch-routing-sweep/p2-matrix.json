@@ -1,0 +1,486 @@
+[
+  {
+    "id": "D-01",
+    "name": "布帘 × 无规则工艺（罗马帘）→ 主线十道，逐部位变体正确",
+    "status": "pass",
+    "detail": "订单 f4151883e39fce1d697de757eff521ca 加工单 JG-20261014-8436（direct）→ 10 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='c5a08689a402d112a66a4caff58443c1'"
+    ],
+    "at": "2026-10-14T12:31:20.305Z"
+  },
+  {
+    "id": "D-02",
+    "name": "布帘 × 韩褶 → 主线 + 韩褶(三边后) + 上车布(韩褶后)",
+    "status": "pass",
+    "detail": "订单 001fbdad55e33318d49027508749eaa6 加工单 JG-20261014-8437（direct）→ 12 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='f7a1d255ef11d6050f9d44442a1a16ac'"
+    ],
+    "at": "2026-10-14T12:31:22.702Z"
+  },
+  {
+    "id": "D-03",
+    "name": "纱帘 × 韩褶 → 纱变体逐道正确（精裁-纱/纱三边/韩褶-纱/上车布-纱/车被-纱）",
+    "status": "fail",
+    "detail": "工序序列不符\n      期望 精裁-纱 → 纱三边 → 韩褶-纱 → 上车布-纱 → 熨烫-纱 → 定型-纱 → 复烫-纱 → 车被-纱 → 外帘打卷 → 打包 → 外帘装袋 → 外帘发货\n      实得 精裁-纱 → 纱三边 → 韩褶-纱 → 熨烫-纱 → 定型-纱 → 复烫-纱 → 车被-纱 → 外帘打卷 → 打包 → 外帘装袋 → 外帘发货",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "orderId=bd88c09fd9db633a374de48be51a3abb"
+    ],
+    "at": "2026-10-14T12:31:24.752Z"
+  },
+  {
+    "id": "D-04",
+    "name": "帘头 × 平幔 → 帘头复用布帘变体 + 帘头制作(三边后) + 去掉复烫",
+    "status": "pass",
+    "detail": "订单 0a6894449e1497e93c303ae40e0464e4 加工单 JG-20261014-8439（direct）→ 10 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='b3eca879a0043580817fb5f654a1d730'"
+    ],
+    "at": "2026-10-14T12:31:27.184Z"
+  },
+  {
+    "id": "D-05",
+    "name": "布料形态（saleForm=布料）→ 布料主线（裁剪→打包），不套窗帘工艺规则",
+    "status": "pass",
+    "detail": "订单 2aaa8f56f2127363c3689b2c3a706d78 加工单 JG-20261014-8440（direct）→ 2 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='c00fa3aafbccacf842135a82be88ac0a'"
+    ],
+    "at": "2026-10-14T12:31:28.927Z"
+  },
+  {
+    "id": "D-06",
+    "name": "布帘 × 打孔 → 打孔-布(三边后)",
+    "status": "pass",
+    "detail": "订单 c06e521cea675f6d5f19cfe7a32169b8 加工单 JG-20261014-8441（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='34ea6695e0a008494ab9945cd0dc364d'"
+    ],
+    "at": "2026-10-14T12:31:31.180Z"
+  },
+  {
+    "id": "D-07",
+    "name": "布帘 × 穿杆 → 去掉 定型/复烫",
+    "status": "pass",
+    "detail": "订单 44f0194098d1e1b0a3790a3ce85f077c 加工单 JG-20261014-8442（direct）→ 8 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='dac9f613cf4d5fd4e3144e56afc59cf7'"
+    ],
+    "at": "2026-10-14T12:31:33.330Z"
+  },
+  {
+    "id": "D-08",
+    "name": "布帘 × 四爪钩 → 该工艺规则已软删 ⇒ 与主线逐字相同（软删规则不得生效）",
+    "status": "pass",
+    "detail": "订单 d858ce3ecbc72c69baad5b912c1adbde 加工单 JG-20261014-8443（direct）→ 10 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='1f56ac4eb44417a15d25f8aab5639bda'"
+    ],
+    "at": "2026-10-14T12:31:36.023Z"
+  },
+  {
+    "id": "D-09",
+    "name": "布帘 未填部位与工艺 → 显式回落默认（route_source 标注 + 序列 = 默认工艺「韩褶」的 12 道）",
+    "status": "pass",
+    "detail": "订单 dace0d50e38027fabb8b8e9ae3491216 加工单 JG-20261014-8444（default）→ 12 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='70bbf206d69c0ab18834c7f89f090c0f'"
+    ],
+    "at": "2026-10-14T12:31:38.652Z"
+  },
+  {
+    "id": "D-10",
+    "name": "布帘 × 罗马帘 + isShaped=false → 剔除 定型/复烫（形态开关接线）",
+    "status": "pass",
+    "detail": "订单 9197a06549fd744dbcd1383eb8c5ba49 加工单 JG-20261014-8445（direct）→ 8 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='80e705caadc1b82b2bd1c6ca84b0327f'"
+    ],
+    "at": "2026-10-14T12:31:40.952Z"
+  },
+  {
+    "id": "O-拼1次",
+    "name": "布帘 + 特殊选项「拼1次」→ 条件工序落位（三边 之后）",
+    "status": "pass",
+    "detail": "订单 b7ae0a78fd89dbcb3ec30c5f82c45219 加工单 JG-20261014-8446（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='f10704b439e894a4cadaf8be26bc4126'"
+    ],
+    "at": "2026-10-14T12:31:43.168Z"
+  },
+  {
+    "id": "O-拼2次",
+    "name": "布帘 + 特殊选项「拼2次」→ 条件工序落位（三边 之后）",
+    "status": "pass",
+    "detail": "订单 8710b6c5ac729208fb24d77f1552d055 加工单 JG-20261014-8447（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='348b16e8f684a96109da9411613a29f2'"
+    ],
+    "at": "2026-10-14T12:31:45.906Z"
+  },
+  {
+    "id": "O-拼3次",
+    "name": "布帘 + 特殊选项「拼3次」→ 条件工序落位（三边 之后）",
+    "status": "pass",
+    "detail": "订单 c252898fd9cc609e0cd1eac758e6b886 加工单 JG-20261014-8448（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='94b9438a17ad37b2a1ebc5e7fd3bc83f'"
+    ],
+    "at": "2026-10-14T12:31:48.247Z"
+  },
+  {
+    "id": "O-加花边",
+    "name": "布帘 + 特殊选项「加花边」→ 条件工序落位（三边 之后）",
+    "status": "pass",
+    "detail": "订单 203bd6bba2bb66c9be17792071f93e7a 加工单 JG-20261014-8449（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='ca6154e738c72e931317bc77493ff15d'"
+    ],
+    "at": "2026-10-14T12:31:50.287Z"
+  },
+  {
+    "id": "O-加铅块",
+    "name": "布帘 + 特殊选项「加铅块」→ 条件工序落位（三边 之后）",
+    "status": "pass",
+    "detail": "订单 dbd2a0520fde62bf7b869dcb3ac0f21a 加工单 JG-20261014-8450（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='991eef47e31e11a521feb95571b7a34e'"
+    ],
+    "at": "2026-10-14T12:31:52.867Z"
+  },
+  {
+    "id": "O-接高",
+    "name": "布帘 + 特殊选项「接高」→ 条件工序落位（精裁 之后）",
+    "status": "pass",
+    "detail": "订单 d055f47d713bd565ef82f916d9afc21b 加工单 JG-20261014-8451（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='161dadb2a67fa193c782df70ccdd3dc0'"
+    ],
+    "at": "2026-10-14T12:31:55.378Z"
+  },
+  {
+    "id": "O-双眼皮接高",
+    "name": "布帘 + 特殊选项「双眼皮接高」→ 条件工序落位（精裁 之后）",
+    "status": "pass",
+    "detail": "订单 f951085f7c7d97d9f3a39777bda5dca9 加工单 JG-20261014-8452（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='fe6341f649e36ce8615ca8b8e7ed6daf'"
+    ],
+    "at": "2026-10-14T12:31:57.858Z"
+  },
+  {
+    "id": "O-余料做绑带",
+    "name": "布帘 + 特殊选项「余料做绑带」→ 条件工序落位（车被 之后）",
+    "status": "pass",
+    "detail": "订单 bc263cf749489fcb62fb5aa48b2a3ec9 加工单 JG-20261014-8453（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='e53dd4e3dce08d4736e7b75a07e1adcb'"
+    ],
+    "at": "2026-10-14T12:32:00.760Z"
+  },
+  {
+    "id": "O-布绑带",
+    "name": "布帘 + 特殊选项「布绑带」→ 条件工序落位（车被 之后）",
+    "status": "pass",
+    "detail": "订单 b6e96f21e89628d38fa016c3ed53eb26 加工单 JG-20261014-8454（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='b48466dd38b623cc401e47257e68bc67'"
+    ],
+    "at": "2026-10-14T12:32:03.296Z"
+  },
+  {
+    "id": "O-纱绑带",
+    "name": "布帘 + 特殊选项「纱绑带」→ 条件工序落位（车被 之后）",
+    "status": "pass",
+    "detail": "订单 fd4685903d2257892edf51167a982d08 加工单 JG-20261014-8459（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='374ee26f0f9a010bf1b986bbfa9133a1'"
+    ],
+    "at": "2026-10-14T12:32:05.685Z"
+  },
+  {
+    "id": "O-余料做帘头",
+    "name": "布帘 + 特殊选项「余料做帘头」→ 条件工序落位（三边 之后）",
+    "status": "pass",
+    "detail": "订单 f95cf9eda715e349763cd2d3a0ea7f20 加工单 JG-20261014-8463（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='d85586d40ab70b9383152a29c21881b0'"
+    ],
+    "at": "2026-10-14T12:32:07.953Z"
+  },
+  {
+    "id": "O-抱枕",
+    "name": "布帘 + 特殊选项「抱枕」→ 条件工序落位（外帘打卷 之后）",
+    "status": "pass",
+    "detail": "订单 23cebef9898e2d76e2d37b78f781d4eb 加工单 JG-20261014-8465（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='1cfd009f371e6a686ada779f66442b78'"
+    ],
+    "at": "2026-10-14T12:32:10.440Z"
+  },
+  {
+    "id": "O-加logo条",
+    "name": "布帘 + 特殊选项「加logo条」→ 条件工序落位（三边 之后）",
+    "status": "pass",
+    "detail": "订单 e6f1d8f49fe7d5a90b2de39008bc65ce 加工单 JG-20261014-8470（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='d6d63f76b5b383aed62f958af3da363e'"
+    ],
+    "at": "2026-10-14T12:32:12.797Z"
+  },
+  {
+    "id": "O-加立边",
+    "name": "布帘 + 特殊选项「加立边」→ 条件工序落位（三边 之后）",
+    "status": "pass",
+    "detail": "订单 8e6d8349eb6c534cc6808c8a0d1ffbd7 加工单 JG-20261014-8475（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='1c3bdcd23cffc9cc4e3aecd5f1835dcb'"
+    ],
+    "at": "2026-10-14T12:32:15.551Z"
+  },
+  {
+    "id": "O-扣环",
+    "name": "布帘 + 特殊选项「扣环」→ 条件工序落位（三边 之后）",
+    "status": "pass",
+    "detail": "订单 5a4e558ed8a880332d39a94696928043 加工单 JG-20261014-8480（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='665b6c2484f127b91f2d0e07800f947a'"
+    ],
+    "at": "2026-10-14T12:32:17.867Z"
+  },
+  {
+    "id": "O-防翘扣",
+    "name": "布帘 + 特殊选项「防翘扣」→ 条件工序落位（三边 之后）",
+    "status": "pass",
+    "detail": "订单 9f74d93e6b2f63a208af1f17d632ce7d 加工单 JG-20261014-8481（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='50ce048bae3322bed891aadc602044e9'"
+    ],
+    "at": "2026-10-14T12:32:20.068Z"
+  },
+  {
+    "id": "I-花边",
+    "name": "布帘 + 加工项「花边」→ 条件工序落位",
+    "status": "pass",
+    "detail": "订单 9d868b38e3de0a797bab8bd6baf44664 加工单 JG-20261014-8486（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='4e2aed1df5762c6a0ef642ac07e1731b'"
+    ],
+    "at": "2026-10-14T12:32:22.490Z"
+  },
+  {
+    "id": "I-扣环",
+    "name": "布帘 + 加工项「扣环」→ 条件工序落位",
+    "status": "pass",
+    "detail": "订单 2d90b9e6c67fcb877907eca6c22cfcc4 加工单 JG-20261014-8487（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='d6a1f88b2742cee7b1ce34f13afd6b3c'"
+    ],
+    "at": "2026-10-14T12:32:25.449Z"
+  },
+  {
+    "id": "I-接高",
+    "name": "布帘 + 加工项「接高」→ 条件工序落位",
+    "status": "pass",
+    "detail": "订单 9d27be2dfb2907cfabd46c141068ecda 加工单 JG-20261014-8488（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='1b53ccb94bdeffaf6ed350c10c58505e'"
+    ],
+    "at": "2026-10-14T12:32:27.229Z"
+  },
+  {
+    "id": "S-01",
+    "name": "一樘布+纱（craftLineId 同组）→ 两个部位各自序列正确，套级工序只落一次（防双付）",
+    "status": "fail",
+    "detail": "第 1 个部位序列不符\n      期望 精裁-纱 → 纱三边 → 韩褶-纱 → 上车布-纱 → 熨烫-纱 → 定型-纱 → 复烫-纱 → 车被-纱\n      实得 精裁-纱 → 纱三边 → 韩褶-纱 → 熨烫-纱 → 定型-纱 → 复烫-纱 → 车被-纱",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "orderId=13c6749fd6f2c923f1776e583038b091"
+    ],
+    "at": "2026-10-14T12:32:28.833Z"
+  },
+  {
+    "id": "S-02",
+    "name": "两樘独立窗（无 craftLineId）→ 两行各自 12 道、套级工序各落一次（合计 2 次）",
+    "status": "pass",
+    "detail": "订单 b5e908ea0d705efa57227568696b3b00 加工单 JG-20261014-8490（direct）→ 24 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='d3f0a05344e33e363f84163d6ea0f83f'"
+    ],
+    "at": "2026-10-14T12:32:30.913Z"
+  },
+  {
+    "id": "S-03",
+    "name": "纱帘 + 选项「拼1次」（仅布帘有该变体）→ 须显式失败，不得静默丢工序",
+    "status": "fail",
+    "detail": "预期显式失败，实际生成成功（工序=精裁-纱,纱三边,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货）—— 静默丢工序或错误取路",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "orderId=c114f12bc4912dec3f64bfb80b093189"
+    ],
+    "at": "2026-10-14T12:32:32.547Z"
+  },
+  {
+    "id": "Q-01",
+    "name": "数量口径：孔数（holes=24）恒等于报工应做数量",
+    "status": "pass",
+    "detail": "订单 1a81e435f0628acb7a98c7ff9b37d7e1 加工单 JG-20261014-8492（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='7396599928a7c75395defd6269edcae3'"
+    ],
+    "at": "2026-10-14T12:32:33.952Z"
+  },
+  {
+    "id": "D-11",
+    "name": "纱帘 × 打孔 → 打孔-纱（纱变体逐条可达）",
+    "status": "pass",
+    "detail": "订单 684419fd43136efc12bbb253f1d957c2 加工单 JG-20261014-8493（direct）→ 11 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='9c22253dd57f3b18c7cf7877512df70a'"
+    ],
+    "at": "2026-10-14T12:32:35.485Z"
+  },
+  {
+    "id": "O2-纱绑带@纱帘",
+    "name": "纱帘 + 选项「纱绑带」→ 绑带变体按部位解析成 绑带-纱",
+    "status": "pass",
+    "detail": "订单 4d6b5975176fdb025748d168f06f4e0b 加工单 JG-20261014-8494（direct）→ 10 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='0f3bd58839831c14062730faaa6037d4'"
+    ],
+    "at": "2026-10-14T12:32:36.924Z"
+  },
+  {
+    "id": "F-拼1次@纱帘",
+    "name": "纱帘 + 选项「拼1次」→ 该工序无纱帘变体，须显式失败且指名缺的工序",
+    "status": "fail",
+    "detail": "预期显式失败，实际生成成功（工序=精裁-纱,纱三边,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货）—— 静默丢工序或错误取路",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "orderId=f3716907422856cfc04759b782322ab1"
+    ],
+    "at": "2026-10-14T12:32:38.314Z"
+  },
+  {
+    "id": "F-加花边@纱帘",
+    "name": "纱帘 + 选项「加花边」→ 该工序无纱帘变体，须显式失败且指名缺的工序",
+    "status": "fail",
+    "detail": "预期显式失败，实际生成成功（工序=精裁-纱,纱三边,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货）—— 静默丢工序或错误取路",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "orderId=07c8d11dfff1b376cf499f00e317db09"
+    ],
+    "at": "2026-10-14T12:32:39.966Z"
+  },
+  {
+    "id": "F-加铅块@纱帘",
+    "name": "纱帘 + 选项「加铅块」→ 该工序无纱帘变体，须显式失败且指名缺的工序",
+    "status": "fail",
+    "detail": "预期显式失败，实际生成成功（工序=精裁-纱,纱三边,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货）—— 静默丢工序或错误取路",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "orderId=313035f3ff397f07d4549282adb0d9b7"
+    ],
+    "at": "2026-10-14T12:32:41.390Z"
+  },
+  {
+    "id": "F-接高@纱帘",
+    "name": "纱帘 + 选项「接高」→ 该工序无纱帘变体，须显式失败且指名缺的工序",
+    "status": "fail",
+    "detail": "预期显式失败，实际生成成功（工序=精裁-纱,纱三边,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货）—— 静默丢工序或错误取路",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "orderId=718579c1952c2ddba944abbe33852da3"
+    ],
+    "at": "2026-10-14T12:32:43.086Z"
+  },
+  {
+    "id": "F-加logo条@纱帘",
+    "name": "纱帘 + 选项「加logo条」→ 该工序无纱帘变体，须显式失败且指名缺的工序",
+    "status": "fail",
+    "detail": "预期显式失败，实际生成成功（工序=精裁-纱,纱三边,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货）—— 静默丢工序或错误取路",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "orderId=74700f19abb5bb9cefa1ca10281247fc"
+    ],
+    "at": "2026-10-14T12:32:44.385Z"
+  },
+  {
+    "id": "F-加立边@纱帘",
+    "name": "纱帘 + 选项「加立边」→ 该工序无纱帘变体，须显式失败且指名缺的工序",
+    "status": "fail",
+    "detail": "预期显式失败，实际生成成功（工序=精裁-纱,纱三边,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货）—— 静默丢工序或错误取路",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "orderId=b067d20a40c7c7e5dcd56d78e003060c"
+    ],
+    "at": "2026-10-14T12:32:46.174Z"
+  },
+  {
+    "id": "F-扣环@纱帘",
+    "name": "纱帘 + 选项「扣环」→ 该工序无纱帘变体，须显式失败且指名缺的工序",
+    "status": "fail",
+    "detail": "预期显式失败，实际生成成功（工序=精裁-纱,纱三边,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货）—— 静默丢工序或错误取路",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "orderId=37e808b5eba153317b0f99a630ae7c8d"
+    ],
+    "at": "2026-10-14T12:32:47.859Z"
+  },
+  {
+    "id": "F-防翘扣@纱帘",
+    "name": "纱帘 + 选项「防翘扣」→ 该工序无纱帘变体，须显式失败且指名缺的工序",
+    "status": "fail",
+    "detail": "预期显式失败，实际生成成功（工序=精裁-纱,纱三边,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货）—— 静默丢工序或错误取路",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "orderId=1ce036df38af17161505e0b374d05568"
+    ],
+    "at": "2026-10-14T12:32:49.492Z"
+  },
+  {
+    "id": "O2-抱枕@纱帘",
+    "name": "纱帘 + 选项「抱枕」→ 部位无关工序照常派工（不误判为缺工序）",
+    "status": "pass",
+    "detail": "订单 830d58da40b860fa2ed8e6f9035e4dab 加工单 JG-20261014-8503（direct）→ 10 道工序",
+    "evidence": [
+      "POST /api/admin/processing-orders/generate",
+      "SQL: select * from processing_position_operations where processing_order_id='7abdade016ca78b7ffcceb6a1220415a'"
+    ],
+    "at": "2026-10-14T12:32:51.042Z"
+  }
+]

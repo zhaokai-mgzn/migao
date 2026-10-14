@@ -1,0 +1,52 @@
+{
+  "http": 200,
+  "body": {
+    "success": true,
+    "data": {
+      "id": "d4a2d0bda250da87cfb9ec71f9da41d6",
+      "deleted": true,
+      "detached_positions": 2,
+      "deleted_positions": 2
+    },
+    "requestId": "req_0f1d19c34bf1432a",
+    "timestamp": 1791981248
+  },
+  "posBefore": {
+    "id": "l2pos6ffad8dc7f15efd3a513",
+    "tenant_id": 32,
+    "logical_name": "线②验收工序246959",
+    "position": "线②验收部位",
+    "unit_price": 12.5,
+    "applicable": true,
+    "status": "active",
+    "created_at": "2026-10-14T20:34:07.474051+08:00",
+    "updated_at": "2026-10-14T20:34:07.474051+08:00",
+    "deleted": 0
+  },
+  "posAfter": {
+    "id": "l2pos6ffad8dc7f15efd3a513",
+    "tenant_id": 32,
+    "logical_name": "线②验收工序246959",
+    "position": "线②验收部位",
+    "unit_price": null,
+    "applicable": false,
+    "status": "active",
+    "created_at": "2026-10-14T20:34:07.474051+08:00",
+    "updated_at": "2026-10-14T20:34:08.034506+08:00",
+    "deleted": 1
+  },
+  "beforeOp": {
+    "id": "d4a2d0bda250da87cfb9ec71f9da41d6",
+    "name": "线②验收工序246959",
+    "deleted": 0,
+    "status": "active",
+    "updated_at": "2026-10-14T20:34:07.045959+08:00"
+  },
+  "afterOp": {
+    "id": "d4a2d0bda250da87cfb9ec71f9da41d6",
+    "name": "线②验收工序246959",
+    "deleted": 1,
+    "status": "active",
+    "updated_at": "2026-10-14T20:34:08.034506+08:00"
+  }
+}
