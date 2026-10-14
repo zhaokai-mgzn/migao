@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+### 入库单「过账」与「作废」严格同时发出时不再账实不符（2026-10-14，issue #6928）
+
+同一张草稿入库单上 `PATCH /api/admin/inbound-orders/{id}` 的 `action=post` 与 `action=cancel`
+**严格同时**发出时，改前两个请求都可能回 200，而单据终态落在「已作废」——库存加过的那几米与
+`stock_ledger_entries` 里的入库台账行**静默留在库里**（账实不符、无任何报错；独立复现 20 轮命中 3 轮）。
+根因：「作废」这一条状态迁移走的是「先读状态判草稿、再无谓词写回」（`WHERE` 只有主键），
+与「过账」的条件更新**不互斥**。现在作废与过账**同款**：状态迁移写进同一条带谓词的语句
+（`WHERE id=? AND tenant_id=? AND status='draft' AND deleted=0`），抢不到的一方得到明确的
+409「只有草稿可以作废 / 只有草稿可以过账」。**对外契约、字段名与状态取值一字未改。**
 ### admin-api → ai-agent 这条内部调用腿断了不再静默：`/actuator/health` 摆出 `token_configured` / `reachable` / `probe_error`（2026-10-14，issue #6896）
 
 六个客户端（入驻审核 / 工艺计算 / 图片识别 / 知识蒸馏 / 简报生成 / 加工数量）各自读

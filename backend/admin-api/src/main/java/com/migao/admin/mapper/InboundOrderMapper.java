@@ -37,4 +37,32 @@ public interface InboundOrderMapper extends BaseMapper<InboundOrder> {
                    @Param("tenantId") Long tenantId,
                    @Param("operator") String operator,
                    @Param("postedAt") OffsetDateTime postedAt);
+
+    /**
+     * 作废的**原子闸**：条件更新（CAS）—— 只有当前仍是 {@code draft} 才置 {@code cancelled}。
+     *
+     * <p><b>为什么必须与 {@link #markPosted} 同款</b>（issue #6928）：{@code InboundOrderService#post}
+     * 与 {@code #cancel} 争的是**同一份状态迁移权**。改前 {@code #cancel} 走「先读 status 判 draft、
+     * 再 {@code updateById}（WHERE 仅主键 ⇒ 无谓词）」：读-判-写之间的窗口里 {@code #post} 的 CAS
+     * 可以抢到过账权并提交（库存 +N 米、{@code stock_ledger_entries} 恰 1 行），随后 {@code #cancel}
+     * 的无谓词写把该单**覆写**成 {@code cancelled} ⇒ 同一张单两个请求都回 200、终态却是
+     * {@code cancelled}，而库存与入库台账**静默留在库里**（账实不符且无任何 4xx）。
+     * 一个写面有 CAS、另一个没有 ⇒ 两者**不互斥**；把判断与写入压进**同一条语句**才互斥。</p>
+     *
+     * <p>{@code cancelled_at} / {@code cancelled_by} / {@code cancelled_reason} 与状态**同一句**写入：
+     * 「谁在何时为什么作废」不能与状态迁移分成两次写（中间态无法追责）。</p>
+     *
+     * <p>谓词带 {@code deleted = 0}：MyBatis-Plus 的 {@code @TableLogic} 只对自动生成的 SQL 生效，
+     * 手写 SQL 必须自己带上（软删的单不得作废）。</p>
+     *
+     * @return 影响行数：{@code 1} = 本请求抢到作废权；{@code 0} = 已被过账 / 已作废 / 单不存在
+     */
+    @Update("UPDATE inbound_orders SET status = 'cancelled', cancelled_at = #{cancelledAt}, "
+            + "cancelled_by = #{operator}, cancelled_reason = #{reason}, updated_at = NOW() "
+            + "WHERE id = #{id} AND tenant_id = #{tenantId} AND status = 'draft' AND deleted = 0")
+    int markCancelled(@Param("id") String id,
+                      @Param("tenantId") Long tenantId,
+                      @Param("operator") String operator,
+                      @Param("reason") String reason,
+                      @Param("cancelledAt") OffsetDateTime cancelledAt);
 }
