@@ -1,0 +1,10 @@
+2026-10-14 20:46:37 +08 [独立复现] 登录 tenant=32（期望 32）
+file:///Users/guangzhen.zk/ai%20native/migao/acceptance/2026-10-14/line3-aftersales-race/probe-w2-repro.mjs:20
+const stockBefore = Number(skuBefore.stock)
+                                     ^
+
+TypeError: Cannot read properties of undefined (reading 'stock')
+    at file:///Users/guangzhen.zk/ai%20native/migao/acceptance/2026-10-14/line3-aftersales-race/probe-w2-repro.mjs:20:38
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+
+Node.js v24.19.0

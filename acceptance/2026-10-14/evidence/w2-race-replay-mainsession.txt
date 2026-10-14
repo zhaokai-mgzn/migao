@@ -1,0 +1,48 @@
+Traceback (most recent call last):
+  File "<stdin>", line 6, in <module>
+KeyError: 'requests'
+AFTER round-02.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+AFTER round-03.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+AFTER round-04.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+AFTER round-05.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+AFTER round-06.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+AFTER round-07.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+AFTER round-08.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+AFTER round-09.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+Traceback (most recent call last):
+  File "<stdin>", line 6, in <module>
+KeyError: 'requests'
+AFTER round-11.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+AFTER round-12.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+AFTER round-13.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+AFTER round-14.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+AFTER round-15.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+AFTER round-16.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+AFTER round-17.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+AFTER round-18.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+AFTER round-19.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+AFTER round-20.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+Traceback (most recent call last):
+  File "<stdin>", line 6, in <module>
+KeyError: 'requests'
+Traceback (most recent call last):
+  File "<stdin>", line 6, in <module>
+KeyError: 'requests'
+BEFORE round-03.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+BEFORE round-04.json: post=200 cancel=200 db=cancelled delta=5 ledger=1 inconsistent=3
+BEFORE round-05.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+BEFORE round-06.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+BEFORE round-07.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+BEFORE round-08.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+BEFORE round-09.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+BEFORE round-10.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+BEFORE round-11.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+BEFORE round-12.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+BEFORE round-13.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+BEFORE round-14.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+BEFORE round-15.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+BEFORE round-16.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+BEFORE round-17.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+BEFORE round-18.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+BEFORE round-19.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0
+BEFORE round-20.json: post=409 cancel=200 db=cancelled delta=0 ledger=0 inconsistent=0

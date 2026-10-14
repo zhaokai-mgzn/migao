@@ -1,0 +1,359 @@
+{
+  "records": [
+    {
+      "id": "LB-AS-CREATE-01",
+      "name": "建单：关联订单不存在 ⇒ 拒绝（不得落库）",
+      "status": "pass",
+      "detail": "期望 422 + VALIDATION_ERROR + 文案「关联订单不存在」且 after_sales_tickets 零新增 == 实测 422 VALIDATION_ERROR 关联订单不存在",
+      "evidence": [
+        "期望来源: 源码 backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java 的 createTicket（!isComplaint ⇒ selectById(orderId)==null ⇒ 「关联订单不存在」）",
+        "期望: 422 + VALIDATION_ERROR + 文案「关联订单不存在」且 after_sales_tickets 零新增",
+        "实得: 422 VALIDATION_ERROR 关联订单不存在",
+        "响应原文: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"关联订单不存在\"},\"requestId\":\"req_26f26ecfb3f6487f\",\"timestamp\":1791981004,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+        "DB 复查: after_sales_tickets where order_id='ffffffffffffffffffffffffffffffff' ⇒ 0 行"
+      ],
+      "at": "2026-10-14 20:30:04 +08",
+      "atUtc": "2026-10-14T12:30:04.262Z"
+    },
+    {
+      "id": "LB-AS-CREATE-02",
+      "name": "建单：他人租户订单跨域复用 ⇒ 拒绝",
+      "status": "skip",
+      "detail": "库中无 tenant=1 的订单可作跨租户探针",
+      "evidence": [],
+      "at": "2026-10-14 20:30:04 +08",
+      "atUtc": "2026-10-14T12:30:04.358Z"
+    },
+    {
+      "id": "LB-AS-CREATE-03",
+      "name": "建单幂等：同会话同键重发 ⇒ replayed=true 且落库恰一张（AS-010 口径）",
+      "status": "skip",
+      "detail": "第1次 200 replayed=undefined；第2次 422 replayed=undefined；落库活跃工单数=1",
+      "evidence": [
+        "期望来源: .github/cases/aftersales.yml 的 AS-010（db_verify[after_sales_by_client_request_id] expect_rows=1 + expect_replayed=true）」",
+        "幂等键 = X-Client-Request-Id: <REDACTED-JWT>（服务端口径见 backend/admin-api/src/main/java/com/migao/admin/service/ClientRequestIdService.java 的 HEADER）",
+        "第1次响应: {\"success\":true,\"data\":{\"id\":\"d5804663f5706f19265ecfb84820cb0e\",\"ticketNo\":\"AS-20261014-0001\",\"orderId\":\"e4f2dd51700c1b1de900248aa315d6a8\",\"orderNo\":\"20261014892000004\",\"customerId\":\"线B验收客户-IDEM-mv8380xgkmb\",\"customerName\":\"线B验收客户-IDEM-mv8380xgkmb\",\"customerPhone\":\"13999454996\",\"ticketType\":\"refund\"",
+        "第2次响应: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"该订单已有 退款 类型的活跃工单（AS-20261014-0001），请先处理后再创建\"},\"requestId\":\"req_db8c98bd9b2a4d8b\",\"timestamp\":1791981006,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+        "⇒ **skip 理由（判据对象错层）**：本条判的是 agent 工具面（aftersale_create）的同键回放能力，而 admin-api 直连面**未接**该服务",
+        "   （接线只在这些端点：WorkerProductionController / WorkerShipmentController / ProductionController / Agent*Controller），",
+        "   故本判据在 **admin-api 直连面** 上很可能不如 AS-010 那样成立 —— 该用例判的是 **agent 工具面**。读数即为结论，不作推断。"
+      ],
+      "at": "2026-10-14 20:30:06 +08",
+      "atUtc": "2026-10-14T12:30:06.556Z",
+      "key": "<REDACTED-JWT>",
+      "httpStatus1": 200,
+      "httpStatus2": 422,
+      "rows": 1,
+      "raw2": "{\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"该订单已有 退款 类型的活跃工单（AS-20261014-0001），请先处理后再创建\"},\"requestId\":\"req_db8c98bd9b2a4d8b\",\"timestamp\":1791981006,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+    },
+    {
+      "id": "LB-AS-SM-01",
+      "name": "状态机合法流转 pending → processing",
+      "status": "pass",
+      "detail": "期望 200 + DB after_sales_tickets.status=processing == 实测 200 / DB=processing",
+      "evidence": [
+        "期望来源: 源码 backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java 的 STATUS_TRANSITIONS 的 \"pending\" → {processing, rejected, closed}",
+        "期望: 200 + DB after_sales_tickets.status=processing",
+        "实得: 200 / DB=processing",
+        "响应: {\"success\":true,\"requestId\":\"req_0e25a986c46e4b83\",\"timestamp\":1791981006}",
+        "DB 行: {\"id\":\"c18843f8747c34ffa74e2ae99b1d4285\",\"tenant_id\":32,\"ticket_no\":\"AS-20261014-0002\",\"order_id\":\"4bc10dc297389775a1c1d55b87d0c392\",\"ticket_type\":\"other\",\"status\":\"processing\",\"refund_amount\":null,\"refund_method\":null,\"source\":\"merchant\",\"closed_at\":null,\"close_reason\":null,\"deleted\":0}"
+      ],
+      "at": "2026-10-14 20:30:06 +08",
+      "atUtc": "2026-10-14T12:30:06.932Z"
+    },
+    {
+      "id": "LB-AS-SM-02",
+      "name": "状态机非法流转：跳级 processing → rejected ⇒ 拒绝且终态不变",
+      "status": "pass",
+      "detail": "期望 422 + 文案「工单状态不允许从 [处理中] 变更为 [已拒绝]」+ DB 仍 processing == 实测 422 工单状态不允许从 [处理中] 变更为 [已拒绝] / DB=processing",
+      "evidence": [
+        "期望来源: 源码 backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java 的 STATUS_TRANSITIONS 的 \"processing\" → {resolved, closed}（rejected 不在集合内）",
+        "期望: 422 + 文案「工单状态不允许从 [处理中] 变更为 [已拒绝]」+ DB 仍 processing",
+        "实得: 422 工单状态不允许从 [处理中] 变更为 [已拒绝] / DB=processing",
+        "响应原文: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"工单状态不允许从 [处理中] 变更为 [已拒绝]\"},\"requestId\":\"req_40bfcbf2716f4c9a\",\"timestamp\":1791981007,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+        "DB 行: {\"id\":\"c18843f8747c34ffa74e2ae99b1d4285\",\"tenant_id\":32,\"ticket_no\":\"AS-20261014-0002\",\"order_id\":\"4bc10dc297389775a1c1d55b87d0c392\",\"ticket_type\":\"other\",\"status\":\"processing\",\"refund_amount\":null,\"refund_method\":null,\"source\":\"merchant\",\"closed_at\":null,\"close_reason\":null,\"deleted\":0}"
+      ],
+      "at": "2026-10-14 20:30:07 +08",
+      "atUtc": "2026-10-14T12:30:07.144Z"
+    },
+    {
+      "id": "LB-AS-SM-03",
+      "name": "状态机合法流转 processing → resolved",
+      "status": "pass",
+      "detail": "期望 200 + DB status=resolved == 实测 200 / DB=resolved",
+      "evidence": [
+        "期望来源: 源码 backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java 的 STATUS_TRANSITIONS 的 \"processing\" → {resolved, closed}",
+        "期望: 200 + DB status=resolved",
+        "实得: 200 / DB=resolved",
+        "响应: {\"success\":true,\"requestId\":\"req_ad41c6cf3b494de7\",\"timestamp\":1791981007}",
+        "DB 行: {\"id\":\"c18843f8747c34ffa74e2ae99b1d4285\",\"tenant_id\":32,\"ticket_no\":\"AS-20261014-0002\",\"order_id\":\"4bc10dc297389775a1c1d55b87d0c392\",\"ticket_type\":\"other\",\"status\":\"resolved\",\"refund_amount\":null,\"refund_method\":null,\"source\":\"merchant\",\"closed_at\":null,\"close_reason\":null,\"deleted\":0}"
+      ],
+      "at": "2026-10-14 20:30:07 +08",
+      "atUtc": "2026-10-14T12:30:07.394Z"
+    },
+    {
+      "id": "LB-AS-SM-04",
+      "name": "状态机非法流转：终态回退 resolved → processing ⇒ 拒绝",
+      "status": "pass",
+      "detail": "期望 422 + 文案「工单状态不允许从 [已解决] 变更为 [处理中]」+ DB 仍 resolved == 实测 422 工单状态不允许从 [已解决] 变更为 [处理中] / DB=resolved",
+      "evidence": [
+        "期望来源: 源码 backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java 的 STATUS_TRANSITIONS 的 \"resolved\" → Set.of()（终态，不允许再变更）",
+        "期望: 422 + 文案「工单状态不允许从 [已解决] 变更为 [处理中]」+ DB 仍 resolved",
+        "实得: 422 工单状态不允许从 [已解决] 变更为 [处理中] / DB=resolved",
+        "响应原文: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"工单状态不允许从 [已解决] 变更为 [处理中]\"},\"requestId\":\"req_9a4f337eaf8e41c2\",\"timestamp\":1791981007,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+        "DB 行: {\"id\":\"c18843f8747c34ffa74e2ae99b1d4285\",\"tenant_id\":32,\"ticket_no\":\"AS-20261014-0002\",\"order_id\":\"4bc10dc297389775a1c1d55b87d0c392\",\"ticket_type\":\"other\",\"status\":\"resolved\",\"refund_amount\":null,\"refund_method\":null,\"source\":\"merchant\",\"closed_at\":null,\"close_reason\":null,\"deleted\":0}"
+      ],
+      "at": "2026-10-14 20:30:07 +08",
+      "atUtc": "2026-10-14T12:30:07.556Z"
+    },
+    {
+      "id": "LB-AS-SM-05",
+      "name": "状态机：无效状态字面量 ⇒ 422（DTO 层 @Pattern）",
+      "status": "pass",
+      "detail": "期望 422 + 校验失败（不得 5xx） == 实测 422 VALIDATION_ERROR 参数校验失败",
+      "evidence": [
+        "期望来源: 源码 backend/admin-api/src/main/java/com/migao/admin/dto/AfterSalesStatusUpdateRequest.java 的 @Pattern(\"^(pending|processing|resolved|rejected|closed)$\")",
+        "期望: 422 + 校验失败（不得 5xx）",
+        "实得: 422 VALIDATION_ERROR 参数校验失败",
+        "响应原文: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"参数校验失败\",\"details\":[{\"field\":\"status\",\"message\":\"无效的售后状态\"}]},\"requestId\":\"req_89d4835fc4964a03\",\"timestamp\":1791981007}"
+      ],
+      "at": "2026-10-14 20:30:07 +08",
+      "atUtc": "2026-10-14T12:30:07.614Z"
+    },
+    {
+      "id": "LB-AS-SM-06",
+      "name": "状态机：pending → closed（#3541 裁定允许直关）",
+      "status": "pass",
+      "detail": "期望 200 + DB status=closed + closed_at 非空 == 实测 200 / DB status=closed closed_at=2026-10-14T20:30:07.835186+08:00",
+      "evidence": [
+        "期望来源: 源码 backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java 的 STATUS_TRANSITIONS 的 \"pending\" → {processing, rejected, closed}（javadoc 逐字：#3541 允许未处理工单直接关闭）",
+        "期望: 200 + DB status=closed + closed_at 非空",
+        "实得: 200 / DB status=closed closed_at=2026-10-14T20:30:07.835186+08:00",
+        "响应: {\"success\":true,\"requestId\":\"req_51783e8f80fe44b0\",\"timestamp\":1791981007}",
+        "DB 行: {\"id\":\"1beebc4fff98a0965d86a4788e7dfaf9\",\"tenant_id\":32,\"ticket_no\":\"AS-20261014-0003\",\"order_id\":\"4bc10dc297389775a1c1d55b87d0c392\",\"ticket_type\":\"complaint\",\"status\":\"closed\",\"refund_amount\":null,\"refund_method\":null,\"source\":\"merchant\",\"closed_at\":\"2026-10-14T20:30:07.835186+08:00\",\"close_reason\":\"线B验收：误建直关\",\"deleted\":0}"
+      ],
+      "at": "2026-10-14 20:30:08 +08",
+      "atUtc": "2026-10-14T12:30:08.075Z"
+    },
+    {
+      "id": "LB-AS-SM-07",
+      "name": "状态机：pending → rejected",
+      "status": "pass",
+      "detail": "期望 200 + DB status=rejected + closed_at 非空（rejected 也记关闭时间） == 实测 200 / DB status=rejected closed_at=2026-10-14T20:30:08.373046+08:00",
+      "evidence": [
+        "期望来源: 源码 backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java 的 STATUS_TRANSITIONS 的 \"pending\" → rejected；updateTicketStatus 的 closed/rejected 分支置 closed_at",
+        "期望: 200 + DB status=rejected + closed_at 非空（rejected 也记关闭时间）",
+        "实得: 200 / DB status=rejected closed_at=2026-10-14T20:30:08.373046+08:00",
+        "响应: {\"success\":true,\"requestId\":\"req_f67134afce3b45f9\",\"timestamp\":1791981008}",
+        "DB 行: {\"id\":\"aa8d2881a30f74106afb7f3ff9a9bde3\",\"tenant_id\":32,\"ticket_no\":\"AS-20261014-0004\",\"order_id\":\"4bc10dc297389775a1c1d55b87d0c392\",\"ticket_type\":\"repair\",\"status\":\"rejected\",\"refund_amount\":null,\"refund_method\":null,\"source\":\"merchant\",\"closed_at\":\"2026-10-14T20:30:08.373046+08:00\",\"close_reason\":\"线B验收：不受理\",\"deleted\":0}"
+      ],
+      "at": "2026-10-14 20:30:08 +08",
+      "atUtc": "2026-10-14T12:30:08.516Z"
+    },
+    {
+      "id": "LB-REF-01",
+      "name": "退款：部分退款 100.00 / 实收 300.00 ⇒ 成功且三方一致",
+      "status": "pass",
+      "detail": "期望 200；orders.refund_amount=100.00；refund_at 非空；finance_transactions 恰 1 行 refund 100.00 == 实测 200；refund_amount=100 refund_at=set；流水 1 行 100",
+      "evidence": [
+        "期望来源: 本包独立算式：部分退款额 = 100.00（请求值）；实收 = 300（DB 读数，独立于读面）",
+        "期望: 200；orders.refund_amount=100.00；refund_at 非空；finance_transactions 恰 1 行 refund 100.00",
+        "实得: 200；refund_amount=100 refund_at=set；流水 1 行 100",
+        "响应: {\"success\":true,\"requestId\":\"req_f78c49dfba254f17\",\"timestamp\":1791981010}",
+        "DB orders: {\"id\":\"f2471f52eba439c05ae8befd76262e55\",\"tenant_id\":32,\"order_no\":\"20261014825760005\",\"status\":\"confirmed\",\"total_amount\":300,\"actual_amount\":300,\"refund_amount\":100,\"refund_at\":\"2026-10-14T20:30:10.109714+08:00\",\"deleted\":0}",
+        "DB 流水: [{\"id\":\"0f8939609b16363b4f44c6057b2e0daf\",\"type\":\"refund\",\"amount\":100,\"status\":\"success\",\"occurred_at\":\"2026-10-14T20:30:10.132843+08:00\",\"remark\":\"订单退款: 线B验收退款\"}]"
+      ],
+      "at": "2026-10-14 20:30:10 +08",
+      "atUtc": "2026-10-14T12:30:10.349Z"
+    },
+    {
+      "id": "LB-REF-02",
+      "name": "退款：超额（400.00 > 实收 300.00）⇒ 拒绝且零写入",
+      "status": "pass",
+      "detail": "期望 422 + 文案「退款金额不能超过实收款 300.00」+ DB refund_amount 仍为 0/null + 流水 0 行 == 实测 422 退款金额不能超过实收款 300.00；refund_amount=0；流水 0 行",
+      "evidence": [
+        "期望来源: 本包独立算式：实收 = 300；请求 400.00 > 实收 ⇒ 必须拒绝（源码的 refund.compareTo(actual) > 0 分支）",
+        "期望: 422 + 文案「退款金额不能超过实收款 300.00」+ DB refund_amount 仍为 0/null + 流水 0 行",
+        "实得: 422 退款金额不能超过实收款 300.00；refund_amount=0；流水 0 行",
+        "响应原文: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"退款金额不能超过实收款 300.00\"},\"requestId\":\"req_b4d485e257de4345\",\"timestamp\":1791981011,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+        "DB orders: {\"id\":\"cf791a5cb6a1efa4b272e04acd47e9dc\",\"tenant_id\":32,\"order_no\":\"20261014333350006\",\"status\":\"confirmed\",\"total_amount\":300,\"actual_amount\":300,\"refund_amount\":0,\"refund_at\":null,\"deleted\":0}"
+      ],
+      "at": "2026-10-14 20:30:12 +08",
+      "atUtc": "2026-10-14T12:30:12.214Z"
+    },
+    {
+      "id": "LB-REF-03",
+      "name": "退款：负数 −50.00 ⇒ 拒绝",
+      "status": "pass",
+      "detail": "期望 422 + 文案「退款金额不能为负数」+ DB refund_amount=0/null == 实测 422 退款金额不能为负数；refund_amount=0",
+      "evidence": [
+        "期望来源: 源码 backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java 的 refundOrder 的 refund.compareTo(ZERO) < 0 ⇒ 「退款金额不能为负数」",
+        "期望: 422 + 文案「退款金额不能为负数」+ DB refund_amount=0/null",
+        "实得: 422 退款金额不能为负数；refund_amount=0",
+        "响应原文: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"退款金额不能为负数\"},\"requestId\":\"req_9d1024c2440c4c87\",\"timestamp\":1791981013,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+      ],
+      "at": "2026-10-14 20:30:13 +08",
+      "atUtc": "2026-10-14T12:30:13.939Z"
+    },
+    {
+      "id": "LB-REF-04",
+      "name": "退款：部分退款重复累计封顶实收（4×100 vs 实收 300）⇒ 第 4 次拒绝，累计恰 300",
+      "status": "pass",
+      "detail": "期望 逐次结局 = [200,200,200,422]；orders.refund_amount=300.00（≤ 实收）；流水 3 行各 100.00（合计 300.00） == 实测 结局=[200,200,200,422]；refund_amount=300；流水 3 行合计 300.000",
+      "evidence": [
+        "期望来源: 本包独立算式：3 次 × 100.00 = 300.00 = 实收 ⇒ 第 4 次 applied ≤ 0 ⇒ 拒绝「该订单已全额退款，无需重复退款」",
+        "期望: 逐次结局 = [200,200,200,422]；orders.refund_amount=300.00（≤ 实收）；流水 3 行各 100.00（合计 300.00）",
+        "实得: 结局=[200,200,200,422]；refund_amount=300；流水 3 行合计 300.000",
+        "逐次响应: [\"200:ok\",\"200:ok\",\"200:ok\",\"422:该订单已全额退款，无需重复退款\"]",
+        "DB orders: {\"id\":\"c45c4ee0e8cd53eee23ad7326cd01b3e\",\"tenant_id\":32,\"order_no\":\"20261014908030008\",\"status\":\"confirmed\",\"total_amount\":300,\"actual_amount\":300,\"refund_amount\":300,\"refund_at\":\"2026-10-14T20:30:15.854968+08:00\",\"deleted\":0}",
+        "DB 流水: [{\"id\":\"ae34147c5103be6785ef7ba4e1e259a9\",\"type\":\"refund\",\"amount\":100,\"status\":\"success\",\"occurred_at\":\"2026-10-14T20:30:15.623215+08:00\",\"remark\":\"订单退款: 线B验收退款\"},{\"id\":\"d692c1c19b030e36b22a810574a1175d\",\"type\":\"refund\",\"amount\":100,\"status\":\"success\",\"occurred_at\":\"2026-10-14T20:30:15.75479+08:00\",\"remark\":\"订单退款: 线B验收退款\"},{\"id\":\"991f704cccff3461f4a4a30dbc5df00f\",\"type\":\"refund\",\"amount\":100,\"status\":\"success\",\"occurred_at\":\"2026-10-14T20:30:15.876756+08:00\",\"remark\":\"订单退款: 线B验收退款\"}]"
+      ],
+      "at": "2026-10-14 20:30:16 +08",
+      "atUtc": "2026-10-14T12:30:16.171Z",
+      "perRequest": [
+        {
+          "round": 1,
+          "status": 200
+        },
+        {
+          "round": 2,
+          "status": 200
+        },
+        {
+          "round": 3,
+          "status": 200
+        },
+        {
+          "round": 4,
+          "status": 422,
+          "code": "VALIDATION_ERROR",
+          "msg": "该订单已全额退款，无需重复退款"
+        }
+      ]
+    },
+    {
+      "id": "LB-REF-05",
+      "name": "退款：不传 refund_amount ⇒ 全额退款（= 实收）",
+      "status": "pass",
+      "detail": "期望 200；refund_amount=300.00（= 实收）；流水 1 行 300.00 == 实测 200；refund_amount=300；流水 1 行 300",
+      "evidence": [
+        "期望来源: 源码 backend/admin-api/src/main/java/com/migao/admin/controller/OrderController.java 的 refundOrder：body 缺 refund_amount ⇒ refundAmount=null ⇒ service 侧 refund = actual（全额）",
+        "期望: 200；refund_amount=300.00（= 实收）；流水 1 行 300.00",
+        "实得: 200；refund_amount=300；流水 1 行 300",
+        "响应: {\"success\":true,\"requestId\":\"req_324b995c7da54561\",\"timestamp\":1791981018}",
+        "DB orders: {\"id\":\"b6a39b3dada3d47eda94e73030e79715\",\"tenant_id\":32,\"order_no\":\"20261014383170009\",\"status\":\"confirmed\",\"total_amount\":300,\"actual_amount\":300,\"refund_amount\":300,\"refund_at\":\"2026-10-14T20:30:18.091037+08:00\",\"deleted\":0}",
+        "DB 流水: [{\"id\":\"d1e4f42daa284ad05be3f52753424241\",\"type\":\"refund\",\"amount\":300,\"status\":\"success\",\"occurred_at\":\"2026-10-14T20:30:18.120711+08:00\",\"remark\":\"订单退款: 线B验收退款\"}]"
+      ],
+      "at": "2026-10-14 20:30:18 +08",
+      "atUtc": "2026-10-14T12:30:18.360Z"
+    },
+    {
+      "id": "LB-REF-06",
+      "name": "退款：不可退状态（cancelled）⇒ 拒绝且存量订单零改动",
+      "status": "pass",
+      "detail": "期望 422 + 文案「当前状态[已取消]不允许退款…」+ 该行前后 sha 一致（零改动） == 实测 422 当前状态[已取消]不允许退款，仅已确认/生产中/已发货/已完成可退款；前后 refund_amount=0→0",
+      "evidence": [
+        "期望来源: 源码 backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java 的 refundOrder 的 refundableStatuses = {confirmed, producing, shipped, completed}（cancelled 不在内）",
+        "期望: 422 + 文案「当前状态[已取消]不允许退款…」+ 该行前后 sha 一致（零改动）",
+        "实得: 422 当前状态[已取消]不允许退款，仅已确认/生产中/已发货/已完成可退款；前后 refund_amount=0→0",
+        "探针对象为**存量**订单（只读探针，未写）: id=21935236d6725fe861ac4eee45fd9f59 order_no=20261014370510010",
+        "取消响应原文: {\"success\":true,\"requestId\":\"req_894f326f3c8c46f7\",\"timestamp\":1791981020}",
+        "响应原文: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"当前状态[已取消]不允许退款，仅已确认/生产中/已发货/已完成可退款\"},\"requestId\":\"req_59b6f30e601e485d\",\"timestamp\":1791981020,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+        "前后行: {\"id\":\"21935236d6725fe861ac4eee45fd9f59\",\"tenant_id\":32,\"order_no\":\"20261014370510010\",\"status\":\"cancelled\",\"total_amount\":100,\"actual_amount\":100,\"refund_amount\":0,\"refund_at\":null,\"deleted\":0} / {\"id\":\"21935236d6725fe861ac4eee45fd9f59\",\"tenant_id\":32,\"order_no\":\"20261014370510010\",\"status\":\"cancelled\",\"total_amount\":100,\"actual_amount\":100,\"refund_amount\":0,\"refund_at\":null,\"deleted\":0}"
+      ],
+      "at": "2026-10-14 20:30:20 +08",
+      "atUtc": "2026-10-14T12:30:20.573Z"
+    },
+    {
+      "id": "LB-REF-07",
+      "name": "退款：不可退状态（pending，未确认收款）⇒ 拒绝",
+      "status": "pass",
+      "detail": "期望 422 + 文案「当前状态[待付款]不允许退款…」+ DB 该单 refund_amount 仍 0/null == 实测 422 当前状态[待付款]不允许退款，仅已确认/生产中/已发货/已完成可退款；refund_amount=0",
+      "evidence": [
+        "期望来源: 源码 backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java 的 refundableStatuses 不含 pending",
+        "期望: 422 + 文案「当前状态[待付款]不允许退款…」+ DB 该单 refund_amount 仍 0/null",
+        "实得: 422 当前状态[待付款]不允许退款，仅已确认/生产中/已发货/已完成可退款；refund_amount=0",
+        "响应原文: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"当前状态[待付款]不允许退款，仅已确认/生产中/已发货/已完成可退款\"},\"requestId\":\"req_1d7ca8c75cb2468b\",\"timestamp\":1791981021,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+        "DB orders: {\"id\":\"83d930e71667767816074477a029d057\",\"tenant_id\":32,\"order_no\":\"20261014833510011\",\"status\":\"pending\",\"total_amount\":100,\"actual_amount\":100,\"refund_amount\":0,\"refund_at\":null,\"deleted\":0}",
+        "建单原始响应（若此处 id 缺失 ⇒ 是本包 harness 的取字段缺陷，不是产品缺陷）: status=200 dataKeys=id,orderNo,customerName,customerPhone,customerAddress,logisticsType,logisticsCompany,totalAmount,actualAmount,discountAmount,refundAmount,processingFee,status,remark,isUrgent,createdByName,items,processingItems,createdAt,updatedAt",
+        "建单响应摘录: {\"success\":true,\"data\":{\"id\":\"83d930e71667767816074477a029d057\",\"orderNo\":\"20261014833510011\",\"customerName\":\"线B验收客户-RP\",\"customerPhone\":\"13900000007\",\"customerAddress\":\"线B验收地址\",\"logisticsType\":\"express\",\"logisticsCompany\":\"线B验收物流\",\"totalAmount\":100.00,\"actualAmount\":100.00,\"discountAmount\":0.00,\"re"
+      ],
+      "at": "2026-10-14 20:30:21 +08",
+      "atUtc": "2026-10-14T12:30:21.800Z"
+    },
+    {
+      "id": "LB-REF-08",
+      "name": "退款：金额格式非法（\"abc\"）⇒ 422 而非 500",
+      "status": "pass",
+      "detail": "期望 422 + 文案「退款金额格式不正确」 == 实测 422 VALIDATION_ERROR 退款金额格式不正确",
+      "evidence": [
+        "期望来源: 源码 backend/admin-api/src/main/java/com/migao/admin/controller/OrderController.java 的 refundOrder 的 NumberFormatException ⇒ 「退款金额格式不正确」",
+        "期望: 422 + 文案「退款金额格式不正确」",
+        "实得: 422 VALIDATION_ERROR 退款金额格式不正确",
+        "响应原文: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"退款金额格式不正确\"},\"requestId\":\"req_e848507aac4d47b4\",\"timestamp\":1791981023,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}"
+      ],
+      "at": "2026-10-14 20:30:23 +08",
+      "atUtc": "2026-10-14T12:30:23.462Z"
+    },
+    {
+      "id": "LB-AS-RESTOCK-ON",
+      "name": "回补开关**开**（allow_return_restock=true）：退货完结 ⇒ 库存回补 + 落 aftersales 台账",
+      "status": "pass",
+      "detail": "期望 200（pending→processing→resolved 两步）+ SKU 库存 98.000 → 100.000（回补 2.000，= 基线 + 明细数量）+ stock_ledger_entries 恰 1 行 reason=aftersales delta=+2.000 ref_no=AS-20261014-0005 + 订单 refund_amount=200.00 == 实测 status=200；SKU 98 → 100；台账 1 行 [[2,98,100,\"aftersales\"]]；订单 refund_amount=200",
+      "evidence": [
+        "期望来源: 本包独立算式（**运行时基线 + 增量**）：回补前读数 98.000 + 明细数量 2.000 = 100.000；台账 delta 由库内 after−before 算出（StockLedgerService.recordChangesAgainstSnapshot）",
+        "期望: 200（pending→processing→resolved 两步）+ SKU 库存 98.000 → 100.000（回补 2.000，= 基线 + 明细数量）+ stock_ledger_entries 恰 1 行 reason=aftersales delta=+2.000 ref_no=AS-20261014-0005 + 订单 refund_amount=200.00",
+        "实得: status=200；SKU 98 → 100；台账 1 行 [[2,98,100,\"aftersales\"]]；订单 refund_amount=200",
+        "工单 id=6242ef22562c5599ee1badb41702e5c3 ticketNo=AS-20261014-0005 建单响应: {\"success\":true,\"data\":{\"id\":\"6242ef22562c5599ee1badb41702e5c3\",\"ticketNo\":\"AS-20261014-0005\",\"orderId\":\"2d43fc64c073310e872e4f7a5f3d7a01\",\"orderNo\":\"20261014440010001\",\"customerId\":\"线B验收客户-RESTOCKON-",
+        "完结响应: {\"success\":true,\"requestId\":\"req_7b390bf78225484a\",\"timestamp\":1791981024}",
+        "SKU 前后: {\"id\":\"2110347383571410946\",\"stock\":98,\"sales_count\":2} → {\"id\":\"2110347383571410946\",\"stock\":100,\"sales_count\":0}",
+        "台账原始行: [{\"id\":4134,\"sku_id\":2110347383571411000,\"delta\":2,\"before_qty\":98,\"after_qty\":100,\"reason\":\"aftersales\",\"ref_no\":\"AS-20261014-0005\"}]",
+        "源码: backend/admin-api/src/main/java/com/migao/admin/service/AfterSalesTicketService.java 的 maybeRestockOnReturn（全商品 allow=TRUE 才整单回补，复用 OrderService.restoreStockForReturn）"
+      ],
+      "at": "2026-10-14 20:30:24 +08",
+      "atUtc": "2026-10-14T12:30:24.512Z",
+      "ticketNo": "AS-20261014-0005",
+      "ledger": [
+        {
+          "id": 4134,
+          "sku_id": 2110347383571411000,
+          "delta": 2,
+          "before_qty": 98,
+          "after_qty": 100,
+          "reason": "aftersales",
+          "ref_no": "AS-20261014-0005"
+        }
+      ],
+      "skuBefore": 98,
+      "skuAfter": 100
+    },
+    {
+      "id": "LB-AS-RESTOCK-OFF",
+      "name": "回补开关**关**（allow_return_restock=false，默认）：退货完结 ⇒ 库存零变化",
+      "status": "pass",
+      "detail": "期望 200（pending→processing→resolved 两步）+ SKU 库存 98 → 98（零变化）+ ref_no=AS-20261014-0006 的台账 0 行 + 退款仍照记（refund_amount=200.00） == 实测 status=200；SKU 98 → 98；台账 0 行；订单 refund_amount=200",
+      "evidence": [
+        "期望来源: 本包独立算式（运行时基线）：开关关 ⇒ 零回补 ⇒ SKU 保持回补前读数（零变化）；退款与开关无关 ⇒ 仍应累加 200.00",
+        "期望: 200（pending→processing→resolved 两步）+ SKU 库存 98 → 98（零变化）+ ref_no=AS-20261014-0006 的台账 0 行 + 退款仍照记（refund_amount=200.00）",
+        "实得: status=200；SKU 98 → 98；台账 0 行；订单 refund_amount=200",
+        "工单 id=211f11474eb9344b9b15851dd52d652b ticketNo=AS-20261014-0006",
+        "完结响应: {\"success\":true,\"requestId\":\"req_f9d4515646e64b41\",\"timestamp\":1791981025}",
+        "SKU 前后: {\"id\":\"2110347389221138433\",\"stock\":98,\"sales_count\":2} → {\"id\":\"2110347389221138433\",\"stock\":98,\"sales_count\":2}",
+        "订单前后: {\"id\":\"55dde5869071164b1ab46b2171c18f8f\",\"tenant_id\":32,\"order_no\":\"20261014705860002\",\"status\":\"confirmed\",\"total_amount\":200,\"actual_amount\":200,\"refund_amount\":0,\"refund_at\":null,\"deleted\":0} → {\"id\":\"55dde5869071164b1ab46b2171c18f8f\",\"tenant_id\":32,\"order_no\":\"20261014705860002\",\"status\":\"confirmed\",\"total_amount\":200,\"actual_amount\":200,\"refund_amount\":200,\"refund_at\":\"2026-10-14T20:30:25.185655+08:00\",\"deleted\":0}",
+        "源码: 同 maybeRestockOnReturn 的 allAllow=false 分支（<issue #2991> 窗帘定制退货不可再售，默认 false）"
+      ],
+      "at": "2026-10-14 20:30:25 +08",
+      "atUtc": "2026-10-14T12:30:25.624Z",
+      "ticketNo": "AS-20261014-0006",
+      "skuBefore": 98,
+      "skuAfter": 98
+    }
+  ],
+  "summary": {
+    "pass": 18,
+    "fail": 0,
+    "skip": 2,
+    "falseRed": 0,
+    "total": 20
+  }
+}

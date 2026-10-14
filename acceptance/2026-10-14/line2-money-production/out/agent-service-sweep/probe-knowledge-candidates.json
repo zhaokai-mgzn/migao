@@ -1,0 +1,193 @@
+[
+  {
+    "id": "D1-1",
+    "name": "夹具就绪：3 条 pending 候选落库（正对照）",
+    "status": "pass",
+    "detail": "期望 3 行且 status 全为 pending == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 正对照（缺它则后续 adopt/reject 判据无夹具）",
+      "HTTP/读数: {\"rows\":3,\"statuses\":[\"pending\",\"pending\",\"pending\"]}",
+      "admin-api 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16"
+    ],
+    "at": "2026-10-14 20:35:50 +08",
+    "atUtc": "2026-10-14T12:35:50.073Z"
+  },
+  {
+    "id": "D2-1",
+    "name": "pending-count 读面 ⇒ 200 且计数 ≥ 3",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 count ≥ 3（本包刚插入 3 条） == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 本包夹具数（3）+ 库中既有候选数 ⇒ 下界判据（不写死总数）",
+      "HTTP/读数: {\"status\":200,\"data\":{\"pending\":3}}",
+      "admin-api 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16"
+    ],
+    "at": "2026-10-14 20:35:50 +08",
+    "atUtc": "2026-10-14T12:35:50.136Z"
+  },
+  {
+    "id": "D2-2",
+    "name": "候选列表读面含本包 3 条且 tenant 一致",
+    "status": "pass",
+    "detail": "期望 3 条命中且 tenantId 均为登录租户 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 读面必须按 TenantContext 过滤 + 返回项 tenantId == 登录租户",
+      "HTTP/读数: {\"httpStatus\":200,\"total\":3,\"mine\":[{\"id\":\"l1canddmv83feif2\",\"tenantId\":32,\"status\":\"pending\"},{\"id\":\"l1canddmv83feif1\",\"tenantId\":32,\"status\":\"pending\"},{\"id\":\"l1canddmv83feif0\",\"tenantId\":32,\"status\":\"pending\"}]}",
+      "admin-api 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16"
+    ],
+    "at": "2026-10-14 20:35:50 +08",
+    "atUtc": "2026-10-14T12:35:50.216Z"
+  },
+  {
+    "id": "D3-1",
+    "name": "adopt ⇒ 200 且返回新卡",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 data.id 非空 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: KnowledgeCandidateController.adopt 契约（返回 KnowledgeCard）",
+      "HTTP/读数: {\"status\":200,\"cardId\":\"0e2536463c0fc6ac9ed5d6a3d08a7eab\",\"body\":{\"success\":true,\"data\":{\"id\":\"0e2536463c0fc6ac9ed5d6a3d08a7eab\",\"tenantId\":32,\"title\":\"线②验收候选-adopt-dmv83feif\",\"category\":\"faq\",\"industry\":\"curtain\",\"sourceType\":\"manual\",\"sourceRef\":\"线②验收\",\"question\":\"线②验收候选-adopt-dmv83feif\",\"answer\":\"线②验收候选答复-adopt\",\"keywords\":\"线②验收,候选\",\"status\":\"published\",\"version\":1,\"createdBy\":\"adopt\",\"createdAt\":\"2026-10-14T20:35:50.276183+08:00\",\"updatedAt\":\"2026-10-14T20:35:50.276191+08:00\"},\"requestId\":\"req_2c64da169d434713\",\"timestamp\":1791981350}}",
+      "admin-api 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16"
+    ],
+    "at": "2026-10-14 20:35:50 +08",
+    "atUtc": "2026-10-14T12:35:50.405Z"
+  },
+  {
+    "id": "D3-2",
+    "name": "adopt 后候选状态流转 pending → adopted",
+    "status": "pass",
+    "detail": "期望 status==\"adopted\" 且 reviewed_at 非空 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 候选状态机：pending → adopted（reviewed_at 打点）",
+      "HTTP/读数: {\"status\":\"adopted\",\"reviewed_at\":\"2026-10-14T20:35:50.289286+08:00\",\"reviewed_by\":\"admin\"}",
+      "admin-api 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16"
+    ],
+    "at": "2026-10-14 20:35:50 +08",
+    "atUtc": "2026-10-14T12:35:50.405Z"
+  },
+  {
+    "id": "D3-3",
+    "name": "入卡产物 DB 逐字段：tenant/title/answer 来自候选且租户一致",
+    "status": "pass",
+    "detail": "期望 tenant_id/标题/答复与候选一致（不跨租户） == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 入卡 = 用候选内容建卡；租户必须继承候选租户（TenantContext）",
+      "HTTP/读数: {\"mismatches\":[],\"cardRow\":{\"id\":\"0e2536463c0fc6ac9ed5d6a3d08a7eab\",\"tenant_id\":32,\"title\":\"线②验收候选-adopt-dmv83feif\",\"answer\":\"线②验收候选答复-adopt\",\"source_type\":\"manual\",\"source_ref\":\"线②验收\",\"status\":\"published\"}}",
+      "admin-api 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16"
+    ],
+    "at": "2026-10-14 20:35:50 +08",
+    "atUtc": "2026-10-14T12:35:50.589Z"
+  },
+  {
+    "id": "D3-4",
+    "name": "登记：入卡产物的 source_type/source_ref（追溯面读数，非判据）",
+    "status": "pass",
+    "detail": "source_type=manual source_ref=线②验收 status=published",
+    "evidence": [
+      "cardId=0e2536463c0fc6ac9ed5d6a3d08a7eab",
+      "候选 id=l1canddmv83feif0"
+    ],
+    "at": "2026-10-14 20:35:50 +08",
+    "atUtc": "2026-10-14T12:35:50.589Z"
+  },
+  {
+    "id": "D4-1",
+    "name": "reject ⇒ 200 且候选状态流转 pending → rejected",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 DB status==\"rejected\" 且 reviewed_at 非空 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 候选状态机：pending → rejected（status_note 记录原因）",
+      "HTTP/读数: {\"status\":200,\"dbStatus\":\"rejected\",\"note\":\"线②验收拒绝原因\",\"reviewed_at\":\"2026-10-14T20:35:50.648095+08:00\"}",
+      "admin-api 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16"
+    ],
+    "at": "2026-10-14 20:35:50 +08",
+    "atUtc": "2026-10-14T12:35:50.791Z"
+  },
+  {
+    "id": "D4-2",
+    "name": "reject 不得产生知识卡片",
+    "status": "pass",
+    "detail": "期望 0 张同源卡片 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 拒绝语义：reject 只改候选状态，不落卡",
+      "HTTP/读数: {\"cards\":0}",
+      "admin-api 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16"
+    ],
+    "at": "2026-10-14 20:35:50 +08",
+    "atUtc": "2026-10-14T12:35:50.881Z"
+  },
+  {
+    "id": "D5-1",
+    "name": "adopt-edited ⇒ 入卡内容用「编辑后」的值（不是候选原值）",
+    "status": "pass",
+    "detail": "期望 title=编辑后 / answer=编辑后 / tenant=32 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: adopt-edited 语义：以编辑补丁覆盖候选字段后入卡",
+      "HTTP/读数: {\"status\":200,\"cardId\":\"54ee08e97ae395e6533b2ea6e18b0ef0\",\"row\":{\"title\":\"线②验收候选-edited-改-dmv83feif\",\"answer\":\"线②验收候选答复-edited-改-dmv83feif\",\"tenant_id\":32,\"status\":\"published\"}}",
+      "admin-api 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16"
+    ],
+    "at": "2026-10-14 20:35:51 +08",
+    "atUtc": "2026-10-14T12:35:51.082Z"
+  },
+  {
+    "id": "D5-2",
+    "name": "adopt-edited 后候选状态流转（不得仍 pending）",
+    "status": "pass",
+    "detail": "期望 status ∈ {adopted, edited, converted} 且 ≠ pending == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 已处置的候选不得留在 pending（否则会被重复采纳）",
+      "HTTP/读数: {\"status\":\"edited\"}",
+      "admin-api 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16"
+    ],
+    "at": "2026-10-14 20:35:51 +08",
+    "atUtc": "2026-10-14T12:35:51.214Z"
+  },
+  {
+    "id": "D6-1",
+    "name": "蒸馏面无 Service Token ⇒ 401",
+    "status": "pass",
+    "detail": "期望 HTTP 401 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::verify_service_token（内部面统一守卫）",
+      "HTTP/读数: {\"status\":401,\"code\":\"AUTH_REQUIRED\"}",
+      "admin-api 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16"
+    ],
+    "at": "2026-10-14 20:35:51 +08",
+    "atUtc": "2026-10-14T12:35:51.220Z"
+  },
+  {
+    "id": "D6-2",
+    "name": "蒸馏面契约：200 + success + data.candidates 为数组",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 data.candidates 是数组（不得 500） == 实测 [object Object]",
+    "evidence": [
+      "期望来源: internal.py::distill_knowledge 契约（提炼失败降级返回空候选，不阻断）",
+      "HTTP/读数: {\"status\":200,\"success\":true,\"count\":0,\"keys\":[\"candidates\"]}",
+      "admin-api 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16"
+    ],
+    "at": "2026-10-14 20:35:51 +08",
+    "atUtc": "2026-10-14T12:35:51.229Z"
+  },
+  {
+    "id": "D6-3",
+    "name": "登记：蒸馏产物是否落库（只读观察，非判据）",
+    "status": "pass",
+    "detail": "返回 0 条候选（LLM 侧降级或空）",
+    "evidence": [
+      "登记项：本线不判定蒸馏内容质量（LLM 面，按 #4262 不刷额度）"
+    ],
+    "at": "2026-10-14 20:35:51 +08",
+    "atUtc": "2026-10-14T12:35:51.229Z"
+  }
+]

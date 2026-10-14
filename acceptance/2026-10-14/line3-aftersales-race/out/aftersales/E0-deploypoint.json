@@ -1,0 +1,18 @@
+{
+  "expected": "ff655a06c",
+  "declaredSha": "",
+  "lastSuccessSha": "d0efc4e0c",
+  "lastSuccessAtUtc": "2026-10-14T09:41:37Z",
+  "deployRunsRaw": "2026-10-14T12:09:32Z|failure|90192bcac82b1d276d2793986ca9c64f47e47d16\n2026-10-14T09:41:37Z|success|d0efc4e0cd5ff5e249c945c5731a9629a8ab3600\n2026-10-14T08:16:41Z|success|f636c89f810dbf87db96878c19f19bf4516018f5\n2026-10-14T06:16:54Z|success|bd71d8c87ee4f6ac2dfb4acf11a0bcd1ae2a2899\n2026-10-14T06:10:07Z|success|bd71d8c87ee4f6ac2dfb4acf11a0bcd1ae2a2899\n2026-10-14T05:57:14Z|success|cfd24deebbc5cdb7952d4a33053f45b427c3e98d\n2026-10-14T03:36:11Z|success|0159a7a0fb4b5d3ad1e1c92054414924e98bbc97\n2026-10-14T03:10:21Z|success|50506527a79b7a7435c2e83b2902c644b1b25420\n2026-10-14T02:47:36Z|success|ac60010835ebb6c542ac7fa132cdcc60c9520ef4\n2026-10-14T02:29:15Z|success|85d86fedbb401f4929026701bbd0b64d07871cfb\n2026-10-14T01:07:15Z|success|7d23227d4be172a0bff5980abcc7a8408f0c624b\n2026-10-13T21:48:08Z|success|7d6cff6806b3912fa92b956abf5ff96b6614187d",
+  "localWorktree": {
+    "worktree": "/Users/guangzhen.zk/ai native/migao",
+    "sha": "90192bcac",
+    "shaFull": "90192bcac82b1d276d2793986ca9c64f47e47d16",
+    "note": "本地旧构建点，非被测面；读数不取自它"
+  },
+  "probeUrl": "http://127.0.0.1:8080/api/admin/after-sales",
+  "observedAt": {
+    "cst": "2026-10-14 20:29:57 +08",
+    "utc": "2026-10-14T12:29:57.710Z"
+  }
+}

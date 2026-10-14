@@ -1,0 +1,184 @@
+[
+  {
+    "id": "C1-1",
+    "name": "建卡 ⇒ 200 且有 id",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 data.id 非空 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: KnowledgeCardController.create 契约（200 + 返回实体）",
+      "HTTP/读数: {\"status\":200,\"id\":\"d08edcabf1c08f671dd91352ff1fe5c2\",\"body\":{\"success\":true,\"data\":{\"id\":\"d08edcabf1c08f671dd91352ff1fe5c2\",\"tenantId\":32,\"title\":\"线②验收知识卡-cmv83fddk\",\"category\":\"faq\",\"industry\":\"curtain\",\"sourceType\":\"manual\",\"question\":\"线②验收问题-线②验收知识卡-cmv83fddk\",\"answer\":\"线②验收标准答复-线②验收知识卡-cmv83fddk\",\"keywords\":\"线②验收,探针\",\"status\":\"draft\",\"version\":1,\"createdBy\":\"admin\",\"createdAt\":\"2026-10-14T20:35:48.151783+08:00\",\"updatedAt\":\"2026-10-14T20:35:48.15181+08:00\"},\"requestId\":\"req_1926598f271a4d59\",\"timestamp\":1791981348}}",
+      "admin-api 构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16",
+      "登录: admin 32 租户（sms 万能码）"
+    ],
+    "at": "2026-10-14 20:35:48 +08",
+    "atUtc": "2026-10-14T12:35:48.163Z"
+  },
+  {
+    "id": "C1-2",
+    "name": "建卡后 DB 逐字段与请求一致（11 字段）",
+    "status": "pass",
+    "detail": "期望 全部字段相符 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 请求体是期望来源（逐字段），DB 行是权威留痕；契约声明 create 的 status 初值 = draft、version = 1",
+      "HTTP/读数: {\"mismatches\":[],\"row\":{\"id\":\"d08edcabf1c08f671dd91352ff1fe5c2\",\"tenant_id\":32,\"title\":\"线②验收知识卡-cmv83fddk\",\"category\":\"faq\",\"industry\":\"curtain\",\"source_type\":\"manual\",\"question\":\"线②验收问题-线②验收知识卡-cmv83fddk\",\"answer\":\"线②验收标准答复-线②验收知识卡-cmv83fddk\",\"keywords\":\"线②验收,探针\",\"status\":\"draft\",\"version\":1,\"created_by\":\"admin\",\"deleted\":0}}",
+      "admin-api 构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16",
+      "登录: admin 32 租户（sms 万能码）",
+      "SQL: select 11 字段 from knowledge_cards where id='d08edcabf1c08f671dd91352ff1fe5c2'"
+    ],
+    "at": "2026-10-14 20:35:48 +08",
+    "atUtc": "2026-10-14T12:35:48.263Z"
+  },
+  {
+    "id": "C1-3",
+    "name": "建卡租户归属 = 登录租户（不得落他租户）",
+    "status": "pass",
+    "detail": "期望 tenant_id == 32 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: KnowledgeCardService.create 打 TenantContext.getTenantId()",
+      "HTTP/读数: {\"tenant_id\":32}",
+      "admin-api 构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16",
+      "登录: admin 32 租户（sms 万能码）"
+    ],
+    "at": "2026-10-14 20:35:48 +08",
+    "atUtc": "2026-10-14T12:35:48.263Z"
+  },
+  {
+    "id": "C2-1",
+    "name": "更新卡 ⇒ 200",
+    "status": "pass",
+    "detail": "期望 HTTP 200 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: KnowledgeCardController.update 契约",
+      "HTTP/读数: {\"status\":200,\"body\":{\"success\":true,\"data\":{\"id\":\"d08edcabf1c08f671dd91352ff1fe5c2\",\"tenantId\":32,\"title\":\"线②验收知识卡-cmv83fddk-改\",\"category\":\"policy\",\"industry\":\"curtain\",\"sourceType\":\"manual\",\"question\":\"线②验收问题-线②验收知识卡-cmv83fddk\",\"answer\":\"线②验收修订答复-cmv83fddk\",\"keywords\":\"线②验收,探针\",\"applyProducts\":\"[]\",\"variables\":\"{}\",\"status\":\"draft\",\"version\":2,\"createdBy\":\"admin\",\"createdAt\":\"2026-10-14T20:35:48.151783+08:00\",\"updatedAt\":\"2026-10-14T20:35:48.15181+08:00\",\"deleted\":0},\"requestId\":\"req_ff1104518abf4afb\",\"timestamp\":1791981348}}",
+      "admin-api 构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16",
+      "登录: admin 32 租户（sms 万能码）"
+    ],
+    "at": "2026-10-14 20:35:48 +08",
+    "atUtc": "2026-10-14T12:35:48.323Z"
+  },
+  {
+    "id": "C2-2",
+    "name": "更新后 DB 字段生效且 version 1→2、租户不变",
+    "status": "pass",
+    "detail": "期望 title/answer/category 已改、version==2、tenant_id 不变 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: KnowledgeCardService.update —— setVersion(existing.version + 1)；租户不得被改",
+      "HTTP/读数: {\"mismatches\":[],\"row\":{\"title\":\"线②验收知识卡-cmv83fddk-改\",\"answer\":\"线②验收修订答复-cmv83fddk\",\"category\":\"policy\",\"status\":\"draft\",\"version\":2,\"tenant_id\":32,\"updated_at\":\"2026-10-14T20:35:48.15181+08:00\"}}",
+      "admin-api 构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16",
+      "登录: admin 32 租户（sms 万能码）"
+    ],
+    "at": "2026-10-14 20:35:48 +08",
+    "atUtc": "2026-10-14T12:35:48.427Z"
+  },
+  {
+    "id": "C3-1",
+    "name": "发布卡 ⇒ status 落库 published",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 DB status==\"published\" == 实测 [object Object]",
+    "evidence": [
+      "期望来源: KnowledgeCardService.publish —— setStatus(STATUS_PUBLISHED)",
+      "HTTP/读数: {\"status\":200,\"dbStatus\":\"published\",\"reviewed_at\":\"2026-10-14T20:35:48.475278+08:00\"}",
+      "admin-api 构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16",
+      "登录: admin 32 租户（sms 万能码）"
+    ],
+    "at": "2026-10-14 20:35:48 +08",
+    "atUtc": "2026-10-14T12:35:48.587Z"
+  },
+  {
+    "id": "C3-2",
+    "name": "读面一致：列表按关键词能读到该卡且字段与 DB 一致",
+    "status": "pass",
+    "detail": "期望 found 且 status==\"published\" 且 title 与 DB 相同 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 读面（列表）与写面（DB 行）必须一致 —— 禁止只看 HTTP 200",
+      "HTTP/读数: {\"httpStatus\":200,\"total\":1,\"found\":{\"id\":\"d08edcabf1c08f671dd91352ff1fe5c2\",\"status\":\"published\",\"title\":\"线②验收知识卡-cmv83fddk-改\"}}",
+      "admin-api 构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16",
+      "登录: admin 32 租户（sms 万能码）"
+    ],
+    "at": "2026-10-14 20:35:48 +08",
+    "atUtc": "2026-10-14T12:35:48.659Z"
+  },
+  {
+    "id": "C3-3",
+    "name": "读面一致：search 面能读到该卡",
+    "status": "pass",
+    "detail": "期望 搜索结果含该 cardId == 实测 [object Object]",
+    "evidence": [
+      "期望来源: KnowledgeCardController.search 契约（按 title/keywords 命中）",
+      "HTTP/读数: {\"httpStatus\":200,\"count\":1,\"ids\":[\"d08edcabf1c08f671dd91352ff1fe5c2\"]}",
+      "admin-api 构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16",
+      "登录: admin 32 租户（sms 万能码）"
+    ],
+    "at": "2026-10-14 20:35:48 +08",
+    "atUtc": "2026-10-14T12:35:48.715Z"
+  },
+  {
+    "id": "C4-1",
+    "name": "归档卡 ⇒ status 落库 archived（失效）",
+    "status": "pass",
+    "detail": "期望 HTTP 200 且 DB status==\"archived\" == 实测 [object Object]",
+    "evidence": [
+      "期望来源: KnowledgeCardService.archive —— setStatus(STATUS_ARCHIVED)",
+      "HTTP/读数: {\"status\":200,\"dbStatus\":\"archived\"}",
+      "admin-api 构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16",
+      "登录: admin 32 租户（sms 万能码）"
+    ],
+    "at": "2026-10-14 20:35:48 +08",
+    "atUtc": "2026-10-14T12:35:48.897Z"
+  },
+  {
+    "id": "C4-2",
+    "name": "归档后读面：search 不得再返回该卡（或状态为 archived）",
+    "status": "pass",
+    "detail": "期望 search 未返回该卡，或返回的 status==\"archived\" == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 失效语义：归档卡片不应作为生效知识被检索命中（读面须与 status 一致）",
+      "HTTP/读数: {\"count\":0,\"hit\":null}",
+      "admin-api 构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16",
+      "登录: admin 32 租户（sms 万能码）",
+      "登记：本判据允许两种合法实现（不返回 / 返回但带 archived），只要不冒充生效"
+    ],
+    "at": "2026-10-14 20:35:48 +08",
+    "atUtc": "2026-10-14T12:35:48.951Z"
+  },
+  {
+    "id": "C5-1",
+    "name": "更新不存在的卡 ⇒ 4xx（不得 200/500）",
+    "status": "pass",
+    "detail": "期望 HTTP 4xx == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 资源不存在 ⇒ 4xx（不得静默 200，也不得 500）",
+      "HTTP/读数: {\"status\":404,\"body\":\"{\\\"success\\\":false,\\\"error\\\":{\\\"code\\\":\\\"NOT_FOUND\\\",\\\"message\\\":\\\"知识卡片不存在\\\"},\\\"requestId\\\":\\\"req_24c62c06a4c340f3\\\",\\\"timestamp\\\":1791981349,\\\"suggestion\\\":\\\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\\\"}\"}",
+      "admin-api 构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16",
+      "登录: admin 32 租户（sms 万能码）"
+    ],
+    "at": "2026-10-14 20:35:49 +08",
+    "atUtc": "2026-10-14T12:35:49.008Z"
+  },
+  {
+    "id": "C5-2",
+    "name": "删除不存在的卡 ⇒ 4xx（不得 500）",
+    "status": "pass",
+    "detail": "期望 HTTP 4xx == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 同上",
+      "HTTP/读数: {\"status\":404}",
+      "admin-api 构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 (chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)) procStart=三 10月/14 20:24:44 2026",
+      "ai-agent 构建点: 90192bcac82b1d276d2793986ca9c64f47e47d16",
+      "登录: admin 32 租户（sms 万能码）"
+    ],
+    "at": "2026-10-14 20:35:49 +08",
+    "atUtc": "2026-10-14T12:35:49.065Z"
+  }
+]

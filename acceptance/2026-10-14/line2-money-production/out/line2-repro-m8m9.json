@@ -1,0 +1,372 @@
+{
+  "run": "REPRO206621",
+  "at": "2026-10-14T12:33:26.621Z",
+  "probes": [],
+  "reports": [
+    {
+      "label": "M8-a1 幂等键首次",
+      "key": "REPRO206621-IDEM",
+      "body": {
+        "worker_name": "线②复现REPRO206621工人",
+        "qty": 4,
+        "qualified_qty": 4,
+        "work_type": "normal"
+      },
+      "http": 200,
+      "resp": {
+        "success": true,
+        "data": {
+          "operation_id": "1ca9a8cd9260a9d01137c44a9b9d97a3",
+          "done_qty": 4,
+          "status": "done",
+          "order_completed": false,
+          "worker_name": "线②复现REPRO206621工人",
+          "identity_source": "client_body"
+        },
+        "requestId": "req_8b23b1bfa9774f38",
+        "timestamp": 1791981209
+      }
+    },
+    {
+      "label": "M8-a2 幂等键重放",
+      "key": "REPRO206621-IDEM",
+      "body": {
+        "worker_name": "线②复现REPRO206621工人",
+        "qty": 4,
+        "qualified_qty": 4,
+        "work_type": "normal"
+      },
+      "http": 200,
+      "resp": {
+        "success": true,
+        "data": {
+          "status": "done",
+          "done_qty": 4,
+          "worker_name": "线②复现REPRO206621工人",
+          "operation_id": "1ca9a8cd9260a9d01137c44a9b9d97a3",
+          "identity_source": "client_body",
+          "order_completed": false,
+          "replayed": true
+        },
+        "requestId": "req_ea07b34bb5ae40fc",
+        "timestamp": 1791981209
+      }
+    },
+    {
+      "label": "M8-a3 同键不同体",
+      "key": "REPRO206621-IDEM",
+      "body": {
+        "worker_name": "线②复现REPRO206621工人",
+        "qty": 1,
+        "qualified_qty": 1,
+        "work_type": "normal"
+      },
+      "http": 200,
+      "resp": {
+        "success": true,
+        "data": {
+          "status": "done",
+          "done_qty": 4,
+          "worker_name": "线②复现REPRO206621工人",
+          "operation_id": "1ca9a8cd9260a9d01137c44a9b9d97a3",
+          "identity_source": "client_body",
+          "order_completed": false,
+          "replayed": true
+        },
+        "requestId": "req_46d63ee85d624d72",
+        "timestamp": 1791981209
+      }
+    },
+    {
+      "label": "M8-a4 新键同操作同量",
+      "key": "REPRO206621-OTHER",
+      "body": {
+        "worker_name": "线②复现REPRO206621工人",
+        "qty": 4,
+        "qualified_qty": 4,
+        "work_type": "normal"
+      },
+      "http": 200,
+      "resp": {
+        "success": true,
+        "data": {
+          "operation_id": "1ca9a8cd9260a9d01137c44a9b9d97a3",
+          "done_qty": 8,
+          "status": "done",
+          "order_completed": false,
+          "worker_name": "线②复现REPRO206621工人",
+          "identity_source": "client_body"
+        },
+        "requestId": "req_2bc7f189c73a4b80",
+        "timestamp": 1791981209
+      }
+    },
+    {
+      "label": "M9-b1 超应做",
+      "key": "REPRO206621-OVER",
+      "body": {
+        "worker_name": "线②复现REPRO206621工人",
+        "qty": 30,
+        "qualified_qty": 30,
+        "work_type": "normal"
+      },
+      "http": 422,
+      "resp": {
+        "success": false,
+        "error": {
+          "code": "REPORT_QTY_EXCEEDS_PLANNED",
+          "message": "报工数量超上限：本次合格 30 + 累计已报 0 = 30 超过应做 20（剩余 20），本次未落库"
+        },
+        "requestId": "req_c4f57332a8f54aaa",
+        "timestamp": 1791981209,
+        "suggestion": "数量可疑，请核对后重报：本次最多可报 20（= 应做 20 − 已报 0）；若实际应做数量就是这么多，请先由管理员在工艺路线/工序实例上修正应做数量，再报工"
+      }
+    },
+    {
+      "label": "M9-b2 等于应做",
+      "key": "<REDACTED-JWT>",
+      "body": {
+        "worker_name": "线②复现REPRO206621工人",
+        "qty": 20,
+        "qualified_qty": 20,
+        "work_type": "normal"
+      },
+      "http": 200,
+      "resp": {
+        "success": true,
+        "data": {
+          "operation_id": "ccd0dbb60a791cfd0ce8a0841f41ef35",
+          "done_qty": 20,
+          "status": "done",
+          "order_completed": false,
+          "worker_name": "线②复现REPRO206621工人",
+          "identity_source": "client_body"
+        },
+        "requestId": "req_6484e98103f249b0",
+        "timestamp": 1791981210
+      }
+    },
+    {
+      "label": "M9-b3 报满后再报",
+      "key": "REPRO206621-OVER2",
+      "body": {
+        "worker_name": "线②复现REPRO206621工人",
+        "qty": 1,
+        "qualified_qty": 1,
+        "work_type": "normal"
+      },
+      "http": 422,
+      "resp": {
+        "success": false,
+        "error": {
+          "code": "REPORT_QTY_EXCEEDS_PLANNED",
+          "message": "报工数量超上限：本次合格 1 + 累计已报 20 = 21 超过应做 20（剩余 0），本次未落库"
+        },
+        "requestId": "req_6e88eef96e014db4",
+        "timestamp": 1791981210,
+        "suggestion": "数量可疑，请核对后重报：本次最多可报 0（= 应做 20 − 已报 20）；若实际应做数量就是这么多，请先由管理员在工艺路线/工序实例上修正应做数量，再报工"
+      }
+    },
+    {
+      "label": "M8-c1 已报满+键首用",
+      "key": "REPRO206621-FULL",
+      "body": {
+        "worker_name": "线②复现REPRO206621工人",
+        "qty": 1,
+        "qualified_qty": 1,
+        "work_type": "normal"
+      },
+      "http": 422,
+      "resp": {
+        "success": false,
+        "error": {
+          "code": "REPORT_QTY_EXCEEDS_PLANNED",
+          "message": "报工数量超上限：本次合格 1 + 累计已报 20 = 21 超过应做 20（剩余 0），本次未落库"
+        },
+        "requestId": "req_a311a49ca53c4a1b",
+        "timestamp": 1791981210,
+        "suggestion": "数量可疑，请核对后重报：本次最多可报 0（= 应做 20 − 已报 20）；若实际应做数量就是这么多，请先由管理员在工艺路线/工序实例上修正应做数量，再报工"
+      }
+    },
+    {
+      "label": "M8-c2 已报满+同键重放",
+      "key": "REPRO206621-FULL",
+      "body": {
+        "worker_name": "线②复现REPRO206621工人",
+        "qty": 1,
+        "qualified_qty": 1,
+        "work_type": "normal"
+      },
+      "http": 422,
+      "resp": {
+        "success": false,
+        "error": {
+          "code": "REPORT_QTY_EXCEEDS_PLANNED",
+          "message": "报工数量超上限：本次合格 1 + 累计已报 20 = 21 超过应做 20（剩余 0），本次未落库"
+        },
+        "requestId": "req_261fb709e90c43b3",
+        "timestamp": 1791981210,
+        "suggestion": "数量可疑，请核对后重报：本次最多可报 0（= 应做 20 − 已报 20）；若实际应做数量就是这么多，请先由管理员在工艺路线/工序实例上修正应做数量，再报工"
+      }
+    }
+  ],
+  "note": "",
+  "created": {
+    "catId": "45bd9d240c6cb2652b8bd6d854519f2b",
+    "productId": "47b480de1e01ff7d84aed1dab43f9016",
+    "skuId": "2110348254866763777",
+    "prodStatus": 200,
+    "catStatus": 200,
+    "orderId": "2c2b2ba67541fe554d277b311de78faf",
+    "poId": "134c2c8c4a06f159a89bcdd39aad40af",
+    "poNo": "JG-20261014-8516",
+    "orderStatus": 200,
+    "genStatus": 200
+  },
+  "instanceOps": [
+    "精裁-布(qty=12.30,seq=1)",
+    "布三边(qty=12.30,seq=2)",
+    "熨烫-布(qty=12.30,seq=3)",
+    "定型-布(qty=12.30,seq=4)",
+    "复烫-布(qty=12.30,seq=5)",
+    "布帘车被(qty=12.30,seq=6)",
+    "外帘打卷(qty=1.00,seq=7)",
+    "打包(qty=1.00,seq=8)",
+    "外帘装袋(qty=1.00,seq=9)",
+    "外帘发货(qty=1.00,seq=10)"
+  ],
+  "pricedOps": [
+    "精裁-布@0.40 qty=20.00",
+    "布三边@0.40 qty=20.00",
+    "熨烫-布@0.35 qty=12.30",
+    "定型-布@0.40 qty=12.30",
+    "复烫-布@0.35 qty=12.30",
+    "布帘车被@0.40 qty=12.30",
+    "外帘打卷@1.00 qty=1.00",
+    "打包@null qty=1.00",
+    "外帘装袋@1.00 qty=1.00",
+    "外帘发货@1.00 qty=1.00"
+  ],
+  "logsAfter": [
+    {
+      "id": "468b7ac7f49cbec38a871112105f5017",
+      "operation_name": "精裁-布",
+      "worker_name": "线②复现REPRO206621工人",
+      "qty": "4.00",
+      "qualified_qty": "4.00",
+      "unit_price": "0.40",
+      "work_type": "normal"
+    },
+    {
+      "id": "3e98684baa25aeb135cd6e9db43344f1",
+      "operation_name": "精裁-布",
+      "worker_name": "线②复现REPRO206621工人",
+      "qty": "4.00",
+      "qualified_qty": "4.00",
+      "unit_price": "0.40",
+      "work_type": "normal"
+    },
+    {
+      "id": "1cfdf639806b48d34375ac5822029618",
+      "operation_name": "布三边",
+      "worker_name": "线②复现REPRO206621工人",
+      "qty": "20.00",
+      "qualified_qty": "20.00",
+      "unit_price": "0.40",
+      "work_type": "normal"
+    }
+  ],
+  "instancesAfter": [
+    "精裁-布 done=8.00/20.00 @0.40",
+    "布三边 done=20.00/20.00 @0.40",
+    "熨烫-布 done=0.00/12.30 @0.35",
+    "定型-布 done=0.00/12.30 @0.40",
+    "复烫-布 done=0.00/12.30 @0.35",
+    "布帘车被 done=0.00/12.30 @0.40",
+    "外帘打卷 done=0.00/1.00 @1.00",
+    "打包 done=0.00/1.00 @null",
+    "外帘装袋 done=0.00/1.00 @1.00",
+    "外帘发货 done=0.00/1.00 @1.00"
+  ],
+  "cleanup": [
+    {
+      "sql": "delete from worker_report_audits where tenant_id=32 and processing_ord",
+      "ok": true
+    },
+    {
+      "sql": "delete from production_work_logs where tenant_id=32 and processing_ord",
+      "ok": true
+    },
+    {
+      "sql": "delete from processing_set_part_tokens where tenant_id=32 and processi",
+      "ok": true
+    },
+    {
+      "sql": "delete from processing_position_operations where tenant_id=32 and proc",
+      "ok": true
+    },
+    {
+      "sql": "delete from processing_order_sets where tenant_id=32 and processing_or",
+      "ok": true
+    },
+    {
+      "sql": "delete from processing_orders where tenant_id=32 and id='134c2c8c4a06f",
+      "ok": true
+    },
+    {
+      "sql": "delete from order_logistics where tenant_id=32 and order_id='2c2b2ba67",
+      "ok": true
+    },
+    {
+      "sql": "delete from order_items where tenant_id=32 and order_id='2c2b2ba67541f",
+      "ok": true
+    },
+    {
+      "sql": "delete from orders where tenant_id=32 and id='2c2b2ba67541fe554d277b31",
+      "ok": true
+    },
+    {
+      "sql": "delete from stock_batch_consumptions where tenant_id=32 and product_id",
+      "ok": true
+    },
+    {
+      "sql": "delete from stock_batches where tenant_id=32 and product_id='47b480de1",
+      "ok": true
+    },
+    {
+      "sql": "delete from fabric_remnants where tenant_id=32 and product_id='47b480d",
+      "ok": true
+    },
+    {
+      "sql": "delete from stock_ledger_entries where tenant_id=32 and product_id='47",
+      "ok": true
+    },
+    {
+      "sql": "delete from product_colors where tenant_id=32 and product_id='47b480de",
+      "ok": true
+    },
+    {
+      "sql": "delete from product_skus where tenant_id=32 and product_id='47b480de1e",
+      "ok": true
+    },
+    {
+      "sql": "delete from product_attributes where tenant_id=32 and product_id='47b4",
+      "ok": true
+    },
+    {
+      "sql": "delete from products where tenant_id=32 and id='47b480de1e01ff7d84aed1",
+      "ok": true
+    },
+    {
+      "sql": "delete from categories where tenant_id=32 and id='45bd9d240c6cb2652b8b",
+      "ok": true
+    }
+  ],
+  "residueAfter": {
+    "orders": 0,
+    "pos": 0,
+    "logs": 0,
+    "products": 0,
+    "cats": 0
+  }
+}

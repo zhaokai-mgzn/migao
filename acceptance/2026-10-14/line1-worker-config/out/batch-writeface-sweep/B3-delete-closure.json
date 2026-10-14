@@ -1,0 +1,28 @@
+{
+  "deleted": {
+    "http": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "success": 1,
+        "failed": 0,
+        "errors": []
+      },
+      "requestId": "req_6f929e504fc4400f",
+      "timestamp": 1791981244
+    }
+  },
+  "productAfter": {
+    "id": "06507fe7881ce1bcc6c9781671c165cd",
+    "tenant_id": 32,
+    "status": "draft",
+    "deleted": 1
+  },
+  "skusBeforeCount": 1,
+  "childAfter": {
+    "skus": 1,
+    "colors": 1,
+    "ledger": 1
+  },
+  "definition": "软删：parent 行仍在（deleted=1）⇒ 子行不是孤儿；孤儿 = 引用不存在的 parent"
+}

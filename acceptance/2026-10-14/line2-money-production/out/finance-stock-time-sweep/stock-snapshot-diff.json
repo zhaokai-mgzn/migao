@@ -1,0 +1,117 @@
+{
+  "changedAll": [
+    {
+      "table": "products",
+      "before": {
+        "sha256": "e0af8383f774b185a2245b77f719247de69f4128eae506f967e690c403e14d8a",
+        "n": 4
+      },
+      "after": {
+        "sha256": "aab4f0a50219b4c53a8c9d4f985f4510b3e4c38344b838848780396429143306",
+        "n": 10
+      }
+    },
+    {
+      "table": "product_skus",
+      "before": {
+        "sha256": "96edd5ddefcf1824ed6fdd1355835576006c0a5ab9f37f24dc1ab9170f0f3a53",
+        "n": 4
+      },
+      "after": {
+        "sha256": "d3b9549a6a64ee54966083eb98d27e14e2f02c2de6abfa49673ae81b7cb14f14",
+        "n": 10
+      }
+    },
+    {
+      "table": "stock_ledger_entries",
+      "before": {
+        "sha256": "6e7100cedef5286191276607df844c2c8b24b1a28761f5d80be7be1f2b5cd134",
+        "n": 4
+      },
+      "after": {
+        "sha256": "5e540fdeaabfeb54868b0a97e3c37cb678cef809e73f03e51cae27a4f2285679",
+        "n": 11
+      }
+    },
+    {
+      "table": "finance_transactions",
+      "before": {
+        "sha256": "e85193c37c9de8e0a7f1c0617b3114b7ffed170fa102440b8e42376c23433680",
+        "n": 4
+      },
+      "after": {
+        "sha256": "76c9ba7fb1ade0f8ea1a740b671a8d603c6963eff9c2dbcbadceef91209b4349",
+        "n": 16
+      }
+    },
+    {
+      "table": "orders",
+      "before": {
+        "sha256": "72262a497b4447f0a434bc0244044119e2348d435ae78b052b8a68256c8dd2fb",
+        "n": 4
+      },
+      "after": {
+        "sha256": "31c4e74eebb688e72de121b7f5826ae05611e6d69b4296b0b49239184a0bfd76",
+        "n": 11
+      }
+    }
+  ],
+  "changedWritten": [
+    {
+      "table": "products",
+      "before": {
+        "sha256": "e0af8383f774b185a2245b77f719247de69f4128eae506f967e690c403e14d8a",
+        "n": 4
+      },
+      "after": {
+        "sha256": "aab4f0a50219b4c53a8c9d4f985f4510b3e4c38344b838848780396429143306",
+        "n": 10
+      }
+    },
+    {
+      "table": "product_skus",
+      "before": {
+        "sha256": "96edd5ddefcf1824ed6fdd1355835576006c0a5ab9f37f24dc1ab9170f0f3a53",
+        "n": 4
+      },
+      "after": {
+        "sha256": "d3b9549a6a64ee54966083eb98d27e14e2f02c2de6abfa49673ae81b7cb14f14",
+        "n": 10
+      }
+    },
+    {
+      "table": "stock_ledger_entries",
+      "before": {
+        "sha256": "6e7100cedef5286191276607df844c2c8b24b1a28761f5d80be7be1f2b5cd134",
+        "n": 4
+      },
+      "after": {
+        "sha256": "5e540fdeaabfeb54868b0a97e3c37cb678cef809e73f03e51cae27a4f2285679",
+        "n": 11
+      }
+    },
+    {
+      "table": "finance_transactions",
+      "before": {
+        "sha256": "e85193c37c9de8e0a7f1c0617b3114b7ffed170fa102440b8e42376c23433680",
+        "n": 4
+      },
+      "after": {
+        "sha256": "76c9ba7fb1ade0f8ea1a740b671a8d603c6963eff9c2dbcbadceef91209b4349",
+        "n": 16
+      }
+    },
+    {
+      "table": "orders",
+      "before": {
+        "sha256": "72262a497b4447f0a434bc0244044119e2348d435ae78b052b8a68256c8dd2fb",
+        "n": 4
+      },
+      "after": {
+        "sha256": "31c4e74eebb688e72de121b7f5826ae05611e6d69b4296b0b49239184a0bfd76",
+        "n": 11
+      }
+    }
+  ],
+  "changedForeign": []
+}

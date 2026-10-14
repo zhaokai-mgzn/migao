@@ -1,0 +1,43 @@
+{
+  "at": "2026-10-14T12:31:18.331Z",
+  "run": "078126",
+  "logical": "复烫",
+  "generalPrice": "1.11",
+  "worker": "工资验收工人戊078126",
+  "generalRowCandidates": [],
+  "libraryRow": null,
+  "originalGeneralPrice": null,
+  "rowsBefore": [
+    {
+      "id": "8c5d7dd4658ae69dfae13dd3527c5860",
+      "position": "布帘",
+      "unit_price": "0.35",
+      "applicable": true,
+      "deleted": 0
+    },
+    {
+      "id": "c27a8015677ac5bf1bfc0a109e9b947e",
+      "position": "布料",
+      "unit_price": null,
+      "applicable": false,
+      "deleted": 0
+    },
+    {
+      "id": "4be94affc96e3c32ad455eb7e092aed1",
+      "position": "帘头",
+      "unit_price": null,
+      "applicable": false,
+      "deleted": 0
+    },
+    {
+      "id": "c35c7c0b58bbf026ecef3e56f09210be",
+      "position": "纱帘",
+      "unit_price": null,
+      "applicable": false,
+      "deleted": 0
+    }
+  ],
+  "tempSoftDeleted": [
+    "8c5d7dd4658ae69dfae13dd3527c5860"
+  ]
+}

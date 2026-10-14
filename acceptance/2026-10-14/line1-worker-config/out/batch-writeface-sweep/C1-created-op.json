@@ -1,0 +1,24 @@
+{
+  "http": 200,
+  "body": {
+    "success": true,
+    "data": {
+      "id": "d4a2d0bda250da87cfb9ec71f9da41d6",
+      "name": "线②验收工序246959",
+      "library_name": "线②验收工序246959",
+      "group": "线②验收组",
+      "position": "线②验收部位",
+      "scope": "position",
+      "unit": "米",
+      "unit_price": 12.5,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "qty_rule_missing": true,
+      "qty_rule_hint": "该工序不在算料目录内，派工应做数量将按 1 计",
+      "created_positions": 1,
+      "skipped_positions": 0
+    },
+    "requestId": "req_d0620832098544c4",
+    "timestamp": 1791981247
+  }
+}

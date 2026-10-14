@@ -1,0 +1,108 @@
+{
+  "records": [
+    {
+      "id": "CH0.category",
+      "name": "POST /api/admin/categories 建商品分类（空租户建商品的前置）",
+      "status": "pass",
+      "detail": "HTTP 200 categoryId=01e509933be1c3e941ae36990dfbb3d7",
+      "evidence": [
+        "管理员登录: tenantId=32 cached=false",
+        "期望来源: ProductService 校验（第一次建商品实测 422「分类ID不能为空」）+ categories 独立 DB 读数",
+        "期望: 2xx ∧ categoryId 非空 ∧ DB 有该行",
+        "实得: HTTP 200 body={\"success\":true,\"data\":{\"id\":\"01e509933be1c3e941ae36990dfbb3d7\",\"name\":\"线A验收分类-mv839jljyl\",\"level\":1,\"status\":\"active\",\"children\":[],\"createdAt\":\"2026-10-14 20:31:16\",\"updatedAt\":\"2026-10-14 20:31:16\",\"sort\":1},\"requestId\":\"req_02916c3e02ff439e\",\"timestamp\":1791981076}"
+      ],
+      "at": "2026-10-14 20:31:16 +08",
+      "atUtc": "2026-10-14T12:31:16.428Z"
+    },
+    {
+      "id": "CH1.product+sku",
+      "name": "POST /api/admin/products 建商品（含 SKU）→ DB 复读",
+      "status": "pass",
+      "detail": "HTTP 200 productId=736e8223ba6ed8dca749f499937f4183 DB SKU 行数=1",
+      "evidence": [
+        "管理员登录: tenantId=32 cached=false",
+        "期望来源: ProductController.java @PostMapping(\"/api/admin/products\") 契约 + product_skus 表独立 DB 读数",
+        "期望: 2xx ∧ productId 非空 ∧ product_skus 恰 1 行(price=168.000)",
+        "实得: HTTP 200 skus=[{\"id\":\"2110347707744972802\",\"door_width\":\"2.8\",\"color_name\":\"线A验收米白\",\"price\":\"168.00\"}]"
+      ],
+      "at": "2026-10-14 20:31:16 +08",
+      "atUtc": "2026-10-14T12:31:16.830Z"
+    },
+    {
+      "id": "CH2.order-with-product-id",
+      "name": "POST /api/admin/orders 下单 ∧ 订单行 product_id 非空（不踩 #6219）",
+      "status": "pass",
+      "detail": "HTTP 200 orderId=01cceb1e85eef72a085734579c812822 orderNo=20261014201150038 DB 订单行=[{\"id\":\"4b87861ce2df10c6e6f6b6320878ab43\",\"product_id\":\"736e8223ba6ed8dca749f499937f4183\",\"product_name\":\"线A验收布-mv839jljyl\",\"quantity\":\"1.00\",\"unit_price\":\"168.00\",\"subtotal\":\"168.00\"}]",
+      "evidence": [
+        "管理员登录: tenantId=32 cached=false",
+        "期望来源: OrderController.java @PostMapping(\"/api/admin/orders\") 契约 + order_items 表独立 DB 读数",
+        "期望: 2xx ∧ orderId 非空 ∧ order_items 恰 1 行 ∧ product_id == 请求 productId",
+        "实得: HTTP 200 items=[{\"id\":\"4b87861ce2df10c6e6f6b6320878ab43\",\"product_id\":\"736e8223ba6ed8dca749f499937f4183\",\"product_name\":\"线A验收布-mv839jljyl\",\"quantity\":\"1.00\",\"unit_price\":\"168.00\",\"subtotal\":\"168.00\"}]"
+      ],
+      "at": "2026-10-14 20:31:17 +08",
+      "atUtc": "2026-10-14T12:31:17.234Z"
+    },
+    {
+      "id": "CH3.prepay-gate",
+      "name": "负对照：未确认收款的订单**不得**生成加工单（红线方向证明本判据会红）",
+      "status": "pass",
+      "detail": "HTTP 200 未付款订单已生成加工单=false",
+      "evidence": [
+        "管理员登录: tenantId=32 cached=false",
+        "期望来源: ProcessingOrderService 类注释「与『仅已确认订单可生成加工单』同一道闸」（orders.status='confirmed'）",
+        "期望: 未 confirmed ⇒ 4xx 或 零生成",
+        "实得: HTTP 200 body={\"success\":true,\"data\":[{\"orderRef\":\"01cceb1e85eef72a085734579c812822\",\"success\":false,\"message\":\"订单 20261014201150038 当前状态 [pending] 不允许生成加工单，须为已确认\",\"code\":\"VALIDATION_ERROR\"}],\"requestId\":\"req_d9bdaa5536524527\",\"timestamp\":1791981077} dbPo=null"
+      ],
+      "at": "2026-10-14 20:31:17 +08",
+      "atUtc": "2026-10-14T12:31:17.408Z"
+    },
+    {
+      "id": "CH4.confirm-payment",
+      "name": "PUT /api/admin/orders/{id}/payment 确认收款 ⇒ orders.status 独立 DB 复读 = confirmed",
+      "status": "pass",
+      "detail": "HTTP 200 DB status=confirmed",
+      "evidence": [
+        "管理员登录: tenantId=32 cached=false",
+        "期望来源: OrderController.confirmPayment 契约 + orders 表独立 DB 读数",
+        "期望: HTTP 200 ∧ orders.status='confirmed'",
+        "实得: HTTP 200 status=confirmed"
+      ],
+      "at": "2026-10-14 20:31:18 +08",
+      "atUtc": "2026-10-14T12:31:18.663Z"
+    },
+    {
+      "id": "CH5.generate-processing-order",
+      "name": "POST /api/admin/processing-orders/generate ⇒ 加工单 + 工序实例落库",
+      "status": "pass",
+      "detail": "HTTP 200 poId=a8a7a6849debfd9d7d25bc0461f8290b poNo=JG-20261014-8435 工序实例=2 行",
+      "evidence": [
+        "管理员登录: tenantId=32 cached=false",
+        "期望来源: ProcessingOrderController.java @PostMapping(\"/generate\") 契约 + processing_orders/processing_position_operations 独立 DB 读数",
+        "期望: HTTP 200 ∧ 恰 1 张加工单 ∧ 工序实例 ≥1 行",
+        "实得: HTTP 200 po=[{\"id\":\"a8a7a6849debfd9d7d25bc0461f8290b\",\"processing_order_no\":\"JG-20261014-8435\",\"status\":\"generated\"}] ops=2"
+      ],
+      "at": "2026-10-14 20:31:19 +08",
+      "atUtc": "2026-10-14T12:31:19.183Z"
+    },
+    {
+      "id": "CH6.e2e-empty-tenant-first-order",
+      "name": "空租户首个订单端到端：商品→下单→收款→加工单→**可扫码工序实例**",
+      "status": "pass",
+      "detail": "productId=736e8223ba6ed8dca749f499937f4183 orderId=01cceb1e85eef72a085734579c812822(confirmed) poId=a8a7a6849debfd9d7d25bc0461f8290b 可扫码工序实例=2",
+      "evidence": [
+        "管理员登录: tenantId=32 cached=false",
+        "期望来源: 本段独立算式（四段端点全部 2xx + 三段 DB 复读一致 + 工序实例 set_id 非空且 qty>0 —— 这是 pickOpTemplate 的唯一前条件）",
+        "期望: productId≠∅ ∧ order_items.product_id=请求值 ∧ orders.status=confirmed ∧ po≠∅ ∧ set_id≠∅且qty>0",
+        "实得: [{\"id\":\"97499f62ed162ef715f1cc281c266b9e\",\"seq\":1,\"operation_name\":\"裁剪-布\",\"group_name\":\"裁剪\",\"unit\":\"米\",\"position_name\":\"线A验收布-mv839jljyl\",\"position_kind\":\"布帘\",\"qty_source\":\"fabric_meters\",\"unit_price\":\"0.40\",\"factor\":\"1.00\",\"qty\":\"1.00\",\"set_id\":\"9eb810e6b48848099f4f45945434a10a\",\"set_no\":\"JG-20261014-8435-001\",\"order_item_id\":\"4b87861ce2df10c6e6f6b6320878ab43\",\"product_id\":\"736e8223ba6ed8dca749f499937f4183\"},{\"id\":\"c769c0a2746044b9ae9586317c989501\",\"seq\":2,\"operation_name\":\"打包\",\"group_name\":\"后道\",\"unit\":\"套\",\"position_name\":\"线A验收布-mv839jljyl\",\"position_kind\":\"布帘\",\"qty_source\":\"fallback\",\"unit_price\":null,\"factor\":\"1.00\",\"qty\":\"1.00\",\"set_id\":\"9eb810e6b48848099f4f45945434a10a\",\"set_no\":\"JG-20261014-8435-001\",\"order_item_id\":\"4b87861ce2df10c6e6f6b6320878ab43\",\"product_id\":\"736e8223ba6ed8dca749f499937f4183\"}]"
+      ],
+      "at": "2026-10-14 20:31:19 +08",
+      "atUtc": "2026-10-14T12:31:19.183Z"
+    }
+  ],
+  "summary": {
+    "pass": 7,
+    "fail": 0,
+    "skip": 0,
+    "total": 7
+  }
+}

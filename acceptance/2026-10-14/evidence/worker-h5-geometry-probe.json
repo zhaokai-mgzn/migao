@@ -1,0 +1,361 @@
+{
+  "generatedAt": "2026-10-14T12:58:14.063Z",
+  "chrome": "Chrome/155.0.8059.39",
+  "screens": [
+    {
+      "screen": "report",
+      "items": {
+        "loginLink": null,
+        "switchWorker": null,
+        "#wh5-report": {
+          "selector": "#wh5-report",
+          "touchAction": "manipulation",
+          "cursor": "pointer",
+          "minHeight": 44,
+          "height": 44,
+          "width": 700,
+          "background": "rgb(15, 118, 110)",
+          "disabled": false,
+          "text": "报 工"
+        },
+        "#wh5-rescan": {
+          "selector": "#wh5-rescan",
+          "touchAction": "manipulation",
+          "cursor": "default",
+          "minHeight": 44,
+          "height": 44,
+          "width": 700,
+          "background": "rgb(255, 255, 255)",
+          "disabled": false,
+          "text": "重扫"
+        },
+        ".wh5-ghost": {
+          "selector": ".wh5-ghost",
+          "touchAction": "manipulation",
+          "cursor": "default",
+          "minHeight": 44,
+          "height": 44,
+          "width": 60,
+          "background": "rgb(255, 255, 255)",
+          "disabled": false,
+          "text": "切换"
+        },
+        "#wh5-report:active": {
+          "selector": "#wh5-report:active(forced)",
+          "background": "rgb(17, 94, 89)",
+          "transform": "matrix(1, 0, 0, 1, 0, 1)"
+        }
+      }
+    },
+    {
+      "screen": "report-busy",
+      "items": {
+        "loginLink": null,
+        "switchWorker": null,
+        "#wh5-report": {
+          "selector": "#wh5-report",
+          "touchAction": "manipulation",
+          "cursor": "default",
+          "minHeight": 44,
+          "height": 44,
+          "width": 700,
+          "background": "rgb(148, 163, 184)",
+          "disabled": true,
+          "text": "提交中…"
+        },
+        "#wh5-rescan": {
+          "selector": "#wh5-rescan",
+          "touchAction": "manipulation",
+          "cursor": "default",
+          "minHeight": 44,
+          "height": 44,
+          "width": 700,
+          "background": "rgb(255, 255, 255)",
+          "disabled": false,
+          "text": "重扫"
+        },
+        ".wh5-ghost": {
+          "selector": ".wh5-ghost",
+          "touchAction": "manipulation",
+          "cursor": "default",
+          "minHeight": 44,
+          "height": 44,
+          "width": 60,
+          "background": "rgb(255, 255, 255)",
+          "disabled": false,
+          "text": "切换"
+        }
+      }
+    },
+    {
+      "screen": "machine",
+      "items": {
+        "loginLink": {
+          "selector": "#wh5-machine-login",
+          "touchAction": "manipulation",
+          "cursor": "pointer",
+          "minHeight": 44,
+          "height": 48,
+          "width": 64,
+          "background": "rgba(0, 0, 0, 0)",
+          "transition": "all"
+        },
+        "switchWorker": null,
+        "#wh5-machine-login": {
+          "selector": "#wh5-machine-login",
+          "touchAction": "manipulation",
+          "cursor": "pointer",
+          "minHeight": 44,
+          "height": 48,
+          "width": 64,
+          "background": "rgba(0, 0, 0, 0)",
+          "disabled": false,
+          "text": "登录"
+        }
+      }
+    },
+    {
+      "screen": "machine-worker",
+      "items": {
+        "loginLink": null,
+        "switchWorker": {
+          "selector": "#wh5-machine-switch-worker",
+          "touchAction": "manipulation",
+          "cursor": "default",
+          "minHeight": 72,
+          "height": 72,
+          "width": 152,
+          "background": "rgb(51, 65, 85)",
+          "transition": "all"
+        },
+        "#wh5-machine-switch-worker": {
+          "selector": "#wh5-machine-switch-worker",
+          "touchAction": "manipulation",
+          "cursor": "default",
+          "minHeight": 72,
+          "height": 72,
+          "width": 152,
+          "background": "rgb(51, 65, 85)",
+          "disabled": false,
+          "text": "切换工人"
+        }
+      }
+    }
+  ],
+  "headerReadings": {
+    "360": {
+      "workerWidth": 192,
+      "buttons": {
+        "wh5-switch": {
+          "text": "切换",
+          "lines": 1,
+          "scrollWidth": 58,
+          "clientWidth": 58,
+          "height": 44
+        },
+        "wh5-logout": {
+          "text": "登出",
+          "lines": 1,
+          "scrollWidth": 58,
+          "clientWidth": 58,
+          "height": 44
+        }
+      }
+    },
+    "390": {
+      "workerWidth": 222,
+      "buttons": {
+        "wh5-switch": {
+          "text": "切换",
+          "lines": 1,
+          "scrollWidth": 58,
+          "clientWidth": 58,
+          "height": 44
+        },
+        "wh5-logout": {
+          "text": "登出",
+          "lines": 1,
+          "scrollWidth": 58,
+          "clientWidth": 58,
+          "height": 44
+        }
+      }
+    },
+    "430": {
+      "workerWidth": 262,
+      "buttons": {
+        "wh5-switch": {
+          "text": "切换",
+          "lines": 1,
+          "scrollWidth": 58,
+          "clientWidth": 58,
+          "height": 44
+        },
+        "wh5-logout": {
+          "text": "登出",
+          "lines": 1,
+          "scrollWidth": 58,
+          "clientWidth": 58,
+          "height": 44
+        }
+      }
+    }
+  },
+  "checks": [
+    {
+      "name": "report #wh5-report · 存在且 touch-action=manipulation",
+      "ok": true,
+      "reading": "manipulation"
+    },
+    {
+      "name": "report #wh5-rescan · 存在且 touch-action=manipulation",
+      "ok": true,
+      "reading": "manipulation"
+    },
+    {
+      "name": "report .wh5-ghost · 存在且 touch-action=manipulation",
+      "ok": true,
+      "reading": "manipulation"
+    },
+    {
+      "name": "machine #wh5-machine-login · 存在且 touch-action=manipulation",
+      "ok": true,
+      "reading": "manipulation"
+    },
+    {
+      "name": "machine-worker #wh5-machine-switch-worker · 存在且 touch-action=manipulation",
+      "ok": true,
+      "reading": "manipulation"
+    },
+    {
+      "name": "report #wh5-report · 触控目标高度 ≥44px",
+      "ok": true,
+      "reading": 44
+    },
+    {
+      "name": "machine #wh5-machine-login · 触控目标高度 ≥44px",
+      "ok": true,
+      "reading": 48
+    },
+    {
+      "name": "machine-worker #wh5-machine-switch-worker · 触控目标高度 ≥44px",
+      "ok": true,
+      "reading": 72
+    },
+    {
+      "name": "report #wh5-report:active · 按下有视觉变化（背景或位移）",
+      "ok": true,
+      "reading": "{\"selector\":\"#wh5-report:active(forced)\",\"background\":\"rgb(17, 94, 89)\",\"transform\":\"matrix(1, 0, 0, 1, 0, 1)\"}"
+    },
+    {
+      "name": "report-busy #wh5-report · 提交中 disabled 且视觉可分（背景与空闲态不同）",
+      "ok": true,
+      "reading": "{\"disabled\":true,\"busyBg\":\"rgb(148, 163, 184)\",\"idleBg\":\"rgb(15, 118, 110)\",\"text\":\"提交中…\"}"
+    },
+    {
+      "name": "页头 360px · 夹具渲染出两个页头按钮（当前工人宽 192）",
+      "ok": true,
+      "reading": "wh5-switch / wh5-logout"
+    },
+    {
+      "name": "页头 360px wh5-switch「切换」· 文字单行（不折行）",
+      "ok": true,
+      "reading": "1 个行盒 / 按钮宽 58 / 滚动宽 58"
+    },
+    {
+      "name": "页头 360px wh5-switch「切换」· 无横向溢出",
+      "ok": true,
+      "reading": "58 <= 58"
+    },
+    {
+      "name": "页头 360px wh5-switch「切换」· 触控目标高 ≥44px",
+      "ok": true,
+      "reading": 44
+    },
+    {
+      "name": "页头 360px wh5-logout「登出」· 文字单行（不折行）",
+      "ok": true,
+      "reading": "1 个行盒 / 按钮宽 58 / 滚动宽 58"
+    },
+    {
+      "name": "页头 360px wh5-logout「登出」· 无横向溢出",
+      "ok": true,
+      "reading": "58 <= 58"
+    },
+    {
+      "name": "页头 360px wh5-logout「登出」· 触控目标高 ≥44px",
+      "ok": true,
+      "reading": 44
+    },
+    {
+      "name": "页头 390px · 夹具渲染出两个页头按钮（当前工人宽 222）",
+      "ok": true,
+      "reading": "wh5-switch / wh5-logout"
+    },
+    {
+      "name": "页头 390px wh5-switch「切换」· 文字单行（不折行）",
+      "ok": true,
+      "reading": "1 个行盒 / 按钮宽 58 / 滚动宽 58"
+    },
+    {
+      "name": "页头 390px wh5-switch「切换」· 无横向溢出",
+      "ok": true,
+      "reading": "58 <= 58"
+    },
+    {
+      "name": "页头 390px wh5-switch「切换」· 触控目标高 ≥44px",
+      "ok": true,
+      "reading": 44
+    },
+    {
+      "name": "页头 390px wh5-logout「登出」· 文字单行（不折行）",
+      "ok": true,
+      "reading": "1 个行盒 / 按钮宽 58 / 滚动宽 58"
+    },
+    {
+      "name": "页头 390px wh5-logout「登出」· 无横向溢出",
+      "ok": true,
+      "reading": "58 <= 58"
+    },
+    {
+      "name": "页头 390px wh5-logout「登出」· 触控目标高 ≥44px",
+      "ok": true,
+      "reading": 44
+    },
+    {
+      "name": "页头 430px · 夹具渲染出两个页头按钮（当前工人宽 262）",
+      "ok": true,
+      "reading": "wh5-switch / wh5-logout"
+    },
+    {
+      "name": "页头 430px wh5-switch「切换」· 文字单行（不折行）",
+      "ok": true,
+      "reading": "1 个行盒 / 按钮宽 58 / 滚动宽 58"
+    },
+    {
+      "name": "页头 430px wh5-switch「切换」· 无横向溢出",
+      "ok": true,
+      "reading": "58 <= 58"
+    },
+    {
+      "name": "页头 430px wh5-switch「切换」· 触控目标高 ≥44px",
+      "ok": true,
+      "reading": 44
+    },
+    {
+      "name": "页头 430px wh5-logout「登出」· 文字单行（不折行）",
+      "ok": true,
+      "reading": "1 个行盒 / 按钮宽 58 / 滚动宽 58"
+    },
+    {
+      "name": "页头 430px wh5-logout「登出」· 无横向溢出",
+      "ok": true,
+      "reading": "58 <= 58"
+    },
+    {
+      "name": "页头 430px wh5-logout「登出」· 触控目标高 ≥44px",
+      "ok": true,
+      "reading": 44
+    }
+  ]
+}

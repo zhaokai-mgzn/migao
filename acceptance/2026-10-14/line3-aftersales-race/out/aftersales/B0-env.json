@@ -1,0 +1,87 @@
+{
+  "records": [
+    {
+      "id": "LB0-01",
+      "name": "被测构建点自证（部署台账/远端变量 ⇒ 期望 ff655a06c）",
+      "status": "fail",
+      "detail": "远端声明=(ADMIN_API_DEPLOYED_SHA 未设)；最后一个 success 部署=d0efc4e0c @ 2026-10-14T09:41:37Z（UTC）",
+      "evidence": [
+        "期望来源: BRIEF §1 —— 被测构建点 = 已部署 ff655a06c（2026-10-04 05:47 +08 部署）",
+        "取证命令: gh variable get ADMIN_API_DEPLOYED_SHA / gh run list --workflow=deploy-admin-api.yml",
+        "部署台账（UTC，换算 +08）：2026-10-14T12:09:32Z|failure|90192bcac82b1d276d2793986ca9c64f47e47d16 ｜ 2026-10-14T09:41:37Z|success|d0efc4e0cd5ff5e249c945c5731a9629a8ab3600 ｜ 2026-10-14T08:16:41Z|success|f636c89f810dbf87db96878c19f19bf4516018f5 ｜ 2026-10-14T06:16:54Z|success|bd71d8c87ee4f6ac2dfb4acf11a0bcd1ae2a2899",
+        "⚠️ 本地工作树 /Users/guangzhen.zk/ai native/migao HEAD=90192bcac82b1d276d2793986ca9c64f47e47d16 —— **本地旧构建点，非被测面**（BRIEF：读数一律取自 API_BASE）",
+        "口径：若远端变量缺失，则以「最近一个 success 部署的 headSha」为准（本判据取两者之一命中即 pass）"
+      ],
+      "at": "2026-10-14 20:29:57 +08",
+      "atUtc": "2026-10-14T12:29:57.712Z"
+    },
+    {
+      "id": "LB0-02",
+      "name": "时钟自检（JS +08 vs SQL Asia/Shanghai）",
+      "status": "pass",
+      "detail": "JS=2026-10-14 20:29:57 / SQL=2026-10-14 20:29:57（差 0s）",
+      "evidence": [
+        "取值口径: nowCST() 走 Intl timeZone=Asia/Shanghai；SQL 走 now() at time zone 'Asia/Shanghai'",
+        "两侧均按 '+08:00' 显式解析后比较（不依赖进程 TZ）"
+      ],
+      "at": "2026-10-14 20:29:57 +08",
+      "atUtc": "2026-10-14T12:29:57.810Z"
+    },
+    {
+      "id": "LB0-03",
+      "name": "端点可达性 GET /api/admin/after-sales?page=1&size=1（已部署面）",
+      "status": "pass",
+      "detail": "未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）",
+      "evidence": [
+        "响应原文: {\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}",
+        "目标: http://127.0.0.1:8080/api/admin/after-sales?page=1&size=1"
+      ],
+      "at": "2026-10-14 20:29:57 +08",
+      "atUtc": "2026-10-14T12:29:57.833Z"
+    },
+    {
+      "id": "LB0-04",
+      "name": "端点可达性 GET /api/admin/orders?page=1&size=1（已部署面）",
+      "status": "pass",
+      "detail": "未鉴权访问返回 401（期望 401 —— 该端点是鉴权面）",
+      "evidence": [
+        "响应原文: {\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}",
+        "目标: http://127.0.0.1:8080/api/admin/orders?page=1&size=1"
+      ],
+      "at": "2026-10-14 20:29:57 +08",
+      "atUtc": "2026-10-14T12:29:57.836Z"
+    },
+    {
+      "id": "LB0-05",
+      "name": "管理员登录（已部署面）+ 租户自证",
+      "status": "pass",
+      "detail": "取到 token（长度 774），方式=sms-bypass-code；登录租户=32（期望 32）",
+      "evidence": [
+        "手机号 = 13800138000（env 覆盖；底座默认值属已删除租户 20）",
+        "租户自证：响应 user.tenantId=32 ⇒ 后续所有写操作落在租户 32",
+        "响应 data 键: user,accessToken,expiresIn"
+      ],
+      "at": "2026-10-14 20:29:57 +08",
+      "atUtc": "2026-10-14T12:29:57.999Z"
+    },
+    {
+      "id": "LB0-06",
+      "name": "租户 32 存量基线（外来行归因 + 清理对照用）",
+      "status": "pass",
+      "detail": "{\"orders\":0,\"tickets\":0,\"ledger\":0,\"finance\":0,\"products\":4,\"active_categories\":4,\"users\":4}",
+      "evidence": [
+        "只读现取；量纲 = 行数（判据只断言**本线前缀对象**，不断言租户级全局计数 —— BRIEF 纪律 8）",
+        "三线并发写同一租户 32 ⇒ 该基线只作「外来行归因」参照，不作零不变判据"
+      ],
+      "at": "2026-10-14 20:29:58 +08",
+      "atUtc": "2026-10-14T12:29:58.096Z"
+    }
+  ],
+  "summary": {
+    "pass": 5,
+    "fail": 1,
+    "skip": 0,
+    "falseRed": 0,
+    "total": 6
+  }
+}

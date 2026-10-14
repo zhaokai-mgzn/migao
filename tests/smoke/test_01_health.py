@@ -16,13 +16,23 @@ class TestHealthCheck:
     """健康检查验证"""
 
     def test_admin_api_health(self, admin_client: SmokeTestClient):
-        """admin-api 公网健康检查：/actuator/* 已被 nginx 屏蔽（安全加固），
-        服务在线性通过公开认证端点验证"""
-        # 1) 安全断言：/actuator/health 公网必须 404（nginx 屏蔽，Issue #2662）
+        """admin-api 健康检查：**部署形态**下 /actuator/* 被 nginx 屏蔽（安全加固），
+        服务在线性通过公开认证端点验证；**本地直起**形态没有 nginx ⇒ 断言改成「DB 健康」。"""
+        # 1) 安全断言：**部署形态**（https，前有 nginx）下 /actuator/health 必须 404（Issue #2662）；
+        #    本地直起（http://localhost:8080，无 nginx）时 actuator 本就裸露可达 ⇒ 200 才是预期
+        #    （2026-10-14 实测：原来无条件要求 404 ⇒ 本地形态**恒红**，且红得没有信息量）。
         resp = admin_client.get("/actuator/health")
-        assert resp.status_code == 404, (
-            f"/actuator/health 应被 nginx 屏蔽返回 404（安全加固），实际 {resp.status_code}"
-        )
+        if admin_client.base_url.startswith("https://"):
+            assert resp.status_code == 404, (
+                f"部署形态下 /actuator/health 应被 nginx 屏蔽返回 404（安全加固），实际 {resp.status_code}"
+            )
+        else:
+            assert resp.status_code == 200, (
+                f"本地直起形态下 /actuator/health 应可达（无 nginx），实际 {resp.status_code}"
+            )
+            assert str(resp.json().get("status", "")).upper() in ("UP", "HEALTHY"), (
+                f"本地 /actuator/health 应为 UP，实得 {resp.text[:200]}"
+            )
 
         # 2) 在线性断言：公开端点 /api/auth/sms/login 空 body → 400/422（参数校验，服务在线）
         resp = admin_client.post("/api/auth/sms/login", json={})

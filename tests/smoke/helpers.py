@@ -44,6 +44,20 @@ class SmokeTestClient:
         self._access_token = None
         self._refresh_token = None
 
+    def refresh_token_from_jar(self) -> Optional[str]:
+        """从 httpx cookie jar 读 refresh_token（**只给本地 http 形态兜底**）。
+
+        为什么需要它：登录下发的 `refresh_token` cookie 带 `Secure`，而 httpx 不会在 http 上
+        发送 Secure cookie（浏览器对 localhost 有例外、httpx 没有）⇒ 本地直起形态下刷新链路
+        走不通 cookie jar。**部署形态（https）不使用本方法**，断言一字不放宽。
+        消费者 = `tests/smoke/test_02_auth.py::TestTokenRefresh::test_refresh_token`。
+        """
+        try:
+            return self._client.cookies.get("refresh_token") or None
+        except Exception:
+            # 同名多域冲突（CookieConflictError）等 ⇒ 返回 None，由调用方断言失败报出
+            return None
+
     def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
         """**所有动词的唯一出口**：瞬态签名（502/503/504 与传输层断开）走有界等待重试。
 

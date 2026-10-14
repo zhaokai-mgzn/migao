@@ -1,0 +1,118 @@
+{
+  "line": "line2-money-production",
+  "buildpoint": "90192bcac82b1d276d2793986ca9c64f47e47d16",
+  "buildpoint_short": "90192bcac",
+  "run_at": "2026-10-14 20:30 ~ 20:37 +08",
+  "tenant": 32,
+  "surfaces": {
+    "admin_api": "http://127.0.0.1:8080",
+    "ai_agent": "http://127.0.0.1:8001 (DEBUG=true)",
+    "admin_web": "http://127.0.0.1:3001",
+    "db": "cloud dev RDS ai_customer_service"
+  },
+  "sweeps": {
+    "finance-stock-time-sweep": {"pass": 38, "fail": 0, "skip": 8, "total": 46},
+    "piecework-wage-sweep": {"pass": 29, "fail": 3, "skip": 2, "total": 34},
+    "dispatch-routing-sweep": {"pass": 68, "fail": 19, "skip": 0, "total": 87},
+    "agent-service-sweep": {"pass": 56, "fail": 23, "skip": 2, "total": 81},
+    "line2-repro-m8m9 (本线最小复现探针)": {"pass": 0, "fail": 0, "skip": 0, "total": 0, "note": "独立复现脚本，非断言集；产物 line2-repro-m8m9.json"}
+  },
+  "counts": {
+    "pass": 191,
+    "fail": 45,
+    "skip": 12,
+    "false_red": 24,
+    "real_defect": 3,
+    "env_or_fixture": 18,
+    "note": "fail 45 = 真缺陷 3 + 假红 24 + 环境/夹具 18；skip 12 永不折算为 pass"
+  },
+  "findings": [
+    {
+      "id": "L2-F1",
+      "class": "real_defect",
+      "severity": "P1-涉钱/派工准确性",
+      "title": "韩褶（纱帘侧）漏插「上车布-纱」——规则只对布帘生效，纱帘派工少一道工序",
+      "min_repro": "POST /api/admin/processing-orders/generate（纱帘单 + craft=韩褶）⇒ 工序序列缺 上车布-纱",
+      "red_criterion": "期望 精裁-纱→纱三边→韩褶-纱→**上车布-纱**→熨烫-纱→… ；实得整条缺 上车布-纱（13 个字母序变体里独缺它）",
+      "root_symbol": "production_route_rules 里 craft=韩褶 仅一行 insert 上车布 且 position='布帘'；纱帘侧无 position IS NULL 的对应行 ⇒ collapse/取路按部位命中不上",
+      "evidence": ["dispatch-routing-sweep/p2-matrix.json::D-03", "dispatch-routing-sweep/p2-matrix.json::S-01", "dispatch-routing-sweep/p2-coverage.json uncovered=['裁剪-纱','上车布-纱','质检','配料','腰靠垫','绑带-纱']", "psql: production_route_rules where trigger_value like '韩褶%' ⇒ 2 行，唯一 上车布 行 position=布帘", "production_operations 里 上车布-纱 存在且 active ⇒ 非库缺，是取路/规则未命中"],
+      "attribution_5_layer": {"现象": "纱帘+韩褶派工少 1 道", "服务层": "ProcessingOrderService.buildRoute 取规则按 position 命中", "接口层": "POST /processing-orders/generate 静默 200", "数据层": "production_route_rules 纱帘侧缺行", "期望层": "harness 逐字全序期望（库内真值）"}
+    },
+    {
+      "id": "L2-F2",
+      "class": "real_defect_candidate",
+      "severity": "P2-口径",
+      "title": "选项工序在目标部位无变体时「静默成功、少一道工序」（无显式失败/无名）",
+      "min_repro": "纱帘单 + option=拼1次/加花边/加铅块/接高/加logo条/加立边/扣环/防翘扣 ⇒ generate 返回 200，序列里没有该选项工序",
+      "red_criterion": "期望显式失败并指名缺口（harness 判据）；实得 200 且静默产出基线序列",
+      "root_symbol": "取路侧对「选项工序无该部位变体」无 fail-closed 分支（ProcessingOrderService 取路/规则应用段）",
+      "evidence": ["dispatch-routing-sweep/p2-matrix.json::S-03", "dispatch-routing-sweep/p2-matrix.json::F-拼1次@纱帘 等 8 条", "dispatch-routing-sweep/p3-writes.json（同族 2 条）"],
+      "attribution_5_layer": {"现象": "选项被静默丢弃", "服务层": "取路缺 fail-closed", "接口层": "generate 200 无告警字段", "数据层": "库内仅 拼1次-布/花边-布 无 -纱 变体", "期望层": "「必须显式失败」为 harness 判据，产品文档未明写 ⇒ 待裁定"},
+      "note": "证据强度只到「静默成功」；是否算缺陷取决于产品口径（选项对无变体部位应拒还是应跳过）⇒ 登记为待裁定，不武断判产品"
+    },
+    {
+      "id": "L2-F3",
+      "class": "env_or_fixture",
+      "severity": "P0-评测可用性",
+      "title": "本机 ai-agent(:8001) 的 JWT_PUBLIC_KEY 与 harness 用私钥不成对 ⇒ /api/chat/** 全部 TOKEN_INVALID",
+      "min_repro": "harness 用 ~/migao-keys/jwt-private.pem 签 RS256 token → POST /api/chat/sessions ⇒ 401 TOKEN_INVALID",
+      "red_criterion": "正对照 B1-1（合法 token 建会话）应为 200，实得 401",
+      "root_symbol": "backend/ai-agent-service/.env::JWT_PUBLIC_KEY（spki sha256=6292bfb2…）≠ openssl rsa -pubout ~/migao-keys/jwt-private.pem（sha256=86978d00…）",
+      "evidence": ["agent-service-sweep/probe-tenant-isolation.json::B1-1/B1-2 401", "agent-service-sweep/probe-auth-debugfalse.json::A2-positive 401", "指纹对照见 REPORT.md §3"],
+      "attribution_5_layer": {"现象": "JWT 面全红", "服务层": "auth.py 签名校验", "接口层": "401 TOKEN_INVALID", "数据层": "密钥对不匹配", "期望层": "本机环境注入问题，非产品"}
+    }
+  ],
+  "false_reds": [
+    {"id": "M9-01", "why": "判据把返工数量计入应做上限，而产品判据（advances = work_type=='normal'）明确不计 ⇒ 200 是正确行为；独立复现 line2-repro-m8m9.json::M9-b1 超报 30/20 得 422 证明护栏在线"},
+    {"id": "M8-01", "why": "夹具在「已报满(opRated2 20/20)」的实例上做幂等重放 ⇒ 首报即被 422 拦（占位 discard），键不存在 ⇒ replayed 字段无从出现；独立复现 M8-c1/c2 复现同形，且 M8-a1/a2 证明余量充足时 replayed=true 正常"},
+    {"id": "M10-02", "why": "predTotalEqualsOwnMath(fmt(expAfterNew.total), expAfterNew.total) 把「分」的 BigInt 与已格式化字符串比 ⇒ 类型不可比；同文件其余调用均传原始值"},
+    {"id": "W-01b", "why": "期望「自建工序 unit=米 ⇒ 应做=用料米数」与产品口径「引擎目录外工序兜底 1 且 qty_source=fallback」不符；E-01 型期望过期"},
+    {"id": "W-08", "why": "harness 结论（前端发 status:'inactive'）已过期：现 main 的 features.ts::disableOpByName 发 {status:'disabled'}，后端 STATUSES={active,disabled} ⇒ 该按钮在 90192bcac 上可用（harness 引用的 types/index.ts 注释即 #6103 的修复留痕）"},
+    {"id": "P9-01(改价漂移探针)", "why": "TypeError: Cannot read properties of null ⇒ harness 崩溃，非产品读数（同文件真正的 P9-01 断言 pass、P9-02 pass）"},
+    {"id": "E-01", "why": "注入的是既有 position='布帘' 行（injected.id == baselinePrices.布帘RowId）⇒ 改的就是塌缩价源本身，观测到的就是「改布帘价 ⇒ 价变」，非 F8 缺陷；产品文档明写收敛规则「用户裁定取布帘价」"},
+    {"id": "DR-01/03/04/05", "why": "p10 基线 = p0 采集的租户态（开工态），比对时租户已被并行线①加过工序/路线、被 p3-writes 改过价目与规则 ⇒ 漂移对象全部带「写面横切工序写面」等非本线前缀，非本线所写"}
+  ],
+  "env_or_fixture_fails": [
+    {"group": "DEBUG=true 旁路（5 条）", "ids": ["A2-notoken-*×3", "A2-expired", "RP-A1"], "why": "start-stack 起 :8001 用 DEBUG=true ⇒ 无 token 被旁路放行 200；harness 按 DEBUG=false 断言"},
+    {"group": "JWT 密钥对不匹配（19 条）", "ids": ["B1-1/B1-2/B3-1..4/B4-1/B4-2/B5-2/B5-3/B6-1..4", "F0-1/F2-1", "A2-positive"], "why": "见 L2-F3"},
+    {"group": "合成租户 B 不存在（2 条）", "ids": ["B1-2", "p5/p6/p7 的 FK violation"], "why": "TENANT_B=999999 不在 tenants ⇒ agent_employees/agent_sessions/sessions FK 违约，p5/p6/p7 三段中断"},
+    {"group": "p5-ui 硬编码手机号（piecework U-02+；dispatch UI-00 部分）", "ids": ["piecework p5-ui 崩溃", "dispatch UI-00"], "why": "piecework p5-ui-and-residue.mjs:25 loginApi('13870217889') 硬编码旧租户手机号；本租户管理员=13800138000 ⇒ 401「该手机号未注册」"},
+    {"group": "本线探针清理前的 Z1-1", "ids": ["agent-service p7-residue Z1-1"], "why": "p7 依赖 PROBE_TAGS（本轮未传）且有 4 卡+4 候选残留 ⇒ 报 fail；本线已手工清理至 0"}
+  ],
+  "criteria_side": [
+    "C6（#6185 物流缓存）skip 前提错误：harness 在 admin-api 的 Java 源码里 grep 「物流缓存」；#6185 落地对象是 ai-agent-service 的 app/core/logistics_trace_cache.py（commit 37204f4e9 是 90192bcac 的祖先）⇒ 判据命名空间错位，非产品缺口",
+    "C6 之外：finance A0/A4/B9b skip 均带真实前置（本租户无 production_work_logs / 无残料行 / 结算面确不存在，实测 8 候选面全 404）⇒ 属正常未覆盖",
+    "piecework M16/F8E/F8Z 前置不成立（本租户无「有通用行无活跃布帘行」的逻辑工序）⇒ F8 复现链未覆盖；但 F8 受控实验（F8X-02/03/04）证明 90192bcac 上「一次普通保存不新建价目行、实例仍未定价」⇒ 修复在位",
+    "p10-drift 的基线过期（用 p0 采集态当基线，运行期被并行线改动）⇒ 零漂移断言失去判别力，属判据设计缺陷"
+  ],
+  "uncovered_skips": [
+    {"ids": ["A1", "A2", "A3"], "reason": "结算单/发放/导出面不存在（8 候选端点全 404）", "restart": "产品新增结算面后"},
+    {"ids": ["A0"], "reason": "本租户 production_work_logs 为空时无正对照（本轮已由 piecework 造出报工 ⇒ 可重启）", "restart": "先跑 piecework 再跑 finance"},
+    {"ids": ["A4"], "reason": "结构性归因（源码级存在性）", "restart": "—"},
+    {"ids": ["B9b"], "reason": "fabric_remnants 0 行 ⇒ 残料写面不可达", "restart": "造出余料后"},
+    {"ids": ["C6"], "reason": "前提错位（见判据侧）", "restart": "把判据指向 ai-agent-service 的 logistics_trace_cache 后"},
+    {"ids": ["Z4", "Z2 空集表"], "reason": "并发登记 / 空集快照（无判别力）", "restart": "独占租户窗口重跑"},
+    {"ids": ["M16-01/02", "F8E-00", "F8Z-00"], "reason": "F8 复现前置不存在", "restart": "构造「有通用行、无活跃布帘行」的逻辑工序"},
+    {"ids": ["F3-2/F3-3", "RP-B*"], "reason": "无租户 B 对照身份 / 建会话夹具失败", "restart": "存在第二个真实租户且 JWT 密钥对修好后"},
+    {"ids": ["dispatch P5 UI-00"], "reason": "Playwright 登录页 #phone 选择器 45s 超时（登录页可 HTTP 200）", "restart": "前端 dev 热重载完成/重启 admin-web 后"},
+    {"ids": ["agent-service 全 JWT 面"], "reason": "密钥对不匹配", "restart": "见 L2-F3"}
+  ],
+  "residue": {
+    "before_cleanup_line2": {"knowledge_cards": 4, "knowledge_candidates": 4, "agent_sessions": 2, "agent_messages": 2},
+    "after_cleanup_line2": {"knowledge_cards": 0, "knowledge_candidates": 0, "agent_sessions": 0, "agent_messages": 0},
+    "pre_existing_not_mine": {
+      "note": "非本线所写、按纪律不清（属线①/线③的探针）",
+      "probe_orders_active": 74, "probe_products_active": 12, "probe_categories_active": 12,
+      "probe_work_logs": 16, "processing_orders": 83, "operation_positions_active": 115
+    },
+    "tenants_now": [32, 34],
+    "tenant_34_note": "「米高测试环境-隔离对照」2026-10-14 20:35:03 由并行线创建，非本线"
+  },
+  "artifact_files": {
+    "finance": "out/finance-stock-time-sweep/{summary-raw.json,SUMMARY.json,run.log,residue.json,buildpoint-run.json}",
+    "piecework": "out/piecework-wage-sweep/{p1p2-matrix.json,run.log,p6-price-source.json,p3-f8-redproof.json,p7/p8/p9-*.json}",
+    "dispatch": "out/dispatch-routing-sweep/{p2-matrix.json,p2-coverage.json,p3-writes.json,p10-drift.json,surface.json,run.log}",
+    "agent": "out/agent-service-sweep/{probe-*.json,SUMMARY.json,run.log}",
+    "repro": "out/piecework-wage-sweep/line2-repro-m8m9.json"
+  }
+}

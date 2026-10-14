@@ -1,0 +1,72 @@
+{
+  "at": "2026-10-14T12:38:56.082Z",
+  "tenant": 32,
+  "roots": {
+    "products": {
+      "predicate": "tenant_id=32 and name like 'race-sweep%'",
+      "rows": 6
+    },
+    "product_skus": {
+      "predicate": "tenant_id=32 and product_id in (select id from products where tenant_id=32 and name like 'race-sweep%')",
+      "rows": 6
+    },
+    "orders": {
+      "predicate": "tenant_id=32 and (remark like 'race-sweep%' or customer_name like 'race-sweep%')",
+      "rows": 12
+    },
+    "inbound_orders": {
+      "predicate": "tenant_id=32 and (coalesce(supplier,'') like 'race-sweep%' or coalesce(remark,'') like 'race-sweep%' or coalesce(supplier_doc_no,'') like 'race-sweep%')",
+      "rows": 7
+    },
+    "client_request_keys": {
+      "predicate": "tenant_id=32 and client_request_id like 'race-sweep%'",
+      "rows": 4
+    },
+    "stock_batches": {
+      "predicate": "tenant_id=32 and (product_id in (select id from products where tenant_id=32 and name like 'race-sweep%') or sku_id in (select id from product_skus where tenant_id=32 and product_id in (select id from products where tenant_id=32 and name like 'race-sweep%')) or supplier like 'race-sweep%' or dye_lot like 'race-sweep%' or inbound_order_id in (select id from inbound_orders where tenant_id=32 and (supplier like 'race-sweep%' or remark like 'race-sweep%')))",
+      "rows": 10
+    },
+    "stock_batch_consumptions": {
+      "predicate": "tenant_id=32 and (stocktake_run_id like 'race-sweep%' or batch_id in (select id from stock_batches where tenant_id=32 and (supplier like 'race-sweep%' or dye_lot like 'race-sweep%')))",
+      "rows": 2
+    },
+    "stock_ledger_entries": {
+      "predicate": "tenant_id=32 and (product_id in (select id from products where tenant_id=32 and name like 'race-sweep%') or sku_id in (select id from product_skus where tenant_id=32 and product_id in (select id from products where tenant_id=32 and name like 'race-sweep%')) or note like '%race-sweep%' or coalesce(ref_no,'') in (select order_no from orders where tenant_id=32 and (remark like 'race-sweep%' or customer_name like 'race-sweep%')) or coalesce(ref_no,'') in (select inbound_no from inbound_orders where tenant_id=32 and (supplier like 'race-sweep%' or remark like 'race-sweep%')))",
+      "rows": 20
+    },
+    "order_shipments": {
+      "predicate": "tenant_id=32 and order_id in (select id from orders where tenant_id=32 and (remark like 'race-sweep%' or customer_name like 'race-sweep%'))",
+      "rows": 1
+    },
+    "finance_transactions": {
+      "predicate": "tenant_id=32 and (order_id in (select id from orders where tenant_id=32 and (remark like 'race-sweep%' or customer_name like 'race-sweep%')) or coalesce(order_no,'') in (select order_no from orders where tenant_id=32 and (remark like 'race-sweep%' or customer_name like 'race-sweep%')) or coalesce(remark,'') like '%race-sweep%')",
+      "rows": 2
+    },
+    "processing_orders": {
+      "predicate": "tenant_id=32 and (order_id in (select id from orders where tenant_id=32 and (remark like 'race-sweep%' or customer_name like 'race-sweep%')) or coalesce(processing_order_no,'') in (select order_no from orders where tenant_id=32 and (remark like 'race-sweep%' or customer_name like 'race-sweep%')))",
+      "rows": 0
+    }
+  },
+  "steps": [],
+  "errors": [],
+  "blocked": [],
+  "plan": {
+    "tablesInClosure": 25,
+    "deleteOrder": 25
+  },
+  "dryRows": 118,
+  "totalDeleted": 0,
+  "after": {
+    "products": 6,
+    "finance_transactions": 2,
+    "processing_orders": 0,
+    "inbound_labels": 0,
+    "stock_batches": 10,
+    "orders": 12,
+    "inbounds": 7,
+    "keys": 4,
+    "ledger": 7,
+    "consumptions": 2
+  },
+  "blockedTop": []
+}

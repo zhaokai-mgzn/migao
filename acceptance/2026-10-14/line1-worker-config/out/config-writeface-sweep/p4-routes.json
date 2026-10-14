@@ -1,0 +1,26 @@
+[
+  {
+    "id": "W4-L0",
+    "name": "清场：历史残留同前缀对象",
+    "status": "pass",
+    "detail": "清理 0 条：（无）",
+    "evidence": [],
+    "at": "2026-10-14T12:34:49.974Z"
+  },
+  {
+    "id": "W4-98",
+    "name": "零残留读数：前缀对象存活数 = 0",
+    "status": "pass",
+    "detail": "存活明细=0（ops/pos/routes/rules/fees 全部 deleted=1 或不存在）",
+    "evidence": [],
+    "at": "2026-10-14T12:34:51.123Z"
+  },
+  {
+    "id": "W4-99",
+    "name": "既有默认路线未被触碰（还原自证：只读比对）",
+    "status": "pass",
+    "detail": "当前活跃路线 = [{\"id\":\"44063090af70bc49d5e72e122cab42e2\",\"is_default\":false,\"name\":\"布料工序路线\",\"status\":\"active\"},{\"id\":\"ee07fef1fa75e06c4cb473e01bbd0209\",\"is_default\":true,\"name\":\"窗帘工序路线（默认）\",\"status\":\"active\"}]",
+    "evidence": [],
+    "at": "2026-10-14T12:34:51.225Z"
+  }
+]

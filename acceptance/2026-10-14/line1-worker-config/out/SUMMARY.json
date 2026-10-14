@@ -1,0 +1,260 @@
+{
+  "line": "线① 工人端 / 小程序 / 配置写面",
+  "buildpoint": {
+    "sha": "90192bcac",
+    "shaFull": "90192bcac82b1d276d2793986ca9c64f47e47d16",
+    "subject": "chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)",
+    "originMain": "03ce170501b4d315f5a744572afbbbe65be67e10",
+    "adminApiPid": "54364",
+    "adminApiStart": "2026-10-14 20:24:44 +08",
+    "observedAt": "2026-10-14 20:29:10 +08",
+    "note": "读数窗口 2026-10-14 20:29~20:41 +08；被测面 = 本机三件套（:8080 / :8001 / :3001）+ 云 dev RDS，tenant 32"
+  },
+  "counts": {
+    "pass": 270,
+    "fail": 31,
+    "skip": 13,
+    "false_red": 24
+  },
+  "counts_note": "四态口径（原始读数）：pass=270；fail=31 = 判据侧假红 24 条 + 故意失效控制项 2 条（BATCH/F4、SHIP/R0，自述「预期就是 fail」）+ 真缺陷 4 条（L1-F1..F4，已含 SHIP/W1-2→L1-F2、BATCH/E4.1→L1-F1、SHIP/K3b-1→L1-F3、SHIP/K3-3→判据侧）+ 1 条归并差额（SHIP/K3-3 在假红清单里按判据侧列示，与真缺陷清单不重复计）。skip=13 条，不折算 pass。",
+  "counts_by_suite": {
+    "bootstrap-chain(空租户冷启动链)": {
+      "pass": 7,
+      "fail": 0,
+      "skip": 0
+    },
+    "worker-miniapp-writeface-sweep": {
+      "pass": 69,
+      "fail": 19,
+      "skip": 2
+    },
+    "shipments-sweep": {
+      "pass": 69,
+      "fail": 5,
+      "skip": 4
+    },
+    "batch-writeface-sweep": {
+      "pass": 57,
+      "fail": 6,
+      "skip": 0
+    },
+    "config-writeface-sweep": {
+      "pass": 68,
+      "fail": 1,
+      "skip": 4
+    }
+  },
+  "true_defects": [
+    "L1-F1",
+    "L1-F2",
+    "L1-F3",
+    "L1-F4"
+  ],
+  "findings": [
+    {
+      "id": "L1-F1",
+      "severity": "P3（并发语义；终态正确、无半完成）",
+      "title": "并发 5 次 DELETE /api/admin/production/operations/{id}/detach-and-delete 同一工序 ⇒ 3 次 HTTP 200（应恰 1 次成功）",
+      "evidence": "out/batch-writeface-sweep/E4-detach-concurrent.json: concurrentHttp=[200,200,200,422,422]；after={id:e1f7177549b39c099fc496a6309dd4a8, deleted:1}；out/batch-writeface-sweep/run.log:80 的 E4.1 FAIL 行",
+      "root_cause_symbol": "ProductionController.detachAndDeleteOperation → ProductionOperationCommandService.deleteDetaching（无 CAS/行锁的 check-then-act）",
+      "red_criteria": "同 id 并发 delete ⇒ 成功(200) 次数 == 1"
+    },
+    {
+      "id": "L1-F2",
+      "severity": "P3（审计字段越界；不影响数量）",
+      "title": "工人发货写面在 orders 上多写一列 orders.shipped_at（不变量「发货只记事实、不动订单内容」判红）",
+      "evidence": "out/shipments-sweep/p4-records.json 的 W1-2 越界明细 orders.shipped_at: null → \"2026-10-14T20:32:59.195747+08:00\"；W1-3 diff=[orders.shipped_at, orders.status]；out/shipments-sweep/run.log:1-2",
+      "root_cause_symbol": "工人发货写面（orders 状态/时间列写入）；判据允许集见 p4-writeface-equivalence.mjs AUDIT",
+      "red_criteria": "发货写面的变化集 ⊆ payload 键 ∪ 显式声明审计列"
+    },
+    {
+      "id": "L1-F3",
+      "severity": "P2（口径：重放语义，非破坏性）",
+      "title": "商家发货路不认 X-Client-Request-Id：同键两次调用都不回放（第二次因「未发生发货流转」422；client_request_keys 零命中）",
+      "evidence": "out/shipments-sweep/p5-records.json 的 K3b-1 证据 R1(200)/RA(422)/RB(422) tracking 恒为 SF-FIRST-7777、client_request_keys 命中 []；K3-3 响应原文「本次未发生订单发货流转，因此未新增发货单（若只是改运单号，请用物流改单入口）」",
+      "root_cause_symbol": "ProductionController.ship 直接转发 orderService.shipWithLogistics（未走 ClientRequestIdService.claim）",
+      "red_criteria": "同 X-Client-Request-Id 的重复写请求 ⇒ 回放首次结果"
+    },
+    {
+      "id": "L1-F4",
+      "severity": "P3（不变量：发货不得改订单内容）",
+      "title": "发货写面在 orders 上改 orders.shipped_at（W1-3 判红：orders 仅允许 status/updated_at 变化）",
+      "evidence": "out/shipments-sweep/p4-records.json 的 W1-3 diff=[\"orders.shipped_at: null → \\\"2026-10-14T20:32:59.195747+08:00\\\" [field]\",\"orders.status: \\\"confirmed\\\" → \\\"shipped\\\" [field]\"]",
+      "root_cause_symbol": "工人发货写面（orders 状态/时间列写入）；允许集见 acceptance/2026-10-03/shipments-sweep/harness/p4-writeface-equivalence.mjs 的 AUDIT 常量（未含 shipped_at）",
+      "red_criteria": "发货写面的变化集 ⊆ payload 键 ∪ 显式声明审计列（W1-3：orders 仅 status/updated_at 可变）"
+    },
+    {
+      "id": "OBS-SHIP-K3-3",
+      "severity": "判据侧（期望过期，非缺陷）",
+      "title": "商家发货路「换单号重发」返回 422 而非 2xx：服务端逐字给可行动文案「本次未发生订单发货流转…若只是改运单号，请用物流改单入口」，shipments 仍 1、logistics 仍 1",
+      "evidence": "out/shipments-sweep/p5-records.json 的 K3-3 响应原文 + SQL tracking_no=SF-ADMIN-1（未被覆写）",
+      "root_cause_symbol": "—（判据写死「幂等重发不报错 ⇒ 2xx」；实测形态是显式拒绝 + 零副作用）",
+      "red_criteria": "若改判据：重复发货 ⇒ shipments 仍 1 ∧ logistics 仍 1 ∧ tracking 未被覆写（不论 HTTP 码）"
+    }
+  ],
+  "false_red": [
+    {
+      "id": "BATCH/E4.1 → 真缺陷 L1-F1",
+      "kind": "归入真缺陷",
+      "why": "并发 detach-and-delete 3×200；判据自红有效"
+    },
+    {
+      "id": "SHIP/W1-2 → 真缺陷 L1-F2",
+      "kind": "归入真缺陷",
+      "why": "orders.shipped_at 越界；判据自红有效"
+    },
+    {
+      "id": "SHIP/K3b-1 → 真缺陷 L1-F3",
+      "kind": "归入真缺陷",
+      "why": "同幂等键不回放；判据自红有效"
+    },
+    {
+      "id": "P2b/N1",
+      "kind": "期望值过期伪影",
+      "why": "判据写死「product_id=NULL ⇒ HTTP 500」（老构建 de614623d 行为）；本次实测 200，且源码已含 24b7381d1 短路，git merge-base --is-ancestor 24b7381d1 HEAD = YES"
+    },
+    {
+      "id": "P2b/N5",
+      "kind": "期望值过期伪影",
+      "why": "单变量三步期望 200→500→200，实测 200→200→200（同 N1 根因）"
+    },
+    {
+      "id": "P3/D5,D7,D9,D10,D11,D12,D16,D17,D18",
+      "kind": "夹具漂移",
+      "why": "夹具送 quantity='7.5'（米数），而 #6812 起 photo 入库单的该字段 = 卷数正整数 ⇒ 服务端 400 并逐字给可行动文案"
+    },
+    {
+      "id": "P4/E16,E17,E18,E20",
+      "kind": "环境注入（JWT 密钥错配）",
+      "why": "harness 用 ~/migao-keys/jwt-private.pem 签 token，ai-agent .env 的 JWT_PUBLIC_KEY 与该私钥**不是一对**（现算比对 False）⇒ 401 TOKEN_INVALID"
+    },
+    {
+      "id": "P5/U2,U3,U3b,U4a",
+      "kind": "夹具漂移（UI 契约变更）",
+      "why": "worker-h5 已改「工号 + 企业编码」（#6564，提交 0478ca5ff），登录入口 #wh5-enterprise-code，URL 参数 tenant_code；p5-ui（2026-10-03）仍用 tenant_id= + #wh5-code"
+    },
+    {
+      "id": "BATCH/B2.1,B2.3",
+      "kind": "夹具漂移",
+      "why": "对照租户写死「租户 21」，该租户已不存在 ⇒ 跨租户断言在 null 目标上空转判红"
+    },
+    {
+      "id": "BATCH/F2",
+      "kind": "判据/清理缺陷",
+      "why": "注入行确实被删（delete where id='l2dup…'），但计数读面 restored=2 ≠ 1 ⇒ 第二次读面/清理口径缺陷，非产品"
+    },
+    {
+      "id": "BATCH/F3",
+      "kind": "红证注入通道缺陷",
+      "why": "注入 -5 走 API 被合法护栏 422 拒绝（E2.1 期望行为）⇒ 注入未生效 ⇒ 判据「当场红」不成立"
+    },
+    {
+      "id": "BATCH/F4",
+      "kind": "故意的失效控制项",
+      "why": "期望 1===2，按设计必红"
+    },
+    {
+      "id": "SHIP/R0-VACUOUS-CONTROL",
+      "kind": "故意的失效控制项",
+      "why": "期望 99 vs 实测 1，按设计必红"
+    },
+    {
+      "id": "CONFIG/W0-00b",
+      "kind": "构建点自检（环境注入）",
+      "why": "prod 未设 LIVE_WORKTREE ⇒ 回落 /Users/guangzhen.zk/migao-wt/main-live（本机不存在）⇒ merge-base 抛错被 catch 成 hasFix=false ⇒ 判「不含 #6102 修复」"
+    },
+    {
+      "id": "CONFIG/W1-00",
+      "kind": "夹具漂移",
+      "why": "夹具用部位名「通用」触发 F8 前置，被新校验拒：只接受矩阵已有部位（布帘/纱帘/帘头/布料）或基线三部位"
+    },
+    {
+      "id": "SHIP/时间口径",
+      "kind": "装置缺陷（不影响判定）",
+      "why": "shipments-sweep/lib.mjs::nowCST 显式 +08 但把无 TZ 的 UTC 墙钟当 +08 ⇒ 日志时间戳比真实 +08 早 8 小时"
+    },
+    {
+      "id": "SHIP/K3-3",
+      "kind": "判据侧·期望过期",
+      "why": "重复发货实测 422 + 服务端逐字可行动文案「本次未发生订单发货流转…请用物流改单入口」，且 shipments/logistics 仍各 1、tracking 未覆写 ⇒ 判据写死「必须 2xx」与现形态不符"
+    }
+  ],
+  "skips": [
+    {
+      "id": "P2/C17.cross-tenant-object",
+      "reason": "无对照租户夹具（写死租户 21，该租户已不存在）"
+    },
+    {
+      "id": "P3/D21.cross-tenant-label",
+      "reason": "同上"
+    },
+    {
+      "id": "SHIP/P2-EXPORT",
+      "reason": "发货单导出面不存在（枚举端点 404/405）"
+    },
+    {
+      "id": "SHIP/K1-2",
+      "reason": "发货扣减库存写面不存在"
+    },
+    {
+      "id": "SHIP/K2-RESTOCK",
+      "reason": "发货退回/回补面不存在"
+    },
+    {
+      "id": "SHIP/K4-INBOUND",
+      "reason": "入库标签补打不在本包射程"
+    },
+    {
+      "id": "SHIP/p5×3",
+      "reason": "打印/标签硬件通道与库存时效读面不可达"
+    },
+    {
+      "id": "CONFIG/W6-01,W6-07,W6-09,W6-14",
+      "reason": "空租户缺夹具（加工项目录 / 工人端页面开关无行 / 无 processing_categories / AI 配置无字符串键）"
+    },
+    {
+      "id": "P2b/N1·N5 语义",
+      "reason": "非 skip：按假红登记（见 false_red）"
+    }
+  ],
+  "residue": {
+    "before": {
+      "users_la": 2,
+      "orders_la": 11,
+      "orders_chain": 1,
+      "po_la": 11,
+      "po_chain": 1,
+      "ops_la": 13,
+      "ops_chain": 2,
+      "product_chain": 1,
+      "sku_chain": 1,
+      "cat_chain": 1,
+      "craft_calc_configs.margin_multi": "0.320"
+    },
+    "after": {
+      "users_la": 0,
+      "orders_la": 0,
+      "orders_chain": 0,
+      "po_la": 0,
+      "po_chain": 0,
+      "ops_la": 0,
+      "ops_chain": 0,
+      "product_chain": 0,
+      "sku_chain": 0,
+      "cat_chain": 0,
+      "craft_calc_configs.margin_multi": "0.310"
+    },
+    "cleanup_sql": "/tmp/line1-clean.sql（单事务、逐条 ON_ERROR_STOP off；子表优先）",
+    "restored": "craft_calc_configs.ccc-32.margin_multi 0.320 → 0.310（= W6-05 自身 diff 证据里的写前值；harness 的 restore 没做）",
+    "not_touched": "tenant 32 整体未清空；非本线探针行（工资验收/漂移验收/设置验收… 属线②，租户 34 属线③）一律未碰"
+  },
+  "evidence_files": [
+    "out/run.log（四次 sweep 总编排日志）",
+    "out/bootstrap-chain/{P0b-chain.json,P0b-step0..5-*.json,.chain.json}",
+    "out/worker-miniapp-writeface-sweep/{P1-auth,P2-scan,P2b-cuttingheight-npe,P3-inbound,P4-miniapp-ship-upload,P5-ui,SUMMARY,Z-residue}.json + run.log + rerun.log",
+    "out/shipments-sweep/{p1..p7}-records.json + summary.json + run.log",
+    "out/batch-writeface-sweep/{A-import-export,B-batch-and-detach,D-uploads,E-concurrency-and-redproof,F-redproof,SUMMARY,Z-residue,E4-detach-concurrent}.json + run.log",
+    "out/config-writeface-sweep/{p1-selftest-f8,p2-operations,p3-positions,p4-routes,p5-rules,p6-other-config}.json + run-all-summary.json + raw-*.log"
+  ],
+  "self_declaration": "本包只产读数 + 判定 + 证据；不下「验收通过 / 评测 OK / 交付完成」结论；skip 不折算 pass。未改任何产品代码；未跑 verify-all.sh/batch-gate/全量 pytest；未调真实 LLM；未派 GitHub workflow。"
+}

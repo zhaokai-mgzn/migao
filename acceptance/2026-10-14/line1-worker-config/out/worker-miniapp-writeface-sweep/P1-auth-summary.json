@@ -1,0 +1,22 @@
+{
+  "at": {
+    "cst": "2026-10-14 20:36:53 +08",
+    "utc": "2026-10-14T12:36:53.763Z"
+  },
+  "summary": {
+    "pass": 16,
+    "fail": 0,
+    "skip": 0,
+    "total": 16
+  },
+  "workers": {
+    "A": {
+      "id": "7f9e2c21a6c5703b6fa4a593cee6faae",
+      "no": "LAA11016"
+    },
+    "B": {
+      "id": "1b5fd08889f5fce5bebe7fec30393b2a",
+      "no": "LAB11316"
+    }
+  }
+}

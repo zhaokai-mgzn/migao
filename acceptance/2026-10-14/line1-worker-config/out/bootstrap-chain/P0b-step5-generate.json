@@ -1,0 +1,68 @@
+{
+  "at": {
+    "cst": "2026-10-14 20:31:19 +08",
+    "utc": "2026-10-14T12:31:19.182Z"
+  },
+  "endpoint": "POST /api/admin/processing-orders/generate",
+  "requestBody": {
+    "orderIds": [
+      "01cceb1e85eef72a085734579c812822"
+    ]
+  },
+  "httpStatus": 200,
+  "response": {
+    "success": true,
+    "data": [
+      {
+        "orderRef": "01cceb1e85eef72a085734579c812822",
+        "success": true,
+        "processingOrderNo": "JG-20261014-8435"
+      }
+    ],
+    "requestId": "req_bad6f176236d4998",
+    "timestamp": 1791981078
+  },
+  "dbProcessingOrders": [
+    {
+      "id": "a8a7a6849debfd9d7d25bc0461f8290b",
+      "processing_order_no": "JG-20261014-8435",
+      "status": "generated"
+    }
+  ],
+  "dbPositionOps": [
+    {
+      "id": "97499f62ed162ef715f1cc281c266b9e",
+      "seq": 1,
+      "operation_name": "裁剪-布",
+      "group_name": "裁剪",
+      "unit": "米",
+      "position_name": "线A验收布-mv839jljyl",
+      "position_kind": "布帘",
+      "qty_source": "fabric_meters",
+      "unit_price": "0.40",
+      "factor": "1.00",
+      "qty": "1.00",
+      "set_id": "9eb810e6b48848099f4f45945434a10a",
+      "set_no": "JG-20261014-8435-001",
+      "order_item_id": "4b87861ce2df10c6e6f6b6320878ab43",
+      "product_id": "736e8223ba6ed8dca749f499937f4183"
+    },
+    {
+      "id": "c769c0a2746044b9ae9586317c989501",
+      "seq": 2,
+      "operation_name": "打包",
+      "group_name": "后道",
+      "unit": "套",
+      "position_name": "线A验收布-mv839jljyl",
+      "position_kind": "布帘",
+      "qty_source": "fallback",
+      "unit_price": null,
+      "factor": "1.00",
+      "qty": "1.00",
+      "set_id": "9eb810e6b48848099f4f45945434a10a",
+      "set_no": "JG-20261014-8435-001",
+      "order_item_id": "4b87861ce2df10c6e6f6b6320878ab43",
+      "product_id": "736e8223ba6ed8dca749f499937f4183"
+    }
+  ]
+}

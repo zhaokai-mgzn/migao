@@ -1,0 +1,95 @@
+{
+  "at": {
+    "cst": "2026-10-14 20:32:23 +08",
+    "utc": "2026-10-14T12:32:23.946Z"
+  },
+  "probePrefix": "la",
+  "residue": {
+    "counts": {
+      "probeUsers": 3,
+      "probeSessions": 6,
+      "probeOrders": 1,
+      "probeProcessingOrders": 1,
+      "probeSets": 1,
+      "probeItems": 1,
+      "probePositionOps": 1,
+      "probePartTokens": 1,
+      "probeWorkLogs": 0,
+      "probeAudits": 0,
+      "probeIdemKeys": 0,
+      "probeInboundItems": 0,
+      "probeInboundLabels": 0
+    },
+    "total": 15
+  },
+  "residueClean": false,
+  "tableCounts": {
+    "orders": 36,
+    "processingOrders": 36,
+    "positionOps": 360,
+    "partTokens": 36,
+    "workLogs": 11,
+    "users": 7,
+    "inboundOrders": 0,
+    "inboundLabels": 0
+  },
+  "ledgerExisting": {
+    "hash": "b685fd5002d761b00f8cb28fc95c9a995c3bf1300915ad647f9ba5124b217b1f",
+    "parts": [
+      "orders=9f6326bd80891ef4507a4eed9a96e181#36",
+      "processing_orders=61e7a186c639370a006db93bbe65710b#35",
+      "processing_position_operations=1aa949d15ffeec85c32b4afba17e564f#359",
+      "processing_set_part_tokens=a8e66e08d9da4299cc8ed9286af41236#35",
+      "production_work_logs=668f4b3493266fbcc77e3ce0fc0912cd#11",
+      "worker_report_audits=e61e3a13e7951de26bd24fc8502c6e3b#11",
+      "users=766876404090b1bc04c2b8f47c2b43bf#7",
+      "worker_sessions=79ec82fdffc189362847b759d4ad4e9c#6",
+      "inbound_labels=EMPTY#0",
+      "client_request_keys=93a115ab05559bce34f62429ec31480c#11"
+    ],
+    "excludeProbe": true
+  },
+  "perTable": {
+    "orders": {
+      "probe": 1,
+      "existing": 36
+    },
+    "processing_orders": {
+      "probe": 1,
+      "existing": 36
+    },
+    "processing_position_operations": {
+      "probe": 1,
+      "existing": 370
+    },
+    "processing_set_part_tokens": {
+      "probe": 1,
+      "existing": 36
+    },
+    "production_work_logs": {
+      "probe": 0,
+      "existing": 11
+    },
+    "worker_report_audits": {
+      "probe": 0,
+      "existing": 11
+    },
+    "users": {
+      "probe": 0,
+      "existing": 7
+    },
+    "worker_sessions": {
+      "probe": 0,
+      "existing": 6
+    },
+    "inbound_labels": {
+      "probe": 0,
+      "existing": 0
+    },
+    "client_request_keys": {
+      "probe": 0,
+      "existing": 11
+    }
+  },
+  "probeAllZero": false
+}

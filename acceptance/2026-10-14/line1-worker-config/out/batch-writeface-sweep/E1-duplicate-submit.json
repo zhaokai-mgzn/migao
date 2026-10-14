@@ -1,0 +1,163 @@
+{
+  "idemKey": "<REDACTED-JWT>",
+  "serialHttp": 200,
+  "serialBody": {
+    "success": true,
+    "data": {
+      "id": "db16863641b1941fb3bac3824e176f46",
+      "name": "线②验收重复提交",
+      "basePrice": 9,
+      "description": "线②验收重复提交探针",
+      "images": [],
+      "status": "draft",
+      "stock": 1,
+      "stockWarningThreshold": 10,
+      "skuCode": "l2-E1-DUP-83DBOA",
+      "unit": "米",
+      "pricingType": "per_meter",
+      "stockDeductionMode": "on_order",
+      "colorCount": 1,
+      "totalStock": 1,
+      "salesCount": 0,
+      "salesAmount": 0,
+      "recommended": false,
+      "allowReturnRestock": false,
+      "colors": [
+        {
+          "id": "2110348446051528705",
+          "productId": "db16863641b1941fb3bac3824e176f46",
+          "colorName": "米白",
+          "sortOrder": 0,
+          "createdAt": "2026-10-14 20:34:12",
+          "updatedAt": "2026-10-14 20:34:12"
+        }
+      ],
+      "sellingMethods": [
+        "bulk_cut",
+        "full_roll"
+      ],
+      "doorWidths": [
+        "2.8m"
+      ],
+      "skus": [
+        {
+          "id": "2110348446089277441",
+          "productId": "db16863641b1941fb3bac3824e176f46",
+          "colorId": "2110348446051528705",
+          "colorName": "米白",
+          "doorWidth": "2.8m",
+          "price": 9,
+          "stock": 1,
+          "skuCode": "L2-E1-DUP-83DBOA-01-28",
+          "createdAt": "2026-10-14 20:34:12",
+          "updatedAt": "2026-10-14 20:34:12"
+        }
+      ],
+      "detailImages": [],
+      "editedBy": "13800138000",
+      "editedAt": "2026-10-14 20:34:12",
+      "createdAt": "2026-10-14 20:34:12",
+      "updatedAt": "2026-10-14 20:34:12",
+      "price": 9
+    },
+    "requestId": "req_bd8842cfab7243ba",
+    "timestamp": 1791981252
+  },
+  "afterSerial": 1,
+  "concHttp": [
+    200,
+    200,
+    200,
+    200,
+    200
+  ],
+  "concBody": [
+    {
+      "ok": true,
+      "id": "db16863641b1941fb3bac3824e176f46"
+    },
+    {
+      "ok": true,
+      "id": "db16863641b1941fb3bac3824e176f46"
+    },
+    {
+      "ok": true,
+      "id": "db16863641b1941fb3bac3824e176f46"
+    },
+    {
+      "ok": true,
+      "id": "db16863641b1941fb3bac3824e176f46"
+    },
+    {
+      "ok": true,
+      "id": "db16863641b1941fb3bac3824e176f46"
+    }
+  ],
+  "afterConc": 1,
+  "clientRequestKeys": [
+    {
+      "id": 468,
+      "tenant_id": 32,
+      "client_request_id": "<REDACTED-JWT>",
+      "endpoint": "POST /api/admin/products",
+      "response_payload": {
+        "id": "db16863641b1941fb3bac3824e176f46",
+        "name": "线②验收重复提交",
+        "skus": [
+          {
+            "id": "2110348446089277441",
+            "price": 9,
+            "stock": 1,
+            "colorId": "2110348446051528705",
+            "skuCode": "L2-E1-DUP-83DBOA-01-28",
+            "colorName": "米白",
+            "createdAt": "2026-10-14 20:34:12",
+            "doorWidth": "2.8m",
+            "productId": "db16863641b1941fb3bac3824e176f46",
+            "updatedAt": "2026-10-14 20:34:12"
+          }
+        ],
+        "unit": "米",
+        "price": 9,
+        "stock": 1,
+        "colors": [
+          {
+            "id": "2110348446051528705",
+            "colorName": "米白",
+            "createdAt": "2026-10-14 20:34:12",
+            "productId": "db16863641b1941fb3bac3824e176f46",
+            "sortOrder": 0,
+            "updatedAt": "2026-10-14 20:34:12"
+          }
+        ],
+        "images": [],
+        "status": "draft",
+        "skuCode": "l2-E1-DUP-83DBOA",
+        "editedAt": "2026-10-14 20:34:12",
+        "editedBy": "13800138000",
+        "basePrice": 9,
+        "createdAt": "2026-10-14 20:34:12",
+        "updatedAt": "2026-10-14 20:34:12",
+        "colorCount": 1,
+        "doorWidths": [
+          "2.8m"
+        ],
+        "salesCount": 0,
+        "totalStock": 1,
+        "description": "线②验收重复提交探针",
+        "pricingType": "per_meter",
+        "recommended": false,
+        "salesAmount": 0,
+        "detailImages": [],
+        "sellingMethods": [
+          "bulk_cut",
+          "full_roll"
+        ],
+        "allowReturnRestock": false,
+        "stockDeductionMode": "on_order",
+        "stockWarningThreshold": 10
+      },
+      "created_at": "2026-10-14T20:34:12.530868+08:00"
+    }
+  ]
+}

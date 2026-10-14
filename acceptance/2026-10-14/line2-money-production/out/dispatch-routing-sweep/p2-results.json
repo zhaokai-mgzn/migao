@@ -1,0 +1,986 @@
+[
+  {
+    "id": "D-01",
+    "title": "布帘 × 无规则工艺（罗马帘）→ 主线十道，逐部位变体正确",
+    "pass": true,
+    "problems": [],
+    "orderId": "f4151883e39fce1d697de757eff521ca",
+    "po": "JG-20261014-8436",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.熨烫-布(12.30米@0.35|fabric_meters)",
+      "4.定型-布(12.30米@0.40|fabric_meters)",
+      "5.复烫-布(12.30米@0.35|fabric_meters)",
+      "6.布帘车被(12.30米@0.40|fabric_meters)",
+      "7.外帘打卷(1.00套@1.00|fallback)",
+      "8.打包(1.00套@NULL|fallback)",
+      "9.外帘装袋(1.00套@1.00|fallback)",
+      "10.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "D-02",
+    "title": "布帘 × 韩褶 → 主线 + 韩褶(三边后) + 上车布(韩褶后)",
+    "pass": true,
+    "problems": [],
+    "orderId": "001fbdad55e33318d49027508749eaa6",
+    "po": "JG-20261014-8437",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.韩褶-布(40.00折@0.40|pleat_count)",
+      "4.上车布-布(12.30米@0.50|fabric_meters)",
+      "5.熨烫-布(12.30米@0.35|fabric_meters)",
+      "6.定型-布(12.30米@0.40|fabric_meters)",
+      "7.复烫-布(12.30米@0.35|fabric_meters)",
+      "8.布帘车被(12.30米@0.40|fabric_meters)",
+      "9.外帘打卷(1.00套@1.00|fallback)",
+      "10.打包(1.00套@NULL|fallback)",
+      "11.外帘装袋(1.00套@1.00|fallback)",
+      "12.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "D-03",
+    "title": "纱帘 × 韩褶 → 纱变体逐道正确（精裁-纱/纱三边/韩褶-纱/上车布-纱/车被-纱）",
+    "pass": false,
+    "problems": [
+      "工序序列不符\n      期望 精裁-纱 → 纱三边 → 韩褶-纱 → 上车布-纱 → 熨烫-纱 → 定型-纱 → 复烫-纱 → 车被-纱 → 外帘打卷 → 打包 → 外帘装袋 → 外帘发货\n      实得 精裁-纱 → 纱三边 → 韩褶-纱 → 熨烫-纱 → 定型-纱 → 复烫-纱 → 车被-纱 → 外帘打卷 → 打包 → 外帘装袋 → 外帘发货"
+    ],
+    "orderId": "bd88c09fd9db633a374de48be51a3abb",
+    "po": "JG-20261014-8438",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-纱(12.30米@0.40|fabric_meters)",
+      "2.纱三边(12.30米@0.40|fabric_meters)",
+      "3.韩褶-纱(40.00折@0.40|pleat_count)",
+      "4.熨烫-纱(12.30米@0.35|fabric_meters)",
+      "5.定型-纱(12.30米@0.40|fabric_meters)",
+      "6.复烫-纱(12.30米@0.35|fabric_meters)",
+      "7.车被-纱(12.30米@0.40|fabric_meters)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "D-04",
+    "title": "帘头 × 平幔 → 帘头复用布帘变体 + 帘头制作(三边后) + 去掉复烫",
+    "pass": true,
+    "problems": [],
+    "orderId": "0a6894449e1497e93c303ae40e0464e4",
+    "po": "JG-20261014-8439",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.帘头制作(1.00个@2.00|fallback)",
+      "4.熨烫-布(12.30米@0.35|fabric_meters)",
+      "5.定型-布(12.30米@0.40|fabric_meters)",
+      "6.布帘车被(12.30米@0.40|fabric_meters)",
+      "7.外帘打卷(1.00套@1.00|fallback)",
+      "8.打包(1.00套@NULL|fallback)",
+      "9.外帘装袋(1.00套@1.00|fallback)",
+      "10.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "D-05",
+    "title": "布料形态（saleForm=布料）→ 布料主线（裁剪→打包），不套窗帘工艺规则",
+    "pass": true,
+    "problems": [],
+    "orderId": "2aaa8f56f2127363c3689b2c3a706d78",
+    "po": "JG-20261014-8440",
+    "route_source": "direct",
+    "ops": [
+      "1.裁剪-布(12.30米@0.40|fabric_meters)",
+      "2.打包(1.00套@NULL|fallback)"
+    ]
+  },
+  {
+    "id": "D-06",
+    "title": "布帘 × 打孔 → 打孔-布(三边后)",
+    "pass": true,
+    "problems": [],
+    "orderId": "c06e521cea675f6d5f19cfe7a32169b8",
+    "po": "JG-20261014-8441",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.打孔-布(24.00孔@0.15|holes)",
+      "4.熨烫-布(12.30米@0.35|fabric_meters)",
+      "5.定型-布(12.30米@0.40|fabric_meters)",
+      "6.复烫-布(12.30米@0.35|fabric_meters)",
+      "7.布帘车被(12.30米@0.40|fabric_meters)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "D-07",
+    "title": "布帘 × 穿杆 → 去掉 定型/复烫",
+    "pass": true,
+    "problems": [],
+    "orderId": "44f0194098d1e1b0a3790a3ce85f077c",
+    "po": "JG-20261014-8442",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.熨烫-布(12.30米@0.35|fabric_meters)",
+      "4.布帘车被(12.30米@0.40|fabric_meters)",
+      "5.外帘打卷(1.00套@1.00|fallback)",
+      "6.打包(1.00套@NULL|fallback)",
+      "7.外帘装袋(1.00套@1.00|fallback)",
+      "8.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "D-08",
+    "title": "布帘 × 四爪钩 → 该工艺规则已软删 ⇒ 与主线逐字相同（软删规则不得生效）",
+    "pass": true,
+    "problems": [],
+    "orderId": "d858ce3ecbc72c69baad5b912c1adbde",
+    "po": "JG-20261014-8443",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.熨烫-布(12.30米@0.35|fabric_meters)",
+      "4.定型-布(12.30米@0.40|fabric_meters)",
+      "5.复烫-布(12.30米@0.35|fabric_meters)",
+      "6.布帘车被(12.30米@0.40|fabric_meters)",
+      "7.外帘打卷(1.00套@1.00|fallback)",
+      "8.打包(1.00套@NULL|fallback)",
+      "9.外帘装袋(1.00套@1.00|fallback)",
+      "10.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "D-09",
+    "title": "布帘 未填部位与工艺 → 显式回落默认（route_source 标注 + 序列 = 默认工艺「韩褶」的 12 道）",
+    "pass": true,
+    "problems": [],
+    "orderId": "dace0d50e38027fabb8b8e9ae3491216",
+    "po": "JG-20261014-8444",
+    "route_source": "default",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.韩褶-布(40.00折@0.40|pleat_count)",
+      "4.上车布-布(12.30米@0.50|fabric_meters)",
+      "5.熨烫-布(12.30米@0.35|fabric_meters)",
+      "6.定型-布(12.30米@0.40|fabric_meters)",
+      "7.复烫-布(12.30米@0.35|fabric_meters)",
+      "8.布帘车被(12.30米@0.40|fabric_meters)",
+      "9.外帘打卷(1.00套@1.00|fallback)",
+      "10.打包(1.00套@NULL|fallback)",
+      "11.外帘装袋(1.00套@1.00|fallback)",
+      "12.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "D-10",
+    "title": "布帘 × 罗马帘 + isShaped=false → 剔除 定型/复烫（形态开关接线）",
+    "pass": true,
+    "problems": [],
+    "orderId": "9197a06549fd744dbcd1383eb8c5ba49",
+    "po": "JG-20261014-8445",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.熨烫-布(12.30米@0.35|fabric_meters)",
+      "4.布帘车被(12.30米@0.40|fabric_meters)",
+      "5.外帘打卷(1.00套@1.00|fallback)",
+      "6.打包(1.00套@NULL|fallback)",
+      "7.外帘装袋(1.00套@1.00|fallback)",
+      "8.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "O-拼1次",
+    "title": "布帘 + 特殊选项「拼1次」→ 条件工序落位（三边 之后）",
+    "pass": true,
+    "problems": [],
+    "orderId": "b7ae0a78fd89dbcb3ec30c5f82c45219",
+    "po": "JG-20261014-8446",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.拼1次-布(2.00幅@0.80|fallback)",
+      "4.熨烫-布(12.30米@0.35|fabric_meters)",
+      "5.定型-布(12.30米@0.40|fabric_meters)",
+      "6.复烫-布(12.30米@0.35|fabric_meters)",
+      "7.布帘车被(12.30米@0.40|fabric_meters)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "O-拼2次",
+    "title": "布帘 + 特殊选项「拼2次」→ 条件工序落位（三边 之后）",
+    "pass": true,
+    "problems": [],
+    "orderId": "8710b6c5ac729208fb24d77f1552d055",
+    "po": "JG-20261014-8447",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.拼2次-布(2.00幅@1.20|fallback)",
+      "4.熨烫-布(12.30米@0.35|fabric_meters)",
+      "5.定型-布(12.30米@0.40|fabric_meters)",
+      "6.复烫-布(12.30米@0.35|fabric_meters)",
+      "7.布帘车被(12.30米@0.40|fabric_meters)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "O-拼3次",
+    "title": "布帘 + 特殊选项「拼3次」→ 条件工序落位（三边 之后）",
+    "pass": true,
+    "problems": [],
+    "orderId": "c252898fd9cc609e0cd1eac758e6b886",
+    "po": "JG-20261014-8448",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.拼3次-布(2.00幅@1.60|fallback)",
+      "4.熨烫-布(12.30米@0.35|fabric_meters)",
+      "5.定型-布(12.30米@0.40|fabric_meters)",
+      "6.复烫-布(12.30米@0.35|fabric_meters)",
+      "7.布帘车被(12.30米@0.40|fabric_meters)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "O-加花边",
+    "title": "布帘 + 特殊选项「加花边」→ 条件工序落位（三边 之后）",
+    "pass": true,
+    "problems": [],
+    "orderId": "203bd6bba2bb66c9be17792071f93e7a",
+    "po": "JG-20261014-8449",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.花边-布(12.30米@0.60|fabric_meters)",
+      "4.熨烫-布(12.30米@0.35|fabric_meters)",
+      "5.定型-布(12.30米@0.40|fabric_meters)",
+      "6.复烫-布(12.30米@0.35|fabric_meters)",
+      "7.布帘车被(12.30米@0.40|fabric_meters)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "O-加铅块",
+    "title": "布帘 + 特殊选项「加铅块」→ 条件工序落位（三边 之后）",
+    "pass": true,
+    "problems": [],
+    "orderId": "dbd2a0520fde62bf7b869dcb3ac0f21a",
+    "po": "JG-20261014-8450",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.铅坠-布(12.30米@0.30|fabric_meters)",
+      "4.熨烫-布(12.30米@0.35|fabric_meters)",
+      "5.定型-布(12.30米@0.40|fabric_meters)",
+      "6.复烫-布(12.30米@0.35|fabric_meters)",
+      "7.布帘车被(12.30米@0.40|fabric_meters)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "O-接高",
+    "title": "布帘 + 特殊选项「接高」→ 条件工序落位（精裁 之后）",
+    "pass": true,
+    "problems": [],
+    "orderId": "d055f47d713bd565ef82f916d9afc21b",
+    "po": "JG-20261014-8451",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.接高-布(2.00幅@1.00|fallback)",
+      "3.布三边(12.30米@0.40|fabric_meters)",
+      "4.熨烫-布(12.30米@0.35|fabric_meters)",
+      "5.定型-布(12.30米@0.40|fabric_meters)",
+      "6.复烫-布(12.30米@0.35|fabric_meters)",
+      "7.布帘车被(12.30米@0.40|fabric_meters)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "O-双眼皮接高",
+    "title": "布帘 + 特殊选项「双眼皮接高」→ 条件工序落位（精裁 之后）",
+    "pass": true,
+    "problems": [],
+    "orderId": "f951085f7c7d97d9f3a39777bda5dca9",
+    "po": "JG-20261014-8452",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.接高-布(2.00幅@1.00|fallback)",
+      "3.布三边(12.30米@0.40|fabric_meters)",
+      "4.熨烫-布(12.30米@0.35|fabric_meters)",
+      "5.定型-布(12.30米@0.40|fabric_meters)",
+      "6.复烫-布(12.30米@0.35|fabric_meters)",
+      "7.布帘车被(12.30米@0.40|fabric_meters)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "O-余料做绑带",
+    "title": "布帘 + 特殊选项「余料做绑带」→ 条件工序落位（车被 之后）",
+    "pass": true,
+    "problems": [],
+    "orderId": "bc263cf749489fcb62fb5aa48b2a3ec9",
+    "po": "JG-20261014-8453",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.熨烫-布(12.30米@0.35|fabric_meters)",
+      "4.定型-布(12.30米@0.40|fabric_meters)",
+      "5.复烫-布(12.30米@0.35|fabric_meters)",
+      "6.布帘车被(12.30米@0.40|fabric_meters)",
+      "7.绑带-布(1.00套@0.50|fallback)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "O-布绑带",
+    "title": "布帘 + 特殊选项「布绑带」→ 条件工序落位（车被 之后）",
+    "pass": true,
+    "problems": [],
+    "orderId": "b6e96f21e89628d38fa016c3ed53eb26",
+    "po": "JG-20261014-8454",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.熨烫-布(12.30米@0.35|fabric_meters)",
+      "4.定型-布(12.30米@0.40|fabric_meters)",
+      "5.复烫-布(12.30米@0.35|fabric_meters)",
+      "6.布帘车被(12.30米@0.40|fabric_meters)",
+      "7.绑带-布(1.00套@0.50|fallback)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "O-纱绑带",
+    "title": "布帘 + 特殊选项「纱绑带」→ 条件工序落位（车被 之后）",
+    "pass": true,
+    "problems": [],
+    "orderId": "fd4685903d2257892edf51167a982d08",
+    "po": "JG-20261014-8459",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.熨烫-布(12.30米@0.35|fabric_meters)",
+      "4.定型-布(12.30米@0.40|fabric_meters)",
+      "5.复烫-布(12.30米@0.35|fabric_meters)",
+      "6.布帘车被(12.30米@0.40|fabric_meters)",
+      "7.绑带-布(1.00套@0.50|fallback)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "O-余料做帘头",
+    "title": "布帘 + 特殊选项「余料做帘头」→ 条件工序落位（三边 之后）",
+    "pass": true,
+    "problems": [],
+    "orderId": "f95cf9eda715e349763cd2d3a0ea7f20",
+    "po": "JG-20261014-8463",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.帘头制作(1.00个@2.00|fallback)",
+      "4.熨烫-布(12.30米@0.35|fabric_meters)",
+      "5.定型-布(12.30米@0.40|fabric_meters)",
+      "6.复烫-布(12.30米@0.35|fabric_meters)",
+      "7.布帘车被(12.30米@0.40|fabric_meters)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "O-抱枕",
+    "title": "布帘 + 特殊选项「抱枕」→ 条件工序落位（外帘打卷 之后）",
+    "pass": true,
+    "problems": [],
+    "orderId": "23cebef9898e2d76e2d37b78f781d4eb",
+    "po": "JG-20261014-8465",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.熨烫-布(12.30米@0.35|fabric_meters)",
+      "4.定型-布(12.30米@0.40|fabric_meters)",
+      "5.复烫-布(12.30米@0.35|fabric_meters)",
+      "6.布帘车被(12.30米@0.40|fabric_meters)",
+      "7.外帘打卷(1.00套@1.00|fallback)",
+      "8.抱枕(1.00个@2.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "O-加logo条",
+    "title": "布帘 + 特殊选项「加logo条」→ 条件工序落位（三边 之后）",
+    "pass": true,
+    "problems": [],
+    "orderId": "e6f1d8f49fe7d5a90b2de39008bc65ce",
+    "po": "JG-20261014-8470",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.logo条-布(12.30米@0.60|fabric_meters)",
+      "4.熨烫-布(12.30米@0.35|fabric_meters)",
+      "5.定型-布(12.30米@0.40|fabric_meters)",
+      "6.复烫-布(12.30米@0.35|fabric_meters)",
+      "7.布帘车被(12.30米@0.40|fabric_meters)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "O-加立边",
+    "title": "布帘 + 特殊选项「加立边」→ 条件工序落位（三边 之后）",
+    "pass": true,
+    "problems": [],
+    "orderId": "8e6d8349eb6c534cc6808c8a0d1ffbd7",
+    "po": "JG-20261014-8475",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.立边-布(12.30米@0.50|fabric_meters)",
+      "4.熨烫-布(12.30米@0.35|fabric_meters)",
+      "5.定型-布(12.30米@0.40|fabric_meters)",
+      "6.复烫-布(12.30米@0.35|fabric_meters)",
+      "7.布帘车被(12.30米@0.40|fabric_meters)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "O-扣环",
+    "title": "布帘 + 特殊选项「扣环」→ 条件工序落位（三边 之后）",
+    "pass": true,
+    "problems": [],
+    "orderId": "5a4e558ed8a880332d39a94696928043",
+    "po": "JG-20261014-8480",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.扣环-布(1.00个@0.30|fallback)",
+      "4.熨烫-布(12.30米@0.35|fabric_meters)",
+      "5.定型-布(12.30米@0.40|fabric_meters)",
+      "6.复烫-布(12.30米@0.35|fabric_meters)",
+      "7.布帘车被(12.30米@0.40|fabric_meters)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "O-防翘扣",
+    "title": "布帘 + 特殊选项「防翘扣」→ 条件工序落位（三边 之后）",
+    "pass": true,
+    "problems": [],
+    "orderId": "9f74d93e6b2f63a208af1f17d632ce7d",
+    "po": "JG-20261014-8481",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.防翘扣-布(1.00个@0.20|fallback)",
+      "4.熨烫-布(12.30米@0.35|fabric_meters)",
+      "5.定型-布(12.30米@0.40|fabric_meters)",
+      "6.复烫-布(12.30米@0.35|fabric_meters)",
+      "7.布帘车被(12.30米@0.40|fabric_meters)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "I-花边",
+    "title": "布帘 + 加工项「花边」→ 条件工序落位",
+    "pass": true,
+    "problems": [],
+    "orderId": "9d868b38e3de0a797bab8bd6baf44664",
+    "po": "JG-20261014-8486",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.花边-布(12.30米@0.60|fabric_meters)",
+      "4.熨烫-布(12.30米@0.35|fabric_meters)",
+      "5.定型-布(12.30米@0.40|fabric_meters)",
+      "6.复烫-布(12.30米@0.35|fabric_meters)",
+      "7.布帘车被(12.30米@0.40|fabric_meters)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "I-扣环",
+    "title": "布帘 + 加工项「扣环」→ 条件工序落位",
+    "pass": true,
+    "problems": [],
+    "orderId": "2d90b9e6c67fcb877907eca6c22cfcc4",
+    "po": "JG-20261014-8487",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.扣环-布(1.00个@0.30|fallback)",
+      "4.熨烫-布(12.30米@0.35|fabric_meters)",
+      "5.定型-布(12.30米@0.40|fabric_meters)",
+      "6.复烫-布(12.30米@0.35|fabric_meters)",
+      "7.布帘车被(12.30米@0.40|fabric_meters)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "I-接高",
+    "title": "布帘 + 加工项「接高」→ 条件工序落位",
+    "pass": true,
+    "problems": [],
+    "orderId": "9d27be2dfb2907cfabd46c141068ecda",
+    "po": "JG-20261014-8488",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.接高-布(2.00幅@1.00|fallback)",
+      "3.布三边(12.30米@0.40|fabric_meters)",
+      "4.熨烫-布(12.30米@0.35|fabric_meters)",
+      "5.定型-布(12.30米@0.40|fabric_meters)",
+      "6.复烫-布(12.30米@0.35|fabric_meters)",
+      "7.布帘车被(12.30米@0.40|fabric_meters)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "S-01",
+    "title": "一樘布+纱（craftLineId 同组）→ 两个部位各自序列正确，套级工序只落一次（防双付）",
+    "pass": false,
+    "problems": [
+      "第 1 个部位序列不符\n      期望 精裁-纱 → 纱三边 → 韩褶-纱 → 上车布-纱 → 熨烫-纱 → 定型-纱 → 复烫-纱 → 车被-纱\n      实得 精裁-纱 → 纱三边 → 韩褶-纱 → 熨烫-纱 → 定型-纱 → 复烫-纱 → 车被-纱"
+    ],
+    "orderId": "13c6749fd6f2c923f1776e583038b091",
+    "po": "JG-20261014-8489",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.韩褶-布(40.00折@0.40|pleat_count)",
+      "4.上车布-布(12.30米@0.50|fabric_meters)",
+      "5.熨烫-布(12.30米@0.35|fabric_meters)",
+      "6.定型-布(12.30米@0.40|fabric_meters)",
+      "7.复烫-布(12.30米@0.35|fabric_meters)",
+      "8.布帘车被(12.30米@0.40|fabric_meters)",
+      "9.外帘打卷(1.00套@1.00|fallback)",
+      "10.打包(1.00套@NULL|fallback)",
+      "11.外帘装袋(1.00套@1.00|fallback)",
+      "12.外帘发货(1.00套@1.00|fallback)",
+      "1.精裁-纱(12.30米@0.40|fabric_meters)",
+      "2.纱三边(12.30米@0.40|fabric_meters)",
+      "3.韩褶-纱(40.00折@0.40|pleat_count)",
+      "4.熨烫-纱(12.30米@0.35|fabric_meters)",
+      "5.定型-纱(12.30米@0.40|fabric_meters)",
+      "6.复烫-纱(12.30米@0.35|fabric_meters)",
+      "7.车被-纱(12.30米@0.40|fabric_meters)"
+    ]
+  },
+  {
+    "id": "S-02",
+    "title": "两樘独立窗（无 craftLineId）→ 两行各自 12 道、套级工序各落一次（合计 2 次）",
+    "pass": true,
+    "problems": [],
+    "orderId": "b5e908ea0d705efa57227568696b3b00",
+    "po": "JG-20261014-8490",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.韩褶-布(40.00折@0.40|pleat_count)",
+      "4.上车布-布(12.30米@0.50|fabric_meters)",
+      "5.熨烫-布(12.30米@0.35|fabric_meters)",
+      "6.定型-布(12.30米@0.40|fabric_meters)",
+      "7.复烫-布(12.30米@0.35|fabric_meters)",
+      "8.布帘车被(12.30米@0.40|fabric_meters)",
+      "9.外帘打卷(1.00套@1.00|fallback)",
+      "10.打包(1.00套@NULL|fallback)",
+      "11.外帘装袋(1.00套@1.00|fallback)",
+      "12.外帘发货(1.00套@1.00|fallback)",
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.韩褶-布(40.00折@0.40|pleat_count)",
+      "4.上车布-布(12.30米@0.50|fabric_meters)",
+      "5.熨烫-布(12.30米@0.35|fabric_meters)",
+      "6.定型-布(12.30米@0.40|fabric_meters)",
+      "7.复烫-布(12.30米@0.35|fabric_meters)",
+      "8.布帘车被(12.30米@0.40|fabric_meters)",
+      "9.外帘打卷(1.00套@1.00|fallback)",
+      "10.打包(1.00套@NULL|fallback)",
+      "11.外帘装袋(1.00套@1.00|fallback)",
+      "12.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "S-03",
+    "title": "纱帘 + 选项「拼1次」（仅布帘有该变体）→ 须显式失败，不得静默丢工序",
+    "pass": false,
+    "problems": [
+      "预期显式失败，实际生成成功（工序=精裁-纱,纱三边,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货）—— 静默丢工序或错误取路"
+    ],
+    "orderId": "c114f12bc4912dec3f64bfb80b093189",
+    "po": "JG-20261014-8491",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-纱(12.30米@0.40|fabric_meters)",
+      "2.纱三边(12.30米@0.40|fabric_meters)",
+      "3.熨烫-纱(12.30米@0.35|fabric_meters)",
+      "4.定型-纱(12.30米@0.40|fabric_meters)",
+      "5.复烫-纱(12.30米@0.35|fabric_meters)",
+      "6.车被-纱(12.30米@0.40|fabric_meters)",
+      "7.外帘打卷(1.00套@1.00|fallback)",
+      "8.打包(1.00套@NULL|fallback)",
+      "9.外帘装袋(1.00套@1.00|fallback)",
+      "10.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "Q-01",
+    "title": "数量口径：孔数（holes=24）恒等于报工应做数量",
+    "pass": true,
+    "problems": [],
+    "orderId": "1a81e435f0628acb7a98c7ff9b37d7e1",
+    "po": "JG-20261014-8492",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-布(12.30米@0.40|fabric_meters)",
+      "2.布三边(12.30米@0.40|fabric_meters)",
+      "3.打孔-布(24.00孔@0.15|holes)",
+      "4.熨烫-布(12.30米@0.35|fabric_meters)",
+      "5.定型-布(12.30米@0.40|fabric_meters)",
+      "6.复烫-布(12.30米@0.35|fabric_meters)",
+      "7.布帘车被(12.30米@0.40|fabric_meters)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "D-11",
+    "title": "纱帘 × 打孔 → 打孔-纱（纱变体逐条可达）",
+    "pass": true,
+    "problems": [],
+    "orderId": "684419fd43136efc12bbb253f1d957c2",
+    "po": "JG-20261014-8493",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-纱(12.30米@0.40|fabric_meters)",
+      "2.纱三边(12.30米@0.40|fabric_meters)",
+      "3.打孔-纱(24.00孔@0.15|holes)",
+      "4.熨烫-纱(12.30米@0.35|fabric_meters)",
+      "5.定型-纱(12.30米@0.40|fabric_meters)",
+      "6.复烫-纱(12.30米@0.35|fabric_meters)",
+      "7.车被-纱(12.30米@0.40|fabric_meters)",
+      "8.外帘打卷(1.00套@1.00|fallback)",
+      "9.打包(1.00套@NULL|fallback)",
+      "10.外帘装袋(1.00套@1.00|fallback)",
+      "11.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "O2-纱绑带@纱帘",
+    "title": "纱帘 + 选项「纱绑带」→ 绑带变体按部位解析成 绑带-纱",
+    "pass": true,
+    "problems": [],
+    "orderId": "4d6b5975176fdb025748d168f06f4e0b",
+    "po": "JG-20261014-8494",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-纱(12.30米@0.40|fabric_meters)",
+      "2.纱三边(12.30米@0.40|fabric_meters)",
+      "3.熨烫-纱(12.30米@0.35|fabric_meters)",
+      "4.定型-纱(12.30米@0.40|fabric_meters)",
+      "5.复烫-纱(12.30米@0.35|fabric_meters)",
+      "6.车被-纱(12.30米@0.40|fabric_meters)",
+      "7.外帘打卷(1.00套@1.00|fallback)",
+      "8.打包(1.00套@NULL|fallback)",
+      "9.外帘装袋(1.00套@1.00|fallback)",
+      "10.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "F-拼1次@纱帘",
+    "title": "纱帘 + 选项「拼1次」→ 该工序无纱帘变体，须显式失败且指名缺的工序",
+    "pass": false,
+    "problems": [
+      "预期显式失败，实际生成成功（工序=精裁-纱,纱三边,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货）—— 静默丢工序或错误取路"
+    ],
+    "orderId": "f3716907422856cfc04759b782322ab1",
+    "po": "JG-20261014-8495",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-纱(12.30米@0.40|fabric_meters)",
+      "2.纱三边(12.30米@0.40|fabric_meters)",
+      "3.熨烫-纱(12.30米@0.35|fabric_meters)",
+      "4.定型-纱(12.30米@0.40|fabric_meters)",
+      "5.复烫-纱(12.30米@0.35|fabric_meters)",
+      "6.车被-纱(12.30米@0.40|fabric_meters)",
+      "7.外帘打卷(1.00套@1.00|fallback)",
+      "8.打包(1.00套@NULL|fallback)",
+      "9.外帘装袋(1.00套@1.00|fallback)",
+      "10.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "F-加花边@纱帘",
+    "title": "纱帘 + 选项「加花边」→ 该工序无纱帘变体，须显式失败且指名缺的工序",
+    "pass": false,
+    "problems": [
+      "预期显式失败，实际生成成功（工序=精裁-纱,纱三边,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货）—— 静默丢工序或错误取路"
+    ],
+    "orderId": "07c8d11dfff1b376cf499f00e317db09",
+    "po": "JG-20261014-8496",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-纱(12.30米@0.40|fabric_meters)",
+      "2.纱三边(12.30米@0.40|fabric_meters)",
+      "3.熨烫-纱(12.30米@0.35|fabric_meters)",
+      "4.定型-纱(12.30米@0.40|fabric_meters)",
+      "5.复烫-纱(12.30米@0.35|fabric_meters)",
+      "6.车被-纱(12.30米@0.40|fabric_meters)",
+      "7.外帘打卷(1.00套@1.00|fallback)",
+      "8.打包(1.00套@NULL|fallback)",
+      "9.外帘装袋(1.00套@1.00|fallback)",
+      "10.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "F-加铅块@纱帘",
+    "title": "纱帘 + 选项「加铅块」→ 该工序无纱帘变体，须显式失败且指名缺的工序",
+    "pass": false,
+    "problems": [
+      "预期显式失败，实际生成成功（工序=精裁-纱,纱三边,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货）—— 静默丢工序或错误取路"
+    ],
+    "orderId": "313035f3ff397f07d4549282adb0d9b7",
+    "po": "JG-20261014-8497",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-纱(12.30米@0.40|fabric_meters)",
+      "2.纱三边(12.30米@0.40|fabric_meters)",
+      "3.熨烫-纱(12.30米@0.35|fabric_meters)",
+      "4.定型-纱(12.30米@0.40|fabric_meters)",
+      "5.复烫-纱(12.30米@0.35|fabric_meters)",
+      "6.车被-纱(12.30米@0.40|fabric_meters)",
+      "7.外帘打卷(1.00套@1.00|fallback)",
+      "8.打包(1.00套@NULL|fallback)",
+      "9.外帘装袋(1.00套@1.00|fallback)",
+      "10.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "F-接高@纱帘",
+    "title": "纱帘 + 选项「接高」→ 该工序无纱帘变体，须显式失败且指名缺的工序",
+    "pass": false,
+    "problems": [
+      "预期显式失败，实际生成成功（工序=精裁-纱,纱三边,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货）—— 静默丢工序或错误取路"
+    ],
+    "orderId": "718579c1952c2ddba944abbe33852da3",
+    "po": "JG-20261014-8498",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-纱(12.30米@0.40|fabric_meters)",
+      "2.纱三边(12.30米@0.40|fabric_meters)",
+      "3.熨烫-纱(12.30米@0.35|fabric_meters)",
+      "4.定型-纱(12.30米@0.40|fabric_meters)",
+      "5.复烫-纱(12.30米@0.35|fabric_meters)",
+      "6.车被-纱(12.30米@0.40|fabric_meters)",
+      "7.外帘打卷(1.00套@1.00|fallback)",
+      "8.打包(1.00套@NULL|fallback)",
+      "9.外帘装袋(1.00套@1.00|fallback)",
+      "10.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "F-加logo条@纱帘",
+    "title": "纱帘 + 选项「加logo条」→ 该工序无纱帘变体，须显式失败且指名缺的工序",
+    "pass": false,
+    "problems": [
+      "预期显式失败，实际生成成功（工序=精裁-纱,纱三边,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货）—— 静默丢工序或错误取路"
+    ],
+    "orderId": "74700f19abb5bb9cefa1ca10281247fc",
+    "po": "JG-20261014-8499",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-纱(12.30米@0.40|fabric_meters)",
+      "2.纱三边(12.30米@0.40|fabric_meters)",
+      "3.熨烫-纱(12.30米@0.35|fabric_meters)",
+      "4.定型-纱(12.30米@0.40|fabric_meters)",
+      "5.复烫-纱(12.30米@0.35|fabric_meters)",
+      "6.车被-纱(12.30米@0.40|fabric_meters)",
+      "7.外帘打卷(1.00套@1.00|fallback)",
+      "8.打包(1.00套@NULL|fallback)",
+      "9.外帘装袋(1.00套@1.00|fallback)",
+      "10.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "F-加立边@纱帘",
+    "title": "纱帘 + 选项「加立边」→ 该工序无纱帘变体，须显式失败且指名缺的工序",
+    "pass": false,
+    "problems": [
+      "预期显式失败，实际生成成功（工序=精裁-纱,纱三边,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货）—— 静默丢工序或错误取路"
+    ],
+    "orderId": "b067d20a40c7c7e5dcd56d78e003060c",
+    "po": "JG-20261014-8500",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-纱(12.30米@0.40|fabric_meters)",
+      "2.纱三边(12.30米@0.40|fabric_meters)",
+      "3.熨烫-纱(12.30米@0.35|fabric_meters)",
+      "4.定型-纱(12.30米@0.40|fabric_meters)",
+      "5.复烫-纱(12.30米@0.35|fabric_meters)",
+      "6.车被-纱(12.30米@0.40|fabric_meters)",
+      "7.外帘打卷(1.00套@1.00|fallback)",
+      "8.打包(1.00套@NULL|fallback)",
+      "9.外帘装袋(1.00套@1.00|fallback)",
+      "10.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "F-扣环@纱帘",
+    "title": "纱帘 + 选项「扣环」→ 该工序无纱帘变体，须显式失败且指名缺的工序",
+    "pass": false,
+    "problems": [
+      "预期显式失败，实际生成成功（工序=精裁-纱,纱三边,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货）—— 静默丢工序或错误取路"
+    ],
+    "orderId": "37e808b5eba153317b0f99a630ae7c8d",
+    "po": "JG-20261014-8501",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-纱(12.30米@0.40|fabric_meters)",
+      "2.纱三边(12.30米@0.40|fabric_meters)",
+      "3.熨烫-纱(12.30米@0.35|fabric_meters)",
+      "4.定型-纱(12.30米@0.40|fabric_meters)",
+      "5.复烫-纱(12.30米@0.35|fabric_meters)",
+      "6.车被-纱(12.30米@0.40|fabric_meters)",
+      "7.外帘打卷(1.00套@1.00|fallback)",
+      "8.打包(1.00套@NULL|fallback)",
+      "9.外帘装袋(1.00套@1.00|fallback)",
+      "10.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "F-防翘扣@纱帘",
+    "title": "纱帘 + 选项「防翘扣」→ 该工序无纱帘变体，须显式失败且指名缺的工序",
+    "pass": false,
+    "problems": [
+      "预期显式失败，实际生成成功（工序=精裁-纱,纱三边,熨烫-纱,定型-纱,复烫-纱,车被-纱,外帘打卷,打包,外帘装袋,外帘发货）—— 静默丢工序或错误取路"
+    ],
+    "orderId": "1ce036df38af17161505e0b374d05568",
+    "po": "JG-20261014-8502",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-纱(12.30米@0.40|fabric_meters)",
+      "2.纱三边(12.30米@0.40|fabric_meters)",
+      "3.熨烫-纱(12.30米@0.35|fabric_meters)",
+      "4.定型-纱(12.30米@0.40|fabric_meters)",
+      "5.复烫-纱(12.30米@0.35|fabric_meters)",
+      "6.车被-纱(12.30米@0.40|fabric_meters)",
+      "7.外帘打卷(1.00套@1.00|fallback)",
+      "8.打包(1.00套@NULL|fallback)",
+      "9.外帘装袋(1.00套@1.00|fallback)",
+      "10.外帘发货(1.00套@1.00|fallback)"
+    ]
+  },
+  {
+    "id": "O2-抱枕@纱帘",
+    "title": "纱帘 + 选项「抱枕」→ 部位无关工序照常派工（不误判为缺工序）",
+    "pass": true,
+    "problems": [],
+    "orderId": "830d58da40b860fa2ed8e6f9035e4dab",
+    "po": "JG-20261014-8503",
+    "route_source": "direct",
+    "ops": [
+      "1.精裁-纱(12.30米@0.40|fabric_meters)",
+      "2.纱三边(12.30米@0.40|fabric_meters)",
+      "3.熨烫-纱(12.30米@0.35|fabric_meters)",
+      "4.定型-纱(12.30米@0.40|fabric_meters)",
+      "5.复烫-纱(12.30米@0.35|fabric_meters)",
+      "6.车被-纱(12.30米@0.40|fabric_meters)",
+      "7.外帘打卷(1.00套@1.00|fallback)",
+      "8.打包(1.00套@NULL|fallback)",
+      "9.外帘装袋(1.00套@1.00|fallback)",
+      "10.外帘发货(1.00套@1.00|fallback)"
+    ]
+  }
+]

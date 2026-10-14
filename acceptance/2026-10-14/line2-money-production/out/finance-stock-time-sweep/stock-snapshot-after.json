@@ -1,0 +1,46 @@
+{
+  "products": {
+    "sha256": "aab4f0a50219b4c53a8c9d4f985f4510b3e4c38344b838848780396429143306",
+    "n": 10
+  },
+  "product_skus": {
+    "sha256": "d3b9549a6a64ee54966083eb98d27e14e2f02c2de6abfa49673ae81b7cb14f14",
+    "n": 10
+  },
+  "stock_batches": {
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "n": 0
+  },
+  "stock_ledger_entries": {
+    "sha256": "5e540fdeaabfeb54868b0a97e3c37cb678cef809e73f03e51cae27a4f2285679",
+    "n": 11
+  },
+  "stock_batch_consumptions": {
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "n": 0
+  },
+  "finance_transactions": {
+    "sha256": "76c9ba7fb1ade0f8ea1a740b671a8d603c6963eff9c2dbcbadceef91209b4349",
+    "n": 16
+  },
+  "inbound_orders": {
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "n": 0
+  },
+  "inbound_order_items": {
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "n": 0
+  },
+  "fabric_remnants": {
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "n": 0
+  },
+  "daily_briefings": {
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "n": 0
+  },
+  "orders": {
+    "sha256": "31c4e74eebb688e72de121b7f5826ae05611e6d69b4296b0b49239184a0bfd76",
+    "n": 11
+  }
+}

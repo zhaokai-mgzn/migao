@@ -1,0 +1,304 @@
+{
+  "at": "2026-10-14T12:31:04.165Z",
+  "run": "063999",
+  "roomy": {
+    "id": "b3e1e88343a020fef40f98919cfcdf5e",
+    "operation_name": "精裁-布",
+    "qty": "20.00",
+    "done_qty": "13.00",
+    "unit_price": "0.40"
+  },
+  "idempotency": {
+    "op": "精裁-布",
+    "before": 6,
+    "mid": 7,
+    "after": 7,
+    "firstHttp": 200,
+    "first": {
+      "operation_id": "b3e1e88343a020fef40f98919cfcdf5e",
+      "done_qty": 15,
+      "status": "done",
+      "order_completed": false,
+      "identity_source": "client_body"
+    },
+    "secondHttp": 200,
+    "second": {
+      "status": "done",
+      "done_qty": 15,
+      "operation_id": "b3e1e88343a020fef40f98919cfcdf5e",
+      "identity_source": "client_body",
+      "order_completed": false,
+      "replayed": true
+    },
+    "secondRaw": ""
+  },
+  "failThenRetry": {
+    "firstHttp": 422,
+    "firstMsg": "报工数量超上限：本次合格 9999 + 累计已报 15 = 10014 超过应做 20（剩余 5），本次未落库"
+  },
+  "overReport": {
+    "op": "精裁-布",
+    "remaining": 5,
+    "sent": 6,
+    "http": 422,
+    "msg": "报工数量超上限：本次合格 6 + 累计已报 15 = 21 超过应做 20（剩余 5），本次未落库",
+    "rowsAfter": 7
+  },
+  "f8": {
+    "probe": "A",
+    "poNo": "JG-20261014-8429",
+    "unpricedInstance": {
+      "id": "022f16cefd44fd66041d437331fbf856",
+      "operation_name": "打包",
+      "unit_price": null,
+      "qty": "1.00",
+      "done_qty": "0.00"
+    },
+    "logical": "打包",
+    "catalogRow": {
+      "id": "650b27b8b4076c3fda3875c30e92818d",
+      "name": "打包",
+      "library_name": "打包",
+      "group": "后道",
+      "scope": "set",
+      "unit": "套",
+      "unit_price": 0,
+      "is_must_finish": false,
+      "is_start_marker": false,
+      "source": "占位待确认",
+      "qty_rule_missing": false
+    },
+    "before": {
+      "posRows": [
+        {
+          "id": "bba467f927974add7fb0e46bb1a443fe",
+          "logical_name": "打包",
+          "position": "布帘",
+          "unit_price": null,
+          "deleted": 0,
+          "created_at": "2026-10-14 20:26:33.924998+08"
+        },
+        {
+          "id": "6470984cff309319da537ef540964bba",
+          "logical_name": "打包",
+          "position": "布料",
+          "unit_price": null,
+          "deleted": 0,
+          "created_at": "2026-10-14 20:26:33.925005+08"
+        },
+        {
+          "id": "5ca49874bc7cd1f76be7468b0a2a0dec",
+          "logical_name": "打包",
+          "position": "帘头",
+          "unit_price": null,
+          "deleted": 0,
+          "created_at": "2026-10-14 20:26:33.925003+08"
+        },
+        {
+          "id": "7e3d68561242623092e53f1c436b4d58",
+          "logical_name": "打包",
+          "position": "纱帘",
+          "unit_price": null,
+          "deleted": 0,
+          "created_at": "2026-10-14 20:26:33.925001+08"
+        }
+      ],
+      "instance": {
+        "id": "022f16cefd44fd66041d437331fbf856",
+        "operation_name": "打包",
+        "unit_price": null
+      },
+      "piecework": {
+        "total": 14,
+        "per_worker": {
+          "工资验收工人甲053457": 13.2,
+          "未分配": 0.8
+        },
+        "per_operation": [
+          {
+            "amount": 6,
+            "operation": "精裁-布"
+          },
+          {
+            "amount": 8,
+            "operation": "布三边"
+          },
+          {
+            "amount": 0,
+            "operation": "熨烫-布"
+          }
+        ],
+        "per_position": [
+          {
+            "position_name": "工资验收行-A 本白",
+            "amount": 14,
+            "qty": 55
+          }
+        ],
+        "per_set": [
+          {
+            "set_no": "JG-20261014-8429-001",
+            "amount": 14,
+            "qty": 55
+          }
+        ],
+        "unpriced": {
+          "qty": 5,
+          "operations": [
+            {
+              "operation": "定型-布",
+              "logical_name": "定型",
+              "qty": 5
+            }
+          ],
+          "hint": "以下工序**未定价**（≠ ¥0.00，已从计件合计中排除）：请在「企业基础设置 → 工序与部位单价」的部位价目矩阵中为对应「工序 × 部位」格填入单价；未定价期间工人可照常报工，但不会产生计件金额。"
+        }
+      },
+      "logsCount": 7,
+      "readFace": {
+        "catalogRows": [
+          [
+            "打包",
+            null,
+            0
+          ]
+        ],
+        "layerRows": []
+      }
+    },
+    "put": {
+      "http": 200,
+      "body": "{\"success\":true,\"data\":{\"id\":\"650b27b8b4076c3fda3875c30e92818d\",\"name\":\"打包\",\"library_name\":\"打包\",\"group\":\"后道\",\"scope\":\"set\",\"unit\":\"套\",\"unit_price\":0.00,\"is_must_finish\":false,\"is_start_marker\":false,\"source\":\"占位待确认\",\"qty_rule_missing\":false},\"requestId\":\"req_1f55ad4b28b94a39\",\"timestamp\":1791981066}",
+      "catalogId": "650b27b8b4076c3fda3875c30e92818d",
+      "scopeSent": "set"
+    },
+    "after": {
+      "posRows": [
+        {
+          "id": "bba467f927974add7fb0e46bb1a443fe",
+          "logical_name": "打包",
+          "position": "布帘",
+          "unit_price": null,
+          "deleted": 0,
+          "created_at": "2026-10-14 20:26:33.924998+08"
+        },
+        {
+          "id": "6470984cff309319da537ef540964bba",
+          "logical_name": "打包",
+          "position": "布料",
+          "unit_price": null,
+          "deleted": 0,
+          "created_at": "2026-10-14 20:26:33.925005+08"
+        },
+        {
+          "id": "5ca49874bc7cd1f76be7468b0a2a0dec",
+          "logical_name": "打包",
+          "position": "帘头",
+          "unit_price": null,
+          "deleted": 0,
+          "created_at": "2026-10-14 20:26:33.925003+08"
+        },
+        {
+          "id": "7e3d68561242623092e53f1c436b4d58",
+          "logical_name": "打包",
+          "position": "纱帘",
+          "unit_price": null,
+          "deleted": 0,
+          "created_at": "2026-10-14 20:26:33.925001+08"
+        }
+      ],
+      "instance": {
+        "id": "022f16cefd44fd66041d437331fbf856",
+        "operation_name": "打包",
+        "unit_price": null
+      },
+      "readFace": {
+        "catalogRows": [
+          [
+            "打包",
+            null,
+            0
+          ]
+        ],
+        "layerRows": []
+      },
+      "reportHttp": 422,
+      "newLog": null,
+      "piecework": {
+        "total": 14,
+        "per_worker": {
+          "工资验收工人甲053457": 13.2,
+          "未分配": 0.8
+        },
+        "per_operation": [
+          {
+            "amount": 6,
+            "operation": "精裁-布"
+          },
+          {
+            "amount": 8,
+            "operation": "布三边"
+          },
+          {
+            "amount": 0,
+            "operation": "熨烫-布"
+          }
+        ],
+        "per_position": [
+          {
+            "position_name": "工资验收行-A 本白",
+            "amount": 14,
+            "qty": 55
+          }
+        ],
+        "per_set": [
+          {
+            "set_no": "JG-20261014-8429-001",
+            "amount": 14,
+            "qty": 55
+          }
+        ],
+        "unpriced": {
+          "qty": 5,
+          "operations": [
+            {
+              "operation": "定型-布",
+              "logical_name": "定型",
+              "qty": 5
+            }
+          ],
+          "hint": "以下工序**未定价**（≠ ¥0.00，已从计件合计中排除）：请在「企业基础设置 → 工序与部位单价」的部位价目矩阵中为对应「工序 × 部位」格填入单价；未定价期间工人可照常报工，但不会产生计件金额。"
+        }
+      },
+      "expectedTotal": "14.00"
+    },
+    "instanceUnitPriceChanged": false,
+    "positionRowsChanged": false,
+    "readFaceChanged": false,
+    "verdict": {
+      "instanceSilentlyPriced": false,
+      "newLogSnapshotPrice": null,
+      "unpricedBlockQtyAfter": 5
+    }
+  },
+  "interference": {
+    "at": "2026-10-14T12:31:07.036Z",
+    "p0At": "2026-10-14T12:30:50.583Z",
+    "rawCounts": {
+      "opsChanged": 0,
+      "posChanged": 0,
+      "added": 0,
+      "removed": 0
+    },
+    "operationsChanged": [],
+    "positionPricesChanged": [],
+    "added": [],
+    "removed": [],
+    "nonProbe": {
+      "operations": [],
+      "positionPrices": [],
+      "added": []
+    },
+    "note": "只依赖自建探针对象判定；非自建行的变化一律记为「疑似并发干扰」，**不作为缺陷登记**"
+  }
+}

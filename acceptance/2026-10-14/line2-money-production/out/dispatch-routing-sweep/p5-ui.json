@@ -1,0 +1,10 @@
+[
+  {
+    "id": "UI-00",
+    "name": "UI 巡视执行",
+    "status": "fail",
+    "detail": "异常：TimeoutError: page.waitForSelector: Timeout 45000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#phone') to be visible\u001b[22m\n",
+    "evidence": [],
+    "at": "2026-10-14T12:34:02.561Z"
+  }
+]
