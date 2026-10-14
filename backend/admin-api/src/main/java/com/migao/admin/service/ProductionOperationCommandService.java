@@ -561,17 +561,21 @@ public class ProductionOperationCommandService {
                     "删除工序未通过校验（" + details.size() + " 条问题）", details,
                     "按每条理由处理：先改主线 / 先删改那条规则 / 先在对应部位设为不做");
         }
+        // ⓪ 抢删除权：条件更新（CAS）—— 判断与写入同一条语句 + PG 行锁 ⇒ 并发下至多一个赢家（issue #6936）。
+        // 与同族的另一条路径 **同一形态**（同族写面必须**都**带闸：只有一个带闸 = 两个写面不互斥，
+        // 正是 #6928 的教训）—— 闸落在 `ProductionOperationMapper#claimDelete`
+        // （`WHERE id=? AND tenant_id=? AND deleted=0`，0 行 ⇒ fail-closed 409；
+        // 显式写列 deleted=1 而非 updateById —— MP 会把该字段从 SET 剔除，issue #4608）。
+        // 闸在**任何副作用之前**（摘格 / 级联软删零写入）⇒ 落败方零副作用。
+        // ⚠️ **顺序即语义**：护栏判定在前（被引用 ⇒ 422 文案一字不变），CAS 在后 ⇒ 两者之间没有写入。
         OffsetDateTime now = OffsetDateTime.now();
+        if (productionOperationMapper.claimDelete(id, tenantId, now) == 0) {
+            throw BusinessException.conflict(
+                    "工序已被其他请求删除（并发操作）",
+                    "刷新页面后重试；该工序已由另一个请求删除");
+        }
         // 级联软删矩阵行（issue #4665 C：删工序要「删干净」）—— 见 `cascadeSoftDeleteCells` 的说明
         result.put("deleted_positions", cascadeSoftDeleteCells(tenantId, matchingCells, now));
-        // ⚠️ 必须**显式写列**（issue #4608），不得写成 `op.setDeleted(1); updateById(op);`：
-        // MP 全局逻辑删除会把逻辑删除字段从 updateById 的 SET 子句里**剔除** ⇒ deleted 永不落库，
-        // 而调用仍返回成功 = 删除静默 no-op（用户实测「提示成功但数据还在」）。
-        // 显式 .set(...) 绕过字段剔除，同时保住审计字段 updated_at（「谁在什么时候删的」的唯一证据）。
-        productionOperationMapper.update(null, new LambdaUpdateWrapper<ProductionOperation>()
-                .eq(ProductionOperation::getId, id)
-                .set(ProductionOperation::getDeleted, 1)
-                .set(ProductionOperation::getUpdatedAt, now));
         log.info("软删工序: tenantId={}, operationId={}, name={}, 级联软删矩阵行={}",
                 tenantId, op.getId(), op.getName(), result.get("deleted_positions"));
         return result;
@@ -587,6 +591,16 @@ public class ProductionOperationCommandService {
      *
      * <p><b>护栏不放宽</b>（本单硬要求）：护栏①<b>活跃路线主线</b>与②<b>活跃规则</b>**照样拦**
      * （主线涉及车间顺序，必须人工确认）；且**先判护栏、后摘格** ⇒ 被拦时**一格都不摘**。</p>
+     *
+     * <p><b>并发闸 = 条件更新（CAS）+ 影响行数判定</b>（issue #6936，与 #6928 / {@code InboundOrderService#cancel}
+     * 同族）：{@code active → deleted} 这条迁移走 {@code WHERE id=? AND tenant_id=? AND deleted=0}，
+     * 按<b>影响行数</b>判是否抢到删除权（0 行 ⇒ 409 CONFLICT，与既有 conflict 口径一致）。
+     * 为什么不能是「先读 {@code op.deleted==0} 判活、后写」：那是 <b>check-then-act</b> ——
+     * 判断与写入不在同一条语句上，两个并发请求都读到提交前快照（{@code deleted=0}）⇒
+     * <b>都</b>去摘格 / 级联软删，于是多个请求都回 200（实测 5 并发 ⇒
+     * {@code [200,200,200,422,422]}，成功 3 次；终态虽正确，但「我摘了格、我删了它」这句话被说了三遍）。
+     * 条件更新把判断与写入压进同一条语句，PG 对命中行加行锁并持有到事务结束 ⇒ 后到者要么阻塞到前者提交，
+     * 要么看到 0 行受影响。闸在<b>任何副作用之前</b>（摘格 / 级联软删 / 工序行写）⇒ 落败方零副作用。</p>
      */
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> deleteDetaching(String id, Long tenantId) {
@@ -611,10 +625,22 @@ public class ProductionOperationCommandService {
                     "删除工序未通过校验（" + details.size() + " 条问题）", details,
                     "按每条理由处理：先改主线 / 先删改那条规则 / 先在对应部位设为不做");
         }
+        // ⓪ 抢删除权：条件更新（CAS）—— 判断与写入同一条语句 + PG 行锁 ⇒ 并发下至多一个赢家（issue #6936）。
+        // 与同族的另一条路径 **同一形态**（同族写面必须**都**带闸：只有一个带闸 = 两个写面不互斥，
+        // 正是 #6928 的教训）—— 闸落在 `ProductionOperationMapper#claimDelete`
+        // （`WHERE id=? AND tenant_id=? AND deleted=0`，0 行 ⇒ fail-closed 409；
+        // 显式写列 deleted=1 而非 updateById —— MP 会把该字段从 SET 剔除，issue #4608）。
+        // 闸在**任何副作用之前**（摘格 / 级联软删零写入）⇒ 落败方零副作用。
+        // ⚠️ **顺序即语义**：护栏判定在前（被引用 ⇒ 422 文案一字不变），CAS 在后 ⇒ 两者之间没有写入。
+        OffsetDateTime now = OffsetDateTime.now();
+        if (productionOperationMapper.claimDelete(id, tenantId, now) == 0) {
+            throw BusinessException.conflict(
+                    "工序已被其他请求删除（并发操作）",
+                    "刷新页面后重试；该工序已由另一个请求删除");
+        }
         List<ProductionOperationPosition> matchingCells = matchingCells(tenantId, variantName);
         // 一键摘格：**先判护栏、后摘格** ⇒ 被拦时一格都不摘。写形态复用矩阵写面同一份
         // （`updatePriceAndApplicable`：不做 ⇒ 价强制清空，与「明确不做 ⇒ 不报价」同口径）。
-        OffsetDateTime now = OffsetDateTime.now();
         int detached = 0;
         for (ProductionOperationPosition row : matchingCells) {
             if (!Boolean.TRUE.equals(row.getApplicable())) {
@@ -629,11 +655,6 @@ public class ProductionOperationCommandService {
             log.info("一键摘格（设为不做）: tenantId={}, operationId={}, cells={}", tenantId, id, detached);
         }
         result.put("deleted_positions", cascadeSoftDeleteCells(tenantId, matchingCells, now));
-        // 显式写列（同 `delete`：不走 updateById —— MP 会剔除该字段 ⇒ 静默 no-op，issue #4608）
-        productionOperationMapper.update(null, new LambdaUpdateWrapper<ProductionOperation>()
-                .eq(ProductionOperation::getId, id)
-                .set(ProductionOperation::getDeleted, 1)
-                .set(ProductionOperation::getUpdatedAt, now));
         log.info("软删工序（一键摘格）: tenantId={}, operationId={}, name={}, 级联软删矩阵行={}",
                 tenantId, op.getId(), op.getName(), result.get("deleted_positions"));
         return result;

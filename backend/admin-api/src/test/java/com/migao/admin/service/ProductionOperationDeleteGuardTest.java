@@ -298,8 +298,8 @@ class ProductionOperationDeleteGuardTest {
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
                 position("三边", "布帘", false)));
         // issue #4665 C：已设「不做」的格**照样级联软删**（否则它会留在工艺项表格里 = 删不干净）
+        when(productionOperationMapper.claimDelete(any(), any(), any())).thenReturn(1);
         when(productionOperationPositionMapper.softDelete(any(), any(), any())).thenReturn(1);
-        when(productionOperationMapper.update(isNull(), any())).thenReturn(1);
 
         Map<String, Object> result = service().delete(OP_ID, TENANT);
 
@@ -385,8 +385,8 @@ class ProductionOperationDeleteGuardTest {
                 position("三边", "帘头", true)));
         when(productionOperationPositionMapper.updatePriceAndApplicable(
                 any(), any(), any(), any(), any())).thenReturn(1);
+        when(productionOperationMapper.claimDelete(any(), any(), any())).thenReturn(1);
         when(productionOperationPositionMapper.softDelete(any(), any(), any())).thenReturn(1);
-        when(productionOperationMapper.update(isNull(), any())).thenReturn(1);
 
         Map<String, Object> result = service().deleteDetaching(OP_ID, TENANT);
 
@@ -401,7 +401,7 @@ class ProductionOperationDeleteGuardTest {
         assertThat(prices.getAllValues()).as("不做 ⇒ 价强制清空（≠ 0 元）").containsOnlyNulls();
 
         // ② 然后真的软删（不是「只摘格不删」）
-        verify(productionOperationMapper).update(isNull(), any());
+        verify(productionOperationMapper).claimDelete(eq(OP_ID), eq(TENANT), any());
         assertThat(result.get("deleted")).isEqualTo(true);
         assertThat(result.get("detached_positions")).as("如实报数：摘了几个格").isEqualTo(2);
     }
@@ -437,7 +437,7 @@ class ProductionOperationDeleteGuardTest {
         verify(productionOperationPositionMapper, never())
                 .updatePriceAndApplicable(any(), any(), any(), any(), any());
         verify(productionOperationPositionMapper, never()).softDelete(any(), any(), any());
-        verify(productionOperationMapper, never()).update(isNull(), any());
+        verify(productionOperationMapper, never()).update(any(), any());
     }
 
     /**
@@ -481,8 +481,8 @@ class ProductionOperationDeleteGuardTest {
         // 一格已「不做」——**照样要删**（否则设过不做的格会留在工艺项表格里 = 用户实测「删不干净」）
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
                 position("三边", "布帘", false)));
+        when(productionOperationMapper.claimDelete(any(), any(), any())).thenReturn(1);
         when(productionOperationPositionMapper.softDelete(any(), any(), any())).thenReturn(1);
-        when(productionOperationMapper.update(isNull(), any())).thenReturn(1);
 
         Map<String, Object> result = service().delete(OP_ID, TENANT);
 
@@ -491,7 +491,7 @@ class ProductionOperationDeleteGuardTest {
         assertThat(stamps.getValue()).as("审计：必须留 updated_at（谁在什么时候删的）").isNotNull();
         assertThat(result.get("deleted_positions")).isEqualTo(1);
         // 工序行本身也照旧软删（显式写列）
-        verify(productionOperationMapper).update(isNull(), any());
+        verify(productionOperationMapper).claimDelete(eq(OP_ID), eq(TENANT), any());
     }
 
     /**
@@ -510,8 +510,8 @@ class ProductionOperationDeleteGuardTest {
                 position("三边", "帘头", true)));
         when(productionOperationPositionMapper.updatePriceAndApplicable(
                 any(), any(), any(), any(), any())).thenReturn(1);
+        when(productionOperationMapper.claimDelete(any(), any(), any())).thenReturn(1);
         when(productionOperationPositionMapper.softDelete(any(), any(), any())).thenReturn(1);
-        when(productionOperationMapper.update(isNull(), any())).thenReturn(1);
 
         // 一键（detachPositions=true）⇒ 那一格「做」先被摘掉，再连两行一起软删
         Map<String, Object> result = service().deleteDetaching(OP_ID, TENANT);
@@ -544,7 +544,7 @@ class ProductionOperationDeleteGuardTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(422));
         // 工序行**不得**被写（回滚的落点是「什么都没发生」）
-        verify(productionOperationMapper, never()).update(isNull(), any());
+        verify(productionOperationMapper, never()).update(any(), any());
     }
 
     /**
@@ -560,8 +560,8 @@ class ProductionOperationDeleteGuardTest {
         stubNothingReferencing();
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of(
                 position("三边", "布帘", false)));
+        when(productionOperationMapper.claimDelete(any(), any(), any())).thenReturn(1);
         when(productionOperationPositionMapper.softDelete(any(), any(), any())).thenReturn(1);
-        when(productionOperationMapper.update(isNull(), any())).thenReturn(1);
 
         service().delete(OP_ID, TENANT);
 
@@ -583,17 +583,14 @@ class ProductionOperationDeleteGuardTest {
         when(productionOperationMapper.selectById(OP_ID)).thenReturn(operation(0));
         stubCatalog();
         stubNothingReferencing();
-        when(productionOperationMapper.update(isNull(), any())).thenReturn(1);
+        when(productionOperationMapper.claimDelete(any(), any(), any())).thenReturn(1);
 
         Map<String, Object> result = service().delete(OP_ID, TENANT);
 
-        ArgumentCaptor<LambdaUpdateWrapper> wrapper = ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
-        verify(productionOperationMapper).update(isNull(), wrapper.capture());
+        // issue #6936：工序行软删改走 mapper 的条件更新（`claimDelete`）；「SET 侧显式写 deleted=1 +
+        // updated_at」的形态判据在 ProductionOperationDeleteCasMetaGuardTest 按 mapper SQL 逐条扫（不两处各写一份）
+        verify(productionOperationMapper).claimDelete(eq(OP_ID), eq(TENANT), any());
         verify(productionOperationMapper, never()).updateById(any(ProductionOperation.class));
-        assertThat(wrapper.getValue().getSqlSet())
-                .as("显式 SET 必须含 deleted 与 updated_at（不是只「调了 update」）")
-                .contains("deleted")
-                .contains("updated_at");
         verify(productionOperationMapper, never()).deleteById(any(String.class));
         assertThat(result.get("id")).isEqualTo(OP_ID);
         assertThat(result.get("deleted")).isEqualTo(true);
@@ -608,7 +605,7 @@ class ProductionOperationDeleteGuardTest {
 
         assertThat(result.get("deleted")).isEqualTo(true);
         verify(productionOperationMapper, never()).updateById(any(ProductionOperation.class));
-        verify(productionOperationMapper, never()).update(isNull(), any());
+        verify(productionOperationMapper, never()).update(any(), any());
     }
 
     @Test
@@ -627,6 +624,6 @@ class ProductionOperationDeleteGuardTest {
                 .satisfies(e -> assertThat(((BusinessException) e).getHttpStatus()).isEqualTo(404));
 
         verify(productionOperationMapper, never()).updateById(any(ProductionOperation.class));
-        verify(productionOperationMapper, never()).update(isNull(), any());
+        verify(productionOperationMapper, never()).update(any(), any());
     }
 }

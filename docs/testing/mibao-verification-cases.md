@@ -6257,7 +6257,7 @@
 ```
 溯源: 2026-10-14 新增（issue #6928，P1·库存台账并发）。取号 = 现取 `.github/cases/order.yml` 最大号 OR-065 ⇒ **OR-066**（全仓 refs 复核 0 命中）。**红→绿（注入式双向对照，真 PG）**：① 把 `#cancel` 退回修前的无谓词 `updateById` ⇒ 3 轮全红、逐字 `post=200 cancel=200 成功数=2 单终态=cancelled 库存=100.0→105.0 台账行=1`；② 修后（`#cancel` 走 `InboundOrderMapper#markCancelled` 的 CAS）⇒ 3 轮全绿、`post=200 cancel=409 成功数=1 单终态=posted 库存=100.0→105.0 台账行=1`。元守卫红证（最隐蔽的一种，实证）：**锚串留着**（`if (false && …markCancelled(…)`）、真正落库换成无谓词 `updateById` ⇒ 判据当场红并具名 `违规=[cancel]`（只判锚会被它骗过去 ⇒ 判据本体是 CAS 而不是锚）。 ｜ tags: inbound, stock, ledger, concurrency, backend-contract, realdb
 
-## 加工项域（28 case）
+## 加工项域（30 case）
 
 ### PP-002. 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query） 🔵
 ```
@@ -6697,6 +6697,32 @@
 跳过: [backend-contract] 纯后端并发落库判据（无 LLM 写路径：工序改价走 admin-api 服务层的 PUT /api/admin/production/operations/{id}，不经黄金策 Agent 工具）⇒ 不进 agent-eval 冒烟：由 admin-api 真库并发单测 ProductionOperationPriceVersionConcurrentRealDbTest 执行
 ```
 溯源: 2026-10-03 新增（issue #6238，第三轮深度测试的核验包 · 涉钱面）：台账 #6220 的 unverified 观察项核验为**真**并**当场修复** —— 修法 = 进入事务后先取工序行排他锁（`ProductionOperationMapper#lockById` 的 `SELECT … FOR UPDATE`）**再读**旧价（顺序即语义），使「价是否真变了」建立在库内已提交事实上 ⇒ 同价重复提交退化为既有的幂等空分支（照常 200，**不是** 409：请求意图已达成）；异价并发两次变更各自成行、created_at 顺序与提交顺序一致。为什么不用 CAS + 409：CAS 会**静默丢弃**后写者的改价，对涉钱配置面不可接受。交付物 = 真库并发判据（N=4 × 3 轮 + 串行/同价重复正对照 + 库层零兜底实测 + 入口面无幂等键）+ 台账 unverified → entries 回填 + REALDB_FILES 登记。取号 PP-022：库内 PP-001~PP-021（PP-001 是**已退役**的旧用例号、PP-002/003/004/005 为历史空号 ⇒ 按 PP-015 / PP-016 先例「不复用已发布的号段」取 max+1，**不**用分配器给的最小空闲号 PP-001）；PP-022 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。 ｜ tags: production, price-version, concurrency, backend-contract
+
+### PG-074. 工序一键「设为不做并删除」写面并发 exactly-once：5 并发 ⇒ 至多一个赢家 + 无重复副作用 + 终态唯一（issue #6936） 🟡
+```
+你: 商家在「企业基础设置 → 工序与部位单价」点「设为不做并删除」时手抖点了两次（或两个管理员同时点）
+数据: **核验结论 = 真**：`DELETE /api/admin/production/operations/{id}/detach-and-delete` 在并发下**不是** exactly-once。修前实测（验收探针 E4，逐字读数见 acceptance/2026-10-14/line1-worker-config/out/batch-writeface-sweep/E4-detach-concurrent.json 与同目录 run.log 的 `[FAIL] [E4.1]` 行）：并发 5 次同一工序 ⇒ HTTP `[200,200,200,422,422]`（成功 **3** 次）；终态**正确**（deleted=1、无半完成）⇒ 这是**并发语义**缺陷，不是账实不符。
+数据: **病根形态**：`ProductionOperationCommandService#deleteDetaching` 是 check-then-act（先读 `op.deleted==0` 判活，再摘格 / 级联软删 / 写工序行），判断与写入不在同一条语句上 ⇒ 并发请求都读到提交前快照、都进写侧。同族参照 = issue #6928 / PR #6931（`InboundOrderService#cancel` 改成与 `#post` 同款条件更新）。
+数据: **主判据（已落码）**：N=5 并发同一工序 ⇒ 成功（200）次数 **≤ 1**；报 `detached_positions=1` 的请求数 ≤ 1；摘格写（`updatePriceAndApplicable`）与级联软删（`softDelete`）对同一个格**各恰一次**；落败方必须是显式 **409 CONFLICT**。断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationDetachConcurrentTest.java 的 `concurrentDetachAndDeleteHasAtMostOneWinner`。
+数据: **谓词完整性**：删除权的 CAS 必须带 `id` + `tenant_id` + `deleted=0` 三条谓词（wrapper SQL 段恰 3 个 AND 分量；实参含本租户与 0）—— 断言 = 同文件 `serialDetachAndDeleteStillSucceeds`。
+数据: **正对照（不误杀）**：单请求串行 `detach-and-delete` 必须成功（200）且摘格/软删各恰一次；护栏命中（主线/规则引用）时仍返回 **422 + details**（CAS 不改变既有 conflict/validation 口径）；已软删的工序仍是 **200 幂等 no-op**（公开契约一字不变）。
+数据: **红证（修前实测，确定性）**：撤掉 CAS（退回修前形态，`git stash` 主源那一处）⇒ 同一条判据实测 `各状态=[200,200,200,200,200] 成功数=5 报 detached_positions=1 的请求数=5 被拒(409)数=0`（5/5 全赢家，比 HTTP 层 3/5 更强）⇒ 判据当场红。修后（CAS）⇒ 成功数=1。
+数据: **边界（如实登记）**：① 本类跑的是 mock 面（服务层只认 CAS 的影响行数）；真 PG 的行锁/条件重估由同族真库判据承担（`InboundOrderCancelRaceRealDbTest`，#6928）；② HTTP 层成对读数见 PR body 的 E4 对照；③ 只覆盖 `deleteDetaching` 一个入口。
+跳过: [backend-contract] 纯后端并发落库判据（无 LLM 写路径）⇒ 不进 agent-eval 冒烟：由 admin-api 单测 ProductionOperationDetachConcurrentTest 执行（一并由 ProductionOperationDeleteCasMetaGuardTest 的类级元守卫兜住同族写面）。
+```
+溯源: 2026-10-14 新增（issue #6936，独立验收复现 + 证据已冻结）：把 detach-and-delete 的「工序行软删」改成**条件更新（CAS）+ 影响行数判定**（`WHERE id=? AND tenant_id=? AND deleted=0`，0 行 ⇒ 409 CONFLICT），并把闸放在**任何副作用之前**（护栏判定之后、摘格/级联软删之前）⇒ 并发下至多一个赢家、落败方零副作用。修前的 `check-then-act` 保留给「已软删 ⇒ 200 幂等 no-op」这条既有契约（未改）。取号 = PG-074（全仓 PG 号 max=072，PR #6927/#6930 均未改 `.github/cases/**`，两处现取均未占用）。 ｜ tags: production, operation, detach, concurrency, backend-contract
+
+### PG-075. 类级元守卫（#6936）：工序「删除权」的写路径必须落到 SQL 谓词（CAS）+ 未登记即红 + 豁免只许缩短 🟡
+```
+你: （元守卫，无用户轮次）下一个人在工序族新加一条软删写路径，或把 CAS 的「影响行数 0」判定删掉
+数据: **为什么是类级**（铁律 8）：只修 `deleteDetaching` 一处 = 没修 —— 下一个同族写面照样可以「有谓词但不看影响行数」，而没有任何东西会红。守卫把「写 deleted 列的写路径清单 + 谓词完整性 + 影响行数判定」钉成机械判据。
+数据: **判据 1（扫描器非空跑自证 + 谓词完整性）**：现取 `ProductionOperationPositionMapper` 里写 deleted 列的写面必须含 `updateUnitPrice` / `updatePriceAndApplicable` / `softDelete`，且每个写面必须带 `deleted=0` 谓词 + 租户谓词。断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionOperationDeleteCasMetaGuardTest.java 的 `mapperWritesCarryTheFullPredicate`。
+数据: **判据 2（service 写路径必须判影响行数 + 未登记即红 + 登记必须兑现 + 豁免只许缩短）**：现取「写 deleted 列的 service 方法」必须含 `delete` / `deleteDetaching`，每个方法体里的行写调用必须在「影响行数 == 0」判定里；写路径清单必须逐条登记在台账 backend/admin-api/src/test/resources/production-operation-delete-cas-ledger.json（`entries[].method` + `evidence` 锚逐字兑现，幽灵条目判红）；豁免 `unverified` ≤ `unverified_baseline`（**0**，只许缩短）。断言 = 同文件 `serviceWritePathsAreRegisteredAndGuarded`。
+数据: **判据 3（判别力自证）**：合成语料上六种坏形态各自判红 —— ① 无谓词 `updateById`；② CAS 谓词齐但不看影响行数；③ 缺 `deleted=0`；④ 缺 tenant 谓词；⑤ 新加一条未登记的写路径；⑥ 最隐蔽的「赋值留着、`if (… == 0)` 判定删掉」；合规语料（与真源码同形）判绿；只改注释不红。断言 = 同文件 `guardHasDiscriminatingPower`。
+数据: **边界（如实登记）**：见台账 `coverage_boundary` —— 形态判据不做 AST（把 CAS 结果跨方法判会被保守判红）；射程 = `ProductionOperationCommandService` + `ProductionOperationPositionMapper`；判不了非 deleted 列的写；不跑被它引用的实例判据。
+跳过: [backend-contract] 类级形态守卫（读源码文本、零 DB 零网络）⇒ 不进 agent-eval 冒烟：由 admin-api 单测 ProductionOperationDeleteCasMetaGuardTest 执行。
+```
+溯源: 2026-10-14 新增（issue #6936 的类级固化，与 PG-074 同批）：沿用 #6928 的元守卫范式（扫描器非空跑自证 / 谓词完整性 / 未登记即红 / 登记必须兑现 / 豁免只许缩短 / 判别力自证），但**扩到本单的射程**（`production_operations.deleted` 的两条软删写路径 + `production_operation_positions` 的三个软删写面），台账 = backend/admin-api/src/test/resources/production-operation-delete-cas-ledger.json（豁免基线 **0**）。既有判据**未放宽**（`InboundOrderStatusCasMetaGuardTest` 的 MC-100 一字未动）。取号 = PG-075（现取未占用）。 ｜ tags: production, operation, concurrency, meta_guard, backend-contract
 
 ## 加工单域（62 case）
 
@@ -10815,7 +10841,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：745（活跃 134，跳过 611）
+- 用例总数：747（活跃 134，跳过 613）
 - tier 分布：smoke 12 / normal 690 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
@@ -10835,7 +10861,7 @@
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：66
-- 加工项域：28
+- 加工项域：30
 - 加工单域：62
 - 商品域：120
 - 工具注册器域：1
@@ -11061,6 +11087,8 @@
 - PG-042: 加工费消费面 - 选配组合 → processing_fee_combinations 取价 × 加工费米数（未定价 ⇒ 0 + unpriced，不回落 Σ 加工项；人工改价 ⇒ manual + 建单回写组合）
 - PG-043: 特殊选项按套计价（包 A）- route_rules 加对客单价列 + 加工费 = 组合价×米数 + Σ(选项价×套数) + 92 行合成价目
 - PP-022: 工序改价并发面核验（N=4 并发提交同一工序的同一次调价）：价格版本账恰追加 1 行、当前价 = 最新版本行（issue #6238）
+- PG-074: 工序一键「设为不做并删除」写面并发 exactly-once：5 并发 ⇒ 至多一个赢家 + 无重复副作用 + 终态唯一（issue #6936）
+- PG-075: 类级元守卫（#6936）：工序「删除权」的写路径必须落到 SQL 谓词（CAS）+ 未登记即红 + 豁免只许缩短
 - PR-083: 渲染腿**转义解码**：生成物取值与真值（`yaml.safe_load`）逐值相等（修前 33 处不同 / 163 个多余转义）
 - PR-084: 渲染腿比较器**落库**（唯一实现）+ **「0 条」必须判红**（比较器坏了 ≠ 没有差异）
 - PR-085: 渲染腿保真度的**边界登记与死亡条件**（修好的形态必须移出登记表；未覆盖的不许说成已覆盖）
