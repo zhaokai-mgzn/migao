@@ -332,9 +332,20 @@ async function cleanupProduct(page, id) {
       headers: { 'Content-Type': 'application/json', Cookie: `access_token=${at.value}` },
       body: body === undefined ? undefined : JSON.stringify(body),
     })
-    // ① 下架（幂等：已经 off_sale / 已删除时失败不作数 —— 直接走 ② 的硬判据）
+    // ① 状态闸门（**现取**当前状态再决定要不要下架）：
+    //    后端 `ProductService.deleteProduct` 只允许 `draft` / `off_sale` 删除（`on_sale` / `under_review` 拒），
+    //    而 `draft → off_sale` 的流转**本身是非法**的（逐字：`状态流转无效: 草稿 → 已下架，允许的目标状态: 审核中/出售中`）
+    //    ⇒ 对草稿商品硬下架会 422、再删照样 422。⇒ 先看状态：只有 `on_sale` / `under_review` 才下架。
+    let cur = ''
+    try {
+      const g = await raw('GET', `/api/admin/products/${id}`)
+      if (g.status === 404) return { ok: true, status: null, del: null, after: 404, why: '已不存在（无需清理）' }
+      cur = ((await g.json()).data || {}).status || ''
+    } catch { cur = '' }
     let status = null
-    try { status = (await raw('PUT', `/api/admin/products/${id}/status`, { status: 'off_sale' })).status } catch { status = -1 }
+    if (cur && cur !== 'draft' && cur !== 'off_sale') {
+      try { status = (await raw('PUT', `/api/admin/products/${id}/status`, { status: 'off_sale' })).status } catch { status = -1 }
+    }
     // ② 删除
     let del = -1
     try { del = (await raw('DELETE', `/api/admin/products/${id}`)).status } catch { del = -1 }
