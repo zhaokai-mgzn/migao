@@ -165,6 +165,14 @@ REALDB_FILES: dict[str, str] = {
     # 逐字相同**（都是"调了一次 mapper"）—— 丢更新只有 N 个连接真并发打同一行才现形；
     # 部分唯一索引 / CHECK / 表达式索引更是 mock 里**不存在**的 DB 对象。
     _SVC + "InboundLabelPrintCountRealDbTest.java": "direct",
+    # issue #6928：入库单「过账 × 作废」交叉竞态 ⇒ 至多一个赢家 + 「已作废的单」不得改库存 / 留台账。
+    # 为什么必须真 PG：`#cancel` 与 `#post` 争的是**同一份状态迁移权**，而互斥的全部效力来自只有真 PG
+    # 才有的两件事 —— ① **行锁**（条件更新的判断与写入是同一条语句，命中行的锁持有到事务结束）、
+    # ② **条件重估**（后到者阻塞到前者提交后按新版本行重估 `status='draft'` ⇒ 影响行数 0）。
+    # mock 面结构上判不了：mock 的 `updateById` 恒返回 1、也不会因 WHERE 不满足而返回 0
+    # ⇒ 修前形态（无谓词写）在 mock 上**恒绿**（假绿）；而「终态 cancelled ⇒ 库存 0 变化且台账 0 行」
+    # 是**并发下的落库读数**。判据用包内探针把微秒级窗口放大到 800ms（生产恒为 0）⇒ 确定性，非 flake。
+    _SVC + "InboundOrderCancelRaceRealDbTest.java": "direct",
     # issue #5844：入库单列表的**批次号聚合**（`string_agg(batch_no, ',' ORDER BY batch_no)`）——
     # 聚合、排序、NULL 跳过全是 **SQL 语义**：「聚合写错」与「聚合根本没写」在 mock 面的读数
     # **逐字相同**（都是"调了一次 mapper"）；而 `deleted = 0` 谓词与 `COUNT(*)` 同处一个子查询，
