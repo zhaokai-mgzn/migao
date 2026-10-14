@@ -99,7 +99,7 @@ function journey(name, opts = {}) {
       if (msg.type() !== 'error') return
       const text = msg.text().slice(0, 300)
       // harness **自己**发的登录发码请求（`smsLogin` 的 `loginWindow`）：本机连跑会被后端 60s 频控拒
-      // （`SmsService.java:89`「发送过于频繁，请 60 秒后重试」）⇒ 400；浏览器只报「status of 400」**不带 URL**
+      // （`SmsService` 抛「发送过于频繁，请 60 秒后重试」）⇒ 400；浏览器只报「status of 400」**不带 URL**
       // ⇒ 只能按**窗口**判它，否则会把**本旅程**（往往是首个）误判成红。登录若真失败，后面的
       // `waitForURL('**/dashboard**')` 与 `未取到 access_token cookie` 会照旧红 —— 登录本身未放宽。
       if (loginWindow && /status of 4\d\d/.test(text)) return
