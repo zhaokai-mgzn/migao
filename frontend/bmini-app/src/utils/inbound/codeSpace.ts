@@ -8,7 +8,7 @@
  * | 码空间 | 形态 | 承载 | 扫到之后该去哪 |
  * |---|---|---|---|
  * | **入库标签** | `https://app.migaozn.com/i/<短码>` | `inbound_labels`（一张入库标签） | 本页：读单据详情 → 补打 |
- * | **洗水码 / 报工短链** | `https://app.migaozn.com/s/<短码>` | `processing_set_part_tokens`（一个部位） | 报工页（服务端 302 → `/w/?t=<token>`） |
+ * | **洗水码 / 报工短链** | `https://app.migaozn.com/s/<短码>` | `processing_set_part_tokens`（一个部位） | 报工面 = **H5 `/w/`**（服务端 302 → `/w/?t=<token>`） |
  *
  * 两者**短码规格故意同款**（8 位 Crockford Base32、去 `I/L/O/U`）——「同款」是为了**人可读可抄**，
  * 不是为了**可以互相串**。串了的下场很具体：工人拍一张洗水码 ⇒ 拿它的 8 位短码去查入库详情 ⇒
@@ -36,7 +36,7 @@
  * ## 五个空间的边界（每个都对应一种真实结局，不许合并）
  *
  * - `inbound-label`：**唯一**能去查入库详情的空间；
- * - `wash-code`：洗水码 ⇒ 说清 + 给报工入口（**绝不**当入库标签查）；
+ * - `wash-code`：洗水码 ⇒ 说清「**报工面在 H5 `/w/`**」（**绝不**当入库标签查）；
  * - `foreign`：不是观星台的码 ⇒ 说清（不猜、不去查）；
  * - `invalid-input`：手输形态不合法（非 8 位字母数字）⇒ 说清 + **一次请求都不发**；
  * - `undecoded`：照片里没解出码（磨花 / 太暗 / 反光）⇒ 提示重拍 + 手输兜底。
@@ -51,17 +51,20 @@ import { INBOUND_LABEL_CODE_ORIGIN, INBOUND_LABEL_CODE_PATH } from './truth'
  */
 export const WASH_CODE_PATH = '/s/'
 
-/** 报工页路由（洗水码的唯一去处；`src/app.config.ts` 已登记 —— 进不了报工页的"入口"是空头支票） */
-export const REPORT_PAGE_ROUTE = '/pages/production/index/index'
+/**
+ * 🔴 **洗水码的报工面 = H5 `/w/`**（2026-10-14，issue #6868 实现包 D1）。
+ *
+ * **历史沿革（不删）**：这里曾有 `REPORT_PAGE_ROUTE = '/pages/production/index/index'`（洗水码的
+ * 「下一步」路由）+ 一个 `WASH_CODE_ACTION` 按钮（`LabelCodeAction` 那一族类型随之退场）。
+ * 那一页是工人报工的**第二份实现**（唯一实现 = `frontend/worker-h5` 的 `/w/`）⇒ 已随本包
+ * 整页删除；端侧**不再有可跳的报工路由** —— 微信内承载 H5 需 web-view，而 2026-09-29 的产品
+ * 形态裁定「一端双编译（形态 A：小程序走原生页）」已排除 web-view（留痕见
+ * `src/utils/inbound/lpapiTransport.ts` 文件头）。⇒ 洗水码这一支只**说清去处**、不给端内下一步
+ * （与 `foreign` / `invalid-input` / `undecoded` 三支同形：都没有"下一步按钮"）。
+ */
 
 /** 码空间（见文件头「五个空间的边界」） */
 export type LabelCodeSpace = 'inbound-label' | 'wash-code' | 'foreign' | 'invalid-input' | 'undecoded'
-
-/** 该空间的动作去处（洗水码 ⇒ 报工页；其余空间没有"下一步按钮"） */
-export interface LabelCodeAction {
-  label: string
-  route: string
-}
 
 export interface LabelCodeReading {
   space: LabelCodeSpace
@@ -71,17 +74,14 @@ export interface LabelCodeReading {
   raw: string
   /** 给工人看的一句话（**永远非空**：空提示 = 静默失败） */
   message: string
-  action: LabelCodeAction | null
 }
 
-/** 洗水码的入口（文案与路由各一处定义，页面不另写一句） */
-export const WASH_CODE_ACTION: LabelCodeAction = {
-  label: '去「生产报工」扫水洗唛上的码',
-  route: REPORT_PAGE_ROUTE,
-}
-
+// ⚠️ 文案里**不出现域名**（issue #5668 判据 1：前端源码里出现未登记的硬编码域名 ⇒ 判红 —— 本行
+// 首次落地时踩过一次）。域名的单一真值是 `utils/inbound/truth.ts` 的 `INBOUND_LABEL_CODE_ORIGIN`，
+// 且**环境一变**（本地 / 预发 / 生产 / 未来换域名）文案就会把工人指到错的地方；而工人手上拿的是**纸**
+// ⇒ 指路只说「工人端报工页」（报工的人用微信扫这张码就直接开到那一页）。
 export const WASH_CODE_MESSAGE =
-  '这是水洗唛上的报工码（加工单上印的那个码），不是入库标签：它指向报工页，没有入库单据详情可看。请到「生产报工」里扫它报工；要补打入库标签，请拍入库标签或手输标签上的 8 位短码。'
+  '这是水洗唛上的报工码（加工单上印的那个码），不是入库标签：它要到工人端报工页上扫（报工的人用微信扫这张码，就开到那一页），这里没有可补打的入库单据。请把这条码交给报工的人扫；要补打入库标签，请拍入库标签或手输标签上的 8 位短码。'
 
 export const FOREIGN_CODE_MESSAGE =
   '这不是观星台的标签：码里既不是入库标签的 /i/，也不是水洗唛报工码的 /s/。请确认拍的是观星台打印的标签（纸面左下角有 8 位短码），或直接手输那 8 位短码。'
@@ -118,9 +118,8 @@ function makeReading(
   shortCode: string | null,
   raw: string,
   message: string,
-  action: LabelCodeAction | null = null,
 ): LabelCodeReading {
-  return { space, shortCode, raw, message, action }
+  return { space, shortCode, raw, message }
 }
 
 /** 从一段文本里读「主机 + 路径」；读不出来（纯短码 / 纯文本）⇒ 两者都为空 */
@@ -179,7 +178,7 @@ export function classifyScannedCode(raw: string | null | undefined): LabelCodeRe
   if (!text) return makeReading('undecoded', null, '', UNDECODED_CODE_MESSAGE)
   const hit = readSpaceFromUrl(text)
   if (hit?.space === 'inbound-label') return makeReading('inbound-label', hit.shortCode, text, SCAN_INBOUND_MESSAGE)
-  if (hit?.space === 'wash-code') return makeReading('wash-code', hit.shortCode, text, WASH_CODE_MESSAGE, WASH_CODE_ACTION)
+  if (hit?.space === 'wash-code') return makeReading('wash-code', hit.shortCode, text, WASH_CODE_MESSAGE)
   return makeReading('foreign', null, text, FOREIGN_CODE_MESSAGE)
 }
 
@@ -197,7 +196,7 @@ export function classifyManualCode(raw: string | null | undefined): LabelCodeRea
   if (!text) return makeReading('invalid-input', null, '', MANUAL_CODE_INVALID_MESSAGE)
   const hit = readSpaceFromUrl(text)
   if (hit?.space === 'inbound-label') return makeReading('inbound-label', hit.shortCode, text, MANUAL_INBOUND_MESSAGE)
-  if (hit?.space === 'wash-code') return makeReading('wash-code', hit.shortCode, text, WASH_CODE_MESSAGE, WASH_CODE_ACTION)
+  if (hit?.space === 'wash-code') return makeReading('wash-code', hit.shortCode, text, WASH_CODE_MESSAGE)
   const code = text.replace(WRITTEN_SEPARATORS, '')
   if (/^[0-9A-Za-z]{8}$/.test(code)) return makeReading('inbound-label', code, text, MANUAL_INBOUND_MESSAGE)
   return makeReading('invalid-input', null, text, MANUAL_CODE_INVALID_MESSAGE)

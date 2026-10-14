@@ -109,7 +109,7 @@ export const WORKER_LOGIN_ROUTE = '/pages/worker/login/index'
 /**
  * **商家登录页上的工人入口**（issue #6467 切片 1）—— `?tab=worker` 直达第三 tab。
  *
- * 「报工页 / 工人首页」的引导都指向**这一条**（而不是独立的 `pages/worker/login/index`）：
+ * 「工人首页」的引导指向**这一条**（而不是独立的 `pages/worker/login/index`）：
  * 商家登录页是 H5 的主登录门（`/b/` 的常规落点），从那里进去的人不必再找第二个登录页；
  * 两条链路的**身份判定都在服务端**（工号 + PIN ⇒ 工人 session），前端只是入口不同。
  */
@@ -132,11 +132,17 @@ export const WORKER_HOME_ROUTE = '/pages/worker/home/index'
 export const WORKER_HOME_PAGE_FILE = 'src/pages/worker/home/index.tsx'
 
 /**
- * **扫码报工**页路由（工人首页的三件功能之一）。
- * 该页早已在 `app.config.ts` 登记（也是「我的」页的入口），这里只把**工人面的引用**收敛到常量
- * —— 工人首页不再写第二份字面量（入口台账要能核「跳转语句里带着这个记号」）。
+ * 🔴 **小程序报工页已下架**（2026-10-14，issue #6868 实现包 D1；用户逐字「**没有用处的页面就直接删了**」）。
+ *
+ * **历史沿革（不删）**：这里曾有 `PRODUCTION_PAGE_ROUTE = '/pages/production/index/index'` ——
+ * 工人首页三件功能之一的入口常量。而工人报工的**唯一实现**是 `frontend/worker-h5`
+ * （`/w/`，能力更全：工序选择器 / 机台页 / 已上线）⇒ 小程序侧那一页是**第二份实现**，
+ * 已随本包删除（`src/pages/production/index/**` 三个文件）。
+ *
+ * **报工面现由 H5 `/w/` 承接**：工人扫纸上的码（微信浏览器直接开 H5）或直达
+ * `https://app.migaozn.com/w/`。微信内承载 H5 **不用 web-view** —— 2026-09-29 的产品形态裁定
+ * 「一端双编译（形态 A：小程序走原生页）」，留痕 = `src/utils/inbound/lpapiTransport.ts` 文件头。
  */
-export const PRODUCTION_PAGE_ROUTE = '/pages/production/index/index'
 
 /**
  * **拍照发货**页路由（issue #6761）—— 工人工作台的第 **4** 条入口（#5648 的 UI 面收口）。
@@ -161,9 +167,16 @@ export const SHIPMENT_WORKER_LOGIN_REQUIRED =
 export const WORKER_HOME_LOGIN_REQUIRED =
   '请先用工号 + PIN 登录工人身份，再使用工人功能（商家账号不能走这条路径）。'
 
-/** 报工页未登录工人身份时的引导（照报工页的语义写；写入口只在这个前提下渲染） */
-export const PRODUCTION_WORKER_LOGIN_REQUIRED =
-  '请先用工号 + PIN 登录工人身份，再扫码报工（商家账号不能走这条路径）。'
+/**
+ * 🔴 **报工页未登录引导已随页面下架**（2026-10-14，issue #6868 实现包 D1）。
+ *
+ * **历史沿革（不删）**：这里曾是 `PRODUCTION_WORKER_LOGIN_REQUIRED`
+ * （'请先用工号 + PIN 登录工人身份，再扫码报工（商家账号不能走这条路径）。'）——
+ * 报工页在**无工人 session** 时的引导文案。页面已删 ⇒ 文案失去消费点；同一份
+ * 「无工人身份 ⇒ 明说去登录」的口径仍活在**保留的工人面**上：`WORKER_HOME_LOGIN_REQUIRED`
+ * （工人首页）/ `INBOUND_WORKER_LOGIN_REQUIRED`（拍照入库）/ `SHIPMENT_WORKER_LOGIN_REQUIRED`
+ * （拍照发货），判据 = `frontend/bmini-app/tests/worker-surface-ledger.test.ts`。
+ */
 
 /** 补打页未登录时的引导（与入库页同一口径，但说清本页是"补打"） */
 export const REPRINT_WORKER_LOGIN_REQUIRED =

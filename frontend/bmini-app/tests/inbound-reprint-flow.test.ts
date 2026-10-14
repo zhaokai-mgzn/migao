@@ -176,7 +176,7 @@ describe('拍照补打主链：解码优先 / 码空间门禁 / 404-410 分开 /
     expect(classifyScannedCode(decodeQrFromImageData(qrImage(url))).shortCode).toBe('ABCD0234')
   })
 
-  it('F2 🔴 洗水码 /s/ ⇒ 一次都不查入库详情，且给出报工入口', async () => {
+  it('F2 🔴 洗水码 /s/ ⇒ 一次都不查入库详情，且说清报工面在 H5（端内不再给路由）', async () => {
     const server = fakeServer()
     const reading = classifyScannedCode('https://app.migaozn.com/s/7K3M9QP2')
     const state = await loadReprintDetail({ reading, lookup: server.lookup })
@@ -185,10 +185,11 @@ describe('拍照补打主链：解码优先 / 码空间门禁 / 404-410 分开 /
     if (state.kind === 'blocked') {
       expect(state.space).toBe('wash-code')
       expect(state.message).toContain('水洗唛')
-      expect(state.action?.route).toBeTruthy()
+      // 2026-10-14（issue #6868 实现包 D1）：报工页已删 ⇒ 端内没有「下一步」路由；文案自己说清 H5 报工面。
+      expect(state.message).toContain('报工页')
     }
     // 🔴 红证（对照组）：把这同一个码**伪造成入库码** ⇒ 门禁一撤，立刻查一次（且服务端 404）
-    const forged = { ...reading, space: 'inbound-label' as const, action: null }
+    const forged = { ...reading, space: 'inbound-label' as const }
     const wrong = await loadReprintDetail({ reading: forged, lookup: server.lookup })
     expect(server.state.detailCalls).toEqual(['7K3M9QP2'])
     expect(wrong.kind).toBe('not-found')

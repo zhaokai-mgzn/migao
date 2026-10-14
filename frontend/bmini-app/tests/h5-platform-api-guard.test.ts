@@ -24,6 +24,16 @@ import {
   unsupportedApis,
 } from './helpers/h5PlatformLists'
 
+/** 递归收集 `src/**` 下的源码文件（本文件那条类级判据用；不复制 helper 里那份业务扫描） */
+function walkSource(dir: string, out: string[] = []): string[] {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) walkSource(full, out)
+    else if (/\.(ts|tsx)$/.test(entry.name)) out.push(full)
+  }
+  return out
+}
+
 // 抽取实现（两张清单 / 用法扫描 / 注释剥离 / 平台分支判定）**只有一份** ——
 // 共享 helper `tests/helpers/h5PlatformLists.ts`（issue #5654 起被管理面守卫共用；
 // 两处各抄一份 = 第二份会漂的口径，见 `migao-dev-flow` §17.3 与 issue #5346）。
@@ -42,11 +52,13 @@ describe('类级守卫：小程序专有 API 必须同时给 h5 去处（issue #
 
   it('射程非空且确实取到了本仓的命中用法（判据不许空转成「0 命中 = 通过」）', () => {
     expect(usages.length).toBeGreaterThan(50)
+    // 🔴 2026-10-14（issue #6868 实现包 D1）：小程序报工页整页删除 ⇒ 它是本仓**唯一**的
+    // `Taro.scanCode` 用法（页内「扫一扫」的降级面随页面退场：工人报工面 = H5 `/w/`，
+    // 那台屏上**没有页内扫码**）⇒ 命中集合少了 `scanCode`，其余三处仍在射程内。
     expect(Array.from(new Set(hazardous.map((u) => u.api))).sort()).toEqual([
       'createOffscreenCanvas',
       'getRecorderManager',
       'login',
-      'scanCode',
     ])
   })
 
@@ -78,22 +90,19 @@ describe('类级守卫：小程序专有 API 必须同时给 h5 去处（issue #
   // ── issue #5750：扫码降级不许退回「只给手输」────────────────────────────
   // 用户在 iPhone 上点「扫一扫」只得到一句「当前浏览器不支持扫码」⇒ 只能手敲单号。
   // 而本仓在拍照入库链路上**早已验证**「拍照 + 本机 jsQR 解码」在任何浏览器都能走通。
-  it('scanCode 的 h5 出路必须写清「拍照识别」这条首选降级（退回只给手输 ⇒ 红）', () => {
-    expect(H5_API_OUTLET_LEDGER.scanCode).toContain('拍照')
-  })
+  // 🔴 2026-10-14（issue #6868 实现包 D1）：原「`scanCode` 的 h5 出路必须写清『拍照识别』降级」
+  // 判据随该台账条目一起退场（唯一用法 = 已删除的小程序报工页）。这条**不是**放宽：
+  // `scanCode` 已不在本仓射程内（清单 ∩ 用法 = ∅ ⇒ 台账条目必须删），下面那条
+  // 「唯一直接依赖 jsqr」的类级判据接手了「不许出现第二份解码实现」这一半。
 
-  it('降级必须复用既有解码模块：报工页不得出现第二份解码实现（直接依赖 jsQR ⇒ 红）', () => {
-    const page = fs.readFileSync(
-      path.join(__dirname, '..', 'src', 'pages', 'production', 'index', 'index.tsx'),
-      'utf8',
-    )
-    // ① 复用：两个既有导出都真的被调用（只 import 不用 = 假接线）
-    expect(page).toContain('utils/inbound/barcodeDecode')
-    expect(page).toMatch(/loadPixelsFromFileH5\(/)
-    expect(page).toMatch(/decodeQrFromImageData\(/)
-    // ② 不许绕过它直接依赖解码库（那会与拍照入库那套的平台分支/失败方向分叉成第二份实现）。
-    //    判据锚在**依赖形态**上而不是 `jsQR` 这个词 —— 注释里说明「用 jsQR 解码」是合法的。
-    expect(page).not.toMatch(/from\s+['"]jsqr['"]/)
-    expect(page).not.toMatch(/require\(\s*['"]jsqr['"]\s*\)/)
+  it('降级必须复用既有解码模块：全 `src/**` 只有一处直接依赖 jsqr（第二份解码实现 ⇒ 红）', () => {
+    // 🔴 2026-10-14（issue #6868 实现包 D1）：原判据锚在**报工页**（页内扫一扫的降级面）；该页已整页
+    // 删除 ⇒ 改钉为**类级**形态（射程更宽，不是放宽）：解码库的唯一直接依赖点必须仍是
+    // `utils/inbound/barcodeDecode.ts` —— 拍照入库 / 补打两页都 import 它的导出，不自己依赖 jsqr。
+    // 判据锚在**依赖形态**上而不是 `jsQR` 这个词（注释里说明「用 jsQR 解码」是合法的）。
+    const offenders = walkSource(path.join(__dirname, '..', 'src'))
+      .filter((file) => /from\s+['"]jsqr['"]|require\(\s*['"]jsqr['"]\s*\)/.test(fs.readFileSync(file, 'utf8')))
+      .map((file) => path.relative(path.join(__dirname, '..'), file).split(path.sep).join('/'))
+    expect(offenders).toEqual(['src/utils/inbound/barcodeDecode.ts'])
   })
 })

@@ -37,9 +37,7 @@ import path from 'path'
 import {
   FOREIGN_CODE_MESSAGE,
   MANUAL_CODE_INVALID_MESSAGE,
-  REPORT_PAGE_ROUTE,
   UNDECODED_CODE_MESSAGE,
-  WASH_CODE_ACTION,
   WASH_CODE_MESSAGE,
   WASH_CODE_PATH,
   classifyManualCode,
@@ -244,14 +242,13 @@ describe('拍照补打：码空间判定与手输兜底（issue #5640）', () =>
     const reading = classifyScannedCode('https://app.migaozn.com/i/ABCD2345')
     expect(reading.space).toBe('inbound-label')
     expect(reading.shortCode).toBe('ABCD2345')
-    expect(reading.action).toBeNull()
     expect(reading.message.trim().length).toBeGreaterThan(8)
     // 小写 / 带查询串 / 带尾斜杠：路径段原样取出（大小写与别名一律**留给服务端**归一化）
     expect(classifyScannedCode('https://app.migaozn.com/i/abcd2345?from=paper').shortCode).toBe('abcd2345')
     expect(classifyScannedCode('https://app.migaozn.com/i/7K3M9QP2/').shortCode).toBe('7K3M9QP2')
   })
 
-  it('S2 🔴 扫到 /s/<短码> ⇒ **洗水码**空间 + 报工入口（绝不当作入库标签）', () => {
+  it('S2 🔴 扫到 /s/<短码> ⇒ **洗水码**空间 + 说清报工面在 H5（绝不当作入库标签）', () => {
     const raw = 'https://app.migaozn.com/s/7K3M9QP2'
     const reading = classifyScannedCode(raw)
     expect(reading.space).toBe('wash-code')
@@ -260,8 +257,11 @@ describe('拍照补打：码空间判定与手输兜底（issue #5640）', () =>
     expect(reading.message).toBe(WASH_CODE_MESSAGE)
     expect(reading.message).toContain('水洗唛')
     expect(reading.message).toContain('报工')
-    expect(reading.action).toEqual(WASH_CODE_ACTION)
-    expect(reading.action?.route).toBe(REPORT_PAGE_ROUTE)
+    // 🔴 2026-10-14（issue #6868 实现包 D1）：报工页整页下架 ⇒ 端内**没有**「下一步」路由可给
+    // （洗水码这一支与 foreign / invalid-input / undecoded 同形：只给文案）—— 留着按钮才是死链。
+    // 红证：文案必须说清「去工人端报工页扫」（把那半句删掉 ⇒ 本断言红）；文案里**不出现域名**
+    // （域名单一真值 = utils/inbound/truth.ts；issue #5668 判据 1）。
+    expect(reading.message).toContain('报工页')
     // 🔴 红证（注入式）：把"**不看码空间**的那条路"喂给**同一判定** ⇒ 必须点名
     expect(spaceGateProblems(treatAsInboundShortCode).join('\n')).toContain('没有码空间门禁')
     // 对照：真实现下同一判定判绿 —— 这一半让本 case 真的**走被测函数**（把它整体禁用 ⇒ 本 case 必红）

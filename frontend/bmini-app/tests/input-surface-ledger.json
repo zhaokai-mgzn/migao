@@ -2,7 +2,7 @@
   "schema": 1,
   "issue": "#6478",
   "_what": "bmini 输入框面台账：每个在 frontend/bmini-app/src/**/*.tsx 里渲染 <Input> 的 (文件, className) 配对。射程 = src 下全部 .tsx（先剥注释）。",
-  "_why": "「H5 输入框文字贴顶」是 h5 形态缺陷（Taro h5 的 <Input> 是「外层 taro-input-core + 内层原生 input」两层），修法落在共享样式层 frontend/bmini-app/src/styles/input-center.scss。台账把「有哪些输入面」变成可执行判据：新增一个输入面/换一个 className 而没登记 ⇒ 红，逼作者当场确认它也走共享层。",
+  "_why": "「H5 输入框文字贴顶」是 h5 形态缺陷（Taro h5 的 <Input> 是「外层 taro-input-core + 内层原生 input」两层），修法落在共享样式层 frontend/bmini-app/src/styles/input-center.scss。台账把「有哪些输入面」变成可执行判据：新增一个输入面/换一个 className 而没登记 ⇒ 红，逼作者当场确认它也走共享层。 🔴 2026-10-14（issue #6868 实现包 D1）：原登记过**小程序报工页**的三个输入面（production-manual__input / production-ship__input / operation-item__qty-input），该页是工人报工的第二份实现、已整页删除 ⇒ 三条随之删掉（台账只许缩短）。",
   "_judged_by": "frontend/bmini-app/tests/input-center-guard.test.ts",
   "_recompute": "cd frontend/bmini-app && node -e \"const fs=require('fs'),p=require('path'),w=d=>fs.readdirSync(d,{withFileTypes:true}).flatMap(e=>e.isDirectory()?w(p.join(d,e.name)):(/\\.tsx$/.test(e.name)?[p.join(d,e.name)]:[]));const s=new Set();for(const f of w('src'))for(const m of fs.readFileSync(f,'utf8').matchAll(/<Input\\s+className='([^']+)'/g))s.add(f+'::'+m[1]);console.log(s.size);[...s].sort().forEach(x=>console.log(x))\"",
   "_boundary": [
@@ -39,24 +39,6 @@
       "file": "src/pages/auth/login/index.tsx",
       "className": "login-field__input login-field__input--code",
       "label": "商家登录页：短信验证码框（与「获取验证码」按钮同行）",
-      "case_ids": ["BM-042"]
-    },
-    {
-      "file": "src/pages/production/index/index.tsx",
-      "className": "production-manual__input",
-      "label": "报工页：手输加工单号",
-      "case_ids": ["BM-042"]
-    },
-    {
-      "file": "src/pages/production/index/index.tsx",
-      "className": "production-ship__input",
-      "label": "报工页：货运单号",
-      "case_ids": ["BM-042"]
-    },
-    {
-      "file": "src/pages/production/index/index.tsx",
-      "className": "operation-item__qty-input",
-      "label": "报工页：工序完成数量",
       "case_ids": ["BM-042"]
     },
     {

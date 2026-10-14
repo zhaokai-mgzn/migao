@@ -50,6 +50,8 @@ describe('parseOrderIdFromQr', () => {
  * （需后端调微信接口，另单）。小程序内可做的部分 = **带参跳转直达报工页**：
  * `Taro.navigateTo({url: '/pages/production/index/index?order_id=…'})` 或 `?qr=…`
  * （后端 `resolveOrder` 三形态：order_id / order_no / qr_token）。
+ * ⚠️ 2026-10-14（issue #6868 实现包 D1）：报工页已整页下架 ⇒ 本函数的现役消费方是
+ * **加工单详情只读页**（`src/pages/production/order-detail/index.tsx`）；判据本体一字未改。
  */
 describe('resolveOrderIdFromParams（深链直达）', () => {
   /**

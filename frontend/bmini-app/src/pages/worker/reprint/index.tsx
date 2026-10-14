@@ -362,19 +362,13 @@ export default function WorkerReprintPage() {
           </View>
         )}
 
-        {/* 非入库码：每一种空间各自一句可行动的话（洗水码另给报工入口） */}
+        {/* 非入库码：每一种空间各自一句可行动的话。
+            🔴 洗水码那一支**不给端内下一步**（2026-10-14，issue #6868 实现包 D1）：报工页已下架，
+            报工面 = H5 `/w/` ⇒ 文案说清去处（`codeSpace.ts` 的 `WASH_CODE_MESSAGE`）；
+            端内留一个跳不过去的按钮才是死链。 */}
         {reading && blockedTestId !== '' && (
           <View className='admin-card' data-testid={blockedTestId}>
             <Text className='admin-card__note'>{reading.message}</Text>
-            {reading.action && (
-              <View
-                className='admin-action admin-action--gold'
-                data-testid='reprint-go-report'
-                onClick={() => Taro.navigateTo({ url: (reading.action as { route: string }).route })}
-              >
-                <Text>{reading.action.label}</Text>
-              </View>
-            )}
           </View>
         )}
 

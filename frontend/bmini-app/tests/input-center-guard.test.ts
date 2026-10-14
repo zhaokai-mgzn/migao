@@ -328,7 +328,11 @@ describe('B. 输入框面台账元守卫（issue #6478）', () => {
     const input = realLedgerInput()
     // 反空跑：射程非空、台账非空（否则「双向相等」在空集上恒真）
     expect(input.files.length).toBeGreaterThanOrEqual(12)
-    expect(LEDGER.entries.length).toBeGreaterThanOrEqual(12)
+    // 🔴 2026-10-14（issue #6868 实现包 D1）：小程序报工页整页删除 ⇒ 它的**三个**输入面
+    // （`production-manual__input` / `production-ship__input` / `operation-item__qty-input`）
+    // 随之下架（台账只许缩短）⇒ 反空跑下限由 12 改为 10（现取恰为 10）。
+    // 「台账非空 + 与现取**双向相等**」（下面那条判据）才是反空跑的本体，魔数不是。
+    expect(LEDGER.entries.length).toBeGreaterThanOrEqual(10)
     expect(ledgerProblems(input)).toEqual([])
   })
 

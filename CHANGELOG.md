@@ -35,6 +35,30 @@
 - **不受影响**：金额口径（仍只读服务端字段）、打印介质与打印隔离范式、缺值占位（`—` / 「未采集」）
   逐条不变。
 
+### 小程序里工人报工页下架：报工统一走 H5（2026-10-14，issue #6868）
+
+用户 2026-10-14 逐字：「**没有用处的页面就直接删了**，商家小程序壳保留」。
+
+- **改后的形态（用户可见）**：微信里打开「黄金策商家助手」小程序、进工人工作台后，**不再有「扫码报工」主按钮**
+  （身份卡 + 拍照入库 / 补打入库标签 / 拍照发货三张行卡**一字未动**）。工人报工统一走 **H5 `/w/`**
+  （`app.migaozn.com/w/`）：扫纸上的部位码即开（微信内置浏览器直接打开 H5，**不用 web-view** ——
+  依 2026-09-29 的产品形态裁定「一端双编译」），或收藏 / 直达该网址。工人工作台的主按钮
+  在删页后是**死链**，故一并删除。
+- **为什么删**：工人报工的**唯一实现**早已是 `frontend/worker-h5`（能力更全：工序选择器 / 机台页 / 已上线）；
+  小程序里那一页（`frontend/bmini-app/src/pages/production/index/**`）是**第二份实现** ⇒ 按用户裁定整页删除。
+  同批清掉它的一切指向物：页面注册、路由常量（`PRODUCTION_PAGE_ROUTE` / `REPORT_PAGE_ROUTE`）、入口台账、
+  两份工人面台账（**只许缩短**）、`WASH_CODE_ACTION` 端内跳转（洗水码改为文案说清「报工面在 H5」）、
+  以及只服务它的服务端封装（商家发货 / 工人发货 / 计件读面）。
+- **商家小程序壳保留**：tabBar、`pages/{chat,dashboard,sessions,profile,auth}`、`pages/admin/**`、
+  加工单详情（`pages/production/order-detail`）**一个字节都没删**。
+- **判据（会红）**：删页后**先实测判红**（4 suites / 19 failed / 22 passed）——
+  `frontend/bmini-app/tests/page-entry-reachability.test.ts`（L0/L2 入口台账）、
+  `worker-surface-ledger.test.ts`（台账条目已死）、`input-center-guard.test.ts`（输入面台账）、
+  `worker-action-endpoint-ledger.test.ts`（动作端点台账）、`h5-platform-api-guard.test.ts`（`scanCode` 台账条目必须活着）；
+  收缩登记后全绿。工人工作台侧另有反向断言（`worker-home-page.test.tsx`：不再渲染「扫码报工」）。
+- **有意保留**：`pages/worker/{login,home,inbound,reprint,shipment}` —— H5 没有等价面，且入库 / 补打 / 发货依赖
+  **原生蓝牙打印**（`lpapi-ble-wx`）与「不用 web-view」的既有裁定 ⇒ 它们**不是**重复实现。
+
 ### 加工单纸上的码从「纯文本单号」变成**可扫开的稳定短链**，纸面加印人可读短码（2026-10-14，issue #6867）
 
 现场：商家打印的 A4 纸质加工单右上角那个二维码，内容一直是**加工单号纯文本**

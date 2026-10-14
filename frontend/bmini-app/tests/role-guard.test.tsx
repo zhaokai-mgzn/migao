@@ -14,7 +14,7 @@
  * | 2 | 负控：**有**商家凭据（哪怕同时有工人 session）⇒ **不跳**（共用 PAD 的正常动线） | 只看工人 session 就跳 ⇒ 判红 |
  * | 3 | 负控：只有商家凭据、没有工人 session ⇒ 不跳 | 同上 |
  * | 4 | 类级：**商家页清单**（tabBar 四页 + 管理面 4 项 + 坐席会话详情，现取）每页都挂了护栏 | 新增一个商家页不挂 ⇒ 判红 |
- * | 5 | 类级：工人页 / 公开登录页**不许**挂护栏（挂了工人会被自己的页面弹走） | 给报工页挂上 ⇒ 判红 |
+ * | 5 | 类级：工人页 / 公开登录页**不许**挂护栏（挂了工人会被自己的页面弹走） | 给工人首页挂上 ⇒ 判红 |
  */
 import React from 'react'
 import { View } from '@tarojs/components'
@@ -117,7 +117,6 @@ describe('商家页清单（类级：新增商家页必须挂护栏）', () => {
 
   it('🔴 工人页 / 公开登录页**不许**挂护栏（挂了工人被自己的页面弹走、登录都进不去）', () => {
     const notGuarded = [
-      'src/pages/production/index/index.tsx',
       'src/pages/worker/home/index.tsx',
       'src/pages/worker/inbound/index.tsx',
       'src/pages/worker/reprint/index.tsx',

@@ -21,7 +21,8 @@
  * ① 射程 = **顶层导出函数**（非导出 / 嵌套函数不在面内）；**只裁 `/api/admin/` 这一族**
  *    （`/api/worker/**` 的纯工人端点本就到得了、不是病灶 ⇒ 不登记，避免台账把「正常工人端点」也吃进来）；
  * ② 判的是**静态形态**（端点字符串在不在、页面有没有引用），**不是**运行期真的走对了端点 ——
- *    行为面由 `tests/production-ship-endpoint-by-identity.test.ts` 与 `tests/production-page.test.tsx` 的实例判据承担；
+ *    行为面由 `tests/worker-shipment-page.test.tsx` 等实例判据承担（原报工页的两个载体已随该页删除：
+ *    2026-10-14，issue #6868 实现包 D1）；
  * ③ 端点常量被抽成变量时静态扫描看不见（`frontend/bmini-app/src/services/workerInboundService.ts`
  *    的端点映射对象即此形态，当前 0 命中，如实登记）；④ 不改任何门禁的通过条件、不新增豁免。
  */
@@ -285,8 +286,11 @@ describe('工人面动作端点台账元守卫（issue #6472 S3）', () => {
     const awarePages = Object.values(input.pages).filter((text) => isWorkerAwarePage(text))
     expect(awarePages.length).toBeGreaterThanOrEqual(3)
     const detected = detectActions(input)
-    expect(detected.length).toBeGreaterThanOrEqual(3)
-    expect(input.entries.length).toBeGreaterThanOrEqual(3)
+    // 🔴 2026-10-14（issue #6868 实现包 D1）：反空跑下限由「≥3」改为「≥2」——报工页下架后
+    // `productionService` 的 admin 端点面只剩两个（getOrderOperations / getProcessingOrderBrief），
+    // 两个都由**商家只读页**消费。非空 + 下面那条**双向相等**才是反空跑的本体，魔数不是。
+    expect(detected.length).toBeGreaterThanOrEqual(2)
+    expect(input.entries.length).toBeGreaterThanOrEqual(2)
     expect(ledgerProblems(input)).toEqual([])
     // 台账条数**现取**（文档不写死）：登记集与现扫集双向相等
     expect(new Set(input.entries.map(pairKey)).size).toBe(detected.length)
@@ -320,35 +324,41 @@ describe('工人面动作端点台账元守卫（issue #6472 S3）', () => {
       reason: 'x',
       pages: ['src/pages/production/index/index.tsx'],
       requires_worker_session: false,
-      case_ids: ['BM-039'],
+      // 🔴 2026-10-14（issue #6868 实现包 D1）：原声明 BM-039 已随报工页退役 ⇒ 夹具改挂仍在册的 BM-006
+      case_ids: ['BM-006'],
     }
     const problems = ledgerProblems({ ...input, entries: [...input.entries, dead] })
     expect(problems.some((p) => p.includes('台账条目已死') && p.includes('shippedLongAgo'))).toBe(true)
   })
 
-  it('红证②b 台账只许缩短：摘掉 `shipOrder` 的登记（函数还在被工人页引用）⇒ 未登记即红', () => {
+  it('红证②b 台账只许缩短：摘掉 `getProcessingOrderBrief` 的登记（函数仍在现扫集合里）⇒ 未登记即红', () => {
     const input = realInput()
-    const without = input.entries.filter((entry) => entry.fn !== 'shipOrder')
+    // 🔴 2026-10-14（issue #6868 实现包 D1）：原红证用 `shipOrder`（已随报工页删除的导出）⇒ 改钉到
+    // 仍被现扫命中的 `getProcessingOrderBrief`（判据本体一字未改）。
+    const without = input.entries.filter((entry) => entry.fn !== 'getProcessingOrderBrief')
     expect(without.length).toBe(input.entries.length - 1)
     const problems = ledgerProblems({ ...input, entries: without })
-    expect(problems.some((p) => p.includes('未登记即红') && p.includes('shipOrder'))).toBe(true)
+    expect(problems.some((p) => p.includes('未登记即红') && p.includes('getProcessingOrderBrief'))).toBe(true)
   })
 
   // ── 判据 3：admin 条目必须给出路 ──────────────────────────────────────────
 
   it('红证③ admin 条目既无工人替代也无理由 ⇒ 判红', () => {
     const input = realInput()
+    // 🔴 2026-10-14（issue #6868 实现包 D1）：红证对象改钉到 `getProcessingOrderBrief`（判据本体未改）。
     const stripped = input.entries.map((entry) =>
-      entry.fn === 'shipOrder' ? { ...entry, worker_alternative: '', reason: undefined } : entry,
+      entry.fn === 'getProcessingOrderBrief' ? { ...entry, worker_alternative: '', reason: undefined } : entry,
     )
     const problems = ledgerProblems({ ...input, entries: stripped })
-    expect(problems.some((p) => p.includes('shipOrder') && p.includes('既没有 worker_alternative 也没有 reason'))).toBe(true)
+    expect(problems.some((p) => p.includes('getProcessingOrderBrief') && p.includes('既没有 worker_alternative 也没有 reason'))).toBe(true)
   })
 
   it('红证③b 工人替代函数名不存在 / 不含工人端点 ⇒ 判红', () => {
     const input = realInput()
+    // 🔴 2026-10-14（issue #6868 实现包 D1）：现役台账条目**都不带 worker_alternative**（如实登记）⇒
+    // 本条红证给一条真条目**合成**一个幽灵替代函数（判据本体一字未改）。
     const ghost = input.entries.map((entry) =>
-      entry.fn === 'shipOrder' ? { ...entry, worker_alternative: 'shipWorkerOrderGhost' } : entry,
+      entry.fn === 'getProcessingOrderBrief' ? { ...entry, worker_alternative: 'shipWorkerOrderGhost' } : entry,
     )
     expect(
       ledgerProblems({ ...input, entries: ghost }).some((p) => p.includes('不在') && p.includes('shipWorkerOrderGhost')),
@@ -366,16 +376,16 @@ describe('工人面动作端点台账元守卫（issue #6472 S3）', () => {
 
   // ── 判据 5：工人替代必须真的被用上（接线不在 ⇒ 红） ───────────────────────
 
-  it('红证⑤ 页面不再调工人替代函数（替代只在台账里声明）⇒ 判红（§28.2：判据绿 ≠ 接线在）', () => {
+  it('红证⑤ 调用页不再引用被登记的端点函数 ⇒ 判红（§28.2：判据绿 ≠ 接线在）', () => {
     const input = realInput()
-    const page = 'src/pages/production/index/index.tsx'
-    const mutated = input.pages[page].replace('shipWorkerOrder(', 'shipWorkerOrderRenamed(')
-    expectMutationApplied(mutated, ['shipWorkerOrderRenamed('], '接线必须活着')
+    // 🔴 2026-10-14（issue #6868 实现包 D1）：原红证用报工页的 `shipWorkerOrder(` 接线，该页已删 ⇒
+    // 改钉到现役调用页 order-detail 的 `getOrderOperations(` 接线（判据本体一字未改）。
+    const page = 'src/pages/production/order-detail/index.tsx'
+    const mutated = input.pages[page].replace('getOrderOperations(', 'getOrderOperationsRenamed(')
+    expectMutationApplied(mutated, ['getOrderOperationsRenamed('], '接线必须活着')
     const problems = ledgerProblems({ ...input, pages: { ...input.pages, [page]: mutated } })
-    expect(
-      problems.some((p) => p.includes('shipWorkerOrder') && p.includes('接线不在')),
-    ).toBe(true)
+    expect(problems.some((p) => p.includes('getOrderOperations(') && p.includes('条目已死'))).toBe(true)
     // 反向对照：不注入 ⇒ 同一份判据不报（否则红证是空断言）
-    expect(ledgerProblems(input).filter((p) => p.includes('接线不在'))).toEqual([])
+    expect(ledgerProblems(input)).toEqual([])
   })
 })
