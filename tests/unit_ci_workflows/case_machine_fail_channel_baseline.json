@@ -479,7 +479,7 @@
       "note": "issue #6868 实现包 D1（小程序工人报工页下架）：**退役 3 条** `[backend-contract]` 用例 —— **BM-007**（报工页部位规格行的批次行；真值改由 H5 精裁清单承担 ⇒ 承接用例 PG-058）、**BM-035**（报工页身份分流）、**BM-039**（报工页发货块按身份选端点；承接用例 BM-050 工人拍照发货页）；三者按设计都**不进 agent-eval**（`expectations: []`），原计分通道 = 已随页面删除的 frontend/bmini-app/tests/production-*.test.tsx ⇒ 无通道可留、且断言对象不存在（该页是工人报工的第二份实现，唯一实现 = H5 `/w/`）⇒ 必须退役而不是留空壳。**BM-006 改钉**（承载体由小程序报工页改为 H5 面）后**仍在册**（仍计入本读数）。因此读数 146 → 145（-1，不是 -3：另两条本就不在该口径内）。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**：本机实跑该判据报 145 vs 锚点 146。"
     },
     {
-      "sha": "a50108d897a34dbd61d48c1ba2f22db421cbb95f",
+      "sha": "fe72ce3a2d3d4c8f7aca6b39f627e7fea76e8d0c",
       "date": "2026-10-14",
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 146,
