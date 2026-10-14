@@ -36,6 +36,7 @@ import org.mockito.quality.Strictness;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -142,6 +143,11 @@ class InboundOrderServiceTest {
         // 过账原子闸：默认「抢到过账权」（影响行数 1）；抢不到的场景在各用例里覆盖成 0
         org.mockito.Mockito.doAnswer(inv -> markPostedRows)
                 .when(inboundOrderMapper).markPosted(anyString(), anyLong(), any(), any());
+        // 作废原子闸（issue #6928）：与过账同款 —— 默认「抢到作废权」（影响行数 1）；
+        // 抢不到（= 并发的 post 已提交过账）的场景覆盖成 0
+        markCancelledRows = 1;
+        org.mockito.Mockito.doAnswer(inv -> markCancelledRows)
+                .when(inboundOrderMapper).markCancelled(anyString(), anyLong(), any(), any(), any());
         // 批次号**原子取号**（issue #6248）：`update(` 的受影响行数 = 号归不归我。
         // mock 承担 `uk_stock_batches_no` 的同语义：同一个 (tenant, batch_no) 第二次 ⇒ 0 行
         // （没有这层，「撞号后重试」用例会因为「重复号也照样成功」而恒绿 = 空断言）。
@@ -190,6 +196,9 @@ class InboundOrderServiceTest {
 
     /** 过账原子闸的影响行数（1 = 抢到；0 = 已被并发的另一个请求过账） */
     private int markPostedRows = 1;
+
+    /** 作废原子闸的影响行数（1 = 抢到；0 = 已被并发的另一个请求过账/作废） */
+    private int markCancelledRows = 1;
 
     /** 库内**已被占用**的入库单号（模拟真库的 uk_inbound_orders_no；进程重启后重新建单会撞上它） */
     private final java.util.Set<String> takenInboundNos = new java.util.HashSet<>();
@@ -981,11 +990,13 @@ class InboundOrderServiceTest {
 
             service.cancel("RK-20260923-0001", "送货单录错", TENANT, "op");
 
-            ArgumentCaptor<InboundOrder> cap = ArgumentCaptor.forClass(InboundOrder.class);
-            verify(inboundOrderMapper).updateById(cap.capture());
-            assertThat(cap.getValue().getStatus()).isEqualTo(InboundOrder.STATUS_CANCELLED);
-            assertThat(cap.getValue().getCancelledReason()).isEqualTo("送货单录错");
-            assertThat(cap.getValue().getCancelledAt()).isNotNull();
+            // 作废的落库口径 = 条件更新 CAS（issue #6928）：状态/留痕与**谓词**在同一条语句里，
+            // 不再走无谓词的 updateById（那正是「过账 × 作废」交叉竞态的病根）。
+            ArgumentCaptor<OffsetDateTime> atCap = ArgumentCaptor.forClass(OffsetDateTime.class);
+            verify(inboundOrderMapper).markCancelled(
+                    eq("inbound-uuid-1"), eq(TENANT), eq("op"), eq("送货单录错"), atCap.capture());
+            assertThat(atCap.getValue()).as("作废时刻与状态同一句写入").isNotNull();
+            verify(inboundOrderMapper, never()).updateById(any(InboundOrder.class));
         }
 
         @Test
