@@ -39,4 +39,5 @@ public interface ProductionOperationMapper extends BaseMapper<ProductionOperatio
      */
     @Select("SELECT id FROM production_operations WHERE id = #{id} AND deleted = 0 FOR UPDATE")
     String lockById(@Param("id") String id);
+
 }
