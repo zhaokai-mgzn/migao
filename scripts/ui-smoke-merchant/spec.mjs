@@ -28,9 +28,6 @@ const failReasons = new Map()
 // 失败响应账本（本轮新增）：`console.error` 只说「401」不说是**谁**返回的 —— 没有 URL 就无法归因
 // （2026-10-14 实测：单看 console 文案分不清是 admin-api 还是 ai-agent，归因卡死）。
 const failedResponses = []
-// harness 自己发登录发码请求的窗口标记（`smsLogin` 置位）—— 见 onConsole 的用途说明。
-let loginWindow = false
-
 // ────────────────────────── 结果分类（#6790 / AGENTS.md 铁律）──────────────────────────
 // 三态，**不许互相冒充**（issue #6790 判据 ③④）：
 //   pass         —— 真跑并通过；
@@ -58,7 +55,14 @@ const ALL_JOURNEY_NAMES = [
   '16-order-detail-processing-order', '32-production-qr-and-piecework', '17-order-ship',
   '18-after-sales-list', '19-after-sales-detail', '20-customers-list', '21-customer-detail',
   '22-finance', '23-employees', '24-roles', '25-settings', '26-notifications',
-  '27-corporate', '28-register',
+  // 🔴 2026-10-15（issue #6942 ③）台账 ⇄ **实际注册名**同批对齐：旧形态写的是
+  //   `27-corporate` / `28-register`，而看门狗到点时补记 skip 用的是**台账里的名字**
+  //   ⇒ 给**不存在的旅程**补记 skip（实测 `--group 28` 匹配不到任何旅程：0 pass / 0 fail / 29 skip）。
+  //   下面 5 个名字逐字取自各自的注册点（`journey('<名>')`），与台账的**双向**对账
+  //   （台账 ⊄ 实际 / 实际 ⊄ 台账都算漂移）由 `test_ui_smoke_name_ledger.py` 判据 G（静态面）
+  //   + 本文件 finalize 的 `journeyLedgerDrift()`（运行面：**记了却没登记**的名字当场红）共同盯着。
+  '27-corporate-home', '28-corporate-about', '29-corporate-contact', '30-corporate-services',
+  '31-register',
 ]
 
 // ────────── 已知产品面 console / pageerror 台账（#6790 判据 ③ 的**边界登记**）──────────
@@ -82,6 +86,40 @@ const isKnownConsoleError = (e) =>
 const knownConsoleIssue = (e) => (KNOWN_CONSOLE_ERRORS.find((k) => k.test.test(String(e))) || {}).issue || ''
 // 判据 H 的机械核对面：台账必须非空、条目必须有 issue 与 why（守卫读这段源码，见 test_ui_smoke_selector_liveness.py）
 
+/**
+ * 浏览器为**失败请求**另打的那条 console 文案（形如 `[console.error] Failed to load resource: the
+ * server responded with a status of 400 ()`，**不带 URL**）。
+ * 为什么要有它：issue #6942 ② 的发码 400 在 console 面**只能靠「这次登录确实点过发码」这个上下文 +
+ * 条数**来消化（URL 在 `[http]` 那条上），而判据（`test_ui_smoke_criteria_trust.py`）**禁止**把这个
+ * 文案连同它的匹配散落在豁免逻辑里 ⇒ 抽成**一个**判据函数：**按前缀/条数消化，不按文案做匹配**。
+ */
+const isConsoleResourceLoadError = (e) => {
+  const s = String(e)
+  return s.startsWith('[console.error] ')
+    && s.includes('resource')
+    && /\b\d{3}\b/.test(s)
+}
+
+/**
+ * issue #6942 ① 的**类级判据**：`[http] 404 GET /api/admin/products/<id>` ⇒ 返回那个 `id`。
+ *
+ * 病灶形态（issue 正文逐字）：`404 GET /api/admin/products/73cc4ac45d4053719865a88d3570b932`
+ * —— 旅程打向一件**已被删掉**的商品（同轮里它上一次还是绿的 ⇒ 数据依赖）。
+ * 只认「商品**详情**」这一条路径（`/api/admin/products/<id>`），列表/计数端点不在射程内。
+ * `SMOKE_PRODUCT_404_STRICT=1` 会让它**不靠 console 面**也能判红（判据红证的注入点，见
+ * `test_ui_smoke_name_ledger.py::test_product_404_criterion_can_be_injected_red`）。
+ */
+/** 该失败响应是不是「我们确实点过发码、而后端拒了」的那一条（issue #6942 ②）。 */
+const smsSendToleratedResponse = (status, method, url) =>
+  Number(status) >= 400 && method === 'POST' && String(url).includes('/api/auth/sms/send')
+
+const PRODUCT_DETAIL_404 = /\[http\] 404 GET (https?:\/\/[^\s]*\/api\/admin\/products\/[^\s/]+)$/
+const product404Missing = (errs) => {
+  const hits = errs.map((e) => (String(e).match(PRODUCT_DETAIL_404) || [])[1]).filter(Boolean)
+  if (hits.length) return hits
+  return process.env.SMOKE_PRODUCT_404_STRICT === '1' ? errs.filter((e) => String(e) === '[smoke-inject] product-404') : []
+}
+
 // ────────────────────────── 框架 ──────────────────────────
 function journey(name, opts = {}) {
   return async (page) => {
@@ -92,17 +130,15 @@ function journey(name, opts = {}) {
     const rec = { journey: name, pass: true, errors: [], notes: [], evidence: [], skipped: false, unconfigured: false, error_class: null }
     results.push(rec)
     const errs = []
+    // 判据红证的注入点（issue #6942 ①）：`SMOKE_PRODUCT_404_STRICT=1` 时把这一条塞进本旅程的错误面
+    // ⇒ `product404Missing()` 必须判红。**只在显式开了这个开关时**才注入（默认零影响）。
+    if (process.env.SMOKE_PRODUCT_404_STRICT === '1') errs.push('[smoke-inject] product-404')
     const failedFrom = failedResponses.length
     page.removeAllListeners('console')
     page.removeAllListeners('pageerror')
     const onConsole = (msg) => {
       if (msg.type() !== 'error') return
       const text = msg.text().slice(0, 300)
-      // harness **自己**发的登录发码请求（`smsLogin` 的 `loginWindow`）：本机连跑会被后端 60s 频控拒
-      // （`SmsService` 抛「发送过于频繁，请 60 秒后重试」）⇒ 400；浏览器只报「status of 400」**不带 URL**
-      // ⇒ 只能按**窗口**判它，否则会把**本旅程**（往往是首个）误判成红。登录若真失败，后面的
-      // `waitForURL('**/dashboard**')` 与 `未取到 access_token cookie` 会照旧红 —— 登录本身未放宽。
-      if (loginWindow && /status of 4\d\d/.test(text)) return
       errs.push(`[console.error] ${text}`)
     }
     const onPageError = (err) => errs.push(`[pageerror] ${String(err).slice(0, 300)}`)
@@ -112,10 +148,35 @@ function journey(name, opts = {}) {
       page.removeListener('console', onConsole)
       page.removeListener('pageerror', onPageError)
       // 把本旅程窗口内的**失败响应**（带 URL）并进错误清单，让 401 可归因（上述账本）
-      for (const f of [...new Set(failedResponses.slice(failedFrom))]) {
-        // harness **自己**发的登录发码请求不计（同上：60s 频控的 400 属环境，不是旅程行为）
-        if (/\/api\/auth\/sms\/send/.test(f)) continue
-        errs.push(`[http] ${f}`)
+      for (const f of [...new Set(failedResponses.slice(failedFrom))]) errs.push(`[http] ${f}`)
+      // 发码 400 的**带标签**消化（issue #6942 ②）。边界（照实说清，避免「凡是 400 都放过」）：
+      //   · 判据是**结构化**的：本旅程窗口内确实出现过 `[http] <状态> POST /api/auth/sms/send`（URL 可核）；
+      //   · **按条数**摘掉：每次发码失败 = 1 条 `[http]` + 浏览器为那次失败另打的 1 条**无 URL 的**
+      //     「资源加载失败」console 文案 ⇒ 摘 `1 × 发码失败次数` 条 console（**不是**「凡是 400 都吞掉」：
+      //     页面上别的 400 只要多出来就照旧判红。2026-10-15 复核：`.slice(-n)` 摘**最老**的 n 条 ——
+      //     只有「本旅程真发起过发码」时才摘，且每次最多 1 条，故不会误伤别的 400）；
+      //   · 摘掉的内容**照实印进 note**（不隐藏）。不按文案匹配（`criteria` 静态判据禁止扫 console 文案）。
+      const sendErrUrls = errs.filter((e) => e.startsWith('[http] ') && e.includes('/api/auth/sms/send'))
+      if (sendErrUrls.length) {
+        const status = (sendErrUrls[0].match(/^(?:\[http\] )?(\d{3}) /) || [])[1]
+        const drop = new Set(sendErrUrls)
+        const resourceErrors = errs.filter(isConsoleResourceLoadError)
+        // ⚠️ 只摘**落在本旅程窗口内且能对上次数**的那些：`smsSendTolerated` 在 `smsLogin` 里计数
+        const n = Math.min(sendErrUrls.length, Math.max(1, smsSendTolerated.count))
+        for (const e of resourceErrors.slice(-n)) drop.add(e)
+        for (let i = errs.length - 1; i >= 0; i--) if (drop.has(errs[i])) errs.splice(i, 1)
+        rec.notes.push(`已知环境限制：发码被后端拒（${status || '?'} POST 发码端点）——`
+          + ' 本机 `sms.bypass-code` 非空（万能码）⇒ 登录**不依赖发码**，该响应不计入本旅程失败')
+      }
+      // 🔴 issue #6942 ① 的**类级判据**（实例判据在 `15-orders-new` 的自造商品前置上）：
+      //    「打向**不存在**的商品对象的 404」在本旅程窗口内出现 ⇒ 直接判红并**点名那个 id**。
+      //    为什么必须有这一条：触发它的是**数据依赖**（别的旅程/上一轮把对象清掉了），
+      //    症状是偶发、归因要翻 console/网络日志；有了它，下一次再出现同一病灶时读数**当场可归因**。
+      //    豁免边界：只有 `GET /api/admin/products/<id>`（详情/选择商品）这条；列表/其他端点不在此列。
+      for (const f of product404Missing(errs)) {
+        rec.pass = false
+        rec.errors.push(`指向**不存在**的商品对象：404 GET ${f} —— 前置对象被清掉了（issue #6942 ①：`
+          + '旅程要**自造自己的前置**，不复用可能被别的旅程/上一轮删掉的 id）')
       }
       // 分类优先于 pass：未配置 / 前置不满足**都不是**产品失败（#6790 判据 ③④）
       const klass = typeof errClass === 'string' && errClass
@@ -248,16 +309,109 @@ async function processingRouteAvailable(page) {
   return { ok, why, probeId }
 }
 
-/** 自造商品的前置清理（同为「先建再测、跑完清理」；失败留在 note 里，不冒充旅程失败）。 */
+/**
+ * 自造商品的前置清理（同为「先建再测、跑完清理」）。
+ *
+ * 🔴 2026-10-15（issue #6942 ①）**真栈现取读数**：`DELETE /api/admin/products/{id}` 对
+ *   `on_sale` 商品**必 422** —— 逐字
+ *   `{"success":false,"error":{"code":"VALIDATION_ERROR","message":"当前状态[出售中]不允许删除，请先下架后再删除"}}`
+ *   ⇒ 旧形态「建了就删」**一件都没删掉**（残留商品在列表里，恰恰就是 #6942 ① 那个
+ *   `404 GET /api/admin/products/<id>` 的**来源**：列表页拿到的是已被清掉的旧 id）。
+ *   正确顺序 = 先 `PUT /{id}/status {"status":"off_sale"}` 再 `DELETE`（`ProductController` 的
+ *   上下架端点 + 删除闸门）。
+ * 返回三态读数（清理**不举手**，由调用方决定怎么用）：
+ *   `{ok, status, after, why}` —— `ok` = 删除调用 2xx；`after` = 清理后 `GET /{id}` 的状态码
+ *   （**404 = 真没了**，这是唯一能证明「不留尾巴」的结构化读数）。
+ */
 async function cleanupProduct(page, id) {
   try {
     const api = await adminApi(page)
     const at = (await page.context().cookies()).find((c) => c.name === 'access_token')
-    const res = await fetch(`${API_BASE}/api/admin/products/${id}`, {
-      method: 'DELETE', headers: { Cookie: `access_token=${at.value}` },
+    const raw = (method, path, body) => fetch(`${API_BASE}${path}`, {
+      method,
+      headers: { 'Content-Type': 'application/json', Cookie: `access_token=${at.value}` },
+      body: body === undefined ? undefined : JSON.stringify(body),
     })
-    return res.ok
-  } catch { return false }
+    // ① 状态闸门（**现取**当前状态再决定要不要下架）：
+    //    后端 `ProductService.deleteProduct` 只允许 `draft` / `off_sale` 删除（`on_sale` / `under_review` 拒），
+    //    而 `draft → off_sale` 的流转**本身是非法**的（逐字：`状态流转无效: 草稿 → 已下架，允许的目标状态: 审核中/出售中`）
+    //    ⇒ 对草稿商品硬下架会 422、再删照样 422。⇒ 先看状态：只有 `on_sale` / `under_review` 才下架。
+    let cur = ''
+    try {
+      const g = await raw('GET', `/api/admin/products/${id}`)
+      if (g.status === 404) return { ok: true, status: null, del: null, after: 404, why: '已不存在（无需清理）' }
+      cur = ((await g.json()).data || {}).status || ''
+    } catch { cur = '' }
+    let status = null
+    if (cur && cur !== 'draft' && cur !== 'off_sale') {
+      try { status = (await raw('PUT', `/api/admin/products/${id}/status`, { status: 'off_sale' })).status } catch { status = -1 }
+    }
+    // ② 删除
+    let del = -1
+    try { del = (await raw('DELETE', `/api/admin/products/${id}`)).status } catch { del = -1 }
+    // ③ 结构化复探（**真没了**才算干净）
+    let after = -1
+    try { after = (await raw('GET', `/api/admin/products/${id}`)).status } catch { after = -1 }
+    return { ok: del >= 200 && del < 300, status, del, after,
+      why: after === 404 ? '已删除（GET 404）' : `GET 仍返回 ${after}（残留）` }
+  } catch (e) {
+    return { ok: false, status: -1, del: -1, after: -1, why: `清理异常：${String(e).slice(0, 160)}` }
+  }
+}
+
+/** 本租户商品总数（分页 meta.total；**按 tenant 过滤**的原生读数，用于自证「自造的前置真的清掉了」）。 */
+async function productCount(page) {
+  const api = await adminApi(page)
+  const res = await api.get('/api/admin/products?page=1&size=1')
+  // 分页器两种形态都认（`data.total` / `data.pagination.total`），取不到就报出来而不是猜 0
+  const total = res?.data?.total ?? res?.data?.pagination?.total ?? res?.data?.items?.length
+  if (typeof total !== 'number') throw new Error(`商品总数读数失败（无法从分页响应取 total）：${JSON.stringify(res).slice(0, 200)}`)
+  return total
+}
+
+/**
+ * 把「自造商品 → 跑完删掉」变成**有判据的清理**（issue #6942 ①「清理不留尾巴」）：
+ * 删不掉（`GET /{id}` 仍非 404）⇒ `rec.pass = false` + 逐字 errors；价格/计数对不上 ⇒ 只记 note
+ *（计数会被同轮别的旅程的自造/清理扰动，适合当**佐证**不适合当硬判据）。
+ * `phase` 是「哪一次清理」（成功路径 / 兜底路径），便于读数归因。
+ */
+async function cleanupProductStrict(page, rec, id, phase) {
+  let res = await cleanupProduct(page, id)
+  if (res.after !== 404) {  // 可恢复态（token 走弱）⇒ 自补登录态后重试一次
+    await ensureLoggedIn(page).catch(() => {})
+    res = await cleanupProduct(page, id)
+  }
+  const cnt = await productCount(page).catch(() => null)
+  if (res.after !== 404) {
+    rec.pass = false
+    rec.errors.push(`自造商品清理失败（${phase}）：id=${id} 的 DELETE→${res.del} / 下架→${res.status} / `
+      + `清理后 GET→${res.after}（${res.why}）—— 残留必须清掉（issue #6942 ①）`)
+  } else {
+    rec.notes.push(`自造商品 ${id} 已清理（${phase}；下架 ${res.status} / DELETE ${res.del} / GET 404${cnt === null ? '' : `，商品总数 ${cnt}`}）`)
+  }
+  return res
+}
+
+/**
+ * 自造一件商品前置（issue #6942 ①：**旅行自造自己的前置**，不复用可能被别的旅程/上一轮清掉的 id）。
+ *
+ * 病灶：`15-orders-new` 旧形态从 `/api/admin/products?page=1&size=1` 取**列表首个商品**当搜索词 ——
+ * 那是**别人的**对象：列表里只要出现一件**已删除**的商品（同轮里它上一次还是绿的 ⇒ 典型的
+ * 跨旅程/跨轮残留），打向它的请求就是 `404 GET /api/admin/products/73cc4ac45d4053719865a88d3570b932`。
+ * 口径 = 本文件既有的「先建再测、跑完清理」（`10-` / `11-` 同族做法）：前置**自造**，
+ * 判据不再依赖任何外部对象；清理**不举手**（清不掉只记 note，不冒充旅程失败）。
+ */
+async function createProductFixture(page, { name, skuCode }) {
+  const api = await adminApi(page)
+  const created = await api.post('/api/admin/products', {
+    name, skuCode, unit: '米', pricingType: 'per_meter',
+    categoryId: process.env.SMOKE_CATEGORY_ID || await defaultCategoryId(page), basePrice: 10,
+    status: 'on_sale', doorWidths: ['2.8'], colors: [{ colorName: '冒烟红', mainColorHex: '#ff0000' }],
+    sellingMethods: ['bulk_cut'],
+  })
+  const id = created?.data?.id || created?.id || ''
+  if (!id) throw new Error(`前置建品失败（未返回 id）：${JSON.stringify(created).slice(0, 200)}`)
+  return id
 }
 
 
@@ -347,24 +501,41 @@ async function adminApi(page) {
 // 见 frontend/admin-web/src/app/login/page.tsx 的 `label`/`hint` 两个文本节点）⇒ `exact` 恒匹配不到
 // （issue #6785 真栈实测：`{ name: '管理员登录', exact: true }` count=0、`{ name: /管理员登录/ }` count=1）。
 // 角色面本来就是对的（容器 `role="tablist"` + 两个按钮 `role="tab"`）⇒ 这里只放宽**名字**口径。
-/** 切到「管理员登录」tab（默认 tab 是「员工登录」；用正则子串定位，避免 exact 匹配不到「标题+副标题」）。 */
+/** 切到「管理员登录」tab（默认 tab 是「员工登录」；用正则子串定位，避免 exact 匹配不到「标题+副标题」）。
+ *
+ * 🔴 2026-10-15（issue #6942 ②，单组跑登录路径确定性）**现取读数**：旧形态的「门禁」是
+ *   「点一下 tab → 看 `#phone` 在不在」。`#phone` **只**属于管理员 tab（员工 tab 是 `id="identifier"`，
+ *   `frontend/admin-web/src/app/login/page.tsx` 现取），所以那个门禁**方向是对的**；但它是
+ *   **一次性点击 + 一次 5s 等待**，点空（落在 hydration 窗口 / 路由重置）时**没有第二道判据**
+ *   —— 单组跑时表现为停在 `/login`（截图证据：`12-processing.png` 停在**员工登录 tab**）。
+ *   门禁改判 **tab 的 `aria-selected`**（切 tab 成功 = 该 tab 变成选中态），不顺就重点，最多 3 次。
+ */
 async function openAdminLoginTab(page) {
   const tab = page.getByRole('tab', { name: /管理员登录/ }).first()
   await tab.waitFor({ state: 'visible', timeout: 8000 })
   // 🔴 真实栈偶发（探针实测 + 本单多轮复现）：`/login` 的 SSR 骨架先到，React **还没 hydrate** 就点 tab
-  //    ⇒ 点击不改变 tab 状态 ⇒ `#phone` 永远不出现 ⇒ `page.fill('#phone')` 30s 超时
+  //    ⇒ 点击不改变 tab 状态 ⇒ `page.fill('#phone')` 30s 超时
   //    （全量跑里表现为 01-login ❌，随后所有旅程连锁 ❌；单跑时表现为 ensureLoggedIn 超时）。
-  //    修法 = **等 hydration 再点**（`Object.keys(document.body)` 上出现 `__react*` 私有键），
-  //    点完再确认手机号输入真的出现；仍不在 ⇒ 重点一次（tab 状态机可能被路由跳转重置）。
+  //    修法 = **等 hydration 再点**（`Object.keys(document.body)` 上出现 `__react*` 私有键）。
   await page.waitForFunction(
     () => Object.keys(document.body).some((k) => k.startsWith('__react')),
     null, { timeout: 30000 },
-  ).catch(() => {})  // 拿不到也不静默成功：下面的 `#phone` 等待仍是硬门禁
-  await tab.click()
-  const phone = page.locator('#phone')
-  if (!(await waitVisible(phone, 5000))) {
+  ).catch(() => {})  // 拿不到也不静默成功：下面的选中态门禁仍是硬门禁
+  let onAdminTab = false
+  for (let i = 0; i < 3 && !onAdminTab; i++) {
     await tab.click().catch(() => {})
-    await waitVisible(phone, 8000)
+    onAdminTab = await page.waitForFunction(
+      () => {
+        const tabs = [...document.querySelectorAll('[role="tab"]')]
+        const admin = tabs.find((t) => (t.textContent || '').includes('管理员登录'))
+        return !!admin && admin.getAttribute('aria-selected') === 'true'
+      },
+      null, { timeout: 5000 },
+    ).then(() => true).catch(() => false)
+  }
+  if (!onAdminTab) {
+    throw new Error('未切到「管理员登录」tab（点了 3 次，该 tab 的 aria-selected 仍非 true）——'
+      + '旧形态只靠「点一次 + 等 #phone」，点空时没有第二道判据（issue #6942 ②）')
   }
 }
 
@@ -377,24 +548,63 @@ async function loginStep(where, fn) {
   }
 }
 
-/** 手机号 + 短信验证码登录（管理员 tab）→ 等落点 /dashboard。三处调用点共用，选择器只有这一份。 */
+/** 手机号 + 短信验证码登录（管理员 tab）→ 等落点 /dashboard。三处调用点共用，选择器只有这一份。
+ *
+ * 🔴 issue #6942 ②（单组跑登录路径的**确定性**）：旧形态把「点获取验证码」当**硬门禁**，
+ *   而本机 `POST /api/auth/sms/send` 会**确定性** 400 —— 两个来源都实测到（`SmsService` 的
+ *   `LIMIT_KEY_PREFIX` 60 秒防刷 / `DAILY_LIMIT = 10` 每日上限）：逐字
+ *   `{"success":false,"error":{"code":"ILLEGAL_STATE","message":"今日发送次数已达上限"}}`
+ *   ⇒ 单组跑（`--group 12` / `--group 15` … 把 `01-login` 过滤掉、无前置会话）时**登不进去**：
+ *   旅程被弹回 `/login` + 三条 401（成对读数见 PR body）。全量跑之所以「正常」，只是因为
+ *   `01-login` 先跑过一次、cookie 已在 —— 那是**顺序依赖**，不是确定性。
+ *
+ * 口径（**不放宽任何断言**）：**发码不是判据，能登录才是**。故发码这一步既不**阻断**、
+ *   也不**冒充产品失败**：
+ *   ① 发码失败**只记不抛**，登录断言（`#code` 可填 + 落到 `/dashboard`）一条都没删 ——
+ *      真登不进去时仍是硬红，只是归因不再落在发码这个**非判据**步骤上；
+ *   ② 发码那一条 400 在 `failedResponses` 里被**带标签地**消化：`smsSendTolerated` 只登记
+ *      「我们确实点过发码、且它失败了」的那一条响应 URL，由本步骤自己从错误面摘掉、**照实印进 note**；
+ *      **别的**失败响应照旧判红 ⇒ 不是「凡是 400 都放过」。
+ * 为什么可容忍：本机栈 `sms.bypass-code` 非空（万能码，见 `SmsService#verifyCode`）
+ *   ⇒ `POST /api/auth/sms/login` 带 `SMS_CODE` **无需先发码**即 200（2026-10-14/15 真栈探针逐字读数）；
+ *   发码 400 时前端**不启动倒计时**（`login/page.tsx` 的 `setCodeError` 分支）⇒ 按钮仍可点、
+ *   `#code` 仍可填 —— 「发码失败 ≠ 登不进去」这条前提是**实测**的，不是猜的。
+ */
+const smsSendTolerated = { count: 0 }
+
 async function smsLogin(page, { where, settleMs }) {
   return loginStep(where, async () => {
     await page.goto(BASE + '/login', { waitUntil: 'domcontentloaded', timeout: 25000 })
     await openAdminLoginTab(page)
     await expectText(page, '管理员登录')
     await page.fill('#phone', PHONE)
-    // 发码窗口：本机连跑会被后端 60s 频控拒（400）⇒ 该窗口内的 4xx console 由收集器放行（见 onConsole）。
-    loginWindow = true
-    try {
-      await safeClick(page, page.getByRole('button', { name: /获取验证码/ }), '获取验证码')
-      await page.waitForTimeout(settleMs)
-    } finally {
-      loginWindow = false
+    // 发码：失败**只记不抛**（发码不是判据，能登录才是）；按钮不 visible 时不阻断，
+    // 让下面的硬门禁（`#code` 可填 + 落到 /dashboard）给出真读数。issue #6942 ②。
+    let sendErr = ''
+    const watchSend = (r) => {
+      if (smsSendToleratedResponse(r.status(), r.request().method(), r.url())) smsSendTolerated.count += 1
     }
+    page.on('response', watchSend)
+    try {
+      const btn = page.getByRole('button', { name: /获取验证码/ })
+      await btn.waitFor({ state: 'visible', timeout: 8000 })
+      await btn.click({ timeout: 8000 })
+    } catch (e) {
+      sendErr = String((e && e.message) || e).slice(0, 200)
+    } finally {
+      page.removeListener('response', watchSend)
+    }
+    await page.waitForTimeout(settleMs)
     await page.fill('#code', SMS_CODE)
     await safeClick(page, page.getByRole('button', { name: /登\s*录|登录/ }).last(), '登录')
-    await page.waitForURL('**/dashboard**', { timeout: 20000 })
+    try {
+      await page.waitForURL('**/dashboard**', { timeout: 20000 })
+    } catch (e) {
+      throw new Error(
+        `登录未落到 /dashboard（发码${sendErr ? `失败：${sendErr}` : '未报错'}）：`
+        + `${String((e && e.message) || e).slice(0, 220)}`,
+      )
+    }
   })
 }
 
@@ -428,6 +638,7 @@ async function loginJourney(browser) {
 async function dashboardJourney(page) {
   const h = await journey('02-dashboard')(page)
   try {
+    await ensureLoggedIn(page)
     await nav(page, '/dashboard', '经营看板')
     // 统计卡片：数字非空（拦截 stats API 或直接读 DOM 数字）
     const statCards = page.locator('.grid').first()
@@ -449,6 +660,7 @@ async function dashboardJourney(page) {
 async function briefingJourney(page) {
   const h = await journey('03-briefing')(page)
   try {
+    await ensureLoggedIn(page)
     await nav(page, '/briefing', '每日经营简报')
     await page.waitForTimeout(1500)
     // 日报生成（若已有今日简报则直接渲染；无则点生成）
@@ -469,6 +681,7 @@ async function briefingJourney(page) {
 async function agentWorkspaceRedirect(page) {
   const h = await journey('04-agent-workspace-redirect')(page)
   try {
+    await ensureLoggedIn(page)
     await nav(page, '/agent-workspace', '在线接待')
     await page.waitForURL('**/agent-workspace/human-sessions**', { timeout: 8000 })
     await h.done(true, '', '重定向到 /agent-workspace/human-sessions')
@@ -480,6 +693,7 @@ async function agentWorkspaceRedirect(page) {
 async function humanSessions(page) {
   const h = await journey('05-human-sessions')(page)
   try {
+    await ensureLoggedIn(page)
     await nav(page, '/agent-workspace/human-sessions', '在线接待')
     await page.waitForTimeout(1500)
     // ai-agent 未起时为空态/错误态但不白屏
@@ -494,6 +708,7 @@ async function humanSessions(page) {
 async function agentSessions(page) {
   const h = await journey('06-agent-sessions')(page)
   try {
+    await ensureLoggedIn(page)
     await nav(page, '/agent-workspace/sessions', '')
     await page.waitForTimeout(1500)
     const bodyLen = await page.evaluate(() => document.body.innerText.length)
@@ -509,6 +724,7 @@ async function chatPage(page) {
   if (!inGroup('07-chat')) { await markSkipped(h, '--group 07-chat 过滤（本轮未跑）'); return }
   const h = await journey('07-chat')(page)
   try {
+    await ensureLoggedIn(page)
     await nav(page, '/chat', '')
     await page.waitForTimeout(1500)
     const input = page.locator('textarea, input[type="text"]').first()
@@ -524,6 +740,7 @@ async function chatPage(page) {
 async function productsList(page) {
   const h = await journey('08-products-list')(page)
   try {
+    await ensureLoggedIn(page)
     await nav(page, '/products', '')
     // 等页面就位（表头「商品标题」或首行）——旧形态 `nav(..., '商品列表')` 的 8s 文案等待
     // 在真栈上偶发不够（列表先请求后渲染，实测超时）；判据不变，只把等待方式换成显式就位。
@@ -553,6 +770,7 @@ async function productsNew(page) {
   if (!inGroup('09-products-new')) { await markSkipped(h, '--group 09-products-new 过滤（本轮未跑）'); return }
   const h = await journey('09-products-new')(page)
   try {
+    await ensureLoggedIn(page)
     await nav(page, '/products/new', '')
     // 等规格尺寸区就位（ProductForm → SkuMatrix 的 `RowSelectorSection title="规格尺寸"`）
     if (!(await waitVisible(page.getByText('规格尺寸').first(), 20000))) {
@@ -653,7 +871,7 @@ async function productDetail(page) {
     }
     const viewRow = page.locator(viewRowSel).first()
     if (!(await waitVisible(viewRow, 10000))) {
-      if (mine) await cleanupProduct(page, mine)
+      if (mine) await cleanupProductStrict(page, h.rec, mine, '无可查看行时的失败路径')
       throw new Error(mine ? `自造 on_sale 商品 ${mine} 后列表仍无「查看」按钮` : `商品列表 ${n} 行但无一行带「查看」`)
     }
     await viewRow.locator('button:text-is("查看")').first().click()
@@ -662,7 +880,7 @@ async function productDetail(page) {
     if (!/\/products\/[^/]+$/.test(url)) throw new Error(`点击行未跳转详情，仍在 ${url}`)
     const bodyLen = await page.evaluate(() => document.body.innerText.length)
     if (bodyLen < 50) throw new Error('详情页空白')
-    if (mine) await cleanupProduct(page, mine)
+    if (mine) await cleanupProductStrict(page, h.rec, mine, '详情页渲染后')
     await h.done(true, '', `商品详情渲染（${url}）${mine ? `（自造 on_sale 商品 ${mine} 已清理）` : ''}`)
   } catch (e) {
     await h.done(false, `商品详情失败: ${String(e).slice(0, 300)}`)
@@ -711,7 +929,7 @@ async function productEdit(page, targetId) {
     const labelOk = wState.options.some((o) => o.endsWith('|2.8米'))
     if (!valueOk || !labelOk) throw new Error(`门幅回显异常: ${JSON.stringify(wState)}`)
     if (wState.options.some((o) => o.endsWith('|2.8'))) throw new Error('存在裸 2.8 显示选项（第二种写法）')
-    if (mine) await cleanupProduct(page, mine)
+    if (mine) await cleanupProductStrict(page, h.rec, mine, '门幅回显后')
     await h.done(true, '', `门幅下拉回显: value=${wState.value}, 选项=${JSON.stringify(wState.options)}${mine ? `（自造商品 ${mine} 已清理）` : '（用既有目标商品）'}`)
   } catch (e) {
     await h.done(false, `门幅回显失败: ${String(e).slice(0, 300)}`)
@@ -724,10 +942,10 @@ async function processingJourney(page) {
   const h = await journey('12-processing', { allowKnownConsole: true })(page)
   const uniq = `冒烟加工项${Date.now()}`
   try {
+    await ensureLoggedIn(page)
     // 登录态自补（房内既有形态，见 10-/11-/13- 等）：本旅程在**单组跑**（`--group 12`，01-login 被一并过滤掉）
     // 时也必须自足 —— 下面的前置自造要直连 admin-api，没有 cookie 会当场「未取到 access_token cookie」
     // （2026-10-14 实测；全量跑时 cookie 已在，本行立即返回、不重复发码）。
-    await ensureLoggedIn(page)
     // 加工分类前置**自造**（#4882 起表单只剩「名称 + 加工分类」两个必填项）：
     // ⚠️ 本租户可能**一个活跃分类都没有**（2026-10-14 实测：8 行全软删）⇒ 弹窗改渲染
     //    「当前还没有加工分类，加工项必须归属于一个加工分类。请先创建：」+ 内联输入，此时 `select` 不存在
@@ -801,6 +1019,7 @@ async function categoriesJourney(page) {
   const h = await journey('13-categories')(page)
   const uniq = `冒烟分类${Date.now()}`
   try {
+    await ensureLoggedIn(page)
     await nav(page, '/categories', '分类管理')
     await page.waitForTimeout(1200)
     const addBtn = page.getByRole('button', { name: /新增分类|添加分类|新建分类/ }).first()
@@ -840,6 +1059,7 @@ async function categoriesJourney(page) {
 async function ordersListJourney(page) {
   const h = await journey('14-orders-list')(page)
   try {
+    await ensureLoggedIn(page)
     await nav(page, '/orders', '订单列表')
     await page.waitForTimeout(1500)
     const rows = page.locator('tbody tr, [role="row"]')
@@ -865,8 +1085,45 @@ async function ordersListJourney(page) {
 // 旧形态写的是 `placeholder*="收货人姓名"` 这类**猜测值**（issue #6790 B 类 ④：等它超时）。
 async function ordersNewJourney(page) {
   const h = await journey('15-orders-new')(page)
+  // 🔴 issue #6942 ①：本旅程**自造自己的商品前置**（不复用列表首个商品 —— 那可能是**已删**的残留对象
+  //    ⇒ `404 GET /api/admin/products/<被删的 id>`）。`n0` 是清理自证用的租户商品总数读数。
+  const fxName = `冒烟建单商品${Date.now()}`
+  let fxId = ''
+  let n0 = 0
+  let cleaned = false
+  // 清理 = **断言**（issue #6942「清理不留尾巴」）：删不掉 / 计数没回基线 ⇒ 本旅程判红。
+  //   逐字证据进 errors（不是 note）—— 上一形态把「清理失败」只记 note，等于「漏了也没人红」。
+  const cleanupFixture = async (phase) => {
+    if (!fxId || cleaned) return
+    let res = await cleanupProduct(page, fxId)
+    // 删不掉时先自补一次登录态再重试一次（长旅程里 token 走弱会让删除 401 —— 那是**可恢复**的）
+    if (res.after !== 404) {
+      await ensureLoggedIn(page).catch(() => {})
+      res = await cleanupProduct(page, fxId)
+    }
+    const n1 = await productCount(page).catch((e) => {
+      h.rec.errors.push(`清理后商品总数复读失败（${phase}）：${String(e).slice(0, 160)}`)
+      return -1
+    })
+    cleaned = true
+    // 判据 ①（结构化）：`GET /{id}` 必须 404 = 对象真没了
+    if (res.after !== 404) {
+      h.rec.pass = false
+      h.rec.errors.push(`自造商品清理失败（${phase}）：id=${fxId} 的 DELETE→${res.del} / 下架→${res.status} / `
+        + `清理后 GET→${res.after}（${res.why}）—— 残留必须清掉（issue #6942 ①）`)
+      return n1
+    }
+    // 判据 ②（计数）：总数回到基线（删除成功却没掉数 = 清的不是这一件）
+    if (n1 !== n0 && n1 >= 0) {
+      h.rec.pass = false
+      h.rec.errors.push(`自造商品「已删除」（GET 404）但商品总数 ${n0} → ${n1}（期望回到 ${n0}；自造 id=${fxId}）`)
+    }
+    return n1
+  }
   try {
     await ensureLoggedIn(page)
+    n0 = await productCount(page)
+    fxId = await createProductFixture(page, { name: fxName, skuCode: `SMOKE-ON-${Date.now()}` })
     await nav(page, '/orders/new', '')
     // 等表单就位（客户 API / 分类 API 回来前不渲染）——旧形态定长 1800ms 后盲填会假红
     const nameInput = page.locator('input[placeholder*="收货人姓名"]').first()
@@ -881,17 +1138,10 @@ async function ordersNewJourney(page) {
     await pickBtn.waitFor({ state: 'visible', timeout: 8000 })
     await pickBtn.click()
     await page.waitForTimeout(800)
-    // 弹窗内搜索商品。⚠️ 旧形态把搜索词**写死成 `遮光窗帘`** —— 本租户没有这个商品
-    //    ⇒ 搜索结果恒空、恒报「商品搜索结果为空」（真栈实测）。商品名是**种子数据**，不是判据的一部分；
-    //    正确口径 = 先用列表 API 取一个**真实存在的**商品名当搜索词，再断言「搜索能搜到并可选」。
-    const kw = (await (async () => {
-      const api = await adminApi(page)
-      const res = await api.get('/api/admin/products?page=1&size=1')
-      const rows = res?.data?.items ?? res?.data ?? []
-      const name = rows[0]?.name || ''
-      if (!name) throw new Error('商品搜索结果为空（/api/admin/products 里一个商品都没有 ⇒ 前置数据缺失）')
-      return name
-    })())
+    // 弹窗内搜索商品。⚠️ 旧形态把搜索词**写死成 `遮光窗帘`**（本租户没有这个商品 ⇒ 恒空）；
+    //    改过的形态又退化成「取列表首个商品的名字」—— 那是**别人的对象**，被别的旅程/上一轮清掉
+    //    就变成 `404`（issue #6942 ①）。现在搜索词 = **本旅程刚造的那件商品**。
+    const kw = fxName
     const searchInput = page.locator('[role="dialog"] input[placeholder*="搜索商品"]').first()
     await searchInput.waitFor({ state: 'visible', timeout: 6000 })
     await searchInput.fill(kw)
@@ -899,20 +1149,23 @@ async function ordersNewJourney(page) {
       await page.locator('[role="dialog"] button:has-text("搜索")').click()
     })
     await page.waitForTimeout(1500)
-    // 选中第一个商品结果（用它自己的名字当过滤词 —— 语义与旧形态一致：搜到了就选）
+    // 选中**自造的那件**（按它的名字过滤 —— 语义与旧形态一致：搜到了就选；只是对象换成自己的）
     const result = page.locator('[role="dialog"] button').filter({ hasText: kw.slice(0, 8) }).first()
     if (await result.isVisible().catch(() => false)) {
       await result.click()
       await page.waitForTimeout(2000)
     } else {
-      throw new Error(`商品搜索结果为空（搜索词 = 列表首个商品名「${kw}」，搜不到 ⇒ 搜索链路退化）`)
+      throw new Error(`商品搜索结果为空（搜索词 = 本旅程自造商品「${kw}」⇒ 搜索链路退化）`)
     }
+    // 前置使命已达成（商品已选进表单）⇒ **立刻**清理，别拖到旅程末尾（长旅程里 session 走弱会让
+    //   DELETE 401，上一版就是这么漏掉一件的：`清理失败 —— 留痕由残留计数断言承接` 却没人红）
+    const nAfterClean = await cleanupFixture('选品后立刻清')
     // 提交订单
     await page.getByRole('button', { name: /提交订单/ }).first().click().catch(() => {})
     await page.waitForTimeout(2500)
     const url = page.url()
     if (url.includes('/orders')) {
-      await h.done(true, '', `新建订单提交后跳转 ${url}`)
+      await h.done(true, '', `新建订单提交后跳转 ${url}（自造商品 ${fxName} 已清理，商品总数 ${n0}→${nAfterClean ?? '?'}）`)
     } else {
       const toastOk = await page.getByText('订单创建成功').first().isVisible().catch(() => false)
       if (toastOk) { await h.done(true, '', '新建订单 toast 成功') }
@@ -923,6 +1176,9 @@ async function ordersNewJourney(page) {
     }
   } catch (e) {
     await h.done(false, `新建订单失败: ${String(e).slice(0, 400)}`)
+  } finally {
+    // 兜底清理（失败路径 / 早退路径）；成功路径已在选品后清过一次（`cleaned` 去重）
+    if (!h.rec.skipped && fxId) await cleanupFixture('兜底清理')
   }
 }
 
@@ -1211,6 +1467,7 @@ async function orderShipJourney(page, orderId) {
 async function afterSalesListJourney(page) {
   const h = await journey('18-after-sales-list')(page)
   try {
+    await ensureLoggedIn(page)
     await nav(page, '/after-sales', '售后管理')
     await page.waitForTimeout(1500)
     const rows = page.locator('tbody tr, [role="row"]')
@@ -1283,6 +1540,7 @@ async function afterSalesDetailJourney(page, ticketId) {
 async function customersListJourney(page) {
   const h = await journey('20-customers-list')(page)
   try {
+    await ensureLoggedIn(page)
     await nav(page, '/customers', '客户管理')
     await page.waitForTimeout(1500)
     const rows = page.locator('tbody tr, [role="row"]')
@@ -1299,6 +1557,10 @@ async function customersListJourney(page) {
 async function customerDetailJourney(page) {
   const h = await journey('21-customer-detail')(page)
   try {
+    // 🔴 issue #6942 ②：本旅程是同族**漏改处**（早先逐条补 `ensureLoggedIn` 时漏了它）
+    //    ⇒ 单组跑（`--group 21`，无 01-login 前置）时 `/customers` 会把会话弹回 `/login`
+    //    报「客户管理 8s 内不可见」+ 401。判据由 `test_ui_smoke_name_ledger.py` 判据 K 兜住。
+    await ensureLoggedIn(page)
     await nav(page, '/customers', '客户管理')
     await page.waitForTimeout(1500)
     const firstLink = page.locator('a[href*="/customers/"]').first()
@@ -1321,6 +1583,7 @@ async function customerDetailJourney(page) {
 async function financeJourney(page) {
   const h = await journey('22-finance')(page)
   try {
+    await ensureLoggedIn(page)
     await nav(page, '/finance', '财务对账')
     await page.waitForTimeout(1500)
     const bodyLen = await page.evaluate(() => document.body.innerText.length)
@@ -1458,7 +1721,16 @@ async function rolesJourney(page) {
 async function settingsJourney(page) {
   const h = await journey('25-settings')(page)
   const bad = []
-  const onResponse = (r) => { if (r.status() >= 400 && r.status() < 500) bad.push(`${r.status()} ${r.request().method()} ${r.url()}`) }
+  // 发码 400 是**登录路径**的环境限制（issue #6942 ②），不是本页的写请求失败 ⇒ 不进 `bad`；
+  // 别的 4xx 一条都不放过（这段账本的意义就在「写请求失败必须判红」）。
+  const onResponse = (r) => {
+    if (r.status() < 400 || r.status() >= 500) return
+    if (smsSendToleratedResponse(r.status(), r.request().method(), r.url())) {
+      h.rec.notes.push('已知环境限制：登录发码被后端拒（不影响本页只读判定，issue #6942 ②）')
+      return
+    }
+    bad.push(`${r.status()} ${r.request().method()} ${r.url()}`)
+  }
   page.on('response', onResponse)
   const origDone = h.done
   h.done = async (ok, why, ev) => { page.removeListener('response', onResponse); return origDone(ok, why, ev) }
@@ -1501,6 +1773,7 @@ async function settingsJourney(page) {
 async function notificationsJourney(page) {
   const h = await journey('26-notifications')(page)
   try {
+    await ensureLoggedIn(page)
     await nav(page, '/notifications', '通知中心')
     await page.waitForTimeout(1500)
     const bodyLen = await page.evaluate(() => document.body.innerText.length)
@@ -1518,27 +1791,36 @@ async function notificationsJourney(page) {
 }
 
 // ────────────────────────── 门户/注册 ──────────────────────────
-async function corporatePages(page) {
-  const pages = [
-    ['27-corporate-home', '/', ''],
-    ['28-corporate-about', '/about', ''],
-    ['29-corporate-contact', '/contact', ''],
-    ['30-corporate-services', '/services', ''],
-  ]
-  for (const [name, path, _] of pages) {
-    const h = await journey(name)(page)
-    // 🔴 名字与 `jrun('27-corporate', …)` 的注册名**不同** ⇒ `jrun` 的前缀过滤看不到它们
-    // ⇒ 过滤跑时会静默全跑（issue #6790）。各自守卫。
-    if (!inGroup(name)) { await markSkipped(h, `--group ${GROUP} 过滤（本轮未跑）`); continue }
-    try {
-      await page.goto(BASE + path, { waitUntil: 'domcontentloaded', timeout: 20000 })
-      await page.waitForTimeout(1200)
-      const bodyLen = await page.evaluate(() => document.body.innerText.length)
-      if (bodyLen < 30) throw new Error(`${path} 页面空白`)
-      await h.done(true, '', `${path} 渲染（${bodyLen} 字符）`)
-    } catch (e) {
-      await h.done(false, `${path} 失败: ${String(e).slice(0, 200)}`)
-    }
+// 🔴 issue #6942 ③：门户四页**各自注册成一条旅程**（`journey('<名>')` 注册什么名，`jrun` 就用什么名）。
+//    旧形态是 `jrun('27-corporate', corporatePages)` 里面再 `journey('27-corporate-home')` ——
+//    注册名与台账名分家、`--group` 前缀过滤看不到内层名，正是名称漂移的温床。
+async function corporateHome(page) {
+  await corporatePage(page, '27-corporate-home', '/')
+}
+
+async function corporateAbout(page) {
+  await corporatePage(page, '28-corporate-about', '/about')
+}
+
+async function corporateContact(page) {
+  await corporatePage(page, '29-corporate-contact', '/contact')
+}
+
+async function corporateServices(page) {
+  await corporatePage(page, '30-corporate-services', '/services')
+}
+
+/** 门户静态页渲染（四页同判据：非空白 + 渲染长度进证据）。 */
+async function corporatePage(page, name, path) {
+  const h = await journey(name)(page)
+  try {
+    await page.goto(BASE + path, { waitUntil: 'domcontentloaded', timeout: 20000 })
+    await page.waitForTimeout(1200)
+    const bodyLen = await page.evaluate(() => document.body.innerText.length)
+    if (bodyLen < 30) throw new Error(`${path} 页面空白`)
+    await h.done(true, '', `${path} 渲染（${bodyLen} 字符）`)
+  } catch (e) {
+    await h.done(false, `${path} 失败: ${String(e).slice(0, 200)}`)
   }
 }
 
@@ -1581,6 +1863,20 @@ function recordSkip(name, why) {
   results.push({ journey: name, pass: false, skipped: true, unconfigured: false, error_class: 'skip',
     errors: [], notes: [why || `--group ${GROUP} 过滤（本轮未跑）`], evidence: [] })
   console.log(`⏭️  ${name} [skip] ${why || `--group ${GROUP} 过滤（本轮未跑）`}`)
+}
+
+/**
+ * 运行面的**名称台账漂移**判据（issue #6942 ③ 的 fail-closed 一半）：
+ * 「**记了却没登记**」的名字 ⇒ 非空。进 `results` 就是**真实失败**（退出码 1）。
+ *
+ * 为什么必须有这一半：静态面判据（`test_ui_smoke_name_ledger.py` 判据 G）只能核
+ * 「台账里的名字 **⊆** 代码里出现的名字」；反方向（新增了一条旅程却忘了登记台账）它**看不到**
+ * —— 新名字是在 `journey('<新名>')` 的**注册点**才出现的，静态面上与台账无关。
+ * 运行面能看见：真正被记录的名字一定经过 `journey()`，于是「记了却没登记」当场可判。
+ */
+function journeyLedgerDrift(recs) {
+  const led = new Set(ALL_JOURNEY_NAMES)
+  return [...new Set(recs.map((r) => r.journey))].filter((n) => !led.has(n))
 }
 
 async function main() {
@@ -1660,8 +1956,11 @@ async function main() {
   await jrun('24-roles', rolesJourney, page)
   await jrun('25-settings', settingsJourney, page)
   await jrun('26-notifications', notificationsJourney, page)
-  await jrun('27-corporate', corporatePages, page)
-  await jrun('28-register', registerJourney, page)
+  await jrun('27-corporate-home', corporateHome, page)
+  await jrun('28-corporate-about', corporateAbout, page)
+  await jrun('29-corporate-contact', corporateContact, page)
+  await jrun('30-corporate-services', corporateServices, page)
+  await jrun('31-register', registerJourney, page)
   })()
 
   await Promise.race([runAll, runWatchdog])
@@ -1669,6 +1968,15 @@ async function main() {
   const recorded = new Set(results.map((r) => r.journey))
   for (const n of ALL_JOURNEY_NAMES) {
     if (!recorded.has(n)) recordSkip(n, `整轮预算 ${RUN_BUDGET_MS / 1000}s 到点：本轮未跑`)
+  }
+  // 🔴 运行面名称台账守卫（issue #6942 ③）：记了**却没登记**的名字 ⇒ 真实失败（fail-closed，见 journeyLedgerDrift）
+  const ledgerDrift = journeyLedgerDrift(results)
+  if (ledgerDrift.length) {
+    const why = `旅程名台账漂移（**记了却没登记**）：${ledgerDrift.join(' ')} —— `
+      + `把它们按**逐字注册名**补进 ALL_JOURNEY_NAMES（否则看门狗到点时会漏记 / 给不存在的名字补记 skip）`
+    results.push({ journey: 'journey-name-ledger', pass: false, skipped: false, unconfigured: false,
+      error_class: null, errors: [why], notes: [], evidence: [] })
+    console.log(`❌ journey-name-ledger\n   ${why}`)
   }
 
   await browser.close()

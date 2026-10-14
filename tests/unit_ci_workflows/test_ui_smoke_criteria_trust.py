@@ -32,9 +32,15 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests"))
+
+from unit_ci_workflows._source_parsing import java_code  # noqa: E402  （#5323：剥注释的唯一实现）
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SMOKE_DIR = REPO_ROOT / "scripts" / "ui-smoke-merchant"
@@ -152,15 +158,45 @@ def test_journey17_waits_for_form_or_guard():
     )
 
 
+def _text_scan_exemption_failures(spec_text: str) -> list[str]:
+    """③ 的纯判据：可执行面里不许出现「按错误文本判豁免」的写法（空 = 合规，注释不算）。"""
+    code = java_code(spec_text)
+    out: list[str] = []
+    if "includes('404')" in code:
+        out.append("spec.mjs 仍在按错误文本判 404（同族漏改处）")
+    if "Failed to load resource" in code:
+        out.append("spec.mjs 的可执行面仍在扫 console 文案以决定豁免（应为结构化判据）")
+    return out
+
+
 def test_404_exemption_is_structural_not_text_scan():
-    """③ 假绿：404 豁免必须按结构化响应判定，不得扫错误文本。"""
+    """③ 假绿：404 豁免必须按结构化响应判定，不得扫错误文本。
+
+    ⚠️ 扫的是**可执行面**（`java_code` 剥注释，#5323 的唯一实现）：注释里**解释**某个文案不算
+    「按文案判豁免」；豁免逻辑里出现该文案仍然是红（见下面的判别力自证）。
+    """
     src = _read(SPEC)
     assert OLD_TEXT_EXEMPTION not in src, f"spec.mjs 仍有「错误文本含 404 就豁免」的写法：{OLD_TEXT_EXEMPTION!r}"
-    assert "includes('404')" not in src, "spec.mjs 仍在按错误文本判 404（同族漏改处）"
-    assert "Failed to load resource" not in src, "spec.mjs 仍在扫 console 文案以决定豁免（应为结构化判据）"
+    assert _text_scan_exemption_failures(src) == [], "spec.mjs 有按错误文本判豁免的写法：\n" + "\n".join(
+        f"  - {f}" for f in _text_scan_exemption_failures(src)
+    )
     body = _journey_body("orderDetailJourney")
     assert "page.on('response'" in body, "16- 旅程未收集结构化响应（无 response.status() 可供判定）"
     assert "isProbe404Exempt(" in body, "404 豁免未走 criteria.mjs 的结构化判据 isProbe404Exempt()"
+
+
+def test_404_text_scan_criterion_has_teeth():
+    """③ 判别力自证（注入式红证）：把「扫 console 文案」写回**可执行面** ⇒ 红；只写进注释 ⇒ 绿。"""
+    src = _read(SPEC)
+    assert _text_scan_exemption_failures(src) == [], "夹具不成立：现状应当绿"
+    injected = src.replace("const isConsoleResourceLoadError = (e) => {",
+                           "const isConsoleResourceLoadError = (e) => String(e).includes('Failed to load resource') && {")
+    assert injected != src, "注入未生效：找不到 isConsoleResourceLoadError 定义"
+    failures = _text_scan_exemption_failures(injected)
+    assert any("console 文案" in f for f in failures), f"把文案扫描写回可执行面后判据未红：{failures}"
+    # 对照读数：只改注释 ⇒ 不红
+    commented = "// 说明：豁免必须结构化，不得扫 'Failed to load resource' 这类文案\n" + src
+    assert _text_scan_exemption_failures(commented) == [], "只改注释就红了（判据吃自己的说明文字）"
 
 
 def test_executable_criteria_red_proofs_pass():
