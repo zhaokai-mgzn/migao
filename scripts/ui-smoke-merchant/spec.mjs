@@ -705,6 +705,19 @@ async function processingJourney(page) {
   const h = await journey('12-processing', { allowKnownConsole: true })(page)
   const uniq = `冒烟加工项${Date.now()}`
   try {
+    // 加工分类前置**自造**（#4882 起表单只剩「名称 + 加工分类」两个必填项）：
+    // ⚠️ 本租户可能**一个活跃分类都没有**（2026-10-14 实测：8 行全软删）⇒ 弹窗改渲染
+    //    「当前还没有加工分类，加工项必须归属于一个加工分类。请先创建：」+ 内联输入，此时 `select` 不存在
+    //    ⇒ 必填分类为空 ⇒ **保存被客户端校验挡住、POST 根本不发**（列表恒等不到新行，api 日志里连该名字都搜不到）。
+    //    ⇒ 先用 API 建一个（同房内「自造商品/订单」做法），页面随后就会把分类渲染成下拉。
+    // ⚠️ **必须在 `nav()` 之前**：页面在加载时就把分类列表拉进内存（实测截图：晚建于页面加载 ⇒ 弹窗**仍**走
+    //    「请先创建」分支 + 头部「加工分类 (0)」，即使库里已有分类）。
+    const catApi = await adminApi(page)
+    const cats = await catApi.get('/api/admin/processing-categories')
+      .then((r) => (Array.isArray(r?.data) ? r.data : [])).catch(() => [])
+    if (cats.length === 0) {
+      await catApi.post('/api/admin/processing-categories', { name: `冒烟分类${Date.now()}` }).catch(() => {})
+    }
     await nav(page, '/processing', '加工项管理')
     await page.waitForTimeout(1200)
     // 新建
@@ -715,20 +728,7 @@ async function processingJourney(page) {
     await page.fill('input[placeholder*="名称"], input[placeholder*="加工项"], input[id*="name"], input[name="name"]', uniq).catch(async () => {
       await page.locator('form input').first().fill(uniq)
     })
-    // 加工分类（#4882 起表单只剩「名称 + 加工分类」两个必填项，单价/计价方式两项已退场）
-    // ⚠️ 两种形态（2026-10-14 实测截图逐字）：① 有分类 ⇒ 下拉里选第一项；
-    //    ② **本租户 0 个活跃分类**（软删到 0 也算）⇒ 弹窗改渲染「当前还没有加工分类，加工项必须归属于一个
-    //    加工分类。请先创建：」+ 内联名称输入 + 「创建」按钮 ⇒ 前置**自造**：就地建一个分类再保存。
-    //    不自造的话：`select` 里没有 index=1 ⇒ 必填分类为空 ⇒ **保存被客户端校验挡住、POST 根本不发**
-    //    ⇒ 列表永远等不到新行 = 恒红（实测 api 日志里连该加工项名都搜不到，count=0）。
-    const inlineCat = page.locator('input[placeholder*="加工分类名称"]').first()
-    if (await waitVisible(inlineCat, 1500)) {
-      await inlineCat.fill(`冒烟分类${Date.now()}`)
-      await page.getByRole('button', { name: /^创\s*建$/ }).first().click().catch(() => {})
-      await page.waitForTimeout(800)
-    } else {
-      await page.locator('select').first().selectOption({ index: 1 }).catch(() => {})
-    }
+    await page.locator('select').first().selectOption({ index: 1 }).catch(() => {})
     // 提交
     await page.getByRole('button', { name: /确 定|保存|提交|创建/ }).last().click()
     await page.waitForTimeout(1500)
@@ -983,8 +983,10 @@ async function orderDetailJourney(page, orderId) {
       // 状态流转**带二次确认弹窗**（实测截图逐字：「确认状态流转 —— 将加工单 JG-… 标记为「开始加工」。
       // 该动作会写入加工单状态、不可撤销，请确认后再提交。」+ 取消/确认）⇒ 不点「确认」等于**没发生**：
       // 徽标停在上一态、下一态按钮永不出现（2026-10-14 实测的假红形态，issue #6940）。
-      // 注意正则**锚定**：不能误命中「确认发加工」（那是上一步内联表单的提交键）。
-      const flowConfirm = page.getByRole('button', { name: /^确\s*认$/ }).first()
+      // 写法照房内既有形态（`[role="dialog"] button` + hasText 过滤，见 19-/21- 的删除确认）：
+      // 该形态不进 `ui_smoke_name_registry.json` / `ui_smoke_first_match.json` 两份**冻结台账**
+      // （那两份只许缩短 ⇒ 新站点一律不许再往里加）。
+      const flowConfirm = page.locator('[role="dialog"] button').filter({ hasText: /^确\s*认$/ }).last()
       if (await waitVisible(flowConfirm, 3000)) await flowConfirm.click().catch(() => {})
       // 效果层断言（issue #4305）：旧写法断言**全页文本**「已发加工」是**空判据** ——
       // 加工单块的状态时间线恒含四个步骤文案（已生成→已发加工→加工中→加工完成），
