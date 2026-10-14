@@ -116,6 +116,19 @@ export function formatSpecValue(value, format) {
 }
 
 /**
+ * **报工屏的「本部位生产信息」块不渲染**的键（母单 #6901）。
+ *
+ * <p>本表仍**登记**它们（后端 {@code PositionSpecFields.DETAIL_KEYS} 里有，后端守卫要求本表 ⊇ 那份
+ * 键集 ⇒ 缺一个就红），只是**这一块不重复上屏**：</p>
+ * <ul>
+ *   <li>{@code remark}（部位备注）—— 工人端另有一条**更精确**的呈现（`render.mjs::positionRemark`：
+ *       「部位备注：<原文>」紧跟**它自己那个部位**的标题，issue #5685 的既有判据逐字钉住）。
+ *       在规格块里再印一遍 = 同一屏同一事实两次（`migao-dev-flow` §31 P2）。</li>
+ * </ul>
+ */
+export const SCAN_BLOCK_EXCLUDED_KEYS = new Set(['remark'])
+
+/**
  * 一个部位 → **报工屏**的行（缺值**不渲染**：整行不出现 ⇒ 工人手机上不摆空占位）。
  *
  * <p>键集 = **本表**（{@link POSITION_SPEC_KEYS}，白名单驱动）—— 服务端 `set_overview.positions[]`
@@ -132,6 +145,7 @@ export function formatSpecValue(value, format) {
 export function specRows(position) {
   const rows = []
   for (const spec of POSITION_SPEC_KEYS) {
+    if (SCAN_BLOCK_EXCLUDED_KEYS.has(spec.key)) continue
     const shown = formatSpecValue(position?.[spec.key], spec.format)
     if (shown === EMPTY) continue
     rows.push({ key: spec.key, label: spec.label, text: `${shown}${spec.unit ?? ''}` })
