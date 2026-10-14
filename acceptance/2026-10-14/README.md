@@ -219,7 +219,7 @@
 | #6938 夹具漂移 6 条 | #6943 | **22:57:50**（`14:57:50Z`）`091313a2a` | 卷数 / worker-h5 入口 / batch 对照租户 / `nowCST` / 命名空间豁免 / `run-all.sh` 路径 | `nowCST().cst = 2026-10-14 22:31:56 +08` = 真值（主线未合时是 `14:31:56 +08`，**错 8h**，同命令同 `TZ=UTC` 单变量对照） |
 | #6940 UI 四条判据侧 | #6941 | **23:48:36**（`15:48:36Z`）`daa08f558` | 见 §11.2 | `waitForText`×2 / `ensureLoggedIn`×14 /「加工分类前置」×1 /「确认状态流转」×1 |
 | #6936 D3 detach 并发 CAS | #6945 | **2026-10-15 00:10:56**（`16:10:56Z`）`8579755e6` | 内联条件更新（三谓词）+ 影响行数 0 ⇒ 409 | `LambdaUpdateWrapper`×3 / mapper `claimDelete` 残留 **0**（不留死代码）/ `PG-075` 元守卫 ×6；**主会话在合并后的 main 上独立复跑** `Tests run: 5, Failures: 0`，逐字 `[READING #6936 并发] 各状态=[409,409,409,409,200] 成功数=1`、`PG-075 豁免 现取=0 基线=0` |
-| #6942 UI 工装残余三条 | #6947 | 见下方「收口时点」 | 旅程名台账⇄注册名双向守卫 / 清理链（`on_sale` 需先下架）/ 单组跑登录确定性（发码失败只记不抛） | 待合并后补 |
+| #6942 UI 工装残余三条 | #6947 | **2026-10-15 00:31:35**（`16:31:35Z`） | 旅程名台账⇄注册名双向守卫 / 清理链（`on_sale` 需先下架）/ 单组跑登录确定性（发码失败只记不抛 + tab 门禁改判 `aria-selected`） | `test_ui_smoke_name_ledger.py`（`case_ids:` 在）/ `test_ui_smoke_criteria_trust.py` 剥注释后核（8 处）/ `ALL_JOURNEY_NAMES` 已是 `27-corporate-home`…`31-register`（旧幽灵名仅存于**注释**里的「旧形态」说明）/ **主会话删冗余复核：`spec.mjs` 的 `loginWindow` 残留 = 0**（它按协调删掉了我那段已冗余机制）/ 证据面 `acceptance/2026-10-15/ui-harness-tail/smoke-tail-summary.md` 在位 |
 
 > 说明：**#6945 的两条红不是 drift-audit**（我按同名 check 推断错了，由执行者用日志纠正）——
 > 是 `test_logic_delete_write_shape.py`（#4608「三处软删必须显式写列」，它把软删抽进 mapper `@Update` 后 `#delete` 里那段内联片段消失
@@ -257,4 +257,14 @@
   `processing_items(active)` **0** / `processing_categories(active)` **0** —— 均为**该租户自身的测试数据**
   （该租户就是下一轮的起点）；清空口径见 §8 的 `wipe-tenants.py`。
 - 清理链修正后（§11.2），后续旅程自造的商品会被**真正删掉**（先下架 → DELETE → `GET == 404` 收口）：#6942 已用它清掉 **10 件**遗留商品（24 → 14）。
+
+### 11.5 收口时点（2026-10-15 00:3x +08）
+
+- **七个修复包全部合并**（最后一包 #6947 于 **00:31:35 +08** 落地；mergedAt `16:31:35Z`），对应 issue **#6926 / #6928 / #6936 / #6937 / #6938 / #6940 / #6942 全部 CLOSED**。
+- 新建但**未在本轮修复**的产品缺陷候选：**#6946**（`performance.measure` 负区间复发）；待裁定：**#6934**（D1 涉钱）/ **#6935**（D2 契约）。
+- 独立复核（本会话）：① 七个包逐个做 **main 侧内容级自证**（`git show origin/main:<path>`，读点见 §11.1）；② **#6936 的判据在合并后的 main 上独立复跑** `Tests run: 5, Failures: 0`；③ **#6937 的两条注入式红证独立复现**（§11.1）；④ **最终 main 上重跑 UI**：
+  `--group 1`（10~19）**10/10 通过、0 失败**（`out-r2-final-1/`）；`--group 12` 单跑 **✅ 1/32 通过、0 失败**（`out-r2-final-12/`）
+  —— 这一轮同时**独立验证了 #6942 删掉 `loginWindow` 冗余机制后没有退化**（`spec.mjs` 现取 `loginWindow` 命中 = 0，而 10-/12- 仍绿）。
+  ⚠️ 口径提醒：本轮旅程总数从 34 → **35**（`--group 1` 的 skip 记数随之变化），因为 #6942 把企业基础设置那几条**拆成独立旅程名**（`27-corporate-home` … `31-register`）——**「没跑」照样长得像「没跑」**，不折算 pass。
+- 门禁（最终 main）：`check-ui-regression.sh` ✅ ｜ `contract-check.sh` ✅ 6/6 ｜ `plaintext_credential_guard.py` ✅ 零命中（5421 文件）｜ `verify-all.sh gate` 读数见 §6 的追加行。
 
