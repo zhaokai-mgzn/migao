@@ -5,8 +5,15 @@ import { Button, Modal } from '@/components/ui'
 import { batchStockApi, processingOrderApi } from '@/lib/api'
 // 工艺规格展示的单一真值定义（设计文档 §4.9「一份 spec，三处渲染」）
 import { craftSpecLine } from '@/lib/craft-display'
-// 「工艺行但不要门幅」的唯一实现（issue #6893：本组件已在属性行里印过门幅）
-import { craftRowsWithoutDoorWidth } from '@/lib/order-item-sku'
+// 「工艺行但不要门幅」的唯一实现（issue #6893：本组件已在属性行里印过门幅）；
+// 数量 + 单位的**唯一**取值口（issue #6901：屏幕块与「复制全部」文本共用，不各拼一份 ——
+// 订单行自己的 `unit` 键 DTO 未下发 ⇒ 由调用方补加工单**快照行**的单位）
+import { craftRowsWithoutDoorWidth, quantityWithUnit } from '@/lib/order-item-sku'
+// 工序清单的索引 / 状态文案（issue #6901）：与加工单纸面**同一份**实现
+// （`lib/operation-list.ts`，由纸面单据 `./ProcessingDoc` 转出）；
+// 显示名一律走仓内**唯一**口径 `lib/operation-display.ts`（issue #4621）
+import { operationsByItem, operationStatusText } from './ProcessingDoc'
+import { operationDisplayName } from '@/lib/operation-display'
 // 状态文案单一来源：与列表页共用（加工单状态机语义见 lib/processing-order.ts）
 import { PROCESSING_ORDER_STATUS_LABELS as STATUS_TEXT } from '@/lib/processing-order'
 // 米数展示口径（0.1 米粒度、去尾随 .0）—— 与库存/批次账同一份工具
@@ -17,6 +24,8 @@ import type {
   ProcessingOrder,
   ProcessingOrderGenerateBatch,
   ProcessingOrderItem,
+  ProductionOperation,
+  ProductionPosition,
 } from '@/types'
 import { SellingMethodLabels } from '@/types'
 
@@ -35,6 +44,12 @@ interface Props {
    * （V116 / issue #5145 阶段 1）。缺省/空 ⇒ 该单无从指派批次，直接按原路径生成。
    */
   items?: OrderItem[]
+  /**
+   * 本订单的**工序清单**（既有读面 `GET /api/admin/production/orders/{id}/operations`
+   * 的 `positions[]`，issue #6901）—— 由订单详情页加载后原样传进来（本组件**不取数**）。
+   * 缺省/空 ⇒ 屏幕明细块与「复制全部」文本都**不出现**工序行（不印空标题）。
+   */
+  operations?: ProductionPosition[] | null
   /** 加工单状态上报（issue #3889）：详情页据此守卫「含加工项且加工单未完成」的发货入口 */
   onStatusChange?: (po: ProcessingOrder | null) => void
   /**
@@ -144,8 +159,42 @@ function defaultPickOf(row: AssignRow): string {
   return (suggested ?? row.selectable[0])?.batchNo ?? ''
 }
 
+/**
+ * 快照行的**属性行**片段（门幅 / 货号 / 方式 / 宽 / 高 / 数量+单位）—— **唯一**一份实现，
+ * 屏幕块与「复制全部」文本共用（issue #6901：两处是同一条事实的两个渲染面，
+ * 各拼一份必然漂移 —— 复制出去的文本少一项，车间就照旧按老习惯做）。
+ *
+ * 🔴 货号（issue #6901）：快照键 `sku`（`buildSnapshot` 从 `products.sku_code` 落）；
+ * 缺值 ⇒ 该片段不出现（**不印空标签** —— 同族口径见 `craftSpecRows` 丢弃缺值行）。
+ */
+export function snapshotAttrParts(
+  item: Pick<ProcessingOrderItem, 'sku' | 'doorWidth' | 'sellingMethod' | 'width' | 'height'>,
+  quantity: { quantity?: unknown; unit?: unknown } = {},
+  separator = ' ',
+): string[] {
+  const qty = quantityWithUnit(quantity)
+  return [
+    item.doorWidth ? `门幅${separator}${item.doorWidth}` : '',
+    item.sku ? `货号${separator}${item.sku}` : '',
+    item.sellingMethod ? `方式${separator}${sellingMethodLabel(item.sellingMethod)}` : '',
+    item.width != null ? `宽${separator}${item.width}m` : '',
+    item.height != null ? `高${separator}${item.height}m` : '',
+    qty ? `数量${separator}${qty}` : '',
+  ].filter(Boolean)
+}
+
+/**
+ * 一道工序的**片段**（应做数量+单位、状态）—— 屏幕块与「复制全部」文本共用。
+ * 显示名由两处各自调 `ProcessingDoc` 的同一份工序块口径（`operationDisplayName`）。
+ */
+export function operationParts(op: ProductionOperation): string[] {
+  const qty = quantityWithUnit({ quantity: op.qty, unit: op.unit })
+  return [qty, operationStatusText(op.status)].filter((part) => part !== '')
+}
+
 /** 加工单纯文本（复制给加工方/贴 Excel，一行一加工项） */
-function toPlainText(po: ProcessingOrder): string {
+function toPlainText(po: ProcessingOrder, operations?: ProductionPosition[] | null): string {
+  const operationsIndex = operationsByItem(operations)
   const lines: string[] = []
   lines.push(`加工单：${po.processingOrderNo}`)
   if (po.customerName) lines.push(`客户：${po.customerName}`)
@@ -154,14 +203,10 @@ function toPlainText(po: ProcessingOrder): string {
   lines.push(`状态：${STATUS_TEXT[po.status] ?? po.status}`)
   lines.push('')
   ;(po.items ?? []).forEach((it: ProcessingOrderItem, i: number) => {
-    lines.push(`【${i + 1}】${it.productName ?? ''}${it.colorName ? `（${it.colorName}）` : ''}`)
-    const attrs = [
-      it.doorWidth ? `门幅:${it.doorWidth}` : '',
-      it.sellingMethod ? `方式:${sellingMethodLabel(it.sellingMethod)}` : '',
-      it.width ? `宽:${it.width}m` : '',
-      it.height ? `高:${it.height}m` : '',
-      it.quantity != null ? `数量:${it.quantity}${it.unit ?? ''}` : '',
-    ].filter(Boolean)
+    lines.push(`【${i + 1}】${it.productName ?? ''}${it.colorName ? `（${it.colorName}）` : ''}${it.sku ? `【${it.sku}】` : ''}`)
+    // 属性行（门幅 / 货号 / 方式 / 宽 / 高 / 数量+单位）：与屏幕块**同一份**片段生成器
+    // （issue #6901：货号此前两处都缺；文本用 `:` 分隔 = 贴 Excel 的既有形态）
+    const attrs = snapshotAttrParts(it, { quantity: it.quantity, unit: it.unit }, ':')
     if (attrs.length) lines.push(`  ${attrs.join('  ')}`)
     // 工艺规格（issue #4355 / 设计文档 §4.9 ③）：加工方拿到的文本必须带工艺，否则车间按老习惯做。
     // 🔴 issue #6893：**去掉「门幅」**—— 上一行属性里已经写了 `门幅:…`（同一份文本里印两遍）。
@@ -171,6 +216,16 @@ function toPlainText(po: ProcessingOrder): string {
       const opt = Array.isArray(p.options) && p.options.length ? `（${p.options.join('/')}）` : ''
       lines.push(`  加工：${p.name}${opt}${p.quantity != null ? ` × ${p.quantity}${p.unit ?? ''}` : ''}`)
     })
+    // 工序清单（issue #6901）：**这一套要做哪几道** —— 显示名 / 应做（数量+单位）/ 状态。
+    // 缺值（订单还没生成加工单 / 该行对不上 `order_item_id`）⇒ **整块不出现**（不印空标题）。
+    const operations = it.itemId ? operationsIndex.get(it.itemId)?.operations ?? [] : []
+    if (operations.length) {
+      lines.push('  工序：')
+      operations.forEach((op) => {
+        const parts = operationParts(op)
+        lines.push(`    ${operationDisplayName(op)}${parts.length ? `：${parts.join('  ')}` : ''}`)
+      })
+    }
     // 部位备注（issue #5685）：缺键 / 空串 / 纯空白 ⇒ 不出现该行（与屏幕上同一口径）
     if (it.remark?.trim()) lines.push(`  备注：${it.remark}`)
     lines.push('')
@@ -185,6 +240,7 @@ export default function ProcessingOrderBlock({
   orderStatus,
   hasProcessing,
   items,
+  operations,
   onStatusChange,
   onPrintProcessing,
   onReloadReady,
@@ -233,6 +289,8 @@ export default function ProcessingOrderBlock({
 
   const canGenerate = notFound && hasProcessing && (orderStatus === 'confirmed' || orderStatus === 'producing')
   const canAct = po && !['completed', 'cancelled'].includes(po.status)
+  // 工序清单按 `order_item_id` 索引一次（issue #6901；与洗水码/批号同一把钥匙）
+  const operationsIndex = operationsByItem(operations)
 
   /** 取本单各面料行的派工候选（逐行独立；取不到 ⇒ 该行不指派，**绝不猜**候选） */
   const loadAssignRows = useCallback(async (): Promise<AssignRow[]> => {
@@ -345,7 +403,7 @@ export default function ProcessingOrderBlock({
   const handleCopy = async () => {
     if (!po) return
     try {
-      await navigator.clipboard.writeText(toPlainText(po))
+      await navigator.clipboard.writeText(toPlainText(po, operations))
     } catch {
       // 剪贴板不可用时退化为选中文本
       setError('复制失败，请手动选择文本复制')
@@ -514,20 +572,18 @@ export default function ProcessingOrderBlock({
               // 工艺规格（issue #4355 / 设计文档 §4.9 ③）：渲染快照里固化的那一份，缺值行已丢弃。
               // 🔴 issue #6893：去掉「门幅」—— 紧跟的属性行里已印 `门幅 …`。
               const specRows = craftRowsWithoutDoorWidth(it)
+              // 工序清单（issue #6901）：本行对应的那一组（同一把钥匙 = 快照 `itemId` = `order_item_id`）
+              const itemOperations = it.itemId ? operationsIndex.get(it.itemId)?.operations ?? [] : []
               return (
               <div key={idx} className="rounded-md bg-neutral-50 p-3 text-sm">
                 <div className="font-medium text-neutral-900">
                   {it.productName}
+                  {/* 🔴 issue #6901：货号**只印一处** —— 紧跟的属性行里已有 `货号 0012`
+                      （P2 信息不重复：同一真值印两处只是噪音，用户实测同款问题见 #6893 的门幅） */}
                   {it.colorName && <span className="ml-2 text-primary-600">{it.colorName}</span>}
                 </div>
                 <div className="mt-1 text-xs text-neutral-500">
-                  {[
-                    it.doorWidth && `门幅 ${it.doorWidth}`,
-                    it.sellingMethod && `方式 ${sellingMethodLabel(it.sellingMethod)}`,
-                    it.width != null && `宽 ${it.width}m`,
-                    it.height != null && `高 ${it.height}m`,
-                    it.quantity != null && `数量 ${it.quantity}${it.unit ?? ''}`,
-                  ].filter(Boolean).join(' · ')}
+                  {snapshotAttrParts(it, { quantity: it.quantity, unit: it.unit }).join(' · ')}
                 </div>
                 {/* 排料结果（V119 / issue #5158）：**应领米数**（排料口径）与公式口径并列。
                     缺键（未指派批次 / 排不了料的单）⇒ 整块不出现（缺值不渲染，不显示 0 冒充省了）。 */}
@@ -562,6 +618,19 @@ export default function ProcessingOrderBlock({
                         加工：{p.name}
                         {Array.isArray(p.options) && p.options.length > 0 && `（${(p.options as string[]).join('/')}）`}
                         {p.quantity != null && ` × ${p.quantity}${p.unit ?? ''}`}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {/* **工序清单**（issue #6901）：这一套要做哪几道（显示名 / 应做 / 状态）。
+                    缺值（订单还没生成加工单 / 该行对不上 `order_item_id`）⇒ **整块不出现**。 */}
+                {itemOperations.length > 0 && (
+                  <ul className="mt-1.5 space-y-0.5 text-xs text-neutral-600" data-testid="po-item-operations">
+                    <li className="font-medium text-neutral-600">工序</li>
+                    {itemOperations.map((op, oi) => (
+                      <li key={op.id ?? oi} data-testid="po-item-operation">
+                        <span className="text-neutral-700">{operationDisplayName(op)}</span>
+                        {operationParts(op).length > 0 && ` · ${operationParts(op).join(' · ')}`}
                       </li>
                     ))}
                   </ul>

@@ -2111,7 +2111,7 @@ cases:
 
   - id: UI-061
     legacy_id: ""
-    title: "A4 加工单打印：表头九栏（订单日期/客户/电话/地址/备注/制单人/单号/交付日期/货运）+ 右上 QR；按套分块，每块 部位|部位信息|尺寸|组件|货号|用料|批号|备注；@page A4 + 分页不裁切 + 表头重复（issue #5651）"
+    title: "A4 加工单打印：表头九栏（订单日期/客户/电话/地址/备注/制单人/单号/交付日期/货运）+ 右上 QR；按套分块，每块 9 列 品名|货号|颜色|门幅|尺寸|数量|组件|批号|备注 + 每套一张工序子表；@page A4 + 分页不裁切 + 表头重复（issue #5651 / #6901）"
     domains:
       - ui
       - frontend
@@ -2133,17 +2133,21 @@ cases:
       - tool: direct_reply
     data_checks:
       - "判据 1·**表头九栏逐条命中实证 #3**：订单日期 / 客户 / 电话 / 地址 / 备注 / 制单人 / 单号 / 交付日期 / 货运 九栏全部渲染，取值取服务端字段（订单日期 = order.createdAt；单号 = 加工单号、缺则回落订单号；交付日期 = 加工单交期、缺则回落订单「要求到货日」；货运 = logisticsType · logisticsCompany）。执行点 = frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 的「① 表头九栏逐条命中实证 #3 的制式」+「① 交付日期回落链」+「① 加工单缺失 ⇒ 单号回落订单号」。"
-      - "判据 2·**按套分块**：N 个商品行 ⇒ N 块，每块段头 `第N套/共M套`，块内一张 8 列表，列序逐字等于 PROCESSING_DOC_COLUMNS = ['部位','部位信息','尺寸','组件','货号','用料','批号','备注']。执行点 = 同文件「② 按套分块：3 个商品行 ⇒ 3 块」。"
+      - "判据 2·**按套分块**：N 个商品行 ⇒ N 块，每块段头 `第N套/共M套`，块内一张 **9 列表**，列序逐字等于 PROCESSING_DOC_COLUMNS = ['品名','货号','颜色','门幅','尺寸','数量','组件','批号','备注']。🔴 2026-10-14 同批纠正一处**散文漂移**（非本批引入）：本条此前写的是「8 列表 = ['部位','部位信息','尺寸','组件','货号','用料','批号','备注']」，与真值（代码常量 + CI 守卫 C5 的钉住元组）**早已不符** —— 该判据执行点断言的本来就是当前版式，故不构成假绿，但散文必须与真值对齐。执行点 = 同文件「② 按套分块：3 个商品行 ⇒ 3 块」。"
       - "判据 3·**A4 版面与分页不裁切**：样式里 `@page { size: A4; margin: 12mm; }`（由 `lib/print-media.ts` 的 printPageRule('a4') 生成，本组件不自写纸型）；`.processing-set { break-inside: avoid }` + `.processing-doc-table thead { display: table-header-group }`（长单跨页时表头重复）。执行点 = 同文件「③ 版面：@page A4（由介质矩阵生成）+ 分页不裁切 + 表头重复」。"
       - "判据 4·**缺值不许静默留空**：客户名 / 电话 / 地址缺失 ⇒ 单元格为显式占位 `—`（不是空串）；本系统**未采集**的字段（制单人 / 批号）标「未采集」并出脚注 —— 二者必须可区分。执行点 = 同文件「🔴 ④ 缺字段可见」+「🔴 ④ 本系统未采集的字段必须显式标注」。"
       - "判据 5·🔴 **缺码不画假码**（洗水码既有判据）：qrValue 缺席 ⇒ 虚线占位框 + 「无码」字样，渲染树里**零个** svg 码，不拿订单号等别的串顶替。执行点 = 同文件「🔴 ⑤ QR：给了值 ⇒ 出码；不给 ⇒ 出占位框、不画假码」+「⑤ QR 判据可红」。"
       - "判据 6·**加工单不印金额**（实证 #3 无金额列）⇒ 天然没有第二份金额真值：纸面文本不含「本单应收 / 单价 / 金额 / 小计」。执行点 = 同文件「⑥ 加工单不印金额」。"
+      - "判据 7·🔴 **每套工序块**（issue #6901）：逐道印 显示名 / 应做（数量 + 单位）/ 状态；显示名走 `frontend/admin-web/src/lib/operation-display.ts::operationDisplayName()`（**不得**渲染工人端快照名 `operation`）；按 `position.order_item_id` 与订单行对齐（与洗水码 / 批号同一把钥匙）；🔴 无工序实例 / `order_item_id` 对不上 / 读面失败 ⇒ **整块不出现**（不印空表、不印占位表头）。执行点 = 同文件工序用例（`data-testid=processing-doc-operations`）；红证 = 删掉工序块整段 JSX ⇒ **3 failed**（实跑读数）"
+      - "判据 8·**数量列名按本行单位**：快照行 `unit` 有 ⇒ `数量(套)`；**没采集到单位 ⇒ 只写「数量」**（不编「米」）；列名与值**同出** `frontend/admin-web/src/lib/order-item-sku.ts::orderItemQuantity()`。红证 = 把 CI 守卫 C5 的元组改回 `数量(米)` ⇒ **1 failed / 6 passed**（实跑读数）"
       - "🔴 红证（注入式，随测试文件常驻）：把 `.processing-set` 的 break-inside 与 thead 的 table-header-group 抹掉 ⇒ 判据 3 必须红（同文件「③ 分页判据可红」）；把占位换回 `value || ''` 的静默留空 ⇒ 判据 4 必须红（同文件「④ 缺字段判据可红」）；缺值分支硬画一个码 ⇒ 判据 5 必须红。⚠️ 取不到真机读数（针打/三联纸）的部分不在本用例的判据里，如实登记在 docs/design/print-media-matrix.md 的待实测清单。"
     skip_reason: "[backend-contract] 纯前端打印版式（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 执行"
-    merge_log: "2026-09-26 新增（issue #5651）：补客户现行四张单据里的 A4 加工单 —— 表头九栏 + 右上 QR + 按套分块 8 列 + 分页不裁切/表头重复 + 缺值显式占位（制单人/批号为本系统未采集，标「未采集」不编值）。"
+    merge_log: "2026-09-26 新增（issue #5651）：补客户现行四张单据里的 A4 加工单 —— 表头九栏 + 右上 QR + 按套分块 8 列 + 分页不裁切/表头重复 + 缺值显式占位（制单人/批号为本系统未采集，标「未采集」不编值）。 ｜ 2026-10-14 追加（母单 #6901）：① 补**每套工序块**（取数走既有读面 `GET /api/admin/production/orders/{id}/operations`；纸面**不取数**，由调用方按 `order_item_id` 对齐后向下传）；② 数量列名不再写死单位（`数量` / `数量(米)` 按本行 `unit`）；③ 同批纠正判据 2 的**散文漂移**（旧 8 列 → 真值 9 列，非本批引入）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx"
+        - "frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/order-detail.test.tsx"
       ci:
         - pr-check.yml
       verifies: []

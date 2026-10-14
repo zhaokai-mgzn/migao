@@ -1260,10 +1260,12 @@
 数据: 判据 3·页面三态分开（403 ⇒「无「生产看板」查看权限（需要权限码 production:view）」/ 这笔订单还没有加工单 / 加载失败可重试）+ 抬头缺键的行不渲染：同文件四条用例。红证：删掉 forbidden 分支 ⇒ 落到「加载失败」⇒ 红
 数据: 判据 4·🔴 商家面身份护栏：frontend/bmini-app/tests/role-guard.test.tsx —— 有工人 session、无商家凭据 ⇒ `Taro.redirectTo(WORKER_HOME_ROUTE)`；有商家凭据（哪怕同时有工人 session）**不跳**（负控：共用 PAD 的正常动线）；工人页 / 公开登录页**不许**挂护栏（负控：挂了工人会被自己的页面弹走）
 数据: 判据 5·**类级**（新增商家页不挂护栏 ⇒ 红）：商家页清单**现取** —— tabBar 四页来自 frontend/bmini-app/src/app.config.ts 的 `tabBar.list`、管理面 4 项来自 frontend/bmini-app/src/utils/adminPermission.ts 的 `ADMIN_SURFACES`、外加坐席会话详情页 —— 每页都必须挂 `useMerchantSurfaceGuard`（证据：同文件的「商家页清单」组，含反空跑断言）
-跳过: [backend-contract] 确定性结构 / 页面判据（jest: frontend/bmini-app/tests/processing-order-detail-page.test.tsx + role-guard.test.tsx + page-entry-reachability.test.ts；java: ProductionTodoServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
+数据: 判据 6·**按部位补生产信息**（issue #6901）：frontend/bmini-app/tests/processing-order-detail-info.test.tsx 逐部位渲染商品身份（品名 / 货号 / 颜色 / 门幅 / 售卖方式 / 单位）、规格尺寸（宽 × 高，两位小数 + 米）、加工信息（走 `src/utils/craft-display.ts::craftSpecRows()` —— **不新造标签表**）、派工（批号 + 指派米数**两键都在才显示**；只有批号 = 未指派 ⇒ 不渲染）、部位备注；🔴 **键缺席 ⇒ 该行不渲染**（不补默认值、不折 0）。红证（实跑读数）：去掉 `craftSpecRows` 的「部位」过滤 ⇒ **1 failed / 7 passed**（判据 4+5）；`sizeText` 不判有限数 ⇒ **2 failed**（正文含 NaN）；`batchText` 删「两键都在」守卫 ⇒ **2 failed**
+数据: 判据 7·**类级同源（售卖方式展示名）**（issue #6901）：frontend/bmini-app/tests/selling-method-same-source.test.ts 把 bmini 的 `src/utils/selling-method.ts` 与 admin-web 单一真值 `frontend/admin-web/src/types/index.ts::SellingMethodLabels` **现取双侧逐值比对**，并判两侧都非空（防「都空 ⇒ 相等」假绿）。红证：让 `sellingMethodLabel` 直接回显内部键 ⇒ **2 failed**（`bulk_cut` 上屏 + 同源守卫判据 3）
+跳过: [backend-contract] 确定性结构 / 页面判据（jest: frontend/bmini-app/tests/processing-order-detail-page.test.tsx + role-guard.test.tsx + page-entry-reachability.test.ts + processing-order-detail-info.test.tsx + selling-method-same-source.test.ts；java: ProductionTodoServiceTest），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
-溯源: 2026-10-08 新增（issue #6567，用户逐字「数据菜单中的点击卡在哪就展示加工单详情即可，扫一扫和去登录工人身份这种功能不应该展示，我觉得你需要单独设置卡在哪跳转页面」「H5的功能设计的还是没有把管理员，员工和工人的按职责完全隔离干净，得进一步优化」）：① 三类待办的落脚点由报工页（工人面：扫一扫 + 手输单号 + 「去登录工人身份」）改成新的**只读**「加工单详情」页（前端新页 + 后端 link 一处）；② 商家面加身份护栏：纯工人设备（有工人 session、无商家凭据）打开商家页自动回工人工作台。管理员 / 员工按角色的菜单裁剪**不在本单**（另出方案）。 ｜ tags: bmini, production, dashboard, page-entry, role-guard
+溯源: 2026-10-08 新增（issue #6567，用户逐字「数据菜单中的点击卡在哪就展示加工单详情即可，扫一扫和去登录工人身份这种功能不应该展示，我觉得你需要单独设置卡在哪跳转页面」「H5的功能设计的还是没有把管理员，员工和工人的按职责完全隔离干净，得进一步优化」）：① 三类待办的落脚点由报工页（工人面：扫一扫 + 手输单号 + 「去登录工人身份」）改成新的**只读**「加工单详情」页（前端新页 + 后端 link 一处）；② 商家面加身份护栏：纯工人设备（有工人 session、无商家凭据）打开商家页自动回工人工作台。管理员 / 员工按角色的菜单裁剪**不在本单**（另出方案）。 ｜ 2026-10-14 追加（母单 #6901，包 B）：本页按部位补「商品身份 / 规格尺寸 / 加工信息 / 派工 / 部位备注」（用户逐字「加工单缺乏订单中的规格尺寸和加工信息，工人需要这些信息+商品信息来决定如何生产」）；加工信息**复用** bmini 既有 `src/utils/craft-display.ts` 单一真值（不新造标签表），售卖方式新增同源副本 + 现取的类级同源守卫。三条纪律（纯只读 / 显示名走唯一口径 / 三态）一字未回退。 ｜ tags: bmini, production, dashboard, page-entry, role-guard
 
 ### BM-041. 登录页记住上次成功登录的账号名（按登录面分开存 / 进页预填 / 绝不记 PIN·密码·验证码） 🔵
 ```
@@ -6568,18 +6570,19 @@
 真值: processing-manage.cutting-height-config
 溯源: 2026-09-29 新增（母单 #5161）：裁高配置（增量项档案 + 命中口径 + 取整）与裁剪高度计算的引擎覆盖登记，单测覆盖。用户当次裁定：颗粒度 = 部位级、取值 = 租户级、默认命中 = 同名匹配、取整 = 保留三位小数（机器三位小数）、手改只读、接高第一版就做（按特殊选项「接高」，不新造门幅逻辑）。 ｜ tags: processing, cutting_height, tenant_config, backend-contract
 
-### PG-046. 扫码读面补 9 个部位明细键（只加不改：宽高/工艺/加工类型/开数/褶倍/定型/用料；单测覆盖，非 LLM 行为） 🔵
+### PG-046. 扫码读面补「部位生产信息」全量明细键（只加不改：商品身份/规格尺寸/加工信息/算料/派工/部位备注；键集 = 三条工人读面共享的唯一一份，单测覆盖，非 LLM 行为） 🔵
 ```
 你: 扫这张水洗唛，这个部位的宽高、加工类型和用料是多少？
 期望: direct_reply
-数据: positions[] 追加 width / height / craft / curtain_type / open_count / cutting_mode / fullness / is_shaped / fabric_meters
+数据: positions[] 追加**共享键集**（`PositionDetailFields.DETAIL_KEYS`，三条工人读面同一份；issue #6901 由 9 键扩为 31 键，canonical = snake_case）：商品身份 `product_name` / `sku` / `color_name` / `door_width` / `selling_method` / `unit`；规格尺寸 `width` / `height`；加工信息 `curtain_type` / `craft` / `cutting_mode` / `open_count` / `is_shaped` / `style` / `fullness` / `fullness_actual` / `pleat_count` / `per_panel_pleats` / `panels` / `has_pattern` / `pattern_repeat` / `formula` / `craft_tier` / `special_options` / `processing_meters` / `formula_text`；算料 `fabric_meters`；派工 `batch_no` / `batch_meters` / `component_role`；部位备注 `remark`。P0-C 的原 9 键是其**真子集**，名字与取值口径一字未动
 数据: 既有四键（order_item_id / position_kind / position_name / remark）与其值**一字未变**
 数据: 新键逐字取库/取快照（不在 Java 侧重算）；缺失 ⇒ 键恒在且 null（不造 0）
-数据: 不新增 position_remark 别名（部位备注的既有键是 remark —— 一个事实一个键）
+数据: 不新增 position_remark 别名（部位备注的既有键是 remark —— 一个事实一个键）。⚠️ 机台读面例外：该面既有键名就是 position_remark ⇒ 用**具名排除集** `MACHINE_ROW_EXCLUDED_KEYS` 排除 remark（不覆盖、不别名）
+数据: 🔴 `getOperations` 面上同一事实另有 camelCase 兼容支（既有契约，不改名）⇒ 两支**不许漂移**：判据 = `PositionDetailFieldsTest#twinKeysNeverDrift` —— 孪生对照**现取**（实跑 `OrderLineCraftFields.toSnapshotKeys` 取 camelCase 侧）+ **反空转断言**（一对都取不到 ⇒ 判红，不许静默恒绿）
 跳过: [backend-contract] 本条只登记「扫码读面加键」这一层**确定性契约**，由单元测试全量覆盖（backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanServiceDetailFieldsTest.java）⇒ 不进 agent-eval 冒烟（同 CH-036 / CH-042 / PG-045 惯例）。
 ```
 真值: processing-manage.scan-position-detail-keys
-溯源: 2026-09-29 新增（母单 #5161，P0-C / PR #5779）：一体机详情面需要这些键，故把「扫码读面补 9 键」钉成可执行判据。**只加不改**是硬要求（既有键改名/改值即红）。⚠️ 契约真值源 `docs/wiki/CONTRACT-LEDGER.md` 的两行由集成侧同批补登（该包边界不含 docs/**）。 ｜ tags: processing, scan, contract, backend-contract
+溯源: 2026-09-29 新增（母单 #5161，P0-C / PR #5779）：一体机详情面需要这些键，故把「扫码读面补 9 键」钉成可执行判据。**只加不改**是硬要求（既有键改名/改值即红）。⚠️ 契约真值源 `docs/wiki/CONTRACT-LEDGER.md` 的两行由集成侧同批补登（该包边界不含 docs/**）。 ｜ 2026-10-14 追加（母单 #6901，包 A）：键集由 P0-C 的 9 键扩为**三条工人读面共享的唯一一份**（`PositionDetailFields.DETAIL_KEYS`，31 键，canonical = snake_case）—— 修掉「加一个字段、某一屏静默缺失」的成因（此前三面各拼各的键）。机台面用 `MACHINE_ROW_EXCLUDED_KEYS` 排除 `remark`（该面既有键名是 `position_remark`）；`getOperations` 的 camelCase 兼容支与 canonical 支由 `twinKeysNeverDrift` 守「不漂移」。P0-C 原 9 键真子集、一字未改。 ｜ tags: processing, scan, contract, backend-contract
 
 ### PG-047. 一体机裁高计算（机台那台屏）：扫水洗唛 ⇒ 详情 + 裁高值 + 一步报工（不写机器；含设备级预设与「去报工页」逃生门；单测覆盖，非 LLM 行为） 🔵
 ```
@@ -10124,21 +10127,23 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-26 新增（用例库补录，关联 #4906 / 行为修复 #4903）：未登录访问 migaozn.com 官网首页被强制跳登录页 —— 公开路由白名单补 '/'（AuthProvider 跳过会话恢复、拦截器不强制跳转），受保护业务页跳转一条不放宽。取号 UI-060（#4906 标题里的 UI-053 已被 #4965「订单详情页打印报价单」占用，按当前最大号 UI-059 顺延）。 ｜ tags: ui, auth, redirect, public-route, admin-web
 
-### UI-061. A4 加工单打印：表头九栏（订单日期/客户/电话/地址/备注/制单人/单号/交付日期/货运）+ 右上 QR；按套分块，每块 部位|部位信息|尺寸|组件|货号|用料|批号|备注；@page A4 + 分页不裁切 + 表头重复（issue #5651） 🔵
+### UI-061. A4 加工单打印：表头九栏（订单日期/客户/电话/地址/备注/制单人/单号/交付日期/货运）+ 右上 QR；按套分块，每块 9 列 品名|货号|颜色|门幅|尺寸|数量|组件|批号|备注 + 每套一张工序子表；@page A4 + 分页不裁切 + 表头重复（issue #5651 / #6901） 🔵
 ```
 你: 客户现行四张单据里的 A4 加工单（2026-09-26 用户提供实物照，去 PII 后登记在 issue #5651 的实证表 #3）；用户逐字裁定「要做，新增 A4 加工单打印」
 期望: direct_reply
 数据: 判据 1·**表头九栏逐条命中实证 #3**：订单日期 / 客户 / 电话 / 地址 / 备注 / 制单人 / 单号 / 交付日期 / 货运 九栏全部渲染，取值取服务端字段（订单日期 = order.createdAt；单号 = 加工单号、缺则回落订单号；交付日期 = 加工单交期、缺则回落订单「要求到货日」；货运 = logisticsType · logisticsCompany）。执行点 = frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 的「① 表头九栏逐条命中实证 #3 的制式」+「① 交付日期回落链」+「① 加工单缺失 ⇒ 单号回落订单号」。
-数据: 判据 2·**按套分块**：N 个商品行 ⇒ N 块，每块段头 `第N套/共M套`，块内一张 8 列表，列序逐字等于 PROCESSING_DOC_COLUMNS = ['部位','部位信息','尺寸','组件','货号','用料','批号','备注']。执行点 = 同文件「② 按套分块：3 个商品行 ⇒ 3 块」。
+数据: 判据 2·**按套分块**：N 个商品行 ⇒ N 块，每块段头 `第N套/共M套`，块内一张 **9 列表**，列序逐字等于 PROCESSING_DOC_COLUMNS = ['品名','货号','颜色','门幅','尺寸','数量','组件','批号','备注']。🔴 2026-10-14 同批纠正一处**散文漂移**（非本批引入）：本条此前写的是「8 列表 = ['部位','部位信息','尺寸','组件','货号','用料','批号','备注']」，与真值（代码常量 + CI 守卫 C5 的钉住元组）**早已不符** —— 该判据执行点断言的本来就是当前版式，故不构成假绿，但散文必须与真值对齐。执行点 = 同文件「② 按套分块：3 个商品行 ⇒ 3 块」。
 数据: 判据 3·**A4 版面与分页不裁切**：样式里 `@page { size: A4; margin: 12mm; }`（由 `lib/print-media.ts` 的 printPageRule('a4') 生成，本组件不自写纸型）；`.processing-set { break-inside: avoid }` + `.processing-doc-table thead { display: table-header-group }`（长单跨页时表头重复）。执行点 = 同文件「③ 版面：@page A4（由介质矩阵生成）+ 分页不裁切 + 表头重复」。
 数据: 判据 4·**缺值不许静默留空**：客户名 / 电话 / 地址缺失 ⇒ 单元格为显式占位 `—`（不是空串）；本系统**未采集**的字段（制单人 / 批号）标「未采集」并出脚注 —— 二者必须可区分。执行点 = 同文件「🔴 ④ 缺字段可见」+「🔴 ④ 本系统未采集的字段必须显式标注」。
 数据: 判据 5·🔴 **缺码不画假码**（洗水码既有判据）：qrValue 缺席 ⇒ 虚线占位框 + 「无码」字样，渲染树里**零个** svg 码，不拿订单号等别的串顶替。执行点 = 同文件「🔴 ⑤ QR：给了值 ⇒ 出码；不给 ⇒ 出占位框、不画假码」+「⑤ QR 判据可红」。
 数据: 判据 6·**加工单不印金额**（实证 #3 无金额列）⇒ 天然没有第二份金额真值：纸面文本不含「本单应收 / 单价 / 金额 / 小计」。执行点 = 同文件「⑥ 加工单不印金额」。
+数据: 判据 7·🔴 **每套工序块**（issue #6901）：逐道印 显示名 / 应做（数量 + 单位）/ 状态；显示名走 `frontend/admin-web/src/lib/operation-display.ts::operationDisplayName()`（**不得**渲染工人端快照名 `operation`）；按 `position.order_item_id` 与订单行对齐（与洗水码 / 批号同一把钥匙）；🔴 无工序实例 / `order_item_id` 对不上 / 读面失败 ⇒ **整块不出现**（不印空表、不印占位表头）。执行点 = 同文件工序用例（`data-testid=processing-doc-operations`）；红证 = 删掉工序块整段 JSX ⇒ **3 failed**（实跑读数）
+数据: 判据 8·**数量列名按本行单位**：快照行 `unit` 有 ⇒ `数量(套)`；**没采集到单位 ⇒ 只写「数量」**（不编「米」）；列名与值**同出** `frontend/admin-web/src/lib/order-item-sku.ts::orderItemQuantity()`。红证 = 把 CI 守卫 C5 的元组改回 `数量(米)` ⇒ **1 failed / 6 passed**（实跑读数）
 数据: 🔴 红证（注入式，随测试文件常驻）：把 `.processing-set` 的 break-inside 与 thead 的 table-header-group 抹掉 ⇒ 判据 3 必须红（同文件「③ 分页判据可红」）；把占位换回 `value || ''` 的静默留空 ⇒ 判据 4 必须红（同文件「④ 缺字段判据可红」）；缺值分支硬画一个码 ⇒ 判据 5 必须红。⚠️ 取不到真机读数（针打/三联纸）的部分不在本用例的判据里，如实登记在 docs/design/print-media-matrix.md 的待实测清单。
 跳过: [backend-contract] 纯前端打印版式（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 执行
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
-溯源: 2026-09-26 新增（issue #5651）：补客户现行四张单据里的 A4 加工单 —— 表头九栏 + 右上 QR + 按套分块 8 列 + 分页不裁切/表头重复 + 缺值显式占位（制单人/批号为本系统未采集，标「未采集」不编值）。 ｜ tags: ui, order, print, processing-doc, a4
+溯源: 2026-09-26 新增（issue #5651）：补客户现行四张单据里的 A4 加工单 —— 表头九栏 + 右上 QR + 按套分块 8 列 + 分页不裁切/表头重复 + 缺值显式占位（制单人/批号为本系统未采集，标「未采集」不编值）。 ｜ 2026-10-14 追加（母单 #6901）：① 补**每套工序块**（取数走既有读面 `GET /api/admin/production/orders/{id}/operations`；纸面**不取数**，由调用方按 `order_item_id` 对齐后向下传）；② 数量列名不再写死单位（`数量` / `数量(米)` 按本行 `unit`）；③ 同批纠正判据 2 的**散文漂移**（旧 8 列 → 真值 9 列，非本批引入）。 ｜ tags: ui, order, print, processing-doc, a4
 
 ### UI-062. 销售单打印（三联纸 241mm × 140mm 两等分）：@page 241mm 140mm + 只渲染一页（复写由压感纸承担）+ 明细 序号|货号|数量|单位|单价|金额|备注 + 金额一律取服务端字段 + 缺口金额栏不编数（issue #5651） 🔵
 ```

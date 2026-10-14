@@ -1,6 +1,6 @@
 // case_ids: OR-001, OR-002, OR-003, OR-046, OR-055, UI-024, UI-040, UI-053, UI-076, UI-090
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, cleanup, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { markErrorToastShown } from '@/lib/api-error'
 
@@ -8,6 +8,8 @@ import { markErrorToastShown } from '@/lib/api-error'
 const mockGetOrder = vi.fn()
 // 发货读面（issue #5651 收口）：销售单数量列消费的**实发**来源 —— 详情页加载订单时一并取
 const mockGetOrderShipments = vi.fn()
+// 工序读面（issue #6901）：加工单纸面与加工单块的工序清单来源（既有读面，按订单 id 取）
+const mockGetOrderOperations = vi.fn()
 const mockConfirmPayment = vi.fn()
 const mockRefundOrder = vi.fn()
 
@@ -20,6 +22,9 @@ vi.mock('@/lib/api', () => ({
     updateOrderStatus: vi.fn(),
     updateLogistics: vi.fn(),
     refundOrder: (...args: any[]) => mockRefundOrder(...args),
+  },
+  productionApi: {
+    getOrderOperations: (...args: any[]) => mockGetOrderOperations(...args),
   },
 }))
 
@@ -160,6 +165,9 @@ describe('OrderDetailPage', () => {
     mockGetOrderShipments.mockResolvedValue({
       data: { data: { order_id: 'test-order-123', status: 'producing', shipments: [] } },
     })
+    // 工序读面（issue #6901）：默认给「无工序实例」—— 工序块的纸面/屏幕判据在
+    // ProcessingDoc.test.tsx / ProcessingOrderBlock.test.tsx（此处只要形状对得上，不让它抛）
+    mockGetOrderOperations.mockResolvedValue({ data: { data: { positions: [] } } })
   })
 
   it('should show loading state initially', () => {
@@ -484,6 +492,56 @@ describe('OrderDetailPage', () => {
       }
     },
   )
+
+  // ===== 工序清单读面接线（issue #6901）=====
+  //
+  // 🔴 「加了 prop 不等于接线」：加工单纸面 / 加工单块 / 「复制全部」文本三处都靠本页把
+  // `GET /api/admin/production/orders/{id}/operations` 的结果传下去 —— 没有真实调用方时
+  // 工序清单在生产里**永远不出现**，而组件单测喂夹具会全绿（本仓反复复发的假绿形态）。
+  // 本用例直连**真实调用路径**（页面 → 读面 → state）；`ProcessingOrderBlock` 端子行逐值由
+  // ProcessingOrderBlock.test.tsx 的工序用例负责（本文件把该组件替身成空壳）。
+  // 接线面的机械证据（两处 prop 都在）另见 PR body 的 `grep -n "operations={orderOperations}"`。
+  it('🔴 工序读面接线（issue #6901）：详情页按订单 id 取 `orders/{id}/operations` 并向下传', async () => {
+    const operations = [
+      {
+        order_item_id: 'item1',
+        position_name: '布帘',
+        operations: [
+          { id: 'op-1', operation: '精裁-布', logical_name: '精裁', unit: '米', qty: 20, status: 'pending' },
+        ],
+      },
+    ]
+    mockGetOrderOperations.mockResolvedValue({ data: { data: { positions: operations } } })
+    // 加工单块只在「订单含加工项」时渲染（`hasProcessing`）—— 夹具与真页面同形
+    mockGetOrder.mockResolvedValue({
+      data: { data: { ...mockOrder, status: 'producing', processingItems: [{ id: 'pi-1', name: '打孔', quantity: 2 }] } },
+    })
+
+    const { container } = render(<OrderDetailPage />)
+    // 稳态锚点 = 订单号进 DOM（页面已拿到订单）
+    await screen.findAllByText(mockOrder.orderNo)
+
+    // ① 真调了既有读面，且引用的是**本订单** id（缺这行 ⇒ 页面根本不取工序）
+    await waitFor(() => expect(mockGetOrderOperations).toHaveBeenCalledWith('test-order-123'))
+    // ② 页面到达**含加工单面**的稳态：本状态（producing + 含加工项）下「打印加工单」入口在
+    //    （该入口由加工单块区承载）⇒ 证明这一块被渲染出来了、没被工序读面拖垮，也没有失败态文案
+    expect(screen.getByRole('button', { name: /打印加工单/ })).toBeInTheDocument()
+    expect(container.textContent).not.toContain('加载订单详情失败')
+  })
+
+  // 缺值面：读面失败 ⇒ 工序块**不出现**（不印空表），且**不拖垮**订单详情（同页其它读面照常）。
+  it('🔴 工序读面失败 ⇒ 页面不出现工序块，订单详情照常渲染（失败隔离，issue #6901）', async () => {
+    mockGetOrderOperations.mockRejectedValue(new Error('boom'))
+
+    render(<OrderDetailPage />)
+    // 稳态锚点 = 订单号进 DOM（页面已拿到订单）
+    await screen.findAllByText(mockOrder.orderNo)
+    await waitFor(() => expect(mockGetOrderOperations).toHaveBeenCalledWith('test-order-123'))
+
+    expect(screen.queryAllByTestId('po-item-operation')).toHaveLength(0)
+    // 纸面级 testid 也不该出现（工序块整块不出现，不印占位表头）
+    expect(screen.queryByText('工序')).not.toBeInTheDocument()
+  })
 
   it('编辑物流弹窗回填已落库的发货人（存量为空时也可在此补齐）', async () => {
     mockGetOrder.mockResolvedValue({

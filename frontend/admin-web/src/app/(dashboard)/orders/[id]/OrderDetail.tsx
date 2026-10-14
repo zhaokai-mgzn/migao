@@ -7,7 +7,10 @@ import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
 import dayjs from 'dayjs'
 import DateTimeCell from '@/components/common/DateTimeCell'
-import { orderApi } from '@/lib/api'
+// 工序清单读面（issue #6901）：加工单纸面与商家端加工单块要印「这一单要做哪几道工序」——
+// **复用既有读面** `GET /api/admin/production/orders/{id}/operations`（权限码 order:list，
+// 与同页其它读面同码）；**不新造端点、不在打印组件里取数/重算**（组件只负责渲染）。
+import { orderApi, productionApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, Modal } from '@/components/ui'
 import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc, ProcessingDoc, SalesDoc, OrderUrgencyPanel, EditOrderContentModal, PrintDocPreview, ProcessingQrMissingNotice } from '@/components/orders'
@@ -20,7 +23,7 @@ import { usePermission } from '@/lib/permission'
 // ⚠️ 直连组件路径（不走 `@/components/orders` 桶）：订单详情页单测把桶整体替身，
 // 直连才能让**真组件**参与渲染（否则「等式可见」这类判据测的是替身 = 空断言）。
 import OrderFeeBreakdown from '@/components/orders/OrderFeeBreakdown'
-import type { Order, OrderItem, LogisticsFormData, ProcessingOrder, OrderStatus } from '@/types'
+import type { Order, OrderItem, LogisticsFormData, ProcessingOrder, OrderStatus, ProductionPosition } from '@/types'
 import { normalizeOrderStatus, displayOrderStatus } from '@/types'
 import { craftRowsWithoutDoorWidth } from '@/lib/order-item-sku'
 // 整卷售卖的分配文案（issue #5846）：**同一份**渲染实现（含负差额告警）——
@@ -114,6 +117,17 @@ export default function OrderDetailPage() {
   const [processingOrder, setProcessingOrder] = useState<ProcessingOrder | null>(null)
 
   /**
+   * 工序清单（issue #6901）：加工单纸面（`ProcessingDoc`）与商家端加工单块
+   * （`ProcessingOrderBlock`）要印「这一单要做哪几道工序」—— 两个面**同一份**取数，
+   * 都在本页加载后向下传（组件自己不取数）。
+   *
+   * 取不到 / 空 ⇒ `[]` ⇒ 两个面都**不出现**工序块（缺值不渲染，不印空表）。
+   * 失败**不打扰商家**（本轮不弹 toast）：它只影响纸面的一块内容，而工序读面失败与
+   * 「订单/加工单读失败」不是一回事（后者必须让商家知道）。
+   */
+  const [orderOperations, setOrderOperations] = useState<ProductionPosition[]>([])
+
+  /**
    * 加工单**缺码**提示的接线（issue #6867 / B5）。
    *
    * 病：存量加工单没有短码（V155 不回填）⇒ 商家直接点「打印加工单」时纸面**静默**印「无码」，
@@ -193,6 +207,25 @@ export default function OrderDetailPage() {
     }
   }, [orderId])
 
+  /**
+   * 工序清单（issue #6901）：与订单详情**同一轮**加载（拿到订单后立即取，见 `loadOrder`）。
+   * 端点 = 既有读面 `GET /api/admin/production/orders/{id}/operations`（权限码 `order:list`，
+   * 与同页其它读面同码）；**不新造端点**。
+   *
+   * 🔴 失败隔离：读不到 ⇒ 空清单（纸面/屏幕块都**不出现**工序块，不编工序、不猜状态），
+   * 且**不打扰商家** —— 它只影响纸面一块内容，与「订单详情读失败」不是一回事。
+   */
+  const loadOperations = useCallback(async () => {
+    if (!orderId) return
+    try {
+      const res = await productionApi.getOrderOperations(orderId)
+      setOrderOperations(res.data?.data?.positions ?? [])
+    } catch (e) {
+      console.error('加载工序清单失败:', e)
+      setOrderOperations([])
+    }
+  }, [orderId])
+
   // 加载订单
   const loadOrder = useCallback(async () => {
     if (!orderId) return
@@ -201,14 +234,15 @@ export default function OrderDetailPage() {
       const res = await orderApi.getOrder(orderId)
       const data = res.data?.data
       if (data) setOrder(data)
-      await loadShipments()
+      // 发货明细与工序清单**互不依赖**（一条失败不拖另一条），与订单详情同一轮取完
+      await Promise.all([loadShipments(), loadOperations()])
     } catch (e) {
       console.error('加载订单失败:', e)
       toastRequestError(e, '加载订单详情失败')
     } finally {
       setLoading(false)
     }
-  }, [orderId, loadShipments])
+  }, [orderId, loadShipments, loadOperations])
 
   useEffect(() => {
     loadOrder()
@@ -431,6 +465,7 @@ export default function OrderDetailPage() {
         orderStatus={order.status}
         hasProcessing={(order.processingItems?.length ?? 0) > 0}
         items={order.items ?? []}
+        operations={orderOperations}
         onStatusChange={setProcessingOrder}
         onPrintProcessing={() => openPreview('processing')}
         onReloadReady={acceptBlockReload}
@@ -452,6 +487,7 @@ export default function OrderDetailPage() {
         order={order}
         processingOrder={processingOrder}
         qrValue={processingOrder?.scan_url ?? null}
+        operations={orderOperations}
         printTarget={printTarget}
       />
 
@@ -491,6 +527,7 @@ export default function OrderDetailPage() {
             order={order}
             processingOrder={processingOrder}
             qrValue={processingOrder?.scan_url ?? null}
+            operations={orderOperations}
             inline
           />
         )}

@@ -122,6 +122,12 @@ FACES: tuple[str, ...] = (
     "frontend/admin-web/src/components/production/PieceworkTable.tsx",
     "frontend/admin-web/src/components/chat/ProductionProgressCard.tsx",
     "frontend/admin-web/src/app/(dashboard)/processing-orders/[id]/production/page.tsx",
+    # issue #6901：**A4 纸质加工单**补「工序清单」块（逐道 显示名 / 应做 / 状态）—— 显示名走
+    # `operationDisplayName()`（纸面不得渲染工人端变体名）。本清单与
+    # `tests/unit_ci_workflows/test_op_name_registry_guard.py` 的 `MANAGED_FACES` **必须双向一致**。
+    "frontend/admin-web/src/components/orders/ProcessingDoc.tsx",
+    # issue #6901：商家端**加工单块**（屏幕明细块 + 「复制全部」纯文本）同批补工序清单 —— 同上。
+    "frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx",
 )
 
 #: **已退役面**（issue #4964）：曾在 `FACES` 里、现在**明确不得**再渲染工序的界面
@@ -436,7 +442,7 @@ def test_c1_helper_is_the_single_composition_point():
 
 def test_c2_every_face_imports_the_shared_helper():
     """C2：每个受管面都 import 了 helper —— 面文件必须是「真的那一个」（反空跑）。"""
-    assert len(FACES) >= 5, "受管面清单被清空 ⇒ 本守卫会空跑通过（判据必须能判红）"
+    assert len(FACES) >= 7, "受管面清单被清空 ⇒ 本守卫会空跑通过（判据必须能判红）"
     for rel in FACES:
         src = _read(rel)
         assert REQUIRED_IMPORT in src, (

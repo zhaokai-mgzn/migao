@@ -56,6 +56,30 @@
 ① 「切介质后逐格取值逐字相同」（`SalesDoc.test.tsx`）；
 ② 「列清单全仓唯一」（C5，复制一份映射 ⇒ 红）。
 
+### 3.1 加工单的字段映射（列清单 = 唯一真值，改动必须同批改本表 + C5 的钉住元组）
+
+`frontend/admin-web/src/components/orders/ProcessingDoc.tsx` 的 `PROCESSING_DOC_COLUMNS`
+（打印介质守卫 C5 逐字钉住同一串，**两处必须一致**）：
+
+| 单据 | 列清单（有序） | 说明 |
+|---|---|---|
+| 加工单 | `品名 / 货号 / 颜色 / 门幅 / 尺寸 / 数量 / 组件 / 批号 / 备注` | 每套一张 9 列表 |
+| 加工单 · 工序块 | `工序 / 名称 / 应做 / 状态` | 同表内、每套一张子表（issue #6901） |
+
+🔴 **2026-10-14（issue #6901）「数量(米)」→「数量」**：列名不能写死单位 —— `quantity` 的单位随行
+（快照行 `unit` 可能是米 / 件 / 套）。同一行的**列名与值**都出自
+`frontend/admin-web/src/lib/order-item-sku.ts::orderItemQuantity()`：有单位 ⇒ 印 `数量(米)`，
+**没采集到单位 ⇒ 只印 `数量`**（不编「米」）。
+
+🔴 **工序块的取数口径（issue #6901）**：纸面**不取数**，由调用方
+（`frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx`）读**既有读面**
+`GET /api/admin/production/orders/{id}/operations` 后向下传（`operations` prop）；
+按 `position.order_item_id` = 订单行 id 对齐（与洗水码 / 批号**同一把钥匙**）；
+缺值 / 无工序实例（订单还没生成加工单）⇒ **整块不出现**（不印空表、不印占位表头）。
+显示名走 `frontend/admin-web/src/lib/operation-display.ts::operationDisplayName()`
+（**不得**渲染工人端变体名 `operation`）。
+
+
 ## 4. 字段缺口（**如实登记，不编数**）
 
 > 🔴 **2026-10-14（issue #6869）列清单重做**：用户逐字「缺了商品 sku 的信息」「货运 express · 顺丰速运，
@@ -74,6 +98,7 @@
 | 加工单 | **制单人** | `Order` DTO 无该列（`OrderRemark.operator` 是备注操作人，不是制单人） | 「未采集」+ 脚注 |
 | 加工单 | **批号** | `ProcessingOrderItem`（加工单快照明细）**无** `batchNo`；`batchNo` 属入库/库存批次域（`InboundOrderItem` / `InboundBatch`）。生成时的逐行批次指派（#5145）**未落快照列** | 「未采集」 |
 | 销售单 | **上期余额 / 预存抵扣 / 账户余额** | `Order` 只有 `totalAmount` / `discountAmount` / `actualAmount`；`SystemSettings` 只有 `companyName` / `logo` / `notificationEnabled` / `code` —— **无余额面** | 「未采集」+ 脚注（含数字即判红） |
+| 加工单 | **数量单位** | `OrderItem`（订单详情 DTO）**无** `unit` 键 ⇒ 纸面的单位只可能来自加工单**快照行** `unit`（issue #6901 起按行印） | 快照有 `unit` ⇒ 列名印 `数量(米)`；**没有 ⇒ 只印 `数量`**（不编「米」） |
 | 销售单 | 单位 | `OrderItem` 无 `unit`；但 `quantity` 在本系统**恒为米**（发货单表头「数量(米)」、报价单「元/米」）⇒ 取**同一口径**，不算缺口 | 印「米」 |
 
 ## 5. 未核实项 / 待现场实测（**升级条件写死在这里**）
