@@ -98,6 +98,11 @@ vi.mock('@/components/orders', async (importOriginal) => {
     ) : null,
   EditOrderContentModal: ({ open }: any) =>
     open ? <div data-testid="edit-order-content-modal">EditOrderContentModal</div> : null,
+  // 加工单缺码提示 + 一键补码（issue #6867 / B5）：本文件不验它的行为（缺码提示的判据在
+  // tests/unit/components/ProcessingQrMissingNotice.test.tsx），但**必须给替身**——
+  // 页面 import 了它，桶 mock 少一个导出 ⇒ 26 条用例渲染期崩（守卫
+  // tests/unit_ci_workflows/test_orders_barrel_mock_guard.py 的判据 C2，issue #5651 实测）。
+  ProcessingQrMissingNotice: () => null,
   }
 })
 

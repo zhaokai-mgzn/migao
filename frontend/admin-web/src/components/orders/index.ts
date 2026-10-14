@@ -33,5 +33,8 @@ export { default as QuotationDoc } from './QuotationDoc'
 // 介质矩阵见 `lib/print-media.json`（介质是参数，不是各写一份的副本）
 export { default as ProcessingDoc } from './ProcessingDoc'
 export { default as SalesDoc } from './SalesDoc'
+// 「这张加工单还没有可扫二维码」提示 + 一键补码（issue #6867 / B5）——
+// 复用既有 `POST .../qr-token/regenerate`（issue #4287），不新增后端端点
+export { default as ProcessingQrMissingNotice } from './ProcessingQrMissingNotice'
 // 修改订单（**待付款**内容编辑，issue #5842）：收货信息 / 商品明细 / 加工项 + 金额服务端重算
 export { default as EditOrderContentModal } from './EditOrderContentModal'

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronRight, Printer, Zap, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
@@ -10,8 +10,10 @@ import DateTimeCell from '@/components/common/DateTimeCell'
 import { orderApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, Modal } from '@/components/ui'
-import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc, ProcessingDoc, SalesDoc, OrderUrgencyPanel, EditOrderContentModal, PrintDocPreview } from '@/components/orders'
+import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, ProcessingOrderBlock, ShipmentDoc, QuotationDoc, ProcessingDoc, SalesDoc, OrderUrgencyPanel, EditOrderContentModal, PrintDocPreview, ProcessingQrMissingNotice } from '@/components/orders'
 import { PRINT_TARGET_SPECS, usePrintDoc, type PrintTarget } from '@/lib/print-doc'
+// 权限（issue #6867 / B5）：补码入口与端点同码显隐（端点方法级 `processing:manage`）
+import { usePermission } from '@/lib/permission'
 // 费用构成（issue #5843）：详情页原先只算商品金额，与页脚订单级总额（**含**加工费）对不上
 // ⇒ 补「商品合计 + 加工费 + 其它构成 = 订单金额」这一块。判定与渲染都在
 // `components/orders/OrderFeeBreakdown.tsx` + `lib/order-fee-display.ts`（本页只接线、不自算）。
@@ -111,6 +113,22 @@ export default function OrderDetailPage() {
   // 加工单（ProcessingOrderBlock 经 onStatusChange 上报；issue #3889 发货入口守卫用）
   const [processingOrder, setProcessingOrder] = useState<ProcessingOrder | null>(null)
 
+  /**
+   * 加工单**缺码**提示的接线（issue #6867 / B5）。
+   *
+   * 病：存量加工单没有短码（V155 不回填）⇒ 商家直接点「打印加工单」时纸面**静默**印「无码」，
+   * 看起来打好了、纸却扫不了。修：缺码时在打印预览上给一条可行动的提示 + 一键补码入口
+   * （端点 = 既有 `.../qr-token/regenerate`，issue #4287 —— **不新增后端**）。
+   *
+   * `blockReloadRef`：补码成功后要把**纸面**上的短链与短码刷新出来 —— 加工单读面在
+   * `ProcessingOrderBlock`（它自取自持），故让该块把它的 `load` 交给本页调用（不复制第二份读面）。
+   */
+  const { has: hasPermission } = usePermission()
+  const blockReloadRef = useRef<(() => Promise<void>) | null>(null)
+  const canManageProcessing = hasPermission('processing:manage')
+  /** 纸面**确实缺码**（两键都空）—— 有码的单不出现本提示（别对一张有效的纸喊缺码） */
+  const processingQrMissing = !processingOrder?.scan_url && !processingOrder?.short_code
+
   // 确认付款 / 确认收货 / 编辑物流
   const [confirmPaymentOpen, setConfirmPaymentOpen] = useState(false)
   const [paymentSubmitting, setPaymentSubmitting] = useState(false)
@@ -140,6 +158,19 @@ export default function OrderDetailPage() {
   // 🔴 打印**只能**走这一个入口（issue #5914）：`window.print()` 已收敛进 `usePrintDoc()`
   // 的 effect —— 在 target 提交进 DOM **之后**才开印（同 tick 调 print = 首次打印空白纸）。
   const { printTarget, previewTarget, requestPrint, openPreview, closePreview } = usePrintDoc()
+
+  /**
+   * 补码成功后**重新读加工单**（issue #6867 / B5）：纸面读的是 `processingOrder.scan_url` /
+   * `short_code`，它们归 `ProcessingOrderBlock` 的读面所有 ⇒ 由该块自刷新（本页不写第二份读面），
+   * 刷新结果经既有 `onStatusChange` 回传 ⇒ 预览层与纸面同步拿到新码（提示随之退场）。
+   */
+  const reloadProcessingForQr = async () => {
+    await blockReloadRef.current?.()
+  }
+  /** 稳定引用（`ProcessingOrderBlock` 的交接 effect 依赖它 ⇒ 每次渲染换一个新函数会让该 effect 空跑） */
+  const acceptBlockReload = useCallback((reload: () => Promise<void>) => {
+    blockReloadRef.current = reload
+  }, [])
 
   /**
    * 发货明细读面（issue #5651 收口）：销售单数量列要印**实发**（真值 owner = `order_shipment_items`）。
@@ -402,6 +433,7 @@ export default function OrderDetailPage() {
         items={order.items ?? []}
         onStatusChange={setProcessingOrder}
         onPrintProcessing={() => openPreview('processing')}
+        onReloadReady={acceptBlockReload}
       />
 
       {/* 纸质发货单（issue #3768）：屏幕上隐藏，仅打印呈现；已发货/已完成可在此补打 */}
@@ -435,6 +467,19 @@ export default function OrderDetailPage() {
         media={previewTarget ? PRINT_TARGET_SPECS[previewTarget].media : 'a4'}
         onPrint={() => previewTarget && requestPrint(previewTarget)}
         onClose={closePreview}
+        notice={
+          // 加工单预览才挂缺码提示（issue #6867 / B5）：**有码 ⇒ 什么都不渲染**；
+          // 缺码 ⇒ 事实照旧可见（读面事实，谁打印谁受影响），**补码按钮**按 `processing:manage`
+          // 显隐（照 #4287 口径，避免「按钮可见却 403」）—— 两条分界都在组件的 props 里。
+          previewTarget === 'processing' ? (
+            <ProcessingQrMissingNotice
+              orderId={order.id}
+              missing={processingQrMissing}
+              canManage={canManageProcessing}
+              onRegenerated={reloadProcessingForQr}
+            />
+          ) : null
+        }
       >
         {/* `inline` = 原地渲染进真尺寸纸框（不 portal 到 body，issue #5914） */}
         {previewTarget === 'shipment' && (
