@@ -49,16 +49,23 @@ import type { Order, OrderItem, ProcessingOrder, ProcessingOrderItem } from '@/t
  *   （不加限定会同特异性覆盖兄弟单据）；
  * - 守卫 = `tests/unit_ci_workflows/test_print_doc_convention_guard.py`。
  *
- * ## QR 口径
+ * ## QR 口径（issue #6867 起）
  *
- * QR 内容由调用方给（`qrValue`）。**缺码不画假码**（洗水码既有判据）：拿不到值 ⇒ 出一个
- * 虚线占位框 + 「无码」字样，**不**编一个码、也不拿别的串顶替。
+ * QR 内容由调用方给（`qrValue`）—— 现在是**加工单级稳定短链** `{base}/o/{短码}`
+ * （设计 §11.3：调用方传 `processingOrder.scan_url ?? null`，**不再回落加工单号**；
+ * 回落就退回「扫出来只有一串文本」的旧形态）。**前端不拼 URL**（base 是服务端真值）。
+ * **缺码不画假码**（洗水码既有判据）：拿不到值 ⇒ 出一个虚线占位框 + 「无码」字样，
+ * **不**编一个码、也不拿别的串顶替。
+ * 纸面**再印一行人可读短码**（`processingOrder.short_code`，见 `processing-doc-short-code`）
+ * —— 设计 §11.7「人可读短码**不是可选项**」：扫码失败 / 相机权限被拒 / 无扫码工具时，
+ * 工人手输它 = 扫码（§11.4 的解析形态之一）；缺码印 `—`、**绝不编造**。
+ * ⚠️ 上一版这里印的是单号（`docNo`）—— 单号已在表头「单号」格，同纸不重复印同一真值。
  */
 interface ProcessingDocProps {
   order: Order
   /** 加工单（订单详情页已加载；缺省 ⇒ 单号回落订单号、交付日期回落要求到货日） */
   processingOrder?: ProcessingOrder | null
-  /** 右上 QR 的内容；调用方给不出 ⇒ `null`（出占位框，不画假码） */
+  /** 右上 QR 的内容（**加工单级稳定短链** `{base}/o/{短码}`，issue #6867）；调用方给不出 ⇒ `null`（出占位框，不画假码） */
   qrValue?: string | null
   /**
    * 本次打印的目标（`'processing'` = 打印本加工单）。**只在为 `'processing'` 时**置位
@@ -243,7 +250,18 @@ export default function ProcessingDoc({
               无码
             </div>
           )}
-          <div className="text-[7pt] text-neutral-500 mt-0.5">{docNo}</div>
+          {/* 🔴 人可读短码（issue #6867，设计 §11.7「不是可选项」）：扫码失败 / 相机权限被拒 /
+              手上没有扫码工具时，工人**手输它 = 扫码**（§11.4 的四形态解析）。
+              取值 = `processingOrder.short_code`（服务端真值）—— 缺码印 `—`、**绝不编造**，
+              与上面「缺码不画假码」同一口径（别拿 `docNo` / 订单号顶上去：那会印出一个**扫不开也输不进**的码）。
+              形态照 `TaskCardPrint` 的 `task-card-label-short-code-*`（同款范式）。
+              ⚠️ 上一版这里印的是 `docNo` —— 而单号早在表头「单号」格印过（同纸不重复印同一真值）。 */}
+          <div
+            className="mt-0.5 font-mono text-[8pt] font-bold"
+            data-testid="processing-doc-short-code"
+          >
+            {paperText(processingOrder?.short_code)}
+          </div>
         </div>
       </div>
 

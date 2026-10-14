@@ -783,6 +783,22 @@ export interface ProcessingOrder {
   processor?: string
   expectedDeliveryDate?: string
   status: 'generated' | 'issued' | 'in_processing' | 'completed' | 'cancelled'
+  /**
+   * 加工单级码的**人可读短码**（8 位，如 `7K3M9QP2`；键名**冻结**，issue #6867 设计 §11.9）
+   * —— 扫码失败 / 相机权限被拒 / 手上没有扫码工具时，工人**手输它 = 扫码**（§11.7「不是可选项」）。
+   *
+   * 🔴 **未实例化 / 读面未下发 ⇒ `undefined` 或 `null`**（B3 的读面稍后落）⇒ 纸面印 `—`、
+   * **绝不编造**（与既有「缺码不画假码」同口径）。
+   */
+  short_code?: string | null
+  /**
+   * 加工单二维码的**确切内容**（形如 `https://app.migaozn.com/o/7K3M9QP2`）—— 前端**不拼**、逐字用
+   * （`{base}/o/{短码}` 由服务端装配；前端自己拼 = 域名/路径段的第二份真值）。
+   *
+   * 🔴 它就是**印在纸上的那个码**（issue #6867）：缺它 ⇒ `qrValue` 给 `null`、纸面出「无码」占位框 ——
+   * **不回落加工单号**（回落 = 扫出来仍是纯文本、打不开任何页面，正是本单要治的病）。
+   */
+  scan_url?: string | null
   items?: ProcessingOrderItem[]
   remark?: string
   templateVersion?: number

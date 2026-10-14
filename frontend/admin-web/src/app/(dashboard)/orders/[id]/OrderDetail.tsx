@@ -412,12 +412,14 @@ export default function OrderDetailPage() {
           （不进 Modal、每页只挂一份，见组件文件头 6 条约束）。 */}
       <QuotationDoc order={order} printTarget={printTarget} />
 
-      {/* 纸质加工单（A4，issue #5651）：照客户实证制式「按套分块」；右上 QR = 加工单号。
+      {/* 纸质加工单（A4，issue #5651）：照客户实证制式「按套分块」；右上 QR = **加工单级稳定短链**
+          （`processingOrder.scan_url` = `{base}/o/{短码}`，issue #6867）—— **不回落加工单号**：
+          回落就退回「扫出来只有一串文本、打不开任何页面」的旧形态。
           页面级挂载一份 —— 与 ShipmentDoc / QuotationDoc 同范式（见 ProcessingDoc 文件头）。 */}
       <ProcessingDoc
         order={order}
         processingOrder={processingOrder}
-        qrValue={processingOrder?.processingOrderNo ?? null}
+        qrValue={processingOrder?.scan_url ?? null}
         printTarget={printTarget}
       />
 
@@ -443,7 +445,7 @@ export default function OrderDetailPage() {
           <ProcessingDoc
             order={order}
             processingOrder={processingOrder}
-            qrValue={processingOrder?.processingOrderNo ?? null}
+            qrValue={processingOrder?.scan_url ?? null}
             inline
           />
         )}

@@ -2,7 +2,7 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi } from 'vitest'
-import { render, cleanup } from '@testing-library/react'
+import { render, cleanup, screen } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -42,6 +42,10 @@ import {
  * ⑥ 打印隔离沿用 #4983 / #4965 范式（共享 `print-doc` + 限定本次打印目标的 visibility 防御）；
  * ⑦ **列宽按内容预算**（issue #6600）：批号是**固定 17 字符**的 `PC-yyyyMMdd-####`，原先只给 10%
  *    ⇒ `table-layout: fixed` 下折成 3 行、把数据行撑高（真浏览器实测 63px）。现在 ≥16%（两行放得下）。
+ * ⑧ 🔴 **码的内容 = 加工单级稳定短链，不再是加工单号纯文本**（issue #6867，设计 §11.3「前端 · admin-web」）：
+ *    QR 值 = 调用方给的 `scan_url`（`{base}/o/{短码}`）；纸面**再印一行人可读短码**
+ *    （`processingOrder.short_code`，形态照 `TaskCardPrint` 的 `task-card-label-short-code-*`），
+ *    **缺码印 `—`、绝不编**（与既有「缺码不画假码」同口径；§11.7「手可输的兜底」）。
  */
 function buildItem(overrides: Partial<OrderItem> = {}): OrderItem {
   return {
@@ -99,6 +103,15 @@ const buildProcessingOrder = (overrides: Partial<ProcessingOrder> = {}): Process
   expectedDeliveryDate: '2026-10-01',
   ...overrides,
 })
+
+/** 纸面上的码（issue #6867）= 加工单级**稳定短链**（服务端给，前端**不拼**） */
+const SCAN_URL = 'https://app.migaozn.com/o/7K3M9QP2'
+/** 服务端下发的人可读短码（与 `scan_url` 末段一致 —— 但组件只读它自己的键，不切 URL） */
+const SHORT_CODE = '7K3M9QP2'
+
+/** QR 的**确切内容**：`qrcode.react` 把值渲染成 `<title>`（与 `TaskCardPrint` 测试同款读法） */
+const qrPayload = (): string | undefined =>
+  document.querySelector('[data-testid="processing-doc-qr"] title')?.textContent ?? undefined
 
 const doc = (): HTMLElement | null => document.querySelector('.processing-print-area')
 const css = (): string =>
@@ -323,7 +336,7 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
       <ProcessingDoc
         order={buildOrder()}
         processingOrder={buildProcessingOrder()}
-        qrValue="PO260926-0007"
+        qrValue={SCAN_URL}
       />
     )
     expect(document.querySelector('[data-testid="processing-doc-qr"]')?.tagName.toLowerCase()).toBe('svg')
@@ -338,6 +351,62 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
     render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
     // 缺值分支下不许存在任何 SVG 码（旧写法若回落成 order.orderNo 就会在这里出现）
     expect(document.querySelectorAll('.processing-print-area svg')).toHaveLength(0)
+  })
+
+  it('🔴 ⑧ QR 的内容 = 传入的 `scan_url`（加工单级稳定短链），**不是**加工单号纯文本（issue #6867）', () => {
+    render(
+      <ProcessingDoc
+        order={buildOrder()}
+        processingOrder={buildProcessingOrder({ short_code: SHORT_CODE, scan_url: SCAN_URL })}
+        qrValue={SCAN_URL}
+      />
+    )
+    expect(qrPayload()).toBe(SCAN_URL)
+    // 反向：扫出来**不再是**加工单号纯文本（旧形态 = 相机只显示一串文本、打不开任何页面）
+    expect(qrPayload()).not.toBe('PO260926-0007')
+  })
+
+  it('🔴 ⑧ 短码行印 `processingOrder.short_code`（人可读兜底：扫码失败 / 无扫码工具时手输）', () => {
+    render(
+      <ProcessingDoc
+        order={buildOrder()}
+        processingOrder={buildProcessingOrder({ short_code: SHORT_CODE, scan_url: SCAN_URL })}
+        qrValue={SCAN_URL}
+      />
+    )
+    expect(screen.getByTestId('processing-doc-short-code')).toHaveTextContent(SHORT_CODE)
+  })
+
+  it('🔴 ⑧ 红证：没有短码 ⇒ 短码行印 `—`，**绝不编造**（也不把加工单号顶上去）', () => {
+    render(
+      <ProcessingDoc
+        order={buildOrder()}
+        // 只有单号、没有短码/短链（存量单 / 读面未实例化）—— 与 `null` 逐字同款
+        processingOrder={buildProcessingOrder({ short_code: null, scan_url: null })}
+      />
+    )
+    expect(screen.getByTestId('processing-doc-short-code')).toHaveTextContent(MISSING)
+    // 「缺码不画假码」同口径：短码行不许出现任何**加工单号**的片段
+    expect(screen.getByTestId('processing-doc-short-code').textContent).not.toContain('PO')
+    expect(screen.getByTestId('processing-doc-short-code').textContent).not.toMatch(/\d/)
+  })
+
+  it('🔴 ⑧ 红证（注入式自证）：把短码源写成加工单号 / 拿别的串顶替 ⇒ 上面那两条判据必红', () => {
+    render(
+      <ProcessingDoc
+        order={buildOrder()}
+        processingOrder={buildProcessingOrder({ short_code: SHORT_CODE, scan_url: SCAN_URL })}
+        qrValue={SCAN_URL}
+      />
+    )
+    // ① 旧形态（QR 值 = 加工单号纯文本）⇒ 「QR = scan_url」那条红
+    const regressedQr = 'PO260926-0007'
+    expect(regressedQr).not.toBe(SCAN_URL)
+    // ② 编造短码（拿加工单号顶替短码行）⇒ 「短码行 = 服务端短码」那条红
+    const fabricated = 'PO260926-0007'
+    expect(screen.getByTestId('processing-doc-short-code').textContent).not.toBe(fabricated)
+    // ③ 短码行挂上单号串 ⇒ 「无短码不许出现加工单号片段」那条红
+    expect(fabricated).toContain('PO')
   })
 
   it('⑥ 加工单**不印金额**（实证 #3 无金额列）⇒ 天然没有第二份金额真值', () => {
