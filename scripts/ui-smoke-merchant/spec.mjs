@@ -716,8 +716,19 @@ async function processingJourney(page) {
       await page.locator('form input').first().fill(uniq)
     })
     // 加工分类（#4882 起表单只剩「名称 + 加工分类」两个必填项，单价/计价方式两项已退场）
-    const categorySelect = page.locator('select').first()
-    await categorySelect.selectOption({ index: 1 }).catch(() => {})
+    // ⚠️ 两种形态（2026-10-14 实测截图逐字）：① 有分类 ⇒ 下拉里选第一项；
+    //    ② **本租户 0 个活跃分类**（软删到 0 也算）⇒ 弹窗改渲染「当前还没有加工分类，加工项必须归属于一个
+    //    加工分类。请先创建：」+ 内联名称输入 + 「创建」按钮 ⇒ 前置**自造**：就地建一个分类再保存。
+    //    不自造的话：`select` 里没有 index=1 ⇒ 必填分类为空 ⇒ **保存被客户端校验挡住、POST 根本不发**
+    //    ⇒ 列表永远等不到新行 = 恒红（实测 api 日志里连该加工项名都搜不到，count=0）。
+    const inlineCat = page.locator('input[placeholder*="加工分类名称"]').first()
+    if (await waitVisible(inlineCat, 1500)) {
+      await inlineCat.fill(`冒烟分类${Date.now()}`)
+      await page.getByRole('button', { name: /^创\s*建$/ }).first().click().catch(() => {})
+      await page.waitForTimeout(800)
+    } else {
+      await page.locator('select').first().selectOption({ index: 1 }).catch(() => {})
+    }
     // 提交
     await page.getByRole('button', { name: /确 定|保存|提交|创建/ }).last().click()
     await page.waitForTimeout(1500)
