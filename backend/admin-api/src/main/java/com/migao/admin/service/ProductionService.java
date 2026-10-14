@@ -2176,13 +2176,13 @@ public class ProductionService {
             if (spec != null) {
                 position.putAll(spec);
             }
-            // 🔴 母单 #6901：本读面与**扫码读面**（{@code ProductionScanService} 的
-            // {@code set_overview.positions[]}）必须**同源同名** —— `putAll(spec)` 带出来的是
-            // 快照的 **camelCase** 键（`curtainType` / `openCount` …），而扫码面是 snake_case
-            // ⇒ 两条工人读面同一件事实两个键名（消费方各自漂移、且不会变红）。
-            // 修法 = 只**加**同一份 snake_case 明细键（{@link PositionDetailFields}，三条读面唯一那份），
-            // **不改**既有的 camelCase 键（它们是本读面的既有契约，改名 = 打回既有消费方）。
-            PositionDetailFields.fillDetailKeys(position, spec);
+            // ⚠️ 母单 #6901 裁定（CI 实证）：**本读面不注入 canonical 明细键** —— 本面（商家 + 工人
+            // `getOperations`）从 #5161 起的契约是「缺键就缺」+ camelCase 兼容支，由
+            // `ProductionServiceTest.getOperationsOmits*`、`ProductionServicePartCodeTest` 与
+            // `ProcessingSetReadServiceTest` 的精确键集断言冻结。工人两屏的 canonical 明细键
+            // 由**工人扫码面**（{@code ProductionScanService#withPositionDetail}）与**机台面**
+            // （{@code WorkerCuttingHeightService#positionRow}）各自注入，键清单同源
+            // （{@link PositionDetailFields}）。往本面加键 = 改商家读面契约（实证会红）。
             position.put("operations", grouped.get(key));
             // 一部位一码（issue #4946）：该部位**自己**的码（`processing_set_part_tokens`，V92/V99）。
             // 生产按**单个商品行**推进 ⇒ 加工单级 `qr_token` 指不出部位；三键**追加在末尾**、

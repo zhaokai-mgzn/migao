@@ -239,26 +239,33 @@ class PositionDetailFieldsTest {
     // ============================================================ ② 工序读面
 
     @Test
-    @DisplayName("② 工序读面（getOperations.positions[]）⊇ 全键集（本条是面③b 包 B 的取数前提）")
-    void operationsSurfaceCarriesTheWholeKeySet() {
+    @DisplayName("② 工序读面（getOperations.positions[]）**保持既有契约**：本包不向它注入 canonical 明细键（#5247 / #4946 冻结键集）")
+    void operationsSurfaceIsNotTouchedByThisPackage() {
         stubScan();
         when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItem()));
 
-        Map<String, Object> result = productionService.getOperations(ORDER_ID, TENANT);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> positions = (List<Map<String, Object>>) result.get("positions");
-        Map<String, Object> cloth = positions.stream()
-                .filter(p -> ITEM_ID.equals(p.get("order_item_id")))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("工序读面里没有 " + ITEM_ID));
+        Map<String, Object> cloth = operationsPositionOf();
 
-        assertThat(cloth.keySet()).containsAll(PositionDetailFields.DETAIL_KEYS);
+        // 既有 camelCase 兼容支照旧在场（bmini 等既有消费方按它解析；本包不动它）
+        assertThat(cloth).containsKeys("curtainType", "openCount", "cuttingMode", "isShaped");
+        // 本面的编排键（#4946 一部位一码 + 工序明细）本包一字未动
         assertThat(cloth.keySet()).containsAll(OPERATIONS_SURFACE_ONLY_KEYS);
-        // 值与扫码面**逐值同源**（同一份 `orderSpecByItemId`）
-        assertThat(cloth.get("sku")).isEqualTo("MG-006901");
-        assertThat(cloth.get("color_name")).isEqualTo("雾霾蓝");
-        assertThat(cloth.get("craft_tier")).isEqualTo("标准");
-        assertThat(cloth.get("component_role")).isEqualTo("主布");
+        // 🔴 本包在工人两屏新增的 canonical 键**不得**落到本面（落上去 = 改商家读面契约）：
+        //    本单第一版就是这样红的 —— `ProcessingSetReadServiceTest` 的
+        //    `containsExactlyInAnyOrderElementsOf(SCAN_POSITION_DETAIL_KEYS)` 与
+        //    `ProductionServicePartCodeTest` 的既有键集断言当场判红（CI job `admin-api unit tests`）。
+        assertThat(cloth).doesNotContainKeys(
+                "curtain_type", "open_count", "cutting_mode", "is_shaped",
+                "sku", "color_name", "door_width", "selling_method",
+                "craft_tier", "special_options", "component_role",
+                "has_pattern", "pattern_repeat", "formula_text", "processing_meters");
+        // 既有键的**值与来源**一字未变（本面取自 `order_items` 列 + 既有快照键）
+        assertThat(cloth.get("width")).isEqualTo(new BigDecimal("2.92"));
+        assertThat(cloth.get("craft")).isEqualTo("韩褶");
+        // ⚠️ 本面对着快照**逐字透传**（不做 numeric 归一化）⇒ `fabric_meters` 是**字符串**
+        // （它来自 `processing_info` 的算料输出）。这是 main 的既有形态、**不是**本包引入；
+        // 归一化（`decimalOrRaw`）只发生在工人两面 —— 这条断言同时把"本面不许被本包改口径"钉住。
+        assertThat(cloth.get("fabric_meters")).isEqualTo("12.35");
     }
 
     // ============================================================ ③ 机台面
@@ -321,41 +328,36 @@ class PositionDetailFieldsTest {
      * ⇒ 本测试**不手抄**任何键名清单。</p>
      */
     @Test
-    @DisplayName("②′ 双名共存不漂移：camelCase 兼容支 与 snake_case canonical 支**逐值相等**")
-    void twinKeysNeverDrift() {
+    @DisplayName("②′ 跨面不漂移：同一件事实在工序读面的 camelCase 兼容支 与 工人扫码面的 canonical snake_case 必须逐值相等")
+    void workerFacesNeverDriftFromOperationsFace() {
         stubScan();
         when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItem()));
 
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> positions = (List<Map<String, Object>>)
-                productionService.getOperations(ORDER_ID, TENANT).get("positions");
-        Map<String, Object> cloth = positions.stream()
-                .filter(p -> ITEM_ID.equals(p.get("order_item_id")))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("工序读面里没有 " + ITEM_ID));
+        Map<String, Object> opsCloth = operationsPositionOf();
+        Map<String, Object> scanCloth = positionOf(overviewPositions(scanService.resolve(CODE, null, TENANT)));
 
+        // 孪生对照**现取**：camelCase 一侧从 `OrderLineCraftFields.toSnapshotKeys` 实跑取键，
+        // snake_case 一侧取其 snake_case 化 ∩ `DETAIL_KEYS` ⇒ 本测试不手抄任何键名清单。
         Set<String> camelKeys = new LinkedHashSet<>(OrderLineCraftFields.toSnapshotKeys(orderItem()).keySet());
         Set<String> twins = new LinkedHashSet<>(camelKeys);
         twins.retainAll(PositionDetailFields.DETAIL_KEYS);
-        // 台账不许空转：一对孪生键都取不到 ⇒ 本判据恒绿（那是"没跑"而不是"通过"）
-        assertThat(twins).as("孪生键必须**现取**到（样本里两侧都有值）").isNotEmpty();
+        // 反空跑：一对孪生键都取不到 ⇒ 本判据恒绿（那是"没跑"而不是"通过"）
+        assertThat(twins).as("孪生对照必须**现取**到（样本里两面对应的键都有值）").isNotEmpty();
 
+        int checked = 0;
         for (String camel : twins) {
-            // snake_case 一侧的键名 = camelCase 的 snake_case 化（**生成规则现取**，不手抄键名清单）
             String snake = camel.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase(java.util.Locale.ROOT);
             if (!PositionDetailFields.DETAIL_KEYS.contains(snake)) {
                 continue; // 该 camelCase 键没有 canonical 孪生（如 `corner`）⇒ 不在本判据射程
             }
-            assertThat(cloth).as("孪生键 %s 的两支都必须在该读面上", snake).containsKeys(camel, snake);
-            assertThat(cloth.get(snake))
-                    .as("孪生键 %s / %s 两支的值必须逐值相等（只改一边 ⇒ 静默漂移）", camel, snake)
-                    .isEqualTo(cloth.get(camel));
+            assertThat(scanCloth).as("工人扫码面必须有 canonical 键 %s", snake).containsKey(snake);
+            assertThat(scanCloth.get(snake))
+                    .as("同一件事实 %s（工序读面 camelCase）与 %s（工人扫码面 canonical）的值必须逐值相等"
+                            + "（只改一边 ⇒ 静默漂移）", camel, snake)
+                    .isEqualTo(opsCloth.get(camel));
+            checked++;
         }
-        // 同名（非孪生）键照旧只一支：`product_name` / `width` / `height` / `remark` / `sku`
-        assertThat(cloth).containsKeys("product_name", "width", "height", "remark", "sku");
-        // ⚠️ `skuCode` / `productName` 这类**快照源键**在工序读面上**在场**（`putAll(spec)` 的既有行为，
-        // 不是本单新增）——本判据只钉「canonical 支的值不漂」，**不**钉源键的存废（改它 = 打回既有消费方）。
-        assertThat(cloth.get("sku")).isEqualTo(cloth.get("skuCode"));
+        assertThat(checked).as("对照对数不许为 0（否则上面循环空跑）").isPositive();
     }
 
     // ============================================================ ④ 前端标签表
@@ -391,6 +393,17 @@ class PositionDetailFieldsTest {
             keys.add(key.group(1));
         }
         return keys;
+    }
+
+    /** 工序读面（`getOperations`）里那一个部位行。 */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> operationsPositionOf() {
+        List<Map<String, Object>> positions = (List<Map<String, Object>>)
+                productionService.getOperations(ORDER_ID, TENANT).get("positions");
+        return positions.stream()
+                .filter(p -> ITEM_ID.equals(p.get("order_item_id")))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("工序读面里没有 " + ITEM_ID));
     }
 
     private void stubScan() {
