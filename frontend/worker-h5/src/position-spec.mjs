@@ -118,7 +118,7 @@ export function formatSpecValue(value, format) {
 /**
  * **报工屏的「本部位生产信息」块不渲染**的键（母单 #6901）。
  *
- * <p>本表仍**登记**它们（后端 {@code PositionSpecFields.DETAIL_KEYS} 里有，后端守卫要求本表 ⊇ 那份
+ * <p>本表仍**登记**它们（后端 {@code PositionDetailFields.DETAIL_KEYS} 里有，后端守卫要求本表 ⊇ 那份
  * 键集 ⇒ 缺一个就红），只是**这一块不重复上屏**：</p>
  * <ul>
  *   <li>{@code remark}（部位备注）—— 工人端另有一条**更精确**的呈现（`render.mjs::positionRemark`：
@@ -136,7 +136,7 @@ export const SCAN_BLOCK_EXCLUDED_KEYS = new Set(['remark'])
  * ⇒ 内部标识上工人屏（`migao-dev-flow` §31 P3 明令禁止）。</p>
  *
  * <p>🔴 <b>但「没登记」不会静默漏掉</b>：服务端给 `positions[]` 追加新规格键而本表没跟上 ⇒
- * 判据**变红**（后端 `backend/admin-api/src/test/java/com/migao/admin/service/PositionSpecFieldsSurfacesTest.java`
+ * 判据**变红**（后端 `backend/admin-api/src/test/java/com/migao/admin/service/PositionDetailFieldsTest.java`
  * 拿**真源**的键集逐键比对本表 ⇒ 未登记即红）。这是本单要治的「加了一个字段，某一屏静默缺失」的收口。</p>
  *
  * @param {object} position 服务端下发的部位对象（snake_case 键）

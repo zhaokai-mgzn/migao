@@ -179,13 +179,13 @@ public class WorkerCuttingHeightService {
         //
         // 🔴 **只加不改**：上面那批键**已有值、来源各自明确**（`width`/`height`/`craft`/`curtain_type`/
         // `open_count`/`cutting_mode`/`fullness` 取自 `order_items` 列、`fabric_meters` 取自
-        // `fabricMeters(scan)`）⇒ {@link PositionSpecFields#fillDetailKeys} 是 **putIfAbsent** 语义，
+        // `fabricMeters(scan)`）⇒ {@link PositionDetailFields#fillDetailKeys} 是 **putIfAbsent** 语义，
         // **绝不覆盖**既有值、也不改它们的来源。键清单与键名翻译**只有一份**（三条工人读面共用）。
         //
         // 🔴 `remark` **显式排除**：本面上同一件事实的键名是 `position_remark`（上面那行）—— 再落一个
         // `remark` 就是「同一面上同一事实两个键名」（本仓明令禁止；`ProductionScanService` 的 javadoc
         // 为此专门解释过为什么不加 `position_remark` 别名）。扫码面照旧有 `remark`（不丢键）。
-        PositionSpecFields.fillDetailKeys(row, entry, MACHINE_ROW_EXCLUDED_KEYS);
+        PositionDetailFields.fillDetailKeys(row, entry, MACHINE_ROW_EXCLUDED_KEYS);
 
         String position = text(entry.get("position_kind"));
         BigDecimal finishedHeight = item == null ? null : item.getHeight();

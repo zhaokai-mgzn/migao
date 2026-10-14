@@ -41,7 +41,7 @@ import static org.mockito.Mockito.when;
  * {@code GET /api/worker/production/scan} 的 {@code set_overview.positions[]}（= 该屏的部位行）
  * 原来只有「行标识 + 部位名 + 备注 + 工序明细」—— 详情面缺宽高 / 工艺 / 加工类型 / 开数 / 褶倍 /
  * 用料 / 部位备注。母单 #6901 再扩到**全量生产信息**（商品身份 / 加工 / 算料 / 派工）。
- * 本测试钉住这批键**只加不改**（键集真值 = {@link PositionSpecFields#DETAIL_KEYS}）。</p>
+ * 本测试钉住这批键**只加不改**（键集真值 = {@link PositionDetailFields#DETAIL_KEYS}）。</p>
  *
  * <h2>取数口径（🔴 逐字取库/取快照，Java 侧不重算）</h2>
  * <p>与同族先例 {@code ProductionService#getOperations} 的 {@code positions[]} <b>同一份</b>订单行规格
@@ -87,7 +87,7 @@ class ProductionScanServiceDetailFieldsTest {
             "order_item_id", "position_kind", "position_name", "remark");
 
     /**
-     * 扫码面下发的明细键 —— **单一真值**（母单 #6901 起是 {@link PositionSpecFields} 的
+     * 扫码面下发的明细键 —— **单一真值**（母单 #6901 起是 {@link PositionDetailFields} 的
      * {@code DETAIL_KEYS}，不是本文件再抄一份清单）。
      *
      * <p>P0-C（issue #5161）的 9 键（`width` / `height` / `craft` / `curtain_type` / `open_count` /
@@ -95,7 +95,7 @@ class ProductionScanServiceDetailFieldsTest {
      * ⚠️ **用料键 = `fabric_meters`**（不是 `material_meters`）：它是**引擎输出的算料快照键**
      * （与 {@code getOperations} 同源同名），改名 = 同一份引擎数据两个名字。</p>
      */
-    private static final List<String> DETAIL_KEYS = PositionSpecFields.DETAIL_KEYS;
+    private static final List<String> DETAIL_KEYS = PositionDetailFields.DETAIL_KEYS;
 
     /** 母单 #6901 在 P0-C 的 9 键之外**新增**的键（本文件不再维护第二份清单：由真值集推出来）。 */
     private static final List<String> ADDED_IN_6901 = List.of(

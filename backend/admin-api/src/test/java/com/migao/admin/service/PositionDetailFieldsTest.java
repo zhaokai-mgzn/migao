@@ -61,12 +61,12 @@ import static org.mockito.Mockito.when;
  * </ol>
  * <p>各写一份 ⇒ 「加了一个字段，某一屏静默缺失」—— 这正是用户 2026-10-14 的原始抱怨
  * （「加工单缺乏订单中的规格尺寸和加工信息，工人需要这些信息+商品信息来决定如何生产」）。
- * ⇒ 键清单只有一份（{@link PositionSpecFields}），三条读面逐键同源；本文件把这条**同源**钉成判据。</p>
+ * ⇒ 键清单只有一份（{@link PositionDetailFields}），三条读面逐键同源；本文件把这条**同源**钉成判据。</p>
  *
  * <h2>判据（每条都能红 —— 红证读数见 PR body）</h2>
  * <ol>
  *   <li><b>① 扫码面 = 全键集</b>：{@code set_overview.positions[]} 与旧码
- *       {@code selections[].positions[]} 的键集**逐字等于** {@code PositionSpecFields.DETAIL_KEYS} + 既有四键；
+ *       {@code selections[].positions[]} 的键集**逐字等于** {@code PositionDetailFields.DETAIL_KEYS} + 既有四键；
  *       把 {@code fillDetailKeys} 拆回「只给 9 键」⇒ 红（键集不等，且报出缺哪几个键）；</li>
  *   <li><b>② 工序面 ⊇ 全键集</b>：{@code getOperations.positions[]} 是 {@code putAll(spec)} ⇒ 天然全键；
  *       把 {@code orderSpecByItemId} 的某个键删掉 ⇒ 红；</li>
@@ -79,13 +79,13 @@ import static org.mockito.Mockito.when;
  * </ol>
  *
  * <p>🔴 <b>为什么必须现取</b>：若本文件再抄一份键名清单，那份清单就是**第二份会漂的口径**
- * （后端加键、测试照旧绿）。故 ①③④ 的期望值全部来自真源：{@code PositionSpecFields.DETAIL_KEYS}
+ * （后端加键、测试照旧绿）。故 ①③④ 的期望值全部来自真源：{@code PositionDetailFields.DETAIL_KEYS}
  * 与前端模块源码。</p>
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("工人端三条读面的部位明细键同源守卫（母单 #6901）")
-class PositionSpecFieldsTest {
+class PositionDetailFieldsTest {
 
     private static final Long TENANT = 1L;
     private static final String ORDER_ID = "order-6901";
@@ -222,10 +222,10 @@ class PositionSpecFieldsTest {
 
         Map<String, Object> cloth = positionOf(overviewPositions(scanService.resolve(CODE, null, TENANT)));
 
-        for (String key : PositionSpecFields.DETAIL_KEYS) {
+        for (String key : PositionDetailFields.DETAIL_KEYS) {
             assertThat(cloth).containsKey(key);
         }
-        for (String key : PositionSpecFields.DETAIL_KEYS) {
+        for (String key : PositionDetailFields.DETAIL_KEYS) {
             if ("product_name".equals(key)) {
                 continue;
             }
@@ -252,7 +252,7 @@ class PositionSpecFieldsTest {
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("工序读面里没有 " + ITEM_ID));
 
-        assertThat(cloth.keySet()).containsAll(PositionSpecFields.DETAIL_KEYS);
+        assertThat(cloth.keySet()).containsAll(PositionDetailFields.DETAIL_KEYS);
         assertThat(cloth.keySet()).containsAll(OPERATIONS_SURFACE_ONLY_KEYS);
         // 值与扫码面**逐值同源**（同一份 `orderSpecByItemId`）
         assertThat(cloth.get("sku")).isEqualTo("MG-006901");
@@ -280,7 +280,7 @@ class PositionSpecFieldsTest {
         List<Map<String, Object>> positions = (List<Map<String, Object>>) out.get("positions");
         Map<String, Object> cloth = positions.get(0);
 
-        Set<String> expected = new LinkedHashSet<>(PositionSpecFields.DETAIL_KEYS);
+        Set<String> expected = new LinkedHashSet<>(PositionDetailFields.DETAIL_KEYS);
         expected.removeAll(WorkerCuttingHeightService.MACHINE_ROW_EXCLUDED_KEYS);
         assertThat(cloth.keySet()).containsAll(expected);
         // 🔴 具名排除项：本面上同一件事实的键名是 `position_remark`，**不得**再多一个 `remark` 别名
@@ -317,7 +317,7 @@ class PositionSpecFieldsTest {
      * 例外的代价必须由判据兜住：**只要两侧都有值就必须逐值相等**。
      *
      * <p>孪生对照**现取**：camelCase 一侧从 {@code OrderLineCraftFields.toSnapshotKeys} **实跑**取键
-     * （喂一个字段齐全的订单行），snake_case 一侧取 {@code PositionSpecFields.DETAIL_KEYS} 的交集
+     * （喂一个字段齐全的订单行），snake_case 一侧取 {@code PositionDetailFields.DETAIL_KEYS} 的交集
      * ⇒ 本测试**不手抄**任何键名清单。</p>
      */
     @Test
@@ -336,14 +336,14 @@ class PositionSpecFieldsTest {
 
         Set<String> camelKeys = new LinkedHashSet<>(OrderLineCraftFields.toSnapshotKeys(orderItem()).keySet());
         Set<String> twins = new LinkedHashSet<>(camelKeys);
-        twins.retainAll(PositionSpecFields.DETAIL_KEYS);
+        twins.retainAll(PositionDetailFields.DETAIL_KEYS);
         // 台账不许空转：一对孪生键都取不到 ⇒ 本判据恒绿（那是"没跑"而不是"通过"）
         assertThat(twins).as("孪生键必须**现取**到（样本里两侧都有值）").isNotEmpty();
 
         for (String camel : twins) {
             // snake_case 一侧的键名 = camelCase 的 snake_case 化（**生成规则现取**，不手抄键名清单）
             String snake = camel.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase(java.util.Locale.ROOT);
-            if (!PositionSpecFields.DETAIL_KEYS.contains(snake)) {
+            if (!PositionDetailFields.DETAIL_KEYS.contains(snake)) {
                 continue; // 该 camelCase 键没有 canonical 孪生（如 `corner`）⇒ 不在本判据射程
             }
             assertThat(cloth).as("孪生键 %s 的两支都必须在该读面上", snake).containsKeys(camel, snake);
@@ -371,11 +371,11 @@ class PositionSpecFieldsTest {
 
         assertThat(frontendKeys)
                 .as("后端 DETAIL_KEYS 里的每个键都必须在前端标签表里登记（否则该键在工人屏上永远不显示）")
-                .containsAll(PositionSpecFields.DETAIL_KEYS);
+                .containsAll(PositionDetailFields.DETAIL_KEYS);
         // 反向：前端表里不得登记后端根本不发的键（登记了也会静默空转 —— 那是第二份会漂的口径）
-        assertThat(PositionSpecFields.DETAIL_KEYS).containsAll(frontendKeys);
+        assertThat(PositionDetailFields.DETAIL_KEYS).containsAll(frontendKeys);
         // 台账不许空转：真取到键才算数（空集会让上面两条恒绿）
-        assertThat(frontendKeys.size()).isGreaterThanOrEqualTo(PositionSpecFields.DETAIL_KEYS.size());
+        assertThat(frontendKeys.size()).isGreaterThanOrEqualTo(PositionDetailFields.DETAIL_KEYS.size());
         assertThat(frontendKeys).isNotEmpty();
     }
 
@@ -519,7 +519,7 @@ class PositionSpecFieldsTest {
     }
 
     /**
-     * 扫码读面一个部位行的**期望键集**（**现取**自 {@code PositionSpecFields.DETAIL_KEYS}，
+     * 扫码读面一个部位行的**期望键集**（**现取**自 {@code PositionDetailFields.DETAIL_KEYS}，
      * 不在本测试里手抄键名清单）。
      *
      * @param extraKeys 该形态**额外**的编排键（新码 `set_overview.positions[]` 无；
@@ -527,7 +527,7 @@ class PositionSpecFieldsTest {
      */
     private static List<String> expectedScanKeys(String... extraKeys) {
         Set<String> keys = new LinkedHashSet<>(EXISTING_KEYS);
-        keys.addAll(PositionSpecFields.DETAIL_KEYS);
+        keys.addAll(PositionDetailFields.DETAIL_KEYS);
         keys.addAll(List.of(extraKeys));
         return new ArrayList<>(keys);
     }

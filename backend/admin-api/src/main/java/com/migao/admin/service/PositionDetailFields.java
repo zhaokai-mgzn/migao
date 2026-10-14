@@ -46,9 +46,9 @@ import java.util.Set;
  * <p>缺值 ⇒ <b>键恒在且为 {@code null}</b>（先铺满全键的 {@code null}，再按在场值覆盖）——
  * 不补默认值、不折 0 / false，也不省键（消费方不必写「有没有这个键」的分支）。</p>
  */
-final class PositionSpecFields {
+final class PositionDetailFields {
 
-    private PositionSpecFields() {
+    private PositionDetailFields() {
     }
 
     /**

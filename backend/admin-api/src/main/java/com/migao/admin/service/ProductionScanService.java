@@ -121,7 +121,7 @@ public class ProductionScanService {
      * {@code selections[].positions[]} 的既有三键（{@code order_item_id} / {@code position_kind} /
      * {@code position_name}）之后的；既有键与它们的值**一字不动**（`remark` 见 issue #5685）。</p>
      *
-     * <p>🔴 <b>键清单与键名翻译只有一份</b>：见 {@link PositionSpecFields}（母单 #6901）。
+     * <p>🔴 <b>键清单与键名翻译只有一份</b>：见 {@link PositionDetailFields}（母单 #6901）。
      * 本类此前把 9 键与 camelCase→snake_case 的翻译写在这里，而机台面（
      * {@code WorkerCuttingHeightService}）与工序读面（{@code ProductionService#buildPositions}）
      * 各拼各的 ⇒ 三面形状漂移且**不会变红**。现在三面都调那一份。</p>
@@ -139,7 +139,7 @@ public class ProductionScanService {
      *       {@code height} / {@code fullness} 与快照键**逐字同名**。</li>
      * </ul>
      */
-    private static final List<String> POSITION_DETAIL_KEYS = PositionSpecFields.DETAIL_KEYS;
+    private static final List<String> POSITION_DETAIL_KEYS = PositionDetailFields.DETAIL_KEYS;
 
     /**
      * URL 里承载码值的键（**与前端 counterpart {@code frontend/worker-h5/src/scan-input.mjs} 的
@@ -655,20 +655,20 @@ public class ProductionScanService {
     /**
      * 一个部位行的**明细键**（母单 #5161 / P0-C 的 9 键 ⊂ 母单 #6901 的全量生产信息键）。
      *
-     * <p>键清单与「快照键 → 下发键」的翻译**只有一份**：{@link PositionSpecFields}（母单 #6901 抽出）。
+     * <p>键清单与「快照键 → 下发键」的翻译**只有一份**：{@link PositionDetailFields}（母单 #6901 抽出）。
      * 本方法只负责「把这份键集铺到一个部位行上」——{@code putIfAbsent} 语义（缺值 ⇒ 键恒在且为
      * {@code null}；**不覆盖**行上已有的任何键值、也不重算任何数）。</p>
      *
-     * <p>逐键来源与缺值口径见 {@link PositionSpecFields} 的类 javadoc（单一真值源，本处不复制第二份表）。</p>
+     * <p>逐键来源与缺值口径见 {@link PositionDetailFields} 的类 javadoc（单一真值源，本处不复制第二份表）。</p>
      */
     private static Map<String, Object> withPositionDetail(Map<String, Object> entry,
                                                           Map<String, Object> snapshot) {
         Map<String, Object> view = new LinkedHashMap<>(entry);
         // 先按全键铺 null（键恒在），再按**在场的值**覆盖 —— 与既有 9 键逐字同款，只加不改。
-        PositionSpecFields.fillDetailKeys(view, null);
+        PositionDetailFields.fillDetailKeys(view, null);
         if (snapshot != null) {
             for (String key : POSITION_DETAIL_KEYS) {
-                putIfPresent(view, key, PositionSpecFields.valueOf(snapshot, key));
+                putIfPresent(view, key, PositionDetailFields.valueOf(snapshot, key));
             }
         }
         return view;
