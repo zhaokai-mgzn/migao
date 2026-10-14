@@ -32,6 +32,7 @@
     "e2e/specs/orders/order-ship.spec.ts",
     "e2e/specs/orders/print-preview.spec.ts",
     "e2e/specs/orders/processing-orders.spec.ts",
+    "e2e/specs/orders/screen-product-identity.spec.ts",
     "e2e/specs/orders/shipment-doc.spec.ts",
     "e2e/specs/products/product-detail.spec.ts",
     "e2e/specs/products/product-edit.spec.ts",
