@@ -90,8 +90,13 @@
   —— 契约在文案里，**没落到 SQL 谓词上**。
 - 证据：`line3-aftersales-race/out/race/probe-write-raw.json::cases.W2`、`out/race/W2-rounds-index.txt`（逐轮毫秒时间线 + 库侧三读数）、
   `line3-aftersales-race/REPORT.md` §2.1；一键复算 `bash acceptance/2026-10-14/line3-aftersales-race/run-w2-rounds.sh`。
-- 处置：**已派修复包**（AI-TDD：先红判据 → 最小实现 = `#cancel` 与 `#post` 同款条件更新 → 类级固化 → PR）。
-  PR 见本报告末尾「修复包状态」。
+- 处置：**已修并已独立重放** —— issue **#6928** → PR **#6931**（`InboundOrderService#cancel` 改成与 `#post` 同款条件更新
+  `markCancelled`（`WHERE id=? AND tenant_id=? AND status='draft' AND deleted=0`，0 行 ⇒ 409）+ 类级元守卫 MC-099 + 台账基线 0）。
+  **主会话独立重放**（新起修复版 admin-api `:8081`，20 轮严格同时起跑，同一探针对象）：
+  **修复后 18/18 轮 `inconsistent=0`**（`post=409 / cancel=200 / delta=0 / ledger=0`），
+  **同脚本打原 `:8080`（未修）18 轮里 1 轮命中 `inconsistent=3`**（`post=200 / cancel=200 / db=cancelled / delta=5 / ledger=1`）
+  —— 成对读数见 `evidence/w2-race-replay-mainsession.txt`（每段各有 2 轮因探针瞬态 `KeyError: 'requests'` 未计入，
+  按「未跑」读，不计入分母）。命中率随负载在 **5% ~ 40%** 间波动（线③ 15% / 修复包 40%）⇒ 这也正是「只跑一轮会漏」的证据。
 
 ### 5.3 判据侧问题（逐条带**判别证据**；含主会话对子代理结论的**独立复核订正**）
 
@@ -191,5 +196,5 @@
 | 项 | 状态 |
 |---|---|
 | **判据侧 J1–J5 + 本轮证据** | issue **#6926** → PR **#6927**（已 rebase 到 `03ce17050`；`gh pr checks 6927` 全绿；auto-merge 已 arm） |
-| **F1（入库单过账×作废竞态）** | issue **#6928** → 分支 `fix/6928-inbound-cancel-cas`（worktree `migao-wt/6928-inbound-cancel-cas`），修复包执行中：`InboundOrderService#cancel` 改与 `#post` 同款条件更新 + 两个新判据（真库竞态判据 + 状态迁移 CAS 类级元守卫 + 台账） |
+| **F1（入库单过账×作废竞态）** | issue **#6928** → PR **#6931**（分支 `fix/6928-inbound-cancel-cas`）：`#cancel` 补条件更新 CAS + 真库并发判据 `InboundOrderCancelRaceRealDbTest`（3/3 pass）+ 类级元守卫 `InboundOrderStatusCasMetaGuardTest`（6/6 pass，豁免基线 0）+ 台账；**主会话独立重放**：修复版 18/18 轮 0 命中 ⇄ 未修 :8080 1/18 命中（`evidence/w2-race-replay-mainsession.txt`） |
 | D1 / D2 / D3 | 待裁定（§5.4），未动代码 |
