@@ -51,9 +51,10 @@ function buildOrder(overrides: Partial<Order> = {}): Order {
         id: 'item-1',
         productId: 'p-1',
         productName: '布艺遮光帘A',
-        productCode: '0012',
-        color: '米白',
-        specification: '门幅2.8米',
+        // issue #6869：响应里的货号真字段是 `skuCode`（`productCode`/`color` 不在响应里），
+        // 颜色与门幅在 `processingInfo` —— 夹具按**真 wire 形态**写，别再用幽灵字段喂绿。
+        skuCode: '0012',
+        processingInfo: { colorName: '米白', doorWidth: '2.8米' },
         quantity: 12.5,
         unitPrice: 100,
         amount: 1250,
@@ -63,9 +64,8 @@ function buildOrder(overrides: Partial<Order> = {}): Order {
         id: 'item-2',
         productId: 'p-2',
         productName: '纱帘B',
-        productCode: '0020',
-        color: '象牙白',
-        specification: '门幅3.0米',
+        skuCode: '0020',
+        processingInfo: { colorName: '象牙白', doorWidth: '3.0米' },
         quantity: 5,
         unitPrice: 50,
         amount: 250,
@@ -100,13 +100,14 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
     expect(screen.getByText(/余杭区某某路 1 号/)).toBeInTheDocument()
   })
 
-  it('渲染商品明细每一行（品名/货号/颜色/规格/数量/金额）', () => {
+  it('渲染商品明细每一行（品名/货号/颜色/门幅/数量/金额）', () => {
     render(<ShipmentDoc order={buildOrder()} />)
 
     expect(screen.getByText('布艺遮光帘A')).toBeInTheDocument()
     expect(screen.getByText('0012')).toBeInTheDocument()
     expect(screen.getByText('米白')).toBeInTheDocument()
-    expect(screen.getByText('门幅2.8米')).toBeInTheDocument()
+    // 门幅取 `processingInfo.doorWidth`（经 `craftSpecRows` 的「门幅」行格式化 ⇒ `2.8米`）
+    expect(screen.getByText('2.8米')).toBeInTheDocument()
     expect(screen.getByText('纱帘B')).toBeInTheDocument()
     expect(screen.getByText('0020')).toBeInTheDocument()
   })
@@ -187,7 +188,9 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
       '商品',
       '货号',
       '颜色',
-      '规格尺寸',
+      // issue #6869：原「规格尺寸」列读的是 `item.specification`（**不在响应里** ⇒ 恒空）；
+      // 改成印真值「门幅」（`processingInfo.doorWidth`）—— 夹具里那句 `门幅2.8米` 本来就是它。
+      '门幅',
       '单价(元/米)',
       '数量(米)',
       '金额(元)',

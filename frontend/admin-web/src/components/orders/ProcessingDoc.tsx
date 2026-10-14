@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import { QRCodeSVG } from 'qrcode.react'
-import { craftSpecRows } from '@/lib/craft-display'
+import { freightText } from '@/lib/logistics'
+import { paperItemSku } from '@/lib/order-item-sku'
 import { printBodyFontPt, printPageRule } from '@/lib/print-media'
 import { cn } from '@/lib/utils'
 import type { PrintTarget } from './index'
@@ -18,8 +19,10 @@ import type { Order, OrderItem, ProcessingOrder, ProcessingOrderItem } from '@/t
  *
  * ① **表头**：订单日期 / 客户 / 电话 / 地址 / 备注 / **制单人** / **单号** / **交付日期** /
  *    **货运**；**右上角一张 QR**（加工单号码，见下「QR 口径」）；
- * ② **正文**：**按套分块** —— 每块段头 `第N套/共M套`，块内一张 8 列表
- *    （{@link PROCESSING_DOC_COLUMNS}：部位 | 部位信息 | 尺寸 | 组件 | 货号 | 用料 | 批号 | 备注）；
+ * ② **正文**：**按套分块** —— 每块段头 `第N套/共M套`，块内一张 9 列表
+ *    （{@link PROCESSING_DOC_COLUMNS}：品名 | 货号 | 颜色 | 门幅 | 尺寸 | 数量(米) | 组件 | 批号 | 备注）
+ *    ＋ 一行「工艺：…」（原「部位信息」列的内容，issue #6869）；
+ *    品名 / 货号 / 颜色 / 门幅 取 `lib/order-item-sku.ts` 的 `paperItemSku()`；
  * ③ **分页**：每套 `break-inside: avoid`（不跨页裁切）、`thead` 用
  *    `display: table-header-group`（长单跨页时**表头重复**，否则第二页起认不出列）；
  * ④ **介质来自矩阵**：`@page` 由 `printPageRule('a4')` 生成，**本组件不写 `@page size`**
@@ -27,8 +30,12 @@ import type { Order, OrderItem, ProcessingOrder, ProcessingOrderItem } from '@/t
  *
  * ## 数据口径（三条硬约束，勿随手改）
  *
- * 1. **展示真值单一来源**：「部位」= `processingInfo.curtainType`；「部位信息」= `craftSpecRows()`
- *    的**同一份**真值（设计文档 §4.9「一份 spec，三处渲染」）—— 本组件不另写推导；
+ * 1. **展示真值单一来源**：品名 / 货号 / 颜色 / 门幅 取 `lib/order-item-sku.ts` 的
+ *    `paperItemSku(item)`（货号真字段是响应里的 `skuCode`；原先读的 `productCode` **不在响应里**
+ *    ⇒ 纸面货号恒空，issue #6869 的根因）；「工艺」= `craftSpecRows()` 的**同一份**真值
+ *    （设计文档 §4.9「一份 spec，三处渲染」）—— 本组件不另写推导；
+ *    「部位」（`curtainType`）**保留在工艺说明里**：issue #4521 移除录入面后它只有纱帘行才有值，
+ *    独立成列（旧「部位」列 / 段头「部位：…」）时恒空；
  *    `craftSpecRows` 已丢弃缺值行 ⇒ 纸面**绝不**出现 `undefined` / `null` / `NaN`。
  * 2. 🔴 **缺值不许静默留空**（issue #5651 硬约束）：一律显式占位 `—`；
  *    **本系统没有采集**的字段（制单人 / 批号）另标「未采集」并出一行脚注 ——
@@ -80,12 +87,13 @@ interface ProcessingDocProps {
  * 有序标签在 `src/**` 里**恰好出现在一个文件**（复制一份到别的介质变体 ⇒ 必红）。
  */
 export const PROCESSING_DOC_COLUMNS = [
-  '部位',
-  '部位信息',
-  '尺寸',
-  '组件',
+  '品名',
   '货号',
-  '用料',
+  '颜色',
+  '门幅',
+  '尺寸',
+  '数量(米)',
+  '组件',
   '批号',
   '备注',
 ] as const
@@ -158,11 +166,10 @@ export default function ProcessingDoc({
   // 交付日期：加工单的交期优先，缺则回落到订单的「要求到货日」（#5177）—— 都是服务端字段
   const delivery = formatDate(processingOrder?.expectedDeliveryDate ?? order.requiredDeliveryDate)
   const orderDate = formatDate(order.createdAt)
-  // 货运：物流方式 + 物流公司（与报价单同一口径；两者都缺 ⇒ 显式占位）
-  const freight = [order.logisticsType, order.logisticsCompany]
-    .map((value) => (typeof value === 'string' ? value.trim() : ''))
-    .filter((value) => value !== '')
-    .join(' · ')
+  // 货运：物流方式 + 物流公司（与报价单**同一份**实现）。两者都缺 ⇒ 显式占位。
+  // 🔴 issue #6869：原先**原样拼**后端枚举 ⇒ 纸面印出 `express · 顺丰速运`
+  // （用户逐字「不要用英文，人家看不懂」）。
+  const freight = freightText(order.logisticsType, order.logisticsCompany)
 
   const doc = (
     <div
@@ -294,71 +301,67 @@ function SetBlock({
   total: number
 }) {
   const info = (item.processingInfo ?? {}) as Record<string, unknown>
-  const part = paperText(info.curtainType, '')
-  // 部位信息 = craftSpecRows 的同一份真值（§4.9）；排除「部位」行（它已有自己的列，
-  // 重复印同一真值只是噪音 —— 与报价单同一处理）
-  const specRows = craftSpecRows(item.processingInfo).filter((row) => row.label !== '部位')
-  const infoText = specRows.map((row) => `${row.label}：${row.value}`).join('\n')
+  // 商品身份（品名 / 货号 / 颜色 / 门幅）—— **唯一**取值口，见文件头第 1 条
+  const sku = paperItemSku(item)
+  // 工艺说明 = craftSpecRows 的同一份真值（§4.9）—— 「门幅」已由 paperItemSku 排除（有独立的列）；
+  // ⚠️ 「部位」（curtainType）**保留**在这里：issue #4521 移除录入面后它只有纱帘行才有值，
+  // 旧「部位」列/段头「部位：…」对普通订单恒空（用户原话「报价单展示部位是啥意思」）。
+  const craftText = sku.specRows.map((row) => `${row.label}：${row.value}`).join('；')
   const width = typeof item.width === 'number' && Number.isFinite(item.width) ? item.width : null
   const height = typeof item.height === 'number' && Number.isFinite(item.height) ? item.height : null
   // 尺寸：两边都是有限数才出（半个尺寸没有意义）
   const size = width !== null && height !== null ? `${width}×${height}` : ''
   // 组件：面料行 = componentRole（缺省即主布）
   const componentRole = paperText(info.componentRole, '主布')
-  // 货号 = productCode + colorName（各自缺则只印有的那个）
-  const code = [item.productCode, info.colorName]
-    .map((value) => (typeof value === 'string' ? value.trim() : ''))
-    .filter((value) => value !== '')
-    .join(' ')
-  // 用料 = 该行数量（米）；缺 ⇒ 显式占位
+  // 数量（米）= 该行数量；缺 ⇒ 显式占位
   const meters = typeof item.quantity === 'number' && Number.isFinite(item.quantity) ? String(item.quantity) : MISSING
-  const remark = paperText(item.specification, '')
 
   return (
     <div className="processing-set mb-3" data-testid={`processing-doc-set-${index}`}>
       <div className="font-semibold mb-1">
         第{index + 1}套/共{total}套
-        {part !== '' && <span className="ml-2 text-neutral-600">部位：{part}</span>}
       </div>
       {/* table-layout: fixed —— 列宽由表头声明的百分比决定（auto 布局按内容分配，
           长工艺文案会把列撑歪，纸面每单都可能不一样） */}
       <table className="processing-doc-table w-full border-collapse" style={{ tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            <DocTh className="w-[8%]">{PROCESSING_DOC_COLUMNS[0]}</DocTh>
-            <DocTh className="w-[22%]">{PROCESSING_DOC_COLUMNS[1]}</DocTh>
-            <DocTh className="w-[11%]">{PROCESSING_DOC_COLUMNS[2]}</DocTh>
-            <DocTh className="w-[9%]">{PROCESSING_DOC_COLUMNS[3]}</DocTh>
-            <DocTh className="w-[14%]">{PROCESSING_DOC_COLUMNS[4]}</DocTh>
-            <DocTh align="right" className="w-[8%]">
+            <DocTh className="w-[16%]">{PROCESSING_DOC_COLUMNS[0]}</DocTh>
+            <DocTh className="w-[11%]">{PROCESSING_DOC_COLUMNS[1]}</DocTh>
+            <DocTh className="w-[8%]">{PROCESSING_DOC_COLUMNS[2]}</DocTh>
+            <DocTh className="w-[7%]">{PROCESSING_DOC_COLUMNS[3]}</DocTh>
+            <DocTh className="w-[10%]">{PROCESSING_DOC_COLUMNS[4]}</DocTh>
+            <DocTh align="right" className="w-[11%]">
               {PROCESSING_DOC_COLUMNS[5]}
             </DocTh>
-            <DocTh className="w-[16%]">{PROCESSING_DOC_COLUMNS[6]}</DocTh>
-            <DocTh className="w-[12%]">{PROCESSING_DOC_COLUMNS[7]}</DocTh>
+            <DocTh className="w-[8%]">{PROCESSING_DOC_COLUMNS[6]}</DocTh>
+            <DocTh className="w-[17%]">{PROCESSING_DOC_COLUMNS[7]}</DocTh>
+            <DocTh className="w-[12%]">{PROCESSING_DOC_COLUMNS[8]}</DocTh>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <DocTd>{part || MISSING}</DocTd>
-            <DocTd>{infoText || MISSING}</DocTd>
+            <DocTd>{sku.name || MISSING}</DocTd>
+            <DocTd>{sku.code || MISSING}</DocTd>
+            <DocTd>{sku.color || MISSING}</DocTd>
+            <DocTd>{sku.doorWidth || MISSING}</DocTd>
             <DocTd>{size || MISSING}</DocTd>
-            <DocTd>{componentRole}</DocTd>
-            <DocTd>{code || MISSING}</DocTd>
             <DocTd align="right">{meters}</DocTd>
+            <DocTd>{componentRole}</DocTd>
             {/* 批号 = 快照行的 `batchNo`（指派批次时写入）。缺值印 `—`（= 未指派），
                 与「我们没有这个字段」是两件事（issue #5914；登记见 PROCESSING_DOC_NOT_COLLECTED_FIELDS） */}
             <DocTd testId="processing-doc-batch">{paperText(snapshot?.batchNo)}</DocTd>
-            {/* 备注列（`PROCESSING_DOC_COLUMNS[7]`）的占位格 —— 本行内容不落这一列（品名规格走下面
-                那条整行「备注：…」），但**格子必须有**：
-                🔴 issue #6595 实测：原先主体行只渲染 7 格，而备注列在**数据行**没有任何单元格
-                ⇒ 表头 8 格 vs 数据 7 格，备注列的数据段**整列没有边框**（纸面右侧缺一块）。
-                一行的列数由**列序**决定：第 8 格在 ⇒ 这一列有边框；少渲染一格 ⇒ 该列恒无边框。 */}
-            <DocTd>{''}</DocTd>
+            {/* 备注 = 商家手写的**行级备注**（`processingInfo.remark`，issue #5685「这个数字怎么来的」
+                —— 车间要按它核算法）。缺值**留空**（纸面留白供手写）。 */}
+            <DocTd>{paperText(info.remark, '')}</DocTd>
           </tr>
-          {remark !== '' && (
+          {/* 工艺说明行：整行承载原「部位信息」列（issue #6869）；首格 = 行标签「工艺」。
+              🔴 整行必须占满 9 列（1 + `colSpan` 8）—— 少一格 ⇒ 那一列在数据行没有单元格、
+              也就没有边框（issue #6595 实测形态）。 */}
+          {craftText !== '' && (
             <tr>
-              <DocTd>{''}</DocTd>
-              <DocTd colSpan={7}>{`备注：${remark}`}</DocTd>
+              <DocTd>工艺</DocTd>
+              <DocTd colSpan={8}>{craftText}</DocTd>
             </tr>
           )}
         </tbody>

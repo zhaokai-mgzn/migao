@@ -11,6 +11,7 @@ import {
   type PrintMediaId,
 } from '@/lib/print-media'
 import { usePaymentQrcodes } from '@/lib/use-payment-qrcodes'
+import { paperItemSku } from '@/lib/order-item-sku'
 import {
   resolveSalesQuantity,
   SALES_QTY_NOT_SHIPPED,
@@ -51,8 +52,9 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  * ## 制式（四段，逐条对实证 #4）
  *
  * ① 表头：销售单 / 单号 / 日期 / 客户 / 电话 / 地址 / 订货电话；
- * ② 明细：{@link SALES_DOC_COLUMNS}（序号 | 货号 | 数量 | 单位 | 单价 | 金额 | 备注）——
- *    **商品行粒度**（与报价单的「按套 × 部位」粒度**不是同一个数据投影**，不许互套）；
+ * ② 明细：{@link SALES_DOC_COLUMNS}（序号 | 品名 | 货号 | 颜色 | 门幅 | 数量 | 单位 | 单价 | 金额）——
+ *    **商品行粒度**（与报价单的「按套」粒度**不是同一个数据投影**，不许互套）；
+ *    品名 / 货号 / 颜色 / 门幅 取 `lib/order-item-sku.ts` 的 `paperItemSku()`（issue #6869）；
  * ③ 汇总：上期余额 / 预存抵扣 / 优惠金额 / **本单应收** / 账户余额；
  * ④ 页脚：温馨提示 + 扫码支付 QR（无码 ⇒ 整块不出现，**不画假码**）。
  *
@@ -132,8 +134,30 @@ interface SalesDocProps {
  * 销售单明细的列（**全仓唯一一份**）：表头与每行都由它渲染 ⇒ 想加/改列只动这里。
  * 守卫 `test_print_media_matrix_guard.py` C5 断言这串有序标签在 `src/**` 里**恰好出现在
  * 一个文件** —— 复制一份到「另一个介质的版本」⇒ 必红（介质是参数，不是副本）。
+ *
+ * issue #6869（用户 2026-10-14 逐字「缺了商品 sku 的信息」）：原列清单
+ * `序号|货号|数量|单位|单价|金额|备注` 有两个实测缺陷 ——
+ * ① **没有品名 / 颜色 / 门幅**：客户拿这张纸收货，认不出是哪一款布、什么颜色、几米门幅；
+ * ② 「货号」读的是一个**不在响应里**的字段 `productCode`（真字段是 `skuCode`）⇒ 它实际回落到
+ *    商品名（`productCode || productName`）、而「备注」列印的是 `item.color`（同样不在响应里）
+ *    ⇒ 两列一个冒充货号、一个恒空。
+ * ⇒ 新列清单只保留**有真值**的列（取值口 = `lib/order-item-sku.ts`）。
+ * ⛔ 原「备注」列**直接撤掉**（不换成空列、也不另起备注子行）：它印的 `item.color` 已由
+ * 「颜色」列承载，而 `item.specification` 是「品名 + colorName」的同义重复（§31 P2 信息不重复）；
+ * 更要紧的是三联纸单联只有 128mm 可用高，多一行子行会挤掉「本单应收 / 收款码」
+ * （实测 >6 行即溢出被裁，见 `lib/print-media.json` 与 `PrintDocPreview` 的自检）。
  */
-export const SALES_DOC_COLUMNS = ['序号', '货号', '数量', '单位', '单价', '金额', '备注'] as const
+export const SALES_DOC_COLUMNS = [
+  '序号',
+  '品名',
+  '货号',
+  '颜色',
+  '门幅',
+  '数量',
+  '单位',
+  '单价',
+  '金额',
+] as const
 
 /**
  * 🔴 **服务端未采集**的销售单金额栏（缺口，**不编数**）。
@@ -303,18 +327,20 @@ export default function SalesDoc({
           <thead>
             <tr>
               <DocTh className="w-[6%]">{SALES_DOC_COLUMNS[0]}</DocTh>
-              <DocTh className="w-[20%]">{SALES_DOC_COLUMNS[1]}</DocTh>
+              <DocTh className="w-[24%]">{SALES_DOC_COLUMNS[1]}</DocTh>
+              <DocTh className="w-[12%]">{SALES_DOC_COLUMNS[2]}</DocTh>
+              <DocTh className="w-[9%]">{SALES_DOC_COLUMNS[3]}</DocTh>
+              <DocTh className="w-[8%]">{SALES_DOC_COLUMNS[4]}</DocTh>
               <DocTh align="right" className="w-[9%]">
-                {SALES_DOC_COLUMNS[2]}
-              </DocTh>
-              <DocTh className="w-[8%]">{SALES_DOC_COLUMNS[3]}</DocTh>
-              <DocTh align="right" className="w-[13%]">
-                {SALES_DOC_COLUMNS[4]}
-              </DocTh>
-              <DocTh align="right" className="w-[16%]">
                 {SALES_DOC_COLUMNS[5]}
               </DocTh>
-              <DocTh className="w-[28%]">{SALES_DOC_COLUMNS[6]}</DocTh>
+              <DocTh className="w-[6%]">{SALES_DOC_COLUMNS[6]}</DocTh>
+              <DocTh align="right" className="w-[12%]">
+                {SALES_DOC_COLUMNS[7]}
+              </DocTh>
+              <DocTh align="right" className="w-[14%]">
+                {SALES_DOC_COLUMNS[8]}
+              </DocTh>
             </tr>
           </thead>
           <tbody data-testid="sales-doc-body">
@@ -328,30 +354,42 @@ export default function SalesDoc({
                 </td>
               </tr>
             ) : (
-              items.map((item: OrderItem, idx: number) => (
-                <tr key={item.id || idx} data-testid={`sales-item-${idx}`}>
-                  <DocTd align="right">{idx + 1}</DocTd>
-                  {/* 货号：productCode 优先，缺则回落到商品名（两者都缺 ⇒ 显式占位） */}
-                  <DocTd cut>{paperText(item.productCode || item.productName)}</DocTd>
-                  {/* 数量：**实发**（后端 admin 读面；真值 owner = `order_shipment_items`）。
-                      未发行 ⇒ 显式「未发」；未发货 / 读面没取到 ⇒ 订单数量（口径已印在表上方）。
-                      ⛔ 任何情况下都不写 0 —— `0` 会被读成「实发为零」（issue #5651 硬约束）。 */}
-                  <DocTd align="right" testId={`sales-qty-${idx}`}>
-                    {qty.cells[idx]?.basis === 'shipped' && qty.cells[idx]?.value === null
-                      ? SALES_QTY_NOT_SHIPPED
-                      : paperText(qty.cells[idx]?.value)}
-                  </DocTd>
-                  {/* 单位：`OrderItem.quantity` 在本系统**恒为米** —— 发货单表头写的就是
-                      「数量(米)」、报价单单价写的是「元/米」⇒ 单位取**同一口径**，
-                      不新增字段、也不编一个别单位 */}
-                  <DocTd>米</DocTd>
-                  <DocTd align="right">{formatAmount(item.unitPrice)}</DocTd>
-                  <DocTd align="right" testId={`sales-row-amount-${idx}`}>
-                    {formatAmount(item.amount)}
-                  </DocTd>
-                  <DocTd cut>{paperText(item.color, '')}</DocTd>
-                </tr>
-              ))
+              items.map((item: OrderItem, idx: number) => {
+                // 品名 / 货号 / 颜色 / 门幅 = 纸面身份四件套（issue #6869）——
+                // 唯一取值口，缺值一律显式占位 `—`（不静默留空，见文件头硬约束）
+                const sku = paperItemSku(item)
+                return (
+                  <tr key={item.id || idx} data-testid={`sales-item-${idx}`}>
+                    <DocTd align="right">{idx + 1}</DocTd>
+                    <DocTd cut>{sku.name || SALES_DOC_MISSING}</DocTd>
+                    <DocTd cut testId={`sales-code-${idx}`}>
+                      {sku.code || SALES_DOC_MISSING}
+                    </DocTd>
+                    <DocTd cut testId={`sales-color-${idx}`}>
+                      {sku.color || SALES_DOC_MISSING}
+                    </DocTd>
+                    <DocTd testId={`sales-door-width-${idx}`}>
+                      {sku.doorWidth || SALES_DOC_MISSING}
+                    </DocTd>
+                    {/* 数量：**实发**（后端 admin 读面；真值 owner = `order_shipment_items`）。
+                        未发行 ⇒ 显式「未发」；未发货 / 读面没取到 ⇒ 订单数量（口径已印在表上方）。
+                        ⛔ 任何情况下都不写 0 —— `0` 会被读成「实发为零」（issue #5651 硬约束）。 */}
+                    <DocTd align="right" testId={`sales-qty-${idx}`}>
+                      {qty.cells[idx]?.basis === 'shipped' && qty.cells[idx]?.value === null
+                        ? SALES_QTY_NOT_SHIPPED
+                        : paperText(qty.cells[idx]?.value)}
+                    </DocTd>
+                    {/* 单位：`OrderItem.quantity` 在本系统**恒为米** —— 发货单表头写的就是
+                        「数量(米)」、报价单单价写的是「元/米」⇒ 单位取**同一口径**，
+                        不新增字段、也不编一个别单位 */}
+                    <DocTd>米</DocTd>
+                    <DocTd align="right">{formatAmount(item.unitPrice)}</DocTd>
+                    <DocTd align="right" testId={`sales-row-amount-${idx}`}>
+                      {formatAmount(item.amount)}
+                    </DocTd>
+                  </tr>
+                )
+              })
             )}
           </tbody>
         </table>

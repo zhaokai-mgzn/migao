@@ -56,9 +56,10 @@ function buildItem(overrides: Partial<OrderItem> = {}): OrderItem {
     id: 'item-1',
     productId: 'p-1',
     productName: '布艺遮光帘A',
-    productCode: '0012',
-    color: '米白',
-    specification: '门幅2.8米',
+    // issue #6869：响应真字段是 `skuCode`（`productCode`/`color` 不在响应里）；
+    // 颜色 / 门幅在 `processingInfo` —— 夹具按真 wire 形态写。
+    skuCode: '0012',
+    processingInfo: { colorName: '米白', doorWidth: '2.8米' },
     // 🔴 数量 × 单价 = 30，而服务端 `amount` = 500：**故意不同** ——
     // 前端若现算，纸面会印 30.00（红证载荷，不是脏数据）
     quantity: 3,
@@ -122,7 +123,7 @@ const text = (testId: string): string =>
   document.querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? ''
 const sheet = (): HTMLElement | null => document.querySelector('[data-testid="sales-sheet"]')
 
-/** 明细区逐格取值（序号/货号/数量/单位/单价/金额/备注）—— 用于「切介质取值不变」的逐格比对 */
+/** 明细区逐格取值（序号/品名/货号/颜色/门幅/数量/单位/单价/金额）—— 用于「切介质取值不变」的逐格比对 */
 function rowCells(): string[][] {
   return Array.from(document.querySelectorAll('[data-testid^="sales-item-"]')).map((tr) =>
     Array.from(tr.querySelectorAll('td')).map((td) => td.textContent?.trim() || '')
@@ -181,15 +182,38 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
     expect(text('sales-total')).toBe(triTotal)
   })
 
-  it('② 列清单 = SALES_DOC_COLUMNS（全仓唯一一份；商品行粒度，不是报价单的按套×部位）', () => {
+  it('② 列清单 = SALES_DOC_COLUMNS（全仓唯一一份；商品行粒度，不是报价单的按套粒度）', () => {
     render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} />)
     const headers = Array.from(document.querySelectorAll('.sales-doc-table thead th')).map(
       (th) => th.textContent?.trim()
     )
     expect(headers).toEqual([...SALES_DOC_COLUMNS])
-    expect([...SALES_DOC_COLUMNS]).toEqual(['序号', '货号', '数量', '单位', '单价', '金额', '备注'])
+    // issue #6869：补上商品 SKU 四件套（品名/颜色/门幅），撤掉恒空的「备注」（原读 `item.color`）
+    expect([...SALES_DOC_COLUMNS]).toEqual([
+      '序号',
+      '品名',
+      '货号',
+      '颜色',
+      '门幅',
+      '数量',
+      '单位',
+      '单价',
+      '金额',
+    ])
     expect(rowCells()).toHaveLength(1)
-    expect(rowCells()[0].slice(0, 7)).toEqual(['1', '0012', '3', '米', '10.00', '500.00', '米白'])
+    // 🔴 货号取响应真字段 `skuCode` —— 夹具**没有** `productCode`（幽灵字段）：
+    // 旧实现（`productCode || productName`）在这一格印的是品名 ⇒ 本判据即红证
+    expect(rowCells()[0]).toEqual([
+      '1',
+      '布艺遮光帘A',
+      '0012',
+      '米白',
+      '2.8米',
+      '3',
+      '米',
+      '10.00',
+      '500.00',
+    ])
   })
 
   it('🔴 ③ 金额取服务端字段：行金额 = item.amount（≠ 单价×数量），本单应收 = order.actualAmount', () => {
@@ -255,7 +279,8 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
       />
     )
     // 判据面 = **缺值那一行**（真 0 的对照行在另一行：缺值行不得有 0.00，真 0 行不得有「—」）
-    const amountColumn = paperNumericColumn(doc(), { column: 5 })
+    // 金额列 index = 8（9 列表：序号0 品名1 货号2 颜色3 门幅4 数量5 单位6 单价7 金额8）
+    const amountColumn = paperNumericColumn(doc(), { column: 8 })
     // 单据：销售单 SalesDoc
     assertNoPaperZeroFill(amountColumn.slice(0, 1), {
       label: '销售单 SalesDoc',

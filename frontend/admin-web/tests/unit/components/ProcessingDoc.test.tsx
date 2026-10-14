@@ -48,9 +48,9 @@ function buildItem(overrides: Partial<OrderItem> = {}): OrderItem {
     id: 'item-1',
     productId: 'p-1',
     productName: '布艺遮光帘A',
-    productCode: '0012',
-    color: '米白',
-    specification: '门幅2.8米',
+    // issue #6869：货号真字段是响应里的 `skuCode`（`productCode` **不在响应里**）；
+    // 颜色 / 门幅在 `processingInfo` —— 夹具按真 wire 形态写。
+    skuCode: '0012',
     quantity: 12.5,
     unitPrice: 100,
     amount: 1250,
@@ -63,6 +63,7 @@ function buildItem(overrides: Partial<OrderItem> = {}): OrderItem {
       craft: '韩褶',
       cuttingMode: '定高买宽',
       colorName: '米白',
+      doorWidth: '2.8米',
       componentRole: '主布',
     },
     ...overrides,
@@ -197,7 +198,7 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
     expect(doc()?.textContent).toContain('CSO260926-0001')
   })
 
-  it('② 按套分块：3 个商品行 ⇒ 3 块，各带 `第N套/共M套` 与 8 列表头', () => {
+  it('② 按套分块：3 个商品行 ⇒ 3 块，各带 `第N套/共M套` 与 9 列表头', () => {
     render(
       <ProcessingDoc
         order={buildOrder({
@@ -214,17 +215,96 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
       th.textContent?.trim()
     )
     expect(headers.slice(0, PROCESSING_DOC_COLUMNS.length)).toEqual([...PROCESSING_DOC_COLUMNS])
-    // 逐条命中 issue 实证 #3 的列
+    // issue #6869：列清单换成「商品 SKU 四件套 + 尺寸/数量/组件/批号/备注」——
+    // 原「部位 / 部位信息 / 货号(=拼串) / 用料」退场（部位列在 #4521 后对普通订单恒空）
     expect([...PROCESSING_DOC_COLUMNS]).toEqual([
-      '部位',
-      '部位信息',
-      '尺寸',
-      '组件',
+      '品名',
       '货号',
-      '用料',
+      '颜色',
+      '门幅',
+      '尺寸',
+      '数量(米)',
+      '组件',
       '批号',
       '备注',
     ])
+  })
+
+  it('② issue #6869：逐格印商品 SKU 四件套（品名/货号/颜色/门幅）—— 货号取响应真字段 `skuCode`', () => {
+    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
+    const cells = Array.from(doc()!.querySelectorAll('.processing-doc-table tbody tr td')).map(
+      (td) => td.textContent?.trim() ?? ''
+    )
+    expect(cells.slice(0, PROCESSING_DOC_COLUMNS.length)).toEqual([
+      '布艺遮光帘A', // 品名
+      '0012', // 货号（`skuCode` —— 夹具**没有** `productCode`：读幽灵字段的旧实现这里必空 ⇒ 红证）
+      '米白', // 颜色（`processingInfo.colorName`）
+      '2.8米', // 门幅（`processingInfo.doorWidth`，经 `craftSpecRows` 同一份格式化）
+      '3.2×2.6', // 尺寸
+      '12.5', // 数量(米)
+      '主布', // 组件
+      '—', // 批号（无快照行 ⇒ 未指派，显式占位）
+      '', // 备注（未填行级备注 ⇒ 留白供手写）
+    ])
+  })
+
+  it('② issue #6869：工艺说明行承载原「部位信息」，且「部位」并入其中（不再单独成列）', () => {
+    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
+    const text = doc()?.textContent || ''
+    expect(text).toContain('部位：布帘')
+    // 行标签「工艺」在**首格**（不是「工艺：…」前缀 —— 明细里本来就有「工艺：韩褶」，
+    // 前缀会让纸面出现「工艺：…工艺：…」的重复，真机取证实测）
+    const craftRow = Array.from(doc()!.querySelectorAll('.processing-doc-table tbody tr')).find(
+      (tr) => tr.querySelector('td')?.textContent?.trim() === '工艺'
+    )
+    expect(craftRow).toBeTruthy()
+    expect(text).not.toContain('工艺：部位：')
+    // 「门幅」有自己的列 ⇒ 不许在工艺行里重复印一遍（同一真值印两处只是噪音）
+    expect(text).not.toContain('门幅：2.8米')
+    // 表头里不再有「部位」「部位信息」列
+    const headers = Array.from(doc()!.querySelectorAll('.processing-doc-table thead th')).map(
+      (th) => th.textContent?.trim()
+    )
+    expect(headers).not.toContain('部位')
+    expect(headers).not.toContain('部位信息')
+  })
+
+  it('② issue #6869：备注列 = 商家手写的行级备注（`processingInfo.remark`）', () => {
+    render(
+      <ProcessingDoc
+        order={buildOrder({
+          items: [buildItem({ processingInfo: { colorName: '米白', remark: '公式--48个折' } })],
+        })}
+        processingOrder={buildProcessingOrder()}
+      />
+    )
+    const cells = Array.from(doc()!.querySelectorAll('.processing-doc-table tbody tr td')).map(
+      (td) => td.textContent?.trim() ?? ''
+    )
+    expect(cells[PROCESSING_DOC_COLUMNS.length - 1]).toBe('公式--48个折')
+  })
+
+  it('① 货运：**枚举转中文**（issue #6869 用户逐字「不要用英文，人家看不懂」）；自定义值原样印', () => {
+    render(
+      <ProcessingDoc
+        order={buildOrder({ logisticsType: 'express', logisticsCompany: '顺丰速运' })}
+        processingOrder={buildProcessingOrder()}
+      />
+    )
+    const text = doc()?.textContent || ''
+    expect(text).toContain('快递 · 顺丰速运')
+    // 修前形态 = 原样拼后端枚举 ⇒ 纸面印 `express · 顺丰速运`（下面这条就是红证）
+    expect(text).not.toContain('express')
+
+    cleanup()
+    // 未知/自定义取值**原样回显**（不编「快递」兜底）——『物流/专线』是登记值，故这条测自定义串
+    render(
+      <ProcessingDoc
+        order={buildOrder({ logisticsType: '客户自送', logisticsCompany: '' })}
+        processingOrder={buildProcessingOrder()}
+      />
+    )
+    expect(doc()?.textContent).toContain('客户自送')
   })
 
   it('③ 版面：@page A4（由介质矩阵生成）+ 分页不裁切 + 表头重复', () => {
@@ -384,7 +464,7 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
     // 批号必须比常态为空的「备注」列宽
     expect(batch).toBeGreaterThan(headerWidthOf('备注'))
     expect(widths.reduce((sum, w) => sum + w, 0)).toBe(100)
-    // 8 列一个都不能少（少一个 label ⇒ NaN，这条会红）
+    // 9 列一个都不能少（少一个 label ⇒ NaN，这条会红）
     expect(widths.every((w) => Number.isFinite(w))).toBe(true)
 
     // 🔴 可红（在真值源上取证，不碰真文件）：把本组件的表头宽度声明改成**修前**的批号 10%
@@ -396,8 +476,8 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
     const declared = Array.from(source.matchAll(/<DocTh[^>]*?w-\[(\d+)%\][^>]*?>\s*\{?PROCESSING_DOC_COLUMNS\[(\d)\]/g)).map(
       (m) => ({ index: Number(m[2]), percent: Number(m[1]) })
     )
-    expect(declared.find((d) => d.index === 6)?.percent).toBe(batch) // 判据读的就是真值源
-    const broken = declared.map((d) => (d.index === 6 ? 10 : d.percent))
-    expect(broken.find((p, i) => declared[i].index === 6)).toBeLessThan(16)
+    expect(declared.find((d) => d.index === 7)?.percent).toBe(batch) // 判据读的就是真值源
+    const broken = declared.map((d) => (d.index === 7 ? 10 : d.percent))
+    expect(broken.find((p, i) => declared[i].index === 7)).toBeLessThan(16)
   })
 })

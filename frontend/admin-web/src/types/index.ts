@@ -632,7 +632,18 @@ export interface OrderItem {
   id: string
   productId?: string
   productName: string         // 商品标题
-  productCode?: string        // 商品货号
+  /**
+   * 商品货号（**响应真字段**）：后端 `OrderDetailResponse.OrderItemResponse.skuCode`，
+   * 由 `OrderService.convertToItemResponse` 从 `products.sku_code` 回填（issue #6869）。
+   */
+  skuCode?: string
+  /**
+   * ⚠️ `order_items` 表**没有这一列**、响应里也**没有这个键** —— 纸面/列表原先读它 ⇒ 货号恒空
+   * （issue #6869 的根因）。保留仅为兼容存量夹具，新代码走
+   * `frontend/admin-web/src/lib/order-item-sku.ts` 的 `paperItemSku()`。
+   */
+  productCode?: string
+  /** ⚠️ 同上：不在响应里；颜色真值在 `processingInfo.colorName`。 */
   color?: string              // 颜色
   specification?: string      // 规格尺寸（如"门幅2.8米"）
   quantity: number            // 数量（米）

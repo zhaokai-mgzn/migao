@@ -41,16 +41,20 @@ function buildItem(overrides: Partial<OrderItem> = {}): OrderItem {
     id: 'item-1',
     productId: 'p-1',
     productName: '布艺遮光帘A',
-    productCode: '0012',
-    color: '米白',
-    specification: '',
+    skuCode: '0012',
     quantity: 12.5,
     unitPrice: 100,
     amount: 1250,
     subtotal: 1250,
     width: 3.2,
     height: 2.6,
-    processingInfo: { curtainType: '布帘', craft: '韩褶', colorName: '米白', componentRole: '主布' },
+    processingInfo: {
+      curtainType: '布帘',
+      craft: '韩褶',
+      colorName: '米白',
+      doorWidth: '2.8米',
+      componentRole: '主布',
+    },
     ...overrides,
   }
 }
@@ -129,10 +133,10 @@ describe('打印表格列数不变量 · 判别力自证', () => {
 // ───────────────────────── ① 实例判据：加工单 ─────────────────────────
 
 describe('加工单 · 表格列数不变量（issue #6595）', () => {
-  it('🔴 主体行（品名规格为空 ⇒ 没有补位行）每一行都必须占满 8 列 —— 备注列才有边框', () => {
+  it('🔴 主体行每一行都必须占满表头列数 —— 最后一列（备注）才有边框', () => {
     render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
     const tables = collectTableIntegrity(dataTables(doc()))
-    // 每套一张 8 列表（1 个商品行 = 1 张正文表；抬头那几张信息表因不带 `<thead>` 不在此面内）
+    // 每套一张正文表（1 个商品行 = 1 张正文表；抬头那几张信息表因不带 `<thead>` 不在此面内）
     expect(tables.length).toBeGreaterThan(0)
     for (const table of tables) {
       expect(table.columns).toBe(PROCESSING_DOC_COLUMNS.length)
@@ -142,15 +146,17 @@ describe('加工单 · 表格列数不变量（issue #6595）', () => {
     }
   })
 
-  it('品名规格有值 ⇒ 多一条整行补位（`colSpan` 计入后仍逐行自洽）', () => {
+  it('工艺说明行（整行补位）⇒ `colSpan` 计入后仍逐行自洽', () => {
     render(
       <ProcessingDoc
-        order={buildOrder({ items: [buildItem({ specification: '门幅2.8米' })] })}
+        order={buildOrder({ items: [buildItem({ processingInfo: { craft: '韩褶' } })] })}
         processingOrder={buildProcessingOrder()}
       />
     )
     const tables = collectTableIntegrity(dataTables(doc()))
-    expect(tables[0].rows).toEqual([8, 8, 8])
+    const n = PROCESSING_DOC_COLUMNS.length
+    // 表头 + 主体行 + 「工艺：…」补位行
+    expect(tables[0].rows).toEqual([n, n, n])
   })
 
   it('抬头信息表（`tbody`-only、行内不等列）不被误判 —— 判别依据是 `<thead>`', () => {

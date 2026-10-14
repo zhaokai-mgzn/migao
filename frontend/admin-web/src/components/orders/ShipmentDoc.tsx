@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import type { Order, OrderItem, LogisticsInfo } from '@/types'
 import type { PrintTarget } from './index'
 import { printBodyFontPt, printPageRule } from '@/lib/print-media'
+import { paperItemSku } from '@/lib/order-item-sku'
 import { cn, formatFullDateTime } from '@/lib/utils'
 
 /**
@@ -231,7 +232,7 @@ export default function ShipmentDoc({
             <DocTh className="w-[26%]">商品</DocTh>
             <DocTh className="w-[9%]">货号</DocTh>
             <DocTh className="w-[9%]">颜色</DocTh>
-            <DocTh className="w-[12%]">规格尺寸</DocTh>
+            <DocTh className="w-[12%]">门幅</DocTh>
             <DocTh align="right" className="w-[13%]">单价(元/米)</DocTh>
             <DocTh align="right" className="w-[11%]">数量(米)</DocTh>
             <DocTh align="right" className="w-[14%]">金额(元)</DocTh>
@@ -245,17 +246,23 @@ export default function ShipmentDoc({
               </td>
             </tr>
           )}
-          {items.map((item: OrderItem, idx: number) => (
-            <tr key={item.id || idx}>
-              <DocTd>{item.productName}</DocTd>
-              <DocTd>{item.productCode || ''}</DocTd>
-              <DocTd>{item.color || ''}</DocTd>
-              <DocTd>{item.specification || ''}</DocTd>
-              <DocTd align="right">{formatAmount(item.unitPrice)}</DocTd>
-              <DocTd align="right">{formatQty(item.quantity)}</DocTd>
-              <DocTd align="right">{formatAmount(item.amount)}</DocTd>
-            </tr>
-          ))}
+          {items.map((item: OrderItem, idx: number) => {
+            // 纸面身份四件套取 `lib/order-item-sku.ts`（issue #6869）：原先读的
+            // `item.productCode` / `item.color` / `item.specification` **都不在响应里**
+            // ⇒ 货号 / 颜色 / 规格 三列在真单上恒空（「缺了商品 sku 的信息」的同族形态）。
+            const sku = paperItemSku(item)
+            return (
+              <tr key={item.id || idx}>
+                <DocTd>{sku.name}</DocTd>
+                <DocTd>{sku.code}</DocTd>
+                <DocTd>{sku.color}</DocTd>
+                <DocTd>{sku.doorWidth}</DocTd>
+                <DocTd align="right">{formatAmount(item.unitPrice)}</DocTd>
+                <DocTd align="right">{formatQty(item.quantity)}</DocTd>
+                <DocTd align="right">{formatAmount(item.amount)}</DocTd>
+              </tr>
+            )
+          })}
           {items.length > 0 && (
             <tr>
               <td className="border border-neutral-400 px-2 py-1.5 text-right font-semibold" colSpan={5}>

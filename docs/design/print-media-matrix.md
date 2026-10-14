@@ -45,7 +45,7 @@
 
 | 层 | 是什么 | 落在哪 | 判据 |
 |---|---|---|---|
-| ① 内容 / 字段映射 | 这张单据**印什么**（列清单 + 取值口径） | 各 `*Doc.tsx`，每张**只有一份** | `test_print_media_matrix_guard.py` C5（列清单全仓**恰好一个文件**命中） |
+| ① 内容 / 字段映射 | 这张单据**印什么**（列清单 + 取值口径） | 各 `*Doc.tsx`，每张**只有一份** | `test_print_media_matrix_guard.py` C5（列清单全仓**恰好一个文件**命中）+ **C7**（商品身份走 `lib/order-item-sku.ts` 的 `paperItemSku()`、物流方式走 `lib/logistics.ts` 的 `freightText()`） |
 | ② 介质 | 印在**什么纸**上（尺寸 / 边距 / 技术 / 复写 / 字号） | `lib/print-media.json` + `.ts` | 同上 C2（单据 `@page` 与矩阵同源）、C4（待实测登记） |
 | ③ 打印隔离 | 一次只放**一份**单据上纸 | `body > *:not(.print-doc)`（#4983） | `test_print_doc_convention_guard.py` |
 | ④ 打印入口 / 纸型唯一 | `window.print()` 只在 `lib/print-doc.ts`（且**目标提交后**才调用）；`@page` 只在「本次目标是本单据」时发表 | `lib/print-doc.ts` + 各 `*Doc.tsx` 的条件 `<style>` | `test_print_single_doc_on_paper.py`（C1 / C2 / C3） |
@@ -57,6 +57,14 @@
 ② 「列清单全仓唯一」（C5，复制一份映射 ⇒ 红）。
 
 ## 4. 字段缺口（**如实登记，不编数**）
+
+> 🔴 **2026-10-14（issue #6869）列清单重做**：用户逐字「缺了商品 sku 的信息」「货运 express · 顺丰速运，
+> 不要用英文」「报价单展示部位是啥意思」⇒ 三张单据（报价单 / 销售单 / 加工单）与发货单的商品明细
+> 统一改成「**品名 / 货号 / 颜色 / 门幅**」四件套（取值口 = `lib/order-item-sku.ts` 的 `paperItemSku()`），
+> 「部位」列退场（issue #4521 移除录入面后它对普通订单恒空，只有纱帘行有值 —— 该信息并入「工艺：…」行）。
+> ⚠️ 根因**不是**漏列：原先读的 `item.productCode` / `item.color` / `item.specification` **都不在
+> `OrderItemResponse` 里**（真字段 = `skuCode` + `processingInfo.colorName/doorWidth/remark`），
+> 所以那些列在真单上恒空 —— 该形态的类级守卫 = 本文件的判据 **C7**。
 
 客户实证制式里有、而 MIGAO **今天没有口径**的栏位 —— 纸面以**显式标注**呈现
 （`—` / 「未采集」），**绝不**印 `0.00` 或空串（印 0 = 把「没有这个数」画成「余额为零」）：

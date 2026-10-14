@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { craftSpecRows } from '@/lib/craft-display'
+import { freightText } from '@/lib/logistics'
+import { paperItemSku } from '@/lib/order-item-sku'
 import { paperLineSubtotal } from '@/lib/order-amount'
 import { usePaymentQrcodes } from '@/lib/use-payment-qrcodes'
 import { printBodyFontPt, printPageRule } from '@/lib/print-media'
@@ -20,7 +21,9 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  * 这是 A4 大小，这个用来参考设计我们的打印制式」。四段制式：
  *   ① 表头：报价单 / 单号 / 货运 / 客户·电话·地址 / 备注
  *   ② 正文：**每个商品行自成一套**（用户裁定 ②）—— 段头 `第N套/共M套` + `本套金额`，
- *      每段一张 10 列表：部位 | 部位信息 | 部位备注 | 宽*高 | 组件 | 货号 | 用料 | 价格 | 小计 | 备注
+ *      每段一张 9 列表：品名 | 组件 | 货号 | 颜色 | 门幅 | 尺寸 | 数量(米) | 单价(元/米) | 小计
+ *      （列清单改自 issue #6869：用户 2026-10-14 逐字「缺了商品 sku 的信息」+
+ *      「报价单展示部位是啥意思」）＋ 一行「工艺：…」承载原「部位信息 / 部位备注」两列的内容
  *   ③ 汇总：本单总金额 / 优惠金额 / 本单应收
  *   ④ 页脚：温馨提示常量 + 右下扫码支付码
  *
@@ -50,10 +53,14 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  * 4. **每页只挂一份**：`.quotation-print-area` 是全局选择器，挂两份会打印出两套单据。
  *
  * 数据口径（四条硬约束，勿随手改）：
- * 5. **展示真值单一来源**：`部位` = `processingInfo.curtainType`；`部位信息` / `部位备注` 一律
- *    取自 `lib/craft-display.ts` 的 `craftSpecRows()`（设计文档 §4.9「一份 spec，三处渲染」），
- *    本组件**不另写一份推导**；「部位」行已有自己的列 ⇒ 从两列里排除（同一真值不重复印）；
- *    两列的切分沿用既有「原始输入 / 算料输出」分组（§4.3 表 B）。
+ * 5. **展示真值单一来源**：品名 / 货号 / 颜色 / 门幅 一律取 `lib/order-item-sku.ts` 的
+ *    `paperItemSku(item)`（**唯一**取值口；货号真字段是响应里的 `skuCode`，原先读的 `productCode`
+ *    **不在响应里** ⇒ 纸面货号恒空 —— 那正是 issue #6869 的根因）；
+ *    工艺说明取 `lib/craft-display.ts` 的 `craftSpecRows()`（设计文档 §4.9「一份 spec，三处渲染」），
+ *    本组件**不另写一份推导**；「门幅」已由 `paperItemSku` 排除（它有独立的列，同一真值不重复印），
+ *    而「部位」（`curtainType`）**保留在工艺说明里** —— issue #4521 之后它只有纱帘行才有值，
+ *    独立成列时恒空（用户原话「报价单展示部位是啥意思」），并入工艺说明才不丢信息。
+ *    两组沿用既有「原始输入 / 算料输出」切分（§4.3 表 B）：`工艺：…　算料：…`。
  *    `craftSpecRows` 已丢弃缺值行 ⇒ 键缺席 / null / 空串 / 空数组的行不出现，
  *    纸面**绝不**出现 `undefined` / `null` / `NaN`。
  * 6. **金额口径单一来源**：行小计 = `lib/order-amount.ts` 的 `paperLineSubtotal(item)`
@@ -165,13 +172,11 @@ export default function QuotationDoc({
     }))
     .filter((entry) => entry.imageUrl !== '')
 
-  // 货运：物流方式（`order.logisticsType`）+ 物流公司（`order.logisticsCompany`，issue #4874）。
-  // 两者都缺 ⇒ 该栏不印（不编值、不留空标签）。
-  // ⚠️ 这里**原样印**取值、不套 `logisticsTypeLabel()` 的「未知 ⇒ 快递」兜底 ——
-  // 报价单是给客户的**报价凭证**，不能把一个未知/自定义的物流方式印成「快递」（编值）。
-  const logisticsType = textOrNull(order.logisticsType)
-  const logisticsCompany = textOrNull(order.logisticsCompany)
-  const freight = [logisticsType, logisticsCompany].filter(Boolean).join(' · ')
+  // 货运：物流方式 + 物流公司（issue #4874）。两者都缺 ⇒ 该栏不印（不编值、不留空标签）。
+  // 🔴 必须走 `lib/logistics.ts` 的 `freightText()`（issue #6869）：原先**原样拼**后端枚举
+  // ⇒ 纸面印出 `express · 顺丰速运`（用户 2026-10-14 逐字「不要用英文，人家看不懂」）。
+  // 该口对**未登记值**回显原值，**不套**「未知 ⇒ 快递」兜底（报价单是给客户的凭证，不能编值）。
+  const freight = freightText(order.logisticsType, order.logisticsCompany)
   const remark = textOrNull(order.remark)
   const hasDiscount = typeof order.discountAmount === 'number'
 
@@ -302,29 +307,30 @@ export default function QuotationDoc({
 // ========== 每套（= 每个商品行）一段 ==========
 
 function SetBlock({ item, index, total }: { item: OrderItem; index: number; total: number }) {
+  // 商品身份（品名 / 货号 / 颜色 / 门幅）—— **唯一**取值口，见文件头第 5 条
+  const sku = paperItemSku(item)
   const info = (item.processingInfo ?? {}) as Record<string, unknown>
-
-  // 部位 = 部位自己的名字（与洗水码「商品行 = 部位」同粒度）
-  const part = textOrNull(info.curtainType)
-  // 部位信息 / 部位备注 = craftSpecRows 的**同一份真值**（§4.9）——
-  // 排除「部位」行（它已有自己的列，重复印同一真值只是噪音）；
-  // 其余按「算料输出」与否分列（分组口径与 OrderItemList 同一份 CALC_OUTPUT_LABELS）
-  const specRows = craftSpecRows(item.processingInfo).filter((row) => row.label !== '部位')
-  const infoRows = specRows.filter((row) => !CALC_OUTPUT_LABELS.has(row.label))
-  const remarkRows = specRows.filter((row) => CALC_OUTPUT_LABELS.has(row.label))
 
   // 组件：面料行 = componentRole（缺省即主布）/ 加工费行 = 加工费
   const componentRole = textOrNull(info.componentRole) || '主布'
-  // 货号 = productCode + colorName（各自缺则只印有的那个；都缺 ⇒ 不印）
-  const code = [textOrNull(item.productCode), textOrNull(info.colorName)]
-    .filter(Boolean)
-    .join(' ')
   const width = numberOrNull(item.width)
   const height = numberOrNull(item.height)
-  const size = width !== null && height !== null ? `${width}×${height}` : null
+  const size = width !== null && height !== null ? `${width}×${height}` : ''
   const quantity = numberOrNull(item.quantity)
   const processingFee = numberOrNull(item.processingFee) ?? 0
-  const spec = textOrNull(item.specification)
+
+  // 工艺说明：craftSpecRows 的**同一份**真值（§4.9）—— 「门幅」已由 paperItemSku 排除
+  // （它有自己的列，重复印同一真值只是噪音）；其余按「算料输出」与否分两组（§4.3 表 B），
+  // 两组并入**同一行**（纸面要省版面）。
+  // ⚠️ 「部位」（curtainType）**保留**在这里 —— #4521 移除录入面后它只有纱帘行才有值，
+  // 独立成列时恒空（用户原话「报价单展示部位是啥意思」），并入工艺说明才不丢信息。
+  const craftText = specText(sku.specRows.filter((row) => !CALC_OUTPUT_LABELS.has(row.label)))
+  const calcText = specText(sku.specRows.filter((row) => CALC_OUTPUT_LABELS.has(row.label)))
+  // 行首那一格放「工艺」作**行标签**（不是再拼一个「工艺：」前缀 —— 明细里本来就有一行
+  // 「工艺：韩褶」，前缀会让纸面出现「工艺：…工艺：…」的重复，真机取证时一眼可见）
+  const specLine = [craftText, calcText !== '' ? `算料：${calcText}` : '']
+    .filter(Boolean)
+    .join('　')
 
   return (
     <div className="quotation-set mb-3">
@@ -339,52 +345,58 @@ function SetBlock({ item, index, total }: { item: OrderItem; index: number; tota
       <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            <DocTh className="w-[7%]">部位</DocTh>
-            <DocTh className="w-[14%]">部位信息</DocTh>
-            <DocTh className="w-[14%]">部位备注</DocTh>
-            <DocTh className="w-[9%]">宽*高</DocTh>
-            <DocTh className="w-[7%]">组件</DocTh>
+            <DocTh className="w-[16%]">品名</DocTh>
+            <DocTh className="w-[8%]">组件</DocTh>
             <DocTh className="w-[11%]">货号</DocTh>
-            <DocTh align="right" className="w-[8%]">
-              用料
+            <DocTh className="w-[8%]">颜色</DocTh>
+            <DocTh className="w-[7%]">门幅</DocTh>
+            <DocTh className="w-[10%]">尺寸</DocTh>
+            <DocTh align="right" className="w-[11%]">
+              数量(米)
             </DocTh>
-            <DocTh align="right" className="w-[9%]">
-              价格
+            <DocTh align="right" className="w-[12%]">
+              单价(元/米)
             </DocTh>
-            <DocTh align="right" className="w-[10%]">
+            <DocTh align="right" className="w-[17%]">
               小计
             </DocTh>
-            <DocTh className="w-[11%]">备注</DocTh>
           </tr>
         </thead>
         <tbody>
           {/* 面料行 */}
           <tr>
-            <DocTd>{part || ''}</DocTd>
-            <DocTd>{rowsText(infoRows)}</DocTd>
-            <DocTd>{rowsText(remarkRows)}</DocTd>
-            <DocTd>{size || ''}</DocTd>
+            <DocTd>{sku.name}</DocTd>
             <DocTd>{componentRole}</DocTd>
-            <DocTd>{code}</DocTd>
+            <DocTd>{sku.code}</DocTd>
+            <DocTd>{sku.color}</DocTd>
+            <DocTd>{sku.doorWidth}</DocTd>
+            <DocTd>{size}</DocTd>
             <DocTd align="right">{quantity ?? ''}</DocTd>
             <DocTd align="right">{formatAmount(item.unitPrice)}</DocTd>
             <DocTd align="right">{formatAmount(item.subtotal)}</DocTd>
-            <DocTd>{spec || ''}</DocTd>
           </tr>
           {/* 加工费行：processingFee > 0 才出（与参照物的**有意差异**：我们两笔真实金额
               必须分别列示，否则商家对不上账 —— 见文件头第 7 条） */}
           {processingFee > 0 && (
             <tr>
-              <DocTd>{part || ''}</DocTd>
-              <DocTd>{''}</DocTd>
-              <DocTd>{''}</DocTd>
-              <DocTd>{''}</DocTd>
+              <DocTd>{sku.name}</DocTd>
               <DocTd>加工费</DocTd>
-              <DocTd>{code}</DocTd>
+              <DocTd>{sku.code}</DocTd>
+              <DocTd>{sku.color}</DocTd>
+              <DocTd>{''}</DocTd>
+              <DocTd>{''}</DocTd>
               <DocTd align="right">{quantity ?? ''}</DocTd>
               <DocTd align="right">{formatAmount(processingFee)}</DocTd>
               <DocTd align="right">{formatAmount(processingFee)}</DocTd>
-              <DocTd>{''}</DocTd>
+            </tr>
+          )}
+          {/* 工艺说明行：整行承载原「部位信息 / 部位备注」两列（issue #6869）；首格 = 行标签「工艺」。
+              🔴 整行必须占满 9 列（1 + `colSpan` 8）—— 少一格 ⇒ 那一列在数据行
+              没有单元格、也就没有边框（issue #6595 实测形态）。 */}
+          {specLine !== '' && (
+            <tr>
+              <DocTd>工艺</DocTd>
+              <DocTd colSpan={8}>{specLine}</DocTd>
             </tr>
           )}
         </tbody>
@@ -395,9 +407,9 @@ function SetBlock({ item, index, total }: { item: OrderItem; index: number; tota
 
 // ========== 打印友好的表格原子（纯边框、无底色，避免打印丢背景） ==========
 
-/** 一组 craftSpecRows ⇒ 换行拼接（缺值行已由 craftSpecRows 丢弃 ⇒ 空组为空串） */
-function rowsText(rows: { label: string; value: string }[]): string {
-  return rows.map((row) => `${row.label}：${row.value}`).join('\n')
+/** 一组 craftSpecRows ⇒ 分号拼接（缺值行已由 craftSpecRows 丢弃 ⇒ 空组为空串） */
+function specText(rows: { label: string; value: string }[]): string {
+  return rows.map((row) => `${row.label}：${row.value}`).join('；')
 }
 
 function DocCell({
@@ -446,12 +458,15 @@ function DocTh({
 function DocTd({
   children,
   align = 'left',
+  colSpan,
 }: {
   children: React.ReactNode
   align?: 'left' | 'right'
+  colSpan?: number
 }) {
   return (
     <td
+      colSpan={colSpan}
       className={[
         'border border-neutral-400 px-1.5 py-1 align-top break-words whitespace-pre-line',
         align === 'right' ? 'text-right' : 'text-left',

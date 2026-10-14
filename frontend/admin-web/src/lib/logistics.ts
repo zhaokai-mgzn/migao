@@ -44,3 +44,30 @@ export function describeLogisticsProfile(type?: string | null, company?: string 
   const parts = [type ? logisticsTypeLabel(type) : '', (company || '').trim()].filter(Boolean)
   return parts.join(' · ')
 }
+
+/**
+ * **纸面口径**的物流方式：登记枚举 → 中文；**未登记/非枚举 ⇒ 原样回显**。
+ *
+ * 🔴 与 {@link logisticsTypeLabel} 的**有意差异**（issue #6869）：那个是**表单**口径，
+ * 未知值回落「快递」（= 与后端列默认值一致，表单需要一个可选中的值）；
+ * 而纸面（报价单 / 加工单）是**给客户的凭证** —— 把未知值或客户自录的值印成「快递」就是**编值**。
+ * 故这里回显原值，缺值 ⇒ `null`（该栏不印）。
+ *
+ * 实证（用户 2026-10-14 逐字）：「货运 express · 顺丰速运，**不要用英文**，人家看不懂」——
+ * 病根是纸面直接拼了后端枚举 `express`，没走任何词表。
+ */
+export function logisticsTypeText(type?: string | null): string | null {
+  const value = (type || '').trim()
+  if (value === '') return null
+  return LOGISTICS_TYPES.find((t) => t.value === value)?.label ?? value
+}
+
+/**
+ * 纸面「货运」栏文案：`快递 · 顺丰速运`（枚举转中文 + 承运商）。
+ *
+ * 两者都缺 ⇒ 空串（调用方据此决定该栏印不印）。**唯一实现点** —— 报价单与加工单共用，
+ * 不各写一份会漂的拼接。
+ */
+export function freightText(type?: string | null, company?: string | null): string {
+  return [logisticsTypeText(type), (company || '').trim()].filter(Boolean).join(' · ')
+}

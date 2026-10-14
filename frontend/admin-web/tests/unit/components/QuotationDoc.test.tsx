@@ -29,7 +29,7 @@ import type { Order, OrderItem } from '@/types'
  * 报价单（可打印纸质文档，issue #4965）—— 照真实报价单 A4 制式（亿家纺织 CSO260918-03182）。
  *
  * 断言的是**纸面内容**：表头（单号/货运/客户·电话·地址/备注）→ 每个商品行一段
- * （`第N套/共M套` + `本套金额` + 一张 10 列表）→ 汇总（本单总金额/优惠金额/本单应收）
+ * （`第N套/共M套` + `本套金额` + 一张 9 列表 + 一行工艺说明）→ 汇总（本单总金额/优惠金额/本单应收）
  * → 页脚（温馨提示 + 扫码支付码）。
  *
  * 用户裁定（2026-09-21，勿自行改）：
@@ -38,8 +38,13 @@ import type { Order, OrderItem } from '@/types'
  * ③ 参照物把加工费并进面料单价，而我们 `unitPrice` / `processingFee` 是**两笔真实金额**
  *    ⇒ 必须**分别列示**（否则商家对不上账）。
  *
- * 展示真值：`部位信息` / `部位备注` 一律走 `lib/craft-display.ts` 的 `craftSpecRows()`
- * （§4.9「一份 spec，三处渲染」）—— 本文件不另写一份推导，只断言「渲染了同一份真值」。
+ * 展示真值：品名 / 货号 / 颜色 / 门幅 走 `lib/order-item-sku.ts` 的 `paperItemSku()`；
+ * 「工艺：…／算料：…」行走 `lib/craft-display.ts` 的 `craftSpecRows()`（§4.9「一份 spec，
+ * 三处渲染」）—— 本文件不另写一份推导，只断言「渲染了同一份真值」。
+ *
+ * 🔴 issue #6869（用户 2026-10-14）：「缺了商品 sku 的信息」+「报价单展示部位是啥意思」。
+ * 夹具按**真 wire 形态**写（`skuCode` + `processingInfo.colorName/doorWidth`）——
+ * 原夹具用的 `productCode` / `color` **都不在响应里**，正是纸面货号/颜色恒空的原因。
  */
 
 function buildItem(overrides: Partial<OrderItem> = {}): OrderItem {
@@ -47,9 +52,7 @@ function buildItem(overrides: Partial<OrderItem> = {}): OrderItem {
     id: 'item-1',
     productId: 'p-1',
     productName: '布艺遮光帘A',
-    productCode: '0012',
-    color: '米白',
-    specification: '门幅2.8米',
+    skuCode: '0012',
     quantity: 12.5,
     unitPrice: 100,
     amount: 1250,
@@ -67,6 +70,7 @@ function buildItem(overrides: Partial<OrderItem> = {}): OrderItem {
       pleatCount: 36,
       perPanelPleats: 18,
       colorName: '米白',
+      doorWidth: '2.8米',
       componentRole: '主布',
     },
     ...overrides,
@@ -134,12 +138,20 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       expect(docText()).toContain('客户要求工作日送达')
     })
 
-    it('货运：物流方式 + 物流公司（issue #4874 字段）—— 原样印，不套「未知 ⇒ 快递」兜底', () => {
+    it('货运：物流方式 + 物流公司（issue #4874 字段）—— **枚举转中文**（issue #6869 用户逐字「不要用英文」）', () => {
       render(<QuotationDoc order={buildOrder()} />)
       const text = docText()
-      // 报价单是给客户的报价凭证：未知/自定义物流方式**不得**被印成「快递」（编值）
-      expect(text).toContain('express')
-      expect(text).toContain('顺丰速运')
+      expect(text).toContain('快递 · 顺丰速运')
+      // 修前形态 = 原样拼后端枚举 ⇒ 纸面印 `express · 顺丰速运`；下面这条就是那条红证
+      expect(text).not.toContain('express')
+    })
+
+    it('货运：未登记取值**原样回显**，不套「未知 ⇒ 快递」兜底（报价单是客户凭证，不编值）', () => {
+      render(
+        <QuotationDoc order={buildOrder({ logisticsType: '客户自送', logisticsCompany: '张三' })} />
+      )
+      expect(docText()).toContain('客户自送 · 张三')
+      expect(docText()).not.toContain('快递 · 张三')
     })
 
     it('货运缺值 ⇒ 不印该栏（不编值、不留空标签）', () => {
@@ -185,34 +197,56 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       expect(text).toContain('第3套/共3套')
     })
 
-    it('10 列表头齐全（部位/部位信息/部位备注/宽*高/组件/货号/用料/价格/小计/备注）', () => {
+    it('9 列表头齐全（品名/组件/货号/颜色/门幅/尺寸/数量(米)/单价(元/米)/小计）—— issue #6869', () => {
       render(<QuotationDoc order={buildOrder()} />)
       for (const col of [
-        '部位',
-        '部位信息',
-        '部位备注',
-        '宽*高',
+        '品名',
         '组件',
         '货号',
-        '用料',
-        '价格',
+        '颜色',
+        '门幅',
+        '尺寸',
+        '数量(米)',
+        '单价(元/米)',
         '小计',
-        '备注',
       ]) {
         expect(screen.getAllByText(col).length).toBeGreaterThanOrEqual(1)
       }
+      // 退场的三列（用户裁定：「部位」在 #4521 后对普通订单恒空；「部位信息/部位备注」并入工艺行）
+      expect(screen.queryByText('部位')).toBeNull()
+      expect(screen.queryByText('部位信息')).toBeNull()
+      expect(screen.queryByText('部位备注')).toBeNull()
     })
 
-    it('面料行：部位 = curtainType / 组件 = componentRole / 货号 = productCode + colorName / 用料 = quantity 米 / 价格 = unitPrice / 小计 = subtotal', () => {
+    it('面料行：品名 = productName / 组件 = componentRole / 货号 = skuCode / 颜色 = colorName / 门幅 = doorWidth / 数量 = quantity 米 / 单价 = unitPrice / 小计 = subtotal', () => {
       render(<QuotationDoc order={buildOrder()} />)
       const text = docText()
-      expect(text).toContain('布帘')
+      expect(text).toContain('布艺遮光帘A')
       expect(text).toContain('主布')
+      // 🔴 货号取响应真字段 `skuCode` —— 夹具**没有** `productCode`（幽灵字段），
+      // 旧实现（读 `productCode`）在这一格印空 ⇒ 本判据即红证
       expect(text).toContain('0012')
       expect(text).toContain('米白')
+      expect(text).toContain('2.8米')
       expect(text).toContain('12.5')
       expect(text).toContain('100.00')
       expect(text).toContain('1,250.00')
+    })
+
+    it('工艺说明行承载原「部位信息 / 部位备注」，且「部位」并入其中（不再单独成列）', () => {
+      render(<QuotationDoc order={buildOrder()} />)
+      const text = docText()
+      expect(text).toContain('部位：布帘')
+      expect(text).toContain('算料：')
+      // 「门幅」有自己的列 ⇒ 工艺行里不得重复印同一真值
+      expect(text).not.toContain('门幅：2.8米')
+      // 🔴 行标签「工艺」在**首格**，不再是「工艺：…」前缀：明细里本来就有一行「工艺：韩褶」，
+      // 前缀会让纸面出现「工艺：部位：纱帘；工艺：韩褶…」（真机取证实测到的重复，已修）
+      const craftRow = Array.from(doc()!.querySelectorAll('.quotation-set tbody tr')).find(
+        (tr) => tr.querySelector('td')?.textContent?.trim() === '工艺'
+      )
+      expect(craftRow).toBeTruthy()
+      expect(text).not.toContain('工艺：部位：')
     })
 
     it('组件缺 componentRole ⇒ 按主布印（缺省即主布）', () => {
@@ -230,7 +264,7 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       expect(docText()).toContain('主布')
     })
 
-    it('宽*高 = width × height（米）', () => {
+    it('尺寸 = width × height（米）', () => {
       render(<QuotationDoc order={buildOrder()} />)
       expect(docText()).toContain('3.2×2.6')
     })
@@ -241,20 +275,20 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       expect(docText()).not.toContain('×2.6')
     })
 
-    it('部位信息 / 部位备注 来自 craftSpecRows（§4.9 单一真值）：工艺/加工类型/打开方式/是否定型 + 总褶数/折数（每片）', () => {
+    it('工艺说明行来自 craftSpecRows（§4.9 单一真值）：工艺/加工类型/打开方式/是否定型 + 算料组', () => {
       render(<QuotationDoc order={buildOrder()} />)
       const text = docText()
-      // 部位信息列
+      // 原始输入组
       expect(text).toContain('韩褶')
       expect(text).toContain('定高买宽')
       expect(text).toContain('双开')
       expect(text).toContain('是')
-      // 部位备注列（算料口径）
+      // 算料输出组
       expect(text).toContain('36')
       expect(text).toContain('18')
     })
 
-    it('缺工艺键 ⇒ 部位信息/部位备注两列留空，不渲染 undefined/null/NaN', () => {
+    it('缺工艺键 ⇒ 工艺说明行不出现，不渲染 undefined/null/NaN', () => {
       render(
         <QuotationDoc
           order={buildOrder({
@@ -267,9 +301,11 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       expect(text).not.toContain('null')
       expect(text).not.toContain('NaN')
       expect(text).not.toContain('否')
+      // 只剩「部位：布帘」一项也照印（该行不为空；行标签「工艺」在首格）
+      expect(text).toContain('部位：布帘')
     })
 
-    it('加工费行：processingFee > 0 才出，组件 = 加工费 / 用料 = quantity 米 / 价格 = 小计 = processingFee', () => {
+    it('加工费行：processingFee > 0 才出，组件 = 加工费 / 数量 = quantity 米 / 单价 = 小计 = processingFee', () => {
       render(
         <QuotationDoc
           order={buildOrder({ items: [buildItem({ processingFee: 250, subtotal: 1250 })] })}
@@ -416,7 +452,7 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
         })}
       />
     )
-    // 判据面 = 10 列表的**小计列**（index 8，唯一由「金额是否算得出」决定的那一格）
+    // 判据面 = 9 列表的**小计列**（index 8，唯一由「金额是否算得出」决定的那一格）
     // —— 不做整页子串判：汇总里的 `100.00` 是**真值**，整页判会把真值判红
     // （issue #6720 明令的反向对照失败形态）。
     // 单据：报价单 QuotationDoc
@@ -741,7 +777,7 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
             discountAmount: undefined,
             items: [
               buildItem({
-                productCode: undefined,
+                skuCode: undefined,
                 width: undefined,
                 height: undefined,
                 processingInfo: { curtainType: '布帘' },

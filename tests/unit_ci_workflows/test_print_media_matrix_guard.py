@@ -54,14 +54,24 @@ SINGLE_PROJECTION: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "加工单",
         "frontend/admin-web/src/components/orders/ProcessingDoc.tsx",
-        ("部位", "部位信息", "尺寸", "组件", "货号", "用料", "批号", "备注"),
+        ("品名", "货号", "颜色", "门幅", "尺寸", "数量(米)", "组件", "批号", "备注"),
     ),
     (
         "销售单",
         "frontend/admin-web/src/components/orders/SalesDoc.tsx",
-        ("序号", "货号", "数量", "单位", "单价", "金额", "备注"),
+        ("序号", "品名", "货号", "颜色", "门幅", "数量", "单位", "单价", "金额"),
     ),
 )
+
+# ── C7 的判据面（issue #6869）─────────────────────────────────────────────────
+#: 纸面「商品 SKU 身份」的**唯一读取口**（`frontend/admin-web/src/lib/order-item-sku.ts`）
+ITEM_SKU_READER = "paperItemSku("
+#: 纸面「物流方式」的**唯一读取口**（`frontend/admin-web/src/lib/logistics.ts`）
+FREIGHT_READERS: tuple[str, ...] = ("freightText(", "logisticsTypeText(")
+#: 响应里**不存在**的键（在打印单据里直接读 ⇒ 纸面那一列恒空；issue #6869 的根因）
+PHANTOM_ITEM_FIELDS: tuple[str, ...] = ("item.productCode", "item.color")
+#: 「这份单据印商品明细行」的形态标记（两条同时出现才算）
+_ITEM_TABLE_MARKERS: tuple[str, ...] = ("items.map(", "<DocTd")
 
 #: 门户式打印单据的形态（判据 C3 的扫描依据）：`createPortal` + `-print-area` 容器类
 _PORTAL_RE = re.compile(r"createPortal\s*\(")
@@ -416,3 +426,77 @@ def test_c6_injected_regressions_are_red():
     )
     hits = _projection_hits(columns, copied)
     assert len(hits) == 2, f"复制一份字段映射后命中数应为 2（实际 {hits}）⇒ C5 是空判据"
+
+
+# ── C7：纸面「商品身份」与「物流方式」必须走唯一读取口（issue #6869）───────────────
+#
+# 病灶（用户 2026-10-14 逐字）：「缺了商品 sku 的信息」+「货运 express · 顺丰速运，
+# 不要用英文，人家看不懂」。两处的根因是同一形态：**纸面各自读了一个不该读的键**——
+#   ① 货号/颜色读 `item.productCode` / `item.color`，而 `OrderItemResponse` 里**没有这两个键**
+#      （真字段 = `skuCode`，颜色在 `processingInfo.colorName`）⇒ 纸面那两列恒空、
+#      且**没有任何东西会红**（测试夹具自己造了幽灵字段）；
+#   ② 货运直接拼后端枚举 `logisticsType`（`express`）⇒ 给客户的纸上印英文内部值。
+# ⇒ 判据把「读哪个口」钉死：**换一份会漂的写法**（新单据复制一段取数）当场红。
+
+def _identity_problems(rel: str, code: str) -> list[str]:
+    problems: list[str] = []
+    for needle in PHANTOM_ITEM_FIELDS:
+        if needle in code:
+            problems.append(
+                f"`{rel}` 直接读 `{needle}` —— 该键**不在** `OrderItemResponse` 里"
+                f"（响应真字段是 `skuCode` / `processingInfo.colorName`）⇒ 纸面那一列恒空"
+            )
+    if all(marker in code for marker in _ITEM_TABLE_MARKERS) and ITEM_SKU_READER not in code:
+        problems.append(
+            f"`{rel}` 印商品明细行却没过唯一读取口 `{ITEM_SKU_READER}`"
+            "（品名 / 货号 / 颜色 / 门幅 一律走 `lib/order-item-sku.ts`）"
+        )
+    return problems
+
+
+def _freight_problems(rel: str, code: str) -> list[str]:
+    if "logisticsType" in code and not any(reader in code for reader in FREIGHT_READERS):
+        return [
+            f"`{rel}` 引用 `logisticsType` 却没走词表读取口 {list(FREIGHT_READERS)} —— "
+            "纸面会把后端枚举（`express`）原样印给客户"
+        ]
+    return []
+
+
+def test_c7_paper_identity_and_freight_go_through_the_single_reader():
+    """C7：受管打印单据的「商品身份」「物流方式」必须走唯一读取口（未走 ⇒ 红）。"""
+    problems: list[str] = []
+    for rel, _media in PRINT_DOCS:
+        code = _strip_comments(_read(rel))
+        problems += _identity_problems(rel, code)
+        problems += _freight_problems(rel, code)
+    assert problems == [], (
+        "打印单据各自读了一份会漂的取值源（issue #6869）：\n  " + "\n  ".join(problems)
+    )
+
+    # ── 判别力自证（**内存注入**，不碰真文件）：修前写法必须判红、修后写法必须判绿 ──
+    before_identity = "items.map((item) => item.productCode || item.productName)"
+    assert _identity_problems("(合成样本·修前)", before_identity), (
+        "修前写法（读 `item.productCode`）**没判红** ⇒ C7 的幽灵字段分支是空判据"
+    )
+    after_identity = "const sku = paperItemSku(item); items.map(() => sku.code)"
+    assert _identity_problems("(合成样本·修后)", after_identity) == [], (
+        "修后写法被判红 ⇒ C7 会把合规实现喂红（假红）"
+    )
+    # 「印了明细行却没走读取口」这一支：两条标记同时出现才算（防只按 `items` 误判 TaskCardPrint）
+    assert _identity_problems("(合成样本)", "items.map((it) => <DocTd>{it.productName}</DocTd>)"), (
+        "印明细行却没过唯一读取口 **没判红** ⇒ 该分支是空判据"
+    )
+    assert _identity_problems("(合成样本)", "items.map((it) => it.id)") == [], (
+        "不印明细行的文件被判红（如任务卡只读快照行）⇒ 该分支过宽"
+    )
+
+    before_freight = "[order.logisticsType, order.logisticsCompany].join(' · ')"
+    assert _freight_problems("(合成样本·修前)", before_freight), (
+        "修前写法（原样拼 `logisticsType`）**没判红** ⇒ C7 的物流分支是空判据"
+    )
+    after_freight = "const f = freightText(order.logisticsType, order.logisticsCompany)"
+    assert _freight_problems("(合成样本·修后)", after_freight) == [], (
+        "走词表的写法被判红 ⇒ C7 会把合规实现喂红（假红）"
+    )
+
