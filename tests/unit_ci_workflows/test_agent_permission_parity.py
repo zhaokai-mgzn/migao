@@ -1,4 +1,4 @@
-# case_ids: MC-012, HR-011
+# case_ids: MC-012, HR-011, PG-018
 """**Agent 功能权限 ≡ 页面权限** 的机械对账（issue #5246）。
 
 ## 用户裁定（本守卫的唯一理由，2026-09-23）
@@ -1085,6 +1085,14 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
                  "纸上的码对**任何持码人等价** ⇒ 服务端 302 到落地页；**只回跳转、不泄露业务字段**"
                  "（响应体为空，`Location` 里只有落地页 + 短码 + 租户 id）。它与 `/s/{}` 是"
                  "**两个码空间**（入库标签 vs 报工短链），混用会把「扫标签」变成「进报工页」"
+                 "⇒ 互斥判据见 tests/unit_ci_workflows/test_public_code_spaces_are_disjoint.py",
+    "GET /o/{}": "加工单级公开入口（issue #6867 / 实现包 B2，`permitAll`）：码印在**加工单纸**上，"
+                 "纸上的码对**任何**持码人等价 ⇒ 服务端 302 到报工页（`/w/?t=…`）；"
+                 "**只回跳转、不泄露业务字段**（响应体为空，`Location` 查询参数**恰好三个**："
+                 "`t` / `tenant_id` / `tenant_code`），且**它不是数据入口** —— 真数据在 "
+                 "`/api/worker/**` 上（那一层要求有效工人 session，无 session ⇒ 401；"
+                 "纵向越权由 `ADMIN_API_REJECTED_ROLES` 含 worker 挡 `/api/admin/**`）。"
+                 "它与 `/s/{}`（部位纸）、`/i/{}`（入库标签）是**三个码空间**，各自解析自己的表"
                  "⇒ 互斥判据见 tests/unit_ci_workflows/test_public_code_spaces_are_disjoint.py",
 }
 
