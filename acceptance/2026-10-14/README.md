@@ -150,7 +150,8 @@
 | `./check-ui-regression.sh` | ✅ UI 无回退（关键文件与 main token 一致或为正常新增） |
 | `./contract-check.sh` | ✅ 6 项全过（订单状态词表 / 退款字段三端 / 物流读字段 / 单 SKU 改价端点 / 退款蛇形契约 / intent 归属） |
 | `./verify-all.sh gate` | ✅ **1 通过 / 0 失败**（含 QA Growth Gate 预检；未命中的面按设计**显式打印「未跑」**，不当通过读） |
-| CI（PR #6927） | ✅ 全绿：admin-api / ai-agent / admin-web / mini-app / bmini 单测 + typecheck、Case Trust / Case Contract / Case Coverage、QA Growth、UI Regression、E2E quality、Post-Merge Verify…（`gh pr checks 6927`） |
+| CI（PR #6927） | ✅ 全绿：admin-api / ai-agent / admin-web / mini-app / bmini 单测 + typecheck、Case Trust / Case Contract / Case Coverage、QA Growth、UI Regression、E2E quality、Post-Merge Verify…（`gh pr checks 6927`，两条 required helper 腿在后半轮也 pass） |
+| `./scripts/batch-gate.sh <本包> <修复包>`（多包只跑一次全量） | ⛔ **拒绝（exit 3，没跑）**：就绪判定里 `fix/6928-inbound-cancel-cas` 已**无 open PR** —— 该包在批次启动前 **21:43:21 +08 已合并** ⇒ 按 fail-closed 拒绝，**没跑那一次全量**（「没跑」既不等于通过、也不等于失败）。**等价覆盖** = ① 本包在**新基准**（`origin/main` 已含 F1 修复 + 本分支）上重跑 `./verify-all.sh gate` ⇒ ✅ **1 通过 / 0 失败**；② 修复包合并前 required 全绿（含两条 `ci workflow helper unit tests` 与 `admin-api unit tests`）。 |
 
 ## 7. 本轮的两条环境事实（供下一次接手）
 
@@ -195,6 +196,6 @@
 
 | 项 | 状态 |
 |---|---|
-| **判据侧 J1–J5 + 本轮证据** | issue **#6926** → PR **#6927**（已 rebase 到 `03ce17050`；`gh pr checks 6927` 全绿；auto-merge 已 arm） |
-| **F1（入库单过账×作废竞态）** | issue **#6928** → PR **#6931**（分支 `fix/6928-inbound-cancel-cas`）：`#cancel` 补条件更新 CAS + 真库并发判据 `InboundOrderCancelRaceRealDbTest`（3/3 pass）+ 类级元守卫 `InboundOrderStatusCasMetaGuardTest`（6/6 pass，豁免基线 0）+ 台账；**主会话独立重放**：修复版 18/18 轮 0 命中 ⇄ 未修 :8080 1/18 命中（`evidence/w2-race-replay-mainsession.txt`） |
+| **判据侧 J1–J5 + 本轮证据** | issue **#6926** → PR **#6927**（`gh pr checks 6927` 全绿；auto-merge 已 arm；本轮已两次随 main 前移 `update-branch`） |
+| **F1（入库单过账×作废竞态）** | issue **#6928** → PR **#6931** ✅ **已合并**（auto-merge squash，merge commit **`9bc283cad`**，**2026-10-14 21:43:21 +08** = 13:43:21Z；issue 已 CLOSED）：`#cancel` 补条件更新 CAS + 真库并发判据 `InboundOrderCancelRaceRealDbTest`（3/3 pass，case **OR-066**）+ 类级元守卫 `InboundOrderStatusCasMetaGuardTest`（6/6 pass，case **MC-100**，豁免基线 0）+ 台账；**主会话独立重放**：修复版 18/18 轮 0 命中 ⇄ 未修 :8080 1/18 命中（`evidence/w2-race-replay-mainsession.txt`）。合并后内容级自证（`git show origin/main:<path>`）：`markCancelled` 在 mapper 1 处 / service 调用点 1 处、`REALDB_FILES` 登记 1 处 |
 | D1 / D2 / D3 | 待裁定（§5.4），未动代码 |
