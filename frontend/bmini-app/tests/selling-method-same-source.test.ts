@@ -27,10 +27,16 @@ import * as path from 'path'
  * | 2 | 两侧都真的解析出了条目（防「都空 ⇒ 相等」的假绿） | 把任一侧表清空 ⇒ 必红 |
  * | 3 | `sellingMethodLabel('bulk_cut')` 用展示名、未知键如实回显、空/非串 ⇒ `null` | 改成回显内部键 ⇒ 判据 1/3 红 |
  */
-const REPO_ROOT = path.join(__dirname, '../../..')
-
-const BIMINI_LABELS = path.join(REPO_ROOT, 'frontend/bmini-app/src/utils/selling-method.ts')
-const ADMIN_TYPES = path.join(REPO_ROOT, 'frontend/admin-web/src/types/index.ts')
+// 🔴 路径必须写成**单个相对字面量**（别把上跳三级再拼「frontend/...」两段拼起来）：
+// `tests/unit_ci_workflows/test_local_gate_matrix.py` 的「触发面闭包」判据静态抽取**源码里的相对路径字面量**
+// （**不区分注释** ⇒ 注释里也别写这类字面量，PR #6904 实测：注释里的字面量一样被抽到并被判红）。
+// 拆成两段时它抽到的是「上跳三级」那一段、归一成仓根 ⇒ 既报不出真实输入、也说不清耦合对象。
+// 写成下面这样，两个真实输入都会现形：bmini 自己那个在触发面内；admin-web 那个登记在
+// tests/unit_ci_workflows/local_gate_matrix.json 的 trigger_face_uncovered_inputs
+// （理由与既有 print-media.json 条目同款：bmini 是独立 npm 工程、不许 import admin-web 的 TS，
+//  只读源码逐值比对 ⇒ 有意不纳入触发面，靠 admin-web 侧兜）。
+const BIMINI_LABELS = path.join(__dirname, '../src/utils/selling-method.ts')
+const ADMIN_TYPES = path.join(__dirname, '../../admin-web/src/types/index.ts')
 
 /** 取不到就抛（不是弱断言）。同款写法见 `frontend/bmini-app/tests/processing-order-detail-page.test.tsx` 的 `must()`。 */
 function must<T>(value: T | null | undefined, what: string): T {

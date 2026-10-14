@@ -91,6 +91,12 @@
       "issue": "#5511 / 本单 PR body（会话内提出，按 AGENTS.md 11(a) 不开新单）",
       "owner": "集成侧（本地门禁 owner）",
       "consumer": "frontend/bmini-app/src/utils/inbound/truth.ts"
+    },
+    "frontend/admin-web/src/types/index.ts": {
+      "reason": "bmini 的**用例**（frontend/bmini-app/tests/selling-method-same-source.test.ts）读 admin-web 的这份真值源码做『售卖方式展示名』的**类级同源**逐值比对（bmini 是独立 npm 工程、不许 import admin-web 的 TS ⇒ 只能读源码）⇒ 它是本腿判定对象的**跨目录输入**，但**有意不**纳入触发面：纳入会把 admin-web 单独改这一个文件的改动拖成一条 bmini 腿，并对没装 bmini 依赖的 worktree 制造 fail-closed 假红。该耦合靠 admin-web 侧兜：SellingMethodLabels 是 admin-web 的单一真值，其变更在 admin-web 的 typecheck/单测里可见（同款既有条目 = print-media.json）",
+      "issue": "#6901（母单 #6901 / 本包 PR #6904）",
+      "owner": "包 B（bmini 商家只读页）作者 / 集成侧复核",
+      "consumer": "frontend/bmini-app/tests/selling-method-same-source.test.ts"
     }
   },
   "fail_closed_scope": {
@@ -116,7 +122,7 @@
   "non_modules": {},
   "uncovered_frozen": {
     "modules": 1,
-    "trigger_face_uncovered_inputs": 1,
+    "trigger_face_uncovered_inputs": 2,
     "non_modules": 0
   }
 }
