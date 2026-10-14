@@ -229,7 +229,23 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if (StringUtils.hasText(productCode) || StringUtils.hasText(productTitle)) {
             LambdaQueryWrapper<OrderItem> itemWrapper = new LambdaQueryWrapper<>();
             if (StringUtils.hasText(productCode)) {
-                itemWrapper.eq(OrderItem::getProductId, productCode);
+                // 🔴 issue #6884：改前是 `itemWrapper.eq(OrderItem::getProductId, productCode)` ——
+                // 拿**货号**去比 `order_items.product_id`（商品主键，形如 UUID）⇒ 恒不相等 ⇒
+                // 商家输入任何货号都得到**空页**（不是「忽略条件」）。货号的真值在 `products.sku_code`
+                // 上（列表展示用的 `OrderItemBrief.productCode` 也是从它填的）。
+                // 口径与同块的 `productTitle` 一致：**子串匹配**（搜索框语义）。
+                List<String> productIds = productMapper.selectList(
+                                new LambdaQueryWrapper<Product>()
+                                        .like(Product::getSkuCode, productCode)
+                                        .select(Product::getId))
+                        .stream()
+                        .map(Product::getId)
+                        .collect(Collectors.toList());
+                if (productIds.isEmpty()) {
+                    // 没有任何商品匹配这个货号 ⇒ 结果必然是空 —— 如实返回空页，不得退化成「忽略该条件」
+                    return PageResponse.of(0L, page, size, Collections.emptyList());
+                }
+                itemWrapper.in(OrderItem::getProductId, productIds);
             }
             if (StringUtils.hasText(productTitle)) {
                 itemWrapper.like(OrderItem::getProductName, productTitle);
@@ -415,6 +431,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                             }
                             Product product = productMap.get(item.getProductId());
                             return new OrderListResponse.OrderItemBrief(
+                                    // issue #6883：行主键（`order_items.id`）—— 余料行搜索要它指认「哪一行」
+                                    item.getId(),
                                     item.getProductId(),
                                     item.getProductName(),
                                     product != null ? product.getSkuCode() : null,

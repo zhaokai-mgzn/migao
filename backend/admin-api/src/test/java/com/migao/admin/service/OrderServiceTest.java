@@ -138,6 +138,9 @@ class OrderServiceTest {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(conf, "");
         TableInfoHelper.initTableInfo(assistant, Order.class);
         TableInfoHelper.initTableInfo(assistant, OrderItem.class);
+        // issue #6884：列表的「商品货号」搜索要先按 `products.sku_code` 解析商品主键
+        // ⇒ 该路径用 `LambdaQueryWrapper<Product>`，同样需要 lambda 缓存
+        TableInfoHelper.initTableInfo(assistant, Product.class);
         // issue #3621：matchSkuId 组合回退用 LambdaQueryWrapper<ProductSku>，
         // 断言 wrapper 查询条件（归一化后的枚举）需要 lambda 缓存
         TableInfoHelper.initTableInfo(assistant, ProductSku.class);
@@ -231,6 +234,94 @@ class OrderServiceTest {
         // then
         assertThat(result.getTotal()).isEqualTo(0);
         assertThat(result.getItems()).isEmpty();
+    }
+
+    // ============ 商品货号搜索（issue #6884）+ 列表明细行主键（issue #6883）============
+    //
+    // 病灶（issue #6884）：列表搜索栏的「商品货号」被拿去比 `order_items.product_id`（**商品主键**，
+    // 形如 UUID）⇒ 商家输入任何货号都得到**空页**。货号的真值在 `products.sku_code` 上。
+    // 判据：① 命中的商品主键必须被用作过滤条件（不是拿输入串直接比 product_id）；
+    //       ② 查不到任何商品 ⇒ **空页**（fail-closed），不得退化成「忽略该条件返回全部」；
+    //       ③ 红证 = 把实现改回 `eq(OrderItem::getProductId, productCode)` ⇒ ① 必红（参数里没有 'prod-001'）。
+
+    @Test
+    @DisplayName("订单分页查询 - 商品货号按 products.sku_code 解析出商品主键后再过滤（issue #6884）")
+    void getOrderPage_ProductCodeResolvesThroughSkuCode() {
+        // given：货号 'SKU-9' 命中的商品主键 = 'prod-001'
+        Page<Order> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of(testOrder));
+        mockPage.setTotal(1);
+        when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
+                .thenReturn(mockPage);
+        when(productMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(matchedProduct()));
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(testOrderItem));
+        when(productMapper.selectBatchIds(anyCollection()))
+                .thenReturn(List.of(matchedProduct()));
+
+        // when
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(
+                1, 20, null, null, null, null, null, null, null, null, "SKU-9", null, 1L, null, null);
+
+        // then：过滤条件 = 「按 sku_code 查出来的商品主键」
+        ArgumentCaptor<LambdaQueryWrapper<OrderItem>> captor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(orderItemMapper, atLeastOnce()).selectList(captor.capture());
+        LambdaQueryWrapper<OrderItem> firstQuery = captor.getAllValues().get(0);
+        assertThat(firstQuery.getSqlSegment()).contains("product_id");
+        assertThat(String.valueOf(firstQuery.getParamNameValuePairs()))
+                .as("过滤条件必须落在 sku_code 解析出的商品主键上（改前这里放的是用户输入的货号原文）")
+                .contains("prod-001");
+        assertThat(result.getItems()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("订单分页查询 - 货号查不到商品 ⇒ 空页（fail-closed，不得退化成忽略条件）")
+    void getOrderPage_ProductCodeWithNoProductReturnsEmptyPage() {
+        // given：任何商品都不匹配这个货号
+        when(productMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+
+        // when
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(
+                1, 20, null, null, null, null, null, null, null, null, "NO-SUCH-SKU", null, 1L, null, null);
+
+        // then
+        assertThat(result.getItems()).isEmpty();
+        assertThat(result.getTotal()).isZero();
+        verify(orderMapper, never()).selectPage(any(Page.class), any(LambdaQueryWrapper.class));
+    }
+
+    @Test
+    @DisplayName("订单列表明细带行主键 order_items.id 与真货号（issue #6883）")
+    void getOrderPage_ItemBriefCarriesRowIdAndRealSkuCode() {
+        // given
+        Page<Order> mockPage = new Page<>(1, 20);
+        mockPage.setRecords(List.of(testOrder));
+        mockPage.setTotal(1);
+        when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
+                .thenReturn(mockPage);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(List.of(testOrderItem));
+        when(productMapper.selectBatchIds(anyCollection()))
+                .thenReturn(List.of(matchedProduct()));
+
+        // when
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(
+                1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, null);
+
+        // then：余料「按商品行搜索」靠这个 id 指认「是哪一行」
+        OrderListResponse.OrderItemBrief brief = result.getItems().get(0).getItems().get(0);
+        assertThat(brief.getId()).isEqualTo("item-001");
+        assertThat(brief.getProductCode()).isEqualTo("SKU-9");
+    }
+
+    /** 货号 `SKU-9` 的商品（`testOrderItem.productId` = `prod-001` ⇒ 两者对得上） */
+    private Product matchedProduct() {
+        Product product = new Product();
+        product.setId("prod-001");
+        product.setSkuCode("SKU-9");
+        return product;
     }
 
     @Test

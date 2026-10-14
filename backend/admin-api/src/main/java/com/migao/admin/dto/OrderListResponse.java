@@ -116,6 +116,15 @@ public class OrderListResponse {
     @AllArgsConstructor
     @NoArgsConstructor
     public static class OrderItemBrief {
+        /**
+         * 行主键（`order_items.id`）—— issue #6883 补。
+         *
+         * 🔴 原实现**刻意不下发**（issue #2916 的实现副产品，前端注释里记着「列表接口不下发 item.id」），
+         * 但**「余料台账」的「按商品行搜索」要靠它**指认「是哪一行」：缺它 ⇒ 那边只能靠
+         * 「品名 + 颜色 + 规格 + 数量」重新猜一行（而 `color` / `specification` 又不在响应里 ⇒
+         * 猜的判据恒真 ⇒ 可能挂到错行）。**加性改动**，不动任何既有键。
+         */
+        private String id;
         private String productId;
         private String productName;
         private String productCode;

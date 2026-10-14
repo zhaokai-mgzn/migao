@@ -312,8 +312,8 @@ export default function OrderTable({
                     {order.items?.length ? (
                       <div className="space-y-2">
                         {order.items.map((item, itemIdx) => (
-                          // 列表接口不下发 item.id（#2916；类型上已由 `OrderBriefItem` 如实表达，issue #6882）
-                          <div key={`${order.id}-product-${itemIdx}`} className="space-y-0.5">
+                          // 行主键优先（issue #6883 起后端下发 `order_items.id`）；历史响应缺 id ⇒ 退回「订单 + 序号」
+                          <div key={item.id ?? `${order.id}-product-${itemIdx}`} className="space-y-0.5">
                             <div className="text-neutral-900 font-medium leading-tight">
                               {item.productName}
                             </div>
@@ -337,8 +337,8 @@ export default function OrderTable({
                         const pi = item.processingInfo
                         const fee = getItemProcessingFee(pi)
                         return (
-                          // 列表接口不下发 item.id（#2916；类型上已由 `OrderBriefItem` 如实表达，issue #6882）
-                          <div key={`${order.id}-item-${itemIdx}`} className="space-y-0.5">
+                          // 行主键优先（issue #6883 起后端下发 `order_items.id`）；历史响应缺 id ⇒ 退回「订单 + 序号」
+                          <div key={item.id ?? `${order.id}-item-${itemIdx}`} className="space-y-0.5">
                             <div className="text-neutral-700 leading-tight text-xs">
                               <span>{item.productName || item.productCode || '-'}</span>
                               {': '}

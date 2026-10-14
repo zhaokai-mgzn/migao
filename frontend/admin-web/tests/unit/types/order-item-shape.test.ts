@@ -45,8 +45,10 @@ describe('订单行类型面：详情形态 vs 列表形态（issue #6882）', (
     expect(item.sku).toBeUndefined()
   })
 
-  it('列表行 `OrderBriefItem`：**有** productCode（真货号）、**没有** id / skuCode', () => {
+  it('列表行 `OrderBriefItem`：**有** productCode（真货号）与行主键 id、**没有** skuCode', () => {
     const brief: OrderBriefItem = {
+      // issue #6883：列表**补下发**行主键（余料「按商品行搜索」靠它指认「是哪一行」）
+      id: 'item-1',
       productName: '布艺遮光帘A',
       productCode: '0012',
       quantity: 12.5,
@@ -57,9 +59,8 @@ describe('订单行类型面：详情形态 vs 列表形态（issue #6882）', (
 
     // 列表**确实**下发真货号（后端填的是 products.sku_code）—— 所以列表读它是对的
     expect(brief.productCode).toBe('0012')
+    expect(brief.id).toBe('item-1')
 
-    // @ts-expect-error 列表不下发行 id（issue #2916；余料行搜索的缺口见 issue #6883）
-    expect(brief.id).toBeUndefined()
     // @ts-expect-error 列表不填 skuCode（那是详情侧从 products 回填的键）
     expect(brief.skuCode).toBeUndefined()
   })

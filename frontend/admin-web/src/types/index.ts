@@ -675,14 +675,24 @@ export interface OrderItem {
  * - **没有** `skuCode`：那是详情侧从 product 回填的键。
  */
 export interface OrderBriefItem {
+  /**
+   * 行主键（`order_items.id`）—— issue #6883 起后端**补下发**（原 issue #2916 的副产品：列表不带行 id，
+   * 导致「余料台账 → 按商品行搜索」的候选行**恒空**）。
+   */
+  id?: string
   productId?: string
   productName: string
   /** 商品货号（后端填 `products.sku_code`） */
   productCode?: string
   quantity: number
-  unitPrice: number
-  amount: number
-  subtotal: number
+  /**
+   * 单价 / 金额 / 小计：**可能整个键缺席**（后端全局 Jackson `default-property-inclusion: non_null`
+   * ⇒ 值为 null 的键不下发，见 `OrderListResponse.OrderItemBrief`）—— 所以这里是可选，
+   * 展示侧一律按「缺值」处理（不 `?? 0`，§issue #6701）。
+   */
+  unitPrice?: number
+  amount?: number
+  subtotal?: number
   /** 销售信息（颜色、销售方式、门幅等）—— 与详情侧同源 */
   processingInfo?: Record<string, unknown>
 }

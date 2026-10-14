@@ -44,6 +44,8 @@ import { orderApi, remnantApi } from '@/lib/api'
 import { InlineMarkdown } from '@/lib/inline-markdown'
 // 订单行商品身份（颜色 / 门幅）的唯一读取口 —— issue #6882
 import { orderItemSku } from '@/lib/order-item-sku'
+// 候选行摊平（纯函数，可定点判据）—— issue #6883
+import { remnantLineCandidates, type RemnantLineCandidate } from '@/lib/remnant-line-candidates'
 // 🔴 issue #6669 第 7 条：涉钱读数口径收敛到一处真值（本页缺失值印 `—`，不是 `¥0.00`）
 import { moneyOrDash } from '@/lib/money'
 import type { Order, RemnantLedgerView, RemnantMatchView } from '@/types'
@@ -95,17 +97,11 @@ export function remnantReadErrorCopy(err: unknown): string {
  *
  * `itemId`（= 后端要的 `order_items.id`）与 `orderId` 是**内部标识**：只在状态与请求里流转，
  * **不上屏**（商家看到的是订单号 / 商品 / 数量）。
+ *
+ * 形态 = `lib/remnant-line-candidates.ts` 的 `RemnantLineCandidate`（**同一份**定义 ——
+ * 本页不再各写一份会漂的字段表，issue #6883）。
  */
-interface LineChoice {
-  orderId: string
-  orderNo: string
-  customerName: string
-  itemId: string
-  productName: string
-  color?: string
-  specification?: string
-  quantity: number
-}
+type LineChoice = RemnantLineCandidate
 
 function num(value?: number | null, digits = 2): string {
   return value === undefined || value === null ? '—' : Number(value).toFixed(digits)
@@ -189,27 +185,9 @@ export default function RemnantLedgerPage() {
     setLineSearching(true)
     try {
       const res = await orderApi.getOrders({ keyword: kw, page: 1, size: 20 })
-      const orders = (res.data?.data?.items ?? []) as Order[]
-      setLineCandidates(
-        orders.flatMap((o) =>
-          (o.items ?? [])
-            // ⚠️ issue #6883（跟踪中）：列表响应是 **brief** 形态 —— **不下发 `order_items.id`**
-            // ⇒ 这里的 `!!it.id` 恒 false、`itemId` 恒 undefined（候选行搜索整条链路当前不可用）。
-            // 本包（#6882）只把「颜色 / 规格」换成真值源；候选恒空要后端补行 id 才能修。
-            .filter((it) => !!it.id)
-            .map((it) => ({
-              orderId: o.id,
-              orderNo: o.orderNo,
-              customerName: o.customerName,
-              itemId: it.id,
-              productName: it.productName,
-              // 真值源 = `processingInfo.colorName` / 「门幅」（走订单行身份的唯一读取口）
-              color: orderItemSku(it).color,
-              specification: orderItemSku(it).doorWidth,
-              quantity: it.quantity,
-            })),
-        ),
-      )
+      // 🔴 issue #6883：摊平逻辑搬进 `lib/remnant-line-candidates.ts`（可被定点判据钉住）。
+      // 改前写死在这里，且 `filter((it) => !!it.id)` **恒 false**（列表不下发行 id）⇒ 候选恒空。
+      setLineCandidates(remnantLineCandidates(res.data?.data?.items ?? []))
     } catch {
       setLinePickError('订单查询失败 —— 请稍后重试')
     }
@@ -232,30 +210,16 @@ export default function RemnantLedgerPage() {
       setMatchError('请先选一个订单明细行（小件需求来自该行勾选的特殊选项）')
       return
     }
-    // 只对**选中的那一行**取详情（搜索面摊平出的行不带 id ⇒ 不能用它直接查匹配）
     if (!selectedLine) {
       setMatchError('该明细行已失效 —— 请重新搜索订单并选一行')
       return
     }
     try {
-      const res = await orderApi.getOrder(selectedLine.orderId)
-      const order = res.data?.data as Order | undefined
-      const itemId = (order?.items ?? []).find(
-        (it) =>
-          it.productName === selectedLine.productName &&
-          // 🔴 issue #6882：两侧都换成真值源。改前比的是 `it.color` / `it.specification` ——
-          // **这两个键在详情响应里都不存在** ⇒ `undefined === undefined` **恒真**，
-          // 判据退化成「品名 + 数量」⇒ 同名同量的两行会被认成**同一行**（余料可能挂到错行）。
-          orderItemSku(it).color === selectedLine.color &&
-          orderItemSku(it).doorWidth === selectedLine.specification &&
-          Number(it.quantity) === Number(selectedLine.quantity),
-      )?.id
-      if (!itemId) {
-        setMatchError('这行已不在该订单里（订单可能被改过）—— 请重新搜索并选一行')
-        return
-      }
+      // 🔴 issue #6883：直接用**选中那一行自己的主键**。改前这里要重新拉一次订单详情、再靠
+      // 「品名 + 颜色 + 规格 + 数量」把它**猜**回来 —— 而列表不下发行 id、颜色/规格又不在详情里
+      // ⇒ 猜的判据恒真 ⇒ 同名同量的两行会被认成同一行（余料可能挂到错行）。
       const matchRes = await remnantApi.match({
-        orderItemId: itemId,
+        orderItemId: selectedLine.itemId,
         batchNo: batchNo.trim() || undefined,
       })
       setMatch(matchRes.data?.data ?? null)
