@@ -260,8 +260,13 @@ public class ProductionService {
 
         for (OpSpec spec : specs) {
             // 套归属 = 该部位行所属樘窗组的套（`itemId → 组键 → 套` 逐级查；查不到 ⇒ 留空不猜）
-            ProcessingOrderSet set = spec.orderItemId() == null
-                    ? null : setByGroup.get(itemGroupKey.get(spec.orderItemId()));
+            // 两级取值都要判空（issue #6878）：里层 = 部位 id 为空；外层 = **派生出的组键**为空
+            // （明细查不到行 / 快照缺 craftLineId ⇒ `itemGroupKey.get(id)` 返 null），而 `setByGroup`
+            // 在 `ensureSetsFor` 的早返回分支上是**不可变空表** `Map.of()` —— `Map.of().get(null)`
+            // 抛 NPE（`HashMap.get(null)` 才返 null）⇒ 实例化端点 500。
+            // ⛔ 不许用 `getOrDefault(组键, null)` 顶替：不可变表的 `get(null)` 照样抛。
+            String derivedKey = spec.orderItemId() == null ? null : itemGroupKey.get(spec.orderItemId());
+            ProcessingOrderSet set = derivedKey == null ? null : setByGroup.get(derivedKey);
             positionOperationMapper.insert(ProcessingPositionOperation.builder()
                     .tenantId(tenantId)
                     .processingOrderId(po.getId())
@@ -387,7 +392,11 @@ public class ProductionService {
             if (itemId == null || !done.add(itemId)) {
                 continue; // 同一部位多道工序 ⇒ 只一码（一部位一码）
             }
-            ProcessingOrderSet set = setByGroup.get(itemGroupKey.get(itemId));
+            // 同站点 A 的两级取值判空（issue #6878，本处此前**完全没有**判空）：
+            // 归不到组键 ⇒ 不猜、不留码，而不是拿 null 去索引（不可变空表 `get(null)` ⇒ NPE ⇒ 500）。
+            // ⛔ 同上：不许用 `getOrDefault` 顶替。
+            String derivedKey = itemGroupKey.get(itemId);
+            ProcessingOrderSet set = derivedKey == null ? null : setByGroup.get(derivedKey);
             if (set == null) {
                 continue; // 归不到套 ⇒ 不猜（该部位码无从拼出「单号+套号+部位」）
             }

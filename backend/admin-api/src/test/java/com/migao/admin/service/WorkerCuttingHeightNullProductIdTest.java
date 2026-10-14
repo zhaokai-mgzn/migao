@@ -372,7 +372,16 @@ class WorkerCuttingHeightNullProductIdTest {
                 Map.entry("getCategoryNameMap", "ProcessingItemService｜调用点 get(<可能为 null 的 categoryId>)，见台账 INDEX_SITES"),
                 Map.entry("loadOrders", "ProcessingOrderService｜调用点 get(po.getOrderId())，见台账 INDEX_SITES"),
                 Map.entry("specByItemIdOf", "ProductionScanService｜调用点自己判 `specByItemId == null` 短路"),
-                Map.entry("itemIdToGroupKey", "ProductionService｜键 `spec.orderItemId()` 由调用点三元短路"),
+                Map.entry("itemIdToGroupKey", "ProductionService｜交给 `setByGroup.get(...)` 的键是**派生值**："
+                        + "`itemGroupKey.get(部位 id)`（两级取值的站点 A ⇄ 站点 B 由 `ProductionServiceDerivedKeyNpeTest` "
+                        + "的 `DERIVED_KEY_SITES` 承担；本表只登记产出方 ⇒ 必须与那里的登记面对齐）"),
+                Map.entry("ensureSetsFor", "ProductionService｜`setByGroup` 的产出方（两级取值的外层表）："
+                        + "分配器/套行读面未接线、或加工单快照为空 ⇒ `return Map.of();`（**不可变空表**）"
+                        + "⇒ 下游 `setByGroup.get(派生键)` 在派生键为 null 时抛 NPE（issue #6878）。"
+                        + "现取**无**变量级 index site（两处取值都登记在 `ProductionServiceDerivedKeyNpeTest` 的派生键面）"),
+                Map.entry("windowGroupKeyByItemId", "ProductionService｜组键表产出方（快照为空 ⇒ `Map.of()` 早返回）。"
+                        + "现取**无**变量级 index site（#6878 补「跨行方法声明」识别后新浮出 —— 旧实现按单行匹配 "
+                        + "`METHOD_DECL` ⇒ **跨行声明的方法整条被漏掉**，实测同时浮出本方法与 `ensureSetsFor`）"),
                 Map.entry("partTokensByItemId", "ProductionService｜现取无索引调用点（存量）"),
                 Map.entry("assignmentsOf", "StockBatchConsumptionService｜现取无索引调用点（工人端读面待接）"),
                 Map.entry("snapshotSkus", "StockLedgerService｜现取无索引调用点（存量）"));
@@ -411,19 +420,26 @@ class WorkerCuttingHeightNullProductIdTest {
                                 Verdict.KEY_NULLABLE,
                                 "调用点已 `specByItemId == null ? null : ...get(op.getOrderItemId())` 短路")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java|itemGroupKey",
-                        new IndexSite("itemGroupKey", "itemIdToGroupKey", "spec.orderItemId()", "spec.orderItemId()", 264,
+                        new IndexSite("itemGroupKey", "itemIdToGroupKey", "itemGroupKey.get(spec.orderItemId())",
+                                "spec.orderItemId()", 268,
                                 Verdict.KEY_NULLABLE,
-                                "⚠️ 登记面事实（**不是**「已安全」）：本条目 `keyExpression` / `keySource` 登记的是"
-                                        + "**部位 id**（`spec.orderItemId()`），而真正交给 `setByGroup.get(...)` 的键是"
-                                        + "**派生值** `itemGroupKey.get(spec.orderItemId())`。"
-                                        + "可达链（三条同时成立即 NPE）：① 部位 id 非空（本条目那个三元短路只守到这里）"
-                                        + "⇒ ② `itemIdToGroupKey` 的返回来自 `orderItemMapper.selectList(... in(itemIds))`，"
-                                        + "该 id 查不到行（行被删 / 跨租户 / payload 陈旧）时结果里**没有它** ⇒ `get(id)` = null"
-                                        + "⇒ ③ `ensureSetsFor` 的早返回分支返回**不可变空表** `Map.of()` ⇒ `Map.of().get(null)` 抛 NPE。"
-                                        + "本判据的 `siteToleratesNullKey` 只匹配**登记键**的 `== null` 判空 ⇒ 对该形态"
-                                        + "**零判别力**（里层守住了、外层没守）。同源站点 = `ensurePartTokens` 里那处无判空的"
-                                        + "单键读法 ⇒ **已转 issue #6878**（结构修复归那个包，本条目只按现取更新行号 261 → 264："
-                                        + "issue #6867 B1 在 `ensureQrToken(po)` 之后插了 `ensureShortCode(po)`）")),
+                                "⚙️ 登记面事实（issue #6878 订正；**不是**「已安全」结论）：真正交给 `setByGroup.get(...)` 的键是"
+                                        + "**派生值** `itemGroupKey.get(spec.orderItemId())`（字段 = 派生键表达式，本轮由"
+                                        + "`spec.orderItemId()` 订正过来；#6219 初版按**里层**部位 id 登记，"
+                                        + "而本判据的 `siteToleratesNullKey` 只匹配**登记键表达式**的 `== null` 判空 ⇒ "
+                                        + "对派生键这一族**零判别力**）。可达链（三条同时成立即 NPE）：① 部位 id 非空；"
+                                        + "② `itemIdToGroupKey` 的取值来自 `orderItemMapper.selectList(... in(itemIds))`，"
+                                        + "该 id 查不到行（行被删 / 跨租户 / payload 陈旧 / 快照缺 craftLineId）时结果里没有它 "
+                                        + "⇒ `get(id)` = null；③ `ensureSetsFor` 的早返回分支返回**不可变空表** `Map.of()` "
+                                        + "⇒ `Map.of().get(null)` 抛 NPE。⛔ `getOrDefault` 顶不住（不可变表照样抛）。"
+                                        + "**派生键的判空面**由 `ProductionServiceDerivedKeyNpeTest` 的 "
+                                        + "`DERIVED_KEY_SITES` 承担（登记站点 A ⇄ 站点 B；未登记 / 摘掉判空 / 换 getOrDefault "
+                                        + "⇒ 那里具名判红）—— 本条目只保证「产出方与调用点被登记且不陈旧」。")),
+                Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java|setByGroup",
+                        new IndexSite("setByGroup", "ensureSetsFor", "derivedKey", "itemGroupKey.get(spec.orderItemId())", 269,
+                                Verdict.KEY_NULLABLE,
+                                "两级取值的外层表（#6878 补登记；产出方 `ensureSetsFor` 同 PR 补登记后本调用点才被扫到）。"
+                                        + "键 = 派生值 `itemGroupKey.get(...)`，改后先落局部变量 `derivedKey` 再判空")),
                 // ── 存量同族风险点（本包文件族外，**不顺手改**）：键可能为 null 且本文件内无处置。
                 //    承载体 = 独立 issue #6226（主会话按 origin/main 逐字复核开单）⇒ 本判据不在此红，
                 //    但条目仍受「未登记即红 / 台账不许陈旧」约束。──
@@ -604,28 +620,76 @@ class WorkerCuttingHeightNullProductIdTest {
     private record MethodBody(String name, String text) {
     }
 
-    /** 用大括号配平界定**方法体**（不是「往上找最近的方法名」—— 那会命中 `if` / `catch`）。 */
+    /**
+     * 用大括号配平界定**方法体**（不是「往上找最近的方法名」—— 那会命中 `if` / `catch`）。
+     *
+     * <p>🔴 方法声明**跨行**时必须先做「声明拼接」（issue #6878）：本仓大量方法写成
+     * {@code private Map<String, X> m(A a,}<br>{@code B b) {} —— 只按单行匹配 `METHOD_DECL` 会让这些方法
+     * **整条被漏掉**（实测：{@code ProductionService.ensureSetsFor}（`return Map.of();` 的产出方）
+     * 在旧实现下**一个产出方都没登记**，而它正是 #6878 那条可达链的起点）。
+     * 拼接只影响「识别声明」这一步：拼出来的逻辑行**包含**其中每一行的全部大括号 / 字符串字面量，
+     * 故用它做配平与扫描的读数与逐行等价；站点行号仍按**原始行**计（台账不漂）。</p>
+     */
     private static List<MethodBody> methodBodies(List<String> lines) {
         List<MethodBody> out = new ArrayList<>();
         int i = 0;
         while (i < lines.size()) {
-            Matcher decl = METHOD_DECL.matcher(lines.get(i));
-            if (!decl.find()) {
+            Declaration decl = declarationAt(lines, i);
+            if (decl == null) {
                 i++;
                 continue;
             }
-            int depth = braceDelta(lines.get(i));
-            StringBuilder body = new StringBuilder(lines.get(i));
-            int j = i;
+            int depth = braceDelta(decl.text());
+            StringBuilder body = new StringBuilder(decl.text());
+            int j = decl.endLine();
             while (depth > 0 && j + 1 < lines.size()) {
                 j++;
                 body.append('\n').append(lines.get(j));
                 depth += braceDelta(lines.get(j));
             }
-            out.add(new MethodBody(decl.group(1), body.toString()));
+            out.add(new MethodBody(decl.name(), body.toString()));
             i = j + 1;
         }
         return out;
+    }
+
+    /** 跨行方法声明：{@code text} = 拼接后的逻辑行（含全部括号），{@code endLine} = 声明最后一行。 */
+    private record Declaration(String name, String text, int endLine) {
+    }
+
+    /** 圆括号配平 = `(` 数 − `)` 数（负数也算配平失败）。 */
+    private static int parenBalance(String text) {
+        int balance = 0;
+        for (char c : text.toCharArray()) {
+            if (c == '(') {
+                balance++;
+            } else if (c == ')') {
+                balance--;
+            }
+        }
+        return Math.abs(balance);
+    }
+
+    /** 单行声明；否则向下拼接（最多 8 行）直到「括号配平 + 以 `{` 结尾」；仍不成立 ⇒ null。 */
+    private static Declaration declarationAt(List<String> lines, int i) {
+        String line = lines.get(i);
+        if (parenBalance(line) == 0 && line.indexOf('(') >= 0) {
+            Matcher single = METHOD_DECL.matcher(line);
+            return single.find() ? new Declaration(single.group(1), line, i) : null;
+        }
+        if (!line.contains("(") || line.stripTrailing().endsWith(";")) {
+            return null;
+        }
+        StringBuilder joined = new StringBuilder(line);
+        for (int k = i + 1; k < Math.min(lines.size(), i + 8); k++) {
+            joined.append(' ').append(lines.get(k).strip());
+            String candidate = joined.toString();
+            if (parenBalance(candidate) == 0 && candidate.stripTrailing().endsWith("{")) {
+                Matcher multi = METHOD_DECL.matcher(candidate);
+                return multi.find() ? new Declaration(multi.group(1), candidate, k) : null;
+            }
+        }
+        return null;
     }
 
     private static final Pattern METHOD_DECL = Pattern.compile(
