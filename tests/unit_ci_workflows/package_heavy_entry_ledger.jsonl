@@ -61,3 +61,4 @@
 {"id":"1791886965.80501.16130","ts":"2026-10-13T10:22:45Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/6828-remove-tenant-worker-page-config","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1791948634.7406.2569","ts":"2026-10-14T03:30:34Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/verify-6882","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1791948713.7803.22211","ts":"2026-10-14T03:31:53Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/verify-6882","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1791965231.76559.30955","ts":"2026-10-14T08:07:12Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6910-chat-cjk-emphasis","why":"子包 worktree 直跑全量（无批次标记）"}

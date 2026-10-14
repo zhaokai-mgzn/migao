@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import NextImage from 'next/image'
 import { cn } from '@/lib/utils'
+import { normalizeCjkEmphasis } from '@/lib/cjk-emphasis'
 import { useChatStore } from '@/store/chat'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -333,8 +334,11 @@ function AIMessageContent({ message }: { message: ChatMessage }) {
         {/* remark-breaks（issue #6346）：段落内单个 `\n` 在 CommonMark 里是**软换行**（= 空格）
             ⇒ 黄金策的多行回复（能力清单 / 逐条答案）被折成一整段长文（用户 2026-10-05 实测截图）。
             挂上它 ⇒ 软换行渲染成 `<br>`，与小程序端「换行保留」的口径一致。 */}
+        {/* normalizeCjkEmphasis（issue #6910）：CommonMark 的 flanking 规则在「汉字紧邻中文标点」时
+            判 `**` 不能开 / 不能闭 ⇒ 配对不上、星号原样上屏（用户 2026-10-14 截图：
+            `后台的**「订单列表」页**`）。归一化只插不可见的 U+200B、不改可见文本（`@/lib/cjk-emphasis`）。 */}
         <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
-          {visibleContent}
+          {normalizeCjkEmphasis(visibleContent)}
         </ReactMarkdown>
         {message.isStreaming && (
           <span className="inline-block w-1.5 h-4 bg-primary-600 animate-pulse ml-0.5 align-text-bottom" />
