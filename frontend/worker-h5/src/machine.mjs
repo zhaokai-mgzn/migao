@@ -314,7 +314,7 @@ export function reportNotice(receipt) {
   if (!receipt) return null
   const next = receipt.nextOperation
   const nextLabel = next ? operationDisplayName(next) : null
-  const tail = nextLabel ? `下一道 = ${nextLabel}` : (receipt.setCompleted ? '本套工序都已被领走' : '本套已无待做工序')
+  const tail = nextLabel ? `下一道 = ${nextLabel}` : (receipt.setCompleted ? '本套工序都已报工' : '本套已无待做工序')
   return `已报工 · ${tail}${receipt.replayed === true ? '（系统按同一次提交处理，未重复计件）' : ''}`
 }
 

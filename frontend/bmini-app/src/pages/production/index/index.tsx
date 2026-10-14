@@ -862,7 +862,7 @@ export default function ProductionPage() {
                   disabled={reportingId !== null}
                   onClick={handleScanComplete}
                 >
-                  {reportingId === scanScreen.view.operation.operation_id ? '领活中…' : '开工'}
+                  {reportingId === scanScreen.view.operation.operation_id ? '报工中…' : '开工'}
                 </Button>
               ) : null}
               {/* 工序选择器（issue #6638，与 `/w/` 同形）：候选 = 系统推断那道 + 全部备选，
@@ -891,7 +891,7 @@ export default function ProductionPage() {
               )}
             </View>
           ) : (
-            <Text className='production-scan-screen__note'>本套工序都已被领走，无需再领</Text>
+            <Text className='production-scan-screen__note'>本套工序都已报工，无需再报</Text>
           )}
           {/* 本套工序明细（issue #4967 交付物 2）：工人一眼看到「这一套还有哪几道没做」。
               数据**只**来自服务端 `set_overview`（本套 → 部位 → 工序），页面不自己聚合；

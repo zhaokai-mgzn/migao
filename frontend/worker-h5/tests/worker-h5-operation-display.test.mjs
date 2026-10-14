@@ -129,21 +129,21 @@ test('工序选择器：候选都列出来，当前那道显式选中（部位�
 // ── ③ 「下一道」丢部位（独立缺陷，issue #4963）─────────────────────────────
 
 test('🔴 回执「下一道」必须带部位（改前只拼 logical_name ⇒ 丢部位）', () => {
-  // ⚠️ 文案语义 = 「已领活」（扫码 = 开工/领活，issue #4967 用户逐字裁定）—— 本单只补部位，
-  // **不得**改回「已报工」（那会静默回退已合并的 #4967）。
+  // ⚠️ 文案 = 「已报工」（issue #6868 第一刀，2026-10-14 用户逐字「扫码领活改成扫码报工」）
+  // —— 本单（#4963）只负责「补部位」这一半；**记账口径**（#4967 的扫码语义）一字未动。
   assert.equal(
     doneNotice({ nextOperation: { operation_id: 'op-2', logical_name: '打卷', position: '布帘' } }),
-    '已领活 · 下一道：打卷 · 布帘',
+    '已报工 · 下一道：打卷 · 布帘',
     '跨部位时「下一道」缺部位 = 屏上少一半信息（回执本来就带 position）',
   )
   // 部位无关的下一道 ⇒ 不拼孤立的 ` · `
   assert.equal(
     doneNotice({ nextOperation: { operation_id: 'op-3', logical_name: '外帘装袋' } }),
-    '已领活 · 下一道：外帘装袋',
+    '已报工 · 下一道：外帘装袋',
   )
   // 回执没给下一道（推断失败）⇒ 保持既有兜底文案，不编工序名
-  assert.equal(doneNotice({}), '已领活')
-  assert.equal(doneNotice({ setCompleted: true }), '已领活 · 本套工序都领完了 🎉')
+  assert.equal(doneNotice({}), '已报工')
+  assert.equal(doneNotice({ setCompleted: true }), '已报工 · 本套工序都领完了 🎉')
 })
 
 // ── ④ 反空跑锚点：render.mjs 必须**引用**共享模块（不许自拼一份回来）─────────

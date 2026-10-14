@@ -114,7 +114,7 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
   it('四件工人功能入口各自跳对路由（后三个走 gaps.ts 的路由常量，不写字面量）', async () => {
     await renderLoggedIn()
 
-    fireEvent.click(screen.getByText('扫码领活'))
+    fireEvent.click(screen.getByText('扫码报工'))
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/production/index/index' })
 
     fireEvent.click(screen.getByText('拍照入库'))
@@ -171,7 +171,7 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     render(<WorkerHomePage />)
 
     expect(await screen.findByText(/请先用工号 \+ PIN 登录工人身份/)).toBeTruthy()
-    expect(screen.queryByText('扫码领活')).toBeNull()
+    expect(screen.queryByText('扫码报工')).toBeNull()
     expect(screen.queryByText('拍照发货')).toBeNull()
     expect(screen.queryByText('退出')).toBeNull()
 
