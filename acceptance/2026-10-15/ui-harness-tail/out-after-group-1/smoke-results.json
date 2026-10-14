@@ -1,0 +1,398 @@
+[
+  {
+    "journey": "01-login",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "02-dashboard",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "03-briefing",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "04-agent-workspace-redirect",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "05-human-sessions",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "06-agent-sessions",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "07-chat",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "08-products-list",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "09-products-new",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "10-product-detail",
+    "pass": true,
+    "errors": [],
+    "notes": [
+      "已知环境限制：发码被后端拒（400 POST http://localhost:8080/api/auth/sms/send）—— 本机 `sms.bypass-code` 非空（万能码）⇒ 登录**不依赖发码**，该响应不计入本旅程失败"
+    ],
+    "evidence": [
+      "商品详情渲染（http://localhost:3001/products/fedc11b97d26ca05662ae664a462d14b）",
+      "/Users/guangzhen.zk/ai native/migao-wt/6942-ui-harness-tail/acceptance/2026-10-15/ui-harness-tail/out-after-group-1/screenshots/10-product-detail.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "11-product-edit-doorwidth",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "门幅下拉回显: value=2.8, 选项=[\"|请选择\",\"2.8|2.8米\",\"3.2|3.2米\",\"3.4|3.4米\"]（自造商品 2f0f0b662b88a99f407dae0ad77c16b7 已清理）",
+      "/Users/guangzhen.zk/ai native/migao-wt/6942-ui-harness-tail/acceptance/2026-10-15/ui-harness-tail/out-after-group-1/screenshots/11-product-edit-doorwidth.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "12-processing",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "加工项 新建→列表可见→编辑→删除 完成；启停toggle可见=false",
+      "/Users/guangzhen.zk/ai native/migao-wt/6942-ui-harness-tail/acceptance/2026-10-15/ui-harness-tail/out-after-group-1/screenshots/12-processing.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "13-categories",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "分类 新建→可见→行内删除",
+      "/Users/guangzhen.zk/ai native/migao-wt/6942-ui-harness-tail/acceptance/2026-10-15/ui-harness-tail/out-after-group-1/screenshots/13-categories.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "14-orders-list",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "订单列表 20 行（无分页按钮或单页）",
+      "/Users/guangzhen.zk/ai native/migao-wt/6942-ui-harness-tail/acceptance/2026-10-15/ui-harness-tail/out-after-group-1/screenshots/14-orders-list.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "15-orders-new",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "新建订单提交后跳转 http://localhost:3001/orders/new（自造商品 冒烟建单商品1791991571815 已清理，商品总数 14→14）",
+      "/Users/guangzhen.zk/ai native/migao-wt/6942-ui-harness-tail/acceptance/2026-10-15/ui-harness-tail/out-after-group-1/screenshots/15-orders-new.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "16-order-detail-processing-order",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/Users/guangzhen.zk/ai native/migao-wt/6942-ui-harness-tail/acceptance/2026-10-15/ui-harness-tail/out-after-group-1/screenshots/16-order-detail-processing-order.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "32-production-qr-and-piecework",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "17-order-ship",
+    "pass": false,
+    "errors": [],
+    "notes": [
+      "前置不满足（生产路线/默认工艺未配置）：本租户指定单（588efd131d493a6d09126c97533174de）生成加工单**未落库**：接口 HTTP 200 但 data 为空 —— api 日志 INCIDENT_PRODUCTION_ROUTING_UNRESOLVED「订单缺 craft 且该租户没有默认工艺」（租户未配生产路线/默认工艺）"
+    ],
+    "evidence": [
+      "/Users/guangzhen.zk/ai native/migao-wt/6942-ui-harness-tail/acceptance/2026-10-15/ui-harness-tail/out-after-group-1/screenshots/17-order-ship.png"
+    ],
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip"
+  },
+  {
+    "journey": "18-after-sales-list",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "售后工单列表渲染 8 行",
+      "/Users/guangzhen.zk/ai native/migao-wt/6942-ui-harness-tail/acceptance/2026-10-15/ui-harness-tail/out-after-group-1/screenshots/18-after-sales-list.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "19-after-sales-detail",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "关闭原因落库回显=true",
+      "/Users/guangzhen.zk/ai native/migao-wt/6942-ui-harness-tail/acceptance/2026-10-15/ui-harness-tail/out-after-group-1/screenshots/19-after-sales-detail.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "20-customers-list",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "21-customer-detail",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "22-finance",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "23-employees",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "24-roles",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "25-settings",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "26-notifications",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "27-corporate-home",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "28-corporate-about",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "29-corporate-contact",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "30-corporate-services",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "31-register",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  }
+]

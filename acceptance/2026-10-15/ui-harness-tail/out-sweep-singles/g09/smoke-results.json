@@ -1,0 +1,389 @@
+[
+  {
+    "journey": "01-login",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "02-dashboard",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "03-briefing",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "04-agent-workspace-redirect",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "05-human-sessions",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "06-agent-sessions",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "07-chat",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "08-products-list",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "09-products-new",
+    "pass": true,
+    "errors": [],
+    "notes": [
+      "已知环境限制：发码被后端拒（400 POST 发码端点）—— 本机 `sms.bypass-code` 非空（万能码）⇒ 登录**不依赖发码**，该响应不计入本旅程失败"
+    ],
+    "evidence": [
+      "门幅 值/显示分离 ✓([\"|请选择\",\"2.8|2.8米\",\"3.2|3.2米\",\"3.4|3.4米\"]→'2.8') + 建品可见 ✓(冒烟SKU商品1791991930452)",
+      "/Users/guangzhen.zk/ai native/migao-wt/6942-ui-harness-tail/acceptance/2026-10-15/ui-harness-tail/out-sweep-singles/g09/screenshots/09-products-new.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "10-product-detail",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "11-product-edit-doorwidth",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "12-processing",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "13-categories",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "14-orders-list",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "15-orders-new",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "16-order-detail-processing-order",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "32-production-qr-and-piecework",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "17-order-ship",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "18-after-sales-list",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "19-after-sales-detail",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "20-customers-list",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "21-customer-detail",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "22-finance",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "23-employees",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "24-roles",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "25-settings",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "26-notifications",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "27-corporate-home",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "28-corporate-about",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "29-corporate-contact",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "30-corporate-services",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "31-register",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 09 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  }
+]
