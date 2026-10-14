@@ -136,11 +136,14 @@ describe('OrderDetail 商品明细展示工艺规格', () => {
 
     render(<OrderDetailPage />)
 
-    const cell = (await screen.findByText(/门幅2\.8米/)).closest('td') as HTMLElement
-    expect(cell).not.toBeNull()
-    expect((cell.textContent?.match(/门幅/g) ?? []).length).toBe(1)
-    // 没有真工艺键 ⇒ 「工艺规格」组整块不出现（不许只印一个标题）
-    expect(within(cell).queryByText('工艺规格')).toBeNull()
+    const cell = (await screen.findByText(/门幅2\.8米/)).closest('td')
+    // 判据 = 这一格的 textContent 里「门幅」**恰好一次**，且不含「工艺规格」组标题。
+    // ⚠️ 这里**不写** `expect(cell).not.toBeNull()` —— 存在性断言是弱断言，
+    // `.github/weak-assert-baseline.json` 的门禁（存量只许非增 / 新增一律 fail-closed）会当场判红
+    // （CI 首轮就是这么红的）。`toHaveLength` / `not.toContain` 都是触内容的强断言：
+    // 格子找不到 ⇒ 匹配数 0 ⇒ 必红。
+    expect(cell?.textContent?.match(/门幅/g) ?? []).toHaveLength(1)
+    expect(cell?.textContent ?? '').not.toContain('工艺规格')
   })
 
   it('渲染算料口径：总褶数/褶数（每片）/幅数/褶倍/米数/是否对花/花距（§4.9 ②）—— ⚠️ #4876 起**不再渲染「褶距」**', async () => {
