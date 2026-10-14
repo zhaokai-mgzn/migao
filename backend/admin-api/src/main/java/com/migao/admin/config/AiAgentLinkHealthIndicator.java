@@ -1,5 +1,6 @@
 package com.migao.admin.config;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
@@ -54,6 +55,11 @@ public class AiAgentLinkHealthIndicator implements HealthIndicator {
     private final boolean tokenConfigured;
     private final LinkProbe probe;
 
+    /** ⚠️ 本类有**两个**构造器（下面那个是测试用的假探针口）⇒ 这道 `@Autowired` 不可省：
+     *  没有它 Spring 会去找无参构造器并以
+     *  `No default constructor found` 让**整个应用上下文起不来**（实测 2026-10-14：`AdminApiApplicationTest`
+     *  与 `SecurityConfigTest` 59 条全挂）。 */
+    @Autowired
     public AiAgentLinkHealthIndicator(@Value("${ai-agent.base-url:}") String baseUrl,
                                       @Value("${ai-agent.service-token:}") String serviceToken) {
         this(baseUrl, serviceToken, new RestTemplateLinkProbe());
