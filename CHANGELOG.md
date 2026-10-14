@@ -7,6 +7,25 @@
 
 ## [Unreleased]
 
+### admin-api → ai-agent 这条内部调用腿断了不再静默：`/actuator/health` 摆出 `token_configured` / `reachable` / `probe_error`（2026-10-14，issue #6896）
+
+六个客户端（入驻审核 / 工艺计算 / 图片识别 / 知识蒸馏 / 简报生成 / 加工数量）各自读
+`ai-agent.base-url` 与 `ai-agent.service-token`，而两个默认值都是坏的：base-url 默认
+`http://localhost:8000`（8000 是容器内端口，本地直起 ai-agent 在 8001）、token 默认空串
+（ai-agent 侧 `verify_service_token` 对空配置 fail-closed）。漏设环境变量时的形态是**静默**——
+应用 UP、探活 200、ai-agent 自己看着健康，只有真实入驻被驳回成「系统繁忙，可稍后重试」
+（`review_source=system`）。#6674 的收口方式是补 Quick-Start 文档（保护读过文档的人），可观测面一直缺。
+
+现在新增 `AiAgentLinkHealthIndicator`，把这条腿的事实摆到运维一眼能看到的地方，
+**沿用 #5184（到期扫描腿）/ #4517（迁移腿）的同一范式与同一条裁定：恒 UP、不熔断**
+——把 health 打成 DOWN 会连带部署腿 / 探活 / 负载均衡一起红，比原问题更糟；
+「算不算故障」由观测方按 `reachable` / `probe_error` / `probed_at` 裁定。
+token 只暴露「配了没有」，**永不暴露值**（有判据钉住，注入原文即红）。
+
+**未做（照实登记）**：六个客户端里重复的坏默认值没有收敛到一处——8000 对
+`deploy/docker-compose.yml` 的 `8001:8000` 是正确的容器内地址，改默认值会弄坏容器那条路；
+探测结果不缓存（每次 health 现探、超时 800ms 封顶），换来零后台线程与零陈旧态。
+
 ### 加工单信息补齐：工人端两屏 / A4 纸质加工单 / 商家端加工单面同持一份生产字段口径（2026-10-14，issue #6901）
 
 用户 2026-10-14 逐字「加工单缺乏订单中的规格尺寸和加工信息，工人需要这些信息+商品信息来决定如何生产」
