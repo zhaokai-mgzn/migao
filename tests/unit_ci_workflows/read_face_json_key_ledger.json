@@ -1,0 +1,228 @@
+{
+  "schema": "read-face-json-key-ledger/v1",
+  "issue": "#6890",
+  "what": "读面 JSON 键的**自有登记面**（issue #6890 的类级元守卫的台账）。判据 = tests/unit_ci_workflows/test_read_face_json_key_guard.py。逐类登记 `<java 字段> -> <对消费端可见的 JSON 键>` 的**完整清单**；未登记/已登记不符 ⇒ 红。🔴 本文件**不是** docs/wiki/CONTRACT-LEDGER.md（那份由 B2 独占写面，本包只读）。",
+  "scope_expression": "backend/admin-api/src/main/java 下**承载至少一个显式 `@JsonProperty` 的类**（含嵌套类，按 `Outer.Inner` 记）",
+  "judged_by": "tests/unit_ci_workflows/test_read_face_json_key_guard.py",
+  "classes": {
+    "com.migao.admin.dto.CategoryCreateRequest": {
+      "source": "backend/admin-api/src/main/java/com/migao/admin/dto/CategoryCreateRequest.java",
+      "kind": "write-face-request",
+      "keys": {
+        "name": "name",
+        "parentId": "parentId",
+        "level": "level",
+        "sortOrder": "sort",
+        "icon": "icon",
+        "status": "status"
+      },
+      "frozen_keys": [
+        "sort"
+      ],
+      "contract_ledger_keys": [],
+      "contract_ledger_why": "写面请求 DTO（`POST /api/admin/categories`），不属读面账本行；其冻结键 `sort` 仍受风格判据与清单判据约束。"
+    },
+    "com.migao.admin.dto.CategoryResponse": {
+      "source": "backend/admin-api/src/main/java/com/migao/admin/dto/CategoryResponse.java",
+      "kind": "read-face-response",
+      "keys": {
+        "id": "id",
+        "name": "name",
+        "parentId": "parentId",
+        "level": "level",
+        "sortOrder": "sort",
+        "icon": "icon",
+        "status": "status",
+        "children": "children",
+        "createdAt": "createdAt",
+        "updatedAt": "updatedAt"
+      },
+      "frozen_keys": [
+        "sort"
+      ],
+      "contract_ledger_keys": [],
+      "contract_ledger_why": "`GET /api/admin/categories` 在 CONTRACT-LEDGER.md 里**没有独立行**（现取：144 个表格行里无 categories 端点行），其唯一冻结键 `sort` 也未被账本提及 ⇒ 本类的账本侧判定**不可达**，如实登记（不新增账本行、不改账本）。"
+    },
+    "com.migao.admin.dto.CategoryUpdateRequest": {
+      "source": "backend/admin-api/src/main/java/com/migao/admin/dto/CategoryUpdateRequest.java",
+      "kind": "write-face-request",
+      "keys": {
+        "name": "name",
+        "parentId": "parentId",
+        "level": "level",
+        "sortOrder": "sort",
+        "icon": "icon",
+        "status": "status"
+      },
+      "frozen_keys": [
+        "sort"
+      ],
+      "contract_ledger_keys": [],
+      "contract_ledger_why": "写面请求 DTO（`PUT /api/admin/categories/{id}`），同上。"
+    },
+    "com.migao.admin.dto.ProcessingOrderResponse": {
+      "source": "backend/admin-api/src/main/java/com/migao/admin/dto/ProcessingOrderResponse.java",
+      "kind": "read-face-response",
+      "keys": {
+        "id": "id",
+        "tenantId": "tenantId",
+        "orderId": "orderId",
+        "orderNo": "orderNo",
+        "customerName": "customerName",
+        "customerPhone": "customerPhone",
+        "processingOrderNo": "processingOrderNo",
+        "processor": "processor",
+        "expectedDeliveryDate": "expectedDeliveryDate",
+        "status": "status",
+        "items": "items",
+        "remark": "remark",
+        "templateVersion": "templateVersion",
+        "generatedAt": "generatedAt",
+        "issuedAt": "issuedAt",
+        "inProcessingAt": "inProcessingAt",
+        "completedAt": "completedAt",
+        "cancelledAt": "cancelledAt",
+        "cancelledReason": "cancelledReason",
+        "printCount": "printCount",
+        "routeKey": "routeKey",
+        "routeRequestedKey": "routeRequestedKey",
+        "routeSource": "routeSource",
+        "shortCode": "short_code",
+        "scanUrl": "scan_url"
+      },
+      "frozen_keys": [
+        "scan_url",
+        "short_code"
+      ],
+      "contract_ledger_keys": [
+        "short_code",
+        "scan_url"
+      ],
+      "contract_ledger_why": "这两个是 issue #6867/B3 追加的**冻结键**，账本行（docs/wiki/CONTRACT-LEDGER.md 的「加工单列表/详情」行）逐字点名；其余冻结键分属嵌套视图类，见那一类。",
+      "contract_ledger_anchor": "`GET /api/admin/processing-orders"
+    },
+    "com.migao.admin.dto.ProcessingOrderResponse.ProcessingOrderItemBrief": {
+      "source": "backend/admin-api/src/main/java/com/migao/admin/dto/ProcessingOrderResponse.java",
+      "kind": "read-face-nested",
+      "keys": {
+        "itemId": "itemId",
+        "productName": "productName",
+        "sku": "sku",
+        "colorName": "colorName",
+        "sellingMethod": "sellingMethod",
+        "doorWidth": "doorWidth",
+        "width": "width",
+        "height": "height",
+        "quantity": "quantity",
+        "unit": "unit",
+        "processingItems": "processingItems",
+        "specialOptions": "specialOptions",
+        "isUrgent": "isUrgent",
+        "requiredDeliveryDate": "requiredDeliveryDate",
+        "remark": "remark",
+        "curtainType": "curtainType",
+        "craft": "craft",
+        "cuttingMode": "cuttingMode",
+        "openCount": "openCount",
+        "isShaped": "isShaped",
+        "pleatSpacing": "pleatSpacing",
+        "hasPattern": "hasPattern",
+        "patternRepeat": "patternRepeat",
+        "style": "style",
+        "room": "room",
+        "batchNo": "batchNo",
+        "componentRole": "componentRole",
+        "craftLineId": "craftLineId",
+        "metersSource": "metersSource",
+        "processingMeters": "processingMeters",
+        "fabricMeters": "fabric_meters",
+        "pleatCount": "pleat_count",
+        "perPanelPleats": "per_panel_pleats",
+        "panels": "panels",
+        "holes": "holes",
+        "fullness": "fullness",
+        "fullnessActual": "fullness_actual",
+        "formulaText": "formula_text",
+        "formulaMeters": "formulaMeters",
+        "plannedMeters": "plannedMeters",
+        "savedMeters": "savedMeters"
+      },
+      "frozen_keys": [
+        "fabric_meters",
+        "formula_text",
+        "fullness",
+        "fullness_actual",
+        "holes",
+        "panels",
+        "per_panel_pleats",
+        "pleat_count"
+      ],
+      "contract_ledger_keys": [
+        "fabric_meters",
+        "pleat_count",
+        "fullness",
+        "fullness_actual"
+      ],
+      "contract_ledger_why": "嵌套只读视图，**没有单一账本锚行**（它的冻结键散落在账本多行：`fabric_meters` 见扫码读面两行、`pleat_count`/`fullness`/`fullness_actual` 见下单行要素行）⇒ 本类的账本侧判定退化在**全账本**范围做包含（不做行锚）。残差（现取 = 未在账本出现的冻结键）如实登记、不伪造。"
+    }
+  },
+  "nullable_key_forms": {
+    "com.migao.admin.dto.CategoryCreateRequest::sort": {
+      "form": "absent",
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+    },
+    "com.migao.admin.dto.CategoryResponse::sort": {
+      "form": "absent",
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+    },
+    "com.migao.admin.dto.CategoryUpdateRequest::sort": {
+      "form": "absent",
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+    },
+    "com.migao.admin.dto.ProcessingOrderResponse::short_code": {
+      "form": "absent",
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。 ⚠️ issue #6867/B3 与 docs/wiki/CONTRACT-LEDGER.md 的「键恒在 ⇒ 两键都在且为 null」在当前序列化配置下**不可达**（实例判据用的是 `new ObjectMapper()`，其 inclusion 默认 ALWAYS，与线上 ObjectMapper 不同源）—— 消费方（frontend/admin-web 的 ProcessingDoc.tsx / OrderDetail.tsx）用 `?? null` + `short_code?: string | null`，因此**行为不受影响**，受影响的是契约措辞。"
+    },
+    "com.migao.admin.dto.ProcessingOrderResponse::scan_url": {
+      "form": "absent",
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。 ⚠️ issue #6867/B3 与 docs/wiki/CONTRACT-LEDGER.md 的「键恒在 ⇒ 两键都在且为 null」在当前序列化配置下**不可达**（实例判据用的是 `new ObjectMapper()`，其 inclusion 默认 ALWAYS，与线上 ObjectMapper 不同源）—— 消费方（frontend/admin-web 的 ProcessingDoc.tsx / OrderDetail.tsx）用 `?? null` + `short_code?: string | null`，因此**行为不受影响**，受影响的是契约措辞。"
+    },
+    "com.migao.admin.dto.ProcessingOrderResponse.ProcessingOrderItemBrief::fabric_meters": {
+      "form": "absent",
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+    },
+    "com.migao.admin.dto.ProcessingOrderResponse.ProcessingOrderItemBrief::pleat_count": {
+      "form": "absent",
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+    },
+    "com.migao.admin.dto.ProcessingOrderResponse.ProcessingOrderItemBrief::per_panel_pleats": {
+      "form": "absent",
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+    },
+    "com.migao.admin.dto.ProcessingOrderResponse.ProcessingOrderItemBrief::panels": {
+      "form": "absent",
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+    },
+    "com.migao.admin.dto.ProcessingOrderResponse.ProcessingOrderItemBrief::holes": {
+      "form": "absent",
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+    },
+    "com.migao.admin.dto.ProcessingOrderResponse.ProcessingOrderItemBrief::fullness": {
+      "form": "absent",
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+    },
+    "com.migao.admin.dto.ProcessingOrderResponse.ProcessingOrderItemBrief::fullness_actual": {
+      "form": "absent",
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+    },
+    "com.migao.admin.dto.ProcessingOrderResponse.ProcessingOrderItemBrief::formula_text": {
+      "form": "absent",
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+    }
+  },
+  "contract_ledger_row_vocabulary": {
+    "null": "账本锚行里的**值**说明（`无码 ⇒ null`），不是 JSON 键名 —— 行内 token 白名单条目（只许缩短：上界冻结在判据文件里）。",
+    "base": "账本锚行里的**配置项/变量名**（`{base}/o/{short_code}` 的 base），不是 JSON 键名 —— 同上。"
+  },
+  "exemptions": []
+}
