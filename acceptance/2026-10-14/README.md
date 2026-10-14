@@ -211,15 +211,15 @@
 
 ### 11.1 修复包台账（7 单，全部合并；单元 = issue + 分支 + 独立 worktree + 后台执行者）
 
-| 单 | PR | 合并（+08） | 内容 | main 侧自证读点（`git show origin/main:<path>`） |
+| 单 | PR | 合并（+08；UTC 原点见括号） | 内容 | main 侧自证读点（`git show origin/main:<path>`） |
 |---|---|---|---|---|
-| #6926 判据侧 J1–J5 | #6927 | ~22:12 | smoke 三类恒红 + UI 红灯可归因 | `test_09` 的 `logisticsType`×5 / `spec.mjs` 的 `failedResponses`×4 / `helpers.py` 的 `refresh_token_from_jar`×1 |
-| #6928 F1 入库过账×作废竞态 | #6931 | 21:43:21 | `#cancel` 条件更新 CAS + 真库并发判据 | `markCancelled` 在 mapper 1 处 / service 1 处 |
-| #6938 夹具漂移 6 条 | #6943 | 22:57:50 | 卷数 / worker-h5 入口 / batch 对照租户 / `nowCST` / 命名空间豁免 / `run-all.sh` 路径 | `nowCST().cst = 2026-10-14 22:31:56 +08` = 真值（主线未合时是 `14:31:56 +08`，**错 8h**） |
-| #6937 两条 sweep env 化 | #6944 | ~23:0x | 唯一注入口（缺一 exit 2）+ 写死主体守卫 + B 侧对照租户自造/自清 | `lib/subjects.mjs` 的 `guardSubjects` / `sweep.mjs` 引用它 ×2 |
-| #6936 D3 detach 并发 CAS | #6945 | ~00:1x | 内联条件更新（三谓词）+ 影响行数 0 ⇒ 409 | `LambdaUpdateWrapper`×3 / mapper `claimDelete` 残留 **0**（不留死代码）/ `PG-075` 元守卫 ×6 |
-| #6940 UI 四条判据侧 | #6941 | ~23:47 | 见 §11.2 | `waitForText`×2 / `ensureLoggedIn`×14 /「加工分类前置」×1 |
-| #6942 UI 工装残余三条 | #6947 | 待合 | 旅程名台账⇄注册名双向守卫 / 清理链（`on_sale` 需先下架）/ 单组跑登录确定性 | — |
+| #6926 判据侧 J1–J5 | #6927 | **22:13:12**（`14:13:12Z`）`261377ff3` | smoke 三类恒红 + UI 红灯可归因 | `test_09` 的 `logisticsType`×5 / `spec.mjs` 的 `failedResponses`×4 / `helpers.py` 的 `refresh_token_from_jar`×1 |
+| #6928 F1 入库过账×作废竞态 | #6931 | **21:43:21**（`13:43:21Z`）`9bc283cad` | `#cancel` 条件更新 CAS + 真库并发判据 | `markCancelled` 在 mapper 1 处 / service 1 处 |
+| #6937 两条 sweep env 化 | #6944 | **22:45:25**（`14:45:25Z`）`bb55efa71` | 唯一注入口（缺一 exit 2）+ 写死主体守卫 + B 侧对照租户自造/自清 | `lib/subjects.mjs` 的 `guardSubjects` / `sweep.mjs` 引用它 ×2；**主会话注入式红证复现**：写死手机号 ⇒ `exit 3` + 逐字 file:line；A 有效 + B 不存在 ⇒ `exit 3`（`pass=38 fail=0 skip=50 total=88`） |
+| #6938 夹具漂移 6 条 | #6943 | **22:57:50**（`14:57:50Z`）`091313a2a` | 卷数 / worker-h5 入口 / batch 对照租户 / `nowCST` / 命名空间豁免 / `run-all.sh` 路径 | `nowCST().cst = 2026-10-14 22:31:56 +08` = 真值（主线未合时是 `14:31:56 +08`，**错 8h**，同命令同 `TZ=UTC` 单变量对照） |
+| #6940 UI 四条判据侧 | #6941 | **23:48:36**（`15:48:36Z`）`daa08f558` | 见 §11.2 | `waitForText`×2 / `ensureLoggedIn`×14 /「加工分类前置」×1 /「确认状态流转」×1 |
+| #6936 D3 detach 并发 CAS | #6945 | **2026-10-15 00:10:56**（`16:10:56Z`）`8579755e6` | 内联条件更新（三谓词）+ 影响行数 0 ⇒ 409 | `LambdaUpdateWrapper`×3 / mapper `claimDelete` 残留 **0**（不留死代码）/ `PG-075` 元守卫 ×6；**主会话在合并后的 main 上独立复跑** `Tests run: 5, Failures: 0`，逐字 `[READING #6936 并发] 各状态=[409,409,409,409,200] 成功数=1`、`PG-075 豁免 现取=0 基线=0` |
+| #6942 UI 工装残余三条 | #6947 | 见下方「收口时点」 | 旅程名台账⇄注册名双向守卫 / 清理链（`on_sale` 需先下架）/ 单组跑登录确定性（发码失败只记不抛） | 待合并后补 |
 
 > 说明：**#6945 的两条红不是 drift-audit**（我按同名 check 推断错了，由执行者用日志纠正）——
 > 是 `test_logic_delete_write_shape.py`（#4608「三处软删必须显式写列」，它把软删抽进 mapper `@Update` 后 `#delete` 里那段内联片段消失
