@@ -24,6 +24,12 @@ camelCase。全仓 `src/main` 里这样的类**恰好 5 个**（`ProcessingOrder
 
 **自扩展**：任何一个**新**类只要写下显式 `@JsonProperty`，就**自动**进入射程 ⇒ 未登记即红（判据 1 的反向）。
 
+**第二类载体（Map，判据 6b）**：冻结键不只在 DTO 字段上 —— 部位读面
+（`GET /api/admin/production/orders/{orderId}/operations`，issue #4946 的 `part_short_code` / `scan_url`）
+的键是 `ProductionService` 里 `position.put(...)` 的 **Map 条目**。这类键**没有** `@JsonProperty`
+⇒ 上面那条射程表达式看不见它，故由台账 `map_view_faces` **逐键给代码锚**（锚须逐字出现且含 `.put(`）：
+锚消失（键被删 / 改名 / 搬走）或锚不再证明它是 Map 条目（载体换成 DTO）⇒ 红。
+
 ## 判据（每条都会红，且具名）
 
 | # | 判据 | 会怎么红 |
@@ -34,6 +40,7 @@ camelCase。全仓 `src/main` 里这样的类**恰好 5 个**（`ProcessingOrder
 | 4 | **账本侧「代码有、账本无」**：台账点名由 `docs/wiki/CONTRACT-LEDGER.md` 登记的冻结键，必须在锚行里逐字出现 | 从账本锚行删掉 `` `short_code` `` ⇒ 红 |
 | 5 | **账本侧「账本有、代码无」**：锚行里 snake 形态的反引号 token 必须 ∈（该类代码键 ∪ 行内白名单词汇） | 往锚行注入一个不存在的 `` `bogus_key` `` ⇒ 红 |
 | 6 | **可空键的 null 形态 ⇄ 现取序列化策略**（见下「键恒在」口径） | 把 `application.yml` 的 inclusion 改成 `always`（或给该类加 `@JsonInclude(ALWAYS)`）⇒ 登记的 `absent` 不再成立 ⇒ 红 |
+| 6b | **Map 载体读面的键 ⇄ 代码 `put` 锚**（部位读面 `part_short_code` / `scan_url`，issue #4946） | 锚消失（键被删 / 改名 / 搬走）或锚不再含 `.put(`（载体换成 DTO）⇒ 红 |
 | 7 | **台账只许缩短 + 反空跑（fail-closed）** | 射程/台账/冻结键集合为空 ⇒ 红；豁免或行内白名单词汇超出**冻结上界**（判据文件里的字面量）⇒ 红；台账里出现写死的整数计数 ⇒ 红（现取，不写死条数） |
 
 ## 🔴「键恒在」的口径（判据 6，**与 issue 原文的理想形态不一致，如实登记**）
@@ -44,6 +51,13 @@ issue 与 B3 的契约措辞是「**键恒在**：无码 ⇒ 两键都在且为 
 B3 的实例判据用的是 `new ObjectMapper()`（inclusion 默认 `ALWAYS`），**与线上 ObjectMapper 不同源**
 ⇒ 那条断言在单测里成立、在线上不成立（「看起来在判 ≠ 真的在判」，`docs/testing/test-engineering-standards.md` §9）。
 危害面现取为**零**：消费方用 `?? null` + TypeScript `short_code?: string | null`，缺席与 `null` 行为相同。
+
+🔴 **2026-10-14 订正（主会话裁定，本包执行）**：`docs/wiki/CONTRACT-LEDGER.md` 两处「**键恒在**」措辞
+（加工单读面 issue #6867 的两键 + 部位读面 issue #4946 的三键）已改为同源表述
+「**无码 ⇒ 键缺席或为 `null`**（全局 non_null 下实际缺席；两者语义等价，消费方一律按「没有码」处理）」；
+B3 的实例判据已改用**镜像 `application.yml` 的 mapper**（`productionMapper`）断言真实形态 + 正向对照。
+裁定依据：`non_null` 是全局策略、仓内 `@JsonInclude` 压倒性是 NON_NULL、消费方 `?? null` ⇒ 产品影响为零
+（为「让措辞成真」去加 `@JsonInclude(ALWAYS)` 例外属过度建设）。
 
 ⇒ 本判据**不装作它能判「键一定在」**（当前配置下那是不可达形态），它判的是**可推广的那一半**：
 「每个可空冻结键的 null 形态，必须与**现取的**序列化策略一致，且逐键显式登记 + 写理由」——
@@ -62,6 +76,7 @@ B3 的实例判据用的是 `new ObjectMapper()`（inclusion 默认 `ALWAYS`）�
 | ③' 真账本文本锚行删掉 `` `short_code` `` | 判据 4 红 |
 | ④ 射程里新加一个**未登记**的类（带 `@JsonProperty`） | 判据 1 红，具名该类 |
 | ⑤ `application.yml` 的 inclusion 改成 `always` | 判据 6 红 |
+| ⑥ 部位读面的 `position.put("part_short_code", …)` 锚被删 / 锚不再含 `.put(` | 判据 6b 红 |
 | 对照：只往源码里加注释 / 只往台账改动**不涉及**键的字段 | **一条都不红**（判别力对照） |
 
 ## 未固化 / 边界（照实登记）
@@ -72,6 +87,7 @@ B3 的实例判据用的是 `new ObjectMapper()`（inclusion 默认 `ALWAYS`）�
 ⇒ 不做全文 token 提取（锚行 13 个反引号 token 里只有 4 个 snake 形态、其中 2 个不是键名 ⇒ 全文提取必然假红）。
 ③ **判不了**「业务字段该不该下发」（那是权限面，另有既有判据），也判不了消费端是否真的读了某个键。
 ④ 本判据**不跑** Java 测试、不替代 B3 的 `ProcessingOrderReadFaceShortCodeTest`（行为面仍是它的活）。
+⑤ **Map 载体面的键清单是「声明式」的**（`map_view_faces`）：靠代码锚证明键还在，但**不做**「该面所有 `put` 键都登记了吗」的反向穷举 —— 同一个 service 文件里有几十个 `put`（分属多个面），按文件穷举必然假红；缺的方向由「锚消失即红」兜。
 
 判据面复算：
 `python3 -m pytest tests/unit_ci_workflows/test_read_face_json_key_guard.py -q -s`
@@ -164,6 +180,8 @@ def parse_classes(code: str) -> dict[str, dict]:
 
     out: dict[str, dict] = {}
     for start, end, name, parents in scopes:
+        if name is None:
+            continue  # 方法 / 初始化块的花括号不是类：它的 parents FQN 与所在类同名，记它会顶掉类级注解
         fqn = ".".join([p for p in (package, *parents, name) if p])
         # 类级注解 = 类关键字之前、上一个 `}` 或 `;` 之后的那一段
         head = code[:start]
@@ -178,7 +196,7 @@ def parse_classes(code: str) -> dict[str, dict]:
         for pos, value in literals:
             if m.start(1) <= pos < m.end(1) and code[:pos].rstrip().endswith(JP_TOKENS):
                 key = value
-        enclosing = [(end - start, fqn) for start, end, name, parents in scopes
+        enclosing = [(end - start, fqn) for start, end, name, parents in scopes if name is not None
                      for fqn in [".".join([p for p in (package, *parents, name) if p])]
                      if start < m.start() < end]
         if not enclosing:
@@ -343,38 +361,101 @@ def contract_ledger_violations(scope: dict[str, dict], ledger: dict, ledger_text
     return out
 
 
-def null_form_violations(scope: dict[str, dict], ledger: dict, yml_text: str) -> list[str]:
-    """判据 6：可空冻结键的 null 形态 ⇄ 现取序列化策略，且逐键显式登记 + 写理由。"""
+def _carrier_include(ledger: dict, sources: dict[str, str], face: str) -> str | None:
+    """Map 面外层载体类的类级 `@JsonInclude`（台账 `carrier` = `<FQN>::<仓库相对路径>`）。"""
+    carrier = ledger.get("map_view_faces", {}).get(face, {}).get("carrier")
+    if not carrier:
+        return None
+    fqn, _, rel = str(carrier).partition("::")
+    raw = sources.get(rel)
+    if raw is None:
+        return None
+    return parse_classes(java_code(raw)).get(fqn, {}).get("include")
+
+
+def map_view_violations(ledger: dict, sources: dict[str, str]) -> list[str]:
+    """判据 6b：**Map 载体**读面的键 ⇄ 代码里的 `put` 锚（键-恒在形态对 Map 载体同样成立的前提）。"""
+    out: list[str] = []
+    faces = ledger.get("map_view_faces", {})
+    if not faces:
+        out.append("台账 map_view_faces 为空 ⇒ Map 载体面空跑（fail-closed）")
+    for face, reg in sorted(faces.items()):
+        rel = str(reg.get("source", ""))
+        raw = sources.get(rel)
+        if raw is None:
+            out.append(f"{face}:: 载体源文件不在现取集合里：{rel!r}（路径漂移 ⇒ 该面判定失去依据）")
+            continue
+        code = java_code(raw)
+        keys = reg.get("keys", {})
+        if not keys:
+            out.append(f"{face}:: keys 为空 ⇒ 该面空跑（fail-closed）")
+        if not reg.get("carrier"):
+            out.append(f"{face}:: 未声明外层载体 `carrier`（null 形态推导失去依据）")
+        elif _carrier_include(ledger, sources, face) is None:
+            out.append(f"{face}:: 载体 {reg.get('carrier')!r} 解析不到类级 `@JsonInclude`（路径 / 类名漂移）")
+        for key, anchor in sorted(keys.items()):
+            if anchor not in code:
+                out.append(f"{face}::{key} 的代码锚消失（须逐字出现）：{anchor!r}"
+                           f" ⇒ 键被删 / 改名 / 搬走，登记面须同步")
+            elif ".put(" not in anchor:
+                out.append(f"{face}::{key} 的锚不再证明它是 **Map 条目**（锚里没有 `.put(`）：{anchor!r}"
+                           f" ⇒ 载体形态变了，null 形态推导失效，须重新登记")
+    return out
+
+
+def null_form_violations(scope: dict[str, dict], ledger: dict, yml_text: str,
+                         sources: dict[str, str]) -> list[str]:
+    """判据 6：可空冻结键（DTO 字段 + Map 条目）的 null 形态 ⇄ 现取序列化策略，逐键登记 + 写理由。"""
     out: list[str] = []
     ginc = global_inclusion(yml_text)
     declared = ledger.get("nullable_key_forms", {})
-    required: set[str] = set()
+
+    dto_required: dict[str, tuple[dict, dict]] = {}
     for fqn, info in sorted(scope.items()):
-        for field, meta in sorted(info["fields"].items()):
-            if not meta["annotated"] or meta["type"] in PRIMITIVES:
-                continue
-            key_id = f"{fqn}::{meta['key']}"
-            required.add(key_id)
-            form = derive_null_form(info["include"], meta["include"], ginc)
-            if key_id not in declared:
-                out.append(f"{key_id} 未登记 null 形态（可空冻结键必须逐键登记 form + 理由；现取形态 = {form!r}）")
+        for _field, meta in sorted(info["fields"].items()):
+            if meta["annotated"] and meta["type"] not in PRIMITIVES:
+                dto_required[f"{fqn}::{meta['key']}"] = (info, meta)
+
+    map_required: dict[str, str] = {}
+    for face, reg in sorted(ledger.get("map_view_faces", {}).items()):
+        if reg.get("carrier") and _carrier_include(ledger, sources, face) is None:
+            continue  # 载体解析失败已由判据 6b 具名
+        for key in reg.get("keys", {}):
+            map_required[f"{reg.get('source', '')}::{key}"] = face
+
+    required = set(dto_required) | set(map_required)
     if not required:
-        out.append("射程里一个「冻结 + 引用类型」的键都没有 ⇒ 本判据空跑（fail-closed）")
+        out.append("射程里一个可空冻结键都没有 ⇒ 本判据空跑（fail-closed）")
+
+    for key_id, (info, meta) in sorted(dto_required.items()):
+        form = derive_null_form(info["include"], meta["include"], ginc)
+        if key_id not in declared:
+            out.append(f"{key_id} 未登记 null 形态（可空冻结键必须逐键登记 form + why；现取形态 = {form!r}）")
+
     for key_id, entry in sorted(declared.items()):
         if key_id not in required:
-            out.append(f"{key_id} 是陈旧登记（代码里已无此可空冻结键 / 已变成基本类型）")
+            out.append(f"{key_id} 是陈旧登记（代码里已无此可空冻结键 / 已变成基本类型 / 该 Map 键已不在登记面）")
             continue
-        fqn, key = key_id.rsplit("::", 1)
-        info = scope[fqn]
-        meta = next(m for m in info["fields"].values() if m["key"] == key and m["annotated"])
-        form = derive_null_form(info["include"], meta["include"], ginc)
+        if key_id in dto_required:
+            info, meta = dto_required[key_id]
+            form = derive_null_form(info["include"], meta["include"], ginc)
+            where = (f"全局 default-property-inclusion={ginc!r}、类级 @JsonInclude={info['include']!r}、"
+                     f"字段级 @JsonInclude={meta['include']!r}")
+            expect_kind = "dto-key"
+        else:
+            face = map_required[key_id]
+            carrier_inc = _carrier_include(ledger, sources, face)
+            form = derive_null_form(carrier_inc, None, ginc)
+            where = f"全局 default-property-inclusion={ginc!r}、Map 载体类级 @JsonInclude={carrier_inc!r}"
+            expect_kind = "map-entry"
         declared_form = entry.get("form")
+        if entry.get("kind") != expect_kind:
+            out.append(f"{key_id} 的 kind={entry.get('kind')!r} 与实际载体不符（应为 {expect_kind!r}）")
         if declared_form not in ("present", "absent"):
             out.append(f"{key_id} 的 form={declared_form!r} 非法（只认 'present' / 'absent'）")
         elif declared_form != form:
             out.append(f"{key_id} 登记的 null 形态 = {declared_form!r}，而现取序列化策略推出的是 {form!r}"
-                       f"（全局 default-property-inclusion={ginc!r}、类级 @JsonInclude={info['include']!r}、"
-                       f"字段级 @JsonInclude={meta['include']!r}）⇒ 契约措辞与实现不符，须重登记")
+                       f"（{where}）⇒ 契约措辞与实现不符，须重登记")
         if not str(entry.get("why", "")).strip():
             out.append(f"{key_id} 的 null 形态登记缺 `why`（每条登记必须写理由）")
     return out
@@ -474,10 +555,19 @@ def test_contract_ledger_carries_registered_frozen_keys() -> None:
 
 def test_nullable_frozen_keys_declare_null_form_matching_live_policy() -> None:
     """判据 6：可空冻结键的 null 形态 ⇄ 现取序列化策略（未登记即红）。"""
-    _, scope, ledger, _, yml_text = _live()
+    sources, scope, ledger, _, yml_text = _live()
     print(f"[现取] 全局 default-property-inclusion = {global_inclusion(yml_text)!r}；"
           f"登记的可空冻结键 = {len(ledger['nullable_key_forms'])} 个")
-    assert null_form_violations(scope, ledger, yml_text) == []
+    assert null_form_violations(scope, ledger, yml_text, sources) == []
+
+
+def test_map_view_faces_are_live() -> None:
+    """判据 6b：Map 载体读面的键 ⇄ 代码 `put` 锚（部位读面 issue #4946）。"""
+    sources, _, ledger, _, _ = _live()
+    faces = ledger["map_view_faces"]
+    print(f"\n[现取] Map 载体面 = {len(faces)} 个；登记键 = "
+          f"{sum(len(f['keys']) for f in faces.values())} 个")
+    assert map_view_violations(ledger, sources) == []
 
 
 def test_ledger_is_fail_closed_and_only_shrinks() -> None:
@@ -603,11 +693,30 @@ def test_red_proof_4_new_unregistered_dto_is_red() -> None:
 
 def test_red_proof_5_inclusion_flip_is_red() -> None:
     """红证 ⑤：全局 inclusion 改成 `always` ⇒ 登记的 `absent` 不再成立 ⇒ 红。"""
-    _, scope, ledger, _, yml_text = _live()
+    sources, scope, ledger, _, yml_text = _live()
     flipped = yml_text.replace("default-property-inclusion: non_null", "default-property-inclusion: always", 1)
     assert flipped != yml_text, "注入未生效（先自证坐标）"
-    violations = null_form_violations(scope, ledger, flipped)
+    violations = null_form_violations(scope, ledger, flipped, sources)
     assert any("null 形态 = 'absent'，而现取序列化策略推出的是 'present'" in v for v in violations), violations
+
+
+def test_red_proof_6_map_anchor_removed_or_weakened_is_red() -> None:
+    """红证 ⑥：部位读面的 `put` 锚被删 / 锚弱化到不再证明 Map 条目 ⇒ 判据 6b 红。"""
+    _, _, ledger, _, _ = _live()
+    face = next(iter(ledger["map_view_faces"]))
+    rel = ledger["map_view_faces"][face]["source"]
+    sources = read_sources()
+
+    removed = dict(sources)
+    removed[rel] = "\n".join(line for line in sources[rel].splitlines()
+                              if 'position.put("part_short_code"' not in line)
+    v1 = map_view_violations(ledger, removed)
+    assert any("part_short_code" in v and "代码锚消失" in v for v in v1), v1
+
+    weakened = copy.deepcopy(ledger)
+    weakened["map_view_faces"][face]["keys"]["part_short_code"] = "part_short_code"
+    v2 = map_view_violations(weakened, sources)
+    assert any("Map 条目" in v for v in v2), v2
 
 
 def test_control_comment_only_change_is_green() -> None:

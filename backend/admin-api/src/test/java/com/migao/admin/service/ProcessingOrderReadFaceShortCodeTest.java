@@ -3,6 +3,7 @@ package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.config.TenantContext;
@@ -48,9 +49,11 @@ import static org.mockito.Mockito.when;
  *
  * <h3>红证（改坏 ⇒ 必红，逐条对应一个真实缺陷形态）</h3>
  * <ul>
- *   <li><b>无码时省键</b>（`if (hasText) resp.setShortCode(...)` / 返回 Map 时 `put` 在分支里）⇒
- *       {@code missingShortCodeStillCarriesBothKeysAsNull} 红（负控①：消费方 `?? null` 不复现，
- *       而「键缺席」与「值为 null」在**契约**上是两件事 —— 前者会让前端把整块按不可用处理）；</li>
+ *   <li><b>DTO 上无码省字段</b>（`if (hasText) resp.setShortCode(...)`）⇒
+ *       {@code missingShortCodeStillCarriesBothKeysAsNull} 红（负控①：DTO 对象上两键必须**都在且为 null**）。
+ *       🔴 **但线上 JSON 上「键缺席」与「值为 null」不可区分**：全局 `non_null` 策略下两者都不下发 ⇒
+ *       消费方（`processingOrder?.short_code ?? null`）一律拿到「没有码」，**不得编造**
+ *       （issue #6890 的实测发现 + 订正，见 {@code missingShortCodeKeysAreAbsentInJsonUnderProductionInclusion}）；</li>
  *   <li><b>无码时折成 `""`</b>（`shortCode == null ? "" : shortCode`）⇒ 同一条判据红（负控②：
  *       空串会印出一个**空二维码**内容，而不是「无码」占位）；</li>
  *   <li><b>拼出 `/o/null`</b>（少了 `hasText` 判断，直接 `base + "/o/" + po.getShortCode()`）⇒
@@ -67,7 +70,12 @@ import static org.mockito.Mockito.when;
  * <h3>与既有判据的分工</h3>
  * <p>码**本体**（分配 / 补码 / 撤销不碰短码）由 B1 的
  * {@code ProductionServiceShortCodeTest} 判；`/o/{短码}` 的 302/404/410 由 B2 判；
- * 本文件只判**读面下发的形态**（键恒在、值正确、零新增查询、租户隔离）。</p>
+ * 本文件只判**读面下发的形态**（无码时两键在 **DTO 对象**上恒在且为 null、值正确、零新增查询、租户隔离）。</p>
+ *
+ * <p>🔴 <b>线上 JSON 形态（issue #6890 订正）</b>：全局 {@code spring.jackson.default-property-inclusion: non_null}
+ * （{@code backend/admin-api/src/main/resources/application.yml}）⇒ 无码时两键在 JSON 上**缺席**
+ * （不是 {@code key: null}）；与「值为 null」在消费方**语义等价**（{@code ?? null}）。
+ * 故凡断言线上 JSON 形态的判据一律用 {@code productionMapper}（镜像该配置），不用裸 {@code new ObjectMapper()}。</p>
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -98,6 +106,17 @@ class ProcessingOrderReadFaceShortCodeTest {
     private ProductionOperationQtyClient productionOperationQtyClient;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    /**
+     * **线上同源** mapper：镜像 {@code backend/admin-api/src/main/resources/application.yml} 的
+     * {@code spring.jackson.default-property-inclusion: non_null}（Spring Boot 落到
+     * {@code ObjectMapper.setSerializationInclusion(NON_NULL)} ⇒ null 属性与 null Map 值都不下发）。
+     *
+     * <p>⚠️ 裸 {@code new ObjectMapper()} 的 inclusion 是 {@code ALWAYS}，**不是**线上形态 ——
+     * 「无码 ⇒ 键仍在且为 null」只在裸 mapper 上成立（issue #6890 实测：单测绿、线上形态相反）。</p>
+     */
+    private final ObjectMapper productionMapper =
+            new ObjectMapper().setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
     private ProcessingOrderService service;
 
@@ -202,7 +221,7 @@ class ProcessingOrderReadFaceShortCodeTest {
                 .isEqualTo("https://staging.example.com/o/" + SHORT_CODE);
     }
 
-    // ────────────────────────────────────────────── ② 无码 ⇒ 两键恒在且为 null（负控）
+    // ────── ② 无码：DTO 上两键恒在且为 null；**线上 JSON 上两键缺席**（全局 non_null）—— 负控
 
     @Test
     @DisplayName("② 无码（存量行 short_code = NULL）：两键**都在**且为 null —— 不省键、不折成 \"\"、不造 /o/null")
@@ -218,22 +237,34 @@ class ProcessingOrderReadFaceShortCodeTest {
     }
 
     @Test
-    @DisplayName("②b 无码的 JSON 形态：两键**恒在**（NON_NULL 不适用于本 DTO）—— 负控用 raw JSON 钉住")
-    void missingShortCodeKeysAreStillPresentInJson() throws Exception {
+    @DisplayName("②b 无码的**线上 JSON 形态**：全局 non_null ⇒ 两键**缺席**（不是 key: null）；消费方 ?? null 等价")
+    void missingShortCodeKeysAreAbsentInJsonUnderProductionInclusion() throws Exception {
         when(processingOrderMapper.selectOne(any())).thenReturn(po(null));
         when(orderMapper.selectById("order-001")).thenReturn(order());
 
-        JsonNode node = objectMapper.valueToTree(service.getDetail("po-1", TENANT));
+        JsonNode node = productionMapper.valueToTree(service.getDetail("po-1", TENANT));
 
-        // 负控①：把键省掉（`if (hasText) set...`）⇒ 下面两条 has() 红
-        assertThat(node.has("short_code")).as("键恒在：无码也要有 short_code 键").isTrue();
-        assertThat(node.has("scan_url")).as("键恒在：无码也要有 scan_url 键").isTrue();
-        assertThat(node.get("short_code").isNull()).isTrue();
-        assertThat(node.get("scan_url").isNull()).isTrue();
-        // 负控②：折成空串 ⇒ 红
-        assertThat(node.get("short_code").asText("")).as("不得折成空串").isEmpty();
-        // 负控③：拼出 /o/null ⇒ 红（原文里任何位置出现这个串都算）
+        // 负控①：线上同源形态 —— 值为 null ⇒ 键缺席（`non_null`；实测 null 属性与 null Map 值都不下发）
+        assertThat(node.has("short_code")).as("线上 non_null ⇒ 无码时 short_code 键缺席").isFalse();
+        assertThat(node.has("scan_url")).as("线上 non_null ⇒ 无码时 scan_url 键缺席").isFalse();
+        // 消费方负控：缺席解析成「没有码」——`path(...)` 给 MissingNode，`?? null` 给 null，两者等价
+        assertThat(node.path("short_code").isMissingNode()).as("消费方视角：缺席 == null").isTrue();
+        assertThat(node.path("short_code").asText("")).as("不得折成空串").isEmpty();
+        // 负控②：拼出 /o/null ⇒ 红（原文里任何位置出现这个串都算）
         assertThat(node.toString()).as("绝不产出 /o/null 这种假码").doesNotContain("/o/null");
+    }
+
+    @Test
+    @DisplayName("②b' 有码的线上 JSON 形态：两键都在且有值（正向对照，证明缺席不是「键从来没下发过」）")
+    void presentShortCodeKeysAreInJsonUnderProductionInclusion() {
+        when(processingOrderMapper.selectOne(any())).thenReturn(po(SHORT_CODE));
+        when(orderMapper.selectById("order-001")).thenReturn(order());
+
+        JsonNode node = productionMapper.valueToTree(service.getDetail("po-1", TENANT));
+
+        assertThat(node.path("short_code").asText()).as("有码 ⇒ short_code 键在且有值").isEqualTo(SHORT_CODE);
+        assertThat(node.path("scan_url").asText()).as("有码 ⇒ scan_url 键在且有值")
+                .isEqualTo(STABLE_BASE + "/o/" + SHORT_CODE);
     }
 
     @Test

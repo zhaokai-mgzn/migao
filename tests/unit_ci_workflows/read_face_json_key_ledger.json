@@ -1,7 +1,7 @@
 {
   "schema": "read-face-json-key-ledger/v1",
   "issue": "#6890",
-  "what": "读面 JSON 键的**自有登记面**（issue #6890 的类级元守卫的台账）。判据 = tests/unit_ci_workflows/test_read_face_json_key_guard.py。逐类登记 `<java 字段> -> <对消费端可见的 JSON 键>` 的**完整清单**；未登记/已登记不符 ⇒ 红。🔴 本文件**不是** docs/wiki/CONTRACT-LEDGER.md（那份由 B2 独占写面，本包只读）。",
+  "what": "读面 JSON 键的**自有登记面**（issue #6890 的类级元守卫的台账）。判据 = tests/unit_ci_workflows/test_read_face_json_key_guard.py。逐类登记 `<java 字段> -> <对消费端可见的 JSON 键>` 的**完整清单**；未登记/已登记不符 ⇒ 红。🔴 本文件**不是** docs/wiki/CONTRACT-LEDGER.md（那份由 B2 独占写面，本包只读）。 登记面覆盖**两类载体**：① DTO 字段（显式 `@JsonProperty` 的冻结键）；② **Map 条目**（部位读面的 `position.put(...)`，issue #4946）—— 后者由 map_view_faces 逐键给代码锚。",
   "scope_expression": "backend/admin-api/src/main/java 下**承载至少一个显式 `@JsonProperty` 的类**（含嵌套类，按 `Outer.Inner` 记）",
   "judged_by": "tests/unit_ci_workflows/test_read_face_json_key_guard.py",
   "classes": {
@@ -169,60 +169,94 @@
   "nullable_key_forms": {
     "com.migao.admin.dto.CategoryCreateRequest::sort": {
       "form": "absent",
-      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。",
+      "kind": "dto-key"
     },
     "com.migao.admin.dto.CategoryResponse::sort": {
       "form": "absent",
-      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。",
+      "kind": "dto-key"
     },
     "com.migao.admin.dto.CategoryUpdateRequest::sort": {
       "form": "absent",
-      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。",
+      "kind": "dto-key"
     },
     "com.migao.admin.dto.ProcessingOrderResponse::short_code": {
       "form": "absent",
-      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。 ⚠️ issue #6867/B3 与 docs/wiki/CONTRACT-LEDGER.md 的「键恒在 ⇒ 两键都在且为 null」在当前序列化配置下**不可达**（实例判据用的是 `new ObjectMapper()`，其 inclusion 默认 ALWAYS，与线上 ObjectMapper 不同源）—— 消费方（frontend/admin-web 的 ProcessingDoc.tsx / OrderDetail.tsx）用 `?? null` + `short_code?: string | null`，因此**行为不受影响**，受影响的是契约措辞。"
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。 ⚠️ issue #6867/B3 与 docs/wiki/CONTRACT-LEDGER.md 的「键恒在 ⇒ 两键都在且为 null」在当前序列化配置下**不可达**（实例判据用的是 `new ObjectMapper()`，其 inclusion 默认 ALWAYS，与线上 ObjectMapper 不同源）—— 消费方（frontend/admin-web 的 ProcessingDoc.tsx / OrderDetail.tsx）用 `?? null` + `short_code?: string | null`，因此**行为不受影响**，受影响的是契约措辞。",
+      "kind": "dto-key"
     },
     "com.migao.admin.dto.ProcessingOrderResponse::scan_url": {
       "form": "absent",
-      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。 ⚠️ issue #6867/B3 与 docs/wiki/CONTRACT-LEDGER.md 的「键恒在 ⇒ 两键都在且为 null」在当前序列化配置下**不可达**（实例判据用的是 `new ObjectMapper()`，其 inclusion 默认 ALWAYS，与线上 ObjectMapper 不同源）—— 消费方（frontend/admin-web 的 ProcessingDoc.tsx / OrderDetail.tsx）用 `?? null` + `short_code?: string | null`，因此**行为不受影响**，受影响的是契约措辞。"
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。 ⚠️ issue #6867/B3 与 docs/wiki/CONTRACT-LEDGER.md 的「键恒在 ⇒ 两键都在且为 null」在当前序列化配置下**不可达**（实例判据用的是 `new ObjectMapper()`，其 inclusion 默认 ALWAYS，与线上 ObjectMapper 不同源）—— 消费方（frontend/admin-web 的 ProcessingDoc.tsx / OrderDetail.tsx）用 `?? null` + `short_code?: string | null`，因此**行为不受影响**，受影响的是契约措辞。",
+      "kind": "dto-key"
     },
     "com.migao.admin.dto.ProcessingOrderResponse.ProcessingOrderItemBrief::fabric_meters": {
       "form": "absent",
-      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。",
+      "kind": "dto-key"
     },
     "com.migao.admin.dto.ProcessingOrderResponse.ProcessingOrderItemBrief::pleat_count": {
       "form": "absent",
-      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。",
+      "kind": "dto-key"
     },
     "com.migao.admin.dto.ProcessingOrderResponse.ProcessingOrderItemBrief::per_panel_pleats": {
       "form": "absent",
-      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。",
+      "kind": "dto-key"
     },
     "com.migao.admin.dto.ProcessingOrderResponse.ProcessingOrderItemBrief::panels": {
       "form": "absent",
-      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。",
+      "kind": "dto-key"
     },
     "com.migao.admin.dto.ProcessingOrderResponse.ProcessingOrderItemBrief::holes": {
       "form": "absent",
-      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。",
+      "kind": "dto-key"
     },
     "com.migao.admin.dto.ProcessingOrderResponse.ProcessingOrderItemBrief::fullness": {
       "form": "absent",
-      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。",
+      "kind": "dto-key"
     },
     "com.migao.admin.dto.ProcessingOrderResponse.ProcessingOrderItemBrief::fullness_actual": {
       "form": "absent",
-      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。",
+      "kind": "dto-key"
     },
     "com.migao.admin.dto.ProcessingOrderResponse.ProcessingOrderItemBrief::formula_text": {
       "form": "absent",
-      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。"
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。",
+      "kind": "dto-key"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java::part_short_code": {
+      "form": "absent",
+      "kind": "map-entry",
+      "why": "**Map 载体**读面（不是 DTO）：键是 `position.put(...)` 的条目 ⇒ 全局 non_null 对 Map 的 null 值**同样过滤**（实测：`ObjectMapper.setSerializationInclusion(NON_NULL)` 下根级与嵌套 Map 的 null 值都不下发）⇒ 无码时**键缺席**，与「值为 null」在消费方语义等价（`?? null`）。⚠️ 本面的载体若从 Map 变成带 `@JsonInclude(ALWAYS)` 的 DTO，本登记即失效 ⇒ 判据 6b 会红（锚里必须含 `.put(`）。"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java::scan_url": {
+      "form": "absent",
+      "kind": "map-entry",
+      "why": "**Map 载体**读面（不是 DTO）：键是 `position.put(...)` 的条目 ⇒ 全局 non_null 对 Map 的 null 值**同样过滤**（实测：`ObjectMapper.setSerializationInclusion(NON_NULL)` 下根级与嵌套 Map 的 null 值都不下发）⇒ 无码时**键缺席**，与「值为 null」在消费方语义等价（`?? null`）。⚠️ 本面的载体若从 Map 变成带 `@JsonInclude(ALWAYS)` 的 DTO，本登记即失效 ⇒ 判据 6b 会红（锚里必须含 `.put(`）。"
     }
   },
   "contract_ledger_row_vocabulary": {
     "null": "账本锚行里的**值**说明（`无码 ⇒ null`），不是 JSON 键名 —— 行内 token 白名单条目（只许缩短：上界冻结在判据文件里）。",
     "base": "账本锚行里的**配置项/变量名**（`{base}/o/{short_code}` 的 base），不是 JSON 键名 —— 同上。"
   },
-  "exemptions": []
+  "exemptions": [],
+  "map_view_faces": {
+    "GET /api/admin/production/orders/{orderId}/operations（加工单生产明细读面 · 一部位一码，issue #4946）": {
+      "source": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java",
+      "why_map": "响应由 `ProductionService.buildPositions` 逐部位 `position.put(...)` 装配（Map/LinkedHashMap 载体，非 DTO）⇒ 键的存在性由 Map 内容决定，null 值被全局 non_null 过滤。 外层载体 = `ApiResponse<Map<String, Object>>`（`ProductionController.operations`），其类级 `@JsonInclude(NON_NULL)` 与全局策略同向 ⇒ 登记 form = absent。",
+      "keys": {
+        "part_short_code": "position.put(\"part_short_code\"",
+        "scan_url": "position.put(\"scan_url\""
+      },
+      "carrier": "com.migao.admin.dto.ApiResponse::backend/admin-api/src/main/java/com/migao/admin/dto/ApiResponse.java"
+    }
+  }
 }
