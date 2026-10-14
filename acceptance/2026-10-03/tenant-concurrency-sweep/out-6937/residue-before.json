@@ -1,0 +1,792 @@
+{
+  "after_sales_tickets": {
+    "counts": {
+      "32": 3,
+      "35": 0
+    },
+    "fps": {
+      "32": "1de4fe95d363b9b1d1c08d1fe92a2115",
+      "35": "-"
+    }
+  },
+  "agent_batch_items": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "agent_batches": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "agent_employees": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "agent_messages": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "agent_sessions": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "audit_logs": {
+    "counts": {
+      "32": 6,
+      "35": 0
+    },
+    "fps": {
+      "32": "80db278bff3ab98e1d1f4b72bb47db28",
+      "35": "-"
+    }
+  },
+  "categories": {
+    "counts": {
+      "32": 23,
+      "35": 3
+    },
+    "fps": {
+      "32": "af82289caaf6f2241a481e663c5f8619",
+      "35": "e814c1fcdd0bb6c099ddc13e9cd65c15"
+    }
+  },
+  "client_request_keys": {
+    "counts": {
+      "32": 19,
+      "35": 0
+    },
+    "fps": {
+      "32": "440ce71d15f30bae12adebc9c2a28ad3",
+      "35": "-"
+    }
+  },
+  "craft_calc_configs": {
+    "counts": {
+      "32": 1,
+      "35": 0
+    },
+    "fps": {
+      "32": "ad30c5f315e3788a2f95e9d41128f071",
+      "35": "-"
+    }
+  },
+  "customer_profiles": {
+    "counts": {
+      "32": 72,
+      "35": 1
+    },
+    "fps": {
+      "32": "8d154547b763c611f85b1d5925e17d5f",
+      "35": "5207779cdbc7ccd769b396b6267039c8"
+    }
+  },
+  "customer_segment_members": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "customer_segments": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "customer_tags": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "cutting_height_configs": {
+    "counts": {
+      "32": 1,
+      "35": 0
+    },
+    "fps": {
+      "32": "c7d9be6f835a477b054aca098e9d697c",
+      "35": "-"
+    }
+  },
+  "daily_briefings": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "fabric_remnants": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "finance_transactions": {
+    "counts": {
+      "32": 95,
+      "35": 0
+    },
+    "fps": {
+      "32": "73b25fb8a548368f7567d420735c917b",
+      "35": "-"
+    }
+  },
+  "inbound_labels": {
+    "counts": {
+      "32": 3,
+      "35": 0
+    },
+    "fps": {
+      "32": "52a34f039941d65872d0272829087325",
+      "35": "-"
+    }
+  },
+  "inbound_order_items": {
+    "counts": {
+      "32": 3,
+      "35": 0
+    },
+    "fps": {
+      "32": "329d2354929e654eb6ba323f37366521",
+      "35": "-"
+    }
+  },
+  "inbound_orders": {
+    "counts": {
+      "32": 3,
+      "35": 0
+    },
+    "fps": {
+      "32": "ac258f25ba22842891d9ad1282e80b44",
+      "35": "-"
+    }
+  },
+  "knowledge_candidates": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "knowledge_cards": {
+    "counts": {
+      "32": 27,
+      "35": 0
+    },
+    "fps": {
+      "32": "9fc821879feca1e74379409a4f0f21d2",
+      "35": "-"
+    }
+  },
+  "notification_rules": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "notification_templates": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "notifications": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "order_items": {
+    "counts": {
+      "32": 117,
+      "35": 1
+    },
+    "fps": {
+      "32": "4cba7bf463a0e28f865c21fa20ad5466",
+      "35": "59e191b54827b827c01a0b6b67547557"
+    }
+  },
+  "order_logistics": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "order_shipment_items": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "order_shipments": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "orders": {
+    "counts": {
+      "32": 115,
+      "35": 1
+    },
+    "fps": {
+      "32": "6f65dc33b249c7a59e6503c61804f4ce",
+      "35": "1ecb8c56d70fd6f2db1a02e531f62a24"
+    }
+  },
+  "permissions": {
+    "counts": {
+      "32": 32,
+      "35": 32
+    },
+    "fps": {
+      "32": "ba8f0e8a7336b3962e9f931e01c13300",
+      "35": "79be9134ac5d633514bccb89c485dd8b"
+    }
+  },
+  "processing_categories": {
+    "counts": {
+      "32": 8,
+      "35": 0
+    },
+    "fps": {
+      "32": "146fd592ac84e1c9fc956a20e599bfce",
+      "35": "-"
+    }
+  },
+  "processing_fee_combination_versions": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "processing_fee_combinations": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "processing_items": {
+    "counts": {
+      "32": 5,
+      "35": 0
+    },
+    "fps": {
+      "32": "218b14322e4334c55592409911d99548",
+      "35": "-"
+    }
+  },
+  "processing_order_sets": {
+    "counts": {
+      "32": 88,
+      "35": 0
+    },
+    "fps": {
+      "32": "2319819f0d561d0fdca12f616bad9433",
+      "35": "-"
+    }
+  },
+  "processing_orders": {
+    "counts": {
+      "32": 87,
+      "35": 0
+    },
+    "fps": {
+      "32": "3ad98f71f7638a61b8bf51ca71dbb858",
+      "35": "-"
+    }
+  },
+  "processing_position_operations": {
+    "counts": {
+      "32": 979,
+      "35": 0
+    },
+    "fps": {
+      "32": "58c68479cfd4b46d6ed027ecee88bdaa",
+      "35": "-"
+    }
+  },
+  "processing_set_part_tokens": {
+    "counts": {
+      "32": 93,
+      "35": 0
+    },
+    "fps": {
+      "32": "e4cc41e6ca026be34863c8e6767ef21d",
+      "35": "-"
+    }
+  },
+  "product_attributes": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "product_colors": {
+    "counts": {
+      "32": 16,
+      "35": 0
+    },
+    "fps": {
+      "32": "08dcf2c8aa408f22a36a1fd1c0fdadec",
+      "35": "-"
+    }
+  },
+  "product_skus": {
+    "counts": {
+      "32": 16,
+      "35": 0
+    },
+    "fps": {
+      "32": "c5e8ac4d6ce8fb3b1faf03b98b48f4a5",
+      "35": "-"
+    }
+  },
+  "production_crafts": {
+    "counts": {
+      "32": 1,
+      "35": 1
+    },
+    "fps": {
+      "32": "3a118e7f92b7442bd0263d0f6c30d26c",
+      "35": "1e7783329327b259804144c810a4406a"
+    }
+  },
+  "production_instance_repricing_logs": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "production_operation_position_price_versions": {
+    "counts": {
+      "32": 10,
+      "35": 0
+    },
+    "fps": {
+      "32": "bd7df9c039af3bec0f4fb25f57d6cfe9",
+      "35": "-"
+    }
+  },
+  "production_operation_positions": {
+    "counts": {
+      "32": 123,
+      "35": 116
+    },
+    "fps": {
+      "32": "e1e5c5cdf7c7800a3cce0a58a727ce1d",
+      "35": "71a8fc2db264a2698111165c531f54a1"
+    }
+  },
+  "production_operation_price_versions": {
+    "counts": {
+      "32": 51,
+      "35": 41
+    },
+    "fps": {
+      "32": "69b25f54a6c3268a36961a5eab31cb2b",
+      "35": "75a658ae400888d688058aa066ef249e"
+    }
+  },
+  "production_operations": {
+    "counts": {
+      "32": 48,
+      "35": 41
+    },
+    "fps": {
+      "32": "f8ad098ba13b24e7faa07f0d329a5bf4",
+      "35": "2d97a8aa24d94a4c4f5e68c87e5dd0f8"
+    }
+  },
+  "production_route_rules": {
+    "counts": {
+      "32": 29,
+      "35": 27
+    },
+    "fps": {
+      "32": "fe33d46edf158357bbc41c0743be0290",
+      "35": "44cd3f7fab1278792fc912681bf313f2"
+    }
+  },
+  "production_route_signals": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "production_route_templates": {
+    "counts": {
+      "32": 3,
+      "35": 2
+    },
+    "fps": {
+      "32": "699b8210b9ba56b5178ba80c9f0529ea",
+      "35": "a3eeb0f1d041edd61ac9b291be520c10"
+    }
+  },
+  "production_routing_versions": {
+    "counts": {
+      "32": 7,
+      "35": 0
+    },
+    "fps": {
+      "32": "006732eaf981f54135ff46b0b695ccdd",
+      "35": "-"
+    }
+  },
+  "production_routings": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "production_work_logs": {
+    "counts": {
+      "32": 12,
+      "35": 0
+    },
+    "fps": {
+      "32": "b92a1c1104243c19d8952672d2a51d6a",
+      "35": "-"
+    }
+  },
+  "products": {
+    "counts": {
+      "32": 26,
+      "35": 2
+    },
+    "fps": {
+      "32": "3149c2bef3461c59d23745551ebfa876",
+      "35": "0ad58c5f7c4fc5ac7b6457afc116e005"
+    }
+  },
+  "remnant_small_item_specs": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "role_permissions": {
+    "counts": {
+      "32": 100,
+      "35": 100
+    },
+    "fps": {
+      "32": "fdce3313dfed0a5ae24029ea98fbc124",
+      "35": "f4c0807f3fcf9704ddb205f8a9c6af0b"
+    }
+  },
+  "roles": {
+    "counts": {
+      "32": 9,
+      "35": 7
+    },
+    "fps": {
+      "32": "6cad63b3e7b05c6facaba059bceb1499",
+      "35": "ac53398d5615cb524b670061945b1ead"
+    }
+  },
+  "scheduled_tasks": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "session_messages": {
+    "counts": {
+      "32": 1,
+      "35": 0
+    },
+    "fps": {
+      "32": "1ecb8da3e5bff01d968da462f01810b7",
+      "35": "-"
+    }
+  },
+  "sessions": {
+    "counts": {
+      "32": 2,
+      "35": 0
+    },
+    "fps": {
+      "32": "3a91c309cefb0a088dde24318db830e8",
+      "35": "-"
+    }
+  },
+  "stock_batch_consumptions": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "stock_batches": {
+    "counts": {
+      "32": 3,
+      "35": 0
+    },
+    "fps": {
+      "32": "dfb302c3bf9abb6349031281e75f3535",
+      "35": "-"
+    }
+  },
+  "stock_ledger_entries": {
+    "counts": {
+      "32": 97,
+      "35": 0
+    },
+    "fps": {
+      "32": "a72915a8cee51a78944a512717cefcc5",
+      "35": "-"
+    }
+  },
+  "tenant_ai_configs": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "tenant_apps": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "tenant_param_audit": {
+    "counts": {
+      "32": 15,
+      "35": 0
+    },
+    "fps": {
+      "32": "cf0e881d6c19c372b4fbae0b567ec34d",
+      "35": "-"
+    }
+  },
+  "tenant_payment_qrcodes": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "ticket_notes": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "ticket_timeline": {
+    "counts": {
+      "32": 9,
+      "35": 0
+    },
+    "fps": {
+      "32": "bbcf501c2f76e4a31ac2d786fe1ea01b",
+      "35": "-"
+    }
+  },
+  "user_identities": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "user_memories": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "user_memories_bak_20260904_123108": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "user_roles": {
+    "counts": {
+      "32": 9,
+      "35": 1
+    },
+    "fps": {
+      "32": "45728fe6cf6e8354bb7c585b6d2494c0",
+      "35": "8c1601bc95bd08840b9cd597a2a26460"
+    }
+  },
+  "user_suggestion_prefs": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  },
+  "users": {
+    "counts": {
+      "32": 9,
+      "35": 1
+    },
+    "fps": {
+      "32": "f00d138a1b662f5d71b57b8fc7a41bde",
+      "35": "edace0c7073d464a7485548f58392f02"
+    }
+  },
+  "worker_report_audits": {
+    "counts": {
+      "32": 12,
+      "35": 0
+    },
+    "fps": {
+      "32": "74bddda5943e9c25bca96d6d1dd4fe68",
+      "35": "-"
+    }
+  },
+  "worker_sessions": {
+    "counts": {
+      "32": 0,
+      "35": 0
+    },
+    "fps": {
+      "32": "-",
+      "35": "-"
+    }
+  }
+}

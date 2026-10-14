@@ -1,9 +1,12 @@
 // 零残留 / 零写入读数：全表（含 tenant_id 的表）行数 + updated_at 最大值 + 行指纹校验和
 // 用法：node harness/residue.mjs snap-before | snap-after | diff
-import { writeFileSync, readFileSync, existsSync } from 'node:fs'
+// 租户集合由 env 注入（issue #6937）：A 必给；B/C 未注入则不进集合。
+import { writeFileSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { psql, log } from '../../config-writeface-sweep/harness/lib.mjs'
-const OUT = fileURLToPath(new URL('../out/', import.meta.url))
+import { T, SUBJECTS_LINE } from '../../lib/subjects.mjs'
+const OUT = process.env.OUT_DIR ? process.env.OUT_DIR.replace(/\/?$/, '/') : fileURLToPath(new URL('../out/', import.meta.url))
+const TENS = [...new Set([T.A, T.B, T.C].filter((x) => x != null))]
 const TABLES = ['products','product_skus','customer_profiles','customer_tags','categories','production_operations',
  'production_operation_positions','production_route_templates','production_route_rules','processing_fee_combinations',
  'processing_items','processing_categories','orders','order_items','processing_orders','inbound_orders','order_shipments',
@@ -11,6 +14,7 @@ const TABLES = ['products','product_skus','customer_profiles','customer_tags','c
  'users','agent_employees','stock_batches','stock_ledger_entries','finance_transactions','fabric_remnants','sessions','tenants','platform_admins']
 const mode = process.argv[2] ?? 'snap'
 const file = OUT + 'residue-' + (mode === 'snap-after' ? 'after' : 'before') + '.json'
+log(`[env] 残留快照租户集合=${JSON.stringify(TENS)}（${SUBJECTS_LINE}）`)
 if (mode.startsWith('snap')) {
   const snap = {}
   for (const t of TABLES) {
@@ -19,9 +23,8 @@ if (mode.startsWith('snap')) {
     const hasTen = psql(`select 1 x from information_schema.columns where table_schema='public' and table_name='${t}' and column_name='tenant_id'`).length > 0
     if (!hasTen) { snap[t] = { rows: psql(`select count(*)::int n from ${t}`)[0].n, max_updated: hasUpd ? psql(`select max(updated_at)::text m from ${t}`)[0].m : null, checksum: psql(`select md5(string_agg(id::text || '|' || ${hasDel ? 'coalesce(deleted,0)::text' : "''"}, ',' order by id::text)) c from ${t}`)[0].c }; continue }
     snap[t] = {}
-    for (const ten of [1, 20, 21]) {
+    for (const ten of TENS) {
       const where = `tenant_id=${ten}` + (hasDel ? ' and coalesce(deleted,0)=0' : '')
-      // 单次往返取「行数 + updated_at 最大值 + id/deleted/updated_at 指纹 + 内容指纹（截断降本）」
       const q = `select count(*)::int n,
           ${hasUpd ? 'max(updated_at)::text' : 'null::text'} m,
           md5(coalesce(string_agg(id::text || '|' || ${hasDel ? 'coalesce(deleted,0)::text' : "''"} || '|' || ${hasUpd ? "coalesce(updated_at::text,'')" : "''"}, ';' order by id::text),'')) idfp,

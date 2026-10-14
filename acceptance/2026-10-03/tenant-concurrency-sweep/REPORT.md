@@ -445,3 +445,34 @@ node probe-redproof.mjs               # 红证/正对照（只读 + 日志读数
 node residue.mjs snap-before && node residue.mjs marker && node residue.mjs snap-after
 node probe.mjs --flip --n=60 --conc=40 && node probe2.mjs --flip && node probe-agent.mjs --flip && node probe-async.mjs --flip
 ```
+
+---
+
+# 附录 B · 环境注入口（issue #6937，2026-10-14）
+
+**病根**：本 sweep 的主体矩阵与手机号曾**写死**（`resources.mjs` 里 A=20 / B=21 / C=1 + 3 个手机号）。
+2026-10-14 环境重建后那些租户已不存在 ⇒ 登录 401 ⇒ **整 sweep 一条判据都没跑出**（判「未覆盖」）。
+
+**唯一注入口** = `acceptance/2026-10-03/lib/subjects.mjs`（与 `tenant-isolation-sweep` 共用，变量清单/退出码/守卫见其
+`HINT` 与 isolation 的「附录 A」）。本 sweep 额外：`AGENT_BASE`（默认 `http://localhost:8001`）、`SERVICE_TOKEN` 取自
+`backend/admin-api/.env`（故本地跑需 `REPO_ROOT=<主检出>`）。
+
+**怎么跑**（2026-10-14 实测）：
+```bash
+REPO_ROOT=<主检出> TENANT_A=32 PHONE_A=13800138000 TENANT_B=<对照租户> PHONE_B=<其管理员手机号> SMS_CODE=123456 \
+  API_LOG=/private/tmp/<admin-api>.log OUT_DIR=<证据目录> node acceptance/2026-10-03/tenant-concurrency-sweep/harness/probe.mjs
+```
+`TENANT_C/PHONE_C` 未注入时：`P7-C端订单链残留`、`G3-C端端点租户过滤` 等**具名 skip**（不折算 pass）。
+
+**本轮真跑读数**（A=32 / B=35 临时对照租户，两个都是真租户；证据 = `out-6937/`）：
+
+| 入口 | pass | fail | skip | 关键读数 |
+|---|---|---|---|---|
+| `probe.mjs`（P1/P3/P4/P5） | 4 | 0 | 0 | P1 并发 114 请求、逐响应核对 **1931 个对象 id**、越租户 **0**；P5 正对照 A→A **20/20 个 200**、越租户 id 20 个**被拒 20** |
+| `probe2.mjs`（P2/P6/P7） | 2 | 0 | 1 | P2 barrier 对齐 **160 请求**（80 轮，首个响应 154ms 时仍有 159 在飞）0 异常；P6 **320 并发**（>线程池 200）p95 3136ms、0 异常；P7 skip（C 未注入） |
+| `probe-redproof.mjs` | 5 | 0 | 0 | RP1 36 串行全绿；RP2/RP5 判据级注入**双向可判**；RP3 线程复用（51 线程中 2 个先后服务 32/35）；RP4 A/B 商品 id 交集 0 |
+| `probe-agent.mjs`（G1~G5） | 4 | 0 | 1 | G2 `body.tenant_id=32→23 件 / =35→2 件`，越租户 0，`X-Tenant-Id` 头不生效；G5 并发 60 交错越租户 0；G3 skip（C 未注入） |
+| `probe-async.mjs`（A1/A2） | — | — | — | **本轮未跑**：会对 A=32 真实租户写 `briefing/config` 并落 `audit_logs` 行，**无命名域可清**（本轮残留口径 = 清到 0）⇒ 留给有专用租户的轮次；代码已同批注入化（缺 B 即具名 skip） |
+
+**回归判据（会红）**：同 `lib/subjects.mjs::guardSubjects()`（import 即扫，命中写死主体 ⇒ exit 3；台账现取 0 条）。
+实测：把注入口写死回去 ⇒ 立即判红；`TENANT_B_ALLOW_MISSING=1` 时整组 **具名 skip**（`probe 读数 … skip=4`，pass=0）。

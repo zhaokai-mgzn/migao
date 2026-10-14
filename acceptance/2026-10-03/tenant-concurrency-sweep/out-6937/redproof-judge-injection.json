@@ -1,0 +1,14 @@
+{
+  "clean_body_ids": [
+    "b5e908ea0d705efa57227568696b3b00"
+  ],
+  "poisoned_body_ids": [
+    "b5e908ea0d705efa57227568696b3b00",
+    "2587775002d9dfa9871db3b961449693"
+  ],
+  "truth": {
+    "a32_belongs_to": 32,
+    "b35_belongs_to": 35,
+    "source_sql": "select id, tenant_id from orders where id in (...)"
+  }
+}

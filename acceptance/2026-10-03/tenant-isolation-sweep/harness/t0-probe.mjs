@@ -1,10 +1,16 @@
-// 探针：登录三方主体 + 摸清列表返回体形态（零写入）
+// 探针：登录注入的主体 + 摸清列表返回体形态（零写入）
+// 主体全部由 env 注入（issue #6937；注入口 = acceptance/2026-10-03/lib/subjects.mjs）
+import { writeFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { api, loginApi, log, Recorder, sha, psql } from '../../config-writeface-sweep/harness/lib.mjs'
+import { PH, SMS_CODE, SUBJECTS_LINE } from '../../lib/subjects.mjs'
+const OUT = process.env.OUT_DIR ? process.env.OUT_DIR.replace(/\/?$/, '/') : fileURLToPath(new URL('../out/', import.meta.url))
 const rec = new Recorder('t0-probe.json')
-const PHONES = { A: '13870217889', B: '13797101248', P: '13456800919' }
+const PHONES = Object.fromEntries(Object.entries({ A: PH.A, B: PH.B, P: PH.P }).filter(([, p]) => p))
+log(`[env] ${SUBJECTS_LINE}（未注入的主体不登录）`)
 const out = {}
 for (const [k, phone] of Object.entries(PHONES)) {
-  try { const r = await loginApi(phone); out[k] = { phone, token: r.token, raw: r.raw }
+  try { const r = await loginApi(phone, SMS_CODE); out[k] = { phone, token: r.token, raw: r.raw }
     log(`login ${k} ${phone} OK token=${r.token.slice(0,16)}… raw=${JSON.stringify(r.raw).slice(0,300)}`)
   } catch (e) { out[k] = { phone, error: String(e).slice(0,300) }; log(`login ${k} ${phone} FAIL ${String(e).slice(0,200)}`) }
 }
@@ -26,6 +32,5 @@ for (const p of LISTS) {
   log(`LIST ${r.status} ${p} → ${shape}`)
   out['list:' + p] = { status: r.status, shape, sample: JSON.stringify(r.json).slice(0, 900) }
 }
-import { writeFileSync } from 'node:fs'
-writeFileSync('../../../acceptance/2026-10-03/tenant-isolation-sweep/out/t0-subjects.json', JSON.stringify(out, null, 1))
+writeFileSync(OUT + 't0-subjects.json', JSON.stringify(out, null, 1))
 log(`sha=${sha()} tenants=${JSON.stringify(psql('select id, name from tenants order by id'))}`)

@@ -1,0 +1,124 @@
+[
+  {
+    "id": "RP1-正对照",
+    "name": "单线程单租户串行列表请求必须全部 200 且无他租户 id",
+    "status": "pass",
+    "detail": "36 个串行请求，失败 0 个",
+    "evidence": [
+      {
+        "note": "串行 36 个列表请求（A=32/B=35 各自打自己）",
+        "bad": 0,
+        "sample": [
+          {
+            "tenant": 32,
+            "resource": "products",
+            "status": 200,
+            "n": 18,
+            "foreign": []
+          },
+          {
+            "tenant": 32,
+            "resource": "customers",
+            "status": 200,
+            "n": 72,
+            "foreign": []
+          },
+          {
+            "tenant": 32,
+            "resource": "orders",
+            "status": 200,
+            "n": 94,
+            "foreign": []
+          },
+          {
+            "tenant": 32,
+            "resource": "processing_items",
+            "status": 200,
+            "n": 0,
+            "foreign": []
+          },
+          {
+            "tenant": 32,
+            "resource": "processing_categories",
+            "status": 200,
+            "n": 1,
+            "foreign": []
+          },
+          {
+            "tenant": 32,
+            "resource": "roles",
+            "status": 200,
+            "n": 7,
+            "foreign": []
+          }
+        ]
+      }
+    ],
+    "at": "2026-10-14T14:28:23.190Z"
+  },
+  {
+    "id": "RP2-检测器注入",
+    "name": "判据能检出合成越租户响应（证明 P1/P5 的比对器有效）",
+    "status": "pass",
+    "detail": "合成体含 1 个非 32 的 id ⇒ 判据报红",
+    "evidence": [
+      {
+        "note": "合成响应：声称 tenant 32 的列表里放了 tenant 35 的真实商品 id",
+        "foreignId": "ee083867bc612a5911ed005742582091",
+        "leaked": [
+          "ee083867bc612a5911ed005742582091"
+        ]
+      }
+    ],
+    "at": "2026-10-14T14:28:23.598Z"
+  },
+  {
+    "id": "RP4-期望独立性",
+    "name": "期望集合取自直连 DB 且两侧不相交（交集 ∅ ⇒ 越租户可判别）",
+    "status": "pass",
+    "detail": "A=23 B=2 交集=0",
+    "evidence": [
+      {
+        "note": "期望来自直连 DB（information_schema + select tenant_id），不取自 API 响应",
+        "a": 23,
+        "b": 2,
+        "intersection": 0
+      }
+    ],
+    "at": "2026-10-14T14:28:24.002Z"
+  },
+  {
+    "id": "RP5-判据级注入",
+    "name": "比对器对「干净体」绿、对「掺入他租户 id」红（双向可判）",
+    "status": "pass",
+    "detail": "干净体越租户数=0（期望 0）；掺入体越租户数=1（期望 >0）",
+    "evidence": [
+      {
+        "note": "判据级注入：同一比对器，干净体应绿、掺入 B 的订单 id 应红",
+        "a20": "b5e908ea0d705efa57227568696b3b00",
+        "b21": "2587775002d9dfa9871db3b961449693",
+        "cleanBad": 0,
+        "poisonedBad": 1
+      }
+    ],
+    "at": "2026-10-14T14:28:24.431Z"
+  },
+  {
+    "id": "RP3-线程复用证据",
+    "name": "线程复用确实发生（读数来自被测服务自身日志，非推断）",
+    "status": "pass",
+    "detail": "51 个线程中 2 个先后服务过多租户；样例：http-nio-8080-exec-4→32/35 | http-nio-8080-exec-14→32/35",
+    "evidence": [
+      {
+        "note": "同一 Tomcat 线程先后服务 >1 个租户的请求（线程复用直接证据）",
+        "threadCount": 51,
+        "reusedThreads": 2,
+        "sample": [
+          "http-nio-8080-exec-4: tenants=32,35",
+          "http-nio-8080-exec-14: tenants=32,35"
+        ]
+      }
+    ],
+    "at": "2026-10-14T14:28:24.463Z"
+  }
+]
