@@ -969,6 +969,12 @@ async function orderDetailJourney(page, orderId) {
         const issueBtn = page.getByRole('button', { name: /确认发加工/ }).first()
         if (await waitVisible(issueBtn, 8000)) await issueBtn.click().catch(() => {})
       }
+      // 状态流转**带二次确认弹窗**（实测截图逐字：「确认状态流转 —— 将加工单 JG-… 标记为「开始加工」。
+      // 该动作会写入加工单状态、不可撤销，请确认后再提交。」+ 取消/确认）⇒ 不点「确认」等于**没发生**：
+      // 徽标停在上一态、下一态按钮永不出现（2026-10-14 实测的假红形态，issue #6940）。
+      // 注意正则**锚定**：不能误命中「确认发加工」（那是上一步内联表单的提交键）。
+      const flowConfirm = page.getByRole('button', { name: /^确\s*认$/ }).first()
+      if (await waitVisible(flowConfirm, 3000)) await flowConfirm.click().catch(() => {})
       // 效果层断言（issue #4305）：旧写法断言**全页文本**「已发加工」是**空判据** ——
       // 加工单块的状态时间线恒含四个步骤文案（已生成→已发加工→加工中→加工完成），
       // 无论实际状态如何都能命中（假绿）。改判两件真效果：
