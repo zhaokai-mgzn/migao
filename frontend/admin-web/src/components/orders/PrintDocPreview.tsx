@@ -95,6 +95,15 @@ export interface PrintDocPreviewProps {
   /** 点「打印」（由调用方经 `usePrintDoc().requestPrint` 走唯一入口） */
   onPrint: () => void
   onClose: () => void
+  /**
+   * 单据级的**打印前提示槽**（issue #6867 / B5）：纸面自检答不了的问题放这里 —— 例如
+   * 「这张加工单还没有可扫二维码，现在打出来的纸扫不了」+ 一键补码。
+   *
+   * 🔴 为什么**不**放进纸框（`children`）：纸框量的是**纸面要印的内容**（`measureSheets`），
+   * 往里加一行提示会被当成正文 ⇒ 报「超出 mm、直接打印会被裁掉」那句**假**结论；
+   * 而提示本身又不该印到纸上（它是屏幕态的操作入口）。放页脚 ⇒ 纸面读数与纸面元素都不受影响。
+   */
+  notice?: ReactNode
 }
 
 export default function PrintDocPreview({
@@ -104,6 +113,7 @@ export default function PrintDocPreview({
   children,
   onPrint,
   onClose,
+  notice,
 }: PrintDocPreviewProps) {
   const box = printPageBoxMm(media)
   const margin = printPageMarginMm(media)
@@ -245,6 +255,9 @@ export default function PrintDocPreview({
 
         {/* ③ 自检结论 + 出口 */}
         <div className="border-t border-neutral-200 px-4 py-3">
+          {/* 单据级提示槽（issue #6867）：在出口**之前**、纸框**之外** —— 商家先看见「这张纸扫不了」，
+              再决定是打还是先补码（放进纸框会污染纸面自检读数，见 `notice` 的 props 注释）。 */}
+          {notice && <div className="mb-2">{notice}</div>}
           <div className="mb-2 text-sm" data-testid="print-preview-check">
             {check === null ? (
               <span className="text-neutral-500">正在量纸面…</span>
