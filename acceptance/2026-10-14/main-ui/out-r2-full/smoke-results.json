@@ -1,0 +1,449 @@
+[
+  {
+    "journey": "01-login",
+    "pass": false,
+    "errors": [
+      "[console.error] Failed to load resource: the server responded with a status of 400 ()",
+      "[http] 400 POST http://localhost:8080/api/auth/sms/send"
+    ],
+    "notes": [],
+    "evidence": [
+      "login → /dashboard，刷新后会话保持",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/01-login.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "02-dashboard",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "看板渲染数字片段: 1|4|2|3|5",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/02-dashboard.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "03-briefing",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "简报页渲染，body 文本长度 202",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/03-briefing.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "04-agent-workspace-redirect",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "重定向到 /agent-workspace/human-sessions",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/04-agent-workspace-redirect.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "05-human-sessions",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "在线接待页渲染（ai-agent 未起，空态）— UI-only",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/05-human-sessions.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "06-agent-sessions",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "会话历史页渲染（ai-agent 未起，空态）— UI-only",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/06-agent-sessions.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "07-chat",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "对话页输入框可用（ai-agent 未起）— UI-only",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/07-chat.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "08-products-list",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "商品列表渲染 1 行",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/08-products-list.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "09-products-new",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "门幅 值/显示分离 ✓([\"|请选择\",\"2.8|2.8米\",\"3.2|3.2米\",\"3.4|3.4米\"]→'2.8') + 建品可见 ✓(冒烟SKU商品1791987576826)",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/09-products-new.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "10-product-detail",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "商品详情渲染（http://localhost:3001/products/83e618421d08a2a144ee04a677d7f760）",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/10-product-detail.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "11-product-edit-doorwidth",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "门幅下拉回显: value=2.8, 选项=[\"|请选择\",\"2.8|2.8米\",\"3.2|3.2米\",\"3.4|3.4米\"]（自造商品 4771651807a04faa9785088f18c7af33 已清理）",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/11-product-edit-doorwidth.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "12-processing",
+    "pass": false,
+    "errors": [
+      "加工项旅程失败: TimeoutError: locator.waitFor: Timeout 8000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('text=冒烟加工项1791987588763').first() to be visible\u001b[22m\n"
+    ],
+    "notes": [],
+    "evidence": [
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/12-processing.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "13-categories",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "分类 新建→可见→行内删除",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/13-categories.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "14-orders-list",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "订单列表 20 行（无分页按钮或单页）",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/14-orders-list.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "15-orders-new",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "新建订单提交后跳转 http://localhost:3001/orders/new",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/15-orders-new.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "16-order-detail-processing-order",
+    "pass": false,
+    "errors": [
+      "订单详情失败: Error: [发加工] 效果层断言未过：状态徽标=「已生成」（期望「已发加工」）、按钮切换=true"
+    ],
+    "notes": [],
+    "evidence": [
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/16-order-detail-processing-order.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "32-production-qr-and-piecework",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "订单 004078d76c8496676a97c36fb75f3bf2 / 加工单 JG-20261014-9503：qr_token=3a9e1bc395f3414281f28b617e4be396；工序 12 道；DOM qr=1 占位=0 行=12；报工「精裁-布」2米 → 进度 8%（已完成 1/12 道工序）、计件 ¥0.80",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/32-production-qr-and-piecework.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "17-order-ship",
+    "pass": false,
+    "errors": [
+      "发货页失败: Error: 发货表单被加工单前置守卫阻断（订单 0343f0bfa372a169d65f6d526cf70a1b 的加工单未流转到 completed ⇒ 16- 前置未达成）"
+    ],
+    "notes": [],
+    "evidence": [
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/17-order-ship.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "18-after-sales-list",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "售后工单列表渲染 1 行",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/18-after-sales-list.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "19-after-sales-detail",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "关闭原因落库回显=true",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/19-after-sales-detail.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "20-customers-list",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "客户列表 20 行",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/20-customers-list.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "21-customer-detail",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/21-customer-detail.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "22-finance",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "财务对账页渲染",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/22-finance.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "23-employees",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "员工 新建→可见→改手机号落库=false→删除；空提交校验=false",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/23-employees.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "24-roles",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "岗位权限页 1 行，行内「编辑」（button[title=\"编辑\"]）打开权限弹窗 ✓",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/24-roles.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "25-settings",
+    "pass": true,
+    "errors": [],
+    "notes": [
+      "自动保存提示按「含保存二字的说明文字」判定：已保存为您的配置"
+    ],
+    "evidence": [
+      "设置页只读校验：Tab 数=11、自动保存提示=false、意外「保存」按钮=true、密码字段=0、4xx=0",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/25-settings.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "26-notifications",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "通知中心渲染，已读操作可用",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/26-notifications.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "27-corporate-home",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/ 渲染（4140 字符）",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/27-corporate-home.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "28-corporate-about",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/about 渲染（1886 字符）",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/28-corporate-about.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "29-corporate-contact",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/contact 渲染（1152 字符）",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/29-corporate-contact.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "30-corporate-services",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "/services 渲染（3501 字符）",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/30-corporate-services.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "31-register",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "注册页渲染，输入控件=2",
+      "acceptance/2026-10-14/main-ui/out-r2-full/screenshots/31-register.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "27-corporate",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "整轮预算 1500s 到点：本轮未跑"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "28-register",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "整轮预算 1500s 到点：本轮未跑"
+    ],
+    "evidence": []
+  }
+]

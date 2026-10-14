@@ -1,0 +1,363 @@
+[
+  {
+    "journey": "01-login",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "02-dashboard",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "03-briefing",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "04-agent-workspace-redirect",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "05-human-sessions",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "06-agent-sessions",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "07-chat",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "08-products-list",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "09-products-new",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "10-product-detail",
+    "pass": false,
+    "errors": [
+      "[console.error] Failed to load resource: the server responded with a status of 400 ()",
+      "[http] 400 POST http://localhost:8080/api/auth/sms/send"
+    ],
+    "notes": [],
+    "evidence": [
+      "商品详情渲染（http://localhost:3001/products/313754a13041be9cdc8408a7354fb399）",
+      "acceptance/2026-10-14/main-ui/out-r2-group-1d/screenshots/10-product-detail.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "11-product-edit-doorwidth",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "门幅下拉回显: value=2.8, 选项=[\"|请选择\",\"2.8|2.8米\",\"3.2|3.2米\",\"3.4|3.4米\"]（自造商品 50484b8773dd42b6d3c175bfe0a45106 已清理）",
+      "acceptance/2026-10-14/main-ui/out-r2-group-1d/screenshots/11-product-edit-doorwidth.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "12-processing",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "加工项 新建→列表可见→编辑→删除 完成；启停toggle可见=false",
+      "acceptance/2026-10-14/main-ui/out-r2-group-1d/screenshots/12-processing.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "13-categories",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "分类 新建→可见→行内删除",
+      "acceptance/2026-10-14/main-ui/out-r2-group-1d/screenshots/13-categories.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "14-orders-list",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "订单列表 20 行（无分页按钮或单页）",
+      "acceptance/2026-10-14/main-ui/out-r2-group-1d/screenshots/14-orders-list.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "15-orders-new",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "新建订单提交后跳转 http://localhost:3001/orders/new",
+      "acceptance/2026-10-14/main-ui/out-r2-group-1d/screenshots/15-orders-new.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "16-order-detail-processing-order",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "加工单生成+流转:  [发加工→徽标「已发加工」✓;按钮切换✓] [开始加工→徽标「加工中」✓;按钮切换✓] [加工完成→徽标「加工完成」✓;按钮切换✓]; 加工单 JG-20261014-9521 可见=true；前置自造订单 aa18d1d510c707c27b5b2610228867d4（下游 17- 复用，不清理）",
+      "acceptance/2026-10-14/main-ui/out-r2-group-1d/screenshots/16-order-detail-processing-order.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "32-production-qr-and-piecework",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "17-order-ship",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "发货页表单渲染（7 控件）",
+      "acceptance/2026-10-14/main-ui/out-r2-group-1d/screenshots/17-order-ship.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "18-after-sales-list",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "售后工单列表渲染 5 行",
+      "acceptance/2026-10-14/main-ui/out-r2-group-1d/screenshots/18-after-sales-list.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "19-after-sales-detail",
+    "pass": true,
+    "errors": [],
+    "notes": [],
+    "evidence": [
+      "关闭原因落库回显=true",
+      "acceptance/2026-10-14/main-ui/out-r2-group-1d/screenshots/19-after-sales-detail.png"
+    ],
+    "skipped": false,
+    "unconfigured": false,
+    "error_class": null
+  },
+  {
+    "journey": "20-customers-list",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "21-customer-detail",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "22-finance",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "23-employees",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "24-roles",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "25-settings",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "26-notifications",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "27-corporate",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  },
+  {
+    "journey": "28-register",
+    "pass": false,
+    "skipped": true,
+    "unconfigured": false,
+    "error_class": "skip",
+    "errors": [],
+    "notes": [
+      "--group 1 过滤（本轮未跑）"
+    ],
+    "evidence": []
+  }
+]
