@@ -271,6 +271,24 @@ async function safeClick(page, locator, label) {
 const waitVisible = (locator, timeout) =>
   locator.waitFor({ state: 'visible', timeout }).then(() => true).catch(() => false)
 
+/**
+ * 等**文本变成期望值**（不是「等它可见」）—— issue #6940 实测的错形态：
+ * 元素**本来就可见**（旧状态文本）时 `waitVisible` 会**立刻返回**，紧接着比较文本 = **拿旧值断言新状态**
+ * ⇒ 结构上**必假红**（`16-` 的 `[发加工]` 徽标：按钮已经切到「开始加工」= 状态确实变了，徽标却还是「已生成」，
+ * 因为比较发生在重取回来之前）。改成有界轮询后，这条断言才**有意义**：
+ * 文本若始终不变 ⇒ 真的红了（渲染没跟着状态走）。
+ */
+const waitForText = async (locator, expected, timeout) => {
+  const deadline = Date.now() + timeout
+  let last = ''
+  for (;;) {
+    last = ((await locator.textContent().catch(() => '')) ?? '').trim()
+    if (last === expected) return last
+    if (Date.now() >= deadline) return last
+    await new Promise((r) => setTimeout(r, 200))
+  }
+}
+
 // ⚠️ toast 助手 `expectToast()` 已**删除**（issue #4314）：全文件零调用 = 死判据，
 // 且它内部 `waitFor(...).catch(() => {})` 吞超时 ⇒ 一旦接上调用点即**恒真**（空判据）。
 // `15-orders-new` 的 toast 判定维持原样（那是「定长 sleep + 单次 isVisible」同族，
@@ -957,7 +975,11 @@ async function orderDetailJourney(page, orderId) {
       //   ① `.po-print-area` 内的**状态徽标**（该容器内唯一的 `span.bg-primary-50`）逐字等于期望；
       //   ② **按钮切换**（按钮由状态驱动渲染）：发加工后「发加工」消失、「开始加工」出现，依此类推。
       const badge = poBlock.locator('span.bg-primary-50').first()
-      const badgeText = (await waitVisible(badge, 12000)) ? ((await badge.textContent()) ?? '').trim() : ''
+      // 等**文本**变成期望值（issue #6940）：旧写法 `waitVisible(badge) ? textContent() : ''` 在徽标
+      // 本来就可见时立刻返回 ⇒ 拿**旧状态文本**比较新状态 = 结构上必假红（实测：按钮已切到下一态，
+      // 徽标却读到「已生成」）。这里改成有界轮询：文本若始终不变 ⇒ 才是真红。
+      await waitVisible(badge, 12000)
+      const badgeText = await waitForText(badge, expectText, 12000)
       const badgeOk = badgeText === expectText
       const nextBtn = { 发加工: '开始加工', 开始加工: '加工完成', 加工完成: null }[btn]
       const switched = nextBtn
