@@ -82,9 +82,12 @@ if (mode === 'register') {
   const before = rowsOfTenant(id)
   console.log(`[wipe] 清理前：tenants 含 id=${id}（${t.name}/${t.code}）；tenant_id=${id} 子表行数合计=${before.total}（表 ${before.tables} 张）`)
   const tables = psql("select table_name from information_schema.columns where table_schema='public' and column_name='tenant_id' group by 1 order by 1").map((r) => r.table_name)
-  for (const tb of tables) { try { psqlWrite(`delete from ${tb} where tenant_id=${id}`) } catch (e) { console.error(`  ⚠️ ${tb}: ${String(e.message).slice(0, 120)}`) } }
-  psqlWrite(`delete from tenant_applications where phone='${phone()}'`)
-  psqlWrite(`delete from tenants where id=${id}`)
+  // 一次事务里删完：`session_replication_role=replica` 临时关掉外键触发器 —— 表间的引用关系
+  // （实测 `users.role_id → roles.id`）与「按表名顺序删」无关，逐表删会撞 FK 而半途而废。
+  const stmts = tables.map((tb) => `delete from ${tb} where tenant_id=${id}`)
+  stmts.push(`delete from tenant_applications where phone='${phone()}'`)
+  stmts.push(`delete from tenants where id=${id}`)
+  psqlWrite(`begin; set local session_replication_role = replica; ${stmts.join('; ')}; commit;`)
   const after = rowsOfTenant(id)
   const tAfter = psql(`select count(*)::int c from tenants where id=${id}`)[0].c
   const appAfter = psql(`select count(*)::int c from tenant_applications where phone='${phone()}'`)[0].c

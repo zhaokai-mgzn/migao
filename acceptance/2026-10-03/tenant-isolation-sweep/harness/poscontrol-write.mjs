@@ -9,7 +9,7 @@ const recs = []; const rec = (id, name, verdict, detail, evidence) => { recs.pus
 const tok = (await loginApi(PH.A, SMS_CODE)).token
 const hasDel = (t) => psql(`select 1 x from information_schema.columns where table_schema='public' and table_name='${t}' and column_name='deleted'`).length > 0
 const CASES = [
-  ['products', 'products', (id) => `/api/admin/products/${id}`, (r) => ({ name: r.name, unit: r.unit ?? '米', basePrice: Number(r.base_price ?? 0), status: r.status ?? 'on_sale' }), ['name', 'base_price', 'status', 'updated_at']],
+  ['products', 'products', (id) => `/api/admin/products/${id}`, (r) => ({ name: r.name, unit: r.unit ?? '米', basePrice: Number(r.base_price ?? 0), status: r.status ?? 'on_sale', categoryId: r.category_id ?? undefined, pricingType: r.pricing_type ?? 'fixed' }), ['name', 'base_price', 'status', 'updated_at']],
   ['categories', 'categories', (id) => `/api/admin/categories/${id}`, (r) => ({ name: r.name }), ['name', 'sort_order', 'updated_at']],
   ['processing_items', 'processing_items', (id) => `/api/admin/processing-items/${id}`, (r) => ({ name: r.name, categoryId: r.category_id, unit: '米' }), ['name', 'status', 'updated_at']],
   ['customers', 'customer_profiles', (id) => `/api/admin/customers/${id}`, () => ({}), ['phone', 'vip_level', 'updated_at']],
@@ -24,11 +24,12 @@ for (const [key, table, path, build, cols] of CASES) {
   let after = JSON.stringify(full())
   let restored = null
   if (before !== after) {
-    // ⚠️ 实测（#6937）：`{}`/部分载荷不是幂等 ⇒ 探针写脏了自己的行 ⇒ **逐字段还原**
+    // ⚠️ 实测（#6937）：`{}`/部分载荷不是幂等 ⇒ 探针写脏了自己的行 ⇒ **逐字段还原**（jsonb_populate_record：类型安全）
     const b = JSON.parse(before)
-    const sets = Object.entries(b).filter(([c]) => c !== 'id')
-      .map(([c, v]) => `${c} = ${v === null ? 'null' : `'${String(v).replace(/'/g, "''")}'`}`).join(', ')
-    psqlWrite(`update ${table} set ${sets} where id='${row.id}'`)
+    const cols = Object.keys(b).filter((c) => c !== 'id')
+    const json = before.replace(/'/g, "''")
+    psqlWrite(`update ${table} t set (${cols.join(', ')}) = `
+      + `(select ${cols.join(', ')} from jsonb_populate_record(null::${table}, '${json}'::jsonb)) where t.id='${row.id}'`)
     restored = JSON.stringify(full()) === before
     after = JSON.stringify(full())
   }

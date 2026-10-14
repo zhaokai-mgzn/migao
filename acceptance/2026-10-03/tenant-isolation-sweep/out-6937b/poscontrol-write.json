@@ -1,0 +1,41 @@
+[
+ {
+  "id": "PCW-products",
+  "name": "同租户写正对照·products",
+  "verdict": "fail",
+  "detail": "A(32) 幂等 PUT 自己的对象 → 422；净残留=0=true（探针未改库）",
+  "evidence": [
+   "PUT /api/admin/products/0260337248dd35d1d81aab42933fcb9a body={\"name\":\"判据红证商品193761\",\"unit\":\"米\",\"basePrice\":68,\"status\":\"on_sale\"} → 422 {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"分类ID不能为空\"},\"requestId\":\"req_3af4891eb3e0473b\",\"timestamp\":1791988033,\"suggestion\":\"请检查必填字段是否完整，字段格式是否正确\"}",
+   "before(整行)={\"id\":\"0260337248dd35d1d81aab42933fcb9a\",\"tenant_id\":32,\"name\":\"判据红证商品193761\",\"category_id\":\"251daf31bacebd08a0a0035200bc3ba4\",\"base_price\":68,\"description\":null,\"main_image\":null,\"images\":[],\"knowledge_base_id\":null,\"stock\":100000,\"stock_w",
+   "after(整行)={\"id\":\"0260337248dd35d1d81aab42933fcb9a\",\"tenant_id\":32,\"name\":\"判据红证商品193761\",\"category_id\":\"251daf31bacebd08a0a0035200bc3ba4\",\"base_price\":68,\"description\":null,\"main_image\":null,\"images\":[],\"knowledge_base_id\":null,\"stock\":100000,\"stock_w"
+  ]
+ },
+ {
+  "id": "PCW-categories",
+  "name": "同租户写正对照·categories",
+  "verdict": "pass",
+  "detail": "A(32) 幂等 PUT 自己的对象 → 200；净残留=0=true（探针未改库）",
+  "evidence": [
+   "PUT /api/admin/categories/5deb770b2e8c0c8164eaa92c3c22edf0 body={\"name\":\"工资验收分类067383-E\"} → 200 {\"success\":true,\"data\":{\"id\":\"5deb770b2e8c0c8164eaa92c3c22edf0\",\"name\":\"工资验收分类067383-E\",\"level\":1,\"children\":[],\"createdAt\":\"2026-10-14 20:31:08\",\"updatedAt\":\"2026-10-14 20:31:08\",\"sort\":4},\"requestId",
+   "before(整行)={\"id\":\"5deb770b2e8c0c8164eaa92c3c22edf0\",\"tenant_id\":32,\"name\":\"工资验收分类067383-E\",\"parent_id\":null,\"level\":1,\"sort_order\":4,\"icon\":null,\"status\":\"active\",\"created_at\":\"2026-10-14T20:31:08.095584+08:00\",\"updated_at\":\"2026-10-14T20:31:08.095591",
+   "after(整行)={\"id\":\"5deb770b2e8c0c8164eaa92c3c22edf0\",\"tenant_id\":32,\"name\":\"工资验收分类067383-E\",\"parent_id\":null,\"level\":1,\"sort_order\":4,\"icon\":null,\"status\":\"active\",\"created_at\":\"2026-10-14T20:31:08.095584+08:00\",\"updated_at\":\"2026-10-14T20:31:08.095591"
+  ]
+ },
+ {
+  "id": "PCW-processing_items",
+  "name": "同租户写正对照·processing_items",
+  "verdict": "skip",
+  "detail": "租户 32（A）无存活行"
+ },
+ {
+  "id": "PCW-customers",
+  "name": "同租户写正对照·customer_profiles",
+  "verdict": "pass",
+  "detail": "A(32) 幂等 PUT 自己的对象 → 200；净残留=0=true（探针未改库）",
+  "evidence": [
+   "PUT /api/admin/customers/245ffebc8091bfc3012a86dbf92505e7 body={} → 200 {\"success\":true,\"data\":{\"id\":\"245ffebc8091bfc3012a86dbf92505e7\",\"tenantId\":32,\"wechatNickname\":\"线B验收客户-IDEM-mv8380xgkmb\",\"phone\":\"13999454996\",\"gender\":\"unknown\",\"vipLevel\":\"normal\",\"customerStatus\":\"",
+   "before(整行)={\"id\":\"245ffebc8091bfc3012a86dbf92505e7\",\"tenant_id\":32,\"wechat_openid\":null,\"wechat_unionid\":null,\"wechat_nickname\":\"线B验收客户-IDEM-mv8380xgkmb\",\"phone\":\"13999454996\",\"gender\":\"unknown\",\"region_province\":null,\"region_city\":null,\"region_distri",
+   "after(整行)={\"id\":\"245ffebc8091bfc3012a86dbf92505e7\",\"tenant_id\":32,\"wechat_openid\":null,\"wechat_unionid\":null,\"wechat_nickname\":\"线B验收客户-IDEM-mv8380xgkmb\",\"phone\":\"13999454996\",\"gender\":\"unknown\",\"region_province\":null,\"region_city\":null,\"region_distri"
+  ]
+ }
+]

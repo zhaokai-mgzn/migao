@@ -142,9 +142,7 @@ for (const R of WRES) {
     pc = await api(R.write, pathFor(R, aid), { token: tok.A, body: R.writeBody ? R.writeBody() : undefined })
     const pcAfter = rowSnapshot(R.table, aid, pcCols)
     if (JSON.stringify(pcBefore) !== JSON.stringify(pcAfter)) {
-      const sets = Object.entries(pcBefore).filter(([k]) => k !== 'id')
-        .map(([k, v]) => `${k} = ${v === null ? 'null' : `'${String(v).replace(/'/g, "''")}'`}`).join(', ')
-      psqlWrite(`update ${R.table} set ${sets} where id = '${aid}'`)
+      restoreRow(R.table, aid, pcBefore)
       pcRestored = JSON.stringify(rowSnapshot(R.table, aid, pcCols)) === JSON.stringify(pcBefore)
     }
   }
@@ -161,6 +159,17 @@ for (const R of WRES) {
     rec({ id: `WT-${R.key}-RESTORE`, name: `🔴跨租户写生效·还原`, verdict: 'fail',
       detail: `跨租户写**真的改了 ${BTAG} 的数据** ⇒ 需按 evidence 的 before 逐字段还原`, evidence: [cut(before, 300), cut(after, 300)] })
   }
+}
+
+/** 用 JSON 预映像把一行**逐字段**还原。
+ *  走 jsonb_populate_record ⇒ 类型安全（jsonb / 时间戳 / 数组都不需要手写引号；实测 `positions` 是 jsonb，
+ *  手写 `'布料'` 会 `invalid input syntax for type json`）。 */
+function restoreRow(table, id, before) {
+  const cols = Object.keys(before).filter((c) => c !== 'id')
+  const json = JSON.stringify(before).replace(/'/g, "''")
+  psqlWrite(`update ${table} t set (${cols.join(', ')}) = `
+    + `(select ${cols.join(', ')} from jsonb_populate_record(null::${table}, '${json}'::jsonb)) `
+    + `where t.id = '${String(id).replace(/'/g, "''")}'`)
 }
 
 function pathFor(R, id) {

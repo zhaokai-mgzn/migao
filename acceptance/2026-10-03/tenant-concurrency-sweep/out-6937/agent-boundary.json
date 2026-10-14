@@ -1,0 +1,15 @@
+{
+  "finding": "设计边界：持有合法 service token 的调用方可用 body.tenant_id 指定**任意**租户（:8001 不校验调用方与该租户的绑定）",
+  "evidence": {
+    "tenants": [
+      32,
+      35
+    ],
+    "counts": {
+      "32": 23,
+      "35": 2
+    },
+    "x_tenant_id_header": "ignored",
+    "token_len": 65
+  }
+}

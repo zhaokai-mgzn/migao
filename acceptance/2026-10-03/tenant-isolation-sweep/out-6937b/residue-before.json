@@ -1,0 +1,432 @@
+{
+ "products": {
+  "32": {
+   "alive": 17,
+   "max_updated": "2026-10-14 22:25:31.367481+08",
+   "idfp": "befe8fa273c16734572f9dea92155d8e",
+   "rowfp": "272ec9d91a3a7407d76c10766e87c3cb"
+  },
+  "35": {
+   "alive": 2,
+   "max_updated": "2026-10-14 22:22:01.832465+08",
+   "idfp": "5742bc92e063e62accc9dc905dada0ed",
+   "rowfp": "3b85a75d932c1317ac2f9b7ba8853202"
+  }
+ },
+ "product_skus": {
+  "32": {
+   "alive": 16,
+   "max_updated": "2026-10-14 22:25:31.339858+08",
+   "idfp": "9234d2da31e1743e67f7ba50be83b4a6",
+   "rowfp": "5a1ff8e89d5c6586d1f7f5be1b69dd69"
+  },
+  "35": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "customer_profiles": {
+  "32": {
+   "alive": 72,
+   "max_updated": "2026-10-14 22:20:24.029804+08",
+   "idfp": "a76b3199f24ae8fa26abb85525209b09",
+   "rowfp": "c56996ef21b590592813af266b25e2d6"
+  },
+  "35": {
+   "alive": 1,
+   "max_updated": "2026-10-14 22:22:10.900589+08",
+   "idfp": "e64dfead08fb54b172fca92d04c3e7ee",
+   "rowfp": "f21d9f261980d49f2ad1b73fa958e80c"
+  }
+ },
+ "customer_tags": {
+  "32": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "35": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "categories": {
+  "32": {
+   "alive": 14,
+   "max_updated": "2026-10-14 20:34:21.067886+08",
+   "idfp": "897bf23b78bac5d9a6983d63c57b8714",
+   "rowfp": "fcb43c16e187a3f7c496cc3d9fc809d5"
+  },
+  "35": {
+   "alive": 3,
+   "max_updated": "2026-10-14 22:22:01.756633+08",
+   "idfp": "3d08235307e278b82d7c05801965b385",
+   "rowfp": "44c8f9b8b5f90765e6f635d5f59f381c"
+  }
+ },
+ "production_operations": {
+  "32": {
+   "alive": 41,
+   "max_updated": "2026-10-14 22:23:22.280408+08",
+   "idfp": "4b0429a0294459d96c199311d5378953",
+   "rowfp": "e124ade0f429984f15c76bf3acf83e8e"
+  },
+  "35": {
+   "alive": 41,
+   "max_updated": "2026-10-14 22:20:42.154964+08",
+   "idfp": "ec2a6ddcc7e3e8ab1114070db3f7d524",
+   "rowfp": "e7c21391c54209fd45448b9a4ebb3f35"
+  }
+ },
+ "production_operation_positions": {
+  "32": {
+   "alive": 115,
+   "max_updated": "2026-10-14 22:23:25.800467+08",
+   "idfp": "316a514bddf67c8751f6e1969d03db25",
+   "rowfp": "3f9b0be16435406edb1cd58bfd64d834"
+  },
+  "35": {
+   "alive": 116,
+   "max_updated": "2026-10-14 22:20:43.316333+08",
+   "idfp": "fc0ea3096949cb851efe41dd704f7d00",
+   "rowfp": "dc90104eb3dacb7ba61cfa9ccbbecf75"
+  }
+ },
+ "production_route_templates": {
+  "32": {
+   "alive": 2,
+   "max_updated": "2026-10-14 22:23:23.489471+08",
+   "idfp": "3cfe4735ae2be94f148f1d7c1579a252",
+   "rowfp": "0d98be5fce997b146d8aab657d34b1f0"
+  },
+  "35": {
+   "alive": 2,
+   "max_updated": "2026-10-14 22:20:43.331666+08",
+   "idfp": "56b7ca582c1a402065e9886db8ec9d57",
+   "rowfp": "d4d1a8c1c44002f1d78e57f4d6bceb46"
+  }
+ },
+ "production_route_rules": {
+  "32": {
+   "alive": 27,
+   "max_updated": "2026-10-14 20:33:02.620647+08",
+   "idfp": "345933cfe63eace83fde91d29b0710e0",
+   "rowfp": "cf1803b40125c0b302fd2904d3ba0869"
+  },
+  "35": {
+   "alive": 27,
+   "max_updated": "2026-10-14 22:20:43.347975+08",
+   "idfp": "e7006603af086855c90a5276649849a7",
+   "rowfp": "02141659df2adffbd84bb0bc8a7ae527"
+  }
+ },
+ "processing_fee_combinations": {
+  "32": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "35": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "processing_items": {
+  "32": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "35": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "processing_categories": {
+  "32": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "35": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "orders": {
+  "32": {
+   "alive": 92,
+   "max_updated": "2026-10-14 22:26:04.655749+08",
+   "idfp": "8c5b18404cfb3d4efd122386490469f9",
+   "rowfp": "ac91c5ff7ef1278b4e2c7ee0cfe05cbc"
+  },
+  "35": {
+   "alive": 1,
+   "max_updated": "2026-10-14 22:22:10.853779+08",
+   "idfp": "4f000b4bbdd46c3ef224a62de2600d38",
+   "rowfp": "e063f4ff75c889a1ed20a1b4c8597488"
+  }
+ },
+ "order_items": {
+  "32": {
+   "alive": 98,
+   "max_updated": "2026-10-14 22:26:04.699737+08",
+   "idfp": "440bb8fd02cbdcad8b0dc253797e06e1",
+   "rowfp": "3d35ac1c72c380ba6a5a306f16435450"
+  },
+  "35": {
+   "alive": 1,
+   "max_updated": "2026-10-14 22:22:10.868769+08",
+   "idfp": "f406afa76a448474a584107590d8cbab",
+   "rowfp": "88af7e2708752dd2e4d444b390477b02"
+  }
+ },
+ "processing_orders": {
+  "32": {
+   "alive": 85,
+   "max_updated": "2026-10-14 22:26:04.084501+08",
+   "idfp": "86957e68af9c3c2fc0c4ab2a6cf7be96",
+   "rowfp": "4fdb210ebe8da6b87496c61dcc02c4ba"
+  },
+  "35": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "inbound_orders": {
+  "32": {
+   "alive": 3,
+   "max_updated": "2026-10-14 22:20:18.931552+08",
+   "idfp": "d34ea58af40fac84e3e06c7cfbb4ff67",
+   "rowfp": "868548e5ece9924cb302401b35687411"
+  },
+  "35": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "order_shipments": {
+  "32": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "35": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "agent_sessions": {
+  "32": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "35": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "notification_templates": {
+  "32": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "35": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "notification_rules": {
+  "32": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "35": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "knowledge_cards": {
+  "32": {
+   "alive": 27,
+   "max_updated": "2026-10-14 20:35:52.641223+08",
+   "idfp": "a4e30b432790dd83110ffc33b1215040",
+   "rowfp": "13c459f3616467cf22b32ee951bd6ee7"
+  },
+  "35": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "roles": {
+  "32": {
+   "alive": 7,
+   "max_updated": "2026-10-14 20:26:29.971423+08",
+   "idfp": "5d8f3296b17266187517cf5f606d610a",
+   "rowfp": "6e0aa48d9ccf079c3d175ace1a355ea6"
+  },
+  "35": {
+   "alive": 7,
+   "max_updated": "2026-10-14 22:20:40.116535+08",
+   "idfp": "abba636ce0dbf273e4fc1538792ee162",
+   "rowfp": "e433c309b475b14ca1d9d51c6e33bd38"
+  }
+ },
+ "after_sales_tickets": {
+  "32": {
+   "alive": 2,
+   "max_updated": "2026-10-14 22:20:36.602171+08",
+   "idfp": "0a852babc849e2ffaff473e184d34b20",
+   "rowfp": "54490548079d960e820e0fc0c18ed301"
+  },
+  "35": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "users": {
+  "32": {
+   "alive": 1,
+   "max_updated": "2026-10-14 20:26:32.352239+08",
+   "idfp": "43e14c6953126fd2ba5e133db112d74d",
+   "rowfp": "81cdb00cc4ca561a0ffa1e3c959c4b26"
+  },
+  "35": {
+   "alive": 1,
+   "max_updated": "2026-10-14 22:20:42.066099+08",
+   "idfp": "8db2877b1d350c62a20cbb5d853036b8",
+   "rowfp": "c9da1490ae4313abb6f54c049a024f67"
+  }
+ },
+ "agent_employees": {
+  "32": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "35": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "stock_batches": {
+  "32": {
+   "alive": 3,
+   "max_updated": null,
+   "idfp": "f3df8a5e50efff4e462a65b86d6ac7ce",
+   "rowfp": "e34d298ed69d1ed5a23bed6bd21b9239"
+  },
+  "35": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "stock_ledger_entries": {
+  "32": {
+   "alive": 97,
+   "max_updated": null,
+   "idfp": "9d9cbfe06391dc1d111643c1c2f1feb5",
+   "rowfp": "c7b665f7f7c3c9e6e8207248e6dcf478"
+  },
+  "35": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "finance_transactions": {
+  "32": {
+   "alive": 94,
+   "max_updated": "2026-10-14 22:26:12.083132+08",
+   "idfp": "1acdd537e86661d423a162c2da035e99",
+   "rowfp": "527798ca937c271b3edbce5b06bd6c30"
+  },
+  "35": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "fabric_remnants": {
+  "32": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "35": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "sessions": {
+  "32": {
+   "alive": 2,
+   "max_updated": "2026-10-14 20:43:50.904954+08",
+   "idfp": "cc81cbe087322667f93f69d97ebc0125",
+   "rowfp": "cfb6400d756507ce34ef317515f21b0b"
+  },
+  "35": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "tenants": {
+  "rows": 2,
+  "max_updated": "2026-10-14 22:20:40.018606+08",
+  "checksum": "1f49148e3b7fa0ae749aa83cf3465a21"
+ },
+ "platform_admins": {
+  "rows": 1,
+  "max_updated": "2026-06-25 09:02:13.95954+08",
+  "checksum": "535c2944216881b976da173a09c5e263"
+ }
+}
