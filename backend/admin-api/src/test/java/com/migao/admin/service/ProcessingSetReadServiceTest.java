@@ -398,9 +398,26 @@ class ProcessingSetReadServiceTest {
      * 工人扫码面的部位明细键（母单 #5161 / P0-C，与 {@code ProductionScanService.POSITION_DETAIL_KEYS}
      * 逐字同表 —— 两份清单漂移 ⇒ 本测试红）。
      */
+    /**
+     * 工人扫码面在**已共享的聚合**之上追加的部位明细键（母单 #5161 P0-C 的 9 键 → 母单 #6901 扩为
+     * 工人两屏共享的全量键集；**唯一真值** = {@code PositionDetailFields.DETAIL_KEYS}）。
+     *
+     * <p>🔴 这里**故意写成字面清单**（不引用那个常量）：本判据的作用是「扫码面只多出**既定的**明细键」，
+     * 若从常量现取，则「键集被扩」与「剥离清单被同步扩」会一起发生 ⇒ 断言自动跟随、失去判别力。
+     * 扩键集必须**同时**改这里 ⇒ 键集漂移当场红（母单 #6901 的收口纪律）。</p>
+     *
+     * <p>{@code remark} 不在清单里：它是**两侧都有**的既有键（`ProcessingSetReadService` 的
+     * `positionEntry` 本来就给），剥掉反而会让两侧不等。</p>
+     */
     private static final List<String> SCAN_POSITION_DETAIL_KEYS = List.of(
-            "width", "height", "craft", "curtain_type", "open_count", "cutting_mode",
-            "fullness", "is_shaped", "fabric_meters");
+            "product_name", "sku", "color_name", "door_width", "selling_method", "unit",
+            "width", "height",
+            "curtain_type", "craft", "cutting_mode", "open_count", "is_shaped", "style",
+            "fullness", "fullness_actual", "pleat_count", "per_panel_pleats", "panels",
+            "has_pattern", "pattern_repeat", "formula", "craft_tier", "special_options",
+            "processing_meters", "formula_text",
+            "fabric_meters",
+            "batch_no", "batch_meters", "component_role");
 
     @Test
     @DisplayName("🔴 工人扫码面与套件读面同源：同一份聚合逐值相等 + 扫码面**只**多出既定的明细键")

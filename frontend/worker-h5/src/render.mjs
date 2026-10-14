@@ -25,6 +25,9 @@
 // `src/shared/`）：说明符落在发布集 `src/**` 内，发布与 `location /w/` 的 JS MIME 自动覆盖，
 // 无需改 nginx、无需放宽发布腿红线。
 import { operationDisplayName } from './shared/operation-display.mjs'
+// 本部位生产信息（母单 #6901）的标签 / 单位 / 格式化走**唯一一份**（`position-spec.mjs`）——
+// 与机台屏（`machine.mjs`）共用；本文件**不**再写第二份标签表（那正是本单要治的形态）。
+import { specRows } from './position-spec.mjs'
 
 /** 初始态：未登录。 */
 export function initialState() {
@@ -422,6 +425,23 @@ function selectView(state) {
   </section>`
 }
 
+/**
+ * 当前扫码部位的**生产信息**（母单 #6901）：从 `set_overview.positions[]` 里取**本部位**那一行
+ * （键与工序明细**同一份**取数 ⇒ 不再多一个读面）。取不到（旧码降级 / 服务端未下发规格）⇒ 空串
+ * ⇒ `positionSpecBlock` 自然不渲染（不是空块）。
+ *
+ * <p>它在 `mainView` 顶上印、并由 `overviewView` **排除**同一个 `order_item_id` ⇒
+ * 同一件事实在同一屏恰好出现**一次**（`migao-dev-flow` §31 P2 信息不重复）。</p>
+ */
+function currentSpecBlock(v) {
+  const itemId = v?.position?.order_item_id
+  if (itemId === null || itemId === undefined) return ''
+  const positions = v?.set_overview?.positions
+  if (!Array.isArray(positions)) return ''
+  const me = positions.find((p) => p?.order_item_id === itemId)
+  return me ? positionSpecBlock(me) : ''
+}
+
 function mainView(state) {
   const v = state.view
   const op = v.operation
@@ -468,15 +488,39 @@ function mainView(state) {
     <div class="wh5-op" id="wh5-operation">${esc(operationDisplayName(op))}</div>
     <div class="wh5-qty" id="wh5-qty">应做 ${fmtQty(op.qty)} ${esc(op.unit ?? '')}</div>
     <div class="wh5-price-row">${price}</div>
+    ${currentSpecBlock(v)}
     ${v.completed === true ? '<p class="wh5-done" id="wh5-completed">本套工序都已报工</p>' : ''}
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
     ${state.error ? `<p class="wh5-error" id="wh5-error">${esc(state.error)}</p>` : ''}
     ${picker}
     ${reportButton(state, v)}
-    ${overviewView(v)}
+    ${overviewView(v, v.position?.order_item_id ?? null)}
     ${cutPlanView(v)}
     <button id="wh5-rescan" class="wh5-ghost" type="button">重扫</button>
   </section>`
+}
+
+/**
+ * 「本部位生产信息」（母单 #6901，用户诉求：「工人需要这些信息 + 商品信息来决定如何生产」）。
+ *
+ * <p>数据**只**来自服务端下发的部位对象（`set_overview.positions[]`，键 = `ProductionService
+ * #orderSpecByItemId` 的单一取数）—— 页面不另取一份、不算第二份。标签 / 单位 / 数值格式化走
+ * **共享** `position-spec.mjs`（与机台屏同一份；本文件零标签表）。</p>
+ *
+ * <p>🔴 <b>缺值不渲染该行</b>（工人端不摆「批号 —」这种空占位，与精裁清单的 `component` /
+ * `batch_no` 同款）；行数恒等于「该部位真有值的规格数」⇒ 一张老单（空快照）不会多出一片空网格。
+ * 绝不出现 `undefined` / `null` / `NaN`（三者都由 `formatSpecValue` 归到 `EMPTY` ⇒ 整行跳过）。</p>
+ *
+ * <p>两态都挂（`mainView` 与 `overviewView`）⇒ 扫后一屏与「本套工序」里每个部位都能看到自己的规格。
+ * 服务端到达之前（报工回执等**不带**规格的响应）⇒ 没有任何行 ⇒ 整块（含标题）**一个字节都不出现**。</p>
+ */
+function positionSpecBlock(p) {
+  const rows = specRows(p)
+  if (rows.length === 0) return ''
+  const items = rows
+    .map((row) => `<div class="wh5-spec-row"><dt>${esc(row.label)}</dt><dd>${esc(row.text)}</dd></div>`)
+    .join('')
+  return `<dl class="wh5-spec" id="wh5-position-spec"><div class="wh5-spec-title">本部位生产信息</div>${items}</dl>`
 }
 
 /**
@@ -503,7 +547,7 @@ function positionRemark(p) {
  * ⇒ 整块（或该行）**不出现**，绝不渲染「undefined 米 / ¥NaN」这种假数据。
  * `unit_price` 为 `null` = <b>未定价</b>（≠ 0 元，V90 / #4696）⇒ 显式写「未定价」。</p>
  */
-function overviewView(v) {
+function overviewView(v, excludeOrderItemId = null) {
   const positions = v?.set_overview?.positions
   if (!Array.isArray(positions) || positions.length === 0) return ''
   const groups = positions
@@ -528,6 +572,7 @@ function overviewView(v) {
         .join('')
       return `<div class="wh5-ov-pos">
         <div class="wh5-ov-pos-name">${esc(p.position_name ?? p.position_kind ?? '')}</div>
+        ${p.order_item_id === excludeOrderItemId ? '' : positionSpecBlock(p)}
         ${positionRemark(p)}
         <ul class="wh5-ov-ops">${rows}</ul>
       </div>`

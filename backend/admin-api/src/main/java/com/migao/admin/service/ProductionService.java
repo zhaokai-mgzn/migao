@@ -863,6 +863,18 @@ public class ProductionService {
                         spec.put(key, pi.get(key));
                     }
                 }
+                // 🔴 母单 #6901（面①）：**商品身份**与**工艺规格**键逐字取 processing_info 的**在场**值
+                // ——`toSnapshotKeys` 只覆盖工艺**列**（`order_items.curtain_type` 一族），而
+                // 货号 / 颜色 / 门幅 / 售卖方式 / 数量单位、款式 / 是否对花 / 花距 / 用料公式 / 档位 /
+                // 特殊选项 / 算料公式 / 加工费米数 / 组件**只在 `processing_info` 里**（与
+                // `ProcessingOrderService#buildSnapshot` 同一批键名）。
+                // 这三面（扫码详情 / getOperations / 机台裁高）的工人屏都从这里取数 ⇒ 少一个键就是
+                // 「加了一个字段、某一屏静默缺失」。
+                for (String key : PositionDetailFields.PROCESSING_INFO_SOURCE_KEYS) {
+                    if (pi.containsKey(key)) {
+                        spec.put(key, pi.get(key));
+                    }
+                }
             }
             byId.put(item.getId(), spec);
         }
@@ -2164,6 +2176,13 @@ public class ProductionService {
             if (spec != null) {
                 position.putAll(spec);
             }
+            // ⚠️ 母单 #6901 裁定（CI 实证）：**本读面不注入 canonical 明细键** —— 本面（商家 + 工人
+            // `getOperations`）从 #5161 起的契约是「缺键就缺」+ camelCase 兼容支，由
+            // `ProductionServiceTest.getOperationsOmits*`、`ProductionServicePartCodeTest` 与
+            // `ProcessingSetReadServiceTest` 的精确键集断言冻结。工人两屏的 canonical 明细键
+            // 由**工人扫码面**（{@code ProductionScanService#withPositionDetail}）与**机台面**
+            // （{@code WorkerCuttingHeightService#positionRow}）各自注入，键清单同源
+            // （{@link PositionDetailFields}）。往本面加键 = 改商家读面契约（实证会红）。
             position.put("operations", grouped.get(key));
             // 一部位一码（issue #4946）：该部位**自己**的码（`processing_set_part_tokens`，V92/V99）。
             // 生产按**单个商品行**推进 ⇒ 加工单级 `qr_token` 指不出部位；三键**追加在末尾**、

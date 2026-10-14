@@ -395,10 +395,10 @@ class WorkerCuttingHeightNullProductIdTest {
         static final Map<String, IndexSite> INDEX_SITES = Map.ofEntries(
                 // ── 本单：修完必须继续容忍空键（否则本单的判据当场红） ──
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/WorkerCuttingHeightService.java|brands",
-                        new IndexSite("brands", "brands", "productId", "item.getProductId()", 153, Verdict.KEY_NULLABLE,
+                        new IndexSite("brands", "brands", "productId", "item.getProductId()", 164, Verdict.KEY_NULLABLE,
                                 "本单病灶：product_id 可为空（存量明细）⇒ 已显式短路 + 空集改可变表（双重）")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/WorkerCuttingHeightService.java|items",
-                        new IndexSite("items", "itemsOf", "itemId", "entry.get(\"order_item_id\")", 141, Verdict.KEY_NULLABLE,
+                        new IndexSite("items", "itemsOf", "itemId", "entry.get(\"order_item_id\")", 152, Verdict.KEY_NULLABLE,
                                 "itemId 来自扫描结果可能为 null ⇒ `itemId == null ? null : items.get(itemId)` 短路")),
                 // ── 存量：读法本身与表可变性无关（getOrDefault / containsKey） ──
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/DailyBriefingService.java|skusByProduct",
@@ -416,7 +416,7 @@ class WorkerCuttingHeightNullProductIdTest {
                                 Verdict.READ_IS_NULL_TOLERANT, "getOrDefault(c.getId(), 0L) ⇒ 空键安全")),
                 // ── 存量：get + 可能为 null 的键 ⇒ 由调用点显式短路（本包不改这些文件，仅登记） ──
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionScanService.java|specByItemId",
-                        new IndexSite("specByItemId", "specByItemIdOf", "op.getOrderItemId()", "op.getOrderItemId()", 591,
+                        new IndexSite("specByItemId", "specByItemIdOf", "op.getOrderItemId()", "op.getOrderItemId()", 594,
                                 Verdict.KEY_NULLABLE,
                                 "调用点已 `specByItemId == null ? null : ...get(op.getOrderItemId())` 短路")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java|itemGroupKey",

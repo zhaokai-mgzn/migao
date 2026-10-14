@@ -40,7 +40,8 @@ import static org.mockito.Mockito.when;
  * <p><b>治什么</b>：一体机（车间屏 + 扫码枪）扫观星台自己的水洗唛 ⇒ 一屏显示订单详情。工人端
  * {@code GET /api/worker/production/scan} 的 {@code set_overview.positions[]}（= 该屏的部位行）
  * 原来只有「行标识 + 部位名 + 备注 + 工序明细」—— 详情面缺宽高 / 工艺 / 加工类型 / 开数 / 褶倍 /
- * 用料 / 部位备注。本测试钉住这 9 个键**只加不改**。</p>
+ * 用料 / 部位备注。母单 #6901 再扩到**全量生产信息**（商品身份 / 加工 / 算料 / 派工）。
+ * 本测试钉住这批键**只加不改**（键集真值 = {@link PositionDetailFields#DETAIL_KEYS}）。</p>
  *
  * <h2>取数口径（🔴 逐字取库/取快照，Java 侧不重算）</h2>
  * <p>与同族先例 {@code ProductionService#getOperations} 的 {@code positions[]} <b>同一份</b>订单行规格
@@ -50,7 +51,7 @@ import static org.mockito.Mockito.when;
  *
  * <h2>红证（改前实测：本文件在实现前 3 条全红）</h2>
  * <ol>
- *   <li>① 逐字一致：9 个新键不出现 ⇒ 断言「键集相等」直接红（不是「键更多了」这种弱断言）；</li>
+ *   <li>① 逐字一致：明细键不出现 ⇒ 断言「键集相等」直接红（不是「键更多了」这种弱断言）；</li>
  *   <li>② 既有键一字未变：把这 3+1 个既有键的任一个改名 / 改值 ⇒ 红；</li>
  *   <li>③ 缺失不猜：`open_count` 的源值为 0 时若被读成「缺失」⇒ 红；源缺失时若被折成 0 / false ⇒ 红。</li>
  * </ol>
@@ -86,12 +87,23 @@ class ProductionScanServiceDetailFieldsTest {
             "order_item_id", "position_kind", "position_name", "remark");
 
     /**
-     * 本单新增的 9 个明细键。⚠️ **用料键 = `fabric_meters`**（不是 `material_meters`）：
-     * 它是**引擎输出的算料快照键**（与 {@code getOperations} 同源同名），改名 = 同一份引擎数据两个名字。
+     * 扫码面下发的明细键 —— **单一真值**（母单 #6901 起是 {@link PositionDetailFields} 的
+     * {@code DETAIL_KEYS}，不是本文件再抄一份清单）。
+     *
+     * <p>P0-C（issue #5161）的 9 键（`width` / `height` / `craft` / `curtain_type` / `open_count` /
+     * `cutting_mode` / `fullness` / `is_shaped` / `fabric_meters`）是它的**真子集** ——
+     * ⚠️ **用料键 = `fabric_meters`**（不是 `material_meters`）：它是**引擎输出的算料快照键**
+     * （与 {@code getOperations} 同源同名），改名 = 同一份引擎数据两个名字。</p>
      */
-    private static final List<String> DETAIL_KEYS = List.of(
-            "width", "height", "craft", "curtain_type", "open_count", "cutting_mode",
-            "fullness", "is_shaped", "fabric_meters");
+    private static final List<String> DETAIL_KEYS = PositionDetailFields.DETAIL_KEYS;
+
+    /** 母单 #6901 在 P0-C 的 9 键之外**新增**的键（本文件不再维护第二份清单：由真值集推出来）。 */
+    private static final List<String> ADDED_IN_6901 = List.of(
+            "product_name", "sku", "color_name", "door_width", "selling_method", "unit",
+            "style", "fullness_actual", "pleat_count", "per_panel_pleats", "panels",
+            "has_pattern", "pattern_repeat", "formula", "craft_tier", "special_options",
+            "processing_meters", "formula_text",
+            "batch_no", "batch_meters", "component_role");
 
     @Mock
     private ProcessingSetPartTokenMapper setPartTokenMapper;
@@ -142,7 +154,7 @@ class ProductionScanServiceDetailFieldsTest {
     // ============================================================ ① 新键在且逐字一致
 
     @Test
-    @DisplayName("① 新码扫码 ⇒ 部位行带 9 个明细键，值与订单行快照**逐字一致**")
+    @DisplayName("① 新码扫码 ⇒ 部位行带全量明细键，值与订单行快照**逐字一致**")
     void detailKeysCarrySnapshotValuesVerbatim() {
         stubScan(CODE_CLOTH, ITEM_CLOTH, standardOps());
         when(orderItemMapper.selectList(any())).thenReturn(List.of(
@@ -185,6 +197,73 @@ class ProductionScanServiceDetailFieldsTest {
         assertThat(cloth.get("fabric_meters")).isEqualTo(new BigDecimal("13.80"));
     }
 
+    // ============================================================ ①′ 母单 #6901：新增的 21 键
+
+    @Test
+    @DisplayName("①-c 母单 #6901：商品身份 / 加工 / 派工键**恒在**，值与订单行快照**逐值一致**")
+    void added6901KeysCarrySnapshotValuesVerbatim() {
+        stubScan(CODE_CLOTH, ITEM_CLOTH, standardOps());
+        OrderItem item = orderItem(ITEM_CLOTH, "布艺遮光帘A", "2.92", "2.60", "韩褶", "布帘",
+                2, "定高买宽", true, "2.0", identityInfo());
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(item));
+
+        Map<String, Object> cloth = positionOf(overviewPositions(service.resolve(CODE_CLOTH, null, TENANT)),
+                ITEM_CLOTH);
+
+        // 组 1 商品身份（与加工单快照 `ProcessingOrderItemBrief` 逐字同名）
+        assertThat(cloth.get("product_name")).isEqualTo("布艺遮光帘A");
+        assertThat(cloth.get("sku")).isEqualTo("MG-006901");
+        assertThat(cloth.get("color_name")).isEqualTo("雾霾蓝");
+        assertThat(cloth.get("door_width")).isEqualTo("2.8");
+        assertThat(cloth.get("selling_method")).isEqualTo("bulk_cut");
+        assertThat(cloth.get("unit")).isEqualTo("米");
+        // 组 3 加工信息
+        assertThat(cloth.get("style")).isEqualTo("拼色");
+        assertThat(cloth.get("fullness_actual")).isEqualTo(new BigDecimal("2.35"));
+        assertThat(cloth.get("pleat_count")).isEqualTo(48);
+        assertThat(cloth.get("per_panel_pleats")).isEqualTo(24);
+        assertThat(cloth.get("panels")).isEqualTo(2);
+        assertThat(cloth.get("has_pattern")).isEqualTo(true);
+        assertThat(cloth.get("pattern_repeat")).isEqualTo(new BigDecimal("0.32"));
+        assertThat(cloth.get("formula")).isEqualTo("窗宽×褶倍÷门幅");
+        assertThat(cloth.get("craft_tier")).isEqualTo("标准");
+        assertThat(cloth.get("special_options")).isEqualTo(List.of("加线", "包边"));
+        assertThat(cloth.get("processing_meters")).isEqualTo(new BigDecimal("8.10"));
+        assertThat(cloth.get("formula_text")).isEqualTo("2.8×2÷1.5=3.73→4");
+        // 组 5 派工（组件来自快照；`batch_no` / `batch_meters` 由派工盖章，本夹具未指派 ⇒ null）
+        assertThat(cloth.get("component_role")).isEqualTo("主布");
+        assertThat(cloth).containsKey("batch_no");
+        assertThat(cloth.get("batch_no")).isNull();
+        assertThat(cloth.get("batch_meters")).isNull();
+        // 键集 = 既有 4 键 + 全量明细键 + operations（**不省键**）
+        assertThat(cloth.keySet()).containsExactlyInAnyOrderElementsOf(
+                concat(EXISTING_KEYS, DETAIL_KEYS, "operations"));
+        assertThat(DETAIL_KEYS).containsAll(ADDED_IN_6901);
+    }
+
+    @Test
+    @DisplayName("①-d 母单 #6901：新增键在缺数据时**一个都不折默认**（键恒在 = null）")
+    void added6901KeysStayNullWhenSourceIsMissing() {
+        stubScan(CODE_GAUZE, ITEM_GAUZE, gauzeOps());
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(
+                orderItem(ITEM_GAUZE, "纱帘B", null, null, null, null, 0, null, null, null)));
+
+        Map<String, Object> position = positionOf(overviewPositions(service.resolve(CODE_GAUZE, null, TENANT)),
+                ITEM_GAUZE);
+
+        for (String key : ADDED_IN_6901) {
+            assertThat(position).containsKey(key);
+            if ("product_name".equals(key)) {
+                continue; // 它取自 `order_items.product_name` **列**（不是快照键族）⇒ 有值是正确形态
+            }
+            assertThat(position.get(key))
+                    .as("键 %s 的源缺失 ⇒ 必须是 null，不得折成 0 / false / 空串", key)
+                    .isNull();
+        }
+        // `product_name` 取自列 ⇒ 有值（逐字）
+        assertThat(position.get("product_name")).isEqualTo("纱帘B");
+    }
+
     // ============================================================ ② 既有键一字未变
 
     @Test
@@ -208,7 +287,7 @@ class ProductionScanServiceDetailFieldsTest {
     }
 
     @Test
-    @DisplayName("②-b 键集 = 既有 4 键 + 新增 9 键（不删键、不多造键）")
+    @DisplayName("②-b 键集 = 既有 4 键 + 全量明细键（不删键、不多造键）")
     void keySetIsExistingPlusDetails() {
         stubScan(CODE_CLOTH, ITEM_CLOTH, standardOps());
         when(orderItemMapper.selectList(any())).thenReturn(List.of(
@@ -222,7 +301,7 @@ class ProductionScanServiceDetailFieldsTest {
     }
 
     @Test
-    @DisplayName("②-c 旧码降级清单 selections[].positions[] 同批补同 9 键（同一展厅屏，不两套形状）")
+    @DisplayName("②-c 旧码降级清单 selections[].positions[] 同批补同一套键（同一展厅屏，不两套形状）")
     void degradedSelectionPositionsCarrySameDetailKeys() {
         stubLegacyScan();
         when(orderItemMapper.selectList(any())).thenReturn(List.of(
@@ -268,7 +347,7 @@ class ProductionScanServiceDetailFieldsTest {
     }
 
     @Test
-    @DisplayName("③-b 订单行查不到（脏数据）⇒ 仍给 9 键（全 null），不冒充已知、也不崩")
+    @DisplayName("③-b 订单行查不到（脏数据）⇒ 仍给全键（全 null），不冒充已知、也不崩")
     void missingOrderLineStillYieldsNullKeys() {
         stubScan(CODE_CLOTH, ITEM_CLOTH, standardOps());
         when(orderItemMapper.selectList(any())).thenReturn(List.of());
@@ -372,6 +451,38 @@ class ProductionScanServiceDetailFieldsTest {
         return item;
     }
 
+    /**
+     * 母单 #6901 的商品身份 / 加工 / 派工夹具（`order_items.processing_info` 顶层扁平键，
+     * **与 {@code ProcessingOrderService#buildSnapshot} 读的是同一批键名**）。
+     */
+    private static Map<String, Object> identityInfo() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        // 商品身份（`copyIfPresent(pi, entry, "skuCode", "sku")` / "colorName" / "doorWidth" /
+        // "sellingMethod" / "unit" 同一批）
+        info.put("skuCode", "MG-006901");
+        info.put("colorName", "雾霾蓝");
+        info.put("doorWidth", "2.8");
+        info.put("sellingMethod", "bulk_cut");
+        info.put("unit", "米");
+        // 加工信息（`CRAFT_SPEC_SNAPSHOT_KEYS` 同族）
+        info.put("style", "拼色");
+        info.put("hasPattern", true);
+        info.put("patternRepeat", "0.32");
+        info.put("formula", "窗宽×褶倍÷门幅");
+        info.put("craftTier", "标准");
+        info.put("specialOptions", List.of("加线", "包边"));
+        info.put("processingMeters", "8.10");
+        info.put("formulaText", "2.8×2÷1.5=3.73→4");
+        info.put("componentRole", "主布");
+        // 算料输出（`CALC_OUTPUT_SNAPSHOT_KEYS`，snake_case）
+        info.put("fullness_actual", "2.35");
+        info.put("pleat_count", 48);
+        info.put("per_panel_pleats", 24);
+        info.put("panels", 2);
+        info.put("fabric_meters", "12.35");
+        return info;
+    }
+
     private Order order() {
         Order o = new Order();
         o.setId(ORDER_ID);
@@ -422,6 +533,7 @@ class ProductionScanServiceDetailFieldsTest {
         List<String> all = new java.util.ArrayList<>(a);
         all.addAll(b);
         all.add(extra);
-        return all;
+        // `remark` 同时是既有键与明细键（同一件事实一个键）⇒ 去重后比较（键集判据钉的是**集合**）
+        return all.stream().distinct().toList();
     }
 }

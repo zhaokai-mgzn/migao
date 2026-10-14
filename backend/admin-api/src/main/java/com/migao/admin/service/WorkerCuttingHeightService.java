@@ -62,6 +62,17 @@ public class WorkerCuttingHeightService {
     /** 商品品牌落在 {@code product_attributes.attr_key}（与 {@code ProductService.ATTR_KEY_BRAND} 同值）。 */
     private static final String ATTR_KEY_BRAND = "brand";
 
+    /**
+     * 机台屏**不**下发共享明细键里的哪一个（母单 #6901）—— 本面上同一件事实的既有键名是
+     * {@code position_remark}（上方那行），再落一个共享键集里的 {@code remark} 就是
+     * 「同一面上同一事实两个键名」（本仓明令禁止；见 {@code ProductionScanService} 的
+     * {@code POSITION_DETAIL_KEYS} javadoc 为何不加 {@code position_remark} 别名）。
+     *
+     * <p>⚠️ 排除动作**只在机台侧这一处**（扫码面照旧有 {@code remark}，不丢键）——
+     * 具名列出、不用通配，好让「哪天多排除一个键」在评审里看得见。</p>
+     */
+    static final java.util.Set<String> MACHINE_ROW_EXCLUDED_KEYS = java.util.Set.of("remark");
+
     private final ProductionScanService productionScanService;
     private final CuttingHeightConfigService cuttingHeightConfigService;
     private final OrderItemMapper orderItemMapper;
@@ -161,6 +172,20 @@ public class WorkerCuttingHeightService {
         row.put("fullness", item == null ? null : item.getFullness());
         row.put("position_remark", text(entry.get("remark")));
         row.put("fabric_meters", fabric.get(itemId));
+        // 母单 #6901（面①屏 B）：机台屏一 订单详情此前只印「品牌/收货人/款式/套数/宽高/加工类型/
+        // 开数/安装工艺/褶倍/用料/部位备注」—— 商品身份（货号/颜色/门幅）与相当一部分加工信息
+        // （实际褶倍/总褶数/每片褶数/幅数/用料公式/档位/特殊选项/是否对花/花距/算料公式/加工费米数）
+        // 以及派工（批号/指派米数/组件）**屏上没有**（工人据此决定怎么生产）。
+        //
+        // 🔴 **只加不改**：上面那批键**已有值、来源各自明确**（`width`/`height`/`craft`/`curtain_type`/
+        // `open_count`/`cutting_mode`/`fullness` 取自 `order_items` 列、`fabric_meters` 取自
+        // `fabricMeters(scan)`）⇒ {@link PositionDetailFields#fillDetailKeys} 是 **putIfAbsent** 语义，
+        // **绝不覆盖**既有值、也不改它们的来源。键清单与键名翻译**只有一份**（三条工人读面共用）。
+        //
+        // 🔴 `remark` **显式排除**：本面上同一件事实的键名是 `position_remark`（上面那行）—— 再落一个
+        // `remark` 就是「同一面上同一事实两个键名」（本仓明令禁止；`ProductionScanService` 的 javadoc
+        // 为此专门解释过为什么不加 `position_remark` 别名）。扫码面照旧有 `remark`（不丢键）。
+        PositionDetailFields.fillDetailKeys(row, entry, MACHINE_ROW_EXCLUDED_KEYS);
 
         String position = text(entry.get("position_kind"));
         BigDecimal finishedHeight = item == null ? null : item.getHeight();

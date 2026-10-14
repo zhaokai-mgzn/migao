@@ -171,6 +171,15 @@ html, body {
 .wh5-pick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 15px; }
 .wh5-pick-label { color: var(--wh5-muted); }
 
+/* ---- 本部位生产信息（母单 #6901，工人诉求：「需要这些信息 + 商品信息来决定如何生产」）----
+   标签在左、值在右的紧凑网格；`overflow-wrap: anywhere` 让长公式串在窄屏折行（不撑破卡片）。
+   长自由文本（用料公式 / 算料公式）**全文**上屏 —— 截断成省略号 = 工人看不到完整依据。 */
+.wh5-spec { display: flex; flex-direction: column; gap: 4px; margin: 0; border-top: 1px solid var(--wh5-line); padding-top: 8px; }
+.wh5-spec-title { font-size: 16px; font-weight: 700; color: var(--wh5-muted); }
+.wh5-spec-row { display: flex; gap: 8px; align-items: baseline; font-size: 16px; }
+.wh5-spec-row dt { flex: 0 0 auto; min-width: 84px; color: var(--wh5-muted); }
+.wh5-spec-row dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+
 /* ---- 本套工序明细（issue #4967 交付物 2）----
    工人一眼看到「这一套还有哪几道没做」；行高 ≥44px 保持可读、不挤压（PAD 断点正文 20px 见上）。 */
 .wh5-overview { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--wh5-line); padding-top: 10px; }
