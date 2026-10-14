@@ -449,6 +449,19 @@ infer_next(set, scanned_order_item_id):
 >
 > **裁定②-3**：走 **A 模式** —— 「先生产 → 做完扫一次」（报工 = 完工），**零额外交互**，
 > 与真值源 `:57`「一次扫码同时干两件事：**推进工序进度 + 记录个人计件**」一致。
+>
+> 🔴 **2026-10-14 改判块（issue #6868 文案口径统一包；用户同日逐字裁定②「工人屏全部统一到『报』」，
+> 承接裁定①「扫码领活改成扫码报工」）**：本节（含 §4.1 流程图 ③④）里的按钮文案【开工】/【领活】
+> **统一为【报工】**，屏上「本套工序都已被领走」一类的「领」字**统一到「报」**。
+> - **只换可见文案**：大按钮 `id=wh5-report` 由【开工】⇒**【报工】**；回执句尾「…都**领完了**」⇒「…都**报完了**」；
+>   无工序说明「推断不出**待领**工序」⇒「推断不出**待报**工序」；本套明细状态列「**已领 / 待领**」⇒「**已报工 / 待报工**」。
+> - 🔴 **记账口径一字未动**：`started_at` / `worker_id` / `worker_name` 的写入与 `COALESCE` 幂等、
+>   `done_at` / `done_qty` / 计件、端点、请求体、幂等键、全部 DOM id / class —— **一个都没改**（语义裁定仍是 #4967 的
+>   「扫码 = 推进进度 + 记计件」，本轮只统一**叫什么**）。
+> - §4.1 表格与本节末的【开工】/【领活】是 #4967 当时的留痕，**按仓库惯例保留**；本块是叠在它们之上的日期化改判。
+> - 判据载体：`frontend/worker-h5/tests/worker-h5-page.test.mjs`（按钮）· `frontend/worker-h5/tests/worker-h5-operation-display.test.mjs`
+>   （回执句尾）· `frontend/worker-h5/tests/worker-h5-scan-complete.test.mjs`（状态列）·
+>   `frontend/bmini-app/tests/worker-scan-report-copy-same-source.test.ts`（跨面同源守卫，白名单收掉、BANNED 扩充）。
 
 ### 4.1 A 模式的闭环一屏
 
