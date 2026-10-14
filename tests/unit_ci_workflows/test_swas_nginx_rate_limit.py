@@ -1,7 +1,9 @@
-# case_ids: MC-012, PR-117
+# case_ids: MC-012, PR-117, PG-018
 # （沿用 tests/unit_ci_workflows/** 既有惯例：CI/流程结构类 L0 不变式统一挂 MC-012 ——
 #   见 .github/cases/misc.yml 的 MC-012「CI workflow 行为由 tests/unit_ci_workflows/ 单测验证」。
-#   PR-117 = `/i/`（入库标签，issue #5052 §7.1）的**限流预算登记**，且该预算**真的计账**。）
+#   PR-117 = `/i/`（入库标签，issue #5052 §7.1）的**限流预算登记**，且该预算**真的计账**。
+#   PG-018 = `/o/`（加工单级短码，issue #6867 §11.3）的**限流预算登记** —— 与 `/s/`、`/i/` 同一档
+#   （worker_entry），且 `/o/` 必须同时在 `$worker_entry_key` 的 map 里，否则「空 key 不计账」。）
 r"""`deploy/swas/nginx.conf` 的**限流防刷**常驻判据（关联 issue #20 第 3 项）。
 
 ## 为什么要一条常驻判据
@@ -89,6 +91,10 @@ DOCUMENTED_LIMITS: dict[tuple[str, str], dict[str, int]] = {
     # 对**任何持码人**等价 ⇒ 与工人入口面共用「很宽的 per-IP 兜底」档，而不是内部管理面的宽预算。
     # 正常用量 = 扫一次标签 1 个请求（`/i/` 只做 302，落地页请求落在 `/b/`）。
     ("app.migaozn.com", "/i/"): {"worker_entry": 1000},
+    # 加工单级短码 `/o/<短码>`（issue #6867 / B2）：与 `/s/`、`/i/` **同族同档** —— 码印在加工单纸上，
+    # 对**任何持码人**等价 ⇒ 共用「很宽的 per-IP 兜底」档（worker_entry），
+    # 而不是内部管理面的宽预算。正常用量 = 扫一次纸 1 个请求（`/o/` 只做 302）。
+    ("app.migaozn.com", "/o/"): {"worker_entry": 1000},
     ("app.migaozn.com", "/api/chat/"): {"api_perip": 200},
     ("app.migaozn.com", "/api/"): {
         "api_perip": 200, "auth_perip": 60, "abuse_perip": 10,
@@ -320,6 +326,7 @@ LOCATION_SAMPLES: dict[tuple[str, str], dict[str, str]] = {
     ("ai-api.migaozn.com", "/"): {"$request_uri": "/api/chat"},
     ("app.migaozn.com", "/s/"): {"$request_uri": "/s/7K3M9QP2"},
     ("app.migaozn.com", "/i/"): {"$request_uri": "/i/7K3M9QP2"},
+    ("app.migaozn.com", "/o/"): {"$request_uri": "/o/7K3M9QP2"},
     ("app.migaozn.com", "/api/chat/"): {"$request_uri": "/api/chat/x"},
     ("app.migaozn.com", "/api/"): {
         "$request_uri": "/api/orders",
@@ -450,7 +457,7 @@ def problems(text: str, page_cost: int, worker_scan_cost: int) -> list[str]:
                 f"{where[0]}{where[1]} 挂的限流对样本请求 {sample.get('$request_uri', '')!r} "
                 f"**一个 zone 都不计账**（zone {sorted(zone_bursts)} 的 key map 求值为空）⇒ "
                 "「空 key 不计账」会把它们全部放过：限流看着在、实际不拦。"
-                "把这些前缀加进对应 zone 的 key map（如 `$worker_entry_key` 的 `~^/(s/|i/|api/worker/)`）"
+                "把这些前缀加进对应 zone 的 key map（如 `$worker_entry_key` 的 `~^/(s/|i/|o/|api/worker/)`）"
             )
 
     # 判据 6：阈值仍压得住**重算**出来的实测用量（≥10×）
@@ -467,6 +474,7 @@ def problems(text: str, page_cost: int, worker_scan_cost: int) -> list[str]:
         ("app.migaozn.com", "/api/", "worker_sess"): worker_total,
         ("app.migaozn.com", "/s/", "worker_entry"): 1,
         ("app.migaozn.com", "/i/", "worker_entry"): 1,
+        ("app.migaozn.com", "/o/", "worker_entry"): 1,
     }
     for (domain, target, zone), cost in headroom_cases.items():
         burst = got_limits.get((domain, target), {}).get(zone)
@@ -653,17 +661,25 @@ def test_red_proof_raised_page_cost_tightens_the_requirement() -> None:
 
 
 def test_red_proof_a_zone_that_counts_nothing_is_detected() -> None:
-    """红证⑤（本单新增）：`/i/` 挂着 worker_entry，但 `$worker_entry_key` 的 map 不覆盖 `/i/`
-    ⇒ 请求 key 为空 ⇒ nginx 不计账 ⇒ 判据必须报「一个 zone 都不计账」。"""
-    text = _live_text()
-    mutated = _inject(text, "~^/(s/|i/|api/worker/)", "~^/(s/|api/worker/)")
-    assert not zone_accounts_request(mutated, "worker_entry", {"$request_uri": "/i/7K3M9QP2"}), (
-        "把 `/i/` 从 map 里去掉后 key 竟然还取到值 ⇒ 求值器与 nginx 语义对不上（本红证会空转）"
-    )
-    assert zone_accounts_request(mutated, "worker_entry", {"$request_uri": "/s/7K3M9QP2"}), (
-        "`/s/` 的计账被连带打断 ⇒ 求值器把 map 读错了"
-    )
+    """红证⑤：`/i/`（以及 issue #6867 新增的 `/o/`）挂着 worker_entry，但 `$worker_entry_key`
+    的 map 不覆盖它 ⇒ 请求 key 为空 ⇒ nginx 不计账 ⇒ 判据必须报「一个 zone 都不计账」。
+
+    ⚠️ 注入形态 = 把该前缀从 map 的**分支**里摘掉（`|i/|` → `|`），**不写死整条 map 正则**：
+    否则每新增一个短码前缀，本红证都会因为「针找不到」而失败 —— 那不是判据变红，是红证自己坏了
+    （#6867 落 `/o/` 时实测踩到过一次）。
+    """
     page_cost, _where, _missing = measured_page_cost()
     scan_cost, _missing2 = measured_worker_scan_cost()
-    found = problems(mutated, page_cost, scan_cost)
-    assert any("/i/" in item and "不计账" in item for item in found), f"限流不计账没被判红：{found}"
+    for prefix in ("/i/", "/o/"):
+        text = _live_text()
+        mutated = _inject(text, f"|{prefix.strip('/')}/|", "|")
+        assert not zone_accounts_request(mutated, "worker_entry", {"$request_uri": f"{prefix}7K3M9QP2"}), (
+            f"把 `{prefix}` 从 map 里去掉后 key 竟然还取到值 ⇒ 求值器与 nginx 语义对不上（本红证会空转）"
+        )
+        assert zone_accounts_request(mutated, "worker_entry", {"$request_uri": "/s/7K3M9QP2"}), (
+            "`/s/` 的计账被连带打断 ⇒ 求值器把 map 读错了"
+        )
+        found = problems(mutated, page_cost, scan_cost)
+        assert any(prefix in item and "不计账" in item for item in found), (
+            f"{prefix} 的限流不计账没被判红：{found}"
+        )

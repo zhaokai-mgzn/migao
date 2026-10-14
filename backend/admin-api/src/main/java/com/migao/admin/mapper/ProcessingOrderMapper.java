@@ -1,5 +1,6 @@
 package com.migao.admin.mapper;
 
+import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.migao.admin.entity.ProcessingOrder;
 import org.apache.ibatis.annotations.Mapper;
@@ -165,6 +166,36 @@ public interface ProcessingOrderMapper extends BaseMapper<ProcessingOrder> {
     @Select("SELECT * FROM processing_orders WHERE tenant_id = #{tenantId} "
             + "AND short_code = #{shortCode} AND deleted = 0 LIMIT 1")
     ProcessingOrder selectByShortCode(@Param("shortCode") String shortCode, @Param("tenantId") Long tenantId);
+
+    /**
+     * 短码 ⇒ **跨租户**解析加工单（issue #6867 / B2）：公开入口 {@code GET /o/{短码}} 的唯一读面。
+     *
+     * <p>🔴 {@code @InterceptorIgnore(tenantLine = "true")} 是**必须的**（不是优化）：
+     * {@code /o/{短码}} 是公开入口（无 JWT / 无工人 session）⇒ {@code TenantContext} 为空 ⇒
+     * 多租户拦截器会抛 {@code Tenant context not initialized} ⇒ 纸上的码恒 500。
+     * 短码本身**全局唯一**（部分唯一索引 {@code uk_processing_orders_short_code}，列级、跨租户）
+     * ⇒ 跨租户查询最多命中一行，租户由短码解出（设计 §11.6）。同款手法见
+     * {@code ProcessingSetPartTokenMapper.selectByShortCode} 与 {@code UserMapper} 的跨租户手机号查询。</p>
+     *
+     * <p>⚠️ 与上面的 {@link #selectByShortCode}（带 {@code tenantId}）是**两件事**，不要互相替代：
+     * 那个的租户谓词是**刻意的**（分配期查重与「同一张纸」判定都在已认证请求内，不带 tenant_id 就是越权面）；
+     * 本方法的跨租户是**刻意的**（公开入口没有租户上下文）。谁把两者合并成一个，都会打破另一半的判据
+     * （{@code ProcessingOrderShortCodeMapperTest#selectByShortCodeStaysInsideTheTenant} 与
+     * {@code ProcessingOrderShortLinkControllerTest}）。</p>
+     *
+     * <p><b>不带</b> {@code qr_token IS NOT NULL} 过滤：撤销 = 置 NULL（设计 §11.6 / §1.3.1）⇒
+     * 调用方要能区分「短码不存在」（404）与「这张纸已作废」（410），静默回落成 404 会把撤销说成「没这个码」。</p>
+     *
+     * <p>⚠️ {@code @ResultMap} 与同文件其它手写 {@code @Select} 同因（见类注释）：
+     * {@code po.*} 打 {@code items_snapshot}（JSONB），不绑 resultMap 就静默返回字符串。</p>
+     *
+     * @param shortCode 归一化后的短码（8 位 Crockford Base32）
+     * @return 命中行（{@code qrToken} 为 {@code null} = 已撤销）；未知 ⇒ {@code null}
+     */
+    @InterceptorIgnore(tenantLine = "true")
+    @ResultMap("mybatis-plus_ProcessingOrder")
+    @Select("SELECT * FROM processing_orders WHERE short_code = #{shortCode} AND deleted = 0 LIMIT 1")
+    ProcessingOrder selectByShortCodeGlobal(@Param("shortCode") String shortCode);
 
     /**
      * 给**已存在**的加工单补短码（issue #6867 / B1；幂等 = 「只补 {@code NULL}」）。

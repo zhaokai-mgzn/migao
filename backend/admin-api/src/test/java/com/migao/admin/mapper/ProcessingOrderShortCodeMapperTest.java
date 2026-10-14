@@ -1,6 +1,7 @@
 // case_ids: PG-018
 package com.migao.admin.mapper;
 
+import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.migao.admin.entity.ProcessingOrder;
 import org.apache.ibatis.annotations.Select;
@@ -12,6 +13,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.time.OffsetDateTime;
 import java.util.Arrays;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -113,5 +115,27 @@ class ProcessingOrderShortCodeMapperTest {
                 .doesNotContain("short_code");
         assertThat(sql).contains("tenant_id = #{tenantId}");
         assertThat(sql).contains("deleted = 0");
+    }
+
+    @Test
+    @DisplayName("🔴 selectByShortCodeGlobal — 公开入口 /o/{短码} 的**跨租户**读：显式关掉租户拦截器、不带 tenant_id")
+    void selectByShortCodeGlobalIsCrossTenantOnPurpose() throws Exception {
+        Method method = ProcessingOrderMapper.class.getMethod("selectByShortCodeGlobal", String.class);
+        Select select = method.getAnnotation(Select.class);
+        assertThat(select).as("必须是 @Select").isNotNull();
+        String sql = String.join(" ", select.value());
+        assertThat(sql).contains("short_code = #{shortCode}");
+        assertThat(sql).contains("deleted = 0");
+        assertThat(sql).contains("LIMIT 1");
+        // 公开入口没有租户上下文（TenantContext 为空）⇒ **不得**出现 tenant_id 谓词（没有上下文可绑；
+        // 短码的跨租户唯一性由部分唯一索引 uk_processing_orders_short_code 兜底，最多命中一行）
+        assertThat(sql)
+                .as("公开入口无租户上下文 ⇒ 不能绑 tenant_id（那会让纸上的码恒 404）")
+                .doesNotContain("tenant_id");
+        assertThat(Optional.ofNullable(method.getAnnotation(InterceptorIgnore.class))
+                .map(InterceptorIgnore::tenantLine).orElse("<注解缺失>"))
+                .as("@InterceptorIgnore(tenantLine = \"true\") 是必须的（不是优化）：漏了 ⇒ 多租户拦截器抛"
+                        + " Tenant context not initialized ⇒ 纸上的码恒 500")
+                .isEqualTo("true");
     }
 }
