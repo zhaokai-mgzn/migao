@@ -411,9 +411,11 @@ class WorkerCuttingHeightNullProductIdTest {
                                 Verdict.KEY_NULLABLE,
                                 "调用点已 `specByItemId == null ? null : ...get(op.getOrderItemId())` 短路")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java|itemGroupKey",
-                        new IndexSite("itemGroupKey", "itemIdToGroupKey", "spec.orderItemId()", "spec.orderItemId()", 261,
+                        new IndexSite("itemGroupKey", "itemIdToGroupKey", "spec.orderItemId()", "spec.orderItemId()", 264,
                                 Verdict.KEY_NULLABLE,
-                                "调用点已 `spec.orderItemId() == null ? null : setByGroup.get(...)` 短路")),
+                                "调用点已 `spec.orderItemId() == null ? null : setByGroup.get(...)` 短路"
+                                        + "（issue #6867 B1 在 ensureQrToken 之后插了 ensureShortCode ⇒ 本行由 261 移到 264，"
+                                        + "台账按现取更新；判定与处置**一字未改**）")),
                 // ── 存量同族风险点（本包文件族外，**不顺手改**）：键可能为 null 且本文件内无处置。
                 //    承载体 = 独立 issue #6226（主会话按 origin/main 逐字复核开单）⇒ 本判据不在此红，
                 //    但条目仍受「未登记即红 / 台账不许陈旧」约束。──
