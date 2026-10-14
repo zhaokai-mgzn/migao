@@ -91,8 +91,14 @@ FORMS = ("typecheck", "单测", "构建")
 #: 档位 = verify-all.sh 顶层 `case "$MODE" in` 的分支名（矩阵声称的档位必须落在其中）。
 TIERS = ("quick", "full", "frontend", "backend", "agent", "gate", "redproof")
 #: 未覆盖台账的**现取**上限（只许缩短）：要加一条必须在本文件里显式改这个数（diff 里看得见）。
+#: 2026-10-14（issue #6901 / PR #6904）：`UNCOVERED_INPUT_CAP` 1 → 2 —— bmini 新增的**类级同源用例**
+#: `frontend/bmini-app/tests/selling-method-same-source.test.ts` 读 admin-web 的 `SellingMethodLabels`
+#: 真值源码做逐值比对（bmini 是独立 npm 工程、不许 import admin-web 的 TS）⇒ 属**同一形态**的跨目录输入，
+#: 与既有 `print-media.json` 条目同款处置：登记进 `trigger_face_uncovered_inputs`、**有意不**纳入触发面
+#: （纳入会把 admin-web 单改这一个文件的改动拖成一条 bmini 腿，并对未装 bmini 依赖的 worktree 制造
+#: fail-closed 假红）。**显式扩面 +1，diff 可见**。
 UNCOVERED_MODULE_CAP = 1
-UNCOVERED_INPUT_CAP = 1
+UNCOVERED_INPUT_CAP = 2
 NON_MODULE_CAP = 0
 #: 输入闭包的扫描面（只认这些扩展名里的相对路径字面量；二进制/产物不在面内）。
 SOURCE_EXTS = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json")
