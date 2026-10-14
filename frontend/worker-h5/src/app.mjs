@@ -458,6 +458,17 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     dispatch,
     /** 手工刷新页面集（`GET /api/worker/me`）：供装配层/测试在会话就绪后显式调用一次。 */
     refreshPages,
+    /**
+     * **扫码落地**（issue #6866）：把当前 URL 里带的码解析一次。
+     *
+     * @returns {Promise<boolean>} 是否解析了（URL 里没有码 ⇒ false，调用方据此什么都不做）
+     */
+    scanFromUrl: async () => {
+      const code = parseScanInput(href, href)
+      if (!code) return false
+      await doScan(code)
+      return true
+    },
     destroy() {
       if (idleTimer) clearTimeout(idleTimer)
       doc.removeEventListener('visibilitychange', onVisible)
@@ -483,6 +494,15 @@ export async function boot() {
       app.dispatch({ type: 'worker', worker: { workerName: w.workerName, workerNo: w.workerNo } })
       // 页面集随会话就绪一起拉（本单）：读不到 ⇒ 页面按全开跑 + 显式提示（fail-open）
       await app.refreshPages()
+      // 🔴 扫码落地（issue #6866）：工人**已登录**（闲置默认 30 天 ⇒ 常态）时扫部位码，
+      //    服务端 302 把码放在 `?t=`，而此前只有「登录成功」那一支读它 ⇒ 已登录的工人落在输码空态
+      //    （现场读作「扫了还要再输一遍单号」）。
+      // 🔴 **只在装载时解析这一次**：不挂 `visibilitychange` / 定时器 —— 那条路是 `checkAlive`
+      //    的后台对账面，把解析叠上去就是 #6642 的请求风暴形态（线上实测 15–23 req/s）。
+      // 🔴 **只读**：`doScan` → `api.resolveScan`（`GET /production/scan`）；写路（`scan/complete`）
+      //    仍只在工人点【完成】时发生（`wh5-report`）。
+      // 失败已由 `doScan` 落到既有错误面（服务端点名的原因逐字上屏）⇒ 无需在此另加一层。
+      await app.scanFromUrl()
     } catch {
       app.dispatch({ type: 'logout' })
     }
