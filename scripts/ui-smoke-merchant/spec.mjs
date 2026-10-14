@@ -203,27 +203,34 @@ async function cleanupOrder(page, id) {
 /**
  * 依赖探测（issue #6790 判据 ④）：本租户**能不能生成加工单**。
  *
- * 触发条件（真栈实测，api 日志逐字）：
- *   `INCIDENT_PRODUCTION_ROUTING_UNRESOLVED 订单缺 \`craft\` 且该租户没有默认工艺，生成加工单中止
- *    （不回退常量 韩褶）: tenantId=25, 部位=布帘`
- * ⇒ 该租户**没有配置生产路线/默认工艺** ⇒ `POST /api/admin/processing-orders/generate` **HTTP 200 但
- *   `data` 为空**（不是异常），加工单永远不落库 ⇒ `16-` 的 `.po-print-area` 永不出现。
+ * ⚠️ **归因订正（2026-10-14 现取实测，issue #6940）**：本条原先把**两种完全不同的原因**写成了一条叙事 ——
+ *   「`INCIDENT_PRODUCTION_ROUTING_UNRESOLVED`（tenantId=25，租户未配默认工艺）」是 2026-10 早期在
+ *   **另一个租户**上看到的形态；而本租户（32）**已有**默认工艺 `韩褶` 与默认路线模板
+ *   `窗帘工序路线（默认）`，真正挡住生成的是**订单状态**，服务端逐字：
+ *   `{"orderRef":"…","success":false,"message":"订单 … 当前状态 [pending] 不允许生成加工单，须为已确认","code":"VALIDATION_ERROR"}`
+ *   （`data` **并不为空**）。⇒ 旧写法把「探针单没确认」误报成「租户没配路线」，
+ *   于是 16-/17-/32- 三条旅程**以错误的理由 skip**（skip 的面 = 未覆盖，理由错 ⇒ 没人会去修真因）。
  *
- * 这是**前置数据缺失**（云 dev 租户未配路线），不是选择器漂移、也不是产品回归；
- * 所以 16-/17-/32- 在本形态下判 **skip 并印出来**（skip ≠ pass、也 ≠ fail）。
- * 判据 = `可以自造前置 ⇒ 用 `createOrderFixture`；自造不了 ⇒ 显式登记依赖 + skip`。
+ * 现在：① 探针单先**自造前置**（`PUT /api/admin/orders/{id}/payment` 确认收款 ⇒ confirmed）再探生成能力；
+ *   ② `why` **只用服务端自己给的 `message`/`code`**（不再抄任何历史叙事）。
+ * 仍保留 skip 语义：真配不出来（服务端明确说缺工艺/缺路线）⇒ skip 并**逐字印出服务端的话**（skip ≠ pass）。
  */
 async function processingRouteAvailable(page) {
   const api = await adminApi(page)
   const probeId = await createOrderFixture(page, '冒烟路线探测')
+  // 生成加工单要求订单**已确认**（服务端逐字：「当前状态 [pending] 不允许生成加工单，须为已确认」）⇒
+  // 前置**自造**：先确认收款（pending → confirmed）再探生成能力（不自造就会把「没确认」误判成「租户没配路线」）。
+  await api.put(`/api/admin/orders/${probeId}/payment`).catch(() => {})
   const gen = await api.post('/api/admin/processing-orders/generate', { orderIds: [probeId] })
   const results = Array.isArray(gen?.data) ? gen.data : []
   const ok = results.some((r) => r && r.success !== false)
+  // 归因**只用服务端逐字**（禁止再抄历史叙事 —— 那是 2026-10-14 实测过的错归因来源）
+  const detail = results
+    .map((r) => `${r?.orderRef ?? '?'} → ${r?.message ?? '(服务端未给 message)'}${r?.code ? ` [${r.code}]` : ''}`)
+    .join('；')
   const why = ok
     ? ''
-    : `本租户指定单（${probeId}）生成加工单**未落库**：接口 HTTP 200 但 data 为空 —— `
-      + `api 日志 INCIDENT_PRODUCTION_ROUTING_UNRESOLVED「订单缺 craft 且该租户没有默认工艺」`
-      + `（租户未配生产路线/默认工艺）`
+    : `本租户指定单（${probeId}）生成加工单未落库 —— 服务端逐字：${detail || '(data 为空且未给 message)'}`
   if (ok) await cleanupOrder(page, probeId)
   return { ok, why, probeId }
 }
