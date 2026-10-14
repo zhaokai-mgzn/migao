@@ -617,11 +617,11 @@ test('🔴 ⑨ 扫码后按套展示工序细节：本套各部位的工序明�
   assert.match(doc.html, /定型/)
   assert.match(doc.html, /应做\s*11\.00\s*米/)
   assert.match(doc.html, /3\.50\s*元\/米/)
-  assert.match(doc.html, /待领/)
+  assert.match(doc.html, /待报工/)
   assert.match(doc.html, /已报\s*0\.00\s*米/)
-  // ② 已完成的那道**也在**（不是只列待做），且状态是「已领」
+  // ② 已完成的那道**也在**（不是只列待做），且状态是「已报工」
   assert.match(doc.html, /已报\s*4\.00\s*米/, '已完成的那道必须也在清单里（工人要看「还有哪几道没做」）')
-  assert.match(doc.html, /已领/)
+  assert.match(doc.html, /已报工/)
   app.destroy()
 })
 
