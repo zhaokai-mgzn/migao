@@ -473,7 +473,7 @@ users (role='worker', permissions=[], worker_no=<工号>, password_hash=<PIN 的
 > 🔴 **2026-09-21 语义改判（issue #4967，用户逐字裁定①）**：扫码 = **开工 / 领活**（真实车间
 > 「先扫码领活 → 再生产；完工不扫」）⇒ 按钮文案由【完成】改为【开工】。**记账时点与端点一字未变**。
 > 下方 ASCII 图里的【 完 成 】是**改判前**的原文（**保留不删**），并在同一图内标注改后形态与
-> 新增的「本套工序明细」。改判全貌见 `docs/design/set-code-and-scan-loop.md` 的 §4.1 改判块与 §11.5。
+> 新增的「本套工序明细」。改判全貌见 `docs/design/set-code-and-scan-loop.md` 的 §4.1 改判块与 §11.6。
 
 ```
 ① 扫 / 输码 → 服务端解析（新 token 优先，未命中回落旧 qr_token 四形态，§1.5）
@@ -823,7 +823,7 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 
 **症状**：扫 ① 那个码 ⇒ 相机 / 微信扫一扫**只显示一串文本**、打不开任何页面 ⇒ 工人只能回报工页**手输单号**。
 
-**本单的设计范围**：只回答「那张码**应该是什么**」。码**算出来之后**能不能被已登录工人用上，是另一条单（§11.9）。
+**本单的设计范围**：只回答「那张码**应该是什么**」。码**算出来之后**能不能被已登录工人用上，是另一条单（§11.10）。
 
 ### 11.2 🔴 关键前提：这张码**给谁扫**、扫完**应该看到什么**
 
@@ -831,7 +831,7 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 |---|---|---|---|
 | A | **车间工人**（主场景，现场就是这条） | 只有一串单号可看，还得手输 | 直接落到**可报工的页面** |
 | B | 商家自己（复核 / 补打） | 同上 | 页面上本来就有入口，扫码是**顺带** |
-| C | 客户（随货那张） | 同上 | 见 §11.7 N1/N2——随货给客户的是**销售单**，不是加工单 |
+| C | 客户（随货那张） | 同上 | 见 §11.8 N1/N2——随货给客户的是**销售单**，不是加工单 |
 
 **扫完应该看到什么 —— 三个选项（业务口径交人工；安全默认动作明确）**：
 
@@ -844,7 +844,7 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 **安全默认动作（不等人裁定也能往前走的那一半）**：选 **①**。理由三条：
 1. 加工单级码**结构上不可能**指到部位（它属于「一单」，不属于「一部位」）⇒ 选项 ② 不是「更好」，是**换一个不同的东西**；
 2. ① 的落地页**已经存在且已判据化**（`frontend/worker-h5/src/render.mjs` 的降级面 + §1.5 表）⇒ 零新增页面、零新增契约；
-3. **手输仍是最后兜底且不退化** ⇒ 纸面上必须同时留人可读的**短码 + 加工单号**（§11.6）。
+3. **手输仍是最后兜底且不退化** ⇒ 纸面上必须同时留人可读的**短码 + 加工单号**（§11.7）。
    ⇒ **选项 ② 若人工要，按新需求开单**（它是「加工单详情页」，不是「修这个码」）。
 
 ### 11.3 两个选项逐条比较（**改了哪些层**）
@@ -853,13 +853,13 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 
 | 层 | 改动 | 依赖既有资产 |
 |---|---|---|
-| **迁移** | **新表** `processing_order_short_links`（`id` / `tenant_id` / `processing_order_id` / `token` / `short_code` / `created_at` / `updated_at` / `deleted`），两条部分唯一索引：`uk_processing_order_short_links_short_code (short_code) WHERE deleted = 0`（**跨租户**全局唯一，同 §1.3 理由）+ `uk_processing_order_short_links_order (tenant_id, processing_order_id) WHERE deleted = 0`（**一单一码**）。**号现取**（§11.4） | 表结构**照 `processing_set_part_tokens` 的范式**，但**不复用那张表**（同 #5052 边界：「照其范式、不复用其表」） |
-| **后端 · 分配** | `WorkerShortLinkService.allocateUnique(Predicate)` **直接复用**（同一份「随机 + 查重 + 碰撞重试 + 到顶 fail-closed」），**不新写循环** | `WorkerShortLinkService.allocateUnique` |
+| **迁移** | **加一列** `processing_orders.short_code CHAR(8)` + 部分唯一索引 `uk_processing_orders_short_code (short_code) WHERE deleted = 0 AND short_code IS NOT NULL`（**跨租户**全局唯一，同 §1.3 理由）。**不建新表**（论证见 §11.4 —— 存储形态与码空间是**两件独立的事**）。**号现取**（§11.5） | 与既有 `qr_token` **逐字同款**（`uk_processing_orders_qr_token (qr_token) WHERE deleted = 0 AND qr_token IS NOT NULL`）⇒ 存储形态零新意 |
+| **后端 · 分配** | `WorkerShortLinkService.allocateUnique(Predicate)` **直接复用**（同一份「随机 + 查重 + 碰撞重试 + 到顶 fail-closed」），**不新写循环** —— 该 `public static` 重载正是为第二个码空间抽出来的 | `WorkerShortLinkService.allocateUnique` |
 | **后端 · 解析** | **新** `GET /o/{shortCode}` ⇒ 302。未知 / 形态不合法 ⇒ 404；**已撤销**（`token` 置 NULL）⇒ 410 | 控制器与语义**照 `WorkerShortLinkController` 的范式**；302 目标**直接复用** `WorkerShortLinkService.reportPageLocation(token, tenantId, tenantCode)`（`REPORT_PAGE_PATH` 与租户参数拼装**只有这一份**） |
-| **后端 · 读面键** | 加工单读面**追加** `short_code` + `scan_url`（**键恒在、未知 ⇒ null**，与 #4946 的 `part_short_code` / `scan_url` 同款）；`scan_url = {base}/o/{short_code}`，`token` 为空或短码为空 ⇒ **`null`（不编造）** | `ProductionService.scanUrlOf` 的**同款写法**（base + 路径段不同 ⇒ 各自一份，不许互相拼） |
-| **后端 · 撤销语义** | **逐字复用 §1.3.1**：撤销 = `token` 置 NULL（**不换新 token**、**不碰 `short_code`**）⇒ `/o/{短码}` 410 | `ProcessingOrderMapper.revokeQrToken` / `ProcessingSetPartTokenMapper.revokeTokensByOrder` 同款 |
+| **后端 · 读面键** | 加工单读面**追加** `short_code` + `scan_url`（**键恒在、未知 ⇒ null**，与 #4946 的 `part_short_code` / `scan_url` 同款）；`scan_url = {base}/o/{short_code}`，`token` 为空或短码为空 ⇒ **`null`（不编造）**。装配：读活性判据 `selectActiveByOrderId` 已经带回 `po`（**零新增查询**） | `ProductionService.scanUrlOf` 的**同款写法**（base + 路径段不同 ⇒ 各自一份，不许互相拼） |
+| **后端 · 撤销语义** | **逐字复用 §1.3.1**：撤销 = `token` 置 NULL（**不换新 token**、**不碰 `short_code`**）⇒ `/o/{短码}` 410 | `ProcessingOrderMapper.revokeQrToken` **同一条 `UPDATE`**（`short_code` 与 `qr_token` 同表同行 ⇒ 状态**不存在两处**） |
 | **前端 · admin-web** | ① `ProcessingOrder` 类型追加 `short_code?` / `scan_url?`；② 调用方 `qrValue={processingOrder?.scan_url ?? null}`（**不再回落单号**）；③ `ProcessingDoc` 在 QR **下方**加一行**人可读短码**（形态照 `TaskCardPrint` 的 `task-card-label-short-code-*`，缺码印 `—`、**绝不编**）；④ 组件测试把 `qrValue="PO260926-0007"` 换成 URL 形态 + 加「短码行」判据 | `TaskCardPrint` 的「码 + 短码同行」是**同款范式** |
-| **H5 / 小程序消费面** | **零改动**：302 落点仍是 `/w/?t=<token>`，`parseScanInput` 的 `CODE_KEYS` 与四形态解析都不动 | §1.4 / §1.5 |
+| **消费面（H5；小程序是它在微信侧的壳）** | **零改动**：302 落点仍是 `/w/?t=<token>`，`parseScanInput` 的 `CODE_KEYS` 与四形态解析都不动 | §1.4 / §1.5 |
 | **契约账本** | `docs/wiki/CONTRACT-LEDGER.md` **追加**（**不改既有行**）：`GET /o/{短码}` 一条 + 加工单读面新增两键 | 与 #4802 / #4946 登记同款 |
 | **边缘 / 放行** | `SecurityConfig` 的 `permitAll` **追加一条** `"/o/**"`（漏了 ⇒ 扫码拿到 401，纸上的码等于没用）；`deploy/swas/nginx.conf` **追加** `location /o/`（照 `/i/` 逐行，`proxy_pass` **不带 URI 后缀**；漏了 ⇒ 静默落到 SPA fallback 出 200，线上只有真机扫码才发现） | `location /i/` 的注释已把这两个坑写死 |
 | **类级守卫** | 登记进 `CODE_SPACES`（`tests/unit_ci_workflows/test_public_code_spaces_are_disjoint.py`）⇒ 未登记即红；同时补 **F1~F3 边缘归属登记** | 该守卫的判据 A/B/C/D + F1~F3 |
@@ -881,18 +881,48 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 > 就是因为**纸上那一份改不了**。② 的合法用途只有一个：① 落地**之前**的应急过渡，且必须在纸上**同时印**
 > 人可读信息（短码 / 加工单号），并把「已打印批次的作废条件」写进改动单。
 
-### 11.4 迁移号（**现取，不写死**）
+### 11.4 存储形态：**加一列**（最少代码阶梯 —— 为什么不建新表）
+
+> 这一节**独立于** §11.6 的码空间裁定：`CODE_SPACES` 判的是**控制器里的路径前缀**，**与存储位置无关**
+> ⇒ 「新开 `/o/`」不能成为「另建一张表」的理由，两者必须分开论证。结论：**形态取「`processing_orders` 加一列」**。
+
+| 比什么 | ① **加一列** `processing_orders.short_code`（**采用**） | ② 新建 `processing_order_short_links` |
+|---|---|---|
+| 表/列数 | 1 列 + 1 条部分唯一索引 | 1 张表 + 2 条部分唯一索引 + 实体 + Mapper + 迁移里的 COMMENT / 授权 / 指纹面 |
+| 与既有形态的关系 | `qr_token` 是**同一张表、同类列**（`uk_processing_orders_qr_token (qr_token) WHERE deleted = 0 AND qr_token IS NOT NULL` 已在）⇒ 短码照抄它 | 再造一份「纸 → 码」的载体 |
+| 分配点 | `ensureQrToken` 的 `po` 已在手 ⇒ 补短码**零新增查询** | 要再查一次码表（或把 `po` 与码表 join 起来） |
+| 读面装配 | `selectActiveByOrderId` 已经带回 `po` ⇒ 读 `short_code` **零新增查询** | 读面多一次查表（或一 join）；`ensurePartTokens` 的缓存范式可借用，但仍是新增 |
+| 撤销 | **同一条 `UPDATE`**（`short_code` 与 `qr_token` 同表同行）⇒ 撤销状态**只有一处** | 撤销跨两张表 ⇒ 「这张纸还能用吗」有**两处**状态要同步 —— 正是 §1.3.1 / #4946 记过的缺陷形态（「界面说已撤销、纸上的码还活着」） |
+| **一单一码怎么保证** | ✅ **`processing_orders` 已有 `uk_processing_orders_active (order_id) WHERE deleted = 0 AND status IN ('generated','issued','in_processing','completed')`** ⇒ 一个订单**至多一张活跃加工单** ⇒ 列级唯一即「一单一码」（不做额外工作） | 需要自己再加一条部分唯一索引（因为活跃单可能多行） |
+| 重生成会不会丢码 | **不会**：`ProcessingOrderService` 的生成路径先过 `selectActiveByOrderId`（有活跃单 ⇒ 显式拒绝「请勿重复生成」），且**全仓没有软删旧加工单再插新行的路径**（复算命令见 §11.5，实测零命中）⇒ 行是终生制；`ensureQrToken` / `regenerateQrToken` 都是「**复用已有 token**，缺失才生成」⇒ 短码同款复用 | 同款（表行也是终生制） |
+| 丢掉的优势 | 「行随订单报废 ⇒ 码失效」（把码钉在订单对象上而非那张纸） | —— 但本场景**用不到**：一个订单只有一张活跃加工单纸，两者生命周期重合 |
+
+⇒ **新表的额外成本换不到任何东西**；唯一能想到的重启条件 = 「一张加工单要发**多张**码」（一部位一码那种形态）
+—— 那件事**已经由 `processing_set_part_tokens` + `/s/` 覆盖**，不是本单的形态。
+
+**列 vs 码空间（两条不能互相顶替，都是必须的）**：`/o/` 前缀解决「**扫码时**知道该查哪张表 / 该去哪张纸」，
+`short_code` 列解决「**这一张纸的短码存在哪**」；前者是路径层、后者是存储层，各自有各自的判据
+（前者 = `CODE_SPACES` 判据 A/B/C；后者 = 迁移里的部分唯一索引 + 撤销只置 `token` 的断言）。
+
+### 11.5 迁移号（**现取，不写死**）
 
 ```bash
 # 取当前最大迁移号（照 §7.1 同款命令；本节不写死数字）
 git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/migration/ \
   | grep -oE 'V[0-9]+' | sort -t V -k2 -n | tail -1
+
+# 「全仓没有软删旧加工单再插新行的路径」的复算命令
+grep -rn "deleted = 1" backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java \
+                            backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingOrderMapper.java
 ```
 > 实测快照（2026-10-14，`origin/main` @ `94d685c3f`）：最大号 = **V154** ⇒ 本单迁移号 = **V155**（**落码时现取，勿抄本行**）。
 > 同 PR 必须：① 同步 bootstrap 终态 `backend/admin-api/src/main/resources/db/init/schema.sql`（新库路径不跑迁移链）；
 > ② 在 `tests/unit_ci_workflows/migration_fingerprints.json` 登记指纹（新增迁移必须同 PR 登记）。
+> 迁移内容 = `ALTER TABLE processing_orders ADD COLUMN IF NOT EXISTS short_code CHAR(8)`
+> + `CREATE UNIQUE INDEX IF NOT EXISTS uk_processing_orders_short_code ON processing_orders (short_code) WHERE deleted = 0 AND short_code IS NOT NULL`
+> （**幂等**：`IF NOT EXISTS` 两条；**不回填**存量行 —— 未分配短码的行读面给 `null`，**不编造**）。
 
-### 11.5 码空间归属 + 撤销语义（issue 正文的「待裁定」项 —— **AI 可裁，已裁**）
+### 11.6 码空间归属 + 撤销语义（issue 正文的「待裁定」项 —— **AI 可裁，已裁**）
 
 **裁定：新开第三个前缀 `/o/`，与 `/s/`（部位码）、`/i/`（入库标签）并列。**
 
@@ -910,11 +940,11 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 「重新发码」= 只补 `token IS NULL` 的行、**短码不变**（已打印的纸不作废）。
 
 **互不命中（三重，任一层就够）**：① 前缀不同（`/o/` vs `/s/`）；② 承载表不同；③ 各自的部分唯一索引
-（`uk_processing_order_short_links_short_code` vs `uk_set_part_tokens_short_code`）。
+（`uk_processing_orders_short_code` vs `uk_set_part_tokens_short_code`）。
 ⇒ **两边的短码空间可以重叠而不冲突**（同一个 8 位串在两张表里各指各的，路径段把它分开）；
 解析按前缀路由到各自的表 ⇒ 不串。**这条要写进 `CODE_SPACES` 的 `semantics`**（守卫判据 C 的「跨空间互斥」由它体现）。
 
-### 11.6 人可读短码（**不是可选项**，§1.4 逐字继承）
+### 11.7 人可读短码（**不是可选项**，§1.4 逐字继承）
 
 加工单纸的码旁边**必须**印 8 位短码（照 `TaskCardPrint` 的 `part_short_code` 行）——
 三种现场情况都靠它：码磨损 / 脏污、相机权限被拒、工人手上没有扫码工具。
@@ -922,7 +952,7 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 加工单号是「工人只想在报工页手输」的既有兜底（四形态的第 ④ 个）——
 **两者不是重复信息**（一个是系统入口、一个是业务单号），且 §1.4 已把「手输入口」定义成产品能力。
 
-### 11.7 外部输入项 / 有意不做的边界 / 重启条件
+### 11.8 外部输入项 / 有意不做的边界 / 重启条件
 
 **外部输入项（能不引就不引）**：
 
@@ -930,7 +960,7 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 |---|---|---|---|
 | E1 | 稳定域名 `app.migaozn.com` | ✅ **已有**（nginx 已分流、Let's Encrypt 证书已在） | 无 |
 | E2 | ICP 备案 | ✅ **已备案**（用户裁定 2026-09-20；§4.1） | 无 |
-| E3 | 小程序合法域名 / 路径白名单 | ✅ 同域同协议（`/w/` 与 `/s/` 已在用） | **新前缀 `/o/` 与 `/s/` 同域同协议** ⇒ 不新增清单项；是否需要**路径级**登记见 U1 |
+| E3 | 消费面合法域名 / 路径白名单（小程序是 H5 在微信侧的壳，与 H5 同一份域名清单） | ✅ 同域同协议（`/w/` 与 `/s/` 已在用） | **新前缀 `/o/` 与 `/s/` 同域同协议** ⇒ 不新增清单项；是否需要**路径级**登记见 U1 |
 | E4 | 印刷批次 | 纸是**商家自己**打的（改完立刻生效，无需回收） | 无 |
 
 **有意不做（边界逐条 + 重启条件）**：
@@ -941,27 +971,27 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 | N2 | 不做**整单工序清单**落地页（§11.2 选项 ②） | 新页面 + 新读面 + 新契约，**不是修这个码** | 人工裁定要 ⇒ **按新需求开单** |
 | N3 | 不改 `processing_orders.qr_token` 的任何既有语义 | §7.1 红线「**不碰** `processing_orders.qr_token`」 | **无重启条件**（既有载体与撤销端点仍有消费者） |
 | N4 | 不改四形态解析 / `parseScanInput` 的 `CODE_KEYS` | 扫描侧不判形态、服务端单一裁定（§1.5 / C10） | **无**（第二份口径即缺陷） |
-| N5 | 不把 `/o/` 做成 `/s/` 的第二张表 | 见 §11.5（混命名空间**没有任何东西会变红**） | 若 `CODE_SPACES` 守卫扩展到「同前缀多语义即红」，再评估（**以判据为准**） |
+| N5 | 不把 `/o/` 做成 `/s/` 的第二张表 | 见 §11.6（混命名空间**没有任何东西会变红**） | 若 `CODE_SPACES` 守卫扩展到「同前缀多语义即红」，再评估（**以判据为准**） |
 | N6 | 不改 `ProcessingDoc` 的版式 / 介质 | 介质是参数（`docs/design/print-media-matrix.md` §3）；本单只换**码的内容**并加一行短码 | 纸面高度不够 ⇒ 走该文档 §7 SOP，**不就地加行** |
 
 **无法判定（如实登记，不猜）**：
 
 | # | 项 | 需要什么才能判 |
 |---|---|---|
-| U1 | `/o/` 是否需要在**小程序**侧登记路径白名单 | 线上小程序后台的域名 / 路径清单读数（**本机不可得**）；落码时**按 `/s/` 同款**处理，并把「已按同款处理」写进改动单 |
+| U1 | `/o/` 是否需要在**消费面（H5；小程序是它在微信侧的壳）**侧登记路径白名单 | 线上消费面后台的域名 / 路径清单读数（**本机不可得**）；落码时**按 `/s/` 同款**处理，并把「已按同款处理」写进改动单 |
 | U2 | 加工单级码上线后的**扫开率**（多少工人真用它） | 需要线上统计 ⇒ 不在本设计射程 |
 
-### 11.8 零共享写路径的拆包建议（4 包，**接口先冻结再并行**）
+### 11.9 零共享写路径的拆包建议（4 包，**接口先冻结再并行**）
 
 > 拆包纪律（`AGENTS.md` 铁律 6 / `migao-dev-flow` §17.2）：**一个包 = 一个文件族、零共享写路径**。
-> **接口冻结件**（4 个名字，先定死再开工）：① 路径段 `/o/`；② 表名 `processing_order_short_links`；
+> **接口冻结件**（4 个名字，先定死再开工）：① 路径段 `/o/`；② 列名 `processing_orders.short_code`；
 > ③ 读面 JSON 键 `short_code` / `scan_url`；④ 短码规格 = 既有 8 位 Crockford Base32（**不新定**）。
 
 | 包 | 内容（文件族） | 依赖 | 并行性 |
 |---|---|---|---|
-| **B1 后端·码本体** | 迁移（新表）+ bootstrap `backend/admin-api/src/main/resources/db/init/schema.sql` 同步 + `tests/unit_ci_workflows/migration_fingerprints.json` + 实体 + Mapper（`selectByShortCode` / 补码，同款）+ 服务（复用 `WorkerShortLinkService.allocateUnique`）+ 后端单测 | 无 | **起点** |
-| **B2 后端·公开入口** | 新控制器（`GET /o/{shortCode}` ⇒ 302/404/410）+ `SecurityConfig` 的 `permitAll` 追加 `"/o/**"` + `deploy/swas/nginx.conf` 的 `location /o/` + 契约账本追加**一条** + `CODE_SPACES` 登记 | B1 的**类名 / 包名**（接口级；不同文件 ⇒ 可同时写） | 与 B1 并行 |
-| **B3 后端·读面** | 加工单读面**追加两键**（键恒在、未知 null）+ 契约账本追加**该行** + 加工单级 `scanUrl` 拼装 | B1（要查表） | 与 B2 并行（**不同文件**） |
+| **B1 后端·码本体** | 迁移（`ALTER TABLE … ADD COLUMN` + 部分唯一索引）+ bootstrap `backend/admin-api/src/main/resources/db/init/schema.sql` 同步 + `tests/unit_ci_workflows/migration_fingerprints.json` 登记 + 分配 / 补码（复用 `WorkerShortLinkService.allocateUnique`，落在 `ensureQrToken` 同款路径上）+ 后端单测 | 无 | **起点** |
+| **B2 后端·公开入口** | 新控制器（`GET /o/{shortCode}` ⇒ 302/404/410）+ `SecurityConfig` 的 `permitAll` 追加 `"/o/**"` + `deploy/swas/nginx.conf` 的 `location /o/` + 契约账本追加**一条** + `CODE_SPACES` 登记 | B1 的**方法签名**（接口级；文件不重叠 ⇒ 可同时写） | 与 B1 并行 |
+| **B3 后端·读面** | 加工单读面**追加两键**（键恒在、未知 null；装配走既有 `selectActiveByOrderId` 带回的 `po`，**零新增查询**）+ 契约账本追加**该行** + 加工单级 `scanUrl` 拼装 | B1（`po` 上要有那列） | 与 B2 并行（**不同文件**） |
 | **B4 前端·打印面** | `ProcessingOrder` 类型两键 + `OrderDetail` 两处调用改 `qrValue` + `ProcessingDoc` 的「短码行」+ 组件测试 | **只吃冻结的键名** | 与 B1~B3 全并行 |
 
 **依赖顺序（落码时）**：`B1 → (B2 ‖ B3) → 集成验证`；B4 可全程并行。
@@ -969,7 +999,7 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 **测试文件路径纪律**：B4 的组件测试放 `frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx`（gate 模板**不递归子目录**）；
 新增 `tests/unit_ci_workflows/**` 判据文件的，头部按 `AGENTS.md` 铁律 3 声明 `# case_ids:`。
 
-### 11.9 落地顺序（与 #6866 的关系）
+### 11.10 落地顺序（与 #6866 的关系）
 
 ```
 #6866（P1，**前置**）：已登录工人扫 /w/?t=<token> 不解析
