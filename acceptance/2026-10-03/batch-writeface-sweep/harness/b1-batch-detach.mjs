@@ -7,7 +7,35 @@ import {
 const R = new Recorder('B-batch-and-detach.json')
 const { token } = await loginApi()
 const T = TENANT_ID
-const OTHER_TENANT = 21
+// 🔴 修 #6938（对照租户写死 ≠ 已消失 ⇒ B2.1/B2.3 **空转判红**，属类级病「静默打空租户」）：
+//    原实现 `const OTHER_TENANT = 21`，而租户 21 早已不存在 ⇒ `foreignProd = null` ⇒
+//    ① B2.1 期望「ghost + 他租户各进 errors[]」永远拿不到第二条；② B2.3 读到 `null` 判红
+//    —— 两条不是产品问题，而是**判据对象不存在**。
+//    修法（每条都**出声**，不允许静默打空）：
+//      ① 对照租户优先从环境注入（`OTHER_TENANT_ID`）；
+//      ② 否则**现查**库里的另一个真实租户（`limit 1`，任一即可）；
+//      ③ 都没有 ⇒ 用一个「**自证不存在**」的合成租户+商品 id 仍执行跨租户写（这才是矩阵里
+//         「跨租户被拒」的**判别点**；但**当场印出**「本机无第二租户 ⇒ 用的是自证不存在的合成 id」）；
+//      ④ 合成 id 若**真的存在于库里** ⇒ 立即抛错（常量必须换，否则断言会静默变成空转）。
+const FOREIGN_TENANT_ID = Number(process.env.OTHER_TENANT_ID || 0)
+const foreignTenant = FOREIGN_TENANT_ID
+  ? one(`select id, name from tenants where id=${FOREIGN_TENANT_ID}`)
+  : one(`select id, name from tenants where id <> ${T} order by id limit 1`)
+const SYNTHETIC_FOREIGN_TENANT = 'fffffffffffffffffffffffffffff001'
+const SYNTHETIC_FOREIGN_PRODUCT = 'fffffffffffffffffffffffffffff002'
+const foreignProd = foreignTenant
+  ? one(`select id, tenant_id from products where tenant_id=${foreignTenant.id} limit 1`)
+  : { id: SYNTHETIC_FOREIGN_PRODUCT, tenant_id: SYNTHETIC_FOREIGN_TENANT }
+const foreignId = foreignProd?.id
+if (!foreignProd?.tenant_id) throw new Error('对照租户解析失败：既无 OTHER_TENANT_ID、库里也没有第二个租户')
+if (!foreignTenant) {
+  const clash = one(`select id from products where id='${SYNTHETIC_FOREIGN_PRODUCT}'`)
+  if (clash) throw new Error(`合成的对照商品 id 在库里真的存在（${SYNTHETIC_FOREIGN_PRODUCT}）⇒ 必须换常量，否则 B2.1/B2.3 会空转判绿`)
+  log(`⚠️ 本机只有一个租户（tenant ${T}）⇒ 跨租户对照改用**自证不存在**的合成租户 ${SYNTHETIC_FOREIGN_TENANT} + 商品 ${SYNTHETIC_FOREIGN_PRODUCT}（现查 products 无此 id）；本条不再存在「静默打空租户」的形态`)
+} else {
+  log(`跨租户对照 = 真实租户 ${foreignTenant.id}（${foreignTenant.name}）的商品 ${foreignId}`)
+}
+const OTHER_TENANT = foreignProd.tenant_id
 log(`B/C 段开始 ${nowCST().cst}`)
 
 const prodStatus = (id) => one(`select id,tenant_id,status,deleted from products where id='${id}'`)
@@ -113,32 +141,30 @@ judge(R, {
 })
 
 // ══════════════ B2 部分失败：不得「返回失败但已删一半」 ══════════════
-const ghostId = hexId('l2ghost')           // 不存在
-const foreignProd = one(`select id, tenant_id from products where tenant_id=${OTHER_TENANT} limit 1`)
-const foreignId = foreignProd?.id
+const ghostId = hexId('l2ghost')           // 不存在（对照租户/商品已在段首解析，见 FOREIGN_* / foreignProd）
 const p4 = await mkProduct('部分失败D', 'draft')
 const p5 = await mkProduct('部分失败E', 'draft')
 const snapIds = [p4.id, p5.id]
 const beforeDel = Object.fromEntries(snapIds.map((id) => [id, prodStatus(id)]))
 const partial = await api('POST', '/api/admin/products/batch/delete', {
-  token, body: { productIds: [p4.id, ghostId, foreignId, p5.id].filter(Boolean) },
+  token, body: { productIds: [p4.id, ghostId, foreignId, p5.id] },
 })
 const afterDel = Object.fromEntries(snapIds.map((id) => [id, prodStatus(id)]))
-const foreignAfter = foreignId ? prodStatus(foreignId) : null
+const foreignAfter = prodStatus(foreignId)
 writeFileSync(outPath('B2-partial-delete.json'), JSON.stringify({
   http: partial.status, body: partial.json, before: beforeDel, after: afterDel,
-  foreign: { id: foreignId, tenant: foreignProd?.tenant_id, after: foreignAfter },
+  foreign: { id: foreignId, tenant: OTHER_TENANT, kind: foreignTenant ? 'real' : 'synthetic(自证不存在)', after: foreignAfter },
   ghostId,
 }, null, 2))
 judge(R, {
   id: 'B2.1', name: '部分失败：如实报告失败项（不存在的 id + 他租户 id 各进 errors[]）',
-  expect: `failed = 2（ghost + 他租户）且 errors[] 覆盖这两个 id`,
+  expect: `failed = 2（ghost + 他租户 id ${foreignId}）且 errors[] **逐条覆盖这两个 id**`,
   actual: `success=${partial.data?.success} failed=${partial.data?.failed} errors=${JSON.stringify(partial.data?.errors)}`,
   pass: partial.data?.failed === 2 && (partial.data?.errors || []).length === 2
     && (partial.data?.errors || []).some((e) => e.id === ghostId)
-    && (foreignId ? (partial.data?.errors || []).some((e) => e.id === foreignId) : true),
-  expectSource: 'ProductService#batchDelete：selectById==null ⇒ result.addError(id,"商品不存在")；BatchOperationResult{success,failed,errors[{id,message}]}',
-  evidence: [`响应原文: ${partial.text.slice(0, 500)}`],
+    && (partial.data?.errors || []).some((e) => e.id === foreignId),
+  expectSource: 'ProductService#batchDelete：selectById==null ⇒ result.addError(id,"商品不存在")（跨租户 id 同样读不到 ⇒ 同一条路径）；BatchOperationResult{success,failed,errors[{id,message}]}',
+  evidence: [`响应原文: ${partial.text.slice(0, 500)}`, `对照 id 形态: ${foreignTenant ? `真实租户 ${OTHER_TENANT}` : `合成租户 ${SYNTHETIC_FOREIGN_TENANT}（现查 products 无此 id）`}`],
 })
 judge(R, {
   id: 'B2.2', name: '部分失败：合法的 2 个 id 真删了（原子的边界 = 逐项报告，非整包回滚）',
@@ -150,11 +176,15 @@ judge(R, {
 })
 judge(R, {
   id: 'B2.3', name: '他租户 id 零写（跨租户删除被拒）',
-  expect: `租户 ${OTHER_TENANT} 的商品 ${foreignId} 在调用后 deleted=0 且行仍在`,
-  actual: JSON.stringify(foreignAfter),
-  pass: !!foreignAfter && foreignAfter.deleted === 0 && foreignAfter.tenant_id === OTHER_TENANT,
-  expectSource: '多租户隔离（TenantContext）；DB 行前后同一',
-  evidence: [`他租户商品: ${JSON.stringify(foreignProd)}`],
+  expect: foreignTenant
+    ? `租户 ${OTHER_TENANT} 的商品 ${foreignId} 在调用后 deleted=0 且行仍在`
+    : `合成租户 ${SYNTHETIC_FOREIGN_TENANT} 的商品 ${foreignId} 在调用后**仍不存在**（B2.1 的 errors[] 里出现该 id = 被拒）+ 目标租户 ${T} 的商品行数不变`,
+  actual: `foreignAfter=${JSON.stringify(foreignAfter)}`,
+  pass: foreignTenant
+    ? (!!foreignAfter && foreignAfter.deleted === 0 && foreignAfter.tenant_id === OTHER_TENANT)
+    : (foreignAfter === null && (partial.data?.errors || []).some((e) => e.id === foreignId)),
+  expectSource: '多租户隔离（TenantContext）：跨租户 id 一律读不到 ⇒ 拒绝且零写；DB 行前后同一',
+  evidence: [`他租户商品: ${JSON.stringify(foreignProd)}`, `对照租户形态: ${foreignTenant ? '真实第二租户' : '本机无第二租户 ⇒ 合成 id（自证不存在，见上）—— 判据仍读 DB 行数，不空转'}`],
 })
 
 // ══════════════ B3 batch/delete 依赖闭包（孤儿引用）══════════════

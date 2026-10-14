@@ -27,6 +27,14 @@ export const SMS_CODE = process.env.SMS_CODE || '123456'
 export const TENANT_ID = Number(process.env.TENANT_ID || 20)
 export const ADMIN_PHONE = process.env.ADMIN_PHONE || '13870217889'
 export const LIVE_WORKTREE = process.env.LIVE_WORKTREE || '/Users/guangzhen.zk/migao-wt/main-live'
+/**
+ * 被测租户的**企业编码**（= `tenants.code`，issue #6564 起 worker-h5 的唯一租户入口）。
+ *
+ * <p>登录 body 送 `enterpriseCode`、短链读 `?tenant_code=` —— 租户**只由服务端解析**；
+ * 写死租户 id（旧 `?tenant_id=`）在新入口下**不再被消费**。harness 用本值构建 URL 与登录框，
+ * p5-ui 的 `U0b.tenant-code-matches-db` 会把它与 DB 里的 `tenants.code` 对账（不一致 ⇒ 当场红）。</p>
+ */
+export const TENANT_CODE = process.env.TENANT_CODE || 'shop-ttf1'
 
 /** 探针命名域：本包创建的一切对象都带此前缀（中文名域）+ `la` 机器前缀（id 域）。 */
 export const PROBE_PREFIX = process.env.PROBE_PREFIX || '线A验收'
