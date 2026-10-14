@@ -37,6 +37,12 @@ interface Props {
   items?: OrderItem[]
   /** 加工单状态上报（issue #3889）：详情页据此守卫「含加工项且加工单未完成」的发货入口 */
   onStatusChange?: (po: ProcessingOrder | null) => void
+  /**
+   * 把本块的**加工单读面刷新**交给调用方（issue #6867 / B5）：补码成功后页面要重读加工单，
+   * 才能把新短链 / 短码刷到纸面上。**只交出刷新函数、不交出数据** —— 读面仍归本块所有
+   * （详情页不写第二份读面、也不缓存一份会漂的副本）。
+   */
+  onReloadReady?: (reload: () => Promise<void>) => void
 }
 
 const STEP_ORDER: ProcessingOrder['status'][] = ['generated', 'issued', 'in_processing', 'completed']
@@ -181,6 +187,7 @@ export default function ProcessingOrderBlock({
   items,
   onStatusChange,
   onPrintProcessing,
+  onReloadReady,
 }: Props) {
   const [po, setPo] = useState<ProcessingOrder | null>(null)
   const [notFound, setNotFound] = useState(false)
@@ -217,6 +224,12 @@ export default function ProcessingOrderBlock({
   useEffect(() => {
     if (orderId) load()
   }, [orderId, load])
+
+  // 交出刷新函数（issue #6867 / B5）：补码成功后页面据此重读本单，把新码刷到纸面上。
+  // `load` 是稳定引用（useCallback，依赖 orderId / onStatusChange）⇒ 本 effect 不会自激循环。
+  useEffect(() => {
+    onReloadReady?.(load)
+  }, [load, onReloadReady])
 
   const canGenerate = notFound && hasProcessing && (orderStatus === 'confirmed' || orderStatus === 'producing')
   const canAct = po && !['completed', 'cancelled'].includes(po.status)
