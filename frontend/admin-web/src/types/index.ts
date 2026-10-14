@@ -668,7 +668,9 @@ export interface OrderItem {
  * 订单明细的**列表**行 —— 后端 `OrderListResponse.OrderItemBrief`（issue #6882）。
  *
  * 与详情行 `OrderItem` **不是同一个形态**（这是本仓一处历史坑：两者曾共用 `OrderItem`）：
- * - **有** `productCode`：后端填的是 `products.sku_code`（`OrderService.java:420`）—— 真的货号；
+ * - **有** `productCode`：后端填的是 `products.sku_code`（见
+ *   `backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java` 里
+ *   `OrderItemBrief` 的构造处 `product.getSkuCode()`）—— 真的货号；
  * - **没有** `id`：列表不下发行 id（issue #2916）⇒ 需要行 id 的链路见 issue #6883；
  * - **没有** `skuCode`：那是详情侧从 product 回填的键。
  */

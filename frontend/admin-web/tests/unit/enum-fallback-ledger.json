@@ -110,9 +110,9 @@
     },
     "src/components/orders/ProcessingOrderBlock.tsx": {
       "kind": "risk",
-      "reason": "加工单状态（`STATUS_TEXT[po.status] ?? po.status`，两处）：服务端枚举，未命中即把标识印进订单详情区块。",
+      "reason": "加工单状态（`STATUS_TEXT[po.status] ?? po.status`，两处）：服务端枚举，未命中即把标识印进订单详情区块。issue #6882 修掉了第 3 处（`info.colorName ?? it.color` —— 行级 `color` 不在响应里 ⇒ 死回落分支）⇒ 计数 3→2。",
       "sites": {
-        "EF-row-raw-value": 3
+        "EF-row-raw-value": 2
       }
     },
     "src/components/orders/QuotationDoc.tsx": {
