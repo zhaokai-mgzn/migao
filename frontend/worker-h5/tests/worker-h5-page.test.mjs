@@ -80,7 +80,7 @@ test('一屏渲染：页头显示服务端带来的「当前工人」+ 第 N 套
   assert.match(html, /11\.00\s*米/)
   // 🔴 按钮文案 = 【开工】（issue #4967：扫码 = 开工 / 领活，不是「做完扫一次」）
   assert.match(html, /id="wh5-report"[^>]*>\s*开\s*工\s*</)
-  assert.ok(!/完\s*成/.test(html.replace(/本套工序都已被领走/g, '')), '【完成】文案不得再出现（改回 ⇒ 必红）')
+  assert.ok(!/完\s*成/.test(html.replace(/本套工序都已报工/g, '')), '【完成】文案不得再出现（改回 ⇒ 必红）')
   assert.match(html, /切换/) // 共用 PAD 一步切换入口常驻
   assert.ok(!/未定价/.test(html) || true)
 })

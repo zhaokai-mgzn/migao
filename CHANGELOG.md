@@ -7,6 +7,29 @@
 
 ## [Unreleased]
 
+### 工人端统一口径：扫码页/工作台主按钮写「扫码报工」，回执写「已报工」（2026-10-14，issue #6868）
+
+用户 2026-10-14 逐字：「**扫码领活改成扫码报工**，小程序和 H5 未来都是一套产品，不要单独区分开」。
+
+- **改后的口径**：H5 扫码页标题与登录页标题 = **扫码报工 / 工人报工**；小程序工人工作台常驻主按钮 = **扫码报工**；
+  报工成功回执 = **已报工 · 下一道：X**（`set_completed` 时 = **已报工 · 本套/本单工序都领完了 🎉**）；
+  副标题同批改口径「扫一次码 = **报一道工序**（先报工再生产，做完不用再扫）」。
+- **两端同批改**（下架前同一个产品不能两种说法）：`frontend/worker-h5/src/render.mjs` 与
+  `frontend/bmini-app/src/pages/worker/home/index.tsx` 逐字同口径；另含报工页提交中文案「领活中…」⇒「报工中…」、
+  本套做满的告知「本套工序都被领走」⇒**「本套工序都已报工」**（H5 主屏两处 + 机台页
+  `frontend/worker-h5/src/machine.mjs` + 小程序报工页「…，无需再领」⇒「…，无需再报」）。
+- **记账口径一字未动**（issue #4967 的裁定）：扫码仍即时记账（`started_at` 落笔、`done_at` 语义）——
+  本单**纯文案**，端点 / 字段名 / 内部标识 / 权限全部未改；报工**动作按钮【开工】一字不动**（见下）。
+- **判据（会红）**：`frontend/bmini-app/tests/worker-scan-report-copy-same-source.test.ts`
+  （三个工人面的标题 / 副标题 / 回执逐字 + 代码面零 `领活` / `领走` + 四条注入式红证；标注为**过渡期守卫**，
+  工人面重复实现下架时同步收缩）+ 既有断言同批改钉
+  （`frontend/worker-h5/tests/worker-h5-operation-display.test.mjs` / `worker-h5-page.test.mjs` /
+  `worker-h5-scan-complete.test.mjs` / `frontend/bmini-app/tests/worker-home-page.test.tsx` /
+  `profile-page.test.tsx` / `production-scan-complete.test.tsx`）。
+- **有意不改（边界）**：报工**动作**按钮【开工】保留（它是 issue #4967 的语义裁定「不是完工」，
+  且被 `.github/cases/bmini.yml` 的 BM-006 逐字冻结）；回执句尾「…工序都领完了 🎉」与本套明细状态列
+  「待领 / 已领」保留（`领完了` / `待领` 说的是**状态**不是入口命名，属另一刀）。
+
 ### 「算料口径」域改成行式紧凑：输入框不再整列拉满，行内不再逐项标「默认」（2026-10-13，issue #6857）
 
 用户看到 #6825 交付的形态后逐字：「输入框也太长了吧？如此糟糕的设计」为原话大意；本单逐字裁定为

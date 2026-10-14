@@ -272,7 +272,7 @@ describe('ProductionPage（扫码 ⇒ 一屏 ⇒ 开工/领活，切片 ②；is
     render(<ProductionPage />)
     fireEvent.click(screen.getByText('扫一扫'))
 
-    expect(await screen.findByText('本套工序都已被领走，无需再领')).toBeTruthy()
+    expect(await screen.findByText('本套工序都已报工，无需再报')).toBeTruthy()
     expect(screen.queryByText('开工')).toBeNull()
     expect(mockComplete).not.toHaveBeenCalled()
   })

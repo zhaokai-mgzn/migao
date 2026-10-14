@@ -318,15 +318,16 @@ export function legacySelection(view, selection) {
 /** 报工回执 ⇒ 给工人的一句话（`replayed` 必须显式说清「没有新增计件」，不谎报一笔新报工）。 */
 export function doneNotice(receipt) {
   if (receipt.replayed) return '这次没有新增计件：重复提交已回放（同一次扫码只算一次）'
-  if (receipt.orderCompleted) return '已领活 · 本单工序都领完了 🎉'
-  if (receipt.setCompleted === true) return '已领活 · 本套工序都领完了 🎉'
+  if (receipt.orderCompleted) return '已报工 · 本单工序都领完了 🎉'
+  if (receipt.setCompleted === true) return '已报工 · 本套工序都领完了 🎉'
   // 🔴 「下一道」必须**带部位**（issue #4963）：改前只拼 `nextOperation.logical_name`
   // ⇒ 跨部位时屏上少一半信息（`打卷 · 布帘` 显示成 `打卷`）。回执的 `next_operation`
   // 本来就带 `position`（逐字照 `ProductionScanCompleteService.enrichNextOperation`）。
-  // 文案语义（「已领活」= 扫码开工/领活，issue #4967 用户逐字裁定）**一字不动**，只补部位。
+  // 文案语义（`已报工` = 扫码开工/领活这一下，issue #4967 用户逐字裁定 +#6868 统一口径）
+  // **一字不动**，只补部位。
   const next = operationDisplayName(receipt.nextOperation)
-  if (next) return `已领活 · 下一道：${next}`
-  return '已领活'
+  if (next) return `已报工 · 下一道：${next}`
+  return '已报工'
 }
 
 /**
@@ -370,7 +371,7 @@ function header(state) {
 
 function loginView(state) {
   return `<section class="wh5-card">
-    <h1 class="wh5-title">工人领活</h1>
+    <h1 class="wh5-title">工人报工</h1>
     <p class="wh5-sub">工号 + PIN 登录（手机 / PAD 均可，无需微信）</p>
     ${state.error ? `<p class="wh5-error" id="wh5-error">${esc(state.error)}</p>` : ''}
     <label class="wh5-label">企业编码（向商家索取）<input id="wh5-enterprise-code" class="wh5-input" inputmode="text" autocomplete="organization" value="${esc(state.enterpriseCode ?? '')}" /></label>
@@ -385,8 +386,8 @@ function scanView(state) {
   <section class="wh5-card">
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
     ${state.error ? `<p class="wh5-error" id="wh5-error">${esc(state.error)}</p>` : ''}
-    <h1 class="wh5-title">扫码领活</h1>
-    <p class="wh5-sub">扫一次码 = 把这道活领走（先领活再生产，做完不用再扫）；扫不了就输码</p>
+    <h1 class="wh5-title">扫码报工</h1>
+    <p class="wh5-sub">扫一次码 = 报一道工序（先报工再生产，做完不用再扫）；扫不了就输码</p>
     <label class="wh5-label">输码（短码 / 加工单号 / 订单号）
       <input id="wh5-code" class="wh5-input" inputmode="text" autocapitalize="characters" /></label>
     <button id="wh5-scan" class="wh5-primary" type="button">确 定</button>
@@ -430,7 +431,7 @@ function mainView(state) {
   <section class="wh5-card">
     <div class="wh5-set" id="wh5-set">第 ${esc(v.set_no)} 套 · ${esc(v.position?.position_name ?? '')}</div>
     ${v.completed === true
-      ? '<p class="wh5-done" id="wh5-completed">本套工序都已被领走 🎉</p>'
+      ? '<p class="wh5-done" id="wh5-completed">本套工序都已报工 🎉</p>'
       : '<p class="wh5-sub" id="wh5-no-operation">本部位推断不出待领工序（工序未确定 ⇒ 不得记账）</p>'}
     ${overviewView(v)}
     ${cutPlanView(v)}
@@ -465,7 +466,7 @@ function mainView(state) {
     <div class="wh5-op" id="wh5-operation">${esc(operationDisplayName(op))}</div>
     <div class="wh5-qty" id="wh5-qty">应做 ${fmtQty(op.qty)} ${esc(op.unit ?? '')}</div>
     <div class="wh5-price-row">${price}</div>
-    ${v.completed === true ? '<p class="wh5-done" id="wh5-completed">本套工序都已被领走</p>' : ''}
+    ${v.completed === true ? '<p class="wh5-done" id="wh5-completed">本套工序都已报工</p>' : ''}
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
     ${state.error ? `<p class="wh5-error" id="wh5-error">${esc(state.error)}</p>` : ''}
     ${picker}
