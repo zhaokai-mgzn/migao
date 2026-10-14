@@ -815,7 +815,7 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 | ① | A4 加工单右上角 QR 的内容 = **加工单号纯文本** | `frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx` 的 `<ProcessingDoc qrValue={processingOrder?.processingOrderNo ?? null}>`（两处调用：页面级 + 打印预览层） |
 | ② | 组件只负责画，不判内容形态（「缺码不画假码」） | `frontend/admin-web/src/components/orders/ProcessingDoc.tsx` 的 `qrValue` prop + `data-testid="processing-doc-qr"` |
 | ③ | 一部位一码**已经是** `{base}/s/{短码}` 标准 HTTPS URL | `frontend/admin-web/src/components/production/TaskCardPrint.tsx` 的 `position.scan_url ?? position.part_token`；`scan_url` 由 `backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java` 的 `scanUrlOf` 拼（base 可配 `migao.worker.short-link-base-url`，缺省 `https://app.migaozn.com`） |
-| ④ | `/s/{短码}` 的 302 与撤销语义**已落码** | `backend/admin-api/src/main/java/com/migao/admin/controller/WorkerShortLinkController.java` + `.../service/WorkerShortLinkService.java`（未知 404 / 已撤销 410 / `Location: /w/?t=<token>&tenant_id=&tenant_code=`） |
+| ④ | `/s/{短码}` 的 302 与撤销语义**已落码** | `backend/admin-api/src/main/java/com/migao/admin/controller/WorkerShortLinkController.java` + `backend/admin-api/src/main/java/com/migao/admin/service/WorkerShortLinkService.java`（未知 404 / 已撤销 410 / `Location: /w/?t=<token>&tenant_id=&tenant_code=`） |
 | ⑤ | 加工单级只有**可撤销的裸 `qr_token`**，没有短码 | `backend/admin-api/src/main/java/com/migao/admin/entity/ProcessingOrder.java` + `ProcessingOrderMapper.revokeQrToken`（撤销 = 置 NULL，不换新 token） |
 | ⑥ | H5 已能消费 `?t=<裸 token>`，旧形态走「选套 + 选部位」降级面 | `frontend/worker-h5/src/scan-input.mjs` 的 `parseScanInput` / `frontend/worker-h5/src/render.mjs`（`granularity:"order"` + `needs_selection` ⇒ 强制选，**绝不默认取第 1 套**） |
 | ⑦ | 服务端解析是**四形态**（`order_id` / `order_no` / `qr_token` / `processing_order_no`，`processing_order_no` 是后加的兜底） | `backend/admin-api/src/main/java/com/migao/admin/controller/ProcessingOrderController.java` 的读面注释 + `ProductionService.resolveOrder` |
@@ -959,7 +959,7 @@ git ls-tree -r --name-only origin/main backend/admin-api/src/main/resources/db/m
 
 | 包 | 内容（文件族） | 依赖 | 并行性 |
 |---|---|---|---|
-| **B1 后端·码本体** | 迁移（新表）+ bootstrap `schema.sql` 同步 + `migration_fingerprints.json` + 实体 + Mapper（`selectByShortCode` / 补码，同款）+ 服务（复用 `WorkerShortLinkService.allocateUnique`）+ 后端单测 | 无 | **起点** |
+| **B1 后端·码本体** | 迁移（新表）+ bootstrap `backend/admin-api/src/main/resources/db/init/schema.sql` 同步 + `tests/unit_ci_workflows/migration_fingerprints.json` + 实体 + Mapper（`selectByShortCode` / 补码，同款）+ 服务（复用 `WorkerShortLinkService.allocateUnique`）+ 后端单测 | 无 | **起点** |
 | **B2 后端·公开入口** | 新控制器（`GET /o/{shortCode}` ⇒ 302/404/410）+ `SecurityConfig` 的 `permitAll` 追加 `"/o/**"` + `deploy/swas/nginx.conf` 的 `location /o/` + 契约账本追加**一条** + `CODE_SPACES` 登记 | B1 的**类名 / 包名**（接口级；不同文件 ⇒ 可同时写） | 与 B1 并行 |
 | **B3 后端·读面** | 加工单读面**追加两键**（键恒在、未知 null）+ 契约账本追加**该行** + 加工单级 `scanUrl` 拼装 | B1（要查表） | 与 B2 并行（**不同文件**） |
 | **B4 前端·打印面** | `ProcessingOrder` 类型两键 + `OrderDetail` 两处调用改 `qrValue` + `ProcessingDoc` 的「短码行」+ 组件测试 | **只吃冻结的键名** | 与 B1~B3 全并行 |
