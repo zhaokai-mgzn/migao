@@ -815,6 +815,7 @@ CREATE TABLE IF NOT EXISTS processing_orders (
     cancelled_reason TEXT,
     print_count INT DEFAULT 0,
     qr_token VARCHAR(64),                             -- 加工单二维码 token（V49，扫码报工入口）
+    short_code CHAR(8),                               -- 加工单级人可读短码（V155，issue #6867）：8 位 Crockford Base32、随机、跨租户全局唯一；印刷品写 /o/<短码>
     route_key VARCHAR(32),                            -- 实际使用的路线键「帘种×工艺」（V60，issue #4308）
     route_requested_key VARCHAR(32),                  -- 派生出来想用的路线键（V60）；两维全不命中时 NULL
     route_source VARCHAR(16),                         -- 路线键来源（V60 issue #4308 + V130 补齐第 5 态）：direct 帘种与工艺直读订单显式列 order_items.curtain_type/craft（issue #4354/#4362，不查信号映射表，与 derived 同档）/ derived 两维均由库中信号命中且路线存在 / partial 只命中一维（补信号）/ missing_route 派生键库中无路线（建路线）/ default 两维全不命中（补信号）
@@ -832,6 +833,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_processing_orders_no
 CREATE UNIQUE INDEX IF NOT EXISTS uk_processing_orders_qr_token
     ON processing_orders (qr_token)
     WHERE deleted = 0 AND qr_token IS NOT NULL;
+-- 加工单级短码全局唯一（跨租户：/o/{短码} 是公开入口，租户由短码本身解出；V155，issue #6867）
+CREATE UNIQUE INDEX IF NOT EXISTS uk_processing_orders_short_code
+    ON processing_orders (short_code)
+    WHERE deleted = 0 AND short_code IS NOT NULL;
 
 -- ================================================
 -- 9.5.1 生产报工（issue #3995，V49 迁移；M4-G-2）

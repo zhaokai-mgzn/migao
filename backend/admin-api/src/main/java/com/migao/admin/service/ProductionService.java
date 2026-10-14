@@ -226,6 +226,9 @@ public class ProductionService {
         Map<String, ProcessingOrderSet> setByGroup = ensureSetsFor(po, specs, tenantId);
         Map<String, String> itemGroupKey = itemIdToGroupKey(po, specs);
         String qrToken = ensureQrToken(po);
+        // 加工单级短码（issue #6867 / B1）：与 ensureQrToken **同一条复用路径**（同一处、同一幂等口径）
+        // —— 已有短码的行一字不动（已打印的纸不作废），只补 short_code IS NULL 的行。
+        ensureShortCode(po);
         // 部位码（一部位一码，设计 §2.3）：**必须在幂等早返回之前**（issue #4865）——
         // 存量单（已实例化且工序配置未变）走下面的早返回，而落在早返回**之后**的调用永远跑不到
         // ⇒ 那批单**没有任何补码路径**（实测：全库 processing_set_part_tokens 0 行）。
@@ -421,11 +424,47 @@ public class ProductionService {
     }
 
     /**
+     * 复用已有**短码**（已打印的纸不失效）；缺失时分配一个并落库（issue #6867 / B1；设计
+     * {@code docs/design/worker-h5-scan-and-report.md} §11.3 / §11.4）。
+     *
+     * <p>与 {@link #ensureQrToken} **逐字同款的复用语义**（调用点相邻、同一幂等口径）：
+     * 有值 ⇒ 原样返回、**一个字节都不写**；无值 ⇒ 分配 + 条件更新。</p>
+     *
+     * <p><b>分配器复用，不新写循环</b>：{@link WorkerShortLinkService#allocateUnique(java.util.function.Predicate)}
+     * 是「随机 + 查重 + 碰撞重试 + 到顶 fail-closed」的**唯一实现**（第三份循环 = 第二条真相源：
+     * 日后改一处漏一处，且**不会有任何东西变红**）。短码**规格**同样不新定 —— 既有 8 位
+     * Crockford Base32（{@link WorkerShortLinkService#ALPHABET} / {@code CODE_LENGTH}）。
+     * 查重走 {@link ProcessingOrderMapper#selectByShortCode}（显式租户列；跨租户唯一由部分唯一索引兜底）。</p>
+     *
+     * <p><b>幂等落在 SQL 上，不落在调用方记性上</b>：写走
+     * {@link ProcessingOrderMapper#fillMissingShortCode} 的条件更新（{@code AND short_code IS NULL}）
+     * ⇒ 并发下两个请求各自分配时**先落库的那个赢**，后写者影响 0 行、那张纸上的短码纹丝不动。
+     * 用 {@code updateById} 是整行覆盖语义 —— 会静默改掉别人已经印出去的码。</p>
+     *
+     * <p>🔴 与撤销的关系：{@link #revokeQrToken} **只碰 {@code qr_token}**（短码不碰）⇒ 撤销后
+     * 重新实例化**不会**换短码（已打印的纸不作废），只会按需补 token。</p>
+     */
+    private String ensureShortCode(ProcessingOrder po) {
+        if (StringUtils.hasText(po.getShortCode())) {
+            return po.getShortCode();
+        }
+        String shortCode = WorkerShortLinkService.allocateUnique(
+                code -> processingOrderMapper.selectByShortCode(code, po.getTenantId()) != null);
+        processingOrderMapper.fillMissingShortCode(po.getId(), po.getTenantId(), shortCode, OffsetDateTime.now());
+        return shortCode;
+    }
+
+    /**
      * 撤销加工单二维码 token（issue #4202；真值源 §1「token 化、可撤销」）。
      *
      * <p>撤销 = 置空 {@code qr_token}：已打印的码立即失效（{@link #resolveOrder} 的 qr_token
      * 形态解析不到订单 ⇒ 扫码报工 404），再次 {@link #instantiate} 时由 {@link #ensureQrToken}
      * 重新生成新码。这是**安全相关写操作**（旧纸件作废），端点声明 {@code processing:manage}。</p>
+     *
+     * <p>🔴 <b>加工单级 {@code short_code} 不碰</b>（issue #6867 / B1）：本方法写的那条 UPDATE 只写
+     * {@code qr_token}（{@link ProcessingOrderMapper#revokeQrToken}），短码是加工单纸的稳定入口
+     * （{@code /o/{短码}} 见 token 为空 ⇒ 410 Gone，那一跳归 B2）—— 一并清短码 = 把已经打出去的纸
+     * **永久作废**，与「稳定性放服务端、换域名/改路径都不废纸」这个设计目的正好相反。</p>
      *
      * <p>🔴 <b>印刷品载体必须一起作废（issue #4946）</b>：打印出来的已经是**一部位一码**
      * （{@code processing_set_part_tokens}）—— 只撤 {@code qr_token} ⇒ 界面说「已打印的旧码立即失效」
@@ -483,6 +522,8 @@ public class ProductionService {
                     "订单 " + order.getOrderNo() + " 尚无加工单，请先生成加工单再重新发码");
         }
         String qrToken = ensureQrToken(po);
+        // 短码走同一条复用路径（issue #6867 / B1）：重新发码**只补 token**，短码不变（已打印的纸不作废）
+        ensureShortCode(po);
         int partCodes = refillRevokedPartTokens(po, tenantId);
         log.info("重新生成加工单二维码: orderNo={}, po={}, qrToken={}, partCodes={}",
                 order.getOrderNo(), po.getProcessingOrderNo(), qrToken, partCodes);
