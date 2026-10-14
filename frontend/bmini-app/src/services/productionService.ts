@@ -79,6 +79,28 @@ export interface ProductionPosition {
   /** 宽 / 高（订单行 V63 列；下单页必填） */
   width?: number | string | null
   height?: number | string | null
+  /**
+   * 商品身份（issue #6901 组 1）：服务端从订单行「商品 + 销售信息」透传到本部位。
+   *
+   * ⚠️ **键可能缺席**（存量行 / 服务端未透传该键）⇒ 前端按「没有这个键就不渲染该行」处理，
+   * **不补默认值**（缺键 = 未携带，不是错值）。键名口径与加工单快照
+   * （`ProcessingOrderService#buildSnapshot`）一致：`sku` / `colorName` / `doorWidth` /
+   * `sellingMethod` / `unit`。
+   */
+  product_name?: string | null
+  /** 货号（快照键 `sku`；`skuCode` 为历史别名） */
+  sku?: string | null
+  skuCode?: string | null
+  /** 颜色（`processing_info.colorName`，下单时写入） */
+  colorName?: string | null
+  /** 门幅（SKU 原串，两种存量形态：`'2.8米'` / `'2.8'`）—— 展示走 `craftSpecRows` 的同一份解析 */
+  doorWidth?: string | number | null
+  /** 售卖方式（内部键 `bulk_cut` / `full_roll`；展示名走 `utils/selling-method.ts`） */
+  sellingMethod?: string | null
+  /** 计量单位（如 `米`） */
+  unit?: string | null
+  /** 部位级备注（`processing_info.remark`，issue #5685）—— 装「这个数字怎么来的」 */
+  remark?: string | null
   /** 工艺规格（逐字取订单行） */
   craft?: string | null
   curtainType?: string | null
