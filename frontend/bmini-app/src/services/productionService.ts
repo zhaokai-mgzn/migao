@@ -25,7 +25,8 @@ export interface ProductionOperation {
    * ① 本字段 = **快照/变体名**（`ProductionOperation` 的元素；`positions[].operations[]` 下发）；
    * ② `WorkLogRow.operation_name` = 报工流水的**读面键名**（注意它**不叫** `operation`；
    *    消费点自己做了显式映射：`frontend/bmini-app/src/pages/production/index/index.tsx`
-   *    里 `operation: row.operation_name`）；
+   *    里 `operation: row.operation_name`（该页已于 2026-10-14 随 issue #6868 实现包 D1 下架，
+   *    这条映射留痕不改，仍适用于任何消费 `WorkLogRow` 的新页面））；
    * ③ `per_operation[].operation` = **逻辑名**（计件查找键；#4963 已修「拿快照名比逻辑名 ⇒
    *    累计计件静默消失」—— 显示名与查找键是**两件事**）。
    *
@@ -138,11 +139,6 @@ export interface WorkLogRow {
  * 发货结果（issue #4483 = 母单 #4347 §二.2，发货下放到工人扫码端）。
  * 后端原子入口：记物流（含发货人）+ 流转 shipped，**一个动作一个入口**。
  */
-export interface ShipResult {
-  order_id: string
-  status: string
-}
-
 /** GET .../operations 的 data */
 export interface OrderOperations {
   order_id: string
@@ -651,161 +647,25 @@ export async function getProcessingOrderBrief(orderId: string): Promise<Processi
 }
 
 /**
- * 加工单计件汇总（契约 3：GET .../piecework）
+ * 🔴 **本文件里「只服务小程序报工页」的那一族导出已随该页下架**（2026-10-14，issue #6868 实现包 D1）。
  *
- * `{total, per_worker, per_operation}` —— Σ(合格数量 × 单价 × 系数)，**排除返工/报废**
- * （真值源 §4：内部计件与对外加工费两套账分离；计件按报工当时的单价快照）。
- * 页面据此展示「本单累计计件 + 该工序累计计件」（issue #4206 判据 3）。
+ * **历史沿革（不删）**：这里曾有四个只服务那一页的导出面 ——
+ * `getOrderPiecework`（计件汇总读面）、`shipOrder`（商家发货端点）、
+ * `shipWorkerOrder` + `workerShipItems`（工人发货端点，issue #6472 的「按身份选端点」）、
+ * 以及它们共用的 `PieceworkSummary` / `ShipResult` / `WorkerShipItem` 三个类型。
+ * 它们**唯一**的调用页是 `src/pages/production/index/index.tsx`（工人扫码报工页）——
+ * 该页按用户裁定（「**没有用处的页面就直接删了**」）整页删除 ⇒ 这些导出失去全部消费点。
+ *
+ * **为什么必须一并删**（不是顺手削覆盖面）：留存它们会让
+ * `frontend/bmini-app/tests/worker-action-endpoint-ledger.test.ts` 的两条判据同时无法满足 ——
+ * ① 判据 1「未登记即红」（`productionService` 仍被**身份感知页面**
+ * `src/pages/worker/shipment/index.tsx` import ⇒ 现扫仍命中这些 admin 端点函数）；
+ * ② 判据 2「条目必须活着」（登记了却没有任何页面调用 ⇒ 条目已死）。台账**只许缩短**、
+ * 不许新增豁免 ⇒ 唯一的诚实出路是把失去消费点的导出删掉。
+ *
+ * **发货面并未消失**：工人拍照发货 = `src/pages/worker/shipment/index.tsx`
+ * （走 `/api/worker/shipment/**`，判据 = BM-050 / `tests/worker-shipment-page.test.tsx`），
+ * 纯逻辑与 H5 面 = `frontend/worker-h5/src/shipment.mjs`。
+ * 计件读面的现役消费方在电脑端（`frontend/admin-web`）与后端，不靠本文件这一支。
  */
-export interface PieceworkSummary {
-  total: number
-  per_worker: Record<string, number>
-  per_operation: { operation: string; amount: number }[]
-}
-
-export async function getOrderPiecework(
-  orderId: string,
-): Promise<ProductionResponse<PieceworkSummary>> {
-  try {
-    const res = await get<ProductionResponse<PieceworkSummary>>(
-      `/api/admin/production/orders/${encodeURIComponent(orderId)}/piecework`,
-      { baseURL: API_BASE_URL },
-    )
-    return toResponse(res, '计件金额加载失败')
-  } catch (error: any) {
-    return { success: false, message: error?.data?.message || error?.message || '计件金额加载失败' }
-  }
-}
-
-/**
- * **发货**（issue #4483 = #4347 §二.2）：录货运单号 ⇒ 订单 shipped（**原子**）。
- *
- * <p>为什么不是两个调用：后端 `PUT /logistics` 只记物流、`PUT /status` 只流转，
- * 分两次调用中间失败就是「有单号但没发货」或「发货了没单号」的静默不一致 ——
- * 故后端提供了原子入口 `POST /production/orders/{id}/ship`，这里只调它一次。</p>
- *
- * <p>承运商可不传：后端会取**既有物流记录**的承运商（工人端只填单号）；
- * 都没有时后端 422 显式报缺（不静默发一个没承运商的货）。</p>
- *
- * <p>🔴 <b>商家路径，逐字不变</b>（issue #6472）：只写商家会话 `Authorization`，
- * <b>不带</b>工人 session 头；body 仍只有 `{trackingNo, logisticsCompany}` ——
- * 商家端点（`ProductionController#ship`）的实发数量由服务端取「订单未发余量」，
- * 客户端**不传** `items`（多传反而会改它的写面语义）。</p>
- */
-export async function shipOrder(
-  orderId: string,
-  trackingNo: string,
-  logisticsCompany?: string,
-): Promise<ProductionResponse<ShipResult>> {
-  try {
-    const res = await post<ProductionResponse<ShipResult>>(
-      `/api/admin/production/orders/${encodeURIComponent(orderId)}/ship`,
-      { trackingNo, logisticsCompany },
-      { baseURL: API_BASE_URL },
-    )
-    return toResponse(res, '发货失败，请重试')
-  } catch (error: any) {
-    return {
-      success: false,
-      message: error?.data?.message || error?.message || '发货失败，请重试',
-      offline: !error?.statusCode,
-    }
-  }
-}
-
-/** 工人发货实发明细的一行（与后端 `OrderShipmentService.parseDetails` 的字段面**逐字同名**）。 */
-export interface WorkerShipItem {
-  order_item_id: string | null
-  shipped_quantity: number
-  unit: string
-}
-
-/**
- * 工人面实发明细的**端侧来源**（issue #6472，S1 的入参差异适配）。
- *
- * <p>🔴 <b>为什么需要它</b>：工人发货端点 `POST /api/worker/shipment/orders/{id}/ship`
- * 的 body **必填** `items[]`（`OrderShipmentService#parseDetails`：缺/空 ⇒ 422
- * 「发货明细不能为空」；`shipped_quantity` 必须正数、`unit` 必填），而报工页现有的发货 UI
- * **只收一个运单号**（商家端点的 body 没有数量键）⇒ 不补这一层，工人身份下点发货**必被 422 拒**，
- * 等于没修（与「界面给了做不成的动作」是同族形态）。</p>
- *
- * <p>取值口径（**只用读面已有数据，不新造第二份数量口径**）：读面 `GET .../operations`
- * 的每个部位（`positions[]`，键 = `order_item_id`，与实发明细的 `order_item_id` 同为
- * `order_items.id`）取该部位**首道工序**的 `qty`（= 该部位应做数量，算料输出）与 `unit`
- * （工序单位，如「米」）⇒ 一部位一行。**缺 `order_item_id` 的部位跳过**（手写/配件行没有
- * 订单行上限，不冒充已知）；`items` 为空 ⇒ 服务端显式 422 指名原因（**不静默记错数量**）。</p>
- *
- * <p>⚠️ 边界（登记在 PR）：本映射把「应做数量」当「实发数量」—— 报工页的发货入口只在
- * 全部工序报满（{@code isCompleted}）后才出现，此时期望数量 = 实发数量；若现场出现
- * 少发/错发（要按**实际**件数录），需给发货块补数量输入（本单不做，见报告「未做/边界」）。</p>
- */
-export function workerShipItems(positions?: ProductionPosition[]): WorkerShipItem[] {
-  const items: WorkerShipItem[] = []
-  for (const position of positions || []) {
-    if (!position?.order_item_id) continue
-    const head = (position.operations || [])[0]
-    if (!head) continue
-    const qty = Number(head.qty)
-    if (!Number.isFinite(qty) || qty <= 0) continue
-    items.push({ order_item_id: position.order_item_id, shipped_quantity: qty, unit: head.unit })
-  }
-  return items
-}
-
-/**
- * **发货**（工人身份，issue #6472）：`POST /api/worker/shipment/orders/:orderId/ship`。
- *
- * <p>为什么不能复用 {@link shipOrder} 的商家端点：`/api/admin/**` 的门禁把 `worker` 放进
- * **拒绝集合**（`SecurityConfig.ADMIN_API_REJECTED_ROLES`）⇒ 一台只有工号 + PIN 的车间设备
- * 打商家发货**必 403**（issue #5648 同因）。工人发货端点早已存在（`WorkerShipmentController`），
- * 本函数只做**端侧接线** —— 零后端改动、不新造第二个发货实现。</p>
- *
- * <p>🔴 <b>入参差异（以服务端既有契约为准）</b>：
- * <ul>
- *   <li>商家端点 body = `{trackingNo, logisticsCompany?}`（实发数量由服务端取「订单未发余量」）；</li>
- *   <li>工人端点 body = `{trackingNo, logisticsCompany?, photoRefs?, recognition?, items[]}`，
- *       `items[]` <b>必填非空</b>（`{order_item_id?, product_name?, shipped_quantity&gt;0, unit}`，
- *       另有可空的 `set_count`/`roll_count` —— **缺值不填 0**）；</li>
- *   <li>幂等键：两端点都认 `X-Client-Request-Id`（服务端 `ClientRequestIdService`，**同一份实现**）
- *       ⇒ 本函数随动作生成一个键（超时重试会复用同一个 ⇒ 不重复发货），worker-h5 的
- *       `api.shipOrder(orderId, body, clientRequestId)` 同款；</li>
- *   <li>身份：工人端点只认 `X-Worker-Session-Id`（body 里的 `worker_id`/`worker_name` 一个字节都不读）。</li>
- * </ul></p>
- *
- * <p>调用方必须已确认有工人身份（{@code hasWorkerSession()}）；无 session 时服务端 401
- * 显式拒绝（**不**在前端静默降级到商家端点）。</p>
- */
-export async function shipWorkerOrder(
-  orderId: string,
-  trackingNo: string,
-  positions?: ProductionPosition[],
-  logisticsCompany?: string,
-  requestId?: string,
-): Promise<ProductionResponse<ShipResult>> {
-  try {
-    const res = await post<ProductionResponse<ShipResult>>(
-      `/api/worker/shipment/orders/${encodeURIComponent(orderId)}/ship`,
-      {
-        trackingNo,
-        logisticsCompany,
-        items: workerShipItems(positions),
-      },
-      {
-        baseURL: API_BASE_URL,
-        headers: {
-          [CLIENT_REQUEST_ID_HEADER]: requestId || newReportRequestId(),
-          ...workerSessionHeaders(),
-        },
-      },
-    )
-    return toResponse(res, '发货失败，请重试')
-  } catch (error: any) {
-    return {
-      success: false,
-      message: error?.data?.message || error?.message || '发货失败，请重试',
-      offline: !error?.statusCode,
-    }
-  }
-}
-
-export default { getOrderOperations, getWorkerOrderOperations, getOrderPiecework, shipOrder, shipWorkerOrder, workerShipItems, scanResolve, completeByScan, reportOperationFree }
+export default { getOrderOperations, getWorkerOrderOperations, scanResolve, completeByScan, reportOperationFree }

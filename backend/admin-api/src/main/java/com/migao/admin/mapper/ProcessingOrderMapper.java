@@ -149,12 +149,57 @@ public interface ProcessingOrderMapper extends BaseMapper<ProcessingOrder> {
                             @Param("updatedAt") OffsetDateTime updatedAt);
 
     /**
+     * 命中该短码的**本租户**加工单（issue #6867 / B1）：分配查重与「同一张纸」判定的**唯一读面**。
+     *
+     * <p>带 {@code tenant_id = #{tenantId}}：分配与判定都发生在**已认证请求内**（{@code TenantContext}
+     * 有值），租户隔离由 SQL **显式**持有 ⇒ 不依赖拦截器是否挂上（同
+     * {@code ProcessingSetPartTokenMapper.insertIgnoreConflict} 的显式租户列纪律）。</p>
+     *
+     * <p>⚠️ 与「{@code /o/{短码}} 跨租户解析」是**两件事**：那个入口没有租户上下文（由短码本身解出
+     * 租户），归 B2；本方法的租户谓词是**刻意的**，不是遗漏。短码的**跨租户**唯一性由部分唯一索引
+     * {@code uk_processing_orders_short_code} 兜底（列级、与租户无关）。</p>
+     *
+     * <p>不带 {@code short_code IS NOT NULL} 过滤：未知 ⇒ {@code null}（调用方据此判定「可用」）。</p>
+     */
+    @ResultMap("mybatis-plus_ProcessingOrder")
+    @Select("SELECT * FROM processing_orders WHERE tenant_id = #{tenantId} "
+            + "AND short_code = #{shortCode} AND deleted = 0 LIMIT 1")
+    ProcessingOrder selectByShortCode(@Param("shortCode") String shortCode, @Param("tenantId") Long tenantId);
+
+    /**
+     * 给**已存在**的加工单补短码（issue #6867 / B1；幂等 = 「只补 {@code NULL}」）。
+     *
+     * <p>🔴 三条红线（逐条落在 SQL 上，与
+     * {@code ProcessingSetPartTokenMapper.fillMissingShortCode} 逐字同款）：
+     * ① {@code AND short_code IS NULL} ⇒ <b>已有短码的行一字不动</b>（已打印的纸不作废）；
+     * ② 只写 {@code short_code} + {@code updated_at} ⇒ <b>不碰 {@code qr_token}</b>
+     * （撤销状态只有一处）、不碰任何单价/计件列（不追溯）；
+     * ③ {@code deleted = 0} ⇒ 不动软删行。</p>
+     *
+     * <p>为什么不用 {@code updateById}：那是「整行覆盖」语义 —— 并发下两个请求各拿到同一个
+     * {@code po}（{@code short_code} 都为空）、各自分配再回写 ⇒ 后写者**覆盖**前者，
+     * 而前者那张纸已经打印出去了。条件更新把「只补空」钉在 SQL 上，不看调用方记不记得。</p>
+     *
+     * @return 受影响行数（0 = 该行不存在 / 已有短码 / 已软删 ⇒ 调用方无需重试）
+     */
+    @Update("UPDATE processing_orders SET short_code = #{shortCode}, updated_at = #{updatedAt} "
+            + "WHERE id = #{id} AND tenant_id = #{tenantId} AND deleted = 0 AND short_code IS NULL")
+    int fillMissingShortCode(@Param("id") String id, @Param("tenantId") Long tenantId,
+                             @Param("shortCode") String shortCode,
+                             @Param("updatedAt") OffsetDateTime updatedAt);
+
+    /**
      * 撤销二维码 token（issue #4202）：置空 {@code qr_token} ⇒ 已打印的码立即失效
      * （扫码解析走 {@code qr_token} 形态，置空后解析不到订单 ⇒ 报工 404），
      * 再次实例化时由 {@code ProductionService.ensureQrToken} 重新生成。
      *
      * <p>置 NULL 而不是换一个新 token：撤销的语义是「这张纸作废」，不是「静默换一张纸」——
      * 换 token 会让工人手里的旧码解析失败但页面/接口仍显示有码，谁也不知道该重新打印。</p>
+     *
+     * <p>🔴 <b>不碰 {@code short_code}</b>（issue #6867；设计
+     * {@code docs/design/worker-h5-scan-and-report.md} §11.6 逐字复用 §1.3.1）：短码是「哪一张纸」，
+     * 撤销只作废这张纸的**当前 token**（{@code /o/{短码}} 见 token 为空 ⇒ 410 Gone，那一跳是 B2）。
+     * 一并清短码 ⇒ 已打印的纸**永久成为废纸**（换域名/路径都不废纸这件事正是短码存在的理由）。</p>
      */
     @Update("UPDATE processing_orders SET qr_token = NULL, updated_at = #{updatedAt} " +
             "WHERE id = #{id} AND tenant_id = #{tenantId} AND deleted = 0")

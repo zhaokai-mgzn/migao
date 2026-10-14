@@ -13,15 +13,16 @@
  * ## 本文件锁四条（每条都有红证）
  * ① **身份卡读服务端**：工号 + 姓名来自 `fetchCurrentWorker()`（服务端 session），
  *    不是前端 state 拼的（页头显示的正是「这笔活会记到谁头上」= 计件工资的凭证）；
- * ② **常驻主按钮「扫码领活」+ 三件工人功能入口**各自跳对路由（issue #6858 的 V1 布局：
- *    主按钮 = `report` 面，其余三件仍是行卡），
- *    且后两个走 `utils/inbound/gaps.ts` 的路由常量（单一真值，不写字面量）；
+ * ② **三件工人功能入口**各自跳对路由（入库 / 补打 / 发货，均走 `utils/inbound/gaps.ts` 的路由常量
+ *    —— 单一真值，不写字面量）；🔴 原常驻主按钮「扫码报工」已随报工页下架删除
+ *    （2026-10-14，issue #6868 实现包 D1）⇒ 本条**反向**钉住它不再出现（留着就是死链）；
  * ③ **不出现任何商家面入口**（问黄金策 / 数据 / 坐席 / 管理面 4 项）；
  * ④ **退出工人身份**（身份条里的「退出」）= `workerLogout()` + 清本机工人态 + 回登录页的工人入口。
  *
  * ## 红证（每条判据的失败形态）
  * - 身份卡改读 `getCachedWorker()` 而不调 `fetchCurrentWorker()` ⇒ ①红（服务端真值不取）。
  * - 把「拍照入库」入口指向别处 / 删掉 ⇒ ②红。
+ * - 把「扫码报工」主按钮加回来（= 指向已删除的报工页）⇒ ②红（本文件的反向断言）。
  * - 往页面加一行「问黄金策」⇒ ③红。
  * - 退出只清本机不调 `workerLogout()`（服务端 session 还活着 ⇒ 下一个人扫码记到上一个人头上）⇒ ④红。
  */
@@ -111,11 +112,12 @@ describe('WorkerHomePage 工人首页（issue #6467 判据 2）', () => {
     // 红证：身份卡改读 `getCachedWorker()`（不调服务端）⇒ 本断言收到 0 次调用（红）
   })
 
-  it('四件工人功能入口各自跳对路由（后三个走 gaps.ts 的路由常量，不写字面量）', async () => {
+  it('三件工人功能入口各自跳对路由（都走 gaps.ts 的路由常量，不写字面量）', async () => {
     await renderLoggedIn()
 
-    fireEvent.click(screen.getByText('扫码报工'))
-    expect(Taro.navigateTo).toHaveBeenCalledWith({ url: '/pages/production/index/index' })
+    // 🔴 2026-10-14（issue #6868 实现包 D1）：报工页整页下架 ⇒ 本页**不再**有「扫码报工」主按钮
+    // （留着它就是指向已删除页面的死链）。报工面 = H5 `/w/`（工人扫纸上的码即开）。
+    expect(screen.queryByText('扫码报工')).toBeNull()
 
     fireEvent.click(screen.getByText('拍照入库'))
     expect(Taro.navigateTo).toHaveBeenCalledWith({ url: INBOUND_PAGE_ROUTE })

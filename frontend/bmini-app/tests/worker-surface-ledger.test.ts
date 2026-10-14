@@ -22,7 +22,7 @@
  *
  * ## 边界（照实登记，§19.1）
  * ① 它判的是**静态形态**（记号在不在、配对全不全），**不是**运行期真的走到了分流 ——
- *    行为面由 `production-worker-entry.test.tsx` / `worker-home-page.test.tsx` 等实例判据承担；
+ *    行为面由 `worker-home-page.test.tsx` / `worker-reprint-page.test.tsx` 等实例判据承担；
  * ② 射程 = `src/pages` 下的全部 `.tsx`：**组件**（如 `src/components/WorkerBar.tsx`）不在本台账内 ——
  *    WorkerBar 当前只被 import 未渲染（issue #6467 的现场证据之一），一旦真的渲染，
  *    它调用的 `switchWorker` 应连同渲染它的页面一起重新登记（本守卫**不会**替你记得这一点）；
@@ -238,14 +238,16 @@ describe('工人面写入口台账元守卫（issue #6467 S8）', () => {
     expect(problems.join('\n')).toContain('台账条目已死')
   })
 
-  it('🔴 判据 3 红证：把报工页的身份分流摘掉（内存变异）⇒ 判红并具名到页面', () => {
+  it('🔴 判据 3 红证：把入库页的身份分流摘掉（内存变异）⇒ 判红并具名到页面', () => {
     const input = realInput()
-    const target = 'src/pages/production/index/index.tsx'
+    // 🔴 2026-10-14（issue #6868 实现包 D1）：原红证目标是已整页删除的报工页
+    // （`src/pages/production/index/index.tsx`）⇒ 改钉到**保留的工人面**入库页（判据本体一字未改）。
+    const target = 'src/pages/worker/inbound/index.tsx'
     const read = (rel: string): string =>
       rel === target ? input.read(rel).replace(/hasWorkerSession\(\)/g, 'true') : input.read(rel)
     const mutated = read(target)
     // 变异生效自证：分流记号真的没了，而写调用与引导都还在（所以"按文本在不在"判的守卫仍会绿）
-    expectMutationApplied(mutated, ['PRODUCTION_WORKER_LOGIN_REQUIRED', 'completeByScan('], '判据 3 摘掉身份分流')
+    expectMutationApplied(mutated, ['INBOUND_WORKER_LOGIN_REQUIRED', 'createInboundDraft('], '判据 3 摘掉身份分流')
     expect(mutated.includes('hasWorkerSession()')).toBe(false)
     // 对照：真仓库下本判据判绿（否则下面那条"红"可能只是读错了文件）
     expect(ledgerProblems(input)).toEqual([])
@@ -254,27 +256,28 @@ describe('工人面写入口台账元守卫（issue #6467 S8）', () => {
     expect(problems.join('\n')).toContain('身份分流')
   })
 
-  it('🔴 判据 3b 红证：**留着**身份分流声明、只把无码写入口的身份闸门摘掉 ⇒ 判红', () => {
+  it('🔴 判据 3b 红证：**留着**身份分流声明、只把渲染闸门摘掉 ⇒ 判红', () => {
     const input = realInput()
-    const target = 'src/pages/production/index/index.tsx'
+    // 🔴 2026-10-14（issue #6868 实现包 D1）：改钉到保留的工人面入库页（两条写路共用一处闸门）。
+    const target = 'src/pages/worker/inbound/index.tsx'
     // 变异形态：声明还在（`const workerReady = hasWorkerSession()`），只是「完成报工」的
     // **无码那条路**（issue #6598）不再被它挡着 —— 这一族**按"某个 token 在不在"判的守卫会漏**
     // （声明那行仍在文件里）⇒ 台账必须同时核**该写路独有**的渲染条件。
     const read = (rel: string): string =>
       rel === target
-        ? input.read(rel).replace('{workerReady && (', '(')
+        ? input.read(rel).replace('if (!workerReady) {', '(')
         : input.read(rel)
     const mutated = read(target)
-    // 变异生效自证：① 该写路独有的闸门记号真的没了；② 分流声明与两条写调用本体都还在
+    // 变异生效自证：① 那处渲染闸门真的没了；② 分流声明与两条写调用本体都还在
     // （所以「按调用在不在」判的判据 1/2 仍会绿 —— 本台账必须核渲染条件才拦得住）。
-    expect(mutated.includes('{workerReady && (')).toBe(false)
+    expect(mutated.includes('if (!workerReady) {')).toBe(false)
     expect(mutated.includes('const workerReady = hasWorkerSession()')).toBe(true)
-    expect(mutated.includes('completeByScan(')).toBe(true)
-    expect(mutated.includes('reportOperationFree(')).toBe(true)
+    expect(mutated.includes('createInboundDraft(')).toBe(true)
+    expect(mutated.includes('postInboundDraft(')).toBe(true)
     const problems = ledgerProblems({ ...input, read })
     expect(problems.join('\n')).toContain(target)
     expect(problems.join('\n')).toContain('身份分流')
-    expect(problems.join('\n')).toContain('reportOperationFree(')
+    expect(problems.join('\n')).toContain('postInboundDraft(')
   })
 
   /**
@@ -284,25 +287,34 @@ describe('工人面写入口台账元守卫（issue #6467 S8）', () => {
    * 下面这条会红，提示复核 `worker-surface-ledger.json` 的 gate_tokens 口径
    * （否则两条登记的闸门记号会退化成同一个、判据 3b 的红证随即失效）。
    */
-  it('判据 3b 边界：两条写路的身份闸门记号**各自可定位**（写法不同 + 都在文件里）', () => {
+  it('判据 3b 边界：同页两条写路**共用**一处闸门记号时，两条登记仍各自可定位', () => {
     const input = realInput()
-    const target = 'src/pages/production/index/index.tsx'
+    // 🔴 2026-10-14（issue #6868 实现包 D1）：原实例是报工页的「两条写路各用**不同**闸门写法」
+    // （`{workerReady ? (` / `{workerReady && (`）—— 该页已整页删除。现役形态 = 入库页的
+    // 「同页两条写路**共用**同一处闸门」（`if (!workerReady) {`）。判据本体不变：摘掉那处闸门 ⇒
+    // 两条登记各自判红，并具名到**自己的**写调用。
+    const target = 'src/pages/worker/inbound/index.tsx'
     const body = stripComments(input.read(target))
-    expect(body.includes('{workerReady ? (')).toBe(true) // 扫码一屏
-    expect(body.includes('{workerReady && (')).toBe(true) // 逐道报工（无码自由报工那条）
-    expect(body.includes('completeByScan(')).toBe(true)
-    expect(body.includes('reportOperationFree(')).toBe(true)
+    expect(body.includes('if (!workerReady) {')).toBe(true)
+    expect(body.includes('createInboundDraft(')).toBe(true)
+    expect(body.includes('postInboundDraft(')).toBe(true)
     // 真仓库下台账判绿（对照读数）
     expect(ledgerProblems(input)).toEqual([])
+    const mutated = input.read(target).replace('if (!workerReady) {', '(')
+    expect(mutated.includes('if (!workerReady) {')).toBe(false)
+    const problems = ledgerProblems({ ...input, read: (rel) => (rel === target ? mutated : input.read(rel)) })
+    expect(problems.join('\n')).toContain('createInboundDraft(')
+    expect(problems.join('\n')).toContain('postInboundDraft(')
   })
 
   it('🔴 判据 4 红证：删掉引导文案 / 改坏去登录入口 ⇒ 判红', () => {
     const input = realInput()
-    const target = 'src/pages/production/index/index.tsx'
+    // 🔴 2026-10-14（issue #6868 实现包 D1）：改钉到保留的工人首页（guide/login 两记号）。
+    const target = 'src/pages/worker/home/index.tsx'
     const read = (rel: string): string =>
       rel === target
         ? input.read(rel)
-            .replace(/PRODUCTION_WORKER_LOGIN_REQUIRED/g, 'SOME_OTHER_HINT')
+            .replace(/WORKER_HOME_LOGIN_REQUIRED/g, 'SOME_OTHER_HINT')
             .replace(/WORKER_TAB_LOGIN_ROUTE/g, 'SOME_OTHER_ROUTE')
         : input.read(rel)
     const problems = ledgerProblems({ ...input, read })

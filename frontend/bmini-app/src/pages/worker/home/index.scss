@@ -65,7 +65,7 @@
     color: #d93025;
   }
 
-  // 身份条里的小按钮（「退出」）—— 白底描边，与主按钮明显分级（菜单设计 §3.2 主按钮唯一）
+  // 身份条里的小按钮（「退出」）—— 白底描边（原「与主按钮分级」的口径随报工页下架一并退场）
   // 触控目标 ≥88 设计 px（= 44 CSS px），与 `admin-action` 同口径
   &__ghost {
     flex: 0 0 auto;
@@ -83,36 +83,10 @@
     white-space: nowrap;
   }
 
-  // ── 常驻主按钮：一天几十次的那一下（全屏**唯一** primary）──
-  &__primary {
-    display: block;
-    width: 100%;
-    padding: 36px 40px;
-    margin-bottom: 24px;
-    border: 0;
-    border-radius: 24px;
-    background: #1a73e8;
-    color: #ffffff;
-    text-align: left;
-    box-shadow: 0 2px 8px rgba(10, 37, 64, 0.06);
-  }
+  // 🔴 常驻主按钮（`&__primary` / `&__primary-title` / `&__primary-sub`）已随报工页下架删除
+  // （2026-10-14，issue #6868 实现包 D1）—— 留着就是死样式（没有任何 JSX 用它）。
 
-  &__primary-title {
-    display: block;
-    font-size: 44px;
-    font-weight: 700;
-    color: #ffffff;
-  }
-
-  &__primary-sub {
-    display: block;
-    margin-top: 10px;
-    font-size: 26px;
-    color: rgba(255, 255, 255, 0.86);
-    line-height: 1.5;
-  }
-
-  // ── 分组小标题（V1 只有一组「其他功能」；它给列表一个层次，也给将来加组留位）──
+  // ── 分组小标题（V1 只有一组「工人功能」；它给列表一个层次，也给将来加组留位）──
   &__section {
     display: block;
     margin: 8px 8px 16px;

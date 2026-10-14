@@ -37,7 +37,6 @@
  */
 import {
   INBOUND_PAGE_ROUTE,
-  PRODUCTION_PAGE_ROUTE,
   REPRINT_PAGE_ROUTE,
   SHIPMENT_PAGE_ROUTE,
   WORKER_HOME_ROUTE,
@@ -135,7 +134,8 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
   // issue #6563（用户 2026-10-08 裁定）：「我的」（商家面）原本还登记着工人三件功能的三条入口
   // （扫码报工 / 拍照入库 / 补打入库标签，issue #5747 补的）—— 三件功能已归位到工人登录后的工作台，
   // 商家面不再发射它们。**三页的可达性不受影响**：扫标签深链各有一条，
-  // 台账末尾的工人工作台还有三条真入口（`/w/` 页头那两条已于 2026-10-10 撤除，见上面的说明）。
+  // 台账末尾的工人工作台还有**三条**真入口（入库 / 补打 / 发货；`/w/` 页头那两条已于 2026-10-10
+  // 撤除，见上面的说明；报工那条已随页面下架 —— 2026-10-14，issue #6868 实现包 D1）。
   {
     route: '/pages/admin/pool/index',
     from: 'src/pages/profile/index/index.tsx',
@@ -194,15 +194,11 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
     audience:
       '工人身份（登录页工人 tab 用「工号 + PIN」登录成功后 redirectTo 本页；**不**switchTab —— 工人没有商家会话，switchTab 会落到商家 tabBar）',
   },
-  {
-    route: '/pages/auth/login/index',
-    from: 'src/pages/production/index/index.tsx',
-    nav: 'navigateTo',
-    via: 'WORKER_TAB_LOGIN_ROUTE',
-    viaBinding: 'src/utils/inbound/gaps.ts',
-    audience:
-      '工人身份（报工页在**无工人 session** 时的「去登录工人身份」：直达登录页工人 tab，登录成功后进工人工作台）',
-  },
+  // 🔴 issue #6868 实现包 D1（2026-10-14，用户逐字「没有用处的页面就直接删了」）：这里原本还登记着
+  // 一条**报工页**（`src/pages/production/index/index.tsx`）→ 商家登录页工人 tab 的入口 ——
+  // 该页是工人报工的**第二份实现**（唯一实现 = `frontend/worker-h5` 的 `/w/`）⇒ 已整页删除，
+  // 那条登记随之删掉（台账只许缩短）。`/pages/auth/login/index` 这个**路由**本身仍有活入口
+  // （请求层 401 兜底 / 首登改密 / 工人首页的「去登录工人身份」三条，见下与上面两条）。
   {
     route: '/pages/auth/login/index',
     from: 'src/pages/worker/home/index.tsx',
@@ -211,14 +207,11 @@ export const PAGE_ENTRY_LEDGER: PageEntry[] = [
     viaBinding: 'src/utils/inbound/gaps.ts',
     audience: '工人身份（工人首页读不到当前工人 / 未登录时的「去登录工人身份」）',
   },
-  {
-    route: PRODUCTION_PAGE_ROUTE,
-    from: 'src/pages/worker/home/index.tsx',
-    nav: 'navigateTo',
-    via: 'PRODUCTION_PAGE_ROUTE',
-    viaBinding: 'src/utils/inbound/gaps.ts',
-    audience: '工人身份（工人首页 →「扫码报工」；页内再按有无工人 session 分流写入口）',
-  },
+  // 🔴 issue #6868 实现包 D1：这里原本登记着「工人首页 → 扫码报工」（route = 已删除的
+  // `PRODUCTION_PAGE_ROUTE`）—— 报工页整页下架 ⇒ 工人首页的「扫码报工」主按钮是死链，一并删除
+  // （身份卡 + 入库 / 补打 / 发货三张行卡保留）。**报工面现由 H5 `/w/` 承接**：工人扫纸上的码
+  // （微信浏览器直接开 H5）或直达 `app.migaozn.com/w/` —— 跨应用入口不在本台账的射程内
+  // （本台账只登记 bmini 页面的入口，见文件头边界 ①）。
   {
     route: INBOUND_PAGE_ROUTE,
     from: 'src/pages/worker/home/index.tsx',

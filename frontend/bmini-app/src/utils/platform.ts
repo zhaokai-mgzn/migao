@@ -72,6 +72,9 @@ export function canUseNativeScan(): boolean {
  * 「`Taro.chooseImage`（h5 真实实现）+ `<img>`/canvas + `jsQR` 本机解码」在任何浏览器都能走通
  * ⇒ 报工页把扫码降级成**拍照识别**，而不是把工人丢回手输。
  * 判据（行为面）= `tests/production-page.test.tsx` 的「降级为拍照识别 → 同一条 scanResolve」。
+ * ⚠️ 2026-10-14（issue #6868 实现包 D1）：那个**消费页面**（小程序报工页
+ * `src/pages/production/index/index.tsx`）已下架，该判据文件同批删除 ⇒ 本常量当前的消费方
+ * 只剩 H5 侧同类降级面与 `tests/h5-platform-runtime.test.ts` 的平台判据（历史留痕不改）。
  */
 export const H5_SCAN_PHOTO_HINT = '当前浏览器不能直接扫码：已改用拍照识别，对准二维码拍一张即可'
 
@@ -110,8 +113,10 @@ export const H5_API_OUTLET_LEDGER: Record<string, string> = {
   login: 'h5 不走微信换码：miniAppLogin 直接拒绝并指向账号密码登录（employeeLogin → POST /api/auth/employee/login）',
   getRecorderManager:
     'h5 不调用它（stub）⇒ 语音改走**浏览器原生** `getUserMedia` + `MediaRecorder`（issue #6596，见 frontend/bmini-app/src/utils/voiceBrowserRecorder.ts）；浏览器确实没有这两个 API 时才回落文字模式，切换键点了给显式提示（H5_VOICE_UNAVAILABLE_HINT）',
-  scanCode:
-    'h5 仅微信内置浏览器可用（JS-SDK）；纯浏览器降级为**拍照识别**（`Taro.chooseImage` + `<img>`/canvas + jsQR 本机解码，**0 次 LLM** —— 复用 `src/utils/inbound/barcodeDecode.ts`，不新写第二份解码实现），失败/取消再回落到手输单号（文案 = H5_SCAN_PHOTO_HINT / H5_SCAN_PHOTO_FAILED_HINT；issue #5750 起「只给手输」不再是合格出路）',
+  // 🔴 2026-10-14（issue #6868 实现包 D1）：这里原有 `scanCode` 的 h5 出路条目 ——
+  // 本仓**唯一**用法是已整页删除的小程序报工页（页内「扫一扫」的拍照降级面）
+  // ⇒ 台账口径「清单 ∩ 用法里已不存在的条目必须删掉（只许缩短）」要求删掉它。
+  // 工人报工面现为 H5 `/w/`：**没有页内扫码**（工人用微信 / 系统扫一扫打开页面）。
   createOffscreenCanvas:
     'h5 不调用它（未实现的 stub）：拍照入库的**本机解码**在 h5 走 <img> + canvas 取像素，只有小程序端才用它；小程序端取不到像素时明说「已改用服务端识别」（src/utils/inbound/barcodeDecode.ts 的平台分支）',
 }

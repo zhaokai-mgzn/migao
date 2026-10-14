@@ -41,7 +41,6 @@ web 面存在**两套工序名**：`production_operations.name` 是旧命名（�
 |---|---|---|
 | `ProductionOperation.operation` | 快照 / 变体名（`精裁-布`） | **fallback**（helper 兜底键） |
 | `WorkLogRow.operation_name` | 同上（报工流水读面的键名） | **fallback**（#5003② 补的显式映射） |
-| `PieceworkSummary.per_operation[].operation` | **逻辑名**（`精裁`）—— 同名不同义 | `logical`：**不得**喂兜底 |
 | `ScanResolveResult.operation` | 挂的是**对象**（`ScanOperationView`） | `container`：不得喂 helper |
 | 各 `*.logical_name` | 读时派生的逻辑名 | `derived`：只作首选键 |
 
@@ -671,6 +670,8 @@ def test_c7_injected_divergence_is_red(tmp_path: Path):
 
 #: 读面真值源：bmini 的读面类型**只**在这份文件里声明 ⇒ 它是「键名分叉」的对账源。
 READ_FACE_SOURCE = "frontend/bmini-app/src/services/productionService.ts"
+# 🔴 2026-10-14（issue #6868 实现包 D1）：本台账原有 `PieceworkSummary.operation`（计件汇总的
+# 逐工序逻辑名）—— 该接口随工人报工页整页删除而消失（它只服务那一页）⇒ 条目按「台账只许缩短」删掉。
 
 #: helper **接受**的键（C8 从四份实现里**结构化**取 `op?.<键>`，不按文本子串取）：
 #: `logical_name` = 逻辑名（首选）· `position` = 部位 ·
@@ -696,7 +697,6 @@ _NAME_KEY_LEDGER: tuple[tuple[str, str, str], ...] = (
     ("ProductionOperation", "operation", "fallback"),
     ("ProductionOperation", "logical_name", "derived"),
     ("WorkLogRow", "operation_name", "fallback"),
-    ("PieceworkSummary", "operation", "logical"),
     ("ScanOperationView", "logical_name", "derived"),
     ("ScanAlternativeView", "logical_name", "derived"),
     ("ScanOverviewOperationView", "logical_name", "derived"),

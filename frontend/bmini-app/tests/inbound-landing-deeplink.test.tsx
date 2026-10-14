@@ -37,7 +37,6 @@ import {
 import {
   FOREIGN_CODE_MESSAGE,
   MANUAL_CODE_INVALID_MESSAGE,
-  REPORT_PAGE_ROUTE,
   WASH_CODE_MESSAGE,
 } from '../src/utils/inbound/codeSpace'
 import { REPRINT_PAGE_ROUTE } from '../src/utils/inbound/gaps'
@@ -136,12 +135,13 @@ describe('落地页深链：按码空间分流（复用 codeSpace 的既有判�
     expect(classifyLandingCode('https://app.migaozn.com/i/ABCD2345').space).toBe('inbound-label')
   })
 
-  it('D2 🔴 洗水码 ⇒ 洗水码空间 + 报工入口（**绝不**当入库标签）', () => {
+  it('D2 🔴 洗水码 ⇒ 洗水码空间 + 说清报工面在 H5（**绝不**当入库标签）', () => {
     for (const raw of ['https://app.migaozn.com/s/7K3M9QP2', '/s/7K3M9QP2']) {
       const reading = classifyLandingCode(raw)
       expect({ raw, space: reading.space }).toEqual({ raw, space: 'wash-code' })
       expect(reading.message).toBe(WASH_CODE_MESSAGE)
-      expect(reading.action?.route).toBe(REPORT_PAGE_ROUTE)
+      // 2026-10-14（issue #6868 实现包 D1）：报工页下架 ⇒ 端内不给路由；文案说清 H5 报工面。
+      expect(reading.message).toContain('报工页')
     }
     // 🔴 红证：不看码空间的宽松口径**确实**能从 `/s/` 的码里取出一段像模像样的 8 位短码
     const loose = 'https://app.migaozn.com/s/7K3M9QP2'.split('/').pop()

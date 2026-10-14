@@ -68,6 +68,18 @@ public class ProcessingOrder {
     private String qrToken;
 
     /**
+     * 加工单级**人可读短码**（V155，issue #6867；8 位 Crockford Base32，随机、**跨租户**全局唯一）。
+     *
+     * <p>印刷品写 {@code https://<稳定域名>/o/<短码>}，服务端 302 换回 {@code /w/?t=<qrToken>}
+     * （设计 {@code docs/design/worker-h5-scan-and-report.md} §11）。与 {@link #qrToken} 是
+     * **同一行的两种表示**：短码 = 「哪一张纸」（一经分配永不变），token = 「这张纸当前有效吗」
+     * （撤销 = 置 NULL，短码**不碰** ⇒ 已打印的纸不作废）。</p>
+     *
+     * <p>{@code NULL} = 尚未分配（存量行；V155 **不回填**），补码只补 {@code NULL} 的行。</p>
+     */
+    private String shortCode;
+
+    /**
      * 本单**实际使用**的路线键「帘种×工艺」（V60，issue #4308）。
      *
      * <p>T1/T2 时 = 默认 {@code 布帘×韩褶}（与真正实例化出的工序对应）。多部位订单取**最需关注**

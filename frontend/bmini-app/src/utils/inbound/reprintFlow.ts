@@ -27,7 +27,7 @@
  */
 import type { InboundResponse } from '../../services/workerInboundService'
 import type { DecodeOutcome, PendingPhoto } from './barcodeDecode'
-import { classifyScannedCode, type LabelCodeAction, type LabelCodeReading, type LabelCodeSpace } from './codeSpace'
+import { classifyScannedCode, type LabelCodeReading, type LabelCodeSpace } from './codeSpace'
 import type { InboundLabelView } from './labelLayout'
 
 /** 解不出码时给工人的话（重拍要点 + 手输兜底 —— 补打的主场景就是码磨花了） */
@@ -159,7 +159,7 @@ export async function runReprintResolve(deps: ReprintResolveDeps): Promise<Repri
  */
 export type ReprintDetailState =
   | { kind: 'ready'; view: InboundLabelView }
-  | { kind: 'blocked'; space: LabelCodeSpace; message: string; action: LabelCodeAction | null }
+  | { kind: 'blocked'; space: LabelCodeSpace; message: string }
   | { kind: 'not-found'; message: string }
   | { kind: 'revoked'; message: string }
   | { kind: 'error'; message: string }
@@ -181,7 +181,7 @@ export async function loadReprintDetail(deps: {
 }): Promise<ReprintDetailState> {
   const reading = deps.reading
   if (reading.space !== 'inbound-label' || !reading.shortCode) {
-    return { kind: 'blocked', space: reading.space, message: reading.message, action: reading.action }
+    return { kind: 'blocked', space: reading.space, message: reading.message }
   }
 
   const res = await deps.lookup(reading.shortCode)

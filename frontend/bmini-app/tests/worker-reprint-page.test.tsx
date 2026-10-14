@@ -10,7 +10,7 @@
  * | P1 | 没有工人 session ⇒ 明说去登录（不渲染拍照入口、不静默跳走） | 直接渲染拍照步 ⇒ 红 |
  * | P2 | 打印能力缺口**动手前**上屏（iOS ⇒ 一进页面就看到 iPhone 打不了） | 打完才失败 ⇒ 红 |
  * | P3 | 解码出 `/i/<短码>` ⇒ 查详情 + 上屏；**不**调打印留痕（还没点打印） | 提前留痕 ⇒ 红 |
- * | P4 | 🔴 解码出 `/s/<短码>` ⇒ 屏上说「洗水码」+ 报工入口，**一次都不查入库详情** | 把它当入库码查 ⇒ 红 |
+ * | P4 | 🔴 解码出 `/s/<短码>` ⇒ 屏上说「洗水码」+ 说清报工面在 H5（端内不给路由），**一次都不查入库详情** | 把它当入库码查 ⇒ 红 |
  * | P5 | 🔴 404 / 410 **分开呈现**（两个 testid、两句不同的话：查无此码 / 已撤销） | 合成一句话 ⇒ 红 |
  * | P6 | 手输含 `O` 的 8 位 ⇒ **原样**送去查询（抄错归一化在服务端） | 客户端严格字母表闸 ⇒ 红 |
  * | P7 | 打印走唯一入口：**先留痕后送数据**，屏上显示服务端读数（前端不 +1） | 顺序颠倒 / 本地 +1 ⇒ 红 |
@@ -95,7 +95,6 @@ import WorkerReprintPage from '../src/pages/worker/reprint/index'
 import { hasWorkerSession } from '../src/utils/workerSession'
 import { decodeBarcodeFromPhoto } from '../src/utils/inbound/barcodeDecode'
 import { PRINT_FAILURE_HINTS, PRINT_READY_HINT } from '../src/utils/inbound/printCapability'
-import { REPORT_PAGE_ROUTE } from '../src/utils/inbound/codeSpace'
 import { isValidShortCode } from '../src/utils/inbound/shortCode'
 import {
   getInboundLabel,
@@ -206,7 +205,7 @@ describe('工人拍照补打页', () => {
     expect(mockUploadPhoto).not.toHaveBeenCalled()
   })
 
-  it('P4 🔴 解码出 /s/<短码> ⇒ 说是「洗水码」+ 报工入口，且一次都不查入库详情', async () => {
+  it('P4 🔴 解码出 /s/<短码> ⇒ 说是「洗水码」+ 说清报工面在 H5（端内不给路由），且一次都不查入库详情', async () => {
     mockDecode.mockResolvedValueOnce({
       text: 'https://app.migaozn.com/s/7K3M9QP2',
       source: 'h5-dom-canvas',
@@ -218,9 +217,10 @@ describe('工人拍照补打页', () => {
     expect(screen.getByTestId('reprint-wash-code').textContent).toContain('水洗唛')
     expect(mockGetLabel).not.toHaveBeenCalled()
     expect(screen.queryByTestId('reprint-step-detail')).toBeNull()
-    // 入口真的可点，且指向报工页（不是"说一句就完了"）
-    fireEvent.click(screen.getByTestId('reprint-go-report'))
-    expect(mockNavigateTo).toHaveBeenCalledWith({ url: REPORT_PAGE_ROUTE })
+    // 🔴 2026-10-14（issue #6868 实现包 D1）：报工页整页下架 ⇒ 端内**没有**下一步按钮
+    // （不给死链）；文案自己说清报工面在 H5。
+    expect(screen.queryByTestId('reprint-go-report')).toBeNull()
+    expect(screen.getByTestId('reprint-wash-code').textContent).toContain('报工页')
     // 🔴 红证：这段 URL 的末段**看起来就是**一个 8 位短码 ⇒ 不看码空间的那条路会把它送去查详情
     expect('https://app.migaozn.com/s/7K3M9QP2'.split('/').pop()).toHaveLength(8)
     expect(mockGetLabel).not.toHaveBeenCalled()
@@ -422,8 +422,9 @@ describe('落地页深链的页面侧（`?code=` 被消费且按码空间分流�
     await waitFor(() => expect(screen.getByTestId('reprint-wash-code')).toBeTruthy())
     expect(mockGetLabel).not.toHaveBeenCalled()
     expect(screen.getByTestId('reprint-wash-code').textContent).toContain('水洗唛')
-    fireEvent.click(screen.getByTestId('reprint-go-report'))
-    expect(mockNavigateTo).toHaveBeenCalledWith({ url: REPORT_PAGE_ROUTE })
+    // 2026-10-14（issue #6868 实现包 D1）：端内不再有「去报工」按钮（报工页已删）。
+    expect(screen.queryByTestId('reprint-go-report')).toBeNull()
+    expect(screen.getByTestId('reprint-wash-code').textContent).toContain('报工页')
   })
 
   it('R3 🔴 别域名 / 纯文本 ⇒ 「这不是观星台的标签」；空值 ⇒ 「8 位短码」提示（都不查详情）', async () => {

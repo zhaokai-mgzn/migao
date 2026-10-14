@@ -12,8 +12,12 @@
  * 1. **身份卡读服务端**（`fetchCurrentWorker()`）：页头显示的正是「这笔活会记到谁头上」
  *    = 计件工资的凭证 ⇒ 前端自己拼一个名字就是把凭证交给客户端。服务端读不到就**回落成未登录**
  *    （绝不静默留着上一个人的名字）；
- * 2. **四件工人功能**（扫码报工 / 拍照入库 / 补打入库标签 / 拍照发货）都走既有页面与既有路由常量
+ * 2. **三件工人功能**（拍照入库 / 补打入库标签 / 拍照发货）都走既有页面与既有路由常量
  *    （`utils/inbound/gaps.ts` 是路由单一真值，本页不写第二份字面量）；
+ *    🔴 **「扫码报工」主按钮已随报工页下架删除**（2026-10-14，issue #6868 实现包 D1）：
+ *    报工的唯一实现 = `frontend/worker-h5` 的 `/w/`（能力更全、已上线），端内那一页是
+ *    **第二份实现** ⇒ 删除后本页不再有指向 `pages/production/index/index` 的死链。
+ *    报工面由 H5 承接（工人扫纸上的码即开 H5；不用 web-view，见 2026-09-29 的形态裁定）；
  * 3. **一件商家面都不出现**：问黄金策 / 数据 / 坐席 / 管理面 4 项都不在本页（工人点了只会 403）；
  * 4. **退出工人身份** = `workerLogout()`（服务端留 `end_reason=logout` 痕）+ `clearWorkerSession()`
  *    ⇒ 回登录页的**工人入口**（共用 PAD 场景：下一个人接着用）。
@@ -24,7 +28,8 @@
  * + 「工人登录后的页面菜单很少，通常只能看到 1-4 个菜单」。
  * ⇒ 结构按 2026-10-12 已裁定的菜单设计（`docs/design/worker-home-menu.md`）的语言重排，三个候选
  * （V1 大卡列表 / V2 宫格瓦片 / V3 分组清单）由用户**选定 V1**：
- * **身份条（谁在干活 + 退出）+ 唯一主按钮「扫码报工」+ 行卡（标题 + 一句「拿它干什么」）**。
+ * **身份条（谁在干活 + 退出）+ 行卡（标题 + 一句「拿它干什么」）**。
+ * （原「唯一主按钮『扫码报工』」已随报工页下架删除，理由见上面第 2 条。）
  * 为什么 V1：条目只有 1~4 条时，宫格会出现「2+1」孤儿格、分组会出现「标题底下孤零零一张卡」，
  * 行卡在 1~4 条都成立，且主按钮永远在第一屏（`docs/design/worker-home-menu.md` §3.1/§3.2）。
  * 🔴 行为一字未改：身份仍读服务端、路由仍来自 `gaps.ts`、退出仍是 `workerLogout()` + 清本机 + 回工人入口。
@@ -40,7 +45,6 @@ import {
 } from '../../../utils/workerSession'
 import {
   INBOUND_PAGE_ROUTE,
-  PRODUCTION_PAGE_ROUTE,
   REPRINT_PAGE_ROUTE,
   SHIPMENT_PAGE_ROUTE,
   WORKER_HOME_LOGIN_REQUIRED,
@@ -77,11 +81,6 @@ export default function WorkerHomePage() {
     Taro.navigateTo({ url: WORKER_TAB_LOGIN_ROUTE })
   }, [])
 
-  /** 常驻主按钮：扫码报工（`report` 面 = 报工页，一天几十次的那一下） */
-  const goReport = useCallback(() => {
-    Taro.navigateTo({ url: PRODUCTION_PAGE_ROUTE })
-  }, [])
-
   const exitWorker = useCallback(async () => {
     // 先结束服务端 session（幂等），再清本机 —— 只清本机会让下一个人记到上一个人头上
     await workerLogout()
@@ -114,13 +113,9 @@ export default function WorkerHomePage() {
 
       {worker ? (
         <>
-          {/* 常驻主按钮：全屏**唯一** primary（菜单设计 §3.2） */}
-          <Button className='worker-home__primary' onClick={goReport}>
-            <Text className='worker-home__primary-title'>扫码报工</Text>
-            <Text className='worker-home__primary-sub'>扫一次码 = 报一道工序（先报工再生产，做完不用再扫）</Text>
-          </Button>
-
-          <Text className='worker-home__section'>其他功能</Text>
+          {/* 🔴 「扫码报工」主按钮已删（2026-10-14，issue #6868 实现包 D1）：报工页整页下架
+              ⇒ 端内没有报工面，留着它就是死链。报工走 H5 `/w/`（工人扫纸上的码即开）。 */}
+          <Text className='worker-home__section'>工人功能</Text>
 
           {/* 🔴 三张行卡**逐条显式**写（不走数组 + `.map()`）：本仓的入口可达性守卫
               （`tests/page-entry-reachability.test.ts`）按 `Taro.navigateTo({ url: <路由常量> })`

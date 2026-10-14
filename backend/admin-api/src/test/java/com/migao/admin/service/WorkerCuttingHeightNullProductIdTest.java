@@ -411,9 +411,19 @@ class WorkerCuttingHeightNullProductIdTest {
                                 Verdict.KEY_NULLABLE,
                                 "调用点已 `specByItemId == null ? null : ...get(op.getOrderItemId())` 短路")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java|itemGroupKey",
-                        new IndexSite("itemGroupKey", "itemIdToGroupKey", "spec.orderItemId()", "spec.orderItemId()", 261,
+                        new IndexSite("itemGroupKey", "itemIdToGroupKey", "spec.orderItemId()", "spec.orderItemId()", 264,
                                 Verdict.KEY_NULLABLE,
-                                "调用点已 `spec.orderItemId() == null ? null : setByGroup.get(...)` 短路")),
+                                "⚠️ 登记面事实（**不是**「已安全」）：本条目 `keyExpression` / `keySource` 登记的是"
+                                        + "**部位 id**（`spec.orderItemId()`），而真正交给 `setByGroup.get(...)` 的键是"
+                                        + "**派生值** `itemGroupKey.get(spec.orderItemId())`。"
+                                        + "可达链（三条同时成立即 NPE）：① 部位 id 非空（本条目那个三元短路只守到这里）"
+                                        + "⇒ ② `itemIdToGroupKey` 的返回来自 `orderItemMapper.selectList(... in(itemIds))`，"
+                                        + "该 id 查不到行（行被删 / 跨租户 / payload 陈旧）时结果里**没有它** ⇒ `get(id)` = null"
+                                        + "⇒ ③ `ensureSetsFor` 的早返回分支返回**不可变空表** `Map.of()` ⇒ `Map.of().get(null)` 抛 NPE。"
+                                        + "本判据的 `siteToleratesNullKey` 只匹配**登记键**的 `== null` 判空 ⇒ 对该形态"
+                                        + "**零判别力**（里层守住了、外层没守）。同源站点 = `ensurePartTokens` 里那处无判空的"
+                                        + "单键读法 ⇒ **已转 issue #6878**（结构修复归那个包，本条目只按现取更新行号 261 → 264："
+                                        + "issue #6867 B1 在 `ensureQrToken(po)` 之后插了 `ensureShortCode(po)`）")),
                 // ── 存量同族风险点（本包文件族外，**不顺手改**）：键可能为 null 且本文件内无处置。
                 //    承载体 = 独立 issue #6226（主会话按 origin/main 逐字复核开单）⇒ 本判据不在此红，
                 //    但条目仍受「未登记即红 / 台账不许陈旧」约束。──

@@ -10,7 +10,12 @@ export default defineAppConfig({
     // 改密端点(`POST /api/auth/password/change`)在强制改密白名单内、成功即换发新凭据
     // ⇒ 商家员工在本页自助改密，不必去电脑端
     'pages/auth/change-password/index',
-    'pages/production/index/index',
+    // 🔴 **小程序工人扫码报工页已下架**（2026-10-14，issue #6868 实现包 D1）：
+    // 报工的唯一实现 = `frontend/worker-h5`（`/w/`）⇒ `pages/production/index/index` 是
+    // **第二份实现**，按用户裁定（「没有用处的页面就直接删了」）整页删除。
+    // **报工面现由 H5 `/w/` 承接**（工人扫纸上的码即开 H5；不用 web-view，见
+    // `src/utils/inbound/lpapiTransport.ts` 文件头的 2026-09-29 形态裁定）。
+    // 商家面（tabBar / pages/admin/** / pages/production/order-detail）一个字节都没动。
     // 工人登录（issue #4733）：工号 + PIN，主路径不依赖微信；与商家登录页是两条链路
     'pages/worker/login/index',
     // 工人**首页**（issue #6467 切片 1）：纯工人设备（有工人 session、无商家会话）的落地页 ——
