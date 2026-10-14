@@ -475,7 +475,7 @@ test('🔴 ④ 回执 `next_operation` ⇒ 屏上换成下一道（工人接着�
   app.destroy()
 })
 
-test('🔴 ④ 回执 `set_completed:true` ⇒ 显示本套工序都已被领走，且【开工】按钮消失（不再重复提交）', async () => {
+test('🔴 ④ 回执 `set_completed:true` ⇒ 显示本套工序都已报工，且【开工】按钮消失（不再重复提交）', async () => {
   const doc = fakeDom()
   const f = routeFetch({
     '/api/worker/production/scan?': resolveOk(CLOTH_VIEW),
@@ -485,8 +485,8 @@ test('🔴 ④ 回执 `set_completed:true` ⇒ 显示本套工序都已被领走
   await scan(doc, 'tok-cloth')
   await doc.fire('wh5-report')
 
-  assert.match(doc.html, /本套工序都已被领走/, '本套没有待领工序 ⇒ 必须显式告知')
-  assert.ok(!/id="wh5-report"/.test(doc.html), '本套工序都已被领走 ⇒ 不得再出现开工按钮')
+  assert.match(doc.html, /本套工序都已报工/, '本套没有待领工序 ⇒ 必须显式告知')
+  assert.ok(!/id="wh5-report"/.test(doc.html), '本套工序都已报工 ⇒ 不得再出现开工按钮')
   app.destroy()
 })
 
@@ -540,7 +540,7 @@ test('🔴 ⑤ 旧码端到端：扫码 ⇒ 选套 ⇒ 选部位 ⇒ **报工成
   assert.deepEqual(posts[0].body, { token: 'JG20260920001', set_id: 'set-2', order_item_id: 'oi-2' })
   assert.ok(!('operation_id' in posts[0].body), '旧码默认路径不得由客户端定工序（防呆⑤）')
   assert.ok(!('worker_id' in posts[0].body), '身份仍只来自 X-Worker-Session-Id')
-  assert.match(doc.html, /已领活/, '领活成功必须给回执文案（issue #4967 语义改判后）')
+  assert.match(doc.html, /已报工/, '报工成功必须给回执文案（#4967 语义 +#6868 统一口径后）')
   app.destroy()
 })
 
@@ -580,7 +580,7 @@ test('🔴 ⑦ 工序未确定（operation == null 且未完工）⇒ 页面不�
   app.destroy()
 })
 
-test('🔴 ⑦ 扫到「本套工序都已被领走」的新码（completed=true, operation=null）⇒ 不崩 + 显式告知', () => {
+test('🔴 ⑦ 扫到「本套工序都已报工」的新码（completed=true, operation=null）⇒ 不崩 + 显式告知', () => {
   const doc = fakeDom()
   const f = routeFetch({})
   const app = bootPage({ doc, f })
@@ -588,7 +588,7 @@ test('🔴 ⑦ 扫到「本套工序都已被领走」的新码（completed=true
     type: 'resolved',
     view: { ...CLOTH_VIEW, operation: null, alternatives: [], completed: true, needs_selection: [] },
   })
-  assert.match(doc.html, /本套工序都已被领走/)
+  assert.match(doc.html, /本套工序都已报工/)
   assert.ok(!/id="wh5-report"/.test(doc.html))
   app.destroy()
 })
