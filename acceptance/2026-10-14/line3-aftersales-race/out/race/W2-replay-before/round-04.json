@@ -1,0 +1,87 @@
+2026-10-14 21:19:21 +08 [独立复现] 登录 tenant=32（期望 32）
+2026-10-14 21:19:21 +08 [独立复现] SKU 2110348703040729089 起始库存 = 70
+2026-10-14 21:19:22 +08 [独立复现] 草稿单 id=2bafe2971e84ae033a42e773984d7848 no=RK-20261014-0060
+{
+  "at": "2026-10-14 21:19:22 +08",
+  "tenant": 32,
+  "inboundId": "2bafe2971e84ae033a42e773984d7848",
+  "inboundNo": "RK-20261014-0060",
+  "barrierAtCst": "2026-10-14 21:19:22",
+  "requests": [
+    {
+      "i": 0,
+      "action": "post",
+      "t0": 1791983962079,
+      "t1": 1791983962380,
+      "durMs": 301,
+      "status": 200,
+      "body": "{\"success\":true,\"data\":{\"id\":\"2bafe2971e84ae033a42e773984d7848\",\"inboundNo\":\"RK-20261014-0060\",\"supplier\":\"lb3-race-supplier\",\"warehouse\":\"lb3-race-wh\",\"inboundDate\":\"2026-10-14\",\"status\":\"posted\",\"totalAmount\":25.0000,\"source\":\"purchase\",\""
+    },
+    {
+      "i": 1,
+      "action": "cancel",
+      "t0": 1791983962080,
+      "t1": 1791983962321,
+      "durMs": 241,
+      "status": 200,
+      "body": "{\"success\":true,\"data\":{\"id\":\"2bafe2971e84ae033a42e773984d7848\",\"inboundNo\":\"RK-20261014-0060\",\"supplier\":\"lb3-race-supplier\",\"warehouse\":\"lb3-race-wh\",\"inboundDate\":\"2026-10-14\",\"status\":\"cancelled\",\"totalAmount\":25.0000,\"source\":\"purchase"
+    }
+  ],
+  "overlapEvidence": {
+    "真实重叠": true,
+    "unionMs": 301,
+    "sumDurMs": 542,
+    "说明": "并集墙钟 < 各历时之和 ⇒ 两个请求的时间窗真有交集（非串行叙事）"
+  },
+  "db": {
+    "status": "cancelled",
+    "postedAt": "2026-10-14T21:19:22.144625+08:00",
+    "cancelledAt": "2026-10-14T21:19:22.143369+08:00",
+    "cancelledReason": "lb3-race",
+    "updatedAt": "2026-10-14T21:19:21.963846+08:00"
+  },
+  "ledgerForRef": [
+    {
+      "id": 4383,
+      "delta": 5,
+      "before_qty": 70,
+      "after_qty": 75,
+      "reason": "inbound",
+      "ref_no": "RK-20261014-0060",
+      "created_at": "2026-10-14T21:19:22.192633+08:00"
+    }
+  ],
+  "ledgerRows": 1,
+  "stockBefore": 70,
+  "stockAfter": 75,
+  "stockDelta": 5,
+  "expectedByIndependentMath": {
+    "若作废胜出": {
+      "dbStatus": "cancelled",
+      "stockDelta": 0,
+      "ledgerRows": 0
+    },
+    "若过账胜出": {
+      "dbStatus": "posted",
+      "stockDelta": 5,
+      "ledgerRows": 1
+    },
+    "两者都成 ⇒ 不可能一致": "dbStatus=cancelled 且 stockDelta≠0 或 ledgerRows≠0"
+  },
+  "inconsistent": [
+    {
+      "rule": "post 返回 200 但库侧状态不是 posted",
+      "dbStatus": "cancelled"
+    },
+    {
+      "rule": "已作废的单却改了库存",
+      "delta": 5
+    },
+    {
+      "rule": "已作废的单却留下了入库台账行",
+      "rows": 1
+    }
+  ],
+  "verdict": "fail(产品)",
+  "selfCheck": "本判据会红：把 cancel 换成先串行 post 再 cancel（无重叠）⇒ 应得 409 + 无台账（对照 RP3 的形态）"
+}
