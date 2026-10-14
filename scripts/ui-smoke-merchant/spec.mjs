@@ -28,6 +28,8 @@ const failReasons = new Map()
 // 失败响应账本（本轮新增）：`console.error` 只说「401」不说是**谁**返回的 —— 没有 URL 就无法归因
 // （2026-10-14 实测：单看 console 文案分不清是 admin-api 还是 ai-agent，归因卡死）。
 const failedResponses = []
+// harness 自己发登录发码请求的窗口标记（`smsLogin` 置位）—— 见 onConsole 的用途说明。
+let loginWindow = false
 
 // ────────────────────────── 结果分类（#6790 / AGENTS.md 铁律）──────────────────────────
 // 三态，**不许互相冒充**（issue #6790 判据 ③④）：
@@ -94,7 +96,14 @@ function journey(name, opts = {}) {
     page.removeAllListeners('console')
     page.removeAllListeners('pageerror')
     const onConsole = (msg) => {
-      if (msg.type() === 'error') errs.push(`[console.error] ${msg.text().slice(0, 300)}`)
+      if (msg.type() !== 'error') return
+      const text = msg.text().slice(0, 300)
+      // harness **自己**发的登录发码请求（`smsLogin` 的 `loginWindow`）：本机连跑会被后端 60s 频控拒
+      // （`SmsService.java:89`「发送过于频繁，请 60 秒后重试」）⇒ 400；浏览器只报「status of 400」**不带 URL**
+      // ⇒ 只能按**窗口**判它，否则会把**本旅程**（往往是首个）误判成红。登录若真失败，后面的
+      // `waitForURL('**/dashboard**')` 与 `未取到 access_token cookie` 会照旧红 —— 登录本身未放宽。
+      if (loginWindow && /status of 4\d\d/.test(text)) return
+      errs.push(`[console.error] ${text}`)
     }
     const onPageError = (err) => errs.push(`[pageerror] ${String(err).slice(0, 300)}`)
     page.on('console', onConsole)
@@ -103,7 +112,11 @@ function journey(name, opts = {}) {
       page.removeListener('console', onConsole)
       page.removeListener('pageerror', onPageError)
       // 把本旅程窗口内的**失败响应**（带 URL）并进错误清单，让 401 可归因（上述账本）
-      for (const f of [...new Set(failedResponses.slice(failedFrom))]) errs.push(`[http] ${f}`)
+      for (const f of [...new Set(failedResponses.slice(failedFrom))]) {
+        // harness **自己**发的登录发码请求不计（同上：60s 频控的 400 属环境，不是旅程行为）
+        if (/\/api\/auth\/sms\/send/.test(f)) continue
+        errs.push(`[http] ${f}`)
+      }
       // 分类优先于 pass：未配置 / 前置不满足**都不是**产品失败（#6790 判据 ③④）
       const klass = typeof errClass === 'string' && errClass
         ? errClass
@@ -371,8 +384,14 @@ async function smsLogin(page, { where, settleMs }) {
     await openAdminLoginTab(page)
     await expectText(page, '管理员登录')
     await page.fill('#phone', PHONE)
-    await safeClick(page, page.getByRole('button', { name: /获取验证码/ }), '获取验证码')
-    await page.waitForTimeout(settleMs)
+    // 发码窗口：本机连跑会被后端 60s 频控拒（400）⇒ 该窗口内的 4xx console 由收集器放行（见 onConsole）。
+    loginWindow = true
+    try {
+      await safeClick(page, page.getByRole('button', { name: /获取验证码/ }), '获取验证码')
+      await page.waitForTimeout(settleMs)
+    } finally {
+      loginWindow = false
+    }
     await page.fill('#code', SMS_CODE)
     await safeClick(page, page.getByRole('button', { name: /登\s*录|登录/ }).last(), '登录')
     await page.waitForURL('**/dashboard**', { timeout: 20000 })
