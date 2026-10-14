@@ -518,10 +518,9 @@ describe('OrderDetailPage', () => {
 
     // ① 真调了既有读面，且引用的是**本订单** id（缺这行 ⇒ 页面根本不取工序）
     await waitFor(() => expect(mockGetOrderOperations).toHaveBeenCalledWith('test-order-123'))
-    // ② 该结果被页面接住并向下传：本文件把 `ProcessingOrderBlock` 替身成空壳 ⇒ 以「页面稳态 +
-    //    读面成功 + 下游真组件（见 `ProcessingOrderBlock.test.tsx` 的工序用例）逐行渲染」三点成链。
-    //    这里断言页面**没有把工序读面当成致命错误**（读面成功 ⇒ 不出现任何失败态文案）。
-    expect(container.querySelector('[data-testid="po-block"]')).not.toBeNull()
+    // ② 页面到达**含加工单面**的稳态：本状态（producing + 含加工项）下「打印加工单」入口在
+    //    （该入口由加工单块区承载）⇒ 证明这一块被渲染出来了、没被工序读面拖垮，也没有失败态文案
+    expect(screen.getByRole('button', { name: /打印加工单/ })).toBeInTheDocument()
     expect(container.textContent).not.toContain('加载订单详情失败')
   })
 
