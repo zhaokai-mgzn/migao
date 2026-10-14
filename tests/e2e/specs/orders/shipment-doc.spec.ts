@@ -29,13 +29,15 @@ const baseOrder = {
       id: 'item-1',
       productId: 'p-1',
       productName: '布艺遮光帘A',
-      productCode: '0012',
-      color: '米白',
-      specification: '门幅2.8米',
+      // issue #6869：纸面身份走**响应真字段**（`skuCode` + `processingInfo.colorName/doorWidth`）——
+      // 夹具按真 wire 形态写（原先的 `productCode` / `color` / `specification` **不在响应里**，
+      // 纸面那几列在真单上恒空，而夹具却喂得出绿）
+      skuCode: '0012',
       quantity: 12.5,
       unitPrice: 100,
       amount: 1250,
       subtotal: 1250,
+      processingInfo: { colorName: '米白', doorWidth: '2.8米' },
     },
   ],
   processingItems: [],
@@ -122,7 +124,10 @@ test.describe('发货单 — 真实浏览器打印旅程（UI-040）', () => {
     await expect(doc).toContainText('13800138000')
     await expect(doc).toContainText('余杭区某某路 1 号')
     await expect(doc).toContainText('布艺遮光帘A')
-    await expect(doc).toContainText('门幅2.8米')
+    // issue #6869：发货单「规格尺寸」列改印真值「门幅」（原读 `item.specification` —— 不在响应里）
+    await expect(doc).toContainText('0012')
+    await expect(doc).toContainText('米白')
+    await expect(doc).toContainText('2.8米')
     await expect(doc).toContainText('客户要求工作日送达')
     // 经手人 = 当前输入值（发货前打印也要有经手人栏）
     await expect(doc).toContainText('管理员')

@@ -23,13 +23,13 @@ const MOCK_ORDER_PENDING = {
       id: 'item_001',
       productId: 'prod_001',
       productName: '天鹅绒遮光窗帘',
-      productCode: 'SKU-001',
-      color: '灰色',
-      specification: '门幅2.8米',
+      // issue #6869：纸面身份走响应真字段（`productCode` / `color` / `specification` 不在响应里）
+      skuCode: 'SKU-001',
       quantity: 2,
       unitPrice: 168.0,
       amount: 336.0,
       subtotal: 336.0,
+      processingInfo: { colorName: '灰色', doorWidth: '2.8米' },
     },
   ],
   processingItems: [

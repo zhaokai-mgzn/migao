@@ -22,13 +22,13 @@ const buildItems = (count: number) =>
     id: `item-${i + 1}`,
     productId: `p-${i + 1}`,
     productName: `布艺遮光帘${i + 1}`,
-    productCode: `00${i + 1}`,
-    color: '米白',
-    specification: '门幅2.8米',
+    // issue #6869：纸面身份走响应真字段（`skuCode` + `processingInfo.colorName/doorWidth`）
+    skuCode: `00${i + 1}`,
     quantity: 12.5,
     unitPrice: 100,
     amount: 1250,
     subtotal: 1250,
+    processingInfo: { colorName: '米白', doorWidth: '2.8米' },
   }))
 
 const baseOrder = (itemCount = 3) => ({
