@@ -47,15 +47,20 @@ export function log(msg) {
 }
 
 // ────────────────────────── 时间（+08 口径）──────────────────────────
+// 🔴 修 #6938（装置缺陷 —— **只污染证据时间戳，不改任何判定**）：原实现
+//    `off = -d.getTimezoneOffset()` 后 `new Date(d.getTime()+off*60000)` 再取**本地 getter**
+//    ⇒ 本机 TZ=CST（offset=-480）时同一偏移被**加了两次**，实测把 `2026-10-14 22:13 +08`
+//    打印成 `2026-10-15 06:13 +08`（错标 8 小时）；TZ 未设时 offset=0 ⇒ 又退化成 **UTC 墙钟**。
+//    ⇒ 与同族 harness 收成**同一口径**（`worker-miniapp-writeface-sweep/harness/lib.mjs` /
+//      `finance-stock-time-sweep/harness/lib.mjs` / `agent-service-sweep/harness/lib.mjs`）：
+//      **单一事实源 = Intl 具名时区**，禁止再手工加减偏移（跨机不再依赖 TZ 环境变量）。
+const CST_FMT = new Intl.DateTimeFormat('sv-SE', {
+  timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+})
 export function nowCST() {
   const d = new Date()
-  const p = (n) => String(n).padStart(2, '0')
-  const off = -d.getTimezoneOffset()
-  const l = new Date(d.getTime() + off * 60000)
-  return {
-    cst: `${l.getFullYear()}-${p(l.getMonth() + 1)}-${p(l.getDate())} ${p(l.getHours())}:${p(l.getMinutes())}:${p(l.getSeconds())} +08`,
-    utc: d.toISOString(),
-  }
+  return { cst: `${CST_FMT.format(d).replace('T', ' ')} +08`, utc: d.toISOString() }
 }
 
 /** 原始时间戳 → 标注 +08 换算的口径串。

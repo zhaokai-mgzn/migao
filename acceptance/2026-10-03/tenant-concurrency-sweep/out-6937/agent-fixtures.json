@@ -1,0 +1,19 @@
+{
+  "A_products": [
+    "0260337248dd35d1d81aab42933fcb9a",
+    "09fe710ca7577614e570bbb0696ac853",
+    "3234b016a8c067e35e731771bc1f648d",
+    "48bfef564271de9aa4ef33c29ad7f938",
+    "18c38099d49abe9b7405a602a3299dc9"
+  ],
+  "B_products": [
+    "ee083867bc612a5911ed005742582091",
+    "e271a5b7be2c95325fe98b6230484afb"
+  ],
+  "C_recommended": null,
+  "tenants": [
+    32,
+    35
+  ],
+  "sql": "select id from products where tenant_id in (32,35)"
+}

@@ -1,0 +1,19 @@
+[
+ {
+  "table": "product_skus",
+  "tenant": "32",
+  "before": {
+   "alive": 17,
+   "max_updated": "2026-10-14 22:30:15.351858+08",
+   "idfp": "f0f9e0ed6fe89617b06d4724d40aac1f",
+   "rowfp": "701efbc2ca5cec9f2a51e7f396a32ef3"
+  },
+  "after": {
+   "alive": 17,
+   "max_updated": "2026-10-14 22:34:23.523031+08",
+   "idfp": "f0e6c73b7ca05845bbbad5a71075f0f5",
+   "rowfp": "d25ab61dffa734d7d600b33dcc280f1c"
+  },
+  "kind": "id/deleted/updated_at 指纹变"
+ }
+]

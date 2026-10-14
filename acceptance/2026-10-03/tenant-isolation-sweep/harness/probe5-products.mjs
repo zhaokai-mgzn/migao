@@ -1,10 +1,12 @@
 // 探针侧登记复核：商品更新端点的「最小合法载荷」到底是什么（解释 422 与 200 的差异）
+// 主体 A 由 env 注入（issue #6937）
 import { api, loginApi, psql, log } from '../../config-writeface-sweep/harness/lib.mjs'
 import { writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-const OUT = fileURLToPath(new URL('../out/', import.meta.url))
-const tok = (await loginApi('13870217889')).token
-const row = psql(`select id::text as id, name, unit, base_price, status, category_id, pricing_type from products where tenant_id=20 and coalesce(deleted,0)=0 limit 1`)[0]
+import { T, PH, SMS_CODE } from '../../lib/subjects.mjs'
+const OUT = process.env.OUT_DIR ? process.env.OUT_DIR.replace(/\/?$/, '/') : fileURLToPath(new URL('../out/', import.meta.url))
+const tok = (await loginApi(PH.A, SMS_CODE)).token
+const row = psql(`select id::text as id, name, unit, base_price, status, category_id, pricing_type from products where tenant_id=${T.A} and coalesce(deleted,0)=0 limit 1`)[0]
 const recs = []
 const snap = () => JSON.stringify(psql(`select name, unit, base_price, status, category_id, pricing_type, updated_at from products where id='${row.id}'`))
 for (const [label, body] of [

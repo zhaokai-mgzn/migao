@@ -1,0 +1,432 @@
+{
+ "products": {
+  "32": {
+   "alive": 18,
+   "max_updated": "2026-10-14 22:28:52.184265+08",
+   "idfp": "76f6289c5b2d59997b77f2008a66d7af",
+   "rowfp": "e5a4c87986d82840e127e5e37ff4ec6c"
+  },
+  "36": {
+   "alive": 1,
+   "max_updated": "2026-10-14 22:32:47.884843+08",
+   "idfp": "2e5df432da3ec3866ca4b2eba02d9d21",
+   "rowfp": "6d3b1b53804aac28e1b7ed176dfb4665"
+  }
+ },
+ "product_skus": {
+  "32": {
+   "alive": 17,
+   "max_updated": "2026-10-14 22:30:15.351858+08",
+   "idfp": "f0f9e0ed6fe89617b06d4724d40aac1f",
+   "rowfp": "701efbc2ca5cec9f2a51e7f396a32ef3"
+  },
+  "36": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "customer_profiles": {
+  "32": {
+   "alive": 72,
+   "max_updated": "2026-10-14 22:20:24.029804+08",
+   "idfp": "a76b3199f24ae8fa26abb85525209b09",
+   "rowfp": "7cb3e67dcfe5ca9dbb3e154ef9b08918"
+  },
+  "36": {
+   "alive": 1,
+   "max_updated": "2026-10-14 22:32:48.25872+08",
+   "idfp": "e0406bea7441233a2d5d04341ba89401",
+   "rowfp": "598b24967603b78f673a5f30ac8155ec"
+  }
+ },
+ "customer_tags": {
+  "32": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "36": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "categories": {
+  "32": {
+   "alive": 14,
+   "max_updated": "2026-10-14 20:34:21.067886+08",
+   "idfp": "897bf23b78bac5d9a6983d63c57b8714",
+   "rowfp": "fcb43c16e187a3f7c496cc3d9fc809d5"
+  },
+  "36": {
+   "alive": 2,
+   "max_updated": "2026-10-14 22:32:47.815766+08",
+   "idfp": "6687fb0b8f3edbb6a4dde670e68208cc",
+   "rowfp": "ff359a1af6446aad22c903899ced3ecb"
+  }
+ },
+ "production_operations": {
+  "32": {
+   "alive": 41,
+   "max_updated": "2026-10-14 22:23:22.280408+08",
+   "idfp": "4b0429a0294459d96c199311d5378953",
+   "rowfp": "e124ade0f429984f15c76bf3acf83e8e"
+  },
+  "36": {
+   "alive": 41,
+   "max_updated": "2026-10-14 22:32:43.600376+08",
+   "idfp": "f01d03de2904b2b7f1f24b16d4e00e75",
+   "rowfp": "fd160c23f9415ed297ebec1b4d35a65e"
+  }
+ },
+ "production_operation_positions": {
+  "32": {
+   "alive": 115,
+   "max_updated": "2026-10-14 22:23:25.800467+08",
+   "idfp": "316a514bddf67c8751f6e1969d03db25",
+   "rowfp": "3f9b0be16435406edb1cd58bfd64d834"
+  },
+  "36": {
+   "alive": 116,
+   "max_updated": "2026-10-14 22:32:44.877092+08",
+   "idfp": "e6e046fa593ead8637c4e65a69a1d41e",
+   "rowfp": "f1a6d88bf633115237ae47168dcf1c5f"
+  }
+ },
+ "production_route_templates": {
+  "32": {
+   "alive": 2,
+   "max_updated": "2026-10-14 22:26:59.655845+08",
+   "idfp": "d572a8ba8de1e462404e924cc93e65cb",
+   "rowfp": "8084a0db9d65e5cb95078ae373fd938f"
+  },
+  "36": {
+   "alive": 2,
+   "max_updated": "2026-10-14 22:32:44.898393+08",
+   "idfp": "368979458fb7a93f5f5d0d77201cd64b",
+   "rowfp": "ce7e0ffbec4d572e0f37dda76711945c"
+  }
+ },
+ "production_route_rules": {
+  "32": {
+   "alive": 27,
+   "max_updated": "2026-10-14 20:33:02.620647+08",
+   "idfp": "345933cfe63eace83fde91d29b0710e0",
+   "rowfp": "cf1803b40125c0b302fd2904d3ba0869"
+  },
+  "36": {
+   "alive": 27,
+   "max_updated": "2026-10-14 22:32:44.921908+08",
+   "idfp": "a615cb9d041e6c6e245bdaf67f2370ce",
+   "rowfp": "c295976536aefb730b9e8a677577f1dd"
+  }
+ },
+ "processing_fee_combinations": {
+  "32": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "36": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "processing_items": {
+  "32": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "36": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "processing_categories": {
+  "32": {
+   "alive": 1,
+   "max_updated": "2026-10-14 22:28:12.518425+08",
+   "idfp": "b477e7c67fe8ae8884ccc46d23704061",
+   "rowfp": "5aa211eefd219671ea63f3c57050297b"
+  },
+  "36": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "orders": {
+  "32": {
+   "alive": 98,
+   "max_updated": "2026-10-14 22:28:52.756118+08",
+   "idfp": "017f941b658f5f64e33a4017a2b7bd5f",
+   "rowfp": "cbeb885afc21c212076a48cdfb52bc8a"
+  },
+  "36": {
+   "alive": 1,
+   "max_updated": "2026-10-14 22:32:48.204129+08",
+   "idfp": "1a4df15df7b6f22ecf6289096214e70f",
+   "rowfp": "1605900bc815c389355ea575a80860a0"
+  }
+ },
+ "order_items": {
+  "32": {
+   "alive": 104,
+   "max_updated": "2026-10-14 22:28:52.798028+08",
+   "idfp": "b40ffaa31652e0344b0b25e479f07d64",
+   "rowfp": "74ed28b780425ecf4b18a8139c81b6a2"
+  },
+  "36": {
+   "alive": 1,
+   "max_updated": "2026-10-14 22:32:48.220746+08",
+   "idfp": "b4f99a617f4c7e871acf0a4d982f4cd2",
+   "rowfp": "4dd66da7892c6e915b4500fa415b6d7b"
+  }
+ },
+ "processing_orders": {
+  "32": {
+   "alive": 90,
+   "max_updated": "2026-10-14 22:28:48.302894+08",
+   "idfp": "7d0c8d9c53dd1c19391d64928cb29de6",
+   "rowfp": "44b2b20bbaeaeeffb20ac9f791e25e2c"
+  },
+  "36": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "inbound_orders": {
+  "32": {
+   "alive": 5,
+   "max_updated": "2026-10-14 22:28:54.031491+08",
+   "idfp": "120427f0cde2fb7dc1c6012340839649",
+   "rowfp": "0dd88c950258c64323fe83c8cb6d11b2"
+  },
+  "36": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "order_shipments": {
+  "32": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "36": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "agent_sessions": {
+  "32": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "36": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "notification_templates": {
+  "32": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "36": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "notification_rules": {
+  "32": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "36": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "knowledge_cards": {
+  "32": {
+   "alive": 27,
+   "max_updated": "2026-10-14 20:35:52.641223+08",
+   "idfp": "a4e30b432790dd83110ffc33b1215040",
+   "rowfp": "13c459f3616467cf22b32ee951bd6ee7"
+  },
+  "36": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "roles": {
+  "32": {
+   "alive": 7,
+   "max_updated": "2026-10-14 20:26:29.971423+08",
+   "idfp": "5d8f3296b17266187517cf5f606d610a",
+   "rowfp": "6e0aa48d9ccf079c3d175ace1a355ea6"
+  },
+  "36": {
+   "alive": 7,
+   "max_updated": "2026-10-14 22:32:41.507506+08",
+   "idfp": "25154f36f7a5595662508b372d9a56ac",
+   "rowfp": "868c0b523f3a0d4688b66dd18aa014e5"
+  }
+ },
+ "after_sales_tickets": {
+  "32": {
+   "alive": 4,
+   "max_updated": "2026-10-14 22:28:53.608538+08",
+   "idfp": "0c44c777b2c42ca1be7ebff30bdb47db",
+   "rowfp": "eb35bdd524ca5b80b2ff70038b19b2bd"
+  },
+  "36": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "users": {
+  "32": {
+   "alive": 1,
+   "max_updated": "2026-10-14 20:26:32.352239+08",
+   "idfp": "43e14c6953126fd2ba5e133db112d74d",
+   "rowfp": "81cdb00cc4ca561a0ffa1e3c959c4b26"
+  },
+  "36": {
+   "alive": 1,
+   "max_updated": "2026-10-14 22:32:43.508012+08",
+   "idfp": "1da34bbc4c14a578f457b4c90517dac1",
+   "rowfp": "f9a1764d20fe4255aac4716af6c4e99b"
+  }
+ },
+ "agent_employees": {
+  "32": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "36": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "stock_batches": {
+  "32": {
+   "alive": 4,
+   "max_updated": null,
+   "idfp": "c2309370de54f49456486bf331f0a158",
+   "rowfp": "33124065783b656efc01ebdbf0ce64e7"
+  },
+  "36": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "stock_ledger_entries": {
+  "32": {
+   "alive": 99,
+   "max_updated": null,
+   "idfp": "89ccef434bac7b8bb05502b31137dcf1",
+   "rowfp": "f1dfbcc365423595588e205a26cbe419"
+  },
+  "36": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "finance_transactions": {
+  "32": {
+   "alive": 99,
+   "max_updated": "2026-10-14 22:28:53.177292+08",
+   "idfp": "b92654eca0a7fe955fe5eb39aca2d68f",
+   "rowfp": "3ce1107aacf7e55336d5f7726d65a1d6"
+  },
+  "36": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "fabric_remnants": {
+  "32": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "36": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "sessions": {
+  "32": {
+   "alive": 2,
+   "max_updated": "2026-10-14 20:43:50.904954+08",
+   "idfp": "cc81cbe087322667f93f69d97ebc0125",
+   "rowfp": "cfb6400d756507ce34ef317515f21b0b"
+  },
+  "36": {
+   "alive": 0,
+   "max_updated": null,
+   "idfp": "d41d8cd98f00b204e9800998ecf8427e",
+   "rowfp": "d41d8cd98f00b204e9800998ecf8427e"
+  }
+ },
+ "tenants": {
+  "rows": 2,
+  "max_updated": "2026-10-14 22:32:41.402453+08",
+  "checksum": "e420212f280d80729d485eb599383f1c"
+ },
+ "platform_admins": {
+  "rows": 1,
+  "max_updated": "2026-06-25 09:02:13.95954+08",
+  "checksum": "535c2944216881b976da173a09c5e263"
+ }
+}

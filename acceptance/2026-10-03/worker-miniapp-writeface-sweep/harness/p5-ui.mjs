@@ -1,9 +1,15 @@
-// P5 — UI 级（真机驱动 worker-h5 :3100）：登录 + 当前工人 + 一次扫码开工（网络面 + DB 面双侧夹住）
+// P5 — UI 级（真机驱动 worker-h5 :3160）：登录（**工号 + 企业编码 + PIN**）+ 当前工人 + 一次扫码开工（网络面 + DB 面双侧夹住）
 //
-// 工具：Playwright（`tests/node_modules/playwright`，**不新装依赖**，与 ui-replay/replay.mjs 同一引入方式）。
+// 🔴 修 #6938（入口漂移 —— 4 条判据恒红，且掩盖了「UI 级写面旅程 U5 实为未覆盖」）：
+//    worker-h5 早已改「工号 + 企业编码」（issue #6564 / 提交 `0478ca5ff`：登录 body 送 `enterpriseCode`、
+//    **不再**送 `tenantId`；短链 `?tenant_code=` 只是输入框初值；选择器 = `#wh5-enterprise-code`），
+//    而本段仍用 `?tenant_id=` + 不存在的 `#wh5-code`/`#wh5-scan` ⇒ U2/U3/U3b/U4a 恒红、U5 根本没跑到。
+//    ⇒ 选择器与 URL 参数**不手抄**：从 worker-h5 源码**引用**（见下方「UI 契约自证」），
+//      并加 U0 契约断言把形态钉住（源码变了 ⇒ 当场红，而不是夹具悄悄过期）。
 // 判据（每条都能红；含负对照与红证）：
-//   U1 未登录进入 ⇒ 登录视图可见（工号/PIN/登录按钮）
-//   U2 **负对照**：错误 PIN ⇒ 停在登录视图 + 页面出现错误文案（不得进报工视图）
+//   U0 契约自证：选择器/URL 参数引用的真值源逐条命中（读不到 ⇒ fail-closed）
+//   U1 未登录进入 ⇒ 登录视图可见（工号/企业编码/PIN/登录按钮）
+//   U2 **负对照**：错误 PIN ⇒ 停在登录视图 + 页面出现服务端业务文案（不得进报工视图）
 //   U3 正确登录 ⇒ 页头「当前工人：<探针工人>」出现在**真实 DOM**（不是接口回执）
 //   U4 带 token 进入扫码页 ⇒ 扫码输入框 + 「开 工」按钮渲染（`wh5-code` / `wh5-report`）
 //   U5 点「开 工」⇒ **网络面**：POST /api/worker/production/scan/complete 200；**DB 面**：落 1 行 production_work_logs
@@ -15,7 +21,7 @@ import { chromium } from '/Users/guangzhen.zk/ai native/migao/tests/node_modules
 import {
   Recorder, judge, log, nowCST, outPath, psql, one, guardedWrite,
   buildFixture, fixtureOps, workLogs, ensureWorkerSession, storePath, saveStore,
-  TENANT_ID, ID_PREFIX, cleanupFixture,
+  TENANT_ID, TENANT_CODE, ID_PREFIX, cleanupFixture,
 } from './lib.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -32,6 +38,47 @@ const A = await ensureWorkerSession(store, 'A')
 const UI = process.env.WORKER_UI || 'http://127.0.0.1:3160'
 const UI_PATH = process.env.WORKER_UI_PATH || '/worker-h5'
 const API_ORIGIN = process.env.API_ORIGIN || 'http://127.0.0.1:8080'
+
+// ── UI 契约自证（真值源 = worker-h5 源码；选择器与 URL 参数**引用**，不手抄）──
+// 读不到真值源 ⇒ fail-closed（不静默跳过、不回落成"大概对"）。
+const REPO = process.env.REPO_ROOT || fileURLToPath(new URL('../../../../..', import.meta.url))
+const readSrc = (p) => { try { return readFileSync(`${REPO}/${p}`, 'utf8') } catch { return null } }
+const renderSrc = readSrc('frontend/worker-h5/src/render.mjs')
+const scanInputSrc = readSrc('frontend/worker-h5/src/scan-input.mjs')
+const uiContractFailures = []
+if (!renderSrc) uiContractFailures.push('读不到 frontend/worker-h5/src/render.mjs（REPO_ROOT 指错？）')
+if (!scanInputSrc) uiContractFailures.push('读不到 frontend/worker-h5/src/scan-input.mjs（REPO_ROOT 指错？）')
+// 🔴 别再手抄：URL 参数名从 `enterpriseCodeFromLocation` 源码里抠（#6564 契约的唯一事实源）
+const codeParam = scanInputSrc?.match(/url\.searchParams\.get\('([^']+)'\)[\s\S]{0,80}?TENANT_CODE_PATTERN/) ?.[1] ?? null
+if (!codeParam) uiContractFailures.push("从 scan-input.mjs 的 enterpriseCodeFromLocation 抠不出企业编码的 query key")
+if (codeParam && codeParam !== 'tenant_code') uiContractFailures.push(`企业编码 query key 已变成 '${codeParam}'（不是 tenant_code）⇒ 本段的 URL 要跟着改`)
+for (const id of ['wh5-enterprise-code', 'wh5-worker-no', 'wh5-pin', 'wh5-login', 'wh5-error', 'wh5-code', 'wh5-scan', 'wh5-report', 'wh5-current-worker']) {
+  if (renderSrc && !new RegExp(`id="${id}"`).test(renderSrc)) uiContractFailures.push(`render.mjs 里不再有 #${id} ⇒ 本段的页内选择器已过期`)
+}
+if (renderSrc) {
+  const loginBlock = renderSrc.slice(renderSrc.indexOf('id="wh5-enterprise-code"'), renderSrc.indexOf('id="wh5-pin"'))
+  if (!/工号/.test(loginBlock)) uiContractFailures.push('登录表单里「企业编码」与「PIN」之间不是「工号」格 ⇒ 顺序/形态已改')
+}
+if (scanInputSrc && !/TENANT_CODE_PATTERN/.test(scanInputSrc)) uiContractFailures.push('scan-input.mjs 里没有 TENANT_CODE_PATTERN（企业编码形状口径被移走？）')
+const T_CODE = TENANT_CODE
+judge(R, {
+  id: 'U0.ui-contract-shape', name: '🔴 UI 契约自证：登录入口 = 工号 + 企业编码（#6564），选择器与 `?tenant_code=` 全部从 worker-h5 源码引用',
+  expect: `render.mjs 含 #wh5-enterprise-code/#wh5-worker-no/#wh5-pin/#wh5-login/#wh5-code/#wh5-scan/#wh5-report/#wh5-current-worker ∧ scan-input.mjs 的企业编码 query key = tenant_code`,
+  actual: `${JSON.stringify(uiContractFailures)}（query key=${JSON.stringify(codeParam)}）`,
+  pass: uiContractFailures.length === 0,
+  expectSource: '真值源：frontend/worker-h5/src/render.mjs（登录/扫码视图 id）+ frontend/worker-h5/src/scan-input.mjs::enterpriseCodeFromLocation（`?tenant_code=`，提交 0478ca5ff / issue #6564）',
+  evidence: [`REPO_ROOT=${REPO}`, '回归时会怎么红：入口再改（选择器/参数/表单顺序）⇒ 本条红并具名；夹具若没跟上，U1~U5 也会红'],
+})
+const tenantCodeRow = one(`select code from tenants where id=${TENANT_ID}`)
+judge(R, {
+  id: 'U0b.tenant-code-matches-db', name: '🔴 夹具企业编码 == DB 里被测租户的 code（不一致 ⇒ 登录必 422，且**当场具名**而不是显示成产品缺陷）',
+  expect: `harness TENANT_CODE（${T_CODE}）== tenants(${TENANT_ID}).code（${tenantCodeRow?.code}）`,
+  actual: `harness=${T_CODE} db=${tenantCodeRow?.code ?? '(查不到)'}`,
+  pass: !!tenantCodeRow?.code && tenantCodeRow.code === T_CODE,
+  expectSource: '租户短链口径：`?tenant_code=`（PR #6566 短链）== tenants.code；不一致时把 TENANT_CODE=<该值> 传给 harness',
+  evidence: ['可用 TENANT_CODE=<shop-xxxx> 覆盖；本判据的价值 = 让「编码抄错」当场红，而不是被读成产品登录坏了'],
+})
+
 const browser = await chromium.launch()
 const net = []
 const page = await browser.newPage({ viewport: { width: 480, height: 900 } })
@@ -66,21 +113,25 @@ page.on('response', async (r) => {
 })
 
 // ── U1 未登录视图 ──
-await page.goto(`${UI}${UI_PATH}/index.html?tenant_id=${TENANT_ID}`, { waitUntil: 'domcontentloaded' })
+await page.goto(`${UI}${UI_PATH}/index.html?${codeParam || 'tenant_code'}=${T_CODE}`, { waitUntil: 'domcontentloaded' })
 await page.waitForSelector('#wh5-login', { timeout: 15000 })
 await page.waitForTimeout(200)
 const loginVisible = await page.locator('#wh5-login').isVisible().catch(() => false)
+const enterprisePrefilled = await page.locator('#wh5-enterprise-code').inputValue().catch(() => null)
 await page.screenshot({ path: join(SHOT, 'U1-login-view.png') })
 judge(R, {
-  id: 'U1.login-view', name: '未登录进入 worker-h5 ⇒ 登录视图可见（#wh5-login / #wh5-worker-no / #wh5-pin）',
-  expect: '三个元素都可见', actual: `login=${loginVisible} no=${await page.locator('#wh5-worker-no').count()} pin=${await page.locator('#wh5-pin').count()}`,
-  pass: loginVisible && (await page.locator('#wh5-worker-no').count()) === 1 && (await page.locator('#wh5-pin').count()) === 1,
-  expectSource: 'worker-h5/src/render.mjs::renderLogin（`#wh5-worker-no` / `#wh5-pin` / `#wh5-login`）',
+  id: 'U1.login-view', name: '未登录进入 worker-h5 ⇒ 登录视图可见（#wh5-login / #wh5-worker-no / #wh5-enterprise-code / #wh5-pin）',
+  expect: `四个元素都可见 + 企业编码框被 URL 初值预填（${T_CODE}）`,
+  actual: `login=${loginVisible} no=${await page.locator('#wh5-worker-no').count()} ent=${await page.locator('#wh5-enterprise-code').count()} pin=${await page.locator('#wh5-pin').count()} code预填=${JSON.stringify(enterprisePrefilled)}`,
+  pass: loginVisible && (await page.locator('#wh5-worker-no').count()) === 1 && (await page.locator('#wh5-enterprise-code').count()) === 1
+    && (await page.locator('#wh5-pin').count()) === 1 && enterprisePrefilled === T_CODE,
+  expectSource: 'worker-h5/src/render.mjs::loginView（`#wh5-enterprise-code` / `#wh5-worker-no` / `#wh5-pin` / `#wh5-login`）+ app.mjs::createApp（`?tenant_code=` ⇒ 企业编码框**初值**）',
   evidence: [`截图 out/shots/U1-login-view.png`],
 })
 
 // ── U2 负对照：错误 PIN 必须停在登录视图 ──
 await page.fill('#wh5-worker-no', A.workerNo)
+await page.fill('#wh5-enterprise-code', T_CODE)
 await page.fill('#wh5-pin', '999999')
 await page.click('#wh5-login')
 await page.waitForTimeout(1200)
@@ -90,21 +141,41 @@ const reportBtnAfterBad = await page.locator('#wh5-report').count()
 await page.screenshot({ path: join(SHOT, 'U2-bad-pin.png') })
 const headerAfterBad = await page.locator('#wh5-current-worker').count()
 judge(R, {
-  id: 'U2.bad-pin-negative-control', name: '负对照（内容级）：错误 PIN ⇒ 停在登录视图 + #wh5-error 显示**业务文案**「工号或 PIN 不正确」+ 无报工入口、无工人名',
+  id: 'U2.bad-pin-negative-control', name: '负对照：错误 PIN（企业编码正确）⇒ 停在登录视图 + #wh5-error 显示**服务端业务文案**「工号或 PIN 不正确」+ 无报工入口、无工人名',
   expect: '#wh5-login 仍在 + #wh5-error 含「工号或 PIN 不正确」+ #wh5-report 不存在 + #wh5-current-worker 不存在',
-  actual: `loginVisible=${stillLogin} err="${errText.slice(0, 60)}" reportCount=${reportBtnAfterBad} headerCount=${headerAfterBad}`,
+  actual: `loginVisible=${stillLogin} err="${errText.slice(0, 80)}" reportCount=${reportBtnAfterBad} headerCount=${headerAfterBad}`,
   pass: stillLogin && errText.includes('工号或 PIN 不正确') && reportBtnAfterBad === 0 && headerAfterBad === 0,
-  expectSource: 'worker-h5 api.mjs::login 抛错 → render.mjs 显示 #wh5-error（文案来自服务端 401 "工号或 PIN 不正确"）',
+  expectSource: 'worker-h5 api.mjs::login 抛错 → render.mjs 显示 #wh5-error（文案来自服务端 401「工号或 PIN 不正确」）',
   evidence: [
     `截图 out/shots/U2-bad-pin.png`,
     `网络面：${JSON.stringify(net.filter((x) => x.u.includes('/api/worker/login')).map((x) => [x.u, x.status]))}`,
+    '🔴 文案口径（issue #6747，提交 8874bee5b）：「认证失败」路径**逐字保留服务端那句判定**（`工号或 PIN 不正确`）+ 一句可行动作；本次取 `includes` 而不等值，避免把「后面多了半句动作」判成红',
     '🔴 第一版只断言「#wh5-error 非空」⇒ 抓到的是 `Failed to fetch`（**测试装置没做同源代理**，不是产品文案）= 判据什么都没证（主会话复核指出）',
   ],
+})
+
+// ── U2b 负对照：**企业编码错** ⇒ 拒绝且不进报工视图（#6564 的租户只由服务端解析）──
+await page.fill('#wh5-enterprise-code', 'zzz-not-a-tenant')
+await page.fill('#wh5-pin', String(A.pin))
+await page.click('#wh5-login')
+await page.waitForTimeout(1200)
+const errText2 = await page.locator('#wh5-error').innerText().catch(() => '')
+const stillLogin2 = await page.locator('#wh5-login').isVisible().catch(() => false)
+const badCodeCalls = net.filter((x) => x.u.includes('/api/worker/login'))
+await page.screenshot({ path: join(SHOT, 'U2b-bad-enterprise-code.png') })
+judge(R, {
+  id: 'U2b.bad-enterprise-code-rejected', name: '负对照：企业编码不存在 ⇒ 停在登录视图 + 得到**确定性拒绝**（4xx，不是静默成功、不是 5xx）',
+  expect: '#wh5-login 仍在（无 #wh5-report）+ 网络面 /api/worker/login 4xx 且无 5xx',
+  actual: `loginVisible=${stillLogin2} err="${errText2.slice(0, 80)}" 登录调用=${JSON.stringify(badCodeCalls.map((x) => [x.status, String(x.err ?? '').slice(0, 90)]))}`,
+  pass: stillLogin2 && badCodeCalls.length > 0 && badCodeCalls.every((x) => x.status >= 400 && x.status < 500),
+  expectSource: 'WorkerTenantResolver.resolve（服务端按 enterpriseCode 解析租户；解析不到 ⇒ 反枚举 401/422，见 scan-input.mjs 类注释的 2026-10-11 生产实测）',
+  evidence: ['截图 out/shots/U2b-bad-enterprise-code.png', '本条把「租户只由服务端解析」这一条 #6564 纪律钉在 UI 层（前端的默认租户曾把租户 25 的工人登录判成租户 1）'],
 })
 
 // ── U3 正确登录 ⇒ 页头「当前工人」出现在真实 DOM ──
 net.length = 0
 await page.fill('#wh5-worker-no', A.workerNo)
+await page.fill('#wh5-enterprise-code', T_CODE)   // 🔴 U2b 刚把它填成错编码 ⇒ 必须复位，否则本条测的是「编码错」不是「登录成功」
 await page.fill('#wh5-pin', String(A.pin))
 await page.dispatchEvent('#wh5-worker-no', 'input')
 await page.dispatchEvent('#wh5-pin', 'input')
@@ -143,7 +214,7 @@ judge(R, {
   expect: '#wh5-code 存在且值 == ""；#wh5-scan 存在',
   actual: `codeBefore=${JSON.stringify(codeBefore)} ids=${JSON.stringify(preIds)}`,
   pass: codeBefore === '' && preIds.includes('wh5-scan'),
-  expectSource: 'app.mjs: 只从 URL 读 tenantId（tenantIdFromLocation）；token 只能手输/扫码（无深链能力，登记为观察项）',
+  expectSource: 'worker-h5/src/render.mjs::scanView（`#wh5-code` + `#wh5-scan`）；app.mjs 只从 URL 读**企业编码**（enterpriseCodeFromLocation）与 `?code=`/`?token=` 扫码深链，扫码框本身不回填（观察项）',
 })
 await page.fill('#wh5-code', F.token)
 await page.click('#wh5-scan')
@@ -185,7 +256,7 @@ judge(R, {
 const FM = buildFixture({ tag: 'P5M', qty: '3.00' })
 store.fixtures.P5M = FM; saveStore(store)
 guardedWrite(`-- probe-ok\nupdate order_items set product_id=null where tenant_id=${TENANT_ID} and id='${FM.itemId}';`)
-await page.goto(`${UI}${UI_PATH}/machine.html?tenant_id=${TENANT_ID}`, { waitUntil: 'domcontentloaded' })
+await page.goto(`${UI}${UI_PATH}/machine.html?${codeParam || 'tenant_code'}=${T_CODE}`, { waitUntil: 'domcontentloaded' })
 await page.waitForSelector('#machine-root', { timeout: 15000 }).catch(() => {})
 let machineText = ''
 try {
