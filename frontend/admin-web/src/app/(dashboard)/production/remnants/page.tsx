@@ -42,6 +42,8 @@ import { AlertCircle, RefreshCw, Search } from 'lucide-react'
 import { Button, Modal, Pagination } from '@/components/ui'
 import { orderApi, remnantApi } from '@/lib/api'
 import { InlineMarkdown } from '@/lib/inline-markdown'
+// 订单行商品身份（颜色 / 门幅）的唯一读取口 —— issue #6882
+import { orderItemSku } from '@/lib/order-item-sku'
 // 🔴 issue #6669 第 7 条：涉钱读数口径收敛到一处真值（本页缺失值印 `—`，不是 `¥0.00`）
 import { moneyOrDash } from '@/lib/money'
 import type { Order, RemnantLedgerView, RemnantMatchView } from '@/types'
@@ -191,6 +193,9 @@ export default function RemnantLedgerPage() {
       setLineCandidates(
         orders.flatMap((o) =>
           (o.items ?? [])
+            // ⚠️ issue #6883（跟踪中）：列表响应是 **brief** 形态 —— **不下发 `order_items.id`**
+            // ⇒ 这里的 `!!it.id` 恒 false、`itemId` 恒 undefined（候选行搜索整条链路当前不可用）。
+            // 本包（#6882）只把「颜色 / 规格」换成真值源；候选恒空要后端补行 id 才能修。
             .filter((it) => !!it.id)
             .map((it) => ({
               orderId: o.id,
@@ -198,8 +203,9 @@ export default function RemnantLedgerPage() {
               customerName: o.customerName,
               itemId: it.id,
               productName: it.productName,
-              color: it.color,
-              specification: it.specification,
+              // 真值源 = `processingInfo.colorName` / 「门幅」（走订单行身份的唯一读取口）
+              color: orderItemSku(it).color,
+              specification: orderItemSku(it).doorWidth,
               quantity: it.quantity,
             })),
         ),
@@ -237,8 +243,11 @@ export default function RemnantLedgerPage() {
       const itemId = (order?.items ?? []).find(
         (it) =>
           it.productName === selectedLine.productName &&
-          it.color === selectedLine.color &&
-          it.specification === selectedLine.specification &&
+          // 🔴 issue #6882：两侧都换成真值源。改前比的是 `it.color` / `it.specification` ——
+          // **这两个键在详情响应里都不存在** ⇒ `undefined === undefined` **恒真**，
+          // 判据退化成「品名 + 数量」⇒ 同名同量的两行会被认成**同一行**（余料可能挂到错行）。
+          orderItemSku(it).color === selectedLine.color &&
+          orderItemSku(it).doorWidth === selectedLine.specification &&
           Number(it.quantity) === Number(selectedLine.quantity),
       )?.id
       if (!itemId) {

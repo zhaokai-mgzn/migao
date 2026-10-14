@@ -29,6 +29,8 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { craftSpecRows, isCraftSpecKey, type CraftSpecRow } from '@/lib/craft-display'
+// 商品身份（货号 / 颜色 / 门幅）的唯一读取口 —— issue #6882
+import { orderItemSku } from '@/lib/order-item-sku'
 import { lineSubtotal } from '@/lib/order-amount'
 // 加工费的行级展示（读 detail / 编算式 / 判未定价）**issue #5843 起住在共享层** ——
 // 订单详情页的「费用构成」区消费的是**同一份**实现（同一个数不许有两种显示）。
@@ -307,7 +309,9 @@ function ItemRow({ item }: { item: OrderItem }) {
   const sellingMethod = rawSellingMethod
     ? sellingMethodLabel[rawSellingMethod] || rawSellingMethod
     : undefined
-  const doorWidth = typeof info.doorWidth === 'string' ? info.doorWidth : undefined
+  // 🔴 issue #6882：门幅走**唯一读取口**（`craftSpecRows` 同一份格式化 ⇒ `'2.8'` 与 `'2.8米'` 同值），
+  // 不再就地直读 `info.doorWidth`（那是同一件事实的第二份口径，且不归一）。
+  const doorWidth = orderItemSku(item).doorWidth || undefined
 
   const processingFee = item.processingFee || 0
   // 加工费构成（#4406）：只展示服务端已算好的数，**不重算**
@@ -339,16 +343,16 @@ function ItemRow({ item }: { item: OrderItem }) {
         )}
 
         <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
-          {item.sku && <span className="text-xs text-neutral-400">SKU: {item.sku}</span>}
+          {/* 🔴 issue #6882：原「SKU: {item.sku}」与「规格: {item.specification}」读的两个键**都不在**
+              详情响应里（真值 = 货号 `skuCode`）⇒ 前者恒不渲染；后者恒不渲染、且与下面那行
+              「门幅:」是**同一件事实**的重复（§31 P2 信息不重复）⇒ 两处一起退场。 */}
+          {item.skuCode && <span className="text-xs text-neutral-400">货号: {item.skuCode}</span>}
           {/* 销售信息：颜色、销售方式、门幅 */}
           {colorName && (
             <span className="text-xs text-primary-600 font-medium">{colorName}</span>
           )}
           {sellingMethod && <span className="text-xs text-neutral-400">{sellingMethod}</span>}
           {doorWidth && <span className="text-xs text-neutral-400">门幅: {doorWidth}</span>}
-          {item.specification && (
-            <span className="text-xs text-neutral-400">规格: {item.specification}</span>
-          )}
         </div>
 
         {/* 优先整卷发货的分配（用户裁定）：买 100 米 / 1 卷 60 米 ⇒ 整卷 1 + 散剪 40 米。

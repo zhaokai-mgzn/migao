@@ -4,14 +4,15 @@ import { useEffect, useState } from 'react'
 import { X, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Button from '@/components/ui/Button'
-import type { Order } from '@/types'
+import type { OrderBrief } from '@/types'
 
 export interface RefundOrderModalProps {
   open: boolean
   onClose: () => void
   onConfirm: (data: { refundAmount: number; refundReason: string }) => void
   loading?: boolean
-  order?: Order | null
+  /** 🔴 issue #6882：调用方来自**订单列表**（列表形态 `OrderBrief`）—— 不是详情形态。 */
+  order?: OrderBrief | null
 }
 
 const PRESET_REASONS = ['质量问题', '客户退货', '协商一致']

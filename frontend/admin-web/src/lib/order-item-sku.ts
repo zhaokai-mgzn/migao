@@ -1,5 +1,8 @@
 /**
- * 订单行的**商品 SKU 身份**（品名 / 货号 / 颜色 / 门幅）—— 纸面单据的**唯一**取值口。
+ * 订单行的**商品 SKU 身份**（品名 / 货号 / 颜色 / 门幅）—— **唯一**取值口（纸面单据 + 屏幕面共用）。
+ *
+ * 消费方：四张纸面单据（`components/orders/*Doc.tsx`）+ 发货页 `ShipOrder` 的商品表
+ * （issue #6882：屏幕面原先各读一份会漂的字段，实测三列恒空）。
  *
  * ## 为什么单独一个模块（issue #6869 的根因）
  *
@@ -28,10 +31,26 @@
  * 报价单留空、加工单印 `—`（两份单据既有口径不同，属**有意**差异，本模块不替它们选）。
  */
 import { craftSpecRows, type CraftSpecRow } from './craft-display'
-import type { OrderItem } from '@/types'
+
+/**
+ * 取值口接受的**最小形态** —— 详情行 `OrderItem` 与列表行 `OrderBriefItem` **都**满足它
+ * （issue #6882：两个形态的货号键名不同 —— 详情侧是 `skuCode`，列表侧是 `productCode`，
+ * 而后端两处填的都是 `products.sku_code`）。
+ *
+ * 用结构类型而不是绑死某一个 interface：两个调用方共用**同一份**取值口径，
+ * 不再各写一条会漂的别名链（这正是 issue #6869 的病灶形态）。
+ */
+export interface OrderItemSkuSource {
+  productName?: string
+  /** 详情侧：`OrderDetailResponse.OrderItemResponse.skuCode`（= `products.sku_code`） */
+  skuCode?: string
+  /** 列表侧：`OrderListResponse.OrderItemBrief.productCode`（后端填的也是 `products.sku_code`） */
+  productCode?: string
+  processingInfo?: Record<string, unknown> | null
+}
 
 /** 订单行的商品身份（缺值 = 空串） */
-export interface PaperItemSku {
+export interface OrderItemSku {
   /** 商品名称 */
   name: string
   /** 货号：`skuCode`（响应真字段）优先，`productCode` 为历史别名 */
@@ -54,7 +73,7 @@ function text(value: unknown): string {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : ''
 }
 
-export function paperItemSku(item: OrderItem): PaperItemSku {
+export function orderItemSku(item: OrderItemSkuSource): OrderItemSku {
   const rows = craftSpecRows(item.processingInfo)
   const info = (item.processingInfo ?? {}) as Record<string, unknown>
   return {

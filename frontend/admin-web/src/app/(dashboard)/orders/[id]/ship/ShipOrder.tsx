@@ -13,6 +13,8 @@ import { useAuthStore } from '@/store/auth'
 import type { Order, OrderItem } from '@/types'
 import { cn } from '@/lib/utils'
 import { LOGISTICS_COMPANIES, LOGISTICS_TYPES } from '@/lib/logistics'
+// 商品身份（品名/货号/颜色/门幅）的**唯一读取口**（issue #6882：原先这里直读三个不存在的键）
+import { orderItemSku } from '@/lib/order-item-sku'
 
 // 可发货订单状态（后端枚举：pending/confirmed/producing/shipped/completed/cancelled；
 // producing = 加工单流转后订单进入「生产中」，仍属待发货；'processing' 是历史误写，从不产生）
@@ -565,7 +567,7 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
             <Th className="pl-0">商品</Th>
             <Th className="pl-0">商品货号</Th>
             <Th>颜色</Th>
-            <Th>规格尺寸</Th>
+            <Th>门幅</Th>
             <Th align="right">单价(元/米)</Th>
             <Th align="center">数量(米)</Th>
             <Th align="right">金额(元)</Th>
@@ -574,7 +576,13 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
         </thead>
         <tbody className="divide-y divide-neutral-100">
           {groups.map((group) =>
-            group.rows.map((row, rowIdx) => (
+            group.rows.map((row, rowIdx) => {
+              // 🔴 issue #6882：商品身份四件套走**唯一读取口**。原读 `row.productCode` /
+              // `row.color` / `row.specification` —— 这三个键**都不在详情响应里**（`order_items`
+              // 表也没有那几列）⇒ 这三列在真单上恒 `-`（真值：货号 `skuCode`、颜色
+              // `processingInfo.colorName`、门幅 `processingInfo.doorWidth`）。
+              const sku = orderItemSku(row)
+              return (
               <tr key={`${group.key}-${row.id || rowIdx}`} className="hover:bg-neutral-50/50">
                 {rowIdx === 0 && (
                   <td
@@ -584,9 +592,9 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
                     {group.productName}
                   </td>
                 )}
-                <Td className="pl-0">{row.productCode || '-'}</Td>
-                <Td>{row.color || '-'}</Td>
-                <Td>{row.specification || '-'}</Td>
+                <Td className="pl-0">{sku.code || '-'}</Td>
+                <Td>{sku.color || '-'}</Td>
+                <Td>{sku.doorWidth || '-'}</Td>
                 <Td align="right" className="text-red-500 font-medium">
                   {formatAmount(row.unitPrice)}
                 </Td>
@@ -605,7 +613,8 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
                   </td>
                 )}
               </tr>
-            ))
+              )
+            })
           )}
         </tbody>
       </table>

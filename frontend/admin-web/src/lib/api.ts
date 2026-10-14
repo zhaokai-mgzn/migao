@@ -15,6 +15,7 @@ import type {
   ApiResponse, 
   PageResponse, 
   PageParams,
+  OrderBrief,
   Product, 
   ProductListParams, 
   ProductFormData,
@@ -684,8 +685,10 @@ export const afterSalesApi = {
 // 订单 API
 export const orderApi = {
   // 获取订单列表（支持分页和筛选）
+  // 🔴 issue #6882：列表行是**列表形态**（`OrderListResponse.OrderItemBrief`），不是详情行 ——
+  // 用 `Order` 接它会让「详情字段在列表上也是可选字段」这种谎话继续成立。
   getOrders: (params?: OrderListParams) => 
-    request.get<ApiResponse<PageResponse<Order>>>('/api/admin/orders', { params }),
+    request.get<ApiResponse<PageResponse<OrderBrief>>>('/api/admin/orders', { params }),
   
   // 获取单个订单详情
   getOrder: (id: string) => 

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { freightText } from '@/lib/logistics'
-import { paperItemSku } from '@/lib/order-item-sku'
+import { orderItemSku } from '@/lib/order-item-sku'
 import { paperLineSubtotal } from '@/lib/order-amount'
 import { usePaymentQrcodes } from '@/lib/use-payment-qrcodes'
 import { printBodyFontPt, printPageRule } from '@/lib/print-media'
@@ -54,10 +54,10 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  *
  * 数据口径（四条硬约束，勿随手改）：
  * 5. **展示真值单一来源**：品名 / 货号 / 颜色 / 门幅 一律取 `lib/order-item-sku.ts` 的
- *    `paperItemSku(item)`（**唯一**取值口；货号真字段是响应里的 `skuCode`，原先读的 `productCode`
+ *    `orderItemSku(item)`（**唯一**取值口；货号真字段是响应里的 `skuCode`，原先读的 `productCode`
  *    **不在响应里** ⇒ 纸面货号恒空 —— 那正是 issue #6869 的根因）；
  *    工艺说明取 `lib/craft-display.ts` 的 `craftSpecRows()`（设计文档 §4.9「一份 spec，三处渲染」），
- *    本组件**不另写一份推导**；「门幅」已由 `paperItemSku` 排除（它有独立的列，同一真值不重复印），
+ *    本组件**不另写一份推导**；「门幅」已由 `orderItemSku` 排除（它有独立的列，同一真值不重复印），
  *    而「部位」（`curtainType`）**保留在工艺说明里** —— issue #4521 之后它只有纱帘行才有值，
  *    独立成列时恒空（用户原话「报价单展示部位是啥意思」），并入工艺说明才不丢信息。
  *    两组沿用既有「原始输入 / 算料输出」切分（§4.3 表 B）：`工艺：…　算料：…`。
@@ -308,7 +308,7 @@ export default function QuotationDoc({
 
 function SetBlock({ item, index, total }: { item: OrderItem; index: number; total: number }) {
   // 商品身份（品名 / 货号 / 颜色 / 门幅）—— **唯一**取值口，见文件头第 5 条
-  const sku = paperItemSku(item)
+  const sku = orderItemSku(item)
   const info = (item.processingInfo ?? {}) as Record<string, unknown>
 
   // 组件：面料行 = componentRole（缺省即主布）/ 加工费行 = 加工费
@@ -319,7 +319,7 @@ function SetBlock({ item, index, total }: { item: OrderItem; index: number; tota
   const quantity = numberOrNull(item.quantity)
   const processingFee = numberOrNull(item.processingFee) ?? 0
 
-  // 工艺说明：craftSpecRows 的**同一份**真值（§4.9）—— 「门幅」已由 paperItemSku 排除
+  // 工艺说明：craftSpecRows 的**同一份**真值（§4.9）—— 「门幅」已由 orderItemSku 排除
   // （它有自己的列，重复印同一真值只是噪音）；其余按「算料输出」与否分两组（§4.3 表 B），
   // 两组并入**同一行**（纸面要省版面）。
   // ⚠️ 「部位」（curtainType）**保留**在这里 —— #4521 移除录入面后它只有纱帘行才有值，

@@ -628,6 +628,12 @@ export const OrderStatusTabs: { key: OrderStatusTab; label: string }[] = [
 // ===== 订单数据类型 =====
 
 // 订单明细项（单个SKU行）
+//
+// 🔴 issue #6882：本类型 = **详情**响应 `OrderDetailResponse.OrderItemResponse` 的形态。它**没有**
+// `productCode` / `color` / `specification` / `sku` 四个键（`order_items` 表也没有那几列）——
+// 这四个字段已从类型里**删除**：屏幕面再读它们 = **编译期就红**。此前它们是「幽灵可选字段」，
+// 恒 `undefined` 却谁都不报（实测：发货页三列恒 `-`、详情「SKU/规格」恒不渲染）。
+// 列表行是**另一个形态**，见下面的 `OrderBriefItem`。
 export interface OrderItem {
   id: string
   productId?: string
@@ -637,19 +643,9 @@ export interface OrderItem {
    * 由 `OrderService.convertToItemResponse` 从 `products.sku_code` 回填（issue #6869）。
    */
   skuCode?: string
-  /**
-   * ⚠️ `order_items` 表**没有这一列**、响应里也**没有这个键** —— 纸面/列表原先读它 ⇒ 货号恒空
-   * （issue #6869 的根因）。保留仅为兼容存量夹具，新代码走
-   * `frontend/admin-web/src/lib/order-item-sku.ts` 的 `paperItemSku()`。
-   */
-  productCode?: string
-  /** ⚠️ 同上：不在响应里；颜色真值在 `processingInfo.colorName`。 */
-  color?: string              // 颜色
-  specification?: string      // 规格尺寸（如"门幅2.8米"）
   quantity: number            // 数量（米）
   unitPrice: number           // 单价（元/米）
   amount: number              // 金额 = unitPrice * quantity
-  sku?: string
   width?: number
   height?: number
   /**
@@ -667,6 +663,33 @@ export interface OrderItem {
   subtotal: number
   createdAt?: string
 }
+
+/**
+ * 订单明细的**列表**行 —— 后端 `OrderListResponse.OrderItemBrief`（issue #6882）。
+ *
+ * 与详情行 `OrderItem` **不是同一个形态**（这是本仓一处历史坑：两者曾共用 `OrderItem`）：
+ * - **有** `productCode`：后端填的是 `products.sku_code`（`OrderService.java:420`）—— 真的货号；
+ * - **没有** `id`：列表不下发行 id（issue #2916）⇒ 需要行 id 的链路见 issue #6883；
+ * - **没有** `skuCode`：那是详情侧从 product 回填的键。
+ */
+export interface OrderBriefItem {
+  productId?: string
+  productName: string
+  /** 商品货号（后端填 `products.sku_code`） */
+  productCode?: string
+  quantity: number
+  unitPrice: number
+  amount: number
+  subtotal: number
+  /** 销售信息（颜色、销售方式、门幅等）—— 与详情侧同源 */
+  processingInfo?: Record<string, unknown>
+}
+
+/**
+ * 订单**列表**行（＝ {@link Order}，但明细换成列表形态）。
+ * 列表页 / `OrderTable` / 余料页的商品行搜索用它，**不要**用详情类型 `Order` 去接列表响应。
+ */
+export type OrderBrief = Omit<Order, 'items'> & { items?: OrderBriefItem[] }
 
 // 加工项（订单级聚合快照）
 //

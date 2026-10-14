@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // case_ids: UI-019, UI-030
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 
 /**
  * ShipOrder 加工单前置守卫（issue #3889）：
@@ -56,10 +56,15 @@ const mockOrder = {
       id: 'item1',
       productId: 'prod1',
       productName: '遮光窗帘',
-      productCode: 'SKU-001',
+      // issue #6882：夹具按**真 wire 形态**（详情响应只有 `skuCode`；颜色/门幅在 processingInfo 里）。
+      // 改前这里写的是 `productCode` / `color` / `specification` —— 三个键响应里都没有 ⇒
+      // 夹具替纸面「补上」了不存在的键，真单上那三格恒 `-` 而判据照样绿。
+      skuCode: 'SKU-001',
       unitPrice: 175,
       quantity: 20,
       amount: 3500,
+      subtotal: 3500,
+      processingInfo: { colorName: '米白', doorWidth: '2.8米' },
     },
   ],
   processingItems: [{ name: '打孔', quantity: 2 }],
@@ -71,6 +76,33 @@ const po = (status: string) => ({
   processingOrderNo: 'JG-PO-1',
   status,
   items: [],
+})
+
+/**
+ * issue #6882：发货页商品表的「商品货号 / 颜色 / 门幅」三列必须印**真值**。
+ * 改前读 `row.productCode` / `row.color` / `row.specification` —— 三个键都不在详情响应里 ⇒
+ * 三列恒 `-`（判据若只断言「有这一列」就会恒绿）。本用例逐格判真值，改回旧写法必红。
+ */
+describe('ShipOrder 商品表：货号 / 颜色 / 门幅 印真值（issue #6882）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetOrder.mockResolvedValue({ data: { data: mockOrder } })
+    mockPODetail.mockResolvedValue({ data: { data: po('completed') } })
+  })
+
+  it('三格取 skuCode / processingInfo.colorName / processingInfo.doorWidth，且表头是「门幅」', async () => {
+    render(<ShipOrder />)
+    await waitFor(() => {
+      expect(screen.getByText('SKU-001')).toBeInTheDocument()
+    })
+    // 逐格判「同一行里」的真值（不用全局 `getByText`：颜色值可能在全页别处也出现）
+    const row = screen.getByText('SKU-001').closest('tr') as HTMLElement
+    expect(within(row).getByText('米白')).toBeInTheDocument()
+    expect(within(row).getByText('2.8米')).toBeInTheDocument()
+    expect(screen.getByText('门幅')).toBeInTheDocument()
+    // 表头不再是那个读不到值的「规格尺寸」
+    expect(screen.queryByText('规格尺寸')).not.toBeInTheDocument()
+  })
 })
 
 describe('ShipOrder 加工单前置守卫', () => {

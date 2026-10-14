@@ -65,14 +65,18 @@ describe('OrderItemList', () => {
       expect(matches.length).toBeGreaterThanOrEqual(1)
     })
 
-    it('renders SKU when provided', () => {
-      render(<OrderItemList items={[makeItem({ sku: 'SKU-001' })]} />)
-      expect(screen.getByText('SKU: SKU-001')).toBeInTheDocument()
+    it('renders SKU when provided（issue #6882：货号取 skuCode，印「货号」）', () => {
+      render(<OrderItemList items={[makeItem({ skuCode: 'SKU-001' })]} />)
+      expect(screen.getByText('货号: SKU-001')).toBeInTheDocument()
     })
 
-    it('renders specification when provided', () => {
-      render(<OrderItemList items={[makeItem({ specification: '门幅2.8米' })]} />)
-      expect(screen.getByText('规格: 门幅2.8米')).toBeInTheDocument()
+    it('原「规格:」行已退场（issue #6882）——它与「门幅:」是同一件事实，只印一处', () => {
+      render(
+        <OrderItemList
+          items={[makeItem({ processingInfo: { colorName: '米白', doorWidth: '门幅2.8米' } })]}
+        />
+      )
+      expect(screen.queryByText(/^规格[:：]/)).toBeNull()
     })
 
     it('renders width and height when provided', () => {
@@ -97,7 +101,8 @@ describe('OrderItemList', () => {
       )
       expect(screen.getByText('深蓝色')).toBeInTheDocument()
       expect(screen.getByText('散剪')).toBeInTheDocument()
-      expect(screen.getByText('门幅: 2.8m')).toBeInTheDocument()
+      // issue #6882：门幅走唯一读取口 ⇒ 存量形态（`2.8m` / `2.8` / `2.8米`）一律归一到 `2.8米`
+      expect(screen.getByText('门幅: 2.8米')).toBeInTheDocument()
     })
 
     // issue #4426：内部键名的原始键值兜底行**默认收起**（展开后内容不变）
@@ -716,6 +721,35 @@ describe('OrderItemList', () => {
         />
       )
       expect(screen.getByText('散剪')).toBeInTheDocument()
+    })
+  })
+
+  /**
+   * issue #6882：这两行原先分别读 `item.sku` 与 `item.specification` ——
+   * **两个键都不在详情响应里**（真值：货号 `skuCode`）⇒ 前者恒不渲染；后者恒不渲染，
+   * 且与上面那行「门幅:」是**同一件事实**的重复（§31 P2）⇒ 两处一起退场。
+   * 改回旧写法（读 `item.sku` / `item.specification`）⇒ 本用例当场红。
+   */
+  describe('商品身份（issue #6882）', () => {
+    it('货号印 skuCode（不是那个不存在的 `sku`），门幅归一后只印一处', () => {
+      render(
+        <OrderItemList
+          items={[
+            makeItem({ skuCode: 'SKU-9', processingInfo: { colorName: '米白', doorWidth: '2.8' } }),
+          ]}
+        />
+      )
+      expect(screen.getByText('货号: SKU-9')).toBeInTheDocument()
+      // 门幅走唯一读取口 ⇒ `'2.8'` 也归一成 `2.8米`
+      expect(screen.getByText('门幅: 2.8米')).toBeInTheDocument()
+      // 重复的「规格:」那行不再出现（同一件事实只印一处）
+      expect(screen.queryByText(/^规格[:：]/)).toBeNull()
+    })
+
+    it('缺 skuCode ⇒ 不印货号行（不编占位、不印 undefined）', () => {
+      render(<OrderItemList items={[makeItem()]} />)
+      expect(screen.queryByText(/^货号[:：]/)).toBeNull()
+      expect(screen.queryByText(/undefined/)).toBeNull()
     })
   })
 })

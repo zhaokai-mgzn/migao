@@ -413,7 +413,7 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
 
   it('⑨ 部分发货 ⇒ 已发行印实发、未发行**显式**「未发」（不是 0、不是空白）', () => {
     const order = buildOrder({
-      items: [buildItem(), buildItem({ id: 'item-2', productCode: '0013', quantity: 5 })],
+      items: [buildItem(), buildItem({ id: 'item-2', skuCode: '0013', quantity: 5 })],
     })
     render(
       <SalesDoc
@@ -430,7 +430,7 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
 
   it('⑨ 红证：把未发行写成 0 / 静默留空 ⇒ 上面那条必红', () => {
     const order = buildOrder({
-      items: [buildItem(), buildItem({ id: 'item-2', productCode: '0013', quantity: 5 })],
+      items: [buildItem(), buildItem({ id: 'item-2', skuCode: '0013', quantity: 5 })],
     })
     render(
       <SalesDoc

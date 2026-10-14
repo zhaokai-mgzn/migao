@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import type { Order, OrderItem, LogisticsInfo } from '@/types'
 import type { PrintTarget } from './index'
 import { printBodyFontPt, printPageRule } from '@/lib/print-media'
-import { paperItemSku } from '@/lib/order-item-sku'
+import { orderItemSku } from '@/lib/order-item-sku'
 import { cn, formatFullDateTime } from '@/lib/utils'
 
 /**
@@ -250,7 +250,7 @@ export default function ShipmentDoc({
             // 纸面身份四件套取 `lib/order-item-sku.ts`（issue #6869）：原先读的
             // `item.productCode` / `item.color` / `item.specification` **都不在响应里**
             // ⇒ 货号 / 颜色 / 规格 三列在真单上恒空（「缺了商品 sku 的信息」的同族形态）。
-            const sku = paperItemSku(item)
+            const sku = orderItemSku(item)
             return (
               <tr key={item.id || idx}>
                 <DocTd>{sku.name}</DocTd>

@@ -897,7 +897,9 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
                     {group.productName}
                   </td>
                 )}
-                <Td className="pl-0">{row.sku || '-'}</Td>
+                {/* 🔴 issue #6882：原读 `row.sku` —— 详情响应里**没有这个键**（真值 = `skuCode`，
+                    由 `OrderService.convertToItemResponse` 从 `products.sku_code` 回填）⇒ 这一列恒 `-`。 */}
+                <Td className="pl-0">{row.skuCode || '-'}</Td>
                 <Td>{(row.processingInfo as any)?.colorName || '-'}</Td>
                 <Td>
                   {(() => {

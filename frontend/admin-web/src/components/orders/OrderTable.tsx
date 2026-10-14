@@ -2,7 +2,7 @@
 
 import { ArrowDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { Order } from '@/types'
+import type { OrderBrief } from '@/types'
 import { normalizeOrderStatus } from '@/types'
 import { Badge } from '@/components/ui'
 import DateTimeCell from '@/components/common/DateTimeCell'
@@ -14,7 +14,7 @@ import RemarkPopover from './RemarkPopover'
  * #1289: 获取备注列触发器的预览文本。
  * 优先使用 order.remark（旧字符串），否则从 order.remarks[] 取最新一条的 content。
  */
-function getRemarkPreview(order: Order): string {
+function getRemarkPreview(order: OrderBrief): string {
   if (order.remark) {
     return order.remark.replace(/^\[[\d\-:\s]+\]\s*/gm, '')
   }
@@ -28,17 +28,19 @@ function getRemarkPreview(order: Order): string {
 }
 
 export interface OrderTableProps {
-  orders: Order[]
+  /** 🔴 issue #6882：列表行是**列表形态**（明细没有 `id`/`skuCode`，但有 `productCode`= 真货号）。
+   *  用详情类型 `Order` 接列表响应 = 让「详情字段在列表上也可选」的谎话继续成立。 */
+  orders: OrderBrief[]
   loading: boolean
   selectedIds: string[]
   onSelectChange: (ids: string[]) => void
-  onView: (order: Order) => void
-  onRemark: (order: Order) => void
-  onClose: (order: Order) => void
-  onShip: (order: Order) => void
-  onRefund?: (order: Order) => void
-  onConfirmPayment?: (order: Order) => void
-  onConfirmReceive?: (order: Order) => void
+  onView: (order: OrderBrief) => void
+  onRemark: (order: OrderBrief) => void
+  onClose: (order: OrderBrief) => void
+  onShip: (order: OrderBrief) => void
+  onRefund?: (order: OrderBrief) => void
+  onConfirmPayment?: (order: OrderBrief) => void
+  onConfirmReceive?: (order: OrderBrief) => void
   /**
    * 表体空态文案（issue #6733）。
    *
@@ -144,7 +146,7 @@ export default function OrderTable({
     }
   }
 
-  const renderActions = (order: Order) => {
+  const renderActions = (order: OrderBrief) => {
     const displayStatus = normalizeOrderStatus(order.status as string)
     // 后端允许退款的状态：confirmed / producing / shipped / completed
     // （前端展示态 pending_shipment 同时覆盖 confirmed + producing）
@@ -310,8 +312,8 @@ export default function OrderTable({
                     {order.items?.length ? (
                       <div className="space-y-2">
                         {order.items.map((item, itemIdx) => (
-                          // 列表接口不下发 item.id（#2916）→ key 用 id 兜底序号，避免 React key 警告
-                          <div key={item.id ?? `${order.id}-product-${itemIdx}`} className="space-y-0.5">
+                          // 列表接口不下发 item.id（#2916；类型上已由 `OrderBriefItem` 如实表达，issue #6882）
+                          <div key={`${order.id}-product-${itemIdx}`} className="space-y-0.5">
                             <div className="text-neutral-900 font-medium leading-tight">
                               {item.productName}
                             </div>
@@ -335,8 +337,8 @@ export default function OrderTable({
                         const pi = item.processingInfo
                         const fee = getItemProcessingFee(pi)
                         return (
-                          // 列表接口不下发 item.id（#2916）→ key 用 id 兜底序号，避免 React key 警告
-                          <div key={item.id ?? `${order.id}-item-${itemIdx}`} className="space-y-0.5">
+                          // 列表接口不下发 item.id（#2916；类型上已由 `OrderBriefItem` 如实表达，issue #6882）
+                          <div key={`${order.id}-item-${itemIdx}`} className="space-y-0.5">
                             <div className="text-neutral-700 leading-tight text-xs">
                               <span>{item.productName || item.productCode || '-'}</span>
                               {': '}

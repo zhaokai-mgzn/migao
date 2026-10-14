@@ -13,6 +13,7 @@ import type {
   AfterSalesFormData,
   AfterSalesPriority,
   Order,
+  OrderBrief,
 } from '@/types'
 import {
   AfterSalesTypeLabels,
@@ -72,11 +73,12 @@ export default function AfterSalesPage() {
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [orderSearchKeyword, setOrderSearchKeyword] = useState('')
-  const [orderSearchResults, setOrderSearchResults] = useState<Order[]>([])
+  // 🔴 issue #6882：`orderApi.getOrders` 回的是**列表形态**（brief），不是详情形态 `Order`
+  const [orderSearchResults, setOrderSearchResults] = useState<OrderBrief[]>([])
   const [orderSearching, setOrderSearching] = useState(false)
   /** 已经搜过一次（issue #6664 第 9 条）：空态只在「搜过且没结果」时出现，不是一开弹窗就说没有 */
   const [orderSearched, setOrderSearched] = useState(false)
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
+  const [selectedOrder, setSelectedOrder] = useState<OrderBrief | null>(null)
   const [newTicketType, setNewTicketType] = useState<AfterSalesType>('return')
   const [newDescription, setNewDescription] = useState('')
   const [newPriority, setNewPriority] = useState<AfterSalesPriority>('normal')

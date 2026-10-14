@@ -11,7 +11,7 @@ import { OrderTable, CloseOrderModal, RemarkModal, RefundOrderModal } from '@/co
 import { Button, Modal } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
 import { usePermission } from '@/lib/permission'
-import type { Order, OrderStatus, OrderStatusTab } from '@/types'
+import type { OrderBrief, OrderStatus, OrderStatusTab } from '@/types'
 import { FrontendToBackendStatus, OrderStatusTabs, ORDER_CATEGORIES, OrderStatusLabels, toBackendStatusParam } from '@/types'
 
 interface SearchState {
@@ -168,8 +168,8 @@ export default function OrdersPage() {
    */
   const [loadError, setLoadError] = useState(false)
 
-  // 列表
-  const [orders, setOrders] = useState<Order[]>([])
+  // 列表（🔴 issue #6882：**列表形态**，不是详情形态 —— `orderApi.getOrders` 回的是 brief）
+  const [orders, setOrders] = useState<OrderBrief[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
 
@@ -177,14 +177,14 @@ export default function OrdersPage() {
   const [closeModalOpen, setCloseModalOpen] = useState(false)
   const [remarkModalOpen, setRemarkModalOpen] = useState(false)
   const [refundModalOpen, setRefundModalOpen] = useState(false)
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
+  const [selectedOrder, setSelectedOrder] = useState<OrderBrief | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
   /**
    * 确认动作弹框（issue #6664 第 4 条）：改前这两个动作走 `window.confirm` ——
    * 与仓内自研 `Modal`（UI-048 家族）**同一个动作两个世界观**，且**没有在飞行态**。
    * 现在统一走 Modal，弹框就是**闸门**（取消 ⇒ 一个请求都不发）。
    */
-  const [confirmAction, setConfirmAction] = useState<{ kind: 'payment' | 'receive'; order: Order } | null>(null)
+  const [confirmAction, setConfirmAction] = useState<{ kind: 'payment' | 'receive'; order: OrderBrief } | null>(null)
   const [confirming, setConfirming] = useState(false)
 
   const loadOrders = useCallback(async (pageOverride?: number) => {
@@ -303,34 +303,34 @@ export default function OrdersPage() {
     router.replace(`/orders?${url.toString()}`, { scroll: false })
   }
 
-  const handleView = (order: Order) => {
+  const handleView = (order: OrderBrief) => {
     router.push(`/orders/${order.id}`)
   }
 
-  const handleOpenRemark = (order: Order) => {
+  const handleOpenRemark = (order: OrderBrief) => {
     setSelectedOrder(order)
     setRemarkModalOpen(true)
   }
 
-  const handleOpenClose = (order: Order) => {
+  const handleOpenClose = (order: OrderBrief) => {
     setSelectedOrder(order)
     setCloseModalOpen(true)
   }
 
-  const handleOpenRefund = (order: Order) => {
+  const handleOpenRefund = (order: OrderBrief) => {
     setSelectedOrder(order)
     setRefundModalOpen(true)
   }
 
-  const handleShip = (order: Order) => {
+  const handleShip = (order: OrderBrief) => {
     router.push(`/orders/${order.id}/ship`)
   }
 
-  const handleConfirmPayment = (order: Order) => {
+  const handleConfirmPayment = (order: OrderBrief) => {
     setConfirmAction({ kind: 'payment', order })
   }
 
-  const handleConfirmReceive = (order: Order) => {
+  const handleConfirmReceive = (order: OrderBrief) => {
     setConfirmAction({ kind: 'receive', order })
   }
 

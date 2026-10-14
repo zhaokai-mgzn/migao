@@ -65,7 +65,7 @@ SINGLE_PROJECTION: tuple[tuple[str, str, tuple[str, ...]], ...] = (
 
 # ── C7 的判据面（issue #6869）─────────────────────────────────────────────────
 #: 纸面「商品 SKU 身份」的**唯一读取口**（`frontend/admin-web/src/lib/order-item-sku.ts`）
-ITEM_SKU_READER = "paperItemSku("
+ITEM_SKU_READER = "orderItemSku("
 #: 纸面「物流方式」的**唯一读取口**（`frontend/admin-web/src/lib/logistics.ts`）
 FREIGHT_READERS: tuple[str, ...] = ("freightText(", "logisticsTypeText(")
 #: 响应里**不存在**的键（在打印单据里直接读 ⇒ 纸面那一列恒空；issue #6869 的根因）
@@ -479,7 +479,7 @@ def test_c7_paper_identity_and_freight_go_through_the_single_reader():
     assert _identity_problems("(合成样本·修前)", before_identity), (
         "修前写法（读 `item.productCode`）**没判红** ⇒ C7 的幽灵字段分支是空判据"
     )
-    after_identity = "const sku = paperItemSku(item); items.map(() => sku.code)"
+    after_identity = "const sku = orderItemSku(item); items.map(() => sku.code)"
     assert _identity_problems("(合成样本·修后)", after_identity) == [], (
         "修后写法被判红 ⇒ C7 会把合规实现喂红（假红）"
     )

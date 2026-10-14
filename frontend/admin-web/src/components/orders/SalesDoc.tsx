@@ -11,7 +11,7 @@ import {
   type PrintMediaId,
 } from '@/lib/print-media'
 import { usePaymentQrcodes } from '@/lib/use-payment-qrcodes'
-import { paperItemSku } from '@/lib/order-item-sku'
+import { orderItemSku } from '@/lib/order-item-sku'
 import {
   resolveSalesQuantity,
   SALES_QTY_NOT_SHIPPED,
@@ -54,7 +54,7 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  * ① 表头：销售单 / 单号 / 日期 / 客户 / 电话 / 地址 / 订货电话；
  * ② 明细：{@link SALES_DOC_COLUMNS}（序号 | 品名 | 货号 | 颜色 | 门幅 | 数量 | 单位 | 单价 | 金额）——
  *    **商品行粒度**（与报价单的「按套」粒度**不是同一个数据投影**，不许互套）；
- *    品名 / 货号 / 颜色 / 门幅 取 `lib/order-item-sku.ts` 的 `paperItemSku()`（issue #6869）；
+ *    品名 / 货号 / 颜色 / 门幅 取 `lib/order-item-sku.ts` 的 `orderItemSku()`（issue #6869）；
  * ③ 汇总：上期余额 / 预存抵扣 / 优惠金额 / **本单应收** / 账户余额；
  * ④ 页脚：温馨提示 + 扫码支付 QR（无码 ⇒ 整块不出现，**不画假码**）。
  *
@@ -357,7 +357,7 @@ export default function SalesDoc({
               items.map((item: OrderItem, idx: number) => {
                 // 品名 / 货号 / 颜色 / 门幅 = 纸面身份四件套（issue #6869）——
                 // 唯一取值口，缺值一律显式占位 `—`（不静默留空，见文件头硬约束）
-                const sku = paperItemSku(item)
+                const sku = orderItemSku(item)
                 return (
                   <tr key={item.id || idx} data-testid={`sales-item-${idx}`}>
                     <DocTd align="right">{idx + 1}</DocTd>

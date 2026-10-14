@@ -109,7 +109,10 @@ function assignSourcesOf(items: OrderItem[]): AssignSource[] {
     const rawSkuId = typeof info.skuId === 'string' || typeof info.skuId === 'number' ? String(info.skuId) : ''
     const skuId = /^\d+$/.test(rawSkuId) && !/^0+$/.test(rawSkuId) ? rawSkuId : undefined
     if (!it.id || !it.productId || !Number.isFinite(meters) || meters <= 0) continue
-    const color = info.colorName ?? it.color
+    // 🔴 issue #6882：原为 `info.colorName ?? it.color` —— 行级 `color` **不在详情响应里**
+    // （`order_items` 表也没有这一列）⇒ 那个 `??` 分支是**死代码**（永远回落不到），
+    // 颜色只有一个真值源 = `processingInfo.colorName`。
+    const color = info.colorName
     rows.push({
       itemId: it.id,
       productId: it.productId,

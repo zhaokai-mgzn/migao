@@ -38,7 +38,7 @@ import type { Order, OrderItem } from '@/types'
  * ③ 参照物把加工费并进面料单价，而我们 `unitPrice` / `processingFee` 是**两笔真实金额**
  *    ⇒ 必须**分别列示**（否则商家对不上账）。
  *
- * 展示真值：品名 / 货号 / 颜色 / 门幅 走 `lib/order-item-sku.ts` 的 `paperItemSku()`；
+ * 展示真值：品名 / 货号 / 颜色 / 门幅 走 `lib/order-item-sku.ts` 的 `orderItemSku()`；
  * 「工艺：…／算料：…」行走 `lib/craft-display.ts` 的 `craftSpecRows()`（§4.9「一份 spec，
  * 三处渲染」）—— 本文件不另写一份推导，只断言「渲染了同一份真值」。
  *

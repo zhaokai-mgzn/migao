@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import { QRCodeSVG } from 'qrcode.react'
 import { freightText } from '@/lib/logistics'
-import { paperItemSku } from '@/lib/order-item-sku'
+import { orderItemSku } from '@/lib/order-item-sku'
 import { printBodyFontPt, printPageRule } from '@/lib/print-media'
 import { cn } from '@/lib/utils'
 import type { PrintTarget } from './index'
@@ -22,7 +22,7 @@ import type { Order, OrderItem, ProcessingOrder, ProcessingOrderItem } from '@/t
  * ② **正文**：**按套分块** —— 每块段头 `第N套/共M套`，块内一张 9 列表
  *    （{@link PROCESSING_DOC_COLUMNS}：品名 | 货号 | 颜色 | 门幅 | 尺寸 | 数量(米) | 组件 | 批号 | 备注）
  *    ＋ 一行「工艺：…」（原「部位信息」列的内容，issue #6869）；
- *    品名 / 货号 / 颜色 / 门幅 取 `lib/order-item-sku.ts` 的 `paperItemSku()`；
+ *    品名 / 货号 / 颜色 / 门幅 取 `lib/order-item-sku.ts` 的 `orderItemSku()`；
  * ③ **分页**：每套 `break-inside: avoid`（不跨页裁切）、`thead` 用
  *    `display: table-header-group`（长单跨页时**表头重复**，否则第二页起认不出列）；
  * ④ **介质来自矩阵**：`@page` 由 `printPageRule('a4')` 生成，**本组件不写 `@page size`**
@@ -31,7 +31,7 @@ import type { Order, OrderItem, ProcessingOrder, ProcessingOrderItem } from '@/t
  * ## 数据口径（三条硬约束，勿随手改）
  *
  * 1. **展示真值单一来源**：品名 / 货号 / 颜色 / 门幅 取 `lib/order-item-sku.ts` 的
- *    `paperItemSku(item)`（货号真字段是响应里的 `skuCode`；原先读的 `productCode` **不在响应里**
+ *    `orderItemSku(item)`（货号真字段是响应里的 `skuCode`；原先读的 `productCode` **不在响应里**
  *    ⇒ 纸面货号恒空，issue #6869 的根因）；「工艺」= `craftSpecRows()` 的**同一份**真值
  *    （设计文档 §4.9「一份 spec，三处渲染」）—— 本组件不另写推导；
  *    「部位」（`curtainType`）**保留在工艺说明里**：issue #4521 移除录入面后它只有纱帘行才有值，
@@ -320,8 +320,8 @@ function SetBlock({
 }) {
   const info = (item.processingInfo ?? {}) as Record<string, unknown>
   // 商品身份（品名 / 货号 / 颜色 / 门幅）—— **唯一**取值口，见文件头第 1 条
-  const sku = paperItemSku(item)
-  // 工艺说明 = craftSpecRows 的同一份真值（§4.9）—— 「门幅」已由 paperItemSku 排除（有独立的列）；
+  const sku = orderItemSku(item)
+  // 工艺说明 = craftSpecRows 的同一份真值（§4.9）—— 「门幅」已由 orderItemSku 排除（有独立的列）；
   // ⚠️ 「部位」（curtainType）**保留**在这里：issue #4521 移除录入面后它只有纱帘行才有值，
   // 旧「部位」列/段头「部位：…」对普通订单恒空（用户原话「报价单展示部位是啥意思」）。
   const craftText = sku.specRows.map((row) => `${row.label}：${row.value}`).join('；')

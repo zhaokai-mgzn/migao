@@ -244,9 +244,7 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
     id: 'item-missing',
     productId: 'p-x',
     productName: '缺值布',
-    productCode: '',
-    color: '',
-    specification: '',
+    // issue #6882：`productCode` / `color` / `specification` 已从详情行类型里删除（响应里没有这三个键）
     quantity: undefined as unknown as number,
     unitPrice: undefined as unknown as number,
     amount: undefined as unknown as number,
