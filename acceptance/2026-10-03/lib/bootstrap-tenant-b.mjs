@@ -64,7 +64,7 @@ if (mode === 'register') {
   }
   const cat = await step('分类', '/api/admin/categories', { name: `${PREFIX}分类` })
   const prod = await step('商品', '/api/admin/products', { name: `${PREFIX}商品`, categoryId: cat.id, unit: '米', basePrice: 12.5, status: 'on_sale' })
-  const order = await step('订单', '/api/admin/orders', { customerName: `${PREFIX}客户`, customerPhone: phone(), items: [{ productName: `${PREFIX}商品`, quantity: 1, unitPrice: 12.5 }] })
+  const order = await step('订单', '/api/admin/orders', { customerName: `${PREFIX}客户`, customerPhone: phone(), customerAddress: '6937 验收探针地址', logisticsType: 'express', logisticsCompany: '顺丰', remark: '6937 probe', items: [{ productName: `${PREFIX}商品`, quantity: 1, unitPrice: 12.5, subtotal: 12.5 }] })
   console.log(`\n✅ B(${id}) 播种完成：category=${cat.id} product=${prod.id} order=${order.id ?? '—'}`)
   console.log(`   落地核对：select count(*) from products where tenant_id=${id};`)
 } else if (mode === 'wipe') {
