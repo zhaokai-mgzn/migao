@@ -724,6 +724,10 @@ async function processingJourney(page) {
   const h = await journey('12-processing', { allowKnownConsole: true })(page)
   const uniq = `冒烟加工项${Date.now()}`
   try {
+    // 登录态自补（房内既有形态，见 10-/11-/13- 等）：本旅程在**单组跑**（`--group 12`，01-login 被一并过滤掉）
+    // 时也必须自足 —— 下面的前置自造要直连 admin-api，没有 cookie 会当场「未取到 access_token cookie」
+    // （2026-10-14 实测；全量跑时 cookie 已在，本行立即返回、不重复发码）。
+    await ensureLoggedIn(page)
     // 加工分类前置**自造**（#4882 起表单只剩「名称 + 加工分类」两个必填项）：
     // ⚠️ 本租户可能**一个活跃分类都没有**（2026-10-14 实测：8 行全软删）⇒ 弹窗改渲染
     //    「当前还没有加工分类，加工项必须归属于一个加工分类。请先创建：」+ 内联输入，此时 `select` 不存在
