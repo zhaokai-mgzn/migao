@@ -3779,3 +3779,41 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  # ==========================================================================
+  # MC-100（issue #6928）：入库单状态迁移写路径必须落到 SQL 谓词（CAS）—— 类级元守卫
+  # ==========================================================================
+  - id: MC-100
+    legacy_id: ""
+    title: "**入库单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6928 的类级固化）"
+    domains:
+      - misc
+      - backend
+    tier: normal
+    tags:
+      - concurrency
+      - state-transition
+      - cas
+      - ledger
+      - backend-contract
+      - red-proof
+    truths_ref: []
+    user_inputs:
+      - "同一份状态迁移权上有两个写面，只有一个带 CAS —— 凭什么相信「下一个写面不会漏」？"
+    expectations: []
+    data_checks:
+      - "🔴 **判据 1·扫描器非空跑自证**：现取「写 `inbound_orders.status` 的 mapper 手写 SQL」必须含 `markPosted` / `markCancelled`；现取「service 里出现状态列写的方法」必须含 `post` / `cancel` —— **返回空集 = 判据失明，不是通过**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderStatusCasMetaGuardTest.java::scannersAreNotBlind"
+      - "🔴 **判据 2·谓词完整性**：凡在 SET 侧写 `status` 的手写 `@Update` SQL，必须同时含 `tenant_id` 参数 + `status = 'draft'` 谓词 + `deleted = 0` 谓词（少任何一条 ⇒ 红）。执行点 = 同文件::everyStatusWriteCarriesTheFullPredicate"
+      - "🔴 **判据 3·无谓词写即红（判据本体）**：现取的每个状态写路径的方法体里**不得**出现 `inboundOrderMapper.updateById(` —— 状态迁移必须走条件更新 CAS。**实证过的隐蔽形态**：锚串留着（`if (false && …markCancelled(…)`）但真正落库换成 `updateById` ⇒ 仍判红并具名 `违规=[cancel]`（只判锚会被它骗过去）。执行点 = 同文件::noStatusWritePathUsesUnconditionalUpdateById"
+      - "🔴 **判据 4·未登记即红 + 台账不许给不存在的对象盖章**：service 状态写路径必须逐条登记（backend/admin-api/src/test/resources/inbound-order-status-cas-ledger.json 的 `service_write_paths`），且登记的 `call_anchor` 必须逐字出现在方法体里。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful"
+      - "🔴 **判据 5·登记未被兑现即红**：每条 `evidence` 锚 = `<仓库相对全路径>::<可检索文本>`，左侧文件存在、右侧逐字出现（摘掉 CAS 调用 / 方法改名 ⇒ 红）。执行点 = 同文件::everyEvidenceAnchorIsLive"
+      - "🔴 **判据 6·豁免只许缩短**：`unverified` 必须是冻结基线 `unverified_baseline`（现取 0）的子集；新增豁免 ⇒ 红。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful"
+      - "🔴 **判据 7·判别力自证（合成语料）**：无谓词状态写 / 缺 `deleted=0` / 缺 tenant 谓词 / 未登记写路径 / 锚留而落库无谓词 五种坏形态各自判红，合规语料判绿，**只加注释不红**。执行点 = 同文件::guardHasDiscriminatingPower"
+      - "**边界（照实登记）**：① 形态判据换措辞可绕过（真实防线仍是实例判据 `InboundOrderCancelRaceRealDbTest`）；② 射程只到 `InboundOrderService` + `InboundOrderMapper` 这一对文件；③ 判不了「拿 `updateById` 改非状态列」；④ 本守卫不跑被它引用的真库判据；⑤ 不改任何门禁的通过条件、不新增豁免。"
+    skip_reason: "[backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟"
+    merge_log: "2026-10-14 新增（issue #6928 的类级固化，与 OR-066 同批）。取号 = main 侧现取 MC-001~099 ⇒ **MC-100**（本单取号时 MC-099 尚空闲，rebase 时被 #6924/#6896 占用 ⇒ 让号）（全仓 refs 复核 0 命中）。读数：修后 `mvnw test -Dtest=InboundOrderStatusCasMetaGuardTest` = **6 passed / 0 failed**，逐字 `写 status 的 mapper 方法=[markPosted, markCancelled] service 写路径=[post, cancel] 未登记=[] 幽灵条目=[] 豁免=0(基线 0) 违规=[]`。红证（注入式）：把 `#cancel` 退回无谓词 `updateById`（哪怕锚串留着）⇒ `noStatusWritePathUsesUnconditionalUpdateById` 判红并具名 `违规=[cancel]`；把 mapper 的 `status='draft'` / `deleted=0` / `tenant_id` 任一项摘掉 ⇒ 判据 2 判红（合成语料逐形态自证）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderStatusCasMetaGuardTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

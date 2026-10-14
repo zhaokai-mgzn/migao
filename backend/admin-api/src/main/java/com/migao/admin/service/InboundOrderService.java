@@ -210,6 +210,45 @@ public class InboundOrderService {
         return detail(order.getId(), tenantId);
     }
 
+    /**
+     * <b>测试探针</b>（issue #6928，生产恒为 {@code 0}）：在 {@link #cancel} 的「读-判」之后、
+     * 「写」之前暂停指定毫秒。
+     *
+     * <p><b>为什么需要它</b>：窗口注入是竞态类缺陷的**唯一可信证据**形态
+     * （{@code migao-dev-flow} §28.1）—— 判据要在「注入 ⇒ 必红 / 撤回 ⇒ 复绿」两侧各跑一次。
+     * 窗口本身只有微秒级，不注入就只能靠碰运气（HTTP 层 20 轮实测只命中 3 轮），判据会退化成 flake。</p>
+     *
+     * <p><b>为什么放在这里而不是只放测试侧</b>：窗口在服务方法体内，测试侧无法在「已判定仍为草稿、
+     * 尚未落库」那一刻插进一段延时（除非用 {@code mock()} 替换真 mapper —— 那会把唯一的 DB 原子
+     * 判据换成 mock 的恒真返回，判据当场失去意义）。故留这条窄缝，且只在包内可见
+     * （{@code InboundOrderCancelRaceRealDbTest} 与生产同类同包）。</p>
+     */
+    static void setCancelProbePauseMillisForTest(long millis) {
+        CANCEL_PROBE_PAUSE_MILLIS = millis;
+    }
+
+    /** 测试探针时长（默认 0 = 不暂停）；见 {@link #setCancelProbePauseMillisForTest}。 */
+    private static volatile long CANCEL_PROBE_PAUSE_MILLIS = 0L;
+
+    /** 探针**正在**暂停窗口内的信号（测试用它把两个线程钉在确定的时序上）。 */
+    private static volatile boolean cancelProbePaused = false;
+
+    /** 测试观察点：探针是否已进入暂停窗口；生产不读。 */
+    static boolean cancelProbePausedForTest() {
+        return cancelProbePaused;
+    }
+
+    /** 进入窗口 ⇒ 置位 → 停 → 清位（测试在「已置位 / 未清位」之间把 post 走完）。 */
+    private static void pauseCancelForProbe(long millis) {
+        cancelProbePaused = true;
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        cancelProbePaused = false;
+    }
+
     // ============================================================ 过账（核心）
 
     /**
@@ -392,6 +431,16 @@ public class InboundOrderService {
      *
      * <p>已过账的单**不得**作废：库存已进台账，作废等于「悄悄把库存改回去且不留新凭据」。
      * 冲销必须另开单据（留痕）。</p>
+     *
+     * <p><b>并发闸 = 条件更新（CAS），与 {@link #post} 同款</b>（issue #6928）：状态迁移
+     * {@code draft → cancelled} 走 {@link InboundOrderMapper#markCancelled}（{@code WHERE id=? AND
+     * tenant_id=? AND status='draft' AND deleted=0}），按**影响行数**判是否抢到作废权。
+     * 为什么不能是「先读 status 判 draft，再 {@code updateById} 写」：{@code #post} 与 {@code #cancel}
+     * 争同一份迁移权，而 {@code updateById} 的 WHERE 只有主键 ⇒ 两个写面**不互斥** ——
+     * 窗口里 {@code #post} 提交了过账（库存 +N、台账 1 行），{@code #cancel} 随后**无条件**把该单
+     * 覆写成 {@code cancelled}，留下「已作废的单改了库存、还留着入库台账」的账实不符且无任何 4xx
+     * （生产复现读数 3/20）。条件更新的判断与写入是同一条语句，PG 对命中行加行锁并持有到事务结束
+     * ⇒ 后到者要么阻塞到前者提交、要么看到 0 行受影响。闸在**任何库存写入之前**（与 {@code #post} 同口径）。</p>
      */
     @Transactional(rollbackFor = Exception.class)
     public InboundOrderResponse cancel(String rawId, String reason, Long tenantId, String operator) {
@@ -404,11 +453,25 @@ public class InboundOrderService {
                     "入库单当前状态为「" + statusLabel(order.getStatus()) + "」，只有草稿可以作废",
                     "已过账的入库单库存已进台账，冲销请另开单据（不原地改历史）");
         }
+        // 测试探针（issue #6928）：放大「读-判」与「写」之间的窗口（生产恒为 0）。与 #post 的
+        // 取号探针同款：窗口只有微秒级，不注入就只能靠碰运气（HTTP 层 20 轮只命中 3 轮），判据会退化成 flake。
+        if (CANCEL_PROBE_PAUSE_MILLIS > 0) {
+            pauseCancelForProbe(CANCEL_PROBE_PAUSE_MILLIS);
+        }
+        OffsetDateTime now = OffsetDateTime.now();
+        // ⓪ 抢作废权：条件更新（CAS），判断与写入同一条语句 + PG 行锁 ⇒ 与 #post 的过账 CAS 互斥
+        if (inboundOrderMapper.markCancelled(order.getId(), tenantId, operator, reason, now) == 0) {
+            // 抢不到：并发的另一个请求刚过账（也可能刚作废）⇒ 回读真实状态，给准确的文案
+            InboundOrder fresh = inboundOrderMapper.selectById(order.getId());
+            throw BusinessException.conflict(
+                    "入库单当前状态为「" + statusLabel(fresh != null ? fresh.getStatus() : order.getStatus())
+                            + "」，只有草稿可以作废",
+                    "已过账的入库单库存已进台账，冲销请另开单据（不原地改历史）");
+        }
         order.setStatus(InboundOrder.STATUS_CANCELLED);
-        order.setCancelledAt(OffsetDateTime.now());
+        order.setCancelledAt(now);
         order.setCancelledBy(operator);
         order.setCancelledReason(reason);
-        inboundOrderMapper.updateById(order);
         log.info("入库单已作废: tenant={}, inboundNo={}, operator={}, reason={}",
                 tenantId, order.getInboundNo(), operator, reason);
         return detail(order.getId(), tenantId);

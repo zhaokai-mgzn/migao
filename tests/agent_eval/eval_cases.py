@@ -6423,6 +6423,24 @@ _CASE_MC_099 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-100 [NORMAL] **入库单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6928 的类级固化）（源: cases/misc.yml）──
+_CASE_MC_100 = EvalCase(
+    id='MC-100',
+    legacy_id='',
+    title='**入库单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6928 的类级固化）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['同一份状态迁移权上有两个写面，只有一个带 CAS —— 凭什么相信「下一个写面不会漏」？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·扫描器非空跑自证**：现取「写 `inbound_orders.status` 的 mapper 手写 SQL」必须含 `markPosted` / `markCancelled`；现取「service 里出现状态列写的方法」必须含 `post` / `cancel` —— **返回空集 = 判据失明，不是通过**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderStatusCasMetaGuardTest.java::scannersAreNotBlind', "🔴 **判据 2·谓词完整性**：凡在 SET 侧写 `status` 的手写 `@Update` SQL，必须同时含 `tenant_id` 参数 + `status = 'draft'` 谓词 + `deleted = 0` 谓词（少任何一条 ⇒ 红）。执行点 = 同文件::everyStatusWriteCarriesTheFullPredicate", '🔴 **判据 3·无谓词写即红（判据本体）**：现取的每个状态写路径的方法体里**不得**出现 `inboundOrderMapper.updateById(` —— 状态迁移必须走条件更新 CAS。**实证过的隐蔽形态**：锚串留着（`if (false && …markCancelled(…)`）但真正落库换成 `updateById` ⇒ 仍判红并具名 `违规=[cancel]`（只判锚会被它骗过去）。执行点 = 同文件::noStatusWritePathUsesUnconditionalUpdateById', '🔴 **判据 4·未登记即红 + 台账不许给不存在的对象盖章**：service 状态写路径必须逐条登记（backend/admin-api/src/test/resources/inbound-order-status-cas-ledger.json 的 `service_write_paths`），且登记的 `call_anchor` 必须逐字出现在方法体里。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful', '🔴 **判据 5·登记未被兑现即红**：每条 `evidence` 锚 = `<仓库相对全路径>::<可检索文本>`，左侧文件存在、右侧逐字出现（摘掉 CAS 调用 / 方法改名 ⇒ 红）。执行点 = 同文件::everyEvidenceAnchorIsLive', '🔴 **判据 6·豁免只许缩短**：`unverified` 必须是冻结基线 `unverified_baseline`（现取 0）的子集；新增豁免 ⇒ 红。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful', '🔴 **判据 7·判别力自证（合成语料）**：无谓词状态写 / 缺 `deleted=0` / 缺 tenant 谓词 / 未登记写路径 / 锚留而落库无谓词 五种坏形态各自判红，合规语料判绿，**只加注释不红**。执行点 = 同文件::guardHasDiscriminatingPower', '**边界（照实登记）**：① 形态判据换措辞可绕过（真实防线仍是实例判据 `InboundOrderCancelRaceRealDbTest`）；② 射程只到 `InboundOrderService` + `InboundOrderMapper` 这一对文件；③ 判不了「拿 `updateById` 改非状态列」；④ 本守卫不跑被它引用的真库判据；⑤ 不改任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟',
+    tags=['concurrency', 'state-transition', 'cas', 'ledger', 'backend-contract', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -7905,6 +7923,24 @@ _CASE_OR_065 = EvalCase(
     data_checks=['🔴 **判据 1·同源（前端文案 = 后端下发的指针）**：`ProcessingFeeCalculator.java` 的**字符串字面量**里现取域指针（`「企业基础设置 → <域>」`，不写死），断言页面里**每一处**定价入口链接的**可见文案逐字包含**它（改坏前端文案 ⇒ 红；后端改指别处 ⇒ 红）。执行点 = frontend/admin-web/tests/unit/pages/orders-new-fee-preview.test.tsx 的 `expectPricingEntriesAreSameSourced`（#4590 组两条用例）', "🔴 **判据 2·落点真实**：每个入口的 `href` 必须是**仍解析**的定价面（现取重定向页 frontend/admin-web/src/app/(dashboard)/production/processing-fees/page.tsx 的 `redirect('/production/processing?tab=fees')`）—— 删重定向页 / 改落点 ⇒ 红", '**判据 3·判别力（红证，逐字）**：① **修前红**（在**已合并的 main** 上现取）：在 `frontend/admin-web/tests/unit/pages/orders-new-fee-preview.test.tsx` 所在目录跑 vitest ⇒ `2 failed | 18 passed`，两条都报 `Error: 后端 ProcessingFeeCalculator 里找不到 PRICING_ENTRY —— 判据前提失效`；② **负向注入**：把链接文案改成另一个坐标（「工艺配置 → 工艺路线」）⇒ 同一条命令 `2 failed | 18 passed`（断言不是空断言）；③ **修后**：`20 passed`；④ 同族 5 个文件（UnpricedNotice / ProductionProgressTable / PieceworkTable / production-routings / production-piecework）合计 `224 passed` 无回退'],
     skip_reason='[backend-contract] 跨包同源判据（admin-web vitest 真读 admin-api Java 源码取真值；零 LLM 环节 ⇒ 不进 agent-eval 冒烟）',
     tags=['order', 'pricing', 'cross-package-anchor', 'same-source', 'backend-contract', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── OR-066 [EDGE] 入库单「过账 × 作废」交叉竞态：至多一个赢家 + 「已作废的单」不得改库存 / 不得留入库台账（issue #6928）（源: cases/order.yml）──
+_CASE_OR_066 = EvalCase(
+    id='OR-066',
+    legacy_id='',
+    title='入库单「过账 × 作废」交叉竞态：至多一个赢家 + 「已作废的单」不得改库存 / 不得留入库台账（issue #6928）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['同一张草稿入库单上，`PATCH /api/admin/inbound-orders/{id}` 的 `action=post` 与 `action=cancel` 严格同时发出'],
+    expectations=[],
+    data_checks=['**病（独立复现，被测构建点 90192bcac）**：20 轮严格同时起跑里 3 轮（15%）出现 `post=200 cancel=200 db=cancelled delta=+5 ledger=1` —— 同一张单两个请求都回 200、终态却是 `cancelled`，而库存 +5 与 `stock_ledger_entries`（`ref_no=入库单号`）1 行**静默留在库里**（账实不符、无任何 4xx）。产物 = acceptance/2026-10-14/line3-aftersales-race/out/race/W2-rounds/round-{06,09,20}.json；完整判定见同目录 REPORT.md §2.1。根因 = backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java 的 `#cancel` 缺 CAS：先读内存旧值判 `STATUS_DRAFT`，再 `inboundOrderMapper.updateById(order)`（WHERE 仅主键 ⇒ 无谓词），与 `#post` 的 `markPosted` 条件更新**不互斥**。', '**判据 1（至多一个赢家）**：真库并发判据 = backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderCancelRaceRealDbTest.java 的 `concurrentPostAndCancelHaveAtMostOneWinner`（3 轮）：成功数 ≤ 1，落败方必须是 **409**（不是 500 / 不是静默成功）。**红证（注入式，修前形态）**：`post=200(resp=posted) cancel=200(resp=cancelled) 成功数=2 单终态=cancelled 库存=100.0→105.0 台账行=1`（3 轮全红）。', "**判据 2（账实一致，独立算式）**：终态 `cancelled` ⇒ 库存变化 **0** 且该单号 `reason='inbound'` 的台账 **0 行**；终态 `posted` ⇒ 库存增量 == 明细行入库量（夹具常量 5.0，不读被测读面）且台账恰 1 行。**修后读数**：`post=200 cancel=409(msg=入库单当前状态为「已过账」，只有草稿可以作废) 成功数=1 单终态=posted 库存=100.0→105.0 台账行=1`（3 轮一致）。", '**正对照（护栏不误杀）**：同文件 `concurrentPostOnlyStillHasExactlyOneWinner`（并发过账恰一个赢家、库存恰加一次）与 `serialCancelStillSucceeds`（无并发时作废草稿单必须成功、库存与台账零变化）—— 谓词**拦得住并发**且**不误杀正常请求**。', '**窗口注入（判据确定性的来源）**：`InboundOrderService#cancel` 的「读-判」与「写」之间留一条窄缝（`setCancelProbePauseMillisForTest`，生产恒为 0；与 #6248 的批次号取号探针同款）⇒ 判据从「15% 的 flake」变成**确定性**：注入 800ms、cancel 进入窗口后 post 走完整条路再提交。', "**类级元守卫（铁律 8）**：backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderStatusCasMetaGuardTest.java（case MC-100）的 `noStatusWritePathUsesUnconditionalUpdateById` + `everyStatusWriteCarriesTheFullPredicate` + `serviceWritePathsAreRegisteredAndLedgerIsFaithful` + `everyEvidenceAnchorIsLive` —— 现取写 status 的 mapper SQL（必须带 `tenant_id` + `status='draft'` + `deleted=0`）与 service 状态写路径（必须登记、且不得出现无谓词 `updateById`）；台账 = backend/admin-api/src/test/resources/inbound-order-status-cas-ledger.json（豁免基线 0，只许缩短）。"],
+    skip_reason='[backend-contract] 纯后端真库并发判据（真 PG 一次性集群，走 PgCluster.startOrAbort() 收口）+ 类级元守卫（零网络、零 LLM）：admin-api 单测面，不进 agent-eval 冒烟',
+    tags=['inbound', 'stock', 'ledger', 'concurrency', 'backend-contract', 'realdb'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -14238,6 +14274,7 @@ ALL_CASES = (
     _CASE_MC_097,
     _CASE_MC_098,
     _CASE_MC_099,
+    _CASE_MC_100,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
@@ -14313,6 +14350,7 @@ ALL_CASES = (
     _CASE_OR_063,
     _CASE_OR_064,
     _CASE_OR_065,
+    _CASE_OR_066,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,

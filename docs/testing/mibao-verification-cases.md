@@ -3418,7 +3418,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（100 case）
+## 杂项域（101 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4917,6 +4917,21 @@
 ```
 溯源: 2026-10-14 新增（issue #6896，外部贡献者提交）。为什么必须有这条：六个客户端各自读 `ai-agent.base-url` / `ai-agent.service-token`，两个默认值都是坏的（`backend/admin-api/src/main/resources/application.yml` 的 `ai-agent.base-url` / `ai-agent.service-token` 两键，与各客户端 `@Value` 里重复的 `http://localhost:8000` / 空串），漏设环境变量时应用 UP、探活 200、ai-agent 自己看着健康，只有真实入驻静默被驳回成「系统繁忙」（`review_source=system`）—— 与 #5184（到期扫描腿静默停摆）、#4517（迁移被跳过与全过不可区分）是**同一类**失效，此前没有承接面。#6674 的收口方式是补 `docs/wiki/Quick-Start.md` 的「本地开发」节（该节列出 `AI_AGENT_BASE_URL` / `AI_AGENT_SERVICE_TOKEN` 的启动口径），保护的是读过文档的人，**可观测面仍缺**。取号 = main 现取 MC-001~098 ⇒ **MC-099**。⚠️ 贡献者自述：本机无云 dev DB/Redis、未起 ai-agent-service、未装 `migao-agent-presets`，故 `verify-all.sh gate` / `contract-check.sh` **未跑全**，以本 PR 的 CI 为准。 ｜ tags: backend-contract, liveness, observability
 
+### MC-100. **入库单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6928 的类级固化） 🔵
+```
+你: 同一份状态迁移权上有两个写面，只有一个带 CAS —— 凭什么相信「下一个写面不会漏」？
+数据: 🔴 **判据 1·扫描器非空跑自证**：现取「写 `inbound_orders.status` 的 mapper 手写 SQL」必须含 `markPosted` / `markCancelled`；现取「service 里出现状态列写的方法」必须含 `post` / `cancel` —— **返回空集 = 判据失明，不是通过**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderStatusCasMetaGuardTest.java::scannersAreNotBlind
+数据: 🔴 **判据 2·谓词完整性**：凡在 SET 侧写 `status` 的手写 `@Update` SQL，必须同时含 `tenant_id` 参数 + `status = 'draft'` 谓词 + `deleted = 0` 谓词（少任何一条 ⇒ 红）。执行点 = 同文件::everyStatusWriteCarriesTheFullPredicate
+数据: 🔴 **判据 3·无谓词写即红（判据本体）**：现取的每个状态写路径的方法体里**不得**出现 `inboundOrderMapper.updateById(` —— 状态迁移必须走条件更新 CAS。**实证过的隐蔽形态**：锚串留着（`if (false && …markCancelled(…)`）但真正落库换成 `updateById` ⇒ 仍判红并具名 `违规=[cancel]`（只判锚会被它骗过去）。执行点 = 同文件::noStatusWritePathUsesUnconditionalUpdateById
+数据: 🔴 **判据 4·未登记即红 + 台账不许给不存在的对象盖章**：service 状态写路径必须逐条登记（backend/admin-api/src/test/resources/inbound-order-status-cas-ledger.json 的 `service_write_paths`），且登记的 `call_anchor` 必须逐字出现在方法体里。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful
+数据: 🔴 **判据 5·登记未被兑现即红**：每条 `evidence` 锚 = `<仓库相对全路径>::<可检索文本>`，左侧文件存在、右侧逐字出现（摘掉 CAS 调用 / 方法改名 ⇒ 红）。执行点 = 同文件::everyEvidenceAnchorIsLive
+数据: 🔴 **判据 6·豁免只许缩短**：`unverified` 必须是冻结基线 `unverified_baseline`（现取 0）的子集；新增豁免 ⇒ 红。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful
+数据: 🔴 **判据 7·判别力自证（合成语料）**：无谓词状态写 / 缺 `deleted=0` / 缺 tenant 谓词 / 未登记写路径 / 锚留而落库无谓词 五种坏形态各自判红，合规语料判绿，**只加注释不红**。执行点 = 同文件::guardHasDiscriminatingPower
+数据: **边界（照实登记）**：① 形态判据换措辞可绕过（真实防线仍是实例判据 `InboundOrderCancelRaceRealDbTest`）；② 射程只到 `InboundOrderService` + `InboundOrderMapper` 这一对文件；③ 判不了「拿 `updateById` 改非状态列」；④ 本守卫不跑被它引用的真库判据；⑤ 不改任何门禁的通过条件、不新增豁免。
+跳过: [backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟
+```
+溯源: 2026-10-14 新增（issue #6928 的类级固化，与 OR-066 同批）。取号 = main 侧现取 MC-001~099 ⇒ **MC-100**（本单取号时 MC-099 尚空闲，rebase 时被 #6924/#6896 占用 ⇒ 让号）（全仓 refs 复核 0 命中）。读数：修后 `mvnw test -Dtest=InboundOrderStatusCasMetaGuardTest` = **6 passed / 0 failed**，逐字 `写 status 的 mapper 方法=[markPosted, markCancelled] service 写路径=[post, cancel] 未登记=[] 幽灵条目=[] 豁免=0(基线 0) 违规=[]`。红证（注入式）：把 `#cancel` 退回无谓词 `updateById`（哪怕锚串留着）⇒ `noStatusWritePathUsesUnconditionalUpdateById` 判红并具名 `违规=[cancel]`；把 mapper 的 `status='draft'` / `deleted=0` / `tenant_id` 任一项摘掉 ⇒ 判据 2 判红（合成语料逐形态自证）。 ｜ tags: concurrency, state-transition, cas, ledger, backend-contract, red-proof
+
 ## 商家入驻域（6 case）
 
 ### OB-001. 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员 🔵
@@ -5061,7 +5076,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（65 case）
+## 订单域（66 case）
 
 ### OR-061. 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262） 🔵
 ```
@@ -6228,6 +6243,19 @@
 跳过: [backend-contract] 跨包同源判据（admin-web vitest 真读 admin-api Java 源码取真值；零 LLM 环节 ⇒ 不进 agent-eval 冒烟）
 ```
 溯源: 2026-10-13 新增（issue #6853）。病根：B1（#6839 / 合并 `de7ccd6f5`）删除后端常量 `ProcessingFeeCalculator.PRICING_ENTRY` 时判定「已无消费者」，而本文件的跨包判据仍抽它 ⇒ admin-web 腿必红、卡住 #6848；且 **main 的 push 腿看不见 admin-web 腿**（核过 `de7ccd6f5` 的 check-runs）⇒ 合并后才炸。修法：真值源从 **URL** 换成**后端下发的域指针**（意图一字未变：前端入口必须与后端同源、不另写第二份坐标），并把前端链接文案改成带该指针（逐字），href 那半换成「重定向页现取」的真值源。舱内另加类级守卫（MC-098）。 ｜ tags: order, pricing, cross-package-anchor, same-source, backend-contract, red-proof
+
+### OR-066. 入库单「过账 × 作废」交叉竞态：至多一个赢家 + 「已作废的单」不得改库存 / 不得留入库台账（issue #6928） 🟡
+```
+你: 同一张草稿入库单上，`PATCH /api/admin/inbound-orders/{id}` 的 `action=post` 与 `action=cancel` 严格同时发出
+数据: **病（独立复现，被测构建点 90192bcac）**：20 轮严格同时起跑里 3 轮（15%）出现 `post=200 cancel=200 db=cancelled delta=+5 ledger=1` —— 同一张单两个请求都回 200、终态却是 `cancelled`，而库存 +5 与 `stock_ledger_entries`（`ref_no=入库单号`）1 行**静默留在库里**（账实不符、无任何 4xx）。产物 = acceptance/2026-10-14/line3-aftersales-race/out/race/W2-rounds/round-{06,09,20}.json；完整判定见同目录 REPORT.md §2.1。根因 = backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java 的 `#cancel` 缺 CAS：先读内存旧值判 `STATUS_DRAFT`，再 `inboundOrderMapper.updateById(order)`（WHERE 仅主键 ⇒ 无谓词），与 `#post` 的 `markPosted` 条件更新**不互斥**。
+数据: **判据 1（至多一个赢家）**：真库并发判据 = backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderCancelRaceRealDbTest.java 的 `concurrentPostAndCancelHaveAtMostOneWinner`（3 轮）：成功数 ≤ 1，落败方必须是 **409**（不是 500 / 不是静默成功）。**红证（注入式，修前形态）**：`post=200(resp=posted) cancel=200(resp=cancelled) 成功数=2 单终态=cancelled 库存=100.0→105.0 台账行=1`（3 轮全红）。
+数据: **判据 2（账实一致，独立算式）**：终态 `cancelled` ⇒ 库存变化 **0** 且该单号 `reason='inbound'` 的台账 **0 行**；终态 `posted` ⇒ 库存增量 == 明细行入库量（夹具常量 5.0，不读被测读面）且台账恰 1 行。**修后读数**：`post=200 cancel=409(msg=入库单当前状态为「已过账」，只有草稿可以作废) 成功数=1 单终态=posted 库存=100.0→105.0 台账行=1`（3 轮一致）。
+数据: **正对照（护栏不误杀）**：同文件 `concurrentPostOnlyStillHasExactlyOneWinner`（并发过账恰一个赢家、库存恰加一次）与 `serialCancelStillSucceeds`（无并发时作废草稿单必须成功、库存与台账零变化）—— 谓词**拦得住并发**且**不误杀正常请求**。
+数据: **窗口注入（判据确定性的来源）**：`InboundOrderService#cancel` 的「读-判」与「写」之间留一条窄缝（`setCancelProbePauseMillisForTest`，生产恒为 0；与 #6248 的批次号取号探针同款）⇒ 判据从「15% 的 flake」变成**确定性**：注入 800ms、cancel 进入窗口后 post 走完整条路再提交。
+数据: **类级元守卫（铁律 8）**：backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderStatusCasMetaGuardTest.java（case MC-100）的 `noStatusWritePathUsesUnconditionalUpdateById` + `everyStatusWriteCarriesTheFullPredicate` + `serviceWritePathsAreRegisteredAndLedgerIsFaithful` + `everyEvidenceAnchorIsLive` —— 现取写 status 的 mapper SQL（必须带 `tenant_id` + `status='draft'` + `deleted=0`）与 service 状态写路径（必须登记、且不得出现无谓词 `updateById`）；台账 = backend/admin-api/src/test/resources/inbound-order-status-cas-ledger.json（豁免基线 0，只许缩短）。
+跳过: [backend-contract] 纯后端真库并发判据（真 PG 一次性集群，走 PgCluster.startOrAbort() 收口）+ 类级元守卫（零网络、零 LLM）：admin-api 单测面，不进 agent-eval 冒烟
+```
+溯源: 2026-10-14 新增（issue #6928，P1·库存台账并发）。取号 = 现取 `.github/cases/order.yml` 最大号 OR-065 ⇒ **OR-066**（全仓 refs 复核 0 命中）。**红→绿（注入式双向对照，真 PG）**：① 把 `#cancel` 退回修前的无谓词 `updateById` ⇒ 3 轮全红、逐字 `post=200 cancel=200 成功数=2 单终态=cancelled 库存=100.0→105.0 台账行=1`；② 修后（`#cancel` 走 `InboundOrderMapper#markCancelled` 的 CAS）⇒ 3 轮全绿、`post=200 cancel=409 成功数=1 单终态=posted 库存=100.0→105.0 台账行=1`。元守卫红证（最隐蔽的一种，实证）：**锚串留着**（`if (false && …markCancelled(…)`）、真正落库换成无谓词 `updateById` ⇒ 判据当场红并具名 `违规=[cancel]`（只判锚会被它骗过去 ⇒ 判据本体是 CAS 而不是锚）。 ｜ tags: inbound, stock, ledger, concurrency, backend-contract, realdb
 
 ## 加工项域（28 case）
 
@@ -10787,8 +10815,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：743（活跃 134，跳过 609）
-- tier 分布：smoke 12 / normal 689 / adversarial 32
+- 用例总数：745（活跃 134，跳过 611）
+- tier 分布：smoke 12 / normal 690 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10803,10 +10831,10 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：100
+- 杂项域：101
 - 商家入驻域：6
 - 领域本体域：4
-- 订单域：65
+- 订单域：66
 - 加工项域：28
 - 加工单域：62
 - 商品域：120
@@ -10938,6 +10966,7 @@
 - MC-097: 已移除页面名的**旧指针**改指「企业基础设置 → <域 label>」（issue #6839 = #6826 的 B1 包·admin-api 面）：按**动作**拆指针、假出口改写动作、能力名显式不改
 - MC-098: **跨包指针消费者 ⇄ 后端下发面**双向核对：删锚点必红（issue #6853 的类级固化）
 - MC-099: **admin-api → ai-agent 内部调用腿的可观测契约**：接线断了必须摆进 `/actuator/health`，且恒 UP 不熔断（issue #6896）
+- MC-100: **入库单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6928 的类级固化）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
@@ -10963,6 +10992,7 @@
 - OR-062: 并发确认收款不得超卖：扣库存改原子条件更新（WHERE … AND COALESCE(stock,0) >= #{quantity}）+ 受影响行数判定 ⇒ 恰一个赢家、库存不为负、台账链相接（issue #6299）
 - OR-064: 物流「首次发货时刻」（order_logistics.shipped_at）：更新路径**只在为空时**补、已有值一律不覆盖（issue #6276）
 - OR-065: 未定价告警的定价入口：**可见文案与后端下发的域指针逐字同源** + href 落在真实定价面（issue #6853 修 #6848 的卡点）
+- OR-066: 入库单「过账 × 作废」交叉竞态：至多一个赢家 + 「已作废的单」不得改库存 / 不得留入库台账（issue #6928）
 - PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）
