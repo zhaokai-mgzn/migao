@@ -125,6 +125,8 @@
 
 ### 5.5 UI 界面 & 交互验收
 
+> ⚠️ **本节的部分归因已被 §11 取代**（2026-10-14 深夜二次补跑）：`17-/32-` 的 skip 理由**不是**「租户未配生产路线」，
+> `27-/28-` 也不是「预算到点未跑」—— 真因与修后读数见 **§11.2**；本节的数字是**首次全量**那一轮的原样读数，不改写。
 - 运行器 = `scripts/ui-smoke-merchant/spec.mjs`（真浏览器 Playwright + 真后端 + 商家 persona + 截图），
   被测面 = 本地 admin-web `http://localhost:3001` → admin-api `http://localhost:8080`，租户 32。
 - 结果：**28 / 34 通过**，2 失败（= §5.3 R4，判据侧），4 skip：
@@ -179,8 +181,8 @@
 | 黄金策（B 端 agent）评测 | 用户本轮口径**明确不做** | 用户显式要求 |
 | 真实 LLM 面（`test_04_ai_chat` / `test_11_knowledge_ai_advanced` / `test_react_smartness`、评测 workflow） | 本机无 `PRIMARY_API_KEY`；#4262 裁定不自动派发 | 用户显式要求 + 有 key |
 | `tenant-isolation-sweep` / `tenant-concurrency-sweep` 两整 sweep | harness 无 env 注入口（硬编码租户 20/21/1）⇒ 一条判据都跑不出（线③ 已用自建 `probe-cross-tenant.mjs` 部分补测 4/4） | harness env 化后（需派包） |
-| UI `17-order-ship` / `32-production-qr-and-piecework` | 租户未配默认工艺/生产路线（见 §5.5） | 配好工艺的租户 |
-| UI `27-corporate` / `28-register` | 整轮预算到点未跑 | 单跑该组 |
+| UI `17-order-ship` / `32-production-qr-and-piecework` | ~~租户未配默认工艺/生产路线（见 §5.5）~~ **该理由已作废**（真因 = 依赖探针把「订单未确认」误判成「租户未配路线」）⇒ **已修，三条转 pass**（§11.2） | — |
+| UI `27-corporate` / `28-register` | ~~整轮预算到点未跑~~ **其中 `28-register` 是台账里的幽灵名**（实际名 `31-register`，本轮就 ✅）；`27-corporate-home` 单跑 ✅（§11.2） | — |
 | 打印/标签硬件通道、微信开发者工具真机模拟器、裁剪机等未落地模块 | 面不存在 | 落地后 |
 | 线①/②/③ 各自的 skip 明细（共 29 条） | 见各线 REPORT 的「未覆盖清单」 | 各条自带 |
 
@@ -198,4 +200,61 @@
 |---|---|
 | **判据侧 J1–J5 + 本轮证据** | issue **#6926** → PR **#6927**（`gh pr checks 6927` 全绿；auto-merge 已 arm；本轮已两次随 main 前移 `update-branch`） |
 | **F1（入库单过账×作废竞态）** | issue **#6928** → PR **#6931** ✅ **已合并**（auto-merge squash，merge commit **`9bc283cad`**，**2026-10-14 21:43:21 +08** = 13:43:21Z；issue 已 CLOSED）：`#cancel` 补条件更新 CAS + 真库并发判据 `InboundOrderCancelRaceRealDbTest`（3/3 pass，case **OR-066**）+ 类级元守卫 `InboundOrderStatusCasMetaGuardTest`（6/6 pass，case **MC-100**，豁免基线 0）+ 台账；**主会话独立重放**：修复版 18/18 轮 0 命中 ⇄ 未修 :8080 1/18 命中（`evidence/w2-race-replay-mainsession.txt`）。合并后内容级自证（`git show origin/main:<path>`）：`markCancelled` 在 mapper 1 处 / service 调用点 1 处、`REALDB_FILES` 登记 1 处 |
-| D1 / D2 / D3 | 待裁定（§5.4），未动代码 |
+| D1 / D2 / D3 | **已开单**：**#6934**（D1 涉钱·待裁定）/ **#6935**（D2 契约·待裁定）/ **#6936**（D3 并发·已裁定「跟随 #6928 范式」⇒ 已派包，见 §11.1） |
+
+---
+
+## 11. 二次补跑 + 修复包落地（2026-10-14 22:00 ~ 2026-10-15 00:2x +08）
+
+> 触发 = 用户在会话里选定的后续批次（② 补 UI 未覆盖 4 条 / ③ 待裁定三单落地 / ④ 验收资产修正包）。
+> 口径不变：**skip 永不折算 pass**；判据侧缺陷与产品缺陷分开记；每条结论都要能复算。
+
+### 11.1 修复包台账（7 单，全部合并；单元 = issue + 分支 + 独立 worktree + 后台执行者）
+
+| 单 | PR | 合并（+08） | 内容 | main 侧自证读点（`git show origin/main:<path>`） |
+|---|---|---|---|---|
+| #6926 判据侧 J1–J5 | #6927 | ~22:12 | smoke 三类恒红 + UI 红灯可归因 | `test_09` 的 `logisticsType`×5 / `spec.mjs` 的 `failedResponses`×4 / `helpers.py` 的 `refresh_token_from_jar`×1 |
+| #6928 F1 入库过账×作废竞态 | #6931 | 21:43:21 | `#cancel` 条件更新 CAS + 真库并发判据 | `markCancelled` 在 mapper 1 处 / service 1 处 |
+| #6938 夹具漂移 6 条 | #6943 | 22:57:50 | 卷数 / worker-h5 入口 / batch 对照租户 / `nowCST` / 命名空间豁免 / `run-all.sh` 路径 | `nowCST().cst = 2026-10-14 22:31:56 +08` = 真值（主线未合时是 `14:31:56 +08`，**错 8h**） |
+| #6937 两条 sweep env 化 | #6944 | ~23:0x | 唯一注入口（缺一 exit 2）+ 写死主体守卫 + B 侧对照租户自造/自清 | `lib/subjects.mjs` 的 `guardSubjects` / `sweep.mjs` 引用它 ×2 |
+| #6936 D3 detach 并发 CAS | #6945 | ~00:1x | 内联条件更新（三谓词）+ 影响行数 0 ⇒ 409 | `LambdaUpdateWrapper`×3 / mapper `claimDelete` 残留 **0**（不留死代码）/ `PG-075` 元守卫 ×6 |
+| #6940 UI 四条判据侧 | #6941 | ~23:47 | 见 §11.2 | `waitForText`×2 / `ensureLoggedIn`×14 /「加工分类前置」×1 |
+| #6942 UI 工装残余三条 | #6947 | 待合 | 旅程名台账⇄注册名双向守卫 / 清理链（`on_sale` 需先下架）/ 单组跑登录确定性 | — |
+
+> 说明：**#6945 的两条红不是 drift-audit**（我按同名 check 推断错了，由执行者用日志纠正）——
+> 是 `test_logic_delete_write_shape.py`（#4608「三处软删必须显式写列」，它把软删抽进 mapper `@Update` 后 `#delete` 里那段内联片段消失
+> ⇒ 判据不动、**改回实现侧**）与 `test_case_machine_fail_channel.py::test_i3_anchor…`（两条新用例按设计不进 agent-eval
+> ⇒ 机器判红读数 **148 → 150**，同 PR 重锚，`no_channel_total` 仍 0）。
+
+### 11.2 UI 面：4 条「未覆盖」全部落地，且**三条的原始理由被更正**
+
+| 旅程 | 首轮记的理由 | 复核实测（逐字） | 修后 |
+|---|---|---|---|
+| `17-order-ship` / `32-production-qr-and-piecework`（+`16-`） | 「租户未配生产路线/默认工艺」（抄的是**另一个租户**的 `INCIDENT_PRODUCTION_ROUTING_UNRESOLVED tenantId=25` 叙事，且断言「data 为空」） | 本租户**已有**默认工艺 `韩褶` + 默认路线模板；真因 = **探针单没确认**，服务端逐字 `{"success":false,"message":"订单 … 当前状态 [pending] 不允许生成加工单，须为已确认","code":"VALIDATION_ERROR"}`（`data` **并不为空**） | 探针先 `PUT /orders/{id}/payment` ⇒ **三条 skip → pass**（`--group 1` **10/10 通过、0 失败**） |
+| `12-processing` | 「等新建加工项超时」（api 日志里连该名字都搜不到） | 弹窗在**0 个活跃分类**时改渲染「当前还没有加工分类…请先创建：」⇒ 必填项为空 ⇒ 保存被客户端校验挡住、**POST 根本不发**；且分类**必须在 `nav()` 之前**建（页面加载时就把列表拉进内存，晚建 ⇒ 弹窗仍走「请先创建」分支） | 前置自造（API 建分类）+ `ensureLoggedIn` ⇒ **单组跑与全量跑都 ✅** |
+| `10-product-detail` / `01-login`（时红时绿） | 未归因 | `POST /api/auth/sms/send` 的 **400** 来自**登录助手自己**点「获取验证码」，浏览器只报「status of 400」不带 URL ⇒ 首个旅程被 console 门禁误判；#6942 进一步定位为**确定性**（`ILLEGAL_STATE「今日发送次数已达上限」`，日上限 10 + 60s 防刷），旧 `smsLogin` 把发码失败当**硬门禁** ⇒ 单组跑登不进去（全量跑「正常」只是 `01-login` 先跑过的**顺序依赖**） | 发码失败只记不抛 + 逐旅程 `ensureLoggedIn` ⇒ 单组跑确定 |
+| `27-corporate` / `28-register` | 「整轮预算 1500s 到点，未跑」 | `27-corporate` **不存在**（实际名 `27-corporate-home`，单跑 ✅）；`28-register` 是 `ALL_JOURNEY_NAMES` 里的**幽灵名**（实际名 `31-register`，本轮全量里就 ✅）⇒ `--group 28` 匹配不到任何旅程（0 pass / 0 fail / 29 skip） | 台账与实际名对齐 + **双向守卫**（§11.1 #6942） |
+
+顺带查明的**产品侧**事实（不是本轮修复项，已开单/登记）：
+- `DELETE /api/admin/products/{id}` 对 `on_sale` 必 **422**（「请先下架后再删除」），而 `draft → off_sale` 本身非法（「状态流转无效…允许的目标状态: 审核中/出售中」）
+  ⇒ 旧 `cleanupProduct` **一件都没删掉**，残留商品正是 issue ① 那个 `404 /api/admin/products/<id>` 的**来源**（链条已在 #6942 打通并修好清理路径）。
+- `performance.measure` 负区间在 `ProcessingRedirectPage` **复发**（#6799 ② 修过的错；`ui_smoke_known_console.json` 口径写明「再出现即真失败」）⇒ 开 **#6946**（本轮 12 轮复跑里出现 **1** 次，附复现要求）。
+
+### 11.3 主会话的**复核订正**（铁律 11「转述即未核实」——两次都是我自己踩）
+
+1. **#6945 两条红的归因**：我按「同名 check」推断成 drift-audit ⇒ 错，实际是两条 helper 判据（见 §11.1 说明）。
+2. **#6937 的 `exit 3` 红证**：我上一轮报「未能复现（得到 exit 1）」⇒ **是我的注入方式不对**（同时注入了无效的 A）。
+   重测：`TENANT_A=32 + TENANT_B=99998` ⇒ **`exit=3`** + 「对照租户 B（注入的 99998 登录失败 ⇒ 不可用）无对象可打」，读数 `pass=38 fail=0 skip=50 total=88`；
+   注入一行写死手机号 ⇒ `exit=3` + 逐字 `sweep.mjs :: phone-literal → const HARDCODED_PHONE = "13800138000"`（跑完已还原，工作树 0 改动）。
+   **结论更正为「复现成立」**。
+3. `acceptance/2026-10-14/line3-aftersales-race/**` 在 **22:13** 被 #6937 的执行者观察到「被别的进程删除」——那是**我自己**在做收口时
+   `git checkout main`（当时 main 尚未含 #6927）的**瞬态**；22:16 快进到含该 PR 的 main 后**已自动恢复**，现取 `REPORT.md` 与探针脚本都在。
+
+### 11.4 残留与终态（收口时现取）
+
+- `tenants` = **1 行**（只剩 `32 米高测试环境`）；#6937 自造的对照租户 **35 / 36** 已由该包**自清到 0**（逐表现取）。
+- tenant 32 内：`orders` **141** / `products` **44**（命名含「冒烟/验收」**35** 件）/ `product_skus` **33** /
+  `processing_items(active)` **0** / `processing_categories(active)` **0** —— 均为**该租户自身的测试数据**
+  （该租户就是下一轮的起点）；清空口径见 §8 的 `wipe-tenants.py`。
+- 清理链修正后（§11.2），后续旅程自造的商品会被**真正删掉**（先下架 → DELETE → `GET == 404` 收口）：#6942 已用它清掉 **10 件**遗留商品（24 → 14）。
+
