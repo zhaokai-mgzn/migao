@@ -1,0 +1,159 @@
+{
+  "buildPoint": {
+    "worktree": "/Users/guangzhen.zk/ai native/migao",
+    "sha": "90192bcac",
+    "shaFull": "90192bcac82b1d276d2793986ca9c64f47e47d16",
+    "subject": "chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)",
+    "adminApiStart": "三 10月/14 20:24:44 2026",
+    "originMain": "03ce17050"
+  },
+  "buildPointShift": {
+    "from": {
+      "worktree": "/Users/guangzhen.zk/ai native/migao",
+      "sha": "d1c09d02f",
+      "subject": "chore(ci): flaky 台账追加（run 37096947254） (#6183)",
+      "adminApiStart": "2026-10-03 13:09:45 +08",
+      "pid": 99086
+    },
+    "to": {
+      "worktree": "/Users/guangzhen.zk/ai native/migao",
+      "sha": "90192bcac",
+      "subject": "chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)",
+      "adminApiStart": "三 10月/14 20:24:44 2026",
+      "pid": "54364"
+    },
+    "switchAt": "2026-10-03 13:44:16 +08",
+    "observedAt": {
+      "cst": "2026-10-14 20:33:17 +08",
+      "utc": "2026-10-14T12:33:17.902Z"
+    }
+  },
+  "window": {
+    "start": "2026-10-14 20:34:24 +08",
+    "utc": "2026-10-14T12:34:24.222Z"
+  },
+  "perSuite": {
+    "A-import-export.json": {
+      "pass": 21,
+      "fail": 0,
+      "skip": 0,
+      "total": 21
+    },
+    "B-batch-and-detach.json": {
+      "pass": 15,
+      "fail": 2,
+      "skip": 0,
+      "total": 17
+    },
+    "D-uploads.json": {
+      "pass": 13,
+      "fail": 0,
+      "skip": 0,
+      "total": 13
+    },
+    "E-concurrency-and-redproof.json": {
+      "pass": 7,
+      "fail": 1,
+      "skip": 0,
+      "total": 8
+    },
+    "F-redproof.json": {
+      "pass": 1,
+      "fail": 3,
+      "skip": 0,
+      "total": 4
+    }
+  },
+  "totals": {
+    "pass": 57,
+    "fail": 6,
+    "skip": 0,
+    "total": 63
+  },
+  "failures": [
+    {
+      "suite": "B-batch-and-detach.json",
+      "id": "B2.1",
+      "name": "部分失败：如实报告失败项（不存在的 id + 他租户 id 各进 errors[]）",
+      "detail": "期望 failed = 2（ghost + 他租户）且 errors[] 覆盖这两个 id ≠ 实测 success=2 failed=1 errors=[{\"id\":\"l2ghostbeb69cfce60417341a58\",\"message\":\"商品不存在\"}]",
+      "at": "2026-10-14 20:34:04 +08"
+    },
+    {
+      "suite": "B-batch-and-detach.json",
+      "id": "B2.3",
+      "name": "他租户 id 零写（跨租户删除被拒）",
+      "detail": "期望 租户 21 的商品 undefined 在调用后 deleted=0 且行仍在 ≠ 实测 null",
+      "at": "2026-10-14 20:34:04 +08"
+    },
+    {
+      "suite": "E-concurrency-and-redproof.json",
+      "id": "E4.1",
+      "name": "并发 5 次 detach-and-delete 同一工序 ⇒ 恰好 1 次成功、其余拒绝，且终态 deleted=1（无半完成）",
+      "detail": "期望 成功(200) 次数 = 1；其余 4xx；DB deleted=1 ≠ 实测 HTTP=[200,200,200,422,422] 200 次数=3；DB={\"id\":\"e1f7177549b39c099fc496a6309dd4a8\",\"deleted\":1}",
+      "at": "2026-10-14 20:34:16 +08"
+    },
+    {
+      "suite": "F-redproof.json",
+      "id": "F2",
+      "name": "红证②：幂等判据（同货号商品数=1）**会红**（注入第二条同货号 ⇒ 2 ⇒ 清理 ⇒ 1），sha256 自证",
+      "detail": "期望 1 → 注入后 2（判据当场红）→ 清理后 1 ≠ 实测 green=1 red=2 restored=2；注入行 sha256=361b086d3b3dd36e；还原后 sha256=1d462895b8927fe3",
+      "at": "2026-10-14 20:34:18 +08"
+    },
+    {
+      "suite": "F-redproof.json",
+      "id": "F3",
+      "name": "红证③：库存不变式（stock ≥ 0）**会红**（注入 -5 ⇒ 变红 ⇒ 还原 7 ⇒ 回绿），sha256 自证",
+      "detail": "期望 7（绿）→ 注入 -5 后读数为负（红）→ 还原 7（绿） ≠ 实测 green=7.0 → 注入(-5) HTTP 422 读数=7.0 → 还原=7.0；指纹 b7abe17c0d26 → b7abe17c0d26",
+      "at": "2026-10-14 20:34:20 +08"
+    },
+    {
+      "suite": "F-redproof.json",
+      "id": "F4",
+      "name": "故意的失效控制项（**必须红**）：断言 1 === 2 —— 证明 fail 桶可达、红证通道可用",
+      "detail": "期望 1 === 2（**故意为假**） ≠ 实测 1 === 2 为 false ⇒ 本条预期就是 fail",
+      "at": "2026-10-14 20:34:20 +08"
+    }
+  ],
+  "skips": [],
+  "residue": {
+    "counts": {
+      "products": 0,
+      "productsByName": 0,
+      "productSkus": 0,
+      "productColors": 0,
+      "productAttrs": 0,
+      "operations": 0,
+      "opPositions": 0,
+      "opPositionsByName": 0,
+      "opPriceVersions": 0,
+      "routeTemplates": 0,
+      "routeRules": 0,
+      "ledger": 0,
+      "ledgerByProduct": 0
+    },
+    "total": 0
+  },
+  "segments": {
+    "a1-import-export": {
+      "status": "ok",
+      "tail": "2026-10-14 20:33:58 +08 [PASS] [A6.1] 导入模板表头 == IMPORT_HEADERS（模板与解析同源） — 期望 [\"商品名称\",\"货号\",\"分类ID\",\"价格\",\"库存\",\"描述\",\"颜色\",\"门幅\",\"SKU编码\"] == 实测 [\"商品名称\",\"货号\",\"分类ID\",\"价格\",\"库存\",\"描述\",\"颜色\",\"门幅\",\"SKU编码\"]\n2026-10-14 20:33:58 +08 A 段结束，摘要 {\"pass\":21,\"fail\":0,\"skip\":0,\"total\":21}\n"
+    },
+    "b1-batch-detach": {
+      "status": "exit 1",
+      "tail": "2026-10-14 20:34:10 +08 B 段探针对象已清理\n2026-10-14 20:34:10 +08 B/C 段结束，摘要 {\"pass\":15,\"fail\":2,\"skip\":0,\"total\":17}\n"
+    },
+    "d1-uploads": {
+      "status": "ok",
+      "tail": "2026-10-14 20:34:12 +08 D 段上传对象清理：delete 200=6 失败=0\n2026-10-14 20:34:12 +08 D 段结束，摘要 {\"pass\":13,\"fail\":0,\"skip\":0,\"total\":13}\n"
+    },
+    "e1-concurrency": {
+      "status": "exit 1",
+      "tail": "\nNode.js v24.19.0\n"
+    },
+    "f1-redproof": {
+      "status": "ok",
+      "tail": "2026-10-14 20:34:21 +08 F 段探针对象已清理\n2026-10-14 20:34:21 +08 F 段结束，摘要 {\"pass\":1,\"fail\":3,\"skip\":0,\"total\":4}\n"
+    }
+  },
+  "note": "fail 桶中 F4 是**故意的失效控制项**（必须红，不计缺陷）；判据缺陷（假红）单列在 REPORT §7"
+}

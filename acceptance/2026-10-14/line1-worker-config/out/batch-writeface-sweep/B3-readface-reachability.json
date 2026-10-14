@@ -1,0 +1,22 @@
+{
+  "productId": "57cf7da9ec6eefe4f1793aaf07efb9b3",
+  "skuCode": "L2-BATCH-MV83D6LL",
+  "name": "线②验收读面G",
+  "childrenTotals": {
+    "skus": 1,
+    "colors": 1,
+    "ledger": 1
+  },
+  "read": {
+    "getById": {
+      "http": 404,
+      "success": false,
+      "deletedFlag": null
+    },
+    "listBySku": {
+      "http": 200,
+      "total": 0
+    },
+    "exportRows": 0
+  }
+}

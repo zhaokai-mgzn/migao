@@ -1,0 +1,64 @@
+2026-10-14 21:19:31 +08 [独立复现] 登录 tenant=32（期望 32）
+2026-10-14 21:19:31 +08 [独立复现] SKU 2110348703040729089 起始库存 = 75
+2026-10-14 21:19:31 +08 [独立复现] 草稿单 id=db5fd6439f24da91a099544271b91ed2 no=RK-20261014-0069
+{
+  "at": "2026-10-14 21:19:32 +08",
+  "tenant": 32,
+  "inboundId": "db5fd6439f24da91a099544271b91ed2",
+  "inboundNo": "RK-20261014-0069",
+  "barrierAtCst": "2026-10-14 21:19:31",
+  "requests": [
+    {
+      "i": 0,
+      "action": "post",
+      "t0": 1791983971664,
+      "t1": 1791983971855,
+      "durMs": 191,
+      "status": 409,
+      "body": "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"入库单当前状态为「已作废」，只有草稿可以过账\"},\"requestId\":\"req_fd12bccfe14542cc\",\"timestamp\":1791983971,\"suggestion\":\"已过账的入库单不得重复过账（库存只加一次）；如需冲销请另开单据\"}"
+    },
+    {
+      "i": 1,
+      "action": "cancel",
+      "t0": 1791983971664,
+      "t1": 1791983971823,
+      "durMs": 159,
+      "status": 200,
+      "body": "{\"success\":true,\"data\":{\"id\":\"db5fd6439f24da91a099544271b91ed2\",\"inboundNo\":\"RK-20261014-0069\",\"supplier\":\"lb3-race-supplier\",\"warehouse\":\"lb3-race-wh\",\"inboundDate\":\"2026-10-14\",\"status\":\"cancelled\",\"totalAmount\":25.0000,\"source\":\"purchase"
+    }
+  ],
+  "overlapEvidence": {
+    "真实重叠": true,
+    "unionMs": 191,
+    "sumDurMs": 350,
+    "说明": "并集墙钟 < 各历时之和 ⇒ 两个请求的时间窗真有交集（非串行叙事）"
+  },
+  "db": {
+    "status": "cancelled",
+    "postedAt": null,
+    "cancelledAt": "2026-10-14T21:19:31.736868+08:00",
+    "cancelledReason": "lb3-race",
+    "updatedAt": "2026-10-14T21:19:31.531441+08:00"
+  },
+  "ledgerForRef": [],
+  "ledgerRows": 0,
+  "stockBefore": 75,
+  "stockAfter": 75,
+  "stockDelta": 0,
+  "expectedByIndependentMath": {
+    "若作废胜出": {
+      "dbStatus": "cancelled",
+      "stockDelta": 0,
+      "ledgerRows": 0
+    },
+    "若过账胜出": {
+      "dbStatus": "posted",
+      "stockDelta": 5,
+      "ledgerRows": 1
+    },
+    "两者都成 ⇒ 不可能一致": "dbStatus=cancelled 且 stockDelta≠0 或 ledgerRows≠0"
+  },
+  "inconsistent": [],
+  "verdict": "pass",
+  "selfCheck": "本判据会红：把 cancel 换成先串行 post 再 cancel（无重叠）⇒ 应得 409 + 无台账（对照 RP3 的形态）"
+}

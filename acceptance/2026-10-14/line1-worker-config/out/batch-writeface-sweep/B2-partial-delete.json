@@ -1,0 +1,50 @@
+{
+  "http": 200,
+  "body": {
+    "success": true,
+    "data": {
+      "success": 2,
+      "failed": 1,
+      "errors": [
+        {
+          "id": "l2ghostbeb69cfce60417341a58",
+          "message": "商品不存在"
+        }
+      ]
+    },
+    "requestId": "req_8d4f5f24f4d44dcc",
+    "timestamp": 1791981243
+  },
+  "before": {
+    "7815ae89d185f0786e8700e687cbf05c": {
+      "id": "7815ae89d185f0786e8700e687cbf05c",
+      "tenant_id": 32,
+      "status": "draft",
+      "deleted": 0
+    },
+    "a81b3296ab479e6289140c30199e71b1": {
+      "id": "a81b3296ab479e6289140c30199e71b1",
+      "tenant_id": 32,
+      "status": "draft",
+      "deleted": 0
+    }
+  },
+  "after": {
+    "7815ae89d185f0786e8700e687cbf05c": {
+      "id": "7815ae89d185f0786e8700e687cbf05c",
+      "tenant_id": 32,
+      "status": "draft",
+      "deleted": 1
+    },
+    "a81b3296ab479e6289140c30199e71b1": {
+      "id": "a81b3296ab479e6289140c30199e71b1",
+      "tenant_id": 32,
+      "status": "draft",
+      "deleted": 1
+    }
+  },
+  "foreign": {
+    "after": null
+  },
+  "ghostId": "l2ghostbeb69cfce60417341a58"
+}

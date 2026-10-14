@@ -1,0 +1,124 @@
+{
+  "records": [
+    {
+      "id": "E1.0",
+      "name": "正对照：串行 1 次重复提交（同幂等键）⇒ 成功且落库 1 份",
+      "status": "pass",
+      "detail": "期望 HTTP 200 且 products(sku_code=l2-E1-DUP-83DBOA) = 1 == 实测 HTTP 200 落库=1",
+      "evidence": [
+        "期望来源: 正对照（migao-acceptance 反假绿）：先证该写面在串行下能成功，才谈并发保护",
+        "期望: HTTP 200 且 products(sku_code=l2-E1-DUP-83DBOA) = 1",
+        "实得: HTTP 200 落库=1",
+        "响应: {\"success\":true,\"data\":{\"id\":\"db16863641b1941fb3bac3824e176f46\",\"name\":\"线②验收重复提交\",\"basePrice\":9.00,\"description\":\"线②验收重复提交探针\",\"images\":[],\"status\":\"draft\",\"stock\":1.0,\"stockWarningThreshold\":10,\"skuCo"
+      ],
+      "at": "2026-10-14 20:34:13 +08",
+      "atUtc": "2026-10-14T12:34:13.200Z"
+    },
+    {
+      "id": "E1.1",
+      "name": "并发 5 次同 payload 同 X-Client-Request-Id ⇒ 只应产生一份数据（不得 5 份）",
+      "status": "pass",
+      "detail": "期望 落库份数 = 1（幂等键生效）；若为 6 ⇒ 幂等键未生效（登记项） == 实测 落库=1（并发前=1）HTTP=[200,200,200,200,200]",
+      "evidence": [
+        "期望来源: 幂等语义：同一 X-Client-Request-Id 的重复提交只应落一份；测点是 client_request_keys 是否被本链路消费",
+        "期望: 落库份数 = 1（幂等键生效）；若为 6 ⇒ 幂等键未生效（登记项）",
+        "实得: 落库=1（并发前=1）HTTP=[200,200,200,200,200]",
+        "client_request_keys 命中: [{\"id\":468,\"tenant_id\":32,\"client_request_id\":\"l2-e1-mv83dboa\",\"endpoint\":\"POST /api/admin/products\",\"response_payload\":{\"id\":\"db16863641b1941fb3bac3824e176f46\",\"name\":\"线②验收重复提交\",\"skus\":[{\"id\":\"2110348446089277441\",\"price\":9,\"stock\":1,\"colorId\":\"2110348446051528705\",\"skuCode\":\"L2-E1-DUP-83DBOA-01-28\",\"colorName\":\"米白\",\"createdAt\":\"2026-10-14 20:34:12\",\"doorWidth\":\"2.8m\",\"productId\":\"db16863641b1941fb3bac3824e176f46\",\"updatedAt\":\"2026-10-14 20:34:12\"}],\"unit\":\"米\",\"price\":9,\"stock\":1,\"colors\":[{\"id\":\"2110348446051528705\",\"colorName\":\"米白\",\"createdAt\":\"2026-10-14 20:34:12\",\"productId\":\"db16863641b1941fb3bac3824e176f46\",\"sortOrder\":0,\"updatedAt\":\"2026-10-14 20:34:12\"}],\"images\":[],\"status\":\"draft\",\"skuCode\":\"l2-E1-DUP-83DBOA\",\"editedAt\":\"2026-10-14 20:34:12\",\"editedBy\":\"13800138000\",\"basePrice\":9,\"createdAt\":\"2026-10-14 20:34:12\",\"updatedAt\":\"2026-10-14 20:34:12\",\"colorCount\":1,\"doorWidths\":[\"2.8m\"],\"salesCount\":0,\"totalStock\":1,\"description\":\"线②验收重复提交探针\",\"pricingType\":\"per_meter\",\"recommended\":false,\"salesAmount\":0,\"detailImages\":[],\"sellingMethods\":[\"bulk_cut\",\"full_roll\"],\"allowReturnRestock\":false,\"stockDeductionMode\":\"on_order\",\"stockWarningThreshold\":10},\"created_at\":\"2026-10-14T20:34:12.530868+08:00\"}]",
+        "并发响应体: {\"success\":true,\"data\":{\"replayed\":true,\"id\":\"db16863641b1941fb3bac3824e176f46\", | {\"success\":true,\"data\":{\"replayed\":true,\"id\":\"db16863641b1941fb3bac3824e176f46\", | {\"success\":true,\"data\":{\"replayed\":true,\"id\":\"db16863641b1941fb3bac3824e176f46\", | {\"success\":true,\"data\":{\"replayed\":true,\"id\":\"db16863641b1941fb3bac3824e176f46\", | {\"success\":true,\"data\":{\"replayed\":true,\"id\":\"db16863641b1941fb3bac3824e176f46\","
+      ],
+      "at": "2026-10-14 20:34:13 +08",
+      "atUtc": "2026-10-14T12:34:13.201Z"
+    },
+    {
+      "id": "E2.0",
+      "name": "正对照：库存写 7（合法）⇒ 200 且 DB 落 7（商品级与 SKU 级）",
+      "status": "pass",
+      "detail": "期望 HTTP 200；products.stock=7 且 sku.stock=7 == 实测 HTTP 200；product=7.0 sku=[{\"id\":2110348449180479500,\"s\":\"7.0\"}]",
+      "evidence": [
+        "期望来源: 正对照（反假绿）：库存写面在合法值上必须真的生效，否则\"不得为负\"是空断言",
+        "期望: HTTP 200；products.stock=7 且 sku.stock=7",
+        "实得: HTTP 200；product=7.0 sku=[{\"id\":2110348449180479500,\"s\":\"7.0\"}]",
+        "响应: {\"success\":true,\"data\":{\"id\":\"9c0b6a0fec4c9b07deb5f20e4766c32a\",\"name\":\"线②验收库存E2\",\"basePrice\":20.00,\"description\":\"线②验收并发探针\",\"images\":[],\"status\":\"draft\",\"stock\":7.0,\"stockWarningThreshold\":10,\"skuCod"
+      ],
+      "at": "2026-10-14 20:34:14 +08",
+      "atUtc": "2026-10-14T12:34:14.833Z"
+    },
+    {
+      "id": "E2.1",
+      "name": "库存不得为负：写 -5 ⇒ 必须拒绝且 DB 零变更（超卖护栏）",
+      "status": "pass",
+      "detail": "期望 HTTP 4xx 且 products.stock 仍为 7 == 实测 HTTP 422 body={\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"库存 stock 不能为负（库存是实物米数，下限为 0），当前值 -5 —— 请改为不小于 0 的值后重试（服务端不做静默归零）\"},\"requestId\":\"req_21c41d7725cb4101\",\"timestamp\":179；product=7.0",
+      "evidence": [
+        "期望来源: 库口径 stock 为数量字段；超卖 ⇒ 红（本线硬要求「库存不得为负」）。StockQuantity 准入判据存在于 import/stocktake 路径",
+        "期望: HTTP 4xx 且 products.stock 仍为 7",
+        "实得: HTTP 422 body={\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"库存 stock 不能为负（库存是实物米数，下限为 0），当前值 -5 —— 请改为不小于 0 的值后重试（服务端不做静默归零）\"},\"requestId\":\"req_21c41d7725cb4101\",\"timestamp\":179；product=7.0",
+        "负值落库: {\"product\":\"7.0\",\"skus\":[{\"id\":2110348449180479500,\"s\":\"7.0\"}]}",
+        "ledger: [{\"id\":4325,\"ref_no\":null,\"d\":\"3.0\",\"b\":\"0.0\",\"a\":\"3.0\",\"reason\":\"manual\"},{\"id\":4327,\"ref_no\":null,\"d\":\"4.0\",\"b\":\"3.0\",\"a\":\"7.0\",\"reason\":\"manual\"}]"
+      ],
+      "at": "2026-10-14 20:34:14 +08",
+      "atUtc": "2026-10-14T12:34:14.833Z"
+    },
+    {
+      "id": "E2.2",
+      "name": "并发写负库存 5 次 ⇒ 不得有任一次落库（仓库不得出现负库存）",
+      "status": "pass",
+      "detail": "期望 5 次全 4xx；products.stock ≥ 0 == 实测 HTTP=[422,422,422,422,422]；product=7.0 sku=[{\"id\":2110348449180479500,\"s\":\"7.0\"}]",
+      "evidence": [
+        "期望来源: 并发下同一护栏必须仍成立（每条并发断言都配正对照 E2.0）",
+        "期望: 5 次全 4xx；products.stock ≥ 0",
+        "实得: HTTP=[422,422,422,422,422]；product=7.0 sku=[{\"id\":2110348449180479500,\"s\":\"7.0\"}]",
+        "并发响应: {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message | {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message | {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message | {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message | {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message"
+      ],
+      "at": "2026-10-14 20:34:14 +08",
+      "atUtc": "2026-10-14T12:34:14.834Z"
+    },
+    {
+      "id": "E3.0",
+      "name": "正对照：活体商品的同类写（PUT status）真的成功",
+      "status": "pass",
+      "detail": "期望 HTTP 200 且 status=on_sale == 实测 HTTP 200 status=on_sale",
+      "evidence": [
+        "期望来源: 正对照（反假绿）：先证该写路径可用",
+        "期望: HTTP 200 且 status=on_sale",
+        "实得: HTTP 200 status=on_sale",
+        "响应: {\"success\":true,\"requestId\":\"req_38557f533f194eaa\",\"timestamp\":1791981255}"
+      ],
+      "at": "2026-10-14 20:34:15 +08",
+      "atUtc": "2026-10-14T12:34:15.686Z"
+    },
+    {
+      "id": "E3.1",
+      "name": "终态（已软删）对象并发发起会改状态的写 ⇒ 全部拒绝且零写",
+      "status": "pass",
+      "detail": "期望 5 次全 4xx（404/422）；DB deleted 仍为 1 且 status 未被改成 on_sale == 实测 HTTP=[404,404,404,404,404]；DB={\"id\":\"e2c45cfa09953db7b8704fe398292dad\",\"status\":\"draft\",\"deleted\":1}",
+      "evidence": [
+        "期望来源: 软删后 selectById 被 MP 逻辑删除过滤 ⇒ Product null ⇒ notFound；并发下必须零写",
+        "期望: 5 次全 4xx（404/422）；DB deleted 仍为 1 且 status 未被改成 on_sale",
+        "实得: HTTP=[404,404,404,404,404]；DB={\"id\":\"e2c45cfa09953db7b8704fe398292dad\",\"status\":\"draft\",\"deleted\":1}",
+        "响应: {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存 | {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存 | {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存 | {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存 | {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存"
+      ],
+      "at": "2026-10-14 20:34:15 +08",
+      "atUtc": "2026-10-14T12:34:15.863Z"
+    },
+    {
+      "id": "E4.1",
+      "name": "并发 5 次 detach-and-delete 同一工序 ⇒ 恰好 1 次成功、其余拒绝，且终态 deleted=1（无半完成）",
+      "status": "fail",
+      "detail": "期望 成功(200) 次数 = 1；其余 4xx；DB deleted=1 ≠ 实测 HTTP=[200,200,200,422,422] 200 次数=3；DB={\"id\":\"e1f7177549b39c099fc496a6309dd4a8\",\"deleted\":1}",
+      "evidence": [
+        "期望来源: 并发幂等：同一删除请求并发 ⇒ 一次生效；不得 5xx、不得半完成（#4608 的静默 no-op 形态）",
+        "期望: 成功(200) 次数 = 1；其余 4xx；DB deleted=1",
+        "实得: HTTP=[200,200,200,422,422] 200 次数=3；DB={\"id\":\"e1f7177549b39c099fc496a6309dd4a8\",\"deleted\":1}",
+        "响应: {\"success\":true,\"data\":{\"id\":\"e1f7177549b39c099fc496a6309dd4a8\",\"delet | {\"success\":true,\"data\":{\"id\":\"e1f7177549b39c099fc496a6309dd4a8\",\"delet | {\"success\":true,\"data\":{\"id\":\"e1f7177549b39c099fc496a6309dd4a8\",\"delet | {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"删除工序未通过 | {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"删除工序未通过"
+      ],
+      "at": "2026-10-14 20:34:16 +08",
+      "atUtc": "2026-10-14T12:34:16.379Z"
+    }
+  ],
+  "summary": {
+    "pass": 7,
+    "fail": 1,
+    "skip": 0,
+    "total": 8
+  }
+}

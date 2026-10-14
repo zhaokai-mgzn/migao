@@ -1,0 +1,148 @@
+{
+  "buildPoint": {
+    "worktree": "/Users/guangzhen.zk/ai native/migao",
+    "pid": "54364",
+    "sha": "90192bcac",
+    "shaFull": "90192bcac82b1d276d2793986ca9c64f47e47d16",
+    "subject": "chore(deps): bump dompurify to ^3.4.16（按最新 main 重建 commit + npm 10 重生成 lock） (#6655)",
+    "commitTime": "2026-10-14T11:52:37Z",
+    "originMain": "03ce17050",
+    "adminApiStart": "三 10月/14 20:24:44 2026",
+    "observedAt": {
+      "cst": "2026-10-14 20:30:26 +08",
+      "utc": "2026-10-14T12:30:26.997Z"
+    }
+  },
+  "clock": {
+    "node": {
+      "cst": "2026-10-14 20:30:27 +08",
+      "utc": "2026-10-14T12:30:27.094Z"
+    },
+    "dbCst": "2026-10-14 20:30:27",
+    "dbTz": "Asia/Shanghai",
+    "deltaSec": 0.204
+  },
+  "unauthProbes": {
+    "GET /api/worker/me": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "GET /api/worker/production/current-worker": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "GET /api/worker/production/scan?token=la00000000000000000000000000000000": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "POST /api/worker/production/scan/complete": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "GET /api/worker/production/cutting-height?token=la00000000000000000000000000000000": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "POST /api/worker/shipment/recognize": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "POST /api/worker/shipment/orders/la00000000000000000000000000000000/pack": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "POST /api/worker/inbound/recognize": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "POST /api/worker/inbound/drafts": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "POST /api/worker/inbound/drafts/la00000000000000000000000000000000/post": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "POST /api/worker/session/current": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    },
+    "GET /api/admin/products?page=1&size=1": {
+      "status": 401,
+      "code": "UNAUTHORIZED"
+    }
+  },
+  "worker": {
+    "created": 200,
+    "workerId": "c44fcb14f394b6f498f517fe51ffa6ea",
+    "workerNo": "LA027350",
+    "name": "线A验收工人027350",
+    "loggedIn": true,
+    "sessionIdPrefix": "cde332a2",
+    "me": {
+      "status": 200,
+      "pages": [
+        "report",
+        "order",
+        "cut_calc",
+        "shipment"
+      ]
+    },
+    "sessionRow": {
+      "id": "cde332a21f7347deb8b301a21e91f78a",
+      "worker_id": "c44fcb14f394b6f498f517fe51ffa6ea",
+      "worker_no": "LA027350",
+      "worker_name": "线A验收工人027350",
+      "idle_expires_cst": "2026-11-13 20:30:27.851855",
+      "ended_at": null,
+      "end_reason": null
+    }
+  },
+  "probePrefix": "线A验收 / la",
+  "residueAtStart": {
+    "counts": {
+      "probeUsers": 1,
+      "probeSessions": 1,
+      "probeOrders": 0,
+      "probeProcessingOrders": 0,
+      "probeSets": 0,
+      "probeItems": 0,
+      "probePositionOps": 0,
+      "probePartTokens": 0,
+      "probeWorkLogs": 0,
+      "probeAudits": 0,
+      "probeIdemKeys": 0,
+      "probeInboundItems": 0,
+      "probeInboundLabels": 0
+    },
+    "total": 2
+  },
+  "ledgerHashAtStart": {
+    "hash": "66ec38985b1e98bfa13141269cea9ccfc8a83bce6b07c31718fd1faebada184b",
+    "parts": [
+      "orders=0af8e95384dce53dd098d75857c957fe#14",
+      "processing_orders=EMPTY#0",
+      "processing_position_operations=EMPTY#0",
+      "processing_set_part_tokens=EMPTY#0",
+      "production_work_logs=EMPTY#0",
+      "worker_report_audits=EMPTY#0",
+      "users=a9b707ea90c76e7291fbe9549855e048#5",
+      "worker_sessions=48800ab60ad76e2fa6d1b3f6f0b12da2#1",
+      "inbound_labels=EMPTY#0",
+      "client_request_keys=EMPTY#0"
+    ],
+    "excludeProbe": false
+  },
+  "ledgerTables": [
+    "orders",
+    "processing_orders",
+    "processing_position_operations",
+    "processing_set_part_tokens",
+    "production_work_logs",
+    "worker_report_audits",
+    "users",
+    "worker_sessions",
+    "inbound_labels",
+    "client_request_keys"
+  ]
+}

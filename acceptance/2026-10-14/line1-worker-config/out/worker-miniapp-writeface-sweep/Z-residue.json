@@ -1,0 +1,101 @@
+{
+  "at": {
+    "cst": "2026-10-14 20:32:32 +08",
+    "utc": "2026-10-14T12:32:32.899Z"
+  },
+  "cleanupError": null,
+  "residue": {
+    "counts": {
+      "probeUsers": 0,
+      "probeSessions": 0,
+      "probeOrders": 0,
+      "probeProcessingOrders": 0,
+      "probeSets": 0,
+      "probeItems": 0,
+      "probePositionOps": 0,
+      "probePartTokens": 0,
+      "probeWorkLogs": 0,
+      "probeAudits": 0,
+      "probeIdemKeys": 0,
+      "probeInboundItems": 0,
+      "probeInboundLabels": 0
+    },
+    "total": 0
+  },
+  "clean": true,
+  "ledgerBeforeAllRows": {
+    "hash": "66ec38985b1e98bfa13141269cea9ccfc8a83bce6b07c31718fd1faebada184b",
+    "parts": [
+      "orders=0af8e95384dce53dd098d75857c957fe#14",
+      "processing_orders=EMPTY#0",
+      "processing_position_operations=EMPTY#0",
+      "processing_set_part_tokens=EMPTY#0",
+      "production_work_logs=EMPTY#0",
+      "worker_report_audits=EMPTY#0",
+      "users=a9b707ea90c76e7291fbe9549855e048#5",
+      "worker_sessions=48800ab60ad76e2fa6d1b3f6f0b12da2#1",
+      "inbound_labels=EMPTY#0",
+      "client_request_keys=EMPTY#0"
+    ],
+    "excludeProbe": false
+  },
+  "ledgerAfterAllRows": {
+    "hash": "cd989c640865155f9e17e8491cb71600dedf26075dde09aaf2edd128729d14fc",
+    "parts": [
+      "orders=a27253b12d748b14d83d1545ffb7ca1f#39",
+      "processing_orders=5a3e45e215f8c919347bba5a4c925059#38",
+      "processing_position_operations=38189ae21e388616d44869fe992a9008#413",
+      "processing_set_part_tokens=86ba53d84b6ea6be4da3f79185537cf5#40",
+      "production_work_logs=668f4b3493266fbcc77e3ce0fc0912cd#11",
+      "worker_report_audits=e61e3a13e7951de26bd24fc8502c6e3b#11",
+      "users=6ea7da52801dbcd51a3f9ead61acdb69#4",
+      "worker_sessions=EMPTY#0",
+      "inbound_labels=EMPTY#0",
+      "client_request_keys=93a115ab05559bce34f62429ec31480c#11"
+    ],
+    "excludeProbe": false
+  },
+  "ledgerBefore": {
+    "hash": "2226a8908b88865b91704cc9c9f772b480ac73c53a776886aab37cc6f3c78fe4",
+    "parts": [
+      "orders=5a2dbf233685914ae7d6936592fd5208#12",
+      "processing_orders=EMPTY#0",
+      "processing_position_operations=EMPTY#0",
+      "processing_set_part_tokens=EMPTY#0",
+      "production_work_logs=EMPTY#0",
+      "worker_report_audits=EMPTY#0",
+      "users=6ea7da52801dbcd51a3f9ead61acdb69#4",
+      "worker_sessions=EMPTY#0",
+      "inbound_labels=EMPTY#0",
+      "client_request_keys=EMPTY#0"
+    ],
+    "excludeProbe": true
+  },
+  "ledgerAfter": {
+    "hash": "e07a480f4df07f05cdeb7030f2b43720359462b20ccb302dade5b0673fd7b76c",
+    "parts": [
+      "orders=3b9285af262c55643c919a736d37511f#38",
+      "processing_orders=5a3e45e215f8c919347bba5a4c925059#38",
+      "processing_position_operations=38189ae21e388616d44869fe992a9008#413",
+      "processing_set_part_tokens=86ba53d84b6ea6be4da3f79185537cf5#40",
+      "production_work_logs=668f4b3493266fbcc77e3ce0fc0912cd#11",
+      "worker_report_audits=e61e3a13e7951de26bd24fc8502c6e3b#11",
+      "users=6ea7da52801dbcd51a3f9ead61acdb69#4",
+      "worker_sessions=EMPTY#0",
+      "inbound_labels=EMPTY#0",
+      "client_request_keys=93a115ab05559bce34f62429ec31480c#11"
+    ],
+    "excludeProbe": true
+  },
+  "ledgerUnchanged": false,
+  "tableCounts": {
+    "orders": 40,
+    "processingOrders": 39,
+    "positionOps": 423,
+    "partTokens": 41,
+    "workLogs": 11,
+    "users": 4,
+    "inboundOrders": 0,
+    "inboundLabels": 0
+  }
+}

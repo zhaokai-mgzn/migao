@@ -1,0 +1,47 @@
+{
+  "trueOrphans": {
+    "product_skus.product_id": 0,
+    "product_colors.product_id": 0,
+    "product_attributes.product_id": 0,
+    "stock_ledger_entries.product_id": 0,
+    "stock_batches.product_id": 0,
+    "stock_batch_consumptions.product_id": 0,
+    "inbound_order_items.product_id": 0,
+    "fabric_remnants.product_id": 0
+  },
+  "fkCountToProducts": 8,
+  "refTables": [
+    [
+      "product_skus",
+      "product_id"
+    ],
+    [
+      "product_colors",
+      "product_id"
+    ],
+    [
+      "product_attributes",
+      "product_id"
+    ],
+    [
+      "stock_ledger_entries",
+      "product_id"
+    ],
+    [
+      "stock_batches",
+      "product_id"
+    ],
+    [
+      "stock_batch_consumptions",
+      "product_id"
+    ],
+    [
+      "inbound_order_items",
+      "product_id"
+    ],
+    [
+      "fabric_remnants",
+      "product_id"
+    ]
+  ]
+}

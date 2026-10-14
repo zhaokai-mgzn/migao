@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "phone": "13800138000",
+  "expectedTenant": 32,
+  "tenantSeen": 32,
+  "via": "sms-bypass-code",
+  "user": {
+    "id": "35d75c1f3f08b4024152484ff8bb8bd4",
+    "role": "admin",
+    "tenantId": 32
+  }
+}

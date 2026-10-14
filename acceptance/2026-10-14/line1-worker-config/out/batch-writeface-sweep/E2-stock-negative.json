@@ -1,0 +1,72 @@
+{
+  "positive": {
+    "http": 200,
+    "after": {
+      "product": "7.0",
+      "skus": [
+        {
+          "id": 2110348449180479500,
+          "s": "7.0"
+        }
+      ]
+    }
+  },
+  "negative": {
+    "http": 422,
+    "body": {
+      "success": false,
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "库存 stock 不能为负（库存是实物米数，下限为 0），当前值 -5 —— 请改为不小于 0 的值后重试（服务端不做静默归零）"
+      },
+      "requestId": "req_21c41d7725cb4101",
+      "timestamp": 1791981254,
+      "suggestion": "请检查必填字段是否完整，字段格式是否正确"
+    },
+    "after": {
+      "product": "7.0",
+      "skus": [
+        {
+          "id": 2110348449180479500,
+          "s": "7.0"
+        }
+      ]
+    }
+  },
+  "negativeConcurrent": {
+    "http": [
+      422,
+      422,
+      422,
+      422,
+      422
+    ],
+    "after": {
+      "product": "7.0",
+      "skus": [
+        {
+          "id": 2110348449180479500,
+          "s": "7.0"
+        }
+      ]
+    }
+  },
+  "ledger": [
+    {
+      "id": 4325,
+      "ref_no": null,
+      "d": "3.0",
+      "b": "0.0",
+      "a": "3.0",
+      "reason": "manual"
+    },
+    {
+      "id": 4327,
+      "ref_no": null,
+      "d": "4.0",
+      "b": "3.0",
+      "a": "7.0",
+      "reason": "manual"
+    }
+  ]
+}

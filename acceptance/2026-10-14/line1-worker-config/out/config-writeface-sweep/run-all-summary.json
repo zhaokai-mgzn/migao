@@ -1,0 +1,73 @@
+{
+  "results": [
+    {
+      "probe": "p1-selftest-f8",
+      "exit": 1,
+      "started": "2026-10-14T12:34:24.264Z",
+      "ended": "2026-10-14T12:34:27.066Z",
+      "pass": 6,
+      "fail": 1,
+      "skip": 0,
+      "total": 7,
+      "failures": [
+        "W1-00: 自建探针工序 — HTTP 422；resp={\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"新增工序未通过校验（1 条问题）\",\"details\":[{\"field\":\"positions\",\"message\":\"未知部位「通用」：只接受矩阵里已有的部位（布帘/纱帘/帘头/布料）或基线三部位（布帘"
+      ]
+    },
+    {
+      "probe": "p2-operations",
+      "exit": 0,
+      "started": "2026-10-14T12:34:27.068Z",
+      "ended": "2026-10-14T12:34:38.743Z",
+      "pass": 24,
+      "fail": 0,
+      "skip": 0,
+      "total": 24,
+      "failures": []
+    },
+    {
+      "probe": "p3-positions",
+      "exit": 0,
+      "started": "2026-10-14T12:34:38.743Z",
+      "ended": "2026-10-14T12:34:49.038Z",
+      "pass": 19,
+      "fail": 0,
+      "skip": 0,
+      "total": 19,
+      "failures": []
+    },
+    {
+      "probe": "p4-routes",
+      "exit": 1,
+      "started": "2026-10-14T12:34:49.038Z",
+      "ended": "2026-10-14T12:34:51.228Z",
+      "pass": 3,
+      "fail": 0,
+      "skip": 0,
+      "total": 3,
+      "failures": []
+    },
+    {
+      "probe": "p5-rules",
+      "exit": 1,
+      "started": "2026-10-14T12:34:51.228Z",
+      "ended": "2026-10-14T12:34:52.910Z",
+      "pass": 2,
+      "fail": 0,
+      "skip": 0,
+      "total": 2,
+      "failures": []
+    },
+    {
+      "probe": "p6-other-config",
+      "exit": 0,
+      "started": "2026-10-14T12:34:52.910Z",
+      "ended": "2026-10-14T12:34:58.676Z",
+      "pass": 14,
+      "fail": 0,
+      "skip": 4,
+      "total": 18,
+      "failures": []
+    }
+  ],
+  "generatedAt": "2026-10-14T12:34:58.676Z"
+}

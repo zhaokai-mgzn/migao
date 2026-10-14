@@ -1,0 +1,80 @@
+{
+  "records": [
+    {
+      "id": "U1.login-view",
+      "name": "未登录进入 worker-h5 ⇒ 登录视图可见（#wh5-login / #wh5-worker-no / #wh5-pin）",
+      "status": "pass",
+      "detail": "期望 三个元素都可见 == 实测 login=true no=1 pin=1",
+      "evidence": [
+        "期望来源: worker-h5/src/render.mjs::renderLogin（`#wh5-worker-no` / `#wh5-pin` / `#wh5-login`）",
+        "期望: 三个元素都可见",
+        "实得: login=true no=1 pin=1",
+        "截图 out/shots/U1-login-view.png"
+      ],
+      "at": "2026-10-14 20:37:21 +08",
+      "atUtc": "2026-10-14T12:37:21.069Z"
+    },
+    {
+      "id": "U2.bad-pin-negative-control",
+      "name": "负对照（内容级）：错误 PIN ⇒ 停在登录视图 + #wh5-error 显示**业务文案**「工号或 PIN 不正确」+ 无报工入口、无工人名",
+      "status": "fail",
+      "detail": "期望 #wh5-login 仍在 + #wh5-error 含「工号或 PIN 不正确」+ #wh5-report 不存在 + #wh5-current-worker 不存在 ≠ 实测 loginVisible=true err=\"无法识别租户：请填写企业编码（向商家索取，例如 migao）\" reportCount=0 headerCount=0",
+      "evidence": [
+        "期望来源: worker-h5 api.mjs::login 抛错 → render.mjs 显示 #wh5-error（文案来自服务端 401 \"工号或 PIN 不正确\"）",
+        "期望: #wh5-login 仍在 + #wh5-error 含「工号或 PIN 不正确」+ #wh5-report 不存在 + #wh5-current-worker 不存在",
+        "实得: loginVisible=true err=\"无法识别租户：请填写企业编码（向商家索取，例如 migao）\" reportCount=0 headerCount=0",
+        "截图 out/shots/U2-bad-pin.png",
+        "网络面：[[\"/api/worker/login\",422]]",
+        "🔴 第一版只断言「#wh5-error 非空」⇒ 抓到的是 `Failed to fetch`（**测试装置没做同源代理**，不是产品文案）= 判据什么都没证（主会话复核指出）"
+      ],
+      "at": "2026-10-14 20:37:22 +08",
+      "atUtc": "2026-10-14T12:37:22.397Z"
+    },
+    {
+      "id": "U3.current-worker-in-dom",
+      "name": "正确登录 ⇒ 页头「当前工人：<探针工人>」出现在**真实 DOM**",
+      "status": "fail",
+      "detail": "期望 #wh5-current-worker 含「线A验收工人411016」 ≠ 实测 header=\"\" err=\"无法识别租户：请填写企业编码（向商家索取，例如 migao）\" 登录响应=[[\"/api/worker/login\",422,\"{\\\"success\\\":false,\\\"error\\\":{\\\"code\\\":\\\"VALIDATION_ERROR\\\",\\\"message\\\":\\\"无法识别租户：请填写企业编码（向商家索取，例如 migao）\\\"},\\\"requestId\\\":\\\"req_defa926d5a464819\\\",\\\"timestamp\\\":1791981442,\\\"suggestion\\\":\\\"请检查必填字段是否完整，字段格式是否正确\\\"}\"]]",
+      "evidence": [
+        "期望来源: WorkerProfileController/current-worker（服务端解身份）+ render.mjs 页头渲染",
+        "期望: #wh5-current-worker 含「线A验收工人411016」",
+        "实得: header=\"\" err=\"无法识别租户：请填写企业编码（向商家索取，例如 migao）\" 登录响应=[[\"/api/worker/login\",422,\"{\\\"success\\\":false,\\\"error\\\":{\\\"code\\\":\\\"VALIDATION_ERROR\\\",\\\"message\\\":\\\"无法识别租户：请填写企业编码（向商家索取，例如 migao）\\\"},\\\"requestId\\\":\\\"req_defa926d5a464819\\\",\\\"timestamp\\\":1791981442,\\\"suggestion\\\":\\\"请检查必填字段是否完整，字段格式是否正确\\\"}\"]]",
+        "截图 out/shots/U3-logged-in.png"
+      ],
+      "at": "2026-10-14 20:38:04 +08",
+      "atUtc": "2026-10-14T12:38:04.479Z"
+    },
+    {
+      "id": "U3b.me-called",
+      "name": "登录后 UI 真的拉了服务端读面（GET /api/worker/production/current-worker 或 /me 出现在网络面）",
+      "status": "fail",
+      "detail": "期望 网络面出现 worker 读面请求 ≠ 实测 [[\"/api/worker/login\",422]]",
+      "evidence": [
+        "期望来源: worker-h5 app.mjs 登录后 refreshPages/currentWorker（网络面取证，不靠接口独立调用）",
+        "期望: 网络面出现 worker 读面请求",
+        "实得: [[\"/api/worker/login\",422]]"
+      ],
+      "at": "2026-10-14 20:38:04 +08",
+      "atUtc": "2026-10-14T12:38:04.480Z"
+    },
+    {
+      "id": "U4a.scan-input-empty",
+      "name": "扫码前：手输框 `#wh5-code` 存在且**默认为空**、`#wh5-scan` 存在（页面**不**从 URL 读 token 回填 ⇒ 无深链，观察项）",
+      "status": "fail",
+      "detail": "期望 #wh5-code 存在且值 == \"\"；#wh5-scan 存在 ≠ 实测 codeBefore=null ids=[\"wh5-error\",\"wh5-enterprise-code\",\"wh5-worker-no\",\"wh5-pin\",\"wh5-login\"]",
+      "evidence": [
+        "期望来源: app.mjs: 只从 URL 读 tenantId（tenantIdFromLocation）；token 只能手输/扫码（无深链能力，登记为观察项）",
+        "期望: #wh5-code 存在且值 == \"\"；#wh5-scan 存在",
+        "实得: codeBefore=null ids=[\"wh5-error\",\"wh5-enterprise-code\",\"wh5-worker-no\",\"wh5-pin\",\"wh5-login\"]"
+      ],
+      "at": "2026-10-14 20:38:35 +08",
+      "atUtc": "2026-10-14T12:38:35.175Z"
+    }
+  ],
+  "summary": {
+    "pass": 1,
+    "fail": 4,
+    "skip": 0,
+    "total": 5
+  }
+}

@@ -1,0 +1,60 @@
+  "at": "2026-10-14 20:36:57 +08",
+  "tenant": 32,
+  "inboundId": "19e9ef4d43e9d4f5058a411b13708487",
+  "inboundNo": "RK-20261014-0008",
+  "barrierAtCst": "2026-10-14 20:36:56",
+  "requests": [
+    {
+      "i": 0,
+      "action": "post",
+      "t0": 1791981416891,
+      "t1": 1791981417048,
+      "durMs": 157,
+      "status": 409,
+      "body": "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"入库单当前状态为「已作废」，只有草稿可以过账\"},\"requestId\":\"req_9c7ccb7892384e51\",\"timestamp\":1791981417,\"suggestion\":\"已过账的入库单不得重复过账（库存只加一次）；如需冲销请另开单据\"}"
+    },
+    {
+      "i": 1,
+      "action": "cancel",
+      "t0": 1791981416892,
+      "t1": 1791981417022,
+      "durMs": 130,
+      "status": 200,
+      "body": "{\"success\":true,\"data\":{\"id\":\"19e9ef4d43e9d4f5058a411b13708487\",\"inboundNo\":\"RK-20261014-0008\",\"supplier\":\"lb3-race-supplier\",\"warehouse\":\"lb3-race-wh\",\"inboundDate\":\"2026-10-14\",\"status\":\"cancelled\",\"totalAmount\":25.0000,\"source\":\"purchase"
+    }
+  ],
+  "overlapEvidence": {
+    "真实重叠": true,
+    "unionMs": 157,
+    "sumDurMs": 287,
+    "说明": "并集墙钟 < 各历时之和 ⇒ 两个请求的时间窗真有交集（非串行叙事）"
+  },
+  "db": {
+    "status": "cancelled",
+    "postedAt": null,
+    "cancelledAt": "2026-10-14T20:36:56.95355+08:00",
+    "cancelledReason": "lb3-race",
+    "updatedAt": "2026-10-14T20:36:56.741252+08:00"
+  },
+  "ledgerForRef": [],
+  "ledgerRows": 0,
+  "stockBefore": 32,
+  "stockAfter": 32,
+  "stockDelta": 0,
+  "expectedByIndependentMath": {
+    "若作废胜出": {
+      "dbStatus": "cancelled",
+      "stockDelta": 0,
+      "ledgerRows": 0
+    },
+    "若过账胜出": {
+      "dbStatus": "posted",
+      "stockDelta": 5,
+      "ledgerRows": 1
+    },
+    "两者都成 ⇒ 不可能一致": "dbStatus=cancelled 且 stockDelta≠0 或 ledgerRows≠0"
+  },
+  "inconsistent": [],
+  "verdict": "pass",
+  "selfCheck": "本判据会红：把 cancel 换成先串行 post 再 cancel（无重叠）⇒ 应得 409 + 无台账（对照 RP3 的形态）"
+}

@@ -1,0 +1,237 @@
+[
+  {
+    "id": "B1-1",
+    "name": "正对照：租户 A 会话创建成功",
+    "status": "fail",
+    "detail": "期望 HTTP 200 且 data.id 非空 ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: 正对照（缺它则跨租户判据是空断言）",
+      "HTTP/读数: {\"status\":401,\"sessionId\":null}",
+      "构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 procStart=三 10月/14 20:34:43 2026 观测窗口起点 2026-10-14 20:35:46 +08"
+    ],
+    "at": "2026-10-14 20:35:47 +08",
+    "atUtc": "2026-10-14T12:35:47.165Z"
+  },
+  {
+    "id": "B1-2",
+    "name": "正对照：租户 B 会话创建成功",
+    "status": "fail",
+    "detail": "期望 HTTP 200 且 data.id 非空 ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: 正对照（跨租户判据的对侧夹具）",
+      "HTTP/读数: {\"status\":401,\"sessionId\":null}",
+      "构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 procStart=三 10月/14 20:34:43 2026 观测窗口起点 2026-10-14 20:35:46 +08"
+    ],
+    "at": "2026-10-14 20:35:47 +08",
+    "atUtc": "2026-10-14T12:35:47.165Z"
+  },
+  {
+    "id": "B3-1",
+    "name": "跨租户读历史（B 读 A 会话）⇒ 拒",
+    "status": "fail",
+    "detail": "期望 HTTP 403 且 code==\"PERMISSION_DENIED\"，响应体不含会话内容 ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: chat.py::_guard_session —— session.tenant_id != current_user.tenant_id ⇒ 403 PERMISSION_DENIED",
+      "HTTP/读数: {\"status\":401,\"code\":\"TOKEN_INVALID\",\"bodyLen\":118}",
+      "构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 procStart=三 10月/14 20:34:43 2026 观测窗口起点 2026-10-14 20:35:46 +08",
+      "GET /api/chat/history/null with tenant 999999 token"
+    ],
+    "at": "2026-10-14 20:35:47 +08",
+    "atUtc": "2026-10-14T12:35:47.170Z"
+  },
+  {
+    "id": "B3-2",
+    "name": "跨租户关闭会话 ⇒ 拒",
+    "status": "fail",
+    "detail": "期望 HTTP 403 ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: chat.py::_guard_session（close 端点走同一守卫）",
+      "HTTP/读数: {\"status\":401,\"code\":\"TOKEN_INVALID\"}",
+      "构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 procStart=三 10月/14 20:34:43 2026 观测窗口起点 2026-10-14 20:35:46 +08"
+    ],
+    "at": "2026-10-14 20:35:47 +08",
+    "atUtc": "2026-10-14T12:35:47.173Z"
+  },
+  {
+    "id": "B3-3",
+    "name": "跨租户删除会话 ⇒ 拒",
+    "status": "fail",
+    "detail": "期望 HTTP 403 ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: chat.py::_guard_session（delete 端点走同一守卫）",
+      "HTTP/读数: {\"status\":401,\"code\":\"TOKEN_INVALID\"}",
+      "构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 procStart=三 10月/14 20:34:43 2026 观测窗口起点 2026-10-14 20:35:46 +08"
+    ],
+    "at": "2026-10-14 20:35:47 +08",
+    "atUtc": "2026-10-14T12:35:47.177Z"
+  },
+  {
+    "id": "B3-4",
+    "name": "跨租户拒后 A 会话无副作用（未被关闭/删除）",
+    "status": "fail",
+    "detail": "期望 row 存在 且 deleted=0 且 status 未被改成 closed ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: 拒 ⇒ 不得产生写副作用（守卫在写之前抛出）",
+      "HTTP/读数: {\"exists\":false}",
+      "构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 procStart=三 10月/14 20:34:43 2026 观测窗口起点 2026-10-14 20:35:46 +08"
+    ],
+    "at": "2026-10-14 20:35:47 +08",
+    "atUtc": "2026-10-14T12:35:47.259Z"
+  },
+  {
+    "id": "B4-1",
+    "name": "同租户不同用户读他人会话 ⇒ 拒",
+    "status": "fail",
+    "detail": "期望 HTTP 403 ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: chat.py::_guard_session —— customer_id != user_id ⇒ 403（身份作用域含用户维度）",
+      "HTTP/读数: {\"status\":401,\"code\":\"TOKEN_INVALID\"}",
+      "构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 procStart=三 10月/14 20:34:43 2026 观测窗口起点 2026-10-14 20:35:46 +08"
+    ],
+    "at": "2026-10-14 20:35:47 +08",
+    "atUtc": "2026-10-14T12:35:47.262Z"
+  },
+  {
+    "id": "B4-2",
+    "name": "正对照：会话属主读自己的会话 ⇒ 200",
+    "status": "fail",
+    "detail": "期望 HTTP 200 且 success==true ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: 正对照（缺它则 B4-1 可能只是「一律 403」的空断言）",
+      "HTTP/读数: {\"status\":401}",
+      "构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 procStart=三 10月/14 20:34:43 2026 观测窗口起点 2026-10-14 20:35:46 +08"
+    ],
+    "at": "2026-10-14 20:35:47 +08",
+    "atUtc": "2026-10-14T12:35:47.266Z"
+  },
+  {
+    "id": "B5-1",
+    "name": "JWT 缺 tenantId claim ⇒ 401（不得默认落到某租户）",
+    "status": "pass",
+    "detail": "期望 HTTP 401 且 code==\"TOKEN_INVALID\" == 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::get_current_user —— \"if not user.user_id or not user.tenant_id: 401 TOKEN_INVALID\"（fail-closed）",
+      "HTTP/读数: {\"status\":401,\"code\":\"TOKEN_INVALID\",\"body\":{\"detail\":{\"success\":false,\"error\":{\"code\":\"TOKEN_INVALID\",\"message\":\"Invalid token: Signature verification failed\"}}}}",
+      "构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 procStart=三 10月/14 20:34:43 2026 观测窗口起点 2026-10-14 20:35:46 +08"
+    ],
+    "at": "2026-10-14 20:35:47 +08",
+    "atUtc": "2026-10-14T12:35:47.444Z"
+  },
+  {
+    "id": "B5-2",
+    "name": "无 token + 伪造 X-Tenant-Id ⇒ 401（头不得成为租户来源）",
+    "status": "fail",
+    "detail": "期望 HTTP 401 ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: C 端租户只来自 JWT claim（auth.py）；DEBUG=false 时 X-Debug-Role 亦不构成旁路",
+      "HTTP/读数: {\"status\":200,\"body\":{\"success\":true,\"data\":{\"items\":[],\"page\":1,\"size\":20,\"total\":0},\"requestId\":\"req_08eefd66a17d4dfe\",\"timestamp\":1791981347}}",
+      "构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 procStart=三 10月/14 20:34:43 2026 观测窗口起点 2026-10-14 20:35:46 +08"
+    ],
+    "at": "2026-10-14 20:35:47 +08",
+    "atUtc": "2026-10-14T12:35:47.577Z"
+  },
+  {
+    "id": "B5-3",
+    "name": "合法 A token + X-Tenant-Id=B ⇒ 仍只返回 A 的会话",
+    "status": "fail",
+    "detail": "期望 全部 items.tenant_id == 32（跨租户条目数 = 0） ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: 租户来源 = JWT claim（auth.py），头不参与；DB 侧另核（B2）",
+      "HTTP/读数: {\"status\":401,\"count\":0,\"crossCount\":0,\"tenants\":[]}",
+      "构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 procStart=三 10月/14 20:34:43 2026 观测窗口起点 2026-10-14 20:35:46 +08",
+      "GET /api/chat/sessions with A token + X-Tenant-Id: B"
+    ],
+    "at": "2026-10-14 20:35:47 +08",
+    "atUtc": "2026-10-14T12:35:47.580Z"
+  },
+  {
+    "id": "B6-1",
+    "name": "并发建会话 18 条全部成功（并发度 6×3）",
+    "status": "fail",
+    "detail": "期望 18 条 HTTP 200 且有 id ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: 正对照：并发夹具须先全绿，否则串号判据无判别力",
+      "HTTP/读数: {\"total\":18,\"ok\":0,\"statuses\":[401]}",
+      "构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 procStart=三 10月/14 20:34:43 2026 观测窗口起点 2026-10-14 20:35:46 +08"
+    ],
+    "at": "2026-10-14 20:35:47 +08",
+    "atUtc": "2026-10-14T12:35:47.596Z"
+  },
+  {
+    "id": "B6-2",
+    "name": "并发：响应 tenant_id 与请求身份一一对应",
+    "status": "fail",
+    "detail": "期望 不一致条数 = 0 ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: 响应 tenant_id 必须等于该请求 JWT claim 的 tenantId",
+      "HTTP/读数: {\"mismatch\":[{\"user\":\"probe_line1_A1_bmv83fcaz\",\"want\":32,\"hdr\":\"999999\"},{\"user\":\"probe_line1_B1_bmv83fcaz\",\"want\":999999,\"hdr\":\"32\"},{\"user\":\"probe_line1_A2_bmv83fcaz\",\"want\":32,\"hdr\":\"999999\"},{\"user\":\"probe_line1_A1_bmv83fcaz\",\"want\":32,\"hdr\":\"999999\"},{\"user\":\"probe_line1_B1_bmv83fcaz\",\"want\":999999,\"hdr\":\"32\"},{\"user\":\"probe_line1_A2_bmv83fcaz\",\"want\":32,\"hdr\":\"999999\"},{\"user\":\"probe_line1_A1_bmv83fcaz\",\"want\":32,\"hdr\":\"999999\"},{\"user\":\"probe_line1_B1_bmv83fcaz\",\"want\":999999,\"hdr\":\"32\"},{\"user\":\"probe_line1_A2_bmv83fcaz\",\"want\":32,\"hdr\":\"999999\"},{\"user\":\"probe_line1_A1_bmv83fcaz\",\"want\":32,\"hdr\":\"999999\"},{\"user\":\"probe_line1_B1_bmv83fcaz\",\"want\":999999,\"hdr\":\"32\"},{\"user\":\"probe_line1_A2_bmv83fcaz\",\"want\":32,\"hdr\":\"999999\"},{\"user\":\"probe_line1_A1_bmv83fcaz\",\"want\":32,\"hdr\":\"999999\"},{\"user\":\"probe_line1_B1_bmv83fcaz\",\"want\":999999,\"hdr\":\"32\"},{\"user\":\"probe_line1_A2_bmv83fcaz\",\"want\":32,\"hdr\":\"999999\"},{\"user\":\"probe_line1_A1_bmv83fcaz\",\"want\":32,\"hdr\":\"999999\"},{\"user\":\"probe_line1_B1_bmv83fcaz\",\"want\":999999,\"hdr\":\"32\"},{\"user\":\"probe_line1_A2_bmv83fcaz\",\"want\":32,\"hdr\":\"999999\"}]}",
+      "构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 procStart=三 10月/14 20:34:43 2026 观测窗口起点 2026-10-14 20:35:46 +08"
+    ],
+    "at": "2026-10-14 20:35:47 +08",
+    "atUtc": "2026-10-14T12:35:47.596Z"
+  },
+  {
+    "id": "B6-3",
+    "name": "并发：DB 留痕 tenant_id/customer_id 与请求一一对应",
+    "status": "fail",
+    "detail": "期望 不一致条数 = 0（核对 0 行） ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: DB 行是权威留痕（sessions.tenant_id / customer_id），逐条与请求身份比对",
+      "HTTP/读数: {\"checked\":0,\"dbRows\":0,\"mismatch\":[]}",
+      "构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 procStart=三 10月/14 20:34:43 2026 观测窗口起点 2026-10-14 20:35:46 +08",
+      "SQL: select id,tenant_id,customer_id from sessions where id in (…)"
+    ],
+    "at": "2026-10-14 20:35:47 +08",
+    "atUtc": "2026-10-14T12:35:47.596Z"
+  },
+  {
+    "id": "B6-4",
+    "name": "并发：交叉回读全部 403（无一条串号可读）",
+    "status": "fail",
+    "detail": "期望 403 条数 = 0 ≠ 实测 [object Object]",
+    "evidence": [
+      "期望来源: 每条会话用「对侧租户」token 回读，必须被 _guard_session 拒",
+      "HTTP/读数: {\"total\":0,\"hits\":[]}",
+      "构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 procStart=三 10月/14 20:34:43 2026 观测窗口起点 2026-10-14 20:35:46 +08"
+    ],
+    "at": "2026-10-14 20:35:47 +08",
+    "atUtc": "2026-10-14T12:35:47.596Z"
+  },
+  {
+    "id": "B7-1",
+    "name": "C 端 JWT 调 B 端内部面 ⇒ 401（不认 JWT）",
+    "status": "pass",
+    "detail": "期望 HTTP 401 且 code==\"AUTH_REQUIRED\" == 实测 [object Object]",
+    "evidence": [
+      "期望来源: auth.py::verify_service_token 只读 X-Service-Token；JWT 不构成内部面凭证",
+      "HTTP/读数: {\"status\":401,\"code\":\"AUTH_REQUIRED\"}",
+      "构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 procStart=三 10月/14 20:34:43 2026 观测窗口起点 2026-10-14 20:35:46 +08"
+    ],
+    "at": "2026-10-14 20:35:47 +08",
+    "atUtc": "2026-10-14T12:35:47.599Z"
+  },
+  {
+    "id": "B7-2",
+    "name": "C 端 JWT 调工具执行面 ⇒ 401",
+    "status": "pass",
+    "detail": "期望 HTTP 401 == 实测 [object Object]",
+    "evidence": [
+      "期望来源: 同上（内部面仅 Service Token）",
+      "HTTP/读数: {\"status\":401,\"code\":\"AUTH_REQUIRED\"}",
+      "构建点: /Users/guangzhen.zk/ai native/migao @ 90192bcac82b1d276d2793986ca9c64f47e47d16 procStart=三 10月/14 20:34:43 2026 观测窗口起点 2026-10-14 20:35:46 +08"
+    ],
+    "at": "2026-10-14 20:35:47 +08",
+    "atUtc": "2026-10-14T12:35:47.602Z"
+  },
+  {
+    "id": "B7-3",
+    "name": "登记：内部面暴露的只读工具集（读数，非判据）",
+    "status": "pass",
+    "detail": "count=50",
+    "evidence": [
+      "工具名: product_search, product_detail, logistics_track, customer_logistics_track, knowledge_search, order_query, customer_order_query, customer_address_query, order_manage, order_create, processing_order_generate, processing_order_query, processing_order_update, product_manage, inventory_manage, processing_item_query, customer_manage, employee_manage, role_manage, dashboard_stats, finance_api, after_sales_manage, aftersale_create, aftersale_query, notification_manage, settings_manage, session_manage, category_manage, processing_item_manage, product_update, product_batch_update, scheduled_task_manage, sku_update, interact, validate_input, curtain_calc, production_progress_query, piecework_query, production_worklog_query, payment_qrcode_query, batch_stock_query, stock_ledger_query, inbound_order_query, operation_catalog_query, briefing_query, craft_calc_config_query, processing_order_set_query, craft_config_query, image_recognize, nav_guide"
+    ],
+    "at": "2026-10-14 20:35:47 +08",
+    "atUtc": "2026-10-14T12:35:47.608Z"
+  }
+]

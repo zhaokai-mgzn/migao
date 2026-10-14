@@ -1,0 +1,15 @@
+{
+  "deletedHttp": 200,
+  "concurrentHttp": [
+    404,
+    404,
+    404,
+    404,
+    404
+  ],
+  "after": {
+    "id": "e2c45cfa09953db7b8704fe398292dad",
+    "status": "draft",
+    "deleted": 1
+  }
+}

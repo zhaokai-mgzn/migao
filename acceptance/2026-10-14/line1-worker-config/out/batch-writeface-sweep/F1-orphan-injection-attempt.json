@@ -1,0 +1,39 @@
+{
+  "attempt": "insert 一条 product_id 不存在的 product_skus 行（真孤儿）",
+  "error": "ERROR:  insert or update on table \"product_skus\" violates foreign key constraint \"product_skus_product_id_fkey\"",
+  "rowsWithProofSkuAfter": 0,
+  "fksToProducts": [
+    {
+      "child": "fabric_remnants",
+      "col": "product_id"
+    },
+    {
+      "child": "inbound_order_items",
+      "col": "product_id"
+    },
+    {
+      "child": "product_attributes",
+      "col": "product_id"
+    },
+    {
+      "child": "product_colors",
+      "col": "product_id"
+    },
+    {
+      "child": "product_skus",
+      "col": "product_id"
+    },
+    {
+      "child": "stock_batch_consumptions",
+      "col": "product_id"
+    },
+    {
+      "child": "stock_batches",
+      "col": "product_id"
+    },
+    {
+      "child": "stock_ledger_entries",
+      "col": "product_id"
+    }
+  ]
+}

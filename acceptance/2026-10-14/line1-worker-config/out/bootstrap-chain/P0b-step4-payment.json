@@ -1,0 +1,16 @@
+{
+  "at": {
+    "cst": "2026-10-14 20:31:18 +08",
+    "utc": "2026-10-14T12:31:18.663Z"
+  },
+  "endpoint": "PUT /api/admin/orders/01cceb1e85eef72a085734579c812822/payment",
+  "httpStatus": 200,
+  "response": {
+    "success": true,
+    "requestId": "req_c039989c15b04e63",
+    "timestamp": 1791981078
+  },
+  "dbOrderStatus": {
+    "status": "confirmed"
+  }
+}

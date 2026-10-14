@@ -1,0 +1,70 @@
+{
+  "empty": {
+    "http": 422,
+    "body": {
+      "success": false,
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "请选择要上传的文件"
+      },
+      "requestId": "req_55e9068723394c35",
+      "timestamp": 1791981251,
+      "suggestion": "请检查必填字段是否完整，字段格式是否正确"
+    }
+  },
+  "exe": {
+    "http": 422,
+    "body": {
+      "success": false,
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "不支持的文件类型，仅支持 JPG、JPEG、PNG、GIF、WebP、PDF、XLSX、DOCX 格式"
+      },
+      "requestId": "req_70c9572b8a6145c2",
+      "timestamp": 1791981251,
+      "suggestion": "请检查必填字段是否完整，字段格式是否正确"
+    }
+  },
+  "big6": {
+    "http": 422,
+    "bytes": 6291525,
+    "body": {
+      "success": false,
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "文件大小不能超过 5MB"
+      },
+      "requestId": "req_82a43ace18bd4e85",
+      "timestamp": 1791981251,
+      "suggestion": "请检查必填字段是否完整，字段格式是否正确"
+    }
+  },
+  "fakeContentPng": {
+    "http": 422,
+    "body": {
+      "success": false,
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "文件内容与扩展名不符：按内容判，不按文件名 / Content-Type 判"
+      },
+      "requestId": "req_69b2e8ef93d64526",
+      "timestamp": 1791981251,
+      "suggestion": "请检查必填字段是否完整，字段格式是否正确"
+    },
+    "srcBytes": 30
+  },
+  "pdfCtPngExt19MB": {
+    "http": 422,
+    "bytes": 19922953,
+    "body": {
+      "success": false,
+      "error": {
+        "code": "VALIDATION_ERROR",
+        "message": "文件内容与扩展名不符：按内容判，不按文件名 / Content-Type 判"
+      },
+      "requestId": "req_dad2f4ace60c482c",
+      "timestamp": 1791981251,
+      "suggestion": "请检查必填字段是否完整，字段格式是否正确"
+    }
+  }
+}

@@ -1,0 +1,89 @@
+[
+  {
+    "id": "RP1-同 runId 顺序重复盘点（判别对照）",
+    "name": "顺序重复提交 ⇒ 可读回执 replayed、分录仍 1 行（对照并发下的 5xx，证明判据测的是并发）",
+    "status": "pass",
+    "detail": "同 runId **顺序**两次（无并发重叠）：状态 [200,200]；回执行态 [\"changed=1,replayed=0\",\"changed=0,replayed=1\"]（第二次应 changed=0,replayed=1）；分录 1 行",
+    "evidence": [
+      {
+        "runId": "race-sweep-rp1-20261014123513-0c0stl",
+        "batchId": 151,
+        "statuses": [
+          200,
+          200
+        ],
+        "lineStatuses": [
+          "changed=1,replayed=0",
+          "changed=0,replayed=1"
+        ],
+        "consumptionRows": 1,
+        "bodies": [
+          "{\"success\":true,\"data\":{\"runId\":\"race-sweep-rp1-20261014123513-0c0stl\",\"productId\":\"3eec98bd01e59419d8041aff7f851da4\",\"changedCount\":1,\"unchangedCount\":0,\"replayedCount\":0,\"totalDelta\":-1,\"lines\":[{\"b",
+          "{\"success\":true,\"data\":{\"runId\":\"race-sweep-rp1-20261014123513-0c0stl\",\"productId\":\"3eec98bd01e59419d8041aff7f851da4\",\"changedCount\":0,\"unchangedCount\":0,\"replayedCount\":1,\"totalDelta\":0,\"lines\":[{\"ba"
+        ]
+      }
+    ],
+    "at": "2026-10-14T12:35:47.571Z"
+  },
+  {
+    "id": "RP2-台账链判据注入（红证）",
+    "name": "合成同基并发读的行喂给 chainCheck ⇒ 必须报红（证明 W3b 不是恒绿）",
+    "status": "pass",
+    "detail": "链判据注入：合法链报 0 处不一致（应 0）；合成「同基并发读」链报 1 处（应 >0）",
+    "evidence": [
+      {
+        "cleanChainBad": [],
+        "brokenChainBad": [
+          {
+            "at": 2,
+            "prevAfter": "15.0",
+            "curBefore": "10.0"
+          }
+        ]
+      }
+    ],
+    "at": "2026-10-14T12:35:47.573Z"
+  },
+  {
+    "id": "RP3-顺序双击过账（判别对照）",
+    "name": "顺序双击 ⇒ 第二次 4xx、库存只加一次、台账一行（证明 W1 的「恰一个赢家」判据非恒真）",
+    "status": "pass",
+    "detail": "顺序双击过账（无并发）：状态 [200,409]（第二次应 4xx）；库存 31→32（Δ1，应 1）；台账 1 行",
+    "evidence": [
+      {
+        "inboundNo": "RK-20261014-0007",
+        "statuses": [
+          200,
+          409
+        ],
+        "stockBefore": 31,
+        "stockAfter": 32,
+        "ledgerRows": 1,
+        "bodies": [
+          "{\"success\":true,\"data\":{\"id\":\"cb693e2af23f44572d60de7b19d69738\",\"inboundNo\":\"RK-20261014-0007\",\"supplier\":\"race-sweep-rp3\",\"warehouse\":\"race-sweep-wh\",\"inboundD",
+          "{\"success\":false,\"error\":{\"code\":\"CONFLICT\",\"message\":\"入库单当前状态为「已过账」，只有草稿可以过账\"},\"requestId\":\"req_83134980f14c4273\",\"timestamp\":1791981348,\"suggestion\":\"已过账的入库单不"
+        ]
+      }
+    ],
+    "at": "2026-10-14T12:35:48.670Z"
+  },
+  {
+    "id": "RP4-跨租户判据注入（红证）",
+    "name": "合成越租户响应 ⇒ 归属比对必须报红（证明 C1/C5 不是恒绿）",
+    "status": "pass",
+    "detail": "跨租户判据注入：合成「租户 32 的列表里含租户 34 的探针商品 2470b5898c762346621520311f03208b」⇒ 判据标记 1 个（应 >0）",
+    "evidence": [
+      {
+        "bProbeIds": [
+          "2470b5898c762346621520311f03208b",
+          "f130d3e6141d51e247c51e68678ad4f4"
+        ],
+        "aProbeCount": 6,
+        "syntheticFlagged": [
+          "2470b5898c762346621520311f03208b"
+        ]
+      }
+    ],
+    "at": "2026-10-14T12:35:48.879Z"
+  }
+]

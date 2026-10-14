@@ -1,0 +1,35 @@
+{
+  "wiped_tenant_ids": [
+    34
+  ],
+  "rows_deleted_by_table": {
+    "finance_transactions": 2,
+    "order_items": 2,
+    "permissions": 32,
+    "product_skus": 2,
+    "production_crafts": 1,
+    "production_operation_price_versions": 41,
+    "production_route_rules": 27,
+    "role_permissions": 100,
+    "stock_ledger_entries": 4,
+    "ticket_timeline": 2,
+    "user_roles": 1,
+    "after_sales_tickets": 2,
+    "customer_profiles": 1,
+    "product_colors": 2,
+    "production_operation_positions": 116,
+    "production_operations": 41,
+    "production_route_templates": 2,
+    "roles": 7,
+    "products": 2,
+    "categories": 1,
+    "orders": 2,
+    "users": 1
+  },
+  "rows_deleted_total": 391,
+  "residue_rows_after": 0,
+  "residue_tenants_rows_after": [],
+  "tenants_before": [
+    "34|米高测试环境-隔离对照|shop-gh42"
+  ]
+}

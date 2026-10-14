@@ -1,0 +1,32 @@
+[
+  {
+    "m": "GET",
+    "p": "/api/admin/finance/payouts",
+    "status": 404,
+    "code": "NOT_FOUND"
+  },
+  {
+    "m": "POST",
+    "p": "/api/admin/finance/payouts",
+    "status": 404,
+    "code": "NOT_FOUND"
+  },
+  {
+    "m": "GET",
+    "p": "/api/admin/production/payouts",
+    "status": 404,
+    "code": "NOT_FOUND"
+  },
+  {
+    "m": "GET",
+    "p": "/api/admin/finance/wage-payouts",
+    "status": 404,
+    "code": "NOT_FOUND"
+  },
+  {
+    "m": "GET",
+    "p": "/api/admin/finance/disbursements",
+    "status": 404,
+    "code": "NOT_FOUND"
+  }
+]

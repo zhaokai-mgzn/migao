@@ -1,0 +1,293 @@
+[
+  {
+    "id": "W2-00",
+    "name": "自建探针工序（探针锚点）",
+    "status": "pass",
+    "detail": "id=2e8f6cddfaafb33e3214682ce6a13421；name=写面横切工序写面267110；scope=position；库价=0.66；价目行=[{\"applicable\":true,\"id\":\"17034e738cefbebbc830fb60113d7c6c\",\"p\":\"0.66\",\"position\":\"布帘\"}]",
+    "evidence": [],
+    "at": "2026-10-14T12:34:27.656Z"
+  },
+  {
+    "id": "W2-01",
+    "name": "工序写面：只改 scope",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"production_operations.scope\",\"production_operations.updated_at\"]",
+    "evidence": [
+      "PUT /api/admin/production/operations/2e8f6cddfaafb33e3214682ce6a13421 body={\"scope\":\"set\"}",
+      "payload 键=[scope]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: production_operations.2e8f6cddfaafb33e3214682ce6a13421.scope: \"position\" → \"set\" [field] | production_operations.2e8f6cddfaafb33e3214682ce6a13421.updated_at: \"2026-10-14T20:34:27.390927+08:00\" → \"2026-10-14T20:34:28.079845+08:00\" [field]",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-14T12:34:28.272Z"
+  },
+  {
+    "id": "W2-01-restore",
+    "name": "工序写面：只改 scope · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=0（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=2",
+    "evidence": [
+      "还原 SQL（含受影响行数）: （无差异）",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: production_operations.2e8f6cddfaafb33e3214682ce6a13421.scope: \"position\" → \"set\" [field] | production_operations.2e8f6cddfaafb33e3214682ce6a13421.updated_at: \"2026-10-14T20:34:27.390927+08:00\" → \"2026-10-14T20:34:28.079845+08:00\" [field]"
+    ],
+    "at": "2026-10-14T12:34:28.718Z"
+  },
+  {
+    "id": "W2-02",
+    "name": "工序写面：只改 group_name",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"production_operations.group_name\",\"production_operations.updated_at\"]",
+    "evidence": [
+      "PUT /api/admin/production/operations/2e8f6cddfaafb33e3214682ce6a13421 body={\"group_name\":\"写面横切改组\"}",
+      "payload 键=[group_name]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: production_operations.2e8f6cddfaafb33e3214682ce6a13421.group_name: \"写面探针组\" → \"写面横切改组\" [field] | production_operations.2e8f6cddfaafb33e3214682ce6a13421.updated_at: \"2026-10-14T20:34:28.079845+08:00\" → \"2026-10-14T20:34:28.949946+08:00\" [field]",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-14T12:34:29.119Z"
+  },
+  {
+    "id": "W2-02-restore",
+    "name": "工序写面：只改 group_name · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=0（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=4",
+    "evidence": [
+      "还原 SQL（含受影响行数）: （无差异）",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: production_operations.2e8f6cddfaafb33e3214682ce6a13421.group_name: \"写面探针组\" → \"写面横切改组\" [field] | production_operations.2e8f6cddfaafb33e3214682ce6a13421.updated_at: \"2026-10-14T20:34:28.079845+08:00\" → \"2026-10-14T20:34:28.949946+08:00\" [field] | production_operations.83bfaf6e8c0fe955026c4f592cc8646f.status: \"disabled\" → \"active\" [field] | production_operations.83bfaf6e8c0fe955026c4f592cc8646f.updated_at: \"2026-10-14T20:34:28.701473+08:00\" → \"2026-10-14T20:34:29.087281+08:00\" [field]"
+    ],
+    "at": "2026-10-14T12:34:29.576Z"
+  },
+  {
+    "id": "W2-03",
+    "name": "工序写面：只改 unit",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"production_operations.unit\",\"production_operations.updated_at\"]",
+    "evidence": [
+      "PUT /api/admin/production/operations/2e8f6cddfaafb33e3214682ce6a13421 body={\"unit\":\"个\"}",
+      "payload 键=[unit]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: production_operations.2e8f6cddfaafb33e3214682ce6a13421.unit: \"米\" → \"个\" [field] | production_operations.2e8f6cddfaafb33e3214682ce6a13421.updated_at: \"2026-10-14T20:34:28.949946+08:00\" → \"2026-10-14T20:34:29.819929+08:00\" [field]",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-14T12:34:29.970Z"
+  },
+  {
+    "id": "W2-03-restore",
+    "name": "工序写面：只改 unit · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=0（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=2",
+    "evidence": [
+      "还原 SQL（含受影响行数）: （无差异）",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: production_operations.2e8f6cddfaafb33e3214682ce6a13421.unit: \"米\" → \"个\" [field] | production_operations.2e8f6cddfaafb33e3214682ce6a13421.updated_at: \"2026-10-14T20:34:28.949946+08:00\" → \"2026-10-14T20:34:29.819929+08:00\" [field]"
+    ],
+    "at": "2026-10-14T12:34:30.444Z"
+  },
+  {
+    "id": "W2-04",
+    "name": "工序写面：只改 is_start_marker（标记生产开始）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"production_operations.is_start_marker\",\"production_operations.updated_at\"]",
+    "evidence": [
+      "PUT /api/admin/production/operations/2e8f6cddfaafb33e3214682ce6a13421 body={\"is_start_marker\":true}",
+      "payload 键=[is_start_marker]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: production_operations.2e8f6cddfaafb33e3214682ce6a13421.is_start_marker: false → true [field] | production_operations.2e8f6cddfaafb33e3214682ce6a13421.updated_at: \"2026-10-14T20:34:29.819929+08:00\" → \"2026-10-14T20:34:30.636944+08:00\" [field]",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-14T12:34:30.786Z"
+  },
+  {
+    "id": "W2-04-restore",
+    "name": "工序写面：只改 is_start_marker（标记生产开始） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=0（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=2",
+    "evidence": [
+      "还原 SQL（含受影响行数）: （无差异）",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: production_operations.2e8f6cddfaafb33e3214682ce6a13421.is_start_marker: false → true [field] | production_operations.2e8f6cddfaafb33e3214682ce6a13421.updated_at: \"2026-10-14T20:34:29.819929+08:00\" → \"2026-10-14T20:34:30.636944+08:00\" [field]"
+    ],
+    "at": "2026-10-14T12:34:31.264Z"
+  },
+  {
+    "id": "W2-05",
+    "name": "工序写面：只改 sort_order",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"production_operations.sort_order\",\"production_operations.updated_at\"]",
+    "evidence": [
+      "PUT /api/admin/production/operations/2e8f6cddfaafb33e3214682ce6a13421 body={\"sort_order\":7}",
+      "payload 键=[sort_order]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: production_operations.2e8f6cddfaafb33e3214682ce6a13421.sort_order: 999 → 7 [field] | production_operations.2e8f6cddfaafb33e3214682ce6a13421.updated_at: \"2026-10-14T20:34:30.636944+08:00\" → \"2026-10-14T20:34:31.481244+08:00\" [field]",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-14T12:34:31.676Z"
+  },
+  {
+    "id": "W2-05-restore",
+    "name": "工序写面：只改 sort_order · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=0（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=2",
+    "evidence": [
+      "还原 SQL（含受影响行数）: （无差异）",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: production_operations.2e8f6cddfaafb33e3214682ce6a13421.sort_order: 999 → 7 [field] | production_operations.2e8f6cddfaafb33e3214682ce6a13421.updated_at: \"2026-10-14T20:34:30.636944+08:00\" → \"2026-10-14T20:34:31.481244+08:00\" [field]"
+    ],
+    "at": "2026-10-14T12:34:32.057Z"
+  },
+  {
+    "id": "W2-06",
+    "name": "工序写面：status=disabled（停用）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"production_operations.status\",\"production_operations.updated_at\"]",
+    "evidence": [
+      "PUT /api/admin/production/operations/2e8f6cddfaafb33e3214682ce6a13421 body={\"status\":\"disabled\"}",
+      "payload 键=[status]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: production_operations.2e8f6cddfaafb33e3214682ce6a13421.status: \"active\" → \"disabled\" [field] | production_operations.2e8f6cddfaafb33e3214682ce6a13421.updated_at: \"2026-10-14T20:34:31.481244+08:00\" → \"2026-10-14T20:34:32.26651+08:00\" [field]",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-14T12:34:32.436Z"
+  },
+  {
+    "id": "W2-06-restore",
+    "name": "工序写面：status=disabled（停用） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=0（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=2",
+    "evidence": [
+      "还原 SQL（含受影响行数）: （无差异）",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: production_operations.2e8f6cddfaafb33e3214682ce6a13421.status: \"active\" → \"disabled\" [field] | production_operations.2e8f6cddfaafb33e3214682ce6a13421.updated_at: \"2026-10-14T20:34:31.481244+08:00\" → \"2026-10-14T20:34:32.26651+08:00\" [field]"
+    ],
+    "at": "2026-10-14T12:34:32.827Z"
+  },
+  {
+    "id": "W2-07",
+    "name": "工序写面：status=inactive（UI 实发词；F1 形态复核）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[]",
+    "evidence": [
+      "PUT /api/admin/production/operations/2e8f6cddfaafb33e3214682ce6a13421 body={\"status\":\"inactive\"}",
+      "payload 键=[status]；HTTP 422 / {\"code\":\"VALIDATION_ERROR\",\"message\":\"status 仅支持 active/disabled\"}",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: （空）",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-14T12:34:33.239Z"
+  },
+  {
+    "id": "W2-07-restore",
+    "name": "工序写面：status=inactive（UI 实发词；F1 形态复核） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=0（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=0",
+    "evidence": [
+      "还原 SQL（含受影响行数）: （无差异）",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: （无）"
+    ],
+    "at": "2026-10-14T12:34:33.669Z"
+  },
+  {
+    "id": "W2-08",
+    "name": "工序写面：只改 unit_price（工序库价）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"production_operation_price_versions.*(row-added)\",\"production_operations.unit_price\",\"production_operations.updated_at\"]",
+    "evidence": [
+      "PUT /api/admin/production/operations/2e8f6cddfaafb33e3214682ce6a13421 body={\"unit_price\":0.99}",
+      "payload 键=[unit_price]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: production_operation_price_versions.fdcfd70b987a194b7b401a3004482470.*: \"ROW_MISSING\" → \"ROW_ADDED\" [added-row] | production_operations.2e8f6cddfaafb33e3214682ce6a13421.unit_price: 0.66 → 0.99 [field] | production_operations.2e8f6cddfaafb33e3214682ce6a13421.updated_at: \"2026-10-14T20:34:32.881077+08:00\" → \"2026-10-14T20:34:33.90083+08:00\" [field]",
+      "审计/版本面（显式声明副账，不计越界）: production_operation_price_versions.fdcfd70b987a194b7b401a3004482470.*: \"ROW_MISSING\" → \"ROW_ADDED\" [added-row]"
+    ],
+    "at": "2026-10-14T12:34:34.114Z"
+  },
+  {
+    "id": "W2-08-restore",
+    "name": "工序写面：只改 unit_price（工序库价） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=0（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=3",
+    "evidence": [
+      "还原 SQL（含受影响行数）: （无差异）",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: production_operation_price_versions.fdcfd70b987a194b7b401a3004482470.*: \"ROW_MISSING\" → \"ROW_ADDED\" [added-row] | production_operations.2e8f6cddfaafb33e3214682ce6a13421.unit_price: 0.66 → 0.99 [field] | production_operations.2e8f6cddfaafb33e3214682ce6a13421.updated_at: \"2026-10-14T20:34:32.881077+08:00\" → \"2026-10-14T20:34:33.90083+08:00\" [field]"
+    ],
+    "at": "2026-10-14T12:34:34.565Z"
+  },
+  {
+    "id": "W2-09",
+    "name": "工序写面：positions=[布帘]（存量孤儿接入；payload 键=1，声明会建矩阵行）",
+    "status": "pass",
+    "detail": "越界 = 0（changed_keys ⊆ payload ∪ 审计列）；changed=[\"production_operations.updated_at\"]",
+    "evidence": [
+      "PUT /api/admin/production/operations/2e8f6cddfaafb33e3214682ce6a13421 body={\"positions\":[\"布帘\"]}（该写面的语义就是建矩阵行 ⇒ 显式声明放行）",
+      "payload 键=[positions,production_operation_positions.*]；HTTP 200",
+      "判据越界字段（应为空）: []",
+      "全部字段级 diff: production_operations.2e8f6cddfaafb33e3214682ce6a13421.updated_at: \"2026-10-14T20:34:33.90083+08:00\" → \"2026-10-14T20:34:34.806458+08:00\" [field]",
+      "审计/版本面（显式声明副账，不计越界）: （无）"
+    ],
+    "at": "2026-10-14T12:34:35.026Z"
+  },
+  {
+    "id": "W2-09-restore",
+    "name": "工序写面：positions=[布帘]（存量孤儿接入；payload 键=1，声明会建矩阵行） · 还原自证",
+    "status": "pass",
+    "detail": "逐字段比对「还原后 == 快照前」：我的行主面残留=0；还原动作=0（其中 no-op=0，无法恢复=0）；审计面变化=0（显式声明副账）；软删回收=0 行；**非我的行**（并行包改动，未触碰）=1",
+    "evidence": [
+      "还原 SQL（含受影响行数）: （无差异）",
+      "我的行残留明细: （空）",
+      "审计面明细: （无）",
+      "非我的行（并行包；一律不还原）: production_operations.2e8f6cddfaafb33e3214682ce6a13421.updated_at: \"2026-10-14T20:34:33.90083+08:00\" → \"2026-10-14T20:34:34.806458+08:00\" [field]"
+    ],
+    "at": "2026-10-14T12:34:35.480Z"
+  },
+  {
+    "id": "W2-10",
+    "name": "工序写面：POST /operations 新建（自建自清）",
+    "status": "pass",
+    "detail": "HTTP 200；id=d26bac0f6e3fa6ee7ebafa1da5700ef5；name=写面横切新建工序267110；价目行=[{\"applicable\":true,\"id\":\"377da9c2a3a6c9f33060aee03641861e\",\"p\":\"1.23\",\"position\":\"布帘\"}]",
+    "evidence": [],
+    "at": "2026-10-14T12:34:35.800Z"
+  },
+  {
+    "id": "W2-10b",
+    "name": "新建工序探针自清",
+    "status": "pass",
+    "detail": "via=detach-and-delete HTTP 200；resp.deleted=true deleted_positions=1；行态=1；该工序矩阵行存活=0",
+    "evidence": [],
+    "at": "2026-10-14T12:34:36.693Z"
+  },
+  {
+    "id": "W2-98",
+    "name": "探针自清：自建工序已软删 **且** 矩阵行全清",
+    "status": "pass",
+    "detail": "via=detach-and-delete HTTP 200；resp.deleted=true deleted_positions=1 行态=1；该工序矩阵行存活=0",
+    "evidence": [],
+    "at": "2026-10-14T12:34:38.245Z"
+  },
+  {
+    "id": "W2-99",
+    "name": "零残留读数：「写面横切」前缀对象存活数 = 0",
+    "status": "pass",
+    "detail": "存活明细=0（ops/pos/routes/rules/fees 全部 deleted=1 或不存在）；对象总数 ops=5 pos=5 routes=0 rules=0 fees=0",
+    "evidence": [],
+    "at": "2026-10-14T12:34:38.738Z"
+  },
+  {
+    "id": "W2-90",
+    "name": "时间戳（+08 口径）",
+    "status": "pass",
+    "detail": "开始 2026-10-15 04:34:27 +08 / 结束 2026-10-15 04:34:38 +08（UTC: 2026-10-14T12:34:27.306Z → 2026-10-14T12:34:38.738Z）；起始读面有效价=0.66",
+    "evidence": [],
+    "at": "2026-10-14T12:34:38.738Z"
+  }
+]

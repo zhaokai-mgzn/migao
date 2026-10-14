@@ -1,0 +1,57 @@
+{
+  "stamp": "20261014123513",
+  "tenantA": 32,
+  "phoneA": "13800138000",
+  "tenantB": 34,
+  "phoneB": "13800138001",
+  "products": {
+    "a1": {
+      "id": "3eec98bd01e59419d8041aff7f851da4",
+      "name": "race-sweep-A1-20261014123513",
+      "skuId": "2110348703040729089",
+      "skuCode": "RACE-SWEEP-A1-20261014123513-01-28",
+      "stockAtCreate": 10
+    },
+    "a2": {
+      "id": "66bf8e75ff79f305fff7f5887b3a9824",
+      "name": "race-sweep-A2-20261014123513",
+      "skuId": "2110348705565700097",
+      "skuCode": "RACE-SWEEP-A2-20261014123513-01-28",
+      "stockAtCreate": 10
+    },
+    "b1": {
+      "id": "f130d3e6141d51e247c51e68678ad4f4",
+      "name": "race-sweep-B1-20261014123513",
+      "skuId": "2110348707918704641",
+      "skuCode": "RACE-SWEEP-B1-20261014123513-01-28",
+      "stockAtCreate": 10
+    }
+  },
+  "inbound": [],
+  "orders": [],
+  "notes": [],
+  "tokenA": "<REDACTED: 轮内实时 JWT（有效期 2h），落盘时移除；见 REPORT §残留与脱敏>",
+  "userA": "35d75c1f3f08b4024152484ff8bb8bd4",
+  "tokenB": "<REDACTED: 轮内实时 JWT（有效期 2h），落盘时移除；见 REPORT §残留与脱敏>",
+  "userB": "73f73a791972450593e3c44656d028da",
+  "db": {
+    "productsA": [
+      {
+        "id": "3eec98bd01e59419d8041aff7f851da4",
+        "name": "race-sweep-A1-20261014123513"
+      },
+      {
+        "id": "66bf8e75ff79f305fff7f5887b3a9824",
+        "name": "race-sweep-A2-20261014123513"
+      }
+    ],
+    "skusA": [],
+    "productsB": [
+      {
+        "id": "f130d3e6141d51e247c51e68678ad4f4",
+        "name": "race-sweep-B1-20261014123513"
+      }
+    ],
+    "skusB": []
+  }
+}

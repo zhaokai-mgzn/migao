@@ -79,8 +79,16 @@ class TestTokenRefresh:
 
     def test_refresh_token(self, admin_client: SmokeTestClient, auth_token: dict):
         """使用 HttpOnly refresh_token cookie 获取新的 access token（审计 07 P1-5）"""
-        # 登录时 Set-Cookie 已存入 httpx client cookie jar，无需在 body 传 refresh token
-        resp = admin_client.post("/api/auth/refresh", json={})
+        # 登录时 Set-Cookie 已存入 httpx client cookie jar，无需在 body 传 refresh token。
+        # ⚠️ 本地直起形态是 **http**，而刷新 cookie 带 `Secure` ⇒ httpx **不发送**非 https 上的
+        #    Secure cookie（浏览器对 localhost 有例外，httpx 没有）⇒ 本地**恒 401「缺少 Refresh Token」**
+        #    （2026-10-14 实测）。部署形态（https）照旧走 cookie jar，此处**不放宽**任何断言。
+        extra: dict = {}
+        if not admin_client.base_url.startswith("https://"):
+            jar_token = admin_client.refresh_token_from_jar()
+            assert jar_token, "本地形态下 cookie jar 里应有 refresh_token（登录响应已下发）"
+            extra["headers"] = {"Cookie": f"refresh_token={jar_token}"}
+        resp = admin_client.post("/api/auth/refresh", json={}, **extra)
         assert resp.status_code == 200, (
             f"Refresh via cookie should succeed, got {resp.status_code}: {resp.text[:200]}"
         )

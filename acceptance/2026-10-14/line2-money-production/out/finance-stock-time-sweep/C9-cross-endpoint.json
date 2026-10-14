@@ -1,0 +1,19 @@
+{
+  "at": {
+    "cst": "2026-10-14 20:30:19 +08",
+    "utc": "2026-10-14T12:30:19.463Z"
+  },
+  "ordId": "c3925825f6171a9ddb79df",
+  "ordNo": "c3ordmv8387zv",
+  "ordAt": "2026-10-14 02:00:00+08",
+  "todayCst": "2026-10-14",
+  "dashboardTodayOrders": 10,
+  "orderTrendToday": {
+    "date": "2026-10-14",
+    "orders": 11,
+    "amount": 2400
+  },
+  "listStatus": 200,
+  "listTotal": 11,
+  "listHit": true
+}
