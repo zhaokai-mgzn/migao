@@ -2,7 +2,7 @@
 // 主体 A 由 env 注入（issue #6937）
 import { writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { api, loginApi, psql, log } from '../../config-writeface-sweep/harness/lib.mjs'
+import { api, loginApi, psql, psqlWrite, log } from '../../config-writeface-sweep/harness/lib.mjs'
 import { T, PH, SMS_CODE } from '../../lib/subjects.mjs'
 const OUT = process.env.OUT_DIR ? process.env.OUT_DIR.replace(/\/?$/, '/') : fileURLToPath(new URL('../out/', import.meta.url))
 const recs = []; const rec = (id, name, verdict, detail, evidence) => { recs.push({ id, name, verdict, detail, evidence }); log(`${verdict === 'pass' ? '✅' : verdict === 'fail' ? '❌' : '⏭️'} [${id}] ${name} — ${detail}`) }
@@ -17,13 +17,25 @@ const CASES = [
 for (const [key, table, path, build, cols] of CASES) {
   const row = psql(`select * from ${table} where tenant_id=${T.A}${hasDel(table) ? ' and coalesce(deleted,0)=0' : ''} limit 1`)[0]
   if (!row) { rec('PCW-' + key, '同租户写正对照·' + table, 'skip', `租户 ${T.A}（A）无存活行`); continue }
-  const snap = () => JSON.stringify(psql(`select ${cols.join(',')} from ${table} where id='${row.id}'`))
-  const before = snap()
+  // 整行快照（不是只挑几列）：少列 = 看不见「空 body 改写了别的列」
+  const full = () => psql(`select * from ${table} where id='${row.id}'`)[0]
+  const before = JSON.stringify(full())
   const r = await api('PUT', path(row.id), { token: tok, body: build(row) })
-  const after = snap()
-  rec('PCW-' + key, '同租户写正对照·' + table, r.status === 200 && before === after ? 'pass' : 'fail',
-    `A(${T.A}) 幂等 PUT 自己的对象 → ${r.status}；库未变=${before === after}`,
+  let after = JSON.stringify(full())
+  let restored = null
+  if (before !== after) {
+    // ⚠️ 实测（#6937）：`{}`/部分载荷不是幂等 ⇒ 探针写脏了自己的行 ⇒ **逐字段还原**
+    const b = JSON.parse(before)
+    const sets = Object.entries(b).filter(([c]) => c !== 'id')
+      .map(([c, v]) => `${c} = ${v === null ? 'null' : `'${String(v).replace(/'/g, "''")}'`}`).join(', ')
+    psqlWrite(`update ${table} set ${sets} where id='${row.id}'`)
+    restored = JSON.stringify(full()) === before
+    after = JSON.stringify(full())
+  }
+  const net = before === after
+  rec('PCW-' + key, '同租户写正对照·' + table, r.status === 200 && net ? 'pass' : 'fail',
+    `A(${T.A}) 幂等 PUT 自己的对象 → ${r.status}；净残留=0=${net}${restored === null ? '（探针未改库）' : `（⚠️载荷非幂等 ⇒ 已逐字段还原：${restored ? '回到基线' : '🔴 还原失败'}）`}`,
     [`PUT ${path(row.id)} body=${JSON.stringify(build(row)).slice(0, 180)} → ${r.status} ${JSON.stringify(r.json).slice(0, 200)}`,
-     `before=${before.slice(0, 200)}`, `after=${after.slice(0, 200)}`])
+     `before(整行)=${before.slice(0, 240)}`, `after(整行)=${after.slice(0, 240)}`])
 }
 writeFileSync(OUT + 'poscontrol-write.json', JSON.stringify(recs, null, 1))

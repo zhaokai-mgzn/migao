@@ -1,0 +1,41 @@
+[
+ {
+  "id": "PCW-products",
+  "name": "同租户写正对照·products",
+  "verdict": "pass",
+  "detail": "A(32) 幂等 PUT 自己的对象 → 200；库未变=true",
+  "evidence": [
+   "PUT /api/admin/products/09fe710ca7577614e570bbb0696ac853 body={\"name\":\"冒烟SKU商品1791987576826\",\"unit\":\"\",\"basePrice\":0,\"status\":\"draft\"} → 200 {\"success\":true,\"data\":{\"id\":\"09fe710ca7577614e570bbb0696ac853\",\"name\":\"冒烟SKU商品1791987576826\",\"categoryId\":\"6c4d070dfa439abe165dd7a5a814eb4d\",\"categoryName\":\"窗帘成品\",\"basePrice\":0,\"description\":\"\",\"imag",
+   "before=[{\"name\":\"冒烟SKU商品1791987576826\",\"base_price\":0,\"status\":\"draft\",\"updated_at\":\"2026-10-14T22:19:37.023112+08:00\"}]",
+   "after=[{\"name\":\"冒烟SKU商品1791987576826\",\"base_price\":0,\"status\":\"draft\",\"updated_at\":\"2026-10-14T22:19:37.023112+08:00\"}]"
+  ]
+ },
+ {
+  "id": "PCW-categories",
+  "name": "同租户写正对照·categories",
+  "verdict": "pass",
+  "detail": "A(32) 幂等 PUT 自己的对象 → 200；库未变=true",
+  "evidence": [
+   "PUT /api/admin/categories/b0668f8a36c2e6ffbb365631f4339734 body={\"name\":\"工资验收分类053457-A\"} → 200 {\"success\":true,\"data\":{\"id\":\"b0668f8a36c2e6ffbb365631f4339734\",\"name\":\"工资验收分类053457-A\",\"level\":1,\"children\":[],\"createdAt\":\"2026-10-14 20:30:53\",\"updatedAt\":\"2026-10-14 20:30:53\",\"sort\":2},\"requestId",
+   "before=[{\"name\":\"工资验收分类053457-A\",\"sort_order\":2,\"updated_at\":\"2026-10-14T20:30:53.701442+08:00\"}]",
+   "after=[{\"name\":\"工资验收分类053457-A\",\"sort_order\":2,\"updated_at\":\"2026-10-14T20:30:53.701442+08:00\"}]"
+  ]
+ },
+ {
+  "id": "PCW-processing_items",
+  "name": "同租户写正对照·processing_items",
+  "verdict": "skip",
+  "detail": "租户 32（A）无存活行"
+ },
+ {
+  "id": "PCW-customers",
+  "name": "同租户写正对照·customer_profiles",
+  "verdict": "pass",
+  "detail": "A(32) 幂等 PUT 自己的对象 → 200；库未变=true",
+  "evidence": [
+   "PUT /api/admin/customers/b18017a0225ef9d3a6b010d9b1e1cfa2 body={} → 200 {\"success\":true,\"data\":{\"id\":\"b18017a0225ef9d3a6b010d9b1e1cfa2\",\"tenantId\":32,\"wechatNickname\":\"线B验收客户-RESTOCKOFF-mv837xse7u4f\",\"phone\":\"13911449893\",\"gender\":\"unknown\",\"vipLevel\":\"normal\",\"customerSt",
+   "before=[{\"phone\":\"13911449893\",\"vip_level\":\"normal\",\"updated_at\":\"2026-10-14T20:30:01.353495+08:00\"}]",
+   "after=[{\"phone\":\"13911449893\",\"vip_level\":\"normal\",\"updated_at\":\"2026-10-14T20:30:01.353495+08:00\"}]"
+  ]
+ }
+]

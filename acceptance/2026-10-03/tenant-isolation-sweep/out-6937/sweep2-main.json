@@ -1,0 +1,204 @@
+[
+ {
+  "id": "WV-products",
+  "name": "跨租户写(有效载荷)·商品",
+  "detail": "有效载荷也被拒：404；库逐字段未变；无 B 数据泄漏",
+  "evidence": [
+   "A(32)→B(35) 有效载荷 PUT /api/admin/products/ee083867bc612a5911ed005742582091 body={\"name\":\"6937验收对照商品\",\"unit\":\"米\",\"basePrice\":12.5,\"status\":\"on_sale\"} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存在\"},\"requestId\":\"req_5e29e320b1d74c91\",\"timestamp\":1791987814,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
+   "DB 快照 before={\"id\":\"ee083867bc612a5911ed005742582091\",\"name\":\"6937验收对照商品\",\"base_price\":12.5,\"status\":\"on_sale\",\"stock\":0,\"updated_at\":\"2026-10-14T22:22:01.832465+08:00\",\"deleted\":0,\"tenant_id\":35} after={\"id\":\"ee083867bc612a5911ed005742582091\",\"name\":\"6937验收对照商品\",\"base_price\":12.5,\"status\":\"on_sale\",\"stock\":0,\"updated_at\":\"2026-10-14T22:22:01.832465+08:00\",\"deleted\":0,\"tenant_id\":35} unchanged=true",
+   "正对照 A→A 同载荷 → 200 {\"success\":true,\"data\":{\"id\":\"09fe710ca7577614e570bbb0696ac853\",\"name\":\"冒烟SKU商品1791987576826\",\"categoryId\":\"6c4d070dfa439abe165dd7a5a814eb4d\",\"categoryName\":\"窗帘成品\",\"basePrice\":0.00"
+  ],
+  "verdict": "pass"
+ },
+ {
+  "id": "WV-categories",
+  "name": "跨租户写(有效载荷)·商品分类",
+  "detail": "有效载荷也被拒：404；库逐字段未变；无 B 数据泄漏",
+  "evidence": [
+   "A(32)→B(35) 有效载荷 PUT /api/admin/categories/858c193f81024ae2fc8a84ac7149ec63 body={\"name\":\"窗帘成品\"} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"分类不存在\"},\"requestId\":\"req_800d777d96524eb8\",\"timestamp\":1791987815,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
+   "DB 快照 before={\"id\":\"858c193f81024ae2fc8a84ac7149ec63\",\"name\":\"窗帘成品\",\"parent_id\":null,\"sort_order\":0,\"updated_at\":\"2026-10-14T22:20:42.123877+08:00\",\"deleted\":0,\"tenant_id\":35} after={\"id\":\"858c193f81024ae2fc8a84ac7149ec63\",\"name\":\"窗帘成品\",\"parent_id\":null,\"sort_order\":0,\"updated_at\":\"2026-10-14T22:20:42.123877+08:00\",\"deleted\":0,\"tenant_id\":35} unchanged=true",
+   "正对照 A→A 同载荷 → 200 {\"success\":true,\"data\":{\"id\":\"6c4d070dfa439abe165dd7a5a814eb4d\",\"name\":\"窗帘成品\",\"level\":1,\"children\":[],\"createdAt\":\"2026-10-14 20:26:32\",\"updatedAt\":\"2026-10-14 20:26:32\",\"sort\":0},"
+  ],
+  "verdict": "pass"
+ },
+ {
+  "id": "WV-processing_items",
+  "name": "跨租户写(有效载荷)·加工项",
+  "detail": "租户 35（B） 无存活行",
+  "verdict": "skip"
+ },
+ {
+  "id": "WV-orders",
+  "name": "跨租户写(有效载荷)·订单",
+  "detail": "有效载荷也被拒：404；库逐字段未变；无 B 数据泄漏",
+  "evidence": [
+   "A(32)→B(35) 有效载荷 PUT /api/admin/orders/2587775002d9dfa9871db3b961449693/content body={\"customerName\":\"张三\",\"customerPhone\":\"13800138000\",\"items\":[{\"productName\":\"x\",\"quantity\":1,\"unitPrice\":1}]} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"订单不存在\"},\"requestId\":\"req_f0f5fac1aef84d5e\",\"timestamp\":1791987817,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
+   "DB 快照 before={\"id\":\"2587775002d9dfa9871db3b961449693\",\"order_no\":\"20261014924600010\",\"status\":\"pending\",\"total_amount\":12.5,\"remark\":\"6937 probe\",\"updated_at\":\"2026-10-14T22:22:10.853779+08:00\",\"deleted\":0,\"tenant_id\":35} after={\"id\":\"2587775002d9dfa9871db3b961449693\",\"order_no\":\"20261014924600010\",\"status\":\"pending\",\"total_amount\":12.5,\"remark\":\"6937 probe\",\"updated_at\":\"2026-10-14T22:22:10.853779+08:00\",\"deleted\":0,\"tenant_id\":35} unchanged=true",
+   "正对照 A→A 同载荷 → 422 {\"success\":false,\"error\":{\"code\":\"VALIDATION_ERROR\",\"message\":\"订单当前状态为「已确认」，只有「待付款」的订单可以修改内容；已收款及之后的状态如需更正，请先取消订单后重新下单\"},\"requestId\":\"req_3f1cb04e1a06441e\",\"timestamp\":1791987817,\""
+  ],
+  "verdict": "pass"
+ },
+ {
+  "id": "F-products",
+  "name": "伪造越权·商品",
+  "detail": "4 种伪造（query/body 风格 tenantId + X-Tenant-Id 头）全部拒绝：404/404/404/404；无 B 数据",
+  "evidence": [
+   "query ?tenantId=35 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存在\"},\"requestId\":\"req_aed5cd1aacd348d2\",\"timestamp\":1791987817,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先",
+   "query ?tenant_id=35 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存在\"},\"requestId\":\"req_0f0d88bd81dd4d3d\",\"timestamp\":1791987817,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先",
+   "header X-Tenant-Id: 35 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存在\"},\"requestId\":\"req_d0f45ae54537426c\",\"timestamp\":1791987817,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先",
+   "header X-Tenant-Id: 35 + query tenantId=35 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存在\"},\"requestId\":\"req_65ef307f0ea647d5\",\"timestamp\":1791987818,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先",
+   "正对照 A→A(带同伪造头) id=0260337248dd35d1d81aab42933fcb9a → 200"
+  ],
+  "verdict": "pass"
+ },
+ {
+  "id": "F-orders",
+  "name": "伪造越权·订单",
+  "detail": "4 种伪造（query/body 风格 tenantId + X-Tenant-Id 头）全部拒绝：404/404/404/404；无 B 数据",
+  "evidence": [
+   "query ?tenantId=35 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"订单不存在\"},\"requestId\":\"req_a6a861a687554a36\",\"timestamp\":1791987818,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先",
+   "query ?tenant_id=35 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"订单不存在\"},\"requestId\":\"req_f379670fe46a4551\",\"timestamp\":1791987818,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先",
+   "header X-Tenant-Id: 35 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"订单不存在\"},\"requestId\":\"req_80725c6943714f18\",\"timestamp\":1791987818,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先",
+   "header X-Tenant-Id: 35 + query tenantId=35 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"订单不存在\"},\"requestId\":\"req_e3acf11fe34c422b\",\"timestamp\":1791987819,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先",
+   "正对照 A→A(带同伪造头) id=b5e908ea0d705efa57227568696b3b00 → 200"
+  ],
+  "verdict": "pass"
+ },
+ {
+  "id": "F-customers",
+  "name": "伪造越权·客户",
+  "detail": "4 种伪造（query/body 风格 tenantId + X-Tenant-Id 头）全部拒绝：404/404/404/404；无 B 数据",
+  "evidence": [
+   "query ?tenantId=35 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"客户不存在\"},\"requestId\":\"req_2738f45ada784a75\",\"timestamp\":1791987819,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先",
+   "query ?tenant_id=35 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"客户不存在\"},\"requestId\":\"req_37f0fdb5d07d4748\",\"timestamp\":1791987819,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先",
+   "header X-Tenant-Id: 35 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"客户不存在\"},\"requestId\":\"req_3403b27433c3467d\",\"timestamp\":1791987819,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先",
+   "header X-Tenant-Id: 35 + query tenantId=35 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"客户不存在\"},\"requestId\":\"req_108aef1162524214\",\"timestamp\":1791987819,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先",
+   "正对照 A→A(带同伪造头) id=b18017a0225ef9d3a6b010d9b1e1cfa2 → 200"
+  ],
+  "verdict": "pass"
+ },
+ {
+  "id": "F-users",
+  "name": "伪造越权·员工用户",
+  "detail": "4 种伪造（query/body 风格 tenantId + X-Tenant-Id 头）全部拒绝：404/404/404/404；无 B 数据",
+  "evidence": [
+   "query ?tenantId=35 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"用户不存在\"},\"requestId\":\"req_4f338914decd46a0\",\"timestamp\":1791987820,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先",
+   "query ?tenant_id=35 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"用户不存在\"},\"requestId\":\"req_20df95ce107744f7\",\"timestamp\":1791987820,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先",
+   "header X-Tenant-Id: 35 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"用户不存在\"},\"requestId\":\"req_803ebee7f71a4fea\",\"timestamp\":1791987820,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先",
+   "header X-Tenant-Id: 35 + query tenantId=35 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"用户不存在\"},\"requestId\":\"req_819fc64f7904444a\",\"timestamp\":1791987820,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先",
+   "正对照 A→A(带同伪造头) id=35d75c1f3f08b4024152484ff8bb8bd4 → 200"
+  ],
+  "verdict": "pass"
+ },
+ {
+  "id": "F-roles",
+  "name": "伪造越权·角色",
+  "detail": "4 种伪造（query/body 风格 tenantId + X-Tenant-Id 头）全部拒绝：404/404/404/404；无 B 数据",
+  "evidence": [
+   "query ?tenantId=35 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"角色不存在\"},\"requestId\":\"req_1e6965948ef44ec1\",\"timestamp\":1791987821,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先",
+   "query ?tenant_id=35 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"角色不存在\"},\"requestId\":\"req_96052cf9725d429c\",\"timestamp\":1791987821,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先",
+   "header X-Tenant-Id: 35 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"角色不存在\"},\"requestId\":\"req_dbc9a2d8bef742f2\",\"timestamp\":1791987821,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先",
+   "header X-Tenant-Id: 35 + query tenantId=35 → 404 leak=[] body={\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"角色不存在\"},\"requestId\":\"req_edc1e5eb972f4aff\",\"timestamp\":1791987821,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先",
+   "正对照 A→A(带同伪造头) id=67328137903f8c50fb034f0541f48d9a → 200"
+  ],
+  "verdict": "pass"
+ },
+ {
+  "id": "F-body",
+  "name": "伪造越权·body.tenantId",
+  "detail": "A 的 token + body{tenantId:35,name:'伪造越权探针'} PUT B 的商品 → 404；库未变=true",
+  "evidence": [
+   "PUT /api/admin/products/ee083867bc612a5911ed005742582091 body={\"name\":\"伪造越权探针\",\"tenantId\":35} → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"商品不存在\"},\"requestId\":\"req_be519d8c0d924b9a\",\"timestamp\":1791987822,\"suggestion\":\"请检查 ID 是否正确。如果使用了商品名称，请先用 product_search 查出 UUID 后重试\"}",
+   "before={\"id\":\"ee083867bc612a5911ed005742582091\",\"name\":\"6937验收对照商品\",\"base_price\":12.5,\"status\":\"on_sale\",\"updated_at\":\"2026-10-14T22:22:01.832465+08:00\",\"deleted\":0,\"tenant_id\":35} after={\"id\":\"ee083867bc612a5911ed005742582091\",\"name\":\"6937验收对照商品\",\"base_price\":12.5,\"status\":\"on_sale\",\"updated_at\":\"2026-10-14T22:22:01.832465+08:00\",\"deleted\":0,\"tenant_id\":35}"
+  ],
+  "res": "products",
+  "verdict": "pass"
+ },
+ {
+  "id": "N-products",
+  "name": "未认证·商品",
+  "detail": "无/乱/篡改 token 全拒：401/401/401；正对照 200",
+  "evidence": [
+   "无 token → 401 {\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}",
+   "乱 token → 401 {\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}",
+   "篡改 token（签名改字符） → 401 {\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}",
+   "正对照 A→A 有效 token → 200"
+  ],
+  "verdict": "pass"
+ },
+ {
+  "id": "N-orders",
+  "name": "未认证·订单",
+  "detail": "无/乱/篡改 token 全拒：401/401/401；正对照 200",
+  "evidence": [
+   "无 token → 401 {\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}",
+   "乱 token → 401 {\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}",
+   "篡改 token（签名改字符） → 401 {\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}",
+   "正对照 A→A 有效 token → 200"
+  ],
+  "verdict": "pass"
+ },
+ {
+  "id": "N-users",
+  "name": "未认证·员工用户",
+  "detail": "无/乱/篡改 token 全拒：401/401/401；正对照 200",
+  "evidence": [
+   "无 token → 401 {\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}",
+   "乱 token → 401 {\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}",
+   "篡改 token（签名改字符） → 401 {\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}",
+   "正对照 A→A 有效 token → 200"
+  ],
+  "verdict": "pass"
+ },
+ {
+  "id": "N-customers",
+  "name": "未认证·客户",
+  "detail": "无/乱/篡改 token 全拒：401/401/401；正对照 200",
+  "evidence": [
+   "无 token → 401 {\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}",
+   "乱 token → 401 {\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}",
+   "篡改 token（签名改字符） → 401 {\"success\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未认证，请先登录\"}}",
+   "正对照 A→A 有效 token → 200"
+  ],
+  "verdict": "pass"
+ },
+ {
+  "id": "ROLE-plat",
+  "name": "角色越权·平台级端点",
+  "detail": "平台超管 P 未注入（TENANT_P/PHONE_P 缺）⇒ **没有正对照就无法把商家的拒绝归因于权限闸**（不折算 pass）",
+  "verdict": "skip"
+ },
+ {
+  "id": "ROLE-tenants",
+  "name": "角色越权·租户管理端点存在性",
+  "verdict": "pass",
+  "detail": "不存在商家侧「租户管理」端点（GET /api/admin/tenants → 404）⇒ 如实登记「不存在」",
+  "evidence": [
+   "GET /api/admin/tenants → 404 {\"success\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"请求的资源不存在: /api/admin/tenants\"},\"requestId\":\"req_cf95689bc9514a28\",\"timestamp\":1791987823}"
+  ]
+ },
+ {
+  "id": "SA-products",
+  "name": "超管反向对照·商品",
+  "detail": "平台超管 P 未注入 ⇒ 无法做「设计允许 vs 越权」的反向对照",
+  "verdict": "skip"
+ },
+ {
+  "id": "SA-orders",
+  "name": "超管反向对照·订单",
+  "detail": "平台超管 P 未注入 ⇒ 无法做「设计允许 vs 越权」的反向对照",
+  "verdict": "skip"
+ },
+ {
+  "id": "SA-customers",
+  "name": "超管反向对照·客户",
+  "detail": "平台超管 P 未注入 ⇒ 无法做「设计允许 vs 越权」的反向对照",
+  "verdict": "skip"
+ },
+ {
+  "id": "SA-users",
+  "name": "超管反向对照·员工用户",
+  "detail": "平台超管 P 未注入 ⇒ 无法做「设计允许 vs 越权」的反向对照",
+  "verdict": "skip"
+ }
+]

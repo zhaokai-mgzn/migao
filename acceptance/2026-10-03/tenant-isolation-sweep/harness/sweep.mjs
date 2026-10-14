@@ -10,7 +10,7 @@
 // 零写入原则：只做读取 + 必须被拒绝的写尝试（跨租户写）。同租户正对照一律用**幂等 PUT**（值 = 现值）。
 import { writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { api, loginApi, log, psql, one } from '../../config-writeface-sweep/harness/lib.mjs'
+import { api, loginApi, log, psql, psqlWrite, one } from '../../config-writeface-sweep/harness/lib.mjs'
 import { RESOURCES, dbIds, rowSnapshot, realCols } from './registry.mjs'
 import { S, T, PH, SMS_CODE, MISSING_B, B_SKIP, SUBJECTS_LINE } from '../../lib/subjects.mjs'
 
@@ -131,18 +131,29 @@ for (const R of WRES) {
   const w = await api(R.write, pathFor(R, bid), { token: tok.A, body })
   const after = rowSnapshot(R.table, bid, R.snap ?? [])
   const unchanged = JSON.stringify(before) === JSON.stringify(after)
-  // 同租户正对照：幂等写（值 = 现值）⇒ 证明该写端点对 A 可达且整条链路可用
-  let pc = null
+  // 同租户正对照：证明该写端点对 A **可达**（不是一律 401/403）。
+  // ⚠️ 实测（2026-10-14，#6937）：`{}` 空 body **不是幂等** —— 部分端点返回 200 并改写行。
+  // ⇒ 写完立即**逐字段还原**并把还原读数写进证据（保证「零残留」不是空话）。
+  let pc = null, pcRestored = null
   if (aIds.length > 0 && R.write !== 'DELETE') {
     const aid = aIds[0]
+    const pcCols = R.snap ?? []
+    const pcBefore = rowSnapshot(R.table, aid, pcCols)
     pc = await api(R.write, pathFor(R, aid), { token: tok.A, body: R.writeBody ? R.writeBody() : undefined })
+    const pcAfter = rowSnapshot(R.table, aid, pcCols)
+    if (JSON.stringify(pcBefore) !== JSON.stringify(pcAfter)) {
+      const sets = Object.entries(pcBefore).filter(([k]) => k !== 'id')
+        .map(([k, v]) => `${k} = ${v === null ? 'null' : `'${String(v).replace(/'/g, "''")}'`}`).join(', ')
+      psqlWrite(`update ${R.table} set ${sets} where id = '${aid}'`)
+      pcRestored = JSON.stringify(rowSnapshot(R.table, aid, pcCols)) === JSON.stringify(pcBefore)
+    }
   }
   const expectDeny = FLIP ? [200] : EXPECT_DENY
   const good = expectDeny.includes(w.status) && unchanged
   const ev = [
     `跨租户写 A→B：${R.write} ${pathFor(R, bid)} body=${cut(body ?? '', 160)} → ${w.status} ${cut(w.text, 220)}`,
     `DB 前后快照（表 ${R.table} id=${bid}）：before=${cut(before, 300)} after=${cut(after, 300)} unchanged=${unchanged}`,
-    pc ? `正对照 A→A 幂等写：${R.write} ${pathFor(R, aIds[0])} → ${pc.status} ${cut(pc.text, 160)}` : '正对照：无 A 侧对象或 DELETE（不做同租户删除）',
+    pc ? `正对照 A→A 写：${R.write} ${pathFor(R, aIds[0])} → ${pc.status} ${cut(pc.text, 160)}${pcRestored === null ? '（探针未改库）' : `（⚠️空 body 非幂等 ⇒ 探针写脏了 A ⇒ 逐字段还原：${pcRestored ? '已回到基线' : '🔴 还原失败'}）`}` : '正对照：无 A 侧对象或 DELETE（不做同租户删除）',
   ]
   if (good) pass({ id: `WT-${R.key}`, name: `跨租户写·${R.label}`, detail: `拒绝 ${w.status}，且库行逐字段未变（unchanged=true）`, evidence: ev })
   else fail({ id: `WT-${R.key}`, name: `跨租户写·${R.label}`, detail: `🔴 ${R.write} 打 B 的 id 得到 ${w.status}；库变动=${!unchanged}${!unchanged ? ' ⇒ 需还原！' : ''}`, evidence: ev })

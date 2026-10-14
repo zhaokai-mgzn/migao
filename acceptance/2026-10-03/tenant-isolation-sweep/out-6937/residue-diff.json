@@ -1,0 +1,172 @@
+[
+ {
+  "table": "products",
+  "tenant": "32",
+  "before": {
+   "alive": 16,
+   "max_updated": "2026-10-14 22:20:18.963984+08",
+   "idfp": "e2522ac263ba78e5e2fa203274ea91f8",
+   "rowfp": "13efd9262fae5e0900567ac641bf1b73"
+  },
+  "after": {
+   "alive": 16,
+   "max_updated": "2026-10-14 22:20:18.963984+08",
+   "idfp": "e2522ac263ba78e5e2fa203274ea91f8",
+   "rowfp": "5e0e27233a080a43a7f92fdf35692553"
+  },
+  "kind": "行内容指纹变（同 id 同 updated_at 但字段变）"
+ },
+ {
+  "table": "product_skus",
+  "tenant": "32",
+  "before": {
+   "alive": 15,
+   "max_updated": "2026-10-14 22:19:45.428449+08",
+   "idfp": "7e97cf2b436b14568de711cfb53f702f",
+   "rowfp": "c0f8f9dc91cc1ca51936242ede9d07db"
+  },
+  "after": {
+   "alive": 15,
+   "max_updated": "2026-10-14 22:23:46.868559+08",
+   "idfp": "2f8e18c95ad569c40772723e57373ea0",
+   "rowfp": "72ce91c09ed913d19d7cebb0756440e4"
+  },
+  "kind": "id/deleted/updated_at 指纹变"
+ },
+ {
+  "table": "customer_profiles",
+  "tenant": "32",
+  "before": {
+   "alive": 72,
+   "max_updated": "2026-10-14 22:20:24.029804+08",
+   "idfp": "a76b3199f24ae8fa26abb85525209b09",
+   "rowfp": "dfa28e507bb38852635728b078d4d213"
+  },
+  "after": {
+   "alive": 72,
+   "max_updated": "2026-10-14 22:20:24.029804+08",
+   "idfp": "a76b3199f24ae8fa26abb85525209b09",
+   "rowfp": "4e54649065f9eaddfa01c088d2e657cc"
+  },
+  "kind": "行内容指纹变（同 id 同 updated_at 但字段变）"
+ },
+ {
+  "table": "production_operations",
+  "tenant": "32",
+  "before": {
+   "alive": 41,
+   "max_updated": "2026-10-14 22:21:50.130021+08",
+   "idfp": "9f8291d51f8f36ce4d2fbe40fa406a59",
+   "rowfp": "1f27d48e2c3738f577fe7d8381c7f393"
+  },
+  "after": {
+   "alive": 41,
+   "max_updated": "2026-10-14 22:23:22.280408+08",
+   "idfp": "4b0429a0294459d96c199311d5378953",
+   "rowfp": "e124ade0f429984f15c76bf3acf83e8e"
+  },
+  "kind": "id/deleted/updated_at 指纹变"
+ },
+ {
+  "table": "production_operation_positions",
+  "tenant": "32",
+  "before": {
+   "alive": 115,
+   "max_updated": "2026-10-14 22:21:53.612524+08",
+   "idfp": "54c3bec7335d2d7de54bd20e0ff2f604",
+   "rowfp": "bced39eb32542bcbbd5ce80251c1b5fc"
+  },
+  "after": {
+   "alive": 115,
+   "max_updated": "2026-10-14 22:23:25.800467+08",
+   "idfp": "316a514bddf67c8751f6e1969d03db25",
+   "rowfp": "3f9b0be16435406edb1cd58bfd64d834"
+  },
+  "kind": "id/deleted/updated_at 指纹变"
+ },
+ {
+  "table": "production_route_templates",
+  "tenant": "32",
+  "before": {
+   "alive": 2,
+   "max_updated": "2026-10-14 22:21:51.262689+08",
+   "idfp": "49343df37d6dd8fedc236767616cb49e",
+   "rowfp": "65f81f0a4b1de9977d979b3b1f771fd4"
+  },
+  "after": {
+   "alive": 2,
+   "max_updated": "2026-10-14 22:23:23.489471+08",
+   "idfp": "3cfe4735ae2be94f148f1d7c1579a252",
+   "rowfp": "0d98be5fce997b146d8aab657d34b1f0"
+  },
+  "kind": "id/deleted/updated_at 指纹变"
+ },
+ {
+  "table": "orders",
+  "tenant": "32",
+  "before": {
+   "alive": 86,
+   "max_updated": "2026-10-14 22:22:30.057691+08",
+   "idfp": "13d45d45c073994d52cab3ba57004b45",
+   "rowfp": "ac680e9a4ed14030d2e38e8c5015da35"
+  },
+  "after": {
+   "alive": 86,
+   "max_updated": "2026-10-14 22:22:31.406224+08",
+   "idfp": "3048965cce0efc8496d9e7443c8ded9a",
+   "rowfp": "d22ea56ed32434bfd656235f5b292168"
+  },
+  "kind": "id/deleted/updated_at 指纹变"
+ },
+ {
+  "table": "order_items",
+  "tenant": "32",
+  "before": {
+   "alive": 93,
+   "max_updated": "2026-10-14 22:22:31.432378+08",
+   "idfp": "85ea1385fce7b6c66150e14afaf5cd88",
+   "rowfp": "d5272769b17fed87b8e0368589a30ceb"
+  },
+  "after": {
+   "alive": 92,
+   "max_updated": "2026-10-14 22:22:31.432378+08",
+   "idfp": "a2834d912252f716f872c46d299e3a28",
+   "rowfp": "c3981717e0950c6a49b415fad458fb30"
+  },
+  "kind": "行数变"
+ },
+ {
+  "table": "processing_orders",
+  "tenant": "32",
+  "before": {
+   "alive": 80,
+   "max_updated": "2026-10-14 22:22:30.909381+08",
+   "idfp": "58248aa929f840c6683e7b5f7b7c730a",
+   "rowfp": "3bbd0fad11118c8c6e18d2392650858b"
+  },
+  "after": {
+   "alive": 80,
+   "max_updated": "2026-10-14 22:22:34.358935+08",
+   "idfp": "1f944a1d97971eca92cb1384ca002e25",
+   "rowfp": "cc9f605ca5b8ce9a64c0f1f0b0fb701b"
+  },
+  "kind": "id/deleted/updated_at 指纹变"
+ },
+ {
+  "table": "finance_transactions",
+  "tenant": "32",
+  "before": {
+   "alive": 87,
+   "max_updated": "2026-10-14 22:22:32.76148+08",
+   "idfp": "8e13a07e7247fb56a26aeeabc9ea7bb2",
+   "rowfp": "01874c0ad0a960ac60d87f7c001857d9"
+  },
+  "after": {
+   "alive": 89,
+   "max_updated": "2026-10-14 22:24:04.29066+08",
+   "idfp": "e832b69e68dcddc635f9f5210b7705c9",
+   "rowfp": "4220feaa857e60d978f79e32574f3a5b"
+  },
+  "kind": "行数变"
+ }
+]
