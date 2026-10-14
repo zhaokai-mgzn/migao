@@ -120,7 +120,12 @@ LEDGER_CEILINGS = {
     # 有意不加码，读写都只碰自己的行）⇒ 已登记进 `UNANNOTATED_ENDPOINTS` 台账（逐条带理由）。
     # **显式放宽**（diff 里看得见）：增长的原因是「确实新增了 3 条已登记的自助端点」，不是「有人把台账放宽了」。
     # 19 → 22。
-    "UNANNOTATED_ENDPOINTS": 22,
+    # issue #6867 / 实现包 B2（2026-10-14）：新增加工单级公开入口 `GET /o/{shortCode}`
+    # （`ProcessingOrderShortLinkController`，`permitAll`）⇒ 已登记进 `UNANNOTATED_ENDPOINTS`
+    # （逐条带理由：只回 302 跳转、不泄露业务字段、不是数据入口）。**显式放宽**（diff 里看得见）：
+    # 增长的原因是「确实新增了一条与 `/s/{}`、`/i/{}` **同族**的印刷品公开入口」，
+    # 不是「有人把台账放宽了」。22 → 23。
+    "UNANNOTATED_ENDPOINTS": 23,
 
     # issue #4923（2026-10-02）：`craft_config_query` 是**跨码工具**（6 个读端点分属三档生效码，
     # 工具声明生产域读码 `production:view`）⇒ 判据 2 的具名出口 `CODE_DIVERGENCE_EXCEPTIONS`

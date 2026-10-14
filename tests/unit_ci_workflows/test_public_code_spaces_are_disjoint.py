@@ -1,4 +1,4 @@
-# case_ids: PR-113, PR-114, PR-117
+# case_ids: PR-113, PR-114, PR-117, PG-018
 """公开**短码路径命名空间**互斥守卫（issue #5052 P2）—— 让「同一命名空间下混两套语义」进不来。
 
 ## 它治什么（类级，不是这一个实例）
@@ -86,6 +86,18 @@ CODE_SPACES: dict[str, CodeSpace] = {
         ),
         forbidden_tokens=("ProcessingSetPartToken", "processing_set_part_tokens",
                           "REPORT_PAGE_PATH", "/w/"),
+    ),
+    "/o/": CodeSpace(
+        prefix="/o/",
+        semantics="加工单级纸上的码：服务端 302 → /w/?t=<token>（承载表 processing_orders.short_code；"
+                  "撤销 = qr_token 置 NULL ⇒ 410，short_code 不碰）；只有单、天然指不出部位 "
+                  "⇒ 落地必然是「选套 + 选部位」降级面",
+        resolver_files=(
+            "service/ProcessingOrderShortLinkService.java",
+            "controller/ProcessingOrderShortLinkController.java",
+        ),
+        forbidden_tokens=("ProcessingSetPartToken", "processing_set_part_tokens",
+                          "InboundLabel", "inbound_labels"),
     ),
 }
 
@@ -358,6 +370,13 @@ PUBLIC_PREFIX_FACES: dict[str, NginxFace] = {
         semantics="入库标签上的码：服务端 302 → 落地页 /b/?code=<短码>&tenant_id=<id>；未知短码 404 / 已撤销 410",
         upstream="admin-api:8080",
     ),
+    "/o/": NginxFace(
+        prefix="/o/",
+        kind=FACE_PROXY,
+        owner="admin-api（ProcessingOrderShortLinkController，issue #6867）",
+        semantics="加工单级纸上的码：302 → /w/?t=…（只有单、天然指不出部位 ⇒ 必然落到「选套+选部位」降级面）",
+        upstream="admin-api:8080",
+    ),
     "/b/": NginxFace(
         prefix="/b/",
         kind=FACE_STATIC,
@@ -388,6 +407,9 @@ ROUTE_PROBES: tuple[tuple[str, str, str], ...] = (
     ("/i/7K3M9QP2", FACE_PROXY, "admin-api:8080"),
     ("/i/__i_probe__", FACE_PROXY, "admin-api:8080"),
     ("/i/", FACE_PROXY, "admin-api:8080"),
+    ("/o/7K3M9QP2", FACE_PROXY, "admin-api:8080"),
+    ("/o/__o_probe__", FACE_PROXY, "admin-api:8080"),
+    ("/o/", FACE_PROXY, "admin-api:8080"),
     ("/s/7K3M9QP2", FACE_PROXY, "admin-api:8080"),
     ("/b/", FACE_STATIC, "b/index.html"),
     ("/b/orders/2026/detail", FACE_STATIC, "b/index.html"),
@@ -705,4 +727,75 @@ def test_red_proof_a_new_h5_subdir_is_detected() -> None:
     bad = _nginx_problems(_read(NGINX_CONF), h5_prefixes=published_h5_prefixes() | {"/x/"})
     assert any("/x/" in item and "没在 nginx 归属登记表里" in item for item in bad), (
         f"新 h5 子目录没被判红：{bad}"
+    )
+
+
+# ── 注入式红证（#6867 / B2 的 `/o/` 面，与 `/i/` 同族）────────────────────────────
+
+
+def test_red_proof_missing_o_location_falls_back_to_the_spa() -> None:
+    """红证 F3（#6867 / B2）：删掉 `location /o/` 整块 ⇒ 必须指名「落到了 SPA fallback」。
+
+    这就是本单要治的形态：**加工单纸上的码扫出来是别人的页面**（`location /` 的
+    `try_files … /index.html` ⇒ 200 + C 端元元首页），而 200 不是错误码
+    ⇒ 监控不红、只有真机扫码才发现（同 #5668 / #5052 §7.1 的静默串端）。
+    """
+    conf = _read(NGINX_CONF)
+    mutated = _drop_location(conf, "/o/")
+    assert "/o/" not in public_nginx_prefixes(mutated), "变异注入未生效（自证失败 ⇒ 下面的红证是空断言）"
+    assert route(mutated, "/o/7K3M9QP2") == (FACE_STATIC, "index.html", "/o/7K3M9QP2"), (
+        "删掉 `location /o/` 后语义模拟没落到根 index.html ⇒ 模拟器与 nginx 语义对不上（判据会假绿）"
+    )
+    bad = _nginx_problems(mutated)
+    named = [item for item in bad if "落到了 `location /` 的 SPA fallback" in item]
+    assert named, f"删掉 `location /o/` 后判据没指名「落到了 SPA fallback」：{bad}"
+    assert any("/o/7K3M9QP2" in item for item in named), f"红证没指到具体探针：{named}"
+
+
+def test_red_proof_unregistering_the_order_code_space_is_detected() -> None:
+    """红证 A（#6867 / B2）：把 `/o/` 从 `CODE_SPACES` 拿掉（内存里）⇒ 判据 A 的口径必须指名它。
+
+    只登记 `PUBLIC_PREFIX_FACES`（或只登记 `CODE_SPACES`）⇒ 两处**都要**红：本条钉
+    「控制器发现面 vs Java 侧登记表」那半边，下一条钉「nginx 归属登记表」那半边。
+    """
+    found = discover_code_spaces(controller_sources())
+    assert "/o/" in found, "控制器里读不到 `@GetMapping(\"/o/{shortCode}\")` ⇒ 本红证是空断言"
+    registered_without_o = {k: v for k, v in CODE_SPACES.items() if k != "/o/"}
+    undiscovered = sorted(found - set(registered_without_o))
+    assert undiscovered == ["/o/"], (
+        f"把 `/o/` 从 CODE_SPACES 拿掉后，「发现 − 登记」的差集应恰为 ['/o/']（判据 A 据此判红）：{undiscovered}"
+    )
+    assert CODE_SPACES["/o/"].resolver_files == (
+        "service/ProcessingOrderShortLinkService.java",
+        "controller/ProcessingOrderShortLinkController.java",
+    ), "`/o/` 登记的解析文件变了 ⇒ 判据 C / 载体判据与坐标自证扫的面跟着漂"
+
+
+def test_red_proof_unregistering_the_order_face_is_detected() -> None:
+    """红证 F1（#6867 / B2）：把 `/o/` 从 `PUBLIC_PREFIX_FACES` 拿掉（内存里）⇒ 必须报「没在归属登记表里」。"""
+    original = dict(PUBLIC_PREFIX_FACES)
+    try:
+        del PUBLIC_PREFIX_FACES["/o/"]
+        bad = _nginx_problems(_read(NGINX_CONF))
+    finally:
+        PUBLIC_PREFIX_FACES.clear()
+        PUBLIC_PREFIX_FACES.update(original)
+    assert any("/o/" in item and "没在 nginx 归属登记表里" in item for item in bad), (
+        f"未登记的公开前缀 `/o/` 没被判红（那正是「扫出来是别人的页面」的入口）：{bad}"
+    )
+
+
+def test_red_proof_a_removed_order_permit_all_is_detected() -> None:
+    """红证 B（#6867 / B2）：把 `/o/**` 从 `SecurityConfig` 的 permitAll 名单里删掉 ⇒ 必须判红。
+
+    形态：扫码工具打开纸上的码只会拿到 **401** —— 纸上的码等于没用（同 `/i/` 的红证）。
+    """
+    real = _read(SECURITY_CONFIG)
+    mutated = real.replace('"/o/**",', "")
+    assert mutated != real, "变异注入未生效（自证失败 ⇒ 下面的红证是空断言）"
+    assert f'"{CODE_SPACES["/o/"].prefix}**"' in permitted_paths(real), (
+        "真配置里没有 `/o/**` ⇒ 本红证是空断言"
+    )
+    assert f'"{CODE_SPACES["/o/"].prefix}**"' not in permitted_paths(mutated), (
+        "删掉 '/o/**' 后 permitAll 名单里竟然还在 ⇒ 变异注入没生效"
     )

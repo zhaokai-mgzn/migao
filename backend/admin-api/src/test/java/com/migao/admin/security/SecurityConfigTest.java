@@ -1215,6 +1215,88 @@ class SecurityConfigTest {
                 .andExpect(content().string(""));
     }
 
+    /**
+     * 🔴 加工单级短码 {@code GET /o/{短码}} 必须是**公开入口**（issue #6867 / B2；设计 §11.3 / §11.6）。
+     *
+     * <p><b>为什么这条必须有</b>：码印在**加工单纸**上，纸上的码对**任何**持码人等价
+     * （扫码工具 / 系统相机 / 手输 URL）—— 而它落在 {@code anyRequest().authenticated()} 上
+     * ⇒ 未登录访问只会拿到 <b>401</b>，纸上的码**等于没用**。</p>
+     *
+     * <p><b>判据形态</b>：未认证请求能**到达控制器**（⇒ 未知短码得 404，而不是 401）；
+     * 302 那一半由紧随其后的 {@link #processingOrderShortLinkRedirectsThroughSecurityChain()} 钉。
+     * <b>红证</b>：从 {@code SecurityConfig} 的 {@code permitAll} 名单里删掉 {@code "/o/**"}
+     * ⇒ 实测 <b>401</b>（不是 404）⇒ 本用例必红。</p>
+     */
+    @Test
+    @DisplayName("公开端点 - 加工单级短码 /o/{短码} 无需认证（删 permitAll ⇒ 401 ⇒ 必红）")
+    void processingOrderShortLinkIsPublic() throws Exception {
+        mockMvc.perform(get("/o/ZZZZZZZZ"))
+                .andExpect(status().isNotFound());
+    }
+
+    /**
+     * 🔴 全链路（安全过滤链 + 路由 + 控制器 + 服务）：有效加工单短码 ⇒ **302** + {@code Location}。
+     *
+     * <p>走的是**真实**控制器 + 真实 {@code ProcessingOrderShortLinkService}（本类的
+     * {@code processingOrderMapper} 是 {@code @MockBean}）⇒ 归一化 / 跨租户解析 / Location 拼装
+     * 都是生产那一份。同时钉「公开入口不泄露业务字段」：响应体为空，{@code Location} 里只有
+     * 报工页 + token + 租户（**没有**加工单号 / 客户 / 工序 / 价格）。</p>
+     */
+    @Test
+    @DisplayName("🔴 公开加工单短链全链路：有效短码 ⇒ 302 + Location（且不泄露业务字段）")
+    void processingOrderShortLinkRedirectsThroughSecurityChain() throws Exception {
+        String shortCode = "4T7Y2BQ9";
+        String partCode = "fake-po-code-fixture-6867";
+        when(processingOrderMapper.selectByShortCodeGlobal(shortCode))
+                .thenReturn(com.migao.admin.entity.ProcessingOrder.builder()
+                        .id("po-1").tenantId(7L).orderId("order-1")
+                        .processingOrderNo("JG-20261014-0001")
+                        .qrToken(partCode).shortCode(shortCode).deleted(0).build());
+
+        mockMvc.perform(get("/o/" + shortCode))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", "/w/?t=" + partCode + "&tenant_id=7"))
+                .andExpect(content().string(""));
+    }
+
+    /**
+     * 🔴 **扫一张纸 ≠ 拿到数据**（issue #6867 / B2 的安全面）：未带工人会话直接打数据接口 ⇒ **401**。
+     *
+     * <p>{@code /o/{短码}} 只回 302 + Location（纸上的码对任何持码人等价 ⇒ 它**不是**身份入口）；
+     * 真正的单据数据在 {@code /api/worker/**} 上，那一层要求**有效工人 session**
+     * （{@code WorkerSessionFilter} fail-closed：无效 / 已结束 / 闲置超时 / 会话租户与请求租户不一致
+     * ⇒ 不设认证 ⇒ 下游 401；纵向越权侧另由 {@code ADMIN_API_REJECTED_ROLES} 含 {@code worker} 挡住
+     * {@code /api/admin/**}）。本用例把这条钉成判据，而不是靠「现状如此」。</p>
+     *
+     * <p><b>红证</b>：把 {@code SecurityConfig} 的 {@code .requestMatchers("/api/worker/**").authenticated()}
+     * 临时改成 {@code permitAll()} ⇒ 本用例实测不再是 401 ⇒ 必红。</p>
+     */
+    @Test
+    @DisplayName("🔴 安全面：未带工人会话直接打 /api/worker/production/scan ⇒ 401（扫一张纸 ≠ 拿到数据）")
+    void workerProductionScanWithoutWorkerSessionIsUnauthorized() throws Exception {
+        mockMvc.perform(get("/api/worker/production/scan").param("token", "fake-po-code-fixture-6867"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    /**
+     * 🔴 **`/api/worker/**` 整段要求认证**（issue #6867 / B2 的安全面；与上一条分工不同）：
+     * 未带工人会话访问一个**不存在的** worker 子路径 ⇒ **401**（不是 404）。
+     *
+     * <p><b>为什么这条比上一条更硬</b>：上一条走的是真实端点，而端点**自己**也会做会话解析
+     * （两道防线都会给 401）⇒ 把安全链规则改成 permitAll 时它**仍然是 401**，判别力被第二道防线
+     * 顶掉（实测，见本包 PR body 的红证读数）。本条探一条**没有路由**的路径：唯一能在这里给出 401
+     * 的是 {@code SecurityConfig} 的 {@code .requestMatchers("/api/worker/**").authenticated()}
+     * ⇒ 它钉的是「**将来新加的 worker 端点若忘了自查会话，安全链仍然 fail-closed**」。</p>
+     *
+     * <p><b>红证</b>：把该行改成 {@code .permitAll()} ⇒ 本用例实测 <b>404</b>（不再是 401）⇒ 必红。</p>
+     */
+    @Test
+    @DisplayName("🔴 安全面：/api/worker/** 整段要求认证（连不存在的子路径也是 401，不是 404）")
+    void everyWorkerPathRequiresAuthenticationEvenWithoutARoute() throws Exception {
+        mockMvc.perform(get("/api/worker/__no_such_worker_endpoint__"))
+                .andExpect(status().isUnauthorized());
+    }
+
     // ======================== 刷新 Token 公开端点测试 ========================
     @Test
     @DisplayName("公开端点 - Token 刷新接口无需认证")
