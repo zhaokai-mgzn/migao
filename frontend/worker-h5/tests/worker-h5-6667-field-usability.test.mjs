@@ -302,7 +302,7 @@ function reportingApp() {
   return { doc, app, calls, release }
 }
 
-test('🔴 ④ 连点两下【开工】⇒ **只发一笔**报工（in-flight 闸；改前两下 = 两笔请求）', async () => {
+test('🔴 ④ 连点两下【报工】⇒ **只发一笔**报工（in-flight 闸；改前两下 = 两笔请求）', async () => {
   const { doc, calls, release } = reportingApp()
   doc.click('#wh5-report') // 第一下：请求发出、被挂住（in-flight）
   await settle()

@@ -29,7 +29,13 @@
 #
 # 用法: bmini-h5-verify-served.sh [BASE_URL] [DIST_DIR]
 #   默认 https://app.migaozn.com 与 frontend/bmini-app/dist
-# 环境变量: BMINI_NGINX_WAIT_SECONDS —— ② 与 ⑤ 的**共同等待窗口**（默认 900s，见下方 §为什么会有等待）
+#   ⑧ **加工单级短码面**（issue #6867）：`GET /o/<不可能存在的短码>` **必须**走到 admin-api
+#      （形态不合法 / 查不到 ⇒ 404、已撤销 ⇒ 410），**不得**落到 `location /` 的 SPA fallback
+#      （那会 200 + C 端元元首页）。与 ⑤ 同款判据、共用同一套等待窗口（同一个 nginx 生效前提）。
+#      判定落在 `bmini_o_face_verdict`（纯函数）；`O_PROBE` 是 8 位 Crockford Base32 里一个固定串。
+#      ⇒ 本腿覆盖的公开短码前缀：`/i/`（⑤）、`/o/`（⑧）；`/s/` 那一面由 ④ 复用的工人端脚本承担。
+#
+# 环境变量: BMINI_NGINX_WAIT_SECONDS —— ② / ⑤ / ⑧ 的**共同等待窗口**（默认 900s，见下方 §为什么会有等待）
 # 退出码：0 = 线上确实是本仓库的 bmini 产物、不串端、根仍是 C 端、worker-h5 零回归；非零 = 逐条打印哪条不成立。
 #
 # §为什么会有等待（不是「重试到绿」）
@@ -56,6 +62,11 @@ ROOT_PROBE="/__c_end_spa_probe__"
 # `/i/` 探针：一个**不可能存在**的短码（8 位 Crockford 字母表之外）⇒ admin-api 回 404。
 # 它证明的是「请求到了 admin-api」而不是「短码有效」—— 后者由 admin-api 的单测与线上日志负责。
 I_PROBE="/i/__i_shortlink_probe__"
+# `/o/` 探针（issue #6867）：加工单级短码。**形态合法但必然查不到** —— 8 位 Crockford Base32 里的
+# 固定串 `ZZZZZZZZ`（全库随机撞上它的概率 ~2^-40）：它落到与真短码**同一条**查询路径（`resolve`
+# 归一 → 查库 → 未命中）⇒ 证明的是「请求真的到了 admin-api」，而不是「短码有效」。
+# （⚠️ 不像 `/i/` 那样用「形态非法」的串：JOIN 后看到 `/o/ZZZZZZZZ` 才能一眼认出这是探针。）
+O_PROBE="/o/ZZZZZZZZ"
 WAIT_SECONDS=${BMINI_NGINX_WAIT_SECONDS:-900}
 POLL_SECONDS=${BMINI_NGINX_POLL_SECONDS:-20}
 # ② 与 ⑤ 依赖**同一次** nginx 配置生效（同一份 nginx.conf）⇒ 共用一个 deadline：
@@ -103,6 +114,29 @@ js_mime_ok() {   # $1 = Content-Type 原文（可带 `; charset=…`）
 # 取一个 URL 的 Content-Type（与 issue #6293 的复现命令同形：GET + 丢弃 body；HEAD 不是同一回事）
 content_type_of() {
   curl -sS -m 20 -H 'Cache-Control: no-cache' -o /dev/null -w '%{content_type}' "$1" 2>"$TMPDIR_RUN/curl.err" || true
+}
+
+# ── 加工单级短码面（`/o/`，issue #6867）的**纯函数判据** ─────────────────────────
+# 判据必须落在这行代码上（§23 / `migao-acceptance` 的「每条断言都要有红证」）⇒ 判定**不写在
+# `if` 里**，而是收进这个纯函数：给定「HTTP 码 / 探针 body 哈希 / 根页 body 哈希」三个输入，
+# 它回三态之一。测试（tests/unit_ci_workflows/test_bmini_h5_hosting.py）从**现役脚本**里抽出
+# 函数体**离线直跑**，因此不存在「测试测的是另一份实现」这个形态。
+#
+# 为什么「体与根页同哈希」是关键判据（而不是「状态码是 302」）：**未知短码本来就回 404**
+# （设计 §11.6：短码未知 / 形态不合法 ⇒ 404），而落到 `location /` 的 SPA fallback 会回
+# **200 + 根 index.html** ⇒ 可判的是「**body 是不是根页**」（= 串端）；5xx 单独判（代理坏了，
+# 不是「短码不存在」—— 把它读成 404 会把运维故障当成设计行为）。
+bmini_o_face_verdict() {   # $1=HTTP码  $2=探针body哈希（取不到传 `(空)`）  $3=根页body哈希
+  local code=$1 got=$2 root=$3
+  if [ "$got" = "$root" ]; then
+    echo "spa-fallback:$code:$got"
+  elif printf '%s' "$code" | grep -qE '^[0-9]+$' && [ "$code" -ge 500 ]; then
+    echo "broken:$code"
+  elif [ "$code" = "404" ] || [ "$code" = "410" ]; then
+    echo "ok:$code"
+  else
+    echo "unexpected:$code:$got"
+  fi
 }
 
 echo "== bmini h5 落地面身份 + 不串端断言 =="
@@ -261,8 +295,48 @@ while IFS= read -r ref; do
 done <<< "$ENTRY_REFS"
 echo ""
 
+# ── ⑧ 加工单级短码面：/o/<短码> 必须到 admin-api（不得落到 location / 的 SPA fallback）────────
+# issue #6867：`/o/<短码>`（加工单纸上的码）是**与 `/i/` 同族的第三个公开短码前缀**。
+# 缺 `location /o/` 时它会落到 `location /` 的 `try_files … /index.html` ⇒ **200 + C 端元元首页**
+# （2026-09-27 在 `/i/` 上实测过的同款静默串端）：HTTP 200 不是错误码 ⇒ 监控不红、只有真机扫码才发现。
+# 🔴 判据**不是**「状态码是 302」——探针用的是**不存在**的短码，按设计本来就回 404（§11.6）；
+#    关键是 ① **body 不是根页**（落到 SPA 才会是）② 不是 5xx（那说明代理面坏了，不是「码不存在」）。
+#    三态判定在纯函数 `bmini_o_face_verdict` 里（上面），这里只取数 + 打印。
+echo "⑧ GET $BASE${O_PROBE}（加工单级短码：不存在的短码 ⇒ admin-api 回 404；SPA fallback 会回根页）"
+ROOT_SHA=$( [ -s "$TMPDIR_RUN/root.html" ] && file_sha256 "$TMPDIR_RUN/root.html" || echo '(空)' )
+if [ "$ROOT_SHA" = "(空)" ]; then
+  bad "拿不到根页 body（③ 未取到）⇒ ⑧ 无法判定 /o/ 是否串端（无法判定不得当通过）"
+else
+  CODE=$(fetch "${BASE}${O_PROBE}" "$TMPDIR_RUN/o.html")
+  O_SHA=$( [ -s "$TMPDIR_RUN/o.html" ] && file_sha256 "$TMPDIR_RUN/o.html" || echo '(空)' )
+  # 与 ② / ⑤ 同因：nginx 配置随 deploy 腿生效（两个并发 run）⇒ 有上界地等，且与 ② 共用同一个 deadline
+  while [ "$O_SHA" = "$ROOT_SHA" ] && [ "$(date +%s)" -lt "$DEADLINE" ]; do
+    echo "     ⏳ HTTP ${CODE}，body 与根页同哈希 ⇒ \`location /o/\` 还没随 nginx 配置生效，继续等…"
+    sleep "$POLL_SECONDS"
+    CODE=$(fetch "${BASE}${O_PROBE}" "$TMPDIR_RUN/o.html")
+    O_SHA=$( [ -s "$TMPDIR_RUN/o.html" ] && file_sha256 "$TMPDIR_RUN/o.html" || echo '(空)' )
+  done
+  case "$(bmini_o_face_verdict "$CODE" "$O_SHA" "$ROOT_SHA")" in
+    ok:*)
+      ok "GET ${O_PROBE} → HTTP ${CODE}（到了 admin-api：短码不存在 / 形态不合法 ⇒ 404，已撤销 ⇒ 410）"
+      ;;
+    spa-fallback:*)
+      bad "GET ${O_PROBE} → HTTP ${CODE} 且 body 与 \`GET /\` 同哈希 = 落到了 location / 的 SPA fallback（C 端元元）：\`location /o/\` 没随 nginx 配置生效（扫加工单纸会看到错页面；HTTP 200 不是错误码，监控不会红）"
+      echo "     处置：确认 \`deploy/swas/nginx.conf\` 的 \`location /o/\` 已在**本次合并的 commit** 上；"
+      echo "           等 deploy-* 跑完（它才会 cp nginx.conf + reload）后用 \`gh run rerun <run-id>\` 重跑本 job。"
+      ;;
+    broken:*)
+      bad "GET ${O_PROBE} → HTTP ${CODE}（5xx：/o/ 的代理面坏了，不是「短码不存在」）"
+      ;;
+    *)
+      bad "GET ${O_PROBE} → HTTP ${CODE}，且 body 既不是根页也不是预期的 404/410 ⇒ /o/ 面语义变了（先核端点语义，再改本判据 —— 不许直接把期望改成现状）"
+      ;;
+  esac
+fi
+echo ""
+
 if [ "$FAILURES" -gt 0 ]; then
   echo "❌ bmini h5 落地面断言**失败 ${FAILURES} 条**：$BASE/${SUBDIR}/ 的落地面不符合本仓库产物 / 或串了端"
   exit 1
 fi
-echo "✅ 全部通过：$BASE/${SUBDIR}/ = 本仓库 frontend/bmini-app/dist（含子路由 fallback）、根仍是 C 端、worker-h5 零回归、/i/ 面到了 admin-api、入口脚本 Content-Type ∈ JS MIME 白名单"
+echo "✅ 全部通过：$BASE/${SUBDIR}/ = 本仓库 frontend/bmini-app/dist（含子路由 fallback）、根仍是 C 端、worker-h5 零回归、/i/ 面到了 admin-api、/o/ 面到了 admin-api、入口脚本 Content-Type ∈ JS MIME 白名单"

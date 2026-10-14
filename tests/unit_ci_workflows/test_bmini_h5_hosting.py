@@ -792,6 +792,7 @@ class _NginxishServer:
       · ``stale_b``       —— `/b/` 上是**旧产物**（不是本仓库这次构建）
       · ``w_broken``      —— worker-h5 的 `/w/` 坏了
       · ``i_falls_back``  —— nginx 少了 `location /i/`（入库标签的码静默回落到根页 = C 端元元）
+      · ``o_falls_back``  —— nginx 少了 `location /o/`（加工单纸的码静默回落到根页 = C 端元元；#6867）
       · ``bad_js_mime``   —— 入口脚本（`.js`/`.mjs`）被发成 `application/octet-stream`（issue #6293）
     """
 
@@ -834,6 +835,10 @@ class _NginxishServer:
             if self.mode == "i_falls_back":
                 return c_end  # nginx 少了 `location /i/` ⇒ 回落 C 端首页（本条要治的静默串端形态）
             return None  # admin-api 的 404（未知短码按设计不存在；线上实测就是 404 + 空 body）
+        if path.startswith("/o/"):
+            if self.mode == "o_falls_back":
+                return c_end  # nginx 少了 `location /o/` ⇒ 回落 C 端首页（#6867 同款静默串端形态）
+            return None  # admin-api 的 404（未知短码按设计不存在；形态合法但查不到，同 §11.6）
         if self.mode == "root_hijacked":
             return bmini
         return c_end
@@ -920,6 +925,8 @@ def test_verify_served_is_green_on_correct_landing(tmp_path):
         # 本单（PR-117）：`/i/` 面少了 nginx 登记 ⇒ 探针必须判红，且**指名**是 SPA fallback
         # （红得不具体 = 排查时看不出是哪条判据；照 #5668 的口径）。
         ("i_falls_back", "落到了 location / 的 SPA fallback"),
+        # #6867：`/o/` 面（加工单纸的码）少了 nginx 登记 ⇒ 同款静默串端 ⇒ 必须判红且**指名**。
+        ("o_falls_back", "落到了 location / 的 SPA fallback"),
         # issue #6293：入口脚本被发成 octet-stream ⇒ 浏览器拒绝执行 module script ⇒ 整页白屏，
         # 而身份 / 串端 / 字节全对（所以 ①~⑤ 会全绿）⇒ 必须由 ⑥ 判红。
         ("bad_js_mime", "∉ JS MIME 白名单"),
@@ -951,6 +958,139 @@ def test_verify_script_probes_the_i_shortlink_face() -> None:
     )
     assert "${BASE}${I_PROBE}" in text, "探针常量没被真的请求（写了不用 = 空断言）"
     assert "i_falls_back" not in text, "断言脚本里不该知道测试模拟器的 mode 名（两套实现会漂）"
+
+
+# ── `/o/`（加工单级短码，issue #6867）的活体探针 + 纯函数判据 ────────────────────
+# 为什么单独立这里：`/o/{短码}`（加工单纸上的码）在**离线**面已有判据
+# （tests/unit_ci_workflows/test_public_code_spaces_are_disjoint.py 的 F1~F3 语义模拟 +
+#  nginx.conf 文本判据），但**线上真实行为**（nginx 归属 + admin-api 路由真的活着 ⇒ 不是
+# `location /` 的 SPA fallback）此前**没有任何自动腿探过** —— 那正是「静默串端」重新变得
+# 不可见的形态（200 + C 端首页，监控不红）。
+
+def test_verify_script_probes_the_o_shortlink_face() -> None:
+    """判据（实例）：落地面断言脚本必须真的探 `/o/` 面（删掉探针 ⇒ 红）。
+
+    与 `/i/` 那条（判据 8）同因：`/o/` 的落地面**只能**在线上证（离线语义模拟证明不了
+    nginx 已 reload），探针被静默删掉时不会有别的东西变红。
+    """
+    text = VERIFY_SCRIPT.read_text(encoding="utf-8")
+    assert 'O_PROBE="/o/' in text, "落地面断言脚本没有 `/o/` 探针（加工单纸串端就没有任何线上判据兜）"
+    assert "落到了 location / 的 SPA fallback" in text, (
+        "`/o/` 探针判红时必须**指名**是 SPA fallback（照 #5668：红得不具体 = 排查时看不出是哪条）"
+    )
+    assert "${BASE}${O_PROBE}" in text, "探针常量没被真的请求（写了不用 = 空断言）"
+    assert "o_falls_back" not in text, "断言脚本里不该知道测试模拟器的 mode 名（两套实现会漂）"
+
+
+#: `/s/` 那一面**没有**本脚本自己的探针常量：它由 ④ 复用的工人端脚本承担（**不复制**第二份判定），
+#: 本腿只加一条「仍由 admin-api 代理」的边界探针 ⇒ 登记表把它映到那句原始 URL 文本。
+_REUSED_LEG_PROBES = {"/s/": 'fetch "$BASE/s/__bmini_verify__"'}
+
+
+def _probe_string_const(text: str, var: str) -> str | None:
+    """从脚本正文取 `VAR="…"` 的**字面量**（取不到 ⇒ None，由调用方判红）。"""
+    match = re.search(rf'^{re.escape(var)}="([^"]+)"\s*$', text, re.M)
+    return match.group(1) if match else None
+
+
+def test_every_public_proxy_prefix_has_a_live_probe() -> None:
+    """判据（类级元守卫）：`PUBLIC_PREFIX_FACES` 里每一个**代理面**前缀都必须有活体探针。
+
+    发现面 = `tests/unit_ci_workflows/test_public_code_spaces_are_disjoint.py` 的
+    nginx 归属登记表（**不写死清单**：它已经在管「新开一个公开前缀而不登记 ⇒ 红」）；
+    本条管的是它的**下游**——登记了、nginx 也有 `location` 了，但**发布腿没探它** ⇒
+    「扫出来是别人的页面」在线上没有任何判据会发现。新增 `/x/` 代理面而漏探 ⇒ 本条指名判红。
+    """
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from test_public_code_spaces_are_disjoint import FACE_PROXY, PUBLIC_PREFIX_FACES
+
+    text = VERIFY_SCRIPT.read_text(encoding="utf-8")
+    proxy_prefixes = sorted(p for p, face in PUBLIC_PREFIX_FACES.items() if face.kind == FACE_PROXY)
+    assert proxy_prefixes, "归属登记表里一个代理面前缀都没有 ⇒ 本条会静默空跑（不许当通过）"
+
+    problems = []
+    for prefix in proxy_prefixes:
+        if prefix in _REUSED_LEG_PROBES:
+            if _REUSED_LEG_PROBES[prefix] not in text:
+                problems.append(f"{prefix}：复用的边界探针 `{_REUSED_LEG_PROBES[prefix]}` 在脚本里找不到")
+            continue
+        var = f"{prefix.strip('/').upper()}_PROBE"
+        probe = _probe_string_const(text, var)
+        if probe is None:
+            problems.append(f"{prefix}：脚本里没有 `{var}=\"{prefix}…\"` 探针常量")
+            continue
+        if not probe.startswith(prefix):
+            problems.append(f"{prefix}：{var} 指向 `{probe}`（不在该前缀的命名空间里）")
+            continue
+        if f'fetch "${{BASE}}${{{var}}}"' not in text:
+            problems.append(f"{prefix}：{var} 没被真的请求（写了不用 = 空断言）")
+            continue
+        # 变量真的被请求**还不够** —— 把手改 `O_PROBE=""`（或写成 `O_PROBE="/"`）时上面的
+        # `fetch` 那一行**一字不动**，而探针变成「请求根路径」⇒ 与根页同哈希 ⇒ 看似判红、
+        # 实际判的是**另一个对象**（判据面因此失守）。⇒ 形状也必须判：`<前缀><非空短码段>`。
+        rest = probe[len(prefix):]
+        if not rest or rest.startswith("/"):
+            problems.append(
+                f"{prefix}：{var} 的形状不是 `{prefix}<短码段>`（实为 `{probe}`）"
+                "—— 探针指向了前缀本身/别处（判据会看着红、实际判的是另一个对象）"
+            )
+    assert problems == [], (
+        "有公开代理前缀没有发布腿活体探针（登记了前缀 ≠ 线上有人探它）：\n  - " + "\n  - ".join(problems)
+    )
+
+
+#: 从**现役脚本**里抽出纯函数来直跑（同 tests/unit_ci_workflows/test_dev_worktree_registry_drift.py
+#: 的 `eval "$(sed -n '/^…() {/,/^}/p' "$SCRIPT")"` 手法）—— 因此不存在「测试测的是另一份实现」。
+_O_VERDICT_FN = "bmini_o_face_verdict"
+_O_VERDICT_DRIVER = """set -u
+SCRIPT="%(script)s"
+eval "$(sed -n '/^%(fn)s() {/,/^}/p' "$SCRIPT")"
+command -v %(fn)s >/dev/null || { echo "FN-NOT-EXTRACTED" >&2; exit 3; }
+%(fn)s %(args)s
+"""
+
+
+def _o_face_verdict(code: str, got: str, root: str) -> str:
+    """离线直跑脚本里的 `bmini_o_face_verdict`（返回它打印的三态判定原文）。"""
+    driver = _O_VERDICT_DRIVER % {
+        "script": str(VERIFY_SCRIPT),
+        "fn": _O_VERDICT_FN,
+        "args": f"'{code}' '{got}' '{root}'",
+    }
+    proc = subprocess.run(
+        ["bash", "-c", driver], capture_output=True, text=True, encoding="utf-8",
+        errors="replace", timeout=60, cwd=str(REPO_ROOT),
+    )
+    assert proc.returncode == 0, f"抽不出/跑不动 {_O_VERDICT_FN}（判据会假绿）：{proc.stderr}"
+    return proc.stdout.strip()
+
+
+@pytest.mark.parametrize(
+    "code, got, root, expected",
+    [
+        # ① 正常态：到了 admin-api（未知短码 404 / 已撤销 410）
+        ("404", "(空)", "root-sha", "ok:404"),
+        ("410", "(空)", "root-sha", "ok:410"),
+        # ② 🔴 本单要治的形态：body 与根页同哈希 = 落到了 `location /` 的 SPA fallback（200 + C 端首页）
+        ("200", "root-sha", "root-sha", "spa-fallback:200:root-sha"),
+        # ③ 代理面坏了（5xx 不得被读成「短码不存在」——那会把运维故障当设计行为）
+        ("502", "(空)", "root-sha", "broken:502"),
+        # ④ 语义变了（既不是根页、也不是 404/410）：必须落进「unexpected」而不是任何一条通过分支
+        ("302", "some-other-sha", "root-sha", "unexpected:302:some-other-sha"),
+        # ⑤ 空 content（curl 拿不到）不得被读成「与根页同哈希」以外的东西
+        ("000", "(空)", "(空)", "spa-fallback:000:(空)"),
+    ],
+)
+def test_o_face_verdict_is_a_pure_function_on_the_live_probe(code, got, root, expected) -> None:
+    """纯函数判据：三态判定**落在这一行代码上**（不是散在 `if` 里）。
+
+    红证（本文件内联；可离线复算，命令见 PR body）：
+      ① 把期望状态码改成 200（即断言「未知短码必须 200」）⇒ 上面 ① 两例红；
+      ② 去掉「不得是 SPA 的 index.html」那一支（把 `spa-fallback` 折成 `ok`）⇒ ② 例红。
+    """
+    assert _o_face_verdict(code, got, root) == expected
 
 
 # ── 传输载体（Dockerfile）的指令文法判据（issue #5668 首次发布实测）──────────────

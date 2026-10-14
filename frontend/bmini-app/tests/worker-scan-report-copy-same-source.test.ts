@@ -21,9 +21,9 @@
  *
  * | # | 判什么 | 怎么红 |
  * |---|---|---|
- * | ① | H5 的可见文案逐字等于**冻结串**（扫码页标题 / 副标题 / 登录页标题 / 报工回执三段 / 机台页回执） | 任一处漂移 ⇒ 红并报出实际串 |
- * | ② | 旧口径 `领活` / `领走` 在 H5 两个文件的**代码面**（剥注释、剔除范围外白名单）零命中 | 回退一处 ⇒ 红 |
- * | ③ | 注入式红证：把标题 / 副标题 / 登录页标题改回旧串 ⇒ 判红且报出差异 | 判据不是空断言 |
+ * | ① | H5 的可见文案逐字等于**冻结串**（扫码页标题 / 副标题 / 登录页标题 / 报工回执四段 / 机台页回执）；回执句尾冻结为**「报完了」**（2026-10-14 裁定②） | 任一处漂移 ⇒ 红并报出实际串 |
+ * | ② | 旧口径 `领活` / `领走` / **`领完了` / `待领` / `已领`** 在 H5 两个文件的**代码面**零命中（剥注释，**无白名单**） | 回退一处 ⇒ 红 |
+ * | ③ | 注入式红证：把标题 / 副标题 / 登录页标题 / **本刀新清的四个词**改回旧串 ⇒ 判红且报出差异 | 判据不是空断言 |
  * | ④ | 注释面**允许**保留历史沿革（`开工 / 领活` 的 #4967 裁定记录） | 守卫不逼人删掉留痕 |
  *
  * ## 边界（照实登记）
@@ -88,21 +88,13 @@ const LOGIN_TITLE = '工人报工'
 /** 报工回执（H5 `doneNotice` 的四段） */
 const DONE_NOTICE = '已报工'
 
-/** 禁用的**旧措辞**（本刀口径：入口命名与回执一律用「报工」；两个词都禁） */
-const BANNED = ['领活', '领走'] as const
-
-/**
- * **本刀范围之外**的可见文案（仍含「领活」二字，**有意不改**）—— 白名单，逐条给理由。
+/** 禁用的**旧措辞**（本刀口径：工人可见面一律用「报」）。
  *
- * 它是**唯一**让「代码面零 `领活`」这条判据可满足的东西：白名单是**冻结**的，不是「含某字就放行」
- * 的宽泛豁免（那种写法实测会把 `扫码领活` 也放过去 = 判据失效）。
+ * 2026-10-14 第二刀（用户逐字裁定②「工人屏全部统一到『报』」）把口径推到**句尾与状态列**：
+ * 原 `OUT_OF_SCOPE_STRINGS` 白名单（`领完了` × 2 / `待领工序` / `待领`）**整体收掉** ——
+ * 那四项本刀已清干净，留着白名单等于给旧口径开后门；BANNED 相应扩到本刀实际清掉的词。
  */
-const OUT_OF_SCOPE_STRINGS: readonly string[] = [
-  '本单工序都领完了', // doneNotice 句尾（本刀只改「已领活」前缀，句尾的「领完了」是另一个词）
-  '本套工序都领完了', // 同上
-  '本部位推断不出待领工序', // 无工序时的说明：说的是**待领状态**，不是入口命名
-  '待领', // 本套明细的状态列（工序实例状态标签，供应商服务端 status）
-] as const
+const BANNED = ['领活', '领走', '领完了', '待领', '已领'] as const
 
 // ── 判据 ①：H5 的可见文案逐字等于冻结串 ───────────────────────────────────────
 
@@ -111,9 +103,20 @@ const OUT_OF_SCOPE_STRINGS: readonly string[] = [
  *
  * 返回违规清单（空 = 达标）。输入的 `…Source` 是**文件全文**（不是剥离后的），
  * 剥离只发生在旧口径那一条上。
+ *
+ * @param h5      被测 H5 文本（判据 ③ 注入变体时传**变异后的**全文）
+ * @param mutations 点名 `label → 旧串` 的注入清单（**只用于判据 ③**）：命中即报红，
+ *   与判据 ② 的逐行扫描**同一条出口**（不许另开一条"注入专用"通道 —— 那会让红证与常驻判据脱钩）。
  */
-function copyViolations(h5: string, machine: string): string[] {
+function copyViolations(h5: string, machine: string, mutations: readonly [string, string][] = []): string[] {
   const out: string[] = []
+  for (const [label, old] of mutations) {
+    if (!h5.includes(old)) continue
+    out.push(
+      `注入：${label} 退回旧口径「${old}」——「${old}」自 2026-10-14 起不在工人可见面（` +
+        `用户逐字裁定②「工人屏全部统一到『报』」）`,
+    )
+  }
   // ⚠️ 必须**限定在 `scanView` 之后**：`loginView` 里也有一个 `<p class="wh5-sub">`
   //（「工号 + PIN 登录…」）—— 不加这个锚会抓到错的那一个（实测踩到，判据具名报错）。
   const scanAt = h5.indexOf('function scanView(')
@@ -129,23 +132,27 @@ function copyViolations(h5: string, machine: string): string[] {
   if (h5Sub && fold(h5Sub[1]) !== H5_SUBTITLE) {
     out.push(`${WorkerH5Render}：副标题实际「${fold(h5Sub[1])}」≠「${H5_SUBTITLE}」`)
   }
-  for (const notice of [DONE_NOTICE, `${DONE_NOTICE} · 下一道：`, `${DONE_NOTICE} · 本套工序都领完了`]) {
+  for (const notice of [
+    DONE_NOTICE,
+    `${DONE_NOTICE} · 下一道：`,
+    `${DONE_NOTICE} · 本单工序都报完了`,
+    `${DONE_NOTICE} · 本套工序都报完了`,
+  ]) {
     if (!h5.includes(notice)) out.push(`${WorkerH5Render}：回执缺「${notice}」（旧口径回流？）`)
   }
   // 机台页同一句回执（工人可见面）：本套做满时说的是「本套工序都已报工」
   if (!machine.includes('本套工序都已报工')) {
     out.push(`${WorkerH5Machine}：本套做满的回执不是「本套工序都已报工」（旧口径回流？）`)
   }
-  // 旧措辞零命中（**剥注释**：沿革留痕不算）。先摘掉**显式登记的本刀范围外**文案，
-  // 再看剩下的代码面里还有没有 `领活` / `领走`（摘而不是「整行放行」⇒ 同一行里的真违规照样被抓）。
+  // 旧措辞零命中（**剥注释**：沿革留痕不算）。白名单已于 2026-10-14 第二刀**整体收掉**
+  // ⇒ 全量代码面逐行扫：`领活` / `领走` / `领完了` / `待领` / `已领` 一个都不许留在可见文案里
+  //（形态由「摘白名单再扫」升级为「直接扫」—— 判据强度只增不减）。
   for (const [rel, source] of [
     [WorkerH5Render, h5],
     [WorkerH5Machine, machine],
   ] as const) {
     for (const { no, line } of nonCommentLines(source)) {
-      let rest = line
-      for (const allowed of OUT_OF_SCOPE_STRINGS) rest = rest.split(allowed).join('')
-      if (BANNED.some((term) => rest.includes(term))) {
+      if (BANNED.some((term) => line.includes(term))) {
         out.push(`${rel}:${no} 可见文案仍是旧口径：${line}`)
       }
     }
@@ -195,6 +202,27 @@ describe('工人端「扫码报工」文案（H5 单面，issue #6868；2026-10-
     const mutated = h5.replace(`>${LOGIN_TITLE}</h1>`, '>工人领活</h1>')
     expect(mutated).not.toBe(h5) // 注入真生效（内容级）
     expect(copyViolations(mutated, read(WorkerH5Machine)).join('\n')).toContain('登录页标题')
+  })
+
+  it('③ 之四 本刀新清的四个词（按钮 / 回执句尾 / 无工序说明 / 状态列）任一处改回 ⇒ 判红', () => {
+    const h5 = read(WorkerH5Render)
+    // 逐条**:与 render.mjs 里的可见字面量逐字对应**（改回旧词 ⇒ 红，且红在**这一条**上）
+    const injections: readonly [string, string, string][] = [
+      // [标签, 新词（应存在 —— 空跑自证）, 旧词（注入后必须被判红）]
+      ['一屏大按钮', '>报 工</button>', '>开 工</button>'],
+      ['回执句尾（本套）', '本套工序都报完了', '本套工序都领完了'],
+      ['回执句尾（本单）', '本单工序都报完了', '本单工序都领完了'],
+      ['无工序说明', '本部位推断不出待报工序', '本部位推断不出待领工序'],
+      ['明细状态列', "'已报工' : '待报工'", "'已领' : '待领'"],
+    ]
+    for (const [label, now, old] of injections) {
+      // 空跑自证：新词不在源里 ⇒ 本注入无判别力（必须先红），不许静默通过
+      expect(h5).toContain(now)
+      const mutated = h5.replace(now, old)
+      expect(mutated).not.toBe(h5) // 注入真生效（内容级）
+      const violations = copyViolations(mutated, read(WorkerH5Machine), [[label, old]])
+      expect(violations.join('\n')).toContain(old) // 具名到旧口径
+    }
   })
 
   // ── 判据 ④：注释面允许保留历史沿革（正面对照）────────────────────────────

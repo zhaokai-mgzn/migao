@@ -260,6 +260,8 @@ export function canReport(state, view) {
  * 「工人都是先扫码报工后再真实进行生产，不是先生产再扫码报工」）。
  * 按钮文案随之由【完成】改为【开工】；**id 与动作一字未改**（`wh5-report` + `scan/complete`）
  * —— 端点名是冻结契约，改了会把已发版的客户端打回 404。
+ * 🔴 **2026-10-14 文案口径统一（issue #6868，用户逐字裁定②「工人屏全部统一到『报』」）**：
+ * 按钮文案**再由【开工】改为【报工】**（只换词；上面那条 #4967 记录保留为沿革，不要按它改回去）。
  * 记账时点**不变**（仍是点这一下推进进度 + 记计件），所以文案说「领活」而不承诺「完工」。
  *
  * 🔴 **in-flight 闸（issue #6667 第 4 条，涉计件正确性）**：提交在飞时按钮 `disabled` + 文案改
@@ -270,7 +272,7 @@ function reportButton(state, view) {
   if (!canReport(state, view)) return ''
   return state.reporting
     ? '<button id="wh5-report" class="wh5-primary" type="button" disabled>提交中…</button>'
-    : '<button id="wh5-report" class="wh5-primary" type="button">开 工</button>'
+    : '<button id="wh5-report" class="wh5-primary" type="button">报 工</button>'
 }
 
 /**
@@ -318,8 +320,8 @@ export function legacySelection(view, selection) {
 /** 报工回执 ⇒ 给工人的一句话（`replayed` 必须显式说清「没有新增计件」，不谎报一笔新报工）。 */
 export function doneNotice(receipt) {
   if (receipt.replayed) return '这次没有新增计件：重复提交已回放（同一次扫码只算一次）'
-  if (receipt.orderCompleted) return '已报工 · 本单工序都领完了 🎉'
-  if (receipt.setCompleted === true) return '已报工 · 本套工序都领完了 🎉'
+  if (receipt.orderCompleted) return '已报工 · 本单工序都报完了 🎉'
+  if (receipt.setCompleted === true) return '已报工 · 本套工序都报完了 🎉'
   // 🔴 「下一道」必须**带部位**（issue #4963）：改前只拼 `nextOperation.logical_name`
   // ⇒ 跨部位时屏上少一半信息（`打卷 · 布帘` 显示成 `打卷`）。回执的 `next_operation`
   // 本来就带 `position`（逐字照 `ProductionScanCompleteService.enrichNextOperation`）。
@@ -432,7 +434,7 @@ function mainView(state) {
     <div class="wh5-set" id="wh5-set">第 ${esc(v.set_no)} 套 · ${esc(v.position?.position_name ?? '')}</div>
     ${v.completed === true
       ? '<p class="wh5-done" id="wh5-completed">本套工序都已报工 🎉</p>'
-      : '<p class="wh5-sub" id="wh5-no-operation">本部位推断不出待领工序（工序未确定 ⇒ 不得记账）</p>'}
+      : '<p class="wh5-sub" id="wh5-no-operation">本部位推断不出待报工序（工序未确定 ⇒ 不得记账）</p>'}
     ${overviewView(v)}
     ${cutPlanView(v)}
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
@@ -513,13 +515,13 @@ function overviewView(v) {
           const price = o.unit_price === null || o.unit_price === undefined
             ? '未定价'
             : `${fmtQty(o.unit_price)} 元/${esc(o.unit ?? '')}`
-          // 状态与已报数量让工人区分「还没领 / 已被领走」——两者都要看得见
+          // 状态与已报数量让工人区分「还没报 / 已报过」——两者都要看得见
           const claimed = o.status === 'done'
           return `<li class="wh5-ov-op${claimed ? ' is-done' : ''}">
           <span class="wh5-ov-name">${esc(o.logical_name ?? '')}</span>
           <span class="wh5-ov-qty">应做 ${fmtQty(o.qty)} ${esc(o.unit ?? '')}</span>
           <span class="wh5-ov-price">${price}</span>
-          <span class="wh5-ov-status">${claimed ? '已领' : '待领'}</span>
+          <span class="wh5-ov-status">${claimed ? '已报工' : '待报工'}</span>
           <span class="wh5-ov-done">已报 ${fmtQty(o.done_qty)} ${esc(o.unit ?? '')}</span>
         </li>`
         })
