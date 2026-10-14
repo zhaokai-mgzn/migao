@@ -442,7 +442,7 @@ def test_c1_helper_is_the_single_composition_point():
 
 def test_c2_every_face_imports_the_shared_helper():
     """C2：每个受管面都 import 了 helper —— 面文件必须是「真的那一个」（反空跑）。"""
-    assert len(FACES) >= 5, "受管面清单被清空 ⇒ 本守卫会空跑通过（判据必须能判红）"
+    assert len(FACES) >= 7, "受管面清单被清空 ⇒ 本守卫会空跑通过（判据必须能判红）"
     for rel in FACES:
         src = _read(rel)
         assert REQUIRED_IMPORT in src, (

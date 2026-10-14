@@ -601,13 +601,15 @@
     {
       "file": "tests/unit_ci_workflows/test_operation_display_name_guard.py",
       "symbol": "FACES",
-      "bound": 5,
+      "bound": 7,
       "members": [
         "frontend/admin-web/src/components/production/ProductionProgressTable.tsx",
         "frontend/admin-web/src/app/(dashboard)/production/piecework/page.tsx",
         "frontend/admin-web/src/components/production/PieceworkTable.tsx",
         "frontend/admin-web/src/components/chat/ProductionProgressCard.tsx",
-        "frontend/admin-web/src/app/(dashboard)/processing-orders/[id]/production/page.tsx"
+        "frontend/admin-web/src/app/(dashboard)/processing-orders/[id]/production/page.tsx",
+        "frontend/admin-web/src/components/orders/ProcessingDoc.tsx",
+        "frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx"
       ],
       "issue": "#5007",
       "note": "该处只写 `assert len(...) >= N`（只防清空、不防删一项）⇒ 由逐项冻结承担「多一个/少一个都红」；下界断言本身按文件所有权留在原文件"
