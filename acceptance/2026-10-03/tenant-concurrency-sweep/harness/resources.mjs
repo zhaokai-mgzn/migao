@@ -1,10 +1,13 @@
-// 并发探针资源面：只取「A(20) 侧有行」的列表/按 id 读端点 + 「B(21) 侧有行」的反向 id。
-// 复用上一线（tenant-isolation-sweep/harness/registry.mjs）的端点与 id 提取器写法。
+// 并发探针资源面：只取「A 侧有行」的列表/按 id 读端点 + 「B 侧有行」的反向 id。
+// 主体（A/B/C）**全部由 env 注入**（issue #6937；唯一注入口 = acceptance/2026-10-03/lib/subjects.mjs）；
+// B/C 未注入 ⇒ 对应主体为 null，调用方必须**具名 skip**，不许回退成写死的租户。
 import { psql } from './lib.mjs'
+import { S, T, PH } from '../../lib/subjects.mjs'
 
-export const A = { phone: '13870217889', tenant: 20, label: '米高POC演示布艺' }
-export const B = { phone: '13797101248', tenant: 21, label: 'POC彩排5605' }
-export const C = { phone: '13800138000', tenant: 1, label: '词元通达' }
+export const A = { phone: PH.A, tenant: T.A, label: S.A.label }
+export const B = S.B ? { phone: PH.B, tenant: T.B, label: S.B.label } : null
+export const C = S.C ? { phone: PH.C, tenant: T.C, label: S.C.label } : null
+export const TENANTS = [T.A, T.B, T.C].filter((x) => x != null)
 
 const pick = {
   items: (d) => (d?.items ?? []).map((x) => x.id),
@@ -38,6 +41,7 @@ export const RESOURCES = [
 ]
 
 export function dbIds(table, tenantId, limit = 20000) {
+  if (tenantId == null) return []   // 主体未注入 ⇒ 空集（调用方须给具名 skip，不许当 pass）
   const hasDel = psql(`select 1 as x from information_schema.columns where table_schema='public' and table_name='${table}' and column_name='deleted'`).length > 0
   const del = hasDel ? ' and coalesce(deleted,0)=0' : ''
   return psql(`select id::text as id from ${table} where tenant_id=${tenantId}${del} limit ${limit}`).map((r) => String(r.id))

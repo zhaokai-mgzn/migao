@@ -1,0 +1,71 @@
+{
+  "tables": 79,
+  "tenants": 2,
+  "cells": 158,
+  "changed": [
+    {
+      "table": "categories",
+      "tenant": 32,
+      "before": 23,
+      "after": 24,
+      "countDelta": 1,
+      "fpChanged": true
+    },
+    {
+      "table": "orders",
+      "tenant": 32,
+      "before": 115,
+      "after": 111,
+      "countDelta": -4,
+      "fpChanged": true
+    },
+    {
+      "table": "processing_categories",
+      "tenant": 32,
+      "before": 8,
+      "after": 9,
+      "countDelta": 1,
+      "fpChanged": true
+    },
+    {
+      "table": "processing_items",
+      "tenant": 32,
+      "before": 5,
+      "after": 6,
+      "countDelta": 1,
+      "fpChanged": true
+    },
+    {
+      "table": "product_colors",
+      "tenant": 32,
+      "before": 16,
+      "after": 17,
+      "countDelta": 1,
+      "fpChanged": true
+    },
+    {
+      "table": "product_skus",
+      "tenant": 32,
+      "before": 16,
+      "after": 17,
+      "countDelta": 1,
+      "fpChanged": true
+    },
+    {
+      "table": "products",
+      "tenant": 32,
+      "before": 26,
+      "after": 27,
+      "countDelta": 1,
+      "fpChanged": true
+    },
+    {
+      "table": "stock_ledger_entries",
+      "tenant": 32,
+      "before": 97,
+      "after": 98,
+      "countDelta": 1,
+      "fpChanged": true
+    }
+  ]
+}

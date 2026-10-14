@@ -6,7 +6,17 @@
 //   POST /api/worker/inbound/drafts/{id}/post → WorkerInboundService.postDraft（过账才动库存；confirmed 必填）
 //   GET/POST /api/worker/inbound/labels/{code}[/print] → InboundLabelService.detail/recordPrint
 // 期望独立算出：库存/台账/标签行从 DB 复读，不拿 API 读面当期望。
+//
+// 🔴 修 #6938（夹具漂移 —— 9 条判据恒红，把真问题淹没）：本段原夹具送
+//    `quantity:'7.5'`（**米数**），而 **#6812 起 photo 入库该字段 = 卷数（正整数）**、
+//    米数落在 `rollLengthM`（每卷米数），入库米数 = 卷数 × 卷长
+//    ⇒ 服务端逐字拒绝，D5/D7/D9/D10/D11/D12/D16/D17/D18 九条一起红。
+//    ⇒ ① 夹具按真值源改（卷数 2 × 卷长 7.5 = 15.0 米）；
+//       ② 并加一条**契约字段形态**断言（D22）把形态钉住 —— 契约再变 ⇒ 当场红并给出「改哪一格」，
+//          而不是夹具悄悄过期（这是本轮 9 条恒红的成因）。
 import { writeFileSync, readFileSync, existsSync, outPath } from './lib.mjs'
+import { readFileSync as readSrc } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import {
   Recorder, judge, apiWorker, api, log, nowCST, psql, one,
   ensureWorkerSession, storePath, saveStore, idemKey, loginApi, rawWorker, guardedWrite,
@@ -16,7 +26,8 @@ import {
 // 前置清理（幂等）：本包 `la` 前缀域的入库单/标签/明细（含本轮 bisect 期间的探针单）
 {
   const w = (sql) => { try { guardedWrite(`-- probe-ok\n${sql}`) } catch (e) { log(`前置清理跳过: ${e.message.slice(0, 80)}`) } }
-  const sc = `select id from inbound_orders where tenant_id=${20} and id like 'la%'`
+  // 租户/前缀取自 lib.mjs 注入的 env（原实现写死 20 + 'la' ⇒ 换租户后这条清理**空转**）
+  const sc = `select id from inbound_orders where tenant_id=${TENANT_ID} and id like '${ID_PREFIX}%'`
   w(`delete from inbound_labels where inbound_order_id in (${sc});`)
   w(`delete from inbound_order_items where inbound_order_id in (${sc});`)
   w(`delete from inbound_orders where id in (${sc});`)
@@ -73,7 +84,34 @@ judge(R, {
 // ── ② 建草稿：**不动库存** ──
 const stockBeforeDraft = stockOf(sku.sku_id)
 const draftKey = idemKey('p3draft')
-const draftBody = { productId: sku.product_id, skuId: sku.sku_id, quantity: '7.5', unitCost: '12.5', supplier: `${PROBE_PREFIX}供应商`, dyeLot: `${ID_PREFIX}-LOT` }
+// ── ②′ 契约字段形态（真值源 = 产品源码；不手抄，逐条**引用**）──
+// 卷数（正整数）与卷长（每卷米数）不是夹具的约定，是 `WorkerInboundDraftRequest` 的字段语义 ⇒ 直接从源码引用。
+// 读不到真值源 ⇒ fail-closed（不静默跳过、不回落成"大概对"）。
+const REPO = process.env.REPO_ROOT || fileURLToPath(new URL('../../../../..', import.meta.url))
+const readIf = (p) => { try { return readSrc(`${REPO}/${p}`, 'utf8') } catch { return null } }
+const dtoSrc = readIf('backend/admin-api/src/main/java/com/migao/admin/dto/WorkerInboundDraftRequest.java')
+const svcSrc = readIf('backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java')
+const contractFailures = []
+if (!dtoSrc) contractFailures.push('读不到 WorkerInboundDraftRequest.java（REPO_ROOT 指错？）')
+if (!svcSrc) contractFailures.push('读不到 InboundOrderService.java（REPO_ROOT 指错？）')
+// 字段声明**多行**（`private BigDecimal\n    quantity;`）⇒ 不能按单行匹配；取声明周围的 Javadoc 跨度来判语义
+const qtyIdx = dtoSrc ? dtoSrc.indexOf('quantity;') : -1
+const qtySpan = qtyIdx >= 0 ? dtoSrc.slice(Math.max(0, qtyIdx - 600), qtyIdx + 200) : ''
+if (dtoSrc && qtyIdx < 0) contractFailures.push('DTO 里找不到 quantity 字段声明')
+if (dtoSrc && !/卷数/.test(qtySpan)) contractFailures.push('quantity 的字段注释里没有「卷数」⇒ 语义可能已改')
+if (dtoSrc && !/正整数/.test(qtySpan)) contractFailures.push('quantity 的字段注释里没有「正整数」⇒ 准入口径可能已改')
+if (dtoSrc && !/rollLengthM/.test(dtoSrc)) contractFailures.push('DTO 里没有 rollLengthM（卷长）字段')
+if (svcSrc && !(svcSrc.includes('metersFor') && /multiply\(rollLengthM\)/.test(svcSrc))) contractFailures.push('InboundOrderService 的米数换算不再做「× rollLengthM」⇒ 口径可能已改')
+if (svcSrc && !/requireRollCount/.test(svcSrc)) contractFailures.push('InboundOrderService 没有 requireRollCount（卷数正整数准入）')
+// 夹具取值：卷数 = 正整数；卷长 = 每卷米数（photo 单必填）。入库米数 = 2 × 7.5 = 15.0（0.1 米粒度内）
+const ROLL_COUNT = '2'
+const ROLL_LENGTH_M = '7.5'
+const INBOUND_METERS = '15.0'
+const draftBody = {
+  productId: sku.product_id, skuId: sku.sku_id,
+  quantity: ROLL_COUNT, rollLengthM: ROLL_LENGTH_M,
+  unitCost: '12.5', supplier: `${PROBE_PREFIX}供应商`, dyeLot: `${ID_PREFIX}-LOT`,
+}
 const draftBodyJson = JSON.stringify(draftBody)
 // 🔴 载荷取向（主会话独立复核 + 本包实测，两方一致）：`productId`=字符串(products.id)、
 //    `skuId`=**数字**(product_skus.id, bigint)。倒置或传字符串 id ⇒ Jackson 解不出 Long ⇒
@@ -84,12 +122,14 @@ const d1 = await apiWorker('POST', '/api/worker/inbound/drafts', {
 const draftId = d1.json?.data?.draftId ?? null
 const stockAfterDraft = stockOf(sku.sku_id)
 const draftRow = draftId ? one(`select id, inbound_no, status, source, created_by, total_amount::text from inbound_orders where tenant_id=${TENANT_ID} and id='${draftId}'`) : null
+const draftItem = draftId ? one(`select quantity::text as roll_count, roll_length_m::text as roll_length_m from inbound_order_items where tenant_id=${TENANT_ID} and inbound_order_id='${draftId}' limit 1`) : null
 judge(R, {
-  id: 'D5.draft-created', name: 'POST /api/worker/inbound/drafts ⇒ 建单成功（status=draft, source=purchase）',
-  expect: 'HTTP 200 + DB inbound_orders 行 status=draft + source=purchase + created_by=探针工人 id',
-  actual: `HTTP ${d1.status} draftId=${draftId} row=${JSON.stringify(draftRow)}`,
-  pass: d1.status === 200 && draftRow?.status === 'draft' && draftRow?.source === 'purchase' && draftRow?.created_by === A.workerId,
-  expectSource: 'WorkerInboundService.createDraft → InboundOrderService.create（source 服务端固定 purchase；DTO 无 source 键）',
+  id: 'D5.draft-created', name: 'POST /api/worker/inbound/drafts ⇒ 建单成功（status=draft, source=photo[#6812 服务端强制]）',
+  expect: `HTTP 200 + DB 行 status=draft + source=photo + created_by=探针工人 id + 回读卷数=${ROLL_COUNT}/卷长=${ROLL_LENGTH_M}`,
+  actual: `HTTP ${d1.status} draftId=${draftId} row=${JSON.stringify(draftRow)} item=${JSON.stringify(draftItem)}`,
+  pass: d1.status === 200 && draftRow?.status === 'draft' && draftRow?.source === 'photo' && draftRow?.created_by === A.workerId
+    && cents(draftItem?.roll_count) === cents(ROLL_COUNT) && cents(draftItem?.roll_length_m) === cents(ROLL_LENGTH_M),
+  expectSource: 'WorkerInboundService.createDraft → InboundOrderService.create(…, SOURCE_PHOTO)（issue #6812：source 由服务端强制 photo、quantity=卷数、rollLengthM=每卷米数；DTO 无 source 键）',
   evidence: [`resp=${String(JSON.stringify(d1.status >= 300 ? (d1.json?.error ?? d1.text ?? '') : (d1.json?.data ?? ''))).slice(0, 300)}`, `req=${draftBodyJson}`],
 })
 judge(R, {
@@ -126,13 +166,14 @@ const post1 = await apiWorker('POST', `/api/worker/inbound/drafts/${draftId}/pos
 const stockAfterPost = stockOf(sku.sku_id)
 const postRow = one(`select id, status, posted_at is not null as posted, posted_by from inbound_orders where tenant_id=${TENANT_ID} and id='${draftId}'`)
 const ledger = lastLedger()
-const expectStock = fmtQty(BigInt(cents(stockBeforeDraft)) + BigInt(cents('7.5')))
+// 期望**本包独立算出**：入库米数 = 夹具卷数 × 卷长（#6812 的 metersFor 口径），不是照抄请求里的某一个数
+const expectStock = fmtQty(BigInt(cents(stockBeforeDraft)) + BigInt(cents(INBOUND_METERS)))
 judge(R, {
-  id: 'D9.post-moves-stock', name: '过账 ⇒ status=posted + SKU 库存 +7.500（期望本包独立算出） + 台账一行',
-  expect: `stock ${stockBeforeDraft} + 7.500 = ${expectStock}；inbound_orders.status=posted`,
+  id: 'D9.post-moves-stock', name: `过账 ⇒ status=posted + SKU 库存 +${INBOUND_METERS}（= 卷数 ${ROLL_COUNT} × 卷长 ${ROLL_LENGTH_M}，本包独立算出） + 台账一行`,
+  expect: `stock ${stockBeforeDraft} + ${INBOUND_METERS} = ${expectStock}；inbound_orders.status=posted`,
   actual: `HTTP ${post1.status} stock=${stockAfterPost} row=${JSON.stringify(postRow)} ledger=${JSON.stringify(ledger)}`,
   pass: post1.status === 200 && cents(stockAfterPost) === cents(expectStock) && postRow?.status === 'posted',
-  expectSource: 'InboundOrderService.post（过账才动库存）+ stock_ledger_entries 独立复读',
+  expectSource: 'InboundOrderService.post（过账才动库存）+ metersFor(source=photo) = quantity × rollLengthM（#6812）+ stock_ledger_entries 独立复读',
   evidence: [`expectedStock=${expectStock}`, `ledger delta=${ledger?.delta} ${ledger?.before_qty}→${ledger?.after_qty} reason=${ledger?.reason}`],
 })
 const labels = psql(`select l.id, l.short_code, l.print_count, l.inbound_order_id from inbound_labels l where l.tenant_id=${TENANT_ID} and l.inbound_order_id='${draftId}' and l.deleted=0`)
@@ -196,11 +237,40 @@ judge(R, {
   expectSource: 'WorkerInboundService.createDraft：req.skuId==null ⇒ validationError（工人面改写成 400）',
 })
 
+// ── ④′ 契约字段形态（#6938 的**类级出口**）+ 负对照 ──
+// 判据 1：契约没变（D22）—— 契约再变 ⇒ 本条当场红，并逐条说出「哪一格过期了」（不再让夹具悄悄过期）。
+judge(R, {
+  id: 'D22.photo-roll-contract-shape', name: '🔴 契约字段形态自证：#6812 起 photo 入库 `quantity` = **卷数（正整数）**、米数落 `rollLengthM`（真值源逐条引用，不手抄）',
+  expect: 'WorkerInboundDraftRequest.quantity 注释含「卷数 / 正整数」∧ 有 rollLengthM ∧ InboundOrderService.metersFor 做 quantity × rollLengthM ∧ 有 requireRollCount',
+  actual: `真值源=${REPO}/backend/admin-api/src/main/java/com/migao/admin/{dto/WorkerInboundDraftRequest.java,service/InboundOrderService.java}；不匹配项=${JSON.stringify(contractFailures)}`,
+  pass: contractFailures.length === 0,
+  expectSource: '产品真值源（不是夹具约定）：WorkerInboundDraftRequest.java 的 quantity/rollLengthM 字段注释 + InboundOrderService.metersFor/requireRollCount（issue #6812）',
+  evidence: [
+    '回归时会怎么红：契约改成别的形态（例如又允许米数）⇒ 本条红并列出不匹配项；夹具若没跟上，D5 也会红（volume 语义错 ⇒ 服务端拒绝）',
+    `REPO_ROOT=${REPO}（读不到真值源 ⇒ fail-closed，不静默跳过）`,
+  ],
+})
+// 判据 2：**负对照** —— 照旧形态（quantity=米数、无 rollLengthM）必须被**明确拒绝**。
+// 若这条变绿（被接受）⇒ 说明 photo 口径被放开，而 D5 的夹具形态就不再是唯一合法形态 ⇒ 口径该重裁。
+const oldShape = await apiWorker('POST', '/api/worker/inbound/drafts', {
+  sessionId: A.sessionId, body: { productId: sku.product_id, skuId: sku.sku_id, quantity: '7.5', unitCost: '12.5' },
+})
+// 落库读数用**前后计数**（不假设主夹具那张单一定建成功 —— 前置坏了也不许把这条判成"零落库"）
+const oldShapeRows = psql(`select id from inbound_orders where tenant_id=${TENANT_ID} and created_by='${A.workerId}'`).length
+judge(R, {
+  id: 'D23.photo-old-shape-rejected', name: '🔴 负对照：照旧夹具形态（quantity=米数 `7.5`、不传 rollLengthM）⇒ 4xx 拒绝 + **零落库**',
+  expect: `HTTP 4xx（卷数必须正整数）+ 探针工人名下入库单数不变（${oldShapeRows}，即本次未新增）`,
+  actual: `HTTP ${oldShape.status} code=${oldShape.json?.error?.code} msg=${String(oldShape.json?.error?.message).slice(0, 120)} 探针工人名下入库单数=${oldShapeRows}`,
+  pass: oldShape.status >= 400 && oldShape.status < 500 && oldShapeRows === 1,
+  expectSource: 'InboundOrderService.requireRollCount（#6812：卷数必须正整数，「散米 / 尾料请走商家端手工入库」）',
+  evidence: [`body=${JSON.stringify({ productId: sku.product_id, skuId: sku.sku_id, quantity: '7.5', unitCost: '12.5' })}`, 'count=1 = 只有主夹具那一张（本轮该工人名下入库单基数为 0）'],
+})
+
 // ── ⑤ 归属：**自己的草稿才能过账**（非本人 ⇒ 404，不泄露存在性）──
 const draftBKey = idemKey('p3draftB')
 const dB = await apiWorker('POST', '/api/worker/inbound/drafts', {
   sessionId: B.sessionId, headers: { [IDEMPOTENCY_HEADER]: draftBKey },
-  body: `{"productId":${JSON.stringify(sku.product_id)},"skuId":"${sku.sku_id}","quantity":"1.0"}`, raw: true, headers: { 'Content-Type': 'application/json' },
+  body: `{"productId":${JSON.stringify(sku.product_id)},"skuId":"${sku.sku_id}","quantity":"1","rollLengthM":"${ROLL_LENGTH_M}"}`, raw: true, headers: { 'Content-Type': 'application/json' },
 })
 const draftB = dB.json?.data?.draftId ?? null
 const crossPost = draftB ? await apiWorker('POST', `/api/worker/inbound/drafts/${draftB}/post`, { sessionId: A.sessionId, body: { confirmed: true } }) : null
@@ -209,6 +279,7 @@ judge(R, {
   expect: 'HTTP 404', actual: `B 建单=${dB.status}/${draftB} A 过账=${crossPost?.status}/${crossPost?.json?.error?.code}`,
   pass: !!draftB && crossPost?.status === 404,
   expectSource: 'WorkerInboundService.requireOwnDraft：created_by != operator ⇒ notFound(404)（设计 §5.2 逐字）',
+  evidence: [`B 建单响应=${String(dB.text ?? JSON.stringify(dB.json ?? {})).slice(0, 240)}`, `B 建单请求体=quantity 卷数（正整数常量形态，与主夹具同源）`],
 })
 
 // ── ⑥ 标签读面 + 打印留痕 ──

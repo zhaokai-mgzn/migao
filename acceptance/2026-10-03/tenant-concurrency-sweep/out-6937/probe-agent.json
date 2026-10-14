@@ -1,0 +1,117 @@
+[
+  {
+    "id": "G1-服务令牌闸",
+    "name": ":8001 内部面无/伪造 X-Service-Token 必须 401",
+    "status": "pass",
+    "detail": "无=401 伪造=401 空=401",
+    "evidence": [
+      {
+        "case": "G1",
+        "noToken": 401,
+        "bogus": 401,
+        "empty": 401,
+        "head": "{\"detail\":{\"success\":false,\"error\":{\"code\":\"AUTH_REQUIRED\",\"message\":\"Missing X-Service-Token header\"}}}",
+        "note": "A(32)/35 均无 recommended 商品时的空集是数据事实（非隔离证据），隔离判据见 G2/G3"
+      }
+    ],
+    "at": "2026-10-14T14:28:25.279Z"
+  },
+  {
+    "id": "G2-工具直调租户归属",
+    "name": ":8001 /internal/tools/execute：租户由 body.tenant_id 决定，X-Tenant-Id 头不生效",
+    "status": "pass",
+    "detail": "body.tenant_id=32 → 23 件(越租户 0)；=35 → 2 件(越租户 0)；tenant_id=32 + 头 X-Tenant-Id:35 → 23 件(越租户 0)",
+    "evidence": [
+      {
+        "case": "G2-tenant32",
+        "status": 200,
+        "count": 23,
+        "foreign": [],
+        "unknown": 0,
+        "head": "{\"success\":true,\"data\":{\"products\":[{\"id\":\"73cc4ac45d4053719865a88d3570b932\",\"name\":\"线②验收正例E\",\"price\":20.0,\"description\":\"线②验收批量写探针\",\"images\":[],\"main_image\":null,\"stock\":3.0,\"stat"
+      },
+      {
+        "case": "G2-tenant35",
+        "status": 200,
+        "count": 2,
+        "foreign": [],
+        "unknown": 0,
+        "head": "{\"success\":true,\"data\":{\"products\":[{\"id\":\"ee083867bc612a5911ed005742582091\",\"name\":\"6937验收对照商品\",\"price\":12.5,\"description\":\"\",\"images\":[],\"main_image\":null,\"stock\":0,\"status\":\"on_"
+      },
+      {
+        "case": "G2-forged-header",
+        "status": 200,
+        "count": 23,
+        "foreign": [],
+        "unknown": 0
+      }
+    ],
+    "at": "2026-10-14T14:28:27.188Z"
+  },
+  {
+    "id": "G3-C端端点租户过滤",
+    "name": "C 端只读端点按 token/调试身份的租户过滤",
+    "status": "skip",
+    "detail": "第三租户 C 未注入（TENANT_C/PHONE_C 缺）⇒ 「非空夹具」无从取真值 ⇒ 具名 skip，不折算 pass",
+    "evidence": [],
+    "at": "2026-10-14T14:28:27.188Z"
+  },
+  {
+    "id": "G4-C端JWT认证",
+    "name": "C 端 JWT：真 token 可用、坏/缺 token 一律 401（fail-closed，不回落任何租户）",
+    "status": "pass",
+    "detail": "真A=200 真B=200 乱码=401 无token=401 伪造无tenantId=401",
+    "evidence": [
+      {
+        "case": "G4-realA",
+        "status": 200,
+        "got": []
+      },
+      {
+        "case": "G4-realB",
+        "status": 200,
+        "got": []
+      },
+      {
+        "case": "G4-bad",
+        "status": 401,
+        "head": "{\"detail\":{\"success\":false,\"error\":{\"code\":\"TOKEN_INVALID\",\"message\":\"Invalid token: Invalid header padding\"}}}"
+      },
+      {
+        "case": "G4-noToken",
+        "status": 401,
+        "head": "{\"detail\":{\"success\":false,\"error\":{\"code\":\"AUTH_REQUIRED\",\"message\":\"Authentication required\"}}}"
+      },
+      {
+        "case": "G4-forgedNoTenant",
+        "status": 401,
+        "head": "{\"detail\":{\"success\":false,\"error\":{\"code\":\"TOKEN_INVALID\",\"message\":\"Invalid token: Not enough segments\"}}}"
+      }
+    ],
+    "at": "2026-10-14T14:28:27.275Z"
+  },
+  {
+    "id": "G5-并发租户归属",
+    "name": "ai-agent-service 并发下工具直调的租户归属",
+    "status": "pass",
+    "detail": ":8001 并发 60 请求（A=32/B=35 交错工具直调），墙钟 1492ms，首个响应 234ms 时仍有 59 个在飞；越租户响应 0 个",
+    "evidence": [
+      {
+        "case": "G4-bad",
+        "status": 401,
+        "head": "{\"detail\":{\"success\":false,\"error\":{\"code\":\"TOKEN_INVALID\",\"message\":\"Invalid token: Invalid header padding\"}}}"
+      },
+      {
+        "case": "G4-noToken",
+        "status": 401,
+        "head": "{\"detail\":{\"success\":false,\"error\":{\"code\":\"AUTH_REQUIRED\",\"message\":\"Authentication required\"}}}"
+      },
+      {
+        "case": "G4-forgedNoTenant",
+        "status": 401,
+        "head": "{\"detail\":{\"success\":false,\"error\":{\"code\":\"TOKEN_INVALID\",\"message\":\"Invalid token: Not enough segments\"}}}"
+      }
+    ],
+    "at": "2026-10-14T14:28:28.772Z"
+  }
+]

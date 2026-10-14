@@ -1,0 +1,41 @@
+[
+ {
+  "id": "PCW-products",
+  "name": "同租户写正对照·products",
+  "verdict": "pass",
+  "detail": "A(32) 幂等 PUT 自己的对象 → 200；净残留=0=true（⚠️载荷非幂等 ⇒ 已逐字段还原：回到基线）",
+  "evidence": [
+   "PUT /api/admin/products/0260337248dd35d1d81aab42933fcb9a body={\"name\":\"判据红证商品193761\",\"unit\":\"米\",\"basePrice\":68,\"status\":\"on_sale\",\"categoryId\":\"251daf31bacebd08a0a0035200bc3ba4\",\"pricingType\":\"fixed\"} → 200 {\"success\":true,\"data\":{\"id\":\"0260337248dd35d1d81aab42933fcb9a\",\"name\":\"判据红证商品193761\",\"categoryId\":\"251daf31bacebd08a0a0035200bc3ba4\",\"categoryName\":\"判据红证分类193761\",\"basePrice\":68,\"images\":[],\"status\":",
+   "before(整行)={\"id\":\"0260337248dd35d1d81aab42933fcb9a\",\"tenant_id\":32,\"name\":\"判据红证商品193761\",\"category_id\":\"251daf31bacebd08a0a0035200bc3ba4\",\"base_price\":68,\"description\":null,\"main_image\":null,\"images\":[],\"knowledge_base_id\":null,\"stock\":100000,\"stock_w",
+   "after(整行)={\"id\":\"0260337248dd35d1d81aab42933fcb9a\",\"tenant_id\":32,\"name\":\"判据红证商品193761\",\"category_id\":\"251daf31bacebd08a0a0035200bc3ba4\",\"base_price\":68,\"description\":null,\"main_image\":null,\"images\":[],\"knowledge_base_id\":null,\"stock\":100000,\"stock_w"
+  ]
+ },
+ {
+  "id": "PCW-categories",
+  "name": "同租户写正对照·categories",
+  "verdict": "pass",
+  "detail": "A(32) 幂等 PUT 自己的对象 → 200；净残留=0=true（探针未改库）",
+  "evidence": [
+   "PUT /api/admin/categories/3f75557b333324ce7ce38a8854aeb79d body={\"name\":\"工序验收分类074651\"} → 200 {\"success\":true,\"data\":{\"id\":\"3f75557b333324ce7ce38a8854aeb79d\",\"name\":\"工序验收分类074651\",\"level\":1,\"children\":[],\"createdAt\":\"2026-10-14 20:31:14\",\"updatedAt\":\"2026-10-14 20:31:14\",\"sort\":7},\"requestId\":",
+   "before(整行)={\"id\":\"3f75557b333324ce7ce38a8854aeb79d\",\"tenant_id\":32,\"name\":\"工序验收分类074651\",\"parent_id\":null,\"level\":1,\"sort_order\":7,\"icon\":null,\"status\":\"active\",\"created_at\":\"2026-10-14T20:31:14.889238+08:00\",\"updated_at\":\"2026-10-14T20:31:14.889244+0",
+   "after(整行)={\"id\":\"3f75557b333324ce7ce38a8854aeb79d\",\"tenant_id\":32,\"name\":\"工序验收分类074651\",\"parent_id\":null,\"level\":1,\"sort_order\":7,\"icon\":null,\"status\":\"active\",\"created_at\":\"2026-10-14T20:31:14.889238+08:00\",\"updated_at\":\"2026-10-14T20:31:14.889244+0"
+  ]
+ },
+ {
+  "id": "PCW-processing_items",
+  "name": "同租户写正对照·processing_items",
+  "verdict": "skip",
+  "detail": "租户 32（A）无存活行"
+ },
+ {
+  "id": "PCW-customers",
+  "name": "同租户写正对照·customer_profiles",
+  "verdict": "pass",
+  "detail": "A(32) 幂等 PUT 自己的对象 → 200；净残留=0=true（探针未改库）",
+  "evidence": [
+   "PUT /api/admin/customers/67859fe75f484d647f7f265cfa22105d body={} → 200 {\"success\":true,\"data\":{\"id\":\"67859fe75f484d647f7f265cfa22105d\",\"tenantId\":32,\"wechatNickname\":\"线B验收客户-RC-mv8386r86qn6\",\"phone\":\"13950576285\",\"gender\":\"unknown\",\"vipLevel\":\"normal\",\"customerStatus\":\"a",
+   "before(整行)={\"id\":\"67859fe75f484d647f7f265cfa22105d\",\"tenant_id\":32,\"wechat_openid\":null,\"wechat_unionid\":null,\"wechat_nickname\":\"线B验收客户-RC-mv8386r86qn6\",\"phone\":\"13950576285\",\"gender\":\"unknown\",\"region_province\":null,\"region_city\":null,\"region_distric",
+   "after(整行)={\"id\":\"67859fe75f484d647f7f265cfa22105d\",\"tenant_id\":32,\"wechat_openid\":null,\"wechat_unionid\":null,\"wechat_nickname\":\"线B验收客户-RC-mv8386r86qn6\",\"phone\":\"13950576285\",\"gender\":\"unknown\",\"region_province\":null,\"region_city\":null,\"region_distric"
+  ]
+ }
+]

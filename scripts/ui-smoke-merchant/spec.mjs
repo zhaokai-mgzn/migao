@@ -28,6 +28,8 @@ const failReasons = new Map()
 // 失败响应账本（本轮新增）：`console.error` 只说「401」不说是**谁**返回的 —— 没有 URL 就无法归因
 // （2026-10-14 实测：单看 console 文案分不清是 admin-api 还是 ai-agent，归因卡死）。
 const failedResponses = []
+// harness 自己发登录发码请求的窗口标记（`smsLogin` 置位）—— 见 onConsole 的用途说明。
+let loginWindow = false
 
 // ────────────────────────── 结果分类（#6790 / AGENTS.md 铁律）──────────────────────────
 // 三态，**不许互相冒充**（issue #6790 判据 ③④）：
@@ -94,7 +96,14 @@ function journey(name, opts = {}) {
     page.removeAllListeners('console')
     page.removeAllListeners('pageerror')
     const onConsole = (msg) => {
-      if (msg.type() === 'error') errs.push(`[console.error] ${msg.text().slice(0, 300)}`)
+      if (msg.type() !== 'error') return
+      const text = msg.text().slice(0, 300)
+      // harness **自己**发的登录发码请求（`smsLogin` 的 `loginWindow`）：本机连跑会被后端 60s 频控拒
+      // （`SmsService` 抛「发送过于频繁，请 60 秒后重试」）⇒ 400；浏览器只报「status of 400」**不带 URL**
+      // ⇒ 只能按**窗口**判它，否则会把**本旅程**（往往是首个）误判成红。登录若真失败，后面的
+      // `waitForURL('**/dashboard**')` 与 `未取到 access_token cookie` 会照旧红 —— 登录本身未放宽。
+      if (loginWindow && /status of 4\d\d/.test(text)) return
+      errs.push(`[console.error] ${text}`)
     }
     const onPageError = (err) => errs.push(`[pageerror] ${String(err).slice(0, 300)}`)
     page.on('console', onConsole)
@@ -103,7 +112,11 @@ function journey(name, opts = {}) {
       page.removeListener('console', onConsole)
       page.removeListener('pageerror', onPageError)
       // 把本旅程窗口内的**失败响应**（带 URL）并进错误清单，让 401 可归因（上述账本）
-      for (const f of [...new Set(failedResponses.slice(failedFrom))]) errs.push(`[http] ${f}`)
+      for (const f of [...new Set(failedResponses.slice(failedFrom))]) {
+        // harness **自己**发的登录发码请求不计（同上：60s 频控的 400 属环境，不是旅程行为）
+        if (/\/api\/auth\/sms\/send/.test(f)) continue
+        errs.push(`[http] ${f}`)
+      }
       // 分类优先于 pass：未配置 / 前置不满足**都不是**产品失败（#6790 判据 ③④）
       const klass = typeof errClass === 'string' && errClass
         ? errClass
@@ -203,27 +216,34 @@ async function cleanupOrder(page, id) {
 /**
  * 依赖探测（issue #6790 判据 ④）：本租户**能不能生成加工单**。
  *
- * 触发条件（真栈实测，api 日志逐字）：
- *   `INCIDENT_PRODUCTION_ROUTING_UNRESOLVED 订单缺 \`craft\` 且该租户没有默认工艺，生成加工单中止
- *    （不回退常量 韩褶）: tenantId=25, 部位=布帘`
- * ⇒ 该租户**没有配置生产路线/默认工艺** ⇒ `POST /api/admin/processing-orders/generate` **HTTP 200 但
- *   `data` 为空**（不是异常），加工单永远不落库 ⇒ `16-` 的 `.po-print-area` 永不出现。
+ * ⚠️ **归因订正（2026-10-14 现取实测，issue #6940）**：本条原先把**两种完全不同的原因**写成了一条叙事 ——
+ *   「`INCIDENT_PRODUCTION_ROUTING_UNRESOLVED`（tenantId=25，租户未配默认工艺）」是 2026-10 早期在
+ *   **另一个租户**上看到的形态；而本租户（32）**已有**默认工艺 `韩褶` 与默认路线模板
+ *   `窗帘工序路线（默认）`，真正挡住生成的是**订单状态**，服务端逐字：
+ *   `{"orderRef":"…","success":false,"message":"订单 … 当前状态 [pending] 不允许生成加工单，须为已确认","code":"VALIDATION_ERROR"}`
+ *   （`data` **并不为空**）。⇒ 旧写法把「探针单没确认」误报成「租户没配路线」，
+ *   于是 16-/17-/32- 三条旅程**以错误的理由 skip**（skip 的面 = 未覆盖，理由错 ⇒ 没人会去修真因）。
  *
- * 这是**前置数据缺失**（云 dev 租户未配路线），不是选择器漂移、也不是产品回归；
- * 所以 16-/17-/32- 在本形态下判 **skip 并印出来**（skip ≠ pass、也 ≠ fail）。
- * 判据 = `可以自造前置 ⇒ 用 `createOrderFixture`；自造不了 ⇒ 显式登记依赖 + skip`。
+ * 现在：① 探针单先**自造前置**（`PUT /api/admin/orders/{id}/payment` 确认收款 ⇒ confirmed）再探生成能力；
+ *   ② `why` **只用服务端自己给的 `message`/`code`**（不再抄任何历史叙事）。
+ * 仍保留 skip 语义：真配不出来（服务端明确说缺工艺/缺路线）⇒ skip 并**逐字印出服务端的话**（skip ≠ pass）。
  */
 async function processingRouteAvailable(page) {
   const api = await adminApi(page)
   const probeId = await createOrderFixture(page, '冒烟路线探测')
+  // 生成加工单要求订单**已确认**（服务端逐字：「当前状态 [pending] 不允许生成加工单，须为已确认」）⇒
+  // 前置**自造**：先确认收款（pending → confirmed）再探生成能力（不自造就会把「没确认」误判成「租户没配路线」）。
+  await api.put(`/api/admin/orders/${probeId}/payment`).catch(() => {})
   const gen = await api.post('/api/admin/processing-orders/generate', { orderIds: [probeId] })
   const results = Array.isArray(gen?.data) ? gen.data : []
   const ok = results.some((r) => r && r.success !== false)
+  // 归因**只用服务端逐字**（禁止再抄历史叙事 —— 那是 2026-10-14 实测过的错归因来源）
+  const detail = results
+    .map((r) => `${r?.orderRef ?? '?'} → ${r?.message ?? '(服务端未给 message)'}${r?.code ? ` [${r.code}]` : ''}`)
+    .join('；')
   const why = ok
     ? ''
-    : `本租户指定单（${probeId}）生成加工单**未落库**：接口 HTTP 200 但 data 为空 —— `
-      + `api 日志 INCIDENT_PRODUCTION_ROUTING_UNRESOLVED「订单缺 craft 且该租户没有默认工艺」`
-      + `（租户未配生产路线/默认工艺）`
+    : `本租户指定单（${probeId}）生成加工单未落库 —— 服务端逐字：${detail || '(data 为空且未给 message)'}`
   if (ok) await cleanupOrder(page, probeId)
   return { ok, why, probeId }
 }
@@ -263,6 +283,24 @@ async function safeClick(page, locator, label) {
 // 加工单守卫阻断就是这么来的）。判定「页面/按钮是否就位」一律走本助手。
 const waitVisible = (locator, timeout) =>
   locator.waitFor({ state: 'visible', timeout }).then(() => true).catch(() => false)
+
+/**
+ * 等**文本变成期望值**（不是「等它可见」）—— issue #6940 实测的错形态：
+ * 元素**本来就可见**（旧状态文本）时 `waitVisible` 会**立刻返回**，紧接着比较文本 = **拿旧值断言新状态**
+ * ⇒ 结构上**必假红**（`16-` 的 `[发加工]` 徽标：按钮已经切到「开始加工」= 状态确实变了，徽标却还是「已生成」，
+ * 因为比较发生在重取回来之前）。改成有界轮询后，这条断言才**有意义**：
+ * 文本若始终不变 ⇒ 真的红了（渲染没跟着状态走）。
+ */
+const waitForText = async (locator, expected, timeout) => {
+  const deadline = Date.now() + timeout
+  let last = ''
+  for (;;) {
+    last = ((await locator.textContent().catch(() => '')) ?? '').trim()
+    if (last === expected) return last
+    if (Date.now() >= deadline) return last
+    await new Promise((r) => setTimeout(r, 200))
+  }
+}
 
 // ⚠️ toast 助手 `expectToast()` 已**删除**（issue #4314）：全文件零调用 = 死判据，
 // 且它内部 `waitFor(...).catch(() => {})` 吞超时 ⇒ 一旦接上调用点即**恒真**（空判据）。
@@ -346,8 +384,14 @@ async function smsLogin(page, { where, settleMs }) {
     await openAdminLoginTab(page)
     await expectText(page, '管理员登录')
     await page.fill('#phone', PHONE)
-    await safeClick(page, page.getByRole('button', { name: /获取验证码/ }), '获取验证码')
-    await page.waitForTimeout(settleMs)
+    // 发码窗口：本机连跑会被后端 60s 频控拒（400）⇒ 该窗口内的 4xx console 由收集器放行（见 onConsole）。
+    loginWindow = true
+    try {
+      await safeClick(page, page.getByRole('button', { name: /获取验证码/ }), '获取验证码')
+      await page.waitForTimeout(settleMs)
+    } finally {
+      loginWindow = false
+    }
     await page.fill('#code', SMS_CODE)
     await safeClick(page, page.getByRole('button', { name: /登\s*录|登录/ }).last(), '登录')
     await page.waitForURL('**/dashboard**', { timeout: 20000 })
@@ -680,6 +724,23 @@ async function processingJourney(page) {
   const h = await journey('12-processing', { allowKnownConsole: true })(page)
   const uniq = `冒烟加工项${Date.now()}`
   try {
+    // 登录态自补（房内既有形态，见 10-/11-/13- 等）：本旅程在**单组跑**（`--group 12`，01-login 被一并过滤掉）
+    // 时也必须自足 —— 下面的前置自造要直连 admin-api，没有 cookie 会当场「未取到 access_token cookie」
+    // （2026-10-14 实测；全量跑时 cookie 已在，本行立即返回、不重复发码）。
+    await ensureLoggedIn(page)
+    // 加工分类前置**自造**（#4882 起表单只剩「名称 + 加工分类」两个必填项）：
+    // ⚠️ 本租户可能**一个活跃分类都没有**（2026-10-14 实测：8 行全软删）⇒ 弹窗改渲染
+    //    「当前还没有加工分类，加工项必须归属于一个加工分类。请先创建：」+ 内联输入，此时 `select` 不存在
+    //    ⇒ 必填分类为空 ⇒ **保存被客户端校验挡住、POST 根本不发**（列表恒等不到新行，api 日志里连该名字都搜不到）。
+    //    ⇒ 先用 API 建一个（同房内「自造商品/订单」做法），页面随后就会把分类渲染成下拉。
+    // ⚠️ **必须在 `nav()` 之前**：页面在加载时就把分类列表拉进内存（实测截图：晚建于页面加载 ⇒ 弹窗**仍**走
+    //    「请先创建」分支 + 头部「加工分类 (0)」，即使库里已有分类）。
+    const catApi = await adminApi(page)
+    const cats = await catApi.get('/api/admin/processing-categories')
+      .then((r) => (Array.isArray(r?.data) ? r.data : [])).catch(() => [])
+    if (cats.length === 0) {
+      await catApi.post('/api/admin/processing-categories', { name: `冒烟分类${Date.now()}` }).catch(() => {})
+    }
     await nav(page, '/processing', '加工项管理')
     await page.waitForTimeout(1200)
     // 新建
@@ -690,9 +751,7 @@ async function processingJourney(page) {
     await page.fill('input[placeholder*="名称"], input[placeholder*="加工项"], input[id*="name"], input[name="name"]', uniq).catch(async () => {
       await page.locator('form input').first().fill(uniq)
     })
-    // 加工分类（#4882 起表单只剩「名称 + 加工分类」两个必填项，单价/计价方式两项已退场）
-    const categorySelect = page.locator('select').first()
-    await categorySelect.selectOption({ index: 1 }).catch(() => {})
+    await page.locator('select').first().selectOption({ index: 1 }).catch(() => {})
     // 提交
     await page.getByRole('button', { name: /确 定|保存|提交|创建/ }).last().click()
     await page.waitForTimeout(1500)
@@ -944,13 +1003,25 @@ async function orderDetailJourney(page, orderId) {
         const issueBtn = page.getByRole('button', { name: /确认发加工/ }).first()
         if (await waitVisible(issueBtn, 8000)) await issueBtn.click().catch(() => {})
       }
+      // 状态流转**带二次确认弹窗**（实测截图逐字：「确认状态流转 —— 将加工单 JG-… 标记为「开始加工」。
+      // 该动作会写入加工单状态、不可撤销，请确认后再提交。」+ 取消/确认）⇒ 不点「确认」等于**没发生**：
+      // 徽标停在上一态、下一态按钮永不出现（2026-10-14 实测的假红形态，issue #6940）。
+      // 写法照房内既有形态（`[role="dialog"] button` + hasText 过滤，见 19-/21- 的删除确认）：
+      // 该形态不进 `ui_smoke_name_registry.json` / `ui_smoke_first_match.json` 两份**冻结台账**
+      // （那两份只许缩短 ⇒ 新站点一律不许再往里加）。
+      const flowConfirm = page.locator('[role="dialog"] button').filter({ hasText: /^确\s*认$/ }).last()
+      if (await waitVisible(flowConfirm, 3000)) await flowConfirm.click().catch(() => {})
       // 效果层断言（issue #4305）：旧写法断言**全页文本**「已发加工」是**空判据** ——
       // 加工单块的状态时间线恒含四个步骤文案（已生成→已发加工→加工中→加工完成），
       // 无论实际状态如何都能命中（假绿）。改判两件真效果：
       //   ① `.po-print-area` 内的**状态徽标**（该容器内唯一的 `span.bg-primary-50`）逐字等于期望；
       //   ② **按钮切换**（按钮由状态驱动渲染）：发加工后「发加工」消失、「开始加工」出现，依此类推。
       const badge = poBlock.locator('span.bg-primary-50').first()
-      const badgeText = (await waitVisible(badge, 12000)) ? ((await badge.textContent()) ?? '').trim() : ''
+      // 等**文本**变成期望值（issue #6940）：旧写法 `waitVisible(badge) ? textContent() : ''` 在徽标
+      // 本来就可见时立刻返回 ⇒ 拿**旧状态文本**比较新状态 = 结构上必假红（实测：按钮已切到下一态，
+      // 徽标却读到「已生成」）。这里改成有界轮询：文本若始终不变 ⇒ 才是真红。
+      await waitVisible(badge, 12000)
+      const badgeText = await waitForText(badge, expectText, 12000)
       const badgeOk = badgeText === expectText
       const nextBtn = { 发加工: '开始加工', 开始加工: '加工完成', 加工完成: null }[btn]
       const switched = nextBtn

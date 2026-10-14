@@ -38,8 +38,10 @@ jobs:
         working-directory: backend/ai-agent-service
         run: pip install -r requirements.txt -q
 
-      # 凭据名与注入方式照抄既有 workflow（e2e-real.yml:47-50 / ai-agent-tests.yml:73-76 /
-      # deploy-ai-agent-service.yml:99-105）——不新造 secret 名。
+      # 凭据名与注入方式照抄既有 workflow（`e2e-real.yml` / `ai-agent-tests.yml` /
+      # `deploy-ai-agent-service.yml` 三条腿的 secret 注入段）——不新造 secret 名。
+      # ⚠️ 别写 `path:NNN`（drift-audit 的 `ref-freshness`：活跃文件的裸行号几分钟就失效，见 dev-flow §16.7）
+      # —— 按**符号**锚定（workflow 名 / secret 名），别锚行号。
       - name: Run thinking probe (3 real calls)
         working-directory: backend/ai-agent-service
         env:

@@ -1,0 +1,50 @@
+{
+  "posOk": 20,
+  "posTot": 20,
+  "negRejected": 20,
+  "negTot": 20,
+  "leak": 0,
+  "skippedNoRows": [
+    {
+      "note": "正对照不可达：attacker 侧该表无行",
+      "r": "after_sales",
+      "attacker": 35
+    },
+    {
+      "note": "正对照不可达：attacker 侧该表无行",
+      "r": "inbound_orders",
+      "attacker": 35
+    },
+    {
+      "note": "正对照不可达：attacker 侧该表无行",
+      "r": "after_sales",
+      "attacker": 35
+    },
+    {
+      "note": "正对照不可达：attacker 侧该表无行",
+      "r": "inbound_orders",
+      "attacker": 35
+    },
+    {
+      "note": "正对照不可达：attacker 侧该表无行",
+      "r": "after_sales",
+      "attacker": 35
+    },
+    {
+      "note": "正对照不可达：attacker 侧该表无行",
+      "r": "inbound_orders",
+      "attacker": 35
+    },
+    {
+      "note": "正对照不可达：attacker 侧该表无行",
+      "r": "after_sales",
+      "attacker": 35
+    },
+    {
+      "note": "正对照不可达：attacker 侧该表无行",
+      "r": "inbound_orders",
+      "attacker": 35
+    }
+  ],
+  "ev": []
+}
