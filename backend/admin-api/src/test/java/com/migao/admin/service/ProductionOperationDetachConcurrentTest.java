@@ -3,6 +3,7 @@
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.migao.admin.entity.ProductionOperation;
 import com.migao.admin.entity.ProductionOperationPosition;
@@ -16,6 +17,7 @@ import com.migao.admin.mapper.ProductionRouteSignalMapper;
 import com.migao.admin.mapper.ProductionRouteTemplateMapper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,7 +41,7 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -152,13 +154,12 @@ class ProductionOperationDetachConcurrentTest {
     }
 
     /**
-     * 删除权 CAS（{@code ProductionOperationMapper#claimDelete}）的**有序桩**：第 1 次返回 1
-     * （抢到删除权），其后返回 0（已被并发者抢走）。生产路径里这个返回值由 PG 的行锁 +
-     * 条件重估给出（本类的边界见类注释）。
+     * 删除权 CAS（工序行的条件更新）的**有序桩**：第 1 次返回 1（抢到删除权），其后返回 0
+     * （已被并发者抢走）。生产路径里这个返回值由 PG 的行锁 + 条件重估给出（边界见类注释）。
      */
     private void stubCasFirstCallWins() {
         AtomicInteger casCalls = new AtomicInteger();
-        when(productionOperationMapper.claimDelete(any(), any(), any()))
+        when(productionOperationMapper.update(isNull(), any()))
                 .thenAnswer(inv -> casCalls.getAndIncrement() == 0 ? 1 : 0);
     }
 
@@ -213,7 +214,7 @@ class ProductionOperationDetachConcurrentTest {
     @DisplayName("#6936 正对照：单请求串行 detach-and-delete 必须成功（CAS 不误杀）")
     void serialDetachAndDeleteStillSucceeds() {
         stubOneDetachableCell();
-        when(productionOperationMapper.claimDelete(any(), any(), any())).thenReturn(1);
+        when(productionOperationMapper.update(isNull(), any())).thenReturn(1);
 
         Map<String, Object> result = service().deleteDetaching(OP_ID, TENANT);
 
@@ -226,10 +227,19 @@ class ProductionOperationDetachConcurrentTest {
                 .updatePriceAndApplicable(any(), any(), any(), any(), any());
         verify(productionOperationPositionMapper, times(1)).softDelete(any(), any(), any());
 
-        // 谓词完整性：删除权走 mapper 的**条件更新**（`claimDelete`），且**必须判影响行数**
-        // （经 `if (… == 0) throw 409`）；三条谓词（id / tenant_id / deleted=0）由
-        // ProductionOperationDeleteCasMetaGuardTest 按 mapper SQL 逐条扫描（本类只管接线与语义）。
-        verify(productionOperationMapper).claimDelete(eq(OP_ID), eq(TENANT), any());
+        // 谓词完整性：删除权 = 工序行的**条件更新**（`WHERE id + tenant_id + deleted = 0`），且必须
+        // 判影响行数（`if (… == 0) throw 409`）。三条谓词逐个读 wrapper 的**实参**（SQL 段只有占位符）。
+        ArgumentCaptor<LambdaUpdateWrapper<ProductionOperation>> cas =
+                ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(productionOperationMapper).update(isNull(), cas.capture());
+        String segment = cas.getValue().getSqlSegment();
+        System.out.println("[READING #6936 CAS 谓词] sql=" + segment + " params="
+                + cas.getValue().getParamNameValuePairs().values());
+        assertThat(segment.split("AND").length).as("CAS 必须带 id + tenant_id + deleted 三条谓词").isEqualTo(3);
+        assertThat(segment).as("CAS 必须带 tenant_id 谓词（跨租户可写 = 越权）").contains("tenant_id");
+        assertThat(segment).as("CAS 必须带 deleted 谓词（已删的行不得再被抢删除权）").contains("deleted");
+        assertThat(cas.getValue().getParamNameValuePairs().values())
+                .as("谓词实参必须含本租户与 deleted=0").contains(TENANT, 0);
     }
 
     // ── 并发装置 ──

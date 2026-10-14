@@ -694,13 +694,13 @@ class ProductionRoutingReadControllerTest {
         when(productionRouteTemplateMapper.selectList(any())).thenReturn(List.of());
         when(productionRouteRuleMapper.selectList(any())).thenReturn(List.of());
         when(productionOperationPositionMapper.selectList(any())).thenReturn(List.of());
-        when(productionOperationMapper.claimDelete(any(), any(), any())).thenReturn(1);
+        when(productionOperationMapper.update(isNull(), any())).thenReturn(1);
         mockMvc.perform(delete("/api/admin/production/operations/op-busandbian"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.deleted").value(true));
-        // issue #6936：工序行软删改走 mapper 的条件更新（`claimDelete`）——「显式写 deleted=1 + updated_at」
-        // 的写列形态由 ProductionOperationDeleteCasMetaGuardTest 按 mapper SQL 逐条扫描（本用例只管接线）
-        verify(productionOperationMapper).claimDelete(eq("op-busandbian"), eq(TENANT), any());
+        // issue #6936：工序行软删 = 带三条谓词的条件更新（id + tenant_id + deleted=0）+ 影响行数判定；
+        // 形态判据由 ProductionOperationDeleteCasMetaGuardTest 逐条扫描（本用例只管接线与语义）
+        verify(productionOperationMapper).update(isNull(), any());
         verify(productionOperationMapper, never()).updateById(any(ProductionOperation.class));
         // 「SET 侧显式写 deleted=1 + updated_at」的形态判据在 ProductionOperationDeleteCasMetaGuardTest
         // 里按 mapper 的 @Update SQL 逐条扫描（形状判据集中一处，避免同一条主张在两处各写一份）

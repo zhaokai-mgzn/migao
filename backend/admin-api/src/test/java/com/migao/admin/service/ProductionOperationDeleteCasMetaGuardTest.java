@@ -32,139 +32,134 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <h2>判据（每条都会红）</h2>
  * <ol>
- *   <li><b>扫描器非空跑自证</b>：现取写 {@code deleted} 列的 mapper SQL 必须含 {@code claimDelete}
- *       与 {@code softDelete}；现取 service 里抢删除权的调用点必须含 {@code delete} 与
- *       {@code deleteDetaching} —— 候选集为空 / 少了核心对象 ⇒ 先红（形态被改名不是「通过」，
- *       而是「判据失明」）。</li>
- *   <li><b>谓词完整性</b>：凡在 SET 侧写 {@code deleted = 1} 的 mapper SQL，必须同时含
- *       {@code deleted = 0}（已软删的行不得再被抢删除权）与 {@code #{tenantId}}（跨租户可写 = 越权）。</li>
- *   <li><b>CAS 必须在 SET 侧显式写列</b>：{@code claimDelete} 的 SQL 必须显式 {@code deleted = 1}
- *       且保住审计字段 {@code updated_at}（issue #4608：{@code setDeleted(1); updateById(...)}
- *       会被 MP 从 SET 子句剔除 ⇒ 静默 no-op）。</li>
- *   <li><b>抢删除权必须判「影响行数 0」</b>：每个 {@code claimDelete(} 调用点都必须处在
- *       {@code if (… == 0)} 判定里（#6936 的病根本体就是「有谓词但不看影响行数」）。</li>
+ *   <li><b>扫描器非空跑自证</b>：现取 service 里「写 {@code deleted} 列的调用点」（{@code .set(…::getDeleted, 1)}）
+ *       必须含两条软删路径（{@code delete} / {@code deleteDetaching}）—— 候选集为空 / 少了核心对象
+ *       ⇒ 先红（形态被改名不是「通过」，而是「判据失明」）。</li>
+ *   <li><b>谓词完整性</b>：每个写 {@code deleted} 列的调用点，其**同一条链**上必须同时有
+ *       {@code id} 谓词、{@code tenant_id} 谓词、{@code deleted = 0} 谓词（少任何一条 = 跨租户可写 /
+ *       已软删的行被复活 / 全表扫描写）。</li>
+ *   <li><b>CAS 必须显式写列</b>：SET 侧必须显式 {@code .set(…::getDeleted, 1)} 并保住审计字段
+ *       {@code updated_at}（issue #4608：{@code setDeleted(1); updateById(...)} 会被 MP 从 SET 子句剔除
+ *       ⇒ 静默 no-op）。</li>
+ *   <li><b>抢删除权必须判「影响行数 0」</b>：每个行写调用必须处在 {@code if (… == 0)} 判定里
+ *       —— #6936 的病根本体就是「有谓词但不看影响行数」。</li>
  *   <li><b>写路径未登记即红 + 台账不许给不存在的对象盖章</b>：现取「写 deleted 列的 service 方法」
  *       必须逐条登记在台账里；反向，台账里的每条 {@code method} 必须仍能被现取到（改名 ⇒ 红）。</li>
  *   <li><b>登记未被兑现即红</b>：{@code evidence} = {@code <仓库相对路径>::<可检索文本>}，
  *       左侧文件必须存在、右侧必须在该文件里<b>逐字出现</b> ⇒ 防「给不存在的保护盖章」。</li>
- *   <li><b>豁免台账只许缩短</b>：{@code unverified} 必须是冻结基线 {@code unverified_baseline} 的
- *       子集（新增豁免 ⇒ 红）；条数<b>现取</b>（读数打印在断言消息上）。</li>
+ *   <li><b>豁免台账只许缩短</b>：{@code unverified} 必须是冻结基线 {@code unverified_baseline} 的子集
+ *       （新增豁免 ⇒ 红）；条数<b>现取</b>（读数打印在断言消息上）。</li>
  *   <li><b>判别力自证</b>：用<b>合成语料</b>跑与真实源码<b>同一套</b>判定本体 ——
- *       「无谓词 updateById」「有谓词但不判影响行数」「只留赋值不判 0 行」「缺 deleted = 0」
- *       「缺 tenant_id」「未登记写路径」六种坏形态各自判红，合规语料判绿，只改注释不红。</li>
+ *       「缺 {@code deleted = 0}」「缺 {@code tenant_id} 谓词」「有谓词但不判影响行数」
+ *       「只留赋值不判 0 行」「软删写成无谓词 {@code updateById}」五种坏形态各自判红，
+ *       合规语料判绿，只改注释不红。</li>
  * </ol>
  *
  * <p>⚠️ 本判据读<b>源码文本</b>（不做 AST，同 {@code InboundOrderStatusCasMetaGuardTest} 的形态）。
- * 代价：它只能证明「这几个字在文件里」；<b>行为面由实例判据承担</b>：
+ * 代价：它只能证明「这几个字在同一段链上」；<b>行为面由实例判据承担</b>：
  * {@code ProductionOperationDetachConcurrentTest}（#6936）—— 两者缺一不可。</p>
  *
  * <p><b>未固化项（如实登记，不粉饰）</b>：见台账 {@code coverage_boundary} ——
- * ① 形态判据换措辞可绕过（真实防线仍是实例判据）；② 射程只到
- * {@code ProductionOperationCommandService} + 两个工序 mapper；③ 判不了「拿 {@code updateById}
- * 改<b>非 deleted</b> 列」（那不是本表的对象）；④ 本守卫<b>不</b>跑被它引用的实例判据
- * （否则「未登记即红」会退化成全量套件再跑一遍）；⑤ 本守卫<b>不改</b>任何门禁的通过条件、不新增豁免。</p>
+ * ① 形态判据换措辞可绕过（真实防线仍是实例判据）；② 射程 = {@code ProductionOperationCommandService}
+ * 的工序写面（别的模块 / 别的表不在本表射程）；③ 判不了「不改 {@code deleted} 列的写」（那不是本表的对象）；
+ * ④ 本守卫<b>不</b>跑被它引用的实例判据（否则「未登记即红」会退化成全量套件再跑一遍）；
+ * ⑤ 本守卫<b>不改</b>任何门禁的通过条件、不新增豁免；⑥ 与
+ * {@code tests/unit_ci_workflows/test_logic_delete_write_shape.py}（#4608 的显式写列守卫）
+ * <b>有意重叠</b>：那条只管「形态」（不得走 {@code updateById}），本条另管「三谓词 + 影响行数判定 + 未登记即红」。</p>
  */
 @DisplayName("🧱 类级元守卫（#6936）：工序删除权的写路径必须落到 SQL 谓词（未登记即红）")
 class ProductionOperationDeleteCasMetaGuardTest {
 
     private static final String MODULE = "backend/admin-api";
     private static final String MAIN = MODULE + "/src/main/java/com/migao/admin";
-    private static final String OPERATION_MAPPER = MAIN + "/mapper/ProductionOperationMapper.java";
-    private static final String POSITION_MAPPER = MAIN + "/mapper/ProductionOperationPositionMapper.java";
     private static final String SERVICE = MAIN + "/service/ProductionOperationCommandService.java";
     private static final String LEDGER_PATH =
             MODULE + "/src/test/resources/production-operation-delete-cas-ledger.json";
 
-    /** 手写 {@code @Update} 的取块（SQL 自带括号 ⇒ 先取块再剥 Java 语法）。 */
-    private static final Pattern UPDATE_ANNOTATION =
-            Pattern.compile("@Update\\s*\\(((?:[^()]|\\([^()]*\\))*)\\)");
-    /** SET 侧写 {@code deleted = 1}（判「这是不是软删写面」）。 */
-    private static final Pattern SETS_DELETED_ONE =
-            Pattern.compile("deleted\\s*=\\s*1", Pattern.CASE_INSENSITIVE);
+    /** 软删写点：{@code .set(ProductionXxx::getDeleted, 1)}。 */
+    private static final Pattern SET_DELETED =
+            Pattern.compile("\\.set\\(\\s*Production\\w+::getDeleted\\s*,\\s*1\\s*\\)");
+    /** SET 侧必须保住审计字段。 */
+    private static final Pattern SET_UPDATED_AT =
+            Pattern.compile("\\.set\\(\\s*Production\\w+::getUpdatedAt\\s*,");
+    /** 谓词：{@code .eq(ProductionXxx::getId, …)}。 */
+    private static final Pattern EQ_ID = Pattern.compile("\\.eq\\(\\s*Production\\w+::getId\\s*,");
+    /** 谓词：租户。 */
+    private static final Pattern EQ_TENANT = Pattern.compile("\\.eq\\(\\s*Production\\w+::getTenantId\\s*,");
     /** 谓词：{@code deleted = 0}。 */
-    private static final Pattern DELETED_PREDICATE =
-            Pattern.compile("deleted\\s*=\\s*0", Pattern.CASE_INSENSITIVE);
-    /** 谓词：租户（手写 SQL 的参数形态）。 */
-    private static final Pattern TENANT_PARAM =
-            Pattern.compile("#\\{\\s*tenantI?d\\s*\\}", Pattern.CASE_INSENSITIVE);
-    /** 抢删除权的调用点（本单新加的 mapper 入口）。 */
-    private static final Pattern CLAIM_CALL = Pattern.compile("claimDelete\\s*\\(");
+    private static final Pattern EQ_DELETED_ZERO = Pattern.compile("\\.eq\\(\\s*Production\\w+::getDeleted\\s*,\\s*0\\s*\\)");
+    /** 行写调用（条件更新的锚）。 */
+    private static final Pattern ROW_WRITE = Pattern.compile("\\w*[Mm]apper\\.update\\s*\\(");
     /** 「影响行数 == 0」判定。 */
     private static final Pattern ROW_COUNT_GUARD = Pattern.compile("==\\s*0\\s*\\)");
-    /** SET 侧写 deleted 列（lambda 形态 `set(Xxx::getDeleted, 1)`）—— 判「这是不是软删写面」。 */
-    private static final Pattern SETS_DELETED_LAMBDA =
-            Pattern.compile("set\\(\\s*\\w+::getDeleted\\s*,\\s*1\\s*\\)");
     /** 无谓词写（WHERE 仅主键）—— #4608 的静默 no-op 形态。 */
     private static final Pattern UNCONDITIONAL_BY_ID = Pattern.compile("\\w*[Mm]apper\\.updateById\\s*\\(");
-    /** 顶层方法体：4 空格缩进 + **修饰符开头** + `) {` 收尾（修饰符是必需的 —— 否则 `if (…) {` 会被当成方法头）。 */
+    /** 顶层方法体：4 空格缩进 + **修饰符开头** + `) {` 收尾（修饰符必需 —— 否则 `if (…) {` 会被当成方法头）。 */
     private static final Pattern METHOD_HEAD = Pattern.compile(
             "^ {4}(?:public|private|protected|static|final|default|synchronized|abstract)\\b[^\\n]*\\([^;{]*\\)\\s*\\{\\s*$");
-    /** 控制结构关键字（与「方法 + 体」同形，靠名字排除）。 */
+    /** 从方法头里取方法名。 */
+    private static final Pattern METHOD_NAME =
+            Pattern.compile("(\\w+)\\s*\\([^;{]*\\)\\s*\\{\\s*$");
+    /** 控制结构关键字（与方法头同形，靠名字排除）。 */
     private static final List<String> CONTROL_KEYWORDS =
             List.of("if", "for", "while", "switch", "catch", "synchronized", "try", "do");
-    /** 「claimDelete 调用 + 其后的判定」窗口。 */
+    /** 「行写调用 + 其后的判定」窗口（覆盖多行 lambda 链，实测 ~340 字符）。 */
     private static final int GUARD_WINDOW = 600;
 
-    // ────────────────────────────────────────────── 判据 1~3：真语料（mapper 侧）
+    // ────────────────────────────────────────────── 判据 1~4：真语料
 
     @Test
-    @DisplayName("扫描器非空跑自证 + 写 deleted 列的 SQL 必须带 deleted=0 / tenant_id 谓词 + 显式写列")
-    void mapperWritesCarryTheFullPredicate() throws IOException {
-        List<SqlWrite> writes = mapperDeleteWrites(operationMapperText() + "\n" + positionMapperText());
-        List<String> sqls = writes.stream().map(SqlWrite::sql).toList();
+    @DisplayName("扫描器非空跑自证 + 软删写点必须带 id/tenant_id/deleted=0 三谓词 + 显式写列 + 判影响行数")
+    void softDeleteWritesCarryTheFullPredicate() throws IOException {
+        String service = serviceText();
+        List<WriteSite> sites = deleteWriteSites(service);
+        List<String> methods = sites.stream().map(WriteSite::method).toList();
         List<String> offenders = new ArrayList<>();
-        for (SqlWrite w : writes) {
+        for (WriteSite s : sites) {
             List<String> missing = new ArrayList<>();
-            if (!DELETED_PREDICATE.matcher(w.sql()).find()) {
-                missing.add("deleted = 0 谓词");
+            if (!EQ_ID.matcher(s.chain()).find()) {
+                missing.add("id 谓词");
             }
-            if (!TENANT_PARAM.matcher(w.sql()).find()) {
+            if (!EQ_TENANT.matcher(s.chain()).find()) {
                 missing.add("tenant_id 谓词");
             }
+            if (!EQ_DELETED_ZERO.matcher(s.chain()).find()) {
+                missing.add("deleted = 0 谓词");
+            }
+            if (!SET_UPDATED_AT.matcher(s.chain()).find()) {
+                missing.add("updated_at 审计列");
+            }
             if (!missing.isEmpty()) {
-                offenders.add(w.method() + " 缺 " + missing);
+                offenders.add(s.method() + " 缺 " + missing);
             }
         }
-        System.out.println("[READING PG-075 mapper] 写 deleted 列的 SQL=" + sqls + " 违规=" + offenders);
+        System.out.println("[READING PG-075 写点] 写 deleted 列的方法=" + methods
+                + " 违规=" + offenders + " 未判影响行数=" + unguardedWriteMethods(service));
 
-        assertThat(sqls)
-                .as("现取集必须含核心写面（少了 = 被改名或漏扫，判据在变瞎）；实测=" + writes)
-                .isNotEmpty();
-        assertThat(writes.stream().map(SqlWrite::method).toList())
-                .as("工序行的删除权入口（claimDelete）必须在现取集里；实测=" + writes)
-                .contains("claimDelete");
+        assertThat(methods)
+                .as("扫描器必须现取到写 deleted 列的 service 方法（空集 = 判据失明，不是通过）；实测=" + methods)
+                .contains("delete", "deleteDetaching");
         assertThat(offenders)
-                .as("写 deleted 列的 SQL 必须把判断与写入压进同一条语句（无谓词写 = #6936 的病根）")
+                .as("写 deleted 列的条件更新必须带 id + tenant_id + deleted=0 三谓词，并保住 updated_at")
                 .isEmpty();
-
-        // SET 侧形态：显式写 deleted = 1（#4608）+ 保住审计字段 updated_at（「谁在什么时候删的」唯一证据）
-        String claimSql = writes.stream().filter(w -> "claimDelete".equals(w.method())).map(SqlWrite::sql)
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("claimDelete 不在现取写面里：" + writes));
-        System.out.println("[READING PG-075 SET] claimDelete SQL=" + claimSql);
-        assertThat(claimSql).as("CAS 必须显式写 deleted = 1").containsPattern("deleted\\s*=\\s*1");
-        assertThat(claimSql).as("CAS 必须保住 updated_at（审计）").contains("updated_at");
+        assertThat(unguardedWriteMethods(service))
+                .as("行写调用必须判「影响行数 == 0」（有谓词但不判 = 并发下多个请求都进写侧 = #6936 病根）")
+                .isEmpty();
     }
 
-    // ────────────────────────────────────────────── 判据 4~7：真语料（service 侧 + 台账）
+    // ────────────────────────────────────────────── 判据 5~7：台账
 
     @Test
-    @DisplayName("抢删除权必须判影响行数 + 写路径未登记即红 + 登记必须兑现 + 豁免只许缩短")
-    void serviceWritePathsAreRegisteredAndGuarded() throws IOException {
-        String service = serviceText();
-        List<String> paths = serviceDeleteWritePaths(service);
-        List<String> unguarded = claimCallsWithoutRowCountGuard(service);
+    @DisplayName("写路径未登记即红 + 台账不许给不存在的对象盖章 + 登记必须兑现 + 豁免只许缩短")
+    void serviceWritePathsAreRegisteredAndLedgerIsFaithful() throws IOException {
+        List<String> paths = serviceDeleteWriteMethods(serviceText());
         List<String> ledgerMethods = ledgerMethods();
 
-        System.out.println("[READING PG-075 service] 现取写路径=" + paths
-                + " 未判影响行数的 claimDelete 调用点=" + unguarded + " 已登记=" + ledgerMethods);
+        System.out.println("[READING PG-075 台账] 现取写路径=" + paths + " 已登记=" + ledgerMethods);
 
         assertThat(paths)
                 .as("扫描器必须现取到写 deleted 列的 service 方法（空集 = 判据失明）")
                 .contains("delete", "deleteDetaching");
-        assertThat(unguarded)
-                .as("抢删除权必须判「影响行数 0」—— 有谓词但不判 = 并发下多个请求都进写侧（#6936 病根）")
-                .isEmpty();
         assertThat(ledgerMethods)
                 .as("新增写路径未登记即红（下一个 #6936 就是从这里进来的）")
                 .containsAll(paths);
@@ -204,109 +199,115 @@ class ProductionOperationDeleteCasMetaGuardTest {
     // ────────────────────────────────────────────── 判据 8：合成语料判别力自证
 
     @Test
-    @DisplayName("判别力自证（合成语料）：六种坏形态各自判红、合规语料判绿")
+    @DisplayName("判别力自证（合成语料）：五种坏形态各自判红、合规语料判绿")
     void guardHasDiscriminatingPower() {
-        String goodMapper = mapperCorpus("claimDelete", true, true) + mapperCorpus("softDelete", true, true);
-        String goodService = serviceCorpus("delete", guardedClaim()) + serviceCorpus("deleteDetaching", guardedClaim());
+        String good = serviceCorpus("delete", guardedCas()) + serviceCorpus("deleteDetaching", guardedCas());
 
-        System.out.println("[READING PG-075 语料] 合规语料问题清单=" + problems(goodMapper, goodService));
-        assertThat(problems(goodMapper, goodService))
-                .as("合规语料判绿（否则本守卫是恒红噪声）").isEmpty();
+        System.out.println("[READING PG-075 语料] 合规语料问题清单=" + problems(good));
+        assertThat(problems(good)).as("合规语料判绿（否则本守卫是恒红噪声）").isEmpty();
 
-        // 坏形态 ①：无谓词写（= #4608 的静默 no-op 形态）
-        assertThat(problems(mapperCorpus("unconditional", true, true), serviceCorpus("delete",
-                "productionOperationMapper.updateById(new LambdaUpdateWrapper<ProductionOperation>()\n"
-                        + "                .set(ProductionOperation::getDeleted, 1));")))
-                .as("软删走无谓词 updateById（= #4608 静默 no-op 形态）必须判红").isNotEmpty();
+        // 坏形态 ①：缺 deleted = 0 谓词（已软删的行可被再抢删除权）
+        assertThat(problems(serviceCorpus("delete", guardedCas().replace(
+                ".eq(ProductionOperation::getDeleted, 0)\n", ""))))
+                .as("缺 deleted = 0 谓词必须判红").isNotEmpty();
 
-        // 坏形态 ②：谓词齐、但不判影响行数（= #6936 病根本体）
-        assertThat(problems(goodMapper, serviceCorpus("delete", bareClaim())))
+        // 坏形态 ②：缺 tenant_id 谓词（跨租户可写）
+        assertThat(problems(serviceCorpus("delete", guardedCas().replace(
+                ".eq(ProductionOperation::getTenantId, tenantId)\n", ""))))
+                .as("缺 tenant_id 谓词必须判红").isNotEmpty();
+
+        // 坏形态 ③：谓词齐、但不判影响行数（= #6936 病根本体）
+        assertThat(problems(serviceCorpus("delete", bareCas())))
                 .as("有谓词但不判影响行数（没人看 0 行）⇒ 必须判红").isNotEmpty();
 
-        // 坏形态 ③：最隐蔽的一种 —— 赋值留着、`if (… == 0)` 判定被删
-        assertThat(problems(goodMapper, serviceCorpus("delete", "int rows = " + bareClaim())))
+        // 坏形态 ④：最隐蔽的一种 —— 赋值留着、`if (… == 0)` 判定被删
+        assertThat(problems(serviceCorpus("delete", "int rows = " + bareCas())))
                 .as("只留赋值不判 0 行 ⇒ 必须判红（判据的主张本体是判定，不是调用）").isNotEmpty();
 
-        // 坏形态 ④：缺 deleted = 0（软删的行可被再抢删除权）
-        assertThat(problems(mapperCorpus("claimDelete", true, false), goodService))
-                .as("缺 deleted=0 必须判红").isNotEmpty();
+        // 坏形态 ⑤：软删写成无谓词 updateById（= #4608 静默 no-op 形态）
+        assertThat(problems(serviceCorpus("delete",
+                ".set(ProductionOperation::getDeleted, 1)));\n"
+                        + "        productionOperationMapper.updateById(op);")))
+                .as("软删走无谓词 updateById 必须判红").isNotEmpty();
 
-        // 坏形态 ⑤：缺 tenant 谓词（跨租户可写）
-        assertThat(problems(mapperCorpus("claimDelete", false, true), goodService))
-                .as("缺 tenant 谓词必须判红").isNotEmpty();
-
-        // 坏形态 ⑥：新加一条抢删除权但不判影响行数的路径
-        assertThat(problems(goodMapper, goodService + serviceCorpus("undeclaredWrite", bareClaim())))
-                .as("新加一条未登记、也不判影响行数的抢删除权路径 ⇒ 必须判红").isNotEmpty();
+        // 坏形态 ⑥：缺 updated_at 审计列
+        assertThat(problems(serviceCorpus("delete", guardedCas().replace(
+                ".set(ProductionOperation::getUpdatedAt, now))", ")"))))
+                .as("缺 updated_at 审计列必须判红").isNotEmpty();
 
         // 反向对照：只改注释 ⇒ 不红
-        assertThat(problems(goodMapper, goodService.replace("删工序", "删工序（注释微调）")))
+        assertThat(problems(good.replace("删工序", "删工序（注释微调）")))
                 .as("只改注释不得判红").isEmpty();
     }
 
     // ────────────────────────────────────────────── 判定本体（真语料与合成语料共用）
 
-    private record SqlWrite(String method, String sql) {
+    /** 一处「写 deleted 列」的调用点：方法名 + 该软删写点之后 700 字符的链（谓词与判定都在这一段里）。 */
+    private record WriteSite(String method, String chain) {
     }
+
+    private static final int CHAIN = 700;
+    /** 写点**之前**要一起看的窗口（三谓词在 `.set(getDeleted, 1)` 之前 ⇒ 只看后面等于看不见谓词）。 */
+    private static final int CHAIN_BACK = 600;
 
     /** 判定本体：返回问题清单（空 = 合规）。合成语料与真语料**跑同一套**。 */
-    private static List<String> problems(String mapperText, String serviceText) {
+    private static List<String> problems(String serviceText) {
         List<String> out = new ArrayList<>();
-        for (SqlWrite w : mapperDeleteWrites(mapperText)) {
-            if (!DELETED_PREDICATE.matcher(w.sql()).find()) {
-                out.add("mapper " + w.method() + " 缺 deleted = 0");
+        for (WriteSite s : deleteWriteSites(serviceText)) {
+            if (!EQ_ID.matcher(s.chain()).find()) {
+                out.add("service " + s.method() + " 缺 id 谓词");
             }
-            if (!TENANT_PARAM.matcher(w.sql()).find()) {
-                out.add("mapper " + w.method() + " 缺 tenant_id 谓词");
+            if (!EQ_TENANT.matcher(s.chain()).find()) {
+                out.add("service " + s.method() + " 缺 tenant_id 谓词");
+            }
+            if (!EQ_DELETED_ZERO.matcher(s.chain()).find()) {
+                out.add("service " + s.method() + " 缺 deleted = 0 谓词");
+            }
+            if (!SET_UPDATED_AT.matcher(s.chain()).find()) {
+                out.add("service " + s.method() + " 缺 updated_at 审计列");
             }
         }
-        for (String m : claimCallsWithoutRowCountGuard(serviceText)) {
-            out.add("service " + m + " 抢删除权但不判影响行数（0 行 ⇒ 必须 fail-closed）");
+        for (String m : unguardedWriteMethods(serviceText)) {
+            out.add("service " + m + " 行写不判影响行数（0 行 ⇒ 必须 fail-closed）");
         }
-        for (String m : serviceMethodsUsingUpdateById(serviceText)) {
-            out.add("service " + m + " 用了无谓词 updateById（WHERE 仅主键 ⇒ 并发下不互斥）");
+        for (String m : methodsUsingUnconditionalUpdateById(serviceText)) {
+            out.add("service " + m + " 软删写成无谓词 updateById（WHERE 仅主键 ⇒ 并发下不互斥）");
         }
         return out;
     }
 
-    /**
-     * 现取「写 {@code deleted} 列的 mapper SQL」：取每个 {@code @Update} 注解块里含
-     * {@code deleted = 1} 的那些；方法名 = 注解之后第一个 {@code <type> <name>(} 形态的名字。
-     */
-    private static List<SqlWrite> mapperDeleteWrites(String text) {
-        List<SqlWrite> out = new ArrayList<>();
-        Matcher m = UPDATE_ANNOTATION.matcher(text);
-        while (m.find()) {
-            String raw = m.group(1);
-            if (!SETS_DELETED_ONE.matcher(raw).find()) {
-                continue;
+    /** 现取「写 deleted 列的调用点」（写点前后 [-CHAIN_BACK, +CHAIN] 视为同一条链：谓词在写点之前）。 */
+    private static List<WriteSite> deleteWriteSites(String text) {
+        List<WriteSite> out = new ArrayList<>();
+        for (String name : methodNames(text)) {
+            String body = methodBody(text, name);
+            Matcher m = SET_DELETED.matcher(body);
+            while (m.find()) {
+                int from = Math.max(0, m.start() - CHAIN_BACK);
+                int to = Math.min(body.length(), m.end() + CHAIN);
+                out.add(new WriteSite(name, body.substring(from, to)));
             }
-            String sql = raw.replace("\"", "").replace("+", " ").replaceAll("\\s+", " ").trim();
-            String after = text.substring(m.end(), Math.min(text.length(), m.end() + 400));
-            Matcher name = Pattern.compile("(\\w+)\\s*\\(").matcher(after);
-            out.add(new SqlWrite(name.find() ? name.group(1) : "<unknown>", sql));
         }
         return out;
     }
 
-    /** 现取「抢删除权（或显式写列）的 service 方法名」。 */
-    private static List<String> serviceDeleteWritePaths(String text) {
+    /** 现取「写 deleted 列的 service 方法名」。 */
+    private static List<String> serviceDeleteWriteMethods(String text) {
+        List<String> out = new ArrayList<>();
+        for (WriteSite s : deleteWriteSites(text)) {
+            if (!out.contains(s.method())) {
+                out.add(s.method());
+            }
+        }
+        return out;
+    }
+
+    /** 行写调用**不判**「影响行数 == 0」的方法（#6936 病根本体）。 */
+    private static List<String> unguardedWriteMethods(String text) {
         List<String> out = new ArrayList<>();
         for (String name : methodNames(text)) {
             String body = methodBody(text, name);
-            if (CLAIM_CALL.matcher(body).find() || SETS_DELETED_LAMBDA.matcher(body).find()) {
-                out.add(name);
-            }
-        }
-        return out;
-    }
-
-    /** 抢删除权但**不判影响行数**的调用点（方法名）；#6936 的病根本体。 */
-    private static List<String> claimCallsWithoutRowCountGuard(String text) {
-        List<String> out = new ArrayList<>();
-        for (String name : methodNames(text)) {
-            String body = methodBody(text, name);
-            Matcher call = CLAIM_CALL.matcher(body);
+            Matcher call = ROW_WRITE.matcher(body);
             while (call.find()) {
                 int end = Math.min(body.length(), call.end() + GUARD_WINDOW);
                 if (!ROW_COUNT_GUARD.matcher(body.substring(call.start(), end)).find()) {
@@ -317,39 +318,38 @@ class ProductionOperationDeleteCasMetaGuardTest {
         return out;
     }
 
-    /** 用了无谓词 {@code updateById} 的 service 方法。 */
-    private static List<String> serviceMethodsUsingUpdateById(String text) {
+    /** 用了无谓词 {@code updateById} 的软删方法（同方法体里也出现软删写点）。 */
+    private static List<String> methodsUsingUnconditionalUpdateById(String text) {
         List<String> out = new ArrayList<>();
         for (String name : methodNames(text)) {
             String body = methodBody(text, name);
-            if (UNCONDITIONAL_BY_ID.matcher(body).find()
-                    && (CLAIM_CALL.matcher(body).find() || SETS_DELETED_LAMBDA.matcher(body).find())) {
+            if (UNCONDITIONAL_BY_ID.matcher(body).find() && SET_DELETED.matcher(body).find()) {
                 out.add(name);
             }
         }
         return out;
     }
 
-    /** 顶层方法名（4 空格缩进 + `) {` 收尾；控制结构关键字排除）。 */
+    /** 顶层方法名（4 空格缩进 + 修饰符 + `) {` 收尾；控制结构关键字排除）。 */
     private static List<String> methodNames(String text) {
         List<String> out = new ArrayList<>();
         for (String line : text.split("\n")) {
             if (!METHOD_HEAD.matcher(line).matches()) {
                 continue;
             }
-            Matcher name = Pattern.compile("(\\w+)\\s*\\([^;{]*\\)\\s*\\{\\s*$").matcher(line.trim());
+            Matcher name = METHOD_NAME.matcher(line.trim());
             if (!name.find()) {
                 continue;
             }
             String n = name.group(1);
-            if (!CONTROL_KEYWORDS.contains(n)) {
+            if (!CONTROL_KEYWORDS.contains(n) && !out.contains(n)) {
                 out.add(n);
             }
         }
         return out;
     }
 
-    /** 方法体 = 从签名行到下一个顶层签名行（或文件末尾）；同名只取第一处。 */
+    /** 方法体 = 从签名行到下一个顶层签名行（或文件末尾）。 */
     private static String methodBody(String text, String name) {
         String[] lines = text.split("\n", -1);
         int start = -1;
@@ -357,7 +357,7 @@ class ProductionOperationDeleteCasMetaGuardTest {
             if (!METHOD_HEAD.matcher(lines[i]).matches()) {
                 continue;
             }
-            Matcher m = Pattern.compile("(\\w+)\\s*\\(").matcher(lines[i].trim());
+            Matcher m = METHOD_NAME.matcher(lines[i].trim());
             if (m.find() && m.group(1).equals(name)) {
                 start = i;
                 break;
@@ -378,28 +378,8 @@ class ProductionOperationDeleteCasMetaGuardTest {
 
     // ────────────────────────────────────────────── 语料读面
 
-    private static String operationMapperText() throws IOException {
-        return read(OPERATION_MAPPER);
-    }
-
-    private static String positionMapperText() throws IOException {
-        return read(POSITION_MAPPER);
-    }
-
     private static String serviceText() throws IOException {
-        return read(SERVICE);
-    }
-
-    private static String read(String path) throws IOException {
-        return Files.readString(repoRoot().resolve(path), StandardCharsets.UTF_8);
-    }
-
-    /** 合成 mapper 写面（形态与真源码逐字同款：手写 @Update SQL）。 */
-    private static String mapperCorpus(String method, boolean withTenant, boolean withDeletedZero) {
-        return "    @Update(\"UPDATE production_operations SET deleted = 1, updated_at = #{updatedAt} "
-                + "WHERE id = #{id}" + (withTenant ? " AND tenant_id = #{tenantId}" : "")
-                + (withDeletedZero ? " AND deleted = 0" : "") + "\")\n"
-                + "    int " + method + "(@Param(\"id\") String id);\n\n";
+        return Files.readString(repoRoot().resolve(SERVICE), StandardCharsets.UTF_8);
     }
 
     /** 合成 service 方法（形态与真源码同款：4 空格缩进的 `) {` 收尾）。 */
@@ -408,14 +388,24 @@ class ProductionOperationDeleteCasMetaGuardTest {
                 + "        " + body + "\n        return null;\n    }\n\n";
     }
 
-    /** 合规的抢删除权形态（判影响行数）。 */
-    private static String guardedClaim() {
-        return "if (productionOperationMapper.claimDelete(id, tenantId, now) == 0) {";
+    /** 合规的抢删除权形态：三谓词 + 显式写列 + 判影响行数（与真源码逐字同款，只是缩进进了一级）。 */
+    private static String guardedCas() {
+        return "if (productionOperationMapper.update(null, new LambdaUpdateWrapper<ProductionOperation>()\n"
+                + "                .eq(ProductionOperation::getId, id)\n"
+                + "                .eq(ProductionOperation::getTenantId, tenantId)\n"
+                + "                .eq(ProductionOperation::getDeleted, 0)\n"
+                + "                .set(ProductionOperation::getDeleted, 1)\n"
+                + "                .set(ProductionOperation::getUpdatedAt, now)) == 0) {\n"
+                + "            throw BusinessException.conflict(\"并发\", \"重试\");\n        }";
     }
 
     /** 坏形态：谓词齐但不判影响行数。 */
-    private static String bareClaim() {
-        return "productionOperationMapper.claimDelete(id, tenantId, now);";
+    private static String bareCas() {
+        return "productionOperationMapper.update(null, new LambdaUpdateWrapper<ProductionOperation>()\n"
+                + "                .eq(ProductionOperation::getId, id)\n"
+                + "                .eq(ProductionOperation::getTenantId, tenantId)\n"
+                + "                .eq(ProductionOperation::getDeleted, 0)\n"
+                + "                .set(ProductionOperation::getDeleted, 1));";
     }
 
     // ────────────────────────────────────────────── 台账

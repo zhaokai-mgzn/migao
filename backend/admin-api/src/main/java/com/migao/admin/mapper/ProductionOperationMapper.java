@@ -2,12 +2,9 @@ package com.migao.admin.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.migao.admin.entity.ProductionOperation;
-
-import java.time.OffsetDateTime;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
-import org.apache.ibatis.annotations.Update;
 
 /**
  * 生产工序库 Mapper（V49，issue #3995）
@@ -43,30 +40,4 @@ public interface ProductionOperationMapper extends BaseMapper<ProductionOperatio
     @Select("SELECT id FROM production_operations WHERE id = #{id} AND deleted = 0 FOR UPDATE")
     String lockById(@Param("id") String id);
 
-    /**
-     * 🔴 <b>「删除权」的原子闸：条件更新（CAS）</b>（issue #6936；与 #6928 的
-     * {@code InboundOrderMapper#markCancelled} 同款）。
-     *
-     * <p><b>为什么必须有它</b>：{@code delete} / {@code deleteDetaching} 改前是
-     * <b>check-then-act</b>（先读 {@code deleted==0} 判活、再摘格 / 级联软删 / 无条件写回）——
-     * 判断与写入不在同一条语句上 ⇒ 并发下多个请求都读到提交前快照、都进了写侧
-     * （实测 5 并发 ⇒ {@code [200,200,200,422,422]}，成功 3 次）。条件更新把判断与写入压进
-     * <b>同一条语句</b>，PG 对命中行加行锁并持有到事务结束 ⇒ 后到者要么阻塞到前者提交、
-     * 要么看到 0 行受影响。</p>
-     *
-     * <p><b>谓词三条缺一不可</b>：{@code id}（只动这一行）、{@code tenant_id}（手写 SQL 不走
-     * 多租户拦截器的自动追加，跨租户可写 = 越权）、{@code deleted = 0}（已软删的行不得再被抢删除权
-     * —— 手写 SQL 也不走 {@code @TableLogic} 的自动过滤）。<b>显式写列</b> {@code deleted = 1}
-     * （issue #4608：{@code setDeleted(1); updateById(...)} 会被 MP 从 SET 子句里剔除 ⇒ 静默 no-op）
-     * 并保住审计字段 {@code updated_at}（「谁在什么时候删的」的唯一证据）。</p>
-     *
-     * <p>闸必须落在<b>任何副作用之前</b>（摘格 / 级联软删）：这样落败方零副作用、fail-closed。</p>
-     *
-     * @return 影响行数：{@code 1} = 本请求抢到删除权；{@code 0} = 已被并发请求删掉 / 行不存在 / 非本租户
-     */
-    @Update("UPDATE production_operations SET deleted = 1, updated_at = #{updatedAt} "
-            + "WHERE id = #{id} AND tenant_id = #{tenantId} AND deleted = 0")
-    int claimDelete(@Param("id") String id,
-                    @Param("tenantId") Long tenantId,
-                    @Param("updatedAt") OffsetDateTime updatedAt);
 }

@@ -563,13 +563,17 @@ public class ProductionOperationCommandService {
         }
         // ⓪ 抢删除权：条件更新（CAS）—— 判断与写入同一条语句 + PG 行锁 ⇒ 并发下至多一个赢家（issue #6936）。
         // 与同族的另一条路径 **同一形态**（同族写面必须**都**带闸：只有一个带闸 = 两个写面不互斥，
-        // 正是 #6928 的教训）—— 闸落在 `ProductionOperationMapper#claimDelete`
-        // （`WHERE id=? AND tenant_id=? AND deleted=0`，0 行 ⇒ fail-closed 409；
+        // 正是 #6928 的教训）—— 闸 = 本方法的**条件更新**（`WHERE id=? AND tenant_id=? AND deleted=0`，0 行 ⇒ fail-closed 409；
         // 显式写列 deleted=1 而非 updateById —— MP 会把该字段从 SET 剔除，issue #4608）。
         // 闸在**任何副作用之前**（摘格 / 级联软删零写入）⇒ 落败方零副作用。
         // ⚠️ **顺序即语义**：护栏判定在前（被引用 ⇒ 422 文案一字不变），CAS 在后 ⇒ 两者之间没有写入。
         OffsetDateTime now = OffsetDateTime.now();
-        if (productionOperationMapper.claimDelete(id, tenantId, now) == 0) {
+        if (productionOperationMapper.update(null, new LambdaUpdateWrapper<ProductionOperation>()
+                .eq(ProductionOperation::getId, id)
+                .eq(ProductionOperation::getTenantId, tenantId)
+                .eq(ProductionOperation::getDeleted, 0)
+                .set(ProductionOperation::getDeleted, 1)
+                .set(ProductionOperation::getUpdatedAt, now)) == 0) {
             throw BusinessException.conflict(
                     "工序已被其他请求删除（并发操作）",
                     "刷新页面后重试；该工序已由另一个请求删除");
@@ -627,13 +631,17 @@ public class ProductionOperationCommandService {
         }
         // ⓪ 抢删除权：条件更新（CAS）—— 判断与写入同一条语句 + PG 行锁 ⇒ 并发下至多一个赢家（issue #6936）。
         // 与同族的另一条路径 **同一形态**（同族写面必须**都**带闸：只有一个带闸 = 两个写面不互斥，
-        // 正是 #6928 的教训）—— 闸落在 `ProductionOperationMapper#claimDelete`
-        // （`WHERE id=? AND tenant_id=? AND deleted=0`，0 行 ⇒ fail-closed 409；
+        // 正是 #6928 的教训）—— 闸 = 本方法的**条件更新**（`WHERE id=? AND tenant_id=? AND deleted=0`，0 行 ⇒ fail-closed 409；
         // 显式写列 deleted=1 而非 updateById —— MP 会把该字段从 SET 剔除，issue #4608）。
         // 闸在**任何副作用之前**（摘格 / 级联软删零写入）⇒ 落败方零副作用。
         // ⚠️ **顺序即语义**：护栏判定在前（被引用 ⇒ 422 文案一字不变），CAS 在后 ⇒ 两者之间没有写入。
         OffsetDateTime now = OffsetDateTime.now();
-        if (productionOperationMapper.claimDelete(id, tenantId, now) == 0) {
+        if (productionOperationMapper.update(null, new LambdaUpdateWrapper<ProductionOperation>()
+                .eq(ProductionOperation::getId, id)
+                .eq(ProductionOperation::getTenantId, tenantId)
+                .eq(ProductionOperation::getDeleted, 0)
+                .set(ProductionOperation::getDeleted, 1)
+                .set(ProductionOperation::getUpdatedAt, now)) == 0) {
             throw BusinessException.conflict(
                     "工序已被其他请求删除（并发操作）",
                     "刷新页面后重试；该工序已由另一个请求删除");
