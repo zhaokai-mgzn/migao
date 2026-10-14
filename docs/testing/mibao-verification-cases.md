@@ -6574,15 +6574,15 @@
 ```
 你: 扫这张水洗唛，这个部位的宽高、加工类型和用料是多少？
 期望: direct_reply
-数据: positions[] 追加**共享键集**（`PositionSpecFields.DETAIL_KEYS`，三条工人读面同一份；issue #6901 由 9 键扩为 31 键，canonical = snake_case）：商品身份 `product_name` / `sku` / `color_name` / `door_width` / `selling_method` / `unit`；规格尺寸 `width` / `height`；加工信息 `curtain_type` / `craft` / `cutting_mode` / `open_count` / `is_shaped` / `style` / `fullness` / `fullness_actual` / `pleat_count` / `per_panel_pleats` / `panels` / `has_pattern` / `pattern_repeat` / `formula` / `craft_tier` / `special_options` / `processing_meters` / `formula_text`；算料 `fabric_meters`；派工 `batch_no` / `batch_meters` / `component_role`；部位备注 `remark`。P0-C 的原 9 键是其**真子集**，名字与取值口径一字未动
+数据: positions[] 追加**共享键集**（`PositionDetailFields.DETAIL_KEYS`，三条工人读面同一份；issue #6901 由 9 键扩为 31 键，canonical = snake_case）：商品身份 `product_name` / `sku` / `color_name` / `door_width` / `selling_method` / `unit`；规格尺寸 `width` / `height`；加工信息 `curtain_type` / `craft` / `cutting_mode` / `open_count` / `is_shaped` / `style` / `fullness` / `fullness_actual` / `pleat_count` / `per_panel_pleats` / `panels` / `has_pattern` / `pattern_repeat` / `formula` / `craft_tier` / `special_options` / `processing_meters` / `formula_text`；算料 `fabric_meters`；派工 `batch_no` / `batch_meters` / `component_role`；部位备注 `remark`。P0-C 的原 9 键是其**真子集**，名字与取值口径一字未动
 数据: 既有四键（order_item_id / position_kind / position_name / remark）与其值**一字未变**
 数据: 新键逐字取库/取快照（不在 Java 侧重算）；缺失 ⇒ 键恒在且 null（不造 0）
 数据: 不新增 position_remark 别名（部位备注的既有键是 remark —— 一个事实一个键）。⚠️ 机台读面例外：该面既有键名就是 position_remark ⇒ 用**具名排除集** `MACHINE_ROW_EXCLUDED_KEYS` 排除 remark（不覆盖、不别名）
-数据: 🔴 `getOperations` 面上同一事实另有 camelCase 兼容支（既有契约，不改名）⇒ 两支**不许漂移**：判据 = `PositionSpecFieldsTest#twinKeysNeverDrift` —— 孪生对照**现取**（实跑 `OrderLineCraftFields.toSnapshotKeys` 取 camelCase 侧）+ **反空转断言**（一对都取不到 ⇒ 判红，不许静默恒绿）
+数据: 🔴 `getOperations` 面上同一事实另有 camelCase 兼容支（既有契约，不改名）⇒ 两支**不许漂移**：判据 = `PositionDetailFieldsTest#twinKeysNeverDrift` —— 孪生对照**现取**（实跑 `OrderLineCraftFields.toSnapshotKeys` 取 camelCase 侧）+ **反空转断言**（一对都取不到 ⇒ 判红，不许静默恒绿）
 跳过: [backend-contract] 本条只登记「扫码读面加键」这一层**确定性契约**，由单元测试全量覆盖（backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanServiceDetailFieldsTest.java）⇒ 不进 agent-eval 冒烟（同 CH-036 / CH-042 / PG-045 惯例）。
 ```
 真值: processing-manage.scan-position-detail-keys
-溯源: 2026-09-29 新增（母单 #5161，P0-C / PR #5779）：一体机详情面需要这些键，故把「扫码读面补 9 键」钉成可执行判据。**只加不改**是硬要求（既有键改名/改值即红）。⚠️ 契约真值源 `docs/wiki/CONTRACT-LEDGER.md` 的两行由集成侧同批补登（该包边界不含 docs/**）。 ｜ 2026-10-14 追加（母单 #6901，包 A）：键集由 P0-C 的 9 键扩为**三条工人读面共享的唯一一份**（`PositionSpecFields.DETAIL_KEYS`，31 键，canonical = snake_case）—— 修掉「加一个字段、某一屏静默缺失」的成因（此前三面各拼各的键）。机台面用 `MACHINE_ROW_EXCLUDED_KEYS` 排除 `remark`（该面既有键名是 `position_remark`）；`getOperations` 的 camelCase 兼容支与 canonical 支由 `twinKeysNeverDrift` 守「不漂移」。P0-C 原 9 键真子集、一字未改。 ｜ tags: processing, scan, contract, backend-contract
+溯源: 2026-09-29 新增（母单 #5161，P0-C / PR #5779）：一体机详情面需要这些键，故把「扫码读面补 9 键」钉成可执行判据。**只加不改**是硬要求（既有键改名/改值即红）。⚠️ 契约真值源 `docs/wiki/CONTRACT-LEDGER.md` 的两行由集成侧同批补登（该包边界不含 docs/**）。 ｜ 2026-10-14 追加（母单 #6901，包 A）：键集由 P0-C 的 9 键扩为**三条工人读面共享的唯一一份**（`PositionDetailFields.DETAIL_KEYS`，31 键，canonical = snake_case）—— 修掉「加一个字段、某一屏静默缺失」的成因（此前三面各拼各的键）。机台面用 `MACHINE_ROW_EXCLUDED_KEYS` 排除 `remark`（该面既有键名是 `position_remark`）；`getOperations` 的 camelCase 兼容支与 canonical 支由 `twinKeysNeverDrift` 守「不漂移」。P0-C 原 9 键真子集、一字未改。 ｜ tags: processing, scan, contract, backend-contract
 
 ### PG-047. 一体机裁高计算（机台那台屏）：扫水洗唛 ⇒ 详情 + 裁高值 + 一步报工（不写机器；含设备级预设与「去报工页」逃生门；单测覆盖，非 LLM 行为） 🔵
 ```
