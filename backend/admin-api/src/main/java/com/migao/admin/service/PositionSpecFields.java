@@ -132,6 +132,22 @@ final class PositionSpecFields {
             // 部位备注（issue #5685）
             Map.entry("remark", "remark"));
 
+    /**
+     * **只**在 {@code order_items.processing_info} 里才有的键（`ProcessingOrderService#buildSnapshot`
+     * 逐键搬的同一批；{@code toSnapshotKeys} 只覆盖工艺**列**，覆盖不到这些）——
+     * {@code ProductionService#orderSpecByItemId} 把它们**逐字**取进规格快照
+     * ⇒ 三条工人读面（扫码详情 / getOperations / 机台裁高）都能拿到同一份。
+     *
+     * <p>⚠️ 这里的键名是 **{@code processing_info} 的写侧口径**（扁平 camelCase），
+     * 不是下发键 —— 下发键仍在 {@link #SNAPSHOT_SOURCE_KEYS} 里翻译一次。</p>
+     */
+    static final List<String> PROCESSING_INFO_SOURCE_KEYS = List.of(
+            // 商品身份（`buildSnapshot` 的 `copyIfPresent(pi, entry, "skuCode", "sku")` 同一批）
+            "skuCode", "colorName", "doorWidth", "sellingMethod", "unit",
+            // 加工规格（`CRAFT_SPEC_SNAPSHOT_KEYS` 里**没有**对应列的那几个）
+            "style", "hasPattern", "patternRepeat", "formula", "craftTier", "specialOptions",
+            "processingMeters", "formulaText", "componentRole");
+
     /** 数字键（wire 上必须是数字；快照里 `processing_info` 的引擎值可能是字符串）。 */
     private static final Set<String> NUMERIC_KEYS = Set.of(
             "width", "height", "fullness", "fullness_actual", "fabric_meters",

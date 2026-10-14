@@ -854,6 +854,18 @@ public class ProductionService {
                         spec.put(key, pi.get(key));
                     }
                 }
+                // 🔴 母单 #6901（面①）：**商品身份**与**工艺规格**键逐字取 processing_info 的**在场**值
+                // ——`toSnapshotKeys` 只覆盖工艺**列**（`order_items.curtain_type` 一族），而
+                // 货号 / 颜色 / 门幅 / 售卖方式 / 数量单位、款式 / 是否对花 / 花距 / 用料公式 / 档位 /
+                // 特殊选项 / 算料公式 / 加工费米数 / 组件**只在 `processing_info` 里**（与
+                // `ProcessingOrderService#buildSnapshot` 同一批键名）。
+                // 这三面（扫码详情 / getOperations / 机台裁高）的工人屏都从这里取数 ⇒ 少一个键就是
+                // 「加了一个字段、某一屏静默缺失」。
+                for (String key : PositionSpecFields.PROCESSING_INFO_SOURCE_KEYS) {
+                    if (pi.containsKey(key)) {
+                        spec.put(key, pi.get(key));
+                    }
+                }
             }
             byId.put(item.getId(), spec);
         }

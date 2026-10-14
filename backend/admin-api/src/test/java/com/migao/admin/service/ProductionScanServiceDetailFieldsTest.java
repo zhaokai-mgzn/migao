@@ -253,11 +253,14 @@ class ProductionScanServiceDetailFieldsTest {
 
         for (String key : ADDED_IN_6901) {
             assertThat(position).containsKey(key);
+            if ("product_name".equals(key)) {
+                continue; // 它取自 `order_items.product_name` **列**（不是快照键族）⇒ 有值是正确形态
+            }
             assertThat(position.get(key))
                     .as("键 %s 的源缺失 ⇒ 必须是 null，不得折成 0 / false / 空串", key)
                     .isNull();
         }
-        // `product_name` 是唯一有值的（它取自列）
+        // `product_name` 取自列 ⇒ 有值（逐字）
         assertThat(position.get("product_name")).isEqualTo("纱帘B");
     }
 
@@ -530,6 +533,7 @@ class ProductionScanServiceDetailFieldsTest {
         List<String> all = new java.util.ArrayList<>(a);
         all.addAll(b);
         all.add(extra);
-        return all;
+        // `remark` 同时是既有键与明细键（同一件事实一个键）⇒ 去重后比较（键集判据钉的是**集合**）
+        return all.stream().distinct().toList();
     }
 }

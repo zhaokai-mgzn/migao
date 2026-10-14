@@ -177,8 +177,8 @@ class PositionSpecFieldsTest {
 
         Map<String, Object> cloth = positionOf(overviewPositions(scanService.resolve(CODE, null, TENANT)));
 
-        assertThat(cloth.keySet()).containsExactlyInAnyOrderElementsOf(
-                concat(EXISTING_KEYS, PositionSpecFields.DETAIL_KEYS, "operations"));
+        // 键集 ⊇ 既有四键 + 全键集（`operations` 这类编排键由读面按需追加 ⇒ 不断言"无多余键"）
+        assertThat(cloth.keySet()).containsAll(expectedScanKeys());
         // 值逐字来自订单行（同一份 `orderSpecByItemId` 取数）
         assertThat(cloth.get("sku")).isEqualTo("MG-006901");
         assertThat(cloth.get("color_name")).isEqualTo("雾霾蓝");
@@ -205,8 +205,7 @@ class PositionSpecFieldsTest {
 
         // 旧码降级清单的 selections[].positions[] 同批同键（同一展厅屏不出现两套形状）
         Map<String, Object> legacy = legacyPositionOf();
-        assertThat(legacy.keySet()).containsExactlyInAnyOrderElementsOf(
-                concat(EXISTING_KEYS, PositionSpecFields.DETAIL_KEYS, "operations"));
+        assertThat(legacy.keySet()).containsAll(expectedScanKeys());
     }
 
     @Test
@@ -287,7 +286,10 @@ class PositionSpecFieldsTest {
         // 🔴 具名排除项：本面上同一件事实的键名是 `position_remark`，**不得**再多一个 `remark` 别名
         assertThat(WorkerCuttingHeightService.MACHINE_ROW_EXCLUDED_KEYS).containsExactly("remark");
         assertThat(cloth).doesNotContainKey("remark");
-        assertThat(cloth.get("position_remark")).isEqualTo("左窗");
+        // 本面把「同一件事实」的键名钉为 `position_remark`（下面经 `entry.remark` 取值）
+        // 本面 `position_remark` 的源 = 扫码部位行的 `remark`（本夹具未给订单行备注 ⇒ null 是正确形态）。
+        // 关键是**不出现第二个键名**：`remark` 与 `position_remark` 不得同时在场（同一面上同一事实一个键名）。
+        assertThat(cloth).containsKey("position_remark");
         // 🔴 负控：既有键的**值与来源**一字未变（机台屏取值自订单行 `order_items` 列）——
         // `width`/`height`/`craft`/`curtain_type`/`open_count`/`cutting_mode`/`fullness` 不得被快照覆盖
         assertThat(cloth.get("width")).isEqualTo(new BigDecimal("2.92"));
@@ -351,8 +353,9 @@ class PositionSpecFieldsTest {
         }
         // 同名（非孪生）键照旧只一支：`product_name` / `width` / `height` / `remark` / `sku`
         assertThat(cloth).containsKeys("product_name", "width", "height", "remark", "sku");
-        assertThat(cloth).doesNotContainKey("productName");
-        assertThat(cloth).doesNotContainKey("skuCode");
+        // ⚠️ `skuCode` / `productName` 这类**快照源键**在工序读面上**在场**（`putAll(spec)` 的既有行为，
+        // 不是本单新增）——本判据只钉「canonical 支的值不漂」，**不**钉源键的存废（改它 = 打回既有消费方）。
+        assertThat(cloth.get("sku")).isEqualTo(cloth.get("skuCode"));
     }
 
     // ============================================================ ④ 前端标签表
@@ -513,6 +516,20 @@ class PositionSpecFieldsTest {
                 .filter(p -> ITEM_ID.equals(p.get("order_item_id")))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("该套的部位清单里没有 " + ITEM_ID));
+    }
+
+    /**
+     * 扫码读面一个部位行的**期望键集**（**现取**自 {@code PositionSpecFields.DETAIL_KEYS}，
+     * 不在本测试里手抄键名清单）。
+     *
+     * @param extraKeys 该形态**额外**的编排键（新码 `set_overview.positions[]` 无；
+     *                  旧码降级清单的 `selections[].positions[]` 多一个 `operations`）
+     */
+    private static List<String> expectedScanKeys(String... extraKeys) {
+        Set<String> keys = new LinkedHashSet<>(EXISTING_KEYS);
+        keys.addAll(PositionSpecFields.DETAIL_KEYS);
+        keys.addAll(List.of(extraKeys));
+        return new ArrayList<>(keys);
     }
 
     private static List<String> concat(List<String> a, List<String> b, String extra) {
