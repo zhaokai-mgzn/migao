@@ -78,6 +78,16 @@ function aiMsg(content: string): ChatMessage {
 }
 
 /**
+ * 取 markdown 容器；不在就**具名抛错**（不是「弱断言」：`not.toBeNull()` 这类凑数断言会被
+ * QA Growth Gate 判红 —— 本文件第一版就是这样被 CI 抓到的）。
+ */
+function markdownRoot(container: HTMLElement): HTMLElement {
+  const el = container.querySelector('div.prose')
+  if (!el) throw new Error('markdown 容器（div.prose）没渲染出来 —— 组件结构变了？')
+  return el as HTMLElement
+}
+
+/**
  * 渲染一条 AI 回复。
  *
  * ⚠️ 取文本一律取**markdown 容器**（`div.prose`）而不是整个 `container`：气泡外面还有时间戳，
@@ -86,11 +96,10 @@ function aiMsg(content: string): ChatMessage {
 function renderReply(content: string) {
   mockChatStore.messages = [aiMsg(content)]
   const view = render(<MessageList />)
-  const md = view.container.querySelector('div.prose')
-  expect(md, 'markdown 容器没渲染出来（组件结构变了？）').not.toBeNull()
-  const visible = strip(md?.textContent)
-  const strongs = Array.from(md?.querySelectorAll('strong') ?? []).map((el) => strip(el.textContent))
-  return { view, md: md as HTMLElement, visible, strongs }
+  const md = markdownRoot(view.container)
+  const visible = strip(md.textContent)
+  const strongs = Array.from(md.querySelectorAll('strong')).map((el) => strip(el.textContent))
+  return { view, md, visible, strongs }
 }
 
 beforeEach(() => {
