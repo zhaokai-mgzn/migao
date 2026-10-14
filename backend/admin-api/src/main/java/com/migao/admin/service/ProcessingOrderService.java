@@ -118,6 +118,23 @@ public class ProcessingOrderService {
     private final ProductionOperationQtyClient productionOperationQtyClient;
 
     /**
+     * 印刷品上的码的稳定域名（issue #6867 / B3；设计
+     * {@code docs/design/worker-h5-scan-and-report.md} §11.3「后端 · 读面键」）。
+     *
+     * <p><b>与 {@code ProductionService.shortLinkBaseUrl} 取自同一条既有配置</b>
+     * （{@code migao.worker.short-link-base-url}，缺省 {@code https://app.migaozn.com}）——
+     * 域名**不在代码里写第二份字面量**，加工单纸上的码（{@code /o/}）与部位码（{@code /s/}）
+     * 因此换域名时同批生效。</p>
+     *
+     * <p>字段注入 + <b>内联默认值</b>：本类构造签名被多处测试显式 {@code new}（见
+     * {@code ProcessingOrderServiceTest} 的装配注释）⇒ 加构造参数会把这些装配全改一遍，
+     * 而它们都不过 Spring 上下文 ⇒ 取内联默认值（确定性）。同款先例见
+     * {@code ProductionService.shortLinkBaseUrl} 的字段注释。</p>
+     */
+    @Value("${migao.worker.short-link-base-url:https://app.migaozn.com}")
+    private String shortLinkBaseUrl = "https://app.migaozn.com";
+
+    /**
      * 批次消耗台账（V116，issue #5145 阶段 1）：派工扣批次 + 作废回补。
      *
      * <p>用<b>字段注入</b>而不是构造参数：本类构造签名被 5 处测试显式装配
@@ -3749,6 +3766,31 @@ public class ProcessingOrderService {
         return toResponse(po, tenantId, orderMapper.selectById(po.getOrderId()));
     }
 
+    /**
+     * 加工单纸上的码 = {@code {稳定域名}/o/{短码}}（issue #6867 / B3；设计
+     * {@code docs/design/worker-h5-scan-and-report.md} §11.3 的「后端 · 读面键」行）。
+     *
+     * <p><b>服务端拼装</b>（前端不拼 URL —— 拼法只有这一份），域名走上面 {@link #shortLinkBaseUrl}
+     * 那条既有配置。形态与 {@code ProductionService.scanUrlOf(ProcessingSetPartToken)} **同款**
+     * （设计 §11.3 明写「base + 路径段不同 ⇒ **各自一份，不许互相拼**」：{@code /s/} 解「哪一张
+     * 部位纸」、{@code /o/} 解「哪一张加工单纸」，两个码空间互不命中）。</p>
+     *
+     * <p>🔴 <b>短码为空（存量行尚未分配）⇒ 返回 {@code null}</b>，**绝不产出 {@code /o/null}
+     * 这种假码** —— 前端按「无码」处（纸面印 {@code —}），而不是把一个扫不开也输不进的串印出去。
+     * 与 {@code token} 无关：撤销（{@code qr_token} 置 NULL）**不碰短码**，故本键**不因撤销变 null**
+     * （那一跳 {@code /o/{短码}} 见 token 为空 ⇒ 410 Gone，归 B2）。</p>
+     */
+    private String scanUrlOf(ProcessingOrder po) {
+        if (po == null || !StringUtils.hasText(po.getShortCode())) {
+            return null;
+        }
+        String base = shortLinkBaseUrl == null ? "" : shortLinkBaseUrl.trim();
+        while (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        return base + "/o/" + po.getShortCode();
+    }
+
     @SuppressWarnings("unchecked")
     private ProcessingOrderResponse toResponse(ProcessingOrder po, Long tenantId, Order order) {
         ProcessingOrderResponse resp = new ProcessingOrderResponse();
@@ -3772,6 +3814,13 @@ public class ProcessingOrderService {
         resp.setRouteKey(po.getRouteKey());
         resp.setRouteRequestedKey(po.getRouteRequestedKey());
         resp.setRouteSource(po.getRouteSource());
+        // 加工单纸上的码（issue #6867 / B3；设计 §11.3「后端 · 读面键」）：**追加**两键，
+        // 键**恒在**（未知 ⇒ null），既有键一字不动。
+        // 🔴 **零新增查询**：`po` 由本方法的唯一入口 `resolveProcessingOrder`（详情）/
+        // `selectList`/`selectByKeyword`（列表）**已经带回**（`short_code` 是同表列）⇒
+        // 这里只做映射与拼串，不为这两键多查一次 DB。
+        resp.setShortCode(po.getShortCode());
+        resp.setScanUrl(scanUrlOf(po));
         // 订单信息（列表路径由调用方批量取回后传入，单条路径传入单查结果；null 时字段留空，同旧行为）
         if (order != null) {
             resp.setOrderNo(order.getOrderNo());

@@ -56,6 +56,29 @@ public class ProcessingOrderResponse {
     private String routeSource;
 
     /**
+     * 加工单级**人可读短码**（V155，issue #6867 / B3；键名**冻结** = 设计
+     * {@code docs/design/worker-h5-scan-and-report.md} §11.9）。
+     *
+     * <p>取值 = {@code po.getShortCode()}（同表列，随既有查询**已经带回** ⇒ 零新增查询）。
+     * <b>键恒在</b>：存量行尚未分配 / 未实例化 ⇒ {@code null}（**不编造**）——
+     * 前端据此印 {@code —} 并把二维码按「无码」处理。</p>
+     *
+     * <p>⚠️ 必须显式 {@code @JsonProperty}：全局 ObjectMapper **没有** SNAKE_CASE 命名策略
+     * （同本类 {@code formula_text} 等的注记），不标注 ⇒ 键名变成 {@code shortCode} ⇒
+     * 消费方（{@code frontend/admin-web} 的 {@code processingOrder.short_code}）读不到会静默退化。</p>
+     */
+    @JsonProperty("short_code")
+    private String shortCode;
+
+    /**
+     * 加工单纸上的码 = {@code {稳定域名}/o/{短码}}（issue #6867 / B3；键名**冻结**，同上）。
+     * **服务端拼装**（前端不拼 URL）；短码为空 ⇒ 本键也 {@code null}（**不产出 {@code /o/null} 假码**）。
+     * 印刷面直接把本键当二维码内容（{@code qrValue}）。
+     */
+    @JsonProperty("scan_url")
+    private String scanUrl;
+
+    /**
      * 快照明细项
      */
     @Data
