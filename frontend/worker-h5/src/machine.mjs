@@ -25,9 +25,21 @@
 // 工序显示名走**唯一**口径（issue #4963）；模块位置在 issue #6306 迁进树内（`src/shared/`）——
 // 原先住仓根 `frontend/shared/`（发布集之外）⇒ 线上被 SPA 兜底接成 `200 text/html` ⇒ 整页白屏。
 import { operationDisplayName } from './shared/operation-display.mjs'
+// 部位规格的标签 / 单位 / 格式化口径走**唯一一份**（母单 #6901）：报工屏（`render.mjs`）与机台屏
+// （本文件）共用 `position-spec.mjs`，两屏各写一份必然漂移（本仓反复复发的形态）。
+// `EMPTY` / `fmtNumber` / `dataOr` / `digitsOf` 由本模块**原样转出**（既有 import 点一字不动）。
+import {
+  dataOr,
+  DEFAULT_DIGITS,
+  digitsOf,
+  EMPTY,
+  esc,
+  fmtNumber,
+  formatSpecValue,
+  POSITION_SPEC_KEYS,
+} from './position-spec.mjs'
 
-/** 缺值显示（**显式**：缺就显示这个，绝不猜 0 —— 给机器的值偏小 = 裁短 = 事故）。 */
-export const EMPTY = '—'
+export { dataOr, DEFAULT_DIGITS, digitsOf, EMPTY, fmtNumber } from './position-spec.mjs'
 
 /**
  * 「去报工页」出口（issue #6635）：机台那台屏被本机预设钉在裁高页（`?page=cut_calc`）后，
@@ -36,8 +48,7 @@ export const EMPTY = '—'
  */
 export const MACHINE_REPORT_HREF = '/w/?page=report&keep=1'
 
-/** 机器屏精度（三位小数 = mm；服务端 `rounding.digits` 是唯一真值，这里只是渲染兜底）。 */
-export const DEFAULT_DIGITS = 3
+
 
 /**
  * 登录页出口（issue #6667 第 1 条，P0）：机台那台屏**没有登录面**，未登录时只显示
@@ -48,29 +59,6 @@ export const DEFAULT_DIGITS = 3
  * 见 `createScanBuffer` 与 machine.html 的头注释）—— 搬进来等于把那条护栏拆掉。
  */
 export const MACHINE_LOGIN_HREF = '/w/'
-
-const esc = (v) =>
-  String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
-
-/** 数值 → 固定位数文本；`null` / 非数 ⇒ {@link EMPTY}（不显示 0）。 */
-export function fmtNumber(value, digits = DEFAULT_DIGITS) {
-  if (value === null || value === undefined || value === '') return EMPTY
-  const n = Number(value)
-  return Number.isFinite(n) ? n.toFixed(digits) : EMPTY
-}
-
-/** 缺值兜底：空串 / null / undefined ⇒ {@link EMPTY}。 */
-export function dataOr(value) {
-  if (value === null || value === undefined) return EMPTY
-  const text = String(value).trim()
-  return text === '' ? EMPTY : text
-}
-
-/** 取整位数（服务端 `rounding.digits`；缺 ⇒ 三位小数 —— 机器屏口径）。 */
-export function digitsOf(position) {
-  const digits = Number(position?.rounding?.digits)
-  return Number.isInteger(digits) && digits >= 0 && digits <= 3 ? digits : DEFAULT_DIGITS
-}
 
 /**
  * 本次显示值 = 成品高 + Σ(勾选项 × direction)。
@@ -359,8 +347,31 @@ export function detailRows(data, position) {
     // 部位备注（issue #6667 第 9 条）：备注是**商家挂在某个商品行上**的自由文本，多部位单里
     // 只印备注 ⇒ 工人不知道说的是哪一幅帘 ⇒ 印成「商品行名 · 备注」。缺商品行名 ⇒ 只印备注（不塞占位）。
     ['部位备注', remarkText(position), ''],
+    // ── 商品身份（母单 #6901 组 1）──────────────────────────────────────────────
+    ['货号', position?.sku, ''],
+    ['颜色', position?.color_name, ''],
+    ['门幅', position?.door_width, ''],
+    // ── 加工信息 / 派工（母单 #6901 组 3 / 组 5）────────────────────────────────
+    // 🔴 标签 / 单位 / 格式化**逐字来自共享表** `position-spec.mjs::POSITION_SPEC_KEYS`
+    //    （与报工屏同一份；本文件**不**再写第二份标签）。数值形态 = 机台屏既有口径（`m` 三位小数 /
+    //    `int` 整数 / 缺值 `—`）⇒ 既有断言（`定高买宽` / `韩褶` / `8.100` / `—`…）逐字不变。
+    ...POSITION_SPEC_KEYS
+      .filter((spec) => !MACHINE_DETAIL_COVERED.has(spec.key))
+      .map((spec) => [spec.label, position?.[spec.key], spec.unit ?? '', spec.format ?? '']),
   ]
 }
+
+/**
+ * 机台屏**已单独印过**的规格键（上面那 12 行）。
+ *
+ * <p>不排除 ⇒ 同一件事实在一屏上印两遍（`米` 单位也会重复）。这是**排除**而不是改上面那 12 行：
+ * 那 12 行的顺序与文案是机台屏的既有真值（`worker-h5-machine.test.mjs` 逐字断言），
+ * 共享表只**追加**它多出来的键。</p>
+ */
+const MACHINE_DETAIL_COVERED = new Set([
+  'width', 'height', 'craft', 'curtain_type', 'open_count', 'cutting_mode',
+  'fullness', 'fabric_meters',
+])
 
 /** 「商品行名 · 部位备注」；两者都缺 ⇒ `null`（由 `dataOr` 兜成「—」）。 */
 function remarkText(position) {
@@ -373,12 +384,9 @@ function remarkText(position) {
 function kvRows(rows) {
   return rows
     .map(([label, value, unit, format]) => {
-      let shown = dataOr(value)
-      if (value !== null && value !== undefined && Number.isFinite(Number(value))) {
-        if (format === 'm') shown = fmtNumber(value, DEFAULT_DIGITS)
-        else if (format === 'int') shown = String(Math.trunc(Number(value)))
-        else shown = String(Number(value))
-      }
+      // 值 → 文本走**共享**口径（`position-spec.mjs::formatSpecValue`）—— 机台屏的 `m` / `int` / 缺值 `—`
+      // 读数逐字不变，只是不再在第二处各写一份（母单 #6901）。
+      const shown = formatSpecValue(value, format)
       return `<div class="wh5-machine__kv"><dt>${esc(label)}</dt><dd>${esc(shown)}${shown === EMPTY ? '' : esc(unit ?? '')}</dd></div>`
     })
     .join('')
