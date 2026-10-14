@@ -74,6 +74,40 @@ function text(value: unknown): string {
 }
 
 /**
+ * 订单行的**数量口径**（值 + 单位）—— 屏幕 / 纸面共用的唯一取值口（issue #6901）。
+ *
+ * 病根（实测）：同一个 `quantity` 在四处各拼一遍（纸面列名写死「数量(米)」、加工单块
+ * `数量 ${quantity}${unit}`、进度表 `${n} ${unit}`、复制文本 `数量:${q}${unit}`）
+ * ⇒ 单位换一处、别处仍印「米」（**没有任何东西会因此变红**）。
+ *
+ * 单位真值源（按可用性顺序）：
+ * ① 加工单**快照行** `unit`（`ProcessingOrderItem.unit`，后端快照键）；
+ * ② 订单行自己的 `unit`（本系统的 `OrderItem` 详情 DTO **不下发**该键 ——
+ *    `docs/design/print-media-matrix.md` 的缺口表登记为「数量恒为米」；键一旦下发即自动生效）。
+ * 两者都缺 ⇒ 只给值（**不编「米」**：编了就是替客户断言一个没采集到的口径）。
+ *
+ * ⚠️ 非有限数（`undefined` / `null` / `NaN` / 空串）⇒ `quantity` 为 `null`，
+ * 由调用方按自己的缺值口径渲染（纸面印 `—`）—— 本 helper **不**决定占位形态。
+ */
+export function orderItemQuantity(source: {
+  quantity?: unknown
+  unit?: unknown
+}): { quantity: string | null; unit: string } {
+  const unit = text(source.unit)
+  const raw = source.quantity
+  if (typeof raw === 'number' && Number.isFinite(raw)) return { quantity: String(raw), unit }
+  if (typeof raw === 'string' && raw.trim() !== '') return { quantity: raw.trim(), unit }
+  return { quantity: null, unit }
+}
+
+/** 数量 + 单位（单位缺省 ⇒ 只给数量，不留悬空空格） */
+export function quantityWithUnit(source: { quantity?: unknown; unit?: unknown }): string {
+  const { quantity, unit } = orderItemQuantity(source)
+  if (quantity === null) return ''
+  return unit ? `${quantity} ${unit}` : quantity
+}
+
+/**
  * `craftSpecRows()` **去掉「门幅」** —— 屏幕 / 纸面凡**另有**一处印门幅的面都用它（issue #6893）。
  *
  * 为什么必须收敛成**一个** helper：`craftSpecRows()` 会带出「门幅」行，而屏幕上很多地方另印一处

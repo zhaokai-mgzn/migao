@@ -54,7 +54,7 @@ SINGLE_PROJECTION: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "加工单",
         "frontend/admin-web/src/components/orders/ProcessingDoc.tsx",
-        ("品名", "货号", "颜色", "门幅", "尺寸", "数量(米)", "组件", "批号", "备注"),
+        ("品名", "货号", "颜色", "门幅", "尺寸", "数量", "组件", "批号", "备注"),
     ),
     (
         "销售单",

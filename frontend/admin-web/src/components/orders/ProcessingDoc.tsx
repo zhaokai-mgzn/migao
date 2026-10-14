@@ -5,11 +5,21 @@ import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
 import { QRCodeSVG } from 'qrcode.react'
 import { freightText } from '@/lib/logistics'
-import { orderItemSku } from '@/lib/order-item-sku'
+import { orderItemQuantity, orderItemSku, quantityWithUnit } from '@/lib/order-item-sku'
+// 工序显示名的**唯一**口径（issue #4621）：纸面**不得**直接渲染工人端变体名（`operation`）
+import { operationDisplayName } from '@/lib/operation-display'
+// 工序清单的索引 / 状态文案（issue #6901）：与商家端加工单块**同一份**实现
+import { operationStatusText, operationsByItem } from '@/lib/operation-list'
 import { printBodyFontPt, printPageRule } from '@/lib/print-media'
 import { cn } from '@/lib/utils'
 import type { PrintTarget } from './index'
-import type { Order, OrderItem, ProcessingOrder, ProcessingOrderItem } from '@/types'
+import type {
+  Order,
+  OrderItem,
+  ProcessingOrder,
+  ProcessingOrderItem,
+  ProductionPosition,
+} from '@/types'
 
 /**
  * 加工单（可打印纸质文档 · **A4**，issue #5651）—— 照客户现行实物制式（去 PII 后登记在
@@ -20,8 +30,9 @@ import type { Order, OrderItem, ProcessingOrder, ProcessingOrderItem } from '@/t
  * ① **表头**：订单日期 / 客户 / 电话 / 地址 / 备注 / **制单人** / **单号** / **交付日期** /
  *    **货运**；**右上角一张 QR**（加工单号码，见下「QR 口径」）；
  * ② **正文**：**按套分块** —— 每块段头 `第N套/共M套`，块内一张 9 列表
- *    （{@link PROCESSING_DOC_COLUMNS}：品名 | 货号 | 颜色 | 门幅 | 尺寸 | 数量(米) | 组件 | 批号 | 备注）
- *    ＋ 一行「工艺：…」（原「部位信息」列的内容，issue #6869）；
+ *    （{@link PROCESSING_DOC_COLUMNS}：品名 | 货号 | 颜色 | 门幅 | 尺寸 | 数量 | 组件 | 批号 | 备注）
+ *    ＋ 一行「工艺：…」（原「部位信息」列的内容，issue #6869）
+ *    ＋ 一块「工序清单」（issue #6901，见下「工序清单口径」）；
  *    品名 / 货号 / 颜色 / 门幅 取 `lib/order-item-sku.ts` 的 `orderItemSku()`；
  * ③ **分页**：每套 `break-inside: avoid`（不跨页裁切）、`thead` 用
  *    `display: table-header-group`（长单跨页时**表头重复**，否则第二页起认不出列）；
@@ -46,6 +57,25 @@ import type { Order, OrderItem, ProcessingOrder, ProcessingOrderItem } from '@/t
  *    不是「暂时取不到」。登记在 `docs/design/print-media-matrix.md` 的未核实项。
  * 3. **金额一律不前端现算**：本单据**不印金额**（客户实证 #3 的加工单没有金额列）⇒
  *    天然没有第二份金额真值。加工费口径只在报价单 / 发货单走 `lib/order-amount.ts`。
+ *
+ * ## 工序清单口径（issue #6901 —— 工人要按它决定「这张单要做哪几道」）
+ *
+ * 用户逐字「加工单缺乏订单中的规格尺寸和加工信息，工人需要这些信息+商品信息来决定如何生产」
+ * ⇒ 纸面补**逐道工序**：显示名（{@link OPERATIONS_DOC_COLUMNS}）/ 单位 / 应做数量 / 状态。
+ * - **取数**：调用方把既有读面 `GET /api/admin/production/orders/{id}/operations`
+ *   （`ProductionService#operationView` 的 `positions[].operations[]`）原样传进来
+ *   （`operations` prop）—— 本组件**不重算工序、不新造端点、不新造第二份取数**；
+ * - **显示名**一律走仓内唯一口径 `lib/operation-display.ts::operationDisplayName()`
+ *   （底表已按部位分块 ⇒ 传 `{ logical_name }` 只取逻辑名，不再拼一遍部位）；
+ * - **按套对齐**：`position.order_item_id` = 订单行 id（与洗水码/批号**同一把钥匙**）；
+ *   对不上 / 该套没有工序实例（订单还没生成加工单）⇒ **整块不出现**（不印空表、不印占位表头）；
+ * - **分页**：工序行与明细表同属 `.processing-set`（`break-inside: avoid`）⇒ 不跨页裁切。
+ *
+ * ## 数量列的单位（issue #6901）
+ *
+ * 列名原先写死「数量(米)」，而 `quantity` 的单位可能是米/件/套（`OrderItem.unit`）
+ * ⇒ **同一行**里列名与值都来自 `lib/order-item-sku.ts::orderItemQuantity()`，
+ * 两处不会各写一份（口径收敛在一处）。
  *
  * ## 打印隔离（沿用 #4983 / #4965 范式，勿退回旧写法）
  *
@@ -75,6 +105,12 @@ interface ProcessingDocProps {
   /** 右上 QR 的内容（**加工单级稳定短链** `{base}/o/{短码}`，issue #6867）；调用方给不出 ⇒ `null`（出占位框，不画假码） */
   qrValue?: string | null
   /**
+   * 本订单的**工序清单**（既有读面 `GET /api/admin/production/orders/{id}/operations` 的
+   * `positions[]`，issue #6901）。调用方原样传 —— 本组件**不取数、不重算**。
+   * 缺省 / 空 / 该套没有工序实例（订单还没生成加工单）⇒ 工序块**整块不出现**。
+   */
+  operations?: ProductionPosition[] | null
+  /**
    * 本次打印的目标（`'processing'` = 打印本加工单）。**只在为 `'processing'` 时**置位
    * `data-print-target` —— 否则会把同页的发货单 / 报价单 / 销售单重新藏掉（#4965 实测回归）。
    */
@@ -99,11 +135,27 @@ export const PROCESSING_DOC_COLUMNS = [
   '颜色',
   '门幅',
   '尺寸',
-  '数量(米)',
+  '数量',
   '组件',
   '批号',
   '备注',
 ] as const
+
+/**
+ * 工序清单块的列（issue #6901）—— 与 `PROCESSING_DOC_COLUMNS` **不是**同一串标签
+ * ⇒ 打印介质守卫 C5（「每个单据的列清单在 `src/**` 里恰好命中一个文件」）不受影响。
+ */
+export const OPERATIONS_DOC_COLUMNS = ['工序', '名称', '应做', '状态'] as const
+
+/** 工序主列（显示名）占的细列数：其余两列各占 1（合计 = 表头 9 列，issue #6595 的列数不变量） */
+const OPERATIONS_NAME_SPAN = PROCESSING_DOC_COLUMNS.length - (OPERATIONS_DOC_COLUMNS.length - 1)
+
+/**
+ * 工序清单的索引 / 状态文案（issue #6901）**在本模块转出**：纸面单据的公开面就是本文件，
+ * 消费方（`ProcessingOrderBlock`、各单据测试）从**同一处**取，不各自 import 两份路径。
+ * 实现只有一份 = `frontend/admin-web/src/lib/operation-list.ts`。
+ */
+export { operationsByItem, operationStatusText } from '@/lib/operation-list'
 
 /** 纸面缺值占位（**显式**：不静默留空） */
 export const MISSING = '—'
@@ -154,6 +206,7 @@ export default function ProcessingDoc({
   order,
   processingOrder,
   qrValue,
+  operations,
   printTarget,
   inline,
   className,
@@ -169,6 +222,8 @@ export default function ProcessingDoc({
   const creator = paperText(order.createdByName)
   // 批号 = 加工单**快照**行的 `batchNo`（按 `itemId` 与商品行对齐；对不上 ⇒ 该行不猜）
   const snapshots = snapshotIndex(processingOrder)
+  // 工序清单按 `order_item_id`（= 订单行 id）索引 —— 与洗水码 / 批号**同一把钥匙**（issue #6901）
+  const operationsIndex = operationsByItem(operations)
   const docNo = paperText(processingOrder?.processingOrderNo ?? order.orderNo)
   // 交付日期：加工单的交期优先，缺则回落到订单的「要求到货日」（#5177）—— 都是服务端字段
   const delivery = formatDate(processingOrder?.expectedDeliveryDate ?? order.requiredDeliveryDate)
@@ -283,6 +338,7 @@ export default function ProcessingDoc({
             key={item.id || idx}
             item={item}
             snapshot={item.id ? snapshots.get(item.id) : undefined}
+            operations={item.id ? operationsIndex.get(item.id) : undefined}
             index={idx}
             total={items.length}
           />
@@ -306,15 +362,22 @@ export default function ProcessingDoc({
 
 // ========== 每套（= 每个商品行）一段 ==========
 
+/** 列位（按 {@link PROCESSING_DOC_COLUMNS} 的顺序取，**不写魔数** —— 列序调整时这里会一起错） */
+const COL_QUANTITY = PROCESSING_DOC_COLUMNS.indexOf('数量')
+const COL_BATCH = PROCESSING_DOC_COLUMNS.indexOf('批号')
+
 function SetBlock({
   item,
   snapshot,
+  operations,
   index,
   total,
 }: {
   item: OrderItem
   /** 该商品行对应的加工单**快照行**（批号从这里读；对不上 ⇒ `undefined`，不猜） */
   snapshot?: ProcessingOrderItem
+  /** 该商品行的**工序实例**（读面 `positions[]` 里 `order_item_id` 命中的那一组；无 ⇒ 工序块不出现） */
+  operations?: ProductionPosition
   index: number
   total: number
 }) {
@@ -331,8 +394,26 @@ function SetBlock({
   const size = width !== null && height !== null ? `${width}×${height}` : ''
   // 组件：面料行 = componentRole（缺省即主布）
   const componentRole = paperText(info.componentRole, '主布')
-  // 数量（米）= 该行数量；缺 ⇒ 显式占位
-  const meters = typeof item.quantity === 'number' && Number.isFinite(item.quantity) ? String(item.quantity) : MISSING
+  // 数量 + 单位（issue #6901）：**一个**取值口（`lib/order-item-sku.ts`）同时喂「列名」与「值」——
+  // 原先列名写死「数量(米)」而 `quantity` 的单位可能是件/套（快照行 `unit`）
+  // ⇒ 同一行里列名与值各说一份单位。缺值 ⇒ 显式占位 `—`（不静默留空）。
+  const quantity = orderItemQuantity({ quantity: item.quantity, unit: snapshot?.unit })
+  // 列名按本行的单位：有单位 ⇒ `数量(米)`，没采集到 ⇒ 只写 `数量`（**不编「米」**）
+  const quantityLabel = quantity.unit
+    ? `${PROCESSING_DOC_COLUMNS[COL_QUANTITY]}(${quantity.unit})`
+    : PROCESSING_DOC_COLUMNS[COL_QUANTITY]
+  // 工序清单（issue #6901）：**逐道**印显示名 / 应做 / 状态；空 ⇒ `operationsRow` 为 null ⇒ 整块不出现
+  const operationsRows = (operations?.operations ?? []).map((op, i) => (
+    <tr key={op.id ?? i} data-testid="processing-doc-operation">
+      <DocTd colSpan={OPERATIONS_NAME_SPAN} testId="processing-doc-operation-name">
+        {paperText(operationDisplayName(op), MISSING)}
+      </DocTd>
+      <DocTd testId="processing-doc-operation-qty">
+        {quantityWithUnit({ quantity: op.qty, unit: op.unit }) || MISSING}
+      </DocTd>
+      <DocTd testId="processing-doc-operation-status">{operationStatusText(op.status)}</DocTd>
+    </tr>
+  ))
 
   return (
     <div className="processing-set mb-3" data-testid={`processing-doc-set-${index}`}>
@@ -350,7 +431,7 @@ function SetBlock({
             <DocTh className="w-[7%]">{PROCESSING_DOC_COLUMNS[3]}</DocTh>
             <DocTh className="w-[10%]">{PROCESSING_DOC_COLUMNS[4]}</DocTh>
             <DocTh align="right" className="w-[11%]">
-              {PROCESSING_DOC_COLUMNS[5]}
+              {quantityLabel}
             </DocTh>
             <DocTh className="w-[8%]">{PROCESSING_DOC_COLUMNS[6]}</DocTh>
             <DocTh className="w-[17%]">{PROCESSING_DOC_COLUMNS[7]}</DocTh>
@@ -364,7 +445,7 @@ function SetBlock({
             <DocTd>{sku.color || MISSING}</DocTd>
             <DocTd>{sku.doorWidth || MISSING}</DocTd>
             <DocTd>{size || MISSING}</DocTd>
-            <DocTd align="right">{meters}</DocTd>
+            <DocTd align="right">{quantity.quantity ?? MISSING}</DocTd>
             <DocTd>{componentRole}</DocTd>
             {/* 批号 = 快照行的 `batchNo`（指派批次时写入）。缺值印 `—`（= 未指派），
                 与「我们没有这个字段」是两件事（issue #5914；登记见 PROCESSING_DOC_NOT_COLLECTED_FIELDS） */}
@@ -381,6 +462,21 @@ function SetBlock({
               <DocTd>工艺</DocTd>
               <DocTd colSpan={8}>{craftText}</DocTd>
             </tr>
+          )}
+          {/* 工序清单（issue #6901）：**这一套要做哪几道** —— 显示名 / 应做（数量+单位）/ 状态。
+              🔴 整块由 `operationsRows.length > 0` 决定：无工序实例（订单还没生成加工单 /
+              该行对不上 `order_item_id`）⇒ **整块不出现**（不印空表、不印占位表头）。
+              行标签 + 子表头 + 每道一行：整行占满 9 列（1 + colSpan 8，issue #6595 的列数不变量）。 */}
+          {operationsRows.length > 0 && (
+            <>
+              <tr data-testid="processing-doc-operations">
+                <DocTd>{OPERATIONS_DOC_COLUMNS[0]}</DocTd>
+                <DocTd colSpan={OPERATIONS_NAME_SPAN}>{OPERATIONS_DOC_COLUMNS[1]}</DocTd>
+                <DocTd align="right">{OPERATIONS_DOC_COLUMNS[2]}</DocTd>
+                <DocTd>{OPERATIONS_DOC_COLUMNS[3]}</DocTd>
+              </tr>
+              {operationsRows}
+            </>
           )}
         </tbody>
       </table>

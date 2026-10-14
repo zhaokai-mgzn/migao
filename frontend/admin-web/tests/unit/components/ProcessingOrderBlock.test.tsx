@@ -705,3 +705,141 @@ describe('加工单门幅不重复（issue #6893）', () => {
   })
 })
 
+/**
+ * issue #6901：加工单块缺**货号**（快照键 `sku`）与**工序清单**（既有读面 `positions[]`）。
+ *
+ * 「屏幕明细块」与「复制全部」文本（`toPlainText`）是**同一条事实的两个渲染面** ⇒ 两处都补，
+ * 且共用同一份取值/片段生成器（`snapshotAttrParts` / `operationParts` / `operationsByItem`）
+ * —— 只补一处 ⇒ 复制出去的文本仍是旧的，车间照旧按老习惯做（`toPlainText` 的注释在防的正是这个）。
+ */
+describe('加工单块补货号与工序清单（issue #6901）', () => {
+  const SKU = '0012'
+  const poWithSku = {
+    ...poIssued,
+    items: [
+      { ...poIssued.items[0], itemId: 'item-1', sku: SKU, doorWidth: '2.8米', sellingMethod: 'per_meter' },
+    ],
+  }
+
+  /** 工序实例（读面形状 = `ProductionPosition`；按 `order_item_id` 对齐快照行 `itemId`） */
+  const operationsFixture = [
+    {
+      order_item_id: 'item-1',
+      position_name: '布帘',
+      operations: [
+        { id: 'op-1', operation: '精裁-布', logical_name: '精裁', unit: '米', qty: 2.5, status: 'pending' },
+        { id: 'op-2', operation: '韩褶-布', logical_name: '韩褶', unit: '折', qty: 52, status: 'done' },
+      ],
+    },
+  ]
+
+  it('🔴 屏幕明细块印出货号（快照键 `sku`，同一行属性里，**只印一处**）', async () => {
+    mockedDetail.mockResolvedValueOnce({ data: { data: poWithSku } })
+    const { container } = render(
+      <ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />
+    )
+    await screen.findByText('JG-20260912-0001')
+    const text = container.textContent ?? ''
+    expect(text).toContain('货号 0012')
+    // P2 信息不重复：同一真值（货号）不许印两处
+    expect((text.match(/货号/g) ?? []).length).toBe(1)
+    // 同块既有内容照常（防「整块没渲染 ⇒ 假绿」）
+    expect(screen.getByText('布艺遮光帘A')).toBeInTheDocument()
+    expect(screen.getByText('米白')).toBeInTheDocument()
+  })
+
+  it('🔴 缺货号 ⇒ 不渲染（不印空标签 —— 与同块 `colorName` 缺值口径一致）', async () => {
+    mockedDetail.mockResolvedValueOnce({ data: { data: poIssued } })
+    const { container } = render(
+      <ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />
+    )
+    await screen.findByText('JG-20260912-0001')
+    // 前提自证：本态确实渲染了快照块
+    expect(container.textContent).toContain('布艺遮光帘A')
+    expect(container.textContent).not.toContain('货号')
+  })
+
+  it('🔴 「复制全部」文本**同批**带出货号 + 工序清单（两处一个口径）', async () => {
+    mockedDetail.mockResolvedValueOnce({ data: { data: poWithSku } })
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    render(
+      <ProcessingOrderBlock
+        orderId="order-001"
+        orderStatus="producing"
+        hasProcessing
+        operations={operationsFixture}
+      />
+    )
+    await screen.findByText('JG-20260912-0001')
+    await userEvent.click(screen.getByText('复制全部'))
+    await waitFor(() => expect(writeText).toHaveBeenCalled())
+
+    const text = writeText.mock.calls[0][0] as string
+    // 货号在标题行（`【N】品名（颜色）【货号】`）——贴 Excel 时一眼认得出是哪一件
+    expect(text).toContain(`【${SKU}】`)
+    // 工序清单：逐道逻辑名 + 应做（数量+单位）+ 状态
+    expect(text).toContain('工序：')
+    expect(text).toContain('精裁：2.5 米  待做')
+    expect(text).toContain('韩褶：52 折  已完成')
+    // 🔴 工人端快照名（读面键 `operation`）**不得**进文本
+    expect(text).not.toContain('精裁-布')
+    expect(text).not.toMatch(/undefined|null|NaN/)
+  })
+
+  it('🔴 屏幕块印工序清单（逐道逻辑名 + 应做 + 状态）；无工序 ⇒ 整块不出现', async () => {
+    mockedDetail.mockResolvedValueOnce({ data: { data: poWithSku } })
+    const { unmount, container } = render(
+      <ProcessingOrderBlock
+        orderId="order-001"
+        orderStatus="producing"
+        hasProcessing
+        operations={operationsFixture}
+      />
+    )
+    await screen.findByText('JG-20260912-0001')
+    const rows = container.querySelectorAll('[data-testid="po-item-operation"]')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].textContent).toContain('精裁')
+    expect(rows[0].textContent).toContain('2.5 米')
+    expect(rows[0].textContent).toContain('待做')
+    expect(rows[1].textContent).toContain('韩褶')
+    expect(rows[1].textContent).toContain('已完成')
+    expect(container.textContent).not.toContain('精裁-布')
+    unmount()
+
+    // 没传读面（订单还没生成加工单）⇒ 不出现工序块，也不印空标题
+    mockedDetail.mockResolvedValueOnce({ data: { data: poWithSku } })
+    const second = render(
+      <ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />
+    )
+    await screen.findByText('JG-20260912-0001')
+    expect(second.container.querySelectorAll('[data-testid="po-item-operation"]')).toHaveLength(0)
+    expect(second.container.textContent).not.toContain('工序')
+  })
+
+  it('🔴 负控：补了货号与工序行后，既有属性行逐字不变（门幅/方式/宽/高/数量 各只一处）', async () => {
+    mockedDetail.mockResolvedValueOnce({ data: { data: poWithSku } })
+    const { container } = render(
+      <ProcessingOrderBlock
+        orderId="order-001"
+        orderStatus="producing"
+        hasProcessing
+        operations={operationsFixture}
+      />
+    )
+    await screen.findByText('JG-20260912-0001')
+    const text = container.textContent ?? ''
+    expect(text).toContain('门幅 2.8米')
+    expect(text).toContain('方式 按米')
+    expect(text).toContain('宽 2.5m')
+    expect(text).toContain('高 2.8m')
+    expect(text).toContain('数量 2 米')
+    // 每一个真值仍只印一处（新增片段不许把既有片段复制一遍）
+    expect((text.match(/门幅/g) ?? []).length).toBe(1)
+    expect((text.match(/货号/g) ?? []).length).toBe(1)
+    expect((text.match(/数量/g) ?? []).length).toBe(1)
+  })
+})
+
