@@ -151,6 +151,26 @@ function failure<T>(error: any, fallback: string): InboundResponse<T> {
 }
 
 /**
+ * 把上传回执归一成**单张**（`data` 是数组 ⇒ 取第 0 张）。
+ *
+ * 🔴 服务端 `WorkerInboundUploadController#upload` 的返回类型是 `ApiResponse<List<UploadedFileInfo>>`
+ * —— **`data` 是数组**（后端用例逐字断言 `$.data[0].url`；前端守卫 `inbound-api-contract.test.ts` 判据 C6
+ * 把这个形状钉成两侧共同的事实）。端侧一次只传一张 ⇒ 取第 0 张。
+ *
+ * 按**对象**读 `data.url` 会恒为 `undefined` ⇒ 每一次上传都落进「失败」分支，而服务端其实已经
+ * 成功落盘（2026-10-14 线上实证：nginx 200 / admin-api「照片已上传 count=1, storage=oss」/
+ * 端侧仍报「照片上传失败，请重试」）。
+ *
+ * 归一化只放在**服务层这一处**：两个消费方（拍照入库 / 拍照发货）都只读 `data.url`，不各判一次形状。
+ */
+function firstUploadedOf(body: any): any {
+  if (Array.isArray(body?.data)) {
+    return { ...body, data: body.data[0] }
+  }
+  return body
+}
+
+/**
  * 上传**一张**照片（`multipart`，字段名 `files`；服务端要求每次 1~3 张）。
  *
  * 为什么逐张传：`Taro.uploadFile` 一次只装一个文件（两端实现同此），而多张时我们本来也只需要
@@ -172,7 +192,7 @@ export async function uploadInboundPhoto(filePath: string): Promise<InboundRespo
         return { success: false, message: '上传返回的不是 JSON，请重试' }
       }
     }
-    return toResponse<UploadedFileInfo>(body, '照片上传失败，请重试')
+    return toResponse<UploadedFileInfo>(firstUploadedOf(body), '照片上传失败，请重试')
   } catch (error: any) {
     return failure<UploadedFileInfo>(error, '照片上传失败，请重试')
   }
