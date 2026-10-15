@@ -1,4 +1,4 @@
-// case_ids: MC-101
+// case_ids: MC-104
 
 package com.migao.admin.service;
 
@@ -144,7 +144,7 @@ class ProcessingOrderStatusCasMetaGuardTest {
             servicePaths.addAll(serviceStatusWritePaths(serviceText(file), file));
         }
 
-        System.out.println("[READING MC-101 扫描器] 写 status 的 mapper 方法=" + mapperMethods
+        System.out.println("[READING MC-104 扫描器] 写 status 的 mapper 方法=" + mapperMethods
                 + " service 写路径=" + servicePaths);
         assertThat(mapperMethods)
                 .as("扫描器必须现取到写 status 的 mapper 手写 SQL（返回空集 = 判据失明，不是通过）")
@@ -174,7 +174,7 @@ class ProcessingOrderStatusCasMetaGuardTest {
                 offenders.add(w.method() + " 缺 " + missing);
             }
         }
-        System.out.println("[READING MC-101 谓词] 状态写面="
+        System.out.println("[READING MC-104 谓词] 状态写面="
                 + writes.stream().map(MapperWrite::method).toList() + " 违规=" + offenders);
         assertThat(offenders).as("状态迁移的写必须把判断与写入压进同一条语句（无谓词写 = #6955 的病根）")
                 .isEmpty();
@@ -191,7 +191,7 @@ class ProcessingOrderStatusCasMetaGuardTest {
                     .map(m -> owner + "#" + m.name())
                     .toList());
         }
-        System.out.println("[READING MC-101 无谓词写] 现取候选方法="
+        System.out.println("[READING MC-104 无谓词写] 现取候选方法="
                 + allServiceWritePaths() + " 违规=" + offenders);
         assertThat(offenders)
                 .as("状态迁移的写必须带谓词（#6955 的病根就是 updateStatus / cancelOrder 用了无谓词 updateById）")
@@ -215,7 +215,7 @@ class ProcessingOrderStatusCasMetaGuardTest {
         int baseline = ledger.get("unverified_baseline").asInt();
         int entries = ledger.get("entries").size();
 
-        System.out.println("[READING MC-101 台账] 现取写路径=" + servicePaths + " 已登记=" + registered
+        System.out.println("[READING MC-104 台账] 现取写路径=" + servicePaths + " 已登记=" + registered
                 + " 未登记=" + unregistered + " 幽灵条目=" + ghosts
                 + " mapper 条目=" + entries + " 豁免=" + unverified + "(基线 " + baseline + ")");
         assertThat(unregistered)
@@ -251,7 +251,7 @@ class ProcessingOrderStatusCasMetaGuardTest {
                 }
             }
         }
-        System.out.println("[READING MC-101 兑现] 断链=" + broken);
+        System.out.println("[READING MC-104 兑现] 断链=" + broken);
         assertThat(broken).as("evidence 必须逐字兑现（摘掉 CAS 调用 / 方法改名 ⇒ 当场红）").isEmpty();
     }
 
@@ -481,7 +481,7 @@ class ProcessingOrderStatusCasMetaGuardTest {
      *       ⏎ `…Long tenantId, String operator) {` —— 收尾的 {@code ") {"} 落在**续行**上。
      *       只认「签名行含 `) {`」的写法会把**整个方法**跳过，而它的闭合花括号照样把深度减 1
      *       ⇒ 深度从此**下沉一级** ⇒ 后面所有方法全部扫不到；更坏的是「候选集非空但少了核心对象」，
-     *       判据 1 若只检查别的对象就**照样绿**（这正是本单在 MC-101 上抓到的第二种失明形态）。
+     *       判据 1 若只检查别的对象就**照样绿**（这正是本单在 MC-104 上抓到的第二种失明形态）。
      *       ⇒ 改成**待定签名**状态机：见到「类体顶层 + 4 空格缩进 + `(` + 非注释/注解」先登记名字，
      *       到**第一个不深于类体的 `{`** 才正式开体、从花括号之后开始收正文。</li>
      *   <li>名字取「第一个 `(` 之前的最后一段」；控制结构关键字（{@code if}/{@code for}/…）不当签名。</li>

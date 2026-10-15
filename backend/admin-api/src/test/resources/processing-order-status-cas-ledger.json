@@ -20,7 +20,7 @@
       "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingOrderMapper.java::int markStatusIfFrom(",
       "case_ids": [
         "PG-076",
-        "MC-101"
+        "MC-104"
       ]
     },
     {
@@ -29,7 +29,7 @@
       "guard": "完工权 = 条件更新（CAS，issue #4117 既有形态）：谓词 = 活跃集 `status IN ('generated','issued','in_processing','completed')` + `tenant_id` + `deleted = 0` ⇒ 并发取消的加工单不会被复活；已是 completed 时不覆盖首次完工时间。",
       "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingOrderMapper.java::int markCompletedIfActive(",
       "case_ids": [
-        "MC-101"
+        "MC-104"
       ]
     },
     {
@@ -38,7 +38,7 @@
       "guard": "首工序报满 ⇒ `issued → in_processing` 的自动写路径 = 条件更新（CAS，issue #4695 / D13 既有形态）：谓词 = `status = #{fromStatus}`（由 `ProcessingOrderService.allowsTransition` 授权的那个起始态）+ `tenant_id` + `deleted = 0` ⇒ 与并发的取消互斥、不裸 UPDATE 绕过状态机。",
       "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingOrderMapper.java::int markInProcessingIfFrom(",
       "case_ids": [
-        "MC-101"
+        "MC-104"
       ]
     }
   ],
@@ -51,7 +51,7 @@
       "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java::processingOrderMapper.markStatusIfFrom(",
       "case_ids": [
         "PG-076",
-        "MC-101"
+        "MC-104"
       ]
     },
     {
@@ -62,7 +62,7 @@
       "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java::processingOrderMapper.markStatusIfFrom(",
       "case_ids": [
         "PG-076",
-        "MC-101"
+        "MC-104"
       ]
     }
   ],
