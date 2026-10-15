@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 154
+    "backend_contract_scoring_zero": 155
   },
   "history": [
     {
@@ -500,11 +500,18 @@
       "note": "issue #6954（P2·★★★·状态写：入驻审批并发双 approve ⇒ 建出两个租户）新增 **2** 条 `[backend-contract]` 用例：**MC-101**（行为面：真库并发 N=6 + `CountDownLatch` 对齐起跑 ⇒ 租户恰 1 行 / 管理员恰 1 个 / 恰 1 次成功 + 串行正对照）与 **MC-102**（类级元守卫：审批权与驳回权的写路径必须落到 SQL 谓词 CAS — 未登记即红 / 无谓词写即红 / **本表无 deleted 列的负谓词即红** / 台账只许缩短 / 判别力自证）。两条按设计都**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 本读数 +2（150 → 152）；两条的机器判红通道 = `traces.tests`（Java 单测文件均真实存在：`TenantApplicationReviewCasRaceRealDbTest.java` / `TenantApplicationReviewCasMetaGuardTest.java`）⇒ `no_channel_total` 恒为 **0**（真债务未变）。"
     },
     {
+      "sha": "35f991da7",
+      "date": "2026-10-15",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 153,
+      "note": "issue #6968（Post-Merge Verify 的取数面读数探针自己坏了 ⇒ ①/② 从未被分开）新增 **1** 条 `[backend-contract]` 用例 **MC-103**（类级元守卫：探针必须以 `PYTHONPATH=tests` 逐字打出 `creds = {...}` 读数 / 打不出即 `::error::` + 非零退出 / driver 的 `_judging_env` 必须把凭据显式交给判据解释器；三条注入式红证 + 一条负控）。该用例按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 本读数 +1（main 侧 152 → 本 PR 后 153），真债务 `no_channel_total` 仍为 **0**（不变）。机器判红通道 = `traces.tests` 里真实存在且非空的那条 pytest（tests/unit_ci_workflows/test_post_merge_verify_credential_probe.py）；`traces.ci` = pr-check.yml。按本文件 `_how_to_regen` 在同一 PR 内重锚（rebase 到含 #6954 的 main 之后按实测顺延，不按号推算）。"
+    },
+    {
       "sha": "c1722a0d2d01078b791b84c8a5b82e04036798bd",
       "date": "2026-10-15",
       "no_channel_total": 0,
-      "backend_contract_scoring_zero": 154,
-      "note": "issue #6955（P1·并发：加工单状态迁移与订单取消联动腿「读判 × 写」无谓词）新增 **2** 条 `[backend-contract]` 用例：**PG-076**（行为面：真库并发 + 窗口注入，「同一加工单 issue × cancel 恰一个赢家」＋「订单取消 × 加工单开工 不得自相矛盾」＋串行正对照）与 **MC-104**（类级元守卫：加工单状态迁移写路径必须落到 SQL 谓词；未登记即红 / 无谓词写即红 / evidence 必须兑现 / 豁免只许缩短 / 判别力自证）。两条按设计都**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 本读数 +2（main 侧 152 → 本 PR 后 154）。机器判红通道 = `traces.tests` 的两个真测试文件（均非空且真实存在）：`backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderStatusCasRaceRealDbTest.java`（真 PG：3 轮 ×2 形态交叉竞态；修前注入读数 `形态① issue=200(resp=issued) cancel=200(resp=cancelled) 成功数=2 加工单终态=issued`、修后 `形态① issue=409(msg=加工单状态不允许从 [已取消] 变更为 [已发加工]) cancel=200 成功数=1 加工单终态=cancelled`）与 `backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderStatusCasMetaGuardTest.java`（类级元守卫 6 条 + 合成语料判别力自证；红证 = 把两处 CAS 退回无谓词 `updateById` ⇒ 具名 `违规=[ProcessingOrderService#updateStatus, OrderService#cancelOrder]`）；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**（不按号推算）：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -p no:randomly` 报 154 vs 锚点 152 ⇒ 追加本行并把 `entries` 对齐。"
+      "backend_contract_scoring_zero": 155,
+      "note": "issue #6955（P1·并发：加工单状态迁移与订单取消联动腿「读判 × 写」无谓词）新增 **2** 条 `[backend-contract]` 用例：**PG-076**（行为面：真库并发 + 窗口注入，「同一加工单 issue × cancel 恰一个赢家」＋「订单取消 × 加工单开工 不得自相矛盾」＋串行正对照）与 **MC-104**（类级元守卫：加工单状态迁移写路径必须落到 SQL 谓词；未登记即红 / 无谓词写即红 / evidence 必须兑现 / 豁免只许缩短 / 判别力自证）。两条按设计都**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 本读数 +2（main 侧 153 → 本 PR 后 155）。机器判红通道 = `traces.tests` 的两个真测试文件（均非空且真实存在）：`backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderStatusCasRaceRealDbTest.java`（真 PG：3 轮 ×2 形态交叉竞态；修前注入读数 `形态① issue=200(resp=issued) cancel=200(resp=cancelled) 成功数=2 加工单终态=issued`、修后 `形态① issue=409(msg=加工单状态不允许从 [已取消] 变更为 [已发加工]) cancel=200 成功数=1 加工单终态=cancelled`）与 `backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderStatusCasMetaGuardTest.java`（类级元守卫 6 条 + 合成语料判别力自证；红证 = 把两处 CAS 退回无谓词 `updateById` ⇒ 具名 `违规=[ProcessingOrderService#updateStatus, OrderService#cancelOrder]`）；`traces.ci` = `pr-check.yml` 的 `admin-api unit tests`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在同一 PR 内**实测重锚**（不按号推算）：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -p no:randomly` 报 155 vs 锚点 153 ⇒ 追加本行并把 `entries` 对齐。"
     }
   ]
 }

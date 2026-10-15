@@ -3418,7 +3418,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（104 case）
+## 杂项域（105 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4962,6 +4962,20 @@
 跳过: [backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟
 ```
 溯源: 2026-10-15 新增（issue #6954 的类级固化，与 MC-101 同批）。取号 = main 侧现取 MC-001~101 ⇒ **MC-102**（`python3 scripts/next_case_id.py MC` 现取，全仓 refs 复核 0 命中）。读数：修后 `mvnw test -Dtest=TenantApplicationReviewCasMetaGuardTest` = **7 passed / 0 failed**，逐字 `写 status 的 mapper 方法=[approveIfPending, rejectIfPending] service 写路径=[approveApplication, rejectApplication] 未登记=[] 幽灵条目=[] 豁免=0(基线 0) 违规=[] 断链=[]`。**判据自身的 bug（已修，留档）**：第一版对整条 SQL 判状态谓词 ⇒ `SET status = 'approved'` 被当谓词 ⇒ 判别力自证第 ① 族（无谓词状态写）当场判绿（`1 failed / 6 passed`）⇒ 改为**只看 WHERE 段**（`whereClause()`）后 7 passed。这条正是「判别力自证」这一判据存在的理由：**没有它，判据恒绿与判据有效在结果列上长得一样**。 ｜ tags: concurrency, state-transition, cas, ledger, onboarding, backend-contract, red-proof
+
+### MC-103. **Post-Merge Verify 的取数面读数探针必须真有牙**：能打出 creds 读数 / 打不出即响亮判红 / driver 显式把凭据交给判据解释器（issue #6968） 🔵
+```
+你: 判定腿报「没有 API 凭据」，而它自带的诊断探针每轮只说「探针自身失败（不影响判定）」—— 那到底是没凭据，还是没人看得见凭据？
+数据: 判据 1（探针能取数）：`.github/workflows/post-merge-verify.yml` 的「取数面读数」步必须以 `PYTHONPATH=tests`（**包**形态 `unit_ci_workflows.*`）导入判据本体，并逐字打印 `creds = {...}` 行。执行点 = tests/unit_ci_workflows/test_post_merge_verify_credential_probe.py::test_probe_step_is_wired_to_answer_the_question
+数据: 判据 1 的直连真对象：`PYTHONPATH=tests` 下真能 `import unit_ci_workflows.test_case_id_claims` 并读 `TOKEN_ENVS` / `scan_claims` / `current_pr`（零网络）。执行点 = 同文件::test_probe_reads_the_real_criterion_module
+数据: 判据 2（探针失败必须响亮）：读数行打不出 ⇒ 本步 `::error::` + `exit 1`；不许再是「探针自己失败只打印，绝不判红」。执行点 = 同文件::test_negative_control_probe_is_green_on_the_real_tree（正向）
+数据: 判据 3（凭据链显式化）：`scripts/post_merge_verify.py` 的 `_judging_env` 必须把凭据**显式**交给判据解释器（只有 `GH_TOKEN` 时补 `GITHUB_TOKEN`；已有值不被覆盖），且 `credential_env_reading` 把读数带进报告。执行点 = 同文件::test_negative_control_probe_is_green_on_the_real_tree
+数据: 判据 4（判别力自证，注入式红证三条各能单独变红）：① `PYTHONPATH` 换回 `tests/unit_ci_workflows` ⇒ 判据 1 红；② 抹掉 `::error::` / `exit 1` ⇒ 判据 2 红；③ `_judging_env` 退化成纯拷贝 ⇒ 判据 3 红。执行点 = 同文件::test_red_proof_broken_import_path_turns_it_red / ::test_red_proof_silent_probe_turns_it_red / ::test_red_proof_dropping_credential_passthrough_turns_it_red
+数据: 判据 5（读行为不吃说明）：判定面必须先剥整行 shell 注释再匹配 —— 探针块里就写着「上一版插错成 tests/unit_ci_workflows」这类**给下一次的人看的说明**，读进判定会假红（实测踩过）。执行点 = 同文件::test_negative_control_probe_is_green_on_the_real_tree 的 `_strip_comments` 对照臂
+数据: **边界（照实登记）**：① 判不了「CI 上凭据为什么是空的」（那要在真 runner 上读 step shell 与子进程两层读数，属 @外部输入）；② 不等于判据 7 的判定口径正确（那是 tests/unit_ci_workflows/test_case_id_claims.py 自己的面）；③ 不改任何门禁的通过条件、不新增豁免。
+跳过: [backend-contract] 零 LLM 的确定性读数（读 workflow YAML 文本 + 直连判据模块 + 纯函数注入），不进 agent-eval 冒烟
+```
+溯源: 2026-10-15 新增（issue #6968）。取号 = next_case_id.py 现取 MC-103（**rebase 后复核**：main 侧 `#6954` 已落地占用 MC-101/MC-102，本单取号时那两颗尚在飞 ⇒ 让号取 103；全仓 refs 复核 0 命中）。修前逐字（5 个 run 同款）：step shell `GH_TOKEN=377 / GITHUB_TOKEN=未设 / TOKEN_DECLARED=true`，探针 `探针自身失败（不影响判定）: ModuleNotFoundError No module named 'unit_ci_workflows'`，driver 侧 `判定不了：没有 API 凭据（环境变量 GITHUB_TOKEN/GH_TOKEN 都为空）`。修后绿证：`python3 -m pytest tests/unit_ci_workflows/test_post_merge_verify_credential_probe.py -q -p no:randomly` = 6 passed；`test_post_merge_verify_leg.py` 63 条零改动全绿（69 passed 合计）。探针绿证逐字：`取数面读数（判定解释器）: creds = {'GITHUB_TOKEN': 0, 'GH_TOKEN': 16} | current_pr = 6634`；红证（注入式）：把 `PYTHONPATH=tests` 改回 `tests/unit_ci_workflows` ⇒ 逐字 `探针自身失败: ModuleNotFoundError No module named 'unit_ci_workflows'` + `::error::` + rc=1。 ｜ tags: ci, post-merge-verify, credential-chain, probe-liveness, red-proof
 
 ### MC-104. **加工单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6955 的类级固化） 🔵
 ```
@@ -10918,8 +10932,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：752（活跃 134，跳过 618）
-- tier 分布：smoke 12 / normal 693 / adversarial 32
+- 用例总数：753（活跃 134，跳过 619）
+- tier 分布：smoke 12 / normal 694 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10934,7 +10948,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：104
+- 杂项域：105
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：66
@@ -11072,6 +11086,7 @@
 - MC-100: **入库单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6928 的类级固化）
 - MC-101: **入驻审批并发双 approve ⇒ 租户数恰好 +1、恰好 1 次成功**：CAS 闸必须在副作用之前（issue #6954）
 - MC-102: **入驻审批写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 负谓词（本表无 deleted 列）即红 / 台账只许缩短（issue #6954 的类级固化）
+- MC-103: **Post-Merge Verify 的取数面读数探针必须真有牙**：能打出 creds 读数 / 打不出即响亮判红 / driver 显式把凭据交给判据解释器（issue #6968）
 - MC-104: **加工单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6955 的类级固化）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）

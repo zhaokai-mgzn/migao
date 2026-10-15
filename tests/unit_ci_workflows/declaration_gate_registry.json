@@ -595,6 +595,13 @@
       "issue": "#6550",
       "criterion": "tests/unit_ci_workflows/test_swas_config_tarball_fetch_budget.py::test_missing_authority_judge_fails_loudly",
       "note": "该模块的注释声称「权威判据是 ref 同源的**唯一**真相源，本文件只调用它、不复制它的实现」——由两条判据承担：① `test_missing_authority_judge_fails_loudly`（权威判据取不到 ⇒ 显式失败，证明本文件**依赖**它而不是自带一份）② `test_injected_second_derivation_turns_ref_judge_red`（删掉唯一那份推导 ⇒ 判据 3 红，证明「不重实现」被真判）。"
+    },
+    {
+      "file": "scripts/post_merge_verify.py",
+      "symbol": "CREDENTIAL_ENVS",
+      "issue": "#6968",
+      "criterion": "tests/unit_ci_workflows/test_post_merge_verify_credential_probe.py::test_negative_control_probe_is_green_on_the_real_tree",
+      "note": "注释声称与 `tests/unit_ci_workflows/test_case_id_claims.py::TOKEN_ENVS` 同源（driver 交给判据解释器的凭据键 ⟺ 判据自己取凭据的键）⇒ 由该判据的 ④ 腿**真读两侧模块**逐字比对（判据改成读第三个键 / 驱动侧少一个键 ⇒ 当场红）；同腿另判「凭据键 ⊆ JUDGING_ENV_KEYS」⇒ 读数不会看不见它们"
     }
   ],
   "frozen_declarations": [

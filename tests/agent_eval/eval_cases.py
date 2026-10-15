@@ -6477,6 +6477,24 @@ _CASE_MC_102 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-103 [NORMAL] **Post-Merge Verify 的取数面读数探针必须真有牙**：能打出 creds 读数 / 打不出即响亮判红 / driver 显式把凭据交给判据解释器（issue #6968）（源: cases/misc.yml）──
+_CASE_MC_103 = EvalCase(
+    id='MC-103',
+    legacy_id='',
+    title='**Post-Merge Verify 的取数面读数探针必须真有牙**：能打出 creds 读数 / 打不出即响亮判红 / driver 显式把凭据交给判据解释器（issue #6968）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['判定腿报「没有 API 凭据」，而它自带的诊断探针每轮只说「探针自身失败（不影响判定）」—— 那到底是没凭据，还是没人看得见凭据？'],
+    expectations=[],
+    data_checks=['判据 1（探针能取数）：`.github/workflows/post-merge-verify.yml` 的「取数面读数」步必须以 `PYTHONPATH=tests`（**包**形态 `unit_ci_workflows.*`）导入判据本体，并逐字打印 `creds = {...}` 行。执行点 = tests/unit_ci_workflows/test_post_merge_verify_credential_probe.py::test_probe_step_is_wired_to_answer_the_question', '判据 1 的直连真对象：`PYTHONPATH=tests` 下真能 `import unit_ci_workflows.test_case_id_claims` 并读 `TOKEN_ENVS` / `scan_claims` / `current_pr`（零网络）。执行点 = 同文件::test_probe_reads_the_real_criterion_module', '判据 2（探针失败必须响亮）：读数行打不出 ⇒ 本步 `::error::` + `exit 1`；不许再是「探针自己失败只打印，绝不判红」。执行点 = 同文件::test_negative_control_probe_is_green_on_the_real_tree（正向）', '判据 3（凭据链显式化）：`scripts/post_merge_verify.py` 的 `_judging_env` 必须把凭据**显式**交给判据解释器（只有 `GH_TOKEN` 时补 `GITHUB_TOKEN`；已有值不被覆盖），且 `credential_env_reading` 把读数带进报告。执行点 = 同文件::test_negative_control_probe_is_green_on_the_real_tree', '判据 4（判别力自证，注入式红证三条各能单独变红）：① `PYTHONPATH` 换回 `tests/unit_ci_workflows` ⇒ 判据 1 红；② 抹掉 `::error::` / `exit 1` ⇒ 判据 2 红；③ `_judging_env` 退化成纯拷贝 ⇒ 判据 3 红。执行点 = 同文件::test_red_proof_broken_import_path_turns_it_red / ::test_red_proof_silent_probe_turns_it_red / ::test_red_proof_dropping_credential_passthrough_turns_it_red', '判据 5（读行为不吃说明）：判定面必须先剥整行 shell 注释再匹配 —— 探针块里就写着「上一版插错成 tests/unit_ci_workflows」这类**给下一次的人看的说明**，读进判定会假红（实测踩过）。执行点 = 同文件::test_negative_control_probe_is_green_on_the_real_tree 的 `_strip_comments` 对照臂', '**边界（照实登记）**：① 判不了「CI 上凭据为什么是空的」（那要在真 runner 上读 step shell 与子进程两层读数，属 @外部输入）；② 不等于判据 7 的判定口径正确（那是 tests/unit_ci_workflows/test_case_id_claims.py 自己的面）；③ 不改任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（读 workflow YAML 文本 + 直连判据模块 + 纯函数注入），不进 agent-eval 冒烟',
+    tags=['ci', 'post-merge-verify', 'credential-chain', 'probe-liveness', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── MC-104 [NORMAL] **加工单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6955 的类级固化）（源: cases/misc.yml）──
 _CASE_MC_104 = EvalCase(
     id='MC-104',
@@ -14404,6 +14422,7 @@ ALL_CASES = (
     _CASE_MC_100,
     _CASE_MC_101,
     _CASE_MC_102,
+    _CASE_MC_103,
     _CASE_MC_104,
     _CASE_OB_001,
     _CASE_OB_002,
