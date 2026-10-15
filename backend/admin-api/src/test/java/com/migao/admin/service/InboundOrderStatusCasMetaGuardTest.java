@@ -123,11 +123,20 @@ class InboundOrderStatusCasMetaGuardTest {
             Pattern.compile("status\\s*=\\s*'draft'", Pattern.CASE_INSENSITIVE);
     private static final Pattern DELETED_PREDICATE =
             Pattern.compile("deleted\\s*=\\s*0", Pattern.CASE_INSENSITIVE);
-    /** 方法体收尾形态（`… ) {`）：签名**可跨行** ⇒ 取块前先归一成一行（见 {@link #signatureBlockEnd}）。 */
-    private static final String BODY_OPEN = ") {";
-    /** 签名归一：起始行的形态 = 恰 4 空格缩进 + 以**修饰符**开头（`if (` 之类控制结构天然落选）。 */
-    private static final Pattern MEMBER_HEAD_START = Pattern.compile(
-            "^ {4}(?:public|private|protected|static|final|default|synchronized|abstract|native|strictfp)\\b");
+    /**
+     * 取方法体的两种实现 —— 只为**对账**（判据 {@code blindSpotReconciliationHasTeeth}）而并存：
+     * <ul>
+     *   <li>{@link #membersWithBodyRaw} = 本守卫 <b>issue #6956 修前</b>的取块实现（逐行 + 花括号深度，
+     *       <b>不剥注释 / 字符串</b>）。它在这里<b>不是</b>被测实现，而是<b>负控</b>：它必须在坏形态语料上
+     *       当场暴露盲区 —— 否则「对账治具有没有牙」这件事本身就不可判（会退化成恒绿）。</li>
+     *   <li>{@link #membersWithBody} = 修后实现：<b>先剥注释与字符串字面量，再做 balanced-brace 扫描</b>。</li>
+     * </ul>
+     * <p>形态①（跨行签名）已由 <b>PR #6967</b> 修在 main 上（冻结锚 = {@code scannersAreNotBlind} 里的
+     * {@code create} 断言），本包<b>不动</b>它；本包治的是<b>形态②</b>（注释 / 字符串里的括号让深度计数器
+     * 错位），两个方向都覆盖 —— <b>深度多算</b> ⇒ 其后整段方法<b>扫不到</b>；<b>深度提前归位</b> ⇒
+     * 方法在候选集里但 <b>body 被截断</b>（「收错了」比「没收到」更坏：判据会<b>基于错误的 body 判绿</b>）。</p>
+     */
+    private static final boolean RAW_SCANNER = false;
     /** 类体顶层的缩进（4 空格）；嵌套块（控制结构 / lambda）更深 ⇒ 靠它把方法从体内区分出来。 */
     private static final String MEMBER_INDENT = "    ";
     /** Java 控制结构关键字：`if (…) {` 在行形态上与「方法 + 体」同形，靠名字排除。 */
@@ -422,6 +431,118 @@ class InboundOrderStatusCasMetaGuardTest {
                 .as("只加注释不得判红（否则守卫被自己的文案喂红）").isEmpty();
     }
 
+    // ────────────────────────────────────────────── 判据 9：盲区对账（issue #6956 第二部分）
+
+    /**
+     * 🔴 <b>本包的核心治具：对账「看不见 / 看错了」的对象</b>（issue #6956 第二部分）。
+     *
+     * <p>为什么单靠「候选集非空」不够：「漏一条」还能靠对账发现，「<b>一整块不可见</b>」连对账都不知道
+     * 要查什么 —— 所以这里把「扫描器候选集」与「<b>按朴素签名正则独立现取的方法名全集</b>」逐条对比，
+     * <b>打印并判红差集</b>。差集非空 = 病。</p>
+     *
+     * <p>覆盖形态②的三个真向量（②的修法是「先剥注释与字符串，再做 balanced-brace 扫描」）：</p>
+     * <ol>
+     *   <li><b>注释里的孤立 {@code &#123;}</b> ⇒ 深度多算 ⇒ 其后整段方法<b>扫不到</b>；</li>
+     *   <li><b>字符串字面量里的 {@code &#123;} / {@code &#125;}</b>（{@code "{"} / 正则 / 文本块）⇒ 同上；</li>
+     *   <li><b>注释里的孤立 {@code &#125;}</b> ⇒ 深度<b>提前</b>回到 1 ⇒ 方法<b>在候选集里但 body 被截断</b>
+     *       —— 「收错了」比「没收到」更坏（判据会<b>基于错误的 body 判绿</b>）。</li>
+     * </ol>
+     * <p>形态①（跨行签名）<b>已由 PR #6967 修在 main 上</b>，本包不动它 —— 它的冻结锚与反转对照语料
+     * （{@code guardHasDiscriminatingPower} 里那两条 {@code wrappedSignatureService}）继续当回归门。</p>
+     */
+    @Test
+    @DisplayName("盲区对账：注释 / 字符串里的括号不得让其后方法隐形或 body 被截断（差集非空即红）")
+    void blindSpotReconciliationHasTeeth() {
+        // 合规基线：干净语料必须**零差集**（否则下面三格的判红可能只是噪声）
+        String cleanService = serviceCorpus("post", "inboundOrderMapper.markPosted(id);")
+                + serviceCorpus("cancel", "inboundOrderMapper.markCancelled(id);");
+        System.out.println("[READING MC-100 对账 基线] 差集=" + reconciliation(cleanService));
+        assertThat(reconciliation(cleanService))
+                .as("干净语料不得有差集（对账不许把正常语料喂红）").isEmpty();
+
+        // ── 向量 1：注释里的孤立 `{` ⇒ 深度多算 ⇒ 其后方法整段扫不到
+        String commentBrace = serviceCorpus("updateStatus", "inboundOrderMapper.markStatusIfFrom(id);")
+                + orphanOpenBraceCommentCorpus("reopen", "inboundOrderMapper.updateById(order);");
+        System.out.println("[READING MC-100 对账 向量1 注释孤立花括号] 修前可见="
+                + serviceStatusWritePaths(commentBrace, true) + " 修后可见="
+                + serviceStatusWritePaths(commentBrace) + " 差集=" + reconciliation(commentBrace));
+        assertThat(serviceStatusWritePaths(commentBrace, true))
+                .as("负控自证生效：修前取法必须在向量1上**看不见** reopen（否则对账的判红没有牙）")
+                .doesNotContain("reopen");
+        assertThat(serviceStatusWritePaths(commentBrace))
+                .as("修后必须看得见 reopen（注释里的孤立 `{` 不得让其后方法隐形）")
+                .contains("reopen");
+        assertThat(reconciliation(commentBrace))
+                .as("🔴 对账差集非空 ⇒ 必须判红：reopen 在「看不见的对象」清单里")
+                .isNotEmpty();
+
+        // ── 向量 2：字符串字面量里的 `{` / `}` ⇒ 同族失明
+        String stringBrace = serviceCorpus("updateStatus",
+                "String fragment = \"a{b\";\ninboundOrderMapper.markStatusIfFrom(id);")
+                + serviceCorpus("reopen", "inboundOrderMapper.updateById(order);");
+        System.out.println("[READING MC-100 对账 向量2 字符串字面量花括号] 修前可见="
+                + serviceStatusWritePaths(stringBrace, true) + " 修后可见="
+                + serviceStatusWritePaths(stringBrace) + " 差集=" + reconciliation(stringBrace));
+        assertThat(serviceStatusWritePaths(stringBrace, true))
+                .as("负控自证生效：修前取法必须在向量2上**看不见** reopen").doesNotContain("reopen");
+        assertThat(serviceStatusWritePaths(stringBrace))
+                .as("修后必须看得见 reopen（字符串字面量里的 `{` 不得让其后方法隐形）")
+                .contains("reopen");
+        assertThat(reconciliation(stringBrace)).as("🔴 差集非空 ⇒ 判红").isNotEmpty();
+
+        // ── 向量 3（**更坏**）：注释里的孤立 `}` 出现在**方法体第一行** ⇒ 深度提前归位 ⇒
+        //    **方法名在候选集里，但 body 被截断成空壳** ⇒ 判据**基于错误的 body 判绿**。
+        String truncatedBody = truncatedBodyCorpus("updateStatus",
+                "inboundOrderMapper.updateById(order);");
+        Map<String, String> seenBody = new LinkedHashMap<>();
+        for (MethodBody m : membersWithBody(truncatedBody)) {
+            seenBody.put(m.name(), m.body());
+        }
+        System.out.println("[READING MC-100 对账 向量3 注释孤立闭花括号⇒body被截断] 修前候选="
+                + serviceStatusWritePaths(truncatedBody, true) + " 修后候选="
+                + serviceStatusWritePaths(truncatedBody) + " 修后方法体="
+                + seenBody.getOrDefault("updateStatus", "<无>").replace("\n", "\\n")
+                + " 差集=" + reconciliation(truncatedBody));
+        assertThat(serviceStatusWritePaths(truncatedBody, true))
+                .as("负控自证生效：修前取法在向量3上**看得见** updateStatus 这个方法名，但它的 body 被截断成"
+                        + "空壳 ⇒ 该写点不在候选集里 —— 所以「方法不见了」这条判据在这里**抓不到它**，"
+                        + "这正是它比「扫不到」更坏的原因")
+                .doesNotContain("updateStatus");
+        assertThat(serviceStatusWritePaths(truncatedBody))
+                .as("修后必须把 updateStatus 收进候选集（它真的有状态写）")
+                .contains("updateStatus");
+        assertThat(seenBody.getOrDefault("updateStatus", ""))
+                .as("修后 updateStatus 的 body 必须逐字含它真正的写点（不是被截断的空壳）")
+                .contains("inboundOrderMapper.updateById(");
+        assertThat(reconciliation(truncatedBody))
+                .as("🔴 对账差集非空 ⇒ 判红（报出「看不见的写路径」；body 被截断的形态由此被抓住）")
+                .isNotEmpty();
+
+        // ── 差集必须**有牙**（不误杀 + 真报错）：
+        //   ① 干净语料 ⇒ 差集为空（不是恒非空）；
+        //   ② 向量3 那份语料 ⇒ 差集**非空且具名** —— 证明「看错了 body」这条对账真的在比对 body，
+        //      而不是被文案喂红。
+        assertThat(reconciliation(cleanService))
+                .as("干净语料 ⇒ 对账必须为空（差集不是恒非空）").isEmpty();
+        assertThat(reconciliation(truncatedBody))
+                .as("向量3 的 body 被截断 ⇒ 对账必须非空且具名报出被看错的对象")
+                .anySatisfy(p -> assertThat(p).contains("看错了 body").contains("updateStatus"));
+    }
+
+    /**
+     * 现取：候选方法名清单（读数用）。{@code raw} = 走**修前**取块实现（负控 / 对账用）。
+     */
+    private static List<String> serviceStatusWritePaths(String serviceText, boolean raw) {
+        List<MethodBody> members = raw ? membersWithBodyRaw(serviceText) : membersWithBody(serviceText);
+        List<String> out = new ArrayList<>();
+        for (MethodBody m : members) {
+            if (INBOUND_UPDATE_BY_ID.matcher(m.body()).find() || MAPPER_CAS_CALL.matcher(m.body()).find()) {
+                out.add(m.name());
+            }
+        }
+        return out;
+    }
+
     // ────────────────────────────────────────────── 判定本体（真源码与合成语料共用）
 
     /**
@@ -555,120 +676,211 @@ class InboundOrderStatusCasMetaGuardTest {
     }
 
     /**
-     * **签名归一（issue #6956 · 洞 A）**：若 {@code i} 是类体顶层的一个**多行签名**起点，
-     * 返回该签名收尾行的下标（{@code ") {"} 所在行）；否则返回 {@code i}。
-     *
-     * <p>旧实现只看「这一行里同时出现 {@code (} 与 {@code ") {"}」⇒ 签名跨行的方法<b>整个方法体
-     * 从未被收集</b>（实证：{@code InboundOrderService#create(…, String forcedSource)} 的
-     * {@code updateById} 没有任何东西看着它）。这里只做一件朴素的事：从**类体顶层、且以修饰符开头**
-     * 的行起，把括号数没配平的行并进来，直到括号配平 —— 不依赖「一行收尾」这个脆形态。</p>
-     *
-     * <p>为什么「以修饰符开头」是必需的前置：控制结构（{@code if (…)} / {@code for (…)}）在行形态上
-     * 与方法头同形，而本归一化**只允许在顶层签名起点触发**；方法体内（深度 &gt; 1）的条件多行
-     * 不会被并进来（那些本来就在已收集的方法体里，不需要归一）。</p>
-     */
-    private static int signatureBlockEnd(List<String> lines, int i) {
-        String first = lines.get(i);
-        if (!MEMBER_HEAD_START.matcher(first).find() || !first.contains("(")) {
-            return i;
-        }
-        if (first.contains(BODY_OPEN)) {
-            return i;
-        }
-        int parens = countOf(first, '(') - countOf(first, ')');
-        for (int j = i + 1; j < lines.size() && parens > 0; j++) {
-            parens += countOf(lines.get(j), '(') - countOf(lines.get(j), ')');
-            if (parens <= 0) {
-                return lines.get(j).contains(BODY_OPEN) ? j : i;
-            }
-        }
-        return i;
-    }
-
-    private static int countOf(String s, char c) {
-        int n = 0;
-        for (int i = 0; i < s.length(); i++) {
-            if (s.charAt(i) == c) {
-                n++;
-            }
-        }
-        return n;
-    }
-
-    /**
      * 现取：{@code service} 文本里「类体顶层的方法 + 其方法体」。
      *
      * <p>⚠️ 实现口径（本判据踩过的坑，写在这里免得下一个人再踩）：**逐行扫描 + 花括号深度**，
      * 不靠「缩进 + 标识符 + 一对复杂正则」——后者曾把整个判据变成**静默失明**（候选集恒为空，
      * 而空集在结果列上看着像「通过」）。行扫描只看三条朴素事实：① 深度 == 1（类体顶层）；
-     * ② 行首恰为 4 空格缩进（8/12 ⇒ 控制结构 / lambda）；③ 归一后的签名行含 {@code ") {"}
-     * 且不是注释 / 注解行。名字取「第一个 `(` 之前的最后一段」。</p>
+     * ② 行首恰为 4 空格缩进（8/12 ⇒ 控制结构 / lambda）；③ 行内含 {@code ") {"} 且不是注释 / 注解行。
+     * 名字取「第一个 `(` 之前的最后一段」。</p>
      *
-     * <p>🔴 **签名可跨行**（issue #6956 · 洞 A）：③ 里的「归一后的签名行」由
-     * {@link #signatureBlockEnd} 把多行签名并成一行后再判 —— 否则「签名跨行」= 整条写路径隐身。</p>
+     * <p>🔴 <b>签名可跨行</b>（issue #6956 · 洞 A，<b>已由 PR #6967 修在 main 上</b>）：用
+     * <b>待定签名状态机</b> —— 见到「类体顶层 + 4 空格缩进 + `(` + 非注释 / 注解」先登记名字，
+     * 到<b>第一个不深于类体的 `{`</b> 才正式开体、从该花括号之后开始收正文。
+     * 本包<b>不动</b>这条（{@code create} 的冻结锚与反转对照语料继续当回归门）。</p>
+     *
+     * <p>🔴 <b>本包治的是形态②：注释 / 字符串字面量里的括号让深度计数器错位</b>（issue #6956 第二部分）。
+     * 旧实现逐字符数 <code>&#123;</code> / <code>&#125;</code> 而<b>不剥注释 / 字符串</b> ⇒ 三个真向量：
+     * ① 注释里孤立 <code>&#123;</code> ⇒ 深度多算 ⇒ <b>其后整段方法扫不到</b>；
+     * ② 字符串字面量里的 <code>&#123;</code> / <code>&#125;</code>（{@code "{"} / 正则 / 文本块）⇒ 同上；
+     * ③ 注释里孤立 <code>&#125;</code> ⇒ 深度<b>提前</b>回到 1 ⇒ 方法<b>在候选集里但 body 被截断</b>
+     * （「收错了」比「没收到」更坏：判据会<b>基于错误的 body 判绿</b>）。
+     * ⇒ 修法：<b>先剥注释与字符串（保留行结构），再做 balanced-brace 扫描</b>
+     * （{@link #stripCommentsAndStrings}）。判别力由 {@code blindSpotReconciliationHasTeeth} 的
+     * 三条坏形态语料 + 与 {@link #RAW_SCANNER} 负控的<b>对账</b>自证。</p>
      */
     private static List<MethodBody> membersWithBody(String text) {
+        return membersWithBody(text, RAW_SCANNER);
+    }
+
+    /**
+     * 取块的**唯一实现**，`raw` 只选「要不要先剥注释 / 字符串」—— 让**负控**与**被测实现**共用同一段
+     * 状态机代码（避免负控变成「另一个手抄的近似物」而让对账的结论不成立）。
+     */
+    private static List<MethodBody> membersWithBody(String text, boolean skipStrip) {
+        String clean = skipStrip ? text.replace("\r", "") : stripCommentsAndStrings(text);
         List<MethodBody> out = new ArrayList<>();
-        List<String> lines = List.of(text.replace("\r", "").split("\n", -1));
-        // ① 签名归一：把类体顶层的多行签名并成一个「签名行」（issue #6956 · 洞 A），
-        //    同时记下每个签名行覆盖的原始行区间 —— 正文从区间末尾的下一行起。
-        Map<String, Integer> heads = new LinkedHashMap<>();   // 归一后的签名行 -> 原始收尾行
-        int i = 0;
-        while (i < lines.size()) {
-            int end = signatureBlockEnd(lines, i);
-            String effective = end == i ? lines.get(i) : String.join(" ", lines.subList(i, end + 1));
-            String trimmed = effective.strip();
-            boolean signatureLine = lines.get(i).startsWith(MEMBER_INDENT)
-                    && !lines.get(i).startsWith(MEMBER_INDENT + " ")
-                    && trimmed.contains(BODY_OPEN) && trimmed.contains("(")
-                    && !trimmed.startsWith("*") && !trimmed.startsWith("//") && !trimmed.startsWith("@");
-            if (signatureLine) {
+        int depth = 0;
+        String name = null;
+        String pending = null;
+        StringBuilder body = null;
+        for (String raw : clean.replace("\r", "").split("\n", -1)) {
+            String trimmed = raw.strip();
+            if (body == null && depth == 1
+                    && raw.startsWith(MEMBER_INDENT) && !raw.startsWith(MEMBER_INDENT + " ")
+                    && trimmed.contains("(")
+                    && !trimmed.startsWith("*") && !trimmed.startsWith("//") && !trimmed.startsWith("@")) {
                 String head = trimmed.substring(0, trimmed.indexOf('('));
                 int sp = head.lastIndexOf(' ');
                 String candidate = (sp < 0 ? head : head.substring(sp + 1)).strip();
                 if (!candidate.isEmpty() && !CONTROL_KEYWORDS.contains(candidate)) {
-                    heads.put(candidate + "@" + i, end);
+                    pending = candidate;
                 }
             }
-            i = end + 1;
-        }
-        // ② 花括号深度：类体顶层（depth 1 → 2）进入方法体，回到 1 结束 ⇒ 取 [签名收尾+1, 结束行) 的原文。
-        int depth = 0;
-        int start = -1;
-        String name = null;
-        int signatureEnd = -1;
-        for (int k = 0; k < lines.size(); k++) {
-            if (depth == 1) {
-                for (Map.Entry<String, Integer> h : heads.entrySet()) {
-                    if (h.getValue() == k) {
-                        name = h.getKey().substring(0, h.getKey().lastIndexOf('@'));
-                        signatureEnd = h.getValue();
-                        start = k;
-                        break;
-                    }
-                }
-            }
-            String line = lines.get(k);
-            for (int p = 0; p < line.length(); p++) {
-                char ch = line.charAt(p);
+            boolean activated = false;
+            for (int i = 0; i < raw.length(); i++) {
+                char ch = raw.charAt(i);
                 if (ch == '{') {
                     depth++;
+                    if (body == null && pending != null && depth == 2) {
+                        name = pending;
+                        pending = null;
+                        body = new StringBuilder();
+                        activated = true;
+                    }
                 } else if (ch == '}') {
                     depth--;
-                    if (depth == 1 && start >= 0) {
-                        StringBuilder body = new StringBuilder();
-                        for (int b = signatureEnd + 1; b < k; b++) {
-                            body.append(lines.get(b)).append('\n');
-                        }
+                    if (depth == 1 && body != null) {
                         out.add(new MethodBody(name, body.toString()));
-                        start = -1;
+                        body = null;
                         name = null;
-                        signatureEnd = -1;
                     }
+                }
+            }
+            if (body != null && !activated) {
+                body.append(raw).append('\n');
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 剥掉块注释 / 行注释 / 字符串字面量 / 文本块（**保留行结构**：非换行字符变空格，换行原样留下）。
+     *
+     * <p>为什么必须剥（本包的核心）：花括号深度扫描要的只是「<b>真代码</b>里的括号」。注释 / 字符串里的
+     * 半个括号（如 {@code // 形如 &#123;} 或 {@code "{"}）会让计数器整体错位 ⇒ 后续方法全部扫不到，
+     * 或者更坏：<b>提前归位 ⇒ body 被截断而判据照绿</b>（issue #6956 第二部分的本体）。</p>
+     *
+     * <p>为什么不直接上 AST / JavaParser：本仓既有形态是「读源码文本」，加解析器依赖会扩大本单的
+     * 改动面与启动成本；一个手写剥壳足够覆盖「注释 / 字面量里的括号」这一族
+     * （判别力由合成语料的负控对账自证）。</p>
+     */
+    static String stripCommentsAndStrings(String src) {
+        StringBuilder out = new StringBuilder(src.length());
+        int i = 0;
+        int n = src.length();
+        while (i < n) {
+            char c = src.charAt(i);
+            if (src.startsWith("/*", i)) {
+                int j = src.indexOf("*/", i + 2);
+                j = j < 0 ? n : j + 2;
+                appendBlanks(out, src, i, j);
+                i = j;
+            } else if (src.startsWith("//", i)) {
+                int j = src.indexOf('\n', i);
+                j = j < 0 ? n : j;
+                appendBlanks(out, src, i, j);
+                i = j;
+            } else if (src.startsWith("\"\"\"", i)) {
+                int j = src.indexOf("\"\"\"", i + 3);
+                j = j < 0 ? n : j + 3;
+                appendBlanks(out, src, i, j);
+                i = j;
+            } else if (c == '"' || c == '\'') {
+                int j = i + 1;
+                while (j < n) {
+                    if (src.charAt(j) == '\\') {
+                        j += 2;
+                        continue;
+                    }
+                    if (src.charAt(j) == c) {
+                        j++;
+                        break;
+                    }
+                    j++;
+                }
+                appendBlanks(out, src, i, Math.min(j, n));
+                i = Math.min(j, n);
+            } else {
+                out.append(c);
+                i++;
+            }
+        }
+        return out.toString();
+    }
+
+    /** 把 {@code [from, to)} 逐字符写成空格，**换行原样保留**（行结构与缩进判定都依赖它）。 */
+    private static void appendBlanks(StringBuilder out, String src, int from, int to) {
+        for (int k = from; k < to; k++) {
+            out.append(src.charAt(k) == '\n' ? '\n' : ' ');
+        }
+    }
+
+    /**
+     * 「看不见 / 看错了」的对账（本包的核心治具 —— issue #6956 第二部分）。
+     *
+     * <p>口径：<b>同一份文本、两套独立取块</b> —— ① 被测实现（剥壳 + $0 深度，{@link #membersWithBody}）；
+     * ② <b>两套朴素取法</b>：按「签名形态正则」现取**方法名全集**（{@link #declaredMethodNames}，
+     * 它<b>完全不依赖花括号深度</b>）+ 修前的原始取块实现（{@link #RAW_SCANNER} 负控）。</p>
+     *
+     * <p>报出两类差集：<b>① 看不见</b> = 签名正则现取到、被测实现却没给出方法体；
+     * <b>② 看错了</b> = 两边都给出同名方法，但<b>方法体逐字不同</b>（形态②的「提前归位 ⇒ body 被截断」）
+     * —— 「看不见的对象才是本单的病」，而「收错了」比「没收到」更坏（判据会基于错误的 body 判绿）。
+     * 差集非空 ⇒ 判据 {@code blindSpotReconciliationHasTeeth} 当场红。</p>
+     */
+    private static List<String> reconciliation(String serviceText) {
+        List<String> problems = new ArrayList<>();
+        Map<String, String> seen = new LinkedHashMap<>();
+        for (MethodBody m : membersWithBody(serviceText)) {
+            seen.put(m.name(), m.body());
+        }
+        for (String declaredName : declaredMethodNames(serviceText)) {
+            if (!seen.containsKey(declaredName)) {
+                problems.add("看不见的方法: " + declaredName + "（签名正则现取到了，扫器没给出方法体）");
+            }
+        }
+        Map<String, String> raw = new LinkedHashMap<>();
+        for (MethodBody m : membersWithBodyRaw(serviceText)) {
+            raw.put(m.name(), m.body());
+        }
+        for (Map.Entry<String, String> e : raw.entrySet()) {
+            if (seen.containsKey(e.getKey()) && !seen.get(e.getKey()).equals(e.getValue())) {
+                problems.add("看错了 body: " + e.getKey() + "（修前取法给的是被截断的错 body）");
+            }
+        }
+        // 🔴 差集的**主方向**：被测实现（修后）看得见、修前取法看不见的写路径 = 「看不见的对象」。
+        //    本单的病就是**这个方向的差**（修前那一侧少看见一个整块），所以必须报它、且非空即红。
+        Set<String> rawPaths = new LinkedHashSet<>(serviceStatusWritePaths(serviceText, true));
+        for (String p : serviceStatusWritePaths(serviceText, false)) {
+            if (!rawPaths.contains(p)) {
+                problems.add("看不见的写路径: " + p + "（修后候选里在、修前取法整块扫不到 —— 本单的病）");
+            }
+        }
+        return problems;
+    }
+
+    /** 对账用的**另一套**「方法名全集」现取 —— 按签名形态正则，**不依赖花括号深度**。 */
+    private static List<String> declaredMethodNames(String text) {
+        List<String> out = new ArrayList<>();
+        for (String raw : stripCommentsAndStrings(text).replace("\r", "").split("\n", -1)) {
+            String trimmed = raw.strip();
+            if (raw.startsWith(MEMBER_INDENT) && !raw.startsWith(MEMBER_INDENT + " ")
+                    && trimmed.contains("(") && !trimmed.startsWith("@")) {
+                String head = trimmed.substring(0, trimmed.indexOf('('));
+                int sp = head.lastIndexOf(' ');
+                String candidate = (sp < 0 ? head : head.substring(sp + 1)).strip();
+                if (!candidate.isEmpty() && !CONTROL_KEYWORDS.contains(candidate)
+                        && Character.isLowerCase(candidate.charAt(0))) {
+                    out.add(candidate);
                 }
             }
         }
         return out;
+    }
+
+    /** 修前的取块实现（issue #6956 第二部分修前形态）—— **只在负控 / 对账里用**。 */
+    private static List<MethodBody> membersWithBodyRaw(String text) {
+        return membersWithBody(text, true);
     }
 
     /** 现取：service 里**出现状态列写**的方法（方法名 + 方法体）。 */
@@ -724,6 +936,32 @@ class InboundOrderStatusCasMetaGuardTest {
         return "public class X {\n    public void " + method + "(String id,\n"
                 + "                        String second) {\n        "
                 + methodBody + "\n    }\n}\n";
+    }
+
+    /**
+     * 形态② · 向量 1 的合成语料：**注入方法之前**先来一行含孤立 {@code &#123;} 的注释
+     * （如 {@code // 形如 { }），其后是被注入的方法。
+     */
+    private static String orphanOpenBraceCommentCorpus(String method, String methodBody) {
+        return "public class Y {\n"
+                + "    // 形如 {\n"
+                + "    public void " + method + "(String id) {\n"
+                + "        " + methodBody + "\n"
+                + "    }\n}\n";
+    }
+
+    /**
+     * 形态② · 向量 3 的合成语料（<b>「收错了」</b>）：含孤立 {@code &#125;} 的注释落在**方法体第一行** ⇒
+     * 不剥注释的深度计数器<b>提前</b>归位 ⇒ 取到的 body 是**空壳**（方法名进了候选集，判据却基于错误的
+     * body 判绿）。⚠️ 这条形态是**实测确定**的（写成「签名行之前」的注释只会让修前取法连方法名都丢掉，
+     * 那是「扫不到」而不是「收错了」—— 两种都坏，但要分开钉）。
+     */
+    private static String truncatedBodyCorpus(String method, String methodBody) {
+        return "public class Z {\n"
+                + "    public void " + method + "(String id) {\n"
+                + "        // 收尾 } 说明\n"
+                + "        " + methodBody + "\n"
+                + "    }\n}\n";
     }
 
     // ────────────────────────────────────────────── 语料读取
