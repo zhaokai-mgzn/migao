@@ -83,37 +83,40 @@
       "method": "ProductService#updateProduct",
       "host_form": "读整实体 → `BeanUtils.copyProperties` → `productMapper.updateById(product)`",
       "what": "改品**只写自己负责的列**，**不写** status 列（T2b 的类级根因：修前显式 `setStatus(originalStatus)` ⇒ 把读到的旧 status 写回，静默回滚并发的状态迁移）。",
-      "anchor": "product.setStatus(null);\n\n        // 处理图片列表",
-      "forbidden_anchor": "// 恢复状态：状态变更必须通过 updateProductStatus 接口（含状态机校验）\n        product.setStatus(originalStatus);",
-      "forbidden_why": "退回「恢复旧状态」那一句（= 修前形态）⇒ 方法体里重新出现「读了旧 status 又写回」的整实体回写 ⇒ 命中本禁用锚。",
+      "anchor": "productMapper.update(null, updateProductOwnedColumns(product));",
+      "forbidden_anchor": null,
+      "forbidden_why": "host_form 的判别力由 `pre_line` 承担：摘掉紧邻的 `product.setStatus(null);` ⇒ 体内`productMapper.update(null, updateProductOwnedColumns(product));` 的**紧邻前一句**不再是它 ⇒ 判红。本条**无独立禁用锚**（有意为之）：整实体回写的判别已被 `productMapper.updateById(` 全禁（判据 3）。",
       "case_ids": [
         "PG-077"
       ],
-      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java::product.setStatus(null);\n\n        // 处理图片列表"
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java::product.setStatus(null);",
+      "pre_line": "product.setStatus(null);"
     },
     {
       "method": "ProductService#updateProductRecommended",
       "host_form": "读整实体 → `setRecommended` → `productMapper.updateById(product)`",
       "what": "改推荐标记**不写** status 列（同族形态：这次读到的旧 status 不得被写回）。",
-      "anchor": "product.setStatus(null);\nproductMapper.updateById(product);",
-      "forbidden_anchor": "product.setStatus(null);\nproductMapper.updateById(product);",
-      "forbidden_why": "把 `product.setStatus(null);` 那句摘掉（回到「读到的旧 status 一起写回」）⇒ 该行紧接 `productMapper.updateById(product);` ⇒ **锚与禁用锚命中同一段文本** ⇒ 当场红。",
+      "anchor": "productMapper.updateById(product);",
+      "forbidden_anchor": null,
+      "forbidden_why": "同上：`pre_line` = 紧邻前一句。修前那一句是 `product.setEditedAt(OffsetDateTime.now());` ⇒ 判红。本条**无独立禁用锚**（有意为之）：该宿主里 `product.setStatus(null);` 紧接 `updateById` 就是修后的正确形态，拿它当禁用锚会恒红。",
       "case_ids": [
         "PG-077"
       ],
-      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java::product.setStatus(null);\nproductMapper.updateById(product);"
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java::product.setStatus(null);",
+      "pre_line": "product.setStatus(null);"
     },
     {
       "method": "ProductService#adjustStockForAgent",
       "host_form": "读整实体 → `setStock(汇总值)` → `productMapper.updateById(product)`",
       "what": "库存同步**不写** status 列（同族形态）。",
-      "anchor": "product.setStatus(null);\nproductMapper.updateById(product);",
-      "forbidden_anchor": "product.setStatus(null);\nproductMapper.updateById(product);",
-      "forbidden_why": "同上（`product.setStatus(newTotal)` 之后直接跟着 updateById）⇒ 摘掉 status 置 null 那一行即命中。",
+      "anchor": "productMapper.updateById(product);",
+      "forbidden_anchor": null,
+      "forbidden_why": "同上：`pre_line` = 紧邻前一句（修前是 `product.setStock(newTotal);`）⇒ 摘掉保护句即判红。本条**无独立禁用锚**（有意为之），理由同上。",
       "case_ids": [
         "PG-077"
       ],
-      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java::product.setStatus(null);\nproductMapper.updateById(product);"
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java::product.setStatus(null);",
+      "pre_line": "product.setStatus(null);"
     }
   ]
 }

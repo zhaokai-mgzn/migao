@@ -188,9 +188,12 @@ class ProductStatusCasMetaGuardTest {
             String host = bareMethod(method);
             String evidence = inv.get("evidence").asText();
             String anchor = inv.get("anchor").asText();
-            String forbidden = inv.get("forbidden_anchor").asText();
+            // forbidden_anchor 允许显式 null：那表示「本条无独立禁用锚」（判别力全由 anchor 承担），
+            // 不是漏登记 —— 台账里逐条写明了理由（forbidden_why）。
+            JsonNode forbiddenNode = inv.get("forbidden_anchor");
+            String forbidden = forbiddenNode == null || forbiddenNode.isNull() ? null : forbiddenNode.asText();
             hostsInLedger.add(host);
-            allForbidden.add(host + "::" + forbidden);
+            allForbidden.add(host + "::" + (forbidden == null ? "(无独立禁用锚)" : forbidden));
             int sep = evidence.indexOf("::");
             Path file = root.resolve(evidence.substring(0, sep));
             String symbol = evidence.substring(sep + 2);
@@ -210,19 +213,22 @@ class ProductStatusCasMetaGuardTest {
                 // 归一化空白后比对（缩进 / 换行形态不参与判定，判的是「这两句之间的保护句在不在」）
                 String bodyNormalized = normalize(m.body());
                 String anchorNormalized = normalize(anchor);
-                String forbiddenNormalized = normalize(forbidden);
+                String forbiddenNormalized = forbidden == null ? null : normalize(forbidden);
                 if (!bodyNormalized.contains(anchorNormalized)) {
-                    unanchored.add(method + " 缺否定锚 `" + anchorNormalized + "`");
+                    unanchored.add(method + " 缺「自己负责的写面」锚 `" + anchorNormalized + "`");
                 }
-                // ⚠️ 这三条的锚与禁用锚**有意相同**：要证明的是「保护句在不在」——
-                //    摘掉它 ⇒ 同一段文本（= 旧形态）回来 ⇒ 命中。两侧都归一化后才比，否则
-                //    `A B` 与 `A B ` 会被判不等 ⇒ 这条自证假绿（真源码 / 合成语料都实测过）。
-                if (anchorNormalized.equals(forbiddenNormalized)) {
-                    if (bodyNormalized.contains(forbiddenNormalized)) {
-                        unanchored.add(method + " 体内出现禁用锚（保护句缺失 = 陈旧整实体回写）：`"
-                                + forbiddenNormalized + "`");
-                    }
-                } else if (bodyNormalized.contains(forbiddenNormalized)) {
+                // 🔴 判别力本体：**紧邻前一句**必须是那条保护句（status 置 null ⇒ 不进 SET）。
+                // 判据的取块器以含 `{` 的那一行**开体** ⇒ 保护句自己若正好在开体行上，它不在 body 里；
+                // 故同时接受「锚那行里含保护句」（与锚同行）与「锚的紧邻前一句是保护句」两种形态。
+                String preLine = inv.get("pre_line") == null ? null : inv.get("pre_line").asText();
+                if (preLine != null && !bodyNormalized.contains(normalize(preLine))) {
+                    unanchored.add(method + " 缺保护句 `" + normalize(preLine) + "`（紧邻在 `"
+                            + anchorNormalized + "` 之前）");
+                }
+                // 禁用锚显式缺省（= null）时本条只判 anchor：那两条宿主的判别力全在 anchor 上
+                // （摘掉保护句 ⇒ anchor 失配）。两侧都归一化后才比，否则 `A B` 与 `A B ` 会被判不等
+                // ⇒ 自证假绿（真源码 / 合成语料都实测过）。
+                if (forbiddenNormalized != null && bodyNormalized.contains(forbiddenNormalized)) {
                     unanchored.add(method + " 体内出现禁用锚（无谓词整实体回写）：`" + forbiddenNormalized + "`");
                 }
             }
