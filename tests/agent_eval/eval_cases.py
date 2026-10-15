@@ -13930,6 +13930,24 @@ _CASE_UI_098 = EvalCase(
     precondition="本用例是 [backend-contract] 纯前端用例：前置由单测自建 —— `frontend/admin-web/tests/unit/components/MessageList-cjk-emphasis.test.tsx` `vi.mock('@/store/chat')` 注入消息夹具（截图全文逐字复用），另把 `@/hooks/use-typewriter` 替身成直返全文（真实定时器会饿死 waitFor 轮询）。前置不成立时单测直接红（找不到 `div.prose` / 找不到 `<strong>`），不依赖共享夹具；agent-eval 栈不跑它",
 )
 
+# ── UI-099 [NORMAL] measure 区间守卫：谓词按浏览器实测取（负时间戳，不是负时长）+ 必须真装进客户端（issue #6946）（源: cases/ui.yml）──
+_CASE_UI_099 = EvalCase(
+    id='UI-099',
+    legacy_id='',
+    title='measure 区间守卫：谓词按浏览器实测取（负时间戳，不是负时长）+ 必须真装进客户端（issue #6946）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=["验收冒烟偶发 `[pageerror] TypeError: Failed to execute 'measure' on 'Performance': 'ProcessingRedirectPage' cannot have a negative time stamp.` —— #6799 ② 说修过了却还复发；我要的是**这一族再也进不来**，不是再修一次。"],
+    expectations=['direct_reply'],
+    data_checks=['🔴 判据 1·**实例（会红）**：`frontend/admin-web/tests/unit/lib/user-timing-guard.test.ts` —— 桩按**浏览器实测**实现（**任一时间戳为负 ⇒ 抛** `cannot have a negative time stamp`），覆盖 `{start:-1,end:10}` / `{start:5,end:-1}` / `{start:-5,end:-1}`；判别力对照：**负时长**（`100 → 90`，两个时间戳都非负）必须**照旧透传**（旧守卫会误丢它 ⇒ 拿丢埋点换不报错）。修前实测（旧实现 + 新判据）= **7 failed**；修后 = **2 files / 12 passed**。', "🔴 判据 2·**类级接线元守卫**：`frontend/admin-web/tests/unit/user-timing-guard-wiring.test.ts` 钉三件事 —— ① 装它的模块必须是 `'use client'` 模块；② `layout.tsx` 必须**渲染**该客户端组件（只 import 不算）；③ 守卫模块顶层自装。**回归时会怎么红**：改回「Server Component 里副作用 import」/ 删 `'use client'` / 删 `<UserTimingGuard />` ⇒ 具名报红。", '🔴 判据 3·**接线时机**：`frontend/admin-web/tests/unit/components/UserTimingGuard.test.ts` —— import 即装（模块顶层，早于 React 首次 commit 埋点）、重复 import 只装一次、组件渲染 null、且调用位置必须在 `export default` **之前**（挪进组件体即判红，附负控）。', '🔴 真栈复探（人工一条命令，非 CI 腿）：`node acceptance/2026-10-14/tools/probe-timing-guard.mjs` ⇒ 修后逐字 `installed=true patched=true negativeTimestampThrows=false legitPassedThrough=true pageerrors=0`（修前 `installed=false patched=false`）。⚠️ 探针自己踩过假阴性：标记打在 `window.performance` 上，不是 `performance.measure` 上。'],
+    skip_reason='[backend-contract] 纯前端研发态观测面（User Timing 只喂 DevTools；服务端一字未改），由 vitest（jsdom）+ 一条 Playwright 探针执行，不进 agent-eval 冒烟',
+    tags=['ui', 'dev-mode', 'performance-timing', 'client-wiring', 'class-level-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -14712,6 +14730,7 @@ ALL_CASES = (
     _CASE_UI_096,
     _CASE_UI_097,
     _CASE_UI_098,
+    _CASE_UI_099,
     _CASE_UT_001,
     _CASE_UT_002,
 )

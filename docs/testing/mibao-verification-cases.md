@@ -9388,7 +9388,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（98 case）
+## 前端 UI 域（99 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -10812,6 +10812,19 @@
 真值: frontend-fix.vitest, frontend-fix.no-api-change
 溯源: 2026-10-14 新增（issue #6910，用户同日实测截图）。取号 = `python3 scripts/next_case_id.py UI` ⇒ main 现取 UI-001~097、在飞 PR 未占 UI-098 ⇒ **UI-098**。归因：CommonMark 的左/右 flanking 规则都以紧邻字符是否为 Unicode 标点（P/S）为条件，而 `「」（）《》、，。` 都是标点、中文正文里它们前面紧跟汉字 ⇒ `的**「…」**` 判不能开、`**「重点」**文本` 判不能闭，配对不上就按字面输出（英文 `abc**"x"**` 同样如此）。修法 = 交给 react-markdown 之前做一次**零可见变化**的归一化（`frontend/admin-web/src/lib/cjk-emphasis.ts`）：先按「同字符 + 同长度」配对，只给配对里做不到本职（不能开 / 不能闭）的那一侧插零宽空格 U+200B（既非空白也非标点 ⇒ flanking 条件当场成立），代码面（行内代码 / 围栏代码块）逐字跳过。不新增依赖（本仓自写纯函数）。 ｜ tags: ui, chat, markdown, cjk, admin-web, class-level-guard
 
+### UI-099. measure 区间守卫：谓词按浏览器实测取（负时间戳，不是负时长）+ 必须真装进客户端（issue #6946） 🔵
+```
+你: 验收冒烟偶发 `[pageerror] TypeError: Failed to execute 'measure' on 'Performance': 'ProcessingRedirectPage' cannot have a negative time stamp.` —— #6799 ② 说修过了却还复发；我要的是**这一族再也进不来**，不是再修一次。
+期望: direct_reply
+数据: 🔴 判据 1·**实例（会红）**：`frontend/admin-web/tests/unit/lib/user-timing-guard.test.ts` —— 桩按**浏览器实测**实现（**任一时间戳为负 ⇒ 抛** `cannot have a negative time stamp`），覆盖 `{start:-1,end:10}` / `{start:5,end:-1}` / `{start:-5,end:-1}`；判别力对照：**负时长**（`100 → 90`，两个时间戳都非负）必须**照旧透传**（旧守卫会误丢它 ⇒ 拿丢埋点换不报错）。修前实测（旧实现 + 新判据）= **7 failed**；修后 = **2 files / 12 passed**。
+数据: 🔴 判据 2·**类级接线元守卫**：`frontend/admin-web/tests/unit/user-timing-guard-wiring.test.ts` 钉三件事 —— ① 装它的模块必须是 `'use client'` 模块；② `layout.tsx` 必须**渲染**该客户端组件（只 import 不算）；③ 守卫模块顶层自装。**回归时会怎么红**：改回「Server Component 里副作用 import」/ 删 `'use client'` / 删 `<UserTimingGuard />` ⇒ 具名报红。
+数据: 🔴 判据 3·**接线时机**：`frontend/admin-web/tests/unit/components/UserTimingGuard.test.ts` —— import 即装（模块顶层，早于 React 首次 commit 埋点）、重复 import 只装一次、组件渲染 null、且调用位置必须在 `export default` **之前**（挪进组件体即判红，附负控）。
+数据: 🔴 真栈复探（人工一条命令，非 CI 腿）：`node acceptance/2026-10-14/tools/probe-timing-guard.mjs` ⇒ 修后逐字 `installed=true patched=true negativeTimestampThrows=false legitPassedThrough=true pageerrors=0`（修前 `installed=false patched=false`）。⚠️ 探针自己踩过假阴性：标记打在 `window.performance` 上，不是 `performance.measure` 上。
+跳过: [backend-contract] 纯前端研发态观测面（User Timing 只喂 DevTools；服务端一字未改），由 vitest（jsdom）+ 一条 Playwright 探针执行，不进 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-10-15 新增（issue #6946）。取号 = `python3 scripts/next_case_id.py UI` ⇒ main 现取 UI-001~098 ⇒ **UI-099**。⚠️ 本用例同时**纠正一处历史转述错误**：#6799 ② 的两个测试文件此前声明 `case_ids: UI-097`，而 UI-097 逐字是 #6799 ① 的 hydration 用例（见其 `merge_log`）—— 现改挂 UI-099。病（两条各自独立）：① 谓词判的是 `end < start`，而真栈只在**任一负时间戳**时抛（`{start:-1,end:10}` / `{start:5,end:-1}` 抛；`{start:100,end:90}` **不抛**）⇒ 真栈上恒 false，守卫即便装上那一条也拦不住；② 守卫由 `src/app/layout.tsx`（**Server Component**）副作用 import ⇒ 那句 import 只在 Node 侧执行、`typeof window === 'undefined'` 短路 ⇒ 浏览器里 `measure` 一直是 `[native code]`（实测 `__userTimingGuardInstalled` 未置），而旧接线判据只查「仓库里有一行字」⇒ **假绿**。修法 = 谓词改为「任一时间戳为负」（负时长照旧透传）+ 新增 `'use client'` 的 `UserTimingGuard.tsx` 在模块顶层安装、由 `layout.tsx` 渲染它。 ｜ tags: ui, dev-mode, performance-timing, client-wiring, class-level-guard, red-proof
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -10841,8 +10854,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：747（活跃 134，跳过 613）
-- tier 分布：smoke 12 / normal 690 / adversarial 32
+- 用例总数：748（活跃 134，跳过 614）
+- tier 分布：smoke 12 / normal 691 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10867,7 +10880,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：98
+- 前端 UI 域：99
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

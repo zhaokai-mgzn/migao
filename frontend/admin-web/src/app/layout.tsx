@@ -2,10 +2,11 @@ import type { Metadata } from 'next'
 import { Toaster } from 'sonner'
 import AuthProvider from '@/components/providers/AuthProvider'
 import { AuthGuard } from '@/components/auth-guard'
-// issue #6799 ②：`performance.measure` 区间守卫（React 开发态埋点在极端时序下取到负区间 ⇒
+// issue #6799 ② / #6946：`performance.measure` 区间守卫（React 开发态埋点在极端时序下取到**负时间戳** ⇒
 // 浏览器抛 `cannot have a negative time stamp` ⇒ 冒烟把 pageerror 当旅程失败）。
-// 这里 import 即装上（模块顶层，早于 React hydrate）—— 判据与边界见 `src/lib/user-timing-guard.ts`。
-import '../lib/user-timing-guard'
+// ⚠️ 必须走**客户端组件**：本文件是 Server Component，直接 `import '../lib/user-timing-guard'` 只在 Node 侧执行
+// ⇒ 浏览器里守卫根本没装上（#6946 实测 `__userTimingGuardInstalled === false`、`measure` 仍是 `[native code]`）。
+import UserTimingGuard from '@/components/UserTimingGuard'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -62,6 +63,8 @@ export default function RootLayout({
       <body>
         {/* 必须最先执行：在 Next.js 客户端 router 与任何组件 hydrate 之前还原 URL */}
         <script dangerouslySetInnerHTML={{ __html: SPA_PATH_RESTORE_SCRIPT }} />
+        {/* 装上 `performance.measure` 区间守卫（客户端模块顶层执行，早于 React 首次 commit 埋点）—— issue #6946 */}
+        <UserTimingGuard />
         <AuthProvider>
           <AuthGuard>{children}</AuthGuard>
         </AuthProvider>

@@ -47,16 +47,29 @@ type MeasureFn = (
 
 let original: MeasureFn | null = null
 
-/** 这次 `measure` 的区间是不是**非法**（浏览器会因此抛 `negative time stamp`）。 */
+/**
+ * 这次 `measure` 会不会**被浏览器判为非法**（= 抛 `cannot have a negative time stamp`）。
+ *
+ * 🔴 **判据订正（issue #6946；2026-10-15 真栈逐字实测，Chromium）**：抛错的**充要条件是「任一时间戳为负」**，
+ * **不是**「`end < start`」——旧实现判的是后者 ⇒ 真栈上**恒为 false**，守卫即便装上，那条 pageerror 也一条都拦不住：
+ *
+ * | 调用 | 真栈行为 |
+ * |---|---|
+ * | `measure('X', { start: -1, end: 10 })` | **抛** `'X' cannot have a negative time stamp.` |
+ * | `measure('X', { start: 5, end: -1 })`  | **抛**（同上） |
+ * | `measure('X', { start: 100, end: 90 })` | **不抛**（负**时长**合法，浏览器照收） |
+ * | `measure('X', { start: 0, end: 0 })` | 不抛 |
+ *
+ * ⇒ 只按「会不会抛」判；负时长**照旧透传**（不替浏览器做它没做的判断，免得凭空丢埋点）。
+ */
 export function isInvalidMeasureRange(startOrOptions?: string | number | PerformanceMeasureOptions, endMark?: string): boolean {
   if (typeof endMark === 'number') {
-    // `measure(name, startTime, endTime)`：字符串起点（mark 名）由浏览器解析，这里不判
-    return typeof startOrOptions === 'number' ? endMark < startOrOptions : false
+    // `measure(name, startTime, endTime)`：起点若是**字符串**（mark 名），它解析成哪个时刻这里判不了 —— 只判拿得到的两个数
+    return endMark < 0 || (typeof startOrOptions === 'number' && startOrOptions < 0)
   }
   if (startOrOptions && typeof startOrOptions === 'object') {
     const { start, end } = startOrOptions as PerformanceMeasureOptions
-    if (typeof start === 'number' && typeof end === 'number') return end < start
-    return false
+    return (typeof start === 'number' && start < 0) || (typeof end === 'number' && end < 0)
   }
   return false
 }
@@ -92,6 +105,8 @@ export function uninstallUserTimingGuard(): void {
   delete perf.__userTimingGuardInstalled
 }
 
-// 装上：本模块由 `src/app/layout.tsx` **模块顶层** import（与同文件的 SPA 路径还原脚本同一时机），
-// 即"React hydrate 之前"。放在模块级而不是某个组件里，是为了保证**早于** React 的首次 commit 埋点。
+// 装上：本模块由 `src/components/UserTimingGuard.tsx`（`'use client'`）**模块顶层** import ——
+// ⚠️ **不要**改回「由 `src/app/layout.tsx` 直接 import 本模块」：`layout.tsx` 是 Server Component，
+//    那句 import 只在 **Node 侧**执行，浏览器里守卫根本装不上（issue #6946 实测：`__userTimingGuardInstalled === false`、
+//    `measure` 仍是 `[native code]`）。走客户端组件 ⇒ 随客户端 bundle 加载、早于 React 首次 commit 埋点。
 installUserTimingGuard()
