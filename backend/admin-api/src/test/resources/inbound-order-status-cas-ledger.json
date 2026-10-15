@@ -2,11 +2,12 @@
   "schema": "inbound-order-status-cas/1.0",
   "_what": "入库单（inbound_orders）**状态列写路径**的登记表：`InboundOrderMapper` 里每一条写 status 的手写 SQL，以及 `InboundOrderService` 里每一处该列状态迁移的调用点，都必须在此登记，**未登记即红**。规范正文 = issue #6928 / `migao-dev-flow` §23（类级固化）。",
   "_why": "issue #6928 的病根是**同一个状态迁移权上有两个写面，只有一个带 CAS**：`#post` 走条件更新（`WHERE id=? AND tenant_id=? AND status='draft' AND deleted=0`，0 行 ⇒ 409），`#cancel` 走「先读 status 判 draft、再 `updateById`（WHERE 仅主键 ⇒ 无谓词）」。两者**不互斥** ⇒ 窗口里 post 抢到过账权并提交（库存 +N、台账 1 行），cancel 随后无条件把该单覆写成 cancelled —— 同一张单既回 200 又落在 cancelled，而库存与入库台账静默留在库里（账实不符、无任何 4xx；生产复现 3/20）。**只修 cancel 这一处 = 没修**：下一个人在同文件新加状态迁移写路径、或给 mapper 加一条无条件 SQL，同样没有任何东西会红 ⇒ 本表把这一类形态逐个登记。",
+  "_issue_6956": "本表的「现取集」口径由 issue #6956 修正（洞 A）：原守护的取方法体实现要求签名**在同一行**收尾（`) {`），于是**签名跨行**的方法体整个从未被收集（实证：`InboundOrderService#create(InboundOrderCreateRequest, Long, String, String)` 的 `inboundOrderMapper.updateById(order)` 没有任何东西看着它）。修法 = 取块前先把类体顶层的多行签名归一成一行；归一化后 `create` 进入现取集，本表随之**新增**两条登记：`service_write_paths` 一条（该写面**只许写非状态列**，用 `status_write_forbidden` 钉住）与 `non_status_writers` 一条（带冻结基线 1、只许缩短）——不是往豁免里塞条目把红变绿。",
   "scan": {
     "root": "backend/admin-api/src/main/java/com/migao/admin",
     "mapper": "mapper/InboundOrderMapper.java",
     "service": "service/InboundOrderService.java",
-    "shape": "① mapper：手写 @Update SQL（`UPDATE inbound_orders`）里凡在 SET 侧写 `status` 的，必须带完整谓词 `status = 'draft'` + `deleted = 0` + `tenant_id`；② service：凡**方法体内出现** `inboundOrderMapper.updateById(` 或 `inboundOrderMapper.mark*(` 的方法 = 状态列的写路径，必须逐条在册，且其 `call_anchor` 必须**逐字**出现在该方法体内（「以 `markXxx` 收口」这条主张必须被兑现：把 `markXxx` 退回无谓词 `updateById` ⇒ 红）。",
+    "shape": "① mapper：手写 @Update SQL（`UPDATE inbound_orders`）里凡在 SET 侧写 `status` 的，必须带完整谓词 `status = 'draft'` + `deleted = 0` + `tenant_id`；② service：凡**方法体内出现** `inboundOrderMapper.updateById(` 或 `inboundOrderMapper.mark*(` 的方法 = 现取候选（**方法体由花括号深度切块取，签名跨行也必须取到**），每个候选必须落在两个名单之一：`service_write_paths`（写面登记，`call_anchor` 必须**逐字**出现在该方法体内；可选 `status_write_forbidden` = 本方法内**禁止出现**的状态写锚）或 `non_status_writers`（= 明示「它不写 status 列」，名额被 `non_status_writers_baseline` 冻结，且一旦真的写了 status 列即红）。",
     "note": "形态判据不做 AST 解析（只认「注解 + 方法窗口 + 文本标记」）⇒ 换措辞可绕过；真实防线仍是各自的实例判据（见 coverage_boundary）。"
   },
   "entries": [
@@ -53,7 +54,20 @@
       ]
     }
   ],
+  "non_status_writers": [
+    {
+      "method": "InboundOrderService#create",
+      "why": "现取候选（方法体里出现 `inboundOrderMapper.updateById(`），但它**不写 status 列**：`create()` 只在**同一事务里刚 insert 的新行**上写 `total_amount`；草稿态来自 builder 里的 `status(InboundOrder.STATUS_DRAFT)`（不是 `setStatus`）。⇒ 不构成「状态迁移写面」，故不要求 CAS 收口锚；名额被 `non_status_writers_baseline` 冻结（只许缩短），且一旦本方法出现状态列写（`setStatus(` / `.set(InboundOrder::getStatus` / `mark*(`）⇒ 判据当场红（它必须改登记为状态迁移写路径）。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java::inboundOrderMapper.updateById(order);",
+      "case_ids": [
+        "MC-100"
+      ],
+      "call_anchor": "inboundOrderMapper.updateById(order);",
+      "status_write_forbidden": "order.setStatus("
+    }
+  ],
+  "non_status_writers_baseline": 1,
   "unverified_baseline": 0,
   "unverified": [],
-  "coverage_boundary": "本表机械保证的是：① 扫描器**现取**的「写 status 的 mapper SQL」与「service 里写状态列的调用点」都在册、且**只增不减**（新增未登记 ⇒ 红；台账条目在现取集合里消失 ⇒ 红）；② 每条 mapper 写面带完整谓词（`status = 'draft'` + `deleted = 0` + `tenant_id`）；③ 每条 evidence 锚是 `<仓库相对路径>::<可检索文本>`，左侧文件存在、右侧**逐字出现**（摘掉 CAS 调用 / 改名 ⇒ 红）。它**不保证**：① 判据本体没跑过那条真库并发判据 —— 行为面由 `InboundOrderCancelRaceRealDbTest`（真 PG + 窗口注入）承担，两者缺一不可；② 形态判据不做 AST 解析，换措辞可绕过（真实防线仍是实例判据）；③ 射程只到 `InboundOrderService` + `InboundOrderMapper` 这一对文件（**别的租户数据类型的状态迁移不在本表射程**：那是一张更大的表，本单不顺手扩面）；④ 判不了「拿 `updateById` 改**非状态**列」（那不是本表的对象：本表的对象是状态列）；⑤ `.xml` mapper 文件（本仓 mapper 是注解式，无 xml）不在扫描面。"
+  "coverage_boundary": "本表机械保证的是：① 扫描器**现取**的「写 status 的 mapper SQL」与「service 里写状态列的调用点」都在册、且**只增不减**（新增未登记 ⇒ 红；台账条目在现取集合里消失 ⇒ 红）；② 每条 mapper 写面带完整谓词（`status = 'draft'` + `deleted = 0` + `tenant_id`）；③ 每条 evidence 锚是 `<仓库相对路径>::<可检索文本>`，左侧文件存在、右侧**逐字出现**（摘掉 CAS 调用 / 改名 ⇒ 红）；④ 现取候选必须落在 `service_write_paths` 或 `non_status_writers` 之一（两名单皆无 ⇒ 红），`service_write_paths` 里带 `status_write_forbidden` 的写面不得出现该锚，`non_status_writers` 名额 ≤ 冻结基线、名额里的方法一旦写 status 列即红（issue #6956 新增）。它**不保证**：① 判据本体没跑过那条真库并发判据 —— 行为面由 `InboundOrderCancelRaceRealDbTest`（真 PG + 窗口注入）承担，两者缺一不可；② 形态判据不做 AST 解析，换措辞可绕过（真实防线仍是实例判据）；③ 射程只到 `InboundOrderService` + `InboundOrderMapper` 这一对文件（**别的租户数据类型的状态迁移不在本表射程**：那是一张更大的表，本单不顺手扩面）；④ 判不了「拿 `updateById` 改**非状态**列」（那不是本表的对象）—— `non_status_writers` 是这条边界的**登记面**，不是它的判据（判据只保证「豁免没有自己长大」）；⑤ `.xml` mapper 文件（本仓 mapper 是注解式，无 xml）不在扫描面；⑥ **方法体切块靠花括号深度 + 签名归一**（issue #6956 修法）：注释 / 字符串里的花括号仍可能干扰（保守方向：宁可红在形态上），本仓该文件无此形态。"
 }
