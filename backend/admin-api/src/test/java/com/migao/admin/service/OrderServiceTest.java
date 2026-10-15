@@ -1377,16 +1377,16 @@ class OrderServiceTest {
     void addRemark_appendsWithTimestamp() {
         // given
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderMapper.update(isNull(), any())).thenReturn(1);
 
         // when
         orderService.addRemark("order-001", "客户催单");
 
         // then
-        verify(orderMapper).updateById(argThat((Order o) -> {
-            String remark = o.getRemark();
+        // issue #6955：改为「只写 remark 列」的条件更新 ⇒ 断言从「整实体入参」改成 SET 子句的实参
+        verify(orderMapper).update(isNull(), argThat(w -> {
+            String remark = setStringValue(w, "客户催单");
             return remark != null
-                    && remark.contains("客户催单")
                     && remark.matches("(?s).*\\[\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}\\] 客户催单.*");
         }));
     }
@@ -1397,14 +1397,16 @@ class OrderServiceTest {
         // given
         testOrder.setRemark("[2026-06-01 10:00] 旧备注");
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderMapper.update(isNull(), any())).thenReturn(1);
 
         // when
         orderService.addRemark("order-001", "新备注");
 
         // then
-        verify(orderMapper).updateById(argThat((Order o) ->
-                o.getRemark() != null && o.getRemark().contains("\n") && o.getRemark().contains("新备注")));
+        verify(orderMapper).update(isNull(), argThat(w -> {
+            String remark = setStringValue(w, "新备注");
+            return remark != null && remark.contains("\n") && remark.contains("旧备注");
+        }));
     }
 
     @Test
@@ -1587,13 +1589,13 @@ class OrderServiceTest {
     void updateFollowStatus_acceptsValidValue() {
         // given
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
-        when(orderMapper.updateById(any(Order.class))).thenReturn(1);
+        when(orderMapper.update(isNull(), any())).thenReturn(1);
 
         // when
         orderService.updateFollowStatus("order-001", "following");
 
         // then
-        verify(orderMapper).updateById(argThat((Order o) -> "following".equals(o.getFollowStatus())));
+        verify(orderMapper).update(isNull(), argThat(w -> "following".equals(setStringValue(w, "following"))));
     }
 
     // ======================== 优惠金额（discountAmount）测试 ========================
@@ -2430,14 +2432,18 @@ class OrderServiceTest {
                 .processingOrderNo("JG-1").status("generated").build();
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
         when(processingOrderMapper.selectActiveByOrderId("order-001", 1L)).thenReturn(po);
+        // issue #6955：联动作废走条件更新（CAS），0 行 ⇒ 409 并回滚订单取消 ⇒ 这里必须让它命中
+        when(processingOrderMapper.markStatusIfFrom(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(1);
         when(orderMapper.update(any(), any())).thenReturn(1);
 
         orderService.cancelOrder("order-001", "客户不要了");
 
-        ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper).updateById(captor.capture());
-        assertThat(captor.getValue().getStatus()).isEqualTo("cancelled");
-        assertThat(captor.getValue().getCancelledReason()).contains("自动作废");
+        ArgumentCaptor<String> statusArg = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> reasonArg = ArgumentCaptor.forClass(String.class);
+        verify(processingOrderMapper).markStatusIfFrom(eq("po-1"), eq(1L), eq("generated"),
+                statusArg.capture(), any(), any(), any(), any(), any(), any(), reasonArg.capture(), any());
+        assertThat(statusArg.getValue()).isEqualTo("cancelled");
+        assertThat(reasonArg.getValue()).contains("自动作废");
     }
 
     @Test
@@ -3434,5 +3440,23 @@ class OrderServiceTest {
         verify(orderMapper).insert(captor.capture());
         assertThat(captor.getValue().getTotalAmount().toPlainString()).isEqualTo("0.01");
         assertThat(captor.getValue().getActualAmount().toPlainString()).isEqualTo("0.01");
+    }
+
+    /**
+     * 从「只写自己负责的列」的条件更新（issue #6955 的 T2b 形态）里取出**字符串实参**。
+     *
+     * <p>为什么需要它：这三条写路径已从「{@code selectById} → 改实体 → {@code updateById}」
+     * 改成 {@code LambdaUpdateWrapper.set(col, value)} —— SET 子句的实参进的是 wrapper 的
+     * {@code paramNameValuePairs}（不是实体字段）⇒ 旧断言（拿实体比字段）已经拿不到东西。
+     * 这里按「该值是否出现在 SET 实参里」判定，并顺带断言 **SET 只碰 remark / follow_status 这一类
+     * 自己的列、绝不整实体回写**（{@code updateById} 另由各用例的 {@code never()} 守住）。</p>
+     */
+    private static String setStringValue(Object wrapper, String fallback) {
+        if (!(wrapper instanceof com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<?> w)) {
+            return null;
+        }
+        Object v = w.getParamNameValuePairs().values().stream()
+                .filter(String.class::isInstance).reduce((a, b) -> b).orElse(null);
+        return v == null ? fallback : (String) v;
     }
 }

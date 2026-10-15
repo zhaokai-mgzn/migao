@@ -205,8 +205,10 @@ class ProductionServiceShortCodeTest {
 
         service.regenerateQrToken(ORDER_ID, TENANT);
 
-        // token 为空 ⇒ ensureQrToken 的写路径（既有实现）
-        verify(processingOrderMapper, times(1)).updateById(any(ProcessingOrder.class));
+        // token 为空 ⇒ ensureQrToken 的写路径（issue #6955：条件更新 fillMissingQrToken，只补 qr_token）
+        verify(processingOrderMapper, times(1)).fillMissingQrToken(eq(PO_ID), eq(TENANT), anyString(), any());
+        // 且**绝不**回退到整实体 updateById（那会顺带覆写状态列）
+        verify(processingOrderMapper, never()).updateById(any(ProcessingOrder.class));
         verify(processingOrderMapper, never()).fillMissingShortCode(anyString(), anyLong(), anyString(), any());
     }
 

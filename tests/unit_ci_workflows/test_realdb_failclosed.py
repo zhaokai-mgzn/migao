@@ -89,6 +89,15 @@ REALDB_FILES: dict[str, str] = {
     # mock 面结构上不可见（mock 的 `updateById` 恒返回 1、也不会因 WHERE 不满足而返回 0）；
     # 而「一个赢家 ⇒ 库存只回补一次 / 台账恰 1 行 / 时间线恰 2 行」是**并发下的落库读数**。
     _SVC + "AfterSalesConcurrentResolveRealDbTest.java": "direct",
+    # issue #6955：加工单状态迁移 + 订单取消联动腿的**真库并发**判据（同一张加工单上 `issue` × `cancel`，
+    # 以及「订单取消 × 加工单开工」双形态）。为什么必须真 PG：缺陷是**读-判-写**
+    # （`selectById` 过状态机 → 无条件 `updateById`，WHERE 只有主键）——「带谓词的条件更新
+    # （`WHERE id + tenant_id + deleted=0 + status=<状态机授权的前驱>`）是否真的只放一个赢家过去」
+    # 靠的是**行锁 + 谓词重估**，mock 面结构上不可见（mock 的 `updateById` 恒返回 1、也不会因 WHERE
+    # 不满足而返回 0）；而「恰一个赢家 ⇒ 加工单终态合法且与赢家一致 / 订单与加工单不得自相矛盾 /
+    # 落败方必须是 409 而不是静默成功」是**并发下的落库读数**。窗口注入（`PAUSE_MILLIS`，生产恒 0）
+    # 是让该读数从「微秒级碰运气」变成**确定性**的唯一手段（同 #6928 / #6936 的口径）。
+    _SVC + "ProcessingOrderStatusCasRaceRealDbTest.java": "direct",
     # issue #5327：批量批次（agent_batches / agent_batch_items）的跨租户隔离判据 ——
     # 起一次性真 PG 集群、用**生产拦截器 bean** 装配，逐条走收口方法 `PgCluster.startOrAbort()`。
     _SVC + "AgentBatchCrossTenantRealDbTest.java": "direct",

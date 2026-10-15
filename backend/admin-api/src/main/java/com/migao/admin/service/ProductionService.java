@@ -428,7 +428,10 @@ public class ProductionService {
             return po.getQrToken();
         }
         String qrToken = UUID.randomUUID().toString().replace("-", "");
-        processingOrderMapper.updateById(ProcessingOrder.builder().id(po.getId()).qrToken(qrToken).build());
+        // 条件更新（issue #6955）：只补 qr_token、且只在它仍为空时命中 —— 与相邻的 ensureShortCode
+        // （fillMissingShortCode）逐字同款。修前是 updateById(部分实体) ⇒ SET 子句由「非 null 字段」
+        // 决定，语义混进了「整实体写面」（那份内存快照就是该行），只在快照恰好新鲜时才等价。
+        processingOrderMapper.fillMissingQrToken(po.getId(), po.getTenantId(), qrToken, OffsetDateTime.now());
         return qrToken;
     }
 

@@ -1754,6 +1754,52 @@ public class ProcessingOrderService {
     }
 
     /**
+     * <b>测试探针</b>（issue #6954，生产恒为 {@code 0}）：在 {@link #updateStatus} 的「读-判」之后、
+     * 「写」之前暂停指定毫秒。
+     *
+     * <p><b>为什么需要它</b>：窗口注入是竞态类缺陷的<b>唯一可信证据</b>形态
+     * （{@code migao-dev-flow} §28.1）—— 判据要在「注入 ⇒ 必红 / 撤回 ⇒ 复绿」两侧各跑一次。
+     * 窗口本身只有微秒级（#6928 实测 HTTP 20 轮只命中 3 轮），不注入就只能靠碰运气，判据会退化成 flake。</p>
+     *
+     * <p><b>为什么放在这里而不是只放测试侧</b>：窗口在服务方法体内，测试侧无法在「已判定仍可迁移、
+     * 尚未落库」那一刻插进一段延时（除非用 {@code mock()} 替换真 mapper —— 那会把唯一的 DB 原子
+     * 判据换成 mock 的恒真返回，判据当场失去意义）。故留这条窄缝，且只在包内可见
+     * （{@code ProcessingOrderStatusCasRaceRealDbTest} 与生产同类同包）。与
+     * {@code InboundOrderService#setCancelProbePauseMillisForTest}（#6928）逐字同款。</p>
+     */
+    static void setStatusUpdateProbePauseMillisForTest(long millis) {
+        STATUS_UPDATE_PROBE_PAUSE_MILLIS = millis;
+    }
+
+    /** 测试探针时长（默认 0 = 不暂停）；见 {@link #setStatusUpdateProbePauseMillisForTest}。 */
+    private static volatile long STATUS_UPDATE_PROBE_PAUSE_MILLIS = 0L;
+
+    /** 探针**正在**暂停窗口内的信号（测试用它把两个线程钉在确定的时序上）。 */
+    private static volatile boolean statusUpdateProbePaused = false;
+
+    /** 测试观察点：探针是否已进入暂停窗口；生产不读。 */
+    static boolean statusUpdateProbePausedForTest() {
+        return statusUpdateProbePaused;
+    }
+
+    /** 测试观察点：当前注入的探针时长；生产不读。 */
+    static long statusUpdateProbeMillisForTest() {
+        return STATUS_UPDATE_PROBE_PAUSE_MILLIS;
+    }
+
+    /** 进入窗口 ⇒ 置位 → 停 → 清位（测试在「已置位 / 未清位」之间把另一条迁移走完）。 */
+    private static void pauseStatusUpdateForProbe(long millis) {
+        statusUpdateProbePaused = true;
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            statusUpdateProbePaused = false;
+        }
+    }
+
+    /**
      * 派工指定批次 → **只读校验 + 扣减入参**（必须在任何写库之前调用完）；**不**做池级求解
      * —— 求解在调用方（逐单派 = 本单一次 {@code plan}；池化派 = 池内多单一次 {@code plan}，
      * issue #5169 判据 2）。
@@ -3592,8 +3638,17 @@ public class ProcessingOrderService {
             throw BusinessException.validationError("取消加工单必须填写原因");
         }
 
-        ProcessingOrder upd = ProcessingOrder.builder().id(po.getId()).status(target).build();
+        // 本次迁移只 SET 自己那一列（issue #6954）：issue 只动 issued_at/processor/交期、
+        // cancel 只动 cancelled_at/reason —— 与 OrderService 的 T2b 同一条纪律
+        // （不整实体回写 ⇒ 不把不负责的列 / 并发的状态变更一并覆写）。
         OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime issuedAt = null;
+        String processor = null;
+        LocalDate expectedDeliveryDate = null;
+        OffsetDateTime inProcessingAt = null;
+        OffsetDateTime completedAt = null;
+        OffsetDateTime cancelledAt = null;
+        String cancelledReason = null;
         switch (action) {
             case "issue":
                 // issue #3901：交期不允许早于今天（前端 date 控件之外的兜底，同时覆盖 agent processing_order_update 路径）
@@ -3601,22 +3656,27 @@ public class ProcessingOrderService {
                         && req.getExpectedDeliveryDate().isBefore(businessClock.today())) {
                     throw BusinessException.validationError("交付日期不能早于今天");
                 }
-                upd.setIssuedAt(now);
-                upd.setProcessor(req.getProcessor());
-                upd.setExpectedDeliveryDate(req.getExpectedDeliveryDate());
+                issuedAt = now;
+                processor = req.getProcessor();
+                expectedDeliveryDate = req.getExpectedDeliveryDate();
                 break;
             case "start":
-                upd.setInProcessingAt(now);
+                inProcessingAt = now;
                 break;
             case "complete":
-                upd.setCompletedAt(now);
+                completedAt = now;
                 break;
             case "cancel":
-                upd.setCancelledAt(now);
-                upd.setCancelledReason(req.getReason());
+                cancelledAt = now;
+                cancelledReason = req.getReason();
                 break;
             default:
                 break;
+        }
+        // 测试探针（issue #6954）：放大「读-判」与「写」之间的窗口（生产恒为 0）。与 #6928 的作废探针同款：
+        // 窗口只有微秒级，不注入就只能靠碰运气，判据会退化成 flake。
+        if (STATUS_UPDATE_PROBE_PAUSE_MILLIS > 0) {
+            pauseStatusUpdateForProbe(STATUS_UPDATE_PROBE_PAUSE_MILLIS);
         }
         // 联动先行（issue #4305，用户裁定「发加工 = 订单进入生产中」）：**发加工是订单
         // confirmed→producing 的唯一时点**（生成加工单不再推进订单）。先推进订单、再落加工单
@@ -3632,7 +3692,19 @@ public class ProcessingOrderService {
             }
         }
         try {
-            processingOrderMapper.updateById(upd);
+            // 状态迁移 = **条件更新**（issue #6954）：谓词含 id + tenant_id + deleted=0 + **状态机授权的前驱**
+            // ⇒ 与并发的相反迁移争同一份迁移权。修前是 updateById（WHERE 仅主键）⇒ 两个相反迁移可双双成功、
+            // 终态由后写者决定（issued 与 cancelled 互不可达 ⇒ 终态必然自相矛盾）。0 行 ⇒ 409 + 实际当前态。
+            int rows = processingOrderMapper.markStatusIfFrom(po.getId(), tenantId, current, target,
+                    issuedAt, processor, expectedDeliveryDate, inProcessingAt, completedAt,
+                    cancelledAt, cancelledReason, now);
+            if (rows == 0) {
+                ProcessingOrder fresh = resolveProcessingOrder(rawId, tenantId);
+                throw BusinessException.conflict(
+                        String.format("加工单状态不允许从 [%s] 变更为 [%s]",
+                                label(fresh != null ? fresh.getStatus() : current), label(target)),
+                        "该加工单的状态刚被另一个操作变更，请刷新后按当前状态重试");
+            }
         } catch (Exception e) {
             if (orderLinked) {
                 try {

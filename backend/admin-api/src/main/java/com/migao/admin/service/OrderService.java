@@ -141,6 +141,47 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private AuditLogService auditLogService;
 
     /**
+     * <b>测试探针</b>（issue #6955，生产恒为 {@code 0}）：在 {@link #cancelOrder} 的「读判加工单为
+     * {@code generated}」之后、「联动作废（CAS）」之前暂停指定毫秒。
+     *
+     * <p><b>为什么需要它</b>：窗口在服务方法体内，测试侧无法在「已判定加工单仍是 generated、
+     * 尚未落库」那一刻插进延时（除非 mock 掉真 mapper —— 那会把唯一的 DB 原子判据换成 mock 的恒真返回）。
+     * 与 {@code InboundOrderService#setCancelProbePauseMillisForTest}（#6928）逐字同款；
+     * 只在包内可见（{@code ProcessingOrderStatusCasRaceRealDbTest} 与生产同类同包）。</p>
+     */
+    static void setCancelOrderPoProbePauseMillisForTest(long millis) {
+        CANCEL_ORDER_PO_PROBE_PAUSE_MILLIS = millis;
+    }
+
+    /** 探针时长（默认 0 = 不暂停）；见 {@link #setCancelOrderPoProbePauseMillisForTest}。 */
+    private static volatile long CANCEL_ORDER_PO_PROBE_PAUSE_MILLIS = 0L;
+
+    /** 探针**正在**暂停窗口内的信号（测试用它把两个线程钉在确定的时序上）。 */
+    private static volatile boolean cancelOrderPoProbePaused = false;
+
+    /** 测试观察点：探针是否已进入暂停窗口；生产不读。 */
+    static boolean cancelOrderPoProbePausedForTest() {
+        return cancelOrderPoProbePaused;
+    }
+
+    /** 测试观察点：当前注入的探针时长；生产不读。 */
+    static long cancelOrderPoProbeMillisForTest() {
+        return CANCEL_ORDER_PO_PROBE_PAUSE_MILLIS;
+    }
+
+    /** 进入窗口 ⇒ 置位 → 停 → 清位。 */
+    private static void pauseCancelOrderPoForProbe(long millis) {
+        cancelOrderPoProbePaused = true;
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            cancelOrderPoProbePaused = false;
+        }
+    }
+
+    /**
      * 订单号序列号（线程安全）
      */
     private static final AtomicInteger ORDER_SEQ = new AtomicInteger(0);
@@ -952,13 +993,14 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         Map<String, Object> before = contentSnapshot(order, loadOrderItems(order.getId(), tenantId));
 
         // ⑦ 落库：收货信息 + 三金额
-        order.setCustomerName(request.getCustomerName());
-        order.setCustomerPhone(request.getCustomerPhone());
-        order.setCustomerAddress(request.getCustomerAddress());
-        order.setTotalAmount(totalAmount);
-        order.setDiscountAmount(discountAmount);
-        order.setActualAmount(actualAmount);
-        orderMapper.updateById(order);
+        orderMapper.update(null, new LambdaUpdateWrapper<Order>()
+                .eq(Order::getId, order.getId())
+                .set(Order::getCustomerName, request.getCustomerName())
+                .set(Order::getCustomerPhone, request.getCustomerPhone())
+                .set(Order::getCustomerAddress, request.getCustomerAddress())
+                .set(Order::getTotalAmount, totalAmount)
+                .set(Order::getDiscountAmount, discountAmount)
+                .set(Order::getActualAmount, actualAmount));
 
         // ⑧ 明细整体替换：旧行**软删**（@TableLogic）后按新明细落库（与建单同一份 persistOrderItems）
         orderItemMapper.delete(new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, order.getId()));
@@ -1752,13 +1794,28 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         ProcessingOrder activePo = processingOrderMapper.selectActiveByOrderId(order.getId(), order.getTenantId());
         if (activePo != null) {
             if ("generated".equals(activePo.getStatus())) {
-                ProcessingOrder poUpd = ProcessingOrder.builder()
-                        .id(activePo.getId())
-                        .status("cancelled")
-                        .cancelledAt(OffsetDateTime.now())
-                        .cancelledReason("订单取消，加工单自动作废")
-                        .build();
-                processingOrderMapper.updateById(poUpd);
+                // 测试探针（issue #6955）：放大**「读判（订单 + 加工单 generated）」之后、「CAS 落库」之前**
+                // 那条窗口（生产恒为 0）。位置是判据的判别力来源：放在读判**之前**时，并发对手会先把
+                // 加工单推成 issued ⇒ 本腿的读判直接兜底拒绝、那一步（CAS 只放一个赢家过去）永远测不到。
+                // 与 InboundOrderService#setCancelProbePauseMillisForTest（#6928）同款。
+                if (CANCEL_ORDER_PO_PROBE_PAUSE_MILLIS > 0) {
+                    pauseCancelOrderPoForProbe(CANCEL_ORDER_PO_PROBE_PAUSE_MILLIS);
+                }
+                // 联动作废 = **条件更新**（issue #6955）：谓词含 id + tenant_id + deleted=0 + 前驱 generated。
+                // 修前是 updateById（WHERE 仅主键）⇒ 与并发的「加工单开工」（markStatusIfFrom
+                // generated→issued）**不互斥** ⇒ 会出现「订单 cancelled + 加工单 issued」（订单已废、单还在产）。
+                // 0 行 ⇒ 加工单已被并发推进 ⇒ 409，**本事务一并回滚**（订单取消不留半成品）。
+                int poRows = processingOrderMapper.markStatusIfFrom(activePo.getId(), order.getTenantId(),
+                        "generated", "cancelled", null, null, null, null, null,
+                        OffsetDateTime.now(), "订单取消，加工单自动作废", OffsetDateTime.now());
+                if (poRows == 0) {
+                    ProcessingOrder fresh = processingOrderMapper.selectById(activePo.getId());
+                    throw BusinessException.conflict(String.format(
+                                    "订单已发加工（加工单 %s 状态：%s），请先在订单详情或让黄金策处理加工单后再取消订单",
+                                    activePo.getProcessingOrderNo(),
+                                    fresh != null ? fresh.getStatus() : activePo.getStatus()),
+                            "该加工单刚被另一个操作推进，请刷新后按当前状态重试");
+                }
                 log.info("订单取消联动作废加工单: po={}, orderId={}", activePo.getProcessingOrderNo(), order.getId());
                 // 派工扣减的**对称回补**（V116 / issue #5145 判据 3）：本分支绕过
                 // ProcessingOrderService.updateStatus（直接置 cancelled）⇒ 必须在此接同一句话，
@@ -1895,8 +1952,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if (!validStatuses.contains(followStatus)) {
             throw BusinessException.validationError("无效的跟进状态: " + followStatus + "，可选值: pending/following/completed");
         }
-        order.setFollowStatus(followStatus);
-        orderMapper.updateById(order);
+        // 🔴 只写本方法负责的列（issue #6955）：修前是 orderMapper.updateById(order) —— 整实体回写会把
+        // selectById 时读到的**旧 status 一并写回** ⇒ 静默回滚并发的状态变更（F1 的类级根因）。
+        orderMapper.update(null, new LambdaUpdateWrapper<Order>()
+                .eq(Order::getId, order.getId())
+                .set(Order::getFollowStatus, followStatus));
         log.info("更新跟进状态成功: id={}, followStatus={}", id, followStatus);
     }
 
@@ -1993,8 +2053,12 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                 .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
         String remarkEntry = "[" + timestamp + "] " + content;
         String existing = order.getRemark() != null ? order.getRemark() : "";
-        order.setRemark(existing.isEmpty() ? remarkEntry : existing + "\n" + remarkEntry);
-        orderMapper.updateById(order);
+        String merged = existing.isEmpty() ? remarkEntry : existing + "\n" + remarkEntry;
+        // 🔴 只写 remark（issue #6955）：修前是 orderMapper.updateById(order) —— 整实体回写会把
+        // selectById 时读到的**旧 status 一并写回** ⇒ 静默回滚并发的状态变更（F1 的类级根因）。
+        orderMapper.update(null, new LambdaUpdateWrapper<Order>()
+                .eq(Order::getId, order.getId())
+                .set(Order::getRemark, merged));
         log.info("添加订单备注成功: id={}", id);
     }
 
