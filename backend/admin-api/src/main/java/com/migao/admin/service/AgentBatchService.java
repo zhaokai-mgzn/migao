@@ -201,6 +201,12 @@ public class AgentBatchService {
      *
      * <p>逐条独立提交（本方法**有意不加事务**，见类注释取舍 ②③）：单条失败只影响该条，
      * 结果里逐条回 {@code {resourceId, success, error?}}。</p>
+     *
+     * <p>🔴 <b>执行准入 = 条件更新（CAS，issue #6960）</b>：{@code preview → executing} 这一次状态迁移
+     * 必须走 {@link AgentBatchMapper#markExecuting}（判断与写入同一条语句）⇒ 两个并发 execute 里
+     * 只有先到者命中行，后到者影响行数 0 ⇒ 409，**一条 apply 都不跑**。改前是「先读批次判 preview、
+     * 再 {@code updateById}（WHERE 仅主键 ⇒ 无谓词）」⇒ 两个请求都能读到 preview 并各 apply 一轮
+     * （对同一批商品**重复 apply**）。</p>
      */
     public AgentBatchViews.Batch execute(Long tenantId, String batchId) {
         AgentBatch batch = requireBatch(tenantId, batchId);
@@ -209,8 +215,19 @@ public class AgentBatchService {
                             + "，只有 preview 的批次可以执行（不可重复执行）",
                     "用 GET /api/admin/agent/batches/" + batchId + " 查看该批次的状态与结果");
         }
+        // 测试探针（issue #6960）：放大「读-判」与「抢执行权」之间的窗口（生产恒为 0，无分支成本）。
+        // 与 RemnantService#recover 的探针同款 —— 窗口只有微秒级，不注入判据会退化成 flake。
+        if (BATCH_PROBE_PAUSE_MILLIS > 0) {
+            pauseForBatchProbe(BATCH_PROBE_PAUSE_MILLIS);
+        }
+        // 抢执行权：条件更新（CAS）—— 判断与写入同一条语句；0 行 ⇒ 并发的另一个请求已抢到 ⇒ 一条不写
+        if (batchMapper.markExecuting(batchId, tenantId) == 0) {
+            AgentBatch fresh = requireBatch(tenantId, batchId);
+            throw BusinessException.conflict("批次当前状态为 " + fresh.getStatus()
+                            + "，只有 preview 的批次可以执行（不可重复执行）",
+                    "请刷新该批次的状态与结果后重试");
+        }
         batch.setStatus(STATUS_EXECUTING);
-        batchMapper.updateById(batch);
 
         List<AgentBatchItem> items = itemsOf(batchId);
         List<AgentBatchViews.Result> results = new ArrayList<>(items.size());
@@ -253,6 +270,11 @@ public class AgentBatchService {
      *
      * <p><b>不可撤销</b>（契约）：状态非 {@code done}/{@code partial}、或已 {@code reverted}
      * （含 {@code revert_partial} —— 撤销过的批次不再提供第二次撤销）。</p>
+     *
+     * <p>🔴 <b>撤销准入 = 条件更新（CAS，issue #6960）</b>：与 {@link #execute} 同款 ——
+     * 「{@code done}/{@code partial} → 已被 claim」这一次状态迁移走
+     * {@link AgentBatchMapper#markReverting}（谓词 = id + tenant_id + 契约里那一对可撤销状态）。
+     * 并发两个 revert 只有一个命中行 ⇒ 后到者 409，**一轮 apply 都不跑**。</p>
      */
     public AgentBatchViews.Batch revert(Long tenantId, String batchId) {
         AgentBatch batch = requireBatch(tenantId, batchId);
@@ -266,6 +288,18 @@ public class AgentBatchService {
                             + "，可撤销状态只有 " + STATUS_DONE + " / " + STATUS_PARTIAL,
                     "请先执行该批次（POST /api/admin/agent/batches/" + batchId + "/execute）");
         }
+        // 测试探针（issue #6960）：同 execute —— 放大「读-判」与「抢撤销权」之间的窗口（生产恒为 0）。
+        if (BATCH_PROBE_PAUSE_MILLIS > 0) {
+            pauseForBatchProbe(BATCH_PROBE_PAUSE_MILLIS);
+        }
+        // 抢撤销权：条件更新（CAS）—— 0 行 ⇒ 并发的另一个请求已抢到（或状态已不可撤销）⇒ 一条不写
+        if (batchMapper.markReverting(batchId, tenantId, STATUS_DONE, STATUS_PARTIAL) == 0) {
+            AgentBatch fresh = requireBatch(tenantId, batchId);
+            throw BusinessException.conflict("批次当前状态为 " + fresh.getStatus()
+                            + "，可撤销状态只有 " + STATUS_DONE + " / " + STATUS_PARTIAL,
+                    "请先执行该批次，再撤销");
+        }
+        batch.setStatus(STATUS_EXECUTING);
 
         List<AgentBatchItem> items = itemsOf(batchId);
         List<AgentBatchViews.Result> results = new ArrayList<>(items.size());
@@ -303,6 +337,64 @@ public class AgentBatchService {
         batchMapper.updateById(batch);
         log.info("[Agent] 批量撤销完成: batchId={}, failed={}, status={}", batchId, failed, batch.getStatus());
         return view(batch, results, null);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════════
+    // 测试探针（issue #6960）：**只在包内可见**，生产恒为 0
+    // ══════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 把 {@link #execute} / {@link #revert} 的「读-判」与「抢权（CAS）」之间的窗口拉长到指定毫秒
+     * （生产默认 0 = 不暂停；只在包内可见，{@code AgentBatchStatusRaceRealDbTest} 与生产同类同包）。
+     *
+     * <p><b>为什么需要它</b>：窗口注入是竞态类缺陷的**唯一可信证据**形态 —— 判据要在
+     * 「注入 ⇒ 必红 / 撤回 ⇒ 复绿」两侧各跑一次（{@code migao-dev-flow} §28.1）。
+     * 缺陷窗口本身只有微秒级，不注入就只能靠碰运气 ⇒ 判据会退化成 flake。</p>
+     *
+     * <p><b>为什么放在这里而不是只放测试侧</b>：窗口在服务方法体内，测试侧无法在
+     * 「已判定仍可执行、尚未抢权」那一刻插进一段延时（除非用 {@code mock()} 替换真 mapper ——
+     * 那会把唯一的 DB 原子判据换成 mock 的恒真返回，判据当场失去意义）。</p>
+     *
+     * <p>⚠️ 探针**只让第一个到达者停顿**（后续到达者直接穿过）：一个「把所有并发者都停住」
+     * 的闸会让两条判据线程都停在窗口里，而「后到者能否补位」这件事就测不出来。
+     * 单占位与 {@link #setBatchProbePauseMillisForTest} 合起来才构成确定性的两段式时序
+     * （先起跑者在窗口里、对手走完全程并提交，先起跑者再续跑）。</p>
+     */
+    static void setBatchProbePauseMillisForTest(long millis) {
+        BATCH_PROBE_PAUSE_MILLIS = millis;
+    }
+
+    /** 测试探针时长（默认 0 = 不暂停）；见 {@link #setBatchProbePauseMillisForTest}。 */
+    private static volatile long BATCH_PROBE_PAUSE_MILLIS = 0L;
+
+    /** 探针**正在**暂停窗口内的信号（测试用它把「读-判已过、尚未抢权」这一刻钉住）。 */
+    private static volatile boolean batchProbePaused = false;
+
+    /** 探针占位（默认 = 未被占）：只让**第一个**到达者停顿，后面的直接穿过。 */
+    private static final java.util.concurrent.atomic.AtomicBoolean BATCH_PROBE_TAKEN =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /** 测试观察点：探针是否已进入暂停窗口；生产不读。 */
+    static boolean batchProbePausedForTest() {
+        return batchProbePaused;
+    }
+
+    /** 进入窗口 ⇒ 抢占位（抢到者置位 → 停 → 清位；没抢到的直接返回）。 */
+    private static void pauseForBatchProbe(long millis) {
+        if (!BATCH_PROBE_TAKEN.compareAndSet(false, true)) {
+            return;   // 窗口已被另一个线程占着 ⇒ 本线程直接穿过（两段式时序的另一半由判据编排）
+        }
+        batchProbePaused = true;
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            // 🔴 清位在**窗口结束时**（不是更早）：判据要靠「正在暂停」这个信号把对手放进窗口，
+            // 提前清位会让对手以为自己就是起跑者（两条线程都「等在窗口里」= 没人在窗口外走全程）
+            batchProbePaused = false;
+            BATCH_PROBE_TAKEN.set(false);
+        }
     }
 
     // ═══════════════════ ④ 查询（进度 / 结果 / 可撤销性）═══════════════════

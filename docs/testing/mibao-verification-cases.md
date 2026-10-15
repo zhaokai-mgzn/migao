@@ -7620,7 +7620,7 @@
 ```
 溯源: 2026-10-15 新增（issue #6955，P1·并发 ⇒ 单据终态自相矛盾；族级跟踪单 #6953 的 P1 包）。取号 = 现取 `.github/cases/processing-order.yml` 与 `.github/cases/processing.yml` 的**跨文件**最大 PG 号（现取 075）⇒ 取 **PG-076**（`scripts/next_case_id.py PG` 只扫 processing-order.yml，其读数 PG-073 与另一文件里的定义不一致 ⇒ **未采纳该读数**，改用跨全部 cases 的现取最大值 +1；差异如实登记）。**红→绿（注入式，真 PG）**：① 探针开 + 两处退回修前无谓词 `updateById` ⇒ 判据 1 红（`expected: 1L but was: 2L`）+ 判据 3 红（`:349` 具名）；② 修后（两处走 `ProcessingOrderMapper#markStatusIfFrom` 的 CAS）⇒ 3/3 全绿（两次复跑逐字一致）；③ 探针关 + 修后 ⇒ 仍绿（判据不产生假红）。 ｜ tags: concurrency, state-transition, cas, backend-contract, realdb
 
-## 商品域（120 case）
+## 商品域（122 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -9201,6 +9201,34 @@
 跳过: [backend-contract] 确定性契约/机械判据，由 vitest（frontend/admin-web/tests/unit/lib/image-recognize-door-width-split.test.ts、frontend/admin-web/tests/unit/lib/rich-text-plain.test.ts、frontend/admin-web/tests/unit/components/FormInterpretCard.test.tsx、frontend/admin-web/tests/unit/components/ImageRecognizePrefill.test.tsx、frontend/admin-web/tests/unit/pages/products-new-recognize-entry.test.tsx）验证，非 LLM 行为，不进入 agent-eval 冒烟 —— 拆行 / 丢非数 / 去重 / 纯文本转换都能逐值钉住
 ```
 溯源: 2026-10-06 新增（issue #6403，P1·图片识别预填）。取号 = `scripts/next_case_id.py PR` 现取最小空闲号（判取 **PR-022**，历史空档）。红→绿（判据先落、实现后落）：改前 `npx vitest run` 四个文件 ⇒ 4 failed files / **9 failed | 11 passed (20)**（含 3 failed 为断言读数、页面级 2c 超时、`rich-text-plain` 整文件因模块不存在而红）；实现后同一批 **120 passed（10 files）**，并加跑包内相关面（lib / components / pages/products）。真浏览器两屏（上传图 → 识别卡片 → 一键填入）**未覆盖**（承载体没有上传图片的口，见 PR body 的「未覆盖项」）。 ｜ tags: image-recognize, door-width, frontend, prefill, regression
+
+### PR-023. 余料「回收 / 报废」的状态迁移走 DB 原子条件更新（CAS）⇒ 并发双 recover 恰一次回收额入账、回收×报废恰一个赢家（issue #6960） 🔵
+```
+你: 并发两个 recover 打同一块**可用**余料（非 LLM 行为，由真 PG Java 判据 + 静态元守卫覆盖）
+数据: 🔴 **判据 1（真库并发 + 窗口注入，改前必红）**：并发双 `recover` ⇒ 成功数 **== 1**、落败方 **409 CONFLICT**、终态 `used`、`recovered_amount` **逐值等于**「余料米数 × 批次均价」（夹具常量独立复算，不读被测读面）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/RemnantRecoverRaceRealDbTest.java。**窗口探针** = `RemnantService#setRecoverProbePauseMillisForTest`（生产恒为 0；只让第一个到达者停顿 ⇒ 对手走完「读-判 → CAS 0 行 → 409」全长）。
+数据: 🔴 **判据 2（回收 × 报废交叉，改前必红）**：同一行的同一个 `available` 只能被消耗一次 ⇒ 恰一个赢家，终态 ∈ {used, scrapped} 且与赢家自洽（回收赢 ⇒ 报废留痕列全 NULL；报废赢 ⇒ 回收列全 NULL）。两者争**同一份**状态迁移权，一个写面有 CAS、另一个没有就**不互斥**（修前实测两个都 200 / 唯一约束异常）。
+数据: **判据 3（串行正对照，护栏不误杀）**：无并发时 `recover` / `scrap` 各成功一次（谓词非空 ⇒ 正常请求不被 409 误杀）。
+数据: 🔴 **判据 4（类级元守卫，铁律 8）**：`FabricRemnantMapper` 里写 `status` 的手写 SQL 必须带完整谓词（`status='<当前态>'` + `tenant_id` + `deleted = 0` —— 本表**有**软删列，逐字核对 schema.sql）；`RemnantService` 里每条状态写路径必须登记进 backend/admin-api/src/test/resources/remnant-status-cas-ledger.json（**未登记即红** / 幽灵条目即红 / 豁免只许缩短且条数现取）；且 CAS 调用后必须有 `== 0` 的行数判定（只留调用不判 0 行 / 把判定塞进 `if (false && …)` 都判红）。执行点 = RemnantStatusCasMetaGuardTest.java（含八种坏形态的合成语料判别力自证）。
+数据: **红证（注入式 · 双向，实测）**：探针开（800ms）+ 退回修前的无谓词 `updateById` ⇒ 1 failed，逐字读数 `状态码=[200, 200] 成功数=2 409数=0`；恢复修后 ⇒ 3 passed，读数 `状态码=[409, 200] 成功数=1 终态=used 回收额=50.000000`。探针关（0ms）⇒ 并发档按设计判红（`探针未在 10000ms 内进入窗口` —— 无探针的并发判据会退化成 flake，故探针是**硬前提**）。元守卫侧：抽掉 mapper 谓词里的 `deleted = 0` ⇒ `everyStatusWriteCarriesTheFullPredicate` 判红并具名 `[markRecovered 缺 [deleted=0 谓词], markScrapped 缺 …]`。
+数据: **边界（如实登记）**：① 跑的是**服务层真库并发**而非 HTTP 栈（controller 只是薄转发）；② **回收额算法一字未动**（只钉「并发恰一次」）；③ 探针对象全部自建（tenant 6960），随一次性临时 PG 集群销毁，不碰存量数据；④ 元守卫是**纯文本形态判据**（无 AST），真实防线是该条真库判据，两者缺一不可。
+跳过: [backend-contract] 真 PG 判据（initdb+pg_ctl 临时集群 + Java 真装配 + 窗口注入）+ 源码静态元守卫，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: remnant-recovery.match-and-recovery
+溯源: 2026-10-15 新增（issue #6960，族级跟踪单 #6953 的 P3 包）：余料状态迁移的 CAS + 并发恰一次入账。取号 = `scripts/next_case_id.py PR` 现取最小空闲号（判取 **PR-023**，历史空档；同批的 Agent 批次用例取 **PR-028**）。 ｜ tags: remnant, concurrency, cas, real-db, backend-contract
+
+### PR-028. Agent 批次「执行 / 撤销」的准入走 DB 原子条件更新（CAS）⇒ 并发 execute/revert 恰一轮 apply、商品终态可复算（issue #6960） 🔵
+```
+你: 并发两个 execute（或两个 revert）打同一批次（非 LLM 行为，由真 PG Java 判据 + 静态元守卫覆盖）
+数据: 🔴 **判据 1（真库并发 + 窗口注入，改前必红）**：并发双 `execute` ⇒ 成功数 **== 1**、落败方 **409**、**真的落到商品上的 apply 恰一轮**（1 条明细 ⇒ 恰 1 次调用；计数器由 `CountingProductService`（真 ProductService 的有界子类，真库真写）现取）、批次终态 `done`、商品 `status` **逐字等于 newValue**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchStatusRaceRealDbTest.java。**窗口探针** = `AgentBatchService#setBatchProbePauseMillisForTest`（生产恒为 0）。
+数据: 🔴 **判据 2（并发 revert，改前必红）**：成功数 == 1、apply 计数恰 1、批次终态 `reverted`、商品被还原成持久化的 `oldValue`。
+数据: **判据 3（无探针并发对照 + 串行正对照）**：无窗口注入、`CyclicBarrier` 同时起跑 ⇒ 仍恰一个赢家 + 恰一轮 apply（CAS 不依赖注入）；串行 `execute` + `revert` 各成功一次、状态来回（谓词非空 ⇒ 不误杀正常请求）。
+数据: 🔴 **判据 4（类级元守卫，铁律 8）**：`AgentBatchMapper` 里写 `status` 的手写 SQL 必须带谓词 —— `status='<来源态>'`（或 `status IN (…)`，值由服务层传参）+ `tenant_id`；⚠️ **本表没有 `deleted` 列**（逐字核对 schema.sql）⇒ 谓词里出现 `deleted = 0` 反而**判红**（本仓出过「模板写了 `deleted=0` 但该表没有这一列」）。每条状态写路径必须登记进 backend/admin-api/src/test/resources/agent-batch-status-cas-ledger.json（未登记即红 / 幽灵即红 / 豁免只许缩短），且 CAS 调用后必须有 `== 0` 判定。执行点 = AgentBatchStatusCasMetaGuardTest.java。（**⛔ 本包不动** MC-100 `InboundOrderStatusCasMetaGuardTest` 与 PG-075 `ProductionOperationDeleteCasMetaGuardTest` —— 它们归 #6956。）
+数据: **红证（注入式 · 双向，实测）**：探针开 + 退回修前（CAS 结果不判）⇒ 1 failed，逐字读数 `状态码=[200, 200] 成功数=2 409数=0 apply次数=2 批次终态=partial`；恢复修后 ⇒ 4 passed，读数 `状态码=[409, 200] 成功数=1 409数=1 apply次数=1 批次终态=done 商品终态=on_sale`。元守卫侧：把 `if (batchMapper.markExecuting(…) == 0)` 改成不判行数（`if (false && …)`）⇒ `noStatusWritePathUsesUnconditionalUpdateById` 判红并具名 `[CAS 调用没判影响行数（execute 的 markExecuting 后 300 字符内没有 == 0)）]`。
+数据: **边界（如实登记）**：① 跑的是**服务层真库并发**而非 HTTP 栈；② **有意不加方法级 `@Transactional`**（类注释取舍 ②③：逐条独立提交 = 部分失败的载体）⇒ 本单主张的是「准入闸 = 单条语句的 CAS」，**不**主张事务边界；③ revert 的 claim 中间态复用既有 `executing` 取值（**不**扩 DB 的 `ck_agent_batch_status` 约束）；④ 元守卫是纯文本形态判据，真实防线是该条真库判据。
+跳过: [backend-contract] 真 PG 判据（initdb+pg_ctl 临时集群 + Java 真装配 + 窗口注入）+ 源码静态元守卫，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-10-15 新增（issue #6960，族级跟踪单 #6953 的 P3 包）：Agent 批次 execute/revert 的 CAS + 并发恰一轮 apply。取号 = `scripts/next_case_id.py PR` 现取（同批余料用例取 PR-023；本用例落 **PR-028** —— 现取时 PR-024~027 已被占用）。⚠️ **本用例的 `truths_ref` 为空 = 已标注的真值缺口**（`truths.py check` 对该形态只告警不阻塞）：本单的判据是**并发安全属性**（「恰一次」），现有真值模板里没有对应的业务真值条目，新增真值须另开单改模板。 ｜ tags: agent-batch, concurrency, cas, real-db, backend-contract
 
 ### PR-124. 米宝解读可落值的商品字段放开为 name/material/craft/color；door_width 与 price 只写 note 建议、值不落地（issue #6361） 🔵
 ```
@@ -10932,8 +10960,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：753（活跃 134，跳过 619）
-- tier 分布：smoke 12 / normal 694 / adversarial 32
+- 用例总数：755（活跃 134，跳过 621）
+- tier 分布：smoke 12 / normal 696 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10954,7 +10982,7 @@
 - 订单域：66
 - 加工项域：30
 - 加工单域：63
-- 商品域：120
+- 商品域：122
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
@@ -11199,6 +11227,7 @@
 - PR-016: 建品/改品 status 枚举准入：非法值 4xx 且列出合法枚举；状态机死行（active/on_shelf）可改回 off_sale/draft 自救
 - PR-020: 图片识别色号清单拆行：一张色卡的 16 个色号 ⇒ 16 行颜色（改前塞成一格、被 30 字符输入框削断）（issue #6354）
 - PR-022: 图片识别门幅清单拆行 + 识别卡片描述转可读纯文本：一键填入后「规格尺寸」不再 (0)、卡片不再裸显示 <p>（issue #6403）
+- PR-028: Agent 批次「执行 / 撤销」的准入走 DB 原子条件更新（CAS）⇒ 并发 execute/revert 恰一轮 apply、商品终态可复算（issue #6960）
 - PR-124: 米宝解读可落值的商品字段放开为 name/material/craft/color；door_width 与 price 只写 note 建议、值不落地（issue #6361）
 - PR-125: 米宝解读额外生成商品描述文案 ⇒ 预填建品页「图文描述」富文本区（来源 [米宝解读]、有值才写键、不覆盖商家内容）（issue #6362）
 - PR-126: 识别 vs 推理的分工按字段定死：生成类字段（商品名/商品描述）只由 [米宝解读] 给值，识别路径永不许直填（issue #6386）

@@ -255,6 +255,21 @@ REALDB_FILES: dict[str, str] = {
     _SVC + "ProductionOperationPriceVersionConcurrentRealDbTest.java": "direct",
     _SVC + "ProductionPartCodeRealMappingTest.java": "direct",
     _SVC + "ProductionScanClaimRealDbTest.java": "direct",
+    # issue #6960：余料「回收 × 回收 / 回收 × 报废」的**并发准入**真库判据 ——
+    # 为什么必须真 PG：缺陷是**读-判-写**（`require()` 读出 `available` → 应用层判定 → 无条件
+    # `updateById`）。条件更新（`WHERE … AND status='available' AND deleted=0`）的全部效力来自
+    # **行锁 + 条件重估**：后到者阻塞到先到者提交后按新版本行重估 ⇒ 影响行数 0。mock 面结构上
+    # 不可见（mock 的 `updateById` 恒返回 1、也不会因 WHERE 不满足而返回 0 ⇒ 修前形态在 mock 上
+    # 恒绿 = 假绿）；而「回收额恰入账一次 / 终态与赢家自洽（回收列表 vs 报废留痕列互斥）」是
+    # 并发下的**落库读数**。窗口探针 = `RemnantService#setRecoverProbePauseMillisForTest`（生产恒 0）。
+    _SVC + "RemnantRecoverRaceRealDbTest.java": "direct",
+    # issue #6960：Agent 批次「执行 × 执行 / 撤销 × 撤销」的**并发准入**真库判据 ——
+    # 同款理由（读-判-写 → CAS）：`UPDATE agent_batches SET status='executing' WHERE id=? AND
+    # tenant_id=? AND status='preview'`（执行）/ `status IN (done,partial)`（撤销）靠**行锁 + 条件重估**
+    # 互斥；mock 面上 `updateById` 恒返回 1 ⇒ 修前「两个请求都 200、各 apply 一轮」完全测不出来。
+    # 「恰一轮 apply」的读数由真 `ProductService` 的计数子类现取 + 商品终态真库直读。
+    # 窗口探针 = `AgentBatchService#setBatchProbePauseMillisForTest`（生产恒 0）。
+    _SVC + "AgentBatchStatusRaceRealDbTest.java": "direct",
     _SVC + "RemnantRecoveryRealDbTest.java": "direct",
     _SVC + "SavingMetricsBoardRealDbTest.java": "direct",
     _SVC + "SkuBatchGuardRealDbTest.java": "direct",

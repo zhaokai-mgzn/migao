@@ -594,19 +594,23 @@ public class RemnantService {
         // 金额**不在这里舍入**：DB 约束是「逐值相等 recovered_amount = meters × unit_cost」，
         // 先舍入就会让约束失败（列精度 6 位正好容得下 2 位 × 4 位的精确积）。
         BigDecimal amount = meters.multiply(unitCost);
-        FabricRemnant patch = FabricRemnant.builder()
-                .id(remnant.getId())
-                .status(FabricRemnant.STATUS_USED)
-                .usedByOrderNo(orderNo)
-                .usedByOrderItemId(orderItemId)
-                .usedByItemKey(itemKey)
-                .recoveredMeters(meters)
-                .recoveredUnitCost(unitCost)
-                .recoveredAmount(amount)
-                .recoveredAt(OffsetDateTime.now())
-                .recoveredBy(StockLedgerService.resolveOperator())
-                .build();
-        remnantMapper.updateById(patch);
+        // 测试探针（issue #6960）：放大「读-判」（上面那次 status 判定）与「写」（下面的 CAS）之间的
+        // 窗口（生产恒为 0，无分支成本）。与 InboundOrderService#cancel 的探针同款：窗口只有微秒级，
+        // 不注入就只能靠碰运气，判据会退化成 flake；见 RemnantRecoverRaceRealDbTest。
+        if (RECOVER_PROBE_PAUSE_MILLIS > 0) {
+            pauseForRecoverProbe(RECOVER_PROBE_PAUSE_MILLIS);
+        }
+        // 抢回收权：条件更新（CAS），判断与写入同一条语句 + PG 行锁 ⇒ 并发的第二个 recover 影响行数 0
+        if (remnantMapper.markRecovered(remnant.getId(), tenantId, orderNo, orderItemId, itemKey,
+                meters, unitCost, amount, OffsetDateTime.now(), StockLedgerService.resolveOperator()) == 0) {
+            // 抢不到：并发的另一个请求刚回收 / 刚报废 ⇒ 回读真实状态，给准确的文案
+            // （issue #6960 的病根 = 这里的写没有谓词 ⇒ 重复记回收额）
+            FabricRemnant fresh = require(tenantId, remnantId);
+            throw new BusinessException(ERR_REMNANT_NOT_AVAILABLE,
+                    String.format("余料 %s 当前状态 [%s]，只有「可用」的余料才能回收（客户带走的余料归客户）",
+                            remnantId, fresh.getStatus()), 409,
+                    "请刷新余料台账后重试");
+        }
         log.info("余料回收: tenant={}, remnant={}, item={}, order={}, meters={}, unitCost={}, amount={}",
                 tenantId, remnantId, itemKey, orderNo, meters, unitCost, amount);
         return line(require(tenantId, remnantId));
@@ -631,15 +635,78 @@ public class RemnantService {
                             remnantId, remnant.getStatus()), 409,
                     "请刷新余料台账后重试");
         }
-        remnantMapper.updateById(FabricRemnant.builder()
-                .id(remnant.getId())
-                .status(FabricRemnant.STATUS_SCRAPPED)
-                .scrapReason(reason.trim())
-                .scrappedAt(OffsetDateTime.now())
-                .scrappedBy(StockLedgerService.resolveOperator())
-                .build());
+        // 测试探针（issue #6960）：同 recover —— 放大「读-判」与「写」之间的窗口（生产恒为 0）。
+        if (RECOVER_PROBE_PAUSE_MILLIS > 0) {
+            pauseForRecoverProbe(RECOVER_PROBE_PAUSE_MILLIS);
+        }
+        // 抢报废权：条件更新（CAS）—— 与 #recover 争**同一份**状态迁移权，两者靠同一条语句的谓词互斥
+        if (remnantMapper.markScrapped(remnant.getId(), tenantId, reason.trim(),
+                OffsetDateTime.now(), StockLedgerService.resolveOperator()) == 0) {
+            FabricRemnant fresh = require(tenantId, remnantId);
+            throw new BusinessException(ERR_REMNANT_NOT_AVAILABLE,
+                    String.format("余料 %s 当前状态 [%s]，只有「可用」的余料才能报废"
+                                    + "（客户带走的余料归客户，企业无权处置）",
+                            remnantId, fresh.getStatus()), 409,
+                    "请刷新余料台账后重试");
+        }
         log.info("余料报废: tenant={}, remnant={}, reason={}", tenantId, remnantId, reason);
         return line(require(tenantId, remnantId));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════════
+    // 测试探针（issue #6960）：**只在包内可见**，生产恒为 0
+    // ══════════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 把 {@link #recover} / {@link #scrap} 的「读-判」与「写」（CAS）之间的窗口拉长到指定毫秒
+     * （生产默认 0 = 不暂停；只在包内可见，{@code RemnantRecoverRaceRealDbTest} 与生产同类同包）。
+     *
+     * <p><b>为什么需要它</b>：窗口注入是竞态类缺陷的**唯一可信证据**形态 —— 判据要在
+     * 「注入 ⇒ 必红 / 撤回 ⇒ 复绿」两侧各跑一次（{@code migao-dev-flow} §28.1）。
+     * 缺陷窗口本身只有微秒级，不注入就只能靠碰运气 ⇒ 判据会退化成 flake。</p>
+     *
+     * <p><b>为什么放在这里而不是只放测试侧</b>：窗口在服务方法体内，测试侧无法在
+     * 「已判定仍为 available、尚未落库」那一刻插进一段延时（除非用 {@code mock()} 替换真 mapper ——
+     * 那会把唯一的 DB 原子判据换成 mock 的恒真返回，判据当场失去意义）。</p>
+     *
+     * <p>⚠️ 探针**只让第一个到达者停顿**（后续到达者直接穿过）：一个「把所有并发者都停住」
+     * 的闸会把「后到者能否补位」这件事测没（两条判据线程都停在窗口里 ⇒ 谁都还没写）。
+     * 单占位与此处的暂停时长合起来才构成确定性的两段式时序（先起跑者在窗口里、
+     * 对手走完全程并提交，先起跑者再续跑）。</p>
+     */
+    static void setRecoverProbePauseMillisForTest(long millis) {
+        RECOVER_PROBE_PAUSE_MILLIS = millis;
+    }
+
+    /** 测试探针时长（默认 0 = 不暂停）；见 {@link #setRecoverProbePauseMillisForTest}。 */
+    private static volatile long RECOVER_PROBE_PAUSE_MILLIS = 0L;
+
+    /** 探针**正在**暂停窗口内的信号（测试用它把「读-判已过、尚未写」这一刻钉住）。 */
+    private static volatile boolean recoverProbePaused = false;
+
+    /** 探针占位（默认 = 未被占）：只让**第一个**到达者停顿，后面的直接穿过。 */
+    private static final java.util.concurrent.atomic.AtomicBoolean RECOVER_PROBE_TAKEN =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /** 测试观察点：探针是否已进入暂停窗口；生产不读。 */
+    static boolean recoverProbePausedForTest() {
+        return recoverProbePaused;
+    }
+
+    /** 进入窗口 ⇒ 抢占位（抢到者置位 → 停 → 清位；没抢到的直接返回）。 */
+    private static void pauseForRecoverProbe(long millis) {
+        if (!RECOVER_PROBE_TAKEN.compareAndSet(false, true)) {
+            return;   // 窗口已被另一个线程占着 ⇒ 本线程直接穿过（两段式时序的另一半由判据编排）
+        }
+        recoverProbePaused = true;
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } finally {
+            recoverProbePaused = false;
+            RECOVER_PROBE_TAKEN.set(false);
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════
