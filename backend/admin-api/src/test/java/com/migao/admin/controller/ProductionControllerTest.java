@@ -371,7 +371,8 @@ class ProductionControllerTest {
         when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
         when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder(null));
         when(positionOperationMapper.insert(any(ProcessingPositionOperation.class))).thenReturn(1);
-        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
+        // issue #6955：ensureQrToken 的写路径 = 条件更新 fillMissingQrToken（不再是整实体 updateById）
+        when(processingOrderMapper.fillMissingQrToken(any(), any(), any(), any())).thenReturn(1);
 
         String body = mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/instantiate")
                         .contentType("application/json").content(INSTANTIATE_BODY))
@@ -381,12 +382,14 @@ class ProductionControllerTest {
                 .andExpect(jsonPath("$.data.operation_count").value(2))
                 .andReturn().getResponse().getContentAsString();
 
-        // 效果层断言：返回的 token 必须真落到 processing_orders（不是只「调了 updateById」）
+        // 效果层断言：返回的 token 必须真落到 processing_orders（不是只「调了一次写方法」）
+        // issue #6955：写路径 = 条件更新 fillMissingQrToken(id, tenantId, qrToken, updatedAt)
         String returned = objectMapper.readTree(body).path("data").path("qr_token").asText();
-        ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper).updateById(captor.capture());
-        assertThat(captor.getValue().getId()).isEqualTo(PO_ID);
-        assertThat(captor.getValue().getQrToken()).isEqualTo(returned);
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(processingOrderMapper).fillMissingQrToken(eq(PO_ID), eq(TENANT), captor.capture(), any());
+        assertThat(captor.getValue()).isEqualTo(returned);
+        // 且绝不回退到整实体回写（那会把旧 status 一并写回、静默回滚并发状态变更）
+        verify(processingOrderMapper, never()).updateById(any(ProcessingOrder.class));
 
         verify(positionOperationMapper, times(2)).insert(any(ProcessingPositionOperation.class));
     }
@@ -1124,7 +1127,8 @@ class ProductionControllerTest {
         stubV54BulianHanzheLibrary();
         when(positionOperationMapper.selectList(any())).thenReturn(List.of());   // 存量单：工序实例为空
         when(positionOperationMapper.insert(any(ProcessingPositionOperation.class))).thenReturn(1);
-        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
+        // issue #6955：ensureQrToken 的写路径 = 条件更新 fillMissingQrToken（不再是整实体 updateById）
+        when(processingOrderMapper.fillMissingQrToken(any(), any(), any(), any())).thenReturn(1);
 
         mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/instantiate")
                         .contentType("application/json").content("{}"))
@@ -1160,7 +1164,8 @@ class ProductionControllerTest {
         stubV54BulianHanzheLibrary();
         when(positionOperationMapper.selectList(any())).thenReturn(List.of());
         when(positionOperationMapper.insert(any(ProcessingPositionOperation.class))).thenReturn(1);
-        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
+        // issue #6955：ensureQrToken 的写路径 = 条件更新 fillMissingQrToken（不再是整实体 updateById）
+        when(processingOrderMapper.fillMissingQrToken(any(), any(), any(), any())).thenReturn(1);
 
         mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/instantiate")
                         .contentType("application/json").content("{\"positions\":[]}"))
@@ -1214,7 +1219,8 @@ class ProductionControllerTest {
         when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemHanzhe()));
         stubV54BulianHanzheLibrary();
         when(positionOperationMapper.selectList(any())).thenReturn(derivedInstances());
-        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
+        // issue #6955：ensureQrToken 的写路径 = 条件更新 fillMissingQrToken（不再是整实体 updateById）
+        when(processingOrderMapper.fillMissingQrToken(any(), any(), any(), any())).thenReturn(1);
 
         String body = mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/instantiate")
                         .contentType("application/json").content("{}"))
@@ -1242,7 +1248,8 @@ class ProductionControllerTest {
         when(orderMapper.selectById(ORDER_ID)).thenReturn(order("producing"));
         // 撤销后的加工单：qr_token 已被 revoke 置 NULL
         when(processingOrderMapper.selectActiveByOrderId(ORDER_ID, TENANT)).thenReturn(processingOrder(null));
-        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
+        // issue #6955：ensureQrToken 的写路径 = 条件更新 fillMissingQrToken（不再是整实体 updateById）
+        when(processingOrderMapper.fillMissingQrToken(any(), any(), any(), any())).thenReturn(1);
         // 工序实例：首道已报满 done_qty=12.30（该单已有报工历史）
         when(positionOperationMapper.selectList(any())).thenReturn(List.of(
                 op("op-1", 1, "精裁-布", "12.30", false, "done", "12.30"),
@@ -1328,7 +1335,8 @@ class ProductionControllerTest {
         when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItemHanzhe()));
         stubV54BulianHanzheLibrary();
         when(positionOperationMapper.selectList(any())).thenReturn(stale);
-        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
+        // issue #6955：ensureQrToken 的写路径 = 条件更新 fillMissingQrToken（不再是整实体 updateById）
+        when(processingOrderMapper.fillMissingQrToken(any(), any(), any(), any())).thenReturn(1);
 
         mockMvc.perform(post("/api/admin/production/orders/" + ORDER_ID + "/instantiate")
                         .contentType("application/json").content("{}"))

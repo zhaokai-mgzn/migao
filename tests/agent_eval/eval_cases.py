@@ -9122,6 +9122,7 @@ _CASE_PG_076 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    precondition='前置 = ① 存在一张 `status=generated` 的加工单（形态①：判据**自建夹具** —— 一次性真 PG 集群 + `tenant_id=6955` + 单号前缀 `po-6955`，并为其建一条 `cancelled` 订单行满足外键 `processing_orders_order_id_fkey`）；② 形态② 需要一对「`status=confirmed` 订单 + 它的 `generated` 加工单」。前置由判据自身的建夹具段持有（`PgCluster.startOrAbort()` + 按 `poId(r)` 建行）。**不成立时的表现 = fail-closed 硬失败，绝不静默跳过**：探针在 10000ms 内等不到即抛 `IllegalStateException`（逐字「探针未在 10000ms 内进入窗口 —— 判据装置坏了」）；夹具缺失（如外键指向的订单行不存在）会在建夹具那一步就红。⚠️ 由此**不会**出现「前置悄悄不成立 ⇒ 红的表现像 agent 不干活」这一族误归因（PG-013 / CU-003 的形态）：本用例没有任何 agent 期望，红了就只有一个读法 —— 判据或装置坏了。',
 )
 
 # ── PP-002 [NORMAL] 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query）（源: cases/processing.yml）──
