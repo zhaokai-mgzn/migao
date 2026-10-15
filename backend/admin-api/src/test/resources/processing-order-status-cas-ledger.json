@@ -1,0 +1,72 @@
+{
+  "schema": "processing-order-status-cas/1.0",
+  "_what": "加工单（processing_orders）**状态列写路径**的登记表：`ProcessingOrderMapper` 里每一条写 status 的手写 SQL，以及**两条** service（`ProcessingOrderService` / `OrderService`）里每一处该列状态迁移的调用点，都必须在此登记，**未登记即红**。规范正文 = issue #6955 / `migao-dev-flow` §23（类级固化）。",
+  "_why": "issue #6955 的病根是**同一份状态迁移权上有多个写面，全都没有 CAS**：① `ProcessingOrderService#updateStatus` 先读内存旧值过状态机（`STATUS_TRANSITIONS`）、再 `processingOrderMapper.updateById(upd)`（WHERE 仅主键 ⇒ 无谓词）⇒ 同一张加工单并发 `issue` + `cancel` **两个请求都 200**，终态由后写者决定 —— 而 `issued` 与 `cancelled` 在状态机里**互不可达** ⇒ 终态**必然**自相矛盾（修前实测逐字读数 `issue=200(resp=issued) cancel=200(resp=cancelled) 成功数=2 加工单终态=issued`）；② `OrderService#cancelOrder` 的**联动作废腿**同样无谓词 ⇒ 订单作废 × 加工单开工并发出现「**订单 cancelled + 加工单 issued**」（订单已废、单还在产；修前实测 `orderCancel=200(ok) issue=200(resp=issued) 订单终态=cancelled`）。**只修一处 = 没修**：下一个人在同族文件新加状态迁移写路径、或给 mapper 加一条无条件 SQL，同样没有任何东西会红 ⇒ 本表把这一类形态逐个登记。",
+  "scan": {
+    "root": "backend/admin-api/src/main/java/com/migao/admin",
+    "mapper": "mapper/ProcessingOrderMapper.java",
+    "services": [
+      "service/ProcessingOrderService.java",
+      "service/OrderService.java"
+    ],
+    "shape": "① mapper：手写 @Update SQL（`UPDATE processing_orders`）里凡在 **SET 侧**写 `status` 的，必须带完整谓词 `tenant_id` 参数 + **WHERE 侧 status 谓词**（`status = #{fromStatus}` 参数化 / `status = 'x'` / `status IN (…)`）+ `deleted = 0`；② service：凡**方法体内出现** `processingOrderMapper.updateById(` 或 `processingOrderMapper.mark*(` 的方法 = 状态列的写路径，必须逐条在册，且其 `call_anchor` 必须**逐字**出现在该方法体内（「以 `markStatusIfFrom` 收口」这条主张必须被兑现：把它退回无谓词 `updateById` ⇒ 红）。",
+    "note": "形态判据不做 AST 解析（只认「注解 + 方法窗口 + 文本标记」）⇒ 换措辞可绕过；真实防线仍是实例判据（见 coverage_boundary）。⚠️ **射程含 `OrderService` 是刻意的**：本单第二个写面就在那条文件的 `cancelOrder` 里，只扫 service+mapper 那一对会漏掉一半的病。"
+  },
+  "entries": [
+    {
+      "method": "ProcessingOrderMapper#markStatusIfFrom",
+      "verdict": "guarded",
+      "guard": "状态迁移权 = DB 原子条件更新（CAS，issue #6955 本单新增）：`UPDATE processing_orders SET status=#{targetStatus}, updated_at=#{now} [, 各动作只写自己那一列] WHERE id=? AND tenant_id=? AND deleted=0 AND status=#{fromStatus}`，按受影响行数判谁抢到迁移权；0 行 ⇒ 409 + **实际当前态**的可行动文案。`fromStatus` 由调用方从状态机（`ProcessingOrderService.STATUS_TRANSITIONS`）取出 ⇒ 迁移表只有一份投影。手工入口四条迁移（issue/start/complete/cancel）与订单取消联动作废都走它。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingOrderMapper.java::int markStatusIfFrom(",
+      "case_ids": [
+        "PG-076",
+        "MC-101"
+      ]
+    },
+    {
+      "method": "ProcessingOrderMapper#markCompletedIfActive",
+      "verdict": "guarded",
+      "guard": "完工权 = 条件更新（CAS，issue #4117 既有形态）：谓词 = 活跃集 `status IN ('generated','issued','in_processing','completed')` + `tenant_id` + `deleted = 0` ⇒ 并发取消的加工单不会被复活；已是 completed 时不覆盖首次完工时间。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingOrderMapper.java::int markCompletedIfActive(",
+      "case_ids": [
+        "MC-101"
+      ]
+    },
+    {
+      "method": "ProcessingOrderMapper#markInProcessingIfFrom",
+      "verdict": "guarded",
+      "guard": "首工序报满 ⇒ `issued → in_processing` 的自动写路径 = 条件更新（CAS，issue #4695 / D13 既有形态）：谓词 = `status = #{fromStatus}`（由 `ProcessingOrderService.allowsTransition` 授权的那个起始态）+ `tenant_id` + `deleted = 0` ⇒ 与并发的取消互斥、不裸 UPDATE 绕过状态机。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingOrderMapper.java::int markInProcessingIfFrom(",
+      "case_ids": [
+        "MC-101"
+      ]
+    }
+  ],
+  "service_write_paths": [
+    {
+      "method": "ProcessingOrderService#updateStatus",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java",
+      "path": "ProcessingOrderMapper#markStatusIfFrom",
+      "call_anchor": "processingOrderMapper.markStatusIfFrom(",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java::processingOrderMapper.markStatusIfFrom(",
+      "case_ids": [
+        "PG-076",
+        "MC-101"
+      ]
+    },
+    {
+      "method": "OrderService#cancelOrder",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java",
+      "path": "ProcessingOrderMapper#markStatusIfFrom",
+      "call_anchor": "processingOrderMapper.markStatusIfFrom(",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java::processingOrderMapper.markStatusIfFrom(",
+      "case_ids": [
+        "PG-076",
+        "MC-101"
+      ]
+    }
+  ],
+  "unverified_baseline": 0,
+  "unverified": [],
+  "coverage_boundary": "本表机械保证的是：① 扫描器**现取**的「写 status 的 mapper SQL」与「两条 service 里写状态列的调用点」都在册、且**只增不减**（新增未登记 ⇒ 红；台账条目在现取集合里消失 ⇒ 红；mapper 条目为空 ⇒ 红）；② 每条 mapper 写面带完整谓词（WHERE 侧 `status` 谓词 + `deleted = 0` + `tenant_id` 参数）；③ 每条 evidence 锚是 `<仓库相对全路径>::<可检索文本>`，左侧文件存在、右侧**逐字出现**（摘掉 CAS 调用 / 改名 ⇒ 红）。它**不保证**：① 判据本体没跑过那条真库并发判据 —— 行为面由 `ProcessingOrderStatusCasRaceRealDbTest`（真 PG + 窗口注入）承担，两者缺一不可；② 形态判据不做 AST 解析，换措辞可绕过（真实防线仍是实例判据）；③ 射程只到 `ProcessingOrderMapper` + `ProcessingOrderService` + `OrderService` 这三条文件（**别的租户数据类型的状态迁移不在本表射程**：入库单归 MC-100、工序删除权归 PG-075，三张表各自独立、既不互为副本也互不重判）；④ 判不了「拿 `updateById` 改**非状态**列」（那不是本表的对象：本表的对象是状态列）；⑤ `.xml` mapper 文件（本仓 mapper 是注解式，无 xml）不在扫描面；⑥ **「写路径清单」由 `processingOrderMapper.` 前缀现取** ⇒ 若有人改用 `baseMapper.updateById(` / `this.updateById(` 等别名形态写加工单状态，本表扫不到（那是**未覆盖**的形态，重启条件 = 出现第一条这样的写路径时把前缀集合扩到别名并补一条红证）。"
+}
