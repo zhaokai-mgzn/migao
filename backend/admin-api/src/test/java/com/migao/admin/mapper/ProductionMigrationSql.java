@@ -73,6 +73,16 @@ final class ProductionMigrationSql {
         }
     }
 
+    /**
+     * 提取 `CREATE TABLE [IF NOT EXISTS] <table> ( ... );` 的表体（**包内可见**，供
+     * {@code TenantApplicationMapperTest} 的同款解析复用 —— 不另写第二份 DDL 解析器）。
+     *
+     * @return 表体；表不存在时返回 {@code null}
+     */
+    static String tableBody(String sql, String table) {
+        return createTableBody(sql, table);
+    }
+
     /** 提取 `CREATE TABLE [IF NOT EXISTS] <table> ( ... );` 的表体；不存在返回 null。 */
     private static String createTableBody(String sql, String table) {
         String lower = sql.toLowerCase();
