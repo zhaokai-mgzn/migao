@@ -225,7 +225,7 @@ public class AgentBatchService {
             AgentBatch fresh = requireBatch(tenantId, batchId);
             throw BusinessException.conflict("批次当前状态为 " + fresh.getStatus()
                             + "，只有 preview 的批次可以执行（不可重复执行）",
-                    "用 GET /api/admin/agent/batches/" + batchId + " 查看该批次的状态与结果");
+                    "请刷新该批次的状态与结果后重试");
         }
         batch.setStatus(STATUS_EXECUTING);
 
@@ -297,7 +297,7 @@ public class AgentBatchService {
             AgentBatch fresh = requireBatch(tenantId, batchId);
             throw BusinessException.conflict("批次当前状态为 " + fresh.getStatus()
                             + "，可撤销状态只有 " + STATUS_DONE + " / " + STATUS_PARTIAL,
-                    "请先执行该批次（POST /api/admin/agent/batches/" + batchId + "/execute）");
+                    "请先执行该批次，再撤销");
         }
         batch.setStatus(STATUS_EXECUTING);
 
