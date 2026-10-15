@@ -219,12 +219,25 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             }
         }
 
-        void awaitPausedForTest(long timeoutMillis) throws InterruptedException {
+        /**
+         * 等**新的一次**进入窗口（要求 `paused` 先从 true 回到 false，再变 true）。
+         *
+         * <p>⚠️ 不能只等 `paused == true`：判据的**上一轮**或**上一条腿**刚进过窗口 ⇒ 残留的 true 会让
+         * 等待**立刻返回** ⇒ 竞争腿在「被暂停那条腿」还没停住时起跑（本判据初版实测：竞争腿跑完了整条路，
+         * 落败落成 422 读判兜底而不是 409 CAS 落败 ⇒ 测不到 CAS 那一跳）。</p>
+         *
+         * @return 是否真的等到了一次**新的**进入窗口
+         */
+        boolean awaitFreshPauseForTest(long timeoutMillis) throws InterruptedException {
             long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
             synchronized (monitor) {
+                while (paused && System.nanoTime() < deadline) {
+                    monitor.wait(20L);
+                }
                 while (!paused && System.nanoTime() < deadline) {
                     monitor.wait(20L);
                 }
+                return paused;
             }
         }
     }
@@ -244,9 +257,13 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         return statusMigrationProbe.pauseMillisForTest();
     }
 
-    /** 测试装置：等探针真的进入窗口（超时 = 判据装置坏了，由调用方 fail-closed）。 */
-    static void awaitStatusMigrationProbePausedForTest(long timeoutMillis) throws InterruptedException {
-        statusMigrationProbe.awaitPausedForTest(timeoutMillis);
+    /**
+     * 测试装置：等探针**新的一次**进入窗口（超时 = 判据装置坏了，由调用方 fail-closed）。
+     *
+     * @return 是否真的等到（{@code false} = 超时，调用方必须显式判红而不是静默继续）
+     */
+    static boolean awaitStatusMigrationProbeFreshPauseForTest(long timeoutMillis) throws InterruptedException {
+        return statusMigrationProbe.awaitFreshPauseForTest(timeoutMillis);
     }
 
 
@@ -1427,8 +1444,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         String editedBy = getCurrentUsername();
         // 探针（生产恒 0）：把「读 → CAS 写」之间的窗口放大，供真库并发判据确定性命中
         statusMigrationProbe.pauseIfEnabled();
-        int affected = productMapper.updateStatusIfFrom(
-                id, tenantId, product.getStatus(), status, editedBy, OffsetDateTime.now());
+        int affected = productMapper.updateStatusIfFrom(id, tenantId, product.getStatus(),
+                product.getStatus() == null, status, editedBy, OffsetDateTime.now());
         if (affected == 0) {
             Product latest = productMapper.selectById(id);
             String actual = latest == null
@@ -1465,6 +1482,10 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         product.setRecommended(recommended);
         product.setEditedBy(getCurrentUsername());
         product.setEditedAt(OffsetDateTime.now());
+        // 🔴 issue #6961（T2b 同族形态）：**不得**把这次读到的旧 status 一起写回 —— 本仓未声明
+        // update-strategy ⇒ null 不进 SET ⇒ 并发的状态迁移不会被这次「改推荐标记」静默回滚。
+        // （与 `updateProduct` 同一处置；只写自己负责的列 = recommended / edited_*。）
+        product.setStatus(null);
         productMapper.updateById(product);
         log.info("更新商品推荐标记成功: id={}, recommended={}, tenantId={}", id, recommended, tenantId);
     }
@@ -1549,8 +1570,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             }
             // issue #6961：条件更新（CAS），按**影响行数**判定 —— 并发下同一商品只允许一次上架成功，
             // 落败方记为该商品的错误（不是 500、也不是静默成功）。
-            if (productMapper.updateStatusIfFrom(id, tenantId, currentStatus, "on_sale",
-                    getCurrentUsername(), OffsetDateTime.now()) == 0) {
+            if (productMapper.updateStatusIfFrom(id, tenantId, currentStatus, currentStatus == null,
+                    "on_sale", getCurrentUsername(), OffsetDateTime.now()) == 0) {
                 result.addError(id, "商品状态已被并发修改，本次上架未生效（请刷新后重试）");
                 continue;
             }
@@ -1585,8 +1606,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                 continue;
             }
             // issue #6961：条件更新（CAS），按**影响行数**判定 —— 并发下同一商品只允许一次下架成功。
-            if (productMapper.updateStatusIfFrom(id, tenantId, currentStatus, "off_sale",
-                    getCurrentUsername(), OffsetDateTime.now()) == 0) {
+            if (productMapper.updateStatusIfFrom(id, tenantId, currentStatus, currentStatus == null,
+                    "off_sale", getCurrentUsername(), OffsetDateTime.now()) == 0) {
                 result.addError(id, "商品状态已被并发修改，本次下架未生效（请刷新后重试）");
                 continue;
             }
@@ -2681,6 +2702,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         }
         // 商品级 stock 仅作冗余展示，同步为 SKU 汇总值
         product.setStock(newTotal);
+        // 🔴 issue #6961（T2b 同族形态）：同 updateProduct / updateProductRecommended —— status 置 null
+        // 后不进 SET，避免这条库存同步把并发迁移的新状态用陈旧值覆盖回去。
+        product.setStatus(null);
         productMapper.updateById(product);
 
         log.info("[Agent] 库存调整: product={}, adjustment={}, reason={}, total={}->{}, tenant={}",

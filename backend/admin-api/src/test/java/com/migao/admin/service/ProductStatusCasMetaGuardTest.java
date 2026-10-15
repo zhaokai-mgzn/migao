@@ -101,27 +101,40 @@ class ProductStatusCasMetaGuardTest {
     private static final String LEDGER_PATH =
             MODULE + "/src/test/resources/product-status-cas-ledger.json";
 
-    /** 本单四条状态迁移入口 + T2b 的宿主方法（扫描器必须现取到它们，否则判据失明）。 */
+    /** 本单四条状态迁移入口 + T2b 的宿主方法 + 状态迁移收口（扫描器必须现取到它们，否则判据失明）。 */
     private static final List<String> CORE_WRITE_PATHS = List.of(
             "ProductService#updateProductStatus",
             "ProductService#updateProductForAgent",
             "ProductService#batchOnShelf",
             "ProductService#batchOffShelf",
-            "ProductService#updateProduct");
+            "ProductService#applyStatusTransition");
 
     // ── 形态（与台账 scan 段的声明逐字对应）
 
-    /** 手写 update 注解的**取块**（到配对的 `)` 为止；SQL 自带括号 ⇒ 先取块再剥 Java 语法）。 */
-    private static final Pattern UPDATE_ANNOTATION =
-            Pattern.compile("@Update\\s*\\(((?:[^()]|\\([^()]*\\))*)\\)");
     /** 写面表名。 */
     private static final String TABLE = "products";
+    /** `@Update` 注解的分块边界（**取块到下一处注解为止** —— SQL 自带括号，按括号配对的取块会被截断）。 */
+    private static final Pattern UPDATE_ANNOTATION_SPLIT = Pattern.compile("@Update\\s*\\(");
     /** 「状态列写」的**无谓词**形态（本单的病根）：整实体回写。 */
     private static final Pattern UNCONDITIONAL_UPDATE_BY_ID =
             Pattern.compile("productMapper\\.updateById\\(");
-    /** 该 mapper 的条件更新写面（现取，不写死）：`productMapper.updateStatusIfFrom(`。 */
-    private static final Pattern MAPPER_CAS_CALL =
-            Pattern.compile("(productMapper\\.updateStatusIfFrom\\(|applyStatusTransition\\()");
+    /**
+     * 「写商品状态列」的**写路径锚**（现取，不写死方法名）：调用状态迁移收口，或直接调 mapper 的条件更新。
+     * **这两条恰好圈住本单的四个入口 + 收口本身**：`doCreateProduct` / `upsertImportedProduct` 那种
+     * 「new 一个实体 → 写 status → insert」是**建品**语义、不在本表射程；`updateProductRecommended` /
+     * `adjustStockForAgent` 的 `updateById` 只写**非状态**列 ⇒ 不是状态写路径。
+     */
+    private static final Pattern STATUS_WRITE_ANCHOR =
+            Pattern.compile("applyStatusTransition\\(|productMapper\\.updateStatusIfFrom\\(");
+    /**
+     * T2b 的**不变量**（与台账 `invariants` 段逐字对应）：
+     * `<宿主方法> :: <必须逐字出现的锚> :: <该方法体内必须为空的正则>`。
+     * 宿主方法不写状态列，所以它**不是**状态写路径；它的保护由本不变量单独承担。
+     */
+    private static final List<String> T2B_HOST_METHODS =
+            List.of("updateProduct", "updateProductRecommended", "adjustStockForAgent");
+    private static final String T2B_NO_STATUS_WRITE_ANCHOR = "product.setStatus(null)";
+    private static final Pattern T2B_FORBIDDEN = Pattern.compile("productMapper\\.updateById\\(");
     /** 谓词 / 参数要求（issue #6961 的口径）。 */
     private static final Pattern TENANT_PARAM =
             Pattern.compile("#\\{\\s*tenantI?d\\s*\\}", Pattern.CASE_INSENSITIVE);
@@ -155,6 +168,81 @@ class ProductStatusCasMetaGuardTest {
         assertThat(servicePaths)
                 .as("扫描器必须现取到 service 里写商品状态列的方法（少一个核心对象 = 判据失明，不是通过）")
                 .containsAll(CORE_WRITE_PATHS);
+        // 改品宿主**不写状态列** ⇒ 它不在状态写路径里（它的保护 = 台账 invariants，见判据 3）
+        assertThat(servicePaths)
+                .as("`updateProduct` 不写状态列 ⇒ 不该被当成状态写路径（否则台账会被迫把改品也登记上去）")
+                .doesNotContain("ProductService#updateProduct");
+    }
+
+    @Test
+    @DisplayName("T2b 不变量：整实体回写的宿主必须证明「不写陈旧状态列」，且台账 invariants 逐条兑现")
+    void t2bHostsDoNotWriteStaleStatusColumn() throws IOException {
+        String service = serviceText();
+        Path root = repoRoot();
+        List<String> broken = new ArrayList<>();
+        List<String> unanchored = new ArrayList<>();
+        List<String> allForbidden = new ArrayList<>();
+        List<String> hostsInLedger = new ArrayList<>();
+        for (JsonNode inv : ledger().get("invariants")) {
+            String method = inv.get("method").asText();
+            String host = bareMethod(method);
+            String evidence = inv.get("evidence").asText();
+            String anchor = inv.get("anchor").asText();
+            String forbidden = inv.get("forbidden_anchor").asText();
+            hostsInLedger.add(host);
+            allForbidden.add(host + "::" + forbidden);
+            int sep = evidence.indexOf("::");
+            Path file = root.resolve(evidence.substring(0, sep));
+            String symbol = evidence.substring(sep + 2);
+            if (!Files.exists(file)) {
+                broken.add("invariants " + method + " 左侧文件不存在：" + evidence.substring(0, sep));
+            } else if (!normalize(Files.readString(file, StandardCharsets.UTF_8)).contains(normalize(symbol))) {
+                broken.add("invariants " + method + " 的锚在文件里找不到：" + normalize(symbol));
+            }
+            // 逐方法核：① 该宿主确实存在（否则台账给不存在的对象盖章）；② 命中否定锚；
+            //               ③ 体内不得出现禁用锚（无谓词整实体回写 = T2b 病根形态）。
+            boolean found = false;
+            for (MethodBody m : membersWithBody(service)) {
+                if (!host.equals(bareMethod(m.name()))) {
+                    continue;
+                }
+                found = true;
+                // 归一化空白后比对（缩进 / 换行形态不参与判定，判的是「这两句之间的保护句在不在」）
+                String bodyNormalized = normalize(m.body());
+                String anchorNormalized = normalize(anchor);
+                String forbiddenNormalized = normalize(forbidden);
+                if (!bodyNormalized.contains(anchorNormalized)) {
+                    unanchored.add(method + " 缺否定锚 `" + anchorNormalized + "`");
+                }
+                // ⚠️ 这三条的锚与禁用锚**有意相同**：要证明的是「保护句在不在」——
+                //    摘掉它 ⇒ 同一段文本（= 旧形态）回来 ⇒ 命中。两侧都归一化后才比，否则
+                //    `A B` 与 `A B ` 会被判不等 ⇒ 这条自证假绿（真源码 / 合成语料都实测过）。
+                if (anchorNormalized.equals(forbiddenNormalized)) {
+                    if (bodyNormalized.contains(forbiddenNormalized)) {
+                        unanchored.add(method + " 体内出现禁用锚（保护句缺失 = 陈旧整实体回写）：`"
+                                + forbiddenNormalized + "`");
+                    }
+                } else if (bodyNormalized.contains(forbiddenNormalized)) {
+                    unanchored.add(method + " 体内出现禁用锚（无谓词整实体回写）：`" + forbiddenNormalized + "`");
+                }
+            }
+            if (!found) {
+                unanchored.add("台账给不存在的宿主盖章：" + method);
+            }
+        }
+        // 反向自证：真语料里那三个宿主必须真的存在（否则本条判据在空跑 —— 「绿了但没跑」）
+        List<String> live = t2bHostMethods(service);
+        System.out.println("[READING MC-105 T2b] 现取宿主=" + live + " 台账宿主=" + hostsInLedger
+                + " 禁用锚=" + allForbidden + " 违规=" + unanchored + " 台账断链=" + broken);
+        assertThat(live).as("真语料里必须现取到那三个整实体回写宿主（扫不到 = 判据失明，不是通过）")
+                .containsAll(T2B_HOST_METHODS);
+        assertThat(hostsInLedger).as("台账 invariants 必须逐条覆盖全部 T2b 宿主（未登记 ⇒ 红）")
+                .containsAll(T2B_HOST_METHODS);
+        assertThat(unanchored).as("T2b 宿主必须以否定锚证明不写陈旧状态列，且不得有无谓词整实体回写")
+                .isEmpty();
+        assertThat(broken).as("台账 invariants 的 evidence 必须逐字兑现").isEmpty();
+        assertThat(service).as("真语料里必须有那个否定锚（否则本条判据在空跑）")
+                .contains(T2B_NO_STATUS_WRITE_ANCHOR);
     }
 
     @Test
@@ -247,8 +335,9 @@ class ProductStatusCasMetaGuardTest {
                 String symbol = anchor.substring(sep + 2);
                 if (!Files.exists(file)) {
                     broken.add(label + " 左侧文件不存在：" + anchor.substring(0, sep));
-                } else if (!Files.readString(file, StandardCharsets.UTF_8).contains(symbol)) {
-                    broken.add(label + " 右侧锚在文件里找不到：" + symbol);
+                } else if (!normalize(Files.readString(file, StandardCharsets.UTF_8)).contains(normalize(symbol))) {
+                    // 归一化比对：锚可能跨行（源码换行 / 缩进变化不该让台账假红）
+                    broken.add(label + " 右侧锚在文件里找不到：" + normalize(symbol));
                 }
             }
         }
@@ -272,9 +361,11 @@ class ProductStatusCasMetaGuardTest {
                 + serviceCorpus("ProductService", "updateProductForAgent",
                 "applyStatusTransition(latest, request.getStatus(), id, tenantId);")
                 + serviceCorpus("ProductService", "batchOnShelf",
-                "if (productMapper.updateStatusIfFrom(id, tenantId, currentStatus, \"on_sale\", who, now) == 0) { }")
+                "if (productMapper.updateStatusIfFrom(id, tenantId, currentStatus, currentStatus == null,\n                \"on_sale\", who, now) == 0) { }")
                 + serviceCorpus("ProductService", "batchOffShelf",
-                "if (productMapper.updateStatusIfFrom(id, tenantId, currentStatus, \"off_sale\", who, now) == 0) { }")
+                "if (productMapper.updateStatusIfFrom(id, tenantId, currentStatus, currentStatus == null,\n                \"off_sale\", who, now) == 0) { }")
+                // 改品宿主：**不写状态列** ⇒ 它进不了状态写路径候选（不在 registered 里）——
+                // 这正是「有意不写状态列」与「漏登记」的区别；它的保护由 T2b 不变量判据承担。
                 + serviceCorpus("ProductService", "updateProduct",
                 "product.setStatus(null);\n        productMapper.update(null, ownedColumns(product));");
         Map<String, String> registered = new LinkedHashMap<>();
@@ -282,7 +373,6 @@ class ProductStatusCasMetaGuardTest {
         registered.put("ProductService#updateProductForAgent", "applyStatusTransition(");
         registered.put("ProductService#batchOnShelf", "productMapper.updateStatusIfFrom(");
         registered.put("ProductService#batchOffShelf", "productMapper.updateStatusIfFrom(");
-        registered.put("ProductService#updateProduct", "product.setStatus(null);");
 
         assertThat(problems(goodMapper, goodService, registered))
                 .as("合规语料判绿（否则本守卫是恒红噪声）").isEmpty();
@@ -317,7 +407,7 @@ class ProductStatusCasMetaGuardTest {
         // 坏形态 ⑤：service 新加一条未登记的状态写路径
         assertThat(problems(goodMapper, goodService
                         + serviceCorpus("ProductService", "restoreShelf",
-                        "product.setStatus(\"on_sale\");\n        productMapper.updateById(product);"), registered))
+                        "productMapper.updateStatusIfFrom(id, 1L, current, current == null,\n                \"on_sale\", who, now);"), registered))
                 .as("未登记的状态迁移写路径必须判红（这就是「只修一处」的复发形态）").isNotEmpty();
 
         // 坏形态 ⑤b（🔴 去行数判定定向注入）：最隐蔽的一种 —— **锚串留着**
@@ -392,6 +482,9 @@ class ProductStatusCasMetaGuardTest {
         for (MethodBody m : serviceCandidates(serviceText)) {
             candidates.put(bareMethod(m.name()), m);
         }
+        // 📌 T2b（本单另一半病 = 整实体回写）的**不变量**不在这里判：它只对「宿主方法确实存在」的
+        //    **真语料**成立（合成语料没有那三个宿主）⇒ 由专项判据
+        //    `t2bHostsDoNotWriteStaleStatusColumn` 承担（见该判据的断言）。
         List<String> registeredBare = registered.keySet().stream()
                 .map(ProductStatusCasMetaGuardTest::bareMethod).toList();
         for (Map.Entry<String, MethodBody> e : candidates.entrySet()) {
@@ -409,11 +502,33 @@ class ProductStatusCasMetaGuardTest {
             MethodBody body = candidates.get(bareMethod(r.getKey()));
             if (body == null) {
                 problems.add("台账给不存在的写路径盖章: " + r.getKey());
-            } else if (r.getValue() != null && !body.body().contains(r.getValue())) {
+            } else if (r.getValue() != null && !normalize(body.body()).contains(normalize(r.getValue()))) {
                 problems.add("写路径未兑现：主张的 " + r.getKey() + " 收口锚不在方法体里（" + r.getValue() + "）");
             }
         }
         return problems;
+    }
+
+    /** 现取：真语料里存在的 T2b 宿主方法（**整实体回写形态**的持有者）。 */
+    private static List<String> t2bHostMethods(String serviceText) {
+        List<String> out = new ArrayList<>();
+        for (MethodBody m : membersWithBody(serviceText)) {
+            if (T2B_HOST_METHODS.contains(bareMethod(m.name()))) {
+                out.add(bareMethod(m.name()));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 空白归一化（台账锚 vs 方法体的比对口径）：缩进 / 换行 / 连续空格不参与判定。
+     *
+     * <p>两个坑都要躲：① **不归一化** ⇒ 源码换一次缩进（或把调用拆成两行）就假红；
+     * ② **只 trim 一侧** ⇒ `A B` 与 `A B ` 判不等，于是「锚 == 禁用锚」那条自证会**假绿**
+     * （本判据初版实测踩到，是 `guardHasDiscriminatingPower` 的合规语料红暴露的）。</p>
+     */
+    private static String normalize(String text) {
+        return text.replaceAll("\\s+", " ").trim();
     }
 
     /** 台账键 / 读数键的形态是 {@code <类>#<方法>} ⇒ 参与匹配的一律是 {@code #} **之后**那一段。 */
@@ -425,14 +540,18 @@ class ProductStatusCasMetaGuardTest {
     /** 现取：mapper 里**在 SET 侧写 {@code status}** 的手写 SQL（方法名 + SQL 文本）。 */
     private static List<MapperWrite> mapperStatusWrites(String mapperText) {
         List<MapperWrite> out = new ArrayList<>();
-        Matcher m = UPDATE_ANNOTATION.matcher(mapperText);
-        while (m.find()) {
-            String sql = toSql(m.group(1));
+        // ⚠️ 分块口径 = 「从 `@Update(` 到下一处 `@Update(`」，**不按括号配对取块** —— 本守卫的 SQL 里
+        // 自带括号（`((#{fromStatus} IS NULL AND status IS NULL) OR status = #{fromStatus})`），
+        // 按括号配对取块会**整条截断** ⇒ mapper 候选集恒为空（= 判据失明，且空集在结果列上看着像「通过」）。
+        // 表名用 `TABLE`（"products"）判定（不用 `UPDATE products`：SQL 常量里这两段分属相邻字符串，
+        // 剥掉引号后中间是空格，恰好仍在同一段文本里 —— 实跑自证）。
+        for (String chunk : UPDATE_ANNOTATION_SPLIT.split(mapperText)) {
+            String sql = toSql(chunk);
             String upper = sql.toUpperCase();
             if (!upper.contains("UPDATE " + TABLE.toUpperCase()) || !writesStatusColumn(sql)) {
                 continue;
             }
-            out.add(new MapperWrite(methodAfter(mapperText, m.end()), sql));
+            out.add(new MapperWrite(methodNameAfterAnnotation(chunk), sql));
         }
         return out;
     }
@@ -580,9 +699,7 @@ class ProductStatusCasMetaGuardTest {
     private static List<MethodBody> serviceCandidates(String serviceText) {
         List<MethodBody> out = new ArrayList<>();
         for (MethodBody m : membersWithBody(serviceText)) {
-            if (UNCONDITIONAL_UPDATE_BY_ID.matcher(m.body()).find()
-                    || MAPPER_CAS_CALL.matcher(m.body()).find()
-                    || m.body().contains("product.setStatus(")) {
+            if (STATUS_WRITE_ANCHOR.matcher(m.body()).find()) {
                 out.add(m);
             }
         }
@@ -602,8 +719,30 @@ class ProductStatusCasMetaGuardTest {
         return base.endsWith(".java") ? base.substring(0, base.length() - 5) : base;
     }
 
-    private static String methodAfter(String text, int from) {
-        Matcher m = Pattern.compile("\\s+(\\w+)\\s*\\(").matcher(text.substring(from));
+    /**
+     * 该写面的方法名 = **注解之后第一段字符串常量**（SQL 字面量）结束之后第一个 `名字(`。
+     *
+     * <p>⚠️ 不能直接用「文本里第一个 `名字(`」：SQL 字面量里本来就有 `COALESCE(` / `GREATEST(`
+     * （实测第一次就是这么错取成 `AND` 的）⇒ 必须跳过 SQL 字面量再取。</p>
+     */
+    private static String methodNameAfterAnnotation(String chunk) {
+        int i = 0;
+        int n = chunk.length();
+        while (i < n && chunk.charAt(i) != '"') {
+            i++;
+        }
+        while (i < n) {
+            if (chunk.charAt(i) == '\\') {
+                i += 2;
+                continue;
+            }
+            if (chunk.charAt(i) == '"') {
+                i++;
+                break;
+            }
+            i++;
+        }
+        Matcher m = Pattern.compile("\\s+(\\w+)\\s*\\(").matcher(chunk.substring(Math.min(i, n)));
         return m.find() ? m.group(1) : "<unknown>";
     }
 

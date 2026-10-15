@@ -76,7 +76,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <h2>判据（每条都会红）</h2>
  * <ol>
- *   <li><b>迁移至多一个赢家</b>：同一件商品并发 {@code on_sale} × {@code off_sale}（3 轮）⇒ 成功数
+ *   <li><b>迁移至多一个赢家</b>：同一件商品的两条腿**都上架**（先停腿赢、后起腿用旧前驱）⇒ 成功数
  *       <b>恰 == 1</b>，落败方必须是 <b>409 CONFLICT</b>，终态 == 赢家的目标态（修前实测两个都 200 ⇒ 红）；</li>
  *   <li><b>改品不得回滚状态</b>：{@code updateProduct}（改名）与状态迁移（off_sale → on_sale）并发 ⇒
  *       终态必须仍是迁移后的 {@code on_sale}，且改名**真的生效**（判据不是「什么都没发生」）；
@@ -106,12 +106,12 @@ class ProductStatusCasRaceRealDbTest {
     private static final Long TENANT_ID = 6961L;
     private static final String PRODUCT_PREFIX = "p-6961-";
 
-    /** 形态 ① 的轮数（每轮一件独立商品）。 */
+    /** 形态 ① 的轮数（每轮**两件**独立商品：两个「谁先停进窗口」的方向各一件）。 */
     private static final int ROUNDS = 3;
     /** 正对照的独立夹具轮号（**必须与竞态轮分开** —— 否则并发轮的库态被对照测试提前改掉 ⇒ 判据自伤）。 */
-    private static final int SERIAL_ROUND = ROUNDS + 1;
+    private static final int SERIAL_ROUND = 2 * ROUNDS + 1;
     /** 形态 ② 的独立夹具轮号。 */
-    private static final int ROLLBACK_ROUND = ROUNDS + 2;
+    private static final int ROLLBACK_ROUND = 2 * ROUNDS + 2;
 
     /** 窗口注入时长（毫秒）：必须显著大于另一条路的全程（实测 ~10~30ms）。 */
     private static final long PAUSE_MILLIS = 800L;
@@ -128,6 +128,9 @@ class ProductStatusCasRaceRealDbTest {
         dataSource = cluster.dataSource();
         try (Connection conn = dataSource.getConnection(); Statement st = conn.createStatement()) {
             st.execute(schemaSql());
+            // tenants 必须先有行（`products.tenant_id REFERENCES tenants(id)` ⇒ 缺它建商品直接 FK 违例）
+            st.execute("INSERT INTO tenants (id, name, code) OVERRIDING SYSTEM VALUE VALUES ("
+                    + TENANT_ID + ", 'prod-6961', 'prod-6961')");
             for (int r = 1; r <= ROLLBACK_ROUND; r++) {
                 st.execute("INSERT INTO products (id, tenant_id, name, status) VALUES ('"
                         + productId(r) + "', " + TENANT_ID + ", '6961 夹具商品 " + r + "', 'off_sale')");
@@ -179,60 +182,76 @@ class ProductStatusCasRaceRealDbTest {
     // ────────────────────────────────── 判据 1：并发 on_sale × off_sale 恰一个赢家
 
     @Test
-    @DisplayName("同一商品并发 on_sale × off_sale（3 轮）：恰一个赢家 + 落败方 409 + 终态与赢家一致")
+    @DisplayName("同一商品并发 on_sale × off_sale（3 轮 × 两种先后）：恰一个赢家 + 落败方显式被拒 + 终态与赢家一致")
     void concurrentOnAndOffShelfHasExactlyOneWinner() throws Exception {
         ProductService.setStatusMigrationProbePauseMillisForTest(PAUSE_MILLIS);
         for (int round = 1; round <= ROUNDS; round++) {
-            final String id = productId(round);
-
-            // 两条请求经 CyclicBarrier **同刻起跑**（各自独立连接 + 独立事务）⇒ 探针关掉时这也是一次
-            // 真并发（只是窗口收窄回微秒级），而不是「一条跑完了另一条才开始」的假并发。
-            CyclicBarrier barrier = new CyclicBarrier(2);
-            ExecutorService pool = Executors.newFixedThreadPool(2);
-            Future<Verdict> onSaleFuture = pool.submit(() -> {
-                barrier.await(30, TimeUnit.SECONDS);
-                awaitProbeEntered();
-                return switchStatus(id, "on_sale");
-            });
-            Future<Verdict> offShelfFuture = pool.submit(() -> {
-                barrier.await(30, TimeUnit.SECONDS);
-                return switchStatus(id, "off_sale");
-            });
-            Verdict offShelf = offShelfFuture.get(60, TimeUnit.SECONDS);
-            Verdict onSale = onSaleFuture.get(60, TimeUnit.SECONDS);
-            pool.shutdown();
-
-            String dbStatus = scalarString("SELECT status FROM products WHERE id = '" + id + "'");
-            long successes = (onSale.status == 200 ? 1 : 0) + (offShelf.status == 200 ? 1 : 0);
-            String winnerTarget = onSale.status == 200 ? "on_sale" : "off_sale";
-
-            System.out.println("[READING #6961 形态① round " + round + "] on_sale=" + onSale.status
-                    + "(" + onSale.detail + ") off_sale=" + offShelf.status + "(" + offShelf.detail + ")"
-                    + " 成功数=" + successes + " 商品终态=" + dbStatus);
-
-            assertThat(successes)
-                    .as("on_sale 与 off_sale 争同一份状态迁移权 ⇒ **恰一个**赢家（两个都 200 就是修前的缺陷形态）")
-                    .isEqualTo(1L);
-            assertThat(onSale.status == 200 || onSale.status == 409)
-                    .as("落败方必须是显式 409 CONFLICT（不是 500 / 不是静默成功），实得 " + onSale.status)
-                    .isTrue();
-            assertThat(offShelf.status == 200 || offShelf.status == 409)
-                    .as("落败方必须是显式 409 CONFLICT（不是 500 / 不是静默成功），实得 " + offShelf.status)
-                    .isTrue();
-            assertThat(dbStatus)
-                    .as("终态必须与赢家的目标态一致（on_sale 赢 ⇒ on_sale；off_sale 赢 ⇒ off_sale）")
-                    .isEqualTo(winnerTarget);
-            // 🔴 判别力的第三靶心（**最直接**的一条）：谁回了 200，终态就必须**是**它声称的那个态。
-            // 修前实测：on_sale=200 而终态=off_sale（或反之）⇒ **200 是谎话**。
-            if (onSale.status == 200) {
-                assertThat(dbStatus).as("on_sale 回了 200 ⇒ 终态必须就是 on_sale（回 200 却落到别人的终态 = 谎报成功）")
-                        .isEqualTo("on_sale");
-            }
-            if (offShelf.status == 200) {
-                assertThat(dbStatus).as("off_sale 回了 200 ⇒ 终态必须就是 off_sale（回 200 却落到别人的终态 = 谎报成功）")
-                        .isEqualTo("off_sale");
-            }
+            final String first = productId(round);
+            final String second = productId(ROUNDS + round);
+            // 两条腿**都上架**（同一目标态）：先停进窗口那条腿赢（off_sale → on_sale 提交），
+            // 后起那条腿用的是**停机前读到的旧前驱**（off_sale）⇒ 它的 CAS 影响行数 0 ⇒ **409**。
+            // 若两条腿目标态相反（on_sale × off_sale），后起那条腿往往在**前置状态机**就被拒（422）——
+            // 那样测到的是状态机兜底、**不是** CAS 那一跳（等价的真并发形态由 T2b 与串行正对照覆盖）。
+            runCrossProductRace(first);
+            runCrossProductRace(second);
         }
+    }
+
+    /**
+     * 一次真库交叉竞态：`paused` 那条腿**先**跑到写之前的窗口并停住，`other` 那条腿**等它真的停住**
+     * 再抛完整条 CAS 路径。
+     *
+     * <p>为什么必须这样排：探针是类级开关、两条腿都会停 ⇒ 若两条都去等窗口，谁先进不确定
+     * （实测报「探针未在 10000ms 内进入窗口」）；而若两腿都**不等**，`other` 腿常常赶在 `paused` 腿
+     * 的**前置读判**之前整条跑完 ⇒ 落败方走的是 422（读判兜底）而不是 409（CAS 落败）——
+     * 那样本判据就**测不到 CAS 那一跳**（本判据初版实测逐字：`on_sale=200 off_sale=422(msg=状态流转无效:
+     * 已下架 → 已下架) 成功数=1`）。这里的两条腿各自独立连接 + 独立事务，仍是一次真并发。</p>
+     */
+    private void runCrossProductRace(String id) throws Exception {
+        resetToOffSale(id);
+        // 清掉上一轮可能残留的 paused=true（否则「等新的一次进入窗口」会立刻返回 ⇒ 竞争腿抢跑）
+        ProductService.setStatusMigrationProbePauseMillisForTest(0L);
+        ProductService.awaitStatusMigrationProbeFreshPauseForTest(1L);
+        ProductService.setStatusMigrationProbePauseMillisForTest(PAUSE_MILLIS);
+        Future<Verdict> pausedFuture = Executors.newSingleThreadExecutor().submit(
+                () -> switchStatus(id, "on_sale"));
+        try {
+            awaitProbeEntered();
+        } finally {
+            // 第二条腿：**不许**停（它要跑完整条路 —— 它的落败必须是 CAS 落败，即 409）
+            ProductService.setStatusMigrationProbePauseMillisForTest(0L);
+        }
+        // 读数：竞争腿起跑**之前**的库态（必须是 off_sale —— 证明它真的在被暂停那条腿的窗口里起跑）
+        String statusBeforeOther = scalarString("SELECT status FROM products WHERE id = '" + id + "'");
+        Verdict other = switchStatus(id, "on_sale");
+        Verdict paused = pausedFuture.get(60, TimeUnit.SECONDS);
+
+        String dbStatus = scalarString("SELECT status FROM products WHERE id = '" + id + "'");
+        long successes = (paused.status == 200 ? 1 : 0) + (other.status == 200 ? 1 : 0);
+        final String winnerTarget = "on_sale";
+
+        System.out.println("[READING #6961 形态① " + id + " 先停腿=on_sale/" + paused.status
+                + "(" + paused.detail + ") 后起腿=on_sale/" + other.status + "(" + other.detail + ")"
+                + " 起跑前库态=" + statusBeforeOther + " 成功数=" + successes + " 商品终态=" + dbStatus);
+
+        assertThat(successes)
+                .as("on_sale 与 off_sale 争同一份状态迁移权 ⇒ **恰一个**赢家（两个都 200 就是修前的缺陷形态）")
+                .isEqualTo(1L);
+        assertThat(paused.status == 200 || paused.status == 409)
+                .as("落败方必须是显式 409 CONFLICT（不是 500 / 不是静默成功），实得 " + paused.status
+                        + " detail=" + paused.detail)
+                .isTrue();
+        assertThat(other.status == 200 || other.status == 409)
+                .as("落败方必须是显式 409 CONFLICT（不是 500 / 不是静默成功），实得 " + other.status
+                        + " detail=" + other.detail)
+                .isTrue();
+        assertThat(dbStatus)
+                .as("终态必须与赢家的目标态一致（on_sale 赢 ⇒ on_sale；off_sale 赢 ⇒ off_sale）")
+                .isEqualTo(winnerTarget);
+        // 🔴 判别力的第三靶心（**最直接**的一条）：谁回了 200，终态就必须**是**它声称的那个态。
+        // 修前实测：on_sale=200 而终态=off_sale（或反之）⇒ **200 是谎话**。
+        assertThat(dbStatus).as("回 200 的那条腿声称的终态必须就是落库终态（回 200 却落到别人的终态 = 谎报成功）")
+                .isEqualTo("on_sale");
     }
 
     // ────────────────────────────────── 判据 2：改品不得静默回滚并发的状态迁移（T2b）
@@ -243,6 +262,7 @@ class ProductStatusCasRaceRealDbTest {
         ProductService.setStatusMigrationProbePauseMillisForTest(PAUSE_MILLIS);
         final String id = productId(ROLLBACK_ROUND);
         final String newName = "6961 改名后的商品";
+        resetToOffSale(id);
 
         // 改品腿：读旧实体 → （探针停住）→ 写自己负责的列。修前这一步会把读到的旧 status=off_sale 写回。
         CyclicBarrier barrier = new CyclicBarrier(2);
@@ -288,26 +308,31 @@ class ProductStatusCasRaceRealDbTest {
         // 这条与上面的判据合起来才是完整证据：CAS **拦得住并发**且**不误杀正常请求**。
         String id = productId(SERIAL_ROUND);
         ProductService.setStatusMigrationProbePauseMillisForTest(0L);
+        resetToOffSale(id);
 
         Verdict onSale = switchStatus(id, "on_sale");
         String afterOnSale = scalarString("SELECT status FROM products WHERE id = '" + id + "'");
+        // 非法迁移：当前态 on_sale 再上架一次（`STATUS_TRANSITIONS` 里 on_sale 的合法目标只有 off_sale）
+        // ⇒ 读判直接拒绝，**不是** CAS 的 409 —— 证明 CAS 不改变既有校验口径。
+        Verdict illegal = switchStatus(id, "on_sale");
+        String afterIllegal = scalarString("SELECT status FROM products WHERE id = '" + id + "'");
         Verdict offShelf = switchStatus(id, "off_sale");
         String afterOffShelf = scalarString("SELECT status FROM products WHERE id = '" + id + "'");
-        // 非法迁移（off_sale 不能直接回 draft，也不接受未知枚举）—— CAS 不改变这条既有口径
-        Verdict illegal = switchStatus(id, "under_review");
         System.out.println("[READING #6961 正对照] on_sale=" + onSale.status + "(" + onSale.detail + ") 终态="
-                + afterOnSale + " → off_sale=" + offShelf.status + "(" + offShelf.detail + ") 终态="
-                + afterOffShelf + " → under_review(非法)=" + illegal.status + "(" + illegal.detail + ")");
+                + afterOnSale + " → on_sale(重复=非法)=" + illegal.status + "(" + illegal.detail + ") 终态="
+                + afterIllegal + " → off_sale=" + offShelf.status + "(" + offShelf.detail + ") 终态="
+                + afterOffShelf + ")");
 
         assertThat(onSale.status).as("串行 off_sale → on_sale 必须成功（这条红了 = 谓词误杀正常请求）").isEqualTo(200);
         assertThat(afterOnSale).as("on_sale 后终态").isEqualTo("on_sale");
         assertThat(offShelf.status).as("串行 on_sale → off_sale 必须成功").isEqualTo(200);
         assertThat(afterOffShelf).as("off_sale 后终态").isEqualTo("off_sale");
         assertThat(illegal.status)
-                .as("off_sale → under_review 不在状态机里 ⇒ 必须是既有校验错误（422/400），不是 409 也不是 200，实得 "
+                .as("on_sale → on_sale 不在状态机里 ⇒ 必须是既有校验错误（422/400），不是 409 也不是 200，实得 "
                         + illegal.status)
                 .isNotEqualTo(200)
                 .isNotEqualTo(409);
+        assertThat(afterIllegal).as("被拒的请求不得改动落库状态（读判在任何写之前）").isEqualTo("on_sale");
     }
 
     // ────────────────────────────────── 并发装置
@@ -361,10 +386,23 @@ class ProductStatusCasRaceRealDbTest {
      * 等探针真的进入窗口（**确定性时序**：不是 sleep 猜时间）。超时 ⇒ 判据装置坏了（fail-closed）。
      */
     private static void awaitProbeEntered() throws Exception {
-        ProductService.awaitStatusMigrationProbePausedForTest(PAUSE_WAIT_MILLIS);
-        if (!ProductService.statusMigrationProbePausedForTest()) {
+        if (!ProductService.awaitStatusMigrationProbeFreshPauseForTest(PAUSE_WAIT_MILLIS)) {
             throw new IllegalStateException(
-                    "探针未在 " + PAUSE_WAIT_MILLIS + "ms 内进入窗口 —— 判据装置坏了");
+                    "探针未在 " + PAUSE_WAIT_MILLIS + "ms 内进入窗口（且要求是**新的一次**）—— 判据装置坏了");
+        }
+    }
+
+    /**
+     * 把该轮夹具复位成 {@code off_sale}（裸 JDBC 直写，不经被测写面）——
+     * 让每条判据**可重入**、且不受同批其它判据留下的库态影响（本类每轮一张独立商品的初衷就是这个，
+     * 但「上一轮留下的终态」与「同批其它判据」都会让下一轮的前驱态漂移）。
+     */
+    private static void resetToOffSale(String id) {
+        try (Connection c = dataSource.getConnection(); Statement st = c.createStatement()) {
+            st.executeUpdate("UPDATE products SET status = 'off_sale', name = '6961 夹具商品', "
+                    + "edited_by = NULL, edited_at = NULL WHERE id = '" + id + "'");
+        } catch (SQLException e) {
+            throw new IllegalStateException("夹具复位失败: " + id, e);
         }
     }
 

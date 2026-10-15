@@ -32,19 +32,23 @@ public interface ProductMapper extends BaseMapper<Product> {
      * <b>两个请求都成功</b>，终态由后写者决定。列 {@code status} / {@code tenant_id} /
      * {@code deleted} 的存在性已对 {@code db/init/schema.sql} 的 {@code products} DDL 自证。</p>
      *
-     * <p>先判 {@code status IS NULL} 再判 {@code status = #{fromStatus}}：{@code status} 可空
+     * <p>先判「前驱态为空」再判 {@code status = #{fromStatus}}：{@code status} 可空
      * （历史行 / 建品未填），而 <b>PG 里 {@code status = NULL} 求值为 NULL（永假）</b> ——
-     * 少了这一支，那些行会被误判成「被别人抢先改过」。软删（{@code deleted}）同样被
+     * 少了这一支，那些行会被误判成「被别人抢先改过」。⚠️ 这一支**必须**用布尔参数
+     * {@code #{fromStatusIsNull} = TRUE}，<b>不能</b>写成 {@code #{fromStatus} IS NULL}：后者
+     * PG 会报「无法确定参数 $N 的数据类型」（`PARAMETER-TYPE-UNAMBIGUOUS` 的同族，
+     * 真库实测逐字：`错误: 无法确定参数 $7 的数据类型`）。软删（{@code deleted}）同样被
      * {@code @TableLogic} 的行级谓词覆盖，此处显式写出以对齐范式。</p>
      *
      * @return 受影响行数：0 = 不存在 / 跨租户 / 已软删 / 前驱态不符（调用方据此判 409）
      */
     @Update("UPDATE products SET status = #{targetStatus}, edited_by = #{editedBy}, edited_at = #{editedAt}, "
             + "updated_at = #{editedAt} WHERE id = #{id} AND tenant_id = #{tenantId} AND deleted = 0 "
-            + "AND ((#{fromStatus} IS NULL AND status IS NULL) OR status = #{fromStatus})")
+            + "AND ((#{fromStatusIsNull} = TRUE AND status IS NULL) OR status = #{fromStatus})")
     int updateStatusIfFrom(@Param("id") String id,
                            @Param("tenantId") Long tenantId,
                            @Param("fromStatus") String fromStatus,
+                           @Param("fromStatusIsNull") boolean fromStatusIsNull,
                            @Param("targetStatus") String targetStatus,
                            @Param("editedBy") String editedBy,
                            @Param("editedAt") OffsetDateTime editedAt);
