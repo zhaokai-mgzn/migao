@@ -170,6 +170,21 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      */
     private static final StatusMigrationProbe statusMigrationProbe = new StatusMigrationProbe();
 
+    /**
+     * 🔴 <b>仅用于守卫判别力红证</b>的注入孔（生产恒 {@code 0}，不设即零影响）。
+     *
+     * <p>取值：{@code 1} = 把两条批量入口的 CAS 退回无谓词 {@code updateById}（去行数判定）；
+     * {@code 2} = 把改品退回整实体回写 + 把读到的旧 status 写回（T2b 形态）。
+     * 红证读数 = {@code ProductStatusCasMetaGuardTest#guardHasDiscriminatingPower} 的
+     * 『判别力自证（真语料注入）』节（逐字读数见 PR body）。</p>
+     */
+    private static final int GUARD_MUTATION = Integer.getInteger("migao.guard.mutation", 0);
+
+    /** 注入孔读数（生产 0）。 */
+    static int guardMutationForTest() {
+        return GUARD_MUTATION;
+    }
+
     /** 探针（{@link #statusMigrationProbe} 的实现；测试可读「是否已进入窗口」，生产不读）。 */
     static final class StatusMigrationProbe {
 
@@ -750,6 +765,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 校验分类是否存在
         validateCategory(request.getCategoryId());
 
+        // 注入孔 2 需要「读到的旧 status」；生产路径不使用它（新形态不写 status 列）
+        String originalStatus = product.getStatus();
         // 保存原始主图（issue #3884）：BeanUtils.copyProperties 会把请求里的 null mainImage 覆写到实体，
         // 不先记下原值，主图兜底就无法区分「从未设置过」与「已设置过」→ 会误覆盖已设置的主图
         String originalMainImage = product.getMainImage();
@@ -765,7 +782,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         //      update-strategy）⇒ status **根本不进 SET 子句**；
         //   ② 尾部改走只写「本方法负责的列」的 UPDATE（构建器显式点名列）⇒ status / stock /
         //      sales_count / sales_amount / recommended 一律不在它的 SET 里。
-        product.setStatus(null);
+        if (GUARD_MUTATION == 2) {
+            product.setStatus(originalStatus);
+        } else {
+            product.setStatus(null);
+        }
 
         // 处理图片列表
         if (request.getImages() != null) {
@@ -795,7 +816,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 不再整实体回写。窗口探针（生产恒 0）在这里把「读旧实体 → 写」之间的窗口放大，
         // 让「与状态迁移并发 ⇒ status 不被回滚」成为**确定性**判据而不是 flake。
         statusMigrationProbe.pauseIfEnabled();
-        productMapper.update(null, updateProductOwnedColumns(product));
+        if (GUARD_MUTATION == 2) {
+            productMapper.update(product, new LambdaUpdateWrapper<Product>().eq(Product::getId, id));
+        } else {
+            productMapper.update(null, updateProductOwnedColumns(product));
+        }
 
         // 更新销售信息（upsert：按 id/组合匹配原地更新，缺失才删；不再先删后插，
         // 保证订单 processingInfo 里存的旧 skuId/colorId 仍可被 OrderService.matchSkuId 寻址恢复库存）
@@ -1570,7 +1595,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             }
             // issue #6961：条件更新（CAS），按**影响行数**判定 —— 并发下同一商品只允许一次上架成功，
             // 落败方记为该商品的错误（不是 500、也不是静默成功）。
-            if (productMapper.updateStatusIfFrom(id, tenantId, currentStatus, currentStatus == null,
+            if (GUARD_MUTATION == 1
+                    ? productMapper.update(product, new LambdaUpdateWrapper<Product>().eq(Product::getId, id)) == 0
+                    : productMapper.updateStatusIfFrom(id, tenantId, currentStatus, currentStatus == null,
                     "on_sale", getCurrentUsername(), OffsetDateTime.now()) == 0) {
                 result.addError(id, "商品状态已被并发修改，本次上架未生效（请刷新后重试）");
                 continue;
@@ -1606,7 +1633,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                 continue;
             }
             // issue #6961：条件更新（CAS），按**影响行数**判定 —— 并发下同一商品只允许一次下架成功。
-            if (productMapper.updateStatusIfFrom(id, tenantId, currentStatus, currentStatus == null,
+            if (GUARD_MUTATION == 1
+                    ? productMapper.update(product, new LambdaUpdateWrapper<Product>().eq(Product::getId, id)) == 0
+                    : productMapper.updateStatusIfFrom(id, tenantId, currentStatus, currentStatus == null,
                     "off_sale", getCurrentUsername(), OffsetDateTime.now()) == 0) {
                 result.addError(id, "商品状态已被并发修改，本次下架未生效（请刷新后重试）");
                 continue;

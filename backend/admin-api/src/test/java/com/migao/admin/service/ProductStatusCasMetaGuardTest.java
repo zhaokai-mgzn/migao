@@ -351,6 +351,24 @@ class ProductStatusCasMetaGuardTest {
         assertThat(broken).as("evidence 必须逐字兑现（摘掉 CAS 调用 / 方法改名 ⇒ 当场红）").isEmpty();
     }
 
+    @Test
+    @DisplayName("判别力自证（真语料注入）：注入孔存在且生产恒 0 —— 防止红证装置静默腐烂")
+    void guardMutationHoleIsWiredAndDisabledInProduction() throws IOException {
+        String service = serviceText();
+        int branches = countOf(service, "GUARD_MUTATION");
+        System.out.println("[READING MC-105 注入孔] 生产读数=" + ProductService.guardMutationForTest()
+                + " 注入分支出现次数=" + branches);
+        assertThat(ProductService.guardMutationForTest())
+                .as("生产路径必须恒 0（未设 `-Dmigao.guard.mutation` ⇒ 零影响）")
+                .isZero();
+        assertThat(branches).as("守卫判别力的注入锚必须存在（常量声明 + 读数方法 + 4 处注入分支 = 6）")
+                .isEqualTo(6);
+        // ⚠️ 如实登记：本守卫**判不了**「注入孔本身被写成恒真」这类篡改（要读注入代码的语义）；
+        //    它的作用是把「红证怎么重放」钉成可检索的锚 + 把生产读数钉成 0。
+        assertThat(service).as("注入孔必须显式声明生产默认值 0")
+                .contains("Integer.getInteger(\"migao.guard.mutation\", 0)");
+    }
+
     // ────────────────────────────────────────────── 判据 7：合成语料判别力自证
 
     @Test
@@ -524,6 +542,17 @@ class ProductStatusCasMetaGuardTest {
             }
         }
         return out;
+    }
+
+    /** 子串出现次数（读数用）。 */
+    private static int countOf(String text, String needle) {
+        int n = 0;
+        int i = text.indexOf(needle);
+        while (i >= 0) {
+            n++;
+            i = text.indexOf(needle, i + needle.length());
+        }
+        return n;
     }
 
     /**

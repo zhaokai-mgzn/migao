@@ -114,7 +114,7 @@ class ProductStatusCasRaceRealDbTest {
     private static final int ROLLBACK_ROUND = 2 * ROUNDS + 2;
 
     /** 窗口注入时长（毫秒）：必须显著大于另一条路的全程（实测 ~10~30ms）。 */
-    private static final long PAUSE_MILLIS = 800L;
+    private static final long PAUSE_MILLIS = Long.getLong("migao.probe.pause", 800L);
     /** 等「探针已进入窗口」的上限（确定性时序的护栏；超时 = 判据装置坏了）。 */
     private static final long PAUSE_WAIT_MILLIS = 10_000L;
 
@@ -386,6 +386,11 @@ class ProductStatusCasRaceRealDbTest {
      * 等探针真的进入窗口（**确定性时序**：不是 sleep 猜时间）。超时 ⇒ 判据装置坏了（fail-closed）。
      */
     private static void awaitProbeEntered() throws Exception {
+        // 探针关（对照档，`-Dmigao.probe.pause=0`）：窗口本来就进不去 ⇒ 不等窗口，直接放行
+        // （判据退化成「一次真并发」而不是「确定性时序」—— 对照档要的是**不红**，不是判据装置自检）。
+        if (ProductService.statusMigrationProbeMillisForTest() == 0L) {
+            return;
+        }
         if (!ProductService.awaitStatusMigrationProbeFreshPauseForTest(PAUSE_WAIT_MILLIS)) {
             throw new IllegalStateException(
                     "探针未在 " + PAUSE_WAIT_MILLIS + "ms 内进入窗口（且要求是**新的一次**）—— 判据装置坏了");
