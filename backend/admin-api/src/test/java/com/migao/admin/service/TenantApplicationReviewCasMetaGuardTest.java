@@ -438,42 +438,36 @@ class TenantApplicationReviewCasMetaGuardTest {
      * 方块注释内的行先被剥掉（它们的字面量会污染成员扫描）。</p>
      */
     private static List<MethodBody> membersWithBody(String text) {
+        String clean = stripCommentsAndStrings(text);
         List<MethodBody> out = new ArrayList<>();
         int depth = 0;
         String name = null;
+        String pending = null;
         StringBuilder body = null;
-        boolean inBlockComment = false;
-        for (String raw : text.replace("\r", "").split("\n", -1)) {
+        for (String raw : clean.replace("\r", "").split("\n", -1)) {
             String trimmed = raw.strip();
-            if (inBlockComment) {
-                if (trimmed.contains("*/")) {
-                    inBlockComment = false;
-                }
-                continue;
-            }
-            if (trimmed.startsWith("/*") && !trimmed.contains("*/")) {
-                inBlockComment = true;
-                continue;
-            }
-            boolean signatureLine = depth == 1
+            if (body == null && depth == 1
                     && raw.startsWith(MEMBER_INDENT) && !raw.startsWith(MEMBER_INDENT + " ")
-                    && trimmed.contains("(") && trimmed.contains(BODY_OPEN)
-                    && !trimmed.startsWith("*") && !trimmed.startsWith("//") && !trimmed.startsWith("@");
-            if (signatureLine) {
+                    && trimmed.contains("(")
+                    && !trimmed.startsWith("*") && !trimmed.startsWith("//") && !trimmed.startsWith("@")) {
                 String head = trimmed.substring(0, trimmed.indexOf('('));
                 int sp = head.lastIndexOf(' ');
                 String candidate = (sp < 0 ? head : head.substring(sp + 1)).strip();
                 if (!candidate.isEmpty() && !CONTROL_KEYWORDS.contains(candidate)) {
-                    name = candidate;
-                    body = new StringBuilder();
+                    pending = candidate;
                 }
-            } else if (body != null) {
-                body.append(raw).append('\n');
             }
+            boolean activated = false;
             for (int i = 0; i < raw.length(); i++) {
                 char ch = raw.charAt(i);
                 if (ch == '{') {
                     depth++;
+                    if (body == null && pending != null && depth == 2) {
+                        name = pending;
+                        pending = null;
+                        body = new StringBuilder();
+                        activated = true;
+                    }
                 } else if (ch == '}') {
                     depth--;
                     if (depth == 1 && body != null) {
@@ -483,8 +477,70 @@ class TenantApplicationReviewCasMetaGuardTest {
                     }
                 }
             }
+            if (body != null && !activated) {
+                body.append(raw).append('\n');
+            }
         }
         return out;
+    }
+
+    /**
+     * 剥掉块注释 / 行注释 / 字符串字面量 / 文本块（**保留行结构**：非换行字符变空格，换行原样留下）。
+     *
+     * <p>为什么必须剥（issue #6956 第二部分）：花括号深度扫描要的只是「<b>真代码</b>里的括号」。
+     * 原实现只跳过「整行以 {@code /*} 开头」的注释行，<b>行注释与字符串字面量里的括号照样进深度计数</b>
+     * ⇒ 深度错位 ⇒ 其后方法整段扫不到，或 body 被截断成空壳而判据照绿。
+     * 注入式红证：{@code // 形如 &#123;} 后紧跟一个含写点的方法 ⇒ 修前该写路径<b>整块不可见</b>。</p>
+     */
+    static String stripCommentsAndStrings(String src) {
+        StringBuilder out = new StringBuilder(src.length());
+        int i = 0;
+        int n = src.length();
+        while (i < n) {
+            char c = src.charAt(i);
+            if (src.startsWith("/*", i)) {
+                int j = src.indexOf("*/", i + 2);
+                j = j < 0 ? n : j + 2;
+                appendBlanks(out, src, i, j);
+                i = j;
+            } else if (src.startsWith("//", i)) {
+                int j = src.indexOf('\n', i);
+                j = j < 0 ? n : j;
+                appendBlanks(out, src, i, j);
+                i = j;
+            } else if (src.startsWith("\"\"\"", i)) {
+                int j = src.indexOf("\"\"\"", i + 3);
+                j = j < 0 ? n : j + 3;
+                appendBlanks(out, src, i, j);
+                i = j;
+            } else if (c == '"' || c == '\'') {
+                int j = i + 1;
+                while (j < n) {
+                    if (src.charAt(j) == '\\') {
+                        j += 2;
+                        continue;
+                    }
+                    if (src.charAt(j) == c) {
+                        j++;
+                        break;
+                    }
+                    j++;
+                }
+                appendBlanks(out, src, i, Math.min(j, n));
+                i = Math.min(j, n);
+            } else {
+                out.append(c);
+                i++;
+            }
+        }
+        return out.toString();
+    }
+
+    /** 把 {@code [from, to)} 逐字符写成空格，**换行原样保留**。 */
+    private static void appendBlanks(StringBuilder out, String src, int from, int to) {
+        for (int k = from; k < to; k++) {
+            out.append(src.charAt(k) == '\n' ? '\n' : ' ');
+        }
     }
 
     /** 现取：service 里**出现审结写**的方法（方法名 + 方法体）。 */
