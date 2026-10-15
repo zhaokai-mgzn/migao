@@ -86,6 +86,11 @@ class AgentBatchServiceTest {
 
     @BeforeEach
     void setUp() {
+        // 并发准入闸（issue #6960）：execute / revert 先抢条件更新（CAS），0 行 ⇒ 409。
+        // mock 的 int 默认返回 0 ⇒ 不 stub 会让**所有**路径都 409（判据当场变噪声）。
+        // 「抢不到 ⇒ 409 且零写」的判据各自显式覆盖这两条 stub。
+        when(batchMapper.markExecuting(any(), any())).thenReturn(1);
+        when(batchMapper.markReverting(any(), any(), any(), any())).thenReturn(1);
         // MyBatis-Plus 的 lambda 列名缓存（CI 无 Spring 上下文，见 TenantIsolationTest 同款初始化）
         MybatisConfiguration configuration = new MybatisConfiguration();
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), AgentBatch.class);
@@ -555,8 +560,9 @@ class AgentBatchServiceTest {
             assertThat(itemUpdates.getAllValues()).allSatisfy(i -> assertThat(i.getError()).isNull());
 
             assertThat(batchStatusWrites)
-                    .as("状态机：executing 是**落库**的中间态，不是内存里跳过去的")
-                    .containsExactly(AgentBatchService.STATUS_EXECUTING, AgentBatchService.STATUS_DONE);
+                    .as("状态机：终态 done 是**落库**的（executing 那一步见下面的 CAS 兑现判据）")
+                    .containsExactly(AgentBatchService.STATUS_DONE);
+            verify(batchMapper).markExecuting(BATCH_ID, TENANT);
             assertThat(view.getSuccessCount()).isEqualTo(1);
             assertThat(view.getFailCount()).isZero();
             assertThat(view.getExecutedAt()).isNotNull();
@@ -597,7 +603,10 @@ class AgentBatchServiceTest {
 
             assertThat(batchStatusWrites)
                     .as("不做整体回滚：状态只沿 preview→executing→partial 前进（不回 preview、不出现 reverted）")
-                    .containsExactly(AgentBatchService.STATUS_EXECUTING, AgentBatchService.STATUS_PARTIAL);
+                    .containsExactly(AgentBatchService.STATUS_PARTIAL);
+            assertThat(batchStatusWrites)
+                    .as("终态落在 partial（不是 preview / reverted）").doesNotContain(
+                            AgentBatchService.STATUS_PREVIEW, AgentBatchService.STATUS_REVERTED);
             assertThat(view.getSuccessCount()).isEqualTo(1);
             assertThat(view.getFailCount()).isEqualTo(1);
         }
@@ -611,6 +620,25 @@ class AgentBatchServiceTest {
 
             assertThat(ex.getCode()).isEqualTo("CONFLICT");
             verify(productService, never()).updateProductForAgent(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("抢不到执行权（CAS 0 行，另一请求已 claim）⇒ 409 且**一条 apply 都不跑**")
+        void refusesToExecuteWhenAnotherRequestClaimedTheBatch() {
+            // 内存里读到的仍是 preview（并发对手在窗口内抢到了执行权才把它置成 executing）
+            when(batchMapper.selectById(BATCH_ID)).thenReturn(batch(AgentBatchService.STATUS_PREVIEW));
+            when(batchMapper.markExecuting(BATCH_ID, TENANT)).thenReturn(0);
+            when(itemMapper.selectList(any())).thenReturn(List.of(
+                    item(P1, "10.00", "12.00", AgentBatchService.ITEM_PENDING)));
+
+            BusinessException ex = rejection(() -> batchService.execute(TENANT, BATCH_ID));
+
+            assertThat(ex.getCode()).as("抢不到执行权必须是显式 CONFLICT，不是静默跑一轮")
+                    .isEqualTo("CONFLICT");
+            assertThat(ex.getHttpStatus()).as("409（与契约里其它状态机冲突同码）").isEqualTo(409);
+            verify(productService, never()).updateProductForAgent(any(), any(), any());
+            verify(itemMapper, never()).updateById(any(AgentBatchItem.class));
+            // 🔴 本条的判别力：把 markExecuting 的判定摘掉（退回无条件 updateById）⇒ apply 会跑 ⇒ 上面两条红
         }
 
         @Test
@@ -715,6 +743,24 @@ class AgentBatchServiceTest {
             BusinessException ex = rejection(() -> batchService.revert(TENANT, BATCH_ID));
 
             assertThat(ex.getCode()).isEqualTo("CONFLICT");
+            verify(productService, never()).updateProductForAgent(any(), any(), any());
+            verify(itemMapper, never()).updateById(any(AgentBatchItem.class));
+        }
+
+        @Test
+        @DisplayName("抢不到撤销权（CAS 0 行，另一请求已 claim）⇒ 409 且**一条 apply 都不跑**")
+        void refusesToRevertWhenAnotherRequestClaimedTheBatch() {
+            when(batchMapper.selectById(BATCH_ID)).thenReturn(batch(AgentBatchService.STATUS_DONE));
+            when(batchMapper.markReverting(BATCH_ID, TENANT, AgentBatchService.STATUS_DONE,
+                    AgentBatchService.STATUS_PARTIAL)).thenReturn(0);
+            when(itemMapper.selectList(any())).thenReturn(List.of(
+                    item(P1, "10.00", "12.00", AgentBatchService.ITEM_SUCCESS)));
+
+            BusinessException ex = rejection(() -> batchService.revert(TENANT, BATCH_ID));
+
+            assertThat(ex.getCode()).as("抢不到撤销权必须是显式 CONFLICT，不是静默还原一轮")
+                    .isEqualTo("CONFLICT");
+            assertThat(ex.getHttpStatus()).isEqualTo(409);
             verify(productService, never()).updateProductForAgent(any(), any(), any());
             verify(itemMapper, never()).updateById(any(AgentBatchItem.class));
         }

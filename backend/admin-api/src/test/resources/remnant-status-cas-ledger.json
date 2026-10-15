@@ -1,0 +1,57 @@
+{
+  "schema": "remnant-status-cas/1.0",
+  "_what": "余料台账（fabric_remnants）**状态列写路径**的登记表：`FabricRemnantMapper` 里每一条写 status 的手写 SQL，以及 `RemnantService` 里每一处该列状态迁移的调用点，都必须在此登记，**未登记即红**。规范正文 = issue #6960（族级跟踪单 #6953）/ `migao-dev-flow` §23（类级固化）。",
+  "_why": "issue #6960 的病根是**同一份状态迁移权上的两个写面都不带 CAS**：`#recover`（涉回收额）与 `#scrap` 都是「先读 status 判 `available`、再 `remnantMapper.updateById(...)`（WHERE 仅主键 ⇒ 无谓词）」⇒ 并发两个 recover 都能读到 `available` 并各写一次 `recovered_meters/unit_cost/amount`（**重复记回收额**，无任何 4xx）；并发「回收 × 报废」同形（两者争同一行的同一个 `available`，却不互斥）。**只修一处 = 没修**：下一个人在同文件新加状态迁移写路径、或给 mapper 加一条无谓词 SQL，同样没有任何东西会红 ⇒ 本表把这一类形态逐个登记。",
+  "_judged_by": "backend/admin-api/src/test/java/com/migao/admin/service/RemnantStatusCasMetaGuardTest.java",
+  "scan": {
+    "root": "backend/admin-api/src/main/java/com/migao/admin",
+    "mapper": "mapper/FabricRemnantMapper.java",
+    "service": "service/RemnantService.java",
+    "table": "fabric_remnants",
+    "shape": "① mapper：手写 @Update SQL（`UPDATE fabric_remnants`）里凡在 SET 侧写 `status` 的，必须带完整谓词 —— `status = '<当前态>'` + `deleted = 0` + `tenant_id` 参数（本表**有** `deleted` 列，已逐字核对 schema.sql）；② service：凡**方法体内出现** `remnantMapper.updateById(` 或 `remnantMapper.mark*(` 的方法 = 状态列的写路径，必须逐条在册，且其 `call_anchor` 必须**逐字**出现在该方法体内（「以 `markXxx` 收口」这条主张必须被兑现：把 `markXxx` 退回无谓词 `updateById` ⇒ 红）。"
+  },
+  "entries": [
+    {
+      "method": "FabricRemnantMapper#markRecovered",
+      "verdict": "guarded",
+      "guard": "回收权 = DB 原子条件更新（CAS，issue #6960 本单新增）：`UPDATE fabric_remnants SET status='used', used_by_order_no=…, used_by_order_item_id=…, used_by_item_key=…, recovered_meters=…, recovered_unit_cost=…, recovered_amount=…, recovered_at=…, recovered_by=… WHERE id=? AND tenant_id=? AND status='available' AND deleted=0`，按受影响行数判谁抢到回收权；0 行 ⇒ 409「只有可用的余料才能回收」。回收五列与状态**同一句**写入（避免「已用但回收额为 NULL」的中间态，那是 `ck_fabric_remnant_lifecycle` 直接拒绝的行）。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/FabricRemnantMapper.java::int markRecovered(",
+      "case_ids": [
+        "PR-023"
+      ]
+    },
+    {
+      "method": "FabricRemnantMapper#markScrapped",
+      "verdict": "guarded",
+      "guard": "报废权 = **与 markRecovered 同款**的 DB 原子条件更新（CAS，issue #6960 本单新增）：`UPDATE fabric_remnants SET status='scrapped', scrap_reason=…, scrapped_at=…, scrapped_by=… WHERE id=? AND tenant_id=? AND status='available' AND deleted=0`，0 行 ⇒ 409。与 markRecovered 争**同一份**状态迁移权 ⇒ 两者靠同一条语句的谓词 + PG 行锁互斥（改前两边都是无谓词 updateById ⇒ 不互斥 = 本单的病）。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/FabricRemnantMapper.java::int markScrapped(",
+      "case_ids": [
+        "PR-023"
+      ]
+    }
+  ],
+  "service_write_paths": [
+    {
+      "method": "RemnantService#recover",
+      "path": "FabricRemnantMapper#markRecovered",
+      "call_anchor": "remnantMapper.markRecovered(",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/RemnantService.java::remnantMapper.markRecovered(",
+      "case_ids": [
+        "PR-023"
+      ]
+    },
+    {
+      "method": "RemnantService#scrap",
+      "path": "FabricRemnantMapper#markScrapped",
+      "call_anchor": "remnantMapper.markScrapped(",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/RemnantService.java::remnantMapper.markScrapped(",
+      "case_ids": [
+        "PR-023"
+      ]
+    }
+  ],
+  "unverified_baseline": 0,
+  "unverified": [],
+  "_unverified_note": "本表的豁免面 = 「写 fabric_remnants.status 的路径本可以没有闸」。现状 = 两条已注册路径都走带三谓词（id + tenant_id + status='available' + deleted=0）的条件更新 + 影响行数判定 ⇒ 豁免 0（基线 0，只许缩短）。",
+  "coverage_boundary": "本表机械保证的是：① 扫描器**现取**的「写 status 的 mapper SQL」与「service 里写状态列的调用点」都在册、且**只增不减**（新增未登记 ⇒ 红；台账条目在现取集合里消失 ⇒ 红）；② 每条 mapper 写面带完整谓词（`status = '<当前态>'` + `deleted = 0` + `tenant_id`）；③ 每条 evidence 锚是 `<仓库相对路径>::<可检索文本>`，左侧文件存在、右侧**逐字出现**（摘掉 CAS 调用 / 改名 ⇒ 红）。它**不保证**：① 判据本体没跑过那条真库并发判据 —— 行为面由 `RemnantRecoverRaceRealDbTest`（真 PG + 窗口注入）承担，两者缺一不可；② 形态判据不做 AST 解析，换措辞可绕过（真实防线仍是实例判据）；③ 射程只到 `RemnantService` + `FabricRemnantMapper` 这一对文件（`remnant_small_item_specs` 等其它表的写路径不在本表射程）；④ 判不了「拿 `updateById` 改**非状态**列」（那不是本表的对象：本表的对象是状态列）；⑤ 本守卫**不**跑被它引用的那条真库判据（否则「未登记即红」会退化成全量套件再跑一遍）；⑥ 本守卫**不改**任何门禁的通过条件、不新增豁免。"
+}

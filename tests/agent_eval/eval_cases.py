@@ -11819,6 +11819,42 @@ _CASE_PR_022 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-023 [NORMAL] 余料「回收 / 报废」的状态迁移走 DB 原子条件更新（CAS）⇒ 并发双 recover 恰一次回收额入账、回收×报废恰一个赢家（issue #6960）（源: cases/product.yml）──
+_CASE_PR_023 = EvalCase(
+    id='PR-023',
+    legacy_id='',
+    title='余料「回收 / 报废」的状态迁移走 DB 原子条件更新（CAS）⇒ 并发双 recover 恰一次回收额入账、回收×报废恰一个赢家（issue #6960）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['并发两个 recover 打同一块**可用**余料（非 LLM 行为，由真 PG Java 判据 + 静态元守卫覆盖）'],
+    expectations=[],
+    data_checks=['🔴 **判据 1（真库并发 + 窗口注入，改前必红）**：并发双 `recover` ⇒ 成功数 **== 1**、落败方 **409 CONFLICT**、终态 `used`、`recovered_amount` **逐值等于**「余料米数 × 批次均价」（夹具常量独立复算，不读被测读面）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/RemnantRecoverRaceRealDbTest.java。**窗口探针** = `RemnantService#setRecoverProbePauseMillisForTest`（生产恒为 0；只让第一个到达者停顿 ⇒ 对手走完「读-判 → CAS 0 行 → 409」全长）。', '🔴 **判据 2（回收 × 报废交叉，改前必红）**：同一行的同一个 `available` 只能被消耗一次 ⇒ 恰一个赢家，终态 ∈ {used, scrapped} 且与赢家自洽（回收赢 ⇒ 报废留痕列全 NULL；报废赢 ⇒ 回收列全 NULL）。两者争**同一份**状态迁移权，一个写面有 CAS、另一个没有就**不互斥**（修前实测两个都 200 / 唯一约束异常）。', '**判据 3（串行正对照，护栏不误杀）**：无并发时 `recover` / `scrap` 各成功一次（谓词非空 ⇒ 正常请求不被 409 误杀）。', "🔴 **判据 4（类级元守卫，铁律 8）**：`FabricRemnantMapper` 里写 `status` 的手写 SQL 必须带完整谓词（`status='<当前态>'` + `tenant_id` + `deleted = 0` —— 本表**有**软删列，逐字核对 schema.sql）；`RemnantService` 里每条状态写路径必须登记进 backend/admin-api/src/test/resources/remnant-status-cas-ledger.json（**未登记即红** / 幽灵条目即红 / 豁免只许缩短且条数现取）；且 CAS 调用后必须有 `== 0` 的行数判定（只留调用不判 0 行 / 把判定塞进 `if (false && …)` 都判红）。执行点 = RemnantStatusCasMetaGuardTest.java（含八种坏形态的合成语料判别力自证）。", '**红证（注入式 · 双向，实测）**：探针开（800ms）+ 退回修前的无谓词 `updateById` ⇒ 1 failed，逐字读数 `状态码=[200, 200] 成功数=2 409数=0`；恢复修后 ⇒ 3 passed，读数 `状态码=[409, 200] 成功数=1 终态=used 回收额=50.000000`。探针关（0ms）⇒ 并发档按设计判红（`探针未在 10000ms 内进入窗口` —— 无探针的并发判据会退化成 flake，故探针是**硬前提**）。元守卫侧：抽掉 mapper 谓词里的 `deleted = 0` ⇒ `everyStatusWriteCarriesTheFullPredicate` 判红并具名 `[markRecovered 缺 [deleted=0 谓词], markScrapped 缺 …]`。', '**边界（如实登记）**：① 跑的是**服务层真库并发**而非 HTTP 栈（controller 只是薄转发）；② **回收额算法一字未动**（只钉「并发恰一次」）；③ 探针对象全部自建（tenant 6960），随一次性临时 PG 集群销毁，不碰存量数据；④ 元守卫是**纯文本形态判据**（无 AST），真实防线是该条真库判据，两者缺一不可。'],
+    skip_reason='[backend-contract] 真 PG 判据（initdb+pg_ctl 临时集群 + Java 真装配 + 窗口注入）+ 源码静态元守卫，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['remnant', 'concurrency', 'cas', 'real-db', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── PR-028 [NORMAL] Agent 批次「执行 / 撤销」的准入走 DB 原子条件更新（CAS）⇒ 并发 execute/revert 恰一轮 apply、商品终态可复算（issue #6960）（源: cases/product.yml）──
+_CASE_PR_028 = EvalCase(
+    id='PR-028',
+    legacy_id='',
+    title='Agent 批次「执行 / 撤销」的准入走 DB 原子条件更新（CAS）⇒ 并发 execute/revert 恰一轮 apply、商品终态可复算（issue #6960）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['并发两个 execute（或两个 revert）打同一批次（非 LLM 行为，由真 PG Java 判据 + 静态元守卫覆盖）'],
+    expectations=[],
+    data_checks=['🔴 **判据 1（真库并发 + 窗口注入，改前必红）**：并发双 `execute` ⇒ 成功数 **== 1**、落败方 **409**、**真的落到商品上的 apply 恰一轮**（1 条明细 ⇒ 恰 1 次调用；计数器由 `CountingProductService`（真 ProductService 的有界子类，真库真写）现取）、批次终态 `done`、商品 `status` **逐字等于 newValue**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchStatusRaceRealDbTest.java。**窗口探针** = `AgentBatchService#setBatchProbePauseMillisForTest`（生产恒为 0）。', '🔴 **判据 2（并发 revert，改前必红）**：成功数 == 1、apply 计数恰 1、批次终态 `reverted`、商品被还原成持久化的 `oldValue`。', '**判据 3（无探针并发对照 + 串行正对照）**：无窗口注入、`CyclicBarrier` 同时起跑 ⇒ 仍恰一个赢家 + 恰一轮 apply（CAS 不依赖注入）；串行 `execute` + `revert` 各成功一次、状态来回（谓词非空 ⇒ 不误杀正常请求）。', "🔴 **判据 4（类级元守卫，铁律 8）**：`AgentBatchMapper` 里写 `status` 的手写 SQL 必须带谓词 —— `status='<来源态>'`（或 `status IN (…)`，值由服务层传参）+ `tenant_id`；⚠️ **本表没有 `deleted` 列**（逐字核对 schema.sql）⇒ 谓词里出现 `deleted = 0` 反而**判红**（本仓出过「模板写了 `deleted=0` 但该表没有这一列」）。每条状态写路径必须登记进 backend/admin-api/src/test/resources/agent-batch-status-cas-ledger.json（未登记即红 / 幽灵即红 / 豁免只许缩短），且 CAS 调用后必须有 `== 0` 判定。执行点 = AgentBatchStatusCasMetaGuardTest.java。（**⛔ 本包不动** MC-100 `InboundOrderStatusCasMetaGuardTest` 与 PG-075 `ProductionOperationDeleteCasMetaGuardTest` —— 它们归 #6956。）", '**红证（注入式 · 双向，实测）**：探针开 + 退回修前（CAS 结果不判）⇒ 1 failed，逐字读数 `状态码=[200, 200] 成功数=2 409数=0 apply次数=2 批次终态=partial`；恢复修后 ⇒ 4 passed，读数 `状态码=[409, 200] 成功数=1 409数=1 apply次数=1 批次终态=done 商品终态=on_sale`。元守卫侧：把 `if (batchMapper.markExecuting(…) == 0)` 改成不判行数（`if (false && …)`）⇒ `noStatusWritePathUsesUnconditionalUpdateById` 判红并具名 `[CAS 调用没判影响行数（execute 的 markExecuting 后 300 字符内没有 == 0)）]`。', '**边界（如实登记）**：① 跑的是**服务层真库并发**而非 HTTP 栈；② **有意不加方法级 `@Transactional`**（类注释取舍 ②③：逐条独立提交 = 部分失败的载体）⇒ 本单主张的是「准入闸 = 单条语句的 CAS」，**不**主张事务边界；③ revert 的 claim 中间态复用既有 `executing` 取值（**不**扩 DB 的 `ck_agent_batch_status` 约束）；④ 元守卫是纯文本形态判据，真实防线是该条真库判据。'],
+    skip_reason='[backend-contract] 真 PG 判据（initdb+pg_ctl 临时集群 + Java 真装配 + 窗口注入）+ 源码静态元守卫，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['agent-batch', 'concurrency', 'cas', 'real-db', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PR-124 [NORMAL] 米宝解读可落值的商品字段放开为 name/material/craft/color；door_width 与 price 只写 note 建议、值不落地（issue #6361）（源: cases/product.yml）──
 _CASE_PR_124 = EvalCase(
     id='PR-124',
@@ -14650,6 +14686,8 @@ ALL_CASES = (
     _CASE_PR_016,
     _CASE_PR_020,
     _CASE_PR_022,
+    _CASE_PR_023,
+    _CASE_PR_028,
     _CASE_PR_124,
     _CASE_PR_125,
     _CASE_PR_126,

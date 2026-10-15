@@ -3,6 +3,11 @@ package com.migao.admin.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.migao.admin.entity.FabricRemnant;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Update;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 
 /**
  * 余料台账 Mapper（V122，issue #5146）。
@@ -10,6 +15,14 @@ import org.apache.ibatis.annotations.Mapper;
  * <p>写入一律走 {@code RemnantService}（它保证「状态 ↔ 留痕列」自洽、且回收绝不写批次消耗台账）；
  * 本接口只加一条**匹配候选**查询 —— 匹配要的排序（同缸号优先 → 同色优先 → 尺寸最小者优先）
  * 放在 SQL 里而不是 Java 里，是为了「一个查询定序」而不是「查回来再拼一遍顺序」。</p>
+ *
+ * <p>回收 / 报废两条状态迁移走**条件更新（CAS）**（issue #6960）：与
+ * {@code InboundOrderMapper#markPosted} / {@code #markCancelled}（#6928）同款 ——
+ * 「读 status 判 {@code available}」与「写」必须压进**同一条语句**。改前两处都是
+ * 「先读 status 判 available、再 {@code updateById}（WHERE 仅主键 ⇒ 无谓词）」⇒ 两个并发 recover
+ * 都能读到 {@code available} 并各写一次回收额（**重复记回收额**、且无任何 4xx）。
+ * 谓词里的列逐一自证在场（{@code fabric_remnants} 的 DDL 见 {@code db/init/schema.sql}）：
+ * {@code id} 主键 / {@code tenant_id} / {@code status} / {@code deleted}（本表**有**软删列，已核对）。</p>
  */
 @Mapper
 public interface FabricRemnantMapper extends BaseMapper<FabricRemnant> {
@@ -58,4 +71,53 @@ public interface FabricRemnantMapper extends BaseMapper<FabricRemnant> {
             @org.apache.ibatis.annotations.Param("skuCode") String skuCode,
             @org.apache.ibatis.annotations.Param("needLengthM") java.math.BigDecimal needLengthM,
             @org.apache.ibatis.annotations.Param("needWidthM") java.math.BigDecimal needWidthM);
+
+    /**
+     * 回收权 = DB 原子条件更新（CAS，issue #6960 本单新增）。
+     *
+     * <p>{@code recovered_*} 五列与状态**同一句**写入：「这块余料被谁用掉、冲减多少」不能与状态迁移
+     * 分成两次写（中间态可以读出「已用但回收额为 NULL」，而 DB 的
+     * {@code ck_fabric_remnant_lifecycle} 会直接拒绝这种行）。</p>
+     *
+     * <p>谓词带 {@code status = 'available'}：两个并发 recover 只有先到者命中行
+     * （后到者阻塞到先到者提交后按新版本行重估 ⇒ 影响行数 0）⇒ 回收额**恰入账一次**。
+     * 谓词带 {@code deleted = 0}：MyBatis-Plus 的 {@code @TableLogic} 只对自动生成的 SQL 生效，
+     * 手写 SQL 必须自己带上（软删的余料不得回收）。</p>
+     *
+     * @return 影响行数：{@code 1} = 本请求抢到回收权；{@code 0} = 已被回收 / 已报废 / 已客户带走 / 行不存在
+     */
+    @Update("UPDATE fabric_remnants SET status = 'used', used_by_order_no = #{orderNo}, "
+            + "used_by_order_item_id = #{orderItemId}, used_by_item_key = #{itemKey}, "
+            + "recovered_meters = #{meters}, recovered_unit_cost = #{unitCost}, "
+            + "recovered_amount = #{amount}, recovered_at = #{recoveredAt}, recovered_by = #{operator} "
+            + "WHERE id = #{id} AND tenant_id = #{tenantId} AND status = 'available' AND deleted = 0")
+    int markRecovered(@Param("id") Long id,
+                      @Param("tenantId") Long tenantId,
+                      @Param("orderNo") String orderNo,
+                      @Param("orderItemId") String orderItemId,
+                      @Param("itemKey") String itemKey,
+                      @Param("meters") BigDecimal meters,
+                      @Param("unitCost") BigDecimal unitCost,
+                      @Param("amount") BigDecimal amount,
+                      @Param("recoveredAt") OffsetDateTime recoveredAt,
+                      @Param("operator") String operator);
+
+    /**
+     * 报废权 = **与 {@link #markRecovered} 同款**的 DB 原子条件更新（CAS，issue #6960 本单新增）。
+     *
+     * <p>两者争的是**同一份状态迁移权**（同一行的 {@code available} 只能被消耗一次）⇒ 一个写面有 CAS、
+     * 另一个没有就**不互斥**（并发「回收 × 报废」会双双 200 而终态只有一个）。报废留痕三列与状态
+     * **同一句**写入：{@code ck_fabric_remnant_lifecycle} 要求 {@code status='scrapped'} 时三列非空、
+     * 且回收四列必须为 NULL（与回收互斥）。</p>
+     *
+     * @return 影响行数：{@code 1} = 本请求抢到报废权；{@code 0} = 已被回收 / 已报废 / 已客户带走 / 行不存在
+     */
+    @Update("UPDATE fabric_remnants SET status = 'scrapped', scrap_reason = #{reason}, "
+            + "scrapped_at = #{scrappedAt}, scrapped_by = #{operator} "
+            + "WHERE id = #{id} AND tenant_id = #{tenantId} AND status = 'available' AND deleted = 0")
+    int markScrapped(@Param("id") Long id,
+                     @Param("tenantId") Long tenantId,
+                     @Param("reason") String reason,
+                     @Param("scrappedAt") OffsetDateTime scrappedAt,
+                     @Param("operator") String operator);
 }

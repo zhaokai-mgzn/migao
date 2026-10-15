@@ -1,0 +1,57 @@
+{
+  "schema": "agent-batch-status-cas/1.0",
+  "_what": "Agent 批次（agent_batches）**状态列写路径**的登记表：`AgentBatchMapper` 里每一条写 status 的手写 SQL，以及 `AgentBatchService` 里每一处该列状态迁移的调用点，都必须在此登记，**未登记即红**。规范正文 = issue #6960（族级跟踪单 #6953）/ `migao-dev-flow` §23（类级固化）。",
+  "_why": "issue #6960 的病根是**执行权与撤销权都没有 CAS**：`AgentBatchService#execute`（`preview → executing`）与 `#revert`（`done|partial → reverted|revert_partial`）都是「先读批次判状态、再 `batchMapper.updateById(batch)`（WHERE 仅主键 ⇒ 无谓词）+ 逐条 apply」⇒ 两个并发 execute 都能读到 `preview` 并各 apply 一轮（对同一批商品**重复 apply**）；并发 revert 同形。**只修一处 = 没修**：下一个人在同文件新加状态迁移写路径、或给 mapper 加一条无谓词 SQL，同样没有任何东西会红 ⇒ 本表把这一类形态逐个登记。",
+  "_judged_by": "backend/admin-api/src/test/java/com/migao/admin/service/AgentBatchStatusCasMetaGuardTest.java",
+  "scan": {
+    "root": "backend/admin-api/src/main/java/com/migao/admin",
+    "mapper": "mapper/AgentBatchMapper.java",
+    "service": "service/AgentBatchService.java",
+    "table": "agent_batches",
+    "shape": "① mapper：手写 @Update SQL（`UPDATE agent_batches`）里凡在 SET 侧写 `status` 的，必须带完整谓词 —— `status = '<来源态>'`（或 `status IN (…)`，值由服务层传参）+ `tenant_id` 参数；⚠️ **本表没有 `deleted` 列**（逐字核对 schema.sql 的 `CREATE TABLE agent_batches`）⇒ 谓词里**不得**出现 `deleted = 0`（会直接 SQL 报错），故本表的「软删谓词」这一条为**不适用**而非缺失；② service：凡**方法体内出现** `batchMapper.updateById(` 或 `batchMapper.mark*(` 的方法 = 状态列的写路径，必须逐条在册，且其 `call_anchor` 必须**逐字**出现在该方法体内（「以 `markXxx` 收口」这条主张必须被兑现：把 `markXxx` 退回无谓词 `updateById` ⇒ 红）。"
+  },
+  "entries": [
+    {
+      "method": "AgentBatchMapper#markExecuting",
+      "verdict": "guarded",
+      "guard": "执行权 = DB 原子条件更新（CAS，issue #6960 本单新增）：`UPDATE agent_batches SET status='executing' WHERE id=? AND tenant_id=? AND status='preview'`，按受影响行数判谁抢到执行权；0 行 ⇒ 409「只有 preview 的批次可以执行」，且这道闸位于**逐条 apply 之前**（其后才是 `apply(...)` + 逐条 `itemMapper.updateById`）⇒ 并发的第二个请求一条 apply 都不跑。executing 是**落库**的中间态（claim 的可见标记）。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/AgentBatchMapper.java::int markExecuting(",
+      "case_ids": [
+        "PR-028"
+      ]
+    },
+    {
+      "method": "AgentBatchMapper#markReverting",
+      "verdict": "guarded",
+      "guard": "撤销权 = **与 markExecuting 同款**的 DB 原子条件更新（CAS，issue #6960 本单新增）：`UPDATE agent_batches SET status='executing' WHERE id=? AND tenant_id=? AND status IN (#{revertableA}, #{revertableB})`，可撤销那一对状态（`done` / `partial`）由服务层传参（**不写死在 SQL 里**：契约改了而 SQL 静默漂移 = 第二份会烂的口径）；0 行 ⇒ 409。抢到后先置 `executing`（claim），逐条还原完再写终态 `reverted` / `revert_partial` + `reverted_at`。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/AgentBatchMapper.java::int markReverting(",
+      "case_ids": [
+        "PR-028"
+      ]
+    }
+  ],
+  "service_write_paths": [
+    {
+      "method": "AgentBatchService#execute",
+      "path": "AgentBatchMapper#markExecuting",
+      "call_anchor": "batchMapper.markExecuting(",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java::batchMapper.markExecuting(",
+      "case_ids": [
+        "PR-028"
+      ]
+    },
+    {
+      "method": "AgentBatchService#revert",
+      "path": "AgentBatchMapper#markReverting",
+      "call_anchor": "batchMapper.markReverting(",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/AgentBatchService.java::batchMapper.markReverting(",
+      "case_ids": [
+        "PR-028"
+      ]
+    }
+  ],
+  "unverified_baseline": 0,
+  "unverified": [],
+  "_unverified_note": "本表的豁免面 = 「写 agent_batches.status 的路径本可以没有闸」。现状 = 两条已注册路径都走带谓词（id + tenant_id + 来源态）的条件更新 + 影响行数判定 ⇒ 豁免 0（基线 0，只许缩短）。",
+  "coverage_boundary": "本表机械保证的是：① 扫描器**现取**的「写 status 的 mapper SQL」与「service 里写状态列的调用点」都在册、且**只增不减**（新增未登记 ⇒ 红；台账条目在现取集合里消失 ⇒ 红）；② 每条 mapper 写面带谓词（来源态 + `tenant_id`；`deleted` 谓词对本表**不适用** —— 该表没有这一列，见 scan.shape）；③ 每条 evidence 锚是 `<仓库相对路径>::<可检索文本>`，左侧文件存在、右侧**逐字出现**（摘掉 CAS 调用 / 改名 ⇒ 红）。它**不保证**：① 判据本体没跑过那条真库并发判据 —— 行为面由 `AgentBatchStatusRaceRealDbTest`（真 PG + 窗口注入）承担，两者缺一不可；② 形态判据不做 AST 解析，换措辞可绕过（真实防线仍是实例判据）；③ 射程只到 `AgentBatchService` + `AgentBatchMapper` 这一对文件（`agent_batch_items` 的写路径不在本表射程）；④ 判不了「拿 `updateById` 改**非状态**列」（那不是本表的对象：本表的对象是状态列）；⑤ **本单有意不加方法级 `@Transactional`**（类注释取舍 ②③：逐条独立提交 = 部分失败的载体）⇒ 本表不主张「事务边界」那一层，主张的是「准入闸 = 单条语句的 CAS」；⑥ 本守卫**不**跑被它引用的那条真库判据（否则「未登记即红」会退化成全量套件再跑一遍）；⑦ 本守卫**不改**任何门禁的通过条件、不新增豁免。"
+}
