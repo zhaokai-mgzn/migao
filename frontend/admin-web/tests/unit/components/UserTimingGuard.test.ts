@@ -31,7 +31,9 @@ describe('UserTimingGuard —— measure 守卫的客户端接线（issue #6946�
   it('③ 组件自身渲染 null（它只是接线点，不上屏）', async () => {
     vi.resetModules()
     const mod = await import('@/components/UserTimingGuard')
-    expect(mod.default({})).toBeNull()
+    // 该组件**不接受 props**（`export default function UserTimingGuard()`）⇒ 直接无参调用；
+    // 传 `{}` 会被 `tsc --noEmit` 判红（TS2554，CI 的 admin-web typecheck 腿实测抓过）。
+    expect(mod.default()).toBeNull()
   })
 
   it('④ 接线时机：调用必须写在模块作用域（`export default` 之前），不得挪进组件体', () => {
