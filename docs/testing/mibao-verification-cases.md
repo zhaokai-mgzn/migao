@@ -3418,7 +3418,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（101 case）
+## 杂项域（103 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4931,6 +4931,37 @@
 跳过: [backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟
 ```
 溯源: 2026-10-14 新增（issue #6928 的类级固化，与 OR-066 同批）。取号 = main 侧现取 MC-001~099 ⇒ **MC-100**（本单取号时 MC-099 尚空闲，rebase 时被 #6924/#6896 占用 ⇒ 让号）（全仓 refs 复核 0 命中）。读数：修后 `mvnw test -Dtest=InboundOrderStatusCasMetaGuardTest` = **6 passed / 0 failed**，逐字 `写 status 的 mapper 方法=[markPosted, markCancelled] service 写路径=[post, cancel] 未登记=[] 幽灵条目=[] 豁免=0(基线 0) 违规=[]`。红证（注入式）：把 `#cancel` 退回无谓词 `updateById`（哪怕锚串留着）⇒ `noStatusWritePathUsesUnconditionalUpdateById` 判红并具名 `违规=[cancel]`；把 mapper 的 `status='draft'` / `deleted=0` / `tenant_id` 任一项摘掉 ⇒ 判据 2 判红（合成语料逐形态自证）。 ｜ tags: concurrency, state-transition, cas, ledger, backend-contract, red-proof
+
+### MC-101. **入驻审批并发双 approve ⇒ 租户数恰好 +1、恰好 1 次成功**：CAS 闸必须在副作用之前（issue #6954） 🟡
+```
+你: 同一张 pending 入驻申请单被严格同时审批两次（或 N 次）
+数据: **病（根因，`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java`）**：`#approveApplication` 是 check-then-act **且副作用在判之前** —— 读判 `pending` → **先建租户 + 管理员 + 初始数据** → 最后 `applicationMapper.updateById(application)`（WHERE 仅主键 ⇒ 无谓词）收尾。并发的第二个请求读到同一个 `pending` 并通过判断 ⇒ **两个租户都真的建出来**，后写覆盖前写 ⇒ 一个**无主租户**（不可逆：租户已落库、管理员已建、无人知道该删谁）。`#rejectApplication` 同形态，且与 approve **争同一份审批权**。
+数据: **判据 1（恰好 1 次成功）**：真库并发判据 = backend/admin-api/src/test/java/com/migao/admin/service/TenantApplicationReviewCasRaceRealDbTest.java 的 `concurrentApprovalsCreateExactlyOneTenant`（N=6 线程 + `CountDownLatch` 对齐起跑）。**修后逐字读数**：`各状态码=[200, 409, 409, 409, 409, 409] 成功数=1 失败状态码=[409,409,409,409,409] 租户行=1 管理员行=1 单据终态=approved reviewed_by=ta-6954-reviewer 失败文案=[CONFLICT: 该入驻申请已被审结，当前状态: approved …]`。落败方必须是**显式 4xx**（CAS 落空 409 CONFLICT / 读判 400），不许 5xx。
+数据: **判据 2（租户数恰好 +1，不可逆副作用的独立算式）**：以该企业名建出的 `tenants` 行**恰好 1 行**（改前实测 **6** 行）、该租户下的管理员用户**恰好 1 个**（改前实测 **6** 个）—— 判定用**落库事实**而非响应体。
+数据: **判据 3（终态与赢家一致）**：申请单终态 `approved` 且 `reviewed_by` 落库非空。
+数据: **判据 4（串行正对照·护栏不误杀）**：同文件 `serialApprovalStillSucceeds` —— 无并发时串行 approve 必须成功（谓词非空 ⇒ 正常请求不被 409 误杀）。修后读数 `状态码=200 租户行=1 单据终态=approved`。
+数据: **红证（注入式 · 受控单变量）**：临时把 `TenantApplicationMapper#approveIfPending` / `#rejectIfPending` 的 `AND status = 'pending'` **摘掉**（注入前置自证：对两条 CAS 的 `AND status = 'pending'` 逐字计数由 2 → **0**）⇒ 判据 1/2 当场红，逐字读数 `各状态码=[200,200,200,200,200,200] 成功数=6 租户行=6 管理员行=6`；同时**串行正对照仍绿** ⇒ 红的不是「装置坏了」。撤回注入（复算 `grep -c` 回到 **2**）⇒ 2 passed / 0 failed。
+数据: **为什么不需要窗口探针（与 #6928 的差别）**：窗口在收尾 `updateById` **之前**，而中间跑完整条开租链路（建租户 → 七岗 + 权限目录 → 管理员用户 → 默认商品分类 → 生产种子模板 → 后置条件校验）⇒ 窗口是**毫秒级**且随并发线程数放大 ⇒ `CountDownLatch` 对齐起跑即可稳定命中（本包最省成本的原因）。
+数据: **边界（照实登记）**：① 跑的是**服务层真库并发**而非 HTTP 栈（controller 只是薄转发）；② 装配走裸 MyBatis（`autocommit`）而非 Spring 事务代理 ⇒ 证的是 **CAS 语句本身**的互斥性；③ 审阅人必须是 `users` 里的真行（`reviewed_by` 有外键），夹具自建；④ 探针对象全部自建（企业名前缀 `ta-6954`，随一次性临时集群销毁），不碰任何存量数据。
+跳过: [backend-contract] 纯后端真库并发判据（真 PG 一次性集群，走 PgCluster.startOrAbort() 收口）：admin-api 单测面，零网络、零 LLM，不进 agent-eval 冒烟
+```
+溯源: 2026-10-15 新增（issue #6954，P2·★★★·状态写；族级跟踪单 #6953 的 P2 包）。取号 = main 侧现取 MC-001~100 ⇒ **MC-101**（`python3 scripts/next_case_id.py MC` 现取，全仓 refs 复核 0 命中）。**红→绿（注入式双向对照，真 PG）**：① 摘掉两条 CAS 的 `AND status = 'pending'` ⇒ `成功数=6 租户行=6 管理员行=6`（判据 1/2 红，串行正对照仍绿）；② 修后（CAS 前置 + 判定影响行数）⇒ `成功数=1 租户行=1 管理员行=1 终态=approved`，2 passed / 0 failed。 ｜ tags: concurrency, state-transition, cas, onboarding, backend-contract, realdb, red-proof
+
+### MC-102. **入驻审批写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 负谓词（本表无 deleted 列）即红 / 台账只许缩短（issue #6954 的类级固化） 🔵
+```
+你: 审批权上有两个写面（通过 / 驳回），凭什么相信「下一个写面不会漏」？
+数据: 🔴 **判据 1·扫描器非空跑自证**：现取「写 `tenant_applications.status` 的 mapper 手写 SQL」必须含 `approveIfPending` / `rejectIfPending`；现取「service 里出现审结写的调用点」必须含 `approveApplication` / `rejectApplication` —— **返回空集 = 判据失明，不是通过**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/TenantApplicationReviewCasMetaGuardTest.java::scannersAreNotBlind
+数据: 🔴 **判据 2·CAS 谓词完整性**：凡在 SET 侧写 `status` 的手写 `@Update` SQL，必须同时含 `#{id}` 参数 + **WHERE 里的** `status = '<当前态>'` 谓词（少任何一条 ⇒ 红）。⚠️ 谓词判定**只看 WHERE 段** —— `SET status = 'approved'` 也像 `status = '<字面量>'`，对整条 SQL 判会把「无谓词写」判成合规（本判据第一版真的踩了这个坑，由判别力自证当场抓出）。执行点 = 同文件::everyStatusWriteCarriesTheCasPredicate + ::guardHasDiscriminatingPower
+数据: 🔴 **判据 3·无谓词写即红（判据本体）**：现取的每个审结写路径的方法体里**不得**出现 `applicationMapper.updateById(` —— 审批权的判断与写入必须在同一条语句上。**实证过的隐蔽形态**：锚串留着（`if (false && …approveIfPending(…)`）但真正落库换成 `updateById` ⇒ 仍判红并具名（只判锚会被它骗过去）。执行点 = 同文件::noStatusWritePathUsesUnconditionalUpdateById
+数据: 🔴 **判据 4·负谓词即红（本表独有）**：mapper 状态写 SQL **不得**出现 `deleted = 0` —— `tenant_applications` **没有该列**，照抄 #6928 / #6936 的三谓词模板会直接 SQL 报错（PG 报错形如 `column deleted does not exist`）。执行点 = 同文件::noDeletedPredicateBecauseTheColumnDoesNotExist
+数据: 🔴 **判据 5·未登记即红 + 台账不许给不存在的对象盖章**：service 审结写路径必须逐条登记（backend/admin-api/src/test/resources/tenant-application-review-cas-ledger.json 的 `service_write_paths`），且登记的 `call_anchor` 必须逐字出现在方法体里。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful
+数据: 🔴 **判据 6·登记未被兑现即红**：每条 `evidence` 锚 = `<仓库相对全路径>::<可检索文本>`，左侧文件存在、右侧逐字出现（摘掉 CAS 调用 / 方法改名 ⇒ 红）。执行点 = 同文件::everyEvidenceAnchorIsLive
+数据: 🔴 **判据 7·豁免只许缩短**：`unverified` 必须是冻结基线 `unverified_baseline`（现取 0）的子集；新增豁免 ⇒ 红。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful
+数据: 🔴 **判据 8·判别力自证（合成语料）**：无谓词状态写 / 缺 `status` 谓词 / 无谓词 `updateById` / 锚留而落库无谓词 / 未登记写路径 / 台账锚被摘掉 / 带了本表不存在的 `deleted` 谓词 六族坏形态各自判红，合规语料判绿，**只加注释不红**。执行点 = 同文件::guardHasDiscriminatingPower
+数据: **边界（照实登记）**：① 形态判据换措辞可绕过（真实防线仍是实例判据 `TenantApplicationReviewCasRaceRealDbTest`）；② 射程只到 `RegistrationService` + `TenantApplicationMapper` 这一对文件；③ 判不了「拿 `updateById` 改非状态列」；④ 本守卫不跑被它引用的真库判据；⑤ 不改任何门禁的通过条件、不新增豁免。**与 MC-100 / PG-075 有意不重叠**：那两颗的射程是 `inbound_orders` 与 `production_operations.deleted`，本表是 `tenant_applications`，三张表谓词口径**有意不同**（正是判据 4 的对象）；本守卫一字未动那两颗。
+跳过: [backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟
+```
+溯源: 2026-10-15 新增（issue #6954 的类级固化，与 MC-101 同批）。取号 = main 侧现取 MC-001~101 ⇒ **MC-102**（`python3 scripts/next_case_id.py MC` 现取，全仓 refs 复核 0 命中）。读数：修后 `mvnw test -Dtest=TenantApplicationReviewCasMetaGuardTest` = **7 passed / 0 failed**，逐字 `写 status 的 mapper 方法=[approveIfPending, rejectIfPending] service 写路径=[approveApplication, rejectApplication] 未登记=[] 幽灵条目=[] 豁免=0(基线 0) 违规=[] 断链=[]`。**判据自身的 bug（已修，留档）**：第一版对整条 SQL 判状态谓词 ⇒ `SET status = 'approved'` 被当谓词 ⇒ 判别力自证第 ① 族（无谓词状态写）当场判绿（`1 failed / 6 passed`）⇒ 改为**只看 WHERE 段**（`whereClause()`）后 7 passed。这条正是「判别力自证」这一判据存在的理由：**没有它，判据恒绿与判据有效在结果列上长得一样**。 ｜ tags: concurrency, state-transition, cas, ledger, onboarding, backend-contract, red-proof
 
 ## 商家入驻域（6 case）
 
@@ -10854,8 +10885,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：748（活跃 134，跳过 614）
-- tier 分布：smoke 12 / normal 691 / adversarial 32
+- 用例总数：750（活跃 134，跳过 616）
+- tier 分布：smoke 12 / normal 692 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10870,7 +10901,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：101
+- 杂项域：103
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：66
@@ -11006,6 +11037,8 @@
 - MC-098: **跨包指针消费者 ⇄ 后端下发面**双向核对：删锚点必红（issue #6853 的类级固化）
 - MC-099: **admin-api → ai-agent 内部调用腿的可观测契约**：接线断了必须摆进 `/actuator/health`，且恒 UP 不熔断（issue #6896）
 - MC-100: **入库单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6928 的类级固化）
+- MC-101: **入驻审批并发双 approve ⇒ 租户数恰好 +1、恰好 1 次成功**：CAS 闸必须在副作用之前（issue #6954）
+- MC-102: **入驻审批写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 负谓词（本表无 deleted 列）即红 / 台账只许缩短（issue #6954 的类级固化）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

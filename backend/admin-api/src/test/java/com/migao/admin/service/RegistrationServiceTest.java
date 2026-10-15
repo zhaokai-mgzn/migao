@@ -89,6 +89,12 @@ class RegistrationServiceTest extends BaseServiceTest {
         when(valueOperations.increment(anyString())).thenReturn(1L);
         // 查重默认 0 条
         when(applicationMapper.selectCount(any())).thenReturn(0L);
+        // 🔴 审批权的 CAS（issue #6954）：默认「抢到了」（影响行数 1）。
+        // 默认为 0 会让**所有**审批用例撞 409 冲突 —— 那是"没抢到"，不是这些用例要测的东西。
+        // 真库并发语义（恰一个赢家）由 TenantApplicationReviewCasRaceRealDbTest 承担；
+        // 本类是 mock 面，只验调用链与副作用（mock 的恒 1 不影响那些断言）。
+        when(applicationMapper.approveIfPending(anyLong(), any(), any(), any(), any(), any())).thenReturn(1);
+        when(applicationMapper.rejectIfPending(anyLong(), any(), any(), any(), any(), any(), any())).thenReturn(1);
         // 短信验证码默认通过
         when(smsService.verifyCode(anyString(), anyString())).thenReturn(true);
         // 入驻后置条件（#6295）：默认「种下了」——需要验 fail-closed 的用例自己改 stub
@@ -434,7 +440,9 @@ class RegistrationServiceTest extends BaseServiceTest {
             // 开租成功：租户 + 管理员用户照常建出来，申请单落到 approved
             verify(tenantMapper).insert(any(com.migao.admin.entity.Tenant.class));
             verify(userService).createUser(anyString(), anyString(), anyString(), eq("admin"), anyString(), isNull(), eq(100L));
-            assertThat(pendingApp.getStatus()).isEqualTo("approved");
+            // 🔴 issue #6954：审结状态由 **CAS 语句**写（不再回写内存实体）⇒ 断言「CAS 被调用、且参数是 approved」
+            //    （断言内存实体是**假绿**形态：mock 不会像真 SQL 那样改库，也证明不了真的写了）
+            verify(applicationMapper).approveIfPending(eq(1L), eq("reviewer-001"), any(), isNull(), isNull(), isNull());
         }
 
         @Test
@@ -492,9 +500,10 @@ class RegistrationServiceTest extends BaseServiceTest {
             registrationService.approveApplication(1L, "ai",
                     new RegistrationService.ApplicationReview("ai", "[{\"level\":\"medium\"}]", "合规审查通过"));
 
-            assertThat(pendingApp.getReviewSource()).isEqualTo("ai");
-            assertThat(pendingApp.getRiskFlags()).contains("medium");
-            assertThat(pendingApp.getReviewSummary()).isEqualTo("合规审查通过");
+            // 🔴 issue #6954：甄别元数据与状态**同一句**写入 CAS（不再经内存实体的 updateById）⇒
+            //    断言「落库语句拿到了这三个值」。岗位种子等副作用不在本用例射程（各自有用例守着）。
+            verify(applicationMapper).approveIfPending(eq(1L), eq("ai"), any(), eq("ai"),
+                    eq("[{\"level\":\"medium\"}]"), eq("合规审查通过"));
         }
 
         @Test
@@ -521,8 +530,9 @@ class RegistrationServiceTest extends BaseServiceTest {
             registrationService.rejectApplication(1L, "reviewer-001", "资料不全");
 
             verify(applicationMapper).selectById(1L);
-            assertThat(pendingApp.getStatus()).isEqualTo("rejected");
-            assertThat(pendingApp.getRejectReason()).isEqualTo("资料不全");
+            // 🔴 issue #6954：驳回侧与通过侧**同款 CAS**（争同一份审批权）⇒ 断言落库语句拿到 rejected + 理由
+            verify(applicationMapper).rejectIfPending(eq(1L), eq("reviewer-001"), eq("资料不全"), any(),
+                    isNull(), isNull(), isNull());
         }
 
         @Test

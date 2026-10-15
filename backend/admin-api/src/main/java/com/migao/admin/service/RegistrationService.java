@@ -395,13 +395,28 @@ public class RegistrationService {
     public void approveApplication(Long id, String reviewerId, ApplicationReview review) {
         log.info("审批通过入驻申请: id={}, reviewerId={}", id, reviewerId);
 
-        // 1. 查找并校验申请
+        // 1. 查找申请（读判只是**快速路径**：给已审结的单一个干净 400 + 当前状态；
+        //    并发下的**唯一权威判定**在下面第 2 步的 CAS —— 见 issue #6954）
         TenantApplication application = getApplicationDetail(id);
-        if (!"pending".equals(application.getStatus())) {
-            throw BusinessException.validationError("该申请已被处理，当前状态: " + application.getStatus());
+        requirePendingForApprove(application);
+
+        // 2. 🔴 审批通过权 = DB 原子条件更新（CAS，issue #6954）—— **必须在任何副作用之前**
+        //    （派单口径逐字：「先建后判 = 窗口白留，伤害已经发生」）。
+        //    为什么必须在前面：改前这里是「读判 pending → 404-455 先建租户 + 管理员 + 初始数据
+        //    → 457 无条件 updateById 收尾」。并发的第二个请求读到同一个 pending 并通过判断
+        //    ⇒ 两边的租户都真的建出来，后写覆盖前写 ⇒ 一个**无主租户**（不可逆）。
+        //    CAS 把「判断」与「写入」压进同一条语句 ⇒ 后者阻塞到前者提交后按新版本行重估
+        //    status='pending' ⇒ 0 行 ⇒ 抛冲突（不再建第二个租户）。
+        //    锁的持有范围 = 本方法事务结束 ⇒ 副作用全在闸内（建租户 / 管理员 / 初始数据）。
+        OffsetDateTime reviewedAt = OffsetDateTime.now();
+        if (applicationMapper.approveIfPending(id, reviewerId, reviewedAt,
+                review == null ? null : review.source(),
+                review == null ? null : review.riskFlagsJson(),
+                review == null ? null : review.summary()) == 0) {
+            throw conflictForApprove(id);
         }
 
-        // 2. 创建新租户
+        // 3. 创建新租户
         String tenantCode = generateTenantCode(application.getCompanyName());
         Tenant tenant = Tenant.builder()
                 .name(application.getCompanyName())
@@ -449,14 +464,47 @@ public class RegistrationService {
             }
         }
 
-        // 4. 更新申请状态
-        application.setStatus("approved");
-        application.setReviewedBy(reviewerId);
-        application.setReviewedAt(OffsetDateTime.now());
-        applyReviewMeta(application, review);
-        applicationMapper.updateById(application);
-
+        // 4. 收尾：状态迁移**已在第 2 步的 CAS 里与副作用同事务写掉**（issue #6954）——
+        //   这里**不再**回写整个实体：`updateById` 的 WHERE 只有主键、且会把内存里的旧 status
+        //   一起写回（F1 的全实体回写根因）⇒ 那正是本单要消灭的形态。
         log.info("入驻申请审批通过: applicationId={}, tenantId={}", id, tenant.getId());
+    }
+
+    /** 审批通过前的**快速路径**读判（并发下的唯一权威判定是 {@code approveIfPending} 的 CAS）。 */
+    private void requirePendingForApprove(TenantApplication application) {
+        if (!"pending".equals(application.getStatus())) {
+            throw BusinessException.validationError("该申请已被处理，当前状态: " + application.getStatus());
+        }
+    }
+
+    /**
+     * CAS 落空（影响行数 0）时的**冲突**异常 —— 文案带**实际当前态**（issue #6954：
+     * 判红必须可归因；「已被处理」而不说当前是什么状态，操作者无法判断该刷新还是该找别人）。
+     */
+    private BusinessException conflictForApprove(Long id) {
+        String current = currentStatusOrUnknown(id);
+        return BusinessException.conflict(
+                "该入驻申请已被审结，当前状态: " + current,
+                "并发审批只会有一个生效（先到先审结）。请刷新列表查看当前状态；"
+                        + "若显示 approved，企业已开通、无需重复审批。");
+    }
+
+    /**
+     * CAS 落空时的**驳回侧**冲突文案（带实际当前态）。与 {@link #conflictForApprove} 分开，
+     * 是为了让「你被谁抢先」可区分：先到的是**通过**还是**驳回**，处置完全不同。
+     */
+    private BusinessException conflictForReject(Long id) {
+        String current = currentStatusOrUnknown(id);
+        return BusinessException.conflict(
+                "该入驻申请已被审结，当前状态: " + current,
+                "并发审批只会有一个生效（先到先审结）。请刷新列表查看当前状态；"
+                        + "若显示 approved，企业已开通，不能再驳回。");
+    }
+
+    /** 现取申请单**实际**当前态（只为冲突文案可归因；查不到时如实说"未知"而不是编一个状态）。 */
+    private String currentStatusOrUnknown(Long id) {
+        TenantApplication current = applicationMapper.selectById(id);
+        return current == null || current.getStatus() == null ? "未知" : current.getStatus();
     }
 
     /**
@@ -560,31 +608,22 @@ public class RegistrationService {
     public void rejectApplication(Long id, String reviewerId, String reason, ApplicationReview review) {
         log.info("驳回入驻申请: id={}, reviewerId={}, reason={}", id, reviewerId, reason);
 
+        // 1. 查找申请（读判只是**快速路径**；并发下的唯一权威判定在下面的 CAS，见 issue #6954）
         TenantApplication application = getApplicationDetail(id);
-        if (!"pending".equals(application.getStatus())) {
-            throw BusinessException.validationError("该申请已被处理，当前状态: " + application.getStatus());
-        }
+        requirePendingForApprove(application);
 
-        application.setStatus("rejected");
-        application.setReviewedBy(reviewerId);
-        application.setRejectReason(reason);
-        application.setReviewedAt(OffsetDateTime.now());
-        applyReviewMeta(application, review);
-        applicationMapper.updateById(application);
+        // 2. 🔴 驳回权 = 与通过**同款**的 DB 原子条件更新（CAS，issue #6954）——
+        //    两者争的是同一份审批权。改前这里是「读判 pending → 无条件 updateById」⇒
+        //    并发 approve × reject 时 reject 会覆写已通过的审结 ⇒ 终态 rejected 而
+        //    租户 / 管理员 / 初始数据**已经建在库里**（自相矛盾的终态、且无人能登录）。
+        if (applicationMapper.rejectIfPending(id, reviewerId, reason, OffsetDateTime.now(),
+                review == null ? null : review.source(),
+                review == null ? null : review.riskFlagsJson(),
+                review == null ? null : review.summary()) == 0) {
+            throw conflictForReject(id);
+        }
 
         log.info("入驻申请已驳回: applicationId={}", id);
-    }
-
-    /**
-     * 写入甄别元数据（reviewSource / riskFlags / reviewSummary）
-     */
-    private void applyReviewMeta(TenantApplication application, ApplicationReview review) {
-        if (review == null) {
-            return;
-        }
-        application.setReviewSource(review.source());
-        application.setRiskFlags(review.riskFlagsJson());
-        application.setReviewSummary(review.summary());
     }
 
     // ==================== 内部辅助方法 ====================
