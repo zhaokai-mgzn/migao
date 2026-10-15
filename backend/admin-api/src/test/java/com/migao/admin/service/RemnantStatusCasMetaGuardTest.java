@@ -477,57 +477,9 @@ class RemnantStatusCasMetaGuardTest {
         return out;
     }
 
-    /**
-     * 抹掉注释与字符串字面量（**保留行结构**：注释 / 字符串内的换行照数，内容换成等长空白）。
-     *
-     * <p>注释里的圆括号 / 花括号必须先抹掉，否则 {@link #logicalLines} 的括号平衡与签名匹配都会被
-     * javadoc 影响（实测：{@code {@code …}} 标签里的花括号曾把 {@code RemnantService#recover}
-     * 整个吞出候选集）。</p>
-     */
-    private static String stripCommentsAndStrings(String text) {
-        StringBuilder out = new StringBuilder(text.length());
-        int i = 0;
-        int n = text.length();
-        while (i < n) {
-            char c = text.charAt(i);
-            if (c == '/' && i + 1 < n && text.charAt(i + 1) == '/') {
-                while (i < n && text.charAt(i) != '\n') {
-                    out.append(' ');
-                    i++;
-                }
-            } else if (c == '/' && i + 1 < n && text.charAt(i + 1) == '*') {
-                out.append("  ");
-                i += 2;
-                while (i < n && !(text.charAt(i) == '*' && i + 1 < n && text.charAt(i + 1) == '/')) {
-                    out.append(text.charAt(i) == '\n' ? '\n' : ' ');
-                    i++;
-                }
-                if (i < n) {
-                    out.append("  ");
-                    i += 2;
-                }
-            } else if (c == '"') {
-                out.append(' ');
-                i++;
-                while (i < n && text.charAt(i) != '"') {
-                    if (text.charAt(i) == '\\' && i + 1 < n) {
-                        out.append("  ");
-                        i += 2;
-                        continue;
-                    }
-                    out.append(text.charAt(i) == '\n' ? '\n' : ' ');
-                    i++;
-                }
-                if (i < n) {
-                    out.append(' ');
-                    i++;
-                }
-            } else {
-                out.append(c);
-                i++;
-            }
-        }
-        return out.toString();
+        /** 剥壳口径见 {@link GuardScanSupport#stripCommentsAndStrings(String)}（issue #6956 第二部分：收口到一处，别各写一份）。 */
+    private static String stripCommentsAndStrings(String src) {
+        return GuardScanSupport.stripCommentsAndStrings(src);
     }
 
     /**

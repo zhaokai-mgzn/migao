@@ -535,67 +535,11 @@ class ProcessingOrderStatusCasMetaGuardTest {
         return out;
     }
 
-    /**
-     * 剥掉块注释 / 行注释 / 字符串字面量 / 文本块（**保留行结构**：非换行字符变空格，换行原样留下）。
-     *
-     * <p>为什么必须剥：花括号深度扫描要的只是「真代码里的括号」。javadoc 里常见被截断的代码片段
-     * （如 {@code route = [op for op in route} 这类只有半个 `{` 的例子）⇒ 不剥就整体错位
-     * ⇒ 后续方法全部扫不到（本判据初版实测，见 {@link #membersWithBody}）。</p>
-     *
-     * <p>为什么不直接上 AST / JavaParser：本仓既有形态是「读源码文本」，加解析器依赖会扩大本单的
-     * 改动面与启动成本；一个 30 行的手写剥壳足够覆盖「注释 / 字面量里的括号」这一族
-     * （判别力由 {@code guardHasDiscriminatingPower} 的「注释里的 `{`」用例自证）。</p>
-     */
-    static String stripCommentsAndStrings(String src) {
-        StringBuilder out = new StringBuilder(src.length());
-        int i = 0;
-        int n = src.length();
-        while (i < n) {
-            char c = src.charAt(i);
-            if (src.startsWith("/*", i)) {
-                int j = src.indexOf("*/", i + 2);
-                j = j < 0 ? n : j + 2;
-                appendBlanks(out, src, i, j);
-                i = j;
-            } else if (src.startsWith("//", i)) {
-                int j = src.indexOf('\n', i);
-                j = j < 0 ? n : j;
-                appendBlanks(out, src, i, j);
-                i = j;
-            } else if (src.startsWith("\"\"\"", i)) {
-                int j = src.indexOf("\"\"\"", i + 3);
-                j = j < 0 ? n : j + 3;
-                appendBlanks(out, src, i, j);
-                i = j;
-            } else if (c == '"' || c == '\'') {
-                int j = i + 1;
-                while (j < n) {
-                    if (src.charAt(j) == '\\') {
-                        j += 2;
-                        continue;
-                    }
-                    if (src.charAt(j) == c) {
-                        j++;
-                        break;
-                    }
-                    j++;
-                }
-                appendBlanks(out, src, i, Math.min(j, n));
-                i = Math.min(j, n);
-            } else {
-                out.append(c);
-                i++;
-            }
-        }
-        return out.toString();
+        /** 剥壳口径见 {@link GuardScanSupport#stripCommentsAndStrings(String)}（issue #6956 第二部分：收口到一处，别各写一份）。 */
+    private static String stripCommentsAndStrings(String src) {
+        return GuardScanSupport.stripCommentsAndStrings(src);
     }
 
-    /** 把 {@code [from, to)} 逐字符写成空格，**换行原样保留**（行号与缩进判定都依赖它）。 */
-    private static void appendBlanks(StringBuilder out, String src, int from, int to) {
-        for (int k = from; k < to; k++) {
-            out.append(src.charAt(k) == '\n' ? '\n' : ' ');
-        }
-    }
 
     /** 现取：service 里**出现加工单状态列写**的方法（方法名 + 方法体）。 */
     private static List<MethodBody> serviceStatusWriteCandidates(String serviceText) {
