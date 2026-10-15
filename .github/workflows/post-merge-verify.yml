@@ -322,13 +322,22 @@ jobs:
           fi
           echo "判定解释器 = $MIGAO_PY（并行度见下一条读数）"
 
-          # ── 取数面读数（issue #6042，2026-10-06）──────────────────────────────────────
+          # ── 取数面读数（issue #6042，2026-10-06；🔴 issue #6968 修「探针自己坏了」）──────────────
           # 现场：本步 shell **确有**有效凭据（上面第 3~4 行的 `gh run list` 取水位成功），而 driver 拉起的
           # pytest 里 `test_case_id_claims.py` 两条常驻出口报「没有 API 凭据（GITHUB_TOKEN/GH_TOKEN 都为空）」
-          # ⇒ 断点在「step shell → driver → pytest」这条链上。两行读数把两种可能分开：
+          # ⇒ 断点在「step shell → driver → pytest」这条链上。读数把两种可能分开：
           #   ① 模板侧没解出值（`TOKEN_DECLARED=false` / shell len=0）；② 解出了但没进子进程。
-          # 读数**与判据同源**（同一解释器 + 直接问判据本体的 `TOKEN_ENVS` / `current_pr`），不另写推断；
-          # 且**不参与判定**（探针自己失败只打印，绝不判红）。
+          # 读数**与判据同源**（同一解释器 + 直接问判据本体的 `TOKEN_ENVS` / `current_pr`），不另写推断。
+          #
+          # 🔴 **issue #6968（2026-10-15）修的两件事都不是判定口径**：
+          #   1. **探针自己 import 就失败**：`sys.path` 插的是 `tests/unit_ci_workflows`，而本仓判据按**包**
+          #      导入（`unit_ci_workflows.*`）⇒ 自 run `37437327226` 起每轮逐字输出
+          #      `探针自身失败（不影响判定）: ModuleNotFoundError No module named 'unit_ci_workflows'`
+          #      ⇒ **诊断面形同不存在** ⇒ ①/② **从未被分开过**（这就是这条红能连挂多轮没人定位的直接原因）。
+          #      修法 = 让 **`tests`** 可导入（与下面 in-leg 块同口径 —— 一处真值不写第二份）；
+          #   2. **「探针失败只打印、绝不影响判定」是错的**（它让探针坏了两小时没人知道；同 `migao-dev-flow`
+          #      §23 G6「没跑必须长得像没跑」）⇒ 现在 **探针打不出 `creds =` 行 ⇒ 本步响亮失败**。
+          #
           # ⚠️ 首轮实测（run 37436064816）：本步 `set -u` 下 `${#GITHUB_TOKEN}` 直接 **unbound variable** 把判定步打挂
           #    ⇒ 读数两个变量都必须**先探存在再取长度**（`declare -p` 不展开、不触发 `set -u`）。
           #    🧪 这条报错**本身就是读数**：报的是 `GITHUB_TOKEN` 而不是 `GH_TOKEN` ⇒ **`GH_TOKEN` 在 step shell 里是设了的**
@@ -337,21 +346,36 @@ jobs:
           if declare -p GITHUB_TOKEN >/dev/null 2>&1; then GT_LEN="${#GITHUB_TOKEN}"; else GT_LEN="未设"; fi
           echo "取数面读数（step shell）: GH_TOKEN=${GH_LEN} / GITHUB_TOKEN=${GT_LEN} / TOKEN_DECLARED=${TOKEN_DECLARED:-（未声明）}"
           echo "上下文读数（step shell）: GITHUB_REF=${GITHUB_REF:-（空）} EVENT=${GITHUB_EVENT_NAME:-（空）} REPO=${GITHUB_REPOSITORY:-（空）}"
+          # 🔴 `PYTHONPATH=tests`（不是 `tests/unit_ci_workflows`）：判据按**包**导入 `unit_ci_workflows.*`。
+          _PROBE_OUT="$(mktemp)"
           set +e
-          "$MIGAO_PY" - <<'PYEOF' 2>&1 | sed 's/^/取数面读数（判定解释器）: /'
+          PYTHONPATH=tests "$MIGAO_PY" - <<'PYEOF' 2>&1 | sed 's/^/取数面读数（判定解释器）: /' | tee "$_PROBE_OUT"
           import os
           import sys
-          sys.path.insert(0, "tests/unit_ci_workflows")
           try:
-              import test_case_id_claims as t
+              import unit_ci_workflows.test_case_id_claims as t
               entries, _ = t.scan_claims(t.REPO_ROOT / t.CLAIMS_REL)
               creds = {k: len(os.environ.get(k) or "") for k in t.TOKEN_ENVS}
               print("creds =", creds, "| current_pr =", t.current_pr(t.parse_claims(entries)))
-          except Exception as exc:  # noqa: BLE001 —— 诊断面：绝不影响判定
-              print("探针自身失败（不影响判定）:", type(exc).__name__, exc)
+          except Exception as exc:  # noqa: BLE001 —— 诊断面：把失败**打出来**（由下面那条判据判红）
+              print("探针自身失败:", type(exc).__name__, exc)
           print("GITHub_REF =", os.environ.get("GITHUB_REF"), "| EVENT =", os.environ.get("GITHUB_EVENT_NAME"),
                 "| REPO =", os.environ.get("GITHUB_REPOSITORY"))
           PYEOF
+          # 🔴 **探针自己现在有牙**（issue #6968）：读数打不出 `creds =` 行 ⇒ 响亮失败。
+          #    判据形态 = 「**能不能回答那个问题**」，不看答案好坏 —— 没凭据时 `creds` 打印全 0
+          #    **也算探针工作正常**（那是读数，不是故障）；只有 **import 崩了 / 行为被改坏** 才红。
+          #    红证（注入式）：把上面那行 `PYTHONPATH=tests` 改回 `PYTHONPATH=tests/unit_ci_workflows`
+          #    ⇒ 当场 `::error::` + exit 1（实测见 PR body）。
+          if ! grep -qE 'creds = \{' "$_PROBE_OUT"; then
+            echo "::error::取数面读数探针**自己失败了**（判据解释器里打不出 \`creds = {...}\` 行）——"
+            echo "::error::诊断面已失效 ⇒ 「① 模板侧没解出 token」与「② 解出了没进子进程」无法分开（issue #6968 的形态）。"
+            echo "::error::复算：PYTHONPATH=tests $MIGAO_PY -c 'import unit_ci_workflows.test_case_id_claims as t; print(t.TOKEN_ENVS)'"
+            rm -f "$_PROBE_OUT"
+            exit 1
+          fi
+          rm -f "$_PROBE_OUT"
+          set -e
 
           # 🧪 **临时诊断**（issue #6042）：绕开 driver，在**本步**（同一个 shell / 同一个解释器）直接跑
           #    那两条常驻出口。两层读数一起看即可判定断点在哪：
