@@ -258,6 +258,14 @@ REALDB_FILES: dict[str, str] = {
     _SVC + "RemnantRecoveryRealDbTest.java": "direct",
     _SVC + "SavingMetricsBoardRealDbTest.java": "direct",
     _SVC + "SkuBatchGuardRealDbTest.java": "direct",
+    # issue #6954：入驻审批**并发双 approve** 的真库判据（N=6 同一 pending 申请单 ⇒ 恰 1 次成功、
+    # 租户恰 1 行、管理员恰 1 个）。为什么必须真 PG：缺陷是 **check-then-act 且副作用在判之前**
+    # （读判 `pending` → 先建租户 + 管理员 + 初始数据 → 最后无条件 `updateById` 收尾）——
+    # 「条件更新（`WHERE id=? AND status='pending'`）是否真的只放一个赢家过去」靠的是**行锁 + 条件重估**，
+    # mock 面结构上不可见（mock 的 `approveIfPending` 恒返回 stub 值 ⇒ 修前形态在 mock 面上恒绿，
+    # 既有 `RegistrationServiceTest` 正是 mock 面、此前对此缺陷零反应）；而「两个租户都真的建出来了」
+    # 这个**不可逆副作用**只能从落库事实读（`tenants` / `users` 行数）。
+    _SVC + "TenantApplicationReviewCasRaceRealDbTest.java": "direct",
     _MAP + "FabricRemnantMapperTest.java": "via:RemnantTestDb",
     _MAP + "RemnantItemSizeMapperTest.java": "via:RemnantTestDb",
     _SVC + "RemnantServiceTest.java": "via:RemnantTestDb",

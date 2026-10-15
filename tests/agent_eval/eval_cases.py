@@ -6441,16 +6441,52 @@ _CASE_MC_100 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-101 [NORMAL] **加工单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6955 的类级固化）（源: cases/misc.yml）──
+# ── MC-101 [EDGE] **入驻审批并发双 approve ⇒ 租户数恰好 +1、恰好 1 次成功**：CAS 闸必须在副作用之前（issue #6954）（源: cases/misc.yml）──
 _CASE_MC_101 = EvalCase(
     id='MC-101',
+    legacy_id='',
+    title='**入驻审批并发双 approve ⇒ 租户数恰好 +1、恰好 1 次成功**：CAS 闸必须在副作用之前（issue #6954）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['同一张 pending 入驻申请单被严格同时审批两次（或 N 次）'],
+    expectations=[],
+    data_checks=['**病（根因，`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java`）**：`#approveApplication` 是 check-then-act **且副作用在判之前** —— 读判 `pending` → **先建租户 + 管理员 + 初始数据** → 最后 `applicationMapper.updateById(application)`（WHERE 仅主键 ⇒ 无谓词）收尾。并发的第二个请求读到同一个 `pending` 并通过判断 ⇒ **两个租户都真的建出来**，后写覆盖前写 ⇒ 一个**无主租户**（不可逆：租户已落库、管理员已建、无人知道该删谁）。`#rejectApplication` 同形态，且与 approve **争同一份审批权**。', '**判据 1（恰好 1 次成功）**：真库并发判据 = backend/admin-api/src/test/java/com/migao/admin/service/TenantApplicationReviewCasRaceRealDbTest.java 的 `concurrentApprovalsCreateExactlyOneTenant`（N=6 线程 + `CountDownLatch` 对齐起跑）。**修后逐字读数**：`各状态码=[200, 409, 409, 409, 409, 409] 成功数=1 失败状态码=[409,409,409,409,409] 租户行=1 管理员行=1 单据终态=approved reviewed_by=ta-6954-reviewer 失败文案=[CONFLICT: 该入驻申请已被审结，当前状态: approved …]`。落败方必须是**显式 4xx**（CAS 落空 409 CONFLICT / 读判 400），不许 5xx。', '**判据 2（租户数恰好 +1，不可逆副作用的独立算式）**：以该企业名建出的 `tenants` 行**恰好 1 行**（改前实测 **6** 行）、该租户下的管理员用户**恰好 1 个**（改前实测 **6** 个）—— 判定用**落库事实**而非响应体。', '**判据 3（终态与赢家一致）**：申请单终态 `approved` 且 `reviewed_by` 落库非空。', '**判据 4（串行正对照·护栏不误杀）**：同文件 `serialApprovalStillSucceeds` —— 无并发时串行 approve 必须成功（谓词非空 ⇒ 正常请求不被 409 误杀）。修后读数 `状态码=200 租户行=1 单据终态=approved`。', "**红证（注入式 · 受控单变量）**：临时把 `TenantApplicationMapper#approveIfPending` / `#rejectIfPending` 的 `AND status = 'pending'` **摘掉**（注入前置自证：对两条 CAS 的 `AND status = 'pending'` 逐字计数由 2 → **0**）⇒ 判据 1/2 当场红，逐字读数 `各状态码=[200,200,200,200,200,200] 成功数=6 租户行=6 管理员行=6`；同时**串行正对照仍绿** ⇒ 红的不是「装置坏了」。撤回注入（复算 `grep -c` 回到 **2**）⇒ 2 passed / 0 failed。", '**为什么不需要窗口探针（与 #6928 的差别）**：窗口在收尾 `updateById` **之前**，而中间跑完整条开租链路（建租户 → 七岗 + 权限目录 → 管理员用户 → 默认商品分类 → 生产种子模板 → 后置条件校验）⇒ 窗口是**毫秒级**且随并发线程数放大 ⇒ `CountDownLatch` 对齐起跑即可稳定命中（本包最省成本的原因）。', '**边界（照实登记）**：① 跑的是**服务层真库并发**而非 HTTP 栈（controller 只是薄转发）；② 装配走裸 MyBatis（`autocommit`）而非 Spring 事务代理 ⇒ 证的是 **CAS 语句本身**的互斥性；③ 审阅人必须是 `users` 里的真行（`reviewed_by` 有外键），夹具自建；④ 探针对象全部自建（企业名前缀 `ta-6954`，随一次性临时集群销毁），不碰任何存量数据。'],
+    skip_reason='[backend-contract] 纯后端真库并发判据（真 PG 一次性集群，走 PgCluster.startOrAbort() 收口）：admin-api 单测面，零网络、零 LLM，不进 agent-eval 冒烟',
+    tags=['concurrency', 'state-transition', 'cas', 'onboarding', 'backend-contract', 'realdb', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-102 [NORMAL] **入驻审批写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 负谓词（本表无 deleted 列）即红 / 台账只许缩短（issue #6954 的类级固化）（源: cases/misc.yml）──
+_CASE_MC_102 = EvalCase(
+    id='MC-102',
+    legacy_id='',
+    title='**入驻审批写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 负谓词（本表无 deleted 列）即红 / 台账只许缩短（issue #6954 的类级固化）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['审批权上有两个写面（通过 / 驳回），凭什么相信「下一个写面不会漏」？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·扫描器非空跑自证**：现取「写 `tenant_applications.status` 的 mapper 手写 SQL」必须含 `approveIfPending` / `rejectIfPending`；现取「service 里出现审结写的调用点」必须含 `approveApplication` / `rejectApplication` —— **返回空集 = 判据失明，不是通过**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/TenantApplicationReviewCasMetaGuardTest.java::scannersAreNotBlind', "🔴 **判据 2·CAS 谓词完整性**：凡在 SET 侧写 `status` 的手写 `@Update` SQL，必须同时含 `#{id}` 参数 + **WHERE 里的** `status = '<当前态>'` 谓词（少任何一条 ⇒ 红）。⚠️ 谓词判定**只看 WHERE 段** —— `SET status = 'approved'` 也像 `status = '<字面量>'`，对整条 SQL 判会把「无谓词写」判成合规（本判据第一版真的踩了这个坑，由判别力自证当场抓出）。执行点 = 同文件::everyStatusWriteCarriesTheCasPredicate + ::guardHasDiscriminatingPower", '🔴 **判据 3·无谓词写即红（判据本体）**：现取的每个审结写路径的方法体里**不得**出现 `applicationMapper.updateById(` —— 审批权的判断与写入必须在同一条语句上。**实证过的隐蔽形态**：锚串留着（`if (false && …approveIfPending(…)`）但真正落库换成 `updateById` ⇒ 仍判红并具名（只判锚会被它骗过去）。执行点 = 同文件::noStatusWritePathUsesUnconditionalUpdateById', '🔴 **判据 4·负谓词即红（本表独有）**：mapper 状态写 SQL **不得**出现 `deleted = 0` —— `tenant_applications` **没有该列**，照抄 #6928 / #6936 的三谓词模板会直接 SQL 报错（PG 报错形如 `column deleted does not exist`）。执行点 = 同文件::noDeletedPredicateBecauseTheColumnDoesNotExist', '🔴 **判据 5·未登记即红 + 台账不许给不存在的对象盖章**：service 审结写路径必须逐条登记（backend/admin-api/src/test/resources/tenant-application-review-cas-ledger.json 的 `service_write_paths`），且登记的 `call_anchor` 必须逐字出现在方法体里。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful', '🔴 **判据 6·登记未被兑现即红**：每条 `evidence` 锚 = `<仓库相对全路径>::<可检索文本>`，左侧文件存在、右侧逐字出现（摘掉 CAS 调用 / 方法改名 ⇒ 红）。执行点 = 同文件::everyEvidenceAnchorIsLive', '🔴 **判据 7·豁免只许缩短**：`unverified` 必须是冻结基线 `unverified_baseline`（现取 0）的子集；新增豁免 ⇒ 红。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful', '🔴 **判据 8·判别力自证（合成语料）**：无谓词状态写 / 缺 `status` 谓词 / 无谓词 `updateById` / 锚留而落库无谓词 / 未登记写路径 / 台账锚被摘掉 / 带了本表不存在的 `deleted` 谓词 六族坏形态各自判红，合规语料判绿，**只加注释不红**。执行点 = 同文件::guardHasDiscriminatingPower', '**边界（照实登记）**：① 形态判据换措辞可绕过（真实防线仍是实例判据 `TenantApplicationReviewCasRaceRealDbTest`）；② 射程只到 `RegistrationService` + `TenantApplicationMapper` 这一对文件；③ 判不了「拿 `updateById` 改非状态列」；④ 本守卫不跑被它引用的真库判据；⑤ 不改任何门禁的通过条件、不新增豁免。**与 MC-100 / PG-075 有意不重叠**：那两颗的射程是 `inbound_orders` 与 `production_operations.deleted`，本表是 `tenant_applications`，三张表谓词口径**有意不同**（正是判据 4 的对象）；本守卫一字未动那两颗。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟',
+    tags=['concurrency', 'state-transition', 'cas', 'ledger', 'onboarding', 'backend-contract', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── MC-104 [NORMAL] **加工单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6955 的类级固化）（源: cases/misc.yml）──
+_CASE_MC_104 = EvalCase(
+    id='MC-104',
     legacy_id='',
     title='**加工单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6955 的类级固化）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['同一份加工单状态迁移权上有**两个**写面（手工入口 `ProcessingOrderService#updateStatus` 与订单联动腿 `OrderService#cancelOrder`），凭什么相信「下一个写面不会漏」？'],
     expectations=[],
-    data_checks=['🔴 **判据 1·扫描器非空跑自证**：现取「写 `processing_orders.status` 的 mapper 手写 SQL」必须含 `markCompletedIfActive` / `markInProcessingIfFrom` / `markStatusIfFrom`；现取「**两条** service 里出现状态列写的方法」必须含 `ProcessingOrderService#updateStatus` 与 `OrderService#cancelOrder` —— **返回空集 = 判据失明，不是通过**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderStatusCasMetaGuardTest.java::scannersAreNotBlind', "🔴 **判据 2·谓词完整性**：凡在 SET 侧写 `status` 的手写 `@Update` SQL，必须同时含 `tenant_id` 参数 + **WHERE 侧 status 谓词**（`status = #{fromStatus}` / `status = 'x'` / `status IN (…)`）+ `deleted = 0` 谓词（少任何一条 ⇒ 红）。执行点 = 同文件::everyStatusWriteCarriesTheFullPredicate", '🔴 **判据 3·无谓词写即红（判据本体）**：现取的每个状态写路径的方法体里**不得**出现 `processingOrderMapper.updateById(` —— 状态迁移必须走条件更新 CAS。**实证过的隐蔽形态**：锚串留着（`if (false && …markStatusIfFrom(…)`）但真正落库换成 `updateById` ⇒ 仍判红并具名。执行点 = 同文件::noStatusWritePathUsesUnconditionalUpdateById', '🔴 **判据 4·未登记即红 + 台账不许给不存在的对象盖章**：两条 service 的状态写路径必须逐条登记（backend/admin-api/src/test/resources/processing-order-status-cas-ledger.json 的 `service_write_paths`），且登记的 `call_anchor` 必须逐字出现在方法体里。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful', '🔴 **判据 5·登记未被兑现即红**：每条 `evidence` 锚 = `<仓库相对全路径>::<可检索文本>`，左侧文件存在、右侧逐字出现（摘掉 CAS 调用 / 方法改名 ⇒ 红）。执行点 = 同文件::everyEvidenceAnchorIsLive', '🔴 **判据 6·豁免只许缩短 + 台账不许空转**：`unverified` 必须是冻结基线 `unverified_baseline`（现取 0）的子集；新增豁免 ⇒ 红；`entries` / `service_write_paths` 为空 ⇒ 红（「空」不等于「全部合规」）。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful', '🔴 **判据 7·判别力自证（合成语料）**：无谓词状态写 / 缺 `deleted=0` / 缺 tenant 谓词 / 缺 WHERE 侧 status 谓词 / 未登记写路径 / 锚留而落库无谓词 / 台账未兑现 七种坏形态各自判红，合规语料判绿，**只加注释不红**；另含**扫描器鲁棒性**两格（跨行签名必须仍被扫到；注释里的孤立 `{` 不得让深度错位）。执行点 = 同文件::guardHasDiscriminatingPower', '**本包在 MC-101 上抓到的两个真问题（如实登记，不粉饰）**：① **扫描器深度下沉**：`ProcessingOrderService#updateStatus` 的签名跨行（收尾 `) {` 在续行上），只认「签名行含 `) {`」的写法把**整个方法**跳过、而它的闭合花括号照样减深度 ⇒ 深度从此下沉一级 ⇒ **后面所有方法全部扫不到**；初版读数因此少了 `updateStatus`（`service 写路径=[OrderService#cancelOrder]`）而判据 1 只检查另一个对象 ⇒ **照样绿**。② **注释里的孤立花括号**：真实文件第一处 javadoc 含 `{@code route = [` 这类被截断的代码片段 ⇒ 花括号计数器把它当真代码 ⇒ 从此整体错位。两处均已修（跨行签名走「待定签名状态机」；扫描前先剥注释 / 字符串字面量），并各自补了一条合成语料判据防回归（判据 7）。⚠️ **同款形态在 MC-100（`InboundOrderStatusCasMetaGuardTest`）里同样存在**（它只扫一个文件、且没剥注释）—— 按 #6955 的写面纪律**本包不动它**，归 #6956 独占处理。', '**边界（照实登记）**：① 形态判据换措辞可绕过（真实防线仍是实例判据 `ProcessingOrderStatusCasRaceRealDbTest`）；② 射程只到 `ProcessingOrderMapper` + `ProcessingOrderService` + `OrderService` 三条文件；③ 判不了「拿 `updateById` 改非状态列」；④ 本守卫不跑被它引用的真库判据；⑤ **「写路径清单」由 `processingOrderMapper.` 前缀现取** ⇒ 别名形态（`baseMapper.updateById(` / `this.updateById(`）扫不到（未覆盖形态，重启条件写在台账 `coverage_boundary`）；⑥ 不改任何门禁的通过条件、不新增豁免。'],
+    data_checks=['🔴 **判据 1·扫描器非空跑自证**：现取「写 `processing_orders.status` 的 mapper 手写 SQL」必须含 `markCompletedIfActive` / `markInProcessingIfFrom` / `markStatusIfFrom`；现取「**两条** service 里出现状态列写的方法」必须含 `ProcessingOrderService#updateStatus` 与 `OrderService#cancelOrder` —— **返回空集 = 判据失明，不是通过**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderStatusCasMetaGuardTest.java::scannersAreNotBlind', "🔴 **判据 2·谓词完整性**：凡在 SET 侧写 `status` 的手写 `@Update` SQL，必须同时含 `tenant_id` 参数 + **WHERE 侧 status 谓词**（`status = #{fromStatus}` / `status = 'x'` / `status IN (…)`）+ `deleted = 0` 谓词（少任何一条 ⇒ 红）。执行点 = 同文件::everyStatusWriteCarriesTheFullPredicate", '🔴 **判据 3·无谓词写即红（判据本体）**：现取的每个状态写路径的方法体里**不得**出现 `processingOrderMapper.updateById(` —— 状态迁移必须走条件更新 CAS。**实证过的隐蔽形态**：锚串留着（`if (false && …markStatusIfFrom(…)`）但真正落库换成 `updateById` ⇒ 仍判红并具名。执行点 = 同文件::noStatusWritePathUsesUnconditionalUpdateById', '🔴 **判据 4·未登记即红 + 台账不许给不存在的对象盖章**：两条 service 的状态写路径必须逐条登记（backend/admin-api/src/test/resources/processing-order-status-cas-ledger.json 的 `service_write_paths`），且登记的 `call_anchor` 必须逐字出现在方法体里。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful', '🔴 **判据 5·登记未被兑现即红**：每条 `evidence` 锚 = `<仓库相对全路径>::<可检索文本>`，左侧文件存在、右侧逐字出现（摘掉 CAS 调用 / 方法改名 ⇒ 红）。执行点 = 同文件::everyEvidenceAnchorIsLive', '🔴 **判据 6·豁免只许缩短 + 台账不许空转**：`unverified` 必须是冻结基线 `unverified_baseline`（现取 0）的子集；新增豁免 ⇒ 红；`entries` / `service_write_paths` 为空 ⇒ 红（「空」不等于「全部合规」）。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful', '🔴 **判据 7·判别力自证（合成语料）**：无谓词状态写 / 缺 `deleted=0` / 缺 tenant 谓词 / 缺 WHERE 侧 status 谓词 / 未登记写路径 / 锚留而落库无谓词 / 台账未兑现 七种坏形态各自判红，合规语料判绿，**只加注释不红**；另含**扫描器鲁棒性**两格（跨行签名必须仍被扫到；注释里的孤立 `{` 不得让深度错位）。执行点 = 同文件::guardHasDiscriminatingPower', '**本包在 MC-104 上抓到的两个真问题（如实登记，不粉饰）**：① **扫描器深度下沉**：`ProcessingOrderService#updateStatus` 的签名跨行（收尾 `) {` 在续行上），只认「签名行含 `) {`」的写法把**整个方法**跳过、而它的闭合花括号照样减深度 ⇒ 深度从此下沉一级 ⇒ **后面所有方法全部扫不到**；初版读数因此少了 `updateStatus`（`service 写路径=[OrderService#cancelOrder]`）而判据 1 只检查另一个对象 ⇒ **照样绿**。② **注释里的孤立花括号**：真实文件第一处 javadoc 含 `{@code route = [` 这类被截断的代码片段 ⇒ 花括号计数器把它当真代码 ⇒ 从此整体错位。两处均已修（跨行签名走「待定签名状态机」；扫描前先剥注释 / 字符串字面量），并各自补了一条合成语料判据防回归（判据 7）。⚠️ **同款形态在 MC-100（`InboundOrderStatusCasMetaGuardTest`）里同样存在**（它只扫一个文件、且没剥注释）—— 按 #6955 的写面纪律**本包不动它**，归 #6956 独占处理。', '**边界（照实登记）**：① 形态判据换措辞可绕过（真实防线仍是实例判据 `ProcessingOrderStatusCasRaceRealDbTest`）；② 射程只到 `ProcessingOrderMapper` + `ProcessingOrderService` + `OrderService` 三条文件；③ 判不了「拿 `updateById` 改非状态列」；④ 本守卫不跑被它引用的真库判据；⑤ **「写路径清单」由 `processingOrderMapper.` 前缀现取** ⇒ 别名形态（`baseMapper.updateById(` / `this.updateById(`）扫不到（未覆盖形态，重启条件写在台账 `coverage_boundary`）；⑥ 不改任何门禁的通过条件、不新增豁免。'],
     skip_reason='[backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟',
     tags=['concurrency', 'state-transition', 'cas', 'ledger', 'backend-contract', 'red-proof'],
     persona='',
@@ -14367,6 +14403,8 @@ ALL_CASES = (
     _CASE_MC_099,
     _CASE_MC_100,
     _CASE_MC_101,
+    _CASE_MC_102,
+    _CASE_MC_104,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
