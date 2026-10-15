@@ -295,6 +295,14 @@ REALDB_FILES: dict[str, str] = {
     # 既有 `RegistrationServiceTest` 正是 mock 面、此前对此缺陷零反应）；而「两个租户都真的建出来了」
     # 这个**不可逆副作用**只能从落库事实读（`tenants` / `users` 行数）。
     _SVC + "TenantApplicationReviewCasRaceRealDbTest.java": "direct",
+    # issue #6961：商品**状态迁移**（on/off_sale）与**改品整实体回写**的真库并发判据。为什么必须真 PG：
+    # ① 四条迁移入口的 CAS（`WHERE id=? AND tenant_id=? AND deleted=0 AND status=<前驱>`）靠**行锁 +
+    #    条件重估**互斥 —— mock 面上 `updateById` 恒返回 1 ⇒ 修前「两个请求都 200、终态由后写者决定」
+    #    完全测不出来；② 另一半（改品 `updateById` 整实体回写把旧 status 写回 ⇒ 静默回滚并发迁移）
+    #    只有在真库上「两条独立连接 + 独立事务 + 窗口探针」才能确定性命中（微秒级窗口 ⇒ 探针关掉必然是
+    #    load-dependent 的 flake，不能当证据）；③ 终态只能从落库事实读（`SELECT status FROM products`）。
+    #    窗口探针 = `ProductService#setStatusMigrationProbePauseMillisForTest`（生产恒 0）。
+    _SVC + "ProductStatusCasRaceRealDbTest.java": "direct",
     _MAP + "FabricRemnantMapperTest.java": "via:RemnantTestDb",
     _MAP + "RemnantItemSizeMapperTest.java": "via:RemnantTestDb",
     _SVC + "RemnantServiceTest.java": "via:RemnantTestDb",

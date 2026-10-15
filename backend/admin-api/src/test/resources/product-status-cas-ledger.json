@@ -1,0 +1,72 @@
+{
+  "schema": "product-status-cas/1.0",
+  "_what": "商品（products）**状态列写路径**的登记表：`ProductMapper` 里每一条 SET 侧写 status 的手写 SQL，以及 `ProductService` 里每一处该列状态迁移的调用点，都必须在此登记，**未登记即红**。规范正文 = issue #6961 / `migao-dev-flow` §23（类级固化）。",
+  "_why": "issue #6961 的病根是**校验在读之后、写无谓词**：`updateProductStatus` / `updateProductForAgent` / `batchOnShelf` / `batchOffShelf` 四条状态迁移都走「先 `selectById` 读旧 status 过状态机 → `updateById`（WHERE 仅主键 ⇒ 无谓词）」⇒ 并发 on/off_sale **两个请求都成功**、终态由后写者决定；另一半是 `updateProduct` 的**整实体回写**（显式 `setStatus(originalStatus)`）⇒ 改品字段会把读到的旧 status 一起写回，**静默回滚**并发的状态迁移。**只修一处 = 没修**：下一个人在同族文件新加一条状态迁移写路径、或把 CAS 退回 `updateById`，同样没有任何东西会红 ⇒ 本表把这一类形态逐个登记。",
+  "scan": {
+    "root": "backend/admin-api/src/main/java/com/migao/admin",
+    "mapper": "mapper/ProductMapper.java",
+    "service": "service/ProductService.java",
+    "shape": "① mapper：手写 `@Update` SQL 里凡在 **SET 侧**写 `status` 的，谓词三件套必须齐（`tenant_id` 参数 + WHERE 侧 status 谓词 + `deleted = 0`）；② service：凡**方法体内出现** `productMapper.updateStatusIfFrom(` 或 `product.setStatus(` 的方法（方法体由花括号深度切块取，**跨行签名也必须取到**）都必须落在 `service_write_paths` 里，逐条给出 `call_anchor`（必须**逐字**出现在该方法体内）。",
+    "note": "形态判据不做 AST 解析（只认「注解 + 方法窗口 + 文本标记」）⇒ 换措辞可绕过；真实防线仍是实例判据（见 coverage_boundary）。"
+  },
+  "entries": [
+    {
+      "method": "ProductMapper#updateStatusIfFrom",
+      "verdict": "guarded",
+      "guard": "商品状态迁移权 = DB 原子条件更新（CAS）：`UPDATE products SET status = #{targetStatus}, edited_by = …, edited_at = …, updated_at = … WHERE id = ? AND tenant_id = ? AND deleted = 0 AND ((#{fromStatus} IS NULL AND status IS NULL) OR status = #{fromStatus})`，按**受影响行数**判定谁抢到迁移权；0 行 ⇒ 409「商品状态已被其他操作变更」+ 实际当前态。`status` 可空 ⇒ 单列一支 `IS NULL` 形态（PG 里 `status = NULL` 永假，少了它那些行会被误判成「被抢先改过」）。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProductMapper.java::int updateStatusIfFrom(",
+      "case_ids": [
+        "PG-077"
+      ]
+    }
+  ],
+  "service_write_paths": [
+    {
+      "method": "ProductService#updateProductStatus",
+      "path": "ProductMapper#updateStatusIfFrom",
+      "call_anchor": "productMapper.updateStatusIfFrom(",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java::applyStatusTransition(product, status, id, tenantId);",
+      "case_ids": [
+        "PG-077"
+      ]
+    },
+    {
+      "method": "ProductService#updateProductForAgent",
+      "path": "ProductMapper#updateStatusIfFrom",
+      "call_anchor": "applyStatusTransition(latest, request.getStatus(), id, tenantId);",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java::applyStatusTransition(latest, request.getStatus(), id, tenantId);",
+      "case_ids": [
+        "PG-077"
+      ]
+    },
+    {
+      "method": "ProductService#batchOnShelf",
+      "path": "ProductMapper#updateStatusIfFrom",
+      "call_anchor": "productMapper.updateStatusIfFrom(id, tenantId, currentStatus, \"on_sale\",",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java::productMapper.updateStatusIfFrom(id, tenantId, currentStatus, \"on_sale\",",
+      "case_ids": [
+        "PG-077"
+      ]
+    },
+    {
+      "method": "ProductService#batchOffShelf",
+      "path": "ProductMapper#updateStatusIfFrom",
+      "call_anchor": "productMapper.updateStatusIfFrom(id, tenantId, currentStatus, \"off_sale\",",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java::productMapper.updateStatusIfFrom(id, tenantId, currentStatus, \"off_sale\",",
+      "case_ids": [
+        "PG-077"
+      ]
+    }
+  ],
+  "unverified": [],
+  "unverified_baseline": 0,
+  "coverage_boundary": [
+    "射程 = `ProductMapper` 的手写 `@Update` SQL + `ProductService` 的写路径候选（`productMapper.updateStatusIfFrom(` 或 `product.setStatus(`）。它们**恰好**覆盖本单四条状态迁移入口与 `updateProduct` 的 T2b 形态；用别的写法（自研 mapper 方法名、`this.xxx()` 间接写、字符串拼接、`LambdaUpdateWrapper.set(Product::getStatus, …)`）绕过扫描器的形态，本守卫**看不见** —— 那是**有意**接受的边界（用注入式判别力自证把已覆盖的形态钉死，比假装全覆盖诚实）。",
+    "本守卫只保证「登记存在且兑现」，**不保证** `entries` 里声称的保护真的有效 —— 行为面由实例判据承担：`backend/admin-api/src/test/java/com/migao/admin/service/ProductStatusCasRaceRealDbTest.java`（真库并发 + 窗口探针，PG-077）。两者缺一不可：判据本体绿 ≠ 接线在。",
+    "**不下沉到 `ProductMapper#updateById` 的其它调用方**（全仓 0 处，`ProductService` 里 0 处调状态列写入）。判不了的是「拿 `updateById` / wrapper 改**非状态**列」（那不是本表的对象；T2b 的另一半「只 set 自己负责的列」由 `updateProductOwnedColumns` 的显式列清单 + PG-077 判据 2 承担）。",
+    "`ProductService#updateProduct` **有意不在册**（只在 `entries` 之外被扫描器看到候选）：它的方法体里出现 `product.setStatus(null)` 与若干 `productMapper.update(`，但它**不写 status 列** —— `setStatus(null)` + 本仓未声明 update-strategy ⇒ null 不进 SET；CAS 收口在 `applyStatusTransition` 里。把「不写状态列的方法」也登记进 `service_write_paths` 会让本表退化成「ProductService 方法清单」，失去判别力。",
+    "豁免台账 `unverified` 基线 = **0**：本单没有需要豁免的写路径（四条状态迁移全部改成 CAS）。任何新增豁免都必须同时改基线并写明理由 + 重启条件（`restart_condition`）。",
+    "本守卫**不跑**被它引用的真库判据（否则「未登记即红」会退化成全量套件再跑一遍，正是 `migao-dev-flow` §27 要治的机器重活）；本守卫**不改**任何门禁的通过条件、不新增豁免。",
+    "⛔ 与 MC-100（`inbound_orders`）/ PG-075（`production_operations.deleted`）/ MC-102（`tenant_applications`）/ MC-104（`processing_orders`）/ `AfterSalesSideEffectConcurrencyMetaGuardTest`（#6220，`service/*.java` 的多副作用形态）**互不重叠**：各自守自己那张表 / 那个形态的写路径，既不互为副本、也互不重判 —— 本单一个字都没动它们。"
+  ]
+}
