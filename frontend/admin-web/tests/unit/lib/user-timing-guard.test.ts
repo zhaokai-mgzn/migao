@@ -1,4 +1,4 @@
-// case_ids: UI-097
+// case_ids: UI-099
 // 实例判据（issue #6799 ② 的守卫；判据本身经 issue #6946 订正）：
 // `performance.measure` **不得**因「负时间戳」把页面打成 pageerror。
 //
