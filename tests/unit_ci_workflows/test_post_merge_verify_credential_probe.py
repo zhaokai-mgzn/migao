@@ -139,6 +139,18 @@ def _judging_env_problems(module) -> list[str]:
     env2 = module._judging_env({"GITHUB_TOKEN": "real", "GH_TOKEN": "other"})
     if env2.get("GITHUB_TOKEN") != "real":
         problems.append("已有的 `GITHUB_TOKEN` 被覆盖了（必须 `setdefault`，注入点优先）")
+    # ④ **同源面**：driver 的 `CREDENTIAL_ENVS` 必须**逐字**等于判据自己的 `TOKEN_ENVS`
+    #    （`scripts/post_merge_verify.py::CREDENTIAL_ENVS` 的注释声明了这一条 —— 由本腿承担：
+    #    判据改成读第三个键、或驱动侧少一个键 ⇒ 当场红。读的是**真模块**，不是复制一份清单）。
+    import unit_ci_workflows.test_case_id_claims as claims
+
+    if tuple(module.CREDENTIAL_ENVS) != tuple(claims.TOKEN_ENVS):
+        problems.append(
+            f"`CREDENTIAL_ENVS`={tuple(module.CREDENTIAL_ENVS)} 与判据的 `TOKEN_ENVS`="
+            f"{tuple(claims.TOKEN_ENVS)} 不再是同一集合 ⇒ driver 补的凭据与判据取的不是一套"
+        )
+    if not set(module.CREDENTIAL_ENVS) <= set(module.JUDGING_ENV_KEYS):
+        problems.append("凭据键不在 `JUDGING_ENV_KEYS` 里 ⇒ 读数看不到它们")
     return problems
 
 
