@@ -2753,3 +2753,48 @@ cases:
         - pr-check.yml
         - bmini-app.yml
       verifies: []
+
+  # PG-076（issue #6955，P1·并发）：加工单状态迁移 = CAS —— 真库并发判据
+  # ==========================================================================
+  - id: PG-076
+    legacy_id: ""
+    title: "加工单状态迁移「读判 × 写」无谓词 ⇒ 并发相反迁移双双成功；改写为条件更新（CAS）后恰一个赢家（issue #6955）"
+    domains:
+      - processing-order
+      - order
+      - backend
+    tier: edge
+    tags:
+      - concurrency
+      - state-transition
+      - cas
+      - backend-contract
+      - realdb
+    truths_ref: []
+    # 前置声明（case_trust_gate 口径 CASE-TRUST-NO-PRECONDITION-ASSERTION）：
+    # 本用例是 [backend-contract] 的**真库并发判据**，前置 = 夹具状态本身，且**不成立时会硬失败、不会伪装成
+    # 「agent 不干活」**（诚实登记：本用例不是 LLM 多轮对话，「2 条 user_inputs」是两个**竞态场景**的描述，
+    # 不是两轮对话；故按声明层写清前置，而不是靠「效果层断言」弱形式糊过去）。
+    precondition: "前置 = ① 存在一张 `status=generated` 的加工单（形态①：判据**自建夹具** —— 一次性真 PG 集群 + `tenant_id=6955` + 单号前缀 `po-6955`，并为其建一条 `cancelled` 订单行满足外键 `processing_orders_order_id_fkey`）；② 形态② 需要一对「`status=confirmed` 订单 + 它的 `generated` 加工单」。前置由判据自身的建夹具段持有（`PgCluster.startOrAbort()` + 按 `poId(r)` 建行）。**不成立时的表现 = fail-closed 硬失败，绝不静默跳过**：探针在 10000ms 内等不到即抛 `IllegalStateException`（逐字「探针未在 10000ms 内进入窗口 —— 判据装置坏了」）；夹具缺失（如外键指向的订单行不存在）会在建夹具那一步就红。⚠️ 由此**不会**出现「前置悄悄不成立 ⇒ 红的表现像 agent 不干活」这一族误归因（PG-013 / CU-003 的形态）：本用例没有任何 agent 期望，红了就只有一个读法 —— 判据或装置坏了。"
+    user_inputs:
+      - "同一张 `generated` 加工单上，`PATCH /api/admin/processing-orders/{id}` 的 `action=issue` 与 `action=cancel` 严格同时发出"
+      - "一张 `confirmed` 订单（含 `generated` 加工单）上，订单 `cancel` 与加工单 `issue` 严格同时发出"
+    expectations: []
+    data_checks:
+      - "**病（真实缺陷形态）**：修前 `ProcessingOrderService#updateStatus` 先读内存旧值过状态机（`STATUS_TRANSITIONS`）再 `processingOrderMapper.updateById(upd)`（WHERE 仅主键 ⇒ **无谓词**），`OrderService#cancelOrder` 的加工单联动腿同款无谓词 ⇒ 读判与写之间没有任何互斥。同一份迁移权上多个写面不互斥 ⇒ ① 同一加工单并发 issue+cancel **两个请求都 200**、终态由后写者决定（`issued` 与 `cancelled` 在状态机里**互不可达** ⇒ 终态**必然**自相矛盾）；② 订单作废 × 加工单开工 ⇒ 出现「**订单 cancelled + 加工单 issued**」（订单已废、单还在产）。"
+      - "**判据 1（恰一个赢家）**：真库并发判据 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderStatusCasRaceRealDbTest.java 的 `concurrentIssueAndCancelOnSameProcessingOrder`（3 轮）：成功数 **== 1**，落败方必须是 **409**（不是 500 / 不是静默成功）。**红证（注入修前 `updateById` + 探针开 800ms，3 轮全红）**：`issue=200(resp=issued) cancel=200(resp=cancelled) 成功数=2 加工单终态=issued` ⇒ `expected: 1L but was: 2L`。"
+      - "**判据 2（终态合法且与赢家一致）**：终态 ∈ 状态机合法态集合（夹具常量 `{generated, issued, in_processing, completed, cancelled}`，**不读被测读面**）且 == 赢家目标态；另加「谁回 200，终态就必须是它声称的那个态」（修前 `cancel=200` 而终态 `issued` = 谎报成功）。**修后读数（探针开，两次复跑一致）**：`issue=409(msg=加工单状态不允许从 [已取消] 变更为 [已发加工]) cancel=200(resp=cancelled) 落败原因=CAS落败(409) 成功数=1 加工单终态=cancelled`。"
+      - "**判据 3（订单 × 加工单不得自相矛盾）**：同文件 `orderCancelAndProcessingOrderIssueDoNotContradict`（3 轮）：**不得**出现「订单 cancelled + 加工单 issued」；且只要订单取消非 200，订单终态就不得是 cancelled；且开工腿回 200(resp=issued) ⇒ 订单不得是 cancelled。**红证（注入修前形态 + 探针开）**：`orderCancel=200(ok) issue=200(resp=issued) 订单终态=cancelled 加工单终态=cancelled` ⇒ 具名判红（`:349`）。**修后读数**：`orderCancel=409(落败原因=CAS落败(409)) issue=200(resp=issued) 订单终态=confirmed 加工单终态=issued`（3 轮一致）。"
+      - "**正对照（护栏不误杀）**：同文件 `serialTransitionsStillSucceed`（串行独立夹具）：`issue=200(resp=issued) 终态=issued → cancel=200(resp=cancelled) 终态=cancelled` —— 谓词**拦得住并发**且**不误杀正常请求**（谓词写错成常量 ⇒ 这条先红）。"
+      - "**窗口注入（判据确定性的来源）**：两条请求经 `CyclicBarrier` 同刻起跑（各自独立连接 + 独立事务），并给「读-判」之后 /「写」之前留一条窄缝（`ProcessingOrderService#setStatusUpdateProbePauseMillisForTest` 与 `OrderService#setCancelOrderPoProbePauseMillisForTest`，**生产恒为 0**；与 #6928 的作废探针同款）⇒ 判据从「微秒级窗口的碰运气」变成**确定性**：探针开 ⇒ 修前形态两处都红（`expected: 1L but was: 2L` + `:349` 具名）、修后全绿；探针关（`PAUSE_MILLIS=0`）⇒ 修后仍绿（无假红）。"
+      - "**外观一致的正常路径（T2b 三处）**：`OrderService#updatePendingOrderContent` / `#updateFollowStatus` / `#addRemark` 从「`selectById` → 改字段 → `updateById`（整实体回写）」改为**只写自己负责的列**（`LambdaUpdateWrapper.set(...)`）——整实体回写会把内存里读到的**旧 status 一并写回**、静默回滚并发的状态变更（F1 的类级根因）。"
+      - "**边界（照实登记）**：① 判据跑的是**服务层真库并发**而非 HTTP 栈（两条端点只是薄转发，状态机与联动写入全在服务层）；② 探针对象全部自建（tenant 6955 / 单号前缀 `po-6955`），随一次性临时集群销毁，不碰存量数据。"
+    skip_reason: "[backend-contract] 纯后端真库并发判据（真 PG 一次性集群，走 PgCluster.startOrAbort() 收口）+ 类级元守卫：admin-api 单测面，不进 agent-eval 冒烟"
+    merge_log: "2026-10-15 新增（issue #6955，P1·并发 ⇒ 单据终态自相矛盾；族级跟踪单 #6953 的 P1 包）。取号 = 现取 `.github/cases/processing-order.yml` 与 `.github/cases/processing.yml` 的**跨文件**最大 PG 号（现取 075）⇒ 取 **PG-076**（`scripts/next_case_id.py PG` 只扫 processing-order.yml，其读数 PG-073 与另一文件里的定义不一致 ⇒ **未采纳该读数**，改用跨全部 cases 的现取最大值 +1；差异如实登记）。**红→绿（注入式，真 PG）**：① 探针开 + 两处退回修前无谓词 `updateById` ⇒ 判据 1 红（`expected: 1L but was: 2L`）+ 判据 3 红（`:349` 具名）；② 修后（两处走 `ProcessingOrderMapper#markStatusIfFrom` 的 CAS）⇒ 3/3 全绿（两次复跑逐字一致）；③ 探针关 + 修后 ⇒ 仍绿（判据不产生假红）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderStatusCasRaceRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderStatusCasMetaGuardTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

@@ -134,8 +134,44 @@ class Undecidable(Exception):
     """无法判定 —— **必须**以退出码 3 表达，不得静默当成 0（§19.1 三态）。"""
 
 
-def _run(argv: list[str], cwd: Path) -> subprocess.CompletedProcess:
-    return subprocess.run(argv, cwd=str(cwd), capture_output=True, text=True)
+#: 判据面联网要用的凭据环境变量（与 `tests/unit_ci_workflows/test_case_id_claims.py::TOKEN_ENVS` 同源）。
+#: 🔴 issue #6968：判据 7 的 `token_value()` 读 `os.environ` ⇒ **driver 拉起的 pytest 子进程必须看得见它**。
+CREDENTIAL_ENVS = ("GITHUB_TOKEN", "GH_TOKEN")
+#: 判据 7 还要用它拼 REST 路径（`fetch_open_pr_claims` 里 `GITHUB_REPOSITORY` 为空 ⇒ 走
+#: 「非 Actions 环境 ⇒ 不发起判定」那一支 = **静默少判**）⇒ 一并显式传 + 读数。
+JUDGING_ENV_KEYS = CREDENTIAL_ENVS + ("GITHUB_REPOSITORY",)
+
+
+def _judging_env(env: dict[str, str] | None = None) -> dict[str, str]:
+    """跑判据的解释器要拿到的**环境**（issue #6968）：父环境 + **显式补齐**凭据。
+
+    为什么不只靠 `subprocess` 的隐式继承：本腿的真根因就是「凭据链在 step shell 与 driver 拉起的
+    子进程之间断掉，而**没人知道断在哪一环**」（诊断探针自己坏了 —— 见
+    `.github/workflows/post-merge-verify.yml` 的「取数面读数」步）。显式给出 `env=` 之后，
+    子进程拿到哪些键就由本函数说了算，不再依赖一个隐式行为；配套 `credential_env_reading()` 把
+    读数带进报告 ⇒ 归因可 grep（`FM-E*`「判红必须可归因」）。
+
+    ⚠️ `setdefault` **不覆盖**调用方已设的值（同仓先例：注入点优先）。
+    """
+    src = dict(os.environ if env is None else env)
+    for key in CREDENTIAL_ENVS:
+        value = (src.get(key) or "").strip()
+        if value:
+            # 有凭据 ⇒ 让两个键都可用（判据按 `TOKEN_ENVS` 顺序取第一个非空）。
+            src.setdefault("GITHUB_TOKEN", value)
+            break
+    return src
+
+
+def credential_env_reading(env: dict[str, str] | None = None) -> dict[str, int]:
+    """凭据链读数（键 → 去空白后的长度；`0` = 空 / 未设）。**与判据同源，不另写推断。**"""
+    src = os.environ if env is None else env
+    return {key: len((src.get(key) or "").strip()) for key in JUDGING_ENV_KEYS}
+
+
+def _run(argv: list[str], cwd: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+    return subprocess.run(argv, cwd=str(cwd), capture_output=True, text=True,
+                          env=_judging_env() if env is None else env)
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -433,6 +469,12 @@ def render(report: dict) -> str:
         f" / 跳过 {report['skipped']} / 未命中 {len(un)}"
         f" / 并行度 {report['parallel_workers']}"
     )
+    creds = report.get("credential_env") or {}
+    lines.append(
+        "读取面读数（issue #6968）：driver 交给判据解释器的凭据 "
+        + " / ".join(f"{k}={v}" for k, v in creds.items())
+        + "（0 = 空 / 未设；判据 7 只在有它时能判「跨在飞 PR 重号」）"
+    )
     return "\n".join(lines)
 
 
@@ -481,6 +523,9 @@ def main(argv: list[str] | None = None) -> int:
         # 并行度（issue #6312）：**与负载无关**的结构量（不是时长）—— 判据钉它 = 钉住"本腿会不会
         # 退回串行"，而串行正是本腿撞上限被 SIGTERM 的形态。
         "parallel_workers": PARALLEL_WORKERS,
+        # 🔴 凭据链读数（issue #6968）：键 → 长度。判据 7 只在**这个**环境里看得见凭据；
+        #    带进报告 ⇒「① 没解出 token」与「② 解出了没进子进程」在**同一份机器可读产物**里可分开。
+        "credential_env": credential_env_reading(),
         "notes": [],
     }
     if not selected:

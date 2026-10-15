@@ -875,7 +875,7 @@ class ProcessingOrderServiceTest {
     @DisplayName("PG-060 作废回补：generated → cancelled 同事务回补该单扣过的批次")
     void cancelReversesBatchConsumption() {
         when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "generated"));
-        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
+        when(processingOrderMapper.markStatusIfFrom(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(1);
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
 
         ProcessingOrderUpdateRequest cancel = new ProcessingOrderUpdateRequest();
@@ -1402,10 +1402,10 @@ class ProcessingOrderServiceTest {
                 .allSatisfy(instance -> assertThat(instance.getQtySource()).isEqualTo("fabric_meters"));
 
         // ③ qr_token 必须真落到加工单（任务卡二维码取值来源 = qr_token，非空才不走占位分支）
-        ArgumentCaptor<ProcessingOrder> tokenCaptor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper).updateById(tokenCaptor.capture());
-        assertThat(tokenCaptor.getValue().getId()).isEqualTo("po-001");
-        assertThat(tokenCaptor.getValue().getQrToken()).matches("[0-9a-f]{32}");
+        //    issue #6955：写路径由「整实体 updateById」改为条件更新 fillMissingQrToken（只补 qr_token）
+        ArgumentCaptor<String> tokenCaptor = ArgumentCaptor.forClass(String.class);
+        verify(processingOrderMapper).fillMissingQrToken(eq("po-001"), eq(TENANT), tokenCaptor.capture(), any());
+        assertThat(tokenCaptor.getValue()).matches("[0-9a-f]{32}");
     }
 
     @Test
@@ -3471,11 +3471,11 @@ class ProcessingOrderServiceTest {
             return 1;
         });
         when(positionOperationMapper.selectList(any())).thenAnswer(inv -> stored);
-        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenAnswer(inv -> {
-            ProcessingOrder patch = inv.getArgument(0);
+        when(processingOrderMapper.fillMissingQrToken(any(), any(), any(), any())).thenAnswer(inv -> {
+            String token = inv.getArgument(2);
             ProcessingOrder current = processingOrderMapper.selectActiveByOrderId("order-001", TENANT);
-            if (patch.getQrToken() != null && current != null) {
-                current.setQrToken(patch.getQrToken());
+            if (token != null && current != null) {
+                current.setQrToken(token);
             }
             return 1;
         });
@@ -3569,7 +3569,7 @@ class ProcessingOrderServiceTest {
     @DisplayName("PG-005 issue/start/complete 主链流转")
     void updateStatusMainChain() {
         when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "generated"));
-        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
+        when(processingOrderMapper.markStatusIfFrom(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(1);
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
 
         // 交期用**相对日期**（issue #4911）：写死 `LocalDate.of(2026, 9, 20)` 会被「发加工交期不得早于今天」
@@ -3584,15 +3584,15 @@ class ProcessingOrderServiceTest {
         processingOrderService.updateStatus("po-1", issue, TENANT, "u1");
         OffsetDateTime afterIssue = OffsetDateTime.now();
 
-        ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper).updateById(captor.capture());
-        assertThat(captor.getValue().getStatus()).isEqualTo("issued");
-        assertThat(captor.getValue().getProcessor()).isEqualTo("朝阳加工厂");
-        assertThat(captor.getValue().getExpectedDeliveryDate()).isEqualTo(deliveryDate);
+        ArgumentCaptor<String> statusArg = ArgumentCaptor.forClass(String.class);
+        verify(processingOrderMapper).markStatusIfFrom(eq("po-1"), eq(TENANT), eq("generated"),
+                statusArg.capture(), any(), eq("朝阳加工厂"), eq(deliveryDate), any(), any(), any(), any(), any());
+        assertThat(statusArg.getValue()).as("CAS 的目标态").isEqualTo("issued");
         // #4337：`isNotNull()` 只证「有东西」—— 把发加工时点写成交期 / 写死某个日期都照样绿。
         // 收窄成「本次调用当下」的闭区间（不钉具体日历日 ⇒ 不引入 #4911 那类墙钟炸弹）。
-        assertThat(captor.getValue().getIssuedAt()).as("发加工时点 = 本次调用当下")
-                .isBetween(beforeIssue, afterIssue);
+        verify(processingOrderMapper).markStatusIfFrom(eq("po-1"), eq(TENANT), eq("generated"), eq("issued"),
+                argThat(t -> t != null && !t.isBefore(beforeIssue) && !t.isAfter(afterIssue)),
+                any(), any(), any(), any(), any(), any(), any());
 
         // 订单联动（issue #4305，用户裁定「发加工 = 订单进入生产中」）：**发加工**才推进
         // 订单 confirmed→producing（生成加工单已不再推进，见 generateSuccess 的 never 断言）
@@ -3605,18 +3605,18 @@ class ProcessingOrderServiceTest {
         OffsetDateTime beforeStart = OffsetDateTime.now();
         processingOrderService.updateStatus("po-1", start, TENANT, "u1");
         OffsetDateTime afterStart = OffsetDateTime.now();
-        verify(processingOrderMapper, times(2)).updateById(captor.capture());
-        assertThat(captor.getValue().getStatus()).isEqualTo("in_processing");
-        assertThat(captor.getValue().getInProcessingAt()).as("开工时点 = 本次调用当下（#4337 收窄）")
-                .isBetween(beforeStart, afterStart);
+        verify(processingOrderMapper).markStatusIfFrom(eq("po-1"), eq(TENANT), eq("issued"), eq("in_processing"),
+                any(), any(), any(),
+                argThat(t -> t != null && !t.isBefore(beforeStart) && !t.isAfter(afterStart)),
+                any(), any(), any(), any());
 
         // complete：订单保持 producing（不自动 shipped）
         when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "in_processing"));
         ProcessingOrderUpdateRequest complete = new ProcessingOrderUpdateRequest();
         complete.setAction("complete");
         processingOrderService.updateStatus("po-1", complete, TENANT, "u1");
-        verify(processingOrderMapper, times(3)).updateById(captor.capture());
-        assertThat(captor.getValue().getStatus()).isEqualTo("completed");
+        verify(processingOrderMapper).markStatusIfFrom(eq("po-1"), eq(TENANT), eq("in_processing"), eq("completed"),
+                any(), any(), any(), any(), any(), any(), any(), any());
         verify(orderService, never()).updateOrderStatus(eq("order-001"), eq("shipped"));
         // start/complete **不**再联动订单（订单联动只发生在 issue 这一次）
         verify(orderService, times(1)).updateOrderStatus("order-001", "producing");
@@ -3633,7 +3633,7 @@ class ProcessingOrderServiceTest {
         assertThatThrownBy(() -> processingOrderService.updateStatus("po-1", complete, TENANT, "u1"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("不允许从");
-        verify(processingOrderMapper, never()).updateById(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).markStatusIfFrom(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     // ── PG-007/008 取消 ────────────────────────────────────────────
@@ -3652,14 +3652,14 @@ class ProcessingOrderServiceTest {
         assertThatThrownBy(() -> processingOrderService.updateStatus("po-1", issue, TENANT, "u1"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("交付日期不能早于今天");
-        verify(processingOrderMapper, never()).updateById(any(ProcessingOrder.class));
+        verify(processingOrderMapper, never()).markStatusIfFrom(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
     @DisplayName("issue 交期为今天/未来/空 → 正常流转（#3901）")
     void issueAllowsTodayFutureOrNullDeliveryDate() {
         when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "generated"));
-        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
+        when(processingOrderMapper.markStatusIfFrom(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(1);
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
 
         // 今天
@@ -3679,18 +3679,19 @@ class ProcessingOrderServiceTest {
         empty.setAction("issue");
         processingOrderService.updateStatus("po-1", empty, TENANT, "u1");
 
-        ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper, times(3)).updateById(captor.capture());
-        assertThat(captor.getAllValues().get(0).getExpectedDeliveryDate()).isEqualTo(businessClock.today());
-        assertThat(captor.getAllValues().get(1).getExpectedDeliveryDate()).isEqualTo(businessClock.today().plusDays(7));
-        assertThat(captor.getAllValues().get(2).getExpectedDeliveryDate()).isNull();
+        ArgumentCaptor<java.time.LocalDate> dateArg = ArgumentCaptor.forClass(java.time.LocalDate.class);
+        verify(processingOrderMapper, times(3)).markStatusIfFrom(eq("po-1"), eq(TENANT), eq("generated"), eq("issued"),
+                any(), any(), dateArg.capture(), any(), any(), any(), any(), any());
+        assertThat(dateArg.getAllValues().get(0)).isEqualTo(businessClock.today());
+        assertThat(dateArg.getAllValues().get(1)).isEqualTo(businessClock.today().plusDays(7));
+        assertThat(dateArg.getAllValues().get(2)).isNull();
     }
 
     @Test
     @DisplayName("PG-007 取消（generated）→ 加工单 cancelled；订单仍 confirmed ⇒ **不触发**回退（#4305 新时点）")
     void cancelGeneratedDoesNotRevertOrder() {
         when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "generated"));
-        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
+        when(processingOrderMapper.markStatusIfFrom(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(1);
         // #4305 后：generated 态加工单对应的订单**从未**进入 producing（生成不推进、发加工才推进）
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
 
@@ -3699,10 +3700,10 @@ class ProcessingOrderServiceTest {
         cancel.setReason("加工方排期冲突");
         processingOrderService.updateStatus("po-1", cancel, TENANT, "u1");
 
-        ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper).updateById(captor.capture());
-        assertThat(captor.getValue().getStatus()).isEqualTo("cancelled");
-        assertThat(captor.getValue().getCancelledReason()).isEqualTo("加工方排期冲突");
+        ArgumentCaptor<String> reasonArg = ArgumentCaptor.forClass(String.class);
+        verify(processingOrderMapper).markStatusIfFrom(eq("po-1"), eq(TENANT), eq("generated"), eq("cancelled"),
+                any(), any(), any(), any(), any(), any(), reasonArg.capture(), any());
+        assertThat(reasonArg.getValue()).isEqualTo("加工方排期冲突");
         // 订单本就 confirmed ⇒ 回退是空动作（revert 会因「非 producing」抛 409）
         verify(orderService, never()).revertProducingToConfirmed(anyString(), anyString());
     }
@@ -3711,7 +3712,7 @@ class ProcessingOrderServiceTest {
     @DisplayName("PG-007 取消（issued，已发加工 ⇒ 订单 producing）→ 订单 producing→confirmed 回退")
     void cancelIssuedRevertsOrder() {
         when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "issued"));
-        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
+        when(processingOrderMapper.markStatusIfFrom(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(1);
         Order producing = Order.builder().id("order-001").tenantId(TENANT).status("producing").build();
         when(orderMapper.selectById("order-001")).thenReturn(producing);
 
@@ -3720,9 +3721,8 @@ class ProcessingOrderServiceTest {
         cancel.setReason("加工方排期冲突");
         processingOrderService.updateStatus("po-1", cancel, TENANT, "u1");
 
-        ArgumentCaptor<ProcessingOrder> captor = ArgumentCaptor.forClass(ProcessingOrder.class);
-        verify(processingOrderMapper).updateById(captor.capture());
-        assertThat(captor.getValue().getStatus()).isEqualTo("cancelled");
+        verify(processingOrderMapper).markStatusIfFrom(eq("po-1"), eq(TENANT), eq("issued"), eq("cancelled"),
+                any(), any(), any(), any(), any(), any(), any(), any());
         verify(orderService).revertProducingToConfirmed(eq("order-001"), anyString());
     }
 
@@ -3733,7 +3733,7 @@ class ProcessingOrderServiceTest {
     void issueLinkageRollsBackOrderWhenPersistFails() {
         when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "generated"));
         when(orderMapper.selectById("order-001")).thenReturn(confirmedOrder);
-        when(processingOrderMapper.updateById(any(ProcessingOrder.class)))
+        when(processingOrderMapper.markStatusIfFrom(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any()))
                 .thenThrow(new RuntimeException("db down"));
 
         ProcessingOrderUpdateRequest issue = new ProcessingOrderUpdateRequest();
@@ -3751,7 +3751,7 @@ class ProcessingOrderServiceTest {
     @DisplayName("#4305 发加工：订单已是 producing（旧语义存量数据）⇒ 不重复推进、也不回退")
     void issueSkipsLinkageWhenOrderAlreadyProducing() {
         when(processingOrderMapper.selectOne(any())).thenReturn(po("po-1", "generated"));
-        when(processingOrderMapper.updateById(any(ProcessingOrder.class))).thenReturn(1);
+        when(processingOrderMapper.markStatusIfFrom(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(1);
         Order producing = Order.builder().id("order-001").tenantId(TENANT).status("producing").build();
         when(orderMapper.selectById("order-001")).thenReturn(producing);
 

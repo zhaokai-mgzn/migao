@@ -3418,7 +3418,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（103 case）
+## 杂项域（105 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4962,6 +4962,36 @@
 跳过: [backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟
 ```
 溯源: 2026-10-15 新增（issue #6954 的类级固化，与 MC-101 同批）。取号 = main 侧现取 MC-001~101 ⇒ **MC-102**（`python3 scripts/next_case_id.py MC` 现取，全仓 refs 复核 0 命中）。读数：修后 `mvnw test -Dtest=TenantApplicationReviewCasMetaGuardTest` = **7 passed / 0 failed**，逐字 `写 status 的 mapper 方法=[approveIfPending, rejectIfPending] service 写路径=[approveApplication, rejectApplication] 未登记=[] 幽灵条目=[] 豁免=0(基线 0) 违规=[] 断链=[]`。**判据自身的 bug（已修，留档）**：第一版对整条 SQL 判状态谓词 ⇒ `SET status = 'approved'` 被当谓词 ⇒ 判别力自证第 ① 族（无谓词状态写）当场判绿（`1 failed / 6 passed`）⇒ 改为**只看 WHERE 段**（`whereClause()`）后 7 passed。这条正是「判别力自证」这一判据存在的理由：**没有它，判据恒绿与判据有效在结果列上长得一样**。 ｜ tags: concurrency, state-transition, cas, ledger, onboarding, backend-contract, red-proof
+
+### MC-103. **Post-Merge Verify 的取数面读数探针必须真有牙**：能打出 creds 读数 / 打不出即响亮判红 / driver 显式把凭据交给判据解释器（issue #6968） 🔵
+```
+你: 判定腿报「没有 API 凭据」，而它自带的诊断探针每轮只说「探针自身失败（不影响判定）」—— 那到底是没凭据，还是没人看得见凭据？
+数据: 判据 1（探针能取数）：`.github/workflows/post-merge-verify.yml` 的「取数面读数」步必须以 `PYTHONPATH=tests`（**包**形态 `unit_ci_workflows.*`）导入判据本体，并逐字打印 `creds = {...}` 行。执行点 = tests/unit_ci_workflows/test_post_merge_verify_credential_probe.py::test_probe_step_is_wired_to_answer_the_question
+数据: 判据 1 的直连真对象：`PYTHONPATH=tests` 下真能 `import unit_ci_workflows.test_case_id_claims` 并读 `TOKEN_ENVS` / `scan_claims` / `current_pr`（零网络）。执行点 = 同文件::test_probe_reads_the_real_criterion_module
+数据: 判据 2（探针失败必须响亮）：读数行打不出 ⇒ 本步 `::error::` + `exit 1`；不许再是「探针自己失败只打印，绝不判红」。执行点 = 同文件::test_negative_control_probe_is_green_on_the_real_tree（正向）
+数据: 判据 3（凭据链显式化）：`scripts/post_merge_verify.py` 的 `_judging_env` 必须把凭据**显式**交给判据解释器（只有 `GH_TOKEN` 时补 `GITHUB_TOKEN`；已有值不被覆盖），且 `credential_env_reading` 把读数带进报告。执行点 = 同文件::test_negative_control_probe_is_green_on_the_real_tree
+数据: 判据 4（判别力自证，注入式红证三条各能单独变红）：① `PYTHONPATH` 换回 `tests/unit_ci_workflows` ⇒ 判据 1 红；② 抹掉 `::error::` / `exit 1` ⇒ 判据 2 红；③ `_judging_env` 退化成纯拷贝 ⇒ 判据 3 红。执行点 = 同文件::test_red_proof_broken_import_path_turns_it_red / ::test_red_proof_silent_probe_turns_it_red / ::test_red_proof_dropping_credential_passthrough_turns_it_red
+数据: 判据 5（读行为不吃说明）：判定面必须先剥整行 shell 注释再匹配 —— 探针块里就写着「上一版插错成 tests/unit_ci_workflows」这类**给下一次的人看的说明**，读进判定会假红（实测踩过）。执行点 = 同文件::test_negative_control_probe_is_green_on_the_real_tree 的 `_strip_comments` 对照臂
+数据: **边界（照实登记）**：① 判不了「CI 上凭据为什么是空的」（那要在真 runner 上读 step shell 与子进程两层读数，属 @外部输入）；② 不等于判据 7 的判定口径正确（那是 tests/unit_ci_workflows/test_case_id_claims.py 自己的面）；③ 不改任何门禁的通过条件、不新增豁免。
+跳过: [backend-contract] 零 LLM 的确定性读数（读 workflow YAML 文本 + 直连判据模块 + 纯函数注入），不进 agent-eval 冒烟
+```
+溯源: 2026-10-15 新增（issue #6968）。取号 = next_case_id.py 现取 MC-103（**rebase 后复核**：main 侧 `#6954` 已落地占用 MC-101/MC-102，本单取号时那两颗尚在飞 ⇒ 让号取 103；全仓 refs 复核 0 命中）。修前逐字（5 个 run 同款）：step shell `GH_TOKEN=377 / GITHUB_TOKEN=未设 / TOKEN_DECLARED=true`，探针 `探针自身失败（不影响判定）: ModuleNotFoundError No module named 'unit_ci_workflows'`，driver 侧 `判定不了：没有 API 凭据（环境变量 GITHUB_TOKEN/GH_TOKEN 都为空）`。修后绿证：`python3 -m pytest tests/unit_ci_workflows/test_post_merge_verify_credential_probe.py -q -p no:randomly` = 6 passed；`test_post_merge_verify_leg.py` 63 条零改动全绿（69 passed 合计）。探针绿证逐字：`取数面读数（判定解释器）: creds = {'GITHUB_TOKEN': 0, 'GH_TOKEN': 16} | current_pr = 6634`；红证（注入式）：把 `PYTHONPATH=tests` 改回 `tests/unit_ci_workflows` ⇒ 逐字 `探针自身失败: ModuleNotFoundError No module named 'unit_ci_workflows'` + `::error::` + rc=1。 ｜ tags: ci, post-merge-verify, credential-chain, probe-liveness, red-proof
+
+### MC-104. **加工单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6955 的类级固化） 🔵
+```
+你: 同一份加工单状态迁移权上有**两个**写面（手工入口 `ProcessingOrderService#updateStatus` 与订单联动腿 `OrderService#cancelOrder`），凭什么相信「下一个写面不会漏」？
+数据: 🔴 **判据 1·扫描器非空跑自证**：现取「写 `processing_orders.status` 的 mapper 手写 SQL」必须含 `markCompletedIfActive` / `markInProcessingIfFrom` / `markStatusIfFrom`；现取「**两条** service 里出现状态列写的方法」必须含 `ProcessingOrderService#updateStatus` 与 `OrderService#cancelOrder` —— **返回空集 = 判据失明，不是通过**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderStatusCasMetaGuardTest.java::scannersAreNotBlind
+数据: 🔴 **判据 2·谓词完整性**：凡在 SET 侧写 `status` 的手写 `@Update` SQL，必须同时含 `tenant_id` 参数 + **WHERE 侧 status 谓词**（`status = #{fromStatus}` / `status = 'x'` / `status IN (…)`）+ `deleted = 0` 谓词（少任何一条 ⇒ 红）。执行点 = 同文件::everyStatusWriteCarriesTheFullPredicate
+数据: 🔴 **判据 3·无谓词写即红（判据本体）**：现取的每个状态写路径的方法体里**不得**出现 `processingOrderMapper.updateById(` —— 状态迁移必须走条件更新 CAS。**实证过的隐蔽形态**：锚串留着（`if (false && …markStatusIfFrom(…)`）但真正落库换成 `updateById` ⇒ 仍判红并具名。执行点 = 同文件::noStatusWritePathUsesUnconditionalUpdateById
+数据: 🔴 **判据 4·未登记即红 + 台账不许给不存在的对象盖章**：两条 service 的状态写路径必须逐条登记（backend/admin-api/src/test/resources/processing-order-status-cas-ledger.json 的 `service_write_paths`），且登记的 `call_anchor` 必须逐字出现在方法体里。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful
+数据: 🔴 **判据 5·登记未被兑现即红**：每条 `evidence` 锚 = `<仓库相对全路径>::<可检索文本>`，左侧文件存在、右侧逐字出现（摘掉 CAS 调用 / 方法改名 ⇒ 红）。执行点 = 同文件::everyEvidenceAnchorIsLive
+数据: 🔴 **判据 6·豁免只许缩短 + 台账不许空转**：`unverified` 必须是冻结基线 `unverified_baseline`（现取 0）的子集；新增豁免 ⇒ 红；`entries` / `service_write_paths` 为空 ⇒ 红（「空」不等于「全部合规」）。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful
+数据: 🔴 **判据 7·判别力自证（合成语料）**：无谓词状态写 / 缺 `deleted=0` / 缺 tenant 谓词 / 缺 WHERE 侧 status 谓词 / 未登记写路径 / 锚留而落库无谓词 / 台账未兑现 七种坏形态各自判红，合规语料判绿，**只加注释不红**；另含**扫描器鲁棒性**两格（跨行签名必须仍被扫到；注释里的孤立 `{` 不得让深度错位）。执行点 = 同文件::guardHasDiscriminatingPower
+数据: **本包在 MC-104 上抓到的两个真问题（如实登记，不粉饰）**：① **扫描器深度下沉**：`ProcessingOrderService#updateStatus` 的签名跨行（收尾 `) {` 在续行上），只认「签名行含 `) {`」的写法把**整个方法**跳过、而它的闭合花括号照样减深度 ⇒ 深度从此下沉一级 ⇒ **后面所有方法全部扫不到**；初版读数因此少了 `updateStatus`（`service 写路径=[OrderService#cancelOrder]`）而判据 1 只检查另一个对象 ⇒ **照样绿**。② **注释里的孤立花括号**：真实文件第一处 javadoc 含 `{@code route = [` 这类被截断的代码片段 ⇒ 花括号计数器把它当真代码 ⇒ 从此整体错位。两处均已修（跨行签名走「待定签名状态机」；扫描前先剥注释 / 字符串字面量），并各自补了一条合成语料判据防回归（判据 7）。⚠️ **同款形态在 MC-100（`InboundOrderStatusCasMetaGuardTest`）里同样存在**（它只扫一个文件、且没剥注释）—— 按 #6955 的写面纪律**本包不动它**，归 #6956 独占处理。
+数据: **边界（照实登记）**：① 形态判据换措辞可绕过（真实防线仍是实例判据 `ProcessingOrderStatusCasRaceRealDbTest`）；② 射程只到 `ProcessingOrderMapper` + `ProcessingOrderService` + `OrderService` 三条文件；③ 判不了「拿 `updateById` 改非状态列」；④ 本守卫不跑被它引用的真库判据；⑤ **「写路径清单」由 `processingOrderMapper.` 前缀现取** ⇒ 别名形态（`baseMapper.updateById(` / `this.updateById(`）扫不到（未覆盖形态，重启条件写在台账 `coverage_boundary`）；⑥ 不改任何门禁的通过条件、不新增豁免。
+跳过: [backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟
+```
+溯源: 2026-10-15 新增（issue #6955 的类级固化，与 PG-076 同批）。取号 = `scripts/next_case_id.py MC` ⇒ **MC-104**（现取 main ∪ 在飞 PR 的 MC 号最大 = MC-100，且 MC-100 归 #6928 / PG-075 归 #6936，**本包一律不动**）。读数：修后 `mvnw test -Dtest=ProcessingOrderStatusCasMetaGuardTest` = **6 passed / 0 failed**，逐字 `写 status 的 mapper 方法=[markCompletedIfActive, markInProcessingIfFrom, markStatusIfFrom] service 写路径=[ProcessingOrderService#updateStatus, OrderService#cancelOrder] 未登记=[] 幽灵条目=[] mapper 条目=3 豁免=0(基线 0) 违规=[] 断链=[]`。**红证（注入式）**：把两处 CAS 退回修前无谓词 `updateById` ⇒ `noStatusWritePathUsesUnconditionalUpdateById` 判红并具名 `违规=[ProcessingOrderService#updateStatus, OrderService#cancelOrder]`（同批 `everyEvidenceAnchorIsLive` 也红 —— 台账锚不再兑现）。**顺带扫出的同族缺陷（链内修，本包一并落）**：`ProductionService#ensureQrToken` 用 `updateById(部分实体)` 补 `qr_token` ⇒ 换成新加的条件更新 `ProcessingOrderMapper#fillMissingQrToken`（`WHERE … AND qr_token IS NULL`，与相邻的 `fillMissingShortCode` 逐字同款），使该文件的现取集合里不再出现无谓词 `updateById`。 ｜ tags: concurrency, state-transition, cas, ledger, backend-contract, red-proof
 
 ## 商家入驻域（6 case）
 
@@ -6755,7 +6785,7 @@
 ```
 溯源: 2026-10-14 新增（issue #6936 的类级固化，与 PG-074 同批）：沿用 #6928 的元守卫范式（扫描器非空跑自证 / 谓词完整性 / 未登记即红 / 登记必须兑现 / 豁免只许缩短 / 判别力自证），但**扩到本单的射程**（`ProductionOperationCommandService` 里 `production_operations.deleted` 的两条软删写路径：谓词三件套 + 显式写列 + 影响行数判定，另加写路径登记表），台账 = backend/admin-api/src/test/resources/production-operation-delete-cas-ledger.json（豁免基线 **0**）。既有判据**未放宽**（`InboundOrderStatusCasMetaGuardTest` 的 MC-100 一字未动）。取号 = PG-075（现取未占用）。 ｜ tags: production, operation, concurrency, meta_guard, backend-contract
 
-## 加工单域（62 case）
+## 加工单域（63 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -7572,6 +7602,23 @@
 跳过: [backend-contract] 确定性判据（Java 单测 + 端侧 jest），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-09 新增（issue #6598；用户逐字「当前工人报工只能按固定顺序报工，这个设计是不对的，**允许工人自由报工**」，当场选定范围 = **整张加工单内任选任意工序（不扫码也能自由报）**）。**旧口径作废**：issue #5647 G10 的「没有任务码 ⇒ 不提供写入口」按本次用户裁定退场，其当年的依据（那条 URL 定工序的路「非事务 / 不落 done_at」）经复核与今日代码不符 —— 两条路都走 `ProductionService#applyReport`。**未被放宽的**：工序必须显式确定（#4694）、身份只由服务端从工人 session 解（#4733）、归属校验（同租户 + 未软删 + 属于本加工单）、幂等键与一次事务。**未固化项**：worker-h5（`/w/` 工号+PIN 面）本次未接该入口。**顺带固化的两处静默漏检**（本包引入第二条写路时才暴露）：`production-single-write-entry` 的端点抓取① 遇**嵌套泛型** `post<ProductionResponse<X>>(` 会在内层 `>` 处停下 ⇒ 一条端点都匹配不到（判据恒红/恒绿都不可信）；② 遇模板串 `${…}` 会截断端点 ⇒ 第二条写路被静默漏掉；两处都改成按实参位置解析并加计数断言防退化。 ｜ 2026-10-14（issue #6868 实现包 D1，**收缩**）：判据 6 与它的三个端侧载体（production-free-report / production-worker-entry / production-offline）随小程序报工页整页删除 ⇒ 收缩为「如实登记：端侧当前无面 + 重启条件」；判据 1~5（后端契约）与 traces 里的 Java 单测 / production-single-write-entry / worker-surface-ledger **一字未改**。⚠️ 口径落差如实登记：本用例 2026-10-09 的交付物含**端侧**写入口，今天端侧（bmini）已无报工面 ⇒ 该交付物的端侧那一半**回到未固化**（重启条件见 data_checks 末格）。 ｜ tags: processing-order, production, worker, report, free-report
+
+### PG-076. 加工单状态迁移「读判 × 写」无谓词 ⇒ 并发相反迁移双双成功；改写为条件更新（CAS）后恰一个赢家（issue #6955） 🟡
+```
+你: 同一张 `generated` 加工单上，`PATCH /api/admin/processing-orders/{id}` 的 `action=issue` 与 `action=cancel` 严格同时发出
+你: 一张 `confirmed` 订单（含 `generated` 加工单）上，订单 `cancel` 与加工单 `issue` 严格同时发出
+数据: **病（真实缺陷形态）**：修前 `ProcessingOrderService#updateStatus` 先读内存旧值过状态机（`STATUS_TRANSITIONS`）再 `processingOrderMapper.updateById(upd)`（WHERE 仅主键 ⇒ **无谓词**），`OrderService#cancelOrder` 的加工单联动腿同款无谓词 ⇒ 读判与写之间没有任何互斥。同一份迁移权上多个写面不互斥 ⇒ ① 同一加工单并发 issue+cancel **两个请求都 200**、终态由后写者决定（`issued` 与 `cancelled` 在状态机里**互不可达** ⇒ 终态**必然**自相矛盾）；② 订单作废 × 加工单开工 ⇒ 出现「**订单 cancelled + 加工单 issued**」（订单已废、单还在产）。
+数据: **判据 1（恰一个赢家）**：真库并发判据 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderStatusCasRaceRealDbTest.java 的 `concurrentIssueAndCancelOnSameProcessingOrder`（3 轮）：成功数 **== 1**，落败方必须是 **409**（不是 500 / 不是静默成功）。**红证（注入修前 `updateById` + 探针开 800ms，3 轮全红）**：`issue=200(resp=issued) cancel=200(resp=cancelled) 成功数=2 加工单终态=issued` ⇒ `expected: 1L but was: 2L`。
+数据: **判据 2（终态合法且与赢家一致）**：终态 ∈ 状态机合法态集合（夹具常量 `{generated, issued, in_processing, completed, cancelled}`，**不读被测读面**）且 == 赢家目标态；另加「谁回 200，终态就必须是它声称的那个态」（修前 `cancel=200` 而终态 `issued` = 谎报成功）。**修后读数（探针开，两次复跑一致）**：`issue=409(msg=加工单状态不允许从 [已取消] 变更为 [已发加工]) cancel=200(resp=cancelled) 落败原因=CAS落败(409) 成功数=1 加工单终态=cancelled`。
+数据: **判据 3（订单 × 加工单不得自相矛盾）**：同文件 `orderCancelAndProcessingOrderIssueDoNotContradict`（3 轮）：**不得**出现「订单 cancelled + 加工单 issued」；且只要订单取消非 200，订单终态就不得是 cancelled；且开工腿回 200(resp=issued) ⇒ 订单不得是 cancelled。**红证（注入修前形态 + 探针开）**：`orderCancel=200(ok) issue=200(resp=issued) 订单终态=cancelled 加工单终态=cancelled` ⇒ 具名判红（`:349`）。**修后读数**：`orderCancel=409(落败原因=CAS落败(409)) issue=200(resp=issued) 订单终态=confirmed 加工单终态=issued`（3 轮一致）。
+数据: **正对照（护栏不误杀）**：同文件 `serialTransitionsStillSucceed`（串行独立夹具）：`issue=200(resp=issued) 终态=issued → cancel=200(resp=cancelled) 终态=cancelled` —— 谓词**拦得住并发**且**不误杀正常请求**（谓词写错成常量 ⇒ 这条先红）。
+数据: **窗口注入（判据确定性的来源）**：两条请求经 `CyclicBarrier` 同刻起跑（各自独立连接 + 独立事务），并给「读-判」之后 /「写」之前留一条窄缝（`ProcessingOrderService#setStatusUpdateProbePauseMillisForTest` 与 `OrderService#setCancelOrderPoProbePauseMillisForTest`，**生产恒为 0**；与 #6928 的作废探针同款）⇒ 判据从「微秒级窗口的碰运气」变成**确定性**：探针开 ⇒ 修前形态两处都红（`expected: 1L but was: 2L` + `:349` 具名）、修后全绿；探针关（`PAUSE_MILLIS=0`）⇒ 修后仍绿（无假红）。
+数据: **外观一致的正常路径（T2b 三处）**：`OrderService#updatePendingOrderContent` / `#updateFollowStatus` / `#addRemark` 从「`selectById` → 改字段 → `updateById`（整实体回写）」改为**只写自己负责的列**（`LambdaUpdateWrapper.set(...)`）——整实体回写会把内存里读到的**旧 status 一并写回**、静默回滚并发的状态变更（F1 的类级根因）。
+数据: **边界（照实登记）**：① 判据跑的是**服务层真库并发**而非 HTTP 栈（两条端点只是薄转发，状态机与联动写入全在服务层）；② 探针对象全部自建（tenant 6955 / 单号前缀 `po-6955`），随一次性临时集群销毁，不碰存量数据。
+前置: 前置 = ① 存在一张 `status=generated` 的加工单（形态①：判据**自建夹具** —— 一次性真 PG 集群 + `tenant_id=6955` + 单号前缀 `po-6955`，并为其建一条 `cancelled` 订单行满足外键 `processing_orders_order_id_fkey`）；② 形态② 需要一对「`status=confirmed` 订单 + 它的 `generated` 加工单」。前置由判据自身的建夹具段持有（`PgCluster.startOrAbort()` + 按 `poId(r)` 建行）。**不成立时的表现 = fail-closed 硬失败，绝不静默跳过**：探针在 10000ms 内等不到即抛 `IllegalStateException`（逐字「探针未在 10000ms 内进入窗口 —— 判据装置坏了」）；夹具缺失（如外键指向的订单行不存在）会在建夹具那一步就红。⚠️ 由此**不会**出现「前置悄悄不成立 ⇒ 红的表现像 agent 不干活」这一族误归因（PG-013 / CU-003 的形态）：本用例没有任何 agent 期望，红了就只有一个读法 —— 判据或装置坏了。
+跳过: [backend-contract] 纯后端真库并发判据（真 PG 一次性集群，走 PgCluster.startOrAbort() 收口）+ 类级元守卫：admin-api 单测面，不进 agent-eval 冒烟
+```
+溯源: 2026-10-15 新增（issue #6955，P1·并发 ⇒ 单据终态自相矛盾；族级跟踪单 #6953 的 P1 包）。取号 = 现取 `.github/cases/processing-order.yml` 与 `.github/cases/processing.yml` 的**跨文件**最大 PG 号（现取 075）⇒ 取 **PG-076**（`scripts/next_case_id.py PG` 只扫 processing-order.yml，其读数 PG-073 与另一文件里的定义不一致 ⇒ **未采纳该读数**，改用跨全部 cases 的现取最大值 +1；差异如实登记）。**红→绿（注入式，真 PG）**：① 探针开 + 两处退回修前无谓词 `updateById` ⇒ 判据 1 红（`expected: 1L but was: 2L`）+ 判据 3 红（`:349` 具名）；② 修后（两处走 `ProcessingOrderMapper#markStatusIfFrom` 的 CAS）⇒ 3/3 全绿（两次复跑逐字一致）；③ 探针关 + 修后 ⇒ 仍绿（判据不产生假红）。 ｜ tags: concurrency, state-transition, cas, backend-contract, realdb
 
 ## 商品域（122 case）
 
@@ -10913,8 +10960,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：752（活跃 134，跳过 618）
-- tier 分布：smoke 12 / normal 694 / adversarial 32
+- 用例总数：755（活跃 134，跳过 621）
+- tier 分布：smoke 12 / normal 696 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10929,12 +10976,12 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：103
+- 杂项域：105
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：66
 - 加工项域：30
-- 加工单域：62
+- 加工单域：63
 - 商品域：122
 - 工具注册器域：1
 - 设置域：10
@@ -11067,6 +11114,8 @@
 - MC-100: **入库单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6928 的类级固化）
 - MC-101: **入驻审批并发双 approve ⇒ 租户数恰好 +1、恰好 1 次成功**：CAS 闸必须在副作用之前（issue #6954）
 - MC-102: **入驻审批写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 负谓词（本表无 deleted 列）即红 / 台账只许缩短（issue #6954 的类级固化）
+- MC-103: **Post-Merge Verify 的取数面读数探针必须真有牙**：能打出 creds 读数 / 打不出即响亮判红 / driver 显式把凭据交给判据解释器（issue #6968）
+- MC-104: **加工单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6955 的类级固化）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
@@ -11152,6 +11201,7 @@
 - PG-068: 生产交付风险视图：processing_order_query(delivery_risk) 的跨单聚合与披露纪律（issue #6217）
 - PG-070: 列表端点非法分页入参（size<0 / 非整数）⇒ 400 显式拒绝，不再 200 + total=0 + 整页行（issue #6222；page<1 按裁定有意不拒）
 - PG-071: 工人自由报工：整张加工单内任选任意工序（不扫码也能报），且与扫码路共用同一份记账
+- PG-076: 加工单状态迁移「读判 × 写」无谓词 ⇒ 并发相反迁移双双成功；改写为条件更新（CAS）后恰一个赢家（issue #6955）
 - PP-007: 黄金策加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 黄金策加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）

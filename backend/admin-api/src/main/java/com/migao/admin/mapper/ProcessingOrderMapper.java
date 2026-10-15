@@ -135,6 +135,57 @@ public interface ProcessingOrderMapper extends BaseMapper<ProcessingOrder> {
                                @Param("inProcessingAt") OffsetDateTime inProcessingAt);
 
     /**
+     * 加工单状态迁移的**唯一条件更新写面**（issue #6954）：手工入口
+     * {@code ProcessingOrderService.updateStatus} 的四条迁移（issue / start / complete / cancel）
+     * 与订单取消联动作废 {@code OrderService.cancelOrder} 都走它。
+     *
+     * <p>🔴 <b>为什么不能是「先读 status 判、再 {@code updateById} 写」</b>（本单的病根）：
+     * {@code updateById} 的 WHERE 只有主键 ⇒ 谓词缺位 ⇒ **两个相反迁移可以双双成功**，终态由后写者决定。
+     * 实测形态：同一张加工单并发 {@code issue} + {@code cancel} ⇒ 两个请求都 200，落库态由竞态决定
+     * （{@code STATUS_TRANSITIONS} 里 {@code issued} 与 {@code cancelled} 互不可达 ⇒ 终态**必然**自相矛盾）；
+     * 订单作废 × 加工单开工 ⇒ 出现「**订单 cancelled + 加工单 issued**」（订单已废、单还在产）。
+     * 条件更新的判断与写入是同一条语句，PG 对命中行加行锁并持有到事务结束 ⇒ 后到者要么阻塞到前者提交、
+     * 要么看到 0 行受影响。形态与同文件既有的 {@link #markCompletedIfActive} /
+     * {@link #markInProcessingIfFrom} <b>逐字同款</b>（本文件早有 CAS，只是手工入口没走）。</p>
+     *
+     * <p>🔴 <b>为什么 {@code fromStatus} 是参数而不是字面量</b>：合法的起始态**只有状态机说了算**
+     * （{@code ProcessingOrderService.STATUS_TRANSITIONS}）。调用方先过状态机、再把**那个被授权的起始态**
+     * 传进来做 CAS 谓词 ⇒ 迁移表**只有一份**（写死就是第二份投影，迟早漂移）；同时本次写只在行**仍是那个态**
+     * 时命中 ⇒ 不裸 UPDATE 绕过状态机。</p>
+     *
+     * <p>🔴 <b>为什么每个动作只 SET 自己那一列</b>：{@code issue} 只写 {@code issued_at} /
+     * {@code processor} / {@code expected_delivery_date}，{@code cancel} 只写 {@code cancelled_at} /
+     * {@code cancelled_reason} —— 用 {@code <if>} 包住 ⇒ 不把本次不负责的列（如发加工时把
+     * {@code cancelled_reason} 写成 null）一并覆写。这同时让 {@code cancel} 只回补、不误清发加工信息
+     * （发加工信息是**加工方拿到的那张纸**的内容）。</p>
+     *
+     * <p><b>幂等（重复请求 / 并发请求）</b>：谓词不成立 ⇒ 0 行（并发双写里只有一个能命中）；
+     * 返回影响行数（0 ⇒ 本次没有发生迁移，调用方按 409 处置并回读真实状态）。</p>
+     *
+     * @param fromStatus 状态机**授权**的当前态（{@code ProcessingOrderService.STATUS_TRANSITIONS} 的前驱）
+     * @return 受影响行数（0 = 该行不存在 / 已软删 / 跨租户 / 状态已被并发改动）
+     */
+    @Update("<script>UPDATE processing_orders SET status = #{targetStatus}, updated_at = #{now}"
+            + "<if test='issuedAt != null'>, issued_at = #{issuedAt}</if>"
+            + "<if test='processor != null'>, processor = #{processor}</if>"
+            + "<if test='expectedDeliveryDate != null'>, expected_delivery_date = #{expectedDeliveryDate}</if>"
+            + "<if test='inProcessingAt != null'>, in_processing_at = #{inProcessingAt}</if>"
+            + "<if test='completedAt != null'>, completed_at = #{completedAt}</if>"
+            + "<if test='cancelledAt != null'>, cancelled_at = #{cancelledAt}</if>"
+            + "<if test='cancelledReason != null'>, cancelled_reason = #{cancelledReason}</if>"
+            + " WHERE id = #{id} AND tenant_id = #{tenantId} AND deleted = 0"
+            + " AND status = #{fromStatus}</script>")
+    int markStatusIfFrom(@Param("id") String id, @Param("tenantId") Long tenantId,
+                         @Param("fromStatus") String fromStatus, @Param("targetStatus") String targetStatus,
+                         @Param("issuedAt") OffsetDateTime issuedAt, @Param("processor") String processor,
+                         @Param("expectedDeliveryDate") java.time.LocalDate expectedDeliveryDate,
+                         @Param("inProcessingAt") OffsetDateTime inProcessingAt,
+                         @Param("completedAt") OffsetDateTime completedAt,
+                         @Param("cancelledAt") OffsetDateTime cancelledAt,
+                         @Param("cancelledReason") String cancelledReason,
+                         @Param("now") OffsetDateTime now);
+
+    /**
      * 打印计数原子递增（issue #4202 边角修复）—— {@code print_count} 此前**零 UPDATE 写方**：
      * 真值源 §1 要求加工单打印物「记录打印次数」，而全仓只有建单时的 {@code printCount(0)}
      * 与响应映射 ⇒ 打印次数在数据层永不可观测。
@@ -236,4 +287,26 @@ public interface ProcessingOrderMapper extends BaseMapper<ProcessingOrder> {
             "WHERE id = #{id} AND tenant_id = #{tenantId} AND deleted = 0")
     int revokeQrToken(@Param("id") String id, @Param("tenantId") Long tenantId,
                       @Param("updatedAt") OffsetDateTime updatedAt);
+
+    /**
+     * 给**还没有码**的加工单补 {@code qr_token}（issue #6955）—— 与
+     * {@link #fillMissingShortCode} / {@code ProcessingSetPartTokenMapper.fillMissingToken}
+     * <b>逐字同款</b>的「只补缺列」条件更新。
+     *
+     * <p>🔴 <b>为什么换掉 {@code updateById(builder().id().qrToken().build())}</b>（本单扫出的同族形态）：
+     * 那条路的 SET 子句由 <b>实体非 null 字段</b>决定 ⇒ 除 {@code qr_token} 外的列一个都不进 SET。
+     * 今天恰好「不写 = 不动」对多数列成立（MyBatis-Plus 默认 {@code NOT_NULL} 策略），但
+     * <b>状态迁移权同样不在这条路上</b>：本次调用的语义是「只补码」，而整实体写面的语义是
+     * 「这份内存快照就是该行」—— 两者只在「快照恰好新鲜」时等价。条件更新把「只补码」钉在 SQL 上，
+     * 不看调用方记不记得（同 {@link #fillMissingShortCode} 的理由）。</p>
+     *
+     * <p>谓词 = {@code id + tenant_id + deleted = 0}；{@code COALESCE(qr_token, #{qrToken})} ⇒
+     * <b>已有码的行一字不动</b>（已打印的纸不作废；并发双写时两次都命中、但第二次写的是同一个既有值
+     * ⇒ 与 {@code markInProcessingIfFrom} 的「首次时刻不被改写」同款幂等）。</p>
+     */
+    @Update("UPDATE processing_orders SET qr_token = COALESCE(qr_token, #{qrToken}), "
+            + "updated_at = COALESCE(updated_at, #{updatedAt}) "
+            + "WHERE id = #{id} AND tenant_id = #{tenantId} AND deleted = 0")
+    int fillMissingQrToken(@Param("id") String id, @Param("tenantId") Long tenantId,
+                           @Param("qrToken") String qrToken, @Param("updatedAt") OffsetDateTime updatedAt);
 }

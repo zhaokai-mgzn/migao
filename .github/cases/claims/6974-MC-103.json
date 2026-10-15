@@ -1,0 +1,6 @@
+{
+  "id": "MC-103",
+  "pr": 6974,
+  "title": "Post-Merge Verify 的取数面读数探针必须真有牙：能打出 creds 读数 / 打不出即响亮判红 / driver 显式把凭据交给判据解释器（issue #6968）",
+  "claimed_at": "2026-10-15"
+}

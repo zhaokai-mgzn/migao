@@ -3898,3 +3898,82 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  # ==========================================================================
+  # MC-103（issue #6968，2026-10-15）：诊断探针自己坏了 ⇒ ①/② 从未被分开
+  #   病：main 侧守护腿连挂多轮报「没有 API 凭据」，而它自带的「取数面读数」探针
+  #   自己 import 就失败（sys.path 插错层）⇒ 每轮只打印一行「探针自身失败（不影响判定）」
+  #   ⇒ 诊断面形同不存在，两种可能（①模板没解出 / ②解出了没进子进程）从未被分开。
+  # ==========================================================================
+  - id: MC-103
+    legacy_id: ""
+    title: "**Post-Merge Verify 的取数面读数探针必须真有牙**：能打出 creds 读数 / 打不出即响亮判红 / driver 显式把凭据交给判据解释器（issue #6968）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci
+      - post-merge-verify
+      - credential-chain
+      - probe-liveness
+      - red-proof
+    truths_ref: []
+    user_inputs:
+      - "判定腿报「没有 API 凭据」，而它自带的诊断探针每轮只说「探针自身失败（不影响判定）」—— 那到底是没凭据，还是没人看得见凭据？"
+    expectations: []
+    data_checks:
+      - "判据 1（探针能取数）：`.github/workflows/post-merge-verify.yml` 的「取数面读数」步必须以 `PYTHONPATH=tests`（**包**形态 `unit_ci_workflows.*`）导入判据本体，并逐字打印 `creds = {...}` 行。执行点 = tests/unit_ci_workflows/test_post_merge_verify_credential_probe.py::test_probe_step_is_wired_to_answer_the_question"
+      - "判据 1 的直连真对象：`PYTHONPATH=tests` 下真能 `import unit_ci_workflows.test_case_id_claims` 并读 `TOKEN_ENVS` / `scan_claims` / `current_pr`（零网络）。执行点 = 同文件::test_probe_reads_the_real_criterion_module"
+      - "判据 2（探针失败必须响亮）：读数行打不出 ⇒ 本步 `::error::` + `exit 1`；不许再是「探针自己失败只打印，绝不判红」。执行点 = 同文件::test_negative_control_probe_is_green_on_the_real_tree（正向）"
+      - "判据 3（凭据链显式化）：`scripts/post_merge_verify.py` 的 `_judging_env` 必须把凭据**显式**交给判据解释器（只有 `GH_TOKEN` 时补 `GITHUB_TOKEN`；已有值不被覆盖），且 `credential_env_reading` 把读数带进报告。执行点 = 同文件::test_negative_control_probe_is_green_on_the_real_tree"
+      - "判据 4（判别力自证，注入式红证三条各能单独变红）：① `PYTHONPATH` 换回 `tests/unit_ci_workflows` ⇒ 判据 1 红；② 抹掉 `::error::` / `exit 1` ⇒ 判据 2 红；③ `_judging_env` 退化成纯拷贝 ⇒ 判据 3 红。执行点 = 同文件::test_red_proof_broken_import_path_turns_it_red / ::test_red_proof_silent_probe_turns_it_red / ::test_red_proof_dropping_credential_passthrough_turns_it_red"
+      - "判据 5（读行为不吃说明）：判定面必须先剥整行 shell 注释再匹配 —— 探针块里就写着「上一版插错成 tests/unit_ci_workflows」这类**给下一次的人看的说明**，读进判定会假红（实测踩过）。执行点 = 同文件::test_negative_control_probe_is_green_on_the_real_tree 的 `_strip_comments` 对照臂"
+      - "**边界（照实登记）**：① 判不了「CI 上凭据为什么是空的」（那要在真 runner 上读 step shell 与子进程两层读数，属 @外部输入）；② 不等于判据 7 的判定口径正确（那是 tests/unit_ci_workflows/test_case_id_claims.py 自己的面）；③ 不改任何门禁的通过条件、不新增豁免。"
+    skip_reason: "[backend-contract] 零 LLM 的确定性读数（读 workflow YAML 文本 + 直连判据模块 + 纯函数注入），不进 agent-eval 冒烟"
+    merge_log: "2026-10-15 新增（issue #6968）。取号 = next_case_id.py 现取 MC-103（**rebase 后复核**：main 侧 `#6954` 已落地占用 MC-101/MC-102，本单取号时那两颗尚在飞 ⇒ 让号取 103；全仓 refs 复核 0 命中）。修前逐字（5 个 run 同款）：step shell `GH_TOKEN=377 / GITHUB_TOKEN=未设 / TOKEN_DECLARED=true`，探针 `探针自身失败（不影响判定）: ModuleNotFoundError No module named 'unit_ci_workflows'`，driver 侧 `判定不了：没有 API 凭据（环境变量 GITHUB_TOKEN/GH_TOKEN 都为空）`。修后绿证：`python3 -m pytest tests/unit_ci_workflows/test_post_merge_verify_credential_probe.py -q -p no:randomly` = 6 passed；`test_post_merge_verify_leg.py` 63 条零改动全绿（69 passed 合计）。探针绿证逐字：`取数面读数（判定解释器）: creds = {'GITHUB_TOKEN': 0, 'GH_TOKEN': 16} | current_pr = 6634`；红证（注入式）：把 `PYTHONPATH=tests` 改回 `tests/unit_ci_workflows` ⇒ 逐字 `探针自身失败: ModuleNotFoundError No module named 'unit_ci_workflows'` + `::error::` + rc=1。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_post_merge_verify_credential_probe.py"
+      ci:
+        - post-merge-verify.yml
+      verifies: []
+
+  # MC-104（issue #6955）：加工单状态迁移写路径必须落到 SQL 谓词（CAS）—— 类级元守卫
+  # ==========================================================================
+  - id: MC-104
+    legacy_id: ""
+    title: "**加工单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6955 的类级固化）"
+    domains:
+      - misc
+      - backend
+      - processing-order
+    tier: normal
+    tags:
+      - concurrency
+      - state-transition
+      - cas
+      - ledger
+      - backend-contract
+      - red-proof
+    truths_ref: []
+    user_inputs:
+      - "同一份加工单状态迁移权上有**两个**写面（手工入口 `ProcessingOrderService#updateStatus` 与订单联动腿 `OrderService#cancelOrder`），凭什么相信「下一个写面不会漏」？"
+    expectations: []
+    data_checks:
+      - "🔴 **判据 1·扫描器非空跑自证**：现取「写 `processing_orders.status` 的 mapper 手写 SQL」必须含 `markCompletedIfActive` / `markInProcessingIfFrom` / `markStatusIfFrom`；现取「**两条** service 里出现状态列写的方法」必须含 `ProcessingOrderService#updateStatus` 与 `OrderService#cancelOrder` —— **返回空集 = 判据失明，不是通过**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderStatusCasMetaGuardTest.java::scannersAreNotBlind"
+      - "🔴 **判据 2·谓词完整性**：凡在 SET 侧写 `status` 的手写 `@Update` SQL，必须同时含 `tenant_id` 参数 + **WHERE 侧 status 谓词**（`status = #{fromStatus}` / `status = 'x'` / `status IN (…)`）+ `deleted = 0` 谓词（少任何一条 ⇒ 红）。执行点 = 同文件::everyStatusWriteCarriesTheFullPredicate"
+      - "🔴 **判据 3·无谓词写即红（判据本体）**：现取的每个状态写路径的方法体里**不得**出现 `processingOrderMapper.updateById(` —— 状态迁移必须走条件更新 CAS。**实证过的隐蔽形态**：锚串留着（`if (false && …markStatusIfFrom(…)`）但真正落库换成 `updateById` ⇒ 仍判红并具名。执行点 = 同文件::noStatusWritePathUsesUnconditionalUpdateById"
+      - "🔴 **判据 4·未登记即红 + 台账不许给不存在的对象盖章**：两条 service 的状态写路径必须逐条登记（backend/admin-api/src/test/resources/processing-order-status-cas-ledger.json 的 `service_write_paths`），且登记的 `call_anchor` 必须逐字出现在方法体里。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful"
+      - "🔴 **判据 5·登记未被兑现即红**：每条 `evidence` 锚 = `<仓库相对全路径>::<可检索文本>`，左侧文件存在、右侧逐字出现（摘掉 CAS 调用 / 方法改名 ⇒ 红）。执行点 = 同文件::everyEvidenceAnchorIsLive"
+      - "🔴 **判据 6·豁免只许缩短 + 台账不许空转**：`unverified` 必须是冻结基线 `unverified_baseline`（现取 0）的子集；新增豁免 ⇒ 红；`entries` / `service_write_paths` 为空 ⇒ 红（「空」不等于「全部合规」）。执行点 = 同文件::serviceWritePathsAreRegisteredAndLedgerIsFaithful"
+      - "🔴 **判据 7·判别力自证（合成语料）**：无谓词状态写 / 缺 `deleted=0` / 缺 tenant 谓词 / 缺 WHERE 侧 status 谓词 / 未登记写路径 / 锚留而落库无谓词 / 台账未兑现 七种坏形态各自判红，合规语料判绿，**只加注释不红**；另含**扫描器鲁棒性**两格（跨行签名必须仍被扫到；注释里的孤立 `{` 不得让深度错位）。执行点 = 同文件::guardHasDiscriminatingPower"
+      - "**本包在 MC-104 上抓到的两个真问题（如实登记，不粉饰）**：① **扫描器深度下沉**：`ProcessingOrderService#updateStatus` 的签名跨行（收尾 `) {` 在续行上），只认「签名行含 `) {`」的写法把**整个方法**跳过、而它的闭合花括号照样减深度 ⇒ 深度从此下沉一级 ⇒ **后面所有方法全部扫不到**；初版读数因此少了 `updateStatus`（`service 写路径=[OrderService#cancelOrder]`）而判据 1 只检查另一个对象 ⇒ **照样绿**。② **注释里的孤立花括号**：真实文件第一处 javadoc 含 `{@code route = [` 这类被截断的代码片段 ⇒ 花括号计数器把它当真代码 ⇒ 从此整体错位。两处均已修（跨行签名走「待定签名状态机」；扫描前先剥注释 / 字符串字面量），并各自补了一条合成语料判据防回归（判据 7）。⚠️ **同款形态在 MC-100（`InboundOrderStatusCasMetaGuardTest`）里同样存在**（它只扫一个文件、且没剥注释）—— 按 #6955 的写面纪律**本包不动它**，归 #6956 独占处理。"
+      - "**边界（照实登记）**：① 形态判据换措辞可绕过（真实防线仍是实例判据 `ProcessingOrderStatusCasRaceRealDbTest`）；② 射程只到 `ProcessingOrderMapper` + `ProcessingOrderService` + `OrderService` 三条文件；③ 判不了「拿 `updateById` 改非状态列」；④ 本守卫不跑被它引用的真库判据；⑤ **「写路径清单」由 `processingOrderMapper.` 前缀现取** ⇒ 别名形态（`baseMapper.updateById(` / `this.updateById(`）扫不到（未覆盖形态，重启条件写在台账 `coverage_boundary`）；⑥ 不改任何门禁的通过条件、不新增豁免。"
+    skip_reason: "[backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟"
+    merge_log: "2026-10-15 新增（issue #6955 的类级固化，与 PG-076 同批）。取号 = `scripts/next_case_id.py MC` ⇒ **MC-104**（现取 main ∪ 在飞 PR 的 MC 号最大 = MC-100，且 MC-100 归 #6928 / PG-075 归 #6936，**本包一律不动**）。读数：修后 `mvnw test -Dtest=ProcessingOrderStatusCasMetaGuardTest` = **6 passed / 0 failed**，逐字 `写 status 的 mapper 方法=[markCompletedIfActive, markInProcessingIfFrom, markStatusIfFrom] service 写路径=[ProcessingOrderService#updateStatus, OrderService#cancelOrder] 未登记=[] 幽灵条目=[] mapper 条目=3 豁免=0(基线 0) 违规=[] 断链=[]`。**红证（注入式）**：把两处 CAS 退回修前无谓词 `updateById` ⇒ `noStatusWritePathUsesUnconditionalUpdateById` 判红并具名 `违规=[ProcessingOrderService#updateStatus, OrderService#cancelOrder]`（同批 `everyEvidenceAnchorIsLive` 也红 —— 台账锚不再兑现）。**顺带扫出的同族缺陷（链内修，本包一并落）**：`ProductionService#ensureQrToken` 用 `updateById(部分实体)` 补 `qr_token` ⇒ 换成新加的条件更新 `ProcessingOrderMapper#fillMissingQrToken`（`WHERE … AND qr_token IS NULL`，与相邻的 `fillMissingShortCode` 逐字同款），使该文件的现取集合里不再出现无谓词 `updateById`。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderStatusCasMetaGuardTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

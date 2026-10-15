@@ -3,6 +3,7 @@
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.config.TenantContext;
@@ -203,6 +204,7 @@ class OrderContentEditTest {
             assertThat(e.getHttpStatus()).as("422（不是 400/500）").isEqualTo(422);
         }
         verify(orderMapper, never()).updateById(any(Order.class));
+        verify(orderMapper, never()).update(isNull(), any());
         verify(orderItemMapper, never()).insert(any(OrderItem.class));
         verify(orderItemMapper, never()).delete(any());
     }
@@ -217,11 +219,23 @@ class OrderContentEditTest {
         OrderDetailResponse detail = orderService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150"));
 
         assertThat(detail).isNotNull();
-        assertThat(order.getCustomerName()).isEqualTo("李四");
-        assertThat(order.getCustomerPhone()).isEqualTo("13900139000");
-        assertThat(order.getCustomerAddress()).isEqualTo("上海市浦东新区");
-        assertThat(order.getActualAmount()).isEqualByComparingTo("150");
-        verify(orderMapper).updateById(order);
+        // issue #6955：写路径从「读 → 改实体 → updateById（整实体回写）」改成**条件更新 + 只写自己负责的列**
+        // ⇒ 断言随之从「内存实体被改」改成「SET 子句真的带上了这几列与这几个值」。
+        // （旧断言此前还能过，靠的是服务端把 mapper 读回来的**同一个实例**就地改了 —— 那正是 F1 的根因形态。）
+        ArgumentCaptor<LambdaUpdateWrapper<Order>> wrapper = captorOfWrapper();
+        verify(orderMapper).update(isNull(), wrapper.capture());
+        assertThat(wrapper.getValue().getSqlSet())
+                .as("收货信息 + 三金额都必须进 SET（否则改单静默无效）")
+                .contains("customer_name", "customer_phone", "customer_address")
+                .contains("total_amount", "discount_amount", "actual_amount");
+        assertThat(wrapper.getValue().getParamNameValuePairs().values())
+                .as("SET 的实参 = 请求里的新值")
+                .contains("李四", "13900139000", "上海市浦东新区");
+        assertThat(moneyParamsOf(wrapper.getValue()))
+                .as("实收金额 = 服务端重算的 150（按值比，不按 scale）")
+                .anySatisfy(v -> assertThat(v).isEqualByComparingTo("150"));
+        // 且**绝不**回退到整实体回写（那会把内存里读到的旧 status 一并写回、静默回滚并发状态变更）
+        verify(orderMapper, never()).updateById(any(Order.class));
     }
 
     // ──────────────────────────── 判据 ③：金额服务端重算 ────────────────────────────
@@ -232,10 +246,29 @@ class OrderContentEditTest {
         givenSkuStock("999");
         givenOrderItems(oldItem);
         when(orderMapper.selectById(ORDER_ID)).thenReturn(order);
+        // issue #6955：写路径改成条件更新后，服务端**不再改 mapper 读回来的那个实例** ⇒ 若 mock 不模拟落库，
+        // 「改后快照」与「改前快照」恒等 ⇒ 判据 ⑤（审计留痕带前后差异）在 mock 面上**结构性地**看不到差异
+        //（这正是本次 CI 的红因）。这里让 mock 像真 DB 一样把这次要写的列落回行；
+        //「到底写了哪几列 / 哪些值」由判据 ① 用 getSqlSet() + SET 实参钉住，不靠这一条。
+        OrderContentUpdateRequest req = request("3", "50", "150");
+        when(orderMapper.update(isNull(), any())).thenAnswer(inv -> {
+            order.setCustomerName(req.getCustomerName());
+            order.setCustomerPhone(req.getCustomerPhone());
+            order.setCustomerAddress(req.getCustomerAddress());
+            order.setTotalAmount(new BigDecimal("150"));
+            order.setActualAmount(new BigDecimal("150"));
+            order.setDiscountAmount(BigDecimal.ZERO);
+            return 1;
+        });
 
-        orderService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150"));
+        orderService.updatePendingOrderContent(ORDER_ID, req);
 
-        assertThat(order.getTotalAmount()).isEqualByComparingTo("150");
+        // issue #6955：金额断言改看条件更新的 SET 实参（不再靠「内存实体被改」）
+        ArgumentCaptor<LambdaUpdateWrapper<Order>> wrapper = captorOfWrapper();
+        verify(orderMapper).update(isNull(), wrapper.capture());
+        assertThat(moneyParamsOf(wrapper.getValue()))
+                .as("应收 = 单价 × 数量 = 150（服务端重算，请求里的小计不参与）")
+                .anySatisfy(v -> assertThat(v).isEqualByComparingTo("150"));
         ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(captor.capture());
         assertThat(captor.getValue().getSubtotal()).isEqualByComparingTo("150");
@@ -254,6 +287,7 @@ class OrderContentEditTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("实收金额与应收不一致");
         verify(orderMapper, never()).updateById(any(Order.class));
+        verify(orderMapper, never()).update(isNull(), any());
     }
 
     // ──────────────────────────── 判据 ④：库存按新明细重跑 ────────────────────────────
@@ -270,6 +304,7 @@ class OrderContentEditTest {
                 .hasMessageContaining("库存不足")
                 .hasMessageContaining("修改订单");
         verify(orderMapper, never()).updateById(any(Order.class));
+        verify(orderMapper, never()).update(isNull(), any());
     }
 
     @Test
@@ -278,8 +313,22 @@ class OrderContentEditTest {
         givenSkuStock("999");
         givenOrderItems(oldItem);
         when(orderMapper.selectById(ORDER_ID)).thenReturn(order);
+        // issue #6955：写路径改成条件更新后，服务端**不再改 mapper 读回来的那个实例** ⇒ 若 mock 不模拟落库，
+        // 「改后快照」与「改前快照」恒等 ⇒ 判据 ⑤（审计留痕带前后差异）在 mock 面上**结构性地**看不到差异
+        //（这正是本次 CI 的红因）。这里让 mock 像真 DB 一样把这次要写的列落回行；
+        //「到底写了哪几列 / 哪些值」由判据 ① 用 getSqlSet() + SET 实参钉住，不靠这一条。
+        OrderContentUpdateRequest req = request("3", "50", "150");
+        when(orderMapper.update(isNull(), any())).thenAnswer(inv -> {
+            order.setCustomerName(req.getCustomerName());
+            order.setCustomerPhone(req.getCustomerPhone());
+            order.setCustomerAddress(req.getCustomerAddress());
+            order.setTotalAmount(new BigDecimal("150"));
+            order.setActualAmount(new BigDecimal("150"));
+            order.setDiscountAmount(BigDecimal.ZERO);
+            return 1;
+        });
 
-        orderService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150"));
+        orderService.updatePendingOrderContent(ORDER_ID, req);
 
         verify(productSkuMapper, never()).updateById(any(ProductSku.class));
         verifyNoInteractions(stockLedgerService);
@@ -300,6 +349,7 @@ class OrderContentEditTest {
                 .hasMessageContaining("已生成加工单")
                 .hasMessageContaining("JG-20261001-0001");
         verify(orderMapper, never()).updateById(any(Order.class));
+        verify(orderMapper, never()).update(isNull(), any());
     }
 
     // ──────────────────────────── 判据 ⑤：明细替换 + 审计留痕 ────────────────────────────
@@ -310,8 +360,22 @@ class OrderContentEditTest {
         givenSkuStock("999");
         givenOrderItems(oldItem);
         when(orderMapper.selectById(ORDER_ID)).thenReturn(order);
+        // issue #6955：写路径改成条件更新后，服务端**不再改 mapper 读回来的那个实例** ⇒ 若 mock 不模拟落库，
+        // 「改后快照」与「改前快照」恒等 ⇒ 判据 ⑤（审计留痕带前后差异）在 mock 面上**结构性地**看不到差异
+        //（这正是本次 CI 的红因）。这里让 mock 像真 DB 一样把这次要写的列落回行；
+        //「到底写了哪几列 / 哪些值」由判据 ① 用 getSqlSet() + SET 实参钉住，不靠这一条。
+        OrderContentUpdateRequest req = request("3", "50", "150");
+        when(orderMapper.update(isNull(), any())).thenAnswer(inv -> {
+            order.setCustomerName(req.getCustomerName());
+            order.setCustomerPhone(req.getCustomerPhone());
+            order.setCustomerAddress(req.getCustomerAddress());
+            order.setTotalAmount(new BigDecimal("150"));
+            order.setActualAmount(new BigDecimal("150"));
+            order.setDiscountAmount(BigDecimal.ZERO);
+            return 1;
+        });
 
-        orderService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150"));
+        orderService.updatePendingOrderContent(ORDER_ID, req);
 
         verify(orderItemMapper).delete(any());
         verify(orderItemMapper).insert(any(OrderItem.class));
@@ -330,8 +394,22 @@ class OrderContentEditTest {
                 new ArrayList<>(List.of(newItem)),
                 new ArrayList<>(List.of(newItem)));
         when(orderMapper.selectById(ORDER_ID)).thenReturn(order);
+        // issue #6955：写路径改成条件更新后，服务端**不再改 mapper 读回来的那个实例** ⇒ 若 mock 不模拟落库，
+        // 「改后快照」与「改前快照」恒等 ⇒ 判据 ⑤（审计留痕带前后差异）在 mock 面上**结构性地**看不到差异
+        //（这正是本次 CI 的红因）。这里让 mock 像真 DB 一样把这次要写的列落回行；
+        //「到底写了哪几列 / 哪些值」由判据 ① 用 getSqlSet() + SET 实参钉住，不靠这一条。
+        OrderContentUpdateRequest req = request("3", "50", "150");
+        when(orderMapper.update(isNull(), any())).thenAnswer(inv -> {
+            order.setCustomerName(req.getCustomerName());
+            order.setCustomerPhone(req.getCustomerPhone());
+            order.setCustomerAddress(req.getCustomerAddress());
+            order.setTotalAmount(new BigDecimal("150"));
+            order.setActualAmount(new BigDecimal("150"));
+            order.setDiscountAmount(BigDecimal.ZERO);
+            return 1;
+        });
 
-        orderService.updatePendingOrderContent(ORDER_ID, request("3", "50", "150"));
+        orderService.updatePendingOrderContent(ORDER_ID, req);
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> detailsCaptor = ArgumentCaptor.forClass(Map.class);
@@ -409,5 +487,20 @@ class OrderContentEditTest {
         when(processingOrderMapper.selectActiveByOrderId(anyString(), any())).thenReturn(null);
         assertThat(OrderShipGuard.hasProcessingDrift(orderItemMapper, processingOrderMapper, objectMapper, producing))
                 .isFalse();
+    }
+
+    // ──────────────────────────── 条件更新的断言夹具（issue #6955） ────────────────────────────
+
+    /** 捕获 {@code update(entity, wrapper)} 的 wrapper（与 {@code OrderUrgencyFieldsTest} 同款）。 */
+    private static ArgumentCaptor<LambdaUpdateWrapper<Order>> captorOfWrapper() {
+        return ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+    }
+
+    /** wrapper 里所有 {@code BigDecimal} 实参（金额只认值、不认 scale，故不直接比 equals）。 */
+    private static List<BigDecimal> moneyParamsOf(LambdaUpdateWrapper<Order> wrapper) {
+        return wrapper.getParamNameValuePairs().values().stream()
+                .filter(BigDecimal.class::isInstance)
+                .map(BigDecimal.class::cast)
+                .toList();
     }
 }
