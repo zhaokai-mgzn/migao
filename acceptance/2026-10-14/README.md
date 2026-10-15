@@ -132,8 +132,17 @@
 - 结果：**28 / 34 通过**，2 失败（= §5.3 R4，判据侧），4 skip：
   - `17-order-ship` / `32-production-qr-and-piecework`：**前置不满足**（该租户未配「生产路线/默认工艺」⇒ 生成加工单
     接口 HTTP 200 但 `data` 为空，api 日志 `INCIDENT_PRODUCTION_ROUTING_UNRESOLVED`）。
-    ⚠️ **观察项**：**接口 200 + 空 data + 只落日志**，商家页面上看不到"为什么没生成" —— 判据红不了（本轮无配好工艺的对照租户），
-    登记为观察项（重启条件 = 有一个配好默认工艺的租户，即可判"该拒还是该给可行动文案"）。
+    ⚠️ **观察项 → 已判「设计良好」，观察项关闭（2026-10-15；重启条件「有配好默认工艺的租户」已满足）**。首轮记的「接口 200 + 空 data + 只落日志」经复核**不成立**：
+    - 服务端失败是**逐单结果**，不是只落日志：`ProcessingOrderService::generate` 的循环里 `try/catch BusinessException`
+      ⇒ `GenerateResult.fail(rawId, code, message, suggestion)`，**且不影响其余单**；T3 fail-closed（缺工艺 / 无默认路线）也是
+      `BusinessException(ERR_ROUTING_NOT_FOUND, "订单未给出工艺（craft），且该租户没有配置默认工艺，无法实例化工序", <建议>)` ⇒ 走**同一条**通道
+      （`git show origin/main:backend/admin-api/src/main/java/com/migao/admin/service/ProcessingOrderService.java`）。
+    - 前端**逐字转发、不改写不吞掉**：`frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx`
+      `setError(r?.message ?? '生成失败')` + `setErrorHint(r?.suggestion ?? '')`。
+    - 实测回执（租户 32，工艺已配）：`{"success":false,"message":"订单 … 当前状态 [pending] 不允许生成加工单，须为已确认","code":"VALIDATION_ERROR"}`
+      —— **可行动**（该条也被 #6940 用作 `17-`/`32-` 的修法依据）。
+    ⇒ 结论：**不是产品缺陷**；首轮那条是探针把**另一个租户**的叙事抄了进来（`data` 并不为空 —— 与 §11.2 的归因更正同源）。
+    **仍未覆盖**：`17-`/`32-` 走的是**成功路径**，旅程式判据尚未覆盖「生成失败 ⇒ 商家看到可行动文案」这条**失败路径**（见 §9）。
   - `27-corporate` / `28-register`：整轮预算（1500s）到点，未跑（**不是通过**）。
 - 证据：`main-ui/out/**`（截图按旅程命名）、`main-ui/spec.log`、`main-ui/replay.log`（重放 06/07/27/28）。
 - **工人端（worker-h5）UI 层**：真 Chrome + CDP 几何探针 `scripts/probe-worker-h5-touch.mjs` ⇒ **31 条全过（exit 0）**
@@ -184,6 +193,7 @@
 | `tenant-isolation-sweep` / `tenant-concurrency-sweep` 两整 sweep | harness 无 env 注入口（硬编码租户 20/21/1）⇒ 一条判据都跑不出（线③ 已用自建 `probe-cross-tenant.mjs` 部分补测 4/4） | harness env 化后（需派包） |
 | UI `17-order-ship` / `32-production-qr-and-piecework` | ~~租户未配默认工艺/生产路线（见 §5.5）~~ **该理由已作废**（真因 = 依赖探针把「订单未确认」误判成「租户未配路线」）⇒ **已修，三条转 pass**（§11.2） | — |
 | UI `27-corporate` / `28-register` | ~~整轮预算到点未跑~~ **其中 `28-register` 是台账里的幽灵名**（实际名 `31-register`，本轮就 ✅）；`27-corporate-home` 单跑 ✅（§11.2） | — |
+| **加工单「生成失败」的失败路径**（商家是否看到可行动文案） | `17-`/`32-` 走的是**成功路径**；失败路径的产品行为已由**代码级**证据判定（逐单 `GenerateResult.fail` + 前端逐字转发 message/suggestion，见 §5.5），但**没有旅程式判据**守着它不退化 | 派一个 UI 工装小包：造一条**必然失败**的生成（如订单停在 pending 或造一个无默认工艺的租户）⇒ 断言页面出现**服务端逐字 message**；配套类级判据 = 前端失败文案必须来自响应而非硬编码 |
 | 打印/标签硬件通道、微信开发者工具真机模拟器、裁剪机等未落地模块 | 面不存在 | 落地后 |
 | 线①/②/③ 各自的 skip 明细（共 29 条） | 见各线 REPORT 的「未覆盖清单」 | 各条自带 |
 
