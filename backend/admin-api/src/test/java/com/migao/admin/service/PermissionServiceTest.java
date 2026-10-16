@@ -146,7 +146,9 @@ class PermissionServiceTest {
         // ⇒ 27 → 30（应补 26 → 29）。本用例正是「**存量**租户拿新码」的路径。
         // issue #5642 功能⑤：新增**一个**码 `agent:chat`（黄金策唤出权）⇒ 30 → 31（应补 29 → 30）。
         // issue #5699 的 **I4**：新增**一个写**码 `production:execute`（生产执行）⇒ 31 → 32（应补 30 → 31）。
-        assertThat(inserted).isEqualTo(31);
+        // issue #5652：新增**一个写**码 `production:inspect`（质检录入，只授独立质检员）⇒ 32 → 33
+        // （应补 31 → 32）。**数字故意写死**的理由同上：这正是「存量租户拿新码」的唯一路径。
+        assertThat(inserted).isEqualTo(32);
         // 补种的码应含 order:list / employee:create / finance:view（此前角色管理无法授予）
         // + 本单的读码与写码（存量租户的运营/客服/财务要靠它们才能改单、转接会话、记账）
         verify(permissionMapper, atLeastOnce()).insert(argThat((Permission p) ->
@@ -155,6 +157,7 @@ class PermissionServiceTest {
                         || "after_sales:view".equals(p.getCode()) || "knowledge:view".equals(p.getCode())
                         || "order:update".equals(p.getCode()) || "order:create".equals(p.getCode())
                         || "production:execute".equals(p.getCode())
+                        || "production:inspect".equals(p.getCode())
                         || "customer:create".equals(p.getCode()) || "finance:create".equals(p.getCode())
                         || "agent:session:manage".equals(p.getCode())
                         || "product:category:view".equals(p.getCode())
