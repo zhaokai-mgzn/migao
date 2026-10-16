@@ -1,4 +1,4 @@
-# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017, CU-008, CU-001, CU-002
+# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017, CU-008, CU-001, CU-002, ST-002, ST-001
 """规则匹配器单元测试（app/router/rule_matcher.py）
 
 覆盖：_extract_text / RuleMatcher.match 关键词优先级 / 正则规则 / 未命中。
@@ -480,3 +480,89 @@ class TestCustomerProductBrowsePhrasing:
     def test_order_instruction_with_product_noun_not_browse(self):
         """反向：下单指令含商品名词但无浏览句式 → 必须走 ORDER_CREATE（不是商品咨询）。"""
         assert self._intent("帮我下单，遮光窗帘 3 米，要打孔加工") == IntentType.ORDER_CREATE
+
+
+class TestSettingsRouting:
+    """设置类查询的 L1 确定性路由（ST-002 实测红）。
+
+    病灶：`SYSTEM_SETTINGS` / `AI_CONFIG` 两个意图**都在** `IntentType` 且都映射到 `settings_manage`，
+    但 `KEYWORD_MAP` 里**没有它们的 L1 关键词** ⇒ 设置类查询一律降级 L2 分类器。
+    实测后果（本次真实 LLM 评测，persona=mibao）：`ST-001`「查看系统设置」蒙对；
+    `ST-002`「AI客服配置是什么」被判成 `capabilities` ⇒ agent 回自我介绍（`rounds=1 tools=[]`），
+    `settings_manage(action=get_ai_config)` **不可达** ⇒ 该用例确定性红（日志标 `🔬复现型回归`）。
+    """
+
+    def _intent(self, msg):
+        r = RuleMatcher().match(msg)
+        return r.intent if r else None
+
+    def test_ai_config_phrase(self):
+        """ST-002 输入原文：必须落 AI_CONFIG（→ settings_manage），即"查询类必须支持"。"""
+        assert self._intent("AI客服配置是什么") == IntentType.AI_CONFIG
+
+    def test_system_settings_phrase(self):
+        """ST-001 输入原文（回归保护）：系统设置 → SYSTEM_SETTINGS。"""
+        assert self._intent("查看系统设置") == IntentType.SYSTEM_SETTINGS
+
+    def test_not_capabilities(self):
+        """反向：同一句话**不得**被判成 capabilities —— 那正是本次实测的错误落点。"""
+        assert self._intent("AI客服配置是什么") != IntentType.CAPABILITIES
+
+    def test_compound_not_hijacked(self):
+        """负控（CU-008 家族）：含「物流设置」的复合句不得被设置域抢走（那是客户域/物流域的事）。"""
+        msg = "帮我看看客户张三的常用物流设置是什么"
+        assert self._intent(msg) not in (IntentType.SYSTEM_SETTINGS, IntentType.AI_CONFIG)
+
+
+class TestEveryIntentHasL1OrRegisteredExemption:
+    """类级元守卫（铁律 8：修一个缺陷只修这一处 = 没修）。
+
+    判据：**每个 `IntentType` 要么在 `KEYWORD_MAP` 里有 L1 关键词，要么在 `L2_ONLY_EXEMPT` 里
+    且写明"为什么它可以只走 L2"**。未登记即红。
+    形态来源（ST-002 实测）：意图**存在**、工具映射**也在**，唯独**没有 L1 关键词** ⇒ 查询只能降级 L2
+    ⇒ 一次判错就整句走 `direct_reply`、工具**不可达**。这类"沉默的不可达"没有任何东西会报。
+    豁免表**只许缩短**：新增豁免必须在同一条里写清理由（`L2_ONLY_EXEMPT` 的值就是理由）。
+    """
+
+    # 显式豁免：允许只走 L2 的意图（每条都带理由）。**只许缩短**。
+    # 口径：本仓的路由设计是「**L2 分类器为主 + L1 规则为已知误路由打的补丁**」⇒ "没有 L1 关键词"
+    # 本身不等于缺陷；本表的作用是让这个集合**可见、被有意持有**，并逼新增意图/新发现的误路由
+    # 走一次显式登记（要么补 L1 + 红证 = ST-002 的修法，要么在这里写清为什么可以只走 L2）。
+    L2_ONLY_EXEMPT: dict[IntentType, str] = {
+        # 兜底意图本身就是 L2 的落点，不该有 L1 关键词
+        IntentType.GENERAL: "L2 兜底落点本身",
+        IntentType.CUSTOMER_MANAGE: "L2 主路径；无已立证的确定性误路由（出现即按 ST-002 模式补 L1 + 红证）",
+        IntentType.CUSTOMER_QUERY: "同上（客户域查询；CU-008 的复合句劫持由「客户域前置改判」承担）",
+        IntentType.CATEGORY_MANAGE: "同上（分类树读取；无已立证的确定性误路由）",
+        IntentType.STAFF_MANAGE: "同上（员工/账号；HR 家族的历史误路由由 REGEX_RULES 的排除组承担）",
+        IntentType.PERMISSION_MANAGE: "同上（角色权限）",
+        IntentType.DATA_REPORT: "同上（报表/分析；与 STATISTICS/DASHBOARD 的边界由 L2 判）",
+        IntentType.KNOWLEDGE_MANAGE: "同上（知识库管理；C 端 KNOWLEDGE_FAQ 另有 L1）",
+        IntentType.SCHEDULED_TASK_MANAGE: "同上（定时任务）",
+        IntentType.AFTER_SALES_CREATE: "同上（售后工单**创建**；B 端按裁定不支持创建单据 ⇒ 主要面在 C 端）",
+        IntentType.PROCESSING_ORDER_GENERATE: "同上（加工单**生成**；同上，B 端不支持创建单据）",
+        IntentType.PROCESSING_ORDER_QUERY: "同上（加工单查询；「加工单」关键词已在 ORDER_QUERY 上）",
+        IntentType.PROCESSING_ORDER_UPDATE: "同上（加工单变更）",
+    }
+
+    @staticmethod
+    def _no_l1(intents, keyword_map, exempt):
+        return [(i.value if hasattr(i, "value") else str(i))
+                for i in intents if i not in keyword_map and i not in exempt]
+
+    def test_no_unregistered_l2_only_intent(self):
+        from app.router.rule_matcher import KEYWORD_MAP
+
+        missing = self._no_l1(list(IntentType), KEYWORD_MAP, self.L2_ONLY_EXEMPT)
+        assert missing == [], (
+            f"这些意图既没有 L1 关键词、也没登记豁免：{missing}\n"
+            "首选：给它们补 L1 关键词（ST-002 的修法）；次选：加进 L2_ONLY_EXEMPT 并写清理由。"
+        )
+
+    def test_guard_has_teeth(self):
+        """判别力自证：把 ST-002 的修复**摘掉**（= 意图存在但无关键词）⇒ 守卫必须具名报出它。"""
+        from app.router.rule_matcher import KEYWORD_MAP
+
+        stripped = {k: v for k, v in KEYWORD_MAP.items() if k != IntentType.AI_CONFIG}
+        missing = self._no_l1(list(IntentType), stripped, self.L2_ONLY_EXEMPT)
+        assert "ai_config" in missing, "摘掉 AI_CONFIG 的关键词后守卫没有报 ⇒ 守卫退化成空断言"
