@@ -6636,6 +6636,25 @@ _CASE_MC_110 = EvalCase(
     precondition='前置 = 两样都**可判定**：① **外部读数** `repos/zhaokai-mgzn/migao/branches/main/protection` 的 `required_status_checks.contexts`（需 `gh` 可用且已登录；取不到 ⇒ 判据 **fail-closed 抛异常**，不许当成「没有 required 检查」）；② 被测面 `.github/workflows/pr-check.yml` 的 `jobs`（YAML 解析）。**前置不成立时不许读成通过**：读不到 workflow ⇒ `_pr_check_jobs()` **抛异常**（实测有 `test_missing_workflow_is_fail_closed` 把守）；冻结清单为空 / 两个收尾 job 不存在 / 语料下限（≥10）不满足 ⇒ 判据 B/C 判红。**闸门取值口径 = 冻结快照**（`REQUIRED_PR_GATES`，11 个成员逐项冻结在 `tests/unit_ci_workflows/declaration_gate_registry.json` 的 `frozen_declarations`）：**刻意不现取** `branches/main/protection` —— 第一版那么写在本机 2 passed、**CI 上直接红**（该 job 只注入 `GITHUB_TOKEN`，而 `gh` 认 `GH_TOKEN`、且 `/protection` 需 admin），与 `test_automerge_bot_safe_path.py` 挡下的「内置 `GITHUB_TOKEN` 不是 admin」是同一件事。',
 )
 
+# ── MC-111 [NORMAL] 取号工具对**未知前缀**必须出声（不得静默新建号段）：请求的前缀在候选集里 0 次出现 ⇒ 明说「这是**全新号段**」 + 点名**最接近的已知前缀**；已知前缀不得误报（issue #7052）（源: cases/misc.yml）──
+_CASE_MC_111 = EvalCase(
+    id='MC-111',
+    legacy_id='',
+    title='取号工具对**未知前缀**必须出声（不得静默新建号段）：请求的前缀在候选集里 0 次出现 ⇒ 明说「这是**全新号段**」 + 点名**最接近的已知前缀**；已知前缀不得误报（issue #7052）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我把语料文件名当初前缀敲进去了，工具却给了我一个号 —— 我怎么会知道敲错了？'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **判据 8（实例面，会红）**：请求的前缀**一次都没出现**在候选集里（main ∪ 全部 open PR ∪ 本工作区）⇒ 输出必须**明说**「本工具将把它当作**全新号段**」**并点名最接近的已知前缀**（`difflib`）。执行点 = tests/unit_ci_workflows/test_next_case_id_allocator.py::test_unknown_prefix_is_never_silent。**红证（实跑）**：把 `warn_unknown_prefix` 的提前返回改成**恒返回空** ⇒ 该条当场红（1 failed / 19 passed），已逐字节还原。', '🔴 **反面对照臂**：**已知**前缀（`MC`）不得被误报成「全新号段」⇒ 否则判据在乱咬。执行点 = 同文件 `test_unknown_prefix_is_never_silent` 的后半。', '🔴 **判别力自证（纯函数）**：`unknown_prefix_warnings()` 在「已知 / 未知且有近似 / 未知且无近似」三态上分别给「空 / 出声+近似 / 出声+不编造近似」。执行点 = 同文件::test_unknown_prefix_criterion_has_discriminating_power。', '📌 **真实误用现场（逐字，2026-10-16）**：我敲的是 `python3 scripts/next_case_id.py misc`，而该位置参数是**前缀**、不是**语料文件名**（`misc.yml` 里的前缀是 `MC`）⇒ 工具按前缀口径把 `misc` 大写成 `MISC`，**静默**给出 `MISC-001`（零警告）—— 看起来像个成功答案。⇒ issue #7052 的**原始归因"工具把人引向错号段"不成立，已在该单评论里更正**；残留的真实缺陷是「未知前缀静默新建号段」。', '📌 **为什么只出声、不拦**（照实登记的边界）：① 新前缀**合法** —— 既有用例 `test_cli_consults_the_inflight_face` 正是靠「全新前缀 `QX` 仍能被分配」来证明在飞面被读进去，拦它会破该用例；② 「文件名 vs 前缀」**不可判定** —— `API` / `HR` / `UI` 三个串**同时**是语料文件名与真实前缀（现取 26 个 stem ∩ 27 个前缀 = 3）⇒ 拦会误伤。⇒ 出声 + 给近似候选，让打错的人**当场自查**。', '📌 **近似候选的有效性（现取复算）**：26 个语料 stem 里 21 个形态不合法（≥5 字符，已被 `PREFIX_RE` 挡），余 5 个中 `API`/`HR`/`UI` 本就是真前缀，只有 `AUTH`/`CHAT`/`DATA`/`MISC` 四个会走到本告警，且四个都有近似项（`AUTH→UT`、`CHAT→CT`、`DATA→DA`、`MISC→MC`）。', '📌 **`known` 必须取合并集（实现要点，写错就会误报）**：告警要在**过滤 `occupied` 之前**算 —— 只看 main 会把「某个在飞 PR / 本工作区刚引进的新前缀」误报成「一次都没出现」。'],
+    skip_reason='[backend-contract] 纯只读取号工具的静态判据（源码只读性 + 纯函数分配语义 + 未知前缀告警），零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'case-id', 'allocator', 'usability', 'fail-loud', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = 两样都在仓里可读且**可判定**：① 工具本体 `scripts/next_case_id.py`（含 `warn_unknown_prefix` 纯函数与 `UNKNOWN_PREFIX_MARKER` 措辞锚）；② 判据本体 `tests/unit_ci_workflows/test_next_case_id_allocator.py`（含 `NCI_GH_BIN` 🔴 替身与 `NCI_MAIN_REF=HEAD` —— **刻意不读 `origin/main`**，因 CI 的 checkout 是 `fetch-depth: 1`）。**前置不成立时不许读成通过**：`gh` 替身不可用 ⇒ 工具按既有三态语义 `exit 3`（判据 3 把守）；告警被删 ⇒ 判据 8 判红。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -14813,6 +14832,7 @@ ALL_CASES = (
     _CASE_MC_108,
     _CASE_MC_109,
     _CASE_MC_110,
+    _CASE_MC_111,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

@@ -81,6 +81,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import difflib
 import json
 import os
 import re
@@ -190,6 +191,35 @@ def min_free(used: set[int]) -> int:
     while n in used:
         n += 1
     return n
+
+
+#: 判据 8（issue #7052）要求的措辞锚：人必须读得出「这是**新**前缀，不是已有号段的下一个」。
+UNKNOWN_PREFIX_MARKER = "全新号段"
+
+
+def warn_unknown_prefix(prefix: str, known: set[str]) -> list[str]:
+    """请求的前缀**一次都没出现**在候选集里 ⇒ 出声（**只出声，不拦**）。
+
+    为什么要出声（issue #7052，由一次**真实误用**催生）：本工具的位置参数是**前缀**，不是
+    **语料文件名**（`misc.yml` 里的前缀是 `MC`、`bmini.yml` 里是 `BM`）。把文件名当参数敲进来时，
+    `occupied.get(prefix, set())` 让「不存在的前缀」与「存在但还没用过号的前缀」**不可区分**
+    ⇒ 工具**静默**给出 `<错前缀>-001`，看起来像个成功答案 —— 方向与工具目标（消灭撞号）**相反**。
+
+    为什么**只出声不拦**：新前缀是**合法**的（本仓 `QX` 那条既有用例正是靠"全新前缀仍能被分配"来
+    证明在飞面被读进去了），而且「文件名 vs 前缀」**不可判定** —— `API` / `HR` / `UI` 三个串
+    **同时**是语料文件名与真实前缀。⇒ 拦会误伤；出声 + 给近似候选，让打错的人**当场自查**。
+    """
+    if prefix in known:
+        return []
+    near = difflib.get_close_matches(prefix, sorted(known), n=3, cutoff=0.6)
+    msg = (f"⚠️  前缀 `{prefix}` 在候选集里**一次都没出现**（main ∪ 全部 open PR ∪ 本工作区）"
+           f" ⇒ 本工具将把它当作**{UNKNOWN_PREFIX_MARKER}**，下面是**新**前缀的号，不是已有号段的下一个。")
+    if near:
+        msg += f" 最接近的已知前缀：{' / '.join(near)} —— 若是打错了，请改用它们。"
+    else:
+        msg += " 没有形态接近的已知前缀。"
+    msg += " （不带参数运行本工具可列出全部已知前缀。）"
+    return [msg]
 
 
 def allocate(occupied: dict[str, set[int]], prefixes: list[str] | None = None) -> dict[str, int]:
@@ -347,7 +377,7 @@ def read_worktree() -> Source:
 # CLI
 # ─────────────────────────────────────────────────────────────────────────────
 def render(sources: list[Source], baseline: dict[str, set[int]], occupied: dict[str, set[int]],
-           result: dict[str, int], stamp: str) -> str:
+           result: dict[str, int], stamp: str, warnings: list[str] | None = None) -> str:
     """人可复算的输出：来源（命令 + ref + 读数）+ 逐前缀「已占来源 → 现取最小空闲号」。"""
     out = [f"🔢 下一个用例号（只读；候选 = main ∪ 全部 open PR 的分支 ∪ 本工作区）",
            f"   时点 {stamp} · 工具 {ALLOCATION_SITE}（取号口径的单一实现）", "",
@@ -355,6 +385,9 @@ def render(sources: list[Source], baseline: dict[str, set[int]], occupied: dict[
     for s in sources:
         out.append(f"   [{s.label}] {s.command}")
         out.append(f"        ref={s.ref} ⇒ {getattr(s, 'note', '')}")
+    out.append("")
+    for w in warnings or []:
+        out.append(f"   {w}")
     out += ["", "── 分配（最小空闲号；同一次调用里断言「返回的号 ∉ 候选集」）" + "─" * 8]
     for prefix in sorted(result):
         origins = []
@@ -396,13 +429,17 @@ def main(argv: list[str] | None = None) -> int:
         return 3
     baseline = main_src.ids
     occupied = merge_ids(baseline, *(s.ids for s in sources[1:]))
+    warnings: list[str] = []
     if prefix is not None:
+        # ⚠️ `known` 必须在**过滤之前**从合并集里取（issue #7052）：只看 main 会把
+        # 「某个在飞 PR / 本工作区刚引进的新前缀」误报成「一次都没出现」。
+        warnings = warn_unknown_prefix(prefix, set(occupied))
         occupied = {prefix: occupied.get(prefix, set())}
     result = allocate(occupied, [prefix] if prefix else None)
     if not result:
         print("❌ 无法判定 ⇒ 不许取号\n   原因：候选集里一个前缀都没有（main 侧语料为空？）")
         return 3
-    print(render(sources, baseline, occupied, result, stamp))
+    print(render(sources, baseline, occupied, result, stamp, warnings))
     return 0
 
 
