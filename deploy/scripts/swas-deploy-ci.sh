@@ -1,6 +1,6 @@
 #!/bin/bash
 # CI → SWAS 部署通道（被 deploy-admin-api / deploy-ai-agent-service / deploy-frontend 三个 workflow 调用）
-# 用法: swas-deploy-ci.sh <INSTANCE_ID> <REGION> <ACCESS_KEY_ID> <ACCESS_KEY_SECRET> [ACR_USERNAME] [ACR_PASSWORD] [IMAGE_TAG]
+# 用法: swas-deploy-ci.sh <INSTANCE_ID> <REGION> <ACCESS_KEY_ID> <ACCESS_KEY_SECRET> [ACR_USERNAME] [ACR_PASSWORD] [IMAGE_TAG] [SERVICE_KEY] [BUILD_SHA] [BUILT_AT]
 #
 # 2026-08-14 线上事故修复：
 # - 下载加 --retry + gzip 校验（曾因瞬时下载损坏 tar exit 2）
@@ -60,6 +60,23 @@ IMAGE_TAG=${7:-latest}
 #     ⇒ 同一条码路要在两种环境下都跑对，故走参数，且默认值保持「不动 CI 行为」。
 #   · `BUILD_SERVICE` 决定**构建哪一个**服务 ⇒ 由调用它的那条 workflow 决定（三条腿各建自己那个）。
 SERVICE_KEY=${8:-}
+# ── 构建身份到远端（issue #6951 第 5 跳）──────────────────────────────────────
+# 病（真机读数逐字）：`https://api.migaozn.com/api/version` ⇒ `{"app":"admin-api","sha":"","tag":"sha-bab9538","builtAt":""}`
+# —— `tag` 有值（远端 `MIGAO_BUILD_TAG` 回落 `${TAG}`），而 `sha` / `builtAt` **恒空**。
+# 根因（三处逐字吻合）：C′ 之后**构建发生在服务器上**，而 workflow 的 `BUILD_SHA` / `BUILT_AT`
+# 只落在 **runner 的步骤 env** 里；本脚本发往远端的 BOOTSTRAP **只导出**
+# `ALLOW_DOWNGRADE` / `BUILD_SERVICE` / `APT_MIRROR` / `PIP_INDEX_URL` / `BUILD_TIMEOUT_SECS`
+# ⇒ 远端 `deploy.sh` 读到空串 ⇒ `--build-arg MIGAO_BUILD_SHA=` / `MIGAO_BUILT_AT=` ⇒ 镜像里没有身份。
+# ⇒ 这两个值必须**随 BOOTSTRAP 一起到远端**（照既有 `__PLACEHOLDER__` 渲染形态；每次尝试各自渲染，
+#    与 `__BUILD_SERVICE__` 同款 —— 回滚那次也要带上**那个 tag 的**身份）。
+# ⚠️ **不送 `BUILD_TAG`**：它已由 BOOTSTRAP 里渲染进去的 tag 本身携带
+#    （`bash /opt/migao-deploy/deploy.sh ${IMAGE_TAG}` ⇒ 远端 `TAG` ⇒ `MIGAO_BUILD_TAG=${BUILD_TAG:-$TAG}`
+#     回落 = **与镜像 tag 同源**）⇒ 再送一份是第二条会漂的口径（最少代码阶梯的「复用」档）。
+#    判据把这条反向也钉住：`BUILD_TAG` 必须**缺席**（免得将来有人加一份与 `$TAG` 不同源的）。
+# ⚠️ **不许改坏 #4852**：`ALLOW_DOWNGRADE` 的「显式降级许可才注入 1，普通部署恒 0」一字不动
+#    （它的默认仍是第 78 行的 `ALLOW_DOWNGRADE=${ALLOW_DOWNGRADE:-0}` + `只认 1`）。
+BUILD_SHA=${9:-${BUILD_SHA:-}}
+BUILT_AT=${10:-${BUILT_AT:-}}
 # apt 源：默认 deb.debian.org = **不改写 sources.list**（实测从国内 4009s 仍未下完 189MB ⇒ 服务器侧必须换源）
 SWAS_APT_MIRROR=${SWAS_APT_MIRROR:-mirrors.aliyun.com}
 # pip 源：服务器侧必须用国内 PyPI 镜像（CI 现传的是 https://pypi.org/simple/ = 境外）
@@ -417,7 +434,7 @@ fi
 #    占位符（`deploy_attempt` 替换；渲染后仍留占位符 ⇒ 当场报错，绝不静默当「无许可」）。
 #    写成 `export …;` 前置（而不是 `${VAR}=… bash …` 前缀）⇒ 「cp → mv -f → bash deploy.sh」
 #    的**原子安装形态**逐字不变（那是既有护栏，见 tests/unit_ci_workflows/test_swas_deploy_ci_bootstrap.py）。
-BOOTSTRAP="export ALLOW_DOWNGRADE=__ALLOW_DOWNGRADE__; export BUILD_SERVICE=__BUILD_SERVICE__ APT_MIRROR=__APT_MIRROR__ PIP_INDEX_URL=__PIP_INDEX_URL__ BUILD_TIMEOUT_SECS=__BUILD_TIMEOUT_SECS__; PREV=\$(cat /opt/migao-deploy/.last-good-tag 2>/dev/null || true); if [ -z \"\$PREV\" ] && command -v docker >/dev/null 2>&1; then PREV=\$(docker ps --format '{{.Image}}' 2>/dev/null | grep 'ai-customer-service/' | sed 's/.*://' | sort | uniq -c | sort -rn | head -1 | awk '{print \$2}'); fi; echo \"PREV_GOOD_TAG=\${PREV:-}\"; ${REGISTRY_SETUP}SRC=\$(mktemp -d) && TAR=\$(mktemp) && curl -fsSL --retry 3 https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/__BOOTSTRAP_REF__ -o \"\$TAR\" && tar xzf \"\$TAR\" -C \"\$SRC\" --strip-components=1 && mkdir -p /opt/migao-deploy && cp \"\$SRC\"/deploy/swas/deploy.sh /opt/migao-deploy/.deploy.sh.new && mv -f /opt/migao-deploy/.deploy.sh.new /opt/migao-deploy/deploy.sh && bash /opt/migao-deploy/deploy.sh ${IMAGE_TAG}; rc=\$?; if [ \$rc -eq 0 ]; then echo \"${IMAGE_TAG}\" > /opt/migao-deploy/.last-good-tag; fi; rm -rf \"\$SRC\" \"\$TAR\"; exit \$rc"
+BOOTSTRAP="export ALLOW_DOWNGRADE=__ALLOW_DOWNGRADE__; export BUILD_SERVICE=__BUILD_SERVICE__ APT_MIRROR=__APT_MIRROR__ PIP_INDEX_URL=__PIP_INDEX_URL__ BUILD_TIMEOUT_SECS=__BUILD_TIMEOUT_SECS__ BUILD_SHA=__BUILD_SHA__ BUILT_AT=__BUILT_AT__; PREV=\$(cat /opt/migao-deploy/.last-good-tag 2>/dev/null || true); if [ -z \"\$PREV\" ] && command -v docker >/dev/null 2>&1; then PREV=\$(docker ps --format '{{.Image}}' 2>/dev/null | grep 'ai-customer-service/' | sed 's/.*://' | sort | uniq -c | sort -rn | head -1 | awk '{print \$2}'); fi; echo \"PREV_GOOD_TAG=\${PREV:-}\"; ${REGISTRY_SETUP}SRC=\$(mktemp -d) && TAR=\$(mktemp) && curl -fsSL --retry 3 https://codeload.github.com/zhaokai-mgzn/migao/tar.gz/__BOOTSTRAP_REF__ -o \"\$TAR\" && tar xzf \"\$TAR\" -C \"\$SRC\" --strip-components=1 && mkdir -p /opt/migao-deploy && cp \"\$SRC\"/deploy/swas/deploy.sh /opt/migao-deploy/.deploy.sh.new && mv -f /opt/migao-deploy/.deploy.sh.new /opt/migao-deploy/deploy.sh && bash /opt/migao-deploy/deploy.sh ${IMAGE_TAG}; rc=\$?; if [ \$rc -eq 0 ]; then echo \"${IMAGE_TAG}\" > /opt/migao-deploy/.last-good-tag; fi; rm -rf \"\$SRC\" \"\$TAR\"; exit \$rc"
 
 # ══════════════════════════════════════════════════════════════════════════
 # ⑤ 部署脚本**自己**也必须与镜像 tag 同源（issue #5120）
@@ -480,11 +497,17 @@ render_bootstrap() {
   out=${out//__APT_MIRROR__/${SWAS_APT_MIRROR:-mirrors.aliyun.com}}
   out=${out//__PIP_INDEX_URL__/${SWAS_PIP_INDEX_URL:-https://mirrors.aliyun.com/pypi/simple/}}
   out=${out//__BUILD_TIMEOUT_SECS__/${SWAS_BUILD_TIMEOUT_SECS:-2400}}
+  # 构建身份（issue #6951 第 5 跳）：**每次尝试各自渲染**。均为**有界安全值**
+  # （sha = 40 位 hex / builtAt = ISO8601；调用方在 workflow 里已 fail-closed 校验过形态）⇒
+  # 注入面不会把任意 shell 片段带进远端命令。
+  out=${out//__BUILD_SHA__/${BUILD_SHA:-}}
+  out=${out//__BUILT_AT__/${BUILT_AT:-}}
   case "$out" in *__BOOTSTRAP_REF__*) return 1 ;; esac
   # 渲染漏一个占位符 ⇒ 远端会拿到字面量 `__BUILD_SERVICE__` 之类（非法服务名 / 坏镜像源）
   # ⇒ **fail-closed**：占位符还在就当场报错，绝不把未渲染的命令发给服务器。
   case "$out" in
-    *__BUILD_SERVICE__* | *__APT_MIRROR__* | *__PIP_INDEX_URL__* | *__BUILD_TIMEOUT_SECS__*)
+    *__BUILD_SERVICE__* | *__APT_MIRROR__* | *__PIP_INDEX_URL__* | *__BUILD_TIMEOUT_SECS__* \
+      | *__BUILD_SHA__* | *__BUILT_AT__*)
       return 1 ;;
   esac
   printf '%s' "$out"

@@ -32,10 +32,15 @@
 5. **schedule 兜底档两态分开**：`skip=true`（本轮未部署）时必须有**显式出声**的声明步
    ——「本轮未部署 ⇒ 未跑冒烟」不得与「已部署且已验证」共用同一个静默 `success`
    （issue #6951 判据 2 逐字）。
-6. **接线（注入面三处同源）**：`deploy-admin-api.yml`（`BUILD_SHA` / `BUILD_TAG` / `BUILT_AT`）
+6. **接线（注入面五跳同源）**：`deploy-admin-api.yml`（`BUILD_SHA` / `BUILD_TAG` / `BUILT_AT`）
+   → **workflow 的远程调用参数**（`swas-deploy-ci.sh` 的第 9/10 位）
+   → **驱动脚本的 BOOTSTRAP 渲染**（`export …;` + `__PLACEHOLDER__`）
    → `deploy/swas/deploy.sh`（`MIGAO_BUILD_SHA` 等 `--build-arg`）
    → `backend/admin-api/Dockerfile`（`ARG` + `ENV`）→ `VersionController`（读同名环境变量）。
-   任一环改名 ⇒ 具名判红（这是「端点报出的真是这次构建」的必要条件，不是装饰）。
+   任一环改名 / 摘掉 ⇒ 具名判红（这是「端点报出的真是这次构建」的必要条件，不是装饰）。
+   后两跳由**执行式**断言加钉：真跑 `render_bootstrap` + `deploy_attempt`（只桩 `run_cmd`/`nap`），
+   捕获**实际发给远端的命令内容** —— 纯文本断言能被「模板里有占位符、渲染点却空转」骗过。
+   🔴 第 2/3 跳是 issue #6951 补的：改前只覆盖**同一侧**四层，**没覆盖机器边界**（runner → ssh → 服务器）
 7. **端点的泄露面白名单**：`VersionController` 的响应体**只许**有 5 个非敏感键
    （`app` / `sha` / `tag` / `builtAt`）⇒ 有人往里塞主机名 / 路径 / 环境变量 / 配置
    就判红（逼一次「它会不会泄露」的复核）。
@@ -48,18 +53,26 @@
 - 本文件**不联网**：`/api/version` 由**本进程内**的 `http.server` 提供，脚本以
   `BASE_URL=http://127.0.0.1:<port>` + `SERVED_VERSION_PATH` / `SERVED_VERSION_RETRIES` 驱动。
   ⇒ 本文件证的是「**脚本在给定输入下会做什么**」，**不是**「线上真的会这么回」。
-- **未覆盖（照实登记）**：① 线上真机复探（需要一次真实部署，本包**未做**）；
+- **未覆盖（照实登记）**：① **线上真机复探**需要一次真实部署（由集成侧触发；本包**不在真机上跑**）
+  —— 这是本条判据的**唯一终判**，命令逐字：
+  `bash deploy/scripts/served-version-verify.sh 'https://api.migaozn.com' "$(git rev-parse origin/main)"`
+  （要求 rc=0 + `SERVED_VERSION=match`）；
   ② `deploy-frontend.yml` / `deploy-ai-agent-service.yml` 两条腿**未接线**（同形缺口；
-  前端那半边还依赖 #6611 的构建期注入面）；③ Java 侧只做**静态接线判据**，
-  本包**未**跑 `mvn test`（worktree 无构建产物、且那属于全量档）。
+  前端那半边还依赖 #6611 的构建期注入面）—— 逐腿登记在
+  `tests/unit_ci_workflows/test_swas_server_side_build.py` 的 `BUILD_IDENTITY_LEGS`；
+  ③ Java 侧只做**静态接线判据**，本包**未**跑 `mvn test`（worktree 无构建产物、且那属于全量档）。
+- **执行式探针的边界**：`_captured_remote_command()` 桩掉 `run_cmd`（拦住 `aliyun` CLI）与 `nap`，
+  被桩化的是外部依赖，被测的是**驱动脚本自己的渲染编排**；它**不证**「阿里云会真的执行这条命令」。
 """
 from __future__ import annotations
 
 import json
 import os
 import re
+import shlex
 import socket
 import subprocess
+import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -98,6 +111,15 @@ SECURITY_CONFIG = (
 )
 NGINX_CONF = REPO_ROOT / "deploy" / "swas" / "nginx.conf"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "deploy-admin-api.yml"
+# ── 第 5 跳（issue #6951）的载体：CI → 驱动脚本 → 服务器 ─────────────────────────
+CI_SCRIPT = REPO_ROOT / "deploy" / "scripts" / "swas-deploy-ci.sh"
+# 驱动脚本「参数面」上的构建身份实参（**逐字**，第 9/10 个位置参数）
+BUILD_SHA_ARG = '"$BUILD_SHA"'
+BUILT_AT_ARG = '"$BUILT_AT"'
+# BUILD_TAG **有意不**走参数面（远端 `TAG` 已携带同一个值）⇒ 它成实参即判红
+BUILD_TAG_ARG = '"$BUILD_TAG"'
+# 执行式断言（判据 6 的 ③b）用的部署期时钟读数
+_BUILT_AT_PROBE = "2026-10-16T00:00:00Z"
 
 # 与 CI 的 shell 同形（`bash --noprofile --norc -e -o pipefail`）
 BASH_SHELL = ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail"]
@@ -306,6 +328,98 @@ def workflow_text() -> str:
 SERVED_STEP = "Assert served sha == deployed sha (线上就是本次构建，issue #6951)"
 SMOKE_DECL_STEP = "Declare smoke verification state (schedule 兜底档，issue #6951)"
 
+# 从驱动脚本里抽函数体用的段界（与既有探针 tests/unit_ci_workflows/test_swas_deploy_no_downgrade.py
+# 的 PROBE_START/PROBE_END **同一对锚点** —— 不复制判据，只借它的抽取面）
+_CI_PROBE_START = "# ⑤ 部署脚本**自己**也必须与镜像 tag 同源"
+_CI_PROBE_END = "# ── 主流程 "
+# 渲染编排的调用链（缺任一个 ⇒ 显式失败，不是「通过」）
+_CI_PROBE_FUNCS = ("bootstrap_tag_to_sha", "bootstrap_ref_for_tag", "render_bootstrap", "deploy_attempt")
+# 桩：把真正要执行的命令落盘，并回「三次都没 InvokeId」⇒ `deploy_attempt` 早退但**命令已捕获**
+_CI_RUN_CMD_STUB = """
+run_cmd() {
+  local k=$1 c=$2; shift 2
+  local arg prev=""
+  for arg in "$@"; do
+    if [ "$prev" = "--command-content" ]; then printf '%s' "$arg" > "$CAPTURED_CMD"; fi
+    prev=$arg
+  done
+  printf '%s' '{"InvokeId": ""}'
+  return 0
+}
+nap() { return 0; }
+"""
+
+
+def _function_body(text: str, name: str) -> str:
+    """取 shell 函数体（`name() {` 到配对收尾 `}` 那一行）。取不到 ⇒ **显式失败**（不是空跑）。"""
+    m = re.search(rf"^{re.escape(name)}\(\) \{{$", text, re.M)
+    assert m, f"反空跑锚点：驱动脚本里找不到函数 `{name}()`（判据已过期）"
+    end = text.find("\n}\n", m.end())
+    assert end != -1, f"函数 `{name}()` 没有配对的收尾 `}}`（脚本语法已坏）"
+    return text[m.end():end]
+
+
+def _captured_remote_command(ci_text: str, build_sha: str) -> str:
+    """**真跑** `render_bootstrap` + `deploy_attempt`（只桩 `run_cmd` / `nap`），返回实际发给远端的命令。
+
+    这是「第 5 跳」的执行式判据：文本断言能被「模板里有占位符、渲染点却空转」骗过，
+    捕获实发命令不会 —— 身份变量必须在**渲染后**的字符串里。
+
+    ⚠️ `BOOTSTRAP=` 这一行**在抽取段之外**（它定义在「③ 回滚点」那一节、渲染函数之前）
+    ⇒ 必须**逐字带上它自己的模板**（`^BOOTSTRAP="…"$` 单行形态，与既有两条守卫同级），
+    否则探针拿到空模板、命令内容恒 0 字节 ⇒ 判据变成**空跑**（本包第一版实测踩到：
+    `命令内容 0 字节` / 捕获到空串 —— 看起来像「身份没送达」，其实是抽取面漏了模板）。
+    """
+    tmpl = re.search(r'^BOOTSTRAP=".*"$', ci_text, re.M)
+    assert tmpl, "反空跑锚点：驱动脚本里找不到 `BOOTSTRAP=\"…\"` 模板（判据已过期）"
+    start = ci_text.find(_CI_PROBE_START)
+    assert start >= 0, f"反空跑锚点：找不到驱动脚本的渲染编排段头 {_CI_PROBE_START!r}（判据已过期）"
+    end = ci_text.find(_CI_PROBE_END, start)
+    assert end > start, f"反空跑锚点：找不到主流程段 {_CI_PROBE_END!r}（判据已过期）"
+    region = ci_text[start:end]
+
+    parts = [
+        "set -uo pipefail",
+        # ⚠️ **顺序有意义**：`REGISTRY_SETUP` 必须**先定义**再求值 BOOTSTRAP —— 模板里那一处
+        #    `${REGISTRY_SETUP}` 是**本地展开**的（脚本里第 406 行就求值，本探针同形）。
+        #    反过来写 ⇒ `set -u` 当场 `unbound variable`（本包实测踩到：探针 RC 127、零捕获）。
+        'IMAGE_TAG="sha-1a1a1a1"',
+        'INSTANCE_ID="i-probe"',
+        'REGION="cn-probe"',
+        'REGISTRY_SETUP=""',
+        tmpl.group(0),                      # ← 被测的模板本身（逐字取自脚本当前文本）
+        # 与真实调用点同形：两个身份值来自**参数面**（第 9/10 个位置参数）
+        f"BUILD_SHA={shlex.quote(build_sha)}",
+        f"BUILT_AT={shlex.quote(_BUILT_AT_PROBE)}",
+        'DEPLOY_TIMEOUT_SECONDS=1',
+        'CLI_TIMEOUT_SECONDS=1',
+        'POLL_INTERVAL_SECONDS=0',
+        'RETRY_PAUSE_SECONDS=0',
+        'DEADLINE=$(( $(date +%s) + DEPLOY_TIMEOUT_SECONDS ))',
+        'remaining_seconds() { echo $(( DEADLINE - $(date +%s) )); }',
+    ]
+    for name in _CI_PROBE_FUNCS:
+        parts.append(f"{name}() {{{_function_body(region, name)}\n}}")
+    # ⚠️ 桩必须定义在**真函数之后**（shell 是「后定义覆盖先定义」）
+    parts.append(_CI_RUN_CMD_STUB)
+    parts.append('deploy_attempt "$IMAGE_TAG" 0')   # allow=0 = 普通部署（#4852 的对照读数）
+
+    with tempfile.TemporaryDirectory() as tmp:
+        captured = Path(tmp) / "captured-cmd"
+        env = {**os.environ, "CAPTURED_CMD": str(captured)}
+        proc = subprocess.run(["bash", "-c", "\n".join(parts)],
+                              capture_output=True, text=True, timeout=60, env=env)
+        assert captured.is_file(), (
+            "没捕获到远端命令 ⇒ `deploy_attempt` 在把命令交给远端**之前**就 fail-closed 早退了"
+            f"（这本身就是「身份没送达」的一种形态）\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+        )
+        content = captured.read_text(encoding="utf-8")
+        assert content.strip(), (
+            "捕获到的远端命令是**空串** ⇒ 探针空跑（模板没带上 / 渲染段抽取错位），"
+            f"不得据此判绿\nstdout:\n{proc.stdout[:800]}"
+        )
+        return content
+
 
 def test_deploy_leg_asserts_served_sha_not_artifact_existence():
     """判据 4：发布腿必须**真的**断言「线上 sha == 本次部署的 sha」，且期望值来自本次部署。"""
@@ -365,14 +479,32 @@ def test_schedule_skip_path_declares_that_no_smoke_ran():
     )
 
 
-def test_build_identity_wiring_is_same_source_across_four_layers():
-    """判据 6：注入面四层同源（少一环 ⇒ 端点报的就不是这次构建，`sha` 会恒为空）。"""
+def test_build_identity_wiring_is_same_source_across_five_hops():
+    """判据 6（升级为**五跳**同源）：注入面从「本次部署的 sha」到「端点读到的环境变量」共 **5 跳**，
+    断任何一跳 ⇒ 端点报的就不是这次构建（`sha` / `builtAt` 恒为空）。
+
+    | 跳 | 载体 | 逐字形态 |
+    |---|---|---|
+    | 1 | `deploy-admin-api.yml` 解算 build identity + 部署步 env | `id: build_id` · `BUILD_SHA=$SHA` · 三项 env |
+    | **2** | **workflow 的远程调用**（`swas-deploy-ci.sh` 的第 9/10 个位置参数） | `admin-api "$BUILD_SHA" "$BUILT_AT"` |
+    | **3** | **驱动脚本的 BOOTSTRAP**（`export …;` 串 + `__PLACEHOLDER__` 渲染点） | `BUILD_SHA=__BUILD_SHA__ BUILT_AT=__BUILT_AT__` + 显式渲染 + 未渲染即 fail-closed |
+    | 4 | `deploy/swas/deploy.sh` | `BUILD_SHA=${BUILD_SHA:-}` → `--build-arg MIGAO_BUILD_SHA=${BUILD_SHA:-}` |
+    | 5 | `backend/admin-api/Dockerfile` → `VersionController` | `ARG`/`ENV MIGAO_BUILD_SHA` → `@Value("${MIGAO_BUILD_SHA:}")` |
+
+    🔴 **跳 2 / 3 是本单（issue #6951）补上的**：改前本判据只覆盖**同一侧**的四个文件
+    （workflow env → deploy.sh → Dockerfile → 控制器），**没有覆盖机器边界**（runner → ssh → 服务器）
+    ⇒ 单元级「四层同源」全绿，而真机读数逐字为
+    `{"app":"admin-api","sha":"","tag":"sha-bab9538","builtAt":""}`，部署 run `38835344964`
+    判红在 `Assert served sha == deployed sha`（exit 3 = 探不到）。
+    **跨边界的东西必须在边界上判** —— 所以跳 3 除文本断言外还带**执行式**断言（见 ③b）。
+    """
     wf = workflow_text()
+    ci = read(CI_SCRIPT)
     deploy_sh = read(DEPLOY_SH)
     dockerfile = read(DOCKERFILE)
     controller = read(CONTROLLER)
 
-    # ① workflow：解算 build identity 并交给部署步（env 名 → deploy.sh 的变量名）
+    # ① 跳 1 — workflow：解算 build identity 并交给部署步（env 名 → deploy.sh 的变量名）
     assert "id: build_id" in wf, "workflow 没有解算构建身份（git rev-parse HEAD）"
     assert 'echo "BUILD_SHA=$SHA" >> "$GITHUB_OUTPUT"' in wf, "构建身份没有落成 step output"
     for env_name, source in (
@@ -382,7 +514,66 @@ def test_build_identity_wiring_is_same_source_across_four_layers():
     ):
         assert env_name in wf, f"部署步没有把构建身份传下去：{env_name}（来源 {source}）"
 
-    # ② deploy.sh：三个变量 → `--build-arg MIGAO_BUILD_*`
+    # ② 跳 2 — workflow 的**远程调用**：构建身份必须过**参数面**（不是只留在 runner 的步骤 env）
+    call = re.search(r"bash deploy/scripts/swas-deploy-ci\.sh \\\n((?:.*\\\n)*.*)", wf)
+    assert call, "workflow 里找不到 `swas-deploy-ci.sh` 的调用（判据锚点已漂移）"
+    call_args = call.group(1).replace("\\\n", " ").split()
+    assert "admin-api" in call_args, f"远程调用里找不到服务键（判据锚点已漂移）：{call_args}"
+    for token in (BUILD_SHA_ARG, BUILT_AT_ARG):
+        assert token in call_args, (
+            f"workflow 的远程调用**没有把构建身份交给驱动脚本**（实参缺 {token}）⇒ "
+            "这一跳就是本单的病根：`BUILD_SHA` / `BUILT_AT` 只活在 runner 的步骤 env 里，"
+            "而构建发生在**服务器上** ⇒ 远端读到空串 ⇒ `/api/version` 的 `sha` / `builtAt` 恒空"
+        )
+    # BUILD_TAG **有意不过参数面**（远端 `TAG` 已携带同一个值）⇒ 双向钉住：值仍与镜像 tag 同源 + 没多传实参
+    assert "BUILD_TAG: ${{ steps.tag.outputs.IMAGE_TAG }}" in wf, (
+        "BUILD_TAG 不再来自镜像 tag ⇒ 与 compose 的 `image:` 脱钩（两条会漂的口径）"
+    )
+    assert BUILD_TAG_ARG not in call_args, (
+        f"`{BUILD_TAG_ARG}` 被当实参传了 —— 它**有意**不走参数面（远端 `TAG` 已是同一个值），"
+        "再送一份就是第二条会漂的口径"
+    )
+
+    # ③ 跳 3 — 驱动脚本：模板里带占位符 + 从**参数面**读 + **显式渲染** + 未渲染即 fail-closed
+    for ph in ("BUILD_SHA", "BUILT_AT"):
+        assert f"{ph}=__{ph}__" in ci, (
+            f"BOOTSTRAP 没有把 `{ph}` 送往远端（`export …;` 串里没有占位符 `__{ph}__`）"
+            " ⇒ 远端 `deploy.sh` 读到空串 ⇒ 端点那两个字段恒空（issue #6951 的第 5 跳）"
+        )
+    for var in ("BUILD_SHA", "BUILT_AT"):
+        assert re.search(rf"^{var}=\$\{{(9|10)[:]", ci, re.M), (
+            f"驱动脚本没有从**位置参数**取 `{var}`（第 9/10 位）⇒ 参数面这一跳没接上"
+        )
+        assert re.search(rf"out=\$\{{out//__{var}__/\$\{{", ci), (
+            f"占位符 `__{var}__` 没有在 render_bootstrap 里被显式渲染 ⇒ 远端会拿到字面量"
+        )
+    for ph in ("__BUILD_SHA__", "__BUILT_AT__"):
+        assert re.search(rf"\*{ph}\*", ci), (
+            f"渲染后没有自证「占位符 `{ph}` 已替换」（fail-closed）⇒ 漏渲染会静默把字面量发给服务器"
+        )
+    # 有意不送 BUILD_TAG ⇒ BOOTSTRAP 里不该有它的占位符（免得与远端 `$TAG` 形成两条口径）
+    assert "__BUILD_TAG__" not in ci, (
+        "驱动脚本把 `BUILD_TAG` 也送下去了 ⇒ 与远端 `TAG`（渲染进 BOOTSTRAP 的那个）成为两条口径"
+    )
+
+    # ③b **执行式**同源（本判据的注入点）：真跑 `render_bootstrap` + `deploy_attempt`
+    # （只桩 `run_cmd` / `nap`），捕获**实际发给远端的命令内容** —— 身份必须在里面。
+    # 纯文本断言会被「模板里有占位符、渲染点却空转」骗过；这一条不会。
+    captured = _captured_remote_command(ci, TARGET_SHA)
+    for expected in (f"BUILD_SHA={TARGET_SHA}", f"BUILT_AT={_BUILT_AT_PROBE}"):
+        assert expected in captured, (
+            f"渲染后的远端命令里没有 `{expected}` ⇒ 身份**没有真的送达远端**（这一跳是空转）。\n"
+            f"实得命令内容（前 600 字节）：\n{captured[:600]}"
+        )
+    assert "__BUILD_SHA__" not in captured and "__BUILT_AT__" not in captured, (
+        f"渲染后的命令里仍留占位符 ⇒ 远端会拿到字面量：\n{captured[:400]}"
+    )
+    # 对照读数：同一次渲染里 `ALLOW_DOWNGRADE` 仍是普通部署的 0（#4852 的渲染织体未被本单改坏）
+    assert "ALLOW_DOWNGRADE=0" in captured, (
+        "同一次渲染里 `ALLOW_DOWNGRADE` 不再是 0（普通部署）⇒ 本单改坏了 #4852 的许可面"
+    )
+
+    # ④ 跳 4 — deploy.sh：三个变量 → `--build-arg MIGAO_BUILD_*`
     for var in ("BUILD_SHA", "BUILD_TAG", "BUILT_AT"):
         assert re.search(rf"^{var}=\$\{{{var}:-", deploy_sh, re.M), (
             f"deploy.sh 没有 `${var}` 的入口（`set -u` 下裸引用会当场炸；且会静默丢注入面）"
@@ -391,7 +582,7 @@ def test_build_identity_wiring_is_same_source_across_four_layers():
                 "MIGAO_BUILT_AT=${BUILT_AT:-}"):
         assert arg in deploy_sh, f"deploy.sh 没有把 `{arg}` 交给 docker build"
 
-    # ③ Dockerfile：ARG 必须在**两个 stage** 各声明一次（ARG 作用域是 per-stage），
+    # ⑤ 跳 5 — Dockerfile：ARG 必须在**两个 stage** 各声明一次（ARG 作用域是 per-stage），
     #    并由 ENV 落到运行时容器（消费面读的是环境变量）
     for name in ("MIGAO_BUILD_SHA", "MIGAO_BUILD_TAG", "MIGAO_BUILT_AT"):
         assert dockerfile.count(f"ARG {name}=") == 2, (
@@ -400,10 +591,10 @@ def test_build_identity_wiring_is_same_source_across_four_layers():
         )
         assert f"ENV {name}=${name}" in dockerfile, f"Dockerfile 没有把 `{name}` 落成容器环境变量"
 
-    # ④ 控制器：读的必须是**同名**环境变量（改名 ⇒ 端点报空串 ⇒ 判据恒「探不到」）
+    # ⑥ 跳 5（消费点）— 控制器：读的必须是**同名**环境变量（改名 ⇒ 端点报空串 ⇒ 判据恒「探不到」）
     for name in ("MIGAO_BUILD_SHA", "MIGAO_BUILD_TAG", "MIGAO_BUILT_AT"):
         assert f'@Value("${{{name}:}}")' in controller, (
-            f"VersionController 没有读环境变量 `{name}`（四层里这一环断了）"
+            f"VersionController 没有读环境变量 `{name}`（五跳里这一环断了）"
         )
 
 
