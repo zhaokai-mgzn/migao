@@ -458,7 +458,7 @@ export default function OrdersPage() {
           排布：第 1 行 = 下单时间（跨 2 轨）· 订单ID · 收货人；第 2 行 = 制单人 · 商品货号 · 商品标题 · 是否加工；
           第 3 行 = 按钮行（`col-span-full` 独占一行 + `justify-end` 右对齐）—— 主操作不再埋在第 2 行末尾。 */}
       <div
-        className="bg-white rounded-lg border border-neutral-200 p-5 grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-x-6 gap-y-4"
+        className="bg-white rounded-lg border border-neutral-200 shadow-card p-5 grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-x-6 gap-y-4"
         data-testid="search-area"
       >
         {/* 下单时间（跨 2 轨）：起 / 至 / 止 都在**同一个**容器里 —— 一个整体控件组，而不是三个散落的控件 */}
@@ -587,7 +587,7 @@ export default function OrdersPage() {
       </div>
 
       {/* 表格 + Tab */}
-      <div className="bg-white rounded-lg border border-neutral-200">
+      <div className="bg-white rounded-lg border border-neutral-200 shadow-card">
         {loadError && (
           // 失败态 ≠ 空态（issue #6703 / #6691）：说清「不是今天没有订单，是没读到」+ 真重发出口
           <div className="p-4 pb-0">

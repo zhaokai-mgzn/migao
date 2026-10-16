@@ -319,7 +319,7 @@ export default function ProductTable({
   ]
 
   return (
-    <div className="bg-white rounded-lg border border-neutral-200">
+    <div className="bg-white rounded-lg border border-neutral-200 shadow-card">
       {/* 自定义表头第一列：全选复选框（覆盖 Table 内部默认表头中的空标题） */}
       <div className="relative">
         <Table<Product>

@@ -380,7 +380,7 @@ export default function RolesPage() {
           {roles.map(role => (
             <div
               key={role.id}
-              className="bg-white rounded-lg border border-neutral-200 p-5 hover:shadow-md transition-shadow"
+              className="bg-white rounded-lg border border-neutral-200 shadow-card p-5 hover:shadow-card-hover transition-shadow"
             >
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-2">

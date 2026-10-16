@@ -729,7 +729,7 @@ function SummaryCard({ title, icon, value, hint, accent }: {
   accent?: string
 }) {
   return (
-    <div className="bg-white rounded-lg border border-neutral-200 p-4">
+    <div className="bg-white rounded-lg border border-neutral-200 shadow-card p-4">
       <div className="flex items-center justify-between mb-2">
         <span className="text-sm text-neutral-500">{title}</span>
         {icon}
