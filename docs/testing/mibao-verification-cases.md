@@ -3438,7 +3438,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（111 case）
+## 杂项域（112 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5116,6 +5116,22 @@
 跳过: [backend-contract] 纯 CI 判据面（读 branch protection + 解析 workflow YAML），零 LLM、不碰真实云，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-16 新增（issue #7022）。**发现路径**：修本单第一条成因（`grep -c` 配 `|| echo "0"`）时，顺着 `docs/wiki/gate-exemption-ledger.md` §1 第 6 行读到**同一症状的第二条独立成因**已登记（当时那单禁止改 workflows ⇒ 只登记未修），当场核实：两个收尾 job 的 `needs` 各 9 条、缺 4 个 required 门禁。归因确认后**同单一起收**（只修一条治不好症状）。取号 `MC-110`（复核 `origin/main` 空闲、当期零 open PR）。守卫**不硬编码那 4 个 job 名**，而是**现取** branch protection 的 required 名单比对 ⇒ 以后新增 required 门禁而忘了加进 `needs:` 时，本判据照样会红。 ｜ tags: ci-cd, gating, fail-closed, red-proof, empty-green
+
+### MC-111. 取号工具对**未知前缀**必须出声（不得静默新建号段）：请求的前缀在候选集里 0 次出现 ⇒ 明说「这是**全新号段**」 + 点名**最接近的已知前缀**；已知前缀不得误报（issue #7052） 🔵
+```
+你: 我把语料文件名当初前缀敲进去了，工具却给了我一个号 —— 我怎么会知道敲错了？
+期望: direct_reply
+数据: 🔴 **判据 8（实例面，会红）**：请求的前缀**一次都没出现**在候选集里（main ∪ 全部 open PR ∪ 本工作区）⇒ 输出必须**明说**「本工具将把它当作**全新号段**」**并点名最接近的已知前缀**（`difflib`）。执行点 = tests/unit_ci_workflows/test_next_case_id_allocator.py::test_unknown_prefix_is_never_silent。**红证（实跑）**：把 `warn_unknown_prefix` 的提前返回改成**恒返回空** ⇒ 该条当场红（1 failed / 19 passed），已逐字节还原。
+数据: 🔴 **反面对照臂**：**已知**前缀（`MC`）不得被误报成「全新号段」⇒ 否则判据在乱咬。执行点 = 同文件 `test_unknown_prefix_is_never_silent` 的后半。
+数据: 🔴 **判别力自证（纯函数）**：`unknown_prefix_warnings()` 在「已知 / 未知且有近似 / 未知且无近似」三态上分别给「空 / 出声+近似 / 出声+不编造近似」。执行点 = 同文件::test_unknown_prefix_criterion_has_discriminating_power。
+数据: 📌 **真实误用现场（逐字，2026-10-16）**：我敲的是 `python3 scripts/next_case_id.py misc`，而该位置参数是**前缀**、不是**语料文件名**（`misc.yml` 里的前缀是 `MC`）⇒ 工具按前缀口径把 `misc` 大写成 `MISC`，**静默**给出 `MISC-001`（零警告）—— 看起来像个成功答案。⇒ issue #7052 的**原始归因"工具把人引向错号段"不成立，已在该单评论里更正**；残留的真实缺陷是「未知前缀静默新建号段」。
+数据: 📌 **为什么只出声、不拦**（照实登记的边界）：① 新前缀**合法** —— 既有用例 `test_cli_consults_the_inflight_face` 正是靠「全新前缀 `QX` 仍能被分配」来证明在飞面被读进去，拦它会破该用例；② 「文件名 vs 前缀」**不可判定** —— `API` / `HR` / `UI` 三个串**同时**是语料文件名与真实前缀（现取 26 个 stem ∩ 27 个前缀 = 3）⇒ 拦会误伤。⇒ 出声 + 给近似候选，让打错的人**当场自查**。
+数据: 📌 **近似候选的有效性（现取复算）**：26 个语料 stem 里 21 个形态不合法（≥5 字符，已被 `PREFIX_RE` 挡），余 5 个中 `API`/`HR`/`UI` 本就是真前缀，只有 `AUTH`/`CHAT`/`DATA`/`MISC` 四个会走到本告警，且四个都有近似项（`AUTH→UT`、`CHAT→CT`、`DATA→DA`、`MISC→MC`）。
+数据: 📌 **`known` 必须取合并集（实现要点，写错就会误报）**：告警要在**过滤 `occupied` 之前**算 —— 只看 main 会把「某个在飞 PR / 本工作区刚引进的新前缀」误报成「一次都没出现」。
+前置: 前置 = 两样都在仓里可读且**可判定**：① 工具本体 `scripts/next_case_id.py`（含 `warn_unknown_prefix` 纯函数与 `UNKNOWN_PREFIX_MARKER` 措辞锚）；② 判据本体 `tests/unit_ci_workflows/test_next_case_id_allocator.py`（含 `NCI_GH_BIN` 🔴 替身与 `NCI_MAIN_REF=HEAD` —— **刻意不读 `origin/main`**，因 CI 的 checkout 是 `fetch-depth: 1`）。**前置不成立时不许读成通过**：`gh` 替身不可用 ⇒ 工具按既有三态语义 `exit 3`（判据 3 把守）；告警被删 ⇒ 判据 8 判红。
+跳过: [backend-contract] 纯只读取号工具的静态判据（源码只读性 + 纯函数分配语义 + 未知前缀告警），零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-16 新增（issue #7052）。**发现路径** = PR #7037（issue #7022）取号时我**误把语料文件名当成了前缀参数**（`next_case_id.py misc`），观察到工具静默给出 `MISC-001`。归因时先写错了一次（以为工具"把人引向错号段"），**已在该单评论里逐字更正**：用对参数时工具是对的（`MC → MC-111`），残留的真实缺陷是「未知前缀静默新建号段」。取号 = `NCI_MAIN_REF=HEAD python3 scripts/next_case_id.py MC` ⇒ `MC → main:001-110 → 取 MC-111`，并已在飞面复核（当期 open PR 无人含 `MC-111`）。本判据**不拦**新前缀（只出声），理由与边界见 data_checks 第 5 条。 ｜ tags: ci, case-id, allocator, usability, fail-loud, red-proof
 
 ## 商家入驻域（6 case）
 
@@ -11255,8 +11271,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：773（活跃 134，跳过 639）
-- tier 分布：smoke 12 / normal 714 / adversarial 32
+- 用例总数：774（活跃 134，跳过 640）
+- tier 分布：smoke 12 / normal 715 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -11271,7 +11287,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：111
+- 杂项域：112
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：66
@@ -11417,6 +11433,7 @@
 - MC-108: **workflow 的 `run:` 正文「表达式替换后必须是合法 bash」+「`${{ github.<prop> }}` 的属性名必须真实存在」都要有会红的判据**：#7016 把不存在的环境变量 `GITHUB_RUN_STARTED_AT` 换成了**同样不存在**的 context 属性 `github.run_started_at`（官方 `github` 上下文属性表 40 个里没有它）⇒ Actions 解出**空串**、不报错不告警；且其自检文案里「转义反引号 + 表达式」在**空替换**后只剩一个**裸反引号** ⇒ 该步 bash 在**解析阶段**就死（exit 2），步内的自检**一次都没跑过** ⇒ 真机两条部署腿红、构成永久死锁（issue #7029）
 - MC-109: **`grep -c` 配 `|| echo "0"` 会捕获成两行 ⇒ `[ … -gt 0 ]` 报 `integer expression expected` ⇒ 判据走 else「绿着但没干活」**：#7012 的 `Clear stale needs-changes label` 步因此**从未**摘掉过期标签（job 还报 success）；同形态另有一处 `case-draft.yml` 的 `HAS_TRUTH`（issue #7022）
 - MC-110: **标签收尾 job 的 `needs:` 必须覆盖全部 required 门禁**：`label-needs-changes` / `clear-needs-changes` 原各只等 **9** 个 job，缺 `case-coverage-gate` / `case-trust-gate` / `llm-sink-ledger` / `ui-regression-check` ⇒ 这 4 个红时**打不上标签**、且「它们红 + 其余绿」时 `clear-needs-changes` **照样把标签摘掉**（issue #7022 的第二条独立成因）
+- MC-111: 取号工具对**未知前缀**必须出声（不得静默新建号段）：请求的前缀在候选集里 0 次出现 ⇒ 明说「这是**全新号段**」 + 点名**最接近的已知前缀**；已知前缀不得误报（issue #7052）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
