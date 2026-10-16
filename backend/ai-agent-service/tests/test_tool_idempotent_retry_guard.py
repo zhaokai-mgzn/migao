@@ -344,7 +344,7 @@ class TestIdempotencyClassificationLock:
             # "settings_manage"    （update_settings/update_ai_config/change_password 已删除，read_only = True）
             # ⚠️ 两把的 `idempotent = False` 行也一并删除（只读查询可安全重试 ⇒ 吃基类默认 True）——
             #    它们不再是"写工具必须显式表态"的对象（判据：#5302 的
-            #    tests/test_settings_manage_readonly.py）。
+            #    tests/test_settings_domain_readonly.py）。
         ):
             assert name in by_name, f"{name} 未注册"
             assert by_name[name].read_only is False, (

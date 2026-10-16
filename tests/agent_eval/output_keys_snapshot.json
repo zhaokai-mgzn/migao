@@ -698,6 +698,20 @@
       "total"
      ]
     },
+    "mark_read": {
+     "dynamic": false,
+     "keys": [
+      "notification_id",
+      "status"
+     ]
+    },
+    "read_all": {
+     "dynamic": false,
+     "keys": [
+      "scope",
+      "status"
+     ]
+    },
     "unread_count": {
      "dynamic": false,
      "keys": [
@@ -709,19 +723,25 @@
    "file": "backend/ai-agent-service/app/tools/notification_manage.py",
    "keys": [
     "items",
+    "notification_id",
     "page",
+    "scope",
     "size",
+    "status",
     "total",
     "unread_count"
    ],
    "literal_keys": [
     "items",
+    "notification_id",
     "page",
+    "scope",
     "size",
+    "status",
     "total",
     "unread_count"
    ],
-   "source_sha256": "c1c5f13b1d59e0c1b959c41575babc2a2f4a7fcd60ca1bb5d7e043132f20807f"
+   "source_sha256": "b34ee3f27a83417d613698961a04a25733a553351527986a93724251b898eaf4"
   },
   "operation_catalog_query": {
    "actions": null,
@@ -1349,7 +1369,7 @@
     "data ← response.get('data', {})",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "50845f8f46137120eec2d4371ed9140d86a8686897b8c493457ab3c72272c1ca"
+   "source_sha256": "f7597d5d32b4bb5c33994d67faa09ee438fc1289849d871fc3c509d505451636"
   },
   "sku_update": {
    "actions": null,
@@ -1391,7 +1411,7 @@
     "params",
     "validated"
    ],
-   "source_sha256": "6752bfe77e9ebfe8ca1b0ae9829985e402d91e483c5b348c516ad89523ee06bc"
+   "source_sha256": "22a15cdcc1458afdd0b3d9fc67d2a1c0fe32af25d1c01cf3fb49a38190ffe5ce"
   }
  }
 }

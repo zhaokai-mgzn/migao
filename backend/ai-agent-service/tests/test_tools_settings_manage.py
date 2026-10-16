@@ -4,7 +4,7 @@ B 端只读化（issue #5247 用户裁定 2026-09-23；settings 域整域收口 
 settings_manage 的写 action（`update_settings` / `update_ai_config` / `change_password`）
 已从工具删除 ⇒ 本次退休写路径用例（**产品裁定，非放宽门禁**）。
 写能力下线的判据（枚举 / schema / description / 入口拒绝）在
-`tests/test_settings_manage_readonly.py`（新增文件，专治 #5302 的整域漏网）。
+`tests/test_settings_domain_readonly.py`（新增文件，专治 #5302 的整域漏网）。
 """
 # case_ids: ST-001, ST-002, ST-003
 import pytest
@@ -31,7 +31,7 @@ class TestSettingsGet:
 
 # [RETIRED #5302] TestSettingsUpdate（1 例） 已退休：更新系统参数（update_settings）已从工具删除
 #   （B 端只读化；settings 域整域收口）：写能力不再存在，断言无对象。
-#   下线判据见 tests/test_settings_manage_readonly.py::TestSettingsManageIsReadOnly。
+#   下线判据见 tests/test_settings_domain_readonly.py::TestSettingsManageIsReadOnly。
 
 
 class TestAIConfig:
