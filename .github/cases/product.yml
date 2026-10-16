@@ -1078,10 +1078,21 @@ cases:
     #   支持按「本次成功 create 返回的 product_id」回读（见 issue #3683）。
     # ⚠️ 2026-09-24（issue #5247）：原 `must_succeed[product_manage(action=create)]` **已删除** ——
     # 该工具已从 B 端全部 skill 解绑，保留即「永不满足的悬空声明」。
+    # ── 禁区（issue #7048 P1 · 项 C，按 #7035 第一相审计报告 §2.2）────────────────────
+    # 剧本整条是**建品链**（R1 发色卡图要建品 / R2 回填规格 / R4 确认创建），而期望面早已按
+    # #5247 改判为 `direct_reply`（如实说明 + 引导后台）⇒ 用例的**真值**（规格落库）落在被裁定
+    # 禁止的能力上。按 2026-10-16「能力边界 终版」（**创建商品 ❌**）把「不得真去建品」机器化。
+    # 空禁区边界（如实登记）：`product_manage` 已从 B 端全部 skill 解绑 ⇒ B 端腿恒真；
+    # 注入式红证 = 重绑回 `backend/ai-agent-service/app/graph/skills/product_skill.py` 的
+    # `PRODUCT_TOOLS` ⇒ `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 判据 1/7 当场红，
+    # 届时 agent 真去建品还同时命中本格 + 下面 `forbidden_text`（假承诺）。
+    forbidden_tools:
+      - tool: product_manage
+        action: create
     data_checks:
       # 原断言「create 参数含 specifications（…随 specs 落库到 product_attributes…）」断言的是
       # **写路径落库**，在新事实下**必然为假** ⇒ 改判如下（历史原文即本注释）。
-      - "只读 + 如实说明：不得谎称已创建/已落库规格，须说明 B 端黄金策不做创建并引导去后台「商品管理」页面操作"
+      - "只读 + 如实说明：不得谎称已创建/已落库规格，须说明 B 端黄金策不做创建并引导去后台「商品管理」页面操作（机器断言见 forbidden_tools）"
     # forbidden-text-intent: 本用例退役后**被测行为就是这条禁令本身** —— 「不得谎称已创建」（B 端建品写能力
     # 已随 #5247 下线，如实说明「黄金策不做创建」才是正确行为），禁令侧无「某一轮良性措辞误伤」的风险。
     # 声明形态照 assertion_taxonomy.has_forbidden_text_intent 的既有约定（先例 = AS-009）。
@@ -1121,7 +1132,7 @@ cases:
         expect: 0
         max_growth: 1
     skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「色卡图建品的规格落库」（product_manage(action=create)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。"
-    merge_log: "2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩褶」；④ 收尾改协作答卡轮。2026-09-15 §14.1 回填（issue #3683）：补 `must_succeed:[product_manage(action=create)]`（原仅有 expectations 参数级匹配 + required_args，create 失败仍判过）；db_verify 未加——商品名与种子 `prod_eval_2699` 同名同价、`_fetch_product_configs` 取 keyword 首条无法区分本次新建与种子（见用例内注释）；2026-09-15（issue #3835）**改名去种子撞名**：`E2E色卡建品样品面料` → `E2E色卡建品样品面料`（种子 `prod_eval_2699` 就叫前者 ⇒ 运行期造同名副本，读者按名搜会得到 products=2；改名后本次新建可被关键字唯一定位，上述 db_verify 歧义随之解除）、`pre_clean: product_dedupe{E2E色卡建品样品面料, price: 23.8}` → `product_remove{自有名}`、补 `namespaces: product_name:E2E色卡建品样品面料`；断言（expectations/must_succeed/required_args/data_checks/forbidden_text）原样未动。2026-09-18（issue #4305 的 burn-down 缴费）：补 `precondition[product_count_for_keyword: E2E色卡建品样品面料, expect=0, max_growth=1]` —— 建品用例的真前置 =「目标名尚不存在且运行期只新增自己那一件」；判据清零 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（整条销账）。断言面一字未动。2026-09-19（#4371 商品↔加工项解耦）：本用例的**加工项半边退场** —— 删除 ③ 加工项轮（`auto_respond 已选加工项：…`）、`data_checks` 的两条 processing_item_configs/processingItemConfigs 断言、`required_args` 的 `processing_item_configs.customPrice` 字段、收尾 fallback 里的「已选加工项：…」；标题去掉「与加工项价格落库」。**保留**：specifications 落库断言（本用例的另一半，与解耦无关）、must_succeed / forbidden_text / pre_clean / precondition / namespaces 原样未动。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=create)] 改判为 [direct_reply]（如实说明 + 引导去后台页面），must_succeed / required_args / user_inputs[repeat_until].tool_called 里的 product_manage 与「create 参数含 specifications」data_checks 同步移除/改判（否则成为永不满足的悬空声明）。forbidden_text（「尚未真正创建」「未创建成功」）按「不得谎称已创建」保留，并按 assertion_taxonomy 既有约定补 `# forbidden-text-intent:` 声明（先例 AS-009）。"
+    merge_log: "2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩褶」；④ 收尾改协作答卡轮。2026-09-15 §14.1 回填（issue #3683）：补 `must_succeed:[product_manage(action=create)]`（原仅有 expectations 参数级匹配 + required_args，create 失败仍判过）；db_verify 未加——商品名与种子 `prod_eval_2699` 同名同价、`_fetch_product_configs` 取 keyword 首条无法区分本次新建与种子（见用例内注释）；2026-09-15（issue #3835）**改名去种子撞名**：`E2E色卡建品样品面料` → `E2E色卡建品样品面料`（种子 `prod_eval_2699` 就叫前者 ⇒ 运行期造同名副本，读者按名搜会得到 products=2；改名后本次新建可被关键字唯一定位，上述 db_verify 歧义随之解除）、`pre_clean: product_dedupe{E2E色卡建品样品面料, price: 23.8}` → `product_remove{自有名}`、补 `namespaces: product_name:E2E色卡建品样品面料`；断言（expectations/must_succeed/required_args/data_checks/forbidden_text）原样未动。2026-09-18（issue #4305 的 burn-down 缴费）：补 `precondition[product_count_for_keyword: E2E色卡建品样品面料, expect=0, max_growth=1]` —— 建品用例的真前置 =「目标名尚不存在且运行期只新增自己那一件」；判据清零 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（整条销账）。断言面一字未动。2026-09-19（#4371 商品↔加工项解耦）：本用例的**加工项半边退场** —— 删除 ③ 加工项轮（`auto_respond 已选加工项：…`）、`data_checks` 的两条 processing_item_configs/processingItemConfigs 断言、`required_args` 的 `processing_item_configs.customPrice` 字段、收尾 fallback 里的「已选加工项：…」；标题去掉「与加工项价格落库」。**保留**：specifications 落库断言（本用例的另一半，与解耦无关）、must_succeed / forbidden_text / pre_clean / precondition / namespaces 原样未动。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=create)] 改判为 [direct_reply]（如实说明 + 引导去后台页面），must_succeed / required_args / user_inputs[repeat_until].tool_called 里的 product_manage 与「create 参数含 specifications」data_checks 同步移除/改判（否则成为永不满足的悬空声明）。forbidden_text（「尚未真正创建」「未创建成功」）按「不得谎称已创建」保留，并按 assertion_taxonomy 既有约定补 `# forbidden-text-intent:` 声明（先例 AS-009）。 ｜ 2026-10-16（issue #7048 P1 · 项 C，按 #7035 第一相审计报告 §2.2）：新增 `forbidden_tools[product_manage(action=create)]`（2026-10-16「能力边界 终版」：**创建商品 ❌**）—— 剧本整条是建品链而期望面已改判 `direct_reply`，禁区把「不得真去建品」机器化（与既有 `forbidden_text` 的假承诺禁令互补）；`expectations` / `forbidden_text` / `pre_clean` / `precondition` / `namespaces` / `user_inputs` 一字未动。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_prompt_snapshots.py"
@@ -5020,6 +5031,16 @@ cases:
       - "把一张面料图发给黄金策并要求「按这张图建商品」⇒ 黄金策调 image_recognize 时带 interpretations（含 name/material/craft/color 的贴近结论）"
     expectations:
       - tool: direct_reply
+    # ── 禁区（issue #7048 P1 · 项 C，按 #7035 第一相审计报告 §2.2）────────────────────
+    # `user_inputs` 的诉求是「**按这张图建商品**」⇒ 按 2026-10-16「能力边界 终版」
+    # （**创建商品 ❌**）不得真去建品；本用例的真值（解读结论 / 不落库边界）由 `traces.tests`
+    # 的 pytest 承重，禁区这一格把「不落库、不提交」的**既有边界**（下面第 5 条 data_check
+    # 的 `TestNoWriteBoundary`）机器化到用例面。
+    # 空禁区边界（如实登记）：`product_manage` 已从 B 端全部 skill 解绑 ⇒ B 端腿恒真；
+    # 注入式红证 = 重绑回 product skill 的 `PRODUCT_TOOLS` ⇒ B 端只读判据当场红。
+    forbidden_tools:
+      - tool: product_manage
+        action: create
     data_checks:
       - "**口径（用户 2026-10-05 逐字裁定）**：「不可信没关系，先推理一份贴近的结论」⇒ 商品侧可落值的键 = `name` / `material` / `craft` / `color`（来源一律 `[米宝解读]`）。"
       - "**判据 1（逐字钉住，会红）**：`backend/ai-agent-service/app/vision/deep_channel.py::INTERPRETABLE_KEYS[\"product\"]` 恰为 `(\"name\",\"material\",\"craft\",\"color\",\"description\")`（#6362 追加描述格）；`[\"order\"]` 保持 `()`。判据 = tests/test_vision/test_deep_channel.py。"
@@ -5028,7 +5049,7 @@ cases:
       - "**判据 4（来源可分辨）**：落值格 `source == \"[米宝解读]\"` 且 `note_source` 同名；与 `[图片识别]` 不同（商家据此判断该信哪一格）。"
       - "**边界**：内核 `recognizer` 的「只抄写明的内容」铁律**一字未动**（transcription 与 inference 是两层）；本端点**不落库**（TestNoWriteBoundary 保持）。"
     skip_reason: "[backend-contract] 确定性契约/机械判据，由 pytest（backend/ai-agent-service/tests/test_vision/test_deep_channel.py、tests/test_tools_image_recognize.py）验证，非 LLM 行为，不进入 agent-eval 冒烟 —— 可落值集合与「不落值」两半都能逐值钉住"
-    merge_log: "2026-10-05 新增（issue #6361，走 PR #6364 合入 main）。取号 = 现取最大号 + 1（本工作区当时最大 PR-123；`scripts/next_case_id.py` 因扫描超时未用）。红→绿：先写判据、实现未动 ⇒ tests/test_vision/test_deep_channel.py + tests/test_tools_image_recognize.py **5 failed / 40 passed**；实现后 56 passed。注入式（§28.1 出口①）：`product` 元组临时改回两格 ⇒ **4 failed / 41 passed**。"
+    merge_log: "2026-10-05 新增（issue #6361，走 PR #6364 合入 main）。取号 = 现取最大号 + 1（本工作区当时最大 PR-123；`scripts/next_case_id.py` 因扫描超时未用）。红→绿：先写判据、实现未动 ⇒ tests/test_vision/test_deep_channel.py + tests/test_tools_image_recognize.py **5 failed / 40 passed**；实现后 56 passed。注入式（§28.1 出口①）：`product` 元组临时改回两格 ⇒ **4 failed / 41 passed**。 ｜ 2026-10-16（issue #7048 P1 · 项 C，按 #7035 第一相审计报告 §2.2）：新增 `forbidden_tools[product_manage(action=create)]`（同口径）—— 诉求是「按这张图建商品」，agent 侧不得真去建品；`expectations` / `user_inputs` / `data_checks` 一字未动（解读结论与不落库边界仍由 `traces.tests` 的 pytest 承重）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_vision/test_deep_channel.py"
@@ -5058,6 +5079,16 @@ cases:
       - "用户 2026-10-05 逐字「然后把商品描述的文案也要生成一份」⇒ 黄金策的 interpretations 里带 description（HTML 片段）"
     expectations:
       - tool: direct_reply
+    # ── 禁区（issue #7048 P1 · 项 C，按 #7035 第一相审计报告 §2.2）────────────────────
+    # 同 PR-124（同 issue #6362 家族，「生成建品页图文描述」）：诉求是**建品页**预填，
+    # 但 agent 侧**不得真去建品** ⇒ 按 2026-10-16「能力边界 终版」（**创建商品 ❌**）机器化。
+    # 「预填 ≠ 落库、由商家在页面提交」这条边界由 `traces.tests` 的前端/vitest 判据承重
+    # （`buildProductPrefill` 只返回 `initialData`，不调用任何写端点）。
+    # 空禁区边界（如实登记）：`product_manage` 已从 B 端全部 skill 解绑 ⇒ B 端腿恒真；
+    # 注入式红证 = 重绑回 product skill 的 `PRODUCT_TOOLS` ⇒ B 端只读判据当场红。
+    forbidden_tools:
+      - tool: product_manage
+        action: create
     data_checks:
       - "**判据 1（落值）**：前端 `frontend/admin-web/src/lib/image-recognize.ts::buildProductPrefill` 收到 `{key:'description', value:'<p>…</p>', source:'[米宝解读]'}` ⇒ `initialData.description` **逐字**等于该值、`recognizedFields` 含 `description`。判据 = tests/unit/components/ImageRecognizePrefill.test.tsx。"
       - "**判据 2（空值不写键，会红）**：`value` 为空 / 键缺失 ⇒ `'description' in initialData === false`（**绝不写空串** —— 那会覆盖商家自己写的描述；表单是 `{...prev, ...initialData}` 合并语义）。"
@@ -5065,7 +5096,7 @@ cases:
       - "**判据 4（字段表登记）**：`backend/ai-agent-service/app/vision/targets.py` 的 product 字段表含 `description`（类级元守卫：前端读的键必须在内核字段表里 —— 不登记即红）。"
       - "**边界（如实登记）**：描述**文案质量**（是否编造、是否贴图）判据红不了，只由字段表 hint 的口径约束（「不得编造图上没有的硬事实」）；徽标的**端到端**可见性只有组件级判据（Playwright 页面验收未落）。"
     skip_reason: "[backend-contract] 确定性契约/机械判据，由 vitest（frontend/admin-web/tests/unit/components/ImageRecognizePrefill.test.tsx、tests/unit/lib/image-recognize.test.ts）+ pytest（tests/test_vision/test_targets.py、test_recognizer.py、test_deep_channel.py）验证，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-05 新增（issue #6362）。取号 = 现取最大号 + 1（本工作区当时最大 PR-123 已被 PR-124 占用）。红→绿（注入=判据先落、实现后落）：vitest ImageRecognizePrefill **3 failed / 15 passed** → **20 passed**；类级元守卫 image-recognize.test.ts **1 failed / 6 passed** → 7 passed；后端 test_targets / test_recognizer 各 1 条红 → 绿。"
+    merge_log: "2026-10-05 新增（issue #6362）。取号 = 现取最大号 + 1（本工作区当时最大 PR-123 已被 PR-124 占用）。红→绿（注入=判据先落、实现后落）：vitest ImageRecognizePrefill **3 failed / 15 passed** → **20 passed**；类级元守卫 image-recognize.test.ts **1 failed / 6 passed** → 7 passed；后端 test_targets / test_recognizer 各 1 条红 → 绿。 ｜ 2026-10-16（issue #7048 P1 · 项 C，按 #7035 第一相审计报告 §2.2）：新增 `forbidden_tools[product_manage(action=create)]`（同口径，同 #6362 家族）；`expectations` / `user_inputs` / `data_checks` 一字未动。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/components/ImageRecognizePrefill.test.tsx"

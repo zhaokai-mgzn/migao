@@ -109,7 +109,7 @@ _CASE_AS_003 = EvalCase(
     skill=Skill.AFTERSALES,
     difficulty=Difficulty.NORMAL,
     user_inputs=['查一下客户手机号 13800138000 最近的订单', '就刚才那笔订单，客户手机号 13800138000，要退货，创建售后工单', '确认创建', '确认', {'auto_respond': {'fallback': '确认创建'}}, {'auto_respond': {'fallback': '确认'}}],
-    expectations=['order_query', 'after_sales_manage or aftersale_create(order_id=复用上轮 UUID)'],
+    expectations=['order_query', 'after_sales_manage'],
     data_checks=['success=true', '工单号匹配 ^AS-\\d{8}-\\d{4}$'],
     skip_reason='',
     tags=['cross_skill', 'context_share', 'create'],
@@ -150,7 +150,7 @@ _CASE_AS_005 = EvalCase(
     skill=Skill.AFTERSALES,
     difficulty=Difficulty.NORMAL,
     user_inputs=['客户张三说窗帘颜色不对，帮我查下他的订单', '最近那个订单，客户手机号 13800138000', '客户要退货，创建售后工单', '原因：颜色与图片不符，退款', '这工单现在什么状态了'],
-    expectations=['order_query', 'after_sales_manage or aftersale_create', 'after_sales_manage or aftersale_query'],
+    expectations=['order_query', 'after_sales_manage'],
     data_checks=['aftersale_create 的 order_id 来自第2步查询结果', '售后工单包含正确的退款原因'],
     skip_reason='',
     tags=['multi_turn', 'cross_skill', 'real_scenario'],
@@ -2201,8 +2201,8 @@ _CASE_CH_009 = EvalCase(
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
     user_inputs=['__FORM__|{"customer_name":"张三","customer_phone":"13800138000","customer_address":"杭州市西湖区","quantity":"3"}'],
-    expectations=['direct_reply or order_create or interact'],
-    data_checks=['表单字段注入本轮 LLM 上下文（不改写会话历史）', '日志中手机号脱敏（138****8000）', 'payload 超限/非法 JSON 回退为普通文本处理'],
+    expectations=['direct_reply or interact'],
+    data_checks=['表单字段注入本轮 LLM 上下文（不改写会话历史）', '日志中手机号脱敏（138****8000）', 'payload 超限/非法 JSON 回退为普通文本处理', '不得走创建订单写路径（B 端射程内创建订单 ❌；机器面见 must_succeed 的条件档 + traces）'],
     skip_reason='',
     tags=['form', 'interactive', 'multi_turn'],
     persona='',
@@ -2386,13 +2386,14 @@ _CASE_CH_018 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['用户只上传一张窗帘照片（无文字），可能想找同款/查自己订单里这个商品/问面料/录成新商品，意图不明确', '用户上传一张与店铺某商品几乎相同的图片并说『跟这个一样的』'],
     expectations=['interact(component=choice)'],
-    data_checks=['多模态 system prompt 注入 VISION_CLARIFY_GUIDE（呈现理解 + 候选意图 + 不连环追问）', '意图明确（带『创建这个商品』等文字）时直接进既有流程，不多问', '意图不明确（纯图/口语短句）时：先给出 2-4 个候选意图（找同款/识别面料/算料/查订单/建品），不直接执行写操作', '候选意图用简短大白话列出，可用 interact(choice) 卡片点选', '已识别字段不重复反问，不编造图片中不存在的信息'],
+    data_checks=['多模态 system prompt 注入 VISION_CLARIFY_GUIDE（呈现理解 + 候选意图 + 不连环追问）', '意图明确（带『创建这个商品』等文字）时直接进既有流程，不多问', '意图不明确（纯图/口语短句）时：先给出 2-4 个候选意图（找同款/识别面料/算料/查订单/建品），不直接执行写操作；其中「建品」只能作为**引导到后台商品管理页**的入口出现（机器断言见 forbidden_tools）', '候选意图用简短大白话列出，可用 interact(choice) 卡片点选', '已识别字段不重复反问，不编造图片中不存在的信息'],
     skip_reason='[backend-contract] 纯图澄清注入由 pytest 单测验证（test_graph_skills.py::TestVisionClarifyGuide，mock LLM 断言 system prompt），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟',
     tags=['clarification', 'multimodal', 'image'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    forbidden_tools=[{'tool': 'product_manage', 'action': 'create'}],
     precondition='本用例是 [backend-contract]（agent-eval 栈无发图能力，不跑它）：前置 = 多模态 system prompt 的 VISION_CLARIFY_GUIDE 注入点仍在（backend/ai-agent-service 的 base_skill 多模态注入）且纯图/口语短句走的仍是「先澄清后动作」分支；前置由单测自建并断言（test_graph_skills.py::TestVisionClarifyGuide / test_vision_integration.py），注入点被摘或分支被改即单测直接红 ⇒ 前置不成立时不会表现成「agent 不干活」',
 )
 
@@ -2939,6 +2940,7 @@ _CASE_CR_001 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    forbidden_tools=[{'tool': 'order_create'}],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
     namespaces=['customer_phone:13800138000', 'product_name:遮光窗帘'],
     precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
@@ -2960,6 +2962,7 @@ _CASE_CR_002 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    forbidden_tools=[{'tool': 'order_create'}],
     namespaces=['product_name:遮光窗帘', 'customer_phone:13800138000'],
     precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
 )
@@ -2980,6 +2983,8 @@ _CASE_CR_003 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    forbidden_tools=[{'tool': 'order_create'}],
+    want_text=['订单'],
     pre_clean=[{'type': 'product_dedupe', 'product_keyword': '遮光窗帘'}],
     namespaces=['customer_phone:13800138000', 'product_name:遮光窗帘'],
     precondition=[{'type': 'product_count_for_keyword', 'source': '遮光窗帘', 'expect': 1}],
@@ -8403,11 +8408,11 @@ _CASE_PG_012 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PG-013 [NORMAL] 黄金策加工单 LLM 行为：查询含加工项订单 → 生成加工单（真实对话）（源: cases/processing-order.yml）──
+# ── PG-013 [NORMAL] 黄金策加工单 LLM 行为：查询含加工项订单 → 如实说明不支持生成 + 引导生产看板（真实对话）（源: cases/processing-order.yml）──
 _CASE_PG_013 = EvalCase(
     id='PG-013',
     legacy_id='',
-    title='黄金策加工单 LLM 行为：查询含加工项订单 → 生成加工单（真实对话）',
+    title='黄金策加工单 LLM 行为：查询含加工项订单 → 如实说明不支持生成 + 引导生产看板（真实对话）',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
     user_inputs=['最近有没有已确认、需要加工的订单？', '帮我把订单 EVAL-MB-ORD-0002 生成加工单', '确认'],
@@ -8420,7 +8425,9 @@ _CASE_PG_013 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     order_before=['order_query before processing_order_generate'],
-    forbidden_text=['暂不支持', '功能不存在', '没有这个功能', '生成未成功', '生成失败', {'round': 2, 'any_of': ['无加工项', '无法生成加工单', '系统判定为']}, {'round': 3, 'any_of': ['无加工项', '无法生成加工单', '系统判定为']}],
+    forbidden_text=['生成未成功', '生成失败', '已生成', '已创建加工单', '已生成加工单', {'round': 2, 'any_of': ['无加工项', '无法生成加工单', '系统判定为']}, {'round': 3, 'any_of': ['无加工项', '无法生成加工单', '系统判定为']}],
+    forbidden_tools=[{'tool': 'processing_order_generate'}, {'tool': 'processing_order_update'}],
+    want_text=['加工单', '生产'],
     pre_clean=[{'type': 'processing_order_reset', 'order_no': 'EVAL-MB-ORD-0002'}],
     precondition=[{'type': 'order_count_for_phone', 'source': '13800138000'}],
 )
@@ -10250,7 +10257,7 @@ _CASE_PR_019 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=[{'text': '根据这张图片录入商品（色卡图，可识别材质/克重）', 'images': ['https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/images/2026/09/04/e5a68d1a02f844c6a45846784765a737.jpg']}, {'auto_respond': {'fallback': '商品名称: E2E色卡建品样品面料\n单价(元/米): 23.8\n颜色: 2699-01本白\n门幅: 2.8米\n售卖方式: 散剪\n货号: XNE2699', 'form_values': {'name': 'E2E色卡建品样品面料', 'price': '23.8', 'colors': '2699-01本白', 'door_widths': '2.8米', 'selling_methods': '散剪', 'sku_code': 'XNE2699'}}}, {'auto_respond': {'fallback': '商品名称: E2E色卡建品样品面料；单价(元/米): 23.8；颜色: 2699-01本白；门幅: 2.8米；售卖方式: 散剪；货号: XNE2699；确认创建'}}],
     expectations=['direct_reply'],
-    data_checks=['只读 + 如实说明：不得谎称已创建/已落库规格，须说明 B 端黄金策不做创建并引导去后台「商品管理」页面操作'],
+    data_checks=['只读 + 如实说明：不得谎称已创建/已落库规格，须说明 B 端黄金策不做创建并引导去后台「商品管理」页面操作（机器断言见 forbidden_tools）'],
     skip_reason='[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「色卡图建品的规格落库」（product_manage(action=create)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。',
     tags=['product_create', 'specifications', 'regression'],
     persona='',
@@ -10258,6 +10265,7 @@ _CASE_PR_019 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_text=['尚未真正创建', '未创建成功'],
+    forbidden_tools=[{'tool': 'product_manage', 'action': 'create'}],
     pre_clean=[{'type': 'product_remove', 'product_keyword': 'E2E色卡建品样品面料'}],
     namespaces=['product_name:E2E色卡建品样品面料'],
     precondition=[{'type': 'product_count_for_keyword', 'source': 'E2E色卡建品样品面料', 'expect': 0, 'max_growth': 1}],
@@ -12131,6 +12139,7 @@ _CASE_PR_124 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    forbidden_tools=[{'tool': 'product_manage', 'action': 'create'}],
 )
 
 # ── PR-125 [NORMAL] 米宝解读额外生成商品描述文案 ⇒ 预填建品页「图文描述」富文本区（来源 [米宝解读]、有值才写键、不覆盖商家内容）（issue #6362）（源: cases/product.yml）──
@@ -12149,6 +12158,7 @@ _CASE_PR_125 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    forbidden_tools=[{'tool': 'product_manage', 'action': 'create'}],
 )
 
 # ── PR-126 [NORMAL] 识别 vs 推理的分工按字段定死：生成类字段（商品名/商品描述）只由 [米宝解读] 给值，识别路径永不许直填（issue #6386）（源: cases/product.yml）──
@@ -12296,23 +12306,25 @@ _CASE_ST_004 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── ST-005 [NORMAL] 通知标记已读 —— 能力已下线（只读域）：如实告知 + 引导到通知中心，不假承诺（源: cases/settings.yml）──
+# ── ST-005 [NORMAL] 通知标记已读 —— 变更已接回（#7040）：标记已读要真做（走确认门禁），不得谎称已读（源: cases/settings.yml）──
 _CASE_ST_005 = EvalCase(
     id='ST-005',
     legacy_id='6.5',
-    title='通知标记已读 —— 能力已下线（只读域）：如实告知 + 引导到通知中心，不假承诺',
+    title='通知标记已读 —— 变更已接回（#7040）：标记已读要真做（走确认门禁），不得谎称已读',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['把新订单通知标为已读'],
-    expectations=['direct_reply'],
-    data_checks=['如实告知：黄金策不改通知状态（本域只读）⇒ 引导用户到商户后台「通知中心」页自助标记', '整场不得出现假承诺话术（机器断言见 forbidden_text）', 'notification_manage 只暴露 list/unread_count（结构性判据：backend/ai-agent-service/tests/test_settings_domain_readonly.py）'],
+    expectations=['notification_manage(action=mark_read)', 'direct_reply or interact'],
+    data_checks=['真值 = 变更（标记已读）已在能力面内，且该调用必须走写确认门禁（非只读 action）', '整场不得出现假承诺话术（机器断言见 forbidden_text）', '标记已读的落库真值由 admin-api 侧承担：PUT /api/admin/notifications/{id}/read（单条）/ PUT /api/admin/notifications/read-all（全部）'],
     skip_reason='',
-    tags=['query'],
+    tags=['write', 'notification'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_text=['已标记为已读', '已标为已读', '已全部标记', '已经帮您标记', '已为您标记'],
+    must_succeed=[{'tool': 'notification_manage', 'only_if_called': True}],
+    namespaces=['account_password:notifications_mark_read'],
 )
 
 # ── ST-008 [NORMAL] 机器人设置生效 - 自动转人工关键词命中后如实告知（无人工通道）+ 非营业时间降级（确定性层）（源: cases/settings.yml）──

@@ -538,13 +538,26 @@ cases:
     # 本轮上下文后**本轮必须有产出**：表单已带齐下单四要素（姓名 / 手机号 / 地址 / 数量）⇒
     # 落地形态只有三种（直接下单 / 确认卡 / 文本引导），任一都算「表单没被静默丢掉」；
     # 三者皆无（无 tool_calls 且无 final_text，例如注入链路炸了）⇒ `unmatched expectation` 判红。
+    # ── 2026-10-16 重锚（issue #7048 P1 · 项 C，按 #7035 第一相审计报告 §2.2）────────────
+    # 被改的只有一件事：**`order_create` 不再作为合格分支出现在 `expectations` 里**。
+    # 理由（用户 2026-10-16「能力边界 终版」逐字）：创建订单 ∈ **❌**（射程 = B 端黄金策）；
+    # 旧形态把「直接下单」写成三条合格落地形态之一 ⇒ 用例在**奖励**一个被裁定禁止的动作。
+    # 保留判别力（一字未丢）：被测行为仍是「`__FORM__` 表单负载注入后**本轮必须有产出**」——
+    # `direct_reply`（纯文本作答/引导）/ `interact`（确认类澄清卡）任一都算「表单没被静默丢掉」，
+    # 三者皆无（无 tool_calls 且无 final_text）⇒ `unmatched expectation` 判红。
+    # ⚠️ 写声明**留在条件效果层**（`must_succeed[order_create, only_if_called]` 一字未动）：
+    # `order_create` 是 **C 端元元**的主流程（`tests/agent_eval/eval_case_filter.XIAOBU_TOOLS`
+    # 在册），本用例是**双端**用例 ⇒ C 端腿真去下单时仍要求它成功（判别力保留）；
+    # B 端腿从不调用它 ⇒ 条件档不产生噪音。写类身份由
+    # `assertion_taxonomy.write_expectations`（= 写期望 ∪ **效果层指名的写工具**，issue #7048）
+    # 现算，故规则 a2/b/f 对本条**继续生效**（不是把写用例降级成读用例）。
     expectations:
       # `direct_reply` = 该轮无 tool_calls 且有 final_text（runner 既有语义，见 local_runner 的匹配实现）；
-      # `order_create` / `interact` = 直接下单 / 出确认卡。
-      - tool: direct_reply or order_create or interact
+      # `interact` = 出澄清/确认卡（引导到后台订单页的落地形态）。
+      - tool: direct_reply or interact
     # ── 效果层断言 + 自清理（2026-09-25，issue #3778 第一批）──
-    # 本条的写分支（`order_create`）是**可选**的（三条合格落地形态里的一条）⇒ 不能用无条件的
-    # `must_succeed`：顾客只发文本（`direct_reply`）是合格行为，无条件声明会把合格行为判红。
+    # 本条的写分支（`order_create`）是**可选**的（C 端合格落地形态之一）⇒ 不能用无条件的
+    # `must_succeed`：只发文本（`direct_reply`）是合格行为，无条件声明会把合格行为判红。
     # 但「不写」也有个必须堵的洞（**本条原来的假绿形态**）：`expectations` 只做工具名匹配
     # （`__all_tool_names` 跨轮累积）⇒ 一次**被后端拒绝**的 `order_create` 照样满足期望 ——
     # 而那一轮既没有文本（`direct_reply` 要求无 tool_calls）也没有卡 ⇒ 顾客什么都没得到，
@@ -572,8 +585,9 @@ cases:
       - "表单字段注入本轮 LLM 上下文（不改写会话历史）"
       - "日志中手机号脱敏（138****8000）"
       - "payload 超限/非法 JSON 回退为普通文本处理"
+      - "不得走创建订单写路径（B 端射程内创建订单 ❌；机器面见 must_succeed 的条件档 + traces）"
     skip_reason: ""
-    merge_log: "C 端表单化交互（miniapp-multiturn-form-scenarios.md）M1+M2 ｜ 2026-09-25（issue #3778 第一批）：补 `must_succeed[order_create, only_if_called=true]`（条件效果层，「去下单了就必须成了」；合格行为「只发文本」不受影响）+ `namespaces[customer_phone:13800138000]`（写分支落单的并行互斥/重试前置等价）。`user_inputs` / `expectations` / `data_checks` / `traces` 一字未动、**无放宽**（只增不减）。"
+    merge_log: "C 端表单化交互（miniapp-multiturn-form-scenarios.md）M1+M2 ｜ 2026-09-25（issue #3778 第一批）：补 `must_succeed[order_create, only_if_called=true]`（条件效果层，「去下单了就必须成了」；合格行为「只发文本」不受影响）+ `namespaces[customer_phone:13800138000]`（写分支落单的并行互斥/重试前置等价）。`user_inputs` / `expectations` / `data_checks` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ 2026-10-16（issue #7048 P1 · 项 C）：`expectations` 由 [`direct_reply or order_create or interact`] 改为 [`direct_reply or interact`] —— 按用户 2026-10-16「能力边界 终版」（创建订单 ❌，射程 = B 端）**不再把「直接下单」写成合格分支**；`must_succeed[order_create, only_if_called=true]` / `namespaces` / `precondition` 原样保留（C 端腿的写效果层判别力一字未丢）；写类身份改由 `write_expectations` 的**效果层扩展**（issue #7048）现算 ⇒ 规则 a2/b/f 继续生效。"
     traces:
       tests:
         - "frontend/mini-app/tests/form-card.test.tsx"
@@ -1138,15 +1152,26 @@ cases:
       - tool: interact
         args:
           component: choice
+    # ── 禁区（issue #7048 P1 · 项 C，按 #7035 第一相审计报告 §2.2）────────────────────
+    # 候选意图里含「建品」—— 按 2026-10-16「能力边界 终版」（**创建商品 ❌**、射程 = B 端），
+    # 「建品」只能作为**引导到后台商品管理页**的入口出现，**不得**由 agent 真去建
+    # ⇒ 把「不真去建」从散文（下面第 3 条 data_check）**机器化**。
+    # 空禁区边界（如实登记）：`product_manage` 已从 B 端全部 skill 解绑 ⇒ 本格在 B 端腿**恒真**；
+    # 注入式红证 = 把它重绑回 `backend/ai-agent-service/app/graph/skills/product_skill.py` 的
+    # `PRODUCT_TOOLS` ⇒ `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 判据 1/7 当场红，
+    # 届时 agent 真去建品还同时命中本格。
+    forbidden_tools:
+      - tool: product_manage
+        action: create
     data_checks:
       - "多模态 system prompt 注入 VISION_CLARIFY_GUIDE（呈现理解 + 候选意图 + 不连环追问）"
       - "意图明确（带『创建这个商品』等文字）时直接进既有流程，不多问"
-      - "意图不明确（纯图/口语短句）时：先给出 2-4 个候选意图（找同款/识别面料/算料/查订单/建品），不直接执行写操作"
+      - "意图不明确（纯图/口语短句）时：先给出 2-4 个候选意图（找同款/识别面料/算料/查订单/建品），不直接执行写操作；其中「建品」只能作为**引导到后台商品管理页**的入口出现（机器断言见 forbidden_tools）"
       - "候选意图用简短大白话列出，可用 interact(choice) 卡片点选"
       - "已识别字段不重复反问，不编造图片中不存在的信息"
     precondition: "本用例是 [backend-contract]（agent-eval 栈无发图能力，不跑它）：前置 = 多模态 system prompt 的 VISION_CLARIFY_GUIDE 注入点仍在（backend/ai-agent-service 的 base_skill 多模态注入）且纯图/口语短句走的仍是「先澄清后动作」分支；前置由单测自建并断言（test_graph_skills.py::TestVisionClarifyGuide / test_vision_integration.py），注入点被摘或分支被改即单测直接红 ⇒ 前置不成立时不会表现成「agent 不干活」"
     skip_reason: "[backend-contract] 纯图澄清注入由 pytest 单测验证（test_graph_skills.py::TestVisionClarifyGuide，mock LLM 断言 system prompt），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟"
-    merge_log: "issue #2777 Phase 1：VISION_CLARIFY_GUIDE + base_skill 多模态注入（澄清能力强化）；2026-09-20（issue #4694 的 Case Trust burn-down 缴费，与本单行为改动无关）：补声明层 `precondition`（原条目命中 CASE-TRUST-NO-PRECONDITION-ASSERTION 整条销账）—— 断言内容一字未改，补的是**前置可见性**"
+    merge_log: "issue #2777 Phase 1：VISION_CLARIFY_GUIDE + base_skill 多模态注入（澄清能力强化）；2026-09-20（issue #4694 的 Case Trust burn-down 缴费，与本单行为改动无关）：补声明层 `precondition`（原条目命中 CASE-TRUST-NO-PRECONDITION-ASSERTION 整条销账）—— 断言内容一字未改，补的是**前置可见性** ｜ 2026-10-16（issue #7048 P1 · 项 C，按 #7035 第一相审计报告 §2.2）：新增 `forbidden_tools[product_manage(action=create)]` —— 按 2026-10-16「能力边界 终版」（**创建商品 ❌**）把「候选意图含『建品』但**不得真去建**」从散文（第 3 条 data_check）机器化；`expectations` / `user_inputs` / 其余 data_checks / `precondition` 一字未动。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_graph_skills.py"

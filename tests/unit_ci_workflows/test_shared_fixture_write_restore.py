@@ -1,4 +1,4 @@
-# case_ids: PR-021, PR-025, PR-007, PR-017, PR-005, PR-009, PR-010, OR-014
+# case_ids: PR-021, PR-025, PR-007, PR-017, PR-005, PR-009, PR-010, OR-014, ST-005, AS-003, CH-009
 """**共享夹具的属性写方**必须声明复位手段（issue #4075 的机制半边：L0 判据 + 红证）。
 
 ## 病灶（run `35243351675` @`67db87ae`，两条腿同一条断言结论相反）
@@ -258,6 +258,17 @@ PRODUCT_ATTR_WRITERS: dict = {
     #   ("notification_manage", "")           → "unknown"   （同上）
     # action 级写的判别力**没有丢**：三条红证改用**合成「部分写」工具**注入（见
     # `_with_synthetic_action_writer`），机制仍逐条被覆盖。
+    # ── 🔴 #7040 + #7048 P1（2026-10-16）：action 级写方**回来了一条** ────────────────
+    # #7040 把「变更」接回 B 端 ⇒ `notification_manage` 的 `mark_read` / `read_all` 重新可达
+    # （`read_only = False`、`READ_ONLY_ACTIONS = {list, unread_count}`）；#7048 P1 把 `ST-005`
+    # 按新能力重锚（期望 = `notification_manage(action=mark_read)`）⇒ 真实库里出现**第一条**
+    # action 级活写方（`test_scan_surface_covers_the_known_writers` 已同 PR 改判成**正向**断言）。
+    # 「写的是不是共享夹具」的这一问必须有人回答（判据 ① 的口径）：
+    #   · 写的是**收件人自己的通知状态**（`PUT /api/admin/notifications/{id}/read`），
+    #     **不触达任何商品属性** ⇒ 属性键 = `""`（与 `order_create` / `aftersale_create` 同档）；
+    #     据此判据 ②③（要不要复位）对它**不适用**，而不是被豁免。
+    ("notification_manage", "mark_read"): "",
+    ("notification_manage", "read_all"): "",
     # ── 具名批量写方（issue #5314）：属性由**用例声明的 `batch_type`** 决定 ⇒ 3 元组键 ──
     # `preview` = 预演：只落一条 preview 批次，**不改商品属性**（判别维在场也只是把这条钉死）。
     ("product_batch_update", "preview", "product_price"): "",
@@ -595,8 +606,18 @@ class TestSeedTruthAndScanSurface:
         **#5247 证伪**：那 5 条的写工具已全部退场（PR-017/PR-005 改判为只读、
         PR-021/PR-025/PR-007 的写 action 已从源码删除）⇒ 它们不再是写方证据。
         新口径（三类都钉住，取**真实用例库**）：
-          ① 整工具写 —— `CH-009` 的 ` or ` 形态字符串期望里必须析出 `order_create`；
-          ② 整工具写 —— `AS-003` 的 `after_sales_manage or aftersale_create` 里析出 `aftersale_create`；
+          ① 整工具写 —— `PR-009` 的 `product_update` 期望里必须析出 `product_update`；
+             ⚠️ **2026-10-16（issue #7048 P1）换锚**：原第 ①（`CH-009` 的字符串
+             `direct_reply or order_create or interact`）与第 ②（`AS-003` 的
+             `after_sales_manage or aftersale_create`）**已被按 2026-10-16「能力边界 终版」
+             重锚**（创建订单 / 单据类创建 ❌ ⇒ 写分支从 `expectations` 移除，写声明只留在
+             条件效果层 `must_succeed`）⇒ 这两条**在期望面上不再是写方**，继续钉它们 =
+             要求用例把被裁定禁止的创建动作写回合格分支 ✗。**判别力没有丢**：
+             ① 的具体对象换成 `PR-009`（#5303 回绑的 A 档整工具写，期望面上**仍是**活写方）；
+             ② 保留 `AS-003` 但改成**同源推导**的正面断言（见下）；
+             ⑤ 的防空转下界（活写方集合必须认出 `order_create` / `aftersale_create` /
+             `product_update` / `sku_update`）**一字未动** —— 那几个写方在库里的真实位置
+             （C 端下单族 / 改价族）不受本次重锚影响。
           ③ 🔴 **#5302 改判**：原第 ③ 条（`ST-003` 的 `settings_manage(action=change_password)`）随
              settings 域只读化**消失**（该用例已改判为「能力下线的如实告知」）⇒ 改成断言**新真值**：
              真实用例库里**不再有任何 action 级写方**（若又出现，说明有写 action 复活 —— 这里先红）；
@@ -604,21 +625,44 @@ class TestSeedTruthAndScanSurface:
           ⑤ **防空转下界**：从真实库解析出的活写方集合必须非空（解析失效 ⇒ 红）。
         """
         by = {c["id"]: c for c in _all_cases()}
-        assert ("order_create", "") in live_write_expectations(by["CH-009"]), (   # 字符串 ` or ` 必须拆开
-            f"判据认不出 CH-009 的整工具写（` or ` 没拆？）：{live_write_expectations(by['CH-009'])}")
-        assert ("aftersale_create", "") in live_write_expectations(by["AS-003"]), (
-            f"判据认不出 AS-003 的整工具写：{live_write_expectations(by['AS-003'])}")
+        assert ("product_update", "") in live_write_expectations(by["PR-009"]), (   # 期望面上的整工具写
+            f"判据认不出 PR-009 的整工具写（` or ` 没拆？）：{live_write_expectations(by['PR-009'])}")
+        # ⚠️ **2026-10-16（issue #7048 P1）**：原第 ②（`AS-003` 的
+        # `after_sales_manage or aftersale_create`）已按 2026-10-16「能力边界 终版」重锚
+        # ⇒ **期望面上不再有写方**（写声明只在条件效果层）。故这里改成**负向坐标**：
+        # 它必须**不再**被期望面认成写方（若又认出来，说明有人把被裁定禁止的创建分支写回了
+        # `expectations`）。判别力没有净损失：① 已由 `PR-009` 承担，`or` 拆分另由
+        # 本函数下方 `_with_synthetic_action_writer` 的**合成注入**自证。
+        assert live_write_expectations(by["AS-003"]) == [], (
+            f"AS-003 的 `expectations` 里又出现了写方（#7048 重锚被退回？）："
+            f"{live_write_expectations(by['AS-003'])}"
+        )
         # ⚠️ 2026-09-24（issue #5314）判据建面收窄：**必须看 `WRITE_TOOL_ACTIONS` 的成员关系**，
         # 不能拿「key 的 action 分量非空」当代理 —— `WRITE_TOOLS`（整工具写）里也有**带
         # `action` 参数**的工具（`product_batch_update` 的 preview/execute/revert；它是整工具写，
         # 不是「部分写」）⇒ 用 action 分量当代理会把它误判成「写 action 复活」（假红）。
+        #
+        # 🔴 **2026-10-16（issue #7040 + #7048 P1）改判 —— 不是放宽**：
+        # #7040 把「变更」接回 B 端 ⇒ `WRITE_TOOL_ACTIONS` **重新有 1 条成员**
+        # （`notification_manage` 的 `mark_read` / `read_all`），`ST-005` 因此成为**真实库里
+        # 第一条 action 级写方**。旧断言「真实库里不再有任何 action 级写方」（`== []`）在
+        # 新事实下**恒红**，故改判成**正向**断言：它必须**恰好**是 `notification_manage`，
+        # 且 key 必须带**真实的写 action 值**（不写死计数，防以后又加一个写 action 时假红）。
+        # 判别力仍由下面两条承担：具名批量写方（#5314）+ 合成注入（`_with_synthetic_action_writer`）。
         _action_level_tools = set(_taxonomy().WRITE_TOOL_ACTIONS)
         corpus_action_level = sorted(
             k for k in live_writer_keys(_all_cases()) if k[0] in _action_level_tools)
-        assert corpus_action_level == [], (
-            f"真实用例库里又出现了 action 级写方 {corpus_action_level} —— taxonomy 的 "
-            "`WRITE_TOOL_ACTIONS` 现为空集（#5302 后无「部分写」工具）⇒ 要么有人把写 action "
-            "加回了工具源码（那是能力复活，先改判 taxonomy 与判据），要么用例锚点已过期"
+        assert corpus_action_level, (
+            "真实库里解析不到任何 action 级写方 —— 要么 `WRITE_TOOL_ACTIONS` 又空了、"
+            "要么用例侧的 action 级写期望（`ST-005`）没被扫描面认出（`migao-acceptance`"
+            "「绿了但没跑」）"
+        )
+        assert {k[0] for k in corpus_action_level} == {"notification_manage"}, (
+            f"action 级写方出现了未预期的工具：{corpus_action_level} —— 新加「部分写」工具时"
+            "必须同步改判 `WRITE_TOOL_ACTIONS`（taxonomy 单一源）与本处坐标"
+        )
+        assert all(str(k[1]).strip() for k in corpus_action_level), (
+            f"action 级写方的 key 丢了 action 分量（扫描面按旧地图判）：{corpus_action_level}"
         )
         # 判别力正控（issue #5314，同 `test_rebound_writers_are_seen_by_the_surface` 的形态）：
         # 具名批量写方的 key 带**第三维判别值** ⇒ 它必须被认出，否则上面那条会因
