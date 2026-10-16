@@ -320,7 +320,7 @@ def check_claims(gh: str = "gh", env: dict | None = None) -> int:
     total_claims = sum(1 for i in scoped if claim_comments(i.get("comments")))
     if not bad:
         print(f"✅ 清零声明与单据状态一致：开放 `{TITLE_PREFIX.strip()}` 单 {len(scoped)} 张"
-              f"（其中 {total_claims} 张带清零声明，均确为 CLOSED 之外的**零**张）")
+              f"（其中 {total_claims} 张带清零声明；`{CLAIM_MARKER}` 出现在**开放**单上的：0 张）")
         return 0
     _fail(f"清零注释宣称「自动关闭」，而单**没有**关（{len(bad)} 张）—— 假绿（issue #7075）：")
     for b in bad:
