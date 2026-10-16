@@ -446,7 +446,7 @@ jobs:
       # `public/version.json` 应答），把它的 `sha` 与本次目标 sha 逐字符比前 7 位
       # —— 不一致 ⇒ **具名判红**（探到什么 / 期望什么 / 可复制复算命令，三件都在脚本输出里）；
       # 取不到 ⇒ 退 **3**（fail-closed，**不当绿**）。脚本**显式处理回落**：拿到 HTML 判「探不到」。
-      # 实现体只有一份 = `deploy/scripts/admin-web-verify-served.sh`（与 admin-api 腿的脚本同族，不复制语义）。
+      # 实现体只有一份 = `deploy/scripts/admin-web-version-probe.sh`（与 admin-api 腿的脚本同族，不复制语义）。
       #
       # 两条路径都要走（**这正是 #6746 的那一刀**）：
       #  · `skip != 'true'`（push / rollback / schedule 真部署）⇒ 这是**本轮部署后**的最终判据；
@@ -476,7 +476,7 @@ jobs:
             echo "本轮**已部署** ${GITHUB_SHA::7} ⇒ 下面这条断言就是本腿的最终判据（线上 sha == 本次 sha）。"
           fi
           set +e
-          bash deploy/scripts/admin-web-verify-served.sh \
+          bash deploy/scripts/admin-web-version-probe.sh \
             'https://merchant.migaozn.com' "${EXPECTED_SHA:-}"
           rc=$?
           set -e

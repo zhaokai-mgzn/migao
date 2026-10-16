@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 159
+    "backend_contract_scoring_zero": 160
   },
   "history": [
     {
@@ -533,6 +533,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 159,
       "note": "issue #5653（计件**结算单** + 生成/作废留痕：生成即冻结 / 期间唯一 / 与报表同源）新增 **1** 条 `[backend-contract]` 用例 **PG-073** —— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，锚点 158 → **159**）。机器判红通道 = `traces.tests` 的四个真测试文件（均非空且真实存在，本机实跑绿）：`backend/admin-api/src/test/java/com/migao/admin/service/PieceworkSettlementServiceTest.java`（15 条：同源逐值 / 不注入报工表 Mapper 的结构判据 / 无可结金额 422 不落 0 元单 / 作废 CAS 只改一族三列 / 作废必填原因 / 作废后可重开 / 重复生成 409 / 并发败者 409 非 500 / 期间校验 / 留痕三件套 / 跨租户 404 / 金额小数位准入（3 位 ⇒ 422 且零写入））、`backend/admin-api/src/test/java/com/migao/admin/controller/PieceworkSettlementControllerTest.java`（7 条：接口层无 PUT/PATCH/DELETE + 运行时 405 / 生成 200 且金额逐值 / 重复生成 409 具名回执 / 作废留痕 / 参数透传 / 每个映射的权限码 + 路径逐字）、`backend/admin-api/src/test/java/com/migao/admin/service/PieceworkSettlementRealDbTest.java`（4 条真 PG：迁移终态谓词逐字 + 两遍幂等 / `ON CONFLICT` 谓词匹配 / 真 mapper 往返（ASSIGN_UUID + JSONB + CAS + 快照列不动）/ 作废后重开新单）、`backend/admin-api/src/test/java/com/migao/admin/mapper/PieceworkSettlementMapperTest.java`（6 条：三源收敛列集 / 部分唯一索引谓词两源逐字 / 原子生成目标带索引谓词 / mapper 只有两条写语句且 SET 不含快照列）；前端入口（同 PR 补的 admin-web 半边）另有 7 条 vitest 判据挂在同一个用例下（`frontend/admin-web/tests/unit/pages/production-piecework.test.tsx`）；`traces.ci` = `pr-check.yml`（`admin-api unit tests` + `admin-web typecheck + unit tests` + `ci workflow helper unit tests`）。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 159}` vs 锚点 158 ⇒ 差值 1 = 本 PR 新增那一条。"
+    },
+    {
+      "sha": "pending-pr-7013",
+      "date": "2026-10-16",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 160,
+      "note": "issue #6611 + #6746（admin-web 发布腿的身份自证：构建期把 identity 烘焙进产物 + `GET /version.json` 的 sha 比对 + 探不到/回落 fail-closed + schedule 兜底档显式出声）新增 **1** 条 `[backend-contract]` 用例 **MC-106** —— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，**与本 PR 同批的另一条**（#7010 的 PG-073）+1 叠加：159 → **160**）。机器判红通道 = `traces.tests` 的真测试文件（非空且真实存在，本机实跑绿）：`tests/unit_ci_workflows/test_admin_web_served_version.py`（23 passed；红证 = 注入错误期望 sha ⇒ 退 1、同场景换真值 ⇒ 退 0、200+HTML 回落 ⇒ 退 3、身份面自报 unknown ⇒ 退 3；另有 7 条结构注入各自判红且**自动复位**）；`traces.ci` = `pr-check.yml` / `deploy-frontend.yml`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -p no:randomly` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 160}` ⇒ 与上一行 159 的差值 1 = 本 PR 新增那一条。"
     }
   ]
 }

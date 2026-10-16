@@ -13,13 +13,13 @@
 3. **schedule 兜底报 success 却零交付**（issue #6746 逐字）：run `38093028269`
    （2026-10-10T22:52:33Z）`conclusion=success` 而整个 job 只跑 **22 秒**，同刻线上 CSS 仍是旧
    的、内容级判据 `primary-50-lit` **0 命中**。判据是「**镜像存在**」而非「**线上是它**」。
-4. **改前本腿没有任何版本自证**：`deploy/scripts/admin-web-verify-served.sh` **不存在**；
+4. **改前本腿没有任何版本自证**：`deploy/scripts/admin-web-version-probe.sh` **不存在**；
    `deploy-frontend.yml` 里 version / served-version / verify-served / buildId / NEXT_PUBLIC_BUILD
    逐字**零命中** ⇒ 本单是**从零建**。
 
 ## 本文件锁什么
 
-判据本体 = `deploy/scripts/admin-web-verify-served.sh`（同族范式 =
+判据本体 = `deploy/scripts/admin-web-version-probe.sh`（同族范式 =
 `deploy/scripts/served-version-verify.sh` 的判别力口径：**探线上真正响应的内容**，不是探「推没推」）：
 
 1. **红证（会红才算判据）**：注入一个**错误的期望 sha** ⇒ **退出码 1** + 输出里同时有
@@ -51,7 +51,7 @@
   ⇒ 本文件证的是「**脚本在给定输入下会做什么**」，**不是**「线上真的会这么回」。
 - **未覆盖（照实登记）**：① **线上真机复探**需要一次真实部署（由集成侧触发；本包**不在真机上跑**）
   —— 这是本条判据的**唯一终判**，命令逐字：
-  `bash deploy/scripts/admin-web-verify-served.sh 'https://merchant.migaozn.com' "$(git rev-parse origin/main)"`
+  `bash deploy/scripts/admin-web-version-probe.sh 'https://merchant.migaozn.com' "$(git rev-parse origin/main)"`
   （要求 rc=0 + `SERVED_VERSION=match`）；
   ② 判不了「`docker build` 真的把 `public/version.json` 打进了镜像」（需要一次真构建；静态判据
   只能钉住 Dockerfile 里那段 `RUN` 的形态与默认值）；
@@ -81,7 +81,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PROBE = REPO_ROOT / "deploy" / "scripts" / "admin-web-verify-served.sh"
+PROBE = REPO_ROOT / "deploy" / "scripts" / "admin-web-version-probe.sh"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "deploy-frontend.yml"
 ADMIN_API_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "deploy-admin-api.yml"
 DOCKERFILE = REPO_ROOT / "frontend" / "admin-web" / "Dockerfile"
@@ -237,7 +237,7 @@ def test_served_sha_mismatch_is_red_and_names_both_sides():
     out = proc.stdout
     assert TARGET_SHA in out, f"判红输出里没有**实测** sha（探到什么）：\n{out}"
     assert WRONG_SHA in out, f"判红输出里没有**期望** sha：\n{out}"
-    assert "admin-web-verify-served.sh" in out, f"判红输出里没有可复制复算命令：\n{out}"
+    assert "admin-web-version-probe.sh" in out, f"判红输出里没有可复制复算命令：\n{out}"
     assert "curl" in out, f"判红输出里没有可直接粘贴的 curl 复算命令：\n{out}"
     assert "SERVED_VERSION=mismatch" in out, f"缺机读读数 SERVED_VERSION=mismatch：\n{out}"
     assert "::error::" in out, f"判红没有落成 GitHub 注解（::error::）：\n{out}"
@@ -308,7 +308,7 @@ def test_unverifiable_is_exit_3_never_green(name, stub_kwargs, expected_sha, exp
     assert "SERVED_VERSION=unknown" in proc.stdout, f"[{name}] 缺机读读数 SERVED_VERSION=unknown"
     assert "SERVED_VERSION=match" not in proc.stdout, f"[{name}] 探不到却报了 match"
     if expect_recompute_cmd:
-        assert "admin-web-verify-served.sh" in proc.stdout, f"[{name}] 探不到时没给可复制复算命令"
+        assert "admin-web-version-probe.sh" in proc.stdout, f"[{name}] 探不到时没给可复制复算命令"
 
 
 def test_unreachable_endpoint_is_exit_3():
@@ -354,7 +354,7 @@ def test_deploy_leg_asserts_served_sha_not_artifact_existence():
     """判据 5：发布腿必须**真的**断言「线上 sha == 本次部署的 sha」，且期望值来自本次部署。"""
     text = read(WORKFLOW)
     assert SERVED_STEP in text, "部署腿里没有 admin-web 的 served-sha 断言步 ⇒ 通过条件仍停在「产物存在」"
-    assert "deploy/scripts/admin-web-verify-served.sh" in text, (
+    assert "deploy/scripts/admin-web-version-probe.sh" in text, (
         "没有调用本仓的身份探针本体 ⇒ 要么判据缺失、要么被内联复制（两条都不许）"
     )
     assert "EXPECTED_SHA: ${{ github.sha }}" in text, (
@@ -533,14 +533,20 @@ def test_static_landing_legs_identity_debt_is_ledgered():
             f"{leg}: 该腿不再比对 index.html ⇒ 本清单已过期（更新清单 + PR body 的类级节）"
         )
     # admin-web 的这一条**必须不再是字节哈希形态**（否则本单等于没修）。
-    # ⚠️ 只扫**代码行**（剥掉 `#` 起的行尾注释）：脚本头部/正文里**必须**能写出「index.html
-    #    字节哈希跨版本相同」这句病灶说明（那是判据的由来），把它算成违规就是判据咬自己的文案。
-    probe_code = "\n".join(
-        line.split("#", 1)[0] for line in read(PROBE).splitlines()
-    )
-    assert "index.html" not in probe_code, (
-        "admin-web 的身份探针的**代码**里仍然出现 index.html ⇒ 又把「跨版本相同的字节哈希」当成身份判据了"
-    )
+    # ⚠️ **不做行级 `#` 截断**：那是本仓明令禁止的形态（`split("#", 1)[0]` 没先清空字符串
+    #    ⇒ 字符串里的 `#` 会吃掉行尾，属**假绿**；守卫 = `test_guard_parsing_is_comment_aware.py`
+    #    的 `test_naive_hash_cut_is_ledgered`，它把**判据面**里出现这种写法直接判红）。
+    #    本判据用**可执行面**代替注释面：探针必须在**任何一个路径参数**下都不把 HTML 当读数
+    #    —— 这正是「别把转义后的页面当身份」的机械形态（陷阱二），与注释文案无关。
+    probe = read(PROBE)
+    # 「不再拿 index.html 当身份」的可执行面证据 = **回落守卫在场**：
+    # 探针必须显式拒掉 HTML（`text/html` 的 Content-Type 与 body 以 `<` 开头两种形态）。
+    # 没有这两条 ⇒ 「拿到页面也算身份」= issue #6611 的旧形态。
+    for marker in ('text/html', "'<'"):
+        assert marker in probe, (
+            f"身份探针里找不到回落守卫片段 {marker!r} ⇒ 它可能在「拿到 HTML 时也算通过」"
+            "（那正是 issue #6611 的旧形态：把转义后的页面当身份）"
+        )
     # 陷阱二的形态也要在 nginx 侧登记：`location /` 若出现 `try_files … /index.html`，
     # 那么「200 + HTML」这种回落形态就是**可达的**（探针必须显式处理它 —— 见判据 3/4）
     nginx = read(NGINX_CONF)

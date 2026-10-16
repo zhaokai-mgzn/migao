@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 # ══════════════════════════════════════════════════════════════════════════════
+# ⚠️ **命名空间**：本腿**不是**静态落地面腿（`*-verify-served.sh` 那个命名空间，它们由 nginx
+#    发静态文件，`.mjs` 的 MIME 面归 issue #6293），而是**版本身份探针**（`/version.json` 由
+#    admin-web 的 Next 服务器应答）⇒ 与 admin-api 腿的 `served-version-verify.sh` 同族命名。
+#    两条类级守卫（`tests/unit_ci_workflows/test_served_leg_mime_guard.py` /
+#    `test_worker_h5_module_closure_guard.py`）按 `deploy/scripts/*-verify-served.sh` **现取**腿集合、
+#    要求每条腿带静态面的判据 ⇒ 名字落进那个命名空间会把它们判红（名不副实）。
 # admin-web 发布腿的**身份自证**（issue #6611 / #6746；同族范式 = `deploy/scripts/served-version-verify.sh`）
 #
 # ## 病（现取读数，不是推断）
@@ -49,7 +55,7 @@
 #   `c-end-h5`）的身份面 —— 它们各有自己的 `*-verify-served.sh`，本判据**不**替它们背书。
 #
 # 用法:
-#   admin-web-verify-served.sh [<BASE_URL>] [<EXPECTED_SHA>]
+#   admin-web-version-probe.sh [<BASE_URL>] [<EXPECTED_SHA>]
 #     BASE_URL      默认 `https://merchant.migaozn.com`
 #     EXPECTED_SHA  默认 `$GITHUB_SHA`（CI 里就是本次运行的 commit）
 # 环境变量（可选）:
@@ -158,7 +164,7 @@ unknown() {
   echo "  · 实测读数：HTTP ${CODE:-（取不到）} · Content-Type '${CTYPE:-（取不到）}' · sha='${FETCHED_SHA:-}' · app='${FETCHED_APP:-}' · 尝试 ${ATTEMPT}/${RETRIES}"
   echo "  · 可复制复算命令："
   echo "      curl -sS -m 15 -D - '$URL' | head -c 400"
-  echo "      bash deploy/scripts/admin-web-verify-served.sh '$BASE' '$EXPECTED'"
+  echo "      bash deploy/scripts/admin-web-version-probe.sh '$BASE' '$EXPECTED'"
   echo "  · 排查方向：① 身份面在不在（admin-web 容器是否真在服务；\`GET /version.json\` 是不是 404）"
   echo "     ② 镜像有没有构建期注入面（frontend/admin-web/Dockerfile 的 MIGAO_BUILD_SHA）"
   echo "     ③ 拿到了 HTML ⇒ 该路径**回落**到了页面（nginx try_files / 容器换成了别的应用）"
@@ -207,7 +213,7 @@ echo "  · 也就是说：这次部署的「产物存在 / run 结论 success」
 echo "    —— 这正是 issue #6611 / #6746 / #6554 要治的形态（判据从「推没推」换成「线上是不是它」）"
 echo "  · 可复制复算命令："
 echo "      curl -sS -m 15 '$URL' | head -c 400"
-echo "      bash deploy/scripts/admin-web-verify-served.sh '$BASE' '$EXPECTED'"
+echo "      bash deploy/scripts/admin-web-version-probe.sh '$BASE' '$EXPECTED'"
 echo "  · 出口：① 容器没被替换（蓝绿残留 / compose 没重建）⇒ 在 run 页面 Re-run 本腿；"
 echo "     ② 目标构建本身是旧的（镜像 tag 不是本次 commit）⇒ 用 \`gh workflow run deploy-frontend.yml -f image_tag=sha-<7>\` 显式重部署；"
 echo "     ③ 根因不明 ⇒ **先不要**用「再跑一次」掩盖：把本读数和该 run 的 \`EFFECTIVE_TAG=\` 并排看"
