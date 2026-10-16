@@ -3438,7 +3438,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（112 case）
+## 杂项域（113 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5132,6 +5132,25 @@
 跳过: [backend-contract] 纯只读取号工具的静态判据（源码只读性 + 纯函数分配语义 + 未知前缀告警），零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-16 新增（issue #7052）。**发现路径** = PR #7037（issue #7022）取号时我**误把语料文件名当成了前缀参数**（`next_case_id.py misc`），观察到工具静默给出 `MISC-001`。归因时先写错了一次（以为工具"把人引向错号段"），**已在该单评论里逐字更正**：用对参数时工具是对的（`MC → MC-111`），残留的真实缺陷是「未知前缀静默新建号段」。取号 = `NCI_MAIN_REF=HEAD python3 scripts/next_case_id.py MC` ⇒ `MC → main:001-110 → 取 MC-111`，并已在飞面复核（当期 open PR 无人含 `MC-111`）。本判据**不拦**新前缀（只出声），理由与边界见 data_checks 第 5 条。 ｜ tags: ci, case-id, allocator, usability, fail-loud, red-proof
+
+### MC-112. **「job 里调用 `gh` 却没有 git 上下文」的类级判据**：凡 `run:` 里调用 `gh` 的 job 必须有 `actions/checkout` 或 `GH_REPO`（同一形态已咬三次：#2929 automerge → #7022 两个收尾 job）；注释里的 `gh` 不算调用 🔵
+```
+你: 为什么有的 job 里 gh 命令明明写了、却什么都没干？
+期望: direct_reply
+数据: 🔴 **复用共享尺子、不造第二把（本单自己的返工，照实登记）**：本判据需要「剥注释后匹配」，而仓里有**三条**判据盯着「别再造一把剥注释的尺子」—— `test_guard_parsing_is_comment_aware.py`（未登记的朴素 `#` 截断 ⇒ 红；台账**只许缩短**、不许靠加条目吸收新债）、`test_automerge_bot_safe_path.py::test_only_one_strip_comment_implementation_in_the_repo`（整仓同符号只有一处）、以及它的**前缀族对照臂**。**我第一版自造了一个复数版剥注释函数 + 朴素 `#` 截断，这三条当场把我判红** ⇒ 改为 `from danger_scan import strip_comment`（`.github/danger_scan.py` 是**全仓唯一实现**，按 YAML/shell 真实规则跳过引号内的 `#`），并以「逐行涂白」保持行结构。**教训 = 先理解再爬梯：仓里已有那把尺子，造第二把只会让两条判定漂移。**
+数据: 🔴 **判据 A（实例面，会红）**：全仓（41 个 workflow）凡 `run:` 里**调用 `gh`**（`gh` 作为命令词：行首 / 管道后 / `;`/`&&` / `$(` 之后）的 job，必须有 `actions/checkout` step，**或**该 job / 该 step 的 `env` 有 `GH_REPO`。现取命中 **17 个** job。执行点 = tests/unit_ci_workflows/test_workflow_gh_needs_git_context.py::test_every_gh_calling_job_has_git_context。
+数据: 🔴 **红证①（#2929 原现场，实跑）**：摘掉 `.github/workflows/automerge.yml::enable-auto-merge` 的 `Checkout` **并**摘掉该 step 的 `GH_REPO` ⇒ 判据当场红（1 failed / 2 passed），已逐字节还原。**⚠️ 只摘 `Checkout` 不会红** —— 该 step 自带 `GH_REPO`（#2929 当时的双保险）⇒ 这正是判据「二者其一即可」的口径，**不是漏检**。
+数据: 🔴 **红证②（#7022 原现场，实跑）**：摘掉 `.github/workflows/pr-check.yml::clear-needs-changes` 的 `GH_REPO`（该 job 无 checkout）⇒ 判据当场红，已逐字节还原。
+数据: 🔴 **反空跑 + fail-closed**：workflow 语料下限（≥20，现取 41）+ `gh` 命中面下限（≥10，现取 17）+ 目录不存在 ⇒ `scan_workflows` **抛**（不许把「没东西可判」读成绿）。执行点 = test_guard_is_not_vacuous。
+数据: 🔴 **判别力自证（纯函数）**：缺上下文 ⇒ 报出；`checkout` 一侧合法 / `GH_REPO` 一侧合法 ⇒ 都不报；**注释里的 `gh` 不算调用**（本会话反复踩到的假阳性形态）；`github`/`gherkin` 不是 `gh`；`$(gh …)` / `true | gh …` / `a && gh …` 三种真调用形态都要捉到。执行点 = test_criterion_has_discriminating_power。
+数据: 🔴 **必须先剥注释再匹配**：不剥的话本判据自己的说明注释里写一句 `gh pr view …` 就会被当成真调用 ⇒ 假红。定式（#7007 / #7022 同族）：**凡是「扫描源码找形状」的工具，先剥注释再匹配 —— 注释里的例子不是代码。**
+数据: 📌 **为什么必须静态拦（#7022 的实证）**：`clear-needs-changes` 原来写 `gh pr view … 2>/dev/null | grep -c … || echo "0"` ⇒ `|| echo` 把非零退出码**吞掉** ⇒ 步报 **success**、标签**从不脱落**，而错误被 `2>/dev/null` 藏了 ⇒ **「绿着但没干活」**。⇒ **这个缺陷自己不会变红，它只是让某件事静默不生效**，只能靠静态判据拦。
+数据: 📌 **触发时机**：本单（#7051）由 issue #7022 的收尾如实登记为**未固化项**后开单 —— #7022 修掉了那两处，但**没有**把这一类做成判据（当时判断：静态断言「凡 run 里有 gh 的 job 必须有 checkout 或 GH_REPO」是牵动全仓 workflow 的类级规则，不在那个 PR 射程）。本用例即该规则。
+数据: 📌 **边界（照实登记，不写成恒真判据）**：① 只证「有 git 上下文」，**不证能访问到目标数据** —— 权限面不在射程（例：`branches/main/protection` 即便有 `GH_REPO` 也可能因内置 token **非 admin** 而失败，#7022 的 `needs:` 判据因此改成冻结快照）；② `GH_REPO` 只认**字面键**，以**变量拼接**方式给出的写法看不见（现取 0 处）；③ 不判「该 job 该不该用 `gh`」（那是设计问题）；④ 本判据**不改**任何门禁的通过条件、**不新增豁免**。
+前置: 前置 = 两样都在仓里可读：① `.github/workflows/**`（现取 41 个文件，语料下限 ≥20）；② 判据本体 tests/unit_ci_workflows/test_workflow_gh_needs_git_context.py。**前置不成立时不许读成通过**：目录不存在 / 文件数低于下限 ⇒ `scan_workflows` **抛**（fail-closed）；某文件没有 `jobs` 键 ⇒ 同样抛；`gh` 命中面低于下限（≥10）⇒ test_guard_is_not_vacuous 判红。
+跳过: [backend-contract] 全仓 workflow 的静态判据（YAML 解析 + 剥注释后匹配 gh 命令词），零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-16 新增（issue #7051）。**发现路径** = PR #7037（issue #7022）收尾时如实登记的**未固化项**：该 PR 修掉了「job 没有 checkout ⇒ `gh` 推断不出仓库」的两处现场（automerge.yml 早在 #2929 就修过，pr-check.yml 两个收尾 job 是本单修的），但**没有**把这一类做成判据。取号 = `NCI_MAIN_REF=HEAD python3 scripts/next_case_id.py MC` ⇒ `MC-112`，并已在飞面复核无人取。**红证均在真实语料上实跑**：摘 `automerge.yml` 的 Checkout + 其 step 的 `GH_REPO` ⇒ 红；摘 `pr-check.yml::clear-needs-changes` 的 `GH_REPO` ⇒ 红；两次都逐字节还原。**一处纠错照实登记**：我第一版红证只摘了 `Checkout`、判据**不红**，一度以为漏检 —— 实查该 step 自带 `GH_REPO`（#2929 的双保险）⇒ 判据口径是「二者其一即可」，**判据是对的、我的注入是错的**。 ｜ tags: ci, workflow, gh-context, checkout, fail-loud, red-proof
 
 ## 商家入驻域（6 case）
 
@@ -11271,8 +11290,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：774（活跃 134，跳过 640）
-- tier 分布：smoke 12 / normal 715 / adversarial 32
+- 用例总数：775（活跃 134，跳过 641）
+- tier 分布：smoke 12 / normal 716 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -11287,7 +11306,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：112
+- 杂项域：113
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：66
@@ -11434,6 +11453,7 @@
 - MC-109: **`grep -c` 配 `|| echo "0"` 会捕获成两行 ⇒ `[ … -gt 0 ]` 报 `integer expression expected` ⇒ 判据走 else「绿着但没干活」**：#7012 的 `Clear stale needs-changes label` 步因此**从未**摘掉过期标签（job 还报 success）；同形态另有一处 `case-draft.yml` 的 `HAS_TRUTH`（issue #7022）
 - MC-110: **标签收尾 job 的 `needs:` 必须覆盖全部 required 门禁**：`label-needs-changes` / `clear-needs-changes` 原各只等 **9** 个 job，缺 `case-coverage-gate` / `case-trust-gate` / `llm-sink-ledger` / `ui-regression-check` ⇒ 这 4 个红时**打不上标签**、且「它们红 + 其余绿」时 `clear-needs-changes` **照样把标签摘掉**（issue #7022 的第二条独立成因）
 - MC-111: 取号工具对**未知前缀**必须出声（不得静默新建号段）：请求的前缀在候选集里 0 次出现 ⇒ 明说「这是**全新号段**」 + 点名**最接近的已知前缀**；已知前缀不得误报（issue #7052）
+- MC-112: **「job 里调用 `gh` 却没有 git 上下文」的类级判据**：凡 `run:` 里调用 `gh` 的 job 必须有 `actions/checkout` 或 `GH_REPO`（同一形态已咬三次：#2929 automerge → #7022 两个收尾 job）；注释里的 `gh` 不算调用
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

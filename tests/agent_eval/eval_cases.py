@@ -6655,6 +6655,25 @@ _CASE_MC_111 = EvalCase(
     precondition='前置 = 两样都在仓里可读且**可判定**：① 工具本体 `scripts/next_case_id.py`（含 `warn_unknown_prefix` 纯函数与 `UNKNOWN_PREFIX_MARKER` 措辞锚）；② 判据本体 `tests/unit_ci_workflows/test_next_case_id_allocator.py`（含 `NCI_GH_BIN` 🔴 替身与 `NCI_MAIN_REF=HEAD` —— **刻意不读 `origin/main`**，因 CI 的 checkout 是 `fetch-depth: 1`）。**前置不成立时不许读成通过**：`gh` 替身不可用 ⇒ 工具按既有三态语义 `exit 3`（判据 3 把守）；告警被删 ⇒ 判据 8 判红。',
 )
 
+# ── MC-112 [NORMAL] **「job 里调用 `gh` 却没有 git 上下文」的类级判据**：凡 `run:` 里调用 `gh` 的 job 必须有 `actions/checkout` 或 `GH_REPO`（同一形态已咬三次：#2929 automerge → #7022 两个收尾 job）；注释里的 `gh` 不算调用（源: cases/misc.yml）──
+_CASE_MC_112 = EvalCase(
+    id='MC-112',
+    legacy_id='',
+    title='**「job 里调用 `gh` 却没有 git 上下文」的类级判据**：凡 `run:` 里调用 `gh` 的 job 必须有 `actions/checkout` 或 `GH_REPO`（同一形态已咬三次：#2929 automerge → #7022 两个收尾 job）；注释里的 `gh` 不算调用',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['为什么有的 job 里 gh 命令明明写了、却什么都没干？'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **复用共享尺子、不造第二把（本单自己的返工，照实登记）**：本判据需要「剥注释后匹配」，而仓里有**三条**判据盯着「别再造一把剥注释的尺子」—— `test_guard_parsing_is_comment_aware.py`（未登记的朴素 `#` 截断 ⇒ 红；台账**只许缩短**、不许靠加条目吸收新债）、`test_automerge_bot_safe_path.py::test_only_one_strip_comment_implementation_in_the_repo`（整仓同符号只有一处）、以及它的**前缀族对照臂**。**我第一版自造了一个复数版剥注释函数 + 朴素 `#` 截断，这三条当场把我判红** ⇒ 改为 `from danger_scan import strip_comment`（`.github/danger_scan.py` 是**全仓唯一实现**，按 YAML/shell 真实规则跳过引号内的 `#`），并以「逐行涂白」保持行结构。**教训 = 先理解再爬梯：仓里已有那把尺子，造第二把只会让两条判定漂移。**', '🔴 **判据 A（实例面，会红）**：全仓（41 个 workflow）凡 `run:` 里**调用 `gh`**（`gh` 作为命令词：行首 / 管道后 / `;`/`&&` / `$(` 之后）的 job，必须有 `actions/checkout` step，**或**该 job / 该 step 的 `env` 有 `GH_REPO`。现取命中 **17 个** job。执行点 = tests/unit_ci_workflows/test_workflow_gh_needs_git_context.py::test_every_gh_calling_job_has_git_context。', '🔴 **红证①（#2929 原现场，实跑）**：摘掉 `.github/workflows/automerge.yml::enable-auto-merge` 的 `Checkout` **并**摘掉该 step 的 `GH_REPO` ⇒ 判据当场红（1 failed / 2 passed），已逐字节还原。**⚠️ 只摘 `Checkout` 不会红** —— 该 step 自带 `GH_REPO`（#2929 当时的双保险）⇒ 这正是判据「二者其一即可」的口径，**不是漏检**。', '🔴 **红证②（#7022 原现场，实跑）**：摘掉 `.github/workflows/pr-check.yml::clear-needs-changes` 的 `GH_REPO`（该 job 无 checkout）⇒ 判据当场红，已逐字节还原。', '🔴 **反空跑 + fail-closed**：workflow 语料下限（≥20，现取 41）+ `gh` 命中面下限（≥10，现取 17）+ 目录不存在 ⇒ `scan_workflows` **抛**（不许把「没东西可判」读成绿）。执行点 = test_guard_is_not_vacuous。', '🔴 **判别力自证（纯函数）**：缺上下文 ⇒ 报出；`checkout` 一侧合法 / `GH_REPO` 一侧合法 ⇒ 都不报；**注释里的 `gh` 不算调用**（本会话反复踩到的假阳性形态）；`github`/`gherkin` 不是 `gh`；`$(gh …)` / `true | gh …` / `a && gh …` 三种真调用形态都要捉到。执行点 = test_criterion_has_discriminating_power。', '🔴 **必须先剥注释再匹配**：不剥的话本判据自己的说明注释里写一句 `gh pr view …` 就会被当成真调用 ⇒ 假红。定式（#7007 / #7022 同族）：**凡是「扫描源码找形状」的工具，先剥注释再匹配 —— 注释里的例子不是代码。**', '📌 **为什么必须静态拦（#7022 的实证）**：`clear-needs-changes` 原来写 `gh pr view … 2>/dev/null | grep -c … || echo "0"` ⇒ `|| echo` 把非零退出码**吞掉** ⇒ 步报 **success**、标签**从不脱落**，而错误被 `2>/dev/null` 藏了 ⇒ **「绿着但没干活」**。⇒ **这个缺陷自己不会变红，它只是让某件事静默不生效**，只能靠静态判据拦。', '📌 **触发时机**：本单（#7051）由 issue #7022 的收尾如实登记为**未固化项**后开单 —— #7022 修掉了那两处，但**没有**把这一类做成判据（当时判断：静态断言「凡 run 里有 gh 的 job 必须有 checkout 或 GH_REPO」是牵动全仓 workflow 的类级规则，不在那个 PR 射程）。本用例即该规则。', '📌 **边界（照实登记，不写成恒真判据）**：① 只证「有 git 上下文」，**不证能访问到目标数据** —— 权限面不在射程（例：`branches/main/protection` 即便有 `GH_REPO` 也可能因内置 token **非 admin** 而失败，#7022 的 `needs:` 判据因此改成冻结快照）；② `GH_REPO` 只认**字面键**，以**变量拼接**方式给出的写法看不见（现取 0 处）；③ 不判「该 job 该不该用 `gh`」（那是设计问题）；④ 本判据**不改**任何门禁的通过条件、**不新增豁免**。'],
+    skip_reason='[backend-contract] 全仓 workflow 的静态判据（YAML 解析 + 剥注释后匹配 gh 命令词），零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'workflow', 'gh-context', 'checkout', 'fail-loud', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = 两样都在仓里可读：① `.github/workflows/**`（现取 41 个文件，语料下限 ≥20）；② 判据本体 tests/unit_ci_workflows/test_workflow_gh_needs_git_context.py。**前置不成立时不许读成通过**：目录不存在 / 文件数低于下限 ⇒ `scan_workflows` **抛**（fail-closed）；某文件没有 `jobs` 键 ⇒ 同样抛；`gh` 命中面低于下限（≥10）⇒ test_guard_is_not_vacuous 判红。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -14833,6 +14852,7 @@ ALL_CASES = (
     _CASE_MC_109,
     _CASE_MC_110,
     _CASE_MC_111,
+    _CASE_MC_112,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
