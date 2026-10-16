@@ -539,8 +539,8 @@ export default function CustomerDetailPage() {
                   ) : (
                     customer.sessions.map((session) => (
                       <div key={session.id} className="flex items-start gap-3 p-4 border border-neutral-100 rounded-lg hover:bg-neutral-50 transition-colors">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${session.isAI ? 'bg-purple-100' : 'bg-blue-100'}`}>
-                          <MessageSquare className={`w-4 h-4 ${session.isAI ? 'text-purple-600' : 'text-primary-600'}`} />
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${session.isAI ? 'bg-accent-100' : 'bg-primary-100'}`}>
+                          <MessageSquare className={`w-4 h-4 ${session.isAI ? 'text-accent-600' : 'text-primary-600'}`} />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">

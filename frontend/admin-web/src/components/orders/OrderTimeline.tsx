@@ -14,8 +14,8 @@ interface OrderTimelineProps {
 
 const statusColors: Record<OrderStatus, { bg: string; border: string; text: string }> = {
   pending_payment: { bg: 'bg-amber-500', border: 'border-amber-500', text: 'text-amber-700' },
-  pending_shipment: { bg: 'bg-primary-500', border: 'border-primary-500', text: 'text-blue-700' },
-  shipped: { bg: 'bg-indigo-500', border: 'border-indigo-500', text: 'text-indigo-700' },
+  pending_shipment: { bg: 'bg-primary-500', border: 'border-primary-500', text: 'text-primary-700' },
+  shipped: { bg: 'bg-accent-500', border: 'border-accent-500', text: 'text-accent-700' },
   completed: { bg: 'bg-green-500', border: 'border-green-500', text: 'text-green-700' },
   closed: { bg: 'bg-neutral-500', border: 'border-neutral-1000', text: 'text-neutral-700' },
   refund: { bg: 'bg-red-500', border: 'border-red-500', text: 'text-red-700' },

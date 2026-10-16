@@ -6,8 +6,9 @@ import { Plus, Tags, X, Star } from 'lucide-react'
 import { toast } from 'sonner'
 import { customerApi } from '@/lib/api'
 import { resolveImageUrl } from '@/lib/utils'
-import { Table, Pagination, Modal, Button, Badge, SearchBar } from '@/components/ui'
-import type { TableColumn } from '@/components/ui'
+import { Table, Pagination, Modal, Button, Badge, Select, PageHeader, PageCard, SearchPanel } from '@/components/ui'
+import { SEARCH_CONTROL_CLASS } from '@/components/ui/SearchPanel'
+import type { TableColumn, SearchFieldSpec } from '@/components/ui'
 import type { Customer, CustomerTag, CustomerTagFormData, CustomerChannel, CustomerListParams } from '@/types'
 import { CustomerChannelLabels } from '@/types'
 import DateTimeCell from '@/components/common/DateTimeCell'
@@ -81,6 +82,12 @@ export default function CustomersPage() {
   const [pageSize, setPageSize] = useState(20)
   const [searchParams, setSearchParams] = useState({ keyword: '', channel: '', vipLevel: '' })
 
+  // 筛选控件的**受控值**（issue #7007：`SearchBar` 自带 state ⇒ 换成无状态的 `SearchPanel` 后，
+  // 这三个值由页面持有；`searchParams` 仍是「已提交的查询」，两者语义与改动前逐值一致）。
+  const [keyword, setKeyword] = useState('')
+  const [channel, setChannel] = useState('')
+  const [vipLevel, setVipLevel] = useState('')
+
   // 标签管理状态
   const [tagModalOpen, setTagModalOpen] = useState(false)
   const [tags, setTags] = useState<CustomerTag[]>([])
@@ -132,16 +139,21 @@ export default function CustomersPage() {
     loadData()
   }, [loadData])
 
-  const handleSearch = (values: Record<string, string>) => {
+  const handleSearch = () => {
     setCurrent(1)
     setSearchParams({
-      keyword: values.keyword || '',
-      channel: values.channel || '',
-      vipLevel: values.vipLevel || '',
+      keyword: keyword || '',
+      channel: channel || '',
+      vipLevel: vipLevel || '',
     })
   }
 
   const handleReset = () => {
+    // 原 `SearchBar` 的「重置」会同时清空控件内的值（它自己持有 state）⇒ 这里显式清控件值，
+    // 保证「点重置 ⇒ 输入框/下拉都回到空」逐值不变。
+    setKeyword('')
+    setChannel('')
+    setVipLevel('')
     setCurrent(1)
     setSearchParams({ keyword: '', channel: '', vipLevel: '' })
   }
@@ -173,7 +185,7 @@ export default function CustomersPage() {
 
   // 头像：优先头像图片 > 姓名首字 > 手机号末2位 > 默认 #
   const renderAvatar = (customer: Customer) => {
-    const colors = ['bg-primary-500', 'bg-green-500', 'bg-purple-500', 'bg-amber-500', 'bg-rose-500']
+    const colors = ['bg-primary-500', 'bg-green-500', 'bg-accent-500', 'bg-amber-500', 'bg-rose-500']
     const colorIdx = (String(customer.id || '0')).charCodeAt(0) % colors.length
     const avatarSrc = customer.avatarUrl || customer.avatar
     if (avatarSrc) {
@@ -324,50 +336,79 @@ export default function CustomersPage() {
     },
   ]
 
-  const searchFields = [
-    { key: 'keyword', label: '关键词', type: 'input' as const, placeholder: '客户名/手机号' },
+  // 筛选字段（issue #7007）：原 `SearchBar` 的声明式 `{type,options}` 换成 `SearchPanel` 的
+  // `{label, control}` —— 选项文案 / 顺序 / 值逐字不变，控件是受控的，state 在页面持有。
+  const searchPanelFields: SearchFieldSpec[] = [
     {
-      key: 'channel', label: '来源渠道', type: 'select' as const, placeholder: '请选择',
-      options: [
-        { value: '', label: '全部' },
-        { value: 'wechat_mini', label: '微信小程序' },
-        { value: 'wechat_mp', label: '公众号' },
-        { value: 'web', label: 'Web' },
-        { value: 'order', label: '订单' },
-      ],
+      key: 'keyword',
+      label: '关键词',
+      control: (
+        <input
+          type="text"
+          placeholder="客户名/手机号"
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+          className={SEARCH_CONTROL_CLASS}
+        />
+      ),
+    },
+    {
+      key: 'channel',
+      label: '来源渠道',
+      control: (
+        <Select
+          value={channel}
+          onChange={(e) => setChannel(e.target.value)}
+          options={[
+            { value: '', label: '全部' },
+            { value: 'wechat_mini', label: '微信小程序' },
+            { value: 'wechat_mp', label: '公众号' },
+            { value: 'web', label: 'Web' },
+            { value: 'order', label: '订单' },
+          ]}
+        />
+      ),
     },
     {
       // 后端 vipLevel 为字符串：normal/vip1/vip2/vip3
-      key: 'vipLevel', label: 'VIP 等级', type: 'select' as const, placeholder: '请选择',
-      options: [
-        { value: '', label: '全部' },
-        { value: 'normal', label: '普通' },
-        { value: 'vip1', label: 'VIP 1' },
-        { value: 'vip2', label: 'VIP 2' },
-        { value: 'vip3', label: 'VIP 3' },
-      ],
+      key: 'vipLevel',
+      label: 'VIP 等级',
+      control: (
+        <Select
+          value={vipLevel}
+          onChange={(e) => setVipLevel(e.target.value)}
+          options={[
+            { value: '', label: '全部' },
+            { value: 'normal', label: '普通' },
+            { value: 'vip1', label: 'VIP 1' },
+            { value: 'vip2', label: 'VIP 2' },
+            { value: 'vip3', label: 'VIP 3' },
+          ]}
+        />
+      ),
     },
   ]
 
   return (
-    <div className="p-6">
+    <div className="p-6 space-y-4">
       {/* 页面标题 */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-semibold text-neutral-900">客户管理</h1>
-          <p className="text-sm text-neutral-500 mt-1">管理客户信息、标签和互动记录</p>
-        </div>
-        <Button variant="secondary" onClick={openTagManager}>
-          <Tags className="w-4 h-4 mr-1.5" />
-          标签管理
-        </Button>
-      </div>
+      <PageHeader
+        title="客户管理"
+        subtitle="管理客户信息、标签和互动记录"
+        actions={
+          <Button variant="secondary" onClick={openTagManager}>
+            <Tags className="w-4 h-4 mr-1.5" />
+            标签管理
+          </Button>
+        }
+      />
 
       {/* 搜索栏 */}
-      <SearchBar fields={searchFields} onSearch={handleSearch} onReset={handleReset} loading={loading} className="mb-4" />
+      <SearchPanel fields={searchPanelFields} onSearch={handleSearch} onReset={handleReset} loading={loading} />
 
       {/* 数据表格 */}
-      <div data-testid="customers-empty" className="bg-white rounded-lg border border-neutral-200">
+      <PageCard testId="customers-empty">
         {loadError && (
           // 失败态 ≠ 空态（issue #6703）：说清「不是没有客户，是没读到」+ 真重发出口
           <div className="p-4 pb-0">
@@ -399,7 +440,7 @@ export default function CustomersPage() {
           onChange={setCurrent}
           onPageSizeChange={setPageSize}
         />
-      </div>
+      </PageCard>
 
       {/* 标签管理模态框 */}
       <Modal

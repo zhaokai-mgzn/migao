@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
  * 官网（企业站）共用版式（issue #6291）。
  *
  * 为什么共用：首页 / 产品与服务 / 关于我们 / 联系我们 四页此前各写一遍
- * `bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800` 的页头与
+ * `bg-gradient-to-br from-primary-600 via-primary-700 to-accent-800` 的页头与
  * `text-sm font-semibold text-primary-600 uppercase` 的小标签 —— 4 份副本必然漂移。
  *
  * 视觉口径 = 产品自身的「织物质感」token（`frontend/admin-web/tailwind.config.ts`）：

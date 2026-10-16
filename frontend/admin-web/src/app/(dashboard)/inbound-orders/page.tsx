@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Plus, RotateCcw, Search, Send, Ban, PackageOpen, Upload, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { inboundOrderApi } from '@/lib/api'
-import { Modal, Button, Input, Select, Badge } from '@/components/ui'
+import { Modal, Button, Input, Select, Badge, PageCard, PageHeader } from '@/components/ui'
 import type { InboundOrder, InboundOrderLine, InboundOrderStatus, OpeningImportReport } from '@/types'
 import { cn } from '@/lib/utils'
 import { formatStockQuantity } from '@/lib/stock-quantity'
@@ -227,30 +227,32 @@ export default function InboundOrdersPage() {
   return (
     <div className="p-6 space-y-4">
       {/* 页头 */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-neutral-900 flex items-center gap-2">
+      <PageHeader
+        title={
+          <span className="flex items-center gap-2">
             <PackageOpen className="w-5 h-5 text-primary-600" />
             入库单
-          </h1>
-          <p className="text-sm text-neutral-500 mt-1">登记布料到货、过账后加库存 —— <strong>过账前不改动库存</strong>，可以先核对再确认。<strong>期初建账</strong>可按实物把在库批次登记进来</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={openImport}>
-            <Upload className="w-4 h-4 mr-1.5" />
-            期初建账导入
-          </Button>
-          {canWrite && (
-            <Button onClick={() => router.push('/inbound-orders/new')}>
-              <Plus className="w-4 h-4 mr-1.5" />
-              新建入库单
+          </span>
+        }
+        subtitle={<>登记布料到货、过账后加库存 —— <strong>过账前不改动库存</strong>，可以先核对再确认。<strong>期初建账</strong>可按实物把在库批次登记进来</>}
+        actions={
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={openImport}>
+              <Upload className="w-4 h-4 mr-1.5" />
+              期初建账导入
             </Button>
-          )}
-        </div>
-      </div>
+            {canWrite && (
+              <Button onClick={() => router.push('/inbound-orders/new')}>
+                <Plus className="w-4 h-4 mr-1.5" />
+                新建入库单
+              </Button>
+            )}
+          </div>
+        }
+      />
 
       {/* 筛选 */}
-      <div className="flex items-center gap-3 bg-white border border-neutral-200 rounded-lg p-3">
+      <PageCard className="flex items-center gap-3">
         <Input
           placeholder="入库单号 / 供应商 / 送货单号"
           value={keyword}
@@ -277,10 +279,10 @@ export default function InboundOrdersPage() {
           <RotateCcw className="w-4 h-4 mr-1.5" />
           重置
         </Button>
-      </div>
+      </PageCard>
 
       {/* 列表 */}
-      <div className="bg-white border border-neutral-200 rounded-lg overflow-hidden">
+      <PageCard padded={false} className="overflow-hidden">
         {/* issue #6398：`w-full` 会把列压到 CJK min-content（一个汉字）⇒ 必须给横向逃逸口 +
             `whitespace-nowrap`（否则表头折行、状态药丸竖排）。同省料看板 / 工艺路线的既有范式。 */}
         <div className="overflow-x-auto">
@@ -363,7 +365,7 @@ export default function InboundOrdersPage() {
           </tbody>
         </table>
         </div>
-      </div>
+      </PageCard>
 
       {/* 期初建账导入弹窗（V118 / issue #5153） */}
       <Modal

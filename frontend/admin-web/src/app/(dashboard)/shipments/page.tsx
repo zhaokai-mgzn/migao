@@ -11,7 +11,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Printer, RotateCcw, Search, Truck } from 'lucide-react'
 import { orderApi, shipmentApi } from '@/lib/api'
-import { Button, Input } from '@/components/ui'
+import { Button, Input, PageCard, PageHeader } from '@/components/ui'
 import { PRINT_TARGET_SPECS, PrintDocPreview, ShipmentDoc, usePrintDoc } from '@/components/orders'
 // 来源展示口径（内部键不上屏，issue #6664 第 5 条）：与判据同一份模块
 import { sourceLabel } from '@/components/orders/shipment-source'
@@ -114,18 +114,18 @@ export default function ShipmentsPage() {
   return (
     <div className="p-6 space-y-4">
       {/* 页头 */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-neutral-900 flex items-center gap-2">
+      <PageHeader
+        title={
+          <span className="flex items-center gap-2">
             <Truck className="w-5 h-5 text-primary-600" />
             发货单
-          </h1>
-          <p className="text-sm text-neutral-500 mt-1">管理发货单：<strong>可按单号、订单号、客户检索</strong>，并补打纸质发货单</p>
-        </div>
-      </div>
+          </span>
+        }
+        subtitle={<>管理发货单：<strong>可按单号、订单号、客户检索</strong>，并补打纸质发货单</>}
+      />
 
       {/* 筛选 */}
-      <div className="flex items-center gap-3 bg-white border border-neutral-200 rounded-lg p-3">
+      <PageCard className="flex items-center gap-3">
         <Input
           aria-label="搜索发货单"
           placeholder="发货单号 / 订单号 / 客户"
@@ -141,10 +141,10 @@ export default function ShipmentsPage() {
           <RotateCcw className="w-4 h-4 mr-1.5" />
           重置
         </Button>
-      </div>
+      </PageCard>
 
       {/* 列表 */}
-      <div className="bg-white border border-neutral-200 rounded-lg overflow-hidden">
+      <PageCard padded={false} className="overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-neutral-50 text-neutral-600">
             <tr>
@@ -232,7 +232,7 @@ export default function ShipmentsPage() {
             )}
           </tbody>
         </table>
-      </div>
+      </PageCard>
 
       {/* 纸质发货单（屏幕隐藏、仅打印呈现）：挂当前补打的那张单 */}
       {printOrder && (

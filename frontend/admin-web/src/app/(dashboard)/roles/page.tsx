@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
 import { roleApi, permissionApi } from '@/lib/api'
 import request from '@/lib/request'
-import { Button, Input, Modal, Badge } from '@/components/ui'
+import { Button, Input, Modal, Badge, PageHeader, PageCard } from '@/components/ui'
 import type { Role, Permission } from '@/types'
 import DateTimeCell from '@/components/common/DateTimeCell'
 import { formatMobileTitles } from '@/lib/mobile-surface-label'
@@ -332,20 +332,21 @@ export default function RolesPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-6 space-y-4">
       {/* 页面标题 */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-semibold text-neutral-900">岗位权限</h1>
-          <p className="text-sm text-neutral-500 mt-1">管理岗位及默认权限</p>
-        </div>
-        <Button onClick={handleAdd}>
-          <Plus className="w-4 h-4 mr-1.5" />
-          新增岗位
-        </Button>
-      </div>
+      <PageHeader
+        title="岗位权限"
+        subtitle="管理岗位及默认权限"
+        actions={
+          <Button onClick={handleAdd}>
+            <Plus className="w-4 h-4 mr-1.5" />
+            新增岗位
+          </Button>
+        }
+      />
 
       {/* 岗位列表 - 卡片 */}
+      <PageCard padded={false}>
       {loadError ? (
         /* 🔴 失败态 ≠ 空态（issue #6663）：说清「不是没有岗位，是读不到」+ 给重试出口。
            范式：`src/app/(dashboard)/dashboard/page.tsx` 的 `dashboard-load-failed`。 */
@@ -423,6 +424,7 @@ export default function RolesPage() {
           ))}
         </div>
       )}
+      </PageCard>
 
       {/* 新增/编辑岗位对话框 */}
       <Modal
