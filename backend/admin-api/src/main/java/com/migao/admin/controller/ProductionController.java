@@ -5,6 +5,7 @@ import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.worker.WorkerIdentity;
 import com.migao.admin.service.ClientRequestIdService;
+import com.migao.admin.service.OrderLogisticsWriter;
 import com.migao.admin.service.OrderService;
 import com.migao.admin.service.OrderShipmentService;
 import com.migao.admin.service.ProcessingOrderService;
@@ -244,12 +245,31 @@ public class ProductionController {
     /**
      * **发货**（issue #4347 §二.2，用户裁定「发货下放到工人扫码端」）。
      * POST /api/admin/production/orders/{orderId}/ship
-     * body: {@code {trackingNo, logisticsCompany?}}
+     * body: {@code {trackingNo, logisticsCompany?, shippingMethod?, logisticsType?, shipperName?}}
+     *
+     * <p><b>请求体契约（issue #6983 扩写，白名单 fail-closed）</b>：发货页
+     * （{@code frontend/admin-web/src/app/(dashboard)/orders/[id]/ship/ShipOrder.tsx}）
+     * 收敛到本端点后，页面采集的五件事都有落点 ——
+     * {@code trackingNo} 运单号 / {@code logisticsCompany} 承运商 /
+     * {@code shippingMethod} 发货方式（{@code logistics} 物流发货 · {@code none} 无需物流）/
+     * {@code logisticsType} 物流类型（{@code express} 快递 · {@code logistics} 物流专线）/
+     * {@code shipperName} 发货人（发货单纸面「经手人」）。
+     * <ul>
+     *   <li><b>已知键</b> = 上面五个；出现别的键 ⇒ <b>422 并具名报出</b>（改前是静默丢弃 ——
+     *       拼错一个键就变成「2xx 但少记一半」，见 {@link #assertShipBody}）；</li>
+     *   <li><b>发货方式</b>非空且 ∉ {logistics, none} ⇒ 422（缺席/空串不拒绝 —— 老调用方只发前两个键）；</li>
+     *   <li><b>「无需物流」成立</b>：{@code shippingMethod=none} ⇒ 运单号与承运商都允许为空
+     *       （都落空串）。其余形态沿用原有的「运单号必填 + 承运商必填」两条校验
+     *       （工人扫码端口径：「没有单号的发货在车间不可核对」）—— 判定本体在
+     *       {@link OrderService#shipWithLogistics(String, String, String, OrderLogisticsWriter.ShippingDetails)}，
+     *       本端点与状态端点**同一份**，不复制。</li>
+     * </ul></p>
      *
      * <p><b>为什么是一个原子端点而不是复用两个管理端点</b>：
-     * {@code PUT /orders/{id}/logistics} 只记物流**不流转状态**，{@code PUT /orders/{id}/status}
-     * 只流转**不记单号** ⇒ 工人发一次货要调两次，中间失败就是「有单号但没发货」或
-     * 「发货了没单号」的静默不一致。发货是**一个动作**，就该是一个入口。</p>
+     * {@code PUT /orders/{id}/logistics} 只记物流**不流转状态**、也**不建发货单**，
+     * {@code PUT /orders/{id}/status} 只流转**不记单号** ⇒ 商家发一次货要调两次，中间失败就是
+     * 「有单号但没发货」或「发货了没单号」的静默不一致，且 {@code order_shipments} 永远是空的
+     * （issue #6983 实测：全表长期 0 行）。发货是**一个动作**，就该是一个入口。</p>
      *
      * <p><b>权限 = 写码 {@code production:execute}</b>（issue #5699 的 **I4**）：发货是**写**动作
      * （流转订单状态 + 落单号），此前只由**类级读码** {@code order:list} 把守 ⇒「写动作由读码把守」
@@ -315,10 +335,14 @@ public class ProductionController {
     private Map<String, Object> shipAtomic(String orderId, Map<String, String> body, Long tenantId) {
         // ① 零写前置：订单存在 / 归属本租户 / 处于可发货状态 —— 任何写之前判掉
         assertShippableOrder(orderId, tenantId);
+        // ①′ 请求体零写前置（issue #6983）：只接受已知键（拼错的键 ⇒ 422，不静默丢弃）
+        //     + 发货方式白名单 fail-closed —— 同样在任何写之前。
+        OrderLogisticsWriter.ShippingDetails details = assertShipBody(body);
         // ② 记物流 + 原子流转 shipped（加工单守卫在服务内部，与状态端点同一份）
         OrderService.OrderShipmentOutcome outcome = orderService.shipWithLogistics(orderId,
                 body == null ? null : body.get("trackingNo"),
-                body == null ? null : body.get("logisticsCompany"));
+                body == null ? null : body.get("logisticsCompany"),
+                details);
         Map<String, Object> result = outcome.result();
         // ③ 落可查的发货单 —— 🔴 传的是 ② **本次是否真的流转过**（issue #6181 要求 2），
         //    不是「当前状态」（状态已被 ② 写成 shipped，谓词区分不了「刚流转的」与「本来就已发货」）。
@@ -329,6 +353,42 @@ public class ProductionController {
         result.put("shipment_no", shipment.getShipmentNo());
         result.put("shipment_source", shipment.getSource());
         return result;
+    }
+
+    /**
+     * 发货请求体的**零写前置**（issue #6983）：已知键白名单 + 发货方式白名单，都在任何写之前判掉。
+     *
+     * <h2>为什么需要「已知键」这一层</h2>
+     * <p>本端点此前用 {@code Map<String,String>} 只读 {@code trackingNo} / {@code logisticsCompany}
+     * ⇒ 其余键（含拼错的 {@code trackingNO} / {@code shipper}）被**静默丢弃**：请求 2xx、
+     * 而发货人/物流类型/发货方式根本没落库。商家发货页收敛到本端点后，页面采集的字段就靠这条
+     * 兜底 —— 宁可 422 说清楚，也不要「看起来成功、其实少记了一半」。</p>
+     *
+     * <h2>白名单（fail-closed，取值口径与 {@code OrderController.updateLogistics} 逐字同口径）</h2>
+     * <ul>
+     *   <li>已知键 = {@code trackingNo} / {@code logisticsCompany} / {@code shippingMethod} /
+     *       {@code logisticsType} / {@code shipperName}；</li>
+     *   <li>{@code shippingMethod} 非空且 ∉ {logistics, none} ⇒ 422（缺席/空串不拒绝 ——
+     *       「没这句话」≠「说了个坏值」，老调用方只发前两个键）；</li>
+     *   <li>「物流发货 ⇒ 运单号必填」的**收窄**（{@code shippingMethod=none} + 空运单号合法）
+     *       在 {@code OrderService.shipWithLogistics} 里，与状态端点**同一份**判定，此处不复制。</li>
+     * </ul>
+     *
+     * @return 交给服务层的三个可选字段（一次构造，避免调用点漏传其中一个 = 静默不覆盖）
+     */
+    private OrderLogisticsWriter.ShippingDetails assertShipBody(Map<String, String> body) {
+        if (body == null) {
+            return null;
+        }
+        java.util.Set<String> known = java.util.Set.of(
+                "trackingNo", "logisticsCompany", "shippingMethod", "logisticsType", "shipperName");
+        java.util.List<String> unknown = body.keySet().stream().filter(key -> !known.contains(key)).toList();
+        if (!unknown.isEmpty()) {
+            throw com.migao.admin.exception.BusinessException.validationError(String.format(
+                    "不支持的字段: %s（本端点只接受 %s）", String.join(", ", unknown), known));
+        }
+        return new OrderLogisticsWriter.ShippingDetails(
+                body.get("shipperName"), body.get("logisticsType"), body.get("shippingMethod"));
     }
 
     /**

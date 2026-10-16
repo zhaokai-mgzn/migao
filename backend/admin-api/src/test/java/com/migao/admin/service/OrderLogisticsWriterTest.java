@@ -52,7 +52,7 @@ class OrderLogisticsWriterTest {
     @DisplayName("无既有记录 ⇒ 新建（status=in_transit，发货人取显式值）")
     void createsWhenAbsent() {
         givenExisting();
-        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF1", "张三", () -> "兜底人");
+        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF1", new OrderLogisticsWriter.ShippingDetails("张三", null, null), () -> "兜底人");
         ArgumentCaptor<OrderLogistics> c = ArgumentCaptor.forClass(OrderLogistics.class);
         verify(orderLogisticsMapper).insert(c.capture());
         assertThat(c.getValue().getTrackingNo()).isEqualTo("SF1");
@@ -67,7 +67,7 @@ class OrderLogisticsWriterTest {
     void fallsBackOnlyOnCreate() {
         givenExisting();
         AtomicInteger calls = new AtomicInteger();
-        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF1", null,
+        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF1", (OrderLogisticsWriter.ShippingDetails) null,
                 () -> { calls.incrementAndGet(); return "当前登录人"; });
         ArgumentCaptor<OrderLogistics> c = ArgumentCaptor.forClass(OrderLogistics.class);
         verify(orderLogisticsMapper).insert(c.capture());
@@ -81,7 +81,7 @@ class OrderLogisticsWriterTest {
         givenExisting(OrderLogistics.builder().id("l1").tenantId(TENANT).orderId("o1")
                 .shipperName("原经手人").trackingNo("OLD").build());
         AtomicInteger calls = new AtomicInteger();
-        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF2", null,
+        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF2", (OrderLogisticsWriter.ShippingDetails) null,
                 () -> { calls.incrementAndGet(); return "改单号的人"; });
         ArgumentCaptor<OrderLogistics> c = ArgumentCaptor.forClass(OrderLogistics.class);
         verify(orderLogisticsMapper).updateById(c.capture());
@@ -98,7 +98,7 @@ class OrderLogisticsWriterTest {
     void explicitShipperOverwrites() {
         givenExisting(OrderLogistics.builder().id("l1").tenantId(TENANT).orderId("o1")
                 .shipperName("原经手人").build());
-        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF3", "李四", () -> null);
+        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF3", new OrderLogisticsWriter.ShippingDetails("李四", null, null), () -> null);
         ArgumentCaptor<OrderLogistics> c = ArgumentCaptor.forClass(OrderLogistics.class);
         verify(orderLogisticsMapper).updateById(c.capture());
         assertThat(c.getValue().getShipperName()).isEqualTo("李四");
@@ -108,7 +108,7 @@ class OrderLogisticsWriterTest {
     @DisplayName("既有记录 status 为空 ⇒ 补 in_transit（不把空状态留在库里）")
     void fillsMissingStatusOnUpdate() {
         givenExisting(OrderLogistics.builder().id("l1").tenantId(TENANT).orderId("o1").status(null).build());
-        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF4", "张三", () -> null);
+        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF4", new OrderLogisticsWriter.ShippingDetails("张三", null, null), () -> null);
         ArgumentCaptor<OrderLogistics> c = ArgumentCaptor.forClass(OrderLogistics.class);
         verify(orderLogisticsMapper).updateById(c.capture());
         assertThat(c.getValue().getStatus()).isEqualTo("in_transit");
@@ -119,7 +119,7 @@ class OrderLogisticsWriterTest {
     void nullSelectResultIsTreatedAsAbsent() {
         List<OrderLogistics> nullRows = null;
         when(orderLogisticsMapper.selectByOrderId("o1", TENANT)).thenReturn(nullRows);
-        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF5", "张三", () -> null);
+        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF5", new OrderLogisticsWriter.ShippingDetails("张三", null, null), () -> null);
         verify(orderLogisticsMapper).insert(any(OrderLogistics.class));
     }
 
@@ -132,7 +132,7 @@ class OrderLogisticsWriterTest {
         givenExisting(OrderLogistics.builder().id("l1").tenantId(TENANT).orderId("o1")
                 .shippedAt(firstShip).status("in_transit").build());
 
-        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF-NEW", null, () -> null);
+        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF-NEW", (OrderLogisticsWriter.ShippingDetails) null, () -> null);
 
         ArgumentCaptor<OrderLogistics> c = ArgumentCaptor.forClass(OrderLogistics.class);
         verify(orderLogisticsMapper).updateById(c.capture());
@@ -151,7 +151,7 @@ class OrderLogisticsWriterTest {
         givenExisting(OrderLogistics.builder().id("l1").tenantId(TENANT).orderId("o1")
                 .shippedAt(null).status("in_transit").build());
 
-        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF-NEW", null, () -> null);
+        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF-NEW", (OrderLogisticsWriter.ShippingDetails) null, () -> null);
 
         verify(orderLogisticsMapper).backfillShippedAtIfAbsent("o1", TENANT);
         ArgumentCaptor<OrderLogistics> c = ArgumentCaptor.forClass(OrderLogistics.class);
@@ -165,7 +165,7 @@ class OrderLogisticsWriterTest {
     @DisplayName("🔴 首次发货时刻**只在更新路径**补：新建路径不得多调一次（实体已带 shippedAt）")
     void createPathDoesNotNeedBackfill() {
         givenExisting();
-        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF1", "张三", () -> null);
+        OrderLogisticsWriter.upsert(orderLogisticsMapper, TENANT, "o1", "顺丰", "SF1", new OrderLogisticsWriter.ShippingDetails("张三", null, null), () -> null);
         verify(orderLogisticsMapper, never()).backfillShippedAtIfAbsent(anyString(), anyLong());
         ArgumentCaptor<OrderLogistics> c = ArgumentCaptor.forClass(OrderLogistics.class);
         verify(orderLogisticsMapper).insert(c.capture());

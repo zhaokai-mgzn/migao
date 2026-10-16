@@ -105,6 +105,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *   <li>本类：**端到端行为面** —— 真控制器 + 真 {@code OrderService} + 真 {@code OrderShipmentService}，
  *       Mapper 用「状态可变、可断言」的替身，逐条判「落没落库、落了几行、状态变没变」。</li>
  * </ul>
+ *
+ * <h2>判据 ⑥ 的追加（issue #6983）</h2>
+ * <p>商家发货页收敛到本端点后，页面采集的五件事必须有落点、非法/拼错的键**不得静默丢弃**。
+ * 那四条判据（「无需物流」成立 / 物流发货仍必填单号 / 非法发货方式 422 / 拼错键具名 422）
+ * 由 {@link #noLogisticsShipmentSucceedsWithEmptyTrackingNo()} 起的一组用例承担；
+ * 真库上的幂等回放判据另见 {@code MerchantShipmentIdempotencyRealDbTest}。</p>
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -426,6 +432,73 @@ class MerchantShipmentRouteTest {
         // ⚠️ 「状态回滚」这一半在 standalone MockMvc（无事务管理器）里判不了 —— 由
         //    {@code MerchantShipmentAtomicityTest}（真事务管理器）与
         //    {@code ShipmentInvariantGuardTest} 的事务边界元守卫承担。
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 判据 ⑥（issue #6983）：请求体契约 —— 「无需物流」成立 + 白名单 fail-closed
+    //   商家发货页（orders/[id]/ship）收敛到本端点后，页面采集的五件事必须有落点，
+    //   且非法/拼错的键**不得静默丢弃**（改前：Map 只读两个键，其余键无声无息地消失）。
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("判据⑥·「无需物流」成立：shippingMethod=none + 空单号/空承运商 ⇒ 2xx ∧ 恰一张发货单 ∧ 方式落库")
+    void noLogisticsShipmentSucceedsWithEmptyTrackingNo() throws Exception {
+        mockMvc.perform(post(URL).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"trackingNo\":\"\",\"logisticsCompany\":\"\","
+                                + "\"shippingMethod\":\"none\",\"shipperName\":\"王五\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("shipped"));
+
+        assertThat(shipmentRows)
+                .as("🔴「无需物流」也是一次真实发货 ⇒ 必须建发货单（改前空单号被 422 挡死）")
+                .hasSize(1);
+        assertThat(order.getStatus()).as("状态同样要流转（货已经发出去了）").isEqualTo("shipped");
+        assertThat(logisticsRows).as("物流面照样落一行（方式=none 是采集到的事实）").hasSize(1);
+        assertThat(logisticsRows.get(0).getShippingMethod()).as("发货方式必须有落点（不得静默丢字段）")
+                .isEqualTo("none");
+        assertThat(logisticsRows.get(0).getShipperName()).as("发货人必须有落点（纸质单据的经手人）")
+                .isEqualTo("王五");
+    }
+
+    @Test
+    @DisplayName("判据⑥·物流发货仍必填单号：shippingMethod=logistics + 空单号 ⇒ 422（既有口径不松）")
+    void logisticsWithoutTrackingNoIsStillRejected() throws Exception {
+        mockMvc.perform(post(URL).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"trackingNo\":\"\",\"logisticsCompany\":\"顺丰\","
+                                + "\"shippingMethod\":\"logistics\"}"))
+                .andExpect(status().isUnprocessableEntity());
+
+        assertThat(shipmentRows).as("拒绝 = 零写").isEmpty();
+        assertThat(logisticsRows).as("拒绝 = 零写（物流也不许写）").isEmpty();
+    }
+
+    @Test
+    @DisplayName("判据⑥·非法发货方式 ⇒ 422 且零写（白名单 fail-closed，不静默兜底）")
+    void invalidShippingMethodIsRejectedWithoutWritingAnything() throws Exception {
+        mockMvc.perform(post(URL).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"trackingNo\":\"SF-1\",\"logisticsCompany\":\"顺丰\","
+                                + "\"shippingMethod\":\"express\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.message")
+                        .value(org.hamcrest.Matchers.containsString("无效的发货方式")));
+
+        assertThat(shipmentRows).as("非法值 ⇒ 零写（含发货单）").isEmpty();
+        assertThat(logisticsRows).as("非法值 ⇒ 零写（含物流）").isEmpty();
+        assertThat(order.getStatus()).as("状态也不得动").isEqualTo("confirmed");
+    }
+
+    @Test
+    @DisplayName("判据⑥·🔴 拼错的键 ⇒ 422 并具名报出（改前是静默丢弃 = 2xx 但少记一半）")
+    void unknownBodyKeyIsRejectedByNameInsteadOfSilentlyDropped() throws Exception {
+        mockMvc.perform(post(URL).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"trackingNo\":\"SF-1\",\"logisticsCompany\":\"顺丰\","
+                                + "\"shipper\":\"王五\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error.message")
+                        .value(org.hamcrest.Matchers.containsString("shipper")));
+
+        assertThat(shipmentRows).as("拼错键 ⇒ 零写（宁可 422 也不静默少记）").isEmpty();
+        assertThat(logisticsRows).isEmpty();
     }
 
     private OrderItem orderItem() {

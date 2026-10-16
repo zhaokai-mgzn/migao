@@ -2942,7 +2942,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // 写入本体在 OrderLogisticsWriter（issue #5648 抽出，**单一实现点**）：工人可达面的发货端点
         // 走的是同一份「存在则更新、否则新建」口径与同一条发货人规则（不复制坑）。
         OrderLogisticsWriter.upsert(orderLogisticsMapper, TenantContext.getTenantId(), orderId,
-                logisticsCompany, trackingNo, shipperName,
+                logisticsCompany, trackingNo,
+                new OrderLogisticsWriter.ShippingDetails(shipperName, null, null),
                 userService::resolveCurrentUserDisplayName);
     }
 
@@ -2970,9 +2971,43 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      *         {@code OrderShipmentService.recordMerchantShipment} 落，调用方按
      *         {@link OrderShipmentOutcome#transitioned()} 决定要不要建单（issue #6181）。
      */
-    @Transactional(rollbackFor = Exception.class)
     public OrderShipmentOutcome shipWithLogistics(String orderId, String trackingNo, String logisticsCompany) {
-        if (!StringUtils.hasText(trackingNo)) {
+        return shipWithLogistics(orderId, trackingNo, logisticsCompany, null);
+    }
+
+    /**
+     * 同上，外加发货页采集的**三个可选字段**（issue #6983）：发货人 / 物流类型 / 发货方式。
+     *
+     * <p><b>为什么要有这个重载</b>：商家发货页（{@code orders/[id]/ship}）此前走的是
+     * 「{@code PUT /logistics} 再 {@code PUT /status}」两步老路 —— 那条路**不建发货单**，
+     * 于是 {@code order_shipments} 长期 0 行（issue #6983 的症状）。收敛到原子端点后，
+     * 页面本来就在采集的这三件事必须有落点，否则就是「换了端点、丢了一半字段」的静默降级。</p>
+     *
+     * <h2>「无需物流」（{@code shippingMethod=none}）在这里成立</h2>
+     * <p>发货页支持「无需物流」= 不填运单号/承运商（{@code shippingMethod=none} + 空单号）。
+     * 本路此前对空单号/空承运商**一律 422**（工人扫码端的口径：「没有单号的发货在车间不可核对」）
+     * ⇒ 商家页那个合法形态在原子端点上**结构性不成立**。本重载按 {@code shippingMethod} 分流：
+     * {@code none} ⇒ 运单号与承运商都允许为空（都落空串，而不是静默丢弃这次发货）；
+     * 其余（{@code logistics} / 缺席 = 工人路与老调用方）⇒ 逐字保留原有两条必填校验。</p>
+     *
+     * <p><b>白名单 fail-closed（与 {@code OrderController.updateLogistics} 逐字同口径）</b>：
+     * {@code shippingMethod} 非空且 ∉ {logistics, none} ⇒ 422 显式拒绝，**不静默兜底**；
+     * 缺席 / 空串不拒绝（老调用方根本不发这个键 = 「没这句话」，不是「说了个坏值」）。</p>
+     *
+     * @param details 发货页采集的可选字段（{@code null} = 一个都没采集）；取值白名单见上
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public OrderShipmentOutcome shipWithLogistics(String orderId, String trackingNo, String logisticsCompany,
+                                                  OrderLogisticsWriter.ShippingDetails details) {
+        String shippingMethod = details == null ? null : details.shippingMethod();
+        boolean noLogistics = "none".equals(shippingMethod);
+        // 发货方式白名单（issue #6239 的口径，issue #6983 落到本路）：非法值显式拒绝、不静默兜底
+        if (StringUtils.hasText(shippingMethod) && !"logistics".equals(shippingMethod) && !noLogistics) {
+            throw BusinessException.validationError(
+                    "无效的发货方式: " + shippingMethod + "（只接受 logistics 物流发货 / none 无需物流）");
+        }
+        // 运单号必填**只在物流发货时**成立（无需物流本就没有单号 —— issue #6239 同款收窄）
+        if (!noLogistics && !StringUtils.hasText(trackingNo)) {
             throw BusinessException.validationError("货运单号不能为空");
         }
         Order order = orderMapper.selectById(orderId);
@@ -2986,20 +3021,23 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if (!OrderShipmentService.SHIPPABLE_FROM.contains(status) && !"shipped".equals(status)) {
             throw BusinessException.validationError("仅已确认/生产中/已发货状态可发货，当前状态: " + status);
         }
+        String trimmedTrackingNo = StringUtils.hasText(trackingNo) ? trackingNo.trim() : "";
         String company = StringUtils.hasText(logisticsCompany)
                 ? logisticsCompany.trim()
                 : currentLogisticsCompany(orderId);
-        if (!StringUtils.hasText(company)) {
+        if (!noLogistics && !StringUtils.hasText(company)) {
             throw BusinessException.validationError("承运商不能为空（客户档案未带出常用物流时需显式选择）");
         }
-        // 记物流（发货人 = 当前登录人；工人扫码端登录的就是工人本人）
-        upsertLogistics(orderId, company, trackingNo.trim(), null);
+        // 记物流（发货人 = 显式传入优先，否则当前登录人；工人扫码端登录的就是工人本人）
+        OrderLogisticsWriter.upsert(orderLogisticsMapper, TenantContext.getTenantId(), orderId,
+                company == null ? "" : company, trimmedTrackingNo, details,
+                userService::resolveCurrentUserDisplayName);
         // 原子流转 shipped —— **守卫在这一步内**（含加工项订单必须有 completed 加工单）
         boolean transitioned = shipOrderIfApplicable(orderId);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("order_id", orderId);
         result.put("status", "shipped");
-        result.put("tracking_no", trackingNo.trim());
+        result.put("tracking_no", trimmedTrackingNo);
         result.put("logistics_company", company);
         // 🔴 issue #6181：把「本次是否真的流转了」**显式**交给调用方。调用方随后要调建单写面，而建单
         // 写面**不许**再用「当前状态」重新推断这件事（那时状态已被本方法改成 shipped，谓词区分不了

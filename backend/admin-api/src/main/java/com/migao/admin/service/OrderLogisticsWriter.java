@@ -39,6 +39,11 @@ public final class OrderLogisticsWriter {
      * 已有值逐字不动 —— 见
      * {@link OrderLogisticsMapper#backfillShippedAtIfAbsent}。</p>
      *
+     * <p><b>发货方式 / 物流类型 / 发货人（issue #6983）</b>：这三列走 {@link ShippingDetails} 一次传入
+     * —— 商家发货页的三个字段此前在**原子发货端点**上没有落点（端点 body 只读
+     * {@code trackingNo} / {@code logisticsCompany}），于是「无需物流」与「发货人」会被静默丢掉。
+     * 三条同一条规则：<b>新建时写入、更新时仅在显式传入非空时覆盖</b>。</p>
+     *
      * @param currentUserDisplayName 新建且未显式给发货人时的兜底来源（延迟求值：更新路径**不调用**它，
      *                               否则「改一次运单号」就会把经手人换成当次操作人）
      */
@@ -47,8 +52,9 @@ public final class OrderLogisticsWriter {
                               String orderId,
                               String logisticsCompany,
                               String trackingNo,
-                              String shipperName,
+                              ShippingDetails details,
                               Supplier<String> currentUserDisplayName) {
+        String shipperName = details == null ? null : details.shipperName();
         List<OrderLogistics> existing = orderLogisticsMapper.selectByOrderId(orderId, tenantId);
         if (existing == null || existing.isEmpty()) {
             OrderLogistics logistics = OrderLogistics.builder()
@@ -59,6 +65,8 @@ public final class OrderLogisticsWriter {
                     .shipperName(StringUtils.hasText(shipperName)
                             ? shipperName.trim()
                             : currentUserDisplayName.get())
+                    .logisticsType(details == null ? null : details.logisticsType())
+                    .shippingMethod(details == null ? null : details.shippingMethod())
                     .status("in_transit")
                     .shippedAt(OffsetDateTime.now())
                     .build();
@@ -74,6 +82,15 @@ public final class OrderLogisticsWriter {
             if (StringUtils.hasText(shipperName)) {
                 latest.setShipperName(shipperName.trim());
             }
+            // 同一条「显式才覆盖」口径（issue #6983）：物流类型（express/logistics）与发货方式
+            // （logistics/none）**只在显式传入非空时**覆盖 —— 缺席 = 本次请求没说这件事
+            // ⇒ 保留原值（既不静默清空，也不替调用方猜一个）。
+            if (details != null && StringUtils.hasText(details.logisticsType())) {
+                latest.setLogisticsType(details.logisticsType().trim());
+            }
+            if (details != null && StringUtils.hasText(details.shippingMethod())) {
+                latest.setShippingMethod(details.shippingMethod().trim());
+            }
             if (latest.getStatus() == null) {
                 latest.setStatus("in_transit");
             }
@@ -85,5 +102,25 @@ public final class OrderLogisticsWriter {
             orderLogisticsMapper.updateById(latest);
             log.info("更新物流信息成功: id={}, trackingNo={}", latest.getId(), trackingNo);
         }
+    }
+
+    /**
+     * 一次发货请求里**除运单号/承运商之外**的那些字段（issue #6983）。
+     *
+     * <p>为什么打包成一个参数：这三列同属「发货页采集、数据库有列、但原子端点此前没有落点」的
+     * 同一族缺口；逐个加成三个形参会把 {@code upsert} 的签名推成 9 参，且漏传其中一个在编译期
+     * **看不出来**（都会被读成 {@code null} = 「没采集」）—— 一个具名 record 让「传了哪几件事」
+     * 在调用点可见。</p>
+     *
+     * <p>三个字段都允许为 {@code null} / 空串 = <b>本次请求没说这件事</b> ⇒ 不覆盖既有值
+     * （与发货人同一条「显式才覆盖」口径）。取值白名单
+     * （{@code shippingMethod ∈ {logistics, none}}）由端点 owner
+     * {@code ProductionController.ship} 在**任何写之前** fail-closed 校验，本类不重复判。</p>
+     *
+     * @param shipperName    发货人（发货单纸面「经手人」，issue #3768）；空 ⇒ 新建时取当前登录人
+     * @param logisticsType  物流类型：{@code express} 快递 / {@code logistics} 物流专线（issue #4419）
+     * @param shippingMethod 发货方式：{@code logistics} 物流发货 / {@code none} 无需物流（issue #6239）
+     */
+    public record ShippingDetails(String shipperName, String logisticsType, String shippingMethod) {
     }
 }
