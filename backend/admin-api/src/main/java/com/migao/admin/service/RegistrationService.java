@@ -657,7 +657,7 @@ public class RegistrationService {
     }
 
     /**
-     * 为新租户初始化默认岗位（**七岗**：五岗 + P6 正式定义的两个历史岗位码）和权限
+     * 为新租户初始化默认岗位（**八岗**：五岗 + P6 正式定义的两个历史岗位码 + #5652 的质检员）和权限
      *
      * 岗位=角色体系（#2969）：每个岗位在 roles 表落一条记录，role_permissions 即岗位默认权限。
      * 创建员工时选岗位 → 前端预填该岗位默认权限 → 保存为员工个人权限快照。
@@ -665,7 +665,7 @@ public class RegistrationService {
     private void initializeDefaultRolesAndPermissions(Long tenantId) {
         log.info("初始化新租户默认岗位和权限: tenantId={}", tenantId);
 
-        // 创建默认岗位（**七岗**：管理员/客服/运营/销售/财务 + 商品管理员/知识编辑 —— 后两个由 P6 正式定义）
+        // 创建默认岗位（**八岗**：管理员/客服/运营/销售/财务 + 商品管理员/知识编辑 + 质检员 —— 后三个分别由 P6 正式定义 / #5652 新增）
         Role adminRole = Role.builder()
                 .tenantId(tenantId)
                 .name("管理员")
@@ -735,6 +735,23 @@ public class RegistrationService {
                 .build();
         roleMapper.insert(knowledgeEditorRole);
 
+        // 第 8 个岗位：**质检员 `inspector`**（issue #5652：质检记录 / 返工报废）。
+        // 用户裁定「录入者 = B 独立质检员」⇒ 成品帘质检由**独立岗位**录入，不复用生产/客服岗位。
+        // 码 = `production:view`（看生产面）+ **新写码 `production:inspect`**（质检判定录入）——
+        // 🔴 为什么**不**复用 `production:execute`：那个码由 5 个岗位持有（admin/客服/运营/销售/财务）
+        // ⇒ 复用它 = 客服/运营/销售/财务**都能**做质检录入，与「**独立**质检员」的裁定直接冲突
+        // （`QualityCheckPermissionTest` 的声明面判据逐字判红：`production:execute` 的持码岗位 ≠ 只有 inspector）。
+        // 存量租户由 `V158__create_inspector_role.sql` 建行授权（渲染输入 = 活清单，见 `rbac/generate_migration.py`），
+        // 与回退 switch 的 `case "inspector"` **逐值相等**（判据 14 + 本单新增的收敛判据守着）。
+        Role inspectorRole = Role.builder()
+                .tenantId(tenantId)
+                .name("质检员")
+                .code("inspector")
+                .description("成品帘质检录入（issue #5652：独立质检员，持 production:inspect / production:view）")
+                .status("active")
+                .build();
+        roleMapper.insert(inspectorRole);
+
         // 创建默认权限目录（RBAC 修复：与代码 @RequirePermission / 前端菜单树 / 内置角色映射
         // 全量对齐——此前仅 5 条大类码，角色管理页无法授予 order:list / employee:create 等细粒度码，
         // 自定义角色形同虚设。product:manage 保留兼容旧 role_permissions 引用）
@@ -775,6 +792,12 @@ public class RegistrationService {
                 // 新码**只**挂这四个端点（别处一律不挂）⇒ 不放宽任何别的面（逐端点读数见
                 // tests/unit_ci_workflows/test_rbac_endpoint_write_codes.py 的 I4 台账）。
                 {"生产执行", "production:execute", "production", "execute", "建加工单/报工/打任务卡/发货"},
+                // 质检录入**写**码（issue #5652）：把守成品帘质检的判定录入端点（`ProductionInspectionController`）。
+                // 🔴 **只授给 `inspector`（质检员）**——「录入者 = 独立质检员」是用户裁定：客服/运营/销售/财务
+                // **不得**做质检录入 ⇒ 因此**不能**复用 `production:execute`（它由那四个岗位 + admin 持有）。
+                // 本码无菜单节点（质检录入是**动作**不是页面）⇒ 页面/可见性台账里没有它，属**有意**（同 `order:refund` /
+                // `finance:create` / `inbound:create` 的写码先例）。
+                {"质检录入", "production:inspect", "production", "inspect", "成品帘质检判定录入（独立质检员）"},
                 // 入库单（V111，issue #5034）：与 V111 迁移的存量租户权限补齐**同源同码**
                 {"入库单查看", "inbound:view", "inbound-order", "view", "查看入库单/批次"},
                 {"入库单操作", "inbound:create", "inbound-order", "create", "建单/过账/作废入库单"},
@@ -907,8 +930,11 @@ public class RegistrationService {
         // 读码（菜单可见性 / 列表 / 检索）+ 写码（创建 / 编辑 / 删除 / 发布 / 归档）两码一起给。
         attachDefaultPermissions(tenantId, knowledgeEditorRole, List.of(
                 "dashboard:view", "product:list", "knowledge:view", "knowledge:manage"), permissionByCode);
+        // issue #5652：质检员的默认码**逐值取自清单 `roles.seed.inspector`**（不增不减）——
+        // `production:view`（生产面读）+ **`production:inspect`**（质检录入写，新码，只授给本岗位）。
+        attachDefaultPermissions(tenantId, inspectorRole, List.of("production:inspect", "production:view"), permissionByCode);
 
-        log.info("新租户默认岗位和权限初始化完成: tenantId={}, roles=7, permissions={}", tenantId, defaultPermissions.length);
+        log.info("新租户默认岗位和权限初始化完成: tenantId={}, roles=8, permissions={}", tenantId, defaultPermissions.length);
     }
 
     /**

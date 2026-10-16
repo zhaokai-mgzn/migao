@@ -6825,7 +6825,7 @@
 ```
 溯源: 2026-10-14 新增（issue #6936 的类级固化，与 PG-074 同批）：沿用 #6928 的元守卫范式（扫描器非空跑自证 / 谓词完整性 / 未登记即红 / 登记必须兑现 / 豁免只许缩短 / 判别力自证），但**扩到本单的射程**（`ProductionOperationCommandService` 里 `production_operations.deleted` 的两条软删写路径：谓词三件套 + 显式写列 + 影响行数判定，另加写路径登记表），台账 = backend/admin-api/src/test/resources/production-operation-delete-cas-ledger.json（豁免基线 **0**）。既有判据**未放宽**（`InboundOrderStatusCasMetaGuardTest` 的 MC-100 一字未动）。取号 = PG-075（现取未占用）。 ｜ tags: production, operation, concurrency, meta_guard, backend-contract
 
-## 加工单域（64 case）
+## 加工单域（65 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -7676,6 +7676,20 @@
 跳过: [backend-contract] 纯后端真库并发判据（真 PG 一次性集群，走 PgCluster.startOrAbort() 收口）+ 类级元守卫：admin-api 单测面，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-15 新增（issue #6955，P1·并发 ⇒ 单据终态自相矛盾；族级跟踪单 #6953 的 P1 包）。取号 = 现取 `.github/cases/processing-order.yml` 与 `.github/cases/processing.yml` 的**跨文件**最大 PG 号（现取 075）⇒ 取 **PG-076**（`scripts/next_case_id.py PG` 只扫 processing-order.yml，其读数 PG-073 与另一文件里的定义不一致 ⇒ **未采纳该读数**，改用跨全部 cases 的现取最大值 +1；差异如实登记）。**红→绿（注入式，真 PG）**：① 探针开 + 两处退回修前无谓词 `updateById` ⇒ 判据 1 红（`expected: 1L but was: 2L`）+ 判据 3 红（`:349` 具名）；② 修后（两处走 `ProcessingOrderMapper#markStatusIfFrom` 的 CAS）⇒ 3/3 全绿（两次复跑逐字一致）；③ 探针关 + 修后 ⇒ 仍绿（判据不产生假红）。 ｜ tags: concurrency, state-transition, cas, backend-contract, realdb
+
+### PG-077. 质检记录（成品帘级）：独立质检员录判定（合格/返工/报废）+ 判定≠合格必填原因 + 无该角色被拒（issue #5652） 🔵
+```
+数据: **判据 1·落库且逐字段可读（逐值断言）**：录入一条合格判定 ⇒ 真落库的那一行**逐值**等于「谁/何时/哪件成品帘/判了什么」—— `tenant_id` / `order_item_id` / `processing_order_id` / `inspection_result='pass'` / `inspector_id` / `inspector_name` / `inspected_at`（逐字时刻）/ `deleted=0` / `position_name` 快照；返工/报废两条同款**逐值**（判定与原因，原因去首尾空白）。证据：backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckServiceTest.java（passRecordIsPersistedAndReadableFieldByField / reworkAndScrapArePersistedWithReason）
+数据: **判据 2·独立质检员才有权录入（真判据，不是「前端不显示按钮」）**：质检录入与读面端点都声明 `@RequirePermission("production:inspect")`（反射读真注解）；且该码（**新目录码**，不是复用 `production:execute` —— 后者授给客服/运营/销售/财务四个岗位，复用即放宽）在 `rbac/manifest.json` 的 `roles.seed` 上**只**授给一个岗位（运行时的 `admin` 走 `["*"]` 通配，不在「被显式授予」这个读数里）—— 换岗位 / 多授 / 摘掉注解 ⇒ 判据当场红。证据：backend/admin-api/src/test/java/com/migao/admin/controller/QualityCheckControllerTest.java
+数据: **判据 3·报工人只报数量（工人面不得出现质检判定入口）**：质检录入的唯一入口是 `/api/admin/quality-inspections`（`/api/admin/**` 由 `ADMIN_API_REJECTED_ROLES` 把 `worker` 挡在外面），且工人端 H5 报工屏只出现**三态报工**（正常/返工/报废 —— 报的是数量事实），**没有**任何成品帘质检判定控件。证据：frontend/worker-h5/tests/worker-h5-report-work-type.test.mjs（屏上控件只有 `#wh5-work-type` 的 normal/rework/scrap；无质检判定面）
+数据: **判据 4·反例：判定≠合格但原因缺失 ⇒ 具名报错且零写入**：原因缺失 / 空串 / 全空白三种形态都 ⇒ `VALIDATION_ERROR` + **422** + 文案含**该档判定的中文名**（「报废」）与「必须填写不合格原因」，且 `verify(mapper, never()).insert(...)` = **零写入**（不许静默存）；未知判定（如 `ok`）⇒ 422 并逐字列出合法取值 `pass/rework/scrap`。证据：QualityCheckServiceTest.java + QualityCheckControllerTest.java
+数据: **判据 4b·跨租户 = 404，且与「不存在」逐字同一形态**（不泄露存在性）：`code` / `http_status` / `message`（「成品帘不存在」）三项逐字相等，零写入。证据：QualityCheckServiceTest.java
+数据: **判据 5·颗粒度 = 成品帘，且两套口径并存互不覆盖**：一条记录 = 一件成品帘（`order_item_id`），**不**逐工序（表与实体**没有** `operation_id` 面）；质检**不**读写 `production_work_logs`、**不**重算 `qty`/`qualified_qty`、**不**参与计件 —— 计件侧「返工/报废不进 per_worker/per_operation/total」的既有判据由 PG-018/PG-061 一族原样承担，本用例一格不放宽也不改写。
+数据: **判据 6·既有报工链路零回归（反向断言）**：本包不碰 `ProductionService` / `ProductionScanCompleteService` / 计件聚合的任何一行（改动面 = 新表 + 新三件 + 岗位登记）；计件侧「`rework`/`scrap` 不进 per_worker/per_operation/total」的既有机器判据（ProductionPieceworkSummaryTest 的 rework 负例）在本包下**照旧全绿**。
+前置: 前置 = 夹具：① 一件属于当前租户的成品帘（`order_items` 行，`deleted=0`）；② 它所属订单有一张活跃加工单（`ProcessingOrderMapper.selectActiveByOrderId` 命中）。夹具由判据自身以 Mockito 桩持有（`QualityCheckServiceTest.setUp`）；缺任一 ⇒ service 抛 404「成品帘不存在」/ 422「尚无活跃加工单」⇒ 判据**当场红**（不会静默跳过，也不会伪装成「没数据」）。
+跳过: [backend-contract] 后端契约/权限面判据（Java 单测 + 反射读注解 + 声明面对账），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-16 新增（issue #5652 第一刀；口径 = 用户 2026-10-16 逐字裁定「是按成品帘来检查的」+「B 独立质检员」）。落码：新表 `quality_inspections`（V157，**没有** operation_id 列 —— 颗粒度就是成品帘）+ 实体/Mapper/Service + 端点 `POST|GET /api/admin/quality-inspections`（两处都带 `@RequirePermission("production:inspect")`，新目录码）+ 独立质检员岗位 `inspector`（`rbac/manifest.json` 的 `roles.seed`/`roles.fallback` + 注册种子 + 回退 switch + 存量迁移 V158）。**两套口径并存**：报工 = 数量事实（`production_work_logs`）、质检 = 成品帘判定（本表）—— 本包**不**改写任何报工行、**不**重算数量、**不**动计件聚合。取号：现取跨文件最大 PG 号 = 076（073 在飞 PR #7010）⇒ 077。 ｜ tags: quality-inspection, rbac, backend-contract, finished-curtain
 
 ## 商品域（122 case）
 
@@ -11017,8 +11031,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：758（活跃 134，跳过 624）
-- tier 分布：smoke 12 / normal 699 / adversarial 32
+- 用例总数：759（活跃 134，跳过 625）
+- tier 分布：smoke 12 / normal 700 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -11038,7 +11052,7 @@
 - 领域本体域：4
 - 订单域：66
 - 加工项域：30
-- 加工单域：64
+- 加工单域：65
 - 商品域：122
 - 工具注册器域：1
 - 设置域：10
@@ -11262,6 +11276,7 @@
 - PG-071: 工人自由报工：整张加工单内任选任意工序（不扫码也能报），且与扫码路共用同一份记账
 - PG-073: 计件结算单（生成即冻结 / 作废留痕 / 期间唯一 / 与报表同源）——issue #5653
 - PG-076: 加工单状态迁移「读判 × 写」无谓词 ⇒ 并发相反迁移双双成功；改写为条件更新（CAS）后恰一个赢家（issue #6955）
+- PG-077: 质检记录（成品帘级）：独立质检员录判定（合格/返工/报废）+ 判定≠合格必填原因 + 无该角色被拒（issue #5652）
 - PP-007: 黄金策加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 黄金策加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）

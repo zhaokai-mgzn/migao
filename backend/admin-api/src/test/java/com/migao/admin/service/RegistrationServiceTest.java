@@ -354,24 +354,25 @@ class RegistrationServiceTest extends BaseServiceTest {
 
             registrationService.approveApplication(1L, "reviewer-001");
 
-            // 七岗种子：管理员 / 客服 / 运营 / 销售 / 财务 + issue #5699 的 **P6** 正式定义的两个历史岗位
+            // 八岗种子：管理员 / 客服 / 运营 / 销售 / 财务 + issue #5699 的 **P6** 正式定义的两个历史岗位
+            //          + issue #5652 的质检员 `inspector`
             ArgumentCaptor<Role> roleCaptor = ArgumentCaptor.forClass(Role.class);
-            verify(roleMapper, times(7)).insert(roleCaptor.capture());
+            verify(roleMapper, times(8)).insert(roleCaptor.capture());
             List<String> codes = roleCaptor.getAllValues().stream().map(Role::getCode).collect(Collectors.toList());
             assertThat(codes).contains("admin", "customer_service", "operator", "sales", "finance",
-                    "product_manager", "knowledge_editor");
+                    "product_manager", "knowledge_editor", "inspector");
             assertThat(roleCaptor.getAllValues()).allSatisfy(r ->
                     assertThat(r.getStatus()).isEqualTo("active"));
 
             // 每个岗位预置默认权限（role_permissions 落库）
             ArgumentCaptor<RolePermission> rpCaptor = ArgumentCaptor.forClass(RolePermission.class);
-            verify(rolePermissionMapper, atLeast(7)).insert(rpCaptor.capture());
+            verify(rolePermissionMapper, atLeast(8)).insert(rpCaptor.capture());
             assertThat(rpCaptor.getAllValues()).extracting(RolePermission::getRoleId)
                     .contains("role-admin", "role-customer_service", "role-operator", "role-sales", "role-finance",
-                            "role-product_manager", "role-knowledge_editor");
+                            "role-product_manager", "role-knowledge_editor", "role-inspector");
         }
 
-        /** mock role insert 后回填 id（七岗种子依赖 role.getId() 关联 role_permissions） */
+        /** mock role insert 后回填 id（八岗种子依赖 role.getId() 关联 role_permissions） */
         private void mockRoleInsertIds() {
             doAnswer(inv -> {
                 Role role = inv.getArgument(0);

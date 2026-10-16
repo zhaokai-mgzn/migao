@@ -225,6 +225,12 @@ export function reduce(state, action) {
         mode: 'main',
         reporting: false, // 有了结论 ⇒ 闸放开（否则接着领下一道时按钮是禁的）
       }
+    // 报工三态选择（issue #5652 第二刀）：**只记在 view 上**（不进 `state.selection` ——
+    // 那个键是**旧码的套 / 部位**选择，语义不同，混用会让"半截选择"判据失真）。
+    // 放 view 上的好处：`resolved` / `completed` 天然把它换掉 / 丢掉 ⇒ 不必额外写"复位"分支，
+    // 「不把报废悄悄留给下一笔」是状态机自己保证的，不靠人记得清。
+    case 'workType':
+      return { ...state, view: { ...(state.view ?? {}), work_type: normalizeWorkType(action.workType) } }
     case 'notice':
       return { ...state, notice: action.notice ?? null }
     case 'error':
@@ -240,6 +246,32 @@ function findSet(view, setId) {
 
 function findPosition(set, orderItemId) {
   return (set?.positions ?? []).find((p) => p.order_item_id === orderItemId) ?? null
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
+// 报工三态（issue #5652 第二刀，2026-10-16）
+//
+// 🔴 用户裁定：服务端**已支持** `production_work_logs.work_type ∈ {normal, rework, scrap}`
+//    （计件聚合也已排除 rework/scrap）⇒ 端侧只做**接线**，不改后端、**不新开端点**。
+//
+// 🔴 数量语义（**必须诚实**）：服务端 `ProductionScanCompleteService` 解析 `qualified_qty` 的
+//    缺省 = `qty`（「rawQualified == null ? qty : …」）⇒ 只送 `work_type` 而**不**送
+//    `qualified_qty` 时，报废那一笔会被记成**满额合格**。故非「正常」一律由装配层显式带
+//    `qualified_qty: 0`（见 `frontend/worker-h5/src/app.mjs` 的 `wh5-report`）。
+//
+// 闭词表与后端 `ProductionService.WORK_TYPES` **逐字同名**（「work_type 仅支持 normal/rework/scrap」）。
+
+/** 报工三态（**唯一一份**词表；`reduce` 与装配层共用同一把判据）。 */
+export const WORK_TYPES = ['normal', 'rework', 'scrap']
+
+/** 默认 = 正常（缺省 / 非法值都归到它 ⇒ 老行为一字不变：body 里**没有** `work_type` 键）。 */
+export const DEFAULT_WORK_TYPE = 'normal'
+
+const WORK_TYPE_LABELS = { normal: '正常', rework: '返工', scrap: '报废' }
+
+/** 任意输入 ⇒ 闭词表内的值（缺省 / 非法 ⇒ 正常）。 */
+export function normalizeWorkType(v) {
+  return WORK_TYPES.includes(v) ? v : DEFAULT_WORK_TYPE
 }
 
 const esc = (v) =>
@@ -278,6 +310,31 @@ export function canReport(state, view) {
  * 「提交中…」—— 车间里戴手套、弱网下答复要等好几秒，**没有反馈就会被反复按**；
  * 与机台页 `machine.mjs::reportBlock` 同一把闸（同一份形态，两页两处）。
  */
+/**
+ * 报工三态选择器（issue #5652 第二刀）—— 正常 / 返工 / 报废。
+ *
+ * 🔴 **只报数量，不报判定**：这是**工人**对自己这道活的数量归属（正常做出来的 / 返工的 / 报废的）。
+ *    「质检结论」（这块布合不合格）由**另一个角色**在**另一个面**（商家侧质量检验）记录 ——
+ *    工人屏**不得**出现任何质检判定控件（用户裁定：本单不是检验帘的那个面）。
+ *
+ * 🔴 出现条件与报工按钮**同一把**判据（`canReport`）⇒ 两者同生同灭，不会有
+ *    「按钮没有、选择器还在」这种半截形态（那道判据在 `canReport` 一处，不复制第二份）。
+ *
+ * 形态抄既有约定（issue #6635 的工序选择器）：实线可点按钮 + `data-*` 委派 + 选中项
+ * `is-on` + `aria-pressed`（选中态**看得见**，不是"记在内存里"）。
+ */
+function workTypePicker(state, view) {
+  if (!canReport(state, view)) return ''
+  const current = normalizeWorkType(view?.work_type)
+  const choices = WORK_TYPES.map((t) => {
+    const on = t === current
+    return `<button data-work-type="${t}" class="wh5-choice${on ? ' is-on' : ''}" aria-pressed="${on}" type="button">${WORK_TYPE_LABELS[t]}</button>`
+  }).join('')
+  return `<div class="wh5-group" id="wh5-work-type" role="group" aria-label="报工类型">
+      <span class="wh5-group-label">报工类型</span>${choices}
+    </div>`
+}
+
 function reportButton(state, view) {
   if (!canReport(state, view)) return ''
   return state.reporting
@@ -298,7 +355,9 @@ function reportButton(state, view) {
  * ⇒ **不**敢说完工（不知道就说不知道），只把工序置空 ⇒ 报工按钮自然消失。
  */
 export function afterComplete(view, receipt) {
-  const { __requestId, ...rest } = view ?? {}
+  // `work_type` 与 `__requestId` 同族：**丢掉** ⇒ 下一屏回到默认「正常」
+  // （否则「报废」会悄悄留在屏上，下一笔正常做出来的活被记成报废）。
+  const { __requestId, work_type: _workType, ...rest } = view ?? {}
   return {
     ...rest,
     set_no: receipt.setNo ?? view?.set_no ?? null,
@@ -505,6 +564,7 @@ function mainView(state) {
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
     ${state.error ? `<p class="wh5-error" id="wh5-error">${esc(state.error)}</p>` : ''}
     ${picker}
+    ${workTypePicker(state, v)}
     ${reportButton(state, v)}
     ${overviewView(v, v.position?.order_item_id ?? null)}
     ${cutPlanView(v)}

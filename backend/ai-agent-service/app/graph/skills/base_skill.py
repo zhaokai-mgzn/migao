@@ -3277,6 +3277,8 @@ PERMISSION_LABELS = {
     "processing:update": "加工单操作",
     # 生产执行**写**码（issue #5699 的 I4）：名称逐字取 admin-api `RegistrationService` 的同码条目
     "production:execute": "生产执行",
+    # 质检录入**写**码（issue #5652）：名称逐字取 admin-api `RegistrationService` 的同码条目
+    "production:inspect": "质检录入",
     # 入库单（V111，issue #5034）：名称逐字取 admin-api RegistrationService 的同码条目
     "inbound:view": "入库单查看",
     "inbound:create": "入库单操作",

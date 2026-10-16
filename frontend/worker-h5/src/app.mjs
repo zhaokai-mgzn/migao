@@ -15,10 +15,12 @@ import { deviceHomeFromLocation, enterpriseCodeFromLocation, normalizeEnterprise
 import {
   afterComplete,
   DEFAULT_WORKER_IDLE_MINUTES,
+  DEFAULT_WORK_TYPE,
   doneNotice,
   initialState,
   legacySelection,
   MACHINE_ENTRY_HREF,
+  normalizeWorkType,
   reduce,
   renderPage,
 } from './render.mjs'
@@ -355,9 +357,20 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
       draw()
     })
 
+    // 报工三态（issue #5652 第二刀）：选择只落在 `state.view.work_type`（纯状态动作、**不发请求**）。
+    // 🔴 放在 in-flight 闸**之前**：正在提交时也能改选 —— 那一笔的 `workType` 在点【报工】那一刻
+    //    就已取值（下面的条件）⇒ 改选只影响**下一笔**，不会把这一笔改掉。
+    const dispatchWorkType = (raw) => {
+      if (normalizeWorkType(raw) === normalizeWorkType(state.view?.work_type)) return // 已选中 ⇒ no-op（不无谓重绘）
+      dispatch({ type: 'workType', workType: raw })
+    }
+
     on('wh5-report', async () => {
       const v = state.view
       if (!v?.operation?.operation_id) return
+      // 🔴 报工三态（issue #5652 第二刀）**在这一点取值**：闭词表归一（缺省/非法 = 正常）。
+      //    取值早于 await / 重绘 ⇒ 这一笔送出的就是工人**按下时**看到的那个选择。
+      const workType = normalizeWorkType(v.work_type)
       // 🔴 in-flight 闸（issue #6667 第 4 条，**涉计件正确性**）：车间里戴手套、弱网下答复要等几秒
       //    ⇒ 没有闸就会被连点。抄机台页那一把（machine-app.mjs::reportWork 的 `if (state.reporting) return`）。
       //    叠在既有幂等键之上：键保证「服务端只算一次」，闸保证「客户端只发一次」——两道都要。
@@ -379,6 +392,14 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
           operationId: v.operation.determined_by === 'picked' ? v.operation.operation_id : undefined,
           // 旧码收口（#4794）：只有旧码路径的视图才有 `__selection`（新码恒 undefined ⇒ body 只带 token）
           selection: v.__selection,
+          // 报工三态（issue #5652 第二刀）：**正常 = 一个字节都不送**（`undefined` ⇒ api 侧不写
+          // `work_type` 键 ⇒ 与改前的请求体**逐字节相同**，既有 7 条硬约束一条不放宽）。
+          // 非正常 ⇒ 送闭词表里的值。
+          workType: workType === DEFAULT_WORK_TYPE ? undefined : workType,
+          // 🔴 数量诚实（本单要点）：服务端 `qualified_qty` 缺省 = `qty` ⇒ 只送 `work_type`
+          // 会把**报废**那笔记成**满额合格**。非「正常」一律显式 `qualified_qty: 0`
+          // （不猜数量：`qty` 仍缺省 ⇒ 服务端照旧按「剩余应做」推进进度，"这次做了多少"不由前端编）。
+          qualifiedQty: workType === DEFAULT_WORK_TYPE ? undefined : 0,
           clientRequestId,
         })
         // 服务端已答复（首次成功或回放）⇒ 这一笔有结论：下一笔必须换新键
@@ -406,6 +427,11 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
         if (el.classList.contains('is-on')) return
         void doScan(state.view?.__token ?? '', el.dataset.operationId, state.view?.__selection)
       })
+    }
+    // 报工三态选择器（issue #5652 第二刀）：点一下就换选（纯状态、不发任何请求）。
+    // 形态与上面的工序选择器同一把（`data-*` 委派 + `is-on` 标记当前选中）。
+    for (const el of doc.querySelectorAll('[data-work-type]')) {
+      el.addEventListener('click', () => dispatchWorkType(el.dataset.workType))
     }
   }
 

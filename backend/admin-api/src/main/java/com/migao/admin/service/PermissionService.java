@@ -144,6 +144,9 @@ public class PermissionService {
                 {"加工单操作", "processing:update", "processing-order", "update", "生成/发加工/取消加工单"},
                 {"生产查看", "production:view", "production", "view", "查看生产看板/加工项/工艺配置/计件"},
                 {"生产执行", "production:execute", "production", "execute", "建加工单/报工/打任务卡/发货"},
+                // 质检录入**写**码（issue #5652）：只授给 `inspector`（独立质检员）—— 与
+                // RegistrationService 的同一行**逐字同源**（两处目录必须逐值相等，见本方法头注）。
+                {"质检录入", "production:inspect", "production", "inspect", "成品帘质检判定录入（独立质检员）"},
                 {"入库单查看", "inbound:view", "inbound-order", "view", "查看入库单/批次"},
                 {"入库单操作", "inbound:create", "inbound-order", "create", "建单/过账/作废入库单"},
                 {"知识库管理", "knowledge:manage", "knowledge", "manage", "管理知识库"},

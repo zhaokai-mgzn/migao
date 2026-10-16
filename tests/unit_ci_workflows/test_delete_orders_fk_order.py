@@ -53,6 +53,9 @@ EXPECTED_DELETE_ORDER = (
     # V98（issue #4733）新增：报工身份旁路账引用 **processing_orders** 与 **production_work_logs**
     # 的语义父行 ⇒ 与 production_work_logs 同层最先删（`test_plan_covers_every_table_referencing_orders`
     # 会自动要求它出现；本元组是 issue #4242 判据 1 的**显式序列**，故新增一层时同步显式化）。
+    # V157（issue #5652）新增：质检记录（成品帘级）同时引用 processing_orders 与 order_items
+    # ⇒ 必须最先删（`test_plan_covers_every_table_referencing_orders` 会自动要求它出现）。
+    "quality_inspections",
     "worker_report_audits",
     "production_instance_repricing_logs",
     "production_work_logs",

@@ -35,6 +35,11 @@
 --      作废 = 置 voided_at 留痕（不物理删）、活跃单由部分唯一索引
 --      uk_piecework_settlements_active (tenant_id, period, worker_name)
 --      WHERE voided_at IS NULL AND deleted = 0 保证同期间同工人至多一张 ⇒ 要改就作废重开），
+--     quality_inspections
+--      质检记录（V157，issue #5652 —— 一行 = **一件成品帘**（order_item_id 级，用户 2026-10-16 逐字裁定
+--      「是按成品帘来检查的」）⇒ **没有** operation_id 列；记 检验人 / 检验时刻 / 判定（pass·rework·scrap）
+--      / 不合格原因（判定≠pass 时必填，服务层裁）；与报工是**两套并存、互不覆盖**的口径
+--      （报工 = 数量事实、质检 = 成品帘判定）—— 质检不重算报工数量、不参与计件），
 --     production_work_logs, remnant_small_item_specs, role_permissions,
 --     session_states, stock_ledger_entries,
 --     tenant_param_audit（V131，issue #5131 §22 P6：企业参数变更留痕 = 一行一个参数键的一次变更；

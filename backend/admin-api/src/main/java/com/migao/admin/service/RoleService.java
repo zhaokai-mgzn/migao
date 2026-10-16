@@ -446,6 +446,14 @@ public class RoleService {
                     "knowledge:view",
                     "knowledge:manage"
             );
+            // issue #5652：质检员（成品帘质检录入，用户裁定「录入者 = B 独立质检员」）。
+            // 码**逐值取自** `RegistrationService` 的 inspector 默认列表与清单 `roles.seed.inspector`
+            // （三处逐值相等由判据 14 与收敛判据守着）。🔴 写码是**新码 `production:inspect`**而**不是**
+            // `production:execute`：后者由客服/运营/销售/财务持有 ⇒ 复用它 = 「独立质检员」的裁定失效。
+            case "inspector" -> List.of(
+                    "production:inspect",
+                    "production:view"
+            );
             default -> List.of();
         };
     }

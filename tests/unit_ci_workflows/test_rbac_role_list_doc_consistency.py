@@ -7,7 +7,7 @@
 `docs/wiki/RBAC.md` 写「新租户注册初始化**五岗**种子（管理员/客服/运营/销售/财务）」，
 而实测新租户是 **7 岗** —— 多出 `product_manager` / `knowledge_editor`（由 V137 正式定义）。
 
-#5992 把那一行改成了「七岗」，但**没有任何判据把它钉住** ⇒ 下一次改清单（加岗位 / 删岗位）
+#5992 把那一行改成了「七岗」（issue #5652 起为「八岗」——新增质检员 `inspector`），但**没有任何判据把它钉住** ⇒ 下一次改清单（加岗位 / 删岗位）
 时文档会**静默漂移**，而「文档 vs 实测」的差**又一次**只能靠人工验收发现（本仓的经典形态：
 「改了一个缺陷却没修」——`AGENTS.md` 铁律 8）。本文件就是那条缺失的判据。
 
@@ -159,13 +159,13 @@ def test_redproof_reverting_to_five_roles_is_red():
     """注入 ①：把声明行改回 F7 的**原始缺陷形态**「五岗」（仅 5 个历史岗位）⇒ 必红且具名。"""
     manifest, doc = _doc_and_manifest()
     drifted = doc.replace(
-        "> 新租户注册初始化**七岗**种子",
+        "> 新租户注册初始化**八岗**种子",
         "> 新租户注册初始化**五岗**种子",
     ).replace("`product_manager`", "").replace("`knowledge_editor`", "")
     issues = check_role_list_consistency(manifest, drifted)
     assert issues, "把清单改回「五岗」竟然判绿 —— 判据是空断言"
     joined = "\n".join(issues)
-    assert "5 岗" in joined and "7 个岗位码" in joined, f"未报出数量差：{joined}"
+    assert "5 岗" in joined and "8 个岗位码" in joined, f"未报出数量差：{joined}"
     assert "product_manager" in joined and "knowledge_editor" in joined, f"未漏码：{joined}"
 
 
@@ -193,8 +193,8 @@ def test_redproof_unparseable_declaration_is_red():
     """注入 ④（fail-closed）：声明行被删 / 数字写坏 ⇒ 判红，**不得**当成「没问题」。"""
     manifest, doc = _doc_and_manifest()
     for broken in (
-        doc.replace("**七岗**", "**若干岗**"),
-        doc.replace("**七岗**种子", "岗位种子"),
+        doc.replace("**八岗**", "**若干岗**"),
+        doc.replace("**八岗**种子", "岗位种子"),
         doc.replace("`finance`", "").replace("`sales`", ""),  # 漏码（不是解析不了，但同样必红）
     ):
         assert check_role_list_consistency(manifest, broken), "无法解析却判绿（fail-open）"

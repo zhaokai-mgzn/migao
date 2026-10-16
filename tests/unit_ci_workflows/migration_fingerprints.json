@@ -150,8 +150,10 @@
         "V152__add_worker_pages_to_users.sql": "sha256:6674a67909abd2d3a7f82cd974436a311b45121a7b82e1b8532abeb7fb7a407d",
         "V153__inbound_source_photo.sql": "sha256:f72a8d829bd06b1bc9014c88cc46b5d011032eaaa04e33e6af3ef0c632442d4d",
         "V154__drop_worker_page_configs.sql": "sha256:121b60350af69ab53feacd8f87526f707514ace912dd101adefc302251901ba0",
-        "schema.sql": "sha256:16e2647c84db10c08cc711d0ee2c264218cff5c166e1a882b532244d9232ffef",
+        "schema.sql": "sha256:a616ce44055fa3c12a9016c34fbacf3b2a5172f50079c2ab4b1d3f6c2dafe330",
         "V155__add_short_code_to_processing_orders.sql": "sha256:d051f6ac16b4b86e0a22c01e18c1f7a35a12c7932f31519eaa336771266a18be",
-        "V156__create_piecework_settlements.sql": "sha256:55936aa2ba0c29ba520d912f8415091ca19a5d1d9f89c119b4ec85ff22362ece"
+        "V156__create_piecework_settlements.sql": "sha256:55936aa2ba0c29ba520d912f8415091ca19a5d1d9f89c119b4ec85ff22362ece",
+        "V157__create_quality_inspections.sql": "sha256:3889732329d61b01e641d3ec441306b884ef365b7915454dafe45918fe5319b3",
+        "V158__create_inspector_role.sql": "sha256:7197076855ca8517d85727e175dd106ea2b4e2ff6063fe6e707c91d60bf53331"
     }
 }
