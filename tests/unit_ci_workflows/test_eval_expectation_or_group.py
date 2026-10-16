@@ -206,6 +206,17 @@ def or_branch_issues(cases: list[dict]) -> list[str]:
         cid = str(c.get("id") or "?")
         for exp in (c.get("expectations") or []):
             raw = str(exp.get("tool") or "") if isinstance(exp, dict) else str(exp or "")
+            # ⚠️ **dict 形态里不许把 args 内联进 `tool`**（CI 实测的真回归，见下）：`tool` 字段
+            # 只承载**工具名 / 工具名 OR 串**，args 走 `args`。写成 `tool: "x(action=y) or z"` 时
+            # `assertion_taxonomy.expectation_tools` 对该 entry 用 `args` 字段（不是内联串），
+            # 于是 `x(action=y)` 整串被当成**工具名** ⇒ `WRITE_TOOL_SURFACE` 认不出 ⇒
+            # 「本用例是写用例」与 action 级写方扫描面**双双失明**（`ST-005` 的实测形态：
+            # CI 报 `真实库里解析不到任何 action 级写方 … assert []`）。
+            # 正解 = **字符串形态**（`"x(action=y) or z"`，与 PR-006 同形）：该分支走逐分支解析。
+            if isinstance(exp, dict) and "(" in raw:
+                issues.append(
+                    f"{cid}: dict 形态的 `tool` 里内联了 args（`{raw}`）—— args 必须写进 `args` 字段，"
+                    f"或整条改用**字符串形态**（否则写身份 / args 值级校验会被扫描面漏掉）: {raw!r}")
             if " or " not in raw.lower():
                 continue
             if _has_empty_branch(raw):
@@ -307,6 +318,23 @@ class TestObserverGuard:
         issues = or_branch_issues(bad)
         assert any("未登记" in i and "ntf_read" in i for i in issues), issues
 
+    def test_dict_form_with_inline_args_in_tool_is_red(self):
+        """④ dict 形态把 args 内联进 `tool` ⇒ 判红（CI 实测的真回归：写身份/扫描面双双失明）。"""
+        bad = [{"id": "ZZ-007",
+                "expectations": [{"tool": "notification_manage(action=mark_read) or interact"}]}]
+        issues = or_branch_issues(bad)
+        assert any("内联了 args" in i and "ZZ-007" in i for i in issues), issues
+        # 且它**真的**会被扫描面漏掉（用 taxonomy 的同一份解析面复算，不靠叙述）
+        parts = taxonomy.expectation_tools(bad[0])
+        assert ("notification_manage(action=mark_read)", {}) in parts, (
+            f"dict 内联 args 的形态被解析成**整串工具名 + 空 args**（= 扫描面失明的原因，"
+            f"该串不在 `WRITE_TOOL_SURFACE` 里）：{parts}")
+        good = [{"id": "ZZ-008",
+                 "expectations": ["notification_manage(action=mark_read) or interact"]}]
+        assert ("notification_manage", {"action": "mark_read"}) in taxonomy.expectation_tools(good[0]), (
+            "字符串形态必须解析出 (工具名, args) —— 这正是本包选它的理由")
+        assert or_branch_issues(good) == []
+
     def test_stale_ledger_entry_is_red(self):
         """④ 销账未删（表内条目已无人使用）⇒ 判红（台账只许缩短，不许留死条目）。"""
         saved = globals()["BARE_BRANCH_LEDGER"]
@@ -325,8 +353,8 @@ class TestObserverGuard:
         """
         assert or_branch_issues([{
             "id": "ZZ-004",
-            "expectations": [{"tool": "inventory_manage(action=low_stock_alert) or "
-                                      "product_search(stock_status=low_stock)"}],
+            "expectations": ["inventory_manage(action=low_stock_alert) or "
+                             "product_search(stock_status=low_stock)"],
         }]) == []
         assert or_branch_issues([{
             "id": "ZZ-005",
@@ -462,6 +490,23 @@ class TestST005Wiring:
     @staticmethod
     def _case() -> dict:
         return _st005_case()
+
+    def test_write_identity_survives_the_taxonomy_scanner(self):
+        """**接线**：ST-005 声明的**写身份**必须被 `assertion_taxonomy` 的扫描面认出。
+
+        为什么单列一格（CI 实测的真回归）：把期望写成 **dict 形态内联 args**
+        （`{tool: "notification_manage(action=mark_read) or interact"}`）时，taxonomy 会把它解析成
+        「整串工具名 + 空 args」⇒ 落不进 `WRITE_TOOL_SURFACE` ⇒
+        `test_shared_fixture_write_restore.py::test_scan_surface_covers_the_known_writers`
+        报 `真实库里解析不到任何 action 级写方 … assert []`（写用例分类与自清理规则**静默失明**）。
+        字符串形态（PR-006 同形）才走逐分支解析。
+        """
+        pairs = taxonomy.expectation_tools(_st005_case())
+        assert ("notification_manage", {"action": "mark_read"}) in pairs, (
+            f"扫描面认不出 ST-005 的 action 级写方 —— 期望形态退化回 dict 内联 args？{pairs}")
+        assert ("interact", {}) in pairs, pairs
+        assert taxonomy.is_write_expectation("notification_manage", {"action": "mark_read"}), (
+            "`is_write_expectation` 不再判 `notification_manage(mark_read)` 为写 —— taxonomy 单一源被改动")
 
     def test_must_succeed_unchanged_and_still_conditional(self):
         """`must_succeed[notification_manage, only_if_called]` **一字未动**：三态都照旧。"""

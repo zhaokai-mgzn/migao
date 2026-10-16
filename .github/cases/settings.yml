@@ -212,8 +212,17 @@ cases:
     # 给了确认入口（"文本可满足的写用例"= 假绿通道）。本用例的合格形态只有两种：
     # **真去改（成功）** 或 **给出写确认卡**。收紧后「纯文本」变成判红（红证见
     # `tests/unit_ci_workflows/test_eval_expectation_or_group.py`）。
+    # ⚠️ **形态必须是「字符串 + 每个分支内联自己的 args」**（与 PR-006 的
+    # `"inventory_manage(action=low_stock_alert) or product_search(stock_status=low_stock)"` 同形）：
+    # `.github/assertion_taxonomy.py::expectation_tools` 对 **dict 形态**只按 ` or ` 拆 `tool` 字段，
+    # 而 `args` 是**整条 entry 共用**的 ⇒ dict 形态下 `"notification_manage(action=mark_read)"`
+    # 会被当成**整个工具名**（连括号一起）⇒ 它不在 `WRITE_TOOL_SURFACE` 里 ⇒
+    # 「本用例是写用例」与 action 级写方的扫描面**双双失明**（CI 实测：
+    # `tests/unit_ci_workflows/test_shared_fixture_write_restore.py::test_scan_surface_covers_the_known_writers`
+    # 报 `真实库里解析不到任何 action 级写方 … assert []`）。字符串形态走**逐分支**解析
+    # （`_EXP_TOOL_RE` 取工具名 + 正则取该分支的 args）⇒ 写身份与 args 值级校验都正确。
     expectations:
-      - tool: notification_manage(action=mark_read) or interact
+      - "notification_manage(action=mark_read) or interact"
     # forbidden-text-intent: 预测/承诺话术的禁令仍是主判据之一 ——
     # 「不能做」已不再是本用例的真值（能力已接回），真值是「**不得谎称已读**」
     # （说了已读就必须真有 success 的调用；`must_succeed` 是这一半的机器判据）。
