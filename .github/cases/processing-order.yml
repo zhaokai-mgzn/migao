@@ -2794,6 +2794,8 @@ cases:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/PieceworkSettlementServiceTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/PieceworkSettlementControllerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/PieceworkSettlementRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/PieceworkSettlementMapperTest.java"
       ci:
         - pr-check.yml
       verifies: []
