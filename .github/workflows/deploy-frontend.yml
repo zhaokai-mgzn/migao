@@ -373,31 +373,38 @@ jobs:
       - name: "Resolve build identity (issue #6611)"
         id: build_id
         if: steps.sync.outputs.skip != 'true'
-        # 取值源（issue #7015）：`github.run_started_at` 是 **context** ⇒ 必须经 `env:` 落到 shell
-        # 才可读；**不许**再依赖任何未定义变量名。
-        env:
-          RUN_STARTED_AT: ${{ github.run_started_at }}
+        # 🔴 **别再"猜名字"**（两条都实测踩过，issue #7015 → #7029）：改前读 `${GITHUB_RUN_STARTED_AT:-}`
+        # —— 它**不是** GitHub 注入的环境变量；#7016 改成 context `${{ github.run_started_at }}`
+        # —— 它**也不存在**（官方 `github` 上下文属性表 40 个里没有 `run_started_at`）⇒ 取值仍是空串。
+        # ⇒ 本步的取值源 = **runner 时钟**（`date -u`，在 run 正文里现算，不经过任何变量名）。
         run: |
           set -euo pipefail
           SHA=$(git rev-parse HEAD)
           case "$SHA" in
             *[!0-9a-f]*|"") echo "::error::git rev-parse HEAD 解不出 hex sha（'$SHA'）⇒ 拒绝在身份不明时构建"; exit 1 ;;
           esac
-          # 取值源自检（issue #7015）：非空才谈得上「构建身份完整」。空 ⇒ 具名判红并点名**取值源**，
-          # 不许再静默写下空串（那正是改前的形态：`builtAt` 恒为兜底值而全链路无一物变红）。
-          if [ -z "${RUN_STARTED_AT:-}" ]; then
-            echo "::error::RUN_STARTED_AT 为空 ⇒ 取值源未接（issue #7015）：它必须来自 context \`\${{ github.run_started_at }}\`（本步 env）；不许用未定义的环境变量名"
+          # 取值源 = **runner 时钟**（issue #7029）：不走任何变量名，所以本步**没有** step 级 `env:`。
+          # 🔴 自检必须**点名当前来源**并校验形态：空 / 形态不符 ⇒ 具名判红，
+          # 不许静默写下空串（那是 issue #7015 的形态：全链路没有一物会红）。
+          BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          if [ -z "$BUILT_AT" ]; then
+            echo "::error::BUILT_AT 为空 ⇒ 取值源未接（issue #7015 / #7029）：当前取值源 = runner 时钟 [date -u +%Y-%m-%dT%H:%M:%SZ]；不许用未定义的环境变量名，也不许用猜的 context 属性名"
             exit 1
           fi
+          case "$BUILT_AT" in
+            [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z) : ;;
+            *) echo "::error::BUILT_AT 不是 ISO8601 形态（实测 '$BUILT_AT'）⇒ 取值源 = runner 时钟 [date -u +%Y-%m-%dT%H:%M:%SZ]；消费方（Dockerfile 烘焙 + served 探针）按 ISO8601 判读"
+               exit 1 ;;
+          esac
           echo "BUILD_SHA=$SHA" >> "$GITHUB_OUTPUT"
-          echo "BUILT_AT=${RUN_STARTED_AT}" >> "$GITHUB_OUTPUT"
-          echo "构建身份：sha=${SHA} · tag=${{ steps.tag.outputs.IMAGE_TAG }} · builtAt=${RUN_STARTED_AT}"
+          echo "BUILT_AT=${BUILT_AT}" >> "$GITHUB_OUTPUT"
+          echo "构建身份：sha=${SHA} · tag=${{ steps.tag.outputs.IMAGE_TAG }} · builtAt=${BUILT_AT}"
           {
             echo "## 构建身份（issue #6611）"
             echo ""
             echo "- \`sha\` = \`${SHA}\`（\`git rev-parse HEAD\` = 本 run 检出的 commit）"
             echo "- \`tag\` = \`${{ steps.tag.outputs.IMAGE_TAG }}\`"
-            echo "- \`builtAt\` = \`${RUN_STARTED_AT}\`（context \`github.run_started_at\`，issue #7015）"
+            echo "- \`builtAt\` = \`${BUILT_AT}\`（取值源 = runner 时钟 \`date -u\`，issue #7029）"
             echo "- 消费面：\`GET https://merchant.migaozn.com/version.json\`（部署后由下面的 served-sha 断言比对）"
           } >> "$GITHUB_STEP_SUMMARY"
 

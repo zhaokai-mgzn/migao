@@ -804,33 +804,42 @@ def test_deploy_leg_requires_builtat_so_it_cannot_be_a_vacuous_assertion():
     )
 
 
-def test_build_identity_value_source_is_a_context_expression_not_an_env_literal():
-    """🔴 **取值源**（issue #7015 的病灶本身）：`BUILT_AT` 必须由 **context** `github.run_started_at`
-    经 `env:` 注入；**不许**再读任何未定义的 `GITHUB_*` 变量名。
+def test_build_identity_value_source_is_the_runner_clock_not_an_invented_name():
+    """🔴 **取值源**（issue #7015 / #7029 的病灶本身）：`BUILT_AT` 必须由 **runner 时钟现算**
+    （`date -u +%Y-%m-%dT%H:%M:%SZ`）；**既不许**读未定义的 `GITHUB_*` 变量名，
+    **也不许**用猜出来的 `${{ github.<prop> }}`（名字不存在时 Actions 一样解出**空串**）。
 
-    改前逐字：`echo "BUILT_AT=${GITHUB_RUN_STARTED_AT:-}"` —— 而 `GITHUB_RUN_STARTED_AT`
-    **不是** GitHub 注入的环境变量（run 开始时刻只在 context 里）⇒ shell 展开恒空 ⇒ 真机
-    `{"app":"admin-api","sha":"b5d9315e…","builtAt":""}`。
+    两代病逐字（都实测踩过）：
+    · 改前：`echo "BUILT_AT=${GITHUB_RUN_STARTED_AT:-}"` —— 该名字**不是** GitHub 注入的环境变量；
+    · #7016：`env: RUN_STARTED_AT: ${{ github.run_started_at }}` —— 该**属性不存在**
+      （官方 `github` 上下文属性表 40 个里没有 `run_started_at`）⇒ 真机 env 清单里 `RUN_STARTED_AT:` 为空。
     """
     text = workflow_text()
-    assert "RUN_STARTED_AT: ${{ github.run_started_at }}" in text, (
-        "workflow 没把 **context** `github.run_started_at` 注入成 env ⇒ `builtAt` 仍然取不到值"
-        "（issue #7015 的病灶）"
+    assert re.search(r"BUILT_AT=\$\(date -u \+%Y-%m-%dT%H:%M:%SZ\)", text), (
+        "解算步没有从 **runner 时钟**现算 `BUILT_AT` ⇒ 取值源仍是某个变量名/属性名"
+        "（issue #7015 / #7029 的病灶：猜的名字解出空串而无一物变红）"
     )
-    # 取值面（**非注释**的 shell 正文）里一律不许再出现它 —— 找根因的注释必然会提到这个名字，
-    # 那不是「还在用它」。判据 = 非注释行 grep（注释行剥掉再查）。
-    body_offenders = [
-        line for line in text.splitlines()
-        if "GITHUB_RUN_STARTED_AT" in line and not line.lstrip().startswith("#")
-    ]
-    assert not body_offenders, (
-        "workflow 的**取值面**里仍出现 `GITHUB_RUN_STARTED_AT` —— 它不是 GitHub 注入的环境变量"
-        "（run 开始时刻只在 context `github.run_started_at` 里）⇒ shell 展开恒空（issue #7015 的病灶）：\n"
-        + "\n".join(body_offenders)
-    )
-    # 解算步必须 fail-closed：取值源为空 ⇒ 具名判红（不许静默写空串）
-    assert re.search(r'if \[ -z "\$\{RUN_STARTED_AT:-\}" \]', text), (
+    # 取值面（**非注释**行）里一律不许再出现这两个名字 —— 找根因的注释必然会提到它们，
+    # 那不是「还在用它」。判据 = 非注释行 grep。
+    for name in ("GITHUB_RUN_STARTED_AT", "github.run_started_at"):
+        body_offenders = [
+            line for line in text.splitlines()
+            if name in line and not line.lstrip().startswith("#")
+        ]
+        assert not body_offenders, (
+            f"workflow 的**取值面**里仍出现 `{name}` —— 它**不存在**（issue #7015 / #7029）"
+            "⇒ 取值恒为空串而没有任何东西会红：\n" + "\n".join(body_offenders)
+        )
+    # 解算步必须 fail-closed：取值源为空 ⇒ 具名判红（不许静默写空串），且**点名当前来源**
+    assert re.search(r'if \[ -z "\$BUILT_AT" \]', text), (
         "解算步没有「取值源为空 ⇒ 判红」的自检 ⇒ 空值会被静默烘焙进镜像（改前形态）"
+    )
+    assert "runner 时钟" in text, (
+        "取值源自检的报错文案没有**点名当前来源**（本仓口径：判红要能直接指向取值源）"
+    )
+    # ISO8601 形态自检（`admin-web` 的 Dockerfile 逐字写着「调用方在 workflow 里已 fail-closed 校验过形态」）
+    assert re.search(r"\[0-9\]\[0-9\]\[0-9\]\[0-9\]-\[0-9\]\[0-9\]-\[0-9\]\[0-9\]T", text), (
+        "解算步没有校验 `BUILT_AT` 的 ISO8601 形态 ⇒ 形态坏掉的时刻会一路烘焙进产物"
     )
 
 
@@ -882,7 +891,7 @@ def test_undefined_github_env_literal_guard_has_teeth(tmp_path):
     assert "GITHUB_RUN_STARTED_AT: " not in source, (
         "反空跑锚点：本树已修好，注入应以『改前形态』为语料"
     )
-    injected = source.replace('echo "BUILT_AT=${RUN_STARTED_AT}"', 'echo "BUILT_AT=${GITHUB_RUN_STARTED_AT:-}"')
+    injected = source.replace('echo "BUILT_AT=${BUILT_AT}"', 'echo "BUILT_AT=${GITHUB_RUN_STARTED_AT:-}"')
     assert injected != source, "注入没生效（锚点漂了）⇒ 本自证是空跑"
 
     victim = tmp_path / "deploy-admin-api.yml"
@@ -912,8 +921,12 @@ def test_workflow_yaml_still_parses_after_the_value_source_change():
     resolve = [s for s in steps if s.get("name") == RESOLVE_STEP]
     assert len(resolve) == 1, f"期望恰好 1 个解算步，实测 {len(resolve)}"
     env = resolve[0].get("env") or {}
-    assert env.get("RUN_STARTED_AT") == "${{ github.run_started_at }}", (
-        f"解算步的 `env:` 没有接上 context 表达式（实得 {env}）⇒ `builtAt` 仍取不到值"
+    assert "RUN_STARTED_AT" not in env, (
+        f"解算步仍在用 `env:` 传取值源（实得 {env}）⇒ 那又回到「猜一个名字」的形态"
+        "（issue #7015 的 `GITHUB_RUN_STARTED_AT` / #7029 的 `${{ github.run_started_at }}` 都是这么来的）"
+    )
+    assert "date -u +%Y-%m-%dT%H:%M:%SZ" in resolve[0]["run"], (
+        "解算步的取值源不是 runner 时钟（`date -u`）⇒ `builtAt` 仍可能取到空串"
     )
     served = [s for s in steps if s.get("name") == SERVED_STEP]
     assert len(served) == 1, f"期望恰好 1 个 served-version 断言步，实测 {len(served)}"

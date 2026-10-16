@@ -640,25 +640,24 @@ def test_builtat_judge_is_opt_in_and_has_discriminating_power():
     )
 
 
-def test_deploy_leg_requires_builtat_and_value_source_is_a_context_expression():
-    """接线面（issue #7015）：① 发布腿必须显式要求判 `builtAt`；② 取值源必须是 context 表达式。"""
+def test_deploy_leg_requires_builtat_and_value_source_is_the_runner_clock():
+    """接线面（issue #7015 / #7029）：① 发布腿必须显式要求判 `builtAt`；② 取值源必须是 **runner 时钟**。"""
     text = read(WORKFLOW)
     assert "ADMIN_WEB_SERVED_REQUIRE_BUILT_AT: '1'" in text, (
         "发布腿没有要求判 `builtAt` ⇒ 上面那条具名判据在 CI 里**永不生效**（`builtAt` 又变回空断言）"
     )
-    assert "RUN_STARTED_AT: ${{ github.run_started_at }}" in text, (
-        "workflow 没把 **context** `github.run_started_at` 注入成 env ⇒ `builtAt` 仍然取不到值"
-        "（issue #7015 的病灶）"
+    assert re.search(r"BUILT_AT=\$\(date -u \+%Y-%m-%dT%H:%M:%SZ\)", text), (
+        "解算步没有从 **runner 时钟**现算 `BUILT_AT` ⇒ 取值源仍是某个变量名/属性名（issue #7029 的病灶）"
     )
-    body_offenders = [
-        line for line in text.splitlines()
-        if "GITHUB_RUN_STARTED_AT" in line and not line.lstrip().startswith("#")
-    ]
-    assert not body_offenders, (
-        "workflow 的**取值面**里仍出现 `GITHUB_RUN_STARTED_AT` —— 它不是 GitHub 注入的环境变量"
-        "（run 开始时刻只在 context `github.run_started_at` 里）⇒ shell 展开恒空：\n"
-        + "\n".join(body_offenders)
-    )
-    assert re.search(r'if \[ -z "\$\{RUN_STARTED_AT:-\}" \]', text), (
+    for name in ("GITHUB_RUN_STARTED_AT", "github.run_started_at"):
+        body_offenders = [
+            line for line in text.splitlines()
+            if name in line and not line.lstrip().startswith("#")
+        ]
+        assert not body_offenders, (
+            f"workflow 的**取值面**里仍出现 `{name}` —— 它**不存在**（issue #7015 / #7029）"
+            "⇒ 取值恒为空串而没有任何东西会红：\n" + "\n".join(body_offenders)
+        )
+    assert re.search(r'if \[ -z "\$BUILT_AT" \]', text), (
         "解算步没有「取值源为空 ⇒ 判红」的 fail-closed 自检 ⇒ 空值会被静默烘焙进产物（改前形态）"
     )
