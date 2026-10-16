@@ -129,6 +129,26 @@ def _must_succeed_specs(case) -> list:
     return out
 
 
+def _must_succeed_branches(case) -> list:
+    """`must_succeed` → `[(分支工具名, 是否条件档)]`：**把 OR 成功组拆成逐条分支**。
+
+    为什么必须拆（issue #7048 P5）：`must_succeed` 自本单起支持 `tool: "A or B"`
+    （OR 成功组；runner 侧判据 = tests/unit_ci_workflows/test_eval_must_succeed_or_group.py；
+    落因 = PR-006 的「等价路径 OR 期望 × 合取效果层」不对称）。若本文件仍按**整串**取工具名，
+    `"inventory_manage or product_search"` 会被当成一个不存在的工具 ⇒ 三条 persona 边界判据
+    **误报**（把一次正确的用例改造判成越界）。
+
+    ⚠️ 拆开**不降**判别力：守卫要找的两种病（拼写错误 / 越界工具）在**每个分支**上独立成立；
+    拆开后逐分支判比整串判**更强**（`"inventory_manage or product_searcht"` 里的拼错分支照样被抓）。
+    """
+    out = []
+    for tool, conditional in _must_succeed_specs(case):
+        branches = [b.strip() for b in str(tool or "").split(" or ") if b.strip()]
+        for b in (branches or [tool]):
+            out.append((b, conditional))
+    return out
+
+
 class TestMibaoToolsetTruth:
     """B 端工具集真值：与 skill 源码一致，且不含 C 端专属工具（镜像 C 端真值测试）"""
 
@@ -334,7 +354,7 @@ class TestBendWriteToolSuccessAssertions:
         bend = _mibao_real_toolset()
         bad = []
         for c in _bend_runnable_cases():
-            for tool, conditional in _must_succeed_specs(c):
+            for tool, conditional in _must_succeed_branches(c):
                 # 条件档（`only_if_called`）在 B 端腿**从不调用**该工具 ⇒ 不可能产生 B 端噪音，
                 # 前提不成立故不适用本判据；它仍受下方
                 # `test_conditional_specs_must_name_a_tool_known_on_some_leg` 约束（拼写/越界照旧可红）。
@@ -361,7 +381,7 @@ class TestBendWriteToolSuccessAssertions:
                   "customer_address_query", "customer_logistics_track"}
         bad = []
         for c in _bend_runnable_cases():
-            for tool, conditional in _must_succeed_specs(c):
+            for tool, conditional in _must_succeed_branches(c):
                 if conditional:
                     continue
                 if tool in c_only:
@@ -381,7 +401,7 @@ class TestBendWriteToolSuccessAssertions:
         known = _mibao_real_toolset() | set(XIAOBU_TOOLS) | PSEUDO_TOOL_NAMES
         bad = []
         for c in _bend_runnable_cases():
-            for tool, conditional in _must_succeed_specs(c):
+            for tool, conditional in _must_succeed_branches(c):
                 if conditional and tool not in known:
                     bad.append(f"{c['id']}: {tool}")
         assert not bad, (
@@ -390,7 +410,7 @@ class TestBendWriteToolSuccessAssertions:
 
         # 非空转：条件档在库里确实存在（否则本条恒绿），且判别力对注入敏感
         live_conditional = [(c["id"], tool) for c in _bend_runnable_cases()
-                            for tool, cond in _must_succeed_specs(c) if cond]
+                            for tool, cond in _must_succeed_branches(c) if cond]
         assert live_conditional, (
             "库里一条条件档都没有 ⇒ 本条失去判别力（口径变化时请同步本判据）"
         )
@@ -398,6 +418,19 @@ class TestBendWriteToolSuccessAssertions:
                                                     "only_if_called": True}]}
         assert [t for t, cond in _must_succeed_specs(probe) if cond and t not in known], (
             "注入的拼写错误条件声明未被判红 ⇒ 本判据是空断言"
+        )
+
+        # OR 成功组：整串**不是**工具名，必须拆成逐分支后判 —— 两半都要钉住
+        or_probe = {"id": "ZZ-OR", "must_succeed": [
+            {"tool": "inventory_manage or product_searcht"}]}
+        bad_branches = [t for t, _c in _must_succeed_branches(or_probe) if t not in known]
+        assert bad_branches == ["product_searcht"], (
+            f"OR 组里的**拼错分支**没被抓 / 拆解口径不对：{bad_branches}"
+        )
+        good_probe = {"id": "ZZ-OR-OK", "must_succeed": [
+            {"tool": "inventory_manage or product_search"}]}
+        assert [t for t, _c in _must_succeed_branches(good_probe) if t not in known] == [], (
+            "两条合法分支被误判越界 ⇒ 拆解口径过严（会拦下正确的用例改造）"
         )
 
 
