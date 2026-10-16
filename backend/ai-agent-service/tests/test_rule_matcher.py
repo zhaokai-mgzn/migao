@@ -1,4 +1,4 @@
-# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017, CU-008, CU-001, CU-002, ST-002, ST-001
+# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017, CU-008, CU-001, CU-002, ST-002, ST-001, HR-009
 """规则匹配器单元测试（app/router/rule_matcher.py）
 
 覆盖：_extract_text / RuleMatcher.match 关键词优先级 / 正则规则 / 未命中。
@@ -534,7 +534,6 @@ class TestEveryIntentHasL1OrRegisteredExemption:
         IntentType.CUSTOMER_MANAGE: "L2 主路径；无已立证的确定性误路由（出现即按 ST-002 模式补 L1 + 红证）",
         IntentType.CUSTOMER_QUERY: "同上（客户域查询；CU-008 的复合句劫持由「客户域前置改判」承担）",
         IntentType.CATEGORY_MANAGE: "同上（分类树读取；无已立证的确定性误路由）",
-        IntentType.STAFF_MANAGE: "同上（员工/账号；HR 家族的历史误路由由 REGEX_RULES 的排除组承担）",
         IntentType.PERMISSION_MANAGE: "同上（角色权限）",
         IntentType.DATA_REPORT: "同上（报表/分析；与 STATISTICS/DASHBOARD 的边界由 L2 判）",
         IntentType.KNOWLEDGE_MANAGE: "同上（知识库管理；C 端 KNOWLEDGE_FAQ 另有 L1）",
@@ -566,3 +565,32 @@ class TestEveryIntentHasL1OrRegisteredExemption:
         stripped = {k: v for k, v in KEYWORD_MAP.items() if k != IntentType.AI_CONFIG}
         missing = self._no_l1(list(IntentType), stripped, self.L2_ONLY_EXEMPT)
         assert "ai_config" in missing, "摘掉 AI_CONFIG 的关键词后守卫没有报 ⇒ 守卫退化成空断言"
+
+
+class TestStaffAccountRouting:
+    """HR-009：「帮我开个客服账号…」在 L1 一个词都不命中。
+
+    词表里有「开个账号 / 开通账号 / 员工账号」，但输入是「开个**客服**账号」—— **子串不含「开个账号」**
+    ⇒ 该句落 L2 兜底。本次真实 LLM 评测（`persona=mibao`）该用例确定性红：实况 agent 调了
+    `employee_manage` + `role_manage`×3 + `nav_guide`，而用例期望写的是 `direct_reply`。
+    按 2026-10-16 边界裁定（#5247 评论）：「**开客服账号**」= 创建**非单据对象** ⇒ **必须支持** ⇒
+    正确意图 = `STAFF_MANAGE`（映射 `["employee_manage", "role_manage"]` —— **正是实测调用的那两个工具**）。
+    ⇒ 本组判据把"L2 蒙对"变成"L1 确定"，也让 #7035 第二相重锚该用例期望时**有确定的目标意图**。
+    """
+
+    def _intent(self, msg):
+        r = RuleMatcher().match(msg)
+        return r.intent if r else None
+
+    def test_staff_account_phrase(self):
+        """HR-009 输入原文：必须落 STAFF_MANAGE（= 真去开账号，而不是回一句"我不能"）。"""
+        msg = "帮我开个客服账号，姓名李四，手机号 13800009999，密码 Test123456"
+        assert self._intent(msg) == IntentType.STAFF_MANAGE
+
+    def test_short_form(self):
+        """去掉姓名/手机号等修饰后仍必须命中（防"只有长句才过"）。"""
+        assert self._intent("帮我开个客服账号") == IntentType.STAFF_MANAGE
+
+    def test_negative_control_session(self):
+        """负控：「客服会话」不得被账号域抢走（会话管理另有意图，SE-001 家族）。"""
+        assert self._intent("看看当前有哪些客服会话") == IntentType.SESSION_MANAGE
