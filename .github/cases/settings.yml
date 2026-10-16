@@ -212,8 +212,13 @@ cases:
     # 只声明 `namespaces`（规则 b 接受的**弱证据**形态，口径见 `assertion_taxonomy` 的
     # `SELF_CLEAN_FIELDS` 注释）。⇒ 影响面 = 「该收件人的未读通知变少」，且本用例的期望
     # **不依赖**未读计数（`unread_count` 不在期望里）⇒ 重试前置仍等价。
+    #   `account_password:` 是**既有**的「本人账号态」登记前缀（#5055 给 ST-003 加的）——
+    #   本格复用它而不是新开前缀，理由：**新前缀会落进 `test_case_seed_truth.py` 的分类盲区**
+    #   （该判据的 `TestNoSilentSkip` 要求每个空前缀都入表；不入表即红，而入表要改它自己），
+    #   且「不触达种子实体」这一语义与 ST-003 完全一致（账号密码 / 未读通知都**不在**
+    #   `extract_seed_catalog` 的实体目录里）⇒ 用既有登记位比新增一个同义前缀更少漂移面。
     namespaces:
-      - "notification:recipient_unread"
+      - "account_password:notifications_mark_read"
     preconditions:
       - "商家本人的通知中心里存在**至少一条未读通知**（否则 `mark_read` 无对象、agent 无从标记）｜ 变体：目标通知已读 ⇒ agent 合理地答「这条已是已读」，此时本用例的红不构成缺陷（前置面，不是行为面）"
     data_checks:
@@ -221,7 +226,7 @@ cases:
       - "整场不得出现假承诺话术（机器断言见 forbidden_text）"
       - "标记已读的落库真值由 admin-api 侧承担：PUT /api/admin/notifications/{id}/read（单条）/ PUT /api/admin/notifications/read-all（全部）"
     skip_reason: ""
-    merge_log: "verification 6.5 独有 ｜ 2026-09-25（issue #5302，settings 域只读化收口）**退场改造**：原 `expectations[notification_manage(action=mark_read or read_all)]` 与 data_check「status 变为 read」**整体移除**（写 action 已从工具删除 ⇒ 永久不可满足，留着就是悬空声明 + 假红）；改判新行为 = 如实告知 + 引导到「通知中心」+ 不得假承诺（`forbidden_text` 承载禁令面）；`tags` 由 `write` 改判 `query`（本域已无写能力）。 ｜ 2026-10-16（issue #7048 P1 · 项 A，承接 #7049 把变更接回 B 端）**重锚回写面**：`title` 去掉逐字编码旧口径的「能力已下线（只读域）」；`expectations` 由 [`direct_reply`] 改为 [`notification_manage(action=mark_read)`, `direct_reply or interact`]（**工具调用 / 确认卡 / 澄清话术**三种合格落地形态）；新增 `must_succeed[notification_manage, only_if_called=true]`（效果层：去改了就必须成了）；`forbidden_text` 五条**一字未动**（禁令仍是主判据之一）；`tags` 由 `query` 改回 `write`。**红证**：把 `mark_read` 加进工具源码的 `READ_ONLY_ACTIONS`（= 绕过写确认门禁）⇒ `backend/ai-agent-service/tests/test_notification_manage_change_actions.py::test_read_only_actions_are_the_read_ones_only` + `test_confirmation_gate_is_declared` 当场判红（已实测：2 failed）；`tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 判据 8 同向。"
+    merge_log: "verification 6.5 独有 ｜ 2026-09-25（issue #5302，settings 域只读化收口）**退场改造**：原 `expectations[notification_manage(action=mark_read or read_all)]` 与 data_check「status 变为 read」**整体移除**（写 action 已从工具删除 ⇒ 永久不可满足，留着就是悬空声明 + 假红）；改判新行为 = 如实告知 + 引导到「通知中心」+ 不得假承诺（`forbidden_text` 承载禁令面）；`tags` 由 `write` 改判 `query`（本域已无写能力）。 ｜ 2026-10-16（issue #7048 P1 · 项 A，承接 #7049 把变更接回 B 端）**重锚回写面**：`title` 去掉逐字编码旧口径的「能力已下线（只读域）」；`expectations` 由 [`direct_reply`] 改为 [`notification_manage(action=mark_read)`, `direct_reply or interact`]（**工具调用 / 确认卡 / 澄清话术**三种合格落地形态）；新增 `must_succeed[notification_manage, only_if_called=true]`（效果层：去改了就必须成了）；`forbidden_text` 五条**一字未动**（禁令仍是主判据之一）；`tags` 由 `query` 改回 `write`。**红证**：把 `mark_read` 加进工具源码的 `READ_ONLY_ACTIONS`（= 绕过写确认门禁）⇒ `backend/ai-agent-service/tests/test_notification_manage_change_actions.py::test_read_only_actions_are_the_read_ones_only` + `test_confirmation_gate_is_declared` 当场判红（已实测：2 failed）；`tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 判据 8 同向。 ｜ 2026-10-16（issue #7048 P1 · 项 A）**补自清理 + 前置自断言**：重锚回写面后本条**重新**成为写类用例 ⇒ 规则 b/f 到期（#7049 之后 `test_case_trust_gate.py` 的全量对账当场判出 `CASE-TRUST-NO-SELF-CLEAN` + `CASE-TRUST-NO-PRECONDITION-ASSERTION`，**未登记即阻塞**）。修法：① `namespaces[account_password:notifications_mark_read]`（**复用** #5055 给 ST-003 登记的「本人账号态」前缀，而不是新开 `notification:` —— 新前缀会落进 `tests/unit_ci_workflows/test_case_seed_truth.py` 的 `TestNoSilentSkip` 分类盲区，且语义同族：二者都**不触达种子实体**）；② `preconditions`（声明层字段，与 HR-005 同形，**有意不发明 typed precondition 类型**）。**有意不声明 `pre_clean`**：agent 写面只有 `mark_read` / `read_all`、**没有** `mark_unread` ⇒ 真做一次不可逆，写不存在的复位类型 = 静默空转（如实登记在用例注释里）。断言面（expectations / must_succeed / forbidden_text）一字未动。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_notification_manage.py"
