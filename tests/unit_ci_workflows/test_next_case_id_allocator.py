@@ -21,6 +21,7 @@
 | 5 | 🔴 **内存构造复现今天的现场（核心牙齿）** | main 039/040/043/044/045/047 + 在飞 A 046 + 在飞 B 048 ⇒ **041**；A 改成 041 ⇒ **042** | 只看 main 的实现两次都答 041 ⇒ 坏形态读数 ≠ 基线读数 |
 | 6 | **类级：`scripts/**` 里取号只有一个实现点**（双向） | AST 取「用例号形态的正则字面量（真能匹配 `  - id: MC-041` / `MC-041`）+ 号空间后继 / 极值运算」的模块集合 ⇄ 判据里冻结的实现点元组 | 新造第二个算号脚本 ⇒ 「未登记」红；实现点不再命中指纹 ⇒ 「陈旧登记」红 |
 | 7 | **技能面口径唯一（防旧配方回来）** | `migao-dev-flow` §26.3 必须调用该工具，且**不得**再出现手工取号的旧配方 | 把旧配方写回去 ⇒ 红；只加一句散文 ⇒ 不红（对照） |
+| 8 | 🔴 **未知前缀要出声**（issue #7052） | 请求的前缀在候选集里**一次都没出现** ⇒ 输出必须明说「本工具将把它当作**全新号段**」并列出**最接近的已知前缀**（`difflib`） | 把警告删掉 ⇒ 该判据红；已知前缀被误报 ⇒ 也红（对照臂） |
 
 ## 判定方式是确定的（**刻意不进判据的东西**）
 
@@ -49,6 +50,7 @@ from __future__ import annotations
 
 import ast
 import base64
+import difflib
 import importlib.util
 import json
 import os
@@ -596,3 +598,68 @@ def test_skill_face_criterion_has_discriminating_power() -> None:
     prose = text.replace(section, section + "\n（本节只讲取号，不许停在口号。）\n", 1)
     assert skill_face_problems(prose) == [], "只加一句散文就报红 ⇒ 判据在乱咬"
     assert skill_face_problems(text.replace(CMD_SECTION_HEADING, "### 26.9 被改掉的标题")) != [], "标题没了必须 fail-closed"
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 判据 8：未知前缀必须**出声**（issue #7052 —— 本判据由一次**真实误用**催生）
+# ═════════════════════════════════════════════════════════════════════════════
+#: 判据 8 的**误用现场**（逐字，2026-10-16）：把**语料文件名**当成了前缀参数。
+#: `MISC` 形态合法（2~4 个大写字母）却在 27 个前缀里 0 次出现 ⇒ 改前工具**静默**给 `MISC-001`。
+MISUSE_PREFIX = "MISC"
+#: 它最接近的**已知**前缀（实测 `difflib` 于 27 个现取前缀上：`MISC → MC`）。
+MISUSE_NEAREST = "MC"
+#: 判据 8 要求的**措辞锚**（人读得出「这是全新号段，不是已有号段的下一个」）。
+UNKNOWN_PREFIX_MARKER = "全新号段"
+
+
+def unknown_prefix_warnings(prefix: str, known: set[str]) -> list[str]:
+    """**纯函数**：给定请求前缀与候选集里的**已知前缀集** ⇒ 该不该出声。
+
+    只在「一次都没出现」时出声 —— 新前缀**合法**（本仓既有用例 `QX` 就依赖这一点：
+    `test_cli_consults_the_inflight_face` 要求全新前缀仍能被分配），故本判据**不许拦**，
+    只要求**说清楚**并给出近似候选，让打错的人当场看出来。
+    """
+    if prefix in known:
+        return []
+    near = difflib.get_close_matches(prefix, sorted(known), n=3, cutoff=0.6)
+    msg = (f"⚠️  前缀 `{prefix}` 在候选集里**一次都没出现**（main ∪ 全部 open PR ∪ 本工作区）"
+           f" ⇒ 本工具将把它当作**{UNKNOWN_PREFIX_MARKER}**，下面给出的号属于一个**新**前缀。")
+    if near:
+        msg += f" 最接近的已知前缀：{' / '.join(near)} —— 若是打错了，请改用它们。"
+    else:
+        msg += " 没有形态接近的已知前缀。"
+    msg += " （不带参数运行本工具可列出全部已知前缀。）"
+    return [msg]
+
+
+def test_unknown_prefix_is_never_silent(tmp_path: Path) -> None:
+    """判据 8：未知前缀必须在**真实 CLI 输出**里出声 + 点名最接近的前缀。"""
+    proc = _run_cli([MISUSE_PREFIX], gh_bin=_gh_stub(tmp_path, mode="empty"))
+    assert proc.returncode == 0, f"rc={proc.returncode}\n{proc.stdout}\n{proc.stderr}"
+    out = proc.stdout
+    assert UNKNOWN_PREFIX_MARKER in out, (
+        f"未知前缀 `{MISUSE_PREFIX}` 被**静默**接受了（输出里没有「{UNKNOWN_PREFIX_MARKER}」）：\n{out}"
+    )
+    assert MISUSE_NEAREST in out, (
+        f"没有点名最接近的已知前缀 `{MISUSE_NEAREST}` ⇒ 打错的人无从自查：\n{out}"
+    )
+    # 反面对照臂：**已知**前缀不得被误报
+    known = _run_cli(["MC"], gh_bin=_gh_stub(tmp_path, mode="empty"))
+    assert known.returncode == 0, f"rc={known.returncode}\n{known.stdout}\n{known.stderr}"
+    assert UNKNOWN_PREFIX_MARKER not in known.stdout, (
+        f"已知前缀 `MC` 被误报成「{UNKNOWN_PREFIX_MARKER}」⇒ 判据在乱咬：\n{known.stdout}"
+    )
+
+
+def test_unknown_prefix_criterion_has_discriminating_power() -> None:
+    """判据 8 的判别力自证（纯函数）：未知 ⇒ 出声；已知 ⇒ 不出声；两者不可互换。"""
+    known = {"MC", "UI", "QX"}
+    assert unknown_prefix_warnings("MC", known) == [], "已知前缀不该出声"
+    assert unknown_prefix_warnings("QX", known) == [], "已知前缀（哪怕只有 1 个号）不该出声"
+    msgs = unknown_prefix_warnings(MISUSE_PREFIX, known)
+    assert msgs and UNKNOWN_PREFIX_MARKER in msgs[0], "未知前缀没有出声"
+    assert "MC" in msgs[0], "没有给出最接近的已知前缀"
+    # 与已知前缀集无关的前缀：仍要出声，但不得编造近似项
+    far = unknown_prefix_warnings("ZZZZ", {"MC", "UI"})
+    assert far and UNKNOWN_PREFIX_MARKER in far[0], "完全无关的前缀没有出声"
+    assert "没有形态接近" in far[0], "对无关前缀编造了近似项"
