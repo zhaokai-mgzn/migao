@@ -42,6 +42,7 @@
 
 import ast
 import asyncio
+import inspect
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -50,6 +51,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from app.graph.skills.base_skill import (
     _card_click_target_tool,
     _inject_card_click_signal,
+    _is_card_click_round,
     _is_card_confirm_value,
 )
 
@@ -177,6 +179,17 @@ class TestJudgementIsSharedWithGate:
         out, _ = _inject({"last_confirm_value": PRICE_CARD_VALUE, "last_card": PRICE_CARD}, msg)
         assert out == PROMPT, "前缀匹配就注入了点卡事实 —— 与门禁判据不同源（门禁只放行逐字相等）"
         assert not _is_card_confirm_value(msg, PRICE_CARD_VALUE)
+
+    def test_judgement_delegates_to_the_gate_criterion(self):
+        """单一源（静态）：点卡轮判定必须**落回** `_is_card_confirm_value`。
+
+        口径分叉的形态是「两侧各自自洽、没有任何测试会红」（`base_skill.py` 自己的注释
+        就写着这条教训）⇒ 这里钉住「只有一个判据实现」。
+        """
+        src = inspect.getsource(_is_card_click_round)
+        assert "_is_card_confirm_value" in src, (
+            "点卡轮判定没有复用门禁判据 —— 出现了第二份「算不算点卡」的口径"
+        )
 
     def test_trailing_whitespace_is_a_card_click(self):
         """两侧 strip 后相等即点卡（与门禁逐字同源：`_is_card_confirm_value` 也 strip）。"""
@@ -457,12 +470,22 @@ class TestWiredIntoTheRealSystemPrompt:
 class TestRedProofs:
     """判别力自证：把判据/反推在**内存里**摘掉 ⇒ 上面的断言形态必须落到「没注入」那一侧。"""
 
-    def test_disabling_the_shared_criterion_kills_the_signal(self):
-        with patch("app.graph.skills.base_skill._is_card_confirm_value",
+    def test_removing_the_click_round_judgement_kills_the_signal(self):
+        """摘掉「本轮是不是点卡轮」的判定 ⇒ 注入必须消失（注入由它驱动，不是无条件加）。
+
+        ⚠️ patch 目标**只能**选「execution/*.py 顶层没 import 的名字」：本仓
+        `tests/unit/test_execute_skill_split.py::TestPatchSeamsStayAlive` 机械判「patch 点在
+        execution/*.py 被顶层 import 冻住 = 桩静默失效」。`_is_card_confirm_value` 正是被
+        `react_turn.py` / `finalize_turn.py` 顶层 import 的名字 ⇒ 打它的桩会被守卫判红
+        （且那条桩对那两个模块**本来就不生效**）—— 故本文件**不打它的桩**：
+        「与门禁同源」由 `TestJudgementIsSharedWithGate` 的**真实行为**断言 +
+        `test_judgement_delegates_to_the_gate_criterion` 的单一源静态断言承担。
+        """
+        with patch("app.graph.skills.base_skill._is_card_click_round",
                    return_value=False):
             out, _ = _inject({"last_confirm_value": PRICE_CARD_VALUE,
                               "last_card": PRICE_CARD}, PRICE_CARD_VALUE)
-        assert out == PROMPT, "判据被换成恒假后仍然注入 —— 注入并非由点卡判据驱动"
+        assert out == PROMPT, "点卡轮判定被摘掉后仍然注入 —— 注入并非由点卡轮驱动"
 
     def test_removing_target_tool_leaves_no_tool_name(self):
         """摘掉目标反推 ⇒ 注入文本里不得再出现工具名（判据 4 的注入侧对照）。"""
