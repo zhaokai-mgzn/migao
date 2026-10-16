@@ -619,6 +619,40 @@ VALUES
    'scrap', DATE '2026-09-22', TIMESTAMPTZ '2026-09-22 15:00:00+08', 0)
 ON CONFLICT (id) DO NOTHING;
 
+-- ============================================================================
+-- Phase 5：资金流水（issue #7043）—— `FN-001` 的机器断言依赖它
+-- ============================================================================
+-- 为什么需要（issue #7043 的根因，别删）：
+--   FN-001（`.github/cases/finance.yml`）的 `output_verify[finance_api action=get_transactions]`
+--   逐字断言 `items: __nonempty__`；而该 action 返回的是 `finance_transactions` 的行
+--   （`backend/ai-agent-service/app/tools/finance_api.py` 的 `_get_transactions`
+--   → `GET /api/admin/finance/transactions`）⇒ **这条断言要求夹具里有流水行**。
+--   本文件此前**一行都没有**（15 张表的 INSERT 里没有它）⇒ 上轮评测的假红逐字：
+--   `❌ output_verify[finance_api]: items 期望非空，实际 []` · `data=finance_api(items=0 total=0)`
+--   —— 读起来像「黄金策查不到流水」，真因是**夹具没给数据**（本仓反复踩的归因盲区）。
+--
+-- 口径（三条，改这里要一起改）：
+--   ① `occurred_at` 取 `NOW()`：工具在缺时间参数时自动补「本月 1 号 ~ 今天」
+--      （`finance_api.py` 的时间窗默认值）⇒ 写死历史日期会在下个月变成**新的假红**；
+--   ② 列集 / 取值照 `backend/admin-api/src/main/resources/db/init/schema.sql` 的
+--      `finance_transactions` 段（`type` NOT NULL、`status` 默认 `success`、`deleted` 默认 0）；
+--   ③ 幂等：`ON CONFLICT (id) DO NOTHING`；`uk_finance_txn_no` 是 (tenant_id, transaction_no)
+--      唯一键 ⇒ `transaction_no` 必须是**确定值**（不能带时间戳，否则重放会撞唯一键）。
+INSERT INTO finance_transactions
+  (id, tenant_id, transaction_no, order_id, order_no, type, amount,
+   payment_method, status, operator, occurred_at, remark, deleted)
+VALUES
+  ('ftx_eval_7043_0001', 1, 'FIN-EVAL-7043-0001', NULL, NULL, 'income', 1680.00,
+   'wechat', 'success', '评测夹具', NOW(),
+   'mibao 评测夹具：线下收款（FN-001 的 items 非空断言依赖本行）', 0),
+  ('ftx_eval_7043_0002', 1, 'FIN-EVAL-7043-0002', NULL, NULL, 'income', 2360.00,
+   'bank_transfer', 'success', '评测夹具', NOW(),
+   'mibao 评测夹具：对公转账（同上）', 0),
+  ('ftx_eval_7043_0003', 1, 'FIN-EVAL-7043-0003', NULL, NULL, 'refund', 320.00,
+   'wechat', 'success', '评测夹具', NOW(),
+   'mibao 评测夹具：退款（让 FN-002 汇总的 totalRefund 有非零输入）', 0)
+ON CONFLICT (id) DO NOTHING;
+
 -- 数据核对（Phase 4）—— 三段**都在位**才往下走（fail-fast；`scripts/eval_stack_seed.sh` 用 ON_ERROR_STOP=1）
 DO $$
 DECLARE
@@ -659,6 +693,30 @@ BEGIN
     RAISE EXCEPTION 'B 端 Phase 4 注入失败：三段夹具或数值与声明不符
 （加工单=% 工序=% 报工=% 合格=% 返工=% 报废=% 计件=%；期望 1 / 3 / 5 / 14.50 / 2.00 / 1.00 / 26.75）',
       v_po, v_ops, v_logs, v_qual, v_rework, v_scrap, v_amount;
+  END IF;
+END $$;
+
+-- 资金流水核对（Phase 5，issue #7043）—— `FN-001` 的断言依赖**本月窗口内**的行：
+-- 上面 Phase 4 的核对只覆盖报工三段，**覆盖不到**本段；缺本块则「流水被删」只会表现为
+-- 用例层假红（正是 #7043 的形态）⇒ 这里 fail-fast，把缺口钉在注入步。
+DO $$
+DECLARE
+  v_txn    INTEGER;
+  v_income INTEGER;
+  v_refund INTEGER;
+BEGIN
+  SELECT count(*) INTO v_txn FROM finance_transactions
+   WHERE tenant_id = 1 AND deleted = 0 AND id LIKE 'ftx_eval_7043_%'
+     AND occurred_at >= date_trunc('month', NOW());
+  SELECT count(*) INTO v_income FROM finance_transactions
+   WHERE tenant_id = 1 AND deleted = 0 AND id LIKE 'ftx_eval_7043_%' AND type = 'income';
+  SELECT count(*) INTO v_refund FROM finance_transactions
+   WHERE tenant_id = 1 AND deleted = 0 AND id LIKE 'ftx_eval_7043_%' AND type = 'refund';
+  RAISE NOTICE 'B 端 Phase 5 核对: 本月窗口内流水=% 收入=% 退款=%', v_txn, v_income, v_refund;
+  IF v_txn < 3 OR v_income < 2 OR v_refund < 1 THEN
+    RAISE EXCEPTION 'B 端 Phase 5 注入失败：资金流水不在位或不在本月窗口内
+（本月窗口内流水=% 收入=% 退款=%；期望 ≥3 / ≥2 / ≥1）—— FN-001 的 items 非空断言会因此变成假红（issue #7043）',
+      v_txn, v_income, v_refund;
   END IF;
 END $$;
 

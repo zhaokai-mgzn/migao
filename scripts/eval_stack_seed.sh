@@ -27,6 +27,8 @@
 #   bash scripts/eval_stack_seed.sh --persona "$PERSONA"
 #   迭代/自检（不起栈、不连库，只打印该 persona 会装哪些种子）：
 #   bash scripts/eval_stack_seed.sh --persona xiaobu --dry-run
+#   （`--dry-run` 档**额外**跑一条离线判据：夹具 ⇄ 用例机器断言 的数据依赖契约，
+#     判据源 = tests/agent_eval/eval_fixture_case_contract.py，见该模块 docstring）
 #
 # compose/common 可用环境变量覆盖（默认即仓库/CI 口径）：
 #   EVAL_COMPOSE_FILE（默认 deploy/docker-compose.yml）
@@ -100,6 +102,15 @@ if [ "$DRY_RUN" = "true" ]; then
   for f in "${SEED_FILES[@]}"; do
     echo "seed: $f"
   done
+  # ── 夹具 ⇄ 用例机器断言 的**数据依赖契约**（离线判据，issue #7043）────────────────
+  # 治的形态：用例的机器断言要求某张表**有数据**，而夹具没种 ⇒ 断言永远无解 ⇒ 评测假红，
+  # 而假红在报告里长得像产品缺陷（FN-001 的 `items: __nonempty__` / 种子没种
+  # `finance_transactions`）。判据本体与台账见
+  # `tests/agent_eval/eval_fixture_case_contract.py`（未登记即红、豁免只许缩短）。
+  # 放在 `--dry-run` 档：这是「不起栈、不连库」的自检档 ⇒ 契约判定与种子清单**同时**可读，
+  # 不需要任何真环境（远程注入档的同一份保障由 SQL 内的终态对账块承担）。
+  echo "── 数据依赖契约自检（夹具 ⇄ 用例非空断言）──"
+  python3 "$REPO_ROOT/tests/agent_eval/eval_fixture_case_contract.py" --check
   exit 0
 fi
 

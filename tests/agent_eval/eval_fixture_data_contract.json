@@ -1,0 +1,78 @@
+{
+  "_doc": [
+    "评测夹具 ⇄ 用例机器断言 的**数据依赖台账**（issue #7043，铁律 8 的类级元守卫）。",
+    "为什么需要：用例的机器断言要求某张表**有数据**，而夹具没种 —— 断言永远无解 ⇒ 评测出现假红，",
+    "而假红在报告里长得像产品缺陷（FN-001 的 items 非空 / mibao_eval_seed.sql 没有 finance_transactions）。",
+    "判据本体 = tests/agent_eval/eval_fixture_case_contract.py（pytest 套件同名 test_ 前缀文件 + `--check` 自检）。",
+    "纪律：",
+    "  · **未登记即红** —— persona != xiaobu（mibao 腿 ∪ 双端）的用例里任何「要求非空」的",
+    "    output_verify 断言都必须在这里有一行；",
+    "  · **只许缩短** —— 台账每条必须仍能对上一条现取断言（断言退役 ⇒ 删这一行，红过才删得掉）；",
+    "  · kind=seed 的条目必须给出**可复核的种子证据**（文件 + 表），判据会去那个文件里找 INSERT、",
+    "    找幂等护栏、找建库脚本里的 CREATE TABLE、找 eval_stack_seed.sh 的 mibao 分支注册；",
+    "  · kind=derived = 「这条断言不依赖种子数据」（现取仅 1 条），必须给 why + code_anchor（`<路径>::<符号>`）。",
+    "key 形态 = <用例 ID>:<工具>[:<action>]:<output_verify.expect 的字段名>。",
+    "key 由本文件的**对象键**承载（条目内不再重复写 key —— 两份会漂）。"
+  ],
+  "schema": 1,
+  "generated_by": "tests/agent_eval/eval_fixture_case_contract.py（现取比对，不生成台账；本文件是人工维护的登记面）",
+  "entries": {
+    "FN-001:finance_api:get_transactions:items": {
+      "case_id": "FN-001",
+      "tool": "finance_api",
+      "action": "get_transactions",
+      "field": "items",
+      "kind": "seed",
+      "why": "FN-001 的机器断言 `output_verify[finance_api action=get_transactions] expect.items=__nonempty__` 读的是 admin-api 的资金流水表 —— 夹具不种流水，这条断言永远无解（issue #7043 的现取实例）。",
+      "seed_evidence": {
+        "file": "tests/agent_eval/fixtures/mibao_eval_seed.sql",
+        "table": "finance_transactions"
+      }
+    },
+    "OR-001:order_query:list:orders": {
+      "case_id": "OR-001",
+      "tool": "order_query",
+      "action": "list",
+      "field": "orders",
+      "kind": "seed",
+      "why": "OR-001「查看最近的订单」断言订单列表非空 ⇒ 栈里必须有该租户的订单行；缺失时表现为「黄金策查不到订单」的产品缺陷。",
+      "seed_evidence": {
+        "file": "tests/agent_eval/fixtures/xiaobu_eval_seed.sql",
+        "table": "orders"
+      }
+    },
+    "OR-002:order_query:list:orders": {
+      "case_id": "OR-002",
+      "tool": "order_query",
+      "action": "list",
+      "field": "orders",
+      "kind": "seed",
+      "why": "OR-002「查看待发货的订单」同样断言列表非空（同 OR-001 的数据依赖，只是 status=confirmed 过滤）⇒ 种子里必须有处于该状态的订单行。",
+      "seed_evidence": {
+        "file": "tests/agent_eval/fixtures/xiaobu_eval_seed.sql",
+        "table": "orders"
+      }
+    },
+    "PR-001:product_search:products": {
+      "case_id": "PR-001",
+      "tool": "product_search",
+      "action": "",
+      "field": "products",
+      "kind": "seed",
+      "why": "PR-001「搜索遮光窗帘」断言搜索结果非空 ⇒ 栈里必须有名字真含「遮光窗帘」的在售商品；这是本仓最早被记下的同类缺口（空库 ⇒ agent 反复搜 4 轮宣告「库里没有这款商品」）。",
+      "seed_evidence": {
+        "file": "tests/agent_eval/fixtures/xiaobu_eval_seed.sql",
+        "table": "products"
+      }
+    },
+    "PR-024:curtain_calc:warning": {
+      "case_id": "PR-024",
+      "tool": "curtain_calc",
+      "action": "",
+      "field": "warning",
+      "kind": "derived",
+      "why": "本台账里唯一的 kind=derived：这条非空断言**不依赖任何表/种子数据** —— `curtain_calc` 是纯计算工具的告警字段，不是从表里读的列表。⚠️ 本条目**只**承重「它对夹具数据面零依赖」这一件事，**不**主张「warning 必然能落地」：现取告警产生的分支有 `_resolve_plan` 的定宽提示、`calculate_fabric_by_pleats` 的「褶数无法被开数整除」、`calculate_fabric_meters` 的定宽工程告警、以及服务端不可达时的降级告警 —— 它们**由入参决定**（PR-024 的入参会不会命中其中一条，本包**没有实跑**：curtain_calc 要 `app.*` 依赖，本工作区未装 `backend/ai-agent-service/.venv`）⇒ 这一层属「该断言可不可满足」的另一件事，不在本判据职责内（本判据只管数据面）。",
+      "code_anchor": "backend/ai-agent-service/app/tools/curtain_calc.py::_resolve_plan"
+    }
+  }
+}
