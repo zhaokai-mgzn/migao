@@ -58,7 +58,17 @@ vi.mock('sonner', () => ({
 }))
 
 // Mock UI components（Table 用 data 而非 dataSource）
-vi.mock('@/components/ui', () => ({
+vi.mock('@/components/ui', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>()
+  return {
+    // issue #7007：**先摊开真原语，再覆盖**（`...actual` 在前 ⇒ 显式 mock 仍然赢）。
+    // 此前这里是**整模块** mock 且不合并真值，只列被替身的几个原语 ⇒ 页面一旦用上
+    // **当时不存在的原语**（本轮加了 PageHeader / PageCard / SearchPanel）就报
+    // `No "PageHeader" export is defined on the "@/components/ui" mock` ——
+    // 报错离病灶很远（本轮 144 条红的根因，与页面改动对错无关）。
+    // 摊开真值后，新增原语不必再逐个补 mock。口径与同目录
+    // `production-remnants-paging.test.tsx` 既有写法同源。
+    ...actual,
   Table: ({ dataSource, columns, loading, highlightRowKey }: any) => (
     <div data-testid="table">
       {loading && <div data-testid="table-loading">加载中...</div>}
@@ -96,7 +106,8 @@ vi.mock('@/components/ui', () => ({
       <button onClick={onReset} data-testid="reset-btn">重置</button>
     </div>
   ),
-}))
+  }
+})
 
 // Mock DateTimeCell
 vi.mock('@/components/common/DateTimeCell', () => ({

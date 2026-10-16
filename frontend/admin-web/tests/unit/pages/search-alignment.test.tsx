@@ -33,7 +33,17 @@ vi.mock('next/link', () => ({
 }))
 
 // 通用 UI Mock
-vi.mock('@/components/ui', () => ({
+vi.mock('@/components/ui', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>()
+  return {
+    // issue #7007：**先摊开真原语，再覆盖**（`...actual` 在前 ⇒ 显式 mock 仍然赢）。
+    // 此前这里是**整模块** mock 且不合并真值，只列被替身的几个原语 ⇒ 页面一旦用上
+    // **当时不存在的原语**（本轮加了 PageHeader / PageCard / SearchPanel）就报
+    // `No "PageHeader" export is defined on the "@/components/ui" mock` ——
+    // 报错离病灶很远（本轮 144 条红的根因，与页面改动对错无关）。
+    // 摊开真值后，新增原语不必再逐个补 mock。口径与同目录
+    // `production-remnants-paging.test.tsx` 既有写法同源。
+    ...actual,
   Button: ({ children, onClick, ...props }: any) => (
     <button onClick={onClick} {...props}>{children}</button>
   ),
@@ -78,7 +88,8 @@ vi.mock('@/components/ui', () => ({
       <button onClick={onReset} disabled={loading}>重置</button>
     </div>
   ),
-}))
+  }
+})
 
 vi.mock('@/components/ui/TreeCheckbox', () => ({
   TreeCheckbox: () => <div data-testid="tree-checkbox" />,
@@ -95,12 +106,31 @@ function assertNoCenterClasses(className: string | null) {
   }
 }
 
+/**
+ * 各页搜索容器的选择器。
+ *
+ * 🔴 2026-10-16（issue #7007）改判：由**类名选择器**改为**语义锚点**
+ * `[data-testid="search-area"]`。
+ *
+ * 病根：类名选择器把「搜索区的**外观写法**」钉成了契约 ——
+ *   · `employees: '.bg-neutral-50.p-4.rounded-lg'` 是 `SearchBar`（旧共享件）的底色 + 内边距；
+ *   · `orders` / `products: '.bg-white.rounded-lg.border'` 是**任何**白卡都能命中的泛类名；
+ *   · `after-sales: '.border-x'` 同理。
+ * ⇒ 只要版式统一动一下（本包把搜索区收敛到 `PageCard` / `SearchPanel`），这些选择器就
+ * **静默匹配不到** —— 而表现是 **5s 超时**（`waitFor` 等一个永远不出现的元素），
+ * 报错信息只说「超时」，指不到「选择器过期」。这正是「用外观当契约」的代价。
+ *
+ * 现在锚点 = 各页**本来就有的** `data-testid="search-area"`（订单 / 商品 / 员工 / 售后四处是
+ * 页面显式写的，客户页由共享原语 `SearchPanel` 的默认 `testId` 提供）。
+ * **判据强度不变**：仍然断言「那个容器在」+「它的 className 不含居中类」，只是定位方式
+ * 从「长什么样」换成「叫什么」。
+ */
 const SEARCH_SELECTORS: Record<string, string> = {
-  orders: '.bg-white.rounded-lg.border',
-  products: '.bg-white.rounded-lg.border',
-  'after-sales': '.border-x',
+  orders: '[data-testid="search-area"]',
+  products: '[data-testid="search-area"]',
+  'after-sales': '[data-testid="search-area"]',
   customers: '[data-testid="search-area"]',
-  employees: '.bg-neutral-50.p-4.rounded-lg',
+  employees: '[data-testid="search-area"]',
 }
 
 async function waitForSearchContainer(pageKey: string, container?: HTMLElement) {

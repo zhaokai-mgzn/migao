@@ -22,7 +22,14 @@ vi.mock('next/navigation', () => ({
 }))
 
 // Mock lucide-react icons
-vi.mock('lucide-react', () => ({
+vi.mock('lucide-react', async (importOriginal) => ({
+  // issue #7007：整模块 mock 换成 **真实模块 + 局部覆盖**（helper 与 issue #6664 同源）。
+  // 逐个列图标名的写法会在「任一被导入的 UI 组件新增图标」时炸
+  // `No "X" export is defined on the "lucide-react" mock` —— 那是 mock 维护问题、
+  // 不是被测行为（本轮客户页把 `SearchBar` 换成 `SearchPanel` 就是这么炸的）。
+  // 下面这几项是本文件**断言过 testid** 的，必须原样覆盖（helper 的默认 testid 是
+  // `icon-<小写名>`，与本文件既有的 `icon-key` / `icon-loader` 不同）。
+  ...(await import('../helpers/lucide-mock')).lucideMock(await importOriginal()),
   KeyRound: (props: any) => <span data-testid="icon-key" {...props} />,
   Loader2: (props: any) => <span data-testid="icon-loader" {...props} />,
   LogOut: (props: any) => <span data-testid="icon-logout" {...props} />,

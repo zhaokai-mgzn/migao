@@ -195,7 +195,10 @@ describe('算料口径域面板（issue #6580 抽取后的行为面）', () => {
   it('有读数 ⇒ 逐条参数成行（人话名 + 「改它会怎样」都在）', async () => {
     renderPanel()
     expect(screen.getByTestId('param-per_fold_single')).toBeInTheDocument()
-    expect(screen.getAllByText('单色每折吃布（米）').length).toBeGreaterThan(0)
+    // 2026-10-16（issue #7007）：展示名「单色每折吃布」⇒「单色每折用料」（用户裁定方案 B：
+    // 算料术语改叫法、保留业务词）。**只改展示名**：键名 `per_fold_single` / 公式 / 数值一字未动，
+    // 同一 describe 内「引擎键名不上屏」与下文 `PUT` 全量键判据都照旧。
+    expect(screen.getAllByText('单色每折用料（米）').length).toBeGreaterThan(0)
     expect(screen.getAllByText(/改它会怎样/).length).toBeGreaterThan(0)
   })
 
@@ -302,7 +305,7 @@ describe('判据 1（#6825）：域内就地可改 —— 逐键在位', () => {
     expect(customRow).not.toHaveTextContent('custom')
   })
 
-  it('拼色每折吃布表逐行可改（拼 N 次 → 每折吃布）', async () => {
+  it('拼色每折用料表逐行可改（拼 N 次 → 每折用料）', async () => {
     await renderPanel()
     expect(screen.getByTestId('calc-caliber-mixed-1')).toHaveValue('0.65')
     expect(screen.getByTestId('calc-caliber-mixed-2')).toHaveValue('1.2')
@@ -390,7 +393,7 @@ describe('判据 1b：术语说明区块与参数同屏（口径与术语不丢�
 // 判据 2（冻结）：改值 → 保存 ⇒ `PUT` 正文是**全量键**
 // ══════════════════════════════════════════════════════════════════════════════
 describe('判据 2（#6825）：保存发**全量键**（后端是整份替换，缺键会静默回默认值）', () => {
-  it('改「单色每折吃布」⇒ PUT 正文逐键齐全（11 键）+ 改的那个键是新值', async () => {
+  it('改「单色每折用料」⇒ PUT 正文逐键齐全（11 键）+ 改的那个键是新值', async () => {
     const sent: CraftCalcConfig[] = []
     await renderPanel(async (draft) => {
       sent.push(draft)
@@ -581,12 +584,12 @@ describe('判据 8（#6857）：行式紧凑 —— 控件与名称同行、定�
     expect(
       labelRow.textContent,
       '输入框必须与名称在同一个行容器里（判据按「同一行」钉死，不是「页面上有」）',
-    ).toContain('单色每折吃布')
+    ).toContain('单色每折用料')
     expect(labelRow.className).toContain('flex')
     // 🔴 更紧的一刀：输入框的**紧邻前一个兄弟**就是名称 `<span>`（退回「另起一行」时它会变成行 div ⇒ 红）
     const prev = input.previousElementSibling as HTMLElement
     expect(prev?.tagName, '输入框紧邻前一个兄弟必须是名称元素（不是外层行容器）').toBe('SPAN')
-    expect(prev.textContent).toContain('单色每折吃布')
+    expect(prev.textContent).toContain('单色每折用料')
     // 行容器（卡片形态带 border/rounded/p-4；紧凑形态不带）
     const row = input.closest('[data-testid="param-per_fold_single"]') as HTMLElement
     expect(row.className, '本域不再用卡片（改回卡片 ⇒ 行高与边框又回来了）').not.toContain('border')

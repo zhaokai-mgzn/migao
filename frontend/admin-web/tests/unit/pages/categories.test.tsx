@@ -71,7 +71,17 @@ vi.mock('@/components/products/CategoryDialog', () => ({
 }))
 
 // ===== Mock UI components =====
-vi.mock('@/components/ui', () => ({
+vi.mock('@/components/ui', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>()
+  return {
+    // issue #7007：**先摊开真原语，再覆盖**（`...actual` 在前 ⇒ 显式 mock 仍然赢）。
+    // 此前这里是**整模块** mock 且不合并真值，只列被替身的几个原语 ⇒ 页面一旦用上
+    // **当时不存在的原语**（本轮加了 PageHeader / PageCard / SearchPanel）就报
+    // `No "PageHeader" export is defined on the "@/components/ui" mock` ——
+    // 报错离病灶很远（本轮 144 条红的根因，与页面改动对错无关）。
+    // 摊开真值后，新增原语不必再逐个补 mock。口径与同目录
+    // `production-remnants-paging.test.tsx` 既有写法同源。
+    ...actual,
   Button: ({ children, onClick, variant, loading, disabled, ...props }: any) => (
     <button
       onClick={onClick}
@@ -96,7 +106,8 @@ vi.mock('@/components/ui', () => ({
       {text}
     </div>
   ),
-}))
+  }
+})
 
 import CategoriesPage from '@/app/(dashboard)/categories/page'
 
@@ -147,9 +158,11 @@ describe('CategoriesPage', () => {
     mockGetCategories.mockResolvedValue({ data: { data: [] } })
     render(<CategoriesPage />)
     await waitFor(() => {
-      // 空数据时 header subtitle + 空状态都显示统一文案
-      const descElements = screen.getAllByText('管理商品分类：新增、编辑、删除和排序')
-      expect(descElements.length).toBe(2) // header + empty state
+      // 🔴 2026-10-16（issue #7007）改判：空态**不再复读副标题**。
+      // 旧判据数的是「同一句副标题出现 2 次」（header + 空态）—— 那正是 §31 P2 要治的
+      // 「信息不重复」，而它把重复**钉成了契约**（改对反而红）。
+      // 新判据强度不变、且不依赖重复：空态**在**（专属锚点）+ 树**不在**（真值分支）。
+      expect(screen.getByTestId('categories-empty')).toBeInTheDocument()
       expect(screen.queryByTestId('category-tree')).not.toBeInTheDocument()
     })
   })
