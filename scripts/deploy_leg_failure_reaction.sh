@@ -186,6 +186,18 @@ notify() {   # $1=动作描述（写进评论，幂等：同标题已开 ⇒ 评
 }
 
 # ── issue #6556 的两个新出口（② 状态兜底 / 通知补齐）──────────────────────────
+#: `gh issue close --reason` 的**取值枚举** —— 逐字取 `gh issue close --help`：
+#: `-r, --reason string  Reason for closing: {completed|not planned|duplicate}`。
+#: 🔴 `not planned` 是**空格**（issue #7075 实测：`not_planned` 在 gh 的**参数解析阶段**就被拒，
+#:    报 `invalid argument "not_planned" for "-r, --reason" flag`，rc=1 ⇒ 关单从不发生）。
+#: 用**数组**而不是「空格分隔的字符串」：取值本身含空格，`tr ' ' '\n'` 这类分隔法会把它切碎
+#: （本包实测：`not planned` 被切成两行 ⇒ 合法性判定恒失败、静默不清零）。
+#: 这份清单与 `scripts/deploy_leg_close_claim_audit.py check-static` 现取的枚举**双向核对**
+#: （判据 = `tests/unit_ci_workflows/test_deploy_leg_failure_reaction.py`，枚举现取优先、内置清单兜底）。
+CLOSE_REASON_ENUM=("completed" "not planned" "duplicate")
+#: 状态兜底（该 commit 已上线）用的取值 —— 显式常量而不是内联字面量：内联那处曾经写成 `not_planned`。
+CLOSE_REASON_NOT_PLANNED="not planned"
+
 open_issue_of_title() {   # $1=标题 ⇒ 该标题下**开放**单的编号（无 ⇒ 空）
   local n
   n="$(ghc issue list --state open --search "$1 in:title" --json number --jq '.[0].number // empty')" || n=""
@@ -202,18 +214,34 @@ clear_leg() {   # $1=服务键（可空=事件快路径） $2=清零依据（写
     echo "✅ 腿 ${key:-$LEG} 已收敛 ⇒ 无开放的 \`${LEG_TITLE_PREFIX}\` 单需要清零"
     return 0
   fi
-  printf '%s\n' "清零：\`${key:-$LEG}\` 已收敛（${why}）—— 本单由 \`deploy-reconcile.yml\` 的腿级反应步（issue #6526 B / #6556）自动关闭。" \
-    | ghc issue comment "$n" --body-file - >/dev/null || :
+  # 🔴 清零声明句**只对真的关单成功**的那一次写（issue #7075，见下 `if ghc issue close` 块）：
+  #    先写声明、再关单的旧形态会把「留了声明却没关」变成**不可区分**的常态（实测 #6661/#7025/#7032）。
   case "$why" in
     *success*) close_reason="completed" ;;
-    *)         close_reason="" ;;   # 状态兜底：该 commit 已上线 ⇒ 按「不再计划」关
+    *)         close_reason="$CLOSE_REASON_NOT_PLANNED" ;;   # 状态兜底：该 commit 已上线 ⇒ 按「不再计划」关
   esac
-  if [ -n "$close_reason" ]; then
-    ghc issue close "$n" --reason "$close_reason" >/dev/null || :
+  # 取值合法性 fail-closed（issue #7075）：gh 只认 `{completed|not planned|duplicate}`（**空格**，不是下划线）。
+  # 不在枚举内 ⇒ **不发这次调用**（免得 gh 侧报错被咽掉），并具名出声。枚举由离线判据
+  # `scripts/deploy_leg_close_claim_audit.py check-static` 现取核对（本行是它的判据对象）。
+  # ⚠️ 逐元素比对（数组 `"${CLOSE_REASON_ENUM[*]}"` 拼成 `" a b c "` 再按**整值**匹配）——
+  #    **不许**用「空格分隔字符串 + `tr`」：取值本身含空格，那种写法会把 `not planned` 切碎
+  #    ⇒ 判定恒失败（本包实测）。判据侧按 `case " ${VAR[*]} " in` 这个固定形态识别闸门。
+  case " ${CLOSE_REASON_ENUM[*]} " in
+    *" $close_reason "*) ;;
+    *)
+      echo "::warning::腿 ${key:-$LEG} 的关单取值 \`${close_reason}\` **不在 gh 枚举**内（${CLOSE_REASON_ENUM[*]}）⇒ 本轮**未关**值守单 #${n}（issue #7075，fail-closed）"
+      return 0 ;;
+  esac
+  # ① 先关单：**失败必须看得见**（issue #7075 判据 2）—— 旧形态是 `> /dev/null || :`，
+  #    gh 的 `invalid argument … --reason` 被咽掉，而下一行照样宣称「自动关闭」。
+  if ghc issue close "$n" --reason "$close_reason" >/dev/null; then
+    # ② 关单真成功了才写清零声明 + 宣称已关（两者同一出口 ⇒ 声明与状态**结构上**不可能不一致）。
+    printf '%s\n' "清零：\`${key:-$LEG}\` 已收敛（${why}）—— 本单由 \`deploy-reconcile.yml\` 的腿级反应步（issue #6526 B / #6556）自动关闭。" \
+      | ghc issue comment "$n" --body-file - >/dev/null || :
+    echo "✅ 腿 ${key:-$LEG} 已收敛 ⇒ 自动关闭值守单 #${n}（${why}）"
   else
-    ghc issue close "$n" --reason not_planned >/dev/null || :
+    echo "::warning::腿 ${key:-$LEG} 已收敛，但**关单失败** ⇒ 值守单 #${n} **仍开**（清零声明本轮未写；issue #7075）。复算：\`gh issue view ${n} --json state -q .state\`"
   fi
-  echo "✅ 腿 ${key:-$LEG} 已收敛 ⇒ 自动关闭值守单 #${n}（${why}）"
   return 0
 }
 

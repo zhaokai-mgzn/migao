@@ -342,6 +342,47 @@ jobs:
             python -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4
           fi
 
+      # ── `[deploy-leg]` 清零声明的**类级元守卫**（issue #7075）──────────────────────
+      # 病：`scripts/deploy_leg_failure_reaction.sh` 的 `clear_leg()` 走状态兜底时把 `--reason`
+      # 传成 `not_planned`（**下划线**，而 gh 只认**空格**的 `not planned`）并 `|| :` 吞错，
+      # 下一行照样打印「✅ … 自动关闭值守单 #N」⇒ 值守单**只开不关**、假绿堆积。
+      # 现场（durable）：run 38979620458 的日志打出「自动关闭值守单 #7025」，
+      # 而同一分钟 `gh issue view 7025 --json state` = OPEN。
+      # 本步判的是**不变量**（不是那一次调用）：「清零注释写了『自动关闭』」⇄「该单真是 CLOSED」必须一致。
+      # ⚠️ 三态（与 `tests/unit_ci_workflows/test_case_id_claims.py` 的 `TOKEN_ENVS` 同口径）：
+      #    `0` 一致 ⇒ 绿；`1` 违规（具名）⇒ **判红**；`3` **判定不了**（无凭据 / 读不到 / 超取数上限）
+      #    ⇒ **出声 + 放行（exit 0）**。
+      # 🔴 `3` 为什么不判红（口径，逐字可复算）：它**不是**「一致」，但它是**环境态**（凭据缺失 /
+      #    限流 / 超取数上限），与**被检 PR 的内容无关** ⇒ 判红就是「拿无关 PR 卡合并」
+      #    （铁律 11(b)：`3` 不得当 `0` 读，但也不得当成「该 PR 有缺陷」）。⇒ 出声（`::warning::`
+      #    进 job summary/annotations）+ **exit 0**；**不是**静默判绿（读数里逐字写着「判定不了」）。
+      #    同一形态的既有先例 = `tests/unit_ci_workflows/test_case_id_claims.py` 的
+      #    `judge 不了` 分支（fail-closed 判红）**与**各 workflow 里「弃权不判红 + ::warning::」
+      #    那一族（见 `deploy-reconcile.yml` 的两条反应步）。
+      # ⚠️ **本步不新增 job**（只挂在既有的 `ci-workflow-tests` 里）⇒ **不改 required 集合**；
+      #    「把一条 job 翻成 required」的两条前置（每个 PR 都上报 + 判定方式确定）本 PR **没有触发**。
+      # ⚠️ 只读（`permissions: issues: read` 足够）：不关单、不打标签、不改远端。
+      # ⚠️ 离线结构判据（取值枚举 + 具名失败出口）在 pytest 那一步里 ⇒ **没网络也能判**。
+      - name: 清零声明元守卫（[deploy-leg] 声称已关 ⇄ 实际 CLOSED，issue #7075）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          # 显式 `--repo`：不靠 `gh` 从当前检出推断远端（§18.6 环境静默即缺陷）。
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set +e
+          python3 scripts/deploy_leg_close_claim_audit.py check-claims
+          rc=$?
+          case "$rc" in
+            0) echo "✅ 清零声明与单据状态一致" ;;
+            3)
+              echo "::warning::清零声明元守卫**判定不了**（rc=3：无凭据 / 读不到 / 超取数上限）—— 这**不是**「一致」，但它是**环境态**、与被检 PR 无关 ⇒ 本步出声放行（exit 0），不卡无关 PR"
+              exit 0 ;;
+            *)
+              echo "::error::清零声明元守卫判红（rc=$rc，issue #7075）：有单据**宣称已关而实际未关**（具名清单见上）"
+              exit "$rc" ;;
+          esac
+
 
   admin-web-test:
     name: admin-web typecheck + unit tests

@@ -100,7 +100,29 @@ case "$cmd" in
     n=1; [ -f "$s.count" ] && n=$(( $(cat "$s.count") + 1 )); printf '%s' "$n" > "$s.count"
     printf '%s\t%s\t%s\n' "$n" "$last" open >> "$s"
     echo "https://github.com/x/y/issues/$n" ;;
-  "issue comment" | "issue close" | "issue edit")
+  # 🔴 取值合法性（issue #7075）：桩必须**逐字复刻真 gh 的拒绝面**，否则「传了非法取值」这条
+  #    在桩上会**静默成功** ⇒ 判据 1/2 全成空断言（本包红证注入时实测过这个形态）。
+  #    真读数：`gh issue close 999999 --reason not_planned` ⇒
+  #    `invalid argument "not_planned" for "-r, --reason" flag: valid values are {completed|not planned|duplicate}`，rc=1。
+  "issue close")
+    # ⚠️ 单号是**第一个位置参数**（不是 `$1` —— 那是子命令 `close`）；`--reason` 的取值含空格，
+    #    所以只认 `--reason <值>` 这一对。
+    #    ⚠️ 也别用 `case "$a" in [0-9]*)`：未加引号会走 glob（本包实测取不到号）⇒ 按**长度**判：
+    #    `val` 只有「首位是 0-9 的纯数字号」这一种（`--reason` 的取值必带空格或非数字首字符）。
+    n=""; prev=""; reason=""
+    for a in "$@"; do
+      [ "$prev" = "--reason" ] && reason="$a"
+      [ "$prev" != "--reason" ] && [ "${a#?}" != "$a" ] && [ "$(printf '%s' "$a" | tr -d '0-9')" = "" ] && n="${n:-$a}"
+      prev="$a"
+    done
+    allowed=" ${STUB_CLOSE_REASONS:-completed not planned duplicate} "
+    case "$allowed" in
+      *" $reason "*) ;;
+      *) echo "invalid argument \"$reason\" for \"-r, --reason\" flag: valid values are {completed|not planned|duplicate}" >&2; exit 1 ;;
+    esac
+    [ -n "$STUB_CLOSE_LOG" ] && printf '%s\t%s\n' "$n" "$reason" >> "$STUB_CLOSE_LOG"
+    exit 0 ;;
+  "issue comment" | "issue edit")
     last=""; prev=""
     for a in "$@"; do [ "$prev" = "" ] && last="$a"; prev="$a"; done
     exit 0 ;;
@@ -347,10 +369,13 @@ class React:
                  leg: str = "Build and Deploy admin-api",
                  log_text: str | None = None, ledger_path: Path | None = None,
                  rerun_fail: bool = False, extra_env: dict | None = None,
-                 script: Path | None = None, issues_file: Path | None = None):
+                 script: Path | None = None, issues_file: Path | None = None,
+                 close_reasons: str | None = None):
         self.tmp = tmp_path
         self.bin_dir, _ = make_stub(tmp_path)
         self.calls = tmp_path / "gh-calls.log"
+        # issue #7075：**桩的**关单读数面（`<编号>\t<取值>`，只记**被桩接受**的那些）。
+        self.close_log = tmp_path / "gh-closes.log"
         # ⚠️ 桩状态可以**预置**（`issues_file`）：本类在**构造器里**就把脚本跑完 ⇒ 「先种单、
         #    再跑」（success + 已有开放单 ⇒ 清零）那种时序场景必须先把桩喂进去。
         self.issues = issues_file if issues_file is not None else tmp_path / "issues.tsv"
@@ -363,6 +388,8 @@ class React:
             "PATH": f"{self.bin_dir}{os.pathsep}{env['PATH']}",
             "GH_CALL_LOG": str(self.calls),
             "STUB_ISSUES": str(self.issues),
+            # issue #7075：桩的**关单读数面**（只记被桩接受的那些 `<编号>\t<取值>`）。
+            "STUB_CLOSE_LOG": str(self.close_log),
             "REACT_LEDGER": str(ledger_path if ledger_path is not None else LEDGER),
             "LEG_NAME": leg,
             "LEG_CONCLUSION": conclusion,
@@ -383,12 +410,26 @@ class React:
             env["REACT_LOG_FILE"] = str(log_file)
         if rerun_fail:
             env["STUB_RERUN_FAIL"] = "1"
+        if close_reasons is not None:
+            env["STUB_CLOSE_REASONS"] = close_reasons
         self.proc = subprocess.run([BASH, str(script if script is not None else SCRIPT)],
                                    env=env, capture_output=True, text=True, timeout=120)
 
     @property
     def gh_calls(self) -> list:
         return self.calls.read_text(encoding="utf-8").splitlines() if self.calls.exists() else []
+
+    @property
+    def closed(self) -> list:
+        """桩**接受**的关单读数：`[(编号, 取值), …]`（issue #7075 —— 非法取值在桩上就被拒，不进这里）。"""
+        if not self.close_log.exists():
+            return []
+        out = []
+        for line in self.close_log.read_text(encoding="utf-8").splitlines():
+            n, _, reason = line.partition("\t")
+            if n:
+                out.append((n, reason))
+        return out
 
     def ran(self, needle: str) -> bool:
         return any(needle in c for c in self.gh_calls)
@@ -833,17 +874,19 @@ def seed_issues(tmp_path: Path, lines: list) -> Path:
 
 def run_fallback(tmp_path: Path, *, state_rows: dict, issues: list, leg: str = "",
                  script: Path | None = None, sha: str = "deadbeefcafe",
-                 event: str = "schedule", ledger_path: Path | None = None) -> "React":
+                 event: str = "schedule", ledger_path: Path | None = None,
+                 close_reasons: str | None = None) -> "React":
     """跑一次**状态兜底**入口（`event_name != workflow_run`，`LEG_NAME` 为空）。
 
     ⚠️ 桩单必须**先种**（见 `seed_issues`）：种在 `React(...)` 之后 = 「跑完再喂输入」
     （本包实测：`issue list` 返回空 ⇒ 用例假红）。
+    `close_reasons`（issue #7075）= 覆盖桩接受的关单取值集（默认 = 真 gh 的枚举）。
     """
     st = state_file(tmp_path, state_rows)
     seeded = seed_issues(tmp_path, issues)
     return React(tmp_path / "run", conclusion="", attempt="", leg=leg,
                  ledger_path=ledger_path, extra_env=fallback_env(st, sha=sha, event=event),
-                 script=script, issues_file=seeded)
+                 script=script, issues_file=seeded, close_reasons=close_reasons)
 
 
 # ── 判据 ① 非 `workflow_run` 事件下也能清零（**核心**）───────────────────────────
@@ -1238,3 +1281,373 @@ def test_no_new_step_body_exceeds_the_github_limit_after_this_change():
     over = [(len(s.get("run", "") or ""), s.get("name")) for s in _steps()
             if len(s.get("run", "") or "") > RUN_BODY_LIMIT]
     assert not over, f"以下 step 的 run 正文超过 {RUN_BODY_LIMIT} 字符：{over}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# issue #7075：清零声明的**取值 / 静默 / 一致性**三重判据
+#   · 判据 1 取值合法 —— `--reason` 必须在 gh 的枚举内（离线：枚举**现取** `gh issue close --help`）
+#   · 判据 2 不许静默 —— 关单失败必须出声，且**禁止**「失败但仍宣称已关」
+#   · 判据 3 类级元守卫 —— 「清零注释写了『自动关闭』」⇄「该单真是 CLOSED」必须一致
+# 现场（durable，可复算）：`gh run view 38979620458 --log | grep 自动关闭` 打出
+#   `✅ 腿 worker-h5 已收敛 ⇒ 自动关闭值守单 #7025（…）`，而同一分钟 `gh issue view 7025 --json state` = OPEN。
+# ══════════════════════════════════════════════════════════════════════════════
+
+import importlib.util  # noqa: E402  （本段是后加的，见上：与既有 import 段分开只为不动已验收的行）
+import sys  # noqa: E402
+
+AUDIT_SCRIPT = REPO_ROOT / "scripts" / "deploy_leg_close_claim_audit.py"
+CLOSE_CLAIM_LEDGER = REPO_ROOT / "tests/unit_ci_workflows" / "deploy_leg_close_claims_ledger.json"
+PR_CHECK = REPO_ROOT / ".github" / "workflows" / "pr-check.yml"
+#: gh 的取值枚举（**逐字**取自 `gh issue close --help`；判据以现取优先，取不到才用这份兜底）。
+GH_CLOSE_REASONS = ("completed", "not planned", "duplicate")
+#: 存量清零台账的**冻结条数**（2026-10-17 现取；只许缩短 —— 清账时同步下调本常量，见台账 `shrink_rule`）。
+CLOSE_CLAIM_BASELINE = 4
+#: 状态兜底（该 commit 已上线）对应的取值 —— **空格**，不是 `not_planned`。
+NOT_PLANNED = "not planned"
+#: 判据 3 的元守卫锚点（动作脚本 `clear_leg()` 的原文；判据断言失败出口**不得**含它）。
+CLAIM_TEXT = "自动关闭"
+
+
+def _load_audit():
+    """按**文件路径**加载审计模块（不依赖 `sys.path` / 不枚举语料 —— 见 §5284 的既有口径）。"""
+    spec = importlib.util.spec_from_file_location("deploy_leg_close_claim_audit", AUDIT_SCRIPT)
+    assert spec and spec.loader, f"反空跑锚点：加载不到审计模块（{AUDIT_SCRIPT}）"
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault("deploy_leg_close_claim_audit", mod)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _gh_reason_enum() -> list[str]:
+    """现取 gh 的 `--reason` 枚举（`gh` 不在场 ⇒ 退回判据里的兜底清单，并在断言语里声明）。"""
+    audit = _load_audit()
+    allowed, source = audit.gh_reason_enum()
+    assert allowed, f"取不到 `--reason` 枚举（来源 = {source}）⇒ 判据 1 没有对照面"
+    return list(allowed)
+
+
+# ── 判据 1（离线结构）：清零路径的 `--reason` 取值全在 gh 枚举内 ─────────────────
+
+def test_close_reason_enum_line_matches_the_deployed_constant():
+    """脚本里那份枚举清单必须与**现取**的 gh 枚举同集合（否则「合法」这个判断本身会漂）。"""
+    text = SCRIPT.read_text(encoding="utf-8")
+    m = re.search(r'^CLOSE_REASON_ENUM=\((.*)\)', text, re.M)
+    assert m, "反空跑锚点：脚本里找不到 `CLOSE_REASON_ENUM` 数组（取值枚举清单被删/改名 ⇒ 判据已过期）"
+    declared = _load_audit()._parse_string_list(m.group(1))
+    assert declared, f"枚举数组解析出空表（形态被改）→ {m.group(1)!r}"
+    live = _gh_reason_enum()
+    assert set(declared) == set(live), (
+        f"脚本声明的枚举 {sorted(declared)} ≠ gh 现取的枚举 {sorted(live)} ⇒ "
+        f"清零路径的「合法」判定与 gh 脱钩（issue #7075 判据 1）"
+    )
+    assert NOT_PLANNED in declared, (
+        f"枚举里没有 `{NOT_PLANNED}`（**空格**）⇒ 状态兜底那条路没有合法取值可传（issue #7075）"
+    )
+
+
+def test_close_claim_static_guard_is_clean_on_the_repo_script():
+    """判据 1（现行态）：真脚本上，`check-static` 必须判绿（取值全在枚举内 + 清零路径有失败出口）。"""
+    assert SCRIPT.is_file(), f"反空跑锚点：动作脚本不在场（{SCRIPT}）"
+    audit = _load_audit()
+    rc = audit.check_static(SCRIPT)
+    assert rc == 0, (
+        f"`check-static` 对真脚本判 rc={rc}（期望 0）—— 取值 / 静默面已回归（issue #7075 判据 1+2）"
+    )
+
+
+@pytest.mark.parametrize("bad", ["not_planned", "not-planned", "wontfix", "completed_"])
+def test_injected_illegal_close_reason_is_red_offline(bad):
+    """判据 1（**红证**，离线）：把取值注入成枚举外的形态 ⇒ **必须**判红并具名。
+
+    含现场那个 `not_planned`（下划线）—— 它就是本缺陷的逐字取值。
+    """
+    audit = _load_audit()
+    allowed = _gh_reason_enum()
+    assert bad not in allowed, f"（前置）{bad!r} 不该在 gh 枚举里 —— 枚举取错了？{allowed}"
+    body = SCRIPT.read_text(encoding="utf-8")
+    # 注入点 = 清零路径的**初始化**（原缺陷正是在这里把取值定为非法值的）：
+    # 在 case 之前把 close_reason 预置成枚举外取值 ⇒ `--reason "$close_reason"` 的解析集里就多出它。
+    anchor = '  local key="$1" why="$2" t n close_reason=""'
+    assert anchor in body, "注入未生效：找不到 `clear_leg` 的初始化行（判据已过期）"
+    mutated = body.replace(anchor, f'{anchor[:-2]}"{bad}"', 1)
+    assert mutated != body, "注入未生效"
+    problems = audit.static_problems(mutated, allowed)
+    assert problems, (
+        f"把取值注入成枚举外的 {bad!r} 之后判据**没红** ⇒ 判据 1 是空断言（它没在读那处实参）"
+    )
+    assert any(bad in p for p in problems), f"判红未具名到注入的取值 {bad!r}：{problems}"
+
+
+def test_injected_silent_close_swallow_is_red_offline():
+    """判据 1+2（**红证**，离线）：把「失败被咽掉 + 无条件宣称已关」的旧形态注入回去 ⇒ 判红。"""
+    audit = _load_audit()
+    allowed = _gh_reason_enum()
+    body = SCRIPT.read_text(encoding="utf-8")
+    # 注入的形态**逐字**取自 issue #7075 引用的旧代码（那两行的形状，含 `|| :` 与内联 `not_planned`）。
+    old = ("  if [ -n \"$close_reason\" ]; then\n"
+           "    ghc issue close \"$n\" --reason \"$close_reason\" >/dev/null || :\n"
+           "  else\n"
+           "    ghc issue close \"$n\" --reason not_planned >/dev/null || :\n"
+           "  fi\n")
+    mutated = body.replace("  case \"$why\" in", f"{old}  case \"$why\" in", 1)
+    assert mutated != body, "注入未生效：找不到清零路径的锚点"
+    problems = audit.static_problems(mutated, allowed)
+    assert problems, "把旧形态注入回去之后判据**没红** ⇒ 判据 1/2 是空断言"
+    joined = "\n".join(problems)
+    assert "not_planned" in joined, f"判红未具名到非法取值：{problems}"
+    assert "静默" in joined and "|| :" in joined, (
+        f"判红未点到「静默吞错」那一处（`|| :`）—— 那正是判据 2 的判据对象：{problems}"
+    )
+
+
+def test_offline_static_guard_needs_no_token_and_runs_the_audit_cli():
+    """判据 1（**离线可跑**，CI 无网络也能判）：`check-static` 子命令真跑一次，退出码为三态之一。
+
+    ⚠️ 这条不许变成空断言：除了 rc，还断言它**打了读数**（绿/红都要有输出面）。
+    """
+    env = {k: v for k, v in os.environ.items() if k not in ("GITHUB_TOKEN", "GH_TOKEN")}
+    proc = subprocess.run([sys.executable, str(AUDIT_SCRIPT), "check-static"],
+                          capture_output=True, text=True, timeout=60, env=env)
+    assert proc.returncode == 0, (
+        f"`check-static` 离线跑判 rc={proc.returncode}（期望 0）→ {proc.stdout}{proc.stderr}"
+    )
+    out = proc.stdout + proc.stderr
+    assert "枚举" in out, f"离线判据必须打出「用的是哪份枚举」这条读数：{out!r}"
+
+
+# ── 判据 2（运行时）：关单失败必须出声、且**禁止**宣称已关 ───────────────────────
+
+def test_close_claim_is_only_made_when_the_close_actually_succeeded(tmp_path):
+    """判据 2（正例）：收敛 + 开放单 ⇒ 关单**真的成功**（桩接受 `not planned`）⇒ 才宣称已关。"""
+    st = {"admin-web": ("deployed", "无漂移：自 abc1234 起 frontend/admin-web 无代码改动")}
+    r = run_fallback(tmp_path, state_rows=st, issues=[leg_issue(7, LEG_ADMIN_WEB)])
+    assert r.proc.returncode == 0, f"→ {r.proc.returncode}\n{r.out}"
+    assert r.closed == [("7", NOT_PLANNED)], (
+        f"状态兜底那条路必须传 `{NOT_PLANNED}`（**空格**）并真被接受 —— 现取 {r.closed}；"
+        f"调用记录 {r.gh_calls}（issue #7075 判据 1）"
+    )
+    assert "自动关闭值守单 #7" in r.out, f"关单成功后应当宣称已关：{r.out!r}"
+
+
+def test_failed_close_is_loud_and_never_claims_the_issue_was_closed(tmp_path):
+    """判据 2（**红证**，运行时）：注入「gh 只认别的取值」⇒ 本次必然失败 ⇒ **出声**且**不**宣称已关。"""
+    st = {"admin-web": ("deployed", "无漂移：自 abc1234 起 frontend/admin-web 无代码改动")}
+    r = run_fallback(tmp_path, state_rows=st, issues=[leg_issue(7, LEG_ADMIN_WEB)],
+                     close_reasons="completed")
+    assert r.proc.returncode == 0, f"反应步绝不许让调用它的 job 判红 → {r.proc.returncode}\n{r.out}"
+    assert not r.closed, f"（前置）这次关单应当被桩拒掉 —— 现取 {r.closed}"
+    assert "关单失败" in r.out, (
+        f"关单失败必须**具名出声**（旧形态是 `|| :` 静默吞掉）→ {r.out!r}"
+    )
+    assert "仍开" in r.out, f"出声必须点明「单仍开着」：{r.out!r}"
+    assert CLAIM_TEXT not in r.out, (
+        f"🔴 关单**失败**时不得出现「{CLAIM_TEXT}」（这正是本缺陷：失败但仍宣称已关）→ {r.out!r}"
+    )
+    assert not r.ran(f"issue comment 7"), (
+        f"关单失败 ⇒ **不写**清零声明（声明只跟着成功的关单走）→ {r.gh_calls}"
+    )
+
+
+def test_close_failure_does_not_silently_swallow_gh_error(tmp_path):
+    """判据 2（读数面）：关单失败必须把**为什么失败**说清（不再被 `|| :` 咽掉）。
+
+    ⚠️ 断言的是「有具名读数」而不是 `gh` 的错误原文：桩拒掉的是**取值**（`invalid argument`），
+    而真语料上 `ghc` 会把 `gh` 的 stderr 走 `::warning::` 打出来（限流 / 权限也会走这条路）。
+    ⇒ 判据钉在**本脚本自己的出口**上（`关单失败` + 复算命令），不依赖 gh 的文案。
+    """
+    st = {"admin-web": ("deployed", "无漂移：自 abc1234 起 frontend/admin-web 无代码改动")}
+    r = run_fallback(tmp_path, state_rows=st, issues=[leg_issue(7, LEG_ADMIN_WEB)],
+                     close_reasons="completed")
+    assert "关单失败" in r.out and "gh issue view 7" in r.out, (
+        f"失败出口必须具名并给出复算命令（issue #7075 判据 2：不许静默）→ {r.out!r}"
+    )
+
+
+def test_failure_warning_text_never_reads_as_a_close_claim():
+    """判据 3（**结构性**）：失败出口的文案里不得出现 `自动关闭` ——
+    否则「带清零声明的开放单」这条判据会把**出声句**误认成声明（本包实测踩过这个形态）。"""
+    text = SCRIPT.read_text(encoding="utf-8")
+    for line in text.splitlines():
+        if "关单失败" in line or "未关" in line:
+            assert CLAIM_TEXT not in line, (
+                f"失败出口的文案含 `{CLAIM_TEXT}` ⇒ 与「已关」宣称不可区分：{line!r}"
+            )
+    # 反向对照：**成功**出口必须含它（否则判据 3 的锚点在真语料上根本不存在 = 空断言）。
+    assert any(CLAIM_TEXT in l for l in text.splitlines() if "已收敛" in l), (
+        f"成功出口里找不到 `{CLAIM_TEXT}` ⇒ 判据 3 的锚点失效（判据已过期）"
+    )
+
+
+# ── 判据 3（类级元守卫）：声明 ⇄ 状态一致 + 存量台账只许缩短 ─────────────────────
+
+def _open_issue(number: int, title: str, *, claims: int = 0, state: str = "OPEN") -> dict:
+    """造一张单（`gh issue list --json` 的行形状）；`claims>0` ⇒ 带上清零声明注释。"""
+    comments = [{"author": {"login": "github-actions"},
+                 "createdAt": f"2026-10-16T23:0{i}:00Z",
+                 "body": f"清零：`admin-api` 已收敛（…）—— 本单由 `deploy-reconcile.yml` 的腿级反应步"
+                         f"（issue #6526 B / #6556）{CLAIM_TEXT}。"}
+                for i in range(claims)]
+    return {"number": number, "title": title, "state": state, "comments": comments}
+
+
+def test_meta_guard_flags_a_claim_on_an_open_issue_and_stays_green_once_closed():
+    """判据 3（**判别力自证**）：夹具「注释在 + state=OPEN」⇒ 判红并具名；置 CLOSED ⇒ 绿。"""
+    audit = _load_audit()
+    title = f"{LEG_PREFIX} {LEG_ADMIN_WEB} 部署失败（合并后未上线）"
+    red = audit.claim_violations([_open_issue(7025, title, claims=2)])
+    assert len(red) == 1 and red[0]["number"] == 7025, (
+        f"「带清零声明的开放单」必须被判红并具名 —— 现取 {red}"
+    )
+    assert red[0]["claims"], f"判红必须带上证据（哪几条声明）—— 现取 {red[0]}"
+    green = audit.claim_violations([_open_issue(7025, title, claims=2, state="CLOSED")])
+    assert green == [], (
+        f"同一张单置为 CLOSED ⇒ 必须判绿（否则这条判据与「单该不该关」混为一谈）—— 现取 {green}"
+    )
+
+
+def test_meta_guard_ignores_issues_without_a_close_claim():
+    """判据 3（负控）：**没有**清零声明的开放单不许被判红（本判据不主张「所有开放单都该关」）。"""
+    audit = _load_audit()
+    title = f"{LEG_PREFIX} {LEG_ADMIN_WEB} 部署失败（合并后未上线）"
+    assert audit.claim_violations([_open_issue(9999, title, claims=0)]) == []
+
+
+def test_meta_guard_cannot_judge_without_credentials():
+    """判据 3（**fail-closed**）：没有 API 凭据 ⇒ `rc=3`（判定不了），**不许**静默判绿。"""
+    audit = _load_audit()
+    env = {k: v for k, v in os.environ.items() if k not in audit.TOKEN_ENVS}
+    assert audit.token_from_env(env) == "", "（前置）构造的环境里不该有凭据"
+    rc = audit.check_claims(env=env)
+    assert rc == 3, (
+        f"无凭据必须判 rc=3（无法判定）—— 现取 rc={rc}；"
+        f"静默判 0 就是把「没看」读成「一致」（issue #7075 判据 3）"
+    )
+    assert audit.claim_violations([_open_issue(1, "x", claims=1)]), (
+        "（对照）纯函数在构造语料上仍应判红 ⇒ 证明 rc=3 来自凭据缺失、不是判据退化"
+    )
+
+
+def test_meta_guard_is_wired_into_the_repo_pr_check():
+    """判据 3（**接线**）：审计必须真挂在 CI 里 —— 否则「类级元守卫」只是个没人跑的脚本。"""
+    assert PR_CHECK.is_file(), f"反空跑锚点：找不到 {PR_CHECK}"
+    doc = yaml.safe_load(PR_CHECK.read_text(encoding="utf-8")) or {}
+    steps = []
+    for job in (doc.get("jobs") or {}).values():
+        steps.extend(job.get("steps") or [])
+    hit = [s for s in steps if "deploy_leg_close_claim_audit.py" in str(s.get("run", ""))]
+    assert hit, (
+        "没有任何 PR check 步骤跑 `scripts/deploy_leg_close_claim_audit.py` ⇒ 判据 3 的在线面"
+        "不会被触发（issue #7075 判据 3 的接线）"
+    )
+    assert any("check-claims" in str(s.get("run", "")) for s in hit), (
+        f"接线必须跑 `check-claims`（声明 ⇄ 状态那一条）—— 现取 {[str(s.get('run'))[:80] for s in hit]}"
+    )
+    entry = hit[0]
+    for key in ("GH_TOKEN", "GITHUB_REPOSITORY", "GH_REPO"):
+        assert key in (entry.get("env") or {}), (
+            f"审计步缺 env `{key}`（无凭据 ⇒ 只会 rc=3，等于没接线）→ {entry.get('env')}"
+        )
+
+
+def test_close_claim_ledger_only_shrinks_and_every_entry_has_evidence():
+    """判据 3（存量台账：**只许缩短** + 每条有依据）：条数 ⇄ 冻结常量双向核对，条目缺依据 ⇒ 红。"""
+    assert CLOSE_CLAIM_LEDGER.is_file(), f"反空跑锚点：台账不在场（{CLOSE_CLAIM_LEDGER}）"
+    data = json.loads(CLOSE_CLAIM_LEDGER.read_text(encoding="utf-8"))
+    entries = data.get("entries") or []
+    numbers = [int(e["number"]) for e in entries]
+    assert len(entries) == CLOSE_CLAIM_BASELINE, (
+        f"台账条数 {len(entries)} ≠ 冻结基线 {CLOSE_CLAIM_BASELINE}（现取 {numbers}）—— "
+        f"清账时**两边一起下调**（删一边必红）；条数**变大** = 新增同类假绿（issue #7075 判据 3）"
+    )
+    assert len(set(numbers)) == len(numbers), f"台账里出现重复单号（同一条记两次）：{numbers}"
+    for e in entries:
+        assert e.get("evidence"), f"#{e.get('number')} 缺 evidence（关单依据必须可复算）"
+        assert len(e["evidence"]) >= 2, (
+            f"#{e.get('number')} 的依据少于 2 条锚点 ⇒ 不够归因（够不够硬见台账 `reason`）"
+        )
+        assert e.get("reason"), f"#{e.get('number')} 缺 reason（凭什么判它已收敛）"
+    # 台账的「现状」读数与在线面同源：这张清单就是 `check-claims` 在修复前会报的红。§
+    assert data.get("shrink_rule"), "台账必须写下「只许缩短」的规则（否则清账无从执行）"
+
+
+def test_ledger_entries_are_backed_by_durable_readings():
+    """判据 3（**证据硬度**）：台账里点名的每条锚点都必须是**可复算的**读数形态（不是散文）。"""
+    data = json.loads(CLOSE_CLAIM_LEDGER.read_text(encoding="utf-8"))
+    for e in data["entries"]:
+        for anchor in e["evidence"]:
+            assert re.search(r"(gh run (list|view)|gh issue view|git log)", anchor), (
+                f"#{e['number']} 的锚点不是可复算读数：{anchor!r}"
+            )
+
+
+def test_reaction_script_records_which_reason_it_used(tmp_path):
+    """判据 1（调用记录面）：关单调用必须**逐字**带上取值 —— 供事后对账（不是靠日志散文）。"""
+    st = {"admin-web": ("deployed", "无漂移：自 abc1234 起 frontend/admin-web 无代码改动")}
+    r = run_fallback(tmp_path, state_rows=st, issues=[leg_issue(7, LEG_ADMIN_WEB)])
+    closes = [c for c in r.gh_calls if "issue close 7" in c]
+    assert closes, f"应当有关单调用 → {r.gh_calls}"
+    assert f'--reason "{NOT_PLANNED}"' in closes[0] or f"--reason {NOT_PLANNED}" in closes[0], (
+        f"关单调用必须带 `--reason {NOT_PLANNED}`（**空格**）→ {closes[0]!r}"
+    )
+
+
+def test_fail_closed_guard_is_load_bearing_in_both_directions():
+    """判据 1（**闸门本身的判别力**，双向）：
+
+    ① 闸门在 ⇒ 号外声明（初始化空串 + 一条合法出口）**不**算违规（负控：不许把合法脚本判红）；
+    ② 把闸门摘掉 ⇒ 空取值出口当场判红（**摘掉接线必须红** —— 否则那条闸门是装饰）。
+    """
+    audit = _load_audit()
+    allowed = _gh_reason_enum()
+    body = SCRIPT.read_text(encoding="utf-8")
+    assert not audit.static_problems(body, allowed), "（前置）真脚本必须判绿"
+    anchor = '  case " ${CLOSE_REASON_ENUM[*]} " in'
+    assert anchor in body, "反空跑锚点：找不到 fail-closed 闸门（判据已过期）"
+    arm = '*" $close_reason "*) ;;'
+    assert body.count(arm) == 1, f"（前置）闸门的匹配臂应当恰好一处，现取 {body.count(arm)} 处（判据已过期）"
+    broken = body.replace(arm, 'NOSUCHVALUE) ;;   # 红证注入：把闸门的匹配臂摘掉', 1)
+    assert broken != body and arm not in broken, "注入未生效"
+    problems = audit.static_problems(broken, allowed)
+    assert problems, "摘掉 fail-closed 闸门之后判据**没红** ⇒ 那条闸门没有判据承重（装饰）"
+    assert any("空取值" in p for p in problems), f"判红未点到「空取值出口」：{problems}"
+
+
+def _audit_step_run() -> str:
+    """真 workflow 里那条元守卫步骤的 `run` 正文（**执行式**读法：把 `${{ }}` 换成字面量再喂 bash）。"""
+    doc = yaml.safe_load(PR_CHECK.read_text(encoding="utf-8")) or {}
+    for job in (doc.get("jobs") or {}).values():
+        for step in job.get("steps") or []:
+            if "deploy_leg_close_claim_audit.py" in str(step.get("run", "")):
+                return str(step["run"])
+    raise AssertionError("反空跑锚点：pr-check.yml 里找不到元守卫步骤（判据已过期）")
+
+
+@pytest.mark.parametrize(("audit_rc", "want_rc"), [(3, 0), (1, 1), (0, 0)])
+def test_meta_guard_step_does_not_red_unrelated_prs_on_rc3(tmp_path, audit_rc, want_rc):
+    """判据 3（**执行式**接线读数）：`rc=3`（判定不了，**环境态**）⇒ 本步 `exit 0`（不卡无关 PR）；
+    `rc=1`（真有单据宣称已关却未关）⇒ **判红**（`exit 1`）；`rc=0` ⇒ 绿。
+
+    ⚠️ 这条判的是**真 workflow 的正文**（把 `python3 scripts/…` 换成桩），不是复述意图：
+    桩按 `audit_rc` 表态 ⇒ 读数就是 CI 上会发生的退出码。
+    """
+    stub = tmp_path / "audit-stub.py"
+    stub.write_text(f"import sys\nprint('桩：audit_rc={audit_rc}')\nsys.exit({audit_rc})\n", encoding="utf-8")
+    body = _audit_step_run().replace("python3 scripts/deploy_leg_close_claim_audit.py check-claims",
+                                     f"{sys.executable} {stub}")
+    # `${{ … }}` 一律不进 run 正文（本仓有执行式守卫）—— 这里给的是**离线替身**环境：
+    # 没有凭据 ⇒ 正是「无 token 环境」那条读数。
+    env = {k: v for k, v in os.environ.items() if k not in ("GITHUB_TOKEN", "GH_TOKEN")}
+    # ⚠️ 强制 UTF-8 解码（正文含中文）：默认跟随 locale ⇒ 非 UTF-8 locale 下 `text=True` 会在
+    #    **解码**阶段抛 `UnicodeDecodeError`（本机实测踩过：报错与断言无关、极易误归因）。
+    proc = subprocess.run([BASH, "-c", body], capture_output=True, text=True, timeout=60, env=env,
+                          encoding="utf-8", errors="replace")
+    assert proc.returncode == want_rc, (
+        f"audit_rc={audit_rc} ⇒ 本步应 rc={want_rc}，实际 rc={proc.returncode}\n"
+        f"（rc=3 = 判定不了 = 环境态 ⇒ **不许**卡无关 PR；rc=1 = 真有违规 ⇒ 必须判红）\n"
+        f"{proc.stdout}{proc.stderr}"
+    )
+    out = proc.stdout + proc.stderr
+    if audit_rc == 3:
+        assert "判定不了" in out, f"rc=3 必须**出声**（不许静默判绿）→ {out!r}"
+    if audit_rc == 1:
+        assert "::error::" in out, f"rc=1 必须打 `::error::`（判红要有读数面）→ {out!r}"
