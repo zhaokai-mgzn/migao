@@ -75,6 +75,8 @@ import type {
   OperationsCatalog,
   RoutingsResponse,
   PieceworkReport,
+  PieceworkSettlement,
+  PieceworkSettlementList,
   CatalogOperation,
   ProductionOperationUpdateParams,
   Routing,
@@ -1248,6 +1250,20 @@ export const productionApi = {
   // 计件工资报表（按期间 YYYY-MM 聚合，可按工人筛选）
   getPieceworkSummary: (params: { period: string; worker_name?: string }) =>
     request.get<ApiResponse<PieceworkReport>>('/api/admin/production/piecework/summary', { params }),
+
+  // 计件结算单（issue #5653）：**生成即冻结**（没有改写入口）；要改就作废重开（作废不删行）。
+  // 期间唯一性只约束**生效**单：同期间同工人重复生成 ⇒ 409（具名错误，界面原文透出服务端理由）。
+  getPieceworkSettlements: (params: { period: string; include_voided?: boolean }) =>
+    request.get<ApiResponse<PieceworkSettlementList>>('/api/admin/production/piecework/settlements', {
+      params,
+    }),
+  generatePieceworkSettlement: (data: { period: string; worker_name: string }) =>
+    request.post<ApiResponse<PieceworkSettlement>>('/api/admin/production/piecework/settlements', data),
+  voidPieceworkSettlement: (id: string, data: { reason: string }) =>
+    request.post<ApiResponse<PieceworkSettlement>>(
+      `/api/admin/production/piecework/settlements/${id}/void`,
+      data,
+    ),
 
   // 补生成工序（存量加工单：positions 可选，空 body ⇒ 服务端按订单派生）
   instantiate: (orderId: string) =>

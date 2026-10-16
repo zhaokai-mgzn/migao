@@ -188,6 +188,12 @@ class MoneyEntryPrecisionMetaGuardTest {
                 site("com/migao/admin/service/WorkerInboundService.java", "setUnitCost", Admission.GATED,
                         "工人面请求 → 建单请求时过 MoneyScale（工人输入）"),
 
+                site("com/migao/admin/service/PieceworkSettlementService.java", "PieceworkSettlement.builder()",
+                        Admission.GATED,
+                        "计件结算单金额（issue #5653）：逐值取自 piecework/summary 的按人读数，落库前过 "
+                                + "MoneyScale.requireTwoDecimalsOrNull —— 凭证列 NUMERIC(14,2)，"
+                                + "而本单的判据是「与报表读数逐值一致」，静默四舍五入会直接破坏它"),
+
                 // ── ④ 无准入但**不引入新的超精度输入源**（逐条给理由）──────────────
                 site("com/migao/admin/service/CustomerService.java", "CustomerProfile.builder()",
                         Admission.NO_NEW_INPUT_SOURCE,

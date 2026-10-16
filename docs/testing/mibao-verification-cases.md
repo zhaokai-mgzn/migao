@@ -6805,7 +6805,7 @@
 ```
 溯源: 2026-10-14 新增（issue #6936 的类级固化，与 PG-074 同批）：沿用 #6928 的元守卫范式（扫描器非空跑自证 / 谓词完整性 / 未登记即红 / 登记必须兑现 / 豁免只许缩短 / 判别力自证），但**扩到本单的射程**（`ProductionOperationCommandService` 里 `production_operations.deleted` 的两条软删写路径：谓词三件套 + 显式写列 + 影响行数判定，另加写路径登记表），台账 = backend/admin-api/src/test/resources/production-operation-delete-cas-ledger.json（豁免基线 **0**）。既有判据**未放宽**（`InboundOrderStatusCasMetaGuardTest` 的 MC-100 一字未动）。取号 = PG-075（现取未占用）。 ｜ tags: production, operation, concurrency, meta_guard, backend-contract
 
-## 加工单域（63 case）
+## 加工单域（64 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -7622,6 +7622,23 @@
 跳过: [backend-contract] 确定性判据（Java 单测 + 端侧 jest），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-09 新增（issue #6598；用户逐字「当前工人报工只能按固定顺序报工，这个设计是不对的，**允许工人自由报工**」，当场选定范围 = **整张加工单内任选任意工序（不扫码也能自由报）**）。**旧口径作废**：issue #5647 G10 的「没有任务码 ⇒ 不提供写入口」按本次用户裁定退场，其当年的依据（那条 URL 定工序的路「非事务 / 不落 done_at」）经复核与今日代码不符 —— 两条路都走 `ProductionService#applyReport`。**未被放宽的**：工序必须显式确定（#4694）、身份只由服务端从工人 session 解（#4733）、归属校验（同租户 + 未软删 + 属于本加工单）、幂等键与一次事务。**未固化项**：worker-h5（`/w/` 工号+PIN 面）本次未接该入口。**顺带固化的两处静默漏检**（本包引入第二条写路时才暴露）：`production-single-write-entry` 的端点抓取① 遇**嵌套泛型** `post<ProductionResponse<X>>(` 会在内层 `>` 处停下 ⇒ 一条端点都匹配不到（判据恒红/恒绿都不可信）；② 遇模板串 `${…}` 会截断端点 ⇒ 第二条写路被静默漏掉；两处都改成按实参位置解析并加计数断言防退化。 ｜ 2026-10-14（issue #6868 实现包 D1，**收缩**）：判据 6 与它的三个端侧载体（production-free-report / production-worker-entry / production-offline）随小程序报工页整页删除 ⇒ 收缩为「如实登记：端侧当前无面 + 重启条件」；判据 1~5（后端契约）与 traces 里的 Java 单测 / production-single-write-entry / worker-surface-ledger **一字未改**。⚠️ 口径落差如实登记：本用例 2026-10-09 的交付物含**端侧**写入口，今天端侧（bmini）已无报工面 ⇒ 该交付物的端侧那一半**回到未固化**（重启条件见 data_checks 末格）。 ｜ tags: processing-order, production, worker, report, free-report
+
+### PG-073. 计件结算单（生成即冻结 / 作废留痕 / 期间唯一 / 与报表同源）——issue #5653 🔵
+```
+数据: 结算单载体：POST /api/admin/production/piecework/settlements 生成「某期间(YYYY-MM) × 某工人」的应发金额凭证（表 piecework_settlements，迁移 V156）；GET 列表 / GET {id} 详情 / POST {id}/void 作废 —— 端点族与本域既有只读报表 /api/admin/production/piecework/summary **同族**。证据：PieceworkSettlementControllerTest（四个动作的端点契约 + 权限码 + 运行时动词面）
+数据: 🔴 **同源（逐值）**：结算金额 = 生成那一刻 GET /api/admin/production/piecework/summary?period=YYYY-MM&worker_name=X 的 total 的**逐值**快照（不是约等于、不是结算侧再算一遍）—— 行为判据 = 冻结值 === 报表读数（连 BigDecimal 的 scale 一起比）；结构判据 = 结算服务**不注入**报工表/工序实例表 Mapper、也不调用聚合算法（ProductionService.aggregate 仍是唯一一份算法）。改一处 ⇒ 两处同步（红证见 merge_log）。证据：PieceworkSettlementServiceTest 的 settledAmountComesVerbatimFromTheSameAggregation + settlementServiceHoldsNoAggregationInputs
+数据: 🔴 **不可改在接口层不存在**（不是「前端不给按钮」）：本 controller 物理上**没有** PUT / PATCH / DELETE 映射，服务层与 Mapper **没有**任何改写金额 / 期间 / 工人 / 明细的方法；作废 SQL 的 SET 子句只有 voided_at / voided_by / void_reason / updated_at。运行时判据 = PUT/PATCH 落到该路径得 405。证据：PieceworkSettlementControllerTest 的 controllerDeclaresNoUpdateSurface + runtimeRejectsUpdateVerbs + PieceworkSettlementServiceTest 的 voidSqlOnlyTouchesTheVoidTrail
+数据: 🔴 **作废 + 重开**：作废 = 置 voided_at/voided_by/void_reason（**不物理删、不软删**）⇒ 旧单仍在表里、仍可查（列表默认含已作废，voided_count 计数），金额与期间一字不变；作废后同期间可重新生成；作废原因必填（空白 ⇒ 422 且零写库）；重复作废 ⇒ 具名 409（不谎报成功）。证据：PieceworkSettlementServiceTest 的 voidKeepsTheRowAndItsAmountUntouched + voidRequiresReasonAndIsNotRepeatable + regeneratingAfterVoidIsAllowedAndTheOldRowSurvives
+数据: 🔴 **期间唯一性 = 具名报错**（四条判据里「二者取一」的选择，依据写在 PieceworkSettlementService 类注记：结算单是**凭证**不是缓存，幂等返回既有单会让商家把别的时点的冻结值误读成本次动作的结果）：同租户 × 同期间 × 同工人已有**活跃**单 ⇒ 409 PIECEWORK_SETTLEMENT_EXISTS（可行动提示 = 先作废再重开），零写库；并发面由部分唯一索引 uk_piecework_settlements_active（谓词 voided_at IS NULL AND deleted = 0）+ INSERT … ON CONFLICT DO NOTHING **原子闸**保证**绝不**落两行、也绝不 500（具名 409，端点级回执语义）。证据：PieceworkSettlementServiceTest 的 duplicateGenerationIsANamedConflictNotASecondRow + concurrentLoserGets409NotA500 + PieceworkSettlementControllerTest 的 duplicateGenerationIsAReceiptNotAServerError
+数据: 🔴 **留痕**：生成 / 作废各写下「谁（SecurityUser.userId）/ 何时（BusinessClock，仓内唯一时钟单点）/ 对哪个（期间 × 工人）/ 动作 / 作废原因」，逐条可查；生成/作废响应与详情页都带出该四要素。证据：PieceworkSettlementServiceTest 的 generationLeavesWhoWhenAndScope + detailExposesSnapshotAndLiveSummarySideBySide
+数据: 🔴 **未定价 ≠ ¥0.00**：该期间该工人无可结金额（未报工 / 报工的工序未定价）⇒ 422 PIECEWORK_SETTLEMENT_NO_AMOUNT 且**不落 0 元结算单**（不编数）。证据：PieceworkSettlementServiceTest 的 noAmountMeansNoSettlementRowAtAll
+数据: 跨月隔离 / 跨租户隔离：period 参与查询谓词与唯一性（非法 period ⇒ 422，连聚合都不调）；别的租户的结算单读不到（详情 ⇒ 404，不泄露存在性）。证据：PieceworkSettlementServiceTest 的 periodIsValidatedAndScopesTheQuery + otherTenantsSettlementIsNotReachable
+数据: 权限逐条声明（子菜单粒度，复用既有码、不新造）：读 production:view（与该页第一屏读端点 /piecework/summary 逐字同码）/ 写 processing:manage（与本域既有管理写面——工序库写面 / 部位价目矩阵 / 补价——同码；🔴 **刻意不用** production:execute：那个码由 #5699 的 I4 台账把守**恰好四条**执行类写端点、判据是「零外溢」，把结算挂上去会放宽那条不变量，而结算不是执行类动作）；四个动作**逐个**注解（无未注解端点、无类级兜底）。证据：PieceworkSettlementControllerTest 的 everyMappingDeclaresItsPermissionCode
+数据: ⚠️ **本轮不做（用户裁定，不得读成已解决）**：发放状态字段（已发/未发）、发放动作、导出、与财务域（finance_transactions）耦合 —— 重启条件见 issue #5653 的口径裁定评论。边界如实登记：本用例**没有**发放/导出面的任何断言（那些面本轮不存在，写断言就是空断言）。
+数据: 端上入口（商家侧「计件工资」页的**结算单**区块，issue #5653 追加）：① 生成后列表**真出现**该单且金额与同屏报表那一行**逐值一致**（`¥80.00` 对 `¥80.00`，不是「非空」）；② 作废后旧单**仍在列表**（状态「已作废」+ 原因逐字可见），且同一期间同一工人**可再次生成**（新单与旧单并存，各行按结算单 id 定位）；③ 重复生成的 **409** 在界面上是**那句人话**（逐字断言服务端原话「已有一张生效的结算单…先作废那张单（填写原因），再重新生成」，并反向断言**不是**泛化兜底句）；④ **反向断言**：结算单区块里没有「发放 / 导出 / 批量 / 编辑 / 改金额」的任何入口或字样，且消费面 `lib/api.ts` 的 `productionApi` 恰只有四个方法（无发放/导出）。另有两条口径判据：「生成后金额固定不变 / 作废的单留在下面可查原因」**上屏**；已作废**默认折叠**（折叠态那些行的 DOM **取不到** ⇒ 常驻面不随历史条数增长），点「已作废 N 张」才逐条出现。证据：`frontend/admin-web/tests/unit/pages/production-piecework.test.tsx` 的 `计件结算单 /production/piecework（issue #5653）` 组（7 条）。
+跳过: [backend-contract] 后端契约用例（无 LLM 环节，不进 agent-eval 冒烟）：断言由 Java 单测执行 —— PieceworkSettlementServiceTest（同源/不可改/作废重开/期间唯一/留痕/未定价/跨租户）+ PieceworkSettlementControllerTest（端点契约 + 权限 + 405 动词面），另有迁移面判据（V156 幂等 + 终态对账）
+```
+溯源: 2026-10-16 新增（issue #5653；用户 2026-10-16 口径裁定 A 快照式 + 范围收窄「只需要做到计件结算 + 留痕」）。**注入式红证（修前 → 修后）**：① 同源面 —— 把结算侧改成「自己读 production_work_logs 再乘一遍」⇒ settledAmountComesVerbatimFromTheSameAggregation 与 settlementServiceHoldsNoAggregationInputs 双红（前者读数不再是 7.40 的逐值快照，后者报出多注入的 mapper）；② 不可改面 —— 给 controller 加一条 @PutMapping / 给 voidActive 的 SET 补上 total_amount ⇒ controllerDeclaresNoUpdateSurface / runtimeRejectsUpdateVerbs / voidSqlOnlyTouchesTheVoidTrail 三红；③ 作废重开面 —— 把作废改成物理删 / 把部分唯一索引谓词里的 voided_at IS NULL 去掉 ⇒ voidKeepsTheRowAndItsAmountUntouched / regeneratingAfterVoidIsAllowedAndTheOldRowSurvives 红（后者直接对应「作废后永远不能重开」这一产品级故障）；④ 留痕面 —— 把 generated_by 写成固定值或改成无参 now() ⇒ generationLeavesWhoWhenAndScope 红（后者另触发仓内 BusinessClockSourceGuardTest）。 ｜ tags: processing-order, piecework, settlement, finance
 
 ### PG-076. 加工单状态迁移「读判 × 写」无谓词 ⇒ 并发相反迁移双双成功；改写为条件更新（CAS）后恰一个赢家（issue #6955） 🟡
 ```
@@ -10980,8 +10997,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：756（活跃 134，跳过 622）
-- tier 分布：smoke 12 / normal 697 / adversarial 32
+- 用例总数：757（活跃 134，跳过 623）
+- tier 分布：smoke 12 / normal 698 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -11001,7 +11018,7 @@
 - 领域本体域：4
 - 订单域：66
 - 加工项域：30
-- 加工单域：63
+- 加工单域：64
 - 商品域：122
 - 工具注册器域：1
 - 设置域：10
@@ -11222,6 +11239,7 @@
 - PG-068: 生产交付风险视图：processing_order_query(delivery_risk) 的跨单聚合与披露纪律（issue #6217）
 - PG-070: 列表端点非法分页入参（size<0 / 非整数）⇒ 400 显式拒绝，不再 200 + total=0 + 整页行（issue #6222；page<1 按裁定有意不拒）
 - PG-071: 工人自由报工：整张加工单内任选任意工序（不扫码也能报），且与扫码路共用同一份记账
+- PG-073: 计件结算单（生成即冻结 / 作废留痕 / 期间唯一 / 与报表同源）——issue #5653
 - PG-076: 加工单状态迁移「读判 × 写」无谓词 ⇒ 并发相反迁移双双成功；改写为条件更新（CAS）后恰一个赢家（issue #6955）
 - PP-007: 黄金策加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 黄金策加工项 LLM 行为：停用加工项（toggle_item_status → inactive）

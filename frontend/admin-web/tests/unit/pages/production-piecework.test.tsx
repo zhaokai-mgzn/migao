@@ -1,4 +1,4 @@
-// case_ids: PG-021, CU-010
+// case_ids: PG-021, CU-010, PG-073
 // 追加（issue #6669 第 7 条）：计件金额千分位口径与财务域同源。
 // PG-021（issue #4205，前端半边）：计件工资报表页 /production/piecework ——
 // 消费 GET /api/admin/production/piecework/summary?period=YYYY-MM[&worker_name=]，
@@ -43,12 +43,22 @@ function expectedPeriod(now: Date): string {
 }
 
 const mockGetPieceworkSummary = vi.fn()
+// 结算单（issue #5653）：列表 / 生成 / 作废 —— 与报表**同一页**的两块读面
+const mockGetPieceworkSettlements = vi.fn()
+const mockGeneratePieceworkSettlement = vi.fn()
+const mockVoidPieceworkSettlement = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   productionApi: {
     getPieceworkSummary: (...args: unknown[]) => mockGetPieceworkSummary(...args),
+    getPieceworkSettlements: (...args: unknown[]) => mockGetPieceworkSettlements(...args),
+    generatePieceworkSettlement: (...args: unknown[]) => mockGeneratePieceworkSettlement(...args),
+    voidPieceworkSettlement: (...args: unknown[]) => mockVoidPieceworkSettlement(...args),
   },
 }))
+
+import { productionApi } from '@/lib/api'
+import { readFileSync } from 'node:fs'
 
 import PieceworkReportPage from '@/app/(dashboard)/production/piecework/page'
 
@@ -406,5 +416,223 @@ describe('默认期间 = 本地月（issue #4772 红证）', () => {
     const localMonth = expectedPeriod(instant)
     expect(localMonth).toBe('2026-10')
     expect(mockGetPieceworkSummary).toHaveBeenCalledWith({ period: localMonth, worker_name: undefined })
+  })
+})
+
+/**
+ * 计件**结算单**（issue #5653）—— 端上入口的判据。
+ *
+ * 用户 2026-10-16 裁定 **A 快照式**：**生成即冻结**（没有改写金额的入口）、要改就
+ * **作废 + 重开**（旧单留痕不删）、**同一期间同一工人只能有一张生效单**（重复生成是具名错误）、
+ * **不与财务域耦合**（本轮**没有**发放 / 导出 / 编辑任何入口 —— ④ 是反向断言）。
+ *
+ * 四条判据都要求「会红」：
+ * ① 生成后列表**真出现**该单，且金额**与报表那一行逐值一致**（不是「非空」）；
+ * ② 作废后旧单**仍在列表**（状态 + 原因），且同期同工人**可再次生成**（新旧并存）；
+ * ③ 重复生成的 409 在界面上是**那句人话**（逐字断言服务端原话，不是「有报错」）；
+ * ④ 端上**没有**发放 / 导出 / 编辑入口（DOM 反向 + 消费面源码反向）。
+ */
+describe('计件结算单 /production/piecework（issue #5653）', () => {
+  const PERIOD = expectedPeriod(FROZEN_NOW)
+
+  const settlement = (over: Record<string, unknown> = {}) => ({
+    id: 'st-1',
+    period: PERIOD,
+    worker_name: '张三',
+    total_amount: 80,
+    line_items: [{ operation: '精裁-布', qty: 200, amount: 80 }],
+    generated_by: 'user-owner-001',
+    generated_at: '2026-09-15T02:00:00Z',
+    voided: false,
+    voided_at: null,
+    voided_by: null,
+    void_reason: null,
+    ...over,
+  })
+
+  const listOf = (items: Record<string, unknown>[]) => ({
+    period: PERIOD,
+    total: items.length,
+    voided_count: items.filter((i) => i.voided).length,
+    items,
+  })
+
+  beforeEach(() => {
+    vi.setSystemTime(FROZEN_NOW)
+    mockGetPieceworkSummary.mockReset().mockImplementation(() => laggedOk(REPORT))
+    mockGetPieceworkSettlements.mockReset().mockImplementation(() => laggedOk(listOf([])))
+    mockGeneratePieceworkSettlement.mockReset()
+    mockVoidPieceworkSettlement.mockReset()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('🔴 判据① 生成后列表真出现该单，且金额与**报表那一行逐值一致**', async () => {
+    const created = settlement()
+    mockGeneratePieceworkSettlement.mockResolvedValue(ok(created))
+    render(<PieceworkReportPage />)
+    // 等**读面已落界面**的正向信号（不是等「请求已发出」——见文件头 #5088 的坑）
+    await waitFor(() => expect(screen.getByTestId('worker-row-张三')).toBeInTheDocument())
+    // 两块的读面都要落地（结算单块有自己的加载态 ⇒ 不等它就是「用例跑完了、它的 setState 还没提交」）
+    await waitFor(() => expect(screen.getByTestId('settlement-empty')).toBeInTheDocument())
+
+    // 生成入口：可选工人 = **同一份报表读数**的按人行（选项上直接带报表金额 ⇒ 同源在界面上可核）
+    await userEvent.click(screen.getByTestId('settlement-generate-open'))
+    const select = screen.getByTestId('settlement-worker-select') as HTMLSelectElement
+    expect(within(select).getByRole('option', { name: /张三 · ¥80\.00/ })).toBeInTheDocument()
+    expect(within(select).getByRole('option', { name: /李红梅 · ¥43\.45/ })).toBeInTheDocument()
+
+    await userEvent.selectOptions(select, '张三')
+    mockGetPieceworkSettlements.mockImplementation(() => laggedOk(listOf([created])))
+    await userEvent.click(screen.getByTestId('settlement-generate-confirm'))
+
+    expect(mockGeneratePieceworkSettlement).toHaveBeenCalledWith({ period: PERIOD, worker_name: '张三' })
+    await waitFor(() => expect(screen.getByTestId('settlement-row-st-1')).toBeInTheDocument())
+
+    // **逐值一致**（不是「非空」）：结算单金额与报表同一工人那一行逐字相同
+    const reportRow = screen.getByTestId('worker-row-张三')
+    const settledRow = screen.getByTestId('settlement-row-st-1')
+    expect(within(reportRow).getByText('¥80.00')).toBeInTheDocument()
+    expect(within(settledRow).getByText('¥80.00')).toBeInTheDocument()
+    expect(screen.getByTestId('settlement-amount-st-1')).toHaveTextContent('¥80.00')
+    expect(screen.getByTestId('settlement-summary')).toHaveTextContent('本期 1 张生效 · 合计 ¥80.00')
+  })
+
+  it('🔴 判据② 作废后旧单仍在（状态 + 原因），且同期同工人可再次生成（新旧并存）', async () => {
+    const active = settlement()
+    const voided = settlement({
+      voided: true,
+      voided_at: '2026-09-15T02:30:00Z',
+      voided_by: 'user-owner-001',
+      void_reason: '单价录错，重新结算',
+    })
+    const reopened = settlement({ id: 'st-2', total_amount: 90 })
+    mockGetPieceworkSettlements.mockImplementation(() => laggedOk(listOf([active])))
+    mockVoidPieceworkSettlement.mockResolvedValue(ok(voided))
+    render(<PieceworkReportPage />)
+    await waitFor(() => expect(screen.getByTestId('settlement-row-st-1')).toBeInTheDocument())
+
+    // 作废：必须填原因（留痕要答得出「为什么」）
+    await userEvent.click(screen.getByTestId('settlement-void-open-st-1'))
+    await userEvent.type(screen.getByTestId('settlement-void-reason-st-1'), '单价录错，重新结算')
+    mockGetPieceworkSettlements.mockImplementation(() => laggedOk(listOf([voided])))
+    await userEvent.click(screen.getByTestId('settlement-void-confirm-st-1'))
+
+    expect(mockVoidPieceworkSettlement).toHaveBeenCalledWith('st-1', { reason: '单价录错，重新结算' })
+    // 旧单**仍在列表**：状态与原因都看得见（作废不是删除）
+    await waitFor(() => expect(screen.getByTestId('settlement-status-st-1')).toHaveTextContent('已作废'))
+    expect(screen.getByTestId('settlement-status-st-1')).toHaveTextContent('单价录错，重新结算')
+
+    // 同期间同工人**可以再生成一张** ⇒ 新旧并存（期间唯一性只约束**生效**单）
+    mockGetPieceworkSettlements.mockImplementation(() => laggedOk(listOf([reopened, voided])))
+    mockGeneratePieceworkSettlement.mockResolvedValue(ok(reopened))
+    await userEvent.click(screen.getByTestId('settlement-generate-open'))
+    await userEvent.selectOptions(screen.getByTestId('settlement-worker-select'), '张三')
+    await userEvent.click(screen.getByTestId('settlement-generate-confirm'))
+
+    await waitFor(() => expect(screen.getByTestId('settlement-row-st-2')).toBeInTheDocument())
+    expect(screen.getByTestId('settlement-row-st-1')).toBeInTheDocument() // 旧单没被顶掉
+    expect(screen.getByTestId('settlement-status-st-2')).toHaveTextContent('生效中')
+    expect(screen.getByTestId('settlement-status-st-1')).toHaveTextContent('已作废')
+    expect(mockGeneratePieceworkSettlement).toHaveBeenCalledTimes(1)
+  })
+
+  it('🔴 判据③ 重复生成（409）⇒ 界面给出**那句人话**（逐字断言，不是「有报错」）', async () => {
+    // 逐字 = 后端 `PieceworkSettlementService.exists(...)` 的原话（界面**原样透出**，不吞理由、
+    // 也不在前端抄写第二份措辞 ⇒ 两处不会各自漂移）
+    const sentence =
+      `「张三」在 ${PERIOD} 已有一张生效的结算单（结算单生成即冻结、不可改）。` +
+      '如需按最新报工重开：先作废那张单（填写原因），再重新生成。'
+    mockGetPieceworkSettlements.mockImplementation(() => laggedOk(listOf([settlement()])))
+    mockGeneratePieceworkSettlement.mockRejectedValue({
+      isAxiosError: true,
+      response: { data: { error: { code: 'PIECEWORK_SETTLEMENT_EXISTS', message: sentence } } },
+    })
+    render(<PieceworkReportPage />)
+    await waitFor(() => expect(screen.getByTestId('settlement-row-st-1')).toBeInTheDocument())
+
+    await userEvent.click(screen.getByTestId('settlement-generate-open'))
+    await userEvent.selectOptions(screen.getByTestId('settlement-worker-select'), '张三')
+    await userEvent.click(screen.getByTestId('settlement-generate-confirm'))
+
+    await waitFor(() => expect(screen.getByTestId('settlement-notice')).toBeInTheDocument())
+    expect(screen.getByTestId('settlement-notice')).toHaveTextContent('已有一张生效的结算单')
+    expect(screen.getByTestId('settlement-notice')).toHaveTextContent('先作废那张单（填写原因），再重新生成')
+    expect(screen.getByTestId('settlement-notice')).toHaveTextContent(sentence)
+    // 反向：**不是**泛化兜底句（「有报错」不算判据达标）
+    expect(screen.getByTestId('settlement-notice')).not.toHaveTextContent('生成失败，请稍后重试')
+  })
+
+  it('🔴 判据④ 本轮**不做**发放 / 导出 / 编辑 —— 端上没有任何这类入口（反向断言）', async () => {
+    mockGetPieceworkSettlements.mockImplementation(() => laggedOk(listOf([settlement()])))
+    render(<PieceworkReportPage />)
+    await waitFor(() => expect(screen.getByTestId('settlement-row-st-1')).toBeInTheDocument())
+
+    // (a) DOM 反向：结算单区块里不得出现「发放 / 导出 / 批量 / 编辑 / 改金额」任何入口或字样
+    const section = screen.getByTestId('settlement-section')
+    expect(within(section).queryByText(/发放|导出|批量|编辑|改金额|修改金额/)).toBeNull()
+    const labels = within(section)
+      .getAllByRole('button')
+      .map((b) => b.textContent ?? '')
+    expect(labels.filter((x) => /发放|导出|批量|编辑|改金额/.test(x))).toEqual([])
+    // 生效单只有「作废」一个动作（没有「编辑」—— 生成即冻结）
+    expect(within(screen.getByTestId('settlement-row-st-1')).getByText('作废')).toBeInTheDocument()
+
+    // (b) 消费面源码反向：`lib/api.ts` 里本域**没有**任何发放 / 导出方法（防越界交付）
+    const apiSource = readFileSync('src/lib/api.ts', 'utf8')
+    expect(apiSource).not.toMatch(/(disburse|payout|payOut|exportPiecework|PieceworkExport)/)
+    expect(Object.keys(productionApi).sort()).toEqual(
+      [
+        'generatePieceworkSettlement',
+        'getPieceworkSettlements',
+        'getPieceworkSummary',
+        'voidPieceworkSettlement',
+      ].sort(),
+    )
+  })
+
+  it('口径上屏：说明「生成即冻结 / 要改先作废重开 / 作废的单留在列表可查原因」+ 期间口径', async () => {
+    render(<PieceworkReportPage />)
+    await waitFor(() => expect(screen.getByTestId('settlement-empty')).toBeInTheDocument())
+    const section = screen.getByTestId('settlement-section')
+    expect(within(section).getByText(/生成后金额固定不变/)).toBeInTheDocument()
+    expect(within(section).getByText(/作废的单会留在下面，能查到原因/)).toBeInTheDocument()
+    expect(mockGetPieceworkSettlements).toHaveBeenCalledWith({ period: PERIOD, include_voided: true })
+  })
+
+  it('已作废默认折叠：折叠态**不渲染**那些行（常驻面不随历史条数增长），展开后才逐条出现', async () => {
+    const active = settlement({ id: 'st-live' })
+    const old1 = settlement({ id: 'st-old-1', voided: true, void_reason: '第一次录错' })
+    const old2 = settlement({ id: 'st-old-2', voided: true, void_reason: '第二次录错' })
+    mockGetPieceworkSettlements.mockImplementation(() => laggedOk(listOf([active, old1, old2])))
+    render(<PieceworkReportPage />)
+    await waitFor(() => expect(screen.getByTestId('settlement-row-st-live')).toBeInTheDocument())
+
+    // 折叠态：DOM 里取不到（不是 CSS 隐藏 —— 这才是可判的读数）
+    expect(screen.queryByTestId('settlement-row-st-old-1')).toBeNull()
+    expect(screen.queryByTestId('settlement-row-st-old-2')).toBeNull()
+    expect(screen.getByTestId('settlement-toggle-voided')).toHaveTextContent('已作废 2 张')
+    expect(screen.getByTestId('settlement-summary')).toHaveTextContent('本期 1 张生效 · 合计 ¥80.00')
+
+    await userEvent.click(screen.getByTestId('settlement-toggle-voided'))
+    expect(screen.getByTestId('settlement-row-st-old-1')).toBeInTheDocument()
+    expect(screen.getByTestId('settlement-row-st-old-2')).toBeInTheDocument()
+    expect(screen.getByTestId('settlement-status-st-old-1')).toHaveTextContent('第一次录错')
+
+    await userEvent.click(screen.getByTestId('settlement-toggle-voided'))
+    expect(screen.queryByTestId('settlement-row-st-old-1')).toBeNull()
+  })
+
+  it('本期没有可结算的工人 ⇒ 生成入口不可点（不编造默认值、不落 0 元单）', async () => {
+    mockGetPieceworkSummary.mockImplementation(() =>
+      laggedOk({ period: PERIOD, total: 0, per_worker: [], per_operation: [] }),
+    )
+    render(<PieceworkReportPage />)
+    await waitFor(() => expect(screen.getByTestId('settlement-no-worker')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('settlement-empty')).toBeInTheDocument())
+    expect(screen.getByTestId('settlement-generate-open')).toBeDisabled()
+    expect(screen.getByTestId('settlement-no-worker')).toHaveTextContent('未定价不等于 0 元')
   })
 })

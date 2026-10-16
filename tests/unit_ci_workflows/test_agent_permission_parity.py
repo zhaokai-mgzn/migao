@@ -2199,8 +2199,12 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
     "/production": MenuReadAnchor("生产看板", "production/page.tsx", ("processingOrderApi.list",)),
     "/production/pool": MenuReadAnchor("智能派单", "production/pool/page.tsx",
                                        ("poolBoardApi.getBoard",)),
+    # 计件工资（issue #5653 追加）：本页第一屏**两块读面** —— 报表（`summary`）+ 结算单列表
+    # （`settlements`，两处都是 `production:view` ⇒ 码集仍是一个 ⇒ 不需要 `MULTI_READ_ENDPOINT_PAGES`）。
+    # 新读端点消费面**真实新增**了 ⇒ 台账同步（不是「改判据迁就实现」）。
     "/production/piecework": MenuReadAnchor("计件工资", "production/piecework/page.tsx",
-                                            ("productionApi.getPieceworkSummary",)),
+                                            ("productionApi.getPieceworkSummary",
+                                             "productionApi.getPieceworkSettlements")),
     "/inbound-orders": MenuReadAnchor("入库单", "inbound-orders/page.tsx", ("inboundOrderApi.list",)),
     # 发货单（issue #5939）：菜单节点码 `order:list` = 本页第一屏读端点码（GET /api/admin/shipments）
     # —— 取**既有**码（不新造 shipment:view），与「订单列表」同一把尺子。

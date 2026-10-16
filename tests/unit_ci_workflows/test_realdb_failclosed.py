@@ -80,6 +80,13 @@ REALDB_FILES: dict[str, str] = {
     # issue #5939：发货单**列表**读面（GET /api/admin/shipments）的真库判据 —— 只真 PG 能证的四条：
     # 跨租户不可见（+ 反向自证对方租户自己读得到）/ 软删明细不计进 itemCount / 客户名取自 orders 连接 /
     # 未发货按 packed_at 参与排序，以及 LIMIT 生效。
+    # issue #5653：计件**结算单**的真库判据 —— 只真 PG 能证的四条：① 迁移 V156 的**部分唯一索引谓词**
+    # 逐字在场（`UNIQUE` + `voided_at IS NULL` + `deleted = 0`）且 DDL 两遍幂等；② `ON CONFLICT (…) WHERE
+    # voided_at IS NULL AND deleted = 0 DO NOTHING` 与那个部分索引**真的匹配**（谓词不匹配时 PG 直接报
+    # 「没有匹配 ON CONFLICT 说明的唯一或者排除约束」）；③ 真 mapper 往返：`@TableId(ASSIGN_UUID)` 主键在语句
+    # 执行前生成、`line_items` JSONB 过 `JacksonTypeHandler` 落成 List、`selectById` 走逻辑删；④ 作废只置
+    # 留痕三列 + CAS 第二次 0 行、快照列一字不动、同期间可重开新单 —— 观测点全是**表里的行与列**。
+    _SVC + "PieceworkSettlementRealDbTest.java": "direct",
     _SVC + "ShipmentListQueryRealDbTest.java": "direct",
     # issue #6983：商家发货端点（POST /api/admin/production/orders/{id}/ship）的**幂等回放**判据 ——
     # 只真 PG 能证的三条：① `client_request_keys` 的原子占位（`INSERT … ON CONFLICT DO NOTHING`

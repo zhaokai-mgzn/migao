@@ -4,7 +4,7 @@
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
 -- （2026-09-11 实测，逐表比对 backend/admin-api/src/main/resources/db/init/schema.sql）：
 --
---   本文件缺失（schema.sql 已有，共 44 张）：
+--   本文件缺失（schema.sql 已有，共 45 张）：
 --     agent_batches, agent_batch_items
 --      批量更新的批次资源（V127，issue #5314 服务端包 —— 一张批次 + 一张逐条明细；
 --      明细的 old_value 是**撤销的唯一依据**，**不得**改用 audit_logs：审计是有界 fail-open、丢行允许），
@@ -29,6 +29,12 @@
 --      无数量列，少发/错发曾因此不可核）；该真值的唯一 owner = order_shipment_items，
 --      issue #5651（纸面）只消费。
 --     order_shipment_items（同 V132：实发套/件/卷，唯一 owner）,
+--     piecework_settlements
+--      计件**结算单**（V156，issue #5653 —— 一行 = 某租户 × 某期间(YYYY-MM) × 某工人的
+--      应发金额凭证，**生成即冻结**：金额与明细逐值取自 piecework/summary 的同一次聚合读数，
+--      作废 = 置 voided_at 留痕（不物理删）、活跃单由部分唯一索引
+--      uk_piecework_settlements_active (tenant_id, period, worker_name)
+--      WHERE voided_at IS NULL AND deleted = 0 保证同期间同工人至多一张 ⇒ 要改就作废重开），
 --     production_work_logs, remnant_small_item_specs, role_permissions,
 --     session_states, stock_ledger_entries,
 --     tenant_param_audit（V131，issue #5131 §22 P6：企业参数变更留痕 = 一行一个参数键的一次变更；
