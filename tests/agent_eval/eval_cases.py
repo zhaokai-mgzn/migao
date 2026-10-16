@@ -6587,6 +6587,44 @@ _CASE_MC_108 = EvalCase(
     precondition='前置 = 三样都在仓里可读且**可判定**：① 元守卫本体 `tests/unit_ci_workflows/test_workflow_run_body_is_valid_bash_after_substitution.py`（含 `github` **上下文属性白名单**冻结清单 + 出处 URL + 复算命令）；② 被测面 `.github/workflows/**.yml`（现取 20 个 workflow、≥100 个 `run:` 正文、其中 ≥20 个含 `${{ … }}`）；③ 两条部署腿的解算步（`deploy-admin-api.yml` 的 `Resolve build identity (issue #6951)` / `deploy-frontend.yml` 的 `Resolve build identity (issue #6611)`）里 `BUILT_AT` 由 **runner 时钟**现算。**前置不成立时不许读成通过**：取样面塌了（`_runs_in` 少扫/空扫）或白名单被清空 ⇒ 由 `test_guard_really_scans_the_run_bodies` 与 `test_github_context_property_allowlist_is_anchored` 两条**反空跑**判据判红。',
 )
 
+# ── MC-109 [NORMAL] **`grep -c` 配 `|| echo "0"` 会捕获成两行 ⇒ `[ … -gt 0 ]` 报 `integer expression expected` ⇒ 判据走 else「绿着但没干活」**：#7012 的 `Clear stale needs-changes label` 步因此**从未**摘掉过期标签（job 还报 success）；同形态另有一处 `case-draft.yml` 的 `HAS_TRUTH`（issue #7022）（源: cases/misc.yml）──
+_CASE_MC_109 = EvalCase(
+    id='MC-109',
+    legacy_id='',
+    title='**`grep -c` 配 `|| echo "0"` 会捕获成两行 ⇒ `[ … -gt 0 ]` 报 `integer expression expected` ⇒ 判据走 else「绿着但没干活」**：#7012 的 `Clear stale needs-changes label` 步因此**从未**摘掉过期标签（job 还报 success）；同形态另有一处 `case-draft.yml` 的 `HAS_TRUTH`（issue #7022）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这个 job 明明每次都绿，为什么那个标签还是挂在那里？', 'X=$(cmd | grep -c pat || echo "0") —— 这行到底有什么问题？'],
+    expectations=[],
+    data_checks=['🔴 **判据 A（实例面，会红）**：`.github/workflows/**` 里不得出现「`grep -c`（可带 `-P` 等前置选项与 `-cP` 合并形态）+ 其后 200 字符内 `|| echo`」的形态；命中 ⇒ **具名**报出 `文件:行 + 原行文本`，并给出修法（`|| echo "0"` → `|| true`，保留「无命中不触发 `set -e`」的回退语义）。执行点 = tests/unit_ci_workflows/test_grep_c_echo_dupe.py::test_workflows_have_no_grep_c_echo_instances', '🔴 **判据 A 的判别力自证（夹具式）**：两个**逐字取自真语料**的正向夹具（`case-draft` 的 `grep -cP … || echo "0"`、`pr-check` 的**带单引号**那种）必须命中；四个负向夹具（仓内既有的正确写法 `|| true`、**引号内**的提及、无回退的裸 `grep -c`、`grep -m1` + 兜底文案）必须 0 命中。没有这一条，「扫不到任何东西」与「扫了但零违规」无法区分。执行点 = 同文件::test_detector_has_discriminating_power', '🔴 **反空跑（语料下限 + fail-closed）**：workflow 文件数必须 ≥20（扫描面被收窄 ⇒ 红）；`scan_workflows(不存在的目录)` 必须**抛异常**而不是返回空清单（否则「没东西可判」会被读成绿）。执行点 = 同文件::test_scanner_is_not_vacuous', '🔴 **判据 B（台账面，会红）**：已修实例台账 `tests/unit_ci_workflows/grep_c_echo_instances_ledger.json` **只许非增**（条数 ≤ 写在判据文件里的冻结上限 `LEDGER_ENTRIES_FROZEN = 2`）+ **不许清空** + 每条四要素齐全（`path`/`line`/`form`/`fixed_to`/`issue`）。执行点 = 同文件::test_ledger_only_shrinks_and_is_never_emptied', '🔴 **台账不许指向幽灵文件**：每条 `path` 必须在仓里真实存在（否则「已修」是空话）。执行点 = 同文件::test_ledger_entry_paths_exist', '🔴 **注入式红证（三条单变量，实测逐字节还原）**：① 把 `pr-check.yml` 的 `HAS_LABEL` 改回 `… | grep -c x || echo "0"` ⇒ 判据 A 当场红并具名；② 只把 `case-draft.yml` 改回坏形态 ⇒ 判据 A 单变量红；③ 把台账 `instances` 清空 ⇒ 判据 B 红。三条注入后均已还原（`git diff` 为空、`5 passed`）。', '📌 **真机现场（逐字）**：job `Clear stale needs-changes label`（run 38852214807 / job 116818084915）报 **success**，日志含 `[: 0` / `0: integer expression expected` 紧跟 `✅ 无需清除（标签不存在）`；同 PR **28 项检查全 pass** 而标签仍是 `review/needs-changes` ⇒ 已用 `gh pr edit --remove-label` 手工摘掉。**这条红的形态是「绿着但没干活」，只能靠「标签该消失却没消失」观察到。**', '📌 **为什么它不会自己变红**：报错的那个 `[` 处在 `if` 的**条件上下文**里（条件里的失败**不**触发 `set -e`），且不在 `set -e` 直接覆盖的语句位置 ⇒ 步报 success ⇒ 靠「看 CI 绿不绿」**永远发现不了**这一类，必须靠机械守卫扫形态。'],
+    skip_reason='[backend-contract] 纯 CI 判据面（静态扫 workflow YAML 文本 + 台账比对），零网络、零 LLM、不碰真实云，不进 agent-eval 冒烟',
+    tags=['ci-cd', 'shell', 'fail-closed', 'red-proof', 'empty-green'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = 两样都在仓里可读且**可判定**：① 元守卫本体 `tests/unit_ci_workflows/test_grep_c_echo_dupe.py`（含 `grep -c` 形态的剥引号/剥注释 lexer + 判别力自证夹具）；② 被测面 `.github/workflows/**.yml`（判定时现取 ≥20 个 workflow 文件，由 `test_scanner_is_not_vacuous` 的语料下限兜住）。**前置不成立时不许读成通过**：目录不存在 / 零个 workflow / 读不到文件 ⇒ 判据 `scan_workflows()` **抛异常**（fail-closed），而不是返回空清单变绿；台账被清空 ⇒ 判据 B 判红。',
+)
+
+# ── MC-110 [NORMAL] **标签收尾 job 的 `needs:` 必须覆盖全部 required 门禁**：`label-needs-changes` / `clear-needs-changes` 原各只等 **9** 个 job，缺 `case-coverage-gate` / `case-trust-gate` / `llm-sink-ledger` / `ui-regression-check` ⇒ 这 4 个红时**打不上标签**、且「它们红 + 其余绿」时 `clear-needs-changes` **照样把标签摘掉**（issue #7022 的第二条独立成因）（源: cases/misc.yml）──
+_CASE_MC_110 = EvalCase(
+    id='MC-110',
+    legacy_id='',
+    title='**标签收尾 job 的 `needs:` 必须覆盖全部 required 门禁**：`label-needs-changes` / `clear-needs-changes` 原各只等 **9** 个 job，缺 `case-coverage-gate` / `case-trust-gate` / `llm-sink-ledger` / `ui-regression-check` ⇒ 这 4 个红时**打不上标签**、且「它们红 + 其余绿」时 `clear-needs-changes` **照样把标签摘掉**（issue #7022 的第二条独立成因）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这个 job 明明每次都绿，为什么那个标签还是挂在那里？', '标签的「打」和「摘」是不是看同一组门禁？漏了几个会怎样？'],
+    expectations=[],
+    data_checks=['🔴 **判据 A（覆盖性，会红）**：`label-needs-changes` 与 `clear-needs-changes` 的 `needs:` 必须包含**本 workflow 里承接 required 检查的每一个 job**。取法 = **现取** `repos/zhaokai-mgzn/migao/branches/main/protection` 的 `required_status_checks.contexts` × YAML 解析 `pr-check.yml` 的 `jobs`。命中缺口 ⇒ **双向具名**报出（「它红时打不上标签」/「它红时仍会被摘掉标签」）。执行点 = tests/unit_ci_workflows/test_needs_changes_tail_job_coverage.py::test_tail_jobs_cover_every_required_gate', '🔴 **反空跑 + fail-closed**：required 名单 ≥10 项（读数面被收窄 ⇒ 红）；两个收尾 job 必须存在；`branches/main/protection` 取不到（`gh` 不可用/未登录/无权限）或 required 名单为空 ⇒ **抛异常判红**，**不许**当成「没有 required 检查 ⇒ 覆盖性自动成立」。执行点 = 同文件::test_guard_is_not_vacuous_and_has_teeth 的前半', '🔴 **注入式自证**：从 `clear-needs-changes` 的 `needs` 里删掉 `case-trust-gate` ⇒ `coverage_problems()` 必须报出且点名该 job（没有这条，「扫了但正好没缺口」与「判据没牙」无法区分）。执行点 = 同文件::test_guard_is_not_vacuous_and_has_teeth 的后半', '🔴 **注入式红证（两条单变量，实测逐字节还原）**：① 只从 `label-needs-changes` 段删掉 `ui-regression-check` ⇒ **2 failed**（判据 A + 自证）；② 两段都删掉 `case-trust-gate` ⇒ **2 failed**。还原后 **2 passed**，`git diff --stat` 只剩预期的 +18 行。', '📌 **真机读数（改前）**：两个收尾 job 的 `needs` 各 **9** 条，而它们所在的 `pr-check.yml` 里承接 required 检查的 job 有 **11** 个 ⇒ 缺 **4** 个：`case-coverage-gate` / `case-trust-gate` / `llm-sink-ledger` / `ui-regression-check`。改后各 **13** 条（9 + 4）。', '📌 **本单共三条独立成因，本条 = 第二条**：① `grep -c` 配 `|| echo "0"` 捕获成两行；**② 本条的 `needs:` 缺口**；③ 该 job **没有 checkout** ⇒ `gh` 连仓库都推断不出来（`GH_REPO`）—— **少修一条都治不好**这个症状。**为什么本条与 `grep -c` 那条是独立成因**：`grep -c` 那条让「摘标签的判据崩了」（永不摘）；本条的 `needs:` 缺口让「摘/打标签的**依赖面**少一半」（该挂的挂不住、该摘的照摘）。**只修一条治不好症状** ⇒ 同单一起收。该缺口**早已登记**在 `docs/wiki/gate-exemption-ledger.md` §1 第 6 行（当时那单禁止改 workflows ⇒ 只登记未修）。', "📌 **安全性前提（改前已核）**：这两个 job **不在**分支保护的 required 名单里（16 项 required 里无它们）⇒ 扩 `needs:` **不会**新增死锁；且那 4 个目标 job 的 `if` 都是无路径过滤的 `github.event_name == 'pull_request'` ⇒ 能形成 `needs` 汇合。另：`needs:` 只影响「等不等」，**不**影响「上游红了下游还跑不跑」（那是 `if: always()` 的职责，两个 job 都已正确带 `always()`，由 `test_gate_coverage_and_same_source.py` 的另一条判据把守）。"],
+    skip_reason='[backend-contract] 纯 CI 判据面（读 branch protection + 解析 workflow YAML），零 LLM、不碰真实云，不进 agent-eval 冒烟',
+    tags=['ci-cd', 'gating', 'fail-closed', 'red-proof', 'empty-green'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = 两样都**可判定**：① **外部读数** `repos/zhaokai-mgzn/migao/branches/main/protection` 的 `required_status_checks.contexts`（需 `gh` 可用且已登录；取不到 ⇒ 判据 **fail-closed 抛异常**，不许当成「没有 required 检查」）；② 被测面 `.github/workflows/pr-check.yml` 的 `jobs`（YAML 解析）。**前置不成立时不许读成通过**：读不到 workflow ⇒ `_pr_check_jobs()` **抛异常**（实测有 `test_missing_workflow_is_fail_closed` 把守）；冻结清单为空 / 两个收尾 job 不存在 / 语料下限（≥10）不满足 ⇒ 判据 B/C 判红。**闸门取值口径 = 冻结快照**（`REQUIRED_PR_GATES`，11 个成员逐项冻结在 `tests/unit_ci_workflows/declaration_gate_registry.json` 的 `frozen_declarations`）：**刻意不现取** `branches/main/protection` —— 第一版那么写在本机 2 passed、**CI 上直接红**（该 job 只注入 `GITHUB_TOKEN`，而 `gh` 认 `GH_TOKEN`、且 `/protection` 需 admin），与 `test_automerge_bot_safe_path.py` 挡下的「内置 `GITHUB_TOKEN` 不是 admin」是同一件事。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -14755,6 +14793,8 @@ ALL_CASES = (
     _CASE_MC_106,
     _CASE_MC_107,
     _CASE_MC_108,
+    _CASE_MC_109,
+    _CASE_MC_110,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

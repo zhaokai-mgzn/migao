@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "issue": 7022,
+  "_what": "「`grep -c` 输入 + 其后 200 字符内 `|| echo`」这一形态的**已修实例台账**（issue #7022）。`grep -c` 找不到时**已经打印 `0`** 且退出码 1 ⇒ `|| echo \"0\"` **再追加一行** ⇒ 变量是 `$'0\\n0'`（两行）⇒ `[ \"$V\" -gt 0 ]` 报 `integer expression expected` ⇒ `if` 走 else ⇒ **绿着但没干活**。",
+  "_judged_by": "tests/unit_ci_workflows/test_grep_c_echo_dupe.py",
+  "_invariants": [
+    "只许缩短：条数 ≤ 该判据文件里的 LEDGER_ENTRIES_FROZEN（上限写在**判据文件**里 ⇒ 本数据文件改不动它）",
+    "不许清空：清空不能消红（本台账记录的是本缺陷的实例面）",
+    "每条 path 必须真实存在（幽灵条目即红）",
+    "每条必须四要素齐全（path / line / form / fixed_to / issue）",
+    "**真正的判据是**「工作区零残留」——本台账只是把「已修过哪两处」留成可追溯的形态，不是豁免清单"
+  ],
+  "instances": [
+    {
+      "path": ".github/workflows/pr-check.yml",
+      "line": 1158,
+      "step": "Clear stale needs-changes label → Remove review/needs-changes",
+      "form": "HAS_LABEL=$(gh pr view \"$PR_NUMBER\" --json labels --jq '.labels[].name' 2>/dev/null | grep -c 'review/needs-changes' || echo \"0\")",
+      "fixed_to": "HAS_LABEL=$(gh pr view \"$PR_NUMBER\" --json labels --jq '[.labels[].name] | map(select(. == \"review/needs-changes\")) | length')",
+      "why": "本形态的**真机现场**：job 每次都报 success，而过期 `review/needs-changes` 标签从来没被摘掉过（日志：`[: 0\\n0: integer expression expected` 紧跟「✅ 无需清除（标签不存在）」）。实测于 PR #7012：全部 28 项检查 pass、标签仍残留 ⇒ 已用 `gh pr edit --remove-label` 手工摘掉。",
+      "issue": 7022
+    },
+    {
+      "path": ".github/workflows/case-draft.yml",
+      "line": 53,
+      "step": "首个打标签步（needs-truths → needs-verification）",
+      "form": "HAS_TRUTH=$(echo \"$BODY\" | grep -cP \"CONTRACT_JSON|business_truths|业务真值|$TRUTH_VOCAB\" || echo \"0\")",
+      "fixed_to": "HAS_TRUTH=$(echo \"$BODY\" | grep -cP \"CONTRACT_JSON|business_truths|业务真值|$TRUTH_VOCAB\" || true)",
+      "why": "与上一处是**同一个 bug**（同一晚撞见），只是下游**恰好**也用 `-gt` 比较 —— 同样会在无命中时走 else 分支而静默漏掉「补业务真值」这条动作。用 `|| true` 而不是改写成 jq，是因为这一处的输入是**管道里的文本**、没有可换的 jq 表达式，最小修即是补回退语义。",
+      "issue": 7022
+    }
+  ]
+}
