@@ -124,6 +124,21 @@ class PieceworkSettlementServiceTest {
     }
 
     @Test
+    @DisplayName("🔴 涉钱准入：报表读数有 3 位小数 ⇒ 当场拒（422），**不**静默四舍五入、也不落库")
+    void overPrecisionAmountIsRejectedInsteadOfSilentlyRounded() {
+        // 金额列是 NUMERIC(14,2)：直接写会把 7.405 悄悄记成 7.41（或 7.40）——
+        // 而本单的判据是「结算金额与报表读数**逐值**一致」⇒ 静默取整会直接把它做假。
+        when(productionService.pieceworkSummary(PERIOD, WORKER, TENANT)).thenReturn(summary("7.405"));
+        when(settlementMapper.selectList(any())).thenReturn(new ArrayList<>());
+
+        assertThatThrownBy(() -> service.generate(PERIOD, WORKER, TENANT))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("最多支持 2 位小数")
+                .hasMessageContaining("7.405");
+        verify(settlementMapper, never()).insertActiveIfAbsent(any(), anyString());
+    }
+
+    @Test
     @DisplayName("🔴 同源（结构面）：结算服务不注入报工表 / 工序实例表 Mapper —— 结算侧没有第二份算钱的口径")
     void settlementServiceHoldsNoAggregationInputs() {
         List<String> mapperTypes = new ArrayList<>();

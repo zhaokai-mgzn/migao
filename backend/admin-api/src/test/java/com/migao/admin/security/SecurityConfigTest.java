@@ -527,6 +527,17 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.mapper.AgentBatchItemMapper agentBatchItemMapper;
 
+    // 计件结算单（issue #5653）：新控制器 `PieceworkSettlementController` 的构造依赖 ⇒ 本上下文必须能装配它。
+    // Service **与 Mapper 都要**在这里 mock（与上方 CuttingHeightConfig / OrderShipment 两条同款）：
+    // 本上下文 `@EnableAutoConfiguration(exclude = {MybatisPlusAutoConfiguration})` ⇒ 真 Mapper 建不出来
+    // （`Property 'sqlSessionFactory' or 'sqlSessionTemplate' are required`）。
+    // 实测读数（本机复现）：只 mock Service ⇒ 仍是 `pieceworkSettlementMapper` 建 bean 失败、59 条全 error；
+    // 两个都 mock ⇒ 59 条全绿。
+    @MockBean
+    private com.migao.admin.service.PieceworkSettlementService pieceworkSettlementService;
+    @MockBean
+    private com.migao.admin.mapper.PieceworkSettlementMapper pieceworkSettlementMapper;
+
     // ======================== 公开端点测试 ========================
 
     @Test

@@ -97,7 +97,11 @@ public class PieceworkSettlementService {
                             + "—— 未定价 ≠ ¥0.00，本系统不会为它落一张 0 元结算单。",
                     422);
         }
-        BigDecimal amount = (BigDecimal) workerRow.get("amount");
+        // 涉钱准入（issue #6221 的类级纪律）：金额列 NUMERIC(14,2) 会**静默四舍五入** ——
+        // 而本单的判据是「结算金额与报表读数**逐值**一致」⇒ 宁可当场拒（可行动报错）也不许悄悄少几分。
+        // 上游 `ProductionService.money(...)` 已归一成 2 位 ⇒ 今天恒通过；这里是防它将来变形的闸。
+        BigDecimal amount = MoneyScale.requireTwoDecimalsOrNull(
+                (BigDecimal) workerRow.get("amount"), "结算金额");
         List<PieceworkSettlementLine> lines = lineItems(summary);
 
         OffsetDateTime now = businessClock.nowOffset();
