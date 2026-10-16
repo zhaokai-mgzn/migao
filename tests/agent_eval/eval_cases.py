@@ -6587,6 +6587,25 @@ _CASE_MC_108 = EvalCase(
     precondition='前置 = 三样都在仓里可读且**可判定**：① 元守卫本体 `tests/unit_ci_workflows/test_workflow_run_body_is_valid_bash_after_substitution.py`（含 `github` **上下文属性白名单**冻结清单 + 出处 URL + 复算命令）；② 被测面 `.github/workflows/**.yml`（现取 20 个 workflow、≥100 个 `run:` 正文、其中 ≥20 个含 `${{ … }}`）；③ 两条部署腿的解算步（`deploy-admin-api.yml` 的 `Resolve build identity (issue #6951)` / `deploy-frontend.yml` 的 `Resolve build identity (issue #6611)`）里 `BUILT_AT` 由 **runner 时钟**现算。**前置不成立时不许读成通过**：取样面塌了（`_runs_in` 少扫/空扫）或白名单被清空 ⇒ 由 `test_guard_really_scans_the_run_bodies` 与 `test_github_context_property_allowlist_is_anchored` 两条**反空跑**判据判红。',
 )
 
+# ── MC-109 [NORMAL] **`grep -c` 配 `|| echo "0"` 会捕获成两行 ⇒ `[ … -gt 0 ]` 报 `integer expression expected` ⇒ 判据走 else「绿着但没干活」**：#7012 的 `Clear stale needs-changes label` 步因此**从未**摘掉过期标签（job 还报 success）；同形态另有一处 `case-draft.yml` 的 `HAS_TRUTH`（issue #7022）（源: cases/misc.yml）──
+_CASE_MC_109 = EvalCase(
+    id='MC-109',
+    legacy_id='',
+    title='**`grep -c` 配 `|| echo "0"` 会捕获成两行 ⇒ `[ … -gt 0 ]` 报 `integer expression expected` ⇒ 判据走 else「绿着但没干活」**：#7012 的 `Clear stale needs-changes label` 步因此**从未**摘掉过期标签（job 还报 success）；同形态另有一处 `case-draft.yml` 的 `HAS_TRUTH`（issue #7022）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['这个 job 明明每次都绿，为什么那个标签还是挂在那里？', 'X=$(cmd | grep -c pat || echo "0") —— 这行到底有什么问题？'],
+    expectations=[],
+    data_checks=['🔴 **判据 A（实例面，会红）**：`.github/workflows/**` 里不得出现「`grep -c`（可带 `-P` 等前置选项与 `-cP` 合并形态）+ 其后 200 字符内 `|| echo`」的形态；命中 ⇒ **具名**报出 `文件:行 + 原行文本`，并给出修法（`|| echo "0"` → `|| true`，保留「无命中不触发 `set -e`」的回退语义）。执行点 = tests/unit_ci_workflows/test_grep_c_echo_dupe.py::test_workflows_have_no_grep_c_echo_instances', '🔴 **判据 A 的判别力自证（夹具式）**：两个**逐字取自真语料**的正向夹具（`case-draft` 的 `grep -cP … || echo "0"`、`pr-check` 的**带单引号**那种）必须命中；四个负向夹具（仓内既有的正确写法 `|| true`、**引号内**的提及、无回退的裸 `grep -c`、`grep -m1` + 兜底文案）必须 0 命中。没有这一条，「扫不到任何东西」与「扫了但零违规」无法区分。执行点 = 同文件::test_detector_has_discriminating_power', '🔴 **反空跑（语料下限 + fail-closed）**：workflow 文件数必须 ≥20（扫描面被收窄 ⇒ 红）；`scan_workflows(不存在的目录)` 必须**抛异常**而不是返回空清单（否则「没东西可判」会被读成绿）。执行点 = 同文件::test_scanner_is_not_vacuous', '🔴 **判据 B（台账面，会红）**：已修实例台账 `tests/unit_ci_workflows/grep_c_echo_instances_ledger.json` **只许非增**（条数 ≤ 写在判据文件里的冻结上限 `LEDGER_ENTRIES_FROZEN = 2`）+ **不许清空** + 每条四要素齐全（`path`/`line`/`form`/`fixed_to`/`issue`）。执行点 = 同文件::test_ledger_only_shrinks_and_is_never_emptied', '🔴 **台账不许指向幽灵文件**：每条 `path` 必须在仓里真实存在（否则「已修」是空话）。执行点 = 同文件::test_ledger_entry_paths_exist', '🔴 **注入式红证（三条单变量，实测逐字节还原）**：① 把 `pr-check.yml` 的 `HAS_LABEL` 改回 `… | grep -c x || echo "0"` ⇒ 判据 A 当场红并具名；② 只把 `case-draft.yml` 改回坏形态 ⇒ 判据 A 单变量红；③ 把台账 `instances` 清空 ⇒ 判据 B 红。三条注入后均已还原（`git diff` 为空、`5 passed`）。', '📌 **真机现场（逐字）**：job `Clear stale needs-changes label`（run 38852214807 / job 116818084915）报 **success**，日志含 `[: 0` / `0: integer expression expected` 紧跟 `✅ 无需清除（标签不存在）`；同 PR **28 项检查全 pass** 而标签仍是 `review/needs-changes` ⇒ 已用 `gh pr edit --remove-label` 手工摘掉。**这条红的形态是「绿着但没干活」，只能靠「标签该消失却没消失」观察到。**', '📌 **为什么它不会自己变红**：报错的那个 `[` 处在 `if` 的**条件上下文**里（条件里的失败**不**触发 `set -e`），且不在 `set -e` 直接覆盖的语句位置 ⇒ 步报 success ⇒ 靠「看 CI 绿不绿」**永远发现不了**这一类，必须靠机械守卫扫形态。'],
+    skip_reason='[backend-contract] 纯 CI 判据面（静态扫 workflow YAML 文本 + 台账比对），零网络、零 LLM、不碰真实云，不进 agent-eval 冒烟',
+    tags=['ci-cd', 'shell', 'fail-closed', 'red-proof', 'empty-green'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = 两样都在仓里可读且**可判定**：① 元守卫本体 `tests/unit_ci_workflows/test_grep_c_echo_dupe.py`（含 `grep -c` 形态的剥引号/剥注释 lexer + 判别力自证夹具）；② 被测面 `.github/workflows/**.yml`（判定时现取 ≥20 个 workflow 文件，由 `test_scanner_is_not_vacuous` 的语料下限兜住）。**前置不成立时不许读成通过**：目录不存在 / 零个 workflow / 读不到文件 ⇒ 判据 `scan_workflows()` **抛异常**（fail-closed），而不是返回空清单变绿；台账被清空 ⇒ 判据 B 判红。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -14755,6 +14774,7 @@ ALL_CASES = (
     _CASE_MC_106,
     _CASE_MC_107,
     _CASE_MC_108,
+    _CASE_MC_109,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

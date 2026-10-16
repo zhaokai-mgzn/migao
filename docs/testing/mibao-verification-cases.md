@@ -3418,7 +3418,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（109 case）
+## 杂项域（110 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5063,6 +5063,23 @@
 跳过: [backend-contract] 零 LLM 的确定性读数（YAML 解析取样 + `bash -n` 三个替换臂 + 官方属性白名单冻结比对），零网络、不碰真实云，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-16 新增（issue #7029；同族 MC-107 / #7015、MC-105 / #6951、#6746 / #6611、#6750）。取号 = `python3 scripts/next_case_id.py MC` 现取 **MC-108**；claim = `.github/cases/claims/7031-MC-108.json`。**为什么单独立 case**：MC-107 固化的是「**环境变量**命名空间里编造的名字必须判红」，而 #7016 用「**同样不存在**的 context 属性」从旁边走进来了 ⇒ 那是**另一个命名空间**，两条判据互不替代。**真机读数（2026-10-16 13:55 +08，本仓，非推断）**：`deploy-admin-api` run `38856179423`（workflow_dispatch，head `250db08` = #7016 合并提交）build-and-deploy **failure**，逐字 `RUN_STARTED_AT:`（env 值为**空**）、渲染正文 `… 它必须来自 context` 后跟反引号对只剩一个裸反引号、`/home/runner/work/_temp/<uuid>.sh: line 9: unexpected EOF while looking for matching` ⇒ `Process completed with exit code 2`。**两个独立缺陷**：① `github.run_started_at` **不是**合法属性（官方表 40 个里没有；复算：`curl -s https://raw.githubusercontent.com/github/docs/main/content/actions/reference/workflows-and-actions/contexts.md | sed -n '/##  github context/,/^## /p'`）⇒ 解出空串（不报错、不告警）⇒ 即使语法修好、CI 全绿、部署成功，`builtAt` **仍然会是空串**（典型「看上去修好了」）；② 判据的面被**自己的报错文案**毁掉（裸反引号 ⇒ parse 阶段 exit 2）⇒ 那次红**不是**判据在说「取值源没接」，归因会被指向错的对象。**修法**：① 两条腿（`deploy-admin-api.yml` + `deploy-frontend.yml`，同形同因）取值源换成 **runner 时钟** `BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)`（本仓 `close-linked-issues.yml` / `verify-trigger.yml` 已有同款用法），**删掉 step 级 `env:`**，报错文案去掉裸反引号与 `${{ }}`，并补 **ISO8601 形态**自检（`admin-web` 的 Dockerfile 逐字写着「调用方在 workflow 里已 fail-closed 校验过形态」，当时**并没有**校验）；② 新增本 case 的两条类级判据（替换后必须是合法 bash + 属性名白名单）+ 各自注入式自证。**判别力实测（现取，全仓 20 个 workflow / 150 个表达式）**：空替换臂在**改前树**命中 **2** 处（正是两条腿的解算步），修后 **0**；哨兵臂 **0/0**；白名单臂在改前树命中 `github.run_started_at` **2** 处，修后 **0**。**修后绿**：`python3 -m pytest tests/unit_ci_workflows/test_workflow_run_body_is_valid_bash_after_substitution.py -q -p no:randomly` = **6 passed**；两条腿的三个替换臂 `bash -n` 全 rc=0。**红证（注入式）**：见本 case 的判据 A/B 两条自证 + 取值源注入（改回 `env: RUN_STARTED_AT: ${{ github.run_started_at }}` 或 `BUILT_AT=${GITHUB_RUN_STARTED_AT:-}` ⇒ 既有判据族判红，复位后绿）。**阻塞面**：`Skip if already built` 判「main HEAD 的镜像在不在」⇒ 镜像不存在就会一直重进解算步 ⇒ **修好之前没有任何新部署能成功**（永久死锁，不会自愈）；修复**合入 main 后下一轮 schedule（:04/:24/:44）即自动解开**（解算步读的就是 main 里的 workflow 本体）。**端到端终判**：合入后 `curl -s https://api.migaozn.com/api/version` 的 `builtAt` 必须**非空原文**（本条由主会话/人类在一次真实部署后复探）。 ｜ tags: deploy, ci-cd, build-identity, fail-closed, red-proof
+
+### MC-109. **`grep -c` 配 `|| echo "0"` 会捕获成两行 ⇒ `[ … -gt 0 ]` 报 `integer expression expected` ⇒ 判据走 else「绿着但没干活」**：#7012 的 `Clear stale needs-changes label` 步因此**从未**摘掉过期标签（job 还报 success）；同形态另有一处 `case-draft.yml` 的 `HAS_TRUTH`（issue #7022） 🔵
+```
+你: 这个 job 明明每次都绿，为什么那个标签还是挂在那里？
+你: X=$(cmd | grep -c pat || echo "0") —— 这行到底有什么问题？
+数据: 🔴 **判据 A（实例面，会红）**：`.github/workflows/**` 里不得出现「`grep -c`（可带 `-P` 等前置选项与 `-cP` 合并形态）+ 其后 200 字符内 `|| echo`」的形态；命中 ⇒ **具名**报出 `文件:行 + 原行文本`，并给出修法（`|| echo "0"` → `|| true`，保留「无命中不触发 `set -e`」的回退语义）。执行点 = tests/unit_ci_workflows/test_grep_c_echo_dupe.py::test_workflows_have_no_grep_c_echo_instances
+数据: 🔴 **判据 A 的判别力自证（夹具式）**：两个**逐字取自真语料**的正向夹具（`case-draft` 的 `grep -cP … || echo "0"`、`pr-check` 的**带单引号**那种）必须命中；四个负向夹具（仓内既有的正确写法 `|| true`、**引号内**的提及、无回退的裸 `grep -c`、`grep -m1` + 兜底文案）必须 0 命中。没有这一条，「扫不到任何东西」与「扫了但零违规」无法区分。执行点 = 同文件::test_detector_has_discriminating_power
+数据: 🔴 **反空跑（语料下限 + fail-closed）**：workflow 文件数必须 ≥20（扫描面被收窄 ⇒ 红）；`scan_workflows(不存在的目录)` 必须**抛异常**而不是返回空清单（否则「没东西可判」会被读成绿）。执行点 = 同文件::test_scanner_is_not_vacuous
+数据: 🔴 **判据 B（台账面，会红）**：已修实例台账 `tests/unit_ci_workflows/grep_c_echo_instances_ledger.json` **只许非增**（条数 ≤ 写在判据文件里的冻结上限 `LEDGER_ENTRIES_FROZEN = 2`）+ **不许清空** + 每条四要素齐全（`path`/`line`/`form`/`fixed_to`/`issue`）。执行点 = 同文件::test_ledger_only_shrinks_and_is_never_emptied
+数据: 🔴 **台账不许指向幽灵文件**：每条 `path` 必须在仓里真实存在（否则「已修」是空话）。执行点 = 同文件::test_ledger_entry_paths_exist
+数据: 🔴 **注入式红证（三条单变量，实测逐字节还原）**：① 把 `pr-check.yml` 的 `HAS_LABEL` 改回 `… | grep -c x || echo "0"` ⇒ 判据 A 当场红并具名；② 只把 `case-draft.yml` 改回坏形态 ⇒ 判据 A 单变量红；③ 把台账 `instances` 清空 ⇒ 判据 B 红。三条注入后均已还原（`git diff` 为空、`5 passed`）。
+数据: 📌 **真机现场（逐字）**：job `Clear stale needs-changes label`（run 38852214807 / job 116818084915）报 **success**，日志含 `[: 0` / `0: integer expression expected` 紧跟 `✅ 无需清除（标签不存在）`；同 PR **28 项检查全 pass** 而标签仍是 `review/needs-changes` ⇒ 已用 `gh pr edit --remove-label` 手工摘掉。**这条红的形态是「绿着但没干活」，只能靠「标签该消失却没消失」观察到。**
+数据: 📌 **为什么它不会自己变红**：报错的那个 `[` 处在 `if` 的**条件上下文**里（条件里的失败**不**触发 `set -e`），且不在 `set -e` 直接覆盖的语句位置 ⇒ 步报 success ⇒ 靠「看 CI 绿不绿」**永远发现不了**这一类，必须靠机械守卫扫形态。
+前置: 前置 = 两样都在仓里可读且**可判定**：① 元守卫本体 `tests/unit_ci_workflows/test_grep_c_echo_dupe.py`（含 `grep -c` 形态的剥引号/剥注释 lexer + 判别力自证夹具）；② 被测面 `.github/workflows/**.yml`（判定时现取 ≥20 个 workflow 文件，由 `test_scanner_is_not_vacuous` 的语料下限兜住）。**前置不成立时不许读成通过**：目录不存在 / 零个 workflow / 读不到文件 ⇒ 判据 `scan_workflows()` **抛异常**（fail-closed），而不是返回空清单变绿；台账被清空 ⇒ 判据 B 判红。
+跳过: [backend-contract] 纯 CI 判据面（静态扫 workflow YAML 文本 + 台账比对），零网络、零 LLM、不碰真实云，不进 agent-eval 冒烟
+```
+溯源: 2026-10-16 新增（issue #7022）。发现路径 = PR #7012（issue #7007 商家后台 UI 统一）收尾时撞见：全部 28 项检查 pass 而过期 `review/needs-changes` 标签仍残留 ⇒ 顺着 job 日志读到 `integer expression expected`。归因确认后**未在 #7012 内修**（改 `.github/workflows/` 是独立面、且需配套判据），单独立单并在本单内修完。取号 = `python3 scripts/next_case_id.py`（工具对 `misc.yml` 输出 `MISC-001`）**但** `misc.yml` 语料实际用 `MC-` 前缀（108 条 `MC-` + 1 条 `PK-`）⇒ 按**实际语料**取 `MC-109`，并已复核 `origin/main` 上 `MC-109` 空闲、且当期零个 open PR（在飞面为空）。**工具前缀映射与实际语料不一致（`MISC` vs `MC`）本身是一处待固化的漂移，不在本单射程内**，登记于判据文件与 PR body 的边界节。 ｜ tags: ci-cd, shell, fail-closed, red-proof, empty-green
 
 ## 商家入驻域（6 case）
 
@@ -11195,8 +11212,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：771（活跃 134，跳过 637）
-- tier 分布：smoke 12 / normal 712 / adversarial 32
+- 用例总数：772（活跃 134，跳过 638）
+- tier 分布：smoke 12 / normal 713 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -11211,7 +11228,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：109
+- 杂项域：110
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：66
@@ -11355,6 +11372,7 @@
 - MC-106: **admin-web 发布腿的判据从「产物存在」换成「线上探到的 sha == 本次部署的 sha」**：构建期把 identity 烘焙进产物（`GET /version.json`，与 admin-api 的 `/api/version` 同族形态）+ 发布后 served-sha 断言（不一致 ⇒ 具名判红退 1、**探不到 ⇒ fail-closed 退 3**、**响应是 HTML（回落）⇒ 判探不到**）+ schedule 兜底档「本轮未部署 ⇒ 没有发生任何交付」显式出声（issue #6611 / #6746）
 - MC-107: **部署腿 run 正文里编造的 `GITHUB_*` 环境变量名必须判红**：`GITHUB_RUN_STARTED_AT` 不是 GitHub 注入的环境变量⇒ shell 展开**恒为空串**，而 shell 里未定义变量只是空串、**没有任何东西会红** ⇒ `builtAt` 恒空（issue #7015）；同批给 `builtAt` 补一条**会红**的具名判据（探到空 ⇒ 判红点名「取值源未接」）
 - MC-108: **workflow 的 `run:` 正文「表达式替换后必须是合法 bash」+「`${{ github.<prop> }}` 的属性名必须真实存在」都要有会红的判据**：#7016 把不存在的环境变量 `GITHUB_RUN_STARTED_AT` 换成了**同样不存在**的 context 属性 `github.run_started_at`（官方 `github` 上下文属性表 40 个里没有它）⇒ Actions 解出**空串**、不报错不告警；且其自检文案里「转义反引号 + 表达式」在**空替换**后只剩一个**裸反引号** ⇒ 该步 bash 在**解析阶段**就死（exit 2），步内的自检**一次都没跑过** ⇒ 真机两条部署腿红、构成永久死锁（issue #7029）
+- MC-109: **`grep -c` 配 `|| echo "0"` 会捕获成两行 ⇒ `[ … -gt 0 ]` 报 `integer expression expected` ⇒ 判据走 else「绿着但没干活」**：#7012 的 `Clear stale needs-changes label` 步因此**从未**摘掉过期标签（job 还报 success）；同形态另有一处 `case-draft.yml` 的 `HAS_TRUTH`（issue #7022）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

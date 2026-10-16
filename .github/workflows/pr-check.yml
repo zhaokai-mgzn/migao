@@ -1155,7 +1155,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          HAS_LABEL=$(gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name' 2>/dev/null | grep -c 'review/needs-changes' || echo "0")
+          # ⚠️ 不要写成 `… | grep -c 'x' || echo "0"`（issue #7022）：`grep -c` 找不到时
+          # **已经**打印 `0` 且返回 1 ⇒ `|| echo "0"` 会**再追加一行** ⇒ 变量是 `$'0\n0'`
+          # ⇒ `[ "$V" -gt 0 ]` 报 `integer expression expected` ⇒ 走 else ⇒ **绿着但没干活**
+          # （本步因此**从未**摘掉过期标签，实测 PR #7012：28 项检查全 pass 而标签仍残留）。
+          # 现改为 jq 直出计数：既没有退出码语义、也不做逐行文本匹配。
+          # 守卫 = tests/unit_ci_workflows/test_grep_c_echo_dupe.py（用例 MC-109）。
+          HAS_LABEL=$(gh pr view "$PR_NUMBER" --json labels --jq '[.labels[].name] | map(select(. == "review/needs-changes")) | length')
           if [ "$HAS_LABEL" -gt 0 ]; then
             gh pr edit "$PR_NUMBER" --remove-label "review/needs-changes" 2>/dev/null || true
             echo "🧹 已清除 review/needs-changes（全部 job 通过）"
