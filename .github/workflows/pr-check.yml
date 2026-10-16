@@ -170,6 +170,19 @@ jobs:
     #   + conftest 的 `expected_test_files()` / `collection_floor_problems()`
     #   （分片最容易出的坏形态就是「每条腿天然只覆盖一半 ⇒ 旧的整套判定把**每条腿**都判成子集
     #   运行 ⇒ 早退 ⇒ 牙齿全掉」，那一处已按分片感知改写）。
+    # ── **收集面**新增一份套件（issue #7048 · P2，2026-10-16）──────────────────────────────
+    # `tests/agent_eval/eval_fixture_case_contract.py`（评测夹具 ⇄ 用例机器断言的数据依赖契约，
+    # 类级元守卫，issue #7043；pytest 套件 = `tests/agent_eval/test_eval_fixture_case_contract.py`）
+    # 此前**不进 CI**：本腿只跑 `tests/unit_ci_workflows`，那份判据因此**不构成门禁**（#7043 的
+    # 「未固化项 #1」）。现在它经 `tests/unit_ci_workflows/test_eval_fixture_case_contract_leg.py`
+    # （**同名再导出**，判定本体与断言仍只有那一份）进了**本腿的收集面** ⇒ 上面那条 argv **一字未改**、
+    # 全量命令仍**只出现一次**（两条既有契约照旧由 `test_ci_helper_leg.py` / `test_ci_execution_scope.py`
+    # 现取比对），`conftest` / 形态台账 / 执行面台账三处**一格未动**（收集面的成员集合没变，多进来的是
+    # 一个判据文件）。
+    # 🔴 **为什么不是把 `tests/agent_eval` 塞进 argv**：那会**同时**打破上面两条契约。实测过配置层也
+    #   走不通 —— pytest 的 `testpaths` 在**命令行给了路径**时被整个忽略（`testpaths = tests/agent_eval`
+    #   + `pytest tests/unit_ci_workflows` ⇒ 收集数**逐值不变**），而 `addopts` 只是另一种"往 argv 贴东西"。
+    #   ⇒ 收集面在本仓只有两个落点：argv（禁）或**判据目录**（本包走后者）。
     name: ci workflow helper unit tests${{ matrix.shard_suffix }}
     runs-on: ubuntu-latest
     strategy:
