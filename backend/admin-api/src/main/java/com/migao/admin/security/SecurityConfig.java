@@ -204,6 +204,14 @@ public class SecurityConfig {
                                 "/api/auth/sms/**",
                                 // 企业入驻申请接口（公开）
                                 "/api/auth/register",
+                                // 版本探针（issue #6951）：**只读、无鉴权**的「线上跑的是哪个 build」读面。
+                                // ⚠️ 必须在放行名单里：探针**没有**任何凭据（它就是用来判
+                                // 「线上是不是这次构建」的）⇒ 401 会让判据退化成「探不到」。
+                                // 为什么不用 /actuator/info：部署形态下 nginx 把 actuator 面整段
+                                // `return 404`（deploy/swas/nginx.conf）⇒ 探活面 ≠ 探版本面。
+                                // 泄露面 = 5 个非敏感字段（app/sha/tag/builtAt/servedAt），
+                                // 判据 = tests/unit_ci_workflows/test_served_version_verify.py 的字段白名单判据。
+                                "/api/version",
                                 // 健康检查和文档
                                 "/actuator/health",
                                 "/actuator/info",

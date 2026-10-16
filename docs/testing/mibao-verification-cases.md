@@ -3418,7 +3418,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（105 case）
+## 杂项域（106 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4992,6 +4992,26 @@
 跳过: [backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟
 ```
 溯源: 2026-10-15 新增（issue #6955 的类级固化，与 PG-076 同批）。取号 = `scripts/next_case_id.py MC` ⇒ **MC-104**（现取 main ∪ 在飞 PR 的 MC 号最大 = MC-100，且 MC-100 归 #6928 / PG-075 归 #6936，**本包一律不动**）。读数：修后 `mvnw test -Dtest=ProcessingOrderStatusCasMetaGuardTest` = **6 passed / 0 failed**，逐字 `写 status 的 mapper 方法=[markCompletedIfActive, markInProcessingIfFrom, markStatusIfFrom] service 写路径=[ProcessingOrderService#updateStatus, OrderService#cancelOrder] 未登记=[] 幽灵条目=[] mapper 条目=3 豁免=0(基线 0) 违规=[] 断链=[]`。**红证（注入式）**：把两处 CAS 退回修前无谓词 `updateById` ⇒ `noStatusWritePathUsesUnconditionalUpdateById` 判红并具名 `违规=[ProcessingOrderService#updateStatus, OrderService#cancelOrder]`（同批 `everyEvidenceAnchorIsLive` 也红 —— 台账锚不再兑现）。**顺带扫出的同族缺陷（链内修，本包一并落）**：`ProductionService#ensureQrToken` 用 `updateById(部分实体)` 补 `qr_token` ⇒ 换成新加的条件更新 `ProcessingOrderMapper#fillMissingQrToken`（`WHERE … AND qr_token IS NULL`，与相邻的 `fillMissingShortCode` 逐字同款），使该文件的现取集合里不再出现无谓词 `updateById`。 ｜ tags: concurrency, state-transition, cas, ledger, backend-contract, red-proof
+
+### MC-105. **部署腿的判据从「产物存在」换成「线上探到的 sha == 本次部署的 sha」**：admin-api 加只读版本端点 `GET /api/version`（构建期注入 sha/tag/builtAt，nginx 已放行面，无鉴权）+ 部署后 served-sha 断言（不一致 ⇒ 具名判红、探不到 ⇒ fail-closed 退 3）+ schedule 兜底档「本轮未部署」显式出声（issue #6951 / #6746 / #6611 / #6554） 🔵
+```
+你: 部署腿报 success、`Post-Deploy Smoke Test` 却是 skipped —— 这个「绿」到底证明了什么？线上跑的又是哪个 build？
+数据: 🔴 **判据 1·红证（判据自身能因注入错误期望 sha 而红）**：`deploy/scripts/served-version-verify.sh <BASE_URL> <EXPECTED_SHA>` 在「线上读数 = 真 sha / 期望值 = 注入的错误 sha」时必须以 **退 1** 判红，且输出里同时具备三件：**探到什么**（实测 sha）、**期望什么**（期望 sha）、**可复制复算命令**（`curl` + 脚本名）。执行点 = tests/unit_ci_workflows/test_served_version_verify.py::test_served_sha_mismatch_is_red_and_names_both_sides
+数据: 🔴 **判据 1 的对照臂（没有它 ⇒ 恒红也能过上面那条）**：同一场景只把期望 sha 换回真的 ⇒ **退 0** + `SERVED_VERSION=match`。执行点 = 同文件::test_served_sha_match_is_green_control_arm
+数据: 🔴 **判据 2·探不到 ⇒ fail-closed（退 3，**绝不当绿**）**：sha 为空（**老镜像没有构建期注入面** —— 本判据最容易退化成空断言的路径）、body 不是 JSON、HTTP 404、HTTP 429、sha 非 hex、期望 sha 形态不合法、期望 sha < 7 位、`app` 不是目标服务、端点连不上（端口没人听）九态各自 ⇒ 退 3 + `SERVED_VERSION=unknown` 且**不得**出现 `match`。执行点 = 同文件::test_unverifiable_is_exit_3_never_green（8 条参数化）/ ::test_unreachable_endpoint_is_exit_3
+数据: 🔴 **判据 3·结构判据：发布腿的命令里不再以「镜像/产物存在」作为通过条件**：`deploy-admin-api.yml` 必须**真的**调用共享判据本体（`deploy/scripts/served-version-verify.sh`）、期望值来自本次部署（`EXPECTED_SHA: ${{ github.sha }}`）、退出码**原样透传**（`exit "$rc"`，3 不许被归一化成 0）。执行点 = 同文件::test_deploy_leg_asserts_served_sha_not_artifact_existence
+数据: 🔴 **判据 4·类级形态：断言步的生效条件不得绑在「产物/结论」面上**：served-sha 断言的 `if:` 里不许出现 `steps.sync.outputs.skip`，且必须是 `always()`（跳过档也要探一次 —— 否则「本轮未部署」就没有任何线上读数）。执行点 = 同文件::test_deploy_leg_never_keys_pass_on_artifact_existence
+数据: 🔴 **判据 5·schedule 兜底档两态分开**：`skip=true`（本轮未部署）必须有**显式出声**的声明步（`::notice::` + 逐字「未跑 Post-Deploy Smoke Test」+ 落 run summary），且 `deployed` 的语义必须自洽（`skip != 'true'`，冒烟 job 条件随之 `== 'true'`）。执行点 = 同文件::test_schedule_skip_path_declares_that_no_smoke_ran
+数据: 🔴 **判据 6·注入面四层同源**（少一环 ⇒ 端点报的就不是这次构建、sha 恒为空）：workflow（`build_id` 步解算 `git rev-parse HEAD` + 三个 env）→ `deploy/swas/deploy.sh`（`BUILD_SHA`/`BUILD_TAG`/`BUILT_AT` → `--build-arg MIGAO_BUILD_*`）→ `backend/admin-api/Dockerfile`（`ARG` 在 builder/runtime **两个** stage 各一次 + `ENV`）→ `VersionController`（读同名环境变量）。执行点 = 同文件::test_build_identity_wiring_is_same_source_across_four_layers
+数据: 🔴 **判据 7·端点的泄露面白名单**：响应体**只许** 4 个非敏感键（`app`/`sha`/`tag`/`builtAt`），且只读（`@GetMapping`、无写映射）⇒ 有人加字段就判红（逼一次「它会不会泄露」的复核）。执行点 = 同文件::test_version_endpoint_field_whitelist_blocks_accidental_leaks
+数据: 🔴 **判据 8·端点落在已放行面 + 设计前提仍在**：`@GetMapping(value = "/api/version"`（nginx 已放行的 `/api/` 前缀，**不新增放行面**）+ `SecurityConfig` 的 `permitAll` 含 `"/api/version"`；同时 `nginx.conf` 那条 actuator/swagger 屏蔽块必须**仍在**且仍是 `return 404`（「探活面 ≠ 探版本面」正是本单的前提）。执行点 = 同文件::test_version_endpoint_is_under_the_already_allowed_api_prefix
+数据: 🔴 **判据 9·判别力自证（注入式红证，本包实跑）**：① 把脚本的比较改成恒真 ⇒ `test_served_sha_mismatch_is_red_and_names_both_sides` 红（1 failed / 19 passed）；② 摘掉 workflow 的 served-sha 断言步 ⇒ `test_deploy_leg_asserts_served_sha_not_artifact_existence` + `test_deploy_leg_never_keys_pass_on_artifact_existence` 双双红（2 failed / 18 passed）；③ 摘掉 Dockerfile 的 `ENV MIGAO_BUILD_SHA=…` ⇒ `test_build_identity_wiring_is_same_source_across_four_layers` 红（1 failed / 19 passed）；恢复后 20 passed。执行点 = 同文件（判据本体自带对照臂与负控）
+数据: 🔴 **判据 10·脚本自身的两类静默坏形态**（本包实测踩过第一类）：`bash -n` 必须能解析 + **不许**出现「裸 `$VAR` 紧跟非 ASCII」（bash 会把中文全角字节并进变量名 ⇒ `set -u` 下报 `EXPECTED\ufffd: unbound variable`，而报错行号与真实坏点相差数行；同族还能造成未闭合引号把整段吞掉）。执行点 = 同文件::test_shared_script_parses_and_has_no_unquoted_cjk_adjacent_expansion
+数据: 🔴 **判据 11·端点主体的 Java 契约测试**（与 Node 侧判据**不重复实现**：这里判端点行为，那里判脚本/接线）：① `sha`/`tag`/`builtAt` **原样**出（它们就是判据比对的字符串，不许截断/加工）；② 字段面**恰好** 4 个（`app`/`sha`/`tag`/`builtAt`）⇒ 多一个键即泄露面变了；③ 未注入时 `sha` 是**空串**（不是 500 / 不是占位假值 —— 消费方据此判「探不到」exit 3）；③′ 注入值被 trim；④ `POST /api/version` ⇒ **405**（不给写面）；⑤ 注入「显眼标记」后断言响应里只出现白名单键名与注入值、不出现实例路径 / 环境变量形态。执行点 = backend/admin-api/src/test/java/com/migao/admin/controller/VersionControllerTest.java
+数据: **边界（照实登记，不粉饰）**：① 线上真机复探**未做**（需要一次真实部署，本包无部署权）—— 重启条件 = 本 PR 合并并在 main 上跑过一次部署后，执行 `bash deploy/scripts/served-version-verify.sh https://api.migaozn.com "$(git rev-parse origin/main)"` 应退 0；② `deploy-frontend.yml` / `deploy-ai-agent-service.yml` 两条腿**未接线**（同形缺口；前端那半边还依赖 #6611 的构建期注入面）—— 重启条件 = #6611 落地后给前端产物加 build id 并接同一条判据；③ Java 侧只做**静态接线判据**，本包**未**跑 `mvn test`（worktree 无构建产物、属全量档）；④ 本文件**不联网**（`/api/version` 由进程内 HTTP 桩提供）⇒ 证的是「脚本在给定输入下会做什么」，不是「阿里云/线上真的会这么回」；⑤ 不改任何门禁的通过条件、不新增豁免、不新增 schedule。
+跳过: [backend-contract] 零 LLM 的确定性读数（进程内 HTTP 桩驱动真脚本 + 读 workflow/deploy.sh/Dockerfile/Java 源码文本 + `bash -n`），零网络、不碰真实云，不进 agent-eval 冒烟
+```
+溯源: 2026-10-16 新增（issue #6951；同族 #6746 / #6611 / #6554）。取号 = `python3 scripts/next_case_id.py MC` 现取 **MC-105**（main:001-104；`.github/cases/claims/` 现取最大 MC-103 在飞，MC-128 那条 claim 与本号无冲突）。**修前红（与 issue 原文同形）**：`https://api.migaozn.com/actuator/health` 与 `/actuator/info` 都是 **nginx 404**（`deploy/swas/nginx.conf` 的 `location ~ ^/(actuator|v3/api-docs|swagger-ui)(/|$)` ⇒ `return 404`）⇒ 线上探不到「跑的是哪个 build」；`Build and Deploy admin-api` run `38681309878`（2026-10-15T04:24:40Z，sha `b4e63119`）⇒ `build-and-deploy: success` / `Post-Deploy Smoke Test: **skipped**`（门是 `event_name != 'schedule' || deployed == 'false'`，而 `deployed` 逐字写成 `steps.sync.outputs.skip` ⇒ 名字与含义相反）。**修后绿**：`python3 -m pytest tests/unit_ci_workflows/test_served_version_verify.py -q -p no:randomly` = **20 passed**（含红证投影 + 8 条 fail-closed 参数化 + 4 条结构判据 + 2 条形态守卫）。**红证（注入式，实跑读数）**：① 比较改恒真 ⇒ 1 failed / 19 passed；② 摘掉 worked 断言步 ⇒ 2 failed / 18 passed；③ 摘掉 `ENV MIGAO_BUILD_SHA` ⇒ 1 failed / 19 passed；恢复后 20 passed。**顺带修的两处同族**（链内，同一 PR）：`deployed` 的语义订正（`skip != 'true'`，冒烟条件随之 `== 'true'`，行为等价但读数不再自相矛盾）+ schedule 兜底档新增「本轮未部署 ⇒ 未跑冒烟」的显式声明步（`::notice::` + run summary）。 ｜ tags: deploy, ci-cd, version-probe, fail-closed, backend-contract, red-proof
 
 ## 商家入驻域（6 case）
 
@@ -10960,8 +10980,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：755（活跃 134，跳过 621）
-- tier 分布：smoke 12 / normal 696 / adversarial 32
+- 用例总数：756（活跃 134，跳过 622）
+- tier 分布：smoke 12 / normal 697 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -10976,7 +10996,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：105
+- 杂项域：106
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：66
@@ -11116,6 +11136,7 @@
 - MC-102: **入驻审批写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 负谓词（本表无 deleted 列）即红 / 台账只许缩短（issue #6954 的类级固化）
 - MC-103: **Post-Merge Verify 的取数面读数探针必须真有牙**：能打出 creds 读数 / 打不出即响亮判红 / driver 显式把凭据交给判据解释器（issue #6968）
 - MC-104: **加工单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6955 的类级固化）
+- MC-105: **部署腿的判据从「产物存在」换成「线上探到的 sha == 本次部署的 sha」**：admin-api 加只读版本端点 `GET /api/version`（构建期注入 sha/tag/builtAt，nginx 已放行面，无鉴权）+ 部署后 served-sha 断言（不一致 ⇒ 具名判红、探不到 ⇒ fail-closed 退 3）+ schedule 兜底档「本轮未部署」显式出声（issue #6951 / #6746 / #6611 / #6554）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

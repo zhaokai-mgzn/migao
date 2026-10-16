@@ -109,6 +109,30 @@ APT_MIRROR=${APT_MIRROR:-deb.debian.org}
 PIP_INDEX_URL=${PIP_INDEX_URL:-}
 BUILD_TIMEOUT_SECS=${BUILD_TIMEOUT_SECS:-2400}
 
+# ══════════════════════════════════════════════════════════════════════════
+# 构建身份注入面（issue #6951）：**线上跑的是哪个 build** 必须可判读
+#
+# 探针端点 = `GET /api/version`（消费方 `deploy/scripts/served-version-verify.sh`）。
+# 下面三个值经 `--build-arg` 烘焙进镜像 ⇒ 探针读数 = **产物身份**，不是「这次想部署什么」。
+# 🔴 为什么不在 `docker compose up` 时用 `environment:` 注入：那表达的是**部署意图**，
+#    它与「容器里真的在跑哪份代码」可以脱钩（拉了旧镜像 / 容器没被替换）⇒ 探针会在跑着旧代码时
+#    照样报出新 sha，变成**空断言**（issue #6951 要治的正是这个形态）。
+# 🔴 为什么不运行时现算（`git rev-parse HEAD`）：部署形态的容器里**没有 `.git`**
+#    （C′ 的构建上下文是 codeload 归档树，运行时镜像里也不带源码）⇒ 现算必然是错的。
+# ⚠️ 构建期真值由 CI 注入（`deploy-admin-api.yml` 的 `Resolve build identity` 步，
+#    来源 = `GITHUB_SHA` / `GITHUB_RUN_STARTED_AT` —— 都不是运行时现算）；
+#    这里只管**把它交给 docker build**，并保证「忘了传」时在日志里可见（不静默空串）。
+# 判据 = tests/unit_ci_workflows/test_served_version_verify.py
+# ══════════════════════════════════════════════════════════════════════════
+BUILD_SHA=${BUILD_SHA:-}
+BUILD_TAG=${BUILD_TAG:-}
+BUILT_AT=${BUILT_AT:-}
+if [ -n "$BUILD_SERVICE" ] && [ -z "$BUILD_SHA" ]; then
+  echo "  ::warning::BUILD_SHA 为空 ⇒ 本次构建的镜像**没有**版本注入面（/api/version 的 sha 会是空串）"
+  echo "     ⇒ 线上版本自证（served-version-verify.sh）只能判「探不到」(exit 3)，**不会**判绿。"
+  echo "     修法：让调用方（部署腿）导出 BUILD_SHA=<本次部署的 commit sha>（issue #6951）。"
+fi
+
 # 服务键 → (compose 服务名, 构建上下文, Dockerfile)。**唯一一处**映射，构建与拉取两侧共用 ⇒ 不会漂移。
 service_name_of() {
   case "$1" in
@@ -734,6 +758,14 @@ if [ -n "$BUILD_SERVICE" ] && [ -z "$LOCAL_IMAGE_REF" ]; then
   # ── 构建参数 ───────────────────────────────────────────────────────────────
   _build_args=(--build-arg "APT_MIRROR=$APT_MIRROR")
   if [ -n "$PIP_INDEX_URL" ]; then _build_args+=(--build-arg "PIP_INDEX_URL=$PIP_INDEX_URL"); fi
+  # 构建身份（issue #6951）：见上面 BUILD_SHA/BUILD_TAG/BUILT_AT 的说明。
+  # ⚠️ 无条件传给**被构建的那个服务**：admin-api / ai-agent 的 Dockerfile 声明了这三个 ARG
+  #    （ENV 进镜像 ⇒ `/api/version` 可读）；**没有声明它们的 Dockerfile（admin-web）会静默忽略**
+  #    （docker 对未声明的 `--build-arg` 不报错）⇒ 三条腿共用本段是安全的。
+  # ⚠️ `BUILD_TAG` 缺省回落成 `${TAG}`（= 镜像 tag，天然等于「这次部署的是哪个镜像」）。
+  _build_args+=(--build-arg "MIGAO_BUILD_SHA=${BUILD_SHA:-}")
+  _build_args+=(--build-arg "MIGAO_BUILD_TAG=${BUILD_TAG:-$TAG}")
+  _build_args+=(--build-arg "MIGAO_BUILT_AT=${BUILT_AT:-}")
   # admin-web 的构建期环境变量：**构建已搬到服务器侧** ⇒ 覆盖口也从 CI 的 `--build-arg` 挪到这里。
   # 现取：默认值 = Dockerfile 的 ARG 缺省值 = 线上落位（与改前 CI 的 `secrets.X || <默认>` 的
   # **有效值**一致 —— 那几个 secret 从未在仓里登记过，Danger Scan 也不允许新增未登记的 secret 引用）。

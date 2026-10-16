@@ -125,7 +125,12 @@ LEDGER_CEILINGS = {
     # （逐条带理由：只回 302 跳转、不泄露业务字段、不是数据入口）。**显式放宽**（diff 里看得见）：
     # 增长的原因是「确实新增了一条与 `/s/{}`、`/i/{}` **同族**的印刷品公开入口」，
     # 不是「有人把台账放宽了」。22 → 23。
-    "UNANNOTATED_ENDPOINTS": 23,
+    # issue #6951（2026-10-16）：新增 `GET /api/version`（`VersionController` 的**只读版本探针**，
+    # `permitAll`：探针**没有**凭据，加码会让判据退化——401 = 探不到）⇒ 已登记进
+    # `UNANNOTATED_ENDPOINTS` 台账（逐条带理由：只回 5 个非敏感键 `app`/`sha`/`tag`/`builtAt`/`servedAt`，
+    # 无租户/业务/实例数据）。**显式放宽**（diff 里看得见）：增长的原因是「确实新增了一条无鉴权只读探针」，
+    # 不是「有人把台账放宽了」。23 → 24。
+    "UNANNOTATED_ENDPOINTS": 24,
 
     # issue #4923（2026-10-02）：`craft_config_query` 是**跨码工具**（6 个读端点分属三档生效码，
     # 工具声明生产域读码 `production:view`）⇒ 判据 2 的具名出口 `CODE_DIVERGENCE_EXCEPTIONS`
