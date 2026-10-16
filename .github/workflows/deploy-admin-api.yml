@@ -397,6 +397,12 @@ jobs:
           ACR_P: ${{ secrets.ACR_PASSWORD }}
           IMAGE_TAG: ${{ steps.tag.outputs.IMAGE_TAG }}
           # 构建身份（issue #6951）⇒ `deploy/swas/deploy.sh` 把它转成 `--build-arg` 烘焙进镜像。
+          # 🔴 **第 5 跳（本单的病根）**：这三个值必须**过 `swas-deploy-ci.sh` 的参数面**到远端
+          # —— 构建发生在**服务器上**（见上面的 `Assert server-side build (no ACR push)`），
+          # 这里的 `env:` 只在 runner 上生效；驱动脚本若不转发 ⇒ 远端 `deploy.sh` 读到空串
+          # ⇒ 真机读数逐字为 `{"app":"admin-api","sha":"","tag":"sha-bab9538","builtAt":""}`
+          # （其中 `tag` 有值 = 远端 `MIGAO_BUILD_TAG` 回落 `${TAG}` 所赐，**不是**这三个 env 送达的）。
+          # 故**逐个位置参数**显式传（`$9`/`$10`）—— 接线在调用点可见，且判据能把它钉住。
           BUILD_SHA: ${{ steps.build_id.outputs.BUILD_SHA }}
           BUILD_TAG: ${{ steps.tag.outputs.IMAGE_TAG }}
           BUILT_AT: ${{ steps.build_id.outputs.BUILT_AT }}
@@ -407,7 +413,7 @@ jobs:
         run: |
           bash deploy/scripts/swas-deploy-ci.sh \
             ${{ env.SWAS_INSTANCE_ID }} ${{ env.SWAS_REGION }} "$AK" "$SK" "$ACR_U" "$ACR_P" "$IMAGE_TAG" \
-            admin-api
+            admin-api "$BUILD_SHA" "$BUILT_AT"
 
       # ── 「跳过部署」的运行面自证（issue #6294，判据 1）────────────────────────────
       # 病：上面 `Skip if already built` 判「已部署」**只看 run 结论**（镜像在 ACR / 同 sha 结论 success）

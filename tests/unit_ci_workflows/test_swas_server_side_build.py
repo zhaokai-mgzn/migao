@@ -75,6 +75,15 @@ DEPLOY_LEGS = {
     "deploy-admin-api.yml": "admin-api",
     "deploy-frontend.yml": "admin-web",
 }
+# 构建身份过「CI → 驱动脚本 → 服务器」边界的**实参形态**（issue #6951 的第 5 跳）；
+# 它们排在服务键**之后**（第 9/10 个位置参数）⇒ 判服务键位置时要先把它们剥掉。
+BUILD_SHA_ARG = '"$BUILD_SHA"'
+BUILT_AT_ARG = '"$BUILT_AT"'
+# ⚠️ **未固化项（照实登记）**：本单只接了 `deploy-admin-api.yml` 一条腿；另两条腿
+# （`deploy-ai-agent-service.yml` / `deploy-frontend.yml`）的构建身份仍未过边界 —— 它们的
+# `/api/version` 腿要么不存在（前端那半边归 issue #6611）、要么同形未接。**不假装已接线**：
+# 这里逐腿登记，接了的那条腿才受「必须有构建身份实参」的断言约束（新接一条 ⇒ 加进本集合）。
+BUILD_IDENTITY_LEGS = {"deploy-admin-api.yml"}
 
 
 def deploy_text() -> str:
@@ -320,12 +329,23 @@ def test_ci_renders_build_placeholders_and_each_leg_passes_its_service_key():
     # 渲染漏一个 ⇒ fail-closed（否则远端拿到字面量 `__BUILD_SERVICE__`）
     assert re.search(r"\*__BUILD_SERVICE__\*", ci), "渲染后必须自证「占位符已全部替换」否则 fail-closed"
     # 三条腿各传自己的服务键（第 8 个位置参数）
+    # ⚠️ 判据形态于 issue #6951 收紧：**不能**再假定「服务键 = 续行的最后一行」
+    #    —— 构建身份（`"$BUILD_SHA"` / `"$BUILT_AT"`，第 9/10 位）就排在它后面（那正是第 5 跳）。
+    #    又：`${{ env.X }}` 在续行里**带空格** ⇒ 数 token 不可靠；改为剥掉**已知的**构建身份实参后，
+    #    服务键必须是**最后一个**实参。
     for wf, key in DEPLOY_LEGS.items():
         body = (WORKFLOWS / wf).read_text(encoding="utf-8")
         call = re.search(r"bash deploy/scripts/swas-deploy-ci\.sh \\\n((?:.*\\\n)*.*)", body)
         assert call, f"{wf}: 找不到 swas-deploy-ci.sh 调用"
-        last = call.group(1).strip().splitlines()[-1].strip()
-        assert last == key, f"{wf}: 第 8 个位置参数应为 {key}，实得 {last!r}"
+        args = call.group(1).replace("\\\n", " ").split()
+        if wf in BUILD_IDENTITY_LEGS:
+            for known in (BUILD_SHA_ARG, BUILT_AT_ARG):
+                assert known in args, f"{wf}: 构建身份没有过参数面（第 5 跳断了）：缺实参 {known}"
+                args = [a for a in args if a != known]
+        assert args and args[-1] == key, (
+            f"{wf}: 服务键应为剥掉构建身份实参后的**最后一个**位置参数，应为 {key!r}，"
+            f"实得 {args[-1] if args else None!r}"
+        )
 
 
 # ── 零 git 依赖自证（本仓「本机全绿、CI 全红」的直接教训）──────────────────────
@@ -398,7 +418,11 @@ def _problems(deploy: str, ci: str, df: str, legs: dict | None = None) -> list[s
     for fname, text in (legs or {k: (WORKFLOWS / k).read_text(encoding="utf-8") for k in DEPLOY_LEGS}).items():
         key = DEPLOY_LEGS.get(fname)
         call = re.search(r"bash deploy/scripts/swas-deploy-ci\.sh \\\n((?:.*\\\n)*.*)", text)
-        if key is None or not call or call.group(1).strip().splitlines()[-1].strip() != key:
+        # 服务键必须落在**第 8 个位置参数**上（issue #6951：它后面还跟着构建身份两个实参
+        # ⇒ 不能再拿「续行最后一行」当它的位置）。
+        args = call.group(1).replace("\\\n", " ").split() if call else []
+        args = [a for a in args if a not in (BUILD_SHA_ARG, BUILT_AT_ARG)]
+        if key is None or not args or args[-1] != key:
             out.append(f"c9leg:{fname}")
     return out
 
