@@ -79,11 +79,12 @@ DEPLOY_LEGS = {
 # 它们排在服务键**之后**（第 9/10 个位置参数）⇒ 判服务键位置时要先把它们剥掉。
 BUILD_SHA_ARG = '"$BUILD_SHA"'
 BUILT_AT_ARG = '"$BUILT_AT"'
-# ⚠️ **未固化项（照实登记）**：本单只接了 `deploy-admin-api.yml` 一条腿；另两条腿
-# （`deploy-ai-agent-service.yml` / `deploy-frontend.yml`）的构建身份仍未过边界 —— 它们的
-# `/api/version` 腿要么不存在（前端那半边归 issue #6611）、要么同形未接。**不假装已接线**：
-# 这里逐腿登记，接了的那条腿才受「必须有构建身份实参」的断言约束（新接一条 ⇒ 加进本集合）。
-BUILD_IDENTITY_LEGS = {"deploy-admin-api.yml"}
+# ⚠️ **未固化项（照实登记）**：`deploy-ai-agent-service.yml` 的构建身份仍未过边界
+# （该腿的 `/api/version` 面归它自己的单）。**不假装已接线**：这里逐腿登记，接了的那条腿
+# 才受「必须有构建身份实参」的断言约束（新接一条 ⇒ 加进本集合）。
+# `deploy-frontend.yml` 由 issue #6611 接入（admin-web 的 `GET /version.json` 身份面）——
+# 与 admin-api 腿**同一形态**：身份在**服务器上**构建，不过参数面就到不了远端。
+BUILD_IDENTITY_LEGS = {"deploy-admin-api.yml", "deploy-frontend.yml"}
 
 
 def deploy_text() -> str:

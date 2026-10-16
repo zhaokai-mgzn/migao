@@ -60,8 +60,13 @@ jobs:
     # 且仍能兜住真正卡住的 run（lock 一定会释放）。
     timeout-minutes: 90
     # 部署对账输出（issue #2947）：schedule 触发时若镜像已存在则 skip=true（本轮未部署）
+    # ⚠️ 语义订正（issue #6746，#6951 在 admin-api 腿先做的同款）：改前逐字写成
+    # `steps.sync.outputs.skip` —— **名字与含义相反**（本轮未部署却报 deployed=true，
+    # 而消费方 `post-deploy-probe` 的条件是 `deployed == 'false'`）。现订正为 `skip != 'true'`
+    # （真的部署了 ⇒ true），消费侧条件随之改成 `== 'true'` —— **两处同时翻转 ⇒ 行为等价**，
+    # 但读数不再自相矛盾：`deployed=false` 现在真的意味着「本轮没部署」。
     outputs:
-      deployed: ${{ steps.sync.outputs.skip }}
+      deployed: ${{ steps.sync.outputs.skip != 'true' }}
 
     concurrency:
       group: deploy-frontend
@@ -351,6 +356,36 @@ jobs:
           echo "构建位置 = **SWAS 服务器侧**（issue #5814 C′）；CI 不构建、不推 ACR。"
           echo "镜像由 deploy/swas/deploy.sh 在服务器 flock 之内产出，tag=${IMAGE_TAG}。"
 
+      # ── 构建身份的解算（issue #6611；与 `deploy-admin-api.yml` 同族同源）─────────────
+      # 「线上跑的是哪个 build」必须可判读 ⇒ 需要三个**部署期真值**交给服务器侧构建
+      # （`deploy/swas/deploy.sh` 的 `_build_args` ⇒ `frontend/admin-web/Dockerfile` 的
+      #  `MIGAO_BUILD_SHA` 等 ARG ⇒ 构建期烘焙出 `public/version.json`）。这里只**解算**，不部署、不联网。
+      # 🔴 真值来源（都不是运行时现算）：`git rev-parse HEAD` = **本 run 检出的那个 commit**
+      #    （回滚腿 `--ref refs/tags/<tag>` 时它也正好是回滚目标的 commit —— 比 `GITHUB_SHA` 正确：
+      #     后者在 tag ref 下是**该 tag 指向的提交**，而在某些 dispatch 形态下会是 main 的 HEAD）；
+      #    `BUILT_AT` = `GITHUB_RUN_STARTED_AT`（部署期时钟，容器里没有 `.git` 也就没法现算）。
+      # ⚠️ 输出只在**真的要部署**时给（`skip != 'true'`）⇒ 跳过档不会因为「解算失败」被误判红。
+      - name: Resolve build identity (issue #6611)
+        id: build_id
+        if: steps.sync.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse HEAD)
+          case "$SHA" in
+            *[!0-9a-f]*|"") echo "::error::git rev-parse HEAD 解不出 hex sha（'$SHA'）⇒ 拒绝在身份不明时构建"; exit 1 ;;
+          esac
+          echo "BUILD_SHA=$SHA" >> "$GITHUB_OUTPUT"
+          echo "BUILT_AT=${GITHUB_RUN_STARTED_AT:-}" >> "$GITHUB_OUTPUT"
+          echo "构建身份：sha=${SHA} · tag=${{ steps.tag.outputs.IMAGE_TAG }} · builtAt=${GITHUB_RUN_STARTED_AT:-（取不到）}"
+          {
+            echo "## 构建身份（issue #6611）"
+            echo ""
+            echo "- \`sha\` = \`${SHA}\`（\`git rev-parse HEAD\` = 本 run 检出的 commit）"
+            echo "- \`tag\` = \`${{ steps.tag.outputs.IMAGE_TAG }}\`"
+            echo "- \`builtAt\` = \`${GITHUB_RUN_STARTED_AT:-（取不到）}\`"
+            echo "- 消费面：\`GET https://merchant.migaozn.com/version.json\`（部署后由下面的 served-sha 断言比对）"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # 自动部署目标 = 测试环境（当前 SWAS）；生产发布走 deploy-prod（未来）
       - name: Deploy to SWAS (测试环境)
         if: steps.sync.outputs.skip != 'true'
@@ -358,6 +393,16 @@ jobs:
           ACR_U: ${{ secrets.ACR_USERNAME }}
           ACR_P: ${{ secrets.ACR_PASSWORD }}
           IMAGE_TAG: ${{ steps.tag.outputs.IMAGE_TAG }}
+          # 构建身份（issue #6611）⇒ `deploy/swas/deploy.sh` 把它转成 `--build-arg` 烘焙进镜像。
+          # 🔴 **第 5 跳（issue #6951 的病根，本腿同样不许重蹈）**：构建发生在**服务器上**，
+          # 这三个 env 只在 runner 上生效 —— 它们必须**过 `swas-deploy-ci.sh` 的参数面**到远端
+          # （见下面的调用：第 9/10 个位置实参 `"$BUILD_SHA"` / `"$BUILT_AT"`），否则远端 `deploy.sh`
+          # 读到空串 ⇒ `version.json` 的自报 sha 是 `unknown` ⇒ 探针判「探不到」(exit 3)。
+          # ⚠️ `BUILD_TAG` **有意不过参数面**：远端 `TAG`（= 镜像 tag 本身）已是同一个值，
+          #    `deploy.sh` 的 `MIGAO_BUILD_TAG=${BUILD_TAG:-$TAG}` 会回落取它（少一条会漂的口径）。
+          BUILD_SHA: ${{ steps.build_id.outputs.BUILD_SHA }}
+          BUILD_TAG: ${{ steps.tag.outputs.IMAGE_TAG }}
+          BUILT_AT: ${{ steps.build_id.outputs.BUILT_AT }}
           # 显式降级许可（issue #4852 ②）：`workflow_dispatch -f image_tag=<tag>`（MODE=rollback）
           # 是**人工回滚接口** ⇒ 只有这条路径给 1，其余（push / schedule 构建部署）恒 0
           # ⇒ 远端闸门「target 是当前在跑 tag 的祖先就跳过该服务」对普通部署生效、对显式回滚放行。
@@ -365,7 +410,7 @@ jobs:
         run: |
           bash deploy/scripts/swas-deploy-ci.sh \
             ${{ env.SWAS_INSTANCE_ID }} ${{ env.SWAS_REGION }} "$AK" "$SK" "$ACR_U" "$ACR_P" "$IMAGE_TAG" \
-            admin-web
+            admin-web "$BUILD_SHA" "$BUILT_AT"
 
       # ── 「跳过部署」的运行面自证（issue #6294，判据 1）────────────────────────────
       # 病：上面 `Skip if already built` 判「已部署」**只看 run 结论**（镜像在 ACR / 同 sha 结论 success）
@@ -385,12 +430,104 @@ jobs:
           bash deploy/scripts/swas_deploy_running_tag.sh \
             ${{ env.SWAS_INSTANCE_ID }} ${{ env.SWAS_REGION }} "$AK" "$SK" "$IMAGE_TAG" admin-web
 
+      # ══════════════════════════════════════════════════════════════════════════
+      # 判据换芯（issue #6611 / #6746）：**线上探到的 sha == 本次部署的 sha**
+      #
+      # 病（现取）：
+      #  · #6611：本腿此前**没有任何**版本自证（`grep -nE "version|served-version|verify-served|sha256|index.html"`
+      #    零命中）；同族的静态落地面腿用的 `index.html` 字节哈希**跨版本相同**（实测应用代码变了、
+      #    sha256 前后都是 `b1f3a2ef2929ec66`）⇒ 只证 chunk 图、不证部署了哪份代码。
+      #  · #6746：**schedule 兜底报 success 却零交付** —— 兜底判据是「**镜像存在 / 同 sha 的 run 结论
+      #    success**」而非「**线上是它**」。实测 run 38093028269（2026-10-10T22:52:33Z）`conclusion=success`
+      #    而整个 job 只跑 **22 秒**，同刻线上 CSS 仍是旧的、内容级判据 `primary-50-lit` **0 命中**。
+      #
+      # 判据形态（照抄同族 `deploy/scripts/served-version-verify.sh` 的判别力口径）：
+      # 探**线上真正响应的** `GET /version.json`（admin-web 容器里由构建期烘焙的
+      # `public/version.json` 应答），把它的 `sha` 与本次目标 sha 逐字符比前 7 位
+      # —— 不一致 ⇒ **具名判红**（探到什么 / 期望什么 / 可复制复算命令，三件都在脚本输出里）；
+      # 取不到 ⇒ 退 **3**（fail-closed，**不当绿**）。脚本**显式处理回落**：拿到 HTML 判「探不到」。
+      # 实现体只有一份 = `deploy/scripts/admin-web-verify-served.sh`（与 admin-api 腿的脚本同族，不复制语义）。
+      #
+      # 两条路径都要走（**这正是 #6746 的那一刀**）：
+      #  · `skip != 'true'`（push / rollback / schedule 真部署）⇒ 这是**本轮部署后**的最终判据；
+      #  · `skip == 'true'`（schedule / 重复 dispatch 的兜底档）⇒ 本轮**没部署**，但探针仍要跑：
+      #    它把「**本轮未部署**（线上已验证 == 目标）」与「**报 success 却零交付**」在读数上分开。
+      #    改前这两者都表现为 `success + skipped` ⇒ 「绿」被读成「交付」（#6746 的形态）。
+      # ⚠️ 与上面 #6294 那条不重复：那条读的是**容器在跑的 tag**（SWAS 控制面），
+      #    本条读的是**服务端真正响应的内容**（HTTP 面）—— 两者都可以对而线上仍是旧代码
+      #    （#6554 的形态：green 残留容器 / 镜像 tag 与进程真身脱钩）。
+      #
+      # ⚠️ 期望 sha 取 `${GITHUB_SHA}`：这就是本次部署的 commit
+      #    （镜像 tag `sha-${GITHUB_SHA::7}` 也由它派生，两侧同源）。
+      # 判据 = tests/unit_ci_workflows/test_admin_web_served_version.py
+      # ══════════════════════════════════════════════════════════════════════════
+      - name: "Assert served sha == deployed sha (admin-web 线上就是本次构建，issue #6611)"
+        if: always()
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          SKIPPED: ${{ steps.sync.outputs.skip }}
+        run: |
+          set -uo pipefail
+          if [ "${SKIPPED:-}" = "true" ]; then
+            echo "ℹ️ 本轮**未部署**（\`Skip if already built\` 判 skip=true）⇒ 下面的探针是**只读自证**："
+            echo "   它证「线上现在跑的就是 ${GITHUB_SHA::7}」（= 另一次已成功的部署留下的），"
+            echo "   **不是**「本轮做了什么」。这正是 issue #6746 的口径：**镜像存在 != 线上是它**。"
+          else
+            echo "本轮**已部署** ${GITHUB_SHA::7} ⇒ 下面这条断言就是本腿的最终判据（线上 sha == 本次 sha）。"
+          fi
+          set +e
+          bash deploy/scripts/admin-web-verify-served.sh \
+            'https://merchant.migaozn.com' "${EXPECTED_SHA:-}"
+          rc=$?
+          set -e
+          # 三态原样透传（0 一致 / 1 不一致判红 / 3 探不到 fail-closed）—— 不做任何"归一化"，
+          # 否则 3 会被悄悄读成绿（那正是 issue #6611 / #6746 要治的假绿形态）。
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::admin-web 线上版本自证未通过（exit=${rc}）⇒ 本腿判红：这次部署的「产物存在 / run 结论 success」**不等于**「线上是它」"
+            exit "$rc"
+          fi
+
+      # schedule 兜底档的「本轮没做交付」必须**出声**（issue #6746 的读数面）：
+      # 本腿改前在「镜像存在 / 同 sha 的 run 结论 success」时**秒退**并报 `success`，
+      # 而 run 列表里它与「真的部署并验证过」逐字相同 ⇒ 只能靠人回头看线上才发现零交付。
+      # 现在：① `deployed` 的语义订正为 `skip != 'true'`（真的部署了才为 true）；
+      #       ② 本步把「本轮未部署」+「本 run 实际做过的验证只有只读版本自证」**显式**打出来。
+      # ⚠️ 本步**不改**任何既有门禁的通过条件、不新增成本；它只把事实变成可见读数。
+      - name: "Declare deployment state (schedule 兜底档，issue #6746)"
+        if: always()
+        env:
+          SKIPPED: ${{ steps.sync.outputs.skip }}
+        run: |
+          set -uo pipefail
+          if [ "${SKIPPED:-}" = "true" ]; then
+            echo "::notice::本轮**未部署**（schedule / 重复 dispatch 兜底档）⇒ 本 run 的线上验证**只有**"
+            echo "          上一步的只读版本自证（served sha == ${GITHUB_SHA::7}）；**没有**发生任何交付。"
+            echo "          语义区分：『本轮未部署、且线上已验证 == 目标』!= 『本轮部署了但没验证』"
+            echo "          —— 改前这两者都表现为 success + skipped 且只跑 22 秒（issue #6746 逐字读数）。"
+            echo "          要真的交付这个 commit：\`gh workflow run deploy-frontend.yml --ref main\`。"
+            {
+              echo "## ⚠️ 本轮未部署（issue #6746）"
+              echo ""
+              echo "- 判据：\`Skip if already built (schedule reconcile)\` = \`skip=true\`（该 commit 已构建部署过）"
+              echo "- 因此 \`Deploy to SWAS\` 整段 skipped ⇒ 本 run 的 \`success\` **不含**任何交付"
+              echo "- 本 run 实际做过的验证 = 上一步的**只读**版本自证（\`served sha == ${GITHUB_SHA::7}\`）"
+              echo "- 要真的交付：\`gh workflow run deploy-frontend.yml --ref main\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "本轮**已部署** ⇒ 交付已在 \`Deploy to SWAS\` + served-sha 断言两步内完成。"
+          fi
+
   # 部署后探测：前端域名 HTTP 200（防构建期 baked NEXT_PUBLIC_* 配错无信号）
+  # ⚠️ **本步是「可达性」探测，不是身份自证**（照实登记，issue #6611）：它只判「域名有响应」，
+  #    **200/307 对「线上是不是本次构建」一个字节都证不了**（同族空断言：`200 是恒真的`）。
+  #    身份自证在上面 `Assert served sha == deployed sha` 那一步（`/version.json` 的 sha 比对）——
+  #    两者职责不同，本步**保留**（它抓的是「整套没起来 / 反向代理配错」这类与身份无关的故障）。
   post-deploy-probe:
     name: Post-Deploy Frontend Probe
     needs: build-and-deploy
     # schedule 对账跳过构建部署时（本轮未部署）不再跑探测；push/rollback 正常跑
-    if: github.event_name != 'schedule' || needs.build-and-deploy.outputs.deployed == 'false'
+    # （条件与上面订正后的 `deployed` 语义同侧：`== 'true'` = 本轮真的部署了 —— 两处同时翻转，行为等价）
+    if: github.event_name != 'schedule' || needs.build-and-deploy.outputs.deployed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
