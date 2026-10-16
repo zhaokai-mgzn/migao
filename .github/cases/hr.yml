@@ -225,13 +225,28 @@ cases:
     expectations:
       # ── 2026-09-24（issue #5247，B 端只读化）：写 action `create` 已从源码删除（工具收窄为只读
       # `{list, all, detail, list_permissions}`）⇒ 改判为两条**存活的只读路径**：角色列表 +
-      # 该角色的权限清单（「第一个角色有哪些权限？」对应的正是 list_permissions）。
+      # 该角色的权限清单。
+      # ── 重锚（issue #7035 第二相 · 主会话插单）──
+      # 第二条期望原写 `list_permissions`，而它 **不在** runner 的只读查询同义集
+      # `_QUERY_ACTION_SYNONYMS`（= list / all / query / detail / get / search / view / page /
+      # list_categories，实现见 tests/agent_eval/local_runner.py 的 `_is_query_action_equal`）
+      # ⇒ agent 调 `role_manage(action=detail)`（返回角色详情、含该角色权限）被判红
+      # （实测原文：`arg 'action' expected list_permissions got detail`）= **过度指定 action**。
+      # 改判为 `all`：① 在 `VALID_ACTIONS` 内且落在同义集里 ⇒ agent 走 `all` / `list` / `detail`
+      # 任一等价只读路径都算命中；② **不占用 `detail`** —— `detail` 是
+      # tests/unit_ci_workflows/test_case_coverage_actions.py 钉住的「action 级未覆盖先例」
+      # （该判据要求它**保持未覆盖**；写它 = 越权改判据面的后果）。
+      # 第一条（`list`）本就在同义集内 ⇒ agent 调 `all` 已按业务等价放行，**无需改动**。
+      # 判别力边界（照实登记）：本侧表达力的边界在 runner —— `args` 列表是**子集（AND）**语义，
+      # 表达不了"二者之一"；同义集本身是仓库既有口径，**不新造**。
+      # 红证（注入式）：① agent **完全不调用** `role_manage` ⇒ 两条期望均 unmatched ⇒ 判红；
+      # ② 只调 `role_manage(action=tree)`（不在同义集 / 不在枚举）⇒ 第一条判红。
       - tool: role_manage
         args:
           action: list
       - tool: role_manage
         args:
-          action: list_permissions
+          action: all
     # ── Case Trust burn-down 缴费（issue #5013 的 PR 触及 `.github/cases/**` ⇒ 每 PR 须净消减 ≥1 条）──
     # ⚠️ 2026-09-24（issue #5247，B 端只读化）：以下三条判定（写类 a2 / b / f）的**前提**（本用例写角色）
     # 已随写能力下线消失 —— 本用例改判为**只读查询**，三条判定随之不适用（历史理由保留，不删）。
