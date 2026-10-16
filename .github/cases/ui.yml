@@ -4063,3 +4063,38 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: UI-109
+    legacy_id: ""
+    title: "lucide-react mock 的闭集类级元守卫：替身必须摊开真值（ ...actual / Proxy(actual)），不得用固定图标名单（issue #7007）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - test-infra
+      - meta-guard
+      - red-proof
+    truths_ref:
+      - frontend-fix.ui-token
+      - frontend-fix.no-api-change
+      - frontend-fix.vitest
+    user_inputs:
+      - "能否再保留我们当前项目原UI风格设计的前提下，提高整体的精美程度？我看到当前页面整体只有订单管理的设计是非常精美的，其他的页面没有这样的感觉。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 判据 1·**类级元守卫：凡替身 `lucide-react` 的 mock 都不得是闭合集合**：扫 `tests/**` 全部 TS/TSX，凡出现 `vi.mock('lucide-react', …)` —— 要么走本仓 helper `tests/unit/helpers/lucide-mock.ts`（它自己 `...actual`），要么工厂必须是 `async (importOriginal)` 且返回值里出现 `...actual`，要么是 `new Proxy(actual, …)`（未知键透真值）。违者**具名列出文件**。执行点 = `frontend/admin-web/tests/unit/lucide-mock-closure-guard.test.ts` 的「凡替身 lucide-react 的 mock，都必须是「摊开真值 + 显式桩」而不是闭合集合」。**红证（实跑）**：删掉 `setup.ts` 或 `after-sales.test.tsx` 的 `...actual` ⇒ 该条当场判红并指名那个文件"
+      - "🔴 判据 2·**全局兜底桩 `tests/setup.ts` 单独再钉一次**：它是所有测试文件的兜底，漏一个图标就是**全仓红**（实测 `File` / `KeyRound` / `MailOpen` 三个就不在它那张 163 个的固定名单里）。红证：删掉它的 `...actual` ⇒ 当场红"
+      - "🔴 判据 3·**判别力自证（防空转绿）**：① 语料下限 —— 真扫到 > 200 个测试文件（把扫描根指错 ⇒ 红）；② 被检 mock 处数 ≥ 10（把扫描面改窄 ⇒ 红）。没有这两条，「零违规」可能与「什么都没扫」无法区分"
+      - "📌 **为什么立成类级**（同一族缺陷本轮咬了两次，单点修复只是把病灶挪到下一层）：第 1 次 `@/components/ui` **桶**的 mock 是闭集 ⇒ 页面一用上当时不存在的原语就报 `No \"PageHeader\" export`；第 2 次把桶改成 `...actual` 后，**真的**加载了 `EmptyState` ⇒ 而测试文件自己的 lucide mock 只列了 7 个图标 ⇒ 7 个套件同时报 `No \"Package\" export is defined on the \"lucide-react\" mock`。⇒ 病根是「**用闭合集合去替身一个会继续增长的模块**」，必须靠扫形状的元守卫拦，不能靠逐处补图标"
+      - "📌 **为什么本地没抓到（判据读数口径）**：上一轮用 `vitest run --reporter=json --outputFile=…` 取读数，报「4743/4744 通过、失败文件 0」—— 但**套件加载失败时那一整个文件的用例不计入 JSON 的 assertionResults** ⇒ 「7 个文件全灭」表现为「失败文件 0」。改用 CI 同款裸命令 + **看 exit code / `Test Files` 行**后当场复现 7 个 FAIL。⇒ 判据读数必须取**会红的那个量**，不能取一个漂亮的分母"
+    skip_reason: "[backend-contract] 纯前端测试基建（服务端一字未改）：不进入 agent-eval 冒烟"
+    merge_log: "2026-10-16 新增（issue #7007）：CI 反推 —— 把 `@/components/ui` 的整模块 mock 改成 `...actual` 之后，7 个套件同时报 `No \"Package\" export is defined on the \"lucide-react\" mock`。归因发现病根是**类级**的（用闭合集合替身会继续增长的模块），且本轮已咬过两次（桶 / lucide）⇒ 按铁律 8 落实例判据 + 类级元守卫。同时修正一处读数口径错误：JSON reporter 在套件加载失败时不计入用例 ⇒ 假绿。取号 = 复算 `origin/main` 现取最大（UI-099）+ 本批在飞新增（UI-100..UI-108）⇒ 顺延 UI-109。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/lucide-mock-closure-guard.test.ts"
+        - "frontend/admin-web/tests/setup.ts"
+      ci:
+        - pr-check.yml
+      verifies: []

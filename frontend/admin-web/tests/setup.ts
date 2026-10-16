@@ -141,7 +141,14 @@ const iconStub = (name: string) => {
   return Component
 }
 
-vi.mock('lucide-react', () => ({
+vi.mock('lucide-react', async (importOriginal) => {
+  // ⚠️ **必须 spread `...actual`**：本桩是一张**固定名单**，而 `src/` 实际用到的图标会随开发增长。
+  // 名单漏一个 ⇒ 所有走到那个组件的套件一起加载失败（实测 `File` / `KeyRound` / `MailOpen`
+  // 三个就不在这张 163 个的名单里）。摊开真值后，名单只用来**覆盖**需要自带 testid 的那几个。
+  // 类级元守卫：`tests/unit/lucide-mock-closure-guard.test.ts`（issue #7007）。
+  const actual = await importOriginal<Record<string, unknown>>()
+  return {
+  ...actual,
   // 所有项目中使用的图标
   Plus: iconStub('plus'),
   X: iconStub('x'),
@@ -334,4 +341,5 @@ vi.mock('lucide-react', () => ({
   // 与 #5191 / #6291 同因：漏登记 ⇒ 渲染关于页的用例当场抛
   // `No "<Icon>" export is defined on the "lucide-react" mock`（响亮失败，不是静默）。
   MonitorSmartphone: iconStub('monitor-smartphone'),
-}))
+  }
+})
