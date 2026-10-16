@@ -9577,8 +9577,7 @@
 ### ST-005. 通知标记已读 —— 变更已接回（#7040）：标记已读要真做（走确认门禁），不得谎称已读 🔵
 ```
 你: 把新订单通知标为已读
-期望: notification_manage(action=mark_read)
-期望: direct_reply or interact
+期望: notification_manage(action=mark_read) or interact
 数据: 真值 = 变更（标记已读）已在能力面内，且该调用必须走写确认门禁（非只读 action）
 数据: 整场不得出现假承诺话术（机器断言见 forbidden_text）
 数据: 标记已读的落库真值由 admin-api 侧承担：PUT /api/admin/notifications/{id}/read（单条）/ PUT /api/admin/notifications/read-all（全部）

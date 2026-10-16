@@ -166,7 +166,8 @@ cases:
     #   · `notification_manage` 侧：`mark_read` / `read_all` ∈ `WRITE_TOOL_ACTIONS`（#7040 填回）
     #     ⇒ 非只读 action 走 `BaseTool` 的写确认门禁（`react_turn` 的门禁 11/11），
     #     **先确认再改** 与 **本轮直接改** 都是合格落地形态 ⇒ 期望取 OR；
-    #   · `interact` / `direct_reply` 侧：确认卡 / 澄清话术也算合格（与 DF-008 的既有口径同形）；
+    #   · `interact` 侧：**写确认门禁**产出的 `interact(component=confirm)` 卡（"先确认再改"）
+    #     也算合格 —— 与 DF-008 的既有口径同形；
     #   · **不得谎称已读**：`forbidden_text` 为主判据（内容一字未动）；
     #   · **调用失败不得算过**：`must_succeed[notification_manage, only_if_called]` ——
     #     「没去改」不算失败，「**去改了就必须成了**」（先例 = AS-003/AS-005 的条件效果层）。
@@ -177,11 +178,32 @@ cases:
     #    `"mark_read or read_all"` 这种 OR 串**不是**合法 action 值，会静默匹配不上；
     # ③ 写分类不依赖值：`notification_manage` 在 `WRITE_TOOL_ACTIONS` 里、`mark_read` ∈ 写集合
     #    ⇒ `assertion_taxonomy.is_write_expectation` 判写，`must_succeed` 是它的效果层。
+    # ── 2026-10-16 **OR 面收口**（issue #7048 P7）────────────────────────────────
+    # 病灶（runner 语义 + P6 复跑实测）：上面的"两次等价的落地形态"原写成**两条并列 entry**
+    # `[notification_manage(action=mark_read), direct_reply or interact]`，而 runner
+    # **逐条计分**（`score = passed_expectations / total_exp`，见 `run_case`），
+    # **每条独立必需** ⇒ 「先确认再改」路径（本轮真值只有 list/unread_count + confirm 卡，
+    # `mark_read` 要等商家点确认才发）**恒判 50%**（P6 实测读数：`rounds=1
+    # tools=['notification_manage','notification_manage','interact'] score=50%`，
+    # 红在 `notification_manage(action=mark_read) → arg 'action' expected mark_read got unread_count`）。
+    # 这与 PR-006 的「恒 50%」**同一形态**（该用例注释早已写死"**不能**写成两条独立声明"），
+    # 那里走的是同一条出路 —— **一条 OR 文本**：`check_expectation` 原生支持 `A or B`
+    # （拆法见 `local_runner.py` 的 `check_expectation`：`parts = split(" or ")`），
+    # 且 OR 的每一分支**各自**做 `args` 值级校验 ⇒ 两条路径各认自己的证据、互不顶替。
+    # ⚠️ 该 OR **不放大任何面**（三面照旧独立必需）：
+    #   · `forbidden_text` 一字未动（"不得谎称已读"仍是主判据）；
+    #   · `must_succeed[notification_manage, only_if_called]` 一字未动
+    #     ⇒「去改了就必须成了」；**本轮不执行**（确认卡路径）时它仍按 `only_if_called` 放过；
+    #   · 写分类（`is_write_expectation`）仍判写：`notification_manage` 的 `mark_read` ∈
+    #     `WRITE_TOOL_ACTIONS`，**改的只是"同一件事的一次通过条件"，不是"要不要做"**。
+    # ⚠️ 为什么**去掉** `direct_reply` 分支（这是本包**收紧**、不是放宽，如实登记）：
+    # `direct_reply` 的 runner 语义 = 「本轮无 tool_calls 且有文本」⇒ 接受它就等于接受
+    # **一次工具都没调、纯文本**的落地形态 —— 而那条文本既不能证明去改了、也不能证明
+    # 给了确认入口（"文本可满足的写用例"= 假绿通道）。本用例的合格形态只有两种：
+    # **真去改（成功）** 或 **给出写确认卡**。收紧后「纯文本」变成判红（红证见
+    # `tests/unit_ci_workflows/test_eval_expectation_or_group.py`）。
     expectations:
-      - tool: notification_manage
-        args:
-          action: mark_read
-      - tool: direct_reply or interact
+      - tool: notification_manage(action=mark_read) or interact
     # forbidden-text-intent: 预测/承诺话术的禁令仍是主判据之一 ——
     # 「不能做」已不再是本用例的真值（能力已接回），真值是「**不得谎称已读**」
     # （说了已读就必须真有 success 的调用；`must_succeed` 是这一半的机器判据）。
