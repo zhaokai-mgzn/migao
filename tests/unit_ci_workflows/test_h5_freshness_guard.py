@@ -263,8 +263,13 @@ def test_shallow_clone_reports_unreadable_history_named(tmp_path):
     assert subprocess.run(["git", "rev-parse", "--is-shallow-repository"], cwd=shallow,
                           capture_output=True, text=True).stdout.strip() == "true", "夹具自证：这必须是个真浅克隆"
     got, reason = mod.last_source_change("origin/main", shallow)
-    assert got is None, f"浅克隆里取到了「源码最近改动」{got!r} —— 那正是把 HEAD 时间当成源码改动（issue #7073）"
     assert "浅克隆" in reason, f"取不到读数的原因必须**点名浅克隆**（否则人分不清「陈旧」与「读不到历史」）：{reason!r}"
+    # 🔴 **判据本体**（不是「取到的值是不是空」那种存在性断言）：喂进 `judge` ⇒ 必须落 **unknown**（rc=3）
+    verdict, why = mod.judge(datetime(2026, 10, 9, 14, 15, tzinfo=UTC), got, grace_hours=6)
+    assert verdict == "unknown", (
+        f"浅克隆读数被喂进 judge 得到 {verdict!r}（why={why!r}）—— 若它落 stale 就是 CI 上那条"
+        f"「把新鲜的线上判成陈旧」的假红；若落 fresh 则更糟（把「读不到」读成「没问题」）"
+    )
     # 对照：同一个仓的**全 history** 检出里取得到真值（09-21 的源码改动，而不是 10-16 的 HEAD）
     full, _ = mod.last_source_change("HEAD", repo)
     assert full == datetime(2026, 9, 21, 6, 13, 46, tzinfo=UTC), full
