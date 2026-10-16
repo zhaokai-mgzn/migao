@@ -3,6 +3,7 @@ package com.migao.admin.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.migao.admin.dto.PieceworkSettlementLine;
 import com.migao.admin.entity.PieceworkSettlement;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.PieceworkSettlementMapper;
@@ -97,7 +98,7 @@ public class PieceworkSettlementService {
                     422);
         }
         BigDecimal amount = (BigDecimal) workerRow.get("amount");
-        List<PieceworkSettlement.LineItem> lines = lineItems(summary);
+        List<PieceworkSettlementLine> lines = lineItems(summary);
 
         OffsetDateTime now = businessClock.nowOffset();
         String actor = currentUserId();
@@ -249,8 +250,8 @@ public class PieceworkSettlementService {
 
     /** 明细快照 = 报表 {@code per_operation} 的同源子集（只留工序 / 数量 / 金额三个键）。 */
     @SuppressWarnings("unchecked")
-    private static List<PieceworkSettlement.LineItem> lineItems(Map<String, Object> summary) {
-        List<PieceworkSettlement.LineItem> lines = new ArrayList<>();
+    private static List<PieceworkSettlementLine> lineItems(Map<String, Object> summary) {
+        List<PieceworkSettlementLine> lines = new ArrayList<>();
         Object rows = summary.get("per_operation");
         if (!(rows instanceof List<?> list)) {
             return lines;
@@ -260,7 +261,7 @@ public class PieceworkSettlementService {
                 continue;
             }
             Map<String, Object> row = (Map<String, Object>) map;
-            lines.add(new PieceworkSettlement.LineItem(
+            lines.add(new PieceworkSettlementLine(
                     row.get("operation") == null ? null : String.valueOf(row.get("operation")),
                     (BigDecimal) row.get("qty"),
                     (BigDecimal) row.get("amount")));
@@ -268,7 +269,7 @@ public class PieceworkSettlementService {
         return lines;
     }
 
-    private static String toJson(List<PieceworkSettlement.LineItem> lines) {
+    private static String toJson(List<PieceworkSettlementLine> lines) {
         try {
             return JSON.writeValueAsString(lines);
         } catch (JsonProcessingException e) {

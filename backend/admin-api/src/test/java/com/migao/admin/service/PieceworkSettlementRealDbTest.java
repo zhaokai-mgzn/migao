@@ -182,7 +182,7 @@ class PieceworkSettlementRealDbTest {
                 .period("2026-10")
                 .workerName("张三")
                 .totalAmount(new BigDecimal("7.40"))
-                .lineItems(java.util.List.of(new com.migao.admin.entity.PieceworkSettlement.LineItem(
+                .lineItems(java.util.List.of(new com.migao.admin.dto.PieceworkSettlementLine(
                         "精裁", new BigDecimal("10.00"), new BigDecimal("4.00"))))
                 .generatedBy("user-owner-001")
                 .generatedAt(now)
@@ -279,7 +279,7 @@ class PieceworkSettlementRealDbTest {
                 .period(period)
                 .workerName(worker)
                 .totalAmount(new BigDecimal(amount))
-                .lineItems(java.util.List.of(new com.migao.admin.entity.PieceworkSettlement.LineItem(
+                .lineItems(java.util.List.of(new com.migao.admin.dto.PieceworkSettlementLine(
                         "精裁", new BigDecimal("10.00"), new BigDecimal("4.00"))))
                 .generatedBy("user-owner-001")
                 .generatedAt(now)

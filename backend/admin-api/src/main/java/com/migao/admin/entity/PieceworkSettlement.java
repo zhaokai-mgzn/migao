@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
+import com.migao.admin.dto.PieceworkSettlementLine;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -57,9 +58,14 @@ public class PieceworkSettlement {
     /** 应发金额（元）= 生成那一刻 {@code piecework/summary.total} 的**逐值**快照。 */
     private BigDecimal totalAmount;
 
-    /** 明细快照（生成那一刻该工人在该期间的按工序读数；每项 = {@link LineItem}）。 */
+    /**
+     * 明细快照（生成那一刻该工人在该期间的按工序读数；每项 = {@link PieceworkSettlementLine}）。
+     *
+     * <p>载荷类型放 {@code dto} 包、**不是**本类的静态内部类：仓内「schema.sql 必须覆盖实体声明的列」
+     * 的判据按 {@code entity/**.java} 的字段名推导列集 ⇒ 内部类字段会被当成本表的列而判红。</p>
+     */
     @TableField(typeHandler = JacksonTypeHandler.class)
-    private List<LineItem> lineItems;
+    private List<PieceworkSettlementLine> lineItems;
 
     /** 生成者（{@code SecurityUser.userId}；无认证上下文 ⇒ {@code null}，不编造）。 */
     private String generatedBy;
@@ -83,17 +89,4 @@ public class PieceworkSettlement {
 
     private Integer deleted;
 
-    /**
-     * 明细行快照（对消费端可见的 JSON 键即字段名 —— {@code operation} / {@code qty} / {@code amount}；
-     * 键集与 {@code piecework/summary.per_operation[]} 的**同源子集**逐字一致）。
-     */
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-    public static class LineItem {
-        /** 工序（工序实例快照名，与报表 {@code per_operation[].operation} 逐字同值）。 */
-        private String operation;
-        private BigDecimal qty;
-        private BigDecimal amount;
-    }
 }
