@@ -3418,7 +3418,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（107 case）
+## 杂项域（108 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5032,6 +5032,21 @@
 跳过: [backend-contract] 零 LLM 的确定性读数（进程内 HTTP 桩驱动真脚本 + 读 workflow/Dockerfile/deploy.sh 源码文本 + `bash -n`），零网络、不碰真实云，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-16 新增（issue #6611 + #6746；同族范式 = #6951 的 admin-api 腿）。取号 = `python3 scripts/next_case_id.py MC` 现取 **MC-106**（main:001-105；`.github/cases/claims/` 现取最大 MC-103 在飞）。**修前红（与 issue 原文同形）**：`deploy/scripts/admin-web-version-probe.sh` **不存在**、`deploy-frontend.yml` 里 version/served-version/verify-served/buildId 逐字**零命中** ⇒ 本腿此前**没有任何**版本自证；同族静态腿的 `index.html` 字节哈希**跨版本相同**（实测 `b1f3a2ef2929ec66` 前后一致）；本机现取 `curl -sS -m 12 -o /dev/null -w '%{http_code} %{content_type}' https://merchant.migaozn.com/version.json` ⇒ 逐字 `404 text/html; charset=utf-8`。**修后绿**：`python3 -m pytest tests/unit_ci_workflows/test_admin_web_served_version.py -q -p no:randomly` = **23 passed**（含红证 + 11 条 fail-closed 参数化 + 结构/接线/类级判据 + 两条形态守卫）。**红证（注入式，实跑读数）**：① 注入错误期望 sha ⇒ **exit=1** + `SERVED_VERSION=mismatch`（三件齐备）；② 真一致 ⇒ **exit=0** + `SERVED_VERSION=match`；③ 200 + HTML（回落形态）⇒ **exit=3** + `SERVED_VERSION=unknown` 且具名「响应是 HTML」；④ 身份面自报 sha=unknown ⇒ **exit=3**；⑤ 结构注入（7 条，各为单点变异 + 自动写回原文）：改 BUILD_SHA 值 ⇒ 1 failed/43 passed；摘远程实参 ⇒ 2 failed/42 passed；改 BOOTSTRAP 占位符 / 摘渲染点 / 翻 `deployed` / 把 Dockerfile 默认值改成空串 / 换期望 sha 来源 ⇒ 各 1 failed/43 passed；复位后总检 rc=0/44 passed。**端到端终判（本包的兑现条件，需一次真实部署）**：由集成侧触发 `gh workflow run deploy-frontend.yml --ref main`，再跑 ① 里的复探命令。**第一轮 CI 暴露的 6 处判据面红（同一 PR 内修完，不降门禁）**：① 探针原名落进 `*-verify-served.sh`（**静态落地面腿**的命名空间）⇒ 被两条类级守卫（`.mjs` MIME / module 闭包，均按该 glob **现取**腿集合）判成「静态腿缺判据」⇒ **改名 `deploy/scripts/admin-web-version-probe.sh`**（与 admin-api 腿的 `served-version-verify.sh` 同族）；② 我的「只扫代码行」用了朴素 `#` 截断（本仓明令禁止的假绿形态，守卫 = `tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py`）⇒ 换成**可执行面**判据（回落守卫片段在场）；③ 本用例新增 1 条 `[backend-contract]` ⇒ **重锚** `tests/unit_ci_workflows/case_machine_fail_channel_baseline.json`（158 → 159）；④ claim 文件名双向绑定 ⇒ `7013-MC-106.json`；⑤ 🔴 **既有守卫的空跑形态（链内修的真题）**：`tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py` 的「新增未登记 secrets 引用」变异锚点是**逐字替换那一行独占的 admin-web** —— 该串只在服务键**独占一行**时命中；本 PR 把调用改成 `admin-web $BUILD_SHA $BUILT_AT` 后锚点失配 ⇒ 变异**静默变成空操作**，而测试只报「变异没有被判红」（把「锚点漂移」误报成「判据没牙」）⇒ 修法：锚改成**按行匹配** + **变异没生效即报错**；⑥ 改名时丢了脚本可执行位（形态守卫判红）⇒ 已恢复。 ｜ tags: deploy, ci-cd, version-probe, fail-closed, backend-contract, red-proof
+
+### MC-107. **部署腿 run 正文里编造的 `GITHUB_*` 环境变量名必须判红**：`GITHUB_RUN_STARTED_AT` 不是 GitHub 注入的环境变量（run 开始时刻只存在于 **context** `github.run_started_at`）⇒ shell 展开**恒为空串**，而 shell 里未定义变量只是空串、**没有任何东西会红** ⇒ `builtAt` 恒空（issue #7015）；同批给 `builtAt` 补一条**会红**的具名判据（探到空 ⇒ 判红点名「取值源未接」） 🔵
+```
+你: 部署腿说 success、`/api/version` 也报出了 sha，可 `builtAt` 却是空串 —— 这条「线上就是本次构建」的断言，到底证了几个字段？
+数据: 🔴 **判据 12·`builtAt` 具名判据（会红的实例判据，issue #7015）**：`deploy/scripts/served-version-verify.sh` 在「线上 `sha` == 期望 sha、而线上 `builtAt` 是**空串**」且调用方显式要求判它（`SERVED_VERSION_REQUIRE_BUILT_AT=1`）时，必须以 **退 1** 判红，且输出里**逐字点名** issue `#7015` + 「取值源未接」；🔴 **不得**与「探不到（退 3 / `SERVED_VERSION=unknown`）」混桶（两者处置不同：一个是取值源写错、一个是连不上/面被挡）。执行点 = tests/unit_ci_workflows/test_served_version_verify.py::test_empty_builtat_is_red_when_required_and_names_the_value_source
+数据: 🔴 **判据 12 的两条对照臂**（缺一不可：只有红证 ⇒ 恒红也能过）：① **opt-in**：同一场景**不**要求判 `builtAt` ⇒ 退 0 + `SERVED_VERSION=match`（没接这个面的调用方不会被一条它没要求过的判据误判红）；② **判别力**：要求判、而 `builtAt` **非空** ⇒ 退 0，且绿档把线上 `builtAt` 读数打出来（复算者能看见取值源是否真接上了）。执行点 = 同文件::test_empty_builtat_is_green_when_not_required / ::test_nonempty_builtat_is_green_when_required
+数据: 🔴 **判据 12 的接线面**：`deploy-admin-api.yml` 的 served-version 断言步**必须**在其 `env:` 里给 `SERVED_VERSION_REQUIRE_BUILT_AT: '1'` —— 否则上面那条具名判据在 CI 里**永不生效**（`builtAt` 又变回恒真的空断言）。执行点 = 同文件::test_deploy_leg_requires_builtat_so_it_cannot_be_a_vacuous_assertion
+数据: 🔴 **取值源（issue #7015 的病灶本身）**：`BUILT_AT` 的值必须来自 **context** `${{ github.run_started_at }}`（经解算步的 `env: RUN_STARTED_AT` 落到 shell），且解算步必须带「取值源为空 ⇒ 具名判红（不许静默写空串）」的 fail-closed 自检；**取值面**（非注释的 shell 正文）里**不许**再出现 `GITHUB_RUN_STARTED_AT`（找根因的注释提及它不算 —— 剥注释后判）。执行点 = 同文件::test_build_identity_value_source_is_a_context_expression_not_an_env_literal
+数据: 🔴 **判据 13·类级元守卫：编造的 `GITHUB_*` 名必须判红**（issue #7015 的固化面）：扫描 `.github/workflows/**.yml` 的 run 正文，凡**当默认值用 / 直接展开**的 `GITHUB_*` 字面量，必须是 GitHub **真的**会注入的环境变量（`DEFAULT_GITHUB_ENV_LITERALS` 白名单）或已被**显式登记**的例外（`GITHUB_ENV_LITERAL_EXEMPTIONS`，**只许缩短**、有 fail-closed 自证）⇒ 否则**具名判红** `<file>::$GITHUB_X`。执行点 = 同文件::test_workflow_run_bodies_never_expand_undefined_github_env_literals
+数据: 🔴 **判据 13 的判别力自证（注入式）**：把 `deploy-admin-api.yml` 的**改前逐字形态**（`echo "BUILT_AT=${GITHUB_RUN_STARTED_AT:-}"`）喂进**同一套**判定函数 ⇒ 必须报出 `GITHUB_RUN_STARTED_AT`；未注入的本树正文（对照臂）⇒ **不报**（防「扫不到任何东西所以恒绿」的空跑形态）。执行点 = 同文件::test_undefined_github_env_literal_guard_has_teeth
+数据: 🔴 **判据 14·YAML 形态（含本包实测踩到的一处静默截断）**：改完的 workflow 必须仍是**合法 YAML**，且解算步 / served-version 断言步的 `env:` 真挂在**它们自己**身上（YAML 层读数，与文本判据互为对照）；同时**不许**出现「未加引号且含 ` #` 的步名」—— 本包实测：`- name: Resolve build identity (issue #6951)` 因未加引号，YAML 把 ` #` 当**注释起点**，解析出来的步名被**静默截断**成 `"Resolve build identity (issue"`（真跑读数）⇒ 任何「按名字取步」的判据会取空、乃至静默空跑（已顺手加引号 + 补形态守卫）。执行点 = 同文件::test_workflow_yaml_still_parses_after_the_value_source_change
+数据: **边界（照实登记，不粉饰）**：① **真机 `builtAt` 非空**这条终判**本包做不了**（本机 `gh` token 无 `workflow` scope ⇒ 触发不了真实部署）⇒ 必须由主会话/人类在**一次真实部署之后**复探：`curl -s https://api.migaozn.com/api/version`（期望 `builtAt` 非空）+ `bash deploy/scripts/served-version-verify.sh 'https://api.migaozn.com' "$(git rev-parse origin/main)"`（期望 rc=0 + `SERVED_VERSION=match`）；⚠️ 部署触发面 = `push main` 且 paths 命中 `backend/admin-api/**` 或 `deploy/swas/**`（**只改 `.github/**` + `deploy/scripts/**` 不会自动触发**）。② 类级守卫只扫**字面量**形态：`${{ … }}` 表达式（由 Actions 求值）与 YAML 里其它动态取值面（`matrix.*` / `needs.*` / `inputs.*` 的编造字段）**不在射程内** —— 后者需另立判据，本单**不假装已覆盖**。③ 「**定义错了**」（env 定义成空/错值）不是本守卫的面，由判据 12 的实例判据承担。④ **admin-web 腿同批接线**（`deploy-frontend.yml` + `deploy/scripts/admin-web-version-probe.sh`）：本单把同一根因在本仓**所有**接了身份面的腿上一起修掉 —— 它的 `BUILT_AT` 改前同样读未定义的 `${GITHUB_RUN_STARTED_AT:-}`，且 Dockerfile 的兜底把 `builtAt` 写成 `unknown` 而探针只比 `sha`（同款空断言）；`deploy-ai-agent-service.yml` 现取**没有身份面**（无 `MIGAO_BUILD_*` ARG、无身份探针）⇒ 无同款病灶。执行点 = tests/unit_ci_workflows/test_admin_web_served_version.py::{test_empty_or_unknown_builtat_is_red_when_required,test_deploy_leg_requires_builtat_and_value_source_is_a_context_expression}。⑤ 不改任何门禁的通过条件、不新增豁免、不新增 schedule。
+跳过: [backend-contract] 零 LLM 的确定性读数（进程内 HTTP 桩驱动真脚本 + 静态扫 `.github/workflows/**.yml` 正文/步名/YAML 解析 + `bash -n`），零网络、不碰真实云，不进 agent-eval 冒烟
+```
+溯源: 2026-10-16 新增（issue #7015；同族 MC-105 / #6951 / #6746 / #6611 / #6554）。取号 = `python3 scripts/next_case_id.py MC` 现取 **MC-106**，但**与在飞 PR #7013 的 claim 撞号**（`.github/cases/claims/7013-MC-106.json` 现取）⇒ 按 §2.2「后合入者让号」**顺延到 MC-107**，claim = `.github/cases/claims/7016-MC-107.json`。**真机现取（2026-10-16 11:27 +08，修复 #7011 已上线之后）**：`curl -s https://api.migaozn.com/api/version` ⇒ 逐字 `{"app":"admin-api","sha":"b5d9315e6e8f9ec44720529310ac93e7384ccbaf","tag":"sha-b5d9315","builtAt":""}`（`sha` 面**已兑现**；`builtAt` 面**恒空**），且 `bash deploy/scripts/served-version-verify.sh 'https://api.migaozn.com' "$(git rev-parse origin/main)"` = **rc 0 + `SERVED_VERSION=match`** ⇒ 「线上就是本次构建」当时只有 `sha` 一根支柱。**根因（逐行读数，`origin/main` 的 `deploy-admin-api.yml`）**：三处读 `${GITHUB_RUN_STARTED_AT:-…}`（解算步写 `GITHUB_OUTPUT`、日志、run summary），而 **`GITHUB_RUN_STARTED_AT` 不是 GitHub 提供的环境变量** —— run 的开始时刻只在 **context**（`github.run_started_at`）里，全仓无任何 `env:` 定义过它 ⇒ shell 展开**恒空** ⇒ `builtAt` 只能恒空。**为什么这不只是小事**：`builtAt` 是 #6951 身份面三个字段之一，「探到空」与「取不到」在读数上同形 ⇒ 复算者无法区分，而空串既不是「探到非空」也不是「探不到(退 3)」⇒ 是一条**恒真的空断言**。**修法（最小面）**：① 取值源换成 context 表达式 `RUN_STARTED_AT: ${{ github.run_started_at }}`（step 级 `env:`）+ 三处改用 `${RUN_STARTED_AT}`，并加「空 ⇒ 具名判红」的 fail-closed 自检；② 给 `builtAt` 补**具名判据**（探到空 ⇒ 退 1 + 点名 `#7015` / 「取值源未接」，与「探不到退 3」**分别具名**；CI 部署腿用 `SERVED_VERSION_REQUIRE_BUILT_AT=1` 显式要求，默认不判 = opt-in）；③ **类级元守卫**：扫全 workflow 正文里当默认值用的 `GITHUB_*` 字面量，编造的名字 ⇒ 具名判红（例外表只许缩短 + 含它自己的判别力自证）。**修后绿**：`python3 -m pytest tests/unit_ci_workflows/test_served_version_verify.py -q -p no:randomly` = **28 passed**（改前 20 passed；本单新增 8 条）；`test_deploy_leg_run_undefined_vars.py`（判据 4d「不许有第二把剥注释尺子」）= 15 passed（本包复用 `.github/danger_scan.py::strip_comment`，**不新造尺子**）；`test_swas_deploy_ci_bootstrap.py` + `test_swas_server_side_build.py` = 40 passed（既有守卫族未被改瘫）。**红证（注入式，实跑读数）**：① 把 `builtAt` 判据整段摘掉 ⇒ `test_empty_builtat_is_red_when_required...` 判红（`AssertionError: builtAt 为空却没有判红 ⇒ 仍是空断言`）；② 把取值源改回改前逐字 `${GITHUB_RUN_STARTED_AT:-}` ⇒ 类级守卫判红并具名 `deploy-admin-api.yml::$GITHUB_RUN_STARTED_AT`（且判别力自证那条同时红）；③ 摘掉 `SERVED_VERSION_REQUIRE_BUILT_AT: '1'` ⇒ 接线判据判红（具名「具名判据在 CI 里永不生效」）；复位后 28 passed。**另两条腿的核查结论（连带核，别默默略过）**：`deploy-ai-agent-service.yml` / `deploy-frontend.yml` **没有**同款未定义变量（全文无 `GITHUB_RUN_STARTED_AT`、无 `BUILT_AT` 取值面）—— 它们的问题是**未接构建身份面**（不是「接了但取不到值」），逐腿登记在 `tests/unit_ci_workflows/test_swas_server_side_build.py` 的 `BUILD_IDENTITY_LEGS`（本包**不动**该文件；`deploy-frontend.yml` 归在飞 PR #7013 / issue #6611）。**顺带修的一处静默坏形态**（链内，同一 PR）：`- name: Resolve build identity (issue #6951)` 未加引号 ⇒ YAML 把 ` #` 当注释起点、步名被静默截断（真跑读数 `'Resolve build identity (issue'`）⇒ 已加引号并补判据 14。**端到端终判（本包兑现不了，需一次真实部署）**：`curl -s https://api.migaozn.com/api/version`（期望 `builtAt` 非空）+ 上面那条 served-version 命令（rc=0 + `SERVED_VERSION=match`）；⚠️ 只改 `.github/**` + `deploy/scripts/**` **不会**自动触发部署（触发面 = `push main` 且 paths 命中 `backend/admin-api/**` 或 `deploy/swas/**`）。 ｜ tags: deploy, ci-cd, version-probe, build-identity, fail-closed, red-proof
 
 ## 商家入驻域（6 case）
 
@@ -11164,8 +11179,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：769（活跃 134，跳过 635）
-- tier 分布：smoke 12 / normal 710 / adversarial 32
+- 用例总数：770（活跃 134，跳过 636）
+- tier 分布：smoke 12 / normal 711 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -11180,7 +11195,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：107
+- 杂项域：108
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：66
@@ -11322,6 +11337,7 @@
 - MC-104: **加工单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6955 的类级固化）
 - MC-105: **部署腿的判据从「产物存在」换成「线上探到的 sha == 本次部署的 sha」**：admin-api 加只读版本端点 `GET /api/version`（构建期注入 sha/tag/builtAt，nginx 已放行面，无鉴权）+ 部署后 served-sha 断言（不一致 ⇒ 具名判红、探不到 ⇒ fail-closed 退 3）+ schedule 兜底档「本轮未部署」显式出声（issue #6951 / #6746 / #6611 / #6554）
 - MC-106: **admin-web 发布腿的判据从「产物存在」换成「线上探到的 sha == 本次部署的 sha」**：构建期把 identity 烘焙进产物（`GET /version.json`，与 admin-api 的 `/api/version` 同族形态）+ 发布后 served-sha 断言（不一致 ⇒ 具名判红退 1、**探不到 ⇒ fail-closed 退 3**、**响应是 HTML（回落）⇒ 判探不到**）+ schedule 兜底档「本轮未部署 ⇒ 没有发生任何交付」显式出声（issue #6611 / #6746）
+- MC-107: **部署腿 run 正文里编造的 `GITHUB_*` 环境变量名必须判红**：`GITHUB_RUN_STARTED_AT` 不是 GitHub 注入的环境变量（run 开始时刻只存在于 **context** `github.run_started_at`）⇒ shell 展开**恒为空串**，而 shell 里未定义变量只是空串、**没有任何东西会红** ⇒ `builtAt` 恒空（issue #7015）；同批给 `builtAt` 补一条**会红**的具名判据（探到空 ⇒ 判红点名「取值源未接」）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

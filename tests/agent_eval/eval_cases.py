@@ -6550,6 +6550,24 @@ _CASE_MC_106 = EvalCase(
     precondition='前置 = 三样都在仓里可读：① 探针本体 `deploy/scripts/admin-web-version-probe.sh`；② 发布腿 `.github/workflows/deploy-frontend.yml` 里那条 served-sha 断言步；③ 构建身份的五跳载体（workflow 解算步 / 远程调用实参 / 驱动脚本 BOOTSTRAP 渲染 / `deploy/swas/deploy.sh` 的 `--build-arg` / `frontend/admin-web/Dockerfile` 的 ARG + 构建期写出 `public/version.json`）。**前置不成立时直接红**（每条判据开头都是 `read(<路径>)` 的 `assert path.is_file()` + 锚点断言，取不到就具名报出是哪个对象），**不表现成「agent 不干活」**；两条 `user_inputs` 是对**同一支发布腿**的两个真实疑问（「报绿到底证了什么」/「22 秒的 success 是真交付吗」），不是两次会话。',
 )
 
+# ── MC-107 [NORMAL] **部署腿 run 正文里编造的 `GITHUB_*` 环境变量名必须判红**：`GITHUB_RUN_STARTED_AT` 不是 GitHub 注入的环境变量（run 开始时刻只存在于 **context** `github.run_started_at`）⇒ shell 展开**恒为空串**，而 shell 里未定义变量只是空串、**没有任何东西会红** ⇒ `builtAt` 恒空（issue #7015）；同批给 `builtAt` 补一条**会红**的具名判据（探到空 ⇒ 判红点名「取值源未接」）（源: cases/misc.yml）──
+_CASE_MC_107 = EvalCase(
+    id='MC-107',
+    legacy_id='',
+    title='**部署腿 run 正文里编造的 `GITHUB_*` 环境变量名必须判红**：`GITHUB_RUN_STARTED_AT` 不是 GitHub 注入的环境变量（run 开始时刻只存在于 **context** `github.run_started_at`）⇒ shell 展开**恒为空串**，而 shell 里未定义变量只是空串、**没有任何东西会红** ⇒ `builtAt` 恒空（issue #7015）；同批给 `builtAt` 补一条**会红**的具名判据（探到空 ⇒ 判红点名「取值源未接」）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['部署腿说 success、`/api/version` 也报出了 sha，可 `builtAt` 却是空串 —— 这条「线上就是本次构建」的断言，到底证了几个字段？'],
+    expectations=[],
+    data_checks=['🔴 **判据 12·`builtAt` 具名判据（会红的实例判据，issue #7015）**：`deploy/scripts/served-version-verify.sh` 在「线上 `sha` == 期望 sha、而线上 `builtAt` 是**空串**」且调用方显式要求判它（`SERVED_VERSION_REQUIRE_BUILT_AT=1`）时，必须以 **退 1** 判红，且输出里**逐字点名** issue `#7015` + 「取值源未接」；🔴 **不得**与「探不到（退 3 / `SERVED_VERSION=unknown`）」混桶（两者处置不同：一个是取值源写错、一个是连不上/面被挡）。执行点 = tests/unit_ci_workflows/test_served_version_verify.py::test_empty_builtat_is_red_when_required_and_names_the_value_source', '🔴 **判据 12 的两条对照臂**（缺一不可：只有红证 ⇒ 恒红也能过）：① **opt-in**：同一场景**不**要求判 `builtAt` ⇒ 退 0 + `SERVED_VERSION=match`（没接这个面的调用方不会被一条它没要求过的判据误判红）；② **判别力**：要求判、而 `builtAt` **非空** ⇒ 退 0，且绿档把线上 `builtAt` 读数打出来（复算者能看见取值源是否真接上了）。执行点 = 同文件::test_empty_builtat_is_green_when_not_required / ::test_nonempty_builtat_is_green_when_required', "🔴 **判据 12 的接线面**：`deploy-admin-api.yml` 的 served-version 断言步**必须**在其 `env:` 里给 `SERVED_VERSION_REQUIRE_BUILT_AT: '1'` —— 否则上面那条具名判据在 CI 里**永不生效**（`builtAt` 又变回恒真的空断言）。执行点 = 同文件::test_deploy_leg_requires_builtat_so_it_cannot_be_a_vacuous_assertion", '🔴 **取值源（issue #7015 的病灶本身）**：`BUILT_AT` 的值必须来自 **context** `${{ github.run_started_at }}`（经解算步的 `env: RUN_STARTED_AT` 落到 shell），且解算步必须带「取值源为空 ⇒ 具名判红（不许静默写空串）」的 fail-closed 自检；**取值面**（非注释的 shell 正文）里**不许**再出现 `GITHUB_RUN_STARTED_AT`（找根因的注释提及它不算 —— 剥注释后判）。执行点 = 同文件::test_build_identity_value_source_is_a_context_expression_not_an_env_literal', '🔴 **判据 13·类级元守卫：编造的 `GITHUB_*` 名必须判红**（issue #7015 的固化面）：扫描 `.github/workflows/**.yml` 的 run 正文，凡**当默认值用 / 直接展开**的 `GITHUB_*` 字面量，必须是 GitHub **真的**会注入的环境变量（`DEFAULT_GITHUB_ENV_LITERALS` 白名单）或已被**显式登记**的例外（`GITHUB_ENV_LITERAL_EXEMPTIONS`，**只许缩短**、有 fail-closed 自证）⇒ 否则**具名判红** `<file>::$GITHUB_X`。执行点 = 同文件::test_workflow_run_bodies_never_expand_undefined_github_env_literals', '🔴 **判据 13 的判别力自证（注入式）**：把 `deploy-admin-api.yml` 的**改前逐字形态**（`echo "BUILT_AT=${GITHUB_RUN_STARTED_AT:-}"`）喂进**同一套**判定函数 ⇒ 必须报出 `GITHUB_RUN_STARTED_AT`；未注入的本树正文（对照臂）⇒ **不报**（防「扫不到任何东西所以恒绿」的空跑形态）。执行点 = 同文件::test_undefined_github_env_literal_guard_has_teeth', '🔴 **判据 14·YAML 形态（含本包实测踩到的一处静默截断）**：改完的 workflow 必须仍是**合法 YAML**，且解算步 / served-version 断言步的 `env:` 真挂在**它们自己**身上（YAML 层读数，与文本判据互为对照）；同时**不许**出现「未加引号且含 ` #` 的步名」—— 本包实测：`- name: Resolve build identity (issue #6951)` 因未加引号，YAML 把 ` #` 当**注释起点**，解析出来的步名被**静默截断**成 `"Resolve build identity (issue"`（真跑读数）⇒ 任何「按名字取步」的判据会取空、乃至静默空跑（已顺手加引号 + 补形态守卫）。执行点 = 同文件::test_workflow_yaml_still_parses_after_the_value_source_change', '**边界（照实登记，不粉饰）**：① **真机 `builtAt` 非空**这条终判**本包做不了**（本机 `gh` token 无 `workflow` scope ⇒ 触发不了真实部署）⇒ 必须由主会话/人类在**一次真实部署之后**复探：`curl -s https://api.migaozn.com/api/version`（期望 `builtAt` 非空）+ `bash deploy/scripts/served-version-verify.sh \'https://api.migaozn.com\' "$(git rev-parse origin/main)"`（期望 rc=0 + `SERVED_VERSION=match`）；⚠️ 部署触发面 = `push main` 且 paths 命中 `backend/admin-api/**` 或 `deploy/swas/**`（**只改 `.github/**` + `deploy/scripts/**` 不会自动触发**）。② 类级守卫只扫**字面量**形态：`${{ … }}` 表达式（由 Actions 求值）与 YAML 里其它动态取值面（`matrix.*` / `needs.*` / `inputs.*` 的编造字段）**不在射程内** —— 后者需另立判据，本单**不假装已覆盖**。③ 「**定义错了**」（env 定义成空/错值）不是本守卫的面，由判据 12 的实例判据承担。④ **admin-web 腿同批接线**（`deploy-frontend.yml` + `deploy/scripts/admin-web-version-probe.sh`）：本单把同一根因在本仓**所有**接了身份面的腿上一起修掉 —— 它的 `BUILT_AT` 改前同样读未定义的 `${GITHUB_RUN_STARTED_AT:-}`，且 Dockerfile 的兜底把 `builtAt` 写成 `unknown` 而探针只比 `sha`（同款空断言）；`deploy-ai-agent-service.yml` 现取**没有身份面**（无 `MIGAO_BUILD_*` ARG、无身份探针）⇒ 无同款病灶。执行点 = tests/unit_ci_workflows/test_admin_web_served_version.py::{test_empty_or_unknown_builtat_is_red_when_required,test_deploy_leg_requires_builtat_and_value_source_is_a_context_expression}。⑤ 不改任何门禁的通过条件、不新增豁免、不新增 schedule。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（进程内 HTTP 桩驱动真脚本 + 静态扫 `.github/workflows/**.yml` 正文/步名/YAML 解析 + `bash -n`），零网络、不碰真实云，不进 agent-eval 冒烟',
+    tags=['deploy', 'ci-cd', 'version-probe', 'build-identity', 'fail-closed', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -14716,6 +14734,7 @@ ALL_CASES = (
     _CASE_MC_104,
     _CASE_MC_105,
     _CASE_MC_106,
+    _CASE_MC_107,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

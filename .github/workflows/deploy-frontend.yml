@@ -363,26 +363,41 @@ jobs:
       # 🔴 真值来源（都不是运行时现算）：`git rev-parse HEAD` = **本 run 检出的那个 commit**
       #    （回滚腿 `--ref refs/tags/<tag>` 时它也正好是回滚目标的 commit —— 比 `GITHUB_SHA` 正确：
       #     后者在 tag ref 下是**该 tag 指向的提交**，而在某些 dispatch 形态下会是 main 的 HEAD）；
-      #    `BUILT_AT` = `GITHUB_RUN_STARTED_AT`（部署期时钟，容器里没有 `.git` 也就没法现算）。
+      #    `BUILT_AT` = `RUN_STARTED_AT`（部署期时钟，容器里没有 `.git` 也就没法现算）
+      #    —— 值 = **context** `${{ github.run_started_at }}`（见本步的 `env:`）。
+      #    🔴 issue #7015（本腿同款病灶，现取）：改前这里写 `${GITHUB_RUN_STARTED_AT:-}`，而
+      #    **GitHub 从不注入这个环境变量**（run 的开始时刻只在 **context** `github.run_started_at` 里）
+      #    ⇒ shell 展开**恒为空串** ⇒ `public/version.json` 里 `builtAt` 的兜底值 `unknown` 恒生效，
+      #    而**没有任何东西会红**（`sha` 面正常、探针只比 `sha`）。
       # ⚠️ 输出只在**真的要部署**时给（`skip != 'true'`）⇒ 跳过档不会因为「解算失败」被误判红。
-      - name: Resolve build identity (issue #6611)
+      - name: "Resolve build identity (issue #6611)"
         id: build_id
         if: steps.sync.outputs.skip != 'true'
+        # 取值源（issue #7015）：`github.run_started_at` 是 **context** ⇒ 必须经 `env:` 落到 shell
+        # 才可读；**不许**再依赖任何未定义变量名。
+        env:
+          RUN_STARTED_AT: ${{ github.run_started_at }}
         run: |
           set -euo pipefail
           SHA=$(git rev-parse HEAD)
           case "$SHA" in
             *[!0-9a-f]*|"") echo "::error::git rev-parse HEAD 解不出 hex sha（'$SHA'）⇒ 拒绝在身份不明时构建"; exit 1 ;;
           esac
+          # 取值源自检（issue #7015）：非空才谈得上「构建身份完整」。空 ⇒ 具名判红并点名**取值源**，
+          # 不许再静默写下空串（那正是改前的形态：`builtAt` 恒为兜底值而全链路无一物变红）。
+          if [ -z "${RUN_STARTED_AT:-}" ]; then
+            echo "::error::RUN_STARTED_AT 为空 ⇒ 取值源未接（issue #7015）：它必须来自 context \`\${{ github.run_started_at }}\`（本步 env）；不许用未定义的环境变量名"
+            exit 1
+          fi
           echo "BUILD_SHA=$SHA" >> "$GITHUB_OUTPUT"
-          echo "BUILT_AT=${GITHUB_RUN_STARTED_AT:-}" >> "$GITHUB_OUTPUT"
-          echo "构建身份：sha=${SHA} · tag=${{ steps.tag.outputs.IMAGE_TAG }} · builtAt=${GITHUB_RUN_STARTED_AT:-（取不到）}"
+          echo "BUILT_AT=${RUN_STARTED_AT}" >> "$GITHUB_OUTPUT"
+          echo "构建身份：sha=${SHA} · tag=${{ steps.tag.outputs.IMAGE_TAG }} · builtAt=${RUN_STARTED_AT}"
           {
             echo "## 构建身份（issue #6611）"
             echo ""
             echo "- \`sha\` = \`${SHA}\`（\`git rev-parse HEAD\` = 本 run 检出的 commit）"
             echo "- \`tag\` = \`${{ steps.tag.outputs.IMAGE_TAG }}\`"
-            echo "- \`builtAt\` = \`${GITHUB_RUN_STARTED_AT:-（取不到）}\`"
+            echo "- \`builtAt\` = \`${RUN_STARTED_AT}\`（context \`github.run_started_at\`，issue #7015）"
             echo "- 消费面：\`GET https://merchant.migaozn.com/version.json\`（部署后由下面的 served-sha 断言比对）"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -466,6 +481,9 @@ jobs:
         env:
           EXPECTED_SHA: ${{ github.sha }}
           SKIPPED: ${{ steps.sync.outputs.skip }}
+          # 构建身份是**三个字段**（#6611）：只判 `sha` 会让 `builtAt` 退化成恒真的空断言
+          # （issue #7015 实测：`sha` 对、`builtAt` 是兜底值 `unknown`，而全链路无一物变红）⇒ 显式要求判它。
+          ADMIN_WEB_SERVED_REQUIRE_BUILT_AT: '1'
         run: |
           set -uo pipefail
           if [ "${SKIPPED:-}" = "true" ]; then

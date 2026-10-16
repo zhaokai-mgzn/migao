@@ -79,6 +79,10 @@ from pathlib import Path
 
 import pytest
 
+# 剥注释的**唯一**实现（`.github/danger_scan.py`，issue #5268）—— **复用，不复制**。
+# `tests/unit_ci_workflows/conftest.py` 已把 `.github` 挂进 `sys.path`（与 `test_danger_scan.py` 同一机制）。
+from danger_scan import strip_comment  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SERVED_VERIFY = REPO_ROOT / "deploy" / "scripts" / "served-version-verify.sh"
 DEPLOY_SH = REPO_ROOT / "deploy" / "swas" / "deploy.sh"
@@ -327,6 +331,53 @@ def workflow_text() -> str:
 
 SERVED_STEP = "Assert served sha == deployed sha (线上就是本次构建，issue #6951)"
 SMOKE_DECL_STEP = "Declare smoke verification state (schedule 兜底档，issue #6951)"
+# ⚠️ 步名逐字 = `Resolve build identity (issue #6951)`（**ASCII 收尾括号**；别写成全角 `）` ——
+#    本包实测踩到：全角形态按名字取步恒取空，判据静默空跑）。
+#    🔴 该步名改前**没加引号**，而 YAML 把 ` #` 当**注释起点** ⇒ 解析出来的步名被截断成
+#    `"Resolve build identity (issue"`（真跑读数，不是推断）⇒ 已顺手加引号（行为等价、只让读数忠实），
+#    并在 `test_workflow_yaml_still_parses_after_the_value_source_change` 里补了形态守卫。
+RESOLVE_STEP = "Resolve build identity (issue #6951)"
+
+# ── issue #7015 的类级面：workflow 的 run 正文里**默认注入**的环境变量清单 ────────────
+# 只列**本判据真正要用**（= 会被当默认值使用的）那些：漏列一条只会让守卫更严（宁可误报复核），
+# 而多列一条不存在的默认变量会让守卫失明 ⇒ 这里刻意只放「GitHub 确定注入、且本仓确实在用」的。
+DEFAULT_GITHUB_ENV_LITERALS = {
+    "GITHUB_ACTIONS", "GITHUB_ACTION", "GITHUB_ACTOR", "GITHUB_API_URL",
+    "GITHUB_ENV", "GITHUB_EVENT_NAME", "GITHUB_EVENT_PATH", "GITHUB_GRAPHQL_URL",
+    "GITHUB_JOB", "GITHUB_OUTPUT", "GITHUB_PATH", "GITHUB_REF", "GITHUB_REF_NAME",
+    "GITHUB_REPOSITORY", "GITHUB_RUN_ATTEMPT", "GITHUB_RUN_ID", "GITHUB_RUN_NUMBER",
+    "GITHUB_SERVER_URL", "GITHUB_SHA", "GITHUB_STEP_SUMMARY", "GITHUB_TOKEN",
+    "GITHUB_TRIGGERING_ACTOR", "GITHUB_WORKFLOW", "GITHUB_WORKFLOW_REF", "GITHUB_WORKFLOW_SHA",
+    "GITHUB_WORKSPACE",
+}
+# 允许的例外（**只许缩短**：清空 ⇒ 下面那条 fail-closed 自证会判红）。
+# 加例外 = 有人要给某个 `GITHUB_*` 名字一个自定义 env ⇒ 那一刻必须显式登记到这里并写理由。
+GITHUB_ENV_LITERAL_EXEMPTIONS: dict[str, str] = {}
+
+
+def _literal_github_env_defaults(workflow_path: Path) -> set[str]:
+    """workflow 里**当默认值用 / 直接展开**的自定义 `GITHUB_*` 字面量。
+
+    只看**非注释**的 shell 正文（找根因的注释里一定会提到那个编造的名字 —— 那不是「还在用它」）：
+      · `${GITHUB_X:-…}` / `$GITHUB_X` ⇒ 报出 `GITHUB_X`；
+      · `env:` 块里 `GITHUB_X: <字面量>` ⇒ 报出 `GITHUB_X`（有人定义过它）；
+      · 含 `${{ … }}` 的行跳过（那是 Actions 的 context 表达式，由 Actions 自己求值，**不在射程内**）。
+
+    ⚠️ 剥注释**复用** `.github/danger_scan.py::strip_comment`（**唯一**一份实现，issue #5268 / #5944）
+    —— 不在这里另写一把尺子（`test_deploy_leg_run_undefined_vars.py` 的判据 4d 会判红「第二把尺子」）。
+    """
+    names: set[str] = set()
+    for raw in workflow_path.read_text(encoding="utf-8").splitlines():
+        line = strip_comment(raw)          # 行尾注释先剥掉（**未定义的变量名一定会出现在注释里**）
+        if "${{" in line:
+            continue
+        if re.search(r"^\s*[-A-Za-z0-9_]*GITHUB_[A-Z0-9_]+\s*:", line):
+            m = re.search(r"(GITHUB_[A-Z0-9_]+)\s*:", line)
+            if m:
+                names.add(m.group(1))
+            continue
+        names.update(re.findall(r"\$\{?(GITHUB_[A-Z0-9_]+)", line))
+    return names
 
 # 从驱动脚本里抽函数体用的段界（与既有探针 tests/unit_ci_workflows/test_swas_deploy_no_downgrade.py
 # 的 PROBE_START/PROBE_END **同一对锚点** —— 不复制判据，只借它的抽取面）
@@ -672,3 +723,213 @@ def test_shared_script_parses_and_has_no_unquoted_cjk_adjacent_expansion():
         "出现「裸 `$VAR` 紧跟非 ASCII」⇒ bash 会把中文字节并进变量名（`set -u` 下报 unbound variable，"
         "且报错行号与实际坏点不一致）⇒ 改成 `${VAR}` 形态：\n" + "\n".join(offenders)
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 判据 12：`builtAt` 面的具名判据（issue #7015）—— 「探到了、值是空」必须判红
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_empty_builtat_is_red_when_required_and_names_the_value_source():
+    """🔴 **红证**：`sha` 与期望一致、但线上自报的 `builtAt` 是**空串** ⇒ 退出码 **1** 且**点名取值源未接**。
+
+    这是 issue #7015 的**实例判据**：改前 `builtAt` 恒空而**没有任何东西会红**（空串既不是
+    「探到非空」、也不是「探不到 ⇒ 退 3」）⇒ 一条**恒真的空断言**。本判据把「探到了、值是空」
+    单独立成一条**会红的**判据，且**不许**与「探不到（退 3）」混桶。
+    """
+    with VersionStub(version_body(TARGET_SHA, built_at="")) as stub:
+        proc = run_verify(stub.base_url, TARGET_SHA, SERVED_VERSION_REQUIRE_BUILT_AT="1")
+
+    assert proc.returncode == 1, (
+        "`builtAt` 为空却**没有**判红 ⇒ 仍是空断言（issue #7015 的形态）\n"
+        f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
+    out = proc.stdout
+    assert "#7015" in out, f"判红没有点名 issue #7015（归因面）：\n{out}"
+    assert "取值源未接" in out, f"判红没有点名「取值源未接」这个具体病灶：\n{out}"
+    # 语义必须与「探不到」分开（两者处置不同：一个是取值源写错，一个是网络/面被挡）
+    assert "SERVED_VERSION=unknown" not in out, (
+        f"「探到了、值是空」被报成了「探不到」（unknown）⇒ 两种语义被混桶：\n{out}"
+    )
+    assert "SERVED_VERSION=mismatch" in out, f"缺机读读数 SERVED_VERSION=mismatch：\n{out}"
+    assert "::error::" in out, f"判红没有落成 GitHub 注解（::error::）：\n{out}"
+    # 可复制复算命令（同族口径：判红必须可复算）
+    assert "curl" in out and "served-version-verify.sh" in out, f"判红缺可复制复算命令：\n{out}"
+
+
+def test_empty_builtat_is_green_when_not_required():
+    """对照臂（**必要性**）：同一场景、**不**要求判 `builtAt` ⇒ 退 0。
+
+    没有它，上面那条「恒红也能过」；而这一条同时钉住「新判据是**opt-in** 的」——
+    没接这个面的调用方（如本地手动复探）不会被一条它没要求过的判据误判红。
+    """
+    with VersionStub(version_body(TARGET_SHA, built_at="")) as stub:
+        proc = run_verify(stub.base_url, TARGET_SHA)
+
+    assert proc.returncode == 0, (
+        f"未要求判 `builtAt` 却判红 ⇒ 新判据不是 opt-in：\n{proc.stdout}\n{proc.stderr}"
+    )
+    assert "SERVED_VERSION=match" in proc.stdout
+
+
+def test_nonempty_builtat_is_green_when_required():
+    """对照臂（**判别力**）：要求判 `builtAt`、而它**非空** ⇒ 退 0。
+
+    与上面那条合起来 = 红证的两侧都成立：判据既**会红**、也**能绿**（不是恒定输出）。
+    """
+    with VersionStub(version_body(TARGET_SHA, built_at="2026-10-16T03:27:11Z")) as stub:
+        proc = run_verify(stub.base_url, TARGET_SHA, SERVED_VERSION_REQUIRE_BUILT_AT="1")
+
+    assert proc.returncode == 0, (
+        f"`builtAt` 非空却判红 ⇒ 判据过严（会把好部署挡住）：\n{proc.stdout}\n{proc.stderr}"
+    )
+    assert "SERVED_VERSION=match" in proc.stdout
+    assert "2026-10-16T03:27:11Z" in proc.stdout, (
+        f"绿档没有把线上 `builtAt` 读数打出来 ⇒ 复算者看不到取值源是否真接上了：\n{proc.stdout}"
+    )
+
+
+def test_deploy_leg_requires_builtat_so_it_cannot_be_a_vacuous_assertion():
+    """判据 12 的**接线**面：发布腿必须显式要求判 `builtAt`（否则上面那条判据在 CI 里永不生效）。
+
+    形态：`SERVED_VERSION_REQUIRE_BUILT_AT: '1'` 必须在 served-version 断言步的 `env:` 块里
+    （**不是**别的地方 —— 判据生效面 = 那一步）。
+    """
+    text = workflow_text()
+    steps = re.split(r"\n      - name: ", text)
+    served = [s for s in steps if s.startswith(f'"{SERVED_STEP}"')]
+    assert len(served) == 1, f"期望恰好 1 个 served-version 断言步，实测 {len(served)}"
+    assert "SERVED_VERSION_REQUIRE_BUILT_AT: '1'" in served[0], (
+        "served-version 断言步没有要求判 `builtAt` ⇒ issue #7015 的具名判据在 CI 里**永不生效**"
+        "（`builtAt` 又变回恒真的空断言）"
+    )
+
+
+def test_build_identity_value_source_is_a_context_expression_not_an_env_literal():
+    """🔴 **取值源**（issue #7015 的病灶本身）：`BUILT_AT` 必须由 **context** `github.run_started_at`
+    经 `env:` 注入；**不许**再读任何未定义的 `GITHUB_*` 变量名。
+
+    改前逐字：`echo "BUILT_AT=${GITHUB_RUN_STARTED_AT:-}"` —— 而 `GITHUB_RUN_STARTED_AT`
+    **不是** GitHub 注入的环境变量（run 开始时刻只在 context 里）⇒ shell 展开恒空 ⇒ 真机
+    `{"app":"admin-api","sha":"b5d9315e…","builtAt":""}`。
+    """
+    text = workflow_text()
+    assert "RUN_STARTED_AT: ${{ github.run_started_at }}" in text, (
+        "workflow 没把 **context** `github.run_started_at` 注入成 env ⇒ `builtAt` 仍然取不到值"
+        "（issue #7015 的病灶）"
+    )
+    # 取值面（**非注释**的 shell 正文）里一律不许再出现它 —— 找根因的注释必然会提到这个名字，
+    # 那不是「还在用它」。判据 = 非注释行 grep（注释行剥掉再查）。
+    body_offenders = [
+        line for line in text.splitlines()
+        if "GITHUB_RUN_STARTED_AT" in line and not line.lstrip().startswith("#")
+    ]
+    assert not body_offenders, (
+        "workflow 的**取值面**里仍出现 `GITHUB_RUN_STARTED_AT` —— 它不是 GitHub 注入的环境变量"
+        "（run 开始时刻只在 context `github.run_started_at` 里）⇒ shell 展开恒空（issue #7015 的病灶）：\n"
+        + "\n".join(body_offenders)
+    )
+    # 解算步必须 fail-closed：取值源为空 ⇒ 具名判红（不许静默写空串）
+    assert re.search(r'if \[ -z "\$\{RUN_STARTED_AT:-\}" \]', text), (
+        "解算步没有「取值源为空 ⇒ 判红」的自检 ⇒ 空值会被静默烘焙进镜像（改前形态）"
+    )
+
+
+def test_workflow_run_bodies_never_expand_undefined_github_env_literals():
+    """**类级元守卫**（issue #7015 的固化面）：凡 workflow 的 run 正文里当默认值用的 `GITHUB_*`
+    字面量，必须是 GitHub **真的**会注入的环境变量（或已被显式登记为例外）—— 否则判红并具名。
+
+    为什么需要它：`GITHUB_RUN_STARTED_AT` 是**编造的名字**（GitHub 的 run 开始时刻只在 context
+    `github.run_started_at` 里）⇒ `… ${GITHUB_RUN_STARTED_AT:-} …` 恒空，而**没有任何东西会红**
+    （shell 里未定义变量只是空串）⇒ 缺陷可以活到真机复探才被发现。本条把「编造的 `GITHUB_*` 名」
+    变成**编辑期**的具名红。
+
+    边界（照实登记）：① 只扫**字面量**形态（`${{ … }}` 表达式由 Actions 求值，不在射程内）；
+    ② 只认注解里的「未定义」这一半 —— 「定义错了」（值是空串）由 `builtAt` 那条实例判据承担；
+    ③ 例外表 `GITHUB_ENV_LITERAL_EXEMPTIONS` **只许缩短**（有 fail-closed 自证，见下）。
+    """
+    import yaml  # 仓内既有依赖（`tests/unit_ci_workflows/test_swas_server_side_build.py` 已在用）
+
+    assert GITHUB_ENV_LITERAL_EXEMPTIONS == {}, (
+        "例外表不再为空 —— 有人给某个 `GITHUB_*` 名字加了自定义 env。这不是「不许」，"
+        "而是**必须显式复核**：确认那个名字不是「编造的 GitHub 默认变量」再登记（并写理由）；"
+        f"现取：{GITHUB_ENV_LITERAL_EXEMPTIONS}"
+    )
+    assert DEFAULT_GITHUB_ENV_LITERALS, "默认变量白名单被清空了 ⇒ 本判据会退化成恒真（fail-closed）"
+
+    workflows = sorted((REPO_ROOT / ".github" / "workflows").glob("*.yml"))
+    assert len(workflows) >= 10, f"反空跑锚点：workflow 数量异常（{len(workflows)}）⇒ 扫描面可能漂了"
+    offenders: list[str] = []
+    for wf in workflows:
+        for name in sorted(_literal_github_env_defaults(wf)):
+            if name in DEFAULT_GITHUB_ENV_LITERALS or name in GITHUB_ENV_LITERAL_EXEMPTIONS:
+                continue
+            offenders.append(f"{wf.name}::${name}")
+    assert not offenders, (
+        "下列 `GITHUB_*` 字面量**不是** GitHub 注入的环境变量（编造的名字）⇒ shell 展开恒为空\n"
+        "（正是 issue #7015 的病灶：`GITHUB_RUN_STARTED_AT`）⇒ 改用 context 表达式经 `env:` 注入，"
+        "或把该名字加进 `GITHUB_ENV_LITERAL_EXEMPTIONS` 并写理由：\n  " + "\n  ".join(offenders)
+    )
+
+
+def test_undefined_github_env_literal_guard_has_teeth(tmp_path):
+    """**判别力自证**（注入式）：把 `deploy-admin-api.yml` 的正文喂进同一套判定函数，
+    注入一处 `${{ github.run_started_at }}` → `${GITHUB_RUN_STARTED_AT:-}`（= 改前逐字形态）⇒
+    判定函数必须**报出这个名字**；未注入的对照臂 ⇒ 不报。
+
+    没有这一条，上面那条守卫可以「因为扫不到任何东西」而恒绿（本仓点名的空跑形态）。
+    """
+    source = read(WORKFLOW)
+    assert "GITHUB_RUN_STARTED_AT: " not in source, (
+        "反空跑锚点：本树已修好，注入应以『改前形态』为语料"
+    )
+    injected = source.replace('echo "BUILT_AT=${RUN_STARTED_AT}"', 'echo "BUILT_AT=${GITHUB_RUN_STARTED_AT:-}"')
+    assert injected != source, "注入没生效（锚点漂了）⇒ 本自证是空跑"
+
+    victim = tmp_path / "deploy-admin-api.yml"
+    victim.write_text(injected, encoding="utf-8")
+    found_injected = _literal_github_env_defaults(victim)
+    assert "GITHUB_RUN_STARTED_AT" in found_injected, (
+        f"注入「编造的 GITHUB_* 名」却**没**被判定函数报出 ⇒ 守卫不具判别力；实得 {sorted(found_injected)}"
+    )
+
+    clean = tmp_path / "clean.yml"
+    clean.write_text(source, encoding="utf-8")
+    assert "GITHUB_RUN_STARTED_AT" not in _literal_github_env_defaults(clean), (
+        "对照臂：未注入的本树正文被报出 `GITHUB_RUN_STARTED_AT` ⇒ 判定函数有假阳性"
+    )
+
+
+def test_workflow_yaml_still_parses_after_the_value_source_change():
+    """反空跑/形态：改完的 workflow 必须仍是**合法 YAML**，且解算步的 `env:` 真挂在它自己身上。
+
+    改前的三处 `${GITHUB_RUN_STARTED_AT:-…}` 是纯文本改动，不会让 YAML 变坏；本次新增了
+    step 级 `env:`（缩进敏感）⇒ 用 YAML 解析把「缩进写错导致 env 挂到别的 step / 整文件坏掉」钉住。
+    """
+    import yaml
+
+    doc = yaml.safe_load(read(WORKFLOW))
+    steps = doc["jobs"]["build-and-deploy"]["steps"]
+    resolve = [s for s in steps if s.get("name") == RESOLVE_STEP]
+    assert len(resolve) == 1, f"期望恰好 1 个解算步，实测 {len(resolve)}"
+    env = resolve[0].get("env") or {}
+    assert env.get("RUN_STARTED_AT") == "${{ github.run_started_at }}", (
+        f"解算步的 `env:` 没有接上 context 表达式（实得 {env}）⇒ `builtAt` 仍取不到值"
+    )
+    served = [s for s in steps if s.get("name") == SERVED_STEP]
+    assert len(served) == 1, f"期望恰好 1 个 served-version 断言步，实测 {len(served)}"
+    assert (served[0].get("env") or {}).get("SERVED_VERSION_REQUIRE_BUILT_AT") == "1", (
+        "served-version 断言步的 `env:` 没要求判 `builtAt`（YAML 层读数，与文本判据互为对照）"
+    )
+    # ── 顺带的形态守卫（本包实测踩到，见 `RESOLVE_STEP` 的注释）────────────────────
+    # 未加引号的步名里出现 ` #` ⇒ YAML 把它当**注释起点** ⇒ 名字被**静默截断**
+    # （实测：`Resolve build identity (issue #6951）` → `"Resolve build identity (issue"`）
+    # ⇒ 任何「按名字取步」的判据会取空、并可能静默空跑。
+    truncated = [
+        line.strip() for line in read(WORKFLOW).splitlines()
+        if re.match(r"^\s*- name:\s*[^\"'\n]\S*\s#", line)
+    ]
+    assert not truncated, (
+        "workflow 里有**未加引号**且含 ` #` 的步名 ⇒ YAML 会把 `#` 之后当注释、名字被静默截断：\n  "
+        + "\n  ".join(truncated)
+    )
+

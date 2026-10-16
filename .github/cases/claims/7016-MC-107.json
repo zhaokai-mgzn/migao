@@ -1,0 +1,6 @@
+{
+  "id": "MC-107",
+  "pr": 7016,
+  "title": "部署腿 run 正文里**编造的 `GITHUB_*` 环境变量名**必须判红（issue #7015 的类级固化）：`GITHUB_RUN_STARTED_AT` 不是 GitHub 注入的变量（run 开始时刻只在 context `github.run_started_at` 里）⇒ shell 展开恒空、`builtAt` 恒为空串而**没有任何东西会红**",
+  "claimed_at": "2026-10-16"
+}

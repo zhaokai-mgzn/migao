@@ -34,6 +34,7 @@
 # |---|---|---|
 # | 线上 `sha` 前 7 位 == 期望 sha 前 7 位 | **0** | 线上**就是**这次构建 ⇒ 放行 |
 # | 线上 `sha` 与期望**不一致** | **1** | **判红**（具名：期望 / 实测 / 可复制命令），并落 `SERVED_VERSION=mismatch` |
+# | 线上 `sha` 一致、但 `builtAt` 是**空串 / 兜底值 `unknown`**（且调用方要求判它） | **1** | **判红**（具名：**取值源未接** issue #7015）—— 「探到了、该字段是空/兜底」≠「探不到」 |
 # | 探不到（连不上 / 非 200 / body 不是 JSON / **是 HTML（回落）** / `sha` 为空或 `unknown` 或非 hex / `app` 不是目标服务 / 期望 sha 形态不合法） | **3** | **fail-closed**（`SERVED_VERSION=unknown`）|
 #
 # 🔴 **为什么「探不到」是 3 而不是 0**：老镜像没有注入面（`sha` 为空 / `unknown`）时，
@@ -63,8 +64,14 @@
 #   ADMIN_WEB_SERVED_PATH  身份面路径（默认 `/version.json`；**只为本地桩测试而存在**，生产不许改）
 #   ADMIN_WEB_SERVED_RETRIES       就绪重试次数（默认 3）
 #   ADMIN_WEB_SERVED_RETRY_DELAY   每次间隔秒（默认 5）
+#   ADMIN_WEB_SERVED_REQUIRE_BUILT_AT  非空（CI 部署腿传 1）⇒ **探到 `builtAt` 为空 / `unknown` 即判红**（退出码 1）
 #
-# 退出码：0 = 线上就是本次构建；1 = 不一致（判红）；3 = 探不到（fail-closed）。
+# 🔴 **`builtAt` 面（issue #7015）**：`builtAt` 是身份面字段之一，而改前它**恒为兜底值**且
+#    **没有任何东西会红**（探针只比 `sha`）⇒ 一条**恒真的空断言**。⇒ 本探针给它一条**具名判据**
+#    （只在调用方显式要求时生效）：探到空 / `unknown` ⇒ **判红（退 1）+ 点名「取值源未接（issue #7015）」**，
+#    与「探不到（退 3）」**分别具名**。
+#
+# 退出码：0 = 线上就是本次构建；1 = 不一致 / `builtAt` 为空或 unknown（判红）；3 = 探不到（fail-closed）。
 # 判据 = tests/unit_ci_workflows/test_admin_web_served_version.py
 # ══════════════════════════════════════════════════════════════════════════════
 set -uo pipefail
@@ -76,6 +83,7 @@ APP=${ADMIN_WEB_SERVED_APP-admin-web}
 PATH_SUFFIX=${ADMIN_WEB_SERVED_PATH:-/version.json}
 RETRIES=${ADMIN_WEB_SERVED_RETRIES:-3}
 RETRY_DELAY=${ADMIN_WEB_SERVED_RETRY_DELAY:-5}
+REQUIRE_BUILT_AT=${ADMIN_WEB_SERVED_REQUIRE_BUILT_AT:-}
 
 URL="$BASE$PATH_SUFFIX"
 TMPDIR_RUN="$(mktemp -d)"
@@ -116,7 +124,7 @@ print(val if isinstance(val, str) else "")'
 json_field() { python3 -c "$JSON_FIELD_PY" "$1" "$2" 2>/dev/null || echo ""; }
 
 # ── 取读数（就绪重试：滚动重启期间会有瞬态 502/503/504 与连接失败）─────────────────
-CODE=""; CTYPE=""; FETCHED_SHA=""; FETCHED_APP=""; ATTEMPT=0
+CODE=""; CTYPE=""; FETCHED_SHA=""; FETCHED_APP=""; FETCHED_BUILT_AT=""; ATTEMPT=0
 while :; do
   ATTEMPT=$((ATTEMPT + 1))
   # 一次请求取两个读数（`%{content_type}` + `%{http_code}` 各一行）：分两次 curl 会在
@@ -126,7 +134,7 @@ while :; do
   CTYPE=${META%%$'\n'*}
   CODE=${META##*$'\n'}
   CTYPE=${CTYPE%%;*}
-  FETCHED_SHA=""; FETCHED_APP=""
+  FETCHED_SHA=""; FETCHED_APP=""; FETCHED_BUILT_AT=""
   if [ "$CODE" = "200" ] && [ -s "$TMPDIR_RUN/version.json" ]; then
     # 回落形态（HTML）**不当读数**取：它的 `sha` 字段必然是空的，但先判出来的话
     # 「探不到」的理由会写成「sha 为空」而不是「拿到了 HTML（回落）」—— 排查方向完全不同。
@@ -136,6 +144,7 @@ while :; do
     if [ "$CTYPE" != "text/html" ]; then
       FETCHED_SHA=$(json_field "$TMPDIR_RUN/version.json" sha)
       FETCHED_APP=$(json_field "$TMPDIR_RUN/version.json" app)
+      FETCHED_BUILT_AT=$(json_field "$TMPDIR_RUN/version.json" builtAt)
     fi
   fi
   # 判定「这一次读数是否已经可用」——只有它可用才停（`sha` 非空且形态合规）
@@ -148,7 +157,7 @@ while :; do
 done
 
 echo "   HTTP ${CODE:-（取不到）} · Content-Type '${CTYPE:-（取不到）}' · 尝试 $ATTEMPT/$RETRIES"
-echo "   线上读数：sha='${FETCHED_SHA:-}' app='${FETCHED_APP:-}'"
+echo "   线上读数：sha='${FETCHED_SHA:-}' app='${FETCHED_APP:-}' builtAt='${FETCHED_BUILT_AT:-}'"
 if [ -s "$TMPDIR_RUN/version.json" ]; then
   echo "   原始 body：$(head -c 400 "$TMPDIR_RUN/version.json")"
 fi
@@ -201,6 +210,35 @@ if [ "${FETCHED_LOWER:0:7}" = "$EXPECTED7" ]; then
   echo "✅ 线上就是本次构建：served sha=${FETCHED_LOWER} == 期望 ${EXPECTED7}（前 7 位逐字符一致）"
   echo "   · 判据口径：只比前 7 位（与镜像 tag \`sha-<7hex>\` 同口径；更长的两端都照此截断）"
   echo "   · 与 issue #6611 的旧判据的区别：比的是**响应体里的身份字段**，不是 \`index.html\` 的字节哈希"
+  # ── `builtAt` 具名判据（issue #7015；与 admin-api 腿的 `served-version-verify.sh` 同族）────
+  # 「`sha` 对」不等于「构建身份完整」：改前 `BUILT_AT` 由 `${GITHUB_RUN_STARTED_AT:-}` 取值，
+  # 而那不是 GitHub 注入的环境变量（run 开始时刻只在 context `github.run_started_at` 里）
+  # ⇒ 恒空 ⇒ `frontend/admin-web/Dockerfile` 的兜底把 `builtAt` 写成 **`unknown`**
+  # ⇒ 而**没有任何东西会红**（探针只比 `sha`）。
+  # ⚠️ 只在调用方**显式要求**时生效（`ADMIN_WEB_SERVED_REQUIRE_BUILT_AT` 非空；CI 部署腿传 1）。
+  # ⚠️ 与「探不到（退 3）」**语义不同、必须分别具名**：那条说「连不上 / 非 200 / 是 HTML 回落 /
+  #    `sha` 为空」⇒ 一个字节都证不了；本条说「**探到了**，而 `builtAt` 是空串或兜底值 `unknown`」
+  #    ⇒ 取值源没接上。
+  if [ -n "$REQUIRE_BUILT_AT" ]; then
+    case "$FETCHED_BUILT_AT" in
+      ""|unknown)
+        echo "::error::\`builtAt\`='${FETCHED_BUILT_AT}' ⇒ **取值源未接**（issue #7015）：线上自报的构建时刻是空串/兜底值，而 \`sha\` 是有的 —— 两者不同源"
+        echo "  · 服务：admin-web（${URL}）· HTTP ${CODE} · 尝试 ${ATTEMPT}/${RETRIES}"
+        echo "  · 探到什么：sha=${FETCHED_SHA} · app=${FETCHED_APP:-（空）} · builtAt='${FETCHED_BUILT_AT}'（空串 = 无注入面 / \`unknown\` = Dockerfile 的兜底值）"
+        echo "  · 语义区分：这是「**探到了、该字段是空/兜底**」（判红，退 1）≠「**探不到**」（连不上 / 非 200 / HTML 回落 ⇒ 退 3）"
+        echo "  · 根因形态：构建身份里的 \`BUILT_AT\` 取值源写成了**未定义变量**（issue #7015 实测 = \`\${GITHUB_RUN_STARTED_AT:-}\`，"
+        echo "    而 run 的开始时刻只在 context \`github.run_started_at\` 里）⇒ shell 展开恒为空 ⇒ Dockerfile 的兜底 \`unknown\` 恒生效"
+        echo "  · 可复制复算命令："
+        echo "      curl -sS -m 15 '$URL' | head -c 400"
+        echo "      bash deploy/scripts/admin-web-version-probe.sh '$BASE' '$EXPECTED'"
+        echo "  · 出口：① 确认部署腿的解算步用 \`env: RUN_STARTED_AT: \${{ github.run_started_at }}\` 取值"
+        echo "     ② 该值经 \`swas-deploy-ci.sh\` 第 10 位参数 ⇒ BOOTSTRAP 占位符 \`__BUILT_AT__\` ⇒ \`--build-arg MIGAO_BUILT_AT\`；"
+        echo "     ③ 修好后需**一次带注入面的部署**（当前镜像已烘焙空值 ⇒ 光重跑本探针不会变好）"
+        echo "SERVED_VERSION=mismatch"
+        exit 1 ;;
+    esac
+  fi
+  echo "   · builtAt='${FETCHED_BUILT_AT:-（未要求判定）}'"
   echo "SERVED_VERSION=match"
   exit 0
 fi
