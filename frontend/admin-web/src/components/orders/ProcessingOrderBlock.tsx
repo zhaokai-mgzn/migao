@@ -14,8 +14,14 @@ import { craftRowsWithoutDoorWidth, quantityWithUnit } from '@/lib/order-item-sk
 // 显示名一律走仓内**唯一**口径 `lib/operation-display.ts`（issue #4621）
 import { operationsByItem, operationStatusText } from './ProcessingDoc'
 import { operationDisplayName } from '@/lib/operation-display'
-// 状态文案单一来源：与列表页共用（加工单状态机语义见 lib/processing-order.ts）
-import { PROCESSING_ORDER_STATUS_LABELS as STATUS_TEXT } from '@/lib/processing-order'
+// 状态文案单一来源：与列表页共用（加工单状态机语义见 lib/processing-order.ts）；
+// issue #7079：作业单两型（加工单 / 出库作业单）的中文业务名与判定也取同一份 ——
+// 🔴 机器键（`processing` / `outbound`）绝不上屏。
+import {
+  ORDER_KIND_LABELS,
+  PROCESSING_ORDER_STATUS_LABELS as STATUS_TEXT,
+  orderKindOf,
+} from '@/lib/processing-order'
 // 米数展示口径（0.1 米粒度、去尾随 .0）—— 与库存/批次账同一份工具
 import { formatStockQuantity } from '@/lib/stock-quantity'
 import type {
@@ -192,11 +198,15 @@ export function operationParts(op: ProductionOperation): string[] {
   return [qty, operationStatusText(op.status)].filter((part) => part !== '')
 }
 
-/** 加工单纯文本（复制给加工方/贴 Excel，一行一加工项） */
+/** 作业单**纯文本**（复制给加工方/贴 Excel，一行一加工项）
+ *
+ * issue #7079：两型的措辞不同 —— 出库作业单**没有加工方、没有交期** ⇒ 这两行不出现（缺值不渲染）。
+ */
 function toPlainText(po: ProcessingOrder, operations?: ProductionPosition[] | null): string {
   const operationsIndex = operationsByItem(operations)
+  const outbound = orderKindOf(po) === 'outbound'
   const lines: string[] = []
-  lines.push(`加工单：${po.processingOrderNo}`)
+  lines.push(`${ORDER_KIND_LABELS[orderKindOf(po)]}：${po.processingOrderNo}`)
   if (po.customerName) lines.push(`客户：${po.customerName}`)
   if (po.processor) lines.push(`加工方：${po.processor}`)
   if (po.expectedDeliveryDate) lines.push(`交期：${po.expectedDeliveryDate}`)
@@ -287,6 +297,10 @@ export default function ProcessingOrderBlock({
     onReloadReady?.(load)
   }, [load, onReloadReady])
 
+  // 作业单两型（issue #7079）：缺键 = 存量单 ⇒ 按**加工单**处理（不把存量单读成出库）。
+  // 出库作业单**没有加工方、没有交期** ⇒ 那两处写面与展示整块不渲染；也**不**走「发加工」。
+  const kind = po ? orderKindOf(po) : 'processing'
+  const outbound = kind === 'outbound'
   const canGenerate = notFound && hasProcessing && (orderStatus === 'confirmed' || orderStatus === 'producing')
   const canAct = po && !['completed', 'cancelled'].includes(po.status)
   // 工序清单按 `order_item_id` 索引一次（issue #6901；与洗水码/批号同一把钥匙）
@@ -448,7 +462,7 @@ export default function ProcessingOrderBlock({
     <div className="mt-6">
 
       <div className="flex items-center justify-between po-no-print">
-        <h3 className="text-base font-semibold text-neutral-900">加工单</h3>
+        <h3 className="text-base font-semibold text-neutral-900">作业单</h3>
         {po && (
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={handleCopy}>复制全部</Button>
@@ -477,7 +491,7 @@ export default function ProcessingOrderBlock({
       )}
 
       {!loading && notFound && !canGenerate && (
-        <p className="mt-2 text-sm text-neutral-400">该订单无加工单（无加工项订单无需加工环节）。</p>
+        <p className="mt-2 text-sm text-neutral-400">该订单暂无作业单（无加工项订单无需加工环节）。</p>
       )}
 
       {/* 批次指派（issue #5145 阶段 1）：系统按 FIFO 给建议值，文员可改；不选的行不指派 */}
@@ -536,13 +550,28 @@ export default function ProcessingOrderBlock({
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 pb-3">
             <div>
               <span className="text-lg font-semibold text-neutral-900">{po.processingOrderNo}</span>
+              {/* 类型可见（issue #7079）：中文业务名「加工单」/「出库作业单」，机器键不上屏 */}
+              <span
+                className="ml-2 rounded bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600"
+                data-testid="processing-order-kind"
+              >
+                {ORDER_KIND_LABELS[kind]}
+              </span>
               <span className="ml-2 rounded bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700">
                 {STATUS_TEXT[po.status] ?? po.status}
               </span>
             </div>
             <div className="text-sm text-neutral-500">
-              {po.processor && <span className="mr-3">加工方：{po.processor}</span>}
-              {po.expectedDeliveryDate && <span>交期：{po.expectedDeliveryDate}</span>}
+              {/* 出库作业单（issue #7079）：**没有加工方、没有交期** ⇒ 这两个写面不渲染，
+                  改为如实说明原因（不印空标题，也不给「—」冒充有值）。 */}
+              {outbound ? (
+                <span>卖布单不设加工方与交期</span>
+              ) : (
+                <>
+                  {po.processor && <span className="mr-3">加工方：{po.processor}</span>}
+                  {po.expectedDeliveryDate && <span>交期：{po.expectedDeliveryDate}</span>}
+                </>
+              )}
             </div>
           </div>
 
@@ -647,9 +676,17 @@ export default function ProcessingOrderBlock({
           </div>
           {po.remark && <p className="mt-2 text-xs text-neutral-500">整体备注：{po.remark}</p>}
 
+          {/* 出库作业单（issue #7079）：卖布单**不生成加工单**，只按裁剪 / 打包两道出库作业推进 ——
+              页面级一次说明，不逐行重复。 */}
+          {outbound && (
+            <p className="mt-2 text-xs text-neutral-500" data-testid="processing-order-outbound-note">
+              卖布单只做出库作业（裁剪 / 打包），没有加工方与交期，报工后按件计件。
+            </p>
+          )}
+
           {/* 操作区 */}
           <div className="po-no-print mt-4 flex flex-wrap items-center gap-2 border-t border-neutral-100 pt-3">
-            {canAct && po.status === 'generated' && (
+            {canAct && po.status === 'generated' && !outbound && (
               <Button size="sm" onClick={() => setForm({ action: 'issue' })}>发加工</Button>
             )}
             {canAct && po.status === 'issued' && (
@@ -659,7 +696,9 @@ export default function ProcessingOrderBlock({
               <Button size="sm" disabled={simpleBusy} onClick={() => handleSimpleAction('complete')}>加工完成</Button>
             )}
             {canAct && (
-              <Button variant="secondary" size="sm" onClick={() => setForm({ action: 'cancel' })}>取消加工单</Button>
+              <Button variant="secondary" size="sm" onClick={() => setForm({ action: 'cancel' })}>
+                {outbound ? '取消作业单' : '取消加工单'}
+              </Button>
             )}
             {po.status === 'completed' && (
               <span className="text-xs text-green-600">加工已完成，可发货（发货需在订单物流中填写运单）</span>
@@ -726,10 +765,10 @@ export default function ProcessingOrderBlock({
         }
       >
         <p className="text-sm text-neutral-600">
-          将加工单 {po?.processingOrderNo} 标记为「{simpleAction === 'start' ? '开始加工' : '加工完成'}」。
+          将作业单 {po?.processingOrderNo} 标记为「{simpleAction === 'start' ? '开始加工' : '加工完成'}」。
         </p>
         <p className="mt-2 text-sm text-neutral-500">
-          该动作会写入加工单状态、不可撤销，请确认后再提交。
+          该动作会写入作业单状态、不可撤销，请确认后再提交。
         </p>
         {error && <div className="mt-2">{errorBlock}</div>}
       </Modal>

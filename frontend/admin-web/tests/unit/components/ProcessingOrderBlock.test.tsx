@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// case_ids: PG-001, PG-005, PG-019, UI-019, UI-030, PR-057, PR-065
+// case_ids: PG-001, PG-005, PG-019, UI-019, UI-030, UI-094, PR-057, PR-065
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -54,6 +54,32 @@ const poIssued = {
 
 // 待发加工（generated）状态：展示「发加工」入口
 const poGenerated = { ...poIssued, id: 'po-gen', status: 'generated', processor: undefined, expectedDeliveryDate: undefined }
+
+/**
+ * 卖布单的**出库作业单**（issue #7079）：`order_kind='outbound'` ⇒ **没有加工方、没有交期**。
+ *
+ * `order_kind` 是**读面机器键**（键名冻结，与同 DTO 上的 `short_code` / `scan_url` 同族）：
+ * 上屏一律是中文业务名「出库作业单」，`processing` / `outbound` / `order_kind` 不得出现。
+ */
+const poOutbound = {
+  id: 'po-out',
+  orderId: 'order-002',
+  orderNo: 'ORD-2',
+  customerName: '王五',
+  processingOrderNo: 'CK-20261017-0001',
+  order_kind: 'outbound',
+  status: 'issued',
+  items: [
+    {
+      productName: '雪尼尔遮光布',
+      colorName: '灰蓝',
+      sellingMethod: '散剪',
+      quantity: 12,
+      unit: '米',
+      processingItems: [{ id: 'p1', name: '裁剪', quantity: 12, unit: '米' }],
+    },
+  ],
+}
 
 /**
  * 快照携带工艺规格的加工单（issue #4355 / 设计文档 §4.9 ③）。
@@ -157,6 +183,56 @@ describe('ProcessingOrderBlock', () => {
     expect(screen.getByText(/2026-09-20/)).toBeInTheDocument()
     expect(screen.getAllByText('已发加工').length).toBeGreaterThan(0)
     expect(screen.getByText('开始加工')).toBeInTheDocument()
+  })
+
+  // ── issue #7079：作业单两型（加工单 / 出库作业单）在订单详情块的可见面 ──────────────
+
+  it('#7079 缺键 = 存量单 ⇒ 按加工单渲染（不把存量单读成出库，加工方/交期照旧可见）', async () => {
+    mockedDetail.mockResolvedValueOnce({ data: { data: poIssued } })
+    render(<ProcessingOrderBlock orderId="order-001" orderStatus="producing" hasProcessing />)
+
+    await screen.findByText('JG-20260912-0001')
+    expect(screen.getByTestId('processing-order-kind')).toHaveTextContent('加工单')
+    expect(screen.getByText(/朝阳加工厂/)).toBeInTheDocument()
+    expect(screen.getByText(/2026-09-20/)).toBeInTheDocument()
+    expect(screen.queryByTestId('processing-order-outbound-note')).toBeNull()
+  })
+
+  it('#7079 出库作业单：类型显示中文业务名，且**不渲染**加工方/交期（含「发加工」写面）', async () => {
+    mockedDetail.mockResolvedValueOnce({ data: { data: poOutbound } })
+    render(<ProcessingOrderBlock orderId="order-002" orderStatus="producing" hasProcessing />)
+
+    await screen.findByText('CK-20261017-0001')
+    // ① 类型可见 = 中文业务名（不是机器键）
+    expect(screen.getByTestId('processing-order-kind')).toHaveTextContent('出库作业单')
+    // ② 无加工方 / 无交期：写面与展示都不出现，改为如实说明原因
+    expect(screen.getByTestId('processing-order-outbound-note')).toBeInTheDocument()
+    expect(screen.queryByText(/加工方：/)).toBeNull()
+    expect(screen.queryByPlaceholderText('加工方（如：朝阳加工厂）')).toBeNull()
+    expect(screen.queryByPlaceholderText('交期 yyyy-MM-dd')).toBeNull()
+    // ③ 「发加工」这一步对出库作业单不成立（它没有加工方、没有交期）⇒ 整块写面不渲染
+    expect(screen.queryByText('发加工')).toBeNull()
+    // ④ 取消动作按中文业务名措辞
+    expect(screen.getByText('取消作业单')).toBeInTheDocument()
+    // ⑤ 🔴 机器键绝不上屏
+    expect(document.body.textContent ?? '').not.toContain('outbound')
+    expect(document.body.textContent ?? '').not.toContain('order_kind')
+  })
+
+  it('#7079 出库作业单「复制全部」：抬头用中文业务名，且不出现加工方/交期行', async () => {
+    mockedDetail.mockResolvedValueOnce({ data: { data: poOutbound } })
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    render(<ProcessingOrderBlock orderId="order-002" orderStatus="producing" hasProcessing />)
+    await userEvent.click(await screen.findByText('复制全部'))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalled())
+    const text = writeText.mock.calls[0][0] as string
+    expect(text).toContain('出库作业单：CK-20261017-0001')
+    expect(text).not.toContain('加工方')
+    expect(text).not.toContain('交期')
+    expect(text).not.toContain('outbound')
   })
 
   it('复制全部 → 剪贴板文本含加工单号与加工项 options（PG-005）', async () => {

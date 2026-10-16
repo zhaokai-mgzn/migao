@@ -8,6 +8,30 @@ import type { StatusChip } from '@/lib/status-chip'
  * 列表页与订单详情加工单块共用，禁止各自再写一份状态文案/动作映射。
  */
 
+/**
+ * 作业单两型的**中文业务名**（issue #7079）—— 唯一真值，页面/组件一律引用它。
+ *
+ * 上位概念叫「作业单」；实体两型：`processing` = 加工单（成品帘）/ `outbound` = 出库作业单（卖布）。
+ * 🔴 机器键（`processing` / `outbound` / `order_kind`）**绝不上屏**，屏上只出现这里的中文名。
+ */
+export const ORDER_KIND_LABELS: Record<'processing' | 'outbound', string> = {
+  processing: '加工单',
+  outbound: '出库作业单',
+}
+
+/**
+ * 服务端读面键 `order_kind` → 两型（**缺键 / `null` = 存量单 ⇒ 按加工单处理**，issue #7079）。
+ * 存量行不带该键，把它们读成「出库」会把加工单的加工方/交期整块藏掉。
+ */
+export function orderKindOf(po: Pick<ProcessingOrder, 'order_kind'>): 'processing' | 'outbound' {
+  return po.order_kind === 'outbound' ? 'outbound' : 'processing'
+}
+
+/** 作业单类型的中文业务名（屏上只出现它，不出现机器键） */
+export function orderKindLabelOf(po: Pick<ProcessingOrder, 'order_kind'>): string {
+  return ORDER_KIND_LABELS[orderKindOf(po)]
+}
+
 /** 状态文案（与后端 STATUS_LABELS 一致） */
 export const PROCESSING_ORDER_STATUS_LABELS: Record<ProcessingOrder['status'], string> = {
   generated: '已生成',
