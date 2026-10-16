@@ -96,6 +96,9 @@ MIBAO_SKILL_FILES = (
     # 定时任务（用户「预约」，issue #6486 包 2）：与 `mibao.py` 的 skill_names **同序**
     # （knowledge 之后）—— 本元组与 `skill_names` 的一致性有双向元守卫。
     "reminder_skill",
+    # 通知中心（查询 + 标记已读，issue #7040）：与 `mibao.py` 的 skill_names **同序**
+    # （reminder 之后）。漏登记 ⇒ 它的工具不进 B 端体检射程（本文件有双向元守卫）。
+    "notification_skill",
     "general_agent",          # MIBAO_CONFIG.fallback_skill = "general"
     # ↓ 额外来源（不在 skill_names）：**必须先登记进 MIBAO_EXTRA_SKILL_FILES**，
     #   否则双向元守卫判红（未登记的额外项 ⇒ 红；登记了却不在本元组 ⇒ 红）。

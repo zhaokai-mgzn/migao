@@ -44,7 +44,7 @@ class SettingsManageTool(BaseTool):
         "【触发】用户问'系统设置''配置''AI配置''模型''问候语''登录日志'时调用。"
         "【参数】action 必填：**只有 get_settings（获取设置）/ get_ai_config（获取AI配置）/ "
         "login_logs（登录日志）三个只读 action**（B 端已只读化，issue #5247 / #5302）。"
-        "【反例】通知查询用 notification_manage；角色权限用 role_manage。"
+        "【反例】角色权限用 role_manage（站内通知**不属本域**，由通知中心域承接，issue #7040）。"
         "【反例】调整系统参数 / 修改 AI 配置**不在本工具能力内** —— 引导用户到商户后台"
         "「企业基础设置 → 企业信息 / AI 客服」页自助修改。"
         "【反例】修改密码**不在本工具能力内**（后台暂无自助改密入口）—— 如实告知，"

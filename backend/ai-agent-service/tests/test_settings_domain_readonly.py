@@ -1,13 +1,16 @@
-# case_ids: ST-001, ST-002, ST-003, ST-004, ST-005
+# case_ids: ST-001, ST-002, ST-003, ST-004
 """settings 域「只读化」收口判据 —— issue #5302（承接 #5247 的漏网）。
 
 ## 被测事实（三条，都是读源得到，**不是**抄清单）
 
-1. `settings_manage` / `notification_manage` 的 `VALID_ACTIONS` **只剩只读 action**，
+1. `settings_manage` 的 `VALID_ACTIONS` **只剩只读 action**，
    `read_only = True`，写 action 在 `execute()` 入口即被拒（不是"没写进 description"）；
 2. `required_permissions` 与**它仍调用的端点**同码：`settings_manage` 的三个读端点都是
-   `@RequirePermission("system:manage")`（读码，保留）；`notification_manage` 的两个读端点
-   **无码**（`NotificationController` 只给 `POST` 加了码）⇒ 该工具**不持码**、回到角色层；
+   `@RequirePermission("system:manage")`（读码，保留）；
+   ⚠️ **issue #7040**：`notification_manage` 已**迁出本域**（它接回了 `mark_read` / `read_all`
+   变更 action，不再是只读工具 ⇒ 留在「只读域」会与域自述自相矛盾）。它的判据现在在
+   `backend/ai-agent-service/tests/test_notification_manage_change_actions.py`
+   与 `tests/unit_ci_workflows/test_mibao_b_end_readonly.py`（判据 1/3/6b/8/9/10/11）；
 3. 域提示词（`SETTINGS_SYSTEM_PROMPT`）**不再承诺任何写能力**，并给出「引导到后台页面」的
    反例路径 —— 口径 = 用户裁定（#5247 2026-09-23）「B 端 agent …创建和更新能力以及 tools
    都从 B 端 Agent 移除」+ 本单 #5302（settings 域整域漏网收口）。
@@ -28,7 +31,6 @@
 |---|---|
 | `test_settings_valid_actions_are_read_only_only` | 往 `VALID_ACTIONS` 塞回 `update_settings` |
 | `test_write_actions_are_rejected_at_the_entry` | 把 `execute()` 的写分支加回来（或把 action 校验挪到分支之后） |
-| `test_notification_permissions_match_its_endpoints` | 给 `notification_manage` 加回 `employee:list`（该码只服务已删除的 create 收件人解析） |
 | `test_prompt_does_not_promise_retired_write_capabilities` | 往提示词的非否定句里写回「修改 AI 配置」 |
 | `test_prompt_guides_to_the_backend_pages` | 删掉引导句（只拒绝、不给出路） |
 | `TestJudgementIsNotVacuous`（注入式） | 用改坏的文本重建判据 ⇒ 必须红；干净文本 ⇒ 不得误报 |
@@ -51,12 +53,10 @@ import re
 import pytest
 
 from app.graph.skills.settings_skill import SETTINGS_SYSTEM_PROMPT, SETTINGS_TOOLS
-from app.tools.notification_manage import NotificationManageTool
 from app.tools.settings_manage import SettingsManageTool
 
 #: settings 域**只读** action 真值（与 admin-api 端点一对一）。
 SETTINGS_READ_ACTIONS = {"get_settings", "get_ai_config", "login_logs"}
-NOTIFICATION_READ_ACTIONS = {"list", "unread_count"}
 
 #: 写 action 名（闭词表）：出现即视为写能力残留（口径同 MC-021 的 `WRITE_ACTION_WORDS`）。
 RETIRED_WRITE_ACTIONS = frozenset({
@@ -81,7 +81,10 @@ NEGATIONS = (
 #: 🔴 2026-10-09（issue #6580）**随 IA 更新**：`/settings` 由「企业基础信息 + 四个 tab」改成
 #: 「**企业基础设置** = 配置指挥台 + 四个区八个域」⇒ 页面名与页内块名逐字换了（AI 客服设置 → **AI 客服**）；
 #: 通知中心 = `/notifications` 不变。
-GUIDANCE_TARGETS = ("企业基础设置", "AI 客服", "通知中心")
+#: ⚠️ issue #7040：「通知中心」**已移出本表** —— 通知（含标记已读）迁到独立
+#: `notification` skill（`app/graph/skills/notification_skill.py`），本域提示词里
+#: 对通知的处置是「不属本域 ⇒ 交给通知中心域」而不是「引导到后台页自助」。
+GUIDANCE_TARGETS = ("企业基础设置", "AI 客服")
 
 
 def _claimed_sentences(text: str):
@@ -182,89 +185,6 @@ class TestSettingsManageIsReadOnly:
             "description 未给出后台引导路径（调整系统参数/AI 配置该怎么走）"
         )
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 二、notification_manage：写能力已下线 + 码对齐（回到角色层）
-# ══════════════════════════════════════════════════════════════════════════════
-
-
-class TestNotificationManageIsReadOnly:
-    @pytest.fixture
-    def tool(self):
-        return NotificationManageTool()
-
-    def test_notification_valid_actions_are_read_only_only(self, tool):
-        from app.tools import notification_manage as mod
-
-        assert set(mod.VALID_ACTIONS) == NOTIFICATION_READ_ACTIONS, (
-            f"notification_manage 的 action 枚举 {sorted(mod.VALID_ACTIONS)} 不等于只读集 "
-            f"{sorted(NOTIFICATION_READ_ACTIONS)} —— mark_read/read_all/delete/create 不得复活"
-        )
-
-    def test_notification_tool_declares_read_only_and_no_confirmation(self, tool):
-        assert tool.read_only is True
-        assert tool.requires_confirmation is False, (
-            "requires_confirmation 是给「高风险写」用的声明 —— 写 action 已删除，留着会让确认链空转"
-        )
-        assert tool.destructive is False
-        assert tool.read_only_actions == NOTIFICATION_READ_ACTIONS
-
-    def test_notification_permissions_match_its_endpoints(self, tool):
-        """读端点**无码** ⇒ 工具不持码（回落到角色层），与 admin-api 逐端点对齐。
-
-        实测（`NotificationController`）：`GET /api/admin/notifications` 与
-        `GET /unread-count` 都没有 `@RequirePermission`（唯一带码的是 `POST` = create，
-        已删除）；`employee:list` 只服务 create 的收件人解析（`GET /api/admin/users`），
-        随 create 一并退场 —— 留着就是**没有调用点的残留码**（会把 operator 之外的岗位挡在
-        「通知中心」之外，而该页面在后台是**全员可见**的）。
-        """
-        assert list(tool.required_permissions) == [], (
-            f"notification_manage 仍声明 {list(tool.required_permissions)} —— 它的读端点没有生效码，"
-            "残留写码会把通知读取面收窄成「只有持码岗位可用」（与实际端点语义不符）"
-        )
-        assert "employee:list" not in tool.required_permissions
-
-    def test_notification_role_layer_is_explicit_and_b_end_only(self, tool):
-        """无码 ⇒ 角色层是**唯一**门禁：必须在类体显式声明，且不得含 C 端/幽灵角色。"""
-        assert "allowed_roles" in NotificationManageTool.__dict__, (
-            "未声明 required_permissions 的工具必须**显式**声明 allowed_roles "
-            "（吃 BaseTool 默认值 = 含 customer/agent/tenant_admin，属横向越权/口径断裂）"
-        )
-        roles = set(tool.allowed_roles)
-        assert roles, "allowed_roles 不得为空"
-        assert not (roles & {"customer", "agent"}), (
-            f"角色白名单含 C 端角色 {sorted(roles & {'customer', 'agent'})} —— 两端隔离被打破"
-        )
-        assert "tenant_admin" not in roles, "allowed_roles 含幽灵角色 tenant_admin（admin-api 无该角色）"
-        assert {"admin", "operator"} <= roles, (
-            "通知读取面不得窄于改前（#5302 的零回归口径：改前权限码层放行 admin + operator）"
-        )
-
-    def test_notification_schema_exposes_no_write_parameters(self, tool):
-        props = set((tool.parameters or {}).get("properties") or {})
-        assert props == {"action", "status", "channel", "page", "size"}, (
-            f"工具 schema 仍暴露写参数 {sorted(props - {'action', 'status', 'channel', 'page', 'size'})}"
-        )
-        assert set(tool.parameters["properties"]["action"]["enum"]) == NOTIFICATION_READ_ACTIONS
-
-    @pytest.mark.parametrize("action", sorted(RETIRED_WRITE_ACTIONS - {"update_settings",
-                                                                      "update_ai_config",
-                                                                      "change_password"}))
-    async def test_notification_write_actions_are_rejected_at_the_entry(self, tool, action,
-                                                                       admin_tool_context):
-        result = await tool.execute(
-            context=admin_tool_context, action=action,
-            notification_id="n-1", recipient_id="u-1", title="标题", content="内容",
-        )
-        assert result.success is False, f"写 action {action!r} 仍被执行 ⇒ 写能力复活（#5302）"
-        assert "无效的操作类型" in (result.error or ""), result.error
-
-    def test_notification_description_marked_readonly_and_guides_to_backend(self, tool):
-        desc = tool.description
-        assert "【标注】READONLY" in desc, "description 未标注 READONLY"
-        assert "WRITE" not in desc.replace("READONLY", ""), "description 仍带 WRITE 标注"
-        assert "不在本工具能力内" in desc, "description 未写明写能力不在本工具能力内"
-        assert "通知中心" in desc, "description 未给出后台引导路径（标记已读/删除到哪去办）"
 
 
 # ══════════════════════════════════════════════════════════════════════════════

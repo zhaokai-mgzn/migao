@@ -902,9 +902,11 @@ class TestEnumAlignment:
 
     @pytest.mark.parametrize("tool_name,field,expected", [
         ("notification_manage", "action",
-         # 🔴 issue #5302（settings 域只读化收口）：写 action（mark_read/read_all/delete/create）
-         # 已从工具源码删除 ⇒ 期望集收窄为 {list, unread_count}（枚举若被搬回写 action，本用例立刻红）。
-         {"list", "unread_count"}),
+         # 🔴 issue #7040（2026-10-16 裁定「变更 ✅ 必须支持」）：`mark_read` / `read_all`
+         # **已接回**（端点 `PUT …/{id}/read` · `PUT …/read-all` 已核存在）；`delete` / `create`
+         # **仍不接线**（删除 ⊂ 严禁；创建 + 对外发送 ⊂ 不支持）。
+         # 两边都是判别力：少一个变更 action ⇒ 红（接线被回退）；多一个未接线 action ⇒ 红（越界）。
+         {"list", "unread_count", "mark_read", "read_all"}),
         ("notification_manage", "channel",
          {"system", "email", "sms", "wechat"}),
         ("notification_manage", "status",
@@ -930,7 +932,7 @@ class TestEnumAlignment:
         """参数化验证：Tool.parameters.properties[field].enum 与 admin-api 定义严格对齐
 
         涵盖：
-        - notification_manage 的 action / channel / status
+        - notification_manage 的 action / channel / status（action 期望集随 #7040 接线更新）
         - after_sales_manage 的 action / ticket_type / status
         - processing_item_manage 的 action / status（#4882 起该域已无计价方式枚举）
         （#3081 已移除 quick_reply_manage）

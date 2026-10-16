@@ -1,6 +1,6 @@
 # Staff Skill — Few-shot 示例
 
-> 🔴 本域已只读（issue #5247，2026-09-23 用户裁定）：建员工、禁用/删除/重置密码、建/改/删角色（岗位）、
+> 🔴 本域无可写工具（写能力未接线）：建员工、禁用/删除/重置密码、建/改/删角色（岗位）、
 > 分配权限都**不在能力内**——`employee_manage` 只剩 list/detail，`role_manage` 只剩 list/all/detail/list_permissions。
 
 ## ✅ 正确示例

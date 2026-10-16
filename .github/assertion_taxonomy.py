@@ -154,14 +154,21 @@ WRITE_TOOLS: frozenset[str] = frozenset({
 # 本表最后的两个成员（`notification_manage` / `settings_manage`）也收窄为纯只读 ——
 # 写 action（`mark_read` / `read_all` / `delete` / `create` / `update_settings` /
 # `update_ai_config` / `change_password`）已从源码删除 ⇒ 它们不再是「部分写」工具。
-# 🔴 **口径不改**：本表的语义仍是「工具级 read_only=False、但只有部分 action 是写」；
-# 当前**没有任何工具**属这一档（B 端只读化把最后两把收掉了）。
+# 🔴 **本表在 issue #7040（2026-10-16）重新填回 1 条**：用户裁定「变更 ✅ 必须支持」⇒
+# `notification_manage` 的 `mark_read` / `read_all` 接回（`read_only` 由 True 变回 False），
+# 而 `list` / `unread_count` 仍是只读 action（= 该工具同时有读写 action）⇒ 它**恰好**是
+# 本表语义定义的那一档。口径一字未改（工具级 read_only=False + 只有部分 action 是写）。
 # 归零**不是门禁空壳**：写用例的判据源还剩 `WRITE_TOOLS`（C 端 `order_create` /
 # `aftersale_create`）；而「action 级读写分支仍分得清」由
 # `tests/unit_ci_workflows/test_case_trust_gate.py` 的**注入式自证**承担
 # （用合成「部分写」工具证明 `is_write_expectation` 的 action 分支仍然有效）。
 # 一旦重新引入"部分写"工具 ⇒ 必须填回本表 + 恢复那里 ≥1 的下界断言。
-WRITE_TOOL_ACTIONS: dict[str, frozenset[str]] = {}
+WRITE_TOOL_ACTIONS: dict[str, frozenset[str]] = {
+    # issue #7040：`read_only_actions = {"list","unread_count"}`（读）⇒ 写 action = 余下两个。
+    # 值必须与该工具源码的 `read_only_actions` 互补（不变式见
+    # `tests/unit_ci_workflows/test_case_trust_gate.py` 的 `test_write_tool_actions_table_matches_sources`）。
+    "notification_manage": frozenset({"mark_read", "read_all"}),
+}
 
 # 安全护栏：写工具的判据面不得为空（空集合 = 所有写用例都判成读用例 = 门禁静默变空壳）。
 # ⚠️ #5302：`WRITE_TOOL_ACTIONS` 归零是**事实**（见上），故护栏守**两者之和**而不是逐个守。

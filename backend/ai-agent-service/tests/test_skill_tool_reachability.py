@@ -312,6 +312,10 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
         "aftersale_create", "order_create", "order_manage", "processing_item_manage",
         "processing_order_generate", "processing_order_update", "product_manage",
         "product_update", "sku_update",
+        # 🔴 issue #7040（通知域独立）：`notification_manage` 从 settings 域**解绑**并接回
+        # 变更 action（`read_only` 由 True 变回 False）⇒ 它重新进入「写校验目标表」，而
+        # `settings` 仍绑 `validate_input` 却执行不了它 ⇒ 该 skill **+1 死角**（30 → 31）。
+        "notification_manage",
         # issue #5314：同上（各 +1）
         "product_batch_update",
         # issue #6486 包 2：定时提醒（新 A 档写工具 `scheduled_task_manage`）⇒ 同 #5314 的形态：
@@ -344,7 +348,13 @@ A5_REANCHOR_ADDITIONS: dict[str, frozenset[str]] = {
     # 计数对账：账本 32 − 增量 3 == `A5_BASELINE_COUNT_PRE_5247`（29）。
     "customer_aftersales": frozenset({"product_batch_update", "scheduled_task_manage"}),
     "customer_order": frozenset({"product_batch_update", "scheduled_task_manage"}),
-    "settings": frozenset({"product_batch_update", "scheduled_task_manage"}),
+    # 🔴 issue #7040（2026-10-16 通知域独立 + 变更接回）：`notification_manage` 重新成为
+    # **写工具**（`mark_read` / `read_all` 接回）⇒ 按 F6 它必须有 `_VALIDATION_RULES` 规则
+    # ⇒ **域无关**的校验目标表新增一项 ⇒ 仍绑 `validate_input` 的 `settings` **+1 死角**。
+    # 三条正当性（`test_reanchored_additions_trace_to_a_real_product_change` 逐条核）：
+    # ① 已注册 ② 写工具（`read_only=False`）③ 被 `notification` skill 绑定。
+    # 计数对账：账本 **31** − 增量 **4** == `A5_BASELINE_COUNT_PRE_5247`（**27**）。
+    "settings": frozenset({"product_batch_update", "scheduled_task_manage", "notification_manage"}),
 }
 
 # 锚点条数的**计数对账**基准：`账本总数 − 增量条数` 必须等于它（只改数字会被这条拦住）。

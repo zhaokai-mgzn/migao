@@ -17,7 +17,8 @@
 `finance_api` / `inventory_manage` / `role_manage` / `session_manage`）+ #5247 新增的 **6** 把
 （`briefing_query` / `craft_calc_config_query` / `inbound_order_query` /
 `operation_catalog_query` / `processing_order_set_query` / `stock_ledger_query`）
-+ #5302 收窄为只读的 **2** 把（`notification_manage` / `settings_manage`）；
++ #5302 收窄为只读的 **2** 把（`notification_manage` / `settings_manage`）
+  —— 其中 `notification_manage` 已于 **#7040 退场**（变更 action 接回 ⇒ 不再是只读工具）；
 **唯一口径以 `test_witness_b_end_only_readonly_tools_never_reach_c_end_domains` 的见证集为准**
 （本段数量只作导读，抄错即由那条判据报红）⇒ "全局并入只读"会让 C 端当场看见这 23 个 B 端工具
 （越权面），故必须按 persona 家族切。家族由 `SkillConfig.system_prompts` 的 key **derive**（不写死
@@ -326,8 +327,16 @@ class TestPersonaBoundaryIsHard:
             # ── #5247 ② 新增的 6 把只读工具 ────────────────────────────────────────
             "briefing_query", "craft_calc_config_query", "inbound_order_query",
             "operation_catalog_query", "processing_order_set_query", "stock_ledger_query",
-            # ── #5302 ① settings 域整域收窄为只读的 2 把（写 action 已删除）──────────
-            "notification_manage", "settings_manage",
+            # ── #5302 ① settings 域整域收窄为只读 → **2026-10-16 (#7040) 退场 1 把** ──
+            # 🔴 issue #7040 改判（用户 2026-10-16「能力边界 终版」：变更 ✅ 必须支持）：
+            # `notification_manage` **退场 26 → 25** —— 它的 `mark_read` / `read_all` 已接回，
+            # `read_only` 由 True 变回 False ⇒ 按本见证的既有口径
+            # （`(mibao 可达 - xiaobu 可达) ∩ read_only`）**自然退场**（不再是只读工具）。
+            # 口径一字未改；「C 端零改动」照旧由本用例量化：C 端域里出现 B-only 只读工具 ⇒ 红。
+            # ⚠️ 退场 ≠ 放宽：它的 C 端零绑定由 `xiaobu` 侧 skill 集合**现算**（不含它），
+            #    写面边界由 `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 的
+            #    判据 1/3/6b/8/9/10/11 承担。
+            "settings_manage",
             # ── #5368 包 2 进场（Agent 深通道：图 → 同页填充计划；纯本地只读）──────
             "image_recognize",
             # ── #4923 进场（工艺配置 6 个零覆盖读端点；只读聚合，绑 B 端 product）──

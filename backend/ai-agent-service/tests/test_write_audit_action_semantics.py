@@ -75,6 +75,9 @@ WRITE_TOOL_INVENTORY: frozenset = frozenset({
     "product_update",
     "sku_update",
     "scheduled_task_manage",  # issue #6486 包 2：定时提醒（自带 action 参数：create/list/cancel）
+    # 🔴 issue #7040（2026-10-16 裁定「变更 ✅ 必须支持」）：通知标记已读接回 B 端 ⇒
+    # 该工具重新成为**写工具**（自带 action 参数：mark_read / read_all）。
+    "notification_manage",
 })
 # 留痕标记（判据引用的字面量必须在实现里真出现，见 test_*_markers_exist_in_source）
 _PERSIST_FAILED_MARK = "[AUDIT] PERSIST_FAILED"
