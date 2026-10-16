@@ -31,10 +31,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 class WorkerPagesTest {
 
     @Test
-    @DisplayName("默认 = report/order/cut_calc/shipment（顺序即工人端默认页面顺序）")
+    @DisplayName("默认 = report/piecework/order/cut_calc/shipment（顺序即工人端默认页面顺序）")
     void defaultsAreTheFourWorkerPages() {
+        // issue #6767（2026-10-12 用户逐字「需要给工人看」）：新增 `piecework`（我的计件，含金额）
+        // —— 键与商家面人话名同批登记（WorkerPages.labels），默认与可选页同源 ⇒ 本条即闭词表守卫。
         assertThat(WorkerPages.defaultPages())
-                .containsExactly("report", "order", "cut_calc", "shipment");
+                .containsExactly("report", "piecework", "order", "cut_calc", "shipment");
         assertThat(WorkerPages.ALL).containsExactlyInAnyOrderElementsOf(WorkerPages.defaultPages());
     }
 

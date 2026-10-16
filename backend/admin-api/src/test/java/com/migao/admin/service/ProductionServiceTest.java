@@ -2,6 +2,7 @@
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
@@ -29,6 +30,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -60,6 +62,10 @@ class ProductionServiceTest {
     private static final Long TENANT = 1L;
     private static final String ORDER_ID = "order-1";
     private static final String PO_ID = "po-1";
+
+    /** 工人端「我的计件」读面夹具（issue #6767）：会话解的工人 id —— 计件归属的**唯一**根。 */
+    private static final String LEDGER_WORKER = "worker-zhang";
+    private static final String LEDGER_NAME = "张三";
 
     @Mock
     private ProcessingOrderMapper processingOrderMapper;
@@ -615,6 +621,167 @@ class ProductionServiceTest {
                 .hasMessageContaining("worker_name");
         assertThatThrownBy(() -> service.workerPiecework("张三", "2026-13", TENANT))
                 .hasMessageContaining("period");
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // 工人端「我的计件」读面（issue #6767；口径 = docs/design/worker-home-menu.md §6.3）
+    //
+    // 判据 ①（最重要）**单一真值**：本面的 amount_total 与商家端同一份聚合（期间报表
+    // `/piecework/summary`、agent 工人计件 `workerPiecework`）在**同一夹具**下逐值相等
+    // —— 端侧（或本方法）自己再求一遍和 ⇒ 红。
+    // ════════════════════════════════════════════════════════════════════════════
+
+    /** 工人计件读面的夹具日志（work_date 在本月，单价快照随行落库）。 */
+    private ProductionWorkLog ledgerLog(String operationName, String qty, String unitPrice) {
+        return ProductionWorkLog.builder()
+                .tenantId(TENANT).processingOrderId(PO_ID).operationId("op-ledger")
+                .operationName(operationName).workerId(LEDGER_WORKER).workerName(LEDGER_NAME)
+                .qty(new BigDecimal(qty)).qualifiedQty(new BigDecimal(qty))
+                .unitPrice(new BigDecimal(unitPrice)).priceState(ProductionService.PRICE_STATE_PRICED)
+                .workType("normal").workDate(LocalDate.of(2026, 10, 9)).deleted(0).build();
+    }
+
+    /** 把业务时钟钉在 2026-10-16（口径 = Asia/Shanghai 当前自然月；不钉 ⇒ 月份边界判据随真实日期漂）。 */
+    private void pinBusinessToday(int year, int month, int day) {
+        java.time.Clock fixed = java.time.Clock.fixed(
+                LocalDate.of(year, month, day).atStartOfDay(java.time.ZoneOffset.UTC).toInstant(),
+                java.time.ZoneOffset.UTC);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "businessClock",
+                new com.migao.admin.time.BusinessClock(fixed));
+    }
+
+    @Test
+    @DisplayName("🔴 单一真值：工人面合计 == 商家端同一份实现（期间报表 total / agent 工人计件 total）逐值相等")
+    void workerLedgerTotalEqualsMerchantPieceworkForTheSameFixture() {
+        pinBusinessToday(2026, 10, 16);
+        // 夹具刻意让「订单级合计」≠「期间级合计」：商家端读面有两条口径入口（按订单 / 按期），
+        // 工人面必须与**同期**那一份相等。
+        List<ProductionWorkLog> thisMonth = List.of(
+                ledgerLog("精裁-布", "10", "0.12"),
+                ledgerLog("质检", "20", "0.30"));
+        when(workLogMapper.selectList(any())).thenReturn(thisMonth);
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of());
+
+        Map<String, Object> worker = service.workerPieceworkLedger(LEDGER_WORKER, LEDGER_NAME, "2026-10", TENANT);
+        Map<String, Object> merchant = service.pieceworkSummary("2026-10", LEDGER_NAME, TENANT);
+        Map<String, Object> agentWorker = service.workerPiecework(LEDGER_NAME, "2026-10", TENANT);
+
+        // 7.20 = 10×0.12 + 20×0.30（逐笔取整到分再累加，与商家端同一份 aggregate）
+        assertThat((BigDecimal) worker.get("amount_total")).isEqualByComparingTo("7.20");
+        assertThat((BigDecimal) worker.get("amount_total"))
+                .as("工人面合计必须与商家端期间报表**逐值相等**（第二份求和实现 ⇒ 红）")
+                .isEqualByComparingTo((BigDecimal) merchant.get("total"));
+        assertThat((BigDecimal) worker.get("amount_total"))
+                .as("也要与 agent 工人计件（同一份 aggregate）相等")
+                .isEqualByComparingTo((BigDecimal) agentWorker.get("total"));
+        assertThat((BigDecimal) worker.get("qty_total")).isEqualByComparingTo("30");
+        assertThat((List<?>) worker.get("lines")).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("🔴 作用域只认会话：查询按 worker_id 过滤、期间半开区间 [月初, 次月初)")
+    void workerLedgerScopesByWorkerIdAndHalfOpenPeriod() {
+        pinBusinessToday(2026, 10, 16);
+        when(workLogMapper.selectList(any())).thenReturn(List.of());
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of());
+
+        service.workerPieceworkLedger(LEDGER_WORKER, LEDGER_NAME, null, TENANT);
+
+        ArgumentCaptor<QueryWrapper<ProductionWorkLog>> captor =
+                ArgumentCaptor.forClass(QueryWrapper.class);
+        verify(workLogMapper).selectList(captor.capture());
+        assertThat(captor.getValue().getSqlSegment()).contains("worker_id").contains("work_date");
+        assertThat(captor.getValue().getParamNameValuePairs().values())
+                .as("半开区间 [2026-10-01, 2026-11-01)（下一月初 = 上界，不含）")
+                .contains(TENANT, LEDGER_WORKER, LocalDate.of(2026, 10, 1), LocalDate.of(2026, 11, 1));
+    }
+
+    @Test
+    @DisplayName("🔴 归属/期间边界取自**同一次查询**：他人 worker_id 与邻月日期都不在查询谓词里")
+    void workerLedgerNeverQueriesForAnotherWorkerOrNeighbourMonth() {
+        pinBusinessToday(2026, 10, 16);
+        when(workLogMapper.selectList(any())).thenReturn(List.of());
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of());
+
+        service.workerPieceworkLedger(LEDGER_WORKER, LEDGER_NAME, "2026-10", TENANT);
+
+        ArgumentCaptor<QueryWrapper<ProductionWorkLog>> captor =
+                ArgumentCaptor.forClass(QueryWrapper.class);
+        // ⚠️ `workLogMapper.selectList` 在本方法里被调**两次**：先 `activeOperationsById`（无谓词、参数空），
+        // 后才是本次报工流水查询 ⇒ 必须取**那一条带 worker_id 的**（captureAll + 过滤），
+        // 不能取 `getValue()`（Mockito 给的是**最后一次**，实测拿到空参数）。
+        verify(workLogMapper, org.mockito.Mockito.atLeastOnce()).selectList(captor.capture());
+        QueryWrapper<ProductionWorkLog> ledgerQuery = captor.getAllValues().stream()
+                .filter(w -> w.getSqlSegment().contains("worker_id"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("没有任何一次查询带 worker_id 谓词（作用域没落到 SQL 上）"));
+        Collection<Object> params = ledgerQuery.getParamNameValuePairs().values();
+        // 红证：把 `.eq("worker_id", workerId)` 删掉 ⇒ 上面 orElseThrow + 上一条断言当场红（已实测）
+        assertThat(params)
+                .as("归属必须是**会话解出的那个工人**")
+                .contains(LEDGER_WORKER, TENANT);
+        assertThat(params)
+                .as("别人的 worker_id / 相邻月份的端点一律不得出现在谓词里（同名兜底 = 他人计件可见 ⇒ 红）")
+                .doesNotContain("worker-li", LocalDate.of(2026, 9, 30), LocalDate.of(2026, 11, 30));
+    }
+
+    @Test
+    @DisplayName("🔴 未定价行显式列出且**不进合计**（绝不按 0 元计入）")
+    void workerLedgerListsUnpricedRowsAndExcludesThemFromTheTotal() {
+        pinBusinessToday(2026, 10, 16);
+        ProductionWorkLog unpriced = ProductionWorkLog.builder()
+                .tenantId(TENANT).processingOrderId(PO_ID).operationId("op-unpriced")
+                .operationName("车被").workerId(LEDGER_WORKER).workerName(LEDGER_NAME)
+                .qty(new BigDecimal("5")).qualifiedQty(new BigDecimal("5"))
+                .unitPrice(null).priceState(ProductionService.PRICE_STATE_UNPRICED)
+                .workType("normal").workDate(LocalDate.of(2026, 10, 9)).deleted(0).build();
+        when(workLogMapper.selectList(any())).thenReturn(List.of(ledgerLog("质检", "20", "0.30"), unpriced));
+        // 🔴 工人计件读面的实例回查走的是**整租户活跃实例索引**（`activeOperationsById` 的 selectList），
+        // **不是**逐条 `selectById` ⇒ 夹具必须把「单价 NULL 的那个实例」放进这份清单里，否则该笔会被
+        // 当成脏数据跳过（unpriced 块恒空 —— 一开始就是这么踩的，实测）。
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                ProcessingPositionOperation.builder()
+                        .id("op-unpriced").tenantId(TENANT).processingOrderId(PO_ID)
+                        .positionName("布帘").seq(1).operationName("车被").unit("套")
+                        .qty(new BigDecimal("5")).unitPrice(null).factor(BigDecimal.ONE)
+                        .status("pending").doneQty(BigDecimal.ZERO).deleted(0).build()));
+
+        Map<String, Object> worker = service.workerPieceworkLedger(LEDGER_WORKER, LEDGER_NAME, "2026-10", TENANT);
+
+        assertThat((BigDecimal) worker.get("amount_total"))
+                .as("未定价的 5 件按 0 元计入 ⇒ 红；它必须完全在合计之外")
+                .isEqualByComparingTo("6.00");
+        assertThat((BigDecimal) worker.get("qty_total")).isEqualByComparingTo("20");
+        Map<?, ?> unpricedBlock = (Map<?, ?>) worker.get("unpriced");
+        assertThat((BigDecimal) unpricedBlock.get("qty")).isEqualByComparingTo("5");
+        assertThat((List<?>) unpricedBlock.get("operations")).hasSize(1);
+        assertThat(unpricedBlock.get("hint")).isNotNull();
+    }
+
+    @Test
+    @DisplayName("期间：缺省 = 业务当前自然月；未来月份 / 缺 worker_id ⇒ 422")
+    void workerLedgerValidatesPeriodAndWorker() {
+        pinBusinessToday(2026, 10, 16);
+        when(workLogMapper.selectList(any())).thenReturn(List.of());
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of());
+
+        Map<String, Object> current = service.workerPieceworkLedger(LEDGER_WORKER, LEDGER_NAME, null, TENANT);
+        assertThat(current.get("period")).isEqualTo("2026-10");
+        assertThat(current.get("prev_period")).isEqualTo("2026-09");
+        assertThat(current.get("can_prev")).isEqualTo(true);
+        assertThat(current.get("can_next")).isEqualTo(false);
+
+        Map<String, Object> lastMonth = service.workerPieceworkLedger(LEDGER_WORKER, LEDGER_NAME, "2026-09", TENANT);
+        assertThat(lastMonth.get("can_next")).isEqualTo(true);
+        assertThat(lastMonth.get("next_period")).isEqualTo("2026-10");
+
+        assertThatThrownBy(() -> service.workerPieceworkLedger(LEDGER_WORKER, LEDGER_NAME, "2026-11", TENANT))
+                .as("未来月份没有计件可言 ⇒ 422（不是静默回空合计）")
+                .hasMessageContaining("不得晚于当前月份");
+        assertThatThrownBy(() -> service.workerPieceworkLedger(LEDGER_WORKER, LEDGER_NAME, "2026-13", TENANT))
+                .hasMessageContaining("period");
+        assertThatThrownBy(() -> service.workerPieceworkLedger("  ", LEDGER_NAME, "2026-10", TENANT))
+                .hasMessageContaining("worker_id");
     }
 
     @Test

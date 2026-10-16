@@ -31,6 +31,7 @@ import {
   PAGE_CUT_CALC,
   PAGE_ORDER,
   PAGE_REPORT,
+  PAGE_PIECEWORK,
   PAGE_SHIPMENT,
   permUnreadNotice,
   reduce,
@@ -38,7 +39,7 @@ import {
 } from '../src/render.mjs'
 
 /** 后端 `WorkerPages.ALL` 的逐字镜像（改后端闭词表 ⇒ 本文件红）。 */
-const BACKEND_PAGE_KEYS = [PAGE_REPORT, PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT]
+const BACKEND_PAGE_KEYS = [PAGE_REPORT, PAGE_PIECEWORK, PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT]
 
 /** 裁高计算入口（本页唯一的入口；文案 2026-10-10 起用「裁高计算（一体机）」）。 */
 const MACHINE_ENTRY = '/w/machine.html'
@@ -105,12 +106,13 @@ function memStorage(seed = {}) {
 
 // ── 上游契约：页面键闭词表 + 默认全开（两处各一份，必须逐值相同）────────────────────────────
 
-test('页面键闭词表 = 后端 WorkerPages.ALL 的逐字镜像（4 键 + 顺序；改一边不改另一边 ⇒ 红）', () => {
+test('页面键闭词表 = 后端 WorkerPages.ALL 的逐字镜像（5 键 + 顺序；改一边不改另一边 ⇒ 红）', () => {
   assert.deepEqual(DEFAULT_PAGES, BACKEND_PAGE_KEYS, '默认页面集合与后端 WorkerPages.defaultPages() 不一致')
   assert.equal(new Set(DEFAULT_PAGES).size, DEFAULT_PAGES.length, '闭词表有重复键（后端是 Set，重复 = 两套口径）')
   assert.deepEqual(
     BACKEND_PAGE_KEYS,
-    ['report', 'order', 'cut_calc', 'shipment'],
+    // issue #6767：`piecework`（我的计件，含金额）与商家面标签同批登记（后端 WorkerPages.PIECEWORK）
+    ['report', 'piecework', 'order', 'cut_calc', 'shipment'],
     '页面键是**冻结契约**（后端闭词表逐字）：拼错一个字母 ⇒ 商家的开关静默失效',
   )
 })
@@ -135,6 +137,23 @@ test('🔴 ① `cut_calc` ∈ pages ⇒ 入口栏出现「裁高计算（一体�
   assert.equal(deglue(off).includes(MACHINE_ENTRY), false, '`cut_calc` 没开却仍在渲染入口（开关形同虚设）')
   assert.ok(!/机台模式|裁高计算/.test(off), '入口区不该出现裁高计算文案')
   assert.ok(!off.includes('id="wh5-worker-entries"'), '没有可渲染的入口 ⇒ **不留空入口栏**（2026-10-10 改版）')
+})
+
+// ── 判据 ①′：`piecework`（我的计件，issue #6767）─────────────────────────────────────────
+
+test('🔴 ①′ `piecework` ∈ pages ⇒ 入口栏出现「我的计件」真链接；∉ ⇒ 一条都不渲染', () => {
+  const on = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_PIECEWORK]), null))
+  assert.match(on, /id="wh5-piecework-entry"[^>]*href="\/w\/piecework\.html"/, '入口必须是真链接')
+  assert.match(on, />我的计件<\/a>/, '入口文案必须是人话（不许出现页面键 / 路由字面量）')
+  assert.equal(deglue(on).includes(MACHINE_ENTRY), false, '`cut_calc` 没开 ⇒ 不渲染裁高入口')
+
+  const off = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_ORDER, PAGE_SHIPMENT]), null))
+  assert.equal(off.includes('/w/piecework.html'), false, '`piecework` 没开却仍在渲染入口（开关形同虚设）')
+  assert.ok(!off.includes('id="wh5-worker-entries"'), '一条入口都没有 ⇒ **不留空入口栏**')
+
+  const both = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_PIECEWORK, PAGE_CUT_CALC]), null))
+  assert.match(both, /id="wh5-machine-entry"/, '两条都开 ⇒ 两条入口都在')
+  assert.match(both, /id="wh5-piecework-entry"/, '两条都开 ⇒ 两条入口都在')
 })
 
 test('🔴 ① 红证：去掉入口栏的 `cut_calc` 过滤（无条件出裁高链接）⇒ 同一条判定必红', () => {

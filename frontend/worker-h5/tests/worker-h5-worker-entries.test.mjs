@@ -37,7 +37,7 @@ const visible = (html) => html.replace(/<!--[\s\S]*?-->/g, '')
 /** 登录态（`pages` 直接落在 state 上：本文件只测渲染，不走装配层）。 */
 const loggedIn = (pages, extra = {}) => ({ ...initialState(), worker: WORKER, mode: 'scan', pages, ...extra })
 
-test('🔴 ① `cut_calc` ∈ pages ⇒ 页头有「裁高计算（一体机）」入口；∉ ⇒ 整条入口栏不渲染', () => {
+test('🔴 ① `cut_calc` ∈ pages ⇒ 页头有「裁高计算（一体机）」入口；∉（且 `piecework` 也没开）⇒ 整条入口栏不渲染', () => {
   const on = visible(renderPage(loggedIn([PAGE_REPORT, PAGE_CUT_CALC])))
   assert.equal(on.includes(`href="${MACHINE_ENTRY}"`), true, '`cut_calc` 已开却没有入口（机台那台屏走不到裁高页）')
   assert.match(on, /id="wh5-worker-entries"/, '入口栏要有稳定 id（判据 / 排障都按它定位）')

@@ -1996,6 +1996,80 @@ public class ProductionService {
     }
 
     /**
+     * 工人端「我的计件」读面（issue #6767；口径 = {@code docs/design/worker-home-menu.md} §6.3）：
+     * {@code {worker_name, period, amount_total, qty_total, lines[], unpriced{...}, prev/next}}。
+     *
+     * <p>🔴 <b>涉钱面 · 单一真值</b>：金额聚合**没有第二份实现** —— 本方法只是
+     * {@link #aggregate}（per-order 汇总 / 期间报表 / agent 工人计件共用的**唯一**算法）之上的一层
+     * 「按当前工人 + 期间」的**过滤投影**。判据：同一夹具下本面的 {@code amount_total} 与
+     * {@code pieceworkSummary} 的 {@code total}、以及 {@code workerPiecework} 的 {@code total}
+     * **逐值相等**（端侧 / 本方法自己再求一遍和 ⇒ 红）。</p>
+     *
+     * <p>🔴 <b>作用域只认会话</b>：{@code workerId} / {@code workerName} 由调用方从
+     * {@code X-Worker-Session-Id} 解出（{@code WorkerIdentity}）—— 本方法**没有**任何请求入参能
+     * 指定「看谁的计件」（请求里带 {@code worker_id} 不改变结果，判据见
+     * {@code WorkerPieceworkControllerTest}）。</p>
+     *
+     * <p><b>期间</b>：半开区间 {@code [月初 00:00, 次月初 00:00)}，按报工时间（{@code work_date}）归月；
+     * 月度算术全部在服务端（{@code prev_period} / {@code next_period} / {@code can_prev} / {@code can_next}
+     * 一并下发）⇒ 端侧不做月份边界计算。</p>
+     *
+     * <p><b>未定价</b>（issue #4696）：{@code unit_price IS NULL} 的行由 {@link #aggregate} 记进
+     * {@code unpricedQty}（**绝不**按 0 计入金额）⇒ 本面原样透出「N 道未定价（未计入合计）」，
+     * 与商家端读面**同一份** {@code unpriced} 块。</p>
+     *
+     * @param workerId   当前工人 id（**只能**来自工人会话）
+     * @param workerName 当前工人姓名（仅用于回显与溯源，不参与过滤）
+     * @param period     {@code YYYY-MM}；{@code null} = 业务当前自然月（Asia/Shanghai）
+     */
+    public Map<String, Object> workerPieceworkLedger(String workerId, String workerName, String period,
+                                                    Long tenantId) {
+        if (!StringUtils.hasText(workerId)) {
+            // 工人路径上身份只有一个来源（session）—— 调用方已 401，这里是不可达的兜底
+            throw BusinessException.validationError("worker_id 不能为空");
+        }
+        YearMonth current = YearMonth.from(businessClock.today());
+        YearMonth month = StringUtils.hasText(period) ? parsePeriod(period, true) : current;
+        if (month.isAfter(current)) {
+            throw BusinessException.validationError("period 不得晚于当前月份（" + current + "）");
+        }
+
+        // 半开区间 [月初, 次月初)：与期间报表的「当月首末（含端点）」在 LocalDate 列上等价，
+        // 用半开写法把口径写死在 SQL 里（避免以后 work_date 变时间戳时静默变成开区间）。
+        YearMonth next = month.plusMonths(1);
+        QueryWrapper<ProductionWorkLog> wrapper = new QueryWrapper<ProductionWorkLog>()
+                .eq("tenant_id", tenantId)
+                .eq("deleted", 0)
+                // 🔴 归属只认**会话带给报工行**的 worker_id（报工那一刻由服务端固化）：
+                // 按 worker_name 兜底会把同名的**另一个人**的计件读给这位工人（他人计件不可见 ⇒ 红）。
+                .eq("worker_id", workerId)
+                .ge("work_date", month.atDay(1))
+                .lt("work_date", next.atDay(1))
+                .orderByAsc("work_date");
+
+        Map<String, ProcessingPositionOperation> instancesById = activeOperationsById(tenantId);
+        List<ProductionWorkLog> logs = list(wrapper);
+        PieceworkTotals totals = aggregate(logs, instancesById::get,
+                windowGroupKeyByItemId(logs, instancesById, tenantId));
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("worker_name", workerName == null ? null : workerName);
+        result.put("period", month.toString());
+        result.put("amount_total", money(totals.total()));
+        result.put("qty_total", nz(totals.workerQty().get(workerName)));
+        // 逐笔 = 「按工序」明细行（与商家端**同一份**读时派生：逻辑名 + 部位 + 数量 + 金额）
+        result.put("lines", operationPieceworkRows(totals.operationAmount(), totals.operationQty(),
+                positionKindByOperationName(instancesById.values())));
+        result.put("unpriced", unpricedBlock(totals.unpricedQty()));
+        // 期间可切（默认当前自然月，可切上月）—— 月度算术只在服务端一处
+        result.put("prev_period", month.minusMonths(1).toString());
+        result.put("next_period", month.isBefore(current) ? next.toString() : null);
+        result.put("can_prev", true);
+        result.put("can_next", month.isBefore(current));
+        return result;
+    }
+
+    /**
      * period 解析（YYYY-MM）——工人计件（agent 契约，period 可选）与期间报表（#4205，period 必填）
      * **共用这一份**校验：两处各写一遍必然漂移（一处收 "2026-9"、另一处不收）。
      *

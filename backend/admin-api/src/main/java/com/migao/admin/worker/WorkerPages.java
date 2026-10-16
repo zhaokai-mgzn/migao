@@ -46,6 +46,15 @@ public final class WorkerPages {
     /** 页面键：裁高计算器（与商家端「裁高配置」同一个算面）。 */
     public static final String CUT_CALC = "cut_calc";
 
+    /**
+     * 页面键：我的计件（**合计金额** + 件数 + 逐笔；issue #6767，2026-10-12 用户逐字「需要给工人看」）。
+     *
+     * <p>🔴 涉钱面，口径由 {@code docs/design/worker-home-menu.md} §6.3 钉死六条：金额聚合**复用**
+     * 商家端计件读面的同一份实现（{@code ProductionService.aggregate}），工人面只做「当前工人 + 期间」
+     * 的**过滤投影**；作用域只由 {@code X-Worker-Session-Id} 解（请求里带 {@code worker_id} 不改变结果）。</p>
+     */
+    public static final String PIECEWORK = "piecework";
+
     /** 页面键：发货。 */
     public static final String SHIPMENT = "shipment";
 
@@ -55,7 +64,7 @@ public final class WorkerPages {
      * <p>顺序 = 工人端默认的页面顺序（读面原样回给前端，前端不再自己排一遍）。</p>
      */
     public static final Set<String> ALL = Set.copyOf(new LinkedHashSet<>(List.of(
-            REPORT, ORDER, CUT_CALC, SHIPMENT)));
+            REPORT, PIECEWORK, ORDER, CUT_CALC, SHIPMENT)));
 
     private WorkerPages() {
     }
@@ -67,13 +76,14 @@ public final class WorkerPages {
      * —— 可选页与默认值同源，前端不另抄一份。</p>
      */
     public static List<String> defaultPages() {
-        return List.of(REPORT, ORDER, CUT_CALC, SHIPMENT);
+        return List.of(REPORT, PIECEWORK, ORDER, CUT_CALC, SHIPMENT);
     }
 
     /** 页面键 → 商家面可读名称（配置面板按它渲染勾选项；键是机器码，名称是人话）。 */
     public static Map<String, String> labels() {
         Map<String, String> labels = new LinkedHashMap<>();
         labels.put(REPORT, "报工");
+        labels.put(PIECEWORK, "计件工资报表");
         labels.put(ORDER, "订单");
         labels.put(CUT_CALC, "裁高计算器");
         labels.put(SHIPMENT, "发货");

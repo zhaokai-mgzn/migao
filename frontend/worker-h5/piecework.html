@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<!-- 工人端 H5「我的计件」（issue #6767；口径真值源 = docs/design/worker-home-menu.md §6.3）。
+     形态 = 手机 / PAD 上的一块只读钱面：合计金额 + 件数 + 逐笔（本月 / 上月）。
+     🔴 三条纪律（都落在代码里，不靠约定）：
+        ① **只读**：本页没有任何写动作（无确认 / 无锁定 / 无结算入口）；
+        ② **金额只有一个来源**：读数全部来自 `GET /api/worker/piecework`（服务端复用商家端计件
+           读面的**同一份**聚合实现）—— 本页**不做任何求和**（端侧求和 = 第二份口径）；
+        ③ **身份只由会话解**：请求里不带 `worker_id` / `worker_name`（`X-Worker-Session-Id` 由
+           api.mjs 统一带）；页头「当前工人」来自服务端 `current-worker`。
+     零依赖：不引框架 / 扫码 SDK；页面与 /api 同源 ⇒ 无跨域。 -->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="format-detection" content="telephone=no" />
+  <title>我的计件</title>
+  <link rel="stylesheet" href="./src/styles.css" />
+</head>
+<body>
+  <main id="piecework-root" class="wh5-root"></main>
+  <script type="module" src="./src/piecework-app.mjs"></script>
+</body>
+</html>
