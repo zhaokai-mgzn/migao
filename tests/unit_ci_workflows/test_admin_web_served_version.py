@@ -1,4 +1,4 @@
-# case_ids: MC-106
+# case_ids: MC-106, MC-107
 """**admin-web 发布腿的身份自证必须可判读**（issue #6611 逐字病灶 + #6746 兜底零交付）。
 
 ## 病（现取读数，不是推断）
@@ -591,4 +591,74 @@ def test_shared_script_parses_and_has_no_unquoted_cjk_adjacent_expansion():
     assert not offenders, (
         "出现「裸 `$VAR` 紧跟非 ASCII」⇒ bash 会把中文字节并进变量名（`set -u` 下报 unbound variable，"
         "且报错行号与实际坏点不一致）⇒ 改成 `${VAR}` 形态：\n" + "\n".join(offenders)
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# `builtAt` 面的具名判据（issue #7015；与 admin-api 腿的 `served-version-verify.sh` 同族）
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_empty_or_unknown_builtat_is_red_when_required():
+    """🔴 **红证**：`sha` 一致、但 `builtAt` 是**空串 / 兜底值 `unknown`** ⇒ 退 **1** 且**点名取值源未接**。
+
+    issue #7015 的形态：改前本腿的 `BUILT_AT` 读 `${GITHUB_RUN_STARTED_AT:-}`（**不是** GitHub 注入的
+    环境变量）⇒ 恒空 ⇒ `frontend/admin-web/Dockerfile` 的兜底把 `builtAt` 写成 `unknown`
+    ⇒ 而探针**只比 `sha`** ⇒ 一条**恒真的空断言**（没有任何东西会红）。
+    """
+    for value in ("", "unknown"):
+        with ProbeStub(identity_body(TARGET_SHA, built_at=value)) as stub:
+            proc = run_probe(stub.base_url, TARGET_SHA, ADMIN_WEB_SERVED_REQUIRE_BUILT_AT="1")
+        assert proc.returncode == 1, (
+            f"`builtAt`='{value}' 却**没有**判红 ⇒ 仍是空断言（issue #7015 的形态）\n"
+            f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+        )
+        out = proc.stdout
+        assert "#7015" in out, f"判红没有点名 issue #7015（builtAt='{value}'）：\n{out}"
+        assert "取值源未接" in out, f"判红没有点名「取值源未接」（builtAt='{value}'）：\n{out}"
+        assert "SERVED_VERSION=mismatch" in out, f"缺机读读数 mismatch（builtAt='{value}'）：\n{out}"
+        assert "SERVED_VERSION=unknown" not in out, (
+            f"「探到了、该字段是空/兜底」被报成了「探不到」（builtAt='{value}'）⇒ 两种语义混桶：\n{out}"
+        )
+
+
+def test_builtat_judge_is_opt_in_and_has_discriminating_power():
+    """两条**对照臂**（缺一不可）：① **不**要求判 ⇒ 同一读数退 0（opt-in）；② 要求判而**非空** ⇒ 退 0。"""
+    with ProbeStub(identity_body(TARGET_SHA, built_at="")) as stub:
+        relaxed = run_probe(stub.base_url, TARGET_SHA)
+    assert relaxed.returncode == 0, (
+        f"未要求判 `builtAt` 却判红 ⇒ 新判据不是 opt-in：\n{relaxed.stdout}\n{relaxed.stderr}"
+    )
+    assert "SERVED_VERSION=match" in relaxed.stdout
+
+    with ProbeStub(identity_body(TARGET_SHA, built_at="2026-10-16T03:27:11Z")) as stub:
+        strict_ok = run_probe(stub.base_url, TARGET_SHA, ADMIN_WEB_SERVED_REQUIRE_BUILT_AT="1")
+    assert strict_ok.returncode == 0, (
+        f"`builtAt` 非空却判红 ⇒ 判据过严（会挡住好部署）：\n{strict_ok.stdout}\n{strict_ok.stderr}"
+    )
+    assert "2026-10-16T03:27:11Z" in strict_ok.stdout, (
+        f"绿档没有把线上 `builtAt` 读数打出来 ⇒ 复算者看不到取值源是否真接上了：\n{strict_ok.stdout}"
+    )
+
+
+def test_deploy_leg_requires_builtat_and_value_source_is_a_context_expression():
+    """接线面（issue #7015）：① 发布腿必须显式要求判 `builtAt`；② 取值源必须是 context 表达式。"""
+    text = read(WORKFLOW)
+    assert "ADMIN_WEB_SERVED_REQUIRE_BUILT_AT: '1'" in text, (
+        "发布腿没有要求判 `builtAt` ⇒ 上面那条具名判据在 CI 里**永不生效**（`builtAt` 又变回空断言）"
+    )
+    assert "RUN_STARTED_AT: ${{ github.run_started_at }}" in text, (
+        "workflow 没把 **context** `github.run_started_at` 注入成 env ⇒ `builtAt` 仍然取不到值"
+        "（issue #7015 的病灶）"
+    )
+    body_offenders = [
+        line for line in text.splitlines()
+        if "GITHUB_RUN_STARTED_AT" in line and not line.lstrip().startswith("#")
+    ]
+    assert not body_offenders, (
+        "workflow 的**取值面**里仍出现 `GITHUB_RUN_STARTED_AT` —— 它不是 GitHub 注入的环境变量"
+        "（run 开始时刻只在 context `github.run_started_at` 里）⇒ shell 展开恒空：\n"
+        + "\n".join(body_offenders)
+    )
+    assert re.search(r'if \[ -z "\$\{RUN_STARTED_AT:-\}" \]', text), (
+        "解算步没有「取值源为空 ⇒ 判红」的 fail-closed 自检 ⇒ 空值会被静默烘焙进产物（改前形态）"
     )

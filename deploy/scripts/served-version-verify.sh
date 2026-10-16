@@ -25,6 +25,7 @@
 # |---|---|---|
 # | 线上 `sha` 前 7 位 == 期望 sha 前 7 位 | **0** | 线上**就是**这次构建 ⇒ 放行 |
 # | 线上 `sha` 与期望**不一致** | **1** | **判红**（具名：服务 / 期望 / 实测 / 可复制命令），并落 `SERVED_VERSION=mismatch` |
+# | 线上 `sha` 一致、但 `builtAt` 为**空串**（且调用方要求判它） | **1** | **判红**（具名：**取值源未接** issue #7015）—— 「探到了、值是空」≠「探不到」 |
 # | 取不到（连不上 / 非 200 / 429 / body 不是 JSON / `sha` 为空 / `app` 不是目标服务 / 期望 sha 形态不合法） | **3** | **fail-closed**（`SERVED_VERSION=unknown`）|
 #
 # ⚠️ **为什么「取不到」是 3 而不是 0**：老镜像没有注入面（`sha` 为空）时，判据**一个字节都证不了**
@@ -42,6 +43,15 @@
 #    · **不证**：`servedAt` / `builtAt` 的时钟精度，也不证「镜像里的代码等于该 sha 的源码树」
 #      —— 后者由构建期注入面与 `sha` 的**不可变性**保证（同一个 sha 只会被造出一份产物）。
 #
+# ⚠️ **类级残余（issue #7015，照实登记，配合 tests/unit_ci_workflows/test_served_version_verify.py 的
+#    类级守卫 `test_workflow_run_bodies_never_expand_undefined_github_env_literals`）**：
+#    这类「run 正文里当默认值用/直接展开的 `GITHUB_*` 字面量**不是** GitHub 注入的环境变量 ⇒ shell
+#    展开恒为空（而没有任何东西会红）」的形态，**在 shell 里是防御不了的** —— `${GITHUB_X:-}` 对
+#    未定义变量只给空串、`$GITHUB_X` 只在 `set -u` 下才炸（且本仓多处 run 正文只有 `set -uo pipefail`）。
+#    ⇒ 承载体**不在脚本里**，而是上面那条**编辑期**守卫（静态扫 `.github/workflows/**.yml` 的正文，
+#    编造的名字 ⇒ 具名判红）。⬜ 未固化边界：YAML 里的**其它**动态取值面（`matrix.*` / `needs.*` /
+#    `inputs.*` 的编造字段）不在其射程内 —— 它们要另立判据（本单不假装已覆盖）。
+#
 # 用法:
 #   served-version-verify.sh [<BASE_URL>] [<EXPECTED_SHA>]
 #     BASE_URL      默认 `https://api.migaozn.com`
@@ -51,8 +61,17 @@
 #   SERVED_VERSION_PATH  端点路径（默认 `/api/version`；**只为本地桩测试而存在**，生产不许改）
 #   SERVED_VERSION_RETRIES       就绪重试次数（默认 3）
 #   SERVED_VERSION_RETRY_DELAY   每次间隔秒（默认 5）
+#   SERVED_VERSION_REQUIRE_BUILT_AT  非空（CI 部署腿传 1）⇒ **探到 `builtAt` 为空即判红**（退出码 1）
 #
-# 退出码：0 = 线上就是本次构建；1 = 不一致（判红）；3 = 探不到（fail-closed）。
+# 🔴 **`builtAt` 面（issue #7015）**：`builtAt` 是 #6951 身份面三个字段之一，而改前它**恒空**
+#    且**没有任何东西会红** —— 「空串」既不是「探到非空」、也不是「探不到 ⇒ 退 3」，是一条
+#    **恒真的空断言**。⇒ 本脚本给它一条**具名判据**（只在调用方显式要求时生效）：
+#      · **探到 `builtAt` 为空** ⇒ **判红（退 1）+ 点名「取值源未接（issue #7015）」**；
+#      · 「探不到」（连不上 / 非 200 / body 不是 JSON）仍是 **退 3**，**与上面那条是两种语义**
+#        （`builtAt` 字段缺席 ⇒ 本脚本读到空串 ⇒ 走退 1 那条：`/api/version` 的消费面里
+#          「字段在但值是空串」与「字段压根不在」同形，本仓刻意不为此加第二种形态）。
+#
+# 退出码：0 = 线上就是本次构建；1 = 不一致 / `builtAt` 为空（判红）；3 = 探不到（fail-closed）。
 # 判据 = tests/unit_ci_workflows/test_served_version_verify.py
 # ══════════════════════════════════════════════════════════════════════════════
 set -uo pipefail
@@ -64,6 +83,7 @@ APP=${SERVED_VERSION_APP:-}
 PATH_SUFFIX=${SERVED_VERSION_PATH:-/api/version}
 RETRIES=${SERVED_VERSION_RETRIES:-3}
 RETRY_DELAY=${SERVED_VERSION_RETRY_DELAY:-5}
+REQUIRE_BUILT_AT=${SERVED_VERSION_REQUIRE_BUILT_AT:-}
 
 URL="$BASE$PATH_SUFFIX"
 TMPDIR_RUN="$(mktemp -d)"
@@ -106,15 +126,16 @@ print(val if isinstance(val, str) else "")'
 json_field() { python3 -c "$JSON_FIELD_PY" "$1" "$2" 2>/dev/null || echo ""; }
 
 # ── 取读数（就绪重试：滚动重启期间会有瞬态 502/503/504 与连接失败）─────────────────
-CODE=""; FETCHED_SHA=""; FETCHED_APP=""; ATTEMPT=0
+CODE=""; FETCHED_SHA=""; FETCHED_APP=""; FETCHED_BUILT_AT=""; ATTEMPT=0
 while :; do
   ATTEMPT=$((ATTEMPT + 1))
   CODE=$(curl -sS -m 15 -H 'Cache-Control: no-cache' -o "$TMPDIR_RUN/version.json" \
            -w '%{http_code}' "$URL" 2>"$TMPDIR_RUN/curl.err" || true)
-  FETCHED_SHA=""; FETCHED_APP=""
+  FETCHED_SHA=""; FETCHED_APP=""; FETCHED_BUILT_AT=""
   if [ "$CODE" = "200" ] && [ -s "$TMPDIR_RUN/version.json" ]; then
     FETCHED_SHA=$(json_field "$TMPDIR_RUN/version.json" sha)
     FETCHED_APP=$(json_field "$TMPDIR_RUN/version.json" app)
+    FETCHED_BUILT_AT=$(json_field "$TMPDIR_RUN/version.json" builtAt)
   fi
   # 判定「这一次读数是否已经可用」——只有它可用才停（`sha` 非空且形态合规）
   case "$FETCHED_SHA" in
@@ -126,7 +147,7 @@ while :; do
 done
 
 echo "   HTTP $CODE · 尝试 $ATTEMPT/$RETRIES"
-echo "   线上读数：sha='${FETCHED_SHA:-}' app='${FETCHED_APP:-}'"
+echo "   线上读数：sha='${FETCHED_SHA:-}' app='${FETCHED_APP:-}' builtAt='${FETCHED_BUILT_AT:-}'"
 if [ -s "$TMPDIR_RUN/version.json" ]; then
   echo "   原始 body：$(head -c 400 "$TMPDIR_RUN/version.json")"
 fi
@@ -175,6 +196,31 @@ FETCHED_LOWER=$(printf '%s' "$FETCHED_SHA" | tr 'A-Z' 'a-z')
 if [ "${FETCHED_LOWER:0:7}" = "$EXPECTED7" ]; then
   echo "✅ 线上就是本次构建：served sha=${FETCHED_LOWER} == 期望 ${EXPECTED7}（前 7 位逐字符一致）"
   echo "   · 判据口径：只比前 7 位（与镜像 tag \`sha-<7hex>\` 同口径；更长的两端都照此截断）"
+  # ── `builtAt` 具名判据（issue #7015）─────────────────────────────────────────
+  # 「`sha` 对」不等于「构建身份完整」：改前 `builtAt` 由 `${GITHUB_RUN_STARTED_AT:-}` 取值，
+  # 而那不是 GitHub 注入的环境变量（run 开始时刻只在 context `github.run_started_at` 里）
+  # ⇒ 恒空串 ⇒ 真机读数逐字 `{"app":"admin-api","sha":"b5d9315e…","builtAt":""}`。
+  # ⚠️ 只在调用方**显式要求**时生效（`SERVED_VERSION_REQUIRE_BUILT_AT` 非空；CI 部署腿传 1）
+  #    —— 默认不判，免得把没接这个面的调用方（如本地手动复探）误判红。
+  # ⚠️ 与「探不到（退 3）」**语义不同、必须分别具名**：那条说的是「连不上 / 非 200 / body 不是
+  #    JSON ⇒ 一个字节都证不了」；本条说的是「**探到了**，而值是空串 ⇒ 取值源没接上」。
+  if [ -n "$REQUIRE_BUILT_AT" ] && [ -z "$FETCHED_BUILT_AT" ]; then
+    echo "::error::\`builtAt\` 为空 ⇒ **取值源未接**（issue #7015）：线上自报的构建时刻是空串，而 \`sha\` 是有的 —— 两者不同源"
+    echo "  · 服务：admin-api（${URL}）· HTTP ${CODE} · 尝试 ${ATTEMPT}/${RETRIES}"
+    echo "  · 探到什么：sha=${FETCHED_SHA} · app=${FETCHED_APP:-（空）} · builtAt=''（**空串**，不是「探不到」）"
+    echo "  · 语义区分：这是「**探到了、值是空**」（判红，退 1）≠「**探不到**」（连不上 / 非 200 / body 不是 JSON ⇒ 退 3）"
+    echo "  · 根因形态：构建身份里的 \`BUILT_AT\` 取值源写成了**未定义变量**（issue #7015 实测 = \`\${GITHUB_RUN_STARTED_AT:-}\`，"
+    echo "    而 run 的开始时刻只在 context \`github.run_started_at\` 里）⇒ shell 展开恒为空 ⇒ 镜像里烘焙进空串"
+    echo "  · 可复制复算命令："
+    echo "      curl -sS -m 15 '$URL' | head -c 400"
+    echo "      bash deploy/scripts/served-version-verify.sh '$BASE' '$EXPECTED'"
+    echo "  · 出口：① 确认部署腿的 \`Resolve build identity\` 步用 \`env: RUN_STARTED_AT: \${{ github.run_started_at }}\` 取值"
+    echo "     ② 该值经 \`swas-deploy-ci.sh\` 第 10 位参数 ⇒ BOOTSTRAP 占位符 \`__BUILT_AT__\` ⇒ \`--build-arg MIGAO_BUILT_AT\`；"
+    echo "     ③ 修好后需**一次带注入面的部署**（本次部署已把空值烘焙进镜像 ⇒ 光重跑本探针不会变好）"
+    echo "SERVED_VERSION=mismatch"
+    exit 1
+  fi
+  echo "   · builtAt='${FETCHED_BUILT_AT:-（未要求判定）}'"
   echo "SERVED_VERSION=match"
   exit 0
 fi
