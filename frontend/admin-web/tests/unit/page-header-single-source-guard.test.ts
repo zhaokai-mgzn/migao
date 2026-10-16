@@ -67,18 +67,55 @@ const LEGACY_PAGE_HEADER_SNAPSHOT: readonly string[] = [
   'src/app/(dashboard)/after-sales/[id]/AfterSalesDetail.tsx',
   'src/app/(dashboard)/agent-workspace/human-sessions/page.tsx',
   'src/app/(dashboard)/agent-workspace/sessions/page.tsx',
-  'src/app/(dashboard)/knowledge/page.tsx',
   'src/app/(dashboard)/orders/[id]/OrderDetail.tsx',
   'src/app/(dashboard)/orders/[id]/ship/ShipOrder.tsx',
-  'src/app/(dashboard)/orders/new/page.tsx',
-  'src/app/(dashboard)/orders/page.tsx',
   'src/app/(dashboard)/processing-orders/[id]/production/page.tsx',
   'src/app/(dashboard)/products/[id]/ProductDetail.tsx',
-  'src/app/(dashboard)/settings/page.tsx',
 ]
 
 /** 快照的**上界**：只许缩短 ⇒ 现取长度不得大于它（新增不得借快照吸收）。 */
 const SNAPSHOT_UPPER_BOUND = LEGACY_PAGE_HEADER_SNAPSHOT.length  // 现取，随销账自动收紧
+
+/** 「有意不迁」条目的**独立冻结上界**（现取 8；只许缩短，见判据 2 的最后一条）。 */
+const PARKED_UPPER_BOUND = 8
+
+/**
+ * **有意不迁**的文件 + 逐条理由（issue #7065）。
+ *
+ * 这些文件的页头**不是**「标题 + 副标题 + 动作区」那种通用形态，而是与**自定义布局咬合**的：
+ * 强行套 `PageHeader`（`text-2xl` + 自带外边距 + 两行结构）会把版式改坏 —— 那是**改版**，不是本单的「接原语」。
+ *
+ * ⚠️ 本清单不是「豁免台账」：每条都必须给出**为什么**，且守卫会断言「射程内未用原语的文件 = 快照 ∪ 本清单」
+ * ⇒ **两边都不许有漏项**（既不能偷偷加一个手写 h1，也不能把文件挪进本清单了事而无理由）。
+ * 重启条件：真要做这些页面的版式统一时，先给它们定「紧凑型页头」的形态，再逐条迁出本清单。
+ */
+const PARKED_WITH_REASON: ReadonlyArray<readonly [string, string]> = [
+  ['src/app/(dashboard)/agent-workspace/sessions/page.tsx',
+   '固定高度工具条（`h-14` + `border-b`）嵌在 `h-[calc(100vh-…)]` 的全高工作区里，标题是 `text-base`；PageHeader 的 text-2xl + 外边距会撑破该布局'],
+  ['src/app/(dashboard)/agent-workspace/human-sessions/page.tsx',
+   '同上（在线接待工作台，同族同布局）'],
+  ['src/app/(dashboard)/orders/[id]/OrderDetail.tsx',
+   '标题与「返回」按钮同排；且该页首屏还有发货明细读失败告警区，改页头要连带重排版式'],
+  ['src/app/(dashboard)/orders/[id]/ship/ShipOrder.tsx',
+   '标题行内含 `Zap` 图标，右侧是「打印发货单」+ 确认发货两个动作，与运单号表单是一体的'],
+  ['src/app/(dashboard)/orders/new/page.tsx',
+   '页头左侧是「返回」圆形按钮、标题在 flex-1 容器内（新建单据的向导式版式）'],
+  ['src/app/(dashboard)/processing-orders/[id]/production/page.tsx',
+   '加工单号是标题块的一部分（`加工单号 <span data-testid=…>`）+ 左侧返回按钮，属带上下文的详情页头'],
+  ['src/app/(dashboard)/after-sales/[id]/AfterSalesDetail.tsx',
+   '标题行内联状态徽标（`<Badge>`）+ 返回按钮，徽标属标题语义'],
+  ['src/app/(dashboard)/products/[id]/ProductDetail.tsx',
+   '标题是商品名 + 内联状态徽标；且用的是 `font-bold`（与 TYPE_SCALE 的 `font-semibold` 不一致，需单独裁定）'],
+]
+
+/** 「未用原语的射程内文件」必须**恰好**等于「快照 ∪ 有意不迁」。 */
+export function unaccountedFiles(files: string[] = inScopeFiles()): string[] {
+  const known = new Set([
+    ...LEGACY_PAGE_HEADER_SNAPSHOT,
+    ...PARKED_WITH_REASON.map(([f]) => f),
+  ])
+  return legacyHeaderFiles(files).filter((p) => !known.has(p))
+}
 
 /** 旧形态的指纹：手写 `text-xl`（h2 档）+ `font-semibold` 的标题类。 */
 const LEGACY_H1_RE = /className="[^"]*text-xl font-semibold/
@@ -146,13 +183,31 @@ export function legacyHeaderFiles(files: string[] = inScopeFiles()): string[] {
 // ────────────────────────────── 判据 1 ──────────────────────────────
 
 describe('判据 1：射程内页头必须来自共享原语', () => {
-  it('有 <h1> 却没用 PageHeader 的文件必须全部在冻结快照里', () => {
+  it('未用原语的文件必须**全部有交代**（冻结快照 ∪ 逐条给出理由的有意不迁）', () => {
     const files = inScopeFiles()
     expect(files.length).toBeGreaterThan(20) // 反空跑：射程塌了要出声
-    const legacy = legacyHeaderFiles(files)
-    const snapshot = new Set(LEGACY_PAGE_HEADER_SNAPSHOT)
-    const unregistered = legacy.filter((p) => !snapshot.has(p))
-    expect(unregistered, `这些文件手写了 <h1> 却没用 PageHeader（issue #7065）：\n  ${unregistered.join('\n  ')}\n改用 frontend/admin-web/src/components/ui/PageHeader.tsx（h1 = text-2xl 档）`).toEqual([])
+    const unaccounted = unaccountedFiles(files)
+    expect(
+      unaccounted,
+      `这些文件手写了 <h1>、既不在冻结快照里、也没有说明为什么有意不迁（issue #7065）：\n  ${unaccounted.join('\n  ')}\n` +
+        `改用 frontend/admin-web/src/components/ui/PageHeader.tsx（h1 = text-2xl 档）；` +
+        `若确实是自定义版式 ⇒ 加进 PARKED_WITH_REASON 并**逐条写明理由**（不许只挪清单）。`,
+    ).toEqual([])
+  })
+
+  it('有意不迁的每一条都必须带非空理由', () => {
+    expect(PARKED_WITH_REASON.length).toBeGreaterThan(0)
+    for (const [f, why] of PARKED_WITH_REASON) {
+      expect(why.length, `${f} 的理由太短 / 为空（不许只挪清单）`).toBeGreaterThan(15)
+      expect(inScope(f), `${f} 不在射程内 —— 清单里的路径错了`).toBe(true)
+    }
+  })
+
+  it('但「有意不迁」也不许悄悄涨价：条目数有独立冻结上界', () => {
+    // 与快照无关的**独立**上界：快照已清零，不能让它顺带变成「有意不迁可以无限长」。
+    // 迁移一条出本清单 ⇒ 这里会红，必须**显式**改小这个数（= 一次有意识的决定）。
+    expect(PARKED_WITH_REASON.length).toBeLessThanOrEqual(PARKED_UPPER_BOUND)
+    expect(PARKED_WITH_REASON.length).toBeGreaterThan(0)
   })
 })
 

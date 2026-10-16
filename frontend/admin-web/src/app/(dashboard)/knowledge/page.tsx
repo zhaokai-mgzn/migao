@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { Plus, Pencil, Trash2, Send, Archive, Eye, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { knowledgeApi } from '@/lib/api'
-import { Table, Pagination, Modal, Button, Badge, SearchBar } from '@/components/ui'
+import { Table, Pagination, Modal, Button, Badge, SearchBar, PageHeader } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
 import type { KnowledgeCard, KnowledgeCardStatus, KnowledgeCandidate, KnowledgeTemplateInfo } from '@/types'
 import DateTimeCell from '@/components/common/DateTimeCell'
@@ -418,22 +418,20 @@ export default function KnowledgePage() {
   return (
     <div className="p-6 space-y-4">
       {/* 页面标题（与全局产品样式对齐） */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-neutral-900">知识库</h1>
-          <p className="text-sm text-neutral-500 mt-1">管理 AI 客服的知识卡片 —— <strong>发布后优先用于回答顾客问题</strong></p>
-        </div>
-        <div className="flex items-center gap-2">
-          {canWrite && (
+      <PageHeader
+        title="知识库"
+        subtitle={<>管理 AI 客服的知识卡片 —— <strong>发布后优先用于回答顾客问题</strong></>}
+        actions={
+          canWrite && (
             <>
               <Button variant="secondary" size="sm" onClick={() => setDocModalOpen(true)}>文档提炼</Button>
               <Button onClick={openCreate}>
                 <Plus className="h-4 w-4" /> 新建知识卡片
               </Button>
             </>
-          )}
-        </div>
-      </div>
+          )
+        }
+      />
 
       {/* Tab + 内容卡片（与订单/客户页同构：border 卡片内 Tab 栏 + 内容） */}
       <div className="bg-white rounded-lg border border-neutral-200">

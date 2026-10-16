@@ -8,7 +8,7 @@ import { Search, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { orderApi } from '@/lib/api'
 import { OrderTable, CloseOrderModal, RemarkModal, RefundOrderModal } from '@/components/orders'
-import { Button, Modal } from '@/components/ui'
+import { Button, Modal, PageHeader } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
 import { usePermission } from '@/lib/permission'
 import type { OrderBrief, OrderStatus, OrderStatusTab } from '@/types'
@@ -431,22 +431,24 @@ export default function OrdersPage() {
   return (
     <div className="p-6 space-y-4">
       {/* 标题 */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-neutral-900">订单列表</h1>
-        {canWrite && (
-          <button
-            type="button"
-            onClick={() => router.push('/orders/new')}
-            className="h-9 px-4 rounded bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 active:bg-primary-800 transition-colors inline-flex items-center gap-1.5 shadow-sm"
-          >
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            新增订单
-          </button>
-        )}
-      </div>
+      <PageHeader
+        title="订单列表"
+        actions={
+          canWrite && (
+            <button
+              type="button"
+              onClick={() => router.push('/orders/new')}
+              className="h-9 px-4 rounded bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 active:bg-primary-800 transition-colors inline-flex items-center gap-1.5 shadow-sm"
+            >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              新增订单
+            </button>
+          )
+        }
+      />
 
       {/* 查询区域（issue #5880：**纯版式重构、零行为变更**）——
           **单一响应式 grid**：列由轨道定义 ⇒ 行与行**天然对齐**。改前是**两行各自一个 flex 容器**
