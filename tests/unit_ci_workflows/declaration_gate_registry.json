@@ -647,6 +647,26 @@
       ],
       "issue": "#5007",
       "note": "该处只写 `assert len(...) >= N`（只防清空、不防删一项）⇒ 由逐项冻结承担「多一个/少一个都红」；下界断言本身按文件所有权留在原文件"
+    },
+    {
+      "file": "tests/unit_ci_workflows/test_needs_changes_tail_job_coverage.py",
+      "symbol": "REQUIRED_PR_GATES",
+      "bound": 11,
+      "members": [
+        "case-coverage-gate",
+        "case-trust-gate",
+        "case-truth-check",
+        "danger-scan",
+        "gitleaks-scan",
+        "llm-sink-ledger",
+        "qa-growth-gate",
+        "ui-regression-check",
+        "admin-api-test",
+        "admin-web-test",
+        "ci-workflow-tests"
+      ],
+      "issue": "#7022",
+      "note": "该处只写 `assert len(...) >= 11`（下界只防清空，不防删掉任意一项）⇒ 由逐项冻结承担「多一个/少一个都红」；下界断言本身按文件所有权留在原文件。成员 = 本 workflow 里「每个 PR 都跑」的 required 门禁 job（2026-10-16 取自 `gh api …/branches/main/protection` 的 required 名单 ∩ pr-check.yml 承接的 job）—— 删掉任一成员都会让「该挂的标签挂不住」（issue #7022），故必须逐项冻结"
     }
   ],
   "unfixed": [
