@@ -14472,6 +14472,25 @@ _CASE_UI_109 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-110 [NORMAL] **「商家后台页面头只有一个来源」的类级元守卫**：射程内凡手写 `<h1>` 且未用共享原语 `PageHeader` 的文件，必须恰好等于「冻结快照 ∪ 逐条给出理由的有意不迁」；快照只许缩短、有意不迁不许悄悄涨价（issue #7065）（源: cases/ui.yml）──
+_CASE_UI_110 = EvalCase(
+    id='UI-110',
+    legacy_id='',
+    title='**「商家后台页面头只有一个来源」的类级元守卫**：射程内凡手写 `<h1>` 且未用共享原语 `PageHeader` 的文件，必须恰好等于「冻结快照 ∪ 逐条给出理由的有意不迁」；快照只许缩短、有意不迁不许悄悄涨价（issue #7065）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['为什么只有订单页看起来精致，其它页面没有这种感觉？'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **判据 1（完备性，会红）**：射程（`src/app/(dashboard)/**` 下每个 `page.tsx` + 动态路由段下的页面组件，现取 48 个文件）内，凡**手写 `<h1>` 且未用 `PageHeader`** 的文件，必须**恰好**等于「冻结快照 ∪ 逐条给出理由的有意不迁」⇒ **两边都不许漏项**（既不能偷偷手写，也不能把文件挪进清单了事）。执行点 = frontend/admin-web/tests/unit/page-header-single-source-guard.test.ts。**红证（实跑，逐字节还原）**：把 `products/page.tsx` 的 `<PageHeader>` 换回手写 `<h1 className="text-xl …">` ⇒ 判据 1 红；把快照里一项删掉但不迁移 ⇒ 判据 1 红。', '🔴 **判据 2（只许缩短）**：快照**销账是必须动作** —— 已迁完却还留在快照里 ⇒ 红（陈旧条目）；快照项必须去重、必须真实存在且仍在射程内。', '🔴 **判据 3（有意不迁不许悄悄涨价）**：`PARKED_WITH_REASON` 每条**理由非空且 ≥15 字** + 路径必须在射程内 + 条目数有**独立冻结上界**（现取 8，只许缩短）—— 快照清零后不能让它顺带变成「有意不迁可以无限长」。', "🔴 **判别力自证 + fail-closed**：坏形态（手写 `<h1>`）判红、好形态（`<PageHeader>`）放行；**关键反例**：`import { PageHeader } from '@/components/ui'` 只剩 import（用点被换回手写 h1 但忘了删 import）⇒ **不算用过**；射程目录取不到 ⇒ 抛（不许把「没东西可判」读成绿）；射程 > 20 个文件的反空跑下限。", '📌 **为什么必须静态拦**：P0/P1/P2（PR #7012）只做了**逐页迁移**，**没有任何东西**阻止新页面再手写一个 `<h1 className="text-xl font-semibold">` 回去 —— 而 `design-tokens.ts` 的 `TYPE_SCALE` 规定 h1 = `text-2xl`、h2 = `text-xl` ⇒ 手写 `text-xl` 的页头与**页内区块标题同档**，视觉层级读不出来（用户 2026-10-16「只有订单管理精美」的三条根因之一）。`production/remnants` 那页更差：`text-lg`，**低于** h2 档。', '📌 **本单交付**：16 项存量**全部处置** —— **8 项**迁原语（production 族 5 + knowledge/settings/orders/orders-new 5，去重后 8 个真实文件），**8 项**进「有意不迁」并逐条写明理由。快照现为 **0 项**。', '📌 **有意不迁的 8 项为什么是「适配问题」而不是遗漏**：`agent-workspace` 两页是**固定高度工具条**（`h-14` + `border-b`，嵌在 `h-[calc(100vh-180px)]` 全高工作区里，标题 `text-base`）—— 套 `PageHeader`（`text-2xl` + 自带外边距 + 两行结构）会**撑破版式**；其余 6 项（`orders/[id]` / `orders/[id]/ship` / `processing-orders/[id]/production` / `after-sales/[id]` / `products/[id]`）是**标题与返回按钮 / 内联状态徽标 / 标题行内图标 / 单据号咬合**的详情页头。⇒ 重启条件已写进清单注释（真要做这些页面的版式统一时，先给它们定「紧凑型页头」的形态）。', '📌 **迁移过程的机械护栏（值得复用）**：批量替换 JSX 极易漏收尾标签 —— 本单**第一版 5 个文件全部漏了**外层 `</div>`，`tsc` 报 19 个语法错。重做时给迁移脚本加了**替换前自证**：被替换片段与替换片段的 **JSX 栈深度**与**花括号配平**必须逐项相等。它**真的抓到了两次**（`saving-board` 只截半个块；`orders/page.tsx` 同样）⇒ 脚本拒绝写入，补上收尾标签后才写。'],
+    skip_reason='[backend-contract] 前端静态判据（扫 TSX 源码 + 冻结快照对账），零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'design-consistency', 'page-header', 'class-guard', 'snapshot-burndown', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = 两样都在仓里可读：① 共享原语 frontend/admin-web/src/components/ui/PageHeader.tsx（h1 = `text-2xl font-semibold text-neutral-900`，即 `design-tokens.ts` 的 `TYPE_SCALE` h1 档）；② 守卫本体 frontend/admin-web/tests/unit/page-header-single-source-guard.test.ts。**前置不成立时不许读成通过**：射程目录取不到 ⇒ `walk()` 抛（fail-closed）；射程文件数 < 20 ⇒ 反空跑判红。',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -15282,6 +15301,7 @@ ALL_CASES = (
     _CASE_UI_105,
     _CASE_UI_106,
     _CASE_UI_109,
+    _CASE_UI_110,
     _CASE_UT_001,
     _CASE_UT_002,
 )

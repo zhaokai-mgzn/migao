@@ -61,7 +61,7 @@ import Image from 'next/image'
 import { QRCodeSVG } from 'qrcode.react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui'
+import { Button, PageHeader } from '@/components/ui'
 import { settingsApi, uploadApi, briefingApi, productionApi } from '@/lib/api'
 import { CalcCaliberPanel } from '@/components/settings/CalcCaliberPanel'
 import { RemnantItemSizesPanel } from '@/components/settings/RemnantItemSizesPanel'
@@ -344,10 +344,10 @@ export default function SettingsPage() {
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-neutral-900">企业基础设置</h1>
-        <p className="text-sm text-neutral-500 mt-1">
-          配置本企业的口径与生产设置：先定怎么算钱，再定车间怎么干活，最后定料怎么省。
-        </p>
+        <PageHeader
+          title="企业基础设置"
+          subtitle="配置本企业的口径与生产设置：先定怎么算钱，再定车间怎么干活，最后定料怎么省。"
+        />
       </div>
 
       {/* 配置主线（设计 G1）：进页第一眼就是「还缺什么、下一步」—— 常驻一行摘要（§31 P1） */}

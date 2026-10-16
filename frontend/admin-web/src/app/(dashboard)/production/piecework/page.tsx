@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, Check, RefreshCw, Search, X } from 'lucide-react'
-import { Button } from '@/components/ui'
+import { Button, PageHeader } from '@/components/ui'
 import { productionApi } from '@/lib/api'
 import { isAxiosError } from 'axios'
 // 工序显示名的**唯一**口径（issue #4621）：逻辑名 · 部位 —— 本页**不得**直接渲染变体名
@@ -95,16 +95,16 @@ export default function PieceworkReportPage() {
 
   return (
     <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-neutral-900">计件工资</h1>
-          <p className="mt-0.5 text-sm text-neutral-500">按期间汇总报工并算计件工资 —— <strong>返工、报废不计件</strong></p>
-        </div>
-        <Button variant="secondary" size="sm" onClick={load} disabled={loading}>
-          <RefreshCw className={cn('w-4 h-4 mr-1.5', loading && 'animate-spin')} />
-          刷新
-        </Button>
-      </div>
+      <PageHeader
+        title="计件工资"
+        subtitle={<>按期间汇总报工并算计件工资 —— <strong>返工、报废不计件</strong></>}
+        actions={
+          <Button variant="secondary" size="sm" onClick={load} disabled={loading}>
+            <RefreshCw className={cn('w-4 h-4 mr-1.5', loading && 'animate-spin')} />
+            刷新
+          </Button>
+        }
+      />
 
       {/* 查询条件：期间（月份）+ 工人 */}
       <div className="rounded-lg border border-neutral-200 bg-white p-5">

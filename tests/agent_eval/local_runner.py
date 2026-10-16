@@ -480,6 +480,111 @@ async def _reset_processing_order(order_no: str) -> str:
             f"（清掉 {len(cleared or [])} 张在途加工单）")
 
 
+# ── 夹具 ⇄ 运行器「租户口径」一致性自检（issue #7048，**跑前 fail-closed**）─────────
+# 病灶（2026-10-16 实测，单变量对照）：夹具 `fixtures/*_eval_seed.sql` 逐行写 **tenant 1**，
+# 而本运行器的 `EVAL_TENANT_ID` **缺省 = 25（云端测试租户）** ⇒ 本地裸跑（不显式给变量）
+# 时，前置探针 / 复位 SQL 查的是 **tenant 25 = 空** ⇒ `capture=0` ⇒ 被折进
+# 「📦 用例资产缺陷（前置未成立/漂移）」——**归因错人**：真因是**环境变量错配**，不是用例
+# 资产缺陷（实测：缺省 25 ⇒ AS-004 0%；显式 `EVAL_TENANT_ID=1` ⇒ 100%；
+# 真库 tenant1 该工单 = 1 行 / tenant25 = 0 行）。连带：复位落到错误租户 ⇒ 还会造出
+# **假 fail-closed 阻塞**（"前置未复位/结论不可信"）。CI 的 post-deploy-eval.yml 本来就设
+# `EVAL_TENANT_ID: "1"` ⇒ 缺口**只在本地跑法**，但本地跑法错了没有任何东西会出声。
+#
+# 判据形态 = **锚点行对照**（证据式，不猜、不靠解析夹具 SQL）：
+#   把「夹具里**已知必存在**的锚点行」**不带租户谓词**地查一次 ——
+#     · 行在**别的**租户下存在 ⇒ **租户口径错配**（跑前具名报错并停，见 `detect_...`）；
+#     · 行在任何租户都没有 ⇒ **真夹具缺口** —— 既有的「用例资产缺陷」桶照旧管它，
+#       **本判据不许吞**（两条不许互相掩盖 ⇒ 返回 None 而不是报错）；
+#     · 口径一致 / 取不到（DB 不可达 = 已部署云环境那条腿）⇒ None（不误报；"未跑"显式打印）。
+TENANT_SCOPE_MISMATCH = "租户口径错配（EVAL_TENANT_ID 与夹具不符）"
+
+FIXTURE_TENANT_ANCHORS = (
+    # (人读标签, 表, 定位列, 夹具里已知必存在的键) —— 键与上面两条复位/探针**同源**（单一真值）
+    ("工单", "after_sales_tickets", "ticket_no", _SEED_AFTERSALES_TICKET_NO),
+    ("订单", "orders", "order_no", _SEED_PROCESSING_ORDER_NO),
+)
+
+
+def _redact_dsn(dsn: str) -> str:
+    """隐去 DSN 里的凭据（出错信息要可读，但**不得**把口令写进日志 / CI 输出）。"""
+    return re.sub(r"//[^@/]*@", "//***@", dsn or "")
+
+
+def tenant_scope_mismatch_message(label: str, key: str, tenants) -> str:
+    """具名错配说明（**纯函数**；判据 = tests/unit_ci_workflows/test_eval_tenant_fixture_consistency.py）。
+
+    四要素缺一不可（缺一条就退回成"不可行动"）：① 点名**环境变量** `EVAL_TENANT_ID`
+    ② 给出**具体该设成几**（= 锚点行真正所在的租户，**现取**，不写死）
+    ③ 点出夹具文件 + 「本地栈 ≠ 已部署云环境」这条分叉 ④ 点出判据文件。
+    """
+    ids = sorted({int(t) for t in tenants})
+    where = "、".join(str(t) for t in ids)
+    return (
+        f"{TENANT_SCOPE_MISMATCH}：{label} {key!r} 在**租户 {where}** 下存在，"
+        f"而运行器 `EVAL_TENANT_ID={EVAL_TENANT_ID}`（环境变量，读点 = "
+        f"tests/agent_eval/local_runner.py）查不到它 —— 前置探针 / 复位会落到**空租户**，"
+        f"用例会被误判成「📦 用例资产缺陷（前置未成立）」，而真因是环境变量错配。\n"
+        f"    · 夹具口径：tests/agent_eval/fixtures/*_eval_seed.sql 逐行写 tenant {where}；\n"
+        f"    · 本地 / CI 临时栈请显式 `EVAL_TENANT_ID={ids[0]}` 重跑"
+        f"（**已部署**云环境才是 25，由 .github/workflows/agent-eval.yml 显式设定）。"
+    )
+
+
+def tenant_scope_mismatch(label: str, key: str, tenants) -> str | None:
+    """**证据式**判据（纯函数）：锚点行所在的租户集合 ⇒ 错配说明 / None。
+
+    · `tenants` 空（含全是 NULL / 非法值）⇒ None：锚点行**任何**租户都没有 = **真夹具缺口**
+      ⇒ 那是「用例资产缺陷」桶的事，本判据**不许**把它吞成"错配"（互相掩盖）；
+    · `EVAL_TENANT_ID ∈ tenants` ⇒ None：口径一致（反向对照，**不得**误报）；
+    · 否则 ⇒ 具名错配说明（fail-closed：跑前停，不产出任何评测结论）。
+    """
+    found: set[int] = set()
+    for t in tenants or ():
+        try:
+            found.add(int(t))
+        except (TypeError, ValueError):
+            continue
+    if not found or EVAL_TENANT_ID in found:
+        return None
+    return tenant_scope_mismatch_message(label, key, found)
+
+
+async def detect_tenant_scope_mismatch() -> str | None:
+    """跑前自检（读**真实**库）：返回具名错配说明；None = 口径一致 / **无法判定**。
+
+    ⚠️ 锚点查询**不带租户谓词**（`WHERE <key> = $1`）—— 这正是本判据的全部判别力：
+    带谓词就只会得到「查不到」，而那正是本单要治的假归因。
+    """
+    try:
+        import asyncpg  # 延迟导入：本模块的**模块级**第三方依赖仍只有 httpx
+    except ImportError:
+        print("⏭️ 夹具⇄租户口径自检：**未跑**（asyncpg 不可用）")
+        return None
+    try:
+        conn = await asyncpg.connect(_eval_db_dsn(), timeout=8)
+    except Exception as e:
+        print(f"⏭️ 夹具⇄租户口径自检：**未跑**（DB 不可达 {_redact_dsn(_eval_db_dsn())}: "
+              f"{type(e).__name__}）—— 无法判定，不冒充通过")
+        return None
+    try:
+        for label, table, key_col, key_val in FIXTURE_TENANT_ANCHORS:
+            try:
+                rows = await conn.fetch(
+                    f"SELECT DISTINCT tenant_id FROM {table} WHERE {key_col} = $1",
+                    str(key_val))
+            except Exception as e:
+                print(f"⏭️ 夹具⇄租户口径自检：**未跑**（{table} 锚点查询失败: "
+                      f"{type(e).__name__}: {e}）")
+                return None
+            msg = tenant_scope_mismatch(label, str(key_val),
+                                        [r["tenant_id"] for r in rows])
+            if msg:
+                return msg
+        return None
+    finally:
+        await conn.close()
+
+
 # ── 夹具层动作的类型登记表（`pre_clean` / `post_clean` **共用**，issue #3781 / #4075）──
 # 为什么必须有一个显式登记表：`_run_clean_action` 对未知 type 的旧行为是
 # `return f"未知 pre_clean 类型: {_type}（跳过）"` —— 调用侧只把它当消息打印
@@ -10895,6 +11000,15 @@ async def main():
     if args.suite == "probe-permissions":
         # 活体红证入口（issue #4150）：不选用例、不烧 LLM，只校验权限范围是否真的生效。
         sys.exit(await probe_permissions_cli(args.declared))
+
+    # ── 跑前自检：夹具 ⇄ 运行器「租户口径」一致性（issue #7048，fail-closed）──────
+    # 位置有意放在**最前**（早于用例加载 / 任何 HTTP / 任何真实 LLM 请求）：租户错了，
+    # 这一整跑的「用例资产缺陷」结论全是假的 ⇒ 早停既省成本，也不产出误导性结论。
+    # 出口 = 具名报错（文件 + 变量 + 具体该设成几），见 `tenant_scope_mismatch_message`。
+    _scope_err = await detect_tenant_scope_mismatch()
+    if _scope_err:
+        print(f"❌ {_scope_err}")
+        sys.exit(2)
 
     if args.cases:
         cases = load_cases_from_yaml(args.cases)
