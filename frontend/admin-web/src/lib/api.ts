@@ -1293,6 +1293,31 @@ export const productionApi = {
     request.post<ApiResponse<{ batch_id?: string; reverted?: number; skipped?: number; hint?: string }>>(
       `/api/admin/production/repricing/${batchId}/rollback`,
     ),
+
+  /**
+   * **商家发货（原子端点）** —— `POST /api/admin/production/orders/{orderId}/ship`（issue #6983）。
+   *
+   * 🔴 **发货页唯一的提交入口**：单事务里做三件事（记物流 + 原子流转 `shipped` + 建可查的发货单
+   * `order_shipments`），加工单前置守卫也在里面。改前发货页走的是
+   * 「`PUT /orders/{id}/logistics` 再 `PUT /orders/{id}/status`」两步 —— 那条路**不建发货单**
+   * （`order_shipments` 全表长期 0 行）且**非原子**（第一步写了物流、第二步失败就留下部分写入）。
+   * ⛔ 不要再给那两条老端点打补丁：发货是**一个动作**，就该是一个入口。
+   *
+   * 请求体五键（服务端白名单 fail-closed，多发一个键 ⇒ 422 并具名报出，不静默丢弃）：
+   * `trackingNo` / `logisticsCompany` / `shippingMethod`（`logistics` 物流发货 · `none` 无需物流）/
+   * `logisticsType`（`express` 快递 · `logistics` 物流专线）/ `shipperName`（纸质单据「经手人」）。
+   * `shippingMethod=none` 时运单号与承运商**允许为空**（「无需物流」是合法发货形态）。
+   *
+   * `clientRequestId` 走请求头 `X-Client-Request-Id`（与服务端 `ClientRequestIdService` 同一份实现）：
+   * 客户端超时重试（HTTP 25s / 工具 30s 窗口客观存在）不得把运单号静默覆写 —— 同键第二次
+   * 服务端**回放首次结果**（响应带 `replayed: true`），不重复发货、不重复建单。
+   */
+  shipOrder: (orderId: string, data: LogisticsFormData, clientRequestId: string) =>
+    request.post<ApiResponse<Record<string, unknown>>>(
+      `/api/admin/production/orders/${orderId}/ship`,
+      buildLogisticsPayload(data),
+      { headers: { 'X-Client-Request-Id': clientRequestId } },
+    ),
 }
 
 // Dashboard API

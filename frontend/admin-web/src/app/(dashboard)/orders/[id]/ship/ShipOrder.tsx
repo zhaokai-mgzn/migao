@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { ChevronRight, Printer, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
-import { orderApi, processingOrderApi, customerApi } from '@/lib/api'
+import { orderApi, productionApi, processingOrderApi, customerApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading } from '@/components/ui'
 import { PrintDocPreview, ShipmentDoc, PRINT_TARGET_SPECS, usePrintDoc } from '@/components/orders'
@@ -25,6 +25,23 @@ function formatAmount(amount?: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`
+}
+
+/**
+ * 本次发货请求的**幂等键**（`X-Client-Request-Id`，issue #6935 / #6983）。
+ *
+ * 口径（与服务端 `ClientRequestIdService` 的「同键回放、失败释放占位」配套）：
+ * ① **提交期间一次生成**；② 失败后**重试复用同值**（否则一次超时重试就变成两次发货）；
+ * ③ **成功后作废**（下一次发货是一件新事，该拿新键）。
+ * 故键存在 ref 里（不触发重渲染），且**只在成功路径清空**。
+ *
+ * 用 `crypto.randomUUID()`，缺失时退到时间戳 + 随机串（老浏览器 / 非安全上下文下
+ * `randomUUID` 不可用；键只要**唯一**即可，服务端按 `(tenant_id, client_request_id)` 去重）。
+ */
+function newShipRequestId(): string {
+  const uuid = globalThis.crypto?.randomUUID?.()
+  if (uuid) return uuid
+  return `ship-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 interface ProductGroup {
@@ -205,6 +222,19 @@ export default function ShipOrder() {
 
   const productGroups = useMemo(() => groupItems(order?.items), [order?.items])
 
+  /** 幂等键（见文件头 `newShipRequestId` 的口径）；`null` = 下一件发货是新事。 */
+  const shipRequestIdRef = useRef<string | null>(null)
+
+  /**
+   * 🔴 **发货的唯一提交入口 = 原子端点**（issue #6983）：
+   * `POST /api/admin/production/orders/{id}/ship` 在**单事务**里做三件事 ——
+   * 记物流 + 原子流转 `shipped` + 建可查的发货单（`order_shipments`），加工单守卫也在里面。
+   *
+   * ⛔ **不得改回两步老路（先调 `orderApi` 的 updateLogistics，再调它的 updateOrderStatus）**：
+   * 那两步既不建发货单（发货单列表永远为空），又非原子（第一步写了物流、第二步失败 ⇒ 部分写入），
+   * 且都不带幂等键。类级判据见 `tests/unit/pages/ship-order.test.tsx` 的
+   * 「发货页不得再走两步老路」组（扫本文件源码 ⇒ 旧调用回潮即红）。
+   */
   const handleSubmit = async () => {
     if (!order) return
     if (!shipperName.trim()) {
@@ -216,19 +246,27 @@ export default function ShipOrder() {
       return
     }
     setSubmitting(true)
+    const clientRequestId = shipRequestIdRef.current ?? newShipRequestId()
+    shipRequestIdRef.current = clientRequestId
     try {
-      await orderApi.updateLogistics(order.id, {
-        company: shippingMethod === 'logistics' ? logisticsCompany : '',
-        trackingNo: shippingMethod === 'logistics' ? trackingNo.trim() : '',
-        shippingMethod,
-        // 物流类型（issue #4419）：express 快递 / logistics 物流专线；无需物流时不写
-        logisticsType: shippingMethod === 'logistics' ? logisticsType : undefined,
-        shipperName: shipperName.trim(),
-      })
-      await orderApi.updateOrderStatus(order.id, { status: 'shipped' })
+      await productionApi.shipOrder(
+        order.id,
+        {
+          company: shippingMethod === 'logistics' ? logisticsCompany : '',
+          trackingNo: shippingMethod === 'logistics' ? trackingNo.trim() : '',
+          shippingMethod,
+          // 物流类型（issue #4419）：express 快递 / logistics 物流专线；无需物流时不写
+          logisticsType: shippingMethod === 'logistics' ? logisticsType : undefined,
+          shipperName: shipperName.trim(),
+        },
+        clientRequestId,
+      )
+      // 成功 ⇒ 作废本次幂等键（下一次发货是一件新事）
+      shipRequestIdRef.current = null
       toast.success('发货成功')
       router.push(`/orders/${order.id}`)
     } catch (e) {
+      // 失败 ⇒ **保留**该键（重试复用同值：服务端同键回放，不会发两次货）
       toastRequestError(e, '发货失败')
     } finally {
       setSubmitting(false)

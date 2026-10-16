@@ -3,6 +3,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 /**
  * 发货页（/orders/[id]/ship）— 渲染 + 发货人 + 发货单打印（issue #3768 / UI-040）
@@ -15,16 +17,19 @@ import userEvent from '@testing-library/user-event'
 
 // Mock API
 const mockGetOrder = vi.fn()
-const mockUpdateLogistics = vi.fn()
-const mockUpdateOrderStatus = vi.fn()
+/** 原子发货端点替身（issue #6983）：发货页**唯一**的提交通道。 */
+const mockShipOrder = vi.fn()
 const mockGetCustomers = vi.fn()
 const mockProcessingOrderDetail = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   orderApi: {
     getOrder: (...args: any[]) => mockGetOrder(...args),
-    updateLogistics: (...args: any[]) => mockUpdateLogistics(...args),
-    updateOrderStatus: (...args: any[]) => mockUpdateOrderStatus(...args),
+  },
+  // 生产 API（issue #6983）：`shipOrder` = 原子发货端点
+  // （POST /api/admin/production/orders/{id}/ship，单事务 + 幂等 + 建发货单）。
+  productionApi: {
+    shipOrder: (...args: any[]) => mockShipOrder(...args),
   },
   // 客户常用物流档案带出（issue #4419 / UI-047）
   customerApi: {
@@ -37,6 +42,25 @@ vi.mock('@/lib/api', () => ({
     detail: (...args: any[]) => mockProcessingOrderDetail(...args),
   },
 }))
+
+/**
+ * 幂等键序列（issue #6935）：`shipRequestId` 用 `crypto.randomUUID()`，
+ * 这里替换成**可预测**的计数器 ⇒ 能判「重试复用同值 / 成功后换新值」。
+ */
+const requestIds: string[] = []
+beforeEach(() => {
+  requestIds.length = 0
+  Object.defineProperty(globalThis, 'crypto', {
+    configurable: true,
+    value: {
+      randomUUID: () => {
+        const id = `req-${requestIds.length + 1}`
+        requestIds.push(id)
+        return id
+      },
+    },
+  })
+})
 
 // Mock useRouteId
 vi.mock('@/lib/use-route-id', () => ({
@@ -110,8 +134,7 @@ describe('ShipOrder', () => {
     mockGetOrder.mockResolvedValue({
       data: { data: mockOrder },
     })
-    mockUpdateLogistics.mockResolvedValue({ data: { data: null } })
-    mockUpdateOrderStatus.mockResolvedValue({ data: { data: null } })
+    mockShipOrder.mockResolvedValue({ data: { data: { status: 'shipped' } } })
     // 默认：查不到客户档案（不覆盖发货页既有默认值「德邦快递」）
     mockGetCustomers.mockResolvedValue({ data: { data: { items: [], total: 0 } } })
   })
@@ -215,7 +238,15 @@ describe('ShipOrder', () => {
     )
   })
 
-  it('改成实际发货人后确认发货：payload 带 shipperName 且订单流转 shipped', async () => {
+  /**
+   * 🔴 判据 A（issue #6983）：确认发货 ⇒ 调**原子端点** `productionApi.shipOrder`，
+   * 且请求带 `X-Client-Request-Id`（幂等键）。
+   *
+   * 红证：把提交改回 `orderApi.updateLogistics` + `orderApi.updateOrderStatus(shipped)` 两步 ⇒ 本条必红
+   * （mockShipOrder 零调用，而那两个 mock 会各被调一次 —— 本条**不**再断言它们，
+   * 由下一条类级元守卫扫源码判死）。
+   */
+  it('确认发货 ⇒ 调原子端点（带幂等键），不再走两步老路', async () => {
     const user = userEvent.setup()
     render(<ShipOrder />)
 
@@ -225,14 +256,73 @@ describe('ShipOrder', () => {
     await user.type(screen.getByPlaceholderText('请输入快递单号'), 'SF20260915001')
     await user.click(screen.getByRole('button', { name: /确认发货/ }))
 
-    await waitFor(() => expect(mockUpdateLogistics).toHaveBeenCalledTimes(1))
-    expect(mockUpdateLogistics).toHaveBeenCalledWith(
+    await waitFor(() => expect(mockShipOrder).toHaveBeenCalledTimes(1))
+    expect(mockShipOrder).toHaveBeenCalledWith(
       'test-order-456',
-      expect.objectContaining({ trackingNo: 'SF20260915001', shipperName: '赵六' })
+      expect.objectContaining({ trackingNo: 'SF20260915001', shipperName: '赵六' }),
+      // 第三个参数 = 幂等键（由 api 层放进 `X-Client-Request-Id` 请求头，见 lib/api.ts）
+      expect.stringMatching(/^req-\d+$/)
     )
-    await waitFor(() =>
-      expect(mockUpdateOrderStatus).toHaveBeenCalledWith('test-order-456', { status: 'shipped' })
+  })
+
+  /**
+   * 🔴 判据 B（issue #6935）：失败后重试**复用同一个幂等键** —— 否则一次超时重试就是两次发货。
+   * 成功后才换新键（下一件发货是一件新事）。
+   */
+  it('失败重试复用同一幂等键；成功后换新键', async () => {
+    requestIds.length = 0
+    const user = userEvent.setup()
+    render(<ShipOrder />)
+
+    await user.type(await screen.findByPlaceholderText('请输入快递单号'), 'SF-TIMEOUT-1')
+    mockShipOrder.mockRejectedValueOnce(new Error('timeout'))
+    await user.click(screen.getByRole('button', { name: /确认发货/ }))
+    await waitFor(() => expect(mockShipOrder).toHaveBeenCalledTimes(1))
+    expect(mockShipOrder.mock.calls[0][2]).toBe('req-1')
+
+    // 重试（第二次点击）：仍是同一个键
+    await user.click(screen.getByRole('button', { name: /确认发货/ }))
+    await waitFor(() => expect(mockShipOrder).toHaveBeenCalledTimes(2))
+    expect(mockShipOrder.mock.calls[1][2]).toBe('req-1')
+
+    // 成功后：换新键（第三次点击是一件新的发货）
+    await user.click(screen.getByRole('button', { name: /确认发货/ }))
+    await waitFor(() => expect(mockShipOrder).toHaveBeenCalledTimes(3))
+    expect(mockShipOrder.mock.calls[2][2]).toBe('req-2')
+  })
+
+  /**
+   * 🔴 判据 C（issue #6983）· **类级元守卫**：发货页不得再出现「先 updateLogistics
+   * 再 updateOrderStatus(shipped)」那条两步老路。
+   *
+   * 为什么扫**源码**而不是再断言一次 mock：那两步的病灶是「不建发货单 + 非原子 + 无幂等键」，
+   * 而 mock 面上「调没调」只能覆盖到当前这一条用例走的分支 —— 只要有人在别的分支
+   * （如「无需物流」路径）把老路写回来，行为判据**看不见**。源码扫描是这条纪律的机械面：
+   * 旧调用回潮 ⇒ 当场红并具名报出命中的那一处。
+   *
+   * 判别力自证：把两条旧调用拼进内存字符串 ⇒ 同一份判据当场命中（证明它不是恒绿的空断言）。
+   */
+  it('类级守卫：ShipOrder 源码不得再出现两步老路（扫源码，回潮即红）', async () => {
+    const source = readFileSync(
+      join(process.cwd(), 'src/app/(dashboard)/orders/[id]/ship/ShipOrder.tsx'),
+      'utf8'
     )
+
+    // 前置条件（触发确认）：原子入口必须在场，否则「旧调用不在」是空跑
+    expect(source).toContain('productionApi.shipOrder(')
+
+    // 判据 = 两条**老端点的调用形态**（`orderApi.<方法>(`）—— 只认调用、不认散文：
+    // 注释里可以解释这条纪律（那正是它被写下来的方式），但**代码里不许再出现调用**。
+    const forbidden = [
+      ['orderApi', 'updateLogistics('].join('.'),
+      ['orderApi', 'updateOrderStatus('].join('.'),
+    ]
+    const hits = forbidden.filter((needle) => source.includes(needle))
+    expect(hits, `发货页出现两步老路：${hits.join(', ')}`).toEqual([])
+
+    // 判别力自证：同一份判据对「把老路加回来」的文本当场命中（不是恒绿）
+    const regressed = `${source}\n await orderApi.${'updateLogistics'}(order.id, {})`
+    expect(forbidden.some((needle) => regressed.includes(needle))).toBe(true)
   })
 
   it('发货人清空时拒绝提交（纸质单据不能没有经手人）', async () => {
@@ -244,7 +334,7 @@ describe('ShipOrder', () => {
     await user.click(screen.getByRole('button', { name: /确认发货/ }))
 
     await waitFor(() => expect(mockToastError).toHaveBeenCalledWith('请输入发货人'))
-    expect(mockUpdateLogistics).not.toHaveBeenCalled()
+    expect(mockShipOrder).not.toHaveBeenCalled()
   })
 
   it('发货前可打印发货单：点击真的触发 window.print', async () => {
@@ -409,10 +499,14 @@ describe('ShipOrder', () => {
     await user.type(screen.getByPlaceholderText('请输入快递单号'), 'SF20260919001')
     await user.click(screen.getByRole('button', { name: /确认发货/ }))
 
-    await waitFor(() => expect(mockUpdateLogistics).toHaveBeenCalledTimes(1))
-    expect(mockUpdateLogistics).toHaveBeenCalledWith(
+    await waitFor(() => expect(mockShipOrder).toHaveBeenCalledTimes(1))
+    expect(mockShipOrder).toHaveBeenCalledWith(
       'test-order-456',
-      expect.objectContaining({ logisticsType: 'logistics' })
+      expect.objectContaining({
+        logisticsType: 'logistics',
+        shippingMethod: 'logistics',
+      }),
+      expect.stringMatching(/^req-\d+$/)
     )
   })
 

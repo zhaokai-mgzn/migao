@@ -344,8 +344,10 @@ public class OrderShipmentService {
         }
 
         // 物流面复用**同一份**写入口径（存在则更新、否则新建 + 发货人只在新建时解析）
+        // ⚠️ 工人路不产生 logisticsType / shippingMethod（车间不做这两个选择）⇒ 传 null = 不覆盖
         OrderLogisticsWriter.upsert(orderLogisticsMapper, tenantId, orderId, company.trim(),
-                trackingNo.trim(), identity.workerName(), () -> identity.workerName());
+                trackingNo.trim(), new OrderLogisticsWriter.ShippingDetails(identity.workerName(), null, null),
+                () -> identity.workerName());
 
         // 🔴 状态流转是**最后一步**：失败（并发变更）⇒ 抛 ⇒ 整笔回滚 ⇒
         // 「明细写了但状态没变」这个形态在结构上不可能出现。
@@ -454,10 +456,15 @@ public class OrderShipmentService {
      *
      * <h2>实发数量 = 订单未发余量（该端点请求体没有数量）</h2>
      * <p>{@code POST /api/admin/production/orders/{orderId}/ship} 的 body 只有
-     * {@code trackingNo} / {@code logisticsCompany} ⇒ 逐 {@code order_item} 记
+     * {@code trackingNo} / {@code logisticsCompany}（issue #6983 起另有
+     * {@code shippingMethod} / {@code logisticsType} / {@code shipperName} 三个可选键，
+     * 但它们**不参与建单**：只落 {@code order_logistics}）⇒ 逐 {@code order_item} 记
      * {@code 订单量 − 已发合计}（判定本体 = {@link ShipmentInvariants#remainingLines}，
      * 与「累计已发 ≤ 订单量」共用同一份累计口径）。余量为 0 的订单行 ⇒ <b>整笔 4xx 且零写</b>
      * （不静默建一张空单 —— 「已发货但实发 0」是 #6157 明令拒绝的形态）。</p>
+     * <p>「无需物流」（{@code shippingMethod=none}）也建单：那仍是**一次真实的发货**
+     * （货已交给客户），只是没有承运商与单号 ⇒ 本方法的 {@code trackingNo} /
+     * {@code logisticsCompany} 落空串，实发数量口径一字不变。</p>
      *
      * <h2>🔴 「本次是否发生了流转」由调用方**显式传入**（issue #6181 的根因）</h2>
      * <p>本方法**曾经**用「当前状态是否还在 {@link #SHIPPABLE_FROM} 里」来回答「我们刚刚流转过吗」——
