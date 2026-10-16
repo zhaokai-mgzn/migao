@@ -81,7 +81,7 @@ jobs:
     timeout-minutes: 90
     # 部署对账输出（issue #2947）：schedule 触发时若镜像已存在则 skip=true（本轮未部署）
     outputs:
-      deployed: ${{ steps.sync.outputs.skip }}
+      deployed: ${{ steps.sync.outputs.skip != 'true' }}
 
     concurrency:
       group: deploy-admin-api
@@ -359,6 +359,36 @@ jobs:
           echo "构建位置 = **SWAS 服务器侧**（issue #5814 C′）；CI 不构建、不推 ACR。"
           echo "镜像由 deploy/swas/deploy.sh 在服务器 flock 之内产出，tag=${IMAGE_TAG}。"
 
+      # ── 构建身份的解算（issue #6951）──────────────────────────────────────────────
+      # 「线上跑的是哪个 build」必须可判读 ⇒ 需要三个**部署期真值**交给服务器侧构建
+      # （`deploy/swas/deploy.sh` 的 `_build_args` ⇒ `backend/admin-api/Dockerfile` 的
+      #  `MIGAO_BUILD_SHA` 等 ARG ⇒ `/api/version`）。这里只**解算**，不部署、不联网。
+      # 🔴 真值来源（都不是运行时现算）：`git rev-parse HEAD` = **本 run 检出的那个 commit**
+      #    （回滚腿 `--ref refs/tags/<tag>` 时它也正好是回滚目标的 commit —— 比 `GITHUB_SHA` 正确：
+      #     后者在 tag ref 下是**该 tag 指向的提交**，而在某些 dispatch 形态下会是 main 的 HEAD）；
+      #    `BUILT_AT` = `GITHUB_RUN_STARTED_AT`（部署期时钟，容器里没有 `.git` 也就没法现算）。
+      # ⚠️ 输出只在**真的要部署**时给（`skip != 'true'`）⇒ 跳过档不会因为「解算失败」被误判红。
+      - name: Resolve build identity (issue #6951)
+        id: build_id
+        if: steps.sync.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse HEAD)
+          case "$SHA" in
+            *[!0-9a-f]*|"") echo "::error::git rev-parse HEAD 解不出 hex sha（'$SHA'）⇒ 拒绝在身份不明时构建"; exit 1 ;;
+          esac
+          echo "BUILD_SHA=$SHA" >> "$GITHUB_OUTPUT"
+          echo "BUILT_AT=${GITHUB_RUN_STARTED_AT:-}" >> "$GITHUB_OUTPUT"
+          echo "构建身份：sha=${SHA} · tag=${{ steps.tag.outputs.IMAGE_TAG }} · builtAt=${GITHUB_RUN_STARTED_AT:-（取不到）}"
+          {
+            echo "## 构建身份（issue #6951）"
+            echo ""
+            echo "- \`sha\` = \`${SHA}\`（\`git rev-parse HEAD\` = 本 run 检出的 commit）"
+            echo "- \`tag\` = \`${{ steps.tag.outputs.IMAGE_TAG }}\`"
+            echo "- \`builtAt\` = \`${GITHUB_RUN_STARTED_AT:-（取不到）}\`"
+            echo "- 消费面：\`GET https://api.migaozn.com/api/version\`（部署后由下面的 served-version 断言比对）"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # 自动部署目标 = 测试环境（当前 SWAS）；生产发布走 deploy-prod（未来）
       - name: Deploy to SWAS (测试环境)
         if: steps.sync.outputs.skip != 'true'
@@ -366,6 +396,10 @@ jobs:
           ACR_U: ${{ secrets.ACR_USERNAME }}
           ACR_P: ${{ secrets.ACR_PASSWORD }}
           IMAGE_TAG: ${{ steps.tag.outputs.IMAGE_TAG }}
+          # 构建身份（issue #6951）⇒ `deploy/swas/deploy.sh` 把它转成 `--build-arg` 烘焙进镜像。
+          BUILD_SHA: ${{ steps.build_id.outputs.BUILD_SHA }}
+          BUILD_TAG: ${{ steps.tag.outputs.IMAGE_TAG }}
+          BUILT_AT: ${{ steps.build_id.outputs.BUILT_AT }}
           # 显式降级许可（issue #4852 ②）：`workflow_dispatch -f image_tag=<tag>`（MODE=rollback）
           # 是**人工回滚接口** ⇒ 只有这条路径给 1，其余（push / schedule 构建部署）恒 0
           # ⇒ 远端闸门「target 是当前在跑 tag 的祖先就跳过该服务」对普通部署生效、对显式回滚放行。
@@ -392,11 +426,99 @@ jobs:
           set -euo pipefail
           bash deploy/scripts/swas_deploy_running_tag.sh \
             ${{ env.SWAS_INSTANCE_ID }} ${{ env.SWAS_REGION }} "$AK" "$SK" "$IMAGE_TAG" admin-api
+
+      # ══════════════════════════════════════════════════════════════════════════
+      # 判据换芯（issue #6951）：**线上探到的 sha == 本次部署的 sha**
+      #
+      # 病（现取）：本腿此前亮的是「**产物存在**」—— `Skip if already built` 只看
+      # 「镜像在不在 ACR / 同 sha 的 run 结论是不是 success」；#6746 实测「只跑 22 秒也报 success」，
+      # #6554 实测「断言说在跑 tag 046298d，而线上前端实际停在 03b1132」。⇒「推了」不等于「线上是它」。
+      #
+      # 判据形态（照抄同族 `deploy/scripts/worker-h5-verify-served.sh` 的判别力口径）：
+      # 部署后探**线上真正响应的** `GET /api/version`（nginx 已放行的 `/api/` 前缀，**不新增放行面**），
+      # 把它的 `sha` 与本次目标 sha 逐字符比前 7 位 —— 不一致 ⇒ **具名判红**（探到什么 / 期望什么 /
+      # 可复制复算命令，三件都在脚本输出里）；取不到 ⇒ 退 **3**（fail-closed，**不当绿**）。
+      # 实现体只有一份 = `deploy/scripts/served-version-verify.sh`（三条腿将来共用同一份，不复制）。
+      #
+      # 两条路径都要走：
+      #  · `skip != 'true'`（push / rollback / schedule 真部署）⇒ 这是**本轮部署后**的最终判据；
+      #  · `skip == 'true'`（schedule / 重复 dispatch 的兜底档）⇒ 本轮**没部署**，但探针仍要跑：
+      #    它把「**本轮未部署**（线上已验证 == 目标）」与「**部署了但没验证**」在读数上分开 ——
+      #    改前这两者都表现为 `success + skipped`（issue #6951 第 2 条判据逐字要求分开）。
+      #    ⚠️ 与上面 #6294 那条不重复：那条读的是**容器在跑的 tag**（SWAS 控制面），
+      #    本条读的是**服务端真正响应的内容**（HTTP 面）—— 两者都可以对而线上仍是旧代码
+      #    （#6554 的形态：green 残留容器 / 镜像 tag 与进程真身脱钩）。
+      #
+      # ⚠️ 期望 sha 取 `${GITHUB_SHA}`：这就是本次部署的 commit
+      #    （镜像 tag `sha-${GITHUB_SHA::7}` 也由它派生，两侧同源）。
+      # 判据 = tests/unit_ci_workflows/test_served_version_verify.py
+      # ══════════════════════════════════════════════════════════════════════════
+      - name: "Assert served sha == deployed sha (线上就是本次构建，issue #6951)"
+        if: always()
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          SKIPPED: ${{ steps.sync.outputs.skip }}
+        run: |
+          set -uo pipefail
+          if [ "${SKIPPED:-}" = "true" ]; then
+            echo "ℹ️ 本轮**未部署**（\`Skip if already built\` 判 skip=true）⇒ 下面的探针是**只读自证**："
+            echo "   它证「线上现在跑的就是 ${GITHUB_SHA::7}」（= 另一次已成功的部署留下的），"
+            echo "   **不是**「本轮做了什么」。两者在读数上从此分得开（issue #6951 判据 2）。"
+          else
+            echo "本轮**已部署** ${GITHUB_SHA::7} ⇒ 下面这条断言就是本腿的最终判据（线上 sha == 本次 sha）。"
+          fi
+          set +e
+          bash deploy/scripts/served-version-verify.sh \
+            'https://api.migaozn.com' "${EXPECTED_SHA:-}"
+          rc=$?
+          set -e
+          # 三态原样透传（0 一致 / 1 不一致判红 / 3 探不到 fail-closed）—— 不做任何"归一化"，
+          # 否则 3 会被悄悄读成绿（那正是 issue #6951 要治的假绿形态）。
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::线上版本自证未通过（exit=${rc}）⇒ 本腿判红：这次部署的「产物存在 / run 结论 success」**不等于**「线上是它」"
+            exit "$rc"
+          fi
+
+      # schedule 兜底档的「没跑冒烟」必须**出声**（issue #6951 第 2 条判据）：
+      # 冒烟 job 的新条件是 `github.event_name != 'schedule' || deployed == 'true'`（见下方 smoke-test）
+      # ⇒ **schedule + 未发生实际同步**时，`Post-Deploy Smoke Test` 整段 skipped，
+      # 而本 run 仍然是 `success` ⇒ 读 run 列表的人会把它读成「已验证」（改前形态）。
+      # ⚠️ 本步**不改**冒烟的条件（铁律：不削弱任何既有门禁；这里也不新增成本）；
+      #    它只把「本轮没跑冒烟」变成 run 日志/注解里**可见**的一行 + 具名出口。
+      - name: "Declare smoke verification state (schedule 兜底档，issue #6951)"
+        if: always()
+        env:
+          SKIPPED: ${{ steps.sync.outputs.skip }}
+        run: |
+          set -uo pipefail
+          if [ "${SKIPPED:-}" = "true" ]; then
+            echo "::notice::本轮**未部署**（schedule / 重复 dispatch 兜底档）⇒ **未跑 Post-Deploy Smoke Test**；"
+            echo "          本 run 的线上验证**只有**上一步的只读版本自证（served sha == ${GITHUB_SHA::7}）。"
+            echo "          语义区分：『本轮未部署、且线上已验证 == 目标』≠『本轮部署了但没验证』。"
+            echo "          要跑冒烟：\`gh workflow run deploy-admin-api.yml --ref main\`（或在该 run 页面 Re-run）。"
+            {
+              echo "## ⚠️ 本轮未部署 ⇒ 未跑冒烟（issue #6951）"
+              echo ""
+              echo "- 判据：\`Skip if already built (schedule reconcile)\` = \`skip=true\`（该 commit 已构建部署过）"
+              echo "- 因此 \`Post-Deploy Smoke Test\` **整段 skipped**，本 run 的 \`success\` **不含**冒烟验证"
+              echo "- 本 run 实际做过的验证 = 上一步的**只读**版本自证（\`served sha == ${GITHUB_SHA::7}\`）"
+              echo "- 要跑冒烟：\`gh workflow run deploy-admin-api.yml --ref main\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "本轮**已部署** ⇒ \`Post-Deploy Smoke Test\` 按既有条件正常跑（不在本步射程内）。"
+          fi
   smoke-test:
     name: Post-Deploy Smoke Test
     needs: build-and-deploy
-    # schedule 对账跳过构建部署时（本轮未部署）不再跑冒烟；push/rollback 正常跑
-    if: github.event_name != 'schedule' || needs.build-and-deploy.outputs.deployed == 'false'
+    # 语义（issue #6951 订正）：`deployed` 此前逐字写成 `steps.sync.outputs.skip` ——
+    # **名字与含义相反**：条件是 `deployed == 'false'`，而它实际表达的是「**没跳过** ⇒ 本轮真的部署了」。
+    # 现在把 output 订正为 `skip != 'true'`（真的部署了 ⇒ true；本轮未部署 ⇒ false），条件随之改成 `== 'true'`。
+    # 行为不变（两处同时翻转 ⇒ 同一条判定），但**读数不再自相矛盾**：`deployed=false` 现在真的意味着
+    # 「本轮没部署」（schedule 兜底档）⇒ 与上面那条「未部署必须出声」的声明步语义一致。
+    # ⚠️ 未固化项：`deploy-frontend.yml` / `deploy-ai-agent-service.yml` 两腿**仍是旧写法**
+    #（同形、同错），本单只改了 admin-api 这条腿 —— 见 PR body 的「未固化项」。
+    # 本轮**未部署** ⇒ 不跑冒烟（不新增成本）；跑了什么/没跑什么由上面的声明步**显式**打出来。
+    if: github.event_name != 'schedule' || needs.build-and-deploy.outputs.deployed == 'true'
     uses: ./.github/workflows/smoke-test.yml
     with:
       admin_api_url: 'https://api.migaozn.com'

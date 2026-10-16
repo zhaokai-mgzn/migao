@@ -6513,6 +6513,24 @@ _CASE_MC_104 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── MC-105 [NORMAL] **部署腿的判据从「产物存在」换成「线上探到的 sha == 本次部署的 sha」**：admin-api 加只读版本端点 `GET /api/version`（构建期注入 sha/tag/builtAt，nginx 已放行面，无鉴权）+ 部署后 served-sha 断言（不一致 ⇒ 具名判红、探不到 ⇒ fail-closed 退 3）+ schedule 兜底档「本轮未部署」显式出声（issue #6951 / #6746 / #6611 / #6554）（源: cases/misc.yml）──
+_CASE_MC_105 = EvalCase(
+    id='MC-105',
+    legacy_id='',
+    title='**部署腿的判据从「产物存在」换成「线上探到的 sha == 本次部署的 sha」**：admin-api 加只读版本端点 `GET /api/version`（构建期注入 sha/tag/builtAt，nginx 已放行面，无鉴权）+ 部署后 served-sha 断言（不一致 ⇒ 具名判红、探不到 ⇒ fail-closed 退 3）+ schedule 兜底档「本轮未部署」显式出声（issue #6951 / #6746 / #6611 / #6554）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['部署腿报 success、`Post-Deploy Smoke Test` 却是 skipped —— 这个「绿」到底证明了什么？线上跑的又是哪个 build？'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·红证（判据自身能因注入错误期望 sha 而红）**：`deploy/scripts/served-version-verify.sh <BASE_URL> <EXPECTED_SHA>` 在「线上读数 = 真 sha / 期望值 = 注入的错误 sha」时必须以 **退 1** 判红，且输出里同时具备三件：**探到什么**（实测 sha）、**期望什么**（期望 sha）、**可复制复算命令**（`curl` + 脚本名）。执行点 = tests/unit_ci_workflows/test_served_version_verify.py::test_served_sha_mismatch_is_red_and_names_both_sides', '🔴 **判据 1 的对照臂（没有它 ⇒ 恒红也能过上面那条）**：同一场景只把期望 sha 换回真的 ⇒ **退 0** + `SERVED_VERSION=match`。执行点 = 同文件::test_served_sha_match_is_green_control_arm', '🔴 **判据 2·探不到 ⇒ fail-closed（退 3，**绝不当绿**）**：sha 为空（**老镜像没有构建期注入面** —— 本判据最容易退化成空断言的路径）、body 不是 JSON、HTTP 404、HTTP 429、sha 非 hex、期望 sha 形态不合法、期望 sha < 7 位、`app` 不是目标服务、端点连不上（端口没人听）九态各自 ⇒ 退 3 + `SERVED_VERSION=unknown` 且**不得**出现 `match`。执行点 = 同文件::test_unverifiable_is_exit_3_never_green（8 条参数化）/ ::test_unreachable_endpoint_is_exit_3', '🔴 **判据 3·结构判据：发布腿的命令里不再以「镜像/产物存在」作为通过条件**：`deploy-admin-api.yml` 必须**真的**调用共享判据本体（`deploy/scripts/served-version-verify.sh`）、期望值来自本次部署（`EXPECTED_SHA: ${{ github.sha }}`）、退出码**原样透传**（`exit "$rc"`，3 不许被归一化成 0）。执行点 = 同文件::test_deploy_leg_asserts_served_sha_not_artifact_existence', '🔴 **判据 4·类级形态：断言步的生效条件不得绑在「产物/结论」面上**：served-sha 断言的 `if:` 里不许出现 `steps.sync.outputs.skip`，且必须是 `always()`（跳过档也要探一次 —— 否则「本轮未部署」就没有任何线上读数）。执行点 = 同文件::test_deploy_leg_never_keys_pass_on_artifact_existence', "🔴 **判据 5·schedule 兜底档两态分开**：`skip=true`（本轮未部署）必须有**显式出声**的声明步（`::notice::` + 逐字「未跑 Post-Deploy Smoke Test」+ 落 run summary），且 `deployed` 的语义必须自洽（`skip != 'true'`，冒烟 job 条件随之 `== 'true'`）。执行点 = 同文件::test_schedule_skip_path_declares_that_no_smoke_ran", '🔴 **判据 6·注入面四层同源**（少一环 ⇒ 端点报的就不是这次构建、sha 恒为空）：workflow（`build_id` 步解算 `git rev-parse HEAD` + 三个 env）→ `deploy/swas/deploy.sh`（`BUILD_SHA`/`BUILD_TAG`/`BUILT_AT` → `--build-arg MIGAO_BUILD_*`）→ `backend/admin-api/Dockerfile`（`ARG` 在 builder/runtime **两个** stage 各一次 + `ENV`）→ `VersionController`（读同名环境变量）。执行点 = 同文件::test_build_identity_wiring_is_same_source_across_four_layers', '🔴 **判据 7·端点的泄露面白名单**：响应体**只许** 5 个非敏感键（`app`/`sha`/`tag`/`builtAt`/`servedAt`），且只读（`@GetMapping`、无写映射）⇒ 有人加字段就判红（逼一次「它会不会泄露」的复核）。执行点 = 同文件::test_version_endpoint_field_whitelist_blocks_accidental_leaks', '🔴 **判据 8·端点落在已放行面 + 设计前提仍在**：`@GetMapping(value = "/api/version"`（nginx 已放行的 `/api/` 前缀，**不新增放行面**）+ `SecurityConfig` 的 `permitAll` 含 `"/api/version"`；同时 `nginx.conf` 那条 actuator/swagger 屏蔽块必须**仍在**且仍是 `return 404`（「探活面 ≠ 探版本面」正是本单的前提）。执行点 = 同文件::test_version_endpoint_is_under_the_already_allowed_api_prefix', '🔴 **判据 9·判别力自证（注入式红证，本包实跑）**：① 把脚本的比较改成恒真 ⇒ `test_served_sha_mismatch_is_red_and_names_both_sides` 红（1 failed / 19 passed）；② 摘掉 workflow 的 served-sha 断言步 ⇒ `test_deploy_leg_asserts_served_sha_not_artifact_existence` + `test_deploy_leg_never_keys_pass_on_artifact_existence` 双双红（2 failed / 18 passed）；③ 摘掉 Dockerfile 的 `ENV MIGAO_BUILD_SHA=…` ⇒ `test_build_identity_wiring_is_same_source_across_four_layers` 红（1 failed / 19 passed）；恢复后 20 passed。执行点 = 同文件（判据本体自带对照臂与负控）', '🔴 **判据 10·脚本自身的两类静默坏形态**（本包实测踩过第一类）：`bash -n` 必须能解析 + **不许**出现「裸 `$VAR` 紧跟非 ASCII」（bash 会把中文全角字节并进变量名 ⇒ `set -u` 下报 `EXPECTED\\ufffd: unbound variable`，而报错行号与真实坏点相差数行；同族还能造成未闭合引号把整段吞掉）。执行点 = 同文件::test_shared_script_parses_and_has_no_unquoted_cjk_adjacent_expansion', '**边界（照实登记，不粉饰）**：① 线上真机复探**未做**（需要一次真实部署，本包无部署权）—— 重启条件 = 本 PR 合并并在 main 上跑过一次部署后，执行 `bash deploy/scripts/served-version-verify.sh https://api.migaozn.com "$(git rev-parse origin/main)"` 应退 0；② `deploy-frontend.yml` / `deploy-ai-agent-service.yml` 两条腿**未接线**（同形缺口；前端那半边还依赖 #6611 的构建期注入面）—— 重启条件 = #6611 落地后给前端产物加 build id 并接同一条判据；③ Java 侧只做**静态接线判据**，本包**未**跑 `mvn test`（worktree 无构建产物、属全量档）；④ 本文件**不联网**（`/api/version` 由进程内 HTTP 桩提供）⇒ 证的是「脚本在给定输入下会做什么」，不是「阿里云/线上真的会这么回」；⑤ 不改任何门禁的通过条件、不新增豁免、不新增 schedule。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（进程内 HTTP 桩驱动真脚本 + 读 workflow/deploy.sh/Dockerfile/Java 源码文本 + `bash -n`），零网络、不碰真实云，不进 agent-eval 冒烟',
+    tags=['deploy', 'ci-cd', 'version-probe', 'fail-closed', 'backend-contract', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -14460,6 +14478,7 @@ ALL_CASES = (
     _CASE_MC_102,
     _CASE_MC_103,
     _CASE_MC_104,
+    _CASE_MC_105,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
