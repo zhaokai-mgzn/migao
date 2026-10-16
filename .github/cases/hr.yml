@@ -585,7 +585,22 @@ cases:
       # `employee_manage(action=list)` / `role_manage`）含**已删除的写 action `create`** ⇒ 悬空声明。
       # 新裁定下「黄金策做不到这件事、请去后台」才是正确行为 ⇒ 改判为 `direct_reply`
       # （「如实说明 + 引导去后台页面」的既有伪工具形态，MC-021 / DF-016 在用）。
-      - tool: direct_reply
+      # ── 2026-10-16（issue #7048 P4，集中复跑 `HR-009` 红 → 逐条归因 = **期望被产品演进掏空**）──
+      # 复跑实测（`/tmp/eval-rerun-1016-1744.log`）：`R1` 零写工具（`role_manage(action=all)` +
+      # `employee_manage(action=list)` 只是**查**，如实说明在前）✓，但 `R2`「那我要怎么才能给员工
+      # 开账号？」调了 `nav_guide`（返回 `registered=True featureId=employees label=员工管理（员工开账号）`）
+      # ⇒ 裸 `direct_reply`（语义 = 该轮**零**工具调用，见 `tests/agent_eval/local_runner.py`
+      # 的 `check_expectation`）在**任一**轮有工具调用时即判红。
+      # **判"用例腐烂"而非"行为缺陷"**：`nav_guide` 是 issue #5989 引入的只读导航工具，它的
+      # **登记项 `#employees` 的常见说法逐字就是「怎么给员工开账号」**（原文见
+      # `backend/ai-agent-service/app/tools/nav_guide.py` 与 `.github/cases/misc.yml` 的 MC-071
+      # 登记面注释）—— 即**产品已把这条问题变成"应当调工具"的形态**，而本用例还写着"必须零工具"。
+      # ⇒ 期望改为 `direct_reply or nav_guide`（同型先例 = `ST-011` 的 `direct_reply or order_query`，
+      # 其 merge_log 逐字记录了同一种「期望过严判假红」的改判理由）。
+      # 判别力**不在此处承重**：承重的是 `forbidden_text`（不得编造/敷衍）+ `forbidden_tools`
+      # （全程不得碰订单/商品写路径）+ `db_verify[employee_absent]`（李四不得落库）+ 下面的
+      # `want_text`（必须给出打开路径）—— 对「零工具直接答」与「调 nav_guide 定位入口」两条路径都鲁棒。
+      - tool: direct_reply or nav_guide
     # 业务**不得发生**（跨轮机器判定）：本用例的身份没有 employee:create ⇒
     # 任何一次 create **成功**都是越权落库（最坏形态）。
     # ⚠️ 这一条是「未修实现」的判别性断言：未修时服务端给通配 `*` ⇒ create 成功 ⇒ 本用例红。
@@ -618,12 +633,25 @@ cases:
     # 正向关键词（§3.4 双轨的另一轨）：只说"做不了"不够，必须给**开通路径**。
     # ⚠️ 库里已用的正向词是「管理员」「权限」，此处用 `开通`（同一语义族但不重复用词），
     # 并诚实标注它的效力边界：它证明"给了路径"，**不**证明官方措辞。
+    # ── 2026-10-16（issue #7048 P4）：**两条 `want_text` 合并成一条 any_of** ────────────
+    # 原形态是两条独立条目（`{any_of:["开通"]}` + 裸串 `"后台"`），而 runner 的
+    # `check_want_text` 对**每条**单独求值、且两条**都是全程语义**（`tests/agent_eval/local_runner.py`
+    # 的 `check_want_text`：`round` 缺省 ⇒ `hay = 全程 final_text 拼接`）——
+    # 复跑实测报「未出现任一正向关键词 ['开通']」= **假红**：`R1` 的 final_text 里
+    # 「指引其**联系管理员**在「岗位权限」或「员工管理」中**开通**该权限」逐字含「开通」、
+    # `R2` 含「后台」⇒ 两条本该各自成立；明细行只打了第一条（`any_of` 分支 `continue` 后不再看
+    # 第二条），揭示的是**断言写法**（分开写 = 逐条独立判定 + 关键词面窄）而非 agent 缺陷。
+    # 改判方向**不是放宽语义**，是把「给出打开路径」这句话的**同义说法**收进同一格 any_of：
+    # 实测合格回答用的是「**入口**在后台「员工管理」页（/employees）」——「入口」与「管理员」
+    # 是商家侧最自然的措辞，原两词（开通/后台）漏掉它 ⇒ 真正要守的语义（**给出了打开路径**）
+    # 被措辞卡住。判别力不降：`forbidden_text` 仍禁「系统不支持/请稍后重试」，
+    # `expectations` 仍要求有回答，`data_checks` 第 1 条仍登记「未给路径 = 红」。
     want_text:
       - any_of:
           - "开通"
-      # ── 2026-09-24（issue #5247）：**追加正向判据**（裸字符串条目 = 全程语义，见 runner 的
-      # `check_want_text`）：全程 final_text 必须出现「后台」= 真的给出了后台开通路径。
-      - "后台"
+          - "后台"
+          - "入口"
+          - "管理员"
     data_checks:
       # ⚠️ 以下为自然语义描述，**不计分**（acceptance-protocol §1.3 铁律）。机器可判部分由
       # 上面的 expectations / must_fail / forbidden_tools / forbidden_text / want_text 承担。

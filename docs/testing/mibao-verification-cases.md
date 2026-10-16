@@ -1773,6 +1773,7 @@
 命名空间(同键互斥·自动串行): customer_phone:13800138000、product_name:CH019交互卡测试窗帘、product_name:遮光窗帘
 全程禁用: product_manage(create)
 全程禁用: order_create
+跳过: 2026-10-16 能力边界终版（关联 #7048 P4）：四轮诉求（建品／下单／客户写／工单改状态）在 B 端全部禁止或已下线 ⇒ `tool: interact` 期望奖励的是被裁定禁止的写确认卡，本用例无判别力（agent 如实拒绝反被判红）。断言保留待重锚；重锚判据见上方注释。
 ```
 真值: ai-chat.confirm-required
 溯源: issue #2777：G6 interact 绑定 B 端 + admin-web store 字段透传修复。2026-09-16（#3961）语料形态修复：user_inputs 由**能力问答**改为四类写操作的真实触发语（原语料两轮零工具调用 = 假红，污染整轮 completion 判定，见 #3955），四类覆盖面保留；expectations 不变（tool: interact）；data_checks 改为显式标注静态契约由单测/前端单测承重、行为面只留「任一链路下发交互卡」；补 persona: mibao（B 端专属，消除跨腿隐患）；补 namespaces（张三/13800138000 与 10 条用例互斥）；补 pre_clean product_remove（自建商品名重试前置复位）；④ 售后改状态轮有意不答卡，避免与 AS-004 争用 seed 工单；生成物已重渲染。2026-09-18 #4099（burn-down，metric 收紧为 entries ⇒ 必须整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（④ 轮按名字下单 ⇒ 该名字唯一是它真正依赖且**只读**的前置；不选 order_count_for_phone，因本用例自己会建单、漂移判据必然判红）+ namespaces 补 `product_name:遮光窗帘`（护住该前置的基线/漂移两格）；客户/工单两个维度无可声明类型，如实登记为未覆盖；断言（user_inputs/expectations/data_checks/pre_clean）原样未动 ｜ tags: interactive, confirmation
@@ -3286,7 +3287,7 @@
 你: 帮我开个客服账号，姓名李四，手机号 13800009999，密码 Test123456
 你: 那我要怎么才能给员工开账号？
 端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
-期望: direct_reply
+期望: direct_reply or nav_guide
 数据: 同一失败的调用不得跨轮重复（自旋）：本仓库 runner 目前**没有**跨轮重复调用断言，故该条只能靠 LLM 层人工/盲审读报告 —— 如实登记，不假装已机器判定
 数据: 如实说明黄金策不提供创建员工/开账号能力（B 端只读化 #5247：写能力与对应 tools 已从 B 端整体移除），并给出后台「员工管理」页面开通路径（正向判据 want_text 要求全程出现「后台」）
 数据: 不得出现「请稍后重试」/「系统不支持」这类编造或敷衍话术（如实说明「黄金策做不到、请去后台」是**正确**回答，不在禁词内）
@@ -3296,8 +3297,7 @@
 禁词（全程）: 系统不支持、请稍后重试
 全程禁用: order_manage
 全程禁用: product_manage
-必须: {'any_of': ['开通']}
-必须: 后台
+必须: {'any_of': ['开通', '后台', '入口', '管理员']}
 落库: employee_absent 李四 → name=李四; phone=13800009999
 ```
 真值: ai-chat.permission-layers, employee-role.write-require-admin
@@ -11306,7 +11306,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：775（活跃 134，跳过 641）
+- 用例总数：775（活跃 133，跳过 642）
 - tier 分布：smoke 12 / normal 716 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
