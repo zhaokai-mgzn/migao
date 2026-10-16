@@ -342,6 +342,33 @@ jobs:
             python -m pytest tests/unit_ci_workflows -q --tb=short -p no:cacheprovider -n 4
           fi
 
+      # ── `[deploy-leg]` 清零声明的**类级元守卫**（issue #7075）──────────────────────
+      # 病：`scripts/deploy_leg_failure_reaction.sh` 的 `clear_leg()` 走状态兜底时把 `--reason`
+      # 传成 `not_planned`（**下划线**，而 gh 只认**空格**的 `not planned`）并 `|| :` 吞错，
+      # 下一行照样打印「✅ … 自动关闭值守单 #N」⇒ 值守单**只开不关**、假绿堆积。
+      # 现场（durable）：run 38979620458 的日志打出「自动关闭值守单 #7025」，
+      # 而同一分钟 `gh issue view 7025 --json state` = OPEN。
+      # 本步判的是**不变量**（不是那一次调用）：「清零注释写了『自动关闭』」⇄「该单真是 CLOSED」必须一致。
+      # ⚠️ 三态（与 `tests/unit_ci_workflows/test_case_id_claims.py` 的 `TOKEN_ENVS` 同口径）：
+      #    `0` 一致 / `1` 违规（具名）/ `3` **判定不了**（无凭据 / 读不到 / 超取数上限）
+      #    —— `3` 以出声的方式表态，绝不当 `0` 读（「没看」不许长得像「一致」）。
+      # ⚠️ 只读（`permissions: issues: read` 足够）：不关单、不打标签、不改远端。
+      # ⚠️ 离线结构判据（取值枚举 + 具名失败出口）在 pytest 那一步里 ⇒ **没网络也能判**。
+      - name: 清零声明元守卫（[deploy-leg] 声称已关 ⇄ 实际 CLOSED，issue #7075）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          # 显式 `--repo`：不靠 `gh` 从当前检出推断远端（§18.6 环境静默即缺陷）。
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set +e
+          python3 scripts/deploy_leg_close_claim_audit.py check-claims
+          rc=$?
+          if [ "$rc" = "3" ]; then
+            echo "::warning::清零声明元守卫**判定不了**（rc=3：无凭据 / 读不到 / 超取数上限）—— 这**不是**「一致」"
+          fi
+          exit "$rc"
+
 
   admin-web-test:
     name: admin-web typecheck + unit tests

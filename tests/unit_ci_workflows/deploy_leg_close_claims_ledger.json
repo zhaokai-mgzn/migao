@@ -1,0 +1,59 @@
+{
+  "kind": "deploy-leg-close-claims",
+  "what": "「清零注释宣称『自动关闭』而单其实没关」（issue #7075 的假绿形态）的**存量清单**。",
+  "issue": 7075,
+  "snapshot_at": "2026-10-17",
+  "snapshot_command": "gh issue list --state open --search \"[deploy-leg] in:title\" --limit 30 --json number,title,state,comments",
+  "shrink_rule": "**只许缩短**：每次清账都必须把条目从本台账删掉，并把 tests/unit_ci_workflows/test_deploy_leg_failure_reaction.py 的 CLOSE_CLAIM_BASELINE 同值下调（双向核对 ⇒ 删一边必红；台账条数 > 基线 ⇒ 红 = 新增即红）。",
+  "entries": [
+    {
+      "number": 7023,
+      "leg_workflow": "worker-h5-publish.yml",
+      "state_at_snapshot": "OPEN",
+      "reason": "同一失败 run 38852661821（sha fbbb7988f，push）开出的三张重复单之一（#7023/#7024 是事件面同轮重复开单，#7025 才是状态兜底那张）。该腿的**清算条件**已由对账步自证：run 38979620458 的日志逐字 `✅ worker-h5：自上次成功部署 2f4b8b8 起 frontend/worker-h5 无代码改动 ⇒ 无漂移（HEAD 的代码已在线上）` ⇒ 收敛。",
+      "evidence": [
+        "gh run list --workflow=worker-h5-publish.yml --limit 30 --json conclusion,headSha,createdAt | 成功run 38969347424 @ 2f4b8b8（2026-10-16T21:26:07Z）",
+        "gh run view 38979620458 --log | grep \"自上次成功部署 2f4b8b8 起 frontend/worker-h5\"",
+        "git log --oneline -1 2f4b8b84b -- frontend/worker-h5 ⇒ fbbb7988f（此后无改动）"
+      ]
+    },
+    {
+      "number": 7024,
+      "leg_workflow": "worker-h5-publish.yml",
+      "state_at_snapshot": "OPEN",
+      "reason": "与 #7023 同源（同一 run 同一 sha 的重复单）；收敛依据同 #7023。⚠️ 它**从未**收到清零声明（`clear_leg` 的 `open_issue_of_title` 只取**一张**单 ⇒ 同一腿的陈旧重复单不会被清）—— 这条边界照实登记在 PR body 的「未固化项」。",
+      "evidence": [
+        "gh issue view 7024 --json comments ⇒ 0 条（从未被任何清零轮触及）",
+        "gh run view 38979620458 --log | grep \"自上次成功部署 2f4b8b8 起 frontend/worker-h5\"",
+        "gh run list --workflow=worker-h5-publish.yml --limit 30 --json conclusion,headSha | 成功 run 38969347424 @ 2f4b8b8"
+      ]
+    },
+    {
+      "number": 7025,
+      "leg_workflow": "worker-h5-publish.yml",
+      "state_at_snapshot": "OPEN",
+      "reason": "**本缺陷的现场单**：2026-10-16T23:00:45Z 与 23:07:52Z 两轮都打印「✅ 腿 worker-h5 已收敛 ⇒ 自动关闭值守单 #7025」，而 `gh issue view 7025 --json state` = OPEN（注释+日志宣称已关、实际没关）。收敛依据同 #7023。",
+      "evidence": [
+        "gh run view 38979620458 --log | grep \"自动关闭值守单 #7025\"",
+        "gh issue view 7025 --json state -q .state ⇒ OPEN（与上一条同一分钟）",
+        "gh run view 38979620458 --log | grep \"自上次成功部署 2f4b8b8 起 frontend/worker-h5\"",
+        "gh run list --workflow=worker-h5-publish.yml --limit 30 --json conclusion,headSha | 成功 run 38969347424 @ 2f4b8b8"
+      ]
+    },
+    {
+      "number": 7032,
+      "leg_workflow": "deploy-admin-api.yml",
+      "state_at_snapshot": "OPEN",
+      "reason": "admin-api 腿：状态兜底臂在 2026-10-16T06:19:38Z 按 `terminal` 补开（HEAD 为上一条结束时的 sha a54a36e）。该腿此后**已成功部署当前 main HEAD**，且对账步判无漂移 ⇒ 收敛（清零轮 23:00:42Z 与 23:07:49Z 都对该单打印「自动关闭值守单 #7032」而它仍 OPEN）。",
+      "evidence": [
+        "gh run list --workflow=deploy-admin-api.yml | 成功 run 38969253806 @ 2f4b8b8（2026-10-16T21:25:19Z）",
+        "gh run view 38979620458 --log | grep \"自动关闭值守单 #7032\"",
+        "gh run view 38979620458 --log | grep \"自 2f4b8b8（上次成功部署）起 backend/admin-api 无代码改动\""
+      ]
+    }
+  ],
+  "out_of_scope": [
+    "#6660 / #6661（c-end-h5 腿的同族单）—— 由主会话另行处置，本包**未动**（2026-10-17 现取两张都是 CLOSED）",
+    "#7073 / #7075 自身：标题前缀是 `[deploy-leg·假红]` / `[deploy-leg·假绿]`（不是 `[deploy-leg] ` 一族），不在本判据射程内"
+  ]
+}
