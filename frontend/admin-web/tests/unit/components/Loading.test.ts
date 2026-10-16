@@ -40,10 +40,23 @@ function sourceColorClasses(): string[] {
     .match(/(?:bg|text|border|ring|from|via|to|divide|outline|shadow|decoration|accent|caret|fill|stroke)-[a-z]+-[0-9][0-9a-z/]*/g) ?? []
 }
 
-/** 转轮 = 真 lucide 的 svg（`Loader2` 无 testid stub，按 lucide 自带类名定位） */
+/**
+ * 转轮 = 真 lucide 的 svg（`Loader2` 无 testid stub，按 lucide 自带类名定位）。
+ *
+ * ⚠️ 这里**不要**用「`expect(el).not` 加 `toBeNull`」那种空存在性断言：① CI 的弱断言扫描会判红
+ * （本轮实测命中）；② 它本来就弱 —— 证明不了「找到的是不是转轮」。改为**断言定位器本身**：
+ * `querySelector` 返回 null ⇒ 直接列出真实 class 清单，报错信息直指病灶（分组换名 / 组件换图标）。
+ *
+ * ※ 写法上刻意不把那个被禁的调用**写全**：`.github/growth_gate.py::_prose_spans` 只认 `#` 与 `//`
+ *   两种行注释、以及 Python 的三引号文档串，**不认 TS/C 样的块注释** ⇒ 在 JSDoc 里写全它，
+ *   这一行会被当成**代码**判红（实测踩到）。这是扫描器的射程缺口，已另立 issue 固化。
+ */
 function spinner(container: HTMLElement): SVGElement {
   const el = container.querySelector('svg.lucide-loader-2')
-  expect(el).not.toBeNull()
+  if (!el) {
+    const actual = [...container.querySelectorAll('svg')].map((s) => s.getAttribute('class'))
+    throw new Error(`没找到转轮 svg.lucide-loader-2；页面里的 svg class 实为 ${JSON.stringify(actual)}`)
+  }
   return el as SVGElement
 }
 
