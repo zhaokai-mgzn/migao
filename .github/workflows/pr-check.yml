@@ -1119,6 +1119,15 @@ jobs:
       - case-truth-check
       - gitleaks-scan
       - danger-scan
+      # ⚠️ 以下 4 个是 **required 门禁**，漏了它们「该挂的标签挂不住 / 该摘的摘不掉」（issue #7022）：
+      #  `label-needs-changes` 不看 ⇒ 它们红时**不打标签**；`clear-needs-changes` 不看 ⇒
+      #  「它们红 + 其余绿」时**照样把标签摘掉**。守卫 = tests/unit_ci_workflows/
+      #  test_needs_changes_tail_job_coverage.py（用例 MC-110，现取 branch protection 的 required 名单比对，
+      #  以后新增 required 门禁而忘了加进这里 ⇒ 该判据照样红）。
+      - case-coverage-gate
+      - case-trust-gate
+      - llm-sink-ledger
+      - ui-regression-check
     steps:
       - name: Add review/needs-changes
         env:
@@ -1149,6 +1158,15 @@ jobs:
       - case-truth-check
       - gitleaks-scan
       - danger-scan
+      # ⚠️ 以下 4 个是 **required 门禁**，漏了它们「该挂的标签挂不住 / 该摘的摘不掉」（issue #7022）：
+      #  `label-needs-changes` 不看 ⇒ 它们红时**不打标签**；`clear-needs-changes` 不看 ⇒
+      #  「它们红 + 其余绿」时**照样把标签摘掉**。守卫 = tests/unit_ci_workflows/
+      #  test_needs_changes_tail_job_coverage.py（用例 MC-110，现取 branch protection 的 required 名单比对，
+      #  以后新增 required 门禁而忘了加进这里 ⇒ 该判据照样红）。
+      - case-coverage-gate
+      - case-trust-gate
+      - llm-sink-ledger
+      - ui-regression-check
     steps:
       - name: Remove review/needs-changes
         env:

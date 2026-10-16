@@ -4183,3 +4183,38 @@ cases:
         - pr-check.yml
         - case-draft.yml
       verifies: []
+  - id: MC-110
+    legacy_id: ""
+    title: "**标签收尾 job 的 `needs:` 必须覆盖全部 required 门禁**：`label-needs-changes` / `clear-needs-changes` 原各只等 **9** 个 job，缺 `case-coverage-gate` / `case-trust-gate` / `llm-sink-ledger` / `ui-regression-check` ⇒ 这 4 个红时**打不上标签**、且「它们红 + 其余绿」时 `clear-needs-changes` **照样把标签摘掉**（issue #7022 的第二条独立成因）"
+    domains:
+      - misc
+      - ci
+    tier: normal
+    tags:
+      - ci-cd
+      - gating
+      - fail-closed
+      - red-proof
+      - empty-green
+    truths_ref: []
+    precondition: "前置 = 两样都**可判定**：① **外部读数** `repos/zhaokai-mgzn/migao/branches/main/protection` 的 `required_status_checks.contexts`（需 `gh` 可用且已登录；取不到 ⇒ 判据 **fail-closed 抛异常**，不许当成「没有 required 检查」）；② 被测面 `.github/workflows/pr-check.yml` 的 `jobs`（YAML 解析）。**前置不成立时不许读成通过**：required 名单为空 / 两个收尾 job 不存在 / 语料下限（required ≥10）不满足 ⇒ 由 `test_guard_is_not_vacuous_and_has_teeth` 判红。"
+    user_inputs:
+      - "这个 job 明明每次都绿，为什么那个标签还是挂在那里？"
+      - "标签的「打」和「摘」是不是看同一组门禁？漏了几个会怎样？"
+    expectations: []
+    data_checks:
+      - "🔴 **判据 A（覆盖性，会红）**：`label-needs-changes` 与 `clear-needs-changes` 的 `needs:` 必须包含**本 workflow 里承接 required 检查的每一个 job**。取法 = **现取** `repos/zhaokai-mgzn/migao/branches/main/protection` 的 `required_status_checks.contexts` × YAML 解析 `pr-check.yml` 的 `jobs`。命中缺口 ⇒ **双向具名**报出（「它红时打不上标签」/「它红时仍会被摘掉标签」）。执行点 = tests/unit_ci_workflows/test_needs_changes_tail_job_coverage.py::test_tail_jobs_cover_every_required_gate"
+      - "🔴 **反空跑 + fail-closed**：required 名单 ≥10 项（读数面被收窄 ⇒ 红）；两个收尾 job 必须存在；`branches/main/protection` 取不到（`gh` 不可用/未登录/无权限）或 required 名单为空 ⇒ **抛异常判红**，**不许**当成「没有 required 检查 ⇒ 覆盖性自动成立」。执行点 = 同文件::test_guard_is_not_vacuous_and_has_teeth 的前半"
+      - "🔴 **注入式自证**：从 `clear-needs-changes` 的 `needs` 里删掉 `case-trust-gate` ⇒ `coverage_problems()` 必须报出且点名该 job（没有这条，「扫了但正好没缺口」与「判据没牙」无法区分）。执行点 = 同文件::test_guard_is_not_vacuous_and_has_teeth 的后半"
+      - "🔴 **注入式红证（两条单变量，实测逐字节还原）**：① 只从 `label-needs-changes` 段删掉 `ui-regression-check` ⇒ **2 failed**（判据 A + 自证）；② 两段都删掉 `case-trust-gate` ⇒ **2 failed**。还原后 **2 passed**，`git diff --stat` 只剩预期的 +18 行。"
+      - "📌 **真机读数（改前）**：两个收尾 job 的 `needs` 各 **9** 条，而它们所在的 `pr-check.yml` 里承接 required 检查的 job 有 **11** 个 ⇒ 缺 **4** 个：`case-coverage-gate` / `case-trust-gate` / `llm-sink-ledger` / `ui-regression-check`。改后各 **13** 条（9 + 4）。"
+      - "📌 **为什么与同单的 `grep -c` 是两条独立成因**：`grep -c` 那条让「摘标签的判据崩了」（永不摘）；本条的 `needs:` 缺口让「摘/打标签的**依赖面**少一半」（该挂的挂不住、该摘的照摘）。**只修一条治不好症状** ⇒ 同单一起收。该缺口**早已登记**在 `docs/wiki/gate-exemption-ledger.md` §1 第 6 行（当时那单禁止改 workflows ⇒ 只登记未修）。"
+      - "📌 **安全性前提（改前已核）**：这两个 job **不在**分支保护的 required 名单里（16 项 required 里无它们）⇒ 扩 `needs:` **不会**新增死锁；且那 4 个目标 job 的 `if` 都是无路径过滤的 `github.event_name == 'pull_request'` ⇒ 能形成 `needs` 汇合。另：`needs:` 只影响「等不等」，**不**影响「上游红了下游还跑不跑」（那是 `if: always()` 的职责，两个 job 都已正确带 `always()`，由 `test_gate_coverage_and_same_source.py` 的另一条判据把守）。"
+    skip_reason: "[backend-contract] 纯 CI 判据面（读 branch protection + 解析 workflow YAML），零 LLM、不碰真实云，不进 agent-eval 冒烟"
+    merge_log: "2026-10-16 新增（issue #7022）。**发现路径**：修本单第一条成因（`grep -c` 配 `|| echo \"0\"`）时，顺着 `docs/wiki/gate-exemption-ledger.md` §1 第 6 行读到**同一症状的第二条独立成因**已登记（当时那单禁止改 workflows ⇒ 只登记未修），当场核实：两个收尾 job 的 `needs` 各 9 条、缺 4 个 required 门禁。归因确认后**同单一起收**（只修一条治不好症状）。取号 `MC-110`（复核 `origin/main` 空闲、当期零 open PR）。守卫**不硬编码那 4 个 job 名**，而是**现取** branch protection 的 required 名单比对 ⇒ 以后新增 required 门禁而忘了加进 `needs:` 时，本判据照样会红。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_needs_changes_tail_job_coverage.py"
+      ci:
+        - pr-check.yml
+      verifies: []

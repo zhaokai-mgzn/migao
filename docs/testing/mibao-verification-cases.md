@@ -3418,7 +3418,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（110 case）
+## 杂项域（111 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5080,6 +5080,22 @@
 跳过: [backend-contract] 纯 CI 判据面（静态扫 workflow YAML 文本 + 台账比对），零网络、零 LLM、不碰真实云，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-16 新增（issue #7022）。发现路径 = PR #7012（issue #7007 商家后台 UI 统一）收尾时撞见：全部 28 项检查 pass 而过期 `review/needs-changes` 标签仍残留 ⇒ 顺着 job 日志读到 `integer expression expected`。归因确认后**未在 #7012 内修**（改 `.github/workflows/` 是独立面、且需配套判据），单独立单并在本单内修完。取号 = `python3 scripts/next_case_id.py`（工具对 `misc.yml` 输出 `MISC-001`）**但** `misc.yml` 语料实际用 `MC-` 前缀（108 条 `MC-` + 1 条 `PK-`）⇒ 按**实际语料**取 `MC-109`，并已复核 `origin/main` 上 `MC-109` 空闲、且当期零个 open PR（在飞面为空）。**工具前缀映射与实际语料不一致（`MISC` vs `MC`）本身是一处待固化的漂移，不在本单射程内**，登记于判据文件与 PR body 的边界节。 ｜ tags: ci-cd, shell, fail-closed, red-proof, empty-green
+
+### MC-110. **标签收尾 job 的 `needs:` 必须覆盖全部 required 门禁**：`label-needs-changes` / `clear-needs-changes` 原各只等 **9** 个 job，缺 `case-coverage-gate` / `case-trust-gate` / `llm-sink-ledger` / `ui-regression-check` ⇒ 这 4 个红时**打不上标签**、且「它们红 + 其余绿」时 `clear-needs-changes` **照样把标签摘掉**（issue #7022 的第二条独立成因） 🔵
+```
+你: 这个 job 明明每次都绿，为什么那个标签还是挂在那里？
+你: 标签的「打」和「摘」是不是看同一组门禁？漏了几个会怎样？
+数据: 🔴 **判据 A（覆盖性，会红）**：`label-needs-changes` 与 `clear-needs-changes` 的 `needs:` 必须包含**本 workflow 里承接 required 检查的每一个 job**。取法 = **现取** `repos/zhaokai-mgzn/migao/branches/main/protection` 的 `required_status_checks.contexts` × YAML 解析 `pr-check.yml` 的 `jobs`。命中缺口 ⇒ **双向具名**报出（「它红时打不上标签」/「它红时仍会被摘掉标签」）。执行点 = tests/unit_ci_workflows/test_needs_changes_tail_job_coverage.py::test_tail_jobs_cover_every_required_gate
+数据: 🔴 **反空跑 + fail-closed**：required 名单 ≥10 项（读数面被收窄 ⇒ 红）；两个收尾 job 必须存在；`branches/main/protection` 取不到（`gh` 不可用/未登录/无权限）或 required 名单为空 ⇒ **抛异常判红**，**不许**当成「没有 required 检查 ⇒ 覆盖性自动成立」。执行点 = 同文件::test_guard_is_not_vacuous_and_has_teeth 的前半
+数据: 🔴 **注入式自证**：从 `clear-needs-changes` 的 `needs` 里删掉 `case-trust-gate` ⇒ `coverage_problems()` 必须报出且点名该 job（没有这条，「扫了但正好没缺口」与「判据没牙」无法区分）。执行点 = 同文件::test_guard_is_not_vacuous_and_has_teeth 的后半
+数据: 🔴 **注入式红证（两条单变量，实测逐字节还原）**：① 只从 `label-needs-changes` 段删掉 `ui-regression-check` ⇒ **2 failed**（判据 A + 自证）；② 两段都删掉 `case-trust-gate` ⇒ **2 failed**。还原后 **2 passed**，`git diff --stat` 只剩预期的 +18 行。
+数据: 📌 **真机读数（改前）**：两个收尾 job 的 `needs` 各 **9** 条，而它们所在的 `pr-check.yml` 里承接 required 检查的 job 有 **11** 个 ⇒ 缺 **4** 个：`case-coverage-gate` / `case-trust-gate` / `llm-sink-ledger` / `ui-regression-check`。改后各 **13** 条（9 + 4）。
+数据: 📌 **为什么与同单的 `grep -c` 是两条独立成因**：`grep -c` 那条让「摘标签的判据崩了」（永不摘）；本条的 `needs:` 缺口让「摘/打标签的**依赖面**少一半」（该挂的挂不住、该摘的照摘）。**只修一条治不好症状** ⇒ 同单一起收。该缺口**早已登记**在 `docs/wiki/gate-exemption-ledger.md` §1 第 6 行（当时那单禁止改 workflows ⇒ 只登记未修）。
+数据: 📌 **安全性前提（改前已核）**：这两个 job **不在**分支保护的 required 名单里（16 项 required 里无它们）⇒ 扩 `needs:` **不会**新增死锁；且那 4 个目标 job 的 `if` 都是无路径过滤的 `github.event_name == 'pull_request'` ⇒ 能形成 `needs` 汇合。另：`needs:` 只影响「等不等」，**不**影响「上游红了下游还跑不跑」（那是 `if: always()` 的职责，两个 job 都已正确带 `always()`，由 `test_gate_coverage_and_same_source.py` 的另一条判据把守）。
+前置: 前置 = 两样都**可判定**：① **外部读数** `repos/zhaokai-mgzn/migao/branches/main/protection` 的 `required_status_checks.contexts`（需 `gh` 可用且已登录；取不到 ⇒ 判据 **fail-closed 抛异常**，不许当成「没有 required 检查」）；② 被测面 `.github/workflows/pr-check.yml` 的 `jobs`（YAML 解析）。**前置不成立时不许读成通过**：required 名单为空 / 两个收尾 job 不存在 / 语料下限（required ≥10）不满足 ⇒ 由 `test_guard_is_not_vacuous_and_has_teeth` 判红。
+跳过: [backend-contract] 纯 CI 判据面（读 branch protection + 解析 workflow YAML），零 LLM、不碰真实云，不进 agent-eval 冒烟
+```
+溯源: 2026-10-16 新增（issue #7022）。**发现路径**：修本单第一条成因（`grep -c` 配 `|| echo "0"`）时，顺着 `docs/wiki/gate-exemption-ledger.md` §1 第 6 行读到**同一症状的第二条独立成因**已登记（当时那单禁止改 workflows ⇒ 只登记未修），当场核实：两个收尾 job 的 `needs` 各 9 条、缺 4 个 required 门禁。归因确认后**同单一起收**（只修一条治不好症状）。取号 `MC-110`（复核 `origin/main` 空闲、当期零 open PR）。守卫**不硬编码那 4 个 job 名**，而是**现取** branch protection 的 required 名单比对 ⇒ 以后新增 required 门禁而忘了加进 `needs:` 时，本判据照样会红。 ｜ tags: ci-cd, gating, fail-closed, red-proof, empty-green
 
 ## 商家入驻域（6 case）
 
@@ -11212,8 +11228,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：772（活跃 134，跳过 638）
-- tier 分布：smoke 12 / normal 713 / adversarial 32
+- 用例总数：773（活跃 134，跳过 639）
+- tier 分布：smoke 12 / normal 714 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -11228,7 +11244,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：110
+- 杂项域：111
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：66
@@ -11373,6 +11389,7 @@
 - MC-107: **部署腿 run 正文里编造的 `GITHUB_*` 环境变量名必须判红**：`GITHUB_RUN_STARTED_AT` 不是 GitHub 注入的环境变量⇒ shell 展开**恒为空串**，而 shell 里未定义变量只是空串、**没有任何东西会红** ⇒ `builtAt` 恒空（issue #7015）；同批给 `builtAt` 补一条**会红**的具名判据（探到空 ⇒ 判红点名「取值源未接」）
 - MC-108: **workflow 的 `run:` 正文「表达式替换后必须是合法 bash」+「`${{ github.<prop> }}` 的属性名必须真实存在」都要有会红的判据**：#7016 把不存在的环境变量 `GITHUB_RUN_STARTED_AT` 换成了**同样不存在**的 context 属性 `github.run_started_at`（官方 `github` 上下文属性表 40 个里没有它）⇒ Actions 解出**空串**、不报错不告警；且其自检文案里「转义反引号 + 表达式」在**空替换**后只剩一个**裸反引号** ⇒ 该步 bash 在**解析阶段**就死（exit 2），步内的自检**一次都没跑过** ⇒ 真机两条部署腿红、构成永久死锁（issue #7029）
 - MC-109: **`grep -c` 配 `|| echo "0"` 会捕获成两行 ⇒ `[ … -gt 0 ]` 报 `integer expression expected` ⇒ 判据走 else「绿着但没干活」**：#7012 的 `Clear stale needs-changes label` 步因此**从未**摘掉过期标签（job 还报 success）；同形态另有一处 `case-draft.yml` 的 `HAS_TRUTH`（issue #7022）
+- MC-110: **标签收尾 job 的 `needs:` 必须覆盖全部 required 门禁**：`label-needs-changes` / `clear-needs-changes` 原各只等 **9** 个 job，缺 `case-coverage-gate` / `case-trust-gate` / `llm-sink-ledger` / `ui-regression-check` ⇒ 这 4 个红时**打不上标签**、且「它们红 + 其余绿」时 `clear-needs-changes` **照样把标签摘掉**（issue #7022 的第二条独立成因）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
