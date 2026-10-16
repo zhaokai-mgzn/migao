@@ -77,7 +77,7 @@ const LEGACY_PAGE_HEADER_SNAPSHOT: readonly string[] = [
 const SNAPSHOT_UPPER_BOUND = LEGACY_PAGE_HEADER_SNAPSHOT.length  // 现取，随销账自动收紧
 
 /** 「有意不迁」条目的**独立冻结上界**（现取 8；只许缩短，见判据 2 的最后一条）。 */
-const PARKED_UPPER_BOUND = 8
+const PARKED_UPPER_BOUND = 7
 
 /**
  * **有意不迁**的文件 + 逐条理由（issue #7065）。
@@ -98,8 +98,6 @@ const PARKED_WITH_REASON: ReadonlyArray<readonly [string, string]> = [
    '标题与「返回」按钮同排；且该页首屏还有发货明细读失败告警区，改页头要连带重排版式'],
   ['src/app/(dashboard)/orders/[id]/ship/ShipOrder.tsx',
    '标题行内含 `Zap` 图标，右侧是「打印发货单」+ 确认发货两个动作，与运单号表单是一体的'],
-  ['src/app/(dashboard)/orders/new/page.tsx',
-   '页头左侧是「返回」圆形按钮、标题在 flex-1 容器内（新建单据的向导式版式）'],
   ['src/app/(dashboard)/processing-orders/[id]/production/page.tsx',
    '加工单号是标题块的一部分（`加工单号 <span data-testid=…>`）+ 左侧返回按钮，属带上下文的详情页头'],
   ['src/app/(dashboard)/after-sales/[id]/AfterSalesDetail.tsx',
@@ -192,6 +190,19 @@ describe('判据 1：射程内页头必须来自共享原语', () => {
       `这些文件手写了 <h1>、既不在冻结快照里、也没有说明为什么有意不迁（issue #7065）：\n  ${unaccounted.join('\n  ')}\n` +
         `改用 frontend/admin-web/src/components/ui/PageHeader.tsx（h1 = text-2xl 档）；` +
         `若确实是自定义版式 ⇒ 加进 PARKED_WITH_REASON 并**逐条写明理由**（不许只挪清单）。`,
+    ).toEqual([])
+  })
+
+  it('🔴 「有意不迁」里不许留**陈旧项**（已迁原语的必须挪出清单）', () => {
+    // 这一条是**补洞**：本判据第一版只查了「理由非空 + 在射程内」，
+    // ⇒ `orders/new/page.tsx` **被迁移之后仍留在清单里**而**没有任何东西会红**
+    //   （实测：它在清单里，但它其实已经用了 `<PageHeader>`）。
+    // 快照那一侧有「陈旧条目 ⇒ 红」，清单这一侧当时**没有对偶的检查** —— 这就是那个缺口。
+    const stillLegacy = new Set(legacyHeaderFiles())
+    const stale = PARKED_WITH_REASON.map(([f]) => f).filter((f) => !stillLegacy.has(f))
+    expect(
+      stale,
+      `这些文件已经用上原语（或不再手写 <h1>），必须从 PARKED_WITH_REASON 里挪出去：\n  ${stale.join('\n  ')}`,
     ).toEqual([])
   })
 
