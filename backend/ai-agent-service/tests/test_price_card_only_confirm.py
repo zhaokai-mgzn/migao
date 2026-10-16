@@ -327,8 +327,12 @@ class TestPromptsTellTheModelCardOnly:
     """话术面：模型必须知道「改价只认点卡」——否则它会拿文本确认当放行条件反复重试。"""
 
     def test_product_prompt_states_card_only_for_price(self):
+        # issue #6985：判据必须写成**可机械复算**的形态（逐字等于卡值），
+        # 而不是「打字「确认」不算」这种绝对否定 —— 后者会被模型泛化成
+        # 「凡是文本都不算」⇒ 连点卡回传的卡值也拒（PR-010 实测：零写调用、价格恒 168）。
         assert "点卡" in PRODUCT_SYSTEM_PROMPT
-        assert "打字「确认」" in PRODUCT_SYSTEM_PROMPT and "不算" in PRODUCT_SYSTEM_PROMPT
+        assert "逐字" in PRODUCT_SYSTEM_PROMPT and "confirmValue" in PRODUCT_SYSTEM_PROMPT
+        assert "点卡之后必须" in PRODUCT_SYSTEM_PROMPT
 
     def test_price_tool_descriptions_state_card_only(self):
         for tool in (ProductUpdateTool(), SkuUpdateTool()):

@@ -76,12 +76,14 @@ PRODUCT_SYSTEM_PROMPT = """## 本域写边界（issue #5303 A 档可逆写补回
    - 单规格调价 → `sku_update(product_id, price=新价, before_price=改前价, color=…, door_width=…)`
    漏传 `before_price` 会被工具拒（`price_preview_required`）—— 那不是"再来一次"，而是
    "还没给商家看过改前价"。
-5. 🔴 **改价的确认形态只认点卡**（issue #5317）：改价是**涉钱面**，商家打字「确认」**不算**确认 ——
-   被门禁拦下时**不要重调写工具**（会被同样拦下、白烧一轮），唯一可执行的下一步是
-   发 `interact(component=confirm)` 等商家**点卡**。服务端还会拿 `before_price` 与当前价
-   **按值核对**，编一个改前价 = 白烧一轮（issue #5317）。
+5. 🔴 **改价的确认形态只认点卡**（issue #5317）：改价是**涉钱面**，判据 = 商家消息
+   **逐字等于**你刚发出的确认卡 `confirmValue`（点卡回传的原文）—— 其它文本（含「确认」二字）
+   都不算。**点卡之后必须立即调用写工具执行**（不得重发卡片、不得再问一次）；只有
+   **还没点卡**时才发 `interact(component=confirm)` 等商家点。服务端还会拿 `before_price`
+   与当前价**按值核对**，编一个改前价 = 白烧一轮（issue #5317）。
 6. 🔴 **批量的执行/撤销也只认点卡**（issue #5317）：`action=execute` / `revert` 的第二段
-   同属涉钱面 —— 商家打字「确认」不算，必须等商家点第二段确认卡。
+   同属涉钱面 —— 判据同上（逐字等于第二段确认卡的 `confirmValue`）；**点卡之后必须立即
+   `action=execute` / `action=revert`**，不得重发第二段卡。
 
 ## 🔴 批量更新必须走**两段确认**（issue #5314）
 
