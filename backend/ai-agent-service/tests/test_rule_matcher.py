@@ -544,26 +544,51 @@ class TestEveryIntentHasL1OrRegisteredExemption:
         IntentType.PROCESSING_ORDER_UPDATE: "同上（加工单变更）",
     }
 
+    # ⚠️ 口径（issue #7038 立证时**实测**取到，勿凭印象改）：
+    #   · `KEYWORD_MAP` 键数 = 22；`REGEX_RULES` **只产出 3 个意图** —— `order_query`/`product_inquiry`/`quote`。
+    #   · 因此「声明式规则层可达」= 这 25 项；下表里那些**不在这 25 项内**的意图，就是"只靠 L2 或靠
+    #     `match()` 内的命令式特判"的那一批（例如 `customer_query` 由 `match()` 的「客户域前置改判」可达，
+    #     不由本表的声明式两层可达 —— 见它自己那条理由）。
+    #   · 本表**不是**"这些意图只走 L2"的同义语，而是"它们没有声明式 L1 关键词，被有意持有"。
     @staticmethod
-    def _no_l1(intents, keyword_map, exempt):
+    def _rule_reachable() -> set:
+        """**声明式**规则层可达的意图 = `KEYWORD_MAP` 的键 ∪ `REGEX_RULES` 能产出的意图。
+
+        注意它只是可达性的**下界**：`RuleMatcher.match()` 里还有命令式特判（长短语优先、
+        客户域前置改判、算料 re-route 等），那些不在这两层里 ⇒ 本判据不声称"不在集合内 ⇒ 不可达"。
+        """
+        from app.router.rule_matcher import KEYWORD_MAP, REGEX_RULES
+
+        return set(KEYWORD_MAP) | {intent for _, intent in REGEX_RULES}
+
+    @staticmethod
+    def _unreachable(intents, reachable, exempt):
         return [(i.value if hasattr(i, "value") else str(i))
-                for i in intents if i not in keyword_map and i not in exempt]
+                for i in intents if i not in reachable and i not in exempt]
 
     def test_no_unregistered_l2_only_intent(self):
-        from app.router.rule_matcher import KEYWORD_MAP
-
-        missing = self._no_l1(list(IntentType), KEYWORD_MAP, self.L2_ONLY_EXEMPT)
+        missing = self._unreachable(list(IntentType), self._rule_reachable(), self.L2_ONLY_EXEMPT)
         assert missing == [], (
-            f"这些意图既没有 L1 关键词、也没登记豁免：{missing}\n"
+            f"这些意图在**声明式规则层（KEYWORD_MAP ∪ REGEX_RULES）**不产出、也没登记豁免：{missing}\n"
             "首选：给它们补 L1 关键词（ST-002 的修法）；次选：加进 L2_ONLY_EXEMPT 并写清理由。"
         )
 
-    def test_guard_has_teeth(self):
-        """判别力自证：把 ST-002 的修复**摘掉**（= 意图存在但无关键词）⇒ 守卫必须具名报出它。"""
-        from app.router.rule_matcher import KEYWORD_MAP
+    def test_exempt_table_has_no_rule_reachable_intent(self):
+        """豁免表必须**最小**：声明式规则层已可达的意图**不许**躺在豁免表里（「只许缩短」的机器化）。
 
-        stripped = {k: v for k, v in KEYWORD_MAP.items() if k != IntentType.AI_CONFIG}
-        missing = self._no_l1(list(IntentType), stripped, self.L2_ONLY_EXEMPT)
+        落地时本判据**是绿的**（表里没有声明式可达项）—— 它的价值是拦住**将来**把已可达意图塞进表里
+        （那会让"豁免"变成垃圾桶，并掩盖真正的缺词）。这条**不会**因为 `match()` 的命令式特判而误报。
+        """
+        overlap = sorted(i.value for i in self.L2_ONLY_EXEMPT if i in self._rule_reachable())
+        assert overlap == [], (
+            f"豁免表里有**声明式规则层已可达**的意图：{overlap}\n"
+            "⇒ 它们不需要豁免，请从 L2_ONLY_EXEMPT 里删掉（豁免表只许缩短）。"
+        )
+
+    def test_guard_has_teeth(self):
+        """判别力自证：把 ST-002 的修复**摘掉**（= 意图存在但声明式两层都不产出）⇒ 守卫必须具名报出它。"""
+        stripped = {i for i in self._rule_reachable() if i != IntentType.AI_CONFIG}
+        missing = self._unreachable(list(IntentType), stripped, self.L2_ONLY_EXEMPT)
         assert "ai_config" in missing, "摘掉 AI_CONFIG 的关键词后守卫没有报 ⇒ 守卫退化成空断言"
 
 
