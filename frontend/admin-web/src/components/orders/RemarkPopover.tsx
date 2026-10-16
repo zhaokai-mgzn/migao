@@ -173,7 +173,7 @@ export default function RemarkPopover({ remark, remarks, children }: RemarkPopov
                   {entry.operator && (
                     <span
                       data-operator={entry.operator}
-                      className="text-blue-300 text-[11px]"
+                      className="text-primary-300 text-[11px]"
                     >
                       — {entry.operator}
                     </span>

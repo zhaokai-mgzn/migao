@@ -85,13 +85,13 @@ export default function RefundOrderModal({ open, onClose, onConfirm, loading, or
           onClick={(e) => e.stopPropagation()}
         >
           {/* 标题 */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-900">处理退款</h3>
+          <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200">
+            <h3 className="text-lg font-semibold text-neutral-900">处理退款</h3>
             <button
               type="button"
               onClick={onClose}
               disabled={loading}
-              className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors disabled:opacity-50"
+              className="p-1 text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 rounded transition-colors disabled:opacity-50"
             >
               <X className="w-5 h-5" />
             </button>
@@ -101,18 +101,18 @@ export default function RefundOrderModal({ open, onClose, onConfirm, loading, or
           <div className="px-6 pt-5">
             <div className="flex items-start gap-2 mb-5">
               <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-gray-700 leading-relaxed">
+              <p className="text-sm text-neutral-700 leading-relaxed">
                 退款订单：{order?.orderNo || '-'}。退款后订单保持原状态，退款金额记录在订单上。
               </p>
             </div>
 
             {/* 退款金额 */}
             <div className="mb-5">
-              <label htmlFor="refund-amount" className="block text-sm text-gray-700 mb-2">
+              <label htmlFor="refund-amount" className="block text-sm text-neutral-700 mb-2">
                 退款金额
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">¥</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 text-sm">¥</span>
                 <input
                   id="refund-amount"
                   type="number"
@@ -122,24 +122,24 @@ export default function RefundOrderModal({ open, onClose, onConfirm, loading, or
                   onChange={(e) => setAmountText(e.target.value)}
                   placeholder="请输入退款金额"
                   className={cn(
-                    'w-full pl-7 pr-3 h-10 text-sm rounded border border-gray-300 bg-white',
+                    'w-full pl-7 pr-3 h-10 text-sm rounded border border-neutral-300 bg-white',
                     'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15'
                   )}
                 />
               </div>
               {order?.actualAmount ? (
-                <p className="text-xs text-gray-400 mt-1.5">默认退款金额 = 实收款 ¥{order.actualAmount}</p>
+                <p className="text-xs text-neutral-400 mt-1.5">默认退款金额 = 实收款 ¥{order.actualAmount}</p>
               ) : null}
             </div>
 
             {/* 退款原因 */}
             <div className="mb-2">
-              <div className="text-sm text-gray-700 mb-3">退款原因</div>
+              <div className="text-sm text-neutral-700 mb-3">退款原因</div>
               <div className="space-y-2.5">
                 {PRESET_REASONS.map((reason) => (
                   <label
                     key={reason}
-                    className="flex items-center gap-2 cursor-pointer text-sm text-gray-700"
+                    className="flex items-center gap-2 cursor-pointer text-sm text-neutral-700"
                   >
                     <input
                       type="radio"
@@ -147,19 +147,19 @@ export default function RefundOrderModal({ open, onClose, onConfirm, loading, or
                       value={reason}
                       checked={selected === reason}
                       onChange={() => setSelected(reason)}
-                      className="w-4 h-4 border-gray-300 text-primary-600 focus:ring-primary-500"
+                      className="w-4 h-4 border-neutral-300 text-primary-600 focus:ring-primary-500"
                     />
                     {reason}
                   </label>
                 ))}
-                <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700">
+                <label className="flex items-center gap-2 cursor-pointer text-sm text-neutral-700">
                   <input
                     type="radio"
                     name="refund-reason"
                     value={OTHER_KEY}
                     checked={isOther}
                     onChange={() => setSelected(OTHER_KEY)}
-                    className="w-4 h-4 border-gray-300 text-primary-600 focus:ring-primary-500"
+                    className="w-4 h-4 border-neutral-300 text-primary-600 focus:ring-primary-500"
                   />
                   {OTHER_KEY}
                 </label>
@@ -170,7 +170,7 @@ export default function RefundOrderModal({ open, onClose, onConfirm, loading, or
                     rows={3}
                     placeholder="请输入退款原因"
                     className={cn(
-                      'mt-2 w-full px-3 py-2 text-sm rounded border border-gray-300 bg-white',
+                      'mt-2 w-full px-3 py-2 text-sm rounded border border-neutral-300 bg-white',
                       'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15',
                       'resize-none'
                     )}
@@ -181,7 +181,7 @@ export default function RefundOrderModal({ open, onClose, onConfirm, loading, or
           </div>
 
           {/* 底部 */}
-          <div className="flex items-center justify-end gap-3 px-6 py-4 mt-2 border-t border-gray-200">
+          <div className="flex items-center justify-end gap-3 px-6 py-4 mt-2 border-t border-neutral-200">
             <Button variant="secondary" onClick={onClose} disabled={loading}>
               取消
             </Button>

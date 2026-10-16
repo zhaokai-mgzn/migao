@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { Plus, Search, RotateCcw, Wallet, ArrowDownCircle, ArrowUpCircle, TrendingUp } from 'lucide-react'
 import { financeApi } from '@/lib/api'
 import { usePermission } from '@/lib/permission'
-import { Button, Input, Select, Pagination, Modal, Badge } from '@/components/ui'
+import { Button, Input, Select, Pagination, Modal, Badge, PageCard, PageHeader } from '@/components/ui'
 import type {
   FinanceTransaction,
   FinanceTransactionType,
@@ -257,21 +257,21 @@ export default function FinancePage() {
   return (
     <div className="p-6">
       {/* 页面标题 */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-semibold text-neutral-900">财务对账</h1>
-          <p className="text-sm text-neutral-500 mt-1">资金流水、收支汇总与应收对账</p>
-        </div>
-        {canWrite && (
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="w-4 h-4 mr-1.5" />
-            登记收支
-          </Button>
-        )}
+      <div className="mb-6">
+        <PageHeader
+          title="财务对账"
+          subtitle="资金流水、收支汇总与应收对账"
+          actions={canWrite && (
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="w-4 h-4 mr-1.5" />
+              登记收支
+            </Button>
+          )}
+        />
       </div>
 
       {/* 时间范围筛选 */}
-      <div className="bg-white border border-neutral-200 rounded-lg p-4 mb-4">
+      <PageCard className="mb-4">
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[160px]">
             <Input
@@ -300,10 +300,11 @@ export default function FinancePage() {
             </Button>
           </div>
         </div>
-      </div>
+      </PageCard>
 
       {/* 汇总卡片 */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <PageCard className="mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <SummaryCard
           title="本期收入"
           icon={<ArrowDownCircle className="w-5 h-5 text-green-600" />}
@@ -332,20 +333,22 @@ export default function FinancePage() {
           hint={summaryError ? '没读到' : '累计未收差额'}
           accent="text-amber-600"
         />
-      </div>
+        </div>
 
-      {summaryError && (
-        // 失败态 ≠ 空态（issue #6703）：上面四张卡片的金额位此刻印 `—`，这里说清为什么 + 真重发出口
-        <ListLoadError
-          testId="finance-summary-load-error"
-          message="收支汇总加载失败 —— 没读到数据，上面四张卡片的金额不可信。请检查网络后重试。"
-          onRetry={() => void loadSummary()}
-          retrying={summaryLoading}
-        />
-      )}
+        {summaryError && (
+          // 失败态 ≠ 空态（issue #6703）：上面四张卡片的金额位此刻印 `—`，这里说清为什么 + 真重发出口
+          <ListLoadError
+            testId="finance-summary-load-error"
+            message="收支汇总加载失败 —— 没读到数据，上面四张卡片的金额不可信。请检查网络后重试。"
+            onRetry={() => void loadSummary()}
+            retrying={summaryLoading}
+          />
+        )}
+      </PageCard>
 
-      {/* Tab 栏 */}
-      <div className="flex items-center gap-0 bg-white border border-neutral-200 rounded-t-lg overflow-x-auto">
+      {/* Tab 栏 + 内容卡片（与订单/知识库页同构） */}
+      <PageCard padded={false}>
+      <div className="flex items-center gap-0 border-b border-neutral-200 overflow-x-auto">
         {tabs.map((t) => (
           <button
             key={t.key}
@@ -367,7 +370,7 @@ export default function FinancePage() {
 
       {/* ===== 资金流水 ===== */}
       {tab === 'transactions' && (
-        <div className="bg-white rounded-b-lg border border-t-0 border-neutral-200">
+        <div className="border-neutral-200">
           <div className="flex flex-wrap items-end gap-3 p-4 border-b border-neutral-100">
             <div className="min-w-[140px]">
               <Select
@@ -479,7 +482,7 @@ export default function FinancePage() {
 
       {/* ===== 收支汇总 ===== */}
       {tab === 'summary' && (
-        <div className="bg-white rounded-b-lg border border-t-0 border-neutral-200 p-6">
+        <div className="p-6 border-neutral-200">
           <h3 className="text-sm font-semibold text-neutral-900 mb-3">按支付方式</h3>
           <div className="overflow-x-auto mb-6">
             <table className="w-full">
@@ -540,7 +543,7 @@ export default function FinancePage() {
 
       {/* ===== 应收对账 ===== */}
       {tab === 'reconciliation' && (
-        <div className="bg-white rounded-b-lg border border-t-0 border-neutral-200">
+        <div className="border-neutral-200">
           <div className="flex flex-wrap items-end gap-3 p-4 border-b border-neutral-100">
             <div className="min-w-[220px]">
               <Input
@@ -629,6 +632,7 @@ export default function FinancePage() {
           />
         </div>
       )}
+      </PageCard>
 
       {/* 登记收支弹窗 */}
       <Modal

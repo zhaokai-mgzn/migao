@@ -39,7 +39,7 @@ export default function LogisticsCard({ data }: LogisticsCardProps) {
   return (
     <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden shadow-sm">
       {/* 头部 */}
-      <div className="flex items-center gap-2 px-3 py-2.5 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-neutral-100">
+      <div className="flex items-center gap-2 px-3 py-2.5 bg-gradient-to-r from-primary-50 to-accent-50 border-b border-neutral-100">
         <Truck className="w-4 h-4 text-primary-600" />
         <div className="flex-1 min-w-0">
           <p className="text-xs font-medium text-neutral-800">
@@ -52,7 +52,7 @@ export default function LogisticsCard({ data }: LogisticsCardProps) {
           )}
         </div>
         {status && (
-          <span className="text-[10px] px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full font-medium">
+          <span className="text-[10px] px-2 py-0.5 bg-primary-100 text-primary-700 rounded-full font-medium">
             {logisticsStatusLabel(status)}
           </span>
         )}

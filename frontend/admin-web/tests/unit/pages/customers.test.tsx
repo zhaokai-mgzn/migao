@@ -25,21 +25,13 @@ vi.mock('next/link', () => ({
   default: ({ children, href, ...props }: any) => <a href={href} {...props}>{children}</a>,
 }))
 
-// Mock lucide-react
-vi.mock('lucide-react', () => {
-  const stub = (name: string) => (props: any) => <span data-testid={`icon-${name}`} {...props} />
-  return {
-    Plus: stub('plus'),
-    Tags: stub('tags'),
-    X: stub('x'),
-    Star: stub('star'),
-    Search: stub('search'),
-    ChevronUp: stub('chevron-up'),
-    ChevronDown: stub('chevron-down'),
-    ChevronLeft: stub('chevron-left'),
-    ChevronRight: stub('chevron-right'),
-  }
-})
+// Mock lucide-react —— issue #7007：整模块 mock 换成 **真实模块 + 局部覆盖**（helper 与 #6664 同源）。
+// 逐个列图标名的写法会在「任一被导入的 UI 组件新增图标」时炸
+// `No "X" export is defined on the "lucide-react" mock`。本轮客户页把 `SearchBar` 换成
+// `SearchPanel`（内部用 `lucide-react` 的 `Search` / `RotateCcw` / `RefreshCw`）后，
+// 本文件先炸在缺 `Package`（`EmptyState` 的图标）上 —— 正是这条脆弱的写法。
+vi.mock('lucide-react', async (importOriginal) =>
+  (await import('../helpers/lucide-mock')).lucideMock((await importOriginal()) as Record<string, unknown>))
 
 // 🔴 不再 mock dayjs（issue #6669 第 4 条）：原来的 mock 把**任何** format 都返回 `04-20 14:30`
 // —— 那恰好是修前的坏形态（无年份），而「日期口径是否收敛到 DateTimeCell」正是本包要判的东西。
@@ -57,7 +49,14 @@ vi.mock('@/types', () => ({
 
 // Need to re-export TableColumn type
 vi.mock('@/components/ui', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>()
   return {
+    // issue #7007：**先摊开真原语，再覆盖**（`...actual` 在前 ⇒ 显式 mock 仍然赢）。
+    // 本工厂此前虽声明了 `importOriginal`，却**没用它**（收下参数就丢掉）⇒ 等价于整模块 mock：
+    // 客户页本轮把 `SearchBar` 换成 `SearchPanel` 后，页面要用的 `Select` 在工厂里没有
+    // ⇒ `No "Select" export is defined on the "@/components/ui" mock`（本文件 11 条红）。
+    // 摊开真值后，新增 / 换用原语不必再逐个补 mock。
+    ...actual,
     Table: ({ columns, dataSource, loading, rowKey, onRowClick }: any) => (
       <div data-testid="data-table">
         {loading && <div data-testid="table-loading">加载中...</div>}
@@ -91,13 +90,6 @@ vi.mock('@/components/ui', async (importOriginal) => {
     Button: ({ children, onClick, ...props }: any) => <button onClick={onClick} {...props}>{children}</button>,
     StatusBadge: ({ label, color, dot, className, onClick }: any) => React.createElement('span', { onClick, className, title: label }, dot ? React.createElement('span', { className: 'w-1.5 h-1.5 rounded-full' }) : null, label),
   Badge: ({ children, variant }: any) => <span data-variant={variant}>{children}</span>,
-    SearchBar: ({ fields, onSearch, onReset }: any) => (
-      <div data-testid="search-bar">
-        {fields.map((f: any) => <span key={f.key}>{f.label}</span>)}
-        <button onClick={() => onSearch({})}>搜索</button>
-        <button onClick={onReset}>重置</button>
-      </div>
-    ),
   }
 })
 
@@ -146,9 +138,16 @@ describe('CustomersPage', () => {
     expect(screen.getByText('标签管理')).toBeInTheDocument()
   })
 
-  it('should render search bar', () => {
+  it('should render search bar', async () => {
     render(<CustomersPage />)
-    expect(screen.getByTestId('search-bar')).toBeInTheDocument()
+    // 🔴 2026-10-16（issue #7007）改判：客户页的筛选区由 `SearchBar`（自带 state）
+    // 换成共享原语 `SearchPanel`（无状态，值由页面持有）⇒ 锚点从 `search-bar` 变为
+    // 原语的 `search-area`。**同时保留一条更硬的**：三个筛选控件（关键词 / 渠道 / 会员等级）
+    // 必须真的渲染出来 —— 换组件时「容器在、控件没了」是最容易溜过的退步。
+    expect(screen.getByTestId('search-area')).toBeInTheDocument()
+    for (const label of ['关键词', '来源渠道', 'VIP 等级']) {
+      expect(screen.getByText(label)).toBeInTheDocument()
+    }
   })
 
   it('should load and display customers', async () => {

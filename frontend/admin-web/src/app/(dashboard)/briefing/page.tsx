@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Newspaper } from 'lucide-react'
 import { briefingApi } from '@/lib/api'
+import { PageCard, PageHeader } from '@/components/ui'
 import BriefingCard from '@/components/dashboard/BriefingCard'
 
 /**
@@ -24,8 +25,7 @@ export default function BriefingPage() {
     return (
       <div className="p-5 sm:p-6">
         <div className="mb-6">
-          <h1 className="text-xl font-semibold text-neutral-900">每日经营简报</h1>
-          <p className="mt-0.5 text-xs text-neutral-400">加载中...</p>
+          <PageHeader title="每日经营简报" subtitle="加载中..." />
         </div>
       </div>
     )
@@ -35,18 +35,20 @@ export default function BriefingPage() {
     return (
       <div className="p-5 sm:p-6">
         <div className="mb-6">
-          <h1 className="text-xl font-semibold text-neutral-900">每日经营简报</h1>
-          <p className="mt-0.5 text-xs text-neutral-400">数据更新时间：—</p>
+          <PageHeader
+            title="每日经营简报"
+            subtitle="数据更新时间：—"
+          />
         </div>
-        <div className="flex flex-col items-center justify-center rounded-xl border border-neutral-200 bg-white py-16 text-center shadow-card">
-          <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-50 to-indigo-50">
+        <PageCard className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-50 to-accent-50">
             <Newspaper className="h-6 w-6 text-primary-400" />
           </div>
           <p className="text-sm font-medium text-neutral-600">智能每日经营简报未开启</p>
           <p className="mt-1 max-w-md text-xs text-neutral-400">
             请在「企业基础信息 → 基本设置」中开启「智能每日经营简报」企业开关。开启后系统将在每日生成时刻自动整理经营要点，本页面与侧边栏入口将同步显示。
           </p>
-        </div>
+        </PageCard>
       </div>
     )
   }
@@ -54,8 +56,10 @@ export default function BriefingPage() {
   return (
     <div className="p-5 sm:p-6">
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-neutral-900">每日经营简报</h1>
-        <p className="mt-0.5 text-xs text-neutral-400">每天的经营数据摘要，系统自动整理</p>
+        <PageHeader
+          title="每日经营简报"
+          subtitle="每天的经营数据摘要，系统自动整理"
+        />
       </div>
       {/* variant="page"：日报页逐规则展开原因（issue #5955）——看板首页保持紧凑 */}
       <BriefingCard enabled variant="page" />

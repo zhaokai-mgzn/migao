@@ -33,9 +33,16 @@ vi.mock('@/lib/api', () => ({
 }))
 
 // Mock lucide-react
-vi.mock('lucide-react', () => {
+vi.mock('lucide-react', async (importOriginal) => {
+  // ⚠️ 必须 spread `...actual`：本 mock 是**闭合集合**（只列页面直接用到的那几个图标），
+  // 而模块一旦经 `@/components/ui` 桶加载真 `EmptyState`（它自己 import `Package`），
+  // 闭集就漏了它 ⇒ 报 `No "Package" export is defined on the "lucide-react" mock`
+  // （与「整模块 mock `@/components/ui`」同一种病，见 issue #7007）。
+  // `...actual` 在前 ⇒ 显式桩的 testid 仍然赢。
+  const actual = await importOriginal<Record<string, unknown>>()
   const stub = (name: string) => (props: any) => <span data-testid={`icon-${name}`} {...props} />
   return {
+    ...actual,
     Plus: stub('plus'),
     Search: stub('search'),
     RotateCcw: stub('reset'),
@@ -64,7 +71,17 @@ vi.mock('@/types', () => ({
 }))
 
 // Mock UI components
-vi.mock('@/components/ui', () => ({
+vi.mock('@/components/ui', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>()
+  return {
+    // issue #7007：**先摊开真原语，再覆盖**（`...actual` 在前 ⇒ 显式 mock 仍然赢）。
+    // 此前这里是**整模块** mock 且不合并真值，只列被替身的几个原语 ⇒ 页面一旦用上
+    // **当时不存在的原语**（本轮加了 PageHeader / PageCard / SearchPanel）就报
+    // `No "PageHeader" export is defined on the "@/components/ui" mock` ——
+    // 报错离病灶很远（本轮 144 条红的根因，与页面改动对错无关）。
+    // 摊开真值后，新增原语不必再逐个补 mock。口径与同目录
+    // `production-remnants-paging.test.tsx` 既有写法同源。
+    ...actual,
   Pagination: ({ current, total }: any) => (
     <div data-testid="pagination">第 {current} 页, 共 {total} 条</div>
   ),
@@ -92,7 +109,8 @@ vi.mock('@/components/ui', () => ({
     </div>
   ),
   Badge: ({ children, variant }: any) => <span data-testid="badge" data-variant={variant}>{children}</span>,
-}))
+  }
+})
 
 // ── 冻结墙钟（issue #4761 第 2 条：**模块级** `currentPeriod`）────────────────
 // 病根（比 #1/#3 更隐蔽）：本文件的 `currentPeriod` 是**模块级求值** —— 它在

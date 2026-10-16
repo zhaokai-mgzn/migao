@@ -48,7 +48,7 @@ interface ProductTableProps {
 const STATUS_BADGE_COLORS: Record<ProductStatus, string> = {
   on_sale: 'bg-green-50 text-green-700 border-green-200',
   under_review: 'bg-amber-50 text-amber-700 border-amber-200',
-  draft: 'bg-blue-50 text-blue-700 border-blue-200',
+  draft: 'bg-primary-50 text-primary-700 border-primary-200',
   off_sale: 'bg-neutral-50 text-neutral-700 border-neutral-200',
 }
 

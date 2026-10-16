@@ -63,7 +63,7 @@ function SkuPriceCell({ productId, sku, onUpdated }: {
           autoFocus
           type="number"
           step="0.01"
-          className="w-20 h-7 px-1.5 text-xs border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-400 text-right"
+          className="w-20 h-7 px-1.5 text-xs border border-primary-300 rounded focus:outline-none focus:ring-1 focus:ring-primary-400 text-right"
           value={value}
           onChange={e => setValue(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') closeEditor() }}
@@ -79,7 +79,7 @@ function SkuPriceCell({ productId, sku, onUpdated }: {
   return (
     <button
       onClick={startEdit}
-      className="hover:bg-blue-50 px-1.5 py-0.5 rounded transition-colors cursor-pointer"
+      className="hover:bg-primary-50 px-1.5 py-0.5 rounded transition-colors cursor-pointer"
       title="点击编辑价格"
     >
       {price != null ? `¥${price.toFixed(2)}` : '-'}

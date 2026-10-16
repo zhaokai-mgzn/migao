@@ -58,20 +58,20 @@ const ENTITY_ICONS: Record<EntityType, ComponentType<{ className?: string }>> = 
 }
 
 const ENTITY_ICON_CLASSES: Record<EntityType, string> = {
-  order: 'text-blue-500',
+  order: 'text-primary-500',
   product: 'text-amber-500',
   logistics: 'text-green-500',
   aftersale: 'text-red-500',
-  customer: 'text-indigo-500',
-  processing: 'text-purple-500',
+  customer: 'text-accent-500',
+  processing: 'text-accent-500',
 }
 
 /** 订单状态 → 业务文案与配色（办理结果行） */
 const ORDER_STATUS_META: Record<string, { label: string; className: string }> = {
   pending: { label: '待确认', className: 'bg-amber-50 text-amber-700 border-amber-200' },
-  confirmed: { label: '已确认', className: 'bg-blue-50 text-blue-700 border-blue-200' },
-  producing: { label: '生产中', className: 'bg-purple-50 text-purple-700 border-purple-200' },
-  shipped: { label: '已发货', className: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  confirmed: { label: '已确认', className: 'bg-primary-50 text-primary-700 border-primary-200' },
+  producing: { label: '生产中', className: 'bg-accent-50 text-accent-700 border-accent-200' },
+  shipped: { label: '已发货', className: 'bg-accent-50 text-accent-700 border-accent-200' },
   completed: { label: '已完成', className: 'bg-green-50 text-green-700 border-green-200' },
   cancelled: { label: '已取消', className: 'bg-neutral-50 text-neutral-600 border-neutral-200' },
 }
@@ -200,13 +200,13 @@ export default function SessionInsight({
           isDocked
             ? // docked：flex 布局常态列，用宽度过渡实现「向右缩回」
               cn(
-                'h-full bg-white shadow-2xl border-l border-gray-200 flex flex-col overflow-hidden flex-shrink-0',
+                'h-full bg-white shadow-2xl border-l border-neutral-200 flex flex-col overflow-hidden flex-shrink-0',
                 'transition-[width] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
                 isOpen ? 'w-[340px] visible' : 'w-0 invisible'
               )
             : // overlay：绝对定位 + translate 滑入
               cn(
-                'absolute top-0 right-0 h-full w-[340px] bg-white shadow-2xl border-l border-gray-200 flex flex-col overflow-hidden',
+                'absolute top-0 right-0 h-full w-[340px] bg-white shadow-2xl border-l border-neutral-200 flex flex-col overflow-hidden',
                 'transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]',
                 isOpen ? 'translate-x-0 visible' : 'translate-x-full invisible'
               ),
@@ -214,29 +214,29 @@ export default function SessionInsight({
         aria-hidden={!isOpen}
       >
         {/* 头部 */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-          <h3 className="text-sm font-semibold text-gray-800">会话简报</h3>
-          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 transition-colors" title="关闭会话简报">
-            <X className="w-4 h-4 text-gray-400" />
+        <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-100">
+          <h3 className="text-sm font-semibold text-neutral-800">会话简报</h3>
+          <button onClick={onClose} className="p-1 rounded hover:bg-neutral-100 transition-colors" title="关闭会话简报">
+            <X className="w-4 h-4 text-neutral-400" />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto">
           {/* ─── 概览：黄金策身份 + 会话状态 ─── */}
-          <div className="px-4 py-3 border-b border-gray-100">
+          <div className="px-4 py-3 border-b border-neutral-100">
             <div className="flex items-center gap-2.5">
               <span className="w-8 h-8 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center flex-shrink-0">
                 <Bot className="w-[18px] h-[18px]" />
               </span>
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-gray-800 leading-tight">{`黄金策 · ${AI_ROLES.mibao}`}</p>
-                <p className="text-[10px] text-gray-400 mt-0.5">商品 · 订单 · 售后 · 客户 · 数据</p>
+                <p className="text-sm font-semibold text-neutral-800 leading-tight">{`黄金策 · ${AI_ROLES.mibao}`}</p>
+                <p className="text-[10px] text-neutral-400 mt-0.5">商品 · 订单 · 售后 · 客户 · 数据</p>
               </div>
               <span className={cn(
                 'ml-auto inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium flex-shrink-0',
                 sessionStatus === 'active'
                   ? 'bg-green-50 text-green-700 border border-green-200'
-                  : 'bg-gray-50 text-gray-500 border border-gray-200',
+                  : 'bg-neutral-50 text-neutral-500 border border-neutral-200',
               )}>
                 {sessionStatus === 'active' ? '进行中' : '已结束'}
               </span>
@@ -246,7 +246,7 @@ export default function SessionInsight({
           {isEmpty ? (
             /* ─── 空态：友好引导 ─── */
             <div className="px-4 py-10 text-center">
-              <p className="text-xs text-gray-400 leading-relaxed">
+              <p className="text-xs text-neutral-400 leading-relaxed">
                 本会话还没有记录
                 <br />
                 <span className="text-[11px]">向黄金策提问后，这里会汇总本次会话的成果与待办</span>
@@ -255,16 +255,16 @@ export default function SessionInsight({
           ) : (
             <>
               {/* ─── 会话结论 ─── */}
-              <div className="px-3 py-3 border-b border-gray-100" data-testid="brief-conclusion">
-                <h4 className="px-1 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">会话结论</h4>
+              <div className="px-3 py-3 border-b border-neutral-100" data-testid="brief-conclusion">
+                <h4 className="px-1 text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">会话结论</h4>
                 <div className="space-y-1.5">
                   {brief.lines.map((line, idx) => {
                     const meta = BRIEF_ICONS[line.kind]
                     const Icon = meta.icon
                     return (
-                      <div key={`${line.kind}-${idx}`} className="flex items-start gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-2">
+                      <div key={`${line.kind}-${idx}`} className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-white px-2.5 py-2">
                         <Icon className={cn('w-3.5 h-3.5 mt-0.5 flex-shrink-0', meta.className)} />
-                        <span className="text-xs text-gray-700 leading-relaxed break-all">{line.text}</span>
+                        <span className="text-xs text-neutral-700 leading-relaxed break-all">{line.text}</span>
                       </div>
                     )
                   })}
@@ -280,8 +280,8 @@ export default function SessionInsight({
               </div>
 
               {/* ─── 需要你处理 ─── */}
-              <div className="px-3 py-3 border-b border-gray-100" data-testid="brief-actions">
-                <h4 className="px-1 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">需要你处理</h4>
+              <div className="px-3 py-3 border-b border-neutral-100" data-testid="brief-actions">
+                <h4 className="px-1 text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">需要你处理</h4>
 
                 {hasActions ? (
                   <div className="space-y-1.5">
@@ -315,15 +315,15 @@ export default function SessionInsight({
                     ))}
                   </div>
                 ) : (
-                  <div className="text-[11px] text-gray-400 text-center py-4 bg-gray-50 rounded-lg">暂无待办</div>
+                  <div className="text-[11px] text-neutral-400 text-center py-4 bg-neutral-50 rounded-lg">暂无待办</div>
                 )}
               </div>
 
               {/* ─── 办理结果 ─── */}
-              <div className="px-3 py-3 border-b border-gray-100" data-testid="brief-ledger">
-                <h4 className="px-1 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">办理结果</h4>
+              <div className="px-3 py-3 border-b border-neutral-100" data-testid="brief-ledger">
+                <h4 className="px-1 text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">办理结果</h4>
                 {ledgerRows.length === 0 ? (
-                  <div className="text-[11px] text-gray-400 text-center py-4 bg-gray-50 rounded-lg">
+                  <div className="text-[11px] text-neutral-400 text-center py-4 bg-neutral-50 rounded-lg">
                     查询订单、商品或物流后，会自动汇总到这里
                   </div>
                 ) : (
@@ -339,19 +339,19 @@ export default function SessionInsight({
         </div>
 
         {/* ─── 会话信息（弱化展示，调试用） ─── */}
-        <div className="px-4 py-3 border-t border-gray-100 bg-gray-50">
+        <div className="px-4 py-3 border-t border-neutral-100 bg-neutral-50">
           <div className="grid grid-cols-2 gap-2">
             <StatBadge icon={<MessageSquare className="w-3.5 h-3.5" />} label="消息" value={String(messageCount)} />
             {duration && <StatBadge icon={<Clock className="w-3.5 h-3.5" />} label="历时" value={duration} />}
           </div>
           {currentSessionId && (
             <div className="mt-2 flex items-start gap-1">
-              <p className="text-[10px] text-gray-400 font-mono break-all leading-relaxed flex-1">
+              <p className="text-[10px] text-neutral-400 font-mono break-all leading-relaxed flex-1">
                 会话标识: {currentSessionId}
               </p>
               <button
                 onClick={copySessionId}
-                className="flex-shrink-0 p-0.5 rounded hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
+                className="flex-shrink-0 p-0.5 rounded hover:bg-neutral-100 transition-colors text-neutral-400 hover:text-neutral-600"
                 title="复制会话标识"
               >
                 {sessionIdCopied ? (
@@ -373,22 +373,22 @@ export default function SessionInsight({
 function LedgerRowItem({ row, onSend }: { row: LedgerRow; onSend: (followUp: string) => void }) {
   const Icon = ENTITY_ICONS[row.type]
   const content = (
-    <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-2.5 py-2 w-full text-left">
+    <div className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-2.5 py-2 w-full text-left">
       <Icon className={cn('w-3.5 h-3.5 flex-shrink-0', ENTITY_ICON_CLASSES[row.type])} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className="text-xs font-medium text-gray-700 truncate">{row.label}</span>
+          <span className="text-xs font-medium text-neutral-700 truncate">{row.label}</span>
           {statusBadge(row.type, row.status)}
         </div>
         {(row.amount !== undefined || row.customer) && (
-          <p className="text-[11px] text-gray-500 mt-0.5 truncate">
+          <p className="text-[11px] text-neutral-500 mt-0.5 truncate">
             {row.amount !== undefined && <span className="font-semibold text-red-500">{fmtAmount(row.amount)}</span>}
             {row.amount !== undefined && row.customer && <span> · </span>}
             {row.customer}
           </p>
         )}
       </div>
-      <ChevronRight className="w-3.5 h-3.5 text-gray-300 flex-shrink-0" />
+      <ChevronRight className="w-3.5 h-3.5 text-neutral-300 flex-shrink-0" />
     </div>
   )
 
@@ -412,11 +412,11 @@ function LedgerRowItem({ row, onSend }: { row: LedgerRow; onSend: (followUp: str
 
 function StatBadge({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-2 flex items-center gap-2">
+    <div className="bg-white border border-neutral-200 rounded-lg p-2 flex items-center gap-2">
       <span className="text-primary-500">{icon}</span>
       <div>
-        <p className="text-sm font-semibold text-gray-800 leading-tight">{value}</p>
-        <p className="text-[10px] text-gray-500">{label}</p>
+        <p className="text-sm font-semibold text-neutral-800 leading-tight">{value}</p>
+        <p className="text-[10px] text-neutral-500">{label}</p>
       </div>
     </div>
   )

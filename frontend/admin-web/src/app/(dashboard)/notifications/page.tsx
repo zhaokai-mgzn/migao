@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { AlertCircle, Bell, CheckCheck, Trash2, Mail, MailOpen, Inbox } from 'lucide-react'
 import { toast } from 'sonner'
 import { notificationApi } from '@/lib/api'
-import { Pagination, Modal, Button } from '@/components/ui'
+import { Pagination, Modal, Button, PageCard, PageHeader } from '@/components/ui'
 import type { Notification, NotificationStatus, NotificationChannel } from '@/types'
 import { cn } from '@/lib/utils'
 
@@ -158,28 +158,29 @@ export default function NotificationsPage() {
   return (
     <div className="p-6">
       {/* 页面标题 */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-semibold text-neutral-900">通知中心</h1>
-          <p className="text-sm text-neutral-500 mt-1">管理和查看系统通知</p>
-        </div>
-        {/* 🔴 issue #6669 第 5 条：一条未读都没有时这个动作无意义 ⇒ **不出入口**（不是留个点了没反应的按钮）；
-            有未读时 in-flight 期间 disabled + loading（连点不发第二次请求）。 */}
-        {unreadCount > 0 && (
-          <Button
-            data-testid="mark-all-read"
-            onClick={handleMarkAllAsRead}
-            disabled={markingAll}
-            loading={markingAll}
-          >
-            <CheckCheck className="w-4 h-4 mr-1.5" />
-            全部标记已读
-          </Button>
-        )}
+      <div className="mb-6">
+        <PageHeader
+          title="通知中心"
+          subtitle="管理和查看系统通知"
+          actions={unreadCount > 0 && (
+            /* 🔴 issue #6669 第 5 条：一条未读都没有时这个动作无意义 ⇒ **不出入口**（不是留个点了没反应的按钮）；
+                有未读时 in-flight 期间 disabled + loading（连点不发第二次请求）。 */
+            <Button
+              data-testid="mark-all-read"
+              onClick={handleMarkAllAsRead}
+              disabled={markingAll}
+              loading={markingAll}
+            >
+              <CheckCheck className="w-4 h-4 mr-1.5" />
+              全部标记已读
+            </Button>
+          )}
+        />
       </div>
 
-      {/* 状态 Tab 栏 */}
-      <div className="flex items-center gap-0 bg-white border border-neutral-200 rounded-t-lg overflow-x-auto">
+      {/* 状态 Tab 栏 + 列表（与订单/知识库页同构：整宽 Tab 卡 + 整宽列表，故 padded={false}） */}
+      <PageCard padded={false}>
+      <div className="flex items-center gap-0 border-b border-neutral-200 overflow-x-auto">
         {statusTabs.map((tab) => (
           <button
             key={tab.key}
@@ -221,7 +222,7 @@ export default function NotificationsPage() {
       )}
 
       {/* 通知列表 */}
-      <div className="bg-white rounded-b-lg border border-t-0 border-neutral-200">
+      <div className="border-neutral-200">
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="w-6 h-6 border-2 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
@@ -239,7 +240,7 @@ export default function NotificationsPage() {
                 key={notification.id}
                 className={cn(
                   'px-5 py-4 transition-colors hover:bg-neutral-50',
-                  notification.status !== 'read' && 'bg-blue-50/30'
+                  notification.status !== 'read' && 'bg-primary-50/30'
                 )}
               >
                 <div className="flex gap-3">
@@ -317,6 +318,7 @@ export default function NotificationsPage() {
           />
         )}
       </div>
+      </PageCard>
 
       {/* 删除确认弹窗 */}
       <Modal

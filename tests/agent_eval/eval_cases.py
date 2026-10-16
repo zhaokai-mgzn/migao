@@ -14149,6 +14149,186 @@ _CASE_UI_099 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-100 [NORMAL] 商家后台版式统一（页头/页内容器/筛选卡片共享件）+ 零 Tailwind 默认调色板（issue #7007）（源: cases/ui.yml）──
+_CASE_UI_100 = EvalCase(
+    id='UI-100',
+    legacy_id='',
+    title='商家后台版式统一（页头/页内容器/筛选卡片共享件）+ 零 Tailwind 默认调色板（issue #7007）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['能否再保留我们当前项目原UI风格设计的前提下，提高整体的精美程度？我看到当前页面整体只有订单管理的设计是非常精美的，其他的页面没有这样的感觉。'],
+    expectations=['direct_reply'],
+    data_checks=["🔴 判据 1·**零中性灰族（会红）**：`frontend/admin-web/tests/unit/warm-token-palette-guard.test.ts` 扫 `frontend/admin-web/src/app/**` + `frontend/admin-web/src/components/**`（`.tsx`，去注释后），不得出现 `bg|text|border|ring|from|via|to|divide|outline|shadow|decoration|accent|caret|fill|stroke` × `gray|slate|zinc|stone` × 色阶的工具类。**修前实测 = 8 个文件 / 104 处**（`SessionInsight` 38 · `Pagination` 22 · `RefundOrderModal` 17 · `FileUpload` 17 · `EmptyState` 4 · `TreeCheckbox` 3 · `MibaoAccessGate` 2 · `Loading` 1）；**修后 = 0**。复算命令：`grep -rEn '(bg|text|border|ring|from|via|to|divide|outline|shadow|decoration|accent|caret|fill|stroke)-(gray|slate|zinc|stone)-[0-9]' frontend/admin-web/src/`（注释里的引用会命中，判据侧先去注释 ⇒ 以测试为准）。", '🔴 判据 2·**冷彩族台账双向相等（会红）**：同一文件的判据 4 —— 台账 `frontend/admin-web/tests/unit/palette-drift-ledger.json`（20 个文件 / 74 处，`blue`/`indigo`/`sky`/`violet`/`purple`/`cyan` 族）与**现取命中**必须逐文件逐计数相等。**三态都会红**：① 台账有、现取无 ⇒ **死条目**（修好必须删条，留着即松弛量）；② 现取有、台账无 ⇒ **新写的漂移当场红**；③ 计数不一致 ⇒ 报「台账 N vs 现取 M」。判据 5 另判台账不得为空（清空「消红」⇒ 红）。**本判据不为存量背书**，只保证「不再增长 + 修一处少一处」。', '🔴 判据 3·**判别力自证（4 条，在内存里各自判红/放行）**：① 坏形态 `bg-gray-50 text-gray-500 border-gray-200` 命中三条；② 暖色 token（`neutral-*`/`primary-*`）与语义色（`emerald`/`red`/`amber`）**放行且不误伤**；③ **注释里的旧写法不算违规**（否则守卫被自己的说明喂红 —— 本仓已多次踩）；④ 官网子树 `frontend/admin-web/src/app/(corporate)/**` 确在射程之外。', '🔴 判据 4·**共享件存在且用词来自 token**：`frontend/admin-web/src/components/ui/PageHeader.tsx`（标题 `text-2xl` = `TYPE_SCALE` 的 h1 档，见 `frontend/admin-web/src/lib/design-tokens.ts`；此前 26 处 `h1` 全写 `text-xl` ⇒ 页面标题与区块标题同档、层级读不出来）、`PageCard.tsx`（`bg-white rounded-lg border border-neutral-200 shadow-card` + `p-5`）、`SearchPanel.tsx`（标签左置 + 单一响应式 grid + 按钮独占一行，抽自订单页 issue #5880 那一版）三件经 `frontend/admin-web/src/components/ui/index.ts` 导出；`SearchBar.tsx` 底色由 `bg-gray-50` 改 `bg-neutral-50`、**调用方契约（`onSearch(values)` 形状 / `data-testid` = `search-area`）零变更**。', '🔴 判据 5·**既有设计基线一条不放宽**：`design-baseline-token-contract` / `-geometry`（桌面主控件高度 ≥36px，见 `GEOMETRY_LIMITS.minControlHeight`）/ `-page-state-contract`（四态齐备、失败 ≠ 空）/ `-expression-fallback` / `-server-strings` 五个文件**全部继续绿**（本包实测 `137 passed`），且 `tests/unit/components/**` 全量 **1694 passed**。'],
+    skip_reason='[backend-contract] 纯前端版式与配色收口（服务端一字未改）：配置键 / 公式 / 米数 / 加工费组合键**逐值不变**，由 vitest（jsdom）+ §15.7 真机多模态验收执行，不进 agent-eval 冒烟',
+    tags=['ui', 'design-baseline', 'class-level-guard', 'warm-token', 'shared-primitive', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── UI-101 [NORMAL] 算料口径的术语与说明文案收口：展示名改叫法 + 去内部腔 + 逐条术语压到 2~4 行（issue #7007）（源: cases/ui.yml）──
+_CASE_UI_101 = EvalCase(
+    id='UI-101',
+    legacy_id='',
+    title='算料口径的术语与说明文案收口：展示名改叫法 + 去内部腔 + 逐条术语压到 2~4 行（issue #7007）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['算料口径里面的术语也重构一下，现在给人一种乱七八糟的感觉，文案也是非常乱，应该精简美化，算料口径也顺带重构一遍最好'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 判据 1·**只改展示名，口径零变更（会红）**：`frontend/admin-web/tests/unit/lib/craft-calc-glossary.test.ts` 的键集同源判据（`CALC_SCALAR_KEYS` 逐值等于引擎 `DEFAULT_CRAFT_CALC_CONFIG` 的标量键）+ `frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx` 的「保存发**全量键**（11 键）」判据 —— 改展示名若顺手动了键名 / 公式 / 数值，这两条当场红。**实测修后 `183 passed`**（P3 射程 11 个文件）。', '🔴 判据 2·**展示名逐字为改后值（会红）**：`frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx` 断言 `单色每折用料（米）` 在位（改前为 `单色每折吃布（米）`）。同批把 `CalcCaliberPanel.tsx` 里拼次输入框的 `aria-label` 由「拼N次 每折吃布」改为「拼N次 每折用料」—— 无障碍名与可见名**同一套词**，避免屏幕阅读器读到另一个说法。', '🔴 判据 3·**逐条术语压到 2~4 行（会红）**：`frontend/admin-web/tests/unit/components/CraftCalcGlossary.test.tsx` 的渲染面（`glossary-term-<名>` 锚点在、算例带真实数字、`拼接` 含「不触发工序」、`接高` 含「还没确认」）+ `frontend/admin-web/tests/unit/lib/copy-no-markdown-emphasis.test.ts`（带 `**` 的文件必须登记且接线渲染器）。结构改法 = 术语名与一句话定义**同一段**（此前名 / 定义 / 判定 / 影响各占一段 ⇒ 一条最多 5 行小字、六组三四十行）。', '🔴 判据 4·**用户裁定的边界照实登记（有意不做）**：① **不改** `每折吃布` 这个算料术语本身 —— 它同时是引擎响应字段名（`per_fold`）与下单页用料公式说明（`frontend/admin-web/src/lib/meters-formula-legend.ts`）里的用词，只改配置页展示名会让配置页与公式说明对不上；重启条件 = 公式说明的词一并统一时（属另一包）。② **保留** `倒幅`/`正幅`/`定型`/`拼N次`/`接高`/`双眼皮接高` 业务词（与 ERP、工序目录、工人端同源，改名会让三方分叉）。两条都写在 `frontend/admin-web/src/lib/craft-calc-glossary.ts` 的模块头注释里。'],
+    skip_reason='[backend-contract] 纯前端展示名与说明文案（服务端一字未改）：配置键 / 公式 / 米数 / 加工费组合键逐值不变，由 vitest（jsdom）+ §15.7 真机多模态验收执行，不进 agent-eval 冒烟',
+    tags=['ui', 'copy', 'craft-calc', 'user-facing-copy', 'display-name-only', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── UI-107 [NORMAL] PageHeader 共享原语：页面标题必须是 h1 档（text-2xl）而非区块标题档（text-xl）—— 26 处手写页头收敛为一个原语（issue #7007）（源: cases/ui.yml）──
+_CASE_UI_107 = EvalCase(
+    id='UI-107',
+    legacy_id='',
+    title='PageHeader 共享原语：页面标题必须是 h1 档（text-2xl）而非区块标题档（text-xl）—— 26 处手写页头收敛为一个原语（issue #7007）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['能否再保留我们当前项目原UI风格设计的前提下，提高整体的精美程度？我看到当前页面整体只有订单管理的设计是非常精美的，其他的页面没有这样的感觉。'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 判据 1·**标题渲染成 `<h1>` 且是 TYPE_SCALE 的 h1 档**：`frontend/admin-web/src/lib/design-tokens.ts` 规定 h1 = `text-2xl`（24px）、h2 = `text-xl`（20px）；改前全仓 **26 处手写 `h1` 全部写 `text-xl`** ⇒ 页面标题与页内区块标题**同档**、层级读不出来。执行点 = `frontend/admin-web/tests/unit/components/PageHeader.test.ts` 的「标题渲染成 `<h1>` 且是 TYPE_SCALE 的 h1 档」。**红证（实跑）**：`text-2xl` → `text-xl` ⇒ 该条当场判红（1 failed | 6 passed）。', '🔴 判据 2·**字重只有一支**：改前两种字重混用（`font-bold` 分类页 vs `font-semibold` 其余 25 处）⇒ 同层级标题字重不同。执行点 = 同文件的「整仓不许再出现 font-bold 的页头」', '🔴 判据 3·**语义与视觉同时到位**：`<h1>` 而不是 `text-2xl` 的 `<div>` —— 读屏器靠 h1 建立大纲。**红证**：把 `<h1>` 换成 `<div>` ⇒ 该条红', '🔴 判据 4·**副标题与动作区都是可选的、且不传时不留空壳**：`subtitle` 不传 ⇒ DOM 里零个 `<p>`；`actions` 不传 ⇒ 只有一个外层 div（红证：去掉 `subtitle &&` / `actions &&` 的条件 ⇒ 留下空 `<p>` / 空 flex 容器，把标题可用宽度挤掉）', '🔴 判据 5·**动作区纵向对齐用 `items-start`**：`items-center` 会让「有副标题」时按钮下沉、「无副标题」时上跳 ⇒ 同批页面里按钮位置不一致。⚠️ 本条**只钉类名**；真实几何由 `migao-dev-flow` §15.7 真浏览器读图覆盖', '🔴 判据 6·**原语不吃权限码**：`canWrite ? <Button/> : null` 留在调用方，原语结构上没有回显权限码的入口（与 `AccessDenied` 同族口径）'],
+    skip_reason='[backend-contract] 纯前端版式原语（服务端一字未改）：配置键 / 公式 / 米数口径 / 接口与字段名均未动，不进入 agent-eval 冒烟',
+    tags=['ui', 'shared-primitive', 'design-baseline', 'warm-token', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── UI-108 [NORMAL] PageCard 共享原语：页内一级容器必须自带 shadow-card（否则与整页卡片同为「边框套边框」）+ testId 必须透传（14 页迁移的支点）（issue #7007）（源: cases/ui.yml）──
+_CASE_UI_108 = EvalCase(
+    id='UI-108',
+    legacy_id='',
+    title='PageCard 共享原语：页内一级容器必须自带 shadow-card（否则与整页卡片同为「边框套边框」）+ testId 必须透传（14 页迁移的支点）（issue #7007）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['能否再保留我们当前项目原UI风格设计的前提下，提高整体的精美程度？我看到当前页面整体只有订单管理的设计是非常精美的，其他的页面没有这样的感觉。'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 判据 1·**自带 `shadow-card`**：改前全仓 **15 处内层容器只有 `border`、无阴影** ⇒ 与 `app/(dashboard)/layout.tsx` 的整页卡片（`rounded-2xl border shadow-card`）视觉权重相同 ⇒ 「边框套边框」、层级分不开。执行点 = `frontend/admin-web/tests/unit/components/PageCard.test.ts` 的同名条目。**红证（实跑）**：去掉 `shadow-card` ⇒ 该条当场判红（连带 3 条形态判据同时红，成对读数已在 PR body）', '🔴 判据 2·**形态值只来自 token**：`bg-white` / `border-neutral-200`（**不得** `border-gray-*` —— `gray` 在本仓没有 token）/ `rounded-lg`（不得 `rounded-xl` —— 改前圆角三种写法混用 ⇒ 同屏区块起点参差）', '🔴 判据 3·**`testId` 必须透传到 DOM 的 `data-testid`** —— 本包 14 页迁移的**支点**：页面级判据大量以 `data-testid` = `search-area` / `<x>-empty` 定位容器，原语不透传就只能退回手写 div，迁移前提不成立。**红证（实跑）**：删掉 `data-testid={testId}` ⇒ 该条当场判红', '🔴 判据 4·**不传 `testId` 时 DOM 上不出现 `data-testid`**（原语要能替换原有手写 div 而**不引入**新属性，否则既有选择器会漂）', '🔴 判据 5·**`padded={false}` 只关内边距档、不关分层**：整宽表格 + 分页脚的页面保留 `shadow-card` / `border` / `rounded`，但不被多套一层 `p-5`（红证：让 `padded=false` 仍加 `p-5` ⇒ 红）', '🔴 判据 6·**不碰布局语义**：children 原样渲染、原语不加栅格 / 不包额外 div（红证：给 children 套一层 grid ⇒ 元素计数判据红）。这是架构边界，与 `SearchPanel` 的「不持有筛选 state」同族'],
+    skip_reason='[backend-contract] 纯前端版式原语（服务端一字未改）：配置键 / 公式 / 米数口径 / 接口与字段名均未动，不进入 agent-eval 冒烟',
+    tags=['ui', 'shared-primitive', 'design-baseline', 'warm-token', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── UI-102 [NORMAL] CustomerPanel 状态色收口：订单六态语义色由冷色族（blue/purple/indigo）改为暖色 token（primary/accent）+ 收起/展开两态（issue #7007）（源: cases/ui.yml）──
+_CASE_UI_102 = EvalCase(
+    id='UI-102',
+    legacy_id='',
+    title='CustomerPanel 状态色收口：订单六态语义色由冷色族（blue/purple/indigo）改为暖色 token（primary/accent）+ 收起/展开两态（issue #7007）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['能否再保留我们当前项目原UI风格设计的前提下，提高整体的精美程度？我看到当前页面整体只有订单管理的设计是非常精美的，其他的页面没有这样的感觉。'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 判据 1·**冷色收口（实例判据）**：`confirmed` 由 `blue-*` 改 `primary-*`；`producing` 由 `purple-*` 改 `accent-*`；`shipped` 由 `indigo-*` 改 `accent-*`。**未改判的三态**：`pending` 保持 `amber-*`、`completed` 保持 `green-*`、`cancelled` 保持 `neutral-*`。红证：把任一态改回 `blue-50` ⇒ 该条红；由 `warm-token-palette-guard.test.ts` 的硬禁做类级兜底', '🔴 判据 2·**两条渲染分支**：无 `currentSessionId` 时`return null`（不留空壳侧栏）；`collapsed` 时只渲染折叠条，点它回到展开态'],
+    skip_reason='[backend-contract] 纯前端版式与配色收口（服务端一字未改）：配置键 / 公式 / 米数口径 / 接口与字段名均未动，不进入 agent-eval 冒烟',
+    tags=['ui', 'shared-primitive', 'warm-token', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── UI-103 [NORMAL] SearchPanel 共享原语：筛选区版式不变量（单一响应式 grid + label 左置定宽 + 按钮行独占）+ 三个动作按钮的「没传就不渲染」（issue #7007）（源: cases/ui.yml）──
+_CASE_UI_103 = EvalCase(
+    id='UI-103',
+    legacy_id='',
+    title='SearchPanel 共享原语：筛选区版式不变量（单一响应式 grid + label 左置定宽 + 按钮行独占）+ 三个动作按钮的「没传就不渲染」（issue #7007）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['能否再保留我们当前项目原UI风格设计的前提下，提高整体的精美程度？我看到当前页面整体只有订单管理的设计是非常精美的，其他的页面没有这样的感觉。'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 判据 1·**版式不变量**：容器 `grid-cols-1 md:grid-cols-2 2xl:grid-cols-4`（单一响应式 grid ⇒ 行与行天然对齐，取代 `flex-wrap` 的漂移换行点）；字段格 `min-w-0`；label `w-[4.5em]` + `text-right` + `shrink-0`（各行 label 起点对齐）；按钮行 `col-span-full` + `justify-end`。红证：改回 `flex flex-wrap` / 去掉 `w-[4.5em]` ⇒ 对应条红', '🔴 判据 2·**动作分层的取舍**：「查询」恒在并调 `onSearch`；「重置」/「刷新」**没传就不渲染**（`onRefresh` 那支外面套 `border-l` 的 span —— 刷新是列表动作、与筛选动作分层）；`loading` 时三个按钮都 `disabled`。红证：把 `onReset &&` 去掉 ⇒ 「没传就不渲染」当场红', '🔴 判据 3·**原语不持有筛选 state**（架构边界）：`fields[].control` 由调用方渲染、被原样透传（改原语不该改变任何页面的信息结构）；红证：原语内部改成受控 state ⇒ 透传判据红', '🔴 判据 4·**`SEARCH_CONTROL_CLASS` 值与暖色收口**：含 `h-9`（36px，`design-baseline-geometry-probe.mjs` 的 `GEOMETRY_LIMITS.minControlHeight`）/ `w-full` / `border-neutral-300` / `focus:ring-primary-500/15`，且**不含** `gray-`/`blue-`/`indigo-`/`purple-`'],
+    skip_reason='[backend-contract] 纯前端版式与配色收口（服务端一字未改）：配置键 / 公式 / 米数口径 / 接口与字段名均未动，不进入 agent-eval 冒烟',
+    tags=['ui', 'shared-primitive', 'warm-token', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── UI-104 [NORMAL] EmptyState：新增 testId 透传（默认不改变既有 DOM）+ 四个图标映射 + 暖中性色收口（issue #7007）（源: cases/ui.yml）──
+_CASE_UI_104 = EvalCase(
+    id='UI-104',
+    legacy_id='',
+    title='EmptyState：新增 testId 透传（默认不改变既有 DOM）+ 四个图标映射 + 暖中性色收口（issue #7007）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['能否再保留我们当前项目原UI风格设计的前提下，提高整体的精美程度？我看到当前页面整体只有订单管理的设计是非常精美的，其他的页面没有这样的感觉。'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 判据 1·**`testId` 透传成 `data-testid`**；**不传时 DOM 上不出现该属性**（原语要能替换手写空态而不引入新属性）。红证：不透传 ⇒ 红', '🔴 判据 2·**四个 `icon` 值映射到 `Package`/`Search`/`FileX`/`Inbox`**；默认 `title`/`description` 逐字；`action` 给了才渲染', '🔴 判据 3·**暖中性色收口**：`bg-neutral-100`/`text-neutral-400`/`text-neutral-900`/`text-neutral-500`，**不得**出现 Tailwind 默认冷灰 `gray-*`（改前那些是 `gray-*`；类级硬禁见 `warm-token-palette-guard.test.ts`）'],
+    skip_reason='[backend-contract] 纯前端版式与配色收口（服务端一字未改）：配置键 / 公式 / 米数口径 / 接口与字段名均未动，不进入 agent-eval 冒烟',
+    tags=['ui', 'shared-primitive', 'warm-token', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── UI-105 [NORMAL] FileUpload：上传/删除/超限拦截的交互契约 + 进度条与暖色收口（blue-* → primary-*）（issue #7007）（源: cases/ui.yml）──
+_CASE_UI_105 = EvalCase(
+    id='UI-105',
+    legacy_id='',
+    title='FileUpload：上传/删除/超限拦截的交互契约 + 进度条与暖色收口（blue-* → primary-*）（issue #7007）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['能否再保留我们当前项目原UI风格设计的前提下，提高整体的精美程度？我看到当前页面整体只有订单管理的设计是非常精美的，其他的页面没有这样的感觉。'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 判据 1·**暖色收口**：上传中那块由 `blue-*` 改 `primary-*`（`border-primary-200` / `bg-primary-50/50` / 进度条 `bg-primary-500` / 桶底 `bg-primary-100`）；失败态进度条保持 `bg-red-500`。红证：改回 `blue-200` ⇒ 红', '🔴 判据 2·**`effectiveMax` 语义**（`multiple ? maxFiles : 1`）：`value.length >= effectiveMax` 时**不再渲染上传入口**（满了不给入口）；多选时 `multiple` 才透传', '🔴 判据 3·**超限文件拦截**：`file.size > maxSize*1024*1024` ⇒ 调 `toast.error` **且不调上传接口**（真实反例保护）', '🔴 判据 4·**`formatSize` 三档边界**：`<1024` ⇒ `N B`；`<1MB` ⇒ `X.X KB`；否则 `X.X MB`（一位小数）', '🔴 判据 5·**`label` / `hint` 给了才渲染**；已传文件列表渲染文件名 + 人类可读体积 + 删除按钮'],
+    skip_reason='[backend-contract] 纯前端版式与配色收口（服务端一字未改）：配置键 / 公式 / 米数口径 / 接口与字段名均未动，不进入 agent-eval 冒烟',
+    tags=['ui', 'shared-primitive', 'warm-token', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── UI-106 [NORMAL] Loading：三档 size 的类名逐值 + 默认 md + 文案给了才渲染 + 主色由 blue 收口到 primary（issue #7007）（源: cases/ui.yml）──
+_CASE_UI_106 = EvalCase(
+    id='UI-106',
+    legacy_id='',
+    title='Loading：三档 size 的类名逐值 + 默认 md + 文案给了才渲染 + 主色由 blue 收口到 primary（issue #7007）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['能否再保留我们当前项目原UI风格设计的前提下，提高整体的精美程度？我看到当前页面整体只有订单管理的设计是非常精美的，其他的页面没有这样的感觉。'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 判据 1·**暖色收口**：`Loader2` 由 `text-blue-600` 一类改为 `text-primary-600`（实例判据；类级硬禁见 `warm-token-palette-guard.test.ts`）', '🔴 判据 2·**三档 `sizeMap` 逐值**：`sm`=`w-4 h-4` / `md`=`w-6 h-6` / `lg`=`w-10 h-10`，且**默认档是 `md`**（不传 size 时取 md）', '🔴 判据 3·**`text` 给了才渲染**（`text-neutral-500 text-sm`）；`className` 透传'],
+    skip_reason='[backend-contract] 纯前端版式与配色收口（服务端一字未改）：配置键 / 公式 / 米数口径 / 接口与字段名均未动，不进入 agent-eval 冒烟',
+    tags=['ui', 'shared-primitive', 'warm-token', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── UI-109 [NORMAL] lucide-react mock 的闭集类级元守卫：替身必须摊开真值（ ...actual / Proxy(actual)），不得用固定图标名单（issue #7007）（源: cases/ui.yml）──
+_CASE_UI_109 = EvalCase(
+    id='UI-109',
+    legacy_id='',
+    title='lucide-react mock 的闭集类级元守卫：替身必须摊开真值（ ...actual / Proxy(actual)），不得用固定图标名单（issue #7007）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['能否再保留我们当前项目原UI风格设计的前提下，提高整体的精美程度？我看到当前页面整体只有订单管理的设计是非常精美的，其他的页面没有这样的感觉。'],
+    expectations=['direct_reply'],
+    data_checks=["🔴 判据 1·**类级元守卫：凡替身 `lucide-react` 的 mock 都不得是闭合集合**：扫 `tests/**` 全部 TS/TSX，凡出现 `vi.mock('lucide-react', …)` —— 要么走本仓 helper `tests/unit/helpers/lucide-mock.ts`（它自己 `...actual`），要么工厂必须是 `async (importOriginal)` 且返回值里出现 `...actual`，要么是 `new Proxy(actual, …)`（未知键透真值）。违者**具名列出文件**。执行点 = `frontend/admin-web/tests/unit/lucide-mock-closure-guard.test.ts` 的「凡替身 lucide-react 的 mock，都必须是「摊开真值 + 显式桩」而不是闭合集合」。**红证（实跑）**：删掉 `setup.ts` 或 `after-sales.test.tsx` 的 `...actual` ⇒ 该条当场判红并指名那个文件", '🔴 判据 2·**全局兜底桩 `tests/setup.ts` 单独再钉一次**：它是所有测试文件的兜底，漏一个图标就是**全仓红**（实测 `File` / `KeyRound` / `MailOpen` 三个就不在它那张 163 个的固定名单里）。红证：删掉它的 `...actual` ⇒ 当场红', '🔴 判据 3·**判别力自证（防空转绿）**：① 语料下限 —— 真扫到 > 200 个测试文件（把扫描根指错 ⇒ 红）；② 被检 mock 处数 ≥ 10（把扫描面改窄 ⇒ 红）。没有这两条，「零违规」可能与「什么都没扫」无法区分', '📌 **为什么立成类级**（同一族缺陷本轮咬了两次，单点修复只是把病灶挪到下一层）：第 1 次 `@/components/ui` **桶**的 mock 是闭集 ⇒ 页面一用上当时不存在的原语就报 `No "PageHeader" export`；第 2 次把桶改成 `...actual` 后，**真的**加载了 `EmptyState` ⇒ 而测试文件自己的 lucide mock 只列了 7 个图标 ⇒ 7 个套件同时报 `No "Package" export is defined on the "lucide-react" mock`。⇒ 病根是「**用闭合集合去替身一个会继续增长的模块**」，必须靠扫形状的元守卫拦，不能靠逐处补图标', '📌 **为什么本地没抓到（判据读数口径）**：上一轮用 `vitest run --reporter=json --outputFile=…` 取读数，报「4743/4744 通过、失败文件 0」—— 但**套件加载失败时那一整个文件的用例不计入 JSON 的 assertionResults** ⇒ 「7 个文件全灭」表现为「失败文件 0」。改用 CI 同款裸命令 + **看 exit code / `Test Files` 行**后当场复现 7 个 FAIL。⇒ 判据读数必须取**会红的那个量**，不能取一个漂亮的分母'],
+    skip_reason='[backend-contract] 纯前端测试基建（服务端一字未改）：不进入 agent-eval 冒烟',
+    tags=['ui', 'test-infra', 'meta-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -14943,6 +15123,16 @@ ALL_CASES = (
     _CASE_UI_097,
     _CASE_UI_098,
     _CASE_UI_099,
+    _CASE_UI_100,
+    _CASE_UI_101,
+    _CASE_UI_107,
+    _CASE_UI_108,
+    _CASE_UI_102,
+    _CASE_UI_103,
+    _CASE_UI_104,
+    _CASE_UI_105,
+    _CASE_UI_106,
+    _CASE_UI_109,
     _CASE_UT_001,
     _CASE_UT_002,
 )

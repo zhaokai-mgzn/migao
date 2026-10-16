@@ -135,9 +135,9 @@ function OrderRow({ order }: { order: Record<string, unknown> }) {
 function OrderStatusBadge({ status }: { status: string }) {
   const statusMap: Record<string, { label: string; className: string }> = {
     pending: { label: '待确认', className: 'bg-amber-50 text-amber-700 border-amber-200' },
-    confirmed: { label: '已确认', className: 'bg-blue-50 text-blue-700 border-blue-200' },
-    producing: { label: '生产中', className: 'bg-purple-50 text-purple-700 border-purple-200' },
-    shipped: { label: '已发货', className: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+    confirmed: { label: '已确认', className: 'bg-primary-50 text-primary-700 border-primary-200' },
+    producing: { label: '生产中', className: 'bg-accent-50 text-accent-700 border-accent-200' },
+    shipped: { label: '已发货', className: 'bg-accent-50 text-accent-700 border-accent-200' },
     completed: { label: '已完成', className: 'bg-green-50 text-green-700 border-green-200' },
     cancelled: { label: '已取消', className: 'bg-neutral-50 text-neutral-600 border-neutral-200' },
   }

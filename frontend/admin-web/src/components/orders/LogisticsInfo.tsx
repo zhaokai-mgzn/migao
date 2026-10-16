@@ -75,7 +75,7 @@ export default function LogisticsInfo({ logistics, className, onEdit }: Logistic
       </div>
 
       {logistics.status && (
-        <div className="mb-4 px-3 py-2 bg-blue-50 text-blue-700 rounded text-sm">
+        <div className="mb-4 px-3 py-2 bg-primary-50 text-primary-700 rounded text-sm">
           当前状态: {logistics.status}
         </div>
       )}

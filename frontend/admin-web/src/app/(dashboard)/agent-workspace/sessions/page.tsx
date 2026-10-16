@@ -142,7 +142,7 @@ export default function AgentSessionsPage() {
             value={closedCount}
           />
           <StatCell
-            icon={<ListChecks className="w-4 h-4 text-indigo-400" />}
+            icon={<ListChecks className="w-4 h-4 text-accent-400" />}
             label="共"
             value={totalCount}
           />

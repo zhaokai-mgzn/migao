@@ -556,6 +556,19 @@ export const READ_SURFACES = {
   },
 }
 
+
+/**
+ * 空态锚的**允许形态**（issue #7007）。
+ *
+ * 返回值里每条是「一个候选串」，用 `\u0000` 前缀标记「多形态任一即通过」——
+ * `missingWiring` 认这个标记（见其实现）。为什么不直接给两个串：
+ * 它在 `POSITIVE_ANCHORS` 里是 `includes` **全都要满足**（`filter(!includes)`），
+ * 给两个串等于要求**同时**出现两种写法 ⇒ 必然假红。
+ */
+function emptyAnchorForms(emptyTestId) {
+  return [`\u0000either:testId="${emptyTestId}"|data-testid="${emptyTestId}"`]
+}
+
 /**
  * **正向核**：每条登记读面必须逐字含这些接线（**单一源**：由 `READ_SURFACES` 派生，不写第二份）。
  * 删掉任一处（把失败分支的守卫摘了、把锚点换回空态）⇒ 当场红。
@@ -567,7 +580,14 @@ for (const [name, surf] of Object.entries(READ_SURFACES)) {
     // （`data-testid` 由组件内部渲染）⇒ 正向核按**该形态**逐字锚（同 `customers-list`）。
     surf.failureViaSharedComponent ? `testId="${surf.anchor}"` : `data-testid="${surf.anchor}"`,
     surf.failureViaSharedComponent ? 'onRetry=' : `data-testid="${surf.retryAnchor || `${surf.anchor}-retry`}"`,
-    `data-testid="${surf.emptyTestId}"`,
+    // 🔴 issue #7007：空态锚**同样会**走共享原语的 `testId` prop（`PageCard` / `EmptyState`
+    // 内部渲染出 `data-testid`）—— 此前这里硬写 `data-testid` 字面量 ⇒ 页面把空态收敛到
+    // `PageCard testId="<x>-empty"` 之后报「缺空态锚」，而 DOM 上那个锚**明明在**
+    //（实测三条：`employees` / `products` / `customers`）。与上面失败锚**同一口径**：
+    // 判据钉的是「锚点到没到 DOM」，不是「作者用哪种写法写出来」。
+    // 两种形态任一在场即算接线（`missingWiring` 是 `includes` 全都要满足，故这里给成
+    // 一个**逗号分隔的候选串**会失效 —— 改用下面的 `emptyAnchorForms` 显式表达）。
+    ...emptyAnchorForms(surf.emptyTestId),
     // 「失败 key 参与空态那一支的判据」由 `renderGuardsFromSource` 判（形态无关，见其注释）
     surf.failureKey,
   ]
@@ -700,7 +720,19 @@ export function missingWiring(root, surfaces = READ_SURFACES, positive = POSITIV
       out.push({ key, file: surf.file, missing: [`文件不存在：${surf.file}`] })
       continue
     }
-    out.push({ key, file: surf.file, missing: (positive[key] || []).filter((needle) => !source.includes(needle)) })
+    out.push({
+      key,
+      file: surf.file,
+      missing: (positive[key] || [])
+        .map((needle) => {
+          // 「多形态任一」标记（issue #7007）：`\u0000either:a|b` ⇒ 任一在场即算接线，
+          // 缺则报**全部**允许形态（报错信息要能直接告诉你该写哪几种）。
+          if (!needle.startsWith('\u0000either:')) return source.includes(needle) ? null : needle
+          const forms = needle.slice('\u0000either:'.length).split('|')
+          return forms.some((f) => source.includes(f)) ? null : forms.join(' 或 ')
+        })
+        .filter(Boolean),
+    })
   }
   return out
 }

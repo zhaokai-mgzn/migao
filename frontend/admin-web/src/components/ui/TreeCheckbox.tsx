@@ -73,7 +73,7 @@ export const TreeCheckbox = forwardRef<HTMLDivElement, TreeCheckboxProps>(
               if (allChecked) onChange(selected.filter(c => !allLeafSet.has(c)))
               else onChange([...selected, ...allLeafCodes.filter(c => !selectedSet.has(c))])
             }}
-            className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            className="w-4 h-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
           />
           <span className="text-sm font-semibold">全部权限</span>
         </label>
@@ -101,7 +101,7 @@ export const TreeCheckbox = forwardRef<HTMLDivElement, TreeCheckboxProps>(
                       else
                         onChange([...selected, ...childCodes.filter(c => !selectedSet.has(c))])
                     }}
-                    className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    className="w-4 h-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
                   />
                   <NodeLabel node={node} />
                 </label>
@@ -119,7 +119,7 @@ export const TreeCheckbox = forwardRef<HTMLDivElement, TreeCheckboxProps>(
                             else
                               onChange([...selected, child.code])
                           }}
-                          className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          className="w-4 h-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
                         />
                         <NodeLabel node={child} />
                       </label>

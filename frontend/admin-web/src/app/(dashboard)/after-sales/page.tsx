@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Plus, Search, RotateCcw, FileText, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 import { afterSalesApi, orderApi } from '@/lib/api'
-import { Pagination, Modal, Button, Input, Select, Badge, StatusBadge } from '@/components/ui'
+import { Pagination, Modal, Button, Input, Select, Badge, StatusBadge, PageHeader, PageCard } from '@/components/ui'
 import type {
   AfterSalesTicket,
   AfterSalesStatus,
@@ -213,19 +213,22 @@ export default function AfterSalesPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-6 space-y-4">
       {/* 页面标题 */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-semibold text-neutral-900">售后管理</h1>
-          <p className="text-sm text-neutral-500 mt-1">管理客户售后工单：退货、换货、维修等</p>
-        </div>
-        <Button onClick={() => setCreateModalOpen(true)}>
-          <Plus className="w-4 h-4 mr-1.5" />
-          新建工单
-        </Button>
-      </div>
+      <PageHeader
+        title="售后管理"
+        subtitle="管理客户售后工单：退货、换货、维修等"
+        actions={
+          <Button onClick={() => setCreateModalOpen(true)}>
+            <Plus className="w-4 h-4 mr-1.5" />
+            新建工单
+          </Button>
+        }
+      />
 
+      {/* 工单列表：Tab 栏 / 筛选栏 / 表格 / 分页脚原为**连成一体的整宽卡片**（Tab 圆上角、
+          表格圆下角）⇒ 用 `padded={false}` 保持内部版式与边到边结构不变（issue #7007）。 */}
+      <PageCard padded={false}>
       {/* 状态 Tab 栏 */}
       <div className="flex items-center gap-0 bg-white border border-neutral-200 rounded-t-lg overflow-x-auto">
         {statusTabs.map((tab) => (
@@ -299,7 +302,6 @@ export default function AfterSalesPage() {
           </div>
         </div>
       </div>
-
       {/* 数据表格 */}
       <div className="bg-white rounded-b-lg border border-t-0 border-neutral-200">
         {/* 失败态 ≠ 空态（issue #6703）：说清「不是没有工单，是没读到」+ 真重发出口 */}
@@ -422,6 +424,7 @@ export default function AfterSalesPage() {
           onPageSizeChange={(size) => { setPageSize(size); setCurrent(1) }}
         />
       </div>
+      </PageCard>
 
       {/* 新建工单弹窗 */}
       <Modal

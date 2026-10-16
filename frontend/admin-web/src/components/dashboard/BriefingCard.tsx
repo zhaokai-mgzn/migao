@@ -154,7 +154,7 @@ export default function BriefingCard({ enabled = true, variant = 'dashboard' }: 
       {/* 头部 */}
       <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary-50 to-indigo-50">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary-50 to-accent-50">
             <Newspaper className="h-4 w-4 text-primary-600" />
           </span>
           <div>
@@ -192,7 +192,7 @@ export default function BriefingCard({ enabled = true, variant = 'dashboard' }: 
             {/* 简报没生成 ≠ 没有主动检查结论：有采集到就说清楚「哪些方面本次没有数据」 */}
             <ProactiveStatusPanel status={proactiveStatus} variant={variant} />
             <div className="flex flex-col items-center justify-center py-8 text-center">
-              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary-50 to-indigo-50">
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-primary-50 to-accent-50">
                 <Newspaper className="h-5 w-5 text-primary-400" />
               </div>
               <p className="text-sm font-medium text-neutral-600">今日简报尚未生成</p>

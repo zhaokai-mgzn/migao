@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Plus } from 'lucide-react'
-import { Button, Modal, Loading } from '@/components/ui'
+import { Button, Modal, Loading, PageHeader, PageCard, EmptyState } from '@/components/ui'
 import CategoryTree from '@/components/products/CategoryTree'
 import CategoryDialog from '@/components/products/CategoryDialog'
 import { categoryApi } from '@/lib/api'
@@ -95,29 +95,37 @@ export default function CategoriesPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-6 space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-bold text-neutral-900">分类管理</h1>
-          <p className="text-sm text-neutral-500 mt-1">管理商品分类：新增、编辑、删除和排序</p>
-        </div>
-        <Button onClick={handleAdd}>
-          <Plus className="w-4 h-4 mr-1.5" />
-          添加分类
-        </Button>
-      </div>
+      <PageHeader
+        title="分类管理"
+        subtitle="管理商品分类：新增、编辑、删除和排序"
+        actions={
+          <Button onClick={handleAdd}>
+            <Plus className="w-4 h-4 mr-1.5" />
+            添加分类
+          </Button>
+        }
+      />
 
       {/* Category list — 全宽，扁平结构 */}
-      <div className="bg-white rounded-lg border border-neutral-200 p-5">
+      <PageCard>
         {loading ? (
           <div className="py-12">
             <Loading text="加载中..." />
           </div>
         ) : categories.length === 0 ? (
-          <div className="py-12 text-center text-sm text-neutral-500">
-            管理商品分类：新增、编辑、删除和排序
-          </div>
+          /* 空态（issue #7007，用户裁定「文案精简美化」）：**文案不与副标题逐字重复** ——
+             原正文那句「管理商品分类：新增、编辑、删除和排序」与上方 `PageHeader` 的 subtitle
+             **一字不差**（§31 P2 信息不重复），故换成本页**独有**的「第一步做什么」。
+             ⚠️ 有意**不复用**按钮名「添加分类」（页头已有同名按钮 ⇒ 两处同名会让
+             `getByText` 歧义、读屏也会念两遍）。 */
+          <EmptyState
+            testId="categories-empty"
+            icon="package"
+            title="还没有商品分类"
+            description="先建一个分类，再往里加商品。建好后可以上下调顺序、随时改名或删除。"
+          />
         ) : (
           <CategoryTree
             categories={categories}
@@ -127,7 +135,7 @@ export default function CategoriesPage() {
             onMoveDown={handleMoveDown}
           />
         )}
-      </div>
+      </PageCard>
 
       {/* Add/Edit dialog */}
       <CategoryDialog

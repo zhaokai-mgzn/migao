@@ -191,7 +191,7 @@ export default function NotificationBell() {
                   className={cn(
                     'w-full text-left px-4 py-3 border-b border-neutral-100 last:border-b-0',
                     'hover:bg-neutral-50 transition-colors',
-                    notification.status !== 'read' && 'bg-blue-50/30'
+                    notification.status !== 'read' && 'bg-primary-50/30'
                   )}
                 >
                   <div className="flex gap-3">

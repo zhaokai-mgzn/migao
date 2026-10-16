@@ -1,0 +1,17 @@
+登录：注入 cookie 2 条（手机号 13800138000）
+落点自证：/dashboard OK
+02-dashboard         /dashboard             {"h1":"经营看板","h1cls":"text-xl font-semibold text-neutral-900","cards":17,"bodyText":1161}
+08-products-list     /products              {"h1":"商品管理","h1cls":"text-xl font-semibold text-neutral-900","cards":1,"bodyText":999}
+09-customers         /customers             {"h1":"客户管理","h1cls":"text-xl font-semibold text-neutral-900","cards":1,"bodyText":1511}
+11-categories        /categories            {"h1":"分类管理","h1cls":"text-xl font-bold text-neutral-900","cards":1,"bodyText":312}
+12-employees         /employees             {"h1":"员工管理","h1cls":"text-xl font-semibold text-neutral-900","cards":1,"bodyText":294}
+13-roles             /roles                 {"h1":"岗位权限","h1cls":"text-xl font-semibold text-neutral-900","cards":1,"bodyText":522}
+14-orders-list       /orders                {"h1":"订单列表","h1cls":"text-xl font-semibold text-neutral-900","cards":1,"bodyText":4012}
+16-after-sales       /after-sales           {"h1":"售后管理","h1cls":"text-xl font-semibold text-neutral-900","cards":1,"bodyText":1332}
+18-finance           /finance               {"h1":"财务对账","h1cls":"text-xl font-semibold text-neutral-900","cards":1,"bodyText":1954}
+20-shipments         /shipments             {"h1":"发货单","h1cls":"text-xl font-semibold text-neutral-900 flex items-center gap-2","cards":1,"bodyText":656}
+21-inbound-orders    /inbound-orders        {"h1":"入库单","h1cls":"text-xl font-semibold text-neutral-900 flex items-center gap-2","cards":1,"bodyText":613}
+22-stock-ledger      /stock-ledger          {"h1":"库存明细","h1cls":"text-xl font-semibold text-neutral-900 flex items-center gap-2","cards":1,"bodyText":1963}
+24-notifications     /notifications         {"h1":"通知中心","h1cls":"text-xl font-semibold text-neutral-900","cards":1,"bodyText":121}
+25-settings          /settings              {"h1":"企业基础设置","h1cls":"text-xl font-semibold text-neutral-900","cards":1,"bodyText":2018}
+27-briefing          /briefing              {"h1":"每日经营简报","h1cls":"text-xl font-semibold text-neutral-900","cards":2,"bodyText":199}

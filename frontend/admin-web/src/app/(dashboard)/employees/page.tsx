@@ -7,7 +7,7 @@ import { toastRequestError } from '@/lib/api-error'
 import { employeeApi } from '@/lib/api'
 import request from '@/lib/request'
 import { usePermission } from '@/lib/permission'
-import { Button, Input, Select, Modal, Table, Pagination, Badge } from '@/components/ui'
+import { Button, Input, Select, Modal, Table, Pagination, Badge, PageHeader, PageCard } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
 import type { Employee, EmployeeStatus, EmployeeFormData } from '@/types'
 import { TreeCheckbox, type TreeNode } from '@/components/ui/TreeCheckbox'
@@ -432,14 +432,12 @@ export default function EmployeesPage() {
   ]
 
   return (
-    <div className="p-6">
+    <div className="p-6 space-y-4">
       {/* 页面标题 */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-semibold text-neutral-900">员工管理</h1>
-          <p className="text-sm text-neutral-500 mt-1">管理系统用户和员工账号</p>
-        </div>
-        {activeTab === 'employee' && (canWrite ? (
+      <PageHeader
+        title="员工管理"
+        subtitle="管理系统用户和员工账号"
+        actions={activeTab === 'employee' && (canWrite ? (
           <Button onClick={handleAdd}>
             <Plus className="w-4 h-4 mr-1.5" />
             新增员工
@@ -447,10 +445,11 @@ export default function EmployeesPage() {
         ) : (
           <span className="text-xs text-neutral-400">仅拥有 employee:create 权限的员工可管理账号</span>
         ))}
-      </div>
+      />
 
       {/* 两个面分开（issue #4869）：工人不是员工 —— 各有各的列表与入口 */}
-      <div className="flex items-center gap-1 mb-4 border-b border-neutral-200">
+      <PageCard padded={false}>
+      <div className="flex items-center gap-1 border-b border-neutral-200 px-2">
         <button
           type="button"
           onClick={() => setActiveTab('employee')}
@@ -474,13 +473,16 @@ export default function EmployeesPage() {
           工人档案
         </button>
       </div>
+      </PageCard>
 
       {activeTab === 'worker' ? (
-        <WorkerProfilesPanel canWrite={canWrite} />
+        <PageCard>
+          <WorkerProfilesPanel canWrite={canWrite} />
+        </PageCard>
       ) : (
-      <>
+      <div className="space-y-4">
       {/* 搜索筛选栏 */}
-      <div className="bg-neutral-50 p-4 rounded-lg mb-4" data-testid="search-area">
+      <PageCard testId="search-area">
         <div className="flex flex-wrap items-end gap-4">
           <div className="min-w-[200px]">
             <Input
@@ -513,7 +515,7 @@ export default function EmployeesPage() {
             </Button>
           </div>
         </div>
-      </div>
+      </PageCard>
 
       {/* 🔴 issue #6714：读失败 ⇒ 常驻失败面 + 真重发（与表格的「暂无数据」**互斥**）。
           修前失败只 toast（≈4s 消失），屏上留着「暂无数据」+「共 0 条」两处事实性断言。 */}
@@ -537,7 +539,7 @@ export default function EmployeesPage() {
       )}
 
       {/* 表格 */}
-      <div data-testid="employees-empty" className="bg-white rounded-lg border border-neutral-200">
+      <PageCard testId="employees-empty">
         <Table<Employee>
           columns={columns}
           dataSource={employees}
@@ -557,7 +559,7 @@ export default function EmployeesPage() {
           onChange={setCurrent}
           onPageSizeChange={(size) => { setPageSize(size); setCurrent(1) }}
         />
-      </div>
+      </PageCard>
 
       {/* 新增/编辑对话框 */}
       <Modal
@@ -704,7 +706,7 @@ export default function EmployeesPage() {
           />
         </div>
       </Modal>
-      </>
+      </div>
       )}
     </div>
   )

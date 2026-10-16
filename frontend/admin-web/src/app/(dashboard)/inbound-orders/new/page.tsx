@@ -24,7 +24,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, FileText, Layers, Package, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { inboundOrderApi, productApi } from '@/lib/api'
-import { Button, Card, Input, Select } from '@/components/ui'
+import { Button, PageCard, PageHeader, Input, Select } from '@/components/ui'
 import type { Product, ProductSku } from '@/types'
 import { cn } from '@/lib/utils'
 import { checkStockQuantity, formatStockQuantity } from '@/lib/stock-quantity'
@@ -243,7 +243,7 @@ export default function NewInboundOrderPage() {
   return (
     <div className="p-6 max-w-[1280px] mx-auto pb-28">
       {/* 页头：返回 + 标题（版式同 /orders/new、/products/new） */}
-      <div className="flex items-center gap-3 mb-6">
+      <div className="mb-6 flex items-center gap-3">
         <button
           type="button"
           onClick={() => router.push('/inbound-orders')}
@@ -252,15 +252,16 @@ export default function NewInboundOrderPage() {
         >
           <ArrowLeft className="w-5 h-5 text-neutral-600" />
         </button>
-        <div className="flex-1">
-          <h1 className="text-xl font-semibold text-neutral-900">新增入库单</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">登记一张新的到货入库单 —— <strong>保存草稿不动库存</strong>，过账时才生成批次号并加库存</p>
-        </div>
+        <PageHeader
+          className="flex-1"
+          title="新增入库单"
+          subtitle={<>登记一张新的到货入库单 —— <strong>保存草稿不动库存</strong>，过账时才生成批次号并加库存</>}
+        />
       </div>
 
       <div className="space-y-6">
         {/* ============= 单据信息 ============= */}
-        <Card>
+        <PageCard padded={false}>
           <div className="p-6">
             <SectionTitle icon={<FileText className="w-4 h-4" />} title="单据信息" />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
@@ -329,10 +330,10 @@ export default function NewInboundOrderPage() {
               库存与成本也在过账时一次性写入（可核对后再过账）。
             </p>
           </div>
-        </Card>
+        </PageCard>
 
         {/* ============= 入库明细 ============= */}
-        <Card>
+        <PageCard padded={false}>
           <div className="p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <SectionTitle icon={<Package className="w-4 h-4" />} title="入库明细" />
@@ -559,7 +560,7 @@ export default function NewInboundOrderPage() {
               </p>
             )}
           </div>
-        </Card>
+        </PageCard>
       </div>
 
       {/* 底部吸底汇总条（同 /orders/new 的 fee-summary-bar：常态只占一行） */}

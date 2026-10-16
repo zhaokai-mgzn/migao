@@ -41,7 +41,10 @@ vi.mock('@/lib/api', () => ({
 }))
 
 // Mock lucide-react icons
-vi.mock('lucide-react', () => ({
+vi.mock('lucide-react', async (importOriginal) => ({
+  // issue #7007：整模块 mock 换成 **真实模块 + 局部覆盖**（helper 与 issue #6664 同源）。
+  // 理由同 `change-password.test.tsx`；下面几项是本文件断言过 testid 的，原样覆盖。
+  ...(await import('../helpers/lucide-mock')).lucideMock(await importOriginal()),
   Loader2: (props: any) => <span data-testid="icon-loader" {...props} />,
   ShieldCheck: (props: any) => <span data-testid="icon-shield" {...props} />,
   Smartphone: (props: any) => <span data-testid="icon-smartphone" {...props} />,

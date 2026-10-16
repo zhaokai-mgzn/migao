@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { ClipboardList, DollarSign, TrendingUp, Package, Settings, ArrowRight, RefreshCw, ArrowUp, ArrowDown, AlertTriangle, Headphones } from 'lucide-react'
 import { dashboardApi } from '@/lib/api'
+import { PageHeader } from '@/components/ui'
 // issue #5792：可插拔指标卡的**注册表**（能力位判定收敛在 lib 里，组件不散落 if）
 import { visiblePluggableCards } from '@/lib/dashboard-cards'
 import { useAuthStore } from '@/store/auth'
@@ -531,17 +532,20 @@ export default function DashboardPage() {
     <div className="p-5 sm:p-6">
       {/* 顶部 */}
       <div className="mb-5 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-neutral-900">经营看板</h1>
-          <p className="mt-0.5 text-xs text-neutral-400">数据更新时间：{updateTime}</p>
-        </div>
-        <button
-          onClick={fetchData}
-          className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-500 shadow-card transition-colors hover:border-primary-200 hover:text-primary-600"
-        >
-          <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />
-          刷新
-        </button>
+        <PageHeader
+          className="w-full"
+          title="经营看板"
+          subtitle={`数据更新时间：${updateTime}`}
+          actions={
+            <button
+              onClick={fetchData}
+              className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-500 shadow-card transition-colors hover:border-primary-200 hover:text-primary-600"
+            >
+              <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />
+              刷新
+            </button>
+          }
+        />
       </div>
 
       {/* 🔴 失败态显式告警（issue #5792 ④ + #6715）：与空态**可区分** —— 空态说「暂无…」，
@@ -729,7 +733,7 @@ export default function DashboardPage() {
             ) : (
               <div className="h-full flex flex-col items-center justify-center">
                 <div className="flex flex-col items-center">
-                  <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-50 to-indigo-50">
+                  <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-50 to-accent-50">
                     <TrendingUp className="w-6 h-6 text-primary-400" />
                   </div>
                   <p className="text-sm font-medium text-neutral-500">暂无订单数据</p>

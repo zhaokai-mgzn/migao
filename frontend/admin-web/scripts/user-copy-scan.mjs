@@ -450,6 +450,34 @@ export function pageSubtitles(root) {
       return parts.join(' ').replace(/\s+/g, ' ').trim()
     }
     const visit = (node) => {
+      // 🔴 issue #7007：**页面头有了共享原语**（`src/components/ui/PageHeader.tsx`）⇒ 副标题不再以
+      // 「`<h1>` 的兄弟 `<p>`」的形态出现，而是 `<PageHeader subtitle={…} />` 的 **prop**。
+      // 只认前一种形态的后果是**结构性的**：页面一迁移到原语，该页的副标题就**退出普查面**
+      //（实测：本仓 `src/app/(dashboard)` 的页面头计数由此跌到 8，而基线是 13 ⇒ 下面的
+      // 「普查面非空」判据当场红）。真危险的不是那个数字，而是 **S1~S4 四条副标题规则不再扫到
+      // 这些页的副标题** —— 判据会**静默缩水**（绿着，但没在扫）。
+      // ⇒ 两种形态**都收**（prop 优先于兄弟 `<p>`，避免同一页重复计数）。
+      if (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) {
+        const tag = node.tagName.getText(sf)
+        if (tag === 'PageHeader') {
+          const attrs = node.attributes.properties
+          const attrOf = (name) =>
+            attrs.find((a) => ts.isJsxAttribute(a) && a.name.getText(sf) === name)
+          const subtitleAttr = attrOf('subtitle')
+          if (subtitleAttr && subtitleAttr.initializer) {
+            const text = texts(subtitleAttr.initializer)
+            if (text) {
+              const titleAttr = attrOf('title')
+              out.push({
+                file: rel,
+                line: lineOf(subtitleAttr),
+                title: titleAttr && titleAttr.initializer ? texts(titleAttr.initializer) : '',
+                text,
+              })
+            }
+          }
+        }
+      }
       if (ts.isJsxElement(node)) {
         const kids = node.children
         for (let i = 0; i < kids.length; i++) {
@@ -501,7 +529,10 @@ export const EXEMPT = [
   // placeholder 由 395 推到 **441**，本条同步改号（纯位置变更，命中的文案一字未动）。
   // 🔴 issue #6770：本页权限码从可见面撤下 + `码 → 面` 表改「首见优先」⇒ placeholder 由 441 再推到
   // **453**，本条同步改号（同样只是位置变更；本条豁免的文案与判据一字未动）。
-  'src/app/(dashboard)/roles/page.tsx:453',
+  // 🔴 issue #7007：本页页头由手写 `<h1>` 换成共享原语 `PageHeader`（版式统一）⇒ 行号由
+  // 453 推到 **455**，本条同步改号。**豁免的文案与判据一字未动** —— 这正是台账按
+  // `文件:行` 键控的用意：位置一漂就红，逼你回来改准，而不是留一条指向别处的静默豁免。
+  'src/app/(dashboard)/roles/page.tsx:455',
 ]
 
 /**

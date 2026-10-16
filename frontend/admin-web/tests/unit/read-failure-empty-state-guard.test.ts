@@ -190,7 +190,18 @@ describe('类级守卫：读面失败不得与空态同屏（issue #6713 + #6714
         expect(source, `${surf.file} 缺常驻失败锚`).toContain(`data-testid="${surf.anchor}"`)
         expect(source, `${surf.file} 缺重试出口`).toContain(`data-testid="${retryAnchor}"`)
       }
-      expect(source, `${surf.file} 缺空态锚`).toContain(`data-testid="${surf.emptyTestId}"`)
+      // 🔴 issue #7007：空态锚**同样**可以来自共享原语（`PageCard` / `EmptyState` 的 `testId` prop，
+      // `data-testid` 由组件内部渲染）—— 与上面失败锚**同一口径**。
+      // 此前这一行只认 `data-testid` 字面量 ⇒ 页面把空态收敛到 `PageCard testId=…` 之后，
+      // 判据报「缺空态锚」，而 DOM 上那个锚**明明在**。判据该钉的是**锚点到没到 DOM**，
+      // 不是「作者用哪种写法写出来」；两种写法都验，机制不同、约束相同。
+      const emptyAnchorPresent =
+        source.includes(`testId="${surf.emptyTestId}"`) ||
+        source.includes(`data-testid="${surf.emptyTestId}"`)
+      expect(
+        emptyAnchorPresent,
+        `${surf.file} 缺空态锚（两种形态都不认：\`testId="${surf.emptyTestId}"\` / \`data-testid="${surf.emptyTestId}"\`）`,
+      ).toBe(true)
       expect(source, `${surf.file} 缺失败读数 key`).toContain(surf.failureKey)
       // 失败面必须是 role=alert（读屏器会播报，不是视觉装饰）——共享件 `ListLoadError` 自带
       expect(

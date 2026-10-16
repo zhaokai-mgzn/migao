@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ClipboardList, Layers, RefreshCw, Search, X } from 'lucide-react'
 import { InlineMarkdown } from '@/lib/inline-markdown'
-import { Button } from '@/components/ui'
+import { Button, PageCard, PageHeader } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
 import { batchStockApi, productApi, stockLedgerApi } from '@/lib/api'
 import { formatCost, formatDelta, formatQty, formatTime, reasonLabel } from '@/lib/stock-ledger'
@@ -240,27 +240,29 @@ export default function StockLedgerPage() {
 
   return (
     <div data-testid="stock-ledger-page" className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-neutral-900 flex items-center gap-2">
+      <PageHeader
+        title={
+          <span className="flex items-center gap-2">
             <ClipboardList className="w-5 h-5 text-primary-600" />
             库存明细
-          </h1>
-          <p className="mt-1 text-sm text-neutral-500">
-            <InlineMarkdown
-              text={
-                view === 'flow'
-                  ? '每次库存变动都记在这里：**什么时候、因为哪张单、从多少变成多少** —— 想查库存为什么变，按时间往下看。'
-                  : '按商品查每一卷布还剩多少米：**由入库米数减去已消耗算出**，不另立库存数。'
-              }
-            />
-          </p>
-        </div>
-        <Button variant="secondary" onClick={refresh} aria-label="刷新库存明细">
-          <RefreshCw className="w-4 h-4 mr-1" />
-          刷新
-        </Button>
-      </div>
+          </span>
+        }
+        subtitle={
+          <InlineMarkdown
+            text={
+              view === 'flow'
+                ? '每次库存变动都记在这里：**什么时候、因为哪张单、从多少变成多少** —— 想查库存为什么变，按时间往下看。'
+                : '按商品查每一卷布还剩多少米：**由入库米数减去已消耗算出**，不另立库存数。'
+            }
+          />
+        }
+        actions={
+          <Button variant="secondary" onClick={refresh} aria-label="刷新库存明细">
+            <RefreshCw className="w-4 h-4 mr-1" />
+            刷新
+          </Button>
+        }
+      />
 
       {/* 视图切换：两个读面回答不同问题（流水 × 批次），标签写清口径，别让人猜 */}
       <div className="flex gap-2" role="tablist" aria-label="库存明细视图">

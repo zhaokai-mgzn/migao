@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { AlertTriangle, Plus, RotateCcw, Search, Calendar } from 'lucide-react'
-import { Button, Modal } from '@/components/ui'
+import { Button, Modal, PageHeader, PageCard } from '@/components/ui'
 import ProductTable, { ProductSortField, ProductSortOrder } from '@/components/products/ProductTable'
 import { productApi } from '@/lib/api'
 import { toast } from 'sonner'
@@ -462,12 +462,10 @@ export default function ProductsPage() {
     <div className="p-6 space-y-4">
       {/* 页面标题（#5877：与侧边栏菜单名 / 顶栏面包屑同名 —— 此前一页三名：侧边栏+顶栏「商品管理」、
           正文「商品列表」；用户 2026-10-01 裁定「商品管理页面本体也要改」） */}
-      <div>
-        <h1 className="text-xl font-semibold text-neutral-900">商品管理</h1>
-      </div>
+      <PageHeader title="商品管理" />
 
       {/* 搜索区 */}
-      <div className="bg-white rounded-lg border border-neutral-200 p-5" data-testid="search-area">
+      <PageCard testId="search-area">
         {/* 第一行：商品标题 / 商品货号
             🔴 #5877（用户 2026-10-01 追加裁定）：**「商品ID」筛选整条移除** —— 不是隐藏。
             · 连带清理：state / `syncUrl.merged` / `handleExport` 入参 / `loadProducts` 请求参数 /
@@ -579,7 +577,7 @@ export default function ProductsPage() {
             </Button>
           </div>
         </div>
-      </div>
+      </PageCard>
 
       {/* 工具栏 */}
       <div className="flex items-center justify-between">
@@ -652,7 +650,7 @@ export default function ProductsPage() {
       )}
 
       {/* 表格 */}
-      <div data-testid="products-empty">
+      <PageCard padded={false} testId="products-empty">
       <ProductTable
         products={products}
         loading={loading}
@@ -678,7 +676,7 @@ export default function ProductsPage() {
            本单**页面级**覆盖：失败时空串，读成功才回落到默认「暂无数据」。 */
         emptyText={loadFailed ? '' : '暂无数据'}
       />
-      </div>
+      </PageCard>
 
       {/* 确认弹窗（批量 / 单条共用） */}
       <Modal

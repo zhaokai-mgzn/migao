@@ -72,7 +72,7 @@ const statusTimelineIcon: Record<AfterSalesStatus, typeof CheckCircle2> = {
 // 时间线颜色
 const statusTimelineColor: Record<AfterSalesStatus, string> = {
   pending: 'text-amber-500 bg-amber-50 border-amber-200',
-  processing: 'text-blue-500 bg-blue-50 border-blue-200',
+  processing: 'text-primary-500 bg-primary-50 border-primary-200',
   resolved: 'text-green-500 bg-green-50 border-green-200',
   rejected: 'text-red-500 bg-red-50 border-red-200',
   closed: 'text-neutral-500 bg-neutral-50 border-neutral-200',
