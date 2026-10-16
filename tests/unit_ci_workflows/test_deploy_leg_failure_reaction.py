@@ -1610,3 +1610,44 @@ def test_fail_closed_guard_is_load_bearing_in_both_directions():
     problems = audit.static_problems(broken, allowed)
     assert problems, "摘掉 fail-closed 闸门之后判据**没红** ⇒ 那条闸门没有判据承重（装饰）"
     assert any("空取值" in p for p in problems), f"判红未点到「空取值出口」：{problems}"
+
+
+def _audit_step_run() -> str:
+    """真 workflow 里那条元守卫步骤的 `run` 正文（**执行式**读法：把 `${{ }}` 换成字面量再喂 bash）。"""
+    doc = yaml.safe_load(PR_CHECK.read_text(encoding="utf-8")) or {}
+    for job in (doc.get("jobs") or {}).values():
+        for step in job.get("steps") or []:
+            if "deploy_leg_close_claim_audit.py" in str(step.get("run", "")):
+                return str(step["run"])
+    raise AssertionError("反空跑锚点：pr-check.yml 里找不到元守卫步骤（判据已过期）")
+
+
+@pytest.mark.parametrize(("audit_rc", "want_rc"), [(3, 0), (1, 1), (0, 0)])
+def test_meta_guard_step_does_not_red_unrelated_prs_on_rc3(tmp_path, audit_rc, want_rc):
+    """判据 3（**执行式**接线读数）：`rc=3`（判定不了，**环境态**）⇒ 本步 `exit 0`（不卡无关 PR）；
+    `rc=1`（真有单据宣称已关却未关）⇒ **判红**（`exit 1`）；`rc=0` ⇒ 绿。
+
+    ⚠️ 这条判的是**真 workflow 的正文**（把 `python3 scripts/…` 换成桩），不是复述意图：
+    桩按 `audit_rc` 表态 ⇒ 读数就是 CI 上会发生的退出码。
+    """
+    stub = tmp_path / "audit-stub.py"
+    stub.write_text(f"import sys\nprint('桩：audit_rc={audit_rc}')\nsys.exit({audit_rc})\n", encoding="utf-8")
+    body = _audit_step_run().replace("python3 scripts/deploy_leg_close_claim_audit.py check-claims",
+                                     f"{sys.executable} {stub}")
+    # `${{ … }}` 一律不进 run 正文（本仓有执行式守卫）—— 这里给的是**离线替身**环境：
+    # 没有凭据 ⇒ 正是「无 token 环境」那条读数。
+    env = {k: v for k, v in os.environ.items() if k not in ("GITHUB_TOKEN", "GH_TOKEN")}
+    # ⚠️ 强制 UTF-8 解码（正文含中文）：默认跟随 locale ⇒ 非 UTF-8 locale 下 `text=True` 会在
+    #    **解码**阶段抛 `UnicodeDecodeError`（本机实测踩过：报错与断言无关、极易误归因）。
+    proc = subprocess.run([BASH, "-c", body], capture_output=True, text=True, timeout=60, env=env,
+                          encoding="utf-8", errors="replace")
+    assert proc.returncode == want_rc, (
+        f"audit_rc={audit_rc} ⇒ 本步应 rc={want_rc}，实际 rc={proc.returncode}\n"
+        f"（rc=3 = 判定不了 = 环境态 ⇒ **不许**卡无关 PR；rc=1 = 真有违规 ⇒ 必须判红）\n"
+        f"{proc.stdout}{proc.stderr}"
+    )
+    out = proc.stdout + proc.stderr
+    if audit_rc == 3:
+        assert "判定不了" in out, f"rc=3 必须**出声**（不许静默判绿）→ {out!r}"
+    if audit_rc == 1:
+        assert "::error::" in out, f"rc=1 必须打 `::error::`（判红要有读数面）→ {out!r}"
