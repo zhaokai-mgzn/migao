@@ -16,6 +16,7 @@
       "processing:update",
       "production:view",
       "production:execute",
+      "production:inspect",
       "inbound:view",
       "inbound:create",
       "knowledge:manage",
@@ -50,6 +51,7 @@
       "processing:update",
       "production:view",
       "production:execute",
+      "production:inspect",
       "inbound:view",
       "inbound:create",
       "knowledge:manage",
@@ -84,6 +86,7 @@
       "processing:update": "加工单操作",
       "production:view": "生产查看",
       "production:execute": "生产执行",
+      "production:inspect": "质检录入",
       "inbound:view": "入库单查看",
       "inbound:create": "入库单操作",
       "knowledge:manage": "知识库管理",
@@ -142,6 +145,10 @@
         "knowledge:manage",
         "knowledge:view",
         "product:list"
+      ],
+      "inspector": [
+        "production:inspect",
+        "production:view"
       ],
       "operator": [
         "after_sales:view",
@@ -227,6 +234,10 @@
         "knowledge:manage",
         "knowledge:view",
         "product:list"
+      ],
+      "inspector": [
+        "production:inspect",
+        "production:view"
       ],
       "operator": [
         "after_sales:view",

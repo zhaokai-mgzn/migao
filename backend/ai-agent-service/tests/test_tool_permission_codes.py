@@ -121,6 +121,9 @@ PERMISSION_CATALOG = frozenset({
     "production:view",
     # 生产执行**写**码（issue #5699 的 I4）：把守建加工单/报工/打印/发货四个真写端点
     "production:execute",
+    # 质检录入**写**码（issue #5652）：把守成品帘质检判定录入，**只**授给 `inspector`。
+    # 工具层无工具声明它（纯镜像口径，与新岗位同批登记）。
+    "production:inspect",
     "inbound:view",
     "inbound:create",
     "knowledge:manage",
@@ -230,6 +233,12 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     # ⇒ 工具层镜像同批补读 + 写码（与 `rbac/manifest.json` 的 `roles.seed` **逐值相等**，
     # 判据 = 本文件的 `test_seeded_role_defaults_match_the_mirror`）。
     "knowledge_editor": frozenset({"dashboard:view", "product:list", "knowledge:view", "knowledge:manage"}),
+    # issue #5652：新岗位**质检员 `inspector`**（第 8 个种子岗位）。与 `rbac/manifest.json` 的
+    # `roles.seed.inspector` **逐值相等**（判据 = 本文件的 `test_seeded_role_defaults_match_the_mirror`）。
+    # 🔴 写码是**新码 `production:inspect`**（不是 `production:execute`）：后者由客服/运营/销售/财务持有
+    # ⇒ 质检录入必须由独立码把守，否则「录入者 = 独立质检员」的裁定失效。
+    # 工具层**零影响**：`TOOL_PERMISSION_CODES` 里没有任何工具声明 `production:inspect`（本单可复算）。
+    "inspector": frozenset({"production:inspect", "production:view"}),
     # 以下角色在 admin-api 权限目录里没有任何码（C 端角色 / 幽灵角色）
     "customer": frozenset(),
     "agent": frozenset(),
@@ -351,11 +360,11 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     # ⇒ 放行集**不变**（没有谁被收回，也没有新岗位进场）。
     "category_manage": frozenset({"operator", "product_manager"}),
     # issue #5247 进场；issue #5291：改挂 `production:view` 后持有角色不变（目录推导）。
-    "craft_calc_config_query": frozenset({"operator", "product_manager"}),
+    "craft_calc_config_query": frozenset({"operator", "product_manager", "inspector"}),
     # issue #4923 进场：声明 `production:view` ⇒ 目录推导的持有角色 = operator + product_manager
     # （与 `craft_calc_config_query` / `operation_catalog_query` 同码同放行集）。
     # ⚠️ C 端恒不可达：C 端 JWT 无权限码（`UserIdentity.permissions` 默认空）⇒ 元元不做权限码授权。
-    "craft_config_query": frozenset({"operator", "product_manager"}),
+    "craft_config_query": frozenset({"operator", "product_manager", "inspector"}),
     # issue #5988（2026-10-02 人类裁定「应允许」）：财务补 `customer:view` ⇒
     # 它**首次**满足本工具的码门禁 ⇒ 放行集必须加上它（否则「有码却被角色层拒」= 假拒绝）。
     "customer_manage": frozenset({"customer_service", "finance", "operator", "sales"}),
@@ -381,18 +390,18 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "order_manage": frozenset({"operator"}),
     "order_query": frozenset({"customer_service", "finance", "operator", "sales"}),
     # issue #5247 进场；issue #5291：改挂 `production:view` 后持有角色不变（目录推导）。
-    "operation_catalog_query": frozenset({"operator", "product_manager"}),
+    "operation_catalog_query": frozenset({"operator", "product_manager", "inspector"}),
     # issue #5246 改判：计件/报工/加工单读面 = 生产域读码；issue #5291 起即 `production:view`
     # ⇒ 运营 + 商品主管（两岗同批回填，放行集与改码前逐字相同）。
-    "piecework_query": frozenset({"operator", "product_manager"}),
+    "piecework_query": frozenset({"operator", "product_manager", "inspector"}),
     "processing_item_manage": frozenset({"operator", "product_manager"}),
     # issue #5291：加工项 / 加工单 / 生产进度 / 报工明细读面改挂 `production:view` ⇒ 持有角色仍为
     # operator + product_manager（判据 `test_reviewed_mapping_and_expected_roles_agree` 按目录复算）。
-    "processing_item_query": frozenset({"operator", "product_manager"}),
+    "processing_item_query": frozenset({"operator", "product_manager", "inspector"}),
     "processing_order_generate": frozenset({"operator"}),
-    "processing_order_query": frozenset({"operator", "product_manager"}),
+    "processing_order_query": frozenset({"operator", "product_manager", "inspector"}),
     # issue #5247 进场；issue #5291：改挂 `production:view` 后持有角色不变（目录推导）。
-    "processing_order_set_query": frozenset({"operator", "product_manager"}),
+    "processing_order_set_query": frozenset({"operator", "product_manager", "inspector"}),
     "processing_order_update": frozenset({"operator"}),
     # issue #5314：与 `product_update` 同码 ⇒ 放行集**逐字相同**（目录推导，不额外授予）
     "product_batch_update": frozenset({"operator", "product_manager"}),
@@ -400,8 +409,8 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "product_manage": frozenset({"operator", "product_manager"}),
     "product_search": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
     "product_update": frozenset({"operator", "product_manager"}),
-    "production_progress_query": frozenset({"operator", "product_manager"}),
-    "production_worklog_query": frozenset({"operator", "product_manager"}),
+    "production_progress_query": frozenset({"operator", "product_manager", "inspector"}),
+    "production_worklog_query": frozenset({"operator", "product_manager", "inspector"}),
     # issue #5291：读码 `system:view` 与写码 `system:manage` 一样**不授予任何非 admin 岗位**
     # ⇒ 放行集仍为空（admin 恒为 `*`；本单没有放宽）。
     "role_manage": frozenset(),
@@ -935,6 +944,8 @@ class TestRoleMirrorMatchesTheAdminApiSource:
             # issue #5699 的 P6（出口 i：正式定义）：两个历史岗位码本单进了种子矩阵
             # ⇒ 镜像对它们改取 **seed 口径**（此前取回退口径 —— 两处当时逐值相等，故值不变）。
             "product_manager", "knowledge_editor",
+            # issue #5652：质检员（第 8 个种子岗位；与清单 `roles.seed` 逐值相等）
+            "inspector",
         }, (
             f"admin-api 默认岗位集合变了：{sorted(seeded)} —— 镜像必须同步评审"
         )

@@ -7,18 +7,18 @@
     {
       "face": "role-defaults-seed",
       "file": "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java",
-      "hits": 8,
+      "hits": 9,
       "kind": "declaration",
       "derived_from": "manifest.roles.seed",
-      "note": "A1 新租户种子（RegistrationService.attachDefaultPermissions）"
+      "note": "A1 新租户种子（RegistrationService.attachDefaultPermissions）。issue #5652：+第 8 个岗位 `inspector`（质检员，码 production:view / production:execute）⇒ 命中数 8→9（涨跌都要在同 PR 更新本表）"
     },
     {
       "face": "role-defaults-fallback",
       "file": "backend/admin-api/src/main/java/com/migao/admin/service/RoleService.java",
-      "hits": 7,
+      "hits": 8,
       "kind": "declaration",
       "derived_from": "manifest.roles.fallback",
-      "note": "A2 运行时回退（RoleService.getPermissionCodesForRole 的 switch）"
+      "note": "A2 运行时回退（RoleService.getPermissionCodesForRole 的 switch）。issue #5652：+`case \"inspector\"` ⇒ 命中数 7→8（涨跌都要在同 PR 更新本表）"
     },
     {
       "face": "role-defaults-fallback",
@@ -307,6 +307,14 @@
       "kind": "declaration",
       "derived_from": "manifest.codes.*",
       "note": "I4：写码 production:execute 的目录行（名称/资源/动作/描述逐字取清单同码条目）"
+    },
+    {
+      "face": "sql-role-grants",
+      "file": "backend/admin-api/src/main/resources/db/migration/V158__create_inspector_role.sql",
+      "hits": 1,
+      "kind": "declaration",
+      "derived_from": "manifest.roles.*",
+      "note": "issue #5652：由 `rbac/generate_migration.py` 渲染的新岗位迁移 —— 质检员 `inspector` 建 roles 行 + 授权 production:view / production:execute（1 条 role_permissions 语句）。🔴 与 V136/V137 的**有意差异**：它**尚未发布** ⇒ 渲染输入 = **活清单**（不是冻结快照）⇒ 清单前进即重渲染、手改产物即判红（`test_rbac_migration_convergence.py`）"
     }
   ]
 }

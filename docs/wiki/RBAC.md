@@ -13,11 +13,13 @@
 | 运营 | operator | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `order:list`, `order:detail`, `order:refund`, `product:list`, `product:create`, `product:category`, `processing:manage`, `processing:view`, `processing:update`, `inbound:view`, `inbound:create`, `customer:view`, `finance:view`, `agent:session`, `employee:list`, **`after_sales:view`**, **`knowledge:view`**, **`order:update`**, **`order:create`**, **`customer:create`**, **`finance:create`**, **`agent:session:manage`**（后七个码 issue #5246 新增）, **`product:category:view`**, **`production:view`**（三个域**读**码中的两个，issue #5291 新增 —— operator 原持 `product:category` / `processing:manage`，拆码时**同批回填读码** ⇒ 菜单与 Agent 面**零变化**；第三个 `system:view` **不给**：岗位权限归 admin 专属） |
 | 销售 | sales | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `product:list`, `order:list`, `order:detail`, `customer:view`, `processing:view` |
 | 财务 | finance | 岗位默认权限：role_permissions 预置 —— `dashboard:view`, `order:list`, `order:detail`, `finance:view`, `processing:view`, `inbound:view`, **`finance:create`**（登记收支写码，issue #5246 第二批） |
+| 质检员 | inspector | 岗位默认权限：role_permissions 预置 —— `production:inspect`, `production:view`（issue #5652：成品帘质检录入的**独立**岗位；`production:inspect` 是**新写码**，**只**授给本岗位 —— 复用 `production:execute` 会让客服/运营/销售/财务一并拿到质检录入权，与「独立质检员」的裁定冲突。存量租户由 `V158__create_inspector_role.sql` 建行授权） |
 | 自定义岗位 | 岗位权限页创建 | **岗位权限页勾选的权限码落库到 `role_permissions`**（V16），作为该岗位默认权限 |
 
-> 新租户注册初始化**七岗**种子（管理员/客服/运营/销售/财务 + 商品管理员/知识编辑），逐值为：
-> `admin` / `customer_service` / `operator` / `sales` / `finance` / `product_manager` / `knowledge_editor`，
-> 后两个岗位由 `V137__formalize_legacy_roles.sql` 正式定义。
+> 新租户注册初始化**八岗**种子（管理员/客服/运营/销售/财务 + 商品管理员/知识编辑 + 质检员），逐值为：
+> `admin` / `customer_service` / `operator` / `sales` / `finance` / `product_manager` / `knowledge_editor` / `inspector`，
+> 商品管理员 / 知识编辑两个岗位由 `V137__formalize_legacy_roles.sql` 正式定义，质检员由
+> `V158__create_inspector_role.sql` 正式定义（issue #5652：质检记录 / 返工报废）。
 > role_permissions 预置（V29 为存量租户补齐）；V137 之前那两个码**不是岗位**（无 `roles` 行、岗位权限页不可编辑、
 > 只能靠 `RoleService.getPermissionCodesForRole` 的硬编码 `case` 兜底）⇒ 旧文档写「五岗」与实测不符（issue #5984 更正）。
 >

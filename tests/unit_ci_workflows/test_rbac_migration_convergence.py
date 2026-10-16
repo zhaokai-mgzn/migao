@@ -21,15 +21,31 @@
 - 收口后 `LEGACY_ROLES_IN_FALLBACK` **必须是空表**（销账）：两个角色不再是「种子外的历史角色」，
   留着一张不空的表 = 留两套真相。
 
+## inspector（issue #5652，本文件新增）：质检员岗位的**收敛 + 存量迁移**
+
+- **收敛不变量**（`convergence_problems`，**本单之前它是红的**）：`inspector` 的**链累计**码集必须
+  **逐值等于**清单 `roles.seed.inspector`（= `production:view` + **新写码** `production:inspect` ——
+  后者**只**授给本岗位，见下节「为什么不是复用 `production:execute`」）
+  ⇒ 「新租户（Java seed）与存量租户（迁移链）逐值相等」这条口径对新岗位同样常驻可判。
+- **存量迁移逐值**（`inspector_migration_problems`）：`V158__create_inspector_role.sql` 的建行语句 +
+  授权语句 + 终态对账的 `(岗位, 码)` 清单，三者都必须与**活清单**逐值相等
+  （多授 = 绕过岗位权限页的放宽；少授 = 存量租户拿不到）。
+- **渲染输入**：`V136` / `V137` 是**已发布**迁移 ⇒ 输入钉在发布时刻的清单快照（改活清单**不**动它们）；
+  `V157` **尚未发布** ⇒ 输入 = **活清单**（清单前进即须重渲染）。两个方向都有红证
+  （`test_live_artifacts_follow_the_live_manifest` 证其「跟着活清单走」；
+  `test_frozen_artifacts_do_not_follow_the_live_manifest` 证已发布产物「不跟着漂」）。
+
 ## 红证（每条断言都有，且都在内存里构造）
 
 | 断言 | 变异 | 命中分支 |
 |---|---|---|
-| 生成物新鲜度 | 手工往产物里塞一个字 / 改清单不重渲染 | `freshness_problems` 的 `!=` 分支 |
+| 生成物新鲜度（V136 / **V157**，参数化两例） | 手工往产物里塞一个字 / 改清单不重渲染 | `freshness_problems` 的 `!=` 分支 |
 | 收敛不变量 | 给清单某岗位**加一个链上没有的码** | `convergence_problems` 的 `missing` 分支（具名报出该码） |
 | 差集是现取 | 同上（差集随之变化 ⇒ 与固定读数不符） | `census_problems` 的逐值比较分支 |
 | P6 seed == fallback | 从清单 seed 里删掉一个角色 | `p6_problems` 的「不在种子里」分支 |
 | P6 迁移语句逐值 | 把 V137 的授权语句改掉一个码 | `p6_migration_problems` 的差集分支 |
+| **V157 授权语句逐值**（issue #5652） | 把 V157 的 `p.code IN (…)` 改掉一个码 | `inspector_migration_problems` 的逐值比较分支 |
+| **活清单 vs 冻结快照的边界**（issue #5652） | 改清单 `roles.seed.inspector` 的一个码 | 活产物**必须**跟着变（`live_artifacts_follow`）；已发布产物**必须**不变（`frozen_artifacts_drift`） |
 | 只改散文 ⇒ 不红（对照） | 只改清单 `_note` | 三条判据都必须不红 |
 
 **覆盖面边界（照实登记）**：本判据算的是**声明面推演**，不是真库读数（设计 §6.1）；
@@ -236,6 +252,67 @@ def p6_migration_problems(manifest: dict, text: str | None) -> list[str]:
     return out
 
 
+def _extract_grant_codes(text: str, role: str) -> list[str]:
+    """从一段迁移文本里取**某个岗位**授权语句的 `p.code IN (…)` 码集（升序去重）。
+
+    口径 = `p6_migration_problems` 的同一段切片（`r.code = '<role>'` … `ON CONFLICT`），
+    本函数只是把它抽出来给 `inspector_migration_problems` **复用**（不写第二套正则）。
+    """
+    needle = f"r.code = '{role}'"
+    start = text.index(needle)
+    block = text[start:]
+    block = block[: block.index("ON CONFLICT")]
+    return sorted(set(re.findall(r"'([a-z_]+:[a-z_:]+)'", block)))
+
+
+def inspector_migration_problems(manifest: dict, text: str | None) -> list[str]:
+    """issue #5652：`V157` 的建行 / 授权 / 终态对账三处必须**逐值**等于**活清单**的 `inspector`。
+
+    🔴 与 `p6_migration_problems` 的**有意差异**：`V137` 已发布 ⇒ 比的是**发布时刻快照**；
+    `V157` **尚未发布** ⇒ 比的是**活清单**（清单前进即须重渲染，否则本判据判红）。
+    """
+    derive = load_derive()
+    generator = load_generator()
+    role = generator.INSPECTOR_CODE
+    rel = next(r for r in generator.ARTIFACTS if "create_inspector_role" in r)
+    if text is None:
+        return [f"`{rel}` 不存在 ⇒ 质检员岗位的存量侧没有物化（新租户有、老租户没有）"]
+    declared = sorted(derive.expand_role_codes(manifest, manifest["roles"]["seed"][role]))
+    out: list[str] = []
+    if f"r.code = '{role}'" not in text:
+        out.append(f"`{rel}` 里没有 `{role}` 的授权语句 ⇒ 存量租户拿不到它的默认码")
+    if f"code = '{role}'" not in text:
+        out.append(f"`{rel}` 里没有建 `roles` 行（找不到 code = '{role}'）⇒ 岗位权限页看不到它")
+    if f"r.code = '{role}'" in text:
+        found = _extract_grant_codes(text, role)
+        if found != declared:
+            out.append(
+                f"`{rel}` 的 `{role}` 授权语句与**活清单**声明不逐值相等："
+                f"漏 {sorted(set(declared) - set(found))} / 多 {sorted(set(found) - set(declared))} ⇒ "
+                "（多授 = 绕过岗位权限页的放宽；少授 = 存量租户拿不到）"
+            )
+    # 终态对账块里的 `(岗位, 码)` 清单必须与授权语句**同一份值**（两处各写一份 ⇒ 必然漂移）。
+    # 🔴 只在**对账块的 `VALUES` 段**里取（从 `SELECT COUNT(*) INTO missing_links` 起、到
+    #    `AS want(role_code, perm_code)` 止）—— 文件头的回滚注释与授权语句里各有一处同名值，
+    #    全局子串检索会读到它们（实测：会被回滚注释喂中 ⇒ 漏报，不会假红）。
+    ledger = _extract_ledger_pairs(text)
+    for code in declared:
+        if (role, code) not in ledger:
+            out.append(f"`{rel}` 的终态对账块里缺 `('{role}', '{code}')` ⇒ 对账判不到这一对")
+    return out
+
+
+def _extract_ledger_pairs(text: str) -> set[tuple[str, str]]:
+    """取**终态对账块**里 `(岗位, 码)` 的 `VALUES` 清单（只认那一段，不看散文 / 授权语句）。"""
+    marker = "SELECT COUNT(*) INTO missing_links"
+    assert marker in text, "对账块锚点失配（迁移形态变了）⇒ 无法判定，fail-closed"
+    block = text[text.index(marker):]
+    end = "AS want(role_code, perm_code)"
+    assert end in block, "对账块 `VALUES` 的收尾锚点失配（fail-closed）"
+    block = block[: block.index(end)]
+    return set(re.findall(r"\('([a-z_]+)', '([a-z_:]+)'\)", block))
+
+
 def all_problems(manifest: dict, root: Path | None = None, parity=None) -> list[str]:
     """三条判据的合流（红证/对照都走这一条入口）。"""
     derive, generator, parity = load_derive(), load_generator(), parity or load_parity_guard()
@@ -250,6 +327,12 @@ def all_problems(manifest: dict, root: Path | None = None, parity=None) -> list[
     rel_p6 = next(r for r in generator.ARTIFACTS if "formalize_legacy_roles" in r)
     p6_path = (root or REPO_ROOT) / rel_p6
     out += p6_migration_problems(manifest, p6_path.read_text(encoding="utf-8") if p6_path.is_file() else None)
+    # issue #5652：质检员 `inspector` 的存量迁移（V157）也必须与活清单逐值相符
+    rel_v157 = next(r for r in generator.ARTIFACTS if "create_inspector_role" in r)
+    v157_path = (root or REPO_ROOT) / rel_v157
+    out += inspector_migration_problems(
+        manifest, v157_path.read_text(encoding="utf-8") if v157_path.is_file() else None
+    )
     del derive
     return out
 
@@ -335,3 +418,95 @@ def test_comment_only_change_is_not_red():
     prose["_note"] = str(prose["_note"]) + "（只改散文的一句）"
     assert prose != manifest, "散文变异注入未生效（自证失败）"
     assert all_problems(prose) == [], "只改散文竟判红 ⇒ 判据在读文本而不是在读语义"
+
+
+def test_inspector_role_is_covered_by_the_chain_and_its_migration():
+    """issue #5652：质检员 `inspector` 的**链累计 == 清单声明**，且 `V157` 三处与清单逐值相符。"""
+    manifest = load_manifest()
+    role = load_generator().INSPECTOR_CODE
+    assert role in manifest["roles"]["seed"], "质检员必须已在清单 `roles.seed` 里（否则判据空跑）"
+    # ① 收敛不变量：把整条链推演一遍，质检员的累计码 == 清单声明（本单之前这里是红的）
+    diff = load_derive().convergence_diff(manifest)["roles"][role]
+    assert diff["missing"] == [], f"质检员的链累计缺码 {diff['missing']} ⇒ 存量租户拿不到（红）"
+    assert diff["extra"] == [], f"质检员的链累计多码 {diff['extra']} ⇒ 链比声明更宽（红）"
+    assert diff["chain"] == diff["declared"] == ["production:inspect", "production:view"]
+    # ② 存量迁移逐值：V157 的授权语句 + 终态对账清单 + 建行语句
+    rel = next(r for r in load_generator().ARTIFACTS if "create_inspector_role" in r)
+    text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+    assert inspector_migration_problems(manifest, text) == [], "V157 与活清单不符（红）"
+
+
+def test_inspector_migration_red_proofs():
+    """红证（issue #5652）：`V157` 少一个码 / 多一个码 / 终态对账缺一对 ⇒ 各自具名判红。"""
+    manifest = load_manifest()
+    generator = load_generator()
+    rel = next(r for r in generator.ARTIFACTS if "create_inspector_role" in r)
+    text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+    assert inspector_migration_problems(manifest, text) == [], "前提：现取产物必须全绿"
+
+    only_view = _extract_grant_codes(text, generator.INSPECTOR_CODE)
+    assert len(only_view) == 2, f"前提：质检员必须恰好两个码（现取 {only_view}）"
+
+    # ① 少授一个码（`production:view` 从授权语句里删掉；终态对账块仍留着它）
+    tampered = text.replace("'production:inspect', 'production:view'", "'production:inspect'", 1)
+    assert tampered != text, "变异注入未生效（自证失败）"
+    problems = inspector_migration_problems(manifest, tampered)
+    assert any("不逐值相等" in p and "production:view" in p for p in problems), (
+        f"授权少一个码没被判红：{problems}"
+    )
+
+    # ② 多授一个码（真放宽：清单里没有的码）
+    widened = text.replace("'production:inspect', 'production:view'",
+                           "'production:inspect', 'production:view', 'system:manage'", 1)
+    assert widened != text, "变异注入未生效（自证失败）"
+    problems = inspector_migration_problems(manifest, widened)
+    assert any("不逐值相等" in p and "system:manage" in p for p in problems), (
+        f"授权多一个码没被判红：{problems}"
+    )
+
+    # ③ 终态对账块里删掉一对 ⇒ 判据必须报「对账块里缺」（**只动对账块**，授权语句保持原样 ⇒
+    #    不会先命中「授权语句不逐值相等」那条 ⇒ 这一条断言判的确实是「对账块」）。
+    #    锚点 = 该缩进形态**唯一**指向对账块 `VALUES` 的那一行（文件头的回滚注释行以 `));` 收尾，不匹配）。
+    ledger_line = "        ('inspector', 'production:view')\n"
+    assert text.count(ledger_line) == 1, f"注入锚点失配（出现 {text.count(ledger_line)} 次，期望 1）"
+    dropped = text.replace(ledger_line, "", 1)
+    assert dropped != text, "变异注入未生效（自证失败）"
+    assert _extract_grant_codes(dropped, load_generator().INSPECTOR_CODE) == [
+        "production:inspect", "production:view",
+    ], "前提：授权语句必须**原样**（本注入只动对账块）"
+    problems = inspector_migration_problems(manifest, dropped)
+    assert any("终态对账块里缺" in p and "production:view" in p for p in problems), (
+        f"终态对账缺一对没被判红：{problems}"
+    )
+
+
+def test_live_artifacts_follow_the_live_manifest():
+    """红证（issue #5652）：改清单 `roles.seed.inspector` 的一个码 ⇒ **活清单产物（V157）必须跟着变**。
+
+    这是「V157 的渲染输入 = 活清单」的正面读数 —— 若有人把它也钉进 `FROZEN_SNAPSHOTS`，本判据判红。
+    """
+    generator, manifest = load_generator(), load_manifest()
+    role = generator.INSPECTOR_CODE
+    rel_live = next(r for r in generator.ARTIFACTS if "create_inspector_role" in r)
+    mutated = copy.deepcopy(manifest)
+    mutated["roles"]["seed"][role] = sorted(set(mutated["roles"]["seed"][role]) | {"order:list"})
+    mutated["roles"]["fallback"][role] = sorted(set(mutated["roles"]["fallback"][role]) | {"order:list"})
+    assert generator.render_all(mutated)[rel_live] != generator.render_all(manifest)[rel_live], (
+        "改了活清单而 V157 未变 ⇒ 它被钉成了冻结产物（本单要求它跟着活清单走）"
+    )
+
+
+def test_frozen_artifacts_do_not_follow_the_live_manifest():
+    """对照（issue #5652）：同一处活清单变异 ⇒ **已发布**产物（V136 / V137）**不得**跟着变。"""
+    generator, manifest = load_generator(), load_manifest()
+    role = generator.INSPECTOR_CODE
+    mutated = copy.deepcopy(manifest)
+    mutated["roles"]["seed"][role] = sorted(set(mutated["roles"]["seed"][role]) | {"order:list"})
+    mutated["roles"]["fallback"][role] = sorted(set(mutated["roles"]["fallback"][role]) | {"order:list"})
+    before, after = generator.render_all(manifest), generator.render_all(mutated)
+    for rel in (r for r in generator.ARTIFACTS if r != next(
+        a for a in generator.ARTIFACTS if "create_inspector_role" in a
+    )):
+        assert before[rel] == after[rel], (
+            f"`{rel}` 跟着活清单漂了 ⇒ 已发布迁移被重写（Danger Scan 的 blocker）"
+        )

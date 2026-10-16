@@ -9234,6 +9234,25 @@ _CASE_PG_076 = EvalCase(
     precondition='前置 = ① 存在一张 `status=generated` 的加工单（形态①：判据**自建夹具** —— 一次性真 PG 集群 + `tenant_id=6955` + 单号前缀 `po-6955`，并为其建一条 `cancelled` 订单行满足外键 `processing_orders_order_id_fkey`）；② 形态② 需要一对「`status=confirmed` 订单 + 它的 `generated` 加工单」。前置由判据自身的建夹具段持有（`PgCluster.startOrAbort()` + 按 `poId(r)` 建行）。**不成立时的表现 = fail-closed 硬失败，绝不静默跳过**：探针在 10000ms 内等不到即抛 `IllegalStateException`（逐字「探针未在 10000ms 内进入窗口 —— 判据装置坏了」）；夹具缺失（如外键指向的订单行不存在）会在建夹具那一步就红。⚠️ 由此**不会**出现「前置悄悄不成立 ⇒ 红的表现像 agent 不干活」这一族误归因（PG-013 / CU-003 的形态）：本用例没有任何 agent 期望，红了就只有一个读法 —— 判据或装置坏了。',
 )
 
+# ── PG-077 [NORMAL] 质检记录（成品帘级）：独立质检员录判定（合格/返工/报废）+ 判定≠合格必填原因 + 无该角色被拒（issue #5652）（源: cases/processing-order.yml）──
+_CASE_PG_077 = EvalCase(
+    id='PG-077',
+    legacy_id='',
+    title='质检记录（成品帘级）：独立质检员录判定（合格/返工/报废）+ 判定≠合格必填原因 + 无该角色被拒（issue #5652）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=["**判据 1·落库且逐字段可读（逐值断言）**：录入一条合格判定 ⇒ 真落库的那一行**逐值**等于「谁/何时/哪件成品帘/判了什么」—— `tenant_id` / `order_item_id` / `processing_order_id` / `inspection_result='pass'` / `inspector_id` / `inspector_name` / `inspected_at`（逐字时刻）/ `deleted=0` / `position_name` 快照；返工/报废两条同款**逐值**（判定与原因，原因去首尾空白）。证据：backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckServiceTest.java（passRecordIsPersistedAndReadableFieldByField / reworkAndScrapArePersistedWithReason）", '**判据 2·独立质检员才有权录入（真判据，不是「前端不显示按钮」）**：质检录入与读面端点都声明 `@RequirePermission("production:inspect")`（反射读真注解）；且该码（**新目录码**，不是复用 `production:execute` —— 后者授给客服/运营/销售/财务四个岗位，复用即放宽）在 `rbac/manifest.json` 的 `roles.seed` 上**只**授给一个岗位（运行时的 `admin` 走 `["*"]` 通配，不在「被显式授予」这个读数里）—— 换岗位 / 多授 / 摘掉注解 ⇒ 判据当场红。证据：backend/admin-api/src/test/java/com/migao/admin/controller/QualityCheckControllerTest.java', '**判据 3·报工人只报数量（工人面不得出现质检判定入口）**：质检录入的唯一入口是 `/api/admin/quality-inspections`（`/api/admin/**` 由 `ADMIN_API_REJECTED_ROLES` 把 `worker` 挡在外面），且工人端 H5 报工屏只出现**三态报工**（正常/返工/报废 —— 报的是数量事实），**没有**任何成品帘质检判定控件。证据：frontend/worker-h5/tests/worker-h5-report-work-type.test.mjs（屏上控件只有 `#wh5-work-type` 的 normal/rework/scrap；无质检判定面）', '**判据 4·反例：判定≠合格但原因缺失 ⇒ 具名报错且零写入**：原因缺失 / 空串 / 全空白三种形态都 ⇒ `VALIDATION_ERROR` + **422** + 文案含**该档判定的中文名**（「报废」）与「必须填写不合格原因」，且 `verify(mapper, never()).insert(...)` = **零写入**（不许静默存）；未知判定（如 `ok`）⇒ 422 并逐字列出合法取值 `pass/rework/scrap`。证据：QualityCheckServiceTest.java + QualityCheckControllerTest.java', '**判据 4b·跨租户 = 404，且与「不存在」逐字同一形态**（不泄露存在性）：`code` / `http_status` / `message`（「成品帘不存在」）三项逐字相等，零写入。证据：QualityCheckServiceTest.java', '**判据 5·颗粒度 = 成品帘，且两套口径并存互不覆盖**：一条记录 = 一件成品帘（`order_item_id`），**不**逐工序（表与实体**没有** `operation_id` 面）；质检**不**读写 `production_work_logs`、**不**重算 `qty`/`qualified_qty`、**不**参与计件 —— 计件侧「返工/报废不进 per_worker/per_operation/total」的既有判据由 PG-018/PG-061 一族原样承担，本用例一格不放宽也不改写。', '**判据 6·既有报工链路零回归（反向断言）**：本包不碰 `ProductionService` / `ProductionScanCompleteService` / 计件聚合的任何一行（改动面 = 新表 + 新三件 + 岗位登记）；计件侧「`rework`/`scrap` 不进 per_worker/per_operation/total」的既有机器判据（ProductionPieceworkSummaryTest 的 rework 负例）在本包下**照旧全绿**。'],
+    skip_reason='[backend-contract] 后端契约/权限面判据（Java 单测 + 反射读注解 + 声明面对账），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['quality-inspection', 'rbac', 'backend-contract', 'finished-curtain'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = 夹具：① 一件属于当前租户的成品帘（`order_items` 行，`deleted=0`）；② 它所属订单有一张活跃加工单（`ProcessingOrderMapper.selectActiveByOrderId` 命中）。夹具由判据自身以 Mockito 桩持有（`QualityCheckServiceTest.setUp`）；缺任一 ⇒ service 抛 404「成品帘不存在」/ 422「尚无活跃加工单」⇒ 判据**当场红**（不会静默跳过，也不会伪装成「没数据」）。',
+)
+
 # ── PP-002 [NORMAL] 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query）（源: cases/processing.yml）──
 _CASE_PP_002 = EvalCase(
     id='PP-002',
@@ -14657,6 +14676,7 @@ ALL_CASES = (
     _CASE_PG_071,
     _CASE_PG_073,
     _CASE_PG_076,
+    _CASE_PG_077,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,

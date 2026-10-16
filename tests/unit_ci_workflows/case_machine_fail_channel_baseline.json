@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 160
+    "backend_contract_scoring_zero": 161
   },
   "history": [
     {
@@ -540,6 +540,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 160,
       "note": "issue #6611 + #6746（admin-web 发布腿的身份自证：构建期把 identity 烘焙进产物 + `GET /version.json` 的 sha 比对 + 探不到/回落 fail-closed + schedule 兜底档显式出声）新增 **1** 条 `[backend-contract]` 用例 **MC-106** —— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，**与本 PR 同批的另一条**（#7010 的 PG-073）+1 叠加：159 → **160**）。机器判红通道 = `traces.tests` 的真测试文件（非空且真实存在，本机实跑绿）：`tests/unit_ci_workflows/test_admin_web_served_version.py`（23 passed；红证 = 注入错误期望 sha ⇒ 退 1、同场景换真值 ⇒ 退 0、200+HTML 回落 ⇒ 退 3、身份面自报 unknown ⇒ 退 3；另有 7 条结构注入各自判红且**自动复位**）；`traces.ci` = `pr-check.yml` / `deploy-frontend.yml`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -p no:randomly` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 160}` ⇒ 与上一行 159 的差值 1 = 本 PR 新增那一条。"
+    },
+    {
+      "sha": "61cf1907f",
+      "date": "2026-10-16",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 161,
+      "note": "issue #5652（质检记录/返工报废）新增 **1** 条 `[backend-contract]` 用例 **PG-077**（质检记录成品帘级：独立质检员录判定 + 判定≠合格必填原因 + 无权被拒 + 颗粒度=成品帘 + 工人面不得出现质检判定入口）。该用例按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 本读数 +1（main 侧 160 → 本 PR 后 161）。机器判红通道 = `traces.tests` 三个真测试文件（均非空且真实存在，本机实跑绿）：`backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckServiceTest.java`（语义面 8 条：逐字段可读 / 原因必填 422+零写入 / 跨租户 404 同形 / 读面逐条）、`.../controller/QualityCheckControllerTest.java`（端点形状 + 权限面 6 条；红证已取：摘注解 ⇒ `Expecting actual not to be null`；把岗位码换成 `production:execute` ⇒ 声明码集断言红）、`.../service/QualityCheckMapperTest.java`（真 PG：一行逐列落库 + 租户谓词由拦截器注入 ⇒ 跨租户读为空；红证已取：把列改名 ⇒ 两条判据报 `字段不存在`）。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）。"
     }
   ]
 }
