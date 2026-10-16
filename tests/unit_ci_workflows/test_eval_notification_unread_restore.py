@@ -146,8 +146,9 @@ def _st005_pre_clean() -> list:
 class TestStaticContract:
     def test_type_is_registered_and_pre_only(self):
         """只声明 `pre`：`post` 会把用例结束后的真实产物抹掉（#4075 红线）。"""
-        meta = lr._CLEAN_TYPES.get("notification_unread_restore")
-        assert meta is not None, "类型不在 _CLEAN_TYPES 里 ⇒ 声明它的用例走配置错误（夹具动作未执行）"
+        assert "notification_unread_restore" in lr._CLEAN_TYPES, (
+            "类型不在 _CLEAN_TYPES 里 ⇒ 声明它的用例走配置错误（夹具动作未执行）")
+        meta = lr._CLEAN_TYPES["notification_unread_restore"]
         assert tuple(meta["phases"]) == ("pre",), meta
         assert "notification_unread_restore" in lr._PRECLEAN_TYPES
         assert "notification_unread_restore" not in lr._POSTCLEAN_TYPES
