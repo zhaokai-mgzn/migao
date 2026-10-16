@@ -3443,7 +3443,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（113 case）
+## 杂项域（114 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5156,6 +5156,23 @@
 跳过: [backend-contract] 全仓 workflow 的静态判据（YAML 解析 + 剥注释后匹配 gh 命令词），零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-16 新增（issue #7051）。**发现路径** = PR #7037（issue #7022）收尾时如实登记的**未固化项**：该 PR 修掉了「job 没有 checkout ⇒ `gh` 推断不出仓库」的两处现场（automerge.yml 早在 #2929 就修过，pr-check.yml 两个收尾 job 是本单修的），但**没有**把这一类做成判据。取号 = `NCI_MAIN_REF=HEAD python3 scripts/next_case_id.py MC` ⇒ `MC-112`，并已在飞面复核无人取。**红证均在真实语料上实跑**：摘 `automerge.yml` 的 Checkout + 其 step 的 `GH_REPO` ⇒ 红；摘 `pr-check.yml::clear-needs-changes` 的 `GH_REPO` ⇒ 红；两次都逐字节还原。**一处纠错照实登记**：我第一版红证只摘了 `Checkout`、判据**不红**，一度以为漏检 —— 实查该 step 自带 `GH_REPO`（#2929 的双保险）⇒ 判据口径是「二者其一即可」，**判据是对的、我的注入是错的**。 ｜ tags: ci, workflow, gh-context, checkout, fail-loud, red-proof
+
+### MC-113. **「跑需要真实历史的脚本 ⇒ checkout 必须 `fetch-depth: 0`」的类级判据**：凡 workflow 的 job 里跑 `scripts/h5_freshness_guard.py`（登记在 `h5_script_checkout_depth_ledger.json::canonical_scripts`）的，该 job 的 checkout 必须 `fetch-depth: 0`，否则必须在豁免台账里逐字登记（现取 0 条 ⇒ 只许缩短）；未登记 ⇒ 判红并具名 workflow + job 🔵
+```
+你: 为什么 C 端 H5 那条腿每天都红一次，可线上明明是新的？
+期望: direct_reply
+数据: 🔴 **判据 A（实例面，会红）**：`.github/workflows/c-end-h5-publish.yml` 的 `publish` job（notify 步跑 `scripts/h5_freshness_guard.py`）的 checkout 必须 `fetch-depth: 0`。红证（实跑）= 摘掉该 `with.fetch-depth` ⇒ 判据红并具名「c-end-h5-publish.yml / publish / 现取 None」。执行点 = tests/unit_ci_workflows/test_h5_freshness_needs_full_history.py::test_c_end_h5_publish_checkout_has_full_history。
+数据: 🔴 **判据 B（类级面，让同类进不来）**：全仓 workflow 逐 job 扫「是否跑登记脚本」⇒ 跑而没有 `fetch-depth: 0` 且未登记豁免 ⇒ 判红（红证②：在另一条腿加一个跑该判据的 job 而不给 depth ⇒ 红并具名 `a-new-leg`）。执行点 = test_all_workflows_running_the_guard_have_full_history。
+数据: 🔴 **判据 C（台账只许缩短 + fail-closed）**：`exemptions` 现取 **0 条**（`EXEMPTION_CAP_FROZEN = 0`）⇒ 加一条豁免即红（报出条数与上限）；空转的豁免（那条腿不跑该判据）/ 指向已不存在 workflow 的豁免 / 缺 `why` 的豁免 ⇒ 各自判红；把台账清空（`canonical_scripts` 空 / 整份为空对象 / 缺 `_` 自述）⇒ 判红（红证③）。执行点 = test_ledger_shape_is_fail_closed / test_exemption_table_only_shrinks / TestDiscriminatingPower::test_clearing_the_ledger_turns_it_red。
+数据: 🔴 **判据 D（三态不许塌，根因面）**：`scripts/h5_freshness_guard.py` 在浅克隆里必须判「读不到历史」⇒ `rc=3`（无法判定，具名点名「浅克隆」，`::error::` 上报），**不得**塌成 `rc=2`（确实陈旧）。红证（实跑，可复制）：`cd /tmp && rm -rf h5shallow && git clone --quiet --depth 1 --branch main "file://<本仓绝对路径>" h5shallow && cd h5shallow && git log -1 --format='%cI %h' origin/main -- frontend/mini-app` ⇒ `2026-10-16T16:18:47Z 2f4b8b8`（= HEAD 自己的提交时间，即 CI 的假红读数）；修后同一命令链跑判据 ⇒ `rc=3` + stderr 具名「浅克隆」；全 history 面 ⇒ `2026-10-08T03:20:02Z`（`9ebdf73d8`）⇒ `rc=0 新鲜`。执行点 = tests/unit_ci_workflows/test_h5_freshness_guard.py::test_shallow_clone_is_unknown_not_stale。
+数据: 🔴 **判据 E（负控）**：只改注释 / 加一条不跑该判据的腿 ⇒ 不红；同一份「源代码里出现 `subprocess` 字样」的 AST 判据证明本文件不跑 git。执行点 = TestDiscriminatingPower::test_comment_only_change_stays_green / test_judgement_is_pure_static_and_never_imports_git_or_network。
+数据: 📌 **病根（逐字读数，不是推断）**：CI run 38971606256（`schedule` / sha `2f4b8b84b` / 2026-10-16T21:46Z）判「线上产物陈旧：2026-10-09T14:15Z 早于 frontend/mini-app 最近改动 2026-10-16T16:18Z（落后 7.1 天）」+ `::error::`；而 `2026-10-16T16:18Z` = `2f4b8b84b` 自己的提交时间（`git log -1 --format=%cI 2f4b8b84b`）—— 浅克隆里 `git log -1 <ref> -- <path>` **不判路径**（只有 1 个提交可取）的签名。真值（全 history 复算）= `2026-10-08T03:20:02Z`（`9ebdf73d8`）⇒ 线上**新鲜**（差 34.9h > 宽限 6h）。同一条腿近期连续 6 次 failure（38971606256 / 38941653472 / 38922020408 / 38917201131 / 38912912032 / 38908569922）。
+数据: 📌 **对照面**：`.github/workflows/h5-freshness-guard.yml` 跑**同一份**判据、一直有 `fetch-depth: 0` ⇒ 它不红。⇒ 同一个判据、两个调用面、其中一个面**结构性恒红**。判据 E 的对照读数把这一点钉住（另一条腿 ① 现有 depth 必须在 ② 摘掉它必须红）。
+数据: 📌 **边界（照实登记）**：① 本判据只判**结构**（checkout 步的 `with.fetch-depth`），不判「CI 上那个 job 真的检出了全 history」—— 运行时那一半由脚本自己的 `_is_shallow` 自证；② 只裁**登记进** `canonical_scripts` 的脚本（不做「扫全部脚本调 git」的语义一刀切）⇒ 新脚本要有它自己的登记，未登记即「本判据看不见它」；③ 本单**不改**发布语义（`publish=true` 人工授权 / `w`、`b` 保留前缀 / 首次接管需人工）、**不新增 schedule/cron**、**不降**任何门禁、不给存量开豁免。
+前置: 前置 = 三样都在仓里可读：① `.github/workflows/*.yml`（真文件，用 `yaml.safe_load` 解析后**看结构**，不是 grep 文本 —— 本 workflow 的提示文本里就写着 `h5_freshness_guard.py`，同族 `FM-A11`）；② 台账 tests/unit_ci_workflows/h5_script_checkout_depth_ledger.json（缺 `_` 自述 / 缺顶层键 / `exemptions` 非对象 ⇒ 抛红）；③ 判据本体 tests/unit_ci_workflows/test_h5_freshness_needs_full_history.py。判据**零网络、零 git**（AST 自证只 import json/yaml/ast/copy/pathlib）—— CI 的 `ci workflow helper unit tests` job 本身是 `fetch-depth: 1`，绑 `origin/main` 会因错的原因变绿。
+跳过: [backend-contract] 纯静态 workflow 判据（YAML 解析 + 结构比较）+ 一个真浅克隆的本地 git 夹具，零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-17 新增（issue #7073）。取号 = `python3 scripts/next_case_id.py MC` ⇒ `MC → main:001-112 → 取 MC-113`（候选 = main 777 号 ∪ 全部 open PR 的语料 ∪ 本工作区，工具 script 自己断言「返回号 ∉ 候选集」）。**红证均在真实语料上实跑**：摘 `c-end-h5-publish.yml` 的 `fetch-depth: 0` ⇒ 判据红并具名；真造 `--depth 1` 克隆跑判据 ⇒ 修前 `rc=2 陈旧`（复现 CI 假红）/ 修后 `rc=3 无法判定` 且 stderr 具名「浅克隆」；全 history 面 ⇒ `rc=0` 且读数 `2026-10-08T03:20:02Z` 与 issue 冻结真值逐字一致。 ｜ tags: ci, workflow, fetch-depth, shallow-clone, false-red, red-proof
 
 ## 商家入驻域（6 case）
 
@@ -11342,8 +11359,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：777（活跃 133，跳过 644）
-- tier 分布：smoke 12 / normal 718 / adversarial 32
+- 用例总数：778（活跃 133，跳过 645）
+- tier 分布：smoke 12 / normal 719 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -11358,7 +11375,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：113
+- 杂项域：114
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：66
@@ -11506,6 +11523,7 @@
 - MC-110: **标签收尾 job 的 `needs:` 必须覆盖全部 required 门禁**：`label-needs-changes` / `clear-needs-changes` 原各只等 **9** 个 job，缺 `case-coverage-gate` / `case-trust-gate` / `llm-sink-ledger` / `ui-regression-check` ⇒ 这 4 个红时**打不上标签**、且「它们红 + 其余绿」时 `clear-needs-changes` **照样把标签摘掉**（issue #7022 的第二条独立成因）
 - MC-111: 取号工具对**未知前缀**必须出声（不得静默新建号段）：请求的前缀在候选集里 0 次出现 ⇒ 明说「这是**全新号段**」 + 点名**最接近的已知前缀**；已知前缀不得误报（issue #7052）
 - MC-112: **「job 里调用 `gh` 却没有 git 上下文」的类级判据**：凡 `run:` 里调用 `gh` 的 job 必须有 `actions/checkout` 或 `GH_REPO`（同一形态已咬三次：#2929 automerge → #7022 两个收尾 job）；注释里的 `gh` 不算调用
+- MC-113: **「跑需要真实历史的脚本 ⇒ checkout 必须 `fetch-depth: 0`」的类级判据**：凡 workflow 的 job 里跑 `scripts/h5_freshness_guard.py`（登记在 `h5_script_checkout_depth_ledger.json::canonical_scripts`）的，该 job 的 checkout 必须 `fetch-depth: 0`，否则必须在豁免台账里逐字登记（现取 0 条 ⇒ 只许缩短）；未登记 ⇒ 判红并具名 workflow + job
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
