@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 162
+    "backend_contract_scoring_zero": 163
   },
   "history": [
     {
@@ -554,6 +554,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 162,
       "note": "issue #7015（部署身份面 `builtAt` 恒空：取值源写成未定义的 `${GITHUB_RUN_STARTED_AT:-}`，而 run 开始时刻只在 context `github.run_started_at` 里）新增 **1** 条 `[backend-contract]` 用例 **MC-107**（编造的 `GITHUB_*` 环境变量名必须判红 + 给 `builtAt` 补一条会红的具名判据；admin-api / admin-web 两条腿同批）。该用例按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 本读数 +1（上一行 161 → 本 PR 后 162）。机器判红通道 = `traces.tests` 的真测试文件（非空且真实存在，本机实跑过）：`tests/unit_ci_workflows/test_served_version_verify.py`（28 passed：`builtAt` 空 ⇒ 退 1 具名 + 两条对照臂 + 类级元守卫「编造的 `GITHUB_*` 名」+ 判别力自证 + YAML 形态）与 `tests/unit_ci_workflows/test_admin_web_served_version.py`（26 passed：同族 `builtAt` 判据 + 取值源 context 表达式）；`traces.ci` = `pr-check.yml`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）：本机**现取**（本树 = `origin/main` `301d23389` + 本 PR 新增 MC-107）实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -p no:randomly` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 162}` ⇒ 与锚点 161 的差值 1 = 本 PR 新增那一条。⚠️ 本行是在 rebase 到 `301d23389` 之后现取的读数（本 PR 期间 main 前进过两次：#7018 把锚点推到 161、#7012 未动台账）——**不沿用**上一版写下的数字。"
+    },
+    {
+      "sha": "pending-pr-7031",
+      "date": "2026-10-16",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 163,
+      "note": "issue #7029（部署腿 run 正文「表达式替换后必须是合法 bash」+「`${{ github.<prop> }}` 属性名必须真实存在」）新增 **1** 条 `[backend-contract]` 用例 **MC-108**（两条类级判据 + 各自注入式自证 + 两条腿取值源改 runner 时钟）。该用例按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 本读数 +1（上一行 162 → 本 PR 后 163）。机器判红通道 = `traces.tests` 的真测试文件（非空且真实存在，本机实跑过）：`tests/unit_ci_workflows/test_workflow_run_body_is_valid_bash_after_substitution.py`（6 passed：全仓 run 正文三替换臂 `bash -n` + `github` 属性白名单 + 两组注入式自证 + 反空跑）／`tests/unit_ci_workflows/test_served_version_verify.py`（28 passed）／`tests/unit_ci_workflows/test_admin_web_served_version.py`（26 passed）；`traces.ci` = `pr-check.yml` + 两条部署腿。真债务 `no_channel_total` 仍为 **0**（不变 —— 首版曾因 `traces.tests` 写成裸文件名而升到 1，已按「真债务要修不要锚」改成仓库相对路径）。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -p no:randomly` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 163}` ⇒ 与锚点 162 的差值 1 = 本 PR 新增那一条。"
     }
   ]
 }

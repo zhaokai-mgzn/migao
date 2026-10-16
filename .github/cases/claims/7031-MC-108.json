@@ -1,0 +1,6 @@
+{
+  "id": "MC-108",
+  "pr": 7031,
+  "title": "workflow 的 run 正文「表达式替换后必须是合法 bash」+「${{ github.<prop> }} 的属性名必须真实存在」都要有会红的类级判据（issue #7029）",
+  "claimed_at": "2026-10-16"
+}
