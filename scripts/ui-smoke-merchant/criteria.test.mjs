@@ -25,6 +25,9 @@ import {
   matchProcessingOrderNo,
   isConsoleProbe404,
   isProbe404Exempt,
+  SHIP_GUARD_TEXT,
+  classifyShipPage,
+  shipmentDeltaOk,
 } from './criteria.mjs'
 
 /** 实测真值（issue #4226 现场）：真实加工单号形态与截图证据里的号 */
@@ -80,4 +83,39 @@ test('③ 404 豁免必须结构化：旅程自身失败且文案含 404 ⇒ 不
   assert.equal(isProbe404Exempt([CONSOLE_PROBE_404], [{ url: 'http://x/api/admin/orders/1/print', status: 404 }]), false)
   // pageerror 里的 404 文案不是「资源加载失败」，不得参与豁免
   assert.equal(isConsoleProbe404('[pageerror] Error: timeout 404'), false)
+})
+
+test('④ 发货页三态可分辨：守卫是合法分支，不许与「无表单」混判（issue #6982）', () => {
+  // 守卫文案逐字（与 ShipOrder.tsx 的守卫页一致；守卫分支存在 = 该单的加工单未完成）
+  assert.equal(SHIP_GUARD_TEXT, '须先完成加工单后再发货')
+  // 表单就位 ⇒ form（可提交）
+  assert.equal(classifyShipPage({ submitVisible: true, guardVisible: false }), 'form')
+  // 守卫出现 ⇒ guard（**合法**：含加工项订单的加工单未流转到 completed）
+  assert.equal(classifyShipPage({ submitVisible: false, guardVisible: true }), 'guard')
+  // 两者都没出现（页面没渲染完 / 路由打错 / 产品缺陷）⇒ none，调用方判红
+  assert.equal(classifyShipPage({ submitVisible: false, guardVisible: false }), 'none')
+  // 旧形态（issue #6982 改动前）把这两态判同一句 —— 复刻出来证明「改动前这个分类不存在」
+  const oldVerdict = (o) => (o.submitVisible || o.guardVisible ? 'hasControls' : 'fail')
+  assert.equal(oldVerdict({ submitVisible: false, guardVisible: true }), oldVerdict({ submitVisible: true, guardVisible: false }))
+  // 表单可见**优先于**守卫（守住「两者同时在时仍按可提交处理」这条口径）
+  assert.equal(classifyShipPage({ submitVisible: true, guardVisible: true }), 'form')
+})
+
+test('⑤ 发货单条数必须**恰好 +1**（+2 / +0 / 读不到 都判红，issue #6982）', () => {
+  assert.equal(shipmentDeltaOk(0, 1), true)
+  assert.equal(shipmentDeltaOk(3, 4), true)
+  // 重放又多建了一行（幂等失效）⇒ **不**通过：这就是「> before」那种弱判据看不见的那条
+  assert.equal(shipmentDeltaOk(0, 2), false)
+  // 一条都没建（空跑）⇒ 不通过
+  assert.equal(shipmentDeltaOk(0, 0), false)
+  // 读不到读数（null）⇒ fail-closed，不得当 0 算
+  assert.equal(shipmentDeltaOk(null, 1), false)
+  assert.equal(shipmentDeltaOk(0, null), false)
+  // 反向对照：弱判据（`after > before`）对「多建一行」**恒真** ⇒ 本判据必须看得出差别
+  const weak = (b, a) => Number(a) > Number(b)
+  assert.equal(weak(0, 2), true)
+  assert.equal(shipmentDeltaOk(0, 2), false)
+  // 可显式要求 delta=0（重放之后**不再 +1** 那条断言）
+  assert.equal(shipmentDeltaOk(4, 4, 0), true)
+  assert.equal(shipmentDeltaOk(4, 5, 0), false)
 })

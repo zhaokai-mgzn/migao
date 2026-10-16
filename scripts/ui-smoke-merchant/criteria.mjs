@@ -48,6 +48,45 @@ export function isConsoleProbe404(msg) {
   return s.startsWith('[console.error]') && s.includes('Failed to load resource') && s.includes('404')
 }
 
+/** 加工单守卫逐字文案（`ShipOrder.tsx` 的守卫页：《该订单含加工项，须先完成加工单后再发货…》）。
+ *
+ * issue #6982：**守卫出现是合法分支**（含加工项订单的加工单未流转到 completed）⇒ 旅程记 `skip`，
+ * 既不是红（假红）也不许与「页面无表单」混为一句（归因不可读）。 */
+export const SHIP_GUARD_TEXT = '须先完成加工单后再发货'
+
+/** 发货页的提交控件（与 spec 的动作面**同一份**口径；`17-` 与 `33-` 共用，避免两处各判一套）。 */
+export const SHIP_FORM_MARKERS = { submit: '确认发货', trackingPlaceholder: '请输入快递单号' }
+
+/**
+ * 发货页首屏的**终态分类**（issue #6982）—— 三态互不冒充（同 #6790 的 pass/skip/fail 口径）：
+ *   `form`  —— 发货表单已就位（可提交）；
+ *   `guard` —— **加工单前置守卫**：合法终态，调用方记 `skip`（不是「无表单」这种失败）；
+ *   `none`  —— 既无表单也无守卫：**未定态**（页面没渲染完 / 路由打错 / 产品缺陷），调用方判红。
+ * @param {{submitVisible?: boolean, guardVisible?: boolean}} observed
+ * @returns {'form'|'guard'|'none'}
+ */
+export function classifyShipPage(observed) {
+  const o = observed || {}
+  if (o.submitVisible) return 'form'
+  if (o.guardVisible) return 'guard'
+  return 'none'
+}
+
+/**
+ * 判定「发货单条数按预期 +delta 变化」（issue #6982 硬判据 ② 的**纯判据**一半）。
+ *
+ * 为什么不写成 `after > before`：那对「重放又多建了一行」是**恒真**（空判据）——
+ * 要钉的是**恰好 +1**。null（没取到读数）⇒ **false**（fail-closed：不允许「读不到」冒充通过）。
+ * @param {number|null|undefined} before 提交前条数
+ * @param {number|null|undefined} after 提交后条数
+ * @param {number} [delta]
+ * @returns {boolean}
+ */
+export function shipmentDeltaOk(before, after, delta = 1) {
+  if (before === null || before === undefined || after === null || after === undefined) return false
+  return Number(after) - Number(before) === Number(delta)
+}
+
 /**
  * 是否应豁免「加工单未生成前的 404 探测」导致的旅程失败。
  *

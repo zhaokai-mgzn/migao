@@ -59,18 +59,34 @@ def _read(path: Path) -> str:
 
 
 def _journey_body(name: str) -> str:
-    """取 `async function <name>(...)` 的函数体（到下一个章节分隔注释为止）。
+    """取 `async function <name>(...)` 的函数体。
+    """
+    return _function_body(name, keyword="async function")
+
+
+def _function_body(name: str, keyword: str = "function") -> str:
+    """取 `function <name>(...)` / `async function <name>(...)` 的函数体。
 
     取不到即判红（fail-closed）：判据的定位方式失效时**不得**静默退化成「空字符串扫描通过」。
+
+    issue #6982 起改「**列 0 的右花括号**」口径（旧口径 = 到下一个 `\\n// ─` 章节分隔注释为止）：
+    函数体**内部**的行注释（如「// 🔴 判别力不许丢……」）会让旧口径**提前截断** ⇒ 判据读到半个函数体、
+    把明明写着的锚点判成缺失（假红）。
+
+    ⚠️ **不许**改用「配平 `{`/`}`」口径（本轮踩过）：这些函数体里到处是**对象字面量**
+    （`getByRole('button', { name: … })`）与模板串 `${…}`，按括号计数会**在第一个对象字面量处收尾**
+    ⇒ 判据又是假红。顶层函数体在 `spec.mjs` 里逐字约定为「右花括号顶格（列 0）」，故定位也照这个约定。
     """
     src = _read(SPEC)
-    start = src.find(f"async function {name}(")
+    head = f"{keyword} {name}("
+    start = src.find(head)
     if start < 0:
-        pytest.fail(f"spec.mjs 里找不到旅程函数 {name}（判据定位失效 ⇒ 本守卫未行使，不得读成通过）")
-    tail = src[start:]
-    end = re.search(r"\n// ─", tail)
-    body = tail[: end.start()] if end else tail
-    if len(body) < 200:
+        pytest.fail(f"spec.mjs 里找不到函数 {name}（判据定位失效 ⇒ 本守卫未行使，不得读成通过）")
+    end = src.find("\n}\n", start)
+    if end < 0:
+        pytest.fail(f"{name} 的函数体没有顶格右花括号（判据定位失效 ⇒ 不得读成通过）")
+    body = src[start:end + 2]
+    if len(body) < 80:
         pytest.fail(f"{name} 函数体只取到 {len(body)} 字符（判据定位失效 ⇒ 不得读成通过）")
     return body
 
@@ -156,6 +172,117 @@ def test_journey17_waits_for_form_or_guard():
     assert "须先完成加工单后再发货" in body, (
         "17- 未区分「被加工单前置守卫阻断」与「页面无表单」——两者都判同一句 ⇒ 归因不可读"
     )
+    # issue #6982 ③：守卫出现是**合法分支** ⇒ 记 skip（既不是红，也不与「无表单」混判）
+    assert "markSkipped(" in body, (
+        "17- 仍在把「加工单前置守卫」当失败抛出 —— 守卫出现是**合法**终态（该单的加工单未完成），"
+        "判红 = 假红；本旅程应记 skip"
+    )
+
+
+def test_journey33_keeps_the_same_three_state_verdict():
+    """issue #6982 ③：`33-`（真提交那条）必须与 `17-` **同一份**三态口径（守卫 ⇒ skip，不是红）。"""
+    body = _journey_body(REAL_SHIP_JOURNEY)
+    assert "classifyShipPage(" in body, (
+        "33- 未走 criteria.mjs 的纯判据 classifyShipPage（守卫分支的可分辨性无处可单独红证）"
+    )
+    assert "markSkipped(" in body, "33- 把「加工单前置守卫」当失败 —— 守卫出现是**合法**终态，应记 skip"
+    assert "须先完成加工单后再发货" in body, "33- 的守卫已从「加工单守卫页」漂成别的文案（守卫分支不再可判）"
+
+
+# ─────────── issue #6982：判据可信度的 **类级** 一半 ───────────
+# 病灶（issue #6982 正文现取读数）：云 dev 库 `order_shipments` 全表 **0 行** —— 因为 `17-order-ship`
+# 只断言「发货页表单渲染（N 控件）」即 `done(true)`，**不点【确认发货】**。
+# 于是「页面长得对」被读成了「发货这条旅程是绿的」，而**发货单从来没有被真发过一次**。
+#
+# 本组把「必须真实提交并断言落地」变成**可机械判定**的形状要求：`33-ship-order-real` 的源码里
+# 必须同时出现 ① 提交动作（点提交按钮 + 等原子端点响应）② 幂等键请求头（同一个键用于重放）
+# ③ **从库读**的读数 ④ 从 API 读订单状态的读数。缺任一条 ⇒ 红 —— 后人把断言改回「渲染即过」时，
+# CI（本文件在 `tests/unit_ci_workflows` 面内）当场响，而不是等下一次「发货单怎么还是 0 行」再被发现。
+REAL_SHIP_JOURNEY = "orderShipRealJourney"
+# (锚点字面量, 它钉住的判据, 缺了会怎样)
+REAL_SHIP_ANCHORS: list[tuple[str, str]] = [
+    ("POST", "真提交：只有 UI 真打出请求才有 POST 这个方法名可读"),
+    ("/production/orders/", "真提交：拦的是**原子端点**的 URL（退回两步老路 ⇒ 抓不到）"),
+    ("submit.click(", "真提交：必须真的点提交控件（不点 = 本单的病灶本身）"),
+    ("x-client-request-id", "幂等键：请求头必须被读出来（服务端幂等键的唯一来源）"),
+    ("replayed", "幂等语义的另一面：同键重放必须断言 replayed"),
+    ("shipmentSnapshot(page, orderId)", "**从库读**：断言落地时读发货单真值（不读前端状态）"),
+    ("/api/admin/orders/", "**从 API 读**：订单状态回读（不读 toast / 前端状态）"),
+    ("shipmentDeltaOk(", "恰 +1（不是 `after > before` 那种对「多建一行」恒真的弱判据）"),
+]
+
+# 「渲染即过」的假旅程（issue #6982 改动前**逐字**形态）：用来证明上面的要求**真的会红**
+# —— 判据若对这条也绿，那它就是「不会红的断言」（空断言），本组就白写了。
+RENDER_ONLY_JOURNEY = """
+async function orderShipRealJourney(page, orderId) {
+  const h = await journey('33-ship-order-real')(page)
+  try {
+    await ensureLoggedIn(page)
+    if (!orderId) orderId = await createPlainOrderFixture(page, '冒烟发货提交')
+    await nav(page, `/orders/${orderId}/ship`, '')
+    const submit = page.getByRole('button', { name: /确认发货/ }).first()
+    const hasForm = await page.locator('input, textarea, select').count()
+    if (hasForm === 0) throw new Error(`发货页无表单（url=${page.url()}）`)
+    await h.done(true, '', `发货页表单渲染（${hasForm} 控件）`)
+  } catch (e) {
+    await h.done(false, `发货页失败: ${String(e).slice(0, 300)}`)
+  }
+}
+"""
+
+
+def _real_ship_failures(body: str) -> list[str]:
+    """`33-ship-order-real` 里**缺失**的「真提交 + 断言落地」锚点（空 = 合规）。"""
+    return [f"{why} —— 锚点 {anchor!r}" for anchor, why in REAL_SHIP_ANCHORS if anchor not in body]
+
+
+def test_journey33_submits_for_real_and_asserts_landing():
+    """issue #6982：`33-ship-order-real` 必须**真实提交并断言落地**，不许退回「渲染即过」。"""
+    body = _journey_body(REAL_SHIP_JOURNEY)
+    failures = _real_ship_failures(body)
+    assert failures == [], (
+        "「发货真提交」旅程缺少判据锚点（判据退回「渲染即过」⇒ 发货单又会长期 0 行）：\n  - "
+        + "\n  - ".join(failures)
+    )
+    # 「从库读」那一半的**真值面**：`shipmentSnapshot` 必须真的打 `order_shipments`（不是只读 API 就算数）
+    snap = _function_body("shipmentSnapshot")
+    assert "from order_shipments where order_id =" in snap, (
+        "shipmentSnapshot 未从 `order_shipments` 真库读（判据 ② 的库读面落空 ⇒ 「恰 +1」只证了 API 读面）"
+    )
+    assert "spawnSync('psql'" in snap, "shipmentSnapshot 未走 psql 真库读"
+    assert "apiCount" in snap, "shipmentSnapshot 缺失 API 读面（两条读路要都判，见 issue #6982 判据 ②）"
+
+
+def test_render_only_journey_is_red():
+    """issue #6982 的**判别力自证（注入式红证）**：把旅程改回「只渲染即判过」⇒ 本组必须红。
+
+    红证的两种取法都在这里（同一条判据的两侧）：
+      ① **改动前逐字形态**（issue #6982 正文引用的 `17-` 老断言）⇒ 缺失至少 8 个锚点；
+      ② **单点注入**：只把「点提交」那一行删掉 ⇒ 只缺那一个锚点，仍要红（判据不是被某一条撑起来的）。
+    """
+    # ① 改动前形态（本次改动的 spec.mjs 里不存在这个函数体 ⇒ 用上面的逐字复刻）
+    failures = _real_ship_failures(RENDER_ONLY_JOURNEY)
+    assert len(failures) == len(REAL_SHIP_ANCHORS), (
+        f"「渲染即过」的假旅程没有被判红：只缺 {len(failures)}/{len(REAL_SHIP_ANCHORS)} 条 ⇒ 本判据是空断言"
+    )
+    # ② 单点注入（在真旅程体上删掉「点提交」那一行）
+    body = _journey_body(REAL_SHIP_JOURNEY)
+    injected = body.replace("await submit.click()", "")
+    assert injected != body, "注入未生效：找不到 `await submit.click()`"
+    assert any("submit.click(" in f for f in _real_ship_failures(injected)), (
+        "删掉「真点提交」后判据未红 ⇒ 「必须真实提交」这条要求没被钉住"
+    )
+
+
+def test_real_ship_guard_is_not_vacuous_on_comment_only_edit():
+    """对照读数：只改注释 ⇒ 不红（否则判据在吃自己的说明文字，会被迫删注释消红）。"""
+    body = _journey_body(REAL_SHIP_JOURNEY)
+    assert _real_ship_failures(body) == [], "夹具不成立：现状应当合规"
+    commented = "// 说明：本旅程会 POST /production/orders/{id}/ship 并读 order_shipments\n" + body
+    assert _real_ship_failures(commented) == [], "只改注释就红了（判据吃自己的说明文字）"
+    # 反向对照：把锚点**只**写进注释、可执行面缺失 ⇒ 仍红（注释不许充当判据的承载体）
+    stripped = "// POST /production/orders/ submit.click( x-client-request-id replayed\n" + RENDER_ONLY_JOURNEY
+    assert _real_ship_failures(stripped) != [], "锚点只写在注释里也算数 ⇒ 判据可被注释骗过"
 
 
 def _text_scan_exemption_failures(spec_text: str) -> list[str]:

@@ -2,12 +2,14 @@
 // 阶段 1：admin-web 全部页面（33 旅程）。用法：node spec.mjs [--group 名称前缀]
 // 环境：BASE_URL（默认 http://127.0.0.1:3001）、OUT_DIR（截图/报告输出目录）、PHONE、SMS_CODE
 // case_ids: UI-014, UI-016（admin-web 全站冒烟，视觉/布局旅程）
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
+import { spawnSync } from 'node:child_process'
 // 判据最小单元（issue #4226）：加工单号**形态**判据 + 404 探测豁免的**结构化**判据。
 // 抽到同目录纯函数模块的理由：它们的可信度要能单独验证（见 criteria.test.mjs，node:test 无新依赖）。
-import { ORDER_NO_SHAPE, matchProcessingOrderNo, isConsoleProbe404, isProbe404Exempt } from './criteria.mjs'
+// issue #6982 追加：发货页三态（form/guard/none）与「发货单条数**恰 +1**」两条纯判据同源。
+import { ORDER_NO_SHAPE, matchProcessingOrderNo, isConsoleProbe404, isProbe404Exempt, SHIP_FORM_MARKERS, classifyShipPage, shipmentDeltaOk } from './criteria.mjs'
 
 // playwright 依赖挂在仓库 tests/ 目录（worktree 内未安装，统一用主仓库 tests/node_modules）
 const REPO_ROOT = process.env.REPO_ROOT || join(import.meta.dirname, '..', '..')
@@ -20,6 +22,10 @@ const OUT = process.env.OUT_DIR || '/tmp/ui-smoke/out'
 const PHONE = process.env.PHONE || '13800138000'
 const SMS_CODE = process.env.SMS_CODE || '123456'
 const GROUP = process.argv.includes('--group') ? process.argv[process.argv.indexOf('--group') + 1] : ''
+// .env 值两侧可能带引号（本文件**不用字面量**写那两个引号字符：`tests/unit_ci_workflows/
+// _source_parsing.py` 的 `java_code()` 词法走查**不认正则字面量**，正则里的引号会被当成字符串定界符
+// ⇒ 从那一行起不再剥注释 ⇒ 名称台账判据读到注释里的旧注册名（**假红**，2026-10-16 实测））
+const QUOTES = /[\u0022\u0027]+/g
 mkdirSync(OUT, { recursive: true })
 mkdirSync(join(OUT, 'screenshots'), { recursive: true })
 
@@ -53,6 +59,12 @@ const ALL_JOURNEY_NAMES = [
   '06-agent-sessions', '07-chat', '08-products-list', '09-products-new', '10-product-detail',
   '11-product-edit-doorwidth', '12-processing', '13-categories', '14-orders-list', '15-orders-new',
   '16-order-detail-processing-order', '32-production-qr-and-piecework', '17-order-ship',
+  // 🔴 issue #6982：`17-` 只判「发货页表单渲染（N 控件）」即 done(true)、**不点【确认发货】**
+  //   ⇒ 云 dev 库 `order_shipments` 全表长期 **0 行**（「发货单」这个单据从没被真发过一次）。
+  //   本旅程**真点【确认发货】+ 从 API/真库读回**断言落地；名字用 `17b-` 前缀是**有意**的 ——
+  //   它与 `17-order-ship` 同族（同一页面的另一种终态），`--group 17` 会**两条一起跑**
+  //   （若叫 `33-`，`--group 17` 只跑渲染那条 ⇒ 真提交这条在单组验收里**根本不跑** = 空判据）。
+  '17b-ship-order-real',
   '18-after-sales-list', '19-after-sales-detail', '20-customers-list', '21-customer-detail',
   '22-finance', '23-employees', '24-roles', '25-settings', '26-notifications',
   // 🔴 2026-10-15（issue #6942 ③）台账 ⇄ **实际注册名**同批对齐：旧形态写的是
@@ -1433,6 +1445,10 @@ async function productionQrJourney(page) {
 }
 
 // ────────────────────────── 发货页 ──────────────────────────
+// 分工（issue #6982，**有意**）：
+//   · `17-order-ship` —— 含加工项订单 ⇒ 体现「加工单前置守卫」这个**合法**分支（守卫可达性）；
+//   · `33-ship-order-real` —— 不含加工项的订单 ⇒ 表单可提交，跑**真提交 + 断言落地**。
+//     （含加工项订单在守卫未满足时**没有可提交的表单**，故真提交只能落在无守卫的订单上。）
 async function orderShipJourney(page, orderId) {
   const h = await journey('17-order-ship')(page)
   try {
@@ -1449,17 +1465,249 @@ async function orderShipJourney(page, orderId) {
     // 等页面**稳定**再判，而不是定长 sleep 后数控件（issue #4226②）：含加工项订单要等
     // GET /processing-orders/{orderId} 回来才决定渲染「发货表单」还是「加工单守卫页」，
     // 1500ms 内没回来就判「无表单」是**假红**；两种终态都要能分辨（否则归因不可读）。
+    // 🔴 issue #6982 ③：**守卫出现是合法分支** —— 记 `skip`（既不是红，也不与「页面无表单」混判）；
+    //    只有「表单与守卫都不见」才是红（那才是真正的未定态：页面没渲染完 / 路由打错 / 产品缺陷）。
     const submit = page.getByRole('button', { name: /确认发货/ }).first()
     const guard = page.getByText(/须先完成加工单后再发货|当前订单状态不允许发货/).first()
     await Promise.race([waitVisible(submit, 15000), waitVisible(guard, 15000)])
     if (await waitVisible(guard, 1000)) {
-      throw new Error(`发货表单被加工单前置守卫阻断（订单 ${orderId} 的加工单未流转到 completed ⇒ 16- 前置未达成）`)
+      await markSkipped(h, `加工单前置守卫分支（订单 ${orderId} 含加工项且加工单未流转到 completed）——本旅程的断言面不成立，未跑`)
+      return
+    }
+    if (!(await waitVisible(submit, 1000))) {
+      throw new Error(`发货页未定态（15s 内既未见表单「${SHIP_FORM_MARKERS.submit}」，也未见加工单守卫；url=${page.url()}）`)
     }
     const hasForm = await page.locator('input, textarea, select').count()
     if (hasForm === 0) throw new Error(`发货页无表单（15s 内既未见表单，也未见加工单守卫；url=${page.url()}）`)
     await h.done(true, '', `发货页表单渲染（${hasForm} 控件）`)
   } catch (e) {
     await h.done(false, `发货页失败: ${String(e).slice(0, 300)}`)
+  }
+}
+
+// ────────────────────────── 发货**真提交**（issue #6982）──────────────────────────
+// 判据可信度的分界线：`17-` 判「表单渲染」= 只证**页面长得对**（issue #6982 正文：它「不点【确认发货】」，
+// 于是云 dev 库 `order_shipments` 全表长期 0 行）；本旅程判「提交后**从 API / 真库读**到的状态真的落地」
+// = 证 **UI → HTTP → 库**这条端到端。与 `17-` 的分工是**有意**的（见上面 orderShipJourney 的注释）。
+
+/** 建一张**不含加工项**的订单（发货表单可提交；含加工项的单走加工单守卫 ⇒ 由 `17-` 承担）。 */
+async function createPlainOrderFixture(page, tag) {
+  const api = await adminApi(page)
+  const created = await api.post('/api/admin/orders', {
+    customerName: tag, customerPhone: '13900002223', customerAddress: '杭州市西湖区冒烟路 3 号',
+    logisticsType: 'express', logisticsCompany: '顺丰速运',
+    discountAmount: 0, items: [{
+      productId: SMOKE_PRODUCT_ID, productName: '2699系列雪尼尔窗帘面料',
+      quantity: 2, unitPrice: 23.8, subtotal: 47.6,
+    }],
+  })
+  const id = created?.data?.id
+  if (!id) throw new Error(`前置建单失败（未返回 data.id）：${JSON.stringify(created).slice(0, 200)}`)
+  return id
+}
+
+/**
+ * 发货单快照（**一次调用、两条读路**）—— issue #6982 硬判据 ②。
+ *
+ * `api` = 本租户/本订单的真实读面 `GET /api/admin/orders/{id}/shipments`（与 UI 同一登录主体）；
+ * `db`  = `order_shipments` 真值（`psql`）。
+ *
+ * 🔴 **`db` 是 fail-closed 的**：连不上库 / 读不出 `count|<tracking>` 形态 / `psql` 不在 PATH
+ * ⇒ **抛错（判红）**，不降级成「跳过」—— 库读不到时「发货单真的落库了」这件事**未被证明**，
+ * 而静默降级正是本单要治的病（「没跑」必须长得像「没跑」）。DSN 读 admin-api 的 `.env`
+ * （worktree 形态下 `scripts/ui_smoke_merchant.sh` 会从主仓补一份），`SMOKE_DB_DSN_FILE` 可覆盖。
+ */
+async function shipmentSnapshot(page, orderId) {
+  const api = await adminApi(page)
+  const read = await api.get(`/api/admin/orders/${orderId}/shipments`)
+  const apiCount = (read?.data?.shipments ?? []).length
+
+  const envFile = process.env.SMOKE_DB_DSN_FILE || join(REPO_ROOT, 'backend', 'admin-api', '.env')
+  if (!existsSync(envFile)) {
+    throw new Error(`真库读数不可得：找不到 ${envFile}（SMOKE_DB_DSN_FILE 可覆盖）⇒ 「发货单真的落库了」未被证明，不得读成通过`)
+  }
+  const kv = {}
+  for (const line of readFileSync(envFile, 'utf8').split('\n')) {
+    const m = /^\s*([A-Z_]+)\s*=\s*(.*?)\s*$/.exec(line)
+    if (m) kv[m[1]] = m[2].replace(QUOTES, '')
+  }
+  // psql 的 `-tA` 用 `|` 分隔列 ⇒ 不拼字符串（SQL 里出现**奇数个**单引号会把
+  // `tests/unit_ci_workflows/_source_parsing.py` 的 `java_code()` 词法走查带偏：
+  // 它把单引号当字符串定界符，SQL 字面量里借来的那个引号会让随后的代码被**误当字符串**保留，
+  // 于是文件里更靠后的注释不再被抹掉 ⇒ 名称台账判据 G 读到注释里的旧注册名 ⇒ 假红）
+  const res = spawnSync('psql', [
+    '-h', kv.RDS_HOST || '', '-p', kv.RDS_PORT || '5432', '-U', kv.RDS_USER || '', '-d', kv.RDS_DB || '',
+    '-tAc', "select count(*), coalesce(max(tracking_no), '') from order_shipments where order_id = '" + orderId + "' and deleted = 0",
+  ], { encoding: 'utf8', env: { ...process.env, PGPASSWORD: kv.RDS_PASSWORD || '' } })
+  if (res.error) {
+    throw new Error(`真库读数不可得：psql 未执行（${res.error.message}）⇒ 「发货单真的落库了」未被证明，不得读成通过`)
+  }
+  if (res.status !== 0) {
+    const why = String(res.stderr).trim().slice(0, 200)
+    throw new Error(`真库读数不可得：psql 退出码 ${res.status} / ${why}`)
+  }
+  const row = String(res.stdout).trim().split('\n')[0]
+  const m = /^(\d+)\|(.*)$/.exec(row)
+  if (!m) {
+    const got = JSON.stringify(row)
+    throw new Error(`真库读数不可得：order_shipments 快照形态不符（读到 ${got}，期望 count|tracking）`)
+  }
+  return { apiCount, dbCount: Number(m[1]), dbTracking: m[2] }
+}
+
+/**
+ * `33-ship-order-real` —— **真点发货 + 断言落地**（issue #6982 的三条硬判据）。
+ *
+ * 判据**一律从 API / 真库读**：不读 toast、不读前端状态（前端状态正是「渲染即过」那一族）。
+ * 幂等键 `X-Client-Request-Id` 的三层：① UI 发出的请求头非空（真提交那一半）；
+ * ② **复用 UI 发的那个键**做同键重放 ⇒ `replayed=true` ∧ 不再 +1 ∧ 运单号不被覆写。
+ * ⚠️ 重放必须复用 UI 真发出去的那个键（自造一个键只证得了服务端幂等，证不了「UI 发的这个键就是幂等键」）；
+ * 复用同一 cookie ⇒ 同一租户/用户/权限主体，故这一条**不是**拿 API 直调顶替 UI 旅程 ——
+ * 真提交那一半由上面的真实点击承担。
+ */
+async function orderShipRealJourney(page, seedOrderId) {
+  const h = await journey('17b-ship-order-real')(page)
+  const stamp = Date.now()
+  const trackingNo = `SF${stamp}`
+  try {
+    await ensureLoggedIn(page)
+    const api = await adminApi(page)
+    let orderId = seedOrderId
+    if (!orderId) {
+      orderId = await createPlainOrderFixture(page, `冒烟发货提交${stamp}`)
+      // 待付款不可发货 ⇒ 先确认收款（与 16- 的第一步同法）
+      await api.put(`/api/admin/orders/${orderId}/payment`)
+    }
+    const before = await shipmentSnapshot(page, orderId)
+
+    // 提交前**立刻**装监听：捕获 UI 真发出去的那一次请求（方法 + URL + 请求头 + 响应体）
+    let fired = null
+    let resolveFired
+    const firedP = new Promise((r) => { resolveFired = r })
+    const onResponse = (r) => {
+      if (r.request().method() !== 'POST' || !r.url().includes('/production/orders/') || !r.url().includes('/ship')) return
+      fired = r
+      resolveFired(r)
+    }
+    page.on('response', onResponse)
+
+    await nav(page, `/orders/${orderId}/ship`, '')
+    const submit = page.getByRole('button', { name: /确认发货/ }).first()
+    const guard = page.getByText(/须先完成加工单后再发货|当前订单状态不允许发货/).first()
+    // 三态判定与 `17-` **同一份口径**（issue #6982 ③）：守卫 = 合法分支 ⇒ skip；两者都不见 ⇒ 红。
+    // 口径的纯函数在 `criteria.mjs` 的 `classifyShipPage`（可独立红证），这里只做观测。
+    await Promise.race([waitVisible(submit, 15000), waitVisible(guard, 15000)])
+    const verdict = classifyShipPage({
+      submitVisible: await submit.isVisible().catch(() => false),
+      guardVisible: await guard.isVisible().catch(() => false),
+    })
+    if (verdict === 'guard') {
+      await markSkipped(h, `加工单前置守卫分支（订单 ${orderId}）——真提交的断言面不成立，未跑`)
+      return
+    }
+    if (verdict !== 'form') {
+      throw new Error(`发货页未定态（15s 内既未见表单「${SHIP_FORM_MARKERS.submit}」，也未见加工单守卫；url=${page.url()}）`)
+    }
+
+    await page.getByPlaceholder('请输入实际发货人姓名').fill('冒烟发货人')
+    await page.getByPlaceholder(SHIP_FORM_MARKERS.trackingPlaceholder).first().fill(trackingNo)
+    await submit.click()
+    // 🔴 判别力不许丢：**必须真的提交过一次**（空跑 ⇒ 红）。「页面渲染出表单」在这里**不成立** ——
+    // 只有 UI 真打出了原子端点的 POST 才有读数（页面若退回两步老路 ⇒ 本判据 20s 超时判红）。
+    await Promise.race([firedP, new Promise((r) => setTimeout(r, 20000))])
+    page.removeListener('response', onResponse)
+    if (!fired) {
+      throw new Error(`提交后 20s 内未见 UI 发出 POST …/production/orders/{id}/ship（未真提交；url=${page.url()}）`)
+    }
+
+    const status = fired.status()
+    const respText = await fired.text()
+    if (status !== 200) {
+      const body200 = respText.slice(0, 200)
+      throw new Error(`原子端点返回 HTTP ${status}（期望 200）：${body200}`)
+    }
+    // 硬判据：请求头 `X-Client-Request-Id`（服务端幂等键的**唯一来源**）
+    const sentRequestId = fired.request().headers()['x-client-request-id']
+    if (!sentRequestId) throw new Error('UI 发出的发货请求**未带** X-Client-Request-Id（幂等键缺失 ⇒ 重试会发两次货）')
+    const shipBody = JSON.parse(respText)
+    const shipmentNo = shipBody?.data?.shipment_no
+    if (!shipmentNo) {
+      throw new Error(`原子端点响应无 data.shipment_no（信封形态变了？）：${JSON.stringify(shipBody).slice(0, 200)}`)
+    }
+
+    // ① 提交后**从 API 读**订单状态（不读 toast、不读前端状态）
+    const readOrder = (await api.get(`/api/admin/orders/${orderId}`))?.data ?? {}
+    if (readOrder.status !== 'shipped') {
+      throw new Error(`提交后 API 读回的订单状态是 ${JSON.stringify(readOrder.status)}（期望 shipped）`)
+    }
+    if (readOrder.logistics?.trackingNo !== trackingNo) {
+      throw new Error(`提交后 API 读回的运单号是 ${JSON.stringify(readOrder.logistics?.trackingNo)}（期望 ${trackingNo}）`)
+    }
+
+    // ② `order_shipments` **恰 +1 行**（真库读数 + API 读面各判一次）
+    const after = await shipmentSnapshot(page, orderId)
+    if (!shipmentDeltaOk(before.dbCount, after.dbCount)) {
+      throw new Error(`order_shipments 未**恰 +1**：库读数 ${before.dbCount} → ${after.dbCount}`
+        + `（API 读面 ${before.apiCount} → ${after.apiCount}）`)
+    }
+    if (!shipmentDeltaOk(before.apiCount, after.apiCount)) {
+      throw new Error(`发货单读面 GET /orders/{id}/shipments 未**恰 +1**：${before.apiCount} → ${after.apiCount}`)
+    }
+    if (after.dbTracking !== trackingNo) {
+      throw new Error(`库里的运单号是 ${JSON.stringify(after.dbTracking)}（期望 ${trackingNo}）`)
+    }
+
+    // ②的另一面：**同一 `X-Client-Request-Id` 重放** ⇒ 回放首次结果 ∧ 不再 +1 ∧ 运单号不被覆写
+    // ⚠️ 重放**必须复用 UI 真发出去的那个键**（从请求头取；自造一个键只证得了服务端幂等，
+    //    证不了「UI 发的这个键就是幂等键」）。复用同一 cookie ⇒ 同一租户/用户/权限主体。
+    const replayBody = {
+      company: '顺丰速运', trackingNo: 'SF-REPLAY-MUST-NOT-OVERWRITE',
+      shippingMethod: 'logistics', logisticsType: 'express', shipperName: '重放探针',
+    }
+    // 用**浏览器会话的 cookie** 走 node 侧裸 fetch（与 adminApi 同一主体），但**读状态码 + 文本**
+    // 而不抛：判红要能归因（端点 4xx 与「回放标志没置上」是两件不同的事，读数必须分开）。
+    const at = (await page.context().cookies()).find((c) => c.name === 'access_token')
+    const replayRes = await fetch(API_BASE + `/api/admin/production/orders/${orderId}/ship`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: `access_token=${at ? at.value : ''}`,
+        'X-Client-Request-Id': sentRequestId,
+      },
+      body: JSON.stringify(replayBody),
+    })
+    const replayText = await replayRes.text()
+    if (replayRes.status !== 200) {
+      throw new Error(`同键重放（复用 UI 的 X-Client-Request-Id=${String(sentRequestId).slice(0, 8)}…）`
+        + ` 被端点拒绝：HTTP ${replayRes.status}：${replayText.slice(0, 300)}`)
+    }
+    let replay = null
+    try {
+      replay = JSON.parse(replayText)
+    } catch (e) {
+      throw new Error(`同键重放响应不是 JSON：${replayText.slice(0, 200)}`)
+    }
+    if (replay?.data?.replayed !== true) {
+      throw new Error(`同键第二次调用未回放（replayed=${JSON.stringify(replay?.data?.replayed)}）`
+        + `：${JSON.stringify(replay?.data).slice(0, 200)}`)
+    }
+    if (replay?.data?.shipment_no !== shipmentNo) {
+      throw new Error(`同键重放未回放首次结果：shipment_no=${JSON.stringify(replay?.data?.shipment_no)}（期望 ${shipmentNo}）`)
+    }
+    const afterReplay = await shipmentSnapshot(page, orderId)
+    if (!shipmentDeltaOk(after.dbCount, afterReplay.dbCount, 0)) {
+      throw new Error(`同键重放**又建了一行**：库读数 ${after.dbCount} → ${afterReplay.dbCount}（幂等失效）`)
+    }
+    if (afterReplay.dbTracking !== trackingNo) {
+      throw new Error(`同键重放**覆写了运单号**：${trackingNo} → ${afterReplay.dbTracking}`)
+    }
+
+    await h.done(true, '', `订单 ${orderId}：UI 提交（X-Client-Request-Id=${String(sentRequestId).slice(0, 8)}…）`
+      + ` → API 读回 status=${readOrder.status}/trackingNo=${readOrder.logistics?.trackingNo}；order_shipments `
+      + `库 ${before.dbCount}→${after.dbCount}（API 读面 ${before.apiCount}→${after.apiCount}）；`
+      + `同键重放 replayed=${replay.data.replayed} 且库仍 ${afterReplay.dbCount} 行、运单号未变`)
+  } catch (e) {
+    await h.done(false, `发货真提交失败: ${String(e).slice(0, 400)}`)
   }
 }
 
@@ -1945,6 +2193,16 @@ async function main() {
     await orderShipJourney(page, detOrderId)
   } else {
     recordSkip('17-order-ship')
+  }
+  // 🔴 issue #6982：**发货真提交**（真点【确认发货】→ 从 API / 真库读回断言落地）。
+  // 传空 seed ⇒ 旅程**自造一张不含加工项**的订单（`16-` 那张含加工项，其发货页通常是守卫页
+  // ⇒ 拿它做「真提交」会变成结构性 skip）；自造前置、不登记依赖（同 #6790 判据 ④ 的做法）。
+  // 与 `16-` / `17-` 同形：**不走 `jrun` 的 45s 硬超时**（本旅程要跑真提交 + 两条读路 + 重放，
+  // 45s 偏紧），故用 `inGroup` 显式登记（名称台账判据 G 认的就是 `jrun` / `inGroup` 两个注册点）。
+  if (inGroup('17b-ship-order-real')) {
+    await orderShipRealJourney(page, '')
+  } else {
+    recordSkip('17b-ship-order-real')
   }
   await jrun('18-after-sales-list', afterSalesListJourney, page)
   const aftersalesId = process.env.AFTERSALES_ID || ''
