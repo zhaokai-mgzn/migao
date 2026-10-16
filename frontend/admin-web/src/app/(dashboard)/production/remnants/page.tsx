@@ -39,7 +39,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, RefreshCw, Search } from 'lucide-react'
-import { Button, Modal, Pagination } from '@/components/ui'
+import { Button, Modal, Pagination, PageHeader } from '@/components/ui'
 import { orderApi, remnantApi } from '@/lib/api'
 import { InlineMarkdown } from '@/lib/inline-markdown'
 // 订单行商品身份（颜色 / 门幅）的唯一读取口 —— issue #6882
@@ -283,16 +283,16 @@ export default function RemnantLedgerPage() {
 
   return (
     <div data-testid="remnant-ledger-page" className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-neutral-900">余料台账</h1>
-          <p className="text-sm text-neutral-500 mt-1">管理裁剪剩下的余料：尺寸、来源订单与批次、缸号、状态</p>
-        </div>
-        <Button type="button" variant="ghost" size="sm" onClick={() => void load()}>
-          <RefreshCw className="w-4 h-4 mr-1" />
-          刷新
-        </Button>
-      </div>
+      <PageHeader
+        title="余料台账"
+        subtitle="管理裁剪剩下的余料：尺寸、来源订单与批次、缸号、状态"
+        actions={
+          <Button type="button" variant="ghost" size="sm" onClick={() => void load()}>
+            <RefreshCw className="w-4 h-4 mr-1" />
+            刷新
+          </Button>
+        }
+      />
 
       {error && (
         <div

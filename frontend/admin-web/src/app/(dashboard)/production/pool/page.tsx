@@ -5,7 +5,7 @@ import { AlertTriangle, CheckCircle2, ChevronDown, Layers, RefreshCw, XCircle, Z
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
 import { poolBoardApi } from '@/lib/api'
-import { Badge, Button, Card } from '@/components/ui'
+import { Badge, Button, Card, PageHeader } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import {
   batchGroups,
@@ -242,19 +242,21 @@ export default function ProductionPoolPage() {
   return (
     <div className="p-6 space-y-4">
       {/* 页头 */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-neutral-900 flex items-center gap-2">
+      <PageHeader
+        title={
+          <span className="flex items-center gap-2">
             <Layers className="w-5 h-5 text-primary-600" />
             智能派单
-          </h1>
-          <p className="text-sm text-neutral-500 mt-1">待派订单按料（商品 × 颜色 × 门幅）合并 —— 同料合并领料，减少接头损耗；<strong>加急单不参与合并，立即单独派单</strong></p>
-        </div>
-        <Button variant="secondary" onClick={() => void load()} loading={loading}>
-          <RefreshCw className="w-4 h-4 mr-1.5" />
-          刷新
-        </Button>
-      </div>
+          </span>
+        }
+        subtitle={<>待派订单按料（商品 × 颜色 × 门幅）合并 —— 同料合并领料，减少接头损耗；<strong>加急单不参与合并，立即单独派单</strong></>}
+        actions={
+          <Button variant="secondary" onClick={() => void load()} loading={loading}>
+            <RefreshCw className="w-4 h-4 mr-1.5" />
+            刷新
+          </Button>
+        }
+      />
 
       {/*
         顶部状态条：最长等待 / 待派订单 / 加工明细 / 加急 / 超时未派。

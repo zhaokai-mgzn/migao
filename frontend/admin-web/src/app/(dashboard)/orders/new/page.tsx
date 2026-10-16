@@ -35,7 +35,7 @@ import {
 import { orderApi, productApi, customerApi, processingItemApi, productionApi, craftCalcApi, autoFeaturesApi, doorWidthPlanApi, feePreviewApi, type AutoFeaturesParams, type AutoFeaturesResult, type CraftCalcResult, type CraftCalcParams, type DoorWidthPlanParams, type DoorWidthPlanResult, type FeePreviewResult, type FeePreviewRow, type RecognizedField } from '@/lib/api'
 import { resolveImageUrl, cn } from '@/lib/utils'
 import { useOrderAmounts } from '@/hooks/useOrderAmounts'
-import { Button, Card, Input, Modal, NumberInput } from '@/components/ui'
+import { Button, Card, Input, Modal, NumberInput, PageHeader } from '@/components/ui'
 import OrderCraftFields from '@/components/orders/OrderCraftFields'
 import OrderExtraOptions from '@/components/orders/OrderExtraOptions'
 import {
@@ -3169,8 +3169,10 @@ export default function NewOrderPage() {
           <ArrowLeft className="w-5 h-5 text-neutral-600" />
         </button>
         <div className="flex-1">
-          <h1 className="text-xl font-semibold text-neutral-900">新增订单</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">填写新订单：<strong>可添加多个商品，每个商品单独配加工项</strong></p>
+          <PageHeader
+            title="新增订单"
+            subtitle={<>填写新订单：<strong>可添加多个商品，每个商品单独配加工项</strong></>}
+          />
         </div>
       </div>
 
