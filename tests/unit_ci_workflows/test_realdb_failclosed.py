@@ -298,6 +298,10 @@ REALDB_FILES: dict[str, str] = {
     _MAP + "FabricRemnantMapperTest.java": "via:RemnantTestDb",
     _MAP + "RemnantItemSizeMapperTest.java": "via:RemnantTestDb",
     _SVC + "RemnantServiceTest.java": "via:RemnantTestDb",
+    # issue #5652（质检记录 / 成品帘级，V157）：起一次性真 PG 集群 + 生产拦截器装配。
+    # 只真 PG 能证的两条：① 实体列集与 V157 的列名**逐列一致**（mock 面上列名写错也恒绿）；
+    # ② 租户谓词由 `TenantLineInnerInterceptor` 注入（换租户上下文后 `selectById` 必须读不到）。
+    _SVC + "QualityCheckMapperTest.java": "direct",
 }
 
 # 共用夹具（不是判据本身，但同样必须走收口方法 —— 它是上述三个类的 PG 入口）

@@ -26,6 +26,8 @@ from pathlib import Path
 #                      / processing_order_sets / processing_set_part_tokens
 #                      / production_instance_repricing_logs（V94，issue #4709）
 #                      / worker_report_audits（V98，issue #4733：报工身份旁路账）
+#                      / quality_inspections（V157，issue #5652：质检记录，成品帘级 —— 同时引用
+#                        processing_orders 与 order_items 两张父表）
 #   processing_order_sets ← processing_set_part_tokens（码行指向套行）
 #   processing_position_operations ← production_instance_repricing_logs
 # ⚠️ 新增指向 orders / order_items / processing_orders 的外键时必须同步本表，
@@ -35,6 +37,9 @@ from pathlib import Path
 #    issue #4733 的 V98 再补一层 = 报工身份旁路账（工人登录态落地后每笔报工 1:1 一行），同款）。
 #    护栏（**不写死表名**，schema 加一层就自动要求跟上）：tests/unit_ci_workflows/test_delete_orders_fk_order.py
 DELETE_PLAN = (
+    # 质检记录（V157，issue #5652）同时引用**加工单**与**成品帘**两张父表（processing_order_id /
+    # order_item_id 都是真外键）⇒ 必须最先删（两张父表都在它后面）
+    ("quality_inspections", "processing_order_id", "po"),
     # 报工身份旁路账（V98，issue #4733）引用**加工单**（work_log_id 是**语义**父行、无外键）
     # ⇒ 与 production_work_logs 同层最先删
     ("worker_report_audits", "processing_order_id", "po"),
@@ -51,6 +56,7 @@ DELETE_PLAN = (
     ("orders", "id", "order"),
 )
 TABLE_LABELS = {
+    "quality_inspections": "质检记录",
     "worker_report_audits": "报工身份旁路账",
     "production_instance_repricing_logs": "补价动作账",
     "production_work_logs": "报工",

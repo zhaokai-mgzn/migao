@@ -144,6 +144,10 @@ class SecurityConfigTest {
     // ⇒ 不顶替整个上下文起不来 —— 本族坑第 4 次，判据 = tests/unit_ci_workflows/test_security_config_mapper_mocks.py）。
     @MockBean
     private com.migao.admin.mapper.OrderShipmentQueryMapper orderShipmentQueryMapper;
+    // 质检记录（issue #5652，V157）：同为 MyBatis-Plus 自动扫描到的 Mapper（无 sqlSessionFactory
+    // ⇒ 不顶替整个上下文起不来 —— 本族坑第 4 次，判据 = tests/unit_ci_workflows/test_security_config_mapper_mocks.py）。
+    @MockBean
+    private com.migao.admin.mapper.QualityCheckMapper qualityCheckMapper;
     @MockBean
     private com.migao.admin.service.AfterSalesTicketService afterSalesTicketService;
 
