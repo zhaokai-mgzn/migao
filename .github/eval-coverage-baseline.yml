@@ -78,24 +78,13 @@ entries:
   #    ⚠️ **用例已登记 ≠ 已真跑**：CH-044 是 tier normal，按 #4262 只在用户显式触发时执行
   #    （判据写在用例里；真实读数由 #5966 那次集中跑批给出）。
 
-  # ⚠️ 2026-10-02（issue #5989 P1，导航类指引）本条首次登记：登记 = 让缺口**可见且可收缩**
-  #    （不是免死金牌）：补一条用例即删一条，陈旧登记会被 `baseline_stale_blocking` 判红。
-  #    为什么本包不自己补：`nav_guide` 的行为面（用户问「XX 在哪一页」→ 模型会不会调它、会不会
-  #    把 citation 转述出来、会不会**不**编步骤）**只有真跑 LLM 才判得了**；按 issue #4262 的裁定
-  #    （用户 2026-10-02 逐字：「不要自动进行验证，都是重复的验证，白白消耗成本」「手动集中跑一次即可」），
-  #    真实 LLM 评测**手动、由用户显式触发**，本仓不自动派发 ⇒ 本包**不新增评测用例**。
-  #    本包已有的确定性承载体（**不是**这条豁免的对象）：`tests/unit_ci_workflows/test_menu_navigator.py`
-  #    （跨包结构面，用例 MC-065）+ `backend/ai-agent-service/tests/test_nav_guide.py`（工具面）。
-  #    🔴 **重启条件（= 什么条件下这件事才做得成，不是「正在做」）**：用户显式要求跑一次 B 端批量评测时，
-  #    同批补一条 `persona: mibao` + `expectations: [{tool: nav_guide, args: {question: …}}]` 的正常档用例
-  #    （正向 = 命中登记项并转述 citation；反向 = 未登记时如实说「我没有这条指引」且**不编步骤**），
-  #    届时本条销账。跟踪单 = **#5989**（本单仍 open：余下的 **P2 主动新手引导**不在本包）。
-  - tool: nav_guide
-    kind: uncovered
-    persona: mibao
-    issue: "#5989"
-    reason: "#5989 P1 新增的纯本地导航工具（功能 ⇄ 菜单路径 ⇄ 权限码的仓内登记表 + 会话权限裁剪），尚无评测用例；按用户 2026-10-02 裁定「真实 LLM 评测手动、用户显式触发」（#4262）本包不派发评测，且用例库由并发包独占 ⇒ 待集中跑批时补用例。确定性面已由 tests/unit_ci_workflows/test_menu_navigator.py（MC-065）+ backend/ai-agent-service/tests/test_nav_guide.py 覆盖；缺口现由 #5989 跟踪（P2 主动引导未做完）"
-    added: "2026-10-02"
+  # ✅ 销账（2026-10-16，issue #7048 P4）：`nav_guide` / uncovered 一条**销账删除** ——
+  #   配套用例 = **HR-009**（原 `expectations: [direct_reply]` 重锚为 `direct_reply or nav_guide`；
+  #   该用例 R2 的触发语「那我要怎么才能给员工开账号？」正是 `nav_guide` 登记项 `#employees`
+  #   的常见说法，运行期返回 `registered=True featureId=employees`）。补用例与删条目**同 PR**
+  #   （分开做会得到"陈旧登记判红"或"零覆盖缺口判红"的红窗口）。跟踪单 **#5989** 仍 open
+  #   （余下的 P2 主动新手引导不在本包）；本条原注释里的重启条件已达成，故连注释一并销账。
+
 
   # ✅ 销账（2026-09-14，issue #3568 / PR #3589）：`processing_order_query` /
   #    `processing_order_update` 的 uncovered 条目**已删除** —— 配套正向用例
