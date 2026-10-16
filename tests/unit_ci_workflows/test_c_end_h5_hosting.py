@@ -1352,6 +1352,30 @@ def _run_dist_push(checkout: Path, *, script: Path | None = None, env: dict | No
     )
 
 
+# 「无 git 身份」这一类报错的**版本无关**判据（issue #6992）。
+#
+# 背景（实测，逐字）：同一条件（没有可用身份）在不同 git 版本 / 身份探测路径下**文案不同** ——
+#   · Apple Git 2.54（本机）：`fatal: empty ident name (for <runner@…>) not allowed`
+#   · 当前 CI runner       ：`Author identity unknown … fatal: unable to auto-detect email address (got 'runner@…')`
+# 旧判据把**前一条文案**钉成常量 ⇒ runner 一升级就 **每个 PR 都红**（自 2026-10-03 起，
+# 见 `.github/flaky-ledger.json` 的 `entries[251]`（PR #6153）/ `entries[334]`（PR #6407），两条 `open`）。
+#
+# ⚠️ **判别力不减**（这不是"把门禁改绿"）：调用方**仍先断言 `returncode != 0`** —— 无身份就必须
+#    推不出来；本谓词只负责把「身份类报错」与「别的错把这条判据顶红」分开。
+_IDENTITY_FAILURE_MARKERS = (
+    "empty ident name",                    # 旧措辞（Apple Git / 旧 runner）
+    "author identity unknown",             # 新措辞（当前 runner）
+    "who you are",                         # 同一条件的新措辞里的提示句
+    "unable to auto-detect email address", # 新措辞里的 fatal 行
+)
+
+
+def _is_identity_failure(stderr: str) -> bool:
+    """该 stderr 是不是「无 git 身份」类报错（**不钉死某一条文案**，issue #6992）。"""
+    lowered = stderr.lower()
+    return any(marker in lowered for marker in _IDENTITY_FAILURE_MARKERS)
+
+
 def _pushed_sha(proc) -> str:
     m = re.search(r"^H5_DIST_SHA=([0-9a-f]{40})$", proc.stdout, re.M)
     assert m, f"脚本没有输出 40 位 sha：\n{proc.stdout}\n{proc.stderr}"
@@ -1460,8 +1484,32 @@ class TestDistPushIdentityIndependence:
         assert proc.returncode != 0, (
             f"摘掉显式身份竟然还能推成功（判据是空断言；说明夹具没有复现 runner 的条件）：\n{proc.stdout}"
         )
-        assert "empty ident name" in proc.stderr, (
-            f"判红报文不是 CI 上那条 `empty ident name`（夹具没复现 runner 条件）：\n{proc.stderr}"
+        # ⚠️ **不钉死 git 的具体措辞**（issue #6992）：判「身份类报错」，见 `_is_identity_failure` 的说明。
+        assert _is_identity_failure(proc.stderr), (
+            f"判红报文不是身份类报错（夹具没复现 runner 的条件）：\n{proc.stderr}"
+        )
+
+    def test_identity_failure_predicate_is_wording_agnostic_and_not_vacuous(self):
+        """🔴 **类级判据**（issue #6992，铁律 8）：谓词必须认下**两种实测措辞**、且**拒绝**非身份类报错。
+
+        防的是「把环境措辞钉死」这一类**复发**：谁把谓词改回只认单一文案，本判据当场红；
+        谁把它改成恒真（= 空断言），② 的反向对照当场红。
+        """
+        # ① 两种措辞**逐字取自真实运行**（本机 Apple Git 2.54 / 当前 CI runner 各一条），不是编的
+        assert _is_identity_failure(
+            "fatal: empty ident name (for <runner@runnervm8k3b6.(none)>) not allowed"
+        )
+        assert _is_identity_failure(
+            "Author identity unknown\n\n*** Please tell me who you are.\n\nRun\n\n"
+            '  git config --global user.email "you@example.com"\n'
+            "fatal: unable to auto-detect email address (got 'runner@runnervm8k3b6.(none)')"
+        )
+        # ② 反向对照：**别的**错不许被当成身份类（否则谓词恒真 ⇒ 判据变空断言）
+        assert not _is_identity_failure("fatal: could not read from remote repository"), (
+            "把「读不到远端」误判成身份类报错 ⇒ 谓词失去判别力"
+        )
+        assert not _is_identity_failure("fatal: refusing to update checked out branch"), (
+            "把「拒绝更新已检出分支」误判成身份类报错 ⇒ 谓词失去判别力"
         )
 
     def test_hostile_repo_env_is_ignored_and_the_unset_line_is_load_bearing(self, tmp_path):
