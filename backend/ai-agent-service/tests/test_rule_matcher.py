@@ -531,17 +531,22 @@ class TestEveryIntentHasL1OrRegisteredExemption:
     L2_ONLY_EXEMPT: dict[IntentType, str] = {
         # 兜底意图本身就是 L2 的落点，不该有 L1 关键词
         IntentType.GENERAL: "L2 兜底落点本身",
-        IntentType.CUSTOMER_MANAGE: "L2 主路径；无已立证的确定性误路由（出现即按 ST-002 模式补 L1 + 红证）",
-        IntentType.CUSTOMER_QUERY: "同上（客户域查询；CU-008 的复合句劫持由「客户域前置改判」承担）",
-        IntentType.CATEGORY_MANAGE: "同上（分类树读取；无已立证的确定性误路由）",
-        IntentType.PERMISSION_MANAGE: "同上（角色权限）",
-        IntentType.DATA_REPORT: "同上（报表/分析；与 STATISTICS/DASHBOARD 的边界由 L2 判）",
-        IntentType.KNOWLEDGE_MANAGE: "同上（知识库管理；C 端 KNOWLEDGE_FAQ 另有 L1）",
-        IntentType.SCHEDULED_TASK_MANAGE: "同上（定时任务）",
-        IntentType.AFTER_SALES_CREATE: "同上（售后工单**创建**；B 端按裁定不支持创建单据 ⇒ 主要面在 C 端）",
-        IntentType.PROCESSING_ORDER_GENERATE: "同上（加工单**生成**；同上，B 端不支持创建单据）",
-        IntentType.PROCESSING_ORDER_QUERY: "同上（加工单查询；「加工单」关键词已在 ORDER_QUERY 上）",
-        IntentType.PROCESSING_ORDER_UPDATE: "同上（加工单变更）",
+        # ── 以下各条的"已立证"口径（2026-10-16，证据与复算命令见 issue #7038 的评论）──
+        #   「已立证无用例面」= 全库用例里**没有**任何一条的 expectations/must_succeed 落到该意图的工具；
+        #   「已立证」= 它在评测用例里有覆盖，且其覆盖用例在 2026-10-16 那次基线里**全部通过**
+        #     （唯一落在这些覆盖里且失败的是 `HR-005`，其红因是 **action 过度指定**，与 L2 路由无关）。
+        #   ⚠️ 「已立证」不等于"任何措辞都不会失败"——它只说明**已有的用例面**没暴露该意图的 L2 路由问题。
+        IntentType.CUSTOMER_MANAGE: "L2 主路径；无已立证的确定性误路由（出现即按 ST-002 模式补 L1 + 红证）· **已立证**（覆盖 10 条用例全过）",
+        IntentType.CUSTOMER_QUERY: "同上（客户域查询；CU-008 的复合句劫持由「客户域前置改判」承担）· **已立证**（覆盖 10 条用例全过）",
+        IntentType.CATEGORY_MANAGE: "同上（分类树读取；无已立证的确定性误路由）· **已立证**（覆盖 2 条用例全过）",
+        IntentType.PERMISSION_MANAGE: "同上（角色权限）· **已立证**（覆盖 3 条用例；唯一红条 `HR-005` 的红因是 action 过度指定 ≠ L2 路由）",
+        IntentType.DATA_REPORT: "同上（报表/分析；与 STATISTICS/DASHBOARD 的边界由 L2 判）· **已立证**（覆盖 5 条用例全过）",
+        IntentType.KNOWLEDGE_MANAGE: "同上（知识库管理；C 端 KNOWLEDGE_FAQ 另有 L1）· **已立证无用例面**（全库 0 条覆盖）",
+        IntentType.SCHEDULED_TASK_MANAGE: "同上（定时任务）· **已立证无用例面**（全库 0 条覆盖）",
+        IntentType.AFTER_SALES_CREATE: "同上（售后工单**创建**；B 端按裁定不支持创建单据 ⇒ 主要面在 C 端）· **已立证**（覆盖 8 条用例全过）",
+        IntentType.PROCESSING_ORDER_GENERATE: "同上（加工单**生成**；同上，B 端不支持创建单据）· **已立证无用例面**（全库 0 条覆盖）",
+        IntentType.PROCESSING_ORDER_QUERY: "同上（加工单查询；「加工单」关键词已在 ORDER_QUERY 上）· **已立证**（覆盖 4 条用例全过）",
+        IntentType.PROCESSING_ORDER_UPDATE: "同上（加工单变更）· **已立证无用例面**（全库 0 条覆盖）",
     }
 
     # ⚠️ 口径（issue #7038 立证时**实测**取到，勿凭印象改）：
