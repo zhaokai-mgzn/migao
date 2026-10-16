@@ -409,6 +409,18 @@ VALUES
    TIMESTAMPTZ '2026-09-14 09:30:00+08', TIMESTAMPTZ '2026-09-14 09:30:00+08', 0)
 ON CONFLICT (id) DO NOTHING;
 
+-- ⚠️ 归因锚（#7048 P6 实测，勿删）：本行的 `tenant_id = 1` 是本夹具的租户口径，而 runner 侧
+--   **查它 / 复位它**走的是 `EVAL_TENANT_ID`（`tests/agent_eval/local_runner.py`，
+--   **缺省 25 = 云端测试租户**）。⇒ **本地裸跑** runner 时若不显式给 `EVAL_TENANT_ID=1`
+--   （CI 的 `.github/workflows/post-deploy-eval.yml` 已设 `EVAL_TENANT_ID: "1"`），
+--   `_probe_aftersales_ticket_count` / `_reset_aftersales_ticket` 会去 **tenant 25** 查这张
+--   **tenant 1** 的工单 ⇒ 读数 `capture=0` +「未复位：库里没有工单 …（栈缺 seed？）」，
+--   而报告把它归类成「📦 用例资产缺陷（前置未成立）」——**归因全错**：
+--   同一份代码 / 同一个库，只把 `EVAL_TENANT_ID` 从缺省 25 改成 1，AS-004 由 0% → 100%
+--   （单变量对照，逐字读数见 PR body）。
+--   ⇒ **本行本来就在**（不需要再补一行 seed）；工单是否真在位由**本文件 Phase 3 的核对块**
+--   判（`v_pending ≥ 1`，fail-closed）。看报告里那句「栈缺 seed？」时先核 `EVAL_TENANT_ID`。
+
 -- 建单时间线（可选，非 AS-004 断言依赖）：初始化建库脚本里 `ticket_timeline` 的 CREATE TABLE 段只有
 --   id/tenant_id/ticket_id/action/actor_type 非空（V8 给 actor_type 补了 DEFAULT 'system'，
 --   但这里显式给出，避免 V8 未应用的库上落空值）。
@@ -717,6 +729,77 @@ BEGIN
     RAISE EXCEPTION 'B 端 Phase 5 注入失败：资金流水不在位或不在本月窗口内
 （本月窗口内流水=% 收入=% 退款=%；期望 ≥3 / ≥2 / ≥1）—— FN-001 的 items 非空断言会因此变成假红（issue #7043）',
       v_txn, v_income, v_refund;
+  END IF;
+END $$;
+
+-- ============================================================================
+-- Phase 6（#7048 P6）：B 端**未读通知**夹具 —— ST-005「真做」分支的可达性
+-- ============================================================================
+-- 为什么需要（根因，勿删）：
+--   ST-005（`.github/cases/settings.yml`）在 #7049 把**变更**接回 B 端后被重锚回写面 ⇒
+--   期望 = `notification_manage(action=mark_read)` **或** 确认卡 / 澄清话术，而它的前提是
+--   **「商家本人的通知中心里存在至少一条未读通知」**（= 该用例 `preconditions` 的声明层字段）。
+--   本文件此前 `notifications` **一行都没有** ⇒ 合并后 main 的权威读数逐字：
+--     `notification_manage(items=0 total=0 page=1 size=20)` → agent 只能如实答
+--     「您目前没有未读通知」⇒ 期望链路**物理上走不完**（夹具缺口，**不是** agent 行为缺陷）。
+--   形态与 `xiaobu_eval_seed.sql` 里 `debug_admin_eval`（CH-008「通知真的送达」的可达性）同款：
+--   补数据让断言可达 = 可测性修复，**不是**放宽判据（断言面一字未动）。
+--
+-- 收件人口径（**照实现，不猜**）：`notification_manage._list_notifications`
+--   → admin-api `GET /api/admin/notifications`，而该端点的收件人**恒取** SecurityContext
+--   （`NotificationController.getCurrentUserId()`，自助语义 ⇒ 不看请求 body）⇒ 真正生效的过滤
+--   条件是 `NotificationMapper.selectByRecipientId` 的 `recipient_id = #{recipientId}`。
+--   评测请求的身份由 `backend/ai-agent-service/app/utils/auth.py` 的 DEBUG 分支给出：
+--   `X-Debug-Role: mibao`（≠ customer）⇒ **`user_id = "dev_user"`**（`dev_user` 是该分支的逐字字面量）
+--   ⇒ 本行 `recipient_id` 必须是 `dev_user`，否则 `list` 恒空（那正是本夹具此前缺口的表现形态）。
+--
+-- 取值口径：`status='sent'` = **未读**（`notification_manage.STATUS_TO_API` 的 `unread → sent`；
+--   `backend/admin-api/src/main/resources/db/init/schema.sql` 的列注释 = pending/sent/failed/read）；
+--   `read_at` 留 NULL；`recipient_type='user'` / `channel='internal'` 照列注释与 `CHANNEL_TO_API`
+--   的**实际**取值（工具暴露的 `system` 映射过去就是 `internal`）。
+--
+-- ⚠️ 只种**一条**（与用例输入「把**新订单通知**标为已读」的单条语义对齐）：种多条会让
+--   「全部标记已读」也成为合理读法，而本用例期望里写死的是单条 `mark_read`。
+--
+-- 幂等 + **复位**（写类夹具的必要形态，与 `local_runner._RESET_AFTERSALES_TICKET_SQL`
+--   把点名工单复位回 `pending` 同一口径）：ST-005 首跑会把这条**真的**标成 `read`
+--   ⇒ 若用 `DO NOTHING`，第二次评测的前置就**不再成立**（用例会因夹具状态而非行为判红）。
+--   故 `ON CONFLICT (id) DO UPDATE` 显式复位回未读 —— 同一输入连跑两次终态逐值一致（幂等），
+--   且**不删任何既有行**。`sent_at` 取 COALESCE（已有值不动，避免每次注入都漂移时间读数）。
+INSERT INTO notifications
+  (id, tenant_id, recipient_id, recipient_type, channel, title, content,
+   status, sent_at, read_at, retry_count, created_at)
+VALUES
+  ('ntf_eval_new_order_0001', 1, 'dev_user', 'user', 'internal',
+   '您有一笔新订单待处理',
+   'B 端评测 fixture：新订单通知（ST-005「标记已读」的可标记对象；issue #7048 P6）',
+   'sent', TIMESTAMPTZ '2026-09-14 10:00:00+08', NULL, 0,
+   TIMESTAMPTZ '2026-09-14 10:00:00+08')
+ON CONFLICT (id) DO UPDATE
+  SET status  = 'sent',
+      read_at = NULL,
+      sent_at = COALESCE(notifications.sent_at, EXCLUDED.sent_at);
+
+-- 数据核对（Phase 6）—— **fail-closed**：缺数据 ⇒ 注入步当场 `RAISE EXCEPTION`
+-- （`scripts/eval_stack_seed.sh` 用 `psql -v ON_ERROR_STOP=1`）⇒ 绝不允许
+-- 「缺数据 ⇒ 用例静默红 / 静默过」。两条读数**分别**锚两个口径：
+--   ① 目标行在位且 `status='sent'` / `read_at IS NULL`（= 工具 `list(status=unread)` 的映射取值）；
+--   ② `recipient_id='dev_user'` 名下「非 read」条数 ≥ 1（= admin-api `countUnread` 的口径）。
+DO $$
+DECLARE
+  v_row    INTEGER;
+  v_unread INTEGER;
+BEGIN
+  SELECT count(*) INTO v_row FROM notifications
+   WHERE tenant_id = 1 AND id = 'ntf_eval_new_order_0001'
+     AND recipient_id = 'dev_user' AND status = 'sent' AND read_at IS NULL;
+  SELECT count(*) INTO v_unread FROM notifications
+   WHERE tenant_id = 1 AND recipient_id = 'dev_user' AND status <> 'read';
+  RAISE NOTICE 'B 端 Phase 6 核对: 未读通知目标行=% dev_user 名下非 read=%', v_row, v_unread;
+  IF v_row < 1 OR v_unread < 1 THEN
+    RAISE EXCEPTION 'B 端 Phase 6 注入失败：tenant 1 / recipient_id=dev_user 的未读通知不在位
+（目标行=% 非 read=%；期望 ≥1 / ≥1）—— ST-005 的 mark_read 期望会因此变成不可达（issue #7048 P6）',
+      v_row, v_unread;
   END IF;
 END $$;
 
