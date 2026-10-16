@@ -1526,17 +1526,26 @@ async def _restore_customer_profile(token: str, spec: dict, phase: str) -> str:
 
 
 def _match_sku_price(skus, color: str, method: str, width: str):
-    """按色名/售卖方式/门幅在回读的 `skus[]` 里取值（纯函数；缺项 = 不限定）。
+    """按色名/门幅在回读的 `skus[]` 里取值（纯函数；缺项 = 不限定）。
 
-    与 `sku_update` 的匹配维度**同一口径**（`color_name`/`selling_method`/`door_width`），
-    只用于**回读校验**；匹配不到返回 None（调用方按"未证实"处理，不静默当成功）。
+    ⚠️ **`method` 参数是历史签名位，刻意不参与匹配**（issue #7048 P9）：V113 迁移
+    （`V113__product_roll_length_and_selling_method_base_attribute.sql`）**删掉了
+    `product_skus.selling_method` 列**（售卖方式上移为商品级 `products.selling_methods`），
+    回读 DTO `ProductSkuResponse` **不再有** `sellingMethod` 字段（其类注释逐字登记了这次删列）；
+    写侧同源 —— `ProductService.updateSkuPrice` 的候选匹配只按 **color + door_width**
+    （`AgentProductController.updateSkuPrice` 的注释：「V108：售卖方式不再是 SKU 维度 ⇒ 不参与定位」）。
+    ⇒ 读侧若仍按 `sellingMethod` 过滤，取到的永远是 `None`（键根本不在 payload 里）⇒
+    `sku_price_restore` 恒判「回读里找不到该规格的 SKU」= **假红阻塞**（PR-021 连续 5 个 run 逐字复现，
+    而 DB 真值早已复位成功）。唯一性由 DB 约束 `uq_product_skus_combination
+    (product_id, color_id, door_width)` 保证 ⇒ 按 color + door_width 取值是**确定**的。
+
+    保留 `method` 形参 = **不改调用方**（`_restore_sku_price` 两处），且用例侧的
+    `selling_method` 声明仍是**合法输入**（端点忽略未知属性 #3807），只是不再当作筛选维。
     """
     for s in skus or []:
         if not isinstance(s, dict):
             continue
         if color and str(s.get("colorName") or s.get("color_name") or "") != color:
-            continue
-        if method and str(s.get("sellingMethod") or s.get("selling_method") or "") != method:
             continue
         if width and str(s.get("doorWidth") or s.get("door_width") or "") != width:
             continue

@@ -10237,7 +10237,7 @@ _CASE_PR_018 = EvalCase(
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
     user_inputs=['查一下低库存商品的具体清单'],
-    expectations=['product_search(stock_status=low_stock)'],
+    expectations=['inventory_manage(action=low_stock_alert) or product_search(stock_status=low_stock)'],
     data_checks=['黄金策（agent_type=mibao）回复中：product_list 卡片仅包含文本实际引用的商品（按商品名/ID 匹配），未被引用的商品不渲染', '文本未引用任何商品时不下发 product_list 卡片（宁可无卡，不误导）', '元元（agent_type=xiaobu）保持现状：product_search 结果全量渲染卡片（货架浏览体验不回退）'],
     skip_reason='',
     tags=['card', 'reference_alignment', 'mibao'],
@@ -10245,7 +10245,7 @@ _CASE_PR_018 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    must_succeed=[{'tool': 'product_search'}],
+    must_succeed=[{'tool': 'inventory_manage or product_search'}],
 )
 
 # ── PR-019 [NORMAL] 建品规格落库 — 推理属性经 specifications 落库（加工项部分已随 #4371 解耦删除）（源: cases/product.yml）──
@@ -11765,8 +11765,8 @@ _CASE_PR_014 = EvalCase(
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
     user_inputs=['把遮光窗帘和北欧风窗帘每个规格的库存都调到 1200 米', '已选商品：遮光窗帘、北欧风窗帘', {'auto_respond': {'fallback': '确认'}}, '撤销刚才那个批量调库存', {'auto_respond': {'fallback': '确认'}}],
-    expectations=['interact(component=choice, multiSelect=True)', 'product_batch_update(action=preview, batch_type=inventory_stock)', 'interact(component=confirm)', 'product_batch_update(action=execute)'],
-    data_checks=['success=true', '两段确认缺一不可（机器断言）：第一段 = `interact(choice, multiSelect=true)`；第二段 = `interact(confirm)` + 执行必须带 preview 的 `batch_id` ⇒「没给商家看过逐条预览就执行」在**结构上不可达**', '字段配对（机器断言）：`batch_type=inventory_stock` ⇒ 每条 `field` 必须是 `stock`（服务端 `AgentBatchService.TYPE_FIELD` 不配对直接 422），改前值 `oldValue` 必填（撤销的唯一依据）；判据见 backend/ai-agent-service/tests/test_product_batch_update.py 的 `TestInventoryStockBatch`', '阈值 N>50 拒绝并提示分批（本用例 N=2；边界判据见 PR-109）', '撤销逐条还原为改前值 `old_value`（服务端 `revert` → 状态 `reverted`；`revertible` 如实反映，false ⇒ 话术不得承诺可撤销）', '部分失败逐条报告、不做整体回滚（单测断言：执行路径**不得**顺带调用 revert）'],
+    expectations=['interact(component=choice, multiSelect=true) or interact(component=confirm)', 'product_batch_update(action=preview, batch_type=inventory_stock)', 'interact(component=confirm)', 'product_batch_update(action=execute)'],
+    data_checks=['success=true', '两段确认缺一不可（机器断言）：第一段 = `interact(choice, multiSelect=true)`（集合可勾选时）或 `interact(confirm)`（集合已由商家给全时把逐条明细摆给他看）；第二段 = `interact(confirm)` + 执行必须带 preview 的 `batch_id` ⇒「没给商家看过逐条预览就执行」在**结构上不可达**', '字段配对（机器断言）：`batch_type=inventory_stock` ⇒ 每条 `field` 必须是 `stock`（服务端 `AgentBatchService.TYPE_FIELD` 不配对直接 422），改前值 `oldValue` 必填（撤销的唯一依据）；判据见 backend/ai-agent-service/tests/test_product_batch_update.py 的 `TestInventoryStockBatch`', '阈值 N>50 拒绝并提示分批（本用例 N=2；边界判据见 PR-109）', '撤销逐条还原为改前值 `old_value`（服务端 `revert` → 状态 `reverted`；`revertible` 如实反映，false ⇒ 话术不得承诺可撤销）', '部分失败逐条报告、不做整体回滚（单测断言：执行路径**不得**顺带调用 revert）'],
     skip_reason='',
     tags=['batch', 'multi_turn', 'write', 'undo', 'two_stage_confirm', 'stock'],
     persona='mibao',
