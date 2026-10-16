@@ -151,7 +151,17 @@ cases:
     truths_ref:
       - agent-notification.notification-status
     user_inputs:
+      # 🔴 2026-10-16（issue #7048 P7）：**两轮**。R1 = 商家提出诉求 ⇒ 写确认门禁拦下、
+      # 下发 `interact(component=confirm)` 卡；R2 = 商家**明确确认**（整句命中
+      # `base_skill.py::_is_explicit_confirmation` 的 `_CONFIRM_EXACT`；本用例只准用
+      # **代码里的字面量**，不猜措辞）⇒ 门禁放行 ⇒ `mark_read` **真的可达**。
+      # 为什么必须补 R2（P6 的代码级静态证明，零 LLM 可复算）：
+      # `_requires_confirmation` 末尾 `return not _is_explicit_confirmation(last_user_msg)` ——
+      # R1 输入既不在 `_CONFIRM_EXACT` 也不以 `_CONFIRM_PREFIX` 开头 ⇒ 返回 True（需确认）
+      # ⇒ **写被拦**。故「让 agent 别确认直接改」物理上走不通（会被同一段代码拦住），
+      # 「真做」这条合格路径**只能**经 R2 的明确确认到达。
       - "把新订单通知标为已读"
+      - "确认"
     # ── 2026-10-16 **重锚**（issue #7048 P1 · 项 A；承接 #7049 把变更接回 B 端）──────────
     # 三次沿革（**每一次都是「前提变了」，不是放开判据**）：
     #   ① #5302（2026-09-25）：`mark_read` / `read_all` 被从工具源码删除 ⇒ 期望收成
@@ -166,7 +176,8 @@ cases:
     #   · `notification_manage` 侧：`mark_read` / `read_all` ∈ `WRITE_TOOL_ACTIONS`（#7040 填回）
     #     ⇒ 非只读 action 走 `BaseTool` 的写确认门禁（`react_turn` 的门禁 11/11），
     #     **先确认再改** 与 **本轮直接改** 都是合格落地形态 ⇒ 期望取 OR；
-    #   · `interact` / `direct_reply` 侧：确认卡 / 澄清话术也算合格（与 DF-008 的既有口径同形）；
+    #   · `interact` 侧：**写确认门禁**产出的 `interact(component=confirm)` 卡（"先确认再改"）
+    #     也算合格 —— 与 DF-008 的既有口径同形；
     #   · **不得谎称已读**：`forbidden_text` 为主判据（内容一字未动）；
     #   · **调用失败不得算过**：`must_succeed[notification_manage, only_if_called]` ——
     #     「没去改」不算失败，「**去改了就必须成了**」（先例 = AS-003/AS-005 的条件效果层）。
@@ -177,20 +188,70 @@ cases:
     #    `"mark_read or read_all"` 这种 OR 串**不是**合法 action 值，会静默匹配不上；
     # ③ 写分类不依赖值：`notification_manage` 在 `WRITE_TOOL_ACTIONS` 里、`mark_read` ∈ 写集合
     #    ⇒ `assertion_taxonomy.is_write_expectation` 判写，`must_succeed` 是它的效果层。
+    # ── 2026-10-16 **OR 面收口**（issue #7048 P7）────────────────────────────────
+    # 病灶（runner 语义 + P6 复跑实测）：上面的"两次等价的落地形态"原写成**两条并列 entry**
+    # `[notification_manage(action=mark_read), direct_reply or interact]`，而 runner
+    # **逐条计分**（`score = passed_expectations / total_exp`，见 `run_case`），
+    # **每条独立必需** ⇒ 「先确认再改」路径（本轮真值只有 list/unread_count + confirm 卡，
+    # `mark_read` 要等商家点确认才发）**恒判 50%**（P6 实测读数：`rounds=1
+    # tools=['notification_manage','notification_manage','interact'] score=50%`，
+    # 红在 `notification_manage(action=mark_read) → arg 'action' expected mark_read got unread_count`）。
+    # 这与 PR-006 的「恒 50%」**同一形态**（该用例注释早已写死"**不能**写成两条独立声明"），
+    # 那里走的是同一条出路 —— **一条 OR 文本**：`check_expectation` 原生支持 `A or B`
+    # （拆法见 `local_runner.py` 的 `check_expectation`：`parts = split(" or ")`），
+    # 且 OR 的每一分支**各自**做 `args` 值级校验 ⇒ 两条路径各认自己的证据、互不顶替。
+    # ⚠️ 该 OR **不放大任何面**（三面照旧独立必需）：
+    #   · `forbidden_text` **只收窄轮次作用域、五条禁词一字未删**（见下方该字段的注释）；
+    #   · `must_succeed[notification_manage, only_if_called]` 一字未动
+    #     ⇒「去改了就必须成了」；**本轮不执行**（确认卡路径）时它仍按 `only_if_called` 放过；
+    #   · 写分类（`is_write_expectation`）仍判写：`notification_manage` 的 `mark_read` ∈
+    #     `WRITE_TOOL_ACTIONS`，**改的只是"同一件事的一次通过条件"，不是"要不要做"**。
+    # ⚠️ 为什么**去掉** `direct_reply` 分支（这是本包**收紧**、不是放宽，如实登记）：
+    # `direct_reply` 的 runner 语义 = 「本轮无 tool_calls 且有文本」⇒ 接受它就等于接受
+    # **一次工具都没调、纯文本**的落地形态 —— 而那条文本既不能证明去改了、也不能证明
+    # 给了确认入口（"文本可满足的写用例"= 假绿通道）。本用例的合格形态只有两种：
+    # **真去改（成功）** 或 **给出写确认卡**。收紧后「纯文本」变成判红（红证见
+    # `tests/unit_ci_workflows/test_eval_expectation_or_group.py`）。
+    # ⚠️ **形态必须是「字符串 + 每个分支内联自己的 args」**（与 PR-006 的
+    # `"inventory_manage(action=low_stock_alert) or product_search(stock_status=low_stock)"` 同形）：
+    # `.github/assertion_taxonomy.py::expectation_tools` 对 **dict 形态**只按 ` or ` 拆 `tool` 字段，
+    # 而 `args` 是**整条 entry 共用**的 ⇒ dict 形态下 `"notification_manage(action=mark_read)"`
+    # 会被当成**整个工具名**（连括号一起）⇒ 它不在 `WRITE_TOOL_SURFACE` 里 ⇒
+    # 「本用例是写用例」与 action 级写方的扫描面**双双失明**（CI 实测：
+    # `tests/unit_ci_workflows/test_shared_fixture_write_restore.py::test_scan_surface_covers_the_known_writers`
+    # 报 `真实库里解析不到任何 action 级写方 … assert []`）。字符串形态走**逐分支**解析
+    # （`_EXP_TOOL_RE` 取工具名 + 正则取该分支的 args）⇒ 写身份与 args 值级校验都正确。
     expectations:
-      - tool: notification_manage
-        args:
-          action: mark_read
-      - tool: direct_reply or interact
+      - "notification_manage(action=mark_read) or interact"
     # forbidden-text-intent: 预测/承诺话术的禁令仍是主判据之一 ——
     # 「不能做」已不再是本用例的真值（能力已接回），真值是「**不得谎称已读**」
     # （说了已读就必须真有 success 的调用；`must_succeed` 是这一半的机器判据）。
+    # ── 2026-10-16 **禁令收窄到「写轮之前」**（issue #7048 P7；**五条禁词一字未删**）──────
+    # 为什么必须收窄（P6 的代码级静态证明 + 本包逐条复算）：这五条是「能力已下线」时代对
+    # **假承诺**的禁令；#7049 把变更接回后，**真调用成功**时「已为您标记为已读」是**如实陈述**
+    # ⇒ 若让写真执行（R2 确认后），**一句真话会撞全程禁令**（用例自相矛盾）。
+    # 逐条读数（`check_forbidden_text` 直测，零 LLM）：
+    #   · 全程语义 + R2 真话「已为您标记为已读」⇒ `forbidden_text: 回复含反模式词「已为您标记」（R2）`（**假红**）
+    #   · 轮次作用域(R1) + 同一条真话在 R2 ⇒ 无违规 ✓ ；同一条话在 R1（**先声张**）⇒ 判红 ✓
+    # 收窄后的语义 = 「**先声张即违规**」：R1（**做之前**）出现任一禁词即红 —— 这**不削弱**
+    # 禁令原意（假承诺派的正是"没做就说做了"），反而更精确；R2 之后的如实陈述不再误伤。
+    # ⚠️ 与 PG-013（issue #3833）的修法**同形**：全程禁令把「问答轮如实陈述」与
+    # 「写操作轮拒绝执行」判成同一件事 ⇒ 治法是把模糊的全程禁令收紧成「**轮次 + 措辞**」
+    # 精确断言，**不是**把禁词删掉（真拒绝 / 真假承诺必须仍红；红证见
+    # `tests/unit_ci_workflows/test_eval_expectation_or_group.py`）。
+    # 未削弱项：R1 的假承诺面**完整保留**；「不得谎称已读」的另一半（说了已读就必须真有
+    # success 的调用）仍由**全程**生效的 `must_succeed` 把守（对 R2 同样有效）。
     forbidden_text:
-      - "已标记为已读"
-      - "已标为已读"
-      - "已全部标记"
-      - "已经帮您标记"
-      - "已为您标记"
+      - round: 1
+        text: "已标记为已读"
+      - round: 1
+        text: "已标为已读"
+      - round: 1
+        text: "已全部标记"
+      - round: 1
+        text: "已经帮您标记"
+      - round: 1
+        text: "已为您标记"
     # 条件效果层（「调用了 ≠ 成了」，#3778）：声明了写工具就必须证明它成了。
     # `only_if_called` 的理由：本用例合格形态之一是**先出确认卡、本轮不执行**
     # （商家尚未确认）⇒ 无条件声明会把合格行为判红（先例 = AS-003/AS-005 的 `only_if_called`）。

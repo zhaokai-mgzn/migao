@@ -9577,18 +9577,18 @@
 ### ST-005. 通知标记已读 —— 变更已接回（#7040）：标记已读要真做（走确认门禁），不得谎称已读 🔵
 ```
 你: 把新订单通知标为已读
-期望: notification_manage(action=mark_read)
-期望: direct_reply or interact
+你: 确认
+期望: notification_manage(action=mark_read) or interact
 数据: 真值 = 变更（标记已读）已在能力面内，且该调用必须走写确认门禁（非只读 action）
 数据: 整场不得出现假承诺话术（机器断言见 forbidden_text）
 数据: 标记已读的落库真值由 admin-api 侧承担：PUT /api/admin/notifications/{id}/read（单条）/ PUT /api/admin/notifications/read-all（全部）
 前置(散文): 商家本人的通知中心里存在**至少一条未读通知**（否则 `mark_read` 无对象、agent 无从标记）｜ 变体：目标通知已读 ⇒ agent 合理地答「这条已是已读」，此时本用例的红不构成缺陷（前置面，不是行为面）
 命名空间(同键互斥·自动串行): account_password:notifications_mark_read
-禁词: 已标记为已读
-禁词: 已标为已读
-禁词: 已全部标记
-禁词: 已经帮您标记
-禁词: 已为您标记
+禁词（第 1 轮）: 已标记为已读
+禁词（第 1 轮）: 已标为已读
+禁词（第 1 轮）: 已全部标记
+禁词（第 1 轮）: 已经帮您标记
+禁词（第 1 轮）: 已为您标记
 必须成功: notification_manage
 ```
 真值: agent-notification.notification-status
