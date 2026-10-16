@@ -607,20 +607,33 @@ class TestValidateInputGateContractAudit:
         )
         assert result.success is True, result.message
 
-    async def test_notification_create_requires_recipient_id(self, tool, admin_tool_context):
-        """过松：工具硬必填 recipient_id（`notification_manage.py:392-397`），契约
-        `CreateNotificationRequest.java:17-18` @NotBlank → 闸门旧规则只要 title/content。"""
+    async def test_notification_mark_read_requires_notification_id(self, tool, admin_tool_context):
+        """🔴 issue #7040 改判（原用例断的是 `create` 的 `recipient_id`）。
+
+        `create` / `delete` **已不接线**（裁定：删除 ⊂ 严禁；创建 + 对外发送 ⊂ 不支持）⇒
+        它们的规则块同批删除，原断言无对象。改钉**接回**的变更 action 的必填：
+        `mark_read` 需要 `notification_id`（`notification_manage` 的 `_mark_read` 本地也拦，
+        两道闸门都必须到位：工具层 → 这里；校验层 → 本条）。
+        """
+        # `params` 必须非空（工具本身的入参前置）；用**无关字段**占位 ⇒ 必填缺失仍被点出
         missing = await tool.execute(
             context=admin_tool_context, target_tool="notification_manage",
-            target_action="create", params={"title": "到货通知", "content": "已到货"},
+            target_action="mark_read", params={"page": 1},
         )
-        assert missing.success is False
-        assert "recipient_id" in missing.message
+        assert missing.success is False, missing
+        assert "notification_id" in missing.message, missing.message
 
         ok = await tool.execute(
             context=admin_tool_context, target_tool="notification_manage",
-            target_action="create",
-            params={"recipient_id": "u1", "title": "到货通知", "content": "已到货"},
+            target_action="mark_read", params={"notification_id": "n-1"},
+        )
+        assert ok.success is True, ok.message
+
+    async def test_notification_read_all_needs_no_params(self, tool, admin_tool_context):
+        """`read_all` **零业务参数**（`required: []`）—— 「无参即合法」的诚实声明不是漏填。"""
+        ok = await tool.execute(
+            context=admin_tool_context, target_tool="notification_manage",
+            target_action="read_all", params={"page": 1},
         )
         assert ok.success is True, ok.message
 
@@ -748,10 +761,9 @@ RETIRED_RULE_KEYS_B_END_READONLY: frozenset = frozenset({
     ("session_manage", "end"),
     # [RETIRED #5302] notification_manage：收窄为 list/unread_count（写 action 全删）
     #   （settings 域整域收口 = #5247 的漏网补齐；同一轮 B 端只读化 ⇒ 记在同一张台账）
-    ("notification_manage", "create"),
-    ("notification_manage", "delete"),
-    ("notification_manage", "mark_read"),
-    ("notification_manage", "read_all"),
+    # 🔴 issue #7040 销账（4 → 2）：`mark_read` / `read_all` 已**接回**（不再是死键 ——
+    # 它们是真实变更 action，规则块见 `app/tools/validate_input.py`）；
+    # `create` / `delete` 的**规则块**已随「不接线」同批删除（不再计入本台账）。
     # [RETIRED #5302] settings_manage：收窄为 get_settings/get_ai_config/login_logs（写 action 全删）
     #   → [销账 #4025 F8] `change_password` 的规则块已从 `_VALIDATION_RULES` 删除 ⇒ 该条销账
     #     （`update_ai_config` / `update_settings` 的规则块仍在 app 侧 ⇒ 仍记在此）

@@ -459,7 +459,8 @@ _CONFIRM_CARD_MARKERS = ("确认卡", "确认卡片", "component=confirm")
 # #3317 的 6 处工具绑定（B 端）——逐一锁定为回归锚点
 _ISSUE_3317_BINDINGS = {
     "staff": ("employee_manage", "role_manage"),
-    "settings": ("settings_manage", "notification_manage"),
+    # 🔴 issue #7040：通知工具已迁出 settings 域（独立 `notification` skill 承接变更能力）
+    "settings": ("settings_manage",),
     "data": ("finance_api", "session_manage"),
 }
 
@@ -476,7 +477,10 @@ _ISSUE_3317_RETIRED_READ_ONLY: dict = {
     "session_manage": "写 action（assign/end）删除 ⇒ 收窄为 list/monitor/detail",
     # ── # [RETIRED #5302] 最后两把（settings 域整域收口）──────────────────────────
     "settings_manage": "写 action（update_settings/update_ai_config/change_password）全删 ⇒ 收窄为三个只读 action",
-    "notification_manage": "写 action（mark_read/read_all/delete/create）全删 ⇒ 收窄为 list/unread_count",
+    # 🔴 issue #7040 **改判**：`notification_manage` 的 `mark_read` / `read_all` 已**接回**
+    # （用户 2026-10-16 裁定「变更 ✅ 必须支持」）⇒ 它**不再**属本「退役为只读」子集。
+    # 它现在与 `scheduled_task_manage` 同族：**需确认写的 B 端工具**（名册见
+    # `_CONFIRM_GATE_BINDING_SKILLS`，其中 `notification` 为本次新增条目）。
 }
 
 #: 仍绑定「需确认写工具」的 Skill 名册（#5247 后 3 个 → **#5303 后 4 个**）—— 由
@@ -500,6 +504,10 @@ _ISSUE_3317_RETIRED_READ_ONLY: dict = {
 #: 判据本体（绑需确认写工具 ⇒ 必须暴露 `interact`）一字未改。
 _CONFIRM_GATE_BINDING_SKILLS: frozenset = frozenset({
     "customer_order", "customer_aftersales", "product",
+    # 🔴 **issue #7040（通知中心域，2026-10-16）**：`notification` 绑定
+    # `notification_manage`（`requires_confirmation=True`，变更类）且**已绑 `interact`
+    # （确认卡可达）** ⇒ 名册 4 → 5。判据本体（绑需确认写工具 ⇒ 必须暴露 `interact`）一字未改。
+    "notification",
     # 🔴 **issue #6486 包 2（定时提醒域，2026-10-07）**：`reminder` 绑定 A 档可逆写
     # `scheduled_task_manage`（`requires_confirmation=True`）且**已绑 `interact`** ⇒ 名册 3 → 4。
     # 判据本体（绑需确认写工具 ⇒ 必须暴露 `interact`）一字未改。

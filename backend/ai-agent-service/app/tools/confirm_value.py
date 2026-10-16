@@ -314,6 +314,16 @@ CARD_DB_CONSISTENCY_LEDGER: dict = {
                   "没有卡值比对载体；且它落库的是**待办计划**（到点只投站内通知、不执行业务写），"
                   "业务账在该域不存在 —— 是「结构上无从比对」，不是「没登记」。",
     },
+    "notification_manage": {
+        "stance": UNDECIDABLE,
+        "anchor": "#7040",
+        "issue": "#7040",
+        "owner": "通知中心域写路径 owner（notification_manage）",
+        "reason": "变更面只有 `mark_read`（单条已读）/ `read_all`（全部已读）两个 action，"
+                  "参数面只有 `notification_id`（无金额、无数量、无价格字段）⇒ 没有卡值比对载体；"
+                  "落库改的是**通知的已读状态**（幂等的状态置位），业务账在该域不存在 —— "
+                  "是「结构上无从比对」，不是「没登记」。",
+    },
     "order_manage": {
         "stance": UNDECIDABLE,
         "anchor": "#4025",

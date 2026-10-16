@@ -289,18 +289,11 @@ _VALIDATION_RULES: Dict[str, Dict[str, Any]] = {
             "required": ["notification_id"],
             "notification_id": {"type": str, "min_len": 1, "label": "通知 ID"},
         },
-        "delete": {
-            "required": ["notification_id"],
-            "notification_id": {"type": str, "min_len": 1, "label": "通知 ID"},
-        },
-        "create": {
-            # recipient_id 是工具硬必填（`notification_manage.py:392-397`）且契约
-            # `CreateNotificationRequest.java:17-18` @NotBlank → 旧规则漏了它（issue #3566 核查）
-            "required": ["recipient_id", "title", "content"],
-            "recipient_id": {"type": str, "min_len": 1, "label": "接收人用户 ID"},
-            "title": {"type": str, "min_len": 1, "label": "通知标题"},
-            "content": {"type": str, "min_len": 1, "label": "通知内容"},
-        },
+        # 🔴 issue #7040（2026-10-16 用户裁定「能力边界 终版」）：
+        # `delete` / `create` 两个 action 的规则块**已删除** —— 它们**不接线**
+        # （删除 ⊂ 严禁；创建 + 对外发送 ⊂ 不支持）⇒ 工具 `VALID_ACTIONS` 里已无这两个 action，
+        # 规则块留着就是**死键**（F8 台账里同批销账）。留下的两个是同批**接回**的变更 action：
+        # `mark_read`（需 notification_id）/ `read_all`（零参数）。
     },
     "processing_item_manage": {
         # 契约对齐（issue #3566 / #4882）：`ProcessingItemCreateRequest` 必填集已收缩为

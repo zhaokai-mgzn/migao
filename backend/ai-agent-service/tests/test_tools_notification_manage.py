@@ -1,10 +1,15 @@
 """NotificationManageTool 单元测试 — 站内通知**查询**（列表 / 未读数）。
 
-B 端只读化（issue #5247 用户裁定 2026-09-23；settings 域整域收口 = issue #5302）：
-`notification_manage` 的写 action（`mark_read` / `read_all` / `delete` / `create`）已从工具
-删除 ⇒ 本次退休写路径用例（**产品裁定，非放宽门禁**）。
-issue #3567 的收件人解析 / payload 契约机具（只服务 `create`）随写 action 一并从实现删除
-⇒ 对应断言无对象。写能力下线的判据在 `tests/test_settings_domain_readonly.py`。
+能力沿革（同一把工具，两次裁定）：
+  · issue #5247 / #5302（2026-09-23/24）：B 端只读化 ⇒ 写 action（`mark_read` / `read_all` /
+    `delete` / `create`）从工具删除，本文件只留查询断言；
+  · **issue #7040（2026-10-16 用户裁定「能力边界 终版」）**：**变更 ✅ 必须支持** ⇒
+    `mark_read` / `read_all` **接回**（端点 `PUT …/{id}/read` 与 `PUT …/read-all` 已核存在），
+    `delete` / `create` **仍不接线**（删除 ⊂ 严禁；创建 + 对外发送 ⊂ 不支持）。
+
+⇒ 本文件继续只覆盖**只读**面（查询）；**变更面**（含确认门禁与端点断言）在
+`backend/ai-agent-service/tests/test_notification_manage_change_actions.py`，
+结构边界在 `tests/unit_ci_workflows/test_mibao_b_end_readonly.py`（判据 1/3/6b/8/9/10/11）。
 """
 # case_ids: ST-004, ST-005
 import pytest
@@ -119,9 +124,9 @@ class TestNotificationUnreadCount:
         assert mock_client.get.call_args[0][0] == "/api/admin/notifications/unread-count"
 
 
-# [RETIRED #5302] TestNotificationMarkRead（3 例） 已退休：标记已读 / 全部已读
-#   （mark_read / read_all）已从工具删除（B 端只读化；settings 域整域收口）：
-#   写能力不再存在，断言无对象（下线判据见 tests/test_settings_domain_readonly.py）。
+# [RESTORED #7040] TestNotificationMarkRead：标记已读 / 全部已读已**接回**（变更 ✅ 按
+#   2026-10-16 裁定必须支持）⇒ 断言见 tests/test_notification_manage_change_actions.py
+#   （含端点、语义映射与**确认门禁**）。本文件不再保留「已下线」的退休注记，避免与现实相反。
 
 
 # [RETIRED #5302] TestNotificationDelete（2 例） 已退休：删除通知（delete）已从工具删除（同上）。

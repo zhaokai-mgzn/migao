@@ -1466,11 +1466,31 @@ class TestDegenerateGuardRails:
         # 本断言立刻红 ⇒ 必须同时把分类表填回 + 重估 action 级夹具锚点 +
         # 检查 `test_action_level_write_branch_still_discriminates`（那条注入式自证是现下
         # action 级分支的**唯一**判据面，见 `test_read_only_action_list_variants` 的说明）。
-        assert tax.WRITE_TOOL_ACTIONS == {}, (
-            "WRITE_TOOL_ACTIONS 不再是空集 —— 要么混进了陈旧条目（工具已收窄为只读），"
-            f"要么真有新的『部分写』工具进场（那要重估 action 级夹具锚点）："
-            f"{sorted(tax.WRITE_TOOL_ACTIONS)}"
+        # 🔴 **#7040 改判（2026-10-16，不是放宽）**：`WRITE_TOOL_ACTIONS` **重新填回 1 条**
+        # （`notification_manage` —— 用户裁定「变更 ✅ 必须支持」⇒ `mark_read` / `read_all`
+        # 接回，`list` / `unread_count` 仍是只读 action ⇒ 它正是本表语义那一档）。
+        # 断言形态从「等于空集」改为**与源码互补的现算相等**（更强，不是更松）：
+        # 表里每一项的写 action 集必须 == 该工具 `VALID_ACTIONS` − `read_only_actions`；
+        # 反向也判（源码里新出现的"部分写"工具若没登记 ⇒ 红）。
+        # ⇒ 这一条同时取代了旧的"归零即红"哨兵：表被清空（哪怕源码没变）也会红。
+        _declared = _partial_write_tools_from_source()
+        assert _declared, (
+            "源码里没有解析出任何「部分写」工具 ⇒ 本对账空跑（解析口径漂移？）—— fail-closed"
         )
+        assert set(tax.WRITE_TOOL_ACTIONS) <= set(_declared), (
+            "WRITE_TOOL_ACTIONS 里有**陈旧条目**（源码里已不是「部分写」形态）："
+            f"{sorted(set(tax.WRITE_TOOL_ACTIONS) - set(_declared))}"
+        )
+        _unregistered = set(_declared) - set(tax.WRITE_TOOL_ACTIONS) - set(tax.WRITE_TOOLS)
+        assert not _unregistered, (
+            "源码里的「部分写」工具**既不在 WRITE_TOOL_ACTIONS 也不在 WRITE_TOOLS** ⇒ "
+            f"含它的用例不会被分类为写用例（门禁静默变空壳）：{sorted(_unregistered)}"
+        )
+        for tool, write_actions in sorted(tax.WRITE_TOOL_ACTIONS.items()):
+            assert write_actions == _declared[tool], (
+                f"{tool} 的写 action 集与本表登记不一致：表={sorted(write_actions)} "
+                f"源码现算={sorted(_declared[tool])} —— 值必须 == `VALID_ACTIONS` − `read_only_actions`"
+            )
 
     def test_mibao_toolset_truth_loaded(self):
         """黄金策工具集真值必须加载成功（#4356）。
@@ -2148,6 +2168,52 @@ class TestGateShell:
 # ══════════════════════════════════════════════════════════════════════════════
 # 五之二、burn-down 预算与全量对账的端到端红证（#4031 交付 2 / 3）
 # ══════════════════════════════════════════════════════════════════════════════
+
+
+# ── 「部分写」工具的真值源（issue #7040）：与 `.github/assertion_taxonomy.py` 的分类表对账 ──
+_AI_TOOLS_DIR = (
+    Path(__file__).resolve().parents[2]
+    / "backend" / "ai-agent-service" / "app" / "tools"
+)
+
+
+def _partial_write_tools_from_source() -> dict:
+    """现算「工具级 `read_only=False`、但只有部分 action 是写」的工具 → 其写 action 集。
+
+    真值源 = 工具源码本身（`VALID_ACTIONS` − `read_only_actions`），**不读分类表** ——
+    否则「表与源码对账」会退化成自己跟自己比（§19.1 判据自己选择沉默）。
+    零依赖：只用 stdlib `re`（本文件跑在 `ci workflow helper unit tests` job，无后端依赖）。
+
+    判读档位（与分类表**同名同义**，不新造第二套口径）：
+      · **整工具即写**（`read_only=False` 且**不声明** action 枚举，如 `aftersale_create`）
+        ⇒ 归 `WRITE_TOOLS`，**不在本函数的返回值里**（本函数只算"部分写"那一档）；
+      · **部分写**（`read_only=False` ∧ 声明 `VALID_ACTIONS` ∧ `read_only_actions` 是其**真子集**）
+        ⇒ 归 `WRITE_TOOL_ACTIONS`（本函数的返回值）；
+      · `read_only=False` 但两者**没有同时声明**（如 `aftersale_create` 整工具即写、`order_manage`
+        只声明 action 枚举）⇒ 不在本函数射程（本函数**不猜**，避免造第二套口径）；
+      · 两者都声明、但 `read_only_actions == VALID_ACTIONS`（全读却声明写）⇒ 属**自相矛盾**，
+        由 `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 的判据 3 判红。
+    """
+    import re as _re
+
+    out: dict[str, set] = {}
+    for path in sorted(_AI_TOOLS_DIR.glob("*.py")):
+        src = path.read_text(encoding="utf8")
+        if not _re.search(r"^\s+read_only\s*=\s*False", src, _re.M):
+            continue
+        valid_m = _re.search(r"^VALID_ACTIONS\s*=\s*[^\n]*", src, _re.M)
+        ro_m = _re.search(r"^(?:READ_ONLY_ACTIONS|[A-Z_]*READ_ONLY[A-Z_]*)\s*=\s*[^\n]*", src, _re.M)
+        # 只有**同时**声明两者才落在本函数射程（= 可判定"部分写"）。
+        # 其余形态（整工具即写 / 只声明 action 枚举 / 无 read_only_actions）归 `WRITE_TOOLS`
+        # 或由别的判据承担，本函数**不猜**（猜 = 造第二套口径）。
+        if not valid_m or not ro_m:
+            continue
+        valid = set(_re.findall(r'"([a-z_]+)"', valid_m.group(0)))
+        read_only = set(_re.findall(r'"([a-z_]+)"', ro_m.group(0)))
+        if read_only and read_only < valid:  # 严格子集 ⇒ 「部分 action 是写」
+            name_m = _re.search(r'^\s+name\s*=\s*"([a-z_]+)"', src, _re.M)
+            out[name_m.group(1)] = valid - read_only
+    return out
 
 def _gate_module():
     """按路径加载门禁模块（它是脚本不是包）。"""

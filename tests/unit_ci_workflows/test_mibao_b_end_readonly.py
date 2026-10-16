@@ -1,86 +1,73 @@
 # case_ids: MC-021
-"""**B 端黄金策写面边界**的机械判据（issue #5247 只读化 → issue #5303 A 档可逆写补回）。
+"""**B 端黄金策能力边界**的机械判据（issue #7040 重锚；沿革 = issue #5247 / #5302 / #5303）。
 
-## 裁定一（2026-09-23 / issue #5247）
+## 🔴 本文件的第三次重锚：判据换了对象（2026-10-16 用户裁定「能力边界 终版」）
 
-> 「B 端 agent 定位要求**侧重数据查询和分析**；当前具备的创建和更新能力以及 tools
-> 都从 B 端 Agent 移除；把现在的商家后端功能模块能力添加进 B 端 Agent，**仅限查询和数据分析能力**。」
+权威口径 = **issue #5247 的最新评论「能力边界 终版」**（用户三条追加裁定后闭合），逐字要点：
 
-配套裁定：写工具处置 = **收窄为只读工具**（保留工具名与只读 action、`read_only=True`、
-权限码改读码、删写 action）；**员工与岗位保留只读**；**系统设置不进 B 端对话面**；
-C 端（元元）**零改动**。
+> 「对比商家后台观星台的功能，不支持创建商品和订单，**其他单据类的也不要支持创建**，
+> **只允许变更和查下分析类**」· 非单据对象创建「**都支持（只要不是单据）**」·
+> 删除/停用「**不包含（只能改，不能删）**」· 射程「**只在 B 端（黄金策）**」
 
-## 裁定二（2026-09-24 / issue #5303，**A 档可逆写补回** —— 本判据的第二次改判）
+| 类别 | 支持面 |
+|---|---|
+| 创建**商品** / **订单** / **其他单据类** | ❌ 不支持 |
+| 创建**非单据对象**（员工/角色/客户/供应商/标签/分类/加工项/定时提醒） | ✅ 必须支持 |
+| **变更**（改已存在对象/单据：标记已读、改状态、改价…） | ✅ 必须支持 |
+| **删除 / 停用 / 作废**（不可逆） | ❌ 不支持 |
+| 查询 / 分析 / 导航 | ✅ 支持 |
 
-> 按补回顺序把**最高 ROI 的可逆写**放回来：`product_update`（商品级统一定价）/
-> `sku_update`（SKU 调价）—— 标注 `WRITE|IDEMPOTENT`（幂等 ⇒ 重放安全）+ **可逆**
-> （价格能再调回去）+ 非对外承诺 + 不绕过审核门禁。
+**旧判据为什么必须换**（不是"顺手刷新"，是**判据与被判对象脱节**）：
+本文件第二版判「B 端可达工具并集里不得有白名单外的 `read_only != True` 工具」，其文档头
+逐字配套 2026-09-23 的旧口径「写工具处置 = **收窄为只读工具**」⇒ **任何一次「把变更接回 B 端」
+都会被它判红**，而接回变更正是新裁定**要求**的行为 ⇒ 判据会把正确实现判成回归（假红）。
+第三版判据按新口径换成**对象**：
 
-⇒ 白名单**只有这两条**（`A_TIER_REVERSIBLE_WRITES`），且必须
-① **绑在且仅绑在** `product` skill（补回域唯一）；
-② 带 `requires_confirmation`（否则写操作没有确认门禁）；
-③ 先给商家看「改前 → 改后」预览才允许落库（该护栏落在工具层 fail-closed，
-   机械判据见 `backend/ai-agent-service/tests/test_price_preview_guard.py`）。
-其余写能力（建品 / 上下架 / 调库存 / 调订单状态 / 分类与加工项增删改 / 设置 / 通知）**一律仍不得绑**。
-「按新裁定改判，不是删守卫」：判据 1/2/3/5 逐条保留，只把**白名单**这一格显式化，
-并把能力文案的真值从"一律不得提改价"改成**双向一致**（判据 6）。
+1. **零「单据类创建」** —— B 端可达工具一个都不许是「创建单据」的工具（具名禁绑 +
+   结构面：向单据**集合**路径发 `POST` = 建单）；
+2. **零「删除 / 停用 / 作废」action** —— 结构面：发 `DELETE`（`/revert` 类撤销除外）
+   或 action 名命中不可逆闭词表 ⇒ 红；
+3. **每个非只读工具必须有确认门禁** —— 非只读 action 必须走 `requires_confirmation`
+   （**保留原确认门禁**：接回变更 ≠ 拆门禁）；
+4. **变更工具必须真的可达** —— 正向判据（旧判据只能表达「不许有写工具」，于是「变更整体
+   不可达」也全绿；那正是 issue #7040 的起点）；
+5. **A 档可逆写**（改价 / 定时提醒）的补回域与门禁**逐条照旧钉住**。
 
-## 为什么必须有机械判据
+## 判据清单（每条都有**注入式红证**，见文件末尾 `JUDGEMENTS` × `_injections()`）
 
-「B 端写面边界」是**跨三个文件族的联合事实**，任何一处改动都不会有东西变红：
-
-| 面 | 载体 | 漂移形态（本判据要拦的） |
+| # | 判据 | 会怎么红 |
 |---|---|---|
-| **S1 工具声明** | `backend/ai-agent-service/app/tools/*.py` 的 `read_only` / `VALID_ACTIONS` | 把某个 `read_only=True` 改回 `False`，或往 `VALID_ACTIONS` 里塞回写 action |
-| **S2 skill 绑定** | `app/graph/skills/*.py` 的 `*_TOOLS` + `app/agents/agents/mibao.py` 的 `skill_names` | 把 `order_create` / `product_manage` / `validate_input` 重新绑回任一 B 端 skill（= 写能力静默复活） |
-| **S3 能力文案** | `mibao.py` 的 `greeting` / `direct_replies.capabilities` | 文案承诺已下线能力（= **能力谎报**），或反过来**漏报**已补回的能力（商家不知道能找黄金策改价） |
+| 1 | 单据类创建工具禁绑（具名）+ A 档工具的门禁/补回域 | `order_create` 绑回 B 端 / A 档工具摘掉确认门禁 / 补回域漂移 / 悬空绑定 |
+| 2 | 具名写能力工具零绑定（`WRITE_TOOLS_UNBOUND_FROM_B_END` 逐条） | 具名清单里的工具被重新绑定 |
+| 3 | B 端可达工具的 action 面：零建单 / 零删除·停用·作废（结构面 + 闭词表） | 向单据集合 `POST` / 发 `DELETE` / 暴露 `delete`·`toggle_status` |
+| 4 | 能力文案不谎报（闭词表 + 句级否定过滤） | `mibao.py` 的非否定句里承诺创建/删除类能力 |
+| 5 | 共享工具与 C 端零改动 | 删掉共享工具类 / 摘掉它的 C 端绑定 |
+| 6 | A 档 + **变更**能力「文案 ↔ 绑定」双向一致 | 文案承诺而工具未绑 / 工具已绑而文案不提 |
+| 7 | 声明了 mibao persona 的每个 skill（含已解绑孤儿）的工具面受控 | 孤儿 skill 工具改回非只读 / 暴露不可逆动作 / 绑未登记的写工具 |
+| 8 | **非只读 ⇒ 必须带确认门禁**（新口径核心：变更可达但不得无确认执行） | 非只读 action 却无 `requires_confirmation`·`destructive` |
+| 9 | 可达面的汇总口径：零建单、零不可逆动作 | 见判据 3 的两条结构面（9 是**可达并集**口径，独立红证） |
+| ⊕ | `test_change_tools_actually_reachable`：变更工具**必须真的可达** | 把 `notification` 从 `skill_names` 解绑 ⇒ 红 |
 
-## 判据（每条都有**注入式红证**，见文件末尾 `test_every_judgement_can_go_red`）
+> 判据 8 / 9 与判据 1 / 3 的差别是**射程**：1 / 3 判「工具本身是不是禁形态」，8 / 9 判
+> 「**可达**工具面里的实际形态」—— 两者都要求「注入即红」，各自带独立红证。
 
-1. **B 端可达的工具并集里不得有白名单外的 `read_only != True` 工具**（L0；含悬空绑定检查 ——
-   绑了一个不存在的工具名也红，因为那说明解析面或绑定面已漂移）。白名单成员还必须在
-   `product` skill 上且带 `requires_confirmation`。
-2. **白名单外的写能力工具一个都不得绑在 B 端**（具名清单：`order_create` / `order_manage` /
-   `product_manage` / `processing_item_manage` / `processing_order_generate` /
-   `processing_order_update` / `settings_manage` / `notification_manage` / `validate_input`）。
-3. **B 端可达工具的 action 集合 ⊆ 只读 action 集合**（写 action 名零命中；另加一份
-   写 action **闭词表**兜底，防「工具把写 action 挪进 read_only_actions 洗白」）。
-4. **能力文案不谎报**：`mibao.py` 的 `greeting` / `capabilities` 不得出现**白名单外**的
-   能力承诺词（闭词表扫描 + 句级否定过滤）。#5303 改判：`改价` / `调价` 已从闭词表**移出**
-   （该能力真实具备）—— 它们的真实性由判据 6 反向钉住，不是放任。
-5. **共享工具与 C 端零改动**：与 C 端共享的 8 个工具必须**仍然存在**且**仍然绑在 C 端**
-   （`order_create` / `validate_input` / `interact` / `knowledge_search` /
-   `processing_item_query` / `product_search` / `product_detail` / `production_progress_query`）
-   —— 「只解绑 B 端，绝不删除、不改 C 端行为」是用户裁定的硬边界。
-6. **A 档写能力「文案 ↔ 绑定」双向一致**（#5303 新增）：文案承诺改价 ⇒ 两条工具必须真的绑在
-   B 端；工具绑在 B 端 ⇒ 文案必须真的提到改价（**反向能力谎报**同样是缺陷）。
-7. **声明了黄金策 persona 的每个 skill**（可达 + **已解绑的孤儿**）绑的工具必须
-   **∈ A 档白名单 ∪ 只读**（#5302 收口新增，见下）。
+## 本次重锚厂的**配套改动**（同一 PR，缺一不可）
 
-## 🔴 判据 7 的立案理由（#5302）：判据 1~3 的射程是「**可达**」，而 #5247 的处置里有「解绑」
-
-#5247 对两个域用了**两种不同**的处置：8 把写工具 = **收窄**（工具留在原地、删写 action）；
-`settings` 域 = **解绑**（把 skill 从 `mibao.py` 的 `skill_names` 移出）。判据 1~3 全部以
-`b_end_tools`（= `skill_names` ∪ fallback → 各 skill 的 `*_TOOLS`）为射程 ⇒
-**解绑会把该 skill 的工具整体移出射程**，而它的文件、注册关系、写 action 一字未动
-（`settings_manage` 的 `update_settings` / `update_ai_config` / `change_password` 与
-`notification_manage` 的 `create` / `delete` / `mark_read` / `read_all` 全在）——
-**正是 #5302 的漏网形态**：最危险的档位（全局配置 + 群发）整域逃出只读判据。
-
-判据 7 因此按 **skill 源码声明的 persona**（`SkillConfig.system_prompts` 的键）而不是
-「可达性」取射程：只要一个 skill 声明了 `mibao`，它绑的工具就受写面边界约束 ——
-**解绑不再是一条逃逸路径**（"不进对话面" ≠ "可以继续带写能力"）。
-它与判据 1 的差别是**射程**（超集）与**白名单口径复用**（A 档成员照旧放行）；
-在任何一次正常收窄下两者同绿，只有在"用解绑代替收窄"时判据 7 才会红
-（红证见注入 ⑧/⑧b/⑧c）。
+- `WRITE_TOOLS_UNBOUND_FROM_B_END` **移出** `notification_manage`（它的 `delete` / `create`
+  仍未接线，但 `mark_read` / `read_all` 属**变更** ⇒ 留在表里等于「变更永远回不来」）；
+- 新增 `CHANGE_TOOLS_REQUIRED_ON_B_END`（正向表）+ `CHANGE_CLAIM_WORDS`（判据 6b 的文案面）；
+- `FORBIDDEN_CAPABILITY_PHRASES` **不移入**「标记已读」类词（它们已是真实能力；
+  说了做不到由判据 6b 反向钉住）。
 
 ## 明确的边界（**不要**把本判据读成覆盖面更大）
 
-- 本判据**只读源码文本**（零依赖：仅标准库 `ast` + `re`），不连库、不跑 LLM、不读端点。
-  「工具码 ≡ 端点码 ≡ 菜单节点码」由 `tests/unit_ci_workflows/test_agent_permission_parity.py`
-  （#5246）负责，本判据**不重复**它的规则。
-- 本判据**不判提示词里的行为指令**（那些要靠真实 LLM 评测，按 `migao-dev-flow` §13 默认不派发）；
-  它只判「**工具面 + 绑定面 + 能力文案**」这三处静态可判的事实。
+- 本判据**只读源码文本 / 工具对象**（零依赖：仅标准库 `ast` + `re`），不连库、不跑 LLM、
+  不读端点。端点存在性与权限码一致性由 `tests/unit_ci_workflows/test_agent_permission_parity.py`
+  （#5246）与各工具自己的单测负责。
+- **不判提示词里的行为指令**（那些要靠真实 LLM 评测，按 `migao-dev-flow` §13 默认不派发）；
+  只判「**工具面 + 绑定面 + 能力文案 + 确认门禁**」这些静态可判的事实。
+- 「单据类创建」的分类口径是**启发式**（见 `_endpoint_calls`）：只覆盖代码里**字面出现**的
+  HTTP 方法与路径（模块级常量 + 调用点两轮扫描）；动态拼接的路径不在射程内（如实登记）。
 """
 
 from __future__ import annotations
@@ -96,50 +83,102 @@ TOOLS_DIR = AI_SERVICE / "app" / "tools"
 SKILLS_DIR = AI_SERVICE / "app" / "graph" / "skills"
 AGENTS_DIR = AI_SERVICE / "app" / "agents" / "agents"
 
-#: B 端**不得绑定**的写能力工具（用户裁定 2026-09-23：创建/更新能力从 B 端移除）。
-#: `order_create` / `validate_input` 与 C 端共享 ⇒ 只解绑、**不删文件**（判据 5 反向钉住）。
-#:
-#: ⚠️ **2026-09-24 改判（issue #5303，A 档可逆写补回）**：`product_update` / `sku_update`
-#: **已从本表移出** —— 它们被用户裁定为白名单（见 `A_TIER_REVERSIBLE_WRITES`），
-#: 重新绑回 `product` skill。移出 ≠ 放宽：它们的可达性/确认门禁/补回域由判据 1 逐条钉住，
-#: 且**本表其余条目一条都不许动**（`test_write_tools_bound` 的红证仍在跑）。
-WRITE_TOOLS_UNBOUND_FROM_B_END: dict[str, str] = {
-    "order_create": "建单（与 C 端共享：只解绑 B 端，文件与 C 端行为一字不动）",
-    "order_manage": "改订单状态/发货/退款",
-    "product_manage": "建品/上下架",
-    "processing_item_manage": "加工项增删改",
-    "processing_order_generate": "生成加工单",
-    "processing_order_update": "加工单状态流转",
-    "settings_manage": "系统设置（用户裁定：不进 B 端对话面）",
-    "notification_manage": "通知配置（用户裁定：不进 B 端对话面）",
-    "validate_input": "写操作前置校验（B 端无写操作 ⇒ 绑它只会把 A5「校验自己执行不了的写工具」引回来）",
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 一、新口径的真值表（**显式登记**，未登记即红）
+# ══════════════════════════════════════════════════════════════════════════════
+
+#: **单据类创建工具禁绑**（新裁定：商品 / 订单 / 其他单据类都不得创建）。判据 1 的具名面。
+#: ⚠️ 这是**活表**：谁要把某个单据类创建工具接回 B 端，必须先在用户裁定面上登记
+#: （改本表 = 改产品能力边界，评审面必须看见）。
+DOCUMENT_CREATION_TOOLS_DENIED: dict[str, str] = {
+    "order_create": "创建订单（用户裁定逐字点名不支持）",
+    "product_manage": "创建商品（`create` action；用户裁定逐字点名不支持）",
+    "aftersale_create": "创建售后工单（单据类；用户裁定「其他单据类的也不要支持创建」）",
+    "processing_order_generate": "生成加工单（单据类创建）",
+    "processing_order_update": "加工单写面（创建 / 状态流转；B 端未接线）",
 }
 
-#: **A 档可逆写白名单**（issue #5303，用户裁定 2026-09-24）：B 端**允许**存在的 `read_only=False` 工具。
+#: **单据类资源根**（结构面判据的路径口径）。向这些**集合路径**发 `POST` = 建一张单据。
+#: 口径 = 用户裁定里逐字点到的单据族（加工单 / 发货单 / 入库单 / 采购单 / 售后工单 / 质检单）
+#: + 商品与订单两个被点名者。**刻意收窄**：`/customers`（客户，非单据对象）等**不在**表里。
+DOCUMENT_ROOT_PATTERNS: tuple[str, ...] = (
+    "/orders",             # 订单（含 /agent/orders）
+    "/products",           # 商品（含 /agent/products）
+    "/processing-orders",  # 加工单
+    "/shipments",          # 发货单
+    "/inbound-orders",     # 入库单
+    "/purchase-orders",    # 采购单
+    "/after-sales",        # 售后工单
+    "/quality-checks",     # 质检单
+)
+
+#: 「删除 / 停用 / 作废」（不可逆）—— **action 名闭词表**（结构面兜底）。
+IRREVERSIBLE_ACTION_WORDS: frozenset = frozenset({
+    "delete", "delete_item", "delete_category", "delete_task", "delete_notification",
+    "delete_role", "delete_user", "delete_tag", "delete_product",
+    "toggle_status", "toggle_item_status", "toggle_product_status",
+    "void", "deactivate", "disable", "abolish", "purge", "remove",
+})
+
+#: `/revert` 类**撤销**端点：把批量写改回去的**可逆**动作，按裁定**不是**删除
+#: （`product_batch_update(action=revert)` 的存在就是这条口径的实例）。
+REVERT_PATH_MARKERS: tuple[str, ...] = ("/revert", "/rollback", "/undo")
+
+#: 🔴 **「撤销」与「删除」的分界**（`DELETE` 方法的**唯一**例外面，逐条具名登记）。
+#: 口径 = `DELETE` 把「**本次委托产生的、可重建的**对象」收回 —— 它不销毁既有业务数据：
+#: `scheduled_task_manage(action=cancel)` 删的是**自己刚建的提醒待办**，商家再委托一次即恢复
+#: ⇒ 按裁定属**变更**（用户 2026-10-07 已裁定入 A 档可逆写白名单，issue #6486 包 2）。
+#: 反面形态（**必须红**）：`processing_item_manage` 的 `delete_item` 删的是**既有业务对象**
+#: （加工项，软删 = 记录置 `deleted=1`）—— 那才是「不可逆删除」。
+#: ⚠️ 这是**活表**：加一条 = 允许某把工具用 `DELETE` ⇒ 评审面必须看见（判据 3 的
+#: 「DELETE 例外」子判据会核「该工具的 action 面里不得出现 `delete*`」）。
+CANCEL_DELETE_ALLOWLIST: dict[str, str] = {
+    "scheduled_task_manage": (
+        "`cancel` = 收回**本次委托**产生的提醒待办（可重建 ⇒ 可逆），"
+        "A 档可逆写白名单成员（issue #6486 包 2）"
+    ),
+}
+
+#: B 端**不得绑定**的写能力工具（具名清单）。
+#: ⚠️ 2026-09-24 改判（issue #5303）：`product_update` / `sku_update` 已移出（A 档白名单）。
+#: ⚠️ 2026-10-16 改判（issue #7040）：**`notification_manage` 已移出** —— 它的
+#: `mark_read` / `read_all` 属**变更**（裁定要求支持，#7040 接回）；留在表里的后果是
+#: 「变更永远回不来」（判据把正确实现判成回归）。移出 ≠ 放宽：它的可达性 / 确认门禁 /
+#: 文案一致性由判据 3、6b、8、9 与 `test_change_tools_actually_reachable` 逐条钉住，
+#: 且**本表其余条目一条都不许动**（`problems_write_tools_bound` 的红证仍在跑）。
+WRITE_TOOLS_UNBOUND_FROM_B_END: dict[str, str] = {
+    "order_create": "建单（与 C 端共享：只解绑 B 端，文件与 C 端行为一字不动）",
+    "order_manage": "改订单状态/发货/退款（单据写面；B 端未接线）",
+    "product_manage": "建品/上下架（商品创建 = 严禁）",
+    "processing_item_manage": "加工项增删改（含 `delete_item` = 不可逆 ⇒ 与「只能改不能删」冲突）",
+    "processing_order_generate": "生成加工单（单据类创建）",
+    "processing_order_update": "加工单状态流转（单据写面）",
+    "settings_manage": "系统设置（用户裁定：不进 B 端对话面）",
+    "validate_input": "写操作前置校验（B 端写面按新口径重构 ⇒ 绑它只会引入「校验自己执行不了的写工具」= A5 死角）",
+}
+
+#: 🔴 **变更工具必须接回 B 端**（新口径的**正向**要求：变更 ✅ 必须支持）。
+#: 这是本判据从「白名单制」换成「**禁绑制 + 变更可达**」的关键一格：
+#: 旧判据只能表达"不许有写工具"，新口径要求"变更类写工具**应当在**"。
+CHANGE_TOOLS_REQUIRED_ON_B_END: dict[str, str] = {
+    "notification_manage": (
+        "通知标记已读（变更，issue #7040 接线）：`mark_read` / `read_all` —— 端点 "
+        "`PUT /api/admin/notifications/{id}/read` · `PUT /api/admin/notifications/read-all` 已核存在"
+    ),
+}
+
+#: **A 档可逆写白名单**（issue #5303 / #5314 / #6486）：B 端**允许**存在的 `read_only=False` 工具。
 #: 入册判据（缺一不可）：`WRITE|IDEMPOTENT`（重放安全）+ 可逆 + 非对外承诺 + 不绕过审核门禁。
 #: ⚠️ 新增成员 = 改产品能力边界，必须显式改判本常量（判据 1 会立刻红）。
-#: ⚠️ 2026-09-24 第二次改判（issue #5314「批量更新能力」）：`product_batch_update` 入册 ——
-#: 它写的是**绝对目标值**（价格 / 上架状态，重放收敛 ⇒ 幂等），且带**撤销入口**
-#: （`action=revert` 逐条还原 `old_value`，契约 §一 把撤销定为批量的**准入前置**）；
-#: 两段确认（勾选集合 → 逐条「改前 → 改后」预览）+ 工具级 `requires_confirmation=True`
-#: ⇒ 不绕过审核门禁。批量不是"新的写能力面"，而是把 N 次单条写压成一次意图。
 A_TIER_REVERSIBLE_WRITES: frozenset = frozenset({
     "product_update",        # 商品级统一定价（PATCH /api/admin/agent/products/{id} → basePrice）
     "sku_update",            # 单规格调价（PATCH …/skus/price）
-    "product_batch_update",  # 批量改价 / 批量上下架 + revert 撤销（issue #5314，# 见上）
-    # 定时任务（用户「预约」，issue #6486 包 2；用户 2026-10-07 裁定，留痕 = agent-write-boundary §五）：
-    # 建 / 取消「到点提醒」待办。A 档四条逐条对齐：可逆（cancel 撤销）/ 幂等（服务端 dedup_key）/
-    # 非对外承诺（只提醒**自己**，不发给客户）/ 不绕审核门禁（不涉钱、不涉状态跃迁）。
-    # 🔴 到点只发**站内通知**，不执行业务写（L1 提醒型边界 —— 定时执行取不到「点确认卡」那个门禁）。
-    "scheduled_task_manage",
+    "product_batch_update",  # 批量改价 / 批量上下架 + revert 撤销（issue #5314）
+    "scheduled_task_manage",  # 建 / 取消「到点提醒」待办（issue #6486 包 2）
 })
 
-#: A 档工具 → **必须**绑在的 skill（补回域**逐条**钉住；漂移到别的域即红 —— 判据 1）。
-#:
-#: 2026-10-07（issue #6486 包 2）由单一常量 `A_TIER_SKILL = "product"` 改成逐工具映射：
-#: 定时提醒域的补回域是 `reminder`、与改价域的 `product` 不同 —— 单一常量**结构性表达不了**
-#: 「每把工具各有其域」，继续用它只会逼出「要么放宽成任意域、要么永远进不了白名单」的假二选一。
-#: 台账**只许显式增删**：新增 A 档工具必须在此处写明它的域（未登记 ⇒ 判据 1 当场红，不静默放行）。
+#: A 档工具 → **必须**绑在的 skill（补回域**逐条**钉住；漂移到别的域即红）。
 A_TIER_SKILLS: dict[str, str] = {
     "product_update": "product",
     "sku_update": "product",
@@ -147,8 +186,8 @@ A_TIER_SKILLS: dict[str, str] = {
     "scheduled_task_manage": "reminder",
 }
 
-#: 写 action **闭词表**（判据 3 的兜底）：action 名命中即视为写能力。
-#: 口径 = 「动词表达『改数据』」，与 `read_only_actions` 的声明**无关** ——
+#: 写 action **闭词表**（判据 3 / 7 的兜底）：action 名命中即视为写能力。
+#: 口径 = 「动词表达**改数据**」，与 `read_only_actions` 的声明**无关** ——
 #: 否则把写 action 挪进 `read_only_actions` 就能洗白（那正是本表要拦的形态）。
 WRITE_ACTION_WORDS = frozenset({
     "create", "update", "delete", "adjust", "add_tag", "remove_tag", "create_tag",
@@ -158,18 +197,14 @@ WRITE_ACTION_WORDS = frozenset({
     "delete_item", "create_role", "update_role", "delete_role", "create_user",
     "update_user", "delete_user", "create_category", "update_category", "delete_category",
     "create_ticket", "create_order", "mark_read", "create_notification",
-    # ── #5302 收口补入（settings 域的写 action 名 + `read_all`）────────────────────────
-    # 为什么必须补：闭词表原先把这三个 settings 域写 action 漏在外面 ⇒ 「把写 action 塞回
-    # 已解绑 skill 的工具」这条注入（判据 7 的红证 ⑧b）**不会变红**（实测踩到：注入生效、
-    # 判据沉默 = 空断言）。补入后 settings 域的写 action 与其它域同受闭词表约束。
     "update_settings", "update_ai_config", "change_password", "read_all",
 })
 
 #: 能力文案里的**写能力承诺词**（判据 4 闭词表）。命中即「AI 说得到、做不到」。
-#:
-#: ⚠️ **2026-09-24 改判（issue #5303）**：`改价` / `调价` **已移出本表** —— 改价是 A 档
-#: 白名单能力（真实具备），留在闭词表里会把**正确的如实告知**判成谎报（假红）。
-#: 它**不是被豁免**：文案提到改价而工具没绑 = 谎报，这一半由判据 6 反向钉住（双向一致）。
+#: ⚠️ 2026-09-24 改判（#5303）：`改价` / `调价` 已移出（A 档白名单能力，真实具备）。
+#: ⚠️ 2026-10-16 改判（#7040）：`标记已读` 类词**不得入表** —— 它们是 `notification_manage`
+#: 的真实能力（变更），留着会把**正确的如实告知**判成谎报（假红）。它们**不是被豁免**：
+#: 文案说了而工具没绑 = 谎报，由判据 6b 的 `CHANGE_CLAIM_WORDS` 反向钉住。
 FORBIDDEN_CAPABILITY_PHRASES = (
     "创建商品", "创建订单", "创建工单", "创建员工", "创建角色", "创建分类", "创建加工项",
     "建单", "建品", "下单", "改状态", "修改订单", "取消订单", "退款",
@@ -178,15 +213,61 @@ FORBIDDEN_CAPABILITY_PHRASES = (
     "图片识别", "创建商品记录",
 )
 
+#: A 档写能力在能力文案里的**承诺词**（判据 6 的扫描面）—— **按域**。
+A_TIER_CLAIM_WORDS: dict[str, tuple[str, ...]] = {
+    "product": ("改价", "调价"),
+    "reminder": ("提醒",),
+}
+
+#: **变更**能力在能力文案里的**承诺词**（判据 6b 的扫描面）—— 按工具。
+#: 与判据 4 的闭词表互补：判据 4 管"别承诺做不到的"，判据 6b 管"做到了别不吭声"
+#: （接回了变更却在 greeting/capabilities 里一个字不提 ⇒ 商家不知道能找黄金策办 = 白接）。
+CHANGE_CLAIM_WORDS: dict[str, tuple[str, ...]] = {
+    "notification_manage": ("标记已读", "标为已读", "全部已读"),
+}
+
 #: 与 C 端共享的工具（判据 5）：必须仍存在、且仍被 C 端 skill 绑定。
 SHARED_WITH_C_END = (
     "order_create", "validate_input", "interact", "knowledge_search",
     "processing_item_query", "product_search", "product_detail", "production_progress_query",
 )
 
+#: 🔴 判据 11 的**正向工具名单**（prompt 措辞与代码事实一致性）。
+#: 口径 = 本单**接回**的能力所对应的工具（`CHANGE_TOOLS_REQUIRED_ON_B_END`）+ A 档可逆写。
+#: 它们在 prompt 文本里**不得与否定句共现**（同句出现 = 提示词还在教 agent 拒绝一个已支持的能力）。
+#: 为什么只列**接回的**：prompt 语料里存量否定句指向的都是**确实不支持**的能力（创建 / 删除），
+#: 全量扫描会把那些**正确**的如实告知判成假红（§17.3「判据被自己的文案喂红」）。
+PROMPT_COHERENCE_TOOLS: tuple[str, ...] = tuple(sorted(
+    set(CHANGE_TOOLS_REQUIRED_ON_B_END) | A_TIER_REVERSIBLE_WRITES
+))
+
+#: 判据 11 扫描的 prompt 语料（模型可见的域提示词 + 共享规则 + 通用助手兜底）。
+PROMPT_CORPUS_FILES: tuple[str, ...] = (
+    "PROMPT-rules.md",
+    # ⚠️ EXAMPLES-*（L5 few-shot）**同属注入面**：本仓实测「缝在示例里的旧口径」比 prompt 正文
+    # 更容易漏改（`EXAMPLES-product.md` 曾写「建品/改价…都不在能力内」，与 `prompts/product.md`
+    # 的「唯一可写的动作是改价」**直接矛盾**，而没有任何判据会红）⇒ 一并进扫描面。
+    "EXAMPLES-general.md",
+    "EXAMPLES-order.md",
+    "EXAMPLES-product.md",
+    "EXAMPLES-aftersales.md",
+    "EXAMPLES-customer.md",
+    "EXAMPLES-staff.md",
+    "EXAMPLES-settings.md",
+    "prompts/general.md",
+    "prompts/order.md",
+    "prompts/product.md",
+    "prompts/aftersales.md",
+    "prompts/customer.md",
+    "prompts/staff.md",
+    "prompts/data.md",
+    "prompts/settings.md",
+    "base/principles.md",
+)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 一、读源（注入式红证 = 替换这里的某一项文本后重建 World）
+# 二、读源（注入式红证 = 替换这里的某一项文本后重建 World）
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -200,6 +281,11 @@ def _source_map() -> dict[str, str]:
         out[f"skill:{p.name}"] = p.read_text(encoding="utf8")
     for name in ("mibao", "xiaobu"):
         out[f"agent:{name}"] = (AGENTS_DIR / f"{name}.py").read_text(encoding="utf8")
+    refs = SKILLS_DIR / "references"
+    for rel in PROMPT_CORPUS_FILES:
+        path = refs / rel
+        if path.exists():
+            out[f"prompt:{rel}"] = path.read_text(encoding="utf8")
     return out
 
 
@@ -230,40 +316,152 @@ def _module_literal(tree: ast.Module, name: str):
     return None
 
 
-def _class_literal(node: ast.ClassDef, attr: str):
+def _class_literal(node: ast.ClassDef, attr: str, module_consts: dict | None = None):
+    """类属性取值；**名字引用会被解析**（`read_only_actions = READ_ONLY_ACTIONS`）。
+
+    ⚠️ 仓内既有形态把只读 action 集写成**模块级常量**再在类里按名字引用
+    （`app/tools/notification_manage.py` / `scheduled_task_manage.py`）——
+    不解析这层引用会静默拿到 `None`，让依赖它的判据子面变成**空断言**（实测踩到）。
+    """
     for st in node.body:
         if isinstance(st, ast.Assign) and len(st.targets) == 1:
             tgt = st.targets[0]
             if isinstance(tgt, ast.Name) and tgt.id == attr:
-                return _literal(st.value)
+                val = _literal(st.value)
+                if val is None and isinstance(st.value, ast.Name) and module_consts:
+                    return module_consts.get(st.value.id)
+                return val
     return None
 
 
+#: 源码里 admin-api 客户端的方法名 → HTTP 方法（`AdminApiClient` 的公开面）。
+_CLIENT_METHODS = {"get": "GET", "post": "POST", "put": "PUT", "patch": "PATCH", "delete": "DELETE"}
+
+
+def _endpoint_calls(text: str) -> list[tuple[str, str]]:
+    """`(HTTP 方法, 路径字面量)` —— 从**模块级字符串常量**与**调用点**两处现算。
+
+    ⚠️ **分类口径是启发式**（`/revert` 那类撤销端点按裁定不算删除、动态拼接路径不在射程内）：
+    它要判的是「**这个工具会不会去建单据 / 删东西**」，判的是代码里**字面出现**的调用形态。
+
+    两轮扫描缺一不可（实证踩过其一就漏）：路径多数写成模块级常量
+    （`LIST_ENDPOINT = "..."`）再进 `client.get(LIST_ENDPOINT)` —— 只看调用点会拿到 `Name`
+    节点、一个路径都取不到，判据就变成**空断言**（看着绿、注入也不红）。
+    """
+    tree = ast.parse(text)
+
+    const_strs: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            tgt = node.targets[0]
+            val = _literal(node.value)
+            if isinstance(tgt, ast.Name) and isinstance(val, str):
+                const_strs[tgt.id] = val
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            val = _literal(node.value) if node.value is not None else None
+            if isinstance(val, str):
+                const_strs[node.target.id] = val
+
+    def _path_of(arg: ast.AST) -> str | None:
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+            return arg.value
+        if isinstance(arg, ast.Name):
+            return const_strs.get(arg.id)
+        # f-string：取它的字面量前缀（`f"/api/admin/orders/{oid}"` ⇒ "/api/admin/orders/"）
+        if isinstance(arg, ast.JoinedStr):
+            head = arg.values[0] if arg.values else None
+            if isinstance(head, ast.Constant) and isinstance(head.value, str):
+                return head.value
+        return None
+
+    out: list[tuple[str, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        # `client.post(...)` / `get_admin_api_client().post(...)` / `self.client.delete(...)`
+        if isinstance(fn, ast.Attribute) and fn.attr in _CLIENT_METHODS and node.args:
+            path = _path_of(node.args[0])
+            if path is not None:
+                out.append((_CLIENT_METHODS[fn.attr], path))
+        # 关键字形态：`client._request("POST", path)` 之类
+        elif isinstance(fn, ast.Attribute) and fn.attr == "_request" and node.args:
+            m = _literal(node.args[0])
+            path = _path_of(node.args[1]) if len(node.args) > 1 else None
+            if isinstance(m, str) and path is not None:
+                out.append((m.upper(), path))
+    return out
+
+
+def _matches_document_root(path: str) -> bool:
+    """路径是否落在**单据类资源**上（`/api/admin/agent/orders` / `…/orders/{id}` 都算）。"""
+    stripped = path.split("?")[0]
+    for root in DOCUMENT_ROOT_PATTERNS:
+        if stripped == root or stripped.endswith(root):
+            return True
+        if f"{root}/" in stripped:
+            return True
+    return False
+
+
+def _is_revert(path: str) -> bool:
+    return any(marker in path for marker in REVERT_PATH_MARKERS)
+
+
 def parse_tools(sources: dict[str, str]) -> dict[str, dict]:
-    """`app/tools/*.py` → {tool_name: {read_only, valid_actions, read_only_actions, file}}。"""
+    """`app/tools/*.py` → {tool_name: {read_only, ..., calls, irreversible_actions, file}}。"""
     out: dict[str, dict] = {}
     for key, text in sorted(sources.items()):
         if not key.startswith("tool:"):
             continue
         tree = ast.parse(text)
         valid = _module_literal(tree, "VALID_ACTIONS")
+        # 模块级 Name 常量（`READ_ONLY_ACTIONS = frozenset({...})`）—— 供类属性引用解析
+        module_consts: dict[str, object] = {}
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and len(node.targets) == 1:
+                tgt = node.targets[0]
+                if isinstance(tgt, ast.Name):
+                    v = _literal(node.value)
+                    if v is not None:
+                        module_consts[tgt.id] = v
+        calls = _endpoint_calls(text)
+        # 结构面：向单据集合发 POST / 对任何路径发 DELETE（撤销端点除外）
+        doc_creates = sorted({
+            path for method, path in calls
+            if method == "POST" and _matches_document_root(path)
+        })
+        hard_deletes = sorted({
+            path for method, path in calls
+            if method == "DELETE" and not _is_revert(path)
+        })
         for node in ast.walk(tree):
             if not isinstance(node, ast.ClassDef):
                 continue
             name = _class_literal(node, "name")
             if not isinstance(name, str):
                 continue
-            ro = _class_literal(node, "read_only")
-            roa = _class_literal(node, "read_only_actions")
-            # `requires_confirmation`（#5303）：A 档白名单成员必须带确认门禁 —— 判据 1 要读它
-            rc = _class_literal(node, "requires_confirmation")
+            ro = _class_literal(node, "read_only", module_consts)
+            roa = _class_literal(node, "read_only_actions", module_consts)
+            rc = _class_literal(node, "requires_confirmation", module_consts)
+            actions = None if valid is None else [str(a) for a in valid]
+            # 「撤销」面：`DELETE` 的**唯一**例外 = `CANCEL_DELETE_ALLOWLIST` 里的工具，
+            # 且它的 action 面**不得**出现 `delete*`（否则那是真删除，不是撤销）。
+            irreversible_deletes = (
+                [] if name in CANCEL_DELETE_ALLOWLIST else hard_deletes
+            )
             out[name] = {
                 "file": f"app/tools/{key.split(':', 1)[1]}",
                 "read_only": True if ro is None else bool(ro),
                 "declared_read_only": ro is not None,
                 "requires_confirmation": bool(rc) if rc is not None else False,
-                "valid_actions": None if valid is None else [str(a) for a in valid],
+                "valid_actions": actions,
                 "read_only_actions": None if roa is None else [str(a) for a in roa],
+                "doc_creates": doc_creates,
+                "hard_deletes": hard_deletes,
+                "irreversible_deletes": irreversible_deletes,
+                "write_actions": sorted(set(actions or []) & WRITE_ACTION_WORDS),
+                "irreversible_actions": sorted(set(actions or []) & IRREVERSIBLE_ACTION_WORDS),
             }
     assert out, "工具解析出 0 个声明 ⇒ 判据会空跑（fail-closed）"
     return out
@@ -361,10 +559,11 @@ def parse_agent(sources: dict[str, str], agent: str) -> tuple[frozenset[str], st
 
 
 def parse_agent_direct_replies(sources: dict[str, str], agent: str) -> dict[str, str]:
-    """`AgentConfig.greeting` + `direct_replies` 的 键→文案（判据 4 的扫描面）。
+    """`AgentConfig.greeting` + `direct_replies` 的 键→文案（判据 4 / 6 / 6b 的扫描面）。
 
     ⚠️ 两处**分开存键**（`greeting` vs `direct_replies.greeting`）：同名键互相覆盖会让
-    「只改了一处」的注入在读数上被另一处盖掉 ⇒ 判据看着绿、注入就成了空断言（实测踩到）。"""
+    「只改了一处」的注入在读数上被另一处盖掉 ⇒ 判据看着绿、注入就成了空断言（实测踩到）。
+    """
     tree = ast.parse(sources[f"agent:{agent}"])
     out: dict[str, str] = {}
     for node in ast.walk(tree):
@@ -407,7 +606,7 @@ class World:
         self.mibao_declared_tools = frozenset(
             t for s in self.mibao_declared_skills for t in self.skills.get(s, ())
         )
-        # A 档白名单的"确认门禁"面（#5303）：从工具类声明现算，不抄清单
+        # 确认门禁面（判据 8）：从工具类声明现算，不抄清单
         self.confirmed_write_tools = frozenset(
             n for n, d in self.tools.items() if d.get("requires_confirmation")
         )
@@ -419,37 +618,45 @@ class World:
             "否则判据 7 比判据 1 还窄，收口失效"
         )
 
+    def write_bound_tools(self) -> list[str]:
+        """B 端**可达**且 `read_only=False` 的工具（判据 8 的射程）。"""
+        return sorted(
+            t for t in self.b_end_tools
+            if t in self.tools and not self.tools[t]["read_only"]
+        )
+
 
 def world() -> World:
     return World(_source_map())
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 二、五条判据（纯函数：输入 World，输出问题清单 —— 空 = 绿）
+# 三、判据（纯函数：输入 World，输出问题清单 —— 空 = 绿）
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-def problems_union_is_read_only(w: World) -> list[str]:
-    """判据 1：B 端可达工具的并集里，`read_only != True` 的只能是**白名单**成员（含悬空绑定）。
+def problems_document_creation_tools_denied(w: World) -> list[str]:
+    """判据 1：**单据类创建工具禁绑**（具名）+ A 档工具的门禁与补回域。
 
-    #5303：白名单 = `A_TIER_REVERSIBLE_WRITES`（两条改价工具）。白名单成员另加两道：
-    必须绑在 `A_TIER_SKILLS` 里**为它登记的域**（补回域逐条钉住；2026-10-07 issue #6486 包 2 起
-    由单一常量改成逐工具映射）且必须带 `requires_confirmation`（写操作要有确认门禁）——
-    否则"白名单"就成了任人往里塞写工具的橡皮图章。
+    新口径下「白名单制」换成「**禁绑制**」：禁的是**单据类创建**（商品 / 订单 / 其他单据类），
+    而不是「一切写」。A 档可逆写的两道护栏（确认门禁 + 补回域逐条钉住）**照旧**。
     """
     out: list[str] = []
+    for tool, why in sorted(DOCUMENT_CREATION_TOOLS_DENIED.items()):
+        if tool in w.b_end_tools:
+            out.append(
+                f"`{tool}`（{why}）仍在 B 端工具并集里 ⇒ **单据类创建能力复活**"
+                "（用户裁定：创建商品 / 订单 / 其他单据类一律不支持）"
+            )
     for name in sorted(w.b_end_tools):
         decl = w.tools.get(name)
         if decl is None:
-            out.append(f"`{name}` 被 B 端 skill 绑定，但**没有任何工具类声明该名字**（悬空绑定 ⇒ 模型必然撞 tool_not_found）")
-            continue
-        if decl["read_only"]:
-            continue
-        if name not in A_TIER_REVERSIBLE_WRITES:
             out.append(
-                f"`{name}`（{decl['file']}）`read_only=False` 却仍在 B 端工具并集里 ⇒ "
-                "B 端写能力复活（用户裁定：除 A 档可逆写白名单外，创建/更新能力全部从 B 端移除）"
+                f"`{name}` 被 B 端 skill 绑定，但**没有任何工具类声明该名字**"
+                "（悬空绑定 ⇒ 模型必然撞 tool_not_found）"
             )
+            continue
+        if decl["read_only"] or name not in A_TIER_REVERSIBLE_WRITES:
             continue
         expected_skill = A_TIER_SKILLS.get(name)
         if expected_skill is None:
@@ -463,13 +670,12 @@ def problems_union_is_read_only(w: World) -> list[str]:
                 "补回域漂移（`A_TIER_SKILLS` 逐条钉住每把工具的域）"
             )
         else:
-            # 「**仅**绑在该域」：多绑一个 B 端域 = 补回范围悄悄超出本单裁定
             strays = sorted(s for s in w.mibao_skills
                             if s != expected_skill and name in w.skills.get(s, ()))
             if strays:
                 out.append(
                     f"`{name}` 属 A 档可逆写白名单，却还绑在其它 B 端 skill {strays} ⇒ "
-                    f"补回范围超界（本单只在 `{expected_skill}` 域补回）"
+                    f"补回范围超界（该类工具只在 `{expected_skill}` 域补回）"
                 )
         if not decl.get("requires_confirmation"):
             out.append(
@@ -480,7 +686,7 @@ def problems_union_is_read_only(w: World) -> list[str]:
 
 
 def problems_write_tools_bound(w: World) -> list[str]:
-    """判据 2：写能力工具一个都不得绑在 B 端（具名清单 + 双向陈旧检查）。"""
+    """判据 2：具名写能力工具一个都不得绑在 B 端（双向陈旧检查）。"""
     out: list[str] = []
     for tool, why in sorted(WRITE_TOOLS_UNBOUND_FROM_B_END.items()):
         if tool in w.b_end_tools:
@@ -489,22 +695,54 @@ def problems_write_tools_bound(w: World) -> list[str]:
 
 
 def problems_action_sets(w: World) -> list[str]:
-    """判据 3：B 端可达工具的 action 集合 ⊆ 只读 action 集合（+ 写 action 闭词表）。
+    """判据 3：B 端可达工具的 action 面 —— 零**单据类创建**、零**删除·停用·作废**。
 
-    ⚠️ 2026-09-24（issue #5314，随 A 档白名单第二次扩容同步）：A 档白名单成员**有意**
-    拥有写 action（这正是它入册的原因）⇒ 对它们改判为判据 3 的**另一半**（反洗白）：
-    写动作名不得被声明进 `read_only_actions`（那会借只读豁免绕开确认门禁）。
-    其余工具**一条不放宽**：`actions ⊆ read_only_actions` 与闭词表兜底都照旧
-    （判据自身的两条红证仍打在非白名单工具 `category_manage` 上，未改锚点）。
+    三个子面（各自可单独变红）：
+    ① **结构面-创建**：向单据类**集合**路径发 `POST`（= 建一张单据）；
+    ② **结构面-删除**：对任何路径发 `DELETE`（`/revert` 类**撤销**端点除外 —— 它是可逆的）；
+    ③ **闭词表兜底**：action 名命中 `IRREVERSIBLE_ACTION_WORDS`（防「把 DELETE 挪成 action 名
+       藏进 schema」）或把写 action 声明进 `read_only_actions` 洗白。
+
+    ⚠️ A 档白名单成员**有意**拥有写 action（这正是它入册的原因）⇒ 对它们只跑 ③ 的**洗白**
+    子判据（不得把写动作名声明成只读），①/② 仍照跑。
     """
     out: list[str] = []
     for name in sorted(w.b_end_tools):
         decl = w.tools.get(name)
-        if decl is None or decl["valid_actions"] is None:
+        if decl is None:
             continue
-        actions = set(decl["valid_actions"])
+        if decl["doc_creates"]:
+            out.append(
+                f"`{name}`（{decl['file']}）向单据类资源发 `POST {', '.join(decl['doc_creates'])}` "
+                "⇒ 这是**创建单据**的动作（用户裁定：商品 / 订单 / 其他单据类都不得创建）"
+            )
+        # 🔴 `DELETE` 例外的**自我守卫**：登记在 `CANCEL_DELETE_ALLOWLIST` 里的工具，其 action 面
+        # 必须**真的只是撤销**（不得同时暴露 `delete*`）—— 否则「撤销」这张表就成了
+        # 「DELETE 免检通道」（登记一次，之后往该工具里塞 `delete` 也没人管）。
+        if name in CANCEL_DELETE_ALLOWLIST:
+            deletes = sorted(
+                a for a in (decl["valid_actions"] or []) if a.startswith("delete")
+            )
+            if deletes:
+                out.append(
+                    f"`{name}` 在 `CANCEL_DELETE_ALLOWLIST` 里（声称 `DELETE` = 撤销），"
+                    f"但 action 面暴露真删除动作 {deletes} ⇒ 例外被滥用"
+                )
+        if decl["irreversible_deletes"]:
+            out.append(
+                f"`{name}`（{decl['file']}）发 `DELETE {', '.join(decl['irreversible_deletes'])}` ⇒ "
+                "不可逆删除动作（用户裁定：只能改，不能删）"
+            )
+        if decl["irreversible_actions"]:
+            out.append(
+                f"`{name}`：action 集合里出现不可逆动作名 {decl['irreversible_actions']} ⇒ "
+                "删除 / 停用 / 作废不在支持面内"
+            )
         roa = set(decl["read_only_actions"] or [])
-        if name in A_TIER_REVERSIBLE_WRITES:
+        actions = set(decl["valid_actions"] or [])
+        if name in A_TIER_REVERSIBLE_WRITES or name in CHANGE_TOOLS_REQUIRED_ON_B_END:
+            # 🔴 已登记的写面（A 档可逆写 / 变更类）**有意**拥有写 action —— 这正是它们入册的原因。
+            # 对它们只判**洗白**：写动作名不得被声明成只读（那会借只读豁免绕开确认门禁）。
             hidden = sorted(a for a in (actions & roa) if a in WRITE_ACTION_WORDS)
             if hidden:
                 out.append(
@@ -512,25 +750,28 @@ def problems_action_sets(w: World) -> list[str]:
                     "借只读豁免绕开确认门禁（闭词表兜底）"
                 )
             continue
-        if decl["read_only_actions"] is not None:
-            extra = sorted(actions - roa)
-            if extra:
+        if decl["read_only"]:
+            # 只读工具的 action 面必须**全是只读 action**（写 action 一个都不许露）
+            if decl["read_only_actions"] is not None:
+                extra = sorted(actions - roa)
+                if extra:
+                    out.append(
+                        f"`{name}`：**只读工具**的 action {extra} 不在它声明的只读 action "
+                        f"{sorted(roa)} 里 ⇒ 写 action 没删干净"
+                    )
+            hits = sorted(actions & WRITE_ACTION_WORDS)
+            if hits:
                 out.append(
-                    f"`{name}`：B 端可达的 action {extra} 不在它声明的只读 action "
-                    f"{sorted(roa)} 里 ⇒ 写 action 没删干净"
+                    f"`{name}`：**只读工具**的 action 集合里出现写动作名 {hits}（闭词表命中）—— "
+                    "即把它写进 `read_only_actions` 也只是洗白"
                 )
-        hits = sorted(actions & WRITE_ACTION_WORDS)
-        if hits:
-            out.append(
-                f"`{name}`：action 集合里出现写动作名 {hits}（闭词表命中）—— "
-                "即把它写进 `read_only_actions` 也只是洗白，B 端不得再暴露写 action"
-            )
+        # 非只读且**未登记**（既非 A 档也非变更白名单）⇒ 不在此判死：由判据 7
+        # （problems_declared_persona_tools_are_controlled）报「未登记的写能力」并给出两个出口，
+        # 避免同一条事实被两条判据双报。
     return out
 
 
 #: 句级否定词（**与仓内同类守卫同口径**）：这些句子是「教用户别这么期待」，不是能力承诺。
-#: 不做句级过滤会把「⚠️ 下单/建品/改价等操作黄金策不做」这类**正确的如实告知**判成谎报（假红）。
-#: ⚠️ 教训：本判据回归时第一版就是全文扫描 ⇒ 立刻误红了自家 capabilities 的否定句。
 CAPABILITY_NEGATIONS = (
     "不做", "不提供", "不在能力内", "不得", "不能", "无法", "禁止", "切勿", "只读", "不支持",
 )
@@ -545,7 +786,7 @@ def _claimed_sentences(text: str):
 
 
 def problems_capability_claims(w: World) -> list[str]:
-    """判据 4：`mibao.py` 的 greeting / capabilities 不得**承诺**白名单外的能力（闭词表 + 句级否定过滤）。"""
+    """判据 4：`mibao.py` 的 greeting / capabilities 不得**承诺**清单外的能力（闭词表 + 句级否定过滤）。"""
     out: list[str] = []
     for key, text in sorted(w.capability_text.items()):
         for seg in _claimed_sentences(text):
@@ -553,29 +794,14 @@ def problems_capability_claims(w: World) -> list[str]:
                 if phrase in seg:
                     out.append(
                         f"`mibao.py` 的 `{key}` 文案在**非否定句**里出现「{phrase}」⇒ **能力谎报**"
-                        "（该能力已下线，承诺它就是 AI 说得到做不到）"
+                        "（该能力不支持，承诺它就是 AI 说得到做不到）"
                         f"｜原句：{seg.strip()[:60]}"
                     )
     return out
 
 
-#: A 档写能力在能力文案里的**承诺词**（判据 6 的扫描面）—— **按域**。
-#: 与判据 4 的闭词表互补：判据 4 管"别承诺做不到的"，判据 6 管"做到了别不吭声"。
-#: 2026-10-07（issue #6486 包 2）：随白名单进入第二个域改成按域映射 —— 单一名单在多域下
-#: 会让判据 6 的粗粒度判断失效（只解绑一个域时「全量 bound」仍非空 ⇒ 该域的漂移静默逃逸）。
-A_TIER_CLAIM_WORDS: dict[str, tuple[str, ...]] = {
-    "product": ("改价", "调价"),
-    "reminder": ("提醒",),
-}
-
-
 def problems_a_tier_capability_parity(w: World) -> list[str]:
-    """判据 6（#5303 新增）：A 档写能力的**文案 ↔ 绑定**双向一致（两侧都现算，不抄清单）。
-
-    2026-10-07（issue #6486 包 2）：判定**逐域**进行 —— 白名单进入第二个域（reminder）后，
-    「全量 bound ↔ 全量 claimed」的粗粒度判断会让「只解绑一个域」的漂移静默逃逸
-    （product 工具还绑着 ⇒ bound 非空 ⇒ 该域谎报不红）。
-    """
+    """判据 6：A 档写能力 + **变更**能力的「文案 ↔ 绑定」双向一致（两侧都现算，不抄清单）。"""
     out: list[str] = []
     for skill, claim_words in sorted(A_TIER_CLAIM_WORDS.items()):
         tools_in_skill = sorted(t for t, s_ in A_TIER_SKILLS.items() if s_ == skill)
@@ -598,6 +824,26 @@ def problems_a_tier_capability_parity(w: World) -> list[str]:
                 f"capabilities 一个字都没提{words} ⇒ **反向能力谎报**"
                 "（商家不知道能找黄金策用这个能力；补回了却不说 = 白补）"
             )
+    # 判据 6b：**变更**能力的同一条双向一致（#7040 接线后新增的面）
+    for tool, claim_words in sorted(CHANGE_CLAIM_WORDS.items()):
+        bound = tool in w.b_end_tools
+        claimed: list[str] = []
+        for key, text in sorted(w.capability_text.items()):
+            for seg in _claimed_sentences(text):
+                hit = next((w_ for w_ in claim_words if w_ in seg), None)
+                if hit:
+                    claimed.append(f"{key}「{hit}」")
+        words = "/".join(claim_words)
+        if claimed and not bound:
+            out.append(
+                f"能力文案承诺了{words}（{', '.join(claimed)}），但变更工具 `{tool}` 不在 "
+                "B 端工具并集里 ⇒ **能力谎报**（说得到做不到）"
+            )
+        if bound and not claimed:
+            out.append(
+                f"变更工具 `{tool}` 已绑回 B 端，但 `mibao.py` 的 greeting / capabilities "
+                f"一个字都没提{words} ⇒ **反向能力谎报**（接回了却不说 = 白接）"
+            )
     return out
 
 
@@ -617,13 +863,11 @@ def problems_shared_tools_intact(w: World) -> list[str]:
 
 
 def problems_declared_persona_tools_are_controlled(w: World) -> list[str]:
-    """判据 7（#5302）：**声明了黄金策 persona 的每个 skill**（含已解绑的孤儿）绑的工具
-    必须 **∈ A 档白名单 ∪ 只读**。
+    """判据 7：**声明了黄金策 persona 的每个 skill**（含已解绑的孤儿）绑的工具必须
+    ∈ A 档白名单 ∪ 变更白名单 ∪ 只读，且 action 面不得含不可逆动作。
 
-    与判据 1 的唯一差别 = **射程**：判据 1 取「可达并集」（`skill_names` ∪ fallback），
-    本判据取「声明了 persona 的 skill 并集」⇒ "把 skill 解绑" 不再是逃逸路径（#5302 的立案
-    理由与红证见文件头）。三条子判据：工具类必须存在（悬空绑定）、白名单外必须只读、
-    action 集不含写动词（闭词表，防「把写 action 挪进 `read_only_actions` 洗白」）。
+    与判据 1 的差别 = **射程**：判据 1 取「可达并集」（`skill_names` ∪ fallback），
+    本判据取「声明了 persona 的 skill 并集」⇒ "把 skill 解绑" 不再是逃逸路径（#5302）。
     """
     out: list[str] = []
     for name in sorted(w.mibao_declared_tools):
@@ -634,60 +878,183 @@ def problems_declared_persona_tools_are_controlled(w: World) -> list[str]:
                 "（悬空绑定 ⇒ 模型必然撞 tool_not_found）"
             )
             continue
-        if not decl["read_only"] and name not in A_TIER_REVERSIBLE_WRITES:
+        if decl["irreversible_actions"]:
             out.append(
-                f"`{name}`（{decl['file']}）`read_only=False`，却被声明 mibao persona 的 skill "
-                "绑定 ⇒ 该 skill 一旦接回 `skill_names`（或经 persona 家族只读共享）就是写能力复活。"
-                "#5247/#5302 的裁定是**收窄为只读**（或进 A 档白名单），不是「解绑即免责」"
-                "（#5302 的整域漏网形态）"
+                f"`{name}`：action 集合里出现不可逆动作名 {decl['irreversible_actions']} ⇒ "
+                "声明 persona 的 skill 不得暴露删除 / 停用 / 作废动作"
             )
-        # 🔴 A 档白名单成员**有意**暴露写 action（补回域由判据 1 的 `A_TIER_SKILLS` 逐条钉住）。
-        # 不豁免会让白名单在本判据里**结构性不可能通过**：写工具的 action 名必然命中闭词表
-        # （`create` / `cancel` 就在表里）—— 那等于「要么别补回，要么把闭词表拆了」，两个出口都坏。
-        # 闭词表要拦的是「**暗中**把写 action 塞进只读工具」（洗白形态），不是已具名裁定过的补回。
-        if name in A_TIER_REVERSIBLE_WRITES:
-            continue
-        hits = sorted(set(decl["valid_actions"] or []) & WRITE_ACTION_WORDS)
-        if hits:
+        if decl["doc_creates"]:
             out.append(
-                f"`{name}`：action 集合里出现写动作名 {hits}（闭词表命中）—— "
-                "声明 persona 的 skill 不得再暴露写 action"
+                f"`{name}`（{decl['file']}）向单据类资源发 "
+                f"`POST {', '.join(decl['doc_creates'])}` ⇒ 声明 persona 的 skill 不得绑创建单据的工具"
+            )
+        # 非只读 + 不在任一登记表里 ⇒ 红（未登记的写能力不得经 persona 家族溜进 B 端）
+        if (not decl["read_only"]
+                and name not in A_TIER_REVERSIBLE_WRITES
+                and name not in DOCUMENT_CREATION_TOOLS_DENIED
+                and name not in CHANGE_TOOLS_REQUIRED_ON_B_END):
+            out.append(
+                f"`{name}`（{decl['file']}）`read_only=False`，却被声明 mibao persona 的 skill 绑定 "
+                "⇒ **未登记的写能力**。处置（二选一，必须显式）：① 按新裁定它是**变更** ⇒ 登记进 "
+                "`CHANGE_TOOLS_REQUIRED_ON_B_END` 并把它的变更用例与确认门禁写清；"
+                "② 它属单据类创建 / 删除 / 停用 / 作废 ⇒ 登记进 "
+                "`DOCUMENT_CREATION_TOOLS_DENIED` 并解绑"
             )
     return out
 
 
+def problems_write_requires_confirmation(w: World) -> list[str]:
+    """判据 8（新口径的核心）：**非只读 ⇒ 必须带确认门禁**。
+
+    「接回变更」与「拆掉门禁」是两件事：本判据保证前者发生的同时后者不发生 ——
+    任何 B 端可达的非只读工具，必须在类体声明 `requires_confirmation`（或 `destructive`）。
+    门禁落点 = `backend/ai-agent-service/app/graph/skills/base_skill.py` 的
+    `_requires_confirmation`：非只读且非只读 action ⇒ 要求用户确认，
+    补救路径 = 同 skill 的 `interact(component=confirm)` 确认卡。
+    """
+    out: list[str] = []
+    for name in w.write_bound_tools():
+        decl = w.tools[name]
+        if decl.get("requires_confirmation") or decl.get("destructive"):
+            continue
+        out.append(
+            f"`{name}`（{decl['file']}）在 B 端**可达**且 `read_only=False`，但既没有 "
+            "`requires_confirmation` 也没有 `destructive` ⇒ **变更没有确认门禁**"
+            "（会绕过 `base_skill._requires_confirmation`，模型可直接改数据）"
+        )
+    return out
+
+
+def problems_no_irreversible_or_document_creation_on_b_end(w: World) -> list[str]:
+    """判据 9：**可达工具面**里的「单据类创建」与「删除 / 停用 / 作废」零出现（汇总口径）。
+
+    与判据 3 同源但**射程不同**（3 判单个工具的动作与调用面，9 判可达并集的形态），
+    两条各自带独立红证 —— 防止「一条判据同时承担两件事」后被人顺手删掉一格。
+    """
+    out: list[str] = []
+    for name in sorted(w.b_end_tools):
+        decl = w.tools.get(name)
+        if decl is None:
+            continue
+        if name in DOCUMENT_CREATION_TOOLS_DENIED:
+            out.append(f"`{name}` 是**单据类创建工具**且 B 端可达（`DOCUMENT_CREATION_TOOLS_DENIED`）")
+        if decl["irreversible_actions"] or decl["irreversible_deletes"]:
+            out.append(
+                f"`{name}` B 端可达且暴露不可逆动作 "
+                f"（action={decl['irreversible_actions']} · DELETE={decl['irreversible_deletes']}）"
+            )
+    return out
+
+
+def problems_change_tools_reachable(w: World) -> list[str]:
+    """判据 10（**正向**）：登记在 `CHANGE_TOOLS_REQUIRED_ON_B_END` 的变更工具必须真的可达。
+
+    旧判据只能表达「不许有写工具」⇒ 把变更能力整体解绑也全绿（那正是 issue #7040 的起点：
+    「变更」在 B 端物理不可达，而没有任何判据会因此变红）。本条把**正向可达**变成判据。
+    """
+    return [
+        f"变更工具 `{t}` 不在 B 端可达并集里（{why}）⇒ 「变更必须支持」这条裁定在 B 端"
+        "**物理上不可达**" for t, why in sorted(CHANGE_TOOLS_REQUIRED_ON_B_END.items())
+        if t not in w.b_end_tools
+    ]
+
+
+def problems_prompt_boundary_coherence(w: World) -> list[str]:
+    """判据 11：**prompt 措辞**不得把已接回的能力说成「不在能力内」。
+
+    ## 立案理由（主会话插单发现，2026-10-16）
+
+    prompt 是 B 端行为的**主要载体**（比工具面更直接）：工具接回了、prompt 仍写「这些操作
+    全部不在能力内」⇒ agent 会**继续拒绝**，接回的能力**不会被用**（#7040 形同空转），
+    且评测里那批「期望 = agent 拒绝」的用例会继续红。
+
+    ## 判据形态（**共现**扫描，不是"全文禁词"）
+
+    对每个 prompt 语料文件，按**句**（`。；\n` 切）扫描：**同一句**里既出现
+    `PROMPT_COHERENCE_TOOLS` 里的工具名、又出现**否定词** ⇒ 红。
+    逐句而不是逐文件是**判别力的来源**：本仓 prompt 文风是「一条规则 + 一条 ❌ 反例」，
+    正确的写法（如「创建商品 ❌ 不支持；**标记已读** ✅ 要办」）会让否定句与工具名**不同句**
+    ⇒ 不误红；而「`notification_manage` 已下线 / 不在能力内」这类**同句**写法必红。
+
+    ## 边界（照实登记，§19.1）
+
+    - **只扫 `PROMPT_COHERENCE_TOOLS`**（本单接回的工具 + A 档工具）：全量禁词扫描会把 prompt 里
+      指向**确实不支持**能力（创建 / 删除）的**正确**否定句整片喂红（§17.3）。
+    - **判的是文本一致性，不是 LLM 行为**：prompt 改对了不等于模型照做 —— 行为面只能靠真实
+      LLM 评测（按 #4262 由用户集中跑）。本判据只保证「提示词不会**主动教 agent 拒绝**已支持的能力」。
+    """
+    out: list[str] = []
+    for key, text in sorted(w.sources.items()):
+        if not key.startswith("prompt:"):
+            continue
+        rel = key.split(":", 1)[1]
+        for seg in re.split(r"[。；\n]", text):
+            neg = next((n for n in CAPABILITY_NEGATIONS if n in seg), None)
+            if neg is None:
+                continue
+            hits = sorted(t for t in PROMPT_COHERENCE_TOOLS if t in seg)
+            if hits:
+                out.append(
+                    f"`{rel}` 同一句里既点名已接回的工具 {hits}、又出现否定词「{neg}」⇒ "
+                    "提示词仍在教 agent 拒绝一个**已支持**的能力（#7040 接线会被 prompt 抵消）"
+                    f"｜原句：{seg.strip()[:80]}"
+                )
+    return out
+
+
 JUDGEMENTS = {
-    "1 · B 端工具并集白名单制": problems_union_is_read_only,
-    "2 · 白名单外写工具零绑定": problems_write_tools_bound,
-    "3 · action 集 ⊆ 只读集": problems_action_sets,
+    "1 · 单据类创建工具禁绑 + A 档门禁/补回域": problems_document_creation_tools_denied,
+    "2 · 具名写工具零绑定": problems_write_tools_bound,
+    "3 · action 面零建单零删除": problems_action_sets,
     "4 · 能力文案不谎报": problems_capability_claims,
     "5 · 共享工具与 C 端零改动": problems_shared_tools_intact,
-    "6 · A 档能力文案↔绑定双向一致": problems_a_tier_capability_parity,
+    "6 · A 档/变更能力文案↔绑定双向一致": problems_a_tier_capability_parity,
     "7 · 声明 persona 的 skill 工具面受控": problems_declared_persona_tools_are_controlled,
+    "8 · 非只读 ⇒ 必须带确认门禁": problems_write_requires_confirmation,
+    "9 · 可达面零建单零删除": problems_no_irreversible_or_document_creation_on_b_end,
+    "10 · 变更工具必须真的可达": problems_change_tools_reachable,
+    "11 · prompt 措辞与边界一致（不教 agent 拒绝已支持能力）": problems_prompt_boundary_coherence,
 }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 三、断言
+# 四、断言
 # ══════════════════════════════════════════════════════════════════════════════
 
 
 def test_every_judgement_is_green() -> None:
-    """七条判据在**当前仓库**上全绿（红 = B 端写面边界已漂移，逐条问题见断言文案）。"""
+    """十条判据在**当前仓库**上全绿（红 = B 端能力边界已漂移，逐条问题见断言文案）。"""
     w = world()
     problems = {label: fn(w) for label, fn in JUDGEMENTS.items()}
     bad = {label: p for label, p in problems.items() if p}
-    assert bad == {}, "B 端只读判据未通过：\n" + "\n".join(
+    assert bad == {}, "B 端能力边界判据未通过：\n" + "\n".join(
         f"  【{label}】\n    - " + "\n    - ".join(items[:12]) for label, items in bad.items()
     )
 
 
+def test_change_tools_actually_reachable() -> None:
+    """**正向要求**（新口径 vs 旧判据的分水岭）：变更工具必须真的在 B 端可达并集里。
+
+    红证 = 注入 ⑪（把 `notification` 从 `mibao.py` 的 `skill_names` 解绑）。
+    """
+    w = world()
+    assert problems_change_tools_reachable(w) == [], "\n".join(problems_change_tools_reachable(w))
+    assert w.write_bound_tools(), (
+        "B 端可达并集里一个非只读工具都没有 ⇒ 「变更可达」这条正向判据退化成空断言"
+        "（fail-closed：接回变更才是本单的目的）"
+    )
+
+
 def test_union_print_is_informative() -> None:
-    """读数（供 PR/汇报引用）：B 端工具并集与它们的 `read_only` 声明。"""
+    """读数（供 PR/汇报引用）：B 端工具并集与它们的 `read_only` / 门禁声明。"""
     w = world()
     print("\n[B 端工具并集] " + str(sorted(w.b_end_tools)))
     print("[其中 read_only=False] " + str(sorted(
         n for n in w.b_end_tools if w.tools.get(n, {}).get("read_only") is not True
+    )))
+    print("[其中带确认门禁] " + str(sorted(
+        n for n in w.b_end_tools
+        if w.tools.get(n, {}).get("requires_confirmation") or w.tools.get(n, {}).get("destructive")
     )))
     print("[B 端 skill] " + str(sorted(w.mibao_skills)))
     print("[声明 mibao persona 的 skill（判据 7 射程）] " + str(sorted(w.mibao_declared_skills)))
@@ -695,12 +1062,12 @@ def test_union_print_is_informative() -> None:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 四、注入式红证：**每一条**判据都要有能单独变红的负向夹具（否则它只是空断言）
+# 五、注入式红证：**每一条**判据都要有能单独变红的负向夹具（否则它只是空断言）
 # ══════════════════════════════════════════════════════════════════════════════
 
 
 def _bind_into_b_skill(text: str, tool: str) -> str:
-    """往某个 B 端 skill 的 `*_TOOLS` 列表里插一个工具名（模拟「写工具被重新绑回」）。"""
+    """往某个 B 端 skill 的 `*_TOOLS` 列表里插一个工具名（模拟「工具被重新绑回」）。"""
     m = re.search(r"^[A-Z_]+_TOOLS\s*=\s*\[", text, re.M)
     assert m, "注入锚点失配：该 skill 里没有 `*_TOOLS = [`（同步本判据）"
     return text[: m.end()] + f'\n    "{tool}",' + text[m.end():]
@@ -708,45 +1075,84 @@ def _bind_into_b_skill(text: str, tool: str) -> str:
 
 def _unbind_from_c_skill(text: str, tool: str) -> str:
     new, n = re.subn(rf'\n\s*"{re.escape(tool)}",', "", text, count=1)
-    assert n == 1, f"注入锚点失配：该 C 端 skill 里没有 `{tool}`（同步本判据）"
+    assert n == 1, f"注入锚点失配：该 skill 里没有 `{tool}`（同步本判据）"
     return new
 
 
 def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
     """`label` → (被判据读取的源键, 文本变异, 目标判据)。"""
     return {
-        "① 把 `order_create` 重新绑回 order skill ⇒ 判据 2 红": (
+        # ── 判据 1：单据类创建工具禁绑 ────────────────────────────────────────────
+        "① 把 `order_create` 重新绑回 order skill ⇒ 判据 1 红（单据类创建）": (
             "skill:order_skill.py",
             lambda s: _bind_into_b_skill(s, "order_create"),
-            problems_write_tools_bound,
+            problems_document_creation_tools_denied,
         ),
-        "①b 把 `settings_manage` 重新绑回 product skill ⇒ 判据 2 红": (
+        "①b A 档工具摘掉确认门禁（product_update）⇒ 判据 1 红": (
+            "tool:product_update.py",
+            lambda s: s.replace("requires_confirmation = True", "requires_confirmation = False", 1),
+            problems_document_creation_tools_denied,
+        ),
+        "①c A 档工具被绑到别的 B 端域（product_update 进 order skill）⇒ 判据 1 红（补回域漂移）": (
+            "skill:order_skill.py",
+            lambda s: _bind_into_b_skill(s, "product_update"),
+            problems_document_creation_tools_denied,
+        ),
+        "①d 绑一个不存在的工具名（悬空绑定）⇒ 判据 1 红": (
+            "skill:data_skill.py",
+            lambda s: _bind_into_b_skill(s, "ghost_tool_never_declared"),
+            problems_document_creation_tools_denied,
+        ),
+        # ── 判据 2：具名写工具零绑定 ─────────────────────────────────────────────
+        "② 把 `settings_manage` 重新绑回 product skill ⇒ 判据 2 红": (
             "skill:product_skill.py",
             lambda s: _bind_into_b_skill(s, "settings_manage"),
             problems_write_tools_bound,
         ),
-        "② 把 B 端工具改回 `read_only = False`（product_search）⇒ 判据 1 红": (
-            "tool:product_search.py",
-            lambda s: s.replace("read_only = True", "read_only = False", 1),
-            problems_union_is_read_only,
+        "②b 把 `order_manage` 重新绑回 order skill ⇒ 判据 2 红": (
+            "skill:order_skill.py",
+            lambda s: _bind_into_b_skill(s, "order_manage"),
+            problems_write_tools_bound,
         ),
-        "②b 绑一个不存在的工具名（悬空绑定）⇒ 判据 1 红": (
-            "skill:data_skill.py",
-            lambda s: _bind_into_b_skill(s, "ghost_tool_never_declared"),
-            problems_union_is_read_only,
-        ),
-        "③ 往 B 端工具的 action 集合塞回写 action（category_manage += create）⇒ 判据 3 红": (
-            "tool:category_manage.py",
-            lambda s: s.replace('VALID_ACTIONS = {"tree"}', 'VALID_ACTIONS = {"tree", "create"}', 1),
-            problems_action_sets,
-        ),
-        "③b 把写 action 挪进 `read_only_actions` 洗白（category_manage）⇒ 判据 3 红（闭词表兜底）": (
+        # ── 判据 3：action 面零建单零删除（三条子面各自独立红证）────────────────────
+        "③ 让 B 端可达工具向单据集合发 POST（category_manage 加建单调用）⇒ 判据 3 红": (
             "tool:category_manage.py",
             lambda s: s.replace(
-                'VALID_ACTIONS = {"tree"}', 'VALID_ACTIONS = {"tree", "create"}', 1
-            ).replace('read_only_actions = {"tree"}', 'read_only_actions = {"tree", "create"}', 1),
+                'VALID_ACTIONS = {"tree"}',
+                'VALID_ACTIONS = {"tree"}\n\n\nasync def _planted_create(client):\n'
+                '    return await client.post("/api/admin/agent/orders", json_data={})',
+                1,
+            ),
             problems_action_sets,
         ),
+        "③b 让 B 端可达工具发 DELETE（category_manage 加删分类调用）⇒ 判据 3 红": (
+            "tool:category_manage.py",
+            lambda s: s.replace(
+                'VALID_ACTIONS = {"tree"}',
+                'VALID_ACTIONS = {"tree"}\n\n\nasync def _planted_delete(client):\n'
+                '    return await client.delete("/api/admin/categories/1")',
+                1,
+            ),
+            problems_action_sets,
+        ),
+        "③c 往 B 端只读工具的 action 集塞不可逆动作名（category_manage += delete）⇒ 判据 3 红": (
+            "tool:category_manage.py",
+            lambda s: s.replace('VALID_ACTIONS = {"tree"}', 'VALID_ACTIONS = {"tree", "delete"}', 1),
+            problems_action_sets,
+        ),
+        "③d 把写 action 挪进 `read_only_actions` 洗白（notification_manage += mark_read）⇒ 判据 3 红": (
+            "tool:notification_manage.py",
+            lambda s: s.replace('READ_ONLY_ACTIONS = frozenset({"list", "unread_count"})',
+                                'READ_ONLY_ACTIONS = frozenset({"list", "unread_count", "mark_read"})', 1),
+            problems_action_sets,
+        ),
+        "③e `DELETE` 例外被滥用（允许撤销的工具同时暴露 delete action）⇒ 判据 3 红": (
+            "tool:scheduled_task_manage.py",
+            lambda s: s.replace('VALID_ACTIONS = {"create", "list", "cancel"}',
+                                'VALID_ACTIONS = {"create", "list", "cancel", "delete"}', 1),
+            problems_action_sets,
+        ),
+        # ── 判据 4：能力文案不谎报 ───────────────────────────────────────────────
         "④ 能力文案注入「我可以帮您创建商品」⇒ 判据 4 红": (
             "agent:mibao",
             lambda s: s.replace("我可以帮您**查数据、做分析**", "我可以帮您创建商品、", 1),
@@ -761,18 +1167,13 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
             ),
             problems_capability_claims,
         ),
+        # ── 判据 5：共享工具与 C 端零改动 ────────────────────────────────────────
         "⑤ 共享工具的 C 端绑定被摘掉（customer_order 去 order_create）⇒ 判据 5 红": (
             "skill:customer_order_skill.py",
             lambda s: _unbind_from_c_skill(s, "order_create"),
             problems_shared_tools_intact,
         ),
-        # ── #5303 新增（判据 6）：A 档能力「文案 ↔ 绑定」双向 ──
-        # ⚠️ #5314：解绑面**从白名单现算**（原来逐字写死两条 ⇒ 白名单扩容后注入不再生效，
-        #    红证会退化成"判据没有变红"）。口径不变：全部 A 档工具被解绑 + 文案仍承诺改价。
-        # ⚠️ 2026-10-07（issue #6486 包 2）：白名单进入**第二个域**（reminder）后，
-        #    「对单个 skill 文件移除全部白名单成员」不再成立（`product_skill.py` 里没有
-        #    `scheduled_task_manage` ⇒ 锚点失配）⇒ 改为**按域逐条**生成：一条注入对应它自己域的文件。
-        #    因为判据 6 已逐域判定，**单域解绑也真能**让它红（不再是「全解绑才红」）。
+        # ── 判据 6：A 档 / 变更能力「文案 ↔ 绑定」双向 ───────────────────────────
         **{
             f"⑥ 解绑 {_sk} 域**全部** A 档工具（文案仍承诺）⇒ 判据 6 红（谎报方向）": (
                 f"skill:{_sk}_skill.py",
@@ -782,8 +1183,6 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
                 ))(sorted(_t for _t, _s in A_TIER_SKILLS.items() if _s == _sk)),
                 problems_a_tier_capability_parity,
             )
-            # 粒度 = **整域**（不是逐工具）：判据 6 逐域判定，域内还剩别的 A 档工具时
-            # 「该域已解绑」这个事实不成立 ⇒ 逐工具注入中会有一半永远不红（假空断言）。
             for _sk in sorted(set(A_TIER_SKILLS.values()))
         },
         "⑥b 文案抹掉改价承诺、工具仍绑在 B 端 ⇒ 判据 6 红（漏报方向）": (
@@ -791,38 +1190,88 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
             lambda s: re.sub(r"改价|调价", "改款", s),
             problems_a_tier_capability_parity,
         ),
-        # ── #5303 新增（判据 1）：白名单成员的两道护栏 ──
-        "⑦ A 档工具摘掉确认门禁（product_update）⇒ 判据 1 红": (
-            "tool:product_update.py",
-            lambda s: s.replace("requires_confirmation = True", "requires_confirmation = False", 1),
-            problems_union_is_read_only,
+        "⑥c 文案承诺标记已读、但变更工具被解绑 ⇒ 判据 6 红（谎报方向）": (
+            "skill:notification_skill.py",
+            lambda s: _unbind_from_c_skill(s, "notification_manage"),
+            problems_a_tier_capability_parity,
         ),
-        "⑦b A 档工具被绑到别的 B 端域（product_update 进 order skill）⇒ 判据 1 红（补回域漂移）": (
-            "skill:order_skill.py",
-            lambda s: _bind_into_b_skill(s, "product_update"),
-            problems_union_is_read_only,
+        "⑥d 文案抹掉标记已读承诺、工具仍绑在 B 端 ⇒ 判据 6 红（漏报方向）": (
+            "agent:mibao",
+            lambda s: re.sub(r"标记已读|标为已读|全部已读", "看看通知", s),
+            problems_a_tier_capability_parity,
         ),
-        # ── #5302 新增（判据 7）：**孤儿 skill 的工具面**必须也能变红 ────────────────
-        # 三个注入都打在 `settings` 域（它在 `mibao.py` 的 `skill_names` 里**不在**，
-        # 故判据 1~6 对它们完全沉默 —— 这正是 #5302 的漏网形态）。
-        "⑧ 已解绑 skill 的工具改回 `read_only = False`（settings_manage）⇒ 判据 7 红": (
+        # ── 判据 7：声明 persona 的 skill 工具面受控 ──────────────────────────────
+        "⑦ 已解绑 skill 的工具改回 `read_only = False`（settings_manage）⇒ 判据 7 红": (
             "tool:settings_manage.py",
             lambda s: s.replace("read_only = True", "read_only = False", 1),
             problems_declared_persona_tools_are_controlled,
         ),
-        "⑧b 已解绑 skill 的工具塞回写 action（settings_manage += change_password）⇒ 判据 7 红": (
+        "⑦b 已解绑 skill 的工具塞回不可逆 action（settings_manage += delete）⇒ 判据 7 红": (
             "tool:settings_manage.py",
             lambda s: s.replace(
                 'VALID_ACTIONS = {"get_settings", "get_ai_config", "login_logs"}',
-                'VALID_ACTIONS = {"get_settings", "get_ai_config", "login_logs", "change_password"}',
+                'VALID_ACTIONS = {"get_settings", "get_ai_config", "login_logs", "delete"}',
                 1,
             ),
             problems_declared_persona_tools_are_controlled,
         ),
-        "⑧c 已解绑 skill 绑定一个不存在的工具（settings_skill 悬空绑定）⇒ 判据 7 红": (
+        "⑦c 已解绑 skill 绑定一个不存在的工具（settings_skill 悬空绑定）⇒ 判据 7 红": (
             "skill:settings_skill.py",
             lambda s: _bind_into_b_skill(s, "ghost_tool_never_declared"),
             problems_declared_persona_tools_are_controlled,
+        ),
+        "⑦d 声明 persona 的 skill 绑一个未登记的写工具（settings_skill 绑 order_manage）⇒ 判据 7 红": (
+            "skill:settings_skill.py",
+            lambda s: _bind_into_b_skill(s, "order_manage"),
+            problems_declared_persona_tools_are_controlled,
+        ),
+        # ── 判据 8：非只读 ⇒ 必须带确认门禁 ─────────────────────────────────────
+        "⑧ 变更工具摘掉确认门禁（notification_manage）⇒ 判据 8 红": (
+            "tool:notification_manage.py",
+            lambda s: s.replace("requires_confirmation = True", "requires_confirmation = False", 1),
+            problems_write_requires_confirmation,
+        ),
+        # ⑧b 用的是**合成工具**（真仓里没有「非只读且无门禁」的工具 —— 那正是本判据要防的形态）
+        # ⇒ 注入点 = 新增一个工具文件 + 把它绑进 B 端 skill（见 _inject_unconfirmed_write_tool）。
+        "⑧b 往 B 端接一个**非只读且无确认门禁**的工具 ⇒ 判据 8 红": (
+            "skill:staff_skill.py",
+            lambda s: _bind_into_b_skill(s, "zzz_planted_write_tool"),
+            problems_write_requires_confirmation,
+        ),
+        # ── 判据 9：可达面零建单零删除 ───────────────────────────────────────────
+        "⑨ 单据类创建工具进 B 端可达面（order_create → order skill）⇒ 判据 9 红": (
+            "skill:order_skill.py",
+            lambda s: _bind_into_b_skill(s, "order_create"),
+            problems_no_irreversible_or_document_creation_on_b_end,
+        ),
+        "⑨b 可达工具暴露不可逆动作（notification_manage += delete）⇒ 判据 9 红": (
+            "tool:notification_manage.py",
+            lambda s: s.replace(
+                'VALID_ACTIONS = {"list", "unread_count", "mark_read", "read_all"}',
+                'VALID_ACTIONS = {"list", "unread_count", "mark_read", "read_all", "delete"}',
+                1,
+            ),
+            problems_no_irreversible_or_document_creation_on_b_end,
+        ),
+        # ── 判据 10（正向）：变更工具必须真的可达 ────────────────────────────────
+        "⑩ 把 `notification` skill 从 mibao 解绑 ⇒ 判据 10 红（变更不可达）": (
+            "agent:mibao",
+            lambda s: re.sub(r'\n\s*"notification",', "", s, count=1),
+            problems_change_tools_reachable,
+        ),
+        # ── 判据 11：prompt 措辞与边界一致 ───────────────────────────────────────
+        "⑪ prompt 同句把已接回的工具说成「不在能力内」（settings.md 写回旧口径）⇒ 判据 11 红": (
+            "prompt:prompts/settings.md",
+            lambda s: s + (
+                "\n## 旧口径残留（注入）\n"
+                "`notification_manage` 的标记已读**不在能力内**，如实说明并引导到后台。\n"
+            ),
+            problems_prompt_boundary_coherence,
+        ),
+        "⑪b prompt 同句说 A 档改价工具「不做」（general.md 写回旧口径）⇒ 判据 11 红": (
+            "prompt:prompts/general.md",
+            lambda s: s + "\n改价（product_update / sku_update）本域**不做**，请到后台自行调整。\n",
+            problems_prompt_boundary_coherence,
         ),
     }
 
@@ -842,12 +1291,39 @@ def test_every_judgement_can_go_red() -> None:
     base_world = World(base_sources)
     green = {label: fn(base_world) for label, fn in JUDGEMENTS.items()}
     assert all(not v for v in green.values()), (
-        "对照组：未注入时七条判据必须全绿（否则红证无从归因）：\n"
+        "对照组：未注入时十一条判据必须全绿（否则红证无从归因）：\n"
         + "\n".join(f"  【{k}】{v[:2]}" for k, v in green.items() if v)
     )
     for label, (key, mutate, judgement) in _injections().items():
         sources = dict(base_sources)
         sources[key] = mutate(sources[key])
         assert sources[key] != base_sources[key], f"{label}：注入没生效（锚点失配）—— 同步本判据"
+        sources.update(_synthetic_tools(label))
         mutated = World(sources)
         assert judgement(mutated), f"{label}：判据没有变红 ⇒ 它是空断言"
+
+
+#: 注入用**合成工具**（只在内存里存在，不落盘）：真仓里不存在「非只读且无确认门禁」的 B 端工具
+#: —— 那正是判据 8 要防的形态 ⇒ 只能靠合成对象证明判据**真的会红**（否则判据 8 是空断言）。
+_SYNTHETIC_WRITE_TOOL = """\
+from app.tools.base import BaseTool, ToolResult
+
+
+VALID_ACTIONS = {"list", "mark_all"}
+
+
+class ZzzPlantedWriteTool(BaseTool):
+    name = "zzz_planted_write_tool"
+    description = "注入用合成工具（非只读、无确认门禁）"
+    read_only = False
+
+    async def execute(self, context, action="list", **kwargs) -> ToolResult:
+        return ToolResult(success=True, message="noop")
+"""
+
+
+def _synthetic_tools(label: str) -> dict[str, str]:
+    """按注入标签补上合成源：只有 ⑧b 需要（其余注入都打真文件）。"""
+    if label.startswith("⑧b"):
+        return {"tool:zzz_planted_write_tool.py": _SYNTHETIC_WRITE_TOOL}
+    return {}
