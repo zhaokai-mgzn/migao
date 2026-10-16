@@ -255,13 +255,18 @@ def _score(expectations: list[str], rounds: list) -> float:
     return passed / len(expectations) if expectations else 1.0
 
 
+def _st005_case() -> dict:
+    """ST-005 的**声明**（真值源 = 用例库）。"""
+    for c in _cases():
+        if c.get("id") == "ST-005":
+            return c
+    raise AssertionError("用例库解析不到 ST-005 —— 判据坐标失效")
+
+
 def _st005_expectations() -> list[str]:
     """ST-005 **声明**的 expectations（真值源 = 用例库，不是本文件里抄的常量）。"""
     exp_to_str = _render().exp_to_str
-    for c in _cases():
-        if c.get("id") == "ST-005":
-            return [exp_to_str(e) for e in (c.get("expectations") or [])]
-    raise AssertionError("用例库解析不到 ST-005 —— 判据坐标失效")
+    return [exp_to_str(e) for e in (_st005_case().get("expectations") or [])]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -338,19 +343,14 @@ class TestObserverGuard:
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestST005DeclaredExpectation:
-    """用**声明的** expectation 喂三条真实形态轨迹（零 LLM、确定性）。"""
+    """用**声明的** expectation 喂真实形态轨迹（零 LLM、确定性）。
+
+    R1 轨迹 = 商家提出诉求；R2 轨迹 = 商家明确确认后的执行轮。
+    """
 
     @staticmethod
-    def _direct_write_round():
-        """合格形态甲：本轮直接改 —— `mark_read` 真发且成功。"""
-        return _round(1,
-                      calls=[("notification_manage", {"action": "mark_read"})],
-                      results=[("notification_manage", True)],
-                      text="已将「您有一笔新订单待处理」标记为已读")
-
-    @staticmethod
-    def _confirm_card_round():
-        """合格形态乙：先确认再改 —— P6 实测轨迹（list + unread_count + confirm 卡）。"""
+    def _r1_confirm_card():
+        """R1（P6/本包实测形态）：list + unread_count + 写确认门禁下发的 confirm 卡。"""
         return _round(
             1,
             calls=[("notification_manage", {"action": "list"}),
@@ -359,13 +359,23 @@ class TestST005DeclaredExpectation:
                                  "confirmValue": "确认将 ntf_eval_new_order_0001 标记为已读"})],
             results=[("notification_manage", True), ("notification_manage", True)],
             text="我先查一下你当前有哪些未读通知。",
-            cards=[{"component": "confirm", "title": "确认标记这条通知为已读？"}],
+            cards=[{"component": "confirm", "title": "确认将这条通知标为已读？"}],
         )
 
     @staticmethod
-    def _text_only_round():
-        """不合格形态：一次工具都没调、纯文本（`direct_reply` 能顶替的那条通道）。"""
-        return _round(1, text="好的，我来帮您看看这条通知。")
+    def _r2_mark_read():
+        """R2（本包实测形态）：确认后 `mark_read` 真发且成功。"""
+        return _round(2,
+                      calls=[("notification_manage", {"action": "mark_read"})],
+                      results=[("notification_manage", True)],
+                      text="✅ 已把「您有一笔新订单待处理」标为已读。当前未读：0 条。")
+
+    @staticmethod
+    def _r2_text_only():
+        """R2 的不合格形态：一次工具都没调、纯文本（`direct_reply` 能顶替的那条通道）。"""
+        return _round(2, text="好的，我来帮您看看这条通知。")
+
+    # ── 期望面（OR）──────────────────────────────────────────────────────────
 
     def test_declared_form_is_a_single_or_entry(self):
         """收口后 ST-005 的期望面 = **一条** OR 文本（两条并列 entry = 恒 50% 的原病灶）。"""
@@ -373,24 +383,74 @@ class TestST005DeclaredExpectation:
         assert exps == ["notification_manage(action=mark_read) or interact"], (
             f"ST-005 的期望面被改动（原病灶 = 两条并列 entry ⇒ 恒 50%）：{exps}")
 
-    def test_direct_write_scores_full(self):
-        """合格形态甲（真去改）⇒ 100%。"""
-        assert _score(_st005_expectations(), [self._direct_write_round()]) == 1.0
+    def test_declared_inputs_are_two_rounds(self):
+        """R2 必须是**代码里 `_CONFIRM_EXACT` 的字面量**（确认门禁只认它；本用例不猜措辞）。"""
+        c = self._case()
+        assert c.get("user_inputs") == ["把新订单通知标为已读", "确认"], (
+            f"ST-005 的轮次被改动（R2 = 放行写操作的那一轮）：{c.get('user_inputs')}")
 
     def test_confirm_card_scores_full(self):
-        """合格形态乙（先确认再改，P6 实测轨迹）⇒ 100%（**这就是本包要修的那 50%**）。"""
-        assert _score(_st005_expectations(), [self._confirm_card_round()]) == 1.0
+        """合格形态乙（先确认再改，R1 就出卡）⇒ 100%。"""
+        assert _score(_st005_expectations(), [self._r1_confirm_card()]) == 1.0
+
+    def test_write_round_scores_full(self):
+        """合格形态甲（R2 确认后**真做**）⇒ 100%。"""
+        assert _score(_st005_expectations(), [self._r1_confirm_card(), self._r2_mark_read()]) == 1.0
 
     def test_text_only_scores_zero(self):
-        """反向对照（假绿方向）：纯文本 ⇒ 判红（写用例不得由文本满足）。"""
-        assert _score(_st005_expectations(), [self._text_only_round()]) == 0.0
+        """反向对照（假绿方向）：**全程**没真改、也没出卡（纯文本）⇒ 判红。"""
+        assert _score(_st005_expectations(), [self._r2_text_only()]) == 0.0
 
     def test_old_two_entry_form_would_score_half(self):
         """红证（注入式）：期望退回**两条并列 entry**（旧形态）⇒ 确认卡路径当场 50%。"""
         old = ["notification_manage(action=mark_read)", "direct_reply or interact"]
-        assert _score(old, [self._confirm_card_round()]) == 0.5
+        assert _score(old, [self._r1_confirm_card()]) == 0.5
         # 且旧形态下「纯文本」也判 50%（= 判绿那半）—— 正是本包去掉 `direct_reply` 分支的理由。
-        assert _score(old, [self._text_only_round()]) == 0.5
+        assert _score(old, [self._r2_text_only()]) == 0.5
+
+    # ── 禁令面（轮次作用域）──────────────────────────────────────────────────
+
+    @staticmethod
+    def _case() -> dict:
+        return _st005_case()
+
+    @classmethod
+    def _ban_spec(cls) -> list:
+        """用例**声明的** forbidden_text（真值源 = 用例库；5 条禁词只加轮次作用域）。"""
+        return cls._case().get("forbidden_text") or []
+
+    def test_forbidden_text_keeps_all_five_words_and_adds_round_scope(self):
+        """**五条禁词一字未删**，每条都收窄到 R1（「先声张即违规」；本包红线：不许放宽）。"""
+        bans = self._ban_spec()
+        assert [b.get("text") for b in bans] == [
+            "已标记为已读", "已标为已读", "已全部标记", "已经帮您标记", "已为您标记",
+        ], f"ST-005 的禁词表被改动: {bans}"
+        assert {b.get("round") for b in bans} == {1}, (
+            f"禁词必须全部收窄到 R1（写轮之前）：{bans}")
+
+    def test_truthful_statement_after_the_write_is_not_red(self):
+        """**轮次作用域的红证（防假红）**：R2 如实陈述「已为您标记为已读」不得判红。
+
+        全程语义下这句会被判红（它是**真话** —— 写真的成了，见于 `must_succeed`）；
+        这正是本包把禁令收窄到 R1 的理由（同 PG-013 / issue #3833 的修法形态）。
+        """
+        ban = self._ban_spec()
+        r1, r2 = self._r1_confirm_card(), self._r2_mark_read()
+        r2["final_text"] = "✅ 已为您标记为已读。当前未读 0 条。"
+        assert lr.check_forbidden_text([r1, r2], ban) == [], (
+            "R2 的如实陈述被误判 —— 禁令的轮次作用域失效")
+        # 对照：**全程**语义（旧形态）对同一条真话判红 ⇒ 证明"收窄"这一步真的在起作用。
+        whole_chat = [b["text"] for b in ban]
+        issues = lr.check_forbidden_text([r1, r2], whole_chat)
+        assert issues and "已为您标记" in issues[0] and "R2" in issues[0], (
+            f"全程语义本应对 R2 真话判红（= 旧形态的假红）：{issues}")
+
+    def test_false_promise_before_the_write_is_still_red(self):
+        """**禁令原意未削弱**：R1（**做之前**）声称已做 ⇒ 仍判红（这是禁令真正要防的）。"""
+        r1 = self._r1_confirm_card()
+        r1["final_text"] = "好的，已为您标记为已读。"
+        issues = lr.check_forbidden_text([r1], self._ban_spec())
+        assert issues and "已为您标记" in issues[0] and "R1" in issues[0], issues
 
 
 class TestST005Wiring:
@@ -400,23 +460,8 @@ class TestST005Wiring:
     """
 
     @staticmethod
-    def _case():
-        for c in _cases():
-            if c.get("id") == "ST-005":
-                return c
-        raise AssertionError("用例库解析不到 ST-005 —— 判据坐标失效")
-
-    def test_forbidden_text_unchanged_and_still_fires(self):
-        """`forbidden_text` **一字未动**（5 条），且在谎称话术上判红（本包红线：不许放宽）。"""
-        c = self._case()
-        assert c.get("forbidden_text") == [
-            "已标记为已读", "已标为已读", "已全部标记", "已经帮您标记", "已为您标记",
-        ], f"ST-005 的 forbidden_text 被改动: {c.get('forbidden_text')}"
-        lying = _round(1, calls=[("notification_manage", {"action": "list"})],
-                       results=[("notification_manage", True)],
-                       text="已为您标记为已读")
-        issues = lr.check_forbidden_text([lying], c.get("forbidden_text"))
-        assert issues and "已为您标记" in issues[0], issues
+    def _case() -> dict:
+        return _st005_case()
 
     def test_must_succeed_unchanged_and_still_conditional(self):
         """`must_succeed[notification_manage, only_if_called]` **一字未动**：三态都照旧。"""
@@ -425,12 +470,12 @@ class TestST005Wiring:
         assert spec == [{"tool": "notification_manage", "only_if_called": True}], (
             f"ST-005 的效果层被改动（本包红线：不许放宽）: {spec}")
         cls = TestST005DeclaredExpectation
-        # ① 确认卡路径：本轮没执行写 ⇒ `only_if_called` 放过（合格形态，不得假红）
-        assert lr.check_must_succeed([cls._confirm_card_round()], spec) == []
+        # ① 确认卡路径：那轮没执行写 ⇒ `only_if_called` 放过（合格形态，不得假红）
+        assert lr.check_must_succeed([cls._r1_confirm_card()], spec) == []
         # ② 真去改且成功 ⇒ 过
-        assert lr.check_must_succeed([cls._direct_write_round()], spec) == []
+        assert lr.check_must_succeed([cls._r2_mark_read()], spec) == []
         # ③ 去改但**没成** ⇒ 判红（「调了 ≠ 成了」仍由效果层把守）
-        failed = _round(1,
+        failed = _round(2,
                         calls=[("notification_manage", {"action": "mark_read"})],
                         results=[("notification_manage", False)])
         issues = lr.check_must_succeed([failed], spec)
