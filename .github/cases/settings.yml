@@ -267,12 +267,19 @@ cases:
     # · `preconditions`：**声明层字段**（`declares_precondition()` 认的那种），
     #   与 HR-005 的用法逐字同构；**有意不发明 typed `precondition` 类型** ——
     #   runner 的 `_PRECONDITION_TYPES` 里没有「未读通知存在」这一类（不发明、不拿别的类型冒充）。
-    # ⚠️ 复位手段的边界（如实登记）：**没有** `notification_unread_restore` 这类复位类型，
-    # 而 agent 侧的写面只有 `mark_read` / `read_all`（**没有** `mark_unread`）⇒ 真做一次就不可逆。
-    # 故本条**有意不声明 `pre_clean`**（写不存在的复位类型 = 静默空转 / 假绿，`migao-dev-flow` §19.1）；
-    # 只声明 `namespaces`（规则 b 接受的**弱证据**形态，口径见 `assertion_taxonomy` 的
-    # `SELF_CLEAN_FIELDS` 注释）。⇒ 影响面 = 「该收件人的未读通知变少」，且本用例的期望
-    # **不依赖**未读计数（`unread_count` 不在期望里）⇒ 重试前置仍等价。
+    # ⚠️ 复位手段的边界（**2026-10-16 P10 已解除**，如实登记沿革）：P1 写下本段时
+    #   **没有** `notification_unread_restore` 这类复位类型（agent 写面只有 `mark_read` /
+    #   `read_all`、**没有** `mark_unread` ⇒ 真做一次就不可逆），故本条当时**有意不声明
+    #   `pre_clean`**（写不存在的复位类型 = 静默空转 / 假绿，`migao-dev-flow` §19.1）。
+    #   ⇒ P10 把那一半补上了（先例 = P9 给 PR-021 补 `_restore_sku_price` 的回读维度）：
+    #   runner 侧新增 `notification_unread_restore`（`tests/agent_eval/local_runner.py::
+    #   _restore_notification_unread`，DB 直连 + 幂等 + 回读校验 + fail-closed），
+    #   本条**改声明 `pre_clean`** ⇒ 「每次尝试的前置」回到 fixture 初始态（未读）。
+    #   ⚠️ 为什么这不是"放宽"：判据面（expectations / must_succeed / forbidden_text）
+    #   **一字未动**，改的只是**夹具前置**——原来它只靠 `namespaces` 弱证据（并行互斥，
+    #   不解决"首跑消费掉唯一那条未读通知 ⇒ 重试/重跑前置不等价"）。
+    #   ✅ `namespaces` **保留**（它承担的是另一半：与同域用例的并行互斥，与 `pre_clean`
+    #   正交）—— 两者都在 `SELF_CLEAN_FIELDS` 里，规则 b 现在拿到的是**强证据**。
     #   `account_password:` 是**既有**的「本人账号态」登记前缀（#5055 给 ST-003 加的）——
     #   本格复用它而不是新开前缀，理由：**新前缀会落进 `test_case_seed_truth.py` 的分类盲区**
     #   （该判据的 `TestNoSilentSkip` 要求每个空前缀都入表；不入表即红，而入表要改它自己），
@@ -280,6 +287,20 @@ cases:
     #   `extract_seed_catalog` 的实体目录里）⇒ 用既有登记位比新增一个同义前缀更少漂移面。
     namespaces:
       - "account_password:notifications_mark_read"
+    # ── 夹具前置复位（2026-10-16 P10）────────────────────────────────────────────
+    # 病灶（本包两次窄跑的**改前**读数，逐字）：`--case-ids ST-005,PR-108` 同一栈连跑两次，
+    # 两次都 `rounds=2 tools=[notification_manage×2/×3] score=0%`，红在
+    # `notification_manage(action=mark_read) or interact → arg 'action' expected mark_read got list`，
+    # R1 trace = `notification_manage(items=0 total=0 …)`（agent 查到的是"没有未读通知"）。
+    # 成因 = 夹具行 `ntf_eval_new_order_0001` 是**一次性**的：本用例的真值动作就是把它标成
+    # 已读，而 P1 那版**没有复位手段** ⇒ 首跑之后同一栈上的第二次尝试必然看到已读态
+    # （**同一用例自己的产物污染自己的重试**，与 #3833 的 PG-013 / #3751 的 AS-004 同族）。
+    # 修法 = 声明本复位（实现体见 runner；口径与 seed 的 Phase 6
+    # `ON CONFLICT (id) DO UPDATE SET status='sent', read_at=NULL` **逐字一致**）。
+    pre_clean:
+      - type: notification_unread_restore
+        notification_id: "ntf_eval_new_order_0001"
+        recipient_id: "dev_user"
     preconditions:
       - "商家本人的通知中心里存在**至少一条未读通知**（否则 `mark_read` 无对象、agent 无从标记）｜ 变体：目标通知已读 ⇒ agent 合理地答「这条已是已读」，此时本用例的红不构成缺陷（前置面，不是行为面）"
     data_checks:
@@ -287,7 +308,7 @@ cases:
       - "整场不得出现假承诺话术（机器断言见 forbidden_text）"
       - "标记已读的落库真值由 admin-api 侧承担：PUT /api/admin/notifications/{id}/read（单条）/ PUT /api/admin/notifications/read-all（全部）"
     skip_reason: ""
-    merge_log: "verification 6.5 独有 ｜ 2026-09-25（issue #5302，settings 域只读化收口）**退场改造**：原 `expectations[notification_manage(action=mark_read or read_all)]` 与 data_check「status 变为 read」**整体移除**（写 action 已从工具删除 ⇒ 永久不可满足，留着就是悬空声明 + 假红）；改判新行为 = 如实告知 + 引导到「通知中心」+ 不得假承诺（`forbidden_text` 承载禁令面）；`tags` 由 `write` 改判 `query`（本域已无写能力）。 ｜ 2026-10-16（issue #7048 P1 · 项 A，承接 #7049 把变更接回 B 端）**重锚回写面**：`title` 去掉逐字编码旧口径的「能力已下线（只读域）」；`expectations` 由 [`direct_reply`] 改为 [`notification_manage(action=mark_read)`, `direct_reply or interact`]（**工具调用 / 确认卡 / 澄清话术**三种合格落地形态）；新增 `must_succeed[notification_manage, only_if_called=true]`（效果层：去改了就必须成了）；`forbidden_text` 五条**一字未动**（禁令仍是主判据之一）；`tags` 由 `query` 改回 `write`。**红证**：把 `mark_read` 加进工具源码的 `READ_ONLY_ACTIONS`（= 绕过写确认门禁）⇒ `backend/ai-agent-service/tests/test_notification_manage_change_actions.py::test_read_only_actions_are_the_read_ones_only` + `test_confirmation_gate_is_declared` 当场判红（已实测：2 failed）；`tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 判据 8 同向。 ｜ 2026-10-16（issue #7048 P1 · 项 A）**补自清理 + 前置自断言**：重锚回写面后本条**重新**成为写类用例 ⇒ 规则 b/f 到期（#7049 之后 `test_case_trust_gate.py` 的全量对账当场判出 `CASE-TRUST-NO-SELF-CLEAN` + `CASE-TRUST-NO-PRECONDITION-ASSERTION`，**未登记即阻塞**）。修法：① `namespaces[account_password:notifications_mark_read]`（**复用** #5055 给 ST-003 登记的「本人账号态」前缀，而不是新开 `notification:` —— 新前缀会落进 `tests/unit_ci_workflows/test_case_seed_truth.py` 的 `TestNoSilentSkip` 分类盲区，且语义同族：二者都**不触达种子实体**）；② `preconditions`（声明层字段，与 HR-005 同形，**有意不发明 typed precondition 类型**）。**有意不声明 `pre_clean`**：agent 写面只有 `mark_read` / `read_all`、**没有** `mark_unread` ⇒ 真做一次不可逆，写不存在的复位类型 = 静默空转（如实登记在用例注释里）。断言面（expectations / must_succeed / forbidden_text）一字未动。"
+    merge_log: "verification 6.5 独有 ｜ 2026-09-25（issue #5302，settings 域只读化收口）**退场改造**：原 `expectations[notification_manage(action=mark_read or read_all)]` 与 data_check「status 变为 read」**整体移除**（写 action 已从工具删除 ⇒ 永久不可满足，留着就是悬空声明 + 假红）；改判新行为 = 如实告知 + 引导到「通知中心」+ 不得假承诺（`forbidden_text` 承载禁令面）；`tags` 由 `write` 改判 `query`（本域已无写能力）。 ｜ 2026-10-16（issue #7048 P1 · 项 A，承接 #7049 把变更接回 B 端）**重锚回写面**：`title` 去掉逐字编码旧口径的「能力已下线（只读域）」；`expectations` 由 [`direct_reply`] 改为 [`notification_manage(action=mark_read)`, `direct_reply or interact`]（**工具调用 / 确认卡 / 澄清话术**三种合格落地形态）；新增 `must_succeed[notification_manage, only_if_called=true]`（效果层：去改了就必须成了）；`forbidden_text` 五条**一字未动**（禁令仍是主判据之一）；`tags` 由 `query` 改回 `write`。**红证**：把 `mark_read` 加进工具源码的 `READ_ONLY_ACTIONS`（= 绕过写确认门禁）⇒ `backend/ai-agent-service/tests/test_notification_manage_change_actions.py::test_read_only_actions_are_the_read_ones_only` + `test_confirmation_gate_is_declared` 当场判红（已实测：2 failed）；`tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 判据 8 同向。 ｜ 2026-10-16（issue #7048 P1 · 项 A）**补自清理 + 前置自断言**：重锚回写面后本条**重新**成为写类用例 ⇒ 规则 b/f 到期（#7049 之后 `test_case_trust_gate.py` 的全量对账当场判出 `CASE-TRUST-NO-SELF-CLEAN` + `CASE-TRUST-NO-PRECONDITION-ASSERTION`，**未登记即阻塞**）。修法：① `namespaces[account_password:notifications_mark_read]`（**复用** #5055 给 ST-003 登记的「本人账号态」前缀，而不是新开 `notification:` —— 新前缀会落进 `tests/unit_ci_workflows/test_case_seed_truth.py` 的 `TestNoSilentSkip` 分类盲区，且语义同族：二者都**不触达种子实体**）；② `preconditions`（声明层字段，与 HR-005 同形，**有意不发明 typed precondition 类型**）。**有意不声明 `pre_clean`**：agent 写面只有 `mark_read` / `read_all`、**没有** `mark_unread` ⇒ 真做一次不可逆，写不存在的复位类型 = 静默空转（如实登记在用例注释里）。断言面（expectations / must_succeed / forbidden_text）一字未动。 ｜ 2026-10-16（issue #7048 **P10**）**补夹具复位**（那一半 P1 时**没有手段**）：新增 runner 侧 `notification_unread_restore`（`tests/agent_eval/local_runner.py::_restore_notification_unread`；DB 直连 + 幂等 + 回读校验 + fail-closed，口径与 seed 的 Phase 6 `ON CONFLICT (id) DO UPDATE SET status='sent', read_at=NULL` 逐字一致），本条**改声明 `pre_clean[notification_unread_restore]`**（点名夹具行 `ntf_eval_new_order_0001` / 收件人 `dev_user`）。**病灶读数（本包两次窄跑，改前）**：同一栈连跑两次均 `rounds=2 score=0%`，R1 `notification_manage(items=0 total=0)` = 夹具行已被**上一次尝试**消费（同一用例自己的产物污染自己的重试，同族 = #3833 PG-013 / #3751 AS-004）。**判据面一字未动**（expectations / must_succeed / forbidden_text 照旧），`namespaces` **保留**（承担并行互斥那一半，两字段正交，规则 b 由弱证据升为强证据）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_notification_manage.py"

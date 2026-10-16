@@ -280,9 +280,109 @@ def _st005_expectations() -> list[str]:
     return [exp_to_str(e) for e in (_st005_case().get("expectations") or [])]
 
 
+def _pr108_case() -> dict:
+    """PR-108 的**声明**（真值源 = 用例库；issue #7048 P10）。"""
+    for c in _cases():
+        if c.get("id") == "PR-108":
+            return c
+    raise AssertionError("用例库解析不到 PR-108 —— 判据坐标失效")
+
+
+def _pr108_expectations() -> list[str]:
+    """PR-108 声明的 expectations（真值源 = 用例库）。"""
+    exp_to_str = _render().exp_to_str
+    return [exp_to_str(e) for e in (_pr108_case().get("expectations") or [])]
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 一、类级元守卫：OR 分支形态（注入式自证 + 真语料）
 # ══════════════════════════════════════════════════════════════════════════════
+
+class TestPR108FirstStageAcceptsBothLoadBearingCards:
+    """PR-108 第一段的 OR 面（issue #7048 **P10**；与 PR-014 的 P9 修法逐字同形）。
+
+    判据两问（`migao-acceptance` 的完成判据）都要答得上：
+      ① **真实的合格形态必须绿** —— agent 把"改哪些"塞进 **confirm 明细卡**（两次全量权威跑
+         实测的形态）与发 **choice 多选卡**（窄跑实测的形态）都要 100%；
+      ② **改坏必须红** —— `multiSelect` 从 choice 卡上摘掉（漏传 ⇒ 变单选、商家选不了多条）
+         必须判红 ⇒ 证明 OR **不是**"随便一张卡"。
+
+    真值源 = 用例库的**声明**（`_pr108_expectations()`），零 LLM、零网络。
+    """
+
+    @staticmethod
+    def _rounds(first_card: str, *, multi_select: bool = True) -> list:
+        """按 PR-108 的声明造一条**完整**轨迹；`first_card` ∈ {confirm, choice}。"""
+        if first_card == "choice":
+            # ⚠️ 卡片 payload **必须带** `multiSelect` 键：runner 的 `check_interact` 只验
+            # "期望声明的键在卡片里也在、且值一致"，**不带**该键的卡片走旧行为（放过）
+            # —— 假替身漏掉这个键，`multiSelect: false` 那条判据就变成恒绿（本包实测踩到）。
+            first = ("interact", {"component": "choice", "multiSelect": multi_select})
+            first_card_event = {"component": "choice", "multiSelect": multi_select,
+                                "title": "选择要改价的商品"}
+        else:
+            first = ("interact", {"component": "confirm",
+                                  "fields": [{"label": "遮光窗帘 · 改前价", "value": "¥168"},
+                                             {"label": "遮光窗帘 · 改后价", "value": "¥155"}]})
+            first_card_event = {"component": "confirm", "title": "批量改价确认（2 个商品）"}
+        return [
+            _round(1,
+                   calls=[("product_search", {"keyword": "遮光窗帘"}),
+                          ("product_detail", {"product_id": "prod_eval_blackout"}), first],
+                   results=[("product_search", True), ("product_detail", True)],
+                   text="已把逐条「改前 → 改后」摆出来，请核对。",
+                   cards=[first_card_event]),
+            _round(2,
+                   calls=[("product_batch_update",
+                           {"action": "preview", "batch_type": "product_price"})],
+                   results=[("product_batch_update", True)],
+                   text="预览已生成。",
+                   cards=[{"component": "confirm", "title": "确认执行批量改价"}]),
+            _round(3,
+                   calls=[("product_batch_update",
+                           {"action": "execute", "batch_id": "b-1"})],
+                   results=[("product_batch_update", True)], text="✅ 2 条全部成功。"),
+        ]
+
+    def test_declared_first_stage_is_a_single_or_entry(self):
+        """收口后第一段 = **一条** OR 文本（两条并列 entry = 恒 50%，PR-006/P7 的实测教训）。"""
+        exps = _pr108_expectations()
+        assert exps[0] == ("interact(component=choice, multiSelect=true)"
+                           " or interact(component=confirm)"), exps
+        # 后三条（第二段卡 / 预览 / 执行）**一字未删** —— 本包只动第一段
+        assert exps[1:] == [
+            "product_batch_update(action=preview, batch_type=product_price)",
+            "interact(component=confirm)",
+            "product_batch_update(action=execute)",
+        ], exps
+
+    def test_confirm_card_first_stage_scores_full(self):
+        """合格形态甲（两次全量权威跑实测：逐条明细塞进 confirm 卡）⇒ 100%。"""
+        assert _score(_pr108_expectations(), self._rounds("confirm")) == 1.0
+
+    def test_choice_card_first_stage_scores_full(self):
+        """合格形态乙（窄跑实测：choice + multiSelect）⇒ 100%。"""
+        assert _score(_pr108_expectations(), self._rounds("choice")) == 1.0
+
+    def test_the_first_stage_alone_is_unsatisfied_by_a_single_select_card(self):
+        """**机器锚点**：把第一段的期望**单独**喂给"单选卡"那一轮 ⇒ `False`。
+
+        这是本条最干净、最不易被别的轮遮蔽的判别力读数（`check_expectation` 是纯函数，
+        零 LLM）。⛔ 不能拿整条轨迹的分数当锚点：`check_expectation` 的 scope = **整条轨迹**，
+        而 `interact(component=confirm)` 那条期望会在**任何**轮放行 confirm 卡 ⇒
+        一条"从不给商家看改哪些、只在别处发 confirm 卡"的轨迹照样能拿 75%/100%
+        （那是 runner 的既有语义，本包**不动**它；但把这种轨迹写成"第一段仍必需"的
+        判据就是**假绿**——本包实测踩到过两次，如实登记在此）。
+        """
+        first_only = [self._rounds("choice", multi_select=False)[0]]
+        exp_first = _pr108_expectations()[0]
+        assert lr.check_expectation(first_only[0], exp_first)[0] is False, (
+            f"单选卡（multiSelect 缺失/为假）被第一段放过 ⇒ 判据被放宽成「随便一张卡」：{exp_first}")
+        # 反向对照（同一轮、同一期望）：多选卡必须过
+        assert lr.check_expectation(self._rounds("choice")[0], exp_first)[0] is True
+        # 同轮反向对照 ②：confirm 明细卡也必须过（这就是本包放开的那条等价路径）
+        assert lr.check_expectation(self._rounds("confirm")[0], exp_first)[0] is True
+
 
 class TestObserverGuard:
     """观察者守卫：坏形态**在内存里**必须判红；合规形态**不得**红。"""

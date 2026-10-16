@@ -665,6 +665,18 @@ _CLEAN_TYPES: dict[str, dict] = {
     # ⚠️ `attr` 留空是**有意**的（同 `order_status_restore`）：会话不是商品夹具属性，
     # 编一个属性键会让 `test_runner_restore_attrs_have_a_known_writer_surface` 判「无对应写方」。
     "session_credential_restore": {"phases": ("pre", "post"), "attr": ""},
+    # ── 复位族第四批（issue #7048 P10）：写方改的是**通知已读态**（站内通知，ST-005）──
+    # 为什么需要（ST-005 的病灶）：夹具行 `ntf_eval_new_order_0001` 是**一次性**的 ——
+    # 首跑把它标成已读后，**同一栈上的第二次跑**（或同一次跑里的第二次尝试）前置就不再
+    # 等价：agent 合理地答「这条已是已读」⇒ 判红，而红的是夹具状态、不是行为。
+    # agent 侧写面只有 `mark_read` / `read_all`、**没有** `mark_unread`
+    # （`backend/ai-agent-service/app/tools/notification_manage.py` 的 `VALID_ACTIONS`）
+    # ⇒ 现有 HTTP 面上**没有**反向放行 ⇒ 与 seed 走同一条 DB（口径同 `order_status_restore`）。
+    # ⚠️ `attr` 留空是**有意**的（同 `order_status_restore`）：通知不是商品夹具属性，
+    # 编一个属性键会让 `test_runner_restore_attrs_have_a_known_writer_surface` 判「无对应写方」。
+    # ⚠️ 只声明 `pre`（**不**声明 `post`）：复位对象是**下一次尝试的前置**（#3751 语义），
+    # 用例结束后把商家的已读结果改回去 = 抹掉本次尝试的真实产物（#4075 的红线）。
+    "notification_unread_restore": {"phases": ("pre",), "attr": ""},
 }
 
 # 派生视图（**不要**再各写一份字面量：类型清单只在上面那张表里）
@@ -769,6 +781,7 @@ _PRECLEAN_FAILURE_PREFIXES: dict[str, tuple[str, ...]] = {
     "order_status_restore": (),     # 同上（#4992）
     "customer_profile_restore": (),  # 同上（#4992）
     "session_credential_restore": (),  # 同上（#5482）
+    "notification_unread_restore": (),  # 同上（#7048 P10）：不在位/写失败/回读不符走 `_clean_not_applied`
     # 幂等型：目标不存在 = **无缺口**（"有重复商品"是待清理物，不是用例依赖的前置）
     # ⇒ 无「该在位而不在位」的语义，失败形态由动作自身（HTTP 非 2xx → 抛异常 → 通用
     # `⚠️ pre_clean 失败` 文案）承载。
@@ -1641,6 +1654,76 @@ async def _restore_session_credentials(token: str, spec: dict, phase: str) -> st
             f"（清掉 {n} 项，回读一致）")
 
 
+# ── 通知已读态复位的**点名常量**（issue #7048 P10）────────────────────────────
+# 真值来源 = `tests/agent_eval/fixtures/mibao_eval_seed.sql` 的 Phase 6 行
+# （`ntf_eval_new_order_0001` / 收件人 `dev_user` / `'sent'` = 未读 / `read_at IS NULL`）。
+# ⚠️ 只种**一条**（用例输入「把**新订单通知**标为已读」是单条语义）⇒ 复位默认也只点名这一条。
+NOTIFICATION_UNREAD_FIXTURE_ID = "ntf_eval_new_order_0001"
+NOTIFICATION_UNREAD_FIXTURE_RECIPIENT = "dev_user"
+
+
+async def _restore_notification_unread(token: str, spec: dict, phase: str) -> str:
+    """`notification_unread_restore`：把**被点名的站内通知**复位回未读（issue #7048 P10）。
+
+    为什么需要（ST-005 的病灶，本包实测）：夹具行 `ntf_eval_new_order_0001` 是**一次性**的 ——
+    ST-005 的真值动作就是把它标成已读，而 agent 写面只有 `mark_read` / `read_all`、
+    **没有** `mark_unread` ⇒ 首跑之后**同一栈**上的第二次尝试看到 `items=0`，agent 合理地答
+    「这条已是已读」⇒ 判红。这不是行为缺陷，是**夹具前置不等价**（#3751 的同族），
+    而 `pre_clean` 正是它在本仓的既有出口（先例 = `processing_order_reset` / #3833）。
+    ⇒ 把「未读」复位到 fixture 的初始态（`status='sent'` / `read_at=NULL`，与 seed 逐字同口径）。
+
+    ⚠️ 走 DB 直连而不是 HTTP：反向动作（改成未读）在 admin-api 侧**不存在**
+    （`NotificationController` 只有 `PUT /{id}/read` + `PUT /read-all`）⇒ 与 seed 走同一条 DB。
+    ⚠️ 定位**只按** `(tenant_id, id)` 精确匹配（禁子串/模糊，同 #3800 的教训）。
+
+    幂等：目标**已是**未读 ⇒ 不写库、直接成功返回（读数与写后同值）；同一条声明连跑两次结果一致。
+    失败可见（fail-closed，走 `_clean_not_applied(phase, …)` 的稳定标记）：
+    目标行**不在位**（栈缺 seed ⇒ 用例必然物理不可满足 —— 折进结论归因到数据层，
+    而不是让 agent 背「不会标记已读」的锅）/ asyncpg 不可用 / DB 不可达 / 写后回读不符。
+    ⚠️ 措辞红线（#3751）：**成功路径**的消息不得含「未复位」/「失败」。
+    """
+    nid = str(spec.get("notification_id") or NOTIFICATION_UNREAD_FIXTURE_ID).strip()
+    recipient = str(spec.get("recipient_id") or NOTIFICATION_UNREAD_FIXTURE_RECIPIENT).strip()
+    if not nid:
+        return _clean_not_applied(phase, "`notification_unread_restore` 缺 `notification_id`（无法定位目标通知）")
+    try:
+        import asyncpg  # 延迟导入：本模块的**模块级**第三方依赖仍只有 httpx
+    except ImportError as e:
+        return _clean_not_applied(
+            phase, f"通知 {nid} 的未读复位未执行（asyncpg 不可用: {e}）")
+    try:
+        conn = await asyncpg.connect(_eval_db_dsn(), timeout=8)
+        try:
+            # ① 目标行**在位性**（缺 seed ⇒ fail-closed，不当成"没什么可复位"）
+            present = await conn.fetchval(
+                "SELECT count(*) FROM notifications WHERE tenant_id = $1 AND id = $2",
+                EVAL_TENANT_ID, nid)
+            if not present:
+                return _clean_not_applied(
+                    phase, f"通知 {nid} 不在位（本用例的夹具行缺失 —— 栈缺 seed？"
+                           f"见 tests/agent_eval/fixtures/mibao_eval_seed.sql 的 Phase 6）")
+            # ② 幂等短路：已是未读（口径与 seed 的 Phase 6 核对式逐字相同）
+            if await conn.fetchval(
+                    "SELECT count(*) FROM notifications WHERE tenant_id = $1 AND id = $2"
+                    " AND recipient_id = $3 AND status = 'sent' AND read_at IS NULL",
+                    EVAL_TENANT_ID, nid, recipient):
+                return (f"通知 {nid} 本就是未读（初始态，幂等）")
+            # ③ 复位（口径与 seed 的 `ON CONFLICT (id) DO UPDATE` 逐字一致）
+            await conn.execute(
+                "UPDATE notifications SET status = 'sent', read_at = NULL"
+                " WHERE tenant_id = $1 AND id = $2",
+                EVAL_TENANT_ID, nid)
+        finally:
+            try:
+                await conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        return _clean_not_applied(
+            phase, f"通知 {nid} 的未读复位未执行（DB 不可达/失败: {type(e).__name__}: {e}）")
+    return (f"已复位通知 {nid} → 未读（收件人 {recipient}，status='sent' / read_at=NULL）")
+
+
 async def _run_clean_action(token: str, spec: dict, phase: str = "pre") -> str:
     """一次夹具层动作的**实现体**（原始消息；族/阶段归类见 `_run_pre_clean` / `_run_post_clean`）。
 
@@ -1668,6 +1751,9 @@ async def _run_clean_action(token: str, spec: dict, phase: str = "pre") -> str:
     - session_credential_restore: **复位族第三批**（#5482）——把**会话凭证事实**
       （已发验证码 / 已点确认卡 / 会话态）复位到该会话刚建立时的初始态；DB 直连
       （HTTP 面无"清空会话工作状态、保留会话"的路径，见该函数 docstring）。
+    - notification_unread_restore: **复位族第四批**（#7048 P10）——把**站内通知的已读态**
+      复位回未读（ST-005「标记已读」的病灶面：那条唯一夹具行是一次性的）；DB 直连
+      （agent 写面没有 `mark_unread`，HTTP 面无反向放行，见该函数 docstring）。
 
     ⚠️ 调用时机（issue #3751 / #4075）：`pre` 阶段只允许在**一次尝试开始之前**执行
     （`run_suite` 在首次尝试前与每次重试前调用；绝不在 `run_case`/`db_verify` 之后 ——
@@ -1858,6 +1944,11 @@ async def _run_clean_action(token: str, spec: dict, phase: str = "pre") -> str:
         # 复位族第三批（#5482）：把**会话凭证事实**（验证码/确认卡/会话态）复位到初始态
         # （实现体见 `_restore_session_credentials`）。
         return await _restore_session_credentials(token, spec, phase)
+    if _type == "notification_unread_restore":
+        # 复位族第四批（#7048 P10）：把**通知已读态**复位回未读（ST-005 的病灶面 ——
+        # 首跑消费掉那条唯一夹具行后，同一栈上的第二次尝试前置不再等价）。
+        # 实现体见 `_restore_notification_unread`。
+        return await _restore_notification_unread(token, spec, phase)
     # ── customer_tag_remove（登记表里的最后一个 ⇒ 落到这里即它；其余情况是
     #    "登记了但漏写实现体"，同样走配置错误，不许退回静默）──
     # 配置错误**不是**静默跳过（issue #3781）：旧行为 `（跳过）` 只被打印一行，

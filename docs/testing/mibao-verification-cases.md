@@ -9084,12 +9084,12 @@
 你: 撤销刚才那个批量改价
 你: [🤖 按上一轮卡片作答]
 端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
-期望: interact(component=choice, multiSelect=True)
+期望: interact(component=choice, multiSelect=true) or interact(component=confirm)
 期望: product_batch_update(action=preview, batch_type=product_price)
 期望: interact(component=confirm)
 期望: product_batch_update(action=execute)
 数据: success=true
-数据: 两段确认缺一不可（机器断言）：第一段 = `interact(choice, multiSelect=true)`；第二段 = `interact(confirm)` + 执行必须带 preview 的 `batch_id` ⇒「没给商家看过逐条预览就执行」在**结构上不可达**
+数据: 两段确认缺一不可（机器断言）：第一段 = `interact(choice, multiSelect=true)`（集合可勾选时）或 `interact(confirm)`（集合已由商家给全时把逐条明细摆给他看）；第二段 = `interact(confirm)` + 执行必须带 preview 的 `batch_id` ⇒「没给商家看过逐条预览就执行」在**结构上不可达**
 数据: 逐条「改前 → 改后」由 `product_batch_update(preview)` 返回的 fields 派生（字段投影单一源 = backend/ai-agent-service/app/tools/confirm_value.py），断言见 backend/ai-agent-service/tests/test_product_batch_update.py
 数据: 撤销逐条还原为改前值 `old_value`（required_args[revert.batch_id] + 单测断言 `/revert` 端点与「还原」话术）
 数据: 部分失败逐条报告、不做整体回滚（单测断言：执行路径**不得**顺带调用 revert）
@@ -9104,7 +9104,7 @@
 必填: product_batch_update(revert) 字段 batch_id
 必须成功: product_batch_update
 ```
-溯源: 2026-09-24 新增（issue #5314 的 Agent 侧包）：批量更新的**两段确认 + 撤销**（工具 `product_batch_update`，契约 = issue #5314 评论「批量更新能力 —— 设计 + 冻结契约」）。本用例覆盖改价批量（`product_price`）+ 撤销入口；上下架批量（`product_status`）、阈值、白名单与结构锁的确定性判据见 PR-109（非 LLM 面）。post_clean 复位两条共享夹具商品的**商品级价**（种子真值：遮光窗帘 168 / 北欧风窗帘 128，#4075 口径）。 ｜ tags: batch, multi_turn, write, undo, two_stage_confirm
+溯源: 2026-09-24 新增（issue #5314 的 Agent 侧包）：批量更新的**两段确认 + 撤销**（工具 `product_batch_update`，契约 = issue #5314 评论「批量更新能力 —— 设计 + 冻结契约」）。本用例覆盖改价批量（`product_price`）+ 撤销入口；上下架批量（`product_status`）、阈值、白名单与结构锁的确定性判据见 PR-109（非 LLM 面）。post_clean 复位两条共享夹具商品的**商品级价**（种子真值：遮光窗帘 168 / 北欧风窗帘 128，#4075 口径）。 ｜ 2026-10-16（issue #7048 **P10**）**第一段收成 OR**（与 P9 给 PR-014 的修法逐字同形，先例可比）：原写法把第一段硬绑在 `interact(component=choice, multiSelect=true)` 一条路径上，而本用例 R1 输入**自己就把集合给全**（两条商品逐一点名）⇒ 发 confirm 明细卡同样满足「改哪些在执行前经商家过目」这一内核。改前红证 = **两次全量权威跑**：run 2131 首跑 `unmatched expectation: interact(component=choice, multiSelect=True)`（重试发 choice 卡才通过 ⇒ 记为 llm-noise 放行）、run 2259 两次尝试同点判红（桶=`unstable` 阻塞）。**未放宽**：`multiSelect` 判据保留在 OR 第一条分支、第二段卡 / `execute` / `revert` / `required_args` 一字未删。 ｜ tags: batch, multi_turn, write, undo, two_stage_confirm
 
 ### PR-109. 批量更新 - 阈值 N>50 拒绝分批 + batchType 白名单只有两个 + 两段确认结构锁 + 撤销逐条还原（确定性判据，非 LLM 面） 🔵
 ```
@@ -9582,6 +9582,7 @@
 数据: 真值 = 变更（标记已读）已在能力面内，且该调用必须走写确认门禁（非只读 action）
 数据: 整场不得出现假承诺话术（机器断言见 forbidden_text）
 数据: 标记已读的落库真值由 admin-api 侧承担：PUT /api/admin/notifications/{id}/read（单条）/ PUT /api/admin/notifications/read-all（全部）
+清理: notification_unread_restore(notification_id=ntf_eval_new_order_0001、recipient_id=dev_user)
 前置(散文): 商家本人的通知中心里存在**至少一条未读通知**（否则 `mark_read` 无对象、agent 无从标记）｜ 变体：目标通知已读 ⇒ agent 合理地答「这条已是已读」，此时本用例的红不构成缺陷（前置面，不是行为面）
 命名空间(同键互斥·自动串行): account_password:notifications_mark_read
 禁词（第 1 轮）: 已标记为已读
@@ -9592,7 +9593,7 @@
 必须成功: notification_manage
 ```
 真值: agent-notification.notification-status
-溯源: verification 6.5 独有 ｜ 2026-09-25（issue #5302，settings 域只读化收口）**退场改造**：原 `expectations[notification_manage(action=mark_read or read_all)]` 与 data_check「status 变为 read」**整体移除**（写 action 已从工具删除 ⇒ 永久不可满足，留着就是悬空声明 + 假红）；改判新行为 = 如实告知 + 引导到「通知中心」+ 不得假承诺（`forbidden_text` 承载禁令面）；`tags` 由 `write` 改判 `query`（本域已无写能力）。 ｜ 2026-10-16（issue #7048 P1 · 项 A，承接 #7049 把变更接回 B 端）**重锚回写面**：`title` 去掉逐字编码旧口径的「能力已下线（只读域）」；`expectations` 由 [`direct_reply`] 改为 [`notification_manage(action=mark_read)`, `direct_reply or interact`]（**工具调用 / 确认卡 / 澄清话术**三种合格落地形态）；新增 `must_succeed[notification_manage, only_if_called=true]`（效果层：去改了就必须成了）；`forbidden_text` 五条**一字未动**（禁令仍是主判据之一）；`tags` 由 `query` 改回 `write`。**红证**：把 `mark_read` 加进工具源码的 `READ_ONLY_ACTIONS`（= 绕过写确认门禁）⇒ `backend/ai-agent-service/tests/test_notification_manage_change_actions.py::test_read_only_actions_are_the_read_ones_only` + `test_confirmation_gate_is_declared` 当场判红（已实测：2 failed）；`tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 判据 8 同向。 ｜ 2026-10-16（issue #7048 P1 · 项 A）**补自清理 + 前置自断言**：重锚回写面后本条**重新**成为写类用例 ⇒ 规则 b/f 到期（#7049 之后 `test_case_trust_gate.py` 的全量对账当场判出 `CASE-TRUST-NO-SELF-CLEAN` + `CASE-TRUST-NO-PRECONDITION-ASSERTION`，**未登记即阻塞**）。修法：① `namespaces[account_password:notifications_mark_read]`（**复用** #5055 给 ST-003 登记的「本人账号态」前缀，而不是新开 `notification:` —— 新前缀会落进 `tests/unit_ci_workflows/test_case_seed_truth.py` 的 `TestNoSilentSkip` 分类盲区，且语义同族：二者都**不触达种子实体**）；② `preconditions`（声明层字段，与 HR-005 同形，**有意不发明 typed precondition 类型**）。**有意不声明 `pre_clean`**：agent 写面只有 `mark_read` / `read_all`、**没有** `mark_unread` ⇒ 真做一次不可逆，写不存在的复位类型 = 静默空转（如实登记在用例注释里）。断言面（expectations / must_succeed / forbidden_text）一字未动。 ｜ tags: write, notification
+溯源: verification 6.5 独有 ｜ 2026-09-25（issue #5302，settings 域只读化收口）**退场改造**：原 `expectations[notification_manage(action=mark_read or read_all)]` 与 data_check「status 变为 read」**整体移除**（写 action 已从工具删除 ⇒ 永久不可满足，留着就是悬空声明 + 假红）；改判新行为 = 如实告知 + 引导到「通知中心」+ 不得假承诺（`forbidden_text` 承载禁令面）；`tags` 由 `write` 改判 `query`（本域已无写能力）。 ｜ 2026-10-16（issue #7048 P1 · 项 A，承接 #7049 把变更接回 B 端）**重锚回写面**：`title` 去掉逐字编码旧口径的「能力已下线（只读域）」；`expectations` 由 [`direct_reply`] 改为 [`notification_manage(action=mark_read)`, `direct_reply or interact`]（**工具调用 / 确认卡 / 澄清话术**三种合格落地形态）；新增 `must_succeed[notification_manage, only_if_called=true]`（效果层：去改了就必须成了）；`forbidden_text` 五条**一字未动**（禁令仍是主判据之一）；`tags` 由 `query` 改回 `write`。**红证**：把 `mark_read` 加进工具源码的 `READ_ONLY_ACTIONS`（= 绕过写确认门禁）⇒ `backend/ai-agent-service/tests/test_notification_manage_change_actions.py::test_read_only_actions_are_the_read_ones_only` + `test_confirmation_gate_is_declared` 当场判红（已实测：2 failed）；`tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 判据 8 同向。 ｜ 2026-10-16（issue #7048 P1 · 项 A）**补自清理 + 前置自断言**：重锚回写面后本条**重新**成为写类用例 ⇒ 规则 b/f 到期（#7049 之后 `test_case_trust_gate.py` 的全量对账当场判出 `CASE-TRUST-NO-SELF-CLEAN` + `CASE-TRUST-NO-PRECONDITION-ASSERTION`，**未登记即阻塞**）。修法：① `namespaces[account_password:notifications_mark_read]`（**复用** #5055 给 ST-003 登记的「本人账号态」前缀，而不是新开 `notification:` —— 新前缀会落进 `tests/unit_ci_workflows/test_case_seed_truth.py` 的 `TestNoSilentSkip` 分类盲区，且语义同族：二者都**不触达种子实体**）；② `preconditions`（声明层字段，与 HR-005 同形，**有意不发明 typed precondition 类型**）。**有意不声明 `pre_clean`**：agent 写面只有 `mark_read` / `read_all`、**没有** `mark_unread` ⇒ 真做一次不可逆，写不存在的复位类型 = 静默空转（如实登记在用例注释里）。断言面（expectations / must_succeed / forbidden_text）一字未动。 ｜ 2026-10-16（issue #7048 **P10**）**补夹具复位**（那一半 P1 时**没有手段**）：新增 runner 侧 `notification_unread_restore`（`tests/agent_eval/local_runner.py::_restore_notification_unread`；DB 直连 + 幂等 + 回读校验 + fail-closed，口径与 seed 的 Phase 6 `ON CONFLICT (id) DO UPDATE SET status='sent', read_at=NULL` 逐字一致），本条**改声明 `pre_clean[notification_unread_restore]`**（点名夹具行 `ntf_eval_new_order_0001` / 收件人 `dev_user`）。**病灶读数（本包两次窄跑，改前）**：同一栈连跑两次均 `rounds=2 score=0%`，R1 `notification_manage(items=0 total=0)` = 夹具行已被**上一次尝试**消费（同一用例自己的产物污染自己的重试，同族 = #3833 PG-013 / #3751 AS-004）。**判据面一字未动**（expectations / must_succeed / forbidden_text 照旧），`namespaces` **保留**（承担并行互斥那一半，两字段正交，规则 b 由弱证据升为强证据）。 ｜ tags: write, notification
 
 ### ST-008. 机器人设置生效 - 自动转人工关键词命中后如实告知（无人工通道）+ 非营业时间降级（确定性层） 🔵
 ```

@@ -11724,8 +11724,8 @@ _CASE_PR_108 = EvalCase(
     skill=Skill.PRODUCT,
     difficulty=Difficulty.NORMAL,
     user_inputs=['把遮光窗帘和北欧风窗帘的价格都改成 155', '已选商品：遮光窗帘、北欧风窗帘', {'auto_respond': {'fallback': '确认'}}, '撤销刚才那个批量改价', {'auto_respond': {'fallback': '确认'}}],
-    expectations=['interact(component=choice, multiSelect=True)', 'product_batch_update(action=preview, batch_type=product_price)', 'interact(component=confirm)', 'product_batch_update(action=execute)'],
-    data_checks=['success=true', '两段确认缺一不可（机器断言）：第一段 = `interact(choice, multiSelect=true)`；第二段 = `interact(confirm)` + 执行必须带 preview 的 `batch_id` ⇒「没给商家看过逐条预览就执行」在**结构上不可达**', '逐条「改前 → 改后」由 `product_batch_update(preview)` 返回的 fields 派生（字段投影单一源 = backend/ai-agent-service/app/tools/confirm_value.py），断言见 backend/ai-agent-service/tests/test_product_batch_update.py', '撤销逐条还原为改前值 `old_value`（required_args[revert.batch_id] + 单测断言 `/revert` 端点与「还原」话术）', '部分失败逐条报告、不做整体回滚（单测断言：执行路径**不得**顺带调用 revert）', '阈值 N>50 拒绝并提示分批（本用例 N=2；边界判据见 PR-109）'],
+    expectations=['interact(component=choice, multiSelect=true) or interact(component=confirm)', 'product_batch_update(action=preview, batch_type=product_price)', 'interact(component=confirm)', 'product_batch_update(action=execute)'],
+    data_checks=['success=true', '两段确认缺一不可（机器断言）：第一段 = `interact(choice, multiSelect=true)`（集合可勾选时）或 `interact(confirm)`（集合已由商家给全时把逐条明细摆给他看）；第二段 = `interact(confirm)` + 执行必须带 preview 的 `batch_id` ⇒「没给商家看过逐条预览就执行」在**结构上不可达**', '逐条「改前 → 改后」由 `product_batch_update(preview)` 返回的 fields 派生（字段投影单一源 = backend/ai-agent-service/app/tools/confirm_value.py），断言见 backend/ai-agent-service/tests/test_product_batch_update.py', '撤销逐条还原为改前值 `old_value`（required_args[revert.batch_id] + 单测断言 `/revert` 端点与「还原」话术）', '部分失败逐条报告、不做整体回滚（单测断言：执行路径**不得**顺带调用 revert）', '阈值 N>50 拒绝并提示分批（本用例 N=2；边界判据见 PR-109）'],
     skip_reason='',
     tags=['batch', 'multi_turn', 'write', 'undo', 'two_stage_confirm'],
     persona='mibao',
@@ -12324,6 +12324,7 @@ _CASE_ST_005 = EvalCase(
     forbidden_card_text=[],
     forbidden_text=[{'round': 1, 'text': '已标记为已读'}, {'round': 1, 'text': '已标为已读'}, {'round': 1, 'text': '已全部标记'}, {'round': 1, 'text': '已经帮您标记'}, {'round': 1, 'text': '已为您标记'}],
     must_succeed=[{'tool': 'notification_manage', 'only_if_called': True}],
+    pre_clean=[{'type': 'notification_unread_restore', 'notification_id': 'ntf_eval_new_order_0001', 'recipient_id': 'dev_user'}],
     namespaces=['account_password:notifications_mark_read'],
 )
 

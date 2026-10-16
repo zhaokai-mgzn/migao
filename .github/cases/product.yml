@@ -4112,12 +4112,37 @@ cases:
         source: "北欧风窗帘"
         expect: 1
     expectations:
-      # 第一段：多选卡（勾选集合 = 改哪些）—— `multiSelect: true` 是硬要求
-      # （漏传会变单选，商家选不了多条；PR-014 实证）
-      - tool: interact
-        args:
-          component: choice
-          multiSelect: true
+      # 第一段：**改哪些必须经商家过目** —— 两条等价载体，任一成立即算（issue #7048 **P10**）
+      # ── 与 PR-014 的 P9 修法**逐字同形**（同一根因、同一先例；核实依据见下）──────
+      # 核实（P10 开工第一件事，照 P9 的先例逐条比对）：`git show origin/main:.github/cases/product.yml`
+      # 的 PR-014 段 = `"interact(component=choice, multiSelect=true) or interact(component=confirm)"`
+      # （第一段收成 OR ✓），其第二段卡 + `execute` + `revert` + `required_args` **一字未删** ✓。
+      # 本条当时**不在** P9 射程内（P9 只收 PR-021/PR-018/PR-014 三条）⇒ 本条是本批的**同一形态残留**。
+      # ── 病灶（**改前红证 = 两次全量权威跑的逐字读数**；本包窄跑**不复现**该分支，如实登记）──
+      #   · run 2131（`/tmp/eval-rerun-1016-2131.log`）：首跑
+      #     `❌ interact(component=choice, multiSelect=True) → unmatched expectation`、
+      #     首跑指纹 `no_success(interact)`；R1/R2 的 agent **发的是 confirm 卡**
+      #     （`cardreq=confirm:批量改价确认（2 条商品）`，fields=逐条改前→改后）⇒ 重试发 choice 卡才通过
+      #     （该 run 最终 `✅ (重试后通过) 🎲噪声·重试放行`）——「同一形态在不同 run 之间跳」。
+      #   · run 2259（`/tmp/eval-rerun-1016-2259.log`）：两次尝试**都**首段判红
+      #     （`arg_mismatch(interact,component)` + `required_arg(product_batch_update,batch_id)`），
+      #     桶 = `unstable`（两次皆败、成因不同）⇒ 阻塞。
+      #   ⇒ 两跑的共同失分点**只有**「第一段必须是一张 choice 勾选卡」，而本用例的 **R1 输入自己
+      #   就把集合给全了**（「把遮光窗帘和北欧风窗帘的价格都改成 155」= 两条逐一点名，没有"选哪些"
+      #   的余地；`product_skill.py` 的「让商家**勾选**要改的商品」是为**消歧**而设）⇒
+      #   与 PR-014 / PR-018 / PR-006 **同族**的**过度指定实现路径**。
+      # ── 修法（**判别力不降**：不放宽成"随便一张卡"）──
+      # 内核 = 「**改哪些**在**执行之前**被摆给商家看过」。两条载体都能承担它，任一成立即通过：
+      #   · `interact(component=choice, multiSelect=true)` = 集合**可勾选**时的原路径；
+      #   · `interact(component=confirm)` = 集合**已由商家自己给全**时，由 preview 的 `fields`
+      #     把逐条"改前 → 改后"（含**每条商品**）摆出来 —— 下方**第二段卡 / 执行 / 撤销断言
+      #     一字未删**（仍是硬要求；`required_args` 亦一字未动）。
+      # ⚠️ **未放宽**：`multiSelect` 的机器判据仍**原样保留在第一条分支**里（漏传 multiSelect
+      # 的**单选卡**仍判红）；第二条分支也没有放开成"无卡"。
+      # ── 未固化项（如实登记，见 PR body）──
+      # 本包**窄跑**（`--case-ids ST-005,PR-108`）两次都是 100% ⇒ 该分支在窄跑里**不复现**
+      # （夹具未被他用例污染的干净栈上，agent 恰好发 choice 卡）；真红证取的是**两次全量权威跑**。
+      - "interact(component=choice, multiSelect=true) or interact(component=confirm)"
       # 第二段材料：预演 —— 逐条「改前 → 改后」只能由它产出；
       # `batch_type` 同时是共享夹具的**属性判别维**（见 test_shared_fixture_write_restore.py）
       - tool: product_batch_update
@@ -4147,7 +4172,7 @@ cases:
         fields: [batch_id]
     data_checks:
       - "success=true"
-      - "两段确认缺一不可（机器断言）：第一段 = `interact(choice, multiSelect=true)`；第二段 = `interact(confirm)` + 执行必须带 preview 的 `batch_id` ⇒「没给商家看过逐条预览就执行」在**结构上不可达**"
+      - "两段确认缺一不可（机器断言）：第一段 = `interact(choice, multiSelect=true)`（集合可勾选时）或 `interact(confirm)`（集合已由商家给全时把逐条明细摆给他看）；第二段 = `interact(confirm)` + 执行必须带 preview 的 `batch_id` ⇒「没给商家看过逐条预览就执行」在**结构上不可达**"
       - "逐条「改前 → 改后」由 `product_batch_update(preview)` 返回的 fields 派生（字段投影单一源 = backend/ai-agent-service/app/tools/confirm_value.py），断言见 backend/ai-agent-service/tests/test_product_batch_update.py"
       - "撤销逐条还原为改前值 `old_value`（required_args[revert.batch_id] + 单测断言 `/revert` 端点与「还原」话术）"
       - "部分失败逐条报告、不做整体回滚（单测断言：执行路径**不得**顺带调用 revert）"
@@ -4160,7 +4185,7 @@ cases:
         product_keyword: "北欧风窗帘"
         price: 128
     skip_reason: ""
-    merge_log: "2026-09-24 新增（issue #5314 的 Agent 侧包）：批量更新的**两段确认 + 撤销**（工具 `product_batch_update`，契约 = issue #5314 评论「批量更新能力 —— 设计 + 冻结契约」）。本用例覆盖改价批量（`product_price`）+ 撤销入口；上下架批量（`product_status`）、阈值、白名单与结构锁的确定性判据见 PR-109（非 LLM 面）。post_clean 复位两条共享夹具商品的**商品级价**（种子真值：遮光窗帘 168 / 北欧风窗帘 128，#4075 口径）。"
+    merge_log: "2026-09-24 新增（issue #5314 的 Agent 侧包）：批量更新的**两段确认 + 撤销**（工具 `product_batch_update`，契约 = issue #5314 评论「批量更新能力 —— 设计 + 冻结契约」）。本用例覆盖改价批量（`product_price`）+ 撤销入口；上下架批量（`product_status`）、阈值、白名单与结构锁的确定性判据见 PR-109（非 LLM 面）。post_clean 复位两条共享夹具商品的**商品级价**（种子真值：遮光窗帘 168 / 北欧风窗帘 128，#4075 口径）。 ｜ 2026-10-16（issue #7048 **P10**）**第一段收成 OR**（与 P9 给 PR-014 的修法逐字同形，先例可比）：原写法把第一段硬绑在 `interact(component=choice, multiSelect=true)` 一条路径上，而本用例 R1 输入**自己就把集合给全**（两条商品逐一点名）⇒ 发 confirm 明细卡同样满足「改哪些在执行前经商家过目」这一内核。改前红证 = **两次全量权威跑**：run 2131 首跑 `unmatched expectation: interact(component=choice, multiSelect=True)`（重试发 choice 卡才通过 ⇒ 记为 llm-noise 放行）、run 2259 两次尝试同点判红（桶=`unstable` 阻塞）。**未放宽**：`multiSelect` 判据保留在 OR 第一条分支、第二段卡 / `execute` / `revert` / `required_args` 一字未删。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_product_batch_update.py"
