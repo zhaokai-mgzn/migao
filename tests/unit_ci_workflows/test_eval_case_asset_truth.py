@@ -557,9 +557,28 @@ class TestPG013ForbiddenTextIsRoundScoped:
     机制支持了轮次作用域，但用例仍可能写成全程裸字符串 ⇒ 假红**照旧**。
     本类锁的是"用例**真的用了**这个能力"，并用**派生注入**证明它有效：
     把声明的 dict 压平成全程裸串（= 改前语义），R1 的良性原文立刻又红。
+
+    🔴 **2026-10-16 口径改判（issue #7048 P1 · 项 C）—— 判据**期望**换锚，不是放宽**：
+    原判据要求「**能力否定**类措辞必须仍是全程禁词」，原词表 = 「暂不支持 / 功能不存在 /
+    没有这个功能 / 生成未成功 / 生成失败」。按用户 2026-10-16「能力边界 终版」，
+    **生成加工单 ∈ 创建单据 = ❌** ⇒ agent 对「帮我生成加工单」的**正确行为就是如实说明不支持
+    + 引导生产看板**，而「暂不支持」「功能不存在」「没有这个功能」**正是诚实拒绝的话**
+    ⇒ 把它们列为禁词 = **用例在惩罚正确行为**（反向判据，必然假红）。
+    故本类改为两个方向各自成条（**都保留会红的判据，一条没删**）：
+      · 正向：**假承诺**（编造"已完成"）+ **编造失败**（#3477 家族）必须仍是全程禁词；
+      · 反向：**诚实拒绝词**不得再出现在禁词表里（回归即红 —— 这是本次改判的守卫）。
+    判别力自证：把 `FALSE_PROMISE_WORDS` 任一词从用例的 `forbidden_text` 删掉 ⇒ ② 红；
+    把 `CORRECT_REFUSAL_WORDS` 加回用例 ⇒ ③ 红。
     """
 
-    CAPABILITY_DENIAL = ["暂不支持", "功能不存在", "没有这个功能", "生成未成功", "生成失败"]
+    #: **假承诺 / 编造失败** —— 这两族在任何一轮说出来都是错的（保持全程禁词）。
+    #: ⚠️ 与原口径的差别：原表的「暂不支持 / 功能不存在 / 没有这个功能」**已移入**
+    #: `CORRECT_REFUSAL_WORDS`（见下方 ③ 的反向守卫）。
+    FALSE_PROMISE_WORDS = ["已生成", "已创建加工单", "已生成加工单"]
+    FABRICATED_FAILURE_WORDS = ["生成未成功", "生成失败"]
+    #: **诚实拒绝词**：按 2026-10-16 边界，加工单生成**不在能力内** ⇒ 说这几句是**正确行为**
+    #: ⇒ **不得**出现在 `forbidden_text` 里（出现即把正确拒绝判红 = 假红）。
+    CORRECT_REFUSAL_WORDS = ["暂不支持", "功能不存在", "没有这个功能"]
     WRITE_ROUND_WORDS = ["无加工项", "无法生成加工单", "系统判定为"]
     BENIGN_R1 = (
         "📦 已确认（待发货）订单共 2 个，其中 **1 个含加工项**：\n"
@@ -581,10 +600,28 @@ class TestPG013ForbiddenTextIsRoundScoped:
         for rnd, words in rounds.items():
             assert set(self.WRITE_ROUND_WORDS) <= words, (rnd, words)
 
-    def test_capability_denial_words_stay_all_run(self):
-        """**不降强度**：能力自我否定 / 编造失败类措辞必须仍是全程（任何一轮说出来都错）。"""
+    def test_false_promise_words_stay_all_run(self):
+        """**不降强度**：假承诺（编造"已完成"）/ 编造失败类措辞必须仍是全程（任何一轮说出来都错）。"""
         bare = {w for w in self._declared() if isinstance(w, str)}
-        assert set(self.CAPABILITY_DENIAL) <= bare, (self.CAPABILITY_DENIAL, bare)
+        assert set(self.FALSE_PROMISE_WORDS) <= bare, (
+            f"假承诺词不再全程禁（说了「已生成」却没人拦）：{self.FALSE_PROMISE_WORDS} ⊄ {bare}")
+        assert set(self.FABRICATED_FAILURE_WORDS) <= bare, (
+            f"编造失败词不再全程禁（#3477 家族）：{self.FABRICATED_FAILURE_WORDS} ⊄ {bare}")
+
+    def test_correct_refusal_words_are_not_penalised(self):
+        """**反向守卫（#7048 P1 · 项 C 的类级固化）**：诚实拒绝词**不得**回到禁词表。
+
+        为什么必须单列一条：本次改判的**唯一动机**就是「加工单生成不在能力内 ⇒ 如实说不支持
+        是正确行为」。只要有人把它加回 `forbidden_text`，这条用例就会重新开始惩罚正确拒绝
+        （且形态是**静默**的：报告上只表现为 agent「拒绝执行」）。
+        判别力：把任一 `CORRECT_REFUSAL_WORDS` 加进用例 ⇒ 本条红。
+        """
+        bare = {w for w in self._declared() if isinstance(w, str)}
+        leaked = sorted(set(self.CORRECT_REFUSAL_WORDS) & bare)
+        assert not leaked, (
+            f"诚实拒绝词又回到 `forbidden_text` 里 {leaked} —— 按 2026-10-16「能力边界 终版」"
+            f"（**创建单据 ❌**），如实说明「不支持生成加工单」是**正确行为**，"
+            f"把它当禁词 = 用例在惩罚正确行为（假红）")
 
     def test_flattening_the_declaration_brings_the_false_red_back(self):
         """**红证（派生注入）**：把声明的 dict 压平成全程裸串（= 改前语义）⇒
