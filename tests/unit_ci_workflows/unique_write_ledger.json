@@ -40,6 +40,10 @@
       "table": "order_shipments",
       "handling": "none"
     },
+    "backend/admin-api/src/main/java/com/migao/admin/service/PieceworkSettlementService.java::settlementMapper": {
+      "table": "piecework_settlements",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/PieceworkSettlementMapper.java"
+    },
     "backend/admin-api/src/main/java/com/migao/admin/service/ProcessingFeeCombinationCommandService.java::combinationMapper": {
       "table": "processing_fee_combinations",
       "handling": "none"

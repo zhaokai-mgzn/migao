@@ -3630,5 +3630,44 @@ COMMENT ON COLUMN scheduled_tasks.status IS
 COMMENT ON COLUMN scheduled_tasks.source IS 'user（米宝委托）/ system（规则派生）。';
 
 -- ================================================
+-- 计件结算单（V156，issue #5653；本轮 = 结算 + 留痕）
+-- 一行 = 某租户 × 某期间(YYYY-MM) × 某工人的应发金额凭证（**生成即冻结**）。
+-- 金额与 line_items 逐值来自 piecework/summary 的同一次读数（结算侧不重算 —— 同一真值一处投影）。
+-- 作废 = 置 voided_at 留痕（不物理删、不软删）；活跃单部分唯一索引 ⇒ 要改就作废重开。
+-- 本轮不做：发放状态字段 / 发放动作 / 导出 / 与财务域耦合（用户 2026-10-16 裁定）。
+-- ================================================
+CREATE TABLE IF NOT EXISTS piecework_settlements (
+    id           VARCHAR(64) PRIMARY KEY,
+    tenant_id    BIGINT NOT NULL REFERENCES tenants(id),
+    period       VARCHAR(7) NOT NULL,                 -- 期间键 YYYY-MM
+    worker_name  VARCHAR(64) NOT NULL,
+    total_amount NUMERIC(14,2) NOT NULL,              -- = 生成那一刻 piecework/summary 的 total
+    line_items   JSONB NOT NULL DEFAULT '[]'::jsonb,  -- 明细快照 [{operation, qty, amount}]
+    generated_by VARCHAR(64),
+    generated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    voided_at    TIMESTAMP WITH TIME ZONE,            -- NULL = 生效中；作废只改这一族三列
+    voided_by    VARCHAR(64),
+    void_reason  TEXT,
+    created_at   TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at   TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted      INTEGER NOT NULL DEFAULT 0
+);
+-- 活跃单唯一（部分唯一索引：作废行 / 软删行不占位 ⇒ 作废后可重开，旧行仍留痕）
+CREATE UNIQUE INDEX IF NOT EXISTS uk_piecework_settlements_active
+    ON piecework_settlements (tenant_id, period, worker_name)
+    WHERE voided_at IS NULL AND deleted = 0;
+-- 列表面（按租户 × 期间读）
+CREATE INDEX IF NOT EXISTS idx_piecework_settlements_tenant_period
+    ON piecework_settlements (tenant_id, period, worker_name);
+COMMENT ON TABLE piecework_settlements IS
+    '计件结算单（V156，issue #5653）：一行 = 某租户 × 某期间(YYYY-MM) × 某工人的应发金额凭证（生成即冻结）。金额与 line_items 逐值来自 piecework/summary 的同一次读数（结算侧不重算）。作废 = 置 voided_at 留痕（不物理删、不软删）；活跃单在同租户同期间同工人上唯一 ⇒ 要改就作废重开。本轮不做：发放状态字段 / 发放动作 / 导出 / 与财务域耦合';
+COMMENT ON COLUMN piecework_settlements.total_amount IS
+    '应发金额（元，NUMERIC(14,2)）= 生成那一刻 GET /production/piecework/summary 的 total 的逐值快照；服务端计算，前端不参与';
+COMMENT ON COLUMN piecework_settlements.line_items IS
+    '明细快照（JSONB 数组，每项 {operation, qty, amount}）= 同一次 piecework/summary 响应 per_operation 的同源子集；只读不改';
+COMMENT ON COLUMN piecework_settlements.voided_at IS
+    '作废时刻（NULL = 生效中）。作废只置本列 + voided_by + void_reason —— 金额/期间/工人/明细一字不动（「作废 ≠ 改写」由 SQL 文本机械保证）';
+
+-- ================================================
 -- END OF SCHEMA
 -- ================================================

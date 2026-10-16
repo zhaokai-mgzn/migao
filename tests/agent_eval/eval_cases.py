@@ -9178,6 +9178,24 @@ _CASE_PG_071 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-073 [NORMAL] 计件结算单（生成即冻结 / 作废留痕 / 期间唯一 / 与报表同源）——issue #5653（源: cases/processing-order.yml）──
+_CASE_PG_073 = EvalCase(
+    id='PG-073',
+    legacy_id='',
+    title='计件结算单（生成即冻结 / 作废留痕 / 期间唯一 / 与报表同源）——issue #5653',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['结算单载体：POST /api/admin/production/piecework/settlements 生成「某期间(YYYY-MM) × 某工人」的应发金额凭证（表 piecework_settlements，迁移 V156）；GET 列表 / GET {id} 详情 / POST {id}/void 作废 —— 端点族与本域既有只读报表 /api/admin/production/piecework/summary **同族**。证据：PieceworkSettlementControllerTest（四个动作的端点契约 + 权限码 + 运行时动词面）', '🔴 **同源（逐值）**：结算金额 = 生成那一刻 GET /api/admin/production/piecework/summary?period=YYYY-MM&worker_name=X 的 total 的**逐值**快照（不是约等于、不是结算侧再算一遍）—— 行为判据 = 冻结值 === 报表读数（连 BigDecimal 的 scale 一起比）；结构判据 = 结算服务**不注入**报工表/工序实例表 Mapper、也不调用聚合算法（ProductionService.aggregate 仍是唯一一份算法）。改一处 ⇒ 两处同步（红证见 merge_log）。证据：PieceworkSettlementServiceTest 的 settledAmountComesVerbatimFromTheSameAggregation + settlementServiceHoldsNoAggregationInputs', '🔴 **不可改在接口层不存在**（不是「前端不给按钮」）：本 controller 物理上**没有** PUT / PATCH / DELETE 映射，服务层与 Mapper **没有**任何改写金额 / 期间 / 工人 / 明细的方法；作废 SQL 的 SET 子句只有 voided_at / voided_by / void_reason / updated_at。运行时判据 = PUT/PATCH 落到该路径得 405。证据：PieceworkSettlementControllerTest 的 controllerDeclaresNoUpdateSurface + runtimeRejectsUpdateVerbs + PieceworkSettlementServiceTest 的 voidSqlOnlyTouchesTheVoidTrail', '🔴 **作废 + 重开**：作废 = 置 voided_at/voided_by/void_reason（**不物理删、不软删**）⇒ 旧单仍在表里、仍可查（列表默认含已作废，voided_count 计数），金额与期间一字不变；作废后同期间可重新生成；作废原因必填（空白 ⇒ 422 且零写库）；重复作废 ⇒ 具名 409（不谎报成功）。证据：PieceworkSettlementServiceTest 的 voidKeepsTheRowAndItsAmountUntouched + voidRequiresReasonAndIsNotRepeatable + regeneratingAfterVoidIsAllowedAndTheOldRowSurvives', '🔴 **期间唯一性 = 具名报错**（四条判据里「二者取一」的选择，依据写在 PieceworkSettlementService 类注记：结算单是**凭证**不是缓存，幂等返回既有单会让商家把别的时点的冻结值误读成本次动作的结果）：同租户 × 同期间 × 同工人已有**活跃**单 ⇒ 409 PIECEWORK_SETTLEMENT_EXISTS（可行动提示 = 先作废再重开），零写库；并发面由部分唯一索引 uk_piecework_settlements_active（谓词 voided_at IS NULL AND deleted = 0）+ INSERT … ON CONFLICT DO NOTHING **原子闸**保证**绝不**落两行、也绝不 500（具名 409，端点级回执语义）。证据：PieceworkSettlementServiceTest 的 duplicateGenerationIsANamedConflictNotASecondRow + concurrentLoserGets409NotA500 + PieceworkSettlementControllerTest 的 duplicateGenerationIsAReceiptNotAServerError', '🔴 **留痕**：生成 / 作废各写下「谁（SecurityUser.userId）/ 何时（BusinessClock，仓内唯一时钟单点）/ 对哪个（期间 × 工人）/ 动作 / 作废原因」，逐条可查；生成/作废响应与详情页都带出该四要素。证据：PieceworkSettlementServiceTest 的 generationLeavesWhoWhenAndScope + detailExposesSnapshotAndLiveSummarySideBySide', '🔴 **未定价 ≠ ¥0.00**：该期间该工人无可结金额（未报工 / 报工的工序未定价）⇒ 422 PIECEWORK_SETTLEMENT_NO_AMOUNT 且**不落 0 元结算单**（不编数）。证据：PieceworkSettlementServiceTest 的 noAmountMeansNoSettlementRowAtAll', '跨月隔离 / 跨租户隔离：period 参与查询谓词与唯一性（非法 period ⇒ 422，连聚合都不调）；别的租户的结算单读不到（详情 ⇒ 404，不泄露存在性）。证据：PieceworkSettlementServiceTest 的 periodIsValidatedAndScopesTheQuery + otherTenantsSettlementIsNotReachable', '权限逐条声明（子菜单粒度，复用既有码、不新造）：读 production:view（与该页第一屏读端点 /piecework/summary 逐字同码）/ 写 processing:manage（与本域既有管理写面——工序库写面 / 部位价目矩阵 / 补价——同码；🔴 **刻意不用** production:execute：那个码由 #5699 的 I4 台账把守**恰好四条**执行类写端点、判据是「零外溢」，把结算挂上去会放宽那条不变量，而结算不是执行类动作）；四个动作**逐个**注解（无未注解端点、无类级兜底）。证据：PieceworkSettlementControllerTest 的 everyMappingDeclaresItsPermissionCode', '⚠️ **本轮不做（用户裁定，不得读成已解决）**：发放状态字段（已发/未发）、发放动作、导出、与财务域（finance_transactions）耦合 —— 重启条件见 issue #5653 的口径裁定评论。边界如实登记：本用例**没有**发放/导出面的任何断言（那些面本轮不存在，写断言就是空断言）。'],
+    skip_reason='[backend-contract] 后端契约用例（无 LLM 环节，不进 agent-eval 冒烟）：断言由 Java 单测执行 —— PieceworkSettlementServiceTest（同源/不可改/作废重开/期间唯一/留痕/未定价/跨租户）+ PieceworkSettlementControllerTest（端点契约 + 权限 + 405 动词面），另有迁移面判据（V156 幂等 + 终态对账）',
+    tags=['processing-order', 'piecework', 'settlement', 'finance'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PG-076 [EDGE] 加工单状态迁移「读判 × 写」无谓词 ⇒ 并发相反迁移双双成功；改写为条件更新（CAS）后恰一个赢家（issue #6955）（源: cases/processing-order.yml）──
 _CASE_PG_076 = EvalCase(
     id='PG-076',
@@ -14617,6 +14635,7 @@ ALL_CASES = (
     _CASE_PG_068,
     _CASE_PG_070,
     _CASE_PG_071,
+    _CASE_PG_073,
     _CASE_PG_076,
     _CASE_PP_002,
     _CASE_PP_006,

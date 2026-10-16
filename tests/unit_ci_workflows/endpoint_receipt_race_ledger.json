@@ -12,6 +12,16 @@
       "level": "endpoint",
       "case_ids": "MC-082",
       "note": "issue #6318：原子闸 = StockBatchConsumptionMapper#insertStocktakeIfAbsent（ON CONFLICT … DO NOTHING）。判据①（端点级幂等回执）、判据②（朴素 insert 注入 ⇒ 端点 5×500 的注入式红证）、判据③（端点 500 日志面）三条同在一个文件里，且都驱动真 MockMvc + 真 PG。"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/PieceworkSettlementService.java::settlementMapper": {
+      "table": "piecework_settlements",
+      "endpoint": "POST /api/admin/production/piecework/settlements",
+      "criterion": "backend/admin-api/src/test/java/com/migao/admin/controller/PieceworkSettlementControllerTest.java::duplicateGenerationIsAReceiptNotAServerError",
+      "log_criterion": "backend/admin-api/src/test/java/com/migao/admin/controller/PieceworkSettlementControllerTest.java::everyMappingDeclaresItsPermissionCode",
+      "red_proof": "backend/admin-api/src/test/java/com/migao/admin/controller/PieceworkSettlementControllerTest.java::runtimeRejectsUpdateVerbs",
+      "level": "endpoint",
+      "case_ids": "PG-073",
+      "note": "issue #5653：原子闸 = PieceworkSettlementMapper#insertActiveIfAbsent（INSERT … ON CONFLICT (tenant_id, period, worker_name) WHERE voided_at IS NULL AND deleted = 0 DO NOTHING）。回执口径 = 期间唯一性取「具名报错」：冲突（并发败者 / 重复生成）⇒ HTTP 409 + error.code=PIECEWORK_SETTLEMENT_EXISTS，**不是** 500（判据 duplicateGenerationIsAReceiptNotAServerError 驱动真 MockMvc + GlobalExceptionHandler）。红证与权限面判据同文件。"
     }
   },
   "deferred": {
