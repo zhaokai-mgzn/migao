@@ -81,6 +81,15 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+        with:
+          # 🔴 **必须全 history**（issue #7073）：notify 步跑的 `scripts/h5_freshness_guard.py` 用
+          # `git log -1 <ref> -- frontend/mini-app` 算「源码最近改动」—— 浅克隆（默认 `fetch-depth: 1`）里
+          # `git log` 只有 1 个提交、**不判路径** ⇒ 它回的是 **HEAD 自己的提交时间**（CI run 38971606256
+          # 逐字读数 `2026-10-16T16:18Z` = `2f4b8b84b` 的提交时间；真值 = `2026-10-08T03:20:02Z`（`9ebdf73d8`））
+          # ⇒ 把**新鲜的**线上产物判成「陈旧」，cron（`53 18 * * *`）每天恒红一次，真信号被淹。
+          # 判据：tests/unit_ci_workflows/test_h5_freshness_needs_full_history.py
+          #   ::test_c_end_h5_publish_checkout_has_full_history（摘掉本行 ⇒ 判红并具名）
+          fetch-depth: 0
 
       # 模式判定（**三种触发各自的出口**，见文件头「三种形态」）：
       #   · `push` / `schedule` / 不带 `publish=true` 的 dispatch ⇒ `notify`：**只报告，不发布**
