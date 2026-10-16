@@ -200,12 +200,25 @@ def run_probe(base_url: str, expected: str, **env_extra: str) -> subprocess.Comp
 
 
 def free_port_that_is_closed() -> int:
-    """占一个端口再放掉 ⇒ 后续连接必然被拒（用来造「连不上」那一态，不依赖外网）。"""
+    """取一个**确实没人听**的端口（造「连不上」那一态，不依赖外网）。
+
+    ⚠️ 比「bind 一下再 close」强一层：归还前先**真连一次**确认此刻没人听
+    （`bind(0)` 只保证「刚才没人占」，不保证探针跑的那一刻还没人占 ——
+    同一会话里别的用例起过的桩服务若正好复用该端口，本用例会退化成「连得上」而假红）。
+    """
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))
     port = sock.getsockname()[1]
     sock.close()
-    return port
+    probe = socket.socket()
+    probe.settimeout(1)
+    try:
+        probe.connect(("127.0.0.1", port))
+    except OSError:
+        return port          # 连不上 = 正是我们要的形态
+    finally:
+        probe.close()
+    raise AssertionError(f"端口 {port} 上有东西在听 ⇒ 造不出「连不上」态（重跑或换端口）")
 
 
 # ══════════════════════════════════════════════════════════════════════════
