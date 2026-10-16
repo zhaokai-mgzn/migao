@@ -151,8 +151,10 @@ export function specRows(position) {
     rows.push({ key: spec.key, label: spec.label, text: `${shown}${spec.unit ?? ''}` })
   }
   // ⚠️ **未知键不上屏、也不静默消失**：服务端将来给 `positions[]` 追加新规格键时，两屏都**不会**显示它，
-  // 但**判据会红**（`tests/worker-h5-position-spec.test.mjs` 拿真实服务端键集逐键比对本表 ⇒
-  // 「未登记即红」）。这是**有意**取舍：宁可让工人看到一个「占位不明的原始键名」之前先让 CI 说话
+  // 但**判据会红**（键集覆盖在后端：`backend/admin-api/src/test/java/com/migao/admin/service/PositionDetailFieldsTest.java`
+  // 的 `frontendLabelTableCoversTheWholeKeySet` 拿**真源**键集逐键比对本表 ⇒ 「未登记即红」；
+  // 两屏的**上屏**形态在 `frontend/worker-h5/tests/worker-h5-position-spec.test.mjs`）。这是**有意**取舍：
+  // 宁可让工人看到一个「占位不明的原始键名」之前先让 CI 说话
   // —— 上屏内部键名违反产品口径（`migao-dev-flow` §31 P3 不摆内部标识）。
   return rows
 }
