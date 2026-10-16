@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Layers, RefreshCw } from 'lucide-react'
 import { toastRequestError } from '@/lib/api-error'
 import { savingBoardApi } from '@/lib/api'
-import { Button, Card } from '@/components/ui'
+import { Button, Card, PageHeader } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import {
   NO_DATA,
@@ -96,36 +96,36 @@ export default function SavingBoardPage() {
   return (
     <div className="p-6 space-y-4">
       {/* 页头：标题 + **一句**规则（用户要求「用数据和规则说清楚」） */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-neutral-900 flex items-center gap-2">
+      <PageHeader
+        title={
+          <span className="flex items-center gap-2">
             <Layers className="w-5 h-5 text-primary-600" />
             省料看板
-          </h1>
-          <p data-testid="saving-rule" className="text-sm text-neutral-500 mt-1">
-            {savedRule()}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <select
-            aria-label="时间粒度"
-            data-testid="saving-granularity"
-            value={granularity}
-            onChange={(e) => setGranularity(e.target.value)}
-            className="h-9 rounded-md border border-neutral-300 bg-white px-2 text-sm text-neutral-700"
-          >
-            {GRANULARITIES.map((g) => (
-              <option key={g.value} value={g.value}>
-                {g.label}
-              </option>
-            ))}
-          </select>
-          <Button variant="secondary" onClick={() => void load()} loading={loading}>
-            <RefreshCw className="w-4 h-4 mr-1.5" />
-            刷新
-          </Button>
-        </div>
-      </div>
+          </span>
+        }
+        subtitle={<span data-testid="saving-rule">{savedRule()}</span>}
+        actions={
+          <div className="flex items-center gap-2">
+            <select
+              aria-label="时间粒度"
+              data-testid="saving-granularity"
+              value={granularity}
+              onChange={(e) => setGranularity(e.target.value)}
+              className="h-9 rounded-md border border-neutral-300 bg-white px-2 text-sm text-neutral-700"
+            >
+              {GRANULARITIES.map((g) => (
+                <option key={g.value} value={g.value}>
+                  {g.label}
+                </option>
+              ))}
+            </select>
+            <Button variant="secondary" onClick={() => void load()} loading={loading}>
+              <RefreshCw className="w-4 h-4 mr-1.5" />
+              刷新
+            </Button>
+          </div>
+        }
+      />
 
       {error && (
         <div data-testid="saving-error" className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">

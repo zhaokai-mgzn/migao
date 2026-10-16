@@ -73,17 +73,12 @@ const LEGACY_PAGE_HEADER_SNAPSHOT: readonly string[] = [
   'src/app/(dashboard)/orders/new/page.tsx',
   'src/app/(dashboard)/orders/page.tsx',
   'src/app/(dashboard)/processing-orders/[id]/production/page.tsx',
-  'src/app/(dashboard)/production/page.tsx',
-  'src/app/(dashboard)/production/piecework/page.tsx',
-  'src/app/(dashboard)/production/pool/page.tsx',
-  'src/app/(dashboard)/production/remnants/page.tsx',
-  'src/app/(dashboard)/production/saving-board/page.tsx',
   'src/app/(dashboard)/products/[id]/ProductDetail.tsx',
   'src/app/(dashboard)/settings/page.tsx',
 ]
 
 /** 快照的**上界**：只许缩短 ⇒ 现取长度不得大于它（新增不得借快照吸收）。 */
-const SNAPSHOT_UPPER_BOUND = LEGACY_PAGE_HEADER_SNAPSHOT.length
+const SNAPSHOT_UPPER_BOUND = LEGACY_PAGE_HEADER_SNAPSHOT.length  // 现取，随销账自动收紧
 
 /** 旧形态的指纹：手写 `text-xl`（h2 档）+ `font-semibold` 的标题类。 */
 const LEGACY_H1_RE = /className="[^"]*text-xl font-semibold/

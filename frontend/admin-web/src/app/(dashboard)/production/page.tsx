@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertCircle, RefreshCw, Search } from 'lucide-react'
-import { Button, Pagination } from '@/components/ui'
+import { Button, Pagination, PageHeader } from '@/components/ui'
 import StatusBadge from '@/components/ui/StatusBadge'
 import { chipToneClasses } from '@/lib/status-chip'
 import {
@@ -202,16 +202,16 @@ export default function ProductionBoardPage() {
 
   return (
     <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-neutral-900">生产看板</h1>
-          <p className="mt-0.5 text-sm text-neutral-500">加工单在产进度与计件合计</p>
-        </div>
-        <Button variant="secondary" size="sm" onClick={refresh} disabled={loading}>
-          <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
-          刷新
-        </Button>
-      </div>
+      <PageHeader
+        title="生产看板"
+        subtitle="加工单在产进度与计件合计"
+        actions={
+          <Button variant="secondary" size="sm" onClick={refresh} disabled={loading}>
+            <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+            刷新
+          </Button>
+        }
+      />
 
       {/* 查询区域（issue #4357：合并自加工单列表页，能力原样保留） */}
       <div className="bg-white rounded-lg border border-neutral-200 p-5">
