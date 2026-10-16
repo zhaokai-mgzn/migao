@@ -37,7 +37,7 @@
    → `backend/admin-api/Dockerfile`（`ARG` + `ENV`）→ `VersionController`（读同名环境变量）。
    任一环改名 ⇒ 具名判红（这是「端点报出的真是这次构建」的必要条件，不是装饰）。
 7. **端点的泄露面白名单**：`VersionController` 的响应体**只许**有 5 个非敏感键
-   （`app` / `sha` / `tag` / `builtAt` / `servedAt`）⇒ 有人往里塞主机名 / 路径 / 环境变量 / 配置
+   （`app` / `sha` / `tag` / `builtAt`）⇒ 有人往里塞主机名 / 路径 / 环境变量 / 配置
    就判红（逼一次「它会不会泄露」的复核）。
 8. **`/api/version` 落在已放行的路径面**：`SecurityConfig` 的 `permitAll` 必须含它，
    而 `nginx.conf` 必须**仍然**屏蔽 actuator 面 —— 后者是「探活面 ≠ 探版本面」这个前提本身，
@@ -169,8 +169,7 @@ class VersionStub:
 def version_body(sha: str, app: str = "admin-api", tag: str = "sha-6f3aec2",
                  built_at: str = "2026-10-16T00:00:00Z") -> bytes:
     return json.dumps(
-        {"app": app, "sha": sha, "tag": tag, "builtAt": built_at,
-         "servedAt": "2026-10-16T08:00:00+08:00"}
+        {"app": app, "sha": sha, "tag": tag, "builtAt": built_at}
     ).encode("utf-8")
 
 
@@ -409,10 +408,10 @@ def test_build_identity_wiring_is_same_source_across_four_layers():
 
 
 def test_version_endpoint_field_whitelist_blocks_accidental_leaks():
-    """判据 7：端点的泄露面 = 5 个非敏感字段；加字段就判红（逼一次安全复核）。"""
+    """判据 7：端点的泄露面 = 4 个非敏感字段；加字段就判红（逼一次安全复核）。"""
     controller = read(CONTROLLER)
     keys = re.findall(r'body\.put\("([^"]+)"', controller)
-    assert keys == ["app", "sha", "tag", "builtAt", "servedAt"], (
+    assert keys == ["app", "sha", "tag", "builtAt"], (
         f"响应字段白名单变了（实测 {keys}）⇒ 重新过一遍「它会不会泄露」："
         "主机名 / 路径 / 环境变量 / 依赖版本 / 配置都不许上屏"
     )

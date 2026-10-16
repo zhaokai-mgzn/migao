@@ -8,9 +8,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.OffsetDateTime;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -35,11 +32,18 @@ import java.util.Map;
  *
  * <h3>公开（无鉴权）与它**不**泄露什么</h3>
  * <p>本端点挂在 {@code permitAll}（{@code SecurityConfig}）：它要能被**未鉴权**的探针读到
- * （与 {@code /actuator/health} 同级的对外读面）。响应体**只有** 5 个字段：
- * {@code app} / {@code sha} / {@code tag} / {@code builtAt} / {@code servedAt} ——
+ * （与 {@code /actuator/health} 同级的对外读面）。响应体**只有** 4 个字段：
+ * {@code app} / {@code sha} / {@code tag} / {@code builtAt} ——
  * <b>不含</b>主机名 / 路径 / 环境变量 / 依赖版本 / 配置 / 任何业务字段。
- * 判据 = {@code tests/unit_ci_workflows/test_served_version_verify.py} 的「字段白名单」判据
+ * 判据 = {@code tests/unit_ci_workflows/test_served_version_verify.py} 与
+ * {@code VersionControllerTest} 的「字段白名单」判据
  * （加了新字段就判红 ⇒ 必须重新过一遍「它会不会泄露」）。</p>
+ *
+ * <p>⚠️ <b>刻意没有 {@code servedAt}</b>：判据只看 {@code sha}（部署目标 = 构建身份），
+ * 而任何「服务端现算的时刻」都要走全仓唯一的时钟单点 {@code BusinessClock}
+ * （{@code BusinessClockSourceGuardTest} 会判红控制器里的时区字面量 / 无参 now()）
+ * —— 为一个与判定无关的字段引入时钟依赖不划算；要「这个响应什么时候出的」，
+ * 看 curl 侧的时间戳即可。</p>
  *
  * <h3>三态语义（消费方必须照此判，不许把「取不到」当「一致」）</h3>
  * <ul>
@@ -90,8 +94,6 @@ public class VersionController {
         body.put("sha", sha);
         body.put("tag", tag);
         body.put("builtAt", builtAt);
-        body.put("servedAt", OffsetDateTime.now(ZoneId.of("Asia/Shanghai"))
-                .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
         if (sha.isEmpty()) {
             // 「没跑」必须长得像「没跑」：注入面缺失时部署腿会判 exit 3（探不到），
             // 但**日志里要说清是为什么**（否则下一个人只会看到「线上 sha 是空串」）。

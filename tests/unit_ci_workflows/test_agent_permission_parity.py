@@ -1036,6 +1036,14 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
     # 其中 `/roles`·`/roles/all` 与黄金策 `role_manage` 工具的跨码关系具名登记在
     # `CODE_DIVERGENCE_EXCEPTIONS['role_manage']`（那才是它们现在的正确登记处）。
     "PUT /api/admin/settings/password": "自助改密：只改当前认证用户自己的密码（#4727 部分覆盖表）",
+    # issue #6951：**版本探针**——`GET /api/version`（`VersionController`）是部署腿的**只读、无鉴权**读面
+    # （探针没有凭据；它要能被**未鉴权**的探针读到，与 `/actuator/health` 同级）。
+    # 语义 = 「线上跑的是哪个 build」：响应体**只有** 5 个非敏感键
+    # （`app`/`sha`/`tag`/`builtAt`/`servedAt`，白名单判据 = `tests/unit_ci_workflows/test_served_version_verify.py`），
+    # **不含**任何租户/业务/实例数据 ⇒ 拿不到越权面（加码反而会让判据退化：401 = 探不到）。
+    # ⚠️ 它**没有** `@RequirePermission`：本守卫只读注解 ⇒ 必须在此显式登记（沉默放行 = 本单要治的失效模式）。
+    # 判据 = `tests/unit_ci_workflows/test_agent_permission_parity.py::test_every_judgement_is_green`。
+    "GET /api/version": "版本探针（issue #6951）：只读、无鉴权、只回构建身份 5 字段，无租户/业务数据",
     "GET /api/admin/notifications*": "自助通知中心：收件人一律取 `SecurityContext` 当前用户（#4727 第 4 行）",
     "PUT /api/admin/notifications*": "同上（标记已读）",
     "DELETE /api/admin/notifications*": "同上（删除自己的通知）",
