@@ -126,3 +126,43 @@
 两侧各追加一条 ⇒ **两条都该留**，不是二选一）。第一次修时我的脚本把首行的 `_kind` header
 也当数据行 ⇒ `KeyError: 'ts'`，已 `git merge --abort` 回滚重做。
 **这类「台账首行是 header 不是数据」的结构下次还会遇到**（`schedule_scope_ledger.json` 同族）。
+
+## 六、CI 反推出的完整缺陷清单（八条，全部已修 · 全部有红证）
+
+真浏览器验收过的是「**看起来**对不对」，CI 过的是**机器判据**。提交后 CI 一共判红八次
+——**八条都是真缺陷**，没有一条是 CI 误报。按被发现的顺序：
+
+| # | 判据判红的原话 | 真病 | 修法 |
+|---|---|---|---|
+| 1 | `❌ UI-096..UI-100: 重复用例 ID` | `ui.yml` 尾部**整段被复读**（UI-095..UI-100 各两份） | 以 `origin/main` 的 99 条为骨架逐条取回，去重 5 条 |
+| 2 | （同上一条的后果） | **取号撞车**：UI-096..100 已被并行包占用 | 本批改落 **UI-100..UI-109** |
+| 3 | `QA Growth Gate: BLOCKERS=7` | 7 个**新写的**组件源码没有同名测试文件 | 逐个补实例判据（62 用例） |
+| 4 | `Case Contract: exit 3（合并探测无法判定）` | 本树与 `origin/main` **冲突** ⇒ 合并结果不存在 | rebase 到最新 main |
+| 5 | `Growth Gate: 修改的测试未声明 case_ids` | `data-table.test.tsx` 自初版就无 `case_ids` 头 | 挂到类级用例 UI-109 |
+| 6 | `weak_total 238 ≠ 台账 237` + `存量弱断言只许非增` | `Loading.test.ts` 的**注释**被弱断言扫描当代码 | 改写注释（不在 JSDoc 里写出那个被禁调用） |
+| 7 | `7 个套件加载失败：No "Package" export is defined on the "lucide-react" mock` | 测试文件的 lucide mock 是**闭合集合**（只列 7 个图标），而 `@/components/ui` 摊开真值后**真的**加载了 `EmptyState` | 14 个文件改 `...actual`；**并立类级元守卫 UI-109** |
+| 8 | `lucide-mock-closure-guard: data-table.test.tsx 工厂不是 async` | **守卫自己**两处缺陷：自跳过比较对象写错 + 把注释里**叙述**的 mock 当成本体 | `basename` 判定 + **先剥注释再扫** |
+
+### 这八条里有三条是「**同一个坑**」，值得单独记
+
+**ⓐ 闭合集合替身会随依赖面增长而爆**（第 3、7 条）：先用闭集替身 `@/components/ui` ⇒ 页面用上
+新原语就报 `No "PageHeader" export`；把桶摊开真值后 ⇒ **真的**加载 `EmptyState` ⇒ 闭集 lucide mock
+缺 `Package` ⇒ **7 个套件同时挂**。⇒ 病根是**类级**的（用闭集替身一个会继续增长的模块），
+逐处补图标永远追不上 ⇒ 立 `lucide-mock-closure-guard.test.ts` 扫**形状**（UI-109）。
+
+**ⓑ 扫描器把注释当代码**（第 6、8 条）：`growth_gate._prose_spans` 不认 TS 块注释 ⇒
+`Loading.test.ts` 的 JSDoc 里举了个反例就被判弱断言；我新写的守卫又犯同一件事 ⇒ 把注释里
+**叙述**的 `vi.mock('lucide-react')` 当成 mock 本体。
+⇒ 定式：**凡是「扫描源码找形状」的工具，先剥注释再匹配**。
+
+**ⓒ 判据读数取错了量 ⇒ 假绿读数**（第 7 条的掩盖者）：
+用 `vitest run --reporter=json --outputFile=…` 取读数时报的是「**4743/4744 通过、失败文件 0**」——
+但**套件加载失败时，那一整个文件的用例不计入 JSON 的 assertionResults** ⇒「7 个文件全灭」在读数里
+表现为「失败文件 0」。改用 CI 同款**裸命令 + 看 exit code / `Test Files` 行**后当场复现 7 个 FAIL。
+⇒ **判据读数必须取会红的那个量，不能取一个漂亮的分母。**
+
+### 生成物在 rebase 后必须**再渲染一次**（第 4 条的隐藏尾巴）
+
+rebase 解冲突时渲染的那一份会被后续提交覆盖 ⇒ `--merge-probe` 判 `drifted`
+（`--base-probe` 显示 base 侧**新鲜** ⇒ 漂移由**本树**引入）。踩过一次 `exit 3`。
+⇒ 口径：**rebase 完成后重渲染生成物，别把解冲突时渲染的那份当终态。**
