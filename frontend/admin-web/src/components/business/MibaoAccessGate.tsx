@@ -43,8 +43,8 @@ export default function MibaoAccessGate({ allowed, children }: MibaoAccessGatePr
         data-testid='mibao-gate-denied'
         className='flex h-full flex-col items-center justify-center gap-4 p-8 text-center'
       >
-        <h2 className='text-lg font-semibold text-gray-800'>{MIBAO_NEEDS_ADMIN_GRANT_TEXT}</h2>
-        <p className='max-w-md text-sm text-gray-500'>{MIBAO_GRANT_GUIDE_TEXT}</p>
+        <h2 className='text-lg font-semibold text-neutral-800'>{MIBAO_NEEDS_ADMIN_GRANT_TEXT}</h2>
+        <p className='max-w-md text-sm text-neutral-500'>{MIBAO_GRANT_GUIDE_TEXT}</p>
       </div>
     )
   }

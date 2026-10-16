@@ -12,7 +12,12 @@ export { default as Card } from './Card'
 export { default as Loading } from './Loading'
 export { default as FileUpload } from './FileUpload'
 export { default as NumberInput } from './NumberInput'
+// issue #7007：页内版式原语（页面头 / 页内一级容器 / 无状态筛选卡片）
+export { default as PageHeader } from './PageHeader'
+export { default as PageCard } from './PageCard'
+export { default as SearchPanel } from './SearchPanel'
 
 export type { TableColumn } from './Table'
 export type { SearchField } from './SearchBar'
+export type { SearchFieldSpec } from './SearchPanel'
 export type { NumberInputProps } from './NumberInput'
