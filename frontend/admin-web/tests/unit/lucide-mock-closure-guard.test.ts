@@ -36,7 +36,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { basename, join, relative } from 'node:path'
 
 const TESTS_ROOT = join(__dirname, '..')
 const REPO_TEST_HELPER = 'helpers/lucide-mock'
@@ -52,6 +52,21 @@ function collectTests(dir: string, out: string[] = []): string[] {
     }
   }
   return out
+}
+
+/**
+ * 剥掉块注释与行注释 —— **必须先剥再扫**。
+ *
+ * 实测踩过：本包在 `data-table.test.tsx` 的头部注释里**叙述**了
+ * `vi.mock('lucide-react')`（说明「把它从闭合集合改成摊开真值」），
+ * 扫描器把那句**说明**当成了 mock 本体 ⇒ 报「工厂不是 async」假红。
+ * 与 `.github/growth_gate.py::_prose_spans` 处理弱断言时同一个道理：
+ * **注释里的例子不是代码**（那边只认 `//`/`#`，不认 TS 块注释 —— 本次绕开，未改那边）。
+ */
+function stripComments(src: string): string {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, '')   // 块注释（含 JSDoc）
+    .replace(/^\s*\/\/.*$/gm, '')          // 整行行注释（行尾注释不影响 mock 形态判定）
 }
 
 /** 取出 `vi.mock('lucide-react', ...)` 这一次调用的源码片段（到下一个顶层 `vi.mock(` 为止） */
@@ -79,9 +94,13 @@ describe('lucide-react mock 闭集元守卫（issue #7007）', () => {
     let checked = 0
 
     for (const f of files) {
-      // 跳过本扫描器自己：源码里含被扫的字面量，否则它会扫到自己那几行模板字符串
-      if (f.endsWith('lucide-mock-closure-guard.test.ts')) continue
-      const src = readFileSync(f, 'utf-8')
+      // 跳过本扫描器自己：源码里含被扫的字面量，否则它会扫到自己那几行模板字符串。
+      // ⚠️ 用 `basename` 判，**不要**用 `f.endsWith('lucide-mock-closure-guard.test.ts')` ——
+      // 实测踩过：写成字符串字面量后**它自己那一行**也含该后缀，而 `f` 是 `…/unit/xxx` 形态，
+      // `endsWith` 的比较对象写错就变成「跳过了自己以外的某个人」/「没跳过自己」。
+      if (basename(f) === 'lucide-mock-closure-guard.test.ts') continue
+      // ⚠️ 必须先剥注释：注释里「叙述」mock 的句子会被当成 mock 本体（实测假红）
+      const src = stripComments(readFileSync(f, 'utf-8'))
       for (const seg of lucideMockSegments(src)) {
         // 仓内既有 helper：它自己 `...actual` ⇒ 放行
         if (seg.includes(REPO_TEST_HELPER) || seg.includes('lucideMock')) continue
@@ -112,7 +131,7 @@ describe('lucide-react mock 闭集元守卫（issue #7007）', () => {
 
   it('全局 setup.ts 的兜底桩也必须摊开真值（它漏一个图标就是全仓红）', () => {
     // 红证：把 setup.ts 里 lucide 的 `...actual` 删掉 ⇒ 本判据当场红
-    const setup = readFileSync(join(TESTS_ROOT, 'setup.ts'), 'utf-8')
+    const setup = stripComments(readFileSync(join(TESTS_ROOT, 'setup.ts'), 'utf-8'))
     const segs = lucideMockSegments(setup)
     expect(segs.length).toBeGreaterThan(0)
     expect(segs[0]).toContain('...actual')
