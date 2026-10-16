@@ -6973,7 +6973,7 @@
 ```
 溯源: 2026-10-14 新增（issue #6936 的类级固化，与 PG-074 同批）：沿用 #6928 的元守卫范式（扫描器非空跑自证 / 谓词完整性 / 未登记即红 / 登记必须兑现 / 豁免只许缩短 / 判别力自证），但**扩到本单的射程**（`ProductionOperationCommandService` 里 `production_operations.deleted` 的两条软删写路径：谓词三件套 + 显式写列 + 影响行数判定，另加写路径登记表），台账 = backend/admin-api/src/test/resources/production-operation-delete-cas-ledger.json（豁免基线 **0**）。既有判据**未放宽**（`InboundOrderStatusCasMetaGuardTest` 的 MC-100 一字未动）。取号 = PG-075（现取未占用）。 ｜ tags: production, operation, concurrency, meta_guard, backend-contract
 
-## 加工单域（65 case）
+## 加工单域（68 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -7842,6 +7842,42 @@
 跳过: [backend-contract] 后端契约/权限面判据（Java 单测 + 反射读注解 + 声明面对账），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-16 新增（issue #5652 第一刀；口径 = 用户 2026-10-16 逐字裁定「是按成品帘来检查的」+「B 独立质检员」）。落码：新表 `quality_inspections`（V157，**没有** operation_id 列 —— 颗粒度就是成品帘）+ 实体/Mapper/Service + 端点 `POST|GET /api/admin/quality-inspections`（两处都带 `@RequirePermission("production:inspect")`，新目录码）+ 独立质检员岗位 `inspector`（`rbac/manifest.json` 的 `roles.seed`/`roles.fallback` + 注册种子 + 回退 switch + 存量迁移 V158）。**两套口径并存**：报工 = 数量事实（`production_work_logs`）、质检 = 成品帘判定（本表）—— 本包**不**改写任何报工行、**不**重算数量、**不**动计件聚合。取号：现取跨文件最大 PG 号 = 076（073 在飞 PR #7010）⇒ 077。 ｜ tags: quality-inspection, rbac, backend-contract, finished-curtain
+
+### PG-078. 作业单两型（`order_kind`）：卖布单 = `outbound`、成品帘 = `processing`、混合单 = `processing`，类型在生成时冻结 🔵
+```
+数据: 判据 1·**纯卖布单 ⇒ `order_kind = outbound`**：夹具 = 一行 `processing_info.saleForm=布料`、无 `processingItems` ⇒ 生成出来的作业单类型逐字等于 `ProcessingOrderService.ORDER_KIND_OUTBOUND`。红证：把生成落点的判定改成恒 `processing` ⇒ 本判据当场红。
+数据: 判据 2·**成品帘单 ⇒ `processing`**；判据 3·**混合单（一行卖布 + 一行成品帘）⇒ `processing`**（有加工就是加工单）—— 两条都是反向护栏：把判定写成「只要含卖布行就 outbound」⇒ 混合单那条红。
+数据: 判据 4·**存量行不回填**：本次迁移之前的 `processing_orders` 行类型一律为 `processing`（列 `NOT NULL DEFAULT 'processing'`，迁移里**没有** UPDATE）—— 红证：在迁移里补一条把存量行刷成 `outbound` 的 UPDATE ⇒ 红（历史单据的类型被改写）。
+数据: 判据 5·**三源词表逐值一致**：迁移的取值约束 ⇄ `ORDER_KIND_PROCESSING` / `ORDER_KIND_OUTBOUND` 常量 ⇄ 前端 `order_kind` 联合类型；且默认值 `processing` 在迁移与 bootstrap 建库脚本 `backend/admin-api/src/main/resources/db/init/schema.sql` **两处**都在。证据 = tests/unit_ci_workflows/test_processing_order_kind_vocab_parity.py 的 C1~C5（红证：任一侧改名/换值/少一个 ⇒ 具名报出该侧）。
+数据: 判据 6·**读面键名冻结**：加工单读面下发 `order_kind`（snake_case，显式 `@JsonProperty`）—— 登记面 = tests/unit_ci_workflows/read_face_json_key_ledger.json。红证：摘掉 `@JsonProperty` ⇒ 键静默退回 camelCase（消费端读不到）⇒ 台账判据红。
+数据: **边界（如实登记）**：① 混合单**不**细分到行级单据（一张订单仍是一张作业单）；② 本判据面只覆盖确定性服务层 + 静态词表判据，**无** LLM 环节。
+跳过: [backend-contract] 后端契约（新列 + 生成时冻结 + 三源词表一致；纯确定性单测 + 静态判据，无 LLM 环节，不进入 agent-eval 冒烟）
+```
+溯源: 2026-10-17 新增（issue #7079；用户 2026-10-17 逐字裁定见本条注释与 issue body）。取号 = `python3 scripts/next_case_id.py PG` 现取 = 078。 ｜ tags: processing-order, fabric, order-kind
+
+### PG-079. 卖布单发货前置「裁剪 + 打包已报工」：无 completed 作业单 ⇒ 拒绝发货；非卖布的普通无加工项单仍可直发 🔵
+```
+数据: 判据 1·🔴 **卖布单（有 `saleForm=布料` 的行、无加工项）没有 completed 作业单 ⇒ 拒绝发货**（`assertProcessingCompletedBeforeShip` 抛业务异常）。红证：把判据改回只判「含加工项」⇒ 本判据当场红（这正是改前的缺陷形态）。
+数据: 判据 2·**卖布单作业单 completed ⇒ 放行**（守卫不是「卖布一律拒」）。
+数据: 判据 3·**反向护栏**：**非卖布**的普通无加工项订单（配件 / 赠品行）**仍可直发** —— 不许被本次收紧误伤。
+数据: 判据 4·**同一份判据覆盖三条发货路**：商家 `PUT /orders/{id}/status`、发货页 `shipOrderIfApplicable`、工人 `OrderShipmentService` 共用 `OrderShipGuard` 的单一实现点；`hasProcessingItems` / `needsWork` 由 `OrderService` 一行委托（不写第二份解析）。
+数据: 判据 5·**`processing_info` 为 JSON 字符串形态时也认得出来**（既有老坑：自定义 `@Select` 不走 JacksonTypeHandler ⇒ 恒判「无」）。
+数据: 判据 6·**接线不许退回**（结构面）：`OrderShipGuard.isProcessingReadyForShip` 必须经由 `needsWork`，且 `needsWork` 里同时含 `hasProcessingItems` 与 `hasFabricSaleLine`。证据 = tests/unit_ci_workflows/test_processing_order_kind_vocab_parity.py 的 C6（红证：改回只判含加工项 ⇒ 具名报出）。
+数据: **已知行为变化（照实登记）**：这是**收紧** —— 以前能直接发货的卖布单，现在必须先完成作业单；用户 2026-10-17 裁定「很有必要」。
+跳过: [backend-contract] 后端发货守卫契约（Java 单测 + 静态接线判据，无 LLM 环节，不进入 agent-eval 冒烟）
+```
+溯源: 2026-10-17 新增（issue #7079；用户裁定 3 逐字「很有必要」）。取号 = `python3 scripts/next_case_id.py PG` 现取 = 079。 ｜ tags: processing-order, fabric, ship-guard
+
+### PG-080. 卖布单进「待排产 / 待发货」两类生产待办（与发货守卫同一判据），且仍在智能派单池的成批候选区 🔵
+```
+数据: 判据 1·**卖布单出现在「待排产」**（订单已确认 + 活跃工序实例数 = 0 + `needsWork`）。红证：把该处过滤退回 `hasProcessingItems` ⇒ 红。
+数据: 判据 2·**卖布单出现在「待发货」**（`needsWork` + 发货守卫已就绪）。同上反向红证。
+数据: 判据 3·**同一份判据**：`ProductionTodoService` 里**只剩** `needsWork`，不得再出现 `hasProcessingItems(`（结构面，证据 = tests/unit_ci_workflows/test_processing_order_kind_vocab_parity.py 的 C7）。
+数据: 判据 4·🔴 **卖布单在派单池的成批候选区里**（`pool()` 的 `groups[].lines` 含它、计数计入）—— 用户裁定 2（「需要进」）。反向断言：非卖布且无加工项的行（配件 / 赠品）**仍不进池**（既有语义一字不放宽）。
+数据: **边界**：夹具不得把订单标成加急（加急单按既有裁定**不进池**，走 `urgentLines()`）。
+跳过: [backend-contract] 后端只读聚合面（生产待办 + 派单池可达性；Java 单测 + 静态接线判据，无 LLM 环节，不进入 agent-eval 冒烟）
+```
+溯源: 2026-10-17 新增（issue #7079；用户裁定 2 逐字「需要进」）。取号 = `python3 scripts/next_case_id.py PG` 现取 = 080。 ｜ tags: processing-order, fabric, production-todo, dispatch-pool
 
 ## 商品域（122 case）
 
@@ -9725,7 +9761,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（111 case）
+## 前端 UI 域（112 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -11330,6 +11366,20 @@
 ```
 溯源: 2026-10-16 新增（issue #7069，承接 #7007 根因②）。**发现路径** = 用户问「现在是什么状态？页面重构好了吗」，我现场复核 #7007 正文里「三条根因」的完成度，发现只做了根因①（页头，由 #7065 收口），根因②（内层容器缺 shadow-card）**一处未做** ⇒ 用 #7007 正文自带的复算命令取读数为 22 命中 / 9 处缺失，当场开单。用例号 = `NCI_MAIN_REF=HEAD python3 scripts/next_case_id.py UI` ⇒ `UI-111`（UI-110 已被 #7065 的页头守卫占用）。**报告型说明**：本用例承载体是前端单测（vitest），由 `admin-web 单测` 腿收集。 ｜ tags: ui, design-consistency, card-layering, shadow-card, class-guard, red-proof
 
+### UI-113. 作业单两型可见面：生产看板 / 订单详情统一「作业单」+ 中文类型标签；`outbound` 型不显示加工方与交期；机器键不上屏 🔵
+```
+你: 用户 2026-10-17 逐字：「……原设计是想规定好成品帘加工路线和单布料售卖的路线……但是单布料售卖是不应该生成加工单的，现在仍然是个功能缺口」（附「工艺路线」页截图）
+期望: direct_reply
+数据: 判据 1·🔴 **类型必须在界面上看得见，且是中文**：`order_kind='outbound'` 的作业单在生产看板/订单详情渲染**「出库作业单」**，`processing` 渲染**「加工单」**。红证：把标签渲染去掉 ⇒ 该行取不到该文案（`queryByText` 为 null）。
+数据: 判据 2·🔴 **机器键绝不上屏**：页面上**不得**出现 `processing` / `outbound` / `order_kind` 这些标识（本仓既有「JSX 文本位机器键」跨页面元守卫会上红）。红证：把 `{po.order_kind}` 直接渲染进 JSX ⇒ 具名报出。
+数据: 判据 3·**`outbound` 型不渲染加工方 / 交期**：卖布单没有加工方与交期这两个概念 ⇒ 相关字段与写面（含「发加工」动作）在 `outbound` 型上不出现；`processing` 型**照旧全渲染**（反向护栏：不许把成品帘面砍掉）。
+数据: 判据 4·**缺键 = 存量单，按加工单处理**：读面 `order_kind` 缺席（存量单）时按 `processing` 渲染，**不得**渲染成空白或未知态。
+数据: 判据 5·**工艺路线页口径同步**：「布料工序路线」的说明文案改成「卖布单的**出库作业**（裁剪 / 打包）」这一口径（改前写「这两条是窗帘单与布料单各自的主线」）。
+数据: **未覆盖面（照实登记，不粉饰）**：工人端 `frontend/worker-h5/**` 与 `frontend/bmini-app/**` 里「加工单」措辞的同族收敛**不在本条** —— 那条面（洗水码/扫码页/离线报工）本轮未改，重启条件 = 工人端做一次同族文案巡检时一并收口。
+跳过: [backend-contract] 纯前端渲染与文案（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-17 新增（issue #7079；用户裁定见 user_inputs 与 PG-078 的注释）。取号 = `python3 scripts/next_case_id.py UI` 现取 = 113。 ｜ tags: ui, production, processing-order, copy, order-kind
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -11359,8 +11409,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：778（活跃 133，跳过 645）
-- tier 分布：smoke 12 / normal 719 / adversarial 32
+- 用例总数：782（活跃 133，跳过 649）
+- tier 分布：smoke 12 / normal 723 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -11380,12 +11430,12 @@
 - 领域本体域：4
 - 订单域：66
 - 加工项域：30
-- 加工单域：65
+- 加工单域：68
 - 商品域：122
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：111
+- 前端 UI 域：112
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -11612,6 +11662,9 @@
 - PG-073: 计件结算单（生成即冻结 / 作废留痕 / 期间唯一 / 与报表同源）——issue #5653
 - PG-076: 加工单状态迁移「读判 × 写」无谓词 ⇒ 并发相反迁移双双成功；改写为条件更新（CAS）后恰一个赢家（issue #6955）
 - PG-077: 质检记录（成品帘级）：独立质检员录判定（合格/返工/报废）+ 判定≠合格必填原因 + 无该角色被拒（issue #5652）
+- PG-078: 作业单两型（`order_kind`）：卖布单 = `outbound`、成品帘 = `processing`、混合单 = `processing`，类型在生成时冻结
+- PG-079: 卖布单发货前置「裁剪 + 打包已报工」：无 completed 作业单 ⇒ 拒绝发货；非卖布的普通无加工项单仍可直发
+- PG-080: 卖布单进「待排产 / 待发货」两类生产待办（与发货守卫同一判据），且仍在智能派单池的成批候选区
 - PP-007: 黄金策加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 黄金策加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）
@@ -11663,4 +11716,5 @@
 - UI-089: 库存明细页的「批次余量」视图（/stock-ledger）：每卷剩余米数可见 + 不重算（见证批次）+ 未选商品不拉全量 + 两本账不串
 - UI-110: **「商家后台页面头只有一个来源」的类级元守卫**：射程内凡手写 `<h1>` 且未用共享原语 `PageHeader` 的文件，必须恰好等于「冻结快照 ∪ 逐条给出理由的有意不迁」；快照只许缩短、有意不迁不许悄悄涨价（issue #7065）
 - UI-111: **「内层白卡必须有 shadow-card」的类级元守卫**：射程内凡「白底 + 圆角 + 中性边框」的内层白卡容器，必须带 `shadow-card`，否则「一圈边框套一圈边框」（issue #7069，承接 #7007 根因②）
+- UI-113: 作业单两型可见面：生产看板 / 订单详情统一「作业单」+ 中文类型标签；`outbound` 型不显示加工方与交期；机器键不上屏
 

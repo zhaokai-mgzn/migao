@@ -4173,3 +4173,56 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # UI-113（issue #7079，2026-10-17）——「作业单」两型的**商家可见面**。
+  #
+  # 病根（用户逐字）：「**单布料售卖是不应该生成加工单的**」—— 而卖布单改前在「生产看板」
+  # 与订单详情的作业单区块里**就**叫「加工单」，商家读到的单据名与业务不符。
+  #
+  # 口径（用户 2026-10-17 裁定）：上位概念统一为**作业单**；实体按 `order_kind` 分两型
+  # （`processing` = 加工 / `outbound` = 出库），**商家可见面一律用中文业务名**：
+  # 「加工单」（成品帘）与「出库作业单」（卖布单）；`outbound` 型**没有加工方、没有交期**
+  # ⇒ 相关写面不得渲染。
+  #
+  # 取号：`python3 scripts/next_case_id.py UI` 现取 = 113（main 最大 111，PR #7081 占 112）。
+  #
+  # ⚠️ **本轮只覆盖商家端 admin-web**；工人端（worker-h5 / bmini-app）里「加工单」措辞的
+  # 同族收敛**不在本条**，如实登记为未覆盖面（见 data_checks 末条）。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: UI-113
+    legacy_id: ""
+    title: "作业单两型可见面：生产看板 / 订单详情统一「作业单」+ 中文类型标签；`outbound` 型不显示加工方与交期；机器键不上屏"
+    domains:
+      - ui
+      - frontend
+      - processing-order
+    tier: normal
+    persona: ""
+    tags:
+      - ui
+      - production
+      - processing-order
+      - copy
+      - order-kind
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-17 逐字：「……原设计是想规定好成品帘加工路线和单布料售卖的路线……但是单布料售卖是不应该生成加工单的，现在仍然是个功能缺口」（附「工艺路线」页截图）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·🔴 **类型必须在界面上看得见，且是中文**：`order_kind='outbound'` 的作业单在生产看板/订单详情渲染**「出库作业单」**，`processing` 渲染**「加工单」**。红证：把标签渲染去掉 ⇒ 该行取不到该文案（`queryByText` 为 null）。"
+      - "判据 2·🔴 **机器键绝不上屏**：页面上**不得**出现 `processing` / `outbound` / `order_kind` 这些标识（本仓既有「JSX 文本位机器键」跨页面元守卫会上红）。红证：把 `{po.order_kind}` 直接渲染进 JSX ⇒ 具名报出。"
+      - "判据 3·**`outbound` 型不渲染加工方 / 交期**：卖布单没有加工方与交期这两个概念 ⇒ 相关字段与写面（含「发加工」动作）在 `outbound` 型上不出现；`processing` 型**照旧全渲染**（反向护栏：不许把成品帘面砍掉）。"
+      - "判据 4·**缺键 = 存量单，按加工单处理**：读面 `order_kind` 缺席（存量单）时按 `processing` 渲染，**不得**渲染成空白或未知态。"
+      - "判据 5·**工艺路线页口径同步**：「布料工序路线」的说明文案改成「卖布单的**出库作业**（裁剪 / 打包）」这一口径（改前写「这两条是窗帘单与布料单各自的主线」）。"
+      - "**未覆盖面（照实登记，不粉饰）**：工人端 `frontend/worker-h5/**` 与 `frontend/bmini-app/**` 里「加工单」措辞的同族收敛**不在本条** —— 那条面（洗水码/扫码页/离线报工）本轮未改，重启条件 = 工人端做一次同族文案巡检时一并收口。"
+    skip_reason: "[backend-contract] 纯前端渲染与文案（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7079；用户裁定见 user_inputs 与 PG-078 的注释）。取号 = `python3 scripts/next_case_id.py UI` 现取 = 113。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/production-board.test.tsx"
+        - "frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
