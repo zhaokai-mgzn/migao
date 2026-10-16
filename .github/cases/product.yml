@@ -974,10 +974,28 @@ cases:
       - product-sku-stock.low-stock
     user_inputs:
       - "查一下低库存商品的具体清单"
+    # ── 等价路径（issue #7048 P9；**与 PR-006 完全同形态**，先例逐字可比）──
+    # 病灶：原用例只认 `product_search(stock_status=low_stock)` **一条实现路径**，而「低库存」
+    # 在产品里有**两条都被文档认可**的工具路径（PR-006 的用例注释逐字列过：`product_search` 的
+    # `stock_status=low_stock` 与 `inventory_manage(action=low_stock_alert)` 共用单点来源
+    # `app/tools/stock_semantics.py` 的 `LOW_STOCK_THRESHOLD`）。本用例的**输入形态与 PR-006 同类**
+    # （「查一下低库存商品的具体清单」vs「看看哪些商品库存不足」），低库存语义同一格。
+    # 本 run 实测（`/tmp/eval-rerun-1016-2131.log`）：agent 走
+    # `inventory_manage(action=low_stock_alert)`，返回 `items=0 threshold=100 count=0`，回答
+    # 「当前没有低库存商品」+ 如实给出预警口径 —— 被产品文档认可的等价路径，却被判 0%
+    # （`product_search(stock_status=low_stock) → unmatched expectation` +
+    #  `must_succeed: product_search 从未被调用`）。
+    # ⇒ 与 PR-006 **同形态**：**断言层过度指定实现路径**（不是 agent 做错）。
+    # 修法（**零阈值放宽、零断言删除**）：期望面 + 效果面各自收成**一条 OR**，
+    # 与 PR-006 的 `"inventory_manage(action=low_stock_alert) or product_search(stock_status=low_stock)"`
+    # 逐字同构；断言内核一字未变 ——「用其中任一工具、按各自口径字段，把低库存**真的**查出来」。
+    # ⚠️ **每条 OR 分支必须带自己的 args**（PR-006 的实测教训）：写成一条 `tool+args` 会变成
+    # 「两个键都要」（`_arg_mismatch_reason` 按**单一** args 字典逐键校验，`product_search`
+    # 没有 `action` 字段 ⇒ `missing arg 'action'`）⇒ 故此处用 runner 的 `tool(k=v)` 文本形态。
+    # ⚠️ **不能**写成两条独立声明：runner 逐条计分（`score = 通过条数/声明条数`），
+    # 一次运行只可能走一条路径 ⇒ 两条独立声明的用例**恒为 50%**（PR-006 实测复现）。
     expectations:
-      - tool: product_search
-        args:
-          stock_status: low_stock
+      - "inventory_manage(action=low_stock_alert) or product_search(stock_status=low_stock)"
     # ── 效果层断言（issue #4093 的 PR-018 条目 → 跟踪单 #4110）──
     # 读场景用 `must_succeed` 证明这次查询**真的成功返回**（「调用了 ≠ 成了」：#3361 实测
     # `check_expectation` 不读 `success`，工具返回 500 也照样通过）—— 同工具同款声明先例 =
@@ -995,8 +1013,16 @@ cases:
     #   反过来"要求非空"会变成**世界状态依赖**的假绿/恒红：PR-006 实测那次 `products=4`
     #   来自**运行期**别的用例建品的产物（`ProductService` 建 SKU 未指定库存时 `stock=100`，
     #   恰在阈值上）—— 不是可依赖的种子真值。
+    # ── 效果层也必须与期望面**对称**（issue #7048 P9；PR-006 的逐字先例）──
+    # 原 `must_succeed: [product_search]`（单工具）与期望面的 OR **不对称** ⇒ 走
+    # `inventory_manage(action=low_stock_alert)` 的那次运行恒判 0%
+    # （`must_succeed: product_search 从未被调用`）；这正是 PR-006 在 P5 修掉的同一个另一半
+    # （`6047e57a0`：runner 补 `tool: "A or B"` OR 成功组 + 用例改用；判据 =
+    # `tests/unit_ci_workflows/test_eval_must_succeed_or_group.py`）。
+    # ⚠️ 修法**不是**删断言（删掉即回到「调了≠成了」的假绿，#3778）：内核一字未变
+    # ——「两条等价路径里**至少有一条真的成功**」；旧写法只是把该内核**错误地**绑死在一条路径上。
     must_succeed:
-      - tool: product_search
+      - tool: "inventory_manage or product_search"
     data_checks:
       - "黄金策（agent_type=mibao）回复中：product_list 卡片仅包含文本实际引用的商品（按商品名/ID 匹配），未被引用的商品不渲染"
       - "文本未引用任何商品时不下发 product_list 卡片（宁可无卡，不误导）"
@@ -4232,12 +4258,33 @@ cases:
         source: "北欧风窗帘"
         expect: 1
     expectations:
-      # 第一段：多选卡（勾选集合 = 改哪些）—— `multiSelect: true` 是硬要求
-      # （漏传会变单选，商家选不了多条）
-      - tool: interact
-        args:
-          component: choice
-          multiSelect: true
+      # 第一段：**改哪些必须经商家过目** —— 两条等价载体，任一成立即算（issue #7048 P9）
+      # ── 病灶（本 run 逐字读数，`/tmp/eval-rerun-1016-2131.log`；同根因跨 run 复现）──
+      # 原写法把第一段**硬绑在 `interact(component=choice, multiSelect=true)` 一条路径**上，
+      # 而本用例的 **R1 输入自己就把集合给定了**：「把遮光窗帘和北欧风窗帘每个规格的库存都调到
+      # 1200 米」—— 两条商品**逐一点名**，没有任何"选哪些"的余地
+      # （`product_skill.py` 的「🔴 批量更新必须走**两段确认**」第 1 步是「让商家**勾选**要改的商品」，
+      #  它是为**消歧**而设；集合已单值时，再发勾选卡要商家从 2 个里"选"他刚说过的 2 个）。
+      # 该 run 的 agent 把第一段的**信息**（`商品=遮光窗帘（浅灰 2.8 / 米白 2.8）；商品=北欧风窗帘
+      # （白色 2.8 / 雾霾蓝 2.8）`，逐规格**改前=500 / 改后=1200**）**并进了第二段的 confirm 卡**，
+      # 其余结构性要求全部满足：`product_batch_update(action=preview, batch_type=inventory_stock)`
+      # ✓、带 `fields` 的 confirm 卡 ✓、**点卡之后**才 `action=execute`（带 preview 的 batch_id）✓、
+      # 撤销的 confirm ✓ + `action=revert` ✓（`must_succeed` ✓ / `required_args` ✓ / `order_before` ✓）。
+      # 实测 score = 4/5 = **80%**，唯一失分点就是这条"必须是一张 choice 卡"。
+      # ⇒ 与 PR-018 / PR-006 **同族**的**过度指定实现路径**：把"改哪些经商家过目"这一内核
+      # 错误地绑死在**一种卡片组件**上（本 run 实测：同一形态在不同 run 里在 80%/100% 之间跳）。
+      # ── 修法（**判别力不降**：不放宽成"随便一张卡"）──
+      # 内核 = 「**改哪些**在**执行之前**被摆给商家看过」。两条载体都能承担它，任一成立即通过：
+      #   · `interact(component=choice, multiSelect=true)` = 集合**可勾选**时的原路径（模糊集合用它）；
+      #   · `interact(component=confirm)` = 集合**已由商家自己给全**时，由 preview 的 `fields`
+      #     把逐条"改前 → 改后"（含**每条商品**）摆出来 —— 下方**第二段卡断言一字未删**（仍是硬要求）。
+      # ⚠️ **未放宽**：`multiSelect` 的机器判据仍**原样保留在第一条分支**里（漏传 multiSelect
+      # 的**单选卡**仍判红）；第二条分支也没有放开成"无卡"。
+      # ── 未固化项（如实登记，见 PR body）──
+      # `product_skill.py` / `product_batch_update.py` 的工具描述把第一段写成"**任何一段都不得跳过**"
+      # 的**必发 choice 卡**，与本用例 R1 的"集合已单值"输入**语义冲突** ⇒ 本轮**不改 agent 面**
+      # （属产品口径，不在本包射程；登记为待裁定项 + 重启条件）。
+      - "interact(component=choice, multiSelect=true) or interact(component=confirm)"
       # 第二段材料：预演 —— 逐条「改前库存 → 改后库存」只能由它产出；
       # `batch_type` 同时是共享夹具的**属性判别维**（见 test_shared_fixture_write_restore.py：
       # `inventory_stock` ⇒ 写 `stock`）
@@ -4268,7 +4315,7 @@ cases:
         fields: [batch_id]
     data_checks:
       - "success=true"
-      - "两段确认缺一不可（机器断言）：第一段 = `interact(choice, multiSelect=true)`；第二段 = `interact(confirm)` + 执行必须带 preview 的 `batch_id` ⇒「没给商家看过逐条预览就执行」在**结构上不可达**"
+      - "两段确认缺一不可（机器断言）：第一段 = `interact(choice, multiSelect=true)`（集合可勾选时）或 `interact(confirm)`（集合已由商家给全时把逐条明细摆给他看）；第二段 = `interact(confirm)` + 执行必须带 preview 的 `batch_id` ⇒「没给商家看过逐条预览就执行」在**结构上不可达**"
       - "字段配对（机器断言）：`batch_type=inventory_stock` ⇒ 每条 `field` 必须是 `stock`（服务端 `AgentBatchService.TYPE_FIELD` 不配对直接 422），改前值 `oldValue` 必填（撤销的唯一依据）；判据见 backend/ai-agent-service/tests/test_product_batch_update.py 的 `TestInventoryStockBatch`"
       - "阈值 N>50 拒绝并提示分批（本用例 N=2；边界判据见 PR-109）"
       - "撤销逐条还原为改前值 `old_value`（服务端 `revert` → 状态 `reverted`；`revertible` 如实反映，false ⇒ 话术不得承诺可撤销）"

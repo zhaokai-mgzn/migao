@@ -8039,11 +8039,11 @@
 ```
 你: 查一下低库存商品的具体清单
 端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
-期望: product_search(stock_status=low_stock)
+期望: inventory_manage(action=low_stock_alert) or product_search(stock_status=low_stock)
 数据: 黄金策（agent_type=mibao）回复中：product_list 卡片仅包含文本实际引用的商品（按商品名/ID 匹配），未被引用的商品不渲染
 数据: 文本未引用任何商品时不下发 product_list 卡片（宁可无卡，不误导）
 数据: 元元（agent_type=xiaobu）保持现状：product_search 结果全量渲染卡片（货架浏览体验不回退）
-必须成功: product_search
+必须成功: inventory_manage or product_search
 ```
 真值: product-sku-stock.low-stock
 溯源: 2026-09-07 新增（issue #3009）：sess_66c12e3cf3a14ee0 低库存清单场景，LLM 文本正确筛出 5 件低库存商品，但下方渲染了 2 页×10 张原始返回商品卡，文本与卡片两层皮。方案 B：mibao 延迟到文本生成后按引用过滤再发卡；2026-09-18 下沉补齐（issue #4093 的 PR-018 条目 → 跟踪单 #4110，首跑指纹 `no_success(product_search)`）：本单只补**单端标注** `persona: mibao`（title/tags/实现注释三处均写 B 端黄金策，见 `app/api/chat.py::_filter_products_by_reference` 的「背景（issue #3009 / case PR-018）」；缺标注 ⇒ 被 C 端腿选中，而元元拒绝商家后台口径的「低库存」是**正确行为** ⇒ 恒红）+ **效果层断言** `must_succeed[product_search]`（读场景证明查询真成功；种子里无低库存商品 ⇒ 按 seed 真值**不要求非空**，空结果仍 success=true）；title/expectations/data_checks **原样未动** ｜ tags: card, reference_alignment, mibao
@@ -9129,12 +9129,12 @@
 你: 撤销刚才那个批量调库存
 你: [🤖 按上一轮卡片作答]
 端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
-期望: interact(component=choice, multiSelect=True)
+期望: interact(component=choice, multiSelect=true) or interact(component=confirm)
 期望: product_batch_update(action=preview, batch_type=inventory_stock)
 期望: interact(component=confirm)
 期望: product_batch_update(action=execute)
 数据: success=true
-数据: 两段确认缺一不可（机器断言）：第一段 = `interact(choice, multiSelect=true)`；第二段 = `interact(confirm)` + 执行必须带 preview 的 `batch_id` ⇒「没给商家看过逐条预览就执行」在**结构上不可达**
+数据: 两段确认缺一不可（机器断言）：第一段 = `interact(choice, multiSelect=true)`（集合可勾选时）或 `interact(confirm)`（集合已由商家给全时把逐条明细摆给他看）；第二段 = `interact(confirm)` + 执行必须带 preview 的 `batch_id` ⇒「没给商家看过逐条预览就执行」在**结构上不可达**
 数据: 字段配对（机器断言）：`batch_type=inventory_stock` ⇒ 每条 `field` 必须是 `stock`（服务端 `AgentBatchService.TYPE_FIELD` 不配对直接 422），改前值 `oldValue` 必填（撤销的唯一依据）；判据见 backend/ai-agent-service/tests/test_product_batch_update.py 的 `TestInventoryStockBatch`
 数据: 阈值 N>50 拒绝并提示分批（本用例 N=2；边界判据见 PR-109）
 数据: 撤销逐条还原为改前值 `old_value`（服务端 `revert` → 状态 `reverted`；`revertible` 如实反映，false ⇒ 话术不得承诺可撤销）
