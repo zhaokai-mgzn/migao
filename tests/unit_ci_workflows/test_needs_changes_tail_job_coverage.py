@@ -1,7 +1,11 @@
 # case_ids: MC-110
 """标签收尾 job 的 `needs:` 必须覆盖**全部 required 门禁**（issue #7022，第二条成因）。
 
-## 病（真机，2026-10-16；与同单的 `grep -c` 是**两条独立的**成因）
+## 病（真机，2026-10-16；本单共**三条独立成因**，本条 = 其中的**第二条**）
+
+> 三条成因（同单 #7022，症状相同）：① `grep -c` 配 `|| echo "0"` 捕获成两行；
+> **② 本条的 `needs:` 缺口**；③ 该 job 没有 `checkout` ⇒ `gh` 连仓库都推断不出来（`GH_REPO`）。
+> **少修一条都治不好**这个症状。
 
 `review/needs-changes` 这个标签有**两个**收尾 job：
 
@@ -167,7 +171,7 @@ def test_tail_jobs_cover_every_required_gate():
     problems = coverage_problems(REQUIRED_PR_GATES, jobs)
     assert problems == [], (
         "「该挂的标签挂不住 / 该摘的摘不掉」——收尾 job 的 `needs:` 少了 required 门禁"
-        "（issue #7022，与同单的 `grep -c` 是两条独立成因）：\n"
+        "（issue #7022，本单三条独立成因中的第二条）：\n"
         + "\n".join(f"  {p}" for p in problems)
     )
 
