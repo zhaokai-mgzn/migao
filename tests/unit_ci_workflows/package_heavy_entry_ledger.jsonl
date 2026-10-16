@@ -66,4 +66,5 @@
 {"id":"1792066523.81805.741","ts":"2026-10-15T12:15:24Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6960-remnant-agentbatch-cas","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1792111246.36620.20227","ts":"2026-10-16T00:40:46Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6992-ci-git-ident-message","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1792111301.37606.18024","ts":"2026-10-16T00:41:41Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6985-confirm-execute","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1792116455.61481.16963","ts":"2026-10-16T02:07:36Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/5653-piecework-settlement","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1792116461.61670.23633","ts":"2026-10-16T02:07:42Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6951-remote-build-identity","why":"子包 worktree 直跑全量（无批次标记）"}
