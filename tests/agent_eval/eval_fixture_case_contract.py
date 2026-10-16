@@ -68,13 +68,17 @@ python3 -m pytest tests/agent_eval/test_eval_fixture_case_contract.py -q
    写进基线（`tests/unit_ci_workflows/test_schema_integrity.py` 的「建库脚本 ⊇ 迁移链」判据）⇒
    「基线里有 `CREATE TABLE`」= 「评测栈建得出这张表」。**本判据不另跑迁移**（那要起真库）。
    ⚠️ 因此它**判不了**一个陈旧的本机夹具库（真库上已记账但表没建出来）—— 那属环境刷新，不属本判据。
-4. **CI 执行面未接线（如实登记，未固化项）**：本判据落在 `tests/agent_eval/**`（issue #7043
-   明确指定，避开 `tests/unit_ci_workflows/**` 的并发包）。CI 侧 `ci workflow helper unit tests`
-   只跑 `tests/unit_ci_workflows`（`.github/workflows/pr-check.yml` 的既有 argv），
-   **本包不越界改 CI 接线** ⇒ 当前常驻执行点是 `scripts/eval_stack_seed.sh --dry-run`
-   （本地与评测 workflow 的注种子步都会走到）。**重启条件**：由 CI 接线包把它并进 helper 腿
-   的 pytest argv（登记 `tests/unit_ci_workflows/ci_execution_scope_ledger.json`）后，本文件
-   作为 pytest 套件直接生效，**判定实现一行都不用改**。
+4. **CI 执行面：已接线**（issue #7048 · P2；本条原为「未固化项 #4：CI 执行面未接线」，2026-10-16 改判）。
+   本判据落在 `tests/agent_eval/**`（issue #7043 明确指定，避开 `tests/unit_ci_workflows/**` 的并发包），
+   而 CI 的 `ci workflow helper unit tests` 腿只跑 `tests/unit_ci_workflows`（`.github/workflows/pr-check.yml`
+   的既有 argv，**一字不改**）⇒ 接线落在**收集面**那一层：同名再导出
+   `tests/unit_ci_workflows/test_eval_fixture_case_contract_leg.py` 让本套件进那条腿的收集面
+   （判定本体与断言仍只有本文件 + 同目录的 `test_eval_fixture_case_contract.py` 这一份）。
+   常驻执行点因此有两个：① 上面那条 CI 腿 ② `scripts/eval_stack_seed.sh --dry-run`
+   （本地与评测 workflow 的注种子步都会走到）。**残留边界（如实登记）**：那条腿的 argv 与两个台账
+   （`helper_leg_shape_ledger.json` / `ci_execution_scope_ledger.json`）**未改**（收集面成员集合没变，
+   多进来的是一个判据文件）；再导出漏一条断言时由
+   `test_eval_fixture_case_contract_leg.py::test_this_reexport_covers_every_guard_test_in_the_source_suite` 判红。
 5. **绿 ≠ 夹具完备**：本判据只保证「**已登记**的依赖真被提供」，不保证夹具在真实栈上的
    数据能过 admin-api 的读侧过滤（时间窗 / 权限 / 租户隔离）—— 那一层要真栈复跑。
 """

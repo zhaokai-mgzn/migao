@@ -191,7 +191,26 @@
         "recompute": "MIGAO_CI_HELPER_SHARD=2/2 python3 -m pytest tests/unit_ci_workflows -q --collect-only -p no:cacheprovider | tail -1"
       }
     },
-    "shards_note": "**分片的冻结基线**（issue #6164）：运行期牙齿按**本片**的下界判（`conftest.collection_floor_problems` → `_frozen_floor`），不是拿整套的 5767 去撞每一片（那样两片**都**会红）。🟢 **本片基线 = 本片实测读数 − 10**（现取 3241 / 3292 ⇒ 3231 / 3282）：CI 与本机在**收集面**历史上逐值相同（3269 那次也是），差 10 是给「新增/删除一两条用例」留的余量。🔴 **读数是分片成员的函数**：改盐（= 改分片）必须**同批重锚**这两个数 —— 实测过：只改盐不同步 ⇒ 片 1 立刻判红（`本轮收集 3057 < 冻结基线 3245`，fail-closed 生效）。"
+    "shards_note": "**分片的冻结基线**（issue #6164）：运行期牙齿按**本片**的下界判（`conftest.collection_floor_problems` → `_frozen_floor`），不是拿整套的 5767 去撞每一片（那样两片**都**会红）。🟢 **本片基线 = 本片实测读数 − 10**（现取 3241 / 3292 ⇒ 3231 / 3282）：CI 与本机在**收集面**历史上逐值相同（3269 那次也是），差 10 是给「新增/删除一两条用例」留的余量。🔴 **读数是分片成员的函数**：改盐（= 改分片）必须**同批重锚**这两个数 —— 实测过：只改盐不同步 ⇒ 片 1 立刻判红（`本轮收集 3057 < 冻结基线 3245`，fail-closed 生效）。",
+    "sync_2026_10_16": {
+      "issue": "#7048",
+      "what": "**收集面新增一份套件**（`tests/unit_ci_workflows/test_eval_fixture_case_contract_leg.py`，把 `tests/agent_eval` 的评测夹具判据并进这条腿 —— 详见该文件 docstring）。本节点记新读数，并说明**为什么冻结下界不跟着改**。",
+      "new_readings": {
+        "at": "2026-10-16T17:19+08",
+        "branch_head": "本分支（基于 origin/main `71b46f83e`）+ 本包改动",
+        "whole_suite": 7409,
+        "shards": {"1/2": 3636, "2/2": 3773},
+        "recompute": "python3 -m pytest tests/unit_ci_workflows -q --collect-only -p no:cacheprovider | tail -1（分片：前缀 MIGAO_CI_HELPER_SHARD=N/2）",
+        "which_shard_got_the_new_file": "1/2（`shard_of(test_eval_fixture_case_contract_leg.py)` = 1）—— 片 1 由 3627 → 3636（**+9**：再导出的 8 条 + 本文件自己的「再导出不许漏」1 条），片 2 不变（3773）。"
+      },
+      "why_floors_unchanged": [
+        "① **不变式本身仍成立，且方向正确**：运行期判的是 `collected < 冻结下界`（`conftest._frozen_floor` → `collection_floor_problems`），而新增只**抬高**读数 ⇒ 三条下界（整套 5767 / 片 1 3231 / 片 2 3282）对现取读数（7409 / 3636 / 3773）**全部仍满足**，既不会假红、也不会假绿。",
+        "② **重锚只会把余量从 1642/405/491 收紧到 ~10，代价是多出一类假红**：下界原本是「**与负载无关的地板**」，不是一个会随每次新增而复位的棘轮 —— 若按「现取 − 10」重锚，则任何**净减 >10 条**的合法改动（删一条退役用例 / 合并两个判据文件）都会让本腿在 **required** 检查上判红，而那与「有没有悄悄少跑」无关（§23 G6：判据只钉与负载无关的工作量读数，**不钉**逐次漂移）。",
+        "③ **本包不引入新的牙齿缺口**：新增的 9 条读数**同时**受「全划分 == 现取语料（400 个判据文件）」这条结构判据约束（`test_helper_leg_execution_shape.py::shard_problems` 判据 ③）—— 文件少了 / 没进任何片 ⇒ 那条判据当场红，不依赖本节点里的数字。",
+        "⇒ 结论：**登记读数 + 说明**（本条），**不动** `collected_total` / `shards[*].collected_total`。谁要重锚，按上面的 `recompute` 复算并**同批**改这两处（原口径见 `shards_note`）。"
+      ],
+      "boundary": "本节点只登记**收集面读数**；它不为新套件的断言覆盖面背书（那条由该文件自己的 9 条判据 + 注入式红证承担）。"
+    }
   },
   "confidence_boundary": [
     "只裁**本腿的执行形态**：不判任何一条断言的覆盖面，也不为存量判据的安全性背书。",
