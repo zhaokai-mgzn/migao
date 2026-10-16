@@ -2407,7 +2407,7 @@ _CASE_CH_019 = EvalCase(
     user_inputs=['创建一个窗帘，名称 CH019交互卡测试窗帘，价格168，分类选窗帘', {'auto_respond': {'fallback': '窗帘布艺'}}, {'auto_respond': {'fallback': '确认创建'}}, '帮客户张三（手机号 13800138000）下一单：遮光窗帘 3 米，要打孔加工', {'auto_respond': {'fallback': '确认下单'}}, '把客户张三（手机号 13800138000）的「VIP2」标签去掉', {'auto_respond': {'fallback': '确认'}}, '把工单 AS-20260914-9001 关闭，关闭原因写「客户已协商一致」'],
     expectations=['interact'],
     data_checks=['【静态契约 ▪ 单测承重，非本用例】B 端 product/order/aftersales/customer skill 的 tool_names 均绑定 interact（G6 契约）—— 断言在 traces.tests[0] 的 test_all_write_skills_bind_interact_via_confirm_guard，**不由本次 LLM 跑证明静态事实**', '【静态契约 ▪ 单测承重，非本用例】product_skill.py / prompts/order.md 里要求 interact 的指令与工具绑定一致、无 tool_not_found 退化 —— 同上（test_prompt_required_interact_tools_are_bound）', '【静态契约 ▪ 前端单测承重，非本用例】admin-web store 完整透传 confirmValue/cancelValue/pageMeta（confirm 卡回传上下文值而非死值）—— 断言在 traces.tests[1]', '【本用例的行为面】真实写操作触发语下，四类链路**任一条**下发了交互卡（= expectations）；四类链路各自的完整正确性由专项用例承重：建品 PR-008 / 下单 OR-014 / 客户标签 CU-003 / 售后改状态 AS-004'],
-    skip_reason='2026-10-16 能力边界终版（关联 #7048 P4）：四轮诉求（建品／下单／客户写／工单改状态）在 B 端全部禁止或已下线 ⇒ `tool: interact` 期望奖励的是被裁定禁止的写确认卡，本用例无判别力（agent 如实拒绝反被判红）。断言保留待重锚；重锚判据见上方注释。',
+    skip_reason='[backend-contract] 2026-10-16 能力边界终版（关联 #7048 P4）：四轮诉求（建品／下单／客户写／工单改状态）在 B 端全部禁止或已下线 ⇒ `tool: interact` 期望奖励的是被裁定禁止的写确认卡，本用例无判别力（agent 如实拒绝反被判红）。断言保留待重锚；重锚判据见上方注释。',
     tags=['interactive', 'confirmation'],
     persona='mibao',
     debug_user='',
