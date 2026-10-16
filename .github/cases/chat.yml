@@ -1307,7 +1307,30 @@ cases:
       - "【静态契约 ▪ 单测承重，非本用例】product_skill.py / prompts/order.md 里要求 interact 的指令与工具绑定一致、无 tool_not_found 退化 —— 同上（test_prompt_required_interact_tools_are_bound）"
       - "【静态契约 ▪ 前端单测承重，非本用例】admin-web store 完整透传 confirmValue/cancelValue/pageMeta（confirm 卡回传上下文值而非死值）—— 断言在 traces.tests[1]"
       - "【本用例的行为面】真实写操作触发语下，四类链路**任一条**下发了交互卡（= expectations）；四类链路各自的完整正确性由专项用例承重：建品 PR-008 / 下单 OR-014 / 客户标签 CU-003 / 售后改状态 AS-004"
-    skip_reason: ""
+    # ── 退役（2026-10-16 集中复跑 `CH-019` 红 → 逐条归因 = **用例腐烂**，issue #7048 P4）──
+    # 用户 2026-10-16「能力边界 终版」逐字：「对比商家后台观星台的功能，**不支持创建商品和订单**，
+    # **其他单据类的也不要支持创建**，**只允许变更和查下分析类**」「删除/停用**不包含（只能改，不能删）**」
+    # 「射程**只在 B 端（黄金策）**」（全文锚 = `tests/unit_ci_workflows/test_mibao_b_end_readonly.py`
+    # 文件头「🔴 本文件的第三次重锚」节引的 issue #5247 最新评论）。
+    # **本用例四轮诉求逐条落在禁止面或已下线面**（逐轮对着 `backend/ai-agent-service/app/graph/skills/` 现取）：
+    #   ①「创建一个窗帘…」= **创建商品 ❌**（`product_manage` 已从 B 端全部 skill 解绑）；
+    #   ②「帮客户张三下一单…」= **创建订单 ❌**（`order_create` 已解绑）；
+    #   ③「去掉客户「VIP2」标签」= **变更**类，但 `customer_manage` 的写 action 已随
+    #      issue #5247 B 端只读化删除 ⇒ B 端**无任何客户写路径**（变更类「改价 / 标记已读 /
+    #      定时提醒」三样里不含它）；
+    #   ④「关闭工单」= 工单状态流转，`after_sales_manage` 在 B 端**只读**（写 action 已删）。
+    # ⇒ 四类的合格行为**全部**是「如实说明做不到 + 引导后台」，**没有任何一轮**会下发确认卡。
+    # `expectations: tool: interact` 于是变成「奖励一个被裁定禁止的行为」：把 agent 判成绿
+    # 的唯一办法 = 它去发写确认卡（2026-10-16 复跑实测 agent 四轮全部如实拒绝 ⇒ `unmatched
+    # expectation: interact`，**这个红不是缺陷，是正确的读数**）。
+    # 处置 = **整条退役**（同 CR-001 的退役形态：`skip_reason` 非空 ⇒ 不进 persona 用例集）；
+    # **断言一字未删**（`user_inputs` / `expectations` / `precondition` / `forbidden_tools` 原样留着，
+    # 备将来「非单据对象创建接线」后按新边界重锚）。
+    # ⚠️ 与 A 类重锚（issue #7035 第二相）的关系：那一次只补了 ① ② 的 `forbidden_tools` 禁区，
+    # 仍假设 ③ ④ 会发卡 ⇒ 本用例在**新边界下**整体不可满足；本次不是"放宽阈值"，是**承认用例对象已消失**。
+    # un-skip 判据：B 端重新接线「客户标签增删」「售后工单状态流转」**且**能下发确认卡时，按当时
+    # 的能力面重写四轮诉求（`#7040` 的「非单据对象创建」缺口清单可查）。
+    skip_reason: "[backend-contract] 2026-10-16 能力边界终版（关联 #7048 P4）：四轮诉求（建品／下单／客户写／工单改状态）在 B 端全部禁止或已下线 ⇒ `tool: interact` 期望奖励的是被裁定禁止的写确认卡，本用例无判别力（agent 如实拒绝反被判红）。断言保留待重锚；重锚判据见上方注释。"
     merge_log: "issue #2777：G6 interact 绑定 B 端 + admin-web store 字段透传修复。2026-09-16（#3961）语料形态修复：user_inputs 由**能力问答**改为四类写操作的真实触发语（原语料两轮零工具调用 = 假红，污染整轮 completion 判定，见 #3955），四类覆盖面保留；expectations 不变（tool: interact）；data_checks 改为显式标注静态契约由单测/前端单测承重、行为面只留「任一链路下发交互卡」；补 persona: mibao（B 端专属，消除跨腿隐患）；补 namespaces（张三/13800138000 与 10 条用例互斥）；补 pre_clean product_remove（自建商品名重试前置复位）；④ 售后改状态轮有意不答卡，避免与 AS-004 争用 seed 工单；生成物已重渲染。2026-09-18 #4099（burn-down，metric 收紧为 entries ⇒ 必须整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（④ 轮按名字下单 ⇒ 该名字唯一是它真正依赖且**只读**的前置；不选 order_count_for_phone，因本用例自己会建单、漂移判据必然判红）+ namespaces 补 `product_name:遮光窗帘`（护住该前置的基线/漂移两格）；客户/工单两个维度无可声明类型，如实登记为未覆盖；断言（user_inputs/expectations/data_checks/pre_clean）原样未动"
     traces:
       tests:
@@ -2516,6 +2539,20 @@ cases:
     # ⚠️ **有意不抄 CH-034 的 `want_text` 内容断言**：CH-034 的接地对象是某个**颜色词**
     # （它用的是单色感的图 + 三次实测稳定词），而本用例的同图实测里颜色词会漂
     # ⇒ 内容词断言 = 造 flake。本用例的接地对象是**工具调用与参数**。
+    # ── 行为面缺口的**产品侧**修法（2026-10-16 集中复跑读数，issue #7048 P4）──────────
+    # 复跑实测（`/tmp/eval-rerun-1016-1744.log`）：本用例**首跑调了** `image_recognize`
+    # （`target_type=product` + 图片 URL 逐字取自上下文 ⇒ `required_args` 那两条本来是满足的），
+    # 但识别内核返回 `degraded`（`success=false`，`error=recognition_degraded` ⇒ `must_succeed` 红）；
+    # **复跑整轮没调** `image_recognize`，改调 `category_manage` + `product_search` 后直接回
+    # 「建品不在我这边能力内」。两跑的不一致 = 判定面（「建品被拒」被模型扩读成「这一整轮不用识别」）。
+    # ⇒ 产品侧修法落在 prompt（**不是**放宽本用例）：`product.md` 新增
+    # 「图片识别：**建品被拒 ≠ 拒绝这次识别**」一节（接地对象 = 该节里逐字出现的
+    # 「仍要调 `image_recognize`」与 `TestNoWriteBoundary` 的「不落库」事实），
+    # 并同步场景映射表那一行。本用例的 `expectations` / `must_succeed` / `required_args` /
+    # `forbidden_tools` / `forbidden_text` **一字未动**（它是 `image_recognize` 的**唯一**行为面承重）。
+    # ⚠️ 残留（如实登记，未固化）：`degraded` 分支取决于 vision 供应商对**这一张**图的识别结果，
+    # 不是本仓可判定的确定性行为 ⇒ 「复跑仍可能因 `recognition_degraded` 红」，此时红**不可归因于 agent**
+    # （本用例 `precondition` 已逐字声明同一件事）。
     user_inputs:
       - text: "照这张图帮我建个商品。"
         images:

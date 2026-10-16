@@ -46,6 +46,7 @@
 | 7 | 声明了 mibao persona 的每个 skill（含已解绑孤儿）的工具面受控 | 孤儿 skill 工具改回非只读 / 暴露不可逆动作 / 绑未登记的写工具 |
 | 8 | **非只读 ⇒ 必须带确认门禁**（新口径核心：变更可达但不得无确认执行） | 非只读 action 却无 `requires_confirmation`·`destructive` |
 | 9 | 可达面的汇总口径：零建单、零不可逆动作 | 见判据 3 的两条结构面（9 是**可达并集**口径，独立红证） |
+| 12 | **用例面**：`expectations` 要求 persona **不可达**的工具（在飞的用例期望一个边界外的动作） | 用例声明 `expectations: [order_create]` / `[product_manage]` ⇒ 具名报出「文件::用例 id::工具::原句」 |
 | ⊕ | `test_change_tools_actually_reachable`：变更工具**必须真的可达** | 把 `notification` 从 `skill_names` 解绑 ⇒ 红 |
 
 > 判据 8 / 9 与判据 1 / 3 的差别是**射程**：1 / 3 判「工具本身是不是禁形态」，8 / 9 判
@@ -73,6 +74,7 @@
 from __future__ import annotations
 
 import ast
+import sys
 import functools
 import re
 from pathlib import Path
@@ -82,6 +84,12 @@ AI_SERVICE = REPO_ROOT / "backend" / "ai-agent-service"
 TOOLS_DIR = AI_SERVICE / "app" / "tools"
 SKILLS_DIR = AI_SERVICE / "app" / "graph" / "skills"
 AGENTS_DIR = AI_SERVICE / "app" / "agents" / "agents"
+CASES_DIR = REPO_ROOT / ".github" / "cases"
+
+#: 用例源的解析器 = 仓内 `yaml_light`（**纯标准库**，与本判据「零依赖」的口径一致；
+#: 直接 import `.github/render_cases.py` 会连带拉进它的兄弟模块，故只取其解析器这一份实现）。
+sys.path.insert(0, str(REPO_ROOT / ".github"))
+from yaml_light import load as _yaml_load_text  # noqa: E402
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -286,6 +294,12 @@ def _source_map() -> dict[str, str]:
         path = refs / rel
         if path.exists():
             out[f"prompt:{rel}"] = path.read_text(encoding="utf8")
+    # 用例面（判据 12）：`.github/cases/*.yml` 的**原文**。用 `rglob`（不 import
+    # `render_cases.load_case_dicts`）——后者会连带拉进 `cases_yaml` 等兄弟模块，
+    # 与本判据「零依赖、只读文本」的口径不一致（真库漏加载会被判据 12 的 fail-closed 兜住）。
+    if CASES_DIR.is_dir():
+        for p in sorted(CASES_DIR.rglob("*.yml")):
+            out[f"case:{p.relative_to(CASES_DIR)}"] = p.read_text(encoding="utf8")
     return out
 
 
@@ -599,6 +613,11 @@ class World:
             t for s in self.xiaobu_skills for t in self.skills.get(s, ())
         )
         self.capability_text = parse_agent_direct_replies(sources, "mibao")
+        # 判据 12 的输入面：用例源原文（键 `case:<相对 .github/cases 的路径>`，值 = 文本）
+        self.case_docs = {k: v for k, v in sources.items() if k.startswith("case:")}
+        assert "case:chat.yml" in self.case_docs or not self.sources.get("case:chat.yml"), (
+            "用例源名录与 `case:` 源不一致（`case:chat.yml` 缺席）⇒ 判据 12 会空跑，fail-closed"
+        )
         # 判据 7 的射程：**声明**了 mibao persona 的 skill（可达 + 已解绑的孤儿）。
         self.mibao_declared_skills = frozenset(
             n for n, p in self.skill_personas.items() if "mibao" in p
@@ -959,6 +978,142 @@ def problems_change_tools_reachable(w: World) -> list[str]:
     ]
 
 
+#: 判据 12 的**伪工具名**：`expectations` 里用来表达「该轮不要工具调用」等的形态词，
+#: 不是真工具（真值源 = `tests/agent_eval/local_runner.py::check_expectation` 的语义）。
+PSEUDO_EXPECTATIONS: frozenset = frozenset({"direct_reply"})
+
+
+def _expectation_branches(exp):
+    """`expectations` 的一条声明 → `(工具名列表, 是否含伪工具分支)`。
+
+    ⚠️ 两条形态都要吃：**字符串**（`tool: "direct_reply or nav_guide"`）与 **mapping**
+    （`tool: order_create`）；只写 mapping 分支 = 判据在真语料上一路空转
+    （本判据首版实测：`iter names: []` ⇒ 注入式红证当场抓出）。
+
+    ⚠️ **伪工具分支也必须计数**（第二版踩到）：`direct_reply or validate_input` 里
+    `validate_input` 不可达，但 `direct_reply` **可达**（= 该轮零工具调用即满足）
+    ⇒ 只看真工具名会把这条误判成「整条都不可达」。返回的第二个值就是为它准备的。
+    """
+    text = exp.get("tool") if isinstance(exp, dict) else exp
+    names: list[str] = []
+    pseudo = False
+    for part in re.split(r"\bor\b", str(text or "")):
+        name = part.strip()
+        if not name:
+            continue
+        if name in PSEUDO_EXPECTATIONS:
+            pseudo = True
+            continue
+        # `product_search(k=v)` 形态 ⇒ 取括号前那段
+        name = name.split("(", 1)[0].strip()
+        if re.fullmatch(r"[a-z][a-z0-9_]*", name):
+            names.append(name)
+    return names, pseudo
+
+
+def problems_cases_expect_unreachable_tools(w: World) -> list[str]:
+    """判据 12（**用例面**）：声明了 persona 的用例，其 `expectations` 要求的工具必须**可达**。
+
+    ## 立案理由（issue #7048 P4，2026-10-16）
+
+    判据 1 / 3 / 7 / 9 判的是**工具面与绑定面** —— 它们看不见「**在飞的用例**还在期望一个
+    边界外的动作」。`CH-019` 就是这一格：2026-10-16 能力边界终版之后，它四轮诉求（建品／下单／
+    客户写／工单改状态）在 B 端全部禁止或已下线，而 `expectations` 仍是 `tool: interact`
+    ⇒ 把 agent 判成绿的唯一办法 = 它去发一张**被裁定禁止的写确认卡**。判据 1 全绿、CI 全绿，
+    只有真跑 LLM 评测才会红（而评测按 #4262 由用户**集中手动**跑）⇒ **零常驻信号**。
+
+    ## 判据形态
+
+    逐用例取 persona 决定**该端的可达工具集**（`mibao` → B 端 / `xiaobu` → C 端 / 未声明 →
+    两端并集；与 `tests/agent_eval/eval_case_filter.py::select_cases_for_persona` 同一口径），
+    再逐条 `expectations` 取工具名：**不在该集合里 ⇒ 红**（默认拒绝，不猜、不近似匹配）。
+
+    ## 边界（照实登记，§19.1）
+
+    - **只扫 `expectations`**（不是 `data_checks`：后者多为自然语义散文，`acceptance-protocol` §1.3
+      铁律明确它**不计分**）；`must_succeed` / `required_args` 的具名工具由判据 1/7 的绑定面兜住。
+    - **判不了行为**（同判据 11 的自述）：它只保证「用例不会**要求**一个边界外的工具」，
+      「模型是否照做」只能靠真实 LLM 评测。
+    - **判不了「期望过严」**（漏报方向）：`HR-009` 的裸 `direct_reply` 是**另一个形态**的腐烂
+      （该调 `nav_guide` 却被要求零工具）—— 那需要读产品语义，本判据不假装能判。
+    - 🔴 **双端用例整条排除**（防假红，**主会话插单提醒核过**）：`persona` 缺省 ⇒ 两端都跑，
+      而 `expectations` 是「任一轮满足即过」⇒ 某个工具在**本腿**不可达是**合法**形态
+      （实例：`CH-009` 的 `order_create` = C 端主流程）。故本判据只判**单端**用例
+      （`persona` ∈ {mibao, xiaobu}）—— 反向对照见 `test_dual_leg_cases_are_not_false_red`。
+    - **零台账 / 零豁免**：真语料上当前命中 **0** 条（2026-10-16 现取）⇒ 本判据**不留**
+      「登记后放行」的出口（边界外期望一出现即红）。
+    - **整条 vs 死分支**：只判「`expectations` **整条**都指向不可达工具」那一格（判别力被掏空）；
+      `or` 形态里**仍有可达分支**的（死分支）不判红、也不登记（漏报方向，如实登记）。
+    """
+    out: list[str] = []
+    seen_blockers: dict[str, str] = {}
+    if not w.case_docs:
+        out.append(
+            "用例源一个都没加载到（`.github/cases/**` 为空或 `CASES_DIR` 漂移）⇒ 本判据会空跑，"
+            "fail-closed 判红"
+        )
+        return out
+    for key, text in sorted(w.case_docs.items()):
+        rel = key.split(":", 1)[1]
+        # ⚠️ 从 **World 的源文本**解析（`w.case_docs[key]`），**不是**从磁盘重读文件 ——
+        # 判据的输入面就是 `sources`；重读磁盘会让注入式红证**恒绿**（注入改了内存、
+        # 磁盘没变 ⇒ 判据读不到注入，实测踩到：⑫ 首版写成 `_yaml_load_file(str(CASES_DIR/rel))`
+        # ⇒ 「判据没有变红 ⇒ 它是空断言」当场红）。
+        try:
+            data = _yaml_load_text(text)
+        except Exception as e:  # noqa: BLE001 —— 解析不了 = 判不了 ⇒ 报出，不静默跳过
+            out.append(f"`{rel}` 解析失败（{type(e).__name__}: {e}）⇒ 判据 12 判不了该文件")
+            continue
+        for c in (data or {}).get("cases") or []:
+            if not isinstance(c, dict):
+                continue
+            persona = str(c.get("persona") or "").strip().lower()
+            if persona == "mibao":
+                reachable = w.b_end_tools
+            elif persona == "xiaobu":
+                reachable = w.c_end_tools
+            else:
+                # 🔴 **双端用例（`persona` 缺省）整条排除** —— 本判据只对**单端**用例生效。
+                # 依据（与运行期选择口径**同一份**，不另立第二份判别）：
+                # `tests/agent_eval/eval_case_filter.py::select_cases_for_persona` 的语义 ——
+                # `persona` 为空/其它 ⇒ 该用例**两端都跑**（`filter_by_persona` 只在
+                # `persona == 另一端的专属值` 时才丢），且 runner 的 `expectations` 是
+                # **任一轮满足即过**（`tests/agent_eval/local_runner.py` 的计分循环）⇒
+                # 「本腿不可达的那个工具」在另一条腿上可能是主流程 ⇒ 在这里判红 = **假红**。
+                # 实例（主会话插单提醒核过，2026-10-16）：`CH-009` 是双端用例，其
+                # `expectations` 含 `order_create`（**C 端元元的主流程**，在
+                # `eval_case_filter.XIAOBU_TOOLS` 在册）；`order_create` 在 B 端已解绑 ⇒
+                # 若把双端用例一起判，`CH-009` 会被假红。**故必须排除**（不是"漏判"：
+                # 双端用例的"本腿不可达"是**合法**形态）。
+                continue
+            for exp in c.get("expectations") or []:
+                text = str((exp.get("tool") if isinstance(exp, dict) else exp) or "")
+                names, has_pseudo = _expectation_branches(exp)
+                if not names:
+                    continue
+                dead = [n for n in names if n not in reachable]
+                if not dead:
+                    continue
+                has_reachable = has_pseudo or any(n in reachable for n in names)
+                cid, who = c.get("id"), (persona or "双端")
+                if not has_reachable:
+                    # 🔴 **判别力被掏空的那一格**（本判据的靶心）：这一条**没有任何**可达分支
+                    # ⇒ 用例的通过条件只能是「做到一个边界外的动作」（绿 = 奖励被禁止的行为），
+                    # 或者永远红（agent 正确地不做）。`CH-019`（改判前）就是这一格。
+                    seen_blockers[str(cid)] = (
+                        f"`{rel}` 的用例 `{cid}`（persona={who}）`expectations` **整条**都指向"
+                        f"不可达工具 {dead}（B 端可达 {len(w.b_end_tools)} 个）⇒ 该用例要么奖励"
+                        f"一个边界外的动作、要么永远红（无第三个出口）｜原句：{text}"
+                    )
+                # else：**死分支不判红**（漏报方向，如实登记）—— `or` 形态里至少还有一条
+                # 可达分支 ⇒ 用例**仍然可满足**，那个不可达分支**不影响判定**。
+                # 真语料上这类形态当前 0 条（双端用例已在上面整条排除；三条例 `persona: mibao`
+                # 的 `direct_reply or validate_input` 是**伪分支 + 真分支**，不属于本判据射程）。
+    # 无台账、无豁免：**默认拒绝**。真语料上当前命中 0 条（2026-10-16 现取）——
+    # 本判据是**零存量**的（把边界外的期望留在用例里 ⇒ 当场红，没有"登记后放行"的出口）。
+    return out + [f"{detail}" for _cid, detail in sorted(seen_blockers.items())]
+
+
 def problems_prompt_boundary_coherence(w: World) -> list[str]:
     """判据 11：**prompt 措辞**不得把已接回的能力说成「不在能力内」。
 
@@ -1014,6 +1169,7 @@ JUDGEMENTS = {
     "9 · 可达面零建单零删除": problems_no_irreversible_or_document_creation_on_b_end,
     "10 · 变更工具必须真的可达": problems_change_tools_reachable,
     "11 · prompt 措辞与边界一致（不教 agent 拒绝已支持能力）": problems_prompt_boundary_coherence,
+    "12 · 用例 expectations 要求 persona 可达的工具": problems_cases_expect_unreachable_tools,
 }
 
 
@@ -1023,12 +1179,62 @@ JUDGEMENTS = {
 
 
 def test_every_judgement_is_green() -> None:
-    """十条判据在**当前仓库**上全绿（红 = B 端能力边界已漂移，逐条问题见断言文案）。"""
+    """全部判据在**当前仓库**上全绿（红 = B 端能力边界已漂移，逐条问题见断言文案）。"""
     w = world()
     problems = {label: fn(w) for label, fn in JUDGEMENTS.items()}
     bad = {label: p for label, p in problems.items() if p}
     assert bad == {}, "B 端能力边界判据未通过：\n" + "\n".join(
         f"  【{label}】\n    - " + "\n    - ".join(items[:12]) for label, items in bad.items()
+    )
+
+
+DUAL_LEG_CASE_ID = "ZZ-INJ-DUAL-LEG"
+SINGLE_LEG_CASE_ID = "ZZ-INJ-SINGLE-LEG"
+
+
+def test_dual_leg_cases_are_not_false_red() -> None:
+    """判据 12 的**反向对照**：双端用例里出现"本腿不可达的工具"**不得**判红。
+
+    为什么必须单列这条（主会话插单提醒，2026-10-16）：
+      `persona` 缺省的用例**两端都跑**，而 `expectations` 的计分语义是「任一轮满足即过」
+      ⇒ 它在 B 端腿不可达的那个工具，在 C 端腿可能正是主流程（实例：`CH-009` 的
+      `order_create`，见 `tests/agent_eval/eval_case_filter.py::XIAOBU_TOOLS`）——
+      若不排除双端用例，本判据会把 `CH-009` 这类**合法**用例判红。
+
+    两段读数（**同一判定函数**）：
+      ① 真语料（含 `CH-009`）⇒ 判据 12 输出不含任何 `CH-009` 相关的阻塞项（现取，不写死）；
+      ② 合成对照：同一个"不可达工具"声明，放在**双端**用例里 ⇒ 不红；放在**单端**用例里 ⇒ 红
+         （这半段同时证明「⑫d 不是空断言」）。
+    """
+    w = world()
+    problems = problems_cases_expect_unreachable_tools(w)
+    c009 = [p for p in problems if "`CH-009`" in p]
+    assert c009 == [], (
+        "双端用例 `CH-009` 被判据 12 判红 ⇒ 本判据误伤了双端用例"
+        "（`order_create` 是 C 端主流程，B 端不可达是**合法**形态）：\n  " + "\n  ".join(c009)
+    )
+    # ② 合成对照：同一段声明，persona 取/不取
+    def _with(extra: str) -> list[str]:
+        src = dict(_source_map())
+        src["case:chat.yml"] = src["case:chat.yml"] + extra
+        return problems_cases_expect_unreachable_tools(World(src))
+
+    dual = _with(
+        f"\n  - id: {DUAL_LEG_CASE_ID}\n    user_inputs:\n      - \"双端对照\"\n"
+        "    expectations:\n      - tool: order_create\n    skip_reason: \"\"\n"
+    )
+    assert [p for p in dual if DUAL_LEG_CASE_ID in p] == [], (
+        "双端用例（persona 缺省）被判定为「期望边界外动作」⇒ 判据 12 的双端排除失效"
+    )
+    single = _with(
+        f"\n  - id: {SINGLE_LEG_CASE_ID}\n    persona: mibao\n    user_inputs:\n"
+        "      - \"单端对照\"\n    expectations:\n      - tool: order_create\n"
+        "    skip_reason: \"\"\n"
+    )
+    hits = [p for p in single if SINGLE_LEG_CASE_ID in p]
+    assert hits, (
+        "单端用例声明一个不可达工具却**没有**被判红 ⇒ 判据 12 的判别力退化成空断言"
+        "（双端排除把单端也一起放过了）"
     )
 
 
@@ -1273,7 +1479,49 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
             lambda s: s + "\n改价（product_update / sku_update）本域**不做**，请到后台自行调整。\n",
             problems_prompt_boundary_coherence,
         ),
+        # ── 判据 12：用例面（expectations 要求不可达工具）────────────────────────
+        # 三个注入各打一个**不同**的坏形态：① 边界外工具（B 端解绑的写工具）
+        # ② C 端专属工具（B 端从来没有）③ 用例源整个没加载（fail-closed，防"空跑恒绿"）。
+        "⑫ 用例 expectations 要求 B 端**已解绑**的写工具（order_create）⇒ 判据 12 红": (
+            "case:chat.yml",
+            lambda s: s + _INJECTED_CASE_ORPHAN_WRITE,
+            problems_cases_expect_unreachable_tools,
+        ),
+        "⑫b 用例 expectations 要求 **C 端专属**工具（aftersale_create 跑在 mibao 腿上）⇒ 判据 12 红": (
+            "case:chat.yml",
+            lambda s: s + _INJECTED_CASE_C_END_TOOL,
+            problems_cases_expect_unreachable_tools,
+        ),
+        # ⚠️ ⑫d 是**反向对照**（不是红证）：本判据的注入表要求「判据必须变红」，
+        # 故它用**同一判定函数**在 `_injections` 之外的独立断言里跑 —— 见
+        # `test_dual_leg_cases_are_not_false_red`（它证明**不红**，方向与注入表相反）。
+        "⑫c 用例源一个都没加载（`CASES_DIR` 漂移）⇒ 判据 12 红（fail-closed，不空跑恒绿）": (
+            "case:chat.yml",
+            lambda s: s + "\n# 注入（判据 12 ⑫c 的锚点，见下方 sources 抹除）\n",
+            problems_cases_expect_unreachable_tools,
+        ),
     }
+
+
+#: 判据 12 的注入语料（合成用例：**只在内存里**进 World —— ⑫c 用 `[]` 把 `case:` 源整片抹掉）。
+_INJECTED_CASE_ORPHAN_WRITE = '''
+  - id: ZZ-INJ-WRITE
+    persona: mibao
+    user_inputs:
+      - "注入：下单"
+    expectations:
+      - tool: order_create
+    skip_reason: ""
+'''
+_INJECTED_CASE_C_END_TOOL = '''
+  - id: ZZ-INJ-CEND
+    persona: mibao
+    user_inputs:
+      - "注入：C 端专属工具"
+    expectations:
+      - tool: aftersale_create
+    skip_reason: ""
+'''
 
 
 def test_every_judgement_can_go_red() -> None:
@@ -1291,13 +1539,18 @@ def test_every_judgement_can_go_red() -> None:
     base_world = World(base_sources)
     green = {label: fn(base_world) for label, fn in JUDGEMENTS.items()}
     assert all(not v for v in green.values()), (
-        "对照组：未注入时十一条判据必须全绿（否则红证无从归因）：\n"
+        "对照组：未注入时全部判据必须全绿（否则红证无从归因）：\n"
         + "\n".join(f"  【{k}】{v[:2]}" for k, v in green.items() if v)
     )
     for label, (key, mutate, judgement) in _injections().items():
         sources = dict(base_sources)
         sources[key] = mutate(sources[key])
-        assert sources[key] != base_sources[key], f"{label}：注入没生效（锚点失配）—— 同步本判据"
+        assert sources[key] != base_sources[key], (
+            f"{label}：注入没生效（锚点失配）—— 同步本判据"
+        )
+        if label.startswith("⑫c"):
+            # ⑫c 的语义 = 「用例源整片没加载」⇒ 抹掉全部 `case:` 源（注入语料本身不改）
+            sources = {k: v for k, v in sources.items() if not k.startswith("case:")}
         sources.update(_synthetic_tools(label))
         mutated = World(sources)
         assert judgement(mutated), f"{label}：判据没有变红 ⇒ 它是空断言"
