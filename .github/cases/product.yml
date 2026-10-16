@@ -288,15 +288,11 @@ cases:
     # ⇒ 一次运行"只用一条路径"这件事由**语义**保证（agent 回答一个问题不会两条都调）；
     #   若将来要**机器强制**，需要 runner 支持"OR 断言组"或"args 级 OR"，属 runner 包范围，
     #   已登记在 #3781（不能为了这条用一个恰好能跑通的近似写法冒充强制）。
-    # ⚠️ **已知的等价路径不完整（如实登记，未掩盖）**：`must_succeed` 声明的是
-    #   `product_search`（本 run 实测走通的那条），故若某次运行改为走
-    #   `inventory_manage(low_stock_alert)`，`expectations` 会过（OR 分支）而
-    #   `must_succeed` 会红 —— 该次红**不是** agent 做错，而是**断言层尚不支持
-    #   "任一路径真成功"（OR 成功组）**。本包**无法离线判定**下次 run 走哪条
-    #   （需真实 LLM），故不猜：如实写在这里 + PR body 的「存疑项」+ #3781 登记。
-    #   若下次全量 run 显示 agent 稳定走 `product_search`（= 本声明正确），无需改动；
-    #   若它改走 `inventory_manage`，正解是补 runner 的 OR 成功组能力（runner 包），
-    #   **不是**把这条 `must_succeed` 删掉（删掉即回到"调了≠成了"的假绿）。
+    # ⚠️ **已知的等价路径不完整（如实登记，未掩盖）**：`must_succeed` 现声明
+    #   `inventory_manage or product_search`（OR 成功组）⇒ 两条路径任一条真成功即满足。
+    #   ⚠️ 上一版 `must_succeed[product_search]`（单工具）与 OR 期望**不对称**，走另一条路径的运行
+    #   恒判 0%（2026-10-16 复跑实证，见下方 `must_succeed` 处的逐条读数）⇒ 已由 runner 的
+    #   OR 成功组能力修掉（#3781 的产品侧出口）。**该次红不是** agent 做错。
     # ⚠️ **每条 OR 分支必须带自己的 args**（写成一条 `tool+args` 会变成"两个键都要"：
     # `_arg_mismatch_reason` 按**单一** args 字典逐键校验，`product_search` 没有 `action`
     # 字段 ⇒ `missing arg 'action'` ⇒ 两条路径全红）。故此处用 runner 的
@@ -310,8 +306,20 @@ cases:
     # 声明互补：OR 声明承担"哪条路径 + 关键值"，它承担"路径真的成功了"）。
     # 声明两条会因合取语义导致恒红，故取一条；**该条必须与用 args.action 的 OR 分支解耦**：
     # `product_search` 无 `action` 字段，若声明 `action=low_stock_alert` 则永远匹配不到它。
+    # ── 🔴 2026-10-16（issue #7048 P5）：效果层改用 **runner 的 OR 成功组**（`tool: "A or B"`）──
+    # 病灶（复跑逐字读数，`/tmp/eval-p4-after-1016-1850.log` / `/tmp/eval-p4-baseline-1016-1827.log`）：
+    # 原 `must_succeed: [product_search]`（单工具）与期望面的 OR **不对称** ⇒ 走
+    # `inventory_manage(action=low_stock_alert)` 的那两次运行判 `score=0%`
+    # （`must_succeed: product_search 从未被调用`），走 `product_search(stock_status=low_stock)`
+    # 的那两次判 100% —— 同一条用例**按 agent 选哪条等价路径**在 0%/100% 之间跳。
+    # 那不是 agent 做错（两条路径都是产品文档认可的低库存口径），是断言层**过度指定实现路径**
+    # （本用例 2026-09-15 修期望面时留下的另一半，见 #3781）。
+    # ⚠️ 修法**不是**删断言（删掉即回到"调了≠成了"的假绿，#3778）：断言内核一字未变
+    # ——「两条等价路径里**至少有一条真的成功**」；旧写法只是把该内核**错误地**绑死在一条路径上。
+    # 能力缺口已由 runner 侧补齐（`check_must_succeed` 支持 `tool: "A or B"`，与
+    # `check_expectation` 的拆法同源；判据 = tests/unit_ci_workflows/test_eval_must_succeed_or_group.py）。
     must_succeed:
-      - tool: product_search
+      - tool: "inventory_manage or product_search"
     # ⚠️ **此处刻意不声明 `required_args[product_search.stock_status]`**：`required_args`
     # 同样是**合取**（每条都必须满足），而 `inventory_manage` 分支**没有** `stock_status`
     # 字段 ⇒ 加了它，走 `inventory_manage` 的那次运行会因"未调用 product_search"判红 ——

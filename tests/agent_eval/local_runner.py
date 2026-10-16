@@ -3532,6 +3532,17 @@ def check_must_succeed(results: list, must_succeed: list,
         if not tool:
             issues.append(f"must_succeed: 配置缺 tool: {spec!r}")
             continue
+        # OR 成功组（issue #3781 的产品侧出口；PR-006 实测复现）：`tool: "A or B"` = **等价路径**，
+        # 「其中任一条真的成功」即满足 —— 拆法与 `check_expectation` 的 `A or B` 同源。
+        # 为什么必须支持：等价路径用例的期望面早已写成 OR，而效果层是**合取** ⇒ 两条路径里
+        # 只走一条的那次运行**恒红**（PR-006 实测：走 `inventory_manage(action=low_stock_alert)`
+        # 的那两次因「product_search 从未被调用」判 0%；走 `product_search` 的那两次 100%）。
+        # 那不是 agent 做错，是断言层**过度指定实现路径**。
+        # 语义边界（**不放大**）：① 分支**并集**里任一次成功即满足；② `min_successes` 按
+        # 并集计数（「同键重试两次」形态仍要真成功 N 次）；③ `action` / `source` /
+        # `only_if_called` 对每条分支各自生效；④ 无 ` or ` 时 `tool_alts == [tool]`，
+        # 与旧实现**逐字等价**（既有用例零影响）。
+        tool_alts = [t.strip() for t in tool.split(" or ") if t.strip()] or [tool]
         # 读哪一面（issue #4097）：缺省 `sse` = 既有 SSE 事件面，语义一字不变；
         # `metadata` = 落库面（`metadata.tool_results`）。**显式二选一**，不并存。
         source = str(spec.get("source") or "sse")
@@ -3565,48 +3576,50 @@ def check_must_succeed(results: list, must_succeed: list,
                 continue
             need_successes = _ms
 
+        # 逐分支收集 attempts（`tool_alts` 单元素时与旧实现逐字等价；多元素 = OR 成功组）。
         attempts: list = []   # [(round, ok, error)]
-        for r in face or []:
-            rnd = r.get("__round")
-            # 调用侧：LLM 是否发起了该工具（按 action 过滤）
-            called = False
-            for tc in r.get("tool_calls") or []:
-                if not _tool_name_matches(tc.get("name"), tool):
+        for _alt in tool_alts:
+            for r in face or []:
+                rnd = r.get("__round")
+                # 调用侧：LLM 是否发起了该工具（按 action 过滤）
+                called = False
+                for tc in r.get("tool_calls") or []:
+                    if not _tool_name_matches(tc.get("name"), _alt):
+                        continue
+                    if action and (tc.get("args") or {}).get("action") != action:
+                        continue
+                    called = True
+                    break
+                # 结果侧（issue #3681 / 同 #3667 的同族修法）：SSE tool_result 事件**不带 args**，
+                # 所以声明 action 时必须按**同轮同名调用的出现顺序**对齐到"那一次调用"自己的结果
+                # —— 否则同一工具不同 action 的成败会互相顶替，**别的 action 成功也能让
+                # `must_succeed[action=X]` 通过（假绿）**。对不齐（合成轨迹）→ 回退工具级旧语义。
+                if action:
+                    a_called, _aligned, _legacy = _round_action_result(r, _alt, action)
+                    if not a_called:
+                        continue
+                    if _aligned is not None:
+                        _res = _aligned.get("result")
+                        attempts.append((rnd, bool(_res.get("success") if isinstance(_res, dict)
+                                                   else False), None))
+                    elif _legacy is not None:
+                        attempts.append((rnd, bool(_legacy), None))
+                    else:
+                        # 发起了但没有结果事件（流中断/并发丢弃）→ 按未成功记录，不许静默当成功
+                        attempts.append((rnd, False, "无结果事件"))
                     continue
-                if action and (tc.get("args") or {}).get("action") != action:
+                matched_results = [
+                    st for st in _tool_result_status(r.get("tool_results") or [])
+                    if _tool_name_matches(st.get("tool"), _alt)
+                ]
+                if not called and not matched_results:
                     continue
-                called = True
-                break
-            # 结果侧（issue #3681 / 同 #3667 的同族修法）：SSE tool_result 事件**不带 args**，
-            # 所以声明 action 时必须按**同轮同名调用的出现顺序**对齐到"那一次调用"自己的结果
-            # —— 否则同一工具不同 action 的成败会互相顶替，**别的 action 成功也能让
-            # `must_succeed[action=X]` 通过（假绿）**。对不齐（合成轨迹）→ 回退工具级旧语义。
-            if action:
-                a_called, _aligned, _legacy = _round_action_result(r, tool, action)
-                if not a_called:
-                    continue
-                if _aligned is not None:
-                    _res = _aligned.get("result")
-                    attempts.append((rnd, bool(_res.get("success") if isinstance(_res, dict)
-                                               else False), None))
-                elif _legacy is not None:
-                    attempts.append((rnd, bool(_legacy), None))
-                else:
+                if not matched_results:
                     # 发起了但没有结果事件（流中断/并发丢弃）→ 按未成功记录，不许静默当成功
                     attempts.append((rnd, False, "无结果事件"))
-                continue
-            matched_results = [
-                st for st in _tool_result_status(r.get("tool_results") or [])
-                if _tool_name_matches(st.get("tool"), tool)
-            ]
-            if not called and not matched_results:
-                continue
-            if not matched_results:
-                # 发起了但没有结果事件（流中断/并发丢弃）→ 按未成功记录，不许静默当成功
-                attempts.append((rnd, False, "无结果事件"))
-                continue
-            for st in matched_results:
-                attempts.append((rnd, bool(st.get("ok")), st.get("error")))
+                    continue
+                for st in matched_results:
+                    attempts.append((rnd, bool(st.get("ok")), st.get("error")))
 
         if sum(1 for _r, ok, _e in attempts if ok) >= need_successes:
             continue

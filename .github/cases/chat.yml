@@ -554,7 +554,21 @@ cases:
     expectations:
       # `direct_reply` = 该轮无 tool_calls 且有 final_text（runner 既有语义，见 local_runner 的匹配实现）；
       # `interact` = 出澄清/确认卡（引导到后台订单页的落地形态）。
-      - tool: direct_reply or interact
+      # 🔴 2026-10-16（issue #7048 P5）：补**第三条**等价分支 `customer_manage`（**只读**查客户）。
+      # 病灶（复跑读数，三红一绿 —— 红是稳态）：
+      #   `/tmp/eval-full-v3.log` · `/tmp/eval-p4-baseline-1016-1827.log` · `/tmp/eval-rerun-1016-1953.log`
+      #   ⇒ `rounds=1 tools=['customer_manage'] score=0%` + `unmatched expectation`；
+      #   唯一那次绿（`/tmp/eval-p4-after-1016-1850.log`）是 `rounds=1 tools=[] score=100%`
+      #   ⇒ 真行为 = **「只读查客户 + 出文本」**，而 `direct_reply` 的 runner 语义要求
+      #   **该轮无 tool_calls** ⇒ 它把「有产出且表单被消费」的合格形态判成"表单被静默丢掉"。
+      # ⚠️ 本用例的真值内核（一字未动）=「`__FORM__` 负载注入后**本轮必须有产出**」：
+      #   trace 逐字（`/tmp/eval-rerun-1016-1953.log`）—— `ai=收到您填的信息 ✅ 但先说明一个边界：
+      #   **建单不在我的能力内**…` ⇒ **文本在**（表单确实被消费），红的只是「有只读工具调用」这一形态。
+      #   `order_create` 仍**不在**合格分支里（用户 2026-10-16「能力边界 终版」：创建订单 ❌）。
+      # 出口为什么不选"改 runner 的 direct_reply 语义"（如实登记）：那会**全局**放宽
+      #   「无工具调用」这一条 —— 影响所有用 `direct_reply` 的用例（含 xiaobu 腿），
+      #   属另一包射程；本包只按**本用例观测到的真行为**补等价分支。
+      - tool: direct_reply or interact or customer_manage
     # ── 效果层断言 + 自清理（2026-09-25，issue #3778 第一批）──
     # 本条的写分支（`order_create`）是**可选**的（C 端合格落地形态之一）⇒ 不能用无条件的
     # `must_succeed`：只发文本（`direct_reply`）是合格行为，无条件声明会把合格行为判红。
