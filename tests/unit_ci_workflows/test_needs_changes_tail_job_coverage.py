@@ -25,8 +25,20 @@
 
 | # | 判据 | 取法 | 怎么红 |
 |---|---|---|---|
-| A | **覆盖性**：`label-needs-changes` 与 `clear-needs-changes` 的 `needs:` 必须包含**本 workflow 里承接 required 检查的每一个 job** | 现取 `branches/main/protection` 的 `required_status_checks.contexts` × YAML 解析 `pr-check.yml` 的 `jobs`，按「`name` 命中 required 检查名」判定哪些 job 是 required 门禁 | 从任一 `needs:` 里删掉 `case-trust-gate` ⇒ 当场红并具名 |
-| B | **不静默空跑 + 判别力自证**：required 名单必须非空；两个收尾 job 必须存在；且**注入式**验证判据 A 真的会红 | 同上 + 注入 | ① required 名单读不到/为空 ⇒ 红（不许「没东西可判 ⇒ 绿」）；② 注入式自证 |
+| A | **覆盖性**：`label-needs-changes` 与 `clear-needs-changes` 的 `needs:` 必须包含 `REQUIRED_PR_GATES`（**冻结快照**）里的每一个 job | YAML 解析 `pr-check.yml` 的 `jobs` × 冻结清单 | 从任一 `needs:` 里删掉 `case-trust-gate` ⇒ 当场红并具名 |
+| B | **冻结清单不许腐烂、不许缩短**：清单里每个 job 必须**真实存在**，且其 `if` 仍是「每个 PR 都跑」的形态（**无路径过滤**）——否则「它该进 needs」这个前提本身失效 | 同上 | 把某个 job 改名/给它的 `if` 加路径过滤 ⇒ 红（具名要求同步更新冻结清单）；`declaration_gate_registry.json` 的 members 多一个/少一个 ⇒ 红 |
+| C | **不静默空跑 + 判别力自证**：清单非空；两个收尾 job 必须存在；**注入式**验证判据 A 真的会红 | 同上 + 注入 | 清单为空 ⇒ 红；从 `needs` 删掉 `case-trust-gate` ⇒ 红 |
+
+## ⚠️ 为什么用**冻结清单**而不是现取 `branches/main/protection`（实测踩到才改的）
+
+第一版是 `gh api repos/…/branches/main/protection` **现取** required 名单 —— 本机手动跑（`gh` 已登录）
+**2 passed**，但 **CI 上直接判红**：`ci workflow helper unit tests` 那个 job 只把凭据注入成
+**`GITHUB_TOKEN`**（`gh` 认的是 `GH_TOKEN`），且 `/protection` 需要 **admin**（内置 token 不是 admin）。
+⇒ **判据跑在 CI 里就不能依赖「本机已登录」** —— 这与 `test_automerge_bot_safe_path.py` 挡下的
+「内置 `GITHUB_TOKEN` 不是 admin」是**同一件事**（那条判据禁止把内置凭据直绑 `GH_TOKEN`）。
+⇒ 改为**冻结快照**（本仓元守卫的既有范式：白名单冻结 + 出处 + 只许缩短），零网络、确定性。
+**代价**（照实登记）：它不再自动跟上 branch protection 的变更 —— 但判据 B 会在**被冻结的那个 job
+本身**改名/加路径过滤时判红，从而给出「该同步这份清单了」的可行动信号。
 
 ## 边界（照实登记，§19.1）
 
@@ -50,9 +62,8 @@
 
 from __future__ import annotations
 
-import json
 import pathlib
-import subprocess
+import re
 
 import pytest
 import yaml
@@ -65,131 +76,153 @@ BASE_BRANCH = "main"
 # 只管这两个收尾 job（打/摘 `review/needs-changes`）
 TAIL_JOBS = ("label-needs-changes", "clear-needs-changes")
 
-
-def _required_contexts() -> list[str]:
-    """现取 `main` 的 required status checks。取不到 ⇒ fail-closed 抛异常。"""
-    proc = subprocess.run(
-        ["gh", "api", f"repos/{REPO_SLUG}/branches/{BASE_BRANCH}/protection"],
-        capture_output=True, text=True,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(
-            "取不到分支保护 required 名单（fail-closed，不许当成「没有 required 检查」）："
-            f"gh api rc={proc.returncode} stderr={proc.stderr.strip()[:200]}"
-        )
-    try:
-        payload = json.loads(proc.stdout)
-    except json.JSONDecodeError as e:  # pragma: no cover - 环境异常
-        raise RuntimeError(f"分支保护响应不是合法 JSON：{e}") from e
-    contexts = (payload.get("required_status_checks") or {}).get("contexts") or []
-    if not contexts:
-        raise RuntimeError("required 名单为空（fail-closed）—— 覆盖性判据会因此静默空跑成绿")
-    return [str(c) for c in contexts]
+# ── required 门禁的**冻结快照**（2026-10-16，`origin/main` @6fb4b498）──────────────────────
+# 出处：`gh api repos/zhaokai-mgzn/migao/branches/main/protection` 的
+#       `required_status_checks.contexts`（16 项）∩ 本 workflow 承接的 job。
+# 为什么冻结：见 docstring 末尾那一节（CI 无 `GH_TOKEN` / 内置 token 非 admin ⇒ 现取会判红）。
+# **只许缩短**：新增门禁要**先**把它加进本清单，再加进两个收尾 job 的 `needs:`
+# （判据 B 保证清单里的 job 真实存在且「每个 PR 都跑」）。
+# ⚠️ 本清单的「多一个/少一个都红」**不是**靠这里的下界断言（下界只防清空）——
+# 而是逐项冻结在 `declaration_gate_registry.json` 的 `frozen_declarations` 里
+# （`.github/…` 的那条判据族：**凡只设下界的冻结集合，成员必须逐项登记**，见 #5007②）。
+REQUIRED_PR_GATES = (
+    # 8 个 `if` 恰为 `github.event_name == 'pull_request'`（无路径过滤）的门禁
+    "case-coverage-gate",
+    "case-trust-gate",
+    "case-truth-check",
+    "danger-scan",
+    "gitleaks-scan",
+    "llm-sink-ledger",
+    "qa-growth-gate",
+    "ui-regression-check",
+    # 3 个无路径过滤、每个 PR 都跑的测试腿（名字即 job id）
+    "admin-api-test",
+    "admin-web-test",
+    "ci-workflow-tests",
+)
 
 
 def _pr_check_jobs() -> dict:
+    """解析 `pr-check.yml` 的 jobs。读不到 ⇒ fail-closed 抛异常。"""
     if not PR_CHECK.is_file():
         raise RuntimeError(f"读不到 {PR_CHECK}（fail-closed）")
-    return yaml.safe_load(PR_CHECK.read_text(encoding="utf-8"))["jobs"]
+    doc = yaml.safe_load(PR_CHECK.read_text(encoding="utf-8"))
+    jobs = doc.get("jobs")
+    if not isinstance(jobs, dict) or not jobs:
+        raise RuntimeError("pr-check.yml 里没有 jobs（fail-closed，不许当成「无需覆盖」）")
+    return jobs
 
 
-def coverage_problems(required: list[str], jobs: dict) -> list[str]:
-    """→ 问题清单（空 = 覆盖完整）。同时把「本 workflow 无承接 job」的 required 项计数登记。"""
+def has_path_filter(job: dict) -> bool:
+    """该 job 的 `if:` 是否带路径过滤（`paths` / `changed` 之类）⇒ 不是每个 PR 都跑。"""
+    cond = str(job.get("if") or "")
+    return bool(re.search(r"paths|changed|dorny|filter", cond, re.I))
+
+
+def coverage_problems(required: tuple[str, ...], jobs: dict) -> list[str]:
+    """→ 问题清单（空 = 覆盖完整）。
+
+    双向具名：`label` 侧缺 ⇒ 「红时打不上标签」；`clear` 侧缺 ⇒ 「红时仍会被摘掉标签」。
+    """
     problems: list[str] = []
-    required_set = set(required)
-    # 本 workflow 里「承接某个 required 检查」的 job
-    required_jobs: dict[str, str] = {}
-    for jid, job in sorted(jobs.items()):
-        if not isinstance(job, dict):
-            continue
-        name = job.get("name") or jid
-        if name in required_set:
-            required_jobs[jid] = name
-        elif jid in required_set:
-            required_jobs[jid] = jid
-
     for tail in TAIL_JOBS:
         if tail not in jobs:
             problems.append(f"pr-check.yml 里找不到收尾 job `{tail}`（判据的前提被破坏）")
             continue
         needs = jobs[tail].get("needs") or []
         needs = [needs] if isinstance(needs, str) else [str(n) for n in needs]
-        for jid, name in sorted(required_jobs.items()):
+        for jid in required:
             if jid not in needs:
+                consequence = "打不上" if tail.startswith("label") else "仍会被摘掉"
                 problems.append(
-                    f"`{tail}` 的 needs 缺 required 门禁 `{jid}`（name: {name}）"
-                    f" ⇒ 它红时{'打不上' if tail.startswith('label') else '仍会被摘掉'}标签"
+                    f"`{tail}` 的 needs 缺 required 门禁 `{jid}` ⇒ 它红时{consequence}标签"
                 )
     return problems
 
 
-def uncovered_required_in_other_workflows(required: list[str], jobs: dict) -> list[str]:
-    """本 workflow 里**没有**承接 job 的 required 检查（跨 workflow 面，登记而不判红）。"""
-    found = set()
-    for jid, job in jobs.items():
-        if isinstance(job, dict):
-            found.add(job.get("name") or jid)
-        found.add(jid)
-    return sorted(set(required) - found)
+def snapshot_problems(required: tuple[str, ...], jobs: dict) -> list[str]:
+    """冻结清单自身的健康度：每个 job 必须真实存在，且仍是「每个 PR 都跑」的形态。"""
+    problems: list[str] = []
+    for jid in required:
+        job = jobs.get(jid)
+        if not isinstance(job, dict):
+            problems.append(
+                f"冻结清单里的 `{jid}` 在 pr-check.yml 里**不存在**（改名了？删了？）"
+                " ⇒ 请同步 `REQUIRED_PR_GATES` 与两个收尾 job 的 `needs:`"
+            )
+            continue
+        if has_path_filter(job):
+            problems.append(
+                f"冻结清单里的 `{jid}` 的 `if:` 带了路径过滤（{job.get('if')!r}）"
+                " ⇒ 它不再「每个 PR 都跑」，把它列进 `needs:` 的前提已失效，请重新裁定"
+            )
+    return problems
 
 
 # ────────────────────────────── 判据 A ──────────────────────────────
 
 def test_tail_jobs_cover_every_required_gate():
-    """判据 A：两个收尾 job 的 `needs:` 必须覆盖本 workflow 里的全部 required 门禁。"""
-    required = _required_contexts()
+    """判据 A：两个收尾 job 的 `needs:` 必须覆盖 `REQUIRED_PR_GATES` 全量。"""
     jobs = _pr_check_jobs()
-    problems = coverage_problems(required, jobs)
-    covered = len(required) - len(uncovered_required_in_other_workflows(required, jobs))
+    problems = coverage_problems(REQUIRED_PR_GATES, jobs)
     assert problems == [], (
         "「该挂的标签挂不住 / 该摘的摘不掉」——收尾 job 的 `needs:` 少了 required 门禁"
         "（issue #7022，与同单的 `grep -c` 是两条独立成因）：\n"
         + "\n".join(f"  {p}" for p in problems)
-        + f"\n\n（required={len(required)} 项，其中 {covered} 项由本 workflow 承接；"
-        "跨 workflow 的那几项不在本判据射程）"
     )
+
+
+# ────────────────────────────── 判据 B ──────────────────────────────
+
+def test_frozen_snapshot_is_not_rotten_and_only_shrinks():
+    """判据 B：冻结清单不许腐烂（job 必须真实存在、仍是每个 PR 都跑），也不许变宽。"""
+    jobs = _pr_check_jobs()
+    assert REQUIRED_PR_GATES, "冻结清单为空 ⇒ 判据 A 会静默空跑成绿"
+    assert len(set(REQUIRED_PR_GATES)) == len(REQUIRED_PR_GATES), "冻结清单有重复项"
+    problems = snapshot_problems(REQUIRED_PR_GATES, jobs)
+    assert problems == [], "冻结清单已腐烂：\n" + "\n".join(f"  {p}" for p in problems)
 
 
 # ─────────────────────── 反空跑 + 判别力自证 ───────────────────────
 
 def test_guard_is_not_vacuous_and_has_teeth():
-    """③ 反空跑 + 注入式自证：语料下限、fail-closed、以及「注入即红」。"""
-    required = _required_contexts()
+    """判据 C：语料下限 + 注入式自证（删掉一个 required 门禁 ⇒ 必须报出）。"""
     jobs = _pr_check_jobs()
 
     # 语料下限
-    assert len(required) >= 10, f"required 检查过少（{len(required)}）—— 读数面被收窄了？"
+    # 下界（只防清空）；**逐项冻结**在 declaration_gate_registry.json 的 frozen_declarations
+    # ⇒ 多一个/少一个都红（#5007② 的既有范式）。
+    assert len(REQUIRED_PR_GATES) >= 11, (
+        f"冻结清单被削到 {len(REQUIRED_PR_GATES)} < 11 —— 覆盖性判据会变弱"
+    )
     for tail in TAIL_JOBS:
         assert tail in jobs, f"缺收尾 job `{tail}`"
-
-    # 应在场：4 个曾经缺失的门禁，现在必须都在两个 needs 里
-    required_jobs = {
-        jid for jid, job in jobs.items()
-        if isinstance(job, dict) and (job.get("name") or jid) in set(required)
-    }
     for tail in TAIL_JOBS:
         needs = jobs[tail].get("needs") or []
-        assert required_jobs <= set(needs), f"`{tail}` 的 needs 未覆盖 {sorted(required_jobs - set(needs))}"
+        missing = [g for g in REQUIRED_PR_GATES if g not in needs]
+        assert not missing, f"`{tail}` 的 needs 未覆盖 {missing}"
 
     # ── 注入式自证：从 needs 里删掉一个 required 门禁 ⇒ coverage_problems 必须报出 ──
-    probe = {k: dict(v) if isinstance(v, dict) else v for k, v in jobs.items()}
     victim = "case-trust-gate"
+    probe = {k: dict(v) if isinstance(v, dict) else v for k, v in jobs.items()}
     assert victim in (jobs["clear-needs-changes"].get("needs") or []), "自证前提：victim 原本在 needs 里"
     probe["clear-needs-changes"] = dict(probe["clear-needs-changes"])
     probe["clear-needs-changes"]["needs"] = [
         n for n in probe["clear-needs-changes"]["needs"] if n != victim
     ]
-    injected = coverage_problems(required, probe)
-    assert any(victim in p for p in injected), (
+    injected = coverage_problems(REQUIRED_PR_GATES, probe)
+    assert any(victim in msg for msg in injected), (
         f"注入式自证失败：从 `clear-needs-changes` 的 needs 里删掉 `{victim}` 后判据没报出来 ⇒ 判据没有牙"
     )
 
-    # ── fail-closed 自证：gh 取不到 ⇒ 必须抛，不许返回空名单 ──
+    # ── 判别力自证之二：清单腐烂（job 不存在）也必须被捉到 ──
+    rotten = snapshot_problems(("no-such-gate-xyz",), jobs)
+    assert rotten and "no-such-gate-xyz" in rotten[0], "冻结清单腐烂时判据 B 没报出来 ⇒ 它不是活判据"
+
+def test_missing_workflow_is_fail_closed(monkeypatch, tmp_path):
+    """读不到 `pr-check.yml` ⇒ 必须**抛**，不许返回空 jobs（否则「没东西可判」被读成绿）。"""
+    monkeypatch.setattr(
+        pathlib.Path, "is_file", lambda self: False if self == PR_CHECK else pathlib.Path.is_file(self)
+    )
     with pytest.raises(RuntimeError, match="fail-closed"):
-        wrong = subprocess.run(
-            ["gh", "api", f"repos/{REPO_SLUG}/branches/no-such-branch-xyz/protection"],
-            capture_output=True, text=True,
-        )
-        if wrong.returncode != 0:
-            raise RuntimeError("fail-closed：取不到分支保护")
-        raise AssertionError("预期 gh 取不到不存在的分支保护")
+        _pr_check_jobs()

@@ -4197,7 +4197,7 @@ cases:
       - red-proof
       - empty-green
     truths_ref: []
-    precondition: "前置 = 两样都**可判定**：① **外部读数** `repos/zhaokai-mgzn/migao/branches/main/protection` 的 `required_status_checks.contexts`（需 `gh` 可用且已登录；取不到 ⇒ 判据 **fail-closed 抛异常**，不许当成「没有 required 检查」）；② 被测面 `.github/workflows/pr-check.yml` 的 `jobs`（YAML 解析）。**前置不成立时不许读成通过**：required 名单为空 / 两个收尾 job 不存在 / 语料下限（required ≥10）不满足 ⇒ 由 `test_guard_is_not_vacuous_and_has_teeth` 判红。"
+    precondition: "前置 = 两样都**可判定**：① **外部读数** `repos/zhaokai-mgzn/migao/branches/main/protection` 的 `required_status_checks.contexts`（需 `gh` 可用且已登录；取不到 ⇒ 判据 **fail-closed 抛异常**，不许当成「没有 required 检查」）；② 被测面 `.github/workflows/pr-check.yml` 的 `jobs`（YAML 解析）。**前置不成立时不许读成通过**：读不到 workflow ⇒ `_pr_check_jobs()` **抛异常**（实测有 `test_missing_workflow_is_fail_closed` 把守）；冻结清单为空 / 两个收尾 job 不存在 / 语料下限（≥10）不满足 ⇒ 判据 B/C 判红。**闸门取值口径 = 冻结快照**（`REQUIRED_PR_GATES`，11 个成员逐项冻结在 `tests/unit_ci_workflows/declaration_gate_registry.json` 的 `frozen_declarations`）：**刻意不现取** `branches/main/protection` —— 第一版那么写在本机 2 passed、**CI 上直接红**（该 job 只注入 `GITHUB_TOKEN`，而 `gh` 认 `GH_TOKEN`、且 `/protection` 需 admin），与 `test_automerge_bot_safe_path.py` 挡下的「内置 `GITHUB_TOKEN` 不是 admin」是同一件事。"
     user_inputs:
       - "这个 job 明明每次都绿，为什么那个标签还是挂在那里？"
       - "标签的「打」和「摘」是不是看同一组门禁？漏了几个会怎样？"
