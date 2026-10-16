@@ -1,4 +1,4 @@
-# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017, CU-008, CU-001, CU-002
+# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017, CU-008, CU-001, CU-002, ST-002, ST-001, HR-009
 """规则匹配器单元测试（app/router/rule_matcher.py）
 
 覆盖：_extract_text / RuleMatcher.match 关键词优先级 / 正则规则 / 未命中。
@@ -480,3 +480,147 @@ class TestCustomerProductBrowsePhrasing:
     def test_order_instruction_with_product_noun_not_browse(self):
         """反向：下单指令含商品名词但无浏览句式 → 必须走 ORDER_CREATE（不是商品咨询）。"""
         assert self._intent("帮我下单，遮光窗帘 3 米，要打孔加工") == IntentType.ORDER_CREATE
+
+
+class TestSettingsRouting:
+    """设置类查询的 L1 确定性路由（ST-002 实测红）。
+
+    病灶：`SYSTEM_SETTINGS` / `AI_CONFIG` 两个意图**都在** `IntentType` 且都映射到 `settings_manage`，
+    但 `KEYWORD_MAP` 里**没有它们的 L1 关键词** ⇒ 设置类查询一律降级 L2 分类器。
+    实测后果（本次真实 LLM 评测，persona=mibao）：`ST-001`「查看系统设置」蒙对；
+    `ST-002`「AI客服配置是什么」被判成 `capabilities` ⇒ agent 回自我介绍（`rounds=1 tools=[]`），
+    `settings_manage(action=get_ai_config)` **不可达** ⇒ 该用例确定性红（日志标 `🔬复现型回归`）。
+    """
+
+    def _intent(self, msg):
+        r = RuleMatcher().match(msg)
+        return r.intent if r else None
+
+    def test_ai_config_phrase(self):
+        """ST-002 输入原文：必须落 AI_CONFIG（→ settings_manage），即"查询类必须支持"。"""
+        assert self._intent("AI客服配置是什么") == IntentType.AI_CONFIG
+
+    def test_system_settings_phrase(self):
+        """ST-001 输入原文（回归保护）：系统设置 → SYSTEM_SETTINGS。"""
+        assert self._intent("查看系统设置") == IntentType.SYSTEM_SETTINGS
+
+    def test_not_capabilities(self):
+        """反向：同一句话**不得**被判成 capabilities —— 那正是本次实测的错误落点。"""
+        assert self._intent("AI客服配置是什么") != IntentType.CAPABILITIES
+
+    def test_compound_not_hijacked(self):
+        """负控（CU-008 家族）：含「物流设置」的复合句不得被设置域抢走（那是客户域/物流域的事）。"""
+        msg = "帮我看看客户张三的常用物流设置是什么"
+        assert self._intent(msg) not in (IntentType.SYSTEM_SETTINGS, IntentType.AI_CONFIG)
+
+
+class TestEveryIntentHasL1OrRegisteredExemption:
+    """类级元守卫（铁律 8：修一个缺陷只修这一处 = 没修）。
+
+    判据：**每个 `IntentType` 要么在 `KEYWORD_MAP` 里有 L1 关键词，要么在 `L2_ONLY_EXEMPT` 里
+    且写明"为什么它可以只走 L2"**。未登记即红。
+    形态来源（ST-002 实测）：意图**存在**、工具映射**也在**，唯独**没有 L1 关键词** ⇒ 查询只能降级 L2
+    ⇒ 一次判错就整句走 `direct_reply`、工具**不可达**。这类"沉默的不可达"没有任何东西会报。
+    豁免表**只许缩短**：新增豁免必须在同一条里写清理由（`L2_ONLY_EXEMPT` 的值就是理由）。
+    """
+
+    # 显式豁免：允许只走 L2 的意图（每条都带理由）。**只许缩短**。
+    # 口径：本仓的路由设计是「**L2 分类器为主 + L1 规则为已知误路由打的补丁**」⇒ "没有 L1 关键词"
+    # 本身不等于缺陷；本表的作用是让这个集合**可见、被有意持有**，并逼新增意图/新发现的误路由
+    # 走一次显式登记（要么补 L1 + 红证 = ST-002 的修法，要么在这里写清为什么可以只走 L2）。
+    L2_ONLY_EXEMPT: dict[IntentType, str] = {
+        # 兜底意图本身就是 L2 的落点，不该有 L1 关键词
+        IntentType.GENERAL: "L2 兜底落点本身",
+        # ── 以下各条的"已立证"口径（2026-10-16，证据与复算命令见 issue #7038 的评论）──
+        #   「已立证无用例面」= 全库用例里**没有**任何一条的 expectations/must_succeed 落到该意图的工具；
+        #   「已立证」= 它在评测用例里有覆盖，且其覆盖用例在 2026-10-16 那次基线里**全部通过**
+        #     （唯一落在这些覆盖里且失败的是 `HR-005`，其红因是 **action 过度指定**，与 L2 路由无关）。
+        #   ⚠️ 「已立证」不等于"任何措辞都不会失败"——它只说明**已有的用例面**没暴露该意图的 L2 路由问题。
+        IntentType.CUSTOMER_MANAGE: "L2 主路径；无已立证的确定性误路由（出现即按 ST-002 模式补 L1 + 红证）· **已立证**（覆盖 10 条用例全过）",
+        IntentType.CUSTOMER_QUERY: "同上（客户域查询；CU-008 的复合句劫持由「客户域前置改判」承担）· **已立证**（覆盖 10 条用例全过）",
+        IntentType.CATEGORY_MANAGE: "同上（分类树读取；无已立证的确定性误路由）· **已立证**（覆盖 2 条用例全过）",
+        IntentType.PERMISSION_MANAGE: "同上（角色权限）· **已立证**（覆盖 3 条用例；唯一红条 `HR-005` 的红因是 action 过度指定 ≠ L2 路由）",
+        IntentType.DATA_REPORT: "同上（报表/分析；与 STATISTICS/DASHBOARD 的边界由 L2 判）· **已立证**（覆盖 5 条用例全过）",
+        IntentType.KNOWLEDGE_MANAGE: "同上（知识库管理；C 端 KNOWLEDGE_FAQ 另有 L1）· **已立证无用例面**（全库 0 条覆盖）",
+        IntentType.SCHEDULED_TASK_MANAGE: "同上（定时任务）· **已立证无用例面**（全库 0 条覆盖）",
+        IntentType.AFTER_SALES_CREATE: "同上（售后工单**创建**；B 端按裁定不支持创建单据 ⇒ 主要面在 C 端）· **已立证**（覆盖 8 条用例全过）",
+        IntentType.PROCESSING_ORDER_GENERATE: "同上（加工单**生成**；同上，B 端不支持创建单据）· **已立证无用例面**（全库 0 条覆盖）",
+        IntentType.PROCESSING_ORDER_QUERY: "同上（加工单查询；「加工单」关键词已在 ORDER_QUERY 上）· **已立证**（覆盖 4 条用例全过）",
+        IntentType.PROCESSING_ORDER_UPDATE: "同上（加工单变更）· **已立证无用例面**（全库 0 条覆盖）",
+    }
+
+    # ⚠️ 口径（issue #7038 立证时**实测**取到，勿凭印象改）：
+    #   · `KEYWORD_MAP` 键数 = 22；`REGEX_RULES` **只产出 3 个意图** —— `order_query`/`product_inquiry`/`quote`。
+    #   · 因此「声明式规则层可达」= 这 25 项；下表里那些**不在这 25 项内**的意图，就是"只靠 L2 或靠
+    #     `match()` 内的命令式特判"的那一批（例如 `customer_query` 由 `match()` 的「客户域前置改判」可达，
+    #     不由本表的声明式两层可达 —— 见它自己那条理由）。
+    #   · 本表**不是**"这些意图只走 L2"的同义语，而是"它们没有声明式 L1 关键词，被有意持有"。
+    @staticmethod
+    def _rule_reachable() -> set:
+        """**声明式**规则层可达的意图 = `KEYWORD_MAP` 的键 ∪ `REGEX_RULES` 能产出的意图。
+
+        注意它只是可达性的**下界**：`RuleMatcher.match()` 里还有命令式特判（长短语优先、
+        客户域前置改判、算料 re-route 等），那些不在这两层里 ⇒ 本判据不声称"不在集合内 ⇒ 不可达"。
+        """
+        from app.router.rule_matcher import KEYWORD_MAP, REGEX_RULES
+
+        return set(KEYWORD_MAP) | {intent for _, intent in REGEX_RULES}
+
+    @staticmethod
+    def _unreachable(intents, reachable, exempt):
+        return [(i.value if hasattr(i, "value") else str(i))
+                for i in intents if i not in reachable and i not in exempt]
+
+    def test_no_unregistered_l2_only_intent(self):
+        missing = self._unreachable(list(IntentType), self._rule_reachable(), self.L2_ONLY_EXEMPT)
+        assert missing == [], (
+            f"这些意图在**声明式规则层（KEYWORD_MAP ∪ REGEX_RULES）**不产出、也没登记豁免：{missing}\n"
+            "首选：给它们补 L1 关键词（ST-002 的修法）；次选：加进 L2_ONLY_EXEMPT 并写清理由。"
+        )
+
+    def test_exempt_table_has_no_rule_reachable_intent(self):
+        """豁免表必须**最小**：声明式规则层已可达的意图**不许**躺在豁免表里（「只许缩短」的机器化）。
+
+        落地时本判据**是绿的**（表里没有声明式可达项）—— 它的价值是拦住**将来**把已可达意图塞进表里
+        （那会让"豁免"变成垃圾桶，并掩盖真正的缺词）。这条**不会**因为 `match()` 的命令式特判而误报。
+        """
+        overlap = sorted(i.value for i in self.L2_ONLY_EXEMPT if i in self._rule_reachable())
+        assert overlap == [], (
+            f"豁免表里有**声明式规则层已可达**的意图：{overlap}\n"
+            "⇒ 它们不需要豁免，请从 L2_ONLY_EXEMPT 里删掉（豁免表只许缩短）。"
+        )
+
+    def test_guard_has_teeth(self):
+        """判别力自证：把 ST-002 的修复**摘掉**（= 意图存在但声明式两层都不产出）⇒ 守卫必须具名报出它。"""
+        stripped = {i for i in self._rule_reachable() if i != IntentType.AI_CONFIG}
+        missing = self._unreachable(list(IntentType), stripped, self.L2_ONLY_EXEMPT)
+        assert "ai_config" in missing, "摘掉 AI_CONFIG 的关键词后守卫没有报 ⇒ 守卫退化成空断言"
+
+
+class TestStaffAccountRouting:
+    """HR-009：「帮我开个客服账号…」在 L1 一个词都不命中。
+
+    词表里有「开个账号 / 开通账号 / 员工账号」，但输入是「开个**客服**账号」—— **子串不含「开个账号」**
+    ⇒ 该句落 L2 兜底。本次真实 LLM 评测（`persona=mibao`）该用例确定性红：实况 agent 调了
+    `employee_manage` + `role_manage`×3 + `nav_guide`，而用例期望写的是 `direct_reply`。
+    按 2026-10-16 边界裁定（#5247 评论）：「**开客服账号**」= 创建**非单据对象** ⇒ **必须支持** ⇒
+    正确意图 = `STAFF_MANAGE`（映射 `["employee_manage", "role_manage"]` —— **正是实测调用的那两个工具**）。
+    ⇒ 本组判据把"L2 蒙对"变成"L1 确定"，也让 #7035 第二相重锚该用例期望时**有确定的目标意图**。
+    """
+
+    def _intent(self, msg):
+        r = RuleMatcher().match(msg)
+        return r.intent if r else None
+
+    def test_staff_account_phrase(self):
+        """HR-009 输入原文：必须落 STAFF_MANAGE（= 真去开账号，而不是回一句"我不能"）。"""
+        msg = "帮我开个客服账号，姓名李四，手机号 13800009999，密码 Test123456"
+        assert self._intent(msg) == IntentType.STAFF_MANAGE
+
+    def test_short_form(self):
+        """去掉姓名/手机号等修饰后仍必须命中（防"只有长句才过"）。"""
+        assert self._intent("帮我开个客服账号") == IntentType.STAFF_MANAGE
+
+    def test_negative_control_session(self):
+        """负控：「客服会话」不得被账号域抢走（会话管理另有意图，SE-001 家族）。"""
+        assert self._intent("看看当前有哪些客服会话") == IntentType.SESSION_MANAGE
