@@ -7,6 +7,11 @@
  * jsdom 不解析媒体查询 ⇒ 只有真实渲染 + emulateMedia({ media: 'print' }) 能验证。
  *
  * fixture 模式（E2E_MOCK_AUTH）：认证与订单接口全部 mock，不依赖后端与真实数据。
+ *
+ * 🔴 issue #6983：发货提交的 mock 拦的是**原子端点** `POST /api/admin/production/orders/{id}/ship`
+ * （改前拦 `PUT /orders/{id}/logistics` 两步老路 —— 那条路不建发货单、非原子、无幂等键）。
+ * 本 spec 的提交用例同时钉 payload（发货人 / 运单号 / 发货方式 / 物流类型）与
+ * 请求头 `X-Client-Request-Id`（幂等键）。
  */
 import { test, expect } from '../../fixtures'
 
@@ -43,27 +48,52 @@ const baseOrder = {
   processingItems: [],
 }
 
-/** 订单详情 GET + 物流 PUT 的 mock（按方法分流，避免把发货提交也吃掉） */
+/** 订单详情 GET + **原子发货端点** POST 的 mock（按方法分流，避免把发货提交也吃掉） */
 async function mockOrderApi(page: any, order: Record<string, unknown>) {
   let current = { ...order }
   const submitted: any[] = []
 
-  await page.route('**/api/admin/orders/**', async (route: any) => {
+  /**
+   * 🔴 发货提交的**唯一入口** = 原子端点 `POST /api/admin/production/orders/{id}/ship`（issue #6983）。
+   *
+   * 改前这里拦的是 `PUT /api/admin/orders/{id}/logistics`（两步老路之一）—— 那条路**不建发货单**
+   * （`order_shipments` 长期 0 行）、**非原子**，且不带幂等键。发货页收敛到原子端点后，拦旧端点
+   * 就再也捕获不到提交（`submitted.length === 0`）；本 mock 随实现一起搬到新端点，
+   * 并留下**载荷 + 请求头**两份读数。
+   */
+  await page.route('**/api/admin/production/orders/**', async (route: any) => {
     const req = route.request()
-    const url = req.url()
-    if (req.method() === 'PUT' && url.includes('/logistics')) {
-      submitted.push(req.postDataJSON())
+    if (req.method() === 'POST' && req.url().includes('/ship')) {
+      submitted.push({ payload: req.postDataJSON(), headers: req.headers() })
       current = {
         ...current,
         status: 'shipped',
         logistics: { logisticsCompany: '顺丰速运', trackingNo: 'SF20260915001', shipperName: '王五' },
       }
+      // 端点信封（服务端 `ProductionController.ship`）：单事务里记物流 + 流转 shipped + 建发货单
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: null }),
+        body: JSON.stringify({
+          success: true,
+          data: {
+            order_id: ORDER_ID,
+            status: 'shipped',
+            shipment_no: 'SH20260915001',
+            shipment_source: 'admin',
+          },
+        }),
       })
     }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: null }),
+    })
+  })
+
+  await page.route('**/api/admin/orders/**', async (route: any) => {
+    const req = route.request()
     if (req.method() === 'PUT') {
       return route.fulfill({
         status: 200,
@@ -180,7 +210,7 @@ test.describe('发货单 — 真实浏览器打印旅程（UI-040）', () => {
     await page.screenshot({ path: '/tmp/ui040-shipment-doc-reprint.png', fullPage: true })
   })
 
-  test('发货提交：发货人随 payload 下发（改过的值优先）', async ({ page }) => {
+  test('发货提交：走原子端点，发货人/运单号/发货方式随 payload 下发，且带幂等键', async ({ page }) => {
     const { submitted } = await mockOrderApi(page, baseOrder)
 
     await page.goto(`/orders/${ORDER_ID}/ship`)
@@ -190,10 +220,23 @@ test.describe('发货单 — 真实浏览器打印旅程（UI-040）', () => {
     await page.getByPlaceholder('请输入快递单号').fill('SF20260915001')
     await page.getByRole('button', { name: /确认发货/ }).click()
 
+    // 🔴 判别力不许丢：**必须真的发生了一次提交**（空跑 ⇒ 红）。
+    // 提交被拦到的前提是页面调的是**原子端点**（issue #6983）—— 页面若退回两步老路的
+    // `PUT /orders/{id}/logistics`，本 mock 捕不到 ⇒ 这条在 5s 内超时判红。
     await expect
-      .poll(() => submitted.length, { message: '应发生一次物流提交' })
+      .poll(() => submitted.length, { message: '应发生一次发货提交（原子端点 POST …/ship）' })
       .toBeGreaterThan(0)
-    expect(submitted[0].shipperName).toBe('王五')
-    expect(submitted[0].trackingNo).toBe('SF20260915001')
+
+    const { payload, headers } = submitted[0]
+    // 改过的值优先（发货人随 payload 下发）
+    expect(payload.shipperName).toBe('王五')
+    expect(payload.trackingNo).toBe('SF20260915001')
+    // 发货方式 / 物流类型（issue #6239 / #6983）：页面上采集的选择必须真的下发，
+    // 不许在客户端被静默丢掉（改前原子端点根本没有这两个字段的落点）
+    expect(payload.shippingMethod).toBe('logistics')
+    expect(payload.logisticsType).toBe('express')
+    // 🔴 幂等键（issue #6935 / #6983）：发货提交必须带 —— 服务端同键回放首次结果，
+    // 客户端超时重试不会把这一单发两次货（请求头名与服务端 `ClientRequestIdService.HEADER` 逐字一致）
+    expect(headers['x-client-request-id']).toBeTruthy()
   })
 })
