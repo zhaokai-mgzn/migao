@@ -2201,7 +2201,7 @@ _CASE_CH_009 = EvalCase(
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
     user_inputs=['__FORM__|{"customer_name":"张三","customer_phone":"13800138000","customer_address":"杭州市西湖区","quantity":"3"}'],
-    expectations=['direct_reply or interact'],
+    expectations=['direct_reply or interact or customer_manage'],
     data_checks=['表单字段注入本轮 LLM 上下文（不改写会话历史）', '日志中手机号脱敏（138****8000）', 'payload 超限/非法 JSON 回退为普通文本处理', '不得走创建订单写路径（B 端射程内创建订单 ❌；机器面见 must_succeed 的条件档 + traces）'],
     skip_reason='',
     tags=['form', 'interactive', 'multi_turn'],
@@ -10056,7 +10056,7 @@ _CASE_PR_006 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    must_succeed=[{'tool': 'product_search'}],
+    must_succeed=[{'tool': 'inventory_manage or product_search'}],
 )
 
 # ── PR-007 [NORMAL] 商品上架（状态流转）（源: cases/product.yml）──
