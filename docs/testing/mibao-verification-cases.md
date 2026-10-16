@@ -3418,7 +3418,7 @@
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的四组冒烟，**未新增 / 未放宽**。 ｜ tags: knowledge, smoke, live-stack
 
-## 杂项域（106 case）
+## 杂项域（107 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -4322,7 +4322,7 @@
 跳过: [backend-contract] 静态结构守卫（只读仓内文本 + 内存注入；零网络、零时钟、不跑被引用的测试）由 pytest 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
-溯源: 2026-10-02 新增（issue #5983 铁律 8 的类级固化）：修四页（orders / products / inbound-orders / finance 的写按钮按写码显隐）只是**实例面**；本条把「列表页写按钮漏接权限」钉成未登记即红 —— 扫描 `frontend/admin-web/src/app/(dashboard)/**/page.tsx`（排除 `…/new/page.tsx`，那是建单页本身）里「整行 = 新增/新建/**登记**标签」的写按钮，必须同文件引用 `hasPermission(...)` 或登记进 tests/unit_ci_workflows/list_page_write_button_ledger.json（台账只许缩短、冻结上限与条数**现取**）。词汇表含「登记」的原因见 ui.yml 的 UI-081：`/finance` 的按钮叫「登记收支」，只认「新增/新建」会把它漏在射程外（正是本判据要防的「看着覆盖了、其实没覆盖」）。存量豁免 5 条 = after-sales / knowledge / production·processing / production·routings / roles（同类缺口，不在本 PR 范围，如实登记待办）。取号 MC-063（**让号**：#6001 已合入并占用 MC-062 ⇒ 按「后合入者让号」顺延）：按「当前最大号 +1」（现取 main 最大 = MC-061；沿用 MC-054~061 的「空档号 ≠ 可用号」先例，故不采用取号工具给出的历史空档 MC-049）。⚠️ 与任何并行改 `.github/cases/misc.yml` 的包 ⇒ 谁后合并谁 `./scripts/sync-main.sh --rebase` 并**重渲染**生成物。 ｜ tags: ci, guard, rbac, frontend
+溯源: 2026-10-02 新增（issue #5983 铁律 8 的类级固化）：修四页（orders / products / inbound-orders / finance 的写按钮按写码显隐）只是**实例面**；本条把「列表页写按钮漏接权限」钉成未登记即红 —— 扫描 `frontend/admin-web/src/app/(dashboard)/**/page.tsx`（排除 `…/new/page.tsx`，那是建单页本身）里「整行 = 新增/新建/**登记**标签」的写按钮，必须同文件引用 `hasPermission(...)` 或登记进 tests/unit_ci_workflows/list_page_write_button_ledger.json（台账只许缩短、冻结上限与条数**现取**）。词汇表含「登记」的原因见 ui.yml 的 UI-081：`/finance` 的按钮叫「登记收支」，只认「新增/新建」会把它漏在射程外（正是本判据要防的「看着覆盖了、其实没覆盖」）。存量豁免 5 条 = after-sales / knowledge / production·processing / production·routings / roles（同类缺口，不在本 PR 范围，如实登记待办）。取号 MC-063（**让号**：#6001 已合入并占用 MC-062 ⇒ 按「后合入者让号」顺延）：按「当前最大号 +1」（现取 main 最大 = MC-061；沿用 MC-054~061 的「空档号 ≠ 可用号」先例，故不采用取号工具给出的历史空档 MC-049）。⚠️ 与任何并行改 `.github/cases/misc.yml` 的包 ⇒ 谁后合并谁 `./scripts/sync-main.sh --rebase` 并**重渲染**生成物。 ｜ tags: ci, guard, rbac, ui
 
 ### MC-065. 导航类指引真值源（issue #5989 · P1）：登记表逐节点镜像 config/menu.ts + 权限码逐值真 + 未登记默认拒绝 + 只按服务端会话权限裁剪 + citation 可溯 + 结构上不含 steps（禁编步骤） 🔵
 ```
@@ -5012,6 +5012,26 @@
 跳过: [backend-contract] 零 LLM 的确定性读数（进程内 HTTP 桩驱动真脚本 + 读 workflow/deploy.sh/Dockerfile/Java 源码文本 + `bash -n`），零网络、不碰真实云，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-16 新增（issue #6951；同族 #6746 / #6611 / #6554）。取号 = `python3 scripts/next_case_id.py MC` 现取 **MC-105**（main:001-104；`.github/cases/claims/` 现取最大 MC-103 在飞，MC-128 那条 claim 与本号无冲突）。**修前红（与 issue 原文同形）**：`https://api.migaozn.com/actuator/health` 与 `/actuator/info` 都是 **nginx 404**（`deploy/swas/nginx.conf` 的 `location ~ ^/(actuator|v3/api-docs|swagger-ui)(/|$)` ⇒ `return 404`）⇒ 线上探不到「跑的是哪个 build」；`Build and Deploy admin-api` run `38681309878`（2026-10-15T04:24:40Z，sha `b4e63119`）⇒ `build-and-deploy: success` / `Post-Deploy Smoke Test: **skipped**`（门是 `event_name != 'schedule' || deployed == 'false'`，而 `deployed` 逐字写成 `steps.sync.outputs.skip` ⇒ 名字与含义相反）。**修后绿**：`python3 -m pytest tests/unit_ci_workflows/test_served_version_verify.py -q -p no:randomly` = **20 passed**（含红证投影 + 8 条 fail-closed 参数化 + 4 条结构判据 + 2 条形态守卫）。**红证（注入式，实跑读数）**：① 比较改恒真 ⇒ 1 failed / 19 passed；② 摘掉 worked 断言步 ⇒ 2 failed / 18 passed；③ 摘掉 `ENV MIGAO_BUILD_SHA` ⇒ 1 failed / 19 passed；恢复后 20 passed。**顺带修的两处同族**（链内，同一 PR）：`deployed` 的语义订正（`skip != 'true'`，冒烟条件随之 `== 'true'`，行为等价但读数不再自相矛盾）+ schedule 兜底档新增「本轮未部署 ⇒ 未跑冒烟」的显式声明步（`::notice::` + run summary）。**2026-10-16 追加（issue #6951 真机缺陷，PR 关联 #6951）：该 case 登记为「未做」的第 5 跳已固化。**病灶（主会话真机确证）：构建在**服务器上**，而 `BUILD_SHA`/`BUILT_AT` 只落在 runner 的步骤 env ⇒ `deploy/scripts/swas-deploy-ci.sh` 的 BOOTSTRAP 没把它们送过去（逐字：`export ALLOW_DOWNGRADE…; export BUILD_SERVICE=… BUILD_TIMEOUT_SECS=…;` 里既无 `BUILD_SHA` 也无 `BUILT_AT`）⇒ 远端 `MIGAO_BUILD_SHA` / `MIGAO_BUILT_AT` 恒空、而 `MIGAO_BUILD_TAG` 靠 `${BUILD_TAG:-$TAG}` 回落才有值 —— 与真机读数（`tag` 有值 / `sha`/`builtAt` 空）逐字吻合。修法：workflow 远程调用加第 9/10 个位置参数 `admin-api 「$BUILD_SHA」「$BUILT_AT」`；驱动脚本 `BUILD_SHA=${9:-…}` / `BUILT_AT=${10:-…}`，模板里加 `BUILD_SHA=__BUILD_SHA__ BUILT_AT=__BUILT_AT__` 并在 `render_bootstrap` 显式渲染 + 未渲染即 fail-closed；`BUILD_TAG` **有意不送**（远端 `$TAG` 已同源，免第二条口径）。既有护栏一字未动：`#4852` 的 `ALLOW_DOWNGRADE` 只认显式 1（普通部署恒 0）、BOOTSTRAP 的 `export …;` 前置 + `cp → mv -f → bash deploy.sh` 原子安装形态逐字不变（`tests/unit_ci_workflows/test_swas_deploy_ci_bootstrap.py` 全绿）。**判据 6 升级为「五跳同源」**（`test_build_identity_wiring_is_same_source_across_five_hops`）：`python3 -m pytest tests/unit_ci_workflows/test_served_version_verify.py -q` = **20 passed**（改前 19 passed / 同名旧判据）。**红证（注入式，实跑读数）**：① 从 BOOTSTRAP 的 `export` 串摘掉 `BUILD_SHA=__BUILD_SHA__` ⇒ 判据 6 判红，逐字 `AssertionError: BOOTSTRAP 没有把 BUILD_SHA 送往远端（export …; 串里没有占位符 __BUILD_SHA__）`（1 failed / 19 deselected）；② 同一注入下**只跑执行式探针**（绕开全部文本断言）⇒ 捕获的命令内容里 `BUILD_SHA=<sha>` 缺席（逐字 `BUILD_SHA=6f3aec2b…` → `False`，命令长度 1072 → 1021 字节）；③ 把渲染点改成空转（`out=${out//__BUILD_SHA__/…}` 摘掉）⇒ 判据红在「没有在 render_bootstrap 里被显式渲染」；④ 把 `BUILD_TAG` 也送下去（第二条会漂的口径）⇒ 判据红在 `__BUILD_TAG__` 反向上；复位后 20 passed。**端到端终判（本包的兑现条件，需一次真实部署）**：`bash deploy/scripts/served-version-verify.sh https://api.migaozn.com $(git rev-parse origin/main)` ⇒ **rc=0 + `SERVED_VERSION=match`**。未固化项不变：`deploy-frontend.yml` / `deploy-ai-agent-service.yml` 两条腿仍未接线。 ｜ tags: deploy, ci-cd, version-probe, fail-closed, backend-contract, red-proof
+
+### MC-106. **admin-web 发布腿的判据从「产物存在」换成「线上探到的 sha == 本次部署的 sha」**：构建期把 identity 烘焙进产物（`GET /version.json`，与 admin-api 的 `/api/version` 同族形态）+ 发布后 served-sha 断言（不一致 ⇒ 具名判红退 1、**探不到 ⇒ fail-closed 退 3**、**响应是 HTML（回落）⇒ 判探不到**）+ schedule 兜底档「本轮未部署 ⇒ 没有发生任何交付」显式出声（issue #6611 / #6746） 🔵
+```
+你: 发布腿报 success，线上跑的却还是旧版本 —— 这个「绿」到底证明了什么？
+你: schedule 兜底只跑了 22 秒也报 success：它是真的把新版本交付上去了，还是只是「镜像存在」？
+数据: 🔴 **判据 1·红证（判据自身能因注入错误期望 sha 而红）**：`deploy/scripts/admin-web-version-probe.sh <BASE_URL> <EXPECTED_SHA>` 在「线上读数 = 真 sha / 期望值 = 注入的错误 sha」时必须以 **退 1** 判红，且输出里同时具备三件：**探到什么**（实测 sha）、**期望什么**（期望 sha）、**可复制复算命令**（`curl` + 脚本名）。执行点 = tests/unit_ci_workflows/test_admin_web_served_version.py::test_served_sha_mismatch_is_red_and_names_both_sides
+数据: 🔴 **判据 1 的对照臂（没有它 ⇒ 恒红也能过上面那条）**：同一场景只把期望 sha 换回真的 ⇒ **退 0** + `SERVED_VERSION=match`。执行点 = 同文件::test_served_sha_match_is_green_control_arm
+数据: 🔴 **判据 2·探不到 ⇒ fail-closed（退 3，绝不当绿）**：sha 为空（**老镜像没有构建期注入面** —— 本判据最容易退化成空断言的路径）、sha 是 unknown（**构建身份没过「CI→驱动脚本→服务器」边界**）、**响应是 HTML（回落）**、Content-Type 撒谎成 text/html、body 不是 JSON、HTTP 404、HTTP 503、sha 非 hex、`app` 不是 admin-web、期望 sha 形态不合法、期望 sha < 7 位、端点连不上（端口没人听）十二态各自 ⇒ 退 3 + `SERVED_VERSION=unknown` 且**不得**出现 `match`。执行点 = 同文件::test_unverifiable_is_exit_3_never_green（11 条参数化）/ ::test_unreachable_endpoint_is_exit_3
+数据: 🔴 **判据 3·陷阱二的正面处理（HTTP 200 不是证据）**：`try_files … /index.html` 的回落形态 = **200 + HTML**；探针必须判**探不到（退 3）**，且**具名**点出「HTML / 回落」而不是笼统的「sha 为空」（两者的排查方向与处置完全不同）。执行点 = 同文件::test_probe_reports_html_fallback_and_never_passes_on_status_200_alone
+数据: 🔴 **判据 4·结构判据：发布腿的通过条件不再可能是「镜像/产物存在」**：`deploy-frontend.yml` 必须**真的**调用本仓的身份探针本体（`deploy/scripts/admin-web-version-probe.sh`）、期望值来自本次部署（`EXPECTED_SHA: ${{ github.sha }}`）、退出码**原样透传**（`exit "$rc"`，3 不许被归一化成 0）。执行点 = 同文件::test_deploy_leg_asserts_served_sha_not_artifact_existence
+数据: 🔴 **判据 5·类级形态：断言步的生效条件不得绑在「产物/结论」面上**：served-sha 断言的 `if:` 里不许出现 `steps.sync.outputs.skip`，且必须是 `always()`（跳过档也要探一次 —— 否则「本轮未部署」就没有任何线上读数，那正是 issue #6746 的形态）。执行点 = 同文件::test_served_assertion_never_keys_pass_on_artifact_existence
+数据: 🔴 **判据 6·注入面五跳同源**（少一环 ⇒ 身份面报的就不是这次构建）：`deploy-frontend.yml`（`build_id` 步解算 `git rev-parse HEAD` + 三个 env）→ **远程调用参数面**（`swas-deploy-ci.sh` 第 9/10 位 `"$BUILD_SHA"` / `"$BUILT_AT"`）→ **驱动脚本的 BOOTSTRAP 渲染**（`export …;` 里的 `__BUILD_SHA__` / `__BUILT_AT__` + 显式渲染 + 未渲染即 fail-closed）→ `deploy/swas/deploy.sh`（`BUILD_SHA`/`BUILD_TAG`/`BUILT_AT` → `--build-arg MIGAO_BUILD_*`）→ `frontend/admin-web/Dockerfile`（三个 `ARG` + 构建期写出 `public/version.json`）。`BUILD_TAG` **有意不过参数面**（远端 `TAG` 已是同一个值）⇒ 反向也判红。执行点 = 同文件::test_build_identity_wiring_is_same_source_across_five_hops
+数据: 🔴 **判据 7·schedule 兜底档两态分开**：`deployed` 的语义必须是 `skip != 'true'`（真的部署了才为 true），探测 job 条件随之 `== 'true'`（两处同时翻转 ⇒ 行为等价、读数不再自相矛盾），且 `skip=true` 必须有**显式出声**的声明步（`::notice::` + 逐字「本轮未部署」+ 落 run summary）。同时校验 admin-api 腿仍是同形 ⇒ 防「只改了一条腿、两腿读数口径分裂」。执行点 = 同文件::test_schedule_skip_path_declares_that_nothing_was_delivered
+数据: 🔴 **判据 8·类级：另三条静态落地面腿的身份债必须登记在案**：`worker-h5` / `bmini-h5` / `c-end-h5` 的 `*-verify-served.sh` 用的仍是「线上字节 == 本仓产物」= **跨版本相同**的身份判据（issue #6611 逐条核过：`bmini-h5` 与 `c-end-h5` 只比 `index.html`、`worker-h5` 多比 `app.js` 但按需加载的分块仍不覆盖）—— 本单**只修 admin-web 一条腿**，本判据让「还有三条腿同形」进不了「已解决」的错觉：哪天有人把它们改成有判别力的身份面 ⇒ 判红，逼一次清单/PR body 同步更新。执行点 = 同文件::test_static_landing_legs_identity_debt_is_ledgered
+数据: 🔴 **判据 9·脚本自身的两类静默坏形态**：`bash -n` 必须能解析 + **不许**出现「裸 `$VAR` 紧跟非 ASCII」（bash 会把中文全角字节并进变量名 ⇒ `set -u` 下报 unbound variable，而报错行号与真实坏点相差数行）。执行点 = 同文件::test_shared_script_parses_and_has_no_unquoted_cjk_adjacent_expansion
+数据: **边界（照实登记，不粉饰）**：① 线上**真机复探未做**（需要一次真实部署，本包无部署权；本机 `gh` token **无 `workflow` scope** ⇒ 触发不了真实部署）—— 重启条件 = 本 PR 合并并在 main 上跑过一次 frontend 部署后，执行 `bash deploy/scripts/admin-web-version-probe.sh https://merchant.migaozn.com "$(git rev-parse origin/main)"` 应 **rc=0 + `SERVED_VERSION=match`**；② 判不了「`docker build` 真的把 `public/version.json` 打进了镜像」（需要一次真构建；静态判据只钉住 Dockerfile 里那段 `RUN` 的形态与默认值）；③ 判不了「Next.js 会把该文件按原样发出去」（框架行为，真机复探才看得见）；④ **已接线**：`deploy-frontend.yml` 的 push 部署腿 + schedule 兜底腿（同一条 served-sha 断言步覆盖两条路径）；⑤ 不改任何门禁的通过条件、不新增豁免、**不新增 schedule**（改用例面只借既有 `deploy-frontend.yml` 的既有 cron）。
+前置: 前置 = 三样都在仓里可读：① 探针本体 `deploy/scripts/admin-web-version-probe.sh`；② 发布腿 `.github/workflows/deploy-frontend.yml` 里那条 served-sha 断言步；③ 构建身份的五跳载体（workflow 解算步 / 远程调用实参 / 驱动脚本 BOOTSTRAP 渲染 / `deploy/swas/deploy.sh` 的 `--build-arg` / `frontend/admin-web/Dockerfile` 的 ARG + 构建期写出 `public/version.json`）。**前置不成立时直接红**（每条判据开头都是 `read(<路径>)` 的 `assert path.is_file()` + 锚点断言，取不到就具名报出是哪个对象），**不表现成「agent 不干活」**；两条 `user_inputs` 是对**同一支发布腿**的两个真实疑问（「报绿到底证了什么」/「22 秒的 success 是真交付吗」），不是两次会话。
+跳过: [backend-contract] 零 LLM 的确定性读数（进程内 HTTP 桩驱动真脚本 + 读 workflow/Dockerfile/deploy.sh 源码文本 + `bash -n`），零网络、不碰真实云，不进 agent-eval 冒烟
+```
+溯源: 2026-10-16 新增（issue #6611 + #6746；同族范式 = #6951 的 admin-api 腿）。取号 = `python3 scripts/next_case_id.py MC` 现取 **MC-106**（main:001-105；`.github/cases/claims/` 现取最大 MC-103 在飞）。**修前红（与 issue 原文同形）**：`deploy/scripts/admin-web-version-probe.sh` **不存在**、`deploy-frontend.yml` 里 version/served-version/verify-served/buildId 逐字**零命中** ⇒ 本腿此前**没有任何**版本自证；同族静态腿的 `index.html` 字节哈希**跨版本相同**（实测 `b1f3a2ef2929ec66` 前后一致）；本机现取 `curl -sS -m 12 -o /dev/null -w '%{http_code} %{content_type}' https://merchant.migaozn.com/version.json` ⇒ 逐字 `404 text/html; charset=utf-8`。**修后绿**：`python3 -m pytest tests/unit_ci_workflows/test_admin_web_served_version.py -q -p no:randomly` = **23 passed**（含红证 + 11 条 fail-closed 参数化 + 结构/接线/类级判据 + 两条形态守卫）。**红证（注入式，实跑读数）**：① 注入错误期望 sha ⇒ **exit=1** + `SERVED_VERSION=mismatch`（三件齐备）；② 真一致 ⇒ **exit=0** + `SERVED_VERSION=match`；③ 200 + HTML（回落形态）⇒ **exit=3** + `SERVED_VERSION=unknown` 且具名「响应是 HTML」；④ 身份面自报 sha=unknown ⇒ **exit=3**；⑤ 结构注入（7 条，各为单点变异 + 自动写回原文）：改 BUILD_SHA 值 ⇒ 1 failed/43 passed；摘远程实参 ⇒ 2 failed/42 passed；改 BOOTSTRAP 占位符 / 摘渲染点 / 翻 `deployed` / 把 Dockerfile 默认值改成空串 / 换期望 sha 来源 ⇒ 各 1 failed/43 passed；复位后总检 rc=0/44 passed。**端到端终判（本包的兑现条件，需一次真实部署）**：由集成侧触发 `gh workflow run deploy-frontend.yml --ref main`，再跑 ① 里的复探命令。**第一轮 CI 暴露的 6 处判据面红（同一 PR 内修完，不降门禁）**：① 探针原名落进 `*-verify-served.sh`（**静态落地面腿**的命名空间）⇒ 被两条类级守卫（`.mjs` MIME / module 闭包，均按该 glob **现取**腿集合）判成「静态腿缺判据」⇒ **改名 `deploy/scripts/admin-web-version-probe.sh`**（与 admin-api 腿的 `served-version-verify.sh` 同族）；② 我的「只扫代码行」用了朴素 `#` 截断（本仓明令禁止的假绿形态，守卫 = `tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py`）⇒ 换成**可执行面**判据（回落守卫片段在场）；③ 本用例新增 1 条 `[backend-contract]` ⇒ **重锚** `tests/unit_ci_workflows/case_machine_fail_channel_baseline.json`（158 → 159）；④ claim 文件名双向绑定 ⇒ `7013-MC-106.json`；⑤ 🔴 **既有守卫的空跑形态（链内修的真题）**：`tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py` 的「新增未登记 secrets 引用」变异锚点是**逐字替换那一行独占的 admin-web** —— 该串只在服务键**独占一行**时命中；本 PR 把调用改成 `admin-web $BUILD_SHA $BUILT_AT` 后锚点失配 ⇒ 变异**静默变成空操作**，而测试只报「变异没有被判红」（把「锚点漂移」误报成「判据没牙」）⇒ 修法：锚改成**按行匹配** + **变异没生效即报错**；⑥ 改名时丢了脚本可执行位（形态守卫判红）⇒ 已恢复。 ｜ tags: deploy, ci-cd, version-probe, fail-closed, backend-contract, red-proof
 
 ## 商家入驻域（6 case）
 
@@ -10997,8 +11017,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：757（活跃 134，跳过 623）
-- tier 分布：smoke 12 / normal 698 / adversarial 32
+- 用例总数：758（活跃 134，跳过 624）
+- tier 分布：smoke 12 / normal 699 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -11013,7 +11033,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：8
-- 杂项域：106
+- 杂项域：107
 - 商家入驻域：6
 - 领域本体域：4
 - 订单域：66
@@ -11154,6 +11174,7 @@
 - MC-103: **Post-Merge Verify 的取数面读数探针必须真有牙**：能打出 creds 读数 / 打不出即响亮判红 / driver 显式把凭据交给判据解释器（issue #6968）
 - MC-104: **加工单状态迁移写路径必须落到 SQL 谓词（CAS）**：未登记即红 / 无谓词写即红 / 台账只许缩短（issue #6955 的类级固化）
 - MC-105: **部署腿的判据从「产物存在」换成「线上探到的 sha == 本次部署的 sha」**：admin-api 加只读版本端点 `GET /api/version`（构建期注入 sha/tag/builtAt，nginx 已放行面，无鉴权）+ 部署后 served-sha 断言（不一致 ⇒ 具名判红、探不到 ⇒ fail-closed 退 3）+ schedule 兜底档「本轮未部署」显式出声（issue #6951 / #6746 / #6611 / #6554）
+- MC-106: **admin-web 发布腿的判据从「产物存在」换成「线上探到的 sha == 本次部署的 sha」**：构建期把 identity 烘焙进产物（`GET /version.json`，与 admin-api 的 `/api/version` 同族形态）+ 发布后 served-sha 断言（不一致 ⇒ 具名判红退 1、**探不到 ⇒ fail-closed 退 3**、**响应是 HTML（回落）⇒ 判探不到**）+ schedule 兜底档「本轮未部署 ⇒ 没有发生任何交付」显式出声（issue #6611 / #6746）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

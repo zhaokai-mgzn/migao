@@ -1,0 +1,6 @@
+{
+  "id": "MC-106",
+  "pr": 7013,
+  "title": "admin-web 发布腿的身份自证：构建期烘焙 identity 到 GET /version.json + 发布后 served-sha 断言（探不到/回落 ⇒ fail-closed）+ schedule 兜底档显式出声（issue #6611 / #6746）",
+  "claimed_at": "2026-10-16"
+}

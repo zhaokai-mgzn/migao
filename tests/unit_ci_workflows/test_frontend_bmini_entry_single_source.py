@@ -191,6 +191,33 @@ def _entry_branches(src: str) -> dict:
     return {"yes": m.group("yes"), "no": m.group("no")} if m else {}
 
 
+
+def _inject_secret_ref(workflow: str) -> str:
+    """在部署调用行**之后**追加一行未登记的 `secrets.<公开地址>` 引用，并**断言变异真生效**。
+
+    🔴 为什么不再用「逐字替换 `            admin-web\n`」那种锚（issue #6611 实测踩到）：
+    该锚**只在服务键独占一行**时命中；`deploy-frontend.yml` 的调用改成
+    `admin-web "$BUILD_SHA" "$BUILT_AT"`（构建身份过参数面）之后，那个逐字串不再存在
+    ⇒ `str.replace` **什么都没做**、变异静默变成空操作 ⇒ 测试报「变异**没有被判红**」，
+    而真实原因是**变异没注入**（两种原因的处置完全不同：改判据 vs 改锚）。
+    ⇒ 两件事一起做：① 锚改成**按行匹配**（`^\s*admin-web(?:\s|$)`，服务键在行首/参数尾都命中）；
+    ② **变异没生效即当场报错**（fail-closed）—— 这正是本仓「空捕获/空跑判绿 = 假绿」的同族纪律。
+    """
+    lines = workflow.split("\n")
+    for i, line in enumerate(lines):
+        if re.match(r"^\s*admin-web(?:\s|$)", line):
+            lines.insert(i + 1, f"            # 变异注入：{ENV_VAR}=${{{{ secrets.{ENV_VAR} }}}}")
+            break
+    else:
+        raise AssertionError(
+            "找不到 `deploy-frontend.yml` 的部署调用行（`admin-web` 服务键）⇒ 变异锚点已漂移，"
+            "本条红证会退化成**空跑**（不许静默）"
+        )
+    mutated = "\n".join(lines)
+    assert mutated != workflow, "变异注入是空操作 ⇒ 本条红证不成立（fail-closed）"
+    assert f"secrets.{ENV_VAR}" in mutated, "注入的未登记 secrets 引用没进变异体（fail-closed）"
+    return mutated
+
 def _problems(page_src=None, helper_src=None, dockerfile=None, workflow=None, env_example=None, files=None) -> list:
     page_src = _read(SETTINGS_PAGE) if page_src is None else page_src
     helper_src = _read(URL_HELPER) if helper_src is None else helper_src
@@ -362,11 +389,7 @@ def test_mutations_are_all_detected(tmp_path):
         #    （变异没生效 ⇒ 被判成「未检出」，红证失效）。现锚在**仍然存在**的那一行行尾，
         #    变异语义不变：**新增一处未登记的 `secrets.<公开地址>` 引用 ⇒ 必须被判红**。
         "deploy-frontend 新增未登记的 secrets 引用（Danger Scan 阻塞形态）": dict(
-            workflow=workflow.replace(
-                "            admin-web\n",
-                "            admin-web\n"
-                f"            # 变异注入：{ENV_VAR}=${{{{ secrets.{ENV_VAR} }}}}\n",
-            )
+            workflow=_inject_secret_ref(workflow)
         ),
         "把二维码挪进无值分支（画假码）": dict(page_src=fake_qr),
         "二维码内容改成硬编码（不取配置值）": dict(
