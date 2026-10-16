@@ -198,7 +198,8 @@ if [ "${FETCHED_LOWER:0:7}" = "$EXPECTED7" ]; then
   echo "   · 判据口径：只比前 7 位（与镜像 tag \`sha-<7hex>\` 同口径；更长的两端都照此截断）"
   # ── `builtAt` 具名判据（issue #7015）─────────────────────────────────────────
   # 「`sha` 对」不等于「构建身份完整」：改前 `builtAt` 由 `${GITHUB_RUN_STARTED_AT:-}` 取值，
-  # 而那不是 GitHub 注入的环境变量（run 开始时刻只在 context `github.run_started_at` 里）
+  # 而那不是 GitHub 注入的环境变量（issue #7015）；#7016 一度改成 context `${{ github.run_started_at }}`
+  # —— 该属性**也不存在**（issue #7029：官方 `github` 上下文属性表 40 个里没有它）⇒ 两次都静默解成**空串**
   # ⇒ 恒空串 ⇒ 真机读数逐字 `{"app":"admin-api","sha":"b5d9315e…","builtAt":""}`。
   # ⚠️ 只在调用方**显式要求**时生效（`SERVED_VERSION_REQUIRE_BUILT_AT` 非空；CI 部署腿传 1）
   #    —— 默认不判，免得把没接这个面的调用方（如本地手动复探）误判红。
@@ -209,12 +210,14 @@ if [ "${FETCHED_LOWER:0:7}" = "$EXPECTED7" ]; then
     echo "  · 服务：admin-api（${URL}）· HTTP ${CODE} · 尝试 ${ATTEMPT}/${RETRIES}"
     echo "  · 探到什么：sha=${FETCHED_SHA} · app=${FETCHED_APP:-（空）} · builtAt=''（**空串**，不是「探不到」）"
     echo "  · 语义区分：这是「**探到了、值是空**」（判红，退 1）≠「**探不到**」（连不上 / 非 200 / body 不是 JSON ⇒ 退 3）"
-    echo "  · 根因形态：构建身份里的 \`BUILT_AT\` 取值源写成了**未定义变量**（issue #7015 实测 = \`\${GITHUB_RUN_STARTED_AT:-}\`，"
-    echo "    而 run 的开始时刻只在 context \`github.run_started_at\` 里）⇒ shell 展开恒为空 ⇒ 镜像里烘焙进空串"
+    echo "  · 根因形态（**两代都实测踩过**，issue #7015 → #7029）：① 取值源写成**未定义的环境变量**"
+    echo "    （\`\${GITHUB_RUN_STARTED_AT:-}\` —— 它**不是** GitHub 注入的）；② 换成**猜出来的 context 属性**"
+    echo "    （\`github.run_started_at\` —— 该属性**不存在**）⇒ 两次都静默解成**空串** ⇒ 镜像里烘焙进空串"
     echo "  · 可复制复算命令："
     echo "      curl -sS -m 15 '$URL' | head -c 400"
     echo "      bash deploy/scripts/served-version-verify.sh '$BASE' '$EXPECTED'"
-    echo "  · 出口：① 确认部署腿的 \`Resolve build identity\` 步用 \`env: RUN_STARTED_AT: \${{ github.run_started_at }}\` 取值"
+    echo "  · 出口：① 确认部署腿的 \`Resolve build identity\` 步用 **runner 时钟**取值"
+    echo "    （\`BUILT_AT=\$(date -u +%Y-%m-%dT%H:%M:%SZ)\`，该步**没有** \`env:\` 传值；别再猜变量名/属性名）"
     echo "     ② 该值经 \`swas-deploy-ci.sh\` 第 10 位参数 ⇒ BOOTSTRAP 占位符 \`__BUILT_AT__\` ⇒ \`--build-arg MIGAO_BUILT_AT\`；"
     echo "     ③ 修好后需**一次带注入面的部署**（本次部署已把空值烘焙进镜像 ⇒ 光重跑本探针不会变好）"
     echo "SERVED_VERSION=mismatch"
