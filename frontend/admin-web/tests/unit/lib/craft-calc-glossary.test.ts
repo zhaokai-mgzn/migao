@@ -318,9 +318,11 @@ describe('算料配置页·口径与术语说明（issue #4975）', () => {
   })
 
   it('判据 7b：接高的「双眼皮接高」照实写「还没确认」，不凭字面编解释', () => {
-    const jiegao = MANUAL_FEATURE_TERMS.find((t) => t.name === '接高')
-    if (!jiegao) throw new Error('手选术语里缺「接高」')
-    expect(jiegao.boundary ?? '').toContain('还没确认')
+    // 🔴 2026-10-17：该句随「红色边界行」收口**从 boundary 移入 definition**（载体变了、
+    // 判据强度不变）。注入：把「还没确认」删掉 ⇒ 红
+    const b = SPECIAL_OPTION_TERMS.find((t) => t.name === '双眼皮接高')
+    if (!b) throw new Error('特殊选项术语里缺「双眼皮接高」')
+    expect(b.definition).toContain('还没确认')
   })
 
   it('判据 8：术语覆盖清单齐全（自动推算三项 + 手选两项 + 近义词族）', () => {
@@ -466,8 +468,8 @@ describe('特殊选项术语（issue #4986）', () => {
     // 注入：给「双眼皮接高」编一道自己的工序 ⇒ 红（真值源里它映射到同一道）
     expect(b.operation).toBe(a.operation)
     expect(b.after).toBe(a.after)
-    // 含义还没弄清楚 ⇒ 照实写，不凭字面猜
-    expect(b.boundary ?? '').toContain('还没确认')
+    // 含义还没弄清楚 ⇒ 照实写，不凭字面猜（2026-10-17：载体由 boundary 移入 definition）
+    expect(b.definition).toContain('还没确认')
   })
 
   it('判据 5：一分为二 = 不加工序 / 只有历史计件系数（三层写清）', () => {

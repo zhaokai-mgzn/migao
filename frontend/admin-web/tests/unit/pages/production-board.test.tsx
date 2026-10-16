@@ -487,6 +487,41 @@ describe('生产看板页 /production（加工单唯一入口，PG-038）', () =
     ).toBeInTheDocument()
   })
 
+  it('表头与订单列表**同源** + 行内动作是**链接式**（2026-10-17 用户裁定）', async () => {
+    render(<ProductionBoardPage />)
+    await waitFor(() => expect(screen.getByTestId('production-row-po-1')).toBeInTheDocument())
+
+    // ① 表头（用户逐字「生产看板的表头风格和其他单据的不一致」）：
+    //    与 `frontend/admin-web/src/components/orders/OrderTable.tsx` 的表头行逐字同源
+    //    —— `bg-neutral-50` 底 + `text-neutral-600` 字，字号回到表格自己的 `text-sm`。
+    // 注入：改回「无底色 + `text-xs text-neutral-500`」⇒ 下面四条同时红。
+    const headRow = screen.getByRole('table').querySelector('thead tr') as HTMLElement
+    expect(headRow.className).toContain('bg-neutral-50')
+    expect(headRow.className).toContain('text-neutral-600')
+    expect(headRow.className).not.toContain('text-xs')
+    expect(headRow.className).not.toContain('text-neutral-500')
+    // 冻结的「操作」表头必须与表头行**同色**（否则横滚时露出一条白带）
+    expect(
+      within(headRow).getByRole('columnheader', { name: '操作' }).className,
+    ).toContain('bg-neutral-50')
+
+    // ② 行内动作（用户逐字「操作行内的按钮样式能否保持让全部单据统一向订单保持一致，
+    //    不要有多种风格设计」）：与订单列表共用 `@/components/ui/RowActionLink`。
+    // 注入：改回 `Button variant="secondary"`（描边按钮）⇒ 两条都红。
+    const action = within(screen.getByTestId('production-row-po-1')).getByRole('button', {
+      name: '生产明细',
+    })
+    expect(action.className, '行内动作必须是链接式（hover 下划线是它的标志）').toContain(
+      'hover:underline',
+    )
+    expect(action.className, '行内动作不得再是描边按钮（`border` 回归 ⇒ 红）').not.toContain('border')
+    // 反向自证（不是"整列都没了"）：同一行两个动作都还在，且不再换行（`flex-wrap` 退回 ⇒ 红）
+    expect(
+      within(screen.getByTestId('production-row-po-1')).getByRole('button', { name: '订单详情' }),
+    ).toBeInTheDocument()
+    expect(action.closest('div')?.className).not.toContain('flex-wrap')
+  })
+
   it('引导文案是**页面级**的：全页只渲染一次且不在表格里（issue #5913）', async () => {
     render(<ProductionBoardPage />)
     await waitFor(() => expect(screen.getByTestId('production-row-po-1')).toBeInTheDocument())

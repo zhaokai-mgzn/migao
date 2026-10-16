@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { Plus, Pencil, Trash2, Send, Archive, Eye, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { knowledgeApi } from '@/lib/api'
+import { extractApiErrorMessage } from '@/lib/api-error'
 import { Table, Pagination, Modal, Button, Badge, SearchBar, PageHeader } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
 import type { KnowledgeCard, KnowledgeCardStatus, KnowledgeCandidate, KnowledgeTemplateInfo } from '@/types'
@@ -172,7 +173,7 @@ export default function KnowledgePage() {
       setEditorOpen(false)
       loadEntries()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '保存失败')
+      toast.error(extractApiErrorMessage(e, '保存失败'))
     } finally {
       setSaving(false)
     }
@@ -185,7 +186,7 @@ export default function KnowledgePage() {
       toast.success(entry.status === 'archived' ? '知识卡片已重新发布' : '知识卡片已发布')
       loadEntries()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '发布失败')
+      toast.error(extractApiErrorMessage(e, '发布失败'))
     }
   }
 
@@ -195,7 +196,7 @@ export default function KnowledgePage() {
       toast.success('知识卡片已归档')
       loadEntries()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '归档失败')
+      toast.error(extractApiErrorMessage(e, '归档失败'))
     }
   }
 
@@ -207,7 +208,7 @@ export default function KnowledgePage() {
       setDeleteTarget(null)
       loadEntries()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '删除失败')
+      toast.error(extractApiErrorMessage(e, '删除失败'))
     }
   }
 
@@ -261,7 +262,7 @@ export default function KnowledgePage() {
       setRefreshTick((t) => t + 1)
       loadCandidates()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '采纳失败')
+      toast.error(extractApiErrorMessage(e, '采纳失败'))
     }
   }
 
@@ -271,7 +272,7 @@ export default function KnowledgePage() {
       toast.success('已拒绝')
       loadCandidates()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '拒绝失败')
+      toast.error(extractApiErrorMessage(e, '拒绝失败'))
     }
   }
 
@@ -300,7 +301,7 @@ export default function KnowledgePage() {
       setRefreshTick((t) => t + 1)
       loadTemplates()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '套用失败')
+      toast.error(extractApiErrorMessage(e, '套用失败'))
     } finally {
       setApplying('')
     }
@@ -322,7 +323,7 @@ export default function KnowledgePage() {
       setDocForm({ title: '', content: '' })
       loadCandidates()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : '文档提炼失败')
+      toast.error(extractApiErrorMessage(e, '文档提炼失败'))
     } finally {
       setDistilling(false)
     }

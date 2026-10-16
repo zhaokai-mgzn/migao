@@ -7472,6 +7472,7 @@
 数据: 时序保护随能力迁移（issue #4303 的长期判据 = 加载竞态）：搜索/筛选/刷新搬到看板后，**请求序号保护必须一起搬** —— 旧的在飞列表响应晚到不得把看板覆盖回旧数据，`loading` 只由最新一次请求收尾。红证（实现前实测）：`production-board.test.tsx`「PG-024 时序保护」得 `getByPlaceholderText(...)` 找不到元素（看板无搜索 ⇒ 竞态无从触发）；留在被合并掉的页面里 = 保护随页面一起消失。
 数据: 面包屑与侧边栏一致（§15.2）：`/production` 系列此前**没有任何面包屑条目** ⇒ 落进兜底分支显示「工作台 > 经营看板」；本单补 生产管理×{生产看板, 智能派单, 工艺配置, 计件工资}（**2026-09-23 补记（issue #5271）**：该组面包屑现为**四条**，组名与组 key `production-center` 与侧边栏逐字一致）（**2026-09-21 改判，issue #4440**：改前写「{生产看板, 工序库, 工艺路线, 计件工资}」—— 「工序库」+「工艺路线」已由 issue #4416 合并为「工艺配置」`/production/routings` ⇒ 面包屑表内对应条目现为「生产管理 > 工艺配置」，且 `Header.test.tsx` 反向断言旧菜单名「工序库」**不出现在面包屑里**），且 `/processing-orders/{id}/production` 由「订单管理 > 加工单」改判为「生产管理 > 生产明细」。✅ **2026-09-23 收口（issue #5271）**：原「如实登记（未做项，issue #4440 实测）」写「「入库单」`/inbound-orders` **不在面包屑表**内 ⇒ 落进兜底分支、当前**不是**「生产管理 > 入库单」；本改判**不**把它写成已有（不粉饰，另单可收）」—— 该未做项**已关闭、判据相应升级**：`Header.tsx` 现有条目 = 「**仓储与物料 > 入库单**」（拆组后入库单既不在生产管理组，首项也就不再是「生产管理」；同理 `/production/remnants`、`/production/saving-board` 两条首项亦为「仓储与物料」）。红证（实现前实测，本机 vitest 4 条红）：Header 的 /production、/production/operations、/production/piecework 三条得找不到「生产管理」（当时走兜底面包屑）—— ⚠️ 这句是**历史记录**（当时真实路径形态），`/production/operations` 现已是重定向、面包屑表内不再有该条，照实保留不追改；/processing-orders/{id}/production 得找不到「生产明细」
 数据: 权限护栏随入口走（**不得砍既有护栏**）：`/production` 此前**无**前端路由权限守卫，而它承接的原 `/processing-orders` 有 `processing:manage` ⇒ 合并后守卫必须跟着入口走（layout.tsx ROUTE_PERMISSION_MAP 新增 `/production`，前缀覆盖三个子页），否则等于砍掉既有第二道防线。🔴 **2026-09-25 改判（issue #5291）**：`/production`、`/processing-orders`、`/processing` 三个前缀的守卫改用**读码 `production:view`**；**智能派单 `/production/pool`、余料台账 `/production/remnants`、省料看板 `/production/saving-board` 仍是 `processing:manage`** 且必须排在 `/production` 之前（前缀匹配先命中 ⇒ 否则会把这三页一起收权）。证据：`frontend/admin-web/src/app/(dashboard)/layout.tsx` 的 ROUTE_PERMISSION_MAP（后端 @RequirePermission 仍是唯一硬拦面）
+数据: 🔴 **2026-10-17 用户裁定（生产看板观感三条）**：① 「表头风格和其他单据的不一致」⇒ 表头行改为与 `frontend/admin-web/src/components/orders/OrderTable.tsx` 逐字同源（`bg-neutral-50 text-left text-neutral-600`，字号回到表格的 `text-sm`；右缘冻结的「操作」表头同色 `bg-neutral-50`）。② 「操作行内的按钮样式能否保持让全部单据统一向订单保持一致，不要有多种风格设计」⇒ 两个行内动作改用共享原语 `frontend/admin-web/src/components/ui/RowActionLink.tsx`（链接式；订单列表的本地 `ActionLink` 同批并入该原语）。③ 「列表看起来很紧凑」⇒ 操作列由两个描边按钮变成行内链接后变窄，腾出的宽度还给「商品与数量」（`max-w-[130px]`→`200px`）与工序进度条（`w-12`→`w-16`）。判据 = `frontend/admin-web/tests/unit/pages/production-board.test.tsx` 的「表头与订单列表**同源** + 行内动作是**链接式**」用例（`text-xs` 表头 / 描边按钮 / `flex-wrap` 任一回归 ⇒ 红）；既有能力（筛选 / 分页 / 懒加载 / 两入口显隐）一条不减。
 跳过: [backend-contract] 前端 IA / 页面结构 / 交互流（admin-web），由 vitest 单测（production-board / processing-orders-list / Header）+ Playwright E2E 旅程（tests/e2e/specs/orders/processing-orders.spec.ts）覆盖，非 LLM 行为，不进入 agent-eval 冒烟（同 PG-024 惯例）
 ```
 溯源: 2026-09-19 新增（issue #4357，P2）。用户提问「加工单菜单是否放入到加工管理更合适」→ 裁定「是，且合并而非只搬家」，组名保持「生产管理」。红证（实现前实测，本机 vitest：3 文件 13 failed / 44 passed，失败逐条列在 data_checks 内）。实现：menu.ts 移除 trade-center 的 processing-orders 项（生产管理组**不新增项** —— 加工单与生产看板合并为同一入口）；/production 吸收列表页全部能力（关键词/状态筛选、重置、刷新、商品与数量列、查看按钮、筛选空态）+ 请求序号保护（issue #4303 迁移）；/processing-orders 改重定向；Header.tsx 补生产管理组四条面包屑并改判 processing-orders 面包屑；layout.tsx 补 /production 权限守卫。**不做（如实登记）**：① 不移动 /processing-orders/{id}/production 路由（#4345 刚稳定该路径的 e2e，避免同批双重改动；副作用 = 该子页侧边栏无高亮项，另单）；② 不改后端菜单树（MenuController/AuthService 与前端 menu.ts 的漂移、且前端根本不消费服务端菜单，另单）；③ 不涉及 agent 行为 ⇒ 按 #4262 不派发真实 LLM 评测。 ｜ 2026-09-21（issue #4440 用例库同步，配套 PR #5068）：**两处散文改判**（侧边栏 IA 的 ② 生产管理组节点表；面包屑的 生产管理×{…} 集合）—— 二者此前仍写 issue #4416 合并前的「工序库 + 工艺路线」，与 main 上的 `config/menu.ts` / `Header.tsx` **实测不符**；另**如实登记**入库单面包屑缺失（未做项）。**判据一格不放宽**：红证、能力迁移、时序保护、权限护栏四条与 `user_inputs` / `skip_reason` 一字未动。 ｜ 2026-09-23（issue #5271 用例库同步）：**三处散文改判**（侧边栏 IA 的 ①②③④ 组名/归属/项数 + 顶层组 key 序列；面包屑的 生产管理×{…} 集合补上「智能派单」；入库单面包屑「未做项」随 #5271 **关闭并升级为已有判据**「仓储与物料 > 入库单」），并给注释块的病根段标注「组名是 #5271 前的旧 IA」—— 旧文案「订单管理组只有订单列表/售后工单」「生产管理组四项含入库单」与 `config/menu.ts` / `MenuController` / `AuthService`（三源均已按 #5271 重排）**实测不符**，正是本仓最忌的「用例库与现实脱节」。**判据只增不减**：3 条扩到 5 条（新增仓储与物料组三项点名、顶层组 key 序列 + 21 项总数）。 ｜ 2026-10-01（issue #5913 用例库同步）：**两处散文改判** —— 「合并 ≠ 丢能力」的入口名（「查看」→「订单详情」）与「入口收敛不回归」的文案落点（行内 → 页面级一次），二者与 main 上的 `production/page.tsx` 实测不符；改判同时新增**显隐谓词**（按目标页守卫码 `order:list`），判据一格不放宽（跳转目标、四个按钮的负向断言、文案原文全未动），并把**类级元守卫**（UI-026）与**同族第二处**（售后工单详情「订单号」）登记进用例库。 ｜ tags: processing-order, production, menu, ia, admin_web
@@ -9738,7 +9739,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（111 case）
+## 前端 UI 域（112 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -10450,6 +10451,7 @@
 数据: **行式紧凑版式**（issue #6857，用户裁定方案 B）：算料域的数值输入**与名称同一行**（输入框紧邻的前一个兄弟 = 名称元素）、定宽 `w-28` + 数字右对齐（`tabular-nums`）、**不得** `w-full`；行间细分割线、**不再用卡片**；档位表 显示名 `w-40` / 褶倍 `w-28`、拼色表 `w-28`、备用公式 `select` `w-64`
 数据: **行内不标默认态**（issue #6857，用户裁定方案 C）：`param-unset-*` / `param-is-default-*` / `param-changed-*` **一个都不在**；替代 = 域级信号（横幅 + 口径徽标）+ 「恢复为默认值」按钮（把**整份**草稿写回 `defaults`；`defaults_source !== 'engine'` ⇒ 禁用；**不自动保存**）
 数据: **类级守护：配置页数值输入必须定宽**（issue #6857 判据 5）：本域每个 `calc-caliber-*` 输入/下拉都带定宽 token（`w-28`/`w-40`/`w-64`）且**不得** `w-full`；`boundedInputCls` 的替换必须真的生效（`inputCls` 丢了 `w-full` ⇒ 自证红，防静默退化成整列宽）
+数据: 🔴 **2026-10-17 用户裁定（两条）**：① 「把算料口径里面的这行字都拿掉吧」—— 参数行内**整行**「改它会怎样：… 说明」退场（含行尾 `param-doc-*` 锚点），影响说明的唯一载体是同屏术语区块的「参数当前值」表；承载体 = `frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx`（逐条断言页面上取不到 `改它会怎样`、`param-doc-*` 为 `null`，并反向自证 `glossary-param-*` 目标行仍在）。② 「两个参数一行排列的布局是否更美观」⇒ 常用 / 高级参数容器改为 `grid grid-cols-1 gap-x-8 xl:grid-cols-2`（窄屏单列），判据 = 同文件的「两列排布（xl+）」用例（把 `divide-y` 单列写回 ⇒ 红）。三件套口径（人话名 / 口径提示 / 就地可改）一条不放宽。
 前置: 本用例是 [backend-contract] 纯前端用例：前置（算料配置读面与 AI 配置读面）由单测 mock `@/lib/api` 自建（#6573 起算料域读面由**页面**发起、以 props 注入面板），不依赖共享夹具 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它
 跳过: [backend-contract] 纯前端页面与只读展示（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx（算料口径域面板；它承接的是 #6826 删掉的那个死代码组件的面）、frontend/admin-web/tests/unit/pages/settings-params.test.tsx（新页面 + 配置主线）、frontend/admin-web/tests/unit/lib/config-readiness.test.ts（三态判据）、frontend/admin-web/tests/unit/lib/tenant-params.test.ts 执行
 ```
@@ -11345,6 +11347,19 @@
 ```
 溯源: 2026-10-16 新增（issue #7069，承接 #7007 根因②）。**发现路径** = 用户问「现在是什么状态？页面重构好了吗」，我现场复核 #7007 正文里「三条根因」的完成度，发现只做了根因①（页头，由 #7065 收口），根因②（内层容器缺 shadow-card）**一处未做** ⇒ 用 #7007 正文自带的复算命令取读数为 22 命中 / 9 处缺失，当场开单。用例号 = `NCI_MAIN_REF=HEAD python3 scripts/next_case_id.py UI` ⇒ `UI-111`（UI-110 已被 #7065 的页头守卫占用）。**报告型说明**：本用例承载体是前端单测（vitest），由 `admin-web 单测` 腿收集。 ｜ tags: ui, design-consistency, card-layering, shadow-card, class-guard, red-proof
 
+### UI-112. 失败原因 = 业务文案：传输层读数不得上屏（智能派单报 422 显示 Request failed with status code 422；2026-10-17 用户裁定） 🔵
+```
+你: 用户 2026-10-17 逐字：「点击一键合并派单后页面报错了，你看下服务器上的日志，这个错误提示非常低级，用户完全看不懂，得把报错原因用业务文案写清楚，而不是技术语言」（截图 = 智能派单页 `合并预览失败：Request failed with status code 422`）
+期望: direct_reply
+数据: 🔴 **两层归因**：① 调用面 `frontend/admin-web/src/app/(dashboard)/production/pool/page.tsx` 的 `dispatchErrorText` 取的是 `e.message`，而 axios 错误的 `.message` **就是**传输层读数（`Request failed with status code 422`）；服务端业务原因在 `error.response.data.error.message`（`GlobalExceptionHandler` 的 `ApiResponse.error(code, message, details)`）里、被那一行丢掉。② 共享原语 `frontend/admin-web/src/lib/api-error.ts` 的 `extractApiErrorMessage` 兜底链里也留着 `err.message` 一格 ⇒ 服务端文案缺失时照样端出技术语言。
+数据: 🔴 **判据（行为面）**：服务端文案优先（业务原因逐字透出）；**传输层原文绝不外传**（缺服务端文案 ⇒ 落到业务兜底话术）；反向自证 —— 非传输层的本地错误（客户端校验等）仍用自己的 `message`（不是把 `message` 一律禁掉）。承载体 = `frontend/admin-web/tests/unit/lib/server-error-copy.test.ts`。
+数据: 🔴 **判据（形态面，类级）**：`src/app` + `src/components` 全域扫描，禁止「`instanceof Error ? <x>.message`」这种把错误对象 message 当展示文案的写法（改前 9 处：智能派单 1 / 知识库 8 / 省料看板 1）—— 注入任一形态 ⇒ 具名报出该文件。
+数据: ⚠️ **本次未固化的那一半（照实登记）**：服务端 2026-10-17 那次 422 的**具体业务原因**要在真实环境复现才能定名（本机两个 admin-api 实例的日志里都没有该请求：:8080 的实例自 03:53 起连不上云 dev RDS、:8180 的实例 07:15~07:22 只有定时任务的 SQL）⇒ 本条只保证「服务端给了什么文案，商家就看到什么」；改后同一次失败会把服务端原文打在卡片上（报错原因具备可见性）。
+跳过: [backend-contract] 纯前端错误文案 / 纯函数，由 vitest 单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-10-17 新增（用户逐字裁定，见 user_inputs）。取号 = `python3 scripts/next_case_id.py ui` 现取 main 最大 + 1 = UI-112。红证：把 `dispatchErrorText` 与 `extractApiErrorMessage` 换回 `git show origin/main:<path>` 的旧实现 ⇒ 行为面用例红（`extractApiErrorMessage` 返回 `Request failed with status code 422`）；把任一 `toast.error(extractApiErrorMessage(...))` 改回 `e instanceof Error ? e.message : 'X失败'` ⇒ 形态面用例具名报出该文件。 ｜ tags: ui, copy, error-message
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -11400,7 +11415,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：111
+- 前端 UI 域：112
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

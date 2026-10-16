@@ -5,7 +5,7 @@
  * 本文件判两件事：
  *
  * **① 抽取后必须保持的三件事**（抽取的判据就是「行为一字不变」）
- * 1. 有读数 ⇒ 每个标量参数都有一行（人话 + 「改它会怎样」），不是只显示名字；
+ * 1. 有读数 ⇒ 每个标量参数都有一行（人话名 + 口径提示），不是只显示名字；
  * 2. `calcError` ⇒ 显示**传进来的**那句分流话术（面板不自己编话术 —— 归因判据在页面里），
  *    且**不**渲染参数行；`loading` ⇒ 不出现「未配置」这类结论（三态不互画）；
  * 3. 域自己就是编辑面 ⇒ **不许**再挂「去算料配置」那种跳出本页的外链。
@@ -192,14 +192,33 @@ beforeEach(() => {
 // 判据 0：抽取后的行为面（读面 + 三件套 + 三态）
 // ══════════════════════════════════════════════════════════════════════════════
 describe('算料口径域面板（issue #6580 抽取后的行为面）', () => {
-  it('有读数 ⇒ 逐条参数成行（人话名 + 「改它会怎样」都在）', async () => {
+  it('有读数 ⇒ 逐条参数成行（人话名 + 口径提示；「改它会怎样」不上屏）', async () => {
     renderPanel()
     expect(screen.getByTestId('param-per_fold_single')).toBeInTheDocument()
     // 2026-10-16（issue #7007）：展示名「单色每折吃布」⇒「单色每折用料」（用户裁定方案 B：
     // 算料术语改叫法、保留业务词）。**只改展示名**：键名 `per_fold_single` / 公式 / 数值一字未动，
     // 同一 describe 内「引擎键名不上屏」与下文 `PUT` 全量键判据都照旧。
     expect(screen.getAllByText('单色每折用料（米）').length).toBeGreaterThan(0)
-    expect(screen.getAllByText(/改它会怎样/).length).toBeGreaterThan(0)
+    // 🔴 2026-10-17 用户逐字「把算料口径里面的这行字都拿掉吧」= 「改它会怎样：… 说明」**整行**。
+    // 注入：把那行加回 ⇒ 本条红（它是行内**唯一**被点名的形态）。
+    expect(screen.queryAllByText(/改它会怎样/)).toEqual([])
+    // 反向自证（撤的是**那一行**，不是把整行内容都删空）：同一行的**口径提示**仍在，
+    // 文案取自单一真值 `CALC_PARAM_COPY`（去掉行内标记后逐字比对）。
+    const row = screen.getByTestId('param-per_fold_single')
+    const hint = CALC_PARAM_COPY.per_fold_single.hint.replace(/\*\*/g, '')
+    expect(row.textContent).toContain(hint)
+  })
+
+  it('两列排布（xl+）：常用参数容器是 grid + xl:grid-cols-2（2026-10-17 用户裁定）', async () => {
+    renderPanel()
+    // 注入：把容器换回 `divide-y` 单列 ⇒ 本条红
+    const container = screen.getByTestId('param-per_fold_single').parentElement
+    expect(container?.className).toContain('grid')
+    expect(container?.className).toContain('xl:grid-cols-2')
+    // 反向自证：窄屏仍是单列（`grid-cols-1` 在，不是把断点整个删掉）
+    expect(container?.className).toContain('grid-cols-1')
+    // 一行里仍是「名称 + 控件」同一行（两列不得把控件挤到名称下面）
+    expect(screen.getByTestId('calc-caliber-scalar-per_fold_single')).toBeInTheDocument()
   })
 
   it('🔴 引擎键名不上屏（§31 P3）—— `param-<key>` 锚点在，但值**只由输入框承载**（§31 P2）', async () => {
@@ -378,13 +397,17 @@ describe('判据 1b：术语说明区块与参数同屏（口径与术语不丢�
     expect(text).not.toContain('`')
     // 正控：强调必须以元素形态呈现（只把标记删掉也能让上面两条变绿 ⇒ 必须另有这条）
     expect(glossary.querySelectorAll('strong').length).toBeGreaterThan(0)
-    // 参数旁「说明」锚点指到同页的说明条目（不指空 —— 指空即死链接）
+    // 🔴 2026-10-17 用户逐字「把算料口径里面的这行字都拿掉吧」⇒ 参数旁的「说明」锚点
+    //    （`param-doc-*`，原挂在那一行行尾）随该行**一起退场**。
+    // 注入：把锚点加回 ⇒ 本条红（用户要的形态 = 该行整行不存在）。
     for (const key of ['per_fold_single', 'margin_single', 'margin_multi'] as const) {
-      const href = screen.getByTestId(`param-doc-${key}`).getAttribute('href') ?? ''
-      expect(href).toBe(`#glossary-param-${key}`)
-      // 锚点必须落在**该参数自己的术语行**上（只断「有元素」= 存在性弱断言，换不来判别力）
-      const row = document.getElementById(href.replace('#', ''))
-      expect(row?.textContent, `「说明」锚点须落在「${key}」的术语行`).toContain(CALC_PARAM_COPY[key].label)
+      expect(screen.queryByTestId(`param-doc-${key}`)).toBeNull()
+      // 反向自证（撤的是**指路入口**，不是目的地）：术语区块里该参数的条目仍在，
+      // 且落在**它自己那一行**上（只断「有元素」= 存在性弱断言，换不来判别力）。
+      const row = document.getElementById(`glossary-param-${key}`)
+      expect(row?.textContent, `术语区块仍须有「${key}」的参数当前值行`).toContain(
+        CALC_PARAM_COPY[key].label,
+      )
     }
   })
 })
@@ -590,9 +613,16 @@ describe('判据 8（#6857）：行式紧凑 —— 控件与名称同行、定�
     const prev = input.previousElementSibling as HTMLElement
     expect(prev?.tagName, '输入框紧邻前一个兄弟必须是名称元素（不是外层行容器）').toBe('SPAN')
     expect(prev.textContent).toContain('单色每折用料')
-    // 行容器（卡片形态带 border/rounded/p-4；紧凑形态不带）
+    // 行容器（卡片形态带 rounded / p-4 / 四边描边；紧凑形态只有一条**行底细线**）
+    // 2026-10-17：两列排布后行间靠 `border-b` 分隔 ⇒ 判据改判成**卡片标记**（rounded / p-4），
+    // 并正向钉住「分隔线是行底细线」（不是卡片描边）—— 判别力不变。
     const row = input.closest('[data-testid="param-per_fold_single"]') as HTMLElement
-    expect(row.className, '本域不再用卡片（改回卡片 ⇒ 行高与边框又回来了）').not.toContain('border')
+    expect(row.className, '本域不再用卡片（改回卡片 ⇒ 圆角与内边距又回来了）').not.toMatch(
+      /rounded|\bp-4\b\s*/,
+    )
+    expect(row.className, '行间分隔线只能是行底细线（`border-b`），不得是四边描边').toContain(
+      'border-b',
+    )
   })
 
   it('🔴 本域**所有**数值输入定宽（`w-full` 回归 ⇒ 红）', async () => {
