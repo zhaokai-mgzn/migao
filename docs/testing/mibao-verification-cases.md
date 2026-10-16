@@ -5155,7 +5155,6 @@
 ### ON-001. 本体 schema 加载与状态枚举校验（核心四对象 + 扩展三对象） 🔵
 ```
 你: 加载默认本体 schema，校验七对象（订单/商品SKU/售后单/客户 + 员工/加工项/分类）定义、状态枚举、关系目标与 source 挂载点（issue #5245）
-期望: none
 数据: 默认 schema.yaml 存在且可加载，返回 Ontology 七对象：order/product_sku/aftersales/customer + employee/processing_item/category（knowledge_document 已随旧 RAG 知识库退场，issue #3051）
 数据: 每个对象具备属性/关系/动作/规则四要素
 数据: 订单状态枚举 == [pending, confirmed, producing, shipped, completed, cancelled]（与 CONTRACT-LEDGER 的 OrderService.java 状态机一致，生产中是 producing 非 processing）
@@ -5172,7 +5171,6 @@
 ### ON-002. vision 分析候选实体写入上下文实体槽（G10 修复） 🔵
 ```
 你: 用户发图，vision 分析识别出候选商品/订单/客户 → 候选实体写入 context_manager 实体槽 → 后续轮次 build_context 注入
-期望: none
 数据: record_vision_candidates 写入后 get_entities 返回包含 source=vision 的候选实体
 数据: build_context 注入的上下文包含 vision 候选实体（图片关联对象有召回保障）
 数据: 重复写入同一候选去重；非法 entity_type 拒绝
@@ -5185,7 +5183,6 @@
 ### ON-003. intent 归属表全量登记 + 双端能力视图契约校验（v2 按 agent 核对） 🔵
 ```
 你: schema 全量登记 30 个业务 intent（双端 22 + 仅 mibao 5（finance + 加工单域 3 + 定时提醒 1）+ 仅 xiaobu 2（knowledge_manage/quote）——knowledge_faq 已双端可达，issue #3059）；契约校验与双端真实映射按 agent 分别对比，活映射侧另有一条端到端判据
-期望: none
 数据: schema.intent_ownership 全量登记 30 个业务 intent（排除 general 兜底；mibao 已启用 knowledge_faq 知识卡片检索，issue #3059；knowledge_manage 管理意图不可达 agent——管理走 admin-web；定时提醒 scheduled_task_manage 仅 mibao（issue #6486 包 2 引入、#6514 补登记 schema））
 数据: 契约校验 v2：schema 声明某 agent 可达的 intent 必须在该 agent 映射中存在（防假声明）；mibao route_key 严格一致（B 端是约定事实源，xiaobu 兜底覆盖不计漂移）；任一 agent 映射有但 schema 未登记 → 违规；声明可达的 route_key 必须在该 agent 真实可达集合中
 数据: xiaobu 专属 intent（quote/knowledge_manage）在 mibao 映射缺失是正常的，不得误报（knowledge_faq 现为双端可达）
@@ -5199,7 +5196,6 @@
 ### ON-004. vision 分析文本落上下文槽 + base_skill 接线（行为闭环收口） 🔵
 ```
 你: vision 分析完成后，分析文本写入 context_manager 上下文槽（record_vision_analysis）→ build_context 跨 skill 注入，澄清候选 grounded 有召回保障；base_skill 接线调用
-期望: none
 数据: record_vision_analysis 写入后 build_context 注入包含 vision 分析文本（截断 800 字符）
 数据: 重复写入覆盖旧文本（最新图片分析优先）；空文本/无 session 不落槽
 数据: base_skill vision 分支分析成功后调用 record_vision_analysis（与 set_vision_analysis 并列，异常降级不破坏主流程）
@@ -6638,7 +6634,7 @@
 数据: （散文、不计分）缺口逐条来自服务端：`unrouted_operations` / `unrouted_operation_total` / `pending_confirmation_total` / `signal_keys_without_route` 只能原样转述 `GET /api/admin/production/routing-gaps` 的返回，不得自行推断「哪道工序该进哪条路线」，也不得编造服务端没返回的数量
 数据: （散文、不计分）「有意挂起 ≠ 系统漏了」：`pending_confirmation=true` 的工序（等客户输入）必须如实说明**是有意挂起**，不得报成系统缺口；必要时可用 `note` 字段的口径解释
 数据: （散文、不计分）只读边界：本工具 read_only=true，无任何写 action ⇒ 不得声称已把工序加进路线 / 已新建路线，只能引导商家去「企业基础设置 → 工艺路线」处理
-必须成功: craft_config_query
+必须成功: craft_config_query(routing_gaps)
 ```
 真值: processing-manage.craft-config-routing-gaps, ai-chat.tool-classes
 溯源: 2026-10-02 新增（issue #4923）：工艺配置读面 6 个零覆盖读端点中的 routing_gaps 首次获得 LLM 行为面覆盖。取号 PP-016：库内 PP-001~PP-015（PP-002/003/004/005 为历史空号，不复用已发布的号段）—— PP-016~PP-021 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。 ｜ tags: craft_config, production, routing_gaps, readonly, llm_behavior
@@ -6652,7 +6648,7 @@
 数据: 调用参数 action=route_signals（信号映射面）
 数据: （散文、不计分）逐条来自服务端：`signals[]` 的 signal / curtain_type / craft / priority / status 只能原样转述 `GET /api/admin/production/route-signals` 的返回，不得编造映射行、不得自行发明新键
 数据: （散文、不计分）语义边界：该表自 issue #4452 起是**存量单兜底**（写面已退役，新单的部位改走 componentRole、工艺改走加工项的 craft_hint）⇒ 不得把它说成「新增映射的入口」，也不得声称已新增/已修改（本工具只读）
-必须成功: craft_config_query
+必须成功: craft_config_query(route_signals)
 ```
 真值: processing-manage.craft-config-route-signals, ai-chat.tool-classes
 溯源: 2026-10-02 新增（issue #4923）：六个零覆盖读端点中的 route_signals 首次获得 LLM 行为面覆盖。 ｜ tags: craft_config, production, route_signals, readonly, llm_behavior
@@ -6666,7 +6662,7 @@
 数据: 调用参数 action=routing_anomalies（异常订单清单面）
 数据: （散文、不计分）逐条来自服务端：`orders[]` 的 processing_order_no / route_key / route_requested_key / route_source / suggestion 只能原样转述 `GET /api/admin/production/orders/routing-anomalies` 的返回；route_source ∈ {default, partial} 的语义（default = 部位与工艺都没填、partial = 只填了一维）必须如实区分，不得含混
 数据: （散文、不计分）只读边界：不得声称已替商家补上部位/工艺或已重新生成加工单，只能按服务端 suggestion 引导商家去下单侧补信息
-必须成功: craft_config_query
+必须成功: craft_config_query(routing_anomalies)
 ```
 真值: processing-manage.craft-config-routing-anomalies, ai-chat.tool-classes
 溯源: 2026-10-02 新增（issue #4923）：六个零覆盖读端点中的 routing_anomalies 首次获得 LLM 行为面覆盖。 ｜ tags: craft_config, production, routing_anomalies, readonly, llm_behavior
@@ -6680,7 +6676,7 @@
 数据: 调用参数 action=fee_combinations（组合定价表面）
 数据: （散文、不计分）逐条来自服务端：`combinations[]` 的 items / composition_key / unit_price / unit / status 只能原样转述 `GET /api/admin/production/processing-fee-combinations` 的返回；**不得用行业常识或代码默认常量编一个价**，也不得把 `unit_price` 与加工项自己的单价混为一谈
 数据: （散文、不计分）只读边界：改价 / 新建 / 停用组合都不在能力内（工具 read_only=true）⇒ 只能引导「企业基础设置 → 加工费组合」，不得声称已改价
-必须成功: craft_config_query
+必须成功: craft_config_query(fee_combinations)
 ```
 真值: processing-manage.craft-config-fee-combinations, ai-chat.tool-classes
 溯源: 2026-10-02 新增（issue #4923）：六个零覆盖读端点中的 fee_combinations 首次获得 LLM 行为面覆盖。 ｜ tags: craft_config, production, fee_combinations, readonly, llm_behavior
@@ -6694,7 +6690,7 @@
 数据: 调用参数 action=fee_gaps（缺口面；`fee_combinations` 是已定价表面，两者不得混用）
 数据: （散文、不计分）逐条来自服务端：`unpriced_combinations[]` 的 composition_key / items / order_count / note 与 `unpriced_combination_total` / `scanned_order_items` / `scanned_truncated` 只能原样转述 `GET /api/admin/production/processing-fee-gaps` 的返回；**不得替缺口发明一个默认价或给一个「大概多少钱」的估算**
 数据: （散文、不计分）截断要显式：`scanned_truncated=true` 时必须说明「只扫了最近的一批订单」，不得把扫到的当全量；只读边界：不得声称已补价
-必须成功: craft_config_query
+必须成功: craft_config_query(fee_gaps)
 ```
 真值: processing-manage.craft-config-fee-gaps, ai-chat.tool-classes
 溯源: 2026-10-02 新增（issue #4923）：六个零覆盖读端点中的 fee_gaps 首次获得 LLM 行为面覆盖。 ｜ tags: craft_config, production, fee_gaps, readonly, llm_behavior
@@ -6708,7 +6704,7 @@
 数据: 调用参数 action=stuck_points（卡点面；不带 processing_order_id = 看本租户全部活跃加工单）
 数据: （散文、不计分）逐条来自服务端：`mode` / `threshold_hours` / `threshold_source` / `states` / `stuck_total` / `stuck[]` 的 set_no / position / operation / predecessor / stalled_hours 只能原样转述 `GET /api/admin/production/stuck-points` 的返回；「卡了多久」取前道 `done_at`（服务端已算好 `stalled_hours`），**不得自己按 updated_at 或当下时间心算**
 数据: （散文、不计分）A 模式口径：本片只查「**没开工**」那一种卡点（mode=A）⇒ 不得把「开了没完」也说成卡点；阈值要说清从哪来（`threshold_source`），不得把默认阈值说成商家自己配的
-必须成功: craft_config_query
+必须成功: craft_config_query(stuck_points)
 ```
 真值: processing-manage.craft-config-stuck-points, ai-chat.tool-classes
 溯源: 2026-10-02 新增（issue #4923）：六个零覆盖读端点中的 stuck_points 首次获得 LLM 行为面覆盖。 ｜ tags: craft_config, production, stuck_points, readonly, llm_behavior

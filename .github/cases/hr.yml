@@ -719,6 +719,17 @@ cases:
     # 在新事实下**不可能满足**（创建员工的能力已从 B 端整体移除，李四永不会被创建）。按「不删历史 +
     # 与本次改动无关的断言不动」保留原样为**历史判据**；它不参与 CI 的 action 绑定判据，且退役后
     # 不再执行。若将来 un-retire，此格必须随之改判（见 `skip_reason`）。
+    # ── D 类登记（issue #7035 第二相·**只登记不改断言面**）──
+    # 本格是「构造不可满足」而非「agent 会答错」：`check_db_verify` 的 `fetch: employee` 分支
+    # （tests/agent_eval/local_runner.py）要求先找到 `employee_manage` 的**成功写调用**
+    # （`_first_successful_call`），而该工具现为 `read_only=True`、`VALID_ACTIONS={list, detail}`
+    # ⇒ 永远找不到 ⇒ 判「找不到成功调用（无变更可核对）」= **失败而非跳过**。现由 `skip_reason`
+    # 挡住；一旦摘掉 skip 立刻恒红。
+    # **本包不自行裁定**：本条同时属「灰类」（非单据对象创建的边界未裁 —— #5247 终版的
+    # 「仍交人工」清单），账户创建该不该支持是人工裁定项 ⇒ 期望面保持现状。
+    # 重锚方向与 un-skip 判据已逐字写在 `skip_reason`（载体 = #7040 把 `employee_manage` 的
+    # `create` 接回 B 端时才动本格）。红证（若裁定「支持」）= 把写路径注入成「调用成功但字段
+    # 没落库」⇒ 本格判红（这就是它承重的样子）。
     db_verify:
       - fetch: employee
         name: "李四"

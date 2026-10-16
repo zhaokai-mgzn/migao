@@ -22,8 +22,17 @@ cases:
       - ai-chat.context-memory
     user_inputs:
       - "加载默认本体 schema，校验七对象（订单/商品SKU/售后单/客户 + 员工/加工项/分类）定义、状态枚举、关系目标与 source 挂载点（issue #5245）"
-    expectations:
-      - tool: none
+    # D 类重锚（issue #7035 第二相）：runner 的 `check_expectation`（tests/agent_eval/local_runner.py）
+    # **没有**「不调用工具」这一分支 —— `none` 会被当成工具名去 `__all_tool_names` 里做子串匹配
+    # ⇒ 一旦真跑即 `unmatched expectation`（恒不可过；现由 `skip_reason` 挡住，摘掉 skip 立刻恒红）。
+    # 本体域用例的计分通道本来就是 `traces.tests` 的 pytest（纯数据结构契约、非 LLM 行为）
+    # ⇒ 不该有工具期望，清空（原值 `tool: none` 登记在此，不删历史）。
+    # 判别力不降：本组判据全部落在 `data_checks` + `traces.tests`，由 `.github/assertion_taxonomy.py`
+    # 的 `backend_contract_scoring_channel` 分流（`[backend-contract]` ⇒ 不受「计分断言非空」约束）。
+    # 红证（注入式）：把 `expectations: []` 改回 `- tool: none`，在 runner 里跑该条 ⇒ 期望 unmatched 判红。
+    # ⚠️ 未固化项：把「受管用例出现未知期望形态 ⇒ 入库即红」从运行期左移到 L0 判据，属
+    # `tests/unit_ci_workflows/**`（issue #7040 的射程），本包不动 —— 已写进 PR body。
+    expectations: []
     data_checks:
       - "默认 schema.yaml 存在且可加载，返回 Ontology 七对象：order/product_sku/aftersales/customer + employee/processing_item/category（knowledge_document 已随旧 RAG 知识库退场，issue #3051）"
       - "每个对象具备属性/关系/动作/规则四要素"
@@ -57,8 +66,17 @@ cases:
       - ai-chat.context-memory
     user_inputs:
       - "用户发图，vision 分析识别出候选商品/订单/客户 → 候选实体写入 context_manager 实体槽 → 后续轮次 build_context 注入"
-    expectations:
-      - tool: none
+    # D 类重锚（issue #7035 第二相）：runner 的 `check_expectation`（tests/agent_eval/local_runner.py）
+    # **没有**「不调用工具」这一分支 —— `none` 会被当成工具名去 `__all_tool_names` 里做子串匹配
+    # ⇒ 一旦真跑即 `unmatched expectation`（恒不可过；现由 `skip_reason` 挡住，摘掉 skip 立刻恒红）。
+    # 本体域用例的计分通道本来就是 `traces.tests` 的 pytest（纯数据结构契约、非 LLM 行为）
+    # ⇒ 不该有工具期望，清空（原值 `tool: none` 登记在此，不删历史）。
+    # 判别力不降：本组判据全部落在 `data_checks` + `traces.tests`，由 `.github/assertion_taxonomy.py`
+    # 的 `backend_contract_scoring_channel` 分流（`[backend-contract]` ⇒ 不受「计分断言非空」约束）。
+    # 红证（注入式）：把 `expectations: []` 改回 `- tool: none`，在 runner 里跑该条 ⇒ 期望 unmatched 判红。
+    # ⚠️ 未固化项：把「受管用例出现未知期望形态 ⇒ 入库即红」从运行期左移到 L0 判据，属
+    # `tests/unit_ci_workflows/**`（issue #7040 的射程），本包不动 —— 已写进 PR body。
+    expectations: []
     data_checks:
       - "record_vision_candidates 写入后 get_entities 返回包含 source=vision 的候选实体"
       - "build_context 注入的上下文包含 vision 候选实体（图片关联对象有召回保障）"
@@ -88,8 +106,17 @@ cases:
       - ai-chat.context-memory
     user_inputs:
       - "schema 全量登记 30 个业务 intent（双端 22 + 仅 mibao 5（finance + 加工单域 3 + 定时提醒 1）+ 仅 xiaobu 2（knowledge_manage/quote）——knowledge_faq 已双端可达，issue #3059）；契约校验与双端真实映射按 agent 分别对比，活映射侧另有一条端到端判据"
-    expectations:
-      - tool: none
+    # D 类重锚（issue #7035 第二相）：runner 的 `check_expectation`（tests/agent_eval/local_runner.py）
+    # **没有**「不调用工具」这一分支 —— `none` 会被当成工具名去 `__all_tool_names` 里做子串匹配
+    # ⇒ 一旦真跑即 `unmatched expectation`（恒不可过；现由 `skip_reason` 挡住，摘掉 skip 立刻恒红）。
+    # 本体域用例的计分通道本来就是 `traces.tests` 的 pytest（纯数据结构契约、非 LLM 行为）
+    # ⇒ 不该有工具期望，清空（原值 `tool: none` 登记在此，不删历史）。
+    # 判别力不降：本组判据全部落在 `data_checks` + `traces.tests`，由 `.github/assertion_taxonomy.py`
+    # 的 `backend_contract_scoring_channel` 分流（`[backend-contract]` ⇒ 不受「计分断言非空」约束）。
+    # 红证（注入式）：把 `expectations: []` 改回 `- tool: none`，在 runner 里跑该条 ⇒ 期望 unmatched 判红。
+    # ⚠️ 未固化项：把「受管用例出现未知期望形态 ⇒ 入库即红」从运行期左移到 L0 判据，属
+    # `tests/unit_ci_workflows/**`（issue #7040 的射程），本包不动 —— 已写进 PR body。
+    expectations: []
     data_checks:
       - "schema.intent_ownership 全量登记 30 个业务 intent（排除 general 兜底；mibao 已启用 knowledge_faq 知识卡片检索，issue #3059；knowledge_manage 管理意图不可达 agent——管理走 admin-web；定时提醒 scheduled_task_manage 仅 mibao（issue #6486 包 2 引入、#6514 补登记 schema））"
       - "契约校验 v2：schema 声明某 agent 可达的 intent 必须在该 agent 映射中存在（防假声明）；mibao route_key 严格一致（B 端是约定事实源，xiaobu 兜底覆盖不计漂移）；任一 agent 映射有但 schema 未登记 → 违规；声明可达的 route_key 必须在该 agent 真实可达集合中"
@@ -121,8 +148,17 @@ cases:
       - ai-chat.context-memory
     user_inputs:
       - "vision 分析完成后，分析文本写入 context_manager 上下文槽（record_vision_analysis）→ build_context 跨 skill 注入，澄清候选 grounded 有召回保障；base_skill 接线调用"
-    expectations:
-      - tool: none
+    # D 类重锚（issue #7035 第二相）：runner 的 `check_expectation`（tests/agent_eval/local_runner.py）
+    # **没有**「不调用工具」这一分支 —— `none` 会被当成工具名去 `__all_tool_names` 里做子串匹配
+    # ⇒ 一旦真跑即 `unmatched expectation`（恒不可过；现由 `skip_reason` 挡住，摘掉 skip 立刻恒红）。
+    # 本体域用例的计分通道本来就是 `traces.tests` 的 pytest（纯数据结构契约、非 LLM 行为）
+    # ⇒ 不该有工具期望，清空（原值 `tool: none` 登记在此，不删历史）。
+    # 判别力不降：本组判据全部落在 `data_checks` + `traces.tests`，由 `.github/assertion_taxonomy.py`
+    # 的 `backend_contract_scoring_channel` 分流（`[backend-contract]` ⇒ 不受「计分断言非空」约束）。
+    # 红证（注入式）：把 `expectations: []` 改回 `- tool: none`，在 runner 里跑该条 ⇒ 期望 unmatched 判红。
+    # ⚠️ 未固化项：把「受管用例出现未知期望形态 ⇒ 入库即红」从运行期左移到 L0 判据，属
+    # `tests/unit_ci_workflows/**`（issue #7040 的射程），本包不动 —— 已写进 PR body。
+    expectations: []
     data_checks:
       - "record_vision_analysis 写入后 build_context 注入包含 vision 分析文本（截断 800 字符）"
       - "重复写入覆盖旧文本（最新图片分析优先）；空文本/无 session 不落槽"
