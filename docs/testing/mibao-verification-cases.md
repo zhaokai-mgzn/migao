@@ -7635,6 +7635,7 @@
 数据: 跨月隔离 / 跨租户隔离：period 参与查询谓词与唯一性（非法 period ⇒ 422，连聚合都不调）；别的租户的结算单读不到（详情 ⇒ 404，不泄露存在性）。证据：PieceworkSettlementServiceTest 的 periodIsValidatedAndScopesTheQuery + otherTenantsSettlementIsNotReachable
 数据: 权限逐条声明（子菜单粒度，复用既有码、不新造）：读 production:view（与该页第一屏读端点 /piecework/summary 逐字同码）/ 写 processing:manage（与本域既有管理写面——工序库写面 / 部位价目矩阵 / 补价——同码；🔴 **刻意不用** production:execute：那个码由 #5699 的 I4 台账把守**恰好四条**执行类写端点、判据是「零外溢」，把结算挂上去会放宽那条不变量，而结算不是执行类动作）；四个动作**逐个**注解（无未注解端点、无类级兜底）。证据：PieceworkSettlementControllerTest 的 everyMappingDeclaresItsPermissionCode
 数据: ⚠️ **本轮不做（用户裁定，不得读成已解决）**：发放状态字段（已发/未发）、发放动作、导出、与财务域（finance_transactions）耦合 —— 重启条件见 issue #5653 的口径裁定评论。边界如实登记：本用例**没有**发放/导出面的任何断言（那些面本轮不存在，写断言就是空断言）。
+数据: 端上入口（商家侧「计件工资」页的**结算单**区块，issue #5653 追加）：① 生成后列表**真出现**该单且金额与同屏报表那一行**逐值一致**（`¥80.00` 对 `¥80.00`，不是「非空」）；② 作废后旧单**仍在列表**（状态「已作废」+ 原因逐字可见），且同一期间同一工人**可再次生成**（新单与旧单并存，各行按结算单 id 定位）；③ 重复生成的 **409** 在界面上是**那句人话**（逐字断言服务端原话「已有一张生效的结算单…先作废那张单（填写原因），再重新生成」，并反向断言**不是**泛化兜底句）；④ **反向断言**：结算单区块里没有「发放 / 导出 / 批量 / 编辑 / 改金额」的任何入口或字样，且消费面 `lib/api.ts` 的 `productionApi` 恰只有四个方法（无发放/导出）。另有两条口径判据：「生成后金额固定不变 / 作废的单留在下面可查原因」**上屏**；已作废**默认折叠**（折叠态那些行的 DOM **取不到** ⇒ 常驻面不随历史条数增长），点「已作废 N 张」才逐条出现。证据：`frontend/admin-web/tests/unit/pages/production-piecework.test.tsx` 的 `计件结算单 /production/piecework（issue #5653）` 组（7 条）。
 跳过: [backend-contract] 后端契约用例（无 LLM 环节，不进 agent-eval 冒烟）：断言由 Java 单测执行 —— PieceworkSettlementServiceTest（同源/不可改/作废重开/期间唯一/留痕/未定价/跨租户）+ PieceworkSettlementControllerTest（端点契约 + 权限 + 405 动词面），另有迁移面判据（V156 幂等 + 终态对账）
 ```
 溯源: 2026-10-16 新增（issue #5653；用户 2026-10-16 口径裁定 A 快照式 + 范围收窄「只需要做到计件结算 + 留痕」）。**注入式红证（修前 → 修后）**：① 同源面 —— 把结算侧改成「自己读 production_work_logs 再乘一遍」⇒ settledAmountComesVerbatimFromTheSameAggregation 与 settlementServiceHoldsNoAggregationInputs 双红（前者读数不再是 7.40 的逐值快照，后者报出多注入的 mapper）；② 不可改面 —— 给 controller 加一条 @PutMapping / 给 voidActive 的 SET 补上 total_amount ⇒ controllerDeclaresNoUpdateSurface / runtimeRejectsUpdateVerbs / voidSqlOnlyTouchesTheVoidTrail 三红；③ 作废重开面 —— 把作废改成物理删 / 把部分唯一索引谓词里的 voided_at IS NULL 去掉 ⇒ voidKeepsTheRowAndItsAmountUntouched / regeneratingAfterVoidIsAllowedAndTheOldRowSurvives 红（后者直接对应「作废后永远不能重开」这一产品级故障）；④ 留痕面 —— 把 generated_by 写成固定值或改成无参 now() ⇒ generationLeavesWhoWhenAndScope 红（后者另触发仓内 BusinessClockSourceGuardTest）。 ｜ tags: processing-order, piecework, settlement, finance
@@ -10996,8 +10997,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：756（活跃 134，跳过 622）
-- tier 分布：smoke 12 / normal 697 / adversarial 32
+- 用例总数：757（活跃 134，跳过 623）
+- tier 分布：smoke 12 / normal 698 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21

@@ -1849,6 +1849,47 @@ export interface PieceworkReport {
 }
 
 /**
+ * 计件结算单的明细行（issue #5653）——
+ * 与报表 `per_operation[]` 是**同源子集**（同一次聚合读数，生成时落定）。
+ */
+export interface PieceworkSettlementLine {
+  operation: string
+  qty: number
+  amount: number
+}
+
+/**
+ * 一行结算单（issue #5653）：某期间 × 某工人的应发金额，**生成即冻结**。
+ *
+ * <p>`voided` / `void_reason` / `voided_at` / `voided_by` = 作废留痕：作废**不删行**，
+ * 故列表里旧单仍在、能答出「谁在什么时候、为什么」。</p>
+ */
+export interface PieceworkSettlement {
+  id: string
+  period: string
+  worker_name: string
+  total_amount: number
+  line_items: PieceworkSettlementLine[]
+  generated_by?: string | null
+  generated_at?: string | null
+  voided: boolean
+  voided_at?: string | null
+  voided_by?: string | null
+  void_reason?: string | null
+  /** 详情 / 生成响应才有：该期间现取的报表读数（同源在消费面上可见） */
+  summary_total?: number | null
+}
+
+/** GET /api/admin/production/piecework/settlements?period=YYYY-MM&include_voided=` */
+export interface PieceworkSettlementList {
+  period: string | null
+  total: number
+  /** 该期间已作废的条数（列表默认折叠已作废，用它做「已作废 N 张」的入口） */
+  voided_count: number
+  items: PieceworkSettlement[]
+}
+
+/**
  * 工序可写字段（PUT /api/admin/production/operations/{id}，issue #4204；scope 见 #4384 A1）。
  *
  * ⚠️ **退场的是「可写键」，不是「读面键」**（issue #4960 / #4961 的同一口径）：

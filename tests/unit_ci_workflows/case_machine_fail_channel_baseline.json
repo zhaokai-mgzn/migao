@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 158
+    "backend_contract_scoring_zero": 159
   },
   "history": [
     {
@@ -526,6 +526,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 158,
       "note": "issue #6951（部署腿「线上就是本次构建」的判据，同族 #6746 / #6611 / #6554）新增 **1** 条 `[backend-contract]` 用例 **MC-105**（线上探到的 sha == 本次部署的 sha；端点侧契约 + 部署腿结构判据 + schedule 兜底档显式出声）。该用例按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 本读数 +1（上一行 156 → 本 PR 后 157）。机器判红通道 = `traces.tests` 的两个真测试文件（均非空且真实存在，本机实跑过）：`tests/unit_ci_workflows/test_served_version_verify.py`（20 passed；红证 = 注入错误期望 sha ⇒ 退 1、对照臂同场景换真值 ⇒ 退 0；8 条 fail-closed 参数化 + 4 条结构判据 + 2 条形态守卫）与 `backend/admin-api/src/test/java/com/migao/admin/controller/VersionControllerTest.java`（6 passed：字段面恰好 5 个 / 未注入 ⇒ sha 空串 / 只读 405 / 不泄露）；`traces.ci` = `pr-check.yml`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -p no:randomly` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 158}` ⇒ 与锚点 157 的差值 1 = 本 PR 新增那一条。"
+    },
+    {
+      "sha": "pending-pr-7010",
+      "date": "2026-10-16",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 159,
+      "note": "issue #5653（计件**结算单** + 生成/作废留痕：生成即冻结 / 期间唯一 / 与报表同源）新增 **1** 条 `[backend-contract]` 用例 **PG-073** —— 它按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0` ⇒ 本读数 +1，锚点 158 → **159**）。机器判红通道 = `traces.tests` 的四个真测试文件（均非空且真实存在，本机实跑绿）：`backend/admin-api/src/test/java/com/migao/admin/service/PieceworkSettlementServiceTest.java`（15 条：同源逐值 / 不注入报工表 Mapper 的结构判据 / 无可结金额 422 不落 0 元单 / 作废 CAS 只改一族三列 / 作废必填原因 / 作废后可重开 / 重复生成 409 / 并发败者 409 非 500 / 期间校验 / 留痕三件套 / 跨租户 404 / 金额小数位准入（3 位 ⇒ 422 且零写入））、`backend/admin-api/src/test/java/com/migao/admin/controller/PieceworkSettlementControllerTest.java`（7 条：接口层无 PUT/PATCH/DELETE + 运行时 405 / 生成 200 且金额逐值 / 重复生成 409 具名回执 / 作废留痕 / 参数透传 / 每个映射的权限码 + 路径逐字）、`backend/admin-api/src/test/java/com/migao/admin/service/PieceworkSettlementRealDbTest.java`（4 条真 PG：迁移终态谓词逐字 + 两遍幂等 / `ON CONFLICT` 谓词匹配 / 真 mapper 往返（ASSIGN_UUID + JSONB + CAS + 快照列不动）/ 作废后重开新单）、`backend/admin-api/src/test/java/com/migao/admin/mapper/PieceworkSettlementMapperTest.java`（6 条：三源收敛列集 / 部分唯一索引谓词两源逐字 / 原子生成目标带索引谓词 / mapper 只有两条写语句且 SET 不含快照列）；前端入口（同 PR 补的 admin-web 半边）另有 7 条 vitest 判据挂在同一个用例下（`frontend/admin-web/tests/unit/pages/production-piecework.test.tsx`）；`traces.ci` = `pr-check.yml`（`admin-api unit tests` + `admin-web typecheck + unit tests` + `ci workflow helper unit tests`）。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -k i3` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 159}` vs 锚点 158 ⇒ 差值 1 = 本 PR 新增那一条。"
     }
   ]
 }

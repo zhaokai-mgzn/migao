@@ -798,6 +798,7 @@
       "gate": "production:view",
       "units": {
         "production:view": [
+          "GET /api/admin/production/piecework/settlements",
           "GET /api/admin/production/piecework/summary"
         ]
       },
