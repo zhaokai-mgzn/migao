@@ -131,6 +131,19 @@ MAPPING_RULES = [
     # + 确认）、ST-005（标已读 → notification_manage(mark_read)）—— #3624 补齐。
     # 两条分别覆盖该 skill 的两个需确认写工具（settings_manage / notification_manage），
     # 也就是 #3577 补绑 interact 后最需要真信号的两条写路径。
+    # 🔎 **2026-10-16（issue #7048 P1 · 新增项 9）复核：本映射与新能力一致，无需改** ──
+    # 上游三度改判后逐条核对（**不是照抄**）：
+    #   · #5302（2026-09-25）把 `notification_manage` 收窄为只读（`mark_read` 从源码删除）
+    #     ⇒ 当时本映射的 `mark_read` 口径**已不可达**（应改判而**未**改 —— 本注释即补登记）；
+    #   · #7040/#7049（2026-10-16）按用户「能力边界 终版」（**变更 ✅**）把 `mark_read` /
+    #     `read_all` **接回**（`notification_manage.py` 的
+    #     `VALID_ACTIONS = {list, unread_count, mark_read, read_all}`、`read_only = False`）；
+    #   · #7048 P1 把 `ST-005` 按新能力重锚（期望 = `notification_manage(action=mark_read)`，
+    #     见 `.github/cases/settings.yml`）。
+    # ⇒ 现取真值：`settings_skill.py` 仍绑定该工具（判据 = `test_mibao_b_end_readonly.py`
+    #   的「变更工具必须真的可达」正向判据），`ST-005` 是它的写路径用例 ⇒ **本映射逐字仍然正确**。
+    # 判据（会红）：`tests/unit_ci_workflows/test_behavior_mapping_tool_coverage.py` +
+    # `test_behavior_mapping_guard_family_coverage.py`（映射 ⇄ 工具面/守卫族的类级守卫）。
     (r"app/graph/skills/settings_skill\.py", ["ST-003", "ST-005"]),
     # 数据分析（看板 / 财务 / 会话）Skill 本体 → DA-004（会话监控 → session_manage(monitor)）、
     # FN-001（登记线下收款 → finance_api(create_transaction) + 确认）—— #3624 补齐。

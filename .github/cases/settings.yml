@@ -140,41 +140,88 @@ cases:
 
   - id: ST-005
     legacy_id: "6.5"
-    title: "通知标记已读 —— 能力已下线（只读域）：如实告知 + 引导到通知中心，不假承诺"
+    title: "通知标记已读 —— 变更已接回（#7040）：标记已读要真做（走确认门禁），不得谎称已读"
     domains:
       - settings
       - notification
     tier: normal
     tags:
-      - query
+      - write
+      - notification
     truths_ref:
       - agent-notification.notification-status
     user_inputs:
       - "把新订单通知标为已读"
-    # ── 2026-09-25 **退场改造**（issue #5302；承接 #5247「B 端黄金策只读化」）────────────
-    # 原断言（`notification_manage(action=mark_read or read_all)` + data_check「status 变为 read」）
-    # **不可满足**：两个写 action 已从工具源码删除（`VALID_ACTIONS` 只剩 list/unread_count）。
-    # 用例保留（用户仍会说这句话），改判**能力下线后的正确行为** = 如实告知 + 引导到后台
-    # 「通知中心」页自助处理，且不得假承诺已标记。
-    # 「不得调用已删除的写 action」由 L0 结构判据锁定
-    # （backend/ai-agent-service/tests/test_settings_domain_readonly.py +
-    #  tests/unit_ci_workflows/test_mibao_b_end_readonly.py 判据 6）——
-    # 此处**不写** `must_fail: notification_manage(action=mark_read)`：那是悬空 action。
+    # ── 2026-10-16 **重锚**（issue #7048 P1 · 项 A；承接 #7049 把变更接回 B 端）──────────
+    # 三次沿革（**每一次都是「前提变了」，不是放开判据**）：
+    #   ① #5302（2026-09-25）：`mark_read` / `read_all` 被从工具源码删除 ⇒ 期望收成
+    #      `direct_reply`（如实告知「能力已下线」+ 引导通知中心）；
+    #   ② #7040/#7049（2026-10-16）：用户「能力边界 终版」裁定 **变更 ✅** ⇒ 两个写 action
+    #      **接回**（`backend/ai-agent-service/app/tools/notification_manage.py` 的
+    #      `VALID_ACTIONS = {list, unread_count, mark_read, read_all}`，`read_only = False`，
+    #      `READ_ONLY_ACTIONS = {list, unread_count}`）⇒ ①的问法**自身编码了被推翻的只读口径**
+    #      （「能力已下线（只读域）」），必须按新能力重锚；
+    #   ③ 本次（issue #7048）：期望 = **工具调用（真做）或确认类澄清卡（先确认再改）**。
+    # 判据边界（写清楚，防被读成"什么都算过"）：
+    #   · `notification_manage` 侧：`mark_read` / `read_all` ∈ `WRITE_TOOL_ACTIONS`（#7040 填回）
+    #     ⇒ 非只读 action 走 `BaseTool` 的写确认门禁（`react_turn` 的门禁 11/11），
+    #     **先确认再改** 与 **本轮直接改** 都是合格落地形态 ⇒ 期望取 OR；
+    #   · `interact` / `direct_reply` 侧：确认卡 / 澄清话术也算合格（与 DF-008 的既有口径同形）；
+    #   · **不得谎称已读**：`forbidden_text` 为主判据（内容一字未动）；
+    #   · **调用失败不得算过**：`must_succeed[notification_manage, only_if_called]` ——
+    #     「没去改」不算失败，「**去改了就必须成了**」（先例 = AS-003/AS-005 的条件效果层）。
+    # ⚠️ 期望里为什么是**单个** `mark_read`（而**不是** `mark_read or read_all`）：
+    # ① 用户输入是**单条**（「把**新订单通知**标为已读」）⇒ 真值就是 `mark_read`
+    #    （`read_all` = 「全部标记已读」是另一件事，商家的诉求里没有它）；
+    # ② runner 的 `args` 做**值级**匹配（只读查询那套同义集不覆盖写 action）⇒
+    #    `"mark_read or read_all"` 这种 OR 串**不是**合法 action 值，会静默匹配不上；
+    # ③ 写分类不依赖值：`notification_manage` 在 `WRITE_TOOL_ACTIONS` 里、`mark_read` ∈ 写集合
+    #    ⇒ `assertion_taxonomy.is_write_expectation` 判写，`must_succeed` 是它的效果层。
     expectations:
-      - tool: direct_reply
-    # forbidden-text-intent: 本用例测的就是「能力已下线 ⇒ 不得假承诺已标记已读」——禁令即主判据
+      - tool: notification_manage
+        args:
+          action: mark_read
+      - tool: direct_reply or interact
+    # forbidden-text-intent: 预测/承诺话术的禁令仍是主判据之一 ——
+    # 「不能做」已不再是本用例的真值（能力已接回），真值是「**不得谎称已读**」
+    # （说了已读就必须真有 success 的调用；`must_succeed` 是这一半的机器判据）。
     forbidden_text:
       - "已标记为已读"
       - "已标为已读"
       - "已全部标记"
       - "已经帮您标记"
       - "已为您标记"
+    # 条件效果层（「调用了 ≠ 成了」，#3778）：声明了写工具就必须证明它成了。
+    # `only_if_called` 的理由：本用例合格形态之一是**先出确认卡、本轮不执行**
+    # （商家尚未确认）⇒ 无条件声明会把合格行为判红（先例 = AS-003/AS-005 的 `only_if_called`）。
+    must_succeed:
+      - tool: notification_manage
+        only_if_called: true
+    # ── 自清理 + 前置自断言（issue #7048 P1 · 项 A）────────────────────────────────
+    # 本条重锚回写面后**重新**成为写类用例 ⇒ 规则 b（自清理）/ f（前置自断言）随即到期
+    # （#7049 之后 `test_case_trust_gate.py` 的全量对账当场判出
+    # `CASE-TRUST-NO-SELF-CLEAN` + `CASE-TRUST-NO-PRECONDITION-ASSERTION`，**未登记即阻塞**）。
+    # · `namespaces`：写产物是**本人收件箱里的未读通知** ⇒ 争用面 = 「该收件人存在未读通知」。
+    #   声明命名空间与同域用例自动互斥（弱证据形态，与 HR-005 的 `role_code:` 同款用法）。
+    # · `preconditions`：**声明层字段**（`declares_precondition()` 认的那种），
+    #   与 HR-005 的用法逐字同构；**有意不发明 typed `precondition` 类型** ——
+    #   runner 的 `_PRECONDITION_TYPES` 里没有「未读通知存在」这一类（不发明、不拿别的类型冒充）。
+    # ⚠️ 复位手段的边界（如实登记）：**没有** `notification_unread_restore` 这类复位类型，
+    # 而 agent 侧的写面只有 `mark_read` / `read_all`（**没有** `mark_unread`）⇒ 真做一次就不可逆。
+    # 故本条**有意不声明 `pre_clean`**（写不存在的复位类型 = 静默空转 / 假绿，`migao-dev-flow` §19.1）；
+    # 只声明 `namespaces`（规则 b 接受的**弱证据**形态，口径见 `assertion_taxonomy` 的
+    # `SELF_CLEAN_FIELDS` 注释）。⇒ 影响面 = 「该收件人的未读通知变少」，且本用例的期望
+    # **不依赖**未读计数（`unread_count` 不在期望里）⇒ 重试前置仍等价。
+    namespaces:
+      - "notification:recipient_unread"
+    preconditions:
+      - "商家本人的通知中心里存在**至少一条未读通知**（否则 `mark_read` 无对象、agent 无从标记）｜ 变体：目标通知已读 ⇒ agent 合理地答「这条已是已读」，此时本用例的红不构成缺陷（前置面，不是行为面）"
     data_checks:
-      - "如实告知：黄金策不改通知状态（本域只读）⇒ 引导用户到商户后台「通知中心」页自助标记"
+      - "真值 = 变更（标记已读）已在能力面内，且该调用必须走写确认门禁（非只读 action）"
       - "整场不得出现假承诺话术（机器断言见 forbidden_text）"
-      - "notification_manage 只暴露 list/unread_count（结构性判据：backend/ai-agent-service/tests/test_settings_domain_readonly.py）"
+      - "标记已读的落库真值由 admin-api 侧承担：PUT /api/admin/notifications/{id}/read（单条）/ PUT /api/admin/notifications/read-all（全部）"
     skip_reason: ""
-    merge_log: "verification 6.5 独有 ｜ 2026-09-25（issue #5302，settings 域只读化收口）**退场改造**：原 `expectations[notification_manage(action=mark_read or read_all)]` 与 data_check「status 变为 read」**整体移除**（写 action 已从工具删除 ⇒ 永久不可满足，留着就是悬空声明 + 假红）；改判新行为 = 如实告知 + 引导到「通知中心」+ 不得假承诺（`forbidden_text` 承载禁令面）；`tags` 由 `write` 改判 `query`（本域已无写能力）"
+    merge_log: "verification 6.5 独有 ｜ 2026-09-25（issue #5302，settings 域只读化收口）**退场改造**：原 `expectations[notification_manage(action=mark_read or read_all)]` 与 data_check「status 变为 read」**整体移除**（写 action 已从工具删除 ⇒ 永久不可满足，留着就是悬空声明 + 假红）；改判新行为 = 如实告知 + 引导到「通知中心」+ 不得假承诺（`forbidden_text` 承载禁令面）；`tags` 由 `write` 改判 `query`（本域已无写能力）。 ｜ 2026-10-16（issue #7048 P1 · 项 A，承接 #7049 把变更接回 B 端）**重锚回写面**：`title` 去掉逐字编码旧口径的「能力已下线（只读域）」；`expectations` 由 [`direct_reply`] 改为 [`notification_manage(action=mark_read)`, `direct_reply or interact`]（**工具调用 / 确认卡 / 澄清话术**三种合格落地形态）；新增 `must_succeed[notification_manage, only_if_called=true]`（效果层：去改了就必须成了）；`forbidden_text` 五条**一字未动**（禁令仍是主判据之一）；`tags` 由 `query` 改回 `write`。**红证**：把 `mark_read` 加进工具源码的 `READ_ONLY_ACTIONS`（= 绕过写确认门禁）⇒ `backend/ai-agent-service/tests/test_notification_manage_change_actions.py::test_read_only_actions_are_the_read_ones_only` + `test_confirmation_gate_is_declared` 当场判红（已实测：2 failed）；`tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 判据 8 同向。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_notification_manage.py"

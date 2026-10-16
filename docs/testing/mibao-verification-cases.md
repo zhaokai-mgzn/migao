@@ -33,7 +33,7 @@
 你: [🤖 按上一轮卡片作答]
 你: [🤖 按上一轮卡片作答]
 期望: order_query
-期望: after_sales_manage or aftersale_create(order_id=复用上轮 UUID)
+期望: after_sales_manage
 数据: success=true
 数据: 工单号匹配 ^AS-\d{8}-\d{4}$
 前置: order_count_for_phone(source=13800138000)
@@ -42,7 +42,7 @@
 必须成功: aftersale_create（落库面 metadata.tool_results）
 ```
 真值: aftersales-flow.create-order-required, aftersales-flow.dup-guard, aftersales-flow.ticket-format
-溯源: eval C002 + verification 3.3（同义，取 eval 的跨域版）；2026-09-14 自包含化（#3511）→ 指代显式化（#3568，用手机号而非「这个订单」）；2026-09-15 补收尾答卡轮（结论档 run 34841029062 实证：4 轮里末轮是 agent 发确认卡那一轮，after_sales_manage 必不执行）——断言未改；2026-09-15（issue #3781）补 namespaces + precondition[order_count_for_phone]：本用例依赖「13800138000 名下订单集合稳定」，而同栈并行建单用例（OR-016/CR-001/CH-010/OR-008/OR-009/OR-015/CR-003）会实时改写它 —— 断言内容未改，改的是**前置可见性与互斥** ｜ 2026-09-25（issue #3778 第一批）：补 **`must_succeed[aftersale_create, only_if_called=true]`** —— 原效果层只有轮级 `success=true`（工具无关 ⇒ 工单没建出来也能绿）；条件档是因为本用例**双端**而 `aftersale_create` 是 **C 端专属**（B 端腿没这个工具 ⇒ 无条件声明 = 固定噪音；B 端腿放过、C 端腿「去建了就必须成了」）；`user_inputs` / `expectations` / `data_checks` / `namespaces` / `precondition` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ 2026-09-26（issue #4097）：补 **`must_succeed[aftersale_create, source=metadata, only_if_called=true]`** —— 同一件事的**落库面**断言（读 `metadata.tool_results`；读侧 `GET /api/chat/history/{sid}` 自本单起回传该字段，此前只写不读、评测无法断言「确实调了 / 确实成了」）。两面**显式二选一**（`source`），取数不可用 ⇒ fail-closed 判「断言未评估」；本条与既有 SSE 面条目同源同序（写侧一次调用同时产出事件与落库元信息）⇒ 正常路径必然一致、不一致即缺陷。`user_inputs` / `expectations` / `data_checks` / `namespaces` / `precondition` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ tags: cross_skill, context_share, create
+溯源: eval C002 + verification 3.3（同义，取 eval 的跨域版）；2026-09-14 自包含化（#3511）→ 指代显式化（#3568，用手机号而非「这个订单」）；2026-09-15 补收尾答卡轮（结论档 run 34841029062 实证：4 轮里末轮是 agent 发确认卡那一轮，after_sales_manage 必不执行）——断言未改；2026-09-15（issue #3781）补 namespaces + precondition[order_count_for_phone]：本用例依赖「13800138000 名下订单集合稳定」，而同栈并行建单用例（OR-016/CR-001/CH-010/OR-008/OR-009/OR-015/CR-003）会实时改写它 —— 断言内容未改，改的是**前置可见性与互斥** ｜ 2026-09-25（issue #3778 第一批）：补 **`must_succeed[aftersale_create, only_if_called=true]`** —— 原效果层只有轮级 `success=true`（工具无关 ⇒ 工单没建出来也能绿）；条件档是因为本用例**双端**而 `aftersale_create` 是 **C 端专属**（B 端腿没这个工具 ⇒ 无条件声明 = 固定噪音；B 端腿放过、C 端腿「去建了就必须成了」）；`user_inputs` / `expectations` / `data_checks` / `namespaces` / `precondition` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ 2026-09-26（issue #4097）：补 **`must_succeed[aftersale_create, source=metadata, only_if_called=true]`** —— 同一件事的**落库面**断言（读 `metadata.tool_results`；读侧 `GET /api/chat/history/{sid}` 自本单起回传该字段，此前只写不读、评测无法断言「确实调了 / 确实成了」）。两面**显式二选一**（`source`），取数不可用 ⇒ fail-closed 判「断言未评估」；本条与既有 SSE 面条目同源同序（写侧一次调用同时产出事件与落库元信息）⇒ 正常路径必然一致、不一致即缺陷。`user_inputs` / `expectations` / `data_checks` / `namespaces` / `precondition` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ 2026-10-16（issue #7048 P1 · 项 B/C，按 #7035 第一相审计报告 §2.2）：`expectations` 去掉写分支/跨端分支，收成存活的只读路径 `after_sales_manage` —— 用户 2026-10-16「能力边界 终版」明令「其他单据类的也不要支持创建」⇒ `aftersale_create`（创建售后工单 = 单据类创建）**不再作为合格分支**（AS-005 另去掉 C 端专属的 `aftersale_query` 分支）。`must_succeed[aftersale_create, only_if_called=true]`（+ AS-003 的 `source: metadata` 落库面那条）/ `namespaces` / `precondition` / `data_checks` **一字未动**（C 端腿写效果层判别力不丢）；写类身份改由 `tests/unit_ci_workflows/test_case_trust_gate.py` 的 `effect_declared_write_tools()` 现算。 ｜ tags: cross_skill, context_share, create
 
 ### AS-004. 查看售后工单（只读；原「更新工单状态-关闭」随 #5247 写能力下线改判） 🔵
 ```
@@ -64,8 +64,7 @@
 你: 原因：颜色与图片不符，退款
 你: 这工单现在什么状态了
 期望: order_query
-期望: after_sales_manage or aftersale_create
-期望: after_sales_manage or aftersale_query
+期望: after_sales_manage
 数据: aftersale_create 的 order_id 来自第2步查询结果
 数据: 售后工单包含正确的退款原因
 前置: order_count_for_phone(source=13800138000)
@@ -73,7 +72,7 @@
 必须成功: aftersale_create
 ```
 真值: aftersales-flow.status-enums, aftersales-flow.timeline, aftersales-flow.create-order-required
-溯源: eval M008 独有（售后全旅程）。2026-09-14 自包含化（issue #3568）：第 2 轮硬编码单号 ORD-20260701-0001（评测环境不存在，OR-006/OR-010 已实测 found:0）→ 换手机号唯一指代，同 AS-003（#3511）先例。2026-09-19（issue #4521 的 burn-down 缴费，metric=entries ⇒ 必须整条销账）：本用例命中的唯一存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION ⇒ 补 `precondition[order_count_for_phone: 13800138000]`（有意不给 `expect`，同 AS-003/OR-012 口径；本用例不建单 ⇒ 漂移判据不会被自己踩红）。user_inputs / expectations / data_checks / namespaces 原样未动、无放宽。 ｜ 2026-09-25（issue #3778 第一批）：补 **`must_succeed[aftersale_create, only_if_called=true]`**（效果层；同族形状 = CH-012，条件档理由同 AS-003）—— 原用例只有「调用了」级证据。`user_inputs` / `expectations` / `data_checks` / `namespaces` / `precondition` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ tags: multi_turn, cross_skill, real_scenario
+溯源: eval M008 独有（售后全旅程）。2026-09-14 自包含化（issue #3568）：第 2 轮硬编码单号 ORD-20260701-0001（评测环境不存在，OR-006/OR-010 已实测 found:0）→ 换手机号唯一指代，同 AS-003（#3511）先例。2026-09-19（issue #4521 的 burn-down 缴费，metric=entries ⇒ 必须整条销账）：本用例命中的唯一存量违规是 CASE-TRUST-NO-PRECONDITION-ASSERTION ⇒ 补 `precondition[order_count_for_phone: 13800138000]`（有意不给 `expect`，同 AS-003/OR-012 口径；本用例不建单 ⇒ 漂移判据不会被自己踩红）。user_inputs / expectations / data_checks / namespaces 原样未动、无放宽。 ｜ 2026-09-25（issue #3778 第一批）：补 **`must_succeed[aftersale_create, only_if_called=true]`**（效果层；同族形状 = CH-012，条件档理由同 AS-003）—— 原用例只有「调用了」级证据。`user_inputs` / `expectations` / `data_checks` / `namespaces` / `precondition` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ 2026-10-16（issue #7048 P1 · 项 B/C，按 #7035 第一相审计报告 §2.2）：`expectations` 去掉写分支/跨端分支，收成存活的只读路径 `after_sales_manage` —— 用户 2026-10-16「能力边界 终版」明令「其他单据类的也不要支持创建」⇒ `aftersale_create`（创建售后工单 = 单据类创建）**不再作为合格分支**（AS-005 另去掉 C 端专属的 `aftersale_query` 分支）。`must_succeed[aftersale_create, only_if_called=true]`（+ AS-003 的 `source: metadata` 落库面那条）/ `namespaces` / `precondition` / `data_checks` **一字未动**（C 端腿写效果层判别力不丢）；写类身份改由 `tests/unit_ci_workflows/test_case_trust_gate.py` 的 `effect_declared_write_tools()` 现算。 ｜ tags: multi_turn, cross_skill, real_scenario
 
 ### AS-006. 售后工单退款/退货完结 - 按商品「退货回补库存」开关决定是否回补库存 🔵
 ```
@@ -1577,16 +1576,17 @@
 ### CH-009. interact form 表单提交注入上下文（__FORM__ 协议） 🔵
 ```
 你: __FORM__|{"customer_name":"张三","customer_phone":"13800138000","customer_address":"杭州市西湖区","quantity":"3"}
-期望: direct_reply or order_create or interact
+期望: direct_reply or interact
 数据: 表单字段注入本轮 LLM 上下文（不改写会话历史）
 数据: 日志中手机号脱敏（138****8000）
 数据: payload 超限/非法 JSON 回退为普通文本处理
+数据: 不得走创建订单写路径（B 端射程内创建订单 ❌；机器面见 must_succeed 的条件档 + traces）
 前置: order_count_for_phone(source=13800138000、max_growth=1)
 命名空间(同键互斥·自动串行): customer_phone:13800138000
 必须成功: order_create
 ```
 真值: ai-chat.context-memory
-溯源: C 端表单化交互（miniapp-multiturn-form-scenarios.md）M1+M2 ｜ 2026-09-25（issue #3778 第一批）：补 `must_succeed[order_create, only_if_called=true]`（条件效果层，「去下单了就必须成了」；合格行为「只发文本」不受影响）+ `namespaces[customer_phone:13800138000]`（写分支落单的并行互斥/重试前置等价）。`user_inputs` / `expectations` / `data_checks` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ tags: form, interactive, multi_turn
+溯源: C 端表单化交互（miniapp-multiturn-form-scenarios.md）M1+M2 ｜ 2026-09-25（issue #3778 第一批）：补 `must_succeed[order_create, only_if_called=true]`（条件效果层，「去下单了就必须成了」；合格行为「只发文本」不受影响）+ `namespaces[customer_phone:13800138000]`（写分支落单的并行互斥/重试前置等价）。`user_inputs` / `expectations` / `data_checks` / `traces` 一字未动、**无放宽**（只增不减）。 ｜ 2026-10-16（issue #7048 P1 · 项 C）：`expectations` 由 [`direct_reply or order_create or interact`] 改为 [`direct_reply or interact`] —— 按用户 2026-10-16「能力边界 终版」（创建订单 ❌，射程 = B 端）**不再把「直接下单」写成合格分支**；`must_succeed[order_create, only_if_called=true]` / `namespaces` / `precondition` 原样保留（C 端腿的写效果层判别力一字未丢）；写类身份改由 `write_expectations` 的**效果层扩展**（issue #7048）现算 ⇒ 规则 a2/b/f 继续生效。 ｜ tags: form, interactive, multi_turn
 
 ### CH-010. 选购下单表单化交互（choice 选品→form 收参→confirm 确认→下单） 🔵
 ```
@@ -1742,14 +1742,15 @@
 期望: interact(component=choice)
 数据: 多模态 system prompt 注入 VISION_CLARIFY_GUIDE（呈现理解 + 候选意图 + 不连环追问）
 数据: 意图明确（带『创建这个商品』等文字）时直接进既有流程，不多问
-数据: 意图不明确（纯图/口语短句）时：先给出 2-4 个候选意图（找同款/识别面料/算料/查订单/建品），不直接执行写操作
+数据: 意图不明确（纯图/口语短句）时：先给出 2-4 个候选意图（找同款/识别面料/算料/查订单/建品），不直接执行写操作；其中「建品」只能作为**引导到后台商品管理页**的入口出现（机器断言见 forbidden_tools）
 数据: 候选意图用简短大白话列出，可用 interact(choice) 卡片点选
 数据: 已识别字段不重复反问，不编造图片中不存在的信息
 前置: 本用例是 [backend-contract]（agent-eval 栈无发图能力，不跑它）：前置 = 多模态 system prompt 的 VISION_CLARIFY_GUIDE 注入点仍在（backend/ai-agent-service 的 base_skill 多模态注入）且纯图/口语短句走的仍是「先澄清后动作」分支；前置由单测自建并断言（test_graph_skills.py::TestVisionClarifyGuide / test_vision_integration.py），注入点被摘或分支被改即单测直接红 ⇒ 前置不成立时不会表现成「agent 不干活」
+全程禁用: product_manage(create)
 跳过: [backend-contract] 纯图澄清注入由 pytest 单测验证（test_graph_skills.py::TestVisionClarifyGuide，mock LLM 断言 system prompt），agent-eval runner 当前无发图能力，不进入 agent-eval 冒烟
 ```
 真值: ai-chat.route-actions
-溯源: issue #2777 Phase 1：VISION_CLARIFY_GUIDE + base_skill 多模态注入（澄清能力强化）；2026-09-20（issue #4694 的 Case Trust burn-down 缴费，与本单行为改动无关）：补声明层 `precondition`（原条目命中 CASE-TRUST-NO-PRECONDITION-ASSERTION 整条销账）—— 断言内容一字未改，补的是**前置可见性** ｜ tags: clarification, multimodal, image
+溯源: issue #2777 Phase 1：VISION_CLARIFY_GUIDE + base_skill 多模态注入（澄清能力强化）；2026-09-20（issue #4694 的 Case Trust burn-down 缴费，与本单行为改动无关）：补声明层 `precondition`（原条目命中 CASE-TRUST-NO-PRECONDITION-ASSERTION 整条销账）—— 断言内容一字未改，补的是**前置可见性** ｜ 2026-10-16（issue #7048 P1 · 项 C，按 #7035 第一相审计报告 §2.2）：新增 `forbidden_tools[product_manage(action=create)]` —— 按 2026-10-16「能力边界 终版」（**创建商品 ❌**）把「候选意图含『建品』但**不得真去建**」从散文（第 3 条 data_check）机器化；`expectations` / `user_inputs` / 其余 data_checks / `precondition` 一字未动。 ｜ tags: clarification, multimodal, image
 
 ### CH-019. B 端黄金策交互卡可用 - 建品/下单/售后/客户写操作可发 interact 卡片（issue #2777 G6） 🔵
 ```
@@ -2197,10 +2198,11 @@
 清理: product_dedupe(product_keyword=遮光窗帘)
 前置: product_count_for_keyword(source=遮光窗帘、expect=1)
 命名空间(同键互斥·自动串行): customer_phone:13800138000、product_name:遮光窗帘
+全程禁用: order_create
 跳过: [backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「下单（跨 Skill 复用 UUID）」（order_create）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为「查商品详情（product_detail）+ 如实说明黄金策不做下单、引导去后台订单页面」。
 ```
 真值: id-resolve.no-fabricate, ai-chat.context-memory
-溯源: eval C001 独有；2026-09-14 校准（#3518）：① 下单轮去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 合理查无此价 → 流程不前进），自包含化同 AS-003 先例（#3511）；② pre_clean 去 price 过滤（关键词去重，原 price: 100 在种子 ¥168 的栈上恒不匹配）。2026-09-15 校准（结论档 run 34841029062 实证）：③ 补 2 轮收尾答卡轮——5 轮预算里末轮恰好是 agent **发**确认卡那一轮，没有轮次去点卡 → order_create 必不执行（断言本身合理，不得放宽），照 OR-015（#3544 §2）先例。2026-09-21（burn-down 缴费，随 #4865 的用例面改动）：补效果层断言 `must_succeed[order_create]`（裸工具名期望只证「调用过」）+ 前置自断言 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（按名选品 + 同关键词 pre_clean ⇒ 唯一性是可判定前置；同 OR-015/OR-014/OR-029 先例）⇒ 整条销账（`CASE-TRUST-NO-EFFECT-ASSERTION` + `CASE-TRUST-NO-PRECONDITION-ASSERTION`）。user_inputs / expectations / required_args / data_checks / pre_clean / namespaces 一字未动（断言只增不减）。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：order_create 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_detail, order_create] 改判为 [product_detail]，must_succeed / required_args 里的 order_create 同步移除（否则成为永不满足的悬空声明；required_args 整条退场，无残留字段）；user_inputs / namespaces / pre_clean / precondition / data_checks 原样未动（下单剧本与「复用 UUID」的散文判据保留为历史记录、不再进运行期）。 ｜ tags: cross_skill, context_share
+溯源: eval C001 独有；2026-09-14 校准（#3518）：① 下单轮去「100元的那件」价格点名（独立栈种子只有 ¥168 款，点名不存在的价 → agent 合理查无此价 → 流程不前进），自包含化同 AS-003 先例（#3511）；② pre_clean 去 price 过滤（关键词去重，原 price: 100 在种子 ¥168 的栈上恒不匹配）。2026-09-15 校准（结论档 run 34841029062 实证）：③ 补 2 轮收尾答卡轮——5 轮预算里末轮恰好是 agent **发**确认卡那一轮，没有轮次去点卡 → order_create 必不执行（断言本身合理，不得放宽），照 OR-015（#3544 §2）先例。2026-09-21（burn-down 缴费，随 #4865 的用例面改动）：补效果层断言 `must_succeed[order_create]`（裸工具名期望只证「调用过」）+ 前置自断言 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（按名选品 + 同关键词 pre_clean ⇒ 唯一性是可判定前置；同 OR-015/OR-014/OR-029 先例）⇒ 整条销账（`CASE-TRUST-NO-EFFECT-ASSERTION` + `CASE-TRUST-NO-PRECONDITION-ASSERTION`）。user_inputs / expectations / required_args / data_checks / pre_clean / namespaces 一字未动（断言只增不减）。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：order_create 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_detail, order_create] 改判为 [product_detail]，must_succeed / required_args 里的 order_create 同步移除（否则成为永不满足的悬空声明；required_args 整条退场，无残留字段）；user_inputs / namespaces / pre_clean / precondition / data_checks 原样未动（下单剧本与「复用 UUID」的散文判据保留为历史记录、不再进运行期）。 ｜ 2026-10-16（issue #7048 P1 · 项 C，按 #7035 第一相审计报告 §2.2）：新增 `forbidden_tools[order_create]`（2026-10-16「能力边界 终版」：**创建订单 ❌**）—— 剧本整条是下单链而期望只断言查品，禁区把「不得真去下单」机器化；`user_inputs` / `expectations` / `namespaces` / `pre_clean` / `precondition` / `data_checks` 一字未动（退役用例的剧本改写归产品侧 un-skip 批次 #7040）。 ｜ tags: cross_skill, context_share
 
 ### CR-002. 对抗性 - 3 个 Skill 连续切换 🔴
 ```
@@ -2213,10 +2215,11 @@
 数据: success=true
 前置: product_count_for_keyword(source=遮光窗帘、expect=1)
 命名空间(同键互斥·自动串行): product_name:遮光窗帘、customer_phone:13800138000
+全程禁用: order_create
 跳过: [backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「给张三下单（3 个 Skill 连续切换的末段写面）」（order_create）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为「搜商品 + 查客户（product_search / customer_manage action=list）+ 如实说明黄金策不做下单、引导去后台订单页面」。
 ```
 真值: ai-chat.context-memory, id-resolve.no-fabricate
-溯源: eval C003 独有；2026-09-18 补前置自断言 + namespaces（burn-down：改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-PRECONDITION-ASSERTION + CASE-TRUST-NO-SELF-CLEAN）：`precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（R3 按名下单 ⇒ 名字唯一是它真正依赖且只读的前置，先例 = OR-014/CH-019；**不选 order_count_for_phone**，因本用例自己会建单、漂移判据必然判红）+ `namespaces[product_name:遮光窗帘, customer_phone:13800138000]`（护住该前置两格 + 与同手机号建单用例互斥）。**断言（user_inputs / expectations / data_checks）原样未动，无放宽、无删减。** ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：order_create 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_search, customer_manage, order_create] 改判为 [product_search, customer_manage(action=list)]，order_create 同步移除（否则成为永不满足的悬空声明）；must_succeed / required_args / repeat_until 本就没有 order_create 声明（无需改动）；user_inputs / data_checks / namespaces / precondition / pre_clean 原样未动。 ｜ tags: cross_skill, multi_round, adversarial
+溯源: eval C003 独有；2026-09-18 补前置自断言 + namespaces（burn-down：改用例文件的 PR 须净缩 ≥1 条存量违规，本用例命中的两条是 CASE-TRUST-NO-PRECONDITION-ASSERTION + CASE-TRUST-NO-SELF-CLEAN）：`precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（R3 按名下单 ⇒ 名字唯一是它真正依赖且只读的前置，先例 = OR-014/CH-019；**不选 order_count_for_phone**，因本用例自己会建单、漂移判据必然判红）+ `namespaces[product_name:遮光窗帘, customer_phone:13800138000]`（护住该前置两格 + 与同手机号建单用例互斥）。**断言（user_inputs / expectations / data_checks）原样未动，无放宽、无删减。** ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：order_create 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_search, customer_manage, order_create] 改判为 [product_search, customer_manage(action=list)]，order_create 同步移除（否则成为永不满足的悬空声明）；must_succeed / required_args / repeat_until 本就没有 order_create 声明（无需改动）；user_inputs / data_checks / namespaces / precondition / pre_clean 原样未动。 ｜ 2026-10-16（issue #7048 P1 · 项 C，按 #7035 第一相审计报告 §2.2）：新增 `forbidden_tools[order_create]`（同口径）—— 对抗档 R3「给张三下个遮光窗帘的订单」不得真去下单；其余字段一字未动。 ｜ tags: cross_skill, multi_round, adversarial
 
 ### CR-003. 真实场景全旅程 - 咨询→查商品→下单→查物流 🔵
 ```
@@ -2240,11 +2243,13 @@
 清理: product_dedupe(product_keyword=遮光窗帘)
 前置: product_count_for_keyword(source=遮光窗帘、expect=1)
 命名空间(同键互斥·自动串行): customer_phone:13800138000、product_name:遮光窗帘
+全程禁用: order_create
+必须: 订单
 载荷(全场可用): customer_name=张三, customer_phone=13800138000, customer_address=浙江省杭州市西湖区文三路 1 号 1 幢 101 室
 跳过: [backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「全旅程下单」（order_create）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为「咨询 + 搜商品 + 查商品详情 + 查订单/物流（product_search / product_detail / order_query）+ 如实说明黄金策不做下单、引导去后台订单页面」。
 ```
 真值: ai-chat.context-memory, ai-chat.intent-domains, order.states, order.logistics, id-resolve.index
-溯源: eval M007 独有（物流查询是旅程一环，独立用例见 OR-005）。2026-09-14 消除顺序依赖（issue #3568）：① 「看看第一个的详情」→ 点名「遮光窗帘」（推荐列表返回顺序依赖，同 OR-024 #3408）；② 色号「白色」→ 种子真实色号「米白」；③ 收尾裸文本「确认下单/确认」→ 答卡轮（#3518 口径）；④ 补 pre_clean product_dedupe + must_succeed[order_create]；2026-09-18 补前置自断言 precondition[product_count_for_keyword 遮光窗帘 expect=1]（issue #4046 的 OR-* 优先档 burn-down） ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：order_create 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_search, product_detail, order_create, order_query] 改判为 [product_search, product_detail, order_query]，must_succeed 里的 order_create 同步移除（否则成为永不满足的悬空声明）；user_inputs / auto_fill / pre_clean / precondition / namespaces / data_checks 原样未动（下单剧本保留为历史记录、不再进运行期）。 ｜ tags: multi_turn, real_scenario, cross_skill, full_journey
+溯源: eval M007 独有（物流查询是旅程一环，独立用例见 OR-005）。2026-09-14 消除顺序依赖（issue #3568）：① 「看看第一个的详情」→ 点名「遮光窗帘」（推荐列表返回顺序依赖，同 OR-024 #3408）；② 色号「白色」→ 种子真实色号「米白」；③ 收尾裸文本「确认下单/确认」→ 答卡轮（#3518 口径）；④ 补 pre_clean product_dedupe + must_succeed[order_create]；2026-09-18 补前置自断言 precondition[product_count_for_keyword 遮光窗帘 expect=1]（issue #4046 的 OR-* 优先档 burn-down） ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：order_create 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_search, product_detail, order_create, order_query] 改判为 [product_search, product_detail, order_query]，must_succeed 里的 order_create 同步移除（否则成为永不满足的悬空声明）；user_inputs / auto_fill / pre_clean / precondition / namespaces / data_checks 原样未动（下单剧本保留为历史记录、不再进运行期）。 ｜ 2026-10-16（issue #7048 P1 · 项 C，按 #7035 第一相审计报告 §2.2）：新增 `forbidden_tools[order_create]` + `want_text[订单]`（同口径）—— 全旅程中段「下单」不再是合格行为，改成「不得真去下单 + 如实说明并引导后台订单页」；`user_inputs` / `expectations` / `pre_clean` / `precondition` / `namespaces` / `data_checks` 一字未动（剧本改写归产品侧 un-skip 批次 #7040）。 ｜ tags: multi_turn, real_scenario, cross_skill, full_journey
 
 ## 客户域（12 case）
 
@@ -3234,7 +3239,7 @@
 命名空间(同键互斥·自动串行): role_code:stock_keeper
 ```
 真值: employee-role.role-crud, employee-role.permissions
-溯源: verification 5.5 独有；2026-09-10 校准：①「库存权限」生产不存在（库存由商品管理模块承载），改真实权限「商品管理」；② 补「确认创建」轮 + 明确编码/描述（role_manage create 走 validate_input→create 确认链，validate_input 已 #3157 补 role_manage 规则；「确认」一词因 agent 澄清多问编码/描述致 LLM 歧义，改为明确第二输入） ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`role_manage` 收窄为只读（写 action `create` 已删除）⇒ 本用例按新机制改判：`expectations` 由 `role_manage(action=create)` → `role_manage(action=list)` + `role_manage(action=list_permissions)`，`must_succeed[role_manage(action=create)]` 整格移除，`title` / `user_inputs` / `data_checks` 随新语义改判（**不是放宽**：原输入里的「库管」角色是本用例自己创建的、写能力下线后不再存在，故不能继续引用它；角色与权限清单的**来源**仍逐条受服务端断言约束，且「不得声称已创建/已分配」是新加的正向约束）。 ｜ tags: create, permission
+溯源: verification 5.5 独有；2026-09-10 校准：①「库存权限」生产不存在（库存由商品管理模块承载），改真实权限「商品管理」；② 补「确认创建」轮 + 明确编码/描述（role_manage create 走 validate_input→create 确认链，validate_input 已 #3157 补 role_manage 规则；「确认」一词因 agent 澄清多问编码/描述致 LLM 歧义，改为明确第二输入） ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`role_manage` 收窄为只读（写 action `create` 已删除）⇒ 本用例按新机制改判：`expectations` 由 `role_manage(action=create)` → `role_manage(action=list)` + `role_manage(action=list_permissions)`，`must_succeed[role_manage(action=create)]` 整格移除，`title` / `user_inputs` / `data_checks` 随新语义改判（**不是放宽**：原输入里的「库管」角色是本用例自己创建的、写能力下线后不再存在，故不能继续引用它；角色与权限清单的**来源**仍逐条受服务端断言约束，且「不得声称已创建/已分配」是新加的正向约束）。 ｜ 2026-10-16（issue #7048 P1 · 项 D）**复核「该不该回到 `detail`」⇒ 结论：不回到，保留 `action: all`** —— 依据（单变量对照 + 读判据真值）：`detail` 与 `all` 都在 runner 的只读查询同义集里 ⇒ 换成 `detail` **没有可观测的判别力增量**（原病灶「过度指定 `list_permissions`」已由 `all` 解决）；而 `role_manage/detail` 被 `tests/unit_ci_workflows/test_case_coverage_actions.py` 的 `test_repo_reports_action_gaps_including_known_precedents` 钉为「action 级未覆盖的工作清单先例」（下界 `>= 15` 与先例清单同源）。⇒ 保留现状，并把该钉的**必要性**与**重启条件**登记在期望块的注释里（口径 = `migao-dev-flow` §24：『有意不做』必须写明接受的缺口 + 重启条件）。断言面（expectations）**一字未动**。 ｜ tags: create, permission
 
 ### HR-006. 岗位权限体系 - 注册新租户初始化五岗默认权限 + 员工权限快照式解析（#2969） 🔵
 ```
@@ -7017,7 +7022,7 @@
 ```
 溯源: 2026-09-12 新增（issue #3340） ｜ tags: processing-order, intent-routing, contract
 
-### PG-013. 黄金策加工单 LLM 行为：查询含加工项订单 → 生成加工单（真实对话） 🔵
+### PG-013. 黄金策加工单 LLM 行为：查询含加工项订单 → 如实说明不支持生成 + 引导生产看板（真实对话） 🔵
 ```
 你: 最近有没有已确认、需要加工的订单？
 你: 帮我把订单 EVAL-MB-ORD-0002 生成加工单
@@ -7028,17 +7033,21 @@
 清理: processing_order_reset(order_no=EVAL-MB-ORD-0002)
 前置: order_count_for_phone(source=13800138000)
 时序: order_query before processing_order_generate
-禁词: 暂不支持
-禁词: 功能不存在
-禁词: 没有这个功能
 禁词: 生成未成功
 禁词: 生成失败
+禁词: 已生成
+禁词: 已创建加工单
+禁词: 已生成加工单
 禁词（第 2 轮）: 无加工项、无法生成加工单、系统判定为
 禁词（第 3 轮）: 无加工项、无法生成加工单、系统判定为
+全程禁用: processing_order_generate
+全程禁用: processing_order_update
+必须: 加工单
+必须: 生产
 跳过: [backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「生成加工单（processing_order_generate）」已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 只读路径 order_query（订单查询）+ 如实说明黄金策不做生成加工单 + 引导去后台生产管理页面。
 ```
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
-溯源: 2026-09-12 新增（验收缺口 #3348）：黄金策加工单 LLM 行为真实对话用例（替代纯单测覆盖）；2026-09-15（issue #3833）修双重假红：① 补 `pre_clean: processing_order_reset(order_no=EVAL-MB-ORD-0002)` —— 写类用例自清理，重试前置回到 seed 初始态（confirmed + 无加工单），与首跑等价；② `forbidden_text` 从全程语义收紧成「轮次 + 措辞」：R1 问答轮如实陈述（某单未见加工项/引用系统判定）不再判红，写操作轮（R2/R3）真拒绝仍必红；能力自我否定/编造失败类措辞保持全程。expectations / required_args **未改**；2026-09-15（issue #3917）skip：加工单工具对 agent 不再开放；2026-09-18（issue #4196）**去 skip**：加工单工具恢复接入（registry 注册 + order skill 工具/意图 + IntentType/描述/域/工具映射四处 + prompts/order.md 操作指引），**断言面原样保留**（expectations / must_succeed / required_args / forbidden_text / pre_clean 全部未改，未放宽）；去 skip 不空跑的前置 = runner 的 `pre_clean[processing_order_reset]` + 种子 EVAL-MB-ORD-0002/0003/0004（confirmed + paid + 明细带加工项）；**同 PR 补 must_succeed[processing_order_generate]**（去 skip 后 `.github/case_trust_gate.py` 全量对账判出的存量缺陷 `CASE-TRUST-NO-EFFECT-ASSERTION`：#3778「调用了 ≠ 成了」—— 原断言面里 `order_before` 是时序、`required_args` 在工具未调用时 `continue` 全绿、两条 `data_checks` 是纯散文 ⇒ **无任何效果层断言**。按 #4046 的 fail-closed 口径**当场修掉**，不入账基线；这是**加强**不是放宽，expectations / required_args / forbidden_text / pre_clean 一字未动）。2026-09-18（issue #4305，用户裁定「发加工 = 订单进入生产中」）：第 2 条 data_check 里「订单转 producing」**已过时**（那是旧时点）⇒ 改判为「订单**保持 confirmed**」（加工单行照旧落库），其余断言未动。2026-09-19（issue #4361 的 burn-down 缴费，整条销账 CASE-TRUST-NO-PRECONDITION-ASSERTION）：补 `precondition[order_count_for_phone: 13800138000]` —— 本用例是**多轮 + 写类**用例（3 轮 + processing_order_generate），R1 问答依赖该客户名下订单集合、写步依赖 EVAL-MB-ORD-0002 在位，而此前**没有任何可判定前置断言** ⇒ 前置不成立时红的表现像「agent 不干活」（本规则 `counterexample` 字段点名的正是本用例，实证 run 34908262839）。**行为层修复、不是纸面修复**：`order_count_for_phone` 是 runner 已实现的前置类型（`local_runner._PRECONDITION_TYPES`），基线在尝试前捕获、尝试后回读，漂移即折成 `precondition_not_applied`。⚠️ **与 PG-015/PG-016 的 `expect: 1` 有意不同**：那两条用**专用**手机号（种子里各只 1 笔单）；本用例的客户号 13800138000 是**共享**评测号（种子里名下 3 笔单：0001/0002/0005，且同时是商家冒烟默认登录号、AS-004 等也挂该号）⇒ 写死 `expect: N` 会让任何人往该号码造单都判「前置不成立」，形成**永远红/永远被豁免的空判据**（§19.1）⇒ 故只声明 `source` 做漂移检测。断言只增不减：expectations / must_succeed / required_args / forbidden_text / pre_clean / data_checks 一字未动。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：processing_order_generate 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [order_query, processing_order_generate] 改判为 [order_query]，must_succeed(processing_order_generate) / required_args(order_ids) 两条写声明同步移除（否则成为永不满足的悬空声明），data_checks 第 2 条由「生成后 processing_orders 落新行（status=generated）；订单状态保持 confirmed」改判为「如实说明黄金策不做生成加工单、引导后台生产管理页面；不得声称已生成」；pre_clean(processing_order_reset EVAL-MB-ORD-0002) 与 precondition(order_count_for_phone 13800138000) 按处置表**保留不动**（夹具/漂移检测，不是工具引用），order_before(order_query before processing_order_generate) 亦保留（runner 语义：B 未调用则不判时序 ⇒ 不构成悬空声明）；forbidden_text（含 R2/R3 轮次限定条目）/ user_inputs 一字未动。 ｜ tags: processing_order, llm_behavior, tool_call
+溯源: 2026-09-12 新增（验收缺口 #3348）：黄金策加工单 LLM 行为真实对话用例（替代纯单测覆盖）；2026-09-15（issue #3833）修双重假红：① 补 `pre_clean: processing_order_reset(order_no=EVAL-MB-ORD-0002)` —— 写类用例自清理，重试前置回到 seed 初始态（confirmed + 无加工单），与首跑等价；② `forbidden_text` 从全程语义收紧成「轮次 + 措辞」：R1 问答轮如实陈述（某单未见加工项/引用系统判定）不再判红，写操作轮（R2/R3）真拒绝仍必红；能力自我否定/编造失败类措辞保持全程。expectations / required_args **未改**；2026-09-15（issue #3917）skip：加工单工具对 agent 不再开放；2026-09-18（issue #4196）**去 skip**：加工单工具恢复接入（registry 注册 + order skill 工具/意图 + IntentType/描述/域/工具映射四处 + prompts/order.md 操作指引），**断言面原样保留**（expectations / must_succeed / required_args / forbidden_text / pre_clean 全部未改，未放宽）；去 skip 不空跑的前置 = runner 的 `pre_clean[processing_order_reset]` + 种子 EVAL-MB-ORD-0002/0003/0004（confirmed + paid + 明细带加工项）；**同 PR 补 must_succeed[processing_order_generate]**（去 skip 后 `.github/case_trust_gate.py` 全量对账判出的存量缺陷 `CASE-TRUST-NO-EFFECT-ASSERTION`：#3778「调用了 ≠ 成了」—— 原断言面里 `order_before` 是时序、`required_args` 在工具未调用时 `continue` 全绿、两条 `data_checks` 是纯散文 ⇒ **无任何效果层断言**。按 #4046 的 fail-closed 口径**当场修掉**，不入账基线；这是**加强**不是放宽，expectations / required_args / forbidden_text / pre_clean 一字未动）。2026-09-18（issue #4305，用户裁定「发加工 = 订单进入生产中」）：第 2 条 data_check 里「订单转 producing」**已过时**（那是旧时点）⇒ 改判为「订单**保持 confirmed**」（加工单行照旧落库），其余断言未动。2026-09-19（issue #4361 的 burn-down 缴费，整条销账 CASE-TRUST-NO-PRECONDITION-ASSERTION）：补 `precondition[order_count_for_phone: 13800138000]` —— 本用例是**多轮 + 写类**用例（3 轮 + processing_order_generate），R1 问答依赖该客户名下订单集合、写步依赖 EVAL-MB-ORD-0002 在位，而此前**没有任何可判定前置断言** ⇒ 前置不成立时红的表现像「agent 不干活」（本规则 `counterexample` 字段点名的正是本用例，实证 run 34908262839）。**行为层修复、不是纸面修复**：`order_count_for_phone` 是 runner 已实现的前置类型（`local_runner._PRECONDITION_TYPES`），基线在尝试前捕获、尝试后回读，漂移即折成 `precondition_not_applied`。⚠️ **与 PG-015/PG-016 的 `expect: 1` 有意不同**：那两条用**专用**手机号（种子里各只 1 笔单）；本用例的客户号 13800138000 是**共享**评测号（种子里名下 3 笔单：0001/0002/0005，且同时是商家冒烟默认登录号、AS-004 等也挂该号）⇒ 写死 `expect: N` 会让任何人往该号码造单都判「前置不成立」，形成**永远红/永远被豁免的空判据**（§19.1）⇒ 故只声明 `source` 做漂移检测。断言只增不减：expectations / must_succeed / required_args / forbidden_text / pre_clean / data_checks 一字未动。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：processing_order_generate 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [order_query, processing_order_generate] 改判为 [order_query]，must_succeed(processing_order_generate) / required_args(order_ids) 两条写声明同步移除（否则成为永不满足的悬空声明），data_checks 第 2 条由「生成后 processing_orders 落新行（status=generated）；订单状态保持 confirmed」改判为「如实说明黄金策不做生成加工单、引导后台生产管理页面；不得声称已生成」；pre_clean(processing_order_reset EVAL-MB-ORD-0002) 与 precondition(order_count_for_phone 13800138000) 按处置表**保留不动**（夹具/漂移检测，不是工具引用），order_before(order_query before processing_order_generate) 亦保留（runner 语义：B 未调用则不判时序 ⇒ 不构成悬空声明）；forbidden_text（含 R2/R3 轮次限定条目）/ user_inputs 一字未动。 ｜ 2026-10-16（issue #7048 P1 · 项 C，按 #7035 第一相审计报告 §2.2）**重锚**：① `title` 由「→ 生成加工单」改为「→ 如实说明不支持生成 + 引导生产看板」（用户 2026-10-16「能力边界 终版」：**创建单据 ❌**）；② `forbidden_text` **删掉**「暂不支持」「功能不存在」「没有这个功能」—— 按新边界，**诚实拒绝正是合格行为**，留着这三条 = 把正确拒绝判红（假红）；**保留**「生成未成功」「生成失败」（编造失败，#3477 家族）并**新增**「已生成」「已创建加工单」「已生成加工单」（假承诺）；③ 新增 `forbidden_tools[processing_order_generate / processing_order_update]`（真去生成/流转即红）+ `want_text[加工单 / 生产]`（静默装死即红）—— 三面互补，`expectations` / `pre_clean` / `precondition` / `must_succeed`（空，随载体解绑）一字未动。**红证**：① 假承诺 → 正文含「已生成加工单」即红；② 真调工具 → 重绑 `processing_order_generate` 回加工单 skill 工具集 ⇒ `test_mibao_b_end_readonly.py` 当场红，届时 agent 真去生成还同时命中本格；③ 静默装死 → 正文不含「加工单」「生产」即红。 ｜ tags: processing_order, llm_behavior, tool_call
 
 ### PG-014. 订单加工项不可变（源头约束，决策 C）：创建后无任何修改通道 🔵
 ```
@@ -8010,17 +8019,18 @@
 你: [🤖 按上一轮卡片作答]
 你: [🤖 按上一轮卡片作答]
 期望: direct_reply
-数据: 只读 + 如实说明：不得谎称已创建/已落库规格，须说明 B 端黄金策不做创建并引导去后台「商品管理」页面操作
+数据: 只读 + 如实说明：不得谎称已创建/已落库规格，须说明 B 端黄金策不做创建并引导去后台「商品管理」页面操作（机器断言见 forbidden_tools）
 清理: product_remove(product_keyword=E2E色卡建品样品面料)
 前置: product_count_for_keyword(source=E2E色卡建品样品面料、expect=0、max_growth=1)
 命名空间(同键互斥·自动串行): product_name:E2E色卡建品样品面料
 禁词: 尚未真正创建
 禁词: 未创建成功
+全程禁用: product_manage(create)
 载荷(全场可用): name=E2E色卡建品样品面料, price=23.8, colors=2699-01本白, door_widths=2.8米, selling_methods=散剪, sku_code=XNE2699
 跳过: [backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「色卡图建品的规格落库」（product_manage(action=create)）已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 如实说明 + 引导去后台页面（direct_reply）。本用例不再进 agent-eval 冒烟（能力已下线、无对象）：B 端只读化是**源码静态事实**（工具声明 / skill 绑定 / 能力文案），由零依赖静态判据承担 —— tests/unit_ci_workflows/test_mibao_b_end_readonly.py（随 #5247 落地的 MC-021）。
 ```
 真值: product-sku-stock.low-stock
-溯源: 2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩褶」；④ 收尾改协作答卡轮。2026-09-15 §14.1 回填（issue #3683）：补 `must_succeed:[product_manage(action=create)]`（原仅有 expectations 参数级匹配 + required_args，create 失败仍判过）；db_verify 未加——商品名与种子 `prod_eval_2699` 同名同价、`_fetch_product_configs` 取 keyword 首条无法区分本次新建与种子（见用例内注释）；2026-09-15（issue #3835）**改名去种子撞名**：`E2E色卡建品样品面料` → `E2E色卡建品样品面料`（种子 `prod_eval_2699` 就叫前者 ⇒ 运行期造同名副本，读者按名搜会得到 products=2；改名后本次新建可被关键字唯一定位，上述 db_verify 歧义随之解除）、`pre_clean: product_dedupe{E2E色卡建品样品面料, price: 23.8}` → `product_remove{自有名}`、补 `namespaces: product_name:E2E色卡建品样品面料`；断言（expectations/must_succeed/required_args/data_checks/forbidden_text）原样未动。2026-09-18（issue #4305 的 burn-down 缴费）：补 `precondition[product_count_for_keyword: E2E色卡建品样品面料, expect=0, max_growth=1]` —— 建品用例的真前置 =「目标名尚不存在且运行期只新增自己那一件」；判据清零 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（整条销账）。断言面一字未动。2026-09-19（#4371 商品↔加工项解耦）：本用例的**加工项半边退场** —— 删除 ③ 加工项轮（`auto_respond 已选加工项：…`）、`data_checks` 的两条 processing_item_configs/processingItemConfigs 断言、`required_args` 的 `processing_item_configs.customPrice` 字段、收尾 fallback 里的「已选加工项：…」；标题去掉「与加工项价格落库」。**保留**：specifications 落库断言（本用例的另一半，与解耦无关）、must_succeed / forbidden_text / pre_clean / precondition / namespaces 原样未动。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=create)] 改判为 [direct_reply]（如实说明 + 引导去后台页面），must_succeed / required_args / user_inputs[repeat_until].tool_called 里的 product_manage 与「create 参数含 specifications」data_checks 同步移除/改判（否则成为永不满足的悬空声明）。forbidden_text（「尚未真正创建」「未创建成功」）按「不得谎称已创建」保留，并按 assertion_taxonomy 既有约定补 `# forbidden-text-intent:` 声明（先例 AS-009）。 ｜ tags: product_create, specifications, regression
+溯源: 2026-09-08 新增（issue #3027）：sess_c1fce183dae24f22 复盘 — AI 预填表单展示了推理属性但 create 未落库（product_attributes 0 行）；加工项只传名称列表 → custom_price 全 NULL → 详情页 ¥0.00/米（单位硬编码）。三端修复：prompt 强制 specifications+processing_item_configs、admin-api finalPrice 回退、admin-web 渲染回退；2026-09-09 校准：补真实色卡图（原纯文本「根据这张图片」无 images，agent 要图走不下去）。2026-09-14 资产重写（#3518）：② 色卡识别结果轮由 `auto_select`（对 form 卡发「第一个」→ 表单从未提交）改为按 formFields 真实 key 回填的 `auto_respond`；③ 原文本占位符「颜色…门幅…」补真实值、加工项「波浪定型」换目录中真实存在的「韩褶」；④ 收尾改协作答卡轮。2026-09-15 §14.1 回填（issue #3683）：补 `must_succeed:[product_manage(action=create)]`（原仅有 expectations 参数级匹配 + required_args，create 失败仍判过）；db_verify 未加——商品名与种子 `prod_eval_2699` 同名同价、`_fetch_product_configs` 取 keyword 首条无法区分本次新建与种子（见用例内注释）；2026-09-15（issue #3835）**改名去种子撞名**：`E2E色卡建品样品面料` → `E2E色卡建品样品面料`（种子 `prod_eval_2699` 就叫前者 ⇒ 运行期造同名副本，读者按名搜会得到 products=2；改名后本次新建可被关键字唯一定位，上述 db_verify 歧义随之解除）、`pre_clean: product_dedupe{E2E色卡建品样品面料, price: 23.8}` → `product_remove{自有名}`、补 `namespaces: product_name:E2E色卡建品样品面料`；断言（expectations/must_succeed/required_args/data_checks/forbidden_text）原样未动。2026-09-18（issue #4305 的 burn-down 缴费）：补 `precondition[product_count_for_keyword: E2E色卡建品样品面料, expect=0, max_growth=1]` —— 建品用例的真前置 =「目标名尚不存在且运行期只新增自己那一件」；判据清零 `CASE-TRUST-NO-PRECONDITION-ASSERTION`（整条销账）。断言面一字未动。2026-09-19（#4371 商品↔加工项解耦）：本用例的**加工项半边退场** —— 删除 ③ 加工项轮（`auto_respond 已选加工项：…`）、`data_checks` 的两条 processing_item_configs/processingItemConfigs 断言、`required_args` 的 `processing_item_configs.customPrice` 字段、收尾 fallback 里的「已选加工项：…」；标题去掉「与加工项价格落库」。**保留**：specifications 落库断言（本用例的另一半，与解耦无关）、must_succeed / forbidden_text / pre_clean / precondition / namespaces 原样未动。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：product_manage 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_manage(action=create)] 改判为 [direct_reply]（如实说明 + 引导去后台页面），must_succeed / required_args / user_inputs[repeat_until].tool_called 里的 product_manage 与「create 参数含 specifications」data_checks 同步移除/改判（否则成为永不满足的悬空声明）。forbidden_text（「尚未真正创建」「未创建成功」）按「不得谎称已创建」保留，并按 assertion_taxonomy 既有约定补 `# forbidden-text-intent:` 声明（先例 AS-009）。 ｜ 2026-10-16（issue #7048 P1 · 项 C，按 #7035 第一相审计报告 §2.2）：新增 `forbidden_tools[product_manage(action=create)]`（2026-10-16「能力边界 终版」：**创建商品 ❌**）—— 剧本整条是建品链而期望面已改判 `direct_reply`，禁区把「不得真去建品」机器化（与既有 `forbidden_text` 的假承诺禁令互补）；`expectations` / `forbidden_text` / `pre_clean` / `precondition` / `namespaces` / `user_inputs` 一字未动。 ｜ tags: product_create, specifications, regression
 
 ### PR-021. 单独 SKU 调价 - 修改某规格价格（#5247 只读化期间改判为只读核对，#5303 按 A 档裁定补回） 🔵
 ```
@@ -9402,9 +9412,10 @@
 数据: **判据 3（不覆盖）**：内核 `[图片识别]` 已给值的格、以及目录歧义格（有 candidates）**一律不被解读覆盖** —— 既有注入式红证保持绿。
 数据: **判据 4（来源可分辨）**：落值格 `source == "[米宝解读]"` 且 `note_source` 同名；与 `[图片识别]` 不同（商家据此判断该信哪一格）。
 数据: **边界**：内核 `recognizer` 的「只抄写明的内容」铁律**一字未动**（transcription 与 inference 是两层）；本端点**不落库**（TestNoWriteBoundary 保持）。
+全程禁用: product_manage(create)
 跳过: [backend-contract] 确定性契约/机械判据，由 pytest（backend/ai-agent-service/tests/test_vision/test_deep_channel.py、tests/test_tools_image_recognize.py）验证，非 LLM 行为，不进入 agent-eval 冒烟 —— 可落值集合与「不落值」两半都能逐值钉住
 ```
-溯源: 2026-10-05 新增（issue #6361，走 PR #6364 合入 main）。取号 = 现取最大号 + 1（本工作区当时最大 PR-123；`scripts/next_case_id.py` 因扫描超时未用）。红→绿：先写判据、实现未动 ⇒ tests/test_vision/test_deep_channel.py + tests/test_tools_image_recognize.py **5 failed / 40 passed**；实现后 56 passed。注入式（§28.1 出口①）：`product` 元组临时改回两格 ⇒ **4 failed / 41 passed**。 ｜ tags: image-recognize, interpretation, backend-contract, regression
+溯源: 2026-10-05 新增（issue #6361，走 PR #6364 合入 main）。取号 = 现取最大号 + 1（本工作区当时最大 PR-123；`scripts/next_case_id.py` 因扫描超时未用）。红→绿：先写判据、实现未动 ⇒ tests/test_vision/test_deep_channel.py + tests/test_tools_image_recognize.py **5 failed / 40 passed**；实现后 56 passed。注入式（§28.1 出口①）：`product` 元组临时改回两格 ⇒ **4 failed / 41 passed**。 ｜ 2026-10-16（issue #7048 P1 · 项 C，按 #7035 第一相审计报告 §2.2）：新增 `forbidden_tools[product_manage(action=create)]`（同口径）—— 诉求是「按这张图建商品」，agent 侧不得真去建品；`expectations` / `user_inputs` / `data_checks` 一字未动（解读结论与不落库边界仍由 `traces.tests` 的 pytest 承重）。 ｜ tags: image-recognize, interpretation, backend-contract, regression
 
 ### PR-125. 米宝解读额外生成商品描述文案 ⇒ 预填建品页「图文描述」富文本区（来源 [米宝解读]、有值才写键、不覆盖商家内容）（issue #6362） 🔵
 ```
@@ -9415,9 +9426,10 @@
 数据: **判据 3（徽标各认各的键）**：描述格在**解读清单**里 ⇒ 渲染 `interpreted-marker-description`（`[米宝解读]`），且**不得**出现 `recognized-marker-description`（`[图片识别]`）。红证：预填了描述却一枚徽标都没有 ⇒ 该断言红。
 数据: **判据 4（字段表登记）**：`backend/ai-agent-service/app/vision/targets.py` 的 product 字段表含 `description`（类级元守卫：前端读的键必须在内核字段表里 —— 不登记即红）。
 数据: **边界（如实登记）**：描述**文案质量**（是否编造、是否贴图）判据红不了，只由字段表 hint 的口径约束（「不得编造图上没有的硬事实」）；徽标的**端到端**可见性只有组件级判据（Playwright 页面验收未落）。
+全程禁用: product_manage(create)
 跳过: [backend-contract] 确定性契约/机械判据，由 vitest（frontend/admin-web/tests/unit/components/ImageRecognizePrefill.test.tsx、tests/unit/lib/image-recognize.test.ts）+ pytest（tests/test_vision/test_targets.py、test_recognizer.py、test_deep_channel.py）验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
-溯源: 2026-10-05 新增（issue #6362）。取号 = 现取最大号 + 1（本工作区当时最大 PR-123 已被 PR-124 占用）。红→绿（注入=判据先落、实现后落）：vitest ImageRecognizePrefill **3 failed / 15 passed** → **20 passed**；类级元守卫 image-recognize.test.ts **1 failed / 6 passed** → 7 passed；后端 test_targets / test_recognizer 各 1 条红 → 绿。 ｜ tags: image-recognize, description, frontend, regression
+溯源: 2026-10-05 新增（issue #6362）。取号 = 现取最大号 + 1（本工作区当时最大 PR-123 已被 PR-124 占用）。红→绿（注入=判据先落、实现后落）：vitest ImageRecognizePrefill **3 failed / 15 passed** → **20 passed**；类级元守卫 image-recognize.test.ts **1 failed / 6 passed** → 7 passed；后端 test_targets / test_recognizer 各 1 条红 → 绿。 ｜ 2026-10-16（issue #7048 P1 · 项 C，按 #7035 第一相审计报告 §2.2）：新增 `forbidden_tools[product_manage(action=create)]`（同口径，同 #6362 家族）；`expectations` / `user_inputs` / `data_checks` 一字未动。 ｜ tags: image-recognize, description, frontend, regression
 
 ### PR-126. 识别 vs 推理的分工按字段定死：生成类字段（商品名/商品描述）只由 [米宝解读] 给值，识别路径永不许直填（issue #6386） 🔵
 ```
@@ -9527,21 +9539,25 @@
 真值: agent-notification.notification-filter
 溯源: verification 6.4 独有 ｜ tags: query
 
-### ST-005. 通知标记已读 —— 能力已下线（只读域）：如实告知 + 引导到通知中心，不假承诺 🔵
+### ST-005. 通知标记已读 —— 变更已接回（#7040）：标记已读要真做（走确认门禁），不得谎称已读 🔵
 ```
 你: 把新订单通知标为已读
-期望: direct_reply
-数据: 如实告知：黄金策不改通知状态（本域只读）⇒ 引导用户到商户后台「通知中心」页自助标记
+期望: notification_manage(action=mark_read)
+期望: direct_reply or interact
+数据: 真值 = 变更（标记已读）已在能力面内，且该调用必须走写确认门禁（非只读 action）
 数据: 整场不得出现假承诺话术（机器断言见 forbidden_text）
-数据: notification_manage 只暴露 list/unread_count（结构性判据：backend/ai-agent-service/tests/test_settings_domain_readonly.py）
+数据: 标记已读的落库真值由 admin-api 侧承担：PUT /api/admin/notifications/{id}/read（单条）/ PUT /api/admin/notifications/read-all（全部）
+前置(散文): 商家本人的通知中心里存在**至少一条未读通知**（否则 `mark_read` 无对象、agent 无从标记）｜ 变体：目标通知已读 ⇒ agent 合理地答「这条已是已读」，此时本用例的红不构成缺陷（前置面，不是行为面）
+命名空间(同键互斥·自动串行): notification:recipient_unread
 禁词: 已标记为已读
 禁词: 已标为已读
 禁词: 已全部标记
 禁词: 已经帮您标记
 禁词: 已为您标记
+必须成功: notification_manage
 ```
 真值: agent-notification.notification-status
-溯源: verification 6.5 独有 ｜ 2026-09-25（issue #5302，settings 域只读化收口）**退场改造**：原 `expectations[notification_manage(action=mark_read or read_all)]` 与 data_check「status 变为 read」**整体移除**（写 action 已从工具删除 ⇒ 永久不可满足，留着就是悬空声明 + 假红）；改判新行为 = 如实告知 + 引导到「通知中心」+ 不得假承诺（`forbidden_text` 承载禁令面）；`tags` 由 `write` 改判 `query`（本域已无写能力） ｜ tags: query
+溯源: verification 6.5 独有 ｜ 2026-09-25（issue #5302，settings 域只读化收口）**退场改造**：原 `expectations[notification_manage(action=mark_read or read_all)]` 与 data_check「status 变为 read」**整体移除**（写 action 已从工具删除 ⇒ 永久不可满足，留着就是悬空声明 + 假红）；改判新行为 = 如实告知 + 引导到「通知中心」+ 不得假承诺（`forbidden_text` 承载禁令面）；`tags` 由 `write` 改判 `query`（本域已无写能力）。 ｜ 2026-10-16（issue #7048 P1 · 项 A，承接 #7049 把变更接回 B 端）**重锚回写面**：`title` 去掉逐字编码旧口径的「能力已下线（只读域）」；`expectations` 由 [`direct_reply`] 改为 [`notification_manage(action=mark_read)`, `direct_reply or interact`]（**工具调用 / 确认卡 / 澄清话术**三种合格落地形态）；新增 `must_succeed[notification_manage, only_if_called=true]`（效果层：去改了就必须成了）；`forbidden_text` 五条**一字未动**（禁令仍是主判据之一）；`tags` 由 `query` 改回 `write`。**红证**：把 `mark_read` 加进工具源码的 `READ_ONLY_ACTIONS`（= 绕过写确认门禁）⇒ `backend/ai-agent-service/tests/test_notification_manage_change_actions.py::test_read_only_actions_are_the_read_ones_only` + `test_confirmation_gate_is_declared` 当场判红（已实测：2 failed）；`tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 判据 8 同向。 ｜ tags: write, notification
 
 ### ST-008. 机器人设置生效 - 自动转人工关键词命中后如实告知（无人工通道）+ 非营业时间降级（确定性层） 🔵
 ```
@@ -11455,7 +11471,7 @@
 - PG-010: 订单取消联动 - 加工单 generated 自动作废；issued+ 拦截
 - PG-011: 租户隔离 - 跨租户加工单不可查询/不可解析
 - PG-012: 加工单 intent 路由契约 - processing_order_* 路由 order skill（仅黄金策可达）
-- PG-013: 黄金策加工单 LLM 行为：查询含加工项订单 → 生成加工单（真实对话）
+- PG-013: 黄金策加工单 LLM 行为：查询含加工项订单 → 如实说明不支持生成 + 引导生产看板（真实对话）
 - PG-014: 订单加工项不可变（源头约束，决策 C）：创建后无任何修改通道
 - PG-015: 黄金策加工单 LLM 行为：查询加工单状态（只读；原「生成→回查」随 #5247 写能力下线改判）
 - PG-016: 黄金策加工单 LLM 行为：查加工单状态（只读；原「更新状态-完成」随 #5247 写能力下线改判）

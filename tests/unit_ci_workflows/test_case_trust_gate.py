@@ -1,4 +1,4 @@
-# case_ids: MC-012, PG-013, PR-021, CU-003, AS-003, AS-005, CH-009
+# case_ids: MC-012, PG-013, PR-021, CU-003, AS-003, AS-005, CH-009, CH-018, CR-001, CR-002, CR-003, HR-005, PR-019, PR-124, PR-125, ST-005
 # drift-audit: refs-are-fixtures
 #   本文件里大量 `path:NNN` 是喂给 `assertion_taxonomy.find_path_line_refs()` 的**合成夹具**
 #   （按定义必须是失效引用：`a/b.py:5`、`local_runner.py:999999`、`eval-environments.md:86` 等）
@@ -301,6 +301,55 @@ def codes(violations) -> set:
     return {v["code"] for v in violations}
 
 
+# 写用例的**计底面**（issue #7048 P1 · 项 B 的类级判据）：
+#   期望面（`tax.write_expectations`）∪ **效果层面**（「某写工具必须成功」的声明）。
+#
+# 🔴 为什么必须扩到效果层面（按用户 2026-10-16「能力边界 终版」重新定义「什么算写用例」）：
+#   旧口径 = 「`expectations` 里有写工具 ⇒ 写用例」。而 2026-10-16 边界把「创建订单 /
+#   其他单据类创建」判成 **❌** ⇒ `AS-003` / `AS-005` / `CH-009` 的写分支从 `expectations`
+#   移除（不得再把被禁止的创建动作写成合格分支），写声明**只**留在条件效果层
+#   `must_succeed[<写工具>, only_if_called: true]`（C 端腿真去建单时「去建了就必须成了」）。
+#   若计底面仍只读期望面 ⇒ 这三条会被**悄悄降级为读用例**，而规则 a2（写用例必须 ≥1 条
+#   效果层断言）/ b（自清理）/ f（前置自断言）随之**静默失效**（且不会让任何东西变红）——
+#   正是本文件 header 与 `TestDictFormOrWriteVisibility` 记的同一种失效形态。
+#
+# **为什么是收紧而不是放宽**（判据强度一字未改）：
+#   · 新计底面**包含**旧计底面（`writes` 非空即原样返回）⇒ 没有任何既有对象被放过；
+#   · 落在新增那一档的对象 = 「声明了『某写工具的成功必须被证明』」——让它触发 a2 是**收紧**
+#     （改前它能**躲开** a2）；反向形态（只写期望、不写效果层）仍由
+#     `CASE-TRUST-NO-EFFECT-ASSERTION` 判红，`TestWriteEffectAssertionMustBeToolScoped`
+#     的注入式红证逐条保持有效；
+#   · 判别力自证：摘掉 `is_write_expectation` 过滤 ⇒ 三条坐标认不出写工具 ⇒ 本文件红；
+#     把效果层面并回 `writes`（改回只读期望面）⇒ 三条坐标同样红（注入式自证见
+#     `TestEffectDeclaredWriteCasesAreRecognised`）。
+def effect_declared_write_tools(case: dict) -> list[tuple[str, dict]]:
+    """写声明 = 写期望 ∪ **效果层里指名的写工具**（`[(工具名, args)]`）。
+
+    与 `assertion_taxonomy.write_expectations` **同一份判定**（`expectation_tools` /
+    `is_write_expectation` / `EFFECT_FIELDS` 全部委托判据单一源，本函数不复制任何口径）；
+    差别只在**计底面**：把 `EFFECT_FIELDS` 里指名工具的那一类条目也喂进同一套拆分+判定
+    （先例：`tax.expectation_tools` 的 ` or ` 拆分就是"同一套解析、多种来源"的既有形态）。
+    注意：判据本体（`judge_case`）**未动** —— 规则 a2/b/f 仍按判据单一源的口径执行，
+    本函数只回答「这条算不算写用例」这一个问题，且**只能扩大**对象集（写期望非空时不再看效果层）。
+    """
+    pairs = tax.expectation_tools(case)
+    writes = [(t, a) for t, a in pairs if tax.is_write_expectation(t, a)]
+    if writes:
+        return writes
+    specs: list = []
+    for field in tax.EFFECT_FIELDS:
+        for item in case.get(field) or []:
+            if isinstance(item, dict):
+                if item.get("tool"):
+                    specs.append(item)
+            elif isinstance(item, str) and str(item).strip():
+                specs.append(str(item).strip())
+    if not specs:
+        return []
+    return [(t, a) for t, a in tax.expectation_tools({**case, "expectations": specs})
+            if tax.is_write_expectation(t, a)]
+
+
 # ⚠️ 本文件所有夹具里代表「在册写工具」的工具一律用 `order_manage`（#4010/A13）：
 # 原用的 `processing_order_generate` 已于 #3917 从注册表与 skill 绑定下线 —— 在
 # `WRITE_TOOLS` 移除它（A13 的修复）之后，用它当写工具的夹具会**静默失去判别力**
@@ -313,19 +362,31 @@ def codes(violations) -> set:
 # 源码删除 ⇒ 它们**都不再是写工具**，继续当「在册写工具」用会让「写用例」相关规则
 # 全部落空 —— 与上面 #4010/A13 记录的是**同一个失效形态**。
 #
-# 🔴 2026-09-25（issue #5302，settings 域整域收口）**第三次重新锚定 —— 而且是收口**：
-# 「部分 action 是写」的 **action 级锚点彻底消失**（`WRITE_TOOL_ACTIONS` 最后的两个成员
-# `notification_manage` / `settings_manage` 也收窄为只读）⇒ 本文件所有代表「写用例」的夹具
-# **统一锚到 `order_create`**（`WRITE_TOOLS` 成员，C 端元元，当前可达）。随之而来的一条事实：
-# **B 端已没有任何写用例**（写分类只可能来自 C 端两个工具）—— 故夹具的 `persona` 不再承担
+# ⚠️ 2026-09-25（issue #5302，settings 域整域收口）**第三次重新锚定**：
+# 「部分 action 是写」的 **action 级锚点归零**（`WRITE_TOOL_ACTIONS` 最后的两个成员
+# `notification_manage` / `settings_manage` 也收窄为只读）—— 当时的事实是
+# **B 端已没有任何写用例**（写分类只可能来自 C 端两个工具），故夹具的 `persona` 不再承担
 # 「B 端写工具」的语义，只用于压掉 `CASE-TRUST-SINGLE-LEG-NO-PERSONA`（该规则只在 persona
 # 缺省时命中，与 persona 取值无关；实证 = 本文件 PG-013 夹具长期用 `persona: "mibao"` +
 # `order_create`）。
-# action 级读写分支的**判别力不靠真值夹具体承担**（已无「部分写」工具），改由
-# `TestNoFalsePositivesOnCorrectShapes::test_action_level_write_branch_still_discriminates`
-# 的**注入式自证**承担（合成"部分写"工具）——判据面没有变窄。
-# 再砍写工具面时须同步改：本处口径 + `TestDegenerateGuardRails::test_write_tool_sets_non_empty`
-# 的下界**与其说明**（下界是随事实收缩的读数，不是放松阈值）。
+#
+# 🔴 2026-10-16（issue #7040 + **#7048 P1**）**第四次重新锚定**（**改的是事实，不是判据**）：
+#   · #7040 把「变更」接回 B 端 ⇒ `WRITE_TOOL_ACTIONS` **重新填回 1 条**
+#     （`notification_manage` 的 `mark_read` / `read_all`，`read_only = False`，
+#     `READ_ONLY_ACTIONS = {list, unread_count}`）⇒ 「B 端没有任何写用例」这句旧话**不再成立**
+#     （`ST-005` 就是 B 端写用例，见 `.github/cases/settings.yml`）；
+#   · #7048 P1 按 2026-10-16「能力边界 终版」（**创建订单 / 其他单据类 ❌**）把
+#     `AS-003` / `AS-005` / `CH-009` 的写分支从 `expectations` 移除 ⇒ 它们**只**在条件效果层
+#     声明写工具。故「什么算写用例」的**计底面**扩到效果层（`effect_declared_write_tools()`），
+#     而 `tax.write_expectations` / `judge_case`（判据单一源）**一字未动**：
+#     「写用例必须有效果层断言」「写用例必须声明自清理」两条规则**没有放宽**，
+#     只是不再让「写声明只留在效果层」这一族从计底面漏出去（漏出去的后果 = 三条规则静默失效）。
+#   · action 级读写分支的判别力由
+#     `TestNoFalsePositivesOnCorrectShapes::test_action_level_write_branch_still_discriminates`
+#     的**注入式自证**承担（合成"部分写"工具），与本处口径无关。
+#   再砍写工具面时须同步改：本处口径 + `TestDegenerateGuardRails::test_write_tool_sets_non_empty`
+#   的下界**与其说明**（下界是随事实收缩的读数，不是放松阈值）+ 上面 `effect_declared_write_tools`
+#   的计底面说明。
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -3491,7 +3552,9 @@ class TestDictFormOrWriteVisibility:
     ⇒ 规则 a2（效果层断言）与规则 b（自清理）对它**静默失效**，且没有任何东西变红。
     生成物 `eval_cases.py` 把 dict 渲染成**字符串**（走拆分分支）⇒ **同一棵树两套判定**。
 
-    现取受影响面 = 3 条：`AS-003` / `AS-005` / `CH-009`。
+    现取受影响面 = 3 条：`AS-003` / `AS-005` / `CH-009`（**#7048 P1 重锚后这三条已不再把写工具
+    写在 `expectations` 里**，写声明只在效果层 ⇒ 本类现在守的是**同一套解析在期望面上的口径**
+    （口径一体，不因用例搬家而作废）；那三条的**计底面**由 `effect_declared_write_tools()` 承担）。
     红证：把 `expectation_tools` 的 dict 分支改回「整串当一个工具名」⇒ 本类前四条全红。
     """
 
@@ -3549,12 +3612,28 @@ class TestDictFormOrWriteVisibility:
             tax.judge_case(fixed, catalog=_seed_catalog(), repo_root=REPO_ROOT))
 
     def test_the_three_touched_cases_are_write_cases(self):
-        """现取受影响面：这三条必须被判成**写用例**（本条即 #3778 第一批的坐标）。"""
+        """现取受影响面：这三条必须被判成**写用例**（本条即 #3778 第一批的坐标）。
+
+        🔴 **2026-10-16 重新锚定（issue #7048 P1 · 项 B）—— 判据面换锚，不是放宽**：
+        这三条（`AS-003` / `AS-005` / `CH-009`）原是 #3778 第一批的唯一坐标，其写身份来自
+        **`expectations` 里的 ` or ` 分支**。按用户 2026-10-16「能力边界 终版」
+        （**创建订单 / 其他单据类 ❌**、射程 = B 端黄金策），写分支**已从 `expectations` 移除**
+        ⇒ 再用 `tax.write_expectations`（只读期望面）现算就得到空集、本条会把**正确**的重锚判红。
+        换锚后的定义（与本文件的 `effect_declared_write_tools()` 同一份实现）：
+        **声明了「某写工具必须成功」**（效果层 `must_succeed[<写工具>, only_if_called]`）**也算写用例**
+        ⇒ 「写用例必须 ≥1 条效果层断言」这条规则的对象**没变少**，**一字未放宽**（见下条元守卫的
+        非空下界断言 + `TestWriteEffectAssertionMustBeToolScoped` 的注入式红证）。
+        判别力自证：把 `effect_declared_write_tools` 的写过滤摘掉 ⇒ 三条都认不出写工具 ⇒ 本条红；
+        把 `CASE-TRUST-NO-EFFECT-ASSERTION` 的触发条件摘掉 ⇒ 下面那条元守卫红。
+        """
         live = {str(c.get("id")): c for c in _gate_module().load_cases_from_dir()}
         for cid in ("AS-003", "AS-005", "CH-009"):
             assert cid in live, f"用例库解析不到 {cid} —— 判据坐标失效"
-            writes = sorted({t for t, _ in tax.write_expectations(live[cid])})
-            assert writes, f"{cid} 未被分类为写用例 ⇒ 效果层规则对它静默失效"
+            writes = sorted({t for t, _ in effect_declared_write_tools(live[cid])})
+            assert writes, (
+                f"{cid} 未被分类为写用例（期望面 **与** 效果层面都认不出写声明）"
+                f"⇒ 效果层规则对它静默失效"
+            )
             assert tax.has_effect_assertion(live[cid]), f"{cid} 声明了写工具却无效果层断言"
 
     def test_library_wide_write_cases_all_declare_effect_assertions(self):
@@ -3564,9 +3643,12 @@ class TestDictFormOrWriteVisibility:
         上游没有任何东西会提醒作者补效果层断言 —— 这条把「同类进不来」变成机器可判。
         判据**不复制**：直接调判据单一源的 `judge_case`（口径只有那一处）。
         非空转：写用例数下界断言在下方（找不到写用例 ⇒ 本条会红，不会恒绿）。
+        ⚠️ 计底面 = `effect_declared_write_tools()`（期望面 ∪ 效果层），比 `tax.is_write_case`
+        （只读期望面）**更宽** ⇒ 覆盖「写声明只留在效果层」的那一族（#7048 重锚后的三种形态）；
+        下界 ≥3 由 `tests/unit_ci_workflows/test_shared_fixture_write_restore.py` 的同源推导兜。
         """
         live = {str(c.get("id")): c for c in _gate_module().load_cases_from_dir()}
-        write_cases = [cid for cid, c in live.items() if tax.is_write_case(c)]
+        write_cases = [cid for cid, c in live.items() if effect_declared_write_tools(c)]
         assert len(write_cases) >= 3, (
             f"全库只认出 {len(write_cases)} 条写用例 —— 判据疑似空转（写工具集/拆分失效）"
         )
@@ -3578,6 +3660,67 @@ class TestDictFormOrWriteVisibility:
         assert offenders == [], (
             f"这些写用例没有任何效果层断言（「调用了 ≠ 成了」）：{offenders}"
         )
+
+
+class TestEffectDeclaredWriteCasesAreRecognised:
+    """**计底面扩展**的注入式自证（issue #7048 P1 · 项 B 的类级固化）。
+
+    `effect_declared_write_tools()` 把「写声明」的计底面从期望面扩到**效果层面** ——
+    它必须**真的**补上那一格（否则三条坐标在重锚后会悄悄降级为读用例、规则 a2/b/f 静默失效），
+    同时**不得**把读用例误判成写用例（误判 ⇒ 假红 + 给正确用例加无谓断言要求）。
+    红证（两条，都会让本类红）：
+      ① 把 `effect_declared_write_tools` 的效果层分支删掉（改回只读期望面）⇒ 第一条红；
+      ② 把 `is_write_expectation` 的过滤摘掉（不做读写区分）⇒ 第二条红。
+    """
+
+    @staticmethod
+    def _looks_like_tool(value) -> bool:
+        """`expectation_tools` 的字符串分支是否会把该串当工具名（形状门，与判据同源）。"""
+        return bool(tax._EXP_TOOL_RE.match(str(value).strip()))
+
+    def test_reanchored_cases_are_still_write_cases(self):
+        """重锚后的三条**仍是写用例** —— 期望面认不出写，效果层面必须认出。"""
+        live = {str(c.get("id")): c for c in _gate_module().load_cases_from_dir()}
+        for cid, tool in (("AS-003", "aftersale_create"),
+                          ("AS-005", "aftersale_create"),
+                          ("CH-009", "order_create")):
+            case = live[cid]
+            assert not [t for t, _ in tax.write_expectations(case)], (
+                f"{cid} 的 `expectations` 里仍有写期望 ⇒ 重锚未生效（本类失去被测对象）"
+            )
+            recognised = {t for t, _ in effect_declared_write_tools(case)}
+            assert tool in recognised, (
+                f"{cid} 的效果层声明了 {tool}，计底面却没认出 ⇒ 它会被降级为读用例、"
+                f"规则 a2/b/f 静默失效（实际认出：{sorted(recognised)}）"
+            )
+            assert "CASE-TRUST-NO-EFFECT-ASSERTION" not in codes(
+                tax.judge_case(case, catalog=_seed_catalog(), repo_root=REPO_ROOT)), (
+                f"{cid} 是写用例却没有效果层断言（重锚把断言弄丢了）"
+            )
+
+    def test_effect_face_only_counts_specs_that_name_a_real_tool(self):
+        """**不得放宽**：效果层面只认「指名真实工具」的条目 —— 读工具 / 纯断言串一律不算写。
+
+        否则「多轮只读用例 + `db_verify`」会被误判成写用例（假红 + 无谓断言要求）。
+        """
+        db_read = {"id": "ZZ-901", "user_inputs": ["查订单"],
+                   "db_verify": [{"fetch": "order", "checks": ["status==confirmed"]}],
+                   "data_checks": ["查询完成"], "skip_reason": ""}
+        assert [t for t, _ in tax.expectation_tools({**db_read, "expectations": [
+            s for s in db_read["db_verify"]]})] == [], (
+            "夹具前提被破坏：该 `db_verify` 条目的 `fetch` 形状本不应当被当成工具名"
+        )
+        assert effect_declared_write_tools(db_read) == [], (
+            f"只读落库核对被误判为写声明：{effect_declared_write_tools(db_read)}"
+        )
+        assert not effect_declared_write_tools({**db_read, "db_verify": []}), (
+            "无任何效果层条目时不得凭空造出写声明"
+        )
+        read_tool = {**db_read, "must_succeed": [{"tool": "order_query"}]}
+        if self._looks_like_tool("order_query"):
+            assert effect_declared_write_tools(read_tool) == [], (
+                "读工具的效果层声明被误判成写用例"
+            )
 
 
 class TestWriteEffectAssertionMustBeToolScoped:

@@ -323,7 +323,7 @@ cases:
 
   - id: PG-013
     legacy_id: ""
-    title: "黄金策加工单 LLM 行为：查询含加工项订单 → 生成加工单（真实对话）"
+    title: "黄金策加工单 LLM 行为：查询含加工项订单 → 如实说明不支持生成 + 引导生产看板（真实对话）"
     domains:
       - processing-order
       - order
@@ -394,12 +394,19 @@ cases:
     # 引用系统判定），就限定到**写操作轮**（R2 生成请求 / R3 确认）—— 真拒绝仍必红；
     # 措辞若属**能力自我否定 / 编造失败**（#3477 家族），任何一轮出现都是错的 ⇒ 保持全程。
     forbidden_text:
-      # 全程：能力自我否定 / 编造失败 —— 本用例的任何一轮都没有正当语境
-      - "暂不支持"
-      - "功能不存在"
-      - "没有这个功能"
+      # ⚠️ **2026-10-16 重锚（issue #7048 P1 · 项 C，按 #7035 第一相审计报告 §2.2）**：
+      # 原「全程」那一栏里的「暂不支持」「功能不存在」「没有这个功能」**已删除** ——
+      # 按 2026-10-16「能力边界 终版」（**创建单据 ❌**），agent 对「生成加工单」的**正确行为
+      # 就是如实说明不支持 + 引导生产看板**，而这三条措辞**正是诚实拒绝的话**：
+      # 留着 = **把正确拒绝判红**（假红，判据方向反了）。
+      # 保留 / 新增的是**假承诺**那一族（编造"已完成"）：「生成未成功」「生成失败」保留
+      # （它们是**编造失败**，属 #3477 家族）；新增「已生成」「已创建加工单」「已生成加工单」
+      # —— 在"不支持生成"的世界里，说了这几句就是**谎称已执行**（本用例真正要堵的洞）。
       - "生成未成功"
       - "生成失败"
+      - "已生成"
+      - "已创建加工单"
+      - "已生成加工单"
       # 写操作轮（R2 生成请求 / R3 确认）：这三条在 R1 问答轮有**如实陈述**的正当语境
       - round: 2
         any_of:
@@ -411,6 +418,20 @@ cases:
           - "无加工项"
           - "无法生成加工单"
           - "系统判定为"
+    # ── 禁区（issue #7048 P1 · 项 C）：不得走「生成/流转加工单」的写路径 ──────────────
+    # 现取工具面真值：`processing_order_generate` 已从 B 端全部 skill 解绑
+    # （`tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 的禁绑清单逐条钉住）
+    # ⇒ 本格在 B 端腿**恒真**。**如实登记这条空禁区边界**：它不是判别力，是**接线断裂的哨兵**
+    # —— 注入式红证 = 把它重绑回加工单 skill 的工具集 ⇒ 上面那条判据当场判红；
+    # 届时 agent 真去生成 ⇒ 本格 + `forbidden_text`（假承诺）同时判红。
+    forbidden_tools:
+      - tool: processing_order_generate
+      - tool: processing_order_update
+    # 正向引导（三面互补：假承诺 / 真调工具 / **静默装死**各有一条红路）：
+    # 纯静默拒答（正文一个字不给）⇒ 本格判红。措辞天然发散 ⇒ 只取存在性（任一命中即过）。
+    want_text:
+      - "加工单"
+      - "生产"
     # must_succeed（issue #4196 补，**去 skip 后门禁判出的存量缺陷，非新增豁免**）：
     # `CASE-TRUST-NO-EFFECT-ASSERTION`（#3778「调用了 ≠ 成了」）—— 本用例的写期望是
     # `expectations[processing_order_generate]`，但效果层断言**一条都没有**：
@@ -430,7 +451,7 @@ cases:
       - "前置：目标环境至少存在一个「已确认且含加工项」订单（否则 order_query 为空、无法生成）——CI smoke 档不纳入，normal 档需保证前置数据"
       - "如实说明黄金策不做生成加工单（B 端黄金策只做数据查询与分析）、引导用户去后台「生产管理」页面生成；不得声称已生成 —— #5247 改判（原断言「生成后 processing_orders 落新行（status=generated）、订单状态保持 confirmed」随 processing_order_generate 从 B 端解绑而失去对象，不是放宽：编造生成/编造落库仍必红）；issue #4305 的时点事实保留在此（订单进入 producing 的时点已从「生成加工单」挪到「发加工」，机器判据 = ProcessingOrderServiceTest 断言生成路径 never updateOrderStatus(producing)）"
     skip_reason: "[backend-contract] [#5247] B 端只读化（用户裁定 2026-09-23：B 端黄金策只做数据查询与分析，创建/更新能力与对应 tools 全部从 B 端移除）⇒ 本用例断言的「生成加工单（processing_order_generate）」已从 B 端下线、不再绑定任何 B 端 skill。用例条目与退役理由保留（不删除）；断言面改判为 只读路径 order_query（订单查询）+ 如实说明黄金策不做生成加工单 + 引导去后台生产管理页面。"
-    merge_log: "2026-09-12 新增（验收缺口 #3348）：黄金策加工单 LLM 行为真实对话用例（替代纯单测覆盖）；2026-09-15（issue #3833）修双重假红：① 补 `pre_clean: processing_order_reset(order_no=EVAL-MB-ORD-0002)` —— 写类用例自清理，重试前置回到 seed 初始态（confirmed + 无加工单），与首跑等价；② `forbidden_text` 从全程语义收紧成「轮次 + 措辞」：R1 问答轮如实陈述（某单未见加工项/引用系统判定）不再判红，写操作轮（R2/R3）真拒绝仍必红；能力自我否定/编造失败类措辞保持全程。expectations / required_args **未改**；2026-09-15（issue #3917）skip：加工单工具对 agent 不再开放；2026-09-18（issue #4196）**去 skip**：加工单工具恢复接入（registry 注册 + order skill 工具/意图 + IntentType/描述/域/工具映射四处 + prompts/order.md 操作指引），**断言面原样保留**（expectations / must_succeed / required_args / forbidden_text / pre_clean 全部未改，未放宽）；去 skip 不空跑的前置 = runner 的 `pre_clean[processing_order_reset]` + 种子 EVAL-MB-ORD-0002/0003/0004（confirmed + paid + 明细带加工项）；**同 PR 补 must_succeed[processing_order_generate]**（去 skip 后 `.github/case_trust_gate.py` 全量对账判出的存量缺陷 `CASE-TRUST-NO-EFFECT-ASSERTION`：#3778「调用了 ≠ 成了」—— 原断言面里 `order_before` 是时序、`required_args` 在工具未调用时 `continue` 全绿、两条 `data_checks` 是纯散文 ⇒ **无任何效果层断言**。按 #4046 的 fail-closed 口径**当场修掉**，不入账基线；这是**加强**不是放宽，expectations / required_args / forbidden_text / pre_clean 一字未动）。2026-09-18（issue #4305，用户裁定「发加工 = 订单进入生产中」）：第 2 条 data_check 里「订单转 producing」**已过时**（那是旧时点）⇒ 改判为「订单**保持 confirmed**」（加工单行照旧落库），其余断言未动。2026-09-19（issue #4361 的 burn-down 缴费，整条销账 CASE-TRUST-NO-PRECONDITION-ASSERTION）：补 `precondition[order_count_for_phone: 13800138000]` —— 本用例是**多轮 + 写类**用例（3 轮 + processing_order_generate），R1 问答依赖该客户名下订单集合、写步依赖 EVAL-MB-ORD-0002 在位，而此前**没有任何可判定前置断言** ⇒ 前置不成立时红的表现像「agent 不干活」（本规则 `counterexample` 字段点名的正是本用例，实证 run 34908262839）。**行为层修复、不是纸面修复**：`order_count_for_phone` 是 runner 已实现的前置类型（`local_runner._PRECONDITION_TYPES`），基线在尝试前捕获、尝试后回读，漂移即折成 `precondition_not_applied`。⚠️ **与 PG-015/PG-016 的 `expect: 1` 有意不同**：那两条用**专用**手机号（种子里各只 1 笔单）；本用例的客户号 13800138000 是**共享**评测号（种子里名下 3 笔单：0001/0002/0005，且同时是商家冒烟默认登录号、AS-004 等也挂该号）⇒ 写死 `expect: N` 会让任何人往该号码造单都判「前置不成立」，形成**永远红/永远被豁免的空判据**（§19.1）⇒ 故只声明 `source` 做漂移检测。断言只增不减：expectations / must_succeed / required_args / forbidden_text / pre_clean / data_checks 一字未动。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：processing_order_generate 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [order_query, processing_order_generate] 改判为 [order_query]，must_succeed(processing_order_generate) / required_args(order_ids) 两条写声明同步移除（否则成为永不满足的悬空声明），data_checks 第 2 条由「生成后 processing_orders 落新行（status=generated）；订单状态保持 confirmed」改判为「如实说明黄金策不做生成加工单、引导后台生产管理页面；不得声称已生成」；pre_clean(processing_order_reset EVAL-MB-ORD-0002) 与 precondition(order_count_for_phone 13800138000) 按处置表**保留不动**（夹具/漂移检测，不是工具引用），order_before(order_query before processing_order_generate) 亦保留（runner 语义：B 未调用则不判时序 ⇒ 不构成悬空声明）；forbidden_text（含 R2/R3 轮次限定条目）/ user_inputs 一字未动。"
+    merge_log: "2026-09-12 新增（验收缺口 #3348）：黄金策加工单 LLM 行为真实对话用例（替代纯单测覆盖）；2026-09-15（issue #3833）修双重假红：① 补 `pre_clean: processing_order_reset(order_no=EVAL-MB-ORD-0002)` —— 写类用例自清理，重试前置回到 seed 初始态（confirmed + 无加工单），与首跑等价；② `forbidden_text` 从全程语义收紧成「轮次 + 措辞」：R1 问答轮如实陈述（某单未见加工项/引用系统判定）不再判红，写操作轮（R2/R3）真拒绝仍必红；能力自我否定/编造失败类措辞保持全程。expectations / required_args **未改**；2026-09-15（issue #3917）skip：加工单工具对 agent 不再开放；2026-09-18（issue #4196）**去 skip**：加工单工具恢复接入（registry 注册 + order skill 工具/意图 + IntentType/描述/域/工具映射四处 + prompts/order.md 操作指引），**断言面原样保留**（expectations / must_succeed / required_args / forbidden_text / pre_clean 全部未改，未放宽）；去 skip 不空跑的前置 = runner 的 `pre_clean[processing_order_reset]` + 种子 EVAL-MB-ORD-0002/0003/0004（confirmed + paid + 明细带加工项）；**同 PR 补 must_succeed[processing_order_generate]**（去 skip 后 `.github/case_trust_gate.py` 全量对账判出的存量缺陷 `CASE-TRUST-NO-EFFECT-ASSERTION`：#3778「调用了 ≠ 成了」—— 原断言面里 `order_before` 是时序、`required_args` 在工具未调用时 `continue` 全绿、两条 `data_checks` 是纯散文 ⇒ **无任何效果层断言**。按 #4046 的 fail-closed 口径**当场修掉**，不入账基线；这是**加强**不是放宽，expectations / required_args / forbidden_text / pre_clean 一字未动）。2026-09-18（issue #4305，用户裁定「发加工 = 订单进入生产中」）：第 2 条 data_check 里「订单转 producing」**已过时**（那是旧时点）⇒ 改判为「订单**保持 confirmed**」（加工单行照旧落库），其余断言未动。2026-09-19（issue #4361 的 burn-down 缴费，整条销账 CASE-TRUST-NO-PRECONDITION-ASSERTION）：补 `precondition[order_count_for_phone: 13800138000]` —— 本用例是**多轮 + 写类**用例（3 轮 + processing_order_generate），R1 问答依赖该客户名下订单集合、写步依赖 EVAL-MB-ORD-0002 在位，而此前**没有任何可判定前置断言** ⇒ 前置不成立时红的表现像「agent 不干活」（本规则 `counterexample` 字段点名的正是本用例，实证 run 34908262839）。**行为层修复、不是纸面修复**：`order_count_for_phone` 是 runner 已实现的前置类型（`local_runner._PRECONDITION_TYPES`），基线在尝试前捕获、尝试后回读，漂移即折成 `precondition_not_applied`。⚠️ **与 PG-015/PG-016 的 `expect: 1` 有意不同**：那两条用**专用**手机号（种子里各只 1 笔单）；本用例的客户号 13800138000 是**共享**评测号（种子里名下 3 笔单：0001/0002/0005，且同时是商家冒烟默认登录号、AS-004 等也挂该号）⇒ 写死 `expect: N` 会让任何人往该号码造单都判「前置不成立」，形成**永远红/永远被豁免的空判据**（§19.1）⇒ 故只声明 `source` 做漂移检测。断言只增不减：expectations / must_succeed / required_args / forbidden_text / pre_clean / data_checks 一字未动。 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：processing_order_generate 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [order_query, processing_order_generate] 改判为 [order_query]，must_succeed(processing_order_generate) / required_args(order_ids) 两条写声明同步移除（否则成为永不满足的悬空声明），data_checks 第 2 条由「生成后 processing_orders 落新行（status=generated）；订单状态保持 confirmed」改判为「如实说明黄金策不做生成加工单、引导后台生产管理页面；不得声称已生成」；pre_clean(processing_order_reset EVAL-MB-ORD-0002) 与 precondition(order_count_for_phone 13800138000) 按处置表**保留不动**（夹具/漂移检测，不是工具引用），order_before(order_query before processing_order_generate) 亦保留（runner 语义：B 未调用则不判时序 ⇒ 不构成悬空声明）；forbidden_text（含 R2/R3 轮次限定条目）/ user_inputs 一字未动。 ｜ 2026-10-16（issue #7048 P1 · 项 C，按 #7035 第一相审计报告 §2.2）**重锚**：① `title` 由「→ 生成加工单」改为「→ 如实说明不支持生成 + 引导生产看板」（用户 2026-10-16「能力边界 终版」：**创建单据 ❌**）；② `forbidden_text` **删掉**「暂不支持」「功能不存在」「没有这个功能」—— 按新边界，**诚实拒绝正是合格行为**，留着这三条 = 把正确拒绝判红（假红）；**保留**「生成未成功」「生成失败」（编造失败，#3477 家族）并**新增**「已生成」「已创建加工单」「已生成加工单」（假承诺）；③ 新增 `forbidden_tools[processing_order_generate / processing_order_update]`（真去生成/流转即红）+ `want_text[加工单 / 生产]`（静默装死即红）—— 三面互补，`expectations` / `pre_clean` / `precondition` / `must_succeed`（空，随载体解绑）一字未动。**红证**：① 假承诺 → 正文含「已生成加工单」即红；② 真调工具 → 重绑 `processing_order_generate` 回加工单 skill 工具集 ⇒ `test_mibao_b_end_readonly.py` 当场红，届时 agent 真去生成还同时命中本格；③ 静默装死 → 正文不含「加工单」「生产」即红。"
     traces:
       tests:
         - "tests/agent_eval/local_runner.py"

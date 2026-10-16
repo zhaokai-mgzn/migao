@@ -241,6 +241,27 @@ cases:
       # 表达不了"二者之一"；同义集本身是仓库既有口径，**不新造**。
       # 红证（注入式）：① agent **完全不调用** `role_manage` ⇒ 两条期望均 unmatched ⇒ 判红；
       # ② 只调 `role_manage(action=tree)`（不在同义集 / 不在枚举）⇒ 第一条判红。
+      #
+      # ── 2026-10-16（issue #7048 P1 · 项 D）**复核「该不该回到 `detail`」** ⇒ 结论：**不回到** ──
+      # 被复核的钉 = `tests/unit_ci_workflows/test_case_coverage_actions.py` 的
+      # `test_repo_reports_action_gaps_including_known_precedents`：它把 `role_manage/detail`
+      # 钉成「**保持未覆盖**的工作清单先例」。复核方法 = **单变量对照 + 读判据真值**：
+      #   ① **无收益**：`detail` 与 `all` 都 ∈ runner 的只读查询同义集
+      #      （`tests/agent_eval/local_runner.py` 的 `_QUERY_ACTION_SYNONYMS`）⇒ agent 调其中
+      #      **任一个**都按业务等价放行 ⇒ 「改回 `detail` 以增强判别力」**没有可观测的判别力增量**
+      #      （#7035 第一相审计点名的病灶是「过度指定 `list_permissions` ⇒ 把合法的 `detail`/
+      #      `all` 判红」，那条已由 `all` 解决 —— 换 `detail` 只是把"过度指定"掉个头）。
+      #   ② **有成本**：该钉是 action 级覆盖体检的**先例读数**（判据原文「下界随事实收缩
+      #      = **不是**放宽阈值」）—— 消化掉它就少一条「报告面仍看得见、但已无人守」的先例，
+      #      而下界（`>= 15`）与先例清单同源 ⇒ 改一条要连带改判据与说明（多一处漂移面）。
+      #   ③ **改判据不在本包写路径**：`test_case_coverage_actions.py` 在本批只允许按项 D
+      #      「复核并登记理由」，不允许为了让一条用例过而放宽门禁（不降门禁）。
+      # ⇒ 保留 `action: all`，并把该钉的**必要性**与**重启条件**登记在此
+      #   （口径 = `migao-dev-flow` §24：『有意不做』必须写明接受的缺口 + 重启条件）。
+      # **重启条件（满足任一条即应重新评估）**：① 该先例被其它用例**自然覆盖**（届时这条钉连同
+      #   下界一起收缩即可，属"销账即删条目"的正常流程）；② action 级覆盖体检从「只报告」
+      #   升级成**阻塞门禁**（先例的意义随之反转）；③ 出现「必须用 `detail` 才能表达」的真值
+      #   （例如 `detail` 与 `all` 的返回结构在断言层被区分）—— 此刻两条同义 ⇒ 不成立。
       - tool: role_manage
         args:
           action: list
@@ -273,7 +294,7 @@ cases:
     data_checks:
       - "角色/权限清单逐条来自服务端（role_manage list / list_permissions），不得编造；只读，不得声称已创建或已分配权限"
     skip_reason: ""
-    merge_log: "verification 5.5 独有；2026-09-10 校准：①「库存权限」生产不存在（库存由商品管理模块承载），改真实权限「商品管理」；② 补「确认创建」轮 + 明确编码/描述（role_manage create 走 validate_input→create 确认链，validate_input 已 #3157 补 role_manage 规则；「确认」一词因 agent 澄清多问编码/描述致 LLM 歧义，改为明确第二输入） ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`role_manage` 收窄为只读（写 action `create` 已删除）⇒ 本用例按新机制改判：`expectations` 由 `role_manage(action=create)` → `role_manage(action=list)` + `role_manage(action=list_permissions)`，`must_succeed[role_manage(action=create)]` 整格移除，`title` / `user_inputs` / `data_checks` 随新语义改判（**不是放宽**：原输入里的「库管」角色是本用例自己创建的、写能力下线后不再存在，故不能继续引用它；角色与权限清单的**来源**仍逐条受服务端断言约束，且「不得声称已创建/已分配」是新加的正向约束）。"
+    merge_log: "verification 5.5 独有；2026-09-10 校准：①「库存权限」生产不存在（库存由商品管理模块承载），改真实权限「商品管理」；② 补「确认创建」轮 + 明确编码/描述（role_manage create 走 validate_input→create 确认链，validate_input 已 #3157 补 role_manage 规则；「确认」一词因 agent 澄清多问编码/描述致 LLM 歧义，改为明确第二输入） ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`role_manage` 收窄为只读（写 action `create` 已删除）⇒ 本用例按新机制改判：`expectations` 由 `role_manage(action=create)` → `role_manage(action=list)` + `role_manage(action=list_permissions)`，`must_succeed[role_manage(action=create)]` 整格移除，`title` / `user_inputs` / `data_checks` 随新语义改判（**不是放宽**：原输入里的「库管」角色是本用例自己创建的、写能力下线后不再存在，故不能继续引用它；角色与权限清单的**来源**仍逐条受服务端断言约束，且「不得声称已创建/已分配」是新加的正向约束）。 ｜ 2026-10-16（issue #7048 P1 · 项 D）**复核「该不该回到 `detail`」⇒ 结论：不回到，保留 `action: all`** —— 依据（单变量对照 + 读判据真值）：`detail` 与 `all` 都在 runner 的只读查询同义集里 ⇒ 换成 `detail` **没有可观测的判别力增量**（原病灶「过度指定 `list_permissions`」已由 `all` 解决）；而 `role_manage/detail` 被 `tests/unit_ci_workflows/test_case_coverage_actions.py` 的 `test_repo_reports_action_gaps_including_known_precedents` 钉为「action 级未覆盖的工作清单先例」（下界 `>= 15` 与先例清单同源）。⇒ 保留现状，并把该钉的**必要性**与**重启条件**登记在期望块的注释里（口径 = `migao-dev-flow` §24：『有意不做』必须写明接受的缺口 + 重启条件）。断言面（expectations）**一字未动**。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_tools_role_manage.py"
