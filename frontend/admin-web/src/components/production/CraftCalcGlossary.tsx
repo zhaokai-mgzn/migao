@@ -47,32 +47,34 @@ function TermBlock({ term, anchor, meta }: { term: GlossaryTerm; anchor?: string
   // 锚点与 testid 同源（`anchor` 缺省 = 术语组命名空间；特殊选项组传自己的命名空间）
   const id = anchor ?? glossaryTermAnchorOf(term.name)
   return (
-    <div
-      id={id}
-      data-testid={id}
-      className="space-y-0.5 border-b border-neutral-100 py-2 last:border-b-0"
-    >
-      <p className="font-medium text-neutral-800">
-        <InlineMarkdown text={term.name} />
-      </p>
-      <p className="text-neutral-600">
+    <div id={id} data-testid={id} className="border-b border-neutral-100 py-2.5 last:border-b-0">
+      {/* 术语名 + 一句话定义**同一段**（issue #7007）：此前名 / 定义 / 判定 / 影响各占一段
+          ⇒ 一条术语最多 5 行小字、六组共三四十行，商家读到一半就放弃。
+          现在一条术语固定 **2~4 行**：① 名称 + 定义；② 判定（仅自动推算项）；
+          ③ 影响；④ 边界（仅真有前提时）。 */}
+      <p className="text-sm leading-relaxed text-neutral-600">
+        <span className="font-medium text-neutral-900">
+          <InlineMarkdown text={term.name} />
+        </span>
+        <span className="mx-1.5 text-neutral-300">·</span>
         <InlineMarkdown text={term.definition} />
       </p>
-      {meta !== undefined && (
-        <p className="text-neutral-500">
-          <InlineMarkdown text={meta} />
-        </p>
-      )}
       {term.criterion !== undefined && (
-        <p className="text-neutral-500">
+        <p className="mt-0.5 text-xs text-neutral-500">
           判定：<InlineMarkdown text={term.criterion} />
         </p>
       )}
-      <p className="text-neutral-600">
-        <InlineMarkdown text={term.impact} />
+      <p className="mt-0.5 text-xs text-neutral-600">
+        影响：<InlineMarkdown text={term.impact} />
+        {meta !== undefined && (
+          <>
+            {' '}
+            <InlineMarkdown text={meta} />
+          </>
+        )}
       </p>
       {term.boundary !== undefined && (
-        <p className="text-amber-700">
+        <p className="mt-0.5 text-xs text-amber-700">
           <InlineMarkdown text={term.boundary} />
         </p>
       )}
@@ -138,9 +140,9 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
       data-testid="craft-calc-glossary"
       className="rounded-lg border border-neutral-200 bg-white p-5"
     >
-      <h2 className="text-base font-medium text-neutral-900">算料口径与术语说明</h2>
+      <h2 className="text-base font-medium text-neutral-900">术语与算法说明</h2>
       <p className="mt-1 text-sm text-neutral-500">
-        <InlineMarkdown text="上面的参数回答「我这家的口径是多少」；这里回答「系统怎么判、拿哪些参数判」。下面的数值都按**当前配置**渲染 —— 改完参数保存后，这里的数字会跟着变。" />
+        <InlineMarkdown text="上面的参数回答「我家这套口径是多少」；这里回答「每个词是什么意思、系统按什么判、改了什么会变」。下面的数字都按**当前配置**渲染 —— 参数保存后，这里的数字跟着变。" />
       </p>
 
       <details
@@ -236,7 +238,7 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
         </div>
 
         <h3 className="mt-4 text-sm font-medium text-neutral-700">
-          近义词族（最容易搅在一起，其实不在同一层）
+          最容易混的几个词（看着像一回事，其实不在同一层）
         </h3>
         <div className="mt-1">
           {TERM_FAMILY.map((term) => (

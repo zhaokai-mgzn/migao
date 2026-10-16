@@ -510,7 +510,7 @@ export function CalcCaliberPanel({
                           <td className="py-1.5">
                             <NumberInput
                               className={boundedInputCls('w-28 text-right tabular-nums')}
-                              aria-label={`拼${times}次 每折吃布`}
+                              aria-label={`拼${times}次 每折用料`}
                               data-testid={`calc-caliber-mixed-${times}`}
                               value={
                                 typeof perFold === 'number' && Number.isFinite(perFold)
