@@ -143,9 +143,16 @@ vi.mock('dayjs', () => ({
 }))
 
 // Mock lucide-react — icons used by employees page
-vi.mock('lucide-react', () => {
+vi.mock('lucide-react', async (importOriginal) => {
+  // ⚠️ 必须 spread `...actual`：本 mock 是**闭合集合**（只列页面直接用到的那几个图标），
+  // 而模块一旦经 `@/components/ui` 桶加载真 `EmptyState`（它自己 import `Package`），
+  // 闭集就漏了它 ⇒ 报 `No "Package" export is defined on the "lucide-react" mock`
+  // （与「整模块 mock `@/components/ui`」同一种病，见 issue #7007）。
+  // `...actual` 在前 ⇒ 显式桩的 testid 仍然赢。
+  const actual = await importOriginal<Record<string, unknown>>()
   const stub = (name: string) => (props: any) => <span data-testid={`icon-${name}`} {...props} />
   return {
+    ...actual,
     Plus: stub('plus'),
     Search: stub('search'),
     // issue #6663：失败态行用的图标

@@ -39,9 +39,14 @@ vi.mock('@/lib/permission', () => ({
 }))
 
 // Mock lucide-react — 覆盖本页 + 子面板使用的图标
-vi.mock('lucide-react', () => {
+vi.mock('lucide-react', async (importOriginal) => {
+  // ⚠️ 必须 spread `...actual`：本条**显式桩**只列了用到的图标，而模块一旦经 `@/components/ui`
+  // 桶（如 `EmptyState`）加载，就会连带 import 它自己的图标（实测炸在缺 `Package`）——
+  // 与「整模块 mock `@/components/ui`」同一种病（见 issue #7007）。桩在前 ⇒ 显式 testid 仍然赢。
+  const actual = await importOriginal<Record<string, unknown>>()
   const stub = (name: string) => (props: any) => <span data-testid={`icon-${name}`} {...props} />
   return {
+    ...actual,
     Building2: stub('building2'),
     Bot: stub('bot'),
     Bell: stub('bell'),
