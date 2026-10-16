@@ -662,6 +662,7 @@ KNOWN_PRECLEAN_TARGET_FIELDS: dict[str, str | None] = {
     "customer_profile_restore": "customer_keyword", # `_restore_customer_profile` → `spec.get("customer_keyword")`（或 `customer_id`）；定位客户（#4161 补登记）
     "session_credential_restore": "session_id",     # `_restore_session_credentials` → `spec.get("session_id")`（缺省回落 `EVAL_SESSION_ID`）；不可变键定位会话（#5482 登记）
     "product_stock_restore": "product_keyword",     # `_restore_product_stock` → `spec.get("product_keyword")`；子串匹配商品名（#5950 登记）
+    "notification_unread_restore": None,            # `_restore_notification_unread` → `spec.get("notification_id")`（缺省 = 种子夹具行 `ntf_eval_new_order_0001`）；**不点名种子目录里的对象** —— `notifications` 不在 `extract_seed_catalog` 的实体目录里 ⇒ 门禁侧无解析口径（登记为 `None`，同 `user_memories_clear`；未登记即红见 test_eval_preclean_registry）（#7048 P10 登记）
 }
 # ⚠️ **键类字段的解析口径未实装**（如实登记，不粉饰）：`resolve_pre_clean_target` 只覆盖
 # **名字类**三条（`tag_name` / `employee_name` / `product_keyword` —— 种子目录
