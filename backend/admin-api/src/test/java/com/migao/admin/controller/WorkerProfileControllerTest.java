@@ -71,7 +71,9 @@ class WorkerProfileControllerTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.data.worker_name").value("张三"))
                 .andExpect(jsonPath("$.data.pages.length()").value(WorkerPages.defaultPages().size()))
                 .andExpect(jsonPath("$.data.pages[0]").value("report"))
-                .andExpect(jsonPath("$.data.pages[3]").value("shipment"));
+                // issue #6767：`piecework`（我的计件，含金额）在闭词表里排第 2 ⇒ 末位索引随之后移
+                .andExpect(jsonPath("$.data.pages[1]").value("piecework"))
+                .andExpect(jsonPath("$.data.pages[4]").value("shipment"));
 
         // 档案按**会话里的 worker_id** 取（不接受任何请求入参指定看谁的菜单）
         verify(workerAdminService).findOwnedWorker(ZHANG.workerId());

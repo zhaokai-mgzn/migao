@@ -10,6 +10,7 @@
 #      ② body 含工人端入口 `src/app.mjs`；**不含** C 端标识（`TARO_` / `元元智能助手`）；
 #      ③ `GET /w/src/app.mjs` 200 且哈希 == 本仓库同名文件（证明 `src/**` 真的落了，不只是 index）。
 #      ④⑤ `/w/machine.html` 与 `/w/src/machine.mjs`（一体机机台页，母单 #5161）；
+#      ⑧ `/w/piecework.html` 与 `/w/src/piecework-app.mjs`（我的计件页，issue #6767）——同族绊线；
 #      ⑥ **module script 的 MIME**（issue #6293）：`frontend/worker-h5/src/**` 的**每个** `.mjs` 的
 #         Content-Type 必须 ∈ **JS MIME 白名单** —— 身份与字节全对时页面**仍可能白屏**：
 #         `.mjs` 被 nginx 发成 `application/octet-stream` ⇒ 浏览器按 HTML 规范拒绝执行 module script。
@@ -33,6 +34,8 @@ LOCAL_INDEX="$ROOT/frontend/worker-h5/index.html"
 LOCAL_APP="$ROOT/frontend/worker-h5/src/app.mjs"
 LOCAL_MACHINE="$ROOT/frontend/worker-h5/machine.html"
 LOCAL_MACHINE_APP="$ROOT/frontend/worker-h5/src/machine.mjs"
+LOCAL_PIECEWORK="$ROOT/frontend/worker-h5/piecework.html"
+LOCAL_PIECEWORK_APP="$ROOT/frontend/worker-h5/src/piecework-app.mjs"
 
 C_END_MARKERS=("TARO_" "元元智能助手")
 WORKER_MARKERS=("src/app.mjs")
@@ -89,11 +92,15 @@ echo "   BASE_URL=$BASE"
 [ -f "$LOCAL_APP" ]   || { echo "❌ 本仓库缺少 ${LOCAL_APP}（无法比对身份）" >&2; exit 2; }
 [ -f "$LOCAL_MACHINE" ] || { echo "❌ 本仓库缺少 ${LOCAL_MACHINE}（无法比对身份）" >&2; exit 2; }
 [ -f "$LOCAL_MACHINE_APP" ] || { echo "❌ 本仓库缺少 ${LOCAL_MACHINE_APP}（无法比对身份）" >&2; exit 2; }
+[ -f "$LOCAL_PIECEWORK" ] || { echo "❌ 本仓库缺少 ${LOCAL_PIECEWORK}（无法比对身份）" >&2; exit 2; }
+[ -f "$LOCAL_PIECEWORK_APP" ] || { echo "❌ 本仓库缺少 ${LOCAL_PIECEWORK_APP}（无法比对身份）" >&2; exit 2; }
 
 EXPECTED_INDEX_SHA="$(file_sha256 "$LOCAL_INDEX")"
 EXPECTED_APP_SHA="$(file_sha256 "$LOCAL_APP")"
 EXPECTED_MACHINE_SHA="$(file_sha256 "$LOCAL_MACHINE")"
 EXPECTED_MACHINE_APP_SHA="$(file_sha256 "$LOCAL_MACHINE_APP")"
+EXPECTED_PIECEWORK_SHA="$(file_sha256 "$LOCAL_PIECEWORK")"
+EXPECTED_PIECEWORK_APP_SHA="$(file_sha256 "$LOCAL_PIECEWORK_APP")"
 echo "   仓库 index.html 哈希=$EXPECTED_INDEX_SHA"
 echo "   仓库 src/app.mjs 哈希=$EXPECTED_APP_SHA"
 echo ""
@@ -177,6 +184,37 @@ if [ -s "$TMPDIR_RUN/machine.mjs" ]; then
     ok "body 哈希 = 仓库 frontend/worker-h5/src/machine.mjs（${GOT}）"
   else
     bad "body 哈希 $GOT ≠ 仓库 $EXPECTED_MACHINE_APP_SHA"
+  fi
+fi
+echo ""
+
+# ── ⑧ /w/piecework.html + /w/src/piecework-app.mjs（我的计件页；issue #6767）─────────
+# 与 ④⑤ 同族病灶：新入口没进发布集 ⇒ 线上被 nginx `try_files` 静默回落成 C 端 H5（HTTP 200 不报错）
+# ⇒ 「H5 有我的计件面」这句话就是空的。本段是该缺口的**绊线**（身份 = 逐字节哈希）。
+echo "⑧ GET $BASE/w/piecework.html"
+CODE=$(fetch "$BASE/w/piecework.html" "$TMPDIR_RUN/piecework.html")
+echo "   HTTP $CODE"
+if [ "$CODE" = "200" ]; then ok "状态码 200"; else bad "状态码 ${CODE}（期望 200 —— piecework.html 没进发布集？）"; fi
+if [ -s "$TMPDIR_RUN/piecework.html" ]; then
+  GOT="$(file_sha256 "$TMPDIR_RUN/piecework.html")"
+  if [ "$GOT" = "$EXPECTED_PIECEWORK_SHA" ]; then
+    ok "body 哈希 = 仓库 frontend/worker-h5/piecework.html（${GOT}）"
+  else
+    bad "body 哈希 $GOT ≠ 仓库 ${EXPECTED_PIECEWORK_SHA}（回落成了别的东西？）"
+  fi
+fi
+echo ""
+
+echo "⑧ GET $BASE/w/src/piecework-app.mjs"
+CODE=$(fetch "$BASE/w/src/piecework-app.mjs" "$TMPDIR_RUN/piecework-app.mjs")
+echo "   HTTP $CODE"
+if [ "$CODE" = "200" ]; then ok "状态码 200"; else bad "状态码 ${CODE}（期望 200 —— 我的计件页脚本没落上去？）"; fi
+if [ -s "$TMPDIR_RUN/piecework-app.mjs" ]; then
+  GOT="$(file_sha256 "$TMPDIR_RUN/piecework-app.mjs")"
+  if [ "$GOT" = "$EXPECTED_PIECEWORK_APP_SHA" ]; then
+    ok "body 哈希 = 仓库 frontend/worker-h5/src/piecework-app.mjs（${GOT}）"
+  else
+    bad "body 哈希 $GOT ≠ 仓库 $EXPECTED_PIECEWORK_APP_SHA"
   fi
 fi
 echo ""

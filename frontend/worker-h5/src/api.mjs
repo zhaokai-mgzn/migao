@@ -333,6 +333,22 @@ export function createApi(opts = {}) {
     },
 
     /**
+     * 我的计件（issue #6767）：`GET /api/worker/piecework[?month=YYYY-MM]` —— **只读**。
+     *
+     * 🔴 **零入参能指定看谁**：请求里**没有** `worker_id` / `worker_name`（身份只由
+     * `X-Worker-Session-Id` 解，服务端作用域）。金额、件数、逐笔、未定价块**全部**来自服务端
+     * （与商家端同一份聚合实现）—— 前端**不求和**、不推算月份（`prev_period` / `can_prev` 由服务端给）。
+     *
+     * @param {{month?: string}} [p] `month` 省略 = 服务端按业务当前自然月（Asia/Shanghai）
+     */
+    async readPiecework({ month } = {}) {
+      const qs = new URLSearchParams()
+      if (month) qs.set('month', month)
+      const suffix = qs.toString() ? `?${qs.toString()}` : ''
+      return request(`/api/worker/piecework${suffix}`)
+    },
+
+    /**
      * 扫码完成 —— **工人页唯一的写入口**（切片② 的 `POST /api/worker/production/scan/complete`）。
      *
      * 一次事务（明细 + CAS 推进 + `done_at` + 完工判定）+ 未确定工序拒绝记账（422，零写入）

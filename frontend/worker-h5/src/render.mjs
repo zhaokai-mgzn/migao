@@ -55,17 +55,21 @@ export function initialState() {
 //
 // 它回答「本机这个工人能走到哪几页」，**不是**权限（准入仍在服务端 `/api/worker/**`）。
 // 与后端 `com.migao.admin.worker.WorkerPages` 的闭词表**逐字同名**（改一边 ⇒ 判据红）：
-//   · `report`   —— 报工主流程（本页，`/w/`）
-//   · `order`    —— 订单页（⚠️ `/w/` **暂无对应面**：`render.mjs` 里没有订单 UI 入口
-//                   ⇒ 本包**不为它造 UI**，只登记「键存在、`/w/` 暂无对应面」；
-//                   将来 `/w/` 长出订单面时，在这里按 `effectivePages().has(PAGE_ORDER)` 门控）
-//   · `cut_calc` —— 裁高计算（一体机那台屏的页面，`/w/machine.html` 的入口链接）
-//   · `shipment` —— 发货页（⚠️ 同上：`/w/` 暂无对应面 ⇒ 不造 UI；准入面
-//                   `/api/worker/shipment/**` 已在后端，缺的只是入口）
+//   · `report`    —— 报工主流程（本页，`/w/`）
+//   · `piecework` —— 我的计件（**含金额**；`/w/piecework.html`，issue #6767）
+//   · `order`     —— 订单页（⚠️ `/w/` **暂无对应面**：`render.mjs` 里没有订单 UI 入口
+//                    ⇒ 本包**不为它造 UI**，只登记「键存在、`/w/` 暂无对应面」；
+//                    将来 `/w/` 长出订单面时，在这里按 `effectivePages().has(PAGE_ORDER)` 门控）
+//   · `cut_calc`  —— 裁高计算（一体机那台屏的页面，`/w/machine.html` 的入口链接）
+//   · `shipment`  —— 发货页（⚠️ 同上：`/w/` 暂无对应面 ⇒ 不造 UI；准入面
+//                    `/api/worker/shipment/**` 已在后端，缺的只是入口）
 // ════════════════════════════════════════════════════════════════════════════════
 
 /** 页面键：报工主流程（本页）。 */
 export const PAGE_REPORT = 'report'
+
+/** 页面键：我的计件（`/w/piecework.html`；含金额，issue #6767）。 */
+export const PAGE_PIECEWORK = 'piecework'
 
 /** 页面键：裁高计算（一体机那台屏，`/w/machine.html`）。 */
 export const PAGE_CUT_CALC = 'cut_calc'
@@ -77,16 +81,19 @@ export const PAGE_ORDER = 'order'
 export const PAGE_SHIPMENT = 'shipment'
 
 /**
- * 默认页面集合 = 后端 `WorkerPages.defaultPages()` 的**逐字镜像**（缺行 ⇒ 默认四页全开）。
+ * 默认页面集合 = 后端 `WorkerPages.defaultPages()` 的**逐字镜像**（缺行 ⇒ 默认全开）。
  *
  * ⚠️ 这是**第二份**默认值（真值在后端；前端不可能 import Java）⇒ 唯一防线是判据：
- * `tests/worker-h5-pages.test.mjs` 逐值比对四个键 + 顺序，改一边不改另一边 ⇒ 红。
+ * `tests/worker-h5-pages.test.mjs` 逐值比对**全部**键 + 顺序，改一边不改另一边 ⇒ 红。
  */
-export const DEFAULT_PAGES = [PAGE_REPORT, PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT]
+export const DEFAULT_PAGES = [PAGE_REPORT, PAGE_PIECEWORK, PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT]
 
 /** 裁高计算入口（同源静态页；`/w/` 与 `/w/machine.html` 同一静态根 ⇒ 相对路径、不写死域名）。
  *  文案 = 「裁高计算（一体机）」（2026-10-10 用户裁定：改前的「机台模式」只有内部人懂，issue #6635）。 */
 export const MACHINE_ENTRY_HREF = '/w/machine.html'
+
+/** 我的计件入口（同源静态页，与 `machine.html` 同款；issue #6767）。 */
+export const PIECEWORK_ENTRY_HREF = '/w/piecework.html'
 
 /**
  * 本机实际可走的页面集合（**唯一判据**）—— 三态各不相同，绝不合并：
@@ -344,21 +351,26 @@ export function doneNotice(receipt) {
  * `from` 就是它）⇒ 从 `/w/` 移出**不会**让那两页变成「走不到」。
  * 本页的反向钉住（页头再出现这两条 ⇒ 红）= frontend/worker-h5/tests/worker-h5-worker-entries.test.mjs。
  *
- * 入口栏**只**留 `cut_calc` 那一条，文案与商家端页面开关同源
+ * 入口栏 = `pages` 里**本页有对应面**的那几条（`cut_calc` / `piecework`），文案与商家端页面开关同源
  * （页面键与商家面人话名的唯一真值 = `backend/admin-api/src/main/java/com/migao/admin/worker/WorkerPages.java`）：
  * 改前的「机台模式」只有内部人懂（用户 2026-10-10 逐字问「机台模式是什么含义」）。
- * `cut_calc` ∉ `pages` ⇒ **整条入口栏不渲染**（不留空 `<nav>`）—— 机台那台屏改用**本机预设**直达
+ * 一条都没开 ⇒ **整条入口栏不渲染**（不留空 `<nav>`）—— 机台那台屏改用**本机预设**直达
  * （`?page=cut_calc`，见 frontend/worker-h5/src/scan-input.mjs 的 `deviceHomeFromLocation`）。
  *
  * ⚠️ 这是**菜单显隐**语义，不是「访问拦截」（2026-09-29 用户逐字改判，口径以 B 端 H5 为准）：
- * 链接消失 ≠ 页面不可达 —— `/w/machine.html` 直接敲 URL **仍可进入**（静态页，本包不给它加访问门禁）。
- * 同款语义的另一半 = 页头的 `pageNoticeBanner`（`report` 关掉时页面**照旧可用**，只多一句话）。
+ * 链接消失 ≠ 页面不可达 —— `/w/machine.html` / `/w/piecework.html` 直接敲 URL **仍可进入**
+ * （静态页，本包不给它加访问门禁）。同款语义的另一半 = 页头的 `pageNoticeBanner`
+ * （`report` 关掉时页面**照旧可用**，只多一句话）。
  */
 function workerEntriesBar(state) {
   const { opened } = effectivePages(state)
-  if (!opened.has(PAGE_CUT_CALC)) return ''
+  const machine = opened.has(PAGE_CUT_CALC)
+    ? `<a class="wh5-entry" id="wh5-machine-entry" href="${MACHINE_ENTRY_HREF}">裁高计算（一体机）</a>` : ''
+  const piecework = opened.has(PAGE_PIECEWORK)
+    ? `<a class="wh5-entry" id="wh5-piecework-entry" href="${PIECEWORK_ENTRY_HREF}">我的计件</a>` : ''
+  if (!machine && !piecework) return ''
   return `<nav class="wh5-entries" id="wh5-worker-entries" aria-label="工人面入口">
-    <a class="wh5-entry" id="wh5-machine-entry" href="${MACHINE_ENTRY_HREF}">裁高计算（一体机）</a>
+    ${machine}${piecework}
   </nav>`
 }
 

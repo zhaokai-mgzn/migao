@@ -44,9 +44,11 @@ class WorkerPageCatalogControllerTest extends BaseControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.pages.length()").value(WorkerPages.defaultPages().size()))
                 .andExpect(jsonPath("$.data.pages[0]").value("report"))
-                .andExpect(jsonPath("$.data.pages[1]").value("order"))
-                .andExpect(jsonPath("$.data.pages[2]").value("cut_calc"))
-                .andExpect(jsonPath("$.data.pages[3]").value("shipment"))
+                // issue #6767：`piecework`（我的计件，含金额）在闭词表里排第 2
+                .andExpect(jsonPath("$.data.pages[1]").value("piecework"))
+                .andExpect(jsonPath("$.data.pages[2]").value("order"))
+                .andExpect(jsonPath("$.data.pages[3]").value("cut_calc"))
+                .andExpect(jsonPath("$.data.pages[4]").value("shipment"))
                 .andExpect(jsonPath("$.data.labels.report").value(WorkerPages.labels().get("report")))
                 .andExpect(jsonPath("$.data.labels.shipment").value(WorkerPages.labels().get("shipment")));
     }

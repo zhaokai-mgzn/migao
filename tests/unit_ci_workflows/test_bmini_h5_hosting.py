@@ -637,6 +637,8 @@ def _make_static_root(tmp_path: Path) -> Path:
     shutil.copy(WORKER_H5_DIR / "index.html", root / "w" / "index.html")
     # 机台页（母单 #5161）：worker-h5 落地面断言有 ④/⑤ 段（machine.html / src/machine.mjs）
     shutil.copy(WORKER_H5_DIR / "machine.html", root / "w" / "machine.html")
+    # 我的计件页（issue #6767）：同一条腿的 ⑧ 段判 piecework.html / src/piecework-app.mjs 的落地面身份
+    shutil.copy(WORKER_H5_DIR / "piecework.html", root / "w" / "piecework.html")
     # `src/**` **整棵递归**铺（issue #6293 / #6306）：该腿 ⑥ 对**每一个** `.mjs` 逐条断言 MIME，
     # ⑦ 还沿 worker-h5 的 import 闭包取依赖（树内有 `src/shared/operation-display.mjs`）⇒
     # 少铺一个（尤其子目录里的）就是**夹具造的假红**（与上面机台页同因）。

@@ -316,10 +316,14 @@ class _HtmlMjsHandler(_QuietHandler):
         return super().guess_type(path)
 
 
+#: 发布集里的 `*.html` 入口（真值在 `deploy/swas/h5-publish-remote.sh`；issue #6767 加入 piecework.html）
+WORKER_HTML_ENTRIES = ("index.html", "machine.html", "piecework.html")
+
+
 def _copy_worker_tree(dest: Path) -> None:
-    """铺一份「已正确发布」的 `w/` 子树 = 远端发布集：index.html + machine.html + `src/**`（递归）。"""
+    """铺一份「已正确发布」的 `w/` 子树 = 远端发布集：全部 `*.html` 入口 + `src/**`（递归）。"""
     (dest / "w").mkdir(parents=True, exist_ok=True)
-    for name in ("index.html", "machine.html"):
+    for name in WORKER_HTML_ENTRIES:
         (dest / "w" / name).write_bytes((WORKER_SRC / name).read_bytes())
     subprocess.run(
         ["cp", "-R", str(WORKER_SRC / "src"), str(dest / "w" / "src")],

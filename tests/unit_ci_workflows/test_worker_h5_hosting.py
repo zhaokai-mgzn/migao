@@ -69,6 +69,10 @@ WORKER_APP = WORKER_H5_DIR / "src" / "app.mjs"
 # ⇒ 线上 /w/machine.html 打不开、且被 try_files 静默回落成 C 端 H5。本判据钉住它必须发布。
 WORKER_MACHINE = WORKER_H5_DIR / "machine.html"
 WORKER_MACHINE_APP = WORKER_H5_DIR / "src" / "machine.mjs"
+# 我的计件页（issue #6767）：与 machine.html **同族病灶**（新入口漏进发布集 ⇒ 线上被 try_files
+# 静默回落成 C 端 H5，HTTP 200 不报错）⇒ 落地面断言 ⑧ 段钉住它必须发布、且逐字节一致。
+WORKER_PIECEWORK = WORKER_H5_DIR / "piecework.html"
+WORKER_PIECEWORK_APP = WORKER_H5_DIR / "src" / "piecework-app.mjs"
 
 JOB = "publish"
 PUBLISH_SCRIPT = "deploy/scripts/swas-h5-publish-ci.sh"
@@ -430,6 +434,13 @@ def test_sandbox_publish_is_identity_and_preserves_parent(tmp_path):
     published_machine = root / SUBDIR / "machine.html"
     assert published_machine.is_file(), "machine.html 没被发布（机台页线上打不开）"
     assert _file_sha(published_machine) == _file_sha(WORKER_MACHINE), "发布的 machine.html 与仓库不一致"
+    # ③ 我的计件页也必须发布（issue #6767；红证：把它从远端脚本的发布集里删掉 ⇒ 本断言红）
+    published_piecework = root / SUBDIR / "piecework.html"
+    assert published_piecework.is_file(), "piecework.html 没被发布（我的计件页线上打不开）"
+    assert _file_sha(published_piecework) == _file_sha(WORKER_PIECEWORK), "发布的 piecework.html 与仓库不一致"
+    assert "piecework-app.mjs" in published_piecework.read_text(encoding="utf-8"), (
+        "我的计件页入口脚本没接上（页面加载不到任何模块 ⇒ 白屏）"
+    )
     body = published_index.read_text(encoding="utf-8")
     assert "src/app.mjs" in body
     assert "TARO_" not in body and "元元智能助手" not in body
@@ -569,16 +580,18 @@ def _run_verify(base_url: str):
 
 
 def _copy_worker_tree(dest: Path) -> None:
-    """铺一份「已正确发布」的 `w/` 子树 = 远端发布集：index.html + machine.html + `src/**`。
+    """铺一份「已正确发布」的 `w/` 子树 = 远端发布集：全部 `*.html` 入口 + `src/**`。
 
     ⚠️ `src/**` 必须**整棵递归**铺（不再只铺顶层文件）：`deploy/scripts/worker-h5-verify-served.sh`
     ⑥ 对**每一个** `.mjs` 逐条断言 MIME（issue #6293），⑦ 还沿 import 闭包取每个依赖
     （issue #6306 起树内有 `src/shared/operation-display.mjs`）⇒ 少铺一个（尤其**子目录**里的那个）
     就是**夹具造的假红**（与 ④/⑤ 段「机台页必须在夹具里」同因，2026-09-29 已实证过同一个坑）。
+    ⚠️ issue #6767 起发布集**多一个入口** `piecework.html`（⑧ 段判它的身份）⇒ 同样必须在夹具里。
     """
     (dest / SUBDIR / "src").mkdir(parents=True, exist_ok=True)
     (dest / SUBDIR / "index.html").write_bytes(WORKER_INDEX.read_bytes())
     (dest / SUBDIR / "machine.html").write_bytes(WORKER_MACHINE.read_bytes())
+    (dest / SUBDIR / "piecework.html").write_bytes(WORKER_PIECEWORK.read_bytes())
     subprocess.run(
         ["cp", "-R", str(WORKER_H5_DIR / "src") + "/.", str(dest / SUBDIR / "src")],
         check=True, capture_output=True,
