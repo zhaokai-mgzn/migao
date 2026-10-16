@@ -288,6 +288,111 @@ def registered_tools() -> set:
     return set(lr.mibao_real_toolset()) | set(lr.XIAOBU_TOOLS)
 
 
+# ── 声明键白名单守卫（issue #7026 的**类级**固化；issue #7035 第二相落地）──────────────
+# 病灶：`must_succeed` / `expectations` 条目里的**未支持的键**会被 runner **静默忽略**
+# ⇒ 断言降级/空转，而用例照旧判绿（#7026 的 `PP-016~021` 就是这么漏过去的：
+# `must_succeed[].args` 被静默丢弃）。runner 侧已有**运行期** fail-closed
+# （`check_must_succeed` 报「条目含未支持的键」），但要有一次真实评测才会出现；而 L0 侧的
+# `action_binding_violations` 只判「action 是否在该工具的枚举里」，**不管键本身是否被支持**
+# ⇒ 静态面留了缺口。本函数补这一维，并挂在**同一个单实现点**上（门禁两个 CLI 与 L0 不变式
+# `tests/unit_ci_workflows/test_eval_assertion_action_binding.py` 共用同一函数）。
+# **允许键现取自真值源**（不硬编码转述；取不到 ⇒ fail-closed，绝不退化成"没违规"）：
+#   · `must_succeed` ← `tests/agent_eval/local_runner.py` 的 `check_must_succeed` 白名单字面量；
+#   · `expectations`（dict 形态）← `.github/render_cases.py` 的 `exp_to_str` 实际消费的键。
+#     ⚠️ 两侧白名单**不同**：`expectations.args` 是**被识别并参与匹配**的，不能照抄
+#     `must_succeed` 那份去禁 `args`。
+# 历史形态登记（**保留、不擅改**）：`DA-005` 的 `expectations` 用 `page` / `required_texts`
+# （页面规格面，真值面见 `.github/page-specs/*.yml`）⇒ 计入允许面并在此登记。
+_EXPECTATION_EXTRA_KEYS = frozenset({"page", "required_texts"})
+# 注入式自证用的合成用例（判别力自证：判据**必须**报出这两个坏键，否则判据自身失效）：
+_KEYGUARD_SELFTEST_CASE = {
+    "id": "__KEYGUARD_SELFTEST__",
+    "must_succeed": [{"tool": "no_such_tool", "no_such_key": 1}],
+    "expectations": [{"tool": "no_such_tool", "another_bad_key": 1}],
+}
+
+
+def _keys_from_source(rel_path: str, func: str, pattern: str):
+    """从**真值源源码**现取允许键集合；取不到（文件/函数/字面量改写法）⇒ None（fail-closed）。"""
+    try:
+        src = (REPO_ROOT / rel_path).read_text(encoding="utf-8")
+    except OSError:
+        return None
+    start = src.find("def %s" % func)
+    if start < 0:
+        return None
+    nxt = src.find("\ndef ", start + 1)
+    hits = re.findall(pattern, src[start:nxt if nxt > 0 else len(src)])
+    keys = set()
+    for h in hits:
+        # 一个字面量集合（`, ` 分隔）与多次取值（`e.get("k")`）两种形态都收
+        keys |= {s.strip().strip("\"'") for s in str(h).replace("\n", " ").split(",")}
+    return {k for k in keys if k} or None
+
+
+def _assertion_key_whitelists(cases=None) -> tuple:
+    """→ `(must_succeed 允许键, expectations 允许键, 取数失败说明)`。"""
+    problems = []
+    ms = _keys_from_source("tests/agent_eval/local_runner.py", "check_must_succeed",
+                           r"set\(spec\)\s*-\s*\{([^}]*)\}")
+    if not ms:
+        problems.append("`check_must_succeed` 的允许键白名单**无法现取**"
+                        "（tests/agent_eval/local_runner.py 的 `set(spec) - {...}` 写法变了？）")
+    ex = _keys_from_source(".github/render_cases.py", "exp_to_str",
+                           r'\be\.get\("([A-Za-z_]+)"')
+    if not ex:
+        problems.append("`exp_to_str` 消费的 expectations 键**无法现取**"
+                        "（.github/render_cases.py 的实现写法变了？）")
+    # **完整性自证**（实测踩过）：只匹配**首个** `e.get(...)` ⇒ `args` 被漏 ⇒ 全库 100+ 条误报。
+    # ⇒ 用「库内真的用到 `args`，白名单就必须含 `args`」把解析不全挡在门口（fail-closed，
+    # 既不静默误报也不静默漏报）。
+    if cases is not None and ex and "args" not in ex:
+        used = [c.get("id") for c in cases if isinstance(c, dict)
+                for s in (c.get("expectations") or []) if isinstance(s, dict) and "args" in s]
+        if used:
+            problems.append("expectations 白名单**现取不完整**：库内 "
+                            f"{len(used)} 条用例用了 `args`（如 {used[0]}）却未解析到该键")
+    return (ms or set()), (ex or set()), problems
+
+
+def assertion_key_violations(cases) -> list:
+    """`[(case_id, tool, "<面>.<键>", "unsupported_key")]` —— 声明里出现了**不被支持**的键。
+
+    与 `action_binding_violations` 同一家族（配置错误 ⇒ 断言永不满足 / 静默空转），故挂在同一处
+    （`action_binding_violations` 会把它并进同一份结果，门禁与 L0 不变式两侧同口径）。
+    报错**具名**：用例 id + 工具 + 面 + 键名（调用方文案里带出）。
+    判别力自证：合成用例 `_KEYGUARD_SELFTEST_CASE` **必须**被判红，否则本判据自身失效
+    （整库无违规时判据会恒绿 ⇒ 必须显式证明"注入即红"，fail-closed）。
+    """
+    ms_keys, ex_keys, problems = _assertion_key_whitelists(cases)
+    out = [("__KEYGUARD_WHITELIST__", "-", "assertion_key_whitelist", p) for p in problems]
+    if not (ms_keys and ex_keys):
+        return out
+
+    ex_allowed = ex_keys | _EXPECTATION_EXTRA_KEYS
+    reported, injected = set(), set()
+    for case in list(cases) + [_KEYGUARD_SELFTEST_CASE]:
+        cid = case.get("id") if isinstance(case, dict) else getattr(case, "id", "?")
+        is_self = cid == _KEYGUARD_SELFTEST_CASE["id"]
+        for face, allowed in (("must_succeed", ms_keys), ("expectations", ex_allowed)):
+            specs = (case.get(face) if isinstance(case, dict) else getattr(case, face, None)) or []
+            for spec in [s for s in specs if isinstance(s, dict)]:
+                for k in sorted(set(spec) - allowed):
+                    if is_self:
+                        injected.add((face, k))
+                        continue                    # 合成用例只用于自证，不进结果
+                    out.append((cid, str(spec.get("tool") or "-"), "%s.%s" % (face, k),
+                                "unsupported_key"))
+                    reported.add((face, k))
+    missing = sorted("%s.%s" % (f, k) for f, k in
+                     {("must_succeed", "no_such_key"), ("expectations", "another_bad_key")}
+                     - injected)
+    if missing:
+        out.append(("__KEYGUARD_SELFTEST_FAILED__", "-", "assertion_key_guard_selftest",
+                    "自证失败：注入的坏键未被判红 " + ",".join(missing)))
+    return out
+
+
 def action_binding_violations(cases, tools=None) -> list:
     """`[(case_id, tool, action, kind)]`；kind = `no_action_param`（工具无 action 维度）
     或 `not_in_enum`（枚举不含该值）—— 两者都是"断言永不满足"，都不静默跳过。
@@ -324,6 +429,8 @@ def action_binding_violations(cases, tools=None) -> list:
                 if a not in enum:
                     out.append((cid, tool, a,
                                 "not_in_enum" if enum else "no_action_param"))
+    # 同一份结果里并入「声明键不被支持」这一维（#7026 的类级固化）：门禁与 L0 不变式两侧同口径。
+    out.extend(assertion_key_violations(cases))
     return out
 
 

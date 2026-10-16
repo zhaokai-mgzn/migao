@@ -956,9 +956,16 @@ cases:
         args:
           action: routing_gaps
     must_succeed:
+      # D 类重锚（issue #7035 第二相）：`check_must_succeed`（tests/agent_eval/local_runner.py）
+      # 的受支持键 = tool / action / only_if_called / source / min_successes —— **不含 `args`**。
+      # 原 `args: {action: …}` 会被同函数判「条目含未支持的键」= 配置错误 ⇒ 本用例**恒不可过**
+      # （agent 明明调对了工具）。病灶已由 issue #7026 立案。此处的修法 = 把 action 提到
+      # 受支持的 `action` 键（`expectations` 侧的 dict 形态不受影响：`render_cases.exp_to_str`
+      # 会渲染成 `craft_config_query(action=…)` 字符串，走的是字符串分支）。
+      # 判别力不降反升：`action` 按「那次调用自己」对齐（同轮同名别的 action 成功不得顶替）
+      # ⇒ 同工具**错 action** 即判红；原 `args` 版本根本不参与评估。
       - tool: craft_config_query
-        args:
-          action: routing_gaps
+        action: routing_gaps
     data_checks:
       - "success=true"
       - "调用参数 action=routing_gaps（缺口面；工序库目录是 operation_catalog_query 的 operations，两者不得混用）"
@@ -997,9 +1004,10 @@ cases:
         args:
           action: route_signals
     must_succeed:
+      # D 类重锚（issue #7035 第二相，同 PP-016）：`args` 不是 `check_must_succeed` 的
+      # 受支持键 ⇒ 原形态恒判配置错误、用例恒不可过（#7026）⇒ 提到 `action` 键。
       - tool: craft_config_query
-        args:
-          action: route_signals
+        action: route_signals
     data_checks:
       - "success=true"
       - "调用参数 action=route_signals（信号映射面）"
@@ -1037,9 +1045,10 @@ cases:
         args:
           action: routing_anomalies
     must_succeed:
+      # D 类重锚（issue #7035 第二相，同 PP-016）：`args` 不是 `check_must_succeed` 的
+      # 受支持键 ⇒ 原形态恒判配置错误、用例恒不可过（#7026）⇒ 提到 `action` 键。
       - tool: craft_config_query
-        args:
-          action: routing_anomalies
+        action: routing_anomalies
     data_checks:
       - "success=true"
       - "调用参数 action=routing_anomalies（异常订单清单面）"
@@ -1077,9 +1086,10 @@ cases:
         args:
           action: fee_combinations
     must_succeed:
+      # D 类重锚（issue #7035 第二相，同 PP-016）：`args` 不是 `check_must_succeed` 的
+      # 受支持键 ⇒ 原形态恒判配置错误、用例恒不可过（#7026）⇒ 提到 `action` 键。
       - tool: craft_config_query
-        args:
-          action: fee_combinations
+        action: fee_combinations
     data_checks:
       - "success=true"
       - "调用参数 action=fee_combinations（组合定价表面）"
@@ -1117,9 +1127,10 @@ cases:
         args:
           action: fee_gaps
     must_succeed:
+      # D 类重锚（issue #7035 第二相，同 PP-016）：`args` 不是 `check_must_succeed` 的
+      # 受支持键 ⇒ 原形态恒判配置错误、用例恒不可过（#7026）⇒ 提到 `action` 键。
       - tool: craft_config_query
-        args:
-          action: fee_gaps
+        action: fee_gaps
     data_checks:
       - "success=true"
       - "调用参数 action=fee_gaps（缺口面；`fee_combinations` 是已定价表面，两者不得混用）"
@@ -1157,9 +1168,10 @@ cases:
         args:
           action: stuck_points
     must_succeed:
+      # D 类重锚（issue #7035 第二相，同 PP-016）：`args` 不是 `check_must_succeed` 的
+      # 受支持键 ⇒ 原形态恒判配置错误、用例恒不可过（#7026）⇒ 提到 `action` 键。
       - tool: craft_config_query
-        args:
-          action: stuck_points
+        action: stuck_points
     data_checks:
       - "success=true"
       - "调用参数 action=stuck_points（卡点面；不带 processing_order_id = 看本租户全部活跃加工单）"

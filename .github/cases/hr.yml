@@ -225,13 +225,28 @@ cases:
     expectations:
       # ── 2026-09-24（issue #5247，B 端只读化）：写 action `create` 已从源码删除（工具收窄为只读
       # `{list, all, detail, list_permissions}`）⇒ 改判为两条**存活的只读路径**：角色列表 +
-      # 该角色的权限清单（「第一个角色有哪些权限？」对应的正是 list_permissions）。
+      # 该角色的权限清单。
+      # ── 重锚（issue #7035 第二相 · 主会话插单）──
+      # 第二条期望原写 `list_permissions`，而它 **不在** runner 的只读查询同义集
+      # `_QUERY_ACTION_SYNONYMS`（= list / all / query / detail / get / search / view / page /
+      # list_categories，实现见 tests/agent_eval/local_runner.py 的 `_is_query_action_equal`）
+      # ⇒ agent 调 `role_manage(action=detail)`（返回角色详情、含该角色权限）被判红
+      # （实测原文：`arg 'action' expected list_permissions got detail`）= **过度指定 action**。
+      # 改判为 `all`：① 在 `VALID_ACTIONS` 内且落在同义集里 ⇒ agent 走 `all` / `list` / `detail`
+      # 任一等价只读路径都算命中；② **不占用 `detail`** —— `detail` 是
+      # tests/unit_ci_workflows/test_case_coverage_actions.py 钉住的「action 级未覆盖先例」
+      # （该判据要求它**保持未覆盖**；写它 = 越权改判据面的后果）。
+      # 第一条（`list`）本就在同义集内 ⇒ agent 调 `all` 已按业务等价放行，**无需改动**。
+      # 判别力边界（照实登记）：本侧表达力的边界在 runner —— `args` 列表是**子集（AND）**语义，
+      # 表达不了"二者之一"；同义集本身是仓库既有口径，**不新造**。
+      # 红证（注入式）：① agent **完全不调用** `role_manage` ⇒ 两条期望均 unmatched ⇒ 判红；
+      # ② 只调 `role_manage(action=tree)`（不在同义集 / 不在枚举）⇒ 第一条判红。
       - tool: role_manage
         args:
           action: list
       - tool: role_manage
         args:
-          action: list_permissions
+          action: all
     # ── Case Trust burn-down 缴费（issue #5013 的 PR 触及 `.github/cases/**` ⇒ 每 PR 须净消减 ≥1 条）──
     # ⚠️ 2026-09-24（issue #5247，B 端只读化）：以下三条判定（写类 a2 / b / f）的**前提**（本用例写角色）
     # 已随写能力下线消失 —— 本用例改判为**只读查询**，三条判定随之不适用（历史理由保留，不删）。
@@ -719,6 +734,17 @@ cases:
     # 在新事实下**不可能满足**（创建员工的能力已从 B 端整体移除，李四永不会被创建）。按「不删历史 +
     # 与本次改动无关的断言不动」保留原样为**历史判据**；它不参与 CI 的 action 绑定判据，且退役后
     # 不再执行。若将来 un-retire，此格必须随之改判（见 `skip_reason`）。
+    # ── D 类登记（issue #7035 第二相·**只登记不改断言面**）──
+    # 本格是「构造不可满足」而非「agent 会答错」：`check_db_verify` 的 `fetch: employee` 分支
+    # （tests/agent_eval/local_runner.py）要求先找到 `employee_manage` 的**成功写调用**
+    # （`_first_successful_call`），而该工具现为 `read_only=True`、`VALID_ACTIONS={list, detail}`
+    # ⇒ 永远找不到 ⇒ 判「找不到成功调用（无变更可核对）」= **失败而非跳过**。现由 `skip_reason`
+    # 挡住；一旦摘掉 skip 立刻恒红。
+    # **本包不自行裁定**：本条同时属「灰类」（非单据对象创建的边界未裁 —— #5247 终版的
+    # 「仍交人工」清单），账户创建该不该支持是人工裁定项 ⇒ 期望面保持现状。
+    # 重锚方向与 un-skip 判据已逐字写在 `skip_reason`（载体 = #7040 把 `employee_manage` 的
+    # `create` 接回 B 端时才动本格）。红证（若裁定「支持」）= 把写路径注入成「调用成功但字段
+    # 没落库」⇒ 本格判红（这就是它承重的样子）。
     db_verify:
       - fetch: employee
         name: "李四"

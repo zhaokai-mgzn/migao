@@ -30,9 +30,17 @@ cases:
       - id-resolve.name
     user_inputs:
       - "查看不存在的商品详情"
+    # ── 重锚（issue #7035 第二相 · 主会话插单）──
+    # 病灶：两条并列期望要求**同一次运行**里 `product_detail` 与 `product_search` **都**被调用，
+    # 而"查看不存在的商品详情"的正确链路是**先 detail（NOT_FOUND）→ 再 search（给候选）**；
+    # 实测首跑只掉 detail、重试只掉 search ⇒ 两条期望被分散在**两次运行**里，单次运行永远凑不齐
+    # （`unmatched expectation`）。属**用例侧耦合**，不是 agent 缺陷。
+    # 重锚：改成"**二者之一即可**"（`A or B` 是 runner 既有 OR 分支形态：按「 or 」拆分、
+    # 任一分支持续命中即过；覆盖体检侧同样按分支计入两个工具，不产生悬空）。
+    # 🔴 **判别力一字未丢**：真正要拦的是"**不存在的商品被查出来了**"—— 它由下方
+    # `must_fail[product_detail]` 承重（该工具一旦**成功**即判红），与本次期望改判正交。
     expectations:
-      - tool: product_detail
-      - tool: product_search
+      - tool: product_detail or product_search
     # ── 「不存在的商品不得查出结果」的机器判据（issue #4099）：工具级「零成功调用」──
     # 为什么**不是**原先那条 `error.code` 断言（恒不可满足 ⇒ 永久红，把本用例 score 上限钉在 2/3）：
     #   ① 取值路径对不上：runner 的 error-code 断言只读**轮级** SSE error
@@ -237,8 +245,20 @@ cases:
     # 的诉求仍有机器判据（查订单真的成功）。
     must_succeed:
       - tool: order_query
+    # ── A 类重锚（issue #7035 第二相）──
+    # 原任务 = **建品**（2026-10-16 边界终版：创建商品 ❌，射程仅 B 端）⇒ 补「不得创建商品」的机器
+    # 断言，并把 `data_checks` 里仍在要求建品的散文真值改判为「如实说明不支持建品 + 引导后台」。
+    # 本用例的**真价值**（打岔后仍能回到原任务）由 `expectations[order_query]` +
+    # `must_succeed[order_query]` 承重，与"是否支持创建"无关 ⇒ 那两面**一字未动**。
+    # ⚠️ 空禁区边界（如实登记）：`product_manage` 已从 B 端全部 skill 解绑 ⇒ 本格恒真；红证
+    # （注入式，MC-021 式重绑）= 重绑回 `backend/ai-agent-service/app/graph/skills/product_skill.py`
+    # 的 `PRODUCT_TOOLS` ⇒ B 端只读判据 1/7（`tests/unit_ci_workflows/test_mibao_b_end_readonly.py`）
+    # 当场红；un-skip 后 agent 真建品亦被本格判红。
+    forbidden_tools:
+      - tool: product_manage
+        action: create
     data_checks:
-      - "创建的 name=星夜, price=299"
+      - "（退役，#7035 第二相：创建商品按 2026-10-16 边界判为 ❌）如实说明黄金策不提供建品、引导去后台商品页；改判前口径（留档，不再生效）：「创建的 name=星夜, price=299」"
       - "打岔前后上下文未丢失"
     # 自清理（#3800 / CASE-TRUST-NO-SELF-CLEAN burn-down）：本用例**自建**商品「星夜」
     # （全库仅本条使用），重试时若不复位 ⇒ 前置与首跑不等价（同名重创/重名澄清）。
@@ -1241,6 +1261,22 @@ cases:
       - tool: interact
     # data_checks 与语料对齐：原来三条**全是静态契约散文**（不计分、也不该靠 LLM 跑来证），
     # 逐条标明「由哪个测试承重」；行为面只保留一条，并写明四类链路各自的专项用例归属。
+    # ── A 类重锚（issue #7035 第二相 · 主会话插单 DF-008 同族）──
+    # 2026-10-16 边界终版：**删除 / 停用 ❌**（「只能改，不能删」）⇒ 本条四类写操作里
+    # 「建品」（创建 ❌）与「下单」（创建订单 ❌）两轮的合格行为 = 如实说明不支持 + 引导后台；
+    # 「去掉客户标签」「关闭工单」属**变更 ⇒ ✅ 支持**（不动）。
+    # 补两个禁区把「不得创建」机器化。**有意不加** `after_sales_manage` / `customer_manage`：
+    # 这两把工具在 B 端**仍可达（只读）**，而 `forbidden_tools` 是**整工具**粒度（调用即违规）
+    # ⇒ 把只读查询路径一并禁掉 = 制造假红（审计建议里列了 after_sales_manage，此处**不采纳**并
+    # 登记理由）。工单「关闭」的写 action 现已不存在 ⇒ 那一半只能靠产品侧补 action（#7040）。
+    # ⚠️ 空禁区：`product_manage` / `order_create` 均已从 B 端全部 skill 解绑 ⇒ 两格在 B 端腿恒真；
+    # 红证（注入式，MC-021 式重绑）= 把它们重绑回 `.../skills/product_skill.py` 的 `PRODUCT_TOOLS`
+    # / `.../skills/order_skill.py` 的 `ORDER_TOOLS` ⇒ B 端只读判据 1/7 当场红；
+    # agent 真发创建调用（本用例判分面就是"是否下发交互卡"）亦会被本格判红。
+    forbidden_tools:
+      - tool: product_manage
+        action: create
+      - tool: order_create
     data_checks:
       - "【静态契约 ▪ 单测承重，非本用例】B 端 product/order/aftersales/customer skill 的 tool_names 均绑定 interact（G6 契约）—— 断言在 traces.tests[0] 的 test_all_write_skills_bind_interact_via_confirm_guard，**不由本次 LLM 跑证明静态事实**"
       - "【静态契约 ▪ 单测承重，非本用例】product_skill.py / prompts/order.md 里要求 interact 的指令与工具绑定一致、无 tool_not_found 退化 —— 同上（test_prompt_required_interact_tools_are_bound）"
@@ -2470,6 +2506,22 @@ cases:
         fields:
           - target_type
           - images
+    # ── A 类重锚（issue #7035 第二相）──
+    # 2026-10-16 边界终版：**创建商品 ❌** ⇒ 本条诉求「照这张图帮我建个商品」里的**建品落点**
+    # 不允许发生。本条实际测的是**分析能力**（`image_recognize` 出同页填充计划）+ 现有
+    # 「不落库、不提交」边界 ⇒ 把该边界机器化：全程不得调用建品写路径。
+    # **有意不改 `user_inputs`**（审计建议把诉求改成"解读这张图"）：本条的产品形态就是
+    # 「发图 → 同页填充计划 → 商家在页面上提交」（`backend/ai-agent-service/tests/test_tools_image_recognize.py`
+    # 的 `TestNoWriteBoundary` 钉住识别内核不 import 写入缝）⇒ 改诉求会把这条**真实链路**的覆盖
+    # 改小；`image_recognize` 的期望 / `must_succeed` / `required_args` 是它唯一的行为面承重
+    # （覆盖体检里 `image_recognize` **只有本条**用例）⇒ 一字未动。
+    # ⚠️ 空禁区：`product_manage` 已从 B 端全部 skill 解绑 ⇒ 本格恒真；红证（注入式，MC-021 式重绑）
+    # = 重绑回 `backend/ai-agent-service/app/graph/skills/product_skill.py` 的 `PRODUCT_TOOLS`
+    # ⇒ B 端只读判据 1/7（`tests/unit_ci_workflows/test_mibao_b_end_readonly.py`）当场红；
+    # agent 真去建品亦被本格判红。
+    forbidden_tools:
+      - tool: product_manage
+        action: create
     forbidden_text:
       - "图片分析失败"
       - "无法识别图片"
