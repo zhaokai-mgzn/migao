@@ -1,0 +1,13 @@
+{
+  "_": "「跑需要真实历史的脚本 ⇒ checkout 必须 fetch-depth: 0」的登记台账（issue #7073）。判据 = tests/unit_ci_workflows/test_h5_freshness_needs_full_history.py",
+  "canonical_scripts": {
+    "scripts/h5_freshness_guard.py": {
+      "requires": "全 history：判据算的是 `git log -1 <ref> -- frontend/mini-app`（该路径最近一次改动），浅克隆里 `git log` 不判路径、直接回 HEAD ⇒ 它会把 HEAD 的提交时间当成「源码最近改动」而恒判陈旧（rc=2）。",
+      "why_shallow_clone": "CI 逐字读数：run 38971606256（schedule, 2f4b8b84b）判「2026-10-09T14:15Z 早于 2026-10-16T16:18Z」——后者 = HEAD 自己的提交时间；真值（全 history）= 2026-10-08T03:20:02Z（9ebdf73d8）。",
+      "recompute": "cd /tmp && rm -rf h5shallow && git clone --quiet --depth 1 \"file://<本仓绝对路径>\" h5shallow && cd h5shallow && git log -1 --format='%cI %h' origin/main -- frontend/mini-app",
+      "required_fetch_depth": 0
+    }
+  },
+  "_exemptions_reading": "exemptions 是「跑了该判据、但**有意**不给 fetch-depth: 0」的登记表；条目数只许缩短（现取 0 条 ⇒ 上限冻结在 0，见判据 EXEMPTION_CAP_FROZEN）。未登记即判红；登记未被兑现（workflow 已不跑该判据 / 目录已不存在）同样判红。",
+  "exemptions": {}
+}

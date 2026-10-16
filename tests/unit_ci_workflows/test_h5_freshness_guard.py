@@ -215,9 +215,9 @@ def test_source_change_ignores_tests_only_commit(tmp_path):
     repo = _repo_with_mini_app_commit(tmp_path, "2026-09-21T06:13:46+00:00")
     _commit(repo, "frontend/mini-app/tests/setup.ts", "// 只改测试", "2026-10-10T03:25:28+00:00", "test(frontend): 只改测试")
 
-    got = mod.last_source_change("HEAD", repo)
-    assert got == datetime(2026, 9, 21, 6, 13, 46, tzinfo=UTC), (
-        f"只改测试被当成了源码改动（取到 {got}）⇒ 会判「线上产物陈旧」并逼一次**字节完全相同**的生产发布（issue #6672）"
+    got, reason = mod.last_source_change("HEAD", repo)
+    assert (got, reason) == (datetime(2026, 9, 21, 6, 13, 46, tzinfo=UTC), ""), (
+        f"只改测试被当成了源码改动（取到 {got!r}/{reason!r}）⇒ 会判「线上产物陈旧」并逼一次**字节完全相同**的生产发布（issue #6672）"
     )
 
 
@@ -227,5 +227,100 @@ def test_source_change_still_counts_src_commit(tmp_path):
     _commit(repo, "frontend/mini-app/tests/setup.ts", "// 只改测试", "2026-10-10T03:25:28+00:00", "test(frontend): 只改测试")
     _commit(repo, "frontend/mini-app/src/a.ts", "y", "2026-10-10T04:00:00+00:00", "feat(frontend): 真改源码")
 
-    got = mod.last_source_change("HEAD", repo)
-    assert got == datetime(2026, 10, 10, 4, 0, 0, tzinfo=UTC), f"真改 src 却没被算作源码改动（取到 {got}）"
+    got, reason = mod.last_source_change("HEAD", repo)
+    assert (got, reason) == (datetime(2026, 10, 10, 4, 0, 0, tzinfo=UTC), ""), \
+        f"真改 src 却没被算作源码改动（取到 {got!r}/{reason!r}）"
+
+
+# ── 7) 三态不许塌：浅克隆 ⇒ **无法判定**（rc=3），不得判「确实陈旧」（issue #7073）──────────
+#
+# 实测现场（CI run 38971606256 / `schedule` / sha `2f4b8b84b`）：本 workflow 的 checkout 是
+# **默认 `fetch-depth: 1`** ⇒ 浅克隆里只有 1 个提交 ⇒ `git log -1 <ref> -- frontend/mini-app`
+# **不判路径**、直接回该提交 ⇒ 拿到的是 **HEAD 自己的提交时间**（CI 逐字读数 `2026-10-16T16:18Z`
+# = `2f4b8b84b` 的提交时间），而真值（全 history）= `2026-10-08T03:20:02Z`（`9ebdf73d8`）
+# ⇒ 把「新鲜的线上产物」判成「陈旧」并判红 ⇒ 每天 cron 恒红一次，真信号被淹。
+
+
+def _two_commit_repo(tmp_path: Path) -> Path:
+    """一个「源码改动在早年、HEAD 在近期」的仓 —— 浅克隆下这两者**无法区分**。"""
+    repo = _repo_with_mini_app_commit(tmp_path, "2026-09-21T06:13:46+00:00")
+    _commit(repo, "README.md", "只动与产物无关的文件", "2026-10-16T16:18:47+00:00", "chore(docs): 无关改动（= 浅克隆里的 HEAD）")
+    return repo
+
+
+def _shallow_clone(repo: Path, tmp_path: Path, branch: str = "main") -> Path:
+    """真造一个 `--depth 1` 的克隆（`file://` 才是真浅克隆；裸路径会被本地优化成硬链接全量）。"""
+    shallow = tmp_path / "shallow"
+    subprocess.run(["git", "clone", "--quiet", "--depth", "1", "--branch", branch,
+                    f"file://{repo}", str(shallow)], check=True, env=GIT_ENV)
+    return shallow
+
+
+def test_shallow_clone_reports_unreadable_history_named(tmp_path):
+    """浅克隆 ⇒ 判据**自己**报「读不到历史」，且**具名**点名浅克隆（不塌成 stale）。"""
+    repo = _two_commit_repo(tmp_path)
+    shallow = _shallow_clone(repo, tmp_path)
+    assert subprocess.run(["git", "rev-parse", "--is-shallow-repository"], cwd=shallow,
+                          capture_output=True, text=True).stdout.strip() == "true", "夹具自证：这必须是个真浅克隆"
+    got, reason = mod.last_source_change("origin/main", shallow)
+    assert got is None, f"浅克隆里取到了「源码最近改动」{got!r} —— 那正是把 HEAD 时间当成源码改动（issue #7073）"
+    assert "浅克隆" in reason, f"取不到读数的原因必须**点名浅克隆**（否则人分不清「陈旧」与「读不到历史」）：{reason!r}"
+    # 对照：同一个仓的**全 history** 检出里取得到真值（09-21 的源码改动，而不是 10-16 的 HEAD）
+    full, _ = mod.last_source_change("HEAD", repo)
+    assert full == datetime(2026, 9, 21, 6, 13, 46, tzinfo=UTC), full
+
+
+def test_shallow_clone_is_unknown_not_stale(tmp_path):
+    """🔴 三态不许塌：浅克隆 ⇒ **rc=3 无法判定**，**不得**判 stale（rc=2 确实陈旧）。
+
+    判别力自证（实跑）：拿掉 `_is_shallow` 这道自证 ⇒ 浅克隆里 `last_source_change` 返回 HEAD 时间
+    （2026-10-16）而线上是 2026-10-09 ⇒ 输出当场变成 `rc=2` 陈旧（= CI 上那条**假红**）。
+
+    红证命令（可复制）：
+        cd /tmp && rm -rf h5shallow && git clone --quiet --depth 1 "file://<本仓绝对路径>" h5shallow
+        cd h5shallow && git log -1 --format='%cI %h %s' origin/main -- frontend/mini-app
+    """
+    repo = _two_commit_repo(tmp_path)
+    shallow = _shallow_clone(repo, tmp_path)
+    httpd, url = _serve(tmp_path, "Fri, 09 Oct 2026 14:15:02 GMT")
+    try:
+        out = _run_cli(shallow, url, "--ref", "origin/main")
+    finally:
+        httpd.shutdown()
+    assert out.returncode == 3, (out.returncode, out.stdout, out.stderr)    # 不是 2（确实陈旧）
+    assert "MIGAO-H5FRESH-SUMMARY seen=1 acted=0 rc=3" in out.stdout, out.stdout
+    assert "浅克隆" in out.stderr, f"取不到读数的**根因**必须具名（否则人分不清「陈旧」与「读不到历史」）：{out.stderr}"
+    assert "::error::" in out.stderr, f"判据跑在浅克隆上 = CI 接线缺口 ⇒ 必须上报（不只是 ⚠️ 一行）：{out.stderr}"
+    # 对照：同一个仓的**全 history** 检出里判「新鲜」（线上 10-09 晚于源码 09-21，宽限 6h）
+    assert mod.last_source_change("HEAD", repo)[0] == datetime(2026, 9, 21, 6, 13, 46, tzinfo=UTC)
+
+
+def test_shallow_clone_is_reported_as_error_not_warning(tmp_path, capsys):
+    """`main()` 在浅克隆下按 **`::error::` + rc=3** 上报（浅克隆 = 接线缺口，不是「线上可能不新鲜」）。
+
+    真造一个 `--depth 1` 的克隆、真跑 `main(cwd=<那个克隆>)` —— 不打桩被测函数（同族：本文件全部判据）。
+    """
+    repo = _two_commit_repo(tmp_path)
+    shallow = _shallow_clone(repo, tmp_path)
+    assert subprocess.run(["git", "rev-parse", "--is-shallow-repository"], cwd=shallow,
+                          capture_output=True, text=True).stdout.strip() == "true", "夹具自证：这必须是个真浅克隆"
+    httpd, url = _serve(tmp_path, "Fri, 09 Oct 2026 14:15:02 GMT")
+    try:
+        rc = mod.main(["--url", url, "--ref", "origin/main"], cwd=shallow)
+    finally:
+        httpd.shutdown()
+    err = capsys.readouterr().err
+    assert rc == 3, rc
+    assert "::error::" in err and "浅克隆" in err, err
+    # 对照读数：全 history 检出里同一份数据判「新鲜」（rc=0），两边的差别只有检出深度
+    httpd, url = _serve(tmp_path, "Fri, 09 Oct 2026 14:15:02 GMT")
+    try:
+        assert mod.main(["--url", url, "--ref", "HEAD"], cwd=repo) == 0
+    finally:
+        httpd.shutdown()
+
+
+def test_unknown_level_keeps_the_three_states_apart():
+    """等级口径：浅克隆 ⇒ `error`（接线缺口）；其它取不到 ⇒ `warning`（网络/ref 面）。"""
+    assert mod.unknown_level("检出是**浅克隆**（…）⇒ …") == "error"
+    assert mod.unknown_level("取不到线上产物的 Last-Modified ⇒ 无法判定") == "warning"
