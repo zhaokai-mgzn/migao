@@ -31,6 +31,17 @@ def _extract_text(content: Union[str, list, None]) -> str:
 
 # 关键词 → 意图映射表
 KEYWORD_MAP: dict[IntentType, list[str]] = {
+    # ⚠️ 设置类必须排在最前（ST-002 修复）：`SYSTEM_SETTINGS` / `AI_CONFIG` 两个意图**本就存在**
+    # （在 `intent_config` 里都映射 `settings_manage`），但本表里**没有它们的 L1 关键词** ⇒
+    # 设置类查询一律降级 L2 分类器。实测（真实 LLM 评测，persona=mibao）：ST-001「查看系统设置」
+    # 蒙对；ST-002「AI客服配置是什么」被判 `capabilities` ⇒ agent 回自我介绍（`rounds=1 tools=[]`），
+    # `settings_manage(action=get_ai_config)` **不可达** ⇒ 该用例确定性红（日志标 `🔬复现型回归`）。
+    # 词表刻意只用**完整短语**：裸「设置 / 配置」太宽，会抢走「常用物流设置」这类复合句（CU-008 家族），
+    # 其负控已钉在 `tests/test_rule_matcher.py::TestSettingsRouting::test_compound_not_hijacked`。
+    IntentType.AI_CONFIG: [
+        "ai客服配置", "ai 客服配置", "智能客服配置", "客服机器人配置", "机器人配置", "ai配置", "ai 配置",
+    ],
+    IntentType.SYSTEM_SETTINGS: ["系统设置", "企业设置", "基础设置", "店铺设置", "全局设置", "系统配置"],
     # 数据分析必须在订单前（防"订单趋势"被"订单"吞掉）
     IntentType.DASHBOARD: ["看板", "趋势", "经营", "今日数据", "本周数据", "本月数据"],
     IntentType.STATISTICS: ["统计", "数据报表"],

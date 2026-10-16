@@ -1,4 +1,4 @@
-# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017, CU-008, CU-001, CU-002
+# case_ids: MC-010, MC-011, AS-003, AS-004, AS-005, HR-002, DA-004, PR-013, DA-003, PP-002, OR-014, CH-010, PG-017, CU-008, CU-001, CU-002, ST-002, ST-001
 """规则匹配器单元测试（app/router/rule_matcher.py）
 
 覆盖：_extract_text / RuleMatcher.match 关键词优先级 / 正则规则 / 未命中。
@@ -480,3 +480,35 @@ class TestCustomerProductBrowsePhrasing:
     def test_order_instruction_with_product_noun_not_browse(self):
         """反向：下单指令含商品名词但无浏览句式 → 必须走 ORDER_CREATE（不是商品咨询）。"""
         assert self._intent("帮我下单，遮光窗帘 3 米，要打孔加工") == IntentType.ORDER_CREATE
+
+
+class TestSettingsRouting:
+    """设置类查询的 L1 确定性路由（ST-002 实测红）。
+
+    病灶：`SYSTEM_SETTINGS` / `AI_CONFIG` 两个意图**都在** `IntentType` 且都映射到 `settings_manage`，
+    但 `KEYWORD_MAP` 里**没有它们的 L1 关键词** ⇒ 设置类查询一律降级 L2 分类器。
+    实测后果（本次真实 LLM 评测，persona=mibao）：`ST-001`「查看系统设置」蒙对；
+    `ST-002`「AI客服配置是什么」被判成 `capabilities` ⇒ agent 回自我介绍（`rounds=1 tools=[]`），
+    `settings_manage(action=get_ai_config)` **不可达** ⇒ 该用例确定性红（日志标 `🔬复现型回归`）。
+    """
+
+    def _intent(self, msg):
+        r = RuleMatcher().match(msg)
+        return r.intent if r else None
+
+    def test_ai_config_phrase(self):
+        """ST-002 输入原文：必须落 AI_CONFIG（→ settings_manage），即"查询类必须支持"。"""
+        assert self._intent("AI客服配置是什么") == IntentType.AI_CONFIG
+
+    def test_system_settings_phrase(self):
+        """ST-001 输入原文（回归保护）：系统设置 → SYSTEM_SETTINGS。"""
+        assert self._intent("查看系统设置") == IntentType.SYSTEM_SETTINGS
+
+    def test_not_capabilities(self):
+        """反向：同一句话**不得**被判成 capabilities —— 那正是本次实测的错误落点。"""
+        assert self._intent("AI客服配置是什么") != IntentType.CAPABILITIES
+
+    def test_compound_not_hijacked(self):
+        """负控（CU-008 家族）：含「物流设置」的复合句不得被设置域抢走（那是客户域/物流域的事）。"""
+        msg = "帮我看看客户张三的常用物流设置是什么"
+        assert self._intent(msg) not in (IntentType.SYSTEM_SETTINGS, IntentType.AI_CONFIG)
