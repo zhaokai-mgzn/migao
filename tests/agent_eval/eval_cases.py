@@ -6679,6 +6679,25 @@ _CASE_MC_112 = EvalCase(
     precondition='前置 = 两样都在仓里可读：① `.github/workflows/**`（现取 41 个文件，语料下限 ≥20）；② 判据本体 tests/unit_ci_workflows/test_workflow_gh_needs_git_context.py。**前置不成立时不许读成通过**：目录不存在 / 文件数低于下限 ⇒ `scan_workflows` **抛**（fail-closed）；某文件没有 `jobs` 键 ⇒ 同样抛；`gh` 命中面低于下限（≥10）⇒ test_guard_is_not_vacuous 判红。',
 )
 
+# ── MC-113 [NORMAL] **「跑需要真实历史的脚本 ⇒ checkout 必须 `fetch-depth: 0`」的类级判据**：凡 workflow 的 job 里跑 `scripts/h5_freshness_guard.py`（登记在 `h5_script_checkout_depth_ledger.json::canonical_scripts`）的，该 job 的 checkout 必须 `fetch-depth: 0`，否则必须在豁免台账里逐字登记（现取 0 条 ⇒ 只许缩短）；未登记 ⇒ 判红并具名 workflow + job（源: cases/misc.yml）──
+_CASE_MC_113 = EvalCase(
+    id='MC-113',
+    legacy_id='',
+    title='**「跑需要真实历史的脚本 ⇒ checkout 必须 `fetch-depth: 0`」的类级判据**：凡 workflow 的 job 里跑 `scripts/h5_freshness_guard.py`（登记在 `h5_script_checkout_depth_ledger.json::canonical_scripts`）的，该 job 的 checkout 必须 `fetch-depth: 0`，否则必须在豁免台账里逐字登记（现取 0 条 ⇒ 只许缩短）；未登记 ⇒ 判红并具名 workflow + job',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['为什么 C 端 H5 那条腿每天都红一次，可线上明明是新的？'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **判据 A（实例面，会红）**：`.github/workflows/c-end-h5-publish.yml` 的 `publish` job（notify 步跑 `scripts/h5_freshness_guard.py`）的 checkout 必须 `fetch-depth: 0`。红证（实跑）= 摘掉该 `with.fetch-depth` ⇒ 判据红并具名「c-end-h5-publish.yml / publish / 现取 None」。执行点 = tests/unit_ci_workflows/test_h5_freshness_needs_full_history.py::test_c_end_h5_publish_checkout_has_full_history。', '🔴 **判据 B（类级面，让同类进不来）**：全仓 workflow 逐 job 扫「是否跑登记脚本」⇒ 跑而没有 `fetch-depth: 0` 且未登记豁免 ⇒ 判红（红证②：在另一条腿加一个跑该判据的 job 而不给 depth ⇒ 红并具名 `a-new-leg`）。执行点 = test_all_workflows_running_the_guard_have_full_history。', '🔴 **判据 C（台账只许缩短 + fail-closed）**：`exemptions` 现取 **0 条**（`EXEMPTION_CAP_FROZEN = 0`）⇒ 加一条豁免即红（报出条数与上限）；空转的豁免（那条腿不跑该判据）/ 指向已不存在 workflow 的豁免 / 缺 `why` 的豁免 ⇒ 各自判红；把台账清空（`canonical_scripts` 空 / 整份为空对象 / 缺 `_` 自述）⇒ 判红（红证③）。执行点 = test_ledger_shape_is_fail_closed / test_exemption_table_only_shrinks / TestDiscriminatingPower::test_clearing_the_ledger_turns_it_red。', '🔴 **判据 D（三态不许塌，根因面）**：`scripts/h5_freshness_guard.py` 在浅克隆里必须判「读不到历史」⇒ `rc=3`（无法判定，具名点名「浅克隆」，`::error::` 上报），**不得**塌成 `rc=2`（确实陈旧）。红证（实跑，可复制）：`cd /tmp && rm -rf h5shallow && git clone --quiet --depth 1 --branch main "file://<本仓绝对路径>" h5shallow && cd h5shallow && git log -1 --format=\'%cI %h\' origin/main -- frontend/mini-app` ⇒ `2026-10-16T16:18:47Z 2f4b8b8`（= HEAD 自己的提交时间，即 CI 的假红读数）；修后同一命令链跑判据 ⇒ `rc=3` + stderr 具名「浅克隆」；全 history 面 ⇒ `2026-10-08T03:20:02Z`（`9ebdf73d8`）⇒ `rc=0 新鲜`。执行点 = tests/unit_ci_workflows/test_h5_freshness_guard.py::test_shallow_clone_is_unknown_not_stale。', '🔴 **判据 E（负控）**：只改注释 / 加一条不跑该判据的腿 ⇒ 不红；同一份「源代码里出现 `subprocess` 字样」的 AST 判据证明本文件不跑 git。执行点 = TestDiscriminatingPower::test_comment_only_change_stays_green / test_judgement_is_pure_static_and_never_imports_git_or_network。', '📌 **病根（逐字读数，不是推断）**：CI run 38971606256（`schedule` / sha `2f4b8b84b` / 2026-10-16T21:46Z）判「线上产物陈旧：2026-10-09T14:15Z 早于 frontend/mini-app 最近改动 2026-10-16T16:18Z（落后 7.1 天）」+ `::error::`；而 `2026-10-16T16:18Z` = `2f4b8b84b` 自己的提交时间（`git log -1 --format=%cI 2f4b8b84b`）—— 浅克隆里 `git log -1 <ref> -- <path>` **不判路径**（只有 1 个提交可取）的签名。真值（全 history 复算）= `2026-10-08T03:20:02Z`（`9ebdf73d8`）⇒ 线上**新鲜**（差 34.9h > 宽限 6h）。同一条腿近期连续 6 次 failure（38971606256 / 38941653472 / 38922020408 / 38917201131 / 38912912032 / 38908569922）。', '📌 **对照面**：`.github/workflows/h5-freshness-guard.yml` 跑**同一份**判据、一直有 `fetch-depth: 0` ⇒ 它不红。⇒ 同一个判据、两个调用面、其中一个面**结构性恒红**。判据 E 的对照读数把这一点钉住（另一条腿 ① 现有 depth 必须在 ② 摘掉它必须红）。', '📌 **边界（照实登记）**：① 本判据只判**结构**（checkout 步的 `with.fetch-depth`），不判「CI 上那个 job 真的检出了全 history」—— 运行时那一半由脚本自己的 `_is_shallow` 自证；② 只裁**登记进** `canonical_scripts` 的脚本（不做「扫全部脚本调 git」的语义一刀切）⇒ 新脚本要有它自己的登记，未登记即「本判据看不见它」；③ 本单**不改**发布语义（`publish=true` 人工授权 / `w`、`b` 保留前缀 / 首次接管需人工）、**不新增 schedule/cron**、**不降**任何门禁、不给存量开豁免。'],
+    skip_reason='[backend-contract] 纯静态 workflow 判据（YAML 解析 + 结构比较）+ 一个真浅克隆的本地 git 夹具，零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ci', 'workflow', 'fetch-depth', 'shallow-clone', 'false-red', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = 三样都在仓里可读：① `.github/workflows/*.yml`（真文件，用 `yaml.safe_load` 解析后**看结构**，不是 grep 文本 —— 本 workflow 的提示文本里就写着 `h5_freshness_guard.py`，同族 `FM-A11`）；② 台账 tests/unit_ci_workflows/h5_script_checkout_depth_ledger.json（缺 `_` 自述 / 缺顶层键 / `exemptions` 非对象 ⇒ 抛红）；③ 判据本体 tests/unit_ci_workflows/test_h5_freshness_needs_full_history.py。判据**零网络、零 git**（AST 自证只 import json/yaml/ast/copy/pathlib）—— CI 的 `ci workflow helper unit tests` job 本身是 `fetch-depth: 1`，绑 `origin/main` 会因错的原因变绿。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -14904,6 +14923,7 @@ ALL_CASES = (
     _CASE_MC_110,
     _CASE_MC_111,
     _CASE_MC_112,
+    _CASE_MC_113,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
