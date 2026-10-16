@@ -134,11 +134,34 @@ def _strip_comments(text: str) -> str:
 
 
 def _parse_string_list(items: str) -> list[str]:
-    """把「shell 字符串字面量序列」拆成逐个取值（`"not planned" 'a b'` ⇒ `["not planned", "a b"]`）。"""
+    """把「shell 字符串字面量序列」拆成逐个取值（`"not planned" 'a b'` ⇒ `["not planned", "a b"]`）。
+
+    ⚠️ **手写扫描，不用「引号定界捕获组的正则」**：那种「按引号扫原文取值」的口径会被注释 /
+    docstring 里的引号喂中（类级守卫 = `tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py`
+    的 RULE_QUOTE，**台账只许缩短、不许为新命中加条目**）。这里的输入是**已在 shell 语法里
+    的**字面量序列（不是源代码），所以按字符逐个走、遇引号开闭 + 认反斜杠转义即可。
+    """
     out: list[str] = []
-    for m in re.finditer(r'"([^"]*)"|\'([^\']*)\'', items):
-        out.append(m.group(1) if m.group(1) is not None else m.group(2))
-    return [v for v in out if "\n" not in v]
+    i = 0
+    while i < len(items):
+        ch = items[i]
+        if ch not in "\"'":
+            i += 1
+            continue
+        i += 1
+        buf: list[str] = []
+        while i < len(items) and items[i] != ch:
+            if items[i] == "\\" and i + 1 < len(items):
+                i += 1
+            buf.append(items[i])
+            i += 1
+        if i >= len(items):
+            break               # 引号没闭合（畸形输入）⇒ 丢掉这一段，不抛异常（判据会因此判红，不静默）
+        i += 1                  # 吃掉收尾引号
+        value = "".join(buf)
+        if "\n" not in value:
+            out.append(value)
+    return out
 
 
 def assignment_values(text: str, var: str) -> list[str]:
