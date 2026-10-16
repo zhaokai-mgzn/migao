@@ -525,23 +525,25 @@ function SettlementSection({ period, workers }: { period: string; workers: Piece
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
-                <th className="pl-5 pr-4 py-3 font-medium">工人</th>
-                <th className="px-4 py-3 font-medium">金额</th>
-                <th className="px-4 py-3 font-medium">状态</th>
-                <th className="px-4 py-3 font-medium">操作</th>
+                <th className="pl-5 pr-4 py-3 font-medium whitespace-nowrap">工人</th>
+                <th className="px-4 py-3 font-medium whitespace-nowrap">金额</th>
+                <th className="px-4 py-3 font-medium whitespace-nowrap">状态</th>
+                {/* issue #6717：含「操作」列的表格，该列必须右缘冻结（sticky right-0 + 不透明背景）
+                    或落在前 3 列内 —— 否则窄视口下它落在容器右缘之外，商家要横向滚动才够得到行操作 */}
+                <th className="sticky right-0 z-20 border-l border-neutral-200 bg-white px-4 py-3 font-medium whitespace-nowrap">操作</th>
               </tr>
             </thead>
             <tbody>
               {visible.map((row) => (
                 <tr key={row.id} className="border-b border-neutral-100 last:border-0" data-testid={`settlement-row-${row.id}`}>
-                  <td className="pl-5 pr-4 py-3.5 text-neutral-900">{row.worker_name}</td>
-                  <td className="px-4 py-3.5 font-medium text-neutral-900" data-testid={`settlement-amount-${row.id}`}>
+                  <td className="pl-5 pr-4 py-3.5 text-neutral-900 whitespace-nowrap">{row.worker_name}</td>
+                  <td className="px-4 py-3.5 font-medium text-neutral-900 whitespace-nowrap" data-testid={`settlement-amount-${row.id}`}>
                     {money(row.total_amount)}
                   </td>
-                  <td className="px-4 py-3.5 text-neutral-600" data-testid={`settlement-status-${row.id}`}>
+                  <td className="px-4 py-3.5 text-neutral-600 whitespace-nowrap" data-testid={`settlement-status-${row.id}`}>
                     {row.voided ? `已作废${row.void_reason ? ` · ${row.void_reason}` : ''}` : '生效中'}
                   </td>
-                  <td className="px-4 py-3.5">
+                  <td className="sticky right-0 z-10 border-l border-neutral-100 bg-white px-4 py-3.5 whitespace-nowrap">
                     {row.voided ? (
                       <span className="text-neutral-300">—</span>
                     ) : voidingId === row.id ? (
