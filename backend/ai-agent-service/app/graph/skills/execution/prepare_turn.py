@@ -17,7 +17,8 @@ from typing import Any, List
 from app.graph.skills.base_skill import (
     AIMessage, AgentState, CircuitBreakerOpenError, HumanMessage,
     LLM_CALL_TIMEOUT_S, SystemMessage, VISION_CLARIFY_GUIDE, _build_system_prompt,
-    _extract_content, _extract_intent_name, _inject_pending_validated, _inject_permission_scope,
+    _extract_content, _extract_intent_name, _inject_card_click_signal,
+    _inject_pending_validated, _inject_permission_scope,
     _inject_user_memories, _inject_write_input_recovery,
     _sanitize_messages_for_text_path, _track_llm_cost,
     _usable_vision_analysis, _vision_retry_needed, build_tool_context, has_images,
@@ -178,6 +179,11 @@ async def prepare_turn(
             _confirm_msg = _extract_content(_m)
             break
     system_prompt = await _inject_pending_validated(system_prompt, state, _confirm_msg)
+    # 4d-②. 点卡轮「顾客刚点击了确认卡」事实注入（issue #6985）：不经 `validate_input` 的
+    # A 档写路径（改价 / 批量改价 / 批量库存）缺的不是参数，而是**模型不认这是点卡** ——
+    # 它只看到一条长得像文本的用户消息，而 prompt 的绝对措辞（「商家打字「确认」不算」）
+    # 又让它自造第二条判据 ⇒ 反复重发新卡、写工具永不执行。判据与门禁同源（逐字等于卡值）。
+    system_prompt = await _inject_card_click_signal(system_prompt, state, _confirm_msg)
     # 4e. 写工具缺参等待期注入（issue #3365，OR-017）：顾客欠验证码等参数时，
     # 明令"索要参数、禁止重复调用、禁止重发同一张确认卡"——模型层不遵从是死循环的真因。
     system_prompt = await _inject_write_input_recovery(system_prompt, state, _confirm_msg)

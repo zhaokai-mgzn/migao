@@ -3979,6 +3979,98 @@ async def _inject_pending_validated(system_prompt: str, state: AgentState, last_
         return system_prompt
 
 
+#: 点卡轮注入里「目标工具」的**反推表**（只读卡内容，不猜）：卡字段标签 → 写工具。
+#: 为什么必须反推：这一轮模型手里只有「一条看起来像文本的用户消息」，
+#: 而 `pending_validated_input` 只有走 `validate_input` 的流程才有 ——
+#: 改价（`product_update` / `sku_update`）与批量库存（`product_batch_update`）都不经过它
+#: ⇒ 没有本表就只能给事实、给不出「该调哪个工具」（issue #6985 实测的两条路径都是这一类）。
+_CARD_FIELD_TARGETS = (
+    ("改前库存", "product_batch_update"), ("改后库存", "product_batch_update"),
+    ("改前价", "product_update"), ("改后价", "product_update"),
+)
+
+#: 点卡轮注入模板（`{tool}` 为空时用「发卡时计划调用的那个写工具」这一泛指）。
+_CARD_CLICK_SIGNAL_TEMPLATE = (
+    "【系统事实 · 顾客刚**点击**了确认卡】顾客本轮消息与系统上一次发出的确认卡 "
+    "confirmValue **逐字相同** —— 这是**点卡回传**，不是商家打字输入的文本。\n"
+    "该卡确认的写操作现在**已获确认**：本轮应当调用 {tool} 执行（参数按卡上展示的内容填），"
+    "**不要**再发一张确认卡、也不要再问一次「是否确认」—— 重发只会让商家再点一次、流程永不收敛。\n"
+    "（判据同源：`_is_card_confirm_value` —— 用户消息**逐字等于**系统自产的卡值才算点卡；"
+    "其它任何文本都不是点卡。）"
+)
+
+
+def _card_click_target_tool(card: dict | None) -> str:
+    """从**确认卡内容**反推这张卡在确认哪个写工具（认不出 ⇒ 空串，不猜）。
+
+    只用卡字段标签（`interact(component=confirm, fields=[…])` 的 label）——
+    「改前库存/改后库存」⇒ 批量库存调整 `product_batch_update`；
+    「改前价/改后价」⇒ 改价（商品级统一 `product_update`；单规格由卡片来源决定，
+    这里给的是**同一张卡的默认写工具**，模型可据卡上「规格」信息改用 `sku_update`）。
+    """
+    fields = (card or {}).get("fields")
+    if not isinstance(fields, list):
+        return ""
+    labels = " ".join(
+        str((f or {}).get("label") or "") if isinstance(f, dict) else str(f or "")
+        for f in fields
+    )
+    for key, tool in _CARD_FIELD_TARGETS:
+        if key in labels:
+            return tool
+    return ""
+
+
+def _is_card_click_round(last_user_msg: str, session_state: dict | None) -> bool:
+    """本轮是否是**点卡轮**（判据与门禁**同源**：`_is_card_confirm_value`，不另立第二份口径）。
+
+    为什么需要这个判定（issue #6985）：模型看不到系统内部的「卡值精确匹配」，
+    它只看到一条长得像文本的用户消息；而 4 处涉钱 prompt 又写着绝对措辞
+    「商家打字「确认」不算」⇒ 模型自造第二条判据、判「这不是点卡」⇒
+    反复重发新卡（`confirmValue` 每轮还在变）⇒ 永远走不到「点卡后再次调用写工具」。
+    """
+    if not isinstance(session_state, dict):
+        return False
+    return _is_card_confirm_value(last_user_msg or "",
+                                  session_state.get("last_confirm_value"))
+
+
+async def _inject_card_click_signal(system_prompt: str, state: AgentState,
+                                    last_user_msg: str) -> str:
+    """点卡轮注入「顾客刚点击了确认卡」的**上下文事实**（issue #6985，修法①）。
+
+    与 `_inject_pending_validated` 的分工：那条管「已校验待执行」的 `validate_input` 流程；
+    本条管**不经 `validate_input` 的 A 档写路径**（改价 / 批量改价 / 批量库存），
+    它们的「缺的那一步」不是参数，而是**模型不认这是点卡**。
+
+    边界（照实登记）：
+      · **只加事实、不放行**：确认门禁、`confirmed_write_release` 的放行链一字未动；
+      · **只读**：不写会话状态（不得借注入改放行账）；
+      · **只在点卡轮**：判据 = `_is_card_confirm_value`（逐字等于系统自产卡值）⇒
+        普通文本「确认」/ 前缀相同 / 无卡 / 无 session 一律**原样返回**；
+      · 任何异常不抛（与既有 `_inject_*` 同口径），失败即不注入。
+    """
+    if not state.get("session_id"):
+        return system_prompt
+    try:
+        from app.memory.session_state_store import SessionStateStore
+        full = await SessionStateStore().load(state["session_id"]) or {}
+        if not _is_card_click_round(last_user_msg, full):
+            return system_prompt
+        tool = _card_click_target_tool(full.get("last_card"))
+        if not tool:
+            # 卡值匹配那轮记下的目标工具（`record_confirmed_write` 同源落账）
+            tool = str(full.get("confirmed_write_tool") or "")
+        signal = _CARD_CLICK_SIGNAL_TEMPLATE.format(
+            tool=tool or "发这张卡时计划调用的那个写工具")
+        logger.info(
+            f"[card-click] 点卡轮事实注入 | session={state['session_id']} target={tool or '-'}")
+        return signal + "\n\n" + system_prompt
+    except Exception as e:
+        logger.warning(f"[card-click] 注入失败（非致命）: {e}")
+        return system_prompt
+
+
 async def execute_skill(
     state: AgentState,
     skill_name: str,
