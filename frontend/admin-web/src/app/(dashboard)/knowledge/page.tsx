@@ -434,7 +434,7 @@ export default function KnowledgePage() {
       />
 
       {/* Tab + 内容卡片（与订单/客户页同构：border 卡片内 Tab 栏 + 内容） */}
-      <div className="bg-white rounded-lg border border-neutral-200">
+      <div className="bg-white rounded-lg border border-neutral-200 shadow-card">
         {/* Tab 栏 */}
         <div className="flex items-center gap-6 px-5 pt-3 border-b border-neutral-200 overflow-x-auto">
           {([

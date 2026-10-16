@@ -334,7 +334,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
         </div>
       </div>
 
-      <div className="bg-white rounded-lg border border-neutral-200">
+      <div className="bg-white rounded-lg border border-neutral-200 shadow-card">
         <Table<WorkerProfile>
           columns={columns}
           dataSource={workers}

@@ -214,7 +214,7 @@ export default function ProductionBoardPage() {
       />
 
       {/* 查询区域（issue #4357：合并自加工单列表页，能力原样保留） */}
-      <div className="bg-white rounded-lg border border-neutral-200 p-5">
+      <div className="bg-white rounded-lg border border-neutral-200 shadow-card p-5">
         <div className="flex flex-wrap items-end gap-4">
           <div className="flex items-center gap-2">
             <label className="text-sm text-neutral-600 whitespace-nowrap shrink-0 text-right min-w-[4.5em]">

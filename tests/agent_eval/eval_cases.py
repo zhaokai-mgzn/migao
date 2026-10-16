@@ -14491,6 +14491,25 @@ _CASE_UI_110 = EvalCase(
     precondition='前置 = 两样都在仓里可读：① 共享原语 frontend/admin-web/src/components/ui/PageHeader.tsx（h1 = `text-2xl font-semibold text-neutral-900`，即 `design-tokens.ts` 的 `TYPE_SCALE` h1 档）；② 守卫本体 frontend/admin-web/tests/unit/page-header-single-source-guard.test.ts。**前置不成立时不许读成通过**：射程目录取不到 ⇒ `walk()` 抛（fail-closed）；射程文件数 < 20 ⇒ 反空跑判红。',
 )
 
+# ── UI-111 [NORMAL] **「内层白卡必须有 shadow-card」的类级元守卫**：射程内凡「白底 + 圆角 + 中性边框」的内层白卡容器，必须带 `shadow-card`，否则「一圈边框套一圈边框」（issue #7069，承接 #7007 根因②）（源: cases/ui.yml）──
+_CASE_UI_111 = EvalCase(
+    id='UI-111',
+    legacy_id='',
+    title='**「内层白卡必须有 shadow-card」的类级元守卫**：射程内凡「白底 + 圆角 + 中性边框」的内层白卡容器，必须带 `shadow-card`，否则「一圈边框套一圈边框」（issue #7069，承接 #7007 根因②）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['为什么只有订单页看起来精致，其它页面没有这种感觉？'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **判据 1（会红）**：射程（`src/app/(dashboard)/**` + `src/components/**` 的 `.tsx`，现取 400+ 文件）内，凡形态为「白底 + 圆角 + 中性边框」（`bg-white rounded-{lg,xl,2xl} border border-neutral-200`）的**内层白卡容器**，**必须**带 `shadow-card`；缺即**点名 `文件:行号`** 判红（判红文案直接给出复算命令与出口）。**红证（实跑、逐字节还原）**：摘掉「生产看板」页查询区容器的 `shadow-card`（定位 = 该页 `bg-white rounded-lg border border-neutral-200 shadow-card p-5` 那个 div）⇒ 判据 1 红并点名该处所在的 `文件:行号`。', '🔴 **判据 2（反空转）**：射程内白卡容器**实存 ≥ 15 处**（现取 **22**）⇒ 防「把 className 改写成别的形态」绕过判据 1。', '🔴 **判据 3**：`shadow-card` 这个 token **真的被定义**（`tailwind.config.ts` 的 `boxShadow.card`）⇒ 防「写了个不存在的类」（本仓曾出现「声明存在 ≠ 可达」的形态，铁律 11）。', '🔴 **判据 4（判别力自证）**：坏形态判红、好形态放行；且**不该命中的形态不被命中**（`divide-y divide-neutral-200` 分隔线 / `input` 的 `border-neutral-300` 边框 / Tab 下划线都**不是**白卡容器）。', '📌 **为什么这是「精美度」的结构问题**：`app/(dashboard)/layout.tsx` 已把每页包进 `rounded-2xl border shadow-card`（外壳统一），差距全在**卡片内部**。订单页的清透感来自「**整页卡片(阴影) → 内层卡片(边框)**」这套层级；内层容器缺 `shadow-card` 时与外壳**视觉权重相同** ⇒ 退化成「**一圈边框套一圈边框**」（#7007 正文逐字诊断，用户原话「只有订单管理精美」）。', '📌 **本单交付**：22 处命中里 **9 处缺 `shadow-card`** 全部补齐（production / knowledge / orders×2 / finance / roles + components 的 WorkerProfilesPanel / ProductForm / ProductTable）；修后缺 = **0**。**只补 token，不动 padding / 布局 / 文案 / 交互**。', '📌 **一处易误读**：`frontend/admin-web/src/app/(dashboard)/dashboard/page.tsx` 有 **5 处**命中该 grep，但它们**本来就有** `shadow-card`（`bg-white rounded-xl border border-neutral-200 shadow-card p-5`）⇒ 「命中 grep」≠「缺阴影」；**必须在同一行**再查 `shadow-card` 才能定性（我第一版用 `grep -c "shadow-card"` 统计时就被这个绊了一次）。', '📌 **顺带修真的一处漂移**：`roles/page.tsx` 原写 `hover:shadow-md`（Tailwind **内置**阴影）⇒ 改为仓里已有的 `hover:shadow-card-hover`（暖色阴影 token，与 `shadow-card` 同一套体系）。', '📌 **边界（照实登记）**：本判据**只钉住「白卡容器不得缺 shadow-card」这一侧**，**不判**「阴影是不是太多了」——反过来层层堆阴影同样破坏层级，那属**评审面**（§15.7 读图 + §31 产品设计原则）；也**不判**「该用 `PageCard` 原语还是手写 div」（两种写法都合规，只看层级 token）。'],
+    skip_reason='[backend-contract] 前端静态判据（扫 TSX 源码的 className 形态 + 冻结下界对账），零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'design-consistency', 'card-layering', 'shadow-card', 'class-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = 三样都在仓里可读：① 阴影 token `frontend/admin-web/tailwind.config.ts` 的 `boxShadow.card`（`0 1px 2px rgba(36,31,24,.04), 0 4px 16px rgba(36,31,24,.06)`）；② 页内一级容器原语 `frontend/admin-web/src/components/ui/PageCard.tsx`（自带 `shadow-card`）；③ 守卫本体 `frontend/admin-web/tests/unit/inner-card-layer-guard.test.ts`。**前置不成立时不许读成通过**：射程目录取不到 ⇒ `walk()` 抛（fail-closed）；射程文件数 ≤ 40 ⇒ 反空跑判红；白卡容器 < 15 处 ⇒ 判据 2 红。',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -15302,6 +15321,7 @@ ALL_CASES = (
     _CASE_UI_106,
     _CASE_UI_109,
     _CASE_UI_110,
+    _CASE_UI_111,
     _CASE_UT_001,
     _CASE_UT_002,
 )

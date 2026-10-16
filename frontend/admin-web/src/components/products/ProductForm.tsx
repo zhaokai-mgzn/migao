@@ -1000,7 +1000,7 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <section className="bg-white rounded-lg border border-neutral-200 mb-5 overflow-hidden">
+    <section className="bg-white rounded-lg border border-neutral-200 shadow-card mb-5 overflow-hidden">
       <header className="px-6 py-3.5 border-b border-neutral-100">
         <h3 className="text-base font-semibold text-neutral-900 flex items-center gap-2">
           <span className="inline-block w-1 h-4 bg-primary-600 rounded" />
