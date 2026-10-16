@@ -363,12 +363,13 @@ jobs:
       # 🔴 真值来源（都不是运行时现算）：`git rev-parse HEAD` = **本 run 检出的那个 commit**
       #    （回滚腿 `--ref refs/tags/<tag>` 时它也正好是回滚目标的 commit —— 比 `GITHUB_SHA` 正确：
       #     后者在 tag ref 下是**该 tag 指向的提交**，而在某些 dispatch 形态下会是 main 的 HEAD）；
-      #    `BUILT_AT` = `RUN_STARTED_AT`（部署期时钟，容器里没有 `.git` 也就没法现算）
-      #    —— 值 = **context** `${{ github.run_started_at }}`（见本步的 `env:`）。
-      #    🔴 issue #7015（本腿同款病灶，现取）：改前这里写 `${GITHUB_RUN_STARTED_AT:-}`，而
-      #    **GitHub 从不注入这个环境变量**（run 的开始时刻只在 **context** `github.run_started_at` 里）
-      #    ⇒ shell 展开**恒为空串** ⇒ `public/version.json` 里 `builtAt` 的兜底值 `unknown` 恒生效，
-      #    而**没有任何东西会红**（`sha` 面正常、探针只比 `sha`）。
+      #    `BUILT_AT` = **runner 时钟**（本步 `date -u` 现算 —— 部署期时钟；容器里没有 `.git` 也就没法现算）。
+      #    🔴 **两代错法都实测踩过**（issue #7015 → #7029），别再"猜名字"：
+      #    ① 改前写 `${GITHUB_RUN_STARTED_AT:-}` —— 它**不是** GitHub 注入的环境变量；
+      #    ② #7016 改成 context `${{ github.run_started_at }}` —— 该属性**也不存在**
+      #       （官方 `github` 上下文属性表 40 个里没有它）⇒ 两次都静默解成**空串**
+      #       ⇒ `public/version.json` 里 `builtAt` 的兜底值 `unknown` 恒生效，而**没有任何东西会红**
+      #       （`sha` 面正常、探针只比 `sha`）。
       # ⚠️ 输出只在**真的要部署**时给（`skip != 'true'`）⇒ 跳过档不会因为「解算失败」被误判红。
       - name: "Resolve build identity (issue #6611)"
         id: build_id
