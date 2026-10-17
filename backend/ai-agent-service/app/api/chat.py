@@ -41,7 +41,11 @@ from app.agents.customer_service_agent import (
 from app.tools import ToolRegistry, get_tool_registry
 from app.tools.base import CUSTOMER_ONLY_ROLES, ToolContext  # 角色口径单点（#4013 A10）
 # 页面上下文（issue #5371 族 4）：route→真值源登记表 + **默认拒绝**的注入面
-from app.context.page_registry import build_page_context, render_page_context
+from app.context.page_registry import (
+    build_page_context,
+    render_page_context,
+    strip_page_context_envelope,
+)
 # 主动新手引导（issue #5989 · P2）：route→功能登记表（复用 P1 真值源）+ 推送判定（纯函数）
 from app.context.menu_navigator import build_proactive_push
 from app.utils.auth import get_current_user, UserIdentity
@@ -351,6 +355,18 @@ async def _save_message_or_report(
         return None
 
 
+def _history_user_text(role: Any, content: Any) -> Any:
+    """历史里**用户消息**的文本：剥掉页面上下文注入信封（issue #7112）。
+
+    信封是**元数据**（「用户在哪一页」），不是用户说的话 —— 落库侧自 #7112 起不再写它，
+    旧行则由**读**这一侧归一（不改写历史数据）。展示面（`get_history`）与 LLM 历史
+    （`_convert_history_to_agent_format`）**共用本函数**：两处各写一份口径 = 迟早漂移。
+    """
+    if role == "user" and isinstance(content, str):
+        return strip_page_context_envelope(content)
+    return content
+
+
 def _format_datetime(dt: Any) -> str:
     """格式化日期时间为 ISO 8601 字符串（UTC，以 Z 结尾）"""
     if isinstance(dt, datetime):
@@ -445,6 +461,8 @@ def _convert_history_to_agent_format(messages: List[Dict[str, Any]]) -> List[Dic
         content = msg.get("content", "")
         if role == "assistant":
             content = re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
+        else:
+            content = _history_user_text(role, content)
         entry: Dict[str, Any] = {
             "role": role,
             "content": content,
@@ -1070,6 +1088,8 @@ async def _agent_stream_to_sse(
     session_id: str,
     tenant_id: int,
     user_id: str,
+    *,
+    display_message: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """
     将 Agent 的流式输出转换为 SSE 事件
@@ -1420,9 +1440,12 @@ async def _agent_stream_to_sse(
 
         # 异步提取用户记忆（fire-and-forget，不阻塞 SSE 流）
         # user_message 提取自 message 参数（可能为 str 或 list）
-        user_msg_text = message if isinstance(message, str) else (
-            " ".join(p.get("text", "") for p in message if isinstance(p, dict) and p.get("type") == "text")
-        ) if isinstance(message, list) else ""
+        # 记忆抽取 / 会话标题取**用户原话**（`display_message`）—— 不取注入了页面上下文的文本
+        # （issue #7112：信封不该变成「用户记忆」或会话标题）。
+        _text_source = message if display_message is None else display_message
+        user_msg_text = _text_source if isinstance(_text_source, str) else (
+            " ".join(p.get("text", "") for p in _text_source if isinstance(p, dict) and p.get("type") == "text")
+        ) if isinstance(_text_source, list) else ""
         if assistant_content and user_msg_text:
             try:
                 # 登记在途任务：会话关闭 flush 前会 drain 它们（issue #3357——
@@ -1953,7 +1976,12 @@ async def _handle_page_ctx_request(
         images=request.images,
         # page_context 不再下发（本轮已消费：防重复注入，也防入口再分派成自递归）
     )
-    return await send_message(injected_request, current_user)
+    # 🔴 信封**只进本轮 LLM 文本**，落库/展示用用户原话（issue #7112）：
+    # 「页面上下文是元数据，不是用户说的话」（`app/context/page_registry.py` 的纪律），
+    # 落库带上它 ⇒ 切回会话时整段内部提示上屏（并污染标题生成 / 记忆抽取）。
+    return await _send_plain_message(
+        injected_request, current_user, display_message=request.message,
+    )
 
 
 # ============ API 路由 ============
@@ -2170,6 +2198,8 @@ async def _handle_page_enter_request(
 async def _send_plain_message(
     request: ChatSendRequest,
     current_user: UserIdentity,
+    *,
+    display_message: Optional[str] = None,
 ):
     """普通文本路径：会话守卫 → 落库 → Agent 流式 SSE。**不含任何前缀分派**。
 
@@ -2180,6 +2210,10 @@ async def _send_plain_message(
     """
     tenant_id = current_user.tenant_id
     user_id = current_user.user_id
+
+    # 落库 / 展示 / 标题 / 记忆抽取用的**用户原话**：可与「本轮送给 LLM 的文本」不同
+    # （页面上下文信封只属于后者，issue #7112）。
+    user_text = request.message if display_message is None else display_message
 
     logger.info(
         f"[chat/send] Message received | tenant={tenant_id} user={user_id} session={request.session_id or 'new'} msg_len={len(request.message)}"
@@ -2244,7 +2278,7 @@ async def _send_plain_message(
                 session_memory, source="chat.user", fail_open=False,
                 session_id=session_id,
                 role="user",
-                content=request.message,
+                content=user_text,
                 tenant_id=tenant_id,
                 content_type=content_type,
                 extra_metadata=extra_metadata,
@@ -2331,6 +2365,7 @@ async def _send_plain_message(
                 session_id=session_id,
                 tenant_id=tenant_id,
                 user_id=user_id,
+                display_message=user_text,
             ):
                 yield event
                 
@@ -2660,7 +2695,8 @@ async def get_history(
             # C 端历史是**展示面**：顾客刷新页面走的就是这里回放（issue #3386）。
             # 出站脱敏此前只做在 SSE 流上 → 同一份对话「流上脱敏、历史里明文」两种口径。
             # 落库保持原文（模型下一轮/复核对账都要真号），脱敏只在这一层做。
-            "content": _mask_for_customer(msg["content"], current_user),
+            "content": _mask_for_customer(
+                _history_user_text(msg.get("role"), msg["content"]), current_user),
             "content_type": msg.get("content_type", "text"),
             "images": msg_images if msg_images else None,
             "tool_calls": msg.get("tool_calls"),
