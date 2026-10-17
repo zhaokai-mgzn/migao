@@ -287,6 +287,10 @@ class ProductionTodoServiceTest {
         assertThat(evidenceOf(todo)).as("反向护栏：含加工项的单该键仍为 true（判据不是「一律 false」）")
                 .containsEntry("has_processing_items", true)
                 .containsEntry("needs_work", true);
+        // 🔴 显式断言（补回，不许静默放宽）：含加工项 ⇒ `processing_completed` 必须落 `true`。
+        //    它**不是**上面那条按型断言的重复：没有它，「把 `if (hasProcessing)` 整段删掉」
+        //    这种回退会让**所有**订单都丢这个键（含加工项的也丢）而反向护栏全绿 = 空判据。
+        assertThat(evidenceOf(todo)).containsEntry("processing_completed", true);
         // 反向护栏（issue #7079）：含加工项 ⇒ 标题与 reason **逐字等于原文案**（本单的硬护栏）
         assertThat(todo.get("title")).isEqualTo("订单 " + ORDER_NO + " 加工单已完成，可以发货了");
         assertThat(todo.get("reason")).isEqualTo(
