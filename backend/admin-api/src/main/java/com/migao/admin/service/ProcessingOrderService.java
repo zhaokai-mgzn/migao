@@ -1910,9 +1910,18 @@ public class ProcessingOrderService {
                 batchNo = batchStock().suggestedBatchNo(tenantId, productIdByItemId.get(itemId),
                         skuCode, meters, assignmentRule);
                 if (!StringUtils.hasText(batchNo)) {
+                    // 🔴 2026-10-17（issue #7077，用户逐字「得把报错原因用业务文案写清楚，而不是技术语言」）：
+                    // 旧文案把**内部规则码**（`fifo` / `best_fit`）与**明细行 id**（UUID）端给商家
+                    // —— 两句都是他照着做不了的读数。现在说清四件事：哪一行（商品名）/ 要多少米 /
+                    // 为什么补不上（按「先到先用」也找不到能整行裁出的批次）/ 下一步做什么（入库或核对余量）。
+                    // ⚠️ 判据 `ProcessingOrderServiceTest#noCandidateUnderTheRuleFailsClosed` 同时钉
+                    // 「新文案在」与「内部标识符不在」两条（把任一句写回去 ⇒ 红）。
+                    String productName = str(row.get("productName"));
+                    String lineLabel = StringUtils.hasText(productName) ? productName : "这一行";
                     throw BusinessException.validationError(String.format(
-                            "明细行 %s 在指派规则 %s 下没有可满足的批次（该行需要 %s 米）",
-                            itemId, assignmentRule, meters.toPlainString()));
+                            "「%s」这行需要 %s 米，库存里没有能裁出它的批次（按「先到先用」也补不上）"
+                                    + "—— 请先把这批布入库，或核对库存里对应门幅与颜色的余量后重试",
+                            lineLabel, meters.toPlainString()));
                 }
             }
             designations.add(new StockBatchConsumptionService.Designation(
