@@ -9761,7 +9761,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（112 case）
+## 前端 UI 域（113 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -11380,6 +11380,16 @@
 ```
 溯源: 2026-10-17 新增（issue #7079；用户裁定见 user_inputs 与 PG-078 的注释）。取号 = `python3 scripts/next_case_id.py UI` 现取 = 113。 ｜ tags: ui, production, processing-order, copy, order-kind
 
+### UI-114. demo path spec 的占位符选择器活性：`tests/e2e/**` 里每个 `getByPlaceholder(...)` 字面量必须在 admin-web 源码里逐字活着 🔵
+```
+数据: 判据 L1·🔴 **射程内每个占位符字面量必须在被驱动面里活着**：`tests/e2e/**/*.ts` 的 `getByPlaceholder('X')` / `getByPlaceholderText('X')` 的 `X`，必须在 `frontend/admin-web/src/**` 的 `.ts`/`.tsx` 里**逐字**出现。证据 = tests/unit_ci_workflows/test_e2e_placeholder_liveness.py::test_every_e2e_placeholder_literal_is_alive_in_admin_web。**红证（真回归实跑，2026-10-17）**：四包集成树里（源码已改、e2e 未修）该判据红，具名逐字为 `tests/e2e/specs/orders/processing-orders.spec.ts:368 的 getByPlaceholder('请输入加工单号或订单号') 在 frontend/admin-web/src/** 里取不到逐字文案`（`:398` 同）—— 与 CI 那条腿点的**同一个文件**。
+数据: 判据 L2·**反空跑（fail-closed）**：射程（`getByPlaceholder` 字面量）为空 ⇒ 红 —— spec 被改名/搬走、或调用换成了变量时，不许把「没有可比对的东西」读成通过。
+数据: 判据 L3·**判别力自证（反恒真）**：好形态（字面量在源码里）不报；坏形态具名报出（含本次真实漏网的那个字面量）；且 `getByPlaceholder` / `getByPlaceholderText`、单双引号两种拼写都认。
+数据: **边界（照实登记）**：① 射程只到**占位符**这一档 —— `getByText` / `getByRole(name)` / `getByLabel` 的同族字面量**不在本条**（现取 397 / 330 / 14 处，多数是运行期数据，静态判据会假红）；② 判据是「字面量在不在源码里」，**不是**「Playwright 真能定位到它」—— 运行期真实定位由 CI 的 `Demo path specs (admin-web, fixture mode)` 腿承担，本条的绿**不能**替代它；③ 不含 `scripts/ui-smoke-merchant/spec.mjs`（那是 test_ui_smoke_selector_liveness.py 的射程，两处不互为副本）。
+跳过: [backend-contract] 纯静态源码判据（读 `tests/e2e/**` 与 `frontend/admin-web/src/**` 的字面量对账），零网络、非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-17 新增（issue #7079 的类级固化；病灶 = 本单自己的真实漏网，CI demo path 腿实测 2 failed）。取号 = 手工 +1 = 114（取号工具看不见未开 PR 的分支，它报的 113 已被本单 UI-113 占用）。 ｜ tags: ui, e2e, selector-liveness, copy-drift, class-level-guard
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -11409,8 +11419,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：782（活跃 133，跳过 649）
-- tier 分布：smoke 12 / normal 723 / adversarial 32
+- 用例总数：783（活跃 133，跳过 650）
+- tier 分布：smoke 12 / normal 724 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -11435,7 +11445,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：112
+- 前端 UI 域：113
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -11717,4 +11727,5 @@
 - UI-110: **「商家后台页面头只有一个来源」的类级元守卫**：射程内凡手写 `<h1>` 且未用共享原语 `PageHeader` 的文件，必须恰好等于「冻结快照 ∪ 逐条给出理由的有意不迁」；快照只许缩短、有意不迁不许悄悄涨价（issue #7065）
 - UI-111: **「内层白卡必须有 shadow-card」的类级元守卫**：射程内凡「白底 + 圆角 + 中性边框」的内层白卡容器，必须带 `shadow-card`，否则「一圈边框套一圈边框」（issue #7069，承接 #7007 根因②）
 - UI-113: 作业单两型可见面：生产看板 / 订单详情统一「作业单」+ 中文类型标签；`outbound` 型不显示加工方与交期；机器键不上屏
+- UI-114: demo path spec 的占位符选择器活性：`tests/e2e/**` 里每个 `getByPlaceholder(...)` 字面量必须在 admin-web 源码里逐字活着
 

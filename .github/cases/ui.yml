@@ -4226,3 +4226,53 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # UI-114（issue #7079 的**类级固化**，2026-10-17）—— demo path spec 的**占位符选择器活性**。
+  #
+  # 病灶（真发生，非假想）：本单把生产看板搜索占位从「请输入加工单号或订单号」改成
+  # 「请输入作业单号或订单号」，源码与 vitest 都跟了，**但 `tests/e2e/specs/orders/processing-orders.spec.ts`
+  # 这个消费方漏了** ⇒ CI `Demo path specs (admin-web, fixture mode)` 腿红、具名到
+  # `processing-orders.spec.ts:366:7`（`waiting for getByPlaceholder('请输入加工单号或订单号')`，2 failed / 59 passed）。
+  #
+  # 结构原因：仓里**已有**同族守卫 `test_ui_smoke_selector_liveness.py`（判据 A 文案活性），
+  # 但它的射程**只有冒烟 spec**（`scripts/ui-smoke-merchant/spec.mjs`）——
+  # `tests/e2e/**` 这条载体的选择器活性**此前零守卫**。
+  #
+  # 口径：新增 `test_e2e_placeholder_liveness.py`，射程**故意只到占位符**（现取 12 处 / 6 个不同字面量）——
+  # `getByText` 397 / `getByRole` 330 / `getByLabel` 14 的字面量大量是运行期数据或动态拼装，
+  # 静态活性判据对它们会大面积假红。**更宽的那一档留在它自己的载体上**（两条守卫不互为副本）。
+  #
+  # 取号：`python3 scripts/next_case_id.py UI` 现取报 113，但 **113 已被本单的 UI-113 占用**
+  # （取号工具的候选 = main ∪ open PR ∪ 本工作区 ⇒ **尚未开 PR 的分支它看不见**，故此处手工 +1 取 114）。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: UI-114
+    legacy_id: ""
+    title: "demo path spec 的占位符选择器活性：`tests/e2e/**` 里每个 `getByPlaceholder(...)` 字面量必须在 admin-web 源码里逐字活着"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    persona: ""
+    tags:
+      - ui
+      - e2e
+      - selector-liveness
+      - copy-drift
+      - class-level-guard
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 L1·🔴 **射程内每个占位符字面量必须在被驱动面里活着**：`tests/e2e/**/*.ts` 的 `getByPlaceholder('X')` / `getByPlaceholderText('X')` 的 `X`，必须在 `frontend/admin-web/src/**` 的 `.ts`/`.tsx` 里**逐字**出现。证据 = tests/unit_ci_workflows/test_e2e_placeholder_liveness.py::test_every_e2e_placeholder_literal_is_alive_in_admin_web。**红证（真回归实跑，2026-10-17）**：四包集成树里（源码已改、e2e 未修）该判据红，具名逐字为 `tests/e2e/specs/orders/processing-orders.spec.ts:368 的 getByPlaceholder('请输入加工单号或订单号') 在 frontend/admin-web/src/** 里取不到逐字文案`（`:398` 同）—— 与 CI 那条腿点的**同一个文件**。"
+      - "判据 L2·**反空跑（fail-closed）**：射程（`getByPlaceholder` 字面量）为空 ⇒ 红 —— spec 被改名/搬走、或调用换成了变量时，不许把「没有可比对的东西」读成通过。"
+      - "判据 L3·**判别力自证（反恒真）**：好形态（字面量在源码里）不报；坏形态具名报出（含本次真实漏网的那个字面量）；且 `getByPlaceholder` / `getByPlaceholderText`、单双引号两种拼写都认。"
+      - "**边界（照实登记）**：① 射程只到**占位符**这一档 —— `getByText` / `getByRole(name)` / `getByLabel` 的同族字面量**不在本条**（现取 397 / 330 / 14 处，多数是运行期数据，静态判据会假红）；② 判据是「字面量在不在源码里」，**不是**「Playwright 真能定位到它」—— 运行期真实定位由 CI 的 `Demo path specs (admin-web, fixture mode)` 腿承担，本条的绿**不能**替代它；③ 不含 `scripts/ui-smoke-merchant/spec.mjs`（那是 test_ui_smoke_selector_liveness.py 的射程，两处不互为副本）。"
+    skip_reason: "[backend-contract] 纯静态源码判据（读 `tests/e2e/**` 与 `frontend/admin-web/src/**` 的字面量对账），零网络、非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7079 的类级固化；病灶 = 本单自己的真实漏网，CI demo path 腿实测 2 failed）。取号 = 手工 +1 = 114（取号工具看不见未开 PR 的分支，它报的 113 已被本单 UI-113 占用）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_e2e_placeholder_liveness.py"
+      ci:
+        - pr-check.yml
+      verifies: []
