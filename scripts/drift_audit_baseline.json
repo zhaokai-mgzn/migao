@@ -14,7 +14,6 @@
   "entries": {
     "generated-freshness": {},
     "heartbeat": {
-      "c-end-h5-publish.yml|never-succeeded": 1,
       "drift-audit.yml|stale": 1,
       "e2e-real.yml|paused": 1,
       "fixture-record.yml|never-succeeded": 1,
@@ -45,9 +44,9 @@
       "version": 1
     }
   },
-  "generated_at": "2026-10-14T15:05:01.661751+00:00",
+  "generated_at": "2026-10-17T07:55:00.000000+00:00",
   "policy_version": 1,
-  "reason": "把 .github/workflows/llm-thinking-probe.yml 注释里的裸行号引用改成符号锚点（ref-freshness 3 条归零）⇒ 按「台账只许缩短」删掉这 3 条基线（PR #6941 的 burn-down）",
+  "reason": "销账 `c-end-h5-publish.yml|never-succeeded`：该 workflow 于 2026-10-17 06:57 +08 首次发布成功（workflow_dispatch）⇒ 「从未成功」这条豁免的事实已消失，按「全量对账 + 台账只许缩短」删掉它（它是运行态条目，无提交会去删 ⇒ 该腿自 2026-10-17 00:18 +08 起连续 39 次红，观测见 issue #6980 的同族记录）",
   "regenerate_command": "python3 scripts/drift_audit.py --regen-baseline --reason '<理由>'",
   "schema": "migao.drift-audit-baseline/1"
 }
