@@ -15,6 +15,8 @@ import { cn } from '@/lib/utils'
 import { LOGISTICS_COMPANIES, LOGISTICS_TYPES } from '@/lib/logistics'
 // 商品身份（品名/货号/颜色/门幅）的**唯一读取口**（issue #6882：原先这里直读三个不存在的键）
 import { orderItemSku } from '@/lib/order-item-sku'
+// 「发货前要不要作业」的唯一读点 + 按型分岔的阻断文案（issue #7079 第 5 包）
+import { WORK_ORDER_NEEDED_COPY, workOrderKindOf } from '@/lib/processing-order'
 
 // 可发货订单状态（后端枚举：pending/confirmed/producing/shipped/completed/cancelled；
 // producing = 加工单流转后订单进入「生产中」，仍属待发货；'processing' 是历史误写，从不产生）
@@ -129,15 +131,20 @@ export default function ShipOrder() {
 
   const shippable = !!order && SHIPPABLE_STATUSES.has(order.status)
 
-  // 加工单状态查询：仅「可发货状态 + 含加工项」的订单需要（其余短路为已检查）
+  // 该订单**发货前要不要作业**（issue #7079 第 5 包）：一律取订单详情读面键 `work_order_kind`
+  // （后端 `OrderShipGuard.needsWork` 的同一份判据：含加工项 **或** 有卖布行）——
+  // 🔴 不再按 `order.processingItems` 推（那只覆盖「含加工项」一半 ⇒ 卖布单**完全不拦**，
+  // 用户填完整张表单、提交时才撞服务端那句「须先完成出库作业单的裁剪与打包报工」）。
+  const needsWorkOrder = workOrderKindOf(order ?? {}) !== null
+
+  // 作业单状态查询：仅「可发货状态 + 需要作业单」的订单需要（其余短路为已检查）
   useEffect(() => {
     if (!order || !shippable) {
       setPoChecked(true)
       setProcessingBlocked(false)
       return
     }
-    const hasProcessing = (order.processingItems?.length ?? 0) > 0
-    if (!hasProcessing) {
+    if (!needsWorkOrder) {
       setPoChecked(true)
       setProcessingBlocked(false)
       return
@@ -160,7 +167,7 @@ export default function ShipOrder() {
     return () => {
       cancelled = true
     }
-  }, [order, shippable])
+  }, [order, shippable, needsWorkOrder])
 
   /**
    * 订单自带的**常用物流两列**（issue #4874；后端 #4872 在 `orders` 上新增，
@@ -310,19 +317,22 @@ export default function ShipOrder() {
     )
   }
 
-  // 加工单前置守卫（issue #3889）：含加工项且加工单未完成 → 明确阻断，不再渲染发货表单
-  const hasProcessing = (order.processingItems?.length ?? 0) > 0
-  if (hasProcessing && !poChecked) {
+  // 发货前置守卫（issue #3889；issue #7079 第 5 包扩到**卖布单**）：**需要作业单**且作业单未完成
+  // → 明确阻断并给可行动出口，不再渲染发货表单 —— 判据 = 读面键 `work_order_kind`（与后端
+  // `OrderShipGuard.needsWork` 同一份），阻断文案按型分岔（加工单 / 出库作业单）。
+  if (needsWorkOrder && !poChecked) {
     return (
       <div className="p-6 flex items-center justify-center min-h-[400px]">
         <Loading size="lg" text="加载订单详情..." />
       </div>
     )
   }
-  if (hasProcessing && processingBlocked) {
+  if (needsWorkOrder && processingBlocked) {
     return (
       <div className="p-6 text-center py-12">
-        <p className="text-neutral-500 mb-4">该订单含加工项，须先完成加工单后再发货，请返回订单详情处理加工单</p>
+        <p className="text-neutral-500 mb-4">
+          {WORK_ORDER_NEEDED_COPY[workOrderKindOf(order) ?? 'processing'].shipBlocked}，请返回订单详情处理作业单
+        </p>
         <Button onClick={() => router.push(`/orders/${order.id}`)}>返回订单详情</Button>
       </div>
     )

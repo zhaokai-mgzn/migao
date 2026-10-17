@@ -1448,7 +1448,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释）；2026-09-21（case-trust burn-down 缴费，issue #4971，metric=entries ⇒ 整条销账）：补 `must_succeed[category_manage(action=delete)]`（效果层：「调用了 ≠ 成了」，#3778）+ `namespaces[category:轻奢系列]`（弱证据，如实登记：夹具层无分类域复位/准备动作，且与 CT-002「建同一个分类」自动串行）+ 机器计分型前置断言；`user_inputs` / `expectations` / `data_checks` 原第 1 条 / `skip_reason` / `traces` 一字未动、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`category_manage` 的写 action `delete` 已删除（工具收窄为只读 `{tree}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `[interact(confirm), category_manage(action=delete)]` 改判为 `direct_reply`（如实说明 + 引导去后台商品分类页面：删除**没有存活的只读路径**），`must_succeed[category_manage(action=delete)]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）；`data_checks` 的写路径断言（「二次确认后才执行删除」+ 写面前置）改判为只读/如实说明口径（原第 1 条文本已并入新第 1 条保留为历史）。 ｜ tags: delete, destructive, confirm
 
-## 对话边界域（45 case）
+## 对话边界域（46 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -2180,6 +2180,20 @@
 跳过: [backend-contract] 纯配置解析（dict → 文案），**零 LLM**：判定在 `app.agents.channel_config` 的纯函数层（由 ai-agent-service pytest 执行），不进 agent-eval 冒烟
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新，`DEFAULT_BOT_NAME` 随改）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的渠道欢迎语断言，**未新增 / 未放宽**（先例 = AG-007 / issue #5951）。 ｜ tags: chat, channel, greeting, tenant-config
+
+### CH-047. 页面上下文注入信封不得落库（切回会话时不得把内部提示当用户消息上屏） 🔵
+```
+你: 商家在**生产页**（/production）问「我想看下当前的生产风险」⇒ 黄金策照常回答；**切走会话再切回来**，用户气泡里必须只有「我想看下当前的生产风险」，不得出现「黄金策正在用户当前页面上：/production…」这类内部提示
+期望: direct_reply
+数据: **落库的是用户原话**：带 `page_context` 发一轮（登记 route）⇒ `session_memory.save_message` 收到的 `role="user"` 消息 `content` == 用户原话（不含信封）。执行点 = backend/ai-agent-service/tests/test_page_context_persistence.py 的 `TestEnvelopeNeverPersisted::test_plain_chat_persists_user_question_not_envelope`。
+数据: **信封只进本轮 LLM 文本**（功能不退化）：入口把「LLM 文本（含信封）」与「落库文本（原话）」**分开**递交。执行点 = 同 class 的 `test_entry_forwards_both_texts`。
+数据: **旧行回放归一**：库里已含信封的历史行（登记 route 形态 / 未登记页面的常量降级形态）经 `GET /history/{session_id}` 与 `_convert_history_to_agent_format` 读出后只剩问题；内部文档路径不止屏。执行点 = 同文件 `TestReadBackNormalisation::test_history_endpoint_strips_legacy_envelope` / `test_agent_history_strips_legacy_envelope`。
+数据: **类级往返（渲染 ⇄ 剥离）**：登记表**现取**的每条 route（含/不含实体 id）+ 降级形态，`strip(render(问题)) == 问题` —— 渲染形态改了而剥离没跟上 ⇒ 当场红。执行点 = 同文件 `test_strip_is_inverse_of_render_for_every_route`。
+数据: **负控：不吞用户内容**：以同样句子开头但形态不完整（缺尾部提示 / 不是开头）⇒ 原样返回。执行点 = 同文件 `test_strip_keeps_user_text_that_only_looks_like_envelope`。
+前置: 前置 = `app.context.page_registry.render_page_context` 与 `_handle_page_ctx_request` 可导入；`PAGE_REGISTRY` 非空（空登记表 ⇒ 类级往返判据自证失败并红）
+跳过: [backend-contract] 判据全部是**入口级 + 纯函数**（零 LLM、零网络）：落库文本、历史回放、剥离往返，由 backend/ai-agent-service/tests/test_page_context_persistence.py 执行；「黄金策回答质量」属行为面，按用户裁定（#4262 / #4974）手动集中跑一次，本轮不自动派发真实 LLM 评测
+```
+溯源: 2026-10-17 新增（issue #7112）：页面上下文信封此前被当作用户消息落库 ⇒ 切回会话时整段内部提示上屏（并污染会话标题与记忆抽取）。修复 = 写侧分离（信封只进本轮 LLM 文本）+ 读侧归一（历史回放剥离，不改写历史数据）。 ｜ tags: chat, page-context, persistence, display-integrity
 
 ## 跨域（3 case）
 
@@ -9740,7 +9754,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（112 case）
+## 前端 UI 域（113 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -11363,6 +11377,23 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-10-17 新增（用户逐字裁定，见 user_inputs）。取号 = `python3 scripts/next_case_id.py ui` 现取 main 最大 + 1 = UI-112。红证：把 `dispatchErrorText` 与 `extractApiErrorMessage` 换回 `git show origin/main:<path>` 的旧实现 ⇒ 行为面用例红（`extractApiErrorMessage` 返回 `Request failed with status code 422`）；把任一 `toast.error(extractApiErrorMessage(...))` 改回 `e instanceof Error ? e.message : 'X失败'` ⇒ 形态面用例具名报出该文件。 ｜ tags: ui, copy, error-message
 
+### UI-115. **卖布单在订单详情的「生成作业单」出口**：发货前是否需要作业由读面给出（`needs_work` / `work_order_kind`），详情空态/生成按钮、发货页守卫、详情发货入口三处都用它（issue #7079 第 5 包） 🔵
+```
+你: 卖布单（按米卖布）在订单详情里为什么没有生成作业单的按钮？空态还写着「无加工项订单无需加工环节」，可它明明要先裁剪打包报工。
+期望: direct_reply
+数据: 🔴 **判据 1（会红，前端可见面）**：卖布单（`work_order_kind = outbound`、`processingItems` 为空）且无作业单 ⇒ 订单详情「作业单」区块必须出现**「生成出库作业单」**按钮 + 按型说明（按钮文案取 `ORDER_KIND_LABELS`，不新造词），且屏上**不出现**机器键 `outbound` / `work_order_kind`。执行点 = `frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx`（`UI-113 判据 1`）。**红证**：把 `canGenerate` 退回 `notFound && hasProcessing && …`（旧形态）⇒ 红。
+数据: 🔴 **判据 2（会红，不实文案）**：空态文案**不得**再出现「无加工项订单无需加工环节」——它对卖布单**不实**（卖布单正需要裁剪/打包作业）。需要作业但当前状态还不能生成 ⇒ 显示按型的**可行动**说明（「该订单需要作业单（出库作业单），当前状态还不能生成」+ 下一步是什么）；无需要报工的作业 ⇒ 「该订单无需作业单（没有加工项，也不是卖布单）」。执行点 = 同文件 `UI-113 判据 3/4`。**红证**：把空态改回那句旧文案 ⇒ 判据 3 红。
+数据: 🔴 **判据 3（会红，发货页前置守卫）**：卖布单在 `/orders/{id}/ship` 必须被**前置阻断**（不渲染发货表单「确认发货 / 确认物流」）+ 可行动出口（「返回订单详情」）+ 按型引导句（「该订单是卖布单：先完成出库作业单的裁剪与打包报工，再发货」）；作业单已完成 ⇒ 放行；**无作业**的普通单（`work_order_kind` 缺键）⇒ 不查作业单、直接渲染表单（不许误拦）。执行点 = `frontend/admin-web/tests/unit/components/ShipOrderGuard.test.tsx`（`UI-113 判据 1~4`）。**红证**：把守卫退回 `order.processingItems?.length > 0` ⇒ 卖布单那 3 条红。
+数据: 🔴 **判据 4（会红，详情页发货入口）**：订单详情的发货入口对卖布单同样有前置提示（按型引导句），作业单已完成才出可点的「发货」。执行点 = `frontend/admin-web/tests/unit/components/OrderDetailShipGuard.test.tsx`（`UI-113 判据 5~7`）。**红证**：退回 `processingItems` 单侧判据 ⇒ 卖布单直接渲染「发货」按钮 ⇒ 红。
+数据: 🔴 **判据 5（会红，读面同源）**：`OrderShipGuard.requiredOrderKind` 与 `needsWork` **必须同源**（有型 ⇔ 需要作业），且逐值：全卖布行 ⇒ `outbound` / 含加工项或混合 ⇒ `processing` / 无作业 ⇒ `null`；卖布行以 JSON **字符串** 形态出现时仍判出库。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/OrderShipGuardTest.java`（`requiredOrderKind*` 6 条）。**红证**：让 `hasFabricSaleLine` 恒假 / 按 `processingItems` 单侧判 ⇒ 红。
+数据: 🔴 **判据 6（会红，读面接线）**：`OrderService.convertToDetailResponse` 必须真的调用 `OrderShipGuard.requiredOrderKind` 并把结果落到响应（`setNeedsWork` / `setWorkOrderKind`），DTO 上两个键必须是显式 `@JsonProperty`（snake_case 冻结键）。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/OrderDetailWorkSignalReadFaceTest.java`（含判别力自证：判据本体不接线 / 结果不落响应 / 摘掉 `@JsonProperty` / 方法体取不到，四种坏形态各自判红；只往注释里加字面量 ⇒ 一条都不红）。**红证**：把 `requiredOrderKind(` 换成 `hasProcessingItems(` ⇒ 红。
+数据: 📌 **为什么这是缺陷不是新需求**：卖布单生成作业单的**能力早就有**（`ProcessingOrderService.prepare` 的门是 `snapshot.isEmpty()`，而 `buildSnapshot` 对 `saleForm=布料` 的行使**保留**），派单池与 AI 工具两条出口都通；断的只是**读面没把「要不要作业」交给前端** ⇒ 商家在订单详情看不到出口，而刚被发货守卫拦下时收到的却正是「须先完成出库作业单的裁剪与打包报工」——两个面互相矛盾。
+数据: 📌 **边界（照实登记）**：本用例**不判**「作业单该由谁生成」（派单池 / AI 工具 / 详情按钮三条路都合法）；也**不判**「卖布单该不该走作业」（那是 issue #7079 ②/③ 的产品裁定，已定）；`order_kind` 的三源词表（后端常量 / V159 的 CHECK / 前端联合类型）本包**未动**。
+前置: 前置 = 四样都在仓里可读：① 判据本体 `backend/admin-api/src/main/java/com/migao/admin/service/OrderShipGuard.java`（`needsWork` = 含加工项 **或** 有卖布行；`requiredOrderKind` = 该判据的读面形态）；② 读面键 `backend/admin-api/src/main/java/com/migao/admin/dto/OrderDetailResponse.java` 的 `@JsonProperty("needs_work")` / `@JsonProperty("work_order_kind")`；③ 前端唯一读点 `frontend/admin-web/src/lib/processing-order.ts` 的 `workOrderKindOf`；④ 三处消费面组件（`ProcessingOrderBlock` / `ship/ShipOrder` / `OrderDetail`）。**前置不成立时不许读成通过**：接线判据取不到 `convertToDetailResponse` 方法体 ⇒ fail-closed 判红（不许读成「没有违规」）。
+跳过: [backend-contract] 前端可见面判据（vitest 渲染断言）+ 后端行为/接线判据（JUnit）；零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-17 新增（issue #7079 的第 5 包）。**发现路径** = 集成复核 #7079 的「可行动出口」时发现三条路只有两条通：订单详情「作业单」区块的门是 `canGenerate = notFound && hasProcessing && …`（`hasProcessing` 只覆盖「含加工项」）⇒ 卖布单没有生成按钮、空态还写着对卖布单**不实**的「无加工项订单无需加工环节」；同一单侧信号还导致发货页守卫**完全不拦**卖布单、详情发货入口无前置提示。用例号 = `NCI_MAIN_REF=HEAD python3 scripts/next_case_id.py UI` ⇒ 该工具报 `UI-113`，但 `UI-113` / `UI-114` 已被本单在飞分支 `test/20261017-work-order-kind-guard`（未开 PR ⇒ 工具看不见）占用 ⇒ **按内容核对后取 UI-115**（main 上最大 `UI-111`）。**报告型说明**：承载体 = 前端单测（vitest，`admin-web 单测` 腿）+ 后端单测（JUnit，`admin-api` 腿）。 ｜ tags: ui, processing-order, fabric-sale, read-face-signal, ship-guard, dead-end-exit, red-proof
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -11392,15 +11423,15 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：780（活跃 133，跳过 647）
-- tier 分布：smoke 12 / normal 721 / adversarial 32
+- 用例总数：782（活跃 133，跳过 649）
+- tier 分布：smoke 12 / normal 723 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
 - 登录认证域：12
 - B 端小程序域：47
 - 分类域：3
-- 对话边界域：45
+- 对话边界域：46
 - 跨域：3
 - 客户域：12
 - 数据域：24
@@ -11418,7 +11449,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：112
+- 前端 UI 域：113
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -11444,6 +11475,7 @@
 - CH-031: C 端交互组件历史回放透传—— getSessionMessages 映射透传 interactive/interactive_answered，刷新/切会话后已答卡片只读呈现而非消失
 - CH-032: C 端交互组件流式门控 + XML 伪代码兜底剥离—— 流式期间交互组件隐藏（防闪烁/防误点），历史残留 <interact>/```tool_call 伪代码块不展示
 - CH-046: 渠道欢迎语解析（元元）：四渠道默认文案 + 租户 botName 优先 + {bot_name} 占位符
+- CH-047: 页面上下文注入信封不得落库（切回会话时不得把内部提示当用户消息上屏）
 - DA-008: 智能每日经营简报：企业开关熔断（关闭=不生成+菜单隐藏，issue #3468）
 - DA-009: 智能每日经营简报：数字回填校验（LLM 编造即丢弃，issue #3468）
 - DA-010: 智能每日经营简报：PII 不进 prompt + RLS 隔离（issue #3468）
@@ -11697,4 +11729,5 @@
 - UI-089: 库存明细页的「批次余量」视图（/stock-ledger）：每卷剩余米数可见 + 不重算（见证批次）+ 未选商品不拉全量 + 两本账不串
 - UI-110: **「商家后台页面头只有一个来源」的类级元守卫**：射程内凡手写 `<h1>` 且未用共享原语 `PageHeader` 的文件，必须恰好等于「冻结快照 ∪ 逐条给出理由的有意不迁」；快照只许缩短、有意不迁不许悄悄涨价（issue #7065）
 - UI-111: **「内层白卡必须有 shadow-card」的类级元守卫**：射程内凡「白底 + 圆角 + 中性边框」的内层白卡容器，必须带 `shadow-card`，否则「一圈边框套一圈边框」（issue #7069，承接 #7007 根因②）
+- UI-115: **卖布单在订单详情的「生成作业单」出口**：发货前是否需要作业由读面给出（`needs_work` / `work_order_kind`），详情空态/生成按钮、发货页守卫、详情发货入口三处都用它（issue #7079 第 5 包）
 

@@ -20,7 +20,10 @@ import { operationDisplayName } from '@/lib/operation-display'
 import {
   ORDER_KIND_LABELS,
   PROCESSING_ORDER_STATUS_LABELS as STATUS_TEXT,
+  WORK_ORDER_NEEDED_COPY,
   orderKindOf,
+  workOrderKindOf,
+  type WorkOrderKind,
 } from '@/lib/processing-order'
 // 米数展示口径（0.1 米粒度、去尾随 .0）—— 与库存/批次账同一份工具
 import { formatStockQuantity } from '@/lib/stock-quantity'
@@ -43,8 +46,19 @@ interface Props {
   onPrintProcessing?: () => void
   orderId: string
   orderStatus: string
-  /** 订单是否含加工项（由父组件从明细判断） */
-  hasProcessing: boolean
+  /**
+   * **没有作业单时该生成哪一型**（订单详情读面键 `work_order_kind`，issue #7079 第 5 包）。
+   *
+   * 🔴 它同时就是「这单发货前**要不要**作业」的判据：`null` = 不要（订单直发，不渲染生成入口）。
+   * **不许**改用 `order.processingItems?.length` 自己推（那只覆盖「含加工项」那一半 ⇒
+   * 卖布单没有生成出口）。值由服务端 `OrderShipGuard.requiredOrderKind` 给出（与发货守卫同一份判据）。
+   */
+  workOrderKind: WorkOrderKind
+  /**
+   * @deprecated issue #7079 第 5 包起**不再消费**（只覆盖「含加工项」的单侧信号，卖布单被漏掉）；
+   * 判据一律走 {@link Props.workOrderKind}。保留字段只为兼容存量调用点，新代码不要传。
+   */
+  hasProcessing?: boolean
   /**
    * 订单明细（订单详情页已有数据）：生成加工单时据此取**逐面料行的派工候选**
    * （V116 / issue #5145 阶段 1）。缺省/空 ⇒ 该单无从指派批次，直接按原路径生成。
@@ -248,7 +262,7 @@ function toPlainText(po: ProcessingOrder, operations?: ProductionPosition[] | nu
 export default function ProcessingOrderBlock({
   orderId,
   orderStatus,
-  hasProcessing,
+  workOrderKind,
   items,
   operations,
   onStatusChange,
@@ -301,7 +315,10 @@ export default function ProcessingOrderBlock({
   // 出库作业单**没有加工方、没有交期** ⇒ 那两处写面与展示整块不渲染；也**不**走「发加工」。
   const kind = po ? orderKindOf(po) : 'processing'
   const outbound = kind === 'outbound'
-  const canGenerate = notFound && hasProcessing && (orderStatus === 'confirmed' || orderStatus === 'producing')
+  // 「要不要作业」+「要哪一型」都取**订单详情读面**的同一个信号（issue #7079 第 5 包）——
+  // 卖布单行上没有加工项，只按 processingItems 推会判「不需要」⇒ 没有生成出口。
+  const neededKind = workOrderKindOf({ workOrderKind })
+  const canGenerate = notFound && neededKind !== null && (orderStatus === 'confirmed' || orderStatus === 'producing')
   const canAct = po && !['completed', 'cancelled'].includes(po.status)
   // 工序清单按 `order_item_id` 索引一次（issue #6901；与洗水码/批号同一把钥匙）
   const operationsIndex = operationsByItem(operations)
@@ -479,19 +496,36 @@ export default function ProcessingOrderBlock({
 
       {loading && <div className="py-4 text-sm text-neutral-400">加载中…</div>}
 
-      {!loading && canGenerate && (
+      {!loading && canGenerate && neededKind && (
         <div className="mt-3 rounded-lg border border-primary-100 bg-primary-50/50 p-4">
-          <p className="text-sm text-neutral-600">该订单含加工项，可生成加工单发给加工方（订单将进入「生产中」）。</p>
+          <p className="text-sm text-neutral-600">{WORK_ORDER_NEEDED_COPY[neededKind].generateIntro}</p>
+          {/* 按钮文案 = 「生成」+ 该型的**中文业务名**（`ORDER_KIND_LABELS`，不新造词）：
+              卖布单出「生成出库作业单」、成品帘单出「生成加工单」。 */}
           <Button className="mt-3" size="sm" disabled={busy} onClick={handleGenerate}>
-            {busy ? '生成中…' : '生成加工单'}
+            {busy ? '生成中…' : `生成${ORDER_KIND_LABELS[neededKind]}`}
           </Button>
           {/* 对话框开着时失败提示在对话框里（两处只会有一处可见，避免同一句话出现两遍） */}
           {error && !assign && <div className="mt-2">{errorBlock}</div>}
         </div>
       )}
 
+      {/* 空态（issue #7079 第 5 包）：文案**按型分岔** —— 旧文案「无加工项订单无需加工环节」对
+          卖布单**不实**（卖布单正需要裁剪/打包作业，且它必须先在订单详情拿到生成入口）。 */}
       {!loading && notFound && !canGenerate && (
-        <p className="mt-2 text-sm text-neutral-400">该订单暂无作业单（无加工项订单无需加工环节）。</p>
+        neededKind ? (
+          <div data-testid="processing-order-generate-not-yet" className="mt-2 text-sm text-neutral-500">
+            <p>该订单需要作业单（{ORDER_KIND_LABELS[neededKind]}），当前状态还不能生成。</p>
+            <p className="mt-1">
+              请先
+              {orderStatus === 'pending_shipment'
+                ? '在生产待办里生成作业单'
+                : '确认订单（订单进入「已确认」后即可生成）'}
+              ，再回来生成{ORDER_KIND_LABELS[neededKind]}。
+            </p>
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-neutral-400">该订单无需作业单（没有加工项，也不是卖布单）。</p>
+        )
       )}
 
       {/* 批次指派（issue #5145 阶段 1）：系统按 FIFO 给建议值，文员可改；不选的行不指派 */}
