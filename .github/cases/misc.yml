@@ -4333,3 +4333,38 @@ cases:
         - pr-check.yml
         - c-end-h5-publish.yml
       verifies: []
+
+  - id: MC-114
+    legacy_id: ""
+    title: "开租默认加工项目录的三源收敛元守卫（issue #7148）：Java 种子目录 ⇄（建库脚本目录 − 活迁移撤出项 + 改名映射）双向对账、分类名单一来源、判别力在内存语料上自证"
+    domains:
+      - misc
+      - onboarding
+    tier: normal
+    tags:
+      - backend-contract
+      - onboarding
+      - required-initial-data
+      - class-level-guard
+      - red-proof
+    truths_ref: []
+    user_inputs:
+      - "以后有人往库里加 / 撤一个加工项目录项（或改它的工艺声明）时，不应该只有老租户跟着变 —— 新租户拿到的默认目录必须同批对齐，否则两边静默分叉、且没有任何东西会变红。"
+    expectations: []
+    data_checks:
+      - "**病（本守卫要挡的形态）**：issue #7148 的修法是用 Java 常量目录（ProcessingItemSeedService.CATALOG）给新租户播种，而库里的目录另有两条真值源（归档迁移 backend/admin-api/src/main/resources/db/migration-archive/V83__seed_processing_item_catalog.sql + 建库脚本 backend/admin-api/src/main/resources/db/init/schema.sql 的终态块）⇒ **第三份副本 = 第三个会漂移的真值源**：谁改了库里的目录（或新加一条撤出迁移），Java 那份不会跟着变，也不会有任何东西变红。"
+      - "**判据 1（主判据）**：Java 目录 ⇄（建库脚本目录 − 活迁移的撤出项 + 改名映射）逐条同值（名字 + craftHint）。撤出项从**迁移本身**读（V123 撤「接高」）、改名从 tests/unit_ci_workflows/_migration_renames.py 的 processing_item_renames() 读（V139「韩折」→「韩褶」）—— 判据里不另抄一份名单。判据 = tests/unit_ci_workflows/test_onboarding_processing_catalog_seed.py::test_java_catalog_converges_with_the_live_database_catalog。"
+      - "**判据 1b**：目录里名字不重复；**已撤出的项不许出现**（出现 = 复活一个商家不该勾到的项）。判据 = 同文件 test_java_catalog_has_no_duplicates_and_the_retired_item_is_gone。"
+      - "**判据 2+3（单一来源）**：默认加工分类名的字面量在 admin-api 主源码里**恰出现一次**（定义处 OnboardingInitialData.DEFAULT_PROCESSING_CATEGORY_NAME）、其值 = 建库脚本种下的那个分类名、且种子服务**引用常量**而不是再抄一份字面量。判据 = 同文件 test_category_name_is_single_sourced。"
+      - "**判据 4（判别力自证）**：六种坏形态在**内存语料**上各自判红（删一行 / 名字改一个字 / 改 craftHint / 目录清空 / 漏读撤出迁移 / 重复名字），并有一条对照读数（只改注释 ⇒ 解析一字不变）。判据 = 同文件 test_guard_has_discriminating_power_on_mutated_corpus。"
+      - "🔴 **覆盖边界（照实登记）**：① 判的是**数据面**（目录内容同不同值），不是「播种那段代码真的跑在真入驻链路里」—— 后者由 backend/admin-api/src/test/java/com/migao/admin/service/NewTenantOnboardingCategoryRealDbTest.java 与 ProcessingItemSeedServiceTest.java 承担；② 「清单里登记了这条必需初始数据、且入驻链路真的调了它」由既有元守卫 tests/unit_ci_workflows/test_onboarding_required_seed_guard.py（用例 MC-083）承担，本守卫不重复判它；③ 只裁**目录（名字 + 工艺声明）**；description / unit / 排位不在此面（文案改动不该红在这里）。"
+    precondition: "本用例是 [backend-contract] 纯静态元守卫用例：前置 = ① backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemSeedService.java（Java 种子目录）与同目录 OnboardingInitialData.java 在场；② backend/admin-api/src/main/resources/db/init/schema.sql（基线目录）与 db/migration/**（撤出 / 改名迁移）在场；③ tests/unit_ci_workflows/_migration_renames.py 与 test_processing_catalog_seed.py（既有解析器）可导入。前置由判据自身持有：文件缺失 / 目录解析出 0 条 / 撤出项集合为空 ⇒ 判据当场 fail-closed 判红（不会表现成「agent 不干活」）；agent-eval 栈不跑它"
+    skip_reason: "[backend-contract] 纯静态判据（零 LLM、零真库、零网络、零时钟；只读 Java/SQL 语料）由 tests/unit_ci_workflows/test_onboarding_processing_catalog_seed.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7148）。取号 MC-114：main 上 misc 域为 MC-001~MC-113（MC-084 已被 issue #6418 占用）⇒ 取 MC-114。本单 = 开租默认加工项目录的类级元守卫（Java 目录 ⇄ 库里存活目录双向对账，4 组判据 + 判别力自证）；实例判据与红证见用例 OB-007。⚠️ 未固化（照实登记）：见 data_checks 末条三条覆盖边界。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_onboarding_processing_catalog_seed.py"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingItemSeedServiceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

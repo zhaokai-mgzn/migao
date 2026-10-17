@@ -6717,6 +6717,25 @@ _CASE_MC_113 = EvalCase(
     precondition='前置 = 三样都在仓里可读：① `.github/workflows/*.yml`（真文件，用 `yaml.safe_load` 解析后**看结构**，不是 grep 文本 —— 本 workflow 的提示文本里就写着 `h5_freshness_guard.py`，同族 `FM-A11`）；② 台账 tests/unit_ci_workflows/h5_script_checkout_depth_ledger.json（缺 `_` 自述 / 缺顶层键 / `exemptions` 非对象 ⇒ 抛红）；③ 判据本体 tests/unit_ci_workflows/test_h5_freshness_needs_full_history.py。判据**零网络、零 git**（AST 自证只 import json/yaml/ast/copy/pathlib）—— CI 的 `ci workflow helper unit tests` job 本身是 `fetch-depth: 1`，绑 `origin/main` 会因错的原因变绿。',
 )
 
+# ── MC-114 [NORMAL] 开租默认加工项目录的三源收敛元守卫（issue #7148）：Java 种子目录 ⇄（建库脚本目录 − 活迁移撤出项 + 改名映射）双向对账、分类名单一来源、判别力在内存语料上自证（源: cases/misc.yml）──
+_CASE_MC_114 = EvalCase(
+    id='MC-114',
+    legacy_id='',
+    title='开租默认加工项目录的三源收敛元守卫（issue #7148）：Java 种子目录 ⇄（建库脚本目录 − 活迁移撤出项 + 改名映射）双向对账、分类名单一来源、判别力在内存语料上自证',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['以后有人往库里加 / 撤一个加工项目录项（或改它的工艺声明）时，不应该只有老租户跟着变 —— 新租户拿到的默认目录必须同批对齐，否则两边静默分叉、且没有任何东西会变红。'],
+    expectations=[],
+    data_checks=['**病（本守卫要挡的形态）**：issue #7148 的修法是用 Java 常量目录（ProcessingItemSeedService.CATALOG）给新租户播种，而库里的目录另有两条真值源（归档迁移 backend/admin-api/src/main/resources/db/migration-archive/V83__seed_processing_item_catalog.sql + 建库脚本 backend/admin-api/src/main/resources/db/init/schema.sql 的终态块）⇒ **第三份副本 = 第三个会漂移的真值源**：谁改了库里的目录（或新加一条撤出迁移），Java 那份不会跟着变，也不会有任何东西变红。', '**判据 1（主判据）**：Java 目录 ⇄（建库脚本目录 − 活迁移的撤出项 + 改名映射）逐条同值（名字 + craftHint）。撤出项从**迁移本身**读（V123 撤「接高」）、改名从 tests/unit_ci_workflows/_migration_renames.py 的 processing_item_renames() 读（V139「韩折」→「韩褶」）—— 判据里不另抄一份名单。判据 = tests/unit_ci_workflows/test_onboarding_processing_catalog_seed.py::test_java_catalog_converges_with_the_live_database_catalog。', '**判据 1b**：目录里名字不重复；**已撤出的项不许出现**（出现 = 复活一个商家不该勾到的项）。判据 = 同文件 test_java_catalog_has_no_duplicates_and_the_retired_item_is_gone。', '**判据 2+3（单一来源）**：默认加工分类名的字面量在 admin-api 主源码里**恰出现一次**（定义处 OnboardingInitialData.DEFAULT_PROCESSING_CATEGORY_NAME）、其值 = 建库脚本种下的那个分类名、且种子服务**引用常量**而不是再抄一份字面量。判据 = 同文件 test_category_name_is_single_sourced。', '**判据 4（判别力自证）**：六种坏形态在**内存语料**上各自判红（删一行 / 名字改一个字 / 改 craftHint / 目录清空 / 漏读撤出迁移 / 重复名字），并有一条对照读数（只改注释 ⇒ 解析一字不变）。判据 = 同文件 test_guard_has_discriminating_power_on_mutated_corpus。', '🔴 **覆盖边界（照实登记）**：① 判的是**数据面**（目录内容同不同值），不是「播种那段代码真的跑在真入驻链路里」—— 后者由 backend/admin-api/src/test/java/com/migao/admin/service/NewTenantOnboardingCategoryRealDbTest.java 与 ProcessingItemSeedServiceTest.java 承担；② 「清单里登记了这条必需初始数据、且入驻链路真的调了它」由既有元守卫 tests/unit_ci_workflows/test_onboarding_required_seed_guard.py（用例 MC-083）承担，本守卫不重复判它；③ 只裁**目录（名字 + 工艺声明）**；description / unit / 排位不在此面（文案改动不该红在这里）。'],
+    skip_reason='[backend-contract] 纯静态判据（零 LLM、零真库、零网络、零时钟；只读 Java/SQL 语料）由 tests/unit_ci_workflows/test_onboarding_processing_catalog_seed.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'onboarding', 'required-initial-data', 'class-level-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯静态元守卫用例：前置 = ① backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemSeedService.java（Java 种子目录）与同目录 OnboardingInitialData.java 在场；② backend/admin-api/src/main/resources/db/init/schema.sql（基线目录）与 db/migration/**（撤出 / 改名迁移）在场；③ tests/unit_ci_workflows/_migration_renames.py 与 test_processing_catalog_seed.py（既有解析器）可导入。前置由判据自身持有：文件缺失 / 目录解析出 0 条 / 撤出项集合为空 ⇒ 判据当场 fail-closed 判红（不会表现成「agent 不干活」）；agent-eval 栈不跑它',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -6825,6 +6844,25 @@ _CASE_OB_006 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     precondition='本用例是 [backend-contract] 纯后端契约用例：前置 = 真 PG 二进制（CI 由 admin-api-test job 的「Assert PostgreSQL binaries exist」保证，缺失即 job 失败）+ bootstrap 终态 schema（backend/admin-api/src/main/resources/db/init/schema.sql）；前置由测试自身持有（PgCluster.startOrAbort 缺 PG 时 CI 判红 / 本机显式 skip），不依赖共享夹具与远端环境 ⇒ 不会表现成「agent 不干活」；agent-eval 栈不跑它',
+)
+
+# ── OB-007 [NORMAL] 开租即种默认加工项目录 —— 新租户「加工项与分类」开箱即有（韩褶/打孔/定型…共 15 项）（源: cases/onboarding.yml）──
+_CASE_OB_007 = EvalCase(
+    id='OB-007',
+    legacy_id='',
+    title='开租即种默认加工项目录 —— 新租户「加工项与分类」开箱即有（韩褶/打孔/定型…共 15 项）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家入驻通过后第一次打开「生产配置 → 加工项与分类」时，他应该已经有行业常用的加工项（韩褶 / 打孔 / 定型…），可以直接选、也可以改；而不是从 0 项开始自己建。', '同一个租户若被重复开通 / 重试，不应该种出两份加工项目录；商家改过 / 删过的项也不应该被复活。'],
+    expectations=['direct_reply'],
+    data_checks=['**病（issue #7148 的形态）**：加工项目录的两条种子路径（backend/admin-api/src/main/resources/db/migration-archive/V83__seed_processing_item_catalog.sql 与 backend/admin-api/src/main/resources/db/init/schema.sql 的 V83 终态块）都是「对**当时**的租户循环」⇒ 迁移之后新入驻的租户 processing_categories / processing_items 都是 0 行（形态同 #4316 的工序库、#6295 的商品分类）—— 「生产配置 → 加工项与分类」页显示 0 项，下单页选不到任何加工项、加工费组合配不出来。', '**判据 1（真库主判据）**：空库真跑入驻链路 ⇒ 该租户 processing_items 恰 15 行存活项（= 建库脚本 16 项 − V123 撤出的「接高」）、全部挂在 OnboardingInitialData.DEFAULT_PROCESSING_CATEGORY_NAME（「加工费」）分类下（真外键 REFERENCES processing_categories(id)）、craft_hint 逐条照目录；再调播种 ⇒ 返回 0、行数不变。判据 = backend/admin-api/src/test/java/com/migao/admin/service/NewTenantOnboardingCategoryRealDbTest.java::onboardingSeedsProcessingCatalogOnRealDatabase。', '**判据 2（mock 面）**：空目录租户 ⇒ 种 1 个「加工费」分类 + 整份目录（字段逐条正确、tenantId / categoryId 正确）；已有目录 ⇒ 返回 0 且零写操作；已有同名分类 ⇒ 复用不重复建；countProcessingItems 对 null 归 0。判据 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingItemSeedServiceTest.java。', '**判据 3（注入式红证 · 双向）**：只把加工项目录那步摘掉（seedDefaultCatalog spy 成 no-op）、保留后置条件校验 ⇒ 入驻当场 fail-closed（ONBOARDING_REQUIRED_DATA_MISSING）—— 「目录漏种」从静默变成开租当场红。判据 = NewTenantOnboardingCategoryRealDbTest::neuteredProcessingCatalogSeedFailsOnboarding + backend/admin-api/src/test/java/com/migao/admin/service/RegistrationServiceTest.java::failsClosedWhenProcessingCatalogMissing。', '**判据 4（调用点具名断言 · mock 面）**：approveApplication 必须对新租户 id 调 seedDefaultCatalog（删掉那一行即红）—— 同 #4430 / #6295 的教训（调用点没有具名断言 ⇒ 删掉调用 CI 全绿）。判据 = RegistrationServiceTest::successSeedsDefaultProcessingCatalog。', '**类级固化（本用例的元守卫）**：Java 种子目录 ⇄（建库脚本目录 − 活迁移的撤出项 + 改名映射）**双向对账** —— 以后再加 / 撤一个目录项或改 craftHint 而漏改 Java 种子 ⇒ 当场判红；判别力在内存语料上自证（删行 / 改名 / 改工艺 / 清空 / 漏读撤出迁移各自判红，「只改注释」不红）。判据 = tests/unit_ci_workflows/test_onboarding_processing_catalog_seed.py（用例 MC-114）。另：本项已登记进 OnboardingInitialData.REQUIRED ⇒ 既有元守卫 tests/unit_ci_workflows/test_onboarding_required_seed_guard.py（用例 MC-083）自动按锚对账「漏种 / 未登记 / 后置条件接线」。', '🔴 **未固化 / 边界（照实登记）**：① **既有租户不自动补种**（本单只改入驻链路、不新增回填迁移：迁移链之后入驻且至今目录为空的存量租户仍为空）；② 「接高」**不种**（V123 已把它撤出目录，种下 = 复活一个商家不该勾到的项）；③ 目录项的 description / unit **逐字照既有租户**（与 V83 那批行同值），商家可读文案的进一步措辞打磨属另一面（见 #6492）；④ 目录**不落价**（R10 口径不变：价只在「加工费组合」上）。'],
+    skip_reason='[backend-contract] 由 admin-api 单测（真库 NewTenantOnboardingCategoryRealDbTest + mock ProcessingItemSeedServiceTest / RegistrationServiceTest）+ 静态元守卫（test_onboarding_processing_catalog_seed.py）验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['onboarding', 'required-initial-data', 'default-processing-catalog', 'idempotent', 'red-proof', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯后端契约用例：前置 = 真 PG 二进制（CI 由 admin-api-test job 的「Assert PostgreSQL binaries exist」保证，缺失即 job 失败）+ bootstrap 终态 schema（backend/admin-api/src/main/resources/db/init/schema.sql）+ 活迁移 backend/admin-api/src/main/resources/db/migration/V123__retire_join_height_processing_item.sql（撤出项的真值源）；前置由测试自身持有（PgCluster.startOrAbort 缺 PG 时 CI 判红 / 本机显式 skip），不依赖共享夹具与远端环境 ⇒ 不会表现成「agent 不干活」；agent-eval 栈不跑它',
 )
 
 # ── ON-001 [NORMAL] 本体 schema 加载与状态枚举校验（核心四对象 + 扩展三对象）（源: cases/ontology.yml）──
@@ -15126,12 +15164,14 @@ ALL_CASES = (
     _CASE_MC_111,
     _CASE_MC_112,
     _CASE_MC_113,
+    _CASE_MC_114,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
     _CASE_OB_004,
     _CASE_OB_005,
     _CASE_OB_006,
+    _CASE_OB_007,
     _CASE_ON_001,
     _CASE_ON_002,
     _CASE_ON_003,

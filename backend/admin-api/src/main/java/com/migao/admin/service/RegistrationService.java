@@ -93,6 +93,12 @@ public class RegistrationService {
      * `tests/unit_ci_workflows/test_onboarding_required_seed_guard.py` 判红。
      */
     private final ProductCategorySeedService productCategorySeedService;
+    /**
+     * 开租默认加工项目录（issue #7148）：加工项目录的两条历史种子路径（V83 迁移 / 建库脚本）
+     * 都只覆盖「当时的租户」⇒ 不种 ⇒ 新租户的「加工项与分类」是空的，
+     * 下单页选不到任何加工项、加工费组合配不出来。同属 {@link OnboardingInitialData#REQUIRED}。
+     */
+    private final ProcessingItemSeedService processingItemSeedService;
 
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -520,12 +526,17 @@ public class RegistrationService {
         //    落库失败就让开租整体回滚（宁可让申请人重试，也不要产出「开箱不可用」的租户）。
         productCategorySeedService.seedDefaultCategory(tenant.getId());
 
-        // ② 按行业套用生产种子模板（issue #4361 交付物 3；收口 #4316）
+        // ② 默认加工项目录（issue #7148）：不种 ⇒ 新租户开箱时「加工项与分类」是空的
+        //    （下单页选不到加工项、加工费组合配不出来）。同属「单行/整份、无合法不种分支」的硬约束
+        //    ⇒ 同样不吞异常（落库失败就让开租整体回滚）。
+        processingItemSeedService.seedDefaultCatalog(tenant.getId());
+
+        // ③ 按行业套用生产种子模板（issue #4361 交付物 3；收口 #4316）
         //    不做这件事的后果（#4316 取证）：种子只种 tenant_id = 1 ⇒ 新租户工序库/路线库为空
         //    ⇒ resolveRoute 两次都不命中 ⇒ 抛 ERR_ROUTING_NOT_FOUND（422）⇒ **一张加工单也生成不了**。
         applyProductionSeedTemplate(tenant);
 
-        // ③ 后置条件校验（fail-closed）：清单里 enforced 的项逐条现取校验，缺一 ⇒ 开租失败
+        // ④ 后置条件校验（fail-closed）：清单里 enforced 的项逐条现取校验，缺一 ⇒ 开租失败
         assertRequiredInitialData(tenant);
     }
 
@@ -539,12 +550,15 @@ public class RegistrationService {
      *
      * <p>副作用口径（有意）：本方法抛异常 ⇒ 已建的租户 / 管理员 / 角色权限一起回滚。
      * 这里与生产种子模板的「尽力而为、error 日志」口径**相反**是有意的 —— 那一条有合法的
-     * 「本行业没有模板」分支，而默认商品分类没有：缺了就是缺了，租户开箱不可用。</p>
+     * 「本行业没有模板」分支，而默认商品分类与默认加工项目录没有：缺了就是缺了，租户开箱不可用。</p>
      */
     private void assertRequiredInitialData(Tenant tenant) {
         List<String> missing = new ArrayList<>();
         if (productCategorySeedService.countCategories(tenant.getId()) == 0) {
             missing.add(OnboardingInitialData.PRODUCT_CATEGORY_KEY);
+        }
+        if (processingItemSeedService.countProcessingItems(tenant.getId()) == 0) {
+            missing.add(OnboardingInitialData.PROCESSING_CATALOG_KEY);
         }
         if (!missing.isEmpty()) {
             String message = "开通失败：新租户缺少必需初始数据 " + missing
