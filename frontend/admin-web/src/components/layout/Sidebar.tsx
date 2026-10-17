@@ -9,9 +9,15 @@ import { cn } from '@/lib/utils'
 import Logo from '@/components/ui/Logo'
 // #3002: 菜单配置单源化 —— menuGroups/standaloneItems 移至 @/config/menu，
 // 与岗位权限弹窗共用，保证「权限分配」展示的菜单与真实侧边栏一致
-// #5877 / 2026-10-06：`standaloneTopItems`（「商品管理」）是**一级项**，渲染在**所有分组之后**
-// （用户 2026-10-06 裁定：11 个大菜单项并列）；席位组不可见时**不跳到最前**，
-// 而是挂在「当前可见分组」的末尾（口径的唯一实现 = `splitGroupsAtTopItemSlot`）—— 一级项绝不跟着消失。
+// 🔴 2026-10-17（issue #7087）：一级项现有**三个席位**（语义见 `@/config/menu` 的三个 `standalone*` 数组）——
+//   · `standaloneHeadItems`（**最前席位**，本轮新增的「经营看板」）：渲染在**所有分组之前**，
+//     因此它也是**登录落点**（`landingPath()` = 第一个可见菜单项，issue #6758）；
+//   · `standaloneTopItems`（**尾席位**，「商品管理」「企业基础设置」）：渲染在
+//     `STANDALONE_TOP_AFTER_GROUP_KEY` 那个组之后（用户 2026-10-06 裁定：大菜单项并列）；
+//     席位组不可见时**不跳到最前**，而是挂在「当前可见分组」的末尾
+//     （口径的唯一实现 = `splitGroupsAtTopItemSlot`）—— 一级项绝不跟着消失；
+//   · `standaloneItems`（**尾部独立项**，「通知中心」）：渲染在所有分组之后。
+// 三个席位都**不进「常用（收藏）」**（一级项没有星标、已一屏可见）。
 import {
   menuGroups,
   standaloneHeadItems,

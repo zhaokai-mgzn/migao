@@ -158,8 +158,9 @@ public class MenuController {
         // 发货单（issue #5939）：**取既有码 order:list**（与「订单列表」节点、以及该页第一屏读端点
         // GET /api/admin/shipments 的 @RequirePermission 逐字同码）—— 不新造 `shipment:view`：
         // 新码今天没有任何岗位持有 ⇒ 节点对所有人不可见（#4203 同族坑）。
-        // ⚠️ 与「订单列表」节点**同码不同项**是**有意**的（同族先例：`dashboard:view` 同时挂
-        // 「经营看板」与「每日简报」）：码 = 「谁看得见」，两页本来就是同一批人在用。
+        // ⚠️ 与「订单列表」节点**同码不同项**是**有意**的（同族先例：`product:list` 同时挂
+        // 「商品管理」与「省料看板」/「库存明细」—— 码 = 「谁看得见」，几页本来就是同一批人在用）。
+        // （2026-10-17 issue #7087 前这里举的先例是「经营看板 + 每日简报」；后者菜单项已撤，换例。）
         MenuNode i2 = new MenuNode("order:list", "发货单");
         MenuNode prRemnants = new MenuNode("processing:manage", "余料台账");
         MenuNode prSaving = new MenuNode("product:list", "省料看板");   // #5699 P4：= 该页读码
@@ -269,9 +270,10 @@ public class MenuController {
     public static void annotateMobileTitles(List<MenuNode> tree, List<MobileSurfaces.Surface> surfaces) {
         Map<String, List<String>> byCode = mobileTitlesByCode(surfaces);
         // 🔴 issue #6781（修法 1）：一个权限码在树上有多个承载节点（#5699/#5291 的有意设计面，
-        // 如 workspace 组两个 dashboard:view、production-center 组三个 production:view）——
+        // 如 `production:view` 三处承载 = 生产看板 / 计件工资 / 企业基础设置）——
         // 标注**只落到该码在树序上的首个承载节点**。逐节点复制会同时踩两条 §31：
-        //   · P2 信息不重复：「经营看板 · 手机端：数据 / 每日简报 · 手机端：数据」同屏两条一模一样的标注；
+        //   · P2 信息不重复：「生产看板 · 手机端：计件工资报表、生产待办 / 计件工资 · 手机端：计件工资报表、
+        //     生产待办」同屏两条一模一样的标注；
         //   · P4 可据以行动：「企业基础设置 · 手机端：计件工资报表、生产待办」名实不符
         //     （勾它的真实意图是配置生产面，与手机端报表无关）。
         Set<String> annotatedCodes = new HashSet<>();

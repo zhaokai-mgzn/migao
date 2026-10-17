@@ -305,15 +305,12 @@
   },
   "menus": {
     "frontend": {
-      "商品管理": "product:list",
-      "工作台": null,
       "经营看板": "dashboard:view",
-      "每日简报": "dashboard:view",
       "客户服务": null,
       "在线接待": "agent:session",
-      "客户列表": "customer:view",
       "知识库": "knowledge:view",
       "售后工单": "after_sales:view",
+      "客户列表": "customer:view",
       "交易管理": null,
       "订单列表": "order:list",
       "财务对账": "finance:view",
@@ -323,19 +320,19 @@
       "计件工资": "production:view",
       "仓储与物料": null,
       "入库单": "inbound:view",
+      "库存明细": "product:list",
       "发货单": "order:list",
       "余料台账": "processing:manage",
       "省料看板": "product:list",
-      "库存明细": "product:list",
       "组织管理": null,
       "员工管理": "employee:list",
       "岗位权限": "system:view",
-      "通知中心": null,
-      "企业基础设置": "production:view"
+      "商品管理": "product:list",
+      "企业基础设置": "production:view",
+      "通知中心": null
     },
     "controller": {
       "经营看板": "dashboard:view",
-      "每日简报": "dashboard:view",
       "在线接待": "agent:session",
       "知识库": "knowledge:view",
       "商品管理": "product:list",
@@ -354,52 +351,39 @@
       "库存明细": "product:list",
       "员工管理": "employee:list",
       "岗位权限": "system:view",
-      "新增员工": "employee:create",
       "企业基础设置（经营域）": "system:manage",
+      "新增员工": "employee:create",
       "加工单操作": "processing:update",
       "入库单操作": "inbound:create"
     },
     "auth": {
-      "商品管理": "product:list",
       "经营看板": "dashboard:view",
-      "每日简报": "dashboard:view",
       "在线接待": "agent:session",
-      "客户列表": "customer:view",
       "知识库": "knowledge:view",
       "售后工单": "after_sales:view",
+      "客户列表": "customer:view",
       "订单列表": "order:list",
       "财务对账": "finance:view",
       "生产看板": "production:view",
       "智能派单": "processing:view",
       "计件工资": "production:view",
       "入库单": "inbound:view",
+      "库存明细": "product:list",
       "发货单": "order:list",
       "余料台账": "processing:manage",
       "省料看板": "product:list",
-      "库存明细": "product:list",
       "员工管理": "employee:list",
       "岗位权限": "system:view",
+      "商品管理": "product:list",
       "企业基础设置": "production:view"
     },
     "user": {}
   },
   "menu_nodes": [
     {
-      "key": "workspace",
-      "name": "工作台",
-      "path": null,
-      "code": null
-    },
-    {
       "key": "dashboard",
       "name": "经营看板",
       "path": "/dashboard",
-      "code": "dashboard:view"
-    },
-    {
-      "key": "briefing",
-      "name": "每日简报",
-      "path": "/briefing",
       "code": "dashboard:view"
     },
     {
@@ -675,18 +659,6 @@
         "agent:session": [
           "GET /api/admin/agent-sessions",
           "GET /api/admin/agent-sessions/{}"
-        ]
-      },
-      "visibility_rule": "all"
-    },
-    {
-      "key": "briefing",
-      "name": "每日简报",
-      "path": "/briefing",
-      "gate": "dashboard:view",
-      "units": {
-        "dashboard:view": [
-          "GET /api/admin/briefing/config"
         ]
       },
       "visibility_rule": "all"

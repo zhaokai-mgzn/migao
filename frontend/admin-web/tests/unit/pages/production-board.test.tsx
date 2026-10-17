@@ -248,8 +248,9 @@ describe('生产管理菜单入口（侧边栏）', () => {
 
     // 全站不再有指向 /processing-orders 的菜单项（旧入口收敛到 /production）——
     // 展开**全部**组后再查全站 href，避免「因为收起所以查不到」的恒真断言
+    // 🔴 2026-10-17（issue #7087）：「工作台」组**整组撤销** ⇒ 这里少一个组锚点
+    //（「经营看板」改由**最前席位**承载，它**不受展开态影响**，恒在 hrefs 里）。
     for (const key of [
-      'workspace',
       'customer-service',
       'trade-center',
       'production-center',
@@ -260,8 +261,9 @@ describe('生产管理菜单入口（侧边栏）', () => {
     }
     const hrefs = Array.from(document.querySelectorAll('a')).map((a) => a.getAttribute('href'))
     // 🔴 #6580：24 项 → 21 项（生产管理组 5 → 3；「参数总览」一级项随页合并撤销、
-    // 一级项席位改「企业基础设置」）⇒ 简报开关关时 = 20 项。
-    expect(hrefs).toHaveLength(20) // 简报开关关 ⇒ 20 项（21 - 每日简报；#5939/#6404/#6573 的历次 +1 见 menu-nav.test.ts）
+    // 一级项席位改「企业基础设置」）；🔴 #7087：「工作台」组撤销（经营看板 → 最前席位、
+    // 每日简报 → 删除）⇒ 20 项。
+    expect(hrefs).toHaveLength(20) // 20 项 = 最前席位 1 + 组内 16 + 尾席位 2 + 尾部独立项 1（见 menu-nav.test.ts）
     expect(hrefs).not.toContain('/processing-orders')
   })
 

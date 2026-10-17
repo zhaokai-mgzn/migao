@@ -142,6 +142,30 @@ export interface MenuGroup {
   children: MenuItem[]
 }
 
+// ⚠️ **声明位置 = 最前**（在 `menuGroups` 之前），与它的**渲染位**（所有分组之前）同序：
+//    menu.ts 的**声明顺序**是若干解析器（`parse_menu_ts_nodes` / rbac derive / 三源同构守卫的
+//    `_parse_frontend`）读「顶层导航顺序」的口径 ⇒ 声明在最前，才不会让「经营看板」在解析面
+//    落到所有组之后（那样三源同构与岗位矩阵都会假红）。渲染位另由 `Sidebar.tsx` / `flattenMenu`
+//    显式拼装（head → 各组 → 尾席位 → 尾部项），**不依赖本文件的声明先后**。
+
+/**
+ * **最前席位**的一级项（`standaloneHeadItems`）：渲染在**所有分组之前**。
+ *
+ * 用户 2026-10-17 逐字（issue #7087）：「**经营看板直接作为一级菜单，移除工作台**，这样用户一进来
+ * 就很直观的看到经营看板了」。席位为什么必须是「所有分组之前」而不是 `standaloneTopItems` 的尾席位：
+ * `lib/menu-nav.ts` 的 `landingPath()`（登录落点 = **第一个可见菜单项**，issue #6758）——
+ * 放尾席位 ⇒ 登录落点会变成首个分组的第一项（「在线接待」），与用户要的形态正好相反。
+ *
+ * 三源同批表达同一位置：本数组的第 1 项 ⇄ `MenuController.MENU_TREE` 顶层**首个**节点 ⇄
+ * `AuthService.buildMenusByPermissions` **首个**顶层 `menus.add`（判据 = 三源同构守卫的顶层布局序列）。
+ * 旧深链与路由守卫一字不动（`/dashboard`、`dashboard:view`）⇒ 纯信息架构调整，零授权 delta。
+ */
+export const standaloneHeadItems: MenuItem[] = [
+  // 经营看板（原「工作台」组的首项）：issue #5699（P4）节点码 = 该页第一屏读码 `dashboard:view`
+  //（5 个读端点与前端路由守卫同码）—— 「菜单看得见」与「点进去进得去」必须同一把尺子。
+  { key: 'dashboard', name: '经营看板', icon: 'BarChart3', path: '/dashboard', permissionCode: 'dashboard:view', keywords: ['jycb', 'kanban', '看板', '工作台'] },
+]
+
 // 带子级的菜单组（本轮 2026-10-17 改判：**五大组**；顺序即渲染顺序与三源比对顺序）
 export const menuGroups: MenuGroup[] = [
   // 🔴 2026-10-17（issue #7087，用户裁定）：「**工作台**」组**整组撤销** —— 原组内两项：
@@ -342,23 +366,6 @@ export const menuGroups: MenuGroup[] = [
 //     用户 localStorage 里残留的 `products` key 按既有「无效 key 静默丢弃」口径处理。
 //     判据：`frontend/admin-web/tests/unit/lib/menu-pinned.test.ts`。
 
-/**
- * **最前席位**的一级项（`standaloneHeadItems`）：渲染在**所有分组之前**。
- *
- * 用户 2026-10-17 逐字（issue #7087）：「**经营看板直接作为一级菜单，移除工作台**，这样用户一进来
- * 就很直观的看到经营看板了」。席位为什么必须是「所有分组之前」而不是 `standaloneTopItems` 的尾席位：
- * `lib/menu-nav.ts` 的 `landingPath()`（登录落点 = **第一个可见菜单项**，issue #6758）——
- * 放尾席位 ⇒ 登录落点会变成首个分组的第一项（「在线接待」），与用户要的形态正好相反。
- *
- * 三源同批表达同一位置：本数组的第 1 项 ⇄ `MenuController.MENU_TREE` 顶层**首个**节点 ⇄
- * `AuthService.buildMenusByPermissions` **首个**顶层 `menus.add`（判据 = 三源同构守卫的顶层布局序列）。
- * 旧深链与路由守卫一字不动（`/dashboard`、`dashboard:view`）⇒ 纯信息架构调整，零授权 delta。
- */
-export const standaloneHeadItems: MenuItem[] = [
-  // 经营看板（原「工作台」组的首项）：issue #5699（P4）节点码 = 该页第一屏读码 `dashboard:view`
-  //（5 个读端点与前端路由守卫同码）—— 「菜单看得见」与「点进去进得去」必须同一把尺子。
-  { key: 'dashboard', name: '经营看板', icon: 'BarChart3', path: '/dashboard', permissionCode: 'dashboard:view', keywords: ['jycb', 'kanban', '看板', '工作台'] },
-]
 
 /**
  * 一级项（`standaloneTopItems`）的**插入位**：渲染在**这个组之后**（用户 2026-10-06 裁定 = 最后一个组）。

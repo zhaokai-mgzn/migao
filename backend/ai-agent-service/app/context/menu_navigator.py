@@ -144,16 +144,21 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     MenuNode("inventory-center", "发货单", "/shipments", "order:list"),
     MenuNode("inventory-center", "余料台账", "/production/remnants", "processing:manage"),
     MenuNode("inventory-center", "省料看板", "/production/saving-board", "product:list"),
-    # 组织管理
+    # 组织管理（2026-10-17 issue #7087：本组实际成员 = 「员工管理」「岗位权限」两项）
+    # ⚠️ 组内**不再含**「企业基础设置」—— 它自 issue #6580 起已移出本组、改挂 `STANDALONE_GROUP`
+    # 的**尾席位**（`standaloneTopItems`，见下方独立项段），本注释此前误写成组内成员。
     MenuNode("org-center", "员工管理", "/employees", "employee:list"),
     MenuNode("org-center", "岗位权限", "/roles", "system:view"),
-    # 一级独立项（`standaloneTopItems` 的「商品管理」「企业基础设置」+ `standaloneItems` 的「通知中心」）
+    # 独立项 —— #7087 起为**三个席位**（键 `STANDALONE_GROUP` 只表示「不属于任何组」，不区分席位）：
+    #   · **最前席位** = `standaloneHeadItems`：经营看板（已上移为 `MENU_TREE` **首节点**）；
+    #   · **尾席位**   = `standaloneTopItems`：商品管理 → 企业基础设置（下面两条）；
+    #   · **尾部项**   = `standaloneItems`：通知中心（无权限码，全员可见）。
     # 🔴 2026-10-06（issue #6457）：「商品管理」排在**所有分组之后**（原「工作台组之后」）
     # 🔴 2026-10-09（issue #6580）：「企业基础信息」由 `org-center` 组**移出** → 尾部独立项、改名
     # 「企业基础设置」、排在「通知中心」**上面**（用户逐字：「放到通知中心的上面，并且和通知中心
     # 一起沉底」）；同日撤掉 #6573 新增的「参数总览」一级项（内容回到 `/settings` 页内的配置域，
     # 设计见 `docs/design/enterprise-settings-redesign.md`）
-    # ⇒ 顺序 =「6 组 20 项 → 商品管理 → 企业基础设置 → 通知中心」。
+    # ⇒ 顺序 =「5 组 16 项 → 商品管理 → 企业基础设置 → 通知中心」。
     MenuNode(STANDALONE_GROUP, "商品管理", "/products", "product:list"),
     # 企业基础设置（原「企业基础信息」）：路径不变（`/settings`）；**节点码改 `production:view`**
     #（issue #6580 用户裁定选 A：它是合并后生产配置面唯一入口，真实配置者 operator /

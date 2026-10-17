@@ -35,8 +35,9 @@
    - `menu.ts` 的项名必须是该组节点的**前缀子序列**（顺序也一致）；
    - 多出来的节点必须**逐条**命中下方 `ACTION_NODES` 白名单（白名单是**显式枚举**的，
      新增一个动作码节点会被判红 ⇒ 逼人来这里登记理由，而不是静默漂移）。
-4. **顶层布局序列**（#5877 新增，**含位置**）：`[(kind, key)]` —— 前端 / `MenuController` / `AuthService`
-   三者逐项相等（`MenuController` **有意不含**尾部「通知中心」，比对时从前端侧去掉尾部项）。
+4. **顶层布局序列**（#5877 新增，**含位置**；#7087 扩展到**三个席位**）：`[(kind, key)]` ——
+   前端 / `MenuController` / `AuthService` 三者逐项相等（`MenuController` **有意不含**尾部「通知中心」，
+   比对时从前端侧去掉尾部项）。
 
 ## 🔴 #5877：第 4 条判据治的是「对**位置**失明」
 
@@ -45,8 +46,10 @@
 —— 两者都只回答「一级项**是不是**顶层项」，不回答「它**排在第几个**」）⇒ 把 `AuthService` /
 `MenuController` 的一级项从「工作台组之后」挪回「所有分组之前」（或挪到任意两个组之间），
 **三源仍然全绿**。现在升级为**顶层布局序列**比对：
-前端从 `menuGroups` 取组 key 顺序、按 `STANDALONE_TOP_AFTER_GROUP_KEY`（用户 2026-10-01 裁定 = `workspace`）
-把一级项插到该组之后；`MenuController` 解析 `buildMenuTree()` **最终 `return List.of(...)`** 的顶层条目顺序；
+前端 = `standaloneHeadItems`（**最前席位**，渲染在**所有分组之前**，#7087）；
+再用 `STANDALONE_TOP_AFTER_GROUP_KEY` 把 `standaloneTopItems`（**尾席位**）插到该组之后；
+再拼 `standaloneItems`（尾部项）。三个数组的**位置语义各不相同**，见 `menu.ts` 文件头「三个席位」节。
+`MenuController` 解析 `buildMenuTree()` **最终 `return List.of(...)`** 的顶层条目顺序；
 `AuthService` 按**文档出现顺序**抓顶层 `menus.add(menuItem|menuGroup)`（加进同一个 list ⇒ 顺序即渲染顺序）。
 旧的 `_parse_auth_top_items` / `_parse_controller_top_items` 已被它**完全取代**（**删除**而不是留着当摆设）。
 
@@ -54,7 +57,9 @@
 
 对三份源码分别做**单点变异**后重跑判据，断言它**变红**（不是「一起红」）：
 改前端组名 / 删服务端一组 / 打乱 `AuthService` 项序 / 让任一源解析为空 / 往 `MenuController` 塞一个未登记动作节点 /
-**把 `MenuController` 的一级项挪回最前** / **改前端席位常量** / **把 `AuthService` 的一级项挪回最前或挪到组之间**。
+**把 `MenuController` 的一级项挪回最前** / **改前端尾席位常量** / **把 `AuthService` 的一级项挪回最前或挪到组之间** /
+（#7087）**把 `MenuController` 的最前席位项改名或从顶层删掉** / **把 `AuthService` 的最前席位项改名** /
+**把前端最前席位项挪进尾席位数组**（登录落点随之不再是「经营看板」—— 这条是 #7087 的红线）。
 
 ## 第四处菜单源：**已删除，且不得长回来**（issue #5236，见文件末尾 `test_no_fourth_menu_source`）
 
@@ -135,14 +140,20 @@ def _parse_frontend(src: str) -> list[tuple[str, str, list[str]]]:
     marks = [m.start() for m in re.finditer(r"children:\s*\[", src)]
     assert marks, "`menu.ts` 里找不到任何 `children: [`（解析失配 ⇒ 红，不得静默空跑）"
     # 末组 body 必须止于**第一个独立项数组**（否则独立项会被算进最后一个组）。
-    # 🔴 有**两个**独立项数组（`standaloneTopItems` = 一级项，#5877 起渲染在「工作台」组**之后**；
-    # `standaloneItems` = 尾部项，渲染在最后）⇒ 终点必须取**两者中出现更早的那个**：只取后者会让
-    # 末组（org-center）把 `standaloneTopItems` 的「商品管理」读成组内项（假红，实测已踩）。
+    # 🔴 有**三个**独立项数组，位置语义各不相同（见 `menu.ts` 文件头「三个席位」节）：
+    # `standaloneHeadItems` = **最前席位**（#7087 新增，渲染在**所有分组之前**）；
+    # `standaloneTopItems` = **尾席位**（#5877 起渲染在 `STANDALONE_TOP_AFTER_GROUP_KEY` 那个组**之后**）；
+    # `standaloneItems` = **尾部项**（渲染在最后）⇒ 末组 body 的终点必须取**三者中出现更早的那个**：
+    # 只取后两者会让末组（org-center）把「商品管理」读成组内项（假红，实测已踩）；
+    # 🔴 **漏掉 `HeadItems` 则末组 body 会一路吃到文件尾**（含 `standaloneHeadItems` 的「经营看板」）
+    # ⇒ 组内项数对不上 `path:` 计数 ⇒ 「解析失配」假红（#7087 实测）。
     tail_marks = [
         m.start()
-        for m in re.finditer(r"^export const standalone(Top)?Items", src, re.M)
+        for m in re.finditer(r"^export const standalone(?:Head|Top)?Items\b", src, re.M)
     ]
-    hard_end = tail_marks[0] if tail_marks else len(src)
+    # `HeadItems` 数组在 `menuGroups` **之前** ⇒ 只有它**位于首组锚点之后**时才算末组终点。
+    group_head = marks[0]
+    hard_end = next((m for m in tail_marks if m > group_head), len(src))
 
     groups: list[tuple[str, str, list[str]]] = []
     for i, start in enumerate(marks):
@@ -172,6 +183,23 @@ def _parse_frontend(src: str) -> list[tuple[str, str, list[str]]]:
     return groups
 
 
+#: `menu.ts` 一条菜单项对象的**统一取值形态**（`{ key: '…', name: '…', icon: '…', path: '…' }`）。
+#:
+#: 🔴 **三个独立项数组（`standaloneHeadItems` / `standaloneTopItems` / `standaloneItems`）共用它** ——
+#: 不再各写一份同形正则：判据面的元守卫（`test_guard_parsing_is_comment_aware.py`）按「按引号扫原文
+#: 取值的调用」计数，本文件在 `guard_parsing_allowlist.json` 登记 **3** 条且**只许缩短**（#7087 新增
+#: 最前席位时实测的硬约束）⇒ 可复用的取值形态一律**收口到这一处**。
+_ITEM_OBJECT_RE = r"\{\s*key:\s*'[^']+',\s*name:\s*'([^']+)',\s*icon:\s*'[^']+',\s*path:\s*'[^']+'"
+
+
+def _items_named(src: str, start: int = 0) -> list[str]:
+    """从 `src[start:]` 起取**菜单项名**（复用 `_ITEM_OBJECT_RE`，见其注释的解析债务口径）。
+
+    三个独立项数组的解析都走它 —— 同一取值形态**只有一处**（不为新增席位复制正则）。
+    """
+    return re.findall(_ITEM_OBJECT_RE, src[start:])
+
+
 def _parse_standalone(src: str) -> list[str]:
     """`menu.ts` → **一级独立菜单项**名（无子级、直接跳转的那几项，如「通知中心」）。
 
@@ -186,14 +214,38 @@ def _parse_standalone(src: str) -> list[str]:
     （前者是「一级项」，后者是「尾部独立项」，在服务端各自有不同表达：
     一级项 = `MenuController` 的顶层节点 + `AuthService` 的顶层 `menuItem`）。
     """
-    # 🔴 锚行首（见 `_parse_frontend` 的 `tail_marks` 注释）：不锚会命中 `standaloneTopItems`。
-    starts = [m.start() for m in re.finditer(r"^export const standaloneItems", src, re.M)]
-    assert starts, "`menu.ts` 里找不到 `export const standaloneItems`（解析失配 ⇒ 红，不得静默返回空表）"
-    names = re.findall(
-        r"\{\s*key:\s*'[^']+',\s*name:\s*'([^']+)',\s*icon:\s*'[^']+',\s*path:\s*'[^']+'",
-        src[starts[0]:],
-    )
+    # 🔴 锚行首 + 词尾边界（见 `_parse_frontend` 的 `tail_marks` 注释）：不锚 + 不加 `\b`
+    # 会同时命中 `standaloneTopItems` / `standaloneHeadItems`（三个数组不得混算）。
+    assert re.search(r"^export const standaloneItems\b", src, re.M), (
+        "`menu.ts` 里找不到 `export const standaloneItems`（解析失配 ⇒ 红，不得静默返回空表）")
+    names = _items_named(src,  # 🔴 复用统一取值形态：**不新增**带引号的取值调用（解析债务只许缩短）
+                         re.search(r"^export const standaloneItems\b", src, re.M).start())
     assert names, "`standaloneItems` 解析出 0 项（解析失配 ⇒ 红，独立项也是导航的一部分）"
+    return names
+
+
+def _parse_standalone_head(src: str) -> list[str]:
+    """`menu.ts` → **最前席位**一级项名（`standaloneHeadItems`，issue #7087 新增）。
+
+    席位语义：渲染在**所有分组之前** —— 用户 2026-10-17 裁定「经营看板直接作为一级菜单……
+    一进来就很直观的看到经营看板」（登录落点 = **第一个可见菜单项**，issue #6758）。
+    三源同批表达同一位置：本数组第 1 项 ⇄ `MenuController` 顶层**首个**节点 ⇄
+    `AuthService` **首个**顶层 `menuItem`（位置由 `_parse_frontend_layout` 的槽位承担）。
+
+    ⚠️ 本函数只回答「**有哪些**最前席位项」，**不回答它们排在第几**（同 `_parse_standalone_top`）。
+    """
+    m = re.search(r"^export const standaloneHeadItems\b", src, re.M)
+    assert m, (
+        "`menu.ts` 里找不到 `export const standaloneHeadItems`（解析失配 ⇒ 红）—— "
+        "最前席位（#7087：经营看板）靠它表达；若有意取消该席位，请同批改本判据（不许静默空跑）")
+    # 🔴 必须截到**本数组末尾**（下一个 `export const`）——照 `_parse_standalone_top` 的既定口径：
+    # 尾部 `standaloneItems` 也以 `export const ` 开头 ⇒ 切得到，不会误吃（#7087 实测）。
+    body = src[m.start():]
+    nxt = re.search(r"\nexport const ", body)
+    if nxt:
+        body = body[: nxt.start()]
+    names = _items_named(body, 0)
+    assert names, "`standaloneHeadItems` 解析出 0 项（解析失配 ⇒ 红，最前席位项也是导航的一部分）"
     return names
 
 
@@ -218,10 +270,7 @@ def _parse_standalone_top(src: str) -> list[str]:
     nxt = re.search(r"\nexport const ", body)
     if nxt:
         body = body[: nxt.start()]
-    names = re.findall(
-        r"\{\s*key:\s*'[^']+',\s*name:\s*'([^']+)',\s*icon:\s*'[^']+',\s*path:\s*'[^']+'",
-        body,
-    )
+    names = _items_named(body, 0)  # 🔴 与另两个独立项数组**共用**取值形态（见 `_ITEM_OBJECT_RE`）
     assert names, "`standaloneTopItems` 解析出 0 项（解析失配 ⇒ 红，一级项也是导航的一部分）"
     return names
 
@@ -306,31 +355,42 @@ def _parse_frontend_top_slot(src: str) -> str:
 
 
 def _parse_frontend_layout(src: str) -> list[tuple[str, str, str]]:
-    """`menu.ts` → 顶层**渲染布局序列** `[(kind, key, label)]`（**含一级项的位置**，#5877）。
+    """`menu.ts` → 顶层**渲染布局序列** `[(kind, key, label)]`（**含席位项的位次**，#5877 / #7087）。
 
     · `group` —— 组（key = 组 key，label = 组名）；
-    · `standalone-top` —— `standaloneTopItems`（一级项）；`standalone-bottom` —— `standaloneItems`（尾部项）。
+    · `standalone-head` —— `standaloneHeadItems`（**最前席位**，#7087：经营看板，渲染在**所有分组之前**）；
+    · `standalone-top` —— `standaloneTopItems`（**尾席位**）；`standalone-bottom` —— `standaloneItems`（尾部项）。
 
-    ⚠️ 独立项的 `key` 用**渲染序序号**占位（0,1,2…，一级项在前、尾部项在后）：
+    ⚠️ 独立项的 `key` 用**渲染序序号**占位（0,1,2…，按 head → top → bottom 的拼装顺序）：
     同一件事在两处服务端有**不同的 key 表达**（`MenuController` 用 `product:list`、`AuthService` 用
     `products`）⇒ 位置比对按序号，身份（名字）比对由 `label` 承担。比较时先用 `_norm_layout`
     把两侧的 kind 归一到 `group` / `item`，序号即可逐项对上。
 
     🔴 **回落口径必须与实现同源**（`frontend/admin-web/src/lib/menu-nav.ts` 的
     `splitGroupsAtTopItemSlot`）：席位组不在可见分组里（权限过滤掉 / 常量指错）⇒
-    一级项回到**所有分组之前**、**绝不跟着消失**。
+    尾席位项回到**所有分组之后**、**绝不跟着消失**。
     """
     groups = _parse_frontend(src)
     slot = _parse_frontend_top_slot(src)
+    head_names = _parse_standalone_head(src)
     top_names = _parse_standalone_top(src)
     bottom_names = _parse_standalone(src)
     cut = next((i for i, (k, _, _) in enumerate(groups) if k == slot), -1)
     head, tail = (groups[: cut + 1], groups[cut + 1:]) if cut >= 0 else ([], groups)
-    layout: list[tuple[str, str, str]] = [("group", k, n) for k, n, _ in head]
-    layout += [("standalone-top", str(i), name) for i, name in enumerate(top_names)]
+    # 🔴 #7087：最前席位在**所有分组之前** —— 拼装顺序 = head → 全部组 → 尾席位 → 尾部项
+    #（与 `Sidebar.tsx` / `flattenMenu` 的同一份拼装口径逐字对齐）。
+    # ⚠️ 序号必须**跨三个数组连续**（head 在前、top 居中、bottom 在末）：两侧的 `_norm_layout`
+    # 只归并 kind、**保留 key 字面量** ⇒ 各自从 0 重新数会让「位置逐项相等」错位（#7087 实测）。
+    layout: list[tuple[str, str, str]] = [
+        ("standalone-head", str(i), name) for i, name in enumerate(head_names)
+    ]
+    layout += [("group", k, n) for k, n, _ in head]
+    layout += [
+        ("standalone-top", str(len(head_names) + i), name) for i, name in enumerate(top_names)
+    ]
     layout += [("group", k, n) for k, n, _ in tail]
     layout += [
-        ("standalone-bottom", str(len(top_names) + i), name)
+        ("standalone-bottom", str(len(head_names) + len(top_names) + i), name)
         for i, name in enumerate(bottom_names)
     ]
     return layout
@@ -401,8 +461,9 @@ def _parse_auth_layout(src: str) -> list[tuple[str, str, str]]:
     ⇒ **文档出现顺序就是渲染顺序**（这正是「位置」在服务端的唯一表达）。
     kind ∈ {`group`, `item`}；`item` 的 key = 出现序号（与前端同一占位口径）。
 
-    ⚠️ **不按「在第几个组之前/之后」分类**：一级项自 #5877 起插在「工作台」组**之后**，
-    「组之前 / 组之后」这个判据已经**判不出**它是哪一种 —— 位置一律交给布局序列逐项比对
+    ⚠️ **不按「在第几个组之前/之后」分类**：席位项自 #5877 起先后插在「工作台」组之后／所有分组
+    之后，**#7087 起又多出**一个「所有分组**之前**」的最前席位（经营看板）⇒「组之前 / 组之后」
+    这个判据已经**判不出**它是哪一种 —— 位置一律交给布局序列逐项比对
     （分类一旦写错，就会把「位置漂移」误读成「换了一种独立项」而放过）。
     """
     layout: list[tuple[str, str, str]] = []
@@ -435,21 +496,25 @@ def _isomorphism_problems(front_src: str, ctrl_src: str, auth_src: str) -> list[
         front = _parse_frontend(front_src)
         ctrl = _parse_controller(ctrl_src)
         auth = _parse_auth(auth_src)
-        # 🔴 #5877：顶层**布局序列**（含一级项的位置）—— 取代旧的 `_parse_*_top_items`。
-        # 前端两个独立项数组（`standaloneTopItems` / `standaloneItems`）都由它内部解析
-        # （各自的 fail-closed 自证也在那边）⇒ 这里不再单独调用，免得出现「解析了但没人用」的死代码。
+        # 🔴 #5877（#7087 扩展）：顶层**布局序列**（含三个席位的位次）—— 取代旧的 `_parse_*_top_items`。
+        # 前端三个独立项数组（`standaloneHeadItems` / `standaloneTopItems` / `standaloneItems`）
+        # 都由它内部解析（各自的 fail-closed 自证也在那边）⇒ 这里不再单独调用，
+        # 免得出现「解析了但没人用」的死代码。
         front_layout_full = _parse_frontend_layout(front_src)
         ctrl_layout_full = _parse_controller_layout(ctrl_src)
         auth_layout_full = _parse_auth_layout(auth_src)
         front_layout = _norm_layout(front_layout_full)
         ctrl_layout = _norm_layout(ctrl_layout_full)
         auth_layout = _norm_layout(auth_layout_full)
-        # 身份（名字）层：一级项（前端 `standaloneTopItems`）↔ 服务端两处的**顶层叶子节点**
-        front_top = [lab for k, _, lab in front_layout_full if k == "standalone-top"]
-        front_all_items = [lab for k, _, lab in front_layout_full if k != "group"]
+        # 身份（名字）层：席位项（前端 `standaloneHeadItems` + `standaloneTopItems`）↔
+        # 服务端两处的**顶层叶子节点**（#7087：三源顶层叶子 = 最前席位 + 尾席位，位置由布局序列承担）。
+        front_top = [lab for k, _, lab in front_layout_full if k != "group"]
         ctrl_top = [lab for k, _, lab in ctrl_layout_full if k == "item"]
         auth_items = [lab for k, _, lab in auth_layout_full if k == "item"]
+        # 🔴 尾部项**不进** `MenuController`（该树每个节点都要有权限码；「通知中心」无码）
+        # ⇒ 从前端侧按**数量**截掉尾部项再与服务端顶层叶子比（#5877 的既有口径，原样保留）。
         n_bottom = sum(1 for k, _, _ in front_layout_full if k == "standalone-bottom")
+        front_srv_items = front_top[: len(front_top) - n_bottom] if n_bottom else front_top
     except AssertionError as exc:
         return [f"解析失配（判据无法空跑通过）：{exc}"]
 
@@ -468,49 +533,53 @@ def _isomorphism_problems(front_src: str, ctrl_src: str, auth_src: str) -> list[
             f"的「组 key + 组名 + 顺序」必须逐值相等\n"
             f"  前端 = {front_layer}\n  服务端 = {auth_layer}")
 
-    # ── 一级项**标签**层：前端 `standaloneTopItems` ↔ 服务端两处的顶层节点（身份，不含位置）──
-    if front_top != ctrl_top:
+    # ── 席位项**标签**层：前端（最前席位 + 尾席位）↔ 服务端两处的顶层节点（身份，不含位置）──
+    if front_srv_items != ctrl_top:
         problems.append(
-            f"**一级项层**不一致：`menu.ts` 的 `standaloneTopItems`（一级项，渲染在 "
-            f"`STANDALONE_TOP_AFTER_GROUP_KEY` 那个组之后）必须与 `MenuController` 的**顶层节点**"
-            f"（不属于任何组的 `MenuNode`）逐值相等（含顺序）\n"
-            f"  前端 = {front_top}\n  服务端顶层节点 = {ctrl_top}\n"
+            f"**席位项层**不一致：`menu.ts` 的 `standaloneHeadItems`（最前席位，渲染在**所有分组之前**，"
+            f"#7087）与 `standaloneTopItems`（尾席位，渲染在 `STANDALONE_TOP_AFTER_GROUP_KEY` 那个组之后）"
+            f"必须与 `MenuController` 的**顶层节点**（不属于任何组的 `MenuNode`）逐值相等（含顺序）\n"
+            f"  前端（最前 + 尾席位）= {front_srv_items}\n  服务端顶层节点 = {ctrl_top}\n"
             f"⇒ 漏跟会让「岗位权限页勾得动、侧边栏看不到」（或反过来）")
-    # 🔴 独立项**序列**（一级项 + 尾部项，按渲染/文档顺序）—— 取代旧的正则版 `auth_standalone_seq`
+    # 🔴 独立项**序列**（最前席位 + 尾席位 + 尾部项，按渲染/文档顺序）—— 取代旧的正则版 `auth_standalone_seq`
     #（旧判据只比「有哪些 / 什么顺序」，看不见位置；新判据 = 本层 + 下面的布局序列，严格更强）。
-    if front_all_items != auth_items:
+    if front_top != auth_items:
         problems.append(
-            f"**独立项层**不一致：`menu.ts` 的 `standaloneTopItems`（一级项）+ `standaloneItems`"
-            f"（尾部项）必须与 `AuthService.buildMenusByPermissions` 的**顶层 `menuItem`** "
-            f"逐值相等（含顺序）\n  前端（一级项 + 尾部项）= {front_all_items}\n  服务端顶层项 = {auth_items}")
+            f"**独立项层**不一致：`menu.ts` 的 `standaloneHeadItems`（最前席位）+ `standaloneTopItems`"
+            f"（尾席位）+ `standaloneItems`（尾部项）必须与 `AuthService.buildMenusByPermissions` 的"
+            f"**顶层 `menuItem`** 逐值相等（含顺序）\n"
+            f"  前端（最前席位 + 尾席位 + 尾部项）= {front_top}\n  服务端顶层项 = {auth_items}")
 
     # ── 顶层布局序列（#5877 新增）：**位置**也要三源一致 ──
     # 前端 = 组（按 `menuGroups` 顺序）+ 一级项（插在 `STANDALONE_TOP_AFTER_GROUP_KEY` 之后）+ 尾部项；
-    # `MenuController` **有意不含**尾部「通知中心」⇒ 拿掉前端侧的尾部项再比。
+    # ── 顶层布局序列（#5877 新增 / #7087 扩展）：**位置**也要三源一致 ──
+    # 前端 = 最前席位（`standaloneHeadItems`）+ 组（按 `menuGroups` 顺序）+ 尾席位（插在
+    # `STANDALONE_TOP_AFTER_GROUP_KEY` 之后）+ 尾部项；
     # `MenuController` **有意不含**尾部「通知中心」⇒ 从前端侧去掉尾部项的**条目数**再比。
     # ⚠️ 这里按**数量**截尾（不是按 kind 过滤）：若 ctrl 侧多出/少了一项，长度立刻不等 ⇒ 判红。
     front_head = front_layout[: len(front_layout) - n_bottom] if n_bottom else front_layout
     if front_head != ctrl_layout:
         problems.append(
-            f"**顶层布局序列**不一致：`menu.ts` 的渲染顺序（组 + **一级项插在哪个组之后**）必须与 "
-            f"`MenuController.MENU_TREE` 的顶层节点顺序逐项相等"
+            f"**顶层布局序列**不一致：`menu.ts` 的渲染顺序（**最前席位** + 组 + **尾席位插在哪个组之后**）"
+            f"必须与 `MenuController.MENU_TREE` 的顶层节点顺序逐项相等"
             f"（`MenuController` **有意不含**尾部「通知中心」—— 它无权限码、不进权限勾选树）\n"
             f"  前端（不含尾部项）= {front_head}\n  服务端顶层 = {ctrl_layout}\n"
-            f"⇒ 位置是用户 2026-10-01 的裁定（`STANDALONE_TOP_AFTER_GROUP_KEY`）；"
+            f"⇒ 位置是用户裁定：最前席位 = 2026-10-17（#7087「经营看板」置顶）、"
+            f"尾席位 = 2026-10-01（`STANDALONE_TOP_AFTER_GROUP_KEY`）；"
             f"挪位必须**三源同批**改（只改一处 = 「岗位权限页勾得动、侧边栏看不到」的同族坑）")
     if front_layout != auth_layout:
         problems.append(
             f"**顶层布局序列**不一致：`menu.ts` 与 `AuthService.buildMenusByPermissions`"
-            f"（登录下发，**文档顺序 = 渲染顺序**）必须逐项相等（含一级项的位置与尾部项）\n"
+            f"（登录下发，**文档顺序 = 渲染顺序**）必须逐项相等（含最前席位 / 尾席位的位次与尾部项）\n"
             f"  前端 = {front_layout}\n  服务端 = {auth_layout}\n"
-            f"⇒ 登录下发的菜单顺序与真实侧边栏对不上（含「一级项排在哪个组之后」）")
-    # 🔴 负控：一级项**不得**同时出现在某个组里（「升成一级项」= 从原组**移出**；
+            f"⇒ 登录下发的菜单顺序与真实侧边栏对不上（含「席位项排在哪个组之前/之后」）")
+    # 🔴 负控：席位项**不得**同时出现在某个组里（「升为一级项」= 从原组**移出**；
     # 两边都挂会让用户在同一屏看到两个同名入口，面包屑与高亮也随之歧义）。
     for (fk, fn, fitems) in front:
         for top_name in front_top:
             if top_name in fitems:
                 problems.append(
-                    f"一级项「{top_name}」同时出现在组「{fn}」(`{fk}`) 的成员里 ⇒ "
+                    f"席位项「{top_name}」同时出现在组「{fn}」(`{fk}`) 的成员里 ⇒ "
                     f"升为一级项必须**从原组移出**（否则同一入口渲染两次）")
 
     # ── 导航节点层：前端 ↔ AuthService（两处都是导航语义，无豁免）──
@@ -556,6 +625,81 @@ def test_menu_is_isomorphic_across_three_sources() -> None:
 
 
 #: 注入点 —— 每个对应上面一条判据的一种破坏形态（各有一条能**单独**变红的红证）
+def _inject_controller_head_renamed(src: str) -> str:
+    """把 `MenuController` 的**最前席位**项（经营看板）改个名 ⇒ 席位项层漂移（`menu.ts` 未跟）。
+
+    ⚠️ 锚点与另两条「一级项」注入**同为**「限定在 `return List.of(...)` 之内」的形态：
+    文件上方另有 `MenuNode d1 = new MenuNode("dashboard:view", "经营看板");` 的**声明**
+    （供 `test_agent_permission_parity.py` 的解析器用），只按内容替换会打在声明上 ⇒
+    **树文本一字未改** ⇒ 这条红证**静默失效**（#5877 / 2026-10-06 两次实测踩到的形态）。
+    """
+    anchor = "        return List.of(\n"
+    assert anchor in src, "注入锚点失配：`MenuController` 找不到 `return List.of(` 行"
+    head, tail = src.split(anchor, 1)
+    inner = 'new MenuNode("dashboard:view", "经营看板")'
+    assert inner in tail, (
+        "注入锚点失配：`MenuController` 顶层 List.of 里找不到**最前席位**「经营看板」条目"
+        "（#7087：它必须是顶层首个节点；缺了它 ⇒ 判据当场红 —— 那正是本注入要证明的判别力）")
+    tail = re.sub(re.escape(inner) + r",?", 'new MenuNode("dashboard:view", "经营看板X"),', tail, count=1)
+    return head + anchor + tail
+
+
+def _inject_controller_head_demoted_into_group(src: str) -> str:
+    """把 `MenuController` 的**最前席位**项从顶层 `List.of` 删掉（模拟「降回组内 / 漏跟」）⇒ 席位项层 + 布局序列双红。
+
+    这是 #7087 最可能真实发生的漂移形态：前端把「经营看板」升成最前席位一级项，而服务端漏跟
+    （节点仍挂在 `workspace` 组里、或干脆没升顶层）⇒ 旧判据（只看「有哪些顶层项」）可能放过，
+    新判据（席位项层含**位置**）当场红。
+    """
+    anchor = "        return List.of(\n"
+    assert anchor in src, "注入锚点失配：`MenuController` 找不到 `return List.of(` 行"
+    head, tail = src.split(anchor, 1)
+    inner = 'new MenuNode("dashboard:view", "经营看板")'
+    assert inner in tail, (
+        "注入锚点失配：`MenuController` 顶层 List.of 里找不到**最前席位**「经营看板」条目")
+    tail = re.sub(r"[ \t]*" + re.escape(inner) + r",?\n", "", tail, count=1)
+    return head + anchor + tail
+
+
+def _inject_auth_head_renamed(src: str) -> str:
+    """把 `AuthService` 的**最前席位** `add`（经营看板）改个名 ⇒ 席位项层漂移（登录下发面）。
+
+    ⚠️ 锚点必须落在**顶层 add 语句**上（`menus.add(menuItem("dashboard", "经营看板", "/dashboard"));`）——
+    只按「经营看板」四字替换会打在**上方注释**里（#7087 起该注释也逐字写着「经营看板」）⇒
+    判据读的代码一字未改 ⇒ 红证**静默失效**。
+    """
+    old = 'menus.add(menuItem("dashboard", "经营看板", "/dashboard"));'
+    assert old in src, (
+        "注入锚点失配：`AuthService` 里找不到**最前席位**的顶层 add（经营看板）—— "
+        "#7087：它必须是首个 `menus.add`")
+    return src.replace(old, 'menus.add(menuItem("dashboard", "经营看板X", "/dashboard"));', 1)
+
+
+def _inject_front_head_demoted_below_top(src: str) -> str:
+    """把前端**最前席位**数组（`standaloneHeadItems`）整段挪到**尾席位数组之后** ⇒ 布局序位漂移。
+
+    这是 #7087 的红线形态（登录落点 = **第一个可见菜单项**）：最前席位一旦不再排在最前，
+    落点就从「经营看板」变成首个可见项 ⇒ 用户逐字要的形态当场失效。
+    ⚠️ 只**换两个数组的声明先后**（两项都留着）：若改成「把整条删掉」，新判据会先在**解析自证**上
+    红（`_parse_standalone_head` 的「解析出 0 项」）⇒ 红得没有信息量、且验不到**位置**这一维。
+    """
+    head_arr = "export const standaloneHeadItems: MenuItem[] = [\n"
+    assert head_arr in src, "注入锚点失配：`menu.ts` 里找不到 `standaloneHeadItems` 数组声明"
+    h0 = src.index(head_arr)
+    h1 = src.index("\n]", h0) + len("\n]")
+    block = src[h0:h1]
+    m = re.search(r"^[ \t]*\{ key: 'dashboard',.*\n", block, re.M)
+    assert m, (
+        "注入锚点失配：`standaloneHeadItems` 里找不到「经营看板」条目（#7087 的最前席位项）")
+    entry = m.group(0)
+    shrunk = block[: m.start()] + block[m.end():]
+    rest = src[:h0] + shrunk + src[h1:]
+    slot = "export const standaloneTopItems: MenuItem[] = [\n"
+    assert slot in rest, "注入锚点失配：`menu.ts` 里找不到 `standaloneTopItems` 数组声明"
+    t0 = rest.index(slot)
+    return rest[:t0] + slot + entry + rest[t0 + len(slot):]
+
+
 def _inject_front_group_rename(src: str) -> str:
     return src.replace("name: '交易管理',", "name: '订单管理',", 1)
 
@@ -635,17 +779,19 @@ def _inject_controller_top_item_moved_to_front(src: str) -> str:
 
 
 def _inject_front_slot_constant(src: str) -> str:
-    """把一级项的**插入位常量**改到另一个组（末组 `org-center` → 首组 `workspace`）⇒ 前端布局与两处服务端都不一致。
+    """把**尾席位**的插入位常量改到另一个组（`org-center` → `customer-service`）⇒ 前端布局与两处服务端都不一致。
 
     位置是**三源共有的语义**：只改前端常量（服务端不动）就是真实会发生的漂移形态。
-    ⚠️ 锚点用**纯内容**（不含值），值会随用户裁定变化（2026-10-01 取 `workspace`、2026-10-06 改取 `org-center`）
-    ⇒ 把值写进 assert 会让每条「换个落位」的改动都先撞一次**注入失配**（红得没有信息量）。
+    ⚠️ 锚点用**纯内容**（不含值），值会随用户裁定变化（2026-10-01 取 `workspace`、2026-10-06 改取
+    `org-center`；2026-10-17 #7087 撤销 `workspace` 组 ⇒ 再拿它当注入值会写出一个**已不存在**的组 key、
+    注入就不再是「真实会发生的漂移」）⇒ 把值写进 assert 会让每条「换个落位」的改动先撞一次
+    **注入失配**（红得没有信息量）。这里取一个**真实存在但与现值不同**的组 key。
     """
     prefix = "export const STANDALONE_TOP_AFTER_GROUP_KEY = '"
     assert prefix in src, "注入锚点失配：`menu.ts` 里找不到 STANDALONE_TOP_AFTER_GROUP_KEY 声明"
     m = re.search(re.escape(prefix) + r"[^']+'", src)
     assert m, "注入锚点失配：STANDALONE_TOP_AFTER_GROUP_KEY 的取值形态不是 `<前缀>'<值>'`"
-    return src[: m.start()] + prefix + "workspace'" + src[m.end():]
+    return src[: m.start()] + prefix + "customer-service'" + src[m.end():]
 
 
 #: `AuthService` 里一级项的那一段（`if` + `add`）—— 三个位置注入共用同一段原文
@@ -688,12 +834,21 @@ _INJECTIONS: dict[str, tuple[str, object]] = {
     # ── #5877 新增：**位置**判据的红证（三条，分别打前端席位 / MenuController 位置 / AuthService 位置）──
     "⑦ MenuController 把一级项挪回**最前**（顶层布局序列漂移）": (
         "ctrl", _inject_controller_top_item_moved_to_front),
-    "⑧ menu.ts 改一级项的**插入位常量**（workspace → trade-center）": (
+    "⑧ menu.ts 改尾席位的**插入位常量**（org-center → customer-service）": (
         "front", _inject_front_slot_constant),
     "⑨ AuthService 把一级项挪回**最前**（顶层布局序列漂移）": (
         "auth", _inject_auth_top_item_moved_to_front),
     "⑩ AuthService 把一级项挪到**两个组之间**（客户服务之后）": (
         "auth", _inject_auth_top_item_moved_between_groups),
+    # ── #7087 新增：**最前席位**（`standaloneHeadItems`）的红证 —— 四条，三源 + 前端位置各一条 ──
+    "⑪ MenuController 把**最前席位**项改个名（席位项层漂移）": (
+        "ctrl", _inject_controller_head_renamed),
+    "⑫ MenuController 漏跟**最前席位**（顶层 List 里删掉经营看板）": (
+        "ctrl", _inject_controller_head_demoted_into_group),
+    "⑬ AuthService 把**最前席位**项改个名（登录下发面漂移）": (
+        "auth", _inject_auth_head_renamed),
+    "⑭ menu.ts 把**最前席位**整段挪到尾席位之后（位次漂移 ⇒ 登录落点不再是经营看板）": (
+        "front", _inject_front_head_demoted_below_top),
 }
 
 
