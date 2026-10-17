@@ -197,6 +197,20 @@
   **与第一版「行式紧凑」的区别（别混为一谈）**：那版控件**顺排在标签后面** ⇒ 左边界随标签长短抖；
   这版控件在**固定右列** ⇒ 左右边界都恒定（`distinctScalarX` 与 `distinctScalarRight` 各只有一类）。
   **教训**：「同不同行」不是判据，**控件有没有一条共用的对齐线**才是。
+  🔴 **四轮（2026-10-18，用户裁定 —— 现行形态，前三轮全部作废）**：用户逐字
+  「这里的风格为什么不和第二张图的风格对齐呢，**第二张图可以作为一个标准来参考**，后续都要形成
+  固定的设计风格和组件，我们一个产品不要出现多种设计和风格样式」。
+  ⇒ **标准 = 「阈值试算」那一块**（不是 Stripe / Linear 的属性行，也不是 #7124 的 `w-36` 定宽）：
+  浅底面板 `rounded-lg border border-neutral-200 bg-neutral-50/50 p-4` + 标题 `text-sm font-semibold`
+  + 说明 `text-xs text-neutral-500` + 栅格 `grid grid-cols-2 sm:grid-cols-N gap-3 mt-3`
+  + 字段 = **标签在上**（`text-xs`）+ **控件满列**（`w-full h-9 rounded-lg border border-neutral-300`）
+  + **单位做框内后缀** + 可选一句口径提示。
+  🔴 它**已抽成组件**（`frontend/admin-web/src/components/ui/FormPanel.tsx` 的 `FormPanel` / `FormGrid` /
+  `Field` / `FIELD_CONTROL`）：**新面不许自己拼字段版式**；类级守卫
+  `frontend/admin-web/tests/unit/design-system-form-fields.test.tsx` 扫 `src/**`（控件铬只许住在
+  `components/ui/**`、`ml-1 inline-block` 这种「标签顺排控件」只许缩短台账、三个受管面必须继续用原语）。
+  **教训（本仓最贵的一条）**：「好不好看」每轮都能被推翻，**「像不像同一个产品」能被机械判**——
+  所以标准必须落成**组件 + 守卫**，而不是再写一版截图清单。
 - 不改算料存储形态（仍为结构化列，D6′ 方案 A 的裁定不翻）。
 - 不做「一键修复缺配置」（改动钱的东西必须人确认）。
 - 本设计**不新增门禁、不改任何通过条件**；P1/P3/P6/P7 里只有 P1 有实例判据（§22.4 的边界照旧）。
@@ -207,3 +221,31 @@
   （从「独立页面 / tab」→「企业基础设置内的配置域」），**存储与判据部分不变**。
   ⚠️ 该文档 2026-10-08 刚被 #6573 改成「独立一级菜单项」—— 本设计是**同一天的第三次改判**，
   改判理由 = 用户 2026-10-09 的口径（见文首）。两处必须同批改准，不能留一个指向旧形态的真值源。
+
+## 9. 字段与区块的唯一形态（issue #7176，2026-10-18 用户裁定）
+
+**一句话**：配置面的一个字段 / 一个区块**只有一种写法**，写法住在
+`frontend/admin-web/src/components/ui/FormPanel.tsx`，页面只负责给数据。
+
+| 层 | 组件 | 形态（逐字 = 判据） |
+|---|---|---|
+| 区块 | `FormPanel` | `rounded-lg border border-neutral-200 bg-neutral-50/50 p-4` + `h4.text-sm.font-semibold`（可选一句 `text-xs` 说明） |
+| 栅格 | `FormGrid` | `grid grid-cols-2 gap-3 mt-3` + `sm:grid-cols-{2,3,4}`（列数按**标签长度**选，不按字段数） |
+| 字段 | `Field` | 标签在上（`label.text-xs`，能对上 id 就 `htmlFor`）、控件满列、单位做**框内后缀**、可选口径提示 |
+| 控件铬 | `FIELD_CONTROL` / `fieldControl(unit)` | `w-full h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm` + 主色聚焦环（带单位补 `pr-9`） |
+
+**受管面（本单迁移完）**：算料口径全域（标量 / 档位与拼色 / 备用用料公式）、
+`OversizeThresholdPreview`（基准，by construction 不改像素）、裁剪高度的「预演（只读）」。
+
+**几何读数（用户截图复现，CSS px）**：内容宽 764 时，「档位与拼色」两张 `w-fit` 小表
+= 左 423 / 右 245 / **右侧空白 79**；改成两个 `FormPanel` 并排后 = 374 / 374 / **blank 0**
+（复现件 = 同一套 class 的静态 HTML，见 PR 的截图）。
+
+**未迁移面（如实登记，只许缩短）**：
+- 裁剪高度页的**增量项编辑器**（行内 `inputCls` 表格式编辑 + 「取整 / 保留位数」两个顺排下拉）——
+  它是「行编辑」不是「字段表单」，随该页整体重做时收口（`INLINE_LABEL_LEDGER` 里就这一条）；
+- `ImageRecognizeButton` 的 224px 定制输入框（`CHROME_LEDGER` 里就这一条）；
+- 商品 / 订单 / 财务等面各自的筛选区（已有 `SearchPanel` 一套，属**列表筛选**语言，不在本单射程）。
+
+**边界**：本单**不改**任何字段、默认值、保存语义、422 逐条理由、算料口径；
+「好不好看」仍由 §15.7 读图 + 人裁定（§31.4），本单只保证**同一个产品长得像同一个产品**。
