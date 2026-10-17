@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Button } from '@/components/ui'
+import { Button, Modal } from '@/components/ui'
 import { qualityInspectionApi } from '@/lib/api'
 import type { QualityInspectionResult } from '@/types'
 
@@ -13,6 +13,13 @@ import type { QualityInspectionResult } from '@/types'
  * - **一条记录 = 一件成品帘**（`orderItemId`）：不逐工序、不逐工序完工检；
  * - 判定 = **合格 / 返工 / 报废**三态；判定 ≠ 合格 ⇒ **原因必填**；
  * - 检验人与检验时刻**由服务端定**（不在这里收，也不显示输入框）—— 前端可被改，责任凭证不能信前端。
+ *
+ * ## 为什么是**弹窗**而不是行内展开（issue #7160）
+ *
+ * 旧形态把表单渲染在整张列表卡片**最底部**（分页之后）：点「录入判定」后视口内毫无变化，
+ * 用户读成「点了没反应」（用户 2026-10-17 逐字：「交互在下面显示了，这个体验不太好，不如弹窗」）。
+ * 弹窗让「点哪一行 ⇒ 给哪一件录入」这一对应关系当场可见，也避免撑着列表高度。
+ * 本组件同时被「质检记录」页与作业单质检区复用 ⇒ 两处**一次**改成弹窗。
  *
  * ## 为什么「原因必填」在前端也判一次
  *
@@ -81,78 +88,78 @@ export default function QualityCheckForm({
   }
 
   return (
-    <div
-      data-testid="quality-inspection-form"
-      className="space-y-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4"
+    <Modal
+      open
+      onClose={onCancel}
+      title={subject ? `为「${subject}」录入质检判定` : '录入质检判定'}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onCancel} disabled={submitting}>
+            取消
+          </Button>
+          <Button onClick={() => void submit()} disabled={submitting}>
+            {submitting ? '提交中…' : '提交判定'}
+          </Button>
+        </>
+      }
     >
-      <p className="text-sm text-neutral-700">
-        {subject ? `为「${subject}」录入质检判定` : '录入质检判定'}
-      </p>
+      <div data-testid="quality-inspection-form" className="space-y-3">
+        <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="质检判定">
+          {RESULT_OPTIONS.map((option) => {
+            const active = result === option.value
+            return (
+              <label
+                key={option.value}
+                className={
+                  'inline-flex cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-sm ' +
+                  (active
+                    ? 'border-primary-300 bg-primary-50 text-primary-700'
+                    : 'border-neutral-300 bg-white text-neutral-600')
+                }
+              >
+                <input
+                  type="radio"
+                  name={`inspection-result-${orderItemId}`}
+                  value={option.value}
+                  checked={active}
+                  data-testid={`quality-result-${option.value}`}
+                  onChange={() => setResult(option.value)}
+                />
+                {option.label}
+              </label>
+            )
+          })}
+        </div>
 
-      <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="质检判定">
-        {RESULT_OPTIONS.map((option) => {
-          const active = result === option.value
-          return (
-            <label
-              key={option.value}
-              className={
-                'inline-flex cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-sm ' +
-                (active
-                  ? 'border-primary-300 bg-primary-50 text-primary-700'
-                  : 'border-neutral-300 bg-white text-neutral-600')
-              }
-            >
-              <input
-                type="radio"
-                name={`inspection-result-${orderItemId}`}
-                value={option.value}
-                checked={active}
-                data-testid={`quality-result-${option.value}`}
-                onChange={() => setResult(option.value)}
-              />
-              {option.label}
-            </label>
-          )
-        })}
-      </div>
-
-      <p className="text-xs text-neutral-500">
-        {RESULT_OPTIONS.find((option) => option.value === result)?.hint}
-      </p>
-
-      <div>
-        <label htmlFor="inspection-reason" className="mb-1 block text-xs text-neutral-500">
-          不合格原因（判定为返工 / 报废时必填）
-        </label>
-        <textarea
-          id="inspection-reason"
-          data-testid="quality-inspection-reason"
-          rows={2}
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          placeholder="例如：布面污渍 / 尺寸偏差 / 缝线开裂"
-          className="w-full rounded border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/15"
-        />
-      </div>
-
-      {error && (
-        <p role="alert" data-testid="quality-inspection-form-error" className="text-sm text-red-600">
-          {error}
+        <p className="text-xs text-neutral-500">
+          {RESULT_OPTIONS.find((option) => option.value === result)?.hint}
         </p>
-      )}
 
-      <div className="flex gap-2">
-        <Button onClick={() => void submit()} disabled={submitting}>
-          {submitting ? '提交中…' : '提交判定'}
-        </Button>
-        <Button variant="secondary" onClick={onCancel} disabled={submitting}>
-          取消
-        </Button>
+        <div>
+          <label htmlFor="inspection-reason" className="mb-1 block text-xs text-neutral-500">
+            不合格原因（判定为返工 / 报废时必填）
+          </label>
+          <textarea
+            id="inspection-reason"
+            data-testid="quality-inspection-reason"
+            rows={2}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="例如：布面污渍 / 尺寸偏差 / 缝线开裂"
+            className="w-full rounded border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/15"
+          />
+        </div>
+
+        {error && (
+          <p role="alert" data-testid="quality-inspection-form-error" className="text-sm text-red-600">
+            {error}
+          </p>
+        )}
+
+        <p className="text-xs text-neutral-400">
+          提交后记下的是这次检验的人与时刻；同一件成品帘可以多次检验（返工后复检）。
+        </p>
       </div>
-
-      <p className="text-xs text-neutral-400">
-        提交后记下的是这次检验的人与时刻；同一件成品帘可以多次检验（返工后复检）。
-      </p>
-    </div>
+    </Modal>
   )
 }

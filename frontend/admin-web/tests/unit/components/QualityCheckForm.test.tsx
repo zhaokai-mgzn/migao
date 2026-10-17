@@ -12,7 +12,9 @@ import userEvent from '@testing-library/user-event'
  * ② 🔴 **判定 ≠ 合格 ⇒ 原因必填**：不填 ⇒ 当场具名提示 + **零网络**（不白跑一趟；服务端 422 才是真判据）；
  * ③ **提交体逐字段正确**：`order_item_id` / `result` / `reason`；判定为合格时**不带**空原因键；
  * ④ 服务端下发的业务文案**原样显示**（不把 HTTP 状态码当商家文案）；没有业务文案才用兜底句；
- * ⑤ 提交成功后交给调用方（`onDone`）；「取消」只是收起表单（`onCancel`），**不发请求**。
+ * ⑤ 提交成功后交给调用方（`onDone`）；「取消」只是收起表单（`onCancel`），**不发请求**；
+ * ⑥ **呈现形态 = 弹窗**（issue #7160）：`role=dialog`，标题带上这一件成品帘的名字 ——
+ *    旧形态是行内展开在列表最底部，点「录入判定」后视口内看不到任何变化（用户逐字：「不如弹窗」）。
  */
 
 const mockCreate = vi.fn()
@@ -106,5 +108,18 @@ describe('质检判定录入表单', () => {
 
     expect(onCancel).toHaveBeenCalledTimes(1)
     expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  it('⑦ 🔴 以弹窗呈现：role=dialog，标题写明是哪一件成品帘', () => {
+    render(
+      <QualityCheckForm
+        orderItemId="item-1"
+        subject="布艺遮光帘A（米白）"
+        onDone={() => {}}
+        onCancel={() => {}}
+      />,
+    )
+
+    expect(screen.getByRole('dialog', { name: '为「布艺遮光帘A（米白）」录入质检判定' })).toBeInTheDocument()
   })
 })

@@ -7963,11 +7963,12 @@
 数据: **判据 5·分页封顶**：`size=5000` ⇒ 响应 `size=100`（服务端封顶，不信任调用方）；`page=2&size=2` ⇒ 只回第 2 页那两行，`total` 仍是 5。证据：QualityCheckTargetsTest.java（paginationIsCappedAndSliced）
 数据: **判据 6·指不出的成品帘不出行**：快照行缺 `itemId`（存量数据）⇒ **不列出**（不猜、不编占位名），其余行照常出。证据：QualityCheckTargetsTest.java（rowsWithoutItemIdAreSkipped）
 数据: **判据 7·没有活跃加工单 = 空清单 + 零计数**（不是错误态、不是 500）。证据：QualityCheckTargetsTest.java（noActiveProcessingOrderIsEmptyNotError）
+数据: **判据 8·订单号随之给出**（issue #7160，只加不改）：行上 `order_no` = 该加工单所属**销售订单号**（一次 `IN` 批量取回，不逐行单查）；取不到 / 存量单缺 `order_id` ⇒ `null`（不编值，界面渲染 `—`）。既有键与语义一字不动（`quantity` / `unit` 仍返回）。红证：删掉行上 `order_no` 的赋值 ⇒ 判据当场红。证据：backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckTargetsTest.java（rowCarriesSalesOrderNo）
 数据: **边界（照实登记）**：清单读面**不**做「合格率 / 一次通过率」这类派生指标（本轮没有口径裁定）；**不**改写任何报工行、**不**重算数量 —— 报工（数量事实）与质检（成品帘判定）两套口径并存（#5652 的既有裁定）。
 前置: 前置 = Mockito 夹具：① 一张**活跃**加工单（`status ∈ {generated, issued, in_processing, completed}`）+ `items_snapshot` 里的成品帘行；② 若干 `quality_inspections` 行（可为空 = 未检）。前置不成立（无活跃单 / 快照缺 `itemId`）⇒ 读面回空清单 + 零计数（**不是**错误态、也不猜是哪一件）。
 跳过: [backend-contract] 后端只读聚合面（Java 单测 + 同键名断言），非 LLM 行为，不进入 agent-eval 冒烟
 ```
-溯源: 2026-10-17 新增（issue #7140；用户 2026-10-17 逐字见 user_inputs）。落码：`GET /api/admin/quality-inspections/targets`（`@RequirePermission("production:inspect")`，与既有录入/读面**同码**，不新造权限点、不放宽任何码）+ `QualityCheckService.targets()`（一行 = 一件成品帘；`latest` 取该件第一条）+ 加工单生产明细读面 `operations[]` 增 `qualified_qty/rework_qty/scrap_qty`（既有 `ProductionService.worklog` 的同一套口径，抽成 `qtyByOperation`）。取号：见文首注释（工具超时 ⇒ 现取 main 最大 080 + open PR 复核）。 ｜ tags: quality-inspection, backend-contract, finished-curtain, admin-web-consumer
+溯源: 2026-10-17 新增（issue #7140；用户 2026-10-17 逐字见 user_inputs）。落码：`GET /api/admin/quality-inspections/targets`（`@RequirePermission("production:inspect")`，与既有录入/读面**同码**，不新造权限点、不放宽任何码）+ `QualityCheckService.targets()`（一行 = 一件成品帘；`latest` 取该件第一条）+ 加工单生产明细读面 `operations[]` 增 `qualified_qty/rework_qty/scrap_qty`（既有 `ProductionService.worklog` 的同一套口径，抽成 `qtyByOperation`）。取号：见文首注释（工具超时 ⇒ 现取 main 最大 080 + open PR 复核）。2026-10-17 issue #7160 追加：行上 `order_no`（所属销售订单号，批量取回；缺 ⇒ `null`）。 ｜ tags: quality-inspection, backend-contract, finished-curtain, admin-web-consumer
 
 ## 商品域（122 case）
 
@@ -11548,19 +11549,20 @@
 真值: frontend-fix.role-default-menu-pc-mobile
 溯源: 2026-10-17 新增（issue #7146；用户逐字「手机端可见面要不要作为『默认岗位默认菜单』的一部分，当然需要，把 PC 和手机端当一个整体」+ 同轮裁定「加一张只读『工人』卡」「不动授权（零 delta）」）。落地：roles.description 去模块清单（职责-only）→ 默认菜单改派生（后台 × 手机端一份权限码）→ 岗位卡同屏两面 + 只读工人卡；V162 迁移刷存量（只改旧默认文案）。判据 = frontend/admin-web/tests/unit/lib/role-default-menu.test.ts + tests/unit/pages/roles.test.tsx + tests/unit_ci_workflows/test_role_descriptions.py。 ｜ tags: ui, position, role, menu, mobile, worker
 
-### UI-118. 质检记录页（`/quality-inspections`）：待检成品帘清单（未检 ≠ 合格）+ 三态判定录入（返工/报废原因必填）+ 质检流水；读失败不印「未检 0 件」（issue #7140） 🔵
+### UI-118. 质检记录页（`/quality-inspections`）：待检成品帘清单（未检 ≠ 合格、带订单号）+ 弹窗录入三态判定（返工/报废原因必填）+ 质检流水；读失败不印「未检 0 件」（issue #7140 / #7160） 🔵
 ```
 你: 用户 2026-10-17 逐字：「之前让你做过质检流程，我看在观星台上没有任何地方体现出来了」
 期望: direct_reply
-数据: 判据 1·🔴 **待检清单看得见，且未检不折成合格**：一条 = 一件成品帘（加工单号 / 成品帘名 / 数量 / 最新判定）；无记录 ⇒ 该行判定位渲染**「未检」**、操作位是**「录入判定」**；已判行渲染服务端判定（含原因 / 检验人 / 时刻）且操作位是「复检」。红证：把「未检」改渲染成「合格」⇒ 判据当场红。证据：frontend/admin-web/tests/unit/pages/quality-inspections.test.tsx
+数据: 判据 1·🔴 **待检清单看得见，且未检不折成合格**：一条 = 一件成品帘（加工单号 / **订单号** / 成品帘名 / 最新判定；issue #7160 —— 原「数量」列已移除）；无记录 ⇒ 该行判定位渲染**「未检」**、操作位是**「录入判定」**；已判行渲染服务端判定（含原因 / 检验人 / 时刻）且操作位是「复检」。红证：把「未检」改渲染成「合格」⇒ 判据当场红。证据：frontend/admin-web/tests/unit/pages/quality-inspections.test.tsx
 数据: 判据 2·🔴 **判定 ≠ 合格 ⇒ 原因必填**：选「返工」后不填原因点提交 ⇒ 出现具名提示且**不调提交端点**（`create` 零调用）。证据：同文件（② 用例）
 数据: 判据 3·**提交体逐字段正确**：`order_item_id` / `result` / `reason` 三键逐值；判定为「合格」时**不带**空原因键（空串不送）。证据：同文件（③ ④ 用例）
 数据: 判据 4·🔴 **读失败不印计数**：待检清单读失败 ⇒ 失败锚（`role=alert`）常驻 + 摘要行说「数量读不到」，**绝不出现「未检 0 件」**，且**不出现空态**（「读不到」与「一件都没有」是两句话）。红证：把失败分支的计数渲染去掉 ⇒ 判据当场红。证据：同文件（⑤ ⑦ 用例）+ frontend/admin-web/src/lib/quality-check.ts 的 `countsReliable` 口径
 数据: 判据 5·**真的没有待检行才是空态**（并如实显示 0）。证据：同文件（⑥ 用例）
+数据: 判据 6·🔴 **录入 = 弹窗**（issue #7160）：点「录入判定」⇒ `role=dialog`（标题写明是哪一件成品帘）**当场**出现；取消后关闭且零请求。旧形态把表单渲染在整张列表卡片**最底部**（分页之后）⇒ 点击后视口内毫无变化，用户读成「点了没反应」（用户逐字：「交互在下面显示了，这个体验不太好，不如弹窗」）。红证：把弹窗改回行内展开 ⇒ ⑧ 用例当场红。证据：同文件（⑧ 用例）+ frontend/admin-web/tests/unit/components/QualityCheckForm.test.tsx（⑦ 用例）
 数据: **边界（照实登记）**：流水读面（`GET /api/admin/quality-inspections`）没有分页 ⇒ 本页**截断展示最近 20 条**并在标题上写明（不假装是全部）；重启条件 = 该读面加分页。不做时间范围筛选（读面无该入参，前端过滤 = 第二份口径）。
 跳过: [backend-contract] 纯前端渲染与交互（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟
 ```
-溯源: 2026-10-17 新增（issue #7140；用户三项裁定见文首注释）。落码：`frontend/admin-web/src/app/(dashboard)/quality-inspections/page.tsx` + `src/lib/quality-check.ts`（展示口径唯一实现）+ 三源同构菜单项（`menu.ts` / `MenuController` / `AuthService`）+ `rbac/manifest.json` + ai-agent 镜像（`menu_navigator.py` / `page_registry.py`）。取号：见文首注释。 ｜ tags: ui, production, quality-inspection, read-failure, copy
+溯源: 2026-10-17 新增（issue #7140；用户三项裁定见文首注释）。落码：`frontend/admin-web/src/app/(dashboard)/quality-inspections/page.tsx` + `src/lib/quality-check.ts`（展示口径唯一实现）+ 三源同构菜单项（`menu.ts` / `MenuController` / `AuthService`）+ `rbac/manifest.json` + ai-agent 镜像（`menu_navigator.py` / `page_registry.py`）。取号：见文首注释。2026-10-17 issue #7160 订正：判定录入改**弹窗**、清单「数量」列换成「订单号」（服务端 targets 行追加 `order_no`）。 ｜ tags: ui, production, quality-inspection, read-failure, copy
 
 ### UI-119. 作业单生产明细内嵌**质检区**：逐件成品帘最新判定（未检 = 未检）+ 录入/复检入口；读失败不画成「没有质检」（issue #7140） 🔵
 ```
@@ -11931,7 +11933,7 @@
 - UI-114: demo path spec 的占位符选择器活性：`tests/e2e/**` 里每个 `getByPlaceholder(...)` 字面量必须在 admin-web 源码里逐字活着
 - UI-115: **卖布单在订单详情的「生成作业单」出口**：发货前是否需要作业由读面给出（`needs_work` / `work_order_kind`），详情空态/生成按钮、发货页守卫、详情发货入口三处都用它（issue #7079 第 5 包）
 - UI-113: **「页面声明的筛选区必须由原语承载」的类级元守卫**：凡页面自报 `search-area` 的筛选区，承载标签必须是 `SearchPanel` / `SearchBar` / `PageCard`，不得是裸 `div`（issue #7116，承接 #7007 根因③）
-- UI-118: 质检记录页（`/quality-inspections`）：待检成品帘清单（未检 ≠ 合格）+ 三态判定录入（返工/报废原因必填）+ 质检流水；读失败不印「未检 0 件」（issue #7140）
+- UI-118: 质检记录页（`/quality-inspections`）：待检成品帘清单（未检 ≠ 合格、带订单号）+ 弹窗录入三态判定（返工/报废原因必填）+ 质检流水；读失败不印「未检 0 件」（issue #7140 / #7160）
 - UI-119: 作业单生产明细内嵌**质检区**：逐件成品帘最新判定（未检 = 未检）+ 录入/复检入口；读失败不画成「没有质检」（issue #7140）
 - UI-120: 工序进度表**三态数量列**（合格 / 返工 / 报废）：返工报废不进进度、与「已完成数量」分列、缺报工渲染 0（issue #7140）
 

@@ -159,20 +159,19 @@ export default function QualityCheckPanel({
         </div>
       )}
 
+      {/* 录入 = 弹窗（`QualityCheckForm` 内置 `Modal`；issue #7160：行内展开会撑高表格、且点击像没反应） */}
       {editing && (
-        <div className="mt-3">
-          <QualityCheckForm
-            orderItemId={editing}
-            subject={
-              rows.find((position) => position.order_item_id === editing)?.product_name ?? null
-            }
-            onDone={() => {
-              setEditing(null)
-              void load()
-            }}
-            onCancel={() => setEditing(null)}
-          />
-        </div>
+        <QualityCheckForm
+          orderItemId={editing}
+          subject={
+            rows.find((position) => position.order_item_id === editing)?.product_name ?? null
+          }
+          onDone={() => {
+            setEditing(null)
+            void load()
+          }}
+          onCancel={() => setEditing(null)}
+        />
       )}
 
       {!error && rows.length > 0 && (

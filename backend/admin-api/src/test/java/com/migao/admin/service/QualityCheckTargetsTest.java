@@ -2,10 +2,12 @@
 package com.migao.admin.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.migao.admin.entity.Order;
 import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.QualityCheck;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderItemMapper;
+import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.QualityCheckMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,7 +48,9 @@ import static org.mockito.Mockito.when;
  *   <li><b>状态过滤</b>：{@code status=pending} 只回未检行；未知取值 ⇒ 422 具名报错（不静默回落 all）；</li>
  *   <li><b>分页封顶</b>：{@code size} 超过上限被收到 100（服务端封顶，不信任调用方）；</li>
  *   <li><b>指不出的成品帘不出行</b>：快照行缺 {@code itemId}（存量数据）⇒ 不进来（不猜、不编）；</li>
- *   <li><b>已取消的加工单不质检</b>：只有活跃加工单参与（口列表见 {@code TARGET_PROCESSING_STATUSES}）。</li>
+ *   <li><b>已取消的加工单不质检</b>：只有活跃加工单参与（口列表见 {@code TARGET_PROCESSING_STATUSES}）；</li>
+ *   <li><b>订单号随之给出</b>（issue #7160）：行上 {@code order_no} = 该加工单所属销售订单号；
+ *       取不到 ⇒ {@code null}（不编值）—— 清单一行就能对上「哪张订单」。</li>
  * </ol>
  */
 @ExtendWith(MockitoExtension.class)
@@ -57,6 +61,8 @@ class QualityCheckTargetsTest {
     private static final Long TENANT = 20L;
     private static final String PO_ID = "po-1";
     private static final String PO_NO = "JG-20261017-0001";
+    private static final String ORDER_ID = "order-1";
+    private static final String ORDER_NO = "DD-20261017-0001";
 
     @Mock
     private QualityCheckMapper qualityInspectionMapper;
@@ -64,13 +70,15 @@ class QualityCheckTargetsTest {
     private OrderItemMapper orderItemMapper;
     @Mock
     private ProcessingOrderMapper processingOrderMapper;
+    @Mock
+    private OrderMapper orderMapper;
 
     private QualityCheckService service;
 
     @BeforeEach
     void setUp() {
         service = new QualityCheckService(qualityInspectionMapper, orderItemMapper, processingOrderMapper,
-                new ObjectMapper());
+                orderMapper, new ObjectMapper());
     }
 
     /** 一件成品帘（快照行）—— 与 `ProcessingOrderItemBrief` 的键名一致。 */
@@ -90,6 +98,7 @@ class QualityCheckTargetsTest {
         return ProcessingOrder.builder()
                 .id(PO_ID)
                 .tenantId(TENANT)
+                .orderId(ORDER_ID)
                 .processingOrderNo(PO_NO)
                 .status(status)
                 .deleted(0)
@@ -253,5 +262,26 @@ class QualityCheckTargetsTest {
                 .containsEntry("pass", 0)
                 .containsEntry("rework", 0)
                 .containsEntry("scrap", 0);
+    }
+
+    @Test
+    @DisplayName("⑧ 行上带加工单所属销售订单号；订单取不到 ⇒ null（不编值）")
+    void rowCarriesSalesOrderNo() {
+        when(processingOrderMapper.selectList(any()))
+                .thenReturn(List.of(po("in_processing", List.of(item("item-1", "布艺遮光帘A")))));
+        when(qualityInspectionMapper.selectList(any())).thenReturn(List.of());
+        when(orderMapper.selectBatchIds(any())).thenReturn(List.of(
+                Order.builder().id(ORDER_ID).tenantId(TENANT).orderNo(ORDER_NO).deleted(0).build()));
+
+        Map<String, Object> out = service.targets(TENANT, null, null, 1, 20);
+
+        // 同屏可对上订单：加工单号与订单号都给
+        assertThat(itemsOf(out).get(0).get("processing_order_no")).isEqualTo(PO_NO);
+        assertThat(itemsOf(out).get(0).get("order_no")).isEqualTo(ORDER_NO);
+
+        // 订单取不到（存量单 / 订单不可见）⇒ null，界面渲染 —，不编值
+        when(orderMapper.selectBatchIds(any())).thenReturn(List.of());
+        Map<String, Object> missing = service.targets(TENANT, null, null, 1, 20);
+        assertThat(itemsOf(missing).get(0).get("order_no")).isNull();
     }
 }
