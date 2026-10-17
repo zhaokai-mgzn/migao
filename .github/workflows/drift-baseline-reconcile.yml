@@ -135,6 +135,7 @@ jobs:
               '判据自身异常': sum(1 for c in checks if c.get('status') == 'error'),
           }
           blocking = {k: v for k, v in others.items() if v}
+          print(f'zeroed={zeroed}')
           if zeroed and not blocking:
               print('verdict=zeroed')
               print(f"note=归零基线条目 {zeroed} 条，无其它阻塞 ⇒ 交给 --prune-zeroed 判定")
@@ -175,6 +176,8 @@ jobs:
             0) : ;;
             *) echo "::error::\`--prune-zeroed\` 拒绝动手（退出码 ${RC}）—— 具名理由见上方输出；**本轮未写盘**"; exit 1 ;;
           esac
+          PRUNED=$(grep -c '^PRUNED ' /tmp/prune.txt 2>/dev/null || true)
+          echo "pruned=${PRUNED:-0}" >> "$GITHUB_OUTPUT"
           if git diff --quiet -- "$BASELINE"; then
             echo "changed=0" >> "$GITHUB_OUTPUT"
             echo "::notice::⏭️ 没有可写的销账（幂等：同一状态下连跑两次是零动作）"
@@ -283,4 +286,26 @@ jobs:
           if [ "$ARM_RC" != "0" ] && ! printf '%s' "$STATE" | grep -q 'autoMerge=armed'; then
             echo "::error::arm auto-merge 失败（rc=${ARM_RC}）且回读未 armed（${STATE}）⇒ 销账 PR 不会被自动合并（fail-closed）"
             exit 1
+          fi
+
+      # ── 存活读数（issue #5326 判据 1 / 4）：必须是 job 的**最后一步**且 `if: always()` ──
+      # 本腿是**无人值守 + 写作用域**（workflow_run × contents/pull-requests/actions）⇒ 按
+      # `scripts/mechanism-registry.json` 的发现规则必须登记并交出存活读数；否则「机制停摆」
+      # 这条缺陷会重演（#5326：没人知道它还在不在）。
+      # ⚠️ 读数步**独立一步**（注解有 per-step 上限），且 rc 与 run 结论自洽（`--outcome` 绑定
+      #    `${{ job.status }}`，元守卫逐字要求，见 `tests/unit_ci_workflows/test_mechanism_liveness.py`）。
+      - name: 存活读数（本轮看了几条归零条目 / 真删了几条）
+        if: always()
+        env:
+          OUTCOME: ${{ job.status }}
+          ZEROED: ${{ steps.decide.outputs.zeroed }}
+          PRUNED: ${{ steps.prune.outputs.pruned }}
+        run: |
+          if [ -f .github/scripts/mechanism_liveness.sh ]; then
+            bash .github/scripts/mechanism_liveness.sh emit drift-baseline-reconcile \
+              --outcome "$OUTCOME" \
+              --seen "${ZEROED:-unknown}" --acted "${PRUNED:-unknown}" \
+              --why "归零条目=${ZEROED:-unknown} 本轮销账=${PRUNED:-unknown}（零动作与失败在形态上不同）"
+          else
+            echo "::warning::机制存活读数**本轮无声**（mech=drift-baseline-reconcile）：发射器不在检出里 ⇒ 本轮读数缺失（**不是**「零动作」）"
           fi
