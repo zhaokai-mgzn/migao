@@ -310,7 +310,7 @@ issue_body() {   # $1=本次动作
 ${act}
 
 ### 清零判据（不靠人记得）
-- 该腿**下一次**成功（\`conclusion=success\`）⇒ 事件驱动到达本脚本 ⇒ **自动关闭本单**；
+- 该腿**下一次**成功（\`conclusion=success\`）⇒ 事件驱动到达本脚本 ⇒ **由反应步关闭本单**；
   非 \`workflow_run\` 事件（\`schedule\` / \`workflow_dispatch\`）下，\`schedule\` 触发的完成
   **不投递** \`workflow_run\`（issue #6556 实测：15/15 条 push 完成触发、**2/2** 条 schedule 完成
   零触发）⇒ 由**状态兜底**那条入口关闭（对账步把该腿判成 \`deployed\` 即关）。

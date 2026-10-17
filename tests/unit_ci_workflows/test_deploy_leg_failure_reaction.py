@@ -1463,18 +1463,51 @@ def test_close_failure_does_not_silently_swallow_gh_error(tmp_path):
     )
 
 
+def _claim_marker_strays(text: str) -> list[str]:
+    """`自动关闭` 出现在**非成功出口日志行**上的那些行（判据本体；纯函数 ⇒ 内存注入可自证）。
+
+    「成功出口日志行」= 同含 `已收敛` 的那一行（`clear_leg()` 里 `✅ 腿 … 已收敛 ⇒ 自动关闭值守单 #N`）——
+    判据 3 的锚点**只该**长在它上面：那是「真的关了」的那一刻打出来的。
+    **注释行不参与**（`#` 起头只在源码里讨论这个词，不会发到单上、也不会进日志）。
+    """
+    return [
+        line for line in text.splitlines()
+        if CLAIM_TEXT in line and "已收敛" not in line and not line.lstrip().startswith("#")
+    ]
+
+
 def test_failure_warning_text_never_reads_as_a_close_claim():
-    """判据 3（**结构性**）：失败出口的文案里不得出现 `自动关闭` ——
-    否则「带清零声明的开放单」这条判据会把**出声句**误认成声明（本包实测踩过这个形态）。"""
+    """判据 3（**结构性**）：失败侧文案（出声句**与发到单上的模板散文**）里不得出现 `自动关闭` ——
+    否则「带清零声明的开放单」这条判据会把**判据句 / 出声句**误认成声明。
+
+    🔴 2026-10-17（issue #7143，实测）：失败模板的清零判据段曾写着
+    「该腿下一次成功 ⇒ 事件驱动到达本脚本 ⇒ **自动关闭本单**」—— 它是「什么时候会关」的**条件陈述**，
+    却被 `deploy_leg_close_claim_audit.py check-claims` 的锚点（`自动关闭`）读成「已经关了」
+    ⇒ **每一次 deploy leg 失败都把 required job 判红**（现场 #7142，逐字读数见该单）。
+    旧实现只扫含 `关单失败` / `未关` 的行 ⇒ **模板散文不在扫描面内**（声明 ≠ 射程）。
+    ⇒ 现在按**全脚本**判：`自动关闭` 只许出现在成功出口那条日志行上。
+    """
     text = SCRIPT.read_text(encoding="utf-8")
     for line in text.splitlines():
         if "关单失败" in line or "未关" in line:
             assert CLAIM_TEXT not in line, (
                 f"失败出口的文案含 `{CLAIM_TEXT}` ⇒ 与「已关」宣称不可区分：{line!r}"
             )
+    stray = _claim_marker_strays(text)
+    assert not stray, (
+        f"`{CLAIM_TEXT}` 只允许出现在**成功出口**那条日志行（同含 `已收敛`）上；"
+        f"模板散文 / 其它出声句一律不许（否则清零声明守卫会把「什么时候会关」读成「已经关了」，"
+        f"全仓 required 判红）—— 现取：{stray}"
+    )
     # 反向对照：**成功**出口必须含它（否则判据 3 的锚点在真语料上根本不存在 = 空断言）。
     assert any(CLAIM_TEXT in l for l in text.splitlines() if "已收敛" in l), (
         f"成功出口里找不到 `{CLAIM_TEXT}` ⇒ 判据 3 的锚点失效（判据已过期）"
+    )
+    # 判别力自证（内存注入，不落盘）：把失败模板那句放回来 ⇒ 必须判红。
+    injected = "- 该腿**下一次**成功 ⇒ 事件驱动到达本脚本 ⇒ **自动关闭本单**；"
+    assert _claim_marker_strays(injected), "注入失败模板句后仍未判红 ⇒ 本判据已退化成空断言"
+    assert not _claim_marker_strays('echo "✅ 腿 x 已收敛 ⇒ 自动关闭值守单 #7"'), (
+        "成功出口日志行被误判为游离锚点 ⇒ 判据过宽（会把正常路径判红）"
     )
 
 
