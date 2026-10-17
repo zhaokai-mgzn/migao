@@ -9835,7 +9835,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（116 case）
+## 前端 UI 域（117 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -11518,6 +11518,20 @@
 ```
 溯源: 2026-10-17 新增（issue #7116，承接 #7007 根因③）。根因① 由 #7065（页头）、根因② 由 #7069（卡片层级）分别收口。用例号 = `NCI_MAIN_REF=HEAD python3 scripts/next_case_id.py UI`；**首次取到 UI-112 但发现在飞 PR #7113 已占用**（`next_case_id.py` 的已知边界：它在飞面只认能解析到的 PR 列表，本次未命中 #7113 的 diff）⇒ 现取复核后改用 **UI-113**（main 与 #7113 均未占用）。**报告型说明**：承载体是前端单测（vitest），由 `admin-web 单测` 腿收集。 ｜ tags: ui, design-consistency, filter-area, shared-primitive, class-guard, red-proof
 
+### UI-117. 岗位权限页默认菜单 = 后台 + 手机端（一份权限码两面投影）+ 只读工人卡；岗位描述只留职责（issue #7146） 🔵
+```
+你: 手机端可见面要不要作为「默认岗位默认菜单」的一部分，当然需要，把 PC 和手机端当一个整体
+期望: direct_reply
+数据: 岗位权限页每张岗位卡：同一处同时给「后台 N 项」与「手机端 M 个入口」（默认收起 = §31 P1；展开看两份清单）；后台名逐字取 config/menu（与侧边栏同源），手机端面名逐字取服务端 GET /api/admin/menus 的 mobileTitles（夹具改名 ⇒ 页面跟着改，证明前端无第二张表）；没有手机端码的岗位显示 0（不是「全给」、不是报错）
+数据: 岗位描述 roles.description 只承载「职责：…」散文：不得再出现「默认可用模块：」（模块清单必须派生，否则是第二份会漂的真值）；判据 = tests/unit_ci_workflows/test_role_descriptions.py 判据 A（注入「默认可用模块：」⇒ 具名红）
+数据: 只读「工人」卡：工人端默认 5 页（页键 + 人话名取 GET /api/admin/worker-pages），卡内**没有**编辑/删除按钮、给出「员工管理 → 工人档案」链接；目录读失败 ⇒ 显式失败态 + 重试（不画成「没有页面」）
+数据: 零授权 delta：本单不改 role_permissions / users.permissions；手机端写码仍由商家在权限树逐人勾（#6759）
+数据: 存量租户：V162 只改「仍是 V161 默认文案」的行（商家自定义描述不动），终态对账 fail-closed；V161 渲染输入冻结（活清单前进不动它）
+跳过: [backend-contract] 前端派生/只读卡由 vitest 验证；岗位描述职责-only 由 pytest 常驻判据验证；均零网络、零 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.role-default-menu-pc-mobile
+溯源: 2026-10-17 新增（issue #7146；用户逐字「手机端可见面要不要作为『默认岗位默认菜单』的一部分，当然需要，把 PC 和手机端当一个整体」+ 同轮裁定「加一张只读『工人』卡」「不动授权（零 delta）」）。落地：roles.description 去模块清单（职责-only）→ 默认菜单改派生（后台 × 手机端一份权限码）→ 岗位卡同屏两面 + 只读工人卡；V162 迁移刷存量（只改旧默认文案）。判据 = frontend/admin-web/tests/unit/lib/role-default-menu.test.ts + tests/unit/pages/roles.test.tsx + tests/unit_ci_workflows/test_role_descriptions.py。 ｜ tags: ui, position, role, menu, mobile, worker
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -11547,8 +11561,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：791（活跃 133，跳过 658）
-- tier 分布：smoke 12 / normal 732 / adversarial 32
+- 用例总数：792（活跃 133，跳过 659）
+- tier 分布：smoke 12 / normal 733 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -11573,7 +11587,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：116
+- 前端 UI 域：117
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

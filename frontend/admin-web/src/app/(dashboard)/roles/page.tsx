@@ -4,12 +4,14 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Plus, Pencil, Trash2, Shield, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
-import { roleApi, permissionApi } from '@/lib/api'
+import { roleApi, permissionApi, workerPageCatalogApi } from '@/lib/api'
 import request from '@/lib/request'
 import { Button, Input, Modal, Badge, PageHeader, PageCard } from '@/components/ui'
-import type { Role, Permission } from '@/types'
+import type { Role, Permission, WorkerPageCatalogResponse } from '@/types'
 import DateTimeCell from '@/components/common/DateTimeCell'
 import { formatMobileTitles } from '@/lib/mobile-surface-label'
+// issue #7146：默认菜单 = **后台 + 手机端**（一份权限码集的两面投影，纯函数、无本地字面表）
+import { deriveRoleDefaultMenu, roleDefaultMenuSummary } from '@/lib/role-default-menu'
 // #3002 权限分配与真实菜单一致：复用侧边栏菜单配置做单一来源，
 // 弹窗分组/名称 = 侧边栏菜单分组/菜单项，避免展示旧口径权限目录
 import { menuGroups, standaloneHeadItems, standaloneTopItems } from '@/config/menu'
@@ -76,6 +78,55 @@ export default function RolesPage() {
     )
   }, [])
 
+  /**
+   * 「默认菜单」展开态（issue #7146）。
+   *
+   * 一个岗位的默认菜单可能 19 项（管理员）⇒ 常驻展开会把 8 张卡撑成一面墙（§31 P1）。
+   * 默认收起，只留一行摘要（后台 N 项 · 手机端 M 个入口）。
+   */
+  const [expandedMenus, setExpandedMenus] = useState<string[]>([])
+  const toggleMenu = useCallback((roleId: string) => {
+    setExpandedMenus(prev =>
+      prev.includes(roleId) ? prev.filter(id => id !== roleId) : [...prev, roleId]
+    )
+  }, [])
+
+  /** 该岗位的默认权限码（读面回的是权限对象；写面保存的是 ID）。 */
+  const codesOfRole = useCallback(
+    (role: Role) => (role.permissions || []).map(p => p.code).filter((c): c is string => Boolean(c)),
+    [],
+  )
+  /**
+   * 该岗位的「默认菜单」= 后台 + 手机端（issue #7146）。
+   * 两面都由同一批权限码派生：后台名取 `@/config/menu`，手机端名只透传服务端 `mobileTitles`。
+   */
+  const menuOfRole = useCallback(
+    (role: Role) => deriveRoleDefaultMenu(codesOfRole(role), mobileTitlesByCode),
+    [codesOfRole, mobileTitlesByCode],
+  )
+
+  /**
+   * 工人端页面目录（issue #7146，用户裁定「加一张只读『工人』卡」）。
+   *
+   * 工人不是 `roles` 行：`permissions` 恒为 `[]`、后台菜单 0；工人端 5 个页面键由
+   * `users.worker_pages` **逐人**收窄（`WorkerPages` 一处真值）。本页只**只读展示**默认全集
+   * （页键与人话名都取 `GET /api/admin/worker-pages`，前端不维护第二份词表）。
+   */
+  const [workerCatalog, setWorkerCatalog] = useState<WorkerPageCatalogResponse | null>(null)
+  const [workerCatalogError, setWorkerCatalogError] = useState('')
+  const loadWorkerCatalog = useCallback(async () => {
+    setWorkerCatalogError('')
+    try {
+      const res = await workerPageCatalogApi.get()
+      const data = res.data.data
+      setWorkerCatalog({ pages: data?.pages || [], labels: data?.labels || {} })
+    } catch {
+      // 🔴 读失败 ≠ 没有页面：工人端页面目录挂生产域读码，缺码 / 网络失败都会走到这里
+      setWorkerCatalog(null)
+      setWorkerCatalogError('工人端页面目录读取失败 —— 可能是网络或服务暂时不可用')
+    }
+  }, [])
+
   // 加载岗位列表
   const loadRoles = useCallback(async () => {
     setLoading(true)
@@ -116,7 +167,8 @@ export default function RolesPage() {
   useEffect(() => {
     loadRoles()
     loadPermissions()
-  }, [loadRoles, loadPermissions])
+    loadWorkerCatalog()
+  }, [loadRoles, loadPermissions, loadWorkerCatalog])
 
   // 手机端可见面标注（issue #6759）：**真值只在服务端**（`MobileSurfaces` 派生自
   // `GET /api/admin/menus` 的 `mobileTitles`）—— 本页只把它挂到对应权限码上，不自造映射。
@@ -466,6 +518,37 @@ export default function RolesPage() {
                 </div>
               )}
 
+              {/* issue #7146：默认菜单 = **后台 + 手机端**（同一批权限码的两面投影）。默认收起（§31 P1）。 */}
+              {(() => {
+                const menu = menuOfRole(role)
+                const expanded = expandedMenus.includes(role.id)
+                return (
+                  <div className="mb-3" data-testid={`role-default-menu-${role.code}`}>
+                    <button
+                      type="button"
+                      onClick={() => toggleMenu(role.id)}
+                      aria-expanded={expanded}
+                      className="text-xs text-neutral-500 hover:text-primary-600"
+                    >
+                      <span data-testid={`role-default-menu-summary-${role.code}`}>
+                        {roleDefaultMenuSummary(menu)}
+                      </span>
+                      <span className="ml-1 text-primary-600">{expanded ? '收起' : '展开'}</span>
+                    </button>
+                    {expanded && (
+                      <div className="mt-1 space-y-0.5 text-xs text-neutral-500">
+                        <p data-testid={`role-default-menu-backend-${role.code}`}>
+                          后台：{menu.backend.join('、') || '无'}
+                        </p>
+                        <p data-testid={`role-default-menu-mobile-${role.code}`}>
+                          手机端：{menu.mobile.join('、') || '无'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+
               <div className="flex items-center justify-between text-xs text-neutral-400">
                 <span>
                   <Badge variant="info">{role.permissions?.length || 0} 个权限</Badge>
@@ -476,6 +559,68 @@ export default function RolesPage() {
           ))}
         </div>
       )}
+      </PageCard>
+
+      {/*
+        工人端菜单（issue #7146，用户 2026-10-17 裁定「加一张只读『工人』卡」）。
+
+        🔴 工人**不是** `roles` 行：`permissions` 恒为 `[]`、无后台菜单；工人端页面键由
+        `users.worker_pages` **逐人**收窄（`WorkerPages` 一处真值，issue #6788/#6828）
+        ⇒ 这里**只读展示**默认全集，配置出口在「员工管理 → 工人档案」。
+        页键与人话名都取服务端 `GET /api/admin/worker-pages`（前端不维护第二份词表）。
+      */}
+      <PageCard>
+        <div data-testid="worker-menu-card">
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div>
+              <h3 className="font-medium text-neutral-900">工人</h3>
+              <p className="text-xs text-neutral-400">工人端身份（用工号 + PIN 登录，不进管理后台）</p>
+            </div>
+            <Badge variant="info">只读</Badge>
+          </div>
+
+          {workerCatalogError ? (
+            /* 🔴 失败态 ≠ 空态：读不到目录 ≠ 工人端没有页面（同页岗位清单失败态的口径，issue #6663） */
+            <div
+              data-testid="worker-menu-error"
+              className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+            >
+              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <span className="flex-1">
+                工人端页面目录读取失败 —— 这不是「没有页面」：读不到时清单不该显示成空。
+              </span>
+              <button
+                type="button"
+                onClick={() => void loadWorkerCatalog()}
+                className="flex-shrink-0 rounded border border-red-300 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100"
+              >
+                重试
+              </button>
+            </div>
+          ) : workerCatalog === null ? (
+            <p className="text-xs text-neutral-400">加载中...</p>
+          ) : (
+            <>
+              <p className="text-xs text-neutral-400 mb-1">
+                工人端菜单（默认全部 {workerCatalog.pages.length} 页，逐人可收窄）
+              </p>
+              <div data-testid="worker-menu-pages" className="flex flex-wrap gap-2">
+                {workerCatalog.pages.map(key => (
+                  <span
+                    key={key}
+                    className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs text-neutral-600"
+                  >
+                    {workerCatalog.labels?.[key] || key}
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+
+          <a href="/employees" className="mt-2 inline-block text-xs text-primary-600 hover:underline">
+            在「员工管理 → 工人档案」逐人配置
+          </a>
+        </div>
       </PageCard>
 
       {/* 新增/编辑岗位对话框 */}

@@ -157,6 +157,7 @@
     "V159__add_processing_order_kind.sql": "sha256:12a7c0b1a67255ac32a8b6b8b0442afb3f09ba7c4759961b27d94e3712755f13",
     "V160__add_order_paid_at_and_received_at.sql": "sha256:7243b4f499292e1282aebde7631e6c31fd0e14e7ab764b01f8d03b2157b5321b",
     "V161__refresh_default_role_descriptions.sql": "sha256:e0da190e429d6d86e444d9c9e9a581108263e8b6fef0ab08abac01543bed3448",
+    "V162__strip_default_role_module_lists.sql": "sha256:e48f34c4f77ffdfdaa98dafdacd52169b0415de984002c5cb464ccc5767b4a2d",
     "schema.sql": "sha256:80a0b9e5d7e926bd6aa7fa35e5fa3e8d917c5b3fb6c1cc3f7a99738d64d57177"
   }
 }
