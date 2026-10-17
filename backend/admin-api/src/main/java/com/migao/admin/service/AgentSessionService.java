@@ -298,7 +298,22 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
     }
 
     /**
-     * 手动分配会话给员工
+     * 手动分配会话给员工。
+     *
+     * <p><b>并发闸 = 两段条件更新（issue #6962 P5-①）</b>。修前是「读-判-写」三段无互斥：
+     * ① 同一个 {@code sessionId} 并发分配 ⇒ 两个请求都过 {@code status='waiting'} 判、都
+     * {@code updateById}（WHERE 仅主键）⇒ 后写者覆盖先写者，两个 200 里有一个是谎话；
+     * ② 同一个员工的并发额度：N 个请求各自读到的 {@code activeCount} 都是分配前的值 ⇒
+     * 各自都判「未超额」⇒ {@code max_concurrent_sessions} 被突破（上限 3 时 6 个并发全落 active）。
+     * 修后 ① 走 {@link AgentSessionMapper#markAssignedIfWaiting}（谓词
+     * {@code id + tenant_id + status='waiting' + deleted=0}，按<b>影响行数</b>判归属）、
+     * ② 走 {@link AgentSessionMapper#lockEmployeeForQuota}（{@code FOR UPDATE} 锁员工行）+
+     * {@link AgentSessionMapper#countActiveSessions}（锁内现取计数）—— 判额度与占额度在同一个
+     * 持锁临界区里，后到者阻塞到前者提交后再求值 ⇒ 上限守得住。</p>
+     *
+     * <p><b>为什么是 {@code FOR UPDATE} 而不是「{@code UPDATE … WHERE current &lt; max}」</b>：
+     * 见 {@code AgentSessionMapper#lockEmployeeForQuota} 的类注释（那形态在超额时谓词不成立
+     * ⇒ 不取锁 ⇒ 计数照旧读到旧值 ⇒ 上限照样破）。</p>
      */
     @Transactional(rollbackFor = Exception.class)
     public void assignSession(String sessionId, String employeeId) {
@@ -316,6 +331,7 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
         if (!"waiting".equals(session.getStatus())) {
             throw BusinessException.validationError("只有等待中的会话才能分配");
         }
+        final Long tenantId = session.getTenantId();
 
         // 校验员工存在且在线
         AgentEmployee employee = agentEmployeeMapper.selectById(employeeId);
@@ -325,22 +341,44 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
         if ("offline".equals(employee.getStatus())) {
             throw BusinessException.validationError("该员工当前不在线，无法分配");
         }
+        final int maxConcurrent = employee.getMaxConcurrentSessions() != null
+                ? employee.getMaxConcurrentSessions() : 5;
 
-        // 校验员工当前会话数未超过最大并发数
+        // 测试探针（生产恒 0）：把「同一员工的并发分配」窗口从微秒级放大成确定性可观测
+        if (ASSIGN_PROBE_PAUSE_MILLIS > 0) {
+            pauseAssignForProbe(ASSIGN_PROBE_PAUSE_MILLIS);
+        }
+
+        // 快路径前置读判（保留修前口径：额度明显已满时给原有文案，不去抢锁）
         LambdaQueryWrapper<AgentSession> activeWrapper = new LambdaQueryWrapper<>();
         activeWrapper.eq(AgentSession::getEmployeeId, employeeId)
                 .eq(AgentSession::getStatus, "active");
         Long activeCount = agentSessionMapper.selectCount(activeWrapper);
-        int maxConcurrent = employee.getMaxConcurrentSessions() != null ? employee.getMaxConcurrentSessions() : 5;
         if (activeCount >= maxConcurrent) {
             throw BusinessException.validationError("该员工已达到最大并发会话数: " + maxConcurrent);
         }
 
-        // 更新会话状态
-        session.setEmployeeId(employeeId);
-        session.setStatus("active");
-        session.setStartedAt(OffsetDateTime.now());
-        agentSessionMapper.updateById(session);
+        // ① 抢会话分配权：条件更新，按影响行数判归属
+        OffsetDateTime now = OffsetDateTime.now();
+        if (agentSessionMapper.markAssignedIfWaiting(sessionId, tenantId, employeeId, now) == 0) {
+            AgentSession fresh = agentSessionMapper.selectById(sessionId);
+            throw BusinessException.conflict(
+                    "该会话当前状态为「" + statusLabel(fresh != null ? fresh.getStatus() : session.getStatus())
+                            + "」，只有等待中的会话才能分配",
+                    "会话可能已被另一位客服接手，请刷新工作台后再操作");
+        }
+
+        // ② 抢并发额度：FOR UPDATE 锁员工行 + 锁内现取计数 ⇒ 判额度与占额度同一临界区
+        if (agentSessionMapper.lockEmployeeForQuota(employeeId, tenantId) == null) {
+            throw BusinessException.notFound("客服员工");
+        }
+        int lockedActive = agentSessionMapper.countActiveSessions(employeeId, tenantId);
+        int lockedMax = maxConcurrentFor(employeeId, maxConcurrent);
+        if (lockedActive > lockedMax) {
+            throw BusinessException.conflict(
+                    "该员工已达到最大并发会话数: " + lockedMax + "（当前 " + lockedActive + " 个进行中会话）",
+                    "请选择其他客服，或等该员工结束一个会话后再分配");
+        }
 
         // 记录系统消息
         AgentMessage systemMsg = AgentMessage.builder()
@@ -354,6 +392,60 @@ public class AgentSessionService extends ServiceImpl<AgentSessionMapper, AgentSe
         agentMessageMapper.insert(systemMsg);
 
         log.info("会话分配成功: sessionId={}, employeeId={}, employeeName={}", sessionId, employeeId, employee.getName());
+    }
+
+    /** 锁内现取最大并发数（{@code null} 列值 ⇒ 沿用修前 5 的兜底）。 */
+    private int maxConcurrentFor(String employeeId, int fallback) {
+        Integer max = agentSessionMapper.selectMaxConcurrentSessions(employeeId);
+        return max != null ? max : fallback;
+    }
+
+    /** 会话状态的中文标签（409 文案只说**实际当前态**，不暴露内部枚举值）。 */
+    private static String statusLabel(String status) {
+        if (status == null) {
+            return "未知";
+        }
+        return switch (status) {
+            case "waiting" -> "等待中";
+            case "active" -> "进行中";
+            case "ended" -> "已结束";
+            case "transferred" -> "已转接";
+            default -> status;
+        };
+    }
+
+    /**
+     * <b>测试探针</b>（issue #6962 P5-①，生产恒 {@code 0}）：在 {@link #assignSession} 的
+     * 「读会话/员工」之后、「判额度/写」之前暂停指定毫秒。
+     *
+     * <p>窗口注入是竞态类缺陷的<b>唯一可信证据</b>形态（{@code migao-dev-flow} §28.1）：不注入时
+     * 窗口只有微秒级，判据会退化成 flake。探针形态与 {@code InboundOrderService} 的
+     * {@code CANCEL_PROBE_PAUSE_MILLIS} 同款（生产恒 0、只在包内可见）。</p>
+     */
+    static void setAssignProbePauseMillisForTest(long millis) {
+        ASSIGN_PROBE_PAUSE_MILLIS = millis;
+    }
+
+    /** 探针时长（默认 0 = 不暂停）。 */
+    private static volatile long ASSIGN_PROBE_PAUSE_MILLIS = 0L;
+
+    /** 探针**正在**暂停窗口内的信号（测试用它把两个线程钉在确定的时序上）。 */
+    private static volatile boolean assignProbePaused = false;
+
+    /** 测试观察点：探针是否已进入暂停窗口；生产不读。 */
+    static boolean assignProbePausedForTest() {
+        return assignProbePaused;
+    }
+
+    /** 进入窗口 ⇒ 置位 → 停 → 清位。 */
+    private static void pauseAssignForProbe(long millis) {
+        assignProbePaused = true;
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        assignProbePaused = false;
     }
 
     /**

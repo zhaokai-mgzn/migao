@@ -303,6 +303,22 @@ REALDB_FILES: dict[str, str] = {
     #    load-dependent 的 flake，不能当证据）；③ 终态只能从落库事实读（`SELECT status FROM products`）。
     #    窗口探针 = `ProductService#setStatusMigrationProbePauseMillisForTest`（生产恒 0）。
     _SVC + "ProductStatusCasRaceRealDbTest.java": "direct",
+    # issue #6962（P5·并发；族级跟踪单 #6953 的 P5 包首批 3 处）：会话并发分配 / 知识候选并发双采纳 /
+    # 路线与规则删除（跨租户 + 幂等）的**真库并发**判据。为什么必须真 PG：
+    # ① 会话并发额度 —— 修前的病是「先 `selectCount(status='active')` 读计数、再 `updateById`（WHERE 仅主键）」
+    #    且那个**直觉修法**「`UPDATE … WHERE 子查询计数 < 上限`」**在真 PG 上根本不成立**（超额时谓词不匹配
+    #    ⇒ UPDATE 不命中行 ⇒ 不取行锁 ⇒ 两个请求都不阻塞、各自再读到未提交的旧计数 ⇒ 上限照样破）。
+    #    这一条**只有真 PG 的行锁语义**能判：mock 的 `updateById` 恒返回 1、`countActiveSessions` 可被随意 stub。
+    #    修后的闸 = 先抢会话行（条件更新，影响行数）→ 再 `SELECT … FOR UPDATE` 锁员工行 → 锁内现取计数，
+    #    「后到者阻塞到前者提交后重新求值」正是行锁 + 条件重估，mock 面结构上不可见。
+    # ② 候选双采纳 —— 「恰一次成功 ⇒ 恰一张卡」是**并发下的落库读数**（`knowledge_cards` 行数），
+    #    mock 面只会看到「两条路各调了一次 insert」。
+    # ③ 删除的 tenant 限定 + `deleted = 0` + 影响行数 —— 谓词是否真的挡住**跨租户**与**重复删**
+    #    是 SQL 行为（真值源 = 对方租户那一行仍 `deleted = 0`），mock 面把 wrapper 整个吃掉
+    #    （`markDeletedByIdAndTenant` 是 default 方法 ⇒ mock 下真 wrapper 根本不产生）。
+    # 窗口注入（`AgentSessionService#setAssignProbePauseMillisForTest`，生产恒 0）让并发读数从
+    # 「微秒级碰运气」变成**确定性**（同 #6928 / #6955 / #6960 的口径）。
+    _SVC + "ConcurrentQuotaAdoptDeleteCas6962RealDbTest.java": "direct",
     _MAP + "FabricRemnantMapperTest.java": "via:RemnantTestDb",
     _MAP + "RemnantItemSizeMapperTest.java": "via:RemnantTestDb",
     _SVC + "RemnantServiceTest.java": "via:RemnantTestDb",

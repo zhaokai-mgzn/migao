@@ -259,15 +259,22 @@ class AgentSessionServiceTest {
         // 当前活跃会话数 < 最大并发
         when(agentSessionMapper.selectCount(any(LambdaQueryWrapper.class))).thenReturn(2L);
 
-        when(agentSessionMapper.updateById(any(AgentSession.class))).thenReturn(1);
+        // issue #6962 P5-①：分配权 / 额度都走条件更新（CAS），不再 `updateById`（WHERE 仅主键 ⇒ 无谓词）。
+        when(agentSessionMapper.markAssignedIfWaiting(eq("session-waiting"), eq(1L), eq("emp-001"), any()))
+                .thenReturn(1);
+        when(agentSessionMapper.lockEmployeeForQuota("emp-001", 1L)).thenReturn("emp-001");
+        when(agentSessionMapper.selectMaxConcurrentSessions("emp-001")).thenReturn(5);
+        when(agentSessionMapper.countActiveSessions("emp-001", 1L)).thenReturn(2);
         when(agentMessageMapper.insert(any(AgentMessage.class))).thenReturn(1);
 
         // when
         agentSessionService.assignSession("session-waiting", "emp-001");
 
         // then
-        verify(agentSessionMapper).updateById(argThat((AgentSession s) ->
-                "active".equals(s.getStatus()) && "emp-001".equals(s.getEmployeeId())));
+        verify(agentSessionMapper).markAssignedIfWaiting(eq("session-waiting"), eq(1L), eq("emp-001"), any());
+        verify(agentSessionMapper).lockEmployeeForQuota("emp-001", 1L);
+        // 无谓词整实体回写是修前的病根形态 ⇒ 本用例**显式禁止**它回来
+        verify(agentSessionMapper, never()).updateById(any(AgentSession.class));
         verify(agentMessageMapper).insert(any(AgentMessage.class));
     }
 

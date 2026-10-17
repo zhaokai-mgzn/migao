@@ -4368,3 +4368,37 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: MC-116
+    legacy_id: ""
+    title: "类级元守卫（#6962）：会话分配 / 候选处置 / 路线删除三类写面必须落到带谓词的条件更新（未登记即红 + 豁免只许缩短）"
+    domains:
+      - misc
+      - backend
+    tier: edge
+    tags:
+      - meta-guard
+      - concurrency
+      - cas
+      - backend-contract
+    truths_ref: []
+    precondition: "前置 = ① 被守的六条文件（`AgentSessionMapper` / `AgentSessionService` / `KnowledgeCandidateMapper` / `KnowledgeCandidateService` / `ProductionRouteTemplateMapper` + `ProductionRouteRuleMapper` / `ProductionRoutingCommandService`）与台账 backend/admin-api/src/test/resources/concurrency-cas-batch-6962-ledger.json 均可读；② 台账 `entries` / `service_write_paths` 非空。两者不成立 ⇒ 判据**直接红**（不是跳过）—— 「空」不等于「全部合规」。"
+    user_inputs:
+      - "（非对话用例）对 admin-api 源码文本做词法扫描 + 台账现取 + 合成语料判别力自证"
+    expectations: []
+    data_checks:
+      - "🔴 **判据 1·扫描器非空跑自证**：现取的三类写面必须含核心对象（`AgentSessionMapper#markAssignedIfWaiting` / `#lockEmployeeForQuota`、`KnowledgeCandidateMapper#markReviewedIfPending`、两条 `markDeletedByIdAndTenant`，以及 `AgentSessionService#assignSession` / `KnowledgeCandidateService#adoptInternal` / `#reject` / `ProductionRoutingCommandService#deleteRouting` / `#deleteRouteRule`）—— **返回空集 = 判据失明，不是通过**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ConcurrencyCasBatch6962MetaGuardTest.java"
+      - "🔴 **判据 2·谓词完整性**：凡在这些 mapper 里手写 `@Update` 并写受守状态列的 SQL，必须带 tenant 谓词 + 该表应有的状态谓词；`production_route_templates` / `production_route_rules` / `agent_sessions` 另需 `deleted = 0`。⚠️ **`knowledge_candidates` 没有 `deleted` 列**（对 backend/admin-api/src/main/resources/db/init/schema.sql 现取核对）⇒ 该表**不得**要求 `deleted = 0`；本批两例「模板写了 `deleted=0` 但该表没有该列」的坑在此作为正面登记。"
+      - "🔴 **判据 3·无谓词写即红（判据本体）**：受守方法体内**不得**出现受守 mapper 的 `updateById(` —— 状态迁移 / 软删必须走条件更新。**实证过的隐蔽形态**：锚串留着而真正落库换成 `updateById` ⇒ 仍判红并具名。"
+      - "🔴 **判据 4·插卡写序**：`KnowledgeCandidateService#adoptInternal` 里 `knowledgeCardMapper.insert(` 必须在 `markReviewedIfPending(` 及其 `== 0` 冲突检查**之后**（文本序判定）—— 挪回 CAS 之前 ⇒ 判红（「两张卡」的成因）。"
+      - "🔴 **判据 5·未登记即红 + 台账不许给不存在的对象盖章**：受守写路径必须逐条登记（concurrency-cas-batch-6962-ledger.json 的 `service_write_paths`），登记的 `call_anchor` 必须逐字出现在该方法体里；每条 `evidence` = `<仓库相对全路径>::<可检索文本>`，左侧文件存在、右侧逐字出现（摘掉 CAS 调用 / 方法改名 ⇒ 红）。"
+      - "🔴 **判据 6·豁免只许缩短 + 台账不许空转**：`unverified` 必须是冻结基线 `unverified_baseline` 的**子集**（新增豁免 ⇒ 红）；条数**现取**打印在断言消息上；`entries` / `service_write_paths` 为空 ⇒ 红。"
+      - "🔴 **判据 7·判别力自证（合成语料）**：无谓词写 / 缺 tenant 谓词 / 缺状态谓词 / 路由表缺 `deleted=0` / 未登记写路径 / 锚留而落库无谓词 / 台账未兑现 各判红，合规语料判绿，**只加注释不红**（对照读数）。"
+      - "**边界（照实登记）**：① 形态判据读源码文本（不做 AST）⇒ 换措辞可绕过，真实防线是实例判据 backend/admin-api/src/test/java/com/migao/admin/service/ConcurrentQuotaAdoptDeleteCas6962RealDbTest.java；② 射程只到上列六条文件 + 一张台账；③ 判不了「拿 `updateById` 改非受守列」；④ 本守卫**不跑**被它引用的真库判据；⑤ 不改任何门禁的通过条件、不新增豁免。"
+    skip_reason: "[backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟"
+    merge_log: "2026-10-16 新增（issue #6962 的类级固化）。取号 = 现取 main ∪ 全部在飞分支的 MC 号最大（104）⇒ **MC-106**（**跳开** MC-105：另一包 #6961 占用；MC-100 / MC-102 / MC-104 / MC-105 一律不动）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ConcurrencyCasBatch6962MetaGuardTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

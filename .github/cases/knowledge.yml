@@ -256,3 +256,41 @@ cases:
       ci:
         - nightly-verification.yml
       verifies: []
+
+  # KN-010（issue #6962，P5·并发）：知识候选并发双采纳 ⇒ 恰 1 张卡（发布权 = 条件更新）
+  # ==========================================================================
+  - id: KN-010
+    legacy_id: ""
+    title: "知识候选并发双采纳各自插卡 ⇒ 产出两张卡；改写为「先抢发布权（CAS）再插卡」后恰一次成功、恰一张卡（issue #6962）"
+    domains:
+      - knowledge
+      - backend
+    tier: edge
+    tags:
+      - concurrency
+      - cas
+      - idempotency
+      - backend-contract
+      - realdb
+    truths_ref: []
+    precondition: "前置 = 一条 `status='pending'` 的知识提炼候选（`knowledge_candidates` 无 `deleted` 列，软删语义由 `status` 承担）。前置由判据自建（一次性真 PG 集群 + 自建 tenant / 候选行），**不成立时 fail-closed 硬失败**，不会伪装成「agent 不干活」。"
+    user_inputs:
+      - "同一条待确认候选被严格同时采纳两次（并发 adopt）"
+      - "同一条待确认候选被并发「采纳 × 拒绝」各一次"
+    expectations: []
+    data_checks:
+      - "**病（真实缺陷形态）**：修前 `KnowledgeCandidateService#adoptInternal` / `#reject` 都是「`getOwned` 读出 `status='pending'` → 应用层判 → 整实体 `knowledgeCandidateMapper.updateById(candidate)`（WHERE 仅主键 ⇒ **无谓词**）」，且采纳路径是**先 `knowledgeCardMapper.insert(card)` 再置态** ⇒ 并发双采纳**各插一张卡**（实测 2 张）；「采纳 × 拒绝」并发则两个都过读判、都成功，终态由后写者决定。"
+      - "**判据 1（恰一次成功、恰一张卡）**：backend/admin-api/src/test/java/com/migao/admin/service/ConcurrentQuotaAdoptDeleteCas6962RealDbTest.java：并发双 `adopt` ⇒ 成功数 **恰 == 1**、落败方 **409**，且 `SELECT COUNT(*) FROM knowledge_cards WHERE tenant_id=? AND source_ref=<候选 id>` **恰 == 1**（修前为 2 ⇒ 判红）；候选终态 = `adopted`。"
+      - "**判据 2（同族 `reject` 同口径）**：`reject` 与 `adopt` 走**同一条**条件更新 `KnowledgeCandidateMapper#markReviewedIfPending`（谓词 `id + tenant_id + status='pending'`）⇒ 并发「采纳 × 拒绝」只有一方赢；`status_note` 只在 `note != null` 时写（采纳路径不动拒绝原因）。"
+      - "**判据 3（写序不可反转）**：类级元守卫 backend/admin-api/src/test/java/com/migao/admin/service/ConcurrencyCasBatch6962MetaGuardTest.java 断言 `adoptInternal` 里 `knowledgeCardMapper.insert(` **出现在** `markReviewedIfPending(` 及其 `== 0` 冲突检查**之后** —— 把插卡挪回 CAS 之前 ⇒ 判红（那正是「两张卡」的成因）。"
+      - "**列存在性自证（本批两例踩坑的正面登记）**：谓词里的列**逐个对 `db/init/schema.sql` 现取核对** —— `knowledge_candidates` **没有** `deleted` 列（本表谓词**不得**写 `deleted = 0`，写了就是列不存在 ⇒ SQL 报错）；而 `agent_sessions` / `agent_employees` / `production_route_templates` / `production_route_rules` **有** `deleted` 列。"
+      - "**边界（照实登记）**：判据跑服务层真库并发而非 HTTP 栈；候选与卡片的归属键用 `source_ref`（采纳时逐字继承候选的 `source_ref`），不新增审计列。"
+    skip_reason: "[backend-contract] 纯后端真库并发判据（真 PG 一次性集群，走 `PgCluster.startOrAbort()` 收口）+ 类级元守卫：admin-api 单测面，不进 agent-eval 冒烟"
+    merge_log: "2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ConcurrentQuotaAdoptDeleteCas6962RealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ConcurrencyCasBatch6962MetaGuardTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

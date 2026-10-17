@@ -322,3 +322,43 @@ cases:
       ci:
         - ai-agent-tests.yml
       verifies: []
+
+  # AG-013（issue #6962，P5·并发；族级跟踪单 #6953）：客服会话并发分配 = 条件更新 + 额度原子闸
+  # ==========================================================================
+  - id: AG-013
+    legacy_id: ""
+    title: "客服会话并发分配「读计数 × 再写」无互斥 ⇒ max_concurrent_sessions 被突破；改写为条件更新后并发数不超过上限（issue #6962）"
+    domains:
+      - agents
+      - chat
+      - backend
+    tier: edge
+    tags:
+      - concurrency
+      - cas
+      - quota
+      - backend-contract
+      - realdb
+    truths_ref: []
+    precondition: "前置 = ① 一名 `status != offline`、`max_concurrent_sessions = 3` 的客服员工；② 同租户下 N=6 个 `status='waiting'` 的人工会话。前置由判据自建（一次性真 PG 集群 `PgCluster.startOrAbort()` + 自建 tenant 与行），**不成立时 fail-closed 硬失败**（探针在 10000ms 内等不到即抛 `IllegalStateException`；夹具缺失在建夹具那一步红）。本用例不是 LLM 多轮对话，无 agent 期望 ⇒ 红了只有一个读法：判据或装置坏了。"
+    user_inputs:
+      - "同一名客服（上限 3）上，6 个等待中的会话被严格同时分配（并发 assignSession）"
+      - "串行正对照：额度未满时逐条分配必须照旧成功（谓词不得误杀正常请求）"
+    expectations: []
+    data_checks:
+      - "**病（真实缺陷形态）**：修前 `AgentSessionService#assignSession` 先 `selectCount(status='active')` 读出计数、在应用层判 `activeCount >= maxConcurrent`，再 `agentSessionMapper.updateById(session)`（WHERE 仅主键 ⇒ **无谓词**）⇒ 读判与写之间没有任何互斥。① 同一个 `sessionId` 并发分配 ⇒ 两个请求都过读判、都成功（后写者覆盖 `employee_id`）；② 同一个员工的 N 个**不同**会话并发分配 ⇒ N 个请求各自读到的 `activeCount` 都是分配前的值、各自都判「未超额」⇒ `max_concurrent_sessions` 被**突破**（上限 3 时 6 个并发全落 `active`）。"
+      - "**判据 1（并发数不超过上限）**：真库并发判据 = backend/admin-api/src/test/java/com/migao/admin/service/ConcurrentQuotaAdoptDeleteCas6962RealDbTest.java：6 个并发 `assignSession`（上限 3，探针开）后，落库读数 `SELECT COUNT(*) FROM agent_sessions WHERE employee_id=? AND status='active' AND deleted=0` 必须 **≤ 3**（修前为 6 ⇒ 判红）；成功数必须与落库计数一致（不许「回了 200 但没落库」或反之）。"
+      - "**判据 2（落败方是显式 409）**：抢不到分配权 / 抢不到额度的请求必须回 **409 CONFLICT**（不是 500、不是静默成功），且 409 文案带**实际当前态**（会话态的中文标签 / 额度当前值）。"
+      - "**正对照（护栏不误杀）**：串行分配前 `max` 条必须成功、第 `max + 1` 条必须被拒 —— 谓词写错（写成常量 / 写错前驱）会让这条先红。"
+      - "**窗口注入（判据确定性的来源）**：`AgentSessionService#setAssignProbePauseMillisForTest`（**生产恒 0**，与 `InboundOrderService` 的 `CANCEL_PROBE_PAUSE_MILLIS` 同款）在「读会话/员工」之后、判额度之前留一条窄缝 ⇒ 探针开 = 修前形态必红 / 修后绿；探针关 = 修后仍绿（无假红）。"
+      - "**修法（照抄本仓范式）**：① 抢分配权 = `AgentSessionMapper#markAssignedIfWaiting`（谓词 `id + tenant_id + status='waiting' + deleted=0`，按**影响行数**判归属，0 行 ⇒ 409）；② 抢额度 = `AgentSessionMapper#lockEmployeeForQuota`（`SELECT … FOR UPDATE` 锁住员工行）+ `#countActiveSessions`（锁内现取计数）—— 判额度与占额度在同一持锁临界区，后到者阻塞到前者提交后再求值。**为什么不是 `UPDATE … WHERE current < max`**：超额时谓词不成立 ⇒ 不取锁 ⇒ 计数照旧读到旧值 ⇒ 上限照样破（实测订正，写在 mapper javadoc 里）。"
+      - "**边界（照实登记）**：① 判据跑的是**服务层真库并发**而非 HTTP 栈；② 探针对象全部自建（tenant / id 前缀 `6962`），随一次性临时集群销毁、不碰存量数据；③ 计数的真值源 = 会话表本身（`agent_employees` **没有** `current_sessions` 列，`db/init/schema.sql` 自证）⇒ 不引入第二份会漂移的账。"
+    skip_reason: "[backend-contract] 纯后端真库并发判据（真 PG 一次性集群，走 `PgCluster.startOrAbort()` 收口）+ 类级元守卫：admin-api 单测面，不进 agent-eval 冒烟"
+    merge_log: "2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 AG 号最大（12）⇒ **AG-013**（`scripts/next_case_id.py AG` 亦给 013；对在飞分支有盲区，故另跑一次全 ref 复核）。**本批只做 3 处高危站点**，其余站点照实留档不碰（清单见 PR body）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ConcurrentQuotaAdoptDeleteCas6962RealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ConcurrencyCasBatch6962MetaGuardTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
