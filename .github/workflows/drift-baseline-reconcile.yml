@@ -59,7 +59,15 @@ name: Drift Baseline Reconcile (归零基线条目自动销账)
 #   ⇒ 该次合并产生的 `push` 事件可能被 GitHub 的反递归抑制吞掉。对本腿的**判定对象**
 #   （只有 `scripts/drift_audit_baseline.json`）无影响；drift 面另有一条定时腿兜底。
 #   若将来需要该次合并触发 push 面，改的是 **arm 凭据**（与 `AUTOMERGE_PAT` 同一口径），
-#   **不是**放宽任何门禁 —— 本腿**不**在本 PR 里做这件事（照实登记）。
+#   **不是**放宽任何门禁 —— 本次交付里**不**做这件事（照实登记）。
+
+# ── 谁看（停摆不许静默）──────────────────────────────────────────────────────
+# 本腿是「无人值守触发面 × 写作用域」（`workflow_run`/`workflow_dispatch` × contents/
+# pull-requests/actions）⇒ 按 `scripts/mechanism-registry.json` 的结构性发现规则**必须登记**
+# （未登记即红，判据 = `tests/unit_ci_workflows/test_mechanism_liveness.py`），并在 job 的
+# **最后一步**（`if: always()`）交出一条 `MECHANISM-LIVENESS` 读数：`seen=<归零条目数>` /
+# `acted=<本轮真删的条目数>` —— 「零动作」与「没跑」在形态上不同（§23 G6）。
+# 消费面 = `mechanism-liveness.yml` 的定时腿 ⇒ P1 值班 issue。
 
 on:
   workflow_run:
