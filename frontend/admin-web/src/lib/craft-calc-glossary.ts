@@ -73,6 +73,40 @@ export const CALC_SCALAR_KEYS = [
 /** 标量配置键（类型 = 上面清单的成员，**不另写一份联合类型**） */
 export type CalcScalarKey = (typeof CALC_SCALAR_KEYS)[number]
 
+/**
+ * 算料表单里的**字段分组**（issue #7124，2026-10-17 用户裁定「算料口径这里还是太丑陋」）。
+ *
+ * ## 为什么分组清单放在这里（而不是组件里）
+ *
+ * 分组是**展示**分组，但它必须与键集**同源**：清单漏一个键 ⇒ 那个参数在表单里**隐身**
+ * （商家改不到，而页面上看不出少了什么）。所以它跟 `CALC_SCALAR_KEYS` 放同一处，
+ * 并由守卫（`frontend/admin-web/tests/unit/lib/craft-calc-glossary.test.ts`）判
+ * 「分组 ∪ ≡ `CALC_SCALAR_KEYS`」双向相等 —— 引擎新增键而没进分组 ⇒ **红**，不会静默消失。
+ *
+ * ## 分组的依据 = 「改的是同一件事的钱」
+ *
+ * - **用布与余量**：每片帘子裁多少布（褶用掉多少 / 两边包边留多少 / 上下卷边多少）；
+ * - **超高 / 超宽阈值**：净窗超过它才**多收一笔**（加工费组合），与「用多少布」不同因。
+ *
+ * ⚠️ 分组**不改变**任何键集、默认值与保存语义（`PUT` 仍是整份替换）。
+ */
+export const CALC_FIELD_GROUPS = [
+  {
+    key: 'materials',
+    title: '用布与余量',
+    keys: ['per_fold_single', 'margin_single', 'margin_multi', 'hem_margin'],
+  },
+  {
+    key: 'thresholds',
+    title: '超高 / 超宽阈值',
+    keys: ['oversize_width_threshold', 'oversize_height_threshold'],
+  },
+] as const satisfies readonly {
+  key: string
+  title: string
+  keys: readonly CalcScalarKey[]
+}[]
+
 /** 一个配置键的页面文案（`label` 在表单上，`hint` 在输入框下，`impact` 在说明区块） */
 export interface CalcParamCopy {
   /** 表单 label */

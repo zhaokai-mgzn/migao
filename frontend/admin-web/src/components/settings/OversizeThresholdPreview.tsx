@@ -128,9 +128,12 @@ export function OversizeThresholdPreview({ config }: Props) {
       data-testid="threshold-preview"
       className="mt-4 border border-neutral-200 rounded-lg p-4 bg-neutral-50/50"
     >
-      <h4 className="text-sm font-semibold text-neutral-900">阈值试算 —— 改完先看，不保存</h4>
+      <h4 className="text-sm font-semibold text-neutral-900">阈值试算 —— 改完先看</h4>
       <p className="text-xs text-neutral-500 mt-1">
-        <InlineMarkdown text="超高 / 超宽会进加工费组合（组合没配价就收不到这笔钱）。改阈值前先在这里试一扇窗，看看会不会变。判定由系统给，本页**不保存任何改动**。" />
+        {/* 🔴 2026-10-17（issue #7124）：本块**紧跟在「超高 / 超宽阈值」之后**，而旧文案写的是
+            「本页**不保存任何改动**」—— 在能保存的写面上会被读成「上面的改动也不保存」（误导）。
+            改为「**这里只试算** + 要改口径去哪改」，既不承诺保存、又给出动作。 */}
+        <InlineMarkdown text="超高 / 超宽会进加工费组合（组合没配价就收不到这笔钱）。改阈值前先在这里试一扇窗，看看会不会变。判定由系统给；**这里只试算** —— 要改口径请改上面的阈值后点「保存」。" />
       </p>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
@@ -138,8 +141,10 @@ export function OversizeThresholdPreview({ config }: Props) {
           [
             ['试算窗宽（米）', 'preview-width', width, setWidth],
             ['试算窗高（米）', 'preview-height', height, setHeight],
-            ['超宽阈值（米）', 'preview-threshold-width', widthThreshold, setWidthThreshold],
-            ['超高阈值（米）', 'preview-threshold-height', heightThreshold, setHeightThreshold],
+            // 🔴 与上面的配置字段**同名会被读成「同一个框」**（独立复核读图实测：同屏两处
+            //    「超宽阈值（米）」可编辑框，一处改配置、一处只影响试算）⇒ 标题写明「试算用」。
+            ['试算用超宽阈值（米）', 'preview-threshold-width', widthThreshold, setWidthThreshold],
+            ['试算用超高阈值（米）', 'preview-threshold-height', heightThreshold, setHeightThreshold],
           ] as const
         ).map(([label, testid, value, setter]) => (
           <label key={testid} className="block">
@@ -150,7 +155,7 @@ export function OversizeThresholdPreview({ config }: Props) {
               data-testid={testid}
               value={value === '' ? null : value}
               onChange={(v) => (setter as (v: number | '') => void)(v === null ? '' : v)}
-              className="w-full h-8 px-2 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500"
+              className="w-full h-9 px-2 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500"
             />
           </label>
         ))}

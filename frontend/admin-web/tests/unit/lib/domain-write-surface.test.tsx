@@ -276,7 +276,9 @@ describe('判据 5：算料域的数值输入必须**定宽**（不得整列宽�
       .map((el) => el.getAttribute('data-testid'))
     expect(offenders, '这些字段是整列宽（`w-full`）—— #6857 的病灶形态').toEqual([])
     const unbounded = fields
-      .filter((el) => !/\bw-(28|40|64)\b/.test(el.className))
+      // 允许的定宽 token：`w-36` = 本域**统一**数值宽（issue #7124，label 在上之后统一左边界）、
+      // `w-40` = 档位显示名、`w-64` = 备用公式。三个都是**定宽**，没有靠父容器撑宽的形态。
+      .filter((el) => !/\bw-(36|40|64)\b/.test(el.className))
       .map((el) => el.getAttribute('data-testid'))
     expect(unbounded, '这些字段没有定宽 token ⇒ 宽度靠父容器决定，改布局就会变宽').toEqual([])
   })

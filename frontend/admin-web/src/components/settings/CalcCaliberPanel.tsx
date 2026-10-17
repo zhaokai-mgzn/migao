@@ -16,6 +16,24 @@
  * 备用公式 `default_formula` **全部就地可改**，全域**只有一个保存按钮**；
  * 术语说明（`CraftCalcGlossary`）与阈值预览（`OversizeThresholdPreview`）随参数同屏。
  *
+ * ## 版式（issue #7124，2026-10-17 用户裁定 —— 本文件最重要的一段注释）
+ *
+ * 用户逐字：「算料口径这里的样式还是太丑陋了」，并授权「**按你自己最优方案设计**」。
+ * 病灶三条（真机截图归因，逐条对应下面的判据）：
+ *
+ * 1. **控件与名称同行**（#6857 的「行式紧凑」）⇒ 标签长短不一，每个输入框的**左边界逐行抖动**，
+ *    两列之间也对不齐；
+ * 2. **每行一条 `border-b`** ⇒ 8 行 8 条横线，像一张没有表头的表，与同页「阈值试算」那张圆角卡片
+ *    不是同一套视觉语言；
+ * 3. **没有区块标题** ⇒ 用料 / 档位 / 拼色 / 阈值 全靠 `border-t` 硬切，商家读不出哪几项是一组。
+ *
+ * ⇒ 改为**分组表单**：**标签在上、控件在下、一行口径提示收尾**（左边界恒定、两列对齐），
+ * 分组靠**区块标题 + 区块间距**表达（不再画行内分隔线）；分组清单 =
+ * `@/lib/craft-calc-glossary` 的 `CALC_FIELD_GROUPS`（单一真值，守卫判「分组 ∪ ≡ 键集」）。
+ * 定宽输入（防整列拉满，#6857 的另一半）继续保留，宽度统一到 `w-36`。
+ * 🔴 **本组判据不是审美**：「左边界对齐 / 区块存在 / 分组不漏键」都是可断言的形态；
+ * 「好不好看」仍由 §15.7 读图 + 人裁定（§31.4）。
+ *
  * ## 🔴 保存语义（与后端契约逐字一致）
  *
  * 读面 `GET /api/admin/production/craft-calc-config` 给**整份**配置（`CraftCalcConfigResponse`），
@@ -38,10 +56,6 @@
  *   `calcDraft` / `onCalcDraftChange` / `onCalcSave`；**不给写回调** ⇒ 只读退化，**一个输入框都不渲染**
  *   （读面不由本组件取 ⇒ 它没有可写的东西；渲染一个「保存」在那里等于造第二个写面）。
  *
- * 🔴 **旧「受控只读」消费者 `TenantParamsPanel`（旧参数总览页）已由 #6848 整体退场** ⇒
- * 本组件与 `ParamScalarRow` 现在**只有算料口径域一个挂载点**：可选的「紧凑 / 卡片」二形态
- * 与逐键默认态徽标一并删除（留着就是死代码；issue #6857）。
- *
  * ## 数字输入一律用 `NumberInput`（issue #5198 / #5218）
  *
  * 旧 `type="number"` 会吞 `0.` 中间态、清空会把框渲染成字面量 `NaN` 且清不掉。
@@ -56,9 +70,9 @@ import { productionApi } from '@/lib/api'
 import { isErrorToastShown } from '@/lib/api-error'
 import { InlineMarkdown } from '@/lib/inline-markdown'
 import { CRAFT_CALC_FORMULA_LABELS } from '@/lib/craft-calc-request'
-import { CALC_PARAM_COPY } from '@/lib/craft-calc-glossary'
+import { CALC_FIELD_GROUPS, CALC_PARAM_COPY } from '@/lib/craft-calc-glossary'
 import { craftCalcConfigGuardReasons } from '@/lib/production-guard-reasons'
-import { boundedInputCls, inputCls } from '@/components/production-config/utils'
+import { boundedInputCls } from '@/components/production-config/utils'
 import {
   PARAM_DOMAINS,
   isUsingEngineDefault,
@@ -67,57 +81,72 @@ import {
 } from '@/lib/tenant-params'
 import type { CraftCalcConfig, CraftCalcConfigResponse } from '@/types'
 
+/** 数值输入框的**统一定宽**（定宽防「整列拉满」；统一宽度才有稳定的左边界 —— issue #6857 / #7124） */
+const NUM_INPUT_WIDTH = 'w-36'
+
 /**
- * 一行**标量参数**（三件套 + 右列值位）—— 算料域与其余标量域（AI 客服）**同一份渲染**，
- * 避免「同一件事两个载体」（`param-*` 的 testid 也只有一个定义处）。
+ * 一个参数字段（**标签在上、控件在下、口径提示收尾**）。
  *
- * 默认值徽标（`unset` / 逐键「已改 / 默认」）由调用方按**它自己那份读面**决定要不要传 ——
- * 本行只渲染，不判定。
+ * 🔴 为什么控件不跟标签同一行（#6857 曾是同行，本次改版推翻）：标签是「单色每折用料（米）」这种
+ * 长短不一的句子，同行布局下每个输入框的起点都不同 —— 一屏 6 个框排不出一条竖线（用户判「丑陋」的
+ * 主因）。竖排后左边界由**栅格**决定，与标签长短无关。
+ *
+ * 默认值徽标**不在行内标**：默认态由域级信号承担（顶部横幅 + 口径徽标，§31 P2「信息不重复」），
+ * 改动与回退由「恢复为默认值」按钮兜住。
  */
-export function ParamScalarRow({
+export function ParamField({
   param,
   value,
   control,
 }: {
   param: ScalarParam
-  /** 只读值（`control` 缺省时印在名称右侧）；**读面未落地时调用方传 `'…'`**（不谎报） */
+  /** 只读值（`control` 缺省时印在标签下方）；**读面未落地时调用方传 `'…'`**（不谎报） */
   value: string
-  /** 与名称**同一行**的控件（可编辑时给 `NumberInput`；不传 ⇒ 只读，同位置印值） */
+  /** 标签**下方**的控件（可编辑时给 `NumberInput`；不传 ⇒ 只读，同位置印值） */
   control?: ReactNode
 }) {
-  /**
-   * 形态 = **行式紧凑**（issue #6857，用户裁定 2026-10-13；2026-10-17 用户裁定再收一刀）：
-   * 「输入框直接放在名称后面」（方案 B）+「不要每行都写个默认，太丑了」（方案 C）。
-   *
-   * - 控件与名称**同一行**；下面只留**一句口径提示**（`hint`）；行间细线由 `border-b` 给；
-   * - 🔴 2026-10-17 用户逐字「把算料口径里面的这行字都拿掉吧」—— 指的是
-   *   「改它会怎样：… 说明」那**一整行**（含行尾的「说明」锚点）。它**不是**产品文案，
-   *   而是把「这个开关会改什么」在每一行上重复念了一遍（口径提示与术语区块各说一次 ⇒ §31 P2）。
-   *   ⇒ 影响说明的**唯一载体**是同屏的术语区块（`CraftCalcGlossary` 的「参数当前值」表）；
-   *   本行不再挂「说明」锚点（`param-doc-*` 随之退场 —— 指路入口消失，不是指了个空处）；
-   * - 行内**一个默认态徽标都不标**（旧「未配置 / 默认 / 已改（默认 X）」三件套一并退场）：
-   *   默认态由**域级**信号承担 —— 顶部横幅「下表全部为引擎默认值」+ 标题下口径徽标
-   *   （§31 P2「信息不重复」），改动与回退由「恢复为默认值」按钮兜住；
-   * - 🔴 旧**卡片**形态（名称/提示/影响三段 + 右列只读值 + 三个徽标 prop）随旧参数总览页
-   *   （`TenantParamsPanel`，#6848 退场）一起**删除** —— 本组件只剩算料口径域一个挂载点，
-   *   留着那条分支即死代码。
-   */
   return (
-    <div data-testid={`param-${param.key}`} className="py-3 border-b border-neutral-100">
-      <div className="flex items-center gap-3">
-        <span className="text-sm font-medium text-neutral-900">
-          <InlineMarkdown text={param.copy.label} />
-        </span>
+    <div data-testid={`param-${param.key}`} className="min-w-0">
+      <span className="block text-sm font-medium leading-5 text-neutral-800">
+        <InlineMarkdown text={param.copy.label} />
+      </span>
+      <div className="mt-1.5">
         {control ?? (
           <div data-testid={`param-value-${param.key}`} className="text-sm text-neutral-900">
             {value}
           </div>
         )}
       </div>
-      <p className="mt-1 text-xs text-neutral-500">
+      <p className="mt-1.5 text-xs leading-relaxed text-neutral-500">
         <InlineMarkdown text={param.copy.hint} />
       </p>
     </div>
+  )
+}
+
+/**
+ * 表单里的**一个区块**（标题 + 内容）—— 分组靠它表达，`divider` 给区块之间的一条细分隔线
+ * （区块内的字段之间**不画线**：那是上一版「8 行 8 条线」的病灶）。
+ */
+function FormSection({
+  title,
+  testid,
+  divider = true,
+  children,
+}: {
+  title: string
+  testid: string
+  divider?: boolean
+  children: ReactNode
+}) {
+  return (
+    <section
+      data-testid={testid}
+      className={divider ? 'border-t border-neutral-100 pt-6' : undefined}
+    >
+      <h3 className="text-base font-semibold text-neutral-900">{title}</h3>
+      <div className="mt-3">{children}</div>
+    </section>
   )
 }
 
@@ -148,7 +177,7 @@ export interface CalcCaliberPanelProps {
   onRetry?: () => void
 }
 
-/** 工艺档位的**显示名**（键仍是后端键；未知档回退原键，不吞掉、不猜中文） */
+/** 工艺档位的**显示名**（键仍是后端键；未知档回退人话，不吞掉、不猜中文） */
 const TIER_DISPLAY_LABEL: Record<string, string> = {
   standard: '标准档',
   economy: '经济档',
@@ -284,18 +313,18 @@ export function CalcCaliberPanel({
   }
 
   const renderScalar = (p: ScalarParam) => (
-    <ParamScalarRow
+    <ParamField
       key={p.key}
       param={p}
       // 🔴 读失败 ⇒ **空位**（不是 `—`）：`—` 长得像「这个参数没有值」，而真相是**整个读面失败**。
       //    加载中仍给 `…`（那是「还在读」，与失败是两件事）。
       value={failed ? '' : loading && !displayConfig ? '…' : valueOf(p.key)}
-      // 可写形态：控件与名称**同一行**（issue #6857）；不可写 ⇒ 同位置印只读值。
+      // 可写形态：控件在标签**下方**（issue #7124）；不可写 ⇒ 同位置印只读值。
       control={
         writable && displayConfig ? (
           // `NumberInput`（issue #5198 —— `type="number"` 会吞 `0.` / 清空变 `NaN`）
           <NumberInput
-            className={boundedInputCls('w-28 text-right tabular-nums')}
+            className={boundedInputCls(`${NUM_INPUT_WIDTH} text-right tabular-nums`)}
             aria-label={`${p.copy.label}`}
             data-testid={`calc-caliber-scalar-${p.key}`}
             value={numberOf(displayConfig, p.key)}
@@ -307,6 +336,32 @@ export function CalcCaliberPanel({
       }
     />
   )
+
+  /**
+   * 字段分组（顺序与 `CALC_FIELD_GROUPS` 一致；组内顺序 = `domain.common` 的顺序 = 引擎键序）。
+   *
+   * 🔴 **兜底不为空即渲染**：分组清单万一漏了键（守卫会判红，但那是 CI 的事），
+   * 运行时也必须**仍然可改** —— 参数在表单里隐身是比「排得难看」严重得多的故障。
+   */
+  function fieldGroups(): { key: string; title: string; params: ScalarParam[] }[] {
+    const common = domain.common ?? []
+    const used = new Set<string>()
+    const groups = CALC_FIELD_GROUPS.map((g) => {
+      const keys: readonly string[] = g.keys
+      const params = common.filter((p) => keys.includes(p.key))
+      params.forEach((p) => used.add(p.key))
+      return { key: g.key as string, title: g.title as string, params }
+    }).filter((g) => g.params.length > 0)
+    const rest = common.filter((p) => !used.has(p.key))
+    return rest.length > 0
+      ? [...groups, { key: 'rest', title: '其余参数', params: rest }]
+      : groups
+  }
+
+  const groups = fieldGroups()
+  /** 阈值组**排在档位之后、且紧跟试算块**（改完立刻能试 —— 它们是同一件事的两半） */
+  const thresholdGroup = groups.find((g) => g.key === 'thresholds')
+  const leadingGroups = groups.filter((g) => g !== thresholdGroup)
 
   const tiers = displayConfig?.tiers ?? {}
   const mixed = displayConfig?.per_fold_mixed_times ?? {}
@@ -367,89 +422,64 @@ export function CalcCaliberPanel({
         </div>
       )}
 
-      {/* 读面失败 ⇒ **不画参数卡、不画写面**（画一排空值卡 = 把「读不到」伪装成「这些参数是空的」；
+      {/* 读面失败 ⇒ **不画参数、不画写面**（画一排空值 = 把「读不到」伪装成「这些参数是空的」；
           读不到就不许改 —— 改的是一份读不到的配置）。保留一个锚点，让失败态在 DOM 里可断言。 */}
       {failed ? (
         <div data-testid="param-calc-read-failed" />
       ) : (
-        <>
-          {/* P2 三件套（常用 / 高级渐进披露）
-              2026-10-17 用户逐字「两个参数一行排列的布局是否更美观」⇒ **两列**（宽屏）；
-              窄屏（< xl）单列 —— 一行 = 名称 + 控件 + 一句提示，两列时右侧不再空一大片。 */}
-          {domain.common && domain.common.length > 0 && (
-            <div className="grid grid-cols-1 gap-x-8 xl:grid-cols-2">
-              {domain.common.map((p) => renderScalar(p))}
-            </div>
-          )}
-
-          {domain.advanced && domain.advanced.length > 0 && (
-            <div>
-              <button
-                type="button"
-                data-testid={`param-advanced-toggle-${domain.key}`}
-                aria-expanded={advancedOpen}
-                onClick={() => setAdvancedOpen((v) => !v)}
-                className="flex items-center gap-1 text-xs font-medium text-neutral-600 hover:text-neutral-900"
-              >
-                {advancedOpen ? (
-                  <ChevronDown className="w-4 h-4" />
-                ) : (
-                  <ChevronRight className="w-4 h-4" />
-                )}
-                高级（{domain.advanced.length}）—— 一般不常改
-              </button>
-              {advancedOpen && (
-                <div
-                  data-testid={`param-advanced-${domain.key}`}
-                  className="mt-3 grid grid-cols-1 gap-x-8 xl:grid-cols-2"
-                >
-                  {domain.advanced.map((p) => renderScalar(p))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ══════════ 以下三块原在板子的「算料配置」tab 里（issue #6825 并入本域） ══════════ */}
-          {writable && displayConfig && (
-            <>
-              {/* 备用公式（工艺能推导时以工艺为准，这里只是推导表缺失时的兜底） */}
-              <div className="pt-3 border-t border-neutral-100">
-                <label className="mb-1 block text-sm text-neutral-700" htmlFor="calc-caliber-formula">
-                  {CALC_PARAM_COPY.default_formula.label}
-                </label>
-                {/* 取值域与文案 = **单一真值** `CRAFT_CALC_FORMULA_LABELS`（不另写一份映射） */}
-                <select
-                  id="calc-caliber-formula"
-                  className={boundedInputCls('w-64')}
-                  data-testid="calc-caliber-default_formula"
-                  value={displayConfig.default_formula}
-                  onChange={(e) => patchDraft({ ...displayConfig, default_formula: e.target.value })}
-                >
-                  {Object.keys(CRAFT_CALC_FORMULA_LABELS).map((k) => (
-                    <option key={k} value={k}>
-                      {CRAFT_CALC_FORMULA_LABELS[k]}
-                    </option>
-                  ))}
-                </select>
-                <span className="mt-1 block text-xs text-neutral-500">
-                  <InlineMarkdown text={CALC_PARAM_COPY.default_formula.hint} />
-                </span>
+        <div className="space-y-6">
+          {/* ── 用布与余量（及其它非阈值分组） ── */}
+          {leadingGroups.map((g, i) => (
+            <FormSection
+              key={g.key}
+              testid={`calc-caliber-group-${g.key}`}
+              title={g.title}
+              divider={i > 0}
+            >
+              <div className="grid grid-cols-1 gap-x-10 gap-y-5 sm:grid-cols-2">
+                {g.params.map(renderScalar)}
               </div>
+            </FormSection>
+          ))}
 
-              {/* 次区：档位与拼色系数（表格，逐行可改） */}
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 pt-3 border-t border-neutral-100">
-                <div>
-                  <h3 className="mb-2 text-sm font-medium text-neutral-700">
+          {/* ══════════ 档位与拼色（原在板子的「算料配置」tab 里，issue #6825 并入本域） ══════════ */}
+          {writable && displayConfig && (
+            <FormSection testid="calc-caliber-group-rules" title="档位与拼色">
+              {/* 🔴 两张表**上下排**（不是并排）：并排时每张只剩 ~370px，而「档位 + 显示名（w-40）+
+                  褶倍（w-36）」这三列合计就 ~360px ⇒ 真机 1440 实测右列被裁掉（验收读图实证）。
+                  定宽是 #6857 的成果、不能为了并排去缩它（缩了又回到「挤」），所以让容器让步。 */}
+              {/* 🔴 两张表**贴合内容、放得下就并排、放不下就换行**（不是撑满整行）：
+                  撑满整行时每张卡右侧会空出 357 / 535px（独立复核读图实测），
+                  并排 + `w-full` 时又会在 1440 下裁掉「褶倍」列（本包第一轮读图实测）。
+                  正解 = 卡宽贴合表格内容（`w-fit`）+ `flex-wrap`：1440 下两张并排且不裁切，
+                  窄容器下自动换行；`max-w-full` 兜住极窄容器。 */}
+              <div className="flex flex-wrap items-start gap-4">
+                {/* 档位表：一行一个档位（顾客看到的名字 + 褶倍） */}
+                <div className="w-fit max-w-full rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
+                  <h4 className="text-sm font-medium text-neutral-800">
                     {CALC_PARAM_COPY.tiers.label}
-                  </h3>
-                  <table className="w-full text-sm">
+                  </h4>
+                  {/* 表格**不撑满**（无 `w-full`）：列宽贴合内容，同一行的「档位 / 显示名 / 褶倍」
+                      挨在一起读；撑满会把定宽输入框之间的空白拉成一道鸿沟（验收读图实证）。 */}
+                  <table className="mt-2 text-sm">
                     <tbody>
+                      {/* 列头用 `td` 而不是 `th` **元素**：列头本来就短、这张表也不需要横向逃逸口，
+                          而 `list-table-nowrap-guard` 的射程是「带表头标签元素的表格」——
+                          不引它就不必造一个假的 overflow 容器（有意为之，不是漏了）。
+                          ⚠️ 注释里也**不要写那个角括号标签名**：该守卫按源码文本判，注释同样命中。 */}
+                      {/* 列头色 = `text-neutral-600`（对白底 6.2:1，过 AA）；**旧的 400 只有 2.28:1**，
+                          12px 小字在真机上是「看着脏」的来源（独立复核读图实测）。 */}
+                      <tr className="text-xs text-neutral-600">
+                        <td className="pb-1">档位</td>
+                        <td className="pb-1 pl-3">显示名</td>
+                        <td className="pb-1 text-right">褶倍</td>
+                      </tr>
                       {Object.entries(tiers).map(([name, tier]) => (
-                        <tr key={name} className="border-b border-neutral-100">
-                          <td className="py-1.5 pr-3 text-neutral-600">
+                        <tr key={name} className="border-t border-neutral-200/70">
+                          <td className="py-2 pr-3 whitespace-nowrap text-neutral-700">
                             {tierLabelOf(name)}
                           </td>
-                          <td className="py-1.5 pr-3">
+                          <td className="py-2 pr-3">
                             <input
                               className={boundedInputCls('w-40')}
                               aria-label={`${tierLabelOf(name)} 显示名`}
@@ -463,9 +493,9 @@ export function CalcCaliberPanel({
                               }
                             />
                           </td>
-                          <td className="py-1.5">
+                          <td className="py-2">
                             <NumberInput
-                              className={boundedInputCls('w-28 text-right tabular-nums')}
+                              className={boundedInputCls(`${NUM_INPUT_WIDTH} text-right tabular-nums`)}
                               aria-label={`${tierLabelOf(name)} 褶倍`}
                               data-testid={`calc-caliber-tier-${name}-fullness`}
                               value={
@@ -489,18 +519,27 @@ export function CalcCaliberPanel({
                     </tbody>
                   </table>
                 </div>
-                <div>
-                  <h3 className="mb-2 text-sm font-medium text-neutral-700">
+
+                {/* 拼色每折用料表：一行一个拼色次数 */}
+                <div className="w-fit max-w-full rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
+                  <h4 className="text-sm font-medium text-neutral-800">
                     {CALC_PARAM_COPY.per_fold_mixed_times.label}
-                  </h3>
-                  <table className="w-full text-sm">
+                  </h4>
+                  {/* 同档位表：不撑满，行内元素挨着读 */}
+                  <table className="mt-2 text-sm">
                     <tbody>
+                      <tr className="text-xs text-neutral-600">
+                        <td className="pb-1">拼色方式</td>
+                        <td className="pb-1 text-right">每折用料（米）</td>
+                      </tr>
                       {Object.entries(mixed).map(([times, perFold]) => (
-                        <tr key={times} className="border-b border-neutral-100">
-                          <td className="py-1.5 pr-3 text-neutral-600">拼{times}次</td>
-                          <td className="py-1.5">
+                        <tr key={times} className="border-t border-neutral-200/70">
+                          <td className="py-2 pr-3 whitespace-nowrap text-neutral-700">
+                            拼{times}次
+                          </td>
+                          <td className="py-2">
                             <NumberInput
-                              className={boundedInputCls('w-28 text-right tabular-nums')}
+                              className={boundedInputCls(`${NUM_INPUT_WIDTH} text-right tabular-nums`)}
                               aria-label={`拼${times}次 每折用料`}
                               data-testid={`calc-caliber-mixed-${times}`}
                               value={
@@ -525,57 +564,135 @@ export function CalcCaliberPanel({
                   </table>
                 </div>
               </div>
-            </>
+
+              {/* 备用公式（工艺能推导时以工艺为准，这里只是推导表缺失时的兜底） */}
+              <div className="mt-5">
+                <label
+                  className="block text-sm font-medium text-neutral-800"
+                  htmlFor="calc-caliber-formula"
+                >
+                  {CALC_PARAM_COPY.default_formula.label}
+                </label>
+                {/* 取值域与文案 = **单一真值** `CRAFT_CALC_FORMULA_LABELS`（不另写一份映射） */}
+                <select
+                  id="calc-caliber-formula"
+                  className={`${boundedInputCls('w-64')} mt-1.5`}
+                  data-testid="calc-caliber-default_formula"
+                  value={displayConfig.default_formula}
+                  onChange={(e) => patchDraft({ ...displayConfig, default_formula: e.target.value })}
+                >
+                  {Object.keys(CRAFT_CALC_FORMULA_LABELS).map((k) => (
+                    <option key={k} value={k}>
+                      {CRAFT_CALC_FORMULA_LABELS[k]}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-xs text-neutral-500">
+                  <InlineMarkdown text={CALC_PARAM_COPY.default_formula.hint} />
+                </p>
+              </div>
+            </FormSection>
+          )}
+
+          {/* ── 超高 / 超宽阈值 + 试算（同一件事的两半：上半个改阈值，下半个看它会不会变） ── */}
+          {thresholdGroup && (
+            <FormSection testid={`calc-caliber-group-${thresholdGroup.key}`} title={thresholdGroup.title}>
+              <div className="grid grid-cols-1 gap-x-10 gap-y-5 sm:grid-cols-2">
+                {thresholdGroup.params.map(renderScalar)}
+              </div>
+            </FormSection>
           )}
 
           {/* §22 P4：改钱的参数给预览（本域唯一能做**真预演**的两个阈值） */}
           <OversizeThresholdPreview config={displayConfig} />
 
-          {/* 全域**唯一**的保存按钮（受控只读形态 / 读失败 ⇒ 不渲染） */}
+          {/* 高级（渐进披露：默认收起，展开后与常用字段**同一形态**） */}
+          {domain.advanced && domain.advanced.length > 0 && (
+            <div className="border-t border-neutral-100 pt-6">
+              <button
+                type="button"
+                data-testid={`param-advanced-toggle-${domain.key}`}
+                aria-expanded={advancedOpen}
+                onClick={() => setAdvancedOpen((v) => !v)}
+                className="flex items-center gap-1.5 text-sm font-medium text-neutral-800 hover:text-neutral-900"
+              >
+                {advancedOpen ? (
+                  <ChevronDown className="w-4 h-4 text-neutral-400" />
+                ) : (
+                  <ChevronRight className="w-4 h-4 text-neutral-400" />
+                )}
+                高级（{domain.advanced.length}）
+                <span className="text-xs font-normal text-neutral-500">一般不常改</span>
+              </button>
+              {advancedOpen && (
+                <div
+                  data-testid={`param-advanced-${domain.key}`}
+                  className="mt-4 grid grid-cols-1 gap-x-10 gap-y-5 sm:grid-cols-2"
+                >
+                  {domain.advanced.map(renderScalar)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 全域**唯一**的保存出口（受控只读形态 / 读失败 ⇒ 不渲染）。
+              🔴 形态 = **右下角常驻的小条**（`sticky` + 右对齐 + 白底微模糊），不是整条白底横幅：
+              整条横幅在**静止首屏**会盖住内容（独立复核读图实测：盖住「备用用料公式」标签
+              15708px² / 下拉框上部 5632px²）—— 而小条在静止态落在面板右下角的空白区，
+              滚动时只压住一小角，且「保存」永远够得着（首屏不用滚 1.3 屏）。
+              重启条件：若商家反馈「小条挡住右下角内容」，改成滚动过表单首屏后才吸底。 */}
           {writable && displayConfig && (
-            <div className="pt-3 border-t border-neutral-100">
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  data-testid="calc-caliber-save"
-                  /* 域写面台账的「出口」标记（issue #6825）：类级守卫要求「可编辑控件 + 本域写出口」
-                     成对出现 —— 只看「域内有 input」会被**阈值试算**那类工具输入框满足（假绿）。 */
-                  data-write-exit="calc"
-                  disabled={busy}
-                  onClick={() => void save()}
-                  className="rounded bg-primary-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
-                >
-                  {busy ? '保存中…' : '保存'}
-                </button>
-                <button
-                  type="button"
-                  data-testid="calc-caliber-restore-defaults"
-                  disabled={busy || !engineDefaults}
-                  title={
-                    engineDefaults
-                      ? '把全部算料口径恢复成算料引擎默认值（改完还要点「保存」）'
-                      : '本次没取到引擎默认值 ⇒ 无法恢复（重新打开本页可再试）'
-                  }
-                  onClick={restoreDefaults}
-                  className="rounded border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
-                >
-                  恢复为默认值
-                </button>
-                <span className="text-xs text-neutral-500">
-                  保存后按当前配置计算；非法值会被整份拒绝并逐条说明理由。
-                </span>
-              </div>
-              {/* 护栏理由**逐条**展示（后端一次列出每一处不合法）—— 不吞成一句「保存失败」 */}
+            <div className="sticky bottom-6 z-10 pt-2">
+              {/* 护栏理由**逐条**展示（后端一次列出每一处不合法）—— 不吞成一句「保存失败」；
+                  放在吸底容器里 ⇒ 保存被拒时理由不会滚出视口。 */}
               {reasons.length > 0 && (
-                <ul className="mt-2 space-y-1 text-sm text-red-600" data-testid="calc-caliber-reasons">
+                <ul
+                  /* §31 P1：逐条明细**封顶滚动**（不随条数把常驻面撑高）—— 后端一次可能列出多处不合法 */
+                  className="mb-2 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600"
+                  data-testid="calc-caliber-reasons"
+                >
                   {reasons.map((r) => (
                     <li key={r}>{r}</li>
                   ))}
                 </ul>
               )}
+              <div className="flex justify-end">
+                <div className="flex flex-wrap items-center justify-end gap-3 rounded-lg border border-neutral-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur-sm">
+                  {/* ⚠️ 小条里**不写说明文字**：那会把条撑到 ~556px 宽，静止首屏又压到
+                      「备用用料公式」下拉框（右沿 818 > 754，独立复核实测）。说明改挂按钮 `title`，
+                      真正需要时由 422 的逐条理由块承载。 */}
+                  <button
+                    type="button"
+                    data-testid="calc-caliber-restore-defaults"
+                    disabled={busy || !engineDefaults}
+                    title={
+                      engineDefaults
+                        ? '把全部算料口径恢复成算料引擎默认值（改完还要点「保存」）'
+                        : '本次没取到引擎默认值 ⇒ 无法恢复（重新打开本页可再试）'
+                    }
+                    onClick={restoreDefaults}
+                    className="rounded border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                  >
+                    恢复为默认值
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="calc-caliber-save"
+                    /* 域写面台账的「出口」标记（issue #6825）：类级守卫要求「可编辑控件 + 本域写出口」
+                       成对出现 —— 只看「域内有 input」会被**阈值试算**那类工具输入框满足（假绿）。 */
+                    data-write-exit="calc"
+                    disabled={busy}
+                    title="保存后按当前配置计算；非法值会被整份拒绝并逐条说明理由。"
+                    onClick={() => void save()}
+                    className="rounded bg-primary-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+                  >
+                    {busy ? '保存中…' : '保存'}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
-        </>
+        </div>
       )}
 
       {/* 口径与术语说明（issue #4975）：与参数**同屏** —— 参数回答「我这家的口径是多少」，

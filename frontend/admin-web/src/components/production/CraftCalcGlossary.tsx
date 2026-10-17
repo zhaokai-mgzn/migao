@@ -177,7 +177,7 @@ export function CraftCalcGlossary({ config }: { config: CraftCalcConfig }) {
                 data-testid={`glossary-param-${key}`}
                 className="border-b border-neutral-100 last:border-b-0"
               >
-                <td className="py-1.5 pr-3 align-top text-neutral-700">
+                <td className="py-1.5 pr-3 align-top text-neutral-700 whitespace-nowrap">
                   <InlineMarkdown text={CALC_PARAM_COPY[key].label} />
                 </td>
                 <td
