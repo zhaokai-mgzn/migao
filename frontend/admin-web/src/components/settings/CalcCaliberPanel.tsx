@@ -445,13 +445,18 @@ export function CalcCaliberPanel({
           {/* ══════════ 档位与拼色（原在板子的「算料配置」tab 里，issue #6825 并入本域） ══════════ */}
           {writable && displayConfig && (
             <FormSection testid="calc-caliber-group-rules" title="档位与拼色">
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {/* 🔴 两张表**上下排**（不是并排）：并排时每张只剩 ~370px，而「档位 + 显示名（w-40）+
+                  褶倍（w-36）」这三列合计就 ~360px ⇒ 真机 1440 实测右列被裁掉（验收读图实证）。
+                  定宽是 #6857 的成果、不能为了并排去缩它（缩了又回到「挤」），所以让容器让步。 */}
+              <div className="space-y-4">
                 {/* 档位表：一行一个档位（顾客看到的名字 + 褶倍） */}
                 <div className="rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
                   <h4 className="text-sm font-medium text-neutral-800">
                     {CALC_PARAM_COPY.tiers.label}
                   </h4>
-                  <table className="mt-2 w-full text-sm">
+                  {/* 表格**不撑满**（无 `w-full`）：列宽贴合内容，同一行的「档位 / 显示名 / 褶倍」
+                      挨在一起读；撑满会把定宽输入框之间的空白拉成一道鸿沟（验收读图实证）。 */}
+                  <table className="mt-2 text-sm">
                     <tbody>
                       {/* 列头用 `<td>` 而不是 `<th>`：列头本来就短、这张表也不需要横向逃逸口，
                           而 `list-table-nowrap-guard` 的射程是「有 `<th>` 的表格」——
@@ -512,7 +517,8 @@ export function CalcCaliberPanel({
                   <h4 className="text-sm font-medium text-neutral-800">
                     {CALC_PARAM_COPY.per_fold_mixed_times.label}
                   </h4>
-                  <table className="mt-2 w-full text-sm">
+                  {/* 同档位表：不撑满，行内元素挨着读 */}
+                  <table className="mt-2 text-sm">
                     <tbody>
                       <tr className="text-xs text-neutral-400">
                         <td className="pb-1">拼色方式</td>
