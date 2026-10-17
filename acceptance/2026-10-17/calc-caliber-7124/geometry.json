@@ -8,22 +8,22 @@
       "id": "param-per_fold_single",
       "labelText": "单色每折用料",
       "label": {
-        "x": 583,
-        "y": 65,
-        "w": 333,
-        "h": 20,
-        "bottom": 85,
-        "top": 65
+        "x": 562,
+        "y": 14,
+        "w": 556,
+        "h": 44,
+        "bottom": 58,
+        "top": 14
       },
       "input": {
-        "x": 583,
-        "y": 91,
+        "x": 1150,
+        "y": 16,
         "w": 160,
         "h": 36,
-        "bottom": 127,
-        "top": 91
+        "bottom": 52,
+        "top": 16
       },
-      "labelAboveInput": true,
+      "labelLeftOfInput": true,
       "hasBottomBorder": false,
       "labelHasUnitParen": false,
       "unitInBox": true,
@@ -33,22 +33,22 @@
       "id": "param-margin_single",
       "labelText": "单开余量",
       "label": {
-        "x": 956,
-        "y": 65,
-        "w": 333,
-        "h": 20,
-        "bottom": 85,
-        "top": 65
-      },
-      "input": {
-        "x": 956,
+        "x": 562,
         "y": 91,
-        "w": 160,
-        "h": 36,
-        "bottom": 127,
+        "w": 556,
+        "h": 44,
+        "bottom": 135,
         "top": 91
       },
-      "labelAboveInput": true,
+      "input": {
+        "x": 1150,
+        "y": 93,
+        "w": 160,
+        "h": 36,
+        "bottom": 129,
+        "top": 93
+      },
+      "labelLeftOfInput": true,
       "hasBottomBorder": false,
       "labelHasUnitParen": false,
       "unitInBox": true,
@@ -58,22 +58,22 @@
       "id": "param-margin_multi",
       "labelText": "多开余量",
       "label": {
-        "x": 583,
-        "y": 175,
-        "w": 333,
-        "h": 20,
-        "bottom": 195,
-        "top": 175
+        "x": 562,
+        "y": 168,
+        "w": 556,
+        "h": 44,
+        "bottom": 212,
+        "top": 168
       },
       "input": {
-        "x": 583,
-        "y": 201,
+        "x": 1150,
+        "y": 170,
         "w": 160,
         "h": 36,
-        "bottom": 237,
-        "top": 201
+        "bottom": 206,
+        "top": 170
       },
-      "labelAboveInput": true,
+      "labelLeftOfInput": true,
       "hasBottomBorder": false,
       "labelHasUnitParen": false,
       "unitInBox": true,
@@ -83,22 +83,22 @@
       "id": "param-hem_margin",
       "labelText": "上下卷边",
       "label": {
-        "x": 956,
-        "y": 175,
-        "w": 333,
-        "h": 20,
-        "bottom": 195,
-        "top": 175
+        "x": 562,
+        "y": 245,
+        "w": 556,
+        "h": 44,
+        "bottom": 289,
+        "top": 245
       },
       "input": {
-        "x": 956,
-        "y": 201,
+        "x": 1150,
+        "y": 247,
         "w": 160,
         "h": 36,
-        "bottom": 237,
-        "top": 201
+        "bottom": 283,
+        "top": 247
       },
-      "labelAboveInput": true,
+      "labelLeftOfInput": true,
       "hasBottomBorder": false,
       "labelHasUnitParen": false,
       "unitInBox": true,
@@ -108,22 +108,22 @@
       "id": "param-oversize_width_threshold",
       "labelText": "超宽阈值",
       "label": {
-        "x": 583,
-        "y": 776,
-        "w": 333,
-        "h": 20,
-        "bottom": 796,
-        "top": 776
+        "x": 562,
+        "y": 744,
+        "w": 556,
+        "h": 44,
+        "bottom": 788,
+        "top": 744
       },
       "input": {
-        "x": 583,
-        "y": 802,
+        "x": 1150,
+        "y": 746,
         "w": 160,
         "h": 36,
-        "bottom": 838,
-        "top": 802
+        "bottom": 782,
+        "top": 746
       },
-      "labelAboveInput": true,
+      "labelLeftOfInput": true,
       "hasBottomBorder": false,
       "labelHasUnitParen": false,
       "unitInBox": true,
@@ -133,22 +133,22 @@
       "id": "param-oversize_height_threshold",
       "labelText": "超高阈值",
       "label": {
-        "x": 956,
-        "y": 776,
-        "w": 333,
-        "h": 20,
-        "bottom": 796,
-        "top": 776
+        "x": 562,
+        "y": 821,
+        "w": 556,
+        "h": 44,
+        "bottom": 865,
+        "top": 821
       },
       "input": {
-        "x": 956,
-        "y": 802,
+        "x": 1150,
+        "y": 823,
         "w": 160,
         "h": 36,
-        "bottom": 838,
-        "top": 802
+        "bottom": 859,
+        "top": 823
       },
-      "labelAboveInput": true,
+      "labelLeftOfInput": true,
       "hasBottomBorder": false,
       "labelHasUnitParen": false,
       "unitInBox": true,
@@ -158,22 +158,22 @@
       "id": "param-min_fullness",
       "labelText": "褶倍下限",
       "label": {
-        "x": 583,
-        "y": 1265,
-        "w": 333,
-        "h": 20,
-        "bottom": 1285,
-        "top": 1265
+        "x": 562,
+        "y": 1254,
+        "w": 556,
+        "h": 44,
+        "bottom": 1298,
+        "top": 1254
       },
       "input": {
-        "x": 583,
-        "y": 1291,
+        "x": 1150,
+        "y": 1256,
         "w": 160,
         "h": 36,
-        "bottom": 1327,
-        "top": 1291
+        "bottom": 1292,
+        "top": 1256
       },
-      "labelAboveInput": true,
+      "labelLeftOfInput": true,
       "hasBottomBorder": false,
       "labelHasUnitParen": false,
       "unitInBox": false,
@@ -183,22 +183,22 @@
       "id": "param-meters_rounding_step",
       "labelText": "进位步长",
       "label": {
-        "x": 956,
-        "y": 1265,
-        "w": 333,
-        "h": 20,
-        "bottom": 1285,
-        "top": 1265
+        "x": 562,
+        "y": 1331,
+        "w": 556,
+        "h": 44,
+        "bottom": 1375,
+        "top": 1331
       },
       "input": {
-        "x": 956,
-        "y": 1291,
+        "x": 1150,
+        "y": 1333,
         "w": 160,
         "h": 36,
-        "bottom": 1327,
-        "top": 1291
+        "bottom": 1369,
+        "top": 1333
       },
-      "labelAboveInput": true,
+      "labelLeftOfInput": true,
       "hasBottomBorder": false,
       "labelHasUnitParen": false,
       "unitInBox": true,
@@ -208,153 +208,153 @@
   "inputs": [
     {
       "id": "calc-caliber-scalar-per_fold_single",
-      "x": 583,
-      "y": 91,
+      "x": 1150,
+      "y": 16,
       "w": 160,
       "h": 36,
-      "bottom": 127,
-      "top": 91,
-      "cls": "h-9 w-40 pl-3 pr-9 text-left tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 52,
+      "top": 16,
+      "cls": "h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400 w-40 text-left tabular-nums pr-9"
     },
     {
       "id": "calc-caliber-scalar-margin_single",
-      "x": 956,
-      "y": 91,
+      "x": 1150,
+      "y": 93,
       "w": 160,
       "h": 36,
-      "bottom": 127,
-      "top": 91,
-      "cls": "h-9 w-40 pl-3 pr-9 text-left tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 129,
+      "top": 93,
+      "cls": "h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400 w-40 text-left tabular-nums pr-9"
     },
     {
       "id": "calc-caliber-scalar-margin_multi",
-      "x": 583,
-      "y": 201,
+      "x": 1150,
+      "y": 170,
       "w": 160,
       "h": 36,
-      "bottom": 237,
-      "top": 201,
-      "cls": "h-9 w-40 pl-3 pr-9 text-left tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 206,
+      "top": 170,
+      "cls": "h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400 w-40 text-left tabular-nums pr-9"
     },
     {
       "id": "calc-caliber-scalar-hem_margin",
-      "x": 956,
-      "y": 201,
+      "x": 1150,
+      "y": 247,
       "w": 160,
       "h": 36,
-      "bottom": 237,
-      "top": 201,
-      "cls": "h-9 w-40 pl-3 pr-9 text-left tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 283,
+      "top": 247,
+      "cls": "h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400 w-40 text-left tabular-nums pr-9"
     },
     {
       "id": "calc-caliber-tier-economy-label",
       "x": 635,
-      "y": 449,
+      "y": 460,
       "w": 160,
       "h": 36,
-      "bottom": 485,
-      "top": 449,
-      "cls": "h-9 w-40 rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 496,
+      "top": 460,
+      "cls": "h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400 w-40"
     },
     {
       "id": "calc-caliber-tier-economy-fullness",
       "x": 808,
-      "y": 449,
+      "y": 460,
       "w": 160,
       "h": 36,
-      "bottom": 485,
-      "top": 449,
-      "cls": "h-9 w-40 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 496,
+      "top": 460,
+      "cls": "h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400 w-40 text-right tabular-nums"
     },
     {
       "id": "calc-caliber-tier-standard-label",
       "x": 635,
-      "y": 502,
+      "y": 513,
       "w": 160,
       "h": 36,
-      "bottom": 538,
-      "top": 502,
-      "cls": "h-9 w-40 rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 549,
+      "top": 513,
+      "cls": "h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400 w-40"
     },
     {
       "id": "calc-caliber-tier-standard-fullness",
       "x": 808,
-      "y": 502,
+      "y": 513,
       "w": 160,
       "h": 36,
-      "bottom": 538,
-      "top": 502,
-      "cls": "h-9 w-40 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 549,
+      "top": 513,
+      "cls": "h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400 w-40 text-right tabular-nums"
     },
     {
       "id": "calc-caliber-mixed-1",
       "x": 1070,
-      "y": 449,
+      "y": 460,
       "w": 160,
       "h": 36,
-      "bottom": 485,
-      "top": 449,
-      "cls": "h-9 w-40 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 496,
+      "top": 460,
+      "cls": "h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400 w-40 text-right tabular-nums"
     },
     {
       "id": "calc-caliber-mixed-2",
       "x": 1070,
-      "y": 502,
+      "y": 513,
       "w": 160,
       "h": 36,
-      "bottom": 538,
-      "top": 502,
-      "cls": "h-9 w-40 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 549,
+      "top": 513,
+      "cls": "h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400 w-40 text-right tabular-nums"
     },
     {
       "id": "calc-caliber-default_formula",
-      "x": 562,
-      "y": 610,
+      "x": 1054,
+      "y": 593,
       "w": 256,
       "h": 36,
-      "bottom": 646,
-      "top": 610,
-      "cls": "h-9 w-64 rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400 mt-1.5"
+      "bottom": 629,
+      "top": 593,
+      "cls": "h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400 w-64"
     },
     {
       "id": "calc-caliber-scalar-oversize_width_threshold",
-      "x": 583,
-      "y": 802,
+      "x": 1150,
+      "y": 746,
       "w": 160,
       "h": 36,
-      "bottom": 838,
-      "top": 802,
-      "cls": "h-9 w-40 pl-3 pr-9 text-left tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 782,
+      "top": 746,
+      "cls": "h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400 w-40 text-left tabular-nums pr-9"
     },
     {
       "id": "calc-caliber-scalar-oversize_height_threshold",
-      "x": 956,
-      "y": 802,
+      "x": 1150,
+      "y": 823,
       "w": 160,
       "h": 36,
-      "bottom": 838,
-      "top": 802,
-      "cls": "h-9 w-40 pl-3 pr-9 text-left tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 859,
+      "top": 823,
+      "cls": "h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400 w-40 text-left tabular-nums pr-9"
     },
     {
       "id": "calc-caliber-scalar-min_fullness",
-      "x": 583,
-      "y": 1291,
+      "x": 1150,
+      "y": 1256,
       "w": 160,
       "h": 36,
-      "bottom": 1327,
-      "top": 1291,
-      "cls": "h-9 w-40 pl-3 pr-9 text-left tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 1292,
+      "top": 1256,
+      "cls": "h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400 w-40 text-left tabular-nums pr-9"
     },
     {
       "id": "calc-caliber-scalar-meters_rounding_step",
-      "x": 956,
-      "y": 1291,
+      "x": 1150,
+      "y": 1333,
       "w": 160,
       "h": 36,
-      "bottom": 1327,
-      "top": 1291,
-      "cls": "h-9 w-40 pl-3 pr-9 text-left tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 1369,
+      "top": 1333,
+      "cls": "h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400 w-40 text-left tabular-nums pr-9"
     }
   ],
   "sectionTitles": [
@@ -368,7 +368,9 @@
     "特殊选项（下单时勾选）"
   ],
   "distinctScalarX": [
-    583,
-    956
+    1150
+  ],
+  "distinctScalarRight": [
+    1310
   ]
 }
