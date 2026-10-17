@@ -96,13 +96,20 @@ describe('ShipOrder 商品表：货号 / 颜色 / 门幅 印真值（issue #6882
   it('三格取 skuCode / processingInfo.colorName / processingInfo.doorWidth，且表头是「门幅」', async () => {
     render(<ShipOrder />)
     await waitFor(() => {
-      expect(screen.getByText('SKU-001')).toBeInTheDocument()
+      expect(screen.getAllByText('SKU-001').length).toBeGreaterThan(0)
     })
     // 逐格判「同一行里」的真值（不用全局 `getByText`：颜色值可能在全页别处也出现）
-    const row = screen.getByText('SKU-001').closest('tr') as HTMLElement
+    // 🔴 issue #7079 追补（**既有 flake，不是本包引入**）：本页同时渲染**隐藏打印区**（同一行数据会在
+    // portal 里再出现一次）⇒ 单数 `getByText` 会因「找到多个元素」偶发红（实测 `origin/main` 单跑 3 次
+    // = 2 红 1 绿）。判据意图**不变**（三格各取对 wire 键），故改成「取任一渲染行的同一行三重判」。
+    const row = screen.getAllByText('SKU-001')[0].closest('tr') as HTMLElement
     expect(within(row).getByText('米白')).toBeInTheDocument()
     expect(within(row).getByText('2.8米')).toBeInTheDocument()
-    expect(screen.getByText('门幅')).toBeInTheDocument()
+    // 「表头是门幅」：按重复免疫的写法断言**每个命中的都是 `th`**（可见表 + 打印区都会有一份），
+    // 比原 `getByText` 更强（既免疫重复，又真的断言了「是表头」而不是正文里偶然出现的字）。
+    const headerCells = screen.getAllByText('门幅')
+    expect(headerCells.length).toBeGreaterThan(0)
+    expect(headerCells.every((el) => el.tagName === 'TH')).toBe(true)
     // 表头不再是那个读不到值的「规格尺寸」
     expect(screen.queryByText('规格尺寸')).not.toBeInTheDocument()
   })
