@@ -65,7 +65,10 @@ describe('判据 1：三件套上屏（§22 P2）', () => {
     render(<RemnantItemSizesPanel copy={REMNANT_PARAM_COPY} />)
     expect(screen.getByText(REMNANT_PARAM_COPY.label)).toBeInTheDocument()
     expect(screen.getByText(REMNANT_PARAM_COPY.hint)).toBeInTheDocument()
-    expect(screen.getByText(`改它会怎样：${REMNANT_PARAM_COPY.impact}`)).toBeInTheDocument()
+    // 🔴 2026-10-17（issue #7077）：原底部那条「改它会怎样：…」整行撤销（与「算料口径」同口径），
+    // 文案并入参数标题下（信息不丢）。注入：把那行礼帽写回 ⇒ 两条同时红。
+    expect(screen.getByText(REMNANT_PARAM_COPY.impact)).toBeInTheDocument()
+    expect(screen.queryByText(`改它会怎样：${REMNANT_PARAM_COPY.impact}`)).toBeNull()
     await waitFor(() => expect(smallItemSpecs).toHaveBeenCalled())
   })
 })

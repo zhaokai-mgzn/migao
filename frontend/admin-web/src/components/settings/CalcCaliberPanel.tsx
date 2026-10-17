@@ -56,7 +56,7 @@ import { productionApi } from '@/lib/api'
 import { isErrorToastShown } from '@/lib/api-error'
 import { InlineMarkdown } from '@/lib/inline-markdown'
 import { CRAFT_CALC_FORMULA_LABELS } from '@/lib/craft-calc-request'
-import { CALC_PARAM_COPY, CALC_SCALAR_KEYS, glossaryAnchorOf } from '@/lib/craft-calc-glossary'
+import { CALC_PARAM_COPY } from '@/lib/craft-calc-glossary'
 import { craftCalcConfigGuardReasons } from '@/lib/production-guard-reasons'
 import { boundedInputCls, inputCls } from '@/components/production-config/utils'
 import {
@@ -77,26 +77,24 @@ import type { CraftCalcConfig, CraftCalcConfigResponse } from '@/types'
 export function ParamScalarRow({
   param,
   value,
-  docHref,
   control,
 }: {
   param: ScalarParam
   /** 只读值（`control` 缺省时印在名称右侧）；**读面未落地时调用方传 `'…'`**（不谎报） */
   value: string
-  /**
-   * 「参数旁的**说明**」锚点目标（issue #4975：指路要指得着）。
-   * ⚠️ 只有**同屏真的渲染了术语区块**的调用方才能给（否则就是指向空处的死锚点）——
-   * 算料口径域给 `glossaryAnchorOf(key)`。
-   */
-  docHref?: string
   /** 与名称**同一行**的控件（可编辑时给 `NumberInput`；不传 ⇒ 只读，同位置印值） */
   control?: ReactNode
 }) {
   /**
-   * 形态 = **行式紧凑**（issue #6857，用户裁定 2026-10-13）：
+   * 形态 = **行式紧凑**（issue #6857，用户裁定 2026-10-13；2026-10-17 用户裁定再收一刀）：
    * 「输入框直接放在名称后面」（方案 B）+「不要每行都写个默认，太丑了」（方案 C）。
    *
-   * - 控件与名称**同一行**；提示 / 「改它会怎样」降为一行小字；行间靠调用方的 `divide-y` 细线分隔；
+   * - 控件与名称**同一行**；下面只留**一句口径提示**（`hint`）；行间细线由 `border-b` 给；
+   * - 🔴 2026-10-17 用户逐字「把算料口径里面的这行字都拿掉吧」—— 指的是
+   *   「改它会怎样：… 说明」那**一整行**（含行尾的「说明」锚点）。它**不是**产品文案，
+   *   而是把「这个开关会改什么」在每一行上重复念了一遍（口径提示与术语区块各说一次 ⇒ §31 P2）。
+   *   ⇒ 影响说明的**唯一载体**是同屏的术语区块（`CraftCalcGlossary` 的「参数当前值」表）；
+   *   本行不再挂「说明」锚点（`param-doc-*` 随之退场 —— 指路入口消失，不是指了个空处）；
    * - 行内**一个默认态徽标都不标**（旧「未配置 / 默认 / 已改（默认 X）」三件套一并退场）：
    *   默认态由**域级**信号承担 —— 顶部横幅「下表全部为引擎默认值」+ 标题下口径徽标
    *   （§31 P2「信息不重复」），改动与回退由「恢复为默认值」按钮兜住；
@@ -105,7 +103,7 @@ export function ParamScalarRow({
    *   留着那条分支即死代码。
    */
   return (
-    <div data-testid={`param-${param.key}`} className="py-3">
+    <div data-testid={`param-${param.key}`} className="py-3 border-b border-neutral-100">
       <div className="flex items-center gap-3">
         <span className="text-sm font-medium text-neutral-900">
           <InlineMarkdown text={param.copy.label} />
@@ -118,18 +116,6 @@ export function ParamScalarRow({
       </div>
       <p className="mt-1 text-xs text-neutral-500">
         <InlineMarkdown text={param.copy.hint} />
-      </p>
-      <p className="mt-1 text-xs text-neutral-600">
-        改它会怎样：<InlineMarkdown text={param.copy.impact} />
-        {docHref !== undefined && (
-          <a
-            href={`#${docHref}`}
-            data-testid={`param-doc-${param.key}`}
-            className="ml-2 text-primary-600 hover:underline"
-          >
-            说明
-          </a>
-        )}
       </p>
     </div>
   )
@@ -301,8 +287,6 @@ export function CalcCaliberPanel({
     <ParamScalarRow
       key={p.key}
       param={p}
-      // 「说明」锚点指到**同页**的术语与口径区块条目（issue #4975：指路要指得着）
-      docHref={displayConfig ? glossaryAnchorOf(p.key) : undefined}
       // 🔴 读失败 ⇒ **空位**（不是 `—`）：`—` 长得像「这个参数没有值」，而真相是**整个读面失败**。
       //    加载中仍给 `…`（那是「还在读」，与失败是两件事）。
       value={failed ? '' : loading && !displayConfig ? '…' : valueOf(p.key)}
@@ -389,9 +373,13 @@ export function CalcCaliberPanel({
         <div data-testid="param-calc-read-failed" />
       ) : (
         <>
-          {/* P2 三件套（常用 / 高级渐进披露） */}
+          {/* P2 三件套（常用 / 高级渐进披露）
+              2026-10-17 用户逐字「两个参数一行排列的布局是否更美观」⇒ **两列**（宽屏）；
+              窄屏（< xl）单列 —— 一行 = 名称 + 控件 + 一句提示，两列时右侧不再空一大片。 */}
           {domain.common && domain.common.length > 0 && (
-            <div className="divide-y divide-neutral-100">{domain.common.map((p) => renderScalar(p))}</div>
+            <div className="grid grid-cols-1 gap-x-8 xl:grid-cols-2">
+              {domain.common.map((p) => renderScalar(p))}
+            </div>
           )}
 
           {domain.advanced && domain.advanced.length > 0 && (
@@ -411,7 +399,10 @@ export function CalcCaliberPanel({
                 高级（{domain.advanced.length}）—— 一般不常改
               </button>
               {advancedOpen && (
-                <div data-testid={`param-advanced-${domain.key}`} className="mt-3 divide-y divide-neutral-100">
+                <div
+                  data-testid={`param-advanced-${domain.key}`}
+                  className="mt-3 grid grid-cols-1 gap-x-8 xl:grid-cols-2"
+                >
                   {domain.advanced.map((p) => renderScalar(p))}
                 </div>
               )}

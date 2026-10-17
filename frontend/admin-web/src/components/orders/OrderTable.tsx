@@ -4,7 +4,7 @@ import { ArrowDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { OrderBrief } from '@/types'
 import { normalizeOrderStatus } from '@/types'
-import { Badge } from '@/components/ui'
+import { Badge, RowActionLink } from '@/components/ui'
 import DateTimeCell from '@/components/common/DateTimeCell'
 import OrderStatusBadge from './OrderStatusBadge'
 import { isUrgentFlag, urgentBadgeText } from '@/lib/order-urgency'
@@ -98,18 +98,10 @@ function getItemProcessingFee(pi: Record<string, unknown> | undefined): number {
 }
 
 function ActionLink({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation()
-        onClick()
-      }}
-      className="text-primary-600 hover:text-primary-700 hover:underline transition-colors"
-    >
-      {children}
-    </button>
-  )
+  // 2026-10-17（用户裁定「不要有多种风格设计」）：形态并入共享原语
+  // （`@/components/ui/RowActionLink`）—— 「单据列表行内动作只有一种长相」的单一真值在那里，
+  // 本处只留一个本地别名，免去全文件改 8 处调用点。
+  return <RowActionLink onClick={onClick}>{children}</RowActionLink>
 }
 
 export default function OrderTable({
