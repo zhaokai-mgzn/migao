@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// case_ids: PG-001, PG-005, PG-019, UI-019, UI-030, UI-094, PR-057, PR-065, UI-113
+// case_ids: PG-001, PG-005, PG-019, UI-019, UI-030, UI-094, PR-057, PR-065, UI-115
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -506,7 +506,7 @@ describe('ProcessingOrderBlock 排料结果展示（V119 / issue #5158）', () =
 
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-// issue #7079 第 5 包（UI-113）：**卖布单的生成出口** —— 判据 = 订单详情读面键 `work_order_kind`
+// issue #7079 第 5 包（UI-115）：**卖布单的生成出口** —— 判据 = 订单详情读面键 `work_order_kind`
 //
 // 病根：本块原先的门是 `hasProcessing`（= `order.processingItems.length > 0`）这**单侧**信号。
 // 卖布单（按米卖布、行上**没有加工项**）在那一侧恒为 false ⇒ **没有「生成」按钮**，并落到一句
@@ -524,7 +524,7 @@ describe('ProcessingOrderBlock 卖布单的生成出口（issue #7079 第 5 包�
     vi.useRealTimers()
   })
 
-  it('UI-113 判据 1（红证）：卖布单无作业单 ⇒ 出现「生成出库作业单」入口（按钮文案取 ORDER_KIND_LABELS，不新造词）', async () => {
+  it('UI-115 判据 1（红证）：卖布单无作业单 ⇒ 出现「生成出库作业单」入口（按钮文案取 ORDER_KIND_LABELS，不新造词）', async () => {
     mockedDetail.mockRejectedValueOnce(new Error('404'))
     render(<ProcessingOrderBlock orderId="order-fabric" orderStatus="confirmed" workOrderKind="outbound" />)
 
@@ -536,7 +536,7 @@ describe('ProcessingOrderBlock 卖布单的生成出口（issue #7079 第 5 包�
     expect(document.body.textContent ?? '').not.toContain('work_order_kind')
   })
 
-  it('UI-113 判据 2（红证）：卖布单走**同一条**生成通道（orderIds 与含加工项单逐字相同）', async () => {
+  it('UI-115 判据 2（红证）：卖布单走**同一条**生成通道（orderIds 与含加工项单逐字相同）', async () => {
     mockedDetail.mockRejectedValueOnce(new Error('404'))
     mockedGenerate.mockResolvedValueOnce({
       data: { data: [{ orderRef: 'order-fabric', success: true, processingOrderNo: 'CK-20261017-0001' }] },
@@ -551,7 +551,7 @@ describe('ProcessingOrderBlock 卖布单的生成出口（issue #7079 第 5 包�
     expect(mockedGenerate.mock.calls[0][0]).toEqual(['order-fabric'])
   })
 
-  it('UI-113 判据 3（红证）：卖布单在「还不能生成」的状态 ⇒ 空态**不许**再说「无加工项订单无需加工环节」', async () => {
+  it('UI-115 判据 3（红证）：卖布单在「还不能生成」的状态 ⇒ 空态**不许**再说「无加工项订单无需加工环节」', async () => {
     mockedDetail.mockRejectedValueOnce(new Error('404'))
     render(<ProcessingOrderBlock orderId="order-fabric" orderStatus="pending_payment" workOrderKind="outbound" />)
 
@@ -562,7 +562,7 @@ describe('ProcessingOrderBlock 卖布单的生成出口（issue #7079 第 5 包�
     expect(screen.queryByText('生成出库作业单')).toBeNull()
   })
 
-  it('UI-113 判据 4（反向护栏）：无作业的订单（work_order_kind 缺键）⇒ 不出现生成入口，空态说「无需作业单」', async () => {
+  it('UI-115 判据 4（反向护栏）：无作业的订单（work_order_kind 缺键）⇒ 不出现生成入口，空态说「无需作业单」', async () => {
     mockedDetail.mockRejectedValueOnce(new Error('404'))
     render(<ProcessingOrderBlock orderId="order-plain" orderStatus="confirmed" workOrderKind={null} />)
 

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// case_ids: UI-019, UI-030, UI-113
+// case_ids: UI-019, UI-030, UI-115
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 
@@ -126,7 +126,7 @@ describe('OrderDetail 发货入口守卫', () => {
 })
 
 /**
- * issue #7079 第 5 包（UI-113）：订单详情的**发货入口**对卖布单也要有前置提示。
+ * issue #7079 第 5 包（UI-115）：订单详情的**发货入口**对卖布单也要有前置提示。
  *
  * 改前判据 = `order.processingItems.length > 0` ⇒ 卖布单直接渲染可点的「发货」按钮，
  * 用户点进去、填完表单、提交时才被后端拦（入口没有任何前置提示）。
@@ -136,7 +136,7 @@ describe('OrderDetail 发货入口守卫：卖布单（issue #7079 第 5 包）'
     vi.clearAllMocks()
   })
 
-  it('UI-113 判据 5（红证）：卖布单 + 无作业单 ⇒ 引导句按型换成「卖布单 / 出库作业单」，发货按钮不可点', async () => {
+  it('UI-115 判据 5（红证）：卖布单 + 无作业单 ⇒ 引导句按型换成「卖布单 / 出库作业单」，发货按钮不可点', async () => {
     mockGetOrder.mockResolvedValue({
       data: { data: { ...baseOrder, processingItems: [], workOrderKind: 'outbound' } },
     })
@@ -149,7 +149,7 @@ describe('OrderDetail 发货入口守卫：卖布单（issue #7079 第 5 包）'
     expect(document.body.textContent ?? '').not.toContain('outbound')
   })
 
-  it('UI-113 判据 6（红证）：卖布单 + 作业单已完成 ⇒ 发货按钮可点（与后端 countCompleted>0 放行一致）', async () => {
+  it('UI-115 判据 6（红证）：卖布单 + 作业单已完成 ⇒ 发货按钮可点（与后端 countCompleted>0 放行一致）', async () => {
     mockGetOrder.mockResolvedValue({
       data: { data: { ...baseOrder, processingItems: [], workOrderKind: 'outbound' } },
     })
@@ -160,7 +160,7 @@ describe('OrderDetail 发货入口守卫：卖布单（issue #7079 第 5 包）'
     })
   })
 
-  it('UI-113 判据 7（反向护栏）：无作业的普通单（缺键）⇒ 不出现任何引导句，发货按钮照常', async () => {
+  it('UI-115 判据 7（反向护栏）：无作业的普通单（缺键）⇒ 不出现任何引导句，发货按钮照常', async () => {
     mockGetOrder.mockResolvedValue({
       data: { data: { ...baseOrder, processingItems: [], workOrderKind: null } },
     })

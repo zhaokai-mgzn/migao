@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// case_ids: UI-019, UI-030, UI-113
+// case_ids: UI-019, UI-030, UI-115
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 
@@ -160,7 +160,7 @@ describe('ShipOrder 加工单前置守卫', () => {
 })
 
 /**
- * issue #7079 第 5 包（UI-113）：**卖布单**（按米卖布、行上没有加工项）在发货页也必须被前置阻断。
+ * issue #7079 第 5 包（UI-115）：**卖布单**（按米卖布、行上没有加工项）在发货页也必须被前置阻断。
  *
  * 改前判据 = `order.processingItems.length > 0`（**单侧**信号）⇒ 卖布单 `hasProcessing = false`
  * ⇒ 守卫**完全不生效**、发货表单照渲 —— 用户把整张表单填完、提交时才撞服务端那句
@@ -173,7 +173,7 @@ describe('ShipOrder 发货前置守卫：卖布单（issue #7079 第 5 包）', 
     vi.clearAllMocks()
   })
 
-  it('UI-113 判据 1（红证）：卖布单 + 作业单未完成 ⇒ 阻断并给可行动出口，**不渲染**发货表单', async () => {
+  it('UI-115 判据 1（红证）：卖布单 + 作业单未完成 ⇒ 阻断并给可行动出口，**不渲染**发货表单', async () => {
     mockGetOrder.mockResolvedValue({
       data: { data: { ...mockOrder, processingItems: [], workOrderKind: 'outbound' } },
     })
@@ -191,7 +191,7 @@ describe('ShipOrder 发货前置守卫：卖布单（issue #7079 第 5 包）', 
     expect(document.body.textContent ?? '').not.toContain('outbound')
   })
 
-  it('UI-113 判据 2（红证）：卖布单 + 查不到作业单（404）⇒ 同样阻断（与后端 countCompleted==0 一致）', async () => {
+  it('UI-115 判据 2（红证）：卖布单 + 查不到作业单（404）⇒ 同样阻断（与后端 countCompleted==0 一致）', async () => {
     mockGetOrder.mockResolvedValue({
       data: { data: { ...mockOrder, processingItems: [], workOrderKind: 'outbound' } },
     })
@@ -203,7 +203,7 @@ describe('ShipOrder 发货前置守卫：卖布单（issue #7079 第 5 包）', 
     expect(screen.queryByText('确认发货')).not.toBeInTheDocument()
   })
 
-  it('UI-113 判据 3（红证）：卖布单 + 作业单已完成 ⇒ 放行，发货表单照常（不误拦）', async () => {
+  it('UI-115 判据 3（红证）：卖布单 + 作业单已完成 ⇒ 放行，发货表单照常（不误拦）', async () => {
     mockGetOrder.mockResolvedValue({
       data: { data: { ...mockOrder, processingItems: [], workOrderKind: 'outbound' } },
     })
@@ -215,7 +215,7 @@ describe('ShipOrder 发货前置守卫：卖布单（issue #7079 第 5 包）', 
     expect(screen.queryByText(/先完成出库作业单的裁剪与打包报工，再发货/)).not.toBeInTheDocument()
   })
 
-  it('UI-113 判据 4（反向护栏）：无作业的普通单（缺键）⇒ 不查作业单、直接渲染发货表单', async () => {
+  it('UI-115 判据 4（反向护栏）：无作业的普通单（缺键）⇒ 不查作业单、直接渲染发货表单', async () => {
     mockGetOrder.mockResolvedValue({
       data: { data: { ...mockOrder, processingItems: [], workOrderKind: null } },
     })
