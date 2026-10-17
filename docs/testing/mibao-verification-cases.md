@@ -7046,7 +7046,7 @@
 ```
 溯源: 2026-10-14 新增（issue #6936 的类级固化，与 PG-074 同批）：沿用 #6928 的元守卫范式（扫描器非空跑自证 / 谓词完整性 / 未登记即红 / 登记必须兑现 / 豁免只许缩短 / 判别力自证），但**扩到本单的射程**（`ProductionOperationCommandService` 里 `production_operations.deleted` 的两条软删写路径：谓词三件套 + 显式写列 + 影响行数判定，另加写路径登记表），台账 = backend/admin-api/src/test/resources/production-operation-delete-cas-ledger.json（豁免基线 **0**）。既有判据**未放宽**（`InboundOrderStatusCasMetaGuardTest` 的 MC-100 一字未动）。取号 = PG-075（现取未占用）。 ｜ tags: production, operation, concurrency, meta_guard, backend-contract
 
-## 加工单域（70 case）
+## 加工单域（71 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -7986,6 +7986,23 @@
 跳过: [backend-contract] 服务端准入 + 纯前端渲染/状态机（无 LLM 行为），不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-17 新增（issue #7162；用户三条逐字见 user_inputs）。落码：`WorkerQualityController`（`/api/worker/quality/**`，准入 = 工人档案页面集含 `inspect`）+ `QualityCheckService.create(..., inspectorKind, ...)`（kind 校验 / 读面追加 `inspector_kind` / `latest()`）+ 迁移 V163 `inspector_kind` + `WorkerPages.INSPECT`（不在默认集合）+ worker-h5 质检区块（`render.mjs` / `api.mjs` / `app.mjs`）。取号：见文首注释。 ｜ tags: quality-inspection, worker-h5, backend-contract, permission, finished-curtain
+
+### PG-083. 单据联动工序：发货单生成 ⇒ 自动完成「发货/外帘发货」工序；质检合格 ⇒ 自动完成「质检」工序（工人端计件、商家端不计件） 🔵
+```
+你: 用户 2026-10-17 逐字：「我估计现在发货单生成后无法直接联动加工单上的发货工序，如果订单关联的加工单上有发货工序，应该自动完成报工」
+你: 用户 2026-10-17 裁定：「工人端记给发货工人；商家/生产端发货不计件」
+你: 用户 2026-10-17 裁定：「是，质检单生成 ⇒ 质检工序自动完成，计件口径与发货一致」
+数据: **判据 1·只完成真工序**：发货只匹配名称「发货 / 外帘发货」、质检只匹配「质检」；同单其它工序（如「外帘装袋」）不碰。红证：把名称集合改成「包含即匹配」/放开其它工序 ⇒ 判据当场红。证据：backend/admin-api/src/test/java/com/migao/admin/service/DocumentOperationLinkageTest.java（shippingIgnoresOtherOperations）
+数据: **判据 2·只做没做满的（幂等）**：`done_qty ≥ qty` 的工序跳过；重复发货 / 返工后复检不重复记账。证据：DocumentOperationLinkageTest（alreadyDoneOperationIsSkippedByQuery）+ ProductionServiceCompleteByDocumentTest（alreadyFullIsNoOp）
+数据: **判据 3·🔴 计件口径（涉钱）**：有工人身份（工人端发货/质检）⇒ 走既有报工口径，写一行 `production_work_logs`（计件记给该工人）；无身份（商家/生产端、观星台员工录质检）⇒ **不写报工、不计件**，只 CAS 推进工序 + 完工时刻 + 加工单完工判定。红证：把无身份分支改成也走 `applyReport` ⇒ 判据红。证据：ProductionServiceCompleteByDocumentTest（merchantPathAdvancesWithoutPiecework / workerPathWritesPieceworkLog）
+数据: **判据 4·质检只有合格才联动**：`pass` ⇒ 调用联动；`rework` / `scrap` ⇒ 不完成质检工序（还要再检）。证据：backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckServiceTest.java（passLinksQualityOperationButReworkDoesNot）
+数据: **判据 5·质检只动这一件**：联动查询/匹配带该件成品帘的 `order_item_id`；同单另一件不归这次联动。证据：DocumentOperationLinkageTest（qualityCompletesOnlyThatItem）
+数据: **判据 6·触发点覆盖**：工人发货（`OrderShipmentService.ship`，事务内、守卫之前）、商家状态流转（`OrderService.updateOrderStatus`）、商家/生产/agent 发货（`shipOrderIfLogistics` → `shipOrderIfApplicable`）都先联动再走 `OrderShipGuard`；否则有发货工序的单会被守卫先拒。证据：OrderService / OrderShipmentService 的调用点 + shipped 路既有测试（ShipmentControllerTest / MerchantShipmentRouteTest / MerchantShipmentAtomicityTest）
+数据: **边界（照实登记）**：不做存量回填（历史上已发货但发货工序仍 pending 的单不自动补）；只处理活跃加工单；无该工序的订单一个字节不变。
+前置: 前置 = 一张活跃加工单 + 其路由里确有「外帘发货 / 发货」或「质检」工序（`V54__seed_production_operations.sql` 的 op-v54-27 / op-v54-26）；无对应工序的单代入本判据 ⇒ 行为必须零变化（不生成、不猜测）。
+跳过: [backend-contract] 服务端事务与计件口径（无 LLM 行为），不进入 agent-eval 冒烟
+```
+溯源: 2026-10-17 新增（issue #7165；用户原话与两条裁定见 user_inputs）。落码：`DocumentOperationLinkage`（唯一联动点）+ `ProductionService.completeByDocument`（工人身份 ⇒ 既有 applyReport 计件；无身份 ⇒ 只完成工序）+ 发货三入口 / 质检 create 的调用点。 ｜ tags: quality-inspection, shipment, piecework, backend-contract
 
 ## 商品域（122 case）
 
@@ -11648,8 +11665,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：798（活跃 133，跳过 665）
-- tier 分布：smoke 12 / normal 739 / adversarial 32
+- 用例总数：799（活跃 133，跳过 666）
+- tier 分布：smoke 12 / normal 740 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -11669,7 +11686,7 @@
 - 领域本体域：4
 - 订单域：68
 - 加工项域：30
-- 加工单域：70
+- 加工单域：71
 - 商品域：122
 - 工具注册器域：1
 - 设置域：10
@@ -11910,6 +11927,7 @@
 - PG-080: 卖布单进「待排产 / 待发货」两类生产待办（与发货守卫同一判据），且仍在智能派单池的成批候选区
 - PG-081: 质检待检清单读面：未检 ≠ 合格（无记录 ⇒ `state=pending` / `latest=null`）、同一件多条取最新、四态计数、状态过滤 + 分页封顶（issue #7140）
 - PG-082: 工人端质检：扫水洗唛进报工页后录判定、生成质检单（服务端以「档案页面集含 inspect」为准入，不是藏 UI）
+- PG-083: 单据联动工序：发货单生成 ⇒ 自动完成「发货/外帘发货」工序；质检合格 ⇒ 自动完成「质检」工序（工人端计件、商家端不计件）
 - PP-007: 黄金策加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 黄金策加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）

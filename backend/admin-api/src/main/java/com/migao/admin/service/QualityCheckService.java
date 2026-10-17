@@ -12,7 +12,9 @@ import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.QualityCheckMapper;
+import com.migao.admin.worker.WorkerIdentity;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -78,6 +80,14 @@ public class QualityCheckService {
     private static final int TARGETS_MAX_SIZE = 100;
 
     private final QualityCheckMapper qualityInspectionMapper;
+
+    /**
+     * 单据联动工序（issue #7165）：**字段注入**而非构造参数 —— 本类构造签名被单测显式装配，
+     * 加参数会把它们全改一遍（{@code OrderService} 的 {@code poolChangeNotifier} 同款先例）。
+     * {@code null} = 未装配（单测切片）⇒ 跳过联动，不影响记录落库。
+     */
+    @Autowired(required = false)
+    private DocumentOperationLinkage documentOperationLinkage;
     private final OrderItemMapper orderItemMapper;
     private final ProcessingOrderMapper processingOrderMapper;
     /** 加工单 → 所属销售订单号（待检清单要显示「这张加工单是哪个订单的」，issue #7160）。 */
@@ -111,6 +121,18 @@ public class QualityCheckService {
     public Map<String, Object> create(Long tenantId, String orderItemId, String result, String reason,
                                       String inspectorId, String inspectorName, String inspectorKind,
                                       OffsetDateTime inspectedAt) {
+        return create(tenantId, orderItemId, result, reason, inspectorId, inspectorName, inspectorKind,
+                inspectedAt, null);
+    }
+
+    /**
+     * 同上 + **工人身份**（issue #7165）：工人端录判定时，合格 ⇒ 联动完成该件成品帘的「质检」工序，
+     * 计件记给该工人；观星台员工录（{@code actor = null}）⇒ 只完成工序、不计件。
+     */
+    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> create(Long tenantId, String orderItemId, String result, String reason,
+                                      String inspectorId, String inspectorName, String inspectorKind,
+                                      OffsetDateTime inspectedAt, WorkerIdentity actor) {
         String kind = inspectorKind == null ? INSPECTOR_EMPLOYEE : inspectorKind.trim();
         if (!INSPECTOR_KINDS.contains(kind)) {
             throw BusinessException.validationError(
@@ -155,6 +177,10 @@ public class QualityCheckService {
                 .deleted(0)
                 .build();
         qualityInspectionMapper.insert(row);
+        // issue #7165：**合格**才代表这一件的质检工序做完（返工/报废还要再检）
+        if ("pass".equals(normalized) && documentOperationLinkage != null) {
+            documentOperationLinkage.completeQualityOperation(item.getOrderId(), orderItemId, actor, tenantId);
+        }
         return view(row);
     }
 

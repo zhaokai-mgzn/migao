@@ -1,4 +1,4 @@
-// case_ids: PG-082
+// case_ids: PG-082, PG-083
 package com.migao.admin.controller;
 
 import com.migao.admin.config.TenantContext;
@@ -122,7 +122,7 @@ class WorkerQualityControllerTest {
     void grantedWorkerDelegatesWithSessionIdentity() {
         when(workerAdminService.findOwnedWorker(WORKER_ID)).thenReturn(worker("[\"report\",\"inspect\"]"));
         when(qualityCheckService.create(any(), anyString(), anyString(), any(), anyString(), anyString(),
-                anyString(), any())).thenReturn(Map.of("id", "qi-1"));
+                anyString(), any(), any())).thenReturn(Map.of("id", "qi-1"));
 
         controller.create(SESSION, Map.of(
                 "order_item_id", "item-1",
@@ -135,12 +135,15 @@ class WorkerQualityControllerTest {
         ArgumentCaptor<String> workerId = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> workerName = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> kind = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<WorkerIdentity> actor = ArgumentCaptor.forClass(WorkerIdentity.class);
         verify(qualityCheckService).create(eq(TENANT), eq("item-1"), eq("rework"), eq("布面污渍"),
-                workerId.capture(), workerName.capture(), kind.capture(), eq(AT));
+                workerId.capture(), workerName.capture(), kind.capture(), eq(AT), actor.capture());
         assertThat(workerId.getValue()).isEqualTo(WORKER_ID);
         assertThat(workerName.getValue()).isEqualTo(WORKER_NAME);
         assertThat(kind.getValue()).isEqualTo(QualityCheckService.INSPECTOR_WORKER);
         assertThat(kind.getValue()).isNotEqualTo("attacker");
+        // issue #7165：工人端录判定把「本人」交给联动服务（合格时计件记给这位工人）
+        assertThat(actor.getValue().workerId()).isEqualTo(WORKER_ID);
     }
 
     @Test
@@ -165,6 +168,6 @@ class WorkerQualityControllerTest {
         assertThat(controller.latest(SESSION, "item-1").getData().get("latest")).isEqualTo(record);
         // 读面也不调写面
         verify(qualityCheckService, never()).create(any(), anyString(), anyString(), any(), anyString(),
-                anyString(), anyString(), any());
+                anyString(), anyString(), any(), any());
     }
 }

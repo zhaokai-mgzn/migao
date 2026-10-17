@@ -110,6 +110,14 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private PoolChangeNotifier poolChangeNotifier;
 
     /**
+     * 单据联动工序（issue #7165）：字段注入理由同 {@code poolChangeNotifier} —— 本类构造签名被
+     * 多处测试显式装配，加参数会把它们全改一遍；{@code null}（单测切片）⇒ 跳过联动，
+     * 发货守卫行为不变。
+     */
+    @Autowired(required = false)
+    private DocumentOperationLinkage documentOperationLinkage;
+
+    /**
      * 批次消耗台账（V116，issue #5145 阶段 1）：**订单取消自动作废加工单**这条路上的批次回补。
      *
      * <p>为什么这里必须有它：{@link #cancelOrder} 对 {@code generated} 态加工单是**直接
@@ -1056,6 +1064,10 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // 加工单联动守卫（issue #3340）：含加工项订单必须完成加工单后才能发货，
         // 防止加工环节被 confirmed→shipped 直跳绕过
         if ("shipped".equals(status)) {
+            // issue #7165：商家/生产端发货（无工人身份）⇒ 完成「发货」工序但不计件；再走守卫
+            if (documentOperationLinkage != null) {
+                documentOperationLinkage.completeShippingOperations(order, null, order.getTenantId());
+            }
             assertProcessingCompletedBeforeShip(order);
         }
 
@@ -3127,6 +3139,10 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
         String currentStatus = order.getStatus();
         if ("confirmed".equals(currentStatus) || "producing".equals(currentStatus)) {
+            // issue #7165：商家/生产端/agent 发货（无工人身份）⇒ 完成「发货」工序但不计件；再走守卫
+            if (documentOperationLinkage != null) {
+                documentOperationLinkage.completeShippingOperations(order, null, order.getTenantId());
+            }
             // P1 修复（验收复核 #3345）：与 updateOrderStatus 路径同一守卫——含加工项订单
             // 须有 completed 加工单才能发货，防止 agent 发货路径绕过加工环节
             assertProcessingCompletedBeforeShip(order);

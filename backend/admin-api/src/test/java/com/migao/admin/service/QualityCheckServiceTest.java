@@ -1,4 +1,4 @@
-// case_ids: PG-077
+// case_ids: PG-077, PG-083
 package com.migao.admin.service;
 
 import com.migao.admin.config.TenantContext;
@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -28,6 +29,9 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -237,6 +241,39 @@ class QualityCheckServiceTest {
                     assertThat(be.getMessage()).contains("尚无活跃加工单");
                 });
         verify(qualityInspectionMapper, never()).insert(any(QualityCheck.class));
+    }
+
+    @Test
+    @DisplayName("⑦ 🔴 合格 ⇒ 联动完成质检工序（issue #7165）；返工/报废不联动（还要再检）")
+    void passLinksQualityOperationButReworkDoesNot() {
+        DocumentOperationLinkage linkage = org.mockito.Mockito.mock(DocumentOperationLinkage.class);
+        ReflectionTestUtils.setField(service, "documentOperationLinkage", linkage);
+        when(linkage.completeQualityOperation(any(), anyString(), any(), any())).thenReturn(1);
+
+        service.create(TENANT, ITEM_ID, "pass", null, INSPECTOR_ID, INSPECTOR_NAME,
+                QualityCheckService.INSPECTOR_EMPLOYEE, AT);
+
+        // 观星台员工录 ⇒ actor = null（不计件）；只对「这一件」的质检工序
+        verify(linkage).completeQualityOperation(eq(ORDER_ID), eq(ITEM_ID), isNull(), eq(TENANT));
+
+        org.mockito.Mockito.clearInvocations(linkage);
+        service.create(TENANT, ITEM_ID, "rework", "缝线开裂", INSPECTOR_ID, INSPECTOR_NAME,
+                QualityCheckService.INSPECTOR_EMPLOYEE, AT);
+        verify(linkage, never()).completeQualityOperation(any(), anyString(), any(), any());
+    }
+
+    @Test
+    @DisplayName("⑦ 工人端录判定 ⇒ 把工人身份交给联动服务（计件记给该工人）")
+    void workerPassCarriesActorIdentity() {
+        DocumentOperationLinkage linkage = org.mockito.Mockito.mock(DocumentOperationLinkage.class);
+        ReflectionTestUtils.setField(service, "documentOperationLinkage", linkage);
+        com.migao.admin.worker.WorkerIdentity me = new com.migao.admin.worker.WorkerIdentity(
+                "worker-1", "张师傅", com.migao.admin.worker.WorkerIdentity.SOURCE_SERVER_SESSION, "ws-1");
+
+        service.create(TENANT, ITEM_ID, "pass", null, "worker-1", "张师傅",
+                QualityCheckService.INSPECTOR_WORKER, AT, me);
+
+        verify(linkage).completeQualityOperation(eq(ORDER_ID), eq(ITEM_ID), eq(me), eq(TENANT));
     }
 
     @Test
