@@ -684,7 +684,7 @@ public class RegistrationService {
                 .tenantId(tenantId)
                 .name("管理员")
                 .code("admin")
-                .description("职责：企业最高管理岗位，负责员工、岗位与权限配置以及企业基础信息维护，统筹商品、客户、订单、生产、仓储与财务各模块的审核与异常处理。默认可用模块：全部模块 —— 经营看板、每日简报、商品管理、在线接待、知识库、售后工单、客户列表、订单列表、财务对账、生产看板、智能派单、计件工资、入库单、库存明细、发货单、余料台账、省料看板、员工管理、岗位权限、企业基础设置。")
+                .description("职责：企业最高管理岗位，负责员工、岗位与权限配置以及企业基础信息维护，统筹商品、客户、订单、生产、仓储与财务各模块的审核与异常处理。")
                 .status("active")
                 .build();
         roleMapper.insert(adminRole);
@@ -693,7 +693,7 @@ public class RegistrationService {
                 .tenantId(tenantId)
                 .name("客服")
                 .code("customer_service")
-                .description("职责：在线接待客户咨询与投诉，跟进订单进度，处理售后工单与退款，维护客户档案与知识库内容，并承担成品帘加工执行（建加工单、报工、打任务卡、发货）。默认可用模块：经营看板、每日简报、在线接待、知识库、售后工单、客户列表、订单列表、发货单、入库单、智能派单。")
+                .description("职责：在线接待客户咨询与投诉，跟进订单进度，处理售后工单与退款，维护客户档案与知识库内容，并承担成品帘加工执行（建加工单、报工、打任务卡、发货）。")
                 .status("active")
                 .build();
         roleMapper.insert(csRole);
@@ -702,7 +702,7 @@ public class RegistrationService {
                 .tenantId(tenantId)
                 .name("运营")
                 .code("operator")
-                .description("职责：统筹日常经营：建单、改单、退款与售后处理，维护客户档案、商品与分类，管理加工项与入库单，登记财务流水，并兼顾在线接待。默认可用模块：经营看板、每日简报、商品管理、在线接待、知识库、售后工单、客户列表、订单列表、财务对账、生产看板、智能派单、计件工资、入库单、库存明细、发货单、余料台账、省料看板、员工管理、企业基础设置。")
+                .description("职责：统筹日常经营：建单、改单、退款与售后处理，维护客户档案、商品与分类，管理加工项与入库单，登记财务流水，并兼顾在线接待。")
                 .status("active")
                 .build();
         roleMapper.insert(operatorRole);
@@ -711,7 +711,7 @@ public class RegistrationService {
                 .tenantId(tenantId)
                 .name("销售")
                 .code("sales")
-                .description("职责：接待客户并促成下单，负责新建订单、订单跟进与详情核对，跟踪生产与发货进度，维护客户档案。默认可用模块：经营看板、每日简报、商品管理、客户列表、订单列表、智能派单、入库单、库存明细、发货单、省料看板。")
+                .description("职责：接待客户并促成下单，负责新建订单、订单跟进与详情核对，跟踪生产与发货进度，维护客户档案。")
                 .status("active")
                 .build();
         roleMapper.insert(salesRole);
@@ -720,7 +720,7 @@ public class RegistrationService {
                 .tenantId(tenantId)
                 .name("财务")
                 .code("finance")
-                .description("职责：登记与核对收支流水，跟踪订单收款与对账差异，核对入库、发货与加工工价的成本口径，并按需执行加工单与报工操作。默认可用模块：经营看板、每日简报、客户列表、订单列表、财务对账、发货单、入库单、智能派单。")
+                .description("职责：登记与核对收支流水，跟踪订单收款与对账差异，核对入库、发货与加工工价的成本口径，并按需执行加工单与报工操作。")
                 .status("active")
                 .build();
         roleMapper.insert(financeRole);
@@ -735,7 +735,7 @@ public class RegistrationService {
                 .tenantId(tenantId)
                 .name("商品管理员")
                 .code("product_manager")
-                .description("职责：维护商品资料、分类与上下架，管理加工项与加工费口径，为智能派单、生产看板与库存、省料分析提供准确的商品与工序数据。默认可用模块：经营看板、每日简报、商品管理、生产看板、智能派单、计件工资、库存明细、余料台账、省料看板、企业基础设置。")
+                .description("职责：维护商品资料、分类与上下架，管理加工项与加工费口径，为智能派单、生产看板与库存、省料分析提供准确的商品与工序数据。")
                 .status("active")
                 .build();
         roleMapper.insert(productManagerRole);
@@ -744,7 +744,7 @@ public class RegistrationService {
                 .tenantId(tenantId)
                 .name("知识编辑")
                 .code("knowledge_editor")
-                .description("职责：维护客服知识库，新增、修订与下线知识卡片，按商品资料校对对外答复口径，保证客服答复准确一致。默认可用模块：经营看板、每日简报、知识库、商品管理、库存明细、省料看板。")
+                .description("职责：维护客服知识库，新增、修订与下线知识卡片，按商品资料校对对外答复口径，保证客服答复准确一致。")
                 .status("active")
                 .build();
         roleMapper.insert(knowledgeEditorRole);
@@ -761,7 +761,7 @@ public class RegistrationService {
                 .tenantId(tenantId)
                 .name("质检员")
                 .code("inspector")
-                .description("职责：负责成品帘质检判定录入（合格、返工、报废），核对计件工价与工序数据，为返工与报废的结算提供依据。默认可用模块：生产看板、计件工资、企业基础设置。")
+                .description("职责：负责成品帘质检判定录入（合格、返工、报废），核对计件工价与工序数据，为返工与报废的结算提供依据。")
                 .status("active")
                 .build();
         roleMapper.insert(inspectorRole);

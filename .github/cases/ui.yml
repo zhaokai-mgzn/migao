@@ -4389,3 +4389,42 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: UI-117
+    legacy_id: ""
+    title: "岗位权限页默认菜单 = 后台 + 手机端（一份权限码两面投影）+ 只读工人卡；岗位描述只留职责（issue #7146）"
+    domains:
+      - ui
+      - frontend
+      - hr
+    tier: normal
+    tags:
+      - ui
+      - position
+      - role
+      - menu
+      - mobile
+      - worker
+    truths_ref:
+      - frontend-fix.role-default-menu-pc-mobile
+    user_inputs:
+      - "手机端可见面要不要作为「默认岗位默认菜单」的一部分，当然需要，把 PC 和手机端当一个整体"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "岗位权限页每张岗位卡：同一处同时给「后台 N 项」与「手机端 M 个入口」（默认收起 = §31 P1；展开看两份清单）；后台名逐字取 config/menu（与侧边栏同源），手机端面名逐字取服务端 GET /api/admin/menus 的 mobileTitles（夹具改名 ⇒ 页面跟着改，证明前端无第二张表）；没有手机端码的岗位显示 0（不是「全给」、不是报错）"
+      - "岗位描述 roles.description 只承载「职责：…」散文：不得再出现「默认可用模块：」（模块清单必须派生，否则是第二份会漂的真值）；判据 = tests/unit_ci_workflows/test_role_descriptions.py 判据 A（注入「默认可用模块：」⇒ 具名红）"
+      - "只读「工人」卡：工人端默认 5 页（页键 + 人话名取 GET /api/admin/worker-pages），卡内**没有**编辑/删除按钮、给出「员工管理 → 工人档案」链接；目录读失败 ⇒ 显式失败态 + 重试（不画成「没有页面」）"
+      - "零授权 delta：本单不改 role_permissions / users.permissions；手机端写码仍由商家在权限树逐人勾（#6759）"
+      - "存量租户：V162 只改「仍是 V161 默认文案」的行（商家自定义描述不动），终态对账 fail-closed；V161 渲染输入冻结（活清单前进不动它）"
+    skip_reason: "[backend-contract] 前端派生/只读卡由 vitest 验证；岗位描述职责-only 由 pytest 常驻判据验证；均零网络、零 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7146；用户逐字「手机端可见面要不要作为『默认岗位默认菜单』的一部分，当然需要，把 PC 和手机端当一个整体」+ 同轮裁定「加一张只读『工人』卡」「不动授权（零 delta）」）。落地：roles.description 去模块清单（职责-only）→ 默认菜单改派生（后台 × 手机端一份权限码）→ 岗位卡同屏两面 + 只读工人卡；V162 迁移刷存量（只改旧默认文案）。判据 = frontend/admin-web/tests/unit/lib/role-default-menu.test.ts + tests/unit/pages/roles.test.tsx + tests/unit_ci_workflows/test_role_descriptions.py。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/lib/role-default-menu.test.ts"
+        - "frontend/admin-web/tests/unit/pages/roles.test.tsx"
+        - "tests/unit_ci_workflows/test_role_descriptions.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+

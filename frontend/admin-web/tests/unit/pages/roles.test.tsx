@@ -1,4 +1,4 @@
-// case_ids: HR-004, HR-005, HR-006, UI-028
+// case_ids: HR-004, HR-005, HR-006, UI-028, UI-117
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react'
@@ -7,6 +7,8 @@ import { render, screen, waitFor, fireEvent, within } from '@testing-library/rea
 const mockGetRoles = vi.fn()
 const mockGetPermissions = vi.fn()
 const mockCreateRole = vi.fn()
+// issue #7146：工人端页面目录（页键 + 人话名都取服务端；前端不维护第二份词表）
+const mockGetWorkerPages = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   roleApi: {
@@ -17,6 +19,9 @@ vi.mock('@/lib/api', () => ({
   },
   permissionApi: {
     getPermissions: (...args: any[]) => mockGetPermissions(...args),
+  },
+  workerPageCatalogApi: {
+    get: (...args: any[]) => mockGetWorkerPages(...args),
   },
 }))
 
@@ -151,6 +156,15 @@ describe('RolesPage', () => {
     })
     // 缺省：菜单接口读不到 ⇒ 零手机端标注（本文件绝大多数用例与本单无关，不喂语料）
     mockRequestGet.mockRejectedValue(new Error('not mocked'))
+    // 缺省：工人端页面目录可读（issue #7146；个别用例改成失败态 / 改名语料）
+    mockGetWorkerPages.mockResolvedValue({
+      data: {
+        data: {
+          pages: ['report', 'piecework', 'order', 'cut_calc', 'shipment'],
+          labels: { report: '报工', piecework: '计件工资报表', order: '订单', cut_calc: '裁高计算器', shipment: '发货' },
+        },
+      },
+    })
   })
 
   it('renders page title', () => {
@@ -182,11 +196,11 @@ describe('RolesPage', () => {
     })
   })
 
-  // issue #7111：描述改成「职责 + 默认可用模块」后普遍超过两行 ⇒ 默认收起（§31 P1 常驻面克制）
-  // + 逐卡「展开/收起」看全文；短描述不给按钮（对照读数：不制造噪音）
-  it('#7111 长岗位描述默认收起，点「展开」看全文（短描述不给按钮）', async () => {
+  // issue #7146：描述只承载「职责」散文；「默认可用模块」改为派生区（后台 + 手机端同一张卡）
+  // 长描述仍默认收起（§31 P1 常驻面克制）+ 逐卡「展开/收起」看全文；短描述不给按钮（对照读数：不制造噪音）
+  it('#7111/#7146 长岗位描述默认收起，点「展开」看全文（短描述不给按钮）', async () => {
     const longDescription =
-      '职责：' + '维护商品资料与分类，管理加工项与加工费口径。'.repeat(3) + '默认可用模块：商品管理、生产看板。'
+      '职责：' + '维护商品资料与分类，管理加工项与加工费口径。'.repeat(3)
     mockGetRoles.mockResolvedValue({
       data: {
         data: {
@@ -201,10 +215,12 @@ describe('RolesPage', () => {
     const desc = await screen.findByTestId('role-description-product_manager')
     expect(desc).toHaveClass('line-clamp-2')
     expect(screen.queryByTestId('role-description-toggle-customer_service')).toBeNull()
+    // 🔴 #7146：描述里**不得**再出现模块清单（清单必须派生 ⇒ 否则就是第二份会漂的真值）
+    expect(desc).not.toHaveTextContent('默认可用模块')
 
     fireEvent.click(screen.getByTestId('role-description-toggle-product_manager'))
     expect(desc).not.toHaveClass('line-clamp-2')
-    expect(desc).toHaveTextContent('默认可用模块：商品管理、生产看板。')
+    expect(desc).toHaveTextContent('维护商品资料与分类')
     expect(screen.getByTestId('role-description-toggle-product_manager')).toHaveAttribute('aria-expanded', 'true')
 
     fireEvent.click(screen.getByTestId('role-description-toggle-product_manager'))
@@ -642,5 +658,161 @@ describe('RolesPage 读面失败态（issue #6663）', () => {
     expect(failure).toHaveTextContent('权限目录读取失败')
     expect(screen.queryByText('暂无权限数据')).not.toBeInTheDocument()
     expect(screen.queryByTestId('perm-menu-sections')).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * issue #7146：**默认菜单 = 后台 + 手机端（一份菜单的两次投影）**。
+ *
+ * 用户 2026-10-17 逐字：「手机端可见面要不要作为『默认岗位默认菜单』的一部分，当然需要，
+ * **把 PC 和手机端当一个整体**」。
+ *
+ * 判据的真值面：
+ * - 后台菜单名 = `@/config/menu`（侧边栏真值源，三源同构）；
+ * - 手机端面名 = 服务端 `GET /api/admin/menus` 的 `mobileTitles`（真值 = `MobileSurfaces`）；
+ *   🔴 本文件的语料**必须**能证明「页面透传服务端、不自造表」——改名夹具 ⇒ 页面跟着改。
+ */
+describe('RolesPage 默认菜单 = 后台 + 手机端（issue #7146）', () => {
+  // ⚠️ 本块是**独立的顶层 describe**：上面那个 `beforeEach` 不覆盖这里的用例
+  //（曾因此让 `mockGetWorkerPages` 无实现 ⇒ 页面落到失败态、断言超时）——缺省语料在这里自带一份。
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockGetRoles.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            { id: 'r-cs', name: '客服', code: 'customer_service', description: '职责：在线接待客户咨询与投诉。', permissions: [], createdAt: '2026-06-02' },
+          ],
+        },
+      },
+    })
+    mockGetPermissions.mockResolvedValue({ data: { data: PERMISSION_CATALOG } })
+    mockRequestGet.mockRejectedValue(new Error('not mocked'))
+    mockGetWorkerPages.mockResolvedValue({
+      data: {
+        data: {
+          pages: ['report', 'piecework', 'order', 'cut_calc', 'shipment'],
+          labels: { report: '报工', piecework: '计件工资报表', order: '订单', cut_calc: '裁高计算器', shipment: '发货' },
+        },
+      },
+    })
+  })
+
+  const roleWithCodes = (codes: string[]) => ({
+    data: {
+      data: {
+        items: [
+          {
+            id: 'r-cs',
+            name: '客服',
+            code: 'customer_service',
+            description: '职责：在线接待客户咨询与投诉，跟进订单进度。',
+            permissions: codes.map((code, i) => ({ id: `p-${i}`, code, name: code })),
+            createdAt: '2026-06-02',
+          },
+        ],
+      },
+    },
+  })
+
+  const menusPayload = (titles: Record<string, string[]>) => ({
+    data: {
+      data: [
+        {
+          code: 'dashboard',
+          label: '经营看板',
+          children: [{ code: 'dashboard:view', label: '经营看板', mobileTitles: titles['dashboard:view'] || [] }],
+        },
+        {
+          code: 'customer-service',
+          label: '客户服务',
+          children: [
+            { code: 'agent:session', label: '在线接待', mobileTitles: titles['agent:session'] || [] },
+            { code: 'order:list', label: '订单列表', mobileTitles: titles['order:list'] || [] },
+          ],
+        },
+      ],
+    },
+  })
+
+  it('同一张卡给「后台 N 项」与「手机端 M 个入口」：默认收起，展开看两份清单', async () => {
+    mockGetRoles.mockResolvedValue(roleWithCodes(['dashboard:view', 'agent:session', 'order:list']))
+    mockRequestGet.mockResolvedValue(
+      menusPayload({ 'dashboard:view': ['数据'], 'agent:session': ['坐席'] }),
+    )
+    render(<RolesPage />)
+
+    const card = await screen.findByTestId('role-default-menu-customer_service')
+    await waitFor(() =>
+      expect(within(card).getByTestId('role-default-menu-summary-customer_service')).toHaveTextContent(
+        '默认菜单：后台 4 项 · 手机端 2 个入口',
+      ),
+    )
+    // §31 P1 常驻面克制：折叠态下清单不渲染（不是 CSS 隐藏）
+    expect(screen.queryByTestId('role-default-menu-backend-customer_service')).toBeNull()
+
+    fireEvent.click(within(card).getByRole('button', { name: /默认菜单/ }))
+    expect(await screen.findByTestId('role-default-menu-backend-customer_service')).toHaveTextContent(
+      '经营看板、在线接待、订单列表',
+    )
+    expect(screen.getByTestId('role-default-menu-mobile-customer_service')).toHaveTextContent('数据、坐席')
+    expect(within(card).getByRole('button', { name: /默认菜单/ })).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('手机端面名逐字取服务端下发：服务端改名 ⇒ 页面跟着改（前端没有第二张表）', async () => {
+    mockGetRoles.mockResolvedValue(roleWithCodes(['dashboard:view']))
+    mockRequestGet.mockResolvedValue(menusPayload({ 'dashboard:view': ['数据（服务端改名）'] }))
+    render(<RolesPage />)
+
+    const card = await screen.findByTestId('role-default-menu-customer_service')
+    fireEvent.click(await within(card).findByRole('button', { name: /默认菜单/ }))
+    expect(await screen.findByTestId('role-default-menu-mobile-customer_service')).toHaveTextContent(
+      '数据（服务端改名）',
+    )
+  })
+
+  it('没有手机端可见码的岗位 ⇒ 手机端 0 个入口（不是「全给」也不是「无权限报错」）', async () => {
+    mockGetRoles.mockResolvedValue(roleWithCodes(['order:list']))
+    mockRequestGet.mockResolvedValue(menusPayload({}))
+    render(<RolesPage />)
+
+    const card = await screen.findByTestId('role-default-menu-customer_service')
+    await waitFor(() =>
+      expect(within(card).getByTestId('role-default-menu-summary-customer_service')).toHaveTextContent(
+        '默认菜单：后台 2 项 · 手机端 0 个入口',
+      ),
+    )
+    fireEvent.click(within(card).getByRole('button', { name: /默认菜单/ }))
+    expect(await screen.findByTestId('role-default-menu-mobile-customer_service')).toHaveTextContent('无')
+  })
+
+  it('工人只读卡（#7146 用户裁定）：页名逐字取服务端目录、无编辑/删除、链接到工人档案', async () => {
+    render(<RolesPage />)
+
+    const card = await screen.findByTestId('worker-menu-card')
+    expect(card).toHaveTextContent('工人')
+    expect(card).toHaveTextContent('只读')
+    const pages = await screen.findByTestId('worker-menu-pages')
+    for (const label of ['报工', '计件工资报表', '订单', '裁高计算器', '发货']) {
+      expect(pages, label).toHaveTextContent(label)
+    }
+    // 只读：卡片里没有编辑 / 删除按钮（工人不是 roles 行，不能在这里改）
+    expect(within(card).queryByTitle('编辑')).toBeNull()
+    expect(within(card).queryByTitle('删除')).toBeNull()
+    // 逐人配置的出口：员工管理（工人档案）
+    expect(within(card).getByRole('link')).toHaveAttribute('href', '/employees')
+  })
+
+  it('工人端页面目录读失败 ⇒ 显式失败态 + 重试（不画成「没有页面」）', async () => {
+    mockGetWorkerPages.mockRejectedValueOnce(new Error('403'))
+    render(<RolesPage />)
+
+    const failure = await screen.findByTestId('worker-menu-error')
+    expect(failure).toHaveTextContent('工人端页面目录读取失败')
+    expect(screen.queryByTestId('worker-menu-pages')).not.toBeInTheDocument()
+
+    fireEvent.click(within(failure).getByRole('button', { name: '重试' }))
+    await waitFor(() => expect(mockGetWorkerPages).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.getByTestId('worker-menu-pages')).toHaveTextContent('报工'))
   })
 })

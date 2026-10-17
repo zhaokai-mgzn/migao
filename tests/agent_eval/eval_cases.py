@@ -14769,6 +14769,24 @@ _CASE_UI_113 = EvalCase(
     precondition='前置 = 三样都在仓里可读：① 无状态筛选原语 `frontend/admin-web/src/components/ui/SearchPanel.tsx`（`fields[].control` 由页面渲染、单一响应式 grid、`testId` 默认 `search-area`）；② 有状态轻量筛选条 `frontend/admin-web/src/components/ui/SearchBar.tsx`；③ 守卫本体 `frontend/admin-web/tests/unit/filter-area-primitive-guard.test.ts`。**前置不成立时不许读成通过**：射程目录取不到 ⇒ `walk()` 抛（fail-closed）；页面数 ≤ 40、或「声明 + 原语」合计 < 5 ⇒ 反空跑判红。',
 )
 
+# ── UI-117 [NORMAL] 岗位权限页默认菜单 = 后台 + 手机端（一份权限码两面投影）+ 只读工人卡；岗位描述只留职责（issue #7146）（源: cases/ui.yml）──
+_CASE_UI_117 = EvalCase(
+    id='UI-117',
+    legacy_id='',
+    title='岗位权限页默认菜单 = 后台 + 手机端（一份权限码两面投影）+ 只读工人卡；岗位描述只留职责（issue #7146）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['手机端可见面要不要作为「默认岗位默认菜单」的一部分，当然需要，把 PC 和手机端当一个整体'],
+    expectations=['direct_reply'],
+    data_checks=['岗位权限页每张岗位卡：同一处同时给「后台 N 项」与「手机端 M 个入口」（默认收起 = §31 P1；展开看两份清单）；后台名逐字取 config/menu（与侧边栏同源），手机端面名逐字取服务端 GET /api/admin/menus 的 mobileTitles（夹具改名 ⇒ 页面跟着改，证明前端无第二张表）；没有手机端码的岗位显示 0（不是「全给」、不是报错）', '岗位描述 roles.description 只承载「职责：…」散文：不得再出现「默认可用模块：」（模块清单必须派生，否则是第二份会漂的真值）；判据 = tests/unit_ci_workflows/test_role_descriptions.py 判据 A（注入「默认可用模块：」⇒ 具名红）', '只读「工人」卡：工人端默认 5 页（页键 + 人话名取 GET /api/admin/worker-pages），卡内**没有**编辑/删除按钮、给出「员工管理 → 工人档案」链接；目录读失败 ⇒ 显式失败态 + 重试（不画成「没有页面」）', '零授权 delta：本单不改 role_permissions / users.permissions；手机端写码仍由商家在权限树逐人勾（#6759）', '存量租户：V162 只改「仍是 V161 默认文案」的行（商家自定义描述不动），终态对账 fail-closed；V161 渲染输入冻结（活清单前进不动它）'],
+    skip_reason='[backend-contract] 前端派生/只读卡由 vitest 验证；岗位描述职责-only 由 pytest 常驻判据验证；均零网络、零 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'position', 'role', 'menu', 'mobile', 'worker'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -15595,6 +15613,7 @@ ALL_CASES = (
     _CASE_UI_114,
     _CASE_UI_115,
     _CASE_UI_113,
+    _CASE_UI_117,
     _CASE_UT_001,
     _CASE_UT_002,
 )
