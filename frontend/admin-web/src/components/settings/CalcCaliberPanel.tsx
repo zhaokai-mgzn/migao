@@ -144,7 +144,7 @@ function FormSection({
       data-testid={testid}
       className={divider ? 'border-t border-neutral-100 pt-6' : undefined}
     >
-      <h3 className="text-sm font-semibold text-neutral-900">{title}</h3>
+      <h3 className="text-base font-semibold text-neutral-900">{title}</h3>
       <div className="mt-3">{children}</div>
     </section>
   )
@@ -448,9 +448,14 @@ export function CalcCaliberPanel({
               {/* 🔴 两张表**上下排**（不是并排）：并排时每张只剩 ~370px，而「档位 + 显示名（w-40）+
                   褶倍（w-36）」这三列合计就 ~360px ⇒ 真机 1440 实测右列被裁掉（验收读图实证）。
                   定宽是 #6857 的成果、不能为了并排去缩它（缩了又回到「挤」），所以让容器让步。 */}
-              <div className="space-y-4">
+              {/* 🔴 两张表**贴合内容、放得下就并排、放不下就换行**（不是撑满整行）：
+                  撑满整行时每张卡右侧会空出 357 / 535px（独立复核读图实测），
+                  并排 + `w-full` 时又会在 1440 下裁掉「褶倍」列（本包第一轮读图实测）。
+                  正解 = 卡宽贴合表格内容（`w-fit`）+ `flex-wrap`：1440 下两张并排且不裁切，
+                  窄容器下自动换行；`max-w-full` 兜住极窄容器。 */}
+              <div className="flex flex-wrap items-start gap-4">
                 {/* 档位表：一行一个档位（顾客看到的名字 + 褶倍） */}
-                <div className="rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
+                <div className="w-fit max-w-full rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
                   <h4 className="text-sm font-medium text-neutral-800">
                     {CALC_PARAM_COPY.tiers.label}
                   </h4>
@@ -458,17 +463,20 @@ export function CalcCaliberPanel({
                       挨在一起读；撑满会把定宽输入框之间的空白拉成一道鸿沟（验收读图实证）。 */}
                   <table className="mt-2 text-sm">
                     <tbody>
-                      {/* 列头用 `<td>` 而不是 `<th>`：列头本来就短、这张表也不需要横向逃逸口，
-                          而 `list-table-nowrap-guard` 的射程是「有 `<th>` 的表格」——
-                          不引 `<th>` 就不必造一个假的 overflow 容器（有意为之，不是漏了）。 */}
-                      <tr className="text-xs text-neutral-400">
+                      {/* 列头用 `td` 而不是 `th` **元素**：列头本来就短、这张表也不需要横向逃逸口，
+                          而 `list-table-nowrap-guard` 的射程是「带表头标签元素的表格」——
+                          不引它就不必造一个假的 overflow 容器（有意为之，不是漏了）。
+                          ⚠️ 注释里也**不要写那个角括号标签名**：该守卫按源码文本判，注释同样命中。 */}
+                      {/* 列头色 = `text-neutral-600`（对白底 6.2:1，过 AA）；**旧的 400 只有 2.28:1**，
+                          12px 小字在真机上是「看着脏」的来源（独立复核读图实测）。 */}
+                      <tr className="text-xs text-neutral-600">
                         <td className="pb-1">档位</td>
                         <td className="pb-1 pl-3">显示名</td>
                         <td className="pb-1 text-right">褶倍</td>
                       </tr>
                       {Object.entries(tiers).map(([name, tier]) => (
                         <tr key={name} className="border-t border-neutral-200/70">
-                          <td className="py-2 pr-3 whitespace-nowrap text-neutral-600">
+                          <td className="py-2 pr-3 whitespace-nowrap text-neutral-700">
                             {tierLabelOf(name)}
                           </td>
                           <td className="py-2 pr-3">
@@ -513,20 +521,20 @@ export function CalcCaliberPanel({
                 </div>
 
                 {/* 拼色每折用料表：一行一个拼色次数 */}
-                <div className="rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
+                <div className="w-fit max-w-full rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
                   <h4 className="text-sm font-medium text-neutral-800">
                     {CALC_PARAM_COPY.per_fold_mixed_times.label}
                   </h4>
                   {/* 同档位表：不撑满，行内元素挨着读 */}
                   <table className="mt-2 text-sm">
                     <tbody>
-                      <tr className="text-xs text-neutral-400">
+                      <tr className="text-xs text-neutral-600">
                         <td className="pb-1">拼色方式</td>
                         <td className="pb-1 text-right">每折用料（米）</td>
                       </tr>
                       {Object.entries(mixed).map(([times, perFold]) => (
                         <tr key={times} className="border-t border-neutral-200/70">
-                          <td className="py-2 pr-3 whitespace-nowrap text-neutral-600">
+                          <td className="py-2 pr-3 whitespace-nowrap text-neutral-700">
                             拼{times}次
                           </td>
                           <td className="py-2">
@@ -629,7 +637,7 @@ export function CalcCaliberPanel({
 
           {/* 全域**唯一**的保存按钮（受控只读形态 / 读失败 ⇒ 不渲染）；说明在左、按钮在右 */}
           {writable && displayConfig && (
-            <div className="border-t border-neutral-100 pt-6">
+            <div className="sticky bottom-0 z-10 border-t border-neutral-100 bg-white pt-4">
               <div className="flex flex-wrap items-center justify-end gap-3">
                 <span className="mr-auto text-xs text-neutral-500">
                   保存后按当前配置计算；非法值会被整份拒绝并逐条说明理由。

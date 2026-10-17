@@ -53,6 +53,23 @@ await page
   .first()
   .screenshot({ path: `${OUT}/档位与拼色.png` })
 
+// 滚到「档位与拼色」再拍视口：保存条应 sticky 在底部（改完不用滚到底才够得着「保存」）
+await page.locator('[data-testid="calc-caliber-group-rules"]').first().scrollIntoViewIfNeeded()
+await page.waitForTimeout(600)
+const stickyReadout = await page.evaluate(() => {
+  const btn = document.querySelector('[data-testid="calc-caliber-save"]')
+  if (!btn) return null
+  const bar = btn.closest('div.sticky')
+  const r = btn.getBoundingClientRect()
+  return {
+    position: bar ? getComputedStyle(bar).position : null,
+    buttonBottom: Math.round(r.bottom),
+    viewportH: window.innerHeight,
+  }
+})
+await page.screenshot({ path: `${OUT}/保存条-sticky.png` })
+console.log('保存条读数:', JSON.stringify(stickyReadout))
+
 // ── 几何读数 ──
 const geo = await page.evaluate(() => {
   const read = (el) => {

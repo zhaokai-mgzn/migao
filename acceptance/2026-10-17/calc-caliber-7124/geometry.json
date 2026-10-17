@@ -9,19 +9,19 @@
       "labelText": "单色每折用料（米）",
       "label": {
         "x": 562,
-        "y": -12,
+        "y": 91,
         "w": 354,
         "h": 20,
-        "bottom": 8,
-        "top": -12
+        "bottom": 111,
+        "top": 91
       },
       "input": {
         "x": 562,
-        "y": 14,
+        "y": 117,
         "w": 144,
         "h": 36,
-        "bottom": 50,
-        "top": 14
+        "bottom": 153,
+        "top": 117
       },
       "labelAboveInput": true,
       "hasBottomBorder": false,
@@ -32,19 +32,19 @@
       "labelText": "单开余量（米）",
       "label": {
         "x": 956,
-        "y": -12,
+        "y": 91,
         "w": 354,
         "h": 20,
-        "bottom": 8,
-        "top": -12
+        "bottom": 111,
+        "top": 91
       },
       "input": {
         "x": 956,
-        "y": 14,
+        "y": 117,
         "w": 144,
         "h": 36,
-        "bottom": 50,
-        "top": 14
+        "bottom": 153,
+        "top": 117
       },
       "labelAboveInput": true,
       "hasBottomBorder": false,
@@ -55,19 +55,19 @@
       "labelText": "多开余量（米）",
       "label": {
         "x": 562,
-        "y": 96,
+        "y": 199,
         "w": 354,
         "h": 20,
-        "bottom": 116,
-        "top": 96
+        "bottom": 219,
+        "top": 199
       },
       "input": {
         "x": 562,
-        "y": 122,
+        "y": 225,
         "w": 144,
         "h": 36,
-        "bottom": 158,
-        "top": 122
+        "bottom": 261,
+        "top": 225
       },
       "labelAboveInput": true,
       "hasBottomBorder": false,
@@ -78,19 +78,19 @@
       "labelText": "上下卷边（米）",
       "label": {
         "x": 956,
-        "y": 96,
+        "y": 199,
         "w": 354,
         "h": 20,
-        "bottom": 116,
-        "top": 96
+        "bottom": 219,
+        "top": 199
       },
       "input": {
         "x": 956,
-        "y": 122,
+        "y": 225,
         "w": 144,
         "h": 36,
-        "bottom": 158,
-        "top": 122
+        "bottom": 261,
+        "top": 225
       },
       "labelAboveInput": true,
       "hasBottomBorder": false,
@@ -101,19 +101,19 @@
       "labelText": "超宽阈值（米）",
       "label": {
         "x": 562,
-        "y": 854,
+        "y": 755,
         "w": 354,
         "h": 20,
-        "bottom": 874,
-        "top": 854
+        "bottom": 775,
+        "top": 755
       },
       "input": {
         "x": 562,
-        "y": 880,
+        "y": 781,
         "w": 144,
         "h": 36,
-        "bottom": 916,
-        "top": 880
+        "bottom": 817,
+        "top": 781
       },
       "labelAboveInput": true,
       "hasBottomBorder": false,
@@ -124,19 +124,19 @@
       "labelText": "超高阈值（米）",
       "label": {
         "x": 956,
-        "y": 854,
+        "y": 755,
         "w": 354,
         "h": 20,
-        "bottom": 874,
-        "top": 854
+        "bottom": 775,
+        "top": 755
       },
       "input": {
         "x": 956,
-        "y": 880,
+        "y": 781,
         "w": 144,
         "h": 36,
-        "bottom": 916,
-        "top": 880
+        "bottom": 817,
+        "top": 781
       },
       "labelAboveInput": true,
       "hasBottomBorder": false,
@@ -147,19 +147,19 @@
       "labelText": "褶倍下限",
       "label": {
         "x": 562,
-        "y": 1295,
+        "y": 1200,
         "w": 354,
         "h": 20,
-        "bottom": 1315,
-        "top": 1295
+        "bottom": 1220,
+        "top": 1200
       },
       "input": {
         "x": 562,
-        "y": 1321,
+        "y": 1226,
         "w": 144,
         "h": 36,
-        "bottom": 1357,
-        "top": 1321
+        "bottom": 1262,
+        "top": 1226
       },
       "labelAboveInput": true,
       "hasBottomBorder": false,
@@ -170,19 +170,19 @@
       "labelText": "进位步长（米）",
       "label": {
         "x": 956,
-        "y": 1295,
+        "y": 1200,
         "w": 354,
         "h": 20,
-        "bottom": 1315,
-        "top": 1295
+        "bottom": 1220,
+        "top": 1200
       },
       "input": {
         "x": 956,
-        "y": 1321,
+        "y": 1226,
         "w": 144,
         "h": 36,
-        "bottom": 1357,
-        "top": 1321
+        "bottom": 1262,
+        "top": 1226
       },
       "labelAboveInput": true,
       "hasBottomBorder": false,
@@ -193,151 +193,151 @@
     {
       "id": "calc-caliber-scalar-per_fold_single",
       "x": 562,
-      "y": 14,
+      "y": 117,
       "w": 144,
       "h": 36,
-      "bottom": 50,
-      "top": 14,
+      "bottom": 153,
+      "top": 117,
       "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-scalar-margin_single",
       "x": 956,
-      "y": 14,
+      "y": 117,
       "w": 144,
       "h": 36,
-      "bottom": 50,
-      "top": 14,
+      "bottom": 153,
+      "top": 117,
       "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-scalar-margin_multi",
       "x": 562,
-      "y": 122,
+      "y": 225,
       "w": 144,
       "h": 36,
-      "bottom": 158,
-      "top": 122,
+      "bottom": 261,
+      "top": 225,
       "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-scalar-hem_margin",
       "x": 956,
-      "y": 122,
+      "y": 225,
       "w": 144,
       "h": 36,
-      "bottom": 158,
-      "top": 122,
+      "bottom": 261,
+      "top": 225,
       "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-tier-economy-label",
       "x": 635,
-      "y": 343,
+      "y": 449,
       "w": 160,
       "h": 36,
-      "bottom": 379,
-      "top": 343,
+      "bottom": 485,
+      "top": 449,
       "cls": "h-9 w-40 rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-tier-economy-fullness",
       "x": 808,
-      "y": 343,
+      "y": 449,
       "w": 144,
       "h": 36,
-      "bottom": 379,
-      "top": 343,
+      "bottom": 485,
+      "top": 449,
       "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-tier-standard-label",
       "x": 635,
-      "y": 396,
+      "y": 502,
       "w": 160,
       "h": 36,
-      "bottom": 432,
-      "top": 396,
+      "bottom": 538,
+      "top": 502,
       "cls": "h-9 w-40 rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-tier-standard-fullness",
       "x": 808,
-      "y": 396,
+      "y": 502,
       "w": 144,
       "h": 36,
-      "bottom": 432,
-      "top": 396,
+      "bottom": 538,
+      "top": 502,
       "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-mixed-1",
-      "x": 630,
-      "y": 551,
+      "x": 1054,
+      "y": 449,
       "w": 144,
       "h": 36,
-      "bottom": 587,
-      "top": 551,
+      "bottom": 485,
+      "top": 449,
       "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-mixed-2",
-      "x": 630,
-      "y": 604,
+      "x": 1054,
+      "y": 502,
       "w": 144,
       "h": 36,
-      "bottom": 640,
-      "top": 604,
+      "bottom": 538,
+      "top": 502,
       "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-default_formula",
       "x": 562,
-      "y": 712,
+      "y": 610,
       "w": 256,
       "h": 36,
-      "bottom": 748,
-      "top": 712,
+      "bottom": 646,
+      "top": 610,
       "cls": "h-9 w-64 rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400 mt-1.5"
     },
     {
       "id": "calc-caliber-scalar-oversize_width_threshold",
       "x": 562,
-      "y": 880,
+      "y": 781,
       "w": 144,
       "h": 36,
-      "bottom": 916,
-      "top": 880,
+      "bottom": 817,
+      "top": 781,
       "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-scalar-oversize_height_threshold",
       "x": 956,
-      "y": 880,
+      "y": 781,
       "w": 144,
       "h": 36,
-      "bottom": 916,
-      "top": 880,
+      "bottom": 817,
+      "top": 781,
       "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-scalar-min_fullness",
       "x": 562,
-      "y": 1321,
+      "y": 1226,
       "w": 144,
       "h": 36,
-      "bottom": 1357,
-      "top": 1321,
+      "bottom": 1262,
+      "top": 1226,
       "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-scalar-meters_rounding_step",
       "x": 956,
-      "y": 1321,
+      "y": 1226,
       "w": 144,
       "h": 36,
-      "bottom": 1357,
-      "top": 1321,
+      "bottom": 1262,
+      "top": 1226,
       "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     }
   ],
