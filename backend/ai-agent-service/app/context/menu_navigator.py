@@ -77,8 +77,10 @@ from dataclasses import dataclass
 from typing import Any, Dict, FrozenSet, Iterable, Optional, Sequence, Tuple
 
 #: 菜单组（`menu.ts` 的 `menuGroups`）—— key 与组名逐字同源，顺序即渲染顺序。
+#: 🔴 2026-10-17（issue #7087，用户裁定）：「**工作台**」组整组撤销（原 `("workspace", "工作台")`
+#: 已删除）⇒ 现为**五组**。原组内两项的去向：「经营看板」升为**最前席位一级项**（见 `MENU_TREE`
+#: 首节点），「每日简报」菜单项**删除**（那一行结论已在经营看板上，企业开关驱动那张卡）。
 MENU_GROUPS: Tuple[Tuple[str, str], ...] = (
-    ("workspace", "工作台"),
     ("customer-service", "客户服务"),
     ("trade-center", "交易管理"),
     ("production-center", "生产管理"),
@@ -105,18 +107,21 @@ class MenuNode:
     permission_code: str
 
 
-#: `menu.ts` 的**全量导航节点**（现取：6 组 20 项 + 3 个一级独立项 = 23）。
+#: `menu.ts` 的**全量导航节点**（现取：5 组 16 项 + 3 个一级独立项 = 19 + 尾部「通知中心」= **20**）。
 #: 🔴 2026-10-09（issue #6580）：「企业基础设置」由组内项变为独立项、并撤掉 #6573 的「参数总览」
 #: ⇒ 组内 21 → 20、独立项仍 3（商品管理 / 企业基础设置 / 通知中心）。
+#: 🔴 2026-10-17（issue #7087，用户裁定）：「工作台」组撤销 + 「经营看板」升为**最前席位**一级项
+#: + 「每日简报」菜单项删除 ⇒ 组内 20 → 16、独立项 3 → 4（**经营看板** / 商品管理 /
+#: 企业基础设置 / 通知中心）；首节点（`STANDALONE_GROUP` 的「经营看板」）即**登录落点**。
 #: 顺序 = `menu.ts` 的渲染顺序；判据按 `MENU_TREE_ORDER_LOCKED` 比对（**顺序也锁**，
 #: 因为「一级项与各组的相对位次」在 `menu.ts` 里是一门被用户裁定过的信息架构）。
 #: 🔴 2026-10-06（issue #6457，用户裁定方案 A1）：组内顺序重排 + 一级项「商品管理」沉到
 #: **所有分组之后** —— 本镜像**必须同批跟改**（判据 tests/unit_ci_workflows/test_menu_navigator.py
 #: 的「MENU_TREE 的顺序与 menu.ts 的渲染顺序不同」就是本文件漏跟时的真红形态）。
 MENU_TREE: Tuple[MenuNode, ...] = (
-    # 工作台
-    MenuNode("workspace", "经营看板", "/dashboard", "dashboard:view"),
-    MenuNode("workspace", "每日简报", "/briefing", "dashboard:view"),
+    # 最前席位一级项（2026-10-17 issue #7087）：渲染在**所有分组之前** —— 用户要的「一进来就
+    # 很直观看到经营看板」靠它实现（登录落点 = 第一个可见菜单项）。
+    MenuNode(STANDALONE_GROUP, "经营看板", "/dashboard", "dashboard:view"),
     # 客户服务（2026-10-06：接待与工具相邻 → 售后出口 → 客户档案）
     MenuNode("customer-service", "在线接待", "/agent-workspace/human-sessions", "agent:session"),
     MenuNode("customer-service", "知识库", "/knowledge", "knowledge:view"),
@@ -216,8 +221,12 @@ class NavFeature:
 #: `problems_shadowed_aliases`）。推论：同一功能**不得**登记 `("发货单", "发货单列表")`
 #: 这种「短说法是长说法子串」的形态（旧的 `…页` / `…列表` **装饰性变体**即属此列，已清掉）。
 NAV_FEATURES: Tuple[NavFeature, ...] = (
-    NavFeature("dashboard", "经营看板（经营数据）", (("workspace", "经营看板"),), ("经营看板", "经营数据")),
-    NavFeature("briefing", "每日简报（日报）", (("workspace", "每日简报"),), ("每日简报", "日报")),
+    # 🔴 2026-10-17（issue #7087）：「经营看板」现为**最前席位一级项**（不再属于 `workspace` 组，
+    # 该组已撤销）⇒ 归属哨兵改 `STANDALONE_GROUP`；「每日简报」那条登记**同批删除**（菜单项已撤，
+    # 登记项与菜单项必须一一对应 —— 判据 ①「每个菜单节点至少一条可命中的说法」/②「没有空登记」）。
+    # ⚠️ 不登记「工作台」这类旧组名当说法：判据「接地」要求说法与所属节点菜单名 / 本功能 label
+    # 有包含关系 —— 已不存在的组名既不接地、也会把「说到一个没有的页面」变成可命中路径。
+    NavFeature("dashboard", "经营看板（经营数据）", ((STANDALONE_GROUP, "经营看板"),), ("经营看板", "经营数据")),
     NavFeature("human-sessions", "在线接待（人工接待）", (("customer-service", "在线接待"),), ("在线接待", "人工接待")),
     NavFeature("customers", "客户列表（客户）", (("customer-service", "客户列表"),), ("客户列表", "客户")),
     NavFeature("knowledge", "知识库", (("customer-service", "知识库"),), ("知识库",)),

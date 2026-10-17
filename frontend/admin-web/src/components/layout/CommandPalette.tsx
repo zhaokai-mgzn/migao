@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Search } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
-import { menuGroups, standaloneTopItems, standaloneItems } from '@/config/menu'
+import { menuGroups, standaloneHeadItems, standaloneTopItems, standaloneItems } from '@/config/menu'
 import { resolveMenuIcon } from '@/config/menu-icons'
 import {
   filterMenuItems,
@@ -14,7 +14,6 @@ import {
   searchMenu,
   type FlatMenuItem,
 } from '@/lib/menu-nav'
-import { briefingApi } from '@/lib/api'
 
 interface CommandPaletteProps {
   open: boolean
@@ -49,23 +48,17 @@ export default function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const [highlight, setHighlight] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // 简报开关与侧边栏同一口径（开关关了就不该在搜索结果里冒出来）
-  const [briefingEnabled, setBriefingEnabled] = useState(false)
-  useEffect(() => {
-    if (!open) return
-    briefingApi.getConfig()
-      .then((res) => setBriefingEnabled(!!res.data.data?.enabled))
-      .catch(() => setBriefingEnabled(false))
-  }, [open])
-
   const items = useMemo<FlatMenuItem[]>(() => {
-    const opts = { permissions: user?.permissions || [], roles: user?.roles, briefingEnabled }
+    // 🔴 2026-10-17（issue #7087）：`briefingToggle` 随「每日简报」菜单项撤掉 ⇒ 本面板不再拉简报配置
+    //（过滤条件只剩权限那一维）；同时**必须**把最前席位（「经营看板」）并入索引，否则 ⌘K 搜不到它。
+    const opts = { permissions: user?.permissions || [], roles: user?.roles }
     return flattenMenu(
       visibleMenuGroups(menuGroups, opts),
+      filterMenuItems(standaloneHeadItems, opts),
       filterMenuItems(standaloneTopItems, opts),
       filterMenuItems(standaloneItems, opts),
     )
-  }, [user?.permissions, user?.roles, briefingEnabled])
+  }, [user?.permissions, user?.roles])
 
   // 空查询 = 全量索引（移动端就是靠这个当菜单用）
   const results = useMemo(

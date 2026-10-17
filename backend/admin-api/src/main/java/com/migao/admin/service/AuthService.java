@@ -1315,22 +1315,16 @@ public class AuthService {
         // 判据：tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py。
         // 🔴 issue #5217 裁决：**图标是前端专属**（服务端不下发 icon）—— `menuItem` 只有 key/name/path。
 
-        // 工作台（#5271：由「独立项」改为**组**，含 经营看板 + 每日简报 两项）
-        List<UserInfoResponse.MenuItem> workspaceChildren = new java.util.ArrayList<>();
-        // 经营看板（issue #5699 **P4**）：子菜单粒度 = 节点码 ≡ 该页第一屏读码 `dashboard:view`
+        // 🔴 2026-10-17（issue #7087，用户裁定）：原「工作台」组**整组撤销** ——
+        //   · 「经营看板」升为**顶层一级项**、落**最前席位**（本方法**首个**顶层 `menus.add`）；
+        //   · 「每日简报」菜单项**删除**（那一行结论已在经营看板上，企业开关驱动那张卡即可）。
+        // 经营看板（issue #5699 **P4**）：节点码 ≡ 该页第一屏读码 `dashboard:view`
         // —— 此前节点**无码**（全员可见），而该页 5 个读端点与前端路由守卫都取 `dashboard:view`
-        // ⇒ 「菜单看得见、点进去 403」（零权限的自建岗位即真受害者）；本次收敛为同码。
+        // ⇒ 「菜单看得见、点进去 403」（零权限的自建岗位即真受害者）；该码本次**一字未动**。
+        // ⚠️ 位置在**三处**同批表达：本处 add 的文档位置（**最前**）/ `MenuController.MENU_TREE`
+        // 的顶层**首个**节点 / 前端 `menu.ts` 的 `standaloneHeadItems`（三源同构守卫按顶层布局序列比对，含位置）。
         if (isAll || permissions.contains("dashboard:view")) {
-            workspaceChildren.add(menuItem("dashboard", "经营看板", "/dashboard"));
-        }
-        // 每日简报（issue #3468）：按 dashboard:view 判定（与 menu.ts 的 permissionCode 同码）。
-        // ⚠️ **企业开关有意不在此实现** —— 服务端拿不到该开关；开关由前端按 `menu.ts` 的
-        // `briefingToggle` 读取后过滤显隐，服务端只负责权限这一维。
-        if (isAll || permissions.contains("dashboard:view")) {
-            workspaceChildren.add(menuItem("briefing", "每日简报", "/briefing"));
-        }
-        if (!workspaceChildren.isEmpty()) {
-            menus.add(menuGroup("workspace", "工作台", workspaceChildren));
+            menus.add(menuItem("dashboard", "经营看板", "/dashboard"));
         }
 
         // 商品管理（2026-09-29 用户裁定「商品列表改成商品管理，直接作为一级菜单使用」）：

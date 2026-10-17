@@ -845,7 +845,7 @@ function EnterpriseDomainPanel() {
                   <div>
                     <div className="text-sm font-medium text-neutral-700">启用智能每日经营简报</div>
                     <div className="text-xs text-neutral-500">
-                      开启后：立即生成今日简报、此后每日定时生成、侧边栏显示「每日简报」入口；关闭后：停止生成、入口隐藏（历史保留）
+                      开启后：立即生成今日简报、此后每日定时生成，经营看板显示每日经营结论；关闭后：停止生成、经营看板上不再显示结论（历史保留）
                     </div>
                   </div>
                   <button
