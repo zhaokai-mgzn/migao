@@ -1,7 +1,7 @@
 """
 AI 智能客服系统 - 加工单生成 Tool（issue #3340）
 
-把已确认且含加工项的订单批量生成加工单（快照固化五要素 + options，不含销售价），
+把已确认、且**有需要报工的作业**（含加工项 **或** 有卖布行）的订单批量生成作业单（快照固化五要素 + options，不含销售价；含加工项 / 混合单 ⇒ 加工单，全是卖布行 ⇒ 出库作业单），
 并联动订单 confirmed → producing。幂等：同一订单已有加工单时拒绝重复生成。
 """
 
@@ -19,7 +19,8 @@ class ProcessingOrderGenerateTool(BaseTool):
     description = (
         "【触发】用户说'生成加工单''把这几单发加工''今天确认的订单都生成加工单'时调用。"
         "【参数】需要 order_ids（订单 ID 或订单号列表）。"
-        "【语义】仅已确认且含加工项的订单可生成；生成后订单进入生产中（producing）。"
+        "【语义】已确认的订单可生成：含加工项（或混合）⇒ 加工单，卖布单（按米卖布、行上没有加工项）⇒ 出库作业单"
+        "（卖布单同样要经裁剪 → 打包两道工序并由工人报工，同样必须先生成才能发货）；生成后订单进入生产中（producing）。"
         "【反例】查询加工单用 processing_order_query；更新加工单状态用 processing_order_update。"
         "【标注】WRITE — 批量生成前必须列出订单清单并二次确认"
     )
@@ -100,7 +101,7 @@ class ProcessingOrderGenerateTool(BaseTool):
             return admin_api_failure(response,
                 error=error_msg,
                 message=f"生成加工单失败：{error_msg}",
-                suggestion="请确认订单已确认且含加工项；已有加工单的订单不可重复生成",
+                suggestion="请确认订单已确认，且有需要报工的作业（含加工项，或有卖布行）；已有作业单的订单不可重复生成（卖布单生成的是出库作业单）",
             )
 
         results = response.get("data", []) or []
