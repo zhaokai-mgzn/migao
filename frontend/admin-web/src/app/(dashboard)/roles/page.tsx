@@ -14,6 +14,12 @@ import { formatMobileTitles } from '@/lib/mobile-surface-label'
 // 弹窗分组/名称 = 侧边栏菜单分组/菜单项，避免展示旧口径权限目录
 import { menuGroups, standaloneHeadItems, standaloneTopItems } from '@/config/menu'
 
+/**
+ * 描述超过这个长度才给「展开」（issue #7111）：卡片默认 `line-clamp-2`，短描述本来就不被截断，
+ * 给它一个「展开」按钮只是噪音。
+ */
+const DESCRIPTION_TOGGLE_MIN_CHARS = 60
+
 export default function RolesPage() {
   // 岗位列表
   const [roles, setRoles] = useState<Role[]>([])
@@ -56,6 +62,19 @@ export default function RolesPage() {
   // 删除确认
   const [deleteTarget, setDeleteTarget] = useState<Role | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+  /**
+   * 岗位**描述展开态**（issue #7111）。
+   *
+   * 默认描述统一成「职责 + 默认可用模块」后普遍超过卡片的两行（`line-clamp-2`）⇒ 不展开
+   * 等于**没写**。口径 = §31 P1「常驻面克制」：默认收起、逐卡按需展开（不把 8 张卡撑高）。
+   */
+  const [expandedDescriptions, setExpandedDescriptions] = useState<string[]>([])
+  const toggleDescription = useCallback((roleId: string) => {
+    setExpandedDescriptions(prev =>
+      prev.includes(roleId) ? prev.filter(id => id !== roleId) : [...prev, roleId]
+    )
+  }, [])
 
   // 加载岗位列表
   const loadRoles = useCallback(async () => {
@@ -423,7 +442,28 @@ export default function RolesPage() {
               </div>
 
               {role.description && (
-                <p className="text-sm text-neutral-500 mb-3 line-clamp-2">{role.description}</p>
+                <div className="mb-3">
+                  <p
+                    data-testid={`role-description-${role.code}`}
+                    className={`text-sm text-neutral-500 ${
+                      expandedDescriptions.includes(role.id) ? '' : 'line-clamp-2'
+                    }`}
+                  >
+                    {role.description}
+                  </p>
+                  {/* 只有会被 clamp 截断的长描述才给「展开」——短描述给按钮只是噪音 */}
+                  {role.description.length > DESCRIPTION_TOGGLE_MIN_CHARS && (
+                    <button
+                      type="button"
+                      onClick={() => toggleDescription(role.id)}
+                      aria-expanded={expandedDescriptions.includes(role.id)}
+                      data-testid={`role-description-toggle-${role.code}`}
+                      className="mt-1 text-xs text-primary-600 hover:underline"
+                    >
+                      {expandedDescriptions.includes(role.id) ? '收起' : '展开'}
+                    </button>
+                  )}
+                </div>
               )}
 
               <div className="flex items-center justify-between text-xs text-neutral-400">

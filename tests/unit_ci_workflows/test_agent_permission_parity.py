@@ -544,6 +544,26 @@ def _java_string_arg(body: str, callee: str) -> str:
     return ""
 
 
+def parse_role_descriptions(reg_text: str) -> dict[str, str]:
+    """S4（描述面）：内置岗位的**描述**（`Role.builder()...description("x")`）。
+
+    与 `parse_role_defaults` **同一份定位与词法**（先剥注释 `java_code`、再 `java_literals`
+    按前缀归属到 `description(`）—— 不另写第二套解析实现（issue #3570 的教训）。
+    返回 `{角色码: 描述}`；取不到描述的角色不进表（空表由调用方 fail-closed）。
+    """
+    code = java_code(reg_text)
+    out: dict[str, str] = {}
+    for var, body in dict(
+        re.findall(r'Role\s+(\w+)\s*=\s*Role\.builder\(\)(.*?)\.build\(\);', code, re.S)
+    ).items():
+        role_code = _java_string_arg(body, "code(")
+        desc = _java_string_arg(body, "description(")
+        if role_code and desc:
+            out[role_code] = desc
+    assert len(out) >= 5, f"内置岗位描述解析出 {len(out)} 条 ⇒ 判据会空跑（fail-closed）：{sorted(out)}"
+    return out
+
+
 def parse_role_defaults(reg_text: str) -> dict[str, frozenset[str]]:
     """S4：内置岗位默认权限（`Role.builder()...code("x")` 变量 + `attachDefaultPermissions` 列表）。
 

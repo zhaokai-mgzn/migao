@@ -7,14 +7,20 @@ import { toastRequestError } from '@/lib/api-error'
 import { employeeApi } from '@/lib/api'
 import request from '@/lib/request'
 import { usePermission } from '@/lib/permission'
-import { Button, Input, Select, Modal, Table, Pagination, Badge, PageHeader, PageCard } from '@/components/ui'
-import type { TableColumn } from '@/components/ui'
+import { Button, Input, Select, Modal, Table, Pagination, Badge, PageHeader, PageCard, SearchPanel } from '@/components/ui'
+import type { TableColumn, SearchFieldSpec } from '@/components/ui'
 import type { Employee, EmployeeStatus, EmployeeFormData } from '@/types'
 import { TreeCheckbox, type TreeNode } from '@/components/ui/TreeCheckbox'
 import DateTimeCell from '@/components/common/DateTimeCell'
 import WorkerProfilesPanel from '@/components/employees/WorkerProfilesPanel'
 
 // #2969 岗位=角色体系：岗位列表来自 roleApi.getAllRoles（每岗位含默认权限），不再用硬编码预设
+/** 筛选控件统一形态：与 `SearchPanel` 的 `CONTROL_CLASS` 同口径 */
+const SEARCH_CONTROL =
+  'w-full h-9 px-3 rounded border border-neutral-300 bg-white text-sm text-neutral-900 ' +
+  'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 ' +
+  'placeholder:text-neutral-400'
+
 export default function EmployeesPage() {
   const { has: hasPermission } = usePermission()
   const canWrite = hasPermission('employee:create') // 新增/编辑/删除/禁用均需 employee:create
@@ -431,6 +437,39 @@ export default function EmployeesPage() {
     },
   ]
 
+  const searchPanelFields: SearchFieldSpec[] = [
+    {
+      key: 'keyword',
+      label: '姓名/手机号',
+      control: (
+        <input
+          type="text"
+          placeholder="输入姓名或手机号搜索"
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+          className={SEARCH_CONTROL}
+        />
+      ),
+    },
+    {
+      key: 'status',
+      label: '状态',
+      control: (
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as EmployeeStatus | '')}
+          className={SEARCH_CONTROL}
+        >
+          <option value="">全部状态</option>
+          <option value="active">启用</option>
+          <option value="disabled">禁用</option>
+        </select>
+      ),
+    },
+  ]
+
+
   return (
     <div className="p-6 space-y-4">
       {/* 页面标题 */}
@@ -482,40 +521,12 @@ export default function EmployeesPage() {
       ) : (
       <div className="space-y-4">
       {/* 搜索筛选栏 */}
-      <PageCard testId="search-area">
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="min-w-[200px]">
-            <Input
-              label="姓名/手机号"
-              placeholder="输入姓名或手机号搜索"
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            />
-          </div>
-          <div className="min-w-[140px]">
-            <Select
-              label="状态"
-              options={[
-                { value: '', label: '全部状态' },
-                { value: 'active', label: '启用' },
-                { value: 'disabled', label: '禁用' },
-              ]}
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as EmployeeStatus | '')}
-            />
-          </div>
-          <div className="flex items-center gap-2 ml-auto">
-            <Button variant="secondary" size="sm" onClick={handleReset}>
-              重置
-            </Button>
-            <Button size="sm" onClick={handleSearch}>
-              <Search className="w-4 h-4 mr-1.5" />
-              查询
-            </Button>
-          </div>
-        </div>
-      </PageCard>
+      <SearchPanel
+        fields={searchPanelFields}
+        onSearch={handleSearch}
+        onReset={handleReset}
+        loading={loading}
+      />
 
       {/* 🔴 issue #6714：读失败 ⇒ 常驻失败面 + 真重发（与表格的「暂无数据」**互斥**）。
           修前失败只 toast（≈4s 消失），屏上留着「暂无数据」+「共 0 条」两处事实性断言。 */}

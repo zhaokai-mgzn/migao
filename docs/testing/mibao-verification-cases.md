@@ -4926,7 +4926,7 @@
 数据: 🔴 **判据 6·§31 P3 类级（不摆内部标识）+ 只许缩短台账**：`backend/admin-api/src/main/java/**/*.java` 的字面量里「HTTP 动词 + `/api/` 路径」**且含中文字符**（= 人话提示里夹着端点）必须逐条在 `tests/unit_ci_workflows/restricted_literal_leaks_ledger.json` 里（未登记即红 / 幽灵条目即红 / 条数 == `LEAK_LEDGER_BASELINE`；键 = 文件::行::字面量 —— **必须带行**，`AgentBatchService` 有两条完全相同的字面量）。**判据面外的形态具名登记**（纯 ASCII 端点常量 / worker 端点文档串 —— 不是「商家答复」）。跟踪单 = issue #6841。执行点 = 同文件 ::test_merchant_hint_endpoint_leaks_are_all_registered
 数据: 🔴 **判据 7·镜像一致性**：本判据文件里的 `REMOVED_NAMES` 必须与 MC-096 守卫的 `REMOVED_PAGE_NAMES` **逐值相等**（读源码文本比对、**不 import**、解析失败 fail-closed）—— 这是「注释漂移」的解药（镜像漂了要红，不许静默用旧集合）。执行点 = 同文件 ::test_removed_names_mirror_mc096_guard
 数据: 🔴 **判据 3b·§31 P3（B1 承包文件面）**：`ProcessingOrderService` 的商家可见 suggestion 里不得出现内部端点字面量（`GET /api/admin/...`）—— 本包顺手销掉 4 处**存量**泄漏（`查看入口 GET /api/admin/production/routings` ×2、`工序库目录查看入口 GET /api/admin/production/operations-catalog` ×2），**不指路**而不是换一条假路。执行点 = 同文件 ::test_merchant_copy_leaks_no_internal_api_path
-数据: 🔴 **判据 4·台账只许缩短 + 常量与台账一致**：`removed_page_copy_ledger.json` 清到 **3 条 / 3 处**（只剩**能力名**：`PermissionService` ×1 / `RegistrationService` ×2），且每条的 `reason` 必须具名说清它是**能力名（不是坐标）**；守卫的 `FROZEN_MAX_ENTRIES` / `FROZEN_MAX_HITS` 与台账**逐值一致**（3 / 3）。执行点 = 同文件 ::test_ledger_shrunk_to_capability_names_only + tests/unit_ci_workflows/test_removed_page_copy_guard.py::test_ledger_entries_are_live_and_only_shrink
+数据: 🔴 **判据 4·台账只许缩短 + 常量与台账一致**：`removed_page_copy_ledger.json` 清到 **2 条 / 2 处**（只剩**能力名**：`PermissionService` ×1 / `RegistrationService` ×1），且每条的 `reason` 必须具名说清它是**能力名（不是坐标）**；守卫的 `FROZEN_MAX_ENTRIES` / `FROZEN_MAX_HITS` 与台账**逐值一致**（2 / 2）。🔻 2026-10-17（issue #7111）：原 3 条 / 3 处 ⇒ 2 条 / 2 处 —— `RegistrationService` 的**加工项管理**那条（旧商品管理员描述整句）随岗位描述改成「职责 + 默认可用模块」而消失，按「只许缩短」销账。执行点 = 同文件 ::test_ledger_shrunk_to_capability_names_only + tests/unit_ci_workflows/test_removed_page_copy_guard.py::test_ledger_entries_are_live_and_only_shrink
 数据: 🔴 **判据 4b·负控（能力名不得被改成坐标）**：`PermissionService` / `RegistrationService` 的字面量里**不得**出现「企业基础设置 →」（改成页面坐标 = 把岗位职责读成导航路径）。执行点 = 同文件 ::test_capability_names_stay_out_of_the_pointer_rewrite
 数据: 🔴 **判据 5·判别力自证（注入式）**：把真语料里 `ProductionService` 的新指针改回「工艺配置 → 工艺路线」⇒ 判据 1 当场红；**只加注释**（含旧页名）⇒ 一条判据都不红（沿革注释合法，与 MC-096 的对照读数同口径）。执行点 = 同文件 ::test_injection_detects_a_reverted_pointer / ::test_injection_comment_only_change_is_not_red
 数据: **实例判据·Java 契约面**：`ProductionRoutingCommandServiceOptionCreateTest::craftTriggerValueOutsideVocabularyIsRejected` 的断言随文案同步（旧断言判的是旧词表名 ⇒ 新断言判的是新措辞（「已有的活跃工艺」），**判据不放宽**：仍是 422 + `field=trigger_value` + 零写入）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionRoutingCommandServiceOptionCreateTest.java
@@ -9754,7 +9754,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（113 case）
+## 前端 UI 域（114 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -11394,6 +11394,24 @@
 ```
 溯源: 2026-10-17 新增（issue #7079 的第 5 包）。**发现路径** = 集成复核 #7079 的「可行动出口」时发现三条路只有两条通：订单详情「作业单」区块的门是 `canGenerate = notFound && hasProcessing && …`（`hasProcessing` 只覆盖「含加工项」）⇒ 卖布单没有生成按钮、空态还写着对卖布单**不实**的「无加工项订单无需加工环节」；同一单侧信号还导致发货页守卫**完全不拦**卖布单、详情发货入口无前置提示。用例号 = `NCI_MAIN_REF=HEAD python3 scripts/next_case_id.py UI` ⇒ 该工具报 `UI-113`，但 `UI-113` / `UI-114` 已被本单在飞分支 `test/20261017-work-order-kind-guard`（未开 PR ⇒ 工具看不见）占用 ⇒ **按内容核对后取 UI-115**（main 上最大 `UI-111`）。**报告型说明**：承载体 = 前端单测（vitest，`admin-web 单测` 腿）+ 后端单测（JUnit，`admin-api` 腿）。 ｜ tags: ui, processing-order, fabric-sale, read-face-signal, ship-guard, dead-end-exit, red-proof
 
+### UI-113. **「页面声明的筛选区必须由原语承载」的类级元守卫**：凡页面自报 `search-area` 的筛选区，承载标签必须是 `SearchPanel` / `SearchBar` / `PageCard`，不得是裸 `div`（issue #7116，承接 #7007 根因③） 🔵
+```
+你: 为什么只有订单页看起来精致，其它页面没有这种感觉？
+期望: direct_reply
+数据: 🔴 **判据 1（会红）**：射程 = `frontend/admin-web/src/app/(dashboard)/**` 下**每个页面**。凡页面上**自己声明**了筛选区（`data-testid="search-area"` 或 `PageCard` 的 `testId="search-area"`），其**承载标签必须是原语**（`SearchPanel` / `SearchBar` / `PageCard`）——**不得是裸 `<div>`/`<section>`**，否则判红并点名「文件 + 承载标签」。**红证（实跑、逐字节还原）**：迁移前实测 `orders/page.tsx` 与 `after-sales/page.tsx` 各自以裸 `<div>` 承载 ⇒ 判据 1 红并点名两页；迁完两个原语后转绿。
+数据: 🔴 **判据 2（反空转）**：射程内「显式声明」**加**「用了 `SearchPanel` 的页面」合计 **≥ 5**（现取：显式 2 + 用原语 3）⇒ 防「把声明或原语都删掉」让判据 1 空转；另断言三个原语文件真实存在。
+数据: 🔴 **判据 3（判别力自证）**：坏形态（`<div … data-testid="search-area">`）判红、好形态（`<SearchPanel … testId=` / `<PageCard testId=`）放行；**没有声明 ⇒ 不产生任何判定**（不猜 —— 见下条）。
+数据: 📌 **为什么只认「页面自己声明的」**（射程**有意收窄**）：本仓标记「筛选区」的方式不统一，靠「这页有没有查询按钮 / 搜索框」去猜**会把新建单据表单误判成筛选区** —— 实测 `orders/new/page.tsx` 有搜索框 + 查询 + 重置，但它是**下单表单**、不是筛选区。⇒ 判据只承认页面自报的意图，不猜。
+数据: 📌 **病灶（#7007 根因③）**：用户原话「只有订单管理精美」。`#7012` 抽出了 `SearchPanel` 原语，但**落地只有 1 页**（`customers`），而 `PageCard` 被 9 页拿去做筛选外壳 —— 共享件造出来没落地。
+数据: 📌 **本单交付**：`orders` / `after-sales` / `employees` 三页迁到 `SearchPanel`（无状态原语，页面自持筛选 state），迁移后 `SearchPanel` 落地从 **1 页 → 4 页**。`orders` 那页正是「单一响应式 grid / 标签左置 / 按钮独占一行」这一版的**母版**（`#5880` 打磨出来的就是它）—— 迁回去等于把母版接回原语，而不是发明新形态。
+数据: 📌 **`products` 有意未迁（照实登记）**：它用的是**两行独立栅格**（`md:grid-cols-2` + `md:grid-cols-[1fr_1fr_auto]`）+ 防抖 URL 同步，与 `SearchPanel` 的单一 grid 版式不同；且它**已经用 `PageCard` 承载**（判据 1 认可的合法形态）⇒ 不属本判据的违规面。重启条件：真要做「筛选区版式全统一」时，先给 `SearchPanel` 定「多行栅格」形态。
+数据: 📌 **迁移过程中的一处真实性修正（值得记）**：`employees` 迁移后有 1 条断言翻红，我一度误判为「迁移引入行为变化」。实测请求序列迁移前后**逐字相同**（`[{page,size}, {page,size,keyword:'张'}]`），真因是**交互与挂载请求的竞争**：断言 `waitFor(toHaveBeenCalled())` 被**挂载那次**满足 ⇒ 读到的是挂载入参（不带 keyword）。修法 = 交互前**先等挂载请求落地**（不是放宽断言、不是改产品代码）。
+  ⚠️ 过程中我一度把「测试超时」误读成「通过」（`vitest` 对 `-t` 过滤时把未选中用例显示为 skipped），差点据此得出错误结论 —— **判读测试结果必须看 `Tests N passed/failed` 汇总行，不能只看有没有 ×**。
+前置: 前置 = 三样都在仓里可读：① 无状态筛选原语 `frontend/admin-web/src/components/ui/SearchPanel.tsx`（`fields[].control` 由页面渲染、单一响应式 grid、`testId` 默认 `search-area`）；② 有状态轻量筛选条 `frontend/admin-web/src/components/ui/SearchBar.tsx`；③ 守卫本体 `frontend/admin-web/tests/unit/filter-area-primitive-guard.test.ts`。**前置不成立时不许读成通过**：射程目录取不到 ⇒ `walk()` 抛（fail-closed）；页面数 ≤ 40、或「声明 + 原语」合计 < 5 ⇒ 反空跑判红。
+跳过: [backend-contract] 前端静态判据（扫 TSX 源码判承载标签 + 冻结下界对账），零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-17 新增（issue #7116，承接 #7007 根因③）。根因① 由 #7065（页头）、根因② 由 #7069（卡片层级）分别收口。用例号 = `NCI_MAIN_REF=HEAD python3 scripts/next_case_id.py UI`；**首次取到 UI-112 但发现在飞 PR #7113 已占用**（`next_case_id.py` 的已知边界：它在飞面只认能解析到的 PR 列表，本次未命中 #7113 的 diff）⇒ 现取复核后改用 **UI-113**（main 与 #7113 均未占用）。**报告型说明**：承载体是前端单测（vitest），由 `admin-web 单测` 腿收集。 ｜ tags: ui, design-consistency, filter-area, shared-primitive, class-guard, red-proof
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -11423,8 +11441,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：782（活跃 133，跳过 649）
-- tier 分布：smoke 12 / normal 723 / adversarial 32
+- 用例总数：783（活跃 133，跳过 650）
+- tier 分布：smoke 12 / normal 724 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -11449,7 +11467,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：113
+- 前端 UI 域：114
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -11730,4 +11748,5 @@
 - UI-110: **「商家后台页面头只有一个来源」的类级元守卫**：射程内凡手写 `<h1>` 且未用共享原语 `PageHeader` 的文件，必须恰好等于「冻结快照 ∪ 逐条给出理由的有意不迁」；快照只许缩短、有意不迁不许悄悄涨价（issue #7065）
 - UI-111: **「内层白卡必须有 shadow-card」的类级元守卫**：射程内凡「白底 + 圆角 + 中性边框」的内层白卡容器，必须带 `shadow-card`，否则「一圈边框套一圈边框」（issue #7069，承接 #7007 根因②）
 - UI-115: **卖布单在订单详情的「生成作业单」出口**：发货前是否需要作业由读面给出（`needs_work` / `work_order_kind`），详情空态/生成按钮、发货页守卫、详情发货入口三处都用它（issue #7079 第 5 包）
+- UI-113: **「页面声明的筛选区必须由原语承载」的类级元守卫**：凡页面自报 `search-area` 的筛选区，承载标签必须是 `SearchPanel` / `SearchBar` / `PageCard`，不得是裸 `div`（issue #7116，承接 #7007 根因③）
 

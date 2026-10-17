@@ -182,6 +182,35 @@ describe('RolesPage', () => {
     })
   })
 
+  // issue #7111：描述改成「职责 + 默认可用模块」后普遍超过两行 ⇒ 默认收起（§31 P1 常驻面克制）
+  // + 逐卡「展开/收起」看全文；短描述不给按钮（对照读数：不制造噪音）
+  it('#7111 长岗位描述默认收起，点「展开」看全文（短描述不给按钮）', async () => {
+    const longDescription =
+      '职责：' + '维护商品资料与分类，管理加工项与加工费口径。'.repeat(3) + '默认可用模块：商品管理、生产看板。'
+    mockGetRoles.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            { id: 'r9', name: '商品管理员', code: 'product_manager', description: longDescription, permissions: [], createdAt: '2026-06-01' },
+            { id: 'r8', name: '客服', code: 'customer_service', description: '客服人员', permissions: [], createdAt: '2026-06-02' },
+          ],
+        },
+      },
+    })
+    render(<RolesPage />)
+    const desc = await screen.findByTestId('role-description-product_manager')
+    expect(desc).toHaveClass('line-clamp-2')
+    expect(screen.queryByTestId('role-description-toggle-customer_service')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('role-description-toggle-product_manager'))
+    expect(desc).not.toHaveClass('line-clamp-2')
+    expect(desc).toHaveTextContent('默认可用模块：商品管理、生产看板。')
+    expect(screen.getByTestId('role-description-toggle-product_manager')).toHaveAttribute('aria-expanded', 'true')
+
+    fireEvent.click(screen.getByTestId('role-description-toggle-product_manager'))
+    expect(desc).toHaveClass('line-clamp-2')
+  })
+
   it('shows empty state when no positions', () => {
     mockGetRoles.mockResolvedValue({
       data: { data: { items: [], total: 0 } },
