@@ -31,10 +31,20 @@ import static org.mockito.Mockito.when;
  *
  * <p>红证方向：把 {@code isProcessingReadyForShip} 里的 {@code countCompletedByOrderId} 判断删掉
  * ⇒ {@link #processingOrderNotCompletedBlocksShip} 红（含加工项未完成也能发货 = 绕过加工环节，涉钱）。</p>
+ *
+ * <p>issue #7079 追加：卖布单（{@code saleForm=布料}、**无加工项**）也算「有需要报工的作业」
+ * ⇒ 必须先完成出库作业单的裁剪/打包报工。红证方向：
+ * 把 {@code isProcessingReadyForShip} 里的判据退回 {@code hasProcessingItems}（或让
+ * {@code hasFabricSaleLine} 恒返回 {@code false}）⇒ {@link #fabricSaleOrderWithoutCompletedWorkOrderBlocksShip}
+ * 与 {@link #jsonStringFabricSaleInfoIsStillDetected} 红（卖布单一道工序没报工也能发货 = 工人计件丢钱）；</p>
+ *
+ * <p>反向护栏（本单**不许误伤**）：{@link #plainOrderWithoutProcessingItemsIsStillReadyForShip}
+ * —— 非卖布的普通无加工项订单（配件 / 赠品行）必须**仍可直发**，
+ * 把 {@code needsWork} 改成「一律 true」或让「无加工项 ⇒ 拦」都会让它红。</p>
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
-@DisplayName("发货前置守卫：含加工项必须有已完成加工单（唯一实现点）")
+@DisplayName("发货前置守卫：含加工项或有卖布行 ⇒ 必须有已完成的出库作业单（唯一实现点）")
 class OrderShipGuardTest {
 
     private static final Long TENANT = 1L;
@@ -62,6 +72,12 @@ class OrderShipGuardTest {
     private OrderItem item(Object processingInfo) {
         return OrderItem.builder().id("i1").orderId("o1").tenantId(TENANT)
                 .quantity(new BigDecimal("1")).processingInfo(processingInfo).deleted(0).build();
+    }
+
+    /** 卖布行：按米卖布 ⇒ 行上**天然没有** {@code processingItems}，只有 {@code saleForm=布料}。 */
+    private OrderItem fabricItem(Object processingInfo) {
+        return OrderItem.builder().id("i-fabric").orderId("o1").tenantId(TENANT)
+                .quantity(new BigDecimal("12")).processingInfo(processingInfo).deleted(0).build();
     }
 
     @Test
@@ -112,6 +128,59 @@ class OrderShipGuardTest {
         assertThat(OrderShipGuard.extractProcessingItems(objectMapper, Map.of())).isEmpty();
         assertThat(OrderShipGuard.extractProcessingItems(objectMapper, "not json")).isEmpty();
         assertThat(OrderShipGuard.extractProcessingItems(objectMapper, 42)).isEmpty();
+    }
+
+    // ──────────────────────────── issue #7079：卖布单（无加工项，但仍有裁剪/打包报工） ────────────────────────────
+
+    @Test
+    @DisplayName("🔴 卖布单无已完成作业单 ⇒ 拒绝发货（按米卖布没有加工项，但工人报了裁剪+打包的工）")
+    void fabricSaleOrderWithoutCompletedWorkOrderBlocksShip() {
+        givenItems(fabricItem(Map.of("saleForm", "布料")));
+        when(processingOrderMapper.countCompletedByOrderId("o1", TENANT)).thenReturn(0L);
+
+        // 前置自断言：这单**没有**加工项（否则下面证明不了「卖布行也让它需要报工」这件事）
+        assertThat(OrderShipGuard.hasProcessingItems(orderItemMapper, objectMapper, order())).isFalse();
+        assertThat(OrderShipGuard.hasFabricSaleLine(orderItemMapper, objectMapper, order())).isTrue();
+        assertThat(OrderShipGuard.isProcessingReadyForShip(
+                orderItemMapper, processingOrderMapper, objectMapper, order())).isFalse();
+        assertThatThrownBy(() -> OrderShipGuard.assertProcessingCompletedBeforeShip(
+                orderItemMapper, processingOrderMapper, objectMapper, order()))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("出库作业单")
+                .hasMessageContaining("裁剪")
+                .hasMessageContaining("打包");
+    }
+
+    @Test
+    @DisplayName("卖布单作业单已完成 ⇒ 放行（判据不是「卖布单一律拒」）")
+    void completedWorkOrderAllowsFabricSaleShip() {
+        givenItems(fabricItem(Map.of("saleForm", "布料")));
+        when(processingOrderMapper.countCompletedByOrderId("o1", TENANT)).thenReturn(1L);
+        assertThat(OrderShipGuard.isProcessingReadyForShip(
+                orderItemMapper, processingOrderMapper, objectMapper, order())).isTrue();
+    }
+
+    @Test
+    @DisplayName("🔴 反向护栏：非卖布的普通无加工项订单（配件 / 赠品行）**仍可直发**")
+    void plainOrderWithoutProcessingItemsIsStillReadyForShip() {
+        givenItems(item(Map.of()));
+
+        assertThat(OrderShipGuard.hasFabricSaleLine(orderItemMapper, objectMapper, order())).isFalse();
+        assertThat(OrderShipGuard.isProcessingReadyForShip(
+                orderItemMapper, processingOrderMapper, objectMapper, order())).isTrue();
+        org.assertj.core.api.Assertions.assertThatCode(() -> OrderShipGuard.assertProcessingCompletedBeforeShip(
+                orderItemMapper, processingOrderMapper, objectMapper, order())).doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("🔴 卖布行也可以以 JSON **字符串** 形态出现（JacksonTypeHandler 缺失的老坑）")
+    void jsonStringFabricSaleInfoIsStillDetected() {
+        givenItems(fabricItem("{\"saleForm\":\"布料\",\"fabricMeters\":12.5}"));
+        when(processingOrderMapper.countCompletedByOrderId("o1", TENANT)).thenReturn(0L);
+
+        assertThat(OrderShipGuard.hasFabricSaleLine(orderItemMapper, objectMapper, order())).isTrue();
+        assertThat(OrderShipGuard.isProcessingReadyForShip(
+                orderItemMapper, processingOrderMapper, objectMapper, order())).isFalse();
     }
 
     @Test
