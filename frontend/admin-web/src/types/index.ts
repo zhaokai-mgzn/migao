@@ -2003,7 +2003,10 @@ export interface Order {
    * `workOrderKindLabelOf`），机器键不上屏。
    */
   workOrderKind?: 'processing' | 'outbound' | null
-  paymentDeadline?: string     // 支付截止时间（待付款状态用）
+  // 🔴 issue #7110：`paymentDeadline`（支付截止时间）**已删** —— 系统没有这个真值源：
+  // `orders` 无该列、无任何写入点、也没有「超时未付 ⇒ 自动取消」的规则 ⇒ 详情页那个
+  // 「支付倒计时」**从来没有渲染过**（前置判断恒为假）。按幽灵字段撤下；
+  // 若日后真要「支付截止」，先补后端真值源（列 + 下单冻结写入点）再回加本键。
   // 🔴 issue #7078：`paymentNo`（支付宝交易号）**已删** —— 系统没有在线支付交易号的真值源，
   // 该行已从屏幕撤下；留着本键就是「幽灵字段」（#6882 同类，编译器与测试都不拦 ⇒ 恒 "-"）。
   paidAt?: string              // 支付时间（orders.paid_at：确认收款时刻，服务端下发）
