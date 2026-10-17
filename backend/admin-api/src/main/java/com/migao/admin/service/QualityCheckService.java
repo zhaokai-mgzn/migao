@@ -1,6 +1,8 @@
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.QualityCheck;
@@ -58,9 +60,19 @@ public class QualityCheckService {
     private static final String REASON_REQUIRED =
             "质检判定为「%s」时必须填写不合格原因（判定 ≠ 合格 ⇒ 原因必填）";
 
+    /** 参与质检的加工单状态（与 {@link #create} 的「活跃加工单」同一集合 —— 已取消的单不质检）。 */
+    private static final List<String> TARGET_PROCESSING_STATUSES =
+            List.of("generated", "issued", "in_processing", "completed");
+
+    /** 待检清单分页（服务端封顶：一次不许拉爆整租户）。 */
+    private static final int TARGETS_DEFAULT_SIZE = 20;
+    private static final int TARGETS_MAX_SIZE = 100;
+
     private final QualityCheckMapper qualityInspectionMapper;
     private final OrderItemMapper orderItemMapper;
     private final ProcessingOrderMapper processingOrderMapper;
+    /** 加工单快照解析：`items_snapshot` 可能是 JSON 字符串形态（自定义 `@Select` 不经 typeHandler）。 */
+    private final ObjectMapper objectMapper;
 
     /**
      * 录入一条质检记录（成品帘级）。
@@ -141,6 +153,145 @@ public class QualityCheckService {
             out.add(view(row));
         }
         return out;
+    }
+
+    /**
+     * **待检清单**（商家「质检记录」页的第一屏，issue #7140）。
+     *
+     * <p>为什么必须有这个读面：{@link #list} 只能读出**已录**的记录。「哪些成品帘还没检」
+     * 它在结构上答不出（没有行 = 没有事实）⇒ 质检员在观星台上没有工作清单
+     * —— 这正是 issue #7140 的现场形态（后端有端点、观星台一个入口都没有）。</p>
+     *
+     * <p>口径：一条 = **一件成品帘**（加工单快照 {@code items[].itemId} = {@code order_items.id}，
+     * 与 {@link #create} 的颗粒度**同一份**）；只收活跃加工单（已取消的不质检）；
+     * {@code state} = 该成品帘**最新一条**记录的判定（无记录 = {@code pending}）。
+     * 「最新」排序与 {@link #list} **同一份**（{@code inspected_at} 倒序、同刻再按 {@code created_at} 倒序）。</p>
+     *
+     * <p>⚠️ <b>不重算任何数量口径</b>：本方法只做「把加工单快照展开成成品帘行 + 取最新判定」，
+     * 不碰报工、不算合格率（{@code counts} 只是逐条状态的计数，不是比率）。</p>
+     *
+     * @param keyword 加工单号关键词（空 = 不限）
+     * @param status  {@code all} / {@code pending}（未检）/ {@code pass} / {@code rework} / {@code scrap}
+     */
+    public Map<String, Object> targets(Long tenantId, String keyword, String status, Integer pageArg, Integer sizeArg) {
+        int size = sizeArg == null || sizeArg <= 0 ? TARGETS_DEFAULT_SIZE : Math.min(sizeArg, TARGETS_MAX_SIZE);
+        int page = pageArg == null || pageArg <= 0 ? 1 : pageArg;
+        String kw = keyword == null ? "" : keyword.trim();
+        String filter = StringUtils.hasText(status) ? status.trim() : "all";
+        if (!"all".equals(filter) && !"pending".equals(filter) && !RESULTS.contains(filter)) {
+            throw BusinessException.validationError(
+                    "status 仅支持 pending/pass/rework/scrap/all（未检 / 合格 / 返工 / 报废 / 全部），收到：" + status);
+        }
+
+        LambdaQueryWrapper<ProcessingOrder> orderQuery = new LambdaQueryWrapper<ProcessingOrder>()
+                .eq(ProcessingOrder::getTenantId, tenantId)
+                .eq(ProcessingOrder::getDeleted, 0)
+                .in(ProcessingOrder::getStatus, TARGET_PROCESSING_STATUSES)
+                .orderByDesc(ProcessingOrder::getCreatedAt);
+        if (StringUtils.hasText(kw)) {
+            orderQuery.like(ProcessingOrder::getProcessingOrderNo, kw);
+        }
+        List<ProcessingOrder> orders = processingOrderMapper.selectList(orderQuery);
+
+        Map<String, Map<String, Object>> latestByItem = latestInspectionByItem(tenantId, orders);
+
+        List<Map<String, Object>> rows = new ArrayList<>();
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        counts.put("pending", 0);
+        counts.put("pass", 0);
+        counts.put("rework", 0);
+        counts.put("scrap", 0);
+        for (ProcessingOrder po : orders) {
+            for (Map<String, Object> item : snapshotItems(po)) {
+                String orderItemId = str(item.get("itemId"));
+                // 存量行没有订单行 id ⇒ 指不出「哪一件成品帘」⇒ 不可质检（不猜、不编）
+                if (!StringUtils.hasText(orderItemId)) {
+                    continue;
+                }
+                Map<String, Object> latest = latestByItem.get(orderItemId);
+                String state = latest == null ? "pending" : String.valueOf(latest.get("result"));
+                if (counts.containsKey(state)) {
+                    counts.put(state, counts.get(state) + 1);
+                }
+                if (!"all".equals(filter) && !filter.equals(state)) {
+                    continue;
+                }
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("order_item_id", orderItemId);
+                row.put("processing_order_id", po.getId());
+                row.put("processing_order_no", po.getProcessingOrderNo());
+                row.put("processing_status", po.getStatus());
+                row.put("product_name", str(item.get("productName")));
+                row.put("color_name", str(item.get("colorName")));
+                row.put("sku", str(item.get("sku")));
+                row.put("quantity", item.get("quantity"));
+                row.put("unit", str(item.get("unit")));
+                row.put("state", state);
+                row.put("latest", latest);
+                rows.add(row);
+            }
+        }
+
+        int total = rows.size();
+        int from = Math.min((page - 1) * size, total);
+        int to = Math.min(from + size, total);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("items", new ArrayList<>(rows.subList(from, to)));
+        out.put("total", total);
+        out.put("page", page);
+        out.put("size", size);
+        out.put("counts", counts);
+        return out;
+    }
+
+    /** 一次取回这批加工单的全部记录，按成品帘取**最新一条**（排序与 {@link #list} 同源）。 */
+    private Map<String, Map<String, Object>> latestInspectionByItem(Long tenantId, List<ProcessingOrder> orders) {
+        Map<String, Map<String, Object>> latestByItem = new LinkedHashMap<>();
+        if (orders.isEmpty()) {
+            return latestByItem;
+        }
+        List<String> processingOrderIds = new ArrayList<>();
+        for (ProcessingOrder po : orders) {
+            processingOrderIds.add(po.getId());
+        }
+        LambdaQueryWrapper<QualityCheck> q = new LambdaQueryWrapper<QualityCheck>()
+                .eq(QualityCheck::getTenantId, tenantId)
+                .eq(QualityCheck::getDeleted, 0)
+                .in(QualityCheck::getProcessingOrderId, processingOrderIds)
+                .orderByDesc(QualityCheck::getInspectedAt)
+                .orderByDesc(QualityCheck::getCreatedAt);
+        for (QualityCheck row : qualityInspectionMapper.selectList(q)) {
+            latestByItem.putIfAbsent(row.getOrderItemId(), view(row));
+        }
+        return latestByItem;
+    }
+
+    /** 加工单快照里的成品帘行（兼容 JSON 字符串形态；形态不干净 ⇒ 该单不出待检行，**不编值**）。 */
+    private List<Map<String, Object>> snapshotItems(ProcessingOrder po) {
+        Object snapshot = po.getItemsSnapshot();
+        if (snapshot instanceof String s) {
+            if (!StringUtils.hasText(s)) {
+                return List.of();
+            }
+            try {
+                snapshot = objectMapper.readValue(s, Object.class);
+            } catch (Exception e) {
+                return List.of();
+            }
+        }
+        if (snapshot == null) {
+            return List.of();
+        }
+        try {
+            return objectMapper.convertValue(snapshot, new TypeReference<List<Map<String, Object>>>() {});
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
+    /** 快照字段取值（缺键 / null ⇒ null，**不折算成空串**）。 */
+    private String str(Object value) {
+        return value == null ? null : String.valueOf(value);
     }
 
     /**

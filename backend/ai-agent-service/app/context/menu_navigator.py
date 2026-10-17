@@ -136,6 +136,10 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     MenuNode("production-center", "生产看板", "/production", "production:view"),
     MenuNode("production-center", "智能派单", "/production/pool", "processing:view"),
     MenuNode("production-center", "计件工资", "/production/piecework", "production:view"),
+    # 质检记录（issue #7140 = #5652 的商家面）：节点码 = 该页第一屏读端点码
+    # （`GET /api/admin/quality-inspections/targets` 的**方法级** `production:inspect`）。
+    # ⚠️ 该码只授质检员 + 管理员 ⇒ 本节点对其它岗位**必然不可见**（有意，用户 2026-10-17 裁定）。
+    MenuNode("production-center", "质检记录", "/quality-inspections", "production:inspect"),
     # 仓储与物料（2026-10-06：单据（进 → 账 → 出）→ 台账 → 分析）
     MenuNode("inventory-center", "入库单", "/inbound-orders", "inbound:view"),
     # issue #6404：库存明细（与省料看板同码 `product:list` —— 两者都是该页的**读**码；
@@ -246,6 +250,10 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     # `企业基础设置` 这条说法**互相遮蔽**（`problems_shadowed_aliases` 实测判红，见 issue #6062 的
     # 「说法不许与别家成子串」口径）—— 登记项与菜单项必须**一一对应**。
     NavFeature("piecework", "计件工资（计件）", (("production-center", "计件工资"),), ("计件工资", "计件")),
+    # 质检记录（issue #7140）：说法必须**逐字落在菜单名里**（判据「接地」）⇒ 只登记
+    # 「质检记录」与它的子串「质检」；「合格判定」这类不在菜单名里的说法**不登记**
+    #（它命中不了节点 = 不可达，登记了会变成空断言）。
+    NavFeature("quality-inspection", "质检记录（质检判定）", (("production-center", "质检记录"),), ("质检记录", "质检")),
     NavFeature("inbound-orders", "入库单（入库）", (("inventory-center", "入库单"),), ("入库单", "入库")),
     NavFeature("shipments", "发货单（出库）", (("inventory-center", "发货单"),), ("发货单", "出库")),
     NavFeature("remnants", "余料台账（余料）", (("inventory-center", "余料台账"),), ("余料台账", "余料")),

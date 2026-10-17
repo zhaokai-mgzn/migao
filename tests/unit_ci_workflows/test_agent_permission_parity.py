@@ -2057,6 +2057,9 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     "/production/remnants": "余料台账",
     "/production/saving-board": "省料看板",
     "/production": "生产看板",
+    # 质检记录（issue #7140 = #5652 的商家面）：守卫码 = 菜单节点码 = 该页三个端点的**方法级**
+    # `production:inspect`（读待检清单 / 读流水 / 录判定同码 —— 写面也在该码下，故不登记写例外）。
+    "/quality-inspections": "质检记录",
     "/customers": "客户列表",
     "/finance": "财务对账",
     "/employees": "员工管理",
@@ -2243,6 +2246,13 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
     "/production/piecework": MenuReadAnchor("计件工资", "production/piecework/page.tsx",
                                             ("productionApi.getPieceworkSummary",
                                              "productionApi.getPieceworkSettlements")),
+    # 质检记录（issue #7140 = #5652 的商家面）：节点码 = 本页第一屏读端点码
+    # （`GET /api/admin/quality-inspections/targets`，`QualityCheckController` 的**方法级**
+    # `@RequirePermission("production:inspect")`）。写面（POST 录入）与流水读面同码 ⇒ 码集仍是一个，
+    # 不需要 `MULTI_READ_ENDPOINT_PAGES`。本页**没有写码**：判定录入本身就是该码授权的动作。
+    "/quality-inspections": MenuReadAnchor("质检记录", "quality-inspections/page.tsx",
+                                           ("qualityInspectionApi.targets",
+                                            "qualityInspectionApi.list")),
     "/inbound-orders": MenuReadAnchor("入库单", "inbound-orders/page.tsx", ("inboundOrderApi.list",)),
     # 发货单（issue #5939）：菜单节点码 `order:list` = 本页第一屏读端点码（GET /api/admin/shipments）
     # —— 取**既有**码（不新造 shipment:view），与「订单列表」同一把尺子。

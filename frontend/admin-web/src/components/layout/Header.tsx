@@ -92,6 +92,9 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // issue #5271：本页随「面料进出与消耗」动线**移入「仓储与物料」组**（原生产管理组）。
   { match: (p) => p.startsWith('/production/remnants'), crumbs: [{ label: '仓储与物料' }, { label: '余料台账' }] },
   { match: (p) => p.startsWith('/production/piecework'), crumbs: [{ label: '生产管理' }, { label: '计件工资' }] },
+  // 质检记录（issue #7140）：菜单名与 `config/menu.ts` 的 `quality-inspections`、服务端两处菜单节点
+  // **逐字一致**（§15.2「面包屑末项 == 侧边栏菜单名」，守卫 menu-breadcrumb-coverage.test.tsx）。
+  { match: (p) => p.startsWith('/quality-inspections'), crumbs: [{ label: '生产管理' }, { label: '质检记录' }] },
   // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）
   { match: (p) => p.startsWith('/production'), crumbs: [{ label: '生产管理' }, { label: '生产看板' }] },
   // 入库单（issue #5071）：V111（#5034）新增菜单项时**漏了本表这一处** ⇒ 面包屑只剩「工作台」一项。

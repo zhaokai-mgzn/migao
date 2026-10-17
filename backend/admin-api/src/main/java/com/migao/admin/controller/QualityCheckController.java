@@ -75,6 +75,27 @@ public class QualityCheckController {
         return ApiResponse.success(record);
     }
 
+    /**
+     * 待检成品帘清单（商家「质检记录」页的**第一屏**，issue #7140）。
+     *
+     * <p>query：{@code keyword}（加工单号，可选）· {@code status}（{@code all} / {@code pending} /
+     * {@code pass} / {@code rework} / {@code scrap}，缺省 {@code all}）· {@code page}（1 起，缺省 1）·
+     * {@code size}（缺省 20、服务端封顶 100）。</p>
+     *
+     * <p>权限与本类另外两个端点**逐字同码**（{@code production:inspect}）：写与读同一把尺子
+     * —— 质检判定在其它岗位的界面上没有入口，也没有读数（用户 2026-10-17 裁定「保持现状」）。</p>
+     */
+    @GetMapping("/targets")
+    @RequirePermission("production:inspect")
+    public ApiResponse<Map<String, Object>> targets(
+            @RequestParam(name = "keyword", required = false) String keyword,
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "page", required = false) Integer page,
+            @RequestParam(name = "size", required = false) Integer size) {
+        return ApiResponse.success(qualityInspectionService.targets(
+                TenantContext.getTenantId(), keyword, status, page, size));
+    }
+
     /** 质检记录读面（按加工单 / 成品帘过滤，时间倒序；同件可多条 = 返工后重检）。 */
     @GetMapping
     @RequirePermission("production:inspect")

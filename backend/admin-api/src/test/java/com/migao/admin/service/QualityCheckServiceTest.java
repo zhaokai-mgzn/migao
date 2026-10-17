@@ -70,7 +70,8 @@ class QualityCheckServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new QualityCheckService(qualityInspectionMapper, orderItemMapper, processingOrderMapper);
+        service = new QualityCheckService(qualityInspectionMapper, orderItemMapper, processingOrderMapper,
+                new com.fasterxml.jackson.databind.ObjectMapper());
         TenantContext.setTenantId(TENANT);
         when(orderItemMapper.selectById(ITEM_ID)).thenReturn(OrderItem.builder()
                 .id(ITEM_ID)

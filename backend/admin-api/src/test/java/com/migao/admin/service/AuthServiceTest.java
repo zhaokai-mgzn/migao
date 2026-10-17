@@ -614,10 +614,11 @@ class AuthServiceTest {
         // 🔴 2026-10-09（issue #6580）：本组**由 5 项收拢为 3 项** —— 「加工项管理」
         //（`processing`）「工艺配置」（`production-process`）两个菜单项按用户裁定移除
         //（功能体并入一级项「企业基础设置」页内的配置域；旧路径保留为重定向）。
+        // 🔴 2026-10-17（issue #7140）：本组新增「质检记录」（`production:inspect`）
         assertThat(keysOf(production.getChildren())).containsExactly(
-                "production-board", "production-pool", "production-piecework");
+                "production-board", "production-pool", "production-piecework", "quality-inspections");
         assertThat(pathsOf(production.getChildren())).containsExactly(
-                "/production", "/production/pool", "/production/piecework");
+                "/production", "/production/pool", "/production/piecework", "/quality-inspections");
 
         var inventory = groupByKey(menus, "inventory-center");
         // 🔴 2026-10-06（方案 A1）：单据（进 → 账 → 出）→ 台账 → 分析

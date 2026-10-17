@@ -1408,6 +1408,12 @@ public class AuthService {
         if (isAll || permissions.contains("production:view")) {
             productionChildren.add(menuItem("production-piecework", "计件工资", "/production/piecework"));
         }
+        // 质检记录（issue #7140 = #5652 的商家面）：节点码 = 该页三个端点的**方法级**
+        // `production:inspect`（写与读同一把尺子）—— 只授质检员 + 管理员（用户 2026-10-17 裁定）。
+        // 🔴 注释必须写在这个 `if` **之外**（`_iter_menu_auth` 的形态要求，见上方 #5291 的盲区说明）。
+        if (isAll || permissions.contains("production:inspect")) {
+            productionChildren.add(menuItem("quality-inspections", "质检记录", "/quality-inspections"));
+        }
         if (!productionChildren.isEmpty()) {
             menus.add(menuGroup("production-center", "生产管理", productionChildren));
         }

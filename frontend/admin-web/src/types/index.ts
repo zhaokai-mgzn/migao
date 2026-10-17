@@ -960,6 +960,16 @@ export interface ProductionOperation {
   status?: string | null
   done_qty?: number
   /**
+   * 报工三态数量（issue #7140，**只加不改**）：合格 / 返工 / 报废。
+   *
+   * 🔴 返工 / 报废**既不推进进度也不计件**（既有口径，一字未改）—— 但它们是**质量读数**：
+   * 加这三个键之前它们只出现在米宝的 agent 读面（`GET /api/admin/agent/production/worklog`）
+   * ⇒ 商家在观星台的生产明细上**看不到**（前端 0 消费者）。缺报工 ⇒ `0`（「没有这一笔」是真事实）。
+   */
+  qualified_qty?: number
+  rework_qty?: number
+  scrap_qty?: number
+  /**
    * 报工人（issue #4309）：该工序实例下报过工的人（`production_work_logs.worker_name`）。
    * 后端已去重、按首次报工时间升序、只取 `work_type='normal'`、空名折「未署名」；
    * 无报工 = 空数组 ⇒ 表格渲染「—」。**商家侧**生产明细专用，不得进顾客面卡片。
@@ -1003,6 +1013,60 @@ export interface ProductionPosition {
   /** 订单行高度（米；V63 列，读面回查；缺键不补默认值） */
   height?: number | null
   operations?: ProductionOperation[]
+}
+
+// ── 质检记录（**成品帘级**；载体 issue #5652 / 商家面 issue #7140）──
+
+/**
+ * 质检判定三态（**成品帘级**）。
+ *
+ * 🔴 与报工侧 `work_type` **不是一回事**（用户 2026-10-16 裁定「两套口径并存」）：
+ * 报工说的是「这一笔报的是什么货」（数量事实），本判定说的是「**这一件成品帘**判了什么」。
+ */
+export type QualityInspectionResult = 'pass' | 'rework' | 'scrap'
+
+/** 待检清单的状态：`pending` = 尚无任何判定；其余 = 该成品帘**最新一条**判定的结果。 */
+export type QualityTargetState = QualityInspectionResult | 'pending'
+
+/** 一条质检记录（`GET|POST /api/admin/quality-inspections`）。 */
+export interface QualityInspectionRecord {
+  id: string
+  order_item_id: string
+  processing_order_id: string
+  /** 成品帘展示名快照；缺值 = `null`（界面不折成编号、不编假名） */
+  position_name?: string | null
+  result: QualityInspectionResult
+  /** 判定中文标签（服务端给：合格 / 返工 / 报废）；未知值如实 `null` */
+  result_label?: string | null
+  reason?: string | null
+  inspector_name?: string | null
+  inspected_at?: string | null
+}
+
+/** 待检清单一行 = **一件成品帘**（`order_item_id` 级，与录入的颗粒度同一份）。 */
+export interface QualityTarget {
+  order_item_id: string
+  processing_order_id: string
+  processing_order_no?: string | null
+  processing_status?: string | null
+  product_name?: string | null
+  color_name?: string | null
+  sku?: string | null
+  quantity?: number | null
+  unit?: string | null
+  /** 最新判定状态（无记录 = `pending`） */
+  state: QualityTargetState
+  /** 最新一条记录；`null` = **从未质检**（不是「合格」，两句话不许混） */
+  latest?: QualityInspectionRecord | null
+}
+
+/** 待检清单响应：分页 + 逐状态计数（计数是**条数**，不是比率 —— 合格率不在服务端算）。 */
+export interface QualityTargetsResponse {
+  items: QualityTarget[]
+  total: number
+  page: number
+  size: number
+  counts: Record<QualityTargetState, number>
 }
 
 export interface ProductionProgress {

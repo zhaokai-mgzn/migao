@@ -328,6 +328,7 @@
       "生产看板": "production:view",
       "智能派单": "processing:view",
       "计件工资": "production:view",
+      "质检记录": "production:inspect",
       "仓储与物料": null,
       "入库单": "inbound:view",
       "库存明细": "product:list",
@@ -354,6 +355,7 @@
       "生产看板": "production:view",
       "智能派单": "processing:view",
       "计件工资": "production:view",
+      "质检记录": "production:inspect",
       "入库单": "inbound:view",
       "发货单": "order:list",
       "余料台账": "processing:manage",
@@ -377,6 +379,7 @@
       "生产看板": "production:view",
       "智能派单": "processing:view",
       "计件工资": "production:view",
+      "质检记录": "production:inspect",
       "入库单": "inbound:view",
       "库存明细": "product:list",
       "发货单": "order:list",
@@ -467,6 +470,12 @@
       "name": "计件工资",
       "path": "/production/piecework",
       "code": "production:view"
+    },
+    {
+      "key": "quality-inspections",
+      "name": "质检记录",
+      "path": "/quality-inspections",
+      "code": "production:inspect"
     },
     {
       "key": "inventory-center",
@@ -597,6 +606,10 @@
     [
       "/production",
       "production:view"
+    ],
+    [
+      "/quality-inspections",
+      "production:inspect"
     ],
     [
       "/customers",
@@ -846,6 +859,19 @@
       "units": {
         "product:list": [
           "GET /api/admin/products"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "quality-inspections",
+      "name": "质检记录",
+      "path": "/quality-inspections",
+      "gate": "production:inspect",
+      "units": {
+        "production:inspect": [
+          "GET /api/admin/quality-inspections",
+          "GET /api/admin/quality-inspections/targets"
         ]
       },
       "visibility_rule": "all"

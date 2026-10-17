@@ -9557,6 +9557,25 @@ _CASE_PG_080 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-081 [NORMAL] 质检待检清单读面：未检 ≠ 合格（无记录 ⇒ `state=pending` / `latest=null`）、同一件多条取最新、四态计数、状态过滤 + 分页封顶（issue #7140）（源: cases/processing-order.yml）──
+_CASE_PG_081 = EvalCase(
+    id='PG-081',
+    legacy_id='',
+    title='质检待检清单读面：未检 ≠ 合格（无记录 ⇒ `state=pending` / `latest=null`）、同一件多条取最新、四态计数、状态过滤 + 分页封顶（issue #7140）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-17 逐字：「之前让你做过质检流程，我看在观星台上没有任何地方体现出来了」'],
+    expectations=[],
+    data_checks=["**判据 1·🔴 未检 ≠ 合格**：某件成品帘一条记录都没有 ⇒ 该行 `state='pending'`、`latest=null`、`counts.pending` 计入 —— **不得**回落成 `pass`（「一件没检」与「检验合格」是两句话）。红证：把 `state` 初值改成 `pass` ⇒ 判据当场红。证据：backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckTargetsTest.java（noRecordMeansPendingNotPass）", '**判据 2·最新一条胜出（返工后复检）**：同一件成品帘两条记录（读面按 `inspected_at` 倒序、同刻按 `created_at`）⇒ 行上的 `latest` = **排在最前**那条（含检验人 / 时刻），**不重排、不另立第二份排序口径**。证据：QualityCheckTargetsTest.java（latestInspectionWins）', '**判据 3·计数 = 逐态条数**：四件成品帘分别未检 / 合格 / 返工 / 报废 ⇒ `counts` 恰为 1/1/1/1（不是比率、不是「合格率」）。证据：QualityCheckTargetsTest.java（countsArePerStateTotals）', '**判据 4·状态过滤与未知取值**：`status=pending` 只回未检行（且计数仍是**全量四态** —— 过滤只改清单，不改「还有多少要检」这个读数）；`status` 取未知值（如 `ok`）⇒ `BusinessException` 422 具名报错（**不静默回落 all**）。证据：QualityCheckTargetsTest.java（statusFilterAndUnknownValue）', '**判据 5·分页封顶**：`size=5000` ⇒ 响应 `size=100`（服务端封顶，不信任调用方）；`page=2&size=2` ⇒ 只回第 2 页那两行，`total` 仍是 5。证据：QualityCheckTargetsTest.java（paginationIsCappedAndSliced）', '**判据 6·指不出的成品帘不出行**：快照行缺 `itemId`（存量数据）⇒ **不列出**（不猜、不编占位名），其余行照常出。证据：QualityCheckTargetsTest.java（rowsWithoutItemIdAreSkipped）', '**判据 7·没有活跃加工单 = 空清单 + 零计数**（不是错误态、不是 500）。证据：QualityCheckTargetsTest.java（noActiveProcessingOrderIsEmptyNotError）', '**边界（照实登记）**：清单读面**不**做「合格率 / 一次通过率」这类派生指标（本轮没有口径裁定）；**不**改写任何报工行、**不**重算数量 —— 报工（数量事实）与质检（成品帘判定）两套口径并存（#5652 的既有裁定）。'],
+    skip_reason='[backend-contract] 后端只读聚合面（Java 单测 + 同键名断言），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['quality-inspection', 'backend-contract', 'finished-curtain', 'admin-web-consumer'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = Mockito 夹具：① 一张**活跃**加工单（`status ∈ {generated, issued, in_processing, completed}`）+ `items_snapshot` 里的成品帘行；② 若干 `quality_inspections` 行（可为空 = 未检）。前置不成立（无活跃单 / 快照缺 `itemId`）⇒ 读面回空清单 + 零计数（**不是**错误态、也不猜是哪一件）。',
+)
+
 # ── PP-002 [NORMAL] 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query）（源: cases/processing.yml）──
 _CASE_PP_002 = EvalCase(
     id='PP-002',
@@ -14787,6 +14806,60 @@ _CASE_UI_117 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-118 [NORMAL] 质检记录页（`/quality-inspections`）：待检成品帘清单（未检 ≠ 合格）+ 三态判定录入（返工/报废原因必填）+ 质检流水；读失败不印「未检 0 件」（issue #7140）（源: cases/ui.yml）──
+_CASE_UI_118 = EvalCase(
+    id='UI-118',
+    legacy_id='',
+    title='质检记录页（`/quality-inspections`）：待检成品帘清单（未检 ≠ 合格）+ 三态判定录入（返工/报废原因必填）+ 质检流水；读失败不印「未检 0 件」（issue #7140）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-17 逐字：「之前让你做过质检流程，我看在观星台上没有任何地方体现出来了」'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·🔴 **待检清单看得见，且未检不折成合格**：一条 = 一件成品帘（加工单号 / 成品帘名 / 数量 / 最新判定）；无记录 ⇒ 该行判定位渲染**「未检」**、操作位是**「录入判定」**；已判行渲染服务端判定（含原因 / 检验人 / 时刻）且操作位是「复检」。红证：把「未检」改渲染成「合格」⇒ 判据当场红。证据：frontend/admin-web/tests/unit/pages/quality-inspections.test.tsx', '判据 2·🔴 **判定 ≠ 合格 ⇒ 原因必填**：选「返工」后不填原因点提交 ⇒ 出现具名提示且**不调提交端点**（`create` 零调用）。证据：同文件（② 用例）', '判据 3·**提交体逐字段正确**：`order_item_id` / `result` / `reason` 三键逐值；判定为「合格」时**不带**空原因键（空串不送）。证据：同文件（③ ④ 用例）', '判据 4·🔴 **读失败不印计数**：待检清单读失败 ⇒ 失败锚（`role=alert`）常驻 + 摘要行说「数量读不到」，**绝不出现「未检 0 件」**，且**不出现空态**（「读不到」与「一件都没有」是两句话）。红证：把失败分支的计数渲染去掉 ⇒ 判据当场红。证据：同文件（⑤ ⑦ 用例）+ frontend/admin-web/src/lib/quality-check.ts 的 `countsReliable` 口径', '判据 5·**真的没有待检行才是空态**（并如实显示 0）。证据：同文件（⑥ 用例）', '**边界（照实登记）**：流水读面（`GET /api/admin/quality-inspections`）没有分页 ⇒ 本页**截断展示最近 20 条**并在标题上写明（不假装是全部）；重启条件 = 该读面加分页。不做时间范围筛选（读面无该入参，前端过滤 = 第二份口径）。'],
+    skip_reason='[backend-contract] 纯前端渲染与交互（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'production', 'quality-inspection', 'read-failure', 'copy'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── UI-119 [NORMAL] 作业单生产明细内嵌**质检区**：逐件成品帘最新判定（未检 = 未检）+ 录入/复检入口；读失败不画成「没有质检」（issue #7140）（源: cases/ui.yml）──
+_CASE_UI_119 = EvalCase(
+    id='UI-119',
+    legacy_id='',
+    title='作业单生产明细内嵌**质检区**：逐件成品帘最新判定（未检 = 未检）+ 录入/复检入口；读失败不画成「没有质检」（issue #7140）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-17 裁定①：落位 = 生产管理组新增菜单 **+** 作业单生产明细内嵌质检区'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**逐件成品帘显示最新判定**：有记录 ⇒ 渲染服务端判定（含原因 / 检验人 / 检验时刻）；无记录 ⇒ **「未检」**（不是空白、不是「合格」）。证据：frontend/admin-web/tests/unit/components/QualityCheckPanel.test.tsx', '判据 2·🔴 **最新一条胜出**：同一件多条记录时取读面给的**第一条**（服务端已按时间倒序）—— 见证行故意让第二条的时间更晚，组件仍取第一条 ⇒ 证明前端**没有**第二份排序口径。证据：同文件（② 用例）', '判据 3·**录入口在单上**：未检 ⇒「录入判定」、已判 ⇒「复检」，点开同一表单；提交体带上**这一件成品帘**的 id。证据：同文件（③ 用例）', '判据 4·🔴 **读失败不画成「本单没有质检」**：失败锚常驻，空态**不出现**、逐件行不渲染。证据：同文件（④ 用例）', '**权限面（不在本用例的断言里，登记在此）**：质检区只在持 `production:inspect` 时渲染（权限门在**调用方** `processing-orders/[id]/production/page.tsx`，组件自己不再判一次 —— 避免两处口径）；读权限**零放宽**（用户裁定③）。'],
+    skip_reason='[backend-contract] 纯前端渲染与交互（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'production', 'quality-inspection', 'read-failure'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
+# ── UI-120 [NORMAL] 工序进度表**三态数量列**（合格 / 返工 / 报废）：返工报废不进进度、与「已完成数量」分列、缺报工渲染 0（issue #7140）（源: cases/ui.yml）──
+_CASE_UI_120 = EvalCase(
+    id='UI-120',
+    legacy_id='',
+    title='工序进度表**三态数量列**（合格 / 返工 / 报废）：返工报废不进进度、与「已完成数量」分列、缺报工渲染 0（issue #7140）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-17 裁定②：范围 = 一起补 —— 生产明细显示「合格/返工/报废」三列'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**三列表头都在**（合格 / 返工 / 报废）—— 此前 `rework_qty` / `scrap_qty` 在 admin-web **零消费者**（只有米宝读面能看到）。证据：frontend/admin-web/tests/unit/components/ProductionProgressTable-worktype.test.tsx', '判据 2·**逐工序渲染服务端下发的三态数量（含单位）**；缺报工 ⇒ 服务端给 0 ⇒ 渲染 `0`（不是空白、不是 `undefined`）。证据：同文件（② 用例）', '判据 3·🔴 **合格与「已完成数量」是两列**（见证行：`done_qty=10` / `qualified_qty=7` 故意不等）—— 返工 / 报废**既不推进进度也不计件**（既有口径），本表**不为它们做合计**（避免被读成「已完成 = 合格 + 返工 + 报废」）。三天不做合计这件事**不在**本用例的机器断言里（它是「没有写」的事实）⇒ 靠本条的方案注释 + 代码评审承担。'],
+    skip_reason='[backend-contract] 纯前端渲染（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'production', 'quality-inspection', 'worklog'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -15330,6 +15403,7 @@ ALL_CASES = (
     _CASE_PG_078,
     _CASE_PG_079,
     _CASE_PG_080,
+    _CASE_PG_081,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,
@@ -15614,6 +15688,9 @@ ALL_CASES = (
     _CASE_UI_115,
     _CASE_UI_113,
     _CASE_UI_117,
+    _CASE_UI_118,
+    _CASE_UI_119,
+    _CASE_UI_120,
     _CASE_UT_001,
     _CASE_UT_002,
 )

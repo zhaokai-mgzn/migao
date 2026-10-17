@@ -149,6 +149,11 @@ public class MenuController {
         MenuNode pr1 = new MenuNode("production:view", "生产看板");
         MenuNode prPool = new MenuNode("processing:view", "智能派单");   // #5699 P4：= 该页读码
         MenuNode pr3 = new MenuNode("production:view", "计件工资");
+        // 质检记录（issue #7140 = #5652 的**商家面**）：节点码 = 该页三个端点的**方法级**
+        // `production:inspect`（读待检清单 / 读流水 / 录判定同码）—— 只授质检员 + 管理员
+        // （用户 2026-10-17 裁定「保持现状」⇒ 零权限放宽）。放在「计件工资」之后 = 与
+        // `AuthService` 的 add 顺序、前端 `menu.ts` 的 children 顺序**逐项一致**（三源同构判据）。
+        MenuNode pr4 = new MenuNode("production:inspect", "质检记录");
         // 仓储与物料（issue #5271 **新组**）：面料进出与消耗 —— 用户 2026-10-06 组内重排为
         // **单据（进 → 账 → 出）→ 台账 → 分析**（原序「库存明细」在组末、被「省料看板」隔开）。
         // 入库单（V111，issue #5034）权限码**独立**（inbound:view，与 @RequirePermission 同码）；
@@ -212,7 +217,7 @@ public class MenuController {
             // 生产管理（用户 2026-10-06 组内重排后，再随 issue #6580 收拢为**生产看板 → 智能派单
             // → 计件工资**三项 —— 「加工项管理」「工艺配置」两个菜单项按用户裁定**移除**，
             // 功能体并入 `/settings`（企业基础设置）页内的配置域；旧路径保留为重定向）。
-            new MenuNode("production-center", "生产管理", List.of(pr1, prPool, pr3, prUpdate)),
+            new MenuNode("production-center", "生产管理", List.of(pr1, prPool, pr3, pr4, prUpdate)),
             // 仓储与物料（用户 2026-10-06 组内重排：单据（进 → 账 → 出）→ 台账 → 分析）
             // 🔴 issue #6759：组尾追加动作码节点「入库单操作」（`inbound:create` = 手机端过账的写码）。
             new MenuNode("inventory-center", "仓储与物料", List.of(i1, prLedger, i2, prRemnants, prSaving, iCreate)),

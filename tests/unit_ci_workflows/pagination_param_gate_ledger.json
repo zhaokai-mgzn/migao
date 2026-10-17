@@ -151,6 +151,11 @@
       "key": "backend/admin-api/src/main/java/com/migao/admin/controller/agent/AgentOrderController.java::getMyOrders",
       "source": "@RequestParam",
       "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/QualityCheckController.java::targets",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size（`GET /api/admin/quality-inspections/targets`，issue #7140 新增的待检清单读面）⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400；另服务端自身把 `size` 封顶 100（不信任调用方）⇒ 不会出现「负 size = 不分页」那种整表返回。"
     }
   ],
   "coverage_boundary": [

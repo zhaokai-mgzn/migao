@@ -136,6 +136,11 @@ export const capabilityDomains: CapabilityDomain[] = [
         detail: '按人 / 工序 / 部位 / 套四档下钻；返工与报废不计件，系统会自动排除。',
         icon: Coins,
       },
+      {
+        name: '质检记录',
+        detail: '待检成品帘清单（未检 / 合格 / 返工 / 报废）+ 三态判定录入与质检流水；作业单明细内也能直接判定，不合格必须写原因。',
+        icon: ClipboardCheck,
+      },
     ],
   },
   {

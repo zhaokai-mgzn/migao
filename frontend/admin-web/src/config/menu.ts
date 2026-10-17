@@ -279,6 +279,13 @@ export const menuGroups: MenuGroup[] = [
       // 路由守卫同批改挂读码（`app/(dashboard)/layout.tsx`）。
       { key: 'production-pool', name: '智能派单', icon: 'Layers', path: '/production/pool', permissionCode: 'processing:view', keywords: ['zndp', 'zhineng', 'paidan', '派单', 'ckb'] },
       { key: 'production-piecework', name: '计件工资', icon: 'Coins', path: '/production/piecework', permissionCode: 'production:view', keywords: ['jjgz', 'jijian', 'gongzi'] },
+      // 质检记录（issue #7140 = #5652 的**商家面**）：成品帘级三态判定（合格 / 返工 / 报废 + 原因）。
+      // 🔴 为什么要补这条菜单：质检端点与工人端三态**早就在**，但 admin-web 里**0 处消费**
+      // ⇒ 质检员登录观星台没有工作台、商家查不到任何质检读数（用户 2026-10-17 实测原话：
+      // 「之前让你做过质检流程，我看在观星台上没有任何地方体现出来了」）。
+      // 🔴 节点码 = 该页第一屏读端点码 = 写端点码 `production:inspect`（三处逐字同码）：
+      // 该码只授给独立质检员 + 管理员 ⇒ **零权限放宽**（用户 2026-10-17 三个选项里选了「保持现状」）。
+      { key: 'quality-inspections', name: '质检记录', icon: 'BadgeCheck', path: '/quality-inspections', permissionCode: 'production:inspect', keywords: ['zjjl', 'zhijian', 'quality', 'jiance', 'hege'] },
     ],
   },
   // issue #5271 **新组**：面料进出与消耗 —— 入库 → 批次 → 余料 → 省料，是**同一条物流动线**，

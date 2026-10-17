@@ -113,11 +113,11 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     expect(productGroup()).toBeUndefined()
     // 生产管理组（#6580 起 **3 项**；两项已移除）
     expect(productionGroup()!.children.map((c) => c.key)).toEqual([
-      'production-board', 'production-pool', 'production-piecework',
+      'production-board', 'production-pool', 'production-piecework', 'quality-inspections',
     ])
   })
 
-  it('生产管理组现为 **3 项**（#6580 移除两个菜单项）；面料三项仍在「仓储与物料」组（#5778 + issue #5271）', () => {
+  it('生产管理组现为 **4 项**（#6580 移除两个菜单项；#7140 加「质检记录」）；面料三项仍在「仓储与物料」组（#5778 + issue #5271）', () => {
     // 🔴 #6580：本组由 5 项收拢为 3 项（「加工项管理」「工艺配置」菜单项已移除、功能体并入
     // 一级项「企业基础设置」页）；而面料进出与消耗（入库单 / 余料台账 / 省料看板）
     // 仍归**「仓储与物料」**组（issue #5271 的拆组保留，本轮不动）。
@@ -127,6 +127,7 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
       '/production',
       '/production/pool',
       '/production/piecework',
+      '/quality-inspections',   // issue #7140：质检记录
     ])
     // 反向：面料三项**不得**在本科目里（它们属「仓储与物料」）
     expect(productionPaths).not.toContain('/inbound-orders')
@@ -139,6 +140,7 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
       'production:view',    // 生产看板
       'processing:view',    // 智能派单
       'production:view',    // 计件工资
+      'production:inspect', // 质检记录（issue #7140）
     ])
     // 拆出去的三项落在「仓储与物料」组，且**权限码不统一是有意的**：
     // 入库单 = inbound:view（仓储动作，仓管/财务要看入库单却不需要 processing:manage）、
@@ -180,8 +182,8 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // #5778/#5939「+发货单」/#6404「+库存明细」的历次增减见 menu-nav.test.ts；
     // 🔴 2026-10-17（issue #7087）：本判据**不受影响** —— 撤销的「工作台」组两项里，
     // 「经营看板」升为**最前席位一级项**（不入任何组）、「每日简报」菜单项删除 ⇒ 组内项 18 → 16）
-    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(16)
-    expect(allNames).toHaveLength(16)
+    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(17)
+    expect(allNames).toHaveLength(17)
   })
 })
 

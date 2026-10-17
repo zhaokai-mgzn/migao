@@ -282,6 +282,14 @@ EXEMPT_FACES: tuple[tuple[str, str], ...] = (
         "`operationDisplayName()`（受管面判据对它无意义）。"
         "**过期即红**：一旦本模块开始渲染工序名（出现 JSX 或裸快照名）⇒ `_direct_render_hits` 命中。",
     ),
+    (
+        "frontend/admin-web/src/components/production/QualityCheckPanel.tsx",
+        "**作业单生产明细里的质检区**（issue #7140）：它命中 `ProductionPosition` 只是因为 props 的类型就是"
+        " `positions[]`（要从部位块里取 `order_item_id` / `product_name` 才能**逐件成品帘**显示判定）——"
+        "**一个工序名都不渲染**，页面上只有成品帘名 / 判定 / 原因 / 检验人 / 时刻；质检的颗粒度 = **成品帘**（`order_item_id`），"
+        "不是工序（#5652 的口径）。**过期即红**：一旦它开始渲染工序名（`operationDisplayName` / 裸快照名 / 「工序」字样）⇒ "
+        "本文件的 `_direct_render_hits` 命中，必须销账并转 `MANAGED_FACES`。",
+    ),
 )
 
 #: 受管面「直接渲染快照名」的形态（与 S1 的 C3 **同形** —— issue #4963 起两边都是

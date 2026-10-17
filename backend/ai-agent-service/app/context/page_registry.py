@@ -143,6 +143,14 @@ TRUTH_SOURCES: Dict[str, TruthSource] = {
         citation="依据：本店库存流水口径说明",
         path="frontend/admin-web/src/lib/stock-ledger.ts",
     ),
+    # issue #7140（= #5652 的商家面）：质检记录的展示口径 —— 一条 = **一件成品帘**、
+    # 判定三态（合格 / 返工 / 报废）、**未检 ≠ 合格**、缺值印「—」不折 0。
+    # 真值源 = 该口径的**唯一实现模块**（质检记录页与作业单质检区都从它取值）。
+    "quality-inspection-display": TruthSource(
+        label="质检记录口径（一件成品帘一条 · 合格/返工/报废 · 未检不折成合格）",
+        citation="依据：本店质检记录口径说明",
+        path="frontend/admin-web/src/lib/quality-check.ts",
+    ),
 }
 
 
@@ -241,6 +249,14 @@ PAGE_REGISTRY: Tuple[PageEntry, ...] = (
         route="/stock-ledger",
         truth_source="stock-ledger-display",
         page_permissions=("product:list",),
+        entity_permissions=(),
+    ),
+    PageEntry(
+        # 质检记录（issue #7140 = #5652 的商家面）：页面读码 / 守卫码 / 菜单节点码三处同码
+        # `production:inspect`（该码只授质检员 + 管理员 —— 用户 2026-10-17 裁定保持现状）
+        route="/quality-inspections",
+        truth_source="quality-inspection-display",
+        page_permissions=("production:inspect",),
         entity_permissions=(),
     ),
 )
