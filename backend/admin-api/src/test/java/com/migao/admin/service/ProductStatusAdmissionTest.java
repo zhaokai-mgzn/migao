@@ -127,24 +127,32 @@ class ProductStatusAdmissionTest {
     @DisplayName("死行自救：未知当前状态 → off_sale 走得通（收回状态机）")
     void unknownCurrentStatusCanBeRecoveredToOffSale() {
         when(productMapper.selectById("prod-dead")).thenReturn(productWithStatus("prod-dead", "active"));
-        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+        // 🔴 issue #6961：状态迁移的真写面是 CAS（`updateStatusIfFrom`，按受影响行数判赢家）
+        when(productMapper.updateStatusIfFrom(
+                any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean(), any(), any(), any()))
+                .thenReturn(1);
 
         productService.updateProductStatus("prod-dead", "off_sale", 1L);
 
-        org.mockito.Mockito.verify(productMapper)
-                .updateById(org.mockito.ArgumentMatchers.<Product>argThat(p -> "off_sale".equals(p.getStatus())));
+        org.mockito.Mockito.verify(productMapper).updateStatusIfFrom(
+                any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean(),
+                org.mockito.ArgumentMatchers.<String>argThat(t -> "off_sale".equals(t)), any(), any());
     }
 
     @Test
     @DisplayName("死行自救：on_shelf → draft 也走得通；再走正常流转（draft → on_sale）")
     void unknownCurrentStatusCanBeRecoveredToDraft() {
         when(productMapper.selectById("prod-dead2")).thenReturn(productWithStatus("prod-dead2", "on_shelf"));
-        when(productMapper.updateById(any(Product.class))).thenReturn(1);
+        // 🔴 issue #6961：状态迁移的真写面是 CAS（`updateStatusIfFrom`，按受影响行数判赢家）
+        when(productMapper.updateStatusIfFrom(
+                any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean(), any(), any(), any()))
+                .thenReturn(1);
 
         productService.updateProductStatus("prod-dead2", "draft", 1L);
 
-        org.mockito.Mockito.verify(productMapper)
-                .updateById(org.mockito.ArgumentMatchers.<Product>argThat(p -> "draft".equals(p.getStatus())));
+        org.mockito.Mockito.verify(productMapper).updateStatusIfFrom(
+                any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean(),
+                org.mockito.ArgumentMatchers.<String>argThat(t -> "draft".equals(t)), any(), any());
     }
 
     @Test
