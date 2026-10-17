@@ -642,12 +642,13 @@ export function CalcCaliberPanel({
               滚动时只压住一小角，且「保存」永远够得着（首屏不用滚 1.3 屏）。
               重启条件：若商家反馈「小条挡住右下角内容」，改成滚动过表单首屏后才吸底。 */}
           {writable && displayConfig && (
-            <div className="sticky bottom-0 z-10 pt-2">
+            <div className="sticky bottom-6 z-10 pt-2">
               {/* 护栏理由**逐条**展示（后端一次列出每一处不合法）—— 不吞成一句「保存失败」；
                   放在吸底容器里 ⇒ 保存被拒时理由不会滚出视口。 */}
               {reasons.length > 0 && (
                 <ul
-                  className="mb-2 space-y-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600"
+                  /* §31 P1：逐条明细**封顶滚动**（不随条数把常驻面撑高）—— 后端一次可能列出多处不合法 */
+                  className="mb-2 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600"
                   data-testid="calc-caliber-reasons"
                 >
                   {reasons.map((r) => (
