@@ -7046,7 +7046,7 @@
 ```
 溯源: 2026-10-14 新增（issue #6936 的类级固化，与 PG-074 同批）：沿用 #6928 的元守卫范式（扫描器非空跑自证 / 谓词完整性 / 未登记即红 / 登记必须兑现 / 豁免只许缩短 / 判别力自证），但**扩到本单的射程**（`ProductionOperationCommandService` 里 `production_operations.deleted` 的两条软删写路径：谓词三件套 + 显式写列 + 影响行数判定，另加写路径登记表），台账 = backend/admin-api/src/test/resources/production-operation-delete-cas-ledger.json（豁免基线 **0**）。既有判据**未放宽**（`InboundOrderStatusCasMetaGuardTest` 的 MC-100 一字未动）。取号 = PG-075（现取未占用）。 ｜ tags: production, operation, concurrency, meta_guard, backend-contract
 
-## 加工单域（69 case）
+## 加工单域（70 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -7969,6 +7969,23 @@
 跳过: [backend-contract] 后端只读聚合面（Java 单测 + 同键名断言），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-17 新增（issue #7140；用户 2026-10-17 逐字见 user_inputs）。落码：`GET /api/admin/quality-inspections/targets`（`@RequirePermission("production:inspect")`，与既有录入/读面**同码**，不新造权限点、不放宽任何码）+ `QualityCheckService.targets()`（一行 = 一件成品帘；`latest` 取该件第一条）+ 加工单生产明细读面 `operations[]` 增 `qualified_qty/rework_qty/scrap_qty`（既有 `ProductionService.worklog` 的同一套口径，抽成 `qtyByOperation`）。取号：见文首注释（工具超时 ⇒ 现取 main 最大 080 + open PR 复核）。2026-10-17 issue #7160 追加：行上 `order_no`（所属销售订单号，批量取回；缺 ⇒ `null`）。 ｜ tags: quality-inspection, backend-contract, finished-curtain, admin-web-consumer
+
+### PG-082. 工人端质检：扫水洗唛进报工页后录判定、生成质检单（服务端以「档案页面集含 inspect」为准入，不是藏 UI） 🔵
+```
+你: 用户 2026-10-17 逐字：「工人不能进入观星台，维持这个设计，现在只需要在小程序端扫码进入报工页后有入口进行质检即可」
+你: 用户 2026-10-17 逐字：「因为工人主要通过扫水洗唛进入质检流程」
+你: 用户 2026-10-17 逐字：「质检等同发货工序一样，打包发货完成后生成发货单，质检完成后生成质检单，一样的意思」
+数据: **判据 1·🔴 服务端准入（不是藏 UI）**：工人档案页面集没有 `inspect`（含「未收窄 = 默认页」）⇒ `POST /api/worker/quality/inspections` 与 `GET /latest` 一律 **403**，且 `QualityCheckService` **零调用**（`verifyNoInteractions`）。红证：把 `requireInspector` 的判据删掉 ⇒ 判据当场红。证据：backend/admin-api/src/test/java/com/migao/admin/controller/WorkerQualityControllerTest.java
+数据: **判据 2·🔴 检验人只来自工人 session**：落库 `inspector_id` = session 解出的 worker_id、`inspector_name` = 工人姓名、`inspector_kind='worker'`；body 里的 `worker_id` / `inspector_id` 一个字节都不读（伪造值不得进库）。证据：WorkerQualityControllerTest.java（grantedWorkerDelegatesWithSessionIdentity）+ backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckServiceTest.java（workerInspectorKindIsPersistedAndReadable）
+数据: **判据 3·身份类别只加不改**：未知 `inspector_kind` ⇒ 422 且零写入；既有员工路径仍落 `employee`；读面 `view` 追加 `inspector_kind`。证据：QualityCheckServiceTest.java（unknownInspectorKindIsRejected）
+数据: **判据 4·🔴 未检 ≠ 合格**：无记录 ⇒ `latest=null`、H5 显示「未检」（不得显示「合格」）；有记录 ⇒ 显示服务端判定 / 原因 / 检验人 / 时刻。证据：frontend/worker-h5/tests/worker-h5-quality.test.mjs（②③）+ QualityCheckServiceTest.java（latestReturnsNewestOrNull）
+数据: **判据 5·录入 = 质检单**：展开表单 ⇒ 三态 + 原因必填提示 +「提交质检单」；提交成功 ⇒ 「质检单已生成」+ 判定换成回执（同一件可复检 = 再录一次）。证据：worker-h5-quality.test.mjs（④⑤⑥）
+数据: **判据 6·逐人开**：`inspect` 在闭词表里但**不在**默认集合；H5 页面集不含它 ⇒ 质检区块一个字节都不出现。证据：frontend/worker-h5/tests/worker-h5-pages.test.mjs + worker-h5-quality.test.mjs（①）
+数据: **边界（照实登记）**：不做质检单打印（本轮只落记录与两端读面）；不把质检做成可计价工序（报工是数量事实、质检是成品帘判定，两套口径并存）；工人仍**不进** `/api/admin/**`、不获得任何 RBAC 权限码。
+前置: 前置 = ① 一张活跃加工单 + 该件成品帘（`order_item_id`）；② 工人 session（`X-Worker-Session-Id`）；③ 该工人档案的 `users.worker_pages` 里**有** `inspect`（缺 ⇒ 403，不是「看不见入口」）。后端夹具 = Mockito；H5 = 纯渲染/状态机夹具（零 DOM、零网络）。
+跳过: [backend-contract] 服务端准入 + 纯前端渲染/状态机（无 LLM 行为），不进入 agent-eval 冒烟
+```
+溯源: 2026-10-17 新增（issue #7162；用户三条逐字见 user_inputs）。落码：`WorkerQualityController`（`/api/worker/quality/**`，准入 = 工人档案页面集含 `inspect`）+ `QualityCheckService.create(..., inspectorKind, ...)`（kind 校验 / 读面追加 `inspector_kind` / `latest()`）+ 迁移 V163 `inspector_kind` + `WorkerPages.INSPECT`（不在默认集合）+ worker-h5 质检区块（`render.mjs` / `api.mjs` / `app.mjs`）。取号：见文首注释。 ｜ tags: quality-inspection, worker-h5, backend-contract, permission, finished-curtain
 
 ## 商品域（122 case）
 
@@ -9852,7 +9869,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（120 case）
+## 前端 UI 域（121 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -11588,6 +11605,20 @@
 ```
 溯源: 2026-10-17 新增（issue #7140）。落码：`frontend/admin-web/src/components/production/ProductionProgressTable.tsx`（+3 列；**只加不改**既有列）+ 后端 `ProductionService.operationView` 增三键（与 `worklog()` 同口径，抽出 `qtyByOperation`）。 ｜ tags: ui, production, quality-inspection, worklog
 
+### UI-121. 工人档案：质检页逐人开（新建弹窗「单独开放」一栏 + 列表行「开/关质检」）；默认页面不含质检、未收窄显示「默认页面」 🔵
+```
+你: 用户 2026-10-17 裁定：「工人档案逐人开质检页，服务端同时当写准入」
+期望: direct_reply
+数据: 判据 1·**质检不在默认菜单里**：新建弹窗的默认页勾选栏（`worker-page-option-*`）不含 `inspect`；它出现在「单独开放」一栏（`worker-page-optional-inspect`），默认未勾。红证：把 inspect 加进默认集合 ⇒ 判据当场红。证据：frontend/admin-web/tests/unit/components/WorkerProfilesPanel.test.tsx（⑨）
+数据: 判据 2·**勾上 ⇒ 建号请求带它**：默认四页 + 单独勾质检 ⇒ `workerPages = [report, order, cut_calc, shipment, inspect]`（收窄列表，不是 null）。证据：同文件（⑨）
+数据: 判据 3·**已有工人可开/关**：列表行「开质检」⇒ `PUT /api/admin/workers/{id}/pages` 带默认页 + inspect；「关质检」⇒ 去掉 inspect（回到收窄集）。证据：同文件（⑨ 第二条）
+数据: 判据 4·**口径显示**：未收窄（null / 空数组）⇒「默认页面」（不再是「全部页面」—— 全部能力还包含逐人开的质检）。证据：同文件（⑧）
+数据: **上游形状**：`GET /api/admin/worker-pages` 回 `{pages, default_pages, optional_pages, labels}`（服务端唯一真值）；`inspect` 在 pages、不在 default_pages、在 optional_pages。证据：backend/admin-api/src/test/java/com/migao/admin/controller/WorkerPageCatalogControllerTest.java
+数据: **边界（照实登记）**：本页只决定「开不开放」；真正的写准入在 `/api/worker/quality/**`（服务端 403），不是前端隐藏按钮。
+跳过: [backend-contract] 纯前端配置面（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-17 新增（issue #7162）。落码：`WorkerProfilesPanel`（catalog 的 default_pages / optional_pages 消费 + 行内开/关 + 新建弹窗「单独开放」）+ `WorkerPageCatalogController`（追加两键）+ `WorkerPages.optionalPages()`。取号：见文首注释。 ｜ tags: worker-profile, quality-inspection, permission, ui
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -11617,8 +11648,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：796（活跃 133，跳过 663）
-- tier 分布：smoke 12 / normal 737 / adversarial 32
+- 用例总数：798（活跃 133，跳过 665）
+- tier 分布：smoke 12 / normal 739 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -11638,12 +11669,12 @@
 - 领域本体域：4
 - 订单域：68
 - 加工项域：30
-- 加工单域：69
+- 加工单域：70
 - 商品域：122
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：120
+- 前端 UI 域：121
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -11878,6 +11909,7 @@
 - PG-079: 卖布单发货前置「裁剪 + 打包已报工」：无 completed 作业单 ⇒ 拒绝发货；非卖布的普通无加工项单仍可直发
 - PG-080: 卖布单进「待排产 / 待发货」两类生产待办（与发货守卫同一判据），且仍在智能派单池的成批候选区
 - PG-081: 质检待检清单读面：未检 ≠ 合格（无记录 ⇒ `state=pending` / `latest=null`）、同一件多条取最新、四态计数、状态过滤 + 分页封顶（issue #7140）
+- PG-082: 工人端质检：扫水洗唛进报工页后录判定、生成质检单（服务端以「档案页面集含 inspect」为准入，不是藏 UI）
 - PP-007: 黄金策加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 黄金策加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）
@@ -11936,4 +11968,5 @@
 - UI-118: 质检记录页（`/quality-inspections`）：待检成品帘清单（未检 ≠ 合格、带订单号）+ 弹窗录入三态判定（返工/报废原因必填）+ 质检流水；读失败不印「未检 0 件」（issue #7140 / #7160）
 - UI-119: 作业单生产明细内嵌**质检区**：逐件成品帘最新判定（未检 = 未检）+ 录入/复检入口；读失败不画成「没有质检」（issue #7140）
 - UI-120: 工序进度表**三态数量列**（合格 / 返工 / 报废）：返工报废不进进度、与「已完成数量」分列、缺报工渲染 0（issue #7140）
+- UI-121: 工人档案：质检页逐人开（新建弹窗「单独开放」一栏 + 列表行「开/关质检」）；默认页面不含质检、未收窄显示「默认页面」
 

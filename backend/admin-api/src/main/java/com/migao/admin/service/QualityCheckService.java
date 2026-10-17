@@ -60,6 +60,11 @@ public class QualityCheckService {
      */
     public static final Set<String> RESULTS = Set.of("pass", "rework", "scrap");
 
+    /** 检验人身份类别（V163，issue #7162）：观星台员工 / 工人端。 */
+    public static final String INSPECTOR_EMPLOYEE = "employee";
+    public static final String INSPECTOR_WORKER = "worker";
+    private static final Set<String> INSPECTOR_KINDS = Set.of(INSPECTOR_EMPLOYEE, INSPECTOR_WORKER);
+
     /** 判为合格时允许原因为空后的文案锚（供报错文案复用）。 */
     private static final String REASON_REQUIRED =
             "质检判定为「%s」时必须填写不合格原因（判定 ≠ 合格 ⇒ 原因必填）";
@@ -94,6 +99,23 @@ public class QualityCheckService {
      */
     public Map<String, Object> create(Long tenantId, String orderItemId, String result, String reason,
                                       String inspectorId, String inspectorName, OffsetDateTime inspectedAt) {
+        return create(tenantId, orderItemId, result, reason, inspectorId, inspectorName,
+                INSPECTOR_EMPLOYEE, inspectedAt);
+    }
+
+    /**
+     * 录入一条质检记录（带**检验人身份类别**，issue #7162）—— 工人端扫描后录判定走这里。
+     *
+     * @param inspectorKind {@code employee}（观星台）/ {@code worker}（工人 session）；未知值 ⇒ 422
+     */
+    public Map<String, Object> create(Long tenantId, String orderItemId, String result, String reason,
+                                      String inspectorId, String inspectorName, String inspectorKind,
+                                      OffsetDateTime inspectedAt) {
+        String kind = inspectorKind == null ? INSPECTOR_EMPLOYEE : inspectorKind.trim();
+        if (!INSPECTOR_KINDS.contains(kind)) {
+            throw BusinessException.validationError(
+                    "inspector_kind 仅支持 employee/worker（员工/工人），收到：" + inspectorKind);
+        }
         if (!StringUtils.hasText(orderItemId)) {
             throw BusinessException.validationError("order_item_id 必填：质检的颗粒度是**一件成品帘**，缺它无法落记录");
         }
@@ -126,6 +148,7 @@ public class QualityCheckService {
                 .positionName(item.getProductName())
                 .inspectorId(inspectorId)
                 .inspectorName(inspectorName)
+                .inspectorKind(kind)
                 .inspectionResult(normalized)
                 .reason(trimmedReason)
                 .inspectedAt(inspectedAt)
@@ -346,6 +369,20 @@ public class QualityCheckService {
     }
 
     /** 逐字段可读的记录视图（**缺值不渲染假数据**：null 原样为 null，不折 0 / 不写 undefined）。 */
+    /**
+     * 某件成品帘的**最新一条**质检判定（无记录 ⇒ {@code null}；「未检」不折成「合格」）。
+     *
+     * <p>工人端扫描后的质检区块用它显示「这件检过没有、上次判了什么」—— 与商家端读面
+     * （{@link #list} 时间倒序取第一条）**同一份排序口径**（{@link com.migao.admin.mapper.QualityCheckMapper#selectLatestByOrderItemIds}）。</p>
+     */
+    public Map<String, Object> latest(Long tenantId, String orderItemId) {
+        if (!StringUtils.hasText(orderItemId)) {
+            throw BusinessException.validationError("order_item_id 必填：质检的颗粒度是一件成品帘");
+        }
+        List<QualityCheck> rows = qualityInspectionMapper.selectLatestByOrderItemIds(List.of(orderItemId.trim()));
+        return rows == null || rows.isEmpty() ? null : view(rows.get(0));
+    }
+
     private Map<String, Object> view(QualityCheck row) {
         Map<String, Object> v = new LinkedHashMap<>();
         v.put("id", row.getId());
@@ -357,6 +394,8 @@ public class QualityCheckService {
         v.put("reason", row.getReason());
         v.put("inspector_id", row.getInspectorId());
         v.put("inspector_name", row.getInspectorName());
+        // issue #7162：一条只加不改 —— 读面能区分「观星台员工录的」与「工人端录的」
+        v.put("inspector_kind", row.getInspectorKind() == null ? INSPECTOR_EMPLOYEE : row.getInspectorKind());
         v.put("inspected_at", row.getInspectedAt());
         return v;
     }

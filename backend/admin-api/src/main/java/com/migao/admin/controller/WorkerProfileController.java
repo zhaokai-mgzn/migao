@@ -38,6 +38,9 @@ import java.util.Map;
  *       {@code /api/admin/**} 对 {@code worker} 一律 403（{@code SecurityConfig}）；</li>
  *   <li>把某个页面从 {@code pages} 里去掉<b>不等于</b>挡住对应接口 —— 服务端对每个工人都仍然
  *       按同一套授权判（页面开关只是「看不看得见」）。</li>
+ *   <li>🔴 <b>唯一例外（issue #7162）</b>：{@code inspect}（质检）**同时**是工人端质检写入
+ *       （{@code /api/worker/quality/**}）的服务端准入 —— 页面集里没有它 ⇒ 403，与「界面不显示
+ *       入口」是两件事；它仍然不是 RBAC 权限码、仍不进 {@code users.permissions}。</li>
  * </ul>
  *
  * <p>⚠️ 本控制器**独立**于 {@code WorkerProductionController}（报工面）：报工面只回答「这笔活记到谁头上」，

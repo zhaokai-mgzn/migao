@@ -37,7 +37,10 @@ class WorkerPagesTest {
         // —— 键与商家面人话名同批登记（WorkerPages.labels），默认与可选页同源 ⇒ 本条即闭词表守卫。
         assertThat(WorkerPages.defaultPages())
                 .containsExactly("report", "piecework", "order", "cut_calc", "shipment");
-        assertThat(WorkerPages.ALL).containsExactlyInAnyOrderElementsOf(WorkerPages.defaultPages());
+        // issue #7162：`inspect`（质检）在闭词表里，但**不在默认集合**（逐人开、且是服务端写准入）
+        assertThat(WorkerPages.ALL).containsExactly(
+                "report", "piecework", "order", "cut_calc", "shipment", "inspect");
+        assertThat(WorkerPages.defaultPages()).doesNotContain("inspect");
     }
 
     @Test
@@ -51,7 +54,7 @@ class WorkerPagesTest {
     @Test
     @DisplayName("每个页面键都有人话名（档案面板显示用；键是机器码）")
     void everyPageKeyHasAHumanLabel() {
-        assertThat(WorkerPages.labels()).containsOnlyKeys(WorkerPages.defaultPages().toArray(String[]::new));
+        assertThat(WorkerPages.labels()).containsOnlyKeys(WorkerPages.ALL.toArray(String[]::new));
         assertThat(WorkerPages.labels().values()).allSatisfy(label -> assertThat(label).isNotBlank());
     }
 
@@ -112,6 +115,20 @@ class WorkerPagesTest {
         assertThat(WorkerPages.effectiveFor("[]")).containsExactlyElementsOf(WorkerPages.defaultPages());
         assertThat(WorkerPages.effectiveFor(List.of(1, 2)))
                 .containsExactlyElementsOf(WorkerPages.defaultPages());
+    }
+
+    @Test
+    @DisplayName("④ 🔴 inspect 逐人开：默认不出现；收窄集里给了才下发（且排最后）")
+    void inspectIsOptInAndNeverInDefaults() {
+        // 未收窄 ⇒ 默认页（不含质检）
+        assertThat(WorkerPages.effectiveFor(null)).doesNotContain(WorkerPages.INSPECT);
+        // 逐人开：收窄集里带 inspect ⇒ 下发（默认页在前、inspect 最后）
+        assertThat(WorkerPages.effectiveFor(List.of("report", "inspect")))
+                .containsExactly("report", "inspect");
+        // 只开质检也可以（收窄到一页 = 就这一页）
+        assertThat(WorkerPages.effectiveFor(List.of("inspect"))).containsExactly("inspect");
+        // 写侧校验认得这个键（不在闭词表外）
+        assertThat(WorkerPages.validateRestriction(List.of("inspect")).errors()).isEmpty();
     }
 
     @Test

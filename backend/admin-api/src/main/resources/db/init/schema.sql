@@ -3697,8 +3697,9 @@ CREATE TABLE IF NOT EXISTS quality_inspections (
     processing_order_id VARCHAR(64) NOT NULL REFERENCES processing_orders(id),
     order_item_id VARCHAR(64) NOT NULL,                -- 一件成品帘（order_items.id）：质检的唯一颗粒度
     position_name VARCHAR(128),                        -- 成品帘展示名快照（缺值不渲染假数据）
-    inspector_id VARCHAR(64) NOT NULL,                 -- 检验人（独立质检员）
+    inspector_id VARCHAR(64) NOT NULL,                 -- 检验人（独立质检员 / 工人端质检员）
     inspector_name VARCHAR(64),
+    inspector_kind VARCHAR(16) NOT NULL DEFAULT 'employee', -- issue #7162：employee 观星台 / worker 工人端
     inspection_result VARCHAR(16) NOT NULL,            -- 质检三态：pass 合格 / rework 返工 / scrap 报废
     reason VARCHAR(500),                               -- 不合格原因：判定 ≠ pass 时**服务层必填**（缺 ⇒ 422，不静默存）
     inspected_at TIMESTAMP WITH TIME ZONE NOT NULL,    -- 检验时刻（业务时钟单点 BusinessClock）
@@ -3717,7 +3718,8 @@ COMMENT ON TABLE quality_inspections IS '质检记录（成品帘级，issue #56
 COMMENT ON COLUMN quality_inspections.order_item_id IS '一件成品帘（order_items.id）：质检的**唯一颗粒度**（用户裁定「是按成品帘来检查的」）';
 COMMENT ON COLUMN quality_inspections.inspection_result IS '质检三态：pass 合格 / rework 返工 / scrap 报废；取值域由服务层 QualityCheckService.RESULTS 裁（与 production_work_logs.work_type 同名不同物）';
 COMMENT ON COLUMN quality_inspections.reason IS '不合格原因：判定 ≠ pass 时**必填**（缺 ⇒ 422 具名报错，绝不静默存）；pass 时可为 NULL';
-COMMENT ON COLUMN quality_inspections.inspector_id IS '检验人（独立质检员）：服务端从 SecurityContext 解，body 里的同名字段无效';
+COMMENT ON COLUMN quality_inspections.inspector_id IS '检验人（独立质检员 / 工人端质检员）：服务端从会话解（观星台员工 = SecurityContext，工人端 = 工人 session），body 里的同名字段无效';
+COMMENT ON COLUMN quality_inspections.inspector_kind IS '检验人身份类别（V163 / issue #7162）：employee 观星台员工 / worker 工人端（工人 session）；存量行默认 employee';
 COMMENT ON COLUMN quality_inspections.inspected_at IS '检验时刻：取业务时钟单点 BusinessClock（Asia/Shanghai）—— 不使用无参 now()（issue #3802 / BusinessClockSourceGuardTest）';
 
 -- ================================================
