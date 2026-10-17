@@ -29,7 +29,7 @@ issue #7079 把「单布料售卖」从加工单语义里拆出来：实体上�
 | C4 | 前端 `order_kind` 联合类型的成员（去掉 `null`）逐值等于冻结词表 | 前端加/少一个值 ⇒ 红 |
 | C5 | **词表逐项冻结**：`{processing, outbound}` + 默认 `processing` 写死在本文件 —— 集合级相等对「两边一起错」没有判别力 | 两边一起改成别的词 ⇒ 红 |
 | C6 | **接线**：`OrderShipGuard.isProcessingReadyForShip` 必须经由 `needsWork`；`needsWork` 必须同时含 `hasProcessingItems` 与 `hasFabricSaleLine` | 改回只判含加工项 ⇒ 红（具名报出该方法体里找不到 `needsWork`） |
-| C7 | **接线纵深**：`ProductionTodoService` 必须**只剩** `needsWork`，不得再出现 `hasProcessingItems(`（第二份判据） | 某一类待办退回旧判据 ⇒ 红 |
+| C7 | **接线纵深（只判过滤点）**：`ProductionTodoService` 里**每个 `for` 循环体**的 `if` 条件都不得出现 `hasProcessingItems(`，且必须有 `for` 循环体引用 `needsWork` | 某一类待办退回旧过滤判据 ⇒ 红。**射程就是「决定某条候选订单是否进待办」的那个决策点** —— `hasProcessingItems(...)` 出现在**证据/文案**里是合法事实（它说的是「这单有没有加工项」），不算第二份判据 |
 | C8 | **判别力自证（反恒真）**：上面每个读取器/判定器对**注入的坏形态**各自判红、对好形态不报 | 守卫退化成恒真（读不到东西还给空集通过）⇒ 红 |
 | C9 | **反空跑**：任一面「找不到对象」⇒ 红（不许以「没有可比对的东西」为通过） | 删掉整个迁移/常量/类型 ⇒ 红 |
 
@@ -91,6 +91,10 @@ _TS_STRING_MEMBER = re.compile(r"""['"]([^'"]*)['"]""")
 _NEEDS_WORK = "needsWork"
 _HAS_FABRIC_SALE_LINE = "hasFabricSaleLine"
 _HAS_PROCESSING_ITEMS = "hasProcessingItems"
+#: `for (...)` 循环的头部（C7 用它把射程收在**过滤点**上）
+_FOR_LOOP = re.compile(r"for\s*\([^)]*\)\s*\{")
+#: `if (...)` 的**条件文本**（嵌套括号只取到第一个 `)` —— 足够判定「这个条件里引用了哪个谓词」）
+_IF_CONDITION = re.compile(r"if\s*\(([^)]*)\)")
 
 
 def _read(path: Path) -> str:
@@ -195,6 +199,32 @@ def java_method_body(code: str, name: str) -> str:
     return ""
 
 
+def if_conditions(code: str) -> list[str]:
+    """源码里每个 `if (...)` 的**条件文本**（剥注释后）。"""
+    return _IF_CONDITION.findall(code)
+
+
+def for_loop_bodies(code: str) -> list[str]:
+    """源码里每个 `for (...)` 循环的**循环体**（花括号配平，含头含尾）。
+
+    C7 的射程就是这些循环体 —— 待办的候选扫描按 `for` 循环写，「某条候选订单是否进待办」
+    的决策点必然落在循环体里的 `if` 条件上。
+    """
+    out: list[str] = []
+    for matched in _FOR_LOOP.finditer(code):
+        start = matched.end() - 1
+        depth = 0
+        for idx in range(start, len(code)):
+            if code[idx] == "{":
+                depth += 1
+            elif code[idx] == "}":
+                depth -= 1
+                if depth == 0:
+                    out.append(code[start : idx + 1])
+                    break
+    return out
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 判定器（纯函数；C8 判别力自证对同一份函数注入坏形态）
 # ══════════════════════════════════════════════════════════════════════════════
@@ -277,16 +307,33 @@ def judge_ship_guard(code: str) -> str:
 
 
 def judge_todo_service(code: str) -> str:
-    """C7 ⇒ 通过返回 `""`。"""
-    if f"{_NEEDS_WORK}(" not in code:
+    """C7 ⇒ 通过返回 `""`。
+
+    射程 = **过滤点**（`for` 循环体里的 `if` 条件），不是整文件 ——
+    `hasProcessingItems(...)` 出现在**证据/文案**里是合法事实（「这单有没有加工项」正是待办要说清的事），
+    只有把它**当过滤判据**用才是「第二份判据」。
+    """
+    loops = for_loop_bodies(code)
+    if not loops:
         return (
-            f"{_rel(TODO_SERVICE)} 里没有 `{_NEEDS_WORK}(...)` ⇒ "
+            f"{_rel(TODO_SERVICE)} 里找不到任何 `for` 循环 ⇒ 判据失去对象"
+            "（待办的候选扫描按 `for` 循环写；换形即红，不许静默通过）"
+        )
+    if not any(f"{_NEEDS_WORK}(" in body for body in loops):
+        return (
+            f"{_rel(TODO_SERVICE)} 没有任何 `for` 循环体引用 `{_NEEDS_WORK}(...)` ⇒ "
             "生产待办没有改用统一判据（卖布单进不了待排产/待发货）"
         )
-    if f"{_HAS_PROCESSING_ITEMS}(" in code:
+    bad = [
+        cond
+        for body in loops
+        for cond in if_conditions(body)
+        if f"{_HAS_PROCESSING_ITEMS}(" in cond
+    ]
+    if bad:
         return (
-            f"{_rel(TODO_SERVICE)} 里仍出现 `{_HAS_PROCESSING_ITEMS}(...)` ⇒ "
-            "存在第二份判据（两处迟早分叉）"
+            f"{_rel(TODO_SERVICE)} 的 `for` 循环 `if` 条件里仍出现 `{_HAS_PROCESSING_ITEMS}(...)` ⇒ "
+            f"存在第二份过滤判据（{bad[:2]}）"
         )
     return ""
 
@@ -364,8 +411,19 @@ _SHIP_GOOD = """
 """
 
 _TODO_GOOD = """
-    if (orderService.needsWork(order) && orderService.isProcessingReadyForShip(order)) { }
-    if (!orderService.needsWork(order)) { continue; }
+    for (Order order : shipCandidates) {
+        if (orderService.needsWork(order) && orderService.isProcessingReadyForShip(order)) {
+            todos.add(toShipTodo(order));
+        }
+    }
+    for (Order order : scheduleCandidates) {
+        if (instanceCountByOrder.getOrDefault(order.getId(), 0) > 0) { continue; }
+        if (!orderService.needsWork(order)) { continue; }
+        todos.add(toScheduleTodo(order));
+    }
+    private Map<String, Object> toShipTodo(Order order) {
+        evidence.put("has_processing_items", orderService.hasProcessingItems(order));
+    }
 """
 
 
@@ -410,8 +468,16 @@ def test_discriminating_power_bad_forms_are_named():
         )
         != ""
     )
-    # ⑦ 待办里残留第二份判据
-    assert judge_todo_service("if (orderService.needsWork(o)) {} if (orderService.hasProcessingItems(o)) {}") != ""
+    # ⑦ 待办里残留第二份**过滤**判据（射程 = for 循环里的 if 条件）
+    assert (
+        judge_todo_service(
+            "for (Order o : xs) { if (orderService.needsWork(o)) { todos.add(a); } }"
+            "for (Order o : ys) { if (orderService.hasProcessingItems(o)) { todos.add(b); } }"
+        )
+        != ""
+    )
+    # ⑦b 反空跑：一个 for 循环都没有 ⇒ 判据失去对象（不许静默通过）
+    assert judge_todo_service("public class X { }") != ""
 
 
 def test_readers_fail_closed_on_missing_objects():
