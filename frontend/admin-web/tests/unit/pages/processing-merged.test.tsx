@@ -176,10 +176,12 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // 🔴 #6580：菜单项「加工项管理」**已移除** ⇒ 组内命中数 1 → **0**（反向断言，强度不降：
     // 从「恰好有一条」变成「一条都没有」；旧路径不 404 由下面的重定向用例承担）。
     expect(allNames.filter((n) => n === '加工项管理')).toHaveLength(0)
-    // 一项不少不减：组内项 21 → **18** 项（#6580 移除生产管理组的两个菜单项；
-    // #5778/#5939「+发货单」/#6404「+库存明细」的历次增减见 menu-nav.test.ts）
-    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(18)
-    expect(allNames).toHaveLength(18)
+    // 一项不少不减：组内项 18 → **16** 项（#6580 移除生产管理组的两个菜单项；
+    // #5778/#5939「+发货单」/#6404「+库存明细」的历次增减见 menu-nav.test.ts；
+    // 🔴 2026-10-17（issue #7087）：本判据**不受影响** —— 撤销的「工作台」组两项里，
+    // 「经营看板」升为**最前席位一级项**（不入任何组）、「每日简报」菜单项删除 ⇒ 组内项 18 → 16）
+    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(16)
+    expect(allNames).toHaveLength(16)
   })
 })
 
@@ -319,14 +321,15 @@ describe('合并页 /production/processing（两个 tab，不平铺）', () => {
 // ────────────────────────── 顶层分组顺序（issue #4510） ──────────────────────────
 
 describe('顶层分组顺序（issue #4510 立判据；issue #5271 按业务动线重排）', () => {
-  it('完整序列 = 工作台 → 客户服务 → 交易管理 → 生产管理 → 仓储与物料 → 组织管理（#5778：6 组）', () => {
+  it('完整序列 = 客户服务 → 交易管理 → 生产管理 → 仓储与物料 → 组织管理（issue #7087：**5 组**，「工作台」组整组撤销）', () => {
     // ⚠️ 断言**完整序列**，不是只断言相邻两项 —— 否则「把生产管理挪到别处」这类改动会漏网。
     // （实测：本单只做重排时，全量 157 文件 2092 条**一条都没红** ⇒ 顺序此前**无人守**，
     //   这条判据是本单新加的承重面。）
     // issue #5271 变化：组 key `production` → `production-center`；「商品管理」→「商品与加工项」；
     // 「订单管理」+「客户管理」→「交易管理」（`customer-center` 组消失）；**新建** `inventory-center`。
+    // 🔴 2026-10-17（issue #7087，用户逐字「经营看板直接作为一级菜单，移除工作台」）：首组
+    // `workspace`**整组撤销** ⇒ 序列从它开始少一组（它的两项：经营看板 → 最前席位一级项、每日简报 → 删除）。
     expect(menuGroups.map((g) => g.key)).toEqual([
-      'workspace',
       'customer-service',
       'trade-center',
       'production-center',
@@ -334,7 +337,6 @@ describe('顶层分组顺序（issue #4510 立判据；issue #5271 按业务动�
       'org-center',
     ])
     expect(menuGroups.map((g) => g.name)).toEqual([
-      '工作台',
       '客户服务',
       '交易管理',
       '生产管理',
@@ -347,6 +349,9 @@ describe('顶层分组顺序（issue #4510 立判据；issue #5271 按业务动�
     // 🔴 #5778：`product-center` / `smart-customer-service` 两组已撤销/改判 —— 不得长回来
     expect(menuGroups.map((g) => g.key)).not.toContain('product-center')
     expect(menuGroups.map((g) => g.key)).not.toContain('smart-customer-service')
+    // 🔴 #7087：`workspace` 组**不得长回来**（用户明确要求「移除工作台」）
+    expect(menuGroups.map((g) => g.key)).not.toContain('workspace')
+    expect(menuGroups.map((g) => g.name)).not.toContain('工作台')
     expect(menuGroups.map((g) => g.name)).not.toContain('商品与加工项')
     expect(menuGroups.map((g) => g.name)).not.toContain('智能客服')
     expect(menuGroups.map((g) => g.name)).not.toContain('订单管理')
@@ -363,8 +368,8 @@ describe('顶层分组顺序（issue #4510 立判据；issue #5271 按业务动�
     expect(menuGroups[menuGroups.length - 1].key).toBe('org-center')
     // #5778：客户服务在交易管理**之上**（先服务客户 → 再谈交易）
     expect(keys.indexOf('customer-service')).toBeLessThan(keys.indexOf('trade-center'))
-    // 面非空自检：6 组（不是解析失灵造成的空序列）
-    expect(menuGroups).toHaveLength(6)
+    // 面非空自检：5 组（不是解析失灵造成的空序列）—— issue #7087 撤销「工作台」组后由 6 → 5
+    expect(menuGroups).toHaveLength(5)
   })
 
   it('通知中心仍是 `standaloneItems`（渲染在分组之后）—— 「最下面」= 最后一个**分组**', () => {

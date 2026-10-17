@@ -22,9 +22,12 @@
  * 🔴 为什么 ① 从 `>= 2` 改成 `>= 1`（#5877，2026-10-01）：一级项「商品管理」与尾部独立项
  * 「通知中心」**本来就没有父组** ⇒ 面包屑就是**单级**（`Header.tsx` 给「通知中心」的一直是单级）。
  * 原口径 `>= 2` 与它自相矛盾 —— 只因两者**没进检出面**（本文件旧实现只从 `menuGroups` 展开）才没红。
- * ⚠️ 改成 `>= 1` **不是放水**：**「落兜底分支」的判别力由 ② 承担** —— 兜底分支返回的是
- * `[{ label: '工作台', href: '/dashboard' }]`，其末项是「工作台」，**永远不等于**菜单名
- * （没有哪个菜单项叫「工作台」）⇒ 漏改照样红。
+ * ⚠️ 改成 `>= 1` **不是放水**：**「落兜底分支」的判别力由 ② 承担** —— 兜底分支返回的是真实入口
+ * （#7087 起 = `[{ label: '经营看板', href: '/dashboard' }]`），其末项对**除「经营看板」自己以外**的
+ * 每个菜单项都 ≠ 该菜单名 ⇒ 漏改照样红。
+ * ⚠️ 「经营看板」(`/dashboard`) 是唯一一个「兜底结果与正确结果同形」的页面 ⇒ 它由下方
+ * **静态**判据 `uncoveredPages` 承担（匹配表里那条 `p === '/dashboard'` 被摘掉 ⇒ 当场红），
+ * 不靠渲染面这两条 —— 这一处边界如实登记，不假装渲染判据覆盖了它。
  *
  * ## 红证（实测，非推理）
  *
@@ -59,7 +62,7 @@ vi.mock('next/navigation', () => ({
 }))
 
 import Header from '@/components/layout/Header'
-import { menuGroups, standaloneTopItems, standaloneItems } from '@/config/menu'
+import { menuGroups, standaloneHeadItems, standaloneTopItems, standaloneItems } from '@/config/menu'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -70,38 +73,45 @@ const withPath = (items: any[]): Page[] =>
 /**
  * 侧边栏里**每一个带 `path` 的菜单项**（= 用户点得到的页面）。
  *
- * 🔴 #5877：检出面必须覆盖**全部三处菜单数组** —— `menuGroups`（组内项）**+**
- * `standaloneTopItems`（一级项，如商品管理）**+** `standaloneItems`（尾部独立项，如通知中心）。
- * 只从 `menuGroups` 展开时，两个 standalone 数组里的项**根本不在检出面里**
+ * 🔴 #5877：检出面必须覆盖**全部菜单数组** —— `menuGroups`（组内项）**+**
+ * `standaloneHeadItems`（最前席位，如经营看板；2026-10-17 issue #7087 新增）**+**
+ * `standaloneTopItems`（尾席位一级项，如商品管理）**+** `standaloneItems`（尾部独立项，如通知中心）。
+ * 只从 `menuGroups` 展开时，三个 standalone 数组里的项**根本不在检出面里**
  * （= 它们的面包屑怎么错都不会红，实测正是「/products 单级」这条一直没人发现的原因）。
  */
 const PAGES: Page[] = [
   ...(menuGroups as any[]).flatMap((g) => withPath(g.children)),
+  ...withPath(standaloneHeadItems),
   ...withPath(standaloneTopItems),
   ...withPath(standaloneItems),
 ]
 
 describe('侧边栏菜单 ↔ 面包屑覆盖（issue #5071 / §15.2）', () => {
   it('检出面非空 —— 否则下面每条都在空集上恒真（判据退化）', () => {
-    // 实测 21 条（2026-09-21 是 17 条：当时只从 menuGroups 展开，两个 standalone 数组漏在外面；
-    // #5877 补齐后 = 19 组内项 + 1 一级项 + 1 尾部独立项）。写 15 是留增删余量，
+    // 实测 20 条（2026-09-21 是 17 条：当时只从 menuGroups 展开，standalone 数组漏在外面；
+    // #5877 补齐后 = 18 组内项 + 1 一级项 + 1 尾部独立项；2026-10-17 #7087 后
+    // = 16 组内项 + 1 最前席位 + 2 尾席位 + 1 尾部独立项）。写 15 是留增删余量，
     // 但**不允许解析失灵 ⇒ 0 条**。
     expect(PAGES.length).toBeGreaterThanOrEqual(15)
   })
 
-  it('🔴 检出面覆盖三处数组的**并集**（menu.ts 里任何带 path 的菜单项都不得漏）', () => {
+  it('🔴 检出面覆盖全部菜单数组的**并集**（menu.ts 里任何带 path 的菜单项都不得漏）', () => {
     const inGroups = (menuGroups as any[]).flatMap((g) => withPath(g.children))
     const expected = new Set([
       ...inGroups.map((p) => p.path),
+      ...withPath(standaloneHeadItems).map((p) => p.path),
       ...withPath(standaloneTopItems).map((p) => p.path),
       ...withPath(standaloneItems).map((p) => p.path),
     ])
     expect(new Set(PAGES.map((p) => p.path))).toEqual(expected)
-    // 两个 standalone 数组**确实**在检出面里（各自点名一项，防止将来又被漏掉）
-    expect(PAGES.map((p) => p.path)).toContain('/products')       // 一级项
+    // 三个 standalone 数组**确实**在检出面里（各自点名一项，防止将来又被漏掉）
+    expect(PAGES.map((p) => p.path)).toContain('/dashboard')      // 最前席位（#7087 新增）
+    expect(PAGES.map((p) => p.path)).toContain('/products')       // 尾席位一级项
     expect(PAGES.map((p) => p.path)).toContain('/notifications')  // 尾部独立项
     // 反恒真：并集本身不是空的、也不等于「只有组内项」
     expect(expected.size).toBeGreaterThan(inGroups.length)
+    // 🔴 已删除的菜单项不得再进检出面（「每日简报」：issue #7087 撤掉菜单入口）
+    expect(PAGES.map((p) => p.path)).not.toContain('/briefing')
   })
 
   it.each(PAGES)('$path ⇒ 面包屑末项 == 侧边栏菜单名「$name」', ({ path, name }) => {
@@ -116,7 +126,7 @@ describe('侧边栏菜单 ↔ 面包屑覆盖（issue #5071 / §15.2）', () => 
       .filter(Boolean)
 
     // #5877：**至少一项**（一级项 / 尾部独立项就是单级面包屑）——「落兜底分支」由下一条末项断言拦
-    //（兜底 = `[{ label: '工作台' }]`，末项「工作台」≠ 任何菜单名）。
+    //（兜底 = `[{ label: '经营看板', href: '/dashboard' }]`，其末项对**除「经营看板」外**的菜单名都不等）。
     expect(
       crumbs.length,
       `${path} 的面包屑一项都没有（${JSON.stringify(crumbs)}）`,

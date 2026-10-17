@@ -71,4 +71,7 @@
 {"id":"1792119819.12428.18688","ts":"2026-10-16T03:03:40Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7007-ui-shared-primitives","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1792195899.63420.11089","ts":"2026-10-17T00:11:40Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7086-typewriter-live-reveal","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1792195448.59463.7355","ts":"2026-10-17T00:04:09Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7078-order-detail-paid-at","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1792196897.77034.30277","ts":"2026-10-17T00:28:17Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/20261017-dashboard-top-menu","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1792197227.91349.15306","ts":"2026-10-17T00:33:47Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/20261017-dashboard-top-menu","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1792197244.92973.23543","ts":"2026-10-17T00:34:04Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/20261017-dashboard-top-menu","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1792205390.76170.6389","ts":"2026-10-17T02:49:50Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/20261017-page-ctx-envelope-leak","why":"子包 worktree 直跑全量（无批次标记）"}
