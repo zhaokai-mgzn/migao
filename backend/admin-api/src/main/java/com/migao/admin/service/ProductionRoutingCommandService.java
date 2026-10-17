@@ -1,7 +1,6 @@
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.ProcessingItem;
 import com.migao.admin.entity.ProductionOperation;
@@ -281,15 +280,18 @@ public class ProductionRoutingCommandService {
             throw BusinessException.validationError("删除工艺路线未通过校验（" + details.size() + " 条问题）",
                     details, "先把另一条路线设为默认（PUT is_default=true），或先新建一条路线");
         }
-        // ⚠️ 必须**显式写列**（issue #4608），不得写成 `setDeleted(1); updateById(template);`：
+        // 🔴 条件更新（issue #6962 P5-③）：谓词 = id + tenant_id + deleted = 0，按**影响行数**判是否真删到。
+        // 修前这里只有 `.eq(id)`：① 缺 tenant 限定 ⇒ 跨租户误删（拿到别人的 id 就删别人的路线）；
+        // ② 无 deleted=0、不判行数 ⇒ 重复删照样回「成功」（0 行当成功）。
+        // ⚠️ 仍必须**显式写列**（issue #4608），不得写成 `setDeleted(1); updateById(template);`：
         // MP 全局逻辑删除（application.yml 的 mybatis-plus.global-config.db-config.logic-delete-field=deleted）
         // 会把逻辑删除字段从 updateById 的 SET 子句里**剔除** ⇒ deleted 永不落库，而调用仍返回成功
-        // = 删除静默 no-op（用户实测「提示成功但数据还在」）。显式 .set(...) 绕过字段剔除，
-        // 同时保住审计字段 updated_at（「谁在什么时候删的」是排查工序错配的唯一证据）。
-        productionRouteTemplateMapper.update(null, new LambdaUpdateWrapper<ProductionRouteTemplate>()
-                .eq(ProductionRouteTemplate::getId, id)
-                .set(ProductionRouteTemplate::getDeleted, 1)
-                .set(ProductionRouteTemplate::getUpdatedAt, OffsetDateTime.now()));
+        // = 删除静默 no-op（用户实测「提示成功但数据还在」）。
+        if (productionRouteTemplateMapper.markDeletedByIdAndTenant(id, tenantId) == 0) {
+            ProductionRouteTemplate fresh = productionRouteTemplateMapper.selectById(id);
+            throw BusinessException.conflict(deleteRoutingConflictMessage(fresh, tenantId),
+                    "请刷新工艺路线列表后重试");
+        }
         log.info("删除工艺路线: tenantId={}, routingId={}, name={}", tenantId, template.getId(), template.getName());
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", template.getId());
@@ -315,17 +317,41 @@ public class ProductionRoutingCommandService {
                 || !Integer.valueOf(0).equals(rule.getDeleted())) {
             throw BusinessException.notFound("条件工序规则");
         }
-        // 同 deleteRouting：显式写列（issue #4608）—— updateById 会把 deleted 从 SET 里剔除 ⇒ 静默 no-op。
-        productionRouteRuleMapper.update(null, new LambdaUpdateWrapper<ProductionRouteRule>()
-                .eq(ProductionRouteRule::getId, id)
-                .set(ProductionRouteRule::getDeleted, 1)
-                .set(ProductionRouteRule::getUpdatedAt, OffsetDateTime.now()));
+        // 同 deleteRouting：条件更新（issue #6962 P5-③，谓词 id + tenant_id + deleted = 0）+ 影响行数判定；
+        // 并且显式写列（issue #4608）—— updateById 会把 deleted 从 SET 里剔除 ⇒ 静默 no-op。
+        if (productionRouteRuleMapper.markDeletedByIdAndTenant(id, tenantId) == 0) {
+            ProductionRouteRule fresh = productionRouteRuleMapper.selectById(id);
+            throw BusinessException.conflict(deleteRouteRuleConflictMessage(fresh, tenantId),
+                    "请刷新条件工序规则列表后重试");
+        }
         log.info("软删条件工序规则: tenantId={}, ruleId={}, trigger={}",
                 tenantId, rule.getId(), rule.getTriggerValue());
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", rule.getId());
         result.put("deleted", true);
         return result;
+    }
+
+    /**
+     * 删路线抢不到（影响行数 0）⇒ 409 文案，带**实际当前态**。
+     *
+     * <p>三种可能分开说（修前一律回「成功」）：① 已被别人删过（{@code deleted=1}）；
+     * ② 非本租户（不泄漏别的租户的存在性 —— 与 {@code findRouting} 的 404 同口径，但读判之后
+     * 被改过 ⇒ 这里按「不可见」措辞，不确认对方存在）；③ 行已不存在。文案<b>不指内部端点</b>。</p>
+     */
+    private static String deleteRoutingConflictMessage(ProductionRouteTemplate fresh, Long tenantId) {
+        if (fresh == null || !tenantId.equals(fresh.getTenantId())) {
+            return "该工艺路线不存在或不属于当前租户，未执行删除";
+        }
+        return "该工艺路线已被删除（当前为已删除状态），未重复删除";
+    }
+
+    /** 删条件工序规则抢不到（影响行数 0）⇒ 409 文案，同 {@link #deleteRoutingConflictMessage}。 */
+    private static String deleteRouteRuleConflictMessage(ProductionRouteRule fresh, Long tenantId) {
+        if (fresh == null || !tenantId.equals(fresh.getTenantId())) {
+            return "该条件工序规则不存在或不属于当前租户，未执行删除";
+        }
+        return "该条件工序规则已被删除（当前为已删除状态），未重复删除";
     }
 
     // ══════════════════ 特殊选项对客单价（元/套，issue #4567）══════════════════

@@ -537,6 +537,25 @@ _CASE_AG_012 = EvalCase(
     precondition='前置 = 双 Agent 声明模块与 skill 注册表可导入（`app.agents.agent_config` / `app.graph.skills.skill_registry`）；前置由测试自身的 autouse fixture（重置全局实例与注册表）持有 —— 导入失败即直接红，不表现成「agent 不干活」',
 )
 
+# ── AG-013 [EDGE] 客服会话并发分配「读计数 × 再写」无互斥 ⇒ max_concurrent_sessions 被突破；改写为条件更新后并发数不超过上限（issue #6962）（源: cases/agents.yml）──
+_CASE_AG_013 = EvalCase(
+    id='AG-013',
+    legacy_id='',
+    title='客服会话并发分配「读计数 × 再写」无互斥 ⇒ max_concurrent_sessions 被突破；改写为条件更新后并发数不超过上限（issue #6962）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['同一名客服（上限 3）上，6 个等待中的会话被严格同时分配（并发 assignSession）', '串行正对照：额度未满时逐条分配必须照旧成功（谓词不得误杀正常请求）'],
+    expectations=[],
+    data_checks=["**病（真实缺陷形态）**：修前 `AgentSessionService#assignSession` 先 `selectCount(status='active')` 读出计数、在应用层判 `activeCount >= maxConcurrent`，再 `agentSessionMapper.updateById(session)`（WHERE 仅主键 ⇒ **无谓词**）⇒ 读判与写之间没有任何互斥。① 同一个 `sessionId` 并发分配 ⇒ 两个请求都过读判、都成功（后写者覆盖 `employee_id`）；② 同一个员工的 N 个**不同**会话并发分配 ⇒ N 个请求各自读到的 `activeCount` 都是分配前的值、各自都判「未超额」⇒ `max_concurrent_sessions` 被**突破**（上限 3 时 6 个并发全落 `active`）。", "**判据 1（并发数不超过上限）**：真库并发判据 = backend/admin-api/src/test/java/com/migao/admin/service/ConcurrentQuotaAdoptDeleteCas6962RealDbTest.java：6 个并发 `assignSession`（上限 3，探针开）后，落库读数 `SELECT COUNT(*) FROM agent_sessions WHERE employee_id=? AND status='active' AND deleted=0` 必须 **≤ 3**（修前为 6 ⇒ 判红）；成功数必须与落库计数一致（不许「回了 200 但没落库」或反之）。", '**判据 2（落败方是显式 409）**：抢不到分配权 / 抢不到额度的请求必须回 **409 CONFLICT**（不是 500、不是静默成功），且 409 文案带**实际当前态**（会话态的中文标签 / 额度当前值）。', '**正对照（护栏不误杀）**：串行分配前 `max` 条必须成功、第 `max + 1` 条必须被拒 —— 谓词写错（写成常量 / 写错前驱）会让这条先红。', '**窗口注入（判据确定性的来源）**：`AgentSessionService#setAssignProbePauseMillisForTest`（**生产恒 0**，与 `InboundOrderService` 的 `CANCEL_PROBE_PAUSE_MILLIS` 同款）在「读会话/员工」之后、判额度之前留一条窄缝 ⇒ 探针开 = 修前形态必红 / 修后绿；探针关 = 修后仍绿（无假红）。', "**修法（照抄本仓范式）**：① 抢分配权 = `AgentSessionMapper#markAssignedIfWaiting`（谓词 `id + tenant_id + status='waiting' + deleted=0`，按**影响行数**判归属，0 行 ⇒ 409）；② 抢额度 = `AgentSessionMapper#lockEmployeeForQuota`（`SELECT … FOR UPDATE` 锁住员工行）+ `#countActiveSessions`（锁内现取计数）—— 判额度与占额度在同一持锁临界区，后到者阻塞到前者提交后再求值。**为什么不是 `UPDATE … WHERE current < max`**：超额时谓词不成立 ⇒ 不取锁 ⇒ 计数照旧读到旧值 ⇒ 上限照样破（实测订正，写在 mapper javadoc 里）。", '**边界（照实登记）**：① 判据跑的是**服务层真库并发**而非 HTTP 栈；② 探针对象全部自建（tenant / id 前缀 `6962`），随一次性临时集群销毁、不碰存量数据；③ 计数的真值源 = 会话表本身（`agent_employees` **没有** `current_sessions` 列，`db/init/schema.sql` 自证）⇒ 不引入第二份会漂移的账。'],
+    skip_reason='[backend-contract] 纯后端真库并发判据（真 PG 一次性集群，走 `PgCluster.startOrAbort()` 收口）+ 类级元守卫：admin-api 单测面，不进 agent-eval 冒烟',
+    tags=['concurrency', 'cas', 'quota', 'backend-contract', 'realdb'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition="前置 = ① 一名 `status != offline`、`max_concurrent_sessions = 3` 的客服员工；② 同租户下 N=6 个 `status='waiting'` 的人工会话。前置由判据自建（一次性真 PG 集群 `PgCluster.startOrAbort()` + 自建 tenant 与行），**不成立时 fail-closed 硬失败**（探针在 10000ms 内等不到即抛 `IllegalStateException`；夹具缺失在建夹具那一步红）。本用例不是 LLM 多轮对话，无 agent 期望 ⇒ 红了只有一个读法：判据或装置坏了。",
+)
+
 # ── API-001 [NORMAL] chat 会话生命周期 - 租户隔离 + 用户所有权 + 幂等/重开（源: cases/api.yml）──
 _CASE_API_001 = EvalCase(
     id='API-001',
@@ -4648,6 +4667,25 @@ _CASE_KN_009 = EvalCase(
     precondition='前置 = 目标环境可达（`tests/smoke/config.py` 的 base url + 租户凭据）且该环境 C 端渠道可用；不可达时 pytest fixture 直接报错（不会伪装成「知识问答不会答」）',
 )
 
+# ── KN-010 [EDGE] 知识候选并发双采纳各自插卡 ⇒ 产出两张卡；改写为「先抢发布权（CAS）再插卡」后恰一次成功、恰一张卡（issue #6962）（源: cases/knowledge.yml）──
+_CASE_KN_010 = EvalCase(
+    id='KN-010',
+    legacy_id='',
+    title='知识候选并发双采纳各自插卡 ⇒ 产出两张卡；改写为「先抢发布权（CAS）再插卡」后恰一次成功、恰一张卡（issue #6962）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['同一条待确认候选被严格同时采纳两次（并发 adopt）', '同一条待确认候选被并发「采纳 × 拒绝」各一次'],
+    expectations=[],
+    data_checks=["**病（真实缺陷形态）**：修前 `KnowledgeCandidateService#adoptInternal` / `#reject` 都是「`getOwned` 读出 `status='pending'` → 应用层判 → 整实体 `knowledgeCandidateMapper.updateById(candidate)`（WHERE 仅主键 ⇒ **无谓词**）」，且采纳路径是**先 `knowledgeCardMapper.insert(card)` 再置态** ⇒ 并发双采纳**各插一张卡**（实测 2 张）；「采纳 × 拒绝」并发则两个都过读判、都成功，终态由后写者决定。", '**判据 1（恰一次成功、恰一张卡）**：backend/admin-api/src/test/java/com/migao/admin/service/ConcurrentQuotaAdoptDeleteCas6962RealDbTest.java：并发双 `adopt` ⇒ 成功数 **恰 == 1**、落败方 **409**，且 `SELECT COUNT(*) FROM knowledge_cards WHERE tenant_id=? AND source_ref=<候选 id>` **恰 == 1**（修前为 2 ⇒ 判红）；候选终态 = `adopted`。', "**判据 2（同族 `reject` 同口径）**：`reject` 与 `adopt` 走**同一条**条件更新 `KnowledgeCandidateMapper#markReviewedIfPending`（谓词 `id + tenant_id + status='pending'`）⇒ 并发「采纳 × 拒绝」只有一方赢；`status_note` 只在 `note != null` 时写（采纳路径不动拒绝原因）。", '**判据 3（写序不可反转）**：类级元守卫 backend/admin-api/src/test/java/com/migao/admin/service/ConcurrencyCasBatch6962MetaGuardTest.java 断言 `adoptInternal` 里 `knowledgeCardMapper.insert(` **出现在** `markReviewedIfPending(` 及其 `== 0` 冲突检查**之后** —— 把插卡挪回 CAS 之前 ⇒ 判红（那正是「两张卡」的成因）。', '**列存在性自证（本批两例踩坑的正面登记）**：谓词里的列**逐个对 `db/init/schema.sql` 现取核对** —— `knowledge_candidates` **没有** `deleted` 列（本表谓词**不得**写 `deleted = 0`，写了就是列不存在 ⇒ SQL 报错）；而 `agent_sessions` / `agent_employees` / `production_route_templates` / `production_route_rules` **有** `deleted` 列。', '**边界（照实登记）**：判据跑服务层真库并发而非 HTTP 栈；候选与卡片的归属键用 `source_ref`（采纳时逐字继承候选的 `source_ref`），不新增审计列。'],
+    skip_reason='[backend-contract] 纯后端真库并发判据（真 PG 一次性集群，走 `PgCluster.startOrAbort()` 收口）+ 类级元守卫：admin-api 单测面，不进 agent-eval 冒烟',
+    tags=['concurrency', 'cas', 'idempotency', 'backend-contract', 'realdb'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition="前置 = 一条 `status='pending'` 的知识提炼候选（`knowledge_candidates` 无 `deleted` 列，软删语义由 `status` 承担）。前置由判据自建（一次性真 PG 集群 + 自建 tenant / 候选行），**不成立时 fail-closed 硬失败**，不会伪装成「agent 不干活」。",
+)
+
 # ── MC-001 [NORMAL] 记忆提取解析 - 纯 JSON/内嵌数组/非法输入（源: cases/misc.yml）──
 _CASE_MC_001 = EvalCase(
     id='MC-001',
@@ -6734,6 +6772,25 @@ _CASE_MC_114 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     precondition='本用例是 [backend-contract] 纯静态元守卫用例：前置 = ① backend/admin-api/src/main/java/com/migao/admin/service/ProcessingItemSeedService.java（Java 种子目录）与同目录 OnboardingInitialData.java 在场；② backend/admin-api/src/main/resources/db/init/schema.sql（基线目录）与 db/migration/**（撤出 / 改名迁移）在场；③ tests/unit_ci_workflows/_migration_renames.py 与 test_processing_catalog_seed.py（既有解析器）可导入。前置由判据自身持有：文件缺失 / 目录解析出 0 条 / 撤出项集合为空 ⇒ 判据当场 fail-closed 判红（不会表现成「agent 不干活」）；agent-eval 栈不跑它',
+)
+
+# ── MC-116 [EDGE] 类级元守卫（#6962）：会话分配 / 候选处置 / 路线删除三类写面必须落到带谓词的条件更新（未登记即红 + 豁免只许缩短）（源: cases/misc.yml）──
+_CASE_MC_116 = EvalCase(
+    id='MC-116',
+    legacy_id='',
+    title='类级元守卫（#6962）：会话分配 / 候选处置 / 路线删除三类写面必须落到带谓词的条件更新（未登记即红 + 豁免只许缩短）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['（非对话用例）对 admin-api 源码文本做词法扫描 + 台账现取 + 合成语料判别力自证'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·扫描器非空跑自证**：现取的三类写面必须含核心对象（`AgentSessionMapper#markAssignedIfWaiting` / `#lockEmployeeForQuota`、`KnowledgeCandidateMapper#markReviewedIfPending`、两条 `markDeletedByIdAndTenant`，以及 `AgentSessionService#assignSession` / `KnowledgeCandidateService#adoptInternal` / `#reject` / `ProductionRoutingCommandService#deleteRouting` / `#deleteRouteRule`）—— **返回空集 = 判据失明，不是通过**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ConcurrencyCasBatch6962MetaGuardTest.java', '🔴 **判据 2·谓词完整性**：凡在这些 mapper 里手写 `@Update` 并写受守状态列的 SQL，必须带 tenant 谓词 + 该表应有的状态谓词；`production_route_templates` / `production_route_rules` / `agent_sessions` 另需 `deleted = 0`。⚠️ **`knowledge_candidates` 没有 `deleted` 列**（对 backend/admin-api/src/main/resources/db/init/schema.sql 现取核对）⇒ 该表**不得**要求 `deleted = 0`；本批两例「模板写了 `deleted=0` 但该表没有该列」的坑在此作为正面登记。', '🔴 **判据 3·无谓词写即红（判据本体）**：受守方法体内**不得**出现受守 mapper 的 `updateById(` —— 状态迁移 / 软删必须走条件更新。**实证过的隐蔽形态**：锚串留着而真正落库换成 `updateById` ⇒ 仍判红并具名。', '🔴 **判据 4·插卡写序**：`KnowledgeCandidateService#adoptInternal` 里 `knowledgeCardMapper.insert(` 必须在 `markReviewedIfPending(` 及其 `== 0` 冲突检查**之后**（文本序判定）—— 挪回 CAS 之前 ⇒ 判红（「两张卡」的成因）。', '🔴 **判据 5·未登记即红 + 台账不许给不存在的对象盖章**：受守写路径必须逐条登记（concurrency-cas-batch-6962-ledger.json 的 `service_write_paths`），登记的 `call_anchor` 必须逐字出现在该方法体里；每条 `evidence` = `<仓库相对全路径>::<可检索文本>`，左侧文件存在、右侧逐字出现（摘掉 CAS 调用 / 方法改名 ⇒ 红）。', '🔴 **判据 6·豁免只许缩短 + 台账不许空转**：`unverified` 必须是冻结基线 `unverified_baseline` 的**子集**（新增豁免 ⇒ 红）；条数**现取**打印在断言消息上；`entries` / `service_write_paths` 为空 ⇒ 红。', '🔴 **判据 7·判别力自证（合成语料）**：无谓词写 / 缺 tenant 谓词 / 缺状态谓词 / 路由表缺 `deleted=0` / 未登记写路径 / 锚留而落库无谓词 / 台账未兑现 各判红，合规语料判绿，**只加注释不红**（对照读数）。', '**边界（照实登记）**：① 形态判据读源码文本（不做 AST）⇒ 换措辞可绕过，真实防线是实例判据 backend/admin-api/src/test/java/com/migao/admin/service/ConcurrentQuotaAdoptDeleteCas6962RealDbTest.java；② 射程只到上列六条文件 + 一张台账；③ 判不了「拿 `updateById` 改非受守列」；④ 本守卫**不跑**被它引用的真库判据；⑤ 不改任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟',
+    tags=['meta-guard', 'concurrency', 'cas', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = ① 被守的六条文件（`AgentSessionMapper` / `AgentSessionService` / `KnowledgeCandidateMapper` / `KnowledgeCandidateService` / `ProductionRouteTemplateMapper` + `ProductionRouteRuleMapper` / `ProductionRoutingCommandService`）与台账 backend/admin-api/src/test/resources/concurrency-cas-batch-6962-ledger.json 均可读；② 台账 `entries` / `service_write_paths` 非空。两者不成立 ⇒ 判据**直接红**（不是跳过）—— 「空」不等于「全部合规」。',
 )
 
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
@@ -9612,6 +9669,25 @@ _CASE_PG_083 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     precondition='前置 = 一张活跃加工单 + 其路由里确有「外帘发货 / 发货」或「质检」工序（`V54__seed_production_operations.sql` 的 op-v54-27 / op-v54-26）；无对应工序的单代入本判据 ⇒ 行为必须零变化（不生成、不猜测）。',
+)
+
+# ── PG-085 [EDGE] 删路线 / 删条件工序规则只 `.eq(id)` ⇒ 跨租户误删 + 0 行当成功；改写为 tenant 限定 + deleted=0 + 影响行数判定后恰一次成功（issue #6962）（源: cases/processing-order.yml）──
+_CASE_PG_085 = EvalCase(
+    id='PG-085',
+    legacy_id='',
+    title='删路线 / 删条件工序规则只 `.eq(id)` ⇒ 跨租户误删 + 0 行当成功；改写为 tenant 限定 + deleted=0 + 影响行数判定后恰一次成功（issue #6962）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['同一条非默认路线被严格同时删两次（并发 deleteRouting）', '用**另一个租户**的路线 id / 规则 id 调删除（跨租户）'],
+    expectations=[],
+    data_checks=['**病（真实缺陷形态）**：修前 `ProductionRoutingCommandService#deleteRouting` / `#deleteRouteRule` 的落库语句只有 `.eq(id)`（`productionRouteTemplateMapper.update(null, wrapper)` / `productionRouteRuleMapper.update(...)`）⇒ ① **缺 tenant 限定**：租户隔离只靠更早一次读判的 `tenantId.equals(...)`，读判与写之间无互斥 ⇒ 跨租户误删；② **无 `deleted = 0`、不判影响行数** ⇒ 重复删同一 id 照样回「成功」（0 行当成功 = 调用方报 200 而这次没删到任何东西）。', '**判据 1（恰一次成功）**：backend/admin-api/src/test/java/com/migao/admin/service/ConcurrentQuotaAdoptDeleteCas6962RealDbTest.java：并发双 `deleteRouting(id, tenantId)` ⇒ 成功数 **恰 == 1**、另一方 **409**（修前两个都成功 ⇒ 判红），落库 `deleted = 1`；`deleteRouteRule` 同款各一条。', '**判据 2（跨租户必被拒）**：`deleteRouting(idOfTenantB, TENANT_A)` 必须**不删** B 的行（400/404/409 任一显式拒绝），且 B 的行**仍是 `deleted = 0`**；`deleteRouteRule` 同款。修前该调用会把 B 的行删掉（缺 tenant 谓词）⇒ 判红。', '**正对照**：非默认、非最后一条的路线串行删除一次必须成功（`deleted` 落 1），谓词写错（如漏 `deleted = 0` 时对已软删行再删）不得误杀正常删除。', '**修法（照抄本仓范式）**：两条 mapper 各加 `default int markDeletedByIdAndTenant(String id, Long tenantId)` —— `LambdaUpdateWrapper` 谓词 = `id + tenant_id + deleted = 0`，`SET deleted = 1, updated_at = now`，返回影响行数；服务层 `== 0 ⇒ BusinessException.conflict`（409），文案带**实际当前态**且**不指内部端点**。仍走 `update(null, wrapper)` 而**不是** `updateById`（MP 全局逻辑删除会把 `deleted` 从 `updateById` 的 SET 子句里剔除 ⇒ 静默 no-op，issue #4608 的实测形态）。', '**边界（照实登记）**：① 判据跑服务层真库并发而非 HTTP 栈；② 既有护栏（删默认 ⇒ 422 / 删最后一条 ⇒ 422）与「删除是软删、删后不再参与选路」的口径**一字未改**；③ 本守卫不改任何门禁的通过条件、不新增豁免。'],
+    skip_reason='[backend-contract] 纯后端真库并发判据（真 PG 一次性集群，走 `PgCluster.startOrAbort()` 收口）+ 类级元守卫：admin-api 单测面，不进 agent-eval 冒烟',
+    tags=['concurrency', 'cas', 'tenant-isolation', 'soft-delete', 'backend-contract', 'realdb'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = ① 某租户下有**两条非默认**工艺路线（`deleteRouting` 的既有护栏：删默认 ⇒ 422、删最后一条 ⇒ 422，故夹具必须留一条）；② 该租户下至少一条活跃条件工序规则；③ 另一个租户下各有一条同名对象（跨租户拒绝的对照面）。前置由判据自建（一次性真 PG 集群 + 自建 tenant / 行），**不成立时 fail-closed 硬失败**。',
 )
 
 # ── PP-002 [NORMAL] 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query）（源: cases/processing.yml）──
@@ -15032,6 +15108,7 @@ ALL_CASES = (
     _CASE_AG_010,
     _CASE_AG_011,
     _CASE_AG_012,
+    _CASE_AG_013,
     _CASE_API_001,
     _CASE_API_002,
     _CASE_API_003,
@@ -15251,6 +15328,7 @@ ALL_CASES = (
     _CASE_KN_004,
     _CASE_KN_008,
     _CASE_KN_009,
+    _CASE_KN_010,
     _CASE_MC_001,
     _CASE_MC_002,
     _CASE_MC_003,
@@ -15366,6 +15444,7 @@ ALL_CASES = (
     _CASE_MC_112,
     _CASE_MC_113,
     _CASE_MC_114,
+    _CASE_MC_116,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
@@ -15516,6 +15595,7 @@ ALL_CASES = (
     _CASE_PG_081,
     _CASE_PG_082,
     _CASE_PG_083,
+    _CASE_PG_085,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,

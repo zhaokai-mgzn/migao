@@ -1,0 +1,160 @@
+{
+  "schema": "concurrency-cas-batch-6962/1.0",
+  "_what": "issue #6962 P5 首批三处「读-判-写无谓词」并发缺陷的**写面登记表**：① `AgentSessionMapper` 的 `agent_sessions.status` 条件写 + `AgentSessionService#assignSession`；② `KnowledgeCandidateMapper` 的 `knowledge_candidates.status` 条件写 + `KnowledgeCandidateService#adoptInternal` / `#reject`；③ `ProductionRouteTemplateMapper` / `ProductionRouteRuleMapper` 的 `deleted` 条件写 + `ProductionRoutingCommandService#deleteRouting` / `#deleteRouteRule`。**未登记即红**（类级固化：铁律 8 / `migao-dev-flow` §23）。",
+  "_why": "issue #6962 的病根是**同一份状态迁移权上有多个写面，每个写面都是「先读判、再整实体回写」**：① `assignSession` 先 `selectById` 判 `status='waiting'`、再 `updateById(session)`（WHERE 仅主键 ⇒ 无谓词）⇒ 同一 `sessionId` 并发分配**两个请求都成功**（后写者覆盖 `employee_id`）；同一员工的额度是「各自读计数 ⇒ 各自判未超额」⇒ `max_concurrent_sessions` 被突破（上限 3 时 6 个并发全落 active —— 实例判据实测读数）；② `adoptInternal` / `reject` 先 `getOwned` 读出 `pending`、再整实体 `updateById` ⇒ 并发双采纳**各插一张卡**（实测 2 张），「采纳 × 拒绝」并发两个都成功、终态由后写者决定；③ 两条软删的落库语句只有 `.eq(id)` ⇒ ① 缺 tenant 限定（拿到别人的 id 就能删别人的路线，租户隔离只靠更早一次读判、读判与写之间无互斥）② 无 `deleted = 0`、不判影响行数（重复删同一 id 照样「成功」= 0 行当成功）。**只修一处 = 没修**：下一个人在同族文件新加无谓词写路径、或给 mapper 加一条无谓词 SQL，同样没有任何东西会红 ⇒ 本表把这一类形态逐个登记。",
+  "scan": {
+    "root": "backend/admin-api/src/main/java/com/migao/admin",
+    "mappers": [
+      "mapper/AgentSessionMapper.java",
+      "mapper/KnowledgeCandidateMapper.java",
+      "mapper/ProductionRouteTemplateMapper.java",
+      "mapper/ProductionRouteRuleMapper.java"
+    ],
+    "services": [
+      "service/AgentSessionService.java",
+      "service/KnowledgeCandidateService.java",
+      "service/ProductionRoutingCommandService.java"
+    ],
+    "shape": "① mapper 手写 SQL：凡 `@Update` / `@Delete` / `@Insert` 里出现本表、且**在 SET 侧写守卫列**（`agent_sessions.status` / `knowledge_candidates.status` / 两张 route 表的 `deleted`）的，必须带 tenant 谓词 + 必需的状态谓词；两张 route 表另需 `deleted = 0`（SET 侧写 `deleted` 是允许的，谓词侧必须有）；`knowledge_candidates` **必须没有** `deleted` 谓词（见 scan.trap）。② mapper 条件更新方法体：两张 route 表的软删走 `LambdaUpdateWrapper`（不是 `@Update`）⇒ 单独判「方法体里必须有 `getId(` + `getTenantId(` + `deleted = 0`」。③ service：凡方法体内出现「守卫 mapper 的写」的方法 = 写路径，必须逐条在册；每条的 `call_anchor` 必须**逐字**出现在该方法体里（「以 CAS 收口」这条主张必须被兑现：退回无谓词 `updateById` ⇒ 红）。④ 次序：`adoptInternal` 里 `knowledgeCardMapper.insert(` 必须晚于 `markReviewedIfPending(` 与其 `== 0` 冲突回滚。",
+    "trap": "⚠️ **本批实证陷阱（不许再犯）**：模板上写惯了 `deleted = 0`，但 `knowledge_candidates` 表**根本没有 `deleted` 列**（`db/init/schema.sql` 自证：列止于 `reviewed_by`）⇒ 对它是「`deleted` 谓词**必须缺席**」：有人「顺手补上」就是列不存在、SQL 当场报错。本守卫对这一族设**禁令**而不是复用模板，且用 `schemaFactsArePinned` 从 schema 文本现取列清单自证（不是靠注释里的断言）。",
+    "note": "形态判据不做 AST 解析（只认「注解 + 方法窗口 + 文本标记」）⇒ 换措辞可绕过；真实防线仍是实例判据（见 coverage_boundary）。"
+  },
+  "entries": [
+    {
+      "method": "AgentSessionMapper#markAssignedIfWaiting",
+      "verdict": "guarded",
+      "guard": "会话「分配权」= DB 原子条件更新（CAS，issue #6962 P5-①）：`UPDATE agent_sessions SET employee_id=#{employeeId}, status='active', started_at=#{startedAt}, updated_at=#{startedAt} WHERE id=? AND tenant_id=? AND status='waiting' AND deleted=0`，按**受影响行数**判谁抢到分配权；0 行 ⇒ 409 + **实际当前态**的可行动文案（回读最新行，不拿读判时的旧值充当现状）。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/AgentSessionMapper.java::int markAssignedIfWaiting(",
+      "case_ids": [
+        "MC-106"
+      ]
+    },
+    {
+      "method": "AgentSessionMapper#lockEmployeeForQuota",
+      "verdict": "guarded",
+      "guard": "并发**额度闸**（issue #6962 P5-① 第二道闸）：`SELECT id FROM agent_employees WHERE id=? AND tenant_id=? AND deleted=0 FOR UPDATE`。为什么不是「`UPDATE … WHERE current < max`」：`UPDATE` 只在**命中行**时才取行锁，并发超额时谓词不成立 ⇒ 两个请求都拿 0 行、都不取锁、都不阻塞 ⇒ 各自在子查询里读到「尚未提交的旧计数」⇒ 上限照样被突破（本单实测订正：缺陷只是从「读-判-写」挪进了子查询）。`FOR UPDATE` 不管额度够不够都先锁住员工行，后到者阻塞到前者提交再重新求值计数 ⇒ 上限守得住。锁序：先会话行、再员工行（全局一致 ⇒ 无环）。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/AgentSessionMapper.java::String lockEmployeeForQuota(",
+      "case_ids": [
+        "MC-106"
+      ]
+    },
+    {
+      "method": "AgentSessionMapper#countActiveSessions",
+      "verdict": "guarded",
+      "guard": "锁内**现取**「该员工当前 active 会话数」（issue #6962 P5-①）：`SELECT COUNT(*) FROM agent_sessions WHERE employee_id=? AND tenant_id=? AND status='active' AND deleted=0`。必须在 `lockEmployeeForQuota` 持锁之后调用 ⇒ 读到的是被锁串行化后的确定值；`tenant_id` + `deleted = 0` 显式写在谓词上（不依赖拦截器在场）。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/AgentSessionMapper.java::int countActiveSessions(",
+      "case_ids": [
+        "MC-106"
+      ]
+    },
+    {
+      "method": "KnowledgeCandidateMapper#markReviewedIfPending",
+      "verdict": "guarded",
+      "guard": "候选「处置权」= DB 原子条件更新（CAS，issue #6962 P5-②）：`@Update(\"<script>UPDATE knowledge_candidates SET status=#{status}, status_note=<choose>…</choose>, reviewed_by=#{reviewedBy}, reviewed_at=#{reviewedAt} WHERE id=? AND tenant_id=? AND status='pending'</script>\")`。三条路径（采纳 / 编辑后采纳 / 拒绝）共用这一条语句，按**影响行数**判归属；0 行 ⇒ 409 + 实际当前态。⚠️ 谓词里**没有也不得有** `deleted = 0`：本表没有该列。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/KnowledgeCandidateMapper.java::int markReviewedIfPending(",
+      "case_ids": [
+        "MC-106"
+      ]
+    },
+    {
+      "method": "ProductionRouteTemplateMapper#markDeletedByIdAndTenant",
+      "verdict": "guarded",
+      "guard": "软删路线 = 带谓词的条件更新（issue #6962 P5-③）：`update(null, LambdaUpdateWrapper.eq(getId).eq(getTenantId).eq(getDeleted, 0).set(getDeleted, 1).set(getUpdatedAt, now))`，谓词 = `id + tenant_id + deleted = 0`，按影响行数判是否真删到；0 行 ⇒ 409 + 实际当前态。仍走 `update(null, wrapper)` 而**不是** `updateById`：MP 全局逻辑删除会把 `deleted` 从 `updateById` 的 SET 子句里剔除 ⇒ 静默 no-op（issue #4608 的实测形态）。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProductionRouteTemplateMapper.java::default int markDeletedByIdAndTenant(String id, Long tenantId) {",
+      "case_ids": [
+        "MC-106"
+      ]
+    },
+    {
+      "method": "ProductionRouteRuleMapper#markDeletedByIdAndTenant",
+      "verdict": "guarded",
+      "guard": "软删条件工序规则 = 带谓词的条件更新（issue #6962 P5-③）：与 `ProductionRouteTemplateMapper#markDeletedByIdAndTenant` 同口径、同形态（`id + tenant_id + deleted = 0`，SET 侧显式写 `deleted = 1` + `updated_at`）；0 行 ⇒ 409 + 实际当前态。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProductionRouteRuleMapper.java::default int markDeletedByIdAndTenant(String id, Long tenantId) {",
+      "case_ids": [
+        "MC-106"
+      ]
+    }
+  ],
+  "service_write_paths": [
+    {
+      "method": "AgentSessionService#assignSession",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/AgentSessionService.java",
+      "path": "AgentSessionMapper#markAssignedIfWaiting",
+      "call_anchor": "agentSessionMapper.markAssignedIfWaiting(sessionId, tenantId",
+      "guard": "修前：`selectById` 判 `waiting` → `updateById(session)`（无谓词）⇒ 并发分配两个 200；额度「各自读计数 ⇒ 各自判未超额」⇒ 上限被突破。修后：① 抢会话分配权（`markAssignedIfWaiting`，0 行 ⇒ 409）② `lockEmployeeForQuota`（`FOR UPDATE`）③ 锁内 `countActiveSessions` 现取计数再判额度 —— 判额度与占额度在同一个持锁临界区。 ｜ 🔴 锚含 `(sessionId, tenantId` 是**有意收紧**的：把 tenant 参数换成字面量/别人的 id （跨租户可写）不会改方法名、只会改实参 ⇒ 只钉方法名前缀的锚会静默放过这种变异（本单红证报告实测过）。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/AgentSessionService.java::agentSessionMapper.markAssignedIfWaiting(sessionId, tenantId",
+      "case_ids": [
+        "MC-106"
+      ]
+    },
+    {
+      "method": "KnowledgeCandidateService#adoptInternal",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/KnowledgeCandidateService.java",
+      "path": "KnowledgeCandidateMapper#markReviewedIfPending",
+      "call_anchor": "knowledgeCandidateMapper.markReviewedIfPending(",
+      "guard": "修前：`getOwned` 读出 `pending` → 整实体 `updateById` ⇒ 并发双采纳各插一张卡（实测 2 张）。修后：① 先抢「发布权」（CAS，0 行 ⇒ 409 + 实际当前态）② **抢到的那一次才插卡** —— `knowledgeCardMapper.insert(` 必须在 CAS 与其 `== 0` 回滚**之后**（次序反了就是病根本身）。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/KnowledgeCandidateService.java::knowledgeCandidateMapper.markReviewedIfPending(",
+      "case_ids": [
+        "MC-106"
+      ]
+    },
+    {
+      "method": "KnowledgeCandidateService#reject",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/KnowledgeCandidateService.java",
+      "path": "KnowledgeCandidateMapper#markReviewedIfPending",
+      "call_anchor": "knowledgeCandidateMapper.markReviewedIfPending(",
+      "guard": "修前：读判后整实体 `updateById` ⇒ 「采纳 × 拒绝」并发两个都成功、终态由后写者决定。修后：置态走 CAS（谓词 `id + tenant_id + status='pending'`），按影响行数判归属；0 行 ⇒ 409 + 实际当前态。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/KnowledgeCandidateService.java::knowledgeCandidateMapper.markReviewedIfPending(",
+      "case_ids": [
+        "MC-106"
+      ]
+    },
+    {
+      "method": "ProductionRoutingCommandService#deleteRouting",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java",
+      "path": "ProductionRouteTemplateMapper#markDeletedByIdAndTenant",
+      "call_anchor": "productionRouteTemplateMapper.markDeletedByIdAndTenant(id, tenantId) == 0",
+      "guard": "修前：只有 `.eq(id)` ⇒ 跨租户误删（拿到别人的 id 就能删别人的路线）+ 无 `deleted = 0`、不判行数（重复删照样回「成功」）。修后：谓词 = `id + tenant_id + deleted = 0`，**影响行数为 0 ⇒ 409** + 实际当前态。⚠️ 仍必须显式写列（issue #4608），不得写成 `setDeleted(1); updateById(template);`。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java::productionRouteTemplateMapper.markDeletedByIdAndTenant(id, tenantId) == 0",
+      "case_ids": [
+        "MC-106"
+      ]
+    },
+    {
+      "method": "ProductionRoutingCommandService#deleteRouteRule",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java",
+      "path": "ProductionRouteRuleMapper#markDeletedByIdAndTenant",
+      "call_anchor": "productionRouteRuleMapper.markDeletedByIdAndTenant(id, tenantId) == 0",
+      "guard": "修前：只有 `.eq(id)` ⇒ 跨租户误删 + 已软删 / 不存在也回「deleted=true」（0 行当成功）。修后：条件更新（谓词 `id + tenant_id + deleted = 0`）+ **影响行数为 0 ⇒ 409** + 实际当前态。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionRoutingCommandService.java::productionRouteRuleMapper.markDeletedByIdAndTenant(id, tenantId) == 0",
+      "case_ids": [
+        "MC-106"
+      ]
+    },
+    {
+      "method": "AgentSessionService#sendMessage",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/AgentSessionService.java",
+      "path": "（本批**未修**：仍是无谓词 `updateById`，见 guard）",
+      "call_anchor": "agentSessionMapper.updateById(update)",
+      "guard": "⛔ **本批有意不做，照实登记**（issue #6962 的其余站点，由本批 PR body / issue 评论逐站点点名）。现状 = 「`if (\"agent\" … && \"waiting\".equals(session.getStatus()))` 读判 → 新建部分实体 `update.setStatus(\"active\")` → `agentSessionMapper.updateById(update)`（WHERE 仅主键 ⇒ **无谓词**）」= **与 #6962 同族**的读-判-写（并发两次「客服首次回复」会都过读判）。**影响面小于本批三处**（会话状态置 active 是幂等同值写、不涉额度/不涉卡/不涉跨租户）。**重启条件**：若该路径引入额度占用 / 计费 / 唯一键插入，或要把「客服首次回复」的语义做成恰一次事件 ⇒ 升格为必修。**已有独立登记**：`backend/admin-api/src/test/resources/after-sales-sideeffect-concurrency-ledger.json` 的 `unverified` 里也逐字列了它（那是售后域的观察名单）。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/AgentSessionService.java::agentSessionMapper.updateById(update)",
+      "case_ids": [
+        "MC-106"
+      ]
+    },
+    {
+      "method": "AgentSessionService#endSession",
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/AgentSessionService.java",
+      "path": "（本批**未修**：仍是无谓词 `updateById`，见 guard）",
+      "call_anchor": "agentSessionMapper.updateById(session)",
+      "guard": "⛔ **本批有意不做，照实登记**（同 `#sendMessage`）。现状 = 「读判 `active`/`waiting` → `session.setStatus(\"ended\")` → `agentSessionMapper.updateById(session)`（WHERE 仅主键 ⇒ **无谓词**）」⇒ 并发 `endSession` × `sendMessage` 可双双成功（结束的会话被置回 active 的消息路径）。**重启条件**：若会话结束要挂账目/计费副作用，或「结束恰一次」成为可断言契约 ⇒ 升格为必修。**已有独立登记**：`after-sales-sideeffect-concurrency-ledger.json` 的 `unverified`（`baseline` 里逐字有 `AgentSessionService#endSession`）。",
+      "evidence": "backend/admin-api/src/main/java/com/migao/admin/service/AgentSessionService.java::agentSessionMapper.updateById(session)",
+      "case_ids": [
+        "MC-106"
+      ]
+    }
+  ],
+  "unverified_baseline": 0,
+  "unverified": [],
+  "coverage_boundary": "本表机械保证的是：① 扫描器**现取**的「手写 SQL 写面」「条件更新方法体写面」「三条 service 的写路径」都在册、且**只增不减**（新增未登记 ⇒ 红；台账条目在现取集合里消失 ⇒ 红；任何一段为空 ⇒ 红）；② 每条 mapper 写面的谓词齐备（`agent_sessions`：tenant 参数 + `status` 谓词 + `deleted = 0`；两张 route 表：`id` + tenant + `deleted = 0`；`knowledge_candidates`：tenant 参数 + `status` 谓词，且 `deleted` 谓词**必须缺席**），且 schema 列事实从 `db/init/schema.sql` 文本现取自证；③ `adoptInternal` 的插卡次序晚于 CAS 与其 `== 0` 回滚；④ 每条 evidence 锚是 `<仓库相对全路径>::<可检索文本>`，左侧文件存在、右侧**逐字出现**（摘掉 CAS 调用 / 改名 ⇒ 红）。它**不保证**：① 判据本体没跑过那条真库并发判据 —— 行为面由 `ConcurrentQuotaAdoptDeleteCas6962RealDbTest`（**同批兄弟包**，真 PG + 窗口注入）承担，两者缺一不可（`migao-dev-flow` §28.2：判据本体绿 ≠ 接线在；本包**不创建也不运行**那条判据）；② 形态判据不做 AST 解析、只读源码文本，换措辞（别名 mapper 变量、抽一层私有方法、把 CAS 挪进 helper）可绕过（真实防线仍是实例判据）；③ 射程只到上面 7 条源文件 + `schema.sql`（**别的族的同形缺陷不在本表射程**：入库单归 MC-100、加工单状态归 MC-104、工序删除权归 PG-075，各自独立、既不互为副本也互不重判）；④ 判不了「拿 `updateById` 改**非守卫列**」（那不是本表的对象：本表的对象是 `agent_sessions.status` / `knowledge_candidates.status` / 两张 route 表的 `deleted`）；⑤ `.xml` mapper 文件不在扫描面（本仓 mapper 是注解式，无 xml）；⑥ **「写路径清单」靠「守卫 mapper 的写」现取** ⇒ 若有人改用 `baseMapper.updateById(` / `this.updateById(` 等别名形态写守卫列，本表扫不到（那是**未覆盖**的形态，重启条件 = 出现第一条这样的写路径时把前缀集合扩到别名并补一条红证）；⑦ `unverified` 冻结为**空**（基线 0）：本批三处缺陷**全部**已在源码里兑现，没有任何「先放着」的豁免 —— 新增豁免必须走 issue + 重启条件。 ⑤ **本批刻意只修三处**：`AgentSessionService` 的另外两条状态写路径（`sendMessage` / `endSession`）**已逐字登记但未修**（见 `service_write_paths` 里两条 `verdict` = 本批有意不做），它们的重启条件就写在各自 `guard` 里 —— 「未登记即红」对它们同样成立（被删/改名要同步改台账），但**本守卫不为它们的现状背书**。"
+}

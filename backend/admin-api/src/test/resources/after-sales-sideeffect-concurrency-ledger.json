@@ -44,12 +44,6 @@
       "restart_condition": "若建单路径新增「对已有行的账目级写」（自动补退款 / 改库存）⇒ 重评；或核验入口重复提交面后回填结论"
     },
     {
-      "method": "AgentSessionService#assignSession",
-      "reason": "会话占用写（setStatus active + 站内消息）：无涉钱 / 库存账目，并发重复写同值不产生账目差异",
-      "issue": "#6220",
-      "restart_condition": "若会话路径新增涉钱 / 库存 / 计费副作用 ⇒ 重评"
-    },
-    {
       "method": "AgentSessionService#sendMessage",
       "reason": "消息落库 + 回写会话状态：并发重复的是**消息**（去重属消息面），不产生账目差异",
       "issue": "#6220",
@@ -76,7 +70,6 @@
   ],
   "unverified_baseline": [
     "AfterSalesTicketService#createTicket",
-    "AgentSessionService#assignSession",
     "AgentSessionService#sendMessage",
     "AgentSessionService#endSession",
     "InboundOrderService#post",

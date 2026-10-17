@@ -640,18 +640,18 @@ class ProductionRoutingReadControllerTest {
     void deleteRouteRuleEndpointSoftDeletes() throws Exception {
         when(productionRouteRuleMapper.selectById("rr-opt-1"))
                 .thenReturn(rule("rr-opt-1", "option", "拼2次", null, "insert", "拼缝", null, 210));
+        // issue #6962：软删落库在 mapper 的 default 方法 `markDeletedByIdAndTenant` 里（CAS，按**受影响行数**
+        // 判结果）⇒ 打桩 1 行 = 抢到了；0 行 ⇒ 409（见 PG-083）。Mockito 的 mock 不会执行 default 方法体，
+        // 故这里打桩的是**调用点**，wrapper 的 SET 列清单由 ConcurrencyCasBatch6962MetaGuardTest 的
+        // 方法体判据 + 真库判据承担（那里是真的 UPDATE 语句）。
+        when(productionRouteRuleMapper.markDeletedByIdAndTenant("rr-opt-1", TENANT)).thenReturn(1);
 
         mockMvc.perform(delete("/api/admin/production/route-rules/rr-opt-1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value("rr-opt-1"))
                 .andExpect(jsonPath("$.data.deleted").value(true));
-        ArgumentCaptor<LambdaUpdateWrapper> wrapper = ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
-        verify(productionRouteRuleMapper).update(isNull(), wrapper.capture());
+        verify(productionRouteRuleMapper).markDeletedByIdAndTenant("rr-opt-1", TENANT);
         verify(productionRouteRuleMapper, never()).updateById(any(ProductionRouteRule.class));
-        assertThat(wrapper.getValue().getSqlSet())
-                .as("显式 SET 必须含 deleted 与 updated_at（issue #4608：updateById 会把 deleted 从 SET 剔除）")
-                .contains("deleted")
-                .contains("updated_at");
 
         mockMvc.perform(delete("/api/admin/production/route-rules/nope"))
                 .andExpect(status().isNotFound());
