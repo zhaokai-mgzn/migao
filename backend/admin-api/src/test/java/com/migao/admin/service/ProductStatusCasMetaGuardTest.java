@@ -73,7 +73,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <h3>🔴 去谓词 / 去行数判定各自的红证（§23 G3 的「判别力自证」）</h3>
  * 判据 2/3 在合成语料上**各有一条**定向注入：去掉 WHERE 侧 status 谓词 ⇒ 判据 2 红；
  * 把行写换回 {@code updateById} ⇒ 判据 3 红（两者都不是「顺手一起红」）。
- * <b>判不了「0 行之后不 fail-closed」</b>（那是实例判据 PG-082 的靶心，本守卫读的是源码文本）。
+ * <b>判不了「0 行之后不 fail-closed」</b>（那是实例判据 PG-084 的靶心，本守卫读的是源码文本）。
  *
  * <p>⚠️ 本判据读<b>源码文本</b>（不做 AST）—— 本仓既有形态（MC-100
  * {@code InboundOrderStatusCasMetaGuardTest} / MC-104 {@code ProcessingOrderStatusCasMetaGuardTest} 同款）。

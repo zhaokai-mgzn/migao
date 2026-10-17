@@ -550,7 +550,7 @@
       "date": "2026-10-16",
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 161,
-      "note": "issue #5652（质检记录/返工报废）新增 **1** 条 `[backend-contract]` 用例 **PG-082**（质检记录成品帘级：独立质检员录判定 + 判定≠合格必填原因 + 无权被拒 + 颗粒度=成品帘 + 工人面不得出现质检判定入口）。该用例按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 本读数 +1（main 侧 160 → 本 PR 后 161）。机器判红通道 = `traces.tests` 三个真测试文件（均非空且真实存在，本机实跑绿）：`backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckServiceTest.java`（语义面 8 条：逐字段可读 / 原因必填 422+零写入 / 跨租户 404 同形 / 读面逐条）、`.../controller/QualityCheckControllerTest.java`（端点形状 + 权限面 6 条；红证已取：摘注解 ⇒ `Expecting actual not to be null`；把岗位码换成 `production:execute` ⇒ 声明码集断言红）、`.../service/QualityCheckMapperTest.java`（真 PG：一行逐列落库 + 租户谓词由拦截器注入 ⇒ 跨租户读为空；红证已取：把列改名 ⇒ 两条判据报 `字段不存在`）。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）。"
+      "note": "issue #5652（质检记录/返工报废）新增 **1** 条 `[backend-contract]` 用例 **PG-084**（质检记录成品帘级：独立质检员录判定 + 判定≠合格必填原因 + 无权被拒 + 颗粒度=成品帘 + 工人面不得出现质检判定入口）。该用例按设计**不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 本读数 +1（main 侧 160 → 本 PR 后 161）。机器判红通道 = `traces.tests` 三个真测试文件（均非空且真实存在，本机实跑绿）：`backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckServiceTest.java`（语义面 8 条：逐字段可读 / 原因必填 422+零写入 / 跨租户 404 同形 / 读面逐条）、`.../controller/QualityCheckControllerTest.java`（端点形状 + 权限面 6 条；红证已取：摘注解 ⇒ `Expecting actual not to be null`；把岗位码换成 `production:execute` ⇒ 声明码集断言红）、`.../service/QualityCheckMapperTest.java`（真 PG：一行逐列落库 + 租户谓词由拦截器注入 ⇒ 跨租户读为空；红证已取：把列改名 ⇒ 两条判据报 `字段不存在`）。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）。"
     },
     {
       "sha": "pending-pr-7016",
@@ -613,7 +613,7 @@
       "date": "2026-10-17",
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 174,
-      "note": "issue #7162（工人端质检：扫水洗唛录判定、生成质检单）新增 2 条用例（PG-082 / UI-121），其中 1 条落入本读数口径（`[backend-contract]` 且无 runner 计分断言）⇒ 173 → 174。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）：CI job `ci workflow helper unit tests（后半）` 实跑 `test_case_machine_fail_channel.py` 报 {'no_channel_total': 0, 'backend_contract_scoring_zero': 174}。两条用例的机器判红通道 = `traces.tests` 的真实文件（后端 WorkerQualityControllerTest / QualityCheckServiceTest / WorkerPageCatalogControllerTest；H5 worker-h5-quality.test.mjs + worker-h5-pages.test.mjs；admin-web WorkerProfilesPanel.test.tsx），`traces.ci` = `pr-check.yml`。真债务 `no_channel_total` 仍为 **0**。"
+      "note": "issue #7162（工人端质检：扫水洗唛录判定、生成质检单）新增 2 条用例（PG-084 / UI-121），其中 1 条落入本读数口径（`[backend-contract]` 且无 runner 计分断言）⇒ 173 → 174。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）：CI job `ci workflow helper unit tests（后半）` 实跑 `test_case_machine_fail_channel.py` 报 {'no_channel_total': 0, 'backend_contract_scoring_zero': 174}。两条用例的机器判红通道 = `traces.tests` 的真实文件（后端 WorkerQualityControllerTest / QualityCheckServiceTest / WorkerPageCatalogControllerTest；H5 worker-h5-quality.test.mjs + worker-h5-pages.test.mjs；admin-web WorkerProfilesPanel.test.tsx），`traces.ci` = `pr-check.yml`。真债务 `no_channel_total` 仍为 **0**。"
     },
     {
 <<<<<<< HEAD
@@ -627,8 +627,12 @@
       "date": "2026-10-17",
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 177,
+<<<<<<< HEAD
       "note": "issue #6961 rebase 到 2026-10-17 的 main（含 #7160 / #7162 的质检用例）后按实测重锚：174 → 177。本行**不按号推算**：读数来自本树实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的报错行本身。`no_channel_total` 仍为 0（本单新增的 MC-115 / PG-082 两条用例的机器判红通道都是真实类：`ProductStatusCasMetaGuardTest` / `ProductStatusCasRaceRealDbTest`）。"
 >>>>>>> f23d7b383 (chore(ci): rebase 到最新 main 后按实测重锚（174 → 177）+ 生成物刷新)
+=======
+      "note": "issue #6961 rebase 到 2026-10-17 的 main（含 #7160 / #7162 的质检用例）后按实测重锚：174 → 177。本行**不按号推算**：读数来自本树实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 的报错行本身。`no_channel_total` 仍为 0（本单新增的 MC-115 / PG-084 两条用例的机器判红通道都是真实类：`ProductStatusCasMetaGuardTest` / `ProductStatusCasRaceRealDbTest`）。"
+>>>>>>> f9b0aff24 (fix(cases): 真库判据让号 PG-082 → PG-084（main 的 #7162 已占用 082/#7168 占用 083）—— 修 CI 的重复用例 ID 阻塞)
     }
   ]
 }

@@ -5294,7 +5294,7 @@ cases:
       verifies: []
 
   # ── issue #6961（P4·★★·状态写）：商品状态迁移无 CAS + updateProduct 全实体回写（并发回滚他人状态）──
-  # 取号：本单开工时 main 现取 PR-129 / MC-115 / PG-082 均未占用（PR max=PR-128、MC max=MC-104、PG max=PG-075；
+  # 取号：本单开工时 main 现取 PR-129 / MC-115 / PG-084 均未占用（PR max=PR-128、MC max=MC-104、PG max=PG-075；
   # PG-076 与 MC-104 属并行在飞的 #6955 包，本单一个号都不碰）。
   - id: PR-129
     legacy_id: ""
@@ -5353,7 +5353,7 @@ cases:
         - pr-check.yml
       verifies: []
 
-  - id: PG-082
+  - id: PG-084
     legacy_id: ""
     title: "🔴 真库并发（#6961）：商品状态迁移 = CAS（恰一个赢家 + 落败 409）+ 改品不得静默回滚并发状态迁移"
     domains:
@@ -5379,7 +5379,7 @@ cases:
       - "🔴 **红证（探针开 ⇒ 必红 / 探针关 ⇒ 全绿，成对逐字读数见同批 PR body）**：注入 = 把四条写退回无谓词 `updateById` + 把 `updateProduct` 退回整实体回写 + `setStatus(originalStatus)`。"
       - "**边界（如实登记）**：① 服务层真库并发，不覆盖 HTTP 薄转发层；② 探针对象全部自建（tenant 6961 / id 前缀 `p-6961-`），随一次性临时集群销毁，不碰存量数据；③ 判据 1 用 `updateProductStatus` 一条入口代表四条（同一个 `applyStatusTransition` → 同一条 CAS；另外三条的登记由 MC-115 钉住）；④ `batchOnShelf` / `batchOffShelf` 的落败走 `BatchOperationResult.failed`（分部分成功语义）而不是 409，本判据未逐条断言它的影响行数分支（已登记在台账 `coverage_boundary`）。"
     skip_reason: "[backend-contract] 真 PG 并发落库判据（initdb+pg_ctl 临时集群 + 真 ProductService 装配），非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-15 新增（issue #6961 的实例判据，与 PR-129 / MC-115 同批）：范式照抄 ProcessingOrderStatusCasRaceRealDbTest（#6955）。取号 = PG-082（开工时 main 现取 PG max=PG-075；PG-076 属并行在飞的 #6955 包，本单不碰）。"
+    merge_log: "2026-10-15 新增（issue #6961 的实例判据，与 PR-129 / MC-115 同批）：范式照抄 ProcessingOrderStatusCasRaceRealDbTest（#6955）。取号 = PG-084（开工时 main 现取 PG max=PG-075；PG-076 属并行在飞的 #6955 包，本单不碰）。"
     traces:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProductStatusCasRaceRealDbTest.java"

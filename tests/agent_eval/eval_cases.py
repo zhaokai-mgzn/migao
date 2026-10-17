@@ -12474,9 +12474,9 @@ _CASE_MC_115 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PG-082 [EDGE] 🔴 真库并发（#6961）：商品状态迁移 = CAS（恰一个赢家 + 落败 409）+ 改品不得静默回滚并发状态迁移（源: cases/product.yml）──
-_CASE_PG_082 = EvalCase(
-    id='PG-082',
+# ── PG-084 [EDGE] 🔴 真库并发（#6961）：商品状态迁移 = CAS（恰一个赢家 + 落败 409）+ 改品不得静默回滚并发状态迁移（源: cases/product.yml）──
+_CASE_PG_084 = EvalCase(
+    id='PG-084',
     legacy_id='',
     title='🔴 真库并发（#6961）：商品状态迁移 = CAS（恰一个赢家 + 落败 409）+ 改品不得静默回滚并发状态迁移',
     skill=Skill.PRODUCT,
@@ -15670,7 +15670,7 @@ ALL_CASES = (
     _CASE_PR_128,
     _CASE_PR_129,
     _CASE_MC_115,
-    _CASE_PG_082,
+    _CASE_PG_084,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
