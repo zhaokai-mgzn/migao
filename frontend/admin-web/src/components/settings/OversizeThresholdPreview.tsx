@@ -128,12 +128,14 @@ export function OversizeThresholdPreview({ config }: Props) {
       data-testid="threshold-preview"
       className="mt-4 border border-neutral-200 rounded-lg p-4 bg-neutral-50/50"
     >
-      <h4 className="text-sm font-semibold text-neutral-900">阈值试算 —— 改完先看</h4>
+      <h4 className="text-sm font-semibold text-neutral-900">阈值试算</h4>
       <p className="text-xs text-neutral-500 mt-1">
         {/* 🔴 2026-10-17（issue #7124）：本块**紧跟在「超高 / 超宽阈值」之后**，而旧文案写的是
             「本页**不保存任何改动**」—— 在能保存的写面上会被读成「上面的改动也不保存」（误导）。
-            改为「**这里只试算** + 要改口径去哪改」，既不承诺保存、又给出动作。 */}
-        <InlineMarkdown text="超高 / 超宽会进加工费组合（组合没配价就收不到这笔钱）。改阈值前先在这里试一扇窗，看看会不会变。判定由系统给；**这里只试算** —— 要改口径请改上面的阈值后点「保存」。" />
+            改为「**这里只试算** + 要改口径去哪改」，既不承诺保存、又给出动作。
+            🔴 2026-10-17（issue #7147）：去口语与内部机制名 —— 「加工费组合 / 收不到这笔钱」改为
+            商家可读的「按哪一档计价 / 那一档没配价时按未定价处理」。 */}
+        <InlineMarkdown text="超高 / 超宽会影响加工费按哪一档计价（那一档没配价时按未定价处理，不会自动补价）。改阈值前先在这里试算一扇窗，看看会不会变。判定由系统给出；**这里只试算** —— 要改口径请改上面的阈值后点「保存」。" />
       </p>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">

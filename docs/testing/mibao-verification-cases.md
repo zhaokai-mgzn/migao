@@ -11189,7 +11189,7 @@
 数据: 🔴 判据·**豁免台账只许缩短 + 不空转**：`EXEMPT` 每条必须**仍然**命中某条规则，失效当场判红（逼着删干净）。当前唯一一条 = 岗位编码输入框的 placeholder（`admin、customer_service` 是编码**内容本身**，不是散文里的研发腔）。
 数据: 判据·**三条既有规则原样迁入**（不削弱）：R6 `L1/L2/L3` 代号（UI-057）、R7 「池」隐喻（UI-058）、R8 服务端分组标签（UI-092）由行扫描改为同一份 AST 口径后**仍逐条判红**，且各自保留原出口话术。
 数据: 判据·**假红清理有实测**：`value="pending_review"` / `fieldKey="door_width"` / `stopColor="#6366f1"` 三个 JSX 属性值曾被误判成文案/issue 号 ⇒ 改为**属性白名单**（只认 label/title/hint/placeholder/…）+ 十六进制颜色排除，命中 91 → 78。
-数据: **不回归**：口径/接口/字段名/权限/算料行为一字未动（`frontend-fix.no-api-change`）；被改写的文案所承载的承诺与边界**逐条保留**（未定价 ≠ ¥0.00、「拼接/接高要手选，系统不推算」+「不触发工序」、算例数字仍由真值渲染）。
+数据: **不回归**：口径/接口/字段名/权限/算料行为一字未动（`frontend-fix.no-api-change`）；被改写的文案所承载的承诺与边界**逐条保留**（未定价 ≠ ¥0.00、「拼接/接高要手选，系统不推算」+「不会多排一道工序」、算例数字仍由真值渲染）。
 跳过: [backend-contract] 纯前端文案 + 静态守卫，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
@@ -11298,7 +11298,7 @@
 期望: direct_reply
 数据: 🔴 判据 1·**只改展示名，口径零变更（会红）**：`frontend/admin-web/tests/unit/lib/craft-calc-glossary.test.ts` 的键集同源判据（`CALC_SCALAR_KEYS` 逐值等于引擎 `DEFAULT_CRAFT_CALC_CONFIG` 的标量键）+ `frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx` 的「保存发**全量键**（11 键）」判据 —— 改展示名若顺手动了键名 / 公式 / 数值，这两条当场红。**实测修后 `183 passed`**（P3 射程 11 个文件）。
 数据: 🔴 判据 2·**展示名逐字为改后值（会红）**：`frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx` 断言 `单色每折用料（米）` 在位（改前为 `单色每折吃布（米）`）。同批把 `CalcCaliberPanel.tsx` 里拼次输入框的 `aria-label` 由「拼N次 每折吃布」改为「拼N次 每折用料」—— 无障碍名与可见名**同一套词**，避免屏幕阅读器读到另一个说法。
-数据: 🔴 判据 3·**逐条术语压到 2~4 行（会红）**：`frontend/admin-web/tests/unit/components/CraftCalcGlossary.test.tsx` 的渲染面（`glossary-term-<名>` 锚点在、算例带真实数字、`拼接` 含「不触发工序」、`接高` 含「还没确认」）+ `frontend/admin-web/tests/unit/lib/copy-no-markdown-emphasis.test.ts`（带 `**` 的文件必须登记且接线渲染器）。结构改法 = 术语名与一句话定义**同一段**（此前名 / 定义 / 判定 / 影响各占一段 ⇒ 一条最多 5 行小字、六组三四十行）。
+数据: 🔴 判据 3·**逐条术语压到 2~4 行（会红）**：`frontend/admin-web/tests/unit/components/CraftCalcGlossary.test.tsx` 的渲染面（`glossary-term-<名>` 锚点在、算例带真实数字、`拼接` 含「不会多排一道工序」、`接高` 含「系统不推算」；2026-10-17 #7147 起另加**类级口语词表守卫** —— 口语 / 说不准 / 替你猜 / 看着像 / 真值 / 名义 / 系数档 任一上屏 ⇒ 红）+ `frontend/admin-web/tests/unit/lib/copy-no-markdown-emphasis.test.ts`（带 `**` 的文件必须登记且接线渲染器）。结构改法 = 术语名与一句话定义**同一段**（此前名 / 定义 / 判定 / 影响各占一段 ⇒ 一条最多 5 行小字、六组三四十行）。
 数据: 🔴 判据 4·**用户裁定的边界照实登记（有意不做）**：① **不改** `每折吃布` 这个算料术语本身 —— 它同时是引擎响应字段名（`per_fold`）与下单页用料公式说明（`frontend/admin-web/src/lib/meters-formula-legend.ts`）里的用词，只改配置页展示名会让配置页与公式说明对不上；重启条件 = 公式说明的词一并统一时（属另一包）。② **保留** `倒幅`/`正幅`/`定型`/`拼N次`/`接高`/`双眼皮接高` 业务词（与 ERP、工序目录、工人端同源，改名会让三方分叉）。两条都写在 `frontend/admin-web/src/lib/craft-calc-glossary.ts` 的模块头注释里。
 跳过: [backend-contract] 纯前端展示名与说明文案（服务端一字未改）：配置键 / 公式 / 米数 / 加工费组合键逐值不变，由 vitest（jsdom）+ §15.7 真机多模态验收执行，不进 agent-eval 冒烟
 ```

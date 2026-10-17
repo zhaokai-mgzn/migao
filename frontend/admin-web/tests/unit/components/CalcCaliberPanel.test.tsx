@@ -424,9 +424,15 @@ describe('判据 1b：术语说明区块与参数同屏（口径与术语不丢�
 
     const text = glossary.textContent ?? ''
     // 自证非空：空区块上的「不含 `**`」恒真
-    expect(text).toContain('术语怎么判')
+    expect(text).toContain('术语判定规则')
     expect(text).not.toContain('**')
     expect(text).not.toContain('`')
+    // 🔴 2026-10-17（#7147）：**整页**（不止术语区块）不得再把口语 / 内部机制名摆给商家 ——
+    // 「收不到这笔钱」「加工费组合」原本在阈值试算块里（#7147 一并改掉）。
+    const pageText = panel.textContent ?? ''
+    for (const marker of ['收不到这笔钱', '加工费组合', '改完先看']) {
+      expect(pageText, `算料口径页出现了口语 / 机制名：${marker}`).not.toContain(marker)
+    }
     // 正控：强调必须以元素形态呈现（只把标记删掉也能让上面两条变绿 ⇒ 必须另有这条）
     expect(glossary.querySelectorAll('strong').length).toBeGreaterThan(0)
     // 🔴 2026-10-17 用户逐字「把算料口径里面的这行字都拿掉吧」⇒ 参数旁的「说明」锚点

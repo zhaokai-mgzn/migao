@@ -100,6 +100,12 @@ frontend/admin-web/src/lib/craft-calc-glossary.ts 并逐条读源守卫。
 3. 缺褶倍 ⇒ 不判超宽，但下单页显式说明「这里本该判」（不静默）；
 4. 「双眼皮接高」含义**待查明**（客户亦不明）⇒ **不凭字面推**。
 
+   > 🔴 **2026-10-17 收口（issue #7147）**：这条**不再上屏**。产品文案只写系统处理口径
+   > （与「接高」同工序、同计价；同时勾选只排一道），「含义待查明」属研发待办，留在词汇底座
+   > （`docs/curtain-production-rules.md`）与本设计单 —— 用户逐字「不能在产品上含有这类口语用词和
+   > 不模糊的说明文案」。判据 = `frontend/admin-web/tests/unit/lib/craft-calc-glossary.test.ts` 判据 7b
+   > （含类级口语词表守卫）。
+
 ### 5.3 算例（**不自己拼文案**）
 
 `buildAutoFeatureExamples(config)` 逐条调 `detectAutoFeatures`，取它给出的 `reason`（与下单页
