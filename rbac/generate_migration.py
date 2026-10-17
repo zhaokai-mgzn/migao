@@ -9,6 +9,7 @@
 | `db/migration/V137__formalize_legacy_roles.sql` | **P6（出口 i）** | `product_manager` / `knowledge_editor` **正式定义**：建 `roles` 行 + 按清单授权 + 终态对账 |
 | `db/migration/V138__add_production_execute_permission.sql` | **I4** | 新写码 `production:execute`：目录行 + 授予今日持 `order:list` 的四个岗位 + **快照等价回填**（谓词逐字见文件头）+ 终态对账 |
 | `db/migration/V158__create_inspector_role.sql` | **#5652** | 新岗位 `inspector`（质检员）**正式定义**：建 `roles` 行 + 按清单授权（`production:view` / `production:inspect`）+ 终态对账 |
+| `db/migration/V161__refresh_default_role_descriptions.sql` | **#7111** | 8 个内置岗位的**描述**刷新成「职责 + 默认可用模块」（值 = 清单 `roles.descriptions`）：**只改仍是旧默认文案的行**（商家自定义一律不动）+ 终态对账 |
 
 🔴 **两份「渲染输入从哪来」是有意不同的**：`V136` / `V137` **已发布** ⇒ 输入钉在发布时刻的清单快照
 （`FROZEN_SNAPSHOTS`，活清单前进**不**动它们）；`V138` / `V158` 的对应关系由各自的发布时点决定，
@@ -719,6 +720,136 @@ COMMIT;
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 五、V161：内置岗位**描述**的刷新（issue #7111）
+# ══════════════════════════════════════════════════════════════════════════════
+
+DESCRIPTIONS_VERSION = 161
+
+#: 本迁移**只改这些行**：旧默认描述（上一版种子 / V29 / V32 / V137 / V158 的措辞）。
+#: 值是**列表**：同一岗位可能存在**多个历史变体** —— `inspector` 就有两份（注册种子与 V158 的
+#: 码序不同），漏一个就会留下「迁移跑过了、这个岗位还是旧文案」的半完成态。
+#: 🔴 商家**自己改过**的描述一律不在本表 ⇒ 迁移不覆盖自定义文案。
+LEGACY_ROLE_DESCRIPTIONS: dict[str, tuple[str, ...]] = {
+    "admin": ("拥有全部管理权限",),
+    "customer_service": ("负责客户服务与咨询",),
+    "finance": ("负责财务对账",),
+    "inspector": (
+        "成品帘质检录入（issue #5652：独立质检员，持 production:inspect / production:view）",
+        "成品帘质检录入（issue #5652：独立质检员，持 production:view / production:inspect）",
+    ),
+    "knowledge_editor": ("知识库编辑（POC 期历史岗位，issue #5699 的 P6 正式定义）",),
+    "operator": ("负责日常运营管理",),
+    "product_manager": ("商品与加工项管理（POC 期历史岗位，issue #5699 的 P6 正式定义）",),
+    "sales": ("负责销售业务",),
+}
+
+_DESCRIPTIONS_HEADER = """-- 内置岗位**描述**的刷新（issue #7111）
+--
+-- ## 一句话
+--   `roles.description` 是**商家可见面**（岗位权限页逐卡展示、员工弹窗里选岗位时会读到）。
+--   它此前是半句话（「负责销售业务」）或**内部标识**（issue 号 / 权限码 / POC 口径），
+--   既说不清「这个岗位承担什么职责」，也说不清「默认能用哪些模块」。
+--   本迁移把它们统一改成「**职责 + 默认可用模块**」两段式 —— 文案的**唯一声明面**是
+--   `rbac/manifest.json` 的 `roles.descriptions`，与 `RegistrationService` 的注册种子
+--   **逐值对账**（`rbac/readings.json` 的 `roles.descriptions` 由同一份 `Role.builder()` 块现取）。
+--
+-- ## 幂等 + **不覆盖自定义文案**（本迁移的安全边界）
+--   · 每条 UPDATE 的谓词是 `description IN (<旧默认文案>)` —— 只有**仍是**我们写的那句话的行会被改；
+--   · 商家在岗位权限页改过的描述**不在**旧文案表里 ⇒ **一律不动**（迁移不是「把文案推平」的工具）；
+--   · 改过的行第二次执行时已不匹配谓词 ⇒ **第二遍每条 0 行**，结果与第一遍相同。
+--
+-- ## 存量租户（为什么需要一条迁移）
+--   新租户走 `RegistrationService` 的种子（本 PR 同批改成新文案）；存量租户的 `roles` 行
+--   由 V29 / V32 / V137 / V158 建出、且**没有任何 Java 路径**会改写已有描述 ⇒ 不补这条迁移，
+--   「新租户是新文案、老租户还是旧文案」的两份真相会一直并存。
+--
+-- ## 停止条件（fail-closed）
+--   终态对账（文末 `DO` 块）：任何一行仍同时命中「内置岗位码 + 旧默认文案」⇒
+--   `RAISE EXCEPTION` 并回滚本迁移（不硬推半完成态）。
+--
+-- ## 显式事务（同 V97 / V102 / V107 / V108 / V111 / V124 / V136 / V137 / V158 的实测口径）
+--   `MigrationRunner` 用 `jdbc.execute(整份文件)` ⇒ PG 隐式包一个事务；而 `psql -f` 默认逐条
+--   autocommit ⇒ 不显式 `BEGIN/COMMIT` 时中间步骤已提交、`DO` 块才抛 ⇒ 留下**半完成态**。
+--
+-- ## 本文件是**生成物**（不是手写真值）
+--   由 `rbac/generate_migration.py` 从 `rbac/manifest.json` 渲染（`python3 rbac/generate_migration.py`）
+--   ⇒ 手改本文件、或改了清单没重渲染，都会被新鲜度判据判红（`test_rbac_migration_convergence.py`）。
+--
+-- ## 回滚（**新迁移，不删本文件**）
+--   ```sql
+--   -- 只会回到「旧默认文案」；商家自定义文案本迁移从未改过 ⇒ 无需回滚
+--   UPDATE roles SET description = '<旧默认文案>' WHERE code = '<岗位码>' AND deleted = 0
+--     AND description = '<新文案>';   -- 逐岗位重复（回滚是「文案回退」，不涉及授权 / 数据）
+--   ```
+--
+-- ## 边界（照实登记）
+--   ① 不改任何 `role_permissions` 行，**零授权 delta**；② 不回填 `users.permissions` 快照；
+--   ③ 空描述（NULL / 空串）**不动** —— 留白多半是有意的（本迁移只认「我们写的那句话」）。"""
+
+
+def render_role_descriptions(manifest: dict) -> str:
+    """渲染 `V161`（**输入 = 活清单**：描述的唯一声明面 = `roles.descriptions`）。"""
+    descriptions = manifest["roles"]["descriptions"]
+    seed = manifest["roles"]["seed"]
+    assert set(descriptions) == set(seed), (
+        f"`roles.descriptions` 的岗位码必须与 `roles.seed` 逐值相等（缺/多都不渲染）："
+        f"缺 {sorted(set(seed) - set(descriptions))} / 多 {sorted(set(descriptions) - set(seed))}"
+    )
+    for role in sorted(descriptions):
+        text = descriptions[role]
+        assert text.startswith("职责：") and "默认可用模块：" in text, (
+            f"`{role}` 的描述必须是「职责 + 默认可用模块」两段式（本迁移的产物口径）：{text!r}"
+        )
+        assert "'" not in text, f"`{role}` 的描述含单引号 ⇒ 渲染出的 SQL 会断（fail-closed）"
+        assert role in LEGACY_ROLE_DESCRIPTIONS, (
+            f"`{role}` 没有登记旧默认描述 ⇒ 迁移不知道要改哪一行（fail-closed）"
+        )
+    updates = "\n\n".join(
+        "-- ── {role}：只改「仍是旧默认文案」的行（自定义描述一律不动）──\n"
+        "UPDATE roles\n"
+        "   SET description = '{desc}', updated_at = NOW()\n"
+        " WHERE code = '{role}'\n"
+        "   AND deleted = 0\n"
+        "   AND description IN ({legacy});".format(
+            role=role,
+            desc=descriptions[role],
+            legacy=_sql_list(LEGACY_ROLE_DESCRIPTIONS[role]),
+        )
+        for role in sorted(descriptions)
+    )
+    old_pairs = ",\n        ".join(
+        f"('{role}', '{old}')" for role in sorted(descriptions) for old in LEGACY_ROLE_DESCRIPTIONS[role]
+    )
+    return f"""{_DESCRIPTIONS_HEADER}
+
+BEGIN;
+
+{updates}
+
+-- ══════════════════════════════════════════════════════════════════════════════
+-- 终态对账（仍有行保留旧默认文案 ⇒ 回滚，不硬推）
+-- ══════════════════════════════════════════════════════════════════════════════
+DO $$
+DECLARE
+    stale INTEGER;
+BEGIN
+    SELECT COUNT(*) INTO stale
+      FROM roles r
+     WHERE r.deleted = 0
+       AND (r.code, r.description) IN (VALUES
+        {old_pairs}
+       );
+    IF stale > 0 THEN
+        RAISE EXCEPTION 'V{DESCRIPTIONS_VERSION} 终态对账失败：仍有 % 行保留旧默认描述 —— 回滚本迁移', stale;
+    END IF;
+    RAISE NOTICE 'V{DESCRIPTIONS_VERSION} 终态对账通过：{len(descriptions)} 个内置岗位的描述已刷新';
+END $$;
+
+COMMIT;
+"""
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 四、入口
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -728,11 +859,12 @@ ARTIFACTS = {
     f"backend/admin-api/src/main/resources/db/migration/V{P6_VERSION}__formalize_legacy_roles.sql": render_p6,
     f"backend/admin-api/src/main/resources/db/migration/V{I4_VERSION}__add_production_execute_permission.sql": render_i4,
     f"backend/admin-api/src/main/resources/db/migration/V{INSPECTOR_VERSION}__create_inspector_role.sql": render_inspector,
+    f"backend/admin-api/src/main/resources/db/migration/V{DESCRIPTIONS_VERSION}__refresh_default_role_descriptions.sql": render_role_descriptions,
 }
 
 
 def render_all(manifest: dict | None = None) -> dict[str, str]:
-    """渲染四份迁移（纯函数；注入式红证 = 喂改过的清单）。"""
+    """渲染五份迁移（纯函数；注入式红证 = 喂改过的清单）。"""
     derive = load_derive()
     manifest = manifest if manifest is not None else derive.load_manifest()
     return {rel: renderer(manifest) for rel, renderer in ARTIFACTS.items()}
