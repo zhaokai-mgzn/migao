@@ -14694,6 +14694,25 @@ _CASE_UI_115 = EvalCase(
     precondition='前置 = 四样都在仓里可读：① 判据本体 `backend/admin-api/src/main/java/com/migao/admin/service/OrderShipGuard.java`（`needsWork` = 含加工项 **或** 有卖布行；`requiredOrderKind` = 该判据的读面形态）；② 读面键 `backend/admin-api/src/main/java/com/migao/admin/dto/OrderDetailResponse.java` 的 `@JsonProperty("needs_work")` / `@JsonProperty("work_order_kind")`；③ 前端唯一读点 `frontend/admin-web/src/lib/processing-order.ts` 的 `workOrderKindOf`；④ 三处消费面组件（`ProcessingOrderBlock` / `ship/ShipOrder` / `OrderDetail`）。**前置不成立时不许读成通过**：接线判据取不到 `convertToDetailResponse` 方法体 ⇒ fail-closed 判红（不许读成「没有违规」）。',
 )
 
+# ── UI-113 [NORMAL] **「页面声明的筛选区必须由原语承载」的类级元守卫**：凡页面自报 `search-area` 的筛选区，承载标签必须是 `SearchPanel` / `SearchBar` / `PageCard`，不得是裸 `div`（issue #7116，承接 #7007 根因③）（源: cases/ui.yml）──
+_CASE_UI_113 = EvalCase(
+    id='UI-113',
+    legacy_id='',
+    title='**「页面声明的筛选区必须由原语承载」的类级元守卫**：凡页面自报 `search-area` 的筛选区，承载标签必须是 `SearchPanel` / `SearchBar` / `PageCard`，不得是裸 `div`（issue #7116，承接 #7007 根因③）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['为什么只有订单页看起来精致，其它页面没有这种感觉？'],
+    expectations=['direct_reply'],
+    data_checks=['🔴 **判据 1（会红）**：射程 = `frontend/admin-web/src/app/(dashboard)/**` 下**每个页面**。凡页面上**自己声明**了筛选区（`data-testid="search-area"` 或 `PageCard` 的 `testId="search-area"`），其**承载标签必须是原语**（`SearchPanel` / `SearchBar` / `PageCard`）——**不得是裸 `<div>`/`<section>`**，否则判红并点名「文件 + 承载标签」。**红证（实跑、逐字节还原）**：迁移前实测 `orders/page.tsx` 与 `after-sales/page.tsx` 各自以裸 `<div>` 承载 ⇒ 判据 1 红并点名两页；迁完两个原语后转绿。', '🔴 **判据 2（反空转）**：射程内「显式声明」**加**「用了 `SearchPanel` 的页面」合计 **≥ 5**（现取：显式 2 + 用原语 3）⇒ 防「把声明或原语都删掉」让判据 1 空转；另断言三个原语文件真实存在。', '🔴 **判据 3（判别力自证）**：坏形态（`<div … data-testid="search-area">`）判红、好形态（`<SearchPanel … testId=` / `<PageCard testId=`）放行；**没有声明 ⇒ 不产生任何判定**（不猜 —— 见下条）。', '📌 **为什么只认「页面自己声明的」**（射程**有意收窄**）：本仓标记「筛选区」的方式不统一，靠「这页有没有查询按钮 / 搜索框」去猜**会把新建单据表单误判成筛选区** —— 实测 `orders/new/page.tsx` 有搜索框 + 查询 + 重置，但它是**下单表单**、不是筛选区。⇒ 判据只承认页面自报的意图，不猜。', '📌 **病灶（#7007 根因③）**：用户原话「只有订单管理精美」。`#7012` 抽出了 `SearchPanel` 原语，但**落地只有 1 页**（`customers`），而 `PageCard` 被 9 页拿去做筛选外壳 —— 共享件造出来没落地。', '📌 **本单交付**：`orders` / `after-sales` / `employees` 三页迁到 `SearchPanel`（无状态原语，页面自持筛选 state），迁移后 `SearchPanel` 落地从 **1 页 → 4 页**。`orders` 那页正是「单一响应式 grid / 标签左置 / 按钮独占一行」这一版的**母版**（`#5880` 打磨出来的就是它）—— 迁回去等于把母版接回原语，而不是发明新形态。', '📌 **`products` 有意未迁（照实登记）**：它用的是**两行独立栅格**（`md:grid-cols-2` + `md:grid-cols-[1fr_1fr_auto]`）+ 防抖 URL 同步，与 `SearchPanel` 的单一 grid 版式不同；且它**已经用 `PageCard` 承载**（判据 1 认可的合法形态）⇒ 不属本判据的违规面。重启条件：真要做「筛选区版式全统一」时，先给 `SearchPanel` 定「多行栅格」形态。', "📌 **迁移过程中的一处真实性修正（值得记）**：`employees` 迁移后有 1 条断言翻红，我一度误判为「迁移引入行为变化」。实测请求序列迁移前后**逐字相同**（`[{page,size}, {page,size,keyword:'张'}]`），真因是**交互与挂载请求的竞争**：断言 `waitFor(toHaveBeenCalled())` 被**挂载那次**满足 ⇒ 读到的是挂载入参（不带 keyword）。修法 = 交互前**先等挂载请求落地**（不是放宽断言、不是改产品代码）。\n  ⚠️ 过程中我一度把「测试超时」误读成「通过」（`vitest` 对 `-t` 过滤时把未选中用例显示为 skipped），差点据此得出错误结论 —— **判读测试结果必须看 `Tests N passed/failed` 汇总行，不能只看有没有 ×**。"],
+    skip_reason='[backend-contract] 前端静态判据（扫 TSX 源码判承载标签 + 冻结下界对账），零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['ui', 'design-consistency', 'filter-area', 'shared-primitive', 'class-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = 三样都在仓里可读：① 无状态筛选原语 `frontend/admin-web/src/components/ui/SearchPanel.tsx`（`fields[].control` 由页面渲染、单一响应式 grid、`testId` 默认 `search-area`）；② 有状态轻量筛选条 `frontend/admin-web/src/components/ui/SearchBar.tsx`；③ 守卫本体 `frontend/admin-web/tests/unit/filter-area-primitive-guard.test.ts`。**前置不成立时不许读成通过**：射程目录取不到 ⇒ `walk()` 抛（fail-closed）；页面数 ≤ 40、或「声明 + 原语」合计 < 5 ⇒ 反空跑判红。',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -15516,6 +15535,7 @@ ALL_CASES = (
     _CASE_UI_113,
     _CASE_UI_114,
     _CASE_UI_115,
+    _CASE_UI_113,
     _CASE_UT_001,
     _CASE_UT_002,
 )
