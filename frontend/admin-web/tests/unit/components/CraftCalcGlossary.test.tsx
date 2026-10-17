@@ -160,9 +160,8 @@ describe('算料口径与术语说明区块（issue #4975）', () => {
     for (const t of SPECIAL_OPTION_TERMS.filter((x) => x.operation !== null)) {
       const row = container.querySelector(`[data-testid="glossary-option-${t.name}"]`)
       const rowText = row?.textContent ?? ''
-      // 自证非空：取不到行时下面的计数恒为 0（假绿）
-      expect(row, `取不到 ${t.name} 的条目`).not.toBeNull()
-      expect(rowText.length).toBeGreaterThan(10)
+      // 自证非空：取不到行时下面两条都会红（`rowText` 为空 ⇒ 长度断言红；`hits` 为 0 ⇒ 计数断言红）
+      expect(rowText.length, `取不到 ${t.name} 的条目`).toBeGreaterThan(10)
       const hits = rowText.split(`在「${t.after}」之后`).length - 1
       expect(hits, `${t.name} 的锚点信息出现 ${hits} 次（应恰好 1 次）`).toBe(1)
     }
