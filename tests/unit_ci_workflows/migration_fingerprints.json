@@ -156,6 +156,7 @@
     "V158__create_inspector_role.sql": "sha256:7197076855ca8517d85727e175dd106ea2b4e2ff6063fe6e707c91d60bf53331",
     "V159__add_processing_order_kind.sql": "sha256:12a7c0b1a67255ac32a8b6b8b0442afb3f09ba7c4759961b27d94e3712755f13",
     "V160__add_order_paid_at_and_received_at.sql": "sha256:7243b4f499292e1282aebde7631e6c31fd0e14e7ab764b01f8d03b2157b5321b",
+    "V161__refresh_default_role_descriptions.sql": "sha256:e0da190e429d6d86e444d9c9e9a581108263e8b6fef0ab08abac01543bed3448",
     "schema.sql": "sha256:80a0b9e5d7e926bd6aa7fa35e5fa3e8d917c5b3fb6c1cc3f7a99738d64d57177"
   }
 }
