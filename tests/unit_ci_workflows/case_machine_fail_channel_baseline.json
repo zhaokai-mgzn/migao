@@ -602,7 +602,7 @@
       "date": "2026-10-17",
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 173,
-      "note": "issue #7140（质检记录落到观星台：新增商家面三处可见面 + 待检清单读面）新增 4 条 `[backend-contract]` 用例（PG-081 / UI-117 / UI-118 / UI-119）。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）：rebase 到含 #7152（上一行 172）的 main 之后，本树实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 报 {'no_channel_total': 0, 'backend_contract_scoring_zero': 173}（172 → 净增 1；四条用例里只有一条落入本读数口径，其余三条的 `data_checks` 命中了机器判红标记）。四条用例的机器判红通道 = `traces.tests` 的真实文件（本机实跑过：QualityCheckTargetsTest 7 passed / quality-inspections.test.tsx 7 passed / QualityCheckPanel.test.tsx 4 passed / ProductionProgressTable-worktype.test.tsx 3 passed），`traces.ci` = `pr-check.yml`。真债务 `no_channel_total` 仍为 **0**。"
+      "note": "issue #7140（质检记录落到观星台：新增商家面三处可见面 + 待检清单读面）新增 4 条 `[backend-contract]` 用例（PG-081 / UI-118 / UI-119 / UI-120；UI-117 已被 main 的 #7146 占用 ⇒ 本单后合、按规矩改号）。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）：rebase 到含 #7152（上一行 172）的 main 之后，本树实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 报 {'no_channel_total': 0, 'backend_contract_scoring_zero': 173}（172 → 净增 1；四条用例里只有一条落入本读数口径，其余三条的 `data_checks` 命中了机器判红标记）。四条用例的机器判红通道 = `traces.tests` 的真实文件（本机实跑过：QualityCheckTargetsTest 7 passed / quality-inspections.test.tsx 7 passed / QualityCheckPanel.test.tsx 4 passed / ProductionProgressTable-worktype.test.tsx 3 passed），`traces.ci` = `pr-check.yml`。真债务 `no_channel_total` 仍为 **0**。"
     }
   ]
 }
