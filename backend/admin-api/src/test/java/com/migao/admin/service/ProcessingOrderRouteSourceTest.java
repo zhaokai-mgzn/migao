@@ -468,6 +468,76 @@ class ProcessingOrderRouteSourceTest {
         assertThat(results.get(0).getMessage()).contains("无加工项");
     }
 
+    // ══════════════════════ 单据类型 order_kind（V159，issue #7079）══════════════════════
+
+    /**
+     * 纯卖布单（快照**每一行** `saleForm=布料`）⇒ `order_kind = outbound`。
+     *
+     * <p>形态与上面 PG-063 用的是**同一个真库夹具**（卖布行无 `processingItems`）：卖布单今天会
+     * 生成一张只有 `裁剪`/`打包` 两道工序的加工单，但用户裁定它**不该叫加工单** —— 它是
+     * **出库作业单**（2026-10-17 / issue #7079）。本用例断言的是 `processingOrderMapper.insert`
+     * 的**实参**，即「生成那一刻冻结并随行落库」这件事本身。</p>
+     */
+    @Test
+    @DisplayName("PG-063 纯卖布单（每行 saleForm=布料）⇒ orderKind=outbound（issue #7079）")
+    void pureFabricOrderIsAnOutboundJob() {
+        stubRoutings();
+        AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
+                fabricItemWithoutProcessingItems("item-1", "9231 遮光窗帘", "布料")));
+
+        var results = service().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        assertThat(po.get().getOrderKind())
+                .as("卖布单 = **出库**作业单（改前无该列 / 未接线 ⇒ 恒 null）")
+                .isEqualTo(ProcessingOrderService.ORDER_KIND_OUTBOUND);
+    }
+
+    /**
+     * 成品帘单（快照行**没有** `saleForm` 键）⇒ `order_kind = processing`。
+     *
+     * <p>反向护栏：不得把判定写成「缺 `saleForm` 就出库」—— 缺键就是缺（存量单的常态），
+     * **不造值**。</p>
+     */
+    @Test
+    @DisplayName("PG-063 成品帘单（缺 saleForm 键）⇒ orderKind=processing（issue #7079）")
+    void finishedCurtainOrderIsAProcessingJob() {
+        stubSignals();
+        stubRoutings();
+        AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
+                item("item-1", "遮光成品X", "韩褶-布")));
+
+        var results = service().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        assertThat(po.get().getOrderKind())
+                .as("成品帘单 = 加工单；缺 saleForm 键 ⇒ 不得判成 outbound")
+                .isEqualTo(ProcessingOrderService.ORDER_KIND_PROCESSING);
+    }
+
+    /**
+     * 混合单（一行卖布 + 一行成品帘）⇒ `order_kind = processing`：**有加工就是加工单**。
+     *
+     * <p>本用例是「逐行判定」与「任一行判定」的**判别物** —— 实现只要写成「任一行是布料即出库」，
+     * 本用例当场红。</p>
+     */
+    @Test
+    @DisplayName("PG-063 混合单（一行卖布 + 一行成品帘）⇒ orderKind=processing（issue #7079）")
+    void mixedOrderWithAnyProcessingLineStaysAProcessingJob() {
+        stubSignals();
+        stubRoutings();
+        AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
+                fabricItemWithoutProcessingItems("item-1", "9231 遮光窗帘", "布料"),
+                item("item-2", "遮光成品Y", "韩褶-布")));
+
+        var results = service().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        assertThat(po.get().getOrderKind())
+                .as("混合单 = 有加工 ⇒ processing（判据 = **每一行**都是布料才算出库单）")
+                .isEqualTo(ProcessingOrderService.ORDER_KIND_PROCESSING);
+    }
+
     /** 本次生成落库的工序实例（按落库顺序）—— 落库**值**的判据只能从捕获的实体上取。 */
     private List<com.migao.admin.entity.ProcessingPositionOperation> instanceOperations() {
         ArgumentCaptor<com.migao.admin.entity.ProcessingPositionOperation> captor =
