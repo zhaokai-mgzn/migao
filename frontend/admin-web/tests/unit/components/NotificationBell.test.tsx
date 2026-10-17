@@ -307,6 +307,22 @@ describe('NotificationBell', () => {
     })
   })
 
+  it('面板头部「全部已读」的图标是单勾（与通知中心页同一字形，issue #7180）', async () => {
+    mockGetUnreadCount.mockResolvedValue({ data: { data: { count: 3 } } })
+    mockGetNotifications.mockResolvedValue({
+      data: { data: { items: [createNotification()], total: 1, page: 1, size: 5 } },
+    })
+    render(<NotificationBell />)
+    const bell = screen.getByTestId('icon-bell').closest('button')!
+    await user.click(bell)
+    const label = await screen.findByText('全部已读')
+    const btn = label.closest('button') as HTMLElement
+    const icon = btn.querySelector('svg, [data-testid^="icon-"]') as HTMLElement | null
+    expect(icon, '按钮必须带图标').not.toBeNull()
+    expect(icon?.getAttribute('class') ?? '', '不得再用双勾字形').not.toMatch(/check-check/i)
+    expect(icon?.getAttribute('class') ?? '', '图标是单勾').toMatch(/check/i)
+  })
+
   it('未读数为 0 时面板头部不显示"全部已读"按钮', async () => {
     mockGetNotifications.mockResolvedValue({
       data: { data: { items: [createNotification()], total: 1, page: 1, size: 5 } },
