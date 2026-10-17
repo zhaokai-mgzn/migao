@@ -1,7 +1,8 @@
-// case_ids: OR-001, OR-002, OR-003, OR-046, OR-055, UI-024, UI-040, UI-053, UI-076, UI-090
+// case_ids: OR-001, OR-002, OR-003, OR-046, OR-055, OR-067, UI-024, UI-040, UI-053, UI-076, UI-090
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, cleanup, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import dayjs from 'dayjs'
 import { markErrorToastShown } from '@/lib/api-error'
 
 // Mock API
@@ -291,7 +292,7 @@ describe('OrderDetailPage', () => {
     expect(screen.queryByText('已退款 ¥0.00')).not.toBeInTheDocument()
   })
 
-  it('renders "-" for missing paidAt/shippedAt/receivedAt (defensive, no crash)', async () => {
+  it('renders "-" for missing paidAt/shippedAt/receivedAt（存量未采集 ⇒ 占位，不崩不猜）', async () => {
     const noTimes = { ...mockOrder, paidAt: undefined, shippedAt: undefined, receivedAt: undefined }
     mockGetOrder.mockResolvedValue({ data: { data: noTimes } })
     render(<OrderDetailPage />)
@@ -304,6 +305,43 @@ describe('OrderDetailPage', () => {
       expect(row).toBeTruthy()
       expect(row!.textContent).toContain('-')
     }
+  })
+
+  // issue #7078：三个时刻改由**服务端真值**下发（orders.paid_at / shipped_at / received_at）。
+  // 这条判据钉住的正是用户真机上那处自相矛盾：状态引导第 1 步「已付款 ✓」+ 基础信息「支付时间 -」
+  // （根因 = 屏幕面读后端从不下发的键 ⇒ 恒 "-"，#6882 同类）。
+  it('基础信息渲染服务端下发的 支付时间 / 发货时间 / 确认收货时间（不再是恒 -）', async () => {
+    const times = {
+      paidAt: '2026-06-20T10:30:00Z',
+      shippedAt: '2026-06-21T02:00:00Z',
+      receivedAt: '2026-06-23T06:00:00Z',
+    }
+    mockGetOrder.mockResolvedValue({ data: { data: { ...mockOrder, status: 'completed', ...times } } })
+    render(<OrderDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByText('基础信息')).toBeInTheDocument()
+    })
+    const rows: Array<[string, string]> = [
+      ['支付时间：', times.paidAt],
+      ['发货时间：', times.shippedAt],
+      ['确认收货时间：', times.receivedAt],
+    ]
+    for (const [label, iso] of rows) {
+      const cell = screen.getByText(label).parentElement!
+      // 期望值与 DateTimeCell 同一份格式化口径（本地时区 YYYY-MM-DD / HH:mm）⇒ 不写死字符串，
+      // 跨时区跑不会假红
+      expect(cell.textContent).toContain(dayjs(iso).format('YYYY-MM-DD'))
+      expect(cell.textContent).toContain(dayjs(iso).format('HH:mm'))
+    }
+  })
+
+  it('不再渲染「支付交易号」行（后端无真值源 ⇒ 撤下，issue #7078）', async () => {
+    mockGetOrder.mockResolvedValue({ data: { data: { ...mockOrder, status: 'confirmed' } } })
+    render(<OrderDetailPage />)
+    await waitFor(() => {
+      expect(screen.getByText('基础信息')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('支付交易号：')).not.toBeInTheDocument()
   })
 
   // ===== 详情页操作区退款按钮（P1：confirmed/producing/shipped/completed 且未退款） =====

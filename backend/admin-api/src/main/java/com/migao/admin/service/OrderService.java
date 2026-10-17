@@ -1146,6 +1146,20 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if ("shipped".equals(newStatus)) {
             wrapper.set(Order::getShippedAt, businessClock.nowOffset());
         }
+        // issue #7078：paid_at 只在 **pending → confirmed**（= 确认收款）这条边上写。
+        // 🔴 用 expectedStatus 限定前驱是必须的：本方法还被 **producing → confirmed**
+        // （作废加工单退回待发货）复用 —— 那是**回退边**，在那里写会让「支付时间」被一次回退
+        // 动作顶成当天（屏幕上看不出异常）。判据 = OrderPaidAndReceivedAtWriteGuardTest
+        // （含「摘掉前驱限定 ⇒ 判红」的判别力自证）。
+        if ("confirmed".equals(newStatus) && "pending".equals(expectedStatus)) {
+            wrapper.set(Order::getPaidAt, businessClock.nowOffset());
+        }
+        // issue #7078：received_at = 订单进入 completed 的时刻。completed 在本状态机里没有出边
+        // ⇒ 这条边只会走一次、不会覆盖。另一条完成路（发货后 N 天自动完成）**不经**本方法，
+        // 在 OrderMapper.autoCompleteShippedOrders 自己的 SQL 里同写（漏写那条腿 = 那批单永远空值）。
+        if ("completed".equals(newStatus)) {
+            wrapper.set(Order::getReceivedAt, businessClock.nowOffset());
+        }
         if (closeReason != null && !closeReason.isBlank()) {
             wrapper.set(Order::getCloseReason, closeReason);
         }

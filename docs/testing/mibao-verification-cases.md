@@ -5318,7 +5318,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（66 case）
+## 订单域（67 case）
 
 ### OR-061. 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262） 🔵
 ```
@@ -6505,6 +6505,19 @@
 跳过: [backend-contract] 纯后端真库并发判据（真 PG 一次性集群，走 PgCluster.startOrAbort() 收口）+ 类级元守卫（零网络、零 LLM）：admin-api 单测面，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-14 新增（issue #6928，P1·库存台账并发）。取号 = 现取 `.github/cases/order.yml` 最大号 OR-065 ⇒ **OR-066**（全仓 refs 复核 0 命中）。**红→绿（注入式双向对照，真 PG）**：① 把 `#cancel` 退回修前的无谓词 `updateById` ⇒ 3 轮全红、逐字 `post=200 cancel=200 成功数=2 单终态=cancelled 库存=100.0→105.0 台账行=1`；② 修后（`#cancel` 走 `InboundOrderMapper#markCancelled` 的 CAS）⇒ 3 轮全绿、`post=200 cancel=409 成功数=1 单终态=posted 库存=100.0→105.0 台账行=1`。元守卫红证（最隐蔽的一种，实证）：**锚串留着**（`if (false && …markCancelled(…)`）、真正落库换成无谓词 `updateById` ⇒ 判据当场红并具名 `违规=[cancel]`（只判锚会被它骗过去 ⇒ 判据本体是 CAS 而不是锚）。 ｜ tags: inbound, stock, ledger, concurrency, backend-contract, realdb
+
+### OR-067. 订单详情三个时刻（收款 / 发货 / 完成）显示服务端真值：paid_at 只在 pending→confirmed 边写、received_at 两条完成路都写（issue #7078） 🔵
+```
+你: 用户 2026-10-17 真机截图（订单 20261016769570012）：订单详情这里的状态引导和实际的不一致了？—— 引导第 1 步「已付款 ✓」，而同屏「支付时间 / 支付交易号」都是 `-`
+数据: 判据 1·🔴 **结构：paid_at 只在 pending → confirmed 这条边上写**（回退边不得写）：`OrderService.transitionStatusAtomic` 必须同时出现「新态 confirmed」与「**期望前驱 pending**」两个限定 —— 该方法被 producing → confirmed（作废加工单退回待发货）复用，在那里写会把「支付时间」顶成当天而屏幕上看不出异常。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderPaidAndReceivedAtWriteGuardTest.java 的 `paidAtIsWrittenOnlyOnTheConfirmEdge`（含判别力自证：摘掉前驱限定 / 多出第二个写面 ⇒ 各自判红）
+数据: 判据 2·🔴 **结构：received_at 由两条完成路各写一次** —— 商家「确认收货」= `transitionStatusAtomic`（to=completed）；「发货后 N 天自动完成」**不经**该方法，必须在 `OrderMapper.autoCompleteShippedOrders` 自己的条件 UPDATE 里同写（漏写那条腿 ⇒ 那批单永远空值，且不会有别的东西变红）。执行点 = 同文件 `receivedAtIsWrittenOnBothCompletedPaths`（自证注入：把 `received_at = NOW()` 换成 `updated_at = NOW()` ⇒ 判红）
+数据: 判据 3·**详情响应必须透出三个时刻**（否则屏幕退回「恒 -」）：`OrderDetailResponse` 同时含 `private OffsetDateTime paidAt;` / `shippedAt;` / `receivedAt;`。执行点 = 同文件 `detailResponseExposesTheThreeTimestamps`（自证注入：删任一键 ⇒ 判红）
+数据: 判据 4·**屏幕面渲染真值**（用户可见的那一面）：基础信息「支付时间 / 发货时间 / 确认收货时间」三行显示服务端下发的时刻（期望值用与 `DateTimeCell` 同一份格式化口径算，不写死字符串 ⇒ 跨时区不假红）；缺值仍渲染 `-`（存量未采集 ⇒ 占位，不崩不猜）。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx 的「基础信息渲染服务端下发的 支付时间 / 发货时间 / 确认收货时间（不再是恒 -）」与存量未采集占位那条
+数据: 判据 5·**「支付交易号」行撤下**（后端无真值源 ⇒ 建了也恒 `-`）：屏幕不再渲染该行；前端类型面删掉 `paymentNo`（#6882 同款：让编译器成为类级守卫，再读即编译期红）。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx 的「不再渲染支付交易号行」
+数据: 判据 6·**迁移只搬已存在的事实**（V160）：`paid_at` 从 `finance_transactions` 的 `type='income'`（全仓唯一写入点 = `confirmPayment` 的「订单确认收款」）取最早一笔回填；`received_at` **不回填**（存量 completed 单无 durable 完成时刻）⇒ 老单该行仍为 `-`（登记，不是缺口）。迁移幂等 = `ADD COLUMN IF NOT EXISTS` + `WHERE paid_at IS NULL`。
+跳过: [backend-contract] 结构判据（Java 源码面）+ 数据迁移 + 前端展示判据（admin-web vitest）：零 LLM 环节 ⇒ 不进 agent-eval 冒烟；机器判红通道 = traces.tests
+```
+溯源: 2026-10-17 新增（issue #7078，用户裁定 A：补真值）。取号 = `scripts/next_case_id.py OR` 现取（main 001-066）⇒ **OR-067**。病根（读源，不是漏列）：详情页读 `order.paidAt / paymentNo / shippedAt / receivedAt`，而 `OrderDetailResponse` 全文只有 `LogisticsInfo.shippedAt` 一处时间键、`orders` 表也没有对应列 ⇒ 那几行**恒 `-`**，与订单走到哪一步无关（与 #6882「屏幕面读后端未下发的字段」同类；那一包只清了行级字段）。而状态引导第 1 步的勾是 `OrderProgressSteps.getStepStates()` 从 `status` 推出来的 ⇒「已付款 ✓」与「支付时间 -」必然同屏自相矛盾。修法：① V160 加 `paid_at` / `received_at` 两列（`shipped_at` 是 V148 已有列，本单只**透出**）；② 写入点 = `transitionStatusAtomic` 的 pending→confirmed 边（用期望前驱限定，避开回退边）与 completed 边 + `autoCompleteShippedOrders` 的 SQL；③ `OrderDetailResponse` 补三键（`BeanUtils` 同名带出，不另立第二份口径）；④ 支付交易号行撤下、前端类型面删 `paymentNo`。边界：存量 completed 单不回填 `received_at`；自动完成的单 `received_at` = 自动完成时刻（列注释与判据里写明）。 ｜ tags: order, order-detail, phantom-field, data-quality, backend-contract, migration
 
 ## 加工项域（30 case）
 
@@ -11361,8 +11374,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：778（活跃 133，跳过 645）
-- tier 分布：smoke 12 / normal 719 / adversarial 32
+- 用例总数：779（活跃 133，跳过 646）
+- tier 分布：smoke 12 / normal 720 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -11380,7 +11393,7 @@
 - 杂项域：114
 - 商家入驻域：6
 - 领域本体域：4
-- 订单域：66
+- 订单域：67
 - 加工项域：30
 - 加工单域：65
 - 商品域：122
@@ -11552,6 +11565,7 @@
 - OR-064: 物流「首次发货时刻」（order_logistics.shipped_at）：更新路径**只在为空时**补、已有值一律不覆盖（issue #6276）
 - OR-065: 未定价告警的定价入口：**可见文案与后端下发的域指针逐字同源** + href 落在真实定价面（issue #6853 修 #6848 的卡点）
 - OR-066: 入库单「过账 × 作废」交叉竞态：至多一个赢家 + 「已作废的单」不得改库存 / 不得留入库台账（issue #6928）
+- OR-067: 订单详情三个时刻（收款 / 发货 / 完成）显示服务端真值：paid_at 只在 pending→confirmed 边写、received_at 两条完成路都写（issue #7078）
 - PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）

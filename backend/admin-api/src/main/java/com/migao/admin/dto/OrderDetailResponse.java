@@ -162,6 +162,33 @@ public class OrderDetailResponse {
     private OffsetDateTime createdAt;
 
     /**
+     * **收款时刻**（列 {@code orders.paid_at}，V160；issue #7078 起下发）。
+     *
+     * <p>取值与实体同名字段，由 {@code BeanUtils.copyProperties(order, response)} 带出 —— 不另立第二份口径。
+     * {@code null} = 未采集（从未确认收款 / 存量无收款流水）⇒ 屏幕显示「-」，**不猜**。</p>
+     *
+     * <p>🔴 下它的理由（不是"顺手加"）：在这之前详情页读的是**后端从不下发的键**，
+     * 「支付时间」**恒 `-`**，而状态引导第 1 步「已付款 ✓」却是从 {@code status} 推出来的
+     * ⇒ 同屏自相矛盾（#7078 / #6882 同类）。</p>
+     */
+    private OffsetDateTime paidAt;
+
+    /**
+     * **发货时刻**（列 {@code orders.shipped_at}，V148 / #6262；issue #7078 起**下发**）。
+     *
+     * <p>该列此前只在库里有、详情响应没透出 ⇒ 「发货时间」行与状态引导第 3 步**恒空**。
+     * 取值与实体同名字段（{@code BeanUtils} 带出）。{@code null} = 未采集（存量回填不全 / 从未发货）。</p>
+     */
+    private OffsetDateTime shippedAt;
+
+    /**
+     * **完成（收货）时刻**（列 {@code orders.received_at}，V160；issue #7078 起下发）。
+     *
+     * <p>{@code null} = 未采集（存量 completed 单不回填）。自动完成的单本列 = 自动完成时刻。</p>
+     */
+    private OffsetDateTime receivedAt;
+
+    /**
      * 更新时间
      */
     private OffsetDateTime updatedAt;
