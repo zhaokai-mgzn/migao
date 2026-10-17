@@ -80,6 +80,17 @@ public class ProcessingOrder {
     private String shortCode;
 
     /**
+     * 单据类型（V159，issue #7079）：{@code processing} 加工（成品帘；**混合单**也在这一档）/
+     * {@code outbound} 出库（卖布单的裁剪/打包作业 —— 快照**每一行** {@code saleForm=布料}）。
+     *
+     * <p>取值常量 = {@code ProcessingOrderService.ORDER_KIND_PROCESSING} /
+     * {@code ORDER_KIND_OUTBOUND}（**单一出处**，勿散落字面量）。判定在**生成那一刻冻结**
+     * （随 {@code items_snapshot} 一起落库）⇒ 事后改订单行**不回改**；
+     * 存量行 = {@code processing}（DEFAULT 兜底，V159 不回填）。</p>
+     */
+    private String orderKind;
+
+    /**
      * 本单**实际使用**的路线键「帘种×工艺」（V60，issue #4308）。
      *
      * <p>T1/T2 时 = 默认 {@code 布帘×韩褶}（与真正实例化出的工序对应）。多部位订单取**最需关注**

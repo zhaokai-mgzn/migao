@@ -88,15 +88,18 @@
         "routeRequestedKey": "routeRequestedKey",
         "routeSource": "routeSource",
         "shortCode": "short_code",
-        "scanUrl": "scan_url"
+        "scanUrl": "scan_url",
+        "orderKind": "order_kind"
       },
       "frozen_keys": [
+        "order_kind",
         "scan_url",
         "short_code"
       ],
       "contract_ledger_keys": [
-        "short_code",
-        "scan_url"
+        "order_kind",
+        "scan_url",
+        "short_code"
       ],
       "contract_ledger_why": "这两个是 issue #6867/B3 追加的**冻结键**，账本行（docs/wiki/CONTRACT-LEDGER.md 的「加工单列表/详情」行）逐字点名；其余冻结键分属嵌套视图类，见那一类。",
       "contract_ledger_anchor": "`GET /api/admin/processing-orders"
@@ -241,6 +244,11 @@
       "form": "absent",
       "kind": "map-entry",
       "why": "**Map 载体**读面（不是 DTO）：键是 `position.put(...)` 的条目 ⇒ 全局 non_null 对 Map 的 null 值**同样过滤**（实测：`ObjectMapper.setSerializationInclusion(NON_NULL)` 下根级与嵌套 Map 的 null 值都不下发）⇒ 无码时**键缺席**，与「值为 null」在消费方语义等价（`?? null`）。⚠️ 本面的载体若从 Map 变成带 `@JsonInclude(ALWAYS)` 的 DTO，本登记即失效 ⇒ 判据 6b 会红（锚里必须含 `.put(`）。"
+    },
+    "com.migao.admin.dto.ProcessingOrderResponse::order_kind": {
+      "form": "absent",
+      "why": "可空（引用类型），形态 = **键缺席**：全局 `spring.jackson.default-property-inclusion: non_null`（backend/admin-api/src/main/resources/application.yml）+ 类/字段均无 `@JsonInclude(ALWAYS)` ⇒ 值为 null 时该键**不出现在 JSON 里**（不是 `key: null`）。台账登记的是**实际形态**，不是「键恒在」的理想形态 —— 见判据文件头的「键恒在」口径段。 ⚠️ issue #7079/V159：DB 列是 `NOT NULL DEFAULT 'processing'`，但 DTO 侧仍可空（存量 PO / 未接线写入方） ⇒ **不编造**：消费方按「加工（processing）」兜底。",
+      "kind": "dto-key"
     }
   },
   "contract_ledger_row_vocabulary": {

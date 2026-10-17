@@ -222,6 +222,13 @@ public class ProcessingOrderService {
     public static final String FABRIC_POSITION = "布料";
 
     /**
+     * 作业单类型 · **加工**（成品帘；**混合单**也在这一档）—— 与迁移 V159 的 CHECK / 前端联合类型逐值同源。
+     */
+    public static final String ORDER_KIND_PROCESSING = "processing";
+    /** 作业单类型 · **出库**（卖布单的裁剪/打包作业 —— 快照**每一行** {@code saleForm=布料}）。 */
+    public static final String ORDER_KIND_OUTBOUND = "outbound";
+
+    /**
      * 部位（帘种）与工艺的**派生来源**（V60，issue #4308）：租户级库表
      * {@code production_route_signals}，读面 = {@link ProductionOperationQueryService#routeSignals}。
      *
@@ -1679,6 +1686,9 @@ public class ProcessingOrderService {
                 .processingOrderNo(generateOrderNo())
                 .status("generated")
                 .itemsSnapshot(snapshot)
+                // 单据类型（V159，issue #7079）：与快照**同一时机**冻结 —— 卖布单（每一行 saleForm=布料）
+                // 落 `outbound`（出库作业单），其余（含混合单）落 `processing`。事后改订单行不回改。
+                .orderKind(deriveOrderKind(snapshot))
                 .templateVersion(1)
                 .generatedBy(operator)
                 .generatedAt(OffsetDateTime.now())
@@ -1692,6 +1702,30 @@ public class ProcessingOrderService {
                 .deleted(0)
                 .build();
         return new Prepared(rawId, order, snapshot, positions, po, designations);
+    }
+
+    /**
+     * **单据类型**（V159，issue #7079）—— 判定规则**冻结**为：快照非空**且每一行**
+     * {@code saleForm == '布料'} ⇒ {@link #ORDER_KIND_OUTBOUND}；否则
+     * {@link #ORDER_KIND_PROCESSING}（**混合单 = 有加工 ⇒ 加工**）。
+     *
+     * <p>判定在**生成那一刻**做一次并随 {@code items_snapshot} 一起落库（见 {@link #prepare}）——
+     * 「这一单当时按哪一型做的作业」是**已发生的事实**，事后改订单行**不回改**、历史单不改型。</p>
+     *
+     * <p>⚠️ 快照行的 {@code saleForm} 由 {@link #CRAFT_SPEC_SNAPSHOT_KEYS} 从
+     * {@code order_items.processing_info} **透传** ⇒ <b>缺键就是缺</b>（存量单的常态）：
+     * 缺键的行按**非布料**处理，**不得为它造值**（造值 = 把「没这回事」写成「有这回事」）。</p>
+     */
+    private static String deriveOrderKind(List<Map<String, Object>> snapshot) {
+        if (snapshot == null || snapshot.isEmpty()) {
+            return ORDER_KIND_PROCESSING;
+        }
+        for (Map<String, Object> row : snapshot) {
+            if (!SALE_FORM_FABRIC.equals(str(row.get("saleForm")))) {
+                return ORDER_KIND_PROCESSING;
+            }
+        }
+        return ORDER_KIND_OUTBOUND;
     }
 
     /**
@@ -3886,6 +3920,8 @@ public class ProcessingOrderService {
         resp.setRouteKey(po.getRouteKey());
         resp.setRouteRequestedKey(po.getRouteRequestedKey());
         resp.setRouteSource(po.getRouteSource());
+        // 单据类型（V159，issue #7079）：同表列，随既有查询**已经带回** ⇒ 零新增查询（同 route_* 三列）。
+        resp.setOrderKind(po.getOrderKind());
         // 加工单纸上的码（issue #6867 / B3；设计 §11.3「后端 · 读面键」）：**追加**两键，
         // 键**恒在**（未知 ⇒ null），既有键一字不动。
         // 🔴 **零新增查询**：`po` 由本方法的唯一入口 `resolveProcessingOrder`（详情）/
