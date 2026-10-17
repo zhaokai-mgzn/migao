@@ -852,8 +852,14 @@ class ProcessingOrderServiceTest {
                 List.of(batchAssignment("item-1", null)), TENANT, "文员", "best_fit");
 
         assertThat(results.get(0).isSuccess()).isFalse();
+        // 🔴 2026-10-17（issue #7077）：文案 = **商家能照着做**的话（商品名 + 米数 + 下一步）。
+        // 注入：把旧文案写回（内部规则码 / 明细行 id 上屏）⇒ 下面两条 `doesNotContain` 当场红。
         assertThat(results.get(0).getMessage())
-                .contains("在指派规则 best_fit 下没有可满足的批次").contains("该行需要 2.7 米");
+                .contains("「布艺遮光帘A」").contains("需要 2.7 米").contains("没有能裁出它的批次");
+        assertThat(results.get(0).getMessage())
+                .doesNotContain("best_fit")
+                .doesNotContain("item-1")
+                .doesNotContain("指派规则");
         verify(stockBatchConsumptionService, never()).plan(any(), anyList());
         verify(processingOrderMapper, never()).insert(any(ProcessingOrder.class));
     }

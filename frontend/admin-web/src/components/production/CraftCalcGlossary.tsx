@@ -73,11 +73,10 @@ function TermBlock({ term, anchor, meta }: { term: GlossaryTerm; anchor?: string
           </>
         )}
       </p>
-      {term.boundary !== undefined && (
-        <p className="mt-0.5 text-xs text-amber-700">
-          <InlineMarkdown text={term.boundary} />
-        </p>
-      )}
+      {/* 🔴 2026-10-17 用户裁定：原先这里渲染 `term.boundary`（琥珀色「边界」行）——
+          用户逐字「术语怎么判里面的红色文案都拿掉，这些都是开发过程的产物，不是产品的需求」。
+          算料域的术语**已全部不带 boundary**（见 `@/lib/craft-calc-glossary` 的 `GlossaryTerm`），
+          故本行整段删除；真属于产品行为的那几条已并入 definition / impact（**不留红字载体**）。 */}
     </div>
   )
 }

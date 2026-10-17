@@ -2758,7 +2758,7 @@ cases:
       - "判据 1·**缺省不自动指派**：不传 `assignmentRule` 且某行没给 `batchNo` ⇒ **逐字**沿用原错误「批次指派缺少 batchNo（行 item-1）」、**绝不**去查建议值（`verify(never())`）、不落加工单、不落台账。红证：去掉 `assignmentRule == null` 守卫 ⇒ 该行会被「静默指派」（或换成另一条错误文案）⇒ 判据红。"
       - "判据 2·**显式传规则才补位**：`best_fit` ⇒ 未指定批次的行补成 `suggestedBatchNo(...)` 的结果，且**真的进计划**（`plan` 收到的指派行 `batchNo = PC-LATE`）与加工单快照 `batchNo`；补位用的需求 = 该行**公式口径**米数 2.7（实际扣减仍由 plan 按排料结果定）。"
       - "显式 `fifo` 同样开启补位（缺省「不补位」≠ 规则值 `fifo`）；行里已有 `batchNo` ⇒ 人工最终选择优先，不查建议值。"
-      - "判据 3·**无候选 ⇒ 显式拒绝该行**：`suggestedBatchNo` 回 null ⇒ 逐单失败（`在指派规则 best_fit 下没有可满足的批次（该行需要 2.7 米）`）、不落半成品（不插加工单、不扣批次）—— 不静默跳过 = 不静默少扣。"
+      - "判据 3·**无候选 ⇒ 显式拒绝该行**：`suggestedBatchNo` 回 null ⇒ 逐单失败（🔴 2026-10-17 issue #7077 改判：旧文案把**内部规则码**（`best_fit` / `fifo`）与**明细行 id**（UUID）端给商家 ⇒ 现为「`「布艺遮光帘A」这行需要 2.7 米，库存里没有能裁出它的批次（按「先到先用」也补不上）—— 请先把这批布入库，或核对库存里对应门幅与颜色的余量后重试`」；判据 = `ProcessingOrderServiceTest#noCandidateUnderTheRuleFailsClosed` 的**成对断言**：新文案必须在 ∧ `best_fit` / `item-1` / 「指派规则」三个内部串必须**不在** ⇒ 任一句写回即红）、不落半成品（不插加工单、不扣批次）—— 不静默跳过 = 不静默少扣。"
       - "判据 4·**非法规则值 ⇒ 整批拒绝**（**即使本次所有行都显式指定了批次**）：`bestfit` ⇒ 400 + `ASSIGNMENT_RULE_UNKNOWN`，且在**碰任何 Mapper 之前**判完。两个入口都判：`POST /processing-orders/generate`（body 字段）与 `GET /batch-stock/candidates`（query 参数，非法值 ⇒ 400）。"
     skip_reason: "[backend-contract] 生成加工单侧的规则装配与失败面（无黄金策工具面）⇒ 由 Java 单测覆盖，不进入 agent-eval 冒烟"
     merge_log: "2026-09-25 新增（issue #5167）：生成加工单口的 assignmentRule（显式开启才补位 / 人工指定优先 / 失败面显式）。取号 PR-068。"
