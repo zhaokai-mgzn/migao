@@ -536,7 +536,7 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
                       })}
                     />
                     <span className="text-sm text-neutral-800">{page.label}</span>
-                    <span className="text-xs text-neutral-400">扫水洗唛后录判定、生成质检单（服务端写准入）</span>
+                    <span className="text-xs text-neutral-400">扫水洗唛后录判定、生成质检单</span>
                   </label>
                 ))}
               </div>
