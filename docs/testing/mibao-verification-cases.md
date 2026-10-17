@@ -10060,14 +10060,15 @@
 ```
 你: 订单包含加工项（如打孔、韩式打褶定型）时，订单列表「采购明细」列应展示该项加工费与加工项明细，与详情页口径一致
 期望: direct_reply
-数据: OrderTable 采购明细列从 processingInfo.processingFee（非 totalAmount/totalFee）取加工费，商品行后展示「+ 加工费{金额}元」
-数据: processingInfo 无 processingFee 字段时，按 processingInfo.processingItems 的 amount/subtotal 求和兜底展示加工费
-数据: 含加工项订单逐项展示加工项明细行：名称 × 单价元/米 × 数量米 = 金额元（数据源 item.processingInfo.processingItems）
-数据: 不含加工项订单不出现「+ 加工费0元」等误导信息
-跳过: [backend-contract] 纯前端列表展示由 vitest 单测验证（OrderTable.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
+数据: OrderTable 采购明细列的加工费与订单详情「费用构成」读**同一份权威落库值**（`processingInfo.processingFeeDetail.amount`，唯一实现点 = frontend/admin-web/src/lib/order-fee-display.ts::processingFeeOf），商品行后展示「+ 加工费{金额}元」
+数据: processingInfo 里的客户端副本（`processingFee`）**不采信**：副本 15 元 / 权威 0 元（fee_source=unpriced）时不得渲染「+ 加工费15元」（issue #7138 实证的不一致）
+数据: 存量单（#4406 接线前生成、无 processingFeeDetail）才回落：先取顶层 processingFee，再按 processingInfo.processingItems 的 amount/subtotal 求和兜底展示
+数据: 权威值 > 0 时「+ 加工费{金额}元」与详情逐分一致；权威未定价 ⇒ 列表不出现加工费字样（不写「+ 加工费0元」）
+数据: 空数据态下表头不被压成竖排：「采购明细」表头与数据格共用同一宽度契约（whitespace-nowrap + min-w-[280px]），tbody 只有 colSpan 空态行时也不塌
+跳过: [backend-contract] 纯前端列表展示由 vitest 单测验证（OrderTable.test.tsx / order-fee-source-guard.test.ts），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.no-api-change
-溯源: 2026-09-05 新增：订单列表采购明细漏加工项计费修复（issue #2916） ｜ tags: ui, orders, list, processing-fee
+溯源: 2026-09-05 新增：订单列表采购明细漏加工项计费修复（issue #2916）；2026-10-17 口径改为**权威 detail 优先**、客户端副本不采信 + 空态表头宽度契约（issue #7138） ｜ tags: ui, orders, list, processing-fee
 
 ### UI-019. 黄金策工作台「洞察」重构为「会话简报」 — 工具台账转业务简报（结论/待办/办理结果/建议，/chat 工作台默认右侧展开可缩回） 🔵
 ```

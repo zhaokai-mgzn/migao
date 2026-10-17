@@ -72,9 +72,10 @@ const FROZEN_TABLES: string[] = [
   'src/components/dashboard/RecentOrders.tsx::表[订单号|客户|金额|状态|时间]',
   // ⚠️ 本条的锚里带 `~`（`{...}` 表达式被归一化成 `~`）：表头里嵌了受控复选框（跨行 JSX）⇒ 锚较长但仍是**稳定文本锚**。
   // 2026-10-11（issue #6717）：**列序变更**（状态/加急前置到「订单ID」右侧）⇒ 锚里的表头顺序同步。
-  // ⚠️ 这一条**仍是缺陷**（本表「采购明细」表头缺 `whitespace-nowrap`，与本单的可达性修复正交）
-  // ⇒ 条目**不删**、`TABLE_BASELINE` **不变**（只改了「表头顺序」这部分的文本，条数未动）。
-  'src/components/orders/OrderTable.tsx::表[~} onChange=~ className="w-4 h-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500" />|订单ID|状态|加急|采购商品|采购明细 (名称:单价×数量+加工费)|累计金额(元)|实收款(元)|收货人信息|下单时间|制单人|到货日|备注|操作]',
+  // 2026-10-17（issue #7138）：订单列表**真修好** ⇒ 条目**删除**、基线下调（22 → 21）。
+  // 该表真正的缺陷面是「采购明细」表头缺 `whitespace-nowrap` + **缺宽度下限**（空数据态被压成
+  // 一字一行竖排，用户截图）；本包给该 th 补 `whitespace-nowrap` + `min-w-[280px]`（与数据格同一
+  // 宽度契约），并顺手给复选列表头补 nowrap ⇒ 本表每个 th 都 nowrap，条目成为死条目。
   // 2026-10-11（issue #6754）：`CutPlanTable`（精裁输出清单）**补 nowrap ⇒ 缺陷已修** ⇒ 条目**删除**、
   // 基线下调（23 → 22）。⚠️ 与上面 #6717 那条相反：那条只是**表头顺序**变了、缺陷仍在（不删）；
   // 本条是**真修好**（每个 th 都补了 `whitespace-nowrap`）⇒ 留着就是死条目，本判据「台账不得腐坏」那一条会具名报红。
@@ -86,7 +87,7 @@ const FROZEN_TABLES: string[] = [
   // 同上（issue #6662）：`库存（米）` → `库存（{STOCK_UNIT}）`，锚同步；条数不变（缺陷仍在）
   'src/components/products/SkuMatrix.tsx::表[颜色分类|规格尺寸|*价格（元）|*库存（~）]',
 ]
-const TABLE_BASELINE = 22
+const TABLE_BASELINE = 21
 
 /**
  * 存量台账·规则 ②（手写药丸）：同上，冻结于 2026-10-06（issue #6398），**改前** 6 条 → **5**。
