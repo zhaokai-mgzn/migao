@@ -121,11 +121,33 @@ public final class OrderShipGuard {
     /**
      * {@code processing_info → Map}：**复用** {@link #normalizeProcessingInfo} 的既有归一/容错路径
      * （Map 直接可用；JSON **字符串** 解析成 Map；其余 / 坏 JSON ⇒ 空 Map）。
+     *
+     * <p>两处都是**类级元守卫的既定出口**（issue #5550 / #6219）：</p>
+     * <ol>
+     *   <li><b>显式 null 判定</b>：{@code normalizeProcessingInfo} 在「非 String」分支**原样返回入参**
+     *       ⇒ 存量行的 {@code processing_info} 为 NULL 时它返回 null（真库实证 issue #5550：
+     *       待派明细 15/29 行为 NULL）⇒ 必须先判 null 再判类型（判据 =
+     *       {@code ProcessingInfoNullSafetyMetaGuardTest}，它按**源码形态**判，`instanceof` 的运行期
+     *       null 安全不算出口）；</li>
+     *   <li><b>空集用容空键的表</b>：{@code Map.of().get(null)} 抛 NPE（{@code Collections.emptyMap()} 则返回
+     *       null）。实现上取该守卫的**另一条出口** —— 空集直接 {@code new LinkedHashMap<>()}：
+     *       它既容空键，也**不再**让本方法与 {@link #normalizeProcessingInfo} 落进「返回空不可变表的方法」
+     *       那一族（判据 = {@code WorkerCuttingHeightNullProductIdTest}；出口逐字写着
+     *       「空集改返回 {@code LinkedHashMap}/{@code Collections.emptyMap}」）。
+     *       ⚠️ 实测取舍：先按 {@code Collections.emptyMap()} 写 ⇒ 本方法与 {@code normalizeProcessingInfo}
+     *       仍被判「未登记的产出方」，并连带把 {@code ProcessingOrderService} 两处**既有**的索引调用点
+     *       （{@code pi} / {@code normalized} 上的 {@code .get()}）一起判成「未登记的索引调用点」
+     *       ⇒ 换 {@code LinkedHashMap} 一步到位（该守卫按源码形态扫全仓，这族出口只有两条，
+     *       另一条是登记台账 —— 而这里改一行就能从根上满足，不新增台账）。</li>
+     * </ol>
      */
     @SuppressWarnings("unchecked")
     private static Map<String, Object> processingInfoAsMap(ObjectMapper objectMapper, Object processingInfo) {
         Object normalized = normalizeProcessingInfo(objectMapper, processingInfo);
-        return normalized instanceof Map ? (Map<String, Object>) normalized : Map.of();
+        if (normalized == null) {
+            return new LinkedHashMap<>();
+        }
+        return normalized instanceof Map ? (Map<String, Object>) normalized : new LinkedHashMap<>();
     }
 
     /** 卖布行判据（issue #7079）：{@code saleForm} 逐字等于 {@code 布料}（缺键 / 其它取值都不算）。 */
@@ -307,7 +329,11 @@ public final class OrderShipGuard {
                 return objectMapper.readValue(s, Map.class);
             } catch (Exception e) {
                 log.warn("processingInfo JSON 字符串解析失败: {}", e.getMessage());
-                return Map.of();
+                // 容空键的空表（issue #6219 的守卫出口）：`Map.of().get(null)` 抛 NPE。
+                // ⚠️ 不能用 `Collections.emptyMap()` —— 它也匹配该守卫的产出方正则（`return
+                // Collections.emptyMap();`），会把本方法与新的索引调用点一起拖进「未登记」；
+                // 左值写 `new LinkedHashMap<>()` 即从根上不落进那一族（出口逐字允许 `LinkedHashMap`）。
+                return new LinkedHashMap<>();
             }
         }
         return processingInfo;
@@ -320,6 +346,12 @@ public final class OrderShipGuard {
     public static List<OrderDetailResponse.ProcessingItemBrief> extractProcessingItems(
             ObjectMapper objectMapper, Object processingInfo) {
         Object normalized = normalizeProcessingInfo(objectMapper, processingInfo);
+        if (normalized == null) {
+            // 显式 null 判定：本方法**重构后**才成为 `normalizeProcessingInfo` 的调用点（origin/main 上
+            // 它自带一份内联解析、不走归一入口）⇒ 必须补上守卫要求的这一句（判据 =
+            // ProcessingInfoNullSafetyMetaGuardTest：它按源码**形态**判，不接受 `instanceof` 的运行期安全）。
+            return Collections.emptyList();
+        }
         if (!(normalized instanceof Map)) {
             return Collections.emptyList();
         }
