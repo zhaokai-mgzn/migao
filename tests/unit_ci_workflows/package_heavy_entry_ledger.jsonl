@@ -77,3 +77,4 @@
 {"id":"1792205390.76170.6389","ts":"2026-10-17T02:49:50Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/20261017-page-ctx-envelope-leak","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1792230781.81018.30750","ts":"2026-10-17T09:53:01Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7148-onboarding-processing-items","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1792230810.86120.18884","ts":"2026-10-17T09:53:30Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7148-onboarding-processing-items","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1792230898.93665.29581","ts":"2026-10-17T09:54:58Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7148-onboarding-processing-items","why":"--allow-package-heavy（命令行显式）"}
