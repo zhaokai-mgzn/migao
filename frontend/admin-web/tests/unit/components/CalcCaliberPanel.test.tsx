@@ -57,7 +57,7 @@ vi.mock('next/link', () => ({
 import CalcCaliberPanel from '@/components/settings/CalcCaliberPanel'
 import { productionApi } from '@/lib/api'
 import { markErrorToastShown } from '@/lib/api-error'
-import { CALC_PARAM_COPY, CALC_SCALAR_KEYS } from '@/lib/craft-calc-glossary'
+import { CALC_FIELD_GROUPS, CALC_PARAM_COPY, CALC_SCALAR_KEYS } from '@/lib/craft-calc-glossary'
 import { PARAM_DOMAINS } from '@/lib/tenant-params'
 import type { CraftCalcConfig } from '@/types'
 
@@ -209,16 +209,41 @@ describe('算料口径域面板（issue #6580 抽取后的行为面）', () => {
     expect(row.textContent).toContain(hint)
   })
 
-  it('两列排布（xl+）：常用参数容器是 grid + xl:grid-cols-2（2026-10-17 用户裁定）', async () => {
-    renderPanel()
-    // 注入：把容器换回 `divide-y` 单列 ⇒ 本条红
-    const container = screen.getByTestId('param-per_fold_single').parentElement
-    expect(container?.className).toContain('grid')
-    expect(container?.className).toContain('xl:grid-cols-2')
-    // 反向自证：窄屏仍是单列（`grid-cols-1` 在，不是把断点整个删掉）
-    expect(container?.className).toContain('grid-cols-1')
-    // 一行里仍是「名称 + 控件」同一行（两列不得把控件挤到名称下面）
-    expect(screen.getByTestId('calc-caliber-scalar-per_fold_single')).toBeInTheDocument()
+  it('分组表单（issue #7124）：label 在上、控件在下、同组字段同一 grid', async () => {
+    await renderPanel()
+    const field = screen.getByTestId('param-per_fold_single')
+    // ① 字段 = 「标签 → 控件 → 提示」的**竖排**；标签是字段容器的第一个子元素
+    const label = field.firstElementChild as HTMLElement
+    expect(label.tagName, '第一行必须是标签（不是含输入框的行容器）').toBe('SPAN')
+    expect(label.textContent).toContain('单色每折用料')
+    // ② 控件在标签**之后**（DOM 顺序：标签 → 控件 → 提示）
+    const input = screen.getByTestId('calc-caliber-scalar-per_fold_single')
+    expect(label.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // ③ 同组字段落在同一个 grid 里（= 左边界对齐的机制），两列且窄屏单列
+    const grid = field.parentElement as HTMLElement
+    expect(grid.className).toContain('grid')
+    expect(grid.className).toContain('sm:grid-cols-2')
+    expect(grid.className).toContain('grid-cols-1')
+    expect(grid.contains(screen.getByTestId('param-margin_single'))).toBe(true)
+    // ④ 阈值另成一组（不与「用布与余量」混排）—— 分组靠区块标题表达，不靠行内细线
+    expect(grid.contains(screen.getByTestId('param-oversize_width_threshold'))).toBe(false)
+  })
+
+  it('区块标题把参数分组（用布与余量 / 档位与拼色 / 超高 / 超宽阈值）', async () => {
+    await renderPanel()
+    for (const t of ['用布与余量', '档位与拼色', '超高 / 超宽阈值']) {
+      expect(screen.getByText(t), `缺区块标题「${t}」`).toBeInTheDocument()
+    }
+  })
+
+  it('🔴 常用键**一个不漏**地落在某个分组里（漏一个 ⇒ 那个参数在写面上隐身）', () => {
+    const calc = PARAM_DOMAINS.find((d) => d.key === 'calc')
+    const common = (calc?.common ?? []).map((p) => p.key)
+    const grouped = CALC_FIELD_GROUPS.flatMap((g) => [...g.keys])
+    // 双向相等：漏一个 ⇒ 分组少键（参数隐身）；多一个 ⇒ 分组里有不存在的配置项
+    expect([...grouped].sort()).toEqual([...common].sort())
+    // 判别力自证：往「常用键」里注入一个键而分组没加 ⇒ 同一比较式判不等
+    expect([...grouped].sort()).not.toEqual([...common, 'new_engine_scalar'].sort())
   })
 
   it('🔴 引擎键名不上屏（§31 P3）—— `param-<key>` 锚点在，但值**只由输入框承载**（§31 P2）', async () => {
@@ -599,30 +624,22 @@ it('调用方传只读读数（无 `onCalcChange`）⇒ 只渲染读数，不出
 // 可编辑输入只能**另起一行**、且 `inputCls` 是 `w-full` ⇒ 两位数字被拉满整列（真机 ≈670px）。
 // 判据 = 「输入框与名称**同一行**」+「定宽、非 `w-full`」+「行内不再有默认态徽标」。
 // ══════════════════════════════════════════════════════════════════════════════
-describe('判据 8（#6857）：行式紧凑 —— 控件与名称同行、定宽、行内不标默认态', () => {
-  it('🔴 输入框与**名称同一行**（退回「另起一行」⇒ 红）', async () => {
+describe('判据 8（issue #7124）：分组表单 —— label 在上、定宽、行内不标默认态', () => {
+  it('🔴 label 在控件**上方**（退回「控件与名称同行」⇒ 红）', async () => {
     await renderPanel()
     const input = screen.getByTestId('calc-caliber-scalar-per_fold_single')
-    const labelRow = input.parentElement as HTMLElement
-    expect(
-      labelRow.textContent,
-      '输入框必须与名称在同一个行容器里（判据按「同一行」钉死，不是「页面上有」）',
-    ).toContain('单色每折用料')
-    expect(labelRow.className).toContain('flex')
-    // 🔴 更紧的一刀：输入框的**紧邻前一个兄弟**就是名称 `<span>`（退回「另起一行」时它会变成行 div ⇒ 红）
-    const prev = input.previousElementSibling as HTMLElement
-    expect(prev?.tagName, '输入框紧邻前一个兄弟必须是名称元素（不是外层行容器）').toBe('SPAN')
-    expect(prev.textContent).toContain('单色每折用料')
-    // 行容器（卡片形态带 rounded / p-4 / 四边描边；紧凑形态只有一条**行底细线**）
-    // 2026-10-17：两列排布后行间靠 `border-b` 分隔 ⇒ 判据改判成**卡片标记**（rounded / p-4），
-    // 并正向钉住「分隔线是行底细线」（不是卡片描边）—— 判别力不变。
-    const row = input.closest('[data-testid="param-per_fold_single"]') as HTMLElement
-    expect(row.className, '本域不再用卡片（改回卡片 ⇒ 圆角与内边距又回来了）').not.toMatch(
-      /rounded|\bp-4\b\s*/,
-    )
-    expect(row.className, '行间分隔线只能是行底细线（`border-b`），不得是四边描边').toContain(
+    const field = input.closest('[data-testid="param-per_fold_single"]') as HTMLElement
+    const label = field.firstElementChild as HTMLElement
+    expect(label.tagName, '字段第一行必须是标签元素').toBe('SPAN')
+    expect(label.textContent).toContain('单色每折用料')
+    // 控件自成一行：它的父容器**不是**标签本身（同行布局下 input 会挂在名称的 flex 行里）
+    expect(input.parentElement, '控件不得与标签同一行').not.toBe(label)
+    // 字段不再画行底细线（「8 行 8 条线」正是用户判「丑陋」的那一版）
+    expect(field.className, '字段不再画行底细线（分组靠区块标题 + 间距表达）').not.toContain(
       'border-b',
     )
+    // 反向自证：口径提示仍在（撤的是线，不是信息）
+    expect(field.textContent).toContain(CALC_PARAM_COPY.per_fold_single.hint.replace(/\*\*/g, ''))
   })
 
   it('🔴 本域**所有**数值输入定宽（`w-full` 回归 ⇒ 红）', async () => {
@@ -632,7 +649,7 @@ describe('判据 8（#6857）：行式紧凑 —— 控件与名称同行、定�
     for (const id of bounded) {
       const el = screen.getByTestId(id)
       const cls = el.className
-      expect(cls, `${id} 必须带定宽 token（w-28）`).toMatch(/\bw-28\b/)
+      expect(cls, `${id} 必须带统一定宽 token（w-36，issue #7124）`).toMatch(/\bw-36\b/)
       expect(cls, `${id} 不得是整列宽（w-full）—— 正是 #6857 的病灶`).not.toMatch(/\bw-full\b/)
     }
     // 文本类与下拉也是定宽（显示名 w-40 / 备用公式 w-64）

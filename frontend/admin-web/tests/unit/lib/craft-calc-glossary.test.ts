@@ -31,6 +31,7 @@ import { AUTO_FEATURE_NAMES } from '@/lib/craft-auto-features'
 import { SPECIAL_OPTIONS } from '@/lib/order-craft-fields'
 import {
   AUTO_FEATURE_TERMS,
+  CALC_FIELD_GROUPS,
   CALC_PARAM_COPY,
   CALC_SCALAR_KEYS,
   GLOSSARY_FORMULAS,
@@ -510,5 +511,54 @@ describe('特殊选项术语（issue #4986）', () => {
     // 注入：把特殊选项也挂到 `glossary-term-*` ⇒ 与「手选特征」组的「接高」抢同一个 DOM id ⇒ 红
     const manual = MANUAL_FEATURE_TERMS.map((t) => glossaryTermAnchorOf(t.name))
     expect(anchors.filter((a) => manual.includes(a))).toEqual([])
+  })
+})
+
+/**
+ * 算料表单的**字段分组**（issue #7124）。
+ *
+ * ## 病灶（为什么分组需要守卫）
+ *
+ * 分组清单（`CALC_FIELD_GROUPS`）决定「哪个参数出现在表单的哪一块」。它漏一个键的后果**不是排得难看**，
+ * 而是**那个参数在写面上隐身**：商家改不到、页面也不提示少了什么（而 `PUT` 是全量替换 ⇒
+ * 隐身键会按服务端当前值原样回传，看起来「没坏」，实际是**配不了**）。
+ * ⇒ 分组与标量键集必须**双向相等**；引擎新增键而没分组 ⇒ 本文件当场红。
+ */
+describe('算料表单字段分组（issue #7124）', () => {
+  it('判据 1：分组里的每个键都必须是标量键（拼错键名 ⇒ 那个参数改不到 ⇒ 红）', () => {
+    const grouped = CALC_FIELD_GROUPS.flatMap((g) => [...g.keys])
+    for (const key of grouped) {
+      expect(
+        (CALC_SCALAR_KEYS as readonly string[]).includes(key),
+        `分组里出现了不是标量键的键：${key}`,
+      ).toBe(true)
+    }
+    // ⚠️ 「分组 ∪ 是否覆盖**全部**键」由挂载点判（`CalcCaliberPanel.test.tsx`：
+    //   常用键 ≡ 分组 ∪，高级键另有其位）—— 本模块拿不到「哪些键归高级」，
+    //   在这里写死一份键集就是造第二份清单。
+  })
+
+  it('判据 2：同一个键只能属于一个分组（两组抢同一个键 ⇒ 同一参数渲染两遍 ⇒ 红）', () => {
+    const grouped = CALC_FIELD_GROUPS.flatMap((g) => [...g.keys])
+    expect(new Set(grouped).size).toBe(grouped.length)
+  })
+
+  it('判据 3：分组 key / 标题唯一且非空（空标题 = 一块没有名字的表单）', () => {
+    const keys = CALC_FIELD_GROUPS.map((g) => g.key)
+    const titles = CALC_FIELD_GROUPS.map((g) => g.title)
+    expect(new Set(keys).size).toBe(keys.length)
+    expect(new Set(titles).size).toBe(titles.length)
+    for (const g of CALC_FIELD_GROUPS) {
+      expect(g.title.trim().length, `分组 ${g.key} 的标题为空`).toBeGreaterThan(0)
+      expect(g.keys.length, `分组 ${g.key} 没有字段`).toBeGreaterThan(0)
+    }
+  })
+
+  it('判据 4（判别力自证）：分组里出现一个不在键集的键 ⇒ 同一比较式必须判红', () => {
+    // 注入形态 = 分组里拼错一个键（或引擎删了该键）⇒ 那个框渲染的是**不存在的配置项**
+    const injected = [...CALC_FIELD_GROUPS.flatMap((g) => [...g.keys]), 'new_engine_scalar']
+    expect(
+      injected.filter((k) => !(CALC_SCALAR_KEYS as readonly string[]).includes(k)),
+    ).toEqual(['new_engine_scalar'])
   })
 })
