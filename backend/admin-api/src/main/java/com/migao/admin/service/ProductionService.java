@@ -1301,6 +1301,53 @@ public class ProductionService {
     }
 
     /**
+     * **单据联动完成一道工序**（发货单 / 质检单，issue #7165）。
+     *
+     * <p>🔴 两条口径（用户 2026-10-17 裁定）：</p>
+     * <ul>
+     *   <li><b>有工人身份</b>（工人端发货 / 工人端质检）⇒ 走既有 {@link #applyReport} ——
+     *       与扫码报工**同一份**记账口径（单价快照 / 完工时刻 / 报工身份 / 旁路账）⇒ 产生计件工资，
+     *       记给该工人；</li>
+     *   <li><b>无工人身份</b>（商家/生产端发货、观星台员工录质检）⇒ 只推进工序
+     *       （CAS + {@code done_at} + 加工单完工判定），**不写 {@code production_work_logs}、不计件**
+     *       —— 「商家端不计件」是裁定，不是漏写。</li>
+     * </ul>
+     *
+     * <p>数量 = 该工序剩余应做（{@code qty - done_qty}），与扫码「做完扫一次」同口径。</p>
+     *
+     * @return 1 = 本次推进；0 = 已做满 / 已被并发推进（幂等空操作）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public int completeByDocument(Order order, ProcessingOrder po, ProcessingPositionOperation op,
+                                  WorkerIdentity identity, Long tenantId) {
+        BigDecimal qty = nz(op.getQty()).subtract(nz(op.getDoneQty()));
+        if (qty.signum() <= 0) {
+            return 0;
+        }
+        if (identity != null) {
+            // 工人端：复用唯一记账口径（计件 / 身份 / 完工判定都在里面，不另写第二份）
+            applyReport(order, po, op, qty, qty, "normal", identity, tenantId);
+            return 1;
+        }
+        // 商家/生产端：只推进工序，不产生任何报工与计件（裁定：商家端不计件）
+        BigDecimal previousDoneQty = nz(op.getDoneQty());
+        String previousStatus = op.getStatus() == null ? "pending" : op.getStatus();
+        BigDecimal doneQty = previousDoneQty.add(qty);
+        int rows = positionOperationMapper.advanceDoneQtyIfUnchanged(
+                op.getId(), tenantId, previousDoneQty, previousStatus, doneQty, OffsetDateTime.now());
+        if (rows == 0) {
+            return 0;
+        }
+        if (isDoneQty(doneQty, op.getQty())) {
+            positionOperationMapper.recordCompletionIfDone(op.getId(), tenantId, OffsetDateTime.now());
+        }
+        if (allInstancesDone(po.getId(), tenantId)) {
+            processingOrderMapper.markCompletedIfActive(po.getId(), tenantId, OffsetDateTime.now());
+        }
+        return 1;
+    }
+
+    /**
      * 报工落库主体（**唯一**一份记账口径，切片 ② 起被 {@link #doReport} 与
      * {@link #applyScanComplete} 共用）：数量上限校验 → 写 {@code production_work_logs}
      * （数量 × 快照单价 + 价态）→ 身份快照 / 旁路账 → CAS 推进 {@code done_qty} / {@code status}
