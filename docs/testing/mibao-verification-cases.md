@@ -1448,7 +1448,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释）；2026-09-21（case-trust burn-down 缴费，issue #4971，metric=entries ⇒ 整条销账）：补 `must_succeed[category_manage(action=delete)]`（效果层：「调用了 ≠ 成了」，#3778）+ `namespaces[category:轻奢系列]`（弱证据，如实登记：夹具层无分类域复位/准备动作，且与 CT-002「建同一个分类」自动串行）+ 机器计分型前置断言；`user_inputs` / `expectations` / `data_checks` 原第 1 条 / `skip_reason` / `traces` 一字未动、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`category_manage` 的写 action `delete` 已删除（工具收窄为只读 `{tree}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `[interact(confirm), category_manage(action=delete)]` 改判为 `direct_reply`（如实说明 + 引导去后台商品分类页面：删除**没有存活的只读路径**），`must_succeed[category_manage(action=delete)]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）；`data_checks` 的写路径断言（「二次确认后才执行删除」+ 写面前置）改判为只读/如实说明口径（原第 1 条文本已并入新第 1 条保留为历史）。 ｜ tags: delete, destructive, confirm
 
-## 对话边界域（45 case）
+## 对话边界域（46 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -2180,6 +2180,20 @@
 跳过: [backend-contract] 纯配置解析（dict → 文案），**零 LLM**：判定在 `app.agents.channel_config` 的纯函数层（由 ai-agent-service pytest 执行），不进 agent-eval 冒烟
 ```
 溯源: 2026-10-08 新增（issue #6525，品牌改名）：该测试文件此前**未声明 case_ids**，本单改动它（称呼换新，`DEFAULT_BOT_NAME` 随改）后按 Growth Gate 口径补声明；用例内容如实对应该文件既有的渠道欢迎语断言，**未新增 / 未放宽**（先例 = AG-007 / issue #5951）。 ｜ tags: chat, channel, greeting, tenant-config
+
+### CH-047. 页面上下文注入信封不得落库（切回会话时不得把内部提示当用户消息上屏） 🔵
+```
+你: 商家在**生产页**（/production）问「我想看下当前的生产风险」⇒ 黄金策照常回答；**切走会话再切回来**，用户气泡里必须只有「我想看下当前的生产风险」，不得出现「黄金策正在用户当前页面上：/production…」这类内部提示
+期望: direct_reply
+数据: **落库的是用户原话**：带 `page_context` 发一轮（登记 route）⇒ `session_memory.save_message` 收到的 `role="user"` 消息 `content` == 用户原话（不含信封）。执行点 = backend/ai-agent-service/tests/test_page_context_persistence.py 的 `TestEnvelopeNeverPersisted::test_plain_chat_persists_user_question_not_envelope`。
+数据: **信封只进本轮 LLM 文本**（功能不退化）：入口把「LLM 文本（含信封）」与「落库文本（原话）」**分开**递交。执行点 = 同 class 的 `test_entry_forwards_both_texts`。
+数据: **旧行回放归一**：库里已含信封的历史行（登记 route 形态 / 未登记页面的常量降级形态）经 `GET /history/{session_id}` 与 `_convert_history_to_agent_format` 读出后只剩问题；内部文档路径不止屏。执行点 = 同文件 `TestReadBackNormalisation::test_history_endpoint_strips_legacy_envelope` / `test_agent_history_strips_legacy_envelope`。
+数据: **类级往返（渲染 ⇄ 剥离）**：登记表**现取**的每条 route（含/不含实体 id）+ 降级形态，`strip(render(问题)) == 问题` —— 渲染形态改了而剥离没跟上 ⇒ 当场红。执行点 = 同文件 `test_strip_is_inverse_of_render_for_every_route`。
+数据: **负控：不吞用户内容**：以同样句子开头但形态不完整（缺尾部提示 / 不是开头）⇒ 原样返回。执行点 = 同文件 `test_strip_keeps_user_text_that_only_looks_like_envelope`。
+前置: 前置 = `app.context.page_registry.render_page_context` 与 `_handle_page_ctx_request` 可导入；`PAGE_REGISTRY` 非空（空登记表 ⇒ 类级往返判据自证失败并红）
+跳过: [backend-contract] 判据全部是**入口级 + 纯函数**（零 LLM、零网络）：落库文本、历史回放、剥离往返，由 backend/ai-agent-service/tests/test_page_context_persistence.py 执行；「黄金策回答质量」属行为面，按用户裁定（#4262 / #4974）手动集中跑一次，本轮不自动派发真实 LLM 评测
+```
+溯源: 2026-10-17 新增（issue #7112）：页面上下文信封此前被当作用户消息落库 ⇒ 切回会话时整段内部提示上屏（并污染会话标题与记忆抽取）。修复 = 写侧分离（信封只进本轮 LLM 文本）+ 读侧归一（历史回放剥离，不改写历史数据）。 ｜ tags: chat, page-context, persistence, display-integrity
 
 ## 跨域（3 case）
 
@@ -11415,7 +11429,7 @@
 - 登录认证域：12
 - B 端小程序域：47
 - 分类域：3
-- 对话边界域：45
+- 对话边界域：46
 - 跨域：3
 - 客户域：12
 - 数据域：24
@@ -11459,6 +11473,7 @@
 - CH-031: C 端交互组件历史回放透传—— getSessionMessages 映射透传 interactive/interactive_answered，刷新/切会话后已答卡片只读呈现而非消失
 - CH-032: C 端交互组件流式门控 + XML 伪代码兜底剥离—— 流式期间交互组件隐藏（防闪烁/防误点），历史残留 <interact>/```tool_call 伪代码块不展示
 - CH-046: 渠道欢迎语解析（元元）：四渠道默认文案 + 租户 botName 优先 + {bot_name} 占位符
+- CH-047: 页面上下文注入信封不得落库（切回会话时不得把内部提示当用户消息上屏）
 - DA-008: 智能每日经营简报：企业开关熔断（关闭=不生成+菜单隐藏，issue #3468）
 - DA-009: 智能每日经营简报：数字回填校验（LLM 编造即丢弃，issue #3468）
 - DA-010: 智能每日经营简报：PII 不进 prompt + RLS 隔离（issue #3468）
