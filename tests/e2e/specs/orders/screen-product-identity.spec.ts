@@ -42,7 +42,6 @@ const DETAIL_ORDER = {
   id: 'order_001',
   orderNo: 'ORD-20250101-0001',
   status: 'pending_payment',
-  paymentDeadline: '2025-12-31T23:59:59Z',
 }
 
 test.setTimeout(240_000)

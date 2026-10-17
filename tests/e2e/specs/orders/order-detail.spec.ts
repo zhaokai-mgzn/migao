@@ -17,7 +17,6 @@ const MOCK_ORDER_PENDING = {
   actualAmount: 536.0,
   status: 'pending_payment',
   hasProcessing: true,
-  paymentDeadline: '2025-12-31T23:59:59Z',
   items: [
     {
       id: 'item_001',
@@ -94,8 +93,11 @@ test.describe('订单详情 - 待付款状态', () => {
     await expect(page.getByText('待买家付款')).toBeVisible()
   })
 
-  test('应显示支付倒计时', async ({ page }) => {
-    await expect(page.getByText('支付倒计时')).toBeVisible()
+  // issue #7110：后端**没有**「支付截止」真值（`orders` 无列 / 无写入点 / 无「超时未付」规则）
+  // ⇒ 倒计时已撤下。这里判**不渲染**：谁不先补真值源就把倒计时加回来，本断言会红。
+  test('不再渲染支付倒计时（后端无该真值，issue #7110）', async ({ page }) => {
+    await expect(page.getByText('待买家付款')).toBeVisible()
+    await expect(page.getByText('支付倒计时')).toHaveCount(0)
   })
 
   test('应显示关闭订单和确认付款按钮', async ({ page }) => {

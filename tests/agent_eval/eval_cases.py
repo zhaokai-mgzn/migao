@@ -8248,6 +8248,24 @@ _CASE_OR_067 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── OR-068 [NORMAL] 订单详情撤下「支付倒计时」（其 paymentDeadline 后端从不下发、倒计时从未启动）+ 落「读面键 ⊆ OrderDetailResponse」类级守卫（issue #7110）（源: cases/order.yml）──
+_CASE_OR_068 = EvalCase(
+    id='OR-068',
+    legacy_id='',
+    title='订单详情撤下「支付倒计时」（其 paymentDeadline 后端从不下发、倒计时从未启动）+ 落「读面键 ⊆ OrderDetailResponse」类级守卫（issue #7110）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-17「这个继续做 #7110」—— 该单由 #7078 的边界声明登记而来（同一个病第二次长出来）'],
+    expectations=[],
+    data_checks=['判据 1·🔴 **类级守卫：订单详情读面键必须逐个有后端来源** —— `OrderDetail.tsx` 里每个 `order.<键>` / `order?.<键>`（含解构）都必须是 `OrderDetailResponse` 的**顶层字段**，或登记进 `EXEMPT` **并写明理由**；豁免表 fail-closed（空理由 / 已不再被读取的陈旧条目 ⇒ 判红）；解析不许空转（字段数 / 读点数**下限**断言 —— 正则失配必须红，不许在「零读点」上静默变绿）。执行点 = tests/unit_ci_workflows/test_order_detail_reads_have_backend_source.py（A/B/C/D 四条；D 含四种坏形态注入 + 「只改注释 ⇒ 不红」负控）。口径依据：本仓 Jackson 未开 SNAKE_CASE 且该 DTO 无 `@JsonProperty` 改名 ⇒ Java 字段名 = 下发 JSON 键。', '判据 2·**屏幕面不再渲染「支付倒计时」**（撤的是那一行，不是整块）：待付款订单即使**注入** `paymentDeadline` 也不出现倒计时文案，而「待买家付款」与「修改订单 / 关闭订单 / 打印报价单」入口**仍在**。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx 的「待付款订单不渲染「支付倒计时」（后端无该真值，issue #7110）」', '判据 3·**e2e 断言同口径**（防「不先补真值源就把倒计时加回来」）：两条 spec 的 mock 去掉 `paymentDeadline`，断言由「应显示支付倒计时」改为「不再渲染支付倒计时」。执行点 = tests/e2e/specs/orders/order-detail.spec.ts 与 tests/e2e/specs/orders/screen-product-identity.spec.ts（⚠️ `tests/e2e/specs/orders/**` 不在 CI 的 demo manifest 里 ⇒ 这两条是**同口径登记**，机器判红由判据 1 与 2 承担）', '判据 4·**类型面撤键**：`frontend/admin-web/src/types/index.ts` 不再有 `paymentDeadline`（再读即编译期红 —— 编译器当类级守卫，同 #7078 撤 `paymentNo` 的处理）。', '判据 5·**边界（照实登记）**：本守卫只覆盖 `OrderDetail.tsx` 一份文件（历史上两次事故都在这里），**不是**全仓前端↔后端字段对账；只判**存在性**（字段存在但值恒 null 判不了，那一半归 #6890 的读面键台账 + §15.7 真机验收）；判不了 `order?.[动态键]` / `as any` 强转后的读取。'],
+    skip_reason='[backend-contract] 结构判据（TSX↔DTO 静态对账 + 前端展示判据）：零 LLM 环节 ⇒ 不进 agent-eval 冒烟；机器判红通道 = traces.tests',
+    tags=['order', 'order-detail', 'phantom-field', 'class-guard', 'backend-contract', 'frontend'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -15095,6 +15113,7 @@ ALL_CASES = (
     _CASE_OR_065,
     _CASE_OR_066,
     _CASE_OR_067,
+    _CASE_OR_068,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,

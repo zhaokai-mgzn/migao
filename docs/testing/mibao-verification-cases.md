@@ -5333,7 +5333,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（67 case）
+## 订单域（68 case）
 
 ### OR-061. 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262） 🔵
 ```
@@ -6533,6 +6533,19 @@
 跳过: [backend-contract] 结构判据（Java 源码面）+ 数据迁移 + 前端展示判据（admin-web vitest）：零 LLM 环节 ⇒ 不进 agent-eval 冒烟；机器判红通道 = traces.tests
 ```
 溯源: 2026-10-17 新增（issue #7078，用户裁定 A：补真值）。取号 = `scripts/next_case_id.py OR` 现取（main 001-066）⇒ **OR-067**。病根（读源，不是漏列）：详情页读 `order.paidAt / paymentNo / shippedAt / receivedAt`，而 `OrderDetailResponse` 全文只有 `LogisticsInfo.shippedAt` 一处时间键、`orders` 表也没有对应列 ⇒ 那几行**恒 `-`**，与订单走到哪一步无关（与 #6882「屏幕面读后端未下发的字段」同类；那一包只清了行级字段）。而状态引导第 1 步的勾是 `OrderProgressSteps.getStepStates()` 从 `status` 推出来的 ⇒「已付款 ✓」与「支付时间 -」必然同屏自相矛盾。修法：① V160 加 `paid_at` / `received_at` 两列（`shipped_at` 是 V148 已有列，本单只**透出**）；② 写入点 = `transitionStatusAtomic` 的 pending→confirmed 边（用期望前驱限定，避开回退边）与 completed 边 + `autoCompleteShippedOrders` 的 SQL；③ `OrderDetailResponse` 补三键（`BeanUtils` 同名带出，不另立第二份口径）；④ 支付交易号行撤下、前端类型面删 `paymentNo`。边界：存量 completed 单不回填 `received_at`；自动完成的单 `received_at` = 自动完成时刻（列注释与判据里写明）。 ｜ tags: order, order-detail, phantom-field, data-quality, backend-contract, migration
+
+### OR-068. 订单详情撤下「支付倒计时」（其 paymentDeadline 后端从不下发、倒计时从未启动）+ 落「读面键 ⊆ OrderDetailResponse」类级守卫（issue #7110） 🔵
+```
+你: 用户 2026-10-17「这个继续做 #7110」—— 该单由 #7078 的边界声明登记而来（同一个病第二次长出来）
+数据: 判据 1·🔴 **类级守卫：订单详情读面键必须逐个有后端来源** —— `OrderDetail.tsx` 里每个 `order.<键>` / `order?.<键>`（含解构）都必须是 `OrderDetailResponse` 的**顶层字段**，或登记进 `EXEMPT` **并写明理由**；豁免表 fail-closed（空理由 / 已不再被读取的陈旧条目 ⇒ 判红）；解析不许空转（字段数 / 读点数**下限**断言 —— 正则失配必须红，不许在「零读点」上静默变绿）。执行点 = tests/unit_ci_workflows/test_order_detail_reads_have_backend_source.py（A/B/C/D 四条；D 含四种坏形态注入 + 「只改注释 ⇒ 不红」负控）。口径依据：本仓 Jackson 未开 SNAKE_CASE 且该 DTO 无 `@JsonProperty` 改名 ⇒ Java 字段名 = 下发 JSON 键。
+数据: 判据 2·**屏幕面不再渲染「支付倒计时」**（撤的是那一行，不是整块）：待付款订单即使**注入** `paymentDeadline` 也不出现倒计时文案，而「待买家付款」与「修改订单 / 关闭订单 / 打印报价单」入口**仍在**。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx 的「待付款订单不渲染「支付倒计时」（后端无该真值，issue #7110）」
+数据: 判据 3·**e2e 断言同口径**（防「不先补真值源就把倒计时加回来」）：两条 spec 的 mock 去掉 `paymentDeadline`，断言由「应显示支付倒计时」改为「不再渲染支付倒计时」。执行点 = tests/e2e/specs/orders/order-detail.spec.ts 与 tests/e2e/specs/orders/screen-product-identity.spec.ts（⚠️ `tests/e2e/specs/orders/**` 不在 CI 的 demo manifest 里 ⇒ 这两条是**同口径登记**，机器判红由判据 1 与 2 承担）
+数据: 判据 4·**类型面撤键**：`frontend/admin-web/src/types/index.ts` 不再有 `paymentDeadline`（再读即编译期红 —— 编译器当类级守卫，同 #7078 撤 `paymentNo` 的处理）。
+数据: 判据 5·**边界（照实登记）**：本守卫只覆盖 `OrderDetail.tsx` 一份文件（历史上两次事故都在这里），**不是**全仓前端↔后端字段对账；只判**存在性**（字段存在但值恒 null 判不了，那一半归 #6890 的读面键台账 + §15.7 真机验收）；判不了 `order?.[动态键]` / `as any` 强转后的读取。
+跳过: [backend-contract] 结构判据（TSX↔DTO 静态对账 + 前端展示判据）：零 LLM 环节 ⇒ 不进 agent-eval 冒烟；机器判红通道 = traces.tests
+```
+真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
+溯源: 2026-10-17 新增（issue #7110）。取号 = `scripts/next_case_id.py OR` 现取（main 001-067）⇒ **OR-068**。病根（读源）：`OrderDetail.tsx` 的「待付款倒计时」前置判断是 `displayStatus !== 'pending_payment' || !order.paymentDeadline` —— 而 `paymentDeadline` 在 `OrderDetailResponse` 里**根本不存在**（`orders` 表也无该列、全仓无写入点、无「超时未付 ⇒ 自动取消」规则）⇒ 恒为假 ⇒ **倒计时从未渲染过**（连「--:--」都不会出现）。它与 #7078 是**同一个病第二次长出来**（屏幕面读后端不存在的键；可选键谁都能加，运行时读到 undefined 既不报错也不渲染 ⇒ 编译器与测试都不拦）。修法：① 撤下倒计时 UI（`calcCountdown` / state / 定时器 / prop / JSX 那一行）与 `Order.paymentDeadline` 类型键；② 两条 e2e spec 的 mock 与断言同口径；③ **类级固化** = 新守卫 test_order_detail_reads_have_backend_source.py（真语料零漂移 + 豁免 fail-closed + 解析不空转 + 判别力/负控）。边界：本页 20 个读点在撤下后**零豁免**；若产品日后真要「支付截止」，那是**新功能**（先补后端真值源再回加键），不是本单的缺口。 ｜ tags: order, order-detail, phantom-field, class-guard, backend-contract, frontend
 
 ## 加工项域（30 case）
 
@@ -11441,8 +11454,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：783（活跃 133，跳过 650）
-- tier 分布：smoke 12 / normal 724 / adversarial 32
+- 用例总数：784（活跃 133，跳过 651）
+- tier 分布：smoke 12 / normal 725 / adversarial 32
 - 售后域：15
 - Agent 核心域：10
 - API 层域：21
@@ -11460,7 +11473,7 @@
 - 杂项域：114
 - 商家入驻域：6
 - 领域本体域：4
-- 订单域：67
+- 订单域：68
 - 加工项域：30
 - 加工单域：65
 - 商品域：122
@@ -11634,6 +11647,7 @@
 - OR-065: 未定价告警的定价入口：**可见文案与后端下发的域指针逐字同源** + href 落在真实定价面（issue #6853 修 #6848 的卡点）
 - OR-066: 入库单「过账 × 作废」交叉竞态：至多一个赢家 + 「已作废的单」不得改库存 / 不得留入库台账（issue #6928）
 - OR-067: 订单详情三个时刻（收款 / 发货 / 完成）显示服务端真值：paid_at 只在 pending→confirmed 边写、received_at 两条完成路都写（issue #7078）
+- OR-068: 订单详情撤下「支付倒计时」（其 paymentDeadline 后端从不下发、倒计时从未启动）+ 落「读面键 ⊆ OrderDetailResponse」类级守卫（issue #7110）
 - PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）

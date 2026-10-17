@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { ChevronRight, Printer, Zap, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
-import dayjs from 'dayjs'
 import DateTimeCell from '@/components/common/DateTimeCell'
 // 工序清单读面（issue #6901）：加工单纸面与商家端加工单块要印「这一单要做哪几道工序」——
 // **复用既有读面** `GET /api/admin/production/orders/{id}/operations`（权限码 order:list，
@@ -46,16 +45,9 @@ function formatAmount(amount?: number): string {
   })}`
 }
 
-// 倒计时计算
-function calcCountdown(deadline?: string): { h: number; m: number; s: number; expired: boolean } {
-  if (!deadline) return { h: 0, m: 0, s: 0, expired: true }
-  const diff = dayjs(deadline).diff(dayjs(), 'second')
-  if (diff <= 0) return { h: 0, m: 0, s: 0, expired: true }
-  const h = Math.floor(diff / 3600)
-  const m = Math.floor((diff % 3600) / 60)
-  const s = diff % 60
-  return { h, m, s, expired: false }
-}
+// 🔴 issue #7110：这里原本有个 `calcCountdown`（支付倒计时）。后端**没有**「支付截止」真值
+// （`orders` 无列、无写入点、无「超时未付」规则）⇒ 倒计时**从未渲染过**，已连同
+// `Order.paymentDeadline` 类型键一起撤下（同 #7078 撤下 `paymentNo` 的处理）。
 
 // 安全获取明细金额：后端未返回 amount 时依次回退到 subtotal 或 unitPrice*quantity
 // ⚠️ 只管**商品行**（`order_items` 自己的单价/小计）—— 与 #4882 退场的加工项明细无关。
@@ -162,9 +154,6 @@ export default function OrderDetailPage() {
   const [refundModalOpen, setRefundModalOpen] = useState(false)
   const [refundSubmitting, setRefundSubmitting] = useState(false)
 
-  // 倒计时
-  const [countdown, setCountdown] = useState({ h: 0, m: 0, s: 0, expired: false })
-
   /**
    * 本次打印的目标（issue #4965）：本页**同时挂着两份纸质单据**（发货单 `ShipmentDoc` +
    * 报价单 `QuotationDoc`），它们的 `visibility: visible` 打印防御是**同特异性**的兄弟规则
@@ -249,16 +238,6 @@ export default function OrderDetailPage() {
   useEffect(() => {
     loadOrder()
   }, [loadOrder])
-
-  // 待付款倒计时定时器
-  useEffect(() => {
-    const displayStatus = order ? normalizeOrderStatus(order.status as string) : null
-    if (!order || displayStatus !== 'pending_payment' || !order.paymentDeadline) return
-    const update = () => setCountdown(calcCountdown(order.paymentDeadline))
-    update()
-    const timer = setInterval(update, 1000)
-    return () => clearInterval(timer)
-  }, [order])
 
   // 关闭订单
   const handleConfirmClose = async (reason: string) => {
@@ -399,7 +378,6 @@ export default function OrderDetailPage() {
       <StatusSection
         order={order}
         processingOrder={processingOrder}
-        countdown={countdown}
         onClose={() => setCloseModalOpen(true)}
         onEditContent={() => setEditContentOpen(true)}
         onShip={() => router.push(`/orders/${order.id}/ship`)}
@@ -714,7 +692,6 @@ interface StatusSectionProps {
   order: Order
   /** 加工单（ProcessingOrderBlock 上报；null = 无加工单/未生成/查询失败） */
   processingOrder: ProcessingOrder | null
-  countdown: { h: number; m: number; s: number; expired: boolean }
   onClose: () => void
   /** 修改订单内容（issue #5842）—— **只在「待付款」分支渲染入口**（见 StatusSection 的 pending 段） */
   onEditContent: () => void
@@ -730,7 +707,6 @@ interface StatusSectionProps {
 function StatusSection({
   order,
   processingOrder,
-  countdown,
   onClose,
   onEditContent,
   onShip,
@@ -767,19 +743,6 @@ function StatusSection({
         <div className="flex items-center justify-between">
           <div>
             <div className="text-2xl font-semibold text-red-500 mb-3">待买家付款</div>
-            <div className="flex items-center gap-2 text-sm text-neutral-700">
-              <span className="inline-block w-2 h-2 rounded-full bg-amber-400" />
-              <span>
-                支付倒计时：
-                {countdown.expired ? (
-                  <span className="text-red-500">已超时</span>
-                ) : (
-                  <span className="font-medium">
-                    {countdown.h}h {countdown.m}m {countdown.s}s
-                  </span>
-                )}
-              </span>
-            </div>
           </div>
           <div className="flex items-center gap-3 shrink-0">
             {/* 打印入口（issue #6434）：待付款阶段「报价先行」—— 原先这里一个打印按钮都没有，
