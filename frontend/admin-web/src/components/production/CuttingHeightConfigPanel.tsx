@@ -175,21 +175,37 @@ export function CuttingHeightConfigPanel() {
         {config && (
           <div className="mt-4 space-y-4">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm" data-testid="cutting-height-items">
+              {/* 列宽**显式**给（issue #7153）：此前 `w-full` + auto 布局 + 每格 `w-full` 控件 ⇒
+                  宽输入框吃掉余量后把 select 列压到**低于内容宽度**（真机实测「特殊选:」「布厂」被裁、
+                  「启用」「删除」竖排）。现在 `table-fixed` + `colgroup` 定比例、`min-w` 兜底：
+                  窄屏走横向滚动，**不压缩控件到裁字**。 */}
+              <table
+                className="w-full min-w-[700px] table-fixed text-sm"
+                data-testid="cutting-height-items"
+              >
+                <colgroup>
+                  <col className="w-[20%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[16%]" />
+                  <col className="w-[18%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[12%]" />
+                </colgroup>
                 <thead>
                   <tr className="text-left text-neutral-500">
-                    <th className="py-1 pr-2">名称</th>
-                    <th className="py-1 pr-2">取值（米）</th>
-                    <th className="py-1 pr-2">触发</th>
-                    <th className="py-1 pr-2">触发值</th>
-                    <th className="py-1 pr-2">部位</th>
-                    <th className="py-1 pr-2">启用</th>
-                    <th className="py-1" />
+                    <th className="whitespace-nowrap py-1 pr-2">名称</th>
+                    <th className="whitespace-nowrap py-1 pr-2">取值（米）</th>
+                    <th className="whitespace-nowrap py-1 pr-2">触发</th>
+                    <th className="whitespace-nowrap py-1 pr-2">触发值</th>
+                    <th className="whitespace-nowrap py-1 pr-2">部位</th>
+                    <th className="whitespace-nowrap py-1 pr-2 text-center">启用</th>
+                    <th className="whitespace-nowrap py-1" />
                   </tr>
                 </thead>
                 <tbody>
                   {config.items.map((item, index) => (
-                    <tr key={item.key} className="border-t border-neutral-100">
+                    <tr key={item.key} className="border-t border-neutral-100 align-middle">
                       <td className="py-1 pr-2">
                         <input
                           className={inputCls}
@@ -203,7 +219,8 @@ export function CuttingHeightConfigPanel() {
                           className={inputCls}
                           aria-label={`取值-${index}`}
                           value={formatDraft(item.value)}
-                          placeholder="留空 = 有项无值"
+                          placeholder="可留空"
+                          title="取值留空 = 有项无值：会命中，但会显式报出「未配置取值」，不按 0 算"
                           onChange={(e) =>
                             patchItem(index, { value: e.target.value.trim() === '' ? null : Number(e.target.value) })
                           }
@@ -246,7 +263,7 @@ export function CuttingHeightConfigPanel() {
                           ))}
                         </select>
                       </td>
-                      <td className="py-1 pr-2">
+                      <td className="py-1 pr-2 text-center">
                         <input
                           type="checkbox"
                           aria-label={`启用-${index}`}
@@ -254,10 +271,10 @@ export function CuttingHeightConfigPanel() {
                           onChange={(e) => patchItem(index, { enabled: e.target.checked })}
                         />
                       </td>
-                      <td className="py-1">
+                      <td className="whitespace-nowrap py-1">
                         <button
                           type="button"
-                          className="text-neutral-400 underline"
+                          className="whitespace-nowrap text-neutral-400 underline"
                           data-testid={`cutting-height-remove-${index}`}
                           onClick={() =>
                             setConfig((prev) =>

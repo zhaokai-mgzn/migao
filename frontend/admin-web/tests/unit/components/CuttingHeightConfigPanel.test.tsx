@@ -176,4 +176,31 @@ describe('CuttingHeightConfigPanel', () => {
     }
     expect((screen.getByLabelText('部位-1') as HTMLSelectElement).value).toBe('')
   })
+
+  it('⑥ 列宽显式 + 表头不竖排（#7153：下拉与「启用 / 删除」不得被压到裁字）', async () => {
+    mockGet.mockResolvedValue(configResponse('stored'))
+    render(<CuttingHeightConfigPanel />)
+
+    const table = await screen.findByTestId('cutting-height-items')
+    // ① 固定布局 + 最小宽度：窄屏走横向滚动，不再把控件压到内容宽度以下
+    //    （注入：把 `table-fixed` 或 `min-w-[…]` 删掉 ⇒ 下面两条红 —— 那正是「特殊选: / 布厂」的成因）
+    expect(table.className).toContain('table-fixed')
+    expect(table.className).toMatch(/min-w-/)
+    // ② 列宽显式给：colgroup 的列数必须等于表头列数（漏一列 ⇒ 那一列又回到 auto 被压扁）
+    const cols = table.querySelectorAll('colgroup > col')
+    const heads = table.querySelectorAll('thead th')
+    expect(heads.length).toBe(7)
+    expect(cols.length).toBe(heads.length)
+    // ③ 表头不竖排（「启用」曾折成两行）、操作按钮不竖排（「删除」曾折成两行）
+    for (const th of Array.from(heads)) {
+      expect((th as HTMLElement).className, `表头「${th.textContent}」缺 whitespace-nowrap`).toContain(
+        'whitespace-nowrap',
+      )
+    }
+    const removeButtons = table.querySelectorAll('tbody button')
+    expect(removeButtons.length).toBeGreaterThan(0)
+    for (const btn of Array.from(removeButtons)) {
+      expect((btn as HTMLElement).className).toContain('whitespace-nowrap')
+    }
+  })
 })
