@@ -1,4 +1,4 @@
--- V159 — 订单「收款时刻」`orders.paid_at` + 「完成（收货）时刻」`orders.received_at`（issue #7078）
+-- V160 — 订单「收款时刻」`orders.paid_at` + 「完成（收货）时刻」`orders.received_at`（issue #7078）
 --
 -- ## 一句话
 -- `orders` 加两列（timestamptz，可空），把**已经发生、却无处落地**的两个时刻落库：

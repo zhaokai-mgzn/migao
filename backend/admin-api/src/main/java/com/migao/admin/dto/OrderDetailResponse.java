@@ -162,7 +162,7 @@ public class OrderDetailResponse {
     private OffsetDateTime createdAt;
 
     /**
-     * **收款时刻**（列 {@code orders.paid_at}，V159；issue #7078 起下发）。
+     * **收款时刻**（列 {@code orders.paid_at}，V160；issue #7078 起下发）。
      *
      * <p>取值与实体同名字段，由 {@code BeanUtils.copyProperties(order, response)} 带出 —— 不另立第二份口径。
      * {@code null} = 未采集（从未确认收款 / 存量无收款流水）⇒ 屏幕显示「-」，**不猜**。</p>
@@ -182,7 +182,7 @@ public class OrderDetailResponse {
     private OffsetDateTime shippedAt;
 
     /**
-     * **完成（收货）时刻**（列 {@code orders.received_at}，V159；issue #7078 起下发）。
+     * **完成（收货）时刻**（列 {@code orders.received_at}，V160；issue #7078 起下发）。
      *
      * <p>{@code null} = 未采集（存量 completed 单不回填）。自动完成的单本列 = 自动完成时刻。</p>
      */

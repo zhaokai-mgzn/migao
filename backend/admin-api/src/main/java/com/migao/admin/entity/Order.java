@@ -158,7 +158,7 @@ public class Order {
     private OffsetDateTime shippedAt;
 
     /**
-     * **收款时刻**（列 `orders.paid_at`，V159 / issue #7078）。
+     * **收款时刻**（列 `orders.paid_at`，V160 / issue #7078）。
      *
      * <p>语义 = 该单 {@code pending → confirmed}（确认收款）发生的时刻 —— 由
      * {@code OrderService.transitionStatusAtomic} 在「新态 confirmed + <b>期望前驱 pending</b>」
@@ -171,7 +171,7 @@ public class Order {
     private OffsetDateTime paidAt;
 
     /**
-     * **完成（收货）时刻**（列 `orders.received_at`，V159 / issue #7078）。
+     * **完成（收货）时刻**（列 `orders.received_at`，V160 / issue #7078）。
      *
      * <p>= 该单进入 {@code completed} 的时刻。两条完成路各写一次：商家「确认收货」走
      * {@code OrderService.transitionStatusAtomic}（{@code to=completed}）；「发货后 N 天自动完成」
