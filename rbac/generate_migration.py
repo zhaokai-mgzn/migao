@@ -1,7 +1,7 @@
 # case_ids: MC-043, MC-044, MC-045
 """RBAC 迁移的**单一生成器**（跟踪单 issue #5699 的 P5 / P6 / I4；机制 = 设计真值源 §5.2 的 **M3**）。
 
-本文件由 `rbac/manifest.json`（声明）＋迁移链推演（`rbac/derive.py` 的 P5 段）**渲染**四份**已落盘**的迁移：
+本文件由 `rbac/manifest.json`（声明）＋迁移链推演（`rbac/derive.py` 的 P5 段）**渲染**五份**已落盘**的迁移：
 
 | 产物 | 阶段 | 内容（值全部来自清单，散文来自本文件的模板） |
 |---|---|---|
@@ -24,7 +24,7 @@
 ## 用法（两条命令，与 `generate_readings.py` 同款）
 
 ```
-python3 rbac/generate_migration.py            # 重新渲染四份迁移（改完清单后跑）
+python3 rbac/generate_migration.py            # 重新渲染五份迁移（改完清单后跑）
 python3 rbac/generate_migration.py --check    # 只读：产物 vs 当场渲染，非零退出 = 陈旧（CI 同款口径）
 ```
 
