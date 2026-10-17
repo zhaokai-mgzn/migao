@@ -123,7 +123,7 @@ export default function RolesPage() {
     } catch {
       // 🔴 读失败 ≠ 没有页面：工人端页面目录挂生产域读码，缺码 / 网络失败都会走到这里
       setWorkerCatalog(null)
-      setWorkerCatalogError('工人端页面目录读取失败 —— 可能是网络或权限不足')
+      setWorkerCatalogError('工人端页面目录读取失败 —— 可能是网络或服务暂时不可用')
     }
   }, [])
 

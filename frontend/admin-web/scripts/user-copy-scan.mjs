@@ -538,7 +538,7 @@ export const EXEMPT = [
   // 各加一段）⇒ placeholder 由 455 推到 **495**，本条同步改号（同样只是位置变更；
   // 本条豁免的「岗位编码示例」文案一字未动）。
   // 🔴 合并后（#7087 的 +12 与 #7111 的 +28 同时落地）⇒ 现取 = **507**，本条随现值。
-  'src/app/(dashboard)/roles/page.tsx:507',
+  'src/app/(dashboard)/roles/page.tsx:652',
 ]
 
 /**
