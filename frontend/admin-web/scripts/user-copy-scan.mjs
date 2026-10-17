@@ -532,7 +532,9 @@ export const EXEMPT = [
   // 🔴 issue #7007：本页页头由手写 `<h1>` 换成共享原语 `PageHeader`（版式统一）⇒ 行号由
   // 453 推到 **455**，本条同步改号。**豁免的文案与判据一字未动** —— 这正是台账按
   // `文件:行` 键控的用意：位置一漂就红，逼你回来改准，而不是留一条指向别处的静默豁免。
-  'src/app/(dashboard)/roles/page.tsx:455',
+  // 🔴 issue #7087：本页权限树接入**最前席位**（`standaloneHeadItems` / `perm-standalone-head`
+  // 块）⇒ placeholder 由 455 推到 **467**，本条同步改号（纯位置变更，命中的文案一字未动）。
+  'src/app/(dashboard)/roles/page.tsx:467',
 ]
 
 /**
