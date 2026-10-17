@@ -54,7 +54,7 @@ vi.mock('@/lib/api', () => ({
     },
   },
 }))
-import { CALC_SCALAR_KEYS, glossaryAnchorOf } from '@/lib/craft-calc-glossary'
+import { CALC_SCALAR_KEYS, SPECIAL_OPTION_TERMS, glossaryAnchorOf } from '@/lib/craft-calc-glossary'
 import type { CraftCalcConfig } from '@/types'
 
 /** 引擎默认配置（测试替身；逐值写死 = 「后端会回什么」）—— 含 issue #5130 的两个企业阈值 */
@@ -73,11 +73,11 @@ const CONFIG: CraftCalcConfig = {
 }
 
 describe('算料口径与术语说明区块（issue #4975）', () => {
-  it('两组说明都在：A 公式怎么算 / B 术语怎么判', () => {
+  it('两组说明都在：A 用料公式 / B 术语判定规则', () => {
     render(<CraftCalcGlossary config={CONFIG} />)
     // 注入：删掉任一 <details> ⇒ 对应断言红
-    expect(screen.getByTestId('glossary-formula')).toHaveTextContent('公式怎么算')
-    expect(screen.getByTestId('glossary-terms')).toHaveTextContent('术语怎么判')
+    expect(screen.getByTestId('glossary-formula')).toHaveTextContent('用料公式')
+    expect(screen.getByTestId('glossary-terms')).toHaveTextContent('术语判定规则')
   })
 
   it('每个参数锚点都渲染出来（页面「说明」链接不会指空）', () => {
@@ -116,19 +116,19 @@ describe('算料口径与术语说明区块（issue #4975）', () => {
     expect(await screen.findByTestId('glossary-example-倒幅')).toHaveTextContent('定宽买高')
   })
 
-  it('手选两项写明「系统不推算」+ 拼接的「不触发工序」边界可见（死亡条件绑 #4569）', () => {
+  it('手选两项写明「系统不推算」+ 拼接的「不多排工序」承诺可见（死亡条件绑 #4569）', () => {
     render(<CraftCalcGlossary config={CONFIG} />)
-    expect(screen.getByTestId('glossary-term-拼接')).toHaveTextContent('不触发工序')
-    // 2026-10-17 用户裁定：「边界」行整段撤下（研发过程产物）⇒ 原断言（该行含「还没确认」）
-    // 的**载体已移入 definition**（判据强度不变，见同文件「不得再有琥珀色边界行」那条）
+    // 2026-10-17（#7147）：措辞由研发腔「不触发工序」改为文案规范 P4 的「不会多排一道工序」，
+    // 承诺不变（勾了只影响加工费）。注入：删掉该承诺 ⇒ 红。
+    expect(screen.getByTestId('glossary-term-拼接')).toHaveTextContent('不会多排一道工序')
     expect(screen.getByTestId('glossary-term-接高')).toHaveTextContent('系统不推算')
   })
 
-  it('术语怎么判**不再有红色「边界」行**（2026-10-17 用户裁定：研发过程产物不上屏）', () => {
+  it('术语判定规则**不再有红色「边界」行**（2026-10-17 用户裁定：研发过程产物不上屏）', () => {
     const { container } = render(<CraftCalcGlossary config={CONFIG} />)
     const text = container.textContent ?? ''
     // 自证非空：空区块上的 `not.toContain` 恒真
-    expect(text).toContain('术语怎么判')
+    expect(text).toContain('术语判定规则')
     expect(text.length).toBeGreaterThan(200)
     // 注入：把 `boundary` 渲染加回（或把某条 boundary 数据加回）⇒ 两条都红
     expect(container.querySelectorAll('.text-amber-700')).toHaveLength(0)
@@ -143,12 +143,45 @@ describe('算料口径与术语说明区块（issue #4975）', () => {
       // 注入：漏渲染任一项 ⇒ 红
       expect(screen.getByTestId(`glossary-option-${name}`)).toBeInTheDocument()
     }
-    // 注入：给「一分为二」编一道工序 ⇒ 第一条红；删掉「还没确认」⇒ 第二条红
+    // 注入：给「一分为二」编一道工序 ⇒ 第一条红；把研发待办「还没确认」加回 ⇒ 第二条红
     expect(screen.getByTestId('glossary-option-一分为二')).toHaveTextContent('不加工序')
-    expect(screen.getByTestId('glossary-option-双眼皮接高')).toHaveTextContent('还没确认')
+    const 双眼皮 = screen.getByTestId('glossary-option-双眼皮接高')
+    expect(双眼皮).toHaveTextContent('相同的工序与计价口径')
+    expect(双眼皮).not.toHaveTextContent('还没确认')
     // 「接高」两组都有 ⇒ 锚点必须分开（否则跳错条目）
     expect(screen.getByTestId('glossary-term-接高')).toBeInTheDocument()
     expect(screen.getByTestId('glossary-option-接高')).toBeInTheDocument()
+  })
+
+  it('特殊选项：同一道工序信息**只出现一次**（impact 与工序行不得各说一遍 —— P2 信息不重复）', () => {
+    const { container } = render(<CraftCalcGlossary config={CONFIG} />)
+    // 病灶（2026-10-17 #7147 真机截图实证）：拼1次/接高 等条目里 impact 已经写了
+    // 「插一道「拼1次」（在「布三边」之后）」，组件又补一行同样的工序信息 ⇒ 同屏念两遍。
+    for (const t of SPECIAL_OPTION_TERMS.filter((x) => x.operation !== null)) {
+      const row = container.querySelector(`[data-testid="glossary-option-${t.name}"]`)
+      const rowText = row?.textContent ?? ''
+      // 自证非空：取不到行时下面的计数恒为 0（假绿）
+      expect(row, `取不到 ${t.name} 的条目`).not.toBeNull()
+      expect(rowText.length).toBeGreaterThan(10)
+      const hits = rowText.split(`在「${t.after}」之后`).length - 1
+      expect(hits, `${t.name} 的锚点信息出现 ${hits} 次（应恰好 1 次）`).toBe(1)
+    }
+    // 「不加工序」的选项不得再补一行工序信息（说明里已经承载）
+    const noOp = container.querySelector('[data-testid="glossary-option-一分为二"]')
+    expect((noOp?.textContent ?? '').split('不加工序').length - 1).toBe(1)
+  })
+
+  it('分组标题用商家话：易混术语有正式标题；口语标题不得回潮（#7147）', () => {
+    const { container } = render(<CraftCalcGlossary config={CONFIG} />)
+    const text = container.textContent ?? ''
+    expect(text).toContain('容易混淆的术语（名称相近、影响不同）')
+    // 旧标题逐字留档 —— 注入：改回「最容易混的几个词（看着像一回事…）」⇒ 红
+    expect(text).not.toContain('看着像一回事')
+    expect(text).not.toContain('术语怎么判')
+    // 渲染面全量口语扫描（与 `tests/unit/lib/craft-calc-glossary.test.ts` 的 marker 表同族）
+    for (const marker of ['口语', '说不准', '还没确认', '替你猜', '收不到这笔钱', '真值']) {
+      expect(text, `渲染面上出现了口语 / 研发腔：${marker}`).not.toContain(marker)
+    }
   })
 
   it('说明区块可键盘展开（原生 details，无自定义开关）', () => {
@@ -163,7 +196,7 @@ describe('算料口径与术语说明区块（issue #4975）', () => {
     const { container } = render(<CraftCalcGlossary config={CONFIG} />)
     const text = container.textContent ?? ''
     // 自证非空：空 DOM 上的「不含 **」是恒真断言（什么也没测）
-    expect(text).toContain('术语怎么判')
+    expect(text).toContain('术语判定规则')
     expect(text.length).toBeGreaterThan(200)
     // 红证（改前实测 = 本条判红）：渲染层是纯文本插值 ⇒ `**净窗高**` 与 `` `超高阈值` ``
     // 原样上屏成字面星号 / 反引号，商家看到的是噪声而不是加粗。
