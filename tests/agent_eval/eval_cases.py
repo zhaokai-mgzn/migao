@@ -12447,7 +12447,7 @@ _CASE_PR_129 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['商家在商品管理页点「上架」，另一个管理员（或另一个标签页）同一时刻点「下架」——两个请求都回 200，谁后写谁的终态'],
     expectations=[],
-    data_checks=['**核验结论 = 真**：修前 `ProductService#updateProductStatus` / `#updateProductForAgent` / `#batchOnShelf` / `#batchOffShelf` 四条状态迁移都是「先 `selectById` 读旧 status 过状态机（`STATUS_TRANSITIONS`）→ `updateById`（WHERE 仅主键 ⇒ **无谓词**）」⇒ 校验在**读**之后、写无谓词：并发 on/off_sale **两个请求都 200**、终态由后写者决定，另一个请求的 200 是谎话。', '**主判据（已落码）**：真库并发（N=2 同刻起跑 × 3 轮，各自独立连接 + 独立事务）on_sale × off_sale ⇒ 成功数 **恰 == 1**、落败方必须 **409 CONFLICT**、终态 == 赢家的目标态，且「谁回 200，终态就必须是它声称的那个态」。断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProductStatusCasRaceRealDbTest.java 的 `concurrentOnAndOffShelfHasExactlyOneWinner`。', '**谓词完整性**：CAS = `WHERE id=? AND tenant_id=? AND deleted=0 AND ((#{fromStatus} IS NULL AND status IS NULL) OR status = #{fromStatus})` —— 谓词逐条自证（列存在性对 `db/init/schema.sql` 的 `products` DDL 核过：`status`/`tenant_id`/`deleted` 三列都在）；`status` 可空 ⇒ 单列一支 `IS NULL`（PG 里 `status = NULL` 永假）。断言 = 同文件判据 1 的落库终态 + ProductStatusCasMetaGuardTest 的谓词判据。', '**正对照（不误杀）**：串行 `off_sale → on_sale → off_sale` 各成功一次；`off_sale → under_review`（不在状态机里）照旧是既有校验错误（非 200 / 非 409）。断言 = 同文件 `serialTransitionsStillSucceed`。', '🔴 **红证（并发类修复必填：注入方式 + 修前逐字读数）**：见同批 PR body「红证」节（探针开 ⇒ 必红；探针关 ⇒ 绿，成对读数；注入 = 把 CAS 退回 `productMapper.updateById(product)`）。', '**改品不得回滚状态（T2b，本单另一半）**：真库并发「`updateProduct`（改名，带窗口探针）× 状态迁移 off_sale → on_sale」⇒ 终态必须仍是 `on_sale`（修前：整实体回写 + `setStatus(originalStatus)` ⇒ 静默写回 `off_sale`），且改名**真的生效**（判据不是「什么都没发生」）。断言 = 同文件 `updateProductDoesNotRollBackConcurrentStatusMigration`。', '**边界（如实登记）**：① 跑的是服务层真库并发而非 HTTP 栈（`PUT /api/admin/products/{id}/status` 与 agent 端点只是薄转发）；② 探针对象全部自建（tenant 6961 / 商品 id 前缀 `p-6961-`），随一次性临时集群销毁，不碰存量数据；③ 判据 1 只用 `updateProductStatus` 一条入口代表四条（四条都走同一个 `applyStatusTransition` → 同一条 CAS；另外三条的**登记**由 MC-105 逐条钉住）；④ `batchOnShelf`/`batchOffShelf` 的落败文案走 `BatchOperationResult.failed`（分部分成功语义）而不是 409，本判据未逐条断言它的影响行数分支。'],
+    data_checks=['**核验结论 = 真**：修前 `ProductService#updateProductStatus` / `#updateProductForAgent` / `#batchOnShelf` / `#batchOffShelf` 四条状态迁移都是「先 `selectById` 读旧 status 过状态机（`STATUS_TRANSITIONS`）→ `updateById`（WHERE 仅主键 ⇒ **无谓词**）」⇒ 校验在**读**之后、写无谓词：并发 on/off_sale **两个请求都 200**、终态由后写者决定，另一个请求的 200 是谎话。', '**主判据（已落码）**：真库并发（N=2 同刻起跑 × 3 轮，各自独立连接 + 独立事务）on_sale × off_sale ⇒ 成功数 **恰 == 1**、落败方必须 **409 CONFLICT**、终态 == 赢家的目标态，且「谁回 200，终态就必须是它声称的那个态」。断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProductStatusCasRaceRealDbTest.java 的 `concurrentOnAndOffShelfHasExactlyOneWinner`。', '**谓词完整性**：CAS = `WHERE id=? AND tenant_id=? AND deleted=0 AND ((#{fromStatus} IS NULL AND status IS NULL) OR status = #{fromStatus})` —— 谓词逐条自证（列存在性对 `db/init/schema.sql` 的 `products` DDL 核过：`status`/`tenant_id`/`deleted` 三列都在）；`status` 可空 ⇒ 单列一支 `IS NULL`（PG 里 `status = NULL` 永假）。断言 = 同文件判据 1 的落库终态 + ProductStatusCasMetaGuardTest 的谓词判据。', '**正对照（不误杀）**：串行 `off_sale → on_sale → off_sale` 各成功一次；`off_sale → under_review`（不在状态机里）照旧是既有校验错误（非 200 / 非 409）。断言 = 同文件 `serialTransitionsStillSucceed`。', '🔴 **红证（并发类修复必填：注入方式 + 修前逐字读数）**：见同批 PR body「红证」节（探针开 ⇒ 必红；探针关 ⇒ 绿，成对读数；注入 = 把 CAS 退回 `productMapper.updateById(product)`）。', '**改品不得回滚状态（T2b，本单另一半）**：真库并发「`updateProduct`（改名，带窗口探针）× 状态迁移 off_sale → on_sale」⇒ 终态必须仍是 `on_sale`（修前：整实体回写 + `setStatus(originalStatus)` ⇒ 静默写回 `off_sale`），且改名**真的生效**（判据不是「什么都没发生」）。断言 = 同文件 `updateProductDoesNotRollBackConcurrentStatusMigration`。', '**边界（如实登记）**：① 跑的是服务层真库并发而非 HTTP 栈（`PUT /api/admin/products/{id}/status` 与 agent 端点只是薄转发）；② 探针对象全部自建（tenant 6961 / 商品 id 前缀 `p-6961-`），随一次性临时集群销毁，不碰存量数据；③ 判据 1 只用 `updateProductStatus` 一条入口代表四条（四条都走同一个 `applyStatusTransition` → 同一条 CAS；另外三条的**登记**由 MC-115 逐条钉住）；④ `batchOnShelf`/`batchOffShelf` 的落败文案走 `BatchOperationResult.failed`（分部分成功语义）而不是 409，本判据未逐条断言它的影响行数分支。'],
     skip_reason='[backend-contract] 真 PG 并发落库判据（initdb+pg_ctl 临时集群 + 真 ProductService 装配）：CAS 的行锁 / 条件重估与「改了哪几列」在 mock 面结构上不可见，无 LLM 环节 ⇒ 不进 agent-eval 冒烟。',
     tags=['backend-contract', 'concurrency', 'real-db', 'red-proof', 'product-status'],
     persona='',
@@ -12456,9 +12456,9 @@ _CASE_PR_129 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── MC-105 [EDGE] 类级元守卫（#6961）：商品状态迁移写路径必须落到 SQL 谓词（CAS）+ 未登记即红 + 豁免只许缩短（源: cases/product.yml）──
-_CASE_MC_105 = EvalCase(
-    id='MC-105',
+# ── MC-115 [EDGE] 类级元守卫（#6961）：商品状态迁移写路径必须落到 SQL 谓词（CAS）+ 未登记即红 + 豁免只许缩短（源: cases/product.yml）──
+_CASE_MC_115 = EvalCase(
+    id='MC-115',
     legacy_id='',
     title='类级元守卫（#6961）：商品状态迁移写路径必须落到 SQL 谓词（CAS）+ 未登记即红 + 豁免只许缩短',
     skill=Skill.PRODUCT,
@@ -12474,16 +12474,16 @@ _CASE_MC_105 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PG-077 [EDGE] 🔴 真库并发（#6961）：商品状态迁移 = CAS（恰一个赢家 + 落败 409）+ 改品不得静默回滚并发状态迁移（源: cases/product.yml）──
-_CASE_PG_077 = EvalCase(
-    id='PG-077',
+# ── PG-082 [EDGE] 🔴 真库并发（#6961）：商品状态迁移 = CAS（恰一个赢家 + 落败 409）+ 改品不得静默回滚并发状态迁移（源: cases/product.yml）──
+_CASE_PG_082 = EvalCase(
+    id='PG-082',
     legacy_id='',
     title='🔴 真库并发（#6961）：商品状态迁移 = CAS（恰一个赢家 + 落败 409）+ 改品不得静默回滚并发状态迁移',
     skill=Skill.PRODUCT,
     difficulty=Difficulty.EDGE,
     user_inputs=['两个管理员同时对同一件商品操作：一个点「上架」、一个点「下架」（或一个在改商品名、另一个在上下架）'],
     expectations=[],
-    data_checks=['**核验结论 = 真（两条主张都在当前代码上成立）**：① 四条状态迁移入口（`updateProductStatus` / `updateProductForAgent` / `batchOnShelf` / `batchOffShelf`）是「读旧 status 过状态机 → `updateById`（WHERE 仅主键）」⇒ 并发 on/off_sale **两个请求都 200**、终态由后写者决定；② `updateProduct` 是整实体回写 + `setStatus(originalStatus)` ⇒ 改品会把读到的旧 status 写回，**静默回滚**并发的状态迁移（T2b 的类级根因）。', '**判据 1·恰一个赢家（真库并发 + 窗口探针，3 轮）**：同一件商品并发 `on_sale` × `off_sale`（同刻起跑、各自独立连接 + 独立事务）⇒ 成功数 **恰 == 1**、落败方必须 **409 CONFLICT**、终态 == 赢家的目标态，且「谁回 200，终态就必须是它声称的那个态」。断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProductStatusCasRaceRealDbTest.java 的 `concurrentOnAndOffShelfHasExactlyOneWinner`。', '**判据 2·改品不得回滚状态（T2b）**：真库并发「`updateProduct`（改名）× 状态迁移 off_sale → on_sale」⇒ 终态必须仍是 `on_sale`，且改名**真的生效**（判据不是「什么都没发生」）。修前：迁移 200 + status 落 on_sale，随后改品的整实体回写把它写回 `off_sale` ⇒ 当场红。断言 = 同文件 `updateProductDoesNotRollBackConcurrentStatusMigration`。', '**判据 3·正对照（护栏不误杀）**：串行 `off_sale → on_sale → off_sale` 各成功一次；`off_sale → under_review`（不在状态机里）照旧是既有校验错误（非 200 / 非 409）。断言 = 同文件 `serialTransitionsStillSucceed`。', '**为什么必须真库 + 窗口探针**：CAS 的效力来自只有真 PG 才有的**行锁 + 条件重估**（后到者阻塞到前者提交后按新版本行重估谓词 ⇒ 影响行数 0）；mock 面结构上不可见（mock 恒返回 1）⇒ 修前形态在 mock 面**恒绿**（假绿）。窗口只有微秒级 ⇒ 用 `ProductService#setStatusMigrationProbePauseMillisForTest`（生产恒 0）放大，判据才是确定性的而不是 flake。', '🔴 **红证（探针开 ⇒ 必红 / 探针关 ⇒ 全绿，成对逐字读数见同批 PR body）**：注入 = 把四条写退回无谓词 `updateById` + 把 `updateProduct` 退回整实体回写 + `setStatus(originalStatus)`。', '**边界（如实登记）**：① 服务层真库并发，不覆盖 HTTP 薄转发层；② 探针对象全部自建（tenant 6961 / id 前缀 `p-6961-`），随一次性临时集群销毁，不碰存量数据；③ 判据 1 用 `updateProductStatus` 一条入口代表四条（同一个 `applyStatusTransition` → 同一条 CAS；另外三条的登记由 MC-105 钉住）；④ `batchOnShelf` / `batchOffShelf` 的落败走 `BatchOperationResult.failed`（分部分成功语义）而不是 409，本判据未逐条断言它的影响行数分支（已登记在台账 `coverage_boundary`）。'],
+    data_checks=['**核验结论 = 真（两条主张都在当前代码上成立）**：① 四条状态迁移入口（`updateProductStatus` / `updateProductForAgent` / `batchOnShelf` / `batchOffShelf`）是「读旧 status 过状态机 → `updateById`（WHERE 仅主键）」⇒ 并发 on/off_sale **两个请求都 200**、终态由后写者决定；② `updateProduct` 是整实体回写 + `setStatus(originalStatus)` ⇒ 改品会把读到的旧 status 写回，**静默回滚**并发的状态迁移（T2b 的类级根因）。', '**判据 1·恰一个赢家（真库并发 + 窗口探针，3 轮）**：同一件商品并发 `on_sale` × `off_sale`（同刻起跑、各自独立连接 + 独立事务）⇒ 成功数 **恰 == 1**、落败方必须 **409 CONFLICT**、终态 == 赢家的目标态，且「谁回 200，终态就必须是它声称的那个态」。断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProductStatusCasRaceRealDbTest.java 的 `concurrentOnAndOffShelfHasExactlyOneWinner`。', '**判据 2·改品不得回滚状态（T2b）**：真库并发「`updateProduct`（改名）× 状态迁移 off_sale → on_sale」⇒ 终态必须仍是 `on_sale`，且改名**真的生效**（判据不是「什么都没发生」）。修前：迁移 200 + status 落 on_sale，随后改品的整实体回写把它写回 `off_sale` ⇒ 当场红。断言 = 同文件 `updateProductDoesNotRollBackConcurrentStatusMigration`。', '**判据 3·正对照（护栏不误杀）**：串行 `off_sale → on_sale → off_sale` 各成功一次；`off_sale → under_review`（不在状态机里）照旧是既有校验错误（非 200 / 非 409）。断言 = 同文件 `serialTransitionsStillSucceed`。', '**为什么必须真库 + 窗口探针**：CAS 的效力来自只有真 PG 才有的**行锁 + 条件重估**（后到者阻塞到前者提交后按新版本行重估谓词 ⇒ 影响行数 0）；mock 面结构上不可见（mock 恒返回 1）⇒ 修前形态在 mock 面**恒绿**（假绿）。窗口只有微秒级 ⇒ 用 `ProductService#setStatusMigrationProbePauseMillisForTest`（生产恒 0）放大，判据才是确定性的而不是 flake。', '🔴 **红证（探针开 ⇒ 必红 / 探针关 ⇒ 全绿，成对逐字读数见同批 PR body）**：注入 = 把四条写退回无谓词 `updateById` + 把 `updateProduct` 退回整实体回写 + `setStatus(originalStatus)`。', '**边界（如实登记）**：① 服务层真库并发，不覆盖 HTTP 薄转发层；② 探针对象全部自建（tenant 6961 / id 前缀 `p-6961-`），随一次性临时集群销毁，不碰存量数据；③ 判据 1 用 `updateProductStatus` 一条入口代表四条（同一个 `applyStatusTransition` → 同一条 CAS；另外三条的登记由 MC-115 钉住）；④ `batchOnShelf` / `batchOffShelf` 的落败走 `BatchOperationResult.failed`（分部分成功语义）而不是 409，本判据未逐条断言它的影响行数分支（已登记在台账 `coverage_boundary`）。'],
     skip_reason='[backend-contract] 真 PG 并发落库判据（initdb+pg_ctl 临时集群 + 真 ProductService 装配），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['product', 'concurrency', 'real-db', 'backend-contract', 'red-proof'],
     persona='',
@@ -15669,8 +15669,8 @@ ALL_CASES = (
     _CASE_PR_127,
     _CASE_PR_128,
     _CASE_PR_129,
-    _CASE_MC_105,
-    _CASE_PG_077,
+    _CASE_MC_115,
+    _CASE_PG_082,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,

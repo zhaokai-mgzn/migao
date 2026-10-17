@@ -1,4 +1,4 @@
-// case_ids: PG-077
+// case_ids: PG-082
 
 package com.migao.admin.service;
 
@@ -95,7 +95,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ② 探针对象全部自建（tenant {@value #TENANT_ID} / 商品 id 前缀 {@code p-6961-}），随一次性临时集群
  * 销毁，<b>不碰任何存量数据</b>；③ 判据 1 只用 {@code updateProductStatus} 一条入口代表四条
  * （四条都走同一个 {@code applyStatusTransition} → 同一条 CAS；另外三条的**登记**由
- * {@code ProductStatusCasMetaGuardTest}（MC-105）逐条钉住）；④ {@code batchOnShelf} /
+ * {@code ProductStatusCasMetaGuardTest}（MC-115）逐条钉住）；④ {@code batchOnShelf} /
  * {@code batchOffShelf} 的落败文案走 {@code BatchOperationResult.failed} 而不是 409（分部分成功语义），
  * 本判据**未**逐条断言它的影响行数分支（登记在 {@code product-status-cas-ledger.json} 的
  * {@code coverage_boundary}）。</p>

@@ -28,6 +28,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.isNull;
+
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -126,7 +131,9 @@ class AgentProductServiceTest {
             when(productAttributeMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
 
             productService.updateProductForAgent("prod-001", req, 1L);
-            verify(productMapper).updateById(any(Product.class));
+            // issue #6961：改品主写 = 只写自己负责的列的 wrapper（不再整实体回写）
+            verify(productMapper).update(isNull(),
+                    any(com.baomidou.mybatisplus.core.conditions.Wrapper.class));
         }
 
         @Test @DisplayName("商品不存在 → BusinessException")
@@ -155,16 +162,20 @@ class AgentProductServiceTest {
                     .categoryId("cat-001").basePrice(new BigDecimal("99.00"))
                     .status("on_sale").build();
             when(productMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(product);
-            when(productMapper.selectById("prod-001")).thenReturn(product);
-            when(productMapper.updateById(any(Product.class))).thenReturn(1);
+            // 第二次读（applyStatusTransition 前的回读）必须给**未变形的副本**：updateProduct 会就地
+            // 清掉实体上的 status（issue #6961：status 不进 SET），同一个实例回读拿到的会是 null
+            when(productMapper.selectById("prod-001")).thenReturn(product).thenReturn(Product.builder()
+                    .id("prod-001").tenantId(1L).name("遮光窗帘")
+                    .categoryId("cat-001").basePrice(new BigDecimal("99.00"))
+                    .status("on_sale").build());
+            when(productMapper.updateStatusIfFrom(
+                    any(), any(), any(), anyBoolean(), any(), any(), any())).thenReturn(1);
 
             productService.updateProductForAgent("prod-001", req, 1L);
 
-            ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
-            verify(productMapper, atLeastOnce()).updateById(captor.capture());
-            assertThat(captor.getAllValues())
-                    .as("status 必须真的落到实体（堵死 hasUpdate=false 静默成功）")
-                    .anySatisfy(p -> assertThat(p.getStatus()).isEqualTo("off_sale"));
+            // issue #6961：status 落库走 CAS；必须真的带 off_sale 作为**目标态**（堵死 hasUpdate=false 假成功）
+            verify(productMapper).updateStatusIfFrom(any(), any(), any(), anyBoolean(),
+                    argThat((String t) -> "off_sale".equals(t)), any(), any());
         }
 
         @Test @DisplayName("防回归 — 只传无法处理的字段不得返回成功（hasUpdate=false 模式）")

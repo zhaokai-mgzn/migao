@@ -1,4 +1,4 @@
-// case_ids: MC-105
+// case_ids: MC-115
 
 package com.migao.admin.service;
 
@@ -73,7 +73,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <h3>🔴 去谓词 / 去行数判定各自的红证（§23 G3 的「判别力自证」）</h3>
  * 判据 2/3 在合成语料上**各有一条**定向注入：去掉 WHERE 侧 status 谓词 ⇒ 判据 2 红；
  * 把行写换回 {@code updateById} ⇒ 判据 3 红（两者都不是「顺手一起红」）。
- * <b>判不了「0 行之后不 fail-closed」</b>（那是实例判据 PG-077 的靶心，本守卫读的是源码文本）。
+ * <b>判不了「0 行之后不 fail-closed」</b>（那是实例判据 PG-082 的靶心，本守卫读的是源码文本）。
  *
  * <p>⚠️ 本判据读<b>源码文本</b>（不做 AST）—— 本仓既有形态（MC-100
  * {@code InboundOrderStatusCasMetaGuardTest} / MC-104 {@code ProcessingOrderStatusCasMetaGuardTest} 同款）。
@@ -160,7 +160,7 @@ class ProductStatusCasMetaGuardTest {
                 .map(MapperWrite::method).toList();
         List<String> servicePaths = serviceWritePaths(serviceText(), SERVICE_FILE);
 
-        System.out.println("[READING MC-105 扫描器] 写 status 的 mapper 方法=" + mapperMethods
+        System.out.println("[READING MC-115 扫描器] 写 status 的 mapper 方法=" + mapperMethods
                 + " service 写路径=" + servicePaths);
         assertThat(mapperMethods)
                 .as("扫描器必须现取到写 status 的 mapper 手写 SQL（返回空集 = 判据失明，不是通过）")
@@ -238,7 +238,7 @@ class ProductStatusCasMetaGuardTest {
         }
         // 反向自证：真语料里那三个宿主必须真的存在（否则本条判据在空跑 —— 「绿了但没跑」）
         List<String> live = t2bHostMethods(service);
-        System.out.println("[READING MC-105 T2b] 现取宿主=" + live + " 台账宿主=" + hostsInLedger
+        System.out.println("[READING MC-115 T2b] 现取宿主=" + live + " 台账宿主=" + hostsInLedger
                 + " 禁用锚=" + allForbidden + " 违规=" + unanchored + " 台账断链=" + broken);
         assertThat(live).as("真语料里必须现取到那三个整实体回写宿主（扫不到 = 判据失明，不是通过）")
                 .containsAll(T2B_HOST_METHODS);
@@ -271,7 +271,7 @@ class ProductStatusCasMetaGuardTest {
                 offenders.add(w.method() + " 缺 " + missing);
             }
         }
-        System.out.println("[READING MC-105 谓词] 状态写面="
+        System.out.println("[READING MC-115 谓词] 状态写面="
                 + writes.stream().map(MapperWrite::method).toList() + " 违规=" + offenders);
         assertThat(offenders).as("状态迁移的写必须把判断与写入压进同一条语句（无谓词写 = #6961 的病根）")
                 .isEmpty();
@@ -286,7 +286,7 @@ class ProductStatusCasMetaGuardTest {
                 offenders.add("ProductService#" + m.name());
             }
         }
-        System.out.println("[READING MC-105 无谓词写] 现取候选方法=" + serviceWritePaths(serviceText(), SERVICE_FILE)
+        System.out.println("[READING MC-115 无谓词写] 现取候选方法=" + serviceWritePaths(serviceText(), SERVICE_FILE)
                 + " 违规=" + offenders);
         assertThat(offenders)
                 .as("状态迁移的写必须带谓词（#6961 的病根就是四条入口 + updateProduct 用了无谓词 updateById）")
@@ -310,7 +310,7 @@ class ProductStatusCasMetaGuardTest {
         int baseline = ledger.get("unverified_baseline").asInt();
         int entries = ledger.get("entries").size();
 
-        System.out.println("[READING MC-105 台账] 现取写路径=" + servicePaths + " 已登记=" + registered
+        System.out.println("[READING MC-115 台账] 现取写路径=" + servicePaths + " 已登记=" + registered
                 + " 未登记=" + unregistered + " 幽灵条目=" + ghosts
                 + " mapper 条目=" + entries + " 豁免=" + unverified + "(基线 " + baseline + ")");
         assertThat(unregistered)
@@ -347,7 +347,7 @@ class ProductStatusCasMetaGuardTest {
                 }
             }
         }
-        System.out.println("[READING MC-105 兑现] 断链=" + broken);
+        System.out.println("[READING MC-115 兑现] 断链=" + broken);
         assertThat(broken).as("evidence 必须逐字兑现（摘掉 CAS 调用 / 方法改名 ⇒ 当场红）").isEmpty();
     }
 
@@ -356,7 +356,7 @@ class ProductStatusCasMetaGuardTest {
     void guardMutationHoleIsWiredAndDisabledInProduction() throws IOException {
         String service = serviceText();
         int branches = countOf(service, "GUARD_MUTATION");
-        System.out.println("[READING MC-105 注入孔] 生产读数=" + ProductService.guardMutationForTest()
+        System.out.println("[READING MC-115 注入孔] 生产读数=" + ProductService.guardMutationForTest()
                 + " 注入分支出现次数=" + branches);
         assertThat(ProductService.guardMutationForTest())
                 .as("生产路径必须恒 0（未设 `-Dmigao.guard.mutation` ⇒ 零影响）")

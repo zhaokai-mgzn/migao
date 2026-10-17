@@ -15,6 +15,7 @@ import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductSkuMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.toolkit.support.SFunction;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import jakarta.servlet.http.HttpServletResponse;
@@ -1543,28 +1544,57 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      * {@code MyMetaObjectHandler} 自动填充，这条 SQL 路不经过填充器）。</p>
      */
     private LambdaUpdateWrapper<Product> updateProductOwnedColumns(Product product) {
-        return new LambdaUpdateWrapper<Product>()
+        // 🔴 逐列复刻 MyBatis-Plus `updateById` 的默认策略（FieldStrategy.NOT_NULL）：**值为 null 的列不进 SET**。
+        // 少了这条，「只给了 stock / 只给了 skus 的改品请求」会把 `BeanUtils.copyProperties` 覆写成 null 的
+        // name / sku_code / base_price 一起写下去 ⇒ 真库 `products.name` 的 NOT NULL 约束当场报
+        // `null value in column "name"`（issue #6961 真库判据实测；修前整实体 `updateById` 天然不会写 null）。
+        LambdaUpdateWrapper<Product> wrapper = new LambdaUpdateWrapper<Product>()
                 .eq(Product::getId, product.getId())
                 .eq(Product::getTenantId, product.getTenantId())
-                .eq(Product::getDeleted, 0)
-                .set(Product::getName, product.getName())
-                .set(Product::getSkuCode, product.getSkuCode())
-                .set(Product::getUnit, product.getUnit())
-                .set(Product::getPricingType, product.getPricingType())
-                .set(Product::getCategoryId, product.getCategoryId())
-                .set(Product::getBasePrice, product.getBasePrice())
-                .set(Product::getDescription, product.getDescription())
-                .set(Product::getMainImage, product.getMainImage())
-                .set(Product::getImages, product.getImages())
-                .set(Product::getDetailImages, product.getDetailImages())
-                .set(Product::getKnowledgeBaseId, product.getKnowledgeBaseId())
-                .set(Product::getStockWarningThreshold, product.getStockWarningThreshold())
-                .set(Product::getAllowReturnRestock, product.getAllowReturnRestock())
-                .set(Product::getSellingMethods, product.getSellingMethods())
-                .set(Product::getRollLengthM, product.getRollLengthM())
-                .set(Product::getEditedBy, product.getEditedBy())
-                .set(Product::getEditedAt, product.getEditedAt())
-                .set(Product::getUpdatedAt, OffsetDateTime.now());
+                .eq(Product::getDeleted, 0);
+        setIfPresent(wrapper, Product::getName, product.getName());
+        setIfPresent(wrapper, Product::getSkuCode, product.getSkuCode());
+        setIfPresent(wrapper, Product::getUnit, product.getUnit());
+        setIfPresent(wrapper, Product::getPricingType, product.getPricingType());
+        setIfPresent(wrapper, Product::getCategoryId, product.getCategoryId());
+        setIfPresent(wrapper, Product::getBasePrice, product.getBasePrice());
+        setIfPresent(wrapper, Product::getDescription, product.getDescription());
+        setIfPresent(wrapper, Product::getMainImage, product.getMainImage());
+        // JSON 列必须带 typeHandler：Wrapper 的 `.set(col, val)` 没有实体字段的 typeHandler，
+        // PG 拿不到 javaType ⇒ `Can't infer the SQL type ... ImmutableCollections$List12`
+        //（issue #6961 真库判据实测）。这里显式点名与实体注解同一个 handler。
+        setIfPresentWithHandler(wrapper, Product::getImages, product.getImages(), JSON_TYPE_HANDLER);
+        setIfPresentWithHandler(wrapper, Product::getDetailImages, product.getDetailImages(), JSON_TYPE_HANDLER);
+        setIfPresent(wrapper, Product::getKnowledgeBaseId, product.getKnowledgeBaseId());
+        setIfPresent(wrapper, Product::getStockWarningThreshold, product.getStockWarningThreshold());
+        setIfPresent(wrapper, Product::getAllowReturnRestock, product.getAllowReturnRestock());
+        setIfPresentWithHandler(wrapper, Product::getSellingMethods, product.getSellingMethods(), JSON_TYPE_HANDLER);
+        setIfPresent(wrapper, Product::getRollLengthM, product.getRollLengthM());
+        setIfPresent(wrapper, Product::getEditedBy, product.getEditedBy());
+        setIfPresent(wrapper, Product::getEditedAt, product.getEditedAt());
+        wrapper.set(Product::getUpdatedAt, OffsetDateTime.now());
+        return wrapper;
+    }
+
+    /** `@TableField(typeHandler = JacksonTypeHandler.class)` 的 JSON 列在 Wrapper 写面上要显式点名同一 handler。 */
+    private static final String JSON_TYPE_HANDLER =
+            "typeHandler=com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler";
+
+    /** 非 null 才进 SET 子句（= MyBatis-Plus `updateById` 的 NOT_NULL 策略，逐列复刻）。 */
+    private static <V> void setIfPresent(LambdaUpdateWrapper<Product> wrapper,
+                                        SFunction<Product, V> column, V value) {
+        if (value != null) {
+            wrapper.set(column, value);
+        }
+    }
+
+    /** 同上，但带上 typeHandler（JSON 列专用）。 */
+    private static <V> void setIfPresentWithHandler(LambdaUpdateWrapper<Product> wrapper,
+                                                   SFunction<Product, V> column, V value,
+                                                   String typeHandler) {
+        if (value != null) {
+            wrapper.set(column, value, typeHandler);
+        }
     }
 
     // ========== 批量操作 ==========
@@ -2729,12 +2759,17 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                         before, after, StockLedger.REASON_MANUAL, null, reason);
             }
         }
-        // 商品级 stock 仅作冗余展示，同步为 SKU 汇总值
-        product.setStock(newTotal);
-        // 🔴 issue #6961（T2b 同族形态）：同 updateProduct / updateProductRecommended —— status 置 null
-        // 后不进 SET，避免这条库存同步把并发迁移的新状态用陈旧值覆盖回去。
-        product.setStatus(null);
-        productMapper.updateById(product);
+        // 商品级 stock 仅作冗余展示，同步为 SKU 汇总值。
+        // 🔴 issue #6961（T2b 同族收口）：这里**只写 stock 这一列**（+ updated_at），不再整实体回写 ——
+        // 修前是把状态列显式置空后整实体回写：状态靠「NOT_NULL 跳过」躲过去，但 name / base_price /
+        // main_image 等列仍按**读到的陈旧实体**回写 ⇒ 并发的改品会被这条库存同步静默回滚
+        //（与 updateProduct 同一个病根，只是宿主换了）。列清单与 `syncProductStockFromSkus` 同口径。
+        productMapper.update(null, new LambdaUpdateWrapper<Product>()
+                .eq(Product::getId, productId)
+                .eq(Product::getTenantId, tenantId)
+                .eq(Product::getDeleted, 0)
+                .set(Product::getStock, newTotal)
+                .set(Product::getUpdatedAt, OffsetDateTime.now()));
 
         log.info("[Agent] 库存调整: product={}, adjustment={}, reason={}, total={}->{}, tenant={}",
                 productId, adjustment, reason, total, newTotal, tenantId);
