@@ -711,6 +711,9 @@ public class ProductionService {
                 ? List.of()
                 : listWorkLogs(po.getId(), tenantId);
         Map<String, List<String>> workers = po == null ? Map.of() : workersByOperation(logs);
+        // 报工三态数量（issue #7140）：与 `worklog()` 读面的三键**同一口径**
+        //（合格 = normal 的合格数；返工 / 报废 = 该笔报工数量）—— 只内存归集，不参与计价。
+        Map<String, QtyByType> qtyByOp = qtyByOperation(logs);
 
         // 规格可见面（issue #4459 §3.1）：**逐字取订单行**；本单再追加派工批次两键（V116 / #5145）
         Map<String, Map<String, Object>> specByItemId = orderSpecByItemId(order, tenantId);
@@ -722,7 +725,7 @@ public class ProductionService {
         // 樘窗组键（issue #4784）：**复用 #4725 的既有实现**（`windowGroupKeyByItemId` + `setKey`）
         // —— 套维口径只有一份；本参数只用于给每个部位**追加** `set_no`（不改分组）。
         result.put("positions", buildPositions(operations, workers, specByItemId,
-                windowGroupKeyByItemId(order, tenantId), partTokensByItemId(po, tenantId)));
+                windowGroupKeyByItemId(order, tenantId), partTokensByItemId(po, tenantId), qtyByOp));
         result.put("progress", progressOf(operations));
         // 操作记录（issue #4347 §3.2）：**服务端**报工流水，不是本机缓存。
         // 工人端原来只显示本机 storage 里的报工（换设备就没了，也看不到别人做的工序）；
@@ -2220,7 +2223,8 @@ public class ProductionService {
                                                      Map<String, List<String>> workersByOperation,
                                                      Map<String, Map<String, Object>> specByItemId,
                                                      Map<String, String> windowGroupKeyByItemId,
-                                                     Map<String, ProcessingSetPartToken> partTokensByItemId) {
+                                                     Map<String, ProcessingSetPartToken> partTokensByItemId,
+                                                     Map<String, QtyByType> qtyByOp) {
         Map<String, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
         Map<String, ProcessingPositionOperation> headByKey = new LinkedHashMap<>();
         Set<String> seen = new HashSet<>();
@@ -2231,7 +2235,8 @@ public class ProductionService {
             seen.add(key);
             headByKey.putIfAbsent(key, op);
             grouped.computeIfAbsent(key, k -> new ArrayList<>())
-                    .add(operationView(op, workersByOperation.getOrDefault(op.getId(), List.of())));
+                    .add(operationView(op, workersByOperation.getOrDefault(op.getId(), List.of()),
+                            qtyByOp.get(op.getId())));
         }
         List<Map<String, Object>> positions = new ArrayList<>();
         for (String key : seen) {
@@ -2344,7 +2349,43 @@ public class ProductionService {
         return result;
     }
 
-    private Map<String, Object> operationView(ProcessingPositionOperation op, List<String> workers) {
+    /**
+     * 报工三态数量（**唯一一份**规则）：合格 = {@code work_type='normal'} 的**合格数**；
+     * 返工 / 报废 = 该笔的**报工数量**。
+     *
+     * <p>与 {@code worklog()} 读面的 {@code qualified_qty} / {@code rework_qty} / {@code scrap_qty}
+     * **同一口径**（两处都只读 {@code production_work_logs}、不折算、不进计件 —— 返工/报废不计件是
+     * 报工侧既有口径，本单一个字没改）。键 = 工序实例 id；无报工 ⇒ 该键缺席，消费方按 0 读
+     *（「没有这一笔」本身就是事实）。</p>
+     */
+    private Map<String, QtyByType> qtyByOperation(List<ProductionWorkLog> logs) {
+        Map<String, QtyByType> out = new HashMap<>();
+        for (ProductionWorkLog log : logs) {
+            if (log.getOperationId() == null) {
+                continue;
+            }
+            QtyByType qty = out.computeIfAbsent(log.getOperationId(), k -> new QtyByType());
+            String type = log.getWorkType();
+            if ("normal".equals(type)) {
+                qty.qualified = qty.qualified.add(nz(log.getQualifiedQty()));
+            } else if ("rework".equals(type)) {
+                qty.rework = qty.rework.add(nz(log.getQty()));
+            } else if ("scrap".equals(type)) {
+                qty.scrap = qty.scrap.add(nz(log.getQty()));
+            }
+        }
+        return out;
+    }
+
+    /** 逐工序的三态数量累加器（可变；只在本类内存归集里流转，不上读面）。 */
+    private static final class QtyByType {
+        private BigDecimal qualified = BigDecimal.ZERO;
+        private BigDecimal rework = BigDecimal.ZERO;
+        private BigDecimal scrap = BigDecimal.ZERO;
+    }
+
+    private Map<String, Object> operationView(ProcessingPositionOperation op, List<String> workers,
+                                              QtyByType qty) {
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("id", op.getId());
         view.put("seq", op.getSeq());
@@ -2371,6 +2412,13 @@ public class ProductionService {
         view.put("is_start_marker", Boolean.TRUE.equals(op.getIsStartMarker()));
         view.put("status", op.getStatus() == null ? "pending" : op.getStatus());
         view.put("done_qty", nz(op.getDoneQty()));
+        // 报工三态数量（issue #7140，**只加不改**）：合格 / 返工 / 报废。
+        // 🔴 返工 / 报废**既不推进进度也不计件**（既有口径，一字未改）—— 但它们是**质量读数**：
+        // 此前只有米宝答得出（agent 的 worklog 读面），商家在观星台的生产明细上**看不到**。
+        // 缺报工 ⇒ 0（「没有这一笔」是真事实，与本面 `done_qty` 的既有读法一致）。
+        view.put("qualified_qty", qty == null ? BigDecimal.ZERO : qty.qualified);
+        view.put("rework_qty", qty == null ? BigDecimal.ZERO : qty.rework);
+        view.put("scrap_qty", qty == null ? BigDecimal.ZERO : qty.scrap);
         // 追加键（issue #4309）：既有键名/含义/顺序一字不改
         view.put("workers", workers);
         return view;

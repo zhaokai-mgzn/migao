@@ -18,6 +18,7 @@ import { routeSourceNotice } from '@/lib/route-source'
 // ⇒ `logical_name` 缺失时会渲染成 ` · 布帘` 或 `—`，而进度表渲染的是快照名原文。
 import { operationDisplayName } from '@/lib/operation-display'
 import ProductionProgressTable from '@/components/production/ProductionProgressTable'
+import QualityCheckPanel from '@/components/production/QualityCheckPanel'
 import PieceworkTable from '@/components/production/PieceworkTable'
 import CutPlanTable from '@/components/production/CutPlanTable'
 import PrintDocPreview from '@/components/orders/PrintDocPreview'
@@ -768,6 +769,18 @@ export default function ProcessingOrderProductionPage() {
               </>
             )}
           </div>
+
+          {/* 质检区（issue #7140 = #5652 的**商家面**）：按成品帘记录判定（谁检的 / 何时 / 合格·返工·报废 / 原因）。
+              🔴 **只在持 `production:inspect` 时渲染**（判定属独立质检员岗位 + 管理员；用户 2026-10-17
+              裁定「保持现状」⇒ 不是所有人都该看到这一区，也不是所有人都能录）。权限门在**调用方**
+              —— `QualityCheckPanel` 自己不判码（避免两处口径）。
+              ⚠️ 数据来自质检记录读面（按本单过滤），与「工序进度」「计件」并列、**不互相改写**：
+              报工 = 数量事实，质检 = 成品帘判定（#5652 的两套口径并存）。 */}
+          {hasPermission('production:inspect') && po?.id && (
+            <div className="rounded-lg border border-neutral-200 bg-white p-5">
+              <QualityCheckPanel processingOrderId={po.id} positions={operations?.positions} />
+            </div>
+          )}
 
           {/* 可打印洗水码（issue #4946：一个商品行/部位一张；issue #5646 纸宽 30mm→50mm ⇒ 50mm×60mm，
               码 = 该部位自己的 scan_url）；屏幕隐藏（display:none），点「打印任务卡」时只打印它 */}

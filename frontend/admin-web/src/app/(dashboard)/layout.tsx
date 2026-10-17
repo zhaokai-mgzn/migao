@@ -53,6 +53,11 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   { prefix: '/production/processing', code: 'production:view' },
   { prefix: '/production/routings', code: 'production:view' },
   { prefix: '/production', code: 'production:view' },
+  // 质检记录（issue #7140）：页面守卫码 = 菜单节点码 = 该页三个端点的**方法级**
+  // `production:inspect`（读待检清单 / 读流水 / 录判定同码）—— 取**既有**码、零新造。
+  // 没有这一条就只有菜单一道防线：无该码者地址栏直达 `/quality-inspections` 不被拦
+  //（同 #5976 入库单、#6404 库存明细的现场形态）。
+  { prefix: '/quality-inspections', code: 'production:inspect' },
   { prefix: '/customers', code: 'customer:view' },
   { prefix: '/finance', code: 'finance:view' },
   // 发货单（issue #5939）：页面守卫码 = 菜单节点码 = 该页第一屏读端点码（GET /api/admin/shipments）

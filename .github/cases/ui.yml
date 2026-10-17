@@ -4427,4 +4427,119 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  # ══════════════════════════════════════════════════════════════════════════
+  # UI-118 / UI-119 / UI-120（issue #7140 = #5652 的**商家面**，2026-10-17）——
+  # 质检在观星台上的三个可见面。
+  #
+  # 病根（用户逐字）：「之前让你做过质检流程，我看在观星台上没有任何地方体现出来了」。
+  # 实测证据：`grep -rIn "quality|质检" frontend/admin-web/src` ⇒ **0 处**；
+  # `grep -rIn "rework_qty|scrap_qty" frontend/admin-web` ⇒ **0 处**（只有米宝的 agent 读面消费）。
+  #
+  # 用户 2026-10-17 三项裁定：① 落位 = 生产管理组新增「质检记录」菜单 **+** 作业单生产明细内嵌质检区；
+  # ② 范围 = 一起补（生产明细显示 合格/返工/报废 三列）；③ 读权限**保持现状**
+  # （`production:inspect` 只授质检员 + 管理员，零放宽）。
+  #
+  # 取号：`python3 scripts/next_case_id.py UI` 本机超时 ⇒ 现取 `origin/main:.github/cases/ui.yml`
+  # 最大 = UI-116，复核 open PR 无占用 ⇒ 117/118/119。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: UI-118
+    legacy_id: ""
+    title: "质检记录页（`/quality-inspections`）：待检成品帘清单（未检 ≠ 合格）+ 三态判定录入（返工/报废原因必填）+ 质检流水；读失败不印「未检 0 件」（issue #7140）"
+    domains:
+      - ui
+      - frontend
+      - production
+    tier: normal
+    persona: ""
+    tags:
+      - ui
+      - production
+      - quality-inspection
+      - read-failure
+      - copy
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-17 逐字：「之前让你做过质检流程，我看在观星台上没有任何地方体现出来了」"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·🔴 **待检清单看得见，且未检不折成合格**：一条 = 一件成品帘（加工单号 / 成品帘名 / 数量 / 最新判定）；无记录 ⇒ 该行判定位渲染**「未检」**、操作位是**「录入判定」**；已判行渲染服务端判定（含原因 / 检验人 / 时刻）且操作位是「复检」。红证：把「未检」改渲染成「合格」⇒ 判据当场红。证据：frontend/admin-web/tests/unit/pages/quality-inspections.test.tsx"
+      - "判据 2·🔴 **判定 ≠ 合格 ⇒ 原因必填**：选「返工」后不填原因点提交 ⇒ 出现具名提示且**不调提交端点**（`create` 零调用）。证据：同文件（② 用例）"
+      - "判据 3·**提交体逐字段正确**：`order_item_id` / `result` / `reason` 三键逐值；判定为「合格」时**不带**空原因键（空串不送）。证据：同文件（③ ④ 用例）"
+      - "判据 4·🔴 **读失败不印计数**：待检清单读失败 ⇒ 失败锚（`role=alert`）常驻 + 摘要行说「数量读不到」，**绝不出现「未检 0 件」**，且**不出现空态**（「读不到」与「一件都没有」是两句话）。红证：把失败分支的计数渲染去掉 ⇒ 判据当场红。证据：同文件（⑤ ⑦ 用例）+ frontend/admin-web/src/lib/quality-check.ts 的 `countsReliable` 口径"
+      - "判据 5·**真的没有待检行才是空态**（并如实显示 0）。证据：同文件（⑥ 用例）"
+      - "**边界（照实登记）**：流水读面（`GET /api/admin/quality-inspections`）没有分页 ⇒ 本页**截断展示最近 20 条**并在标题上写明（不假装是全部）；重启条件 = 该读面加分页。不做时间范围筛选（读面无该入参，前端过滤 = 第二份口径）。"
+    skip_reason: "[backend-contract] 纯前端渲染与交互（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7140；用户三项裁定见文首注释）。落码：`frontend/admin-web/src/app/(dashboard)/quality-inspections/page.tsx` + `src/lib/quality-check.ts`（展示口径唯一实现）+ 三源同构菜单项（`menu.ts` / `MenuController` / `AuthService`）+ `rbac/manifest.json` + ai-agent 镜像（`menu_navigator.py` / `page_registry.py`）。取号：见文首注释。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/quality-inspections.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
 
+  - id: UI-119
+    legacy_id: ""
+    title: "作业单生产明细内嵌**质检区**：逐件成品帘最新判定（未检 = 未检）+ 录入/复检入口；读失败不画成「没有质检」（issue #7140）"
+    domains:
+      - ui
+      - frontend
+      - production
+    tier: normal
+    persona: ""
+    tags:
+      - ui
+      - production
+      - quality-inspection
+      - read-failure
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-17 裁定①：落位 = 生产管理组新增菜单 **+** 作业单生产明细内嵌质检区"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**逐件成品帘显示最新判定**：有记录 ⇒ 渲染服务端判定（含原因 / 检验人 / 检验时刻）；无记录 ⇒ **「未检」**（不是空白、不是「合格」）。证据：frontend/admin-web/tests/unit/components/QualityCheckPanel.test.tsx"
+      - "判据 2·🔴 **最新一条胜出**：同一件多条记录时取读面给的**第一条**（服务端已按时间倒序）—— 见证行故意让第二条的时间更晚，组件仍取第一条 ⇒ 证明前端**没有**第二份排序口径。证据：同文件（② 用例）"
+      - "判据 3·**录入口在单上**：未检 ⇒「录入判定」、已判 ⇒「复检」，点开同一表单；提交体带上**这一件成品帘**的 id。证据：同文件（③ 用例）"
+      - "判据 4·🔴 **读失败不画成「本单没有质检」**：失败锚常驻，空态**不出现**、逐件行不渲染。证据：同文件（④ 用例）"
+      - "**权限面（不在本用例的断言里，登记在此）**：质检区只在持 `production:inspect` 时渲染（权限门在**调用方** `processing-orders/[id]/production/page.tsx`，组件自己不再判一次 —— 避免两处口径）；读权限**零放宽**（用户裁定③）。"
+    skip_reason: "[backend-contract] 纯前端渲染与交互（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7140）。落码：`frontend/admin-web/src/components/production/QualityCheckPanel.tsx` + `QualityCheckForm.tsx`（页面与单上共用同一表单）+ 生产明细页挂载（按码渲染）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/QualityCheckPanel.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: UI-120
+    legacy_id: ""
+    title: "工序进度表**三态数量列**（合格 / 返工 / 报废）：返工报废不进进度、与「已完成数量」分列、缺报工渲染 0（issue #7140）"
+    domains:
+      - ui
+      - frontend
+      - production
+    tier: normal
+    persona: ""
+    tags:
+      - ui
+      - production
+      - quality-inspection
+      - worklog
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-17 裁定②：范围 = 一起补 —— 生产明细显示「合格/返工/报废」三列"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**三列表头都在**（合格 / 返工 / 报废）—— 此前 `rework_qty` / `scrap_qty` 在 admin-web **零消费者**（只有米宝读面能看到）。证据：frontend/admin-web/tests/unit/components/ProductionProgressTable-worktype.test.tsx"
+      - "判据 2·**逐工序渲染服务端下发的三态数量（含单位）**；缺报工 ⇒ 服务端给 0 ⇒ 渲染 `0`（不是空白、不是 `undefined`）。证据：同文件（② 用例）"
+      - "判据 3·🔴 **合格与「已完成数量」是两列**（见证行：`done_qty=10` / `qualified_qty=7` 故意不等）—— 返工 / 报废**既不推进进度也不计件**（既有口径），本表**不为它们做合计**（避免被读成「已完成 = 合格 + 返工 + 报废」）。三天不做合计这件事**不在**本用例的机器断言里（它是「没有写」的事实）⇒ 靠本条的方案注释 + 代码评审承担。"
+    skip_reason: "[backend-contract] 纯前端渲染（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7140）。落码：`frontend/admin-web/src/components/production/ProductionProgressTable.tsx`（+3 列；**只加不改**既有列）+ 后端 `ProductionService.operationView` 增三键（与 `worklog()` 同口径，抽出 `qtyByOperation`）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/ProductionProgressTable-worktype.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

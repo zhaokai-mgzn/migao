@@ -1,0 +1,435 @@
+'use client'
+
+import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
+import { BadgeCheck, RefreshCw } from 'lucide-react'
+import {
+  Button,
+  EmptyState,
+  PageCard,
+  PageHeader,
+  Pagination,
+  SearchPanel,
+} from '@/components/ui'
+import ListLoadError from '@/components/common/ListLoadError'
+import QualityCheckForm from '@/components/production/QualityCheckForm'
+import { qualityInspectionApi } from '@/lib/api'
+import { usePermission } from '@/lib/permission'
+import {
+  formatMoment,
+  qualityItemName,
+  qualityResultLabel,
+  qualityStateChipClass,
+  qualityStateLabel,
+} from '@/lib/quality-check'
+import type { QualityInspectionRecord, QualityTarget, QualityTargetState } from '@/types'
+
+/**
+ * 质检记录 `/quality-inspections`（issue #7140 = #5652 的**商家面**）—— 大菜单「生产管理 ▸ 质检记录」。
+ *
+ * ## 这一页补的是什么缺口
+ *
+ * 质检的**载体**（`quality_inspections` 表 + 成品帘级三态判定 + 原因必填 + 独立质检员岗位）与
+ * **工人端报工三态**早在 issue #5652 就落了，但 `frontend/admin-web` 里**一处消费都没有**
+ * ⇒ 质检员登录观星台没有工作台、商家在任何页面都看不到质检读数（用户 2026-10-17 实测原话：
+ * 「之前让你做过质检流程，我看在观星台上没有任何地方体现出来了」）。本页 + 作业单明细里的
+ * 质检区 + 生产明细的「合格/返工/报废」三列，把这条链的两端接上。
+ *
+ * ## 两个面（同一页、同一权限码 `production:inspect`）
+ *
+ * ① **待检成品帘**：一条 = **一件成品帘**（与录入的颗粒度**同一份**）—— 加工单号 /
+ *    成品帘 / 数量 / 最新判定 + 「录入判定」；② **质检流水**：最近若干条记录（谁、何时、判了什么、为什么）。
+ * 两个读面都来自 `QualityCheckController`，本页**不重算任何口径**（判定名、计数都取服务端值）。
+ *
+ * ## 🔴 未检 ≠ 合格
+ *
+ * 没有记录 ⇒ 「未检」（`pending`），不是「合格」，也不是「0 条」。读面失败时**不印计数**
+ * （见下方 `countsReliable`）—— 拿 0 冒充「今天没有要检的」是同族实证过的事故形态（#6691 / #6703）。
+ *
+ * ## 边界（如实登记，`migao-dev-flow` §19.1）
+ *
+ * - **流水没有分页**：记录读面（`GET /api/admin/quality-inspections`）只有加工单 / 成品帘两个过滤，
+ *   没有 `page`/`size` ⇒ 本页把返回结果**截断展示最近 20 条**并**在标题上写明**（不假装是全部）；
+ *   重启条件：该读面加分页（那时本页改成分页档）；
+ * - **不做时间范围筛选**：同上（没有对应入参，前端不过滤 —— 前端过滤 = 第二份口径）；
+ * - 判定录入后的**责任凭证不可改**：没有撤销入口（服务端也没有删除端点）。
+ */
+const PAGE_SIZE = 20
+/** 流水展示上限（读面没有分页 ⇒ 显式截断 + 显式说明，不假装是全部） */
+const RECENT_LIMIT = 20
+
+const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
+  { value: 'all', label: '全部' },
+  { value: 'pending', label: '未检' },
+  { value: 'pass', label: '合格' },
+  { value: 'rework', label: '返工' },
+  { value: 'scrap', label: '报废' },
+]
+
+const EMPTY_COUNTS: Record<QualityTargetState, number> = { pending: 0, pass: 0, rework: 0, scrap: 0 }
+
+function readErrorCopy(subject: string): string {
+  return `${subject}加载失败 —— 这不是「没有数据」，是这次没读到。请点「重新加载」再试一次。`
+}
+
+export default function QualityInspectionsPage() {
+  const { has } = usePermission()
+  const canOpenOrder = has('production:view')
+
+  const [keyword, setKeyword] = useState('')
+  const [appliedKeyword, setAppliedKeyword] = useState('')
+  const [status, setStatus] = useState('all')
+  const [appliedStatus, setAppliedStatus] = useState('all')
+  const [page, setPage] = useState(1)
+
+  const [targets, setTargets] = useState<QualityTarget[]>([])
+  const [total, setTotal] = useState(0)
+  const [counts, setCounts] = useState<Record<QualityTargetState, number>>(EMPTY_COUNTS)
+  const [countsReliable, setCountsReliable] = useState(true)
+  const [targetsLoading, setTargetsLoading] = useState(false)
+  const [targetsError, setTargetsError] = useState('')
+
+  const [records, setRecords] = useState<QualityInspectionRecord[]>([])
+  const [recordsLoading, setRecordsLoading] = useState(false)
+  const [recordsError, setRecordsError] = useState('')
+
+  const [editing, setEditing] = useState<QualityTarget | null>(null)
+
+  const loadTargets = useCallback(async () => {
+    setTargetsLoading(true)
+    setTargetsError('')
+    try {
+      const res = await qualityInspectionApi.targets({
+        keyword: appliedKeyword || undefined,
+        status: appliedStatus,
+        page,
+        size: PAGE_SIZE,
+      })
+      const data = res.data?.data
+      setTargets(data?.items ?? [])
+      setTotal(data?.total ?? 0)
+      setCounts(data?.counts ?? EMPTY_COUNTS)
+      setCountsReliable(true)
+    } catch {
+      setTargets([])
+      setCounts(EMPTY_COUNTS)
+      // 读失败 ⇒ 计数位必须不可信（否则「未检 0 件」会被读成「今天没有要检的」）
+      setCountsReliable(false)
+      setTargetsError(readErrorCopy('待检成品帘'))
+    }
+    setTargetsLoading(false)
+  }, [appliedKeyword, appliedStatus, page])
+
+  const loadRecords = useCallback(async () => {
+    setRecordsLoading(true)
+    setRecordsError('')
+    try {
+      const res = await qualityInspectionApi.list()
+      setRecords(res.data?.data ?? [])
+    } catch {
+      setRecords([])
+      setRecordsError(readErrorCopy('质检流水'))
+    }
+    setRecordsLoading(false)
+  }, [])
+
+  useEffect(() => {
+    void loadTargets()
+  }, [loadTargets])
+
+  useEffect(() => {
+    void loadRecords()
+  }, [loadRecords])
+
+  const applyQuery = useCallback(() => {
+    setAppliedKeyword(keyword.trim())
+    setAppliedStatus(status)
+    setPage(1)
+  }, [keyword, status])
+
+  const reset = useCallback(() => {
+    setKeyword('')
+    setAppliedKeyword('')
+    setStatus('all')
+    setAppliedStatus('all')
+    setPage(1)
+  }, [])
+
+  const refresh = useCallback(() => {
+    void loadTargets()
+    void loadRecords()
+  }, [loadTargets, loadRecords])
+
+  const recentRecords = records.slice(0, RECENT_LIMIT)
+
+  return (
+    <div data-testid="quality-inspections-page" className="space-y-4 p-6">
+      <PageHeader
+        title={
+          <span className="flex items-center gap-2">
+            <BadgeCheck className="h-5 w-5 text-primary-600" />
+            质检记录
+          </span>
+        }
+        subtitle="按成品帘记录质检判定：谁检的、什么时候检的、判了合格 / 返工 / 报废，以及不合格的原因。报工记的是做了多少，这里判的是这一件能不能用。"
+        actions={
+          <Button variant="secondary" onClick={refresh} aria-label="刷新质检记录">
+            <RefreshCw className="mr-1 h-4 w-4" />
+            刷新
+          </Button>
+        }
+      />
+
+      {/* 常驻面 = **一行摘要**（不随条数增长）：读失败时这一行改为如实说「读不到」 */}
+      <div className="text-sm text-neutral-600" data-testid="quality-state-summary">
+        {countsReliable ? (
+          <>
+            未检 {counts.pending} 件 · 合格 {counts.pass} 件 · 返工 {counts.rework} 件 · 报废{' '}
+            {counts.scrap} 件
+          </>
+        ) : (
+          <>数量读不到 —— 见下方失败提示（这不是「一件都没有」）</>
+        )}
+      </div>
+
+      <SearchPanel
+        fields={[
+          {
+            key: 'keyword',
+            label: '加工单号',
+            control: (
+              <input
+                id="quality-keyword"
+                aria-label="按加工单号查找"
+                className="h-9 w-full rounded border border-neutral-300 bg-white px-3 text-sm text-neutral-900 placeholder:text-neutral-400 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/15"
+                placeholder="加工单号（可留空）"
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') applyQuery()
+                }}
+              />
+            ),
+          },
+          {
+            key: 'status',
+            label: '判定状态',
+            control: (
+              <select
+                id="quality-status"
+                aria-label="按判定状态筛选"
+                className="h-9 w-full rounded border border-neutral-300 bg-white px-3 text-sm text-neutral-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/15"
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+              >
+                {STATUS_FILTER_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            ),
+          },
+        ]}
+        onSearch={applyQuery}
+        onReset={reset}
+        onRefresh={refresh}
+        loading={targetsLoading || recordsLoading}
+        testId="search-area"
+      />
+
+      <PageCard testId="quality-targets-card" padded={false}>
+        <div className="flex items-baseline justify-between border-b border-neutral-100 px-5 py-3">
+          <h2 className="text-base font-medium text-neutral-900">待检成品帘</h2>
+          <span className="text-xs text-neutral-400">
+            按成品帘逐件判定；返工后可以再检一次
+          </span>
+        </div>
+
+        {targetsError && (
+          <div className="p-4">
+            <ListLoadError
+              testId="quality-targets-load-error"
+              message={targetsError}
+              onRetry={() => void loadTargets()}
+              retrying={targetsLoading}
+            />
+          </div>
+        )}
+
+        {!targetsError && targetsLoading && targets.length === 0 && (
+          <p className="py-8 text-center text-sm text-neutral-400">加载中…</p>
+        )}
+
+        {!targetsError && !targetsLoading && targets.length === 0 && (
+          <EmptyState
+            testId="quality-targets-empty"
+            icon="inbox"
+            title="没有符合条件的成品帘"
+            description="换个加工单号或判定状态试试；也可能确实没有在产的成品帘。"
+          />
+        )}
+
+        {targets.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-neutral-50 text-xs text-neutral-500">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium">加工单号</th>
+                  <th className="px-4 py-2 text-left font-medium">成品帘</th>
+                  <th className="px-4 py-2 text-left font-medium">数量</th>
+                  <th className="px-4 py-2 text-left font-medium">最新判定</th>
+                  <th className="px-4 py-2 text-right font-medium">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {targets.map((target) => {
+                  const name = qualityItemName(target.product_name, target.color_name)
+                  const qty =
+                    target.quantity == null
+                      ? '—'
+                      : `${target.quantity}${target.unit ? ` ${target.unit}` : ''}`
+                  return (
+                    <tr key={target.order_item_id} data-testid={`quality-target-${target.order_item_id}`}>
+                      <td className="px-4 py-2 whitespace-nowrap text-neutral-900">
+                        {target.processing_order_no && canOpenOrder ? (
+                          <Link
+                            className="text-primary-600 hover:text-primary-700"
+                            href={`/processing-orders/${target.processing_order_no}/production`}
+                          >
+                            {target.processing_order_no}
+                          </Link>
+                        ) : (
+                          target.processing_order_no || '—'
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-neutral-900">{name}</td>
+                      <td className="px-4 py-2 whitespace-nowrap text-neutral-600">{qty}</td>
+                      <td className="px-4 py-2">
+                        <span
+                          className={
+                            'inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ' +
+                            qualityStateChipClass(target.state)
+                          }
+                          data-testid={`quality-target-state-${target.order_item_id}`}
+                        >
+                          {qualityStateLabel(target.state)}
+                        </span>
+                        {target.latest?.reason && (
+                          <span className="ml-2 text-xs text-neutral-500">{target.latest.reason}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        <button
+                          type="button"
+                          className="text-sm text-primary-600 hover:text-primary-700"
+                          data-testid={`quality-target-record-${target.order_item_id}`}
+                          onClick={() =>
+                            setEditing(editing?.order_item_id === target.order_item_id ? null : target)
+                          }
+                        >
+                          {target.state === 'pending' ? '录入判定' : '复检'}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            <Pagination
+              current={page}
+              pageSize={PAGE_SIZE}
+              total={total}
+              onChange={setPage}
+              totalReliable={!targetsError}
+            />
+          </div>
+        )}
+
+        {editing && (
+          <div className="border-t border-neutral-100 p-4">
+            <QualityCheckForm
+              orderItemId={editing.order_item_id}
+              subject={qualityItemName(editing.product_name, editing.color_name)}
+              onDone={() => {
+                setEditing(null)
+                void loadTargets()
+                void loadRecords()
+              }}
+              onCancel={() => setEditing(null)}
+            />
+          </div>
+        )}
+      </PageCard>
+
+      <PageCard testId="quality-records-card" padded={false}>
+        <div className="flex items-baseline justify-between border-b border-neutral-100 px-5 py-3">
+          <h2 className="text-base font-medium text-neutral-900">质检流水</h2>
+          <span className="text-xs text-neutral-400">
+            {records.length > RECENT_LIMIT
+              ? `按时间倒序，最多显示最近 ${RECENT_LIMIT} 条`
+              : '按时间倒序'}
+          </span>
+        </div>
+
+        {recordsError && (
+          <div className="p-4">
+            <ListLoadError
+              testId="quality-records-load-error"
+              message={recordsError}
+              onRetry={() => void loadRecords()}
+              retrying={recordsLoading}
+            />
+          </div>
+        )}
+
+        {!recordsError && !recordsLoading && recentRecords.length === 0 && (
+          <EmptyState
+            testId="quality-records-empty"
+            icon="file"
+            title="还没有质检记录"
+            description="在上面的待检清单里对某件成品帘录入判定后，这里会出现记录。"
+          />
+        )}
+
+        {recentRecords.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-neutral-50 text-xs text-neutral-500">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium">检验时刻</th>
+                  <th className="px-4 py-2 text-left font-medium">成品帘</th>
+                  <th className="px-4 py-2 text-left font-medium">判定</th>
+                  <th className="px-4 py-2 text-left font-medium">不合格原因</th>
+                  <th className="px-4 py-2 text-left font-medium">检验人</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {recentRecords.map((record) => (
+                  <tr key={record.id} data-testid={`quality-record-row-${record.id}`}>
+                    <td className="px-4 py-2 whitespace-nowrap text-neutral-600">
+                      {formatMoment(record.inspected_at)}
+                    </td>
+                    <td className="px-4 py-2 text-neutral-900">{record.position_name || '—'}</td>
+                    <td className="px-4 py-2">
+                      <span
+                        className={
+                          'inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ' +
+                          qualityStateChipClass(record.result)
+                        }
+                      >
+                        {qualityResultLabel(record.result, record.result_label)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 text-neutral-600">{record.reason || '—'}</td>
+                    <td className="px-4 py-2 text-neutral-600">{record.inspector_name || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </PageCard>
+    </div>
+  )
+}

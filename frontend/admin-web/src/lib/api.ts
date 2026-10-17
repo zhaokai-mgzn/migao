@@ -163,6 +163,11 @@ import type {
   StockLedgerEntry,
 } from '@/types'
 import type { OrderContentUpdateParams } from '@/types'
+import type {
+  QualityInspectionRecord,
+  QualityInspectionResult,
+  QualityTargetsResponse,
+} from '@/types'
 import { FrontendToBackendStatus } from '@/types'
 
 // 认证 API
@@ -1072,6 +1077,37 @@ export const processingOrderSetApi = {
 
 // 生产报工 API（issue #4000，M4-H；后端 ProductionController，权限 order:list）
 // + 工序库/工艺路线只读消费者、计件工资报表、补生成工序、打印计数（issue #4202~#4205）
+// ── 质检记录（**成品帘级**；issue #7140 = #5652 的商家面）──
+//
+// 三个端点**同码** `production:inspect`（写与读同一把尺子；用户 2026-10-17 裁定「保持现状」⇒
+// 零权限放宽）：该码只授给独立质检员 + 管理员。前端不自己判三态合法性 ——
+// 取值域与「判定 ≠ 合格 ⇒ 原因必填」都由服务端裁定（缺原因 ⇒ 422 具名报错）。
+export const qualityInspectionApi = {
+  /** 待检清单（一条 = 一件成品帘）；`status` 传 `all` = 不过滤（**不传**给服务端，省一次判断） */
+  targets: (params: { keyword?: string; status?: string; page?: number; size?: number } = {}) => {
+    const q = new URLSearchParams()
+    if (params.keyword) q.set('keyword', params.keyword)
+    if (params.status && params.status !== 'all') q.set('status', params.status)
+    if (params.page) q.set('page', String(params.page))
+    if (params.size) q.set('size', String(params.size))
+    const suffix = q.toString() ? '?' + q.toString() : ''
+    return request.get<ApiResponse<QualityTargetsResponse>>('/api/admin/quality-inspections/targets' + suffix)
+  },
+
+  /** 记录流水（按加工单 / 成品帘过滤；时间倒序 —— 同件可多条 = 返工后重检） */
+  list: (params: { processingOrderId?: string; orderItemId?: string } = {}) => {
+    const q = new URLSearchParams()
+    if (params.processingOrderId) q.set('processing_order_id', params.processingOrderId)
+    if (params.orderItemId) q.set('order_item_id', params.orderItemId)
+    const suffix = q.toString() ? '?' + q.toString() : ''
+    return request.get<ApiResponse<QualityInspectionRecord[]>>('/api/admin/quality-inspections' + suffix)
+  },
+
+  /** 录入一条判定；判定 ≠ 合格 ⇒ `reason` 必填（缺 ⇒ 服务端 422，不静默存） */
+  create: (data: { order_item_id: string; result: QualityInspectionResult; reason?: string }) =>
+    request.post<ApiResponse<QualityInspectionRecord>>('/api/admin/quality-inspections', data),
+}
+
 export const productionApi = {
   // 加工单工序树 + 进度（含加工单二维码 token）
   getOrderOperations: (orderId: string) =>
@@ -1902,6 +1938,7 @@ const api = {
   batchStock: batchStockApi,
   remnant: remnantApi,
   production: productionApi,
+  qualityInspection: qualityInspectionApi,
   dashboard: dashboardApi,
   upload: uploadApi,
   file: fileApi,
