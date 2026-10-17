@@ -63,6 +63,25 @@ import static org.mockito.Mockito.when;
  *       （而不是取同一份 list 的长度）⇒ {@link #countsComeFromTheSameSingleSource} 必红；</li>
  *   <li><b>空态渲染假数据</b>：给空态塞占位条目/占位数 ⇒ {@link #emptyStateIsHonest} 必红。</li>
  * </ol>
+ *
+ * <p><b>issue #7079 的红证</b>：把 {@code to_ship} / {@code to_schedule} 两处过滤退回
+ * {@code orderService.hasProcessingItems(order)} ⇒ {@link #fabricSaleOrderEntersToShip} 与
+ * {@link #fabricSaleOrderEntersToSchedule} 必红（卖布单两类待办都进不去）；
+ * 反之把判据改成「无加工项一律进」⇒ 既有的
+ * {@link #noToScheduleWithoutProcessingItems} 必红（反向护栏）。</p>
+ *
+ * <p><b>issue #7079 的第二条红证</b>：把 {@code to_ship} / {@code to_schedule} 的
+ * {@code evidence.has_processing_items} 改回硬编码 {@code true} ⇒
+ * {@link #fabricSaleOrderEvidenceDoesNotClaimProcessingItems} 必红（卖布单没有加工项，
+ * 恒 true 是**读面对它说假话**）；而 {@link #toShipWhenProcessingCompleted} /
+ * {@link #toScheduleWhenConfirmedOrderHasNoInstances} 的反向断言保持绿
+ * （含加工项的单该键仍是 {@code true}）。</p>
+ *
+ * <p><b>issue #7079 的第三条红证</b>（文案按作业单类型分）：把标题 / {@code reason} 退回硬编码
+ * 「加工单」措辞，或把 {@code processing_completed} 改回无条件落键 ⇒
+ * {@link #fabricSaleOrderTodoDoesNotMentionProcessingOrder} 必红
+ * （商家屏上会出现「加工单」——卖布单**不该有**加工单，那是本单要治的病）；
+ * 两条反向护栏（含加工项的标题 / reason **逐字等于原文案**）保持绿。</p>
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -225,6 +244,9 @@ class ProductionTodoServiceTest {
         assertThat(evidenceOf(todo))
                 .containsEntry("operation_instance_count", 0)
                 .containsEntry("has_processing_items", true);
+        // 反向护栏（issue #7079）：含加工项 ⇒ reason **逐字等于原文案**
+        assertThat(todo.get("reason"))
+                .isEqualTo("订单已确认且含加工项，但该单还没有任何工序实例，需要排产");
         assertThat(todo.get("link")).isEqualTo("/pages/production/order-detail/index?orderId=" + ORDER_ID);
     }
 
@@ -262,7 +284,17 @@ class ProductionTodoServiceTest {
         assertThat(todosOf(overview)).hasSize(1);
         assertThat(todo.get("type")).isEqualTo(ProductionTodoService.TYPE_TO_SHIP);
         assertThat(todo.get("criterion")).isEqualTo(ProductionTodoService.CRITERION_TO_SHIP);
+        assertThat(evidenceOf(todo)).as("反向护栏：含加工项的单该键仍为 true（判据不是「一律 false」）")
+                .containsEntry("has_processing_items", true)
+                .containsEntry("needs_work", true);
+        // 🔴 显式断言（补回，不许静默放宽）：含加工项 ⇒ `processing_completed` 必须落 `true`。
+        //    它**不是**上面那条按型断言的重复：没有它，「把 `if (hasProcessing)` 整段删掉」
+        //    这种回退会让**所有**订单都丢这个键（含加工项的也丢）而反向护栏全绿 = 空判据。
         assertThat(evidenceOf(todo)).containsEntry("processing_completed", true);
+        // 反向护栏（issue #7079）：含加工项 ⇒ 标题与 reason **逐字等于原文案**（本单的硬护栏）
+        assertThat(todo.get("title")).isEqualTo("订单 " + ORDER_NO + " 加工单已完成，可以发货了");
+        assertThat(todo.get("reason")).isEqualTo(
+                "含加工项且加工单已完成，订单仍未发货（判据 = 发货守卫：含加工项须先完成加工单）");
         assertThat(todo.get("link")).isEqualTo("/pages/production/order-detail/index?orderId=" + ORDER_ID);
     }
 
@@ -271,6 +303,98 @@ class ProductionTodoServiceTest {
     void noToShipWhenProcessingUnfinished() {
         setUpOrderScenario(order("producing"), /* completedProcessingOrders */ 0L, /* instances */ 4);
         assertThat(todosOf(service.overview(TENANT, NOW))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("🔴 issue #7079：卖布单（无加工项，但有裁剪/打包报工）作业单已完成 ⇒ 进「待发货」")
+    void fabricSaleOrderEntersToShip() {
+        setUpFabricOrderScenario(order("producing"), /* instances */ 4);
+        when(processingOrderMapper.countCompletedByOrderId(ORDER_ID, TENANT)).thenReturn(1L);
+
+        Map<String, Object> overview = service.overview(TENANT, NOW);
+        Map<String, Object> todo = todosOf(overview).get(0);
+
+        assertThat(todosOf(overview)).hasSize(1);
+        assertThat(todo.get("type")).isEqualTo(ProductionTodoService.TYPE_TO_SHIP);
+        assertThat(todo.get("criterion")).isEqualTo(ProductionTodoService.CRITERION_TO_SHIP);
+        // ⚠️ 原断言是 `containsEntry("processing_completed", true)` —— 对卖布单**不成立**：
+        //    卖布单没有加工单（它的那张是**出库作业单**）⇒ 该键按型**缺席**（issue #7079 的按型分岔）。
+        assertThat(evidenceOf(todo)).doesNotContainKey("processing_completed");
+        assertThat(todo.get("link")).isEqualTo("/pages/production/order-detail/index?orderId=" + ORDER_ID);
+    }
+
+    @Test
+    @DisplayName("🔴 issue #7079：卖布单的待办文案**不得出现「加工单」**，且 evidence 无 processing_completed 键")
+    void fabricSaleOrderTodoDoesNotMentionProcessingOrder() {
+        // 待发货
+        setUpFabricOrderScenario(order("producing"), /* instances */ 4);
+        when(processingOrderMapper.countCompletedByOrderId(ORDER_ID, TENANT)).thenReturn(1L);
+        Map<String, Object> shipTodo = todosOf(service.overview(TENANT, NOW)).get(0);
+
+        assertThat(String.valueOf(shipTodo.get("title")))
+                .as("🔴 卖布单没有加工单（用户逐字：单布料售卖不应该生成加工单）⇒ 标题不许说「加工单」")
+                .doesNotContain("加工单")
+                .contains("出库作业单已完成");
+        assertThat(String.valueOf(shipTodo.get("reason")))
+                .as("reason 说清是什么单 + 为什么能发（事实一条不少：卖布单 / 出库作业单 / 裁剪与打包已报工）")
+                .doesNotContain("加工单")
+                .contains("卖布单")
+                .contains("出库作业单")
+                .contains("裁剪与打包");
+        assertThat(evidenceOf(shipTodo))
+                .as("卖布单根本没有加工单 ⇒ 该键**缺席**（「没有加工单」比「加工单未完成」更诚实）")
+                .doesNotContainKey("processing_completed")
+                .containsEntry("has_processing_items", false)
+                .containsEntry("needs_work", true);
+
+        // 待排产（同一张卖布单）
+        setUpFabricOrderScenario(order("confirmed"), /* instances */ 0);
+        Map<String, Object> scheduleTodo = todosOf(service.overview(TENANT, NOW)).get(0);
+
+        assertThat(String.valueOf(scheduleTodo.get("reason")))
+                .as("🔴 待排产的 reason 同样不许把卖布单说成含加工项")
+                .doesNotContain("加工单")
+                .contains("卖布单")
+                .contains("出库作业单");
+        assertThat(evidenceOf(scheduleTodo))
+                .containsEntry("has_processing_items", false)
+                .containsEntry("needs_work", true);
+    }
+
+    @Test
+    @DisplayName("🔴 issue #7079：卖布单（无加工项）已确认且未排产 ⇒ 进「待排产」（不因「无加工项」被丢）")
+    void fabricSaleOrderEntersToSchedule() {
+        setUpFabricOrderScenario(order("confirmed"), /* instances */ 0);
+
+        Map<String, Object> overview = service.overview(TENANT, NOW);
+        Map<String, Object> todo = todosOf(overview).get(0);
+
+        assertThat(todosOf(overview)).hasSize(1);
+        assertThat(todo.get("type")).isEqualTo(ProductionTodoService.TYPE_TO_SCHEDULE);
+        assertThat(todo.get("criterion")).isEqualTo(ProductionTodoService.CRITERION_TO_SCHEDULE);
+        assertThat(evidenceOf(todo)).containsEntry("operation_instance_count", 0);
+    }
+
+    @Test
+    @DisplayName("🔴 issue #7079：卖布单进两类待办时 evidence.has_processing_items **必须说事实**（false）")
+    void fabricSaleOrderEvidenceDoesNotClaimProcessingItems() {
+        // 待发货：作业单已完成 ⇒ 卖布单在「待发货」
+        setUpFabricOrderScenario(order("producing"), /* instances */ 4);
+        when(processingOrderMapper.countCompletedByOrderId(ORDER_ID, TENANT)).thenReturn(1L);
+        Map<String, Object> shipEvidence = evidenceOf(todosOf(service.overview(TENANT, NOW)).get(0));
+        assertThat(shipEvidence)
+                .as("🔴 只有卖布行 ⇒ 没有加工项：该键恒 true 就是对读面说假话（红证 = 把这个值改回硬编码 true）")
+                .containsEntry("has_processing_items", false);
+        assertThat(shipEvidence).as("它仍算「有需要报工的作业」（卖布行那一半由本键承载，不顶替上面那个键）")
+                .containsEntry("needs_work", true);
+        assertThat(shipEvidence).as("卖布单没有加工单 ⇒ 该键必须**缺席**（红证 = 无条件 put）")
+                .doesNotContainKey("processing_completed");
+
+        // 待排产：已确认 + 活跃工序实例数为 0 ⇒ 同一张卖布单在「待排产」，该键同样是事实值
+        setUpFabricOrderScenario(order("confirmed"), /* instances */ 0);
+        Map<String, Object> scheduleEvidence = evidenceOf(todosOf(service.overview(TENANT, NOW)).get(0));
+        assertThat(scheduleEvidence).containsEntry("has_processing_items", false);
+        assertThat(scheduleEvidence).containsEntry("needs_work", true);
     }
 
     // ============================================================ ④ 空态 / 计数同源 / 判据凭据
@@ -414,6 +538,28 @@ class ProductionTodoServiceTest {
         return OrderItem.builder().id(ITEM_ID).orderId(ORDER_ID).tenantId(TENANT).deleted(0)
                 .processingInfo(Map.of("processingItems", List.of(Map.of("name", "打孔"))))
                 .build();
+    }
+
+    /** 卖布行（issue #7079）：按米卖布 ⇒ 行上**没有加工项**，只有 {@code saleForm=布料}。 */
+    private static OrderItem fabricItem() {
+        return OrderItem.builder().id("oi-fabric").orderId(ORDER_ID).tenantId(TENANT).deleted(0)
+                .processingInfo(Map.of("saleForm", "布料"))
+                .build();
+    }
+
+    /** 卖布单场景：一张候选单（**只有卖布行、无加工项**）+ 标称数量的活跃工序实例。 */
+    private void setUpFabricOrderScenario(Order order, int instances) {
+        service = newService(THRESHOLD);
+        when(orderMapper.selectList(any())).thenReturn(List.of(order));
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(fabricItem()));
+        when(processingOrderMapper.selectList(any())).thenReturn(List.of(processingOrder()));
+        List<ProcessingPositionOperation> ops = new ArrayList<>();
+        for (int i = 0; i < instances; i++) {
+            ops.add(op("op-" + i, i + 1, "打包", "11", "0", null));
+        }
+        when(positionOperationMapper.selectList(any())).thenReturn(ops);
+        // 前置自断言：卖布单确实**没有加工项**（否则「卖布单进得来」证明不了判据换过）
+        assertThat(orderService.hasProcessingItems(order)).isFalse();
     }
 
     private static ProcessingOrder processingOrder() {
