@@ -63,6 +63,12 @@ import static org.mockito.Mockito.when;
  *       （而不是取同一份 list 的长度）⇒ {@link #countsComeFromTheSameSingleSource} 必红；</li>
  *   <li><b>空态渲染假数据</b>：给空态塞占位条目/占位数 ⇒ {@link #emptyStateIsHonest} 必红。</li>
  * </ol>
+ *
+ * <p><b>issue #7079 的红证</b>：把 {@code to_ship} / {@code to_schedule} 两处过滤退回
+ * {@code orderService.hasProcessingItems(order)} ⇒ {@link #fabricSaleOrderEntersToShip} 与
+ * {@link #fabricSaleOrderEntersToSchedule} 必红（卖布单两类待办都进不去）；
+ * 反之把判据改成「无加工项一律进」⇒ 既有的
+ * {@link #noToScheduleWithoutProcessingItems} 必红（反向护栏）。</p>
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -273,6 +279,36 @@ class ProductionTodoServiceTest {
         assertThat(todosOf(service.overview(TENANT, NOW))).isEmpty();
     }
 
+    @Test
+    @DisplayName("🔴 issue #7079：卖布单（无加工项，但有裁剪/打包报工）作业单已完成 ⇒ 进「待发货」")
+    void fabricSaleOrderEntersToShip() {
+        setUpFabricOrderScenario(order("producing"), /* instances */ 4);
+        when(processingOrderMapper.countCompletedByOrderId(ORDER_ID, TENANT)).thenReturn(1L);
+
+        Map<String, Object> overview = service.overview(TENANT, NOW);
+        Map<String, Object> todo = todosOf(overview).get(0);
+
+        assertThat(todosOf(overview)).hasSize(1);
+        assertThat(todo.get("type")).isEqualTo(ProductionTodoService.TYPE_TO_SHIP);
+        assertThat(todo.get("criterion")).isEqualTo(ProductionTodoService.CRITERION_TO_SHIP);
+        assertThat(evidenceOf(todo)).containsEntry("processing_completed", true);
+        assertThat(todo.get("link")).isEqualTo("/pages/production/order-detail/index?orderId=" + ORDER_ID);
+    }
+
+    @Test
+    @DisplayName("🔴 issue #7079：卖布单（无加工项）已确认且未排产 ⇒ 进「待排产」（不因「无加工项」被丢）")
+    void fabricSaleOrderEntersToSchedule() {
+        setUpFabricOrderScenario(order("confirmed"), /* instances */ 0);
+
+        Map<String, Object> overview = service.overview(TENANT, NOW);
+        Map<String, Object> todo = todosOf(overview).get(0);
+
+        assertThat(todosOf(overview)).hasSize(1);
+        assertThat(todo.get("type")).isEqualTo(ProductionTodoService.TYPE_TO_SCHEDULE);
+        assertThat(todo.get("criterion")).isEqualTo(ProductionTodoService.CRITERION_TO_SCHEDULE);
+        assertThat(evidenceOf(todo)).containsEntry("operation_instance_count", 0);
+    }
+
     // ============================================================ ④ 空态 / 计数同源 / 判据凭据
 
     @Test
@@ -414,6 +450,28 @@ class ProductionTodoServiceTest {
         return OrderItem.builder().id(ITEM_ID).orderId(ORDER_ID).tenantId(TENANT).deleted(0)
                 .processingInfo(Map.of("processingItems", List.of(Map.of("name", "打孔"))))
                 .build();
+    }
+
+    /** 卖布行（issue #7079）：按米卖布 ⇒ 行上**没有加工项**，只有 {@code saleForm=布料}。 */
+    private static OrderItem fabricItem() {
+        return OrderItem.builder().id("oi-fabric").orderId(ORDER_ID).tenantId(TENANT).deleted(0)
+                .processingInfo(Map.of("saleForm", "布料"))
+                .build();
+    }
+
+    /** 卖布单场景：一张候选单（**只有卖布行、无加工项**）+ 标称数量的活跃工序实例。 */
+    private void setUpFabricOrderScenario(Order order, int instances) {
+        service = newService(THRESHOLD);
+        when(orderMapper.selectList(any())).thenReturn(List.of(order));
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(fabricItem()));
+        when(processingOrderMapper.selectList(any())).thenReturn(List.of(processingOrder()));
+        List<ProcessingPositionOperation> ops = new ArrayList<>();
+        for (int i = 0; i < instances; i++) {
+            ops.add(op("op-" + i, i + 1, "打包", "11", "0", null));
+        }
+        when(positionOperationMapper.selectList(any())).thenReturn(ops);
+        // 前置自断言：卖布单确实**没有加工项**（否则「卖布单进得来」证明不了判据换过）
+        assertThat(orderService.hasProcessingItems(order)).isFalse();
     }
 
     private static ProcessingOrder processingOrder() {

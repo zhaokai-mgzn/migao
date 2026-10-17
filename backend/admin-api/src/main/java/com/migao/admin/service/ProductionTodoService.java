@@ -36,10 +36,11 @@ import java.util.Set;
  *       <td><b>直接消费</b> {@link ProductionStuckPointService#report} 的 {@code stuck} 行
  *           （阈值与其来源 {@code threshold_source} 一并透传，本类**不另设阈值、不重算时长**）</td></tr>
  *   <tr><td>{@code to_schedule} 待排产</td>
- *       <td>订单已确认 + 该单<b>活跃工序实例数 = 0</b> + 含加工项</td>
- *       <td>「含加工项」读 {@link OrderService#hasProcessingItems}（与发货守卫同一份解析）</td></tr>
+ *       <td>订单已确认 + 该单<b>活跃工序实例数 = 0</b> + <b>有需要报工的作业</b></td>
+ *       <td>「有需要报工的作业」读 {@link OrderService#needsWork}（= 含加工项 **或** 有卖布行，
+ *           issue #7079）——与发货守卫**同一份**判据</td></tr>
  *   <tr><td>{@code to_ship} 待发货</td>
- *       <td>含加工项 + 加工单已完成 + 订单未发货</td>
+ *       <td><b>有需要报工的作业</b> + 作业单已完成 + 订单未发货</td>
  *       <td><b>直接消费</b> {@link OrderService#isProcessingReadyForShip}（= issue #3340 发货守卫，
  *           {@code assertProcessingCompletedBeforeShip} 是它的抛异常外壳）</td></tr>
  *   <tr><td>在制进度（三态）</td>
@@ -74,7 +75,7 @@ import java.util.Set;
  *   <li><b>候选订单扫描有上限</b>（{@link #CANDIDATE_SCAN_LIMIT}，每类一条查询）⇒ 响应带
  *       {@code stats.scan.truncated}，**截断不静默**（与既有 {@code qty_source} /
  *       {@code threshold_source} 同族纪律）。</li>
- *   <li><b>每条候选订单一次明细查询</b>：{@code hasProcessingItems} 走订单明细（判据唯一性的代价）。
+ *   <li><b>每条候选订单一次明细查询</b>：{@code needsWork} 走订单明细（判据唯一性的代价）。
  *       实际候选量是「已确认 / 生产中」的订单，通常个位数；上限由 {@code CANDIDATE_SCAN_LIMIT} 兜住。</li>
  *   <li><b>卡点行挂不到订单时丢弃</b>（见上「说不清就不说」）：卡点报表的判据本身不含订单层信息，
  *       需经 加工单 → 订单 关联；关联不上就不报。</li>
@@ -94,13 +95,13 @@ public class ProductionTodoService {
     /** 待办类型 · 待发货（加工单已完成 + 订单未发货）。 */
     public static final String TYPE_TO_SHIP = "to_ship";
 
-    /** 判据 id · 待排产 = 订单已确认 + 该单活跃工序实例数为 0 + 含加工项。 */
+    /** 判据 id · 待排产 = 订单已确认 + 该单活跃工序实例数为 0 + 有需要报工的作业。 */
     public static final String CRITERION_TO_SCHEDULE = "order_confirmed_without_operations";
 
     /** 判据 id · 卡在哪 = 没开工 + 立即前道已完成 + 等待超过阈值（判据与阈值均出自卡点服务）。 */
     public static final String CRITERION_STUCK = "stuck_not_started_over_threshold";
 
-    /** 判据 id · 待发货 = 含加工项 + 加工单已完成 + 订单未发货（判据 = 发货守卫）。 */
+    /** 判据 id · 待发货 = 有需要报工的作业 + 作业单已完成 + 订单未发货（判据 = 发货守卫）。 */
     public static final String CRITERION_TO_SHIP = "processing_completed_order_not_shipped";
 
     /** 三类判据 id 的全集（机械凭据：每条待办的 {@code criterion} 必须落在此集合内）。 */
@@ -177,18 +178,18 @@ public class ProductionTodoService {
             byType.merge(TYPE_STUCK, 1, Integer::sum);
         }
 
-        // ③ 待发货：判据 = OrderService 发货守卫（含加工项 + 加工单已完成），唯一一份
+        // ③ 待发货：判据 = OrderService 发货守卫（**有需要报工的作业** + 作业单已完成），唯一一份
         List<Order> shipCandidates = candidateOrders(tenantId, SHIP_CANDIDATE_STATUSES);
         boolean truncated = shipCandidates.size() >= CANDIDATE_SCAN_LIMIT;
         for (Order order : shipCandidates) {
-            if (orderService.hasProcessingItems(order) && orderService.isProcessingReadyForShip(order)) {
+            if (orderService.needsWork(order) && orderService.isProcessingReadyForShip(order)) {
                 todos.add(toShipTodo(order));
                 byType.merge(TYPE_TO_SHIP, 1, Integer::sum);
             }
         }
 
-        // ④ 待排产：订单已确认 + 活跃工序实例数为 0（+ 含加工项 —— 无加工项时 instantiate 派生为空
-        //    会 fail-closed ⇒ 那是假待办）
+        // ④ 待排产：订单已确认 + 活跃工序实例数为 0（+ 有需要报工的作业 —— 无需要报工的作业时
+        //    instantiate 派生为空会 fail-closed ⇒ 那是假待办；卖布行同样有「裁剪 → 打包」两道活，#7079）
         List<Order> scheduleCandidates = candidateOrders(tenantId, SCHEDULE_CANDIDATE_STATUSES);
         truncated |= scheduleCandidates.size() >= CANDIDATE_SCAN_LIMIT;
         Map<String, Integer> instanceCountByOrder = liveInstanceCounts(tenantId, scheduleCandidates);
@@ -196,7 +197,7 @@ public class ProductionTodoService {
             if (instanceCountByOrder.getOrDefault(order.getId(), 0) > 0) {
                 continue;
             }
-            if (!orderService.hasProcessingItems(order)) {
+            if (!orderService.needsWork(order)) {
                 continue;
             }
             todos.add(toScheduleTodo(order));

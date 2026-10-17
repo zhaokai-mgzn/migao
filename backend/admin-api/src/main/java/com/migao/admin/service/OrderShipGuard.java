@@ -22,7 +22,7 @@ import java.util.Map;
  * 发货前置守卫（issue #3340 的判定本体，issue #5648 抽成**单一实现点**）。
  *
  * <h3>为什么抽出来（不是「为了好看」）</h3>
- * <p>#5648 之前，「含加工项订单必须完成加工单才能发货」这条判定是
+ * <p>#5648 之前，「有需要报工的作业的订单必须完成作业单才能发货」这条判定是
  * {@code OrderService} 的 {@code private} 方法，只能被 {@code OrderService} 自己的两条路
  * （{@code updateOrderStatus} / {@code shipOrderIfApplicable}）调用。本单新增**第三条**发货路
  * （{@code OrderShipmentService}，工人可达面），若在那边再写一份判定，就是**两份守卫** ——
@@ -45,18 +45,36 @@ public final class OrderShipGuard {
     }
 
     /**
-     * 发货前置判据（**唯一一份**，issue #3340 / #5641 / #5648）：含加工项的订单必须已有
-     * 完成加工单才允许发货。三个消费方共用它：发货守卫（{@link #assertProcessingCompletedBeforeShip}）、
-     * 生产待办的「待发货」计数（issue #5641）、以及任何将来的发货路径。
+     * 发货前置判据（**唯一一份**，issue #3340 / #5641 / #5648）：**有需要报工的作业**的订单
+     * （含加工项，或有卖布行 —— issue #7079）必须已有完成作业单才允许发货。三个消费方共用它：
+     * 发货守卫（{@link #assertProcessingCompletedBeforeShip}）、生产待办的「待发货」计数（issue #5641）、
+     * 以及任何将来的发货路径。
      *
-     * @return {@code true} = 允许发货（无加工项，或加工单已完成）；{@code false} = 被加工单挡住
+     * @return {@code true} = 允许发货（无需要报工的作业，或作业单已完成）；
+     *         {@code false} = 被作业单挡住
      */
     public static boolean isProcessingReadyForShip(OrderItemMapper orderItemMapper,
                                                    ProcessingOrderMapper processingOrderMapper,
                                                    ObjectMapper objectMapper,
                                                    Order order) {
-        return !hasProcessingItems(orderItemMapper, objectMapper, order)
+        return !needsWork(orderItemMapper, objectMapper, order)
                 || processingOrderMapper.countCompletedByOrderId(order.getId(), order.getTenantId()) > 0;
+    }
+
+    /**
+     * 该订单是否**有需要报工的作业**（issue #7079）= 含加工项 **或** 有卖布行。
+     *
+     * <p><b>这是本判据的唯一一份</b>：发货前置（{@link #isProcessingReadyForShip}）与生产待办的
+     * 「待排产」/「待发货」（{@code ProductionTodoService}）都读它 ——
+     * 消费方自己再拼一次「加工项 ‖ 卖布行」就是两处口径，而两处口径迟早分叉
+     * （分叉方向：卖布单又能绕过报工发货 ⇒ 工人计件丢钱、完工统计失真）。</p>
+     *
+     * <p>两个子判据各自也**只有一份实现**（{@link #hasProcessingItems} / {@link #hasFabricSaleLine}），
+     * 本方法不含任何解析逻辑。</p>
+     */
+    public static boolean needsWork(OrderItemMapper orderItemMapper, ObjectMapper objectMapper, Order order) {
+        return hasProcessingItems(orderItemMapper, objectMapper, order)
+                || hasFabricSaleLine(orderItemMapper, objectMapper, order);
     }
 
     /**
@@ -77,6 +95,49 @@ public final class OrderShipGuard {
     }
 
     /**
+     * 该订单是否含**卖布行**（issue #7079）= 订单明细里任一行 {@code processing_info.saleForm == "布料"}。
+     *
+     * <p>卖布行天然没有加工项（按米卖布，不选加工项，见 {@code ProcessingOrderService.buildSnapshot}
+     * 的 {@code procs.isEmpty() && !布料} 分支）—— 但它仍要经过「裁剪 → 打包」两道工序并给工人报工计件
+     * ⇒ 只认 {@code hasProcessingItems} 会判「无需报工」，卖布单一道工序都没报工也能发货。</p>
+     *
+     * <p><b>解析必须复用既有归一路径</b>：逐行走 {@link #processingInfoAsMap} → {@link #normalizeProcessingInfo}
+     * —— 该列可能是 Map，也可能是 JSON **字符串**（自定义 {@code @Select} 不经 {@code JacksonTypeHandler}，
+     * 正是 issue #3340 记下的那个坑）⇒ 在这里**不另写一份解析**（两处迟早分叉）。
+     * 判定逐字相等 {@code "布料"}（与 {@code ProcessingOrderService.SALE_FORM_FABRIC} /
+     * {@code routeTemplateFor} 同一口径）：缺键 / 其它取值（含「成品帘」）一律不算卖布行。</p>
+     */
+    public static boolean hasFabricSaleLine(OrderItemMapper orderItemMapper,
+                                            ObjectMapper objectMapper,
+                                            Order order) {
+        for (OrderItem item : loadOrderItems(orderItemMapper, order.getId(), order.getTenantId())) {
+            if (isFabricSaleLine(processingInfoAsMap(objectMapper, item.getProcessingInfo()))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * {@code processing_info → Map}：**复用** {@link #normalizeProcessingInfo} 的既有归一/容错路径
+     * （Map 直接可用；JSON **字符串** 解析成 Map；其余 / 坏 JSON ⇒ 空 Map）。
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> processingInfoAsMap(ObjectMapper objectMapper, Object processingInfo) {
+        Object normalized = normalizeProcessingInfo(objectMapper, processingInfo);
+        return normalized instanceof Map ? (Map<String, Object>) normalized : Map.of();
+    }
+
+    /** 卖布行判据（issue #7079）：{@code saleForm} 逐字等于 {@code 布料}（缺键 / 其它取值都不算）。 */
+    private static boolean isFabricSaleLine(Map<String, Object> processingInfo) {
+        Object saleForm = processingInfo.get("saleForm");
+        return SALE_FORM_FABRIC.equals(saleForm == null ? null : String.valueOf(saleForm).trim());
+    }
+
+    /** 售卖形态 = **布料**（与 {@code ProcessingOrderService.SALE_FORM_FABRIC} 逐字同源，issue #4493/#4529）。 */
+    static final String SALE_FORM_FABRIC = "布料";
+
+    /**
      * 加工单联动守卫（issue #3340）：订单含加工项且无已完成加工单时禁止发货。
      * 有加工项订单必须走 producing（生成加工单）→ 加工完成 → shipped，防止加工环节被绕过。
      *
@@ -92,8 +153,14 @@ public final class OrderShipGuard {
                                                            ObjectMapper objectMapper,
                                                            Order order) {
         if (!isProcessingReadyForShip(orderItemMapper, processingOrderMapper, objectMapper, order)) {
+            // 文案按**类型分**（issue #7079）：卖布单走的是「出库作业单」（裁剪 → 打包），
+            // 说成「加工单」会让商家在订单详情里找不到该生成/该完成的那张单。
+            // ⚠️ 成品帘（含加工项）那条文案**逐字不变** —— 既有断言钉着它。
             throw BusinessException.validationError(
-                    "订单含加工项，须先完成加工单后再发货（可在订单详情或让黄金策生成/更新加工单）");
+                    hasProcessingItems(orderItemMapper, objectMapper, order)
+                            ? "订单含加工项，须先完成加工单后再发货（可在订单详情或让黄金策生成/更新加工单）"
+                            : "订单含卖布行（按米卖布），须先完成出库作业单的裁剪与打包报工后再发货"
+                                    + "（可在订单详情或让黄金策生成出库作业单，报工完成裁剪与打包后发货）");
         }
         // ── 选项 B：快照漂移覆盖校验（issue #5842）────────────────────────────────
         // 决策 C（#3352）当年以「加工项仅创建时可写」把漂移堵在源头；#5842 按用户裁定开了
@@ -227,29 +294,37 @@ public final class OrderShipGuard {
     }
 
     /**
-     * 解析订单行的加工项清单。
+     * {@code processing_info} 归一：Map 原样；JSON **字符串**解析成 Map；其余（null / 数字 / 坏 JSON）原样返回。
      *
      * <p>issue #3340 验收实战：{@code processingInfo} 可能是 JSON **字符串**（自定义 {@code @Select}
-     * 查询不经过 JacksonTypeHandler），此处做兼容解析，避免「有加工项却被判无加工项」。</p>
+     * 查询不经过 JacksonTypeHandler）⇒ 这里做兼容解析，避免「有加工项却被判无加工项」。
+     * 它是本类**唯一**的 JSON 字符串归一分支（{@link #extractProcessingItems} 与
+     * {@link #hasFabricSaleLine} 共用）—— 卖布行判定若另写一份解析，两处迟早分叉。</p>
+     */
+    static Object normalizeProcessingInfo(ObjectMapper objectMapper, Object processingInfo) {
+        if (processingInfo instanceof String s && !s.isBlank()) {
+            try {
+                return objectMapper.readValue(s, Map.class);
+            } catch (Exception e) {
+                log.warn("processingInfo JSON 字符串解析失败: {}", e.getMessage());
+                return Map.of();
+            }
+        }
+        return processingInfo;
+    }
+
+    /**
+     * 解析订单行的加工项清单（{@link #normalizeProcessingInfo} 归一后取 {@code processingItems}）。
      */
     @SuppressWarnings("unchecked")
     public static List<OrderDetailResponse.ProcessingItemBrief> extractProcessingItems(
             ObjectMapper objectMapper, Object processingInfo) {
-        Object normalized = processingInfo;
-        if (normalized instanceof String s && !s.isBlank()) {
-            try {
-                normalized = objectMapper.readValue(s, Map.class);
-            } catch (Exception e) {
-                log.warn("processingInfo JSON 字符串解析失败: {}", e.getMessage());
-                return Collections.emptyList();
-            }
-        }
+        Object normalized = normalizeProcessingInfo(objectMapper, processingInfo);
         if (!(normalized instanceof Map)) {
             return Collections.emptyList();
         }
-        processingInfo = normalized;
         try {
-            Map<String, Object> info = (Map<String, Object>) processingInfo;
+            Map<String, Object> info = (Map<String, Object>) normalized;
             Object raw = info.get("processingItems");
             if (!(raw instanceof List)) {
                 return Collections.emptyList();
