@@ -69,6 +69,13 @@ import static org.mockito.Mockito.when;
  * {@link #fabricSaleOrderEntersToSchedule} 必红（卖布单两类待办都进不去）；
  * 反之把判据改成「无加工项一律进」⇒ 既有的
  * {@link #noToScheduleWithoutProcessingItems} 必红（反向护栏）。</p>
+ *
+ * <p><b>issue #7079 的第二条红证</b>：把 {@code to_ship} / {@code to_schedule} 的
+ * {@code evidence.has_processing_items} 改回硬编码 {@code true} ⇒
+ * {@link #fabricSaleOrderEvidenceDoesNotClaimProcessingItems} 必红（卖布单没有加工项，
+ * 恒 true 是**读面对它说假话**）；而 {@link #toShipWhenProcessingCompleted} /
+ * {@link #toScheduleWhenConfirmedOrderHasNoInstances} 的反向断言保持绿
+ * （含加工项的单该键仍是 {@code true}）。</p>
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -269,6 +276,9 @@ class ProductionTodoServiceTest {
         assertThat(todo.get("type")).isEqualTo(ProductionTodoService.TYPE_TO_SHIP);
         assertThat(todo.get("criterion")).isEqualTo(ProductionTodoService.CRITERION_TO_SHIP);
         assertThat(evidenceOf(todo)).containsEntry("processing_completed", true);
+        assertThat(evidenceOf(todo)).as("反向护栏：含加工项的单该键仍为 true（判据不是「一律 false」）")
+                .containsEntry("has_processing_items", true)
+                .containsEntry("needs_work", true);
         assertThat(todo.get("link")).isEqualTo("/pages/production/order-detail/index?orderId=" + ORDER_ID);
     }
 
@@ -307,6 +317,26 @@ class ProductionTodoServiceTest {
         assertThat(todo.get("type")).isEqualTo(ProductionTodoService.TYPE_TO_SCHEDULE);
         assertThat(todo.get("criterion")).isEqualTo(ProductionTodoService.CRITERION_TO_SCHEDULE);
         assertThat(evidenceOf(todo)).containsEntry("operation_instance_count", 0);
+    }
+
+    @Test
+    @DisplayName("🔴 issue #7079：卖布单进两类待办时 evidence.has_processing_items **必须说事实**（false）")
+    void fabricSaleOrderEvidenceDoesNotClaimProcessingItems() {
+        // 待发货：作业单已完成 ⇒ 卖布单在「待发货」
+        setUpFabricOrderScenario(order("producing"), /* instances */ 4);
+        when(processingOrderMapper.countCompletedByOrderId(ORDER_ID, TENANT)).thenReturn(1L);
+        Map<String, Object> shipEvidence = evidenceOf(todosOf(service.overview(TENANT, NOW)).get(0));
+        assertThat(shipEvidence)
+                .as("🔴 只有卖布行 ⇒ 没有加工项：该键恒 true 就是对读面说假话（红证 = 把这个值改回硬编码 true）")
+                .containsEntry("has_processing_items", false);
+        assertThat(shipEvidence).as("它仍算「有需要报工的作业」（卖布行那一半由本键承载，不顶替上面那个键）")
+                .containsEntry("needs_work", true);
+
+        // 待排产：已确认 + 活跃工序实例数为 0 ⇒ 同一张卖布单在「待排产」，该键同样是事实值
+        setUpFabricOrderScenario(order("confirmed"), /* instances */ 0);
+        Map<String, Object> scheduleEvidence = evidenceOf(todosOf(service.overview(TENANT, NOW)).get(0));
+        assertThat(scheduleEvidence).containsEntry("has_processing_items", false);
+        assertThat(scheduleEvidence).containsEntry("needs_work", true);
     }
 
     // ============================================================ ④ 空态 / 计数同源 / 判据凭据

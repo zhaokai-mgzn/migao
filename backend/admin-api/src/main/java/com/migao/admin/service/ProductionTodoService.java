@@ -272,7 +272,11 @@ public class ProductionTodoService {
 
         Map<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("order_status", order.getStatus());
-        evidence.put("has_processing_items", true);
+        // 🔴 取**真实值**（issue #7079）：卖布单（只有卖布行、无加工项）现在也会进「待发货」
+        // ⇒ 这里硬编码 `true` 就是对它说假话。`needsWork` 的另一半（卖布行）由 `needs_work`
+        // 键承载：两个键各说各的事实，不互相顶替。
+        evidence.put("has_processing_items", orderService.hasProcessingItems(order));
+        evidence.put("needs_work", orderService.needsWork(order));
         evidence.put("processing_completed", true);
 
         return todo(TYPE_TO_SHIP, "待发货", "high",
@@ -289,7 +293,9 @@ public class ProductionTodoService {
 
         Map<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("order_status", order.getStatus());
-        evidence.put("has_processing_items", true);
+        // 同上（issue #7079）：卖布单也进「待排产」⇒ 该键必须说事实，不许恒 `true`。
+        evidence.put("has_processing_items", orderService.hasProcessingItems(order));
+        evidence.put("needs_work", orderService.needsWork(order));
         evidence.put("operation_instance_count", 0);
 
         return todo(TYPE_TO_SCHEDULE, "待排产", "medium",
