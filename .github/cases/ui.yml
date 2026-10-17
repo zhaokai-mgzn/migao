@@ -4544,3 +4544,49 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # UI-121（issue #7162，2026-10-17）—— 工人档案上的「质检」页逐人开。
+  #
+  # 背景：工人端质检的服务端准入 = 该工人档案的页面集含 `inspect`（WorkerPages 的唯一例外条）。
+  # 商家要有地方把它打开/关掉：工人档案列表行上的「开质检 / 关质检」+ 新建弹窗的「单独开放」一栏。
+  #
+  # 取号：`python3 scripts/next_case_id.py UI` 本机超时 ⇒ 现取 origin/main 最大 = UI-120，
+  # 复核 open PR（#7161 只改用例内容、不新增号）未占用 ⇒ 121。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: UI-121
+    legacy_id: ""
+    title: "工人档案：质检页逐人开（新建弹窗「单独开放」一栏 + 列表行「开/关质检」）；默认页面不含质检、未收窄显示「默认页面」"
+    domains:
+      - ui
+      - frontend
+      - production
+      - permission
+    tier: normal
+    persona: ""
+    tags:
+      - worker-profile
+      - quality-inspection
+      - permission
+      - ui
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-17 裁定：「工人档案逐人开质检页，服务端同时当写准入」"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**质检不在默认菜单里**：新建弹窗的默认页勾选栏（`worker-page-option-*`）不含 `inspect`；它出现在「单独开放」一栏（`worker-page-optional-inspect`），默认未勾。红证：把 inspect 加进默认集合 ⇒ 判据当场红。证据：frontend/admin-web/tests/unit/components/WorkerProfilesPanel.test.tsx（⑨）"
+      - "判据 2·**勾上 ⇒ 建号请求带它**：默认四页 + 单独勾质检 ⇒ `workerPages = [report, order, cut_calc, shipment, inspect]`（收窄列表，不是 null）。证据：同文件（⑨）"
+      - "判据 3·**已有工人可开/关**：列表行「开质检」⇒ `PUT /api/admin/workers/{id}/pages` 带默认页 + inspect；「关质检」⇒ 去掉 inspect（回到收窄集）。证据：同文件（⑨ 第二条）"
+      - "判据 4·**口径显示**：未收窄（null / 空数组）⇒「默认页面」（不再是「全部页面」—— 全部能力还包含逐人开的质检）。证据：同文件（⑧）"
+      - "**上游形状**：`GET /api/admin/worker-pages` 回 `{pages, default_pages, optional_pages, labels}`（服务端唯一真值）；`inspect` 在 pages、不在 default_pages、在 optional_pages。证据：backend/admin-api/src/test/java/com/migao/admin/controller/WorkerPageCatalogControllerTest.java"
+      - "**边界（照实登记）**：本页只决定「开不开放」；真正的写准入在 `/api/worker/quality/**`（服务端 403），不是前端隐藏按钮。"
+    skip_reason: "[backend-contract] 纯前端配置面（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7162）。落码：`WorkerProfilesPanel`（catalog 的 default_pages / optional_pages 消费 + 行内开/关 + 新建弹窗「单独开放」）+ `WorkerPageCatalogController`（追加两键）+ `WorkerPages.optionalPages()`。取号：见文首注释。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/WorkerProfilesPanel.test.tsx"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/WorkerPageCatalogControllerTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

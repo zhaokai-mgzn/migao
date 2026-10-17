@@ -239,6 +239,46 @@ class QualityCheckServiceTest {
         verify(qualityInspectionMapper, never()).insert(any(QualityCheck.class));
     }
 
+    @Test
+    @DisplayName("⑥ 工人端身份（issue #7162）：inspector_kind=worker 落库，读面带出")
+    void workerInspectorKindIsPersistedAndReadable() {
+        Map<String, Object> view = service.create(TENANT, ITEM_ID, "pass", null,
+                "worker-user-1", "张师傅", QualityCheckService.INSPECTOR_WORKER, AT);
+
+        QualityCheck row = capturedRow();
+        assertThat(row.getInspectorKind()).isEqualTo(QualityCheckService.INSPECTOR_WORKER);
+        assertThat(row.getInspectorId()).isEqualTo("worker-user-1");
+        assertThat(view).containsEntry("inspector_kind", QualityCheckService.INSPECTOR_WORKER);
+    }
+
+    @Test
+    @DisplayName("⑥ 未知 inspector_kind ⇒ 422（不静默落成员工 / 工人），零写入")
+    void unknownInspectorKindIsRejected() {
+        assertThatThrownBy(() -> service.create(TENANT, ITEM_ID, "pass", null,
+                INSPECTOR_ID, INSPECTOR_NAME, "robot", AT))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(e -> assertThat(((BusinessException) e).getMessage()).contains("inspector_kind"));
+        verify(qualityInspectionMapper, never()).insert(any(QualityCheck.class));
+    }
+
+    @Test
+    @DisplayName("⑥ 最新判定读面：无记录 ⇒ null（未检 ≠ 合格）；有记录 ⇒ 带出身份类别")
+    void latestReturnsNewestOrNull() {
+        when(qualityInspectionMapper.selectLatestByOrderItemIds(List.of(ITEM_ID))).thenReturn(List.of());
+        assertThat(service.latest(TENANT, ITEM_ID)).isNull();
+
+        QualityCheck row = QualityCheck.builder()
+                .id("qi-9").tenantId(TENANT).processingOrderId(PO_ID).orderItemId(ITEM_ID)
+                .inspectorId("worker-user-1").inspectorName("张师傅")
+                .inspectorKind(QualityCheckService.INSPECTOR_WORKER)
+                .inspectionResult("rework").reason("缝线开裂").inspectedAt(AT).deleted(0).build();
+        when(qualityInspectionMapper.selectLatestByOrderItemIds(List.of(ITEM_ID))).thenReturn(List.of(row));
+
+        assertThat(service.latest(TENANT, ITEM_ID))
+                .containsEntry("result", "rework")
+                .containsEntry("inspector_kind", QualityCheckService.INSPECTOR_WORKER);
+    }
+
     /** 捕获这次真落库的那一行（逐值断言的取样点）。 */
     private QualityCheck capturedRow() {
         ArgumentCaptor<QualityCheck> captor = ArgumentCaptor.forClass(QualityCheck.class);

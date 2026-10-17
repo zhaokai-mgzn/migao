@@ -1,4 +1,4 @@
-// case_ids: PG-065
+// case_ids: PG-065, PG-082
 //
 // 工人端**页面开关**的前端消费面（V141，母单 #5161）。
 //
@@ -29,6 +29,7 @@ import {
   effectivePages,
   initialState,
   PAGE_CUT_CALC,
+  PAGE_INSPECT,
   PAGE_ORDER,
   PAGE_REPORT,
   PAGE_PIECEWORK,
@@ -39,7 +40,7 @@ import {
 } from '../src/render.mjs'
 
 /** 后端 `WorkerPages.ALL` 的逐字镜像（改后端闭词表 ⇒ 本文件红）。 */
-const BACKEND_PAGE_KEYS = [PAGE_REPORT, PAGE_PIECEWORK, PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT]
+const BACKEND_PAGE_KEYS = [PAGE_REPORT, PAGE_PIECEWORK, PAGE_ORDER, PAGE_CUT_CALC, PAGE_SHIPMENT, PAGE_INSPECT]
 
 /** 裁高计算入口（本页唯一的入口；文案 2026-10-10 起用「裁高计算（一体机）」）。 */
 const MACHINE_ENTRY = '/w/machine.html'
@@ -106,15 +107,19 @@ function memStorage(seed = {}) {
 
 // ── 上游契约：页面键闭词表 + 默认全开（两处各一份，必须逐值相同）────────────────────────────
 
-test('页面键闭词表 = 后端 WorkerPages.ALL 的逐字镜像（5 键 + 顺序；改一边不改另一边 ⇒ 红）', () => {
-  assert.deepEqual(DEFAULT_PAGES, BACKEND_PAGE_KEYS, '默认页面集合与后端 WorkerPages.defaultPages() 不一致')
-  assert.equal(new Set(DEFAULT_PAGES).size, DEFAULT_PAGES.length, '闭词表有重复键（后端是 Set，重复 = 两套口径）')
+test('页面键闭词表 = 后端 WorkerPages.ALL 的逐字镜像（6 键 + 顺序；改一边不改另一边 ⇒ 红）', () => {
+  assert.equal(new Set(BACKEND_PAGE_KEYS).size, BACKEND_PAGE_KEYS.length, '闭词表有重复键（后端是 Set，重复 = 两套口径）')
   assert.deepEqual(
     BACKEND_PAGE_KEYS,
     // issue #6767：`piecework`（我的计件，含金额）与商家面标签同批登记（后端 WorkerPages.PIECEWORK）
-    ['report', 'piecework', 'order', 'cut_calc', 'shipment'],
+    // issue #7162：`inspect`（质检）在闭词表里，但**不在默认集合**（逐人开 + 服务端写准入）
+    ['report', 'piecework', 'order', 'cut_calc', 'shipment', 'inspect'],
     '页面键是**冻结契约**（后端闭词表逐字）：拼错一个字母 ⇒ 商家的开关静默失效',
   )
+  // 默认集合 = 闭词表去掉逐人开放的能力页（inspect 必须**不在**默认里，否则等于人人可录质检）
+  assert.deepEqual(DEFAULT_PAGES, BACKEND_PAGE_KEYS.filter((k) => k !== PAGE_INSPECT),
+    '默认页面集合与后端 WorkerPages.defaultPages() 不一致（inspect 应为逐人开）')
+  assert.equal(DEFAULT_PAGES.includes(PAGE_INSPECT), false, '质检页出现在默认集合 = 每个工人都被开了质检')
 })
 
 test('`pages` 未被读过 / 空数组 ⇒ 按默认全开（fail-open，不是"全关"）', () => {

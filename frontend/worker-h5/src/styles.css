@@ -397,3 +397,21 @@ a.wh5-machine__back:active { color: #e2e8f0; }
 @media (min-width: 768px) {
   .wh5-machine__done { font-size: 32px; }
 }
+
+/* 质检区块（issue #7162）：扫水洗唛后录判定 → 生成质检单（工人端） */
+.wh5-quality { display: flex; flex-direction: column; gap: 8px; }
+.wh5-q-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wh5-q-title { font-size: 18px; font-weight: 700; color: #0f172a; }
+.wh5-q-state { font-size: 14px; font-weight: 600; padding: 2px 10px; border-radius: 999px; border: 1px solid #cbd5e1; color: #475569; background: #f8fafc; white-space: nowrap; }
+.wh5-q-state.is-pending { color: #92400e; background: #fffbeb; border-color: #fde68a; }
+.wh5-q-state.is-pass { color: #065f46; background: #ecfdf5; border-color: #a7f3d0; }
+.wh5-q-state.is-rework { color: #9a3412; background: #fff7ed; border-color: #fed7aa; }
+.wh5-q-state.is-scrap { color: #991b1b; background: #fef2f2; border-color: #fecaca; }
+.wh5-q-meta, .wh5-q-reason { margin: 0; font-size: 13px; color: #64748b; }
+.wh5-q-reason { color: #334155; }
+.wh5-q-form { display: flex; flex-direction: column; gap: 10px; padding-top: 8px; border-top: 1px dashed #e2e8f0; }
+.wh5-q-choices { display: flex; gap: 8px; flex-wrap: wrap; }
+.wh5-q-choice { flex: 1 1 0; min-height: 46px; border-radius: 10px; border: 1px solid #cbd5e1; background: #fff; color: #334155; font-size: 16px; font-weight: 600; touch-action: manipulation; }
+.wh5-q-choice.is-on { border-color: #0f766e; background: #ccfbf1; color: #115e59; }
+.wh5-q-actions { display: flex; gap: 10px; }
+.wh5-q-actions .wh5-primary { flex: 1 1 auto; }

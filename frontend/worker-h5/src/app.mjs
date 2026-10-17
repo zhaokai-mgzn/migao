@@ -17,10 +17,12 @@ import {
   DEFAULT_WORKER_IDLE_MINUTES,
   DEFAULT_WORK_TYPE,
   doneNotice,
+  effectivePages,
   initialState,
   legacySelection,
   MACHINE_ENTRY_HREF,
   normalizeWorkType,
+  PAGE_INSPECT,
   reduce,
   renderPage,
 } from './render.mjs'
@@ -221,6 +223,53 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     }
   }
 
+  // ══════════════════════════════════════════════════════════════════════════════
+  // 质检（issue #7162）：扫水洗唛后读这一件的最新判定 / 录判定（生成质检单）。
+  //
+  // 🔴 只在 `inspect` ∈ 页面集时读 —— 但**真正**的准入在服务端 `/api/worker/quality/**`
+  //    （工人档案里没开这一页 ⇒ 403）。这里少渲染一块，不等于挡住了接口。
+  // ══════════════════════════════════════════════════════════════════════════════
+  const qualityItemId = () => state.view?.position?.order_item_id ?? null
+
+  async function loadQuality() {
+    const itemId = qualityItemId()
+    if (!itemId) return
+    if (!effectivePages(state).opened.has(PAGE_INSPECT)) return
+    dispatch({ type: 'qualityLoading' })
+    try {
+      const d = await api.qualityLatest(itemId)
+      // 读回来时屏已经换了一件 ⇒ 丢弃（避免把上一件的判定画到这一件上）
+      if (qualityItemId() !== itemId) return
+      dispatch({ type: 'qualityLoaded', latest: d.latest })
+    } catch (e) {
+      dispatch({ type: 'qualityFailed', error: e?.message ?? String(e) })
+    }
+  }
+
+  async function submitQuality() {
+    const form = state.qualityForm
+    const itemId = qualityItemId()
+    if (!form || !itemId) return
+    // 原因由**提交那一刻**从 DOM 读（不在 input 事件里重绘，否则每敲一个字就丢焦点）
+    const reason = (doc.getElementById('wh5-quality-reason')?.value ?? '').trim()
+    if (form.result !== 'pass' && !reason) {
+      dispatch({ type: 'qualityFormError', error: '判定为「返工」或「报废」时，必须填写不合格原因。' })
+      return
+    }
+    dispatch({ type: 'qualitySubmitting' })
+    try {
+      const latest = await api.createQuality({
+        orderItemId: itemId,
+        result: form.result,
+        ...(form.result === 'pass' ? {} : { reason }),
+      })
+      dispatch({ type: 'qualitySubmitted', latest })
+    } catch (e) {
+      // 服务端下发的业务文案原样显示（不把 HTTP 状态码当工人文案）
+      dispatch({ type: 'qualityFormError', error: e?.message ?? String(e) })
+    }
+  }
+
   /**
    * 闲置登出：定时器（服务端 `idle_minutes`）+ 可见性变化双保险。
    *
@@ -357,6 +406,14 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
       draw()
     })
 
+    // 质检（issue #7162）：展开表单 / 选判定 / 取消 / 提交（原因在提交时从 DOM 读）
+    on('wh5-quality-open', () => dispatch({ type: 'qualityFormOpen' }))
+    on('wh5-quality-cancel', () => dispatch({ type: 'qualityFormClose' }))
+    on('wh5-quality-submit', () => { void submitQuality() })
+    doc.querySelectorAll?.('[data-quality-result]').forEach((el) => {
+      el.addEventListener('click', () => dispatch({ type: 'qualityResult', result: el.dataset.qualityResult }))
+    })
+
     // 报工三态（issue #5652 第二刀）：选择只落在 `state.view.work_type`（纯状态动作、**不发请求**）。
     // 🔴 放在 in-flight 闸**之前**：正在提交时也能改选 —— 那一笔的 `workType` 在点【报工】那一刻
     //    就已取值（下面的条件）⇒ 改选只影响**下一笔**，不会把这一笔改掉。
@@ -453,6 +510,7 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
       state = { ...state, view: { ...view, __token: token, __selection: selection } }
       // 重扫同一张码且上次提交没收到答复 ⇒ 明说「这一下是回放、不会重复计件」
       dispatch({ type: 'resolved', view: state.view, notice: resumedNotice(token) })
+      void loadQuality()
     } catch (e) {
       fail(e)
     }
@@ -471,6 +529,7 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
         view: { ...view, __token: token, ...(selection ? { __selection: selection } : {}) },
       }
       dispatch({ type: 'resolved', view: state.view, notice: resumedNotice(token) })
+      void loadQuality()
     } catch (e) {
       fail(e)
     }

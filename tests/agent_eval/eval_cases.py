@@ -9576,6 +9576,25 @@ _CASE_PG_081 = EvalCase(
     precondition='前置 = Mockito 夹具：① 一张**活跃**加工单（`status ∈ {generated, issued, in_processing, completed}`）+ `items_snapshot` 里的成品帘行；② 若干 `quality_inspections` 行（可为空 = 未检）。前置不成立（无活跃单 / 快照缺 `itemId`）⇒ 读面回空清单 + 零计数（**不是**错误态、也不猜是哪一件）。',
 )
 
+# ── PG-082 [NORMAL] 工人端质检：扫水洗唛进报工页后录判定、生成质检单（服务端以「档案页面集含 inspect」为准入，不是藏 UI）（源: cases/processing-order.yml）──
+_CASE_PG_082 = EvalCase(
+    id='PG-082',
+    legacy_id='',
+    title='工人端质检：扫水洗唛进报工页后录判定、生成质检单（服务端以「档案页面集含 inspect」为准入，不是藏 UI）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-17 逐字：「工人不能进入观星台，维持这个设计，现在只需要在小程序端扫码进入报工页后有入口进行质检即可」', '用户 2026-10-17 逐字：「因为工人主要通过扫水洗唛进入质检流程」', '用户 2026-10-17 逐字：「质检等同发货工序一样，打包发货完成后生成发货单，质检完成后生成质检单，一样的意思」'],
+    expectations=[],
+    data_checks=['**判据 1·🔴 服务端准入（不是藏 UI）**：工人档案页面集没有 `inspect`（含「未收窄 = 默认页」）⇒ `POST /api/worker/quality/inspections` 与 `GET /latest` 一律 **403**，且 `QualityCheckService` **零调用**（`verifyNoInteractions`）。红证：把 `requireInspector` 的判据删掉 ⇒ 判据当场红。证据：backend/admin-api/src/test/java/com/migao/admin/controller/WorkerQualityControllerTest.java', "**判据 2·🔴 检验人只来自工人 session**：落库 `inspector_id` = session 解出的 worker_id、`inspector_name` = 工人姓名、`inspector_kind='worker'`；body 里的 `worker_id` / `inspector_id` 一个字节都不读（伪造值不得进库）。证据：WorkerQualityControllerTest.java（grantedWorkerDelegatesWithSessionIdentity）+ backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckServiceTest.java（workerInspectorKindIsPersistedAndReadable）", '**判据 3·身份类别只加不改**：未知 `inspector_kind` ⇒ 422 且零写入；既有员工路径仍落 `employee`；读面 `view` 追加 `inspector_kind`。证据：QualityCheckServiceTest.java（unknownInspectorKindIsRejected）', '**判据 4·🔴 未检 ≠ 合格**：无记录 ⇒ `latest=null`、H5 显示「未检」（不得显示「合格」）；有记录 ⇒ 显示服务端判定 / 原因 / 检验人 / 时刻。证据：frontend/worker-h5/tests/worker-h5-quality.test.mjs（②③）+ QualityCheckServiceTest.java（latestReturnsNewestOrNull）', '**判据 5·录入 = 质检单**：展开表单 ⇒ 三态 + 原因必填提示 +「提交质检单」；提交成功 ⇒ 「质检单已生成」+ 判定换成回执（同一件可复检 = 再录一次）。证据：worker-h5-quality.test.mjs（④⑤⑥）', '**判据 6·逐人开**：`inspect` 在闭词表里但**不在**默认集合；H5 页面集不含它 ⇒ 质检区块一个字节都不出现。证据：frontend/worker-h5/tests/worker-h5-pages.test.mjs + worker-h5-quality.test.mjs（①）', '**边界（照实登记）**：不做质检单打印（本轮只落记录与两端读面）；不把质检做成可计价工序（报工是数量事实、质检是成品帘判定，两套口径并存）；工人仍**不进** `/api/admin/**`、不获得任何 RBAC 权限码。'],
+    skip_reason='[backend-contract] 服务端准入 + 纯前端渲染/状态机（无 LLM 行为），不进入 agent-eval 冒烟',
+    tags=['quality-inspection', 'worker-h5', 'backend-contract', 'permission', 'finished-curtain'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = ① 一张活跃加工单 + 该件成品帘（`order_item_id`）；② 工人 session（`X-Worker-Session-Id`）；③ 该工人档案的 `users.worker_pages` 里**有** `inspect`（缺 ⇒ 403，不是「看不见入口」）。后端夹具 = Mockito；H5 = 纯渲染/状态机夹具（零 DOM、零网络）。',
+)
+
 # ── PP-002 [NORMAL] 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query）（源: cases/processing.yml）──
 _CASE_PP_002 = EvalCase(
     id='PP-002',
@@ -14860,6 +14879,24 @@ _CASE_UI_120 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-121 [NORMAL] 工人档案：质检页逐人开（新建弹窗「单独开放」一栏 + 列表行「开/关质检」）；默认页面不含质检、未收窄显示「默认页面」（源: cases/ui.yml）──
+_CASE_UI_121 = EvalCase(
+    id='UI-121',
+    legacy_id='',
+    title='工人档案：质检页逐人开（新建弹窗「单独开放」一栏 + 列表行「开/关质检」）；默认页面不含质检、未收窄显示「默认页面」',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-17 裁定：「工人档案逐人开质检页，服务端同时当写准入」'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**质检不在默认菜单里**：新建弹窗的默认页勾选栏（`worker-page-option-*`）不含 `inspect`；它出现在「单独开放」一栏（`worker-page-optional-inspect`），默认未勾。红证：把 inspect 加进默认集合 ⇒ 判据当场红。证据：frontend/admin-web/tests/unit/components/WorkerProfilesPanel.test.tsx（⑨）', '判据 2·**勾上 ⇒ 建号请求带它**：默认四页 + 单独勾质检 ⇒ `workerPages = [report, order, cut_calc, shipment, inspect]`（收窄列表，不是 null）。证据：同文件（⑨）', '判据 3·**已有工人可开/关**：列表行「开质检」⇒ `PUT /api/admin/workers/{id}/pages` 带默认页 + inspect；「关质检」⇒ 去掉 inspect（回到收窄集）。证据：同文件（⑨ 第二条）', '判据 4·**口径显示**：未收窄（null / 空数组）⇒「默认页面」（不再是「全部页面」—— 全部能力还包含逐人开的质检）。证据：同文件（⑧）', '**上游形状**：`GET /api/admin/worker-pages` 回 `{pages, default_pages, optional_pages, labels}`（服务端唯一真值）；`inspect` 在 pages、不在 default_pages、在 optional_pages。证据：backend/admin-api/src/test/java/com/migao/admin/controller/WorkerPageCatalogControllerTest.java', '**边界（照实登记）**：本页只决定「开不开放」；真正的写准入在 `/api/worker/quality/**`（服务端 403），不是前端隐藏按钮。'],
+    skip_reason='[backend-contract] 纯前端配置面（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['worker-profile', 'quality-inspection', 'permission', 'ui'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -15404,6 +15441,7 @@ ALL_CASES = (
     _CASE_PG_079,
     _CASE_PG_080,
     _CASE_PG_081,
+    _CASE_PG_082,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,
@@ -15691,6 +15729,7 @@ ALL_CASES = (
     _CASE_UI_118,
     _CASE_UI_119,
     _CASE_UI_120,
+    _CASE_UI_121,
     _CASE_UT_001,
     _CASE_UT_002,
 )

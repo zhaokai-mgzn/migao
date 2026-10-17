@@ -4200,6 +4200,13 @@ export interface CuttingHeightPreview {
 export interface WorkerPageCatalogResponse {
   /** 闭词表全部页键（服务端 `WorkerPages` 一处给出，前端不自己维护第二份词表）。 */
   pages: string[]
+  /**
+   * **默认**页面键（未收窄时的勾选态；issue #7162 起「未收窄」不再等于「全部能力」——
+   * `inspect`（质检）不在默认集合里，逐人开）。
+   */
+  default_pages?: string[]
+  /** 非默认、逐人开放的能力页（issue #7162：`inspect` 同时是服务端写准入）。 */
+  optional_pages?: string[]
   /** 页面键 → 商家面人话名（同上，服务端一处给出）。 */
   labels: Record<string, string>
 }
