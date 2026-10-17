@@ -57,6 +57,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "tests"))
 
 from unit_ci_workflows._source_parsing import java_code  # noqa: E402
+from unit_ci_workflows._sql_schema import strip_sql_comments  # noqa: E402
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 冻结词表（C5：集合级相等挡不住「两边一起错」，故在此逐项写死）
@@ -129,7 +130,13 @@ def kinds_in_order_kind_statements(sql: str) -> tuple[set[str], bool]:
 
     返回 `(字面量集合, 是否含 DEFAULT 'processing')`。语句里一个字面量都没有 ⇒ 返回空集，
     由调用方判红（C2 反空跑）。
+
+    🔴 **先剥 SQL 注释再取值**（顺序不许反）：本单的 V159 迁移头部有大量注释**逐字写着**
+    `'processing'` / `'outbound'`（那是说明口径的散文）—— 按原文扫引号会把注释喂成取值，
+    「注释里提了某值」就会被读成「约束里真有这个值」。剥注释用仓内**唯一**那份实现
+    `_sql_schema.strip_sql_comments`（不另写一份）。判据 = tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py。
     """
+    sql = strip_sql_comments(sql)
     hit = False
     literals: set[str] = set()
     has_default = False
@@ -137,7 +144,15 @@ def kinds_in_order_kind_statements(sql: str) -> tuple[set[str], bool]:
         if COLUMN not in raw:
             continue
         hit = True
-        literals |= set(re.findall(r"'([^']*)'", raw))
+        # 取值集合：先按**结构定界符**取 `order_kind IN ( … )` 的整块（捕获组按右括号定界），
+        # 再逐项剥掉包裹的单引号 —— **不写「引号定界捕获组」**那种按原文扫引号的形态
+        # （判据 = tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py 的 RULE_QUOTE：
+        #  注释/字符串能喂中 `re.findall(r"'([^']*)'", raw)` 这类写法）。
+        for block in re.findall(rf"{COLUMN}\s+IN\s*\(([^)]*)\)", raw, re.I):
+            for item in block.split(","):
+                item = item.strip()
+                if len(item) >= 2 and item.startswith("'") and item.endswith("'"):
+                    literals.add(item[1:-1])
         if re.search(rf"DEFAULT\s+'{re.escape(FROZEN_DEFAULT_KIND)}'", raw):
             has_default = True
     assert hit, (

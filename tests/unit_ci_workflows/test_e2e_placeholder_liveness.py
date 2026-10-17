@@ -48,9 +48,13 @@ CI 的 `Demo path specs (admin-web, fixture mode)` 腿当场红、并具名到�
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+
+from unit_ci_workflows._source_parsing import java_code  # noqa: E402
 
 E2E_DIR = REPO_ROOT / "tests" / "e2e"
 ADMIN_WEB_SRC = REPO_ROOT / "frontend" / "admin-web" / "src"
@@ -72,10 +76,15 @@ def admin_web_sources() -> str:
 
 
 def placeholder_sites() -> list[tuple[str, str, int]]:
-    """射程内每处占位符字面量 ⇒ `[(仓库相对路径, 字面量, 行号)]`。"""
+    """射程内每处占位符字面量 ⇒ `[(仓库相对路径, 字面量, 行号)]`。
+
+    🔴 **先剥注释再取值**（`java_code`，引号感知且**保持行数**）：注释里举例
+    `// 用 getByPlaceholder('X') 取输入框` 不是真选择器 —— 按原文扫会被注释喂中
+    （判据 = tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py）。
+    """
     sites: list[tuple[str, str, int]] = []
     for path in sorted(E2E_DIR.rglob("*.ts")):
-        text = path.read_text(encoding="utf-8")
+        text = java_code(path.read_text(encoding="utf-8"))
         for line_no, line in enumerate(text.splitlines(), start=1):
             for _quote, literal in PLACEHOLDER_CALL.findall(line):
                 if literal:
