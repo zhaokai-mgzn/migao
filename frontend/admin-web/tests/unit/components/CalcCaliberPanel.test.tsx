@@ -213,24 +213,27 @@ describe('算料口径域面板（issue #6580 抽取后的行为面）', () => {
     expect(row.textContent).toContain(hint)
   })
 
-  it('分组表单（issue #7124）：label 在上、控件在下、同组字段同一 grid', async () => {
+  it('设置页属性行（issue #7133）：标签+提示在左、控件在固定右列、同组同一属性列表', async () => {
     await renderPanel()
     const field = screen.getByTestId('param-per_fold_single')
-    // ① 字段 = 「标签 → 控件 → 提示」的**竖排**；标签是字段容器的第一个子元素
-    const label = field.firstElementChild as HTMLElement
-    expect(label.tagName, '第一行必须是标签（不是含输入框的行容器）').toBe('SPAN')
-    expect(label.textContent).toContain('单色每折用料')
-    // ② 控件在标签**之后**（DOM 顺序：标签 → 控件 → 提示）
+    // ① 行 = 「左：标签 + 提示」/「右：控件」两栏（flex + justify-between）
+    expect(field.className, '属性行必须是两栏布局').toContain('justify-between')
+    const left = field.firstElementChild as HTMLElement
+    expect(left.tagName, '左栏是标签块').toBe('DIV')
+    expect(left.textContent).toContain('单色每折用料')
+    // ② 控件在**右栏**（DOM 顺序：左栏 → 右栏），且右栏不参与收缩（`shrink-0` = 定宽列）
+    const right = field.lastElementChild as HTMLElement
     const input = screen.getByTestId('calc-caliber-scalar-per_fold_single')
-    expect(label.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    // ③ 同组字段落在同一个 grid 里（= 左边界对齐的机制），两列且窄屏单列
-    const grid = field.parentElement as HTMLElement
-    expect(grid.className).toContain('grid')
-    expect(grid.className).toContain('sm:grid-cols-2')
-    expect(grid.className).toContain('grid-cols-1')
-    expect(grid.contains(screen.getByTestId('param-margin_single'))).toBe(true)
-    // ④ 阈值另成一组（不与「用布与余量」混排）—— 分组靠区块标题表达，不靠行内细线
-    expect(grid.contains(screen.getByTestId('param-oversize_width_threshold'))).toBe(false)
+    expect(right.className).toContain('shrink-0')
+    expect(right.contains(input), '控件必须落在右栏里').toBe(true)
+    // ③ 同组字段落在同一个属性列表里（行间细线由容器 `divide-y` 给），且**只**含本组字段
+    const list = field.parentElement as HTMLElement
+    expect(list.className, '行间细线由容器给（行自己不带 border-b）').toContain('divide-y')
+    expect(list.contains(screen.getByTestId('param-margin_single'))).toBe(true)
+    // ④ 阈值另成一组（不与「用布与余量」混排）—— 分组靠区块标题表达
+    expect(list.contains(screen.getByTestId('param-oversize_width_threshold'))).toBe(false)
+    // ⑤ 行自己**不得**带行底细线（上一版「8 行 8 条线」的病灶；判据钉在行容器上）
+    expect(field.className).not.toContain('border-b')
   })
 
   it('区块标题把参数分组（用布与余量 / 档位与拼色 / 超高 / 超宽阈值）', async () => {
@@ -628,20 +631,19 @@ it('调用方传只读读数（无 `onCalcChange`）⇒ 只渲染读数，不出
 // 可编辑输入只能**另起一行**、且 `inputCls` 是 `w-full` ⇒ 两位数字被拉满整列（真机 ≈670px）。
 // 判据 = 「输入框与名称**同一行**」+「定宽、非 `w-full`」+「行内不再有默认态徽标」。
 // ══════════════════════════════════════════════════════════════════════════════
-describe('判据 8（issue #7124）：分组表单 —— label 在上、定宽、行内不标默认态', () => {
-  it('🔴 label 在控件**上方**（退回「控件与名称同行」⇒ 红）', async () => {
+describe('判据 8（issue #7124 / #7133）：属性行 —— 标签在左、控件在右列、定宽、不标默认态', () => {
+  it('🔴 控件在**右栏**（退回「控件顺排在标签后面」⇒ 左边界随标签长短抖，红）', async () => {
     await renderPanel()
     const input = screen.getByTestId('calc-caliber-scalar-per_fold_single')
     const field = input.closest('[data-testid="param-per_fold_single"]') as HTMLElement
-    const label = field.firstElementChild as HTMLElement
-    expect(label.tagName, '字段第一行必须是标签元素').toBe('SPAN')
-    expect(label.textContent).toContain('单色每折用料')
-    // 控件自成一行：它的父容器**不是**标签本身（同行布局下 input 会挂在名称的 flex 行里）
-    expect(input.parentElement, '控件不得与标签同一行').not.toBe(label)
-    // 字段不再画行底细线（「8 行 8 条线」正是用户判「丑陋」的那一版）
-    expect(field.className, '字段不再画行底细线（分组靠区块标题 + 间距表达）').not.toContain(
-      'border-b',
-    )
+    const left = field.firstElementChild as HTMLElement
+    const right = field.lastElementChild as HTMLElement
+    expect(left.tagName, '左栏是标签块').toBe('DIV')
+    expect(left.textContent).toContain('单色每折用料')
+    expect(right.contains(input), '控件必须落在右栏里').toBe(true)
+    expect(left.contains(input), '控件不得顺排在左栏（标签后面）').toBe(false)
+    // 行自己不带行底细线（「8 行 8 条线」正是用户判「丑陋」的那一版；线由容器 `divide-y` 给）
+    expect(field.className, '字段不再画行底细线').not.toContain('border-b')
     // 反向自证：口径提示仍在（撤的是线，不是信息）
     expect(field.textContent).toContain(CALC_PARAM_COPY.per_fold_single.hint.replace(/\*\*/g, ''))
   })

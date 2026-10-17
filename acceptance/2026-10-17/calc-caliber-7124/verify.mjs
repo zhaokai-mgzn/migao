@@ -111,13 +111,15 @@ const geo = await page.evaluate(() => {
       const ib = read(input)
       return {
         id: f.getAttribute('data-testid'),
-        labelText: (label?.textContent || '').trim(),
+        // 左栏 = 「标签 span + 提示 p」⇒ 标签文本只取**第一个子元素**（提示里本来就有括号，例如「（单开）」）
+        labelText: (label?.firstElementChild?.textContent || '').trim(),
         label: lb,
         input: ib,
-        labelAboveInput: lb && ib ? lb.bottom <= ib.top : null,
+        // 🔴 issue #7133：属性行 —— 标签块在**左**、控件在**右列**（标签右沿不得压到控件左沿）
+        labelLeftOfInput: lb && ib ? lb.x + lb.w <= ib.x + 1 : null,
         hasBottomBorder: /border-b/.test(f.className),
         // 🔴 本轮判据：单位**不再写在标签里**（`单色每折用料（米）` ⇒ `单色每折用料` + 框内后缀「米」）
-        labelHasUnitParen: /（/.test((label?.textContent || '').trim()),
+        labelHasUnitParen: /（/.test((label?.firstElementChild?.textContent || '').trim()),
         unitInBox: [...f.querySelectorAll('span')].some(
           (s) => /absolute/.test(s.className) && (s.textContent || '').trim() === '米',
         ),
@@ -134,17 +136,22 @@ const geo = await page.evaluate(() => {
 // 同组标量输入框的左边界（只有一个 x ⇒ 一列对齐；两列栅格 ⇒ 恰好两个 x）
 const scalarInputs = geo.inputs.filter((i) => /^calc-caliber-scalar-/.test(i.id))
 const distinctX = [...new Set(scalarInputs.map((i) => i.x))].sort((a, b) => a - b)
+// 属性行：控件的**右沿**也必须共一条线（主流设置页的「控件列」）
+const distinctRight = [...new Set(scalarInputs.map((i) => i.x + i.w))].sort((a, b) => a - b)
 // 有单位的键（`CALC_PARAM_COPY` 里带「（米）」的那些）；`min_fullness`（褶倍下限）**没有**单位
 const UNIT_KEYS = /(per_fold_single|margin_single|margin_multi|hem_margin|oversize_|meters_rounding_step)/
 const badFields = geo.fields.filter(
   (f) =>
-    f.labelAboveInput !== true ||
+    f.labelLeftOfInput !== true ||
     f.hasBottomBorder ||
     f.labelHasUnitParen ||
     (UNIT_KEYS.test(f.id) && !f.unitInBox),
 )
 
-writeFileSync(`${OUT}/geometry.json`, JSON.stringify({ ...geo, distinctScalarX: distinctX }, null, 2))
+writeFileSync(
+  `${OUT}/geometry.json`,
+  JSON.stringify({ ...geo, distinctScalarX: distinctX, distinctScalarRight: distinctRight }, null, 2),
+)
 console.log('区块标题:', JSON.stringify(geo.sectionTitles))
 console.log(
   '字段读数:',
@@ -154,12 +161,13 @@ console.log(
     1,
   ),
 )
-console.log('RESULT', JSON.stringify({ fieldCount: geo.fields.length, bad: badFields.map((f) => f.id), distinctScalarX: distinctX, restPinned: restReadout?.pinned, deepPinned: stickyReadout?.pinned, deepSaveInViewport: stickyReadout?.inViewport }))
+console.log('RESULT', JSON.stringify({ fieldCount: geo.fields.length, bad: badFields.map((f) => f.id), distinctScalarX: distinctX, distinctScalarRight: distinctRight, restPinned: restReadout?.pinned, deepPinned: stickyReadout?.pinned, deepSaveInViewport: stickyReadout?.inViewport }))
 
 await browser.close()
 process.exit(
   badFields.length === 0 &&
-    distinctX.length === 2 &&
+    distinctX.length === 1 &&
+    distinctRight.length === 1 &&
     restReadout?.pinned === false &&
     stickyReadout?.pinned === true &&
     stickyReadout?.inViewport === true
