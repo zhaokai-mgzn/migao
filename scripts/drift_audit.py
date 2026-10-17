@@ -2385,7 +2385,7 @@ def build_baseline(rep: dict, reason: str) -> dict:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 归零条目的**外科手术式销账**（`--prune-zeroed`，issue #7093）
+# 归零条目的**外科手术式销账**（`--prune-zeroed`，issue #7127；实例 #7117）
 # ═══════════════════════════════════════════════════════════════════════════
 def prunable_zeroed(rep: dict, baseline: dict, *,
                     offline: bool) -> tuple[dict[str, list[str]], list[str]]:
@@ -2547,7 +2547,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--regen-baseline", action="store_true", help="重生成基线（必须带 --reason）")
     ap.add_argument("--prune-zeroed", action="store_true",
                     help="**只**删本次审计**实测归零**的基线条目（= 报告里 "
-                         "`stale_baseline_blocking` 点名的那些 key；issue #7093）。"
+                         "`stale_baseline_blocking` 点名的那些 key；issue #7127）。"
                          "与 `--regen-baseline` 不同：它**不重建**清单 ⇒ 不会连带删掉"
                          "「本轮没跑出结论」的判据名下的合法豁免（#5151）。"
                          "fail-closed：有其它阻塞 / 被点名条目所属判据没跑出结论 ⇒ 拒绝动手"
@@ -2625,7 +2625,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.prune_zeroed:
-        # ── 归零条目的**外科手术式销账**（issue #7093；`.github/workflows/drift-baseline-reconcile.yml` 调用）──
+        # ── 归零条目的**外科手术式销账**（issue #7127；`.github/workflows/drift-baseline-reconcile.yml` 调用）──
         # 顺序即安全顺序：**先判能不能动，再决定动不动，最后才写盘**（fail-closed 的写盘只有一处）。
         if args.regen_baseline:
             print("❌ `--prune-zeroed` 与 `--regen-baseline` 互斥：前者只删点名条目（外科手术），"

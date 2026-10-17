@@ -1512,7 +1512,7 @@ def test_real_repo_audit_is_green_on_current_tree():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ⑨ 归零条目的**外科手术式销账**（`--prune-zeroed`，issue #7093）
+# ⑨ 归零条目的**外科手术式销账**（`--prune-zeroed`，issue #7127；实例 #7117）
 #    病：有一族基线条目是**运行态**的（`heartbeat` 判据：`<wf>|paused` / `|never-succeeded` /
 #    `|stale`）—— 外部事件让它们归零（某个 workflow 首次成功 / 解停 / 恢复心跳），而
 #    **没有任何提交会去删它** ⇒ `--check` 此后每次 run 都红、每次都往 P1 值班 issue 追一条
