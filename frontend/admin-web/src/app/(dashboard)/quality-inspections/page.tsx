@@ -37,8 +37,8 @@ import type { QualityInspectionRecord, QualityTarget, QualityTargetState } from 
  *
  * ## 两个面（同一页、同一权限码 `production:inspect`）
  *
- * ① **待检成品帘**：一条 = **一件成品帘**（与录入的颗粒度**同一份**）—— 加工单号 /
- *    成品帘 / 数量 / 最新判定 + 「录入判定」；② **质检流水**：最近若干条记录（谁、何时、判了什么、为什么）。
+ * ① **待检成品帘**：一条 = **一件成品帘**（与录入的颗粒度**同一份**）—— 加工单号 / 订单号 /
+ *    成品帘 / 最新判定 + 「录入判定」；② **质检流水**：最近若干条记录（谁、何时、判了什么、为什么）。
  * 两个读面都来自 `QualityCheckController`，本页**不重算任何口径**（判定名、计数都取服务端值）。
  *
  * ## 🔴 未检 ≠ 合格
@@ -275,8 +275,8 @@ export default function QualityInspectionsPage() {
               <thead className="bg-neutral-50 text-xs text-neutral-500">
                 <tr>
                   <th className="px-4 py-2 text-left font-medium whitespace-nowrap">加工单号</th>
+                  <th className="px-4 py-2 text-left font-medium whitespace-nowrap">订单号</th>
                   <th className="px-4 py-2 text-left font-medium whitespace-nowrap">成品帘</th>
-                  <th className="px-4 py-2 text-left font-medium whitespace-nowrap">数量</th>
                   <th className="px-4 py-2 text-left font-medium whitespace-nowrap">最新判定</th>
                   <th className="px-4 py-2 text-right font-medium whitespace-nowrap sticky right-0 bg-neutral-50">操作</th>
                 </tr>
@@ -284,10 +284,6 @@ export default function QualityInspectionsPage() {
               <tbody className="divide-y divide-neutral-100">
                 {targets.map((target) => {
                   const name = qualityItemName(target.product_name, target.color_name)
-                  const qty =
-                    target.quantity == null
-                      ? '—'
-                      : `${target.quantity}${target.unit ? ` ${target.unit}` : ''}`
                   return (
                     <tr key={target.order_item_id} data-testid={`quality-target-${target.order_item_id}`}>
                       <td className="px-4 py-2 whitespace-nowrap text-neutral-900">
@@ -302,8 +298,10 @@ export default function QualityInspectionsPage() {
                           target.processing_order_no || '—'
                         )}
                       </td>
+                      <td className="px-4 py-2 whitespace-nowrap text-neutral-600">
+                        {target.order_no || '—'}
+                      </td>
                       <td className="px-4 py-2 text-neutral-900">{name}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-neutral-600">{qty}</td>
                       <td className="px-4 py-2">
                         <span
                           className={
@@ -346,18 +344,16 @@ export default function QualityInspectionsPage() {
         )}
 
         {editing && (
-          <div className="border-t border-neutral-100 p-4">
-            <QualityCheckForm
-              orderItemId={editing.order_item_id}
-              subject={qualityItemName(editing.product_name, editing.color_name)}
-              onDone={() => {
-                setEditing(null)
-                void loadTargets()
-                void loadRecords()
-              }}
-              onCancel={() => setEditing(null)}
-            />
-          </div>
+          <QualityCheckForm
+            orderItemId={editing.order_item_id}
+            subject={qualityItemName(editing.product_name, editing.color_name)}
+            onDone={() => {
+              setEditing(null)
+              void loadTargets()
+              void loadRecords()
+            }}
+            onCancel={() => setEditing(null)}
+          />
         )}
       </PageCard>
 

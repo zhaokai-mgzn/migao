@@ -97,13 +97,15 @@ describe('质检区（作业单生产明细内嵌）', () => {
     await waitFor(() => expect(screen.getByTestId('quality-state-item-1')).toHaveTextContent('合格'))
   })
 
-  it('③ 点「录入判定」打开表单，提交后带上这件成品帘的 id', async () => {
+  it('③ 点「录入判定」打开弹窗，提交后带上这件成品帘的 id', async () => {
     const user = userEvent.setup()
     mockList.mockResolvedValue({ data: { data: [] } })
     render(<QualityCheckPanel processingOrderId="po-1" positions={positions} />)
 
     await waitFor(() => expect(screen.getByTestId('quality-record-item-2')).toBeInTheDocument())
     await user.click(screen.getByTestId('quality-record-item-2'))
+    // issue #7160：录入 = 弹窗（与「质检记录」页同一份表单，两处都必须是弹窗）
+    expect(screen.getByRole('dialog', { name: /录入质检判定/ })).toBeInTheDocument()
     await user.click(screen.getByTestId('quality-result-scrap'))
     await user.type(screen.getByTestId('quality-inspection-reason'), '尺寸偏差')
     await user.click(screen.getByRole('button', { name: '提交判定' }))

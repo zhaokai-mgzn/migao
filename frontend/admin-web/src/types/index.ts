@@ -1048,6 +1048,8 @@ export interface QualityTarget {
   order_item_id: string
   processing_order_id: string
   processing_order_no?: string | null
+  /** 加工单所属销售订单号（issue #7160）；取不到 = `null`（界面渲染 `—`，不编值） */
+  order_no?: string | null
   processing_status?: string | null
   product_name?: string | null
   color_name?: string | null

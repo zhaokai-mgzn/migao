@@ -7,6 +7,7 @@ import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.QualityCheck;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderItemMapper;
+import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.QualityCheckMapper;
 import org.junit.jupiter.api.AfterEach;
@@ -65,13 +66,15 @@ class QualityCheckServiceTest {
     private OrderItemMapper orderItemMapper;
     @Mock
     private ProcessingOrderMapper processingOrderMapper;
+    @Mock
+    private OrderMapper orderMapper;
 
     private QualityCheckService service;
 
     @BeforeEach
     void setUp() {
         service = new QualityCheckService(qualityInspectionMapper, orderItemMapper, processingOrderMapper,
-                new com.fasterxml.jackson.databind.ObjectMapper());
+                orderMapper, new com.fasterxml.jackson.databind.ObjectMapper());
         TenantContext.setTenantId(TENANT);
         when(orderItemMapper.selectById(ITEM_ID)).thenReturn(OrderItem.builder()
                 .id(ITEM_ID)

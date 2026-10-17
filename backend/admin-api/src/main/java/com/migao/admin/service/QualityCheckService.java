@@ -3,11 +3,13 @@ package com.migao.admin.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.QualityCheck;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderItemMapper;
+import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.QualityCheckMapper;
 import lombok.RequiredArgsConstructor;
@@ -16,7 +18,9 @@ import org.springframework.util.StringUtils;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -71,6 +75,8 @@ public class QualityCheckService {
     private final QualityCheckMapper qualityInspectionMapper;
     private final OrderItemMapper orderItemMapper;
     private final ProcessingOrderMapper processingOrderMapper;
+    /** 加工单 → 所属销售订单号（待检清单要显示「这张加工单是哪个订单的」，issue #7160）。 */
+    private final OrderMapper orderMapper;
     /** 加工单快照解析：`items_snapshot` 可能是 JSON 字符串形态（自定义 `@Select` 不经 typeHandler）。 */
     private final ObjectMapper objectMapper;
 
@@ -192,6 +198,7 @@ public class QualityCheckService {
             orderQuery.like(ProcessingOrder::getProcessingOrderNo, kw);
         }
         List<ProcessingOrder> orders = processingOrderMapper.selectList(orderQuery);
+        Map<String, String> orderNoByOrderId = loadOrderNos(orders);
 
         Map<String, Map<String, Object>> latestByItem = latestInspectionByItem(tenantId, orders);
 
@@ -220,6 +227,8 @@ public class QualityCheckService {
                 row.put("order_item_id", orderItemId);
                 row.put("processing_order_id", po.getId());
                 row.put("processing_order_no", po.getProcessingOrderNo());
+                // 订单号（issue #7160）：同屏给出「这张加工单是哪个订单的」；取不到 ⇒ null，不编值。
+                row.put("order_no", orderNoByOrderId.get(po.getOrderId()));
                 row.put("processing_status", po.getStatus());
                 row.put("product_name", str(item.get("productName")));
                 row.put("color_name", str(item.get("colorName")));
@@ -242,6 +251,33 @@ public class QualityCheckService {
         out.put("size", size);
         out.put("counts", counts);
         return out;
+    }
+
+    /**
+     * 批量取回这批加工单所属的**销售订单号**（issue #7160；一次 {@code IN}，不逐行单查）。
+     *
+     * <p>租户与软删口径由 {@code OrderMapper} 的标准方法兜底（{@code TenantLineInnerInterceptor} +
+     * {@code Order} 的 {@code @TableLogic}），与单查同口径、不因批量而放宽。存量加工单缺
+     * {@code order_id} / 订单已不可见 ⇒ 不进表 ⇒ 行上 {@code order_no=null}（界面渲染 {@code —}，不编值）。</p>
+     */
+    private Map<String, String> loadOrderNos(List<ProcessingOrder> processingOrders) {
+        Set<String> orderIds = new LinkedHashSet<>();
+        for (ProcessingOrder po : processingOrders) {
+            if (StringUtils.hasText(po.getOrderId())) {
+                orderIds.add(po.getOrderId());
+            }
+        }
+        Map<String, String> noById = new HashMap<>();
+        if (orderIds.isEmpty()) {
+            return noById;
+        }
+        List<Order> rows = orderMapper.selectBatchIds(orderIds);
+        if (rows != null) {
+            for (Order order : rows) {
+                noById.put(order.getId(), order.getOrderNo());
+            }
+        }
+        return noById;
     }
 
     /** 一次取回这批加工单的全部记录，按成品帘取**最新一条**（排序与 {@link #list} 同源）。 */
