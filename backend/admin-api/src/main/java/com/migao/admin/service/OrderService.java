@@ -1196,7 +1196,10 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         }
 
         // 逻辑删除订单
-        orderMapper.deleteById(id);
+        // issue #6956 · 现象 C：判影响行数（并发双删只许一次成功；0 行 = 已被别人删掉）
+        if (orderMapper.deleteById(id) == 0) {
+            throw BusinessException.notFound("订单");
+        }
 
         // 逻辑删除订单明细
         LambdaQueryWrapper<OrderItem> wrapper = new LambdaQueryWrapper<>();

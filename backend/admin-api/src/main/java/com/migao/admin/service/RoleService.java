@@ -657,7 +657,10 @@ public class RoleService {
             throw BusinessException.validationError("该角色下有 " + count + " 个用户，无法删除");
         }
 
-        roleMapper.deleteById(roleId);
+        // issue #6956 · 现象 C：判影响行数（并发双删只许一次成功）
+        if (roleMapper.deleteById(roleId) == 0) {
+            throw BusinessException.notFound("角色");
+        }
 
         // 清理角色权限关联
         LambdaQueryWrapper<RolePermission> rpWrapper = new LambdaQueryWrapper<>();

@@ -1,4 +1,5 @@
 package com.migao.admin.service;
+// case_ids: MC-117
 
 import com.migao.admin.entity.OrderLogistics;
 import com.migao.admin.exception.BusinessException;
@@ -158,10 +159,23 @@ class OrderLogisticsServiceTest extends BaseServiceTest {
         void success() {
             OrderLogistics log = OrderLogistics.builder().id("log-1").build();
             when(orderLogisticsMapper.selectById("log-1")).thenReturn(log);
+            when(orderLogisticsMapper.deleteById("log-1")).thenReturn(1);
 
             orderLogisticsService.deleteLogistics("log-1");
 
-            verify(orderLogisticsMapper).selectById("log-1");
+            verify(orderLogisticsMapper).deleteById("log-1");
+        }
+
+        @Test
+        @DisplayName("🔴 并发已被删（0 行）⇒ 404，不许回「删除成功」（issue #6956 · 现象 C）")
+        void zeroRows_conflict() {
+            OrderLogistics log = OrderLogistics.builder().id("log-1").build();
+            when(orderLogisticsMapper.selectById("log-1")).thenReturn(log);
+            when(orderLogisticsMapper.deleteById("log-1")).thenReturn(0);
+
+            assertThatThrownBy(() -> orderLogisticsService.deleteLogistics("log-1"))
+                    .isInstanceOf(BusinessException.class)
+                    .satisfies(ex -> assertThat(((BusinessException) ex).getCode()).isEqualTo("NOT_FOUND"));
         }
 
         @Test

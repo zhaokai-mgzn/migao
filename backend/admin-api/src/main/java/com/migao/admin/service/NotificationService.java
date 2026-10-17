@@ -245,7 +245,10 @@ public class NotificationService {
             throw BusinessException.permissionDenied();
         }
 
-        notificationMapper.deleteById(notificationId);
+        // issue #6956 · 现象 C：判影响行数（同一条被并发读走两次时，只许一次真删到）
+        if (notificationMapper.deleteById(notificationId) == 0) {
+            throw BusinessException.notFound("通知");
+        }
         log.info("删除通知成功: id={}, recipientId={}", notificationId, recipientId);
     }
 

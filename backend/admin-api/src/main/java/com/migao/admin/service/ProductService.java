@@ -1369,7 +1369,10 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     "当前状态[" + statusLabel + "]不允许删除，请先下架后再删除" + statusRecoveryHint(currentStatus));
         }
 
-        productMapper.deleteById(id);
+        // issue #6956 · 现象 C：判影响行数（并发双删只许一次成功；0 行 = 已被别人删掉）
+        if (productMapper.deleteById(id) == 0) {
+            throw BusinessException.notFound("商品");
+        }
         log.info("删除商品成功: id={}", id);
     }
 
@@ -1701,7 +1704,12 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                 result.addError(id, "当前状态[" + statusLabel + "]不允许删除" + statusRecoveryHint(currentStatus));
                 continue;
             }
-            productMapper.deleteById(id);
+            // issue #6956 · 现象 C：批量里也判行数 —— 抢不到的那条记为该商品的错误行，
+            // 不能算 success（否则「批量删 3 件、成功 3 件」里有一件其实早已被删）
+            if (productMapper.deleteById(id) == 0) {
+                result.addError(id, "商品已被删除，本次未生效（请刷新后重试）");
+                continue;
+            }
             result.addSuccess();
         }
 

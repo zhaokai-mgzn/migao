@@ -3488,7 +3488,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（116 case）
+## 杂项域（117 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5249,6 +5249,20 @@
 跳过: [backend-contract] 零 LLM 的确定性读数（词法扫 admin-api Java 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟
 ```
 溯源: 2026-10-16 新增（issue #6962 的类级固化）。取号 = 现取 main ∪ 全部在飞分支的 MC 号最大（104）⇒ **MC-106**（**跳开** MC-105：另一包 #6961 占用；MC-100 / MC-102 / MC-104 / MC-105 一律不动）。 ｜ tags: meta-guard, concurrency, cas, backend-contract
+
+### MC-117. 类级元守卫（#6956）：T3 逻辑删除族调用方必须判影响行数（未登记即红 + 豁免只许缩短） 🟡
+```
+你: （非对话用例）对 admin-api service 源码做词法扫描 + 台账现取 + 合成语料判别力自证
+数据: 🔴 **判据 1·未登记即红**：`service/*.java` 里**独立成句**（返回值被丢弃）的 `xxxMapper.deleteById(…)` / `deleteBatchIds(…)` 必须要么已改成读行数（`if (… == 0)` / `int rows = …`），要么在台账 `exempt` 里具名登记。修前读数：**18 处**丢弃形态 ⇒ 全部判红；修后只剩 4 处（父单级联删明细、导入差分清理 ×2、小件配置全量替换），逐条登记且写明重启条件。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/T3LogicalDeleteRowCountMetaGuardTest.java
+数据: 🔴 **判据 2·台账条目必须逐字兑现**：每条 `exempt` 的 `call_anchor` 必须在该文件里逐字出现（改方法名 / 摘掉调用 ⇒ 红）；缺 `reason` ⇒ 红。防「登记过了」的假绿。
+数据: 🔴 **判据 3·豁免只许缩短**：`exempt.size() <= exempt_baseline`（新增豁免必须写明为什么可以丢行数 + 重启条件）；条数**现取**打印。
+数据: 🔴 **判据 4·判别力自证（合成语料）**：① 丢弃形态 ⇒ 红；② 读行数形态 ⇒ 绿（否则恒红噪声）；③ 注释 / 字符串里的假调用不得算进射程（只应算真调用那一条）；④ 台账锚在文件里找不到 ⇒ 红。
+数据: **实例判据（2~3 个代表点，会红）**：backend/admin-api/src/test/java/com/migao/admin/service/NotificationRuleServiceTest.java（deleteRule_zeroRows_conflict）/ NotificationTemplateServiceTest.java（deleteTemplate_zeroRows_conflict）/ OrderLogisticsServiceTest.java（Delete.zeroRows_conflict）——「读到时还在、真正删时影响 0 行」⇒ 必须 404，修前静默返回成功。
+数据: **边界（照实登记）**：① 射程只到 `service/*.java` 的**丢弃返回值**形态，写法变成赋值/比较即出射程（那正是修后的样子）；② **不判**「0 行时抛 404 还是 409」（不同入口语义不同，交给各自的实例判据）；③ 不做 AST 解析 ⇒ 换措辞可绕过，真实防线是实例判据；④ 本守卫**不跑**被它引用的实例判据，也不改任何门禁的通过条件。
+前置: 前置 = ① `backend/admin-api/src/main/java/com/migao/admin/service/*.java` 可读；② 台账 backend/admin-api/src/test/resources/t3-delete-rowcount-ledger.json 可读且带 `exempt_baseline`。两者不成立 ⇒ **直接红**（不是跳过）——「空」不等于「全部合规」。
+跳过: [backend-contract] 零 LLM 的确定性读数（词法扫 admin-api service 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟
+```
+溯源: 2026-10-17 新增（issue #6956 · 现象 C 的类级固化）。取号 = 现取 origin/main 的 MC 号最大（116）⇒ **MC-117**。 ｜ tags: meta-guard, concurrency, soft-delete, backend-contract
 
 ## 商家入驻域（7 case）
 
@@ -11769,7 +11783,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：806（活跃 133，跳过 673）
+- 用例总数：807（活跃 133，跳过 674）
 - tier 分布：smoke 12 / normal 741 / adversarial 32
 - 售后域：15
 - Agent 核心域：11
@@ -11785,7 +11799,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：116
+- 杂项域：117
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -11939,6 +11953,7 @@
 - MC-113: **「跑需要真实历史的脚本 ⇒ checkout 必须 `fetch-depth: 0`」的类级判据**：凡 workflow 的 job 里跑 `scripts/h5_freshness_guard.py`（登记在 `h5_script_checkout_depth_ledger.json::canonical_scripts`）的，该 job 的 checkout 必须 `fetch-depth: 0`，否则必须在豁免台账里逐字登记（现取 0 条 ⇒ 只许缩短）；未登记 ⇒ 判红并具名 workflow + job
 - MC-114: 开租默认加工项目录的三源收敛元守卫（issue #7148）：Java 种子目录 ⇄（建库脚本目录 − 活迁移撤出项 + 改名映射）双向对账、分类名单一来源、判别力在内存语料上自证
 - MC-116: 类级元守卫（#6962）：会话分配 / 候选处置 / 路线删除三类写面必须落到带谓词的条件更新（未登记即红 + 豁免只许缩短）
+- MC-117: 类级元守卫（#6956）：T3 逻辑删除族调用方必须判影响行数（未登记即红 + 豁免只许缩短）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

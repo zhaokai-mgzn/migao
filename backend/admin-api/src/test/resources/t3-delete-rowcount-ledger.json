@@ -1,0 +1,49 @@
+{
+  "schema": "t3-delete-rowcount/1.0",
+  "_what": "T3 逻辑删除族（issue #6956 · 现象 C）：`@TableLogic` 自动带 `deleted = 0` 谓词，但**调用方不判影响行数** ⇒ 并发双删「两个都报成功」。本台账登记**允许**丢弃返回值的删除调用（级联 / 差分清理这类天然幂等），其余一律必须判 0 行。",
+  "_why": "为什么不去逐个改而先建台账：18 处丢弃返回值的形态里，有一部分**本来就该幂等**（父单级联删明细、按差分集合清理 SKU/颜色）。把它们也判 404 会让「重放一次同样的清理」失败 ⇒ 运维脚本、导入重试都会红。因此判据 = 「**未登记即红**」：新增/漏改的形态立刻红，登记过的必须写明为什么可以丢。",
+  "scan": {
+    "dir": "backend/admin-api/src/main/java/com/migao/admin/service",
+    "statement_call": "\\b\\w+Mapper\\.(?:deleteById|deleteBatchIds)\\s*\\(",
+    "consumed_forms": [
+      "结果被赋值 / 比较 / 用作 if 条件（`int rows = …`、`if (… == 0)`、`return …`）"
+    ]
+  },
+  "exempt": [
+    {
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java",
+      "method": "deleteOrder",
+      "call_anchor": "orderItemMapper.deleteById(item.getId());",
+      "reason": "父单级联删明细：集合是按父单现取的 ⇒ 删不到只可能是并发已删，重放必须幂等（判 404 会让「删单重试」失败）。",
+      "restart_condition": "若明细删除开始承担账目 / 库存副作用 ⇒ 必须改判行数并重评。"
+    },
+    {
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java",
+      "method": "saveColorsAndSkus",
+      "call_anchor": "productSkuMapper.deleteById(s.getId());",
+      "reason": "导入差分清理（`pruneMissing`）：按「提交集合 = 全量声明」算出的移除集逐条删；重复导入同一批必须幂等。",
+      "restart_condition": "若 SKU 删除开始承担库存台账副作用 ⇒ 必须改判行数并重评。"
+    },
+    {
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/ProductService.java",
+      "method": "saveColorsAndSkus",
+      "call_anchor": "productColorMapper.deleteById(c.getId());",
+      "reason": "同上（颜色差分清理）。",
+      "restart_condition": "同上。"
+    },
+    {
+      "file": "backend/admin-api/src/main/java/com/migao/admin/service/RemnantService.java",
+      "method": "putSpecs",
+      "call_anchor": "specMapper.deleteById(old.getId());",
+      "reason": "小件配置「清空 + 重写」的全量替换语义（本表是一屏几条的参数）：旧行删不到 = 已被并发替换掉，重放幂等。",
+      "restart_condition": "若改成逐行 diff 更新、或旧行删除需要保留审计 ⇒ 必须改判行数。"
+    }
+  ],
+  "exempt_baseline": 4,
+  "coverage_boundary": [
+    "射程 = `service/*.java` 里**独立成句**的 `xxxMapper.deleteById(…)` / `deleteBatchIds(…)`（返回值的丢弃形态）。写成 `int r = …; if (r == 0) throw …` 或 `if (… == 0)` 的形态**不在射程**（那正是修后的样子）。",
+    "判据**不**判「0 行时抛的是 404 还是 409」：不同入口的语义不同（删除不存在 ⇒ 404；并发抢先 ⇒ 409），由各自的**实例判据**钉，元守卫只管「有没有判行数」。",
+    "⛔ 与 #6961 / #6962 的 CAS 族不重叠：那两族守**状态列 / 软删谓词**，本判据守**调用方是否读受影响行数**。",
+    "本判据**不跑**被它引用的实例判据（避免元守卫退化成全量套件），也不改任何门禁通过条件。"
+  ]
+}

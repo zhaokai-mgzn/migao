@@ -176,7 +176,10 @@ public class ProcessingItemService extends ServiceImpl<ProcessingItemMapper, Pro
             throw BusinessException.notFound("加工项");
         }
         
-        processingItemMapper.deleteById(id);
+        // issue #6956 · 现象 C：判影响行数（并发双删只许一次成功）
+        if (processingItemMapper.deleteById(id) == 0) {
+            throw BusinessException.notFound("加工项");
+        }
         log.info("删除加工项成功: id={}", id);
     }
 

@@ -586,7 +586,10 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
         if (tag == null) {
             throw BusinessException.notFound("标签");
         }
-        customerTagMapper.deleteById(tagId);
+        // issue #6956 · 现象 C：并发双删只许一次成功（0 行 = 已被别人删掉）
+        if (customerTagMapper.deleteById(tagId) == 0) {
+            throw BusinessException.notFound("标签");
+        }
         log.info("删除客户标签成功: id={}", tagId);
     }
 
