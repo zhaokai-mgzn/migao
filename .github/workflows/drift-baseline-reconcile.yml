@@ -55,6 +55,11 @@ name: Drift Baseline Reconcile (归零基线条目自动销账)
 #   销账面（`stale_baseline_unverifiable`）⇒ 宁可不动，不误删。
 # · 分支是**草稿分支**：内容永远 = main + 一处基线销账；squash 合并后与 main 无历史关系，
 #   故本腿**不**在旧基线上追加（每次都从 main 重新计算；已同内容则不推）。
+# · **合并者会是 bot**（用内置 `GITHUB_TOKEN` arm 的结果，与 `automerge.yml` 的 #6418 同源）
+#   ⇒ 该次合并产生的 `push` 事件可能被 GitHub 的反递归抑制吞掉。对本腿的**判定对象**
+#   （只有 `scripts/drift_audit_baseline.json`）无影响；drift 面另有一条定时腿兜底。
+#   若将来需要该次合并触发 push 面，改的是 **arm 凭据**（与 `AUTOMERGE_PAT` 同一口径），
+#   **不是**放宽任何门禁 —— 本腿**不**在本 PR 里做这件事（照实登记）。
 
 on:
   workflow_run:
@@ -189,7 +194,9 @@ jobs:
           #    `flaky-triage.yml` 步骤 ④b 的形态 —— 那里踩过「切树后跑到分支的旧副本」）。
           cp .github/scripts/flaky_ledger.py /tmp/flaky_ledger.py
           KEEP=0
+          LEASE=""
           if git fetch --quiet origin "$PRUNE_BRANCH" 2>/dev/null; then
+            EXPECTED=$(git rev-parse FETCH_HEAD)
             # 幂等判据：分支上的 `entries` 与本次要写的**逐字相同** ⇒ 不重复推送
             # （否则每轮都给 PR 造一个新提交、多跑一整轮 CI）。只比 `entries`：
             # `reason` / `generated_at` 每轮必然不同，拿它们比会永远"不同"。
@@ -200,6 +207,15 @@ jobs:
               KEEP=1
               echo "::notice::⏭️ 分支 $PRUNE_BRANCH 上已是同一份 entries ⇒ 不重复推送（幂等）"
             fi
+            # 🔴 推送必须是**租约式强推**：本腿每次都从 main 重新计算并 `checkout -B`
+            #    ⇒ 新提交**不是**旧分支 HEAD 的后代（main 前进过 / 上一轮销了别的条目都会这样）
+            #    ⇒ 普通 push 必然 non-fast-forward 被拒（#5075 同族的"静默停摆"）—— 实测：
+            #    同一状态下 `git push origin <b>` 被拒，而租约式强推通过。
+            #    分支是**单写者草稿分支**（内容永远 = main + 一处销账），故强推是正确语义；
+            #    租约 = 本次 fetch 到的远端 HEAD ⇒ 别人推过就失败重来，**不裸强推**。
+            # ⚠️ 必须写**全名** `<refs/heads/分支>:<期望 sha>`：只写 `<sha>` 那一形态实测**不生效**
+            #    （git 把它当 refname，租约没落到该分支上 ⇒ 退回普通 push ⇒ 非快进被拒）。
+            LEASE="--force-with-lease=refs/heads/$PRUNE_BRANCH:$EXPECTED"
           fi
           if [ "$KEEP" = "0" ]; then
             git config user.name "migao-drift-bot"
@@ -207,8 +223,8 @@ jobs:
             git checkout -q -B "$PRUNE_BRANCH"          # 从 main 重新计算（草稿分支无历史价值）
             git add -- "$BASELINE"                       # 只加自己的文件（禁 `git add -A`）
             git commit -q -m "chore(ci): 销账已归零的漂移基线条目（drift-baseline-reconcile）"
-            git push --quiet origin "$PRUNE_BRANCH" || {
-              echo "::error::推送 $PRUNE_BRANCH 失败 ⇒ 销账未落仓（fail-closed）"; exit 1; }
+            git push --quiet $LEASE origin "$PRUNE_BRANCH" || {
+              echo "::error::推送 $PRUNE_BRANCH 失败（含租约冲突：远端被别人推过）⇒ 销账未落仓（fail-closed）"; exit 1; }
             git fetch --quiet origin "$PRUNE_BRANCH"
             [ "$(git rev-parse FETCH_HEAD)" = "$(git rev-parse HEAD)" ] || {
               echo "::error::销账未落到远端分支 $PRUNE_BRANCH（落仓复核失败）"; exit 1; }
