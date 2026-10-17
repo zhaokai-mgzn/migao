@@ -1743,6 +1743,28 @@ def _wf_runs(doc: dict) -> str:
                      for step in (job.get("steps") or []))
 
 
+def _strip_shell_inline_comment(line: str) -> str:
+    """剥**行尾**注释，但 `#` 落在引号里时不当注释（字符串感知，不是朴素截断）。
+
+    为什么不能 `.split("#")`：字符串里的 `#`（如 `echo "a#b"`）会把行尾吃掉 ⇒ 判据语料被悄悄削短
+    = **假绿** —— 类级守卫 `test_guard_parsing_is_comment_aware.py::test_naive_hash_cut_is_ledgered`
+    把它判红（`#5323` 第 7/8/9 条同族）。顺序**必须是先清空字符串、再剥 `#`**。
+    """
+    quote = ""
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if quote:
+            if ch == quote and line[i - 1:i] != "\\":
+                quote = ""
+        elif ch in "\"'":
+            quote = ch
+        elif ch == "#":
+            return line[:i]
+        i += 1
+    return line
+
+
 def _wf_shell(doc: dict) -> str:
     """同上，但**去掉注释**（整行 + 行尾）—— 「注释里提到」不算「代码里有」。
 
@@ -1752,7 +1774,7 @@ def _wf_shell(doc: dict) -> str:
     for ln in _wf_runs(doc).splitlines():
         if ln.strip().startswith("#"):
             continue
-        lines.append(ln.split("#", 1)[0])
+        lines.append(_strip_shell_inline_comment(ln))
     return "\n".join(lines)
 
 
