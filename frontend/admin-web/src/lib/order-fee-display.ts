@@ -134,6 +134,38 @@ export function readFeeDetail(info: unknown): ProcessingFeeDetail | null {
 }
 
 /**
+ * 一行明细的加工费（元）—— **权威口径优先**（issue #7138）。**读加工费的单一入口**。
+ *
+ * ```
+ * 有 processingFeeDetail        ⇒ 只信 detail.amount（服务端取价落库值，与详情「费用构成」同一份）
+ * 没有 detail = #4406 前的存量单 ⇒ #2916 兜底：顶层 processingFee → 加工项明细 amount / subtotal 求和
+ * ```
+ *
+ * 🔴 **不许先读 `processingInfo.processingFee`**：那是**客户端副本**（下单页 / 探针脚本写进来，
+ * 服务端既不校验也不覆盖）⇒ 与权威值可以是两个数 —— dev 实证（2026-10-17，tenant 32）：
+ * 副本 15 元 / 权威 0 元·`fee_source=unpriced` ⇒ 订单列表「+ 加工费15元」与详情「未定价」自相矛盾。
+ *
+ * ⚠️ 别处再拼一份取值判定 = 迟早与详情分叉（判据 = `tests/unit/order-fee-source-guard.test.ts`）。
+ */
+export function processingFeeOf(info: unknown): number {
+  const detail = readFeeDetail(info)
+  if (detail) {
+    const amount = nullableNumber(detail.amount)
+    return amount === null ? 0 : amount
+  }
+  if (info === null || typeof info !== 'object' || Array.isArray(info)) return 0
+  const blob = info as Record<string, unknown>
+  const declared = nullableNumber(blob.processingFee)
+  if (declared !== null && declared > 0) return declared
+  const list = Array.isArray(blob.processingItems) ? blob.processingItems : []
+  return list.reduce<number>((sum, row) => {
+    const entry = row !== null && typeof row === 'object' ? (row as Record<string, unknown>) : {}
+    const amount = nullableNumber(entry.amount) ?? nullableNumber(entry.subtotal)
+    return sum + (amount ?? 0)
+  }, 0)
+}
+
+/**
  * 加工费算式（用户口径：「**窗帘米数 × 组合加工费 = 具体费用**」）。
  *
  * **缺单价或米数 ⇒ 不编算式**（返回 `null`）：宁可只显示金额，
