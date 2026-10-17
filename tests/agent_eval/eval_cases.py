@@ -12514,7 +12514,6 @@ _CASE_PR_128 = EvalCase(
     forbidden_card_text=[],
 )
 
-<<<<<<< HEAD
 # ── PR-129 [NORMAL] 商品状态迁移改 DB 原子条件更新（CAS）：并发 on/off_sale 恰一个赢家，落败方 409 + 实际当前态（源: cases/product.yml）──
 _CASE_PR_129 = EvalCase(
     id='PR-129',
@@ -12563,28 +12562,10 @@ _CASE_PG_084 = EvalCase(
     data_checks=['**核验结论 = 真（两条主张都在当前代码上成立）**：① 四条状态迁移入口（`updateProductStatus` / `updateProductForAgent` / `batchOnShelf` / `batchOffShelf`）是「读旧 status 过状态机 → `updateById`（WHERE 仅主键）」⇒ 并发 on/off_sale **两个请求都 200**、终态由后写者决定；② `updateProduct` 是整实体回写 + `setStatus(originalStatus)` ⇒ 改品会把读到的旧 status 写回，**静默回滚**并发的状态迁移（T2b 的类级根因）。', '**判据 1·恰一个赢家（真库并发 + 窗口探针，3 轮）**：同一件商品并发 `on_sale` × `off_sale`（同刻起跑、各自独立连接 + 独立事务）⇒ 成功数 **恰 == 1**、落败方必须 **409 CONFLICT**、终态 == 赢家的目标态，且「谁回 200，终态就必须是它声称的那个态」。断言 = backend/admin-api/src/test/java/com/migao/admin/service/ProductStatusCasRaceRealDbTest.java 的 `concurrentOnAndOffShelfHasExactlyOneWinner`。', '**判据 2·改品不得回滚状态（T2b）**：真库并发「`updateProduct`（改名）× 状态迁移 off_sale → on_sale」⇒ 终态必须仍是 `on_sale`，且改名**真的生效**（判据不是「什么都没发生」）。修前：迁移 200 + status 落 on_sale，随后改品的整实体回写把它写回 `off_sale` ⇒ 当场红。断言 = 同文件 `updateProductDoesNotRollBackConcurrentStatusMigration`。', '**判据 3·正对照（护栏不误杀）**：串行 `off_sale → on_sale → off_sale` 各成功一次；`off_sale → under_review`（不在状态机里）照旧是既有校验错误（非 200 / 非 409）。断言 = 同文件 `serialTransitionsStillSucceed`。', '**为什么必须真库 + 窗口探针**：CAS 的效力来自只有真 PG 才有的**行锁 + 条件重估**（后到者阻塞到前者提交后按新版本行重估谓词 ⇒ 影响行数 0）；mock 面结构上不可见（mock 恒返回 1）⇒ 修前形态在 mock 面**恒绿**（假绿）。窗口只有微秒级 ⇒ 用 `ProductService#setStatusMigrationProbePauseMillisForTest`（生产恒 0）放大，判据才是确定性的而不是 flake。', '🔴 **红证（探针开 ⇒ 必红 / 探针关 ⇒ 全绿，成对逐字读数见同批 PR body）**：注入 = 把四条写退回无谓词 `updateById` + 把 `updateProduct` 退回整实体回写 + `setStatus(originalStatus)`。', '**边界（如实登记）**：① 服务层真库并发，不覆盖 HTTP 薄转发层；② 探针对象全部自建（tenant 6961 / id 前缀 `p-6961-`），随一次性临时集群销毁，不碰存量数据；③ 判据 1 用 `updateProductStatus` 一条入口代表四条（同一个 `applyStatusTransition` → 同一条 CAS；另外三条的登记由 MC-115 钉住）；④ `batchOnShelf` / `batchOffShelf` 的落败走 `BatchOperationResult.failed`（分部分成功语义）而不是 409，本判据未逐条断言它的影响行数分支（已登记在台账 `coverage_boundary`）。'],
     skip_reason='[backend-contract] 真 PG 并发落库判据（initdb+pg_ctl 临时集群 + 真 ProductService 装配），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['product', 'concurrency', 'real-db', 'backend-contract', 'red-proof'],
-=======
-# ── PR-129 [EDGE] 工艺路线 / 条件工序规则删除的租户隔离与幂等：跨租户必拒、重复删必 409（issue #6962）（源: cases/product.yml）──
-_CASE_PR_129 = EvalCase(
-    id='PR-129',
-    legacy_id='',
-    title='工艺路线 / 条件工序规则删除的租户隔离与幂等：跨租户必拒、重复删必 409（issue #6962）',
-    skill=Skill.PRODUCT,
-    difficulty=Difficulty.EDGE,
-    user_inputs=['以 A 租户身份删除 B 租户的路线 id / 规则 id', '对同一条已软删的路线重复发起删除'],
-    expectations=[],
-    data_checks=['**判据 1（跨租户必拒）**：`ProductionRoutingCommandService#deleteRouting` / `#deleteRouteRule` 的 SQL 谓词必须含 `tenant_id` ⇒ 跨租户调用不得改动对方任何一行（对方行保持 `deleted = 0`），且必须回显式拒绝（404/409）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ConcurrentQuotaAdoptDeleteCas6962RealDbTest.java', '**判据 2（幂等 = 影响行数判定，不是「再删一次也回成功」）**：重复删同一条（已 `deleted = 1`）必须回 **409**（文案带实际当前态），不得回 200 —— 修前 `.eq(id)` 无 `deleted = 0` 谓词、不判行数 ⇒ 回 200 而这次没删到任何东西。', '**判据 3（谓词列存在性自证）**：`production_route_templates` / `production_route_rules` 均有 `deleted INTEGER NOT NULL DEFAULT 0`（对 backend/admin-api/src/main/resources/db/init/schema.sql 现取核对）⇒ 谓词里的 `deleted = 0` 合法。', '**边界（照实登记）**：软删语义（不物理删、「谁在何时删掉哪条」留证据）与「删后不再参与选路」的口径一字未改；本用例与 PG-077 同批、同一份执行体，PG-077 记并发与租户面，本条记契约与幂等面。'],
-    skip_reason='[backend-contract] 纯后端真库判据（真 PG 一次性集群）：admin-api 单测面，不进 agent-eval 冒烟',
-    tags=['tenant-isolation', 'soft-delete', 'backend-contract', 'realdb'],
->>>>>>> d1065914c (feat(6962): P5 首批三处并发写面改条件更新（CAS）+ 判据/台账（在最新 main 上重建）)
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-<<<<<<< HEAD
-=======
-    precondition='前置 = 两个租户各自持有同名工艺路线与条件工序规则（其中 A 租户下需有**两条非默认**路线，以满足既有「删默认 / 删最后一条 ⇒ 422」护栏）。前置由判据自建（一次性真 PG 集群），不成立时 fail-closed 硬失败。',
->>>>>>> d1065914c (feat(6962): P5 首批三处并发写面改条件更新（CAS）+ 判据/台账（在最新 main 上重建）)
 )
 
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
@@ -15768,11 +15749,8 @@ ALL_CASES = (
     _CASE_PR_127,
     _CASE_PR_128,
     _CASE_PR_129,
-<<<<<<< HEAD
     _CASE_MC_115,
     _CASE_PG_084,
-=======
->>>>>>> d1065914c (feat(6962): P5 首批三处并发写面改条件更新（CAS）+ 判据/台账（在最新 main 上重建）)
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
