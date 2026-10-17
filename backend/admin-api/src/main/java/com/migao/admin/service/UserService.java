@@ -701,7 +701,10 @@ public class UserService implements UserDetailsService {
         // 目标侧 ⊆ 检查（issue #4104）：不能删掉一个权限高于自己的账号（含管理员）
         permissionInterceptor.assertManagesTarget(userId, "删除员工");
         User user = getUserById(userId);
-        userMapper.deleteById(userId);
+        // issue #6956 · 现象 C：判影响行数（并发双删只许一次成功）
+        if (userMapper.deleteById(userId) == 0) {
+            throw BusinessException.notFound("用户");
+        }
 
         // 同时删除 user_roles 关联
         LambdaQueryWrapper<UserRole> wrapper = new LambdaQueryWrapper<>();

@@ -6793,6 +6793,25 @@ _CASE_MC_116 = EvalCase(
     precondition='前置 = ① 被守的六条文件（`AgentSessionMapper` / `AgentSessionService` / `KnowledgeCandidateMapper` / `KnowledgeCandidateService` / `ProductionRouteTemplateMapper` + `ProductionRouteRuleMapper` / `ProductionRoutingCommandService`）与台账 backend/admin-api/src/test/resources/concurrency-cas-batch-6962-ledger.json 均可读；② 台账 `entries` / `service_write_paths` 非空。两者不成立 ⇒ 判据**直接红**（不是跳过）—— 「空」不等于「全部合规」。',
 )
 
+# ── MC-117 [EDGE] 类级元守卫（#6956）：T3 逻辑删除族调用方必须判影响行数（未登记即红 + 豁免只许缩短）（源: cases/misc.yml）──
+_CASE_MC_117 = EvalCase(
+    id='MC-117',
+    legacy_id='',
+    title='类级元守卫（#6956）：T3 逻辑删除族调用方必须判影响行数（未登记即红 + 豁免只许缩短）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['（非对话用例）对 admin-api service 源码做词法扫描 + 台账现取 + 合成语料判别力自证'],
+    expectations=[],
+    data_checks=['🔴 **判据 1·未登记即红**：`service/*.java` 里**独立成句**（返回值被丢弃）的 `xxxMapper.deleteById(…)` / `deleteBatchIds(…)` 必须要么已改成读行数（`if (… == 0)` / `int rows = …`），要么在台账 `exempt` 里具名登记。修前读数：**18 处**丢弃形态 ⇒ 全部判红；修后只剩 4 处（父单级联删明细、导入差分清理 ×2、小件配置全量替换），逐条登记且写明重启条件。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/T3LogicalDeleteRowCountMetaGuardTest.java', '🔴 **判据 2·台账条目必须逐字兑现**：每条 `exempt` 的 `call_anchor` 必须在该文件里逐字出现（改方法名 / 摘掉调用 ⇒ 红）；缺 `reason` ⇒ 红。防「登记过了」的假绿。', '🔴 **判据 3·豁免只许缩短**：`exempt.size() <= exempt_baseline`（新增豁免必须写明为什么可以丢行数 + 重启条件）；条数**现取**打印。', '🔴 **判据 4·判别力自证（合成语料）**：① 丢弃形态 ⇒ 红；② 读行数形态 ⇒ 绿（否则恒红噪声）；③ 注释 / 字符串里的假调用不得算进射程（只应算真调用那一条）；④ 台账锚在文件里找不到 ⇒ 红。', '**实例判据（2~3 个代表点，会红）**：backend/admin-api/src/test/java/com/migao/admin/service/NotificationRuleServiceTest.java（deleteRule_zeroRows_conflict）/ NotificationTemplateServiceTest.java（deleteTemplate_zeroRows_conflict）/ OrderLogisticsServiceTest.java（Delete.zeroRows_conflict）——「读到时还在、真正删时影响 0 行」⇒ 必须 404，修前静默返回成功。', '**边界（照实登记）**：① 射程只到 `service/*.java` 的**丢弃返回值**形态，写法变成赋值/比较即出射程（那正是修后的样子）；② **不判**「0 行时抛 404 还是 409」（不同入口语义不同，交给各自的实例判据）；③ 不做 AST 解析 ⇒ 换措辞可绕过，真实防线是实例判据；④ 本守卫**不跑**被它引用的实例判据，也不改任何门禁的通过条件。'],
+    skip_reason='[backend-contract] 零 LLM 的确定性读数（词法扫 admin-api service 源码文本 + 台账现取 + 合成语料判别力自证），JUnit 真跑、零网络、不进 agent-eval 冒烟',
+    tags=['meta-guard', 'concurrency', 'soft-delete', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = ① `backend/admin-api/src/main/java/com/migao/admin/service/*.java` 可读；② 台账 backend/admin-api/src/test/resources/t3-delete-rowcount-ledger.json 可读且带 `exempt_baseline`。两者不成立 ⇒ **直接红**（不是跳过）——「空」不等于「全部合规」。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -15445,6 +15464,7 @@ ALL_CASES = (
     _CASE_MC_113,
     _CASE_MC_114,
     _CASE_MC_116,
+    _CASE_MC_117,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

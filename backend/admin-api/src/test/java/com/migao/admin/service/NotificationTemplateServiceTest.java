@@ -238,12 +238,25 @@ class NotificationTemplateServiceTest {
         // given
         when(templateMapper.selectById("tpl-1")).thenReturn(tenantTemplate(1L, "tpl-1", "模板"));
         when(ruleMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(templateMapper.deleteById("tpl-1")).thenReturn(1);
 
         // when
         templateService.deleteTemplate(1L, "tpl-1");
 
         // then
         verify(templateMapper).deleteById("tpl-1");
+    }
+
+    @Test
+    @DisplayName("🔴 deleteTemplate — 并发已被删（0 行）⇒ 404（issue #6956 · 现象 C）")
+    void deleteTemplate_zeroRows_conflict() {
+        when(templateMapper.selectById("tpl-1")).thenReturn(tenantTemplate(1L, "tpl-1", "模板"));
+        when(ruleMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+        when(templateMapper.deleteById("tpl-1")).thenReturn(0);
+
+        assertThatThrownBy(() -> templateService.deleteTemplate(1L, "tpl-1"))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(ex -> assertThat(((BusinessException) ex).getCode()).isEqualTo("NOT_FOUND"));
     }
 
     @Test

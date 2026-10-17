@@ -151,7 +151,10 @@ public class KnowledgeCardService {
      */
     public void delete(String id) {
         getOwned(id);
-        knowledgeCardMapper.deleteById(id);
+        // issue #6956 · 现象 C：判影响行数（并发双删只许一次成功）
+        if (knowledgeCardMapper.deleteById(id) == 0) {
+            throw BusinessException.notFound("知识卡片");
+        }
         log.info("删除知识卡片: id={}", id);
     }
 
