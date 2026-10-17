@@ -283,7 +283,7 @@ export default function ProductionBoardPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-neutral-50 text-left text-neutral-600">
-              <th className="pl-5 pr-4 py-3 font-medium whitespace-nowrap">加工单号</th>
+              <th className="pl-5 pr-4 py-3 font-medium whitespace-nowrap">作业单号</th>
               {/* 类型（issue #7079）：两型用**中文业务名**可见 —— 「加工单」/「出库作业单」。
                   机器键（`processing` / `outbound`）绝不上屏。 */}
               <th className="px-4 py-3 font-medium whitespace-nowrap">类型</th>
