@@ -75,6 +75,14 @@ ENTITY_ID_RE = re.compile(r"^(?=.*[0-9])[A-Za-z0-9_\-]{2,64}$")
 #: 新增字段必须同批登记进本元组，否则判据红。这是「不含实体快照 / 敏感字段」的机械形态）。
 CONTEXT_FIELDS: Tuple[str, ...] = ("route", "truth_source", "entity_id")
 
+#: 注入信封的**结构锚**（渲染与「读回剥离」共用同一组常量 —— 各写一份必然漂移，
+#: 见 `strip_page_context_envelope`）。🔴 它们**不是**给用户看的：信封只属于「本轮送给 LLM 的文本」，
+#: **不落库**（issue #7112：信封被当成用户消息落库 ⇒ 切回会话时整段内部提示上屏）。
+PAGE_CONTEXT_ENVELOPE_OPEN = "（黄金策正在用户当前页面上："
+PAGE_CONTEXT_ENVELOPE_TAIL = "仅当用户的问题与当前页面或本页口径有关时才使用本提示；否则照常回答。"
+PAGE_CONTEXT_ENTITY_LINE_PREFIX = "用户当前正在看的对象 id："
+PAGE_CONTEXT_ENVELOPE_CLOSE = "）"
+
 #: 用户可见的降级提示（**常量**：不含 route、不含 id —— 未登记页面的路径绝不进 LLM 上下文）。
 PAGE_CONTEXT_UNKNOWN_NOTICE = (
     "（提示：本次没有可用的页面上下文 —— 无法确认用户当前在哪一页。"
@@ -374,16 +382,48 @@ def render_page_context(question: str, context: Optional[PageContext]) -> str:
     if source is None:  # pragma: no cover - 与 build_page_context 同步的纵深防御
         return PAGE_CONTEXT_UNKNOWN_NOTICE + question
     lines = [
-        f"（黄金策正在用户当前页面上：{context.route}",
+        f"{PAGE_CONTEXT_ENVELOPE_OPEN}{context.route}",
         f"本页的口径说明以《{source.label}》为唯一真值源（{source.path}）；"
         f"解释本页字段/口径/价格时必须基于该真值源，并在答案里写明「{source.citation}」；"
         f"真值源没写到的内容不要替它编。",
-        "仅当用户的问题与当前页面或本页口径有关时才使用本提示；否则照常回答。",
+        PAGE_CONTEXT_ENVELOPE_TAIL,
     ]
     if context.entity_id is not None:
-        lines.append(f"用户当前正在看的对象 id：{context.entity_id}。")
-    lines.append("）")
+        lines.append(f"{PAGE_CONTEXT_ENTITY_LINE_PREFIX}{context.entity_id}。")
+    lines.append(PAGE_CONTEXT_ENVELOPE_CLOSE)
     return "".join(lines) + question
+
+
+def strip_page_context_envelope(text: str) -> str:
+    """从**会话历史里读出来的用户消息**剥掉页面上下文信封（issue #7112）。
+
+    两个目的：
+    1. **展示面**：切走再切回（`GET /history`）不该把内部提示当用户说的话上屏；
+    2. **LLM 历史**：旧行里的 route 是**当时**那一页 —— 之后每一轮都带着它，正是
+       「猜错页面比不猜更烦」的同族（过期上下文）。
+
+    - 只认**开头**：以 `PAGE_CONTEXT_ENVELOPE_OPEN` 起头的才可能是我们渲染的信封；
+      降级形态（`PAGE_CONTEXT_UNKNOWN_NOTICE`）同一条口径；
+    - 结构锚取**渲染侧同一组常量** ⇒ 渲染改了而这里没跟上，
+      `tests/test_page_context_persistence.py::test_strip_is_inverse_of_render_for_every_route` 当场红；
+    - **形态不完整一律原样返回**（宁可比用户多显示一段，也**不吞用户的话**）。
+    """
+    if text.startswith(PAGE_CONTEXT_UNKNOWN_NOTICE):
+        return text[len(PAGE_CONTEXT_UNKNOWN_NOTICE):]
+    if not text.startswith(PAGE_CONTEXT_ENVELOPE_OPEN):
+        return text
+    tail_at = text.find(PAGE_CONTEXT_ENVELOPE_TAIL)
+    if tail_at < 0:
+        return text
+    pos = tail_at + len(PAGE_CONTEXT_ENVELOPE_TAIL)
+    if text.startswith(PAGE_CONTEXT_ENTITY_LINE_PREFIX, pos):
+        line_end = text.find("。", pos)
+        if line_end < 0:
+            return text
+        pos = line_end + 1
+    if not text.startswith(PAGE_CONTEXT_ENVELOPE_CLOSE, pos):
+        return text
+    return text[pos + len(PAGE_CONTEXT_ENVELOPE_CLOSE):]
 
 
 def context_field_names() -> Tuple[str, ...]:

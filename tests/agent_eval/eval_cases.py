@@ -2924,6 +2924,25 @@ _CASE_CH_046 = EvalCase(
     precondition='前置 = `app.agents.channel_config` 可导入且四渠道常量齐备；缺渠道 / 多渠道即直接红（不会表现成「agent 不会打招呼」）',
 )
 
+# ── CH-047 [NORMAL] 页面上下文注入信封不得落库（切回会话时不得把内部提示当用户消息上屏）（源: cases/chat.yml）──
+_CASE_CH_047 = EvalCase(
+    id='CH-047',
+    legacy_id='',
+    title='页面上下文注入信封不得落库（切回会话时不得把内部提示当用户消息上屏）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家在**生产页**（/production）问「我想看下当前的生产风险」⇒ 黄金策照常回答；**切走会话再切回来**，用户气泡里必须只有「我想看下当前的生产风险」，不得出现「黄金策正在用户当前页面上：/production…」这类内部提示'],
+    expectations=['direct_reply'],
+    data_checks=['**落库的是用户原话**：带 `page_context` 发一轮（登记 route）⇒ `session_memory.save_message` 收到的 `role="user"` 消息 `content` == 用户原话（不含信封）。执行点 = backend/ai-agent-service/tests/test_page_context_persistence.py 的 `TestEnvelopeNeverPersisted::test_plain_chat_persists_user_question_not_envelope`。', '**信封只进本轮 LLM 文本**（功能不退化）：入口把「LLM 文本（含信封）」与「落库文本（原话）」**分开**递交。执行点 = 同 class 的 `test_entry_forwards_both_texts`。', '**旧行回放归一**：库里已含信封的历史行（登记 route 形态 / 未登记页面的常量降级形态）经 `GET /history/{session_id}` 与 `_convert_history_to_agent_format` 读出后只剩问题；内部文档路径不止屏。执行点 = 同文件 `TestReadBackNormalisation::test_history_endpoint_strips_legacy_envelope` / `test_agent_history_strips_legacy_envelope`。', '**类级往返（渲染 ⇄ 剥离）**：登记表**现取**的每条 route（含/不含实体 id）+ 降级形态，`strip(render(问题)) == 问题` —— 渲染形态改了而剥离没跟上 ⇒ 当场红。执行点 = 同文件 `test_strip_is_inverse_of_render_for_every_route`。', '**负控：不吞用户内容**：以同样句子开头但形态不完整（缺尾部提示 / 不是开头）⇒ 原样返回。执行点 = 同文件 `test_strip_keeps_user_text_that_only_looks_like_envelope`。'],
+    skip_reason='[backend-contract] 判据全部是**入口级 + 纯函数**（零 LLM、零网络）：落库文本、历史回放、剥离往返，由 backend/ai-agent-service/tests/test_page_context_persistence.py 执行；「黄金策回答质量」属行为面，按用户裁定（#4262 / #4974）手动集中跑一次，本轮不自动派发真实 LLM 评测',
+    tags=['chat', 'page-context', 'persistence', 'display-integrity'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = `app.context.page_registry.render_page_context` 与 `_handle_page_ctx_request` 可导入；`PAGE_REGISTRY` 非空（空登记表 ⇒ 类级往返判据自证失败并红）',
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -14775,6 +14794,7 @@ ALL_CASES = (
     _CASE_CH_044,
     _CASE_CH_045,
     _CASE_CH_046,
+    _CASE_CH_047,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,
