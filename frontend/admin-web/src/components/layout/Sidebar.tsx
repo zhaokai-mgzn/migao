@@ -9,11 +9,18 @@ import { cn } from '@/lib/utils'
 import Logo from '@/components/ui/Logo'
 // #3002: 菜单配置单源化 —— menuGroups/standaloneItems 移至 @/config/menu，
 // 与岗位权限弹窗共用，保证「权限分配」展示的菜单与真实侧边栏一致
-// #5877 / 2026-10-06：`standaloneTopItems`（「商品管理」）是**一级项**，渲染在**所有分组之后**
-// （用户 2026-10-06 裁定：11 个大菜单项并列）；席位组不可见时**不跳到最前**，
-// 而是挂在「当前可见分组」的末尾（口径的唯一实现 = `splitGroupsAtTopItemSlot`）—— 一级项绝不跟着消失。
+// 🔴 2026-10-17（issue #7087）：一级项现有**三个席位**（语义见 `@/config/menu` 的三个 `standalone*` 数组）——
+//   · `standaloneHeadItems`（**最前席位**，本轮新增的「经营看板」）：渲染在**所有分组之前**，
+//     因此它也是**登录落点**（`landingPath()` = 第一个可见菜单项，issue #6758）；
+//   · `standaloneTopItems`（**尾席位**，「商品管理」「企业基础设置」）：渲染在
+//     `STANDALONE_TOP_AFTER_GROUP_KEY` 那个组之后（用户 2026-10-06 裁定：大菜单项并列）；
+//     席位组不可见时**不跳到最前**，而是挂在「当前可见分组」的末尾
+//     （口径的唯一实现 = `splitGroupsAtTopItemSlot`）—— 一级项绝不跟着消失；
+//   · `standaloneItems`（**尾部独立项**，「通知中心」）：渲染在所有分组之后。
+// 三个席位都**不进「常用（收藏）」**（一级项没有星标、已一屏可见）。
 import {
   menuGroups,
+  standaloneHeadItems,
   standaloneTopItems,
   standaloneItems,
   STANDALONE_TOP_AFTER_GROUP_KEY,
@@ -40,7 +47,6 @@ import {
   PINNED_GROUP_KEY,
   PINNED_MAX,
 } from '@/lib/menu-nav'
-import { briefingApi } from '@/lib/api'
 
 interface SidebarProps {
   collapsed: boolean
@@ -90,25 +96,22 @@ export default function Sidebar({
     setLogoFailed(false)
   }, [user?.tenantLogo])
 
-  // 智能每日经营简报企业开关（issue #3468）：开关关闭 → 菜单隐藏（红线 3）
-  const [briefingEnabled, setBriefingEnabled] = useState(false)
-  useEffect(() => {
-    briefingApi.getConfig()
-      .then((res) => setBriefingEnabled(!!res.data.data?.enabled))
-      .catch(() => setBriefingEnabled(false))
-  }, [])
-
   // ── 权限过滤（纯函数，issue #5271）──
-  const filterOpts = { permissions: user?.permissions || [], roles: user?.roles, briefingEnabled }
+  // 🔴 2026-10-17（issue #7087）：过滤条件由三条降为两条 —— `briefingToggle` 随「每日简报」菜单项
+  // 一起撤掉（企业开关从此只驱动经营看板上的结论卡），**侧边栏不再为此发一次配置请求**。
+  const filterOpts = { permissions: user?.permissions || [], roles: user?.roles }
   const groups = visibleMenuGroups(menuGroups, filterOpts)
   const standalone = filterMenuItems(standaloneItems, filterOpts)
-  // 一级项（「商品管理」）；`filterMenuItems` 对空数组安全（返回空表）
+  // 最前席位一级项（「经营看板」，渲染在**所有分组之前** —— 用户 2026-10-17 裁定）
+  const standaloneHead = filterMenuItems(standaloneHeadItems, filterOpts)
+  // 尾席位一级项（「商品管理」「企业基础设置」）；`filterMenuItems` 对空数组安全（返回空表）
   const standaloneTop = filterMenuItems(standaloneTopItems, filterOpts)
 
   // ── 高亮：最长前缀胜出（沿用重设计前的口径）──
   const activePath = resolveActivePath(
     [
       ...groups.flatMap((g) => g.children.map((i) => i.path)),
+      ...standaloneHead.map((i) => i.path),
       ...standaloneTop.map((i) => i.path),
       ...standalone.map((i) => i.path),
     ],
@@ -272,6 +275,60 @@ export default function Sidebar({
     )
   }
 
+  // ── 一级项块（**直达**项，无分组语义）──
+  // 席位语义见 `@/config/menu` 的三个 `standalone*` 数组（最前席位 / 尾席位 / 尾部独立项）。
+  // 视觉 = **板块入口**规格（与组头同级：`text-xs font-medium tracking-wide` + `h-3.5 w-3.5` 图标），
+  // **仍是**一整行可点的 `<Link>`（直达、无展开语义 ⇒ 右端那枚 ChevronRight **不旋转**）；
+  // 🔴 **不渲染星标**：一级项不可收藏（否则「常用」里会出现第二条一模一样的入口）。
+  // `separator`：块前要不要画分隔线 —— 最前席位在顶部（紧接「常用」）不画；尾席位画
+  // （仓内既有同款 `border-t border-white/5`，与尾部独立项前那条一致）。
+  const renderStandaloneBlock = (
+    items: MenuItem[],
+    testId: string,
+    opts: { separator: boolean },
+  ) => {
+    if (items.length === 0) return null
+    return (
+      <div
+        data-testid={testId}
+        className={cn('my-2 space-y-0.5', opts.separator && 'border-t border-white/5 pt-1')}
+      >
+        {items.map((item) => {
+          const Icon = resolveMenuIcon(item.icon)
+          const active = isActive(item.path)
+          return (
+            <Link
+              key={item.key}
+              href={item.path}
+              onClick={onMobileClose}
+              data-menu-key={item.key}
+              className={cn(
+                'relative flex items-center gap-2 rounded-md px-3 py-1.5 transition-colors',
+                active
+                  ? 'bg-primary-600 text-white shadow-sm'
+                  : 'text-neutral-400 hover:bg-white/5 hover:text-neutral-200',
+                collapsed && 'justify-center px-2',
+              )}
+              title={collapsed ? item.name : undefined}
+            >
+              {active && (
+                <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-white/90" />
+              )}
+              <Icon className="h-3.5 w-3.5 flex-shrink-0" />
+              {!collapsed && (
+                <span className="flex-1 text-xs font-medium tracking-wide">{item.name}</span>
+              )}
+              {/* 不旋转 = 「直达」；组头那枚会 `rotate-90`（可展开）—— 语义在此分叉 */}
+              {!collapsed && (
+                <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-neutral-600" />
+              )}
+            </Link>
+          )
+        })}
+      </div>
+    )
+  }
+
   return (
     <aside
       data-testid="sidebar"
@@ -372,13 +429,19 @@ export default function Sidebar({
           </div>
         )}
 
-        {/* ── head 组（含一级项插入位那个组）── */}
+        {/* ── 最前席位一级项（「经营看板」，2026-10-17 issue #7087）──
+            用户逐字：「经营看板直接作为一级菜单，移除工作台，这样用户一进来就很直观的看到经营看板了」
+            ⇒ 渲染在**所有分组之前**。为什么不与「商品管理」并列在尾席位：`landingPath()` = 第一个
+            可见菜单项（issue #6758）—— 尾席位会让登录落点变成「在线接待」。
+            ⚠️ 它同样**不进「常用」**（一级项没有星标、已一屏可见 —— #5877 口径对三个席位一致）。 */}
+        {renderStandaloneBlock(standaloneHead, 'sidebar-standalone-head', { separator: false })}
+
+        {/* ── head 组（含尾席位插入位那个组）── */}
         {head.map((group) => renderGroup(group))}
 
-        {/* ── 一级项块（「商品管理」）──
-            位置 = **所有分组之后**（用户 2026-10-06 裁定：11 个大菜单项并列；见 `STANDALONE_TOP_AFTER_GROUP_KEY`）；
-            与上方之间的分隔线用**仓内既有同款**（`border-t border-white/5`，同尾部独立项前那条），
-            它**有两种情形**（不要只按一种理解）：
+        {/* ── 尾席位一级项（「商品管理」「企业基础设置」）──
+            位置 = **所有分组之后**（用户 2026-10-06 裁定：大菜单项并列；见 `STANDALONE_TOP_AFTER_GROUP_KEY`），
+            分隔线**有两种情形**（不要只按一种理解）：
               · **常态**（席位组 `org-center` 可见：admin / 持 `system:view` 的岗位）⇒ 这条线是
                 「**组织管理组 ↔ 一级项**」的分隔线；
               · **回落情形**（席位组被权限整组过滤掉 —— 实测七个种子岗位里只有 admin 持 `system:view`
@@ -386,49 +449,8 @@ export default function Sidebar({
                 这条线成为「**最后一个可见组 ↔ 一级项**」的分隔线。
               ⚠️ 回落方向是「挂到末尾」**不是**「跳到最前」：旧口径（席位组不可见 ⇒ 排到第一行）
                 会让「商品管理」对多数岗位跑到菜单最上方，与「沉底」的裁定正好相反
-                —— 口径的唯一实现 = `frontend/admin-web/src/lib/menu-nav.ts` 的 `splitGroupsAtTopItemSlot`。
-            视觉 = **板块入口**规格（与组头同级：`text-xs font-medium tracking-wide` + `h-3.5 w-3.5` 图标），
-            **仍是**一整行可点的 `<Link>`（直达、无展开语义 ⇒ 右端那枚 ChevronRight **不旋转**）；
-            🔴 **不渲染星标**：一级项不可收藏（否则「常用」里会出现第二条一模一样的入口）。 */}
-        {standaloneTop.length > 0 && (
-          <div
-            data-testid="sidebar-standalone-top"
-            className="my-2 space-y-0.5 border-t border-white/5 pt-1"
-          >
-            {standaloneTop.map((item) => {
-              const Icon = resolveMenuIcon(item.icon)
-              const active = isActive(item.path)
-              return (
-                <Link
-                  key={item.key}
-                  href={item.path}
-                  onClick={onMobileClose}
-                  data-menu-key={item.key}
-                  className={cn(
-                    'relative flex items-center gap-2 rounded-md px-3 py-1.5 transition-colors',
-                    active
-                      ? 'bg-primary-600 text-white shadow-sm'
-                      : 'text-neutral-400 hover:bg-white/5 hover:text-neutral-200',
-                    collapsed && 'justify-center px-2',
-                  )}
-                  title={collapsed ? item.name : undefined}
-                >
-                  {active && (
-                    <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-white/90" />
-                  )}
-                  <Icon className="h-3.5 w-3.5 flex-shrink-0" />
-                  {!collapsed && (
-                    <span className="flex-1 text-xs font-medium tracking-wide">{item.name}</span>
-                  )}
-                  {/* 不旋转 = 「直达」；组头那枚会 `rotate-90`（可展开）—— 语义在此分叉 */}
-                  {!collapsed && (
-                    <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-neutral-600" />
-                  )}
-                </Link>
-              )
-            })}
-          </div>
-        )}
+                —— 口径的唯一实现 = `frontend/admin-web/src/lib/menu-nav.ts` 的 `splitGroupsAtTopItemSlot`。 */}
+        {renderStandaloneBlock(standaloneTop, 'sidebar-standalone-top', { separator: true })}
 
         {/* ── tail 组（一级项之后的其余组）── */}
         {tail.map((group) => renderGroup(group))}

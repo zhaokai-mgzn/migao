@@ -32,12 +32,12 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   match: (path: string) => boolean
   crumbs: { label: string; href?: string }[]
 }> = [
-  // 工作台
-  { match: (p) => p === '/' || p === '/dashboard', crumbs: [{ label: '工作台', href: '/dashboard' }, { label: '经营看板' }] },
-  // 每日简报（issue #5071）：此前**没有条目** ⇒ 落兜底分支、面包屑只剩「工作台」一项，
-  // §15.2「面包屑与侧边栏菜单名一致」不成立（与 #5034 的入库单是**同一形态**的漏改）。
-  // ⚠️ 本表是 `find` 取**首个命中**、顺序敏感 ⇒ 前缀不得写宽（`p.startsWith('/b')` 会抢走别的匹配）。
-  { match: (p) => p.startsWith('/briefing'), crumbs: [{ label: '工作台' }, { label: '每日简报' }] },
+  // 经营看板（2026-10-17 issue #7087：由「工作台」组升为**一级项**、并撤掉「工作台」组）
+  // 🔴 一级项**没有父组** ⇒ 面包屑是**单级**（与「商品管理」「通知中心」同口径；#5877）。
+  { match: (p) => p === '/' || p === '/dashboard', crumbs: [{ label: '经营看板' }] },
+  // 每日简报（issue #3468；2026-10-17 issue #7087 撤掉菜单项）：`/briefing` 现为**重定向薄壳**
+  // → `/dashboard`（旧深链不 404）⇒ 本表不再为它保留条目 —— 面包屑的末项必须是**真实存在的
+  // 侧边栏菜单名**（§15.2 的可执行定义在 `menu-breadcrumb-coverage.test.tsx`）。
 
   // 客户服务组（本轮 2026-09-29 用户裁定**新建**：原「智能客服」组 + 客户侧两项合并）
   // 🔴 首项 = 组名「客户服务」，与侧边栏 `config/menu.ts` 的 `customer-service` 组逐字一致
@@ -131,7 +131,9 @@ const ROUTE_BREADCRUMB_MAP: Array<{
 function resolveBreadcrumbs(pathname: string | null): { label: string; href?: string }[] {
   if (!pathname) return [{ label: '经营看板' }]
   const matched = ROUTE_BREADCRUMB_MAP.find((m) => m.match(pathname))
-  return matched ? matched.crumbs : [{ label: '工作台', href: '/dashboard' }]
+  // 兜底（未知路径）：给一条**真实存在的入口**回得来 —— 2026-10-17（issue #7087）「工作台」组撤销后，
+  // 兜底项 = 一级项「经营看板」（与 `/`、`/dashboard` 同一条），不再是已不存在的组名。
+  return matched ? matched.crumbs : [{ label: '经营看板', href: '/dashboard' }]
 }
 
 export default function Header({ title, breadcrumbs, onOpenMobileNav }: HeaderProps) {

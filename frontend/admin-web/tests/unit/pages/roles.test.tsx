@@ -221,17 +221,18 @@ describe('RolesPage', () => {
 
   // ── #3002 权限分配与真实菜单一致（菜单同构渲染，groupedBy menuGroups 单源）──
 
-  it('权限分配弹窗按真实侧边栏菜单分组渲染（菜单组名 + 菜单项名），旧英文分组不出现', async () => {
+  it('🔴 权限分配弹窗按真实侧边栏菜单分组渲染（菜单组名 + 菜单项名），旧英文分组与已撤销组名不出现', async () => {
     render(<RolesPage />)
     fireEvent.click(await screen.findByText('新增岗位'))
     const tree = within(await screen.findByTestId('perm-menu-sections'))
-    // 菜单组头 = 侧边栏菜单组名（#5778 新 IA：**6 组 + 1 个一级项**，逐组点名）
-    expect(tree.getByText('工作台')).toBeInTheDocument()
+    // 🔴 菜单组头 = 侧边栏菜单组名（issue #7087 后**5 组**；「工作台」组**整组撤销**）
     expect(tree.getByText('客户服务')).toBeInTheDocument()
     expect(tree.getByText('交易管理')).toBeInTheDocument()
     expect(tree.getByText('生产管理')).toBeInTheDocument()
     expect(tree.getByText('仓储与物料')).toBeInTheDocument()
     expect(tree.getByText('组织管理')).toBeInTheDocument()
+    // 🔴 已撤销的组名不得出现在权限树里 —— 商家可见面（含权限勾选树）不再有「工作台」（issue #7087）
+    expect(tree.queryByText('工作台')).not.toBeInTheDocument()
     // 旧组名不再出现：issue #5271 / #5778 三处改判（商品与加工项**撤销**；智能客服 → 客户服务；
     // 订单管理 + 客户管理 → 交易管理）。
     // 🔴 #5895 纠错：旧断言 `tree.getAllByText('商品管理')).toHaveLength(1)` 是**假绿** ——
@@ -248,11 +249,13 @@ describe('RolesPage', () => {
     expect(tree.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
     expect(tree.getByText('在线接待')).toBeInTheDocument()
     expect(tree.getByText('知识库')).toBeInTheDocument()
-    // 工作台组两项**都**进权限树：每日简报要 dashboard:view；
-    // 🔴 issue #5699（P4）：经营看板自本阶段起**有码**（dashboard:view）⇒ 从「无码不进树」变为可勾选
-    //（否则「勾得动 / 看不到」会漂移：它现在确实决定一个菜单项与 5 个读端点的可见性）。
-    expect(tree.getByText('每日简报')).toBeInTheDocument()
-    expect(tree.getByText('经营看板')).toBeInTheDocument()
+    // 🔴 issue #7087：「经营看板」升为**最前席位**一级项 ⇒ 渲染在 `perm-standalone-head` 块里，
+    // 它带的码 `dashboard:view` 因此仍**可授予**（否则「勾得动 / 看不到」漂移 —— 与 #5895 同一形态）；
+    // 同批「每日简报」菜单项**已删除**（功能保留：企业开关仍驱动经营看板上的结论卡）。
+    const head = within(tree.getByTestId('perm-standalone-head'))
+    expect(head.getByText('经营看板')).toBeInTheDocument()
+    expect(head.getByText('dashboard:view')).toBeInTheDocument()
+    expect(tree.queryByText('每日简报')).not.toBeInTheDocument()
     // #5778：「商品列表」改名「商品管理」（菜单项判据见本文件 #5895 三条：`perm-standalone-top`）
     // 🔴 #6580（2026-10-09 用户裁定）：菜单项「加工项管理」「工艺配置」**已移除**（功能体并入
     // `/settings` 企业基础设置页内的配置域）⇒ 权限树不再渲染它们；同批「企业基础设置」由
@@ -378,6 +381,9 @@ describe('RolesPage', () => {
   // 🔴 新增一个菜单梯队必须在此登记并接线，否则下面第一条判据当场红（未登记即红）。
   const MENU_TIERS: Record<string, string | null> = {
     menuGroups: null,
+    // 🔴 2026-10-17（issue #7087）：**最前席位**（`standaloneHeadItems`：经营看板 / `dashboard:view`）
+    // —— 它与 #5895 的尾席位是**同一形态**的入口（新增梯队、权限树没跟），必须同款接线。
+    standaloneHeadItems: 'perm-standalone-head',
     standaloneTopItems: 'perm-standalone-top',
     standaloneItems: null, // 尾部项「通知中心」：全员可见、**无码** ⇒ 不可授予
   }
@@ -390,7 +396,7 @@ describe('RolesPage', () => {
     expect(tierArrays).toEqual(Object.keys(MENU_TIERS).sort())
   })
 
-  it('类级守卫：三梯队里每个带码菜单节点都能在权限树里勾到（漏接即红）', async () => {
+  it('类级守卫：**四个梯队**里每个带码菜单节点都能在权限树里勾到（漏接即红）', async () => {
     render(<RolesPage />)
     fireEvent.click(await screen.findByText('新增岗位'))
     const container = await screen.findByTestId('perm-menu-sections')
@@ -401,25 +407,37 @@ describe('RolesPage', () => {
     const rows = Array.from(container.querySelectorAll('label')).map(l => l.textContent || '')
     const coded = [
       ...menuConfig.menuGroups.flatMap(g => g.children),
+      // 🔴 issue #7087：最前席位必须一起枚举 —— 只列尾席位会让「经营看板」的漏接**判不出来**
+      ...menuConfig.standaloneHeadItems,
       ...menuConfig.standaloneTopItems,
       ...menuConfig.standaloneItems,
     ].filter(item => item.permissionCode)
     expect(coded.length).toBeGreaterThan(0) // 反空跑：没有可判的对象时本判据不算通过
+    // 点名最前席位（避免将来又把它漏掉时这条判据「恰好」还是绿的）
+    expect(coded.map(i => i.name)).toContain('经营看板')
     for (const item of coded) {
       const hit = rows.some(text => text.includes(item.name) && text.includes(item.permissionCode!))
       expect(hit, `菜单节点「${item.name}」(${item.permissionCode}) 未出现在权限树 —— 梯队接线漏了`).toBe(true)
     }
   })
 
-  it('#5895 一级项「商品管理」渲染在权限树**所有分组之前**（standaloneTopItems / product:list）', async () => {
+  it('🔴 权限树顺序与侧边栏同源：#7087 最前席位在最前，「商品管理」「企业基础设置」随其后，二者都在**所有分组之前**', async () => {
     render(<RolesPage />)
     fireEvent.click(await screen.findByText('新增岗位'))
     const container = await screen.findByTestId('perm-menu-sections')
+    const head = within(container).getByTestId('perm-standalone-head')
     const top = within(container).getByTestId('perm-standalone-top')
+    expect(within(head).getByText('经营看板')).toBeInTheDocument()
+    expect(within(head).getByText('dashboard:view')).toBeInTheDocument()
     expect(within(top).getByText('商品管理')).toBeInTheDocument()
     expect(within(top).getByText('product:list')).toBeInTheDocument()
-    // 位置与侧边栏同序：一级项 → 分组 → 尾部项 ⇒ 一级项块是权限树的**第一个**子块
-    expect(container.firstElementChild).toBe(top)
+    // 位置与侧边栏同序（一级项块 → 分组 → 尾部项）：**席位块是权限树的第一个子块**
+    // （#7087 前这条判的是 `perm-standalone-top`；最前席位加入后它退到第二个 —— 断言强度不降：
+    //  现在多钉了「最前席位在最前」且「两个席位块连续」）。
+    expect(container.firstElementChild).toBe(head)
+    expect(container.firstElementChild!.nextElementSibling).toBe(top)
+    // 判别力：旧形态（席位块排在分组之后）会让上面两条红
+    expect(container.firstElementChild!.hasAttribute('data-testid')).toBe(true)
   })
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -449,9 +467,14 @@ describe('RolesPage', () => {
    * 菜单接口下发（真 `GET /api/admin/menus` 的形状）：`onlyFirstCarrier` = 本单修后形态
    * （同一个码只在**树序首个承载节点**上带 `mobileTitles`，其余同码节点为空）。
    *
-   * ⚠️ 承载节点**不止在组内**：`standaloneTopItems`（「商品管理」`product:list` /
-   * 「企业基础设置」`production:view`）是顶层的**叶子节点**，服务端树里同样是带着 `mobileTitles`
-   * 的顶层条目（`production:view` 因此有 3 个承载节点 —— 本单「名实不符」的那一个就在其中）。
+   * ⚠️ 承载节点**不止在组内**：`standaloneHeadItems`（「经营看板」`dashboard:view`）与
+   * `standaloneTopItems`（「商品管理」`product:list` / 「企业基础设置」`production:view`）都是顶层的
+   * **叶子节点**，服务端树里同样是带着 `mobileTitles` 的顶层条目
+   *（`production:view` 因此有 3 个承载节点 —— 本单「名实不符」的那一个就在其中）。
+   *
+   * 🔴 2026-10-17（issue #7087）：`dashboard:view` 的承载节点由**两个**（工作台组的经营看板 +
+   * 每日简报）降为**一个**（最前席位「经营看板」）—— 组撤销 + 菜单项删除的直接后果；
+   * 本文件据此把「重复标注」锚点从 `dashboard:view` 收敛到 `production:view`（它仍是 3 处）。
    */
   const menuPayload = (onlyFirstCarrier: boolean) => {
     const seen = new Set<string>()
@@ -463,6 +486,8 @@ describe('RolesPage', () => {
       return { code, label: c.name, mobileTitles: onlyFirstCarrier && !firstOfCode ? [] : titles }
     }
     return [
+      // 最前席位（issue #7087）：真服务端树里它是**顶层首个**条目
+      ...menuConfig.standaloneHeadItems.map(c => ({ code: c.key, label: c.name, children: [node(c)] })),
       ...menuConfig.menuGroups.map(g => ({
         code: g.key,
         label: g.name,
@@ -480,17 +505,19 @@ describe('RolesPage', () => {
 
     // 锚定：未修形态下「同一个码 = 同一串标注」在**多个**节点上被渲染（同屏重复 §31 P2）
     expect(container.querySelectorAll('[data-testid^="roles-mobile-production:view"]')).toHaveLength(3)
-    expect(container.querySelectorAll('[data-testid="roles-mobile-dashboard:view"]')).toHaveLength(2)
+    // 🔴 issue #7087：`dashboard:view` 现在只有**一个**承载节点（最前席位「经营看板」）⇒
+    // 「同屏重复」的实例只剩 `production:view`（上面那条），本码收敛为 1 处（这本身是新形态的读数）
+    expect(container.querySelectorAll('[data-testid="roles-mobile-dashboard:view"]')).toHaveLength(1)
   })
 
   it('🔴 #6781 修后形态：每个权限码**只**在树序首个承载节点上渲染一处手机端标注（同屏重复与名实不符都归零）', async () => {
     // 修后形态的语料 = 服务端只把标注放在**树序首个承载节点**上（其余同码节点 `mobileTitles` 为空）
     // 🔴 判别力自证（不读磁盘）：同一份真配置下，**未修形态**的语料必然在同屏渲染出**重复**标注
-    //（`production:view` 三处 / `dashboard:view` 两处）；修后形态收敛为每码一处。
+    //（`production:view` 三处；`dashboard:view` 自 issue #7087 起只剩一处承载节点）；修后形态收敛为每码一处。
     const legacyCodes = menuPayload(false).flatMap(g => g.children)
       .filter(c => (c.mobileTitles || []).length > 0).map((c: any) => c.code)
     expect(legacyCodes.filter(c => c === 'production:view')).toHaveLength(3)
-    expect(legacyCodes.filter(c => c === 'dashboard:view')).toHaveLength(2)
+    expect(legacyCodes.filter(c => c === 'dashboard:view')).toHaveLength(1)
     expect(new Set(legacyCodes).size).toBeLessThan(legacyCodes.length)
     const fixedCodes = menuPayload(true).flatMap(g => g.children)
       .filter(c => (c.mobileTitles || []).length > 0).map((c: any) => c.code)

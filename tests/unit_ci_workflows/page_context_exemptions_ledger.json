@@ -3,12 +3,11 @@
   "issue": 6215,
   "what": "B 端黄金策「页面上下文解释与教学」（能力地图族 4）的**豁免台账**：`frontend/admin-web/src/config/menu.ts` 里的每一个菜单 route，要么登记进 `backend/ai-agent-service/app/context/page_registry.py` 的 `PAGE_REGISTRY`（黄金策能拿该页口径解释），要么**在此具名登记豁免**（未确证有「确为该页口径」的真值源 ⇒ 不注入）。判据 = `tests/unit_ci_workflows/test_page_context_registry_coverage.py`。",
   "why": "「暂不覆盖」在此之前**只活在代码里没有的东西**（登记表里少一条），既看不出是有意为之、也看不出欠了什么 ⇒ 谁也不知道 22 个菜单页里有 16 个悄悄没覆盖。本表把「为什么没覆盖 + 补哪一份口径文档才能重启」变成**必须显式登记、只许缩短**的东西：业务方补齐口径文档 ⇒ 删一条豁免 + 加一条登记（台账变短、登记面变长，两个方向都看得见）。",
-  "frozen_note": "🔴 **只许缩短**（沿用 `tests/unit_ci_workflows/schedule_scope_ledger.json` 的存量冻结范式）：① `exempt_routes_frozen` 是**冻结快照**，必须与 `exemptions` 逐项相等 —— 想「把新页塞进豁免」必须同时改快照、`baseline_frozen` 与 `exemptions` 三处，且 `baseline_frozen` 只许变小；② 与登记表的**双向相等**由元守卫核（漏登记 / 多登记 / 悬挂 route ⇒ 逐条判红）。⚠️ 「缩短」= 删一条豁免 + 同批在 `PAGE_REGISTRY` 里补上该 route（**不是**只删台账条目）。",
-  "baseline_frozen": 13,
+  "frozen_note": "🔴 **只许缩短**（沿用 `tests/unit_ci_workflows/schedule_scope_ledger.json` 的存量冻结范式）：① `exempt_routes_frozen` 是**冻结快照**，必须与 `exemptions` 逐项相等 —— 想「把新页塞进豁免」必须同时改快照、`baseline_frozen` 与 `exemptions` 三处，且 `baseline_frozen` 只许变小；② 与登记表的**双向相等**由元守卫核（漏登记 / 多登记 / 悬挂 route ⇒ 逐条判红）。⚠️ 「缩短」= 删一条豁免 + 同批在 `PAGE_REGISTRY` 里补上该 route（**不是**只删台账条目）。 ｜ 🔴 2026-10-17（issue #7087）：**缩短一条** ——「每日简报」菜单项已删除 ⇒ `/briefing` **挂不到任何菜单项**（它是重定向薄壳、已不在 `menu.ts`）⇒ 按判据 1「悬挂登记必须删掉」销账：`exemptions` / `exempt_routes_frozen` / `baseline_frozen`（13 → 12）三处同批改小（**不是**放宽）。",
+  "baseline_frozen": 12,
   "exempt_routes_frozen": [
     "/agent-workspace/human-sessions",
     "/after-sales",
-    "/briefing",
     "/customers",
     "/employees",
     "/finance",
@@ -21,11 +20,6 @@
     "/settings"
   ],
   "exemptions": [
-    {
-      "route": "/briefing",
-      "reason": "智能每日经营简报（issue #3468）：本仓**没有**「日报指标怎么算 / 今天该看哪几个数」的口径文档（`docs/design/daily-briefing-design.md` 是功能设计稿，不是给用户的字段口径）。",
-      "restart_condition": "补 `docs/daily-briefing-metrics.md`（日报指标口径）后，在本表删本条 + 在 `PAGE_REGISTRY` 登记 `route=\"/briefing\"`、`truth_source` 指向该文档。"
-    },
     {
       "route": "/agent-workspace/human-sessions",
       "reason": "在线接待（人工客服工作台）：本仓没有「会话状态机 / 消息类型」的对外口径文档；接待端的判定是服务端逻辑，没有能引给用户的登记源。",
