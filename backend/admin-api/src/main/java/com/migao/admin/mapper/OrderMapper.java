@@ -140,7 +140,7 @@ public interface OrderMapper extends BaseMapper<Order> {
      */
     @InterceptorIgnore(tenantLine = "true")
     @Select("WITH done AS ("
-            + "UPDATE orders SET status = 'completed', updated_at = NOW() "
+            + "UPDATE orders SET status = 'completed', received_at = NOW(), updated_at = NOW() "
             + "WHERE tenant_id = #{tenantId} AND status = 'shipped' AND deleted = 0 "
             + "AND shipped_at IS NOT NULL AND shipped_at <= #{deadline} "
             + "RETURNING id"

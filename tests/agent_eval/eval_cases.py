@@ -8211,6 +8211,24 @@ _CASE_OR_066 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── OR-067 [NORMAL] 订单详情三个时刻（收款 / 发货 / 完成）显示服务端真值：paid_at 只在 pending→confirmed 边写、received_at 两条完成路都写（issue #7078）（源: cases/order.yml）──
+_CASE_OR_067 = EvalCase(
+    id='OR-067',
+    legacy_id='',
+    title='订单详情三个时刻（收款 / 发货 / 完成）显示服务端真值：paid_at 只在 pending→confirmed 边写、received_at 两条完成路都写（issue #7078）',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-17 真机截图（订单 20261016769570012）：订单详情这里的状态引导和实际的不一致了？—— 引导第 1 步「已付款 ✓」，而同屏「支付时间 / 支付交易号」都是 `-`'],
+    expectations=[],
+    data_checks=['判据 1·🔴 **结构：paid_at 只在 pending → confirmed 这条边上写**（回退边不得写）：`OrderService.transitionStatusAtomic` 必须同时出现「新态 confirmed」与「**期望前驱 pending**」两个限定 —— 该方法被 producing → confirmed（作废加工单退回待发货）复用，在那里写会把「支付时间」顶成当天而屏幕上看不出异常。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderPaidAndReceivedAtWriteGuardTest.java 的 `paidAtIsWrittenOnlyOnTheConfirmEdge`（含判别力自证：摘掉前驱限定 / 多出第二个写面 ⇒ 各自判红）', '判据 2·🔴 **结构：received_at 由两条完成路各写一次** —— 商家「确认收货」= `transitionStatusAtomic`（to=completed）；「发货后 N 天自动完成」**不经**该方法，必须在 `OrderMapper.autoCompleteShippedOrders` 自己的条件 UPDATE 里同写（漏写那条腿 ⇒ 那批单永远空值，且不会有别的东西变红）。执行点 = 同文件 `receivedAtIsWrittenOnBothCompletedPaths`（自证注入：把 `received_at = NOW()` 换成 `updated_at = NOW()` ⇒ 判红）', '判据 3·**详情响应必须透出三个时刻**（否则屏幕退回「恒 -」）：`OrderDetailResponse` 同时含 `private OffsetDateTime paidAt;` / `shippedAt;` / `receivedAt;`。执行点 = 同文件 `detailResponseExposesTheThreeTimestamps`（自证注入：删任一键 ⇒ 判红）', '判据 4·**屏幕面渲染真值**（用户可见的那一面）：基础信息「支付时间 / 发货时间 / 确认收货时间」三行显示服务端下发的时刻（期望值用与 `DateTimeCell` 同一份格式化口径算，不写死字符串 ⇒ 跨时区不假红）；缺值仍渲染 `-`（存量未采集 ⇒ 占位，不崩不猜）。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx 的「基础信息渲染服务端下发的 支付时间 / 发货时间 / 确认收货时间（不再是恒 -）」与存量未采集占位那条', '判据 5·**「支付交易号」行撤下**（后端无真值源 ⇒ 建了也恒 `-`）：屏幕不再渲染该行；前端类型面删掉 `paymentNo`（#6882 同款：让编译器成为类级守卫，再读即编译期红）。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx 的「不再渲染支付交易号行」', "判据 6·**迁移只搬已存在的事实**（V160）：`paid_at` 从 `finance_transactions` 的 `type='income'`（全仓唯一写入点 = `confirmPayment` 的「订单确认收款」）取最早一笔回填；`received_at` **不回填**（存量 completed 单无 durable 完成时刻）⇒ 老单该行仍为 `-`（登记，不是缺口）。迁移幂等 = `ADD COLUMN IF NOT EXISTS` + `WHERE paid_at IS NULL`。"],
+    skip_reason='[backend-contract] 结构判据（Java 源码面）+ 数据迁移 + 前端展示判据（admin-web vitest）：零 LLM 环节 ⇒ 不进 agent-eval 冒烟；机器判红通道 = traces.tests',
+    tags=['order', 'order-detail', 'phantom-field', 'data-quality', 'backend-contract', 'migration'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -15000,6 +15018,7 @@ ALL_CASES = (
     _CASE_OR_064,
     _CASE_OR_065,
     _CASE_OR_066,
+    _CASE_OR_067,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,

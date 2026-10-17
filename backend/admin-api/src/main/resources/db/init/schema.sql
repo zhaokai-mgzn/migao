@@ -711,6 +711,9 @@ CREATE TABLE orders (
     remark TEXT,                                     -- 备注
     -- 来自 V148__add_order_shipped_at.sql（issue #6262，用户 2026-10-03 逐字裁定 B）
     shipped_at TIMESTAMP WITH TIME ZONE,             -- 发货时刻 = 该单最近一次 →shipped 流转发生的时刻；由两条发货路各自的条件 UPDATE 写入（OrderService.transitionStatusAtomic / OrderShipmentService.transition）。用途 = 「发货后 N 天自动完成」定时腿的判定锚点。NULL = 未采集（存量回填不全 / 从未发货）⇒ **不参与**自动完成，只能人工确认收货。不是 updated_at（会被后续编辑刷新）、也不是 created_at（那是下单时刻）
+    -- 来自 V160__add_order_paid_at_and_received_at.sql（issue #7078，用户 2026-10-17 裁定 A）
+    paid_at TIMESTAMP WITH TIME ZONE,                -- **收款时刻** = 该单 pending → confirmed（确认收款）发生的时刻；由 OrderService.transitionStatusAtomic 在「新态 confirmed + **期望前驱 pending**」这条边上写入（回退边 producing → confirmed 不写，否则支付时间会被一次回退顶成当天）。NULL = 未采集（从未确认收款 / 存量无收款流水）⇒ 屏幕显示「-」，不猜；不是 updated_at、也不是 created_at（那是下单时刻）
+    received_at TIMESTAMP WITH TIME ZONE,            -- **完成（收货）时刻** = 该单进入 completed 的时刻；两条完成路各写一次（商家「确认收货」= OrderService.transitionStatusAtomic；发货后 N 天自动完成 = OrderMapper.autoCompleteShippedOrders 的条件 UPDATE）⇒ 自动完成的单本列 = 自动完成时刻。NULL = 未采集（存量 completed 单不回填，无 durable 事实）
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INTEGER DEFAULT 0
