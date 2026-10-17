@@ -711,6 +711,9 @@ CREATE TABLE orders (
     remark TEXT,                                     -- 备注
     -- 来自 V148__add_order_shipped_at.sql（issue #6262，用户 2026-10-03 逐字裁定 B）
     shipped_at TIMESTAMP WITH TIME ZONE,             -- 发货时刻 = 该单最近一次 →shipped 流转发生的时刻；由两条发货路各自的条件 UPDATE 写入（OrderService.transitionStatusAtomic / OrderShipmentService.transition）。用途 = 「发货后 N 天自动完成」定时腿的判定锚点。NULL = 未采集（存量回填不全 / 从未发货）⇒ **不参与**自动完成，只能人工确认收货。不是 updated_at（会被后续编辑刷新）、也不是 created_at（那是下单时刻）
+    -- 来自 V160__add_order_paid_at_and_received_at.sql（issue #7078，用户 2026-10-17 裁定 A）
+    paid_at TIMESTAMP WITH TIME ZONE,                -- **收款时刻** = 该单 pending → confirmed（确认收款）发生的时刻；由 OrderService.transitionStatusAtomic 在「新态 confirmed + **期望前驱 pending**」这条边上写入（回退边 producing → confirmed 不写，否则支付时间会被一次回退顶成当天）。NULL = 未采集（从未确认收款 / 存量无收款流水）⇒ 屏幕显示「-」，不猜；不是 updated_at、也不是 created_at（那是下单时刻）
+    received_at TIMESTAMP WITH TIME ZONE,            -- **完成（收货）时刻** = 该单进入 completed 的时刻；两条完成路各写一次（商家「确认收货」= OrderService.transitionStatusAtomic；发货后 N 天自动完成 = OrderMapper.autoCompleteShippedOrders 的条件 UPDATE）⇒ 自动完成的单本列 = 自动完成时刻。NULL = 未采集（存量 completed 单不回填，无 durable 事实）
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     deleted INTEGER DEFAULT 0
@@ -821,7 +824,8 @@ CREATE TABLE IF NOT EXISTS processing_orders (
     route_source VARCHAR(16),                         -- 路线键来源（V60 issue #4308 + V130 补齐第 5 态）：direct 帘种与工艺直读订单显式列 order_items.curtain_type/craft（issue #4354/#4362，不查信号映射表，与 derived 同档）/ derived 两维均由库中信号命中且路线存在 / partial 只命中一维（补信号）/ missing_route 派生键库中无路线（建路线）/ default 两维全不命中（补信号）
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    deleted INT DEFAULT 0
+    deleted INT DEFAULT 0,
+    order_kind VARCHAR(16) NOT NULL DEFAULT 'processing'   -- 单据类型（V159，issue #7079）：processing 加工（成品帘；混合单也在这一档）/ outbound 出库（卖布单：快照每一行 saleForm=布料）；生成时冻结、存量行不回填。列位 = ALTER … ADD COLUMN 的追加位（与存量库列序逐位相同）
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_processing_orders_active
     ON processing_orders (order_id)
@@ -837,6 +841,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_processing_orders_qr_token
 CREATE UNIQUE INDEX IF NOT EXISTS uk_processing_orders_short_code
     ON processing_orders (short_code)
     WHERE deleted = 0 AND short_code IS NOT NULL;
+-- 单据类型取值白名单（V159，issue #7079）：与 ProcessingOrderService.ORDER_KIND_PROCESSING /
+-- ORDER_KIND_OUTBOUND 逐值同源。本段是 bootstrap 终态（本文件由 docker-entrypoint-initdb.d 执行，
+-- **迁移链不在该栈运行** ⇒ 只写迁移 = 新建库缺该列/约束，同 #3270 形态）。
+ALTER TABLE processing_orders DROP CONSTRAINT IF EXISTS ck_processing_orders_order_kind;
+ALTER TABLE processing_orders
+    ADD CONSTRAINT ck_processing_orders_order_kind
+    CHECK (order_kind IN ('processing', 'outbound'));
+COMMENT ON COLUMN processing_orders.order_kind IS
+    '单据类型（V159，issue #7079）：processing 加工（成品帘；**混合单**也在这一档）/ outbound 出库（卖布单的裁剪/打包作业 —— 快照每一行 saleForm=布料）。判定在**生成那一刻冻结**（ProcessingOrderService.deriveOrderKind，与 items_snapshot 同批落库）⇒ 事后改订单行不回改、历史单不改型。存量行 = processing（DEFAULT 兜底，不回填）';
 
 -- ================================================
 -- 9.5.1 生产报工（issue #3995，V49 迁移；M4-G-2）

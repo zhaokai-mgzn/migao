@@ -268,9 +268,14 @@ function AIMessageContent({ message }: { message: ChatMessage }) {
     .replace(/<interact>[\s\S]*?<\/interact>/g, '')
     .trim()
 
-  // 客户端打字机（issue #5952，用户 2026-10-02 裁定「选 2」）：服务端仍整段下发，这里按节奏揭示。
-  // 流式结束 / 中断 / 错误 / 切会话 / 历史回放 / 减少动画 ⇒ 立刻等于全文（hook 内部收敛，不卡半截）。
-  const visibleContent = useTypewriter(cleanContent, { streaming: !!message.isStreaming })
+  // 客户端打字机（issue #5952，用户 2026-10-02 裁定「选 2」；#7086 修「真实事件序下不播」）：
+  // 服务端仍整段下发，这里按节奏揭示。**揭示不绑流式生命周期** —— 正文整段到达 + 紧随 done
+  // 只有几十~两百毫秒窗口，若「流一结束就立刻全文」则一帧都播不完（#7086 实测读数）。
+  // hook 只认两件事：挂载时已完整（历史回放 / 重挂载）⇒ 首帧全文；否则逐字到完（有界时长）。
+  // 用户主动中断（wasAborted）显式立刻全文。
+  const visibleContent = useTypewriter(cleanContent, { instant: !!message.wasAborted })
+  // 揭示未完成（含流已结束、尾巴还在打）⇒ 光标留着、进度属性继续暴露
+  const revealing = message.isStreaming || visibleContent.length < cleanContent.length
 
   // 正在执行中的工具
   const runningTools = (message.tool_calls || []).filter(
@@ -328,8 +333,9 @@ function AIMessageContent({ message }: { message: ChatMessage }) {
     <div className="group relative">
       <div
         className="prose prose-sm max-w-none text-neutral-800 [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_pre]:my-2 [&_code]:text-xs [&_code]:bg-neutral-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_table]:text-xs [&_table]:border-collapse [&_th]:border [&_th]:border-neutral-300 [&_th]:bg-neutral-100 [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-neutral-300 [&_td]:px-2 [&_td]:py-1"
-        // 打字机揭示进度（可见字符数）：只在流式期暴露，供判据读「t 时刻可见 < 全长」（issue #5952）
-        {...(message.isStreaming ? { 'data-revealed': visibleContent.length } : {})}
+        // 打字机揭示进度（可见字符数）：**揭示未完成期间**暴露（含流已结束、尾巴还在打），
+        // 供判据读「t 时刻可见 < 全长」（issue #5952；#7086 起不再只看 isStreaming）
+        {...(revealing ? { 'data-revealed': visibleContent.length } : {})}
       >
         {/* remark-breaks（issue #6346）：段落内单个 `\n` 在 CommonMark 里是**软换行**（= 空格）
             ⇒ 黄金策的多行回复（能力清单 / 逐条答案）被折成一整段长文（用户 2026-10-05 实测截图）。
@@ -340,7 +346,7 @@ function AIMessageContent({ message }: { message: ChatMessage }) {
         <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
           {normalizeCjkEmphasis(visibleContent)}
         </ReactMarkdown>
-        {message.isStreaming && (
+        {revealing && (
           <span className="inline-block w-1.5 h-4 bg-primary-600 animate-pulse ml-0.5 align-text-bottom" />
         )}
         {message.images && message.images.length > 0 && (

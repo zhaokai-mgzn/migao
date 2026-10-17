@@ -1146,6 +1146,20 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         if ("shipped".equals(newStatus)) {
             wrapper.set(Order::getShippedAt, businessClock.nowOffset());
         }
+        // issue #7078：paid_at 只在 **pending → confirmed**（= 确认收款）这条边上写。
+        // 🔴 用 expectedStatus 限定前驱是必须的：本方法还被 **producing → confirmed**
+        // （作废加工单退回待发货）复用 —— 那是**回退边**，在那里写会让「支付时间」被一次回退
+        // 动作顶成当天（屏幕上看不出异常）。判据 = OrderPaidAndReceivedAtWriteGuardTest
+        // （含「摘掉前驱限定 ⇒ 判红」的判别力自证）。
+        if ("confirmed".equals(newStatus) && "pending".equals(expectedStatus)) {
+            wrapper.set(Order::getPaidAt, businessClock.nowOffset());
+        }
+        // issue #7078：received_at = 订单进入 completed 的时刻。completed 在本状态机里没有出边
+        // ⇒ 这条边只会走一次、不会覆盖。另一条完成路（发货后 N 天自动完成）**不经**本方法，
+        // 在 OrderMapper.autoCompleteShippedOrders 自己的 SQL 里同写（漏写那条腿 = 那批单永远空值）。
+        if ("completed".equals(newStatus)) {
+            wrapper.set(Order::getReceivedAt, businessClock.nowOffset());
+        }
         if (closeReason != null && !closeReason.isBlank()) {
             wrapper.set(Order::getCloseReason, closeReason);
         }
@@ -1481,12 +1495,29 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     }
 
     /**
-     * 发货前置判据（**唯一一份**，issue #3340）：含加工项的订单必须已有完成加工单才允许发货。
+     * 该订单是否**有需要报工的作业**（issue #7079）= 含加工项 **或** 有卖布行。
+     *
+     * <p>卖布单（{@code processing_info.saleForm = 布料}）按米卖布、行上**没有加工项**，
+     * 但它仍要经过「裁剪 → 打包」两道工序并给工人报工计件 ⇒ 只读 {@link #hasProcessingItems}
+     * 会把它判成「无需报工」。生产待办的「待排产」/「待发货」两处过滤读本方法
+     * （与发货守卫 {@link #isProcessingReadyForShip} 同一份判据）。</p>
+     *
+     * <p>本体在 {@code OrderShipGuard.needsWork}（单一实现点），本方法只做参数搬运 ——
+     * 同 {@link #hasProcessingItems} 的范式。</p>
+     */
+    public boolean needsWork(Order order) {
+        return OrderShipGuard.needsWork(orderItemMapper, objectMapper, order);
+    }
+
+    /**
+     * 发货前置判据（**唯一一份**，issue #3340）：**有需要报工的作业**的订单（含加工项，或有卖布行 ——
+     * issue #7079）必须已有完成作业单才允许发货。
      *
      * <p>{@link #assertProcessingCompletedBeforeShip} 是它的抛异常外壳（发货路径用）；
      * 生产待办的「待发货」也读它（issue #5641）—— 两处各写一份必然漂移。</p>
      *
-     * @return {@code true} = 允许发货（无加工项，或加工单已完成）；{@code false} = 被加工单挡住
+     * @return {@code true} = 允许发货（无需要报工的作业，或作业单已完成）；
+     *         {@code false} = 被作业单挡住
      */
     public boolean isProcessingReadyForShip(Order order) {
         // #5648 合并后：本体在 OrderShipGuard（单一实现点）—— 工人发货路与生产待办读**同一份**判定。

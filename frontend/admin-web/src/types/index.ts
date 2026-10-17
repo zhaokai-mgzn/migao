@@ -826,6 +826,19 @@ export interface ProcessingOrder {
   /** 客户手机号（列表/详情接口返回，订单详情块未用到） */
   customerPhone?: string
   processingOrderNo: string
+  /**
+   * 作业单类型（issue #7079；键名**冻结**，与同一 DTO 上既有的 `short_code` / `scan_url` 同族）。
+   *
+   * 上位概念统一叫**作业单**，实体上分两型：
+   * `processing` = 加工（成品帘的加工单：有加工方、有交期）；`outbound` = 出库（卖布单的裁剪 /
+   * 打包作业：**没有加工方、没有交期**）。
+   *
+   * 🔴 **缺键 / `null` = 存量单，按加工单处理** —— 读面键由后端并行补，落地前存量行不带它；
+   * 把它们读成「出库」会把加工单的加工方/交期整块藏掉。
+   * 🔴 **机器键不得上屏** —— 界面上一律渲染中文业务名（「加工单」/「出库作业单」），
+   * 走 `orderKindLabelOf()` 的单一真值。
+   */
+  order_kind?: 'processing' | 'outbound' | null
   processor?: string
   expectedDeliveryDate?: string
   status: 'generated' | 'issued' | 'in_processing' | 'completed' | 'cancelled'
@@ -1969,10 +1982,11 @@ export interface Order {
   status: OrderStatus
   hasProcessing: boolean       // 是否含加工
   paymentDeadline?: string     // 支付截止时间（待付款状态用）
-  paymentNo?: string           // 支付宝交易号
-  paidAt?: string              // 支付时间
-  shippedAt?: string           // 发货时间
-  receivedAt?: string          // 确认收货时间
+  // 🔴 issue #7078：`paymentNo`（支付宝交易号）**已删** —— 系统没有在线支付交易号的真值源，
+  // 该行已从屏幕撤下；留着本键就是「幽灵字段」（#6882 同类，编译器与测试都不拦 ⇒ 恒 "-"）。
+  paidAt?: string              // 支付时间（orders.paid_at：确认收款时刻，服务端下发）
+  shippedAt?: string           // 发货时间（orders.shipped_at，V148；#7078 起详情面下发）
+  receivedAt?: string          // 确认收货时间（orders.received_at：进入已完成的时刻）
   items?: OrderItem[]          // 商品明细
   processingItems?: OrderProcessingItem[]  // 加工项列表
   logistics?: LogisticsInfo    // 物流信息

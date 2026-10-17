@@ -414,7 +414,9 @@ export default function OrderDetailPage() {
           <InfoRow label="订单编号" value={order.orderNo} />
           <InfoRow label="下单时间" value={<DateTimeCell value={order.createdAt} />} />
           <InfoRow label="支付时间" value={<DateTimeCell value={order.paidAt} />} />
-          <InfoRow label="支付交易号" value={order.paymentNo || '-'} />
+          {/* issue #7078：原「支付交易号」行已**撤下** —— 系统不走在线支付渠道，没有交易号的真值源，
+              建了也是恒 "-"（#6882「屏幕面读后端未下发的字段」同类）。前端类型面的 `paymentNo`
+              一并删除（编译器成为类级守卫，防再读）。 */}
           <InfoRow label="发货时间" value={<DateTimeCell value={order.shippedAt} />} />
           <InfoRow label="确认收货时间" value={<DateTimeCell value={order.receivedAt} />} />
         </div>

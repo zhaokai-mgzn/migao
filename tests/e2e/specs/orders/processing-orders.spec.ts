@@ -365,29 +365,29 @@ test.describe('生产看板 /production（加工单唯一入口）', () => {
 
   test('关键词搜索：按加工单号/订单号精确匹配（结果可见）', async ({ page }) => {
     // 按加工单号
-    await page.getByPlaceholder('请输入加工单号或订单号').fill('JG-20260602-0002')
+    await page.getByPlaceholder('请输入作业单号或订单号').fill('JG-20260602-0002')
     await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(300)
     await expect(page.getByText('JG-20260602-0002')).toBeVisible()
     await expect(page.getByText('JG-20260601-0001')).not.toBeVisible()
 
     // 按订单号
-    await page.getByPlaceholder('请输入加工单号或订单号').fill('YK20260601003')
+    await page.getByPlaceholder('请输入作业单号或订单号').fill('YK20260601003')
     await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(300)
     await expect(page.getByText('JG-20260603-0003')).toBeVisible()
     await expect(page.getByText('JG-20260602-0002')).not.toBeVisible()
 
     // 空结果 → 空态
-    await page.getByPlaceholder('请输入加工单号或订单号').fill('不存在的单号')
+    await page.getByPlaceholder('请输入作业单号或订单号').fill('不存在的单号')
     await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(300)
-    await expect(page.getByText(/暂无加工单/)).toBeVisible()
+    await expect(page.getByText(/暂无作业单/)).toBeVisible()
   })
 
   test('重置按钮清空筛选并恢复全量列表', async ({ page }) => {
     // 关键词精确命中 issued 行（keyword 命中时后端忽略 status，等价于单条件筛选）
-    await page.getByPlaceholder('请输入加工单号或订单号').fill('JG-20260602-0002')
+    await page.getByPlaceholder('请输入作业单号或订单号').fill('JG-20260602-0002')
     await page.getByRole('button', { name: '查询' }).click()
     await page.waitForTimeout(300)
     await expect(page.getByText('JG-20260602-0002')).toBeVisible()
@@ -395,7 +395,7 @@ test.describe('生产看板 /production（加工单唯一入口）', () => {
 
     await page.getByRole('button', { name: '重置' }).click()
     await page.waitForTimeout(300)
-    await expect(page.getByPlaceholder('请输入加工单号或订单号')).toHaveValue('')
+    await expect(page.getByPlaceholder('请输入作业单号或订单号')).toHaveValue('')
     await expect(page.getByLabel('状态筛选')).toHaveValue('')
     await expect(page.getByText('JG-20260601-0001')).toBeVisible()
   })

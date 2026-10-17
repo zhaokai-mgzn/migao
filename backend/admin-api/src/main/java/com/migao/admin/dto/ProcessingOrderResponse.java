@@ -56,6 +56,25 @@ public class ProcessingOrderResponse {
     private String routeSource;
 
     /**
+     * **单据类型**（V159，issue #7079）：{@code processing} 加工（成品帘；**混合单**也在这一档）/
+     * {@code outbound} 出库（卖布单的裁剪/打包作业 —— 快照**每一行** {@code saleForm=布料}）。
+     *
+     * <p><b>判定在生成那一刻冻结</b>（{@code ProcessingOrderService.deriveOrderKind}，随
+     * {@code items_snapshot} 一起落库）⇒ 事后改订单行**不回改**、历史单不改型；存量行 =
+     * {@code processing}（V159 的 {@code DEFAULT} 兜底，不回填）。取值常量 =
+     * {@code ProcessingOrderService.ORDER_KIND_PROCESSING} / {@code ORDER_KIND_OUTBOUND}
+     * （单一出处）。</p>
+     *
+     * <p>⚠️ 键名**冻结**为 {@code order_kind}（snake_case）：本类在**读面 JSON 键**类级元守卫
+     * {@code tests/unit_ci_workflows/test_read_face_json_key_guard.py} 的射程内（已有
+     * {@code short_code} / {@code scan_url}）⇒ 新键一律显式 {@code @JsonProperty} 的 snake_case，
+     * 且**同 PR**登记 {@code tests/unit_ci_workflows/read_face_json_key_ledger.json} +
+     * {@code docs/wiki/CONTRACT-LEDGER.md}（漏一处即判红）。</p>
+     */
+    @JsonProperty("order_kind")
+    private String orderKind;
+
+    /**
      * 加工单级**人可读短码**（V155，issue #6867 / B3；键名**冻结** = 设计
      * {@code docs/design/worker-h5-scan-and-report.md} §11.9）。
      *

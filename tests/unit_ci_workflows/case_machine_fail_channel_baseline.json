@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 169
+    "backend_contract_scoring_zero": 166
   },
   "history": [
     {
@@ -570,11 +570,11 @@
       "note": "issue #7022（`grep -c` 配 `|| echo \"0\"` 捕获成两行 ⇒ 判据「绿着但没干活」；同单另收第二条独立成因：收尾 job 的 `needs:` 漏了 4 个 required 门禁）新增 **2** 条 `[backend-contract]` 用例 **MC-109**（`grep -c` 形态类级元守卫：工作区零残留 + 判别力自证 + 反空跑 fail-closed + 台账逐项冻结）与 **MC-110**（标签收尾 job 的 `needs:` 必须覆盖全部 required 门禁 + 冻结清单不许腐烂 + 注入式自证）。两条按设计**都不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 本读数 +2（上一行 163 → 本 PR 后 165）。机器判红通道 = `traces.tests` 的真测试文件（非空、真实存在、本机实跑过）：`tests/unit_ci_workflows/test_grep_c_echo_dupe.py`（5 passed；注入式红证三条：两条改回坏形态 + 台账清空）与 `tests/unit_ci_workflows/test_needs_changes_tail_job_coverage.py`（4 passed；注入式红证两条：`needs` 删门禁 + 登记册删成员；**并且在无 `GH_TOKEN` 环境下也 4 passed**）；`traces.ci` = `pr-check.yml` + `case-draft.yml`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）：本机实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q -p no:randomly` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 165}` ⇒ 与锚点 163 的差值 2 = 本 PR 新增那两条。"
     },
     {
-      "sha": "pending-pr-7079-p4",
+      "sha": "pending-pr-7080",
       "date": "2026-10-17",
       "no_channel_total": 0,
-      "backend_contract_scoring_zero": 169,
-      "note": "issue #7079（单布料售卖从加工单语义里拆出来：作业单两型 `processing`/`outbound` + 卖布单保持进智能派单池 + 发货前置「裁剪+打包已报工」含可行动出口 + 生产待办两类读同一份判据 + 类级元守卫）新增 **4** 条 `scoring_assertion_count == 0` 的 `[backend-contract]` 用例：**PG-078**（两型与冻结口径 / 存量不回填 / 三源词表）、**PG-079**（发货前置与反向护栏）、**PG-080**（两类待办 + 派单池成批候选）与 **UI-114**（demo path spec 占位符选择器活性 —— 本单自己踩到的真实漏网的类级固化）。四条按设计**都不进 agent-eval**（`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 本读数 +4（上一行 165 → 本 PR 后 169）。⚠️ 同批新增的 **UI-113 不计入**：它带 1 条 `expectations`（可见面「类型」列中文标签断言）⇒ `scoring_assertion_count == 1`；逐条复算已核（PG-078/079/080 = 0、UI-114 = 0、UI-113 = 1）。机器判红通道 = `traces.tests` 的真测试文件（非空、真实存在、本机实跑过）：**UI-114** = `tests/unit_ci_workflows/test_e2e_placeholder_liveness.py`（3 passed；**红证 = 本单真实漏网的逐字复现**：四包集成树里源码已改、e2e 未修 ⇒ 具名报出 `tests/e2e/specs/orders/processing-orders.spec.ts:368 的 getByPlaceholder('请输入加工单号或订单号') 在 frontend/admin-web/src/** 里取不到逐字文案`（`:398` 同）—— 与 CI 那条 demo path 腿点的**同一个文件**；修好后转绿，再把该处注入回旧文案 ⇒ 当场复红）；**PG-078/079/080** = `tests/unit_ci_workflows/test_processing_order_kind_vocab_parity.py`（9 条跨端判据；本树 9 passed，P4 分支单独 6 红 3 绿 —— 那 6 条是**三包合并后**的结果断言）＋ 三包各自的 Java 单测 / admin-web vitest；`traces.ci` = `pr-check.yml`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内实测重锚**（不按号推算）：本机在**本树**（= `origin/main` + 本 PR 四包合并）实跑 `python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q` 报 `{'no_channel_total': 0, 'backend_contract_scoring_zero': 169}`。⚠️ 这条**是本地整目录重活跑先于 CI 抓到的**（`tests/unit_ci_workflows` 全目录 7529 passed / 4 failed / 2 skipped / 36 分钟；另 3 条失败已定性为**本机环境**——worktree 建在 `/private/tmp` 下 ⇒ `test_pr_body_guard` 的「共享临时根判定」三条在 macOS 本机必红、CI 的 `REPO_ROOT` 在 `/home/runner/work` 下不红），不是等 CI 报了才改。"
+      "backend_contract_scoring_zero": 166,
+      "note": "issue #7078（订单详情「支付/发货/确认收货时间」恒 `-`：屏幕面读后端未下发的键；本 PR 补真值 + 撤下支付交易号行）新增 **1** 条 `[backend-contract]` 用例 **OR-067**（`expectations: []` ⇒ `scoring_assertion_count == 0`）⇒ 本读数 +1（上一行 165 → 本 PR 后 166）。该用例按设计**不进 agent-eval**，其机器判红通道 = `traces.tests` 的**两个真实文件**（本机实跑过）：`backend/admin-api/src/test/java/com/migao/admin/service/OrderPaidAndReceivedAtWriteGuardTest.java`（4 tests / 0 failures，含五种坏形态的判别力自证）与 `frontend/admin-web/tests/unit/pages/order-detail.test.tsx`（50 passed；另做了注入式红证 = 把「支付时间」行改成恒空 ⇒ `1 failed | 49 passed`）；`traces.ci` = `pr-check.yml`。真债务 `no_channel_total` 仍为 **0**（不变）。本行按 `_how_to_regen` 在**同一 PR 内**实测重锚（不按号推算）：先 `./scripts/sync-main.sh` 合并 `origin/main` `725ef336d`，再**现取**读数（`python3 -m pytest tests/unit_ci_workflows/test_case_machine_fail_channel.py -q`）⇒ {'no_channel_total': 0, 'backend_contract_scoring_zero': 166}。"
     }
   ]
 }

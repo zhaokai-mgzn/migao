@@ -157,6 +157,31 @@ public class Order {
      */
     private OffsetDateTime shippedAt;
 
+    /**
+     * **收款时刻**（列 `orders.paid_at`，V160 / issue #7078）。
+     *
+     * <p>语义 = 该单 {@code pending → confirmed}（确认收款）发生的时刻 —— 由
+     * {@code OrderService.transitionStatusAtomic} 在「新态 confirmed + <b>期望前驱 pending</b>」
+     * 这条边上写入。限定前驱是**必须**的：{@code producing → confirmed}（作废加工单退回待发货）
+     * 是一条**回退边**，在那里写会把「支付时间」顶成当天（判据见
+     * {@code OrderPaidAndReceivedAtWriteGuardTest}）。</p>
+     *
+     * <p>NULL = 未采集（从未确认收款 / 存量无收款流水）⇒ 屏幕显示「-」，不猜。</p>
+     */
+    private OffsetDateTime paidAt;
+
+    /**
+     * **完成（收货）时刻**（列 `orders.received_at`，V160 / issue #7078）。
+     *
+     * <p>= 该单进入 {@code completed} 的时刻。两条完成路各写一次：商家「确认收货」走
+     * {@code OrderService.transitionStatusAtomic}（{@code to=completed}）；「发货后 N 天自动完成」
+     * 走 {@code OrderMapper.autoCompleteShippedOrders} 自己的条件 UPDATE（那条腿**不经**
+     * {@code transitionStatusAtomic}）。⇒ 自动完成的单本列 = <b>自动完成时刻</b>。</p>
+     *
+     * <p>NULL = 未采集（存量 completed 单不回填 —— 没有 durable 的完成时刻）⇒ 屏幕显示「-」。</p>
+     */
+    private OffsetDateTime receivedAt;
+
     @TableField(fill = FieldFill.INSERT)
     private OffsetDateTime createdAt;
 

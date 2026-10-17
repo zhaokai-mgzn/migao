@@ -53,6 +53,13 @@ import static org.mockito.Mockito.when;
  *       红证 = 把排序键退化成**单号序** ⇒ 本类的排序用例红（夹具刻意让「单号序 ≠ 期望序」）。</li>
  *   <li><b>透传</b>（范围 5）：订单级加急/到货日进加工单快照，{@code isUrgent} **恒落键**
  *       （{@code false} 是真值）、{@code requiredDeliveryDate} **缺值不落键**。</li>
+ *   <li><b>卖布单进池</b>（issue #7079，本类追加）：全部行 {@code saleForm=布料} 的单（按米卖布、
+ *       无加工项）**必须**出现在 {@code groups[].lines} 里并计入 {@code lineCount}/{@code orderCount}
+ *       —— 它进池这件事今天已成立（{@code buildSnapshot} 自 issue #4909 起收录卖布行），
+ *       但此前**没有任何东西钉住它**，属「会静默回退」的形态。
+ *       红证 = 在 {@code buildSnapshot}（或池过滤链）里把卖布行按「无加工项」过滤掉 ⇒
+ *       {@link #fabricSaleLinesStayInTheBatchCandidatePool} 当场红。
+ *       反向断言同在该用例里：**非卖布且无加工项**的行（配件 / 赠品行）**仍不进池**（既有语义不放宽）。</li>
  * </ol>
  *
  * <p><b>为什么不测「加急单走单订单路径能生成加工单」</b>：那是**既有**路径（本单没改它），
@@ -310,6 +317,42 @@ class PoolBoardUrgencyTest {
         assertThat(empty).isEmpty();
     }
 
+    // ─────────────────────────────────────────── 卖布单**要**进池（issue #7079）
+
+    @Test
+    @DisplayName("🔴 #7079 卖布单（全部行 saleForm=布料、无加工项）必进成批候选区；非卖布的无加工项行仍不入池")
+    void fabricSaleLinesStayInTheBatchCandidatePool() {
+        OffsetDateTime now = businessClock.nowOffset();
+        when(orderMapper.selectList(any())).thenReturn(List.of(
+                orderOf("o-fabric", "ORD-FABRIC-1", now.minusHours(5), false, null),
+                orderOf("o-accessory", "ORD-ACC-1", now.minusHours(4), false, null)));
+        when(processingOrderMapper.selectActiveOrderIds(eq(TENANT), anyCollection())).thenReturn(List.of());
+        when(orderItemMapper.selectList(any())).thenReturn(
+                fabricItemsOf("o-fabric", "i-fabric"), accessoryItemsOf("o-accessory", "i-acc"));
+
+        ProductionPoolViews.Pool pool = processingOrderService.pool(TENANT, null);
+
+        // 🔴 卖布行**在池里**（红证：在 `buildSnapshot` 的过滤链里按「无加工项」丢掉卖布行
+        //    ⇒ `snapshot.isEmpty()` ⇒ 整单 `continue` ⇒ 下面每一条当场红）
+        assertThat(pool.groups()).hasSize(1);
+        assertThat(pool.groups().get(0).lines()).extracting(ProductionPoolViews.PoolLine::orderId)
+                .as("卖布行是成批派单的候选（issue #4909 起 `buildSnapshot` 已收录它，本用例把它钉住）")
+                .containsExactly("o-fabric");
+        assertThat(pool.lineCount()).as("卖布行计入明细行数").isEqualTo(1);
+        assertThat(pool.orderCount()).as("卖布单计入池内订单数").isEqualTo(1);
+        assertThat(pool.groups().get(0).lines()).allSatisfy(line ->
+                assertThat(line.requiredMeters()).as("按米卖布 ⇒ 明细行 number 即米数（#4909 的 fabric_meters 口径）")
+                        .isEqualByComparingTo("12.5"));
+        assertThat(pool.urgentCount()).as("夹具不是加急单 ⇒ 插队区为空（成批候选区专指 groups）").isZero();
+
+        // 反向护栏：非卖布且无加工项（配件 / 赠品行）**仍不进池** —— 既有语义一字不放宽
+        assertThat(pool.groups().get(0).lines()).extracting(ProductionPoolViews.PoolLine::orderId)
+                .as("普通无加工项行不进池（`buildSnapshot` 的 `procs.isEmpty() && !布料` 分支）")
+                .doesNotContain("o-accessory");
+        assertThat(pool.urgentLines()).isEmpty();
+        assertThat(pool.orderCount()).as("没有快照的单按既有语义不进池，且不占用计数").isEqualTo(1);
+    }
+
     // ─────────────────────────────────────────── 存量行：processing_info 为 NULL（issue #5550）
 
     @Test
@@ -450,6 +493,36 @@ class PoolBoardUrgencyTest {
         info.put("processingItems", procs);
         return List.of(OrderItem.builder().id(itemId).tenantId(TENANT).orderId(orderId)
                 .productId(productId).productName("布艺遮光帘A").quantity(new BigDecimal("3"))
+                .width(new BigDecimal("1.5")).height(new BigDecimal("1.1"))
+                .processingInfo(info).build());
+    }
+
+    /**
+     * 卖布行（issue #7079）：{@code processing_info.saleForm = 布料}、**没有 {@code processingItems}**
+     * （按米卖布，不选加工项 —— 真库形态见 issue #4909）。{@code sku} / {@code saleForm} 逐字取自
+     * 既有夹具的写法（`itemsOf` 的 SKU 口径 + {@code ProcessingOrderService.SALE_FORM_FABRIC} 的取值）。
+     */
+    private List<OrderItem> fabricItemsOf(String orderId, String itemId) {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("colorName", "米白");
+        info.put("sellingMethod", "散剪");
+        info.put("doorWidth", "2.8米");
+        info.put("sku", "SKU-FABRIC");
+        info.put("saleForm", "布料");
+        return List.of(OrderItem.builder().id(itemId).tenantId(TENANT).orderId(orderId)
+                .productId("prod-fabric").productName("遮光窗帘布料")
+                .quantity(new BigDecimal("12.5"))
+                .width(new BigDecimal("2.8")).height(new BigDecimal("2.6"))
+                .processingInfo(info).build());
+    }
+
+    /** 非卖布且**无加工项**的行（配件 / 赠品行）：既有语义 ⇒ 不成派单候选。 */
+    private List<OrderItem> accessoryItemsOf(String orderId, String itemId) {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("sku", "SKU-ACC");
+        return List.of(OrderItem.builder().id(itemId).tenantId(TENANT).orderId(orderId)
+                .productId("prod-acc").productName("挂钩配件")
+                .quantity(new BigDecimal("1"))
                 .width(new BigDecimal("1.5")).height(new BigDecimal("1.1"))
                 .processingInfo(info).build());
     }
