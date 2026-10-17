@@ -635,48 +635,60 @@ export function CalcCaliberPanel({
             </div>
           )}
 
-          {/* 全域**唯一**的保存按钮（受控只读形态 / 读失败 ⇒ 不渲染）；说明在左、按钮在右 */}
+          {/* 全域**唯一**的保存出口（受控只读形态 / 读失败 ⇒ 不渲染）。
+              🔴 形态 = **右下角常驻的小条**（`sticky` + 右对齐 + 白底微模糊），不是整条白底横幅：
+              整条横幅在**静止首屏**会盖住内容（独立复核读图实测：盖住「备用用料公式」标签
+              15708px² / 下拉框上部 5632px²）—— 而小条在静止态落在面板右下角的空白区，
+              滚动时只压住一小角，且「保存」永远够得着（首屏不用滚 1.3 屏）。
+              重启条件：若商家反馈「小条挡住右下角内容」，改成滚动过表单首屏后才吸底。 */}
           {writable && displayConfig && (
-            <div className="sticky bottom-0 z-10 border-t border-neutral-100 bg-white pt-4">
-              <div className="flex flex-wrap items-center justify-end gap-3">
-                <span className="mr-auto text-xs text-neutral-500">
-                  保存后按当前配置计算；非法值会被整份拒绝并逐条说明理由。
-                </span>
-                <button
-                  type="button"
-                  data-testid="calc-caliber-restore-defaults"
-                  disabled={busy || !engineDefaults}
-                  title={
-                    engineDefaults
-                      ? '把全部算料口径恢复成算料引擎默认值（改完还要点「保存」）'
-                      : '本次没取到引擎默认值 ⇒ 无法恢复（重新打开本页可再试）'
-                  }
-                  onClick={restoreDefaults}
-                  className="rounded border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
-                >
-                  恢复为默认值
-                </button>
-                <button
-                  type="button"
-                  data-testid="calc-caliber-save"
-                  /* 域写面台账的「出口」标记（issue #6825）：类级守卫要求「可编辑控件 + 本域写出口」
-                     成对出现 —— 只看「域内有 input」会被**阈值试算**那类工具输入框满足（假绿）。 */
-                  data-write-exit="calc"
-                  disabled={busy}
-                  onClick={() => void save()}
-                  className="rounded bg-primary-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
-                >
-                  {busy ? '保存中…' : '保存'}
-                </button>
-              </div>
-              {/* 护栏理由**逐条**展示（后端一次列出每一处不合法）—— 不吞成一句「保存失败」 */}
+            <div className="sticky bottom-0 z-10 pt-2">
+              {/* 护栏理由**逐条**展示（后端一次列出每一处不合法）—— 不吞成一句「保存失败」；
+                  放在吸底容器里 ⇒ 保存被拒时理由不会滚出视口。 */}
               {reasons.length > 0 && (
-                <ul className="mt-2 space-y-1 text-sm text-red-600" data-testid="calc-caliber-reasons">
+                <ul
+                  className="mb-2 space-y-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600"
+                  data-testid="calc-caliber-reasons"
+                >
                   {reasons.map((r) => (
                     <li key={r}>{r}</li>
                   ))}
                 </ul>
               )}
+              <div className="flex justify-end">
+                <div className="flex flex-wrap items-center justify-end gap-3 rounded-lg border border-neutral-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur-sm">
+                  {/* ⚠️ 小条里**不写说明文字**：那会把条撑到 ~556px 宽，静止首屏又压到
+                      「备用用料公式」下拉框（右沿 818 > 754，独立复核实测）。说明改挂按钮 `title`，
+                      真正需要时由 422 的逐条理由块承载。 */}
+                  <button
+                    type="button"
+                    data-testid="calc-caliber-restore-defaults"
+                    disabled={busy || !engineDefaults}
+                    title={
+                      engineDefaults
+                        ? '把全部算料口径恢复成算料引擎默认值（改完还要点「保存」）'
+                        : '本次没取到引擎默认值 ⇒ 无法恢复（重新打开本页可再试）'
+                    }
+                    onClick={restoreDefaults}
+                    className="rounded border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                  >
+                    恢复为默认值
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="calc-caliber-save"
+                    /* 域写面台账的「出口」标记（issue #6825）：类级守卫要求「可编辑控件 + 本域写出口」
+                       成对出现 —— 只看「域内有 input」会被**阈值试算**那类工具输入框满足（假绿）。 */
+                    data-write-exit="calc"
+                    disabled={busy}
+                    title="保存后按当前配置计算；非法值会被整份拒绝并逐条说明理由。"
+                    onClick={() => void save()}
+                    className="rounded bg-primary-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+                  >
+                    {busy ? '保存中…' : '保存'}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

@@ -41,6 +41,68 @@ await page.waitForSelector('[data-testid="calc-caliber-panel"]', { timeout: 3000
 await page.waitForTimeout(2500)
 await page.screenshot({ path: `${OUT}/算料口径-首屏.png` })
 
+// 静止首屏：常驻保存出口（右下角小条）**盖住了什么内容**（4px 采样；只算「内容元素」，不算容器 div）
+const dockCover = await page.evaluate(() => {
+  const btn = document.querySelector('[data-testid="calc-caliber-save"]')
+  const dock = btn ? btn.closest('div.backdrop-blur-sm') : null
+  if (!dock) return null
+  const r = dock.getBoundingClientRect()
+  // 先「摘掉」吸底条再量它盖住了什么（visibility:hidden 去掉命中测试、保留布局）
+  const prev = dock.style.visibility
+  dock.style.visibility = 'hidden'
+  // 吸底条**自己那一族**（sticky 容器 + 内层 flex + 按钮）不算「被盖住的内容」
+  const bar = dock.closest('div.sticky') || dock
+  const cached = new Map()
+  const textRectsOf = (el) => {
+    if (cached.has(el)) return cached.get(el)
+    const out = []
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+    let node
+    while ((node = walker.nextNode())) {
+      if (!(node.textContent || '').trim()) continue
+      // 吸底条自己的文本、以及 visibility:hidden 的文本都**不算被盖住的内容**
+      if (bar.contains(node.parentElement) || getComputedStyle(node.parentElement).visibility === 'hidden') continue
+      const range = document.createRange()
+      range.selectNodeContents(node)
+      for (const rr of range.getClientRects()) out.push(rr)
+    }
+    cached.set(el, out)
+    return out
+  }
+  let samples = 0
+  let hits = 0
+  const under = new Map()
+  for (let y = Math.ceil(r.top); y < r.bottom; y += 4) {
+    for (let x = Math.ceil(r.left); x < r.right; x += 4) {
+      samples += 1
+      const hit = document
+        .elementsFromPoint(x, y)
+        .find(
+          (el) =>
+            !bar.contains(el) &&
+            textRectsOf(el).some((rr) => x >= rr.left && x <= rr.right && y >= rr.top && y <= rr.bottom),
+        )
+      if (hit) {
+        hits += 1
+        const key =
+          hit.getAttribute('data-testid') || `${hit.tagName}:${(hit.textContent || '').trim().slice(0, 12)}`
+        under.set(key, (under.get(key) || 0) + 1)
+      }
+    }
+  }
+  dock.style.visibility = prev
+  return {
+    dock: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) },
+    dockBottom: Math.round(r.bottom),
+    viewportH: window.innerHeight,
+    samples,
+    contentHits: hits,
+    ratio: samples ? +(hits / samples).toFixed(3) : null,
+    under: [...under.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5),
+  }
+})
+console.log('静止首屏遮挡读数:', JSON.stringify(dockCover))
+
 // 展开「高级」后再拍整页（两份形态都要看得到）
 const adv = page.locator('[data-testid="param-advanced-toggle-calc"]')
 if (await adv.count()) await adv.first().click()
