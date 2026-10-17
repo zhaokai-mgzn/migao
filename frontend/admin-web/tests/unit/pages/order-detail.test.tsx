@@ -1,4 +1,4 @@
-// case_ids: OR-001, OR-002, OR-003, OR-046, OR-055, OR-067, UI-024, UI-040, UI-053, UI-076, UI-090
+// case_ids: OR-001, OR-002, OR-003, OR-046, OR-055, OR-067, OR-068, UI-024, UI-040, UI-053, UI-076, UI-090
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, cleanup, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -414,6 +414,27 @@ describe('OrderDetailPage', () => {
 
     await waitFor(() => expect(screen.getAllByText('订单详情').length).toBeGreaterThanOrEqual(1))
     expect(screen.queryByRole('button', { name: /打印发货单/ })).not.toBeInTheDocument()
+  })
+
+  // issue #7110：`paymentDeadline` 是幽灵字段（后端 DTO 无此键、`orders` 无列、无「超时未付」规则）
+  // ⇒ 那个「支付倒计时」**从未渲染过**，已连同类型键一起撤下。本用例即使**注入**该键（模拟「服务端真发了」）
+  // 也不得出现倒计时 —— 谁不先补真值源就把 UI 加回来，这里会红。
+  it('待付款订单不渲染「支付倒计时」（后端无该真值，issue #7110）', async () => {
+    mockGetOrder.mockResolvedValue({
+      data: {
+        data: {
+          ...mockOrder,
+          status: 'pending_payment',
+          refundAmount: 0,
+          paymentDeadline: '2025-12-31T23:59:59Z',
+        } as any,
+      },
+    })
+    render(<OrderDetailPage />)
+
+    expect(await screen.findByText('待买家付款')).toBeInTheDocument()
+    expect(screen.queryByText(/支付倒计时/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/已超时/)).not.toBeInTheDocument()
   })
 
   // ===== 打印报价单（issue #4965 / UI-053）：与「打印发货单」并列，同一权限口径与写法 =====

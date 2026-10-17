@@ -802,13 +802,17 @@ class TestCriterion11YardstickIsSingleSource:
             # ← **同名不同族**（issue #6434 新增）：它自带一个 **JSX/TS 感知**的注释剥离器
             #   `strip_comments`（复数），与正典（Python 行注释 `strip_comment`）**不是同一把尺子** ——
             #   正是「为什么用精确名谓词」的那一类：退回前缀口径 ⇒ 它会进台账并被当成可合并的同族。
+            # ← **同名不同族**（issue #7110 新增）：订单详情**读面键**守卫自带一个 **TSX/JS 感知**的注释剥离器
+            #   `strip_comments`（复数：`//` + `/* */`），与正典（Python 行注释 `strip_comment`）**不是同一把尺子**
+            #   —— 与 #6434 / #6439 那两条同属「为什么用精确名谓词」的一类：退回前缀口径 ⇒ 它会进台账并被当成同族。
+            "tests/unit_ci_workflows/test_order_detail_reads_have_backend_source.py",
             "tests/unit_ci_workflows/test_order_print_entry_matrix.py",
             "tests/unit_ci_workflows/test_qty_stub_reads_calc_info.py",
             "tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py",
             "tests/unit_ci_workflows/test_swas_nginx_rate_limit.py",
         ], f"前缀族现取读数变了 —— 「为什么选精确名」的理由要重取：{prefix_family}"
 
-        # 而同名不同族那六条，**精确名谓词逐条不命中** ⇒ 它们不进台账（也就不会**陈旧红**）。
+        # 而同名不同族那七条，**精确名谓词逐条不命中** ⇒ 它们不进台账（也就不会**陈旧红**）。
         for family in (".github/danger_scan.py",):
             assert STRIP_COMMENT_DEF_RE.search(
                 (REPO_ROOT / family).read_text(encoding="utf-8")) is not None
@@ -816,6 +820,7 @@ class TestCriterion11YardstickIsSingleSource:
                           "tests/unit_ci_workflows/test_logic_delete_write_shape.py",
                           "tests/unit_ci_workflows/test_lpapi_open_printer_contract.py",
                           "tests/unit_ci_workflows/test_order_print_entry_matrix.py",
+                          "tests/unit_ci_workflows/test_order_detail_reads_have_backend_source.py",
                           "tests/unit_ci_workflows/test_qty_stub_reads_calc_info.py",
                           "tests/unit_ci_workflows/test_rbac_derived_roles_and_catalog.py"):
             assert STRIP_COMMENT_DEF_RE.search(
