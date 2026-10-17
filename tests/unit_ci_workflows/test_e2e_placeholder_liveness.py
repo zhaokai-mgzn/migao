@@ -3,7 +3,7 @@
 """**demo path spec（`tests/e2e/**`）的占位符选择器活性**守卫（issue #7079 的类级固化）。
 
 > 本文件里的 `路径:行号` 字面量**是红证夹具**：它们必须**逐字**等于 CI 真实失败报文里的那一段
-> （`assert "…spec.ts:368" in failures[0]`），改成文本锚就**验不了**「守卫真的点到了那一处」。
+> （`assert` 的那段报文里**含该文件的真实行号**），改成文本锚就**验不了**「守卫真的点到了那一处」。
 > 按 `scripts/drift_audit.py` 的口径，`tests/**` 下声明 `# drift-audit: refs-are-fixtures`
 > 即视为「按定义是失效引用」⇒ 不作引用新鲜度判定（同族先例：`test_agent_jwt_key_alignment.py`
 > 等 3 个文件）。**注意**：本豁免只覆盖本文件；`.github/cases/ui.yml` 里的引用**不**适用
