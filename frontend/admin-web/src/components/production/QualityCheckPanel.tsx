@@ -108,12 +108,12 @@ export default function QualityCheckPanel({
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-xs text-neutral-500">
               <tr>
-                <th className="px-3 py-2 text-left font-medium">成品帘</th>
-                <th className="px-3 py-2 text-left font-medium">最新判定</th>
-                <th className="px-3 py-2 text-left font-medium">不合格原因</th>
-                <th className="px-3 py-2 text-left font-medium">检验人</th>
-                <th className="px-3 py-2 text-left font-medium">检验时刻</th>
-                <th className="px-3 py-2 text-right font-medium">操作</th>
+                <th className="px-3 py-2 text-left font-medium whitespace-nowrap">成品帘</th>
+                <th className="px-3 py-2 text-left font-medium whitespace-nowrap">最新判定</th>
+                <th className="px-3 py-2 text-left font-medium whitespace-nowrap">不合格原因</th>
+                <th className="px-3 py-2 text-left font-medium whitespace-nowrap">检验人</th>
+                <th className="px-3 py-2 text-left font-medium whitespace-nowrap">检验时刻</th>
+                <th className="px-3 py-2 text-right font-medium whitespace-nowrap sticky right-0 bg-neutral-50">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
@@ -141,7 +141,7 @@ export default function QualityCheckPanel({
                     <td className="px-3 py-2 whitespace-nowrap text-neutral-600">
                       {formatMoment(record?.inspected_at)}
                     </td>
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-3 py-2 text-right sticky right-0 bg-white">
                       <button
                         type="button"
                         className="text-sm text-primary-600 hover:text-primary-700"

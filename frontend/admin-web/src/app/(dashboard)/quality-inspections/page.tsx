@@ -235,7 +235,6 @@ export default function QualityInspectionsPage() {
         onReset={reset}
         onRefresh={refresh}
         loading={targetsLoading || recordsLoading}
-        testId="search-area"
       />
 
       <PageCard testId="quality-targets-card" padded={false}>
@@ -275,11 +274,11 @@ export default function QualityInspectionsPage() {
             <table className="w-full text-sm">
               <thead className="bg-neutral-50 text-xs text-neutral-500">
                 <tr>
-                  <th className="px-4 py-2 text-left font-medium">加工单号</th>
-                  <th className="px-4 py-2 text-left font-medium">成品帘</th>
-                  <th className="px-4 py-2 text-left font-medium">数量</th>
-                  <th className="px-4 py-2 text-left font-medium">最新判定</th>
-                  <th className="px-4 py-2 text-right font-medium">操作</th>
+                  <th className="px-4 py-2 text-left font-medium whitespace-nowrap">加工单号</th>
+                  <th className="px-4 py-2 text-left font-medium whitespace-nowrap">成品帘</th>
+                  <th className="px-4 py-2 text-left font-medium whitespace-nowrap">数量</th>
+                  <th className="px-4 py-2 text-left font-medium whitespace-nowrap">最新判定</th>
+                  <th className="px-4 py-2 text-right font-medium whitespace-nowrap sticky right-0 bg-neutral-50">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
@@ -397,11 +396,11 @@ export default function QualityInspectionsPage() {
             <table className="w-full text-sm">
               <thead className="bg-neutral-50 text-xs text-neutral-500">
                 <tr>
-                  <th className="px-4 py-2 text-left font-medium">检验时刻</th>
-                  <th className="px-4 py-2 text-left font-medium">成品帘</th>
-                  <th className="px-4 py-2 text-left font-medium">判定</th>
-                  <th className="px-4 py-2 text-left font-medium">不合格原因</th>
-                  <th className="px-4 py-2 text-left font-medium">检验人</th>
+                  <th className="px-4 py-2 text-left font-medium whitespace-nowrap">检验时刻</th>
+                  <th className="px-4 py-2 text-left font-medium whitespace-nowrap">成品帘</th>
+                  <th className="px-4 py-2 text-left font-medium whitespace-nowrap">判定</th>
+                  <th className="px-4 py-2 text-left font-medium whitespace-nowrap">不合格原因</th>
+                  <th className="px-4 py-2 text-left font-medium whitespace-nowrap">检验人</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">

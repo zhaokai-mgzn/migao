@@ -88,9 +88,10 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
     }
     // 六步里的行业真值：工序三段用行业正名
     expect(screen.getByText(/裁剪（裁床）→ 车位（缝制）→ 后整（烫工及后整）/)).toBeInTheDocument()
-    // 未落地的术语不得出现（「拼版」全仓无实现；「质检」未进任何工艺路线）
+    // 未落地的术语不得出现（「拼版」全仓无实现）
     expect(screen.queryByText(/拼版/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/质检/)).not.toBeInTheDocument()
+    // 🔴 #7140 起「质检」**已落地**（观星台 /quality-inspections + 作业单质检区）⇒ 反向断言转正向
+    expect(screen.getAllByText(/质检/).length).toBeGreaterThan(0)
   })
 
   it('renders 行业纵深四块（算料 / SKU / 工序计件 / 批次余料）', () => {

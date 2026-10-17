@@ -170,7 +170,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     if (btn.getAttribute('aria-expanded') === 'false') fireEvent.click(btn)
   }
 
-  it('侧边栏出现「生产管理」组与**三个**节点，路径与权限码正确（#6580 收拢）', () => {
+  it('侧边栏出现「生产管理」组与**四个**节点，路径与权限码正确（#6580 收拢；#7140 加「质检记录」）', () => {
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
 
     const group = screen.getByText('生产管理').closest('[data-group-key]') as HTMLElement
@@ -186,13 +186,16 @@ describe('生产管理菜单入口（侧边栏）', () => {
     //    ⇒ 4 → 5 项；#5778 之后 #6580（2026-10-09 用户裁定）**把「加工项管理」「工艺配置」两项移除**
     //    （功能体并入一级项「企业基础设置」页内的配置域）⇒ 5 → **3 项**。
     //    旧深链 `/production/processing`、`/production/routings` 保留为**重定向薄壳**（不 404）。
-    expect(links).toHaveLength(3)
+    expect(links).toHaveLength(4)
     expect(links[0].textContent).toContain('生产看板')
     expect(links[0]).toHaveAttribute('href', '/production')
     expect(links[1].textContent).toContain('智能派单')
     expect(links[1]).toHaveAttribute('href', '/production/pool')
     expect(links[2].textContent).toContain('计件工资')
     expect(links[2]).toHaveAttribute('href', '/production/piecework')
+    // 🔴 issue #7140：质检记录（读码 production:inspect —— 质检员与管理员可见）
+    expect(links[3].textContent).toContain('质检记录')
+    expect(links[3]).toHaveAttribute('href', '/quality-inspections')
     // 旧「工序库」入口不再作为独立菜单项（页面改为重定向，旧深链仍可达）
     expect(Array.from(links).map((a) => a.textContent).join('|')).not.toContain('工序库')
     // 🔴 #6580：两个合并项（加工项管理 / 工艺配置）**已不再是菜单项** —— 反向断言（它们的功能体在
@@ -262,8 +265,8 @@ describe('生产管理菜单入口（侧边栏）', () => {
     const hrefs = Array.from(document.querySelectorAll('a')).map((a) => a.getAttribute('href'))
     // 🔴 #6580：24 项 → 21 项（生产管理组 5 → 3；「参数总览」一级项随页合并撤销、
     // 一级项席位改「企业基础设置」）；🔴 #7087：「工作台」组撤销（经营看板 → 最前席位、
-    // 每日简报 → 删除）⇒ 20 项。
-    expect(hrefs).toHaveLength(20) // 20 项 = 最前席位 1 + 组内 16 + 尾席位 2 + 尾部独立项 1（见 menu-nav.test.ts）
+    // 每日简报 → 删除）⇒ 20 项；🔴 #7140：生产管理组 +「质检记录」⇒ 21 项。
+    expect(hrefs).toHaveLength(21) // 21 项 = 最前席位 1 + 组内 17 + 尾席位 2 + 尾部独立项 1（见 menu-nav.test.ts）
     expect(hrefs).not.toContain('/processing-orders')
   })
 
@@ -279,6 +282,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
       'production:view',    // 生产看板（issue #5291）
       'processing:view',    // 智能派单（issue #5699 P4：节点码 = 该页读端点码）
       'production:view',    // 计件工资
+      'production:inspect', // 质检记录（issue #7140）
     ])
     const inventory = menuGroups.find((g) => g.key === 'inventory-center')
     expect(inventory!.children.map((c) => c.permissionCode)).toEqual([
@@ -291,7 +295,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     // 反恒真（issue #5291）：组内**不是**同码 —— 若有人把四项一起改回去（或一起改过来），本条必红。
     // issue #5699（P4）：智能派单的码由 processing:manage 收敛为 processing:view ⇒ 本集合同批改准。
     expect(new Set(group!.children.map((c) => c.permissionCode)))
-      .toEqual(new Set(['production:view', 'processing:view']))
+      .toEqual(new Set(['production:view', 'processing:view', 'production:inspect']))
   })
 })
 

@@ -85,6 +85,8 @@ class MenuControllerTest {
             // 🔴 2026-10-09（issue #6580，用户裁定「移除加工项管理和工艺配置这两个菜单」）：
             // 「加工项管理」「工艺配置」两个菜单项已移除（功能体并入「企业基础设置」页内的配置域）。
             "生产看板", "智能派单", "计件工资",
+            // 🔴 2026-10-17（issue #7140）：生产管理组新增「质检记录」（读码 production:inspect）
+            "质检记录",
             "入库单", "库存明细", "发货单", "余料台账", "省料看板",
             "员工管理", "岗位权限",
             // 组内的**权限码节点**（无 path、不是菜单项）：只为让经营域的码仍可授予
@@ -319,14 +321,15 @@ class MenuControllerTest {
         // 两个菜单项按用户裁定移除 ⇒ 只剩「生产看板 → 智能派单 → 计件工资」。
         // 🔴 2026-10-12（issue #6759）：**组尾**追加动作码节点「加工单操作」（`processing:update`
         // = 手机端派单的写码）—— 动作节点统一追加在组尾，导航项仍是它之前的连续前缀。
-        assertEquals(List.of("生产看板", "智能派单", "计件工资", "加工单操作"),
+        assertEquals(List.of("生产看板", "智能派单", "计件工资", "质检记录", "加工单操作"),
                 labels(production.path("children")));
         // issue #5699（P4，子菜单粒度）：每个节点码 ≡ 该页第一屏读码 —— 智能派单 = processing:view
         //（ProductionPoolController 两个读端点同码）；工艺配置 = production:view（该页第一屏 6 个读端点
         // 本次整页收敛到该码；两码持有岗位集合逐值相同 ⇒ 零 delta）；#5291 的 production:view
         // 仍覆盖生产看板与计件工资。
         // 🔴 #6580：两项移除后组内码为 [生产看板, 智能派单, 计件工资]；#6759 追加 processing:update。
-        assertEquals(List.of("production:view", "processing:view", "production:view", "processing:update"),
+        assertEquals(List.of("production:view", "processing:view", "production:view",
+                        "production:inspect", "processing:update"),
                 codes(production.path("children")));
     }
 
@@ -476,7 +479,7 @@ class MenuControllerTest {
         }
 
         // ③ 两个**导航项**仍是动作节点之前的连续前缀（动作节点只许在组尾）
-        assertEquals(List.of("生产看板", "智能派单", "计件工资"),
+        assertEquals(List.of("生产看板", "智能派单", "计件工资", "质检记录"),
                 labels(processed).subList(0, processed.size() - 1));
         assertEquals(List.of("入库单", "库存明细", "发货单", "余料台账", "省料看板"),
                 labels(inventory).subList(0, inventory.size() - 1));
