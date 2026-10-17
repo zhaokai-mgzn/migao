@@ -1002,13 +1002,20 @@ def test_repo_corpus_face_is_clean() -> None:
     assert problems == [], "跨在飞 PR 的语料取号面判红：\n" + "\n".join(f"  - {p}" for p in problems)
 
 
-def test_cross_pr_check_is_wired_into_the_repo_exit() -> None:
+def test_cross_pr_check_is_wired_into_the_repo_exit(monkeypatch) -> None:
     """**接线判据（§28.2：判据本体绿 ≠ 接线在）**：`repo_problems()` 必须**真的**把判据 7 接上。
 
     🔴 事实：判据 7 的**行为**只在他处测（桩），它完全可以「实现正确但**没接进常驻出口**」——
     那时上面那条 `test_repo_case_id_claims_are_clean` 照旧全绿，而 issue #6245 的病**原样复发**。
     这里用**注入一个念过**的桩把接线本身判红：桩被调用 ⇒ 接线在。
+
+    🔴 **必须显式造出 PR 上下文**（issue #6980）：判据 7 在 push/schedule 腿上**整条不适用**
+    （`current_pr()` = `None` ⇒ 取数面**不发起**）⇒ 不注入时这条判据会**随 CI 事件漂移**：
+    本机（无事件上下文，走启发式）绿，而 main 的 push run 红 —— 实测 2026-10-17 run `39017108085`：
+    `AssertionError: repo_problems() 没有把判据 7 接进常驻出口`（1 failed, 5656 passed）。
+    ⇒ 用 `MIGAO_CASE_CLAIMS_PR` 钉住「这一轮有本 PR」，本判据就与触发事件无关。
     """
+    monkeypatch.setenv(PR_ENV, "1")
     called: list[int] = []
 
     def probe() -> tuple[list[OpenPrClaims], list[str]]:
