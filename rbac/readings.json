@@ -310,9 +310,7 @@
   },
   "menus": {
     "frontend": {
-      "工作台": null,
       "经营看板": "dashboard:view",
-      "每日简报": "dashboard:view",
       "客户服务": null,
       "在线接待": "agent:session",
       "知识库": "knowledge:view",
@@ -340,7 +338,6 @@
     },
     "controller": {
       "经营看板": "dashboard:view",
-      "每日简报": "dashboard:view",
       "在线接待": "agent:session",
       "知识库": "knowledge:view",
       "商品管理": "product:list",
@@ -366,7 +363,6 @@
     },
     "auth": {
       "经营看板": "dashboard:view",
-      "每日简报": "dashboard:view",
       "在线接待": "agent:session",
       "知识库": "knowledge:view",
       "售后工单": "after_sales:view",
@@ -390,21 +386,9 @@
   },
   "menu_nodes": [
     {
-      "key": "workspace",
-      "name": "工作台",
-      "path": null,
-      "code": null
-    },
-    {
       "key": "dashboard",
       "name": "经营看板",
       "path": "/dashboard",
-      "code": "dashboard:view"
-    },
-    {
-      "key": "briefing",
-      "name": "每日简报",
-      "path": "/briefing",
       "code": "dashboard:view"
     },
     {
@@ -680,18 +664,6 @@
         "agent:session": [
           "GET /api/admin/agent-sessions",
           "GET /api/admin/agent-sessions/{}"
-        ]
-      },
-      "visibility_rule": "all"
-    },
-    {
-      "key": "briefing",
-      "name": "每日简报",
-      "path": "/briefing",
-      "gate": "dashboard:view",
-      "units": {
-        "dashboard:view": [
-          "GET /api/admin/briefing/config"
         ]
       },
       "visibility_rule": "all"

@@ -12,7 +12,7 @@ import DateTimeCell from '@/components/common/DateTimeCell'
 import { formatMobileTitles } from '@/lib/mobile-surface-label'
 // #3002 权限分配与真实菜单一致：复用侧边栏菜单配置做单一来源，
 // 弹窗分组/名称 = 侧边栏菜单分组/菜单项，避免展示旧口径权限目录
-import { menuGroups, standaloneTopItems } from '@/config/menu'
+import { menuGroups, standaloneHeadItems, standaloneTopItems } from '@/config/menu'
 
 /**
  * 描述超过这个长度才给「展开」（issue #7111）：卡片默认 `line-clamp-2`，短描述本来就不被截断，
@@ -148,13 +148,22 @@ export default function RolesPage() {
   }, [])
 
   // ── #3002 菜单化权限树：分组/名称来自真实侧边栏菜单（menuGroups 单源）──
-  // 🔴 #5895：侧边栏是**三个梯队** —— `standaloneTopItems`（一级项）→ `menuGroups`（分组）
-  // → `standaloneItems`（尾部项）；权限树必须**同样全接**。#5778 把「商品列表」升为一级项
+  // 🔴 #5895：侧边栏是**四个梯队** —— `standaloneHeadItems`（最前席位，issue #7087）→
+  // `standaloneTopItems`（尾席位一级项）→ `menuGroups`（分组）→ `standaloneItems`（尾部项）；
+  // 权限树必须**同样全接**。#5778 把「商品列表」升为一级项
   // （`standaloneTopItems`：名 =「商品管理」、码 = `product:list`）时只跟了侧边栏与 ⌘K，
   // 本页仍在只遍历 `menuGroups` ⇒ 该项在「权限分配」里**整项消失**（勾都勾不到）。
+  // 🔴 2026-10-17（issue #7087）：同一形态在本轮**又出现一次**的入口 = 新增的最前席位
+  // `standaloneHeadItems`（「经营看板」，码 `dashboard:view`）—— 必须一并接进权限树，
+  // 否则 `dashboard:view` 只能去「操作权限」节勾（菜单名不上树 = 名实不符的同名两处）。
   // 类级判据（新增梯队未接线即红）：tests/unit/pages/roles.test.tsx 的「菜单梯队全部已并入权限树」。
 
-  // 一级项 → 可勾选菜单项（渲染在**所有分组之前**，与侧边栏同序；无分组头，侧边栏里它也不是分组）
+  // 最前席位一级项（`standaloneHeadItems`，如「经营看板」）：与侧边栏同序 —— 渲染在**所有分组之前**
+  const headMenuItems = standaloneHeadItems
+    .filter(item => item.permissionCode)
+    .map(item => ({ code: item.permissionCode!, label: item.name }))
+
+  // 尾席位一级项 → 可勾选菜单项（渲染在**所有分组之前**，与侧边栏同序；无分组头，侧边栏里它也不是分组）
   const topMenuItems = standaloneTopItems
     .filter(item => item.permissionCode)
     .map(item => ({ code: item.permissionCode!, label: item.name }))
@@ -191,6 +200,9 @@ export default function RolesPage() {
     // #5895：一级项也是**菜单节点**（「商品管理」= `product:list`）⇒ 同样进白名单，
     // 否则它会掉进「操作权限」节（同名两处、口径混淆）
     standaloneTopItems.forEach(item => item.permissionCode && set.add(item.permissionCode))
+    // 🔴 2026-10-17（issue #7087）：最前席位（「经营看板」= `dashboard:view`）同理 ——
+    // 它是菜单节点，必须由本树承载可授予性，不得掉进「操作权限」节
+    standaloneHeadItems.forEach(item => item.permissionCode && set.add(item.permissionCode))
     return set
   }, [])
   const extraPermissions = useMemo(
@@ -531,6 +543,13 @@ export default function RolesPage() {
               <p className="text-sm text-neutral-400">暂无权限数据</p>
             ) : (
               <div className="border border-neutral-200 rounded-lg max-h-[300px] overflow-y-auto" data-testid="perm-menu-sections">
+                {/* 最前席位一级项（`standaloneHeadItems`，如「经营看板」，issue #7087）：与侧边栏同序 ——
+                    渲染在**所有分组之前**、无分组头（侧边栏里它也不是分组） */}
+                {headMenuItems.length > 0 && (
+                  <div className="border-b border-neutral-100 px-4 py-2 flex flex-wrap gap-x-6 gap-y-2" data-testid="perm-standalone-head">
+                    {headMenuItems.map(item => renderCodeItem(item.code, item.label))}
+                  </div>
+                )}
                 {/* #5895 一级项（`standaloneTopItems`，如「商品管理」）：与侧边栏同序 ——
                     渲染在**所有分组之前**、无分组头（侧边栏里它也不是分组） */}
                 {topMenuItems.length > 0 && (

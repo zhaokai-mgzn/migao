@@ -773,7 +773,9 @@ class TestJudgementsOnRealObject:
         all_paths = {n.path for n in nav.visible_nodes(["*"])}
         assert all_paths == {n.path for n in nav.MENU_TREE}
         visible = {n.path for n in nav.visible_nodes(["order:list", "dashboard:view"])}
-        assert visible == {"/orders", "/shipments", "/notifications", "/dashboard", "/briefing"}
+        # 🔴 2026-10-17（issue #7087）：`/briefing` 的**菜单项已删除**（结论卡改挂在经营看板上）
+        # ⇒ 本集合里不再有它；`/dashboard` 仍在（节点码一字未动 = `dashboard:view`，零授权 delta）。
+        assert visible == {"/orders", "/shipments", "/notifications", "/dashboard"}
         # 🔴 2026-10-09（issue #6580）：「工艺配置」「加工项管理」两个菜单项已移除（功能体并入
         # 「企业基础设置」页内的配置域）⇒ 夹具改用合并后的入口 `settings`（其节点 = `/settings`）。
         nodes = nav.nodes_for_feature("settings")
@@ -863,16 +865,23 @@ class TestEveryJudgementCanGoRed:
         assert problems_coverage(nav, []) != [], "对照：空的 menu.ts 节点集必须判红（防空跑）"
 
     def test_judgement_1b_red_on_reorder(self, nav, menu_ts_nodes, tmp_path, capsys):
+        """🔴 2026-10-17（issue #7087）改锚：原注入交换「工作台」组的
+        `经营看板` ⇄ `每日简报` —— 该组与「每日简报」菜单项**均已撤销**（经营看板现为**最前席位**
+        一级项），旧锚点**逐字不在** `menu_navigator.py` 里 ⇒ 注入静默失效（本红证会退化成空断言）。
+        改锚到**首组的相邻两项**（在线接待 ⇄ 知识库）：仍验「顺序漂移」这一维，且锚点是长在树上的。
+        """
         mutated = _load_mutated(
             tmp_path,
             lambda s: s.replace(
-                '    MenuNode("workspace", "经营看板", "/dashboard", "dashboard:view"),\n'
-                '    MenuNode("workspace", "每日简报", "/briefing", "dashboard:view"),\n',
-                '    MenuNode("workspace", "每日简报", "/briefing", "dashboard:view"),\n'
-                '    MenuNode("workspace", "经营看板", "/dashboard", "dashboard:view"),\n',
+                '    MenuNode("customer-service", "在线接待", "/agent-workspace/human-sessions", "agent:session"),\n'
+                '    MenuNode("customer-service", "知识库", "/knowledge", "knowledge:view"),\n',
+                '    MenuNode("customer-service", "知识库", "/knowledge", "knowledge:view"),\n'
+                '    MenuNode("customer-service", "在线接待", "/agent-workspace/human-sessions", "agent:session"),\n',
             ),
         )
-        assert [n.path for n in mutated.MENU_TREE][:2] == ["/briefing", "/dashboard"], "前提自证失败"
+        # ⚠️ 首节点是**最前席位**「经营看板」（`/dashboard`，#7087）⇒ 被注入的是紧跟其后的首组两项。
+        assert [n.path for n in mutated.MENU_TREE][1:3] == ["/knowledge", "/agent-workspace/human-sessions"], (
+            "前提自证失败（注入没生效 ⇒ 红证无信息量）")
         assert problems_coverage(mutated, menu_ts_nodes), "判据 1b 没看见顺序漂移 ⇒ 空断言"
 
     def test_judgement_2_red_on_ghost_code(self, nav, catalog, tmp_path, capsys):

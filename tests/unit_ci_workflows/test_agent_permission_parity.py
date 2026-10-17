@@ -803,7 +803,9 @@ TOOL_MENU_NODE: dict[str, str] = {
     "stock_ledger_query": "商品管理",            # product:list
     "inbound_order_query": "入库单",             # inbound:view
     "operation_catalog_query": "企业基础设置",   # 端点方法级 processing:manage（#5247 新增，收窄）
-    "briefing_query": "每日简报",                # dashboard:view
+    # 🔴 2026-10-17（issue #7087）：「每日简报」菜单项已删除 ⇒ 本工具（码 `dashboard:view`）
+    # 的锚点改钉**仍在树上的**「经营看板」节点（该码现在只由它承载，零授权 delta）。
+    "briefing_query": "经营看板",                # dashboard:view
     "craft_calc_config_query": "企业基础设置",   # processing:manage（生产域无专属读码）
     "processing_order_set_query": "生产看板",    # processing:manage（套件读面 = 加工单读面同码，#5246 收尾）
     # 工艺配置读面聚合（issue #4923）：6 个读端点；工具声明生产域**读**码 `production:view`
@@ -1211,8 +1213,9 @@ REGISTERED_RESIDUALS: dict[str, dict[str, str]] = {
     "MenuController 省略的节点": {
         "what": "**只剩「通知中心」**：它不在 `MenuController.MENU_TREE`（该树每个节点都必须有权限码，"
                 "而通知中心是全员可见项）—— 但它在 `AuthService` 的下发面里。"
-                "issue #5271 起服务端两处已镜像侧边栏全部 7 组（含 在线接待/知识库/岗位权限/"
-                "企业基础信息/每日简报），本条残留原先列的其它节点**均已消除**",
+                "issue #5271 起服务端两处已镜像侧边栏（当时的 7 组；🔴 2026-10-17 issue #7087 起为"
+                "**5 组 + 3 个一级项**：经营看板 / 商品管理 / 企业基础设置），本条残留原先列的其它节点"
+                "**均已消除**",
         "why": "通知中心无权限码 ⇒ 结构上不进权限树（不是漏改）；三处菜单源（前端 / `MenuController` / "
                "`AuthService`）现已是**全树同构**，判据见 `test_menu_three_sources_are_isomorphic.py`"
                "（#5271 升级）；第四处源已于 issue #5236 **整段删除**（本单，不再是待统一的残留）",
@@ -2062,7 +2065,11 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     "/settings": "企业基础设置",
     "/knowledge": "知识库",
     "/roles": "岗位权限",
-    "/briefing": "每日简报",
+    # 🔴 2026-10-17（issue #7087）：「每日简报」**菜单项已删除**（结论卡改挂在「经营看板」上、
+    # 由企业开关驱动）⇒ 本锚点**销账**（陈旧登记即红），改登记进 `ROUTE_WITHOUT_MENU_NODE`
+    # —— 守卫前缀 `/briefing` 仍在 `ROUTE_PERMISSION_MAP` 里（= `dashboard:view`，旧深链不 404、
+    # 重定向薄壳进得去），只是**不再有菜单节点**可钉。
+    # ⚠️ `/dashboard` 那条一字未动：节点码仍是 `dashboard:view`（零授权 delta）。
     # 发货单（issue #5939）：新菜单节点 ⇒ 路由守卫（`(dashboard)/layout.tsx` 的 ROUTE_PERMISSION_MAP）
     # 与节点必须成对登记（判据 11 ③：未登记即红）。
     "/shipments": "发货单",
@@ -2098,6 +2105,12 @@ ROUTE_WITHOUT_MENU_NODE: dict[str, str] = {
     # 本条的用途不变（该前缀没有菜单节点可钉），但不许再把「部分重定向」写成「整体重定向」。
     "/production/routings": "「工艺配置」菜单项已移除（issue #6580：功能体并入 `/settings`）⇒ 本前缀没有菜单节点可钉、节点归「企业基础设置」；⚠️ **只有** `?tab=calc` 这一支是旧链兼容重定向（issue #6825 → `/settings?domain=calc`），其余形态仍在 `/production/routings` 渲染本页功能体",
     "/settings/params": "「参数总览」一级项已撤掉（issue #6580：内容回到 `/settings` 页内的配置域）⇒ 本前缀只作旧链兼容（重定向 `/settings`），节点归「企业基础设置」",
+    # 🔴 2026-10-17（issue #7087）：「每日简报」**菜单项已删除** ⇒ 本前缀**不再有菜单节点可钉**
+    # （与上面四条同族形态 = 「旧入口保留、菜单项移除」）。守卫前缀 `/briefing` 仍在
+    # `(dashboard)/layout.tsx` 的 `ROUTE_PERMISSION_MAP` 里、码一字不动（`dashboard:view`），
+    # 页面已是**重定向薄壳** → `/dashboard`（`briefing/page.tsx`，正文删除）⇒ 旧深链不 404。
+    # ⚠️ 判据 11③ 要求「无节点必须逐条带理由」：这条就是那个理由（不许删守卫前缀来「对齐」）。
+    "/briefing": "「每日简报」菜单项已移除（issue #7087：结论卡改挂在「经营看板」上、由企业开关驱动）⇒ 本前缀只作旧深链兼容（重定向薄壳 → `/dashboard`），**无菜单节点可钉**（节点归「经营看板」，同码 `dashboard:view`）",
 }
 
 
@@ -2204,7 +2217,12 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
         "dashboardApi.getStats", "dashboardApi.getOrderTrend",
         "dashboardApi.getProductRanking", "dashboardApi.getRecentOrders",
         "briefingApi.getConfig")),
-    "/briefing": MenuReadAnchor("每日简报", "briefing/page.tsx", ("briefingApi.getConfig",)),
+    # 🔴 2026-10-17（issue #7087）：`/briefing` 的锚点**销账** —— 该页只剩 `redirect('/dashboard')`
+    # （正文删除）⇒ **第一屏没有任何读端点调用**，而本台账的每个 `path` 都必须对应一个菜单节点
+    # （「节点码 ≡ 该页第一屏读端点码」这条判据在**没有节点**时无从成立）。
+    # ⇒ 销账（陈旧登记即红），而不是给它硬凑一个 zero-call 的形态 ——
+    # 路由/守卫/重定向仍由判据 11 的 `ROUTE_WITHOUT_MENU_NODE['/briefing']` 承接。
+    # ⚠️ `/dashboard` 那条一字未动（含 `briefingApi.getConfig`：结论卡仍在经营看板上，开关驱动它）。
     "/agent-workspace/human-sessions": MenuReadAnchor(
         "在线接待", "agent-workspace/human-sessions/page.tsx",
         ("agentSessionApi.getSessions", "agentSessionApi.getSession")),
@@ -2970,9 +2988,9 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
     "dashboard:view": AuthorizationCensusEntry(
         roles=('customer_service', 'finance', 'sales'),
         endpoints=('DELETE /api/admin/files/{}', 'DELETE /api/admin/upload/image', 'GET /api/admin/briefing/config', 'GET /api/admin/briefing/snapshot', 'GET /api/admin/briefing/today', 'GET /api/admin/dashboard/active-sessions', 'GET /api/admin/dashboard/order-status', 'GET /api/admin/dashboard/order-trend', 'GET /api/admin/dashboard/pending-shipment-count', 'GET /api/admin/dashboard/pending-tasks', 'GET /api/admin/dashboard/processing-shipment-count', 'GET /api/admin/dashboard/product-ranking', 'GET /api/admin/dashboard/recent-orders', 'GET /api/admin/dashboard/stats', 'POST /api/admin/files/upload', 'POST /api/admin/files/upload-batch', 'POST /api/admin/upload/image', 'POST /api/admin/upload/images'),
-        menu_nodes=('auth:每日简报', 'controller:每日简报', 'controller:经营看板', 'frontend:每日简报'),
+        menu_nodes=('auth:经营看板', 'controller:经营看板', 'frontend:经营看板'),
         tools=('briefing_query', 'dashboard_stats'),
-        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「每日简报 / 经营看板」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；18 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（DELETE /api/admin/files/{}；DELETE /api/admin/upload/image；GET /api/admin/briefing/config 等）；Agent 侧 2 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（briefing_query / dashboard_stats）。'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「经营看板」菜单节点（三处菜单源一致；2026-10-17 issue #7087 起它是**最前席位**一级项，原并列的「每日简报」菜单项已删除）对这些岗位**由不可见变可见**；18 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（DELETE /api/admin/files/{}；DELETE /api/admin/upload/image；GET /api/admin/briefing/config 等）；Agent 侧 2 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（briefing_query / dashboard_stats）。'),
     ),
     "finance:create": AuthorizationCensusEntry(
         roles=('finance',),
