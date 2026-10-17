@@ -1238,6 +1238,15 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
                 .collect(Collectors.toList());
         response.setItems(itemResponses);
 
+        // 「发货前是否有需要报工的作业」+「没有作业单时该生成哪一型」（issue #7079 第 5 包）：
+        // 判据本体在 `OrderShipGuard.requiredOrderKind`（= 发货守卫用的那份 `needsWork` 的同一实现点），
+        // 本处只做参数搬运 —— 前端据此给卖布单「生成出库作业单」的出口、并前置拦下发货。
+        // ⚠️ 它自己加载一次明细（`items` 走的是 `OrderItem` 实体、没有 `processing_info` 的解析结果可复用，
+        // 见 `OrderShipGuard.loadOrderItems` 的既有约定：必须走 BaseMapper 才经 JacksonTypeHandler）。
+        String workOrderKind = OrderShipGuard.requiredOrderKind(orderItemMapper, objectMapper, order);
+        response.setNeedsWork(workOrderKind != null);
+        response.setWorkOrderKind(workOrderKind);
+
         // 后端统一聚合加工项，并计算加工费 / 实收款（架构决策：费用计算全部在后端）
         // issue #4406：加工费 = Σ 各行**落库时算好的**加工费（组合价 × 加工费米数），不重算；
         // 同时把该行的加工费与可审计构成透出（行级 processingFee / processingFeeDetail）。

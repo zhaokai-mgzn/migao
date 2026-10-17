@@ -119,7 +119,22 @@ describe('算料口径与术语说明区块（issue #4975）', () => {
   it('手选两项写明「系统不推算」+ 拼接的「不触发工序」边界可见（死亡条件绑 #4569）', () => {
     render(<CraftCalcGlossary config={CONFIG} />)
     expect(screen.getByTestId('glossary-term-拼接')).toHaveTextContent('不触发工序')
-    expect(screen.getByTestId('glossary-term-接高')).toHaveTextContent('还没确认')
+    // 2026-10-17 用户裁定：「边界」行整段撤下（研发过程产物）⇒ 原断言（该行含「还没确认」）
+    // 的**载体已移入 definition**（判据强度不变，见同文件「不得再有琥珀色边界行」那条）
+    expect(screen.getByTestId('glossary-term-接高')).toHaveTextContent('系统不推算')
+  })
+
+  it('术语怎么判**不再有红色「边界」行**（2026-10-17 用户裁定：研发过程产物不上屏）', () => {
+    const { container } = render(<CraftCalcGlossary config={CONFIG} />)
+    const text = container.textContent ?? ''
+    // 自证非空：空区块上的 `not.toContain` 恒真
+    expect(text).toContain('术语怎么判')
+    expect(text.length).toBeGreaterThan(200)
+    // 注入：把 `boundary` 渲染加回（或把某条 boundary 数据加回）⇒ 两条都红
+    expect(container.querySelectorAll('.text-amber-700')).toHaveLength(0)
+    expect(text).not.toContain('选项名必须两边一致')
+    // 反向自证（撤的是红字行，不是整块说明）：同一区块里的「影响」行仍在
+    expect(text).toContain('影响：')
   })
 
   it('特殊选项组：六个勾选项各一条（工序/锚点来自真值源；一分为二 无工序）', () => {

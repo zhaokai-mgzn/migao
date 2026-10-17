@@ -11,6 +11,7 @@ import {
   type PrintMediaId,
 } from '@/lib/print-media'
 import { captureNodeToPngBlob, copyPngToClipboard, downloadPng } from '@/lib/print-capture'
+import { extractApiErrorMessage } from '@/lib/api-error'
 import type { PrintTarget } from '@/lib/print-doc'
 
 /**
@@ -183,7 +184,9 @@ export default function PrintDocPreview({
         toast.warning(`浏览器不允许写剪贴板，已改为下载 PNG${note}`)
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '截图失败')
+      // 2026-10-17：并入共享原语（UI-112 的形态面判据）—— 本地错误仍用它的 message，
+      // 传输层错误（axios）的 `Request failed with status code NNN` 不再当失败原因上屏。
+      toast.error(extractApiErrorMessage(error, '截图失败'))
     } finally {
       setCapturing(false)
     }

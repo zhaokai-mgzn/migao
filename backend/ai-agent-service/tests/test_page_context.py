@@ -621,10 +621,14 @@ def test_ts_test_corpus_is_shared() -> None:
 
 
 async def _run_handler(req: ChatSendRequest, user: UserIdentity):
-    """调 `_handle_page_ctx_request`，返回它交给下游 `send_message` 的那条消息。"""
+    """调 `_handle_page_ctx_request`，返回它交给下游 `_send_plain_message` 的那条消息。
+
+    ⚠️ 下游是 `_send_plain_message` 而**不是** `send_message`（issue #7112）：本处理器已把
+    「本轮 LLM 文本」与「落库的用户原话」分开递交 ⇒ 直接落到普通文本路径，不再经前缀分派。
+    """
     from app.api.chat import _handle_page_ctx_request
 
-    with patch("app.api.chat.send_message", new=AsyncMock(return_value=MagicMock())) as mock_send, \
+    with patch("app.api.chat._send_plain_message", new=AsyncMock(return_value=MagicMock())) as mock_send, \
             patch("app.api.chat.SessionMemory",
                   return_value=_memory(get_session=_session(id="sess_1", customer_id=user.user_id))):
         await _handle_page_ctx_request(req, tenant_id=1, user_id=user.user_id, current_user=user)
@@ -730,7 +734,7 @@ class TestPageContextField:
     @pytest.mark.asyncio
     async def test_closed_session_blocked(self) -> None:
         from app.api.chat import _handle_page_ctx_request
-        with patch("app.api.chat.send_message", new=AsyncMock()) as mock_send, \
+        with patch("app.api.chat._send_plain_message", new=AsyncMock()) as mock_send, \
                 patch("app.api.chat.SessionMemory",
                       return_value=_memory(get_session=_session(status="closed"))):
             with pytest.raises(HTTPException) as e:

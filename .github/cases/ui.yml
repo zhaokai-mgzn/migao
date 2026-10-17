@@ -1862,6 +1862,7 @@ cases:
       - "**行式紧凑版式**（issue #6857，用户裁定方案 B）：算料域的数值输入**与名称同一行**（输入框紧邻的前一个兄弟 = 名称元素）、定宽 `w-28` + 数字右对齐（`tabular-nums`）、**不得** `w-full`；行间细分割线、**不再用卡片**；档位表 显示名 `w-40` / 褶倍 `w-28`、拼色表 `w-28`、备用公式 `select` `w-64`"
       - "**行内不标默认态**（issue #6857，用户裁定方案 C）：`param-unset-*` / `param-is-default-*` / `param-changed-*` **一个都不在**；替代 = 域级信号（横幅 + 口径徽标）+ 「恢复为默认值」按钮（把**整份**草稿写回 `defaults`；`defaults_source !== 'engine'` ⇒ 禁用；**不自动保存**）"
       - "**类级守护：配置页数值输入必须定宽**（issue #6857 判据 5）：本域每个 `calc-caliber-*` 输入/下拉都带定宽 token（`w-28`/`w-40`/`w-64`）且**不得** `w-full`；`boundedInputCls` 的替换必须真的生效（`inputCls` 丢了 `w-full` ⇒ 自证红，防静默退化成整列宽）"
+      - "🔴 **2026-10-17 用户裁定（两条）**：① 「把算料口径里面的这行字都拿掉吧」—— 参数行内**整行**「改它会怎样：… 说明」退场（含行尾 `param-doc-*` 锚点），影响说明的唯一载体是同屏术语区块的「参数当前值」表；承载体 = `frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx`（逐条断言页面上取不到 `改它会怎样`、`param-doc-*` 为 `null`，并反向自证 `glossary-param-*` 目标行仍在）。② 「两个参数一行排列的布局是否更美观」⇒ 常用 / 高级参数容器改为 `grid grid-cols-1 gap-x-8 xl:grid-cols-2`（窄屏单列），判据 = 同文件的「两列排布（xl+）」用例（把 `divide-y` 单列写回 ⇒ 红）。三件套口径（人话名 / 口径提示 / 就地可改）一条不放宽。"
     skip_reason: "[backend-contract] 纯前端页面与只读展示（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx（算料口径域面板；它承接的是 #6826 删掉的那个死代码组件的面）、frontend/admin-web/tests/unit/pages/settings-params.test.tsx（新页面 + 配置主线）、frontend/admin-web/tests/unit/lib/config-readiness.test.ts（三态判据）、frontend/admin-web/tests/unit/lib/tenant-params.test.ts 执行"
     precondition: "本用例是 [backend-contract] 纯前端用例：前置（算料配置读面与 AI 配置读面）由单测 mock `@/lib/api` 自建（#6573 起算料域读面由**页面**发起、以 props 注入面板），不依赖共享夹具 ⇒ 前置不成立时单测直接红；agent-eval 栈不跑它"
     merge_log: "2026-09-22 新增（issue #5131）：用户 2026-09-22 裁定 D6′ = 方案 A（整合落在页面与信息架构，存储保持结构化列），并逐字强调「我们的配置类页面务必要考虑配置复杂度和用户体验」⇒ 按 migao-dev-flow §22 配置类页面规范落增量 1：P1 按域分组 / P2 每参数三件套 / P3 默认值可见 / **P4 阈值试算**（双列对照，服务端判定真值 —— 只覆盖超高与超宽两个阈值键，其余算料参数的服务端试算不收 config）。**未闭环（照实登记）**：P6 变更留痕登记为后续增量。 ｜ 2026-10-08（issue #6573，用户裁定方案 C）**改判**：参数总览由 `/settings` 的 tab **升为一级菜单项** `/settings/params` —— 旧形态把配置中心绑在 `system:manage` 上，持 `production:view` 的生产岗根本进不去，而缺配置的正是他们要配的东西；同批落「配置主线」（跨页就绪度：工序与单价 → 工艺路线 → 默认路线 → 加工费组合 → 算料配置）与**域级权限**（不持码的域不渲染也不请求）。判据口径同步改判：第一屏读端点由**页面**的 effect 驱动面承担（`MENU_READ_ENDPOINT_ANCHORS` 新增该页一条，5 个读面全是 `production:view` ⇒ 第一屏码集恰好一个码）。**未实装（照实登记）**：服务端聚合就绪度端点、跨页的「加工项 / 余料尺寸」两步、以及真实浏览器点击 E2E 均未做 ｜ 2026-10-09（issue #6580，用户裁定）**再改判**：「参数总览」**不再单独立菜单**（用户逐字「参数总揽不要单独搞个菜单」）——它的一级项席位由「企业基础设置」（原「企业基础信息」，同批改名）占用，内容并入 `/settings` 页内的配置域；`/settings/params` 保留为旧链兼容（重定向，不 404）。本例的**页面级判据**（四区八域 / 配置主线 / 域级权限 / 阈值试算）随页迁移继续有效， ｜ 2026-10-09（issue #6585，v2）**域拆到功能粒度**：域数 **8 → 11** —— `processing-fee`（一个域两件事：加工项 + 加工费组合）拆成 `processing-items` + `fee-combinations`，`craft-route`（一个域四件事）拆出 `operation-prices`（工序与部位单价是**同一张表** ⇒ 不拆成两域），并新增 `cutting-height`（裁高配置）；算料的**公式编辑**并入「算料口径」域（消灭与 board 内 calc tab 的重复入口）。**新增类级守卫「域内零 tab」**：遍历全部域断言 `config-domain-panel-*` 内无 `role=tablist`（ARIA 角色不得再出现），未拆域进**只许缩短**的台账（`TABS_NOT_YET_SPLIT`）+ 无幽灵断言 ⇒ 每搬完一个域必须从台账删一行。旧 `?domain=processing-fee` 由 `LEGACY_DOMAIN_ALIASES` + `resolveDomainKey` 兜住（域 key = 可分享的 URL 契约，不许落空白）。执行点 = `frontend/admin-web/tests/unit/pages/settings.test.tsx`（判据 7）+ `lib/config-center-domains.test.ts` + `tests/unit/components/{ProcessingItemsPanel,FeeCombinationsPanel,OperationPricePanel,RoutingsPanel,CuttingHeightPanel,CalcCaliberPanel}.test.tsx` ｜ 2026-10-13（issue #6825，用户裁定**方案 B**）**收口算料写面**：`/settings?domain=calc` 的「算料口径」域此前**只有读面**（标签 / 提示 / 影响面 + 只读值 + 阈值试算），真正的写面（8 标量 + 档位表 + 拼色每折吃布表 + 备用公式 + 保存）只存在于 `/production/routings?tab=calc`，而那个菜单入口早在 #6580 就被删了（登记在 `tests/unit_ci_workflows/test_agent_permission_parity.py::ROUTE_WITHOUT_MENU_NODE`）、#6585 又摘掉了「去算料配置」外链 ⇒ **商家从任何导航都到不了这些参数**（同一份配置两个入口 = 设计判死线第 1 条）。本轮把唯一写面收敛进算料口径域：就地可改 8 标量（`NumberInput`，issue #5198/#5218 口径）+ 档位表（显示名 + 满度**逐行可改**）+ 拼色每折吃布表 + `default_formula` select（复用 `CRAFT_CALC_FORMULA_LABELS`，不造第二份映射）+ **一个**保存按钮（`PUT` **全量 11 键**；422 ⇒ `details[].message` **逐条**上屏、**草稿不回滚**、不谎报已保存）；术语与口径区块（`CraftCalcGlossary`）与阈值试算随功能体一并迁入；三态纪律不变（`loading` 不画「未配置」、读失败只剩**一处**失败信号 + 重试、无参数卡）。板子那侧：`ProcessConfigBoard` 的 tab 由「工序管理 / 算料配置 / 裁高配置」收敛为**两个**（算料 tab 与它的全部 `craft-calc-config-*` DOM 整体删除），就绪度第 ④ 步的「去处理」从**页内切 tab** 改成**跨页深链** `/settings?domain=calc`（死按钮不许留）；旧深链 `?tab=calc` 由 `production/routings/page.tsx` `router.replace` 重定向（不 404、不落空白）。`frontend/admin-web/src/components/production-config/CalcFormulaPanel.tsx`（唯一消费者是 `/settings` 算料域）**删除**，其行为判据（读失败单一信号 / 全量 `PUT` 键 / 422 逐条理由）迁进 `CalcCaliberPanel.test.tsx`；`CRAFT_CALC_ENTRY` 改指 `/settings?domain=calc`，并把 `meters-formula-legend.test.ts` 里那条钉死值同批改准。**新增类级守卫**（issue #6825 冻结判据 6）：`tests/unit/lib/domain-write-surface.test.tsx` 遍历 `CONFIG_DOMAINS`（及其 `mainlineSteps`）断言每个域在 `config-domain-panel-*` 内有**可交互写面锚点**、且有**本域写出口**（`[data-write-exit]` 与锚点成对 —— 只留试算框那种形态必红），台账 = `tests/unit/lib/domain-write-surface-ledger.ts`（未登记即抛错，fail-closed）。"
@@ -4175,8 +4176,34 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
-
-  # ══════════════════════════════════════════════════════════════════════════
+  - id: UI-112
+    legacy_id: ""
+    title: "失败原因 = 业务文案：传输层读数不得上屏（智能派单报 422 显示 Request failed with status code 422；2026-10-17 用户裁定）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - copy
+      - error-message
+    truths_ref:
+      - frontend-fix.no-api-change
+      - frontend-fix.vitest
+    user_inputs:
+      - "用户 2026-10-17 逐字：「点击一键合并派单后页面报错了，你看下服务器上的日志，这个错误提示非常低级，用户完全看不懂，得把报错原因用业务文案写清楚，而不是技术语言」（截图 = 智能派单页 `合并预览失败：Request failed with status code 422`）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 **两层归因**：① 调用面 `frontend/admin-web/src/app/(dashboard)/production/pool/page.tsx` 的 `dispatchErrorText` 取的是 `e.message`，而 axios 错误的 `.message` **就是**传输层读数（`Request failed with status code 422`）；服务端业务原因在 `error.response.data.error.message`（`GlobalExceptionHandler` 的 `ApiResponse.error(code, message, details)`）里、被那一行丢掉。② 共享原语 `frontend/admin-web/src/lib/api-error.ts` 的 `extractApiErrorMessage` 兜底链里也留着 `err.message` 一格 ⇒ 服务端文案缺失时照样端出技术语言。"
+      - "🔴 **判据（行为面）**：服务端文案优先（业务原因逐字透出）；**传输层原文绝不外传**（缺服务端文案 ⇒ 落到业务兜底话术）；反向自证 —— 非传输层的本地错误（客户端校验等）仍用自己的 `message`（不是把 `message` 一律禁掉）。承载体 = `frontend/admin-web/tests/unit/lib/server-error-copy.test.ts`。"
+      - "🔴 **判据（形态面，类级）**：`src/app` + `src/components` 全域扫描，禁止「`instanceof Error ? <x>.message`」这种把错误对象 message 当展示文案的写法（改前 9 处：智能派单 1 / 知识库 8 / 省料看板 1）—— 注入任一形态 ⇒ 具名报出该文件。"
+      - "⚠️ **本次未固化的那一半（照实登记）**：服务端 2026-10-17 那次 422 的**具体业务原因**要在真实环境复现才能定名（本机两个 admin-api 实例的日志里都没有该请求：:8080 的实例自 03:53 起连不上云 dev RDS、:8180 的实例 07:15~07:22 只有定时任务的 SQL）⇒ 本条只保证「服务端给了什么文案，商家就看到什么」；改后同一次失败会把服务端原文打在卡片上（报错原因具备可见性）。"
+    skip_reason: "[backend-contract] 纯前端错误文案 / 纯函数，由 vitest 单测覆盖，非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（用户逐字裁定，见 user_inputs）。取号 = `python3 scripts/next_case_id.py ui` 现取 main 最大 + 1 = UI-112。红证：把 `dispatchErrorText` 与 `extractApiErrorMessage` 换回 `git show origin/main:<path>` 的旧实现 ⇒ 行为面用例红（`extractApiErrorMessage` 返回 `Request failed with status code 422`）；把任一 `toast.error(extractApiErrorMessage(...))` 改回 `e instanceof Error ? e.message : 'X失败'` ⇒ 形态面用例具名报出该文件。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/lib/server-error-copy.test.ts"
   # UI-113（issue #7079，2026-10-17）——「作业单」两型的**商家可见面**。
   #
   # 病根（用户逐字）：「**单布料售卖是不应该生成加工单的**」—— 而卖布单改前在「生产看板」
@@ -4275,6 +4302,49 @@ cases:
     traces:
       tests:
         - "tests/unit_ci_workflows/test_e2e_placeholder_liveness.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+  - id: UI-115
+    legacy_id: ""
+    title: "**卖布单在订单详情的「生成作业单」出口**：发货前是否需要作业由读面给出（`needs_work` / `work_order_kind`），详情空态/生成按钮、发货页守卫、详情发货入口三处都用它（issue #7079 第 5 包）"
+    domains:
+      - ui
+      - admin-web
+      - order
+    tier: normal
+    tags:
+      - ui
+      - processing-order
+      - fabric-sale
+      - read-face-signal
+      - ship-guard
+      - dead-end-exit
+      - red-proof
+    truths_ref: []
+    precondition: "前置 = 四样都在仓里可读：① 判据本体 `backend/admin-api/src/main/java/com/migao/admin/service/OrderShipGuard.java`（`needsWork` = 含加工项 **或** 有卖布行；`requiredOrderKind` = 该判据的读面形态）；② 读面键 `backend/admin-api/src/main/java/com/migao/admin/dto/OrderDetailResponse.java` 的 `@JsonProperty(\"needs_work\")` / `@JsonProperty(\"work_order_kind\")`；③ 前端唯一读点 `frontend/admin-web/src/lib/processing-order.ts` 的 `workOrderKindOf`；④ 三处消费面组件（`ProcessingOrderBlock` / `ship/ShipOrder` / `OrderDetail`）。**前置不成立时不许读成通过**：接线判据取不到 `convertToDetailResponse` 方法体 ⇒ fail-closed 判红（不许读成「没有违规」）。"
+    user_inputs:
+      - "卖布单（按米卖布）在订单详情里为什么没有生成作业单的按钮？空态还写着「无加工项订单无需加工环节」，可它明明要先裁剪打包报工。"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "🔴 **判据 1（会红，前端可见面）**：卖布单（`work_order_kind = outbound`、`processingItems` 为空）且无作业单 ⇒ 订单详情「作业单」区块必须出现**「生成出库作业单」**按钮 + 按型说明（按钮文案取 `ORDER_KIND_LABELS`，不新造词），且屏上**不出现**机器键 `outbound` / `work_order_kind`。执行点 = `frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx`（`UI-113 判据 1`）。**红证**：把 `canGenerate` 退回 `notFound && hasProcessing && …`（旧形态）⇒ 红。"
+      - "🔴 **判据 2（会红，不实文案）**：空态文案**不得**再出现「无加工项订单无需加工环节」——它对卖布单**不实**（卖布单正需要裁剪/打包作业）。需要作业但当前状态还不能生成 ⇒ 显示按型的**可行动**说明（「该订单需要作业单（出库作业单），当前状态还不能生成」+ 下一步是什么）；无需要报工的作业 ⇒ 「该订单无需作业单（没有加工项，也不是卖布单）」。执行点 = 同文件 `UI-113 判据 3/4`。**红证**：把空态改回那句旧文案 ⇒ 判据 3 红。"
+      - "🔴 **判据 3（会红，发货页前置守卫）**：卖布单在 `/orders/{id}/ship` 必须被**前置阻断**（不渲染发货表单「确认发货 / 确认物流」）+ 可行动出口（「返回订单详情」）+ 按型引导句（「该订单是卖布单：先完成出库作业单的裁剪与打包报工，再发货」）；作业单已完成 ⇒ 放行；**无作业**的普通单（`work_order_kind` 缺键）⇒ 不查作业单、直接渲染表单（不许误拦）。执行点 = `frontend/admin-web/tests/unit/components/ShipOrderGuard.test.tsx`（`UI-113 判据 1~4`）。**红证**：把守卫退回 `order.processingItems?.length > 0` ⇒ 卖布单那 3 条红。"
+      - "🔴 **判据 4（会红，详情页发货入口）**：订单详情的发货入口对卖布单同样有前置提示（按型引导句），作业单已完成才出可点的「发货」。执行点 = `frontend/admin-web/tests/unit/components/OrderDetailShipGuard.test.tsx`（`UI-113 判据 5~7`）。**红证**：退回 `processingItems` 单侧判据 ⇒ 卖布单直接渲染「发货」按钮 ⇒ 红。"
+      - "🔴 **判据 5（会红，读面同源）**：`OrderShipGuard.requiredOrderKind` 与 `needsWork` **必须同源**（有型 ⇔ 需要作业），且逐值：全卖布行 ⇒ `outbound` / 含加工项或混合 ⇒ `processing` / 无作业 ⇒ `null`；卖布行以 JSON **字符串** 形态出现时仍判出库。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/OrderShipGuardTest.java`（`requiredOrderKind*` 6 条）。**红证**：让 `hasFabricSaleLine` 恒假 / 按 `processingItems` 单侧判 ⇒ 红。"
+      - "🔴 **判据 6（会红，读面接线）**：`OrderService.convertToDetailResponse` 必须真的调用 `OrderShipGuard.requiredOrderKind` 并把结果落到响应（`setNeedsWork` / `setWorkOrderKind`），DTO 上两个键必须是显式 `@JsonProperty`（snake_case 冻结键）。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/OrderDetailWorkSignalReadFaceTest.java`（含判别力自证：判据本体不接线 / 结果不落响应 / 摘掉 `@JsonProperty` / 方法体取不到，四种坏形态各自判红；只往注释里加字面量 ⇒ 一条都不红）。**红证**：把 `requiredOrderKind(` 换成 `hasProcessingItems(` ⇒ 红。"
+      - "📌 **为什么这是缺陷不是新需求**：卖布单生成作业单的**能力早就有**（`ProcessingOrderService.prepare` 的门是 `snapshot.isEmpty()`，而 `buildSnapshot` 对 `saleForm=布料` 的行使**保留**），派单池与 AI 工具两条出口都通；断的只是**读面没把「要不要作业」交给前端** ⇒ 商家在订单详情看不到出口，而刚被发货守卫拦下时收到的却正是「须先完成出库作业单的裁剪与打包报工」——两个面互相矛盾。"
+      - "📌 **边界（照实登记）**：本用例**不判**「作业单该由谁生成」（派单池 / AI 工具 / 详情按钮三条路都合法）；也**不判**「卖布单该不该走作业」（那是 issue #7079 ②/③ 的产品裁定，已定）；`order_kind` 的三源词表（后端常量 / V159 的 CHECK / 前端联合类型）本包**未动**。"
+    skip_reason: "[backend-contract] 前端可见面判据（vitest 渲染断言）+ 后端行为/接线判据（JUnit）；零网络、零时钟、非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7079 的第 5 包）。**发现路径** = 集成复核 #7079 的「可行动出口」时发现三条路只有两条通：订单详情「作业单」区块的门是 `canGenerate = notFound && hasProcessing && …`（`hasProcessing` 只覆盖「含加工项」）⇒ 卖布单没有生成按钮、空态还写着对卖布单**不实**的「无加工项订单无需加工环节」；同一单侧信号还导致发货页守卫**完全不拦**卖布单、详情发货入口无前置提示。用例号 = `NCI_MAIN_REF=HEAD python3 scripts/next_case_id.py UI` ⇒ 该工具报 `UI-113`，但 `UI-113` / `UI-114` 已被本单在飞分支 `test/20261017-work-order-kind-guard`（未开 PR ⇒ 工具看不见）占用 ⇒ **按内容核对后取 UI-115**（main 上最大 `UI-111`）。**报告型说明**：承载体 = 前端单测（vitest，`admin-web 单测` 腿）+ 后端单测（JUnit，`admin-api` 腿）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx"
+        - "frontend/admin-web/tests/unit/components/ShipOrderGuard.test.tsx"
+        - "frontend/admin-web/tests/unit/components/OrderDetailShipGuard.test.tsx"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderShipGuardTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderDetailWorkSignalReadFaceTest.java"
       ci:
         - pr-check.yml
       verifies: []

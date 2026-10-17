@@ -40,7 +40,7 @@ export interface ToastRequestErrorOptions {
 }
 
 /**
- * 取服务端可展示文案（issue #5485）。
+ * 取服务端可展示文案（issue #5485；🔴 2026-10-17 收口）。
  *
  * 后端统一信封 `{success:false, error:{code, message}}` ⇒ 详情在 `response.data.error.message`。
  * 登录 / 改密页需要把 401 / 422 的**服务端原文**直接展示：
@@ -48,19 +48,27 @@ export interface ToastRequestErrorOptions {
  *   前端不得改写、更不得自己编一条更细的提示（那等于把账号是否存在泄露出去）；
  * - 改密 422（弱密码 / 旧密码错）、企业编码 422（格式 / 占用 / 保留字）同样直接透传原文。
  *
- * 兜底顺序与 `request.ts` 拦截器的口径一致，最后才落到调用方给的 fallback。
+ * 🔴 **传输层原文不上屏**（2026-10-17，用户逐字「这个错误提示非常低级，用户完全看不懂，
+ * 得把报错原因用业务文案写清楚，而不是技术语言」—— 他在智能派单页看到的是
+ * `合并预览失败：Request failed with status code 422`）。缺省顺序里原先还有一格 `err.message`，
+ * 而 **axios 错误的 `.message` 就是那句传输层读数**（`Request failed with status code NNN` /
+ * `Network Error`）⇒ 服务端文案缺失时会把技术语言端给商家。
+ * 现在：**传输层错误一律不许用 `.message`**（按 `isAxiosError` / `response` / `request` 三面判定），
+ * 落到调用方给的 `fallback`（业务话术）；非传输层的本地错误（客户端校验等）仍可用 `.message`。
  */
 export function extractApiErrorMessage(error: unknown, fallback: string): string {
   const err = error as {
+    isAxiosError?: boolean
     response?: { data?: { error?: { message?: string }; message?: string } }
+    request?: unknown
     message?: string
   }
-  return (
-    err?.response?.data?.error?.message ||
-    err?.response?.data?.message ||
-    err?.message ||
-    fallback
-  )
+  const fromServer = err?.response?.data?.error?.message || err?.response?.data?.message
+  if (typeof fromServer === 'string' && fromServer.trim()) return fromServer
+  const isTransportError =
+    err?.isAxiosError === true || err?.response !== undefined || err?.request !== undefined
+  if (!isTransportError && typeof err?.message === 'string' && err.message) return err.message
+  return fallback
 }
 
 /**
