@@ -1231,6 +1231,32 @@ def test_every_gh_using_step_declares_a_token():
     )
 
 
+# ── 类级固化：判据 7 在非 PR 上下文里的「出声」出口必须接线（issue #6980 裁定 A）──────────
+
+def test_judging_step_voices_the_no_pr_context_exit():
+    """判定步的探针必须调 `pr_context_note()` —— 本腿在 push/schedule 上**没有「本 PR」对象**。
+
+    为什么钉这里：`tests/unit_ci_workflows/test_case_id_claims.py::current_pr` 在非 PR 事件上返回 `None`
+    （= 判据 7 整条不适用），但「不适用」若**静默**，读日志的人分不清它与「在飞面没有重号」
+    （issue #6980 冻结判据 2「出口口径（不许静默）」）。⇒ 那一行读数必须真被打印出来。
+
+    语料 = 判定步里**可执行**的 bash（`_bash_code_lines` 剥掉整行注释 —— 否则注释里提到那句
+    `pr_context_note(` 就会让判据假绿，§23.8 B1 的 bash 版）。
+    红证（注入式）= 删掉 `print(t.pr_context_note())` 那一行 ⇒ `hits == []` ⇒ 本判据当场红。
+    """
+    doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    hits = [s for s in _steps(doc)
+            if "pr_context_note(" in _bash_code_lines(str(s.get("run") or ""))]
+    assert len(hits) == 1, (
+        f"应有且仅有一个步把判据 7 的**对象读数**打出来（现取 {len(hits)} 个）—— "
+        f"非 PR 上下文的「不判定」不许静默"
+    )
+    run = str(hits[0].get("run") or "")
+    assert "test_case_id_claims" in run, (
+        "出声必须来自判据本体（同一个真相源）—— 不许在 workflow 里另写一份「谁是本 PR」的判断"
+    )
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 判据 16~18（台账 `FM-E21`）：**判红出口的体积预算** —— 三处出口都不能被输出压垮
 #   实测 2026-09-28：完整 pytest 输出现取 **17613k** > GitHub 的 step summary 上限 **1024k**

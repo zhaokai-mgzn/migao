@@ -199,6 +199,10 @@ describe('算料口径域面板（issue #6580 抽取后的行为面）', () => {
     // 算料术语改叫法、保留业务词）。**只改展示名**：键名 `per_fold_single` / 公式 / 数值一字未动，
     // 同一 describe 内「引擎键名不上屏」与下文 `PUT` 全量键判据都照旧。
     expect(screen.getAllByText('单色每折用料（米）').length).toBeGreaterThan(0)
+    // 2026-10-17（issue #7124 二轮）：**字段自己**的标签不再拖括号单位 —— 「（米）」拆成框内后缀
+    // （上面那条命中的是下方术语表的完整标签；这条钉的是表单里的形态）。
+    expect(screen.getByTestId('param-per_fold_single').textContent).toContain('单色每折用料')
+    expect(screen.getByTestId('param-per_fold_single').textContent).toContain('米')
     // 🔴 2026-10-17 用户逐字「把算料口径里面的这行字都拿掉吧」= 「改它会怎样：… 说明」**整行**。
     // 注入：把那行加回 ⇒ 本条红（它是行内**唯一**被点名的形态）。
     expect(screen.queryAllByText(/改它会怎样/)).toEqual([])
@@ -649,12 +653,27 @@ describe('判据 8（issue #7124）：分组表单 —— label 在上、定宽�
     for (const id of bounded) {
       const el = screen.getByTestId(id)
       const cls = el.className
-      expect(cls, `${id} 必须带统一定宽 token（w-36，issue #7124）`).toMatch(/\bw-36\b/)
+      expect(cls, `${id} 必须带统一定宽 token（w-40，issue #7124）`).toMatch(/\bw-40\b/)
       expect(cls, `${id} 不得是整列宽（w-full）—— 正是 #6857 的病灶`).not.toMatch(/\bw-full\b/)
     }
+    // 数值**左对齐**（右对齐会在 160px 的框里留一大片空白，看着像没填 —— 2026-10-17 用户判「劣质」的主因）
+    expect(screen.getByTestId('calc-caliber-scalar-per_fold_single').className).toMatch(/\btext-left\b/)
     // 文本类与下拉也是定宽（显示名 w-40 / 备用公式 w-64）
     expect(screen.getByTestId('calc-caliber-tier-economy-label').className).toMatch(/\bw-40\b/)
     expect(screen.getByTestId('calc-caliber-default_formula').className).toMatch(/\bw-64\b/)
+  })
+
+  it('🔴 保存出口**滚过首屏才吸底**（静止态吸底会盖住内容 —— 独立复核第二轮实测）', async () => {
+    await renderPanel()
+    const dock = () => screen.getByTestId('calc-caliber-save-dock')
+    // 注：`renderPanel` 里 `scrollY` 是 0 ⇒ 静止态**不**吸底（吸底就会压住「备用用料公式」那一段）
+    expect(dock().className, '静止态不得吸底').not.toContain('sticky')
+    Object.defineProperty(window, 'scrollY', { value: 400, configurable: true })
+    fireEvent.scroll(window)
+    expect(dock().className, '滚过首屏 ⇒ 吸底（保存够得着）').toContain('sticky')
+    Object.defineProperty(window, 'scrollY', { value: 0, configurable: true })
+    fireEvent.scroll(window)
+    expect(dock().className, '回顶部 ⇒ 退出吸底').not.toContain('sticky')
   })
 
   it('🔴 行内**一个默认态徽标都不标**（含 source=default 与 defaults 可用两种情形）', async () => {

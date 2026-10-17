@@ -139,24 +139,30 @@ export function OversizeThresholdPreview({ config }: Props) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
         {(
           [
-            ['试算窗宽（米）', 'preview-width', width, setWidth],
-            ['试算窗高（米）', 'preview-height', height, setHeight],
+            ['试算窗宽', '米', 'preview-width', width, setWidth],
+            ['试算窗高', '米', 'preview-height', height, setHeight],
             // 🔴 与上面的配置字段**同名会被读成「同一个框」**（独立复核读图实测：同屏两处
             //    「超宽阈值（米）」可编辑框，一处改配置、一处只影响试算）⇒ 标题写明「试算用」。
-            ['试算用超宽阈值（米）', 'preview-threshold-width', widthThreshold, setWidthThreshold],
-            ['试算用超高阈值（米）', 'preview-threshold-height', heightThreshold, setHeightThreshold],
+            ['试算用超宽阈值', '米', 'preview-threshold-width', widthThreshold, setWidthThreshold],
+            ['试算用超高阈值', '米', 'preview-threshold-height', heightThreshold, setHeightThreshold],
           ] as const
-        ).map(([label, testid, value, setter]) => (
+        ).map(([label, unit, testid, value, setter]) => (
           <label key={testid} className="block">
-            <span className="block text-xs text-neutral-600 mb-1">{label}</span>
-            {/* issue #5218 #5：同 #4 —— `type="number"` + `Number()` 往返吞中间态（"0."）；
-                `''` 与本组件的 `number | null` 语义一一对应（空 = 不试算）。 */}
-            <NumberInput
-              data-testid={testid}
-              value={value === '' ? null : value}
-              onChange={(v) => (setter as (v: number | '') => void)(v === null ? '' : v)}
-              className="w-full h-9 px-2 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500"
-            />
+            {/* 单位与上面的配置字段**同一套写法**：标签不拖括号，单位做框内后缀 */}
+            <span className="block text-xs text-neutral-500 mb-1">{label}</span>
+            <span className="relative block">
+              {/* issue #5218 #5：同 #4 —— `type="number"` + `Number()` 往返吞中间态（"0."）；
+                  `''` 与本组件的 `number | null` 语义一一对应（空 = 不试算）。 */}
+              <NumberInput
+                data-testid={testid}
+                value={value === '' ? null : value}
+                onChange={(v) => (setter as (v: number | '') => void)(v === null ? '' : v)}
+                className="w-full h-9 pl-2 pr-7 rounded-lg border border-neutral-300 bg-white text-left text-sm tabular-nums focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              />
+              <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-xs text-neutral-500">
+                {unit}
+              </span>
+            </span>
           </label>
         ))}
       </div>

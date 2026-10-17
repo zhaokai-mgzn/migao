@@ -357,6 +357,11 @@ jobs:
               entries, _ = t.scan_claims(t.REPO_ROOT / t.CLAIMS_REL)
               creds = {k: len(os.environ.get(k) or "") for k in t.TOKEN_ENVS}
               print("creds =", creds, "| current_pr =", t.current_pr(t.parse_claims(entries)))
+              # 🔴 issue #6980 冻结判据 2「出声，不判红」：push/schedule 腿上**没有「本 PR」这个对象**
+              # ⇒ 判据 7 整条不适用；这一行把那个「未判定」**具名打出来**（可 grep），免得它与
+              # 「在飞面没有重号」长得一样。接线判据 =
+              # tests/unit_ci_workflows/test_post_merge_verify_leg.py::test_judging_step_voices_the_no_pr_context_exit
+              print(t.pr_context_note())
           except Exception as exc:  # noqa: BLE001 —— 诊断面：把失败**打出来**（由下面那条判据判红）
               print("探针自身失败:", type(exc).__name__, exc)
           print("GITHub_REF =", os.environ.get("GITHUB_REF"), "| EVENT =", os.environ.get("GITHUB_EVENT_NAME"),

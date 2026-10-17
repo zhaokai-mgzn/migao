@@ -6,229 +6,245 @@
   "fields": [
     {
       "id": "param-per_fold_single",
-      "labelText": "单色每折用料（米）",
+      "labelText": "单色每折用料",
       "label": {
-        "x": 562,
-        "y": 91,
-        "w": 354,
+        "x": 583,
+        "y": 65,
+        "w": 333,
         "h": 20,
-        "bottom": 111,
-        "top": 91
+        "bottom": 85,
+        "top": 65
       },
       "input": {
-        "x": 562,
-        "y": 117,
-        "w": 144,
+        "x": 583,
+        "y": 91,
+        "w": 160,
         "h": 36,
-        "bottom": 153,
-        "top": 117
+        "bottom": 127,
+        "top": 91
       },
       "labelAboveInput": true,
       "hasBottomBorder": false,
+      "labelHasUnitParen": false,
+      "unitInBox": true,
       "groupSection": "calc-caliber-group-materials"
     },
     {
       "id": "param-margin_single",
-      "labelText": "单开余量（米）",
+      "labelText": "单开余量",
       "label": {
         "x": 956,
-        "y": 91,
-        "w": 354,
+        "y": 65,
+        "w": 333,
         "h": 20,
-        "bottom": 111,
-        "top": 91
+        "bottom": 85,
+        "top": 65
       },
       "input": {
         "x": 956,
-        "y": 117,
-        "w": 144,
+        "y": 91,
+        "w": 160,
         "h": 36,
-        "bottom": 153,
-        "top": 117
+        "bottom": 127,
+        "top": 91
       },
       "labelAboveInput": true,
       "hasBottomBorder": false,
+      "labelHasUnitParen": false,
+      "unitInBox": true,
       "groupSection": "calc-caliber-group-materials"
     },
     {
       "id": "param-margin_multi",
-      "labelText": "多开余量（米）",
+      "labelText": "多开余量",
       "label": {
-        "x": 562,
-        "y": 199,
-        "w": 354,
+        "x": 583,
+        "y": 175,
+        "w": 333,
         "h": 20,
-        "bottom": 219,
-        "top": 199
+        "bottom": 195,
+        "top": 175
       },
       "input": {
-        "x": 562,
-        "y": 225,
-        "w": 144,
+        "x": 583,
+        "y": 201,
+        "w": 160,
         "h": 36,
-        "bottom": 261,
-        "top": 225
+        "bottom": 237,
+        "top": 201
       },
       "labelAboveInput": true,
       "hasBottomBorder": false,
+      "labelHasUnitParen": false,
+      "unitInBox": true,
       "groupSection": "calc-caliber-group-materials"
     },
     {
       "id": "param-hem_margin",
-      "labelText": "上下卷边（米）",
+      "labelText": "上下卷边",
       "label": {
         "x": 956,
-        "y": 199,
-        "w": 354,
+        "y": 175,
+        "w": 333,
         "h": 20,
-        "bottom": 219,
-        "top": 199
+        "bottom": 195,
+        "top": 175
       },
       "input": {
         "x": 956,
-        "y": 225,
-        "w": 144,
+        "y": 201,
+        "w": 160,
         "h": 36,
-        "bottom": 261,
-        "top": 225
+        "bottom": 237,
+        "top": 201
       },
       "labelAboveInput": true,
       "hasBottomBorder": false,
+      "labelHasUnitParen": false,
+      "unitInBox": true,
       "groupSection": "calc-caliber-group-materials"
     },
     {
       "id": "param-oversize_width_threshold",
-      "labelText": "超宽阈值（米）",
+      "labelText": "超宽阈值",
       "label": {
-        "x": 562,
-        "y": 755,
-        "w": 354,
+        "x": 583,
+        "y": 776,
+        "w": 333,
         "h": 20,
-        "bottom": 775,
-        "top": 755
+        "bottom": 796,
+        "top": 776
       },
       "input": {
-        "x": 562,
-        "y": 781,
-        "w": 144,
+        "x": 583,
+        "y": 802,
+        "w": 160,
         "h": 36,
-        "bottom": 817,
-        "top": 781
+        "bottom": 838,
+        "top": 802
       },
       "labelAboveInput": true,
       "hasBottomBorder": false,
+      "labelHasUnitParen": false,
+      "unitInBox": true,
       "groupSection": "calc-caliber-group-thresholds"
     },
     {
       "id": "param-oversize_height_threshold",
-      "labelText": "超高阈值（米）",
+      "labelText": "超高阈值",
       "label": {
         "x": 956,
-        "y": 755,
-        "w": 354,
+        "y": 776,
+        "w": 333,
         "h": 20,
-        "bottom": 775,
-        "top": 755
+        "bottom": 796,
+        "top": 776
       },
       "input": {
         "x": 956,
-        "y": 781,
-        "w": 144,
+        "y": 802,
+        "w": 160,
         "h": 36,
-        "bottom": 817,
-        "top": 781
+        "bottom": 838,
+        "top": 802
       },
       "labelAboveInput": true,
       "hasBottomBorder": false,
+      "labelHasUnitParen": false,
+      "unitInBox": true,
       "groupSection": "calc-caliber-group-thresholds"
     },
     {
       "id": "param-min_fullness",
       "labelText": "褶倍下限",
       "label": {
-        "x": 562,
-        "y": 1200,
-        "w": 354,
+        "x": 583,
+        "y": 1265,
+        "w": 333,
         "h": 20,
-        "bottom": 1220,
-        "top": 1200
+        "bottom": 1285,
+        "top": 1265
       },
       "input": {
-        "x": 562,
-        "y": 1226,
-        "w": 144,
+        "x": 583,
+        "y": 1291,
+        "w": 160,
         "h": 36,
-        "bottom": 1262,
-        "top": 1226
+        "bottom": 1327,
+        "top": 1291
       },
       "labelAboveInput": true,
       "hasBottomBorder": false,
+      "labelHasUnitParen": false,
+      "unitInBox": false,
       "groupSection": null
     },
     {
       "id": "param-meters_rounding_step",
-      "labelText": "进位步长（米）",
+      "labelText": "进位步长",
       "label": {
         "x": 956,
-        "y": 1200,
-        "w": 354,
+        "y": 1265,
+        "w": 333,
         "h": 20,
-        "bottom": 1220,
-        "top": 1200
+        "bottom": 1285,
+        "top": 1265
       },
       "input": {
         "x": 956,
-        "y": 1226,
-        "w": 144,
+        "y": 1291,
+        "w": 160,
         "h": 36,
-        "bottom": 1262,
-        "top": 1226
+        "bottom": 1327,
+        "top": 1291
       },
       "labelAboveInput": true,
       "hasBottomBorder": false,
+      "labelHasUnitParen": false,
+      "unitInBox": true,
       "groupSection": null
     }
   ],
   "inputs": [
     {
       "id": "calc-caliber-scalar-per_fold_single",
-      "x": 562,
-      "y": 117,
-      "w": 144,
+      "x": 583,
+      "y": 91,
+      "w": 160,
       "h": 36,
-      "bottom": 153,
-      "top": 117,
-      "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 127,
+      "top": 91,
+      "cls": "h-9 w-40 pl-3 pr-9 text-left tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-scalar-margin_single",
       "x": 956,
-      "y": 117,
-      "w": 144,
+      "y": 91,
+      "w": 160,
       "h": 36,
-      "bottom": 153,
-      "top": 117,
-      "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 127,
+      "top": 91,
+      "cls": "h-9 w-40 pl-3 pr-9 text-left tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-scalar-margin_multi",
-      "x": 562,
-      "y": 225,
-      "w": 144,
+      "x": 583,
+      "y": 201,
+      "w": 160,
       "h": 36,
-      "bottom": 261,
-      "top": 225,
-      "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 237,
+      "top": 201,
+      "cls": "h-9 w-40 pl-3 pr-9 text-left tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-scalar-hem_margin",
       "x": 956,
-      "y": 225,
-      "w": 144,
+      "y": 201,
+      "w": 160,
       "h": 36,
-      "bottom": 261,
-      "top": 225,
-      "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 237,
+      "top": 201,
+      "cls": "h-9 w-40 pl-3 pr-9 text-left tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-tier-economy-label",
@@ -244,11 +260,11 @@
       "id": "calc-caliber-tier-economy-fullness",
       "x": 808,
       "y": 449,
-      "w": 144,
+      "w": 160,
       "h": 36,
       "bottom": 485,
       "top": 449,
-      "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "cls": "h-9 w-40 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-tier-standard-label",
@@ -264,31 +280,31 @@
       "id": "calc-caliber-tier-standard-fullness",
       "x": 808,
       "y": 502,
-      "w": 144,
+      "w": 160,
       "h": 36,
       "bottom": 538,
       "top": 502,
-      "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "cls": "h-9 w-40 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-mixed-1",
-      "x": 1054,
+      "x": 1070,
       "y": 449,
-      "w": 144,
+      "w": 160,
       "h": 36,
       "bottom": 485,
       "top": 449,
-      "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "cls": "h-9 w-40 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-mixed-2",
-      "x": 1054,
+      "x": 1070,
       "y": 502,
-      "w": 144,
+      "w": 160,
       "h": 36,
       "bottom": 538,
       "top": 502,
-      "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "cls": "h-9 w-40 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-default_formula",
@@ -302,43 +318,43 @@
     },
     {
       "id": "calc-caliber-scalar-oversize_width_threshold",
-      "x": 562,
-      "y": 781,
-      "w": 144,
+      "x": 583,
+      "y": 802,
+      "w": 160,
       "h": 36,
-      "bottom": 817,
-      "top": 781,
-      "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 838,
+      "top": 802,
+      "cls": "h-9 w-40 pl-3 pr-9 text-left tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-scalar-oversize_height_threshold",
       "x": 956,
-      "y": 781,
-      "w": 144,
+      "y": 802,
+      "w": 160,
       "h": 36,
-      "bottom": 817,
-      "top": 781,
-      "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 838,
+      "top": 802,
+      "cls": "h-9 w-40 pl-3 pr-9 text-left tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-scalar-min_fullness",
-      "x": 562,
-      "y": 1226,
-      "w": 144,
+      "x": 583,
+      "y": 1291,
+      "w": 160,
       "h": 36,
-      "bottom": 1262,
-      "top": 1226,
-      "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 1327,
+      "top": 1291,
+      "cls": "h-9 w-40 pl-3 pr-9 text-left tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     },
     {
       "id": "calc-caliber-scalar-meters_rounding_step",
       "x": 956,
-      "y": 1226,
-      "w": 144,
+      "y": 1291,
+      "w": 160,
       "h": 36,
-      "bottom": 1262,
-      "top": 1226,
-      "cls": "h-9 w-36 text-right tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
+      "bottom": 1327,
+      "top": 1291,
+      "cls": "h-9 w-40 pl-3 pr-9 text-left tabular-nums rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400"
     }
   ],
   "sectionTitles": [
@@ -352,7 +368,7 @@
     "特殊选项（下单时勾选）"
   ],
   "distinctScalarX": [
-    562,
+    583,
     956
   ]
 }

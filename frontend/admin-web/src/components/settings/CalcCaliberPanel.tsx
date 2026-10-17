@@ -82,7 +82,7 @@ import {
 import type { CraftCalcConfig, CraftCalcConfigResponse } from '@/types'
 
 /** 数值输入框的**统一定宽**（定宽防「整列拉满」；统一宽度才有稳定的左边界 —— issue #6857 / #7124） */
-const NUM_INPUT_WIDTH = 'w-36'
+const NUM_INPUT_WIDTH = 'w-40'
 
 /**
  * 一个参数字段（**标签在上、控件在下、口径提示收尾**）。
@@ -105,23 +105,47 @@ export function ParamField({
   /** 标签**下方**的控件（可编辑时给 `NumberInput`；不传 ⇒ 只读，同位置印值） */
   control?: ReactNode
 }) {
+  const { text, unit } = splitUnit(param.copy.label)
   return (
     <div data-testid={`param-${param.key}`} className="min-w-0">
-      <span className="block text-sm font-medium leading-5 text-neutral-800">
-        <InlineMarkdown text={param.copy.label} />
+      <span className="block text-sm font-semibold leading-5 text-neutral-900">
+        <InlineMarkdown text={text} />
       </span>
       <div className="mt-1.5">
-        {control ?? (
+        {control ? (
+          /* 单位做**框内后缀**（控件为此留了 `pr-9`）—— 不再让每个标签都拖一个「（米）」：
+             一屏八个括号单位是「一眼廉价」的主要来源之一。 */
+          <div className="relative w-40">
+            {control}
+            {unit !== null && (
+              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-neutral-500">
+                {unit}
+              </span>
+            )}
+          </div>
+        ) : (
           <div data-testid={`param-value-${param.key}`} className="text-sm text-neutral-900">
             {value}
+            {unit !== null && <span className="ml-1 text-xs text-neutral-500">{unit}</span>}
           </div>
         )}
       </div>
-      <p className="mt-1.5 text-xs leading-relaxed text-neutral-500">
+      <p className="mt-2 text-xs leading-5 text-neutral-500">
         <InlineMarkdown text={param.copy.hint} />
       </p>
     </div>
   )
+}
+
+/**
+ * 把标签末尾的「（单位）」拆出来（`单色每折用料（米）` ⇒ `单色每折用料` + `米`）。
+ *
+ * ⚠️ **文案仍是单一真值**：`CALC_PARAM_COPY[...].label` 一字不动，这里只做**展示拆分**
+ * （决定单位在表单里出现的位置 = 框内后缀）。没有括号单位 ⇒ 原样返回，不编造。
+ */
+export function splitUnit(label: string): { text: string; unit: string | null } {
+  const m = /^(.+?)（([^（）]+)）$/.exec(label)
+  return m ? { text: m[1], unit: m[2] } : { text: label, unit: null }
 }
 
 /**
@@ -177,6 +201,25 @@ export interface CalcCaliberPanelProps {
   onRetry?: () => void
 }
 
+/**
+ * 一组字段的外框：**所有分组共用同一个**（同样的 `p-5` ⇒ 各区块输入框的左沿落在同一组 x 上）。
+ *
+ * ⚠️ 别在某一组单独加内边距/外框：那会让该组的输入框比别组右移 21px，展开「高级」时尤其明显
+ * （验收判据「同组两列 x」当场红）。
+ */
+function FieldGrid({ testid, children }: { testid?: string; children: ReactNode }) {
+  return (
+    <div className="rounded-lg border border-neutral-200 bg-neutral-50/50 p-5">
+      <div
+        data-testid={testid}
+        className="grid grid-cols-1 gap-x-10 gap-y-5 sm:grid-cols-2"
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
+
 /** 工艺档位的**显示名**（键仍是后端键；未知档回退人话，不吞掉、不猜中文） */
 const TIER_DISPLAY_LABEL: Record<string, string> = {
   standard: '标准档',
@@ -220,6 +263,15 @@ export function CalcCaliberPanel({
   const [ownDraft, setOwnDraft] = useState<CraftCalcConfig | null>(null)
   const [ownError, setOwnError] = useState('')
   const [busy, setBusy] = useState(false)
+  /** 保存出口是否吸底（**滚过首屏才吸**）：静止态吸底会盖住内容（复核实测：盖住备用公式与下拉框） */
+  const [pinnedSave, setPinnedSave] = useState(false)
+
+  useEffect(() => {
+    const onScroll = () => setPinnedSave(window.scrollY > 320)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
   /** 保存被拒的逐条理由（**不吞**成一句「保存失败」—— 后端一次列出每一处不合法） */
   const [reasons, setReasons] = useState<string[]>([])
 
@@ -324,7 +376,7 @@ export function CalcCaliberPanel({
         writable && displayConfig ? (
           // `NumberInput`（issue #5198 —— `type="number"` 会吞 `0.` / 清空变 `NaN`）
           <NumberInput
-            className={boundedInputCls(`${NUM_INPUT_WIDTH} text-right tabular-nums`)}
+            className={boundedInputCls(`${NUM_INPUT_WIDTH} pl-3 pr-9 text-left tabular-nums`)}
             aria-label={`${p.copy.label}`}
             data-testid={`calc-caliber-scalar-${p.key}`}
             value={numberOf(displayConfig, p.key)}
@@ -388,16 +440,19 @@ export function CalcCaliberPanel({
         </div>
       )}
 
-      {/* 口径来源徽标：「系统默认值」≠「你的配置」（读失败时不画 —— 那是读成功才知道的事） */}
+      {/* 口径来源：「系统默认值」≠「你的配置」（读失败时不画 —— 那是读成功才知道的事）。
+          形态 = **小圆点 + 一行灰字**，不是浅色药丸（药丸看着像调试标记）。 */}
       {!failed && calc && (
         <span
           data-testid="calc-caliber-source"
-          className={
-            calc.source === 'stored'
-              ? 'inline-block rounded bg-primary-50 px-2 py-0.5 text-xs text-primary-700'
-              : 'inline-block rounded bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600'
-          }
+          className="inline-flex items-center gap-1.5 text-xs text-neutral-500"
         >
+          <span
+            aria-hidden
+            className={`inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full ${
+              calc.source === 'stored' ? 'bg-emerald-500' : 'bg-neutral-400'
+            }`}
+          />
           {calc.source === 'stored' ? '已保存为您的配置' : '当前使用系统默认值'}
         </span>
       )}
@@ -436,9 +491,9 @@ export function CalcCaliberPanel({
               title={g.title}
               divider={i > 0}
             >
-              <div className="grid grid-cols-1 gap-x-10 gap-y-5 sm:grid-cols-2">
-                {g.params.map(renderScalar)}
-              </div>
+              {/* 字段落在**浅底面板**里（与「档位与拼色」两张卡同一层语言）：白卡 → 浅底面板 → 白输入框
+                  三级层次，字段不再是「浮在白纸上的一排框」。 */}
+              <FieldGrid>{g.params.map(renderScalar)}</FieldGrid>
             </FormSection>
           ))}
 
@@ -597,9 +652,7 @@ export function CalcCaliberPanel({
           {/* ── 超高 / 超宽阈值 + 试算（同一件事的两半：上半个改阈值，下半个看它会不会变） ── */}
           {thresholdGroup && (
             <FormSection testid={`calc-caliber-group-${thresholdGroup.key}`} title={thresholdGroup.title}>
-              <div className="grid grid-cols-1 gap-x-10 gap-y-5 sm:grid-cols-2">
-                {thresholdGroup.params.map(renderScalar)}
-              </div>
+              <FieldGrid>{thresholdGroup.params.map(renderScalar)}</FieldGrid>
             </FormSection>
           )}
 
@@ -625,11 +678,10 @@ export function CalcCaliberPanel({
                 <span className="text-xs font-normal text-neutral-500">一般不常改</span>
               </button>
               {advancedOpen && (
-                <div
-                  data-testid={`param-advanced-${domain.key}`}
-                  className="mt-4 grid grid-cols-1 gap-x-10 gap-y-5 sm:grid-cols-2"
-                >
-                  {domain.advanced.map(renderScalar)}
+                <div className="mt-4">
+                  <FieldGrid testid={`param-advanced-${domain.key}`}>
+                    {domain.advanced.map(renderScalar)}
+                  </FieldGrid>
                 </div>
               )}
             </div>
@@ -642,7 +694,10 @@ export function CalcCaliberPanel({
               滚动时只压住一小角，且「保存」永远够得着（首屏不用滚 1.3 屏）。
               重启条件：若商家反馈「小条挡住右下角内容」，改成滚动过表单首屏后才吸底。 */}
           {writable && displayConfig && (
-            <div className="sticky bottom-6 z-10 pt-2">
+            <div
+              data-testid="calc-caliber-save-dock"
+              className={pinnedSave ? 'sticky bottom-6 z-10 pt-2' : 'pt-2'}
+            >
               {/* 护栏理由**逐条**展示（后端一次列出每一处不合法）—— 不吞成一句「保存失败」；
                   放在吸底容器里 ⇒ 保存被拒时理由不会滚出视口。 */}
               {reasons.length > 0 && (
@@ -658,9 +713,12 @@ export function CalcCaliberPanel({
               )}
               <div className="flex justify-end">
                 <div className="flex flex-wrap items-center justify-end gap-3 rounded-lg border border-neutral-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur-sm">
-                  {/* ⚠️ 小条里**不写说明文字**：那会把条撑到 ~556px 宽，静止首屏又压到
-                      「备用用料公式」下拉框（右沿 818 > 754，独立复核实测）。说明改挂按钮 `title`，
-                      真正需要时由 422 的逐条理由块承载。 */}
+                  {/* 说明**只在静止态**出现（吸底时它会把条撑宽、又压到内容）；常驻信息不重复 */}
+                  {!pinnedSave && (
+                    <span className="mr-1 text-xs text-neutral-500">
+                      保存后按当前配置计算；非法值会被整份拒绝并逐条说明理由。
+                    </span>
+                  )}
                   <button
                     type="button"
                     data-testid="calc-caliber-restore-defaults"
