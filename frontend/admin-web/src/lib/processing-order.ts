@@ -32,6 +32,49 @@ export function orderKindLabelOf(po: Pick<ProcessingOrder, 'order_kind'>): strin
   return ORDER_KIND_LABELS[orderKindOf(po)]
 }
 
+/** 订单详情读面键 `work_order_kind` 的形状（缺键 / `null` = **无需要报工的作业**） */
+export type WorkOrderKind = 'processing' | 'outbound' | null
+
+/**
+ * 读面键 `work_order_kind`（订单详情面，issue #7079 第 5 包）→ 两型；`null` = 无需要报工的作业。
+ *
+ * 🔴 这是「这单发货前要不要作业」在前端的**唯一**读点：详情页的生成入口、发货页的前置守卫、
+ * 详情页的发货入口三处都读它，**不许**再按 `processingItems` 长度（只覆盖「含加工项」那一半）
+ * 自己推 —— 卖布单（按米卖布、行上没有加工项）正是被那一侧漏掉的。
+ */
+export function workOrderKindOf(order: { workOrderKind?: 'processing' | 'outbound' | null }): WorkOrderKind {
+  return order.workOrderKind === 'outbound' ? 'outbound' : order.workOrderKind === 'processing' ? 'processing' : null
+}
+
+/** 读面键 `work_order_kind` 的中文业务名（缺键 ⇒ `''`，调用方据此不渲染） */
+export function workOrderKindLabelOf(order: { workOrderKind?: 'processing' | 'outbound' | null }): string {
+  const kind = workOrderKindOf(order)
+  return kind ? ORDER_KIND_LABELS[kind] : ''
+}
+
+/**
+ * 「该生成哪一型作业单」的**文案单一真值**（issue #7079 第 5 包）：生成入口的说明 / 按钮 /
+ * 发货前的引导句都从这里取，**不新造词**（类型名仍取 {@link ORDER_KIND_LABELS}）。
+ *
+ * 为什么按型分：卖布单要走**裁剪 → 打包**两道工序（出库作业单，没有加工方 / 交期），
+ * 成品帘单走**加工**（加工单）。同一句文案套两型，商家就会在错的单子里找那张纸。
+ */
+export const WORK_ORDER_NEEDED_COPY: Record<'processing' | 'outbound', {
+  /** 生成入口的说明（订单详情「作业单」区块） */
+  generateIntro: string
+  /** 发货前被拦时的引导句（详情页发货入口 / 发货页阻断页 —— 与后端守卫文案同口径） */
+  shipBlocked: string
+}> = {
+  processing: {
+    generateIntro: '该订单含加工项，可生成加工单发给加工方（订单将进入「生产中」）。',
+    shipBlocked: '该订单含加工项：先完成加工单的加工报工，再发货',
+  },
+  outbound: {
+    generateIntro: '该订单是卖布单（按米卖布），可生成出库作业单交车间裁剪与打包（订单将进入「生产中」）。',
+    shipBlocked: '该订单是卖布单：先完成出库作业单的裁剪与打包报工，再发货',
+  },
+}
+
 /** 状态文案（与后端 STATUS_LABELS 一致） */
 export const PROCESSING_ORDER_STATUS_LABELS: Record<ProcessingOrder['status'], string> = {
   generated: '已生成',

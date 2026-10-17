@@ -183,6 +183,64 @@ class OrderShipGuardTest {
                 orderItemMapper, processingOrderMapper, objectMapper, order())).isFalse();
     }
 
+    // ──────────────── issue #7079 第 5 包：读面「该生成哪一型」（requiredOrderKind） ────────────────
+
+    @Test
+    @DisplayName("🔴 全是卖布行 ⇒ 出库作业单（卖布单在订单详情要拿到「生成出库作业单」的出口）")
+    void fabricOnlyOrderRequiresOutboundKind() {
+        givenItems(fabricItem(Map.of("saleForm", "布料")));
+        assertThat(OrderShipGuard.requiredOrderKind(orderItemMapper, objectMapper, order()))
+                .isEqualTo(ProcessingOrderService.ORDER_KIND_OUTBOUND);
+    }
+
+    @Test
+    @DisplayName("🔴 含加工项 ⇒ 加工单（成品帘单的出口文案仍是「生成加工单」）")
+    void processingOrderRequiresProcessingKind() {
+        givenItems(item(Map.of("processingItems", List.of(Map.of("id", "p1", "name", "韩褶-布")))));
+        assertThat(OrderShipGuard.requiredOrderKind(orderItemMapper, objectMapper, order()))
+                .isEqualTo(ProcessingOrderService.ORDER_KIND_PROCESSING);
+    }
+
+    @Test
+    @DisplayName("🔴 混合单（卖布行 + 加工行）⇒ 加工单（与生成侧 deriveOrderKind「有加工 ⇒ 加工」同源）")
+    void mixedOrderRequiresProcessingKind() {
+        givenItems(fabricItem(Map.of("saleForm", "布料")),
+                item(Map.of("processingItems", List.of(Map.of("id", "p1", "name", "韩褶-布")))));
+        assertThat(OrderShipGuard.requiredOrderKind(orderItemMapper, objectMapper, order()))
+                .isEqualTo(ProcessingOrderService.ORDER_KIND_PROCESSING);
+    }
+
+    @Test
+    @DisplayName("🔴 反向护栏：无需要报工的作业 ⇒ null（配件/赠品行不许凭空造出一个生成入口）")
+    void plainOrderRequiresNoWorkOrderKind() {
+        givenItems(item(Map.of()));
+        assertThat(OrderShipGuard.requiredOrderKind(orderItemMapper, objectMapper, order())).isNull();
+    }
+
+    @Test
+    @DisplayName("🔴 卖布行以 JSON **字符串** 形态出现 ⇒ 仍判出库（不因解析形态退回「无作业」）")
+    void jsonStringFabricSaleInfoStillYieldsOutboundKind() {
+        givenItems(fabricItem("{\"saleForm\":\"布料\",\"fabricMeters\":12.5}"));
+        assertThat(OrderShipGuard.requiredOrderKind(orderItemMapper, objectMapper, order()))
+                .isEqualTo(ProcessingOrderService.ORDER_KIND_OUTBOUND);
+    }
+
+    @Test
+    @DisplayName("🔴 与 needsWork 同源：有型 ⇔ needsWork（两处口径分叉即红）")
+    void requiredKindIsInSyncWithNeedsWork() {
+        List<OrderItem[]> fixtures = List.of(
+                new OrderItem[]{fabricItem(Map.of("saleForm", "布料"))},
+                new OrderItem[]{item(Map.of("processingItems", List.of(Map.of("id", "p1", "name", "韩褶-布"))))},
+                new OrderItem[]{item(Map.of())});
+        for (OrderItem[] fixture : fixtures) {
+            givenItems(fixture);
+            boolean needsWork = OrderShipGuard.needsWork(orderItemMapper, objectMapper, order());
+            String kind = OrderShipGuard.requiredOrderKind(orderItemMapper, objectMapper, order());
+            assertThat(kind != null).as("有型 ⇔ 需要作业（分叉方向：前端拿到型却没有该拦/该放行的依据）")
+                    .isEqualTo(needsWork);
+        }
+    }
+
     @Test
     @DisplayName("toBigDecimal：十进制解析（不经过 double 截断）")
     void toBigDecimalKeepsDecimalPrecision() {
