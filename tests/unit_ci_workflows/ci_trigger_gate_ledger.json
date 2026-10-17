@@ -11,9 +11,19 @@
     "WORKFLOW_RUN_CONCLUSION == '<x>'（等价写法；先落 env/step output 再判）"
   ],
   "consumers_frozen": [
+    "drift-baseline-reconcile.yml",
     "flaky-triage.yml"
   ],
   "workflow_run_gated": [
+    {
+      "file": "drift-baseline-reconcile.yml",
+      "upstreams_on_pr_surface": [
+        "Post-Merge Verify (main 侧守护腿)"
+      ],
+      "gate": "github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'failure'",
+      "why": "本腿只对「上游**判红**」这一半有信息增量：上游 success ⇒ `drift_audit.py --check` 没有归零条目要销 ⇒ 消费一次纯属放大（它会把 main 全量审计再跑一遍）。`workflow_dispatch` 是值班复算入口，不受结论门控。",
+      "evidence": "上游判定逐字见 `.github/workflows/post-merge-verify.yml` 的 `main 侧漂移兜底（漂移审计；全历史检出下真判）` 步（`--check` 非 0 一律带出退出码）；上游 `on:` 含 `pull_request: [opened, reopened]` ⇒ 它落在 PR 面（本表口径）。真实归零样本：`c-end-h5-publish.yml|never-succeeded` 在 2026-10-17 06:57 +08 首次发布成功后归零 ⇒ 上游近 40 次 run 里 39 红（复算：gh run list --workflow=post-merge-verify.yml --limit 40 --json conclusion）。"
+    },
     {
       "file": "flaky-triage.yml",
       "upstreams_on_pr_surface": [

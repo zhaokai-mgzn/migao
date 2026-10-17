@@ -1509,3 +1509,365 @@ def test_real_repo_audit_is_green_on_current_tree():
     errs = [c["id"] for c in rep["checks"] if c["status"] == "error"]
     assert not errs, f"判据崩溃：{errs}\n{out}"
     assert rc == 0, out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ⑨ 归零条目的**外科手术式销账**（`--prune-zeroed`，issue #7127；实例 #7117）
+#    病：有一族基线条目是**运行态**的（`heartbeat` 判据：`<wf>|paused` / `|never-succeeded` /
+#    `|stale`）—— 外部事件让它们归零（某个 workflow 首次成功 / 解停 / 恢复心跳），而
+#    **没有任何提交会去删它** ⇒ `--check` 此后每次 run 都红、每次都往 P1 值班 issue 追一条
+#    评论（实测 `c-end-h5-publish.yml|never-succeeded` 归零后近 40 次 run 里 39 红）。
+#    修法 = 只删「实测归零 ∧ 该判据**本轮真跑出结论**」的条目，**不重建清单**
+#    （`--regen-baseline` 会连带删掉"本轮没跑出结论"的判据名下的合法豁免，#5151）。
+# ─────────────────────────────────────────────────────────────────────────────
+BASELINE_REL = "scripts/drift_audit_baseline.json"
+FIXTURE_CRON_REL = ".github/workflows/fixture-cron.yml"
+FIXTURE_CRON = """name: Fixture Cron
+on:
+  schedule:
+    - cron: '0 3 * * *'
+jobs:
+  x:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+"""
+
+
+def _baseline_bytes(repo: Path) -> bytes:
+    return (repo / BASELINE_REL).read_bytes()
+
+
+def _baseline_json(repo: Path) -> dict:
+    return json.loads(_baseline_bytes(repo).decode("utf-8"))
+
+
+def _zeroed_sync_copy_repo(tmp: Path) -> tuple[Path, str]:
+    """夹具：台账里有一条**实测归零**的 `sync-copy` 条目 ⇒ 返回 `(repo, 该 key)`。
+
+    构造顺序即病态顺序：① 造出版本戳不一致的同步副本（真漂移）② 重生成基线（条目入册）
+    ③ 把版本戳改对 ⇒ 条目**归零**，但**没有提交**去删它 —— 正是本单要治的形态。
+    """
+    repo = mk_repo(tmp, {
+        SKILL_REL: SKILL_TMPL.format(version="1.28.0"),
+        COPY_REL: COPY_TMPL.format(version="1.3"),
+    })
+    run(repo, "--check", "--only", "sync-copy", "--regen-baseline", "--reason", "夹具首跑基线")
+    entries = _baseline_json(repo)["entries"]["sync-copy"]
+    assert entries, "夹具没建起 sync-copy 条目（前提不成立 = 空断言）"
+    key = sorted(entries)[0]
+    _write(repo, COPY_REL, COPY_TMPL.format(version="1.28"))
+    return repo, key
+
+
+def test_prune_zeroed_red_then_green_closure(tmp_path):
+    """**主红证（红转绿闭环）**：归零条目 ⇒ `--check` 必红并点名该 key；`--prune-zeroed`
+    ⇒ 条目被删 + `reason` 更新；再 `--check` ⇒ **exit 0**。"""
+    repo, key = _zeroed_sync_copy_repo(tmp_path)
+    only = ("--only", "sync-copy")
+    rc1, out1, rep1 = run(repo, "--check", *only)
+    assert rc1 == 1, f"归零条目未阻塞（全量对账没生效）：\n{out1}"
+    assert key in out1, f"报告没点名归零条目 {key!r}：\n{out1}"
+    assert rep1["summary"]["stale_baseline_blocking"] == 1, out1
+    before = _baseline_json(repo)
+
+    rc2, out2, _ = run(repo, "--prune-zeroed", "--reason", "夹具：外部事件使条目归零", *only)
+    assert rc2 == 0, f"销账没走通：\n{out2}"
+    assert f"PRUNED sync-copy {key}" in out2, f"销账清单不可 grep（缺 key + 判据 id）：\n{out2}"
+    after = _baseline_json(repo)
+    assert key not in after["entries"]["sync-copy"], out2
+    assert after["reason"] == "夹具：外部事件使条目归零", (
+        f"`reason` 没更新 ⇒ 事后无从复核「为什么少了这条」：{after['reason']!r}")
+    assert after["generated_at"] != before["generated_at"], (
+        "`generated_at` 没更新 ⇒ 台账的『按哪一刻的读数销的账』无从复核")
+    # **外科手术**（不是重建）：别的桶必须逐字保留
+    assert {k: v for k, v in after["entries"].items() if k != "sync-copy"} \
+        == {k: v for k, v in before["entries"].items() if k != "sync-copy"}, out2
+
+    rc3, out3, rep3 = run(repo, "--check", *only)
+    assert rc3 == 0, f"销账后仍红（闭环未打通）：\n{out3}"
+    assert rep3["summary"]["stale_baseline_blocking"] == 0, out3
+
+
+def test_prune_zeroed_refuses_on_new_drift_and_writes_nothing(tmp_path):
+    """负控 1a（**新增漂移**）：有别的阻塞时 `--prune-zeroed` 拒绝动手，且**文件字节不变**。"""
+    repo = mk_repo(tmp_path, {
+        SKILL_REL: SKILL_TMPL.format(version="1.28.0"),
+        COPY_REL: COPY_TMPL.format(version="1.3"),
+    }, surface_seed=True)
+    only = ("--only", "sync-copy,ref-freshness")
+    # 悬空引用必须**提交**进 base 才看得见（`ref-freshness` 的判定面 = `git ls-files`，
+    # untracked 文件不在面上 —— 这正是 mk_repo 文档说的「事后写文件判据看不见」）
+    _write(repo, "docs/testing/note.md", f"引用：`{_NOWHERE}:3`\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "引入一处悬空引用（真漂移）")
+    run(repo, "--check", *only, "--regen-baseline", "--reason", "夹具首跑基线")
+    assert _baseline_json(repo)["entries"]["sync-copy"], "夹具没建起 sync-copy 条目"
+    # 同时：修好 sync-copy（条目归零）+ 引入一处**面内**新漂移（再添一条悬空引用）
+    _write(repo, COPY_REL, COPY_TMPL.format(version="1.28"))
+    _write(repo, "docs/testing/note.md",
+           f"引用甲：`{_NOWHERE}:3`\n引用乙：`{_NOWHERE}:4`\n")
+    rc0, out0, rep0 = run(repo, "--check", *only)
+    assert rc0 == 1 and rep0["summary"]["new_drift"] >= 1, out0
+
+    before = _baseline_bytes(repo)
+    rc, out, _ = run(repo, "--prune-zeroed", *only)
+    assert rc == 1, f"有新增漂移时 `--prune-zeroed` 竟动手了（fail-closed 失效）：\n{out}"
+    assert "拒绝销账" in out and "新增漂移" in out, out
+    assert _baseline_bytes(repo) == before, "拒绝动手时**一个字都不许写**（文件字节变了）"
+
+
+def test_prune_zeroed_refuses_when_an_entry_was_dropped(tmp_path):
+    """负控 1b（**被删但仍漂移的条目**）：反向对账阻塞 ⇒ 拒绝动手（不许"顺手把别的也销了"）。"""
+    repo = mk_repo(tmp_path, {
+        SKILL_REL: SKILL_TMPL.format(version="1.28.0"),
+        COPY_REL: COPY_TMPL.format(version="1.3"),
+    }, surface_seed=True)
+    only = ("--only", "sync-copy,ref-freshness")
+    _write(repo, "docs/testing/note.md", f"引用：`{_NOWHERE}:3`\n")     # 造一条真漂移
+    _git(repo, "add", "-A")                       # 必须提交：判定面 = `git ls-files`
+    _git(repo, "commit", "-q", "-m", "引入一处悬空引用（真漂移）")
+    run(repo, "--check", *only, "--regen-baseline", "--reason", "夹具首跑基线")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "把基线提交进 base（模拟 origin/main 上已有一份）")
+    data = _baseline_json(repo)
+    ref_keys = [k for k in data["entries"]["ref-freshness"]]
+    assert ref_keys, "夹具没造出 ref-freshness 条目"
+    for k in ref_keys:
+        del data["entries"]["ref-freshness"][k]                        # 删掉**仍然漂移**的条目
+    (repo / BASELINE_REL).write_text(
+        json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _write(repo, COPY_REL, COPY_TMPL.format(version="1.28"))           # sync-copy 归零
+    rc0, out0, rep0 = run(repo, "--check", *only)
+    assert rc0 == 1 and rep0["summary"]["dropped_baseline_entry"] >= 1, out0
+    assert rep0["summary"]["stale_baseline_blocking"] >= 1, out0
+
+    before = _baseline_bytes(repo)
+    rc, out, _ = run(repo, "--prune-zeroed", *only)
+    assert rc == 1, f"有被删条目时 `--prune-zeroed` 竟动手了：\n{out}"
+    assert "拒绝销账" in out and "被删但仍漂移" in out, out
+    assert _baseline_bytes(repo) == before, "拒绝动手时**一个字都不许写**"
+
+
+def test_prune_zeroed_refuses_when_a_check_errored(tmp_path):
+    """负控 1c（**判据 `error`**）：另一条判据崩了 ⇒ 拒绝动手。
+
+    病（#5151）：判据崩溃时 `findings` 为空会被读成「没有漂移」⇒ 拿"我这条能判"去动
+    别人的账，等于凭一次异常永久删掉合法豁免。
+    """
+    repo, _ = _zeroed_sync_copy_repo(tmp_path)
+    _write(repo, ".github/cases/keep.yml", "schema: '1'\ndomain: x\ncases: []\n")  # 判据面为空 ⇒ error
+    only = ("--only", "sync-copy,mutable-locator")
+    rc0, out0, rep0 = run(repo, "--check", *only)
+    assert rep0["summary"]["stale_baseline_blocking"] >= 1, out0
+    assert any(c["status"] == "error" for c in rep0["checks"]), out0
+
+    before = _baseline_bytes(repo)
+    rc, out, _ = run(repo, "--prune-zeroed", *only)
+    assert rc == 1, f"判据崩溃时 `--prune-zeroed` 竟动手了：\n{out}"
+    assert "拒绝销账" in out and "自身异常" in out, out
+    assert _baseline_bytes(repo) == before, "拒绝动手时**一个字都不许写**"
+
+
+def test_prune_zeroed_keeps_other_checks_entries_verbatim(tmp_path):
+    """负控 2：**不许连带删掉别的判据的条目** —— 尤其本轮没跑出结论（`unknown`）的那条。
+
+    形态：台账里同时有一条**归零**的 `sync-copy` 条目与一条 `heartbeat` 条目；本次 `--offline`
+    ⇒ `heartbeat` 记 `unknown`（`never-succeeded` **看起来**归零，其实是"gh 不可达"）⇒
+    它必须**逐字留在文件里**（"没跑" ≠ "已不漂移"，#5151）。
+    """
+    repo = mk_repo(tmp_path, {
+        SKILL_REL: SKILL_TMPL.format(version="1.28.0"),
+        COPY_REL: COPY_TMPL.format(version="1.3"),
+        FIXTURE_CRON_REL: FIXTURE_CRON,       # 让 `heartbeat` 的判定面非空（否则它自己 error）
+    })
+    run(repo, "--check", "--only", "sync-copy", "--regen-baseline", "--reason", "夹具首跑基线")
+    data = _baseline_json(repo)
+    hb_entry = {"fixture-cron.yml|never-succeeded": 1}
+    data["entries"]["heartbeat"] = dict(hb_entry)
+    (repo / BASELINE_REL).write_text(
+        json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _write(repo, COPY_REL, COPY_TMPL.format(version="1.28"))           # sync-copy 归零
+
+    only = ("--only", "sync-copy,heartbeat")
+    rc0, out0, rep0 = run(repo, "--check", *only)
+    assert rc0 == 1 and rep0["summary"]["stale_baseline_blocking"] == 1, out0
+    assert rep0["summary"]["stale_baseline_unverifiable"] == 1, (
+        f"夹具前提不成立：`heartbeat` 本轮应当**不可判**（--offline）而不是归零：\n{out0}")
+
+    rc, out, _ = run(repo, "--prune-zeroed", *only)
+    assert rc == 0, f"归零条目没被销账（另有一条不可判条目不该阻止本条的销账）：\n{out}"
+    after = _baseline_json(repo)
+    assert after["entries"]["sync-copy"] == {}, out
+    assert after["entries"]["heartbeat"] == hb_entry, (
+        f"别的判据的条目被连带删掉/改写了（正是 #5151 的形态）：{after['entries']['heartbeat']}")
+
+
+def test_prune_zeroed_is_idempotent(tmp_path):
+    """幂等读数：同一状态下连跑两次 ⇒ 第二次**零动作**（exit 0，文件逐字节不变）。"""
+    repo, key = _zeroed_sync_copy_repo(tmp_path)
+    only = ("--only", "sync-copy")
+    rc1, out1, _ = run(repo, "--prune-zeroed", *only)
+    assert rc1 == 0, out1
+    once = _baseline_bytes(repo)
+    rc2, out2, _ = run(repo, "--prune-zeroed", *only)
+    assert rc2 == 0, out2
+    assert "零动作" in out2, out2
+    assert f"PRUNED sync-copy {key}" not in out2, out2
+    assert _baseline_bytes(repo) == once, "第二次跑竟改了文件（不幂等）"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ⑩ 销账腿的 workflow 面（`drift-baseline-reconcile.yml`）—— **真读 YAML**，不靠注释
+# ─────────────────────────────────────────────────────────────────────────────
+DRIFT_RECONCILE_WF = REPO_ROOT / ".github" / "workflows" / "drift-baseline-reconcile.yml"
+
+
+def _wf_doc() -> dict:
+    import yaml
+    assert DRIFT_RECONCILE_WF.is_file(), f"缺销账腿 {DRIFT_RECONCILE_WF}（本单的交付之一）"
+    return yaml.safe_load(DRIFT_RECONCILE_WF.read_text(encoding="utf-8"))
+
+
+def _wf_on(doc: dict) -> dict:
+    """`on:` 的真 YAML 形态（裸 `on:` 会被 PyYAML 读成布尔键 `True`）。"""
+    on = doc.get("on")
+    if on is None and True in doc:
+        on = doc.get(True)
+    return on if isinstance(on, dict) else {}
+
+
+def _wf_runs(doc: dict) -> str:
+    return "\n".join(str(step.get("run") or "")
+                     for job in (doc.get("jobs") or {}).values()
+                     for step in (job.get("steps") or []))
+
+
+def _strip_shell_inline_comment(line: str) -> str:
+    """剥**行尾**注释，但 `#` 落在引号里时不当注释（字符串感知，不是朴素截断）。
+
+    为什么不能 `.split("#")`：字符串里的 `#`（如 `echo "a#b"`）会把行尾吃掉 ⇒ 判据语料被悄悄削短
+    = **假绿** —— 类级守卫 `test_guard_parsing_is_comment_aware.py::test_naive_hash_cut_is_ledgered`
+    把它判红（`#5323` 第 7/8/9 条同族）。顺序**必须是先清空字符串、再剥 `#`**。
+    """
+    quote = ""
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if quote:
+            if ch == quote and line[i - 1:i] != "\\":
+                quote = ""
+        elif ch in "\"'":
+            quote = ch
+        elif ch == "#":
+            return line[:i]
+        i += 1
+    return line
+
+
+def _wf_shell(doc: dict) -> str:
+    """同上，但**去掉注释**（整行 + 行尾）—— 「注释里提到」不算「代码里有」。
+
+    本仓已踩过四次「提及 ≠ 调用」：判据被说明文字骗绿，等于空断言。
+    """
+    lines = []
+    for ln in _wf_runs(doc).splitlines():
+        if ln.strip().startswith("#"):
+            continue
+        lines.append(_strip_shell_inline_comment(ln))
+    return "\n".join(lines)
+
+
+def _gh_using_repo_scripts() -> set[str]:
+    """**现取**仓内「自己会调 `gh`」的脚本名（不写死清单，否则下一个人新加一个就漏）。"""
+    out: set[str] = set()
+    for f in [*REPO_ROOT.glob("scripts/*.py"), *REPO_ROOT.glob(".github/scripts/*.py")]:
+        src = f.read_text(encoding="utf-8", errors="ignore")
+        if re.search(r"subprocess\.[a-z]+\(\s*\[?\s*[\"']gh[\"']|gh_bin\(|github-actions", src):
+            out.add(f.name)
+    return out
+
+
+def test_drift_reconcile_has_no_schedule_and_triggers_on_upstream():
+    """触发面：`workflow_run`（上游 = 那条会红的守护腿）+ `workflow_dispatch`，**无 cron**。
+
+    铁律 10：本腿做的是**删除**（删基线条目）⇒ 无人值守的周期档默认禁。`workflow_run`
+    不是 cron，无需 `schedule_scope_ledger` 登记。
+    """
+    doc = _wf_doc()
+    on = _wf_on(doc)
+    assert "schedule" not in on, (
+        "销账腿不得新增 schedule/cron（铁律 10：无人值守的**删除类**动作默认禁）")
+    assert {"workflow_run", "workflow_dispatch"} <= set(on), f"触发面缺项：{sorted(on)}"
+    wr = on["workflow_run"]
+    assert wr["workflows"] == ["Post-Merge Verify (main 侧守护腿)"], wr
+    assert "completed" in (wr.get("types") or []), wr
+    # 上游结论门控（类级守卫 A：`ci_trigger_gate_ledger.json` 的 `workflow_run_gated`）
+    job = doc["jobs"]["reconcile"]
+    assert "github.event.workflow_run.conclusion == 'failure'" in str(job.get("if")), job.get("if")
+    ledger = json.loads((Path(__file__).resolve().parent / "ci_trigger_gate_ledger.json")
+                        .read_text(encoding="utf-8"))
+    assert "drift-baseline-reconcile.yml" in ledger["consumers_frozen"], (
+        f"未进 `consumers_frozen`（类级守卫 A 双向比对）：{ledger['consumers_frozen']}")
+    assert any(e.get("file") == "drift-baseline-reconcile.yml"
+               for e in ledger["workflow_run_gated"]), "未进 `workflow_run_gated`（未登记即红）"
+
+
+def test_drift_reconcile_jobs_declare_literal_timeouts():
+    """成本台账逐条复比 `hard_kill_seconds == timeout-minutes × 60` ⇒ 每个 job 必须有字面量。"""
+    doc = _wf_doc()
+    bad = [jid for jid, job in (doc.get("jobs") or {}).items()
+           if not isinstance(job.get("timeout-minutes"), int)]
+    assert not bad, f"这些 job 没有字面量 `timeout-minutes`：{bad}"
+
+
+def test_drift_reconcile_gh_steps_declare_a_token():
+    """凡跑 `gh`（直接 / 经仓内脚本）的步骤必须声明 `GH_TOKEN` —— 否则 `gh` 未认证。
+
+    现场同族（自伤，2026-09-25）：一个不带 token 的 `gh` 步退出码 `3` ⇒ 整条腿此后每次合并
+    都红。本腿的读数步会经 `scripts/drift_audit.py` 调 `gh run list`，approve 步会经
+    `.github/scripts/flaky_ledger.py` 调 `gh` —— 两处都算「用到 gh」。
+    """
+    doc = _wf_doc()
+    wf_env = {**(doc.get("env") or {})}
+    gh_scripts = _gh_using_repo_scripts()
+    missing = []
+    for jid, job in (doc.get("jobs") or {}).items():
+        job_env = {**wf_env, **(job.get("env") or {})}
+        for step in (job.get("steps") or []):
+            run = str(step.get("run") or "")
+            direct = bool(re.search(r"(^|\s|&&|\|\||;|\$\()gh\s", run))
+            indirect = any(name in run for name in gh_scripts)
+            if not (direct or indirect):
+                continue
+            env = {**job_env, **(step.get("env") or {})}
+            if "GH_TOKEN" not in env:
+                why = "直接调 gh" if direct else f"调用会调 gh 的脚本（{sorted(gh_scripts)} 之一）"
+                missing.append(f"{jid} / {step.get('name') or '?'} —— {why}")
+    assert not missing, "这些步骤跑 gh 却没声明 GH_TOKEN：\n  " + "\n  ".join(missing)
+
+
+def test_drift_reconcile_is_fail_closed_and_never_rebuilds_the_baseline():
+    """结构性判据：**无法判定 ⇒ 非零退出**；销账**不许**退化成 `--regen-baseline`（#5151）；
+    只加自己那一个文件（禁 `git add -A`）。"""
+    doc = _wf_doc()
+    text = _wf_shell(doc)          # 只看**执行的 shell**，不看注释（"提及 ≠ 调用"）
+    assert "drift_audit.py --check" in text and "--json" in text, "缺少 `--check --json` 的读数步"
+    assert "--prune-zeroed" in text, "缺少销账调用"
+    assert "--regen-baseline" not in text, (
+        "销账腿**不许**用 `--regen-baseline`：那是全量重建，会连带删掉没跑出结论的判据名下的"
+        "合法豁免（#5151）")
+    # 审计退出码：`0|1` 之外（含三态 `3`）必须有 catch-all 非零出路
+    assert re.search(r"case \"\$RC\" in\s*\n\s*0\|1\)", text), "读数步没有 `0|1` 的显式分支"
+    assert re.search(r"\*\)[^\n]*exit 1", text), "退出码 catch-all 没有非零出路（无法判定会被吞）"
+    # 销账步：只放行 `0)`，其它一律非零
+    assert re.search(r"case \"\$RC\" in\s*\n\s*0\)", text), "销账步没有只放行 `0)` 的显式分支"
+    assert "git add -A" not in text and "git add ." not in text, "禁用 `git add -A`（只加自己的文件）"
+
+
+def test_drift_reconcile_permissions_are_minimal():
+    """权限最小化：只加这条链真正需要的三面（多一条都不加）。"""
+    doc = _wf_doc()
+    assert doc.get("permissions") == {"contents": "write", "pull-requests": "write",
+                                      "actions": "write"}, (
+        f"权限面不是最小集（多出来的会让这条链拥有它不需要的写权限）：{doc.get('permissions')}")
