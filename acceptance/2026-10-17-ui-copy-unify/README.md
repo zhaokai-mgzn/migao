@@ -57,3 +57,7 @@ HTTP 422  {"success":false,"error":{"code":"VALIDATION_ERROR",
 - 本目录**只覆盖桌面视口 1600×1000**：窄屏（< 1280，两列回落单列）与移动端**未取图**；单测钉住的是类名（`grid-cols-1 … xl:grid-cols-2`），几何形态未读图。
 - 四张图**不含 hover / focus / 键盘态**（链接式行内动作的 hover 下划线未取图；单测钉的是类名）。
 - 本机 gate 一趟被机器级重活锁拒绝（见 PR body「证据链」节），CI 仍是权威。
+- ⚠️ **取图时点**：五张图取自 2026-10-17 08:36~08:50，**早于** main 上 `#7079`（作业单列表新增「类型」列）落地
+  ⇒ `生产看板.png` 的表头没有「类型」列；本 PR 已 rebase 到含 `#7079` 的 main（表头形态 = `bg-neutral-50 text-left text-neutral-600`，
+  与新增列共存 —— `production-board.test.tsx` 29 条在 rebase 后仍全绿）。**表头形态与行内动作的判定不受该列影响。**
+
