@@ -233,6 +233,13 @@ describe('EmployeesPage', () => {
   it('#2946: 列表查询请求参数不含 role（列表页已移除角色筛选）', async () => {
     mockGetEmployees.mockClear()
     render(<EmployeesPage />)
+    // 🔴 issue #7116：**先等挂载那次请求落地**，再做交互。
+    // 本页是「草稿 state + 已提交 state」两段式（`keyword` → `handleSearch` → `searchKeyword` → `useEffect` 重发），
+    // 挂载请求未落地时，`setSearchKeyword` 触发的重发**排在同一条微任务链后**，而断言在
+    // `waitFor(toHaveBeenCalled())` 上被**挂载那次**满足 ⇒ 读到的是挂载那次的入参（不带 keyword）。
+    // 这不是迁移引入的行为变化 —— 迁移前后请求序列逐字相同（实测 `[{page,size}, {page,size,keyword:'张'}]`），
+    // 只是**交互与挂载请求的竞争**在 `SearchPanel` 下更容易显现。等挂载落地再点，就是确定的。
+    await waitFor(() => expect(mockGetEmployees).toHaveBeenCalled())
     // 触发一次查询：输入关键字后点「查询」，请求参数只含 page/size/keyword/status，不含 role
     const searchInput = screen.getByPlaceholderText(/输入姓名或手机号搜索/)
     fireEvent.change(searchInput, { target: { value: '张' } })
