@@ -72,7 +72,7 @@ export function RoutingsPanel({
         <div>
           <h2 className="text-base font-medium text-neutral-900">工艺路线（路线与规则）</h2>
           <p className="mt-0.5 text-sm text-neutral-500">
-            一条路线 = 一条有序主线；订单按命中的主线走。
+            一条路线 = 一条有序主线，作业单按命中的主线走；基础的两条分别是成品帘加工与卖布单出库作业（裁剪 / 打包）。
           </p>
         </div>
       )}
@@ -553,7 +553,7 @@ export function RoutingsPanel({
             </p>
             <p className="text-neutral-500">
               删除后，订单命中这个条件时<strong>不再</strong>增删「{deleteRuleTarget.operation ?? '—'}」这道工序
-              （加工单按当前主线生成）。历史加工单一字不变。
+              （作业单按当前主线生成）。历史作业单一字不变。
             </p>
             {ruleDeleteReasons && (
               <ul className="space-y-0.5 text-xs text-red-600" data-testid="route-rule-delete-reasons">

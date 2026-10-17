@@ -1,4 +1,4 @@
-// case_ids: PP-014, PG-024, PG-038, PG-041, PR-106, PG-021
+// case_ids: PP-014, PG-024, PG-038, PG-041, PR-106, PG-021, UI-094
 //
 // PP-014（issue #4307 前端半边）：菜单组第 4 项「工艺路线」—— 页面存在但侧边栏进不去等于没交付；
 //   本文件的链接清单 + 权限码断言随加项改判（红证：加项后旧断言即红）。
@@ -18,6 +18,11 @@
 //   ① 首屏只为当前页（默认 20）发详情请求；② 切页只为新页发；③ 切回已加载页不重复发；
 //   ④ 「刷新」显式清缓存并重取当前页。判据是**调用次数**，不是渲染结果（渲染不出请求扇出）。
 // 反 placeholder：看板断言必须落到真实数据行，不能只断言页面存在。
+//
+// UI-094（issue #7079）：本页是**作业单的唯一入口**，上位概念统一说「作业单」，实体两型用
+//   **中文业务名**可见 —— 「加工单」（`order_kind='processing'`，缺键的存量单同此）/「出库作业单」
+//   （`order_kind='outbound'`，卖布单的裁剪 / 打包作业）。判据 = 类型列的可见文案 + 🔴
+//   **机器键零上屏**（`processing` / `outbound` / `order_kind` 都不得出现在表格文本里）。
 //
 // ⚠️ case_ids 更正（issue #4357）：本文件此前声明 `PG-019`，但 PG-019 是**后端**用例
 //   （存量加工单恢复路径，traces 全是 Java 测试，见 .github/cases/processing-order.yml），
@@ -129,6 +134,20 @@ const MANY_ORDERS = Array.from({ length: 100 }, (_, i) => ({
   customerName: `客户${i + 1}`,
   status: 'in_processing' as const,
 }))
+
+/**
+ * issue #7079：**出库作业单**（卖布单，`order_kind='outbound'`）与加工单同列一屏 ——
+ * 类型用**中文业务名**可见，机器键（`processing` / `outbound` / `order_kind`）绝不上屏。
+ */
+const OUTBOUND_ORDER = {
+  id: 'po-out',
+  orderId: 'order-uuid-out',
+  orderNo: 'MG20261017009',
+  processingOrderNo: 'CK-20261017-0001',
+  customerName: '赵六',
+  order_kind: 'outbound',
+  status: 'generated',
+} as unknown as ProcessingOrder
 
 /** 可手动控制 resolve 时机的 promise（模拟「在飞的慢请求」，PG-024） */
 function deferred() {
@@ -311,6 +330,26 @@ describe('生产看板页 /production（加工单唯一入口，PG-038）', () =
     expect(screen.getByTestId('production-row-piecework-po-2')).toHaveTextContent('¥0.00')
   })
 
+  // ── issue #7079：作业单两型的**类型可见面**（中文业务名，机器键不上屏）──────────────
+
+  it('#7079 类型列用中文业务名：缺键 = 存量单按「加工单」，`outbound` 显示「出库作业单」', async () => {
+    mockList.mockResolvedValue(ok([ORDERS[0], OUTBOUND_ORDER]))
+    render(<ProductionBoardPage />)
+
+    await waitFor(() => expect(screen.getByTestId('production-row-po-1')).toBeInTheDocument())
+    // 缺键（存量单）⇒ 加工单，不是出库
+    expect(screen.getByTestId('production-row-kind-po-1')).toHaveTextContent('加工单')
+    // 出库作业单：中文业务名可见（本行主键是**出库**单号）
+    expect(screen.getByTestId('production-row-kind-po-out')).toHaveTextContent('出库作业单')
+    // 🔴 机器键绝不上屏：既不是枚举值，也不是键名
+    const text = screen.getByRole('table').textContent ?? ''
+    expect(text).not.toContain('outbound')
+    expect(text).not.toContain('processing')
+    expect(text).not.toContain('order_kind')
+    // 两型同列一屏（类型可见，不靠单号前缀猜）
+    expect(screen.getAllByTestId(/^production-row-po-/)).toHaveLength(2)
+  })
+
   it('按加工单上的 orderId 拉工序进度与计件（复用既有端点）', async () => {
     render(<ProductionBoardPage />)
 
@@ -347,7 +386,7 @@ describe('生产看板页 /production（加工单唯一入口，PG-038）', () =
     await waitFor(() => expect(screen.getByTestId('production-row-po-1')).toBeInTheDocument())
 
     const user = userEvent.setup()
-    await user.type(screen.getByPlaceholderText('请输入加工单号或订单号'), 'JG-20260917-0002{Enter}')
+    await user.type(screen.getByPlaceholderText('请输入作业单号或订单号'), 'JG-20260917-0002{Enter}')
 
     await waitFor(() =>
       expect(mockList).toHaveBeenLastCalledWith({ keyword: 'JG-20260917-0002', status: undefined }),
@@ -373,7 +412,7 @@ describe('生产看板页 /production（加工单唯一入口，PG-038）', () =
     await waitFor(() => expect(screen.getByTestId('production-row-po-1')).toBeInTheDocument())
 
     const user = userEvent.setup()
-    const keyword = screen.getByPlaceholderText('请输入加工单号或订单号')
+    const keyword = screen.getByPlaceholderText('请输入作业单号或订单号')
     await user.type(keyword, 'JG-2026')
     await user.selectOptions(statusSelect(), 'issued')
     // 先真的提交一次筛选（否则「重置」后仍与首屏那次调用同参 ⇒ 断言会**平凡通过**）
@@ -501,7 +540,7 @@ describe('生产看板页 /production（加工单唯一入口，PG-038）', () =
     await waitFor(() => expect(tableText()).toContain('加工中'))
 
     const user = userEvent.setup()
-    const keyword = screen.getByPlaceholderText('请输入加工单号或订单号')
+    const keyword = screen.getByPlaceholderText('请输入作业单号或订单号')
     await user.type(keyword, 'JG-20260917{Enter}')
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(2))
     await user.clear(keyword)

@@ -7,7 +7,9 @@ import { Button, Pagination, PageHeader } from '@/components/ui'
 import StatusBadge from '@/components/ui/StatusBadge'
 import { chipToneClasses } from '@/lib/status-chip'
 import {
+  ORDER_KIND_LABELS,
   PROCESSING_ORDER_STATUS_LABELS,
+  orderKindOf,
   processingOrderStatusChipFor,
 } from '@/lib/processing-order'
 import { processingOrderApi, productionApi } from '@/lib/api'
@@ -42,6 +44,10 @@ import type { PieceworkSummary, ProcessingOrder, ProductionProgress } from '@/ty
  * 旧路径 /processing-orders 保留为重定向（旧深链不 404）；子路由
  * /processing-orders/{id}/production（生产明细）**不变**。
  * #4305 的入口收敛不回归：本页**不渲染**发加工/开始加工/加工完成/取消四个按钮。
+ *
+ * issue #7079：上位概念统一叫**作业单**（本页是它的唯一入口），实体两型按中文业务名可见 ——
+ * 「加工单」（成品帘，`order_kind='processing'`）/「出库作业单」（卖布，`order_kind='outbound'`）。
+ * 🔴 机器键（`processing` / `outbound` / `order_kind`）**绝不上屏**；缺键 = 存量单，按加工单处理。
  */
 interface BoardRow {
   po: ProcessingOrder
@@ -121,7 +127,7 @@ export default function ProductionBoardPage() {
       if (seq !== reqSeq.current) return
       console.error(e)
       setRows([])
-      setError('加载加工单失败，请稍后重试')
+      setError('加载作业单失败，请稍后重试')
     } finally {
       if (seq === reqSeq.current) setLoading(false)
     }
@@ -204,7 +210,7 @@ export default function ProductionBoardPage() {
     <div className="p-6 space-y-4">
       <PageHeader
         title="生产看板"
-        subtitle="加工单在产进度与计件合计"
+        subtitle="作业单在产进度与计件合计"
         actions={
           <Button variant="secondary" size="sm" onClick={refresh} disabled={loading}>
             <RefreshCw className={`w-4 h-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
@@ -221,7 +227,7 @@ export default function ProductionBoardPage() {
               关键词
             </label>
             <input
-              placeholder="请输入加工单号或订单号"
+              placeholder="请输入作业单号或订单号"
               value={keywordInput}
               onChange={(e) => setKeywordInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -272,7 +278,10 @@ export default function ProductionBoardPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500">
-              <th className="pl-5 pr-4 py-3 font-medium whitespace-nowrap">加工单号</th>
+              <th className="pl-5 pr-4 py-3 font-medium whitespace-nowrap">作业单号</th>
+              {/* 类型（issue #7079）：两型用**中文业务名**可见 —— 「加工单」/「出库作业单」。
+                  机器键（`processing` / `outbound`）绝不上屏。 */}
+              <th className="px-4 py-3 font-medium whitespace-nowrap">类型</th>
               <th className="px-4 py-3 font-medium whitespace-nowrap">订单号</th>
               <th className="px-4 py-3 font-medium whitespace-nowrap">客户</th>
               <th className="px-4 py-3 font-medium">商品与数量</th>
@@ -288,7 +297,7 @@ export default function ProductionBoardPage() {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-neutral-400" data-testid="production-board-loading">
+                <td colSpan={9} className="px-4 py-8 text-center text-neutral-400" data-testid="production-board-loading">
                   加载中…
                 </td>
               </tr>
@@ -296,7 +305,7 @@ export default function ProductionBoardPage() {
 
             {!loading && error && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center" data-testid="production-board-error">
+                <td colSpan={9} className="px-4 py-8 text-center" data-testid="production-board-error">
                   <span className="mb-2 flex items-center justify-center gap-2 text-red-500">
                     <AlertCircle className="w-4 h-4" />
                     {error}
@@ -310,8 +319,8 @@ export default function ProductionBoardPage() {
 
             {!loading && !error && rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-neutral-400" data-testid="production-board-empty">
-                  暂无加工单{filtered ? '（当前筛选条件下）' : ''}
+                <td colSpan={9} className="px-4 py-10 text-center text-neutral-400" data-testid="production-board-empty">
+                  暂无作业单{filtered ? '（当前筛选条件下）' : ''}
                 </td>
               </tr>
             )}
@@ -332,6 +341,9 @@ export default function ProductionBoardPage() {
                     data-testid={`production-row-${po.id}`}
                   >
                     <td className="pl-5 pr-4 py-4 whitespace-nowrap font-medium text-neutral-900">{po.processingOrderNo}</td>
+                    <td className="px-4 py-4 whitespace-nowrap text-neutral-600" data-testid={`production-row-kind-${po.id}`}>
+                      {ORDER_KIND_LABELS[orderKindOf(po)]}
+                    </td>
                     <td className="px-4 py-4 whitespace-nowrap text-neutral-600">{po.orderNo ?? '—'}</td>
                     <td className="px-4 py-4 whitespace-nowrap text-neutral-900">{po.customerName ?? '—'}</td>
                     {/* 商品与数量：宽度必须收紧 —— 本列是 #4357 合并时新增的第 8 列，过宽会把
