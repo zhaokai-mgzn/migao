@@ -69,3 +69,4 @@
 {"id":"1792116455.61481.16963","ts":"2026-10-16T02:07:36Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/5653-piecework-settlement","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1792116461.61670.23633","ts":"2026-10-16T02:07:42Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/6951-remote-build-identity","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1792119819.12428.18688","ts":"2026-10-16T03:03:40Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7007-ui-shared-primitives","why":"子包 worktree 直跑全量（无批次标记）"}
+{"id":"1792195899.63420.11089","ts":"2026-10-17T00:11:40Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7086-typewriter-live-reveal","why":"子包 worktree 直跑全量（无批次标记）"}
