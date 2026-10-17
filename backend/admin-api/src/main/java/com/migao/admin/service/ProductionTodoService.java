@@ -270,18 +270,30 @@ public class ProductionTodoService {
         target.put("id", order.getId());
         target.put("order_no", order.getOrderNo());
 
+        // 🔴 按**作业单类型**分岔（issue #7079）：本方法与 toScheduleTodo 是在「待办只可能有含加工项的
+        // 单」这个前提下写的，而卖布单（只有 `saleForm=布料` 的行、按米卖布、不选加工项）现在也进
+        // 这两类 ⇒ 标题 / reason / evidence 里每一句**类型相关**的措辞与键都必须按型。
+        // 对卖布单说「加工单」是商家屏上的**不实文案**（用户逐字：单布料售卖是不应该生成加工单的）。
+        boolean hasProcessing = orderService.hasProcessingItems(order);
+
         Map<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("order_status", order.getStatus());
-        // 🔴 取**真实值**（issue #7079）：卖布单（只有卖布行、无加工项）现在也会进「待发货」
-        // ⇒ 这里硬编码 `true` 就是对它说假话。`needsWork` 的另一半（卖布行）由 `needs_work`
-        // 键承载：两个键各说各的事实，不互相顶替。
-        evidence.put("has_processing_items", orderService.hasProcessingItems(order));
+        evidence.put("has_processing_items", hasProcessing);
         evidence.put("needs_work", orderService.needsWork(order));
-        evidence.put("processing_completed", true);
+        if (hasProcessing) {
+            // 「没有加工单」比「加工单未完成」更诚实：卖布单没有加工单 ⇒ 该键**缺席**
+            // （与本读面既有的 non_null / 缺值不落键语义一致，不是新发明）。
+            evidence.put("processing_completed", true);
+        }
 
         return todo(TYPE_TO_SHIP, "待发货", "high",
-                "订单 " + orderLabel(order) + " 加工单已完成，可以发货了",
-                "含加工项且加工单已完成，订单仍未发货（判据 = 发货守卫：含加工项须先完成加工单）",
+                "订单 " + orderLabel(order) + (hasProcessing
+                        ? " 加工单已完成，可以发货了"
+                        : " 出库作业单已完成，可以发货了"),
+                hasProcessing
+                        ? "含加工项且加工单已完成，订单仍未发货（判据 = 发货守卫：含加工项须先完成加工单）"
+                        : "卖布单的出库作业单已完成（裁剪与打包已报工），订单仍未发货"
+                                + "（判据 = 发货守卫：卖布单须先完成出库作业单）",
                 CRITERION_TO_SHIP, processingOrderDetailPage(order.getId()), target, evidence);
     }
 
@@ -291,16 +303,21 @@ public class ProductionTodoService {
         target.put("id", order.getId());
         target.put("order_no", order.getOrderNo());
 
+        // 按型分岔的理由同 toShipTodo（issue #7079）
+        boolean hasProcessing = orderService.hasProcessingItems(order);
+
         Map<String, Object> evidence = new LinkedHashMap<>();
         evidence.put("order_status", order.getStatus());
-        // 同上（issue #7079）：卖布单也进「待排产」⇒ 该键必须说事实，不许恒 `true`。
-        evidence.put("has_processing_items", orderService.hasProcessingItems(order));
+        evidence.put("has_processing_items", hasProcessing);
         evidence.put("needs_work", orderService.needsWork(order));
         evidence.put("operation_instance_count", 0);
 
         return todo(TYPE_TO_SCHEDULE, "待排产", "medium",
                 "订单 " + orderLabel(order) + " 已确认，还没排产",
-                "订单已确认且含加工项，但该单还没有任何工序实例，需要排产",
+                hasProcessing
+                        ? "订单已确认且含加工项，但该单还没有任何工序实例，需要排产"
+                        : "订单已确认且有需要报工的作业（卖布单的出库作业单），"
+                                + "但该单还没有任何工序实例，需要排产",
                 CRITERION_TO_SCHEDULE, processingOrderDetailPage(order.getId()), target, evidence);
     }
 

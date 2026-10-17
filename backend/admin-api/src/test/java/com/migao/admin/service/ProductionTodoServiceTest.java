@@ -76,6 +76,12 @@ import static org.mockito.Mockito.when;
  * 恒 true 是**读面对它说假话**）；而 {@link #toShipWhenProcessingCompleted} /
  * {@link #toScheduleWhenConfirmedOrderHasNoInstances} 的反向断言保持绿
  * （含加工项的单该键仍是 {@code true}）。</p>
+ *
+ * <p><b>issue #7079 的第三条红证</b>（文案按作业单类型分）：把标题 / {@code reason} 退回硬编码
+ * 「加工单」措辞，或把 {@code processing_completed} 改回无条件落键 ⇒
+ * {@link #fabricSaleOrderTodoDoesNotMentionProcessingOrder} 必红
+ * （商家屏上会出现「加工单」——卖布单**不该有**加工单，那是本单要治的病）；
+ * 两条反向护栏（含加工项的标题 / reason **逐字等于原文案**）保持绿。</p>
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -238,6 +244,9 @@ class ProductionTodoServiceTest {
         assertThat(evidenceOf(todo))
                 .containsEntry("operation_instance_count", 0)
                 .containsEntry("has_processing_items", true);
+        // 反向护栏（issue #7079）：含加工项 ⇒ reason **逐字等于原文案**
+        assertThat(todo.get("reason"))
+                .isEqualTo("订单已确认且含加工项，但该单还没有任何工序实例，需要排产");
         assertThat(todo.get("link")).isEqualTo("/pages/production/order-detail/index?orderId=" + ORDER_ID);
     }
 
@@ -275,10 +284,13 @@ class ProductionTodoServiceTest {
         assertThat(todosOf(overview)).hasSize(1);
         assertThat(todo.get("type")).isEqualTo(ProductionTodoService.TYPE_TO_SHIP);
         assertThat(todo.get("criterion")).isEqualTo(ProductionTodoService.CRITERION_TO_SHIP);
-        assertThat(evidenceOf(todo)).containsEntry("processing_completed", true);
         assertThat(evidenceOf(todo)).as("反向护栏：含加工项的单该键仍为 true（判据不是「一律 false」）")
                 .containsEntry("has_processing_items", true)
                 .containsEntry("needs_work", true);
+        // 反向护栏（issue #7079）：含加工项 ⇒ 标题与 reason **逐字等于原文案**（本单的硬护栏）
+        assertThat(todo.get("title")).isEqualTo("订单 " + ORDER_NO + " 加工单已完成，可以发货了");
+        assertThat(todo.get("reason")).isEqualTo(
+                "含加工项且加工单已完成，订单仍未发货（判据 = 发货守卫：含加工项须先完成加工单）");
         assertThat(todo.get("link")).isEqualTo("/pages/production/order-detail/index?orderId=" + ORDER_ID);
     }
 
@@ -301,8 +313,48 @@ class ProductionTodoServiceTest {
         assertThat(todosOf(overview)).hasSize(1);
         assertThat(todo.get("type")).isEqualTo(ProductionTodoService.TYPE_TO_SHIP);
         assertThat(todo.get("criterion")).isEqualTo(ProductionTodoService.CRITERION_TO_SHIP);
-        assertThat(evidenceOf(todo)).containsEntry("processing_completed", true);
+        // ⚠️ 原断言是 `containsEntry("processing_completed", true)` —— 对卖布单**不成立**：
+        //    卖布单没有加工单（它的那张是**出库作业单**）⇒ 该键按型**缺席**（issue #7079 的按型分岔）。
+        assertThat(evidenceOf(todo)).doesNotContainKey("processing_completed");
         assertThat(todo.get("link")).isEqualTo("/pages/production/order-detail/index?orderId=" + ORDER_ID);
+    }
+
+    @Test
+    @DisplayName("🔴 issue #7079：卖布单的待办文案**不得出现「加工单」**，且 evidence 无 processing_completed 键")
+    void fabricSaleOrderTodoDoesNotMentionProcessingOrder() {
+        // 待发货
+        setUpFabricOrderScenario(order("producing"), /* instances */ 4);
+        when(processingOrderMapper.countCompletedByOrderId(ORDER_ID, TENANT)).thenReturn(1L);
+        Map<String, Object> shipTodo = todosOf(service.overview(TENANT, NOW)).get(0);
+
+        assertThat(String.valueOf(shipTodo.get("title")))
+                .as("🔴 卖布单没有加工单（用户逐字：单布料售卖不应该生成加工单）⇒ 标题不许说「加工单」")
+                .doesNotContain("加工单")
+                .contains("出库作业单已完成");
+        assertThat(String.valueOf(shipTodo.get("reason")))
+                .as("reason 说清是什么单 + 为什么能发（事实一条不少：卖布单 / 出库作业单 / 裁剪与打包已报工）")
+                .doesNotContain("加工单")
+                .contains("卖布单")
+                .contains("出库作业单")
+                .contains("裁剪与打包");
+        assertThat(evidenceOf(shipTodo))
+                .as("卖布单根本没有加工单 ⇒ 该键**缺席**（「没有加工单」比「加工单未完成」更诚实）")
+                .doesNotContainKey("processing_completed")
+                .containsEntry("has_processing_items", false)
+                .containsEntry("needs_work", true);
+
+        // 待排产（同一张卖布单）
+        setUpFabricOrderScenario(order("confirmed"), /* instances */ 0);
+        Map<String, Object> scheduleTodo = todosOf(service.overview(TENANT, NOW)).get(0);
+
+        assertThat(String.valueOf(scheduleTodo.get("reason")))
+                .as("🔴 待排产的 reason 同样不许把卖布单说成含加工项")
+                .doesNotContain("加工单")
+                .contains("卖布单")
+                .contains("出库作业单");
+        assertThat(evidenceOf(scheduleTodo))
+                .containsEntry("has_processing_items", false)
+                .containsEntry("needs_work", true);
     }
 
     @Test
@@ -331,6 +383,8 @@ class ProductionTodoServiceTest {
                 .containsEntry("has_processing_items", false);
         assertThat(shipEvidence).as("它仍算「有需要报工的作业」（卖布行那一半由本键承载，不顶替上面那个键）")
                 .containsEntry("needs_work", true);
+        assertThat(shipEvidence).as("卖布单没有加工单 ⇒ 该键必须**缺席**（红证 = 无条件 put）")
+                .doesNotContainKey("processing_completed");
 
         // 待排产：已确认 + 活跃工序实例数为 0 ⇒ 同一张卖布单在「待排产」，该键同样是事实值
         setUpFabricOrderScenario(order("confirmed"), /* instances */ 0);
