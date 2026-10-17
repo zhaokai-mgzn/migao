@@ -4206,6 +4206,107 @@ cases:
     traces:
       tests:
         - "frontend/admin-web/tests/unit/lib/server-error-copy.test.ts"
+  # UI-116（issue #7079，2026-10-17）——「作业单」两型的**商家可见面**。
+  #
+  # 病根（用户逐字）：「**单布料售卖是不应该生成加工单的**」—— 而卖布单改前在「生产看板」
+  # 与订单详情的作业单区块里**就**叫「加工单」，商家读到的单据名与业务不符。
+  #
+  # 口径（用户 2026-10-17 裁定）：上位概念统一为**作业单**；实体按 `order_kind` 分两型
+  # （`processing` = 加工 / `outbound` = 出库），**商家可见面一律用中文业务名**：
+  # 「加工单」（成品帘）与「出库作业单」（卖布单）；`outbound` 型**没有加工方、没有交期**
+  # ⇒ 相关写面不得渲染。
+  #
+  # 取号：`python3 scripts/next_case_id.py UI` 现取 = 113（main 最大 111，PR #7081 占 112）。
+  #
+  # ⚠️ **本轮只覆盖商家端 admin-web**；工人端（worker-h5 / bmini-app）里「加工单」措辞的
+  # 同族收敛**不在本条**，如实登记为未覆盖面（见 data_checks 末条）。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: UI-116
+    legacy_id: ""
+    title: "作业单两型可见面：生产看板 / 订单详情统一「作业单」+ 中文类型标签；`outbound` 型不显示加工方与交期；机器键不上屏"
+    domains:
+      - ui
+      - frontend
+      - processing-order
+    tier: normal
+    persona: ""
+    tags:
+      - ui
+      - production
+      - processing-order
+      - copy
+      - order-kind
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-17 逐字：「……原设计是想规定好成品帘加工路线和单布料售卖的路线……但是单布料售卖是不应该生成加工单的，现在仍然是个功能缺口」（附「工艺路线」页截图）"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·🔴 **类型必须在界面上看得见，且是中文**：`order_kind='outbound'` 的作业单在生产看板/订单详情渲染**「出库作业单」**，`processing` 渲染**「加工单」**。红证：把标签渲染去掉 ⇒ 该行取不到该文案（`queryByText` 为 null）。"
+      - "判据 2·🔴 **机器键绝不上屏**：页面上**不得**出现 `processing` / `outbound` / `order_kind` 这些标识（本仓既有「JSX 文本位机器键」跨页面元守卫会上红）。红证：把 `{po.order_kind}` 直接渲染进 JSX ⇒ 具名报出。"
+      - "判据 3·**`outbound` 型不渲染加工方 / 交期**：卖布单没有加工方与交期这两个概念 ⇒ 相关字段与写面（含「发加工」动作）在 `outbound` 型上不出现；`processing` 型**照旧全渲染**（反向护栏：不许把成品帘面砍掉）。"
+      - "判据 4·**缺键 = 存量单，按加工单处理**：读面 `order_kind` 缺席（存量单）时按 `processing` 渲染，**不得**渲染成空白或未知态。"
+      - "判据 5·**工艺路线页口径同步**：「布料工序路线」的说明文案改成「卖布单的**出库作业**（裁剪 / 打包）」这一口径（改前写「这两条是窗帘单与布料单各自的主线」）。"
+      - "**未覆盖面（照实登记，不粉饰）**：工人端 `frontend/worker-h5/**` 与 `frontend/bmini-app/**` 里「加工单」措辞的同族收敛**不在本条** —— 那条面（洗水码/扫码页/离线报工）本轮未改，重启条件 = 工人端做一次同族文案巡检时一并收口。"
+    skip_reason: "[backend-contract] 纯前端渲染与文案（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "（**集成侧改号**：合入前 main 已被 #7116 用掉 `UI-113`（筛选区元守卫，其 merge_log 记「首次取到 112 但在飞 PR #7113 已占用 ⇒ 改用 113」），而本单的在飞分支对 `next_case_id.py` 不可见 ⇒ 撞号。规矩 = 后合者改号 ⇒ 本用例 113 → **UI-116**；判据内容逐字不变。）2026-10-17 新增（issue #7079；用户裁定见 user_inputs 与 PG-078 的注释）。取号 = `python3 scripts/next_case_id.py UI` 现取 = 113。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/production-board.test.tsx"
+        - "frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # UI-114（issue #7079 的**类级固化**，2026-10-17）—— demo path spec 的**占位符选择器活性**。
+  #
+  # 病灶（真发生，非假想）：本单把生产看板搜索占位从「请输入加工单号或订单号」改成
+  # 「请输入作业单号或订单号」，源码与 vitest 都跟了，**但 `tests/e2e/specs/orders/processing-orders.spec.ts`
+  # 这个消费方漏了** ⇒ CI `Demo path specs (admin-web, fixture mode)` 腿红、具名到
+  # 该文件那两处 `fill(getByPlaceholder('请输入加工单号或订单号'))`（报 `waiting for …` 超时，2 failed / 59 passed）。
+  #
+  # 结构原因：仓里**已有**同族守卫 `test_ui_smoke_selector_liveness.py`（判据 A 文案活性），
+  # 但它的射程**只有冒烟 spec**（`scripts/ui-smoke-merchant/spec.mjs`）——
+  # `tests/e2e/**` 这条载体的选择器活性**此前零守卫**。
+  #
+  # 口径：新增 `test_e2e_placeholder_liveness.py`，射程**故意只到占位符**（现取 12 处 / 6 个不同字面量）——
+  # `getByText` 397 / `getByRole` 330 / `getByLabel` 14 的字面量大量是运行期数据或动态拼装，
+  # 静态活性判据对它们会大面积假红。**更宽的那一档留在它自己的载体上**（两条守卫不互为副本）。
+  #
+  # 取号：`python3 scripts/next_case_id.py UI` 现取报 113，但 **113 已被本单的 UI-113 占用**
+  # （取号工具的候选 = main ∪ open PR ∪ 本工作区 ⇒ **尚未开 PR 的分支它看不见**，故此处手工 +1 取 114）。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: UI-114
+    legacy_id: ""
+    title: "demo path spec 的占位符选择器活性：`tests/e2e/**` 里每个 `getByPlaceholder(...)` 字面量必须在 admin-web 源码里逐字活着"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    persona: ""
+    tags:
+      - ui
+      - e2e
+      - selector-liveness
+      - copy-drift
+      - class-level-guard
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 L1·🔴 **射程内每个占位符字面量必须在被驱动面里活着**：`tests/e2e/**/*.ts` 的 `getByPlaceholder('X')` / `getByPlaceholderText('X')` 的 `X`，必须在 `frontend/admin-web/src/**` 的 `.ts`/`.tsx` 里**逐字**出现。证据 = tests/unit_ci_workflows/test_e2e_placeholder_liveness.py::test_every_e2e_placeholder_literal_is_alive_in_admin_web。**红证（真回归实跑，2026-10-17）**：四包集成树里（源码已改、e2e 未修）该判据红，具名逐字为 `tests/e2e/specs/orders/processing-orders.spec.ts 的 getByPlaceholder('请输入加工单号或订单号') 在 frontend/admin-web/src/** 里取不到逐字文案`（该文件两处 fill 同因）—— 与 CI 那条腿点的**同一个文件**。"
+      - "判据 L2·**反空跑（fail-closed）**：射程（`getByPlaceholder` 字面量）为空 ⇒ 红 —— spec 被改名/搬走、或调用换成了变量时，不许把「没有可比对的东西」读成通过。"
+      - "判据 L3·**判别力自证（反恒真）**：好形态（字面量在源码里）不报；坏形态具名报出（含本次真实漏网的那个字面量）；且 `getByPlaceholder` / `getByPlaceholderText`、单双引号两种拼写都认。"
+      - "**边界（照实登记）**：① 射程只到**占位符**这一档 —— `getByText` / `getByRole(name)` / `getByLabel` 的同族字面量**不在本条**（现取 397 / 330 / 14 处，多数是运行期数据，静态判据会假红）；② 判据是「字面量在不在源码里」，**不是**「Playwright 真能定位到它」—— 运行期真实定位由 CI 的 `Demo path specs (admin-web, fixture mode)` 腿承担，本条的绿**不能**替代它；③ 不含 `scripts/ui-smoke-merchant/spec.mjs`（那是 test_ui_smoke_selector_liveness.py 的射程，两处不互为副本）。"
+    skip_reason: "[backend-contract] 纯静态源码判据（读 `tests/e2e/**` 与 `frontend/admin-web/src/**` 的字面量对账），零网络、非 LLM 行为，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-17 新增（issue #7079 的类级固化；病灶 = 本单自己的真实漏网，CI demo path 腿实测 2 failed）。取号 = 手工 +1 = 114（取号工具看不见未开 PR 的分支，它报的 113 已被本单 UI-113 占用）。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_e2e_placeholder_liveness.py"
+      ci:
+        - pr-check.yml
+      verifies: []
   - id: UI-115
     legacy_id: ""
     title: "**卖布单在订单详情的「生成作业单」出口**：发货前是否需要作业由读面给出（`needs_work` / `work_order_kind`），详情空态/生成按钮、发货页守卫、详情发货入口三处都用它（issue #7079 第 5 包）"
@@ -4229,10 +4330,10 @@ cases:
     expectations:
       - tool: direct_reply
     data_checks:
-      - "🔴 **判据 1（会红，前端可见面）**：卖布单（`work_order_kind = outbound`、`processingItems` 为空）且无作业单 ⇒ 订单详情「作业单」区块必须出现**「生成出库作业单」**按钮 + 按型说明（按钮文案取 `ORDER_KIND_LABELS`，不新造词），且屏上**不出现**机器键 `outbound` / `work_order_kind`。执行点 = `frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx`（`UI-113 判据 1`）。**红证**：把 `canGenerate` 退回 `notFound && hasProcessing && …`（旧形态）⇒ 红。"
-      - "🔴 **判据 2（会红，不实文案）**：空态文案**不得**再出现「无加工项订单无需加工环节」——它对卖布单**不实**（卖布单正需要裁剪/打包作业）。需要作业但当前状态还不能生成 ⇒ 显示按型的**可行动**说明（「该订单需要作业单（出库作业单），当前状态还不能生成」+ 下一步是什么）；无需要报工的作业 ⇒ 「该订单无需作业单（没有加工项，也不是卖布单）」。执行点 = 同文件 `UI-113 判据 3/4`。**红证**：把空态改回那句旧文案 ⇒ 判据 3 红。"
-      - "🔴 **判据 3（会红，发货页前置守卫）**：卖布单在 `/orders/{id}/ship` 必须被**前置阻断**（不渲染发货表单「确认发货 / 确认物流」）+ 可行动出口（「返回订单详情」）+ 按型引导句（「该订单是卖布单：先完成出库作业单的裁剪与打包报工，再发货」）；作业单已完成 ⇒ 放行；**无作业**的普通单（`work_order_kind` 缺键）⇒ 不查作业单、直接渲染表单（不许误拦）。执行点 = `frontend/admin-web/tests/unit/components/ShipOrderGuard.test.tsx`（`UI-113 判据 1~4`）。**红证**：把守卫退回 `order.processingItems?.length > 0` ⇒ 卖布单那 3 条红。"
-      - "🔴 **判据 4（会红，详情页发货入口）**：订单详情的发货入口对卖布单同样有前置提示（按型引导句），作业单已完成才出可点的「发货」。执行点 = `frontend/admin-web/tests/unit/components/OrderDetailShipGuard.test.tsx`（`UI-113 判据 5~7`）。**红证**：退回 `processingItems` 单侧判据 ⇒ 卖布单直接渲染「发货」按钮 ⇒ 红。"
+      - "🔴 **判据 1（会红，前端可见面）**：卖布单（`work_order_kind = outbound`、`processingItems` 为空）且无作业单 ⇒ 订单详情「作业单」区块必须出现**「生成出库作业单」**按钮 + 按型说明（按钮文案取 `ORDER_KIND_LABELS`，不新造词），且屏上**不出现**机器键 `outbound` / `work_order_kind`。执行点 = `frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx`（`UI-115 判据 1`）。**红证**：把 `canGenerate` 退回 `notFound && hasProcessing && …`（旧形态）⇒ 红。"
+      - "🔴 **判据 2（会红，不实文案）**：空态文案**不得**再出现「无加工项订单无需加工环节」——它对卖布单**不实**（卖布单正需要裁剪/打包作业）。需要作业但当前状态还不能生成 ⇒ 显示按型的**可行动**说明（「该订单需要作业单（出库作业单），当前状态还不能生成」+ 下一步是什么）；无需要报工的作业 ⇒ 「该订单无需作业单（没有加工项，也不是卖布单）」。执行点 = 同文件 `UI-115 判据 3/4`。**红证**：把空态改回那句旧文案 ⇒ 判据 3 红。"
+      - "🔴 **判据 3（会红，发货页前置守卫）**：卖布单在 `/orders/{id}/ship` 必须被**前置阻断**（不渲染发货表单「确认发货 / 确认物流」）+ 可行动出口（「返回订单详情」）+ 按型引导句（「该订单是卖布单：先完成出库作业单的裁剪与打包报工，再发货」）；作业单已完成 ⇒ 放行；**无作业**的普通单（`work_order_kind` 缺键）⇒ 不查作业单、直接渲染表单（不许误拦）。执行点 = `frontend/admin-web/tests/unit/components/ShipOrderGuard.test.tsx`（`UI-115 判据 1~4`）。**红证**：把守卫退回 `order.processingItems?.length > 0` ⇒ 卖布单那 3 条红。"
+      - "🔴 **判据 4（会红，详情页发货入口）**：订单详情的发货入口对卖布单同样有前置提示（按型引导句），作业单已完成才出可点的「发货」。执行点 = `frontend/admin-web/tests/unit/components/OrderDetailShipGuard.test.tsx`（`UI-115 判据 5~7`）。**红证**：退回 `processingItems` 单侧判据 ⇒ 卖布单直接渲染「发货」按钮 ⇒ 红。"
       - "🔴 **判据 5（会红，读面同源）**：`OrderShipGuard.requiredOrderKind` 与 `needsWork` **必须同源**（有型 ⇔ 需要作业），且逐值：全卖布行 ⇒ `outbound` / 含加工项或混合 ⇒ `processing` / 无作业 ⇒ `null`；卖布行以 JSON **字符串** 形态出现时仍判出库。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/OrderShipGuardTest.java`（`requiredOrderKind*` 6 条）。**红证**：让 `hasFabricSaleLine` 恒假 / 按 `processingItems` 单侧判 ⇒ 红。"
       - "🔴 **判据 6（会红，读面接线）**：`OrderService.convertToDetailResponse` 必须真的调用 `OrderShipGuard.requiredOrderKind` 并把结果落到响应（`setNeedsWork` / `setWorkOrderKind`），DTO 上两个键必须是显式 `@JsonProperty`（snake_case 冻结键）。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/OrderDetailWorkSignalReadFaceTest.java`（含判别力自证：判据本体不接线 / 结果不落响应 / 摘掉 `@JsonProperty` / 方法体取不到，四种坏形态各自判红；只往注释里加字面量 ⇒ 一条都不红）。**红证**：把 `requiredOrderKind(` 换成 `hasProcessingItems(` ⇒ 红。"
       - "📌 **为什么这是缺陷不是新需求**：卖布单生成作业单的**能力早就有**（`ProcessingOrderService.prepare` 的门是 `snapshot.isEmpty()`，而 `buildSnapshot` 对 `saleForm=布料` 的行使**保留**），派单池与 AI 工具两条出口都通；断的只是**读面没把「要不要作业」交给前端** ⇒ 商家在订单详情看不到出口，而刚被发货守卫拦下时收到的却正是「须先完成出库作业单的裁剪与打包报工」——两个面互相矛盾。"

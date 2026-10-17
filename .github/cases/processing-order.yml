@@ -2911,3 +2911,140 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # PG-078（issue #7079，2026-10-17）——「作业单两型」的**类型面**。
+  #
+  # 病根（用户逐字）：「原设计是想规定好成品帘加工路线和单布料售卖的路线……但是**单布料售卖
+  # 是不应该生成加工单的**」—— 改前卖布单生成的**就是**加工单（只有 `裁剪`/`打包` 两道工序），
+  # 商家在「生产看板」与纸面上看到的都叫「加工单」，语义与业务不符，且**没有任何东西会红**。
+  #
+  # 口径（用户 2026-10-17 裁定）：上位概念统一为**作业单**，实体用新列
+  # `processing_orders.order_kind` 分两型 —— `processing`（加工，成品帘）/
+  # `outbound`（出库，卖布单的裁剪打包作业）。判定 = 快照非空**且每一行**都是卖布行 ⇒ `outbound`，
+  # 否则 `processing`（混合单 = 有加工就是加工单）。类型在**生成时冻结**；存量行由列默认值落
+  # `processing`（**不回填、不改历史**）。
+  #
+  # 取号：`python3 scripts/next_case_id.py PG` 现取 = 078（main 最大 077）。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: PG-078
+    legacy_id: ""
+    title: "作业单两型（`order_kind`）：卖布单 = `outbound`、成品帘 = `processing`、混合单 = `processing`，类型在生成时冻结"
+    domains:
+      - processing-order
+      - production
+    tier: normal
+    persona: ""
+    tags:
+      - processing-order
+      - fabric
+      - order-kind
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 1·**纯卖布单 ⇒ `order_kind = outbound`**：夹具 = 一行 `processing_info.saleForm=布料`、无 `processingItems` ⇒ 生成出来的作业单类型逐字等于 `ProcessingOrderService.ORDER_KIND_OUTBOUND`。红证：把生成落点的判定改成恒 `processing` ⇒ 本判据当场红。"
+      - "判据 2·**成品帘单 ⇒ `processing`**；判据 3·**混合单（一行卖布 + 一行成品帘）⇒ `processing`**（有加工就是加工单）—— 两条都是反向护栏：把判定写成「只要含卖布行就 outbound」⇒ 混合单那条红。"
+      - "判据 4·**存量行不回填**：本次迁移之前的 `processing_orders` 行类型一律为 `processing`（列 `NOT NULL DEFAULT 'processing'`，迁移里**没有** UPDATE）—— 红证：在迁移里补一条把存量行刷成 `outbound` 的 UPDATE ⇒ 红（历史单据的类型被改写）。"
+      - "判据 5·**三源词表逐值一致**：迁移的取值约束 ⇄ `ORDER_KIND_PROCESSING` / `ORDER_KIND_OUTBOUND` 常量 ⇄ 前端 `order_kind` 联合类型；且默认值 `processing` 在迁移与 bootstrap 建库脚本 `backend/admin-api/src/main/resources/db/init/schema.sql` **两处**都在。证据 = tests/unit_ci_workflows/test_processing_order_kind_vocab_parity.py 的 C1~C5（红证：任一侧改名/换值/少一个 ⇒ 具名报出该侧）。"
+      - "判据 6·**读面键名冻结**：加工单读面下发 `order_kind`（snake_case，显式 `@JsonProperty`）—— 登记面 = tests/unit_ci_workflows/read_face_json_key_ledger.json。红证：摘掉 `@JsonProperty` ⇒ 键静默退回 camelCase（消费端读不到）⇒ 台账判据红。"
+      - "**边界（如实登记）**：① 混合单**不**细分到行级单据（一张订单仍是一张作业单）；② 本判据面只覆盖确定性服务层 + 静态词表判据，**无** LLM 环节。"
+    skip_reason: "[backend-contract] 后端契约（新列 + 生成时冻结 + 三源词表一致；纯确定性单测 + 静态判据，无 LLM 环节，不进入 agent-eval 冒烟）"
+    merge_log: "2026-10-17 新增（issue #7079；用户 2026-10-17 逐字裁定见本条注释与 issue body）。取号 = `python3 scripts/next_case_id.py PG` 现取 = 078。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderRouteSourceTest.java"
+        - "tests/unit_ci_workflows/test_processing_order_kind_vocab_parity.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # PG-079（issue #7079，2026-10-17）—— 卖布单的**发货前置**（用户裁定 3，逐字「很有必要」）。
+  #
+  # 病根：发货前置判据 = `OrderShipGuard.isProcessingReadyForShip` = 「含加工项 ⇒ 须有 completed
+  # 加工单」；卖布行**没有加工项**（按米卖布、不选加工项）⇒ 该判据恒放行 ⇒ **卖布单一道工序都
+  # 没报工也能直接发货**（工人计件丢失、卡点/完工统计失真），且三条发货路都放。
+  #
+  # 口径：判据从「含加工项」扩成 **`needsWork` = 含加工项 或 含卖布行**（单一实现点，
+  # 三条发货路共用同一份），即卖布单也必须先有一张 **completed 作业单**。
+  # 「出口真可行动」的依据（读源）：报工完工写路径 = `ProcessingOrderMapper.markCompletedIfActive`，
+  # 谓词 `status IN ('generated','issued','in_processing','completed')` **含 `generated`**
+  # ⇒ 工人把「裁剪 + 打包」扫码报满，作业单**自动变 completed（无需先「发加工」）**，发货随即放行。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: PG-079
+    legacy_id: ""
+    title: "卖布单发货前置「裁剪 + 打包已报工」：无 completed 作业单 ⇒ 拒绝发货；非卖布的普通无加工项单仍可直发"
+    domains:
+      - processing-order
+      - order
+    tier: normal
+    persona: ""
+    tags:
+      - processing-order
+      - fabric
+      - ship-guard
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 **卖布单（有 `saleForm=布料` 的行、无加工项）没有 completed 作业单 ⇒ 拒绝发货**（`assertProcessingCompletedBeforeShip` 抛业务异常）。红证：把判据改回只判「含加工项」⇒ 本判据当场红（这正是改前的缺陷形态）。"
+      - "判据 2·**卖布单作业单 completed ⇒ 放行**（守卫不是「卖布一律拒」）。"
+      - "判据 3·**反向护栏**：**非卖布**的普通无加工项订单（配件 / 赠品行）**仍可直发** —— 不许被本次收紧误伤。"
+      - "判据 4·**同一份判据覆盖三条发货路**：商家 `PUT /orders/{id}/status`、发货页 `shipOrderIfApplicable`、工人 `OrderShipmentService` 共用 `OrderShipGuard` 的单一实现点；`hasProcessingItems` / `needsWork` 由 `OrderService` 一行委托（不写第二份解析）。"
+      - "判据 5·**`processing_info` 为 JSON 字符串形态时也认得出来**（既有老坑：自定义 `@Select` 不走 JacksonTypeHandler ⇒ 恒判「无」）。"
+      - "判据 6·**接线不许退回**（结构面）：`OrderShipGuard.isProcessingReadyForShip` 必须经由 `needsWork`，且 `needsWork` 里同时含 `hasProcessingItems` 与 `hasFabricSaleLine`。证据 = tests/unit_ci_workflows/test_processing_order_kind_vocab_parity.py 的 C6（红证：改回只判含加工项 ⇒ 具名报出）。"
+      - "**已知行为变化（照实登记）**：这是**收紧** —— 以前能直接发货的卖布单，现在必须先完成作业单；用户 2026-10-17 裁定「很有必要」。"
+    skip_reason: "[backend-contract] 后端发货守卫契约（Java 单测 + 静态接线判据，无 LLM 环节，不进入 agent-eval 冒烟）"
+    merge_log: "2026-10-17 新增（issue #7079；用户裁定 3 逐字「很有必要」）。取号 = `python3 scripts/next_case_id.py PG` 现取 = 079。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderShipGuardTest.java"
+        - "tests/unit_ci_workflows/test_processing_order_kind_vocab_parity.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # PG-080（issue #7079，2026-10-17）—— 卖布单在**生产待办**与**智能派单池**里的可达性。
+  #
+  # 病根：`ProductionTodoService` 的「待排产」与「待发货」两条过滤**都硬带「含加工项」**
+  # ⇒ 卖布单两类都进不去（看不见的待办 = 没人处理）；而 `ProcessingOrderService.pool()` 直接消费
+  # `buildSnapshot`、无卖布过滤 ⇒ 它在池里 —— 这一条是用户裁定 2（「**需要进**」）要**保留**的行为，
+  # 但改前**没有任何判据**钉住它（静默回退的形态）。
+  #
+  # 口径：待办两条过滤改用**同一个** `needsWork`（与发货守卫同一份，不新增第二份判据）；
+  # 派单池**保留**卖布单在成批候选区（加急单仍走 `urgentLines()`，与本条无关）。
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: PG-080
+    legacy_id: ""
+    title: "卖布单进「待排产 / 待发货」两类生产待办（与发货守卫同一判据），且仍在智能派单池的成批候选区"
+    domains:
+      - processing-order
+      - production
+    tier: normal
+    persona: ""
+    tags:
+      - processing-order
+      - fabric
+      - production-todo
+      - dispatch-pool
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    data_checks:
+      - "判据 1·**卖布单出现在「待排产」**（订单已确认 + 活跃工序实例数 = 0 + `needsWork`）。红证：把该处过滤退回 `hasProcessingItems` ⇒ 红。"
+      - "判据 2·**卖布单出现在「待发货」**（`needsWork` + 发货守卫已就绪）。同上反向红证。"
+      - "判据 3·**同一份判据**：`ProductionTodoService` 里**只剩** `needsWork`，不得再出现 `hasProcessingItems(`（结构面，证据 = tests/unit_ci_workflows/test_processing_order_kind_vocab_parity.py 的 C7）。"
+      - "判据 4·🔴 **卖布单在派单池的成批候选区里**（`pool()` 的 `groups[].lines` 含它、计数计入）—— 用户裁定 2（「需要进」）。反向断言：非卖布且无加工项的行（配件 / 赠品）**仍不进池**（既有语义一字不放宽）。"
+      - "**边界**：夹具不得把订单标成加急（加急单按既有裁定**不进池**，走 `urgentLines()`）。"
+    skip_reason: "[backend-contract] 后端只读聚合面（生产待办 + 派单池可达性；Java 单测 + 静态接线判据，无 LLM 环节，不进入 agent-eval 冒烟）"
+    merge_log: "2026-10-17 新增（issue #7079；用户裁定 2 逐字「需要进」）。取号 = `python3 scripts/next_case_id.py PG` 现取 = 080。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductionTodoServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/PoolBoardUrgencyTest.java"
+        - "tests/unit_ci_workflows/test_processing_order_kind_vocab_parity.py"
+      ci:
+        - pr-check.yml
+      verifies: []
