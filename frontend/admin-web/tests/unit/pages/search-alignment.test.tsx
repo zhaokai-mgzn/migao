@@ -208,9 +208,12 @@ describe('搜索区域左对齐 — 无居中 CSS 类', () => {
       const { container } = render(<AfterSalesPage />)
       const el = await waitForSearchContainer('after-sales', container)
       assertNoCenterClasses(el.className)
-      const innerFlex = el.querySelector('.flex.flex-wrap.items-end')
-      expect(innerFlex).toBeTruthy()
-      assertNoCenterClasses(innerFlex!.className)
+      // 🔴 issue #7116：售后页筛选区已由裸 `div.flex.flex-wrap` 迁到共享原语 `SearchPanel`
+      // ⇒ 内层不再是那个 flex 容器，而是**单一栅格**（`grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4`）。
+      // 判据意图不变（「筛选区内部也不许有居中类」），锚点换成新结构里那个栅格。
+      const innerGrid = el.querySelector('.grid')
+      expect(innerGrid).toBeTruthy()
+      assertNoCenterClasses(innerGrid!.className)
     })
   })
 

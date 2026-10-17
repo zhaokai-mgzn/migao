@@ -442,7 +442,11 @@ describe('订单列表查询区 · 单一 grid（#5880）/ 不溢出（#5841）/
     render(<OrdersPage />)
     await waitFor(() => expect(mockGetOrders).toHaveBeenCalled())
 
-    expect(hasGridCols(queryArea().className)).toBe(true)
+    // 🔴 issue #7116：筛选区改为由共享原语 `SearchPanel` 承载 ⇒ `search-area` 现在是**外层**容器
+    // （`bg-white rounded-lg … p-5`），栅格是它的**直接子元素**（`grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4`）。
+    // 判据意图不变（「查询区确实是 grid 版式」），只是锚点从「外层自己带 grid」改成「外层里恰有一个 grid」——
+    // 后者由 `layoutGrid()` 严格断言（不恰一个即判红），比原来更严。
+    expect(hasGridCols(layoutGrid().className)).toBe(true)
     expect([...layoutGrid().children].length).toBeGreaterThanOrEqual(8)
     // 查询区应有 8 个控件：订单ID / 收货人 / 制单人 / 起止日期 ×2 / 商品货号 / 商品标题 / 是否加工
     expect(queryControls().length).toBeGreaterThanOrEqual(8)
