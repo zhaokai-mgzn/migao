@@ -17,6 +17,8 @@ import { OrderProgressSteps, CloseOrderModal, LogisticsForm, RefundOrderModal, P
 import { PRINT_TARGET_SPECS, usePrintDoc, type PrintTarget } from '@/lib/print-doc'
 // 权限（issue #6867 / B5）：补码入口与端点同码显隐（端点方法级 `processing:manage`）
 import { usePermission } from '@/lib/permission'
+// 「发货前要不要作业」的唯一读点 + 按型分岔的引导句（issue #7079 第 5 包）
+import { WORK_ORDER_NEEDED_COPY, workOrderKindOf } from '@/lib/processing-order'
 // 费用构成（issue #5843）：详情页原先只算商品金额，与页脚订单级总额（**含**加工费）对不上
 // ⇒ 补「商品合计 + 加工费 + 其它构成 = 订单金额」这一块。判定与渲染都在
 // `components/orders/OrderFeeBreakdown.tsx` + `lib/order-fee-display.ts`（本页只接线、不自算）。
@@ -465,7 +467,9 @@ export default function OrderDetailPage() {
       <ProcessingOrderBlock
         orderId={order.id}
         orderStatus={order.status}
-        hasProcessing={(order.processingItems?.length ?? 0) > 0}
+        // issue #7079 第 5 包：要不要作业 / 要哪一型，一律取服务端读面（`work_order_kind`）——
+        // 旧写法 `processingItems.length > 0` 只覆盖「含加工项」那一半，卖布单被漏掉 ⇒ 没有生成出口。
+        workOrderKind={workOrderKindOf(order)}
         items={order.items ?? []}
         operations={orderOperations}
         onStatusChange={setProcessingOrder}
@@ -740,10 +744,12 @@ function StatusSection({
   const display = displayOrderStatus(order.status as string)
   // issue #3889：producing（生产中）从 pending_shipment 展示中独立（醒目 chip，见 pending_shipment 分支）
   const producing = (order.status as string) === 'producing'
-  // 发货入口守卫：含加工项且无「已完成」加工单 → 引导先完成加工单再发货
-  // （与后端 assertProcessingCompletedBeforeShip「countCompleted==0 拦截」口径一致，不依赖 status 字符串）
-  const hasProcessing = (order.processingItems?.length ?? 0) > 0
-  const processingBlocked = hasProcessing && processingOrder?.status !== 'completed'
+  // 发货入口守卫（issue #3889；issue #7079 第 5 包扩到卖布单）：**需要作业单**且作业单不是「已完成」
+  // → 先引导去做作业单，不渲染可点的「发货」。判据 = 服务端读面键 `work_order_kind`
+  // （后端 `OrderShipGuard.needsWork` = 含加工项 **或** 有卖布行 —— 与 assertProcessingCompletedBeforeShip
+  // 「countCompleted==0 拦截」同一份），不再按 `processingItems` 单侧推。
+  const needsWorkOrder = workOrderKindOf(order) !== null
+  const processingBlocked = needsWorkOrder && processingOrder?.status !== 'completed'
   // 退款展示不再依赖 'refund' 状态：refundAmount > 0 即视为已退款（订单保持原状态）
   const refunded = (order.refundAmount ?? 0) > 0
 
@@ -821,7 +827,11 @@ function StatusSection({
                 原先这里一个打印按钮都没有，货还没发就印不出随货的那张纸。 */}
             <PrintActions status={status} onOpen={onPrint} />
             {processingBlocked ? (
-              <span className="text-sm text-amber-600">含加工项订单：先完成加工单再发货</span>
+              // 引导句**按型分岔**（issue #7079 第 5 包）：卖布单要的不是「加工单」而是「出库作业单」，
+              // 套用加工单文案会让商家在错的单子里找那张纸。
+              <span className="text-sm text-amber-600">
+                {WORK_ORDER_NEEDED_COPY[workOrderKindOf(order) ?? 'processing'].shipBlocked}
+              </span>
             ) : (
               <Button onClick={onShip} className="gap-1.5">
                 发货

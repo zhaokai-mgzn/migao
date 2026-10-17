@@ -1981,6 +1981,28 @@ export interface Order {
   refundAt?: string            // 退款时间
   status: OrderStatus
   hasProcessing: boolean       // 是否含加工
+  /**
+   * **发货前是否有需要报工的作业**（issue #7079 第 5 包；后端键 `needs_work`，详情面下发）
+   * = 含加工项 **或** 有卖布行 —— 后端唯一实现点 = `OrderShipGuard.needsWork`（发货守卫读的同一份）。
+   *
+   * ⚠️ 布尔形态与下面 `workOrderKind` **同源**（`workOrderKind !== null`），这里只如实声明 wire 键；
+   * 前端**唯一读点**是 `workOrderKind`（它同时承载「要不要作业」与「要哪一型」，两处都读会分裂口径）。
+   * 🔴 前端**不许**按「`processingItems` 长度」或「有没有卖布行」自己再推一次（那是第四份口径）。
+   */
+  needsWork?: boolean
+  /**
+   * **没有作业单时该生成哪一型**（后端键 `work_order_kind`）：`processing` 加工单 /
+   * `outbound` 出库作业单；缺键 = 无需要报工的作业（订单直发，屏上不该出现生成入口）。
+   *
+   * 🔴 这是「发货前要不要作业」在前端的**唯一读点**（`lib/processing-order.ts` 的 `workOrderKindOf`）：
+   * 详情页的生成出口、发货页的前置守卫、详情页的发货入口三处一律读它 —— 卖布单（行上没有加工项）
+   * 只读 `processingItems` 会被判成「不需要作业」，那正是本单修前的形态。
+   *
+   * 与 `ProcessingOrder.order_kind` **同一份词表**（本键只在**还没有**作业单时才有值，
+   * 有单之后类型以那张单自己的 `order_kind` 为准）。屏上一律渲染中文业务名（走
+   * `workOrderKindLabelOf`），机器键不上屏。
+   */
+  workOrderKind?: 'processing' | 'outbound' | null
   paymentDeadline?: string     // 支付截止时间（待付款状态用）
   // 🔴 issue #7078：`paymentNo`（支付宝交易号）**已删** —— 系统没有在线支付交易号的真值源，
   // 该行已从屏幕撤下；留着本键就是「幽灵字段」（#6882 同类，编译器与测试都不拦 ⇒ 恒 "-"）。
