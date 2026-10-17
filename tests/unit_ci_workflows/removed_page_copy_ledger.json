@@ -9,7 +9,7 @@
   ],
   "frozen_at": "2026-10-13",
   "tracking_issue": "#6826",
-  "frozen_note": "冻结读数（2026-10-13，issue #6839 = #6826 的 B1 包清零后现取）：**3 条 / 3 处**，全部是**能力名**（`PermissionService` ×1 / `RegistrationService` ×2，显式判定「不改」+ 重启条件）。B1 之前是 12 条 / 13 处（#6827 建立的基线）。只许缩短：修好一处必须同 PR 删对应条目。",
+  "frozen_note": "冻结读数（2026-10-13，issue #6839 = #6826 的 B1 包清零后现取）：**3 条 / 3 处**，全部是**能力名**（`PermissionService` ×1 / `RegistrationService` ×2，显式判定「不改」+ 重启条件）。B1 之前是 12 条 / 13 处（#6827 建立的基线）。只许缩短：修好一处必须同 PR 删对应条目。🔻 2026-10-17（issue #7111）：删去 `RegistrationService` 的**加工项管理**一条 —— 岗位描述改成「职责 + 默认可用模块」后，旧串『商品与加工项管理（POC 期历史岗位…）』在扫描面上已不存在（销账即删）；现取 **2 条 / 2 处**。",
   "entries": [
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/PermissionService.java",
@@ -18,14 +18,6 @@
       "hits": 1,
       "issue": "#6839",
       "reason": "#6580 收掉该菜单项 / 一级项后，这串仍是**岗位/权限的显示名（能力名，不是坐标）**—— 逐字列的是「这个人能做什么」（查看生产看板/加工项/工艺配置/计件），不是「去哪点」⇒ 判为**能力名**，**有意不改**（改成「企业基础设置 → <域 label>」会把能力名变成导航路径 = 读错语义，与 AI Agent 侧 `core/fallback.py` 的「工艺配置暂时不可用」同族）。重启条件 = 若产品决定统一岗位命名，只允许**同名收口**（如「工艺配置」→「加工项」），**不得**改成任何页面坐标。依据 + 复算命令见 issue #6839 的「显式判定」节。"
-    },
-    {
-      "path": "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java",
-      "name": "加工项管理",
-      "literal": "商品与加工项管理（POC 期历史岗位，issue #5699 的 P6 正式定义）",
-      "hits": 1,
-      "issue": "#6839",
-      "reason": "#6580 收掉该菜单项 / 一级项后，这串仍是**岗位/权限的显示名（能力名，不是坐标）**—— 逐字列的是「这个人能做什么」（商品与加工项管理（POC 期历史岗位，issue #5699 的 P6 正式定义）），不是「去哪点」⇒ 判为**能力名**，**有意不改**（改成「企业基础设置 → <域 label>」会把能力名变成导航路径 = 读错语义，与 AI Agent 侧 `core/fallback.py` 的「加工项管理暂时不可用」同族）。重启条件 = 若产品决定统一岗位命名，只允许**同名收口**（如「加工项管理」→「加工项」），**不得**改成任何页面坐标。依据 + 复算命令见 issue #6839 的「显式判定」节。"
     },
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java",
