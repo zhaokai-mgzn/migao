@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# case_ids: MC-012 — 判据 = tests/unit_ci_workflows/test_session_worktree_guard.py
+#
+# pre-commit 守卫（issue #7229）：主工作树是**多会话共享写面**。
+#
+# ## 为什么要有这个钩子（实测事故，不是设想）
+#
+# 2026-10-18：两个 agent 会话同时用主工作树。会话 B 在其中 `git checkout fix/7222-fabric-sale-form`，
+# 会话 A（我）随后提交 ⇒ **提交落到别人的分支**，还 `git push` 上去了（对方 PR 会带上一份无关改动）。
+# 同日稍早还有一次同源事故：`git add -A` 把别人未跟踪的 `acceptance/**`（含**活 JWT**）扫进提交，
+# 被凭据守卫 + gitleaks 判红，留下的机器人评审线程把后续合并卡成 BLOCKED。
+#
+# 远端侧（分支保护 / CI）对"提交落错分支"**零感知** —— 推送时看起来完全正常。
+# 唯一有效的位置就是本地 commit 前，而这个位置此前完全空白（`core.hooksPath` 未设）。
+#
+# ## 判什么（只管一件事，不越界）
+#
+# 1. **主工作树**（`<root>/.git` 是目录）且 HEAD 分支 != main ⇒ 拒提交。
+#    独立工作区的 `.git` 是**文件** ⇒ 本守卫不适用（那是正常的并行开发路径）。
+# 2. 暂存区出现 `acceptance/**/out/*.json(l)` ⇒ **只警告**（机器产物常含活 token；真正的拦截交给
+#    远端凭据守卫，本地不做假红线）。
+#
+# 逃逸口：`MIGAO_MAIN_TREE_COMMIT=1`（有意为之才用，会打印醒目警告）。
+
+set -uo pipefail
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+
+# 只拦主工作树：linked worktree 的 .git 是文件（指向 <主仓>/.git/worktrees/<name>）
+if [ -d "$root/.git" ]; then
+  branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+  if [ -n "$branch" ] && [ "$branch" != "main" ]; then
+    if [ "${MIGAO_MAIN_TREE_COMMIT:-0}" = "1" ]; then
+      echo "⚠️  MIGAO_MAIN_TREE_COMMIT=1：在主工作树的 ${branch} 上提交（已放行；请确认不是被别的会话换了 HEAD）" >&2
+    else
+      cat >&2 <<EOF
+❌ 拒绝提交：主工作树是多会话共享写面，当前 HEAD 在 **${branch}**（不是 main）。
+
+   为什么拦：另一个会话随时可能在这里 \`git checkout\` 换掉 HEAD
+   ⇒ 你的提交会**落到别人的分支**（实测 2026-10-18，issue #7229）。
+
+   怎么办（任一）：
+     • 在自己的独立工作区提交：./scripts/dev-worktree.sh add ${branch}
+     • 确属有意为之：MIGAO_MAIN_TREE_COMMIT=1 git commit ...
+EOF
+      exit 1
+    fi
+  fi
+fi
+
+# 软检查：机器产物形态（含活 token 的地雷，实测踩过两次）—— 只警告，判红交给远端凭据守卫
+staged=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null \
+  | grep -E '^acceptance/.*/out/.*\.(json|jsonl)$' || true)
+if [ -n "$staged" ]; then
+  echo "⚠️  暂存区里有 acceptance/**/out/*.json(l) 机器产物 —— 这类文件常含**活 token**（实测被判红过）。" >&2
+  echo "    确属要提交：先脱敏；否则逐个撤销暂存：" >&2
+  printf '%s\n' "$staged" | while IFS= read -r f; do
+    echo "      git restore --staged '$f'" >&2
+  done
+fi
+
+exit 0
