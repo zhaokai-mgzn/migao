@@ -217,8 +217,7 @@ export function OperationPricePanel({
       )}
       {!hideActions && (
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button variant="secondary" size="sm" onClick={load} disabled={loading}>
-            <RefreshCw className={cn('w-4 h-4 mr-1.5', loading && 'animate-spin')} />
+          <Button variant="secondary" size="sm" onClick={load} disabled={loading} icon={<RefreshCw className="w-4 h-4" />}>
             刷新
           </Button>
           <Button
@@ -228,8 +227,8 @@ export function OperationPricePanel({
             /* 域写面出口标记（issue #6825）：类级守卫要求「可编辑控件 + 本域写出口」成对出现 */
             data-write-exit="operation-prices"
             onClick={openCreateOperation}
+            icon={<Plus className="w-4 h-4" />}
           >
-            <Plus className="w-4 h-4 mr-1.5" />
             新增工序
           </Button>
         </div>

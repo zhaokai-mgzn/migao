@@ -15101,6 +15101,24 @@ _CASE_UI_125 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-124 [NORMAL] 按钮只有一种形态：icon slot 统一间距、loading 时 spinner 顶替图标（不并排）、裸 button 不得自拼主色 chrome（源: cases/ui.yml）──
+_CASE_UI_124 = EvalCase(
+    id='UI-124',
+    legacy_id='',
+    title='按钮只有一种形态：icon slot 统一间距、loading 时 spinner 顶替图标（不并排）、裸 button 不得自拼主色 chrome',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-18 裁定：「还是老问题，按钮样式未统一 …… 制定一个统一规范并执行落地」「这个规范包含观星台所有功能，PC&手机端」'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**icon slot**：前置图标走 `Button` 的 `icon` prop（slot 给 `mr-1.5 shrink-0` 且 `aria-hidden`），调用方不再手写 `mr-*`。证据：frontend/admin-web/tests/unit/design-system-buttons.test.tsx', '判据 2·**loading 顶替**：`loading` 时只渲染 spinner，页面自带图标不出现（并排 = 双图标，真机读成「图标重叠」）；`aria-busy` 随 loading。证据：同文件', '判据 3·**尺寸 token**：sm=h-8 / md=h-9 / lg=h-10，圆角 rounded-lg（改映射 ⇒ 红）。证据：同文件', '判据 4·**类级**：裸 `<button>` 不得自带主色 chrome（`bg-primary-600`）；存量 10 处按冻结台账只许缩短，新增文件/同文件变多 ⇒ 红并具名。证据：同文件 `NAKED_PRIMARY_LEDGER`', '迁移面：工艺配置（刷新/新增工序/新建路线）、加工项与分类（加工分类/新增加工项）、加工费组合（新建组合）、工序与部位单价（刷新/新增工序）—— 全部改走 `icon` slot。证据：frontend/admin-web/src/components/production-config/*.tsx'],
+    skip_reason='',
+    tags=['design-system', 'button', 'ui'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -15945,6 +15963,7 @@ ALL_CASES = (
     _CASE_UI_121,
     _CASE_UI_122,
     _CASE_UI_125,
+    _CASE_UI_124,
     _CASE_UT_001,
     _CASE_UT_002,
 )

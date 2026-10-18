@@ -998,8 +998,13 @@ export default function ProcessConfigBoard({ embedded = false }: { embedded?: bo
           </div>
         )}
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading}>
-            <RefreshCw className={cn('w-4 h-4 mr-1.5', loading && 'animate-spin')} />
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void load()}
+            disabled={loading}
+            icon={<RefreshCw className="w-4 h-4" />}
+          >
             刷新
           </Button>
           <Button
@@ -1007,12 +1012,16 @@ export default function ProcessConfigBoard({ embedded = false }: { embedded?: bo
             size="sm"
             data-testid="routings-new-operation"
             onClick={() => opFeature.openCreateOperation()}
+            icon={<Plus className="w-4 h-4" />}
           >
-            <Plus className="w-4 h-4 mr-1.5" />
             新增工序
           </Button>
-          <Button size="sm" data-testid="routings-new-route" onClick={() => rtFeature.setNewRouteOpen(true)}>
-            <Plus className="w-4 h-4 mr-1.5" />
+          <Button
+            size="sm"
+            data-testid="routings-new-route"
+            onClick={() => rtFeature.setNewRouteOpen(true)}
+            icon={<Plus className="w-4 h-4" />}
+          >
             新建路线
           </Button>
         </div>
