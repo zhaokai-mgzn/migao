@@ -39,6 +39,11 @@ function fetchCompanyName(): Promise<string> {
   return cached
 }
 
+/** 测试专用：清空模块级缓存（生产代码不调用）。 */
+export function __resetCompanyNameCache(): void {
+  cached = null
+}
+
 export function useCompanyName(): string {
   const fromLogin = useAuthStore((state) => state.user?.tenantName?.trim() ?? '')
   const [name, setName] = useState('')
