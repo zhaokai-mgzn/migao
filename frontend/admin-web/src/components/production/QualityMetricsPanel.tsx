@@ -1,9 +1,9 @@
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { PageCard } from '@/components/ui'
-import { formatHours, formatRate } from '@/lib/quality-check'
-import type { QualityStats, QualityStatsGroup, QualityStatsWindow } from '@/types'
+import { useState } from 'react';
+import { PageCard } from '@/components/ui';
+import { formatHours, formatRate } from '@/lib/quality-check';
+import type { QualityStats, QualityStatsGroup, QualityStatsWindow } from '@/types';
 
 /**
  * 质检**指标**面板（P0 + P1，issue #7192）—— `/quality-inspections` 页顶部。
@@ -22,12 +22,12 @@ import type { QualityStats, QualityStatsGroup, QualityStatsWindow } from '@/type
  * 固定高度、不出现整屏告警块。
  */
 interface QualityMetricsPanelProps {
-  stats: QualityStats | null
-  loading: boolean
-  error: string
-  window: QualityStatsWindow
-  onWindowChange: (next: QualityStatsWindow) => void
-  onRetry: () => void
+  stats: QualityStats | null;
+  loading: boolean;
+  error: string;
+  window: QualityStatsWindow;
+  onWindowChange: (next: QualityStatsWindow) => void;
+  onRetry: () => void;
 }
 
 /** 时间窗选项（默认「本月」—— 老板最常问的是「这个月怎么样」）。 */
@@ -36,17 +36,18 @@ export const STATS_WINDOW_OPTIONS: { value: QualityStatsWindow; label: string }[
   { value: 'week', label: '本周' },
   { value: 'month', label: '本月' },
   { value: 'all', label: '全部' },
-]
+];
 
 /** 分组维度（标签 ⇄ 服务端键名一一对应）。 */
-const GROUP_TABS: { key: 'by_processing_order' | 'by_product' | 'by_inspector'; label: string }[] = [
-  { key: 'by_processing_order', label: '加工单' },
-  { key: 'by_product', label: '商品' },
-  { key: 'by_inspector', label: '检验人' },
-]
+const GROUP_TABS: { key: 'by_processing_order' | 'by_product' | 'by_inspector'; label: string }[] =
+  [
+    { key: 'by_processing_order', label: '加工单' },
+    { key: 'by_product', label: '商品' },
+    { key: 'by_inspector', label: '检验人' },
+  ];
 
 /** 趋势最多画的桶数（常驻面克制：超出只画最近 N 个，不随月份数增长）。 */
-const TREND_MAX_POINTS = 14
+const TREND_MAX_POINTS = 14;
 
 export default function QualityMetricsPanel({
   stats,
@@ -58,12 +59,12 @@ export default function QualityMetricsPanel({
 }: QualityMetricsPanelProps) {
   const [groupKey, setGroupKey] = useState<'by_processing_order' | 'by_product' | 'by_inspector'>(
     'by_processing_order',
-  )
+  );
 
-  const groups: QualityStatsGroup[] = stats ? stats[groupKey] ?? [] : []
-  const trend = stats ? stats.trend.slice(-TREND_MAX_POINTS) : []
-  const inspected = stats?.counts.inspected ?? 0
-  const lowSample = stats ? inspected > 0 && inspected < stats.min_sample : false
+  const groups: QualityStatsGroup[] = stats ? stats[groupKey] ?? [] : [];
+  const trend = stats ? stats.trend.slice(-TREND_MAX_POINTS) : [];
+  const inspected = stats?.counts.inspected ?? 0;
+  const lowSample = stats ? inspected > 0 && inspected < stats.min_sample : false;
 
   return (
     <PageCard testId="quality-metrics-panel" padded={false}>
@@ -204,30 +205,32 @@ export default function QualityMetricsPanel({
                 该维度没有已检记录
               </p>
             ) : (
-              <table className="mt-2 w-full text-xs">
-                <thead className="text-neutral-500">
-                  <tr>
-                    <th className="py-1 text-left font-medium">名称</th>
-                    <th className="py-1 text-right font-medium whitespace-nowrap">已检</th>
-                    <th className="py-1 text-right font-medium whitespace-nowrap">首检合格率</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {groups.map((group) => (
-                    <tr key={group.name} data-testid="quality-group-row">
-                      <td className="py-1 text-neutral-900">{group.name}</td>
-                      <td className="py-1 text-right text-neutral-600">{group.inspected}</td>
-                      <td className="py-1 text-right text-neutral-900">
-                        {formatRate(group.first_pass_rate)}
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="mt-2 w-full text-xs">
+                  <thead className="text-neutral-500">
+                    <tr>
+                      <th className="whitespace-nowrap py-1 text-left font-medium">名称</th>
+                      <th className="whitespace-nowrap py-1 text-right font-medium">已检</th>
+                      <th className="whitespace-nowrap py-1 text-right font-medium">首检合格率</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {groups.map((group) => (
+                      <tr key={group.name} data-testid="quality-group-row">
+                        <td className="py-1 text-neutral-900">{group.name}</td>
+                        <td className="py-1 text-right text-neutral-600">{group.inspected}</td>
+                        <td className="py-1 text-right text-neutral-900">
+                          {formatRate(group.first_pass_rate)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>
       ) : null}
     </PageCard>
-  )
+  );
 }
