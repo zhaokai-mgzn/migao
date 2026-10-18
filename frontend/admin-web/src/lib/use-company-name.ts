@@ -15,8 +15,13 @@
  *   （不印空行、不印「未设置」——纸面是给客户看的）；
  * - **登录态优先**：`/api/auth/me` 的 `user.tenantName` 已随登录下发（右上角/侧边栏用的同一份）
  *   ⇒ 普通员工（无 `system:manage`）也能印企业名；
- * - 登录态没有（如测试替身 / 旧会话）才回落 `GET /api/admin/settings`；该端点需 `system:manage`，
- *   失败 ⇒ 空串 ⇒ 不印空行（属预期，不弹 toast、不写 console）。
+ * - 🔴 **登录态有值 ⇒ 一次设置读面都不发**（issue #7285）：回落请求打的是
+ *   `GET /api/admin/settings`，该端点要 `system:manage`；而四张纸面在**订单详情页是常驻挂载**的
+ *   ⇒ 无该码的岗位（客服/销售/财务等）**一进详情页就吃一次 403**，屏上弹出
+ *   「没有权限执行此操作」而页面数据照常渲染 —— 用户现场逐字「提示没有权限，但是页面又能看见」。
+ *   `try/catch` 只能吞掉 Promise，吞不掉 `request.ts` 的 403 toast ⇒ 唯一干净的修法是**不发**；
+ * - 登录态没有（如测试替身 / 旧会话 / `tenantName` 为空的历史会话）才回落设置读面；
+ *   失败 ⇒ 空串 ⇒ 不印空行。
  */
 import { useEffect, useState } from 'react'
 import { settingsApi } from '@/lib/api'
@@ -48,6 +53,9 @@ export function useCompanyName(): string {
   const fromLogin = useAuthStore((state) => state.user?.tenantName?.trim() ?? '')
   const [name, setName] = useState('')
   useEffect(() => {
+    // issue #7285：登录态已有企业名 ⇒ **不发**那个需要 `system:manage` 的回落请求
+    //（纸面在订单详情页常驻挂载，发出去 = 无该码的岗位每进一次页面弹一条 403）
+    if (fromLogin) return
     let alive = true
     void fetchCompanyName().then((value) => {
       if (alive) setName(value)
@@ -55,6 +63,6 @@ export function useCompanyName(): string {
     return () => {
       alive = false
     }
-  }, [])
+  }, [fromLogin])
   return fromLogin || name
 }
