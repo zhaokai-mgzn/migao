@@ -7,8 +7,9 @@
  *
  * ## 病灶（读码，零成本复算）
  *
- * 商家端页面（`pages/auth/login` / `pages/profile` / `pages/dashboard`）统一 `@use
- * frontend/bmini-app/src/styles/variables.scss`，页头是**品牌渐变带**（`$gradient-brand` / `$primary-color` →
+ * 商家端页面（`pages/auth/login` / `pages/profile` / `pages/dashboard`）统一 `@use` 同一份
+ * `styles/variables.scss`（相对路径见各文件首行 —— 本文不复制它：本仓「触发面闭包」判据会把
+ * 源码里引号内的跨目录相对路径当成**跨目录输入**，而本测试只读本模块内的文件，不构成跨模块耦合），页头是**品牌渐变带**（`$gradient-brand` / `$primary-color` →
  * `$primary-light`，下缘大圆角），卡片 `$radius-lg` + `$border-color` + `$shadow-card`。
  *
  * 工人工作台（`pages/worker/home`）却**自持一套字面量**：`#0a2540` / `#1a73e8` / `#f5f7fa` /
