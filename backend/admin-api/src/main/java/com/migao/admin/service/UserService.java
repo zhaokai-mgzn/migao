@@ -732,12 +732,9 @@ public class UserService implements UserDetailsService {
             return;
         }
 
-        UserRole userRole = UserRole.builder()
-                .tenantId(tenantId)
-                .userId(userId)
-                .roleId(role.getId())
-                .build();
-        userRoleMapper.insert(userRole);
+        // issue #7256：同一条写面收口（复活软删行 → 条件插入 → 撞键幂等收敛）。
+        // 原先是裸 insert：`updateUserRole` 先逻辑删旧行再插同一角色时会撞全表唯一键 ⇒ 500。
+        UserRoleWriter.ensureGranted(userRoleMapper, tenantId, userId, role.getId());
     }
 
     /**
