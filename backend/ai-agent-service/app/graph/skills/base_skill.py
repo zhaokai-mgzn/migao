@@ -3268,7 +3268,6 @@ async def _inject_write_input_recovery(system_prompt: str, state: dict,
 # **不编名字**，原样回显码本身（详见 `_inject_permission_scope`）。
 PERMISSION_LABELS = {
     "dashboard:view": "仪表板查看",
-    "product:manage": "商品管理",
     "product:list": "商品管理",
     "product:create": "新增商品",
     "product:category": "商品分类",

@@ -6,7 +6,6 @@
   "codes": {
     "registration": [
       "dashboard:view",
-      "product:manage",
       "product:list",
       "product:create",
       "product:category",
@@ -41,7 +40,6 @@
     ],
     "permission_service": [
       "dashboard:view",
-      "product:manage",
       "product:list",
       "product:create",
       "product:category",
@@ -76,7 +74,6 @@
     ],
     "names": {
       "dashboard:view": "仪表板查看",
-      "product:manage": "商品管理",
       "product:list": "商品管理",
       "product:create": "新增商品",
       "product:category": "商品分类",
@@ -932,7 +929,7 @@
     "ROLE_FALLBACK_DIVERGENCES": 0,
     "AUTHORIZATION_CENSUS": 19,
     "UNANNOTATED_ENDPOINTS": 24,
-    "REGISTERED_RESIDUALS": 10,
+    "REGISTERED_RESIDUALS": 9,
     "A7_CODES_BEYOND_CATALOG": 0,
     "A7_VS_MIRROR_DIVERGENCES": 0,
     "PAGE_VISIBILITY_GAPS": 1
