@@ -616,7 +616,7 @@
 真值: employee-role.position-fallback
 溯源: 2026-10-02 新增（issue #5987）：API 建号缺省岗位/角色落到 operator（运营级 26 码含写权限，仅 API 直连可达，页面强制选岗位走不到）⇒ 两处 fail-open 默认（控制器角色兜底 + 服务实体构建处的 role != null ? role : operator）同批收口为 fail-closed（422 + 未落库），并落「缺省角色字面量台账（未登记即红、只许缩短）+ 建号缺省位不得含写权限字面量」类级元守卫 ｜ tags: api, fail-closed, permission
 
-## 登录认证域（12 case）
+## 登录认证域（13 case）
 
 ### AU-001. 员工登录 用户名@企业编码 + 密码 → 成功签发 JWT 🟢
 ```
@@ -769,6 +769,20 @@
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-10-05 新增（issue #6352）：为跑 #6346 的 §15.7 多模态验收起本机三件套时撞见 —— 整页加载后聊天面 Bearer 为空。取号 AU-012（scripts/next_case_id.py au：现取 main 最大 = AU-011）。 ｜ tags: auth, session-restore, token, admin-web
+
+### AU-013. 手机端商家 H5 登录态 1 个月：access token 2 小时过期后用 refresh cookie 续期并重放（不再每 2 小时被踢回登录页） 🔵
+```
+你: 用户 2026-10-18 逐字：「为什么界面上手机端的二维码扫码后每次都要登录，我设置过登录有效期是一月的吧」→ 现场：扫顶栏「手机端」二维码（issue #7198）打开 https://app.migaozn.com/b/ ，隔一段时间再打开必停「请先登录」并跳 /pages/auth/login/index。用户随即裁定：「是/b，方案选择A，但是登录态改为1个月」
+期望: direct_reply
+数据: 判据 1·配置与兜底同值：backend/admin-api/src/main/resources/application.yml 的 `jwt.refresh-token-expiration` = 2592000（30 天），且 backend/admin-api/src/main/java/com/migao/admin/security/JwtTokenProvider.java 的 `@Value` 兜底同为 2592000（两处漂移 ⇒ 缺省环境静默回到 7 天）。执行点 = tests/unit_ci_workflows/test_refresh_token_lifetime.py::test_refresh_token_is_one_month_and_fallback_matches
+数据: 判据 2·cookie 有效期单一来源：backend/admin-api/src/main/java/com/migao/admin/service/AuthService.java 不再声明 `REFRESH_TOKEN_COOKIE_MAX_AGE` 字面量，`setRefreshTokenCookie` 取自 `jwtTokenProvider.getRefreshTokenExpiration()`。执行点 = 同文件::test_cookie_ttl_has_single_source
+数据: 判据 3·手机端续期接线：frontend/bmini-app/src/utils/request.ts 导出 `refreshAccessToken()`（单飞）并在 `request()` 的 401 分支调用、且 `canRefreshSession` 排除 `/api/worker/` 与 `skipAuth`；frontend/bmini-app/src/store/authStore.ts 的 `initialize` / `checkAuth` 在 exp 过期时先续期、续不到才登出。执行点 = 同文件::test_mobile_refresh_wiring_exists
+数据: 行为判据：frontend/bmini-app/tests/request.test.ts 的「401 会话续期（issue #7249）」五条（换新 token + 重放 / 续期失败回落既有行为 / 并发单飞 / 工人端点不续期 / 登录面不续期）＋ frontend/bmini-app/tests/store-auth.test.ts 四条（有效不续期 / 过期+成功 / 过期+失败 / initialize 同款）
+数据: 🔴 红证（改前实测，migao-dev-flow §28.1 出口① 临时反转）：`cd frontend/bmini-app && npx jest tests/request.test.ts tests/store-auth.test.ts` ⇒ **2 failed / 18 passed**（store 两条：续期成功后仍判未登录、token 仍为 null）＋ request suite 因 `refreshAccessToken` 不存在而编译失败；`python3 -m pytest tests/unit_ci_workflows/test_refresh_token_lifetime.py` ⇒ **4 failed**。改后同命令 = **46 passed** / **4 passed**；全量 `npx jest` = 910 passed；`npx tsc --noEmit` 通过
+跳过: [backend-contract] 会话续期是「后端配置 + 前端请求层」的确定性行为，由 jest / pytest 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-18 新增（issue #7249）：现场 = 商家手机端 H5 隔一段时间打开必回登录页（access token 7200s、手机端零 refresh、initialize/checkAuth 过期即 logout）。冻结口径 = 方案 A（401 ⇒ refresh cookie 换 token 并重放一次，与 admin-web 同口径）+ 登录态 30 天（refresh 2592000）。 ｜ tags: auth, session, token-refresh, bmini
 
 ## B 端小程序域（47 case）
 
@@ -11919,12 +11933,12 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：816（活跃 135，跳过 681）
-- tier 分布：smoke 12 / normal 750 / adversarial 32
+- 用例总数：817（活跃 135，跳过 682）
+- tier 分布：smoke 12 / normal 751 / adversarial 32
 - 售后域：15
 - Agent 核心域：11
 - API 层域：21
-- 登录认证域：12
+- 登录认证域：13
 - B 端小程序域：47
 - 分类域：3
 - 对话边界域：47
