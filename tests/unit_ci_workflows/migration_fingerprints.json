@@ -158,7 +158,8 @@
     "V160__add_order_paid_at_and_received_at.sql": "sha256:7243b4f499292e1282aebde7631e6c31fd0e14e7ab764b01f8d03b2157b5321b",
     "V161__refresh_default_role_descriptions.sql": "sha256:e0da190e429d6d86e444d9c9e9a581108263e8b6fef0ab08abac01543bed3448",
     "V162__strip_default_role_module_lists.sql": "sha256:e48f34c4f77ffdfdaa98dafdacd52169b0415de984002c5cb464ccc5767b4a2d",
-    "schema.sql": "sha256:e5c1b63d158357de5b97a82d0efedc5f86b39d928ed13e33ded875b175b2a3a2",
-    "V163__add_quality_inspector_kind.sql": "sha256:aefdfb4460db7474e685bb52cb84a094d3f968a8453c1854b67096889cde0162"
+    "V163__add_quality_inspector_kind.sql": "sha256:aefdfb4460db7474e685bb52cb84a094d3f968a8453c1854b67096889cde0162",
+    "V164__briefing_enabled_default_true.sql": "sha256:213184b797a65410e1ee93bc24d14708513600906ad289eeeaab469bda7571e9",
+    "schema.sql": "sha256:e9c94f2d6a465b6ac22a9fd2ae52365331a64f85cf2cfd4bc137d474287cd44b"
   }
 }

@@ -698,7 +698,7 @@ class TestIncompleteDisclosure:
 
         message = result.message or ""
         assert "本次数据不完整" in message, "截断必须显式说出来（有界不许变成静默少报）"
-        assert "超 N 天未发货" in message, "点名的必须是**哪条**规则不完整"
+        assert "超时未发货" in message, "点名的必须是**哪条**规则不完整"
         for forbidden in ("今日无异常", "无异常", "一切正常", "未发现异常"):
             assert forbidden not in message
         assert result.data["proactive_status"]["unshipped_overdue"]["status"] == "incomplete"
