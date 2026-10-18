@@ -13,14 +13,15 @@
  */
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, ChevronDown } from 'lucide-react'
 
 import { formatDraft } from '@/components/ui/NumberInput'
 // issue #7176：配置面表单的**唯一版式原语**（与「阈值试算」同一套：浅底面板 + 栅格 + 标签在上 + 单位入框）
 import FormPanel, { FIELD_CONTROL, Field, FormGrid, fieldControl } from '@/components/ui/FormPanel'
 import { cuttingHeightApi } from '@/lib/api'
+import { CRAFT_OPTIONS, SPECIAL_OPTIONS } from '@/lib/order-craft-fields'
 import { cn } from '@/lib/utils'
 import type {
   CuttingHeightConfigBody,
@@ -58,6 +59,65 @@ function newItem(order: number): CuttingHeightItem {
   }
 }
 
+/**
+ * 特殊选项多选下拉（issue #7213）—— 19 项**闭词表**（与下单页 `OrderExtraOptions` 同一份
+ * `SPECIAL_OPTIONS`；选项名是 join key，手输错一个字就不命中 ⇒ 这里不给自由文本）。
+ * §31 P1：常驻面只一行（未选择 / 已选 N 项），点开才渲染复选项。
+ */
+function OptionsMultiSelect({ value, onChange }: { value: string[]; onChange: (next: string[]) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    function onMouseDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [open])
+
+  const toggle = (name: string) => {
+    onChange(value.includes(name) ? value.filter((v) => v !== name) : [...value, name])
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        id="cutting-height-probe-options"
+        aria-label="预演特殊选项"
+        aria-expanded={open}
+        title={value.length > 0 ? value.join('、') : undefined}
+        onClick={() => setOpen((v) => !v)}
+        className={cn(FIELD_CONTROL, 'flex items-center justify-between text-left')}
+      >
+        <span className={value.length === 0 ? 'text-neutral-400' : undefined}>
+          {value.length === 0 ? '未选择' : `已选 ${value.length} 项`}
+        </span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-neutral-400" />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-40 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-neutral-200 bg-white p-1 shadow-card-hover">
+          {SPECIAL_OPTIONS.map((name) => (
+            <label
+              key={name}
+              className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+            >
+              <input
+                type="checkbox"
+                checked={value.includes(name)}
+                onChange={() => toggle(name)}
+                aria-label={`特殊选项-${name}`}
+              />
+              {name}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function CuttingHeightConfigPanel() {
   const [config, setConfig] = useState<CuttingHeightConfigBody | null>(null)
   const [source, setSource] = useState('')
@@ -65,7 +125,7 @@ export function CuttingHeightConfigPanel() {
   const [saving, setSaving] = useState(false)
   const [preview, setPreview] = useState<CuttingHeightPreview | null>(null)
   const [previewError, setPreviewError] = useState('')
-  const [probe, setProbe] = useState({ position: '布帘', finishedHeight: '', craft: '', options: '' })
+  const [probe, setProbe] = useState({ position: '布帘', finishedHeight: '', craft: '', options: [] as string[] })
 
   const load = useCallback(async () => {
     try {
@@ -126,9 +186,7 @@ export function CuttingHeightConfigPanel() {
         position: probe.position,
         finished_height: probe.finishedHeight,
         craft: probe.craft || undefined,
-        special_options: probe.options
-          ? probe.options.split(/[,，\s]+/).filter(Boolean)
-          : [],
+        special_options: probe.options,
       })
       setPreview(res.data.data)
     } catch {
@@ -391,21 +449,25 @@ export function CuttingHeightConfigPanel() {
             />
           </Field>
           <Field label="安装工艺" htmlFor="cutting-height-probe-craft">
-            <input
+            <select
               id="cutting-height-probe-craft"
               className={FIELD_CONTROL}
               aria-label="预演工艺"
               value={probe.craft}
               onChange={(e) => setProbe({ ...probe, craft: e.target.value })}
-            />
+            >
+              <option value="">不指定</option>
+              {CRAFT_OPTIONS.map((craft) => (
+                <option key={craft} value={craft}>
+                  {craft}
+                </option>
+              ))}
+            </select>
           </Field>
-          <Field label="特殊选项（逗号分隔）" htmlFor="cutting-height-probe-options">
-            <input
-              id="cutting-height-probe-options"
-              className={FIELD_CONTROL}
-              aria-label="预演特殊选项"
+          <Field label="特殊选项" htmlFor="cutting-height-probe-options">
+            <OptionsMultiSelect
               value={probe.options}
-              onChange={(e) => setProbe({ ...probe, options: e.target.value })}
+              onChange={(options) => setProbe({ ...probe, options })}
             />
           </Field>
         </FormGrid>
