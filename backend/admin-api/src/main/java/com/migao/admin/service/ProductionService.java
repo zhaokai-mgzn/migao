@@ -785,8 +785,13 @@ public class ProductionService {
      *
      * <p>键**只在真的指派过时才加**（缺键就缺 —— 与规格可见面同一条口径：不补默认值、不显示占位符）；
      * 作废后净额归零的行不出现在结果里（工人不该被指去裁一个已经不扣账的批次）。</p>
+     *
+     * <p>🔴 包内可见（issue #7233）：**两个**工人读面都要这一份，各写一份 = 迟早不同 ——
+     * {@code getOperations} 与工人**扫码详情**面（{@code ProductionScanService#specByItemIdOf}）。
+     * 扫码面此前漏调本方法 ⇒ {@code set_overview.positions[].batch_no} 恒 null ⇒
+     * 裁床屏上「本部位生产信息」没有批号（用户 2026-10-18 逐字「没有批次号工人裁剪哪块布」）。</p>
      */
-    private void stampBatchAssignments(Map<String, Map<String, Object>> specByItemId,
+    void stampBatchAssignments(Map<String, Map<String, Object>> specByItemId,
                                        ProcessingOrder po, Long tenantId) {
         Map<String, StockBatchConsumptionService.BatchAssignment> assignments =
                 batchAssignmentsOf(po, tenantId);
