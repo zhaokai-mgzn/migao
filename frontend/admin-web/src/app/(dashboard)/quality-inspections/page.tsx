@@ -55,17 +55,17 @@ import type {
  *
  * ## 边界（如实登记，`migao-dev-flow` §19.1）
  *
- * - **流水没有分页**：记录读面（`GET /api/admin/quality-inspections`）只有加工单 / 成品帘两个过滤，
- *   没有 `page`/`size` ⇒ 本页把返回结果**截断展示最近 20 条**并**在标题上写明**（不假装是全部）；
- *   重启条件：该读面加分页（那时本页改成分页档）；
+ * - **流水是客户端分页**（issue #7217）：记录读面（`GET /api/admin/quality-inspections`）只有加工单 /
+ *   成品帘两个过滤，没有 `page`/`size` ⇒ 前端按页切分已读到的全量列表（页大小 10/20/50），
+ *   不再硬截断到 20 条；重启条件 = 该读面加服务端分页（那时改成分页档，前端不再持全量）；
  * - **清单没有时间范围筛选**：清单读面没有时间入参，前端也不过滤（前端过滤 = 第二份口径）；
  *   指标面板的「今日 / 本周 / 本月 / 全部」是**服务端**按首检时刻算的窗口（issue #7192，
  *   见 `QualityMetricsPanel`）—— 两者的总体不同（队列 vs 周期读数），页面上各自标注，不混用；
  * - 判定录入后的**责任凭证不可改**：没有撤销入口（服务端也没有删除端点）。
  */
 const PAGE_SIZE = 20
-/** 流水展示上限（读面没有分页 ⇒ 显式截断 + 显式说明，不假装是全部） */
-const RECENT_LIMIT = 20
+/** 流水每页条数（读面没有服务端分页 ⇒ 前端切页；issue #7217） */
+const RECORDS_PAGE_SIZE = 10
 
 /**
  * 指标时间窗 ⇒ 服务端入参（左闭右开 {@code [from, to)}）。
@@ -126,6 +126,8 @@ export default function QualityInspectionsPage() {
   const [records, setRecords] = useState<QualityInspectionRecord[]>([])
   const [recordsLoading, setRecordsLoading] = useState(false)
   const [recordsError, setRecordsError] = useState('')
+  const [recordsPage, setRecordsPage] = useState(1)
+  const [recordsPageSize, setRecordsPageSize] = useState(RECORDS_PAGE_SIZE)
 
   const [editing, setEditing] = useState<QualityTarget | null>(null)
 
@@ -186,6 +188,7 @@ export default function QualityInspectionsPage() {
     try {
       const res = await qualityInspectionApi.list()
       setRecords(res.data?.data ?? [])
+      setRecordsPage(1)
     } catch {
       setRecords([])
       setRecordsError(readErrorCopy('质检流水'))
@@ -221,7 +224,11 @@ export default function QualityInspectionsPage() {
     void loadStats()
   }, [loadTargets, loadRecords, loadStats])
 
-  const recentRecords = records.slice(0, RECENT_LIMIT)
+  // 客户端分页（issue #7217）：读面一次返回全量（无 page/size）⇒ 前端切页，不再截断
+  const pagedRecords = records.slice(
+    (recordsPage - 1) * recordsPageSize,
+    recordsPage * recordsPageSize,
+  )
 
   return (
     <div data-testid="quality-inspections-page" className="space-y-4 p-6">
@@ -430,11 +437,7 @@ export default function QualityInspectionsPage() {
       <PageCard testId="quality-records-card" padded={false}>
         <div className="flex items-baseline justify-between border-b border-neutral-100 px-5 py-3">
           <h2 className="text-base font-medium text-neutral-900">质检流水</h2>
-          <span className="text-xs text-neutral-400">
-            {records.length > RECENT_LIMIT
-              ? `按时间倒序，最多显示最近 ${RECENT_LIMIT} 条`
-              : '按时间倒序'}
-          </span>
+          <span className="text-xs text-neutral-400">按时间倒序</span>
         </div>
 
         {recordsError && (
@@ -448,7 +451,7 @@ export default function QualityInspectionsPage() {
           </div>
         )}
 
-        {!recordsError && !recordsLoading && recentRecords.length === 0 && (
+        {!recordsError && !recordsLoading && pagedRecords.length === 0 && (
           <EmptyState
             testId="quality-records-empty"
             icon="file"
@@ -457,7 +460,7 @@ export default function QualityInspectionsPage() {
           />
         )}
 
-        {recentRecords.length > 0 && (
+        {pagedRecords.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-neutral-50 text-xs text-neutral-500">
@@ -470,7 +473,7 @@ export default function QualityInspectionsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {recentRecords.map((record) => (
+                {pagedRecords.map((record) => (
                   <tr key={record.id} data-testid={`quality-record-row-${record.id}`}>
                     <td className="px-4 py-2 whitespace-nowrap text-neutral-600">
                       {formatMoment(record.inspected_at)}
@@ -493,6 +496,21 @@ export default function QualityInspectionsPage() {
               </tbody>
             </table>
           </div>
+        )}
+
+        {records.length > 0 && (
+          <Pagination
+            current={recordsPage}
+            pageSize={recordsPageSize}
+            total={records.length}
+            onChange={setRecordsPage}
+            onPageSizeChange={(size) => {
+              setRecordsPageSize(size)
+              setRecordsPage(1)
+            }}
+            /* 读失败 / 读中 ⇒ 计数位印「—」，不把「读不到」印成「共 0 条」（issue #6703 同族） */
+            totalReliable={!recordsLoading && !recordsError}
+          />
         )}
       </PageCard>
     </div>

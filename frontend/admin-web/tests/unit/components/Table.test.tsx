@@ -44,6 +44,26 @@ describe('Table Component', () => {
     })
   })
 
+  it('applies whitespace-nowrap to data cells by default (issue #7217)', () => {
+    render(<Table columns={columns} dataSource={dataSource} rowKey="id" />)
+    const tds = document.querySelectorAll('tbody td')
+    expect(tds.length).toBeGreaterThan(0)
+    tds.forEach((td) => {
+      expect(td.className).toMatch(/\bwhitespace-nowrap\b/)
+    })
+  })
+
+  it('allows wrapping only for columns marked wrap: true (issue #7217)', () => {
+    const wrapColumns: TableColumn<TestRecord>[] = [
+      { key: 'name', title: '名称', dataIndex: 'name', wrap: true },
+      { key: 'status', title: '状态', dataIndex: 'status' },
+    ]
+    render(<Table columns={wrapColumns} dataSource={dataSource} rowKey="id" />)
+    const cells = document.querySelectorAll('tbody tr')[0].querySelectorAll('td')
+    expect(cells[0].className).not.toMatch(/\bwhitespace-nowrap\b/)
+    expect(cells[1].className).toMatch(/\bwhitespace-nowrap\b/)
+  })
+
   it('renders column title in a whitespace-nowrap truncate span', () => {
     render(<Table columns={columns} dataSource={dataSource} rowKey="id" />)
     const titleSpan = screen.getByText('商品名称')

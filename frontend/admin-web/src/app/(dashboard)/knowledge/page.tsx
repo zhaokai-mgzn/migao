@@ -333,6 +333,8 @@ export default function KnowledgePage() {
     {
       key: 'title',
       title: '知识卡片标题',
+      // 长文本列（标题 / 常见问法）显式允许折行；其余列由 Table 原语默认 nowrap（issue #7217）
+      wrap: true,
       render: (entry) => (
         <div className="min-w-[220px]">
           <div className="font-medium">{entry.title}</div>
@@ -469,9 +471,9 @@ export default function KnowledgePage() {
               onReset={() => { setKeyword(''); setCurrent(1); loadEntries() }}
             />
 
-            <div className="flex items-center gap-2">
+            <div data-testid="knowledge-filter-row" className="flex flex-wrap items-center gap-3">
               <select
-                className="h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                className="h-9 min-w-[9rem] px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                 value={category}
                 onChange={(e) => { setCategory(e.target.value); setCurrent(1) }}
               >
@@ -481,7 +483,7 @@ export default function KnowledgePage() {
                 ))}
               </select>
               <select
-                className="h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                className="h-9 min-w-[9rem] px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                 value={sourceFilter}
                 onChange={(e) => { setSourceFilter(e.target.value); setCurrent(1) }}
                 aria-label="来源筛选"
@@ -492,7 +494,7 @@ export default function KnowledgePage() {
                 ))}
               </select>
               <select
-                className="h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                className="h-9 min-w-[9rem] px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                 value={statusFilter}
                 onChange={(e) => { setStatusFilter(e.target.value); setCurrent(1) }}
               >

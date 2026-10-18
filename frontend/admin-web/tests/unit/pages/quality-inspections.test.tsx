@@ -1,6 +1,6 @@
 // case_ids: UI-118, PG-087
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 /**
@@ -110,6 +110,18 @@ function mockOkTargets(overrides: Partial<{
       },
     },
   })
+}
+
+/** 流水 N 条（issue #7217 客户端分页判据） */
+function mockRecords(n: number) {
+  const records = Array.from({ length: n }, (_, i) => ({
+    ...passRecord,
+    id: `qi-${i + 1}`,
+    position_name: `成品帘 ${i + 1}`,
+    inspected_at: `2026-10-17T10:${String(i).padStart(2, '0')}:00+08:00`,
+  }))
+  mockList.mockResolvedValue({ data: { data: records } })
+  return records
 }
 
 describe('质检记录页（/quality-inspections）', () => {
@@ -263,5 +275,20 @@ describe('质检记录页（/quality-inspections）', () => {
     await user.click(screen.getByRole('button', { name: '取消' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  it('⑨ 流水客户端分页：25 条 ⇒ 第 1 页 10 条，翻页看第 2 页（issue #7217）', async () => {
+    const user = userEvent.setup()
+    mockRecords(25)
+    render(<QualityInspectionsPage />)
+
+    const card = await screen.findByTestId('quality-records-card')
+    await waitFor(() => expect(within(card).getByTestId('quality-record-row-qi-1')).toBeInTheDocument())
+    expect(within(card).queryByTestId('quality-record-row-qi-11')).not.toBeInTheDocument()
+    expect(within(card).getByTestId('pagination-total')).toHaveTextContent('共 25 条记录')
+
+    await user.click(within(card).getByRole('button', { name: '2' }))
+    await waitFor(() => expect(within(card).getByTestId('quality-record-row-qi-11')).toBeInTheDocument())
+    expect(within(card).queryByTestId('quality-record-row-qi-1')).not.toBeInTheDocument()
   })
 })
