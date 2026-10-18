@@ -160,6 +160,7 @@
     "V162__strip_default_role_module_lists.sql": "sha256:e48f34c4f77ffdfdaa98dafdacd52169b0415de984002c5cb464ccc5767b4a2d",
     "V163__add_quality_inspector_kind.sql": "sha256:aefdfb4460db7474e685bb52cb84a094d3f968a8453c1854b67096889cde0162",
     "V164__briefing_enabled_default_true.sql": "sha256:213184b797a65410e1ee93bc24d14708513600906ad289eeeaab469bda7571e9",
+    "V165__unique_order_logistics_per_order.sql": "sha256:073508f613fc52ae5a2c49f1ec8fe6350660a69f8dfafa74033a404a6188de59",
     "schema.sql": "sha256:e9c94f2d6a465b6ac22a9fd2ae52365331a64f85cf2cfd4bc137d474287cd44b"
   }
 }

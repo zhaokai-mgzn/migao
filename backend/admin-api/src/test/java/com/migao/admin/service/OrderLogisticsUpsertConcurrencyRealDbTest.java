@@ -76,6 +76,10 @@ class OrderLogisticsUpsertConcurrencyRealDbTest {
             st.execute(schemaSql());
             st.execute("INSERT INTO tenants (id, name, code) OVERRIDING SYSTEM VALUE VALUES ("
                     + TENANT + ", 'ol-7174', 'ol-7174')");
+            // 迁移 V165 建的那条部分唯一索引（schema.sql 是**冻结基线**，按 issue #5243 不许改；
+            // 真库判据要覆盖的正是"迁移跑完之后"的形态 ⇒ 这里显式建出同一条索引）
+            st.execute("CREATE UNIQUE INDEX IF NOT EXISTS uk_order_logistics_tenant_order "
+                    + "ON order_logistics (tenant_id, order_id) WHERE deleted = 0");
         }
         MybatisConfiguration configuration = new MybatisConfiguration();
         configuration.setMapUnderscoreToCamelCase(true);

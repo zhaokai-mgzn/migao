@@ -2405,8 +2405,6 @@ CREATE INDEX idx_order_logistics_tenant ON order_logistics(tenant_id);
 CREATE INDEX idx_order_logistics_order ON order_logistics(order_id);
 CREATE INDEX idx_order_logistics_tracking ON order_logistics(tracking_no);
 CREATE INDEX idx_order_logistics_deleted ON order_logistics(deleted);
--- 一单一条物流（issue #7174）：(tenant_id, order_id) 唯一，软删后的历史行不参与
-CREATE UNIQUE INDEX uk_order_logistics_tenant_order ON order_logistics (tenant_id, order_id) WHERE deleted = 0;
 
 -- audit_logs 索引
 CREATE INDEX idx_audit_logs_tenant ON audit_logs(tenant_id);
