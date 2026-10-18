@@ -1,4 +1,4 @@
-# case_ids: UI-084
+# case_ids: UI-084, UI-126
 """聊天气泡「富文本渲染接线」普查 —— issue #6346 的**类级**视角（让同类进不来）。
 
 ## 病根（一类缺陷，不是一个缺陷）
@@ -8,18 +8,21 @@
 
 | 面 | 漏做会怎样（已实测两次） | 正确接线 |
 |---|---|---|
-| Taro 小程序（`mini-app` / `bmini-app`） | 换行在、但 `**加粗**` 与 `- ` 列表**原样上屏**成星号与短横线 | `import { parseRichText }` + 按行渲染 |
+| Taro 小程序（`mini-app` / `bmini-app`） | 换行在、但 `**加粗**` / `- ` 列表 / GFM 表格**原样上屏**成星号、短横线与一排 `|` | `import { parseRichContent }` + 按块渲染（含表格组件） |
 | admin-web（Next.js + react-markdown） | 段落内单个换行被 CommonMark 当**软换行**（= 空格）⇒ 多行回复折成**一整段**长文 | `remarkPlugins` 里挂 `remarkBreaks` |
 
 - 第一次漏：C 端 `mini-app`，2026-09-15 真机实测（用例 UI-042）；
-- 第二次漏：B 端 `bmini-app` + `admin-web`，2026-09-28 就存在、2026-10-05 才被用户截图发现（用例 UI-084）。
+- 第二次漏：B 端 `bmini-app` + `admin-web`，2026-09-28 就存在、2026-10-05 才被用户截图发现（用例 UI-084）；
+- 第三次漏（表格）：2026-10-18 用户手机端实测「表格样式没有正常渲染，还是原生 markdown」（用例 UI-126）——
+  `parseRichText` 只认粗体/列表，GFM 表格不在子集内，**两端同时裸奔**（C 端至今没人报）。
 ⇒ **同一个类犯了三次**，而每次都是「新面/新包照抄旧面」——**没有任何判据会因此变红**（旧面的判据只管旧面）。
 
 ## 判据（四层，逐条能红）
 
 1. **普查集合冻结**：`frontend/*/src/components/chat/MessageBubble.tsx` 的**现取**集合必须逐字等于
    `FROZEN_BUBBLE_PACKAGES` ⇒ 新前端包（照抄一份气泡）即红、包改名/删除也红；
-2. **每个小程序面接线齐全**：该包的气泡源码引用 `parseRichText`，且 `src/utils/richText.ts` 真实存在；
+2. **每个小程序面接线齐全**：该包的气泡源码引用 `parseRichContent`、渲染加粗类，并**真的渲染表格组件**
+   （`message-bubble__table`；缺表格 = 表格裸 markdown 复发），且 `src/utils/richText.ts` 真实存在；
 3. **admin-web 面接线**：`frontend/admin-web/src/components/chat/MessageList.tsx` 必须
    `import remarkBreaks` **且**把它放进 `remarkPlugins`（只 import 不挂 = 断线，同样红）；
 4. **判别力自证**：对真语料零违规；对**内存里的坏样例**（摘掉 `parseRichText` /
@@ -29,7 +32,8 @@
 ## 红证（实跑，任选其一）
 
 ```bash
-# ① 把 bmini 气泡换回「一个 Text 装全文」（摘掉 parseRichText）⇒ 判据 2 判红
+# ① 把 bmini 气泡换回「一个 Text 装全文」（摘掉 parseRichContent）⇒ 判据 2 判红
+# ①b 把表格渲染块摘掉（不再出现 message-bubble__table）⇒ 判据 2 判红（issue #7235）
 # ② 把 admin-web 的 remarkBreaks 从 remarkPlugins 里摘掉（只留 remarkGfm）⇒ 判据 3 判红
 python3 -m pytest tests/unit_ci_workflows/test_chat_richtext_surface_guard.py -q
 ```
@@ -62,6 +66,12 @@ BEHAVIOUR_TESTS = (
     "frontend/admin-web/tests/unit/components/chat-soft-breaks.test.tsx",
     "frontend/bmini-app/tests/chat-rich-text.test.ts",
     "frontend/bmini-app/tests/chat-rich-text-render.test.tsx",
+    # 表格族（issue #7235 / UI-126）：实例判据 + 两端「同口径」类级守卫
+    "frontend/admin-web/tests/unit/components/chat-markdown-table.test.tsx",
+    "frontend/bmini-app/tests/chat-rich-text-table.test.ts",
+    "frontend/bmini-app/tests/chat-table-render.test.tsx",
+    "frontend/mini-app/tests/message-bubble-table.test.tsx",
+    "frontend/mini-app/tests/chat-rich-text-parity.test.ts",
 )
 
 
@@ -73,10 +83,14 @@ def find_bubble_packages() -> list[str]:
 def judge_bubble_source(text: str) -> list[str]:
     """小程序气泡源码的接线判定（纯函数：坏样例可在内存里判红）。"""
     problems: list[str] = []
-    if "parseRichText" not in text:
-        problems.append("未引用 parseRichText（换行在、但 **与 - 会原样上屏）")
+    if "parseRichContent" not in text:
+        problems.append("未引用 parseRichContent（换行在、但 ** / - / 表格会原样上屏）")
     if "message-bubble__text-strong" not in text:
         problems.append("未渲染加粗样式类 message-bubble__text-strong（粗体段没有落点）")
+    if "message-bubble__table" not in text:
+        problems.append(
+            "未渲染表格组件 message-bubble__table（GFM 表格会裸 markdown 上屏，issue #7235）"
+        )
     return problems
 
 
@@ -117,19 +131,25 @@ def test_admin_web_markdown_wires_remark_breaks() -> None:
 
 
 def test_behaviour_judges_still_exist() -> None:
-    """判据 4a：三层行为判据文件都还在（守卫绿而行为判据被删 = 空守）。"""
+    """判据 4a：行为判据文件都还在（守卫绿而行为判据被删 = 空守）。"""
     missing = [rel for rel in BEHAVIOUR_TESTS if not (REPO_ROOT / rel).is_file()]
     assert missing == [], f"行为判据文件缺失：{missing}"
 
 
 def test_guard_has_discriminating_power() -> None:
     """判据 4b：判别力自证 —— 坏样例在内存里逐条判红，真语料零违规。"""
-    good_bubble = "import { parseRichText } from '../../utils/richText'\n<Text className='message-bubble__text-strong'>{seg.text}</Text>"
+    good_bubble = (
+        "import { parseRichContent } from '../../utils/richText'\n"
+        "<Text className='message-bubble__text-strong'>{seg.text}</Text>\n"
+        "<View className='message-bubble__table'>"
+    )
     assert judge_bubble_source(good_bubble) == []
 
     bad_bubble_cases = {
-        "摘掉 parseRichText": good_bubble.replace("parseRichText", "rawContent"),
+        "摘掉 parseRichContent": good_bubble.replace("parseRichContent", "rawContent"),
         "摘掉加粗类": good_bubble.replace("message-bubble__text-strong", "message-bubble__text"),
+        # issue #7235：表格渲染块被摘掉 ⇒ 表格裸 markdown 复发
+        "摘掉表格组件": good_bubble.replace("message-bubble__table", "message-bubble__grid"),
     }
     for name, sample in bad_bubble_cases.items():
         assert judge_bubble_source(sample) != [], f"坏样例未被判红：{name}"

@@ -1464,7 +1464,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释）；2026-09-21（case-trust burn-down 缴费，issue #4971，metric=entries ⇒ 整条销账）：补 `must_succeed[category_manage(action=delete)]`（效果层：「调用了 ≠ 成了」，#3778）+ `namespaces[category:轻奢系列]`（弱证据，如实登记：夹具层无分类域复位/准备动作，且与 CT-002「建同一个分类」自动串行）+ 机器计分型前置断言；`user_inputs` / `expectations` / `data_checks` 原第 1 条 / `skip_reason` / `traces` 一字未动、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`category_manage` 的写 action `delete` 已删除（工具收窄为只读 `{tree}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `[interact(confirm), category_manage(action=delete)]` 改判为 `direct_reply`（如实说明 + 引导去后台商品分类页面：删除**没有存活的只读路径**），`must_succeed[category_manage(action=delete)]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）；`data_checks` 的写路径断言（「二次确认后才执行删除」+ 写面前置）改判为只读/如实说明口径（原第 1 条文本已并入新第 1 条保留为历史）。 ｜ tags: delete, destructive, confirm
 
-## 对话边界域（46 case）
+## 对话边界域（47 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -2210,6 +2210,20 @@
 跳过: [backend-contract] 判据全部是**入口级 + 纯函数**（零 LLM、零网络）：落库文本、历史回放、剥离往返，由 backend/ai-agent-service/tests/test_page_context_persistence.py 执行；「黄金策回答质量」属行为面，按用户裁定（#4262 / #4974）手动集中跑一次，本轮不自动派发真实 LLM 评测
 ```
 溯源: 2026-10-17 新增（issue #7112）：页面上下文信封此前被当作用户消息落库 ⇒ 切回会话时整段内部提示上屏（并污染会话标题与记忆抽取）。修复 = 写侧分离（信封只进本轮 LLM 文本）+ 读侧归一（历史回放剥离，不改写历史数据）。 ｜ tags: chat, page-context, persistence, display-integrity
+
+### CH-048. 黄金策回复不得暴露内部路由（后台「订单列表」页(/orders)）—— 源头话术去路由 + 出站清洗兜底 + 负控 🔵
+```
+你: 商家问「这个订单怎么发货」⇒ 黄金策如实说明不能代办并引导到后台「订单列表」页；回复里**只允许中文页面名**，不得出现内部前端路由（`(/orders)` 形态）。2026-10-18 生产实证：session `sess_742201cbf83f4f58` 的 assistant 正文逐字含「发货操作在后台「订单列表」页(/orders)对应订单上点「发货」即可」
+期望: direct_reply
+数据: **源头去路由**：模型可见话术（工具 description / references 提示词 / base_skill 失败指引）**零**路由 token。判据 = `grep -rnE '\(/[a-zA-Z][a-zA-Z0-9/_-]*\)' backend/ai-agent-service/app --include=*.py --include=*.md` 读数为 0（2026-10-18 现取：修前 .py 7 处 + 模型可见 .md 41 处）。
+数据: **出站清洗形态**：`strip_internal_routes` 对三种括号形态（半角 / 全角 / 括号内空白）整段删除；删除点两侧都是中文 ⇒ 不留空格（`页 (/orders)找到` → `页找到`），否则保留恰好 1 个空格；markdown 链接 `[订单列表](/orders)` 只留 `订单列表`。执行点 = backend/ai-agent-service/tests/test_route_hygiene.py 的 `TestStripInternalRoutes`。
+数据: **负控 + 幂等**：`¥29/米`、`定高买宽/定宽买高`、`http(s)://…`、围栏代码块与行内反引号内的 `/orders` 逐字不变；已清洗文本再跑逐字不变。执行点 = 同 class 的 `test_negative_controls_untouched` / `test_idempotent` / `test_protected_fence_does_not_break_outer_cleaning`。
+数据: **接线（会红）**：真驱动 `_agent_stream_to_sse`（B 端 admin 与 C 端 customer 两条）⇒ SSE 文本与**落库** assistant 文本都不含路由；库中存量旧行经 `GET /history/{session_id}` 回放同样干净。执行点 = 同文件 `TestOutboundWiring` / `TestHistoryReplayWiring`。红证（2026-10-18 实测）：摘掉 chat.py 的收口调用 ⇒ 5 failed / 16 passed。
+数据: **结构级守卫**：`chat.py` 不再出现 `SSEEvent.text(_mask_for_customer(`、历史回放走收口、落库前 `strip_internal_routes(assistant_content)` 在位。执行点 = 同文件 `TestWiringIsStructural`。
+前置: 前置 = `app.utils.route_hygiene.strip_internal_routes` 可导入、`app/api/chat.py` 的 `_sanitize_outbound_text` 收口在位（摘掉 ⇒ 接线判据红，不会表现成「本轮回复刚好没提路由」的假绿）
+跳过: [backend-contract] 判据全部是**纯函数 + 入口级**（零 LLM、零网络）：话术 grep、清洗形态/负控/幂等、SSE/落库/历史回放接线，由 backend/ai-agent-service/tests/test_route_hygiene.py 执行；「黄金策是否真的照新话术引导」属行为面，按用户裁定（#4262 / #4974）手动集中跑一次，本轮不自动派发真实 LLM 评测
+```
+溯源: 2026-10-18 新增（issue #7236）：取号 = 现取 chat.yml 最大号 CH-047 + 1 = CH-048（chat 域，不用 UI 前缀；同批无其它 chat 号在飞）。覆盖两层修复：① 源头话术去路由（app/**/*.py 7 处 + 模型可见 references/*.md 41 处）；② 出站纯函数清洗兜底，并接在落库 / SSE 下发 / 历史回放三处收口（`_mask_for_customer` 语义不动，只在同一收口点追加一层）。 ｜ tags: chat, display-integrity, internal-route, sanitize
 
 ## 跨域（3 case）
 
@@ -10052,7 +10066,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（125 case）
+## 前端 UI 域（126 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -11168,7 +11182,7 @@
 真值: frontend-fix.vitest, order.shipment-read-faces
 溯源: 2026-10-02 新增（issue #5939）：用户报障「我让你开发过发货单的，但是在大菜单上没见到这个单据」—— 核对 `git log -S "发货单" -- frontend/admin-web/src/config/menu.ts` 与对 MenuController.java 的同命令**均为空** ⇒ 发货单从未进过菜单（纸面 #3768 / 数据面 #5648 都做完了，但它只挂在订单详情里）。本单：菜单三源同批加节点（仓储与物料组、入库单之后）+ 新建 `/shipments` 列表页（含补打）+ 后端租户级列表读面（见 OR-056）+ **单据入口台账**类级守卫（下次再有单据做完没人问「用户从哪进得来」时会判红）。⚠️ **未跑（照实登记）**：Playwright 页面多模态验收（真实登录 + 截图 + AI 读图）本轮**未跑** —— 本检出另有一个 07:17 起的 `next dev` 听着 :3001（`lsof` 实测 cwd = 本检出的 frontend/admin-web，非本会话所起），而 tests/playwright.config.ts 的服务身份守卫（#4313/#5121）对「本检出已有活着的 dev server」在配置加载期硬红（Next 16 起 `.next/dev/lock` 按目录取 flock ⇒ 换端口也起不来），杀它属破坏性动作 ⇒ 不做。重启条件 = 该 dev server 停掉或改用独立 worktree 后，按 `tests/playwright.config.ts` 跑一轮针对 `/shipments` 的 Playwright 用例（该 spec **本单未新建、也未跑过** —— 不把未验证的测试塞进 CI；补跑时一并落地并挂 `# case_ids: UI-078`）。本用例**不声称**该轮通过。 ｜ tags: ui, menu, ia, navigation, shipment, rbac
 
-### UI-079. 黄金策对话「客户端打字机」：服务端整段下发 ⇒ 客户端按节奏揭示（真实事件序下逐字 / 单调不回退 / 收口替换不卡 / 有界收敛 / 历史·中断·减少动画立刻全文） 🔵
+### UI-079. 黄金策对话「客户端打字机」：服务端整段下发 ⇒ 客户端按节奏揭示（真实事件序下逐字 / 单调不回退 / 收口替换不卡 / 有界收敛 / 历史·中断·减少动画立刻全文）；PC 与**手机端（bmini）**同口径（issue #7235） 🔵
 ```
 你: 用户 2026-10-02 原话（流式体验）：问「米宝走 SSE 但不是逐字输出，是否要改成逐字」⇒ 裁定 =「选 2（客户端打字机）」
 你: 同一裁定附带的结构性理由（不做服务端真逐字）：backend/ai-agent-service/app/agents/customer_service_agent.py 的 astream_chat 用 graph.astream(initial_state, stream_mode="updates") = 节点级更新；backend/ai-agent-service/app/graph/skills/execution/finalize_turn.py 有后置收口（追加确认卡 XML / 用工具返回 message 替换回复）；C 端出站还有 backend/ai-agent-service/app/api/chat.py 的 _mask_for_customer 跨片脱敏 ⇒ 服务端逐字会与「收口后才是最终文本」冲突
@@ -11179,12 +11193,13 @@
 数据: 🔴 判据 4·**服务端不被改动（本单边界）**：本用例只判展示面 —— `git diff origin/main...HEAD -- backend/` 为空。执行点 = PR 的改动清单（本包零后端改动）
 数据: 🔴 判据 5·**真实事件序下必须逐字（issue #7086）**：正文以**一个** `text` 事件整段到达、紧随 `done`（store 同批把 `isStreaming` 置假并落库）⇒ 结束之后**仍在逐字**（t 时刻可见字符数**严格少于**全长、且恒为全文前缀），最终 == 全长；且整段揭示**有界**（≤ TYPEWRITER_MAX_REVEAL_MS，长文自动加速、不无限拖尾）。执行点 = frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx「🔴 UI-079 真实事件序」+ frontend/admin-web/tests/unit/hooks/use-typewriter.test.tsx「🔴 UI-079-1 真实事件序」「UI-079-3 有界收敛」。类级元守卫 = tests/unit_ci_workflows/test_typewriter_reveal_not_lifecycle_bound.py（揭示层再读外部生命周期开关 / 真实事件序判据被摘掉 ⇒ 判红）
 数据: 🔴 红证（改前实测）：本单落地前全仓 `grep -rn "typewriter\|useTypewriter" frontend/admin-web/src` = 0 命中 ⇒ 组件测试 import 即失败；把 hook 换成直返全文（等效「无打字机」）⇒ 判据 1/2/3 的「中途可见 < 全长」「维持替换过程单调」「流式结束立刻等于全文」三条当场红（本机实测 3 failed / 6 passed）；把组件的 `data-revealed` 接入摘掉 ⇒ 组件侧两条红
+数据: 🔴 判据 6·**手机端（bmini）同口径执行点**（issue #7235）：同一组不变量在 frontend/bmini-app 上成立 —— 直播消息从 0 起逐字（t 时刻 `data-revealed` < 全长且恒为全文前缀）、结束之后仍逐字、历史回放 / 中断（`wasAborted`）/ 减少动画立刻全文、长文按上界有界收敛。执行点 = frontend/bmini-app/tests/chat-typewriter.test.tsx「UI-079 手机端打字机」6 条 + frontend/bmini-app/tests/store-chat.test.ts「stopStreaming 给被中断的消息打 wasAborted」（负控：已结束消息不打标记）
 数据: 🔴 红证（#7086，2026-10-17 实测）：把实现回退到 origin/main（旧 hook 的 `instant = !streaming || …` + 组件传 `streaming: !!message.isStreaming`）⇒ 本用例 19 条里 **5 条红**，其中「真实事件序」的读数是 `expected 37 to be less than 37`（= done 之后第一次读数已是全长，一帧未播，与用户现场一致）；改后 19 条全绿。复算：`git stash push -- frontend/admin-web/src/hooks/use-typewriter.ts frontend/admin-web/src/components/chat/MessageList.tsx` ⇒ `cd frontend/admin-web && npx vitest run --dir tests/unit use-typewriter.test.tsx MessageList-typewriter.test.tsx` ⇒ `git stash pop`（回退后 5 红、恢复后 19 绿，本机 2026-10-17 复算）
 前置: 本用例是 [backend-contract] 纯前端用例：前置由单测自建 —— frontend/admin-web/tests/unit/hooks/use-typewriter.test.tsx 用 `vi.useFakeTimers()` 直接驱动 hook 的揭示时钟；frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx `vi.mock('@/store/chat')` 注入带 `isStreaming/tool_calls` 的消息夹具。前置不成立时单测直接红（找不到 `data-revealed` / 找不到文案），不依赖共享夹具；agent-eval 栈不跑它
 跳过: [backend-contract] 纯前端揭示层（服务端一字未改：仍整段下发）由 vitest（jsdom）执行，不进入 agent-eval 冒烟；LLM 行为面不变，故无 agent 用例
 ```
 真值: frontend-fix.mibao-client-typewriter, frontend-fix.vitest
-溯源: 2026-10-02 新增（issue #5952）：黄金策对话从「服务端整段下发、界面一次性刷出」改为「客户端按节奏揭示」（用户同日裁定「选 2」）。服务端真逐字**有意不做**（节点级 astream + finalize_turn 后置收口 + C 端跨片脱敏三重结构性冲突，见 user_inputs）。取号 UI-079（现取 ui.yml 最大 = UI-078 的下一号）。 ｜ 2026-10-17 改判 + 新增判据 5（issue #7086）：用户现场「电脑端就是一次性返回，不是打字效果」⇒ 根因 = 判据 3 原文的「流式结束（isStreaming=false）⇒ 立刻全文」把揭示窗口压成 ≈ 0（正文整段到达 + 紧随 done）；判据 3 收窄为「立刻收敛只对非直播面」，新增判据 5 钉真实事件序 + 有界收敛。原判据 3 的「组件卸载 ⇒ 立刻全文」一条按实现事实移除（卸载后无可见面；另有「定时器被清掉、无状态更新」的泄漏判据留在 hook 文件）。 ｜ tags: ui, chat, streaming, typewriter, admin-web
+溯源: 2026-10-02 新增（issue #5952）：黄金策对话从「服务端整段下发、界面一次性刷出」改为「客户端按节奏揭示」（用户同日裁定「选 2」）。服务端真逐字**有意不做**（节点级 astream + finalize_turn 后置收口 + C 端跨片脱敏三重结构性冲突，见 user_inputs）。取号 UI-079（现取 ui.yml 最大 = UI-078 的下一号）。 ｜ 2026-10-17 改判 + 新增判据 5（issue #7086）：用户现场「电脑端就是一次性返回，不是打字效果」⇒ 根因 = 判据 3 原文的「流式结束（isStreaming=false）⇒ 立刻全文」把揭示窗口压成 ≈ 0（正文整段到达 + 紧随 done）；判据 3 收窄为「立刻收敛只对非直播面」，新增判据 5 钉真实事件序 + 有界收敛。原判据 3 的「组件卸载 ⇒ 立刻全文」一条按实现事实移除（卸载后无可见面；另有「定时器被清掉、无状态更新」的泄漏判据留在 hook 文件）。 ｜ 2026-10-18 扩执行点（issue #7235）：手机端 bmini 此前**全仓零 `typewriter` 命中** ⇒ 后端整段下发时商家看到「一次性刷出」；本单按 PC 同口径补 `frontend/bmini-app/src/hooks/use-typewriter.ts` + `MessageBubble` 接入 `data-revealed`，并给「用户中断」补 `Message.wasAborted`（stopStreaming 打标）⇒ 判据 6 新增；红证 = 实现退回 origin/main 后本用例执行点 **2 suites failed / 7 failed（chat-typewriter 6 + store-chat 1）/ 21 passed**。 ｜ tags: ui, chat, streaming, typewriter, admin-web, bmini
 
 ### UI-080. 黄金策对话不向用户暴露 tool：带 tool_calls 的消息只渲染人性化进度文案，工具名/入参/结果/原始 JSON 一律不进 DOM（对齐 C 端先例 issue #2857） 🔵
 ```
@@ -11261,6 +11276,23 @@
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-10-05 新增（issue #6346）：C 端 2026-09-15 已治过同族缺陷（UI-042：气泡无 markdown 处理、`**`/列表裸奔），B 端两端都漏课 —— admin-web 侧因 CommonMark 软换行（段落内单个换行 = 空格）把黄金策多行回复折成一整段（修法 = 挂 remark-breaks），bmini 侧沿用 C 端最小子集解析器 + 按行渲染（不建跨 App 共享模块，#6306 教训）。取号 UI-084（scripts/next_case_id.py ui：现取 main 最大 = UI-083，被 #6339 的包占用）。 ｜ tags: ui, chat, rich-text
+
+### UI-126. 手机端（B 端黄金策 / C 端元元）助手消息的 **GFM 表格**渲染 —— 表格成组件（窄屏可横滑 / 表头-数据行逐格 / 列数按分隔行）+ PC 端同族回归判据（用户 2026-10-18 手机端实测：一排 `|---|`） 🔵
+```
+你: 用户 2026-10-18 逐字：「手机端的黄金策返回的表格样式没有正常渲染，还是原声markdown」（原声 = 原生 / raw）；同一句里要求「顺便把pc端的也一起检查下」
+你: 同一轮的 DB 证据（session_messages，session sess_742201cbf83f4f58）：assistant 正文逐字含 `| 工单号 | 关联订单 | 客户 | 类型 | 状态 | 优先级 | 创建时间 |` 与 `|---|---|---|---|` —— 黄金策的清单类回复大量使用 GFM 表格，手机端把这排竖线原样上屏
+期望: direct_reply
+数据: 判据 1·**解析口径（B/C 两端同口径）**：表头行 + 分隔行（列数一致）⇒ 一个 table 块（header / align / rows 逐值）；列数按分隔行定（数据行缺格补空、多格截断）；单元格内 `**粗体**` 仍解析；空行结束表格；首尾竖线可省略。执行点 = frontend/bmini-app/tests/chat-rich-text-table.test.ts（9 条）与 frontend/mini-app/tests/message-bubble-table.test.tsx
+数据: 判据 2·**流式安全负控**：只有表头、分隔行还没到 ⇒ 仍是普通文本（不闪半张表）；普通句子里的 `a | b` 不判成表格；**揭示期（打字机逐字中）尾部未成表的行先不画** —— 表头到了、分隔行没到 ⇒ DOM 里没有裸 `|`（旧形态会闪一两百毫秒裸管道符）。执行点 = 同上两个文件 + frontend/bmini-app/tests/chat-typewriter.test.tsx 判据 ⑦
+数据: 判据 3·**渲染**：`.message-bubble__table` 在场、DOM 文本零字面 `|` / `---`；表头 3 格 + 数据行 N 行且列数不错位；包在 `scrollX` 容器里（窄屏可横滑）；有表格的气泡放宽到 94%。执行点 = frontend/bmini-app/tests/chat-table-render.test.tsx（6 条）+ frontend/mini-app/tests/message-bubble-table.test.tsx
+数据: 判据 4·**PC 同族核查**（用户要求「顺便检查 PC」）：admin-web 走 react-markdown + remark-gfm ⇒ 同一段表格渲染出 `<table>` / `<th>` / `<td>`，且 remark-breaks 在场时仍成表（不折成 `<br>` 裸文本）、对齐标记不错位。执行点 = frontend/admin-web/tests/unit/components/chat-markdown-table.test.tsx（5 条）
+数据: 判据 5·**类级元守卫（两端同口径）**：同一组语料（含单列表格）喂给两端解析器，输出必须**逐值相等**（`toEqual`），且语料自证「lines 与 table 两种块都出现」（防两边都空 ⇒ 相等假绿）。判据 = frontend/mini-app/tests/chat-rich-text-parity.test.ts（3 条；放在 C 端腿里跑 —— 避免 bmini 腿跨目录依赖 C 端源码而污染本地门禁矩阵的触发面）。判别力自证：只改 C 端一处口径（单列表格判定加 `header.length > 1`）⇒ 该条当场红（`1 failed / 2 passed`）；还原 ⇒ 3 passed。这条防的正是本缺陷的**类**：两份本地实现「一端修、一端漏」（UI-042 漏 B 端 → #6346；#7235 若只修 B 端则 C 端继续裸奔）。另有**接线普查**类级守卫 tests/unit_ci_workflows/test_chat_richtext_surface_guard.py 判据 2：每个小程序气泡包必须引用 `parseRichContent` 且渲染 `message-bubble__table`（摘掉表格组件 ⇒ 红）
+数据: 🔴 红证（改前实测，migao-dev-flow §28.1 出口① 临时反转）：把两端实现退回 origin/main（`git stash push -- src/utils/richText.ts src/components/chat/MessageBubble.tsx`，在 frontend/bmini-app 下）⇒ 表格两条执行点 **2 suites failed / 5 failed / 1 passed**（`chat-rich-text-table` 因 `parseRichContent` 不存在整 suite 失败；`chat-table-render` 的 ①③⑤⑥ 红、负控 ④ 仍绿）；恢复后两文件 **15/15 全绿**。PC 侧判别力自证：摘掉 `remarkGfm` ⇒ 判据 4 的 `<table>` 零命中当场红
+前置: 两端 jest 夹具自建消息对象（role='assistant' + 带表格的 content），PC 侧 vi.mock('@/store/chat') 注入消息、**不 mock** react-markdown（判据打在真实渲染管线上）
+跳过: [backend-contract] 纯前端渲染（vitest / jest jsdom），不进 agent-eval 冒烟；服务端一字未改（表格是既有 LLM 输出形态，只改展示层）
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-18 新增（issue #7235）：用户手机端实测黄金策表格裸 markdown；根因 = 两端最小 richText 解析器只认 `**粗体**` + 列表（#6346 落的口径），表格不在子集内（同一份实现的 B/C 两端各持一份，#6306 不建跨 App 共享模块 ⇒ 两端同批补）。取号 UI-126（`python3 scripts/next_case_id.py ui` 现取 = UI-126；候选集 = main ∪ 全部 open PR ∪ 本工作区）。PC 侧经核查**本就渲染**（react-markdown + remark-gfm）⇒ 本单补回归判据把守（#6346 挂的 remark-breaks 与表格同属换行敏感结构）。 ｜ tags: ui, chat, rich-text, table, bmini
 
 ### UI-085. 岗位 × 侧边栏菜单：种子权限集 × menu.ts 三条件 ⇒ 可见项逐值相等（岗位矩阵） 🔵
 ```
@@ -11887,15 +11919,15 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：814（活跃 135，跳过 679）
-- tier 分布：smoke 12 / normal 748 / adversarial 32
+- 用例总数：816（活跃 135，跳过 681）
+- tier 分布：smoke 12 / normal 750 / adversarial 32
 - 售后域：15
 - Agent 核心域：11
 - API 层域：21
 - 登录认证域：12
 - B 端小程序域：47
 - 分类域：3
-- 对话边界域：46
+- 对话边界域：47
 - 跨域：3
 - 客户域：12
 - 数据域：24
@@ -11913,7 +11945,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：125
+- 前端 UI 域：126
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -11941,6 +11973,7 @@
 - CH-032: C 端交互组件流式门控 + XML 伪代码兜底剥离—— 流式期间交互组件隐藏（防闪烁/防误点），历史残留 <interact>/```tool_call 伪代码块不展示
 - CH-046: 渠道欢迎语解析（元元）：四渠道默认文案 + 租户 botName 优先 + {bot_name} 占位符
 - CH-047: 页面上下文注入信封不得落库（切回会话时不得把内部提示当用户消息上屏）
+- CH-048: 黄金策回复不得暴露内部路由（后台「订单列表」页(/orders)）—— 源头话术去路由 + 出站清洗兜底 + 负控
 - DA-008: 智能每日经营简报：企业开关熔断（关闭=不生成+菜单隐藏，issue #3468）
 - DA-009: 智能每日经营简报：数字回填校验（LLM 编造即丢弃，issue #3468）
 - DA-010: 智能每日经营简报：PII 不进 prompt + RLS 隔离（issue #3468）
