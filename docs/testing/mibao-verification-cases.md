@@ -10004,7 +10004,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（122 case）
+## 前端 UI 域（123 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -11768,6 +11768,24 @@
 ```
 溯源: 2026-10-18 新增（issue #7176）。落码：`components/ui/FormPanel.tsx`（FormPanel / FormGrid / Field / FIELD_CONTROL）+ 三个受管面迁移 + 类级守卫 `design-system-form-fields.test.tsx` + 设计真值源 §9。取号：见文首注释。 ｜ tags: design-system, settings, form-field, ui
 
+### UI-125. 算料口径改「变更即保存」：删掉保存 / 恢复默认两个按钮，防抖 0.6 秒自动 PUT（422 逐条理由、草稿不回滚） 🔵
+```
+你: 用户 2026-10-18 裁定：「这里的两个按钮应该移除，一是不需要恢复默认功能，而是应该让用户在输入框变更后即保存，这样增加界面简洁程度提高了用户体验」
+期望: direct_reply
+数据: 判据 1·**全域零保存 / 恢复默认按钮与吸底条**（`calc-caliber-save` / `calc-caliber-restore-defaults` / `calc-caliber-save-dock` 取不到），且「没有保存按钮」这件事被写出来（「修改后自动保存（约 0.6 秒），无需手动提交」）。证据：frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx（判据 9·a）
+数据: 判据 2·**变更即保存 600ms**：改一个标量 ⇒ 599ms 时 0 次、600ms 后 `onCalcSave` 恰好 1 次；期间输入框**不**禁用。证据：同文件（判据 9·b）
+数据: 判据 3·**防抖合并**：窗口内连改两处 ⇒ 只发 1 次，正文带两处新值。证据：同文件（判据 9·c）
+数据: 判据 4·**首屏 / 读面刷新不写库**（基线 = 读面给的整份配置）：挂载后 5s 内 0 次；换一份新配置对象（页面读面落地同步草稿）后仍 0 次。证据：同文件（判据 9·d）
+数据: 判据 5·**在飞闸**：第 1 次未回来前再改两次 ⇒ 仍只有 1 次；回来后按最新草稿补发 1 次（不排队）。证据：同文件（判据 9·e）
+数据: 判据 6·**422 语义不变**：`details[].message` 逐条上屏、草稿不回滚（输入值仍在）、保存态「保存失败 · N 条理由」；改对后再改一次自动重试。证据：同文件（判据 9·f / f2）
+数据: 判据 7·**只读退化零请求**：不给保存回调（只给草稿回调）⇒ 5s 内 0 写请求、无保存态与自动保存说明。证据：同文件（判据 9·g）
+数据: 判据 8·**页面这一跳也是全量键**：`PUT` 正文逐键齐全（11 键），改的键是新值 —— 触发方式改为防抖自动保存。证据：frontend/admin-web/tests/unit/pages/settings.test.tsx（算料口径域保存）
+数据: 判据 9·**类级写面守卫口径不变**：域写面出口标记从保存按钮迁到保存态（`data-write-exit` 仍带 `calc`），逐域 traversal 与「写出口成对」判据仍绿。证据：frontend/admin-web/tests/unit/lib/domain-write-surface.test.tsx（判据 4 / 写出口成对）
+数据: **边界**：不碰后端、不改 422 理由结构；「恢复为默认值」**不给替代入口**（用户明确不要），引擎默认值仍由 `source` 徽标与「本企业尚未保存过算料口径」横幅承担；面板卸载（切域）时待发的那一次仍会发出。证据：同文件（判据 9·h）
+跳过: [backend-contract] 纯前端配置面（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-18 新增（issue #7183）。落码：`frontend/admin-web/src/components/settings/CalcCaliberPanel.tsx`（防抖自动保存 + 保存态 + 删保存条）+ 设置页注释同步。取号：见文首注释。 ｜ tags: settings, craft-calc, autosave, ui
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -11797,8 +11815,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：808（活跃 133，跳过 675）
-- tier 分布：smoke 12 / normal 742 / adversarial 32
+- 用例总数：809（活跃 133，跳过 676）
+- tier 分布：smoke 12 / normal 743 / adversarial 32
 - 售后域：15
 - Agent 核心域：11
 - API 层域：21
@@ -11823,7 +11841,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：122
+- 前端 UI 域：123
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -12128,4 +12146,5 @@
 - UI-120: 工序进度表**三态数量列**（合格 / 返工 / 报废）：返工报废不进进度、与「已完成数量」分列、缺报工渲染 0（issue #7140）
 - UI-121: 工人档案：质检页逐人开（新建弹窗「单独开放」一栏 + 列表行「开/关质检」）；默认页面不含质检、未收窄显示「默认页面」
 - UI-122: 配置面的字段只有一种写法：区块 = 浅底面板 + 标题 + 说明，字段 = 标签在上 + 控件满列 + 单位入框（共享原语 + 类级守卫）
+- UI-125: 算料口径改「变更即保存」：删掉保存 / 恢复默认两个按钮，防抖 0.6 秒自动 PUT（422 逐条理由、草稿不回滚）
 

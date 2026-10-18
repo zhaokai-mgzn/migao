@@ -436,9 +436,10 @@ export default function SettingsPage() {
 
             {activeDomain.key === 'calc' && (
               <div className="space-y-6">
-                {/* 算料口径 = 算料配置的**唯一写面**（issue #6825）：8 标量 + 档位 + 拼色 + 公式就地可改，
-                    保存出口全域只有一个。取数仍在本页（`load` 已读 `craft-calc-config`），
-                    草稿与写面分别由本页持有 / 提供 —— 设计判死线第 1 条：同一份配置不许两个入口。 */}
+                {/* 算料口径 = 算料配置的**唯一写面**（issue #6825）：8 标量 + 档位 + 拼色 + 公式就地可改。
+                    issue #7183 起**变更即保存**（面板内防抖 0.6 秒自动 `PUT`，没有保存按钮）——
+                    取数仍在本页（`load` 已读 `craft-calc-config`），草稿与写面分别由本页持有 / 提供
+                    —— 设计判死线第 1 条：同一份配置不许两个入口。 */}
                 <CalcCaliberPanel
                   calc={calc}
                   calcError={calcError}
