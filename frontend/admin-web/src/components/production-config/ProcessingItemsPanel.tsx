@@ -249,8 +249,8 @@ export default function ProcessingItemsPanel({
               size="sm"
               onClick={() => setCategoryOpen(true)}
               data-testid="processing-categories-open"
+              icon={<FolderTree className="h-4 w-4" />}
             >
-              <FolderTree className="mr-1.5 h-4 w-4" />
               加工分类（{categories.length}）
             </Button>
             <Button
@@ -259,8 +259,8 @@ export default function ProcessingItemsPanel({
               data-testid="processing-item-new"
               /* 域写面出口标记（issue #6825）：类级守卫要求「可编辑控件 + 本域写出口」成对出现 */
               data-write-exit="processing-items"
+              icon={<Plus className="h-4 w-4" />}
             >
-              <Plus className="mr-1.5 h-4 w-4" />
               新增加工项
             </Button>
           </div>

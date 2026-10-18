@@ -52,7 +52,8 @@ vi.mock('@/lib/api', () => ({
 }))
 
 import { toast } from 'sonner'
-import ProcessConfigPage from '@/app/(dashboard)/production/routings/page'
+// issue #7182：旧路由已下架（改成重定向）⇒ 测试直接渲染功能体，不借旧页当壳
+import ProcessConfigBoard from '@/components/production-config/ProcessConfigBoard'
 
 /** 三态齐备的工序库：实证 / 推算 / 占位待确认 各一道（`id` 与矩阵的 `variant_operation_id` 同源） */
 const CATALOG = {
@@ -91,7 +92,7 @@ const ok = (data: unknown) => ({ data: { success: true, data } })
 
 /** 打开某逻辑工序的「管理▸」抽屉（变体明细面 —— 原「工序库明细」折叠区的落点） */
 const openVariant = async (operation: string) => {
-  render(<ProcessConfigPage />)
+  render(<ProcessConfigBoard />)
   await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
   await userEvent.click(screen.getByTestId(`matrix-manage-${operation}`))
   await waitFor(() => expect(screen.getByTestId('operations-manage-drawer')).toBeInTheDocument())
@@ -160,7 +161,7 @@ const layersOf = (cells: any[]) => {
   })
 
   it('渲染真实数据：这一屏的价来自**价目读面**，元数据在抽屉里（反 placeholder）', async () => {
-    render(<ProcessConfigPage />)
+    render(<ProcessConfigBoard />)
     await waitFor(() => expect(screen.getByTestId('operation-price-matrix-total')).toHaveTextContent('3'))
 
     // 价：矩阵格（唯一价载体）
@@ -216,7 +217,7 @@ const layersOf = (cells: any[]) => {
   })
 
   it('工艺路线区渲染**新模型**的真实数据（总名 + 默认徽标；默认徽标不得写死）', async () => {
-    render(<ProcessConfigPage />)
+    render(<ProcessConfigBoard />)
     // issue #4482：路线内容在「工艺路线」tab 上（默认落在「工艺项」）
     await waitFor(() => expect(screen.getByTestId('process-config-tab-process')).toBeInTheDocument())
     await userEvent.click(screen.getByTestId('process-config-tab-process'))

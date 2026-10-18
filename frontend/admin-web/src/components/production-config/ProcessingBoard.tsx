@@ -116,8 +116,8 @@ export default function ProcessingBoard({ embedded = false }: { embedded?: boole
           onClick={refreshAll}
           disabled={itemsLoading || feesLoading}
           data-testid="processing-refresh"
+          icon={<RefreshCw className="h-4 w-4" />}
         >
-          <RefreshCw className={cn('mr-1.5 h-4 w-4', (itemsLoading || feesLoading) && 'animate-spin')} />
           刷新
         </Button>
       </div>

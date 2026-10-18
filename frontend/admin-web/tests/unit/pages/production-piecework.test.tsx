@@ -336,7 +336,8 @@ describe('计件报表页 未定价可见（issue #4696）', () => {
     expect(screen.getByTestId('piecework-unpriced-0')).toHaveTextContent('未定价')
     expect(screen.getByTestId('piecework-unpriced-pricing-link')).toHaveAttribute(
       'href',
-      '/production/routings',
+      // issue #7182：旧「工艺配置」页已下架 ⇒ 定价入口落到唯一写面（与按钮文案同源）
+      '/settings?domain=operation-prices',
     )
   })
 })
