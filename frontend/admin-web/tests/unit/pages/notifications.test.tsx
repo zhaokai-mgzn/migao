@@ -101,6 +101,21 @@ describe('NotificationsPage', () => {
   })
 
   /**
+   * 🔴 issue #7180（2026-10-18 用户报障，截图红框）：图标**不得再用叠置的双勾字形**。
+   *
+   * 病灶：`<CheckCheck />`（lucide 双勾 = 两条 path 叠在一起）在 16px 下被读成「两个图标重叠」。
+   * 判据钉在**字形**上（`lucide-check` vs `lucide-check-check`）：退回双勾 ⇒ 当场红。
+   */
+  it('全部标记已读的图标是单勾（不是叠置双勾）—— issue #7180', async () => {
+    render(<NotificationsPage />)
+    const btn = await screen.findByTestId('mark-all-read')
+    const icon = btn.querySelector('svg, [data-testid^="icon-"]') as HTMLElement | null
+    expect(icon, '按钮必须带图标').not.toBeNull()
+    expect(icon?.getAttribute('class') ?? '', '不得再用双勾字形（读成图标重叠）').not.toMatch(/check-check/i)
+    expect(icon?.getAttribute('class') ?? '', '图标是单勾').toMatch(/check/i)
+  })
+
+  /**
    * 🔴 issue #6669 第 5 条：修前「全部标记已读」**没有 in-flight 闸** —— 连点两次就发两次请求，
    * 商家看到的是随机的成功/失败。判据 = 请求**未落地期间**按钮 disabled，且第二次点击不发第二个请求。
    *

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, Check, CheckCheck, Inbox } from 'lucide-react'
+import { Bell, Check, Inbox } from 'lucide-react'
 import { notificationApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { Notification } from '@/types'
@@ -165,7 +165,8 @@ export default function NotificationBell() {
                 onClick={handleMarkAllAsRead}
                 className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 transition-colors"
               >
-                <CheckCheck className="w-3.5 h-3.5" />
+                {/* issue #7180：与通知中心页同一个字形收口（单勾；14px 下双勾更糊） */}
+                <Check className="w-3.5 h-3.5" aria-hidden />
                 全部已读
               </button>
             )}
