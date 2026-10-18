@@ -84,11 +84,15 @@ export default function SearchPanel({
         {fields.map((field) => (
           <div
             key={field.key}
-            className={cn('flex items-center gap-2 min-w-0', field.span === 2 && 'md:col-span-2')}
+            className={cn('flex items-center gap-3 min-w-0', field.span === 2 && 'md:col-span-2')}
           >
-            {/* 固定宽 + 右对齐（issue #5880 的口径）：`min-w` 只是下限、实际宽度仍随内容变
-                ⇒ 各格 label 宽度不同、行间起点参差。4.5em 装得下最长 label「下单时间」（4 个中文字）。 */}
-            <label className="text-sm text-neutral-600 whitespace-nowrap shrink-0 text-right w-[4.5em]">
+            {/* 定宽 + 右对齐（issue #5880 的口径）：`min-w` 只是下限、实际宽度仍随内容变
+                ⇒ 各格 label 宽度不同、行间起点参差。4.5em 装得下最长 label「下单时间」（4 个中文字）。
+                🔴 issue #7238（用户 2026-10-18 截图「这里太紧凑了」）：4.5em 只是**下限** ——
+                「姓名/手机号」是 5 个字符，纯定宽 + `whitespace-nowrap` 会让文字**溢出**定宽盒、
+                吃掉与控件之间的间隙 ⇒ 标签贴着输入框。`min-w-fit` 让长标签**把控件推远**，
+                4 字标签仍按 4.5em 对齐（两个诉求同时成立）。 */}
+            <label className="text-sm text-neutral-600 whitespace-nowrap shrink-0 text-right w-[4.5em] min-w-fit">
               {field.label}
             </label>
             <div className="flex-1 min-w-0">{field.control}</div>
