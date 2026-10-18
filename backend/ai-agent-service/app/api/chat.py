@@ -50,6 +50,8 @@ from app.context.page_registry import (
 from app.context.menu_navigator import build_proactive_push
 from app.utils.auth import get_current_user, UserIdentity
 import app.utils.error_incident as _err_inc
+# 内部路由清洗（issue #7236）：出站展示文案只写中文页面名，不得带前端路由
+from app.utils.route_hygiene import strip_internal_routes
 # 图片管线（URL 校验 / CDN 重写 / 文本提示）的**单一事实源**（issue #5321 包 1）：
 # 这段规则原先是本文件的三个私有函数，页面入口（建品页 / 建单页）无法独立使用
 # ⇒ 抽到 `app/vision/pipeline.py`，对话路径改为**调用它**（下面保留同名别名，
@@ -844,6 +846,20 @@ def _mask_for_customer(text: str, context) -> str:
         return text
 
 
+def _sanitize_outbound_text(text: str, context) -> str:
+    """**出站文本单一收口**：C 端脱敏 + 双端内部路由清洗（issue #7236）。
+
+    与 `_mask_for_customer` 的分工：脱敏只对 C 端（B 端客服要照实号码联系顾客），
+    内部路由清洗**双端都要**——商家同样看不懂技术路径原文（2026-10-18 实测：黄金策回复
+    『发货需要在后台「订单列表」页…找到该订单』把前端路由当成了展示文案）。追加这一层
+    **不改变**脱敏语义（先脱敏、后清洗；清洗只动前端路由 token，不动手机号掩码）。
+
+    清洗点必须在下发/落库**之前**：SSE 是边流边发，收尾再清追不上已经流出去的气泡；
+    落库侧在写前清洗 ⇒ 历史回放（读库）不会把路由再带出来。
+    """
+    return strip_internal_routes(_mask_for_customer(text, context))
+
+
 def _mask_card_for_customer(data: dict, context) -> dict:
     """**出站**卡片脱敏（issue #3379）：顾客看到的卡片字段脱敏，模型上下文保持原值。
 
@@ -1203,11 +1219,11 @@ async def _agent_stream_to_sse(
                                     _mask_card_for_customer(xml_payload, context))
                             clean = _strip_interact_xml(clean)
                             if clean:
-                                # ⚠️ 只脱敏**出站**（SSE），`full_response` 保持原值：
+                                # ⚠️ 只脱敏/清洗**出站**（SSE），`full_response` 保持原值：
                                 # 它是给**模型**看的上下文（下一轮还要用），脱敏会让模型
                                 # 以为顾客号码不完整（run 34736385849 实证：反过来问顾客要号码）。
                                 full_response.append(clean)
-                                yield SSEEvent.text(_mask_for_customer(clean, context))
+                                yield SSEEvent.text(_sanitize_outbound_text(clean, context))
 
                     elif response.type == "tool_call":
                         # Tool 调用通知（AgentExecutor 内部已处理执行）
@@ -1335,13 +1351,16 @@ async def _agent_stream_to_sse(
         import re
         assistant_content = "".join(full_response)
         assistant_content = re.sub(r"<think>[\s\S]*?</think>", "", assistant_content).strip()
+        # 内部路由清洗在**写库前**（issue #7236）：历史回放读的是这一行 —— 清洗晚于落库
+        # 就等于把路由原文永久写进会话记录（刷新/重开会话又上屏一次）。
+        assistant_content = strip_internal_routes(assistant_content)
         if not assistant_content:
             # LLM 未生成文本回复，进行容错降级
             if tool_calls_info:
                 assistant_content = "我已为您查询了相关信息，请查看上方的结果卡片。如需更多帮助请继续提问。"
             else:
                 assistant_content = "抱歉，我暂时无法生成回复，请稍后重试或联系人工客服。"
-            yield SSEEvent.text(_mask_for_customer(assistant_content, context))
+            yield SSEEvent.text(_sanitize_outbound_text(assistant_content, context))
 
         # 超时/异常时清除 tool_calls 元数据，避免泄漏到前端
         # （#4052：tool_results 与 tool_calls **逐项对齐**，必须一起清 ——
@@ -2695,7 +2714,9 @@ async def get_history(
             # C 端历史是**展示面**：顾客刷新页面走的就是这里回放（issue #3386）。
             # 出站脱敏此前只做在 SSE 流上 → 同一份对话「流上脱敏、历史里明文」两种口径。
             # 落库保持原文（模型下一轮/复核对账都要真号），脱敏只在这一层做。
-            "content": _mask_for_customer(
+            # 内部路由清洗同在此处（issue #7236）：新行写库前已清，这一层兜**存量旧行**
+            # （如 sess_742201cbf83f4f58）—— 存量数据不回写，但回放不得再带出。
+            "content": _sanitize_outbound_text(
                 _history_user_text(msg.get("role"), msg["content"]), current_user),
             "content_type": msg.get("content_type", "text"),
             "images": msg_images if msg_images else None,

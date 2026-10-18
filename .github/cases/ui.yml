@@ -2942,7 +2942,7 @@ cases:
 
   - id: UI-079
     legacy_id: ""
-    title: "黄金策对话「客户端打字机」：服务端整段下发 ⇒ 客户端按节奏揭示（真实事件序下逐字 / 单调不回退 / 收口替换不卡 / 有界收敛 / 历史·中断·减少动画立刻全文）"
+    title: "黄金策对话「客户端打字机」：服务端整段下发 ⇒ 客户端按节奏揭示（真实事件序下逐字 / 单调不回退 / 收口替换不卡 / 有界收敛 / 历史·中断·减少动画立刻全文）；PC 与**手机端（bmini）**同口径（issue #7235）"
     domains:
       - ui
       - frontend
@@ -2954,6 +2954,7 @@ cases:
       - streaming
       - typewriter
       - admin-web
+      - bmini
     truths_ref:
       - frontend-fix.mibao-client-typewriter
       - frontend-fix.vitest
@@ -2969,14 +2970,17 @@ cases:
       - "🔴 判据 4·**服务端不被改动（本单边界）**：本用例只判展示面 —— `git diff origin/main...HEAD -- backend/` 为空。执行点 = PR 的改动清单（本包零后端改动）"
       - "🔴 判据 5·**真实事件序下必须逐字（issue #7086）**：正文以**一个** `text` 事件整段到达、紧随 `done`（store 同批把 `isStreaming` 置假并落库）⇒ 结束之后**仍在逐字**（t 时刻可见字符数**严格少于**全长、且恒为全文前缀），最终 == 全长；且整段揭示**有界**（≤ TYPEWRITER_MAX_REVEAL_MS，长文自动加速、不无限拖尾）。执行点 = frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx「🔴 UI-079 真实事件序」+ frontend/admin-web/tests/unit/hooks/use-typewriter.test.tsx「🔴 UI-079-1 真实事件序」「UI-079-3 有界收敛」。类级元守卫 = tests/unit_ci_workflows/test_typewriter_reveal_not_lifecycle_bound.py（揭示层再读外部生命周期开关 / 真实事件序判据被摘掉 ⇒ 判红）"
       - "🔴 红证（改前实测）：本单落地前全仓 `grep -rn \"typewriter\\|useTypewriter\" frontend/admin-web/src` = 0 命中 ⇒ 组件测试 import 即失败；把 hook 换成直返全文（等效「无打字机」）⇒ 判据 1/2/3 的「中途可见 < 全长」「维持替换过程单调」「流式结束立刻等于全文」三条当场红（本机实测 3 failed / 6 passed）；把组件的 `data-revealed` 接入摘掉 ⇒ 组件侧两条红"
+      - "🔴 判据 6·**手机端（bmini）同口径执行点**（issue #7235）：同一组不变量在 frontend/bmini-app 上成立 —— 直播消息从 0 起逐字（t 时刻 `data-revealed` < 全长且恒为全文前缀）、结束之后仍逐字、历史回放 / 中断（`wasAborted`）/ 减少动画立刻全文、长文按上界有界收敛。执行点 = frontend/bmini-app/tests/chat-typewriter.test.tsx「UI-079 手机端打字机」6 条 + frontend/bmini-app/tests/store-chat.test.ts「stopStreaming 给被中断的消息打 wasAborted」（负控：已结束消息不打标记）"
       - "🔴 红证（#7086，2026-10-17 实测）：把实现回退到 origin/main（旧 hook 的 `instant = !streaming || …` + 组件传 `streaming: !!message.isStreaming`）⇒ 本用例 19 条里 **5 条红**，其中「真实事件序」的读数是 `expected 37 to be less than 37`（= done 之后第一次读数已是全长，一帧未播，与用户现场一致）；改后 19 条全绿。复算：`git stash push -- frontend/admin-web/src/hooks/use-typewriter.ts frontend/admin-web/src/components/chat/MessageList.tsx` ⇒ `cd frontend/admin-web && npx vitest run --dir tests/unit use-typewriter.test.tsx MessageList-typewriter.test.tsx` ⇒ `git stash pop`（回退后 5 红、恢复后 19 绿，本机 2026-10-17 复算）"
     skip_reason: "[backend-contract] 纯前端揭示层（服务端一字未改：仍整段下发）由 vitest（jsdom）执行，不进入 agent-eval 冒烟；LLM 行为面不变，故无 agent 用例"
     precondition: "本用例是 [backend-contract] 纯前端用例：前置由单测自建 —— frontend/admin-web/tests/unit/hooks/use-typewriter.test.tsx 用 `vi.useFakeTimers()` 直接驱动 hook 的揭示时钟；frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx `vi.mock('@/store/chat')` 注入带 `isStreaming/tool_calls` 的消息夹具。前置不成立时单测直接红（找不到 `data-revealed` / 找不到文案），不依赖共享夹具；agent-eval 栈不跑它"
-    merge_log: "2026-10-02 新增（issue #5952）：黄金策对话从「服务端整段下发、界面一次性刷出」改为「客户端按节奏揭示」（用户同日裁定「选 2」）。服务端真逐字**有意不做**（节点级 astream + finalize_turn 后置收口 + C 端跨片脱敏三重结构性冲突，见 user_inputs）。取号 UI-079（现取 ui.yml 最大 = UI-078 的下一号）。 ｜ 2026-10-17 改判 + 新增判据 5（issue #7086）：用户现场「电脑端就是一次性返回，不是打字效果」⇒ 根因 = 判据 3 原文的「流式结束（isStreaming=false）⇒ 立刻全文」把揭示窗口压成 ≈ 0（正文整段到达 + 紧随 done）；判据 3 收窄为「立刻收敛只对非直播面」，新增判据 5 钉真实事件序 + 有界收敛。原判据 3 的「组件卸载 ⇒ 立刻全文」一条按实现事实移除（卸载后无可见面；另有「定时器被清掉、无状态更新」的泄漏判据留在 hook 文件）。"
+    merge_log: "2026-10-02 新增（issue #5952）：黄金策对话从「服务端整段下发、界面一次性刷出」改为「客户端按节奏揭示」（用户同日裁定「选 2」）。服务端真逐字**有意不做**（节点级 astream + finalize_turn 后置收口 + C 端跨片脱敏三重结构性冲突，见 user_inputs）。取号 UI-079（现取 ui.yml 最大 = UI-078 的下一号）。 ｜ 2026-10-17 改判 + 新增判据 5（issue #7086）：用户现场「电脑端就是一次性返回，不是打字效果」⇒ 根因 = 判据 3 原文的「流式结束（isStreaming=false）⇒ 立刻全文」把揭示窗口压成 ≈ 0（正文整段到达 + 紧随 done）；判据 3 收窄为「立刻收敛只对非直播面」，新增判据 5 钉真实事件序 + 有界收敛。原判据 3 的「组件卸载 ⇒ 立刻全文」一条按实现事实移除（卸载后无可见面；另有「定时器被清掉、无状态更新」的泄漏判据留在 hook 文件）。 ｜ 2026-10-18 扩执行点（issue #7235）：手机端 bmini 此前**全仓零 `typewriter` 命中** ⇒ 后端整段下发时商家看到「一次性刷出」；本单按 PC 同口径补 `frontend/bmini-app/src/hooks/use-typewriter.ts` + `MessageBubble` 接入 `data-revealed`，并给「用户中断」补 `Message.wasAborted`（stopStreaming 打标）⇒ 判据 6 新增；红证 = 实现退回 origin/main 后本用例执行点 **2 suites failed / 7 failed（chat-typewriter 6 + store-chat 1）/ 21 passed**。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/hooks/use-typewriter.test.tsx"
         - "frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx"
+        - "frontend/bmini-app/tests/chat-typewriter.test.tsx"
+        - "frontend/bmini-app/tests/store-chat.test.ts"
       ci:
         - pr-check.yml
       verifies: []
@@ -3170,6 +3174,48 @@ cases:
         - "frontend/admin-web/tests/unit/components/chat-soft-breaks.test.tsx"
         - "frontend/bmini-app/tests/chat-rich-text.test.ts"
         - "frontend/bmini-app/tests/chat-rich-text-render.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: UI-126
+    legacy_id: ""
+    title: "手机端（B 端黄金策 / C 端元元）助手消息的 **GFM 表格**渲染 —— 表格成组件（窄屏可横滑 / 表头-数据行逐格 / 列数按分隔行）+ PC 端同族回归判据（用户 2026-10-18 手机端实测：一排 `|---|`）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - ui
+      - chat
+      - rich-text
+      - table
+      - bmini
+    truths_ref:
+      - frontend-fix.no-api-change
+    user_inputs:
+      - "用户 2026-10-18 逐字：「手机端的黄金策返回的表格样式没有正常渲染，还是原声markdown」（原声 = 原生 / raw）；同一句里要求「顺便把pc端的也一起检查下」"
+      - "同一轮的 DB 证据（session_messages，session sess_742201cbf83f4f58）：assistant 正文逐字含 `| 工单号 | 关联订单 | 客户 | 类型 | 状态 | 优先级 | 创建时间 |` 与 `|---|---|---|---|` —— 黄金策的清单类回复大量使用 GFM 表格，手机端把这排竖线原样上屏"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·**解析口径（B/C 两端同口径）**：表头行 + 分隔行（列数一致）⇒ 一个 table 块（header / align / rows 逐值）；列数按分隔行定（数据行缺格补空、多格截断）；单元格内 `**粗体**` 仍解析；空行结束表格；首尾竖线可省略。执行点 = frontend/bmini-app/tests/chat-rich-text-table.test.ts（9 条）与 frontend/mini-app/tests/message-bubble-table.test.tsx"
+      - "判据 2·**流式安全负控**：只有表头、分隔行还没到 ⇒ 仍是普通文本（不闪半张表）；普通句子里的 `a | b` 不判成表格；**揭示期（打字机逐字中）尾部未成表的行先不画** —— 表头到了、分隔行没到 ⇒ DOM 里没有裸 `|`（旧形态会闪一两百毫秒裸管道符）。执行点 = 同上两个文件 + frontend/bmini-app/tests/chat-typewriter.test.tsx 判据 ⑦"
+      - "判据 3·**渲染**：`.message-bubble__table` 在场、DOM 文本零字面 `|` / `---`；表头 3 格 + 数据行 N 行且列数不错位；包在 `scrollX` 容器里（窄屏可横滑）；有表格的气泡放宽到 94%。执行点 = frontend/bmini-app/tests/chat-table-render.test.tsx（6 条）+ frontend/mini-app/tests/message-bubble-table.test.tsx"
+      - "判据 4·**PC 同族核查**（用户要求「顺便检查 PC」）：admin-web 走 react-markdown + remark-gfm ⇒ 同一段表格渲染出 `<table>` / `<th>` / `<td>`，且 remark-breaks 在场时仍成表（不折成 `<br>` 裸文本）、对齐标记不错位。执行点 = frontend/admin-web/tests/unit/components/chat-markdown-table.test.tsx（5 条）"
+      - "判据 5·**类级元守卫（两端同口径）**：同一组语料（含单列表格）喂给两端解析器，输出必须**逐值相等**（`toEqual`），且语料自证「lines 与 table 两种块都出现」（防两边都空 ⇒ 相等假绿）。判据 = frontend/mini-app/tests/chat-rich-text-parity.test.ts（3 条；放在 C 端腿里跑 —— 避免 bmini 腿跨目录依赖 C 端源码而污染本地门禁矩阵的触发面）。判别力自证：只改 C 端一处口径（单列表格判定加 `header.length > 1`）⇒ 该条当场红（`1 failed / 2 passed`）；还原 ⇒ 3 passed。这条防的正是本缺陷的**类**：两份本地实现「一端修、一端漏」（UI-042 漏 B 端 → #6346；#7235 若只修 B 端则 C 端继续裸奔）。另有**接线普查**类级守卫 tests/unit_ci_workflows/test_chat_richtext_surface_guard.py 判据 2：每个小程序气泡包必须引用 `parseRichContent` 且渲染 `message-bubble__table`（摘掉表格组件 ⇒ 红）"
+      - "🔴 红证（改前实测，migao-dev-flow §28.1 出口① 临时反转）：把两端实现退回 origin/main（`git stash push -- src/utils/richText.ts src/components/chat/MessageBubble.tsx`，在 frontend/bmini-app 下）⇒ 表格两条执行点 **2 suites failed / 5 failed / 1 passed**（`chat-rich-text-table` 因 `parseRichContent` 不存在整 suite 失败；`chat-table-render` 的 ①③⑤⑥ 红、负控 ④ 仍绿）；恢复后两文件 **15/15 全绿**。PC 侧判别力自证：摘掉 `remarkGfm` ⇒ 判据 4 的 `<table>` 零命中当场红"
+    skip_reason: "[backend-contract] 纯前端渲染（vitest / jest jsdom），不进 agent-eval 冒烟；服务端一字未改（表格是既有 LLM 输出形态，只改展示层）"
+    precondition: "两端 jest 夹具自建消息对象（role='assistant' + 带表格的 content），PC 侧 vi.mock('@/store/chat') 注入消息、**不 mock** react-markdown（判据打在真实渲染管线上）"
+    merge_log: "2026-10-18 新增（issue #7235）：用户手机端实测黄金策表格裸 markdown；根因 = 两端最小 richText 解析器只认 `**粗体**` + 列表（#6346 落的口径），表格不在子集内（同一份实现的 B/C 两端各持一份，#6306 不建跨 App 共享模块 ⇒ 两端同批补）。取号 UI-126（`python3 scripts/next_case_id.py ui` 现取 = UI-126；候选集 = main ∪ 全部 open PR ∪ 本工作区）。PC 侧经核查**本就渲染**（react-markdown + remark-gfm）⇒ 本单补回归判据把守（#6346 挂的 remark-breaks 与表格同属换行敏感结构）。"
+    traces:
+      tests:
+        - "frontend/bmini-app/tests/chat-rich-text-table.test.ts"
+        - "frontend/bmini-app/tests/chat-table-render.test.tsx"
+        - "frontend/mini-app/tests/chat-rich-text-parity.test.ts"
+        - "tests/unit_ci_workflows/test_chat_richtext_surface_guard.py"
+        - "frontend/mini-app/tests/message-bubble-table.test.tsx"
+        - "frontend/admin-web/tests/unit/components/chat-markdown-table.test.tsx"
       ci:
         - pr-check.yml
       verifies: []

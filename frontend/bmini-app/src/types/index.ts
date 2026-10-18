@@ -78,6 +78,11 @@ export interface Message {
   content_type?: 'text' | 'mixed'
   images?: string[]
   isStreaming?: boolean
+  /**
+   * 用户主动中断（issue #7235）：客户端打字机据此**立刻显示全文**，
+   * 不把已经到达的尾巴继续慢慢打完（与 PC `ChatMessage.wasAborted` 同口径）。
+   */
+  wasAborted?: boolean
   cardData?: CardData
   cards?: CardData[]
   toolCall?: ToolCallData
