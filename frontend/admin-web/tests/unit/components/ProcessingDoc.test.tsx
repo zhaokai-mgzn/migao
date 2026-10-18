@@ -194,7 +194,6 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
       <ProcessingDoc
         order={buildOrder()}
         processingOrder={buildProcessingOrder()}
-        qrValue="PO260926-0007"
       />
     )
     const text = doc()?.textContent || ''
