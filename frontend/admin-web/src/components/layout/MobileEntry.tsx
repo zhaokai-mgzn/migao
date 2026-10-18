@@ -13,8 +13,8 @@
  * ## 形态（§31 P1 常驻面克制）
  *
  * 顶栏常驻面只多**一个图标**（`< lg` 不显示 —— 手机自己扫自己没意义）；二维码**点开才画**，
- * 弹层要点外部才收起。设置页「企业信息」域里保留**一行**入口（地址 + 复制 + 显示二维码），
- * 方便按「设置」这个心智模型找过来的人。两处共用 `MobileEntryPanel` ⇒ **二维码只渲染一处**。
+ * 弹层要点外部才收起。**全站只有这一处入口**（issue #7212：设置页「企业信息」域里那一行也移除 ——
+ * 用户逐字「这块直接移除吧，已经迁移到右上角了」）。
  *
  * ## 判据（别把这里读成"文档承诺"）
  *
@@ -30,7 +30,7 @@ import { Button } from '@/components/ui'
 import { getBminiH5Url } from '@/lib/bmini-h5-url'
 import { cn } from '@/lib/utils'
 
-/** 地址 + 复制动作（顶栏与设置页共用；复制失败不抛未捕获异常 —— jsdom / 非安全上下文没有 clipboard）。 */
+/** 地址 + 复制动作（只由顶栏使用；复制失败不抛未捕获异常 —— jsdom / 非安全上下文没有 clipboard）。 */
 function useMobileEntry() {
   const bminiH5Url = getBminiH5Url()
   const copy = async () => {
@@ -59,7 +59,7 @@ function useClickOutside(open: boolean, close: () => void) {
 }
 
 /**
- * 二维码面板 —— **全站唯一的渲染处**（顶栏弹层 / 设置页弹层共用）。
+ * 二维码面板 —— **全站唯一的渲染处**（只由顶栏弹层使用）。
  * 结构层判据（单源守卫）读的就是这段三元：有值才画码，无值只说「未配置」。
  */
 export function MobileEntryPanel({ className }: { className?: string }) {
@@ -111,36 +111,6 @@ export default function MobileEntryHeader() {
         <span className="hidden text-sm xl:block">手机端</span>
       </button>
       {open && <MobileEntryPanel className="absolute right-0 top-full z-50 mt-2" />}
-    </div>
-  )
-}
-
-/** 设置页「企业信息」域里的一行入口：地址 + 复制链接 + 显示二维码（不再摆 112px 大码块）。 */
-export function MobileEntryInline() {
-  const { bminiH5Url, copy } = useMobileEntry()
-  const [open, setOpen] = useState(false)
-  const close = useCallback(() => setOpen(false), [])
-  const ref = useClickOutside(open, close)
-
-  if (!bminiH5Url) {
-    // 未配置 ⇒ 交给共享面板（同一句「未配置」只说一处，不在这里写第二份）
-    return <MobileEntryPanel className="w-full border-0 p-0 shadow-none" />
-  }
-
-  return (
-    <div className="relative" ref={ref}>
-      <div className="flex flex-wrap items-center gap-2">
-        <code className="text-xs text-neutral-700 break-all" data-testid="bmini-h5-url">
-          {bminiH5Url}
-        </code>
-        <Button variant="secondary" size="sm" onClick={copy}>
-          复制链接
-        </Button>
-        <Button variant="secondary" size="sm" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-          显示二维码
-        </Button>
-      </div>
-      {open && <MobileEntryPanel className="absolute left-0 top-full z-40 mt-2" />}
     </div>
   )
 }
