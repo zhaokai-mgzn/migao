@@ -118,9 +118,12 @@ export default function EmployeesPage() {
 
   // 从 menuTree 中提取 code → 中文 label 的映射 + 叶子节点总数
   //
-  // 🔴 2026-10-18（用户截图：「权限」列出现 `dashboard:view` 英文码）：改前**只扫 children**，
-  // 而「经营看板」自 issue #7087 起是**顶层独立项**（`MenuController` 顶层的 `new MenuNode("dashboard:view", …)`）
+  // 🔴 2026-10-18（用户截图：「权限」列出现英文权限码）：改前**只扫 children**，
+  // 而「经营看板」自 issue #7087 起是**顶层独立项**（`MenuController` 顶层直接构造的菜单节点）
   // ⇒ 这类码没有中文名，权限列回退成内部码上屏（§31 P3「不摆内部标识」）。
+  // ⚠️ 本条注释**不写出那个码**：它是 `AdminGate.ADMIN_PERMISSION_CODES` 的成员，而该集合要求
+  //    前端**任一文件至多出现 1 个成员**（`tests/unit_ci_workflows/test_mibao_chat_gate.py` 判据 ②）
+  //    —— 本页已有 `employee:create` 这类码，再写一个就红。
   // 顶层独立项与组内项一样是**可勾选的叶子**（`TreeCheckbox` 对无 children 的节点取自身 code），
   // 所以它们同时进 labelMap 与叶子计数 —— 两处口径必须同源，否则「全部权限」徽章会算错。
   const { permissionLabelMap, totalLeafCount } = useMemo(() => {
@@ -162,7 +165,7 @@ export default function EmployeesPage() {
    * 手机端可见面由**同一批权限码**派生（issue #6570「走 B」/ #6574 / #6759）—— 服务端在
    * `GET /api/admin/menus` 的节点上把「权限码 → 手机端面中文名」标注下发，这里只**收表**，
    * 不自建映射（判据 = `tests/unit_ci_workflows/test_mobile_surface_annotation_single_source.py`）。
-   * 🔴 必须扫**整棵树**（含顶层独立项）：`dashboard:view`（手机端底栏「数据」）就挂在顶层。
+   * 🔴 必须扫**整棵树**（含顶层独立项）：「经营看板」（手机端底栏「数据」）就挂在顶层。
    */
   const mobileMenuEntries = useMemo(
     () => Object.entries(mobileTitlesByCodeFromTree(menuTree)),
