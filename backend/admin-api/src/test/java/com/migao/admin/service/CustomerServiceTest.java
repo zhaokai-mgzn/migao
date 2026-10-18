@@ -506,25 +506,23 @@ class CustomerServiceTest {
                 .sourceChannel("wechat_mini")
                 .build();
 
-        when(customerProfileMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
-        when(customerProfileMapper.insert(any(CustomerProfile.class))).thenAnswer(invocation -> {
-            CustomerProfile p = invocation.getArgument(0);
-            p.setId("cust-new");
-            return 1;
-        });
+        // issue #7257：写面收口到 CustomerProfileWriter（findFirstByPhone → insertIgnoreByPhone）
+        when(customerProfileMapper.findFirstByPhone(eq(1L), anyString())).thenReturn(null);
+        when(customerProfileMapper.insertIgnoreByPhone(any(CustomerProfile.class))).thenReturn(1);
 
         // when
         CustomerProfile result = customerService.createCustomer(newProfile);
 
         // then
         assertThat(result).isNotNull();
-        assertThat(result.getId()).isEqualTo("cust-new");
+        assertThat(result.getId()).as("id 由写面生成").isNotBlank();
         assertThat(result.getVipLevel()).isEqualTo("normal");
         assertThat(result.getCustomerStatus()).isEqualTo("active");
         assertThat(result.getLifecycleStage()).isEqualTo("new");
         assertThat(result.getTotalOrders()).isEqualTo(0);
         assertThat(result.getTotalConsumption()).isEqualByComparingTo(java.math.BigDecimal.ZERO);
-        verify(customerProfileMapper).insert(any(CustomerProfile.class));
+        verify(customerProfileMapper).insertIgnoreByPhone(any(CustomerProfile.class));
+        verify(customerProfileMapper, never()).insert(any(CustomerProfile.class));
     }
 
     @Test
@@ -537,7 +535,7 @@ class CustomerServiceTest {
                 .wechatNickname("新客户")
                 .build();
 
-        when(customerProfileMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProfile);
+        when(customerProfileMapper.findFirstByPhone(eq(1L), anyString())).thenReturn(testProfile);
 
         // when & then
         assertThatThrownBy(() -> customerService.createCustomer(newProfile))
@@ -550,13 +548,9 @@ class CustomerServiceTest {
     @Test
     @DisplayName("从会话创建客户 - 新客户，自动创建")
     void createFromSession_NewCustomer() {
-        // given: openid 不存在
-        when(customerProfileMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
-        when(customerProfileMapper.insert(any(CustomerProfile.class))).thenAnswer(invocation -> {
-            CustomerProfile p = invocation.getArgument(0);
-            p.setId("cust-session-new");
-            return 1;
-        });
+        // given: openid 不存在（issue #7257：findFirstByOpenid 未命中 ⇒ 条件插入命中）
+        when(customerProfileMapper.findFirstByOpenid(eq(1L), anyString())).thenReturn(null);
+        when(customerProfileMapper.insertIgnoreByOpenid(any(CustomerProfile.class))).thenReturn(1);
 
         // when
         CustomerProfile result = customerService.createFromSession(1L, "openid_new", "新客户昵称", "wechat_mini");
@@ -567,15 +561,16 @@ class CustomerServiceTest {
         assertThat(result.getWechatNickname()).isEqualTo("新客户昵称");
         assertThat(result.getSourceChannel()).isEqualTo("wechat_mini");
         assertThat(result.getVipLevel()).isEqualTo("normal");
-        verify(customerProfileMapper).insert(any(CustomerProfile.class));
+        verify(customerProfileMapper).insertIgnoreByOpenid(any(CustomerProfile.class));
+        verify(customerProfileMapper, never()).insert(any(CustomerProfile.class));
     }
 
     @Test
     @DisplayName("从会话创建客户 - 已存在，更新最后活跃时间")
     void createFromSession_ExistingCustomer() {
-        // given: openid 已存在
-        when(customerProfileMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProfile);
-        when(customerProfileMapper.updateById(any(CustomerProfile.class))).thenReturn(1);
+        // given: openid 已存在 ⇒ 只刷新最后活跃时刻（条件写，不整实体回写）
+        when(customerProfileMapper.findFirstByOpenid(eq(1L), anyString())).thenReturn(testProfile);
+        when(customerProfileMapper.touchLastActiveAt(anyLong(), anyString())).thenReturn(1);
 
         // when
         CustomerProfile result = customerService.createFromSession(1L, "openid_123", null, null);
@@ -583,7 +578,8 @@ class CustomerServiceTest {
         // then
         assertThat(result).isNotNull();
         assertThat(result.getId()).isEqualTo("cust-001");
-        verify(customerProfileMapper).updateById(any(CustomerProfile.class));
+        verify(customerProfileMapper).touchLastActiveAt(1L, "cust-001");
+        verify(customerProfileMapper, never()).updateById(any(CustomerProfile.class));
         verify(customerProfileMapper, never()).insert(any(CustomerProfile.class));
     }
 
@@ -593,12 +589,8 @@ class CustomerServiceTest {
     @DisplayName("从订单创建客户 - 新客户，自动建档")
     void createFromOrder_NewCustomer() {
         // given: 手机号不存在
-        when(customerProfileMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
-        when(customerProfileMapper.insert(any(CustomerProfile.class))).thenAnswer(invocation -> {
-            CustomerProfile p = invocation.getArgument(0);
-            p.setId("cust-order-new");
-            return 1;
-        });
+        when(customerProfileMapper.findFirstByPhone(eq(1L), anyString())).thenReturn(null);
+        when(customerProfileMapper.insertIgnoreByPhone(any(CustomerProfile.class))).thenReturn(1);
 
         // when
         CustomerProfile result = customerService.createFromOrder(1L, "李四", "13600136000", "浙江省杭州市");
@@ -609,7 +601,7 @@ class CustomerServiceTest {
         assertThat(result.getSourceChannel()).isEqualTo("order");
         assertThat(result.getTotalOrders()).isEqualTo(1);
         assertThat(result.getAgentNotes()).contains("首单收货地址：");
-        verify(customerProfileMapper).insert(any(CustomerProfile.class));
+        verify(customerProfileMapper).insertIgnoreByPhone(any(CustomerProfile.class));
     }
 
     @Test
@@ -621,22 +613,23 @@ class CustomerServiceTest {
         // then
         assertThat(result).isNull();
         verify(customerProfileMapper, never()).insert(any(CustomerProfile.class));
-        verify(customerProfileMapper, never()).selectOne(any(LambdaQueryWrapper.class));
+        verify(customerProfileMapper, never()).findFirstByPhone(anyLong(), anyString());
     }
 
     @Test
     @DisplayName("从订单创建客户 - 手机号已存在，刷新活跃时间")
     void createFromOrder_ExistingCustomer() {
-        // given: 手机号已存在
-        when(customerProfileMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testProfile);
-        when(customerProfileMapper.updateById(any(CustomerProfile.class))).thenReturn(1);
+        // given: 手机号已存在 ⇒ 只刷新最后活跃时刻
+        when(customerProfileMapper.findFirstByPhone(eq(1L), anyString())).thenReturn(testProfile);
+        when(customerProfileMapper.touchLastActiveAt(anyLong(), anyString())).thenReturn(1);
 
         // when
         CustomerProfile result = customerService.createFromOrder(1L, null, "13800138000", null);
 
         // then
         assertThat(result).isNotNull();
-        verify(customerProfileMapper).updateById(any(CustomerProfile.class));
+        verify(customerProfileMapper).touchLastActiveAt(1L, "cust-001");
+        verify(customerProfileMapper, never()).updateById(any(CustomerProfile.class));
         verify(customerProfileMapper, never()).insert(any(CustomerProfile.class));
     }
 }
