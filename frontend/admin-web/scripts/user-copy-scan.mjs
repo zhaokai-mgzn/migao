@@ -538,7 +538,10 @@ export const EXEMPT = [
   // 各加一段）⇒ placeholder 由 455 推到 **495**，本条同步改号（同样只是位置变更；
   // 本条豁免的「岗位编码示例」文案一字未动）。
   // 🔴 合并后（#7087 的 +12 与 #7111 的 +28 同时落地）⇒ 现取 = **507**，本条随现值。
-  'src/app/(dashboard)/roles/page.tsx:652',
+  // 🔴 issue #7266：本页「手机端默认菜单」的收表改走共享实现 `mobileTitlesByCodeFromTree`
+  // （删掉页内 13 行的手写循环，净 -6 行）⇒ placeholder 由 652 推到 **646**，本条同步改号
+  // （纯位置变更；本条豁免的文案与判据一字未动）。
+  'src/app/(dashboard)/roles/page.tsx:646',
 ]
 
 /**
