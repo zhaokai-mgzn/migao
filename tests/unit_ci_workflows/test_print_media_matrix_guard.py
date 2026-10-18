@@ -1,4 +1,4 @@
-# case_ids: UI-061, UI-062, UI-063
+# case_ids: UI-040, UI-061, UI-062, UI-063
 """打印**介质矩阵**守卫（issue #5651）—— 让「又一个 A4 模板」式蔓延进不来。
 
 ## 病根（实测，不是推断）
@@ -18,6 +18,8 @@
 | C4 | **待实测登记必须存在**：非 `measured` 的介质要有非空 `pendingMeasurements`（且 ≥3 条） | 删掉三联纸的 `pendingMeasurements` ⇒ 红 |
 | C5 | **单份字段映射**：每张单据的列清单（有序标签串）在 `src/**` 里**恰好出现在一个文件** | 把销售单的列清单复制一份（如「A4 版」）⇒ 红 |
 | C6 | 注入式红证 + **内容指纹**自证（禁 mtime / size，issue #4260） | 注入未生效 ⇒ 红（红证自己是空断言） |
+| C8 | **纸面不印工序清单**（issue #7274：用户逐字「工序细节不用在打印单上，移除掉工序相关的表格信息」） | 把工序清单（`operationsByItem` / `OPERATIONS_DOC_COLUMNS` / `processing-doc-operation`）接回任一受管打印单据 ⇒ 红 |
+| C9 | **发货单「加工项」是一行、不是表格**（issue #7275：用户逐字「加工项表格应该用一行表达…比如改成a+b+c这样？」） | 退回逐项两列表（出现 `<DocTh>加工项</DocTh>` / 去掉 `shipment-processing-items` 锚点）⇒ 红 |
 
 ⚠️ **判据按「去注释后的代码」判定**：各单据的文件头都**用注释解释**这些坑（会写出反例），
 按原文判定会把解释性注释判成违规 = 假红。故本文件自带字符串感知的注释剥离器。
@@ -500,3 +502,121 @@ def test_c7_paper_identity_and_freight_go_through_the_single_reader():
         "走词表的写法被判红 ⇒ C7 会把合规实现喂红（假红）"
     )
 
+
+
+# ── C8：纸面**不印**工序清单（issue #7274）─────────────────────────────────────
+#
+# 用户 2026-10-18 逐字「工序细节不用在打印单上，移除掉工序相关的表格信息」。issue #6901 曾把
+# 逐道工序（显示名 / 应做 / 状态）印进加工单纸面 ⇒ 本单整块移除。工序清单是**执行细节**：
+# 车间按它干活，客户纸面不需要；纸面只留商品 + 工艺。
+# 判据把「接回去」这条路径钉死：任一受管打印单据**代码**（去注释后）出现工序清单的任何一环 ⇒ 红。
+# ⚠️ 判据按**去注释后的代码**判定 —— 文件头会解释这块被移除的来龙去脉（含 `operations` 之类字样），
+# 按原文判会把解释性注释判成违规（假红）。
+
+#: 「纸面接入工序清单」的形态标记（任一命中即红）：
+#: ① 索引 / 状态文案读取口 ② 列清单 ③ 纸面 DOM 锚点 ④ 显示名口径（纸面专用取数）
+OPERATION_PRINT_MARKERS: tuple[str, ...] = (
+    "operationsByItem(",
+    "OPERATIONS_DOC_COLUMNS",
+    "processing-doc-operation",
+    "operationDisplayName(",
+)
+
+
+def _operation_print_problems(rel: str, code: str) -> list[str]:
+    return [
+        f"`{rel}` 仍把工序清单接在纸面上（命中 `{marker}`）—— "
+        "工序细节不上纸（issue #7274）；工序在屏幕加工单块 / 工人扫码面呈现"
+        for marker in OPERATION_PRINT_MARKERS
+        if marker in code
+    ]
+
+
+def test_c8_paper_must_not_carry_the_operation_list():
+    """C8：受管打印单据的**纸面代码**不得接入工序清单（接回 ⇒ 红）。"""
+    problems: list[str] = []
+    for rel, _media in PRINT_DOCS:
+        problems += _operation_print_problems(rel, _strip_comments(_read(rel)))
+    assert problems == [], "工序细节被接回了纸面（issue #7274）：\n  " + "\n  ".join(problems)
+
+    # ── 判别力自证（内存注入，不碰真文件）：修前写法必须判红、修后写法必须判绿 ──
+    before = "<td>{operationDisplayName(op)}</td>"
+    assert _operation_print_problems("(合成样本·修前)", before), (
+        "修前写法（纸面印工序显示名）**没判红** ⇒ C8 是空判据"
+    )
+    after = "const sku = orderItemSku(item); <DocTd>{sku.name}</DocTd>"
+    assert _operation_print_problems("(合成样本·修后)", after) == [], (
+        "不含工序的纸面写法被判红 ⇒ C8 会把合规实现喂红（假红）"
+    )
+    # 反向自证：解释性注释不得被当成违规（判据读的是去注释后的代码）
+    commented = "// 纸面曾有 OPERATIONS_DOC_COLUMNS / processing-doc-operation（issue #6901）\n"
+    assert _operation_print_problems("(合成样本·注释)", _strip_comments(commented)) == [], (
+        "解释性注释被判红 ⇒ C8 未剥注释，会逼人删掉解释（假红）"
+    )
+
+
+# ── C9：发货单「加工项」是一行，不是表格（issue #7275）──────────────────────────
+#
+# 用户 2026-10-18 逐字「加工项表格应该用一行表达，这样节省空间，比如改成a+b+c这样？」。
+# 判据钉两条形态（缺一即红）：① 一行锚点 `data-testid="shipment-processing-items"` 在；
+# ② 逐项表头 `<DocTh>加工项</DocTh>` 不在（= 没有退回两列表）。
+
+#: 发货单（「加工项」一行的承载体）
+SHIPMENT_DOC = "frontend/admin-web/src/components/orders/ShipmentDoc.tsx"
+#: 一行的 DOM 锚点（实例判据 `ShipmentDoc.test.tsx` 也认它）
+SHIPMENT_PROCESSING_LINE_ANCHOR = 'data-testid="shipment-processing-items"'
+#: 退回逐项表格的形态（表头格）
+SHIPMENT_PROCESSING_TABLE_HEAD = "<DocTh>加工项</DocTh>"
+#: 同一行区块里必须同时有的两样真值（防「锚点在、内容被掏空」的假绿）：
+#: ① 逐项渲染模板（`名称×数量`）② 加工费合计标签（仍与逐项同一行区块）
+SHIPMENT_PROCESSING_ITEM_TEMPLATE = "{item.name}×"
+SHIPMENT_PROCESSING_FEE_LABEL = "加工费合计（元）"
+
+
+def _shipment_processing_line_problems(rel: str, code: str) -> list[str]:
+    problems: list[str] = []
+    if SHIPMENT_PROCESSING_LINE_ANCHOR not in code:
+        problems.append(
+            f"`{rel}` 找不到「加工项一行」锚点 {SHIPMENT_PROCESSING_LINE_ANCHOR} —— "
+            "加工项被改回表格 / 锚点被删（issue #7275）"
+        )
+    if SHIPMENT_PROCESSING_TABLE_HEAD in code:
+        problems.append(
+            f"`{rel}` 又把加工项写回表格（命中 `{SHIPMENT_PROCESSING_TABLE_HEAD}`）—— "
+            "加工项必须是一行 `名称×数量 + …`（issue #7275）"
+        )
+    if SHIPMENT_PROCESSING_ITEM_TEMPLATE not in code:
+        problems.append(
+            f"`{rel}` 找不到逐项渲染模板 `{SHIPMENT_PROCESSING_ITEM_TEMPLATE}` —— "
+            "「一行」里必须逐项印 `名称×数量`（只剩名字 = 把送货核对的米数丢了；issue #7275）"
+        )
+    if SHIPMENT_PROCESSING_FEE_LABEL not in code:
+        problems.append(
+            f"`{rel}` 找不到 `{SHIPMENT_PROCESSING_FEE_LABEL}` —— "
+            "加工费合计必须与加工项同一行区块（删掉 = 实物凭证少一行金额；issue #7275）"
+        )
+    return problems
+
+
+def test_c9_shipment_processing_items_stay_on_one_line():
+    """C9：发货单「加工项」是一行 `名称×数量 + …`（退回表格 ⇒ 红）。"""
+    rel = SHIPMENT_DOC
+    code = _strip_comments(_read(rel))
+    assert _shipment_processing_line_problems(rel, code) == [], "\n  ".join(
+        _shipment_processing_line_problems(rel, code)
+    )
+
+    # ── 判别力自证（内存注入）：退回表格 ⇒ 红；保留一行 ⇒ 绿 ──
+    table = '<tr><DocTh>加工项</DocTh><DocTh align="right">数量(米)</DocTh></tr>'
+    assert _shipment_processing_line_problems("(合成样本·修前)", table), (
+        "退回逐项表格**没判红** ⇒ C9 是空判据"
+    )
+    line = (
+        '<span data-testid="shipment-processing-items">'
+        "{processingItems.map((item, i) => <span key={i}>{item.name}×{formatQty(item.quantity)}</span>)}"
+        "</span>"
+        "<span>加工费合计（元）：{formatAmount(processingFeeTotal)}</span>"
+    )
+    assert _shipment_processing_line_problems("(合成样本·修后)", line) == [], (
+        "一行写法被判红 ⇒ C9 会把合规实现喂红（假红）"
+    )

@@ -292,29 +292,26 @@ export default function ShipmentDoc({
           {/* issue #4882：**单价列退场** —— 数据源 `ProcessingItemBrief.unitPrice` 已从后端 DTO 删除
               ⇒ 新单恒为空/0，逐项印价必然误导（与 R10「价只在组合上」同因）；逐项 `金额` 同因退场
               （`amount` 亦随 DTO 删除，印出来只会是 0.00）。
-              **保留**「做了哪几项加工、各多少米」：送货单是给客户/仓库的**实物凭证**，这是它的核对价值。
-              加工费总额走行级落库 `processingFee` 汇总（不是逐项金额相加）。 */}
-          <table className="w-full border-collapse mb-2">
-            <thead>
-              <tr>
-                <DocTh>加工项</DocTh>
-                <DocTh align="right">数量(米)</DocTh>
-              </tr>
-            </thead>
-            <tbody>
+              **保留**「做了哪几项加工、各多少」：送货单是给客户/仓库的**实物凭证**，这是它的核对价值
+              （数量单位沿用旧表头「数量(米)」的口径；压成一行后不再逐项重复单位）。
+              加工费总额走行级落库 `processingFee` 汇总（不是逐项金额相加）。
+              🔴 issue #7275（用户 2026-10-18 逐字「加工项表格应该用一行表达，这样节省空间，比如改成a+b+c这样？」）：
+              逐项一张表在纸面吃掉半屏 ⇒ 压成**一行** `名称×数量 + 名称×数量 …`，加工费合计同行右对齐
+              （内容过长时自动折行 —— `flex-wrap`，不裁掉任何一项）。
+              逐项名称 / 数量仍是服务端快照真值（不聚合重名行、不重算）；缺数量仍印 `—`。 */}
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border border-neutral-400 px-2 py-1.5 mb-2">
+            <span className="break-words" data-testid="shipment-processing-items">
               {processingItems.map((item, idx) => (
-                <tr key={item.id || idx}>
-                  <DocTd>{item.name}</DocTd>
-                  <DocTd align="right">{formatQty(item.quantity)}</DocTd>
-                </tr>
+                <span key={item.id || idx}>
+                  {idx > 0 && ' + '}
+                  {item.name}×{formatQty(item.quantity)}
+                </span>
               ))}
-              <tr>
-                <td className="border border-neutral-400 px-2 py-1.5 text-right font-semibold" colSpan={2}>
-                  加工费合计（元）：{formatAmount(processingFeeTotal)}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+            </span>
+            <span className="font-semibold whitespace-nowrap">
+              加工费合计（元）：{formatAmount(processingFeeTotal)}
+            </span>
+          </div>
         </>
       )}
 

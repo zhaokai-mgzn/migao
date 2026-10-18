@@ -63,21 +63,20 @@
 
 | 单据 | 列清单（有序） | 说明 |
 |---|---|---|
-| 加工单 | `品名 / 货号 / 颜色 / 门幅 / 尺寸 / 数量 / 组件 / 批号 / 备注` | 每套一张 9 列表 |
-| 加工单 · 工序块 | `工序 / 名称 / 应做 / 状态` | 同表内、每套一张子表（issue #6901） |
+| 加工单 | `品名 / 货号 / 颜色 / 门幅 / 尺寸 / 数量 / 组件 / 批号 / 备注` | 每套一张 9 列表；🔴 纸面**不印**工序清单（issue #7274） |
 
 🔴 **2026-10-14（issue #6901）「数量(米)」→「数量」**：列名不能写死单位 —— `quantity` 的单位随行
 （快照行 `unit` 可能是米 / 件 / 套）。同一行的**列名与值**都出自
 `frontend/admin-web/src/lib/order-item-sku.ts::orderItemQuantity()`：有单位 ⇒ 印 `数量(米)`，
 **没采集到单位 ⇒ 只印 `数量`**（不编「米」）。
 
-🔴 **工序块的取数口径（issue #6901）**：纸面**不取数**，由调用方
-（`frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx`）读**既有读面**
-`GET /api/admin/production/orders/{id}/operations` 后向下传（`operations` prop）；
-按 `position.order_item_id` = 订单行 id 对齐（与洗水码 / 批号**同一把钥匙**）；
-缺值 / 无工序实例（订单还没生成加工单）⇒ **整块不出现**（不印空表、不印占位表头）。
-显示名走 `frontend/admin-web/src/lib/operation-display.ts::operationDisplayName()`
-（**不得**渲染工人端变体名 `operation`）。
+🔴 **2026-10-18（issue #7274）工序块从纸面移除**：用户逐字「工序细节不用在打印单上，移除掉工序相关的
+表格信息」⇒ `ProcessingDoc` 的 `operations` prop 与 `工序 / 名称 / 应做 / 状态` 子表**整块退场**
+（issue #6901 曾是它的来由）。工序清单仍在**屏幕**上的加工单块
+（`frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx`）与「复制全部」文本、以及工人扫码面呈现；
+读面 `GET /api/admin/production/orders/{id}/operations` 与显示名口径
+`frontend/admin-web/src/lib/operation-display.ts::operationDisplayName()` **不变**。
+判据 = `test_print_media_matrix_guard.py` 的 C8（把工序接回纸面 ⇒ 红）。
 
 
 ## 4. 字段缺口（**如实登记，不编数**）
