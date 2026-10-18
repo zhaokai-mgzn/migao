@@ -71,6 +71,13 @@ html, body {
   line-height: 1.5;
 }
 .wh5-ghost {
+  /* issue #7232：本类**两种标签都在用**（`<button>` 9 处 + `<a>` 1 处「返回报工」）。
+     `<button>` 的文字天然垂直居中，而被 `.wh5-header` 块化的 `<a>` 不是 —— 不显式给 flex 对齐，
+     链接文字就贴在 44px 白框的上沿（用户 2026-10-18 逐字「返回报工按钮样式有问题」）。
+     同页 `.wh5-entry` 早就是 `display:flex + align-items:center` 的写法，这里与它对齐。 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 44px;
   padding: 0 14px;
   border: 1px solid var(--wh5-line);
@@ -240,6 +247,11 @@ html, body {
 .wh5-ov-name { font-weight: 600; }
 .wh5-ov-status { font-weight: 700; }
 .wh5-ov-op.is-done .wh5-ov-status { color: var(--wh5-brand); }
+/* issue #7232：下面三格**每行都在下发**却一直没有规则（应做 / 单价 / 已报 与工序名挤成一团）
+   ⇒ 按「次要读数」收口：能读、但不跟「工序名 + 状态」抢眼；数字列等宽（小数点不跳舞）。 */
+.wh5-ov-qty { font-variant-numeric: tabular-nums; }
+.wh5-ov-price { color: var(--wh5-muted); font-variant-numeric: tabular-nums; }
+.wh5-ov-done { font-size: 14px; color: var(--wh5-muted); font-variant-numeric: tabular-nums; }
 /* 工序选择器（issue #6635）：候选是**正常动作**（点哪道就领哪道），所以是实线可点按钮，
    不是改前那种"例外入口"的虚线小字；选中那道用 = 既有 .wh5-choice 的同一个品牌色口径。 */
 .wh5-op-choice {
@@ -415,3 +427,134 @@ a.wh5-machine__back:active { color: #e2e8f0; }
 .wh5-q-choice.is-on { border-color: #0f766e; background: #ccfbf1; color: #115e59; }
 .wh5-q-actions { display: flex; gap: 10px; }
 .wh5-q-actions .wh5-primary { flex: 1 1 auto; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   「我的计件」（issue #6767，**样式补齐** = issue #7232）
+   ════════════════════════════════════════════════════════════════════════════
+   病灶：本页下发的 12 个 `wh5-piecework-*` 类此前在 styles.css **一条规则都没有**
+   ⇒ 合计 / 件数 / 逐笔 / 未定价 / 月份切换全落回浏览器默认样式（`<dl>` 缩进、`<li>` 圆点、
+   默认外边距），用户 2026-10-18 读成「整页白色、没有样式」。
+   形态 = 一块**只读钱面**：合计是第一眼（金额用品牌色 + 大字号），逐笔是「哪道活 × 多少件 × 多少钱」。
+   数字列一律等宽（`tabular-nums`：同一列的小数点不会随数字跳行），金额右对齐。 */
+.wh5-piecework-summary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  align-items: baseline;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+.wh5-piecework-summary dt { font-size: 15px; color: var(--wh5-muted); }
+.wh5-piecework-summary dd {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+/* 合计 = 这一页的主角（工人扫一眼就要知道这个月多少钱） */
+#wh5-piecework-total { font-size: 30px; line-height: 1.15; color: var(--wh5-brand); }
+.wh5-piecework-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.wh5-piecework-line {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 2px 12px;
+  align-items: baseline;
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f8fafc;
+  font-size: 15px;
+  /* 工序名是商家自由文本 ⇒ 长串必须折行（含无空格的长串），不撑破卡片、不省略号 */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.wh5-piecework-line-name { font-weight: 600; }
+.wh5-piecework-line-qty { color: var(--wh5-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wh5-piecework-line-amount {
+  min-width: 5.5em;
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* 未定价（V90 口径：未定价 ≠ 0 元）—— 与报错**视觉可分**：它是「这笔还没算钱」，用描边卡不用红字 */
+.wh5-piecework-unpriced {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid #f0c36d;
+  border-radius: 10px;
+  background: #fff8e6;
+  color: #7a5b00;
+  font-size: 15px;
+  line-height: 1.5;
+}
+.wh5-piecework-unpriced-title { margin: 0; font-weight: 700; }
+.wh5-piecework-unpriced-detail { margin: 0; overflow-wrap: anywhere; word-break: break-word; }
+.wh5-piecework-unpriced-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+/* 空月：如实说「本月暂无计件」（不印 ¥0.00 充当读数） */
+.wh5-piecework-empty {
+  margin: 0;
+  padding: 28px 0;
+  text-align: center;
+  color: var(--wh5-muted);
+  font-size: 16px;
+}
+/* 期间切换（上/下月只按服务端 `can_prev` / `can_next` 出现） */
+.wh5-piecework-nav { display: flex; gap: 8px; }
+.wh5-piecework-nav .wh5-ghost { flex: 1 1 0; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   发货面（`src/shipment.mjs`，**样式补齐** = issue #7232）
+   ════════════════════════════════════════════════════════════════════════════
+   一单一块：单号 / 承运商 / 经手各算一件事实（一行一件，不重复念）；撤销打包用警示色**另起一行**。 */
+.wh5-shipments { display: flex; flex-direction: column; gap: 10px; }
+.wh5-totals { margin: 0; font-size: 16px; font-variant-numeric: tabular-nums; }
+.wh5-shipment {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--wh5-line);
+  border-radius: 12px;
+  background: #fff;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.wh5-shipment h3 { margin: 0; font-size: 17px; }
+.wh5-shipment p { margin: 0; line-height: 1.5; }
+.wh5-shipment p:not(.wh5-unpack) { color: var(--wh5-muted); }
+.wh5-shipment ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.wh5-unpack { color: var(--wh5-warn); font-size: 14px; }
+
+/* PAD（≥768px）：远距离可读 —— 与既有断点同口径（正文 ≥20px、金额更大） */
+@media (min-width: 768px) {
+  .wh5-piecework-summary dt { font-size: 18px; }
+  .wh5-piecework-summary dd { font-size: 26px; }
+  #wh5-piecework-total { font-size: 40px; }
+  .wh5-piecework-line { font-size: 20px; }
+  .wh5-piecework-line-qty, .wh5-piecework-line-amount { font-size: 20px; }
+  .wh5-piecework-unpriced { font-size: 18px; }
+  .wh5-piecework-empty { font-size: 20px; }
+  .wh5-shipments { font-size: 20px; }
+  .wh5-shipment { font-size: 20px; }
+  .wh5-shipment h3 { font-size: 22px; }
+  .wh5-unpack { font-size: 18px; }
+}
