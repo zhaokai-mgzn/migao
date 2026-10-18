@@ -7108,7 +7108,7 @@
 ```
 溯源: 2026-10-14 新增（issue #6936 的类级固化，与 PG-074 同批）：沿用 #6928 的元守卫范式（扫描器非空跑自证 / 谓词完整性 / 未登记即红 / 登记必须兑现 / 豁免只许缩短 / 判别力自证），但**扩到本单的射程**（`ProductionOperationCommandService` 里 `production_operations.deleted` 的两条软删写路径：谓词三件套 + 显式写列 + 影响行数判定，另加写路径登记表），台账 = backend/admin-api/src/test/resources/production-operation-delete-cas-ledger.json（豁免基线 **0**）。既有判据**未放宽**（`InboundOrderStatusCasMetaGuardTest` 的 MC-100 一字未动）。取号 = PG-075（现取未占用）。 ｜ tags: production, operation, concurrency, meta_guard, backend-contract
 
-## 加工单域（74 case）
+## 加工单域（75 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -8111,6 +8111,21 @@
 跳过: [backend-contract] 纯读面聚合（服务端 SQL/Java 聚合 + 前端渲染判据，零 LLM 行为），不进 agent-eval 冒烟
 ```
 溯源: 2026-10-18 新增（issue #7192；用户原话见 user_inputs）。落码：`QualityCheckService#stats`（P0 率 + P1 趋势/分组/积压）→ `GET /api/admin/quality-inspections/stats` → `QualityMetricsPanel` + 质检记录页接线。取号 = 现取 origin/main 已占号最大 PG-085（#7186 的 PG-086 在并行分支）⇒ 本单取 PG-087。 ｜ tags: quality-inspection, metrics, backend-contract, admin-web
+
+### PG-088. 客户端漏写 saleForm 的卖布单仍必须被认出（sellingMethod / rollCount 兜底）⇒ 作业单 / 派单池 / 发货守卫三段不再静默放行（issue #7222） 🟡
+```
+你: API 直接建卖布单（不带 saleForm）后，在订单详情看作业单区块
+你: 生成作业单后看工人是否拿到裁剪 / 打包活
+数据: **判据 1（会红，读面）**：`OrderShipGuard.hasFabricSaleLine` / `requiredOrderKind` 对「缺 saleForm、有 sellingMethod=full_roll」的行判卖布行 / `outbound`。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderShipGuardTest.java 的 `fabricSaleLineWithoutSaleFormIsRecognizedBySellingMethod`。**红证**：删掉 `ProcessingOrderService.isFabricSaleLine` 的兜底分支（退回只认显式 saleForm）⇒ 该用例红。
+数据: **判据 2（会红，生成侧）**：`generate` 的该行必须进 `items_snapshot` 且 `order_kind = outbound`。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderRouteSourceTest.java 的 `orderWithoutSaleFormButWithSellingMethodStillGetsOutboundJob`。**红证**：删兜底 ⇒ 快照为空 ⇒「无加工项，无需生成加工单」⇒ 红。
+数据: **判据 3（反向护栏，不许误伤）**：缺 saleForm 且**无任何布料事实**的无加工项行（配件 / 赠品）仍判「无需作业」、仍可直发。执行点 = `OrderShipGuardTest.orderWithoutFabricEvidenceStillNeedsNoWork` 与 `ProcessingOrderRouteSourceTest.itemWithoutProcessingItemsAndWithoutFabricSaleFormIsStillSkipped`。**红证**：把兜底写成「缺 saleForm 一律卖布」⇒ 两条红。
+数据: **判据 5（不许抢路线）**：缺 `saleForm`、有 `sellingMethod`，但**有加工项**的行 ⇒ 仍判加工单（卖布行按米卖，行上从无加工项）。执行点 = `OrderShipGuardTest.fabricFallbackDoesNotHijackLinesWithProcessingItems`。**红证**：去掉 `isFabricSaleLine` 的「有加工项即返回 false」闸 ⇒ 红（成品帘被拉去走裁剪/打包，丢掉缝制工序）。
+数据: **判据 4（显式声明优先）**：显式 `saleForm=成品帘` 的行不被 sellingMethod / rollCount 覆盖。执行点 = `OrderShipGuardTest.explicitNonFabricSaleFormWinsOverRollEvidence`。
+数据: **边界（照实登记）**：缺 saleForm 且无任何布料事实的行**不猜**（保持存量语义）—— 该形态靠写面（米宝 `order_create` 补 `saleForm`）与订单详情的可行动出口兜住。
+前置: 一张**卖布单**由 API / 米宝 / 回归脚本创建：订单行 `processing_info` **缺 `saleForm` 键**，但该行带布料专属事实（`sellingMethod = bulk_cut|full_roll` 或 `rollCount` 非空 —— 下单页只对布料行出「整卷」面板）。
+跳过: [backend-contract] admin-api 单测面（mock mapper），不进 agent-eval 冒烟
+```
+溯源: 2026-10-18 新增（issue #7222，用户截图实证：AI 回归建的卖布单在订单详情报「该订单无需作业单」）。取号 = 当时 origin/main 已占号最大 PG-087 ⇒ 本单取 PG-088。 ｜ tags: fabric-sale, ship-guard, backend-contract
 
 ## 商品域（125 case）
 
@@ -11871,7 +11886,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：813（活跃 135，跳过 678）
+- 用例总数：814（活跃 135，跳过 679）
 - tier 分布：smoke 12 / normal 747 / adversarial 32
 - 售后域：15
 - Agent 核心域：11
@@ -11892,7 +11907,7 @@
 - 领域本体域：4
 - 订单域：68
 - 加工项域：30
-- 加工单域：74
+- 加工单域：75
 - 商品域：125
 - 工具注册器域：1
 - 设置域：10
@@ -12141,6 +12156,7 @@
 - PG-085: 删路线 / 删条件工序规则只 `.eq(id)` ⇒ 跨租户误删 + 0 行当成功；改写为 tenant 限定 + deleted=0 + 影响行数判定后恰一次成功（issue #6962）
 - PG-086: 质检工序没有报工动作：判定即报工（提交判定 ⇒ 自动写报工 + 生成质检流水），报工 / 扫码完成入口对质检工序 422 且零写入
 - PG-087: 质检指标（P0+P1）：按件聚合的首检合格率 / 当前合格率 / 返工报废率 + 时间窗趋势 + 分组 Top-5 + 待检积压（近似待检时长）
+- PG-088: 客户端漏写 saleForm 的卖布单仍必须被认出（sellingMethod / rollCount 兜底）⇒ 作业单 / 派单池 / 发货守卫三段不再静默放行（issue #7222）
 - PP-007: 黄金策加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 黄金策加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）
