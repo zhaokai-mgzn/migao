@@ -134,4 +134,42 @@ describe('纸面自检层 PrintDocPreview（issue #5914）', () => {
     fireEvent.click(screen.getByTestId('print-preview-print'))
     expect(onPrint).toHaveBeenCalledTimes(1)
   })
+
+  it('⑥ 单据级附加动作槽 `actions`（issue #7288）：渲在页脚**同一动作行**、「复制截图」**之前**；不传 ⇒ 槽位不渲染', () => {
+    const { rerender } = render(
+      <PrintDocPreview
+        target="labels"
+        title="水洗唛"
+        media="label-50x60"
+        onPrint={() => {}}
+        onClose={() => {}}
+        actions={<button data-testid="extra-action">蓝牙无线打印</button>}
+      >
+        <div>单据</div>
+      </PrintDocPreview>
+    )
+    const extra = screen.getByTestId('extra-action')
+    const capture = screen.getByTestId('print-preview-capture')
+    const row = screen.getByTestId('print-preview-actions')
+    // 同一动作行 = 页脚动作行（否则「右下角」这个位置会被下次改版悄悄搬走）
+    expect(extra.parentElement).toBe(row)
+    expect(row.contains(capture)).toBe(true)
+    expect(row.contains(screen.getByTestId('print-preview-print'))).toBe(true)
+    // 在「复制截图」之前 ⇒ 主操作「打印」永远在最右（一屏至多一个 primary）
+    expect(extra.compareDocumentPosition(capture) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    // 不传（销售单 / 发货单等其它单据）⇒ 槽位不渲染，页脚与改前一致
+    rerender(
+      <PrintDocPreview
+        target="labels"
+        title="水洗唛"
+        media="label-50x60"
+        onPrint={() => {}}
+        onClose={() => {}}
+      >
+        <div>单据</div>
+      </PrintDocPreview>
+    )
+    expect(screen.queryByTestId('extra-action')).toBeNull()
+  })
 })

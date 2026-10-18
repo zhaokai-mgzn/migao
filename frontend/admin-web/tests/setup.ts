@@ -229,7 +229,7 @@ vi.mock('lucide-react', async (importOriginal) => {
   FolderTree: iconStub('folder-tree'),
   Zap: iconStub('zap'),
   Printer: iconStub('printer'),
-  // 免驱动直连通道（issue #6439）：生产明细页「直连打印机打印」按钮用 Bluetooth 图标
+  // 免驱动直连通道（issue #6439 / #7288）：打印预览页脚的「蓝牙无线打印」按钮用 Bluetooth 图标
   Bluetooth: iconStub('bluetooth'),
   Calculator: iconStub('calculator'),
   AlertTriangle: iconStub('alert-triangle'),

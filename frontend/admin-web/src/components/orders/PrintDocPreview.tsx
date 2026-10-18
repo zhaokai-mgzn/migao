@@ -105,6 +105,14 @@ export interface PrintDocPreviewProps {
    * 而提示本身又不该印到纸上（它是屏幕态的操作入口）。放页脚 ⇒ 纸面读数与纸面元素都不受影响。
    */
   notice?: ReactNode
+  /**
+   * 单据级的**附加动作**（issue #7288）：某张单据除了系统打印之外还有第二条通道时放这里 ——
+   * 洗水唛的「蓝牙无线打印」（免驱动 Web Bluetooth）就挂在这个槽里。
+   *
+   * 🔴 位置 = 页脚动作行、**「复制截图」之前**（右下角）；不传 ⇒ 页脚与改前逐字一致，
+   * 其它单据（销售单 / 发货单 / 报价单）不受影响。
+   */
+  actions?: ReactNode
 }
 
 export default function PrintDocPreview({
@@ -115,6 +123,7 @@ export default function PrintDocPreview({
   onPrint,
   onClose,
   notice,
+  actions,
 }: PrintDocPreviewProps) {
   const box = printPageBoxMm(media)
   const margin = printPageMarginMm(media)
@@ -279,7 +288,8 @@ export default function PrintDocPreview({
               </span>
             )}
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2" data-testid="print-preview-actions">
+            {actions}
             <Button variant="secondary" onClick={handleCapture} loading={capturing} data-testid="print-preview-capture">
               复制截图
             </Button>

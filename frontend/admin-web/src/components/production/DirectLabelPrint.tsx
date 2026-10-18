@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from 'react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { Bluetooth } from 'lucide-react'
 import { Button } from '@/components/ui'
+import { cn } from '@/lib/utils'
 import {
   DIRECT_PRINT_READY_HINT,
   directPrintHint,
@@ -15,15 +16,31 @@ import { LabelPrintError, type LabelPrinterProvider, type PrintJob } from '@/lib
 import type { WashLabelInput } from '@/lib/label-print/wash-label'
 
 /**
- * 「直连打印机」入口（issue #6439）—— **免驱动**把洗水码送到标签机（浏览器 Web Bluetooth）。
+ * 「蓝牙无线打印」入口（issue #6439 建立 → **issue #7288 搬进预览页脚**）——
+ * **免驱动**把洗水唛送到标签机（浏览器 Web Bluetooth）。
+ *
+ * ## 现在挂在哪
+ *
+ * 「水洗唛 · 打印预览」（`frontend/admin-web/src/components/orders/PrintDocPreview.tsx`）的**页脚动作行**
+ * （右下角），与「复制截图 / 打印」并排。用户 2026-10-18 逐字：「把这个直连打印机这个功能不如做到
+ * 水洗唛打印预览中，在右下角加个按钮叫蓝牙无线打印」。
+ *
+ * 好处 = **两条通道在同一个视野里**：预览里看到的就是要打的那张纸，走系统打印还是蓝牙直连不必先关弹层。
+ * 改前它常驻页面第一屏（按钮 + 一整行说明），而纸面预览在弹层里 ⇒ 两个入口分在两个视野。
  *
  * ## 与浏览器打印的关系：**并存，不是替换**
  *
- * 「打印任务卡」（`window.print()` + `@page`）覆盖**任何装了驱动**的打印机
- * （Windows 驱动 / USB / 网络 / 已配对蓝牙）—— 那是**唯一**能覆盖任意品牌的路，**本单不动它**。
+ * 「打印任务卡」→ 预览里的「打印」（`window.print()` + `@page`）覆盖**任何装了驱动**的打印机
+ * （Windows 驱动 / USB / 网络 / 已配对蓝牙）—— 那是**唯一**能覆盖任意品牌的路，**本组件不动它**。
  * 本组件是「懒得装驱动」时的补充：只覆盖**带 SDK 协议**的机型。
  * ⇒ 两者互不干扰（本组件**不碰** `window.print`，由守卫
  * `tests/unit_ci_workflows/test_print_single_doc_on_paper.py` 钉住「`window.print` 只有一处」）。
+ *
+ * ## 纸面与预览**同一份**（issue #6656）
+ *
+ * 打出来的位图读的就是预览那份有序行清单（`frontend/admin-web/src/lib/wash-label-content.ts` 的
+ * `washLabelRows` + 同读介质 `label-50x60`）⇒ 搬入口**不改版式**；唯一不可统一的仍是纸的物理宽度
+ * （打印头 384 点 = 48mm < 纸宽 50mm，登记在 `lib/print-media.json`）。
  *
  * ## 可注入面（为什么留这两个口）
  *
@@ -33,11 +50,16 @@ import type { WashLabelInput } from '@/lib/label-print/wash-label'
  *
  * ## 留痕
  *
- * 与「打印任务卡」同口径：**先上报计数、失败不阻断**（`onRecordPrint` 由页面注入，
- * 内部 fire-and-forget）—— 换通道不换纪律。
+ * 与「打印」同口径：**先上报计数、失败不阻断**（`onRecordPrint` 由页面注入，内部 fire-and-forget）
+ * —— 换通道不换纪律。
+ *
+ * ## 边界（照实登记）
+ *
+ * 预览层关掉即卸载 ⇒ 通道缓存（`providerRef`）随之丢弃：**再开预览要重新选一次设备**。
+ * 这是把入口搬进弹层的代价，有意接受（同一次预览里连打多张不受影响 —— 预览在打印后不会自动关）。
  */
 export interface DirectLabelPrintProps {
-  /** 本次要打的洗水码（一部位一张；页面用 `toWashLabelInputs(positions)` 生成） */
+  /** 本次要打的洗水唛（一部位一张；页面用 `toWashLabelInputs(positions)` 生成） */
   labels: WashLabelInput[]
   /** 打印留痕（fire-and-forget，失败不得阻断打印 —— 与浏览器打印那条路同口径） */
   onRecordPrint?: () => void
@@ -106,7 +128,7 @@ export default function DirectLabelPrint({
     setStatus({ kind: 'idle', text: '' })
     let phase: Phase = 'load'
     try {
-      // ① 留痕（fire-and-forget，失败不阻断 —— 与「打印任务卡」同口径）
+      // ① 留痕（fire-and-forget，失败不阻断 —— 与「打印」同口径）
       onRecordPrint?.()
 
       // ② 通道（已连过就复用）
@@ -154,40 +176,41 @@ export default function DirectLabelPrint({
     }
   }
 
-  return (
-    <div className={className}>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="secondary"
-          data-testid="production-direct-print-button"
-          disabled={!capability.ok || busy || !hasLabels}
-          loading={busy}
-          onClick={handlePrint}
-        >
-          <Bluetooth className="w-4 h-4 mr-1.5" />
-          直连打印机打印
-        </Button>
-        {status.text && (
-          <span
-            data-testid="direct-print-status"
-            className={status.kind === 'error' ? 'text-xs text-red-600' : 'text-xs text-neutral-600'}
-            role={status.kind === 'error' ? 'alert' : undefined}
-          >
-            {status.text}
-          </span>
-        )}
-      </div>
+  /**
+   * 按钮左侧的那一格说明（**同一格**承载三种状态，不叠三段文字）：
+   * 本次结果 > 通道不可用的原因 > 通道能力说明。
+   * 优先级写成「结果优先」：客户端过之后，能力说明就不该再占位（否则同一行既说「已发送」又说「只支持…」）。
+   */
+  const note = status.text
+    ? { kind: 'status' as const, testId: 'direct-print-status', text: status.text }
+    : !capability.ok
+      ? { kind: 'hint' as const, testId: 'direct-print-hint', text: capability.hint }
+      : { kind: 'ready' as const, testId: 'direct-print-ready', text: DIRECT_PRINT_READY_HINT }
+  const noteIsAlert = note.kind === 'status' && status.kind === 'error'
 
-      {!capability.ok && (
-        <p data-testid="direct-print-hint" className="mt-1.5 text-xs text-neutral-500">
-          {capability.hint}
-        </p>
-      )}
-      {capability.ok && (
-        <p className="mt-1.5 text-xs text-neutral-400" data-testid="direct-print-ready">
-          {DIRECT_PRINT_READY_HINT}
-        </p>
-      )}
+  return (
+    <div className={cn('flex flex-wrap items-center gap-2', className)}>
+      <span
+        data-testid={note.testId}
+        role={noteIsAlert ? 'alert' : undefined}
+        className={cn(
+          'max-w-[520px] text-xs leading-snug',
+          noteIsAlert ? 'text-red-600' : note.kind === 'hint' ? 'text-neutral-500' : 'text-neutral-400',
+        )}
+      >
+        {note.text}
+      </span>
+
+      <Button
+        variant="secondary"
+        icon={<Bluetooth className="w-4 h-4" />}
+        data-testid="production-direct-print-button"
+        disabled={!capability.ok || busy || !hasLabels}
+        loading={busy}
+        onClick={handlePrint}
+      >
+        蓝牙无线打印
+      </Button>
 
       {/* 二维码位图源：屏幕不显示（`display:none` 不影响 canvas 位图内容），
           只在送印时被 `drawImage` 取用 —— 复用页面已装的 `qrcode.react`，不引第二个编码器。
