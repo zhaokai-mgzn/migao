@@ -1,35 +1,51 @@
-// 工人工作台（`/b/` 登录后那一页）—— 设计候选 V1「大卡列表」（issue #6858；用户 2026-10-13 选定 V1）
+@use "../../../styles/variables.scss" as *;
+
+// 工人工作台（`/b/` 登录后那一页）—— 与**商家端**同一套视觉语言（issue #7240）
 //
-// 三次迭代都记在这里，便于回溯：
-//   ① #6760：卡片补可见边界（白卡落白底页容器上，形状整个消失）；
-//   ② #6847：补页面底色（`#f5f7fa`，与 `dashboard` / `.admin-surface` 同 token）；
-//   ③ #6858：**结构本身不像「菜单主页」** —— 用户逐字「这版本的菜单主页不太符合我们整体样式设计，
-//      为什么搞成纯白色背景了？」+「工人登录后的页面菜单很少，通常只能看到 1-4 个菜单」
-//      ⇒ 按 2026-10-12 已裁定的菜单设计（`docs/design/worker-home-menu.md`）的语言重排：
-//      **身份条（谁在干活）+ 唯一主按钮（扫码报工）+ 行卡（标题 + 一句「拿它干什么」）**。
-//      三个候选（V1 大卡列表 / V2 宫格瓦片 / V3 分组清单）由用户选定 **V1**：
-//      条目只有 1~4 条时，宫格会出现「2+1」孤儿格、分组会出现「标题底下孤零零一张卡」；
-//      行卡对 1~4 条都成立（行高固定、信息一行一句），主按钮永远落在第一屏。
-//      🔴 **不加渐变页头**：那是工人端「任务页」（拍照入库 / 补打标签 / 拍照发货）的外壳，
-//      不是「菜单主页」的语言 —— 这一页的身份靠**身份条**表达。
-//      🔴 只用既有设计 token（`styles/admin-surfaces.scss`），**不新增颜色**（`check-ui-regression.sh` 判回退）。
+// ## 2026-10-18 用户逐字：「手机端工人登录后和商家登录后的两种风格，看起来很割裂」
+//
+// 上一版（#6858 的 V1 行卡）结构是对的，但**样式自持一套字面量**（`#0a2540` / `#1a73e8` /
+// `#f5f7fa` / `#eaeef3` …，值恰好与商家端相同却没有一处走 token），整页又是「白卡落在灰底上」，
+// 没有商家端每条页首那一条**品牌渐变页头** ⇒ 同一个 App 里两个世界。
+//
+// 本版只改样式，**行为一字未动**（身份仍读服务端、路由仍来自 `gaps.ts`、退出仍是
+// `workerLogout()` + 清本机 + 回工人入口），三处结构与语义原样保留：
+//   ① 身份条（谁在干活 + 退出）—— 现在承载它的正是那条品牌渐变页头；
+//   ② 行卡（标题 + 一句「拿它干什么」）；
+//   ③ 未登录引导块。
+//
+// ## 为什么盯这四条（「同一个产品」的可机械判据，守卫见 `tests/worker-home-merchant-alignment.test.ts`）
+//   1. **设计变量单一源**：本页 `@use` 商家端同一份 `styles/variables.scss`；
+//   2. **零裸 hex**：商家端改一阶、工人端跟着变 —— 自持字面量正是本单的成因；
+//   3. **页头 = 品牌渐变带**：`$gradient-brand` + 下缘 48px 圆角，与 `pages/auth/login` 的
+//      `.login-brand`、`pages/profile` 的 `.profile-header` 同族；
+//   4. **卡片圆角沿用 `$radius-lg`**（= 商家端 `metric-card` 的 16px），不自持 24px。
+//
+// 🔴 三条既有纪律继续成立（别为了"好看"动它们）：
+//   · 白卡必须有**可见边界**（`border` / `box-shadow`）—— `tests/worker-card-contrast-guard.test.ts` 判据 4；
+//   · 页面根必须声明**非白底色** + `min-height: 100vh`（同上判据 9）；
+//   · 字号按 **750 设计尺度**（本仓样式管线 `1px = 1/40 rem`），正文/次要字号下限 24 不动。
 .worker-home {
   min-height: 100vh;
-  background: #f5f7fa;
-  padding: 24px 24px 40px;
+  // 非白底色（判据 9）：白卡必须落在有区别的底上，否则卡片形状整个消失（#6760）
+  background: $bg-secondary;
+  // 页头是全宽渐变带 ⇒ 页面不再自带左右内边距，改由各块自己给（见下 24px）
+  padding: 0 0 40px;
 
-  // ── 身份条：谁在干活（姓名 / 工号读服务端 = 计件归属的可见面）+ 退出 ──
+  // ── 身份条 = 品牌渐变页头（与商家端登录页 / 我的页头同族）──
   //    ⚠️ 类名仍叫 `__card`：本仓类级守卫（`tests/worker-card-contrast-guard.test.ts`）按
   //    `*__card` / `*__entry` / `*__gate` 认「卡片形态」，改名会让那批判据与台账一起动。
   &__card {
     display: flex;
     align-items: center;
-    padding: 28px 32px;
+    flex-wrap: wrap;
+    padding: 56px 32px 48px;
     margin-bottom: 20px;
-    background: #ffffff;
-    border-radius: 24px;
-    // 可见边界：白卡落白底页容器上形状会消失（issue #6760）⇒ 判据 1 要求描边或阴影
-    box-shadow: 0 2px 8px rgba(10, 37, 64, 0.06);
+    background: $gradient-brand;
+    // 下缘大圆角 = `pages/auth/login` 的 `.login-brand` 同款（商家端页头的形状语言）
+    border-radius: 0 0 48px 48px;
+    // 可见边界（判据 4）：渐变页头同样要与下方内容分层
+    box-shadow: $shadow-card;
   }
 
   &__who {
@@ -41,31 +57,34 @@
     display: block;
     font-size: 40px;
     font-weight: 700;
-    color: #0a2540;
+    color: $bg-primary;
   }
 
   &__worker-no {
     display: block;
     margin-top: 6px;
     font-size: 26px;
-    color: #5a6b7c;
+    // 深蓝底上的**金铜**次要字 —— 商家端「深蓝金」语言里的第二层
+    color: $brand-gold-light;
   }
 
   &__worker-status {
     display: block;
     margin-top: 4px;
     font-size: 24px;
-    color: #9aa5b1;
+    color: rgba($bg-primary, 0.7);
   }
 
   &__message {
+    flex: 1 1 100%;
     display: block;
     margin-top: 12px;
     font-size: 24px;
-    color: #d93025;
+    // 报错落在深蓝页头上：金铜（可读）而不是纯红（深蓝底上发沉）
+    color: $brand-gold-light;
   }
 
-  // 身份条里的小按钮（「退出」）—— 白底描边（原「与主按钮分级」的口径随报工页下架一并退场）
+  // 身份条里的小按钮（「退出」）—— 深底上的半透明白描边（同 `.profile-avatar` 的写法）
   // 触控目标 ≥88 设计 px（= 44 CSS px），与 `admin-action` 同口径
   &__ghost {
     flex: 0 0 auto;
@@ -74,24 +93,21 @@
     width: auto;
     min-height: 88px;
     padding: 0 40px;
-    border: 1px solid #eaeef3;
-    border-radius: 20px;
-    background: #ffffff;
-    color: #0a2540;
+    border: 1px solid rgba($bg-primary, 0.4);
+    border-radius: $radius-md;
+    background: rgba($bg-primary, 0.18);
+    color: $bg-primary;
     font-size: 28px;
     line-height: 88px;
     white-space: nowrap;
   }
 
-  // 🔴 常驻主按钮（`&__primary` / `&__primary-title` / `&__primary-sub`）已随报工页下架删除
-  // （2026-10-14，issue #6868 实现包 D1）—— 留着就是死样式（没有任何 JSX 用它）。
-
   // ── 分组小标题（V1 只有一组「工人功能」；它给列表一个层次，也给将来加组留位）──
   &__section {
     display: block;
-    margin: 8px 8px 16px;
+    margin: 8px 24px 16px;
     font-size: 26px;
-    color: #9aa5b1;
+    color: $text-tertiary;
   }
 
   // ── 行卡：一条一件事（彩色左条 + 标题 + 一句「拿它干什么」+ ›）──
@@ -100,29 +116,29 @@
     align-items: center;
     min-height: 128px;
     padding: 28px 32px;
-    margin-bottom: 20px;
-    background: #ffffff;
-    border-radius: 24px;
-    // 入口行：细边界比阴影更克制（§31 常驻面克制），阴影与卡片同一颗 token
-    border: 1px solid #eaeef3;
-    box-shadow: 0 1px 4px rgba(10, 37, 64, 0.04);
+    margin: 0 24px 20px;
+    background: $bg-primary;
+    // 商家端卡片语言：16px 圆角 + 细描边 + 同一颗阴影（`dashboard` 的 `metric-card` 同族）
+    border-radius: $radius-lg;
+    border: 1px solid $border-color;
+    box-shadow: $shadow-card;
   }
 
-  // 左色彩条：三颗**既有**弱色 token（`admin-surfaces.scss` 的状态色），只做节奏区分，不承载语义
+  // 左色彩条：三颗**既有**弱色 token（只做节奏区分，不承载语义）
   &__entry-bar {
     flex: 0 0 auto;
     width: 8px;
     height: 68px;
     margin-right: 24px;
     border-radius: 6px;
-    background: #e8f1fe;
+    background: $primary-light;
 
     &--b {
-      background: #fff4e0;
+      background: $brand-gold-light;
     }
 
     &--c {
-      background: #e6f6ee;
+      background: rgba($success-color, 0.18);
     }
   }
 
@@ -135,14 +151,14 @@
     display: block;
     font-size: 34px;
     font-weight: 600;
-    color: #0a2540;
+    color: $text-primary;
   }
 
   &__entry-sub {
     display: block;
     margin-top: 8px;
     font-size: 25px;
-    color: #5a6b7c;
+    color: $text-secondary;
     line-height: 1.45;
   }
 
@@ -150,30 +166,31 @@
     flex: 0 0 auto;
     margin-left: 16px;
     font-size: 36px;
-    color: #9aa5b1;
+    color: $text-tertiary;
   }
 
-  // ── 未登录引导（白块同样是白底卡 ⇒ 同一颗可见边界，issue #6760）──
+  // ── 未登录引导（白块同样是卡 ⇒ 同一颗可见边界，issue #6760）──
   &__gate {
     padding: 32px;
-    background: #ffffff;
-    border-radius: 24px;
-    box-shadow: 0 2px 8px rgba(10, 37, 64, 0.06);
+    margin: 0 24px;
+    background: $bg-primary;
+    border-radius: $radius-lg;
+    box-shadow: $shadow-card;
   }
 
   &__gate-text {
     display: block;
     font-size: 28px;
-    color: #5b6b7c;
+    color: $text-secondary;
     margin-bottom: 24px;
   }
 
   &__login {
     height: 88px;
     line-height: 88px;
-    background: #1a73e8;
-    color: #ffffff;
-    border-radius: 16px;
+    background: $primary-color;
+    color: $bg-primary;
+    border-radius: $radius-md;
     font-size: 32px;
   }
 }
