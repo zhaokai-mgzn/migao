@@ -3111,7 +3111,9 @@ class OrderServiceTest {
         testOrderItem.setProcessingInfo(new LinkedHashMap<>());   // 无加工项 ⇒ 守卫放行
         when(orderMapper.selectById("order-001")).thenReturn(testOrder);
         when(orderItemMapper.selectList(any())).thenReturn(List.of(testOrderItem));
-        when(orderLogisticsMapper.selectByOrderId("order-001", 1L)).thenReturn(List.of());
+        // issue #7174：写面不再读改写（先条件更新，影响 0 行才建行）⇒ 更新命中 0 行的默认值即"无既有行"
+        when(orderLogisticsMapper.updateShippingDetails(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(0);
         when(orderMapper.update(any(), any())).thenReturn(1);
 
         orderService.shipWithLogistics("order-001", "SF123456", "顺丰");
@@ -3140,13 +3142,14 @@ class OrderServiceTest {
                         .logisticsCompany("德邦").trackingNo("OLD").status("in_transit").build()));
         when(orderMapper.update(any(), any())).thenReturn(1);
 
+        when(orderLogisticsMapper.updateShippingDetails(any(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(1);   // 既有行 ⇒ 条件更新命中
+
         orderService.shipWithLogistics("order-001", "DB999", null);
 
-        // 既有记录被更新（不新建），承运商保留「德邦」
-        ArgumentCaptor<OrderLogistics> captor = ArgumentCaptor.forClass(OrderLogistics.class);
-        verify(orderLogisticsMapper).updateById(captor.capture());
-        assertThat(captor.getValue().getLogisticsCompany()).isEqualTo("德邦");
-        assertThat(captor.getValue().getTrackingNo()).isEqualTo("DB999");
+        // 既有记录被更新（不新建），承运商保留「德邦」；「显式才覆盖」的三列传 null（SQL 侧保留原值）
+        verify(orderLogisticsMapper).updateShippingDetails(1L, "order-001", "德邦", "DB999", null, null, null);
+        verify(orderLogisticsMapper, never()).insert(any(OrderLogistics.class));
     }
 
     @Test
