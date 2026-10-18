@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { AlertCircle, Bell, CheckCheck, Trash2, Mail, MailOpen, Inbox } from 'lucide-react'
+import { AlertCircle, Bell, Check, Trash2, Mail, MailOpen, Inbox } from 'lucide-react'
 import { toast } from 'sonner'
 import { notificationApi } from '@/lib/api'
 import { Pagination, Modal, Button, PageCard, PageHeader } from '@/components/ui'
@@ -171,7 +171,10 @@ export default function NotificationsPage() {
               disabled={markingAll}
               loading={markingAll}
             >
-              <CheckCheck className="w-4 h-4 mr-1.5" />
+              {/* issue #7180：「全部标记已读」用**单勾**（`Check`）。改前是 lucide 的 `CheckCheck`
+                  （两条 path 的叠置双勾）—— 16px 下两个勾叠在一起，真机读成「两个图标重叠」
+                  （用户报障截图红框）。语义不变：这里只有一个动作 = 标记已读。 */}
+              <Check className="w-4 h-4 mr-1.5" aria-hidden />
               全部标记已读
             </Button>
           )}
