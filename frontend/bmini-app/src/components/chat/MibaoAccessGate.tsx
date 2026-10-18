@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { View, Text } from '@tarojs/components'
+import AdminGrantGate from '../admin/SurfaceAccessGate'
 
 /**
  * 黄金策唤出授权门（issue #5642 功能⑤）。
@@ -37,26 +37,9 @@ export default function MibaoAccessGate({ allowed, children }: MibaoAccessGatePr
   }
 
   if (!allowed) {
-    return (
-      <View
-        data-testid='mibao-gate-denied'
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '80px 32px',
-          textAlign: 'center',
-        }}
-      >
-        <Text style={{ fontSize: '32px', fontWeight: '600', color: '#1f2937' }}>
-          {MIBAO_NEEDS_ADMIN_GRANT_TEXT}
-        </Text>
-        <Text style={{ marginTop: '16px', fontSize: '26px', color: '#6b7280', lineHeight: '1.6' }}>
-          {MIBAO_GRANT_GUIDE_TEXT}
-        </Text>
-      </View>
-    )
+    // 呈现实现**只有一份**（`AdminGrantGate`）：底栏页（数据 / 坐席）在 2026-10-18 裁定后
+    // 也用同一形态（「没权限就向问黄金策页面的做法」）⇒ 两处各抄一份样式必然漂。
+    return <AdminGrantGate testid='mibao-gate-denied' guide={MIBAO_GRANT_GUIDE_TEXT} />
   }
 
   return <>{children}</>
