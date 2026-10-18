@@ -143,6 +143,67 @@ class TestGenerateBriefing:
         }
 
     @pytest.mark.asyncio
+    async def test_row_arrays_reach_the_engine_but_not_the_prompt(self):
+        """issue #7195：同一份快照 —— 提示词只吃 metrics+facts，引擎（`proactive_status`）吃全量。
+
+        改前 admin-api 只把 metrics+facts 发过来 ⇒ 引擎逐规则 `not_wired`、卡片面六项恒报
+        「系统尚未接入」。判据两侧同时钉：① 提示词里没有任何行数组键（红线 4 不退让）；
+        ② 同一份快照的逐规则状态是 `wired`（接线真的判定出来了）。
+        """
+        snapshot = {
+            "metrics": {"pending_ship_orders": 10},
+            "facts": [],
+            "row_fields": {
+                "orders": ["order_no", "status", "customer_id", "created_at",
+                           "shipped_at", "sale_amount", "cost_amount"],
+                "skus": ["sku_id", "product_id", "product_name", "stock"],
+                "returns": ["return_no", "customer_id", "product_id", "returned_at", "amount"],
+                "price_changes": ["change_no", "tool_name", "product_id",
+                                  "before_price", "new_price", "changed_at"],
+                "order_discounts": ["order_no", "total_amount", "discount_amount", "created_at"],
+            },
+            "cost_accounting": True,
+            "audit_tool_logging": True,
+            "orders": [{"order_no": "O1", "status": "confirmed", "customer_id": "C1",
+                        "created_at": "2026-10-18T09:00:00", "shipped_at": None,
+                        "sale_amount": 100, "cost_amount": 90}],
+            "skus": [{"sku_id": "S1", "product_id": "P1", "product_name": "布料", "stock": 3}],
+            "returns": [{"return_no": "R1", "customer_id": "C1", "product_id": "P1",
+                         "returned_at": "2026-10-18T10:00:00", "amount": 10}],
+            "price_changes": [{"change_no": "A1", "tool_name": "product_update", "product_id": "P1",
+                               "before_price": 100, "new_price": 110,
+                               "changed_at": "2026-10-18T11:00:00"}],
+            "order_discounts": [{"order_no": "O1", "total_amount": 100, "discount_amount": 10,
+                                 "created_at": "2026-10-18T09:00:00"}],
+        }
+        prompts = []
+
+        class _FakeLLM:
+            async def ainvoke(self, messages):
+                prompts.append(messages[0].content)
+                return type("R", (), {"content": json.dumps({
+                    "summary": "昨日订单 10 单",
+                    "review": [], "todo": [], "risks": [], "suggestions": [],
+                })})()
+
+        with patch("app.briefing.generator.LLMFactory") as factory:
+            factory.create_briefing_llm.return_value = _FakeLLM()
+            result = await generate_briefing(snapshot)
+
+        assert prompts, "LLM 必须被调用一次（判据取的是真实提示词）"
+        prompt = prompts[0]
+        for array in ("orders", "skus", "returns", "price_changes", "order_discounts",
+                      "row_fields", "row_meta"):
+            assert f'"{array}"' not in prompt, f"行级数组 {array} 不许进 LLM 上下文（红线 4）"
+        assert "pending_ship_orders" in prompt, "聚合指标必须在提示词里"
+
+        status = result["proactive_status"]
+        assert {entry["status"] for entry in status.values()} == {"wired"}, (
+            "全量快照的逐规则状态必须是 wired —— 否则卡片面又会恒报「本次没有检查」"
+        )
+        assert all(entry["display"] is None for entry in status.values())
+
+    @pytest.mark.asyncio
     async def test_empty_snapshot_returns_none(self):
         assert await generate_briefing({}) == None  # noqa: E711（空快照降级）
         assert await generate_briefing(None) == None  # noqa: E711（None 快照降级）

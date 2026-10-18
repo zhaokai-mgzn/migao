@@ -26,7 +26,7 @@ CREATE TABLE tenants (
     status VARCHAR(32) DEFAULT 'active',
     auth_config JSONB DEFAULT '{}',
     bailian_config JSONB DEFAULT '{}',
-    briefing_enabled BOOLEAN DEFAULT FALSE,
+    briefing_enabled BOOLEAN DEFAULT TRUE,
     briefing_generate_time VARCHAR(5) DEFAULT '06:00',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

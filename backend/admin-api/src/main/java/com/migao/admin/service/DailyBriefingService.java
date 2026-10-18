@@ -180,8 +180,8 @@ public class DailyBriefingService {
      * 并新增 `product_return_stats` —— 退货率的**两端**（分子由 `returns` 行的商品归属复用而来、
      * 分母 = 同窗口内的订单行数）。</p>
      *
-     * <p>🔴 **刻意缺席**（如实登记为「未接线」，**不是「命中 0 条」**）：`price_changes`
-     * **整个数组不装配** —— 全仓无改价流水表 ⇒ 改价幅度规则接不通（另立 issue）。</p>
+     * <p>🔴 **这张表是「发给引擎的行」的唯一声明**：`proactive_status` 逐规则判接线就拿它比。
+     * 声明了却不上路 = 六条规则永远 `not_wired`（issue #7195 的成因：生成链曾只发提示词投影）。</p>
      */
     static final Map<String, List<String>> SNAPSHOT_ROW_FIELDS = snapshotRowFields();
 
@@ -286,7 +286,8 @@ public class DailyBriefingService {
             throw BusinessException.notFound("租户");
         }
         Map<String, Object> config = new HashMap<>();
-        config.put("enabled", Boolean.TRUE.equals(tenant.getBriefingEnabled()));
+        // 默认开启（2026-10-18 用户裁定）：只有**显式关掉**（`false`）才算关闭；`NULL` = 从没选过 ⇒ 开
+        config.put("enabled", !Boolean.FALSE.equals(tenant.getBriefingEnabled()));
         config.put("generateTime", StringUtils.hasText(tenant.getBriefingGenerateTime())
                 ? tenant.getBriefingGenerateTime() : "06:00");
         return config;
@@ -361,8 +362,8 @@ public class DailyBriefingService {
             log.warn("简报生成跳过：租户不存在 tenantId={}", tenantId);
             return null;
         }
-        // 红线 3：开关即熔断
-        if (!Boolean.TRUE.equals(tenant.getBriefingEnabled())) {
+        // 红线 3：开关即熔断（默认开启：只有显式 `false` 才熔断；`NULL` = 从没选过 ⇒ 照常生成）
+        if (Boolean.FALSE.equals(tenant.getBriefingEnabled())) {
             log.info("简报生成跳过：租户未开启 tenantId={}", tenantId);
             return null;
         }
@@ -436,10 +437,12 @@ public class DailyBriefingService {
         Map<String, Number> metrics = extractMetrics(snapshot);
 
         // 2) LLM 组织层
-        // 🔴 提示词只喂**聚合指标 + 脱敏事实**：行级数组是规则引擎 / 按需视图的输入（族 3），
-        // 不进 LLM 上下文 —— 否则每条简报都要把上千行 JSON 塞进去（ai-agent 侧虽有 6000 字符预算，
-        // 那也只会把它截成半截 JSON：既涨成本，又给模型一堆与组织简报无关的行）。
-        JsonNode briefing = briefingGenerateClient.generate(tenantId, promptSnapshot(snapshot));
+        // 🔴 发给 ai-agent 的是**全量快照**（含行级数组）：引擎的 `proactive_status` 逐规则判接线
+        // 就靠这些行；只发提示词投影 ⇒ 六条规则永远 `not_wired`（issue #7195，2026-10-18 修复）。
+        // 「行级数组**不进 LLM 上下文**」这条红线改由 ai-agent 侧构造提示词视图时保证
+        // （提示词视图 = 落库快照的**子集**，唯一来源仍是 aggregateSnapshot）：上千行 JSON 塞进
+        // 提示词既涨成本，又会被 6000 字符预算截成半截。
+        JsonNode briefing = briefingGenerateClient.generate(tenantId, snapshot);
 
         DailyBriefing record = DailyBriefing.builder()
                 .tenantId(tenantId)
@@ -586,7 +589,7 @@ public class DailyBriefingService {
         snapshot.put("facts", facts);
         // 行级数组（族 3 跨域视图内核，issue #5358）：有界 + 租户隔离（显式带 tenantId，
         // 叠加 TenantLineInnerInterceptor 的 tenant_id 注入 —— 与既有工单查询同口径）。
-        // 🔴 `price_changes` **不装配**（全仓无改价流水表）⇒ 该数组不存在，见 SNAPSHOT_ROW_FIELDS。
+        // `price_changes` 由审计日志装配（issue #5388 裁定 C：不建改价流水表），不另立第二套。
         RowBatch orders = assembleOrderRows(tenantId);
         RowBatch skus = assembleSkuRows(tenantId);
         // 退货率的**两端共用一个窗口变量**（issue #5369）：分子 90 天 / 分母 30 天这类「两处口径」
@@ -1330,20 +1333,6 @@ public class DailyBriefingService {
         return metrics;
     }
 
-    /**
-     * LLM 提示词用的快照视图：**只含** `metrics` + `facts`（红线 4 的「纯数字 + 脱敏事实」口径）。
-     *
-     * <p>行级数组（`orders` / `skus` / `returns` 与 `row_fields` / `row_meta`）**出提示词**：它们是
-     * 规则引擎与按需视图的输入，落库快照里在、提示词里不在 —— 两件事各取所需，不是两份口径
-     * （提示词视图是落库快照的**子集**，唯一来源仍是 {@link #aggregateSnapshot}）。</p>
-     */
-    static Map<String, Object> promptSnapshot(Map<String, Object> snapshot) {
-        Map<String, Object> prompt = new LinkedHashMap<>();
-        prompt.put("metrics", snapshot.get("metrics"));
-        prompt.put("facts", snapshot.get("facts"));
-        return prompt;
-    }
-
     // ==================== 数字回填校验层（红线 4）====================
 
     /** 校验结果：过滤后的 content + verify_status + 各区块保留数 */
@@ -1486,7 +1475,9 @@ public class DailyBriefingService {
     public int generateDueTenants() {
         List<Tenant> enabledTenants = tenantMapper.selectList(
                 new LambdaQueryWrapper<Tenant>()
-                        .eq(Tenant::getBriefingEnabled, true));
+                        // 默认开启：`NULL`（从没选过）与 `true` 同等对待，只有显式 `false` 被跳过
+                        .and(w -> w.eq(Tenant::getBriefingEnabled, true)
+                                .or().isNull(Tenant::getBriefingEnabled)));
         LocalTime now = businessClock.time();
         LocalDate today = businessClock.today();
         int generated = 0;
