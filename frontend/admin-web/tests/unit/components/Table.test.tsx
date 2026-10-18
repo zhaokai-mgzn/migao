@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+// case_ids: UI-086
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import Table, { TableColumn } from '@/components/ui/Table'
