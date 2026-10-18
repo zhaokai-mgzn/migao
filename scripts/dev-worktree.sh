@@ -526,6 +526,10 @@ cmd_hooks_install() {
   # `core.hooksPath` 写在主仓 .git/config ⇒ 对**所有工作区**同时生效；重复执行幂等。
   # `MIGAO_HOOKS_GIT_DIR` / `MIGAO_HOOKS_DIR` 是**测试缝**（判据要能在临时仓库上验证幂等，
   # 而 `REPO_ROOT` 由脚本位置推导、无法被 env 改向）—— 不是用户接口，正常用法不设。
+  # 判据 9（tests/unit_ci_workflows/test_dev_worktree_registry_drift.py）：**每个** cmd_* 入口
+  # 都必须先过「登记表 × 磁盘」前置断言 —— 本命令虽是写配置而非写工作区，也照同一入口纪律走
+  # （不给自己开豁免：豁免名单只许缩短）。
+  wt_registry_assert_for_entry "hooks-install" || exit 1
   local git_dir="${MIGAO_HOOKS_GIT_DIR:-$REPO_ROOT}"
   local hooks_dir="${MIGAO_HOOKS_DIR:-$REPO_ROOT/.githooks}"
   git -C "$git_dir" config core.hooksPath .githooks
