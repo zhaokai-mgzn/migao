@@ -178,11 +178,12 @@ MANAGED_FACES: tuple[str, ...] = (
     # 绕判据（§17.3 ⑤ 禁止）。S1 的 C3 改成「渲染位置」判据后本页按正常写法进清单，
     # 本表**同步登记**（两处清单必须双向一致，否则 `_s1_drift` 红）。
     "frontend/admin-web/src/app/(dashboard)/processing-orders/[id]/production/page.tsx",
-    # issue #6901：**A4 纸质加工单**新补「工序清单」块（逐道 显示名 / 应做（数量+单位）/ 状态）——
-    # 显示名走 `operationDisplayName()`（纸面**不得**渲染工人端变体名 `operation`；取数 = 既有
-    # `GET /api/admin/production/orders/{id}/operations`，由订单详情页向下传，组件不取数）。
-    "frontend/admin-web/src/components/orders/ProcessingDoc.tsx",
-    # issue #6901：商家端**加工单块**（屏幕明细块 + 「复制全部」纯文本两个渲染面）同批补工序清单 ——
+    # 🔴 issue #7274（用户 2026-10-18 逐字「工序细节不用在打印单上，移除掉工序相关的表格信息」）：
+    # `ProcessingDoc.tsx`（A4 纸质加工单）**从 `MANAGED_FACES` 退役** —— 纸面不再印工序清单，
+    # 也不命中任何工序标记（`MARKERS`）⇒ 不需要豁免条目（`EXEMPT_FACES` 过期即红，不能留空壳）。
+    # 反方向由 S1 的 `FACES` 同步退役保持一致；若将来把工序加回纸面，S1 的 C5 与本文件 C2 都会判红，
+    # 必须**同时**把它加回本文件的 `MANAGED_FACES` 与 S1 的 `FACES`。
+    # issue #6901：商家端**加工单块**（屏幕明细块 + 「复制全部」纯文本两个渲染面）补工序清单 ——
     # 显示名同样走 `operationDisplayName()`（两处与纸面共用 `lib/operation-list.ts` 的索引/状态口径）。
     "frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx",
 )
@@ -267,16 +268,17 @@ EXEMPT_FACES: tuple[tuple[str, str], ...] = (
     ),
     (
         "frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx",
-        "**订单详情页**（issue #6901）：它命中标记只因把工序读面的 `ProductionPosition[]` 接进 state"
-        "并向下传（`operations` prop 给纸面 / 加工单块）—— **纯类型透传**，本页一个工序名都不渲染"
-        "（真正渲染的两个面是 `components/orders/ProcessingDoc.tsx` 与 "
-        "`components/orders/ProcessingOrderBlock.tsx`，两者都在 `MANAGED_FACES` 且走 "
-        "`operationDisplayName()`）。**过期即红**：一旦本页出现工序名的渲染位置（JSX 取值 / 裸快照名）"
+        "**订单详情页**（issue #6901 / #7274）：它命中标记只因把工序读面的 `ProductionPosition[]` 接进 state"
+        "并向下传给**屏幕**加工单块（`operations` prop）—— **纯类型透传**，本页一个工序名都不渲染"
+        "（真正渲染的面是 `components/orders/ProcessingOrderBlock.tsx`，在 `MANAGED_FACES` 且走 "
+        "`operationDisplayName()`；A4 纸面自 issue #7274 起**不印工序**、已从两份清单退役）。"
+        "**过期即红**：一旦本页出现工序名的渲染位置（JSX 取值 / 裸快照名）"
         "⇒ `_direct_render_hits` 命中，必须销账并转 `MANAGED_FACES`。",
     ),
     (
         "frontend/admin-web/src/lib/operation-list.ts",
-        "**工序清单的索引 / 状态口径模块**（issue #6901；纸面与加工单块**共用**同一份）：它是 `.ts`、"
+        "**工序清单的索引 / 状态口径模块**（issue #6901；🔴 纸面自 issue #7274 起不印工序 ⇒ 现由"
+        "屏幕加工单块与「复制全部」文本**共用**同一份）：它是 `.ts`、"
         "**无 JSX**，不渲染任何工序名 —— 只做两件事：按 `position.order_item_id` 建索引"
         "（缺键 / 空工序不入表）与把读面 `status` 折成「已完成 / 待做」。显示名一律由消费面走 "
         "`operationDisplayName()`（受管面判据对它无意义）。"
