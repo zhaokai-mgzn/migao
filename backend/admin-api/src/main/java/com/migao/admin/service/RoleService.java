@@ -820,23 +820,13 @@ public class RoleService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void assignRoleToUser(String userId, String roleId, Long tenantId) {
-        // 检查是否已分配
-        LambdaQueryWrapper<UserRole> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(UserRole::getUserId, userId)
-                .eq(UserRole::getRoleId, roleId)
-                .eq(UserRole::getDeleted, 0);
-        UserRole existing = userRoleMapper.selectOne(wrapper);
-        if (existing != null) {
-            throw BusinessException.validationError("用户已拥有该角色");
-        }
-
-        UserRole userRole = UserRole.builder()
-                .tenantId(tenantId)
-                .userId(userId)
-                .roleId(roleId)
-                .build();
-        userRoleMapper.insert(userRole);
-        log.info("为用户分配角色成功: userId={}, roleId={}", userId, roleId);
+        // issue #7256：写面收口到单一实现点（复活软删行 → 条件插入 → 撞键幂等收敛）。
+        // 原先是「selectOne 判重 + 普通 insert」：并发时第二个请求撞唯一键 ⇒ 500；
+        // 而本表唯一键是全表的、删除是逻辑删除 ⇒ 「移除后再授权」也必撞键 ⇒ 500（本单主症状）。
+        // 语义变化：重复授权不再抛 422，改为**幂等成功**（并发重试与"用户真的点了两次"服务端不可区分，
+        // 报错只会制造 500；授权是幂等动作）。
+        boolean changed = UserRoleWriter.ensureGranted(userRoleMapper, tenantId, userId, roleId);
+        log.info("为用户分配角色{}: userId={}, roleId={}", changed ? "成功" : "已存在（幂等）", userId, roleId);
     }
 
     /**
