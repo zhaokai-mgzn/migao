@@ -8,6 +8,7 @@ import Taro from '@tarojs/taro'
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { miniAppLogin, employeeLogin, adminSmsLogin, changePassword, getToken, getUser, logout as authLogout, checkTokenValidity } from '../utils/auth'
+import { refreshAccessToken } from '../utils/request'
 import { STORAGE_KEYS, DEFAULT_TENANT_ID } from '../utils/constants'
 import type { User } from '../types'
 
@@ -29,8 +30,8 @@ interface AuthState {
   logout: () => void
   setUser: (user: User) => void
   setToken: (token: string) => void
-  checkAuth: () => boolean
-  initialize: () => void
+  checkAuth: () => Promise<boolean>
+  initialize: () => Promise<void>
 }
 
 /**
@@ -65,17 +66,27 @@ export const useAuthStore = create<AuthState>()(
       isLoading: false,
 
       /**
-       * 初始化：从本地存储恢复状态
+       * 初始化：从本地存储恢复状态。
+       *
+       * 🔴 access token 只有 2 小时（issue #7249）⇒ exp 过期时**先续期**（HttpOnly
+       * `refresh_token` cookie，30 天）再决定去留：改前这里直接 `logout()` ⇒
+       * 隔一段时间打开 `/b/` 必被踢回登录页（续期失败才登出，与改前一致）。
        */
-      initialize: () => {
+      initialize: async () => {
         const token = getToken()
         const user = getUser()
-        const valid = token ? checkTokenValidity() : false
+        if (!token) return
 
-        if (valid && token && user) {
+        if (checkTokenValidity()) {
           set({ token, user, isLoggedIn: true })
-        } else if (token && !valid) {
-          // Token 过期，清除
+          return
+        }
+
+        const freshToken = await refreshAccessToken()
+        if (freshToken) {
+          set({ token: freshToken, user, isLoggedIn: true })
+        } else {
+          // 续期失败（cookie 过期 / 被吊销）⇒ 清除（行为与改前一致）
           get().logout()
         }
       },
@@ -241,20 +252,27 @@ export const useAuthStore = create<AuthState>()(
       },
 
       /**
-       * 检查认证状态
+       * 检查认证状态（**异步**：exp 过期时先续期，issue #7249）。
+       *
+       * 页面在**发任何请求之前**调它（`pages/chat/index`）⇒ 若这里仍按「exp 过期 = 未登录」，
+       * 请求层补的续期就永远走不到（页面先跳登录页了）。
        */
-      checkAuth: () => {
+      checkAuth: async () => {
         const token = getToken()
         if (!token) {
           set({ isLoggedIn: false })
           return false
         }
-        const valid = checkTokenValidity()
-        if (!valid) {
+        if (checkTokenValidity()) {
+          set({ isLoggedIn: true })
+          return true
+        }
+        const freshToken = await refreshAccessToken()
+        if (!freshToken) {
           get().logout()
           return false
         }
-        set({ isLoggedIn: true })
+        set({ token: freshToken, isLoggedIn: true })
         return true
       },
     }),

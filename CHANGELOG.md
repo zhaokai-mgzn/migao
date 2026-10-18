@@ -43,6 +43,18 @@
 （零裸 hex）：身份条 = 品牌渐变页头（`$gradient-brand` + 下缘 48px 圆角，与登录页 / 「我的」页头同族），
 行卡与引导块 = `$radius-lg` + `$border-color` + `$shadow-card`（与看板卡片同族）。行为零改动。
 
+### 手机端商家 H5 登录态改为 1 个月：access token 过期后自动续期并重放，不再每 2 小时被踢回登录页（2026-10-18，issue #7249）
+
+用户逐字「为什么界面上手机端的二维码扫码后每次都要登录，我设置过登录有效期是一月的吧」→
+「是/b，方案选择A，但是登录态改为1个月」。现场：扫顶栏「手机端」二维码（#7198）打开的
+`https://app.migaozn.com/b/` 隔一段时间再打开必停「请先登录」。读数：access token 只有 7200 秒（2 小时），
+而手机端请求层 401 只做「清态 + 跳登录页」（PC 端 `admin-web` 早就用 HttpOnly `refresh_token` cookie 续期，
+手机端一直没有），且 `authStore` 的 `initialize` / `checkAuth` 在 exp 过期时直接登出。
+现改为：401 时用 refresh cookie 换新 accessToken 并**重放一次**（单飞，工人端点与登录面不续期），
+`initialize` / `checkAuth` 在 exp 过期时先续期、续不到才登出；refresh token 与 `refresh_token` cookie
+有效期 7 天 → **30 天**（`jwt.refresh-token-expiration: 2592000`），且 cookie 有效期改为**只取自**
+`JwtTokenProvider`（不再另抄一份字面量）。access token 仍 2 小时（短凭据面不延长）。
+
 ### 列表页筛选卡片：5 字标签不再压到输入框上（2026-10-18，issue #7238）
 
 用户 2026-10-18 截图红框（员工管理页「姓名/手机号」）逐字「PC端的小问题一起修复掉，这里太紧凑了」。
