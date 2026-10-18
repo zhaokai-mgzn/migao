@@ -199,6 +199,8 @@ public class ProductionScanCompleteService {
         Order order = productionService.resolveOrder(orderId, tenantId);
         ProcessingOrder po = productionService.requireActiveProcessingOrder(order, tenantId);
         ProcessingPositionOperation op = productionService.requireActiveOperation(po.getId(), operationId, tenantId);
+        // 🔴 「质检」工序没有报工动作（issue #7186）：与逐道报工**同一份**判据（不复制第二套文案）。
+        DocumentOperationLinkage.rejectManualReport(op);
 
         // 数量：默认 = 剩余应做（首次报工 = 应做数量；见类注释的偏离登记）
         BigDecimal qty = ProductionService.bd(body == null ? null : body.get("qty"), null);
