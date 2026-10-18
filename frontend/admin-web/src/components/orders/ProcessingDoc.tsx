@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
-import { QRCodeSVG } from 'qrcode.react'
 import { freightText } from '@/lib/logistics'
 import { orderItemQuantity, orderItemSku, quantityWithUnit } from '@/lib/order-item-sku'
 // 工序显示名的**唯一**口径（issue #4621）：纸面**不得**直接渲染工人端变体名（`operation`）
@@ -11,6 +10,7 @@ import { operationDisplayName } from '@/lib/operation-display'
 // 工序清单的索引 / 状态文案（issue #6901）：与商家端加工单块**同一份**实现
 import { operationStatusText, operationsByItem } from '@/lib/operation-list'
 import { printBodyFontPt, printPageRule } from '@/lib/print-media'
+import { useCompanyName } from '@/lib/use-company-name'
 import { cn } from '@/lib/utils'
 import type { PrintTarget } from './index'
 import type {
@@ -214,6 +214,7 @@ export default function ProcessingDoc({
   // 打印只发生在客户端；SSR/首帧无 document，portal 前先等 mounted
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
+  const companyName = useCompanyName()
 
   if (!mounted) return null
 
@@ -267,9 +268,14 @@ export default function ProcessingDoc({
         }
       `}</style>
 
-      {/* ===== ① 表头（左：9 栏；右上：QR） ===== */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
+      {/* ===== ① 表头（issue #7219：不再印 QR；企业名称在标题上方） ===== */}
+      <div>
+        <div>
+          {companyName && (
+            <div className="text-center text-sm font-medium text-neutral-700 mb-0.5" data-testid="doc-company-name">
+              {companyName}
+            </div>
+          )}
           <div className="text-center text-xl font-semibold tracking-[0.5em] mb-1">加工单</div>
           <table className="w-full border-collapse mb-2">
             <tbody>
@@ -300,31 +306,6 @@ export default function ProcessingDoc({
           </table>
         </div>
 
-        {/* 右上 QR：**缺码不画假码**（洗水码既有判据）—— 拿不到值就出虚线占位框 */}
-        <div className="shrink-0 text-center">
-          {qrValue ? (
-            <QRCodeSVG value={qrValue} size={64} level="M" title={qrValue} data-testid="processing-doc-qr" />
-          ) : (
-            <div
-              data-testid="processing-doc-qr-placeholder"
-              className="flex h-[22mm] w-[22mm] items-center justify-center border border-dashed border-neutral-400 text-center text-[7pt] text-neutral-500"
-            >
-              无码
-            </div>
-          )}
-          {/* 🔴 人可读短码（issue #6867，设计 §11.7「不是可选项」）：扫码失败 / 相机权限被拒 /
-              手上没有扫码工具时，工人**手输它 = 扫码**（§11.4 的四形态解析）。
-              取值 = `processingOrder.short_code`（服务端真值）—— 缺码印 `—`、**绝不编造**，
-              与上面「缺码不画假码」同一口径（别拿 `docNo` / 订单号顶上去：那会印出一个**扫不开也输不进**的码）。
-              形态照 `TaskCardPrint` 的 `task-card-label-short-code-*`（同款范式）。
-              ⚠️ 上一版这里印的是 `docNo` —— 而单号早在表头「单号」格印过（同纸不重复印同一真值）。 */}
-          <div
-            className="mt-0.5 font-mono text-[8pt] font-bold"
-            data-testid="processing-doc-short-code"
-          >
-            {paperText(processingOrder?.short_code)}
-          </div>
-        </div>
       </div>
 
       {/* ===== ② 正文：按套分块（每块一张 8 列表） ===== */}

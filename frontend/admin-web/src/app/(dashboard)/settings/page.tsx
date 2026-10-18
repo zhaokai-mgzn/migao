@@ -56,7 +56,7 @@
  * 五个生产域读面与三个企业级读面**全部**在本文的 effect 里发起（不藏进子组件）。
  */
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Building2, Bot, Bell, Newspaper, AlertCircle } from 'lucide-react'
+import { AlertCircle, Bell, Bot, Building2, Newspaper, QrCode } from 'lucide-react'
 import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
@@ -98,6 +98,7 @@ import {
 } from '@/lib/config-readiness'
 import type {
   SystemSettings,
+  PaymentQrcodeMap,
   AiConfig,
   BriefingConfig,
   CraftCalcConfig,
@@ -494,6 +495,10 @@ function EnterpriseDomainPanel() {
   const [uploadingLogo, setUploadingLogo] = useState(false)
   // Logo 预览加载失败标记：URL 失效/过期时回退到占位图标
   const [logoPreviewError, setLogoPreviewError] = useState(false)
+  // 收款码（issue #7219）：企业信息域内上传微信/支付宝收款码，上传即落库（仅管理员可见本域）
+  const [paymentQrcodes, setPaymentQrcodes] = useState<PaymentQrcodeMap>({})
+  const [uploadingPaymentQr, setUploadingPaymentQr] = useState<'wechat' | 'alipay' | null>(null)
+  const paymentQrInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
   const [loadingSettings, setLoadingSettings] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   // #5899：已落库基线 —— 字段失焦时用它判「到底改没改」：没改就不发请求（点进点出不写库）
@@ -609,6 +614,44 @@ function EnterpriseDomainPanel() {
     }
   }
 
+  const loadPaymentQrcodes = useCallback(async () => {
+    try {
+      const res = await settingsApi.getPaymentQrcodes()
+      setPaymentQrcodes((res.data?.data as PaymentQrcodeMap) ?? {})
+    } catch {
+      // 无 system:manage 的账号读不到（本域本身也不可见）⇒ 空表，不弹错、不画假码
+      setPaymentQrcodes({})
+    }
+  }, [])
+
+  const handlePaymentQrUpload = async (type: 'wechat' | 'alipay', e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      toast.error('仅支持 JPG、PNG、WebP 格式')
+      e.target.value = ''
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('图片大小不能超过 5MB')
+      e.target.value = ''
+      return
+    }
+    setUploadingPaymentQr(type)
+    try {
+      const up = await uploadApi.uploadImage(file)
+      const imageUrl = up.data.data.url
+      await settingsApi.updatePaymentQrcode(type, { imageUrl })
+      setPaymentQrcodes((prev) => ({ ...prev, [type]: { ...(prev[type] ?? {}), imageUrl } }))
+      toast.success(`${type === 'wechat' ? '微信' : '支付宝'}收款码已更新`)
+    } catch {
+      toast.error('收款码上传失败')
+    } finally {
+      setUploadingPaymentQr(null)
+      e.target.value = ''
+    }
+  }
+
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -650,7 +693,8 @@ function EnterpriseDomainPanel() {
   useEffect(() => {
     void loadSettings()
     void loadBriefingConfig()
-  }, [loadSettings, loadBriefingConfig])
+    void loadPaymentQrcodes()
+  }, [loadSettings, loadBriefingConfig, loadPaymentQrcodes])
 
   return (
     <div className="space-y-6">
@@ -744,6 +788,65 @@ function EnterpriseDomainPanel() {
                   未设置时展示观星台默认 Logo；上传或移除后自动保存，将展示在后台侧边栏企业名旁
                 </p>
               </div>
+            </div>
+          </div>
+
+          {/* 收款码（issue #7219）：企业信息域内上传；端点 system:manage ⇒ 仅管理员可改。
+              报价单右上角直接印这张码（缺码整块不出现，不画假码）。 */}
+          <div className="border-t border-neutral-100 pt-6" data-testid="settings-payment-qrcodes">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-9 h-9 rounded-lg bg-primary-50 flex items-center justify-center flex-shrink-0">
+                <QrCode className="w-5 h-5 text-primary-600" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-neutral-900">收款码</h3>
+                <p className="text-sm text-neutral-500 mt-0.5">
+                  上传微信 / 支付宝收款码，打印报价单时自动印在右上角（顾客扫码直接付给企业，平台不经手资金）
+                </p>
+              </div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {([
+                { type: 'wechat' as const, label: '微信收款码' },
+                { type: 'alipay' as const, label: '支付宝收款码' },
+              ]).map(({ type, label }) => {
+                const qr = paymentQrcodes[type]
+                return (
+                  <div key={type} className="rounded-lg border border-neutral-200 p-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-20 h-20 bg-neutral-50 rounded-lg border border-neutral-200 flex items-center justify-center overflow-hidden">
+                        {qr?.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={qr.imageUrl} alt={label} className="w-full h-full object-contain" />
+                        ) : (
+                          <QrCode className="w-8 h-8 text-neutral-300" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-neutral-900">{label}</div>
+                        <div className="mt-1.5">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => paymentQrInputRefs.current[type]?.click()}
+                            loading={uploadingPaymentQr === type}
+                          >
+                            {qr?.imageUrl ? '更换收款码' : '上传收款码'}
+                          </Button>
+                        </div>
+                        <input
+                          ref={(el) => { paymentQrInputRefs.current[type] = el }}
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="hidden"
+                          onChange={(e) => void handlePaymentQrUpload(type, e)}
+                        />
+                        <p className="text-xs text-neutral-400 mt-1">JPG / PNG / WebP，≤ 5MB</p>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
 

@@ -8,6 +8,8 @@ import { render, screen, cleanup, act } from '@testing-library/react'
 // 本文件多数用例用注入的 `paymentQrcodes` 覆盖该路径；这里把 API 打桩成「无码」，
 // 避免 jsdom 真发 XHR（噪音）。「无码 ⇒ 整块不出现」的判据仍由组件行为决定。
 const mockGetPaymentQrcodes = vi.fn()
+// issue #7219：纸面表头企业名称（真 hook 读 settingsApi；这里直接给真值）
+vi.mock('@/lib/use-company-name', () => ({ useCompanyName: () => '米高布艺' }))
 vi.mock('@/lib/api', () => ({
   settingsApi: { getPaymentQrcodes: (...args: unknown[]) => mockGetPaymentQrcodes(...args) },
 }))
@@ -535,6 +537,20 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       expect(img).not.toBeNull()
       expect(img.getAttribute('src')).toContain('wx.png')
       expect(docText()).toContain('亿家纺织')
+    })
+
+    it('表头印企业名称；收款码在**右上角**而不是页脚（issue #7219）', () => {
+      render(
+        <QuotationDoc
+          order={buildOrder()}
+          paymentQrcodes={{ wechat: { imageUrl: 'https://oss.example.com/wx.png' } }}
+        />
+      )
+      expect(screen.getByTestId('doc-company-name')).toHaveTextContent('米高布艺')
+      const headerQr = screen.getByTestId('quotation-payment-qr')
+      expect(headerQr.querySelector('img')?.getAttribute('src')).toContain('wx.png')
+      // 只有这一处码：页脚不再印第二份
+      expect(doc()?.querySelectorAll('img')).toHaveLength(1)
     })
 
     it('没有收款码 ⇒ 整块不出现、不画假码（不出现 img 占位）', () => {

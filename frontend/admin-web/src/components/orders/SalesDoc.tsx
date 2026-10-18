@@ -11,6 +11,7 @@ import {
   type PrintMediaId,
 } from '@/lib/print-media'
 import { usePaymentQrcodes } from '@/lib/use-payment-qrcodes'
+import { useCompanyName } from '@/lib/use-company-name'
 import { orderItemSku } from '@/lib/order-item-sku'
 import {
   resolveSalesQuantity,
@@ -223,6 +224,7 @@ export default function SalesDoc({
   useEffect(() => setMounted(true), [])
 
   const qrcodes = usePaymentQrcodes(paymentQrcodes)
+  const companyName = useCompanyName()
 
   if (!mounted) return null
 
@@ -289,7 +291,12 @@ export default function SalesDoc({
         data-testid="sales-sheet"
         style={sheetHeightMm !== null ? { height: `${sheetHeightMm}mm`, overflow: 'hidden' } : undefined}
       >
-        {/* ===== ① 表头 ===== */}
+        {/* ===== ① 表头（issue #7219：企业名称） ===== */}
+        {companyName && (
+          <div className="text-center text-[0.9em] font-medium text-neutral-700 mb-0.5" data-testid="doc-company-name">
+            {companyName}
+          </div>
+        )}
         <div className="flex items-baseline justify-between border-b border-neutral-400 pb-1 mb-1">
           <span className="text-base font-semibold tracking-[0.3em]">销售单</span>
           <span className="text-[0.9em] text-neutral-600">

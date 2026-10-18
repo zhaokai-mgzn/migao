@@ -99,6 +99,8 @@ const mockUpdateSettings = vi.fn()
 const mockGetAiConfig = vi.fn()
 const mockUpdateAiConfig = vi.fn()
 const mockUploadImage = vi.fn()
+const mockGetPaymentQrcodes = vi.fn()
+const mockUpdatePaymentQrcode = vi.fn()
 const mockGetOperationPositions = vi.fn()
 const mockGetRoutings = vi.fn()
 const mockGetFeeCombinations = vi.fn()
@@ -113,6 +115,8 @@ vi.mock('@/lib/api', () => ({
   settingsApi: {
     getSettings: (...args: any[]) => mockGetSettings(...args),
     updateSettings: (...args: any[]) => mockUpdateSettings(...args),
+    getPaymentQrcodes: (...args: any[]) => mockGetPaymentQrcodes(...args),
+    updatePaymentQrcode: (...args: any[]) => mockUpdatePaymentQrcode(...args),
     getAiConfig: (...args: any[]) => mockGetAiConfig(...args),
     updateAiConfig: (...args: any[]) => mockUpdateAiConfig(...args),
   },
@@ -611,6 +615,19 @@ describe('判据 6：域状态徽标**与主线同源**（G4），且没被主�
 // 判据 7：搬迁的能力零回归（企业信息 / AI 客服 / 通知设置）
 // ══════════════════════════════════════════════════════════════════════════════
 describe('判据 7：原四个 tab 的能力迁入域后零回归', () => {
+  it('收款码（issue #7219）：企业信息域展示已上传的微信码 + 上传入口', async () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams('domain=enterprise'))
+    mockGetPaymentQrcodes.mockResolvedValue({
+      data: { data: { wechat: { imageUrl: 'https://oss.example.com/wx.png' } } },
+    })
+    render(<SettingsPage />)
+    expect(await screen.findByTestId('settings-payment-qrcodes')).toBeInTheDocument()
+    expect(await screen.findByAltText('微信收款码')).toHaveAttribute('src', 'https://oss.example.com/wx.png')
+    expect(screen.getByRole('button', { name: /更换收款码/ })).toBeInTheDocument()
+    // 支付宝未上传 ⇒ 上传入口（不是「更换」）
+    expect(screen.getByRole('button', { name: /上传收款码/ })).toBeInTheDocument()
+  })
+
   it('企业信息域：公司名称 / 企业编码 失焦即保存（#5899，无保存按钮）', async () => {
     mockUpdateSettings.mockResolvedValue({ data: {} })
     mockSearchParams.mockReturnValue(new URLSearchParams('domain=enterprise'))
