@@ -141,6 +141,7 @@ def run_script(tmp_path: Path):
         env["STUB_STATE"] = str(state_path)
         env["STUB_CALL_LOG"] = str(log_path)
         env["PMWC_POLL_SECONDS"] = "0"
+        env["PMWC_WAIT_TIMEOUT"] = os.environ.get("PMWC_WAIT_TIMEOUT", "30")
         proc = subprocess.run(["bash", str(SCRIPT), PR, *args], env=env, cwd=str(REPO_ROOT),
                               capture_output=True, text=True, timeout=120)
         calls = [ln for ln in log_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
@@ -223,6 +224,28 @@ def test_dry_run_is_read_only(run_script):
     assert not any("update-branch" in c for c in calls), "--dry-run 不许 update"
     assert not any(c.startswith(f"gh pr merge {PR}") for c in calls), "--dry-run 不许 merge"
     assert "将 update-branch" in proc.stdout
+
+
+# ── 判据 ⑥b：等 pending **不消耗轮次**（实测教训：默认 4 轮连一轮 CI 都等不完）─────────
+
+def test_waiting_for_pending_does_not_consume_attempts(run_script):
+    """pending 多轮（CI 要跑 8-10 min）之后变 CLEAN ⇒ 必须仍然能合并。
+
+    红证 = 把「等」也计入轮次（改前语义）⇒ 本用例会在 pending 的第 2~3 轮就把轮次耗尽 ⇒ exit 3。
+    """
+    views = [_view(merge_state="BLOCKED", pending=19) for _ in range(3)]
+    views += [_view(merge_state="CLEAN"), _view(state="MERGED", merge_state="CLEAN")]
+    proc, calls = run_script(views, args=("--max-attempts", "2"), expect_rc=0)
+    assert any(c.startswith(f"gh pr merge {PR} --squash") for c in calls), "等完之后必须真的合并"
+    assert "已合并" in proc.stdout
+
+
+def test_wait_timeout_is_three(run_script):
+    """一直 pending 且不前进 ⇒ 到 --timeout 必须 3（未判定），不许当成功。"""
+    proc, calls = run_script([_view(merge_state="BLOCKED", pending=1) for _ in range(80)],
+                             args=("--timeout", "1"), expect_rc=3)
+    assert "未判定" in proc.stdout
+    assert not any(c.startswith(f"gh pr merge {PR}") for c in calls)
 
 
 # ── 判据 ⑦：脚本本体存在且可执行（防「判据在、工具没了」的假绿）──────────────────
