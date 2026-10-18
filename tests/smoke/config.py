@@ -11,11 +11,12 @@ import os
 from dataclasses import dataclass
 
 
-#: 云端测试账号的租户 ID（2026-10-04 测试环境重建）：租户 1（词元通达 / 企业编码 `default`）
-#: 连同全部数据已清空，现云端测试账号 = 走入驻流程新建的「米高测试环境」= **tenant 25**
-#: （企业编码 `shop-8yn7`，管理员手机号仍是 13800138000）。
-#: `local` 档**有意不动**：本地 Docker 栈的 tenant 1 由栈内种子/初始化创建，与本重建无关。
-CLOUD_TENANT_ID = "25"
+#: 云端冒烟账号的租户 ID（issue #7179，用户裁定 2026-10-18）：
+#: 冒烟固定登录账号改为**新账号 · 租户 46**（企业「词元通达」，管理员 `13900001025`）——
+#: 原来的 `13800138000` 在云库 `users` 里已不存在 ⇒ 部署后的 P0 冒烟腿结构上必然红
+#: （2026-10-17 那次部署实证：健康检查 4/4 过、登录 401 `该手机号未注册`）。
+#: `local` 档**有意不动**（仍是 tenant 1 + `13800138000`）：本地 Docker 栈的 tenant 1 由栈内种子创建，与云端无关。
+CLOUD_TENANT_ID = "46"
 
 
 @dataclass(frozen=True)
@@ -52,7 +53,7 @@ def get_config() -> EnvConfig:
             name="staging",
             admin_api_url=admin_api_url or "https://api.migaozn.com",
             ai_agent_url=ai_agent_url or "https://ai-api.migaozn.com",
-            admin_phone=os.getenv("ADMIN_PHONE", "13800138000"),
+            admin_phone=os.getenv("ADMIN_PHONE", "13900001025"),
             admin_sms_code=os.getenv("ADMIN_SMS_CODE", "123456"),
             tenant_id=int(os.getenv("TENANT_ID", CLOUD_TENANT_ID)),
             service_token=os.getenv("SERVICE_TOKEN", ""),
@@ -61,7 +62,7 @@ def get_config() -> EnvConfig:
             name="production",
             admin_api_url=admin_api_url or "https://api.migaozn.com",
             ai_agent_url=ai_agent_url or "https://ai-api.migaozn.com",
-            admin_phone=os.getenv("ADMIN_PHONE", "13800138000"),
+            admin_phone=os.getenv("ADMIN_PHONE", "13900001025"),
             admin_sms_code=os.getenv("ADMIN_SMS_CODE", "123456"),
             tenant_id=int(os.getenv("TENANT_ID", CLOUD_TENANT_ID)),
             service_token=os.getenv("SERVICE_TOKEN", ""),

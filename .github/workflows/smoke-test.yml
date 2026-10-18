@@ -108,6 +108,12 @@ jobs:
           SMOKE_ENV: production
           ADMIN_API_URL: ${{ inputs.admin_api_url }}
           AI_AGENT_URL: ${{ inputs.ai_agent_url }}
+          # issue #7179：冒烟固定账号**显式钉住**（租户 46 / 管理员 13900001025）——
+          # 之前只靠 `tests/smoke/config.py` 的默认值 `13800138000`，而那个号在云库 users 里已被删
+          # ⇒ 登录 401「该手机号未注册」，冒烟腿结构上必红（且此前一直 skip，没人看见）。
+          # 钉在 workflow 里是为了让「账号漂移」在**这一个文件里**可读、可改、可 grep 得到。
+          ADMIN_PHONE: 13900001025
+          TENANT_ID: 46
           ADMIN_PASSWORD: ${{ secrets.SMOKE_ADMIN_PASSWORD }}
           SERVICE_TOKEN: ${{ secrets.SMOKE_SERVICE_TOKEN }}
         run: |
