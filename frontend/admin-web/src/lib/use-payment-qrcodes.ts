@@ -17,8 +17,8 @@ import type { PaymentQrcodeMap } from '@/types'
  *    打开并不打印；`window.print()` 一定会触发 `beforeprint`，正好是「要纸面了」的时刻。
  * 3. **失败 / 为空 / 无权限一律按「无码」**（返回 `{}`，不抛不弹 toast）——
  *    调用方据此**整块不出现**：🔴 **缺码不画假码**（#4965 / 洗水码同一条判据）。
- *    `/api/admin/settings/payment-qrcodes` 需 `system:manage` 权限 ⇒ 无权限账号走到
- *    这里必然失败，属预期而非错误。
+ *    读端点权限 = `order:list`（issue #7225：销售也要打印带码报价单）⇒ 订单域读权限即可；
+ *    仍无该码的账号（极少）走到这里会失败，属预期而非错误（无码不画假码）。
  */
 export function usePaymentQrcodes(provided?: PaymentQrcodeMap): PaymentQrcodeMap {
   const [fetched, setFetched] = useState<PaymentQrcodeMap | null>(null)

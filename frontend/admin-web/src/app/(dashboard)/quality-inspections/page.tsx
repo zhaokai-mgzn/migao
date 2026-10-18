@@ -13,6 +13,7 @@ import {
 } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
 import QualityCheckForm from '@/components/production/QualityCheckForm'
+import QualityMetricsPanel from '@/components/production/QualityMetricsPanel'
 import { qualityInspectionApi } from '@/lib/api'
 import { usePermission } from '@/lib/permission'
 import {
@@ -22,7 +23,13 @@ import {
   qualityStateChipClass,
   qualityStateLabel,
 } from '@/lib/quality-check'
-import type { QualityInspectionRecord, QualityTarget, QualityTargetState } from '@/types'
+import type {
+  QualityInspectionRecord,
+  QualityStats,
+  QualityStatsWindow,
+  QualityTarget,
+  QualityTargetState,
+} from '@/types'
 
 /**
  * 质检记录 `/quality-inspections`（issue #7140 = #5652 的**商家面**）—— 大菜单「生产管理 ▸ 质检记录」。
@@ -48,15 +55,42 @@ import type { QualityInspectionRecord, QualityTarget, QualityTargetState } from 
  *
  * ## 边界（如实登记，`migao-dev-flow` §19.1）
  *
- * - **流水没有分页**：记录读面（`GET /api/admin/quality-inspections`）只有加工单 / 成品帘两个过滤，
- *   没有 `page`/`size` ⇒ 本页把返回结果**截断展示最近 20 条**并**在标题上写明**（不假装是全部）；
- *   重启条件：该读面加分页（那时本页改成分页档）；
- * - **不做时间范围筛选**：同上（没有对应入参，前端不过滤 —— 前端过滤 = 第二份口径）；
+ * - **流水是客户端分页**（issue #7217）：记录读面（`GET /api/admin/quality-inspections`）只有加工单 /
+ *   成品帘两个过滤，没有 `page`/`size` ⇒ 前端按页切分已读到的全量列表（页大小 10/20/50），
+ *   不再硬截断到 20 条；重启条件 = 该读面加服务端分页（那时改成分页档，前端不再持全量）；
+ * - **清单没有时间范围筛选**：清单读面没有时间入参，前端也不过滤（前端过滤 = 第二份口径）；
+ *   指标面板的「今日 / 本周 / 本月 / 全部」是**服务端**按首检时刻算的窗口（issue #7192，
+ *   见 `QualityMetricsPanel`）—— 两者的总体不同（队列 vs 周期读数），页面上各自标注，不混用；
  * - 判定录入后的**责任凭证不可改**：没有撤销入口（服务端也没有删除端点）。
  */
 const PAGE_SIZE = 20
-/** 流水展示上限（读面没有分页 ⇒ 显式截断 + 显式说明，不假装是全部） */
-const RECENT_LIMIT = 20
+/** 流水每页条数（读面没有服务端分页 ⇒ 前端切页；issue #7217） */
+const RECORDS_PAGE_SIZE = 10
+
+/**
+ * 指标时间窗 ⇒ 服务端入参（左闭右开 {@code [from, to)}）。
+ *
+ * 🔴 前端**只**把「今日 / 本周 / 本月 / 全部」翻成日期串；率的分子分母与分桶全在服务端算
+ * （同一份口径）。`全部` ⇒ 不传窗口（服务端按数据范围给出趋势）。
+ */
+function statsWindowRange(window: QualityStatsWindow): { from?: string; to?: string } {
+  if (window === 'all') return {}
+  const now = new Date()
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  if (window === 'week') {
+    const offset = (start.getDay() + 6) % 7 // 周一 = 0
+    start.setDate(start.getDate() - offset)
+  } else if (window === 'month') {
+    start.setDate(1)
+  }
+  const end = new Date(start)
+  if (window === 'week') end.setDate(end.getDate() + 7)
+  else if (window === 'month') end.setMonth(end.getMonth() + 1)
+  else end.setDate(end.getDate() + 1)
+  const iso = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return { from: iso(start), to: iso(end) }
+}
 
 const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: 'all', label: '全部' },
@@ -92,8 +126,36 @@ export default function QualityInspectionsPage() {
   const [records, setRecords] = useState<QualityInspectionRecord[]>([])
   const [recordsLoading, setRecordsLoading] = useState(false)
   const [recordsError, setRecordsError] = useState('')
+  const [recordsPage, setRecordsPage] = useState(1)
+  const [recordsPageSize, setRecordsPageSize] = useState(RECORDS_PAGE_SIZE)
 
   const [editing, setEditing] = useState<QualityTarget | null>(null)
+
+  // 指标（P0+P1，issue #7192）：默认「本月」；时间窗与清单**互不影响**（清单是队列，指标是周期读数）
+  const [statsWindow, setStatsWindow] = useState<QualityStatsWindow>('month')
+  const [stats, setStats] = useState<QualityStats | null>(null)
+  const [statsLoading, setStatsLoading] = useState(false)
+  const [statsError, setStatsError] = useState('')
+
+  const loadStats = useCallback(async () => {
+    setStatsLoading(true)
+    setStatsError('')
+    try {
+      const res = await qualityInspectionApi.stats({
+        ...statsWindowRange(statsWindow),
+        bucket: statsWindow === 'all' ? 'month' : 'day',
+      })
+      setStats(res.data?.data ?? null)
+    } catch {
+      setStats(null)
+      setStatsError('指标加载失败 —— 这不是「没有数据」，是这次没读到。请点「重新加载」再试一次。')
+    }
+    setStatsLoading(false)
+  }, [statsWindow])
+
+  useEffect(() => {
+    void loadStats()
+  }, [loadStats])
 
   const loadTargets = useCallback(async () => {
     setTargetsLoading(true)
@@ -126,6 +188,7 @@ export default function QualityInspectionsPage() {
     try {
       const res = await qualityInspectionApi.list()
       setRecords(res.data?.data ?? [])
+      setRecordsPage(1)
     } catch {
       setRecords([])
       setRecordsError(readErrorCopy('质检流水'))
@@ -158,9 +221,14 @@ export default function QualityInspectionsPage() {
   const refresh = useCallback(() => {
     void loadTargets()
     void loadRecords()
-  }, [loadTargets, loadRecords])
+    void loadStats()
+  }, [loadTargets, loadRecords, loadStats])
 
-  const recentRecords = records.slice(0, RECENT_LIMIT)
+  // 客户端分页（issue #7217）：读面一次返回全量（无 page/size）⇒ 前端切页，不再截断
+  const pagedRecords = records.slice(
+    (recordsPage - 1) * recordsPageSize,
+    recordsPage * recordsPageSize,
+  )
 
   return (
     <div data-testid="quality-inspections-page" className="space-y-4 p-6">
@@ -191,6 +259,15 @@ export default function QualityInspectionsPage() {
           <>数量读不到 —— 见下方失败提示（这不是「一件都没有」）</>
         )}
       </div>
+
+      <QualityMetricsPanel
+        stats={stats}
+        loading={statsLoading}
+        error={statsError}
+        window={statsWindow}
+        onWindowChange={setStatsWindow}
+        onRetry={() => void loadStats()}
+      />
 
       <SearchPanel
         fields={[
@@ -360,11 +437,7 @@ export default function QualityInspectionsPage() {
       <PageCard testId="quality-records-card" padded={false}>
         <div className="flex items-baseline justify-between border-b border-neutral-100 px-5 py-3">
           <h2 className="text-base font-medium text-neutral-900">质检流水</h2>
-          <span className="text-xs text-neutral-400">
-            {records.length > RECENT_LIMIT
-              ? `按时间倒序，最多显示最近 ${RECENT_LIMIT} 条`
-              : '按时间倒序'}
-          </span>
+          <span className="text-xs text-neutral-400">按时间倒序</span>
         </div>
 
         {recordsError && (
@@ -378,7 +451,7 @@ export default function QualityInspectionsPage() {
           </div>
         )}
 
-        {!recordsError && !recordsLoading && recentRecords.length === 0 && (
+        {!recordsError && !recordsLoading && pagedRecords.length === 0 && (
           <EmptyState
             testId="quality-records-empty"
             icon="file"
@@ -387,7 +460,7 @@ export default function QualityInspectionsPage() {
           />
         )}
 
-        {recentRecords.length > 0 && (
+        {pagedRecords.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-neutral-50 text-xs text-neutral-500">
@@ -400,7 +473,7 @@ export default function QualityInspectionsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {recentRecords.map((record) => (
+                {pagedRecords.map((record) => (
                   <tr key={record.id} data-testid={`quality-record-row-${record.id}`}>
                     <td className="px-4 py-2 whitespace-nowrap text-neutral-600">
                       {formatMoment(record.inspected_at)}
@@ -423,6 +496,21 @@ export default function QualityInspectionsPage() {
               </tbody>
             </table>
           </div>
+        )}
+
+        {records.length > 0 && (
+          <Pagination
+            current={recordsPage}
+            pageSize={recordsPageSize}
+            total={records.length}
+            onChange={setRecordsPage}
+            onPageSizeChange={(size) => {
+              setRecordsPageSize(size)
+              setRecordsPage(1)
+            }}
+            /* 读失败 / 读中 ⇒ 计数位印「—」，不把「读不到」印成「共 0 条」（issue #6703 同族） */
+            totalReliable={!recordsLoading && !recordsError}
+          />
         )}
       </PageCard>
     </div>

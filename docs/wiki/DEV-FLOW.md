@@ -81,7 +81,7 @@
 多会话并发（多 Agent / 多分支同时开发）时的铁律：**一个会话一个独立工作区，会话之间零共享写路径**。
 
 1. **会话必须建在独立 worktree**：`./scripts/dev-worktree.sh add <branch>`（默认 `../migao-wt/<分支>`）。禁止多会话共用一个工作目录——同时改文件互相覆盖、`git add` 互带对方文件、同时跑 verify 抢资源。
-2. **会话锁**：`dev-worktree.sh add` 自动登记 `.sessions/<branch>.lock`（含 PID+时间戳）；同一分支已有活跃锁时**禁止**重复建工作区/推分支。提交/推送前先 `./scripts/dev-worktree.sh list` 确认锁状态。
+2. **会话锁**：`dev-worktree.sh add` 自动登记 `.git/sessions/<branch>.lock`（含 PID+时间戳+工作区路径）；存活判据 = **PID 仍活着 或 登记的工作区仍在且仍检出该分支**（`add` 是短命进程、PID 必先退出 —— issue #7216）；同一分支仍有活锁时**禁止**重复建工作区。`add` 入口会自动清掉失效锁（事件驱动，不新增 cron）；提交/推送前先 `./scripts/dev-worktree.sh list` 确认锁状态。
 3. **端口隔离**：本地服务端口用环境变量覆盖（`API_PORT`/`AGENT_PORT`/`WEB_PORT`），会话各自 `.env.local`，杜绝 8080/8001/3001 互抢。
 4. **主工作区只读**：主仓库（migao/）只做 `fetch/rebase/merge` 与 PR 管理，**不在主工作区直接改文件**（防止未提交改动静默携带）。
 5. **分支卫生**：验证完即 PR，CI 绿即合并，分支存活 < 1-2 天；定期 `git branch --merged origin/main` 全删 + 清理 `origin gone` 的本地分支。
@@ -313,7 +313,7 @@ python3.11 -m pytest tests/unit_ci_workflows/test_case_trust_gate.py -q # L0 守
   curl -s -o /dev/null -w "%{http_code}\n" -X POST https://api.migaozn.com/api/auth/sms-code -H 'Content-Type: application/json' -d '{}'  # admin-api → 401（存活+鉴权）
   ```
 - 冒烟失败若为全量 502/Connection refused 且后续部署已覆盖 → 多为**部署滚动重启瞬态**，以最新一次部署结论为准（见 §7.3 的 mergeStateStatus 思路）。
-- 云测试环境登录：13800138000 / 万能码 123456（短信网关仍 bypass，上线前需接入）；账号属「米高测试环境」（**tenant 25**，2026-10-04 环境重建后经入驻流程新建）——原 tenant 1「词元通达」连同全部数据已清空。
+- 云测试环境登录：**13900001025** / 万能码 123456（短信网关仍 bypass，上线前需接入）；账号属**租户 46**「词元通达」的管理员（2026-10-18 起，见 issue #7179 —— 旧的 `13800138000` 已不在 `users` 表，导致部署后的 P0 冒烟腿结构上必然红；同时去掉了「tenant 25 = 米高测试环境」的旧口径）。workflow 侧由 `.github/workflows/smoke-test.yml` 的 `ADMIN_PHONE` / `TENANT_ID` 显式钉住。
 
 ## 5. 相关文档
 - `migao-dev-flow` 技能（**权威源**，本页只是它的历史节选）— 预设仓 `zhaokai-mgzn/migao-agent-presets` 的 `skills/migao-dev-flow/SKILL.md`（本机经活锚 `~/.dsh/.agent-presets/migao` 读到只读镜像）

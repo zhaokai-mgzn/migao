@@ -6,6 +6,7 @@ import { freightText } from '@/lib/logistics'
 import { orderItemSku } from '@/lib/order-item-sku'
 import { paperLineSubtotal } from '@/lib/order-amount'
 import { usePaymentQrcodes } from '@/lib/use-payment-qrcodes'
+import { useCompanyName } from '@/lib/use-company-name'
 import { printBodyFontPt, printPageRule } from '@/lib/print-media'
 import { resolveImageUrl } from '@/lib/utils'
 // 「算料输出」行的标签（原始输入 vs 算料输出的分组口径）—— 从既有那份 import，
@@ -159,6 +160,7 @@ export default function QuotationDoc({
   // 口径（调用方注入优先 / 打印时自取 / 失败或为空即「无码」）见该文件头，
   // **不在组件里再写一遍**（同一件事实两处各写一次 ⇒ 将来改一处、另一处静默不一致）。
   const qrcodes = usePaymentQrcodes(paymentQrcodes)
+  const companyName = useCompanyName()
 
   if (!mounted) return null
 
@@ -213,9 +215,36 @@ export default function QuotationDoc({
         }
       `}</style>
 
-      {/* ===== ① 表头 ===== */}
-      <div className="text-center text-xl font-semibold tracking-[0.5em] mb-1">报价单</div>
-      <div className="text-center text-xs text-neutral-500 mb-3">{order.orderNo}</div>
+      {/* ===== ① 表头（issue #7219：企业名 + 收款码右上角） ===== */}
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="min-w-0 flex-1">
+          {companyName && (
+            <div className="text-center text-sm font-medium text-neutral-700 mb-0.5" data-testid="doc-company-name">
+              {companyName}
+            </div>
+          )}
+          <div className="text-center text-xl font-semibold tracking-[0.5em] mb-1">报价单</div>
+          <div className="text-center text-xs text-neutral-500">{order.orderNo}</div>
+        </div>
+        {qrEntries.length > 0 && (
+          <div className="flex items-end gap-2 shrink-0" data-testid="quotation-payment-qr">
+            {qrEntries.map((entry) => (
+              <div key={entry.type} className="text-center">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={entry.imageUrl}
+                  alt={`${entry.label}收款码`}
+                  className="w-[22mm] h-[22mm] object-contain border border-neutral-300"
+                />
+                <div className="text-[10px] text-neutral-500 mt-0.5">{entry.label}</div>
+                {entry.payeeName && (
+                  <div className="text-[10px] text-neutral-500">{entry.payeeName}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <table className="w-full border-collapse mb-3">
         <tbody>
@@ -275,27 +304,9 @@ export default function QuotationDoc({
         </tbody>
       </table>
 
-      {/* ===== ④ 页脚：温馨提示 + 扫码支付码（无码 ⇒ 整块不出现） ===== */}
-      <div className="flex items-end justify-between gap-4 border-t border-neutral-300 pt-2">
+      {/* ===== ④ 页脚：温馨提示（收款码已移到表头右上角，issue #7219） ===== */}
+      <div className="border-t border-neutral-300 pt-2">
         <div className="text-xs text-neutral-600">{QUOTATION_FOOTER_NOTICE}</div>
-        {qrEntries.length > 0 && (
-          <div className="flex items-end gap-3 shrink-0">
-            {qrEntries.map((entry) => (
-              <div key={entry.type} className="text-center">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={entry.imageUrl}
-                  alt={`${entry.label}收款码`}
-                  className="w-[22mm] h-[22mm] object-contain border border-neutral-300"
-                />
-                <div className="text-[10px] text-neutral-500 mt-0.5">{entry.label}</div>
-                {entry.payeeName && (
-                  <div className="text-[10px] text-neutral-500">{entry.payeeName}</div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   )

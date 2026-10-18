@@ -128,6 +128,7 @@ import type {
   CustomerTagFormData,
   AiConfig,
   SystemSettings,
+  PaymentQrcode,
   LoginLog,
   UploadedFile,
   Employee,
@@ -166,6 +167,7 @@ import type { OrderContentUpdateParams } from '@/types'
 import type {
   QualityInspectionRecord,
   QualityInspectionResult,
+  QualityStats,
   QualityTargetsResponse,
 } from '@/types'
 import { FrontendToBackendStatus } from '@/types'
@@ -1094,6 +1096,16 @@ export const qualityInspectionApi = {
     return request.get<ApiResponse<QualityTargetsResponse>>('/api/admin/quality-inspections/targets' + suffix)
   },
 
+  /** 质检指标（P0+P1，issue #7192）：合格率 / 趋势 / 分组 Top-N / 待检积压；`from`/`to` 左闭右开 */
+  stats: (params: { from?: string; to?: string; bucket?: 'day' | 'week' | 'month' } = {}) => {
+    const q = new URLSearchParams()
+    if (params.from) q.set('from', params.from)
+    if (params.to) q.set('to', params.to)
+    if (params.bucket) q.set('bucket', params.bucket)
+    const suffix = q.toString() ? '?' + q.toString() : ''
+    return request.get<ApiResponse<QualityStats>>('/api/admin/quality-inspections/stats' + suffix)
+  },
+
   /** 记录流水（按加工单 / 成品帘过滤；时间倒序 —— 同件可多条 = 返工后重检） */
   list: (params: { processingOrderId?: string; orderItemId?: string } = {}) => {
     const q = new URLSearchParams()
@@ -1655,6 +1667,16 @@ export const settingsApi = {
    */
   getPaymentQrcodes: () =>
     request.get<ApiResponse<PaymentQrcodeMap>>('/api/admin/settings/payment-qrcodes'),
+
+  /**
+   * 保存某类型收款码（issue #7219）：企业设置「收款码」上传后即时落库。
+   * 端点权限 = `system:manage`（仅管理员），前端入口由「企业信息」域的 requiredCode 同码门控。
+   */
+  updatePaymentQrcode: (
+    type: 'wechat' | 'alipay',
+    data: { imageUrl: string; payeeName?: string; remark?: string },
+  ) =>
+    request.put<ApiResponse<PaymentQrcode>>(`/api/admin/settings/payment-qrcodes/${type}`, data),
 }
 
 // 智能每日经营简报 API（issue #3468）

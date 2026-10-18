@@ -320,6 +320,10 @@ describe('WorkerProfilesPanel（issue #4869）', () => {
     mockUpdateWorkerPages.mockResolvedValue({ data: { data: {} } })
     render(<WorkerProfilesPanel canWrite />)
 
+    // 操作列数据格默认 nowrap（issue #7217）：开质检 / 重置 PIN / 停用 不得逐字竖排
+    expect((await screen.findByTestId('worker-optional-inspect-w-7')).closest('td')?.className)
+      .toContain('whitespace-nowrap')
+
     // 默认（未收窄）⇒ 开质检 = 默认四页 + inspect
     fireEvent.click(await screen.findByTestId('worker-optional-inspect-w-7'))
     await waitFor(() => {

@@ -21,10 +21,13 @@ r"""「手机端入口」二维码的**单一真值**与**缺配置不画假码*
 3. **二维码内容取自该单一值**：`value={bminiH5Url}`（不许拼字符串、不许写死域名）。
 4. **缺配置不画假码**（结构层）：`{bminiH5Url ? (…) : (…)}` 的**真分支**里才有 `QRCodeSVG`，
    假分支渲染「未配置」且**一个 svg 都没有**。行为层的孪生判据在
-   `frontend/admin-web/tests/unit/pages/settings.test.tsx`（UI-064 的 5 格）。
+   `frontend/admin-web/tests/unit/components/MobileEntry.test.tsx`（UI-064 的 5 格）。
 5. **发布链在案**（否则功能在线上静默缺失）：`Dockerfile` 的 `ARG`+`ENV`、
    `deploy-frontend.yml` 的 `--build-arg`、`.env.example` 的说明三者都在；
-   任一环缺失 ⇒ 镜像里没有这个值 ⇒ 设置页永远显示「未配置」（而没人会发现）。
+   任一环缺失 ⇒ 镜像里没有这个值 ⇒ 顶栏永远显示「未配置」（而没人会发现）。
+6. **设置页不得再有入口块**（issue #7212；用户 2026-10-18 逐字「这块直接移除吧，已经迁移到
+   右上角了」）：设置页**任何形态**的手机端入口 / 二维码痕迹都判红 —— 扫码入口只在顶栏，
+   两个入口 = 入口分裂，二维码会被渲染第二处。
 
 ## 边界（照实登记）
 
@@ -44,7 +47,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ADMIN_WEB_SRC = REPO_ROOT / "frontend" / "admin-web" / "src"
 SETTINGS_PAGE = ADMIN_WEB_SRC / "app" / "(dashboard)" / "settings" / "page.tsx"
-#: 手机端入口的**唯一渲染处**（issue #7198）：顶栏主入口与设置页一行入口共用同一块面板。
+#: 手机端入口的**唯一渲染处**（issue #7198 / #7212）：全站只有顶栏入口，设置页没有入口块。
 #: 判据 3/4 的三元（`{bminiH5Url ? (…) : (…)}`）随落位从设置页搬到这里 —— **判据只搬位置、不放宽**。
 MOBILE_ENTRY = ADMIN_WEB_SRC / "components" / "layout" / "MobileEntry.tsx"
 HEADER = ADMIN_WEB_SRC / "components" / "layout" / "Header.tsx"
@@ -234,10 +237,23 @@ def _problems(page_src=None, entry_src=None, header_src=None, helper_src=None, d
 
     if page_src is None:
         problems.append("frontend/admin-web/src/app/(dashboard)/settings/page.tsx 缺失")
-    elif "<MobileEntryInline" not in page_src:
-        problems.append(
-            "设置页必须渲染共享的手机端入口（`<MobileEntryInline />`）—— 页面里不画第二份二维码"
-        )
+    else:
+        # 🔴 issue #7212（用户 2026-10-18 逐字「这块直接移除吧，已经迁移到右上角了」）：
+        # 扫码入口**只在顶栏**。设置页任何形态的入口块复活都判红 —— 包括「换回共享组件」那种
+        # 看起来更"整齐"的复活（两个入口 = 入口分裂，且二维码会被渲染第二处）。
+        # 注释抹掉再判：散文里提到组件名不算实现（同 `_hardcoded_domain_sites` 的口径）。
+        page_code = _strip_comments(page_src)
+        for marker, why in (
+            ('data-testid="bmini-h5-entry"', "入口块（bmini-h5-entry）"),
+            ("<MobileEntryInline", "共享入口组件（<MobileEntryInline />）"),
+            ("getBminiH5Url", "地址读取（getBminiH5Url）"),
+            ("QRCodeSVG", "二维码渲染（QRCodeSVG）"),
+            ("qrcode.react", "二维码依赖（qrcode.react）"),
+        ):
+            if marker in page_code:
+                problems.append(
+                    f"设置页不得再渲染手机端入口 —— 发现 {why}；扫码入口只在顶栏（issue #7212）"
+                )
     if entry_src is None:
         problems.append(
             "frontend/admin-web/src/components/layout/MobileEntry.tsx 缺失 —— 手机端入口没有唯一渲染处"
@@ -328,8 +344,8 @@ def test_domain_exemptions_are_alive_and_justified():
     assert len(ALLOWED_DOMAIN_SITES) <= 3, "豁免条目过多 ⇒ 判据正在被绕过（要么收敛实现，要么重新论证）"
 
 
-def test_qr_entry_is_on_the_settings_page_and_keeps_existing_tabs():
-    """判据：手机端入口落在「企业基础设置」页，且既有的设置内容一块不少（只加不改）。
+def test_qr_entry_is_in_the_header_only_and_keeps_existing_tabs():
+    """判据：扫码入口**只在顶栏**；设置页不再有入口块，且既有的设置内容一块不少（只加不改）。
 
     ⚠️ 2026-10-09（issue #6580）**第二次改判**：本页重构成「配置指挥台」，
     旧的四个 tab（`label: '<名>'`）改由**域目录单一真值模块**
@@ -369,14 +385,15 @@ def test_qr_entry_is_on_the_settings_page_and_keeps_existing_tabs():
     assert "router.replace('/settings/params')" not in src, (
         "旧深链**不再**跳去 `/settings/params`（该页已并回本页 ⇒ 跳过去会回到一个重复入口）"
     )
-    # 🔴 issue #7198：主入口搬到**顶栏**（扫码是跨设备交接的工具）；设置页只留一行入口。
-    # 落位变了，判据不变：① 顶栏真的挂了它；② 设置页真的复用同一块面板；
-    # ③ 「未配置」与二维码锚点仍在**唯一渲染处**（不许两处各画一份）。
-    for testid in ('data-testid="bmini-h5-entry"',):
-        assert testid in src, f"设置页缺 {testid}"
-    assert "<MobileEntryInline" in src, (
-        "设置页必须渲染共享的手机端入口（<MobileEntryInline />）—— 页面里不画第二份二维码"
-    )
+    # 🔴 issue #7198：主入口在**顶栏**（扫码是跨设备交接的工具）；
+    # 🔴 issue #7212：设置页那一行**整块移除**（用户 2026-10-18 逐字「这块直接移除吧，
+    # 已经迁移到右上角了」）⇒ 判据翻转：设置页**不得**再出现任何形态的入口 / 二维码痕迹。
+    # 顶栏真的挂了它 + 「未配置」与二维码锚点仍在**唯一渲染处**（不许两处各画一份）。
+    page_code = _strip_comments(src)
+    for marker in ('data-testid="bmini-h5-entry"', 'MobileEntryInline', 'qrcode.react', 'QRCodeSVG'):
+        assert marker not in page_code, (
+            f"设置页又出现了手机端入口痕迹（{marker}）—— 扫码入口只在顶栏（issue #7212）"
+        )
     entry_src = _read(MOBILE_ENTRY)
     assert isinstance(entry_src, str), f"{MOBILE_ENTRY} 缺失 —— 手机端入口没有唯一渲染处"
     for testid in ('data-testid="bmini-h5-qr"', 'data-testid="bmini-h5-unconfigured"'):
@@ -439,7 +456,9 @@ def test_mutations_are_all_detected(tmp_path):
             entry_src=entry.replace("const bminiH5Url = getBminiH5Url()", f"const bminiH5Url = process.env.{ENV_VAR} || ''")
         ),
         "顶栏摘掉手机端入口": dict(header_src=header.replace("<MobileEntryHeader />", "")),
-        "设置页恢复自画一块（不再用共享的一行入口）": dict(page_src=page.replace("<MobileEntryInline />", "")),
+        "设置页复活手机端入口块": dict(
+            page_src=page + '\n<div data-testid="bmini-h5-entry"><MobileEntryInline /></div>\n'
+        ),
     }
     undetected = []
     for name, kwargs in mutations.items():

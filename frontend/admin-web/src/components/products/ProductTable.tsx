@@ -144,6 +144,8 @@ export default function ProductTable({
     {
       key: 'name',
       title: '商品标题',
+      // 长文本列显式允许折行；其余列由 Table 原语默认 nowrap（issue #7217）
+      wrap: true,
       render: (record) => (
         <div className="flex items-start gap-3 min-w-[200px]">
           <div className="w-10 h-10 rounded-md overflow-hidden bg-neutral-100 flex-shrink-0 border border-neutral-200">

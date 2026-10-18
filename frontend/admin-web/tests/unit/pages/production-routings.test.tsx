@@ -420,7 +420,9 @@ vi.mock('@/lib/api', () => ({
 }))
 
 import { toast } from 'sonner'
-import ProcessConfigPage from '@/app/(dashboard)/production/routings/page'
+// issue #7182：旧路由 `/production/routings` 已下架（改成重定向）⇒ 本文件直接渲染**功能体**，
+// 不借旧页当壳。覆盖一条都不减：149 条判据本来测的就是 `ProcessConfigBoard` 的行为。
+import ProcessConfigBoard from '@/components/production-config/ProcessConfigBoard'
 
 const ok = (data: unknown) => ({ data: { success: true, data } })
 
@@ -706,14 +708,14 @@ const beGuardByName = () =>
 
 /** 渲染并切到「工艺路线」tab（路线内容在第二个 tab，默认落在「工艺项」） */
 const renderOnRoutes = async () => {
-  render(<ProcessConfigPage />)
+  render(<ProcessConfigBoard />)
   await waitFor(() => expect(screen.getByTestId('process-config-tab-process')).toBeInTheDocument())
   await userEvent.click(screen.getByTestId('process-config-tab-process'))
 }
 
 /** 渲染并停在「工艺项」tab（默认 tab）；等到这一屏**唯一**的表就位 */
 const renderOperations = async () => {
-  render(<ProcessConfigPage />)
+  render(<ProcessConfigBoard />)
   await waitFor(() => expect(screen.getByTestId('craft-operations-panel')).toBeInTheDocument())
   await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
 }
@@ -860,7 +862,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
   it('部位价目矩阵：端点失败只在该区给可读提示（不白屏、不影响其余区）', async () => {
     mockGetOperationPositions.setDefaultRejectedOnce(new Error('500'))
-    render(<ProcessConfigPage />)
+    render(<ProcessConfigBoard />)
 
     await waitFor(() => expect(screen.getByTestId('operation-price-matrix-error')).toHaveTextContent('工序单价加载失败'))
     // 路线半边照常（切过去仍渲染真实数据）
@@ -1226,7 +1228,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
   })
 
   it('⑨c-⑥ 首屏就发算料 / 裁高读面（用户裁定）：第 ④ 步不必先点 tab 才有真值', async () => {
-    render(<ProcessConfigPage />)
+    render(<ProcessConfigBoard />)
     await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
 
     // 红证：把 `loadCalcConfig` / `loadCutReadiness` 改回懒加载（切到本 tab 才发）⇒ 本断言红
@@ -2949,7 +2951,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
   })
 
   it('**两个 tab**（工序管理 / 裁高配置）且默认落第一个；算料 tab 已退役（issue #6825）', async () => {
-    render(<ProcessConfigPage />)
+    render(<ProcessConfigBoard />)
     await waitFor(() => expect(screen.getByTestId('process-config-tabs')).toBeInTheDocument())
 
     const tabs = screen.getByTestId('process-config-tabs')
@@ -3002,7 +3004,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
 
   it('只读端点失败不白屏：路线列表失败给提示 + 重试；工序库失败只在该区提示', async () => {
     mockGetRoutings.mockReset().mockRejectedValueOnce(new Error('500')).mockResolvedValue(ok(ROUTINGS))
-    render(<ProcessConfigPage />)
+    render(<ProcessConfigBoard />)
 
     await waitFor(() => expect(screen.getByTestId('routings-error')).toHaveTextContent('工艺路线加载失败'))
     await userEvent.click(screen.getByTestId('routings-retry'))
@@ -3029,7 +3031,7 @@ describe('工艺配置页 /production/routings（新路线模型，issue #4433 =
   // ══════════════════ ⑪ 商家面不得出现内部机制名 ══════════════════
 
   it('工艺配置页不得出现「信号映射」这个概念：不渲染该区、不发起请求、页面文本无「信号」', async () => {
-    render(<ProcessConfigPage />)
+    render(<ProcessConfigBoard />)
     await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
 
     for (const id of [

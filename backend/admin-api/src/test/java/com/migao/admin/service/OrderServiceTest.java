@@ -3442,6 +3442,82 @@ class OrderServiceTest {
         assertThat(captor.getValue().getActualAmount().toPlainString()).isEqualTo("0.01");
     }
 
+    // ── issue #7219：processing_info 缺颜色/门幅时按 SKU 兜底 ──────────────────────
+
+    @Test
+    void backfillSkuIdentity_fillsMissingColorAndWidthFromSoleSku() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("colorName", "");
+        ProductSku sku = ProductSku.builder().id(7L).colorName("米白").doorWidth("2.8米").build();
+        Map<String, Object> out = OrderService.backfillSkuIdentity(info, List.of(sku), null);
+        assertThat(out.get("colorName")).isEqualTo("米白");
+        assertThat(out.get("doorWidth")).isEqualTo("2.8米");
+    }
+
+    @Test
+    void backfillSkuIdentity_doesNotOverrideExistingSnapshot() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("colorName", "雾霾蓝");
+        info.put("doorWidth", "3.2米");
+        ProductSku sku = ProductSku.builder().id(7L).colorName("米白").doorWidth("2.8米").build();
+        Map<String, Object> out = OrderService.backfillSkuIdentity(info, List.of(sku), null);
+        assertThat(out.get("colorName")).isEqualTo("雾霾蓝");
+        assertThat(out.get("doorWidth")).isEqualTo("3.2米");
+    }
+
+    @Test
+    void backfillSkuIdentity_usesSkuIdWhenMultipleSkus() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("skuId", 12L);
+        List<ProductSku> skus = List.of(
+                ProductSku.builder().id(11L).colorName("米白").doorWidth("2.8米").build(),
+                ProductSku.builder().id(12L).colorName("象牙白").doorWidth("3.2米").build());
+        Map<String, Object> out = OrderService.backfillSkuIdentity(info, skus, null);
+        assertThat(out.get("colorName")).isEqualTo("象牙白");
+        assertThat(out.get("doorWidth")).isEqualTo("3.2米");
+    }
+
+    @Test
+    void backfillSkuIdentity_doesNotGuessWithMultipleSkusAndNoSkuId() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        List<ProductSku> skus = List.of(
+                ProductSku.builder().id(11L).colorName("米白").doorWidth("2.8米").build(),
+                ProductSku.builder().id(12L).colorName("象牙白").doorWidth("3.2米").build());
+        Map<String, Object> out = OrderService.backfillSkuIdentity(info, skus, null);
+        assertThat(out).doesNotContainKeys("colorName", "doorWidth");
+    }
+
+    @Test
+    void backfillSkuIdentity_matchesSkuByProductNameSuffixWhenMultipleSkus() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        List<ProductSku> skus = List.of(
+                ProductSku.builder().id(11L).colorName("米白").doorWidth("2.8米").build(),
+                ProductSku.builder().id(12L).colorName("深灰").doorWidth("3.2米").build());
+        Map<String, Object> out = OrderService.backfillSkuIdentity(info, skus, "回归帘头-平幔-深灰-3.2米");
+        assertThat(out.get("colorName")).isEqualTo("深灰");
+        assertThat(out.get("doorWidth")).isEqualTo("3.2米");
+    }
+
+    @Test
+    void backfillSkuIdentity_doesNotGuessWhenSuffixIsAmbiguous() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        List<ProductSku> skus = List.of(
+                ProductSku.builder().id(11L).colorName("米白").doorWidth("2.8米").build(),
+                ProductSku.builder().id(12L).colorName("米白").doorWidth("2.8米").build());
+        Map<String, Object> out = OrderService.backfillSkuIdentity(info, skus, "回归帘头-平幔-米白-2.8米");
+        assertThat(out).doesNotContainKeys("colorName", "doorWidth");
+    }
+
+    @Test
+    void backfillSkuIdentity_keepsPresentHalfAndFillsMissingHalf() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("colorName", "雾霾蓝");
+        ProductSku sku = ProductSku.builder().id(7L).colorName("米白").doorWidth("2.8米").build();
+        Map<String, Object> out = OrderService.backfillSkuIdentity(info, List.of(sku), null);
+        assertThat(out.get("colorName")).isEqualTo("雾霾蓝");
+        assertThat(out.get("doorWidth")).isEqualTo("2.8米");
+    }
+
     /**
      * 从「只写自己负责的列」的条件更新（issue #6955 的 T2b 形态）里取出**字符串实参**。
      *

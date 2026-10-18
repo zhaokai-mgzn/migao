@@ -1071,6 +1071,61 @@ export interface QualityTargetsResponse {
   counts: Record<QualityTargetState, number>
 }
 
+/** 指标时间窗（issue #7192）：今日 / 本周 / 本月 / 全部。 */
+export type QualityStatsWindow = 'today' | 'week' | 'month' | 'all'
+
+/** 趋势的一个桶（日 / 周 / 月）。`first_pass_rate` 为 `null` = 该桶 0 样本（**不是** 0%）。 */
+export interface QualityStatsPoint {
+  bucket: string
+  inspected: number
+  first_pass: number
+  first_pass_rate: number | null
+}
+
+/** 分组 Top-N 的一行（加工单 / 商品 / 检验人）。 */
+export interface QualityStatsGroup {
+  name: string
+  inspected: number
+  first_pass: number
+  first_pass_rate: number | null
+}
+
+/**
+ * 质检指标（P0+P1，issue #7192）—— **服务端唯一实现**，前端只格式化。
+ *
+ * 🔴 全部按「件」聚合（`order_item_id` 级）：未检**不进分母**；0 样本的率是 `null`（显示「—」）。
+ * 首检合格率按**首次**判定算（复检合格不洗白）；当前合格率 / 返工率 / 报废率按**最新**判定算。
+ */
+export interface QualityStats {
+  window: { from: string | null; to: string | null; name: string | null }
+  bucket: 'day' | 'week' | 'month'
+  min_sample: number
+  counts: {
+    inspected: number
+    first_pass: number
+    current_pass: number
+    rework: number
+    scrap: number
+  }
+  rates: {
+    first_pass_rate: number | null
+    current_pass_rate: number | null
+    rework_rate: number | null
+    scrap_rate: number | null
+  }
+  trend: QualityStatsPoint[]
+  by_processing_order: QualityStatsGroup[]
+  by_product: QualityStatsGroup[]
+  by_inspector: QualityStatsGroup[]
+  /** 待检积压：`oldest_pending_hours` 是**近似**（无「进入待检」时间戳，按加工单生成时刻起算）。 */
+  backlog: {
+    pending: number
+    oldest_pending_hours: number | null
+    approximate: boolean
+    approximate_from: string
+  }
+}
+
 export interface ProductionProgress {
   total?: number
   done?: number

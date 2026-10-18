@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProcessingPositionOperation;
+import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProcessingPositionOperationMapper;
@@ -86,6 +87,29 @@ public class DocumentOperationLinkage {
             return 0;
         }
         return complete(order, orderItemId, identity, tenantId, List.of(QUALITY_OPERATION_NAME));
+    }
+
+    /**
+     * 「质检」工序**没有报工动作** —— 判定即报工（issue #7186，用户 2026-10-18 逐字：
+     * 「质检员不需要报工这个动作，只需要有一个质检动作，完成判定后自动报工，然后自动生成质检流水」）。
+     *
+     * <p>为什么判据必须落在**服务端写入口**、而不是只把按钮藏起来：报工与判定是两条独立写路径，
+     * 先报工会让 {@link #completeQualityOperation} 的「只做未做满的」幂等判据（{@code done_qty >= qty}）
+     * 把判定侧的自动报工<b>静默跳过</b> ⇒ 落出「报了工、没判过」的脏行（计件记给了一个没做的动作）；
+     * 而按钮藏不藏得住取决于客户端版本（{@code frontend/bmini-app} 今天没有质检面）。
+     * ⇒ 服务端 fail-closed，客户端只做体验。</p>
+     *
+     * <p>返工 / 报废沿用 #7165 口径：判定照落质检流水，但<b>不</b>推进本工序、不计件（还要再检）。</p>
+     */
+    public static void rejectManualReport(ProcessingPositionOperation op) {
+        if (op == null || !QUALITY_OPERATION_NAME.equals(op.getOperationName())) {
+            return;
+        }
+        throw BusinessException.validationError(
+                "工序「质检」没有报工动作：请在质检页录入判定（合格 / 返工 / 报废），提交后自动报工并生成质检单",
+                List.of(BusinessException.detail("operation_id",
+                        "「质检」工序的完成由判定驱动（判定 ≠ 合格不完成，还要再检）")),
+                "扫码进入这一件的质检区块 → 选判定（返工 / 报废必填原因）→ 提交；提交即完成报工");
     }
 
     private static java.math.BigDecimal remainingQty(ProcessingPositionOperation op) {

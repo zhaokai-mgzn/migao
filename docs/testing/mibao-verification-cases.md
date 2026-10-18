@@ -3488,7 +3488,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（117 case）
+## 杂项域（118 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5264,6 +5264,22 @@
 ```
 溯源: 2026-10-17 新增（issue #6956 · 现象 C 的类级固化）。取号 = 现取 origin/main 的 MC 号最大（116）⇒ **MC-117**。 ｜ tags: meta-guard, concurrency, soft-delete, backend-contract
 
+### MC-118. dev-worktree 会话锁判活：PID 已退出但登记的工作区仍在且仍检出该分支 ⇒ 仍算占用（issue #7216）；`add` 入口自动清失效锁，`rm` 释放锁，prune 侧同一口径 🔵
+```
+你: 并行跑 4~5 个会话后，`./scripts/dev-worktree.sh lock` 全是 💀 —— 刚建好、还在里面干活的工作区也被判「进程已退出，锁失效」，同一分支重复建工作区不会被拦
+数据: **病（2026-10-18 项目卫生现取，逐字）**：`lock_register` 写的是 `$$` = `dev-worktree.sh add` 自己的 PID（`add` 一返回该 PID 必已退出）⇒ 只按 `kill -0` 判活时**每把锁一建出来就是失效**：`./scripts/dev-worktree.sh lock` 现取 84 条全 💀（含 7212 / 7213 两个随后仍在推送提交的活跃会话）；「同一分支已有活跃锁 ⇒ 拒绝建区」永不触发；失效锁只增不减。
+数据: **判据 1（实例判据，行为面，真 fixture + 真 git）**：`add` 返回后其 PID 已退出，锁仍必须显示 🔒 且理由含「工作区仍在」；判据 = tests/unit_ci_workflows/test_dev_worktree_lock_liveness.py::test_lock_stays_active_after_add_process_exits。
+数据: **判据 2（修前红，注入式，§28.1 出口①）**：把判活退回「只按 PID」⇒ 同 fixture 必须显示 💀（注入后另做 `bash -n` 自证，防语法错冒充红证）；判据 = 同文件::test_injected_pid_only_liveness_regresses_to_stale。
+数据: **判据 3（prune 判据）**：`lock --prune` 只清「PID 死了**且**工作区不在（或不在该分支上）」的锁；工作区仍在且检出该分支的锁必须保留；判据 = 同文件::test_prune_drops_stale_but_keeps_live_worktree_lock / ::test_lock_for_another_branch_is_stale。
+数据: **判据 4（事件驱动自愈，铁律 10：不新增 cron）**：`add` 入口自动清失效锁；判据 = 同文件::test_add_prunes_stale_locks。
+数据: **判据 5（rm 释放）**：`rm <branch>` 后锁文件必须消失（旧写法以 `lock_alive` 为前提、在 add 之后永假 ⇒ 锁从不在 rm 时释放）；判据 = 同文件::test_rm_releases_session_lock。
+数据: **判据 6（类级元守卫：跨消费者同源）**：`scripts/agent-presets-guard.py::_locked_branches`（`prune` 用）与 bash 判活必须同一口径（PID 活着 **或** 工作区仍在且仍检出该分支）；只改 bash ⇒ `prune` 仍把有会话的工作区判「可安全移除」。行为判据 = 同文件::test_guard_prune_uses_same_liveness_rule；静态判据 = 同文件::test_liveness_rule_has_single_implementation（`lock_alive` 必须委托、`kill -0` 全脚本只许一处、prune 侧必须同时看 pid_alive/worktree_present）。
+数据: **边界（照实登记，§19.1）**：① PID 只是「创建瞬间」证据 —— 本用例不判「同一会话是否还在用」，只判「这个分支是否仍被占用」（保守方向：宁可不判可安全移除）；② 不做心跳/租约（会引入新进程与超时语义，超出本单半径）；③ 只跑定点判据，不跑 `verify-all.sh gate` / 全量 pytest（重活串行，migao-dev-flow §27）。
+前置: 本用例是 [backend-contract] 纯离线判据：前置 = `scripts/dev-worktree.sh` / `scripts/agent-presets-guard.py` 在场且可解析；行为面判据在 `tmp_path` 里真 `git init` + 真 `add` 造真 worktree 与真会话锁（零网络、零其库、不碰任何真实工作区；`gh` 用 rc=1 垫片、HOME 指向 tmp_path）。前置由判据自身持有：文件缺失 / 夹具造不出来 ⇒ 当场红；agent-eval 栈不跑它
+跳过: [backend-contract] 真 fixture 行为守卫（真 git 仓库 / 真 worktree / 真会话锁一律造在 tmp_path，零网络、零其库、不碰真实工作区）+ 静态单一实现守卫，由 tests/unit_ci_workflows/test_dev_worktree_lock_liveness.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-18 新增（issue #7216，P3 研发工具）。落码 = ① `scripts/dev-worktree.sh`：判活改为 `lock_file_alive`（PID 活着 **或** 登记工作区仍在），`lock_prune` 复用同一判据并支持 `--quiet`，`add` 入口自动清失效锁，`rm` 无条件释放锁；② `scripts/agent-presets-guard.py::_locked_branches` 同口径（prune 侧）；③ 判据 tests/unit_ci_workflows/test_dev_worktree_lock_liveness.py（6 条：实例 / 修前红注入 / prune / add 自愈 / rm 释放 / 跨消费者同源与单一实现）；④ 台账 tests/unit_ci_workflows/scripts_locked_tail_ledger.json 删掉陈旧豁免（`dev-worktree.sh::lock_alive` 已不再是 `[ … ] && …` 形态，只许缩短）。⚠️ **红证读数（可复算）**：改前 `./scripts/dev-worktree.sh add <b> && ./scripts/dev-worktree.sh lock` ⇒ 该行 💀（PID 已退出）；改后同命令 ⇒ 🔒（工作区仍在）；注入「只按 PID」后 ⇒ 回到 💀。⚠️ **不入 CHANGELOG**（铁律 7 豁免：研发工具 / `scripts/` 改动，对用户无可观察影响）。取号 = 现取 origin/main 的 MC 最大 117 ⇒ MC-118。 ｜ tags: backend-contract, dev-tooling, worktree, session-lock, liveness, meta-guard, red-proof
+
 ## 商家入驻域（7 case）
 
 ### OB-001. 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员 🔵
@@ -6988,10 +7004,11 @@
 数据: 命中而**未配置取值**的项（壁达的「画线」即此形态）= misses(reason=unresolved)：显式报出、不计入合计、**不按 0 算**
 数据: 缺行 ⇒ source=default（壁达现场弹窗 7 项，画线留空）；PUT 是全量替换，缺键 / 未知键 / 越界值 ⇒ 422 逐条理由（不静默回退默认值）
 数据: 本版只算不写机器：任何路径都不得开串口 / 写寄存器（下发归上游设计单）
+数据: 预演取值域 = **闭词表选择器**（issue #7213）：安装工艺 = 单选 `CRAFT_OPTIONS`（4 值 +「不指定」）、特殊选项 = 多选 `SPECIAL_OPTIONS`（19 项，默认折叠），两个字段都**不是自由文本**；提交 body 仍为 `craft` 字符串 + `special_options` 数组，逐字取自所选项（不拼逗号串）。红证：把任一改回 `<input>` ⇒ ⑥ 红（`tagName` / 默认折叠）。执行点 = frontend/admin-web/tests/unit/components/CuttingHeightConfigPanel.test.tsx 的「⑥ 预演的「安装工艺 / 特殊选项」是闭词表选择器」。
 跳过: [backend-contract] 本条只登记「裁高配置与裁剪高度计算」这一层**确定性逻辑**，由单元测试全量覆盖（backend/admin-api/src/test/java/com/migao/admin/service/CuttingHeightConfigServiceTest.java）⇒ 不进 agent-eval 冒烟（同 CH-036 / CH-042 惯例）。⚠️ 它**不覆盖**「商家该把哪些选项配上」—— 壁达那批「选项/扩展项 ↔ 增量项」的对应行属现场取证（设计单 docs/design/cutting-height-config-and-terminal.md §5）。
 ```
 真值: processing-manage.cutting-height-config
-溯源: 2026-09-29 新增（母单 #5161）：裁高配置（增量项档案 + 命中口径 + 取整）与裁剪高度计算的引擎覆盖登记，单测覆盖。用户当次裁定：颗粒度 = 部位级、取值 = 租户级、默认命中 = 同名匹配、取整 = 保留三位小数（机器三位小数）、手改只读、接高第一版就做（按特殊选项「接高」，不新造门幅逻辑）。 ｜ tags: processing, cutting_height, tenant_config, backend-contract
+溯源: 2026-09-29 新增（母单 #5161）：裁高配置（增量项档案 + 命中口径 + 取整）与裁剪高度计算的引擎覆盖登记，单测覆盖。用户当次裁定：颗粒度 = 部位级、取值 = 租户级、默认命中 = 同名匹配、取整 = 保留三位小数（机器三位小数）、手改只读、接高第一版就做（按特殊选项「接高」，不新造门幅逻辑）。 ｜ 2026-10-18（issue #7213）**预演输入形态改判**：用户逐字「这里的两个输入框改成下拉框会不会更格式，如果要支持多选的就改成多选下拉框？」⇒ 预演的「安装工艺」自由文本改**单选**（`CRAFT_OPTIONS` 4 值 +「不指定」）、「特殊选项（逗号分隔）」改**多选下拉**（`SPECIAL_OPTIONS` 19 项，默认折叠，与下单页同一份 join key）；提交协议与命中口径不变（前端仍只把「订单侧取值」逐字传给服务端，不自己比名字）。判据新增一格，原判据一格不放宽。 ｜ tags: processing, cutting_height, tenant_config, backend-contract
 
 ### PG-046. 扫码读面补「部位生产信息」全量明细键（只加不改：商品身份/规格尺寸/加工信息/算料/派工/部位备注；键集 = 三条工人读面共享的唯一一份，单测覆盖，非 LLM 行为） 🔵
 ```
@@ -7107,7 +7124,7 @@
 ```
 溯源: 2026-10-14 新增（issue #6936 的类级固化，与 PG-074 同批）：沿用 #6928 的元守卫范式（扫描器非空跑自证 / 谓词完整性 / 未登记即红 / 登记必须兑现 / 豁免只许缩短 / 判别力自证），但**扩到本单的射程**（`ProductionOperationCommandService` 里 `production_operations.deleted` 的两条软删写路径：谓词三件套 + 显式写列 + 影响行数判定，另加写路径登记表），台账 = backend/admin-api/src/test/resources/production-operation-delete-cas-ledger.json（豁免基线 **0**）。既有判据**未放宽**（`InboundOrderStatusCasMetaGuardTest` 的 MC-100 一字未动）。取号 = PG-075（现取未占用）。 ｜ tags: production, operation, concurrency, meta_guard, backend-contract
 
-## 加工单域（72 case）
+## 加工单域（74 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -8079,6 +8096,37 @@
 跳过: [backend-contract] 纯后端真库并发判据（真 PG 一次性集群，走 `PgCluster.startOrAbort()` 收口）+ 类级元守卫：admin-api 单测面，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 origin/main 已占号最大 **PG-082**（#7162 质检单占用）⇒ 本单取 **PG-083**（本单原定 PG-077 已被 main 的质检用例占用，按「让号」改号；**不取** `next_case_id.py` 报的空洞号）。 ｜ tags: concurrency, cas, tenant-isolation, soft-delete, backend-contract, realdb
+
+### PG-086. 质检工序没有报工动作：判定即报工（提交判定 ⇒ 自动写报工 + 生成质检流水），报工 / 扫码完成入口对质检工序 422 且零写入 🔵
+```
+你: 用户 2026-10-18 逐字：「真实流程是质检员先质检，然后报工&评判」
+你: 用户 2026-10-18 逐字：「所以质检员不需要报工这个动作，只需要有一个质检动作，完成判定后自动报工，然后自动生成质检流水」
+数据: **判据 1·两条写入口都拦得住（422 + 零写入）**：逐道报工（`POST /api/worker|admin/production/orders/{orderId}/operations/{operationId}/report`）与扫码完成（`POST /api/worker/production/scan/complete`）对「质检」工序必须 422 具名拒绝（文案指向质检录入 + 给 suggestion），且**不落 `production_work_logs`、不 CAS 推进 `done_qty`**。红证：摘掉 `DocumentOperationLinkage#rejectManualReport` 的任一处调用 ⇒ 该入口变成「报工成功」⇒ 断言红。证据：backend/admin-api/src/test/java/com/migao/admin/service/ProductionReportQualityGuardTest.java（reportingQualityOperationIsRejected）+ ProductionScanCompleteServiceTest.java（qualityOperationIsNotReportable）
+数据: **判据 2·对照不得误伤**：非质检工序（如「精裁-布」）报工照常成功（落报工明细 + 推进工序 + 回执 `status=done`）。证据：ProductionReportQualityGuardTest（reportingNormalOperationStillWorks）
+数据: **判据 3·判定即报工（自动，口径不变）**：判定 = `pass` 且工人身份 ⇒ 走既有报工口径（写 `production_work_logs`、计件记给该工人）+ 完成该件「质检」工序；观星台员工（无工人身份）⇒ 只推进工序、不计件；`rework` / `scrap` ⇒ 照落质检流水、**不**推进工序、不计件（还要再检）。证据：QualityCheckServiceTest + ProductionServiceCompleteByDocumentTest（issue #7165 的既有判据，本单未改口径）
+数据: **判据 4·工人端只有一个动作（无报工按钮）**：当前工序 = 质检 ⇒ 工人端扫码页**不渲染** `wh5-report` / `wh5-work-type`，只出质检区块 + 一句「录入判定即完成报工」；非质检工序仍渲染报工按钮；未开通 `inspect` 页时如实说「需由质检员录入判定」而不是留死页面。证据：frontend/worker-h5/tests/worker-h5-quality.test.mjs（⑦⑧⑨）
+数据: **边界（照实登记）**：① 待检清单读面**不动**（用户同日撤回「报工后才产生待检」那版，读面仍从加工单快照派生）；② bmini 小程序今天没有质检面（`frontend/bmini-app/src` 零「质检」引用）⇒ 它若对质检工序发起报工由服务端 422 兜底，本单不补 UI；③ 藏按钮不构成授权（服务端才是闸）。
+前置: 前置 = 活跃加工单 + 其路由里确有「质检」工序（`V54__seed_production_operations.sql` 的 op-v54-26）；工人端「质检」页（`inspect`）逐人开。无质检工序的单代入本判据 ⇒ 行为必须零变化。
+跳过: [backend-contract] 服务端拒绝码 + 工人端渲染判据（零 LLM 行为），不进 agent-eval 冒烟
+```
+溯源: 2026-10-18 新增（issue #7186；用户原话见 user_inputs）。落码：`DocumentOperationLinkage#rejectManualReport`（唯一判据，复用 `QUALITY_OPERATION_NAME`）+ `ProductionService.doReport` / `ProductionScanCompleteService.doComplete` 两处调用 + 工人端 `render.mjs`（`isQualityOperation` / `canReport` / `qualityOnlyNote`）。取号 = 现取 origin/main 已占号最大 PG-085 ⇒ 本单取 PG-086。 ｜ tags: quality-inspection, piecework, worker-h5, backend-contract
+
+### PG-087. 质检指标（P0+P1）：按件聚合的首检合格率 / 当前合格率 / 返工报废率 + 时间窗趋势 + 分组 Top-5 + 待检积压（近似待检时长） 🔵
+```
+你: 用户 2026-10-18 逐字：「质检记录我觉得缺乏一个合格率的指标？」
+你: 用户 2026-10-18 逐字：「那先做 p0 和 p1 吧」（采纳建议：主指标 = 首检合格率、默认本月、返工/报废单列、未检不进分母）
+数据: **判据 1·按件去重（P0 的根）**：同一件两条记录（先合格、后返工）⇒ 已检 **1 件**、首检合格 1、当前合格 0、返工 1；首检合格率 100%、当前合格率 0%、返工率 100%。红证：改成按记录条数聚合 ⇒ 已检变 2 ⇒ 断言红。证据：backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckStatsTest.java（aggregatesPerPieceNotPerRecord）
+数据: **判据 2·未检不进分母**：快照里没有记录的件**不**出现在已检/率里，只出现在 backlog.pending；红证：把未检算进分母（或折成「不合格」）⇒ 断言红。证据：同文件（pendingPiecesStayOutOfDenominator）
+数据: **判据 3·0 样本 ⇒ 率 = null**（前端显示「—」，**不是** 0%）；红证：`rate()` 在分母 0 时返回 0.0 ⇒ 断言红。证据：同文件（emptyCohortHasNullRates）+ frontend/admin-web/tests/unit/components/QualityMetricsPanel.test.tsx（「0 样本 ⇒ 显示『—』」）
+数据: **判据 4·窗口按首检时刻**：窗口外首检、窗口内复检的件**不进** cohort（否则窗口一半落在复检上、率不可比）。证据：同文件（windowUsesFirstInspectionMoment）
+数据: **判据 5·趋势与分组自洽**：趋势 Σ已检 = 已检件数 = 分组 Σ已检（第二份口径 ⇒ 红）。证据：同文件（trendAndGroupsAgreeWithCounts）
+数据: **判据 6·参数闸**：未知 bucket / 非法时间 / 反向窗口 ⇒ 422 具名（不静默回落 day）。证据：同文件（rejectsInvalidParameters）
+数据: **判据 7·前端只格式化不重算**：KPI / 趋势 / 分组 / 积压全部取服务端值；样本 < min_sample 标注「样本偏少」；待检时长必须带「近似」与起算点说明。证据：frontend/admin-web/tests/unit/components/QualityMetricsPanel.test.tsx + tests/unit/pages/quality-inspections.test.tsx（指标面板默认「本月」拉一次）
+数据: **边界（照实登记）**：① 待检时长是**近似**（无「进入待检」时间戳，按加工单生成时刻起算 = 上界）；② 原因分布 / 原因字典化、返工成本属 P2，本单不做；③ 待检清单与四态计数口径**一字未改**；④ 不改任何写入/判定口径。
+前置: 前置 = 若干活跃加工单的成品帘 + 已录判定（同一件可有返工后复检的多条记录）；指标读面只读，不依赖任何写入时序。
+跳过: [backend-contract] 纯读面聚合（服务端 SQL/Java 聚合 + 前端渲染判据，零 LLM 行为），不进 agent-eval 冒烟
+```
+溯源: 2026-10-18 新增（issue #7192；用户原话见 user_inputs）。落码：`QualityCheckService#stats`（P0 率 + P1 趋势/分组/积压）→ `GET /api/admin/quality-inspections/stats` → `QualityMetricsPanel` + 质检记录页接线。取号 = 现取 origin/main 已占号最大 PG-085（#7186 的 PG-086 在并行分支）⇒ 本单取 PG-087。 ｜ tags: quality-inspection, metrics, backend-contract, admin-web
 
 ## 商品域（125 case）
 
@@ -10004,7 +10052,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（123 case）
+## 前端 UI 域（125 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -10877,21 +10925,21 @@
 真值: frontend-fix.print-single-doc-on-paper, frontend-fix.vitest, frontend-fix.e2e, frontend-fix.layout
 溯源: 2026-10-01 新增（issue #5914）：把「打印前先看见纸面」与「一次只放一份单据上纸」落成机器可判的口径 —— print 唯一入口 + 目标提交后才开印、@page 条件化到本次目标、纸面自检（溢出/页数）、截图复制写剪贴板、纸面字段必须在详情 DTO 里真的下发。编号由 `scripts/next_case_id.py` 分配：先取 UI-026，但该号已被并发包 #5913 占用（§26.3 ⑫ 的撞号形态）⇒ rebase 后改判为 **UI-027**（main:001-026,028-077 ⇒ 最小空闲号）。**只增不减**：既有 UI-061/062/063/065 的打印判据一条不放宽（本单另加 C1/C4 两条类级元守卫）。 ｜ tags: ui, print, single-doc, guard
 
-### UI-064. 商家后台「手机端入口」二维码 —— 顶栏主入口 + 设置页一行入口；地址单一配置、内容逐字等于该值、未配置不画假码（issue #5668 / #7198） 🔵
+### UI-064. 商家后台「手机端入口」二维码 —— 顶栏唯一入口（设置页不再有入口块）；地址单一配置、内容逐字等于该值、未配置不画假码（issue #5668 / #7198 / #7212） 🔵
 ```
 你: 用户逐字：「你在商家后端合适的位置搞个二维码，方便用户扫码使用」＋同日裁定「二维码放『系统设置 / 企业设置』页」
 期望: direct_reply
-数据: 判据 1·**有值 ⇒ 内容逐字等于配置值**：`NEXT_PUBLIC_BMINI_H5_URL` = `https://bmini-entry.invalid/b/`（哨兵值，与线上域名不同）时，二维码 svg 的 `<title>` 与可复制链接都逐字等于该值。红证：把 `QRCodeSVG` 的 value/title 改成硬编码线上地址 ⇒ 本格判红（实测：夹具用线上域名时该变异**判不出来** ⇒ 那是空断言方向，故改用哨兵值）。执行点 = frontend/admin-web/tests/unit/components/MobileEntry.test.tsx 的「点击 ⇒ 展开弹层，二维码的标题与可复制地址逐字等于配置值（哨兵值 ⇒ 硬编码必红）」+ frontend/admin-web/tests/unit/pages/settings.test.tsx 的「配置了地址 ⇒ 设置页只留一行；点「显示二维码」后内容逐字等于该值」。
-数据: 判据 2·**无值 ⇒ 明确「未配置」且不画码**：配置为空/纯空白时渲染 `data-testid=bmini-h5-unconfigured`（文案含「尚未开通手机版」），且面板内 `querySelector('svg') === null`（不是「没找到 testid」，是确实没画）。红证：把渲染条件改成恒真 ⇒ 本格判红（实测）。执行点 = frontend/admin-web/tests/unit/components/MobileEntry.test.tsx 的「未配置 ⇒ 不画假码：零 svg + 逐字说明「未配置」」+「未配置 ⇒ 明确说明「未配置」且**零 svg**（缺码不画假码）」+ frontend/admin-web/tests/unit/pages/settings.test.tsx 的「未配置 ⇒ 明确说明且**不画码**（缺码不画假码）」。
+数据: 判据 1·**有值 ⇒ 内容逐字等于配置值**：`NEXT_PUBLIC_BMINI_H5_URL` = `https://bmini-entry.invalid/b/`（哨兵值，与线上域名不同）时，二维码 svg 的 `<title>` 与可复制链接都逐字等于该值。红证：把 `QRCodeSVG` 的 value/title 改成硬编码线上地址 ⇒ 本格判红（实测：夹具用线上域名时该变异**判不出来** ⇒ 那是空断言方向，故改用哨兵值）。执行点 = frontend/admin-web/tests/unit/components/MobileEntry.test.tsx 的「点击 ⇒ 展开弹层，二维码的标题与可复制地址逐字等于配置值（哨兵值 ⇒ 硬编码必红）」+「点「复制链接」⇒ 复制的是**配置值**（不是硬编码地址）+ 成功提示」。
+数据: 判据 2·**无值 ⇒ 明确「未配置」且不画码**：配置为空/纯空白时渲染 `data-testid=bmini-h5-unconfigured`（文案含「尚未开通手机版」），且面板内 `querySelector('svg') === null`（不是「没找到 testid」，是确实没画）。红证：把渲染条件改成恒真 ⇒ 本格判红（实测）。执行点 = frontend/admin-web/tests/unit/components/MobileEntry.test.tsx 的「未配置 ⇒ 不画假码：零 svg + 逐字说明「未配置」」。
 数据: 判据 3·**唯一读取点**：`process.env.NEXT_PUBLIC_BMINI_H5_URL` 在全前端只允许出现在 frontend/admin-web/src/lib/bmini-h5-url.ts；组件经 `getBminiH5Url()` 取。红证：在第二个文件里再读一次 ⇒ 判红。执行点 = tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py。
 数据: 判据 4·**前端源码零硬编码域名**：`frontend/admin-web/src/**` 与 `frontend/bmini-app/{src,config}/**` 的**代码**（注释不算 —— 否则判据会被自己的文档喂红）里不得出现 app.migaozn.com；豁免台账为空、未登记即红。执行点 = 同文件（含「注释剥离但字符串保留」的状态机，防 `https://` 被当注释切掉的假绿）。
-数据: 判据 5·**发布链三环在案**：Dockerfile 的 `ARG`+`ENV`、deploy-frontend.yml 的 `--build-arg`、.env.example 的说明 —— 任一环缺失 ⇒ 镜像里没有这个值 ⇒ 页面永远显示「未配置」而没人会发现。红证：删任一环 ⇒ 判红（实测）。执行点 = 同文件。
+数据: 判据 5·**发布链三环在案**：Dockerfile 的 `ARG`+`ENV`、deploy-frontend.yml 的 `--build-arg`、.env.example 的说明 —— 任一环缺失 ⇒ 镜像里没有这个值 ⇒ 顶栏永远显示「未配置」而没人会发现。红证：删任一环 ⇒ 判红（实测）。执行点 = 同文件。
 数据: 判据 6·**既有页零回归**：设置页既有域（企业信息 / AI 客服 / 通知设置）全在、既有 vitest 全绿（本单只换入口形态，不动域目录与保存逻辑）。⚠️ 2026-10-08（issue #6573）改判：原口径里的「参数总览」已**搬出本页**成为一级菜单项 ⇒ 本判据不再含它。
-数据: 判据 7·**落位（issue #7198）**：① 顶栏右上角挂「手机端入口」按钮（`aria-label`，`< lg` 隐藏），点击才画码、点击外部收起；② 设置页「企业信息」域只留**一行**（地址 + 复制链接 + 显示二维码），默认**不画码**；③ 二维码**只由 `MobileEntry.tsx` 渲染一处**（两处共用同一块面板，不许各画一份）。红证：从 Header 摘掉 `<MobileEntryHeader />` ⇒ 单源守卫判红（实测）；设置页恢复 112px 大码块 ⇒ 单源守卫的 `<MobileEntryInline />` 判据判红。执行点 = frontend/admin-web/tests/unit/components/MobileEntry.test.tsx + frontend/admin-web/tests/unit/components/Header.test.tsx 的「顶栏带「手机端入口」按钮」+ tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py 的 test_qr_entry_is_on_the_settings_page_and_keeps_existing_tabs。
+数据: 判据 7·**落位（issue #7198 / #7212）**：① 顶栏右上角挂「手机端入口」按钮（`aria-label`，`< lg` 隐藏），点击才画码、点击外部收起；② 设置页**不再有**手机端入口（issue #7212 整块移除 —— 用户 2026-10-18 逐字「这块直接移除吧，已经迁移到右上角了」）：`data-testid=bmini-h5-entry` / `MobileEntryInline` / `QRCodeSVG` / `qrcode.react` / `getBminiH5Url` 任一在设置页代码里出现即红；③ 二维码只由 `MobileEntry.tsx` 的 `MobileEntryPanel` 渲染一处。红证：从 Header 摘掉 `<MobileEntryHeader />` ⇒ 单源守卫判红（实测）；把入口块塞回设置页 ⇒ 单源守卫判红（实测）。执行点 = frontend/admin-web/tests/unit/components/MobileEntry.test.tsx + frontend/admin-web/tests/unit/components/Header.test.tsx 的「顶栏带「手机端入口」按钮」+ frontend/admin-web/tests/unit/pages/settings.test.tsx 的「企业信息域**不再**渲染入口块」+ tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py 的 test_qr_entry_is_in_the_header_only_and_keeps_existing_tabs。
 跳过: [backend-contract] 纯前端渲染 + 接线判据（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest（frontend/admin-web/tests/unit/components/MobileEntry.test.tsx、frontend/admin-web/tests/unit/pages/settings.test.tsx）与 pytest（tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py）执行
 ```
 真值: frontend-fix.layout, frontend-fix.vitest
-溯源: 2026-09-26 新增（issue #5668）：B 端 h5 的发布腿落位 app.migaozn.com/b/ 的同时，在商家后台「企业设置」页给出扫码入口。地址走单一配置 NEXT_PUBLIC_BMINI_H5_URL（反面教材 = craft-display 三份副本 #4393）；未配置时不画假码（同族：洗水码「缺码不画假码」）。取号 UI-064（**改号记录**：本包原先取 UI-061，而 #5651 的「A4 加工单打印」先合并并占用了 UI-061 ⇒ 按当前最大号 UI-063 顺延为 UI-064）。 ｜ 2026-10-08（issue #6573）**判据 6 改判**：设置页的 tab 清单里「参数总览」换成「工人端页面」；执行点 = tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py 的 test_qr_entry_is_on_the_settings_page_and_keeps_existing_tabs。 ｜ 2026-10-18（issue #7198）**落位改判**：用户逐字「这里的二维码放置到右上角是否合适？当前地方是临时放置的，需要有个更好的位置让用户方便扫码」⇒ 裁定「顶栏图标 + 按需弹层，设置页留一行入口」；主入口搬到**顶栏**（点击弹层；常驻面只多一个图标，§31 P1），设置页收成**一行**入口；二维码收敛到 `frontend/admin-web/src/components/layout/MobileEntry.tsx` 唯一渲染。判据 1/2/7 的执行点同批改判，判据只搬位置、不放宽。 ｜ tags: ui, settings, qrcode, admin-web
+溯源: 2026-09-26 新增（issue #5668）：B 端 h5 的发布腿落位 app.migaozn.com/b/ 的同时，在商家后台「企业设置」页给出扫码入口。地址走单一配置 NEXT_PUBLIC_BMINI_H5_URL（反面教材 = craft-display 三份副本 #4393）；未配置时不画假码（同族：洗水码「缺码不画假码」）。取号 UI-064（**改号记录**：本包原先取 UI-061，而 #5651 的「A4 加工单打印」先合并并占用了 UI-061 ⇒ 按当前最大号 UI-063 顺延为 UI-064）。 ｜ 2026-10-08（issue #6573）**判据 6 改判**：设置页的 tab 清单里「参数总览」换成「工人端页面」；执行点 = tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py 的 test_qr_entry_is_on_the_settings_page_and_keeps_existing_tabs。 ｜ 2026-10-18（issue #7198）**落位改判**：用户逐字「这里的二维码放置到右上角是否合适？当前地方是临时放置的，需要有个更好的位置让用户方便扫码」⇒ 裁定「顶栏图标 + 按需弹层，设置页留一行入口」；主入口搬到**顶栏**（点击弹层；常驻面只多一个图标，§31 P1），设置页收成**一行**入口；二维码收敛到 `frontend/admin-web/src/components/layout/MobileEntry.tsx` 唯一渲染。判据 1/2/7 的执行点同批改判，判据只搬位置、不放宽。 ｜ 2026-10-18（issue #7212）**整块移除**：用户逐字「这块直接移除吧，已经迁移到右上角了」「企业信息设置里面的那部分」⇒ 设置页「企业信息」域里的入口块连同 `MobileEntryInline` 退场，扫码入口只在**顶栏**；判据 7 改为「设置页不得再现任何形态的入口 / 二维码痕迹」（出现即红），顶栏入口与单源 / 缺码判据不变。 ｜ tags: ui, settings, qrcode, admin-web
 
 ### UI-065. 销售单数量列消费**实发**（order_shipment_items，经 admin 读面）：已发货/部分发货/未发货/读面未取到四态各自可判 + 永不印 0 + 缺口显式（issue #5651 收口） 🔵
 ```
@@ -11787,6 +11835,29 @@
 ```
 溯源: 2026-10-18 新增（issue #7183）。落码：`frontend/admin-web/src/components/settings/CalcCaliberPanel.tsx`（防抖自动保存 + 保存态 + 删保存条）+ 设置页注释同步。取号：见文首注释。 ｜ tags: settings, craft-calc, autosave, ui
 
+### UI-123. 旧「工艺配置」页已下架：/production/routings 重定向到唯一写面，且全仓不再有写死的旧链接 🔵
+```
+你: 用户 2026-10-18 报障：「原工艺配置页面怎么未下架，从计件工资提示链接可以跳转到原页面，这里应该跳转到新页面了」
+期望: direct_reply
+数据: 判据 1·**旧路由重定向**：渲染 `/production/routings` ⇒ `router.replace('/settings?domain=operation-prices')`，且不渲染任何内容（不 404、不落空白）。证据：frontend/admin-web/tests/unit/pages/production-routings-legacy.test.tsx
+数据: 判据 2·**旧链接不再存在**：`src/` 里没有写死的 `href` / `redirect(` / `router.push|replace(` 指向 `/production/routings`（注释里的历史说明、`page-context` 的路由映射、`layout.tsx` 的权限前缀不算链接）。证据：同测试文件的 `linksToRetiredRoute()`
+数据: 判据 3·**定价入口与文案同源**：计件工资「去定价」的落点常量 = `/settings?domain=operation-prices`（文案写的是「企业基础设置 → 工序与部位单价」）。证据：frontend/admin-web/tests/unit/components/UnpricedNotice.test.tsx、ProductionProgressTable.test.tsx、PieceworkTable.test.tsx
+数据: 判据 4·**功能体仍有覆盖**：原借旧页当壳的两个测试改为直接渲染 `ProcessConfigBoard`（覆盖不随页面下架一起消失）。证据：OperationsScopeColumn.test.tsx、OperationsProvenance.test.tsx
+```
+溯源:  ｜ tags: navigation, settings, route-retirement, ui
+
+### UI-124. 按钮只有一种形态：icon slot 统一间距、loading 时 spinner 顶替图标（不并排）、裸 button 不得自拼主色 chrome 🔵
+```
+你: 用户 2026-10-18 裁定：「还是老问题，按钮样式未统一 …… 制定一个统一规范并执行落地」「这个规范包含观星台所有功能，PC&手机端」
+期望: direct_reply
+数据: 判据 1·**icon slot**：前置图标走 `Button` 的 `icon` prop（slot 给 `mr-1.5 shrink-0` 且 `aria-hidden`），调用方不再手写 `mr-*`。证据：frontend/admin-web/tests/unit/design-system-buttons.test.tsx
+数据: 判据 2·**loading 顶替**：`loading` 时只渲染 spinner，页面自带图标不出现（并排 = 双图标，真机读成「图标重叠」）；`aria-busy` 随 loading。证据：同文件
+数据: 判据 3·**尺寸 token**：sm=h-8 / md=h-9 / lg=h-10，圆角 rounded-lg（改映射 ⇒ 红）。证据：同文件
+数据: 判据 4·**类级**：裸 `<button>` 不得自带主色 chrome（`bg-primary-600`）；存量 10 处按冻结台账只许缩短，新增文件/同文件变多 ⇒ 红并具名。证据：同文件 `NAKED_PRIMARY_LEDGER`
+数据: 迁移面：工艺配置（刷新/新增工序/新建路线）、加工项与分类（加工分类/新增加工项）、加工费组合（新建组合）、工序与部位单价（刷新/新增工序）—— 全部改走 `icon` slot。证据：frontend/admin-web/src/components/production-config/*.tsx
+```
+溯源:  ｜ tags: design-system, button, ui
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -11816,8 +11887,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：809（活跃 133，跳过 676）
-- tier 分布：smoke 12 / normal 743 / adversarial 32
+- 用例总数：814（活跃 135，跳过 679）
+- tier 分布：smoke 12 / normal 748 / adversarial 32
 - 售后域：15
 - Agent 核心域：11
 - API 层域：21
@@ -11832,17 +11903,17 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：117
+- 杂项域：118
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
 - 加工项域：30
-- 加工单域：72
+- 加工单域：74
 - 商品域：125
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：123
+- 前端 UI 域：125
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -11987,6 +12058,7 @@
 - MC-114: 开租默认加工项目录的三源收敛元守卫（issue #7148）：Java 种子目录 ⇄（建库脚本目录 − 活迁移撤出项 + 改名映射）双向对账、分类名单一来源、判别力在内存语料上自证
 - MC-116: 类级元守卫（#6962）：会话分配 / 候选处置 / 路线删除三类写面必须落到带谓词的条件更新（未登记即红 + 豁免只许缩短）
 - MC-117: 类级元守卫（#6956）：T3 逻辑删除族调用方必须判影响行数（未登记即红 + 豁免只许缩短）
+- MC-118: dev-worktree 会话锁判活：PID 已退出但登记的工作区仍在且仍检出该分支 ⇒ 仍算占用（issue #7216）；`add` 入口自动清失效锁，`rm` 释放锁，prune 侧同一口径
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
@@ -12084,6 +12156,8 @@
 - PG-082: 工人端质检：扫水洗唛进报工页后录判定、生成质检单（服务端以「档案页面集含 inspect」为准入，不是藏 UI）
 - PG-083: 单据联动工序：发货单生成 ⇒ 自动完成「发货/外帘发货」工序；质检合格 ⇒ 自动完成「质检」工序（工人端计件、商家端不计件）
 - PG-085: 删路线 / 删条件工序规则只 `.eq(id)` ⇒ 跨租户误删 + 0 行当成功；改写为 tenant 限定 + deleted=0 + 影响行数判定后恰一次成功（issue #6962）
+- PG-086: 质检工序没有报工动作：判定即报工（提交判定 ⇒ 自动写报工 + 生成质检流水），报工 / 扫码完成入口对质检工序 422 且零写入
+- PG-087: 质检指标（P0+P1）：按件聚合的首检合格率 / 当前合格率 / 返工报废率 + 时间窗趋势 + 分组 Top-5 + 待检积压（近似待检时长）
 - PP-007: 黄金策加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 黄金策加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）
@@ -12148,4 +12222,6 @@
 - UI-121: 工人档案：质检页逐人开（新建弹窗「单独开放」一栏 + 列表行「开/关质检」）；默认页面不含质检、未收窄显示「默认页面」
 - UI-122: 配置面的字段只有一种写法：区块 = 浅底面板 + 标题 + 说明，字段 = 标签在上 + 控件满列 + 单位入框（共享原语 + 类级守卫）
 - UI-125: 算料口径改「变更即保存」：删掉保存 / 恢复默认两个按钮，防抖 0.6 秒自动 PUT（422 逐条理由、草稿不回滚）
+- UI-123: 旧「工艺配置」页已下架：/production/routings 重定向到唯一写面，且全仓不再有写死的旧链接
+- UI-124: 按钮只有一种形态：icon slot 统一间距、loading 时 spinner 顶替图标（不并排）、裸 button 不得自拼主色 chrome
 

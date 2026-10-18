@@ -134,10 +134,6 @@ function buildPosition(overrides: Partial<ProductionPosition> = {}): ProductionP
   }
 }
 
-/** QR 的**确切内容**：`qrcode.react` 把值渲染成 `<title>`（与 `TaskCardPrint` 测试同款读法） */
-const qrPayload = (): string | undefined =>
-  document.querySelector('[data-testid="processing-doc-qr"] title')?.textContent ?? undefined
-
 const doc = (): HTMLElement | null => document.querySelector('.processing-print-area')
 const css = (): string =>
   Array.from(doc()?.querySelectorAll('style') ?? [])
@@ -437,82 +433,18 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
     expect(cellText('processing-doc-batch')).toBe(MISSING)
   })
 
-  it('🔴 ⑤ QR：给了值 ⇒ 出码；**不给 ⇒ 出占位框、不画假码**', () => {
+  it('🔴 ⑤ 加工单**不再印 QR**（issue #7219：扫码入口不属于加工单）', () => {
     render(
       <ProcessingDoc
         order={buildOrder()}
-        processingOrder={buildProcessingOrder()}
+        processingOrder={buildProcessingOrder({ short_code: SHORT_CODE, scan_url: SCAN_URL })}
         qrValue={SCAN_URL}
       />
     )
-    expect(document.querySelector('[data-testid="processing-doc-qr"]')?.tagName.toLowerCase()).toBe('svg')
-    cleanup()
-    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
+    // QR / 无码占位 / 短码行三种形态**都不出现**（移除是整块移除，不是隐藏）
     expect(document.querySelector('[data-testid="processing-doc-qr"]')).toBeNull()
-    const placeholder = document.querySelector('[data-testid="processing-doc-qr-placeholder"]')
-    expect(placeholder?.textContent).toContain('无码')
-  })
-
-  it('⑤ QR 判据可红：给不出值却硬画一个码（拿别处的串顶替）⇒ 必红', () => {
-    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
-    // 缺值分支下不许存在任何 SVG 码（旧写法若回落成 order.orderNo 就会在这里出现）
-    expect(document.querySelectorAll('.processing-print-area svg')).toHaveLength(0)
-  })
-
-  it('🔴 ⑧ QR 的内容 = 传入的 `scan_url`（加工单级稳定短链），**不是**加工单号纯文本（issue #6867）', () => {
-    render(
-      <ProcessingDoc
-        order={buildOrder()}
-        processingOrder={buildProcessingOrder({ short_code: SHORT_CODE, scan_url: SCAN_URL })}
-        qrValue={SCAN_URL}
-      />
-    )
-    expect(qrPayload()).toBe(SCAN_URL)
-    // 反向：扫出来**不再是**加工单号纯文本（旧形态 = 相机只显示一串文本、打不开任何页面）
-    expect(qrPayload()).not.toBe('PO260926-0007')
-  })
-
-  it('🔴 ⑧ 短码行印 `processingOrder.short_code`（人可读兜底：扫码失败 / 无扫码工具时手输）', () => {
-    render(
-      <ProcessingDoc
-        order={buildOrder()}
-        processingOrder={buildProcessingOrder({ short_code: SHORT_CODE, scan_url: SCAN_URL })}
-        qrValue={SCAN_URL}
-      />
-    )
-    expect(screen.getByTestId('processing-doc-short-code')).toHaveTextContent(SHORT_CODE)
-  })
-
-  it('🔴 ⑧ 红证：没有短码 ⇒ 短码行印 `—`，**绝不编造**（也不把加工单号顶上去）', () => {
-    render(
-      <ProcessingDoc
-        order={buildOrder()}
-        // 只有单号、没有短码/短链（存量单 / 读面未实例化）—— 与 `null` 逐字同款
-        processingOrder={buildProcessingOrder({ short_code: null, scan_url: null })}
-      />
-    )
-    expect(screen.getByTestId('processing-doc-short-code')).toHaveTextContent(MISSING)
-    // 「缺码不画假码」同口径：短码行不许出现任何**加工单号**的片段
-    expect(screen.getByTestId('processing-doc-short-code').textContent).not.toContain('PO')
-    expect(screen.getByTestId('processing-doc-short-code').textContent).not.toMatch(/\d/)
-  })
-
-  it('🔴 ⑧ 红证（注入式自证）：把短码源写成加工单号 / 拿别的串顶替 ⇒ 上面那两条判据必红', () => {
-    render(
-      <ProcessingDoc
-        order={buildOrder()}
-        processingOrder={buildProcessingOrder({ short_code: SHORT_CODE, scan_url: SCAN_URL })}
-        qrValue={SCAN_URL}
-      />
-    )
-    // ① 旧形态（QR 值 = 加工单号纯文本）⇒ 「QR = scan_url」那条红
-    const regressedQr = 'PO260926-0007'
-    expect(regressedQr).not.toBe(SCAN_URL)
-    // ② 编造短码（拿加工单号顶替短码行）⇒ 「短码行 = 服务端短码」那条红
-    const fabricated = 'PO260926-0007'
-    expect(screen.getByTestId('processing-doc-short-code').textContent).not.toBe(fabricated)
-    // ③ 短码行挂上单号串 ⇒ 「无短码不许出现加工单号片段」那条红
-    expect(fabricated).toContain('PO')
+    expect(document.querySelector('[data-testid="processing-doc-qr-placeholder"]')).toBeNull()
+    expect(document.querySelector('[data-testid="processing-doc-short-code"]')).toBeNull()
   })
 
   it('⑥ 加工单**不印金额**（实证 #3 无金额列）⇒ 天然没有第二份金额真值', () => {
