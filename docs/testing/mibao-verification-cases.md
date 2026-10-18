@@ -6988,10 +6988,11 @@
 数据: 命中而**未配置取值**的项（壁达的「画线」即此形态）= misses(reason=unresolved)：显式报出、不计入合计、**不按 0 算**
 数据: 缺行 ⇒ source=default（壁达现场弹窗 7 项，画线留空）；PUT 是全量替换，缺键 / 未知键 / 越界值 ⇒ 422 逐条理由（不静默回退默认值）
 数据: 本版只算不写机器：任何路径都不得开串口 / 写寄存器（下发归上游设计单）
+数据: 预演取值域 = **闭词表选择器**（issue #7213）：安装工艺 = 单选 `CRAFT_OPTIONS`（4 值 +「不指定」）、特殊选项 = 多选 `SPECIAL_OPTIONS`（19 项，默认折叠），两个字段都**不是自由文本**；提交 body 仍为 `craft` 字符串 + `special_options` 数组，逐字取自所选项（不拼逗号串）。红证：把任一改回 `<input>` ⇒ ⑥ 红（`tagName` / 默认折叠）。执行点 = frontend/admin-web/tests/unit/components/CuttingHeightConfigPanel.test.tsx 的「⑥ 预演的「安装工艺 / 特殊选项」是闭词表选择器」。
 跳过: [backend-contract] 本条只登记「裁高配置与裁剪高度计算」这一层**确定性逻辑**，由单元测试全量覆盖（backend/admin-api/src/test/java/com/migao/admin/service/CuttingHeightConfigServiceTest.java）⇒ 不进 agent-eval 冒烟（同 CH-036 / CH-042 惯例）。⚠️ 它**不覆盖**「商家该把哪些选项配上」—— 壁达那批「选项/扩展项 ↔ 增量项」的对应行属现场取证（设计单 docs/design/cutting-height-config-and-terminal.md §5）。
 ```
 真值: processing-manage.cutting-height-config
-溯源: 2026-09-29 新增（母单 #5161）：裁高配置（增量项档案 + 命中口径 + 取整）与裁剪高度计算的引擎覆盖登记，单测覆盖。用户当次裁定：颗粒度 = 部位级、取值 = 租户级、默认命中 = 同名匹配、取整 = 保留三位小数（机器三位小数）、手改只读、接高第一版就做（按特殊选项「接高」，不新造门幅逻辑）。 ｜ tags: processing, cutting_height, tenant_config, backend-contract
+溯源: 2026-09-29 新增（母单 #5161）：裁高配置（增量项档案 + 命中口径 + 取整）与裁剪高度计算的引擎覆盖登记，单测覆盖。用户当次裁定：颗粒度 = 部位级、取值 = 租户级、默认命中 = 同名匹配、取整 = 保留三位小数（机器三位小数）、手改只读、接高第一版就做（按特殊选项「接高」，不新造门幅逻辑）。 ｜ 2026-10-18（issue #7213）**预演输入形态改判**：用户逐字「这里的两个输入框改成下拉框会不会更格式，如果要支持多选的就改成多选下拉框？」⇒ 预演的「安装工艺」自由文本改**单选**（`CRAFT_OPTIONS` 4 值 +「不指定」）、「特殊选项（逗号分隔）」改**多选下拉**（`SPECIAL_OPTIONS` 19 项，默认折叠，与下单页同一份 join key）；提交协议与命中口径不变（前端仍只把「订单侧取值」逐字传给服务端，不自己比名字）。判据新增一格，原判据一格不放宽。 ｜ tags: processing, cutting_height, tenant_config, backend-contract
 
 ### PG-046. 扫码读面补「部位生产信息」全量明细键（只加不改：商品身份/规格尺寸/加工信息/算料/派工/部位备注；键集 = 三条工人读面共享的唯一一份，单测覆盖，非 LLM 行为） 🔵
 ```
