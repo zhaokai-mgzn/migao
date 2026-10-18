@@ -352,6 +352,8 @@ cd .github && python3 render_cases.py --cases cases --out-eval /tmp/ec.py --out-
 - **同文件组串行合并**：多个 PR 改同一文件（requirements.txt / pom.xml / package.json）时逐个合并，避免同时合并互相冲突；可用后台循环脚本轮询 `mergeStateStatus`，CLEAN/UNSTABLE 才合并。
 - `mergeStateStatus` 含义：`UNKNOWN`=GitHub 重算中（main 刚更新），等 30~60s；`BLOCKED`=CI 重跑中或有 pending check；`UNSTABLE`=有 failed check 但非 required，通常可合并；`CLEAN`=直接可合并。
 - **分支落后（DIRTY/CONFLICTING）**：`gh pr update-branch <PR>` 触发 rebase；若 update 报冲突，本地 fetch PR 分支 merge origin/main 解决后 push（dependabot 分支同名推送即可）。
+- **提交前禁止 `git add -A`（主工作区是跨会话共享写面）**：实测两次把**别人正在用的未跟踪产物**带进提交 —— `acceptance/**`（含**活 JWT** ⇒ 被 `Plaintext credential guard` + `gitleaks` 判红）与 `backend/**/tools/*.py`。主树里同时有别的会话在干活，`-A` / `git add .` 会无差别收走。**一律显式列文件**：`git add <path1> <path2>`，提交后再用 `git show --stat HEAD` 自证只含预期文件。
+- **分支落后但检查已全绿（`mergeStateStatus = BEHIND`，`strict = true` 下的高频竞速）**：用 `./scripts/pr-merge-when-clean.sh <PR>` 一条命令收敛（issue #7206）—— 它按「先 update-branch 再等、**从不带着 BEHIND 或红项调 merge**」的顺序重试：`0` 已合并 / `1` 不能合并（required 红或 update 冲突，具名打印）/ `3` 无法判定（读不到 / 轮次耗尽）。⚠️ 「取不到 = 未判定」不许当 0 读；`update-branch` 冲突时它**不会**替你本地解冲突（那要人看），只给出手工解法。
 - 合并前先 `gh pr checks <PR>` 确认无 required check 失败；改 workflow 文件的 PR 若报 `without workflow scope` 即属 §7.1 保留类。
 
 ## 8. CI/本地环境差异已知坑（v1.1 新增，issue #2693 全量教训）
