@@ -319,7 +319,7 @@ export default function EmployeesPage() {
     {
       key: 'name',
       title: '姓名',
-      width: '120px',
+      width: '140px',
       render: (record) => (
         <button
           onClick={() => canWrite && handleEdit(record)}

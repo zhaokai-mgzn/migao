@@ -315,9 +315,9 @@ export default function WorkerProfilesPanel({ canWrite }: WorkerProfilesPanelPro
     {
       key: 'actions',
       title: '操作',
-      width: '180px',
+      width: '220px',
       render: (record) => (
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 whitespace-nowrap">
           {optionalPages.map((page) => (
             <button
               key={page.key}
