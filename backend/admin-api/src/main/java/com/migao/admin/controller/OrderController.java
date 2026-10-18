@@ -181,8 +181,24 @@ public class OrderController {
      * 查询订单详情
      *
      * GET /api/admin/orders/{id}
+     *
+     * <h3>🔴 权限码 = {@code order:detail}（issue #7276；人类 2026-10-18 裁定「让它真正生效」）</h3>
+     * <p>改前挂 {@code order:list} ⇒「订单列表」与「订单详情」是**同一把锁**：岗位权限页里
+     * 「订单详情」那个勾选项**勾了不生效**（census 端点数现取 = 0，登记在
+     * {@code test_agent_permission_parity.py} 的「权限码零消费」条目；去向单 #5236 已关闭
+     * ⇒ 该缺口此后无人承接）。用户现场逐字：「虽然页面上提示我没权限操作，但是我仍然能访问，
+     * RBAC权限没控制住？」——「提示没权限」来自**页内子读面**（加工单块）的 403，
+     * 「仍能访问」则因为本端点只认 {@code order:list}。</p>
+     * <p>现改为**真正生效**：读详情要 {@code order:detail}，读**列表**仍是 {@code order:list}
+     * （{@link #getOrders}）。🔴 **零回归口径**：八个种子岗位里持 {@code order:list} 的四个
+     * （客服 / 运营 / 销售 / 财务）**本来就都持本码**（{@code rbac/manifest.json} 的
+     * {@code roles.seed}）⇒ 现网种子岗位零 delta；只有「只勾订单列表、不勾订单详情」的
+     * **自定义岗位**会开始打不开详情 —— 那正是本单要的效果，**不做存量回填**。</p>
+     * <p>⚠️ 本码同时被同页发货读面 {@link #getOrderShipments} 与三条页外消费方（发货单页 /
+     * 发货操作页 / 黄金策 {@code logistics_track}）共用 ⇒ 改码必须同批对齐，判据 =
+     * {@code test_agent_permission_parity.py} 判据 2。</p>
      */
-    @RequirePermission("order:list")
+    @RequirePermission("order:detail")
     @GetMapping("/{id:[0-9a-fA-F-]+}")
     public ApiResponse<OrderDetailResponse> getOrderById(@PathVariable String id) {
         log.info("查询订单详情: id={}", id);
@@ -206,14 +222,15 @@ public class OrderController {
      * 两个面共用一份实现 ⇒ 工人 H5 与桌面纸面看到的实发数量逐字相同。任何"顺手改一下字段名"
      * 都会让两份投影分叉（守卫：{@code tests/unit_ci_workflows/test_shipment_read_surface_guard.py}）。</p>
      *
-     * <h3>🔴 权限码 = {@code order:list}（取**既有**码，不新造）</h3>
-     * <p>与<b>同页既有读面</b> {@link #getOrderById} 同码：订单详情页读得开、页内单据读不开
+     * <h3>🔴 权限码 = {@code order:detail}（issue #7276 起与本页详情读面**逐字同码**）</h3>
+     * <p>与<b>同页详情读面</b> {@link #getOrderById} 同码：订单详情页读得开、页内单据读不开
      * 是比"没有读面"更坏的形态。#4727 权限注解面审计的口径是「该放行的登记为有意放行」，
      * 而本面<b>有</b>语义正确的既有码 ⇒ 挂注解、<b>不</b>登记豁免（漏注解会被
      * {@code test_agent_permission_parity.py} 判据 8 判红）。</p>
-     * <p>{@code order:detail} 今天只是菜单节点码（{@code MenuController} / {@code RegistrationService}
-     * 里的目录项），<b>没有任何端点在承载</b>；把新读面露挂在它上面等于凭空给一个菜单节点赋予
-     * 端点语义，需连带岗位默认权限 / 菜单 / 目录多处对齐 ⇒ 不属本单范围。</p>
+     * <p>⚠️ 改前本面与详情读面都挂 {@code order:list}，理由是「{@code order:detail} 没有任何端点
+     * 在承载」；issue #7276（人类 2026-10-18 裁定「让它真正生效」）把这个死码变成真读码 ⇒
+     * 本面与详情读面**同批**改挂 {@code order:detail}，两条读面仍同码（判据 = 同族
+     * {@code AdminOrderShipmentReadTest} 的「两读面同码」断言）。</p>
      *
      * <h3>🔴 租户隔离：跨租户 = <b>404</b>（不是 403），且与「订单不存在」逐字同一形态</h3>
      * <p>403 等于承认「这个 id 存在，只是不给你看」= 存在性泄露（P2 刚落的口径）。
@@ -222,7 +239,7 @@ public class OrderController {
      *
      * <p><b>只读</b>：本单只补读面，不新增任何写面（写面归 #5648 的 {@code /api/worker/shipment/**}）。</p>
      */
-    @RequirePermission("order:list")
+    @RequirePermission("order:detail")
     @GetMapping("/{id:[0-9a-fA-F-]+}/shipments")
     public ApiResponse<Map<String, Object>> getOrderShipments(@PathVariable String id) {
         log.info("查询订单发货读面: id={}", id);

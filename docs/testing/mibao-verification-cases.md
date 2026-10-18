@@ -10092,7 +10092,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（126 case）
+## 前端 UI 域（127 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -11916,6 +11916,18 @@
 ```
 溯源:  ｜ tags: design-system, button, ui
 
+### UI-127. 订单详情权限（order:detail）真正生效：详情/发货两读面收码 + 页面拒绝态 + 无权限的加工单块不发起请求（issue #7276） 🔵
+```
+你: 「虽然页面上提示我没权限操作，但是我仍然能访问，RBAC权限没控制住？」（用户 2026-10-18）→ 裁定：让「订单详情」这个码真正生效
+期望: direct_reply
+数据: 判据 1·前端（会红）：frontend/admin-web/tests/unit/pages/order-detail-permission-gate.test.tsx —— 无 order:detail ⇒ 渲染拒绝态且零读请求；有 order:detail 无 production:view ⇒ 页可看、加工单块不渲染；两码都在 ⇒ 加工单块渲染（对照组）。修前实测 3 failed。证据：该文件三条用例
+数据: 判据 2·后端（会红）：AdminOrderShipmentReadTest#adminReadFaceCarriesTheSameReadCodeAsTheOrderDetailPage —— GET /api/admin/orders/{id} 与 .../shipments 的生效码都必须是 order:detail（改回 order:list ⇒ 红）。
+数据: 判据 3·台账：tests/unit_ci_workflows/test_agent_permission_parity.py 的 census —— order:detail.endpoints 非空、order:list 同步移除两条；工具 logistics_track 的 required_permissions ≡ 端点生效码（order:list + order:detail）。
+数据: 判据 4·类级元守卫（新增）：tests/unit_ci_workflows/test_rbac_derived_pages.py::test_action_node_codes_are_consumed_by_at_least_one_endpoint —— 权限树上每个动作码节点的码必须在 admin-api 至少命中一个 @RequirePermission，否则具名判红（或在 ACTION_NODE_WITHOUT_ENDPOINT 登记，台账只许缩短）。
+跳过: [backend-contract] 权限/门控面（前端拒绝态 + Java 注解 + 静态台账）由 vitest 与 Java 单测验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-18 新增（issue #7276）。取号 = 本地复算 origin/main 现取最大 UI-126 ⇒ UI-127。病：order:detail 只活在权限树与岗位种子里（census 端点数 = 0；去向单 #5236 已关 ⇒ 无人承接）⇒ 岗位权限页勾了不生效；详情读面挂 order:list ⇒ 用户「提示没权限却仍能访问」。修：两读面收码 + 页面拒绝态 + 加工单块按 production:view 门控 + 工具码同批对齐 + 类级元守卫。零回归：种子岗位里持 order:list 的四个（客服/运营/销售/财务）本就都持 order:detail。 ｜ tags: rbac, permission, order-detail, class-level-guard
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -11945,8 +11957,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：818（活跃 135，跳过 683）
-- tier 分布：smoke 12 / normal 751 / adversarial 32
+- 用例总数：819（活跃 135，跳过 684）
+- tier 分布：smoke 12 / normal 752 / adversarial 32
 - 售后域：15
 - Agent 核心域：11
 - API 层域：21
@@ -11971,7 +11983,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：126
+- 前端 UI 域：127
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -12284,4 +12296,5 @@
 - UI-125: 算料口径改「变更即保存」：删掉保存 / 恢复默认两个按钮，防抖 0.6 秒自动 PUT（422 逐条理由、草稿不回滚）
 - UI-123: 旧「工艺配置」页已下架：/production/routings 重定向到唯一写面，且全仓不再有写死的旧链接
 - UI-124: 按钮只有一种形态：icon slot 统一间距、loading 时 spinner 顶替图标（不并排）、裸 button 不得自拼主色 chrome
+- UI-127: 订单详情权限（order:detail）真正生效：详情/发货两读面收码 + 页面拒绝态 + 无权限的加工单块不发起请求（issue #7276）
 

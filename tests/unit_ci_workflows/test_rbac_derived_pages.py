@@ -202,8 +202,15 @@ ACTION_NODE_CODES: dict[str, dict[str, str]] = {
     },
     "订单详情": {
         "code": "order:detail",
-        "reason": "「订单详情」是订单列表页内的动作（`order:detail` 的 census 端点数现取 = 0 —— 它是页面内路由，不是首屏）",
-        "owner": "交易管理组菜单面 + 本判据的动作节点台账",
+        "reason": (
+            "「订单详情」是订单列表页内的**子页面动作**（不是首屏）——它有自己的 path 语义（`/orders/{id}`）"
+            "但不进侧边栏。🔴 issue #7276（人类 2026-10-18 裁定「让订单详情这个码真正生效」）起，本码"
+            "**不再是零消费死码**：`GET /api/admin/orders/{id}` 与 `GET /api/admin/orders/{id}/shipments`"
+            "两条读面的生效码就是它（现取见 `test_agent_permission_parity.py::AUTHORIZATION_CENSUS"
+            "['order:detail']` 与 `admin_api_permission_codes()`）；改前那个「勾了不生效」的形态"
+            "由本文件末尾的 `test_action_node_codes_are_consumed_by_at_least_one_endpoint` 兜住。"
+        ),
+        "owner": "交易管理组菜单面 + 本判据的动作节点台账 + 零消费元守卫",
     },
     # 🔴 2026-10-09（issue #6580）新增：`MenuController` 的 org-center 组里那个**权限码节点**
     # 「企业基础设置（经营域）」（码 = `system:manage`）—— 它**没有 `path`**、也不是菜单项。
@@ -1770,3 +1777,104 @@ def test_every_dashboard_page_route_resolves_to_a_guard_code():
     assert any("agent-workspace/sessions" in h for h in hits), (
         f"摘掉 `/agent-workspace` 守卫后没被判红：{hits}"
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 类级元守卫（铁律 8）：**动作码节点的码不许「零消费」**
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# 病（issue #7276 现场）：`order:detail` 在权限树上是个**可勾选**的动作节点、还进了各岗位默认权限种子，
+# 但 admin-api **没有任何端点**消费它、前端也没有任何 `has()` 判断 ⇒ **取消勾选它，后台一个字都不变**
+# （用户原话：「虽然页面上提示我没权限操作，但是我仍然能访问，RBAC权限没控制住？」）。
+# 当时它在 `test_agent_permission_parity.py` 里只有一条**散文**台账（「权限码零消费」），
+# 去向单 #5236 关闭后无人承接 ⇒ 没有东西会因此变红。
+#
+# 本判据把那条散文变成**机械**：动作码节点的码必须在 admin-api 的 `@RequirePermission` 里**至少命中一次**；
+# 命中不了 ⇒ 要么把它变成真码，要么在 `ACTION_NODE_WITHOUT_ENDPOINT` 具名登记「为什么它只能是个纯 UI 码 + 到期条件」。
+# 该台账**只许缩短**（现取为空）：登记项一旦有了端点 ⇒ 不删即红（陈旧登记同样是假绿）。
+
+#: 动作码节点 → 理由（**只许缩短**；键集必须 ⊆ `ACTION_NODE_CODES` 的码集，且每条都要「还没有端点」）。
+ACTION_NODE_WITHOUT_ENDPOINT: dict[str, str] = {}
+
+
+def admin_api_permission_codes() -> dict[str, tuple[str, ...]]:
+    """现取 `admin-api` 的「权限码 → 命中它的源文件」索引（解析面 = `@RequirePermission("…")`）。
+
+    只扫 `src/main/java`（测试里的注解是断言文本，不是生效码）；类级与方法级都算 ——
+    本判据问的是「这个码到底拦不拦得住人」，不是「挂在哪一层」。
+    """
+    root = REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "java"
+    hits: dict[str, list[str]] = {}
+    for path in sorted(root.rglob("*.java")):
+        for m in re.finditer(r'@RequirePermission\("([^"]+)"\)', path.read_text(encoding="utf-8")):
+            hits.setdefault(m.group(1), []).append(path.name)
+    return {code: tuple(files) for code, files in hits.items()}
+
+
+def action_node_endpoint_problems(
+    ledger: dict[str, dict[str, str]] | None = None,
+    codes: dict[str, tuple[str, ...]] | None = None,
+    exempt: dict[str, str] | None = None,
+) -> list[str]:
+    """判据：每个动作码节点的码都必须被至少一个 admin-api 端点消费（或在台账具名）。"""
+    ledger = ACTION_NODE_CODES if ledger is None else ledger
+    codes = admin_api_permission_codes() if codes is None else codes
+    exempt = ACTION_NODE_WITHOUT_ENDPOINT if exempt is None else exempt
+    node_codes = {spec["code"] for spec in ledger.values()}
+    out: list[str] = []
+    for node, spec in sorted(ledger.items()):
+        code = spec["code"]
+        if code in codes:
+            if code in exempt:
+                out.append(
+                    f"动作节点『{node}』的码 `{code}` **已**被 "
+                    f"{len(codes[code])} 个源文件消费（{', '.join(sorted(codes[code]))}）"
+                    " ⇒ `ACTION_NODE_WITHOUT_ENDPOINT` 里的那条豁免已陈旧，必须删掉（台账只许缩短）"
+                )
+            continue
+        if code not in exempt:
+            out.append(
+                f"动作节点『{node}』的码 `{code}` 在 admin-api 里**零消费**（没有任何 "
+                "`@RequirePermission` 命中它）⇒ 岗位权限页里勾了不生效。"
+                "出口：① 让端点真的认这个码；② 或在本文件的 `ACTION_NODE_WITHOUT_ENDPOINT` 具名登记"
+                "（理由 + 到期条件）；③ 或把该节点从权限树上摘掉（不再假装可授予）"
+            )
+    for code in sorted(set(exempt) - node_codes):
+        out.append(
+            f"`ACTION_NODE_WITHOUT_ENDPOINT` 登记的 `{code}` 不是任何动作节点的码（陈旧登记）"
+        )
+    return out
+
+
+def test_action_node_codes_are_consumed_by_at_least_one_endpoint():
+    """🔴 **类级元守卫**（铁律 8 / issue #7276）：动作码节点不许是「勾了不生效」的死码。
+
+    判别力自证（内存注入，不碰仓内文件）：
+    ① 给台账加一个**不存在于 admin-api** 的码 ⇒ 必须具名报出「零消费」；
+    ② 给一个**真正被消费**的码加豁免 ⇒ 必须报「陈旧豁免」。
+    """
+    codes = admin_api_permission_codes()
+    anchor = "order:detail" if "order:detail" in codes else sorted(codes)[0]
+    assert anchor in codes, (
+        f"现取解析面为空（扫不到任何 `@RequirePermission`）⇒ 本判据在扫空气：{REPO_ROOT}"
+    )
+    problems = action_node_endpoint_problems(codes=codes)
+    print(
+        f"── 动作码节点 = {len(ACTION_NODE_CODES)} 个 / admin-api 生效权限码 = {len(codes)} 个 / "
+        f"零消费 = {len(problems)} 项 ──"
+    )
+    assert problems == [], (
+        "动作码节点里有「勾了不生效」的码（共 "
+        f"{len(problems)} 项）——权限树上能勾、却没有任何端点拦得住：\n"
+        + "\n".join(f"  · {p}" for p in problems)
+    )
+
+    # 自证 ①：注入一个不存在的码 ⇒ 判红（否则「恒空」也是绿的）
+    bogus = dict(ACTION_NODE_CODES)
+    bogus["__自证节点__"] = {"code": "order:__not_a_code__", "reason": "红证", "owner": "红证"}
+    hits = action_node_endpoint_problems(ledger=bogus, codes=codes)
+    assert any("__not_a_code__" in h for h in hits), f"注入零消费码后没被判红：{hits}"
+
+    # 自证 ②：给一个**真实被消费**的码加豁免 ⇒ 必须报「陈旧豁免」
+    stale = action_node_endpoint_problems(codes=codes, exempt={anchor: "红证"})
+    assert any(anchor in h and "陈旧" in h for h in stale), f"注入陈旧豁免后没被判红：{stale}"

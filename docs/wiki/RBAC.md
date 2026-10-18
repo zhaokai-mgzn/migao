@@ -96,6 +96,23 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 | AI Tool | `required_permissions`（与 admin-api 权限目录**同源**）+ 工具内按 action 二次校验（如 `employee_manage`：查询需 employee:list，写操作需 employee:create）。**#4106 铺开 + #5246 收口**：`app/tools/*.py` 里每个 B 端可达工具都声明了码（纯本地工具走显式白名单），且与端点生效码/菜单节点码/岗位矩阵**四方对账** —— 判据 = `tests/unit_ci_workflows/test_agent_permission_parity.py`（九条，各带注入式红证） |
 | 前端 | `lib/permission.ts usePermission()`：菜单过滤 + `(dashboard)/layout.tsx` 路由守卫 + 员工页按钮级权限 |
 
+### 「订单详情」码（`order:detail`）自 issue #7276 起真正生效
+
+改前它是**死码**：在权限树里是个可勾选的动作节点、还进了各岗位默认权限种子，但 admin-api
+**没有任何端点消费它**、前端也没有任何 `has('order:detail')` ⇒ **取消勾选它，后台一个字都不变**
+（用户 2026-10-18 现场：「虽然页面上提示我没权限操作，但是我仍然能访问，RBAC权限没控制住？」）。
+当时它只以**散文**形式登记在 `test_agent_permission_parity.py` 的「权限码零消费」条目里，
+去向单 #5236 关闭后无人承接。
+
+现按人类裁定「让它真正生效」：`GET /api/admin/orders/{id}` 与同页发货读面
+`GET /api/admin/orders/{id}/shipments` 的生效码改挂 `order:detail`（**列表**仍是 `order:list`）；
+订单详情页无该码 ⇒ 渲染拒绝态且**不发任何读请求**；页内加工单块（端点码 `production:view`）
+无该码时不渲染。**零回归**：种子岗位里持 `order:list` 的四个（客服/运营/销售/财务）本就都持
+`order:detail`；只有「只勾订单列表、不勾订单详情」的自定义岗位会打不开详情，且**不做存量回填**。
+类级元守卫 = `tests/unit_ci_workflows/test_rbac_derived_pages.py` 的
+`test_action_node_codes_are_consumed_by_at_least_one_endpoint`（动作码节点的码必须在 admin-api
+至少命中一个 `@RequirePermission`，否则具名判红；豁免台账 `ACTION_NODE_WITHOUT_ENDPOINT` 只许缩短）。
+
 ## `/api/admin/**` 放行策略现状（issue #4727 实测，2026-09-20）
 
 `SecurityConfig.securityFilterChain()` 把 `/api/admin/**` 交给 `adminApiAuthorizationManager`（**唯一门禁**），

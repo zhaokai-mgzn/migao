@@ -1,6 +1,19 @@
 // case_ids: OR-001, OR-002, OR-003, OR-046, OR-055, OR-067, OR-068, UI-024, UI-040, UI-053, UI-076, UI-090
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, cleanup, screen, waitFor } from '@testing-library/react'
+
+// issue #7276：订单详情页的**页面码 = order:detail**（判据见 tests/unit/pages/order-detail-permission-gate.test.tsx）
+// ⇒ 本文件渲染的是「有权限的商家」形态，必须给登录态一份 `*` 权限；否则页面走拒绝态，
+// 本文件的全部断言会凭空变红（那不是被测行为）。
+const authMock = vi.hoisted(() => ({
+  state: {
+    user: { id: '1', username: 'tester', name: '测试账号', permissions: ['*'] as string[], roles: [] as string[] },
+  },
+}))
+vi.mock('@/store/auth', () => ({
+  useAuthStore: (selector?: (s: unknown) => unknown) =>
+    typeof selector === 'function' ? selector(authMock.state) : authMock.state,
+}))
 import userEvent from '@testing-library/user-event'
 import dayjs from 'dayjs'
 import { markErrorToastShown } from '@/lib/api-error'

@@ -3,6 +3,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 
+// issue #7276：订单详情页的**页面码 = order:detail**（判据见 tests/unit/pages/order-detail-permission-gate.test.tsx）
+// ⇒ 本文件渲染的是「有权限的商家」形态，必须给登录态一份 `*` 权限；否则页面走拒绝态，
+// 本文件的全部断言会凭空变红（那不是被测行为）。
+const authMock = vi.hoisted(() => ({
+  state: {
+    user: { id: '1', username: 'tester', name: '测试账号', permissions: ['*'] as string[], roles: [] as string[] },
+  },
+}))
+vi.mock('@/store/auth', () => ({
+  useAuthStore: (selector?: (s: unknown) => unknown) =>
+    typeof selector === 'function' ? selector(authMock.state) : authMock.state,
+}))
+
 /**
  * OrderDetail 发货入口守卫（issue #3889）：
  * 含加工项且加工单未完成 → 发货按钮区显示引导文案替代可点发货按钮（不再"先看到可发货、提交才被后端拦"）。
