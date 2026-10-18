@@ -321,6 +321,22 @@ export const QUALITY_RESULTS = [
 
 const QUALITY_LABELS = { pass: '合格', rework: '返工', scrap: '报废' }
 
+/**
+ * 本屏这道工序是不是「质检」（issue #7186）。
+ *
+ * 🔴 与后端 `DocumentOperationLinkage.QUALITY_OPERATION_NAME`（= `质检`）**逐字同名**。
+ * 真闸在服务端（报工 / 扫码完成两条写入口对质检工序 422，唯一实现
+ * `DocumentOperationLinkage#rejectManualReport`）；这里只决定「出不出报工按钮」——
+ * 客户端藏按钮不构成授权，服务端拦不住才是 bug。
+ *
+ * 为什么判「逻辑名」而不是「工序 id 白名单」：路由里的质检工序按**名称**匹配（同 #7165），
+ * 租户自建的质检工序（如 `质检-帘身`）经 `logicalOperationName` 归一后同样是「质检」。
+ */
+export function isQualityOperation(op) {
+  const name = String(op?.logical_name ?? op?.operation_name ?? op?.operation ?? '').trim()
+  return name === '质检'
+}
+
 /** 任意输入 ⇒ 闭词表内的值（缺省 / 非法 ⇒ 正常）。 */
 export function normalizeWorkType(v) {
   return WORK_TYPES.includes(v) ? v : DEFAULT_WORK_TYPE
@@ -343,6 +359,9 @@ export function canReport(state, view) {
   if (!view || view.completed === true) return false
   if (Array.isArray(view.needs_selection) && view.needs_selection.length > 0) return false // ① 旧码未选定
   if (!view.operation?.operation_id) return false                    // ② 工序未确定不得记账
+  // ④ 质检工序**没有报工动作**（issue #7186）：判定即报工 ⇒ 这一屏只出质检区块，
+  //    不出报工按钮 / 报工三态（服务端同款判据见 isQualityOperation 的注释）。
+  if (isQualityOperation(view.operation)) return false
   return true
 }
 
@@ -566,6 +585,23 @@ function currentSpecBlock(v) {
 }
 
 /**
+ * 质检工序的「这一屏只有一个动作」说明（issue #7186）。
+ *
+ * <p>用户 2026-10-18 逐字：「质检员不需要报工这个动作，只需要有一个质检动作，完成判定后自动报工，
+ * 然后自动生成质检流水」⇒ 本屏对「质检」工序**不出**报工按钮（{@link canReport} 判 false）。
+ * 不给一句话就是**死页面**（工人看到应做数量、却没有可点的动作）。</p>
+ *
+ * <p>两句不同是因为**授权**不同（`inspect` 逐人开）：没开这一页的人不该以为「点一下就能报」——
+ * 说清「要谁来录」，而不是把按钮藏起来不说理由。</p>
+ */
+function qualityOnlyNote(state, view) {
+  if (!isQualityOperation(view?.operation)) return ''
+  return effectivePages(state).opened.has(PAGE_INSPECT)
+    ? '<p class="wh5-sub" id="wh5-quality-only">本道是质检工序：录入判定即完成报工并生成质检单（不单独报工）。</p>'
+    : '<p class="wh5-sub" id="wh5-quality-only">本道是质检工序：需由质检员录入判定（当前账号未开通「质检」页）。</p>'
+}
+
+/**
  * 质检区块（issue #7162）：工人扫水洗唛后，在这一屏录判定、生成「质检单」。
  *
  * <p>口径（用户 2026-10-17 逐字）：「工人不能进入观星台……只需要在小程序端扫码进入报工页后
@@ -697,6 +733,7 @@ function mainView(state) {
     ${state.notice ? `<p class="wh5-notice" id="wh5-notice">${esc(state.notice)}</p>` : ''}
     ${state.error ? `<p class="wh5-error" id="wh5-error">${esc(state.error)}</p>` : ''}
     ${picker}
+    ${qualityOnlyNote(state, v)}
     ${workTypePicker(state, v)}
     ${reportButton(state, v)}
     ${overviewView(v, v.position?.order_item_id ?? null)}
