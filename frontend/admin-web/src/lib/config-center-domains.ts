@@ -189,7 +189,7 @@ export const CONFIG_DOMAINS: readonly ConfigDomain[] = [
     key: 'enterprise',
     label: '企业信息',
     zone: 'tenant',
-    summary: '企业名称、Logo 与手机端入口',
+    summary: '企业名称与 Logo',
     // `GET/PUT /api/admin/settings`（本页自身的既有码）
     requiredCode: 'system:manage',
     mainlineSteps: [],
