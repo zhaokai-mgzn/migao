@@ -2290,7 +2290,6 @@ cases:
       - frontend-fix.vitest
     user_inputs:
       - "用户逐字：「你在商家后端合适的位置搞个二维码，方便用户扫码使用」＋同日裁定「二维码放『系统设置 / 企业设置』页」"
-      - "用户逐字（2026-10-18，第二次落位改判）：「这块直接移除吧，已经迁移到右上角了」＋「企业信息设置里面的那部分」"
     expectations:
       - tool: direct_reply
     data_checks:
