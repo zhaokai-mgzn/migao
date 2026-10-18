@@ -68,6 +68,22 @@
 
 ---
 
+## 五、能力变更 → 用例库（防「尺子没跟上」）
+
+能力的**声明**投影了，如果**评测期望**没跟上，同样会产出"看起来在测、实际恒假"的假绿/假红。
+2026-10-19 现取（#6984）：三条 B 端用例写 `tool: direct_reply or validate_input`，
+而 `validate_input` 不在 mibao 可达集 ⇒ 第二条支**恒假**（空断言）。
+
+| 规则 | 判据 |
+|---|---|
+| 能力增删 ⇒ **同 PR** 更新 `.github/cases/`，跑 `render_cases.py` 并提交生成物 | CI `Main Freshness Guard` + `Case Contract` |
+| B 端用例的**正向工具引用**（`expectations` / `must_succeed` / `required_args` / `order_before`）必须落在 **mibao 可达集**（`direct_reply` 是唯一哨兵） | `tests/test_b_end_case_tool_reachability.py::test_b_end_cases_only_expect_reachable_tools` |
+| 负向引用（`forbidden_tools` / `must_fail`）**不在**上条射程：对不可达工具的禁区恒真，属 #4043 族 | 已登记 |
+| 没有绿色基线，不下「能力变好了」的结论（#7027）；真实 LLM 评测按 #4262 **只在显式要求时集中跑** | 评测流水线 |
+
+> 这条与 §一 是同一条不变式在两个面的实例：**声明面**是 prompt，**度量面**是用例库。
+> 两处都由真值投影/判据守住，能力变更才不需要"记得改十个地方"。
+
 ## 五、判据清单（文件 :: 测试名）
 
 - `backend/ai-agent-service/tests/test_capability_boundary.py`
@@ -78,6 +94,7 @@
   - `::test_boundary_injected_for_mibao_only`（C 端零影响）
 - `backend/ai-agent-service/tests/test_agent_capability_paradigm.py`
   - 台账形状 / 投影清单冻结 / 渲染缝与判据可解析 / 手写矩阵禁令 / 范式页与索引在位
+- `backend/ai-agent-service/tests/test_b_end_case_tool_reachability.py`（用例 ↔ 可达集）
 - `backend/ai-agent-service/tests/test_capability_index_prompt.py`（#4125，既有）
 
 ---
