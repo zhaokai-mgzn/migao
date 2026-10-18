@@ -44,6 +44,8 @@ POLL_SECONDS="${PMWC_POLL_SECONDS:-40}"
 WAIT_TIMEOUT="${PMWC_WAIT_TIMEOUT:-1800}"   # 等 pending 的上限（秒）；**不**消耗轮次
 SECONDS=0
 DRY_RUN=0
+RESOLVE_STALE=0
+DIAGNOSED_BLOCKED=0
 GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
 usage() {
@@ -55,6 +57,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --help|-h) usage ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --resolve-stale-threads) RESOLVE_STALE=1; shift ;;
     --max-attempts) MAX_ATTEMPTS="${2:-6}"; shift 2 ;;
     --poll-seconds) POLL_SECONDS="${2:-40}"; shift 2 ;;
     --timeout) WAIT_TIMEOUT="${2:-1800}"; shift 2 ;;
@@ -156,6 +159,21 @@ while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
     attempt=$((attempt + 1))
     sleep "$POLL_SECONDS"
     continue
+  fi
+
+  # 「全绿却 BLOCKED」的头号真因（issue #7206 实测 #7188）：**未解决的评审线程**（分支保护开了
+  # conversation resolution）。仓库已有判定器 `scripts/resolve_stale_bot_threads.py`（默认 dry-run）——
+  # 这里**只做只读诊断 + 打印出口**，不替人做「哪些线程算陈旧」的裁定（那由该工具判）。
+  if [ "$merge_state" = "BLOCKED" ] && [ "$pending" = "0" ] && [ -z "$failed" ] \
+     && [ "$DIAGNOSED_BLOCKED" = "0" ] && [ -f "$GIT_ROOT/scripts/resolve_stale_bot_threads.py" ]; then
+    DIAGNOSED_BLOCKED=1
+    echo "  🧭 全绿却 BLOCKED ⇒ 先查「未解决的评审线程」这个头号真因："
+    if [ "$RESOLVE_STALE" = "1" ] && [ "$DRY_RUN" = "0" ]; then
+      ( cd "$GIT_ROOT" && python3 scripts/resolve_stale_bot_threads.py --apply "$PR" 2>&1 | tail -5 | sed 's/^/     /' )
+    else
+      ( cd "$GIT_ROOT" && python3 scripts/resolve_stale_bot_threads.py "$PR" 2>&1 | tail -5 | sed 's/^/     /' )
+      echo "     确认可解后：$0 $PR --resolve-stale-threads（等价于 python3 scripts/resolve_stale_bot_threads.py --apply ${PR}）"
+    fi
   fi
 
   # BLOCKED / UNKNOWN / 其他：可能仍有 pending，也可能有别的 required（review / 标签）在拦

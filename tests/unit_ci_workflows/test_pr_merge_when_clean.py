@@ -82,6 +82,10 @@ if args[:2] == ["pr", "view"]:
         print(json.dumps(row))
     sys.exit(0)
 
+if "graphql" in args:
+    print(json.dumps({"data": {"repository": {"pullRequest": {"reviewThreads": {"nodes": []}}}}}))
+    sys.exit(0)
+
 if args[:1] == ["api"]:
     if state.get("api_should_fail"):
         print('{"message":"merge conflict between base and head"}', file=sys.stderr)
@@ -248,7 +252,34 @@ def test_wait_timeout_is_three(run_script):
     assert not any(c.startswith(f"gh pr merge {PR}") for c in calls)
 
 
+# ── 判据 ⑥c：「全绿却 BLOCKED」必须诊断到评审线程（issue #7206 的实测真因）──────────
+
+def test_blocked_without_red_diagnoses_review_threads(run_script):
+    """#7188 实测：16 条 required 全绿、pending=0，仍 BLOCKED —— 真因是**未解决的评审线程**。
+
+    红证 = 去掉脚本里那段诊断（`resolve_stale_bot_threads.py` 的调用）⇒ 本用例必红：
+    输出里只剩「跑 gh pr view 看拦在哪」，人还得自己猜。
+    """
+    proc, calls = run_script([_view(merge_state="BLOCKED")], args=("--max-attempts", "1", "--timeout", "1"),
+                             expect_rc=3)
+    assert "评审线程" in proc.stdout, f"必须点名「未解决的评审线程」这个真因；实测输出：{proc.stdout}"
+    assert "resolve_stale_bot_threads.py" in proc.stdout, "必须给出可执行出口（仓库既有判定器）"
+
+
 # ── 判据 ⑦：脚本本体存在且可执行（防「判据在、工具没了」的假绿）──────────────────
+
+def test_no_bare_variable_before_non_ascii():
+    """类级固化（铁律 8）：`$VAR` 后紧跟非 ASCII 字符必须写成 `${VAR}`。
+
+    实测踩了 **3 次**：bash 在多字节 locale 下会把全角标点并进变量名 ⇒ `PR\xef: unbound variable`
+    （脚本直接崩，且崩溃信息里带着半个 UTF-8 字符，连报错都读不清）。
+    红证 = 把任意一处 `${VAR}` 改回 `$VAR` 且后面跟全角标点 ⇒ 本用例必红。
+    """
+    import re
+    body = SCRIPT.read_text(encoding="utf-8")
+    bad = [m.group(0) for m in re.finditer(r"\$[A-Za-z_][A-Za-z0-9_]*(?=[^\x00-\x7f])", body)]
+    assert not bad, f"这些位置必须写成 ${{VAR}}（变量后紧跟全角字符会让 bash 把标点并进变量名）：{bad}"
+
 
 def test_script_exists_and_is_executable():
     assert SCRIPT.exists(), f"工具缺失：{SCRIPT}"
