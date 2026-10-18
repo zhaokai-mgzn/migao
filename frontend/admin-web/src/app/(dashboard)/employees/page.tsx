@@ -13,6 +13,7 @@ import type { Employee, EmployeeStatus, EmployeeFormData } from '@/types'
 import { TreeCheckbox, type TreeNode } from '@/components/ui/TreeCheckbox'
 import DateTimeCell from '@/components/common/DateTimeCell'
 import WorkerProfilesPanel from '@/components/employees/WorkerProfilesPanel'
+import { mobileTitlesByCodeFromTree } from '@/lib/mobile-surface-label'
 
 // #2969 岗位=角色体系：岗位列表来自 roleApi.getAllRoles（每岗位含默认权限），不再用硬编码预设
 /** 筛选控件统一形态：与 `SearchPanel` 的 `CONTROL_CLASS` 同口径 */
@@ -116,15 +117,57 @@ export default function EmployeesPage() {
   }, [loadPositions])
 
   // 从 menuTree 中提取 code → 中文 label 的映射 + 叶子节点总数
+  //
+  // 🔴 2026-10-18（用户截图：「权限」列出现 `dashboard:view` 英文码）：改前**只扫 children**，
+  // 而「经营看板」自 issue #7087 起是**顶层独立项**（`MenuController` 顶层的 `new MenuNode("dashboard:view", …)`）
+  // ⇒ 这类码没有中文名，权限列回退成内部码上屏（§31 P3「不摆内部标识」）。
+  // 顶层独立项与组内项一样是**可勾选的叶子**（`TreeCheckbox` 对无 children 的节点取自身 code），
+  // 所以它们同时进 labelMap 与叶子计数 —— 两处口径必须同源，否则「全部权限」徽章会算错。
   const { permissionLabelMap, totalLeafCount } = useMemo(() => {
     const map: Record<string, string> = {}
     let count = 0
+    // 同码多节点按设计存在（#5699/#5291）：labelMap 首见优先，不被后到同码节点覆盖（issue #6083）
+    const take = (code: string, label: string) => { if (!(code in map)) map[code] = label }
     menuTree.forEach(p => {
-      // 同码多节点按设计存在（#5699/#5291）：labelMap 首见优先，不被后到同码节点覆盖（issue #6083）
-      p.children?.forEach(c => { if (!(c.code in map)) map[c.code] = c.label; count++ })
+      const children = p.children || []
+      if (children.length === 0) {
+        take(p.code, p.label)
+        count++
+        return
+      }
+      children.forEach(c => { take(c.code, c.label); count++ })
     })
     return { permissionLabelMap: map, totalLeafCount: count }
   }, [menuTree])
+
+  /**
+   * 岗位展示名（2026-10-18 用户逐字：「这里的岗位不要用英文」）。
+   *
+   * `users.position` 有两种历史写法：**岗位名**（员工管理页建号，如「客服」）与**角色码**
+   * （API / 回归脚本建号，如 `knowledge_editor`）。后者原样上屏 = 把内部标识摆给商家看（§31 P3）。
+   * 角色码 → 岗位名的真值**只在服务端**：优先用该行下发的 `roles`（`{ code, name }`，`user_roles` 的投影），
+   * 其次用页面已加载的岗位清单（`/api/admin/roles/all`）；前端**不另建**「码 → 岗位名」字典。
+   */
+  const positionLabelOf = (record: Employee): string => {
+    const raw = (record.position || '').trim()
+    if (!raw) return ''
+    const role = (record.roles || []).find(r => r.code === raw || r.name === raw)
+    if (role?.name) return role.name
+    return positionOptions.find(p => p.code === raw || p.name === raw)?.name || raw
+  }
+
+  /**
+   * 手机端菜单（2026-10-18 用户逐字：「员工管理里面不能设置手机端的菜单权限？」）。
+   *
+   * 手机端可见面由**同一批权限码**派生（issue #6570「走 B」/ #6574 / #6759）—— 服务端在
+   * `GET /api/admin/menus` 的节点上把「权限码 → 手机端面中文名」标注下发，这里只**收表**，
+   * 不自建映射（判据 = `tests/unit_ci_workflows/test_mobile_surface_annotation_single_source.py`）。
+   * 🔴 必须扫**整棵树**（含顶层独立项）：`dashboard:view`（手机端底栏「数据」）就挂在顶层。
+   */
+  const mobileMenuEntries = useMemo(
+    () => Object.entries(mobileTitlesByCodeFromTree(menuTree)),
+    [menuTree],
+  )
 
   /** 列表读失败（与「暂无数据」互斥，issue #6714）：故障不是业务事实 */
   const [loadFailed, setLoadFailed] = useState(false)
@@ -200,7 +243,8 @@ export default function EmployeesPage() {
     setFormData({
       name: employee.name,
       phone: employee.phone || '',
-      position: employee.position || '',
+      // 岗位回填用**展示名**：存量行存的是角色码时，直接回填码会让「岗位」下拉匹配不到任何选项
+      position: positionLabelOf(employee),
       role: employee.role || (employee.roles?.[0]?.code as string) || '',
       permissions: employee.permissions || [],
       // #5485：登录账号取 employeeUsername（⚠️ `username` 在列表里仍是手机号，不能拿来当账号）
@@ -348,7 +392,7 @@ export default function EmployeesPage() {
       title: '岗位',
       width: '100px',
       render: (record) => (
-        <span className="text-sm text-neutral-700">{record.position || '-'}</span>
+        <span className="text-sm text-neutral-700">{positionLabelOf(record) || '-'}</span>
       ),
     },
     {
@@ -663,6 +707,39 @@ export default function EmployeesPage() {
               <span className="text-sm text-neutral-400">加载菜单权限中...</span>
             )}
           </div>
+          {/* 手机端菜单（2026-10-18 用户：「员工管理里面不能设置手机端的菜单权限？」）——
+              手机端入口由**同一批权限码**派生，这里只是把它作为一个可操作的投影面摆出来：
+              勾选 = 授予该码（与上方账号权限**同一份**状态，不产生第二套授权）。
+              清单与面名**全部来自服务端**（`mobileTitles`），前端不建「码 → 面名」表。 */}
+          {mobileMenuEntries.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-neutral-700 mb-2">手机端菜单</label>
+              <div
+                data-testid="employees-mobile-menus"
+                className="grid grid-cols-2 gap-x-3 gap-y-2 rounded-lg border border-neutral-200 p-3"
+              >
+                {mobileMenuEntries.map(([code, titles]) => (
+                  <label key={code} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.permissions.includes(code)}
+                      onChange={(e) => setFormData(prev => ({
+                        ...prev,
+                        permissions: e.target.checked
+                          ? (prev.permissions.includes(code) ? prev.permissions : [...prev.permissions, code])
+                          : prev.permissions.filter(c => c !== code),
+                      }))}
+                      className="h-4 w-4 flex-shrink-0 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+                    />
+                    <span className="text-sm text-neutral-600">{titles.join('、')}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-neutral-400 mt-1">
+                这部分与上方账号权限是同一份授权：勾选即开通手机端入口，取消即关闭。
+              </p>
+            </div>
+          )}
         </div>
       </Modal>
 
