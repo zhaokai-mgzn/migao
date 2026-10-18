@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from 'react'
+import { useEffect, useMemo, useCallback, useRef } from 'react'
 import { View, Text, Image, ScrollView } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import type { Message, CardData, InteractiveData } from '../../types'
@@ -28,6 +28,8 @@ interface MessageBubbleProps {
   message: Message
   /** 交互回调：点击确认/取消/追问/下单按钮时，发送对应文本作为用户消息 */
   onInteract?: (value: string) => void
+  /** 打字机逐字揭示追加了内容（issue #7263）：父级据此贴底跟随滚动 */
+  onContentGrow?: () => void
 }
 
 /** 渲染单张卡片 */
@@ -39,7 +41,7 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
       // data 可能是单个商品或商品列表（后端 `_detect_card_type` 只下发 product_list；
       // 旧别名 `product_recommend` 于 #4016 P14 裁剪 —— 后端从无该卡型的发射点）
       const products = Array.isArray(data?.products) ? data.products : (Array.isArray(data) ? data : [data])
-      // 多商品 → 瑞幸式商品表单列表（紧凑行 + 可点规格 + 去下单）
+      // 多商品 → 瑞幸式商品表单列表（紧凑行 + 可点规格 + 查看；issue #7264 商家端不下单）
       if (products.length > 1) {
         return (
           <ProductFormList
@@ -55,7 +57,7 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
             <ProductCard
               key={`product-${pIdx}`}
               data={product}
-              onOrder={onInteract ? (name) => onInteract(`我要下单${name}`) : undefined}
+              onView={onInteract ? (name) => onInteract(`查看${name}`) : undefined}
             />
           ))}
         </View>
@@ -68,7 +70,7 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
         <ProductCard
           key={`card-${idx}`}
           data={product}
-          onOrder={onInteract ? (name) => onInteract(`我要下单${name}`) : undefined}
+          onView={onInteract ? (name) => onInteract(`查看${name}`) : undefined}
         />
       )
     }
@@ -245,7 +247,7 @@ function RichTableBlock({ table }: { table: RichTable }) {
   )
 }
 
-export default function MessageBubble({ message, onInteract }: MessageBubbleProps) {
+export default function MessageBubble({ message, onInteract, onContentGrow }: MessageBubbleProps) {
   const {
     role, content, isStreaming, cards, cardData,
     type, created_at, images, interactive,
@@ -269,6 +271,14 @@ export default function MessageBubble({ message, onInteract }: MessageBubbleProp
   // 正文整段到达 + 紧随 done ⇒ 继续把尾巴打完（旧口径「流结束就立刻全文」会让揭示窗口 ≈ 0）。
   const visibleContent = useTypewriter(cleanContent, { instant: !!message.wasAborted })
   const revealing = !!isStreaming || visibleContent.length < cleanContent.length
+
+  // issue #7263：逐字揭示每追加一帧就通知父级「内容长高了」，由父级决定是否贴底跟随
+  //（用 ref 转发回调：父级每次渲染换新函数不该把揭示节奏重置成每个字符一次）
+  const onContentGrowRef = useRef(onContentGrow)
+  onContentGrowRef.current = onContentGrow
+  useEffect(() => {
+    if (visibleContent.length > 0) onContentGrowRef.current?.()
+  }, [visibleContent.length])
 
   // issue #6346 / #7235：富文本按**块**解析（**粗体** / - 列表 / GFM 表格），流式安全
   // （未闭合 ** 与「分隔行还没到的表格」都原样保留，不闪出解析产物）。

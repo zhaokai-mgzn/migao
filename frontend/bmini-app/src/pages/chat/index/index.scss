@@ -19,7 +19,7 @@
   background: $bg-secondary;
   overflow: hidden;
 
-  // ── 自定义导航栏（瑞幸式深蓝渐变品牌头）──
+  // ── 自定义导航栏（瑞幸式深蓝渐变品牌头；issue #7265 起可向上折叠）──
   &__navbar {
     padding: 12px 24px 16px;
     background: $gradient-brand;
@@ -28,6 +28,31 @@
     box-shadow: $shadow-pop;
     position: relative;
     z-index: 10;
+    transition: padding 0.18s ease;
+  }
+
+  // 收起态：只留「logo + 名称 + 展开键」细品牌条（高度收益 ≈ 40-50 CSS px）
+  &__navbar--collapsed {
+    padding: 6px 24px 8px;
+  }
+
+  // 折叠/展开键（手动入口；滚动联动见 pages/chat/index/index.tsx）
+  &__navbar-toggle {
+    margin-left: auto;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: $radius-full;
+    background: rgba(255, 255, 255, 0.14);
+  }
+
+  &__navbar-toggle-icon {
+    font-size: 26px;
+    line-height: 1;
+    color: rgba(255, 255, 255, 0.85);
   }
 
   &__navbar-title {
@@ -88,6 +113,16 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
+    max-height: 80px;
+    opacity: 1;
+    overflow: hidden;
+    transition: max-height 0.18s ease, opacity 0.12s ease;
+  }
+
+  // 收起态：副标题 + 新对话整块收掉（保留品牌身份，入口可展开后再用）
+  &__navbar--collapsed &__navbar-right {
+    max-height: 0;
+    opacity: 0;
   }
 
   &__new-chat {
