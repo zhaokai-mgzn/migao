@@ -3043,17 +3043,26 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
     ),
     "order:detail": AuthorizationCensusEntry(
         roles=('customer_service', 'finance', 'sales'),
-        endpoints=(),
+        # 🔴 issue #7276（人类 2026-10-18 裁定「让订单详情这个码真正生效」）：本码此前是**零消费死码**
+        # （`endpoints=()`，只作菜单节点码）⇒ 岗位权限页里勾了不生效。现由**两条读面**承载：
+        # 详情 `GET /api/admin/orders/{id}` 与同页发货读面 `.../shipments`（改前这两条挂 `order:list`）。
+        endpoints=('GET /api/admin/orders/{}', 'GET /api/admin/orders/{}/shipments'),
         menu_nodes=('controller:订单详情',),
-        tools=(),
-        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「订单详情」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**。'),
+        # `logistics_track` 同批补本码（它调详情读面拿运单号）⇒ 工具码 ≡ 端点生效码（判据 2）。
+        tools=('logistics_track',),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「订单详情」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**。'
+                   '🔴 issue #7276 起本码**真正拦得住人**：两条读面的生效码就是它 ⇒ 无本码的岗位读详情/发货明细一律 403（改前挂 `order:list`，'
+                   '「只勾订单列表」的岗位照样读得到详情 —— 这正是用户报的「提示没权限却仍能访问」）。'
+                   '页外消费方同批对齐：发货单页 / 发货操作页（前端读面）+ 黄金策 `logistics_track`（工具声明 `order:list` + `order:detail`）。'),
     ),
     "order:list": AuthorizationCensusEntry(
         roles=('customer_service', 'finance', 'sales'),
-        endpoints=('GET /api/admin/agent/orders/mine', 'GET /api/admin/agent/orders/resolve', 'GET /api/admin/agent/payment-qrcodes', 'GET /api/admin/orders', 'GET /api/admin/orders/follow-status/stats', 'GET /api/admin/orders/statistics', 'GET /api/admin/orders/{}', 'GET /api/admin/orders/{}/follow-status', 'GET /api/admin/orders/{}/shipments', 'GET /api/admin/production/orders/{}/operations', 'GET /api/admin/production/orders/{}/piecework', 'GET /api/admin/production/route-signals', 'GET /api/admin/production/routing-gaps', 'GET /api/admin/production/scan', 'GET /api/admin/production/stuck-points', 'POST /api/admin/orders/auto-features', 'POST /api/admin/orders/craft-calc', 'POST /api/admin/orders/door-width-plan', 'POST /api/admin/orders/fee-preview'),
+        # 🔴 issue #7276：详情读面 `GET /api/admin/orders/{}` 与同页发货读面 `.../shipments`
+        # **移出**本码（改挂 `order:detail`）—— 本码从此只管「列表 + 统计 + 改单/建单的试算族」。
+        endpoints=('GET /api/admin/agent/orders/mine', 'GET /api/admin/agent/orders/resolve', 'GET /api/admin/agent/payment-qrcodes', 'GET /api/admin/orders', 'GET /api/admin/orders/follow-status/stats', 'GET /api/admin/orders/statistics', 'GET /api/admin/orders/{}/follow-status', 'GET /api/admin/production/orders/{}/operations', 'GET /api/admin/production/orders/{}/piecework', 'GET /api/admin/production/route-signals', 'GET /api/admin/production/routing-gaps', 'GET /api/admin/production/scan', 'GET /api/admin/production/stuck-points', 'POST /api/admin/orders/auto-features', 'POST /api/admin/orders/craft-calc', 'POST /api/admin/orders/door-width-plan', 'POST /api/admin/orders/fee-preview'),
         menu_nodes=('auth:订单列表', 'controller:订单列表', 'frontend:订单列表'),
         tools=('logistics_track', 'order_query'),
-        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「订单列表」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；19 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/agent/orders/mine；GET /api/admin/agent/orders/resolve；GET /api/admin/agent/payment-qrcodes 等）；Agent 侧 2 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（logistics_track / order_query）。'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「订单列表」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；17 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/agent/orders/mine；GET /api/admin/agent/orders/resolve；GET /api/admin/agent/payment-qrcodes 等）；Agent 侧 2 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（logistics_track / order_query）。'),
     ),
     "order:create": AuthorizationCensusEntry(
         # issue #5988（2026-10-02 人类裁定「应允许」）：销售**下单**是本职。

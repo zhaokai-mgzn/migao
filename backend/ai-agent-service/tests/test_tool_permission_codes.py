@@ -294,7 +294,9 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     "inventory_manage": ("product:list",),
     # issue #5246：知识卡片**读**码 knowledge:view（写/发布/归档仍 knowledge:manage）。
     "knowledge_search": ("knowledge:view",),
-    "logistics_track": ("order:list",),
+    # 🔴 issue #7276：`GET /api/admin/orders/{id}` 的生效码改为 `order:detail`（改前挂 `order:list`）
+    # ⇒ 本工具两个端点的生效码 = {order:list（列表解析）, order:detail（详情拿运单号）}，声明必须逐字对齐。
+    "logistics_track": ("order:list", "order:detail"),
     # 🔴 issue #5302 改判：`notification_manage` 从本表**移出**（settings 域收口）——
     # 它的两个读端点都没有生效码 ⇒ 工具不持码、回到角色层（见 `ROLE_GATED_B_SIDE_TOOLS`
     # 与文件头 `notification_manage` 段）。原码 `["system:manage", "employee:list"]`

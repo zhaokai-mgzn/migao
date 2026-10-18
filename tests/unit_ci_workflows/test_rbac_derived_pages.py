@@ -202,8 +202,15 @@ ACTION_NODE_CODES: dict[str, dict[str, str]] = {
     },
     "订单详情": {
         "code": "order:detail",
-        "reason": "「订单详情」是订单列表页内的动作（`order:detail` 的 census 端点数现取 = 0 —— 它是页面内路由，不是首屏）",
-        "owner": "交易管理组菜单面 + 本判据的动作节点台账",
+        "reason": (
+            "「订单详情」是订单列表页内的**子页面动作**（不是首屏）——它有自己的 path 语义（`/orders/{id}`）"
+            "但不进侧边栏。🔴 issue #7276（人类 2026-10-18 裁定「让订单详情这个码真正生效」）起，本码"
+            "**不再是零消费死码**：`GET /api/admin/orders/{id}` 与 `GET /api/admin/orders/{id}/shipments`"
+            "两条读面的生效码就是它（现取见 `test_agent_permission_parity.py::AUTHORIZATION_CENSUS"
+            "['order:detail']` 与 `admin_api_permission_codes()`）；改前那个「勾了不生效」的形态"
+            "由本文件末尾的 `test_every_grantable_code_has_a_server_side_enforcement_point` 兜住。"
+        ),
+        "owner": "交易管理组菜单面 + 本判据的动作节点台账 + 零消费元守卫",
     },
     # 🔴 2026-10-09（issue #6580）新增：`MenuController` 的 org-center 组里那个**权限码节点**
     # 「企业基础设置（经营域）」（码 = `system:manage`）—— 它**没有 `path`**、也不是菜单项。
@@ -387,6 +394,20 @@ FROZEN_CEILINGS: tuple[dict, ...] = (
         "reason": (
             "gap 台账的**具名条目**（理由 + 谁负责）；与 `PAGE_VISIBILITY_GAPS` 同生共死"
             "（条目集与现取 gap 页集由 `visibility_problems` 双向闭合）。**上界落地值 = 4**（P4 后现取 = 1）。"
+        ),
+    },
+    {
+        "id": "CODE_WITHOUT_ENFORCEMENT",
+        "count": lambda: len(CODE_WITHOUT_ENFORCEMENT),
+        "ceiling": 1,
+        "grew_by": "`code_enforcement_problems`（『未登记即红』+『已接线/陈旧登记 ⇒ 销账』双向；新增条目 = 现取超上界 ⇒ 红）",
+        "reason": (
+            "目录里**可授予但服务端零消费**的码（勾了不生效）—— 逐条具名 + 现状/出口/到期条件，**只许缩短**。"
+            "落地值 = 1（`product:manage` 旧粗码；已由用户裁定删码 ⇒ 落地后归零）。"
+            "**`agent:chat` 曾在本表里，是误判**：它是 `AdminGate` 的**手写门**（UGC 唤出入口），"
+            "不在注解体系里 ⇒ 现登记在 `EXPLICIT_GATES`（带活体校验）。"
+            "issue #7276 修掉的 `order:detail` 是同一形态，它因为**接线**（详情/发货两条读面）而退场 —— "
+            "本上界记的是「还剩几个这类码」，不是许可额。"
         ),
     },
     {
@@ -1770,3 +1791,170 @@ def test_every_dashboard_page_route_resolves_to_a_guard_code():
     assert any("agent-workspace/sessions" in h for h in hits), (
         f"摘掉 `/agent-workspace` 守卫后没被判红：{hits}"
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 类级元守卫（铁律 8）：**可授予的权限码不许「零消费」**
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# 病（issue #7276 现场）：`order:detail` 在权限树上是个**可勾选**的动作节点、还进了各岗位默认权限种子，
+# 但 admin-api **没有任何端点**消费它、前端也没有任何 `has()` 判断 ⇒ **取消勾选它，后台一个字都不变**
+# （用户原话：「虽然页面上提示我没权限操作，但是我仍然能访问，RBAC权限没控制住？」）。
+# 当时它在 `test_agent_permission_parity.py` 里只有一条**散文**台账（「权限码零消费」），
+# 去向单 #5236 关闭后无人承接 ⇒ 没有东西会因此变红。
+#
+# 本判据把「这个码到底拦不拦得住人」变成**机械**：**目录里的每个可授予码**（含动作节点码）都必须
+# 在**服务端强制面**（admin-api `@RequirePermission` / ai-agent 工具 `required_permissions` /
+# agent 页面上下文的 `entity_permissions`）里至少命中一次；命中不了 ⇒ 要么接线，要么在
+# `CODE_WITHOUT_ENFORCEMENT` 具名登记（现状 + 出口 + 到期条件）。该台账**只许缩短**：
+# 登记项一旦有了强制点 ⇒ 不删即红（陈旧登记同样是假绿）。
+#
+# 🔴 为什么「UI 面」（路由守卫 / 页面 `has()` / 菜单节点）**不算**强制点：那是**体验层**，
+# 直接调 API 就绕过了（`order:detail` 改前就活在菜单节点上 —— 正是本判据要治的「看起来有权限面」）。
+
+#: **手写门**（不在 `@RequirePermission` 体系里的判定点）—— 逐条登记 + **活体校验**。
+#: 这是上一轮普查的真实盲区：`agent:chat` 曾被误判成「零消费」，实际由 `AdminGate` 承载。
+#: 每条必须写清：门在哪（`file`）/ 判定链 / 承载判据。「门删了、登记还在」⇒ 本表条目失去活体证据 ⇒ 红。
+EXPLICIT_GATES: dict[str, dict[str, str]] = {
+    "agent:chat": {
+        "file": "backend/admin-api/src/main/java/com/migao/admin/security/AdminGate.java",
+        "chain": (
+            "`AdminGate.MIBAO_CHAT_GRANT_CODE` → `AdminGate.canSummonMibao` → "
+            "`AuthService` 的 `capabilities.mibaoChat` → bmini `MibaoAccessGate` / `pages/chat` 消费"
+        ),
+        "guard": "tests/unit_ci_workflows/test_mibao_chat_gate.py（BM-008，用户 2026-09-26 裁定）",
+    },
+}
+
+#: 目录里**可授予但服务端零强制点**的码 —— 具名台账（**只许缩短**）。
+#: 每条必须写清：现状 + 出口 + 到期条件。⚠️ `agent:chat` **不在**本表：它是**活的手写门**（见上）。
+CODE_WITHOUT_ENFORCEMENT: dict[str, str] = {
+    "product:manage": (
+        "现状：商品域的**旧粗码**，issue #5236 删掉「第四处菜单源」后只剩目录 + 岗位面（`CONTRACT-LEDGER`"
+        " 与 `test_agent_permission_parity.py` 的 census「权限码零消费」都登记过它）；种子岗位无一持有，"
+        "`RegistrationService` 的注释逐字写着「保留兼容旧 role_permissions 引用」。"
+        "出口：**删码**（用户 2026-10-18 裁定「可以删」）⇒ 落地后本条连同 `FROZEN_CEILINGS` 的上界一起归零。"
+        "到期条件：本码从目录移除 ⇒ 必须删掉本条。"
+    ),
+}
+
+
+def catalog_codes() -> set[str]:
+    """现取「可授予的码」全集 = 清单的两处目录（`permission_service` ∪ `registration`）+ 动作节点码。"""
+    manifest = load_manifest()
+    codes = set(manifest["codes"]["permission_service"]) | set(manifest["codes"]["registration"])
+    codes |= {spec["code"] for spec in ACTION_NODE_CODES.values()}
+    return codes
+
+
+def enforcement_surfaces() -> dict[str, tuple[str, ...]]:
+    """现取**服务端强制面**：权限码 → 命中它的源文件（admin-api 的 `@RequirePermission`）。
+
+    ## 判别面为什么只取 admin-api 端点
+
+    ai-agent 的工具（`required_permissions`）与页面上下文（`entity_permissions`）也是强制面，但
+    它们的码集**已被 `test_agent_permission_parity.py` 判据 2 钉成「工具码 ≡ 端点生效码」**
+    （跨码的具名例外在 `CODE_DIVERGENCE_EXCEPTIONS`，其码同样全部落在端点上）⇒ 由端点面即可覆盖，
+    这里不写第二份解析（同一事实两处实现 = 两处漂移）。
+
+    ## 为什么行首锚定（`^[ \t]*@`）
+
+    本仓有一条**原文口径**元守卫（`test_guard_parsing_is_comment_aware.py`，issue #5325）：按引号扫源码
+    原文的取值动作会被判「注释/字符串即可喂中」。注释行以 `//` / ` * ` 开头 ⇒ **行首锚定**
+    （只允许空白前缀）把「注释里写一句 `@RequirePermission("x")` 就当这个码有人拦」这条假绿路径掐掉；
+    真实的注解总是独占一行（见 `OrderController` 等）。
+
+    ⚠️ 普通 UI 面（路由守卫 / 页面 `has()` / 菜单节点）**故意不算**：它们可被直接调 API 绕过，
+    算进来正是 `order:detail` 改前那个假绿的成因。
+
+    ## 手写门（`EXPLICIT_GATES`）算强制点，但必须**逐条登记 + 活体校验**
+
+    「不在注解体系里的门」是上一轮普查的**真实盲区**：`agent:chat` 被判成「零消费」，实际它由
+    `AdminGate.MIBAO_CHAT_GRANT_CODE` 承载（→ `/api/auth/me` 的 `capabilities.mibaoChat` →
+    bmini `MibaoAccessGate` 消费；判据 = `test_mibao_chat_gate.py` 的 BM-008）。手写门**不登记就看不见**，
+    故本函数按 `EXPLICIT_GATES` 补进去，并做**活体校验**（源码里该码必须仍出现在那道门的文件里）——
+    「门删了、登记还在」同样红（陈旧登记）。
+    """
+    hits: dict[str, set[str]] = {}
+    root = REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "java"
+    for path in sorted(root.rglob("*.java")):
+        text = path.read_text(encoding="utf-8")
+        for m in re.finditer(r'^[ \t]*@RequirePermission\([ \t]*"([^"]+)"', text, re.MULTILINE):
+            hits.setdefault(m.group(1), set()).add(f"端点:{path.name}")
+    for code, spec in EXPLICIT_GATES.items():
+        gate_file = REPO_ROOT / spec["file"]
+        text = gate_file.read_text(encoding="utf-8") if gate_file.exists() else ""
+        if f'"{code}"' in text:
+            hits.setdefault(code, set()).add(f"显式门:{Path(spec['file']).name}")
+    return {code: tuple(sorted(files)) for code, files in hits.items()}
+
+
+def code_enforcement_problems(
+    codes: set[str] | None = None,
+    surfaces: dict[str, tuple[str, ...]] | None = None,
+    ledger: dict[str, str] | None = None,
+) -> list[str]:
+    """判据：每个可授予的码都必须有服务端强制点（或在台账具名）。"""
+    codes = catalog_codes() if codes is None else codes
+    surfaces = enforcement_surfaces() if surfaces is None else surfaces
+    ledger = CODE_WITHOUT_ENFORCEMENT if ledger is None else ledger
+    node_of = {spec["code"]: node for node, spec in ACTION_NODE_CODES.items()}
+    out: list[str] = []
+    for code in sorted(codes):
+        where = surfaces.get(code)
+        if where:
+            if code in ledger:
+                out.append(
+                    f"`{code}` **已**有服务端强制点（{len(where)} 处：{', '.join(where[:3])}）"
+                    " ⇒ `CODE_WITHOUT_ENFORCEMENT` 里的那条豁免已陈旧，必须删掉（台账只许缩短）"
+                )
+            continue
+        if code not in ledger:
+            node = f"（动作节点『{node_of[code]}』）" if code in node_of else ""
+            out.append(
+                f"`{code}`{node} 在**服务端零消费**（admin-api 注解 / 工具 / 页面上下文都没有命中它）"
+                " ⇒ 岗位权限页里勾了不生效（可勾选、但拦不住人）。出口：① 让端点真的认这个码；"
+                "② 或在 `CODE_WITHOUT_ENFORCEMENT` 具名登记（现状 + 出口 + 到期条件）；"
+                "③ 或把该码/该节点从权限树上摘掉（不再假装可授予）"
+            )
+    for code in sorted(set(ledger) - codes):
+        out.append(
+            f"`CODE_WITHOUT_ENFORCEMENT` 登记的 `{code}` 不是任何可授予的码（陈旧登记）"
+        )
+    return out
+
+
+def test_every_grantable_code_has_a_server_side_enforcement_point():
+    """🔴 **类级元守卫**（铁律 8 / issue #7276 + #7281 普查）：可授予的码不许是「勾了不生效」的死码。
+
+    判别力自证（内存注入，不碰仓内文件）：
+    ① 注入一个**不存在于服务端**的码 ⇒ 必须具名报出「零消费」；
+    ② 给一个**真正被强制**的码加豁免 ⇒ 必须报「陈旧豁免」；
+    ③ 台账里放一个**不在目录里**的码 ⇒ 必须报「陈旧登记」。
+    """
+    surfaces = enforcement_surfaces()
+    assert surfaces, (
+        f"现取解析面为空（扫不到任何强制点）⇒ 本判据在扫空气：{REPO_ROOT}"
+    )
+    codes = catalog_codes()
+    problems = code_enforcement_problems(codes=codes, surfaces=surfaces)
+    print(
+        f"── 可授予码 = {len(codes)} 个 / 服务端强制面 = {len(surfaces)} 个码 / "
+        f"零消费台账 = {len(CODE_WITHOUT_ENFORCEMENT)} 项 / 问题 = {len(problems)} 项 ──"
+    )
+    assert problems == [], (
+        f"可授予的码里有「勾了不生效」的死码（共 {len(problems)} 项）：\n"
+        + "\n".join(f"  · {p}" for p in problems)
+    )
+
+    bogus = set(codes) | {"__自证:not_a_code__"}
+    hits = code_enforcement_problems(codes=bogus, surfaces=surfaces)
+    assert any("__自证:not_a_code__" in h for h in hits), f"注入零消费码后没被判红：{hits}"
+
+    anchor = sorted(surfaces)[0]
+    stale = code_enforcement_problems(codes=codes, surfaces=surfaces, ledger={anchor: "红证"})
+    assert any(anchor in h and "陈旧" in h for h in stale), f"注入陈旧豁免后没被判红：{stale}"
+
+    ghost = code_enforcement_problems(codes=codes, surfaces=surfaces,
+                                      ledger={**CODE_WITHOUT_ENFORCEMENT, "not:in:catalog": "红证"})
+    assert any("not:in:catalog" in h for h in ghost), f"注入目录外登记后没被判红：{ghost}"

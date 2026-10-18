@@ -6,6 +6,9 @@ import { ChevronRight, Printer, Zap, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
 import DateTimeCell from '@/components/common/DateTimeCell'
+// 页面码拒绝态（issue #7276）：无 `order:detail` ⇒ 本页直接给「无权访问」，与 layout 的
+// `ROUTE_PERMISSION_MAP` 拒绝态**同一个组件**（不新造第二套文案/样式）。
+import AccessDenied from '@/components/common/AccessDenied'
 // 工序清单读面（issue #6901）：**屏幕**加工单块要印「这一单要做哪几道工序」——
 // **复用既有读面** `GET /api/admin/production/orders/{id}/operations`（权限码 order:list，
 // 与同页其它读面同码）；**不新造端点、不在展示组件里取数/重算**（组件只负责渲染）。
@@ -135,6 +138,25 @@ export default function OrderDetailPage() {
   const { has: hasPermission } = usePermission()
   const blockReloadRef = useRef<(() => Promise<void>) | null>(null)
   const canManageProcessing = hasPermission('processing:manage')
+  /**
+   * 本页**页面码** = `order:detail`（issue #7276）。
+   *
+   * 病：改前详情读面挂 `order:list` ⇒ 岗位权限页里「订单详情」那个勾选项**勾了不生效**
+   * （用户现场：「虽然页面上提示我没权限操作，但是我仍然能访问，RBAC权限没控制住？」）。
+   * 修：服务端两个读面收码到 `order:detail`，前端同批加**页内拒绝态** —— 无本码时
+   * 直接渲染 `AccessDenied`，且**一个读请求都不发**（不是先请求再看 403）。
+   * ⚠️ 这只是体验层：真正的关口是 admin-api 的 `@RequirePermission("order:detail")` 403
+   * （前端 `has()` 可被绕过，服务端不可）。
+   */
+  const canViewOrderDetail = hasPermission('order:detail')
+  /**
+   * 加工单块（`ProcessingOrderBlock`）的读面码 = `production:view`
+   * （`ProcessingOrderController.GET /{id}`）。无本码 ⇒ **不请求、不渲染**：改前它无条件请求，
+   * 于是客服/销售/财务（持 `order:detail`、**不持** `production:view`）一进详情页就吃一条
+   * 403 「没有权限执行此操作」—— 而同一屏的订单数据却照常渲染，正是用户截图里那句
+   * 「提示没权限，但仍然能访问」。**无权限的面不发请求**才是干净形态。
+   */
+  const canViewProcessingOrder = hasPermission('production:view')
   /** 纸面**确实缺码**（两键都空）—— 有码的单不出现本提示（别对一张有效的纸喊缺码） */
   const processingQrMissing = !processingOrder?.scan_url && !processingOrder?.short_code
 
@@ -237,8 +259,13 @@ export default function OrderDetailPage() {
   }, [orderId, loadShipments, loadOperations])
 
   useEffect(() => {
+    // issue #7276：无 `order:detail` ⇒ **一个读请求都不发**（不是先打再吃 403）
+    if (!canViewOrderDetail) {
+      setLoading(false)
+      return
+    }
     loadOrder()
-  }, [loadOrder])
+  }, [loadOrder, canViewOrderDetail])
 
   // 关闭订单
   const handleConfirmClose = async (reason: string) => {
@@ -320,6 +347,11 @@ export default function OrderDetailPage() {
   }
 
   const productGroups = useMemo(() => groupItems(order?.items), [order?.items])
+
+  // issue #7276：无页面码 ⇒ **直接拒绝态**（服务端同码 403 是第二道；这条只是让商家一眼看懂）
+  if (!canViewOrderDetail) {
+    return <AccessDenied />
+  }
 
   if (loading) {
     return (
@@ -443,7 +475,7 @@ export default function OrderDetailPage() {
 
       {/* 加工单（issue #3340）：订单 producing 阶段的子进度。
           items（issue #5145 阶段 1）：生成加工单时据此取逐面料行的派工候选（系统给建议值、文员可改）。 */}
-      <ProcessingOrderBlock
+      {canViewProcessingOrder && <ProcessingOrderBlock
         orderId={order.id}
         orderStatus={order.status}
         // issue #7079 第 5 包：要不要作业 / 要哪一型，一律取服务端读面（`work_order_kind`）——
@@ -454,7 +486,7 @@ export default function OrderDetailPage() {
         onStatusChange={setProcessingOrder}
         onPrintProcessing={() => openPreview('processing')}
         onReloadReady={acceptBlockReload}
-      />
+      />}
 
       {/* 纸质发货单（issue #3768）：屏幕上隐藏，仅打印呈现；已发货/已完成可在此补打 */}
       <ShipmentDoc order={order} logistics={order.logistics} printTarget={printTarget} />
