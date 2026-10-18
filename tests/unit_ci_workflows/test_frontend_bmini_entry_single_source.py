@@ -44,6 +44,10 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ADMIN_WEB_SRC = REPO_ROOT / "frontend" / "admin-web" / "src"
 SETTINGS_PAGE = ADMIN_WEB_SRC / "app" / "(dashboard)" / "settings" / "page.tsx"
+#: 手机端入口的**唯一渲染处**（issue #7198）：顶栏主入口与设置页一行入口共用同一块面板。
+#: 判据 3/4 的三元（`{bminiH5Url ? (…) : (…)}`）随落位从设置页搬到这里 —— **判据只搬位置、不放宽**。
+MOBILE_ENTRY = ADMIN_WEB_SRC / "components" / "layout" / "MobileEntry.tsx"
+HEADER = ADMIN_WEB_SRC / "components" / "layout" / "Header.tsx"
 URL_HELPER = ADMIN_WEB_SRC / "lib" / "bmini-h5-url.ts"
 ENV_EXAMPLE = REPO_ROOT / "frontend" / "admin-web" / ".env.example"
 DOCKERFILE = REPO_ROOT / "frontend" / "admin-web" / "Dockerfile"
@@ -218,8 +222,10 @@ def _inject_secret_ref(workflow: str) -> str:
     assert f"secrets.{ENV_VAR}" in mutated, "注入的未登记 secrets 引用没进变异体（fail-closed）"
     return mutated
 
-def _problems(page_src=None, helper_src=None, dockerfile=None, workflow=None, env_example=None, files=None) -> list:
+def _problems(page_src=None, entry_src=None, header_src=None, helper_src=None, dockerfile=None, workflow=None, env_example=None, files=None) -> list:
     page_src = _read(SETTINGS_PAGE) if page_src is None else page_src
+    entry_src = _read(MOBILE_ENTRY) if entry_src is None else entry_src
+    header_src = _read(HEADER) if header_src is None else header_src
     helper_src = _read(URL_HELPER) if helper_src is None else helper_src
     dockerfile = _read(DOCKERFILE) if dockerfile is None else dockerfile
     workflow = _read(DEPLOY_FRONTEND) if workflow is None else workflow
@@ -228,6 +234,20 @@ def _problems(page_src=None, helper_src=None, dockerfile=None, workflow=None, en
 
     if page_src is None:
         problems.append("frontend/admin-web/src/app/(dashboard)/settings/page.tsx 缺失")
+    elif "<MobileEntryInline" not in page_src:
+        problems.append(
+            "设置页必须渲染共享的手机端入口（`<MobileEntryInline />`）—— 页面里不画第二份二维码"
+        )
+    if entry_src is None:
+        problems.append(
+            "frontend/admin-web/src/components/layout/MobileEntry.tsx 缺失 —— 手机端入口没有唯一渲染处"
+        )
+    if header_src is None:
+        problems.append("frontend/admin-web/src/components/layout/Header.tsx 缺失")
+    elif "<MobileEntryHeader" not in header_src:
+        problems.append(
+            "顶栏必须挂手机端入口（`<MobileEntryHeader />`）—— 否则「任何页面一键弹码」不成立（issue #7198 的主入口）"
+        )
     if helper_src is None:
         problems.append(f"{SOLE_READER} 缺失 —— 地址没有单一读取点")
     elif ENV_VAR not in helper_src:
@@ -238,14 +258,14 @@ def _problems(page_src=None, helper_src=None, dockerfile=None, workflow=None, en
     for rel in _env_var_readers(files if files is not None else None):
         problems.append(f"`{ENV_VAR}` 只允许在 {SOLE_READER} 里读，实际又被 {rel} 读了 —— 单一真值被破坏")
 
-    if isinstance(page_src, str):
-        if "getBminiH5Url()" not in page_src:
-            problems.append("设置页必须经 `getBminiH5Url()` 取地址（不许自己读 process.env）")
-        if f"process.env.{ENV_VAR}" in page_src:
-            problems.append("设置页不得直接读 process.env（破坏单一读取点）")
-        if "import { QRCodeSVG } from 'qrcode.react'" not in page_src:
-            problems.append("设置页必须用既有依赖 qrcode.react 的 QRCodeSVG 画码")
-        branches = _entry_branches(page_src)
+    if isinstance(entry_src, str):
+        if "getBminiH5Url()" not in entry_src:
+            problems.append("手机端入口必须经 `getBminiH5Url()` 取地址（不许自己读 process.env）")
+        if f"process.env.{ENV_VAR}" in entry_src:
+            problems.append("手机端入口不得直接读 process.env（破坏单一读取点）")
+        if "import { QRCodeSVG } from 'qrcode.react'" not in entry_src:
+            problems.append("手机端入口必须用既有依赖 qrcode.react 的 QRCodeSVG 画码")
+        branches = _entry_branches(entry_src)
         if not branches:
             problems.append("找不到「手机端入口」的 `{bminiH5Url ? (…) : (…)}` 三元（判据 3/4 的判据对象）")
         else:
@@ -349,16 +369,33 @@ def test_qr_entry_is_on_the_settings_page_and_keeps_existing_tabs():
     assert "router.replace('/settings/params')" not in src, (
         "旧深链**不再**跳去 `/settings/params`（该页已并回本页 ⇒ 跳过去会回到一个重复入口）"
     )
-    for testid in ('data-testid="bmini-h5-entry"', 'data-testid="bmini-h5-qr"', 'data-testid="bmini-h5-unconfigured"'):
+    # 🔴 issue #7198：主入口搬到**顶栏**（扫码是跨设备交接的工具）；设置页只留一行入口。
+    # 落位变了，判据不变：① 顶栏真的挂了它；② 设置页真的复用同一块面板；
+    # ③ 「未配置」与二维码锚点仍在**唯一渲染处**（不许两处各画一份）。
+    for testid in ('data-testid="bmini-h5-entry"',):
         assert testid in src, f"设置页缺 {testid}"
+    assert "<MobileEntryInline" in src, (
+        "设置页必须渲染共享的手机端入口（<MobileEntryInline />）—— 页面里不画第二份二维码"
+    )
+    entry_src = _read(MOBILE_ENTRY)
+    assert isinstance(entry_src, str), f"{MOBILE_ENTRY} 缺失 —— 手机端入口没有唯一渲染处"
+    for testid in ('data-testid="bmini-h5-qr"', 'data-testid="bmini-h5-unconfigured"'):
+        assert testid in entry_src, f"手机端入口组件缺 {testid}"
+    header_src = _read(HEADER)
+    assert isinstance(header_src, str), f"{HEADER} 缺失"
+    assert "MobileEntryHeader" in header_src, (
+        "顶栏必须挂手机端入口（issue #7198 的主入口）—— 否则「任何页面一键弹码」不成立"
+    )
 
 def test_mutations_are_all_detected(tmp_path):
     """注入式红证：把实现改坏 ⇒ 判据必须红（证明上面几条不是空断言）。"""
     page = _read(SETTINGS_PAGE)
+    entry = _read(MOBILE_ENTRY)
+    header = _read(HEADER)
     helper = _read(URL_HELPER)
     dockerfile = _read(DOCKERFILE)
     workflow = _read(DEPLOY_FRONTEND)
-    assert isinstance(page, str) and isinstance(helper, str)
+    assert isinstance(page, str) and isinstance(entry, str) and isinstance(header, str) and isinstance(helper, str)
 
     # ① 硬编码域名：往前端源码里塞一行写死的地址
     polluted = tmp_path / "polluted.ts"
@@ -369,14 +406,14 @@ def test_mutations_are_all_detected(tmp_path):
     src_files = [polluted, second_reader]
 
     # ③ 假码：把 QRCodeSVG 挪进无值分支（缺配置也画一个）
-    fake_qr = page.replace(
-        '<QRCodeSVG value={bminiH5Url} size={112} title={bminiH5Url} data-testid="bmini-h5-qr" />', ""
+    fake_qr = entry.replace(
+        '<QRCodeSVG value={bminiH5Url} size={140} title={bminiH5Url} data-testid="bmini-h5-qr" />', ""
     ).replace(
         '<p className="text-sm text-neutral-500" data-testid="bmini-h5-unconfigured">',
         '<p className="text-sm text-neutral-500" data-testid="bmini-h5-unconfigured">'
         '<QRCodeSVG value="" data-testid="bmini-h5-qr" />',
     )
-    assert fake_qr != page, "变异注入未生效（找不到 QRCodeSVG 那一行）"
+    assert fake_qr != entry, "变异注入未生效（找不到 QRCodeSVG 那一行）"
 
     mutations = {
         "前端源码里硬编码域名": dict(files=src_files),
@@ -391,16 +428,18 @@ def test_mutations_are_all_detected(tmp_path):
         "deploy-frontend 新增未登记的 secrets 引用（Danger Scan 阻塞形态）": dict(
             workflow=_inject_secret_ref(workflow)
         ),
-        "把二维码挪进无值分支（画假码）": dict(page_src=fake_qr),
+        "把二维码挪进无值分支（画假码）": dict(entry_src=fake_qr),
         "二维码内容改成硬编码（不取配置值）": dict(
-            page_src=page.replace(
-                "value={bminiH5Url} size={112} title={bminiH5Url}",
-                'value="https://app.migaozn.com/b/" size={112} title="https://app.migaozn.com/b/"',
+            entry_src=entry.replace(
+                "value={bminiH5Url} size={140} title={bminiH5Url}",
+                'value="https://app.migaozn.com/b/" size={140} title="https://app.migaozn.com/b/"',
             )
         ),
-        "设置页自己读 process.env（绕过单一读取点）": dict(
-            page_src=page.replace("const bminiH5Url = getBminiH5Url()", f"const bminiH5Url = process.env.{ENV_VAR} || ''")
+        "手机端入口自己读 process.env（绕过单一读取点）": dict(
+            entry_src=entry.replace("const bminiH5Url = getBminiH5Url()", f"const bminiH5Url = process.env.{ENV_VAR} || ''")
         ),
+        "顶栏摘掉手机端入口": dict(header_src=header.replace("<MobileEntryHeader />", "")),
+        "设置页恢复自画一块（不再用共享的一行入口）": dict(page_src=page.replace("<MobileEntryInline />", "")),
     }
     undetected = []
     for name, kwargs in mutations.items():

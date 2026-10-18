@@ -14,6 +14,7 @@ import {
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
 import NotificationBell from './NotificationBell'
+import MobileEntryHeader from './MobileEntry'
 
 interface HeaderProps {
   title?: string
@@ -231,8 +232,12 @@ export default function Header({ title, breadcrumbs, onOpenMobileNav }: HeaderPr
         )}
       </div>
 
-      {/* 右侧：通知 + 用户信息 */}
+      {/* 右侧：手机端入口 + 通知 + 用户信息 */}
       <div className="flex items-center gap-3">
+        {/* 手机端入口（issue #7198）：扫码是**跨设备交接的工具**（不是一条配置）⇒ 常驻面只占
+            一个图标，点开才画码（§31 P1 常驻面克制；旧落位埋在设置页 3~4 步深处）。 */}
+        <MobileEntryHeader />
+
         {/* 通知铃铛 */}
         <NotificationBell />
 

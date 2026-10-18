@@ -110,7 +110,9 @@ describe('NotificationsPage', () => {
     render(<NotificationsPage />)
     const btn = await screen.findByTestId('mark-all-read')
     const icon = btn.querySelector('svg, [data-testid^="icon-"]') as HTMLElement | null
-    expect(icon, '按钮必须带图标').not.toBeNull()
+    // 🔴 弱断言收口（#7198 同批，解除 required 检查 `ci workflow helper unit tests` 的阻塞）：
+    // 语义存在性断言替代 `not.toBeNull()`（后者只证明「取到了个东西」）。
+    expect(icon, '按钮必须带图标').toBeInTheDocument()
     expect(icon?.getAttribute('class') ?? '', '不得再用双勾字形（读成图标重叠）').not.toMatch(/check-check/i)
     expect(icon?.getAttribute('class') ?? '', '图标是单勾').toMatch(/check/i)
   })
