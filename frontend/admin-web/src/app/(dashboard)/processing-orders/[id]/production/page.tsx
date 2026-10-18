@@ -250,7 +250,7 @@ export default function ProcessingOrderProductionPage() {
     requestPrint('labels')
   }
 
-  /** 直连通道要的水洗唛数据（部位 + 快照行 ⇒ 纸面行清单，走**单一处**映射；issue #6439 → #6656）
+  /** 预览页脚「蓝牙无线打印」要的水洗唛数据（部位 + 快照行 ⇒ 纸面行清单，走**单一处**映射；issue #6439 → #6656 → #7288）
    *
    * 🔴 与系统打印（`TaskCardPrint`）传的是**同一份**数据源：改动前这里只传了 4 个键
    * （码 / 短码 / 件名 / 部位）⇒ 直连打出来的纸面比预览少十行（issue #6656 的根因）。 */
@@ -498,12 +498,6 @@ export default function ProcessingOrderProductionPage() {
                   打印任务卡
                 </Button>
               </div>
-
-              {/* 免驱动直连打印机（issue #6439）—— **与上面那条并存，不是替换**：
-                  「打印任务卡」走系统打印，覆盖**任何**装了驱动的打印机（Windows 驱动 / USB /
-                  网络 / 已配对蓝牙）；这条只覆盖**带网页蓝牙协议**的机型，胜在**不用装驱动**。
-                  两条通道的能力面与边界见 `frontend/admin-web/src/lib/label-print/capability.ts`。 */}
-              <DirectLabelPrint className="mt-2" labels={washLabels} onRecordPrint={recordPrintOnce} />
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -798,13 +792,19 @@ export default function ProcessingOrderProductionPage() {
           />
 
           {/* 打印前的**纸面自检层**（issue #5914）：标签 50×60mm 的纸型没配好 = 整卷打废，
-              所以洗水码也走「先看纸面再打」。预览实例**不传 printTarget** ⇒ 不上纸。 */}
+              所以洗水码也走「先看纸面再打」。预览实例**不传 printTarget** ⇒ 不上纸。
+
+              🔴 免驱动直连（Web Bluetooth，issue #6439）那条通道的入口**在这个弹层的页脚**
+              （issue #7288：用户 2026-10-18「做到水洗唛打印预览中，在右下角加个按钮叫蓝牙无线打印」）
+              —— 与「打印」并排，两条通道在同一个视野里：预览里看到的就是要打的那张纸。
+              两条通道的能力面与边界见 `frontend/admin-web/src/lib/label-print/capability.ts`。 */}
           <PrintDocPreview
             target={previewTarget}
             title={PRINT_TARGET_SPECS.labels.title}
             media={PRINT_TARGET_SPECS.labels.media}
             onPrint={printTaskCards}
             onClose={closePreview}
+            actions={<DirectLabelPrint labels={washLabels} onRecordPrint={recordPrintOnce} />}
           >
             {previewTarget === 'labels' && (
               <TaskCardPrint
