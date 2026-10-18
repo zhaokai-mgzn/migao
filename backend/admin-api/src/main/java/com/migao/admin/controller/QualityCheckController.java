@@ -106,6 +106,25 @@ public class QualityCheckController {
                 TenantContext.getTenantId(), processingOrderId, orderItemId));
     }
 
+    /**
+     * 质检**指标**读面（P0 + P1，issue #7192）：合格率 / 趋势 / 分组 Top-N / 待检积压。
+     *
+     * <p>权限与清单读面**逐字同码**（{@code production:inspect}）：指标与清单来自同一批记录、
+     * 同一副颗粒度 —— 能看清单的人才能看它的率（不另造一个「只看率」的窄权限）。</p>
+     *
+     * <p>只读：不写、不改任何判定口径；{@code from}/{@code to} 为左闭右开窗口（缺省 = 本月），
+     * {@code bucket} ∈ {@code day/week/month}。</p>
+     */
+    @GetMapping("/stats")
+    @RequirePermission("production:inspect")
+    public ApiResponse<Map<String, Object>> stats(
+            @RequestParam(name = "from", required = false) String from,
+            @RequestParam(name = "to", required = false) String to,
+            @RequestParam(name = "bucket", required = false) String bucket) {
+        return ApiResponse.success(qualityInspectionService.stats(
+                TenantContext.getTenantId(), from, to, bucket));
+    }
+
     /** body 取值（缺键 ⇒ null；**不**从 body 取租户 / 检验人身份）。 */
     private String str(Map<String, Object> body, String key) {
         if (body == null) {
