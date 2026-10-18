@@ -6,7 +6,6 @@ import {
   User,
   LogOut,
   ChevronDown,
-  Phone,
   Briefcase,
   Building2,
   Menu,
@@ -286,17 +285,17 @@ export default function Header({ title, breadcrumbs, onOpenMobileNav }: HeaderPr
                 )}
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-neutral-900">{displayName}</p>
-                  <p className="truncate text-xs text-neutral-500">
-                    {user?.email || user?.username || ''}
-                  </p>
+                  <p className="truncate text-xs text-neutral-500">{user?.email || ''}</p>
                 </div>
               </div>
 
-              {/* 丰富信息：#3099 手机号 / 岗位 / 所属企业 */}
+              {/* 丰富信息：#3099 账号名 / 岗位 / 所属企业
+                  issue #7272：这一行取值是 `user.username`（登录账号，`/me` 不提供 phone）⇒ 标签不能写「手机号」，
+                  否则 `reg_sales` 这类非手机号账号会被标成手机号（用户 2026-10-18 截图逐字「手机号展示成账号了」）。 */}
               <div className="space-y-2 px-4 py-3 text-sm">
                 <div className="flex items-center gap-2 text-neutral-600">
-                  <Phone className="h-3.5 w-3.5 text-neutral-400" />
-                  <span className="w-14 shrink-0 text-neutral-400">手机号</span>
+                  <User className="h-3.5 w-3.5 text-neutral-400" />
+                  <span className="w-14 shrink-0 text-neutral-400">账号名</span>
                   <span className="truncate text-neutral-800">{user?.username || '-'}</span>
                 </div>
                 <div className="flex items-center gap-2 text-neutral-600">
