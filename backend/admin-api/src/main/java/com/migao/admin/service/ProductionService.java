@@ -1202,6 +1202,9 @@ public class ProductionService {
         Order order = resolveOrder(orderId, tenantId);
         ProcessingOrder po = requireActiveProcessingOrder(order, tenantId);
         ProcessingPositionOperation op = requireActiveOperation(po.getId(), operationId, tenantId);
+        // 🔴 「质检」工序没有报工动作（issue #7186）：判定即报工 —— 先报工会绕过判定，
+        // 并让判定侧的自动报工被「只做未做满的」幂等判据静默跳过（判据唯一实现见 DocumentOperationLinkage）。
+        DocumentOperationLinkage.rejectManualReport(op);
 
         String workType = str(body == null ? null : body.get("work_type"), "normal");
         if (!WORK_TYPES.contains(workType)) {
