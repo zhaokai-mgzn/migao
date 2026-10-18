@@ -163,6 +163,7 @@
     "V165__unique_order_logistics_per_order.sql": "sha256:073508f613fc52ae5a2c49f1ec8fe6350660a69f8dfafa74033a404a6188de59",
     "V166__user_roles_active_unique.sql": "sha256:5f9c5c4aada917646c6ee6facb7eb30480ede62ebc0f4bfdcffd825fdc346eba",
     "V167__customer_profiles_identity_unique.sql": "sha256:dade53fba1bc4405b0acca16801af7f5f507242ed73957f9a52cfa42277ac066",
+    "V168__drop_product_manage_permission.sql": "sha256:364c90af0825a013bcc7aea4ed40b2c681b71bf116294055809180c10092d6e5",
     "schema.sql": "sha256:e9c94f2d6a465b6ac22a9fd2ae52365331a64f85cf2cfd4bc137d474287cd44b"
   }
 }

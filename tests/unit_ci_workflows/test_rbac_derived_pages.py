@@ -399,15 +399,14 @@ FROZEN_CEILINGS: tuple[dict, ...] = (
     {
         "id": "CODE_WITHOUT_ENFORCEMENT",
         "count": lambda: len(CODE_WITHOUT_ENFORCEMENT),
-        "ceiling": 1,
+        "ceiling": 0,
         "grew_by": "`code_enforcement_problems`（『未登记即红』+『已接线/陈旧登记 ⇒ 销账』双向；新增条目 = 现取超上界 ⇒ 红）",
         "reason": (
             "目录里**可授予但服务端零消费**的码（勾了不生效）—— 逐条具名 + 现状/出口/到期条件，**只许缩短**。"
-            "落地值 = 1（`product:manage` 旧粗码；已由用户裁定删码 ⇒ 落地后归零）。"
-            "**`agent:chat` 曾在本表里，是误判**：它是 `AdminGate` 的**手写门**（UGC 唤出入口），"
+            "**落地值 = 0**（issue #7282 删掉最后一条 `product:manage`；`order:detail` 已在 issue #7276 接线）。"
+            "**`agent:chat` 曾在本表里，是误判**：它是 `AdminGate` 的**手写门**（黄金策唤出入口），"
             "不在注解体系里 ⇒ 现登记在 `EXPLICIT_GATES`（带活体校验）。"
-            "issue #7276 修掉的 `order:detail` 是同一形态，它因为**接线**（详情/发货两条读面）而退场 —— "
-            "本上界记的是「还剩几个这类码」，不是许可额。"
+            "本上界记的是「还剩几个这类码」，不是许可额 —— 0 就是终态，再涨即红。"
         ),
     },
     {
@@ -1827,16 +1826,12 @@ EXPLICIT_GATES: dict[str, dict[str, str]] = {
 }
 
 #: 目录里**可授予但服务端零强制点**的码 —— 具名台账（**只许缩短**）。
-#: 每条必须写清：现状 + 出口 + 到期条件。⚠️ `agent:chat` **不在**本表：它是**活的手写门**（见上）。
-CODE_WITHOUT_ENFORCEMENT: dict[str, str] = {
-    "product:manage": (
-        "现状：商品域的**旧粗码**，issue #5236 删掉「第四处菜单源」后只剩目录 + 岗位面（`CONTRACT-LEDGER`"
-        " 与 `test_agent_permission_parity.py` 的 census「权限码零消费」都登记过它）；种子岗位无一持有，"
-        "`RegistrationService` 的注释逐字写着「保留兼容旧 role_permissions 引用」。"
-        "出口：**删码**（用户 2026-10-18 裁定「可以删」）⇒ 落地后本条连同 `FROZEN_CEILINGS` 的上界一起归零。"
-        "到期条件：本码从目录移除 ⇒ 必须删掉本条。"
-    ),
-}
+#: ⚠️ `agent:chat` **不在**本表：它是**活的手写门**（见 `EXPLICIT_GATES`）。
+#: **现取为空**（issue #7282）：最后一条 `product:manage` 已按用户 2026-10-18 裁定删除
+#: （两处 Java 目录 + ai-agent 镜像 + 清单 + 迁移 V168 删库）。空台账是有意的**终态** ——
+#: 从此新增任何「可授予但拦不住人」的码都会**当场红**，必须接线、或在 `EXPLICIT_GATES`
+#: 登记手写门、或显式回来认债。
+CODE_WITHOUT_ENFORCEMENT: dict[str, str] = {}
 
 
 def catalog_codes() -> set[str]:

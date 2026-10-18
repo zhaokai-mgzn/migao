@@ -100,7 +100,6 @@ vi.mock('lucide-react', async (importOriginal) => {
 // #3002：与后端权限目录一致的真实 catalog（resourceType = 旧分组码，仅操作权限节展示用）
 const PERMISSION_CATALOG = [
   { id: 'p-dashboard', name: '仪表板查看', code: 'dashboard:view', resource: 'dashboard', action: 'view', description: '查看数据概览' },
-  { id: 'p-product-manage', name: '商品管理', code: 'product:manage', resource: 'product', action: 'manage', description: '管理商品(旧大类码，兼容)' },
   { id: 'p-product-list', name: '商品列表', code: 'product:list', resource: 'product', action: 'list', description: '查看商品列表' },
   { id: 'p-product-create', name: '新增商品', code: 'product:create', resource: 'product', action: 'create', description: '新增/编辑/上下架商品' },
   { id: 'p-product-category', name: '商品分类', code: 'product:category', resource: 'product', action: 'category', description: '管理商品分类' },

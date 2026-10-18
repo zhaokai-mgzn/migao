@@ -768,10 +768,9 @@ public class RegistrationService {
 
         // 创建默认权限目录（RBAC 修复：与代码 @RequirePermission / 前端菜单树 / 内置角色映射
         // 全量对齐——此前仅 5 条大类码，角色管理页无法授予 order:list / employee:create 等细粒度码，
-        // 自定义角色形同虚设。product:manage 保留兼容旧 role_permissions 引用）
+        // 自定义角色形同虚设。旧粗码 product:manage 已于 issue #7282 删除）
         String[][] defaultPermissions = {
                 {"仪表板查看", "dashboard:view", "dashboard", "view", "查看数据概览"},
-                {"商品管理", "product:manage", "product", "manage", "管理商品(旧大类码，兼容)"},
                 {"商品管理", "product:list", "product", "list", "查看商品管理"},
                 {"新增商品", "product:create", "product", "create", "新增/编辑/上下架商品"},
                 {"商品分类", "product:category", "product", "category", "管理商品分类"},

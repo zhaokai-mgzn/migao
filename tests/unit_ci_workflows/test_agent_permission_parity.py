@@ -817,7 +817,7 @@ TOOL_MENU_NODE: dict[str, str] = {
 #: 该菜单**页**允许的写码（判据 3 的「写工具可持页内写码」口径）：
 #: 页面读码 → 从该页发起的写动作所用的码。
 PAGE_WRITE_CODES: dict[str, frozenset[str]] = {
-    "product:list": frozenset({"product:create", "product:category", "product:manage"}),
+    "product:list": frozenset({"product:create", "product:category"}),
     # issue #5246 第二批（用户裁定本轮一并收口）：订单/客户/财务/会话四域**拆出真写码** ——
     # 此前写动作挂在读码上（只读持有者因此拿到写能力）。写码**没有菜单节点**（按钮级），
     # 故在此登记「它属于哪个页」；判据 4 会按所属页的读码反查岗位可见性。
@@ -1221,13 +1221,13 @@ REGISTERED_RESIDUALS: dict[str, dict[str, str]] = {
                "（#5271 升级）；第四处源已于 issue #5236 **整段删除**（本单，不再是待统一的残留）",
         "where": "交集覆盖度由 `problems_menu_parity` 的 `CROSS_CHECKED_FLOOR` 自检；去向：#5236",
     },
-    "权限码零消费": {
-        "what": "`order:detail` / `product:manage` 在目录里且被岗位授予/菜单使用，但没有任何 "
-                "`@RequirePermission` 消费它们（`product:manage` 原只出现在第四处菜单源，"
-                "该源已于 issue #5236 删除 ⇒ 它现在只剩目录 / 岗位面）",
-        "why": "删码/改码会动岗位矩阵（产品裁定）；本单不动",
-        "where": "去向：#5236",
-    },
+    # 「权限码零消费」**已于 issue #7276 + #7282 消项**（2026-10-18）：
+    #   · `order:detail` —— **接线**（订单详情 / 发货两条读面收码 + 页面拒绝态）；
+    #   · `product:manage` —— **删码**（用户 2026-10-18 裁定「可以删」，迁移 V168 删库存量行与快照成员）。
+    # 按「登记表只许缩短」从本表**删除**该条；这一类从此由**机械判据**兜住（不再是散文台账）：
+    # `tests/unit_ci_workflows/test_rbac_derived_pages.py`
+    # `test_every_grantable_code_has_a_server_side_enforcement_point`（可授予码必须有服务端强制点，
+    # 台账 `CODE_WITHOUT_ENFORCEMENT` 现取 = 0）。
     "行为评测用例未补": {
         "what": "本单未新增/修改 `.github/cases/**` 的行为用例（如「客服经黄金策查售后不再 403」的正向对照）",
         "why": "B 端 skill 工具绑定与提示词属 #5247（在其上 rebase），行为面用例应与绑定同批落地",
