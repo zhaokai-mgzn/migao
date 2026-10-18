@@ -80,6 +80,25 @@ public class RoleService {
     }
 
     /**
+     * 岗位的**展示名**（面向用户的输出口径 —— 页面不许出现内部标识，§31 P3）。
+     *
+     * <p>`users.position` 有两种历史写法：**岗位名**（员工管理页建号，如「客服」）与**角色码**
+     * （API / 脚本建号，如 {@code knowledge_editor}）。展示层一律解析成角色名（= 岗位名）；
+     * 解析不到（自定义岗位名、"车间主任"这类没登记角色的）⇒ **原样返回**（那本来就是人话）。</p>
+     *
+     * <p>本方法是 {@code /api/auth/me} 与 {@code /api/admin/user/info} 的 {@code position} 字段
+     * 唯一取值口径（2026-10-18 用户截图：「这里的岗位不要用英文」—— 改前直接把 users.position 原样上屏）。</p>
+     *
+     * @param position 岗位名（如「客服」）或角色 code（如 customer_service）
+     * @param tenantId 租户ID
+     * @return 展示用岗位名；入参为空 ⇒ 原样返回（null / 空串）
+     */
+    public String displayPosition(String position, Long tenantId) {
+        Role role = getRoleByPosition(position, tenantId);
+        return role != null && StringUtils.hasText(role.getName()) ? role.getName() : position;
+    }
+
+    /**
      * 根据用户ID查询用户的所有角色
      *
      * @param userId 用户ID
