@@ -6684,7 +6684,7 @@
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-10-17 新增（issue #7110）。取号 = `scripts/next_case_id.py OR` 现取（main 001-067）⇒ **OR-068**。病根（读源）：`OrderDetail.tsx` 的「待付款倒计时」前置判断是 `displayStatus !== 'pending_payment' || !order.paymentDeadline` —— 而 `paymentDeadline` 在 `OrderDetailResponse` 里**根本不存在**（`orders` 表也无该列、全仓无写入点、无「超时未付 ⇒ 自动取消」规则）⇒ 恒为假 ⇒ **倒计时从未渲染过**（连「--:--」都不会出现）。它与 #7078 是**同一个病第二次长出来**（屏幕面读后端不存在的键；可选键谁都能加，运行时读到 undefined 既不报错也不渲染 ⇒ 编译器与测试都不拦）。修法：① 撤下倒计时 UI（`calcCountdown` / state / 定时器 / prop / JSX 那一行）与 `Order.paymentDeadline` 类型键；② 两条 e2e spec 的 mock 与断言同口径；③ **类级固化** = 新守卫 test_order_detail_reads_have_backend_source.py（真语料零漂移 + 豁免 fail-closed + 解析不空转 + 判别力/负控）。边界：本页 20 个读点在撤下后**零豁免**；若产品日后真要「支付截止」，那是**新功能**（先补后端真值源再回加键），不是本单的缺口。 ｜ tags: order, order-detail, phantom-field, class-guard, backend-contract, frontend
 
-## 加工项域（30 case）
+## 加工项域（31 case）
 
 ### PP-002. 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query） 🔵
 ```
@@ -7151,6 +7151,18 @@
 跳过: [backend-contract] 类级形态守卫（读源码文本、零 DB 零网络）⇒ 不进 agent-eval 冒烟：由 admin-api 单测 ProductionOperationDeleteCasMetaGuardTest 执行。
 ```
 溯源: 2026-10-14 新增（issue #6936 的类级固化，与 PG-074 同批）：沿用 #6928 的元守卫范式（扫描器非空跑自证 / 谓词完整性 / 未登记即红 / 登记必须兑现 / 豁免只许缩短 / 判别力自证），但**扩到本单的射程**（`ProductionOperationCommandService` 里 `production_operations.deleted` 的两条软删写路径：谓词三件套 + 显式写列 + 影响行数判定，另加写路径登记表），台账 = backend/admin-api/src/test/resources/production-operation-delete-cas-ledger.json（豁免基线 **0**）。既有判据**未放宽**（`InboundOrderStatusCasMetaGuardTest` 的 MC-100 一字未动）。取号 = PG-075（现取未占用）。 ｜ tags: production, operation, concurrency, meta_guard, backend-contract
+
+### PG-089. 工人端 H5 闲置登出定时器分片调度：30 天（43200 分钟）延时不得溢出 2^31-1 ⇒ 不得立即触发 / 不得每次装配多打一轮对账（单测覆盖，非 LLM 行为） 🟡
+```
+你: 工人这台手机放在工位上一直没退出，第二天打开还要再登录吗？
+数据: **病根（修前实测读数，确定性）**：`frontend/worker-h5/src/app.mjs::armIdle` 把闲置延时会一次性塞进 `setTimeout(..., Math.max(1, minutes) * 60_000)`；默认 `minutes = 43200`（30 天，issue #6473 用户裁定）⇒ 2,592,000,000 ms **大于** 2^31-1（2,147,483,647）⇒ 浏览器 / Node 把延时钳成 ~1ms 立即触发（本机实测：`TimeoutOverflowWarning: 2592000000 does not fit into a 32-bit signed integer. Timeout duration was set to 1.` + `fired after 3 ms`）。后果 ①「闲置 30 天自动登出」从未按 30 天排期（`checkAlive` 节流分支不重排 ⇒ 之后不再有闲置登出）；② 每次 `armIdle()`（登录成功 / `resolved` / 每次 `checkAlive` 成功）立刻多打一轮 `GET /api/worker/production/current-worker` + `GET /api/worker/me`。
+数据: **主判据（会红；改回单次超长定时器 ⇒ 读数 = ①/②/③/⑤ 红并打印 `2592000000`，② 打印 1ms 内已发两个请求）**：`idleMinutes = 43200` 装配后，每一次 `setTimeout` 入队（含续排分片）≤ 2^31-1；分片之和 = 43,200 × 60_000 ms（30 天口径不变）；装配后第一帧（1ms）内零对账；首片到期只续排、不到期不对账；到期时恰好发起一轮 `current-worker` + `/me`。断言 = frontend/worker-h5/tests/worker-h5-7251-idle-timer.test.mjs 的 ①②③⑤。
+数据: **边界（2^31-1 ms 的两侧）**：35,791 分钟 = 2,147,460,000 ms ≤ 上限 ⇒ 仍是**单次**入队（与改前同形）；35,792 分钟 = 2,147,520,000 ms > 上限 ⇒ 必须分片且各片 ≤ 上限。断言 = 同文件 ④。
+数据: **类级（不是只钉 43200）**：服务端可配区间 **5 ~ 43200 分钟逐个值**都成立 —— 每片 ≤ 2^31-1、各片之和 = 总延时、且「是否分片」正好等于「总延时是否 > 2^31-1」。断言 = 同文件 ⑥。
+数据: **边界（如实登记）**：① 未改 30 天口径、未新增绝对有效期 —— 只改**调度**；「到期」语义仍 = `idle_minutes` 之后做一次后台对账（末片到期）；② 测试替身按平台规范把「> 2^31-1 ⇒ 1ms」建模进来（真实读数见 issue #7251 的 `node -e` 输出），替身只替换 `setTimeout` / `clearTimeout`，不碰被测逻辑；③ **未在真机**验证 24.8 天（首片上限）这一段的浏览器行为，也**不声称**设备休眠 / 后台挂起期间的定时器精度（与改前同级）。
+跳过: [backend-contract] 本条只登记「长延时不得溢出 2^31-1 + 到期才发起一轮对账」这一层**确定性调度行为**（零网络，假时钟），由 frontend/worker-h5/tests/worker-h5-7251-idle-timer.test.mjs 单测执行 ⇒ 不进 agent-eval 冒烟。
+```
+溯源: 2026-10-18 新增（issue #7251）：只修**调度**，不改 30 天口径 —— `armIdle()` 改为按 `idleSlices()` 分片排队（每片 ≤ `MAX_TIMER_DELAY_MS`，前 N-1 片只续排、末片到期才 `checkAlive()`），并新增同文件 ⑥ 的全区间类级判据；同批修好测试侧因「长定时器不再 1ms 立即触发」而挂住测试进程的一处（frontend/worker-h5/tests/worker-h5-6749-stale-login-error.test.mjs 用 `t.after(() => app.destroy())` 显式销毁）。取号 = PG-089（`python3 scripts/next_case_id.py pg` 实跑：PG → main:001-087 · PR #7224:088 → 取 PG-089）。 ｜ tags: processing, worker, session, timer, backend-contract
 
 ## 加工单域（74 case）
 
@@ -11933,7 +11945,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：817（活跃 135，跳过 682）
+- 用例总数：818（活跃 135，跳过 683）
 - tier 分布：smoke 12 / normal 751 / adversarial 32
 - 售后域：15
 - Agent 核心域：11
@@ -11953,7 +11965,7 @@
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
-- 加工项域：30
+- 加工项域：31
 - 加工单域：74
 - 商品域：125
 - 工具注册器域：1
@@ -12216,6 +12228,7 @@
 - PP-022: 工序改价并发面核验（N=4 并发提交同一工序的同一次调价）：价格版本账恰追加 1 行、当前价 = 最新版本行（issue #6238）
 - PG-074: 工序一键「设为不做并删除」写面并发 exactly-once：5 并发 ⇒ 至多一个赢家 + 无重复副作用 + 终态唯一（issue #6936）
 - PG-075: 类级元守卫（#6936）：工序「删除权」的写路径必须落到 SQL 谓词（CAS）+ 未登记即红 + 豁免只许缩短
+- PG-089: 工人端 H5 闲置登出定时器分片调度：30 天（43200 分钟）延时不得溢出 2^31-1 ⇒ 不得立即触发 / 不得每次装配多打一轮对账（单测覆盖，非 LLM 行为）
 - PR-083: 渲染腿**转义解码**：生成物取值与真值（`yaml.safe_load`）逐值相等（修前 33 处不同 / 163 个多余转义）
 - PR-084: 渲染腿比较器**落库**（唯一实现）+ **「0 条」必须判红**（比较器坏了 ≠ 没有差异）
 - PR-085: 渲染腿保真度的**边界登记与死亡条件**（修好的形态必须移出登记表；未覆盖的不许说成已覆盖）
