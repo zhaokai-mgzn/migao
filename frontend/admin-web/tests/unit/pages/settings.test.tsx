@@ -679,15 +679,18 @@ describe('判据 7：原四个 tab 的能力迁入域后零回归', () => {
     }
   })
 
-  it('手机端入口（#5668）：配置了地址 ⇒ 二维码内容逐字等于该值（哨兵值 ⇒ 硬编码必红）', async () => {
+  it('手机端入口（#5668 / #7198）：配置了地址 ⇒ 设置页只留一行；点「显示二维码」后内容逐字等于该值（哨兵值 ⇒ 硬编码必红）', async () => {
     const SENTINEL_URL = 'https://bmini-entry.invalid/b/'
     vi.stubEnv('NEXT_PUBLIC_BMINI_H5_URL', SENTINEL_URL)
     mockSearchParams.mockReturnValue(new URLSearchParams('domain=enterprise'))
     try {
       render(<SettingsPage />)
+      // issue #7198：112px 大码块收成**一行**入口 —— 默认不画码（弹层按需展开，§31 P1 常驻面克制）
+      expect(await screen.findByTestId('bmini-h5-url')).toHaveTextContent(SENTINEL_URL)
+      expect(screen.queryByTestId('bmini-h5-qr')).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: '显示二维码' }))
       const qr = await screen.findByTestId('bmini-h5-qr')
       expect(qr.querySelector('title')?.textContent).toBe(SENTINEL_URL)
-      expect(screen.getByTestId('bmini-h5-url')).toHaveTextContent(SENTINEL_URL)
     } finally {
       vi.unstubAllEnvs()
     }
