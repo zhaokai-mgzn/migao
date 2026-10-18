@@ -3,7 +3,7 @@
  *
  * 覆盖: 会话管理(创建/加载/删除/选择)、消息管理、流式状态
  */
-// case_ids: UI-013, CH-030, CH-031
+// case_ids: UI-013, CH-030, CH-031, UI-079
 
 // Mock chatService
 jest.mock('../src/services/chatService', () => ({
@@ -203,6 +203,27 @@ describe('chatStore', () => {
 
       expect(mockAbort).toHaveBeenCalled()
       expect(store.getState().isStreaming).toBe(false)
+    })
+
+    it('stopStreaming 给被中断的消息打 wasAborted（打字机立刻显示全文，issue #7235 / UI-079）', () => {
+      const store = getChatStore()
+      store.setState({
+        isStreaming: true,
+        _sseClient: { abort: jest.fn() } as any,
+        messages: [
+          { id: 'done-1', role: 'assistant', content: '已完成的回复', created_at: '' },
+          { id: 'live-1', role: 'assistant', content: '被打断的回复', created_at: '', isStreaming: true },
+        ],
+      })
+
+      store.getState().stopStreaming()
+
+      const [done, live] = store.getState().messages
+      // 直播消息：中断标记必须有（客户端打字机据此立刻收敛，不把尾巴慢慢打完）
+      expect(live.isStreaming).toBe(false)
+      expect(live.wasAborted).toBe(true)
+      // 负控：已经结束的消息不许被误打标记
+      expect(done.wasAborted).toBeUndefined()
     })
   })
 

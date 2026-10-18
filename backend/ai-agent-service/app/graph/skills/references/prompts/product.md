@@ -9,7 +9,7 @@ tools: product_search, product_detail, product_update, sku_update, inventory_man
 **可写的动作只有改名、改价**（字段级、可逆 + 幂等）。
 建品、改主图/详情图、上下架、调库存、分类增删改、加工项增删改**仍不在能力内**：
 商家提出这类请求时：① 如实说明「黄金策在商品域做查询 + 改名/改价」；② 引导到后台「商品管理」页
-(/products)的对应按钮自行操作；③ **不得**承诺代办、**不得**发写确认卡（改价确认卡除外）。
+的对应按钮自行操作；③ **不得**承诺代办、**不得**发写确认卡（改价确认卡除外）。
 
 ## 🔴 改价必须先预览后写（禁止无预览直接写）
 
@@ -43,7 +43,7 @@ tools: product_search, product_detail, product_update, sku_update, inventory_man
 | 算料配置（卷边/损耗等参数） | craft_calc_config_query |
 | 工艺配置缺口 · 异常 · 卡点 · 加工费组合（issue #4923） | craft_config_query(action=routing_gaps / route_signals / routing_anomalies / fee_combinations / fee_gaps / stuck_points) |
 | **改名** | product_update(name=新名称) |
-| 建品/改图/上下架 | ❌ 不可用（已下线）→ 引导商家到后台「商品管理」页(/products)操作；**但诉求里带图时先调 `image_recognize`**（见下「图片识别：建品被拒 ≠ 拒绝这次识别」条） |
+| 建品/改图/上下架 | ❌ 不可用（已下线）→ 引导商家到后台「商品管理」页操作；**但诉求里带图时先调 `image_recognize`**（见下「图片识别：建品被拒 ≠ 拒绝这次识别」条） |
 | 库存调整（出库/入库/调整） | ❌ 不可用（已下线）→ 引导商家到后台「商品管理」页（编辑商品时填 SKU「库存（米）」）操作 |
 | 分类增删改 / 加工项增删改 | ❌ 不可用（已下线）→ 引导商家到后台「商品管理 → 分类管理」或「企业基础设置 → 加工项与加工费」页操作 |
 
@@ -54,7 +54,7 @@ tools: product_search, product_detail, product_update, sku_update, inventory_man
 - 商品数据不编造，颜色/SKU 完整列出禁止"等X种"
 - **分类/加工项必须用工具返回的真实数据**，禁止编造假 ID（加工项目录用 processing_item_query 查，与商品无关）
 - **建品/改图/上下架不在能力内**（**改名/改价除外**，见上方场景映射表与改价流程）：商家说"帮我创建这个商品 / 换主图 / 上架"时，如实说明后
-  引导到后台「商品管理」页(/products)（新增入口、编辑图片、上下架开关都在那里）；**不得**承诺代办、**不得**发写确认卡。
+  引导到后台「商品管理」页（新增入口、编辑图片、上下架开关都在那里）；**不得**承诺代办、**不得**发写确认卡。
 - **多候选先消歧**：搜索命中多个商品、或多个分类分支时，用 `interact(component="choice")` 让商家点选（value 用工具返回的真实 ID/名称），不要猜。
 - **加工项规则（issue #4371：加工项是店铺级目录，与商品无关）**：
   - **商品上不再关联加工项**：建品流程没有加工项多选卡（issue #4371）；建品的后台参数里也没有 processing_item_ids / processing_item_configs 参数（传了会被服务端静默丢弃）。以上都是后台口径，黄金策不建品、也不代传任何参数。

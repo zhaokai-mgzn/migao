@@ -2962,6 +2962,25 @@ _CASE_CH_047 = EvalCase(
     precondition='前置 = `app.context.page_registry.render_page_context` 与 `_handle_page_ctx_request` 可导入；`PAGE_REGISTRY` 非空（空登记表 ⇒ 类级往返判据自证失败并红）',
 )
 
+# ── CH-048 [NORMAL] 黄金策回复不得暴露内部路由（后台「订单列表」页(/orders)）—— 源头话术去路由 + 出站清洗兜底 + 负控（源: cases/chat.yml）──
+_CASE_CH_048 = EvalCase(
+    id='CH-048',
+    legacy_id='',
+    title='黄金策回复不得暴露内部路由（后台「订单列表」页(/orders)）—— 源头话术去路由 + 出站清洗兜底 + 负控',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['商家问「这个订单怎么发货」⇒ 黄金策如实说明不能代办并引导到后台「订单列表」页；回复里**只允许中文页面名**，不得出现内部前端路由（`(/orders)` 形态）。2026-10-18 生产实证：session `sess_742201cbf83f4f58` 的 assistant 正文逐字含「发货操作在后台「订单列表」页(/orders)对应订单上点「发货」即可」'],
+    expectations=['direct_reply'],
+    data_checks=["**源头去路由**：模型可见话术（工具 description / references 提示词 / base_skill 失败指引）**零**路由 token。判据 = `grep -rnE '\\(/[a-zA-Z][a-zA-Z0-9/_-]*\\)' backend/ai-agent-service/app --include=*.py --include=*.md` 读数为 0（2026-10-18 现取：修前 .py 7 处 + 模型可见 .md 41 处）。", '**出站清洗形态**：`strip_internal_routes` 对三种括号形态（半角 / 全角 / 括号内空白）整段删除；删除点两侧都是中文 ⇒ 不留空格（`页 (/orders)找到` → `页找到`），否则保留恰好 1 个空格；markdown 链接 `[订单列表](/orders)` 只留 `订单列表`。执行点 = backend/ai-agent-service/tests/test_route_hygiene.py 的 `TestStripInternalRoutes`。', '**负控 + 幂等**：`¥29/米`、`定高买宽/定宽买高`、`http(s)://…`、围栏代码块与行内反引号内的 `/orders` 逐字不变；已清洗文本再跑逐字不变。执行点 = 同 class 的 `test_negative_controls_untouched` / `test_idempotent` / `test_protected_fence_does_not_break_outer_cleaning`。', '**接线（会红）**：真驱动 `_agent_stream_to_sse`（B 端 admin 与 C 端 customer 两条）⇒ SSE 文本与**落库** assistant 文本都不含路由；库中存量旧行经 `GET /history/{session_id}` 回放同样干净。执行点 = 同文件 `TestOutboundWiring` / `TestHistoryReplayWiring`。红证（2026-10-18 实测）：摘掉 chat.py 的收口调用 ⇒ 5 failed / 16 passed。', '**结构级守卫**：`chat.py` 不再出现 `SSEEvent.text(_mask_for_customer(`、历史回放走收口、落库前 `strip_internal_routes(assistant_content)` 在位。执行点 = 同文件 `TestWiringIsStructural`。'],
+    skip_reason='[backend-contract] 判据全部是**纯函数 + 入口级**（零 LLM、零网络）：话术 grep、清洗形态/负控/幂等、SSE/落库/历史回放接线，由 backend/ai-agent-service/tests/test_route_hygiene.py 执行；「黄金策是否真的照新话术引导」属行为面，按用户裁定（#4262 / #4974）手动集中跑一次，本轮不自动派发真实 LLM 评测',
+    tags=['chat', 'display-integrity', 'internal-route', 'sanitize'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='前置 = `app.utils.route_hygiene.strip_internal_routes` 可导入、`app/api/chat.py` 的 `_sanitize_outbound_text` 收口在位（摘掉 ⇒ 接线判据红，不会表现成「本轮回复刚好没提路由」的假绿）',
+)
+
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
 _CASE_CR_001 = EvalCase(
     id='CR-001',
@@ -14332,18 +14351,18 @@ _CASE_UI_078 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── UI-079 [NORMAL] 黄金策对话「客户端打字机」：服务端整段下发 ⇒ 客户端按节奏揭示（真实事件序下逐字 / 单调不回退 / 收口替换不卡 / 有界收敛 / 历史·中断·减少动画立刻全文）（源: cases/ui.yml）──
+# ── UI-079 [NORMAL] 黄金策对话「客户端打字机」：服务端整段下发 ⇒ 客户端按节奏揭示（真实事件序下逐字 / 单调不回退 / 收口替换不卡 / 有界收敛 / 历史·中断·减少动画立刻全文）；PC 与**手机端（bmini）**同口径（issue #7235）（源: cases/ui.yml）──
 _CASE_UI_079 = EvalCase(
     id='UI-079',
     legacy_id='',
-    title='黄金策对话「客户端打字机」：服务端整段下发 ⇒ 客户端按节奏揭示（真实事件序下逐字 / 单调不回退 / 收口替换不卡 / 有界收敛 / 历史·中断·减少动画立刻全文）',
+    title='黄金策对话「客户端打字机」：服务端整段下发 ⇒ 客户端按节奏揭示（真实事件序下逐字 / 单调不回退 / 收口替换不卡 / 有界收敛 / 历史·中断·减少动画立刻全文）；PC 与**手机端（bmini）**同口径（issue #7235）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['用户 2026-10-02 原话（流式体验）：问「米宝走 SSE 但不是逐字输出，是否要改成逐字」⇒ 裁定 =「选 2（客户端打字机）」', '同一裁定附带的结构性理由（不做服务端真逐字）：backend/ai-agent-service/app/agents/customer_service_agent.py 的 astream_chat 用 graph.astream(initial_state, stream_mode="updates") = 节点级更新；backend/ai-agent-service/app/graph/skills/execution/finalize_turn.py 有后置收口（追加确认卡 XML / 用工具返回 message 替换回复）；C 端出站还有 backend/ai-agent-service/app/api/chat.py 的 _mask_for_customer 跨片脱敏 ⇒ 服务端逐字会与「收口后才是最终文本」冲突'],
     expectations=['direct_reply'],
-    data_checks=['判据 1·**真的在逐字**：注入一段文本后，t 时刻可见字符数 **< 全文长度**，且可见文本恒为全文**前缀**；最终 == 全长。执行点 = frontend/admin-web/tests/unit/hooks/use-typewriter.test.tsx「UI-079-1」+ frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx「UI-079 流式回复（真实打字机）」', '判据 2·**收口替换不卡**：先注入短文本、随后注入收口后的长文本（模拟 finalize_turn 替换）⇒ 全程采样「已揭示字符数」**只增不减**（不出现「先短后长再回退」），最终显示**必须是收口版**；反向（收口版更短）⇒ 立刻夹到收口版，不出现越界可见文本。执行点 = 同 hook 文件「UI-079-2」两条', '判据 3·**立刻收敛只对非直播面**：历史回放 / 切会话重挂载（挂载即完整）、用户中断（wasAborted）、减少动画（prefers-reduced-motion: reduce）⇒ 可见文本**立刻**等于全文（不许卡在半截）。🔴 **「流式结束」不在此列**（2026-10-17 / issue #7086 改判）：正文整段到达 + 紧随 done 只有几十~两百毫秒窗口，把「isStreaming=false ⇒ 立刻全文」当不变量会让揭示窗口 ≈ 0（本机实测：结束瞬间已是 37/37 全文 ⇒ 用户看到「一次性刷出」）。执行点 = hook 文件「UI-079-3 历史回放 / 已结束会话」「UI-079-3 用户主动中断（instant）」「UI-079-3 用户偏好减少动画」+ 组件文件「UI-079 中断（wasAborted=true）」「UI-079 历史回放（非流式）」「UI-079 切会话/重挂载」', '🔴 判据 4·**服务端不被改动（本单边界）**：本用例只判展示面 —— `git diff origin/main...HEAD -- backend/` 为空。执行点 = PR 的改动清单（本包零后端改动）', '🔴 判据 5·**真实事件序下必须逐字（issue #7086）**：正文以**一个** `text` 事件整段到达、紧随 `done`（store 同批把 `isStreaming` 置假并落库）⇒ 结束之后**仍在逐字**（t 时刻可见字符数**严格少于**全长、且恒为全文前缀），最终 == 全长；且整段揭示**有界**（≤ TYPEWRITER_MAX_REVEAL_MS，长文自动加速、不无限拖尾）。执行点 = frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx「🔴 UI-079 真实事件序」+ frontend/admin-web/tests/unit/hooks/use-typewriter.test.tsx「🔴 UI-079-1 真实事件序」「UI-079-3 有界收敛」。类级元守卫 = tests/unit_ci_workflows/test_typewriter_reveal_not_lifecycle_bound.py（揭示层再读外部生命周期开关 / 真实事件序判据被摘掉 ⇒ 判红）', '🔴 红证（改前实测）：本单落地前全仓 `grep -rn "typewriter\\|useTypewriter" frontend/admin-web/src` = 0 命中 ⇒ 组件测试 import 即失败；把 hook 换成直返全文（等效「无打字机」）⇒ 判据 1/2/3 的「中途可见 < 全长」「维持替换过程单调」「流式结束立刻等于全文」三条当场红（本机实测 3 failed / 6 passed）；把组件的 `data-revealed` 接入摘掉 ⇒ 组件侧两条红', '🔴 红证（#7086，2026-10-17 实测）：把实现回退到 origin/main（旧 hook 的 `instant = !streaming || …` + 组件传 `streaming: !!message.isStreaming`）⇒ 本用例 19 条里 **5 条红**，其中「真实事件序」的读数是 `expected 37 to be less than 37`（= done 之后第一次读数已是全长，一帧未播，与用户现场一致）；改后 19 条全绿。复算：`git stash push -- frontend/admin-web/src/hooks/use-typewriter.ts frontend/admin-web/src/components/chat/MessageList.tsx` ⇒ `cd frontend/admin-web && npx vitest run --dir tests/unit use-typewriter.test.tsx MessageList-typewriter.test.tsx` ⇒ `git stash pop`（回退后 5 红、恢复后 19 绿，本机 2026-10-17 复算）'],
+    data_checks=['判据 1·**真的在逐字**：注入一段文本后，t 时刻可见字符数 **< 全文长度**，且可见文本恒为全文**前缀**；最终 == 全长。执行点 = frontend/admin-web/tests/unit/hooks/use-typewriter.test.tsx「UI-079-1」+ frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx「UI-079 流式回复（真实打字机）」', '判据 2·**收口替换不卡**：先注入短文本、随后注入收口后的长文本（模拟 finalize_turn 替换）⇒ 全程采样「已揭示字符数」**只增不减**（不出现「先短后长再回退」），最终显示**必须是收口版**；反向（收口版更短）⇒ 立刻夹到收口版，不出现越界可见文本。执行点 = 同 hook 文件「UI-079-2」两条', '判据 3·**立刻收敛只对非直播面**：历史回放 / 切会话重挂载（挂载即完整）、用户中断（wasAborted）、减少动画（prefers-reduced-motion: reduce）⇒ 可见文本**立刻**等于全文（不许卡在半截）。🔴 **「流式结束」不在此列**（2026-10-17 / issue #7086 改判）：正文整段到达 + 紧随 done 只有几十~两百毫秒窗口，把「isStreaming=false ⇒ 立刻全文」当不变量会让揭示窗口 ≈ 0（本机实测：结束瞬间已是 37/37 全文 ⇒ 用户看到「一次性刷出」）。执行点 = hook 文件「UI-079-3 历史回放 / 已结束会话」「UI-079-3 用户主动中断（instant）」「UI-079-3 用户偏好减少动画」+ 组件文件「UI-079 中断（wasAborted=true）」「UI-079 历史回放（非流式）」「UI-079 切会话/重挂载」', '🔴 判据 4·**服务端不被改动（本单边界）**：本用例只判展示面 —— `git diff origin/main...HEAD -- backend/` 为空。执行点 = PR 的改动清单（本包零后端改动）', '🔴 判据 5·**真实事件序下必须逐字（issue #7086）**：正文以**一个** `text` 事件整段到达、紧随 `done`（store 同批把 `isStreaming` 置假并落库）⇒ 结束之后**仍在逐字**（t 时刻可见字符数**严格少于**全长、且恒为全文前缀），最终 == 全长；且整段揭示**有界**（≤ TYPEWRITER_MAX_REVEAL_MS，长文自动加速、不无限拖尾）。执行点 = frontend/admin-web/tests/unit/components/MessageList-typewriter.test.tsx「🔴 UI-079 真实事件序」+ frontend/admin-web/tests/unit/hooks/use-typewriter.test.tsx「🔴 UI-079-1 真实事件序」「UI-079-3 有界收敛」。类级元守卫 = tests/unit_ci_workflows/test_typewriter_reveal_not_lifecycle_bound.py（揭示层再读外部生命周期开关 / 真实事件序判据被摘掉 ⇒ 判红）', '🔴 红证（改前实测）：本单落地前全仓 `grep -rn "typewriter\\|useTypewriter" frontend/admin-web/src` = 0 命中 ⇒ 组件测试 import 即失败；把 hook 换成直返全文（等效「无打字机」）⇒ 判据 1/2/3 的「中途可见 < 全长」「维持替换过程单调」「流式结束立刻等于全文」三条当场红（本机实测 3 failed / 6 passed）；把组件的 `data-revealed` 接入摘掉 ⇒ 组件侧两条红', '🔴 判据 6·**手机端（bmini）同口径执行点**（issue #7235）：同一组不变量在 frontend/bmini-app 上成立 —— 直播消息从 0 起逐字（t 时刻 `data-revealed` < 全长且恒为全文前缀）、结束之后仍逐字、历史回放 / 中断（`wasAborted`）/ 减少动画立刻全文、长文按上界有界收敛。执行点 = frontend/bmini-app/tests/chat-typewriter.test.tsx「UI-079 手机端打字机」6 条 + frontend/bmini-app/tests/store-chat.test.ts「stopStreaming 给被中断的消息打 wasAborted」（负控：已结束消息不打标记）', '🔴 红证（#7086，2026-10-17 实测）：把实现回退到 origin/main（旧 hook 的 `instant = !streaming || …` + 组件传 `streaming: !!message.isStreaming`）⇒ 本用例 19 条里 **5 条红**，其中「真实事件序」的读数是 `expected 37 to be less than 37`（= done 之后第一次读数已是全长，一帧未播，与用户现场一致）；改后 19 条全绿。复算：`git stash push -- frontend/admin-web/src/hooks/use-typewriter.ts frontend/admin-web/src/components/chat/MessageList.tsx` ⇒ `cd frontend/admin-web && npx vitest run --dir tests/unit use-typewriter.test.tsx MessageList-typewriter.test.tsx` ⇒ `git stash pop`（回退后 5 红、恢复后 19 绿，本机 2026-10-17 复算）'],
     skip_reason='[backend-contract] 纯前端揭示层（服务端一字未改：仍整段下发）由 vitest（jsdom）执行，不进入 agent-eval 冒烟；LLM 行为面不变，故无 agent 用例',
-    tags=['ui', 'chat', 'streaming', 'typewriter', 'admin-web'],
+    tags=['ui', 'chat', 'streaming', 'typewriter', 'admin-web', 'bmini'],
     persona='',
     debug_user='',
     form_prefill=[],
@@ -14442,6 +14461,25 @@ _CASE_UI_084 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+)
+
+# ── UI-126 [NORMAL] 手机端（B 端黄金策 / C 端元元）助手消息的 **GFM 表格**渲染 —— 表格成组件（窄屏可横滑 / 表头-数据行逐格 / 列数按分隔行）+ PC 端同族回归判据（用户 2026-10-18 手机端实测：一排 `|---|`）（源: cases/ui.yml）──
+_CASE_UI_126 = EvalCase(
+    id='UI-126',
+    legacy_id='',
+    title='手机端（B 端黄金策 / C 端元元）助手消息的 **GFM 表格**渲染 —— 表格成组件（窄屏可横滑 / 表头-数据行逐格 / 列数按分隔行）+ PC 端同族回归判据（用户 2026-10-18 手机端实测：一排 `|---|`）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-18 逐字：「手机端的黄金策返回的表格样式没有正常渲染，还是原声markdown」（原声 = 原生 / raw）；同一句里要求「顺便把pc端的也一起检查下」', '同一轮的 DB 证据（session_messages，session sess_742201cbf83f4f58）：assistant 正文逐字含 `| 工单号 | 关联订单 | 客户 | 类型 | 状态 | 优先级 | 创建时间 |` 与 `|---|---|---|---|` —— 黄金策的清单类回复大量使用 GFM 表格，手机端把这排竖线原样上屏'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**解析口径（B/C 两端同口径）**：表头行 + 分隔行（列数一致）⇒ 一个 table 块（header / align / rows 逐值）；列数按分隔行定（数据行缺格补空、多格截断）；单元格内 `**粗体**` 仍解析；空行结束表格；首尾竖线可省略。执行点 = frontend/bmini-app/tests/chat-rich-text-table.test.ts（9 条）与 frontend/mini-app/tests/message-bubble-table.test.tsx', '判据 2·**流式安全负控**：只有表头、分隔行还没到 ⇒ 仍是普通文本（不闪半张表）；普通句子里的 `a | b` 不判成表格；**揭示期（打字机逐字中）尾部未成表的行先不画** —— 表头到了、分隔行没到 ⇒ DOM 里没有裸 `|`（旧形态会闪一两百毫秒裸管道符）。执行点 = 同上两个文件 + frontend/bmini-app/tests/chat-typewriter.test.tsx 判据 ⑦', '判据 3·**渲染**：`.message-bubble__table` 在场、DOM 文本零字面 `|` / `---`；表头 3 格 + 数据行 N 行且列数不错位；包在 `scrollX` 容器里（窄屏可横滑）；有表格的气泡放宽到 94%。执行点 = frontend/bmini-app/tests/chat-table-render.test.tsx（6 条）+ frontend/mini-app/tests/message-bubble-table.test.tsx', '判据 4·**PC 同族核查**（用户要求「顺便检查 PC」）：admin-web 走 react-markdown + remark-gfm ⇒ 同一段表格渲染出 `<table>` / `<th>` / `<td>`，且 remark-breaks 在场时仍成表（不折成 `<br>` 裸文本）、对齐标记不错位。执行点 = frontend/admin-web/tests/unit/components/chat-markdown-table.test.tsx（5 条）', '判据 5·**类级元守卫（两端同口径）**：同一组语料（含单列表格）喂给两端解析器，输出必须**逐值相等**（`toEqual`），且语料自证「lines 与 table 两种块都出现」（防两边都空 ⇒ 相等假绿）。判据 = frontend/mini-app/tests/chat-rich-text-parity.test.ts（3 条；放在 C 端腿里跑 —— 避免 bmini 腿跨目录依赖 C 端源码而污染本地门禁矩阵的触发面）。判别力自证：只改 C 端一处口径（单列表格判定加 `header.length > 1`）⇒ 该条当场红（`1 failed / 2 passed`）；还原 ⇒ 3 passed。这条防的正是本缺陷的**类**：两份本地实现「一端修、一端漏」（UI-042 漏 B 端 → #6346；#7235 若只修 B 端则 C 端继续裸奔）。另有**接线普查**类级守卫 tests/unit_ci_workflows/test_chat_richtext_surface_guard.py 判据 2：每个小程序气泡包必须引用 `parseRichContent` 且渲染 `message-bubble__table`（摘掉表格组件 ⇒ 红）', '🔴 红证（改前实测，migao-dev-flow §28.1 出口① 临时反转）：把两端实现退回 origin/main（`git stash push -- src/utils/richText.ts src/components/chat/MessageBubble.tsx`，在 frontend/bmini-app 下）⇒ 表格两条执行点 **2 suites failed / 5 failed / 1 passed**（`chat-rich-text-table` 因 `parseRichContent` 不存在整 suite 失败；`chat-table-render` 的 ①③⑤⑥ 红、负控 ④ 仍绿）；恢复后两文件 **15/15 全绿**。PC 侧判别力自证：摘掉 `remarkGfm` ⇒ 判据 4 的 `<table>` 零命中当场红'],
+    skip_reason='[backend-contract] 纯前端渲染（vitest / jest jsdom），不进 agent-eval 冒烟；服务端一字未改（表格是既有 LLM 输出形态，只改展示层）',
+    tags=['ui', 'chat', 'rich-text', 'table', 'bmini'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition="两端 jest 夹具自建消息对象（role='assistant' + 带表格的 content），PC 侧 vi.mock('@/store/chat') 注入消息、**不 mock** react-markdown（判据打在真实渲染管线上）",
 )
 
 # ── UI-085 [NORMAL] 岗位 × 侧边栏菜单：种子权限集 × menu.ts 三条件 ⇒ 可见项逐值相等（岗位矩阵）（源: cases/ui.yml）──
@@ -15386,6 +15424,7 @@ ALL_CASES = (
     _CASE_CH_045,
     _CASE_CH_046,
     _CASE_CH_047,
+    _CASE_CH_048,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,
@@ -16002,6 +16041,7 @@ ALL_CASES = (
     _CASE_UI_082,
     _CASE_UI_083,
     _CASE_UI_084,
+    _CASE_UI_126,
     _CASE_UI_085,
     _CASE_UI_086,
     _CASE_UI_087,

@@ -503,7 +503,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       streamingContent: '',
       _sseClient: null,
       messages: state.messages.map(msg =>
-        msg.isStreaming ? { ...msg, isStreaming: false } : msg
+        // issue #7235：用户主动中断 ⇒ 打上 wasAborted，客户端打字机立刻显示全文
+        // （不然已到达的尾巴还会按 20ms/字 慢慢打完，等于「点了停止还在动」）
+        msg.isStreaming ? { ...msg, isStreaming: false, wasAborted: true } : msg
       ),
     }))
   },

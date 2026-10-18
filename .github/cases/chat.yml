@@ -2723,3 +2723,37 @@ cases:
       ci:
         - ai-agent-tests.yml
       verifies: []
+
+  - id: CH-048
+    legacy_id: ""
+    title: "黄金策回复不得暴露内部路由（后台「订单列表」页(/orders)）—— 源头话术去路由 + 出站清洗兜底 + 负控"
+    domains:
+      - chat
+    tier: normal
+    tags:
+      - chat
+      - display-integrity
+      - internal-route
+      - sanitize
+    # ⚠️ 真值缺口（照实登记，同 CH-046 / CH-047）：现有真值模板没有「对外文案不得含内部路由」
+    # 条目 ⇒ truths_ref 为空（truths.py check 对该形态只告警不阻塞）；新增真值须另开单改模板。
+    truths_ref: []
+    user_inputs:
+      - "商家问「这个订单怎么发货」⇒ 黄金策如实说明不能代办并引导到后台「订单列表」页；回复里**只允许中文页面名**，不得出现内部前端路由（`(/orders)` 形态）。2026-10-18 生产实证：session `sess_742201cbf83f4f58` 的 assistant 正文逐字含「发货操作在后台「订单列表」页(/orders)对应订单上点「发货」即可」"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**源头去路由**：模型可见话术（工具 description / references 提示词 / base_skill 失败指引）**零**路由 token。判据 = `grep -rnE '\\(/[a-zA-Z][a-zA-Z0-9/_-]*\\)' backend/ai-agent-service/app --include=*.py --include=*.md` 读数为 0（2026-10-18 现取：修前 .py 7 处 + 模型可见 .md 41 处）。"
+      - "**出站清洗形态**：`strip_internal_routes` 对三种括号形态（半角 / 全角 / 括号内空白）整段删除；删除点两侧都是中文 ⇒ 不留空格（`页 (/orders)找到` → `页找到`），否则保留恰好 1 个空格；markdown 链接 `[订单列表](/orders)` 只留 `订单列表`。执行点 = backend/ai-agent-service/tests/test_route_hygiene.py 的 `TestStripInternalRoutes`。"
+      - "**负控 + 幂等**：`¥29/米`、`定高买宽/定宽买高`、`http(s)://…`、围栏代码块与行内反引号内的 `/orders` 逐字不变；已清洗文本再跑逐字不变。执行点 = 同 class 的 `test_negative_controls_untouched` / `test_idempotent` / `test_protected_fence_does_not_break_outer_cleaning`。"
+      - "**接线（会红）**：真驱动 `_agent_stream_to_sse`（B 端 admin 与 C 端 customer 两条）⇒ SSE 文本与**落库** assistant 文本都不含路由；库中存量旧行经 `GET /history/{session_id}` 回放同样干净。执行点 = 同文件 `TestOutboundWiring` / `TestHistoryReplayWiring`。红证（2026-10-18 实测）：摘掉 chat.py 的收口调用 ⇒ 5 failed / 16 passed。"
+      - "**结构级守卫**：`chat.py` 不再出现 `SSEEvent.text(_mask_for_customer(`、历史回放走收口、落库前 `strip_internal_routes(assistant_content)` 在位。执行点 = 同文件 `TestWiringIsStructural`。"
+    skip_reason: "[backend-contract] 判据全部是**纯函数 + 入口级**（零 LLM、零网络）：话术 grep、清洗形态/负控/幂等、SSE/落库/历史回放接线，由 backend/ai-agent-service/tests/test_route_hygiene.py 执行；「黄金策是否真的照新话术引导」属行为面，按用户裁定（#4262 / #4974）手动集中跑一次，本轮不自动派发真实 LLM 评测"
+    precondition: "前置 = `app.utils.route_hygiene.strip_internal_routes` 可导入、`app/api/chat.py` 的 `_sanitize_outbound_text` 收口在位（摘掉 ⇒ 接线判据红，不会表现成「本轮回复刚好没提路由」的假绿）"
+    merge_log: "2026-10-18 新增（issue #7236）：取号 = 现取 chat.yml 最大号 CH-047 + 1 = CH-048（chat 域，不用 UI 前缀；同批无其它 chat 号在飞）。覆盖两层修复：① 源头话术去路由（app/**/*.py 7 处 + 模型可见 references/*.md 41 处）；② 出站纯函数清洗兜底，并接在落库 / SSE 下发 / 历史回放三处收口（`_mask_for_customer` 语义不动，只在同一收口点追加一层）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_route_hygiene.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
