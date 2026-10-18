@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import type { Order, OrderItem, LogisticsInfo } from '@/types'
 import type { PrintTarget } from './index'
 import { printBodyFontPt, printPageRule } from '@/lib/print-media'
+import { useCompanyName } from '@/lib/use-company-name'
 import { orderItemSku } from '@/lib/order-item-sku'
 import { cn, formatFullDateTime } from '@/lib/utils'
 
@@ -128,6 +129,7 @@ export default function ShipmentDoc({
   inline,
   className,
 }: ShipmentDocProps) {
+  const companyName = useCompanyName()
   // 打印只发生在客户端；SSR/首帧无 document，portal 前先等 mounted（未挂载返回 null）
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
@@ -189,6 +191,11 @@ export default function ShipmentDoc({
         }
       `}</style>
 
+      {companyName && (
+        <div className="text-center text-sm font-medium text-neutral-700 mb-0.5" data-testid="doc-company-name">
+          {companyName}
+        </div>
+      )}
       <div className="text-center text-xl font-semibold tracking-[0.5em] mb-1">发货单</div>
       <div className="text-center text-xs text-neutral-500 mb-4">{order.orderNo}</div>
 

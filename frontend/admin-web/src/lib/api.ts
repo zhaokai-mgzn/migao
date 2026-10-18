@@ -128,6 +128,7 @@ import type {
   CustomerTagFormData,
   AiConfig,
   SystemSettings,
+  PaymentQrcode,
   LoginLog,
   UploadedFile,
   Employee,
@@ -1666,6 +1667,16 @@ export const settingsApi = {
    */
   getPaymentQrcodes: () =>
     request.get<ApiResponse<PaymentQrcodeMap>>('/api/admin/settings/payment-qrcodes'),
+
+  /**
+   * 保存某类型收款码（issue #7219）：企业设置「收款码」上传后即时落库。
+   * 端点权限 = `system:manage`（仅管理员），前端入口由「企业信息」域的 requiredCode 同码门控。
+   */
+  updatePaymentQrcode: (
+    type: 'wechat' | 'alipay',
+    data: { imageUrl: string; payeeName?: string; remark?: string },
+  ) =>
+    request.put<ApiResponse<PaymentQrcode>>(`/api/admin/settings/payment-qrcodes/${type}`, data),
 }
 
 // 智能每日经营简报 API（issue #3468）

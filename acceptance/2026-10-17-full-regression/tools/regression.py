@@ -1038,6 +1038,12 @@ def build_order(key: str, lines: list[dict], *, urgent: bool = False, remark: st
                 raise AssertionError(f"加工项不存在: {n}")
             pi_items.append({"id": meta.get("id"), "name": n, "quantity": 1, "unit": meta.get("unit", "米")})
         info = {
+            # SKU 身份（issue #7219）：订单详情/三张纸面的颜色、门幅只认这四个键；
+            # 本工具既然已经选中 SKU，就必须与表单页同形态落库（不写 ⇒ 纸面恒空）。
+            "skuId": sku.get("id"),
+            "skuCode": sku.get("skuCode"),
+            "colorName": sku.get("colorName"),
+            "doorWidth": sku.get("doorWidth"),
             "processingItems": pi_items,
             "processingMeters": qty,
             "fabric_meters": qty,

@@ -1652,8 +1652,71 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             if (product != null && product.getSkuCode() != null) {
                 response.setSkuCode(product.getSkuCode());
             }
+            // SKU 身份兜底（issue #7219）：存量/回归单的 processing_info 可能没有
+            // colorName/doorWidth（纸面与详情都读这两个键 ⇒ 颜色/门幅恒空）。
+            // 只在**缺值**且能从 SKU 唯一确定时回填；多 SKU 且无 skuId ⇒ 不猜（宁可留空）。
+            Map<String, Object> skuInfo = toSkuIdentityMap(item.getProcessingInfo());
+            if (skuInfo != null && (!hasText(skuInfo.get("colorName")) || !hasText(skuInfo.get("doorWidth")))) {
+                List<ProductSku> skus = productSkuMapper.selectList(
+                        new LambdaQueryWrapper<ProductSku>().eq(ProductSku::getProductId, item.getProductId()));
+                response.setProcessingInfo(backfillSkuIdentity(skuInfo, skus, item.getProductName()));
+            }
         }
         return response;
+    }
+
+    /** 把 processing_info 归一成可改写的 Map（JSONB 经 JacksonTypeHandler 可能是 String/其它形态）。 */
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> toSkuIdentityMap(Object raw) {
+        if (!(raw instanceof Map<?, ?> map)) return null;
+        Map<String, Object> copy = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> e : map.entrySet()) copy.put(String.valueOf(e.getKey()), e.getValue());
+        return copy;
+    }
+
+    private static boolean hasText(Object value) {
+        return value instanceof String text && !text.isBlank();
+    }
+
+    /**
+     * SKU 身份兜底（issue #7219）—— **纯函数**，判据见 {@code OrderServiceSkuBackfillTest}。
+     *
+     * <p>口径：① 两个键都有 ⇒ 原样返回（**不覆盖**既有快照）；② {@code skuId} 命中 ⇒ 用那个 SKU；
+     * ③ 没有 skuId 但商品**只有一个 SKU** ⇒ 用唯一 SKU；④ 多 SKU 且产品名以
+     * {@code -颜色-门幅} 结尾、**唯一命中**一个 SKU ⇒ 用它（历史/回归单的既有命名形态）；
+     * ⑤ 其余（无法唯一判定）⇒ 原样返回，**不猜**（猜错比空更贵：纸面会把 A 的颜色印到 B 的行上）。
+     * 只补**缺的那一半**。</p>
+     */
+    static Map<String, Object> backfillSkuIdentity(Map<String, Object> info, List<ProductSku> skus, String productName) {
+        if (info == null) return null;
+        boolean hasColor = hasText(info.get("colorName"));
+        boolean hasWidth = hasText(info.get("doorWidth"));
+        if (hasColor && hasWidth) return info;
+        List<ProductSku> rows = skus == null ? List.of() : skus;
+        ProductSku picked = null;
+        Object rawSkuId = info.get("skuId");
+        if (rawSkuId != null && !String.valueOf(rawSkuId).isBlank()) {
+            String skuId = String.valueOf(rawSkuId);
+            picked = rows.stream()
+                    .filter(sku -> sku.getId() != null && String.valueOf(sku.getId()).equals(skuId))
+                    .findFirst().orElse(null);
+        }
+        if (picked == null && rows.size() == 1) picked = rows.get(0);
+        // ③ 多 SKU 的历史单：产品名常以「-颜色-门幅」结尾（下单工具/人工命名的既有形态）——
+        //    后缀**唯一命中**才采用；零命中/多命中一律不猜（猜错 = 把 A 的颜色印到 B 的行上）。
+        if (picked == null && productName != null && !productName.isBlank()) {
+            String name = productName.trim();
+            List<ProductSku> suffixHits = rows.stream()
+                    .filter(sku -> hasText(sku.getColorName()) && hasText(sku.getDoorWidth())
+                            && name.endsWith("-" + sku.getColorName() + "-" + sku.getDoorWidth()))
+                    .toList();
+            if (suffixHits.size() == 1) picked = suffixHits.get(0);
+        }
+        if (picked == null) return info;
+        Map<String, Object> merged = new LinkedHashMap<>(info);
+        if (!hasColor && hasText(picked.getColorName())) merged.put("colorName", picked.getColorName());
+        if (!hasWidth && hasText(picked.getDoorWidth())) merged.put("doorWidth", picked.getDoorWidth());
+        return merged;
     }
 
     // ==================== 订单统计与跟进状态 ====================
