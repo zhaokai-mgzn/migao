@@ -18,14 +18,24 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.time.DayOfWeek;
+import java.time.Duration;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.temporal.TemporalAdjusters;
+import java.time.temporal.WeekFields;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 /**
  * 质检记录（**成品帘级**）—— issue #5652 的第一刀。
@@ -238,15 +248,7 @@ public class QualityCheckService {
                     "status 仅支持 pending/pass/rework/scrap/all（未检 / 合格 / 返工 / 报废 / 全部），收到：" + status);
         }
 
-        LambdaQueryWrapper<ProcessingOrder> orderQuery = new LambdaQueryWrapper<ProcessingOrder>()
-                .eq(ProcessingOrder::getTenantId, tenantId)
-                .eq(ProcessingOrder::getDeleted, 0)
-                .in(ProcessingOrder::getStatus, TARGET_PROCESSING_STATUSES)
-                .orderByDesc(ProcessingOrder::getCreatedAt);
-        if (StringUtils.hasText(kw)) {
-            orderQuery.like(ProcessingOrder::getProcessingOrderNo, kw);
-        }
-        List<ProcessingOrder> orders = processingOrderMapper.selectList(orderQuery);
+        List<ProcessingOrder> orders = activeOrders(tenantId, kw);
         Map<String, String> orderNoByOrderId = loadOrderNos(orders);
 
         Map<String, Map<String, Object>> latestByItem = latestInspectionByItem(tenantId, orders);
@@ -300,6 +302,408 @@ public class QualityCheckService {
         out.put("size", size);
         out.put("counts", counts);
         return out;
+    }
+
+    // ============================================================ 指标（issue #7192，P0+P1）
+
+    /** 趋势分桶粒度（只认这三种；未知值 ⇒ 422，**不**静默回落 day）。 */
+    public static final Set<String> STATS_BUCKETS = Set.of("day", "week", "month");
+
+    /** 分组 Top-N（服务端封顶：页面是「谁在拖后腿」，不是全量排行）。 */
+    private static final int STATS_TOP_N = 5;
+
+    /** 趋势桶数上限（超出只保留**最近** N 个桶）。 */
+    private static final int STATS_MAX_BUCKETS = 60;
+
+    /** 样本量偏少的阈值（回传给前端做提示；**服务端照样算率**，只是让读数带上样本量）。 */
+    public static final int STATS_MIN_SAMPLE = 20;
+
+    private static final DateTimeFormatter MONTH_FMT = DateTimeFormatter.ofPattern("yyyy-MM");
+
+    /**
+     * 质检指标（**P0 + P1**，issue #7192）—— 用户 2026-10-18 提问「质检记录缺乏一个合格率的指标？」
+     * 并按建议取 P0（率）+ P1（时间窗 / 趋势 / 分组 / 待检积压）。
+     *
+     * <h3>口径（🔴 全部按「件」聚合，不按记录条数）</h3>
+     * <ul>
+     *   <li><b>颗粒度 = 一件成品帘</b>（{@code order_item_id} 级，与 {@link #create} 同一把尺子）：
+     *       同一件允许多条记录（返工后复检）⇒ 全部先按件折叠成「首检 / 最新」两条事实；</li>
+     *   <li><b>首检合格率（FPY）= 首次判定为合格的件数 ÷ 已检件数</b>（复检合格<b>不洗白</b>）—— 主指标；</li>
+     *   <li><b>当前合格率 / 返工率 / 报废率</b>：按<b>最新</b>判定计；三者互斥且和为 1（与清单四态同源）；</li>
+     *   <li><b>未检件不进分母</b>（未检 ≠ 不合格），0 样本的率一律 {@code null}（前端显示「—」，
+     *       <b>不是</b> 0%）；</li>
+     *   <li><b>时间窗作用于「首检时刻」</b>（cohort = 窗口内**首次**被检的件）—— 否则窗口会一半落在
+     *       返工复检上，率不可比。</li>
+     * </ul>
+     *
+     * <h3>为什么在服务端算（不在前端拼）</h3>
+     * <p>与 {@link #targets} 同一条纪律：颗粒度/排序/去重的口径只允许一份（前端只格式化，
+     * 不重算率）。分页与清单读面<b>互不影响</b>：本方法只读、不写、不改任何判定口径。</p>
+     *
+     * @param fromArg 起始时刻（含；缺省 = 本月 1 日 00:00）；支持 {@code 2026-10-01} 或带偏移的 ISO 时刻
+     * @param toArg   结束时刻（<b>不含</b>；缺省 = 不限）
+     * @param bucketArg {@code day} / {@code week} / {@code month}
+     */
+    public Map<String, Object> stats(Long tenantId, String fromArg, String toArg, String bucketArg) {
+        String bucket = StringUtils.hasText(bucketArg) ? bucketArg.trim() : "day";
+        if (!STATS_BUCKETS.contains(bucket)) {
+            throw BusinessException.validationError(
+                    "bucket 仅支持 day/week/month（日/周/月），收到：" + bucketArg);
+        }
+        OffsetDateTime from = parseMoment(fromArg, "from");
+        OffsetDateTime to = parseMoment(toArg, "to");
+        String window = null;
+        if (from == null && to == null) {
+            from = LocalDate.now().withDayOfMonth(1)
+                    .atStartOfDay(ZoneId.systemDefault()).toOffsetDateTime();
+            window = "month";
+        }
+        if (from != null && to != null && !to.isAfter(from)) {
+            throw BusinessException.validationError("时间窗不合法：结束时刻必须晚于起始时刻（to 为不含边界）");
+        }
+
+        // ① 全部记录（按 inspected_at 升序 + created_at 升序）：首检口径需要「这一件的第一条」，
+        //    所以**不能**先按窗口裁行 —— 窗口外首检的件整件不进 cohort（见类注释口径 4）。
+        List<QualityCheck> rows = qualityInspectionMapper.selectList(new LambdaQueryWrapper<QualityCheck>()
+                .eq(QualityCheck::getTenantId, tenantId)
+                .eq(QualityCheck::getDeleted, 0)
+                .orderByAsc(QualityCheck::getInspectedAt)
+                .orderByAsc(QualityCheck::getCreatedAt));
+
+        Map<String, QualityCheck> firstByItem = new LinkedHashMap<>();
+        Map<String, QualityCheck> lastByItem = new LinkedHashMap<>();
+        for (QualityCheck row : rows) {
+            String itemId = row.getOrderItemId();
+            if (!StringUtils.hasText(itemId)) {
+                continue;
+            }
+            firstByItem.putIfAbsent(itemId, row);
+            lastByItem.put(itemId, row);
+        }
+
+        // ② cohort + 计数（全部按件）
+        List<Map.Entry<String, QualityCheck>> cohort = new ArrayList<>();
+        int inspected = 0;
+        int firstPass = 0;
+        int currentPass = 0;
+        int rework = 0;
+        int scrap = 0;
+        for (Map.Entry<String, QualityCheck> entry : firstByItem.entrySet()) {
+            if (!within(entry.getValue().getInspectedAt(), from, to)) {
+                continue;
+            }
+            cohort.add(entry);
+            inspected++;
+            if ("pass".equals(entry.getValue().getInspectionResult())) {
+                firstPass++;
+            }
+            QualityCheck last = lastByItem.get(entry.getKey());
+            String latest = last == null ? null : last.getInspectionResult();
+            if ("pass".equals(latest)) {
+                currentPass++;
+            } else if ("rework".equals(latest)) {
+                rework++;
+            } else if ("scrap".equals(latest)) {
+                scrap++;
+            }
+        }
+
+        // ③ 趋势（窗口内零填充的桶；超出上限只保留最近 N 个）
+        Map<LocalDate, int[]> buckets = trendBuckets(from, to, bucket);
+        for (Map.Entry<String, QualityCheck> entry : cohort) {
+            LocalDate at = toLocalDate(entry.getValue().getInspectedAt());
+            if (at == null) {
+                continue;
+            }
+            int[] slot = buckets.computeIfAbsent(bucketStart(at, bucket), k -> new int[2]);
+            slot[0]++;
+            if ("pass".equals(entry.getValue().getInspectionResult())) {
+                slot[1]++;
+            }
+        }
+        List<Map<String, Object>> trend = new ArrayList<>();
+        for (Map.Entry<LocalDate, int[]> entry : buckets.entrySet()) {
+            Map<String, Object> point = new LinkedHashMap<>();
+            point.put("bucket", bucketLabel(entry.getKey(), bucket));
+            point.put("inspected", entry.getValue()[0]);
+            point.put("first_pass", entry.getValue()[1]);
+            point.put("first_pass_rate", rate(entry.getValue()[1], entry.getValue()[0]));
+            trend.add(point);
+        }
+
+        // ④ 分组 Top-N（加工单 / 商品 / 检验人）—— 标签批量取回，不逐行单查
+        Map<String, String> poNoById = new HashMap<>();
+        Map<String, String> productById = new HashMap<>();
+        loadGroupLabels(cohort, poNoById, productById);
+        Map<String, int[]> byOrder = new LinkedHashMap<>();
+        Map<String, int[]> byProduct = new LinkedHashMap<>();
+        Map<String, int[]> byInspector = new LinkedHashMap<>();
+        for (Map.Entry<String, QualityCheck> entry : cohort) {
+            QualityCheck first = entry.getValue();
+            boolean pass = "pass".equals(first.getInspectionResult());
+            accumulate(byOrder, poNoById.getOrDefault(str(first.getProcessingOrderId()), "（未标注）"), pass);
+            accumulate(byProduct, productById.getOrDefault(entry.getKey(), "（未标注）"), pass);
+            String inspector = StringUtils.hasText(first.getInspectorName())
+                    ? first.getInspectorName() : "（未标注）";
+            accumulate(byInspector, inspector, pass);
+        }
+
+        Map<String, Object> counts = new LinkedHashMap<>();
+        counts.put("inspected", inspected);
+        counts.put("first_pass", firstPass);
+        counts.put("current_pass", currentPass);
+        counts.put("rework", rework);
+        counts.put("scrap", scrap);
+
+        Map<String, Object> rates = new LinkedHashMap<>();
+        rates.put("first_pass_rate", rate(firstPass, inspected));
+        rates.put("current_pass_rate", rate(currentPass, inspected));
+        rates.put("rework_rate", rate(rework, inspected));
+        rates.put("scrap_rate", rate(scrap, inspected));
+
+        Map<String, Object> windowView = new LinkedHashMap<>();
+        windowView.put("from", from);
+        windowView.put("to", to);
+        windowView.put("name", window);
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("window", windowView);
+        out.put("bucket", bucket);
+        out.put("min_sample", STATS_MIN_SAMPLE);
+        out.put("counts", counts);
+        out.put("rates", rates);
+        out.put("trend", trend);
+        out.put("by_processing_order", topGroups(byOrder));
+        out.put("by_product", topGroups(byProduct));
+        out.put("by_inspector", topGroups(byInspector));
+        out.put("backlog", backlog(tenantId));
+        return out;
+    }
+
+    /**
+     * 待检积压（P1）：未检件数 + 最久待检时长。
+     *
+     * <p>🔴 <b>近似口径，如实标注</b>：系统里没有「进入待检」的时间戳（待检是**派生读面** ——
+     * 没有记录就是未检，见 {@link #targets}），所以「等了多久」只能从**加工单生成时刻**起算
+     * —— 它给出的是<b>上界</b>（真实待检时长 ≤ 该值），页面必须写「近似」并说明起算点，
+     * 不做假精确。真正的口径要新增落库字段，属 P2（另开单）。</p>
+     */
+    private Map<String, Object> backlog(Long tenantId) {
+        List<ProcessingOrder> orders = activeOrders(tenantId, null);
+        Map<String, Map<String, Object>> latestByItem = latestInspectionByItem(tenantId, orders);
+        int pending = 0;
+        OffsetDateTime oldest = null;
+        for (ProcessingOrder po : orders) {
+            for (Map<String, Object> item : snapshotItems(po)) {
+                String itemId = str(item.get("itemId"));
+                // 与清单同一份判据：指不出「哪一件」的行不进来（不猜、不编）
+                if (!StringUtils.hasText(itemId) || latestByItem.containsKey(itemId)) {
+                    continue;
+                }
+                pending++;
+                OffsetDateTime since = po.getCreatedAt() != null ? po.getCreatedAt() : po.getGeneratedAt();
+                if (since != null && (oldest == null || since.isBefore(oldest))) {
+                    oldest = since;
+                }
+            }
+        }
+        Double hours = null;
+        if (oldest != null) {
+            long minutes = Math.max(0, Duration.between(oldest, OffsetDateTime.now()).toMinutes());
+            hours = Math.round(minutes / 6.0) / 10.0;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("pending", pending);
+        out.put("oldest_pending_hours", hours);
+        out.put("approximate", true);
+        out.put("approximate_from", "processing_order.created_at");
+        return out;
+    }
+
+    /** 一个分组桶：{已检件数, 首检合格件数}（按件计，**不**按记录条数）。 */
+    private static void accumulate(Map<String, int[]> acc, String key, boolean pass) {
+        int[] slot = acc.computeIfAbsent(key, k -> new int[2]);
+        slot[0]++;
+        if (pass) {
+            slot[1]++;
+        }
+    }
+
+    /** Top-N（按已检件数降序；率 = 该组首检合格件数 ÷ 该组已检件数）。 */
+    private static List<Map<String, Object>> topGroups(Map<String, int[]> acc) {
+        List<Map.Entry<String, int[]>> entries = new ArrayList<>(acc.entrySet());
+        entries.sort((a, b) -> Integer.compare(b.getValue()[0], a.getValue()[0]));
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (int i = 0; i < entries.size() && i < STATS_TOP_N; i++) {
+            Map.Entry<String, int[]> entry = entries.get(i);
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("name", entry.getKey());
+            row.put("inspected", entry.getValue()[0]);
+            row.put("first_pass", entry.getValue()[1]);
+            row.put("first_pass_rate", rate(entry.getValue()[1], entry.getValue()[0]));
+            out.add(row);
+        }
+        return out;
+    }
+
+    /** 分组标签（加工单号 / 商品名 · 颜色）—— 一次 {@code IN}，与清单读面同源。 */
+    private void loadGroupLabels(List<Map.Entry<String, QualityCheck>> cohort,
+                                 Map<String, String> poNoById, Map<String, String> productById) {
+        Set<String> poIds = new LinkedHashSet<>();
+        Set<String> itemIds = new LinkedHashSet<>();
+        for (Map.Entry<String, QualityCheck> entry : cohort) {
+            String poId = str(entry.getValue().getProcessingOrderId());
+            if (StringUtils.hasText(poId)) {
+                poIds.add(poId);
+            }
+            itemIds.add(entry.getKey());
+        }
+        // 商品名 · 颜色取**加工单快照**（与待检清单同一份取数：快照才是那一件的固化真相，
+        // 订单行事后可改；快照缺键 ⇒ 下面按订单行品名兜底，再缺 ⇒ 调用方写「（未标注）」）。
+        if (!poIds.isEmpty()) {
+            List<ProcessingOrder> pos = processingOrderMapper.selectBatchIds(poIds);
+            if (pos != null) {
+                for (ProcessingOrder po : pos) {
+                    poNoById.put(po.getId(), po.getProcessingOrderNo());
+                    for (Map<String, Object> item : snapshotItems(po)) {
+                        String itemId = str(item.get("itemId"));
+                        if (!StringUtils.hasText(itemId)) {
+                            continue;
+                        }
+                        String label = productLabel(str(item.get("productName")), str(item.get("colorName")));
+                        if (StringUtils.hasText(label)) {
+                            productById.putIfAbsent(itemId, label);
+                        }
+                    }
+                }
+            }
+        }
+        if (!itemIds.isEmpty()) {
+            List<OrderItem> items = orderItemMapper.selectBatchIds(itemIds);
+            if (items != null) {
+                for (OrderItem item : items) {
+                    String label = productLabel(item.getProductName(), null);
+                    if (StringUtils.hasText(label)) {
+                        productById.putIfAbsent(item.getId(), label);
+                    }
+                }
+            }
+        }
+    }
+
+    /** 商品标签 = 品名 · 颜色（缺一项就只显示另一项；两项都缺 ⇒ {@code null}，由调用方兜底）。 */
+    private static String productLabel(String productName, String colorName) {
+        boolean hasProduct = StringUtils.hasText(productName);
+        boolean hasColor = StringUtils.hasText(colorName);
+        if (hasProduct && hasColor) {
+            return productName.trim() + " · " + colorName.trim();
+        }
+        if (hasProduct) {
+            return productName.trim();
+        }
+        return hasColor ? colorName.trim() : null;
+    }
+
+    /** 活跃加工单（清单读面与积压指标**同一份**取数口径）。 */
+    private List<ProcessingOrder> activeOrders(Long tenantId, String keyword) {
+        LambdaQueryWrapper<ProcessingOrder> q = new LambdaQueryWrapper<ProcessingOrder>()
+                .eq(ProcessingOrder::getTenantId, tenantId)
+                .eq(ProcessingOrder::getDeleted, 0)
+                .in(ProcessingOrder::getStatus, TARGET_PROCESSING_STATUSES)
+                .orderByDesc(ProcessingOrder::getCreatedAt);
+        if (StringUtils.hasText(keyword)) {
+            q.like(ProcessingOrder::getProcessingOrderNo, keyword);
+        }
+        return processingOrderMapper.selectList(q);
+    }
+
+    /** 解析时间参数（缺省 ⇒ {@code null} = 该侧不限）；非法 ⇒ 422 具名报错（不静默忽略）。 */
+    private static OffsetDateTime parseMoment(String raw, String field) {
+        if (!StringUtils.hasText(raw)) {
+            return null;
+        }
+        String value = raw.trim();
+        try {
+            if (value.length() == 10) {
+                return LocalDate.parse(value).atStartOfDay(ZoneId.systemDefault()).toOffsetDateTime();
+            }
+            return OffsetDateTime.parse(value);
+        } catch (DateTimeParseException e) {
+            throw BusinessException.validationError(
+                    field + " 时间格式不合法（支持 2026-10-01 或 2026-10-01T00:00:00+08:00），收到：" + raw);
+        }
+    }
+
+    /** 左闭右开窗口：{@code from <= moment < to}（缺省侧不限）。 */
+    private static boolean within(OffsetDateTime moment, OffsetDateTime from, OffsetDateTime to) {
+        if (moment == null) {
+            return false;
+        }
+        return (from == null || !moment.isBefore(from)) && (to == null || moment.isBefore(to));
+    }
+
+    private static LocalDate toLocalDate(OffsetDateTime moment) {
+        return moment == null ? null : moment.atZoneSameInstant(ZoneId.systemDefault()).toLocalDate();
+    }
+
+    private static LocalDate bucketStart(LocalDate date, String bucket) {
+        return switch (bucket) {
+            case "week" -> date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+            case "month" -> date.withDayOfMonth(1);
+            default -> date;
+        };
+    }
+
+    private static LocalDate previousBucket(LocalDate date, String bucket) {
+        return switch (bucket) {
+            case "week" -> date.minusWeeks(1);
+            case "month" -> date.minusMonths(1);
+            default -> date.minusDays(1);
+        };
+    }
+
+    private static String bucketLabel(LocalDate start, String bucket) {
+        return switch (bucket) {
+            case "week" -> String.format("%d-W%02d",
+                    start.get(WeekFields.ISO.weekBasedYear()),
+                    start.get(WeekFields.ISO.weekOfWeekBasedYear()));
+            case "month" -> start.format(MONTH_FMT);
+            default -> start.toString();
+        };
+    }
+
+    /** 桶序列（含零填充）：从窗口结尾往回最多 {@link #STATS_MAX_BUCKETS} 个桶，按时间升序。 */
+    private static Map<LocalDate, int[]> trendBuckets(OffsetDateTime from, OffsetDateTime to, String bucket) {
+        LocalDate end = toLocalDate(to != null ? to : OffsetDateTime.now());
+        LocalDate start = toLocalDate(from);
+        if (end == null) {
+            end = LocalDate.now();
+        }
+        if (start == null) {
+            start = end.minusMonths(1);
+        }
+        LocalDate endBucket = bucketStart(end, bucket);
+        LocalDate startBucket = bucketStart(start, bucket);
+        List<LocalDate> keys = new ArrayList<>();
+        LocalDate cursor = endBucket;
+        while (!cursor.isBefore(startBucket) && keys.size() < STATS_MAX_BUCKETS) {
+            keys.add(cursor);
+            cursor = previousBucket(cursor, bucket);
+        }
+        Collections.reverse(keys);
+        Map<LocalDate, int[]> map = new TreeMap<>();
+        for (LocalDate key : keys) {
+            map.put(key, new int[2]);
+        }
+        return map;
+    }
+
+    /** 比率（0~1，四位小数）；**分母为 0 ⇒ {@code null}**（前端显示「—」，不是 0%）。 */
+    private static Double rate(int numerator, int denominator) {
+        if (denominator <= 0) {
+            return null;
+        }
+        return Math.round(numerator * 10000.0 / denominator) / 10000.0;
     }
 
     /**
