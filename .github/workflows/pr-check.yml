@@ -1066,7 +1066,6 @@ jobs:
       #   ③ 归因步骤把两种形态**分开**打印：有 findings（真扫到）/ 无报告（未判定，附常见原因）
       - name: Run gitleaks secret scan
         id: gitleaks
-        continue-on-error: true
         uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -1082,7 +1081,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Classify gitleaks outcome
-        if: steps.gitleaks.outcome == 'failure'
+        if: always() && steps.gitleaks.outcome == 'failure'
         shell: bash
         run: |
           # 归因：**有 findings** = 真扫到密钥；**无报告** = 未判定（动作早退 / API 限流 / 许可）。

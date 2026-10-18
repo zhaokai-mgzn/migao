@@ -53,16 +53,21 @@ def _step(job: dict, name_prefix: str) -> dict:
     raise AssertionError(f"找不到步骤 `{name_prefix}`（判据对象缺失 ⇒ 判定不得当通过）")
 
 
-def test_scan_step_continues_on_error(job):
-    """① 扫描步骤必须 `id` + `continue-on-error: true`，否则后续归因步骤永远跑不到。
+def test_scan_step_keeps_its_red_and_is_identifiable(job):
+    """① 扫描步骤必须有 `id`（供归因读 outcome），且 **不许 continue-on-error**。
 
-    红证 = 删掉 `continue-on-error: true` ⇒ 本用例必红（这正是修法前的形态）。
+    ⚠️ 这里同时守两件相反方向的事：
+    - 没有 `id` ⇒ 归因步骤读不到 outcome（可观测性落空）；
+    - 有 `continue-on-error` ⇒ **红被吞**（= 这条 required 腿等于没装）——
+      仓内已有专门的看守判据 `test_gitleaks_leg_is_watched.py` 明文禁止，本判据与它口径一致。
+
+    红证 = 删掉 `id: gitleaks` ⇒ 本用例红；加回 `continue-on-error: true` ⇒ 本用例红（且看守判据也红）。
     """
     scan = _step(job, "Run gitleaks secret scan")
     assert scan.get("id") == "gitleaks", "扫描步骤必须有 id，供归因步骤读 outcome"
-    assert scan.get("continue-on-error") is True, (
-        "扫描步骤必须 continue-on-error: true —— 否则它一失败整个 job 就收尾，"
-        "「上传报告」「归因」两步永远跑不到（issue #7208 的实测形态）")
+    assert "continue-on-error" not in scan or scan.get("continue-on-error") is False, (
+        "扫描步骤**不得** continue-on-error —— 那会把红吞掉（等价于不装这条 required 腿）；"
+        "失败后的归因/上传改用 `if: always()` 实现，而不是放行失败")
     assert scan.get("uses", "").startswith("gitleaks/gitleaks-action"), "扫描本体仍是官方 action（不另造判定）"
 
 
@@ -83,7 +88,11 @@ def test_classification_distinguishes_both_cases(job):
     红证 = 删掉 `GITLEAKS_NO_REPORT` 分支（即把"无报告"读成"没有密钥"）⇒ 本用例必红。
     """
     step = _step(job, "Classify gitleaks outcome")
-    assert "steps.gitleaks.outcome == 'failure'" in str(step.get("if", "")), (
+    cond = str(step.get("if", ""))
+    assert "always()" in cond, (
+        "归因步骤必须 `if: always() && …` —— 前一步失败后默认 `if: success()` 会让它**不执行**，"
+        "那就等于没有归因（这正是修法前的形态）")
+    assert "steps.gitleaks.outcome == 'failure'" in cond, (
         "归因步骤只在扫描**失败**时跑（成功时不必多花一步）")
     body = str(step.get("run", ""))
     assert "GITLEAKS_NO_REPORT" in body, "必须区分「无报告 ⇒ 未判定」这一形态（本次误判的根因）"
