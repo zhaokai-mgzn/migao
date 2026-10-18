@@ -480,8 +480,8 @@ export default function SettingsPage() {
  * （`tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `page_first_screen_text`）。
  */
 
-/** 简报配置的初值（关闭态）；真值由读面回填 */
-const EMPTY_BRIEFING: BriefingConfig = { enabled: false, generateTime: '06:00' }
+/** 简报配置的初值（**默认开启**，2026-10-18 裁定）；真值由读面回填 */
+const EMPTY_BRIEFING: BriefingConfig = { enabled: true, generateTime: '06:00' }
 
 function EnterpriseDomainPanel() {
   // ============ 基本设置（企业信息）============

@@ -655,6 +655,59 @@ class DailyBriefingServiceTest {
     }
 
     @Nested
+    @DisplayName("默认开启（2026-10-18 用户裁定：只改默认，不动存量）")
+    class DefaultOnFlow {
+
+        @Test
+        @DisplayName("租户从没选过（briefing_enabled = NULL）⇒ 读面按开启返回")
+        void nullFlagReadsAsEnabled() {
+            when(tenantMapper.selectById(1L))
+                    .thenReturn(Tenant.builder().id(1L).briefingEnabled(null).build());
+
+            assertThat(service.getConfig(1L)).containsEntry("enabled", true);
+        }
+
+        @Test
+        @DisplayName("显式关闭（false）仍是关闭 —— 改默认值不改写用户的选择")
+        void explicitFalseStaysOff() {
+            when(tenantMapper.selectById(1L))
+                    .thenReturn(Tenant.builder().id(1L).briefingEnabled(false).build());
+
+            assertThat(service.getConfig(1L)).containsEntry("enabled", false);
+        }
+
+        @Test
+        @DisplayName("从未选过的租户也进调度（NULL 与 true 同等；显式 false 才跳过）")
+        void nullFlagTenantIsScheduled() throws Exception {
+            TenantContext.clear();
+            Tenant dueTenant = Tenant.builder().id(1L).briefingEnabled(null)
+                    .briefingGenerateTime("00:00").build();
+            when(tenantMapper.selectList(any())).thenReturn(List.of(dueTenant));
+            when(tenantMapper.selectById(1L)).thenReturn(dueTenant);
+            when(dailyBriefingMapper.selectOne(any())).thenReturn(null);
+            JsonNode parsed = objectMapper.readTree("""
+                    {"summary": "昨日订单 5 单",
+                     "todo": [{"priority": "high", "title": "t", "metrics": [{"key": "pending_ship_orders", "value": 10}]}],
+                     "risks": [], "suggestions": []}
+                    """);
+            when(briefingGenerateClient.generate(eq(1L), anyMap())).thenReturn(parsed);
+
+            assertThat(service.generateDueTenants()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("显式关闭的租户不进调度（熔断口径未被默认值改坏）")
+        void explicitFalseTenantIsNotScheduled() {
+            TenantContext.clear();
+            // 调度查询自己负责把 NULL/false 分开（这里模拟 MyBatis 已按 SQL 过滤后的结果）
+            when(tenantMapper.selectList(any())).thenReturn(List.of());
+
+            assertThat(service.generateDueTenants()).isZero();
+            verify(briefingGenerateClient, never()).generate(anyLong(), anyMap());
+        }
+    }
+
+    @Nested
     @DisplayName("定时调度（generateDueTenants，issue #3957）")
     class SchedulerFlow {
 
@@ -1517,8 +1570,8 @@ class DailyBriefingServiceTest {
         }
 
         @Test
-        @DisplayName("行级数组**不进 LLM 提示词**（提示词只喂 metrics + facts）")
-        void rowArraysStayOutOfThePrompt() throws Exception {
+        @DisplayName("发给引擎的是**全量快照**：声明过的行数组一个都不许在路上丢（issue #7195）")
+        void theEngineReceivesEveryDeclaredRowArray() throws Exception {
             stubRows();
             when(tenantMapper.selectById(1L)).thenReturn(enabledTenant());
             when(dailyBriefingMapper.selectOne(any())).thenReturn(null);
@@ -1533,11 +1586,16 @@ class DailyBriefingServiceTest {
 
             ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
             verify(briefingGenerateClient).generate(eq(1L), captor.capture());
-            // 提示词视图 = 落库快照的**子集**（唯一来源仍是 aggregateSnapshot）
-            assertThat(captor.getValue()).containsOnlyKeys("metrics", "facts");
-            // 落库快照里行级数组照旧在（两件事各取所需）
-            Map<String, Object> stored = service.aggregateSnapshot(1L);
-            assertThat(stored).containsKeys("orders", "skus", "returns", "row_fields", "row_meta");
+            // 🔴 类级判据（#7195 的成因是「声明了却不上路」）：**逐键**取装配层自描述，
+            // 谁把某条数组从载荷里摘掉（或退回「只发 metrics+facts 的投影」）⇒ 这里必红。
+            assertThat(captor.getValue()).containsKeys(
+                    DailyBriefingService.SNAPSHOT_ROW_FIELDS.keySet().toArray(String[]::new));
+            // 引擎判接线还读这两张自描述表与租户级事实 —— 它们同样不许缺席
+            assertThat(captor.getValue()).containsKeys(
+                    "row_fields", "row_meta", "cost_accounting", "audit_tool_logging");
+            // 载荷就是落库快照本身（同一份口径，不是第二个投影）
+            assertThat(captor.getValue().get("row_fields"))
+                    .isEqualTo(DailyBriefingService.SNAPSHOT_ROW_FIELDS);
         }
 
         @Test

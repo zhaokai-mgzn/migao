@@ -2690,14 +2690,14 @@
 ### DA-021. 日报卡片面「proactive 四态」可视化：让「今天为什么没有提示」逐规则可见（issue #5955） 🔵
 ```
 你: 经营日报卡片面自检（主动检查面板）
-数据: 卡片面**逐规则一行**显示状态 + **原因**，四态各有各的说法：`wired` = 「已检查、无命中」；`not_wired` = 「系统尚未接入」（**不可行动**）；`not_enabled` = 「你还没开启」+ 开启引导（**可行动**，与「尚未接入」**分开说、不合并**）；`incomplete` = 「本次数据不完整」。**互斥红**：某规则未接线的快照 ⇒ 具名报出该规则 + 原因（**不是**「今天没问题」）；规则齐全且无命中的快照 ⇒ 「已检查、无命中」且**不出现**任何未接线/没开启/不完整的措辞；把状态注入摘掉（或把面板渲染摘掉）⇒ 两条判据分别变红
-数据: `wired` 的规则其 `caveats`（数据源固有边界，如审计 fail-open）**也必须在场**（不许因为「绿」就不显示边界）；`proactive_status` 为 NULL / 缺失（本列面世前的存量行）⇒ **不渲染**该面板（未知 ≠ 没问题，也不许用空壳冒充「已检查」）
+数据: 卡片面**只列「本次没有结果」的规则**（每条至多一行，§31 P1/P2）：`not_wired` = 「本次没有检查」；`not_enabled` = 「还没开启」+ **做什么能开启**（**可行动**，与「没有检查」**分开说、不合并**）；`incomplete` = 「数据不完整」；`wired` 只进汇总。**互斥红**：有规则没检查到 ⇒ 汇总说「N 项本次没有结果（不代表没问题）」并具名列出该规则（**不是**「今天没问题」）；规则齐全且无命中 ⇒ 只剩「全部已检查，无命中」一行、**无逐条列表**
+数据: 🔴 **商家面只读引擎给的 `display`**：`reason` / `caveats`（含文件路径 / issue 号 / 列名 / 「装配层」/ `fail-open`）**一个字都不上屏**（§31 P3/P4）；旧载荷（无 `display`）只显示状态标签、**不拿 `reason` 顶替**；`proactive_status` 为 NULL / 缺失（本列面世前的存量行）⇒ **不渲染**该面板（未知 ≠ 没问题，也不许用空壳冒充「已检查」）
 数据: 🔴 **状态字段不来自 LLM 出口**：`sanitize_briefing` 是**白名单**（只返回 summary/review/todo/risks/suggestions）⇒ 把 `proactive_status` 塞进 LLM 输出**被丢弃是预期**（断言对象），而**挂载点之后**的注入必须成功；挂上去的值 = 引擎 `proactive_status(snapshot)` 的**原样**（零重算、零改写、不改快照），且 admin-api 侧**数值回填校验层不得把它对账掉**（它不是数字、也不许混进 content）
 数据: 跨端契约：键名 `proactive_status`、规则 id（`below_cost_price`/`unshipped_overdue`/`low_stock`/`repeat_returns`/`price_change_over`/`discount_over`）与四个枚举值（`wired`/`not_wired`/`not_enabled`/`incomplete`）三端一致；卡片面**只读** —— 面板内无任何按钮/链接（不给「一键处置」入口）
 跳过: [backend-contract] 卡片面渲染与挂载点由三端确定性单测验证（ai-agent：tests/test_briefing_proactive_status_visibility.py；admin-api：DailyBriefingServiceTest 的 ProactiveStatusPassThrough / BriefingControllerTest 的 GetToday；admin-web：tests/unit/components/ProactiveStatusPanel.test.tsx + tests/unit/components/BriefingProactiveStatus.test.tsx），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: dashboard-jump.proactive-status-card, dashboard-jump.proactive-wiring-status
-溯源: 2026-10-02 新增（issue #5955）：日报卡片面 proactive 四态可视化（对话面此前已具备、卡片面零渲染）。取号 DA-021：现取 .github/cases/ 最大号 = DA-020（main ∪ 全部在飞 ref，逐 ref 核过，见 PR body）。**未覆盖面（如实登记）**：Playwright 页面多模态验收（真实登录 + 截图 + AI 读图）由集成方收口，本包不跑；面板在真实浏览器下的排版/对比度不在本单确定性判据面内。 ｜ tags: proactive, briefing, card, ui
+溯源: 2026-10-02 新增（issue #5955）：日报卡片面 proactive 四态可视化（对话面此前已具备、卡片面零渲染）。取号 DA-021：现取 .github/cases/ 最大号 = DA-020（main ∪ 全部在飞 ref，逐 ref 核过，见 PR body）。**未覆盖面（如实登记）**：Playwright 页面多模态验收（真实登录 + 截图 + AI 读图）由集成方收口，本包不跑；面板在真实浏览器下的排版/对比度不在本单确定性判据面内。｜2026-10-18 修订（issue #7195）：判据从「逐条显示原因 + caveats 恒在」改成「只列没结果的规则 + 只读 `display`」—— 用户实测反馈「这里很多信息我都看不懂，用户更看不明白了」，工程原文不再上屏。 ｜ tags: proactive, briefing, card, ui
 
 ### DA-023. 商品健康度的「空」必须归因到商品状态：有 SKU 却被「在售」口径过滤（issue #6347 Part B） 🔵
 ```
