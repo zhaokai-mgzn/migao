@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.ResultMap;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
@@ -15,6 +16,10 @@ import org.apache.ibatis.annotations.Update;
  * 而本表**没有任何唯一约束** ⇒ 并发（下单自动建档 × 手工建档 × 接口重试）会静默写出同一手机号/微信身份的两条档案，
  * 消费总额与订单数被劈成两行。现在唯一性靠迁移 V167 的两条部分唯一索引兜底，
  * 写面统一走 {@code insertIgnore* + 撞键回读}（见 {@code CustomerProfileWriter}），不再用裸 {@code insert}。</p>
+ *
+ * <p>🔴 手写 {@code @Select} 必须显式绑 {@code mybatis-plus_<实体>} 的 autoResultMap（#4865 同族口径）：
+ * 否则 {@code tags} / {@code custom_fields}（JSONB）会以 JSON 字符串落到 {@code Object} 字段上，
+ * 而 {@code instanceof} 判据会**静默为假**。</p>
  *
  * <p>🔴 读侧也收口：历史重复行存在时 {@code selectOne} 会抛 {@code TooManyResultsException}（500），
  * 故本接口只提供 {@code findFirst*}（{@code ORDER BY registered_at, id LIMIT 1}，确定性取最早那条）。</p>
@@ -28,11 +33,13 @@ public interface CustomerProfileMapper extends BaseMapper<CustomerProfile> {
     int touchLastActiveAt(@Param("tenantId") Long tenantId, @Param("id") String id);
 
     /** 按手机号取最早的一条（历史重复行下不抛错，确定性取首条）。 */
+    @ResultMap("mybatis-plus_CustomerProfile")
     @Select("SELECT * FROM customer_profiles WHERE tenant_id = #{tenantId} AND phone = #{phone} "
             + "ORDER BY registered_at, id LIMIT 1")
     CustomerProfile findFirstByPhone(@Param("tenantId") Long tenantId, @Param("phone") String phone);
 
     /** 按微信 openid 取最早的一条。 */
+    @ResultMap("mybatis-plus_CustomerProfile")
     @Select("SELECT * FROM customer_profiles WHERE tenant_id = #{tenantId} AND wechat_openid = #{openid} "
             + "ORDER BY registered_at, id LIMIT 1")
     CustomerProfile findFirstByOpenid(@Param("tenantId") Long tenantId, @Param("openid") String openid);
