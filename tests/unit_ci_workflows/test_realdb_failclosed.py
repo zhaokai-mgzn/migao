@@ -95,6 +95,12 @@ REALDB_FILES: dict[str, str] = {
     # 不是「某个 mock 被调用几次」）；③ 发货页新采集的三个字段（发货方式/物流类型/发货人）
     # **真的落进 `order_logistics`**（改前它们在原子端点上没有落点、被静默丢弃）。
     _SVC + "MerchantShipmentIdempotencyRealDbTest.java": "direct",
+    # issue #7174：物流 upsert 的**并发双行**判据 —— 只真 PG 能证的两条：
+    # ① 同一订单并发两次 upsert ⇒ 表里**恰好 1 行**（读改写形状在 mock 面上整个不存在：
+    #    mock 的 select 恒返回 stub 值，"两个请求同时读到空"这个窗口无法构造）；
+    # ② 判别力自证 = 把旧形状（一次空读 + 两次 insert）确定性复刻 ⇒ 必须落成 **2 行**
+    #    （观测点是表里的行数，不是"某个 mock 被调用几次"）。
+    _SVC + "OrderLogisticsUpsertConcurrencyRealDbTest.java": "direct",
     # issue #5388：改价审计读面（JSONB 真值 / 脱敏期历史行 / 工具筛选 / 窗口 / 租户）
     _SVC + "AuditLogPriceChangeRealDbTest.java": "direct",
     # issue #6220：售后工单**并发完结**的真库判据（N=4 同一 processing 工单 ⇒ 恰一个赢家 + 回补恰一次）。

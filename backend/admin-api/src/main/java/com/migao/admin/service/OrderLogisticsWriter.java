@@ -37,7 +37,8 @@ public final class OrderLogisticsWriter {
      * （用户 2026-10-10 裁定；「最近一次改物流时刻」那条口径已被否掉）⇒ 新建时写
      * {@code now()}；**更新时只在它为 null 时补**（取值 = 该行的 {@code created_at}），
      * 已有值逐字不动 —— 见
-     * {@link OrderLogisticsMapper#backfillShippedAtIfAbsent}。</p>
+     * {@link OrderLogisticsMapper#updateShippingDetails}（它把「为空才补、补的值取该行 created_at」
+     * 这条件写进同一条 SQL 的 {@code COALESCE(shipped_at, created_at)} —— 写面不再有"先补后回写"的顺序面）。</p>
      *
      * <p><b>发货方式 / 物流类型 / 发货人（issue #6983）</b>：这三列走 {@link ShippingDetails} 一次传入
      * —— 商家发货页的三个字段此前在**原子发货端点**上没有落点（端点 body 只读
