@@ -1,51 +1,35 @@
-import { useEffect, useRef, useCallback } from 'react'
 import { View, ScrollView, Text } from '@tarojs/components'
 import type { Message } from '../../types'
 import MessageBubble from './MessageBubble'
 import TypingIndicator from './TypingIndicator'
 import { useAuthStore } from '../../store/authStore'
 import { buildBotName } from '../../utils/brand'
+import { ANCHORS, useChatFollow } from '../../hooks/use-chat-follow'
 import './MessageList.scss'
 
 interface MessageListProps {
   messages: Message[]
   isStreaming: boolean
   onInteract?: (value: string) => void
+  /** 对话区滚动位置（issue #7265：页面据此折叠顶部品牌层） */
+  onScrollOffset?: (scrollTop: number) => void
 }
 
-export default function MessageList({ messages, isStreaming, onInteract }: MessageListProps) {
+export default function MessageList({ messages, isStreaming, onInteract, onScrollOffset }: MessageListProps) {
   // UI-018：智能客服名称取自租户配置 botName（B 端未配置默认「黄金策」）
   const botName = buildBotName(useAuthStore((s) => s.user)?.botName)
-  const scrollAnchorId = 'msg-anchor'
-  const scrollTopRef = useRef(0)
-  const scrollIntoViewRef = useRef(scrollAnchorId)
-  // 使用一个计数器强制 scrollIntoView 更新
-  const counterRef = useRef(0)
+  // issue #7263：贴底跟随（打字机逐字上屏时自动往下滑；用户上滑即停、回底恢复）
+  const { anchorId, followIfSticky, handleScroll, handleScrollToLower } = useChatFollow(
+    messages.length,
+    isStreaming,
+    onScrollOffset,
+  )
 
   // 检查是否需要显示思考中动画：正在流式但最后一条 AI 消息还没有内容
   const showTyping = isStreaming && (() => {
     const lastMsg = messages[messages.length - 1]
     return lastMsg?.role === 'assistant' && !lastMsg.content && !(lastMsg.tool_calls?.length)
   })()
-
-  const scrollToBottom = useCallback(() => {
-    counterRef.current += 1
-    // 通过改变 scrollIntoView 的值触发滚动
-    scrollIntoViewRef.current = scrollAnchorId
-  }, [])
-
-  // 消息变化时滚动到底部
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages.length, isStreaming, scrollToBottom])
-
-  // 流式内容更新时也滚动（通过监听最后一条消息的内容长度）
-  const lastMsgContentLen = messages.length > 0 ? messages[messages.length - 1]?.content?.length || 0 : 0
-  useEffect(() => {
-    if (isStreaming) {
-      scrollToBottom()
-    }
-  }, [lastMsgContentLen, isStreaming, scrollToBottom])
 
   if (messages.length === 0 && !isStreaming) {
     return (
@@ -71,21 +55,31 @@ export default function MessageList({ messages, isStreaming, onInteract }: Messa
       <ScrollView
         className='message-list__scroll'
         scrollY
-        scrollIntoView={scrollAnchorId}
-        scrollWithAnimation
+        scrollIntoView={anchorId}
+        scrollWithAnimation={false}
+        lowerThreshold={60}
         enhanced
         showScrollbar={false}
+        onScroll={handleScroll}
+        onScrollToLower={handleScrollToLower}
       >
         <View className='message-list__content'>
           {messages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} onInteract={onInteract} />
+            <MessageBubble
+              key={msg.id}
+              message={msg}
+              onInteract={onInteract}
+              onContentGrow={followIfSticky}
+            />
           ))}
 
           {/* 思考中动画（UI-018：显示租户 botName，B 端默认「黄金策正在思考...」） */}
           {showTyping && <TypingIndicator text={`${botName}正在思考...`} />}
 
-          {/* 滚动锚点 */}
-          <View id={scrollAnchorId} className='message-list__anchor' />
+          {/* 两个底部锚点轮换（issue #7263）：Taro 只在 scrollIntoView 值变化时滚动 */}
+          {ANCHORS.map((id) => (
+            <View key={id} id={id} className='message-list__anchor' />
+          ))}
         </View>
       </ScrollView>
     </View>
