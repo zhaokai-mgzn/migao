@@ -1,4 +1,4 @@
-// case_ids: UI-005, UI-033, UI-037, PG-038, UI-066
+// case_ids: UI-005, UI-033, UI-037, PG-038, UI-066, UI-064
 /**
  * Header 组件测试
  *
@@ -729,5 +729,15 @@ describe('Header', () => {
     expect(screen.getByText('客户服务')).toBeInTheDocument()
     expect(screen.getByText('客服工作台')).toBeInTheDocument()
     expect(screen.queryByText('快捷回复')).not.toBeInTheDocument()
+  })
+
+  // 🔴 issue #7198：扫码是**跨设备交接的工具**，不是一条配置 ⇒ 主入口移到顶栏（任何页面一键弹码）；
+  // 设置页只留一行入口。判据只钉「顶栏真的挂了它」，弹层行为由 components/MobileEntry.test.tsx 承担。
+  it('顶栏带「手机端入口」按钮（#7198 主入口），且默认不画码', async () => {
+    await act(async () => {
+      render(<Header />)
+    })
+    expect(screen.getByRole('button', { name: '手机端入口' })).toBeInTheDocument()
+    expect(screen.queryByTestId('bmini-h5-qr')).toBeNull()
   })
 })

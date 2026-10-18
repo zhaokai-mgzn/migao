@@ -318,7 +318,10 @@ describe('NotificationBell', () => {
     const label = await screen.findByText('全部已读')
     const btn = label.closest('button') as HTMLElement
     const icon = btn.querySelector('svg, [data-testid^="icon-"]') as HTMLElement | null
-    expect(icon, '按钮必须带图标').not.toBeNull()
+    // 🔴 弱断言收口（#7198 同批，解除 required 检查 `ci workflow helper unit tests` 的阻塞）：
+    // `not.toBeNull()` 只证明「取到了个东西」，失败原因读起来像「null」——改用语义存在性断言，
+    // 与同文件其它用例同口径（存量账本 `.github/weak-assert-baseline.json` 只许缩短，不新增条目）。
+    expect(icon, '按钮必须带图标').toBeInTheDocument()
     expect(icon?.getAttribute('class') ?? '', '不得再用双勾字形').not.toMatch(/check-check/i)
     expect(icon?.getAttribute('class') ?? '', '图标是单勾').toMatch(/check/i)
   })

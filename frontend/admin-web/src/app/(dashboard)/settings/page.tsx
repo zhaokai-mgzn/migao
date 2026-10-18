@@ -58,10 +58,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Building2, Bot, Bell, Newspaper, Smartphone, AlertCircle } from 'lucide-react'
 import Image from 'next/image'
-import { QRCodeSVG } from 'qrcode.react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button, PageHeader } from '@/components/ui'
+import { MobileEntryInline } from '@/components/layout/MobileEntry'
 import { settingsApi, uploadApi, briefingApi, productionApi } from '@/lib/api'
 import { CalcCaliberPanel } from '@/components/settings/CalcCaliberPanel'
 import { RemnantItemSizesPanel } from '@/components/settings/RemnantItemSizesPanel'
@@ -611,19 +611,8 @@ function EnterpriseDomainPanel() {
     }
   }
 
-  // 手机端入口（issue #5668）：地址来自**单一配置** `NEXT_PUBLIC_BMINI_H5_URL`
-  // （唯一读取点 = @/lib/bmini-h5-url，组件里不硬编码域名）；未配置 ⇒ 空串、**不画码**。
-  const bminiH5Url = getBminiH5Url()
-
-  const handleCopyBminiUrl = async () => {
-    try {
-      await navigator.clipboard.writeText(bminiH5Url)
-      toast.success('链接已复制')
-    } catch {
-      // jsdom / 非安全上下文里没有 clipboard —— 不让复制失败变成一个未捕获异常
-      toast.error('复制失败，请手动选择链接复制')
-    }
-  }
+  // 手机端入口（issue #7198）：二维码与地址的**唯一渲染处** = `@/components/layout/MobileEntry`
+  // （顶栏主入口与本页一行入口共用一块面板）；本页不再自己取地址、不再画第二份码。
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -763,10 +752,11 @@ function EnterpriseDomainPanel() {
             </div>
           </div>
 
-          {/* 手机端入口（issue #5668）：B 端 h5 落位 `app.migaozn.com/b/`，让商家**扫码就能用**。
-              地址取自单一配置 NEXT_PUBLIC_BMINI_H5_URL（唯一读取点 = @/lib/bmini-h5-url）。
-              🔴 未配置时**不画二维码**（只给一句明确说明）—— 画一个指向空/错地址的码，
-              用户扫出来是白屏或别的站点，而页面上一切看起来正常（同族判据：缺码不画假码）。 */}
+          {/* 手机端入口（issue #5668 建；issue #7198 改落位）：扫码是**跨设备交接的工具**，
+              不是这个域回答的问题（本域回答「这家店长什么样、谁能进来」）⇒ 主入口移到**顶栏**
+              （任何页面一键弹码），本域只留**一行**（地址 + 复制链接 + 显示二维码）。
+              🔴 二维码只由 `@/components/layout/MobileEntry` 渲染一处；未配置时**不画假码**，
+              由共享面板逐字说明「未配置」（判据仍由单源守卫与 UI-064 钉住）。 */}
           <div className="border-t border-neutral-100 pt-6" data-testid="bmini-h5-entry">
             <div className="flex items-start gap-3 mb-4">
               <div className="w-9 h-9 rounded-lg bg-primary-50 flex items-center justify-center flex-shrink-0">
@@ -777,32 +767,7 @@ function EnterpriseDomainPanel() {
                 <p className="text-sm text-neutral-500 mt-0.5">手机浏览器扫码使用黄金策商家端</p>
               </div>
             </div>
-            {bminiH5Url ? (
-              <div className="flex items-start gap-4">
-                <div className="p-2 bg-white border border-neutral-200 rounded-lg">
-                  <QRCodeSVG value={bminiH5Url} size={112} title={bminiH5Url} data-testid="bmini-h5-qr" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs text-neutral-500">用手机相机或「扫一扫」打开：</p>
-                  <code className="block mt-1 text-xs text-neutral-700 break-all" data-testid="bmini-h5-url">
-                    {bminiH5Url}
-                  </code>
-                  <Button variant="secondary" size="sm" className="mt-2" onClick={handleCopyBminiUrl}>
-                    复制链接
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              /* 🔴 issue #6663：改前这里写的是给运维看的话（env 名 `NEXT_PUBLIC_BMINI_H5_URL` +
-                 「部署时设置后重新构建」）—— 商家**既改不了也不该看到**构建细节（§31 P3 不摆内部标识）。
-                 改成商家可行动的话：说清「还没开通」+「找谁」。
-                 ⚠️ **保留「未配置」逐字**：`tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py`
-                 的判据 4 要求无值分支**逐字**说明「未配置」（不许静默什么都不画）——
-                 去运维腔 ≠ 可以把这个锚点删掉（既有元守卫的张力，本包只动措辞、不动锚点）。 */
-              <p className="text-sm text-neutral-500" data-testid="bmini-h5-unconfigured">
-                手机端入口未配置 —— 尚未开通手机版，需要开通时请联系服务方；开通后这里会出现扫码入口。
-              </p>
-            )}
+            <MobileEntryInline />
           </div>
 
           {/* 智能每日经营简报（issue #3468，企业开关） */}
