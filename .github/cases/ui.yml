@@ -4669,7 +4669,6 @@ cases:
       - "**边界**：不碰后端、不改 422 理由结构；「恢复为默认值」**不给替代入口**（用户明确不要），引擎默认值仍由 `source` 徽标与「本企业尚未保存过算料口径」横幅承担；面板卸载（切域）时待发的那一次仍会发出。证据：同文件（判据 9·h）"
     skip_reason: "[backend-contract] 纯前端配置面（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-10-18 新增（issue #7183）。落码：`frontend/admin-web/src/components/settings/CalcCaliberPanel.tsx`（防抖自动保存 + 保存态 + 删保存条）+ 设置页注释同步。取号：见文首注释。"
-    case_ids: []
     traces:
       tests:
         - "frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx"
