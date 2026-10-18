@@ -174,15 +174,11 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
      */
     @Transactional(rollbackFor = Exception.class)
     public CustomerProfile createCustomer(CustomerProfile profile) {
-        // 检查手机号唯一性（如果有手机号）
-        if (StringUtils.hasText(profile.getPhone())) {
-            LambdaQueryWrapper<CustomerProfile> wrapper = new LambdaQueryWrapper<>();
-            wrapper.eq(CustomerProfile::getPhone, profile.getPhone())
-                    .eq(CustomerProfile::getTenantId, profile.getTenantId());
-            CustomerProfile existing = customerProfileMapper.selectOne(wrapper);
-            if (existing != null) {
-                throw BusinessException.validationError("该手机号已存在客户档案");
-            }
+        // 检查手机号唯一性（如果有手机号）。
+        // issue #7257：读侧改用 findFirstByPhone —— 历史重复行存在时 selectOne 会抛 TooManyResultsException（500）
+        if (StringUtils.hasText(profile.getPhone())
+                && customerProfileMapper.findFirstByPhone(profile.getTenantId(), profile.getPhone()) != null) {
+            throw BusinessException.validationError("该手机号已存在客户档案");
         }
 
         // 设置默认值
@@ -205,9 +201,13 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
             profile.setRegisteredAt(OffsetDateTime.now());
         }
 
-        customerProfileMapper.insert(profile);
-        log.info("创建客户档案成功: id={}, phone={}", profile.getId(), profile.getPhone());
-        return profile;
+        // issue #7257：撞唯一键（并发下对手先建）⇒ 收敛成同一句 422，而不是把 DataIntegrityViolation 冒成 500
+        CustomerProfileWriter.Result result = CustomerProfileWriter.ensureByPhone(customerProfileMapper, profile);
+        if (!result.created()) {
+            throw BusinessException.validationError("该手机号已存在客户档案");
+        }
+        log.info("创建客户档案成功: id={}, phone={}", result.profile().getId(), result.profile().getPhone());
+        return result.profile();
     }
 
     /**
@@ -222,37 +222,28 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
     @Transactional(rollbackFor = Exception.class)
     public CustomerProfile createFromSession(Long tenantId, String wechatOpenid,
                                               String wechatNickname, String sourceChannel) {
-        // 先检查是否已存在
-        if (StringUtils.hasText(wechatOpenid)) {
-            LambdaQueryWrapper<CustomerProfile> wrapper = new LambdaQueryWrapper<>();
-            wrapper.eq(CustomerProfile::getWechatOpenid, wechatOpenid)
-                    .eq(CustomerProfile::getTenantId, tenantId);
-            CustomerProfile existing = customerProfileMapper.selectOne(wrapper);
-            if (existing != null) {
-                // 更新最后活跃时间
-                existing.setLastActiveAt(OffsetDateTime.now());
-                customerProfileMapper.updateById(existing);
-                return existing;
-            }
+        // issue #7257：建档收口到单一实现点（回读 → 撞键不插 → 撞并发回读对手那条）。
+        // 原先是「selectOne 判空 + insert」的读改写：本表没有唯一约束 ⇒ 并发会静默建出两条档案。
+        if (!StringUtils.hasText(wechatOpenid)) {
+            CustomerProfile anonymous = CustomerProfileWriter.candidate(tenantId)
+                    .wechatNickname(wechatNickname)
+                    .build();
+            anonymous.setSourceChannel(sourceChannel != null ? sourceChannel : "wechat_mini");
+            // openid 为空 ⇒ 无处去重（保持原有行为），但建行仍只从写面发生
+            return CustomerProfileWriter.createAnonymous(customerProfileMapper, anonymous);
         }
-
-        CustomerProfile profile = CustomerProfile.builder()
-                .tenantId(tenantId)
-                .wechatOpenid(wechatOpenid)
+        CustomerProfile candidate = CustomerProfileWriter.candidate(tenantId)
                 .wechatNickname(wechatNickname)
-                .sourceChannel(sourceChannel != null ? sourceChannel : "wechat_mini")
-                .vipLevel("normal")
-                .customerStatus("active")
-                .lifecycleStage("new")
-                .totalOrders(0)
-                .totalConsumption(BigDecimal.ZERO)
-                .registeredAt(OffsetDateTime.now())
-                .lastActiveAt(OffsetDateTime.now())
                 .build();
-
-        customerProfileMapper.insert(profile);
-        log.info("从会话自动创建客户档案: id={}, wechatOpenid={}", profile.getId(), wechatOpenid);
-        return profile;
+        // 显式赋值（而不是塞进 builder 链）：本表有「字段级真值守卫」（issue #5362），它按
+        // `CustomerProfile x = …` + `x.setXxx(v)` 与 `CustomerProfile.builder()` 链两种形态扫写入点；
+        // 写面抽到 CustomerProfileWriter 之后 builder 链换了入口，故真值级写入在这里显式表达。
+        candidate.setWechatOpenid(wechatOpenid);
+        candidate.setSourceChannel(sourceChannel != null ? sourceChannel : "wechat_mini");
+        CustomerProfileWriter.Result result = CustomerProfileWriter.ensureByOpenid(customerProfileMapper, candidate);
+        log.info("从会话建档{}: id={}, wechatOpenid={}", result.created() ? "成功" : "命中既有档案",
+                result.profile().getId(), wechatOpenid);
+        return result.profile();
     }
 
     /**
@@ -274,37 +265,19 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
             return null;
         }
 
-        // 按 phone + tenantId 查询是否已存在
-        LambdaQueryWrapper<CustomerProfile> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(CustomerProfile::getPhone, customerPhone)
-                .eq(CustomerProfile::getTenantId, tenantId);
-        CustomerProfile existing = customerProfileMapper.selectOne(wrapper);
-        if (existing != null) {
-            existing.setLastActiveAt(OffsetDateTime.now());
-            customerProfileMapper.updateById(existing);
-            return existing;
-        }
-
-        OffsetDateTime now = OffsetDateTime.now();
-        CustomerProfile profile = CustomerProfile.builder()
-                .tenantId(tenantId)
+        // issue #7257：同一条写面（回读 → 撞键不插 → 撞并发回读对手那条）
+        CustomerProfile candidate = CustomerProfileWriter.candidate(tenantId)
                 .wechatNickname(customerName)
                 .phone(customerPhone)
                 .agentNotes(StringUtils.hasText(customerAddress) ? "首单收货地址：" + customerAddress : null)
-                .vipLevel("normal")
-                .customerStatus("active")
-                .lifecycleStage("new")
-                .totalOrders(1)
-                .totalConsumption(BigDecimal.ZERO)
-                .sourceChannel("order")
-                .registeredAt(now)
-                .lastActiveAt(now)
                 .build();
-
-        customerProfileMapper.insert(profile);
-        log.info("从订单自动创建客户档案: id={}, phone={}, tenantId={}",
-                profile.getId(), customerPhone, tenantId);
-        return profile;
+        candidate.setSourceChannel("order");
+        // 首单建档的既有口径：订单数从 1 起算（不是 0）—— 原先写在 builder 链里，抽出写面后显式表达
+        candidate.setTotalOrders(1);
+        CustomerProfileWriter.Result result = CustomerProfileWriter.ensureByPhone(customerProfileMapper, candidate);
+        log.info("从订单建档{}: id={}, phone={}, tenantId={}",
+                result.created() ? "成功" : "命中既有档案", result.profile().getId(), customerPhone, tenantId);
+        return result.profile();
     }
 
     /**

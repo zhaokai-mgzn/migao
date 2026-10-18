@@ -101,13 +101,13 @@ REALDB_FILES: dict[str, str] = {
     # ② 判别力自证 = 把旧形状（一次空读 + 两次 insert）确定性复刻 ⇒ 必须落成 **2 行**
     #    （观测点是表里的行数，不是"某个 mock 被调用几次"）。
     _SVC + "OrderLogisticsUpsertConcurrencyRealDbTest.java": "direct",
-    # issue #7256：user_roles 唯一性必须只约束**活跃行** —— 只真 PG 能证的三条：
-    # ① 授权 → 逻辑删（= 移除角色）→ 再授权 ⇒ 成功（修法前撞全表 UNIQUE(user_id, role_id) ⇒ 23505）；
-    # ② 并发两次授权 ⇒ 活跃行恰 1；③ 判别力自证：还原全表唯一 + 旧写法 ⇒ **确定性**抛 23505。
+    # issue #7257：CustomerProfileMapper 的条件写/读（撞任意唯一索引都收敛、重复行下读不抛、只刷新活跃时刻）
+    _SVC + "CustomerProfileMapperTest.java": "direct",
+    # issue #7257：并发 3 次按同一手机号建档 ⇒ 恰 1 条；判别力自证 = 摘索引后按旧形状必须落 2 条
+    _SVC + "CustomerProfileDedupeRealDbTest.java": "direct",
+    # issue #7256（由 #7259 合入 main，本 worktree rebase 时补回）：user_roles 唯一性只约束活跃行
     _SVC + "UserRoleReviveRealDbTest.java": "direct",
-    # issue #7256：UserRoleMapper 两条条件写的 SQL 行为（复活只碰软删行 / 撞活跃键 DO NOTHING 与 V166
-    # 部分唯一索引**谓词匹配**）—— 谓词不匹配时 PG 直接报「没有匹配 ON CONFLICT 说明的唯一或者排除约束」，
-    # 这个错误 mock 与静态检查都看不见，只有真 PG 会当场报。
+    # issue #7256：UserRoleMapper 两条条件写的 SQL 行为（ON CONFLICT 谓词必须与 V166 部分唯一索引匹配）
     _SVC + "UserRoleMapperTest.java": "direct",
     # issue #5388：改价审计读面（JSONB 真值 / 脱敏期历史行 / 工具筛选 / 窗口 / 租户）
     _SVC + "AuditLogPriceChangeRealDbTest.java": "direct",
