@@ -27,6 +27,45 @@ public interface OrderLogisticsMapper extends BaseMapper<OrderLogistics> {
     List<OrderLogistics> selectByOrderId(@Param("orderId") String orderId, @Param("tenantId") Long tenantId);
 
     /**
+     * **条件更新**一条订单的物流写面（issue #7174）—— 一次发货只有这一条写路径。
+     *
+     * <p><b>为什么要有它</b>：原实现是「先 {@code selectByOrderId} 看有没有行，再 insert / 整实体
+     * {@code updateById}」的**读改写**。并发两次发货时，两边都读到「没有行」⇒ 都 insert ⇒
+     * 同一订单出现**两条**物流记录（列表重复、后续 {@code getById} 取到哪条不确定）。
+     * 现在改成「**先条件更新，影响行数为 0 才建行**」：更新是一条带 {@code (tenant_id, order_id, deleted=0)}
+     * 谓词的 UPDATE，影响行数就是「这一行当时是否存在」的**原子读数**，不再依赖先读后写。</p>
+     *
+     * <p><b>只写本次请求显式给的列</b>（与 {@code OrderLogisticsWriter} 的「显式才覆盖」口径同一件事）：
+     * 承运商与运单号必写；发货人 / 物流类型 / 发货方式只在传入非空时覆盖（{@code NULLIF} 把空串也当"没说"），
+     * 缺席 = 保留原值。整实体 {@code updateById} 回写会让实体里读到的旧值盖掉别处刚写的值。</p>
+     *
+     * <p><b>首次发货时刻（issue #6276 不变）</b>：{@code shipped_at = COALESCE(shipped_at, created_at)}
+     * —— 只有为空时才补，补的值仍是建行时刻（列对列），已有值逐字不动；且与更新在同一条语句里完成，
+     * 不存在"先补后回写把值盖回去"的顺序问题。</p>
+     *
+     * @param shipperName    空/{@code null} = 本次请求没说这件事 ⇒ 保留原值
+     * @param logisticsType  同上
+     * @param shippingMethod 同上
+     * @return 受影响行数（0 = 该订单当前没有物流行 ⇒ 调用方负责建行）
+     */
+    @Update("UPDATE order_logistics SET "
+            + "logistics_company = #{logisticsCompany}, tracking_no = #{trackingNo}, "
+            + "shipper_name = COALESCE(NULLIF(#{shipperName}, ''), shipper_name), "
+            + "logistics_type = COALESCE(NULLIF(#{logisticsType}, ''), logistics_type), "
+            + "shipping_method = COALESCE(NULLIF(#{shippingMethod}, ''), shipping_method), "
+            + "status = COALESCE(status, 'in_transit'), "
+            + "shipped_at = COALESCE(shipped_at, created_at), "
+            + "updated_at = NOW() "
+            + "WHERE order_id = #{orderId} AND tenant_id = #{tenantId} AND deleted = 0")
+    int updateShippingDetails(@Param("tenantId") Long tenantId,
+                              @Param("orderId") String orderId,
+                              @Param("logisticsCompany") String logisticsCompany,
+                              @Param("trackingNo") String trackingNo,
+                              @Param("shipperName") String shipperName,
+                              @Param("logisticsType") String logisticsType,
+                              @Param("shippingMethod") String shippingMethod);
+
+    /**
      * 给**缺发货时刻**的物流行补上**首次发货时刻**（issue #6276）。
      *
      * <p><b>语义（用户 2026-10-10 裁定）</b>：{@code shipped_at} = <b>首次发货时刻</b> ——

@@ -3,10 +3,10 @@ package com.migao.admin.service;
 import com.migao.admin.entity.OrderLogistics;
 import com.migao.admin.mapper.OrderLogisticsMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.util.StringUtils;
 
 import java.time.OffsetDateTime;
-import java.util.List;
 import java.util.function.Supplier;
 
 /**
@@ -55,53 +55,72 @@ public final class OrderLogisticsWriter {
                               ShippingDetails details,
                               Supplier<String> currentUserDisplayName) {
         String shipperName = details == null ? null : details.shipperName();
-        List<OrderLogistics> existing = orderLogisticsMapper.selectByOrderId(orderId, tenantId);
-        if (existing == null || existing.isEmpty()) {
-            OrderLogistics logistics = OrderLogistics.builder()
-                    .tenantId(tenantId)
-                    .orderId(orderId)
-                    .logisticsCompany(logisticsCompany)
-                    .trackingNo(trackingNo)
-                    .shipperName(StringUtils.hasText(shipperName)
-                            ? shipperName.trim()
-                            : currentUserDisplayName.get())
-                    .logisticsType(details == null ? null : details.logisticsType())
-                    .shippingMethod(details == null ? null : details.shippingMethod())
-                    .status("in_transit")
-                    .shippedAt(OffsetDateTime.now())
-                    .build();
+        String logisticsType = details == null ? null : details.logisticsType();
+        String shippingMethod = details == null ? null : details.shippingMethod();
+        // 「显式才覆盖」：空串与 null 同义（本次请求没说这件事）⇒ 交给 SQL 的 NULLIF + COALESCE 保留原值
+        String explicitShipper = StringUtils.hasText(shipperName) ? shipperName.trim() : null;
+        String explicitType = StringUtils.hasText(logisticsType) ? logisticsType.trim() : null;
+        String explicitMethod = StringUtils.hasText(shippingMethod) ? shippingMethod.trim() : null;
+
+        // 🔴 先条件更新，影响行数就是「这一行当时是否存在」的**原子读数**（issue #7174）。
+        // 原实现是「先 select 再看空不空，空则 insert」的读改写 —— 并发两次发货会双双读到空 ⇒ 双行。
+        int updated = orderLogisticsMapper.updateShippingDetails(tenantId, orderId, logisticsCompany,
+                trackingNo, explicitShipper, explicitType, explicitMethod);
+        if (updated > 0) {
+            log.info("更新物流信息成功: orderId={}, trackingNo={}, rows={}", orderId, trackingNo, updated);
+            return;
+        }
+
+        OrderLogistics logistics = OrderLogistics.builder()
+                .tenantId(tenantId)
+                .orderId(orderId)
+                .logisticsCompany(logisticsCompany)
+                .trackingNo(trackingNo)
+                .shipperName(StringUtils.hasText(explicitShipper)
+                        ? explicitShipper
+                        : currentUserDisplayName.get())
+                .logisticsType(explicitType)
+                .shippingMethod(explicitMethod)
+                .status("in_transit")
+                .shippedAt(OffsetDateTime.now())
+                .build();
+        try {
             orderLogisticsMapper.insert(logistics);
             log.info("创建物流信息成功: orderId={}, trackingNo={}, shipper={}",
                     orderId, trackingNo, logistics.getShipperName());
-        } else {
-            OrderLogistics latest = existing.get(0);
-            latest.setLogisticsCompany(logisticsCompany);
-            latest.setTrackingNo(trackingNo);
-            // 仅显式传入才覆盖：兜底值属于「新建时的经手人」，不能用它改写已记录的发货人
-            // （否则改一次运单号/agent 补一次单号就会把经手人换成当次操作人）
-            if (StringUtils.hasText(shipperName)) {
-                latest.setShipperName(shipperName.trim());
+        } catch (RuntimeException race) {
+            // 并发对手先建行成功（唯一索引 (tenant_id, order_id) WHERE deleted = 0 兜底）⇒
+            // 本请求**退化为更新那一行**：同一订单最终恰好 1 行，调用方不感知冲突、也不报错。
+            // ⚠️ 只吞「唯一约束冲突」这一种：别的写库异常必须原样抛出（否则真实故障会被静默吞掉）。
+            // 为什么要自己判而不是只 catch DuplicateKeyException：异常类型取决于装配形态 ——
+            // Spring 的 SqlSessionTemplate 会把它翻译成 DuplicateKeyException，而**直连 MyBatis**
+            // （如真库判据的装配、或将来换装配方式）抛的是 PersistenceException 包着 PSQLException ⇒
+            // 只看类型会在那种装配下漏接，退化成「404/500」而不是收敛。判 SQLState 是驱动无关的。
+            if (!isUniqueViolation(race)) {
+                throw race;
             }
-            // 同一条「显式才覆盖」口径（issue #6983）：物流类型（express/logistics）与发货方式
-            // （logistics/none）**只在显式传入非空时**覆盖 —— 缺席 = 本次请求没说这件事
-            // ⇒ 保留原值（既不静默清空，也不替调用方猜一个）。
-            if (details != null && StringUtils.hasText(details.logisticsType())) {
-                latest.setLogisticsType(details.logisticsType().trim());
-            }
-            if (details != null && StringUtils.hasText(details.shippingMethod())) {
-                latest.setShippingMethod(details.shippingMethod().trim());
-            }
-            if (latest.getStatus() == null) {
-                latest.setStatus("in_transit");
-            }
-            // 🔴 首次发货时刻（issue #6276，用户裁定 2026-10-10）：本行**没有**首次发货时刻时补上，
-            // 取值 = 该行自己的 created_at（= 建行那一刻 = 首次发货时刻，依据见 mapper 的注释）。
-            // **已有值一律不覆盖**（改一次运单号 ≠ 改发货时刻），且补出来的值恒等于建行时刻。
-            // ⚠️ 必须在 updateById **之前**：否则实体里读到的旧值会把刚补的盖回去。
-            orderLogisticsMapper.backfillShippedAtIfAbsent(orderId, tenantId);
-            orderLogisticsMapper.updateById(latest);
-            log.info("更新物流信息成功: id={}, trackingNo={}", latest.getId(), trackingNo);
+            orderLogisticsMapper.updateShippingDetails(tenantId, orderId, logisticsCompany,
+                    trackingNo, explicitShipper, explicitType, explicitMethod);
+            log.info("创建物流信息撞并发（对手先建行）⇒ 已收敛为更新: orderId={}, trackingNo={}",
+                    orderId, trackingNo);
         }
+    }
+
+    /** 唯一约束冲突判定（驱动无关）：Spring 的 DuplicateKeyException / 原生 SQLState 23505。 */
+    private static boolean isUniqueViolation(Throwable error) {
+        for (Throwable current = error; current != null; current = current.getCause()) {
+            if (current instanceof DuplicateKeyException) {
+                return true;
+            }
+            if (current instanceof java.sql.SQLException sql
+                    && "23505".equals(sql.getSQLState())) {   // 23505 = unique_violation
+                return true;
+            }
+            if (current.getCause() == current) {
+                break;
+            }
+        }
+        return false;
     }
 
     /**
