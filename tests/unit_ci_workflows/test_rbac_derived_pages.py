@@ -399,11 +399,13 @@ FROZEN_CEILINGS: tuple[dict, ...] = (
     {
         "id": "CODE_WITHOUT_ENFORCEMENT",
         "count": lambda: len(CODE_WITHOUT_ENFORCEMENT),
-        "ceiling": 2,
+        "ceiling": 1,
         "grew_by": "`code_enforcement_problems`（『未登记即红』+『已接线/陈旧登记 ⇒ 销账』双向；新增条目 = 现取超上界 ⇒ 红）",
         "reason": (
             "目录里**可授予但服务端零消费**的码（勾了不生效）—— 逐条具名 + 现状/出口/到期条件，**只许缩短**。"
-            "落地值 = 2（`product:manage` 旧粗码 + `agent:chat` 米宝唤出权：V132 引入但至今无任何消费面）。"
+            "落地值 = 1（`product:manage` 旧粗码；已由用户裁定删码 ⇒ 落地后归零）。"
+            "**`agent:chat` 曾在本表里，是误判**：它是 `AdminGate` 的**手写门**（UGC 唤出入口），"
+            "不在注解体系里 ⇒ 现登记在 `EXPLICIT_GATES`（带活体校验）。"
             "issue #7276 修掉的 `order:detail` 是同一形态，它因为**接线**（详情/发货两条读面）而退场 —— "
             "本上界记的是「还剩几个这类码」，不是许可额。"
         ),
@@ -1810,20 +1812,29 @@ def test_every_dashboard_page_route_resolves_to_a_guard_code():
 # 🔴 为什么「UI 面」（路由守卫 / 页面 `has()` / 菜单节点）**不算**强制点：那是**体验层**，
 # 直接调 API 就绕过了（`order:detail` 改前就活在菜单节点上 —— 正是本判据要治的「看起来有权限面」）。
 
-#: 目录里**可授予但没有任何强制点**的码 —— 具名台账（**只许缩短**）。
-#: 每条必须写清：现状（为什么它在目录里）+ 出口（删码 / 接线）+ 到期条件。
+#: **手写门**（不在 `@RequirePermission` 体系里的判定点）—— 逐条登记 + **活体校验**。
+#: 这是上一轮普查的真实盲区：`agent:chat` 曾被误判成「零消费」，实际由 `AdminGate` 承载。
+#: 每条必须写清：门在哪（`file`）/ 判定链 / 承载判据。「门删了、登记还在」⇒ 本表条目失去活体证据 ⇒ 红。
+EXPLICIT_GATES: dict[str, dict[str, str]] = {
+    "agent:chat": {
+        "file": "backend/admin-api/src/main/java/com/migao/admin/security/AdminGate.java",
+        "chain": (
+            "`AdminGate.MIBAO_CHAT_GRANT_CODE` → `AdminGate.canSummonMibao` → "
+            "`AuthService` 的 `capabilities.mibaoChat` → bmini `MibaoAccessGate` / `pages/chat` 消费"
+        ),
+        "guard": "tests/unit_ci_workflows/test_mibao_chat_gate.py（BM-008，用户 2026-09-26 裁定）",
+    },
+}
+
+#: 目录里**可授予但服务端零强制点**的码 —— 具名台账（**只许缩短**）。
+#: 每条必须写清：现状 + 出口 + 到期条件。⚠️ `agent:chat` **不在**本表：它是**活的手写门**（见上）。
 CODE_WITHOUT_ENFORCEMENT: dict[str, str] = {
     "product:manage": (
         "现状：商品域的**旧粗码**，issue #5236 删掉「第四处菜单源」后只剩目录 + 岗位面（`CONTRACT-LEDGER`"
-        " 与 `test_agent_permission_parity.py` 的 census「权限码零消费」都登记过它）；种子岗位无一持有。"
-        "出口：商品域权限收口时**删码**（或把库存读面正式挂到它上面）。到期条件：任一商品域端点改挂本码 ⇒ 删本条。"
-    ),
-    "agent:chat": (
-        "现状：`V132__add_agent_chat_permission.sql`（issue #5642 功能⑤）引入的「米宝唤出权」，"
-        "**只授 admin**（admin 恒 `*` ⇒ 实际零授权 delta）—— 但从落地至今**没有任何端点 / 工具 / UI 面消费它**"
-        "（全仓仅剩目录、`base_skill.py` 的名称映射与迁移链里的登记）。"
-        "出口：① 给「米宝入口」接线（前端按码显隐 + 服务端校验）；② 或删码。**权限语义 ⇒ 需人工裁定**。"
-        "到期条件：任一侧接线 ⇒ 删本条。"
+        " 与 `test_agent_permission_parity.py` 的 census「权限码零消费」都登记过它）；种子岗位无一持有，"
+        "`RegistrationService` 的注释逐字写着「保留兼容旧 role_permissions 引用」。"
+        "出口：**删码**（用户 2026-10-18 裁定「可以删」）⇒ 落地后本条连同 `FROZEN_CEILINGS` 的上界一起归零。"
+        "到期条件：本码从目录移除 ⇒ 必须删掉本条。"
     ),
 }
 
@@ -1853,8 +1864,16 @@ def enforcement_surfaces() -> dict[str, tuple[str, ...]]:
     （只允许空白前缀）把「注释里写一句 `@RequirePermission("x")` 就当这个码有人拦」这条假绿路径掐掉；
     真实的注解总是独占一行（见 `OrderController` 等）。
 
-    ⚠️ UI 面（路由守卫 / 页面 `has()` / 菜单节点）**故意不算**：它们可被直接调 API 绕过，
+    ⚠️ 普通 UI 面（路由守卫 / 页面 `has()` / 菜单节点）**故意不算**：它们可被直接调 API 绕过，
     算进来正是 `order:detail` 改前那个假绿的成因。
+
+    ## 手写门（`EXPLICIT_GATES`）算强制点，但必须**逐条登记 + 活体校验**
+
+    「不在注解体系里的门」是上一轮普查的**真实盲区**：`agent:chat` 被判成「零消费」，实际它由
+    `AdminGate.MIBAO_CHAT_GRANT_CODE` 承载（→ `/api/auth/me` 的 `capabilities.mibaoChat` →
+    bmini `MibaoAccessGate` 消费；判据 = `test_mibao_chat_gate.py` 的 BM-008）。手写门**不登记就看不见**，
+    故本函数按 `EXPLICIT_GATES` 补进去，并做**活体校验**（源码里该码必须仍出现在那道门的文件里）——
+    「门删了、登记还在」同样红（陈旧登记）。
     """
     hits: dict[str, set[str]] = {}
     root = REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "java"
@@ -1862,6 +1881,11 @@ def enforcement_surfaces() -> dict[str, tuple[str, ...]]:
         text = path.read_text(encoding="utf-8")
         for m in re.finditer(r'^[ \t]*@RequirePermission\([ \t]*"([^"]+)"', text, re.MULTILINE):
             hits.setdefault(m.group(1), set()).add(f"端点:{path.name}")
+    for code, spec in EXPLICIT_GATES.items():
+        gate_file = REPO_ROOT / spec["file"]
+        text = gate_file.read_text(encoding="utf-8") if gate_file.exists() else ""
+        if f'"{code}"' in text:
+            hits.setdefault(code, set()).add(f"显式门:{Path(spec['file']).name}")
     return {code: tuple(sorted(files)) for code, files in hits.items()}
 
 
