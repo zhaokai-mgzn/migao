@@ -273,6 +273,10 @@ class RuleSpec:
     #: 是**该租户没开**」⇒ 落 `not_enabled`（带可行动的 `reason`）。键缺省/非布尔 ⇒ **不宣称**
     #: 「没开」（看不见的事实不是 `False`：滚动升级期的老快照按未知处理）。
     enabled_by: Optional[Tuple[str, str, str]] = None
+    #: **商家可读的开启指引**（`display` 在 `not_enabled` 时的取值，issue #7195）：
+    #: 平台面（`reason` / `caveats`）说的是工程口径，商家面只说「做什么能开启」——
+    #: 两句话各在各的面，不许把 `reason` 原样抛到商家屏幕上（`migao-dev-flow` §31 P3/P4）。
+    enabled_hint: Optional[str] = None
     #: **数据源固有边界**（issue #5388）：与「本次是否完整」无关 —— 它是这个源**永远**带的性质
     #: （如审计是 fail-open ⇒ 只可能漏报）。始终随 status 条目给出（`caveats`），
     #: **非 `wired` 时并入 `reason`** ⇒ 边界不会因为「今天恰好完整」而消失。
@@ -484,10 +488,11 @@ RULES: Tuple[RuleSpec, ...] = (
         judgeable_fields=("cost_amount",),
         enabled_by=("cost_accounting", "成本核算",
                     "在商品入库时录入单价（系统按移动加权算出成本价）"),
+        enabled_hint="在商品入库时录入单价（成本），录完就能检查这一项",
     ),
     RuleSpec(
         rule_id="unshipped_overdue",
-        rule_name="超 N 天未发货",
+        rule_name="超时未发货",
         severity="high",
         expression="days(as_of - created_at) > unshipped_days",
         action_label="去处理待发货订单",
@@ -561,6 +566,7 @@ RULES: Tuple[RuleSpec, ...] = (
                     "让黄金策或员工通过 AI 助手至少执行一次写操作（如改价）以产生审计留痕；"
                     "若你确实用过写操作而这里仍为空，说明审计上报没有在跑（该通道 fail-open、可能丢行），"
                     "请联系技术支持排查"),
+        enabled_hint="用 AI 助手执行一次改价操作就能开始记录；若已经用过仍是空的，请联系技术支持",
         caveats=(
             "审计上报是 fail-open（3s 硬上限、允许丢行）⇒ 本项**可能漏报**；审计只记「调用过」，"
             "而 `success=false`（服务端拒绝 / 工具抛错）的调用**不算改价**（价根本没变）"
@@ -664,6 +670,23 @@ def _tenant_fact(snapshot: Any, key: str) -> Optional[bool]:
     return value if isinstance(value, bool) else None
 
 
+def _merchant_display(spec: RuleSpec, value: str) -> Optional[str]:
+    """**商家面**的一句话（issue #7195）：事实 + 该做什么，**不含任何内部标识**。
+
+    `reason` / `caveats` 是诊断面（文件路径 / issue 号 / 列名 / 装配层术语都在那里），
+    商家界面只读这个键 —— 两句话各在各的面（`migao-dev-flow` §31 P3/P4）。
+    """
+    if value == WIRED:
+        return None
+    if value == NOT_ENABLED:
+        if spec.enabled_hint:
+            return spec.enabled_hint
+        return f"开启{spec.enabled_by[1]}后即可检查" if spec.enabled_by else None
+    if value == INCOMPLETE:
+        return "本次数据不完整，可能有遗漏"
+    return "这项检查还没有可用数据，本次没有执行"
+
+
 def proactive_status(
     snapshot: Any, rules: Sequence[RuleSpec] = RULES
 ) -> Dict[str, Dict[str, Any]]:
@@ -672,7 +695,9 @@ def proactive_status(
     为什么**逐规则**而不是一个整体状态：**部分接线是可能的**（首批 5 条里 4 条能接、1 条结构上
     接不通），整体布尔到了调用方还是分不出「哪一条没接线」——那就又变回「空命中 = 今天没问题」。
 
-    返回 `{rule_id: {"rule_id", "rule_name", "status", "reason", "missing", "gaps", "caveats"}}`：
+    返回 `{rule_id: {"rule_id", "rule_name", "status", "reason", "missing", "gaps", "caveats", "display"}}`：
+    `display` = **商家可读**的一句话（`wired` ⇒ `None`；issue #7195：商家界面只读它，
+    `reason` / `caveats` 留作诊断，不原样上屏）；
     `status` ∈ {`wired`（本次完整可用）, `not_wired`（系统未实现）, `not_enabled`（系统有、该租户没开）,
     `incomplete`（本次不完整）}；
     不变式：**`reason is None` ⟺ `status == wired`**（`not_enabled` **不开例外**）—— 调用方只要看这一条，
@@ -744,6 +769,8 @@ def proactive_status(
             "missing": missing,
             "gaps": gaps,
             "caveats": list(spec.caveats),
+            # 商家面（issue #7195）：上屏只读这个键 —— 诊断面（reason / caveats）留在 API 里
+            "display": _merchant_display(spec, value),
         }
     return status
 

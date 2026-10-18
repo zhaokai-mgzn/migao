@@ -2569,6 +2569,11 @@ export interface ProactiveRuleStatus {
   gaps?: string[]
   /** **数据源固有边界**（如审计 fail-open）—— 恒在（可为空数组），`wired` 时也不许静默 */
   caveats?: string[]
+  /**
+   * **商家可读**的一句话（issue #7195）：`wired` ⇒ null；非 `wired` ⇒ 一句大白话（无内部标识）。
+   * 🔴 界面只读这个键 —— `reason` / `caveats` 是诊断面（文件路径 / issue 号 / 列名），不上屏。
+   */
+  display?: string | null
 }
 
 /** 逐规则状态表：键 = rule_id */
