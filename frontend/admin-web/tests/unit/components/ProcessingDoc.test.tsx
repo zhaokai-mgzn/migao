@@ -38,20 +38,18 @@ import {
  * 加工单（**A4 可打印纸质文档**，issue #5651）—— 照客户现行实物制式（issue #5651 实证表 #3）。
  *
  * 断言的是**纸面内容与版面契约**：
- * ① 表头九栏逐条命中（订单日期 / 客户 / 电话 / 地址 / 备注 / 制单人 / 单号 / 交付日期 / 货运）+ 右上 QR；
- * ② **按套分块**，每块 `第N套/共M套` + 一张 8 列表（列清单 = `PROCESSING_DOC_COLUMNS`，全仓唯一一份）；
+ * ① 表头九栏逐条命中（订单日期 / 客户 / 电话 / 地址 / 备注 / 制单人 / 单号 / 交付日期 / 货运）；
+ * ② **按套分块**，每块 `第N套/共M套` + 一张 **9 列表**（列清单 = `PROCESSING_DOC_COLUMNS`，全仓唯一一份）；
  * ③ `@page { size: A4; margin: 12mm; }`（由介质矩阵生成）+ 分页不裁切（`break-inside: avoid`）
  *    且长单分页时**表头重复**（`thead { display: table-header-group }`）；
  * ④ 🔴 **缺值不许静默留空**：一律显式占位 `—`；本系统**没有采集**的字段（制单人 / 批号）
  *    另标「未采集」——「客户没填」与「我们没有这个列」必须可区分；
- * ⑤ 🔴 **缺码不画假码**（洗水码既有判据）：拿不到 QR 值 ⇒ 虚线占位框，不编码、不拿别的串顶替；
+ * ⑤ 🔴 **纸面不印 QR**（issue #7219：扫码入口不属于加工单）—— QR / 无码占位 / 可读短码行三种形态**都不出现**；
  * ⑥ 打印隔离沿用 #4983 / #4965 范式（共享 `print-doc` + 限定本次打印目标的 visibility 防御）；
  * ⑦ **列宽按内容预算**（issue #6600）：批号是**固定 17 字符**的 `PC-yyyyMMdd-####`，原先只给 10%
- *    ⇒ `table-layout: fixed` 下折成 3 行、把数据行撑高（真浏览器实测 63px）。现在 ≥16%（两行放得下）。
- * ⑧ 🔴 **码的内容 = 加工单级稳定短链，不再是加工单号纯文本**（issue #6867，设计 §11.3「前端 · admin-web」）：
- *    QR 值 = 调用方给的 `scan_url`（`{base}/o/{短码}`）；纸面**再印一行人可读短码**
- *    （`processingOrder.short_code`，形态照 `TaskCardPrint` 的 `task-card-label-short-code-*`），
- *    **缺码印 `—`、绝不编**（与既有「缺码不画假码」同口径；§11.7「手可输的兜底」）。
+ *    ⇒ `table-layout: fixed` 下折成 3 行、把数据行撑高（真浏览器实测 63px）。现在 ≥16%（两行放得下）；
+ * ⑧ 🔴 **纸面不印工序清单**（issue #7274）：工序细节不上纸（老调用方形态传进来的 `operations` 也不得渲染）——
+ *    见文件尾「ProcessingDoc 纸面不印工序（issue #7274）」。
  */
 function buildItem(overrides: Partial<OrderItem> = {}): OrderItem {
   return {
@@ -147,7 +145,7 @@ const headerWidthOf = (label: string): number => {
   )
   return Number((th?.className ?? '').match(/\bw-\[(\d+)%\]/)?.[1] ?? NaN)
 }
-/** 8 列表头声明的宽度百分比（按表头顺序） */
+/** 9 列表头声明的宽度百分比（按表头顺序） */
 const headerWidths = (): number[] => PROCESSING_DOC_COLUMNS.map(headerWidthOf)
 
 describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
@@ -177,7 +175,7 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
       />
     )
     const area = document.querySelector('.processing-print-area')
-    // 判据面 = 8 列表的**用料列**（index 5，唯一由「数量是否算得出」决定的那一格）
+    // 判据面 = 9 列表的**用料列**（index 5，唯一由「数量是否算得出」决定的那一格）
     const metersColumn = paperNumericColumn(area, { column: 5 })
     // 单据：加工单 ProcessingDoc
     assertNoPaperZeroFill(metersColumn.slice(0, 1), {
