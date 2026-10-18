@@ -15083,6 +15083,24 @@ _CASE_UI_122 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── UI-125 [NORMAL] 算料口径改「变更即保存」：删掉保存 / 恢复默认两个按钮，防抖 0.6 秒自动 PUT（422 逐条理由、草稿不回滚）（源: cases/ui.yml）──
+_CASE_UI_125 = EvalCase(
+    id='UI-125',
+    legacy_id='',
+    title='算料口径改「变更即保存」：删掉保存 / 恢复默认两个按钮，防抖 0.6 秒自动 PUT（422 逐条理由、草稿不回滚）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-18 裁定：「这里的两个按钮应该移除，一是不需要恢复默认功能，而是应该让用户在输入框变更后即保存，这样增加界面简洁程度提高了用户体验」'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**全域零保存 / 恢复默认按钮与吸底条**（`calc-caliber-save` / `calc-caliber-restore-defaults` / `calc-caliber-save-dock` 取不到），且「没有保存按钮」这件事被写出来（「修改后自动保存（约 0.6 秒），无需手动提交」）。证据：frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx（判据 9·a）', '判据 2·**变更即保存 600ms**：改一个标量 ⇒ 599ms 时 0 次、600ms 后 `onCalcSave` 恰好 1 次；期间输入框**不**禁用。证据：同文件（判据 9·b）', '判据 3·**防抖合并**：窗口内连改两处 ⇒ 只发 1 次，正文带两处新值。证据：同文件（判据 9·c）', '判据 4·**首屏 / 读面刷新不写库**（基线 = 读面给的整份配置）：挂载后 5s 内 0 次；换一份新配置对象（页面读面落地同步草稿）后仍 0 次。证据：同文件（判据 9·d）', '判据 5·**在飞闸**：第 1 次未回来前再改两次 ⇒ 仍只有 1 次；回来后按最新草稿补发 1 次（不排队）。证据：同文件（判据 9·e）', '判据 6·**422 语义不变**：`details[].message` 逐条上屏、草稿不回滚（输入值仍在）、保存态「保存失败 · N 条理由」；改对后再改一次自动重试。证据：同文件（判据 9·f / f2）', '判据 7·**只读退化零请求**：不给保存回调（只给草稿回调）⇒ 5s 内 0 写请求、无保存态与自动保存说明。证据：同文件（判据 9·g）', '判据 8·**页面这一跳也是全量键**：`PUT` 正文逐键齐全（11 键），改的键是新值 —— 触发方式改为防抖自动保存。证据：frontend/admin-web/tests/unit/pages/settings.test.tsx（算料口径域保存）', '判据 9·**类级写面守卫口径不变**：域写面出口标记从保存按钮迁到保存态（`data-write-exit` 仍带 `calc`），逐域 traversal 与「写出口成对」判据仍绿。证据：frontend/admin-web/tests/unit/lib/domain-write-surface.test.tsx（判据 4 / 写出口成对）', '**边界**：不碰后端、不改 422 理由结构；「恢复为默认值」**不给替代入口**（用户明确不要），引擎默认值仍由 `source` 徽标与「本企业尚未保存过算料口径」横幅承担；面板卸载（切域）时待发的那一次仍会发出。证据：同文件（判据 9·h）'],
+    skip_reason='[backend-contract] 纯前端配置面（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['settings', 'craft-calc', 'autosave', 'ui'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -15926,6 +15944,7 @@ ALL_CASES = (
     _CASE_UI_120,
     _CASE_UI_121,
     _CASE_UI_122,
+    _CASE_UI_125,
     _CASE_UT_001,
     _CASE_UT_002,
 )
