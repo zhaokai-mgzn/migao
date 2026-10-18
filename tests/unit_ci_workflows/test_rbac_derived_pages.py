@@ -1837,35 +1837,31 @@ def catalog_codes() -> set[str]:
 
 
 def enforcement_surfaces() -> dict[str, tuple[str, ...]]:
-    """现取**服务端强制面**：权限码 → 命中它的源文件（admin-api 注解 / 工具声明 / agent 页面上下文）。
+    """现取**服务端强制面**：权限码 → 命中它的源文件（admin-api 的 `@RequirePermission`）。
 
-    ⚠️ 只扫描「拦得住」的三面；UI 面（路由守卫 / 页面 `has()` / 菜单节点）**故意不算** ——
-    它们可被直接调 API 绕过，把它们算进来正是 `order:detail` 那个假绿形态的成因。
+    ## 判别面为什么只取 admin-api 端点
+
+    ai-agent 的工具（`required_permissions`）与页面上下文（`entity_permissions`）也是强制面，但
+    它们的码集**已被 `test_agent_permission_parity.py` 判据 2 钉成「工具码 ≡ 端点生效码」**
+    （跨码的具名例外在 `CODE_DIVERGENCE_EXCEPTIONS`，其码同样全部落在端点上）⇒ 由端点面即可覆盖，
+    这里不写第二份解析（同一事实两处实现 = 两处漂移）。
+
+    ## 为什么行首锚定（`^[ \t]*@`）
+
+    本仓有一条**原文口径**元守卫（`test_guard_parsing_is_comment_aware.py`，issue #5325）：按引号扫源码
+    原文的取值动作会被判「注释/字符串即可喂中」。注释行以 `//` / ` * ` 开头 ⇒ **行首锚定**
+    （只允许空白前缀）把「注释里写一句 `@RequirePermission("x")` 就当这个码有人拦」这条假绿路径掐掉；
+    真实的注解总是独占一行（见 `OrderController` 等）。
+
+    ⚠️ UI 面（路由守卫 / 页面 `has()` / 菜单节点）**故意不算**：它们可被直接调 API 绕过，
+    算进来正是 `order:detail` 改前那个假绿的成因。
     """
     hits: dict[str, set[str]] = {}
-
-    def add(code: str, what: str) -> None:
-        hits.setdefault(code, set()).add(what)
-
     root = REPO_ROOT / "backend" / "admin-api" / "src" / "main" / "java"
     for path in sorted(root.rglob("*.java")):
-        for m in re.finditer(r'@RequirePermission\("([^"]+)"\)', path.read_text(encoding="utf-8")):
-            add(m.group(1), f"端点:{path.name}")
-
-    tools = REPO_ROOT / "backend" / "ai-agent-service" / "app" / "tools"
-    for path in sorted(tools.glob("*.py")):
         text = path.read_text(encoding="utf-8")
-        for block in re.finditer(r'required_permissions\s*=\s*\[([^\]]*)\]', text):
-            for code in re.findall(r'"([^"]+)"', block.group(1)):
-                add(code, f"工具:{path.stem}")
-
-    ctx = REPO_ROOT / "backend" / "ai-agent-service" / "app" / "context"
-    for path in sorted(ctx.glob("*.py")):
-        text = path.read_text(encoding="utf-8")
-        for block in re.finditer(r'entity_permissions\s*=\s*\(([^)]*)\)', text):
-            for code in re.findall(r'"([^"]+)"', block.group(1)):
-                add(code, f"页面上下文:{path.stem}")
-
+        for m in re.finditer(r'^[ \t]*@RequirePermission\([ \t]*"([^"]+)"', text, re.MULTILINE):
+            hits.setdefault(m.group(1), set()).add(f"端点:{path.name}")
     return {code: tuple(sorted(files)) for code, files in hits.items()}
 
 
