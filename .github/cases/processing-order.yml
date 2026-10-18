@@ -3329,3 +3329,38 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+  - id: PG-088
+    legacy_id: ""
+    title: "客户端漏写 saleForm 的卖布单仍必须被认出（sellingMethod / rollCount 兜底）⇒ 作业单 / 派单池 / 发货守卫三段不再静默放行（issue #7222）"
+    domains:
+      - processing
+      - processing-order
+      - backend
+    tier: edge
+    tags:
+      - fabric-sale
+      - ship-guard
+      - backend-contract
+    truths_ref: []
+    precondition: "一张**卖布单**由 API / 米宝 / 回归脚本创建：订单行 `processing_info` **缺 `saleForm` 键**，但该行带布料专属事实（`sellingMethod = bulk_cut|full_roll` 或 `rollCount` 非空 —— 下单页只对布料行出「整卷」面板）。"
+    user_inputs:
+      - "API 直接建卖布单（不带 saleForm）后，在订单详情看作业单区块"
+      - "生成作业单后看工人是否拿到裁剪 / 打包活"
+    expectations: []
+    data_checks:
+      - "**判据 1（会红，读面）**：`OrderShipGuard.hasFabricSaleLine` / `requiredOrderKind` 对「缺 saleForm、有 sellingMethod=full_roll」的行判卖布行 / `outbound`。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderShipGuardTest.java 的 `fabricSaleLineWithoutSaleFormIsRecognizedBySellingMethod`。**红证**：删掉 `ProcessingOrderService.isFabricSaleLine` 的兜底分支（退回只认显式 saleForm）⇒ 该用例红。"
+      - "**判据 2（会红，生成侧）**：`generate` 的该行必须进 `items_snapshot` 且 `order_kind = outbound`。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderRouteSourceTest.java 的 `orderWithoutSaleFormButWithSellingMethodStillGetsOutboundJob`。**红证**：删兜底 ⇒ 快照为空 ⇒「无加工项，无需生成加工单」⇒ 红。"
+      - "**判据 3（反向护栏，不许误伤）**：缺 saleForm 且**无任何布料事实**的无加工项行（配件 / 赠品）仍判「无需作业」、仍可直发。执行点 = `OrderShipGuardTest.orderWithoutFabricEvidenceStillNeedsNoWork` 与 `ProcessingOrderRouteSourceTest.itemWithoutProcessingItemsAndWithoutFabricSaleFormIsStillSkipped`。**红证**：把兜底写成「缺 saleForm 一律卖布」⇒ 两条红。"
+      - "**判据 6（前端读面键口径）**：前端判型必须读**下发的 wire 键** `work_order_kind`（snake）；只读 camel `workOrderKind` 时该键在真实响应里恒不存在 ⇒ 生成入口 / 发货前置拦截 /「先做作业单」引导三处静默失效（发货页照常渲染表单，只靠后端 422 兜底）。执行点 = frontend/admin-web/tests/unit/lib/processing-order.test.ts 的 `workOrderKindOf 认 wire 键` 组。**红证**：把 `workOrderKindOf` 改回只读 camel ⇒ 3 条红（2026-10-18 本机实证 3 failed / 6 passed）。"
+      - "**判据 5（不许抢路线）**：缺 `saleForm`、有 `sellingMethod`，但**有加工项**的行 ⇒ 仍判加工单（卖布行按米卖，行上从无加工项）。执行点 = `OrderShipGuardTest.fabricFallbackDoesNotHijackLinesWithProcessingItems`。**红证**：去掉 `isFabricSaleLine` 的「有加工项即返回 false」闸 ⇒ 红（成品帘被拉去走裁剪/打包，丢掉缝制工序）。"
+      - "**判据 4（显式声明优先）**：显式 `saleForm=成品帘` 的行不被 sellingMethod / rollCount 覆盖。执行点 = `OrderShipGuardTest.explicitNonFabricSaleFormWinsOverRollEvidence`。"
+      - "**边界（照实登记）**：缺 saleForm 且无任何布料事实的行**不猜**（保持存量语义）—— 该形态靠写面（米宝 `order_create` 补 `saleForm`）与订单详情的可行动出口兜住。"
+    skip_reason: "[backend-contract] admin-api 单测面（mock mapper），不进 agent-eval 冒烟"
+    merge_log: "2026-10-18 新增（issue #7222，用户截图实证：AI 回归建的卖布单在订单详情报「该订单无需作业单」）。取号 = 当时 origin/main 已占号最大 PG-087 ⇒ 本单取 PG-088。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderShipGuardTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderRouteSourceTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

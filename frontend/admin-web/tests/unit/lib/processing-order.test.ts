@@ -1,4 +1,4 @@
-// case_ids: PG-005, PG-008, UI-012, UI-115
+// case_ids: PG-005, PG-008, PG-088, UI-012, UI-115
 // 加工单状态机 lib 单测：状态文案 / 徽章语义色 / 状态→可行动作映射
 // （与后端 ProcessingOrderService.STATUS_TRANSITIONS 对齐，PG-005 主链 / PG-008 取消原因）
 // + issue #7319：订单详情读面 wire 键 `work_order_kind`（snake_case）的**唯一读点**单测
