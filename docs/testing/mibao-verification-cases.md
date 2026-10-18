@@ -1382,8 +1382,7 @@
 
 ### BM-047. B 端 H5 底栏 4 项一律可见 + 端侧自绘 + 收起原生条（2026-10-18 裁定；旧「按权限裁剪」退场） 🔵
 ```
-你: 员工在手机端：底部 4 项（问黄金策 / 数据 / 坐席 / 我的）一律可见（用户 2026-10-18 逐字「跟问黄金策那个菜单一样都可见」）；数据面仍按权限拦
-你: 「我的」页的子菜单（智能派单 / 入库过账 / 售后处理 / 计件工资报表）仍按权限控制可见性（服务端 mobileSurfaces 投影）
+你: 员工在手机端：底部 4 项（问黄金策 / 数据 / 坐席 / 我的）一律可见（用户 2026-10-18 逐字「跟问黄金策那个菜单一样都可见」），没权限的底栏页走「问黄金策」式的「需要管理员授权」；「我的」页的子菜单（智能派单 / 入库过账 / 售后处理 / 计件工资报表）仍按权限控制可见性（服务端 mobileSurfaces 投影）；数据面仍按权限拦
 期望: direct_reply
 数据: 判据 1·**服务端投影逐值**（真值 = `MobileSurfaces.visibleTabsFor`）：商品管理员（8 码）/ 财务（9 码，均**无** `agent:session`）⇒ chat/dashboard/profile（**没有 sessions**）；客服（12 码，持 `agent:session`）⇒ 4 项齐全；一个码都没有的员工 ⇒ chat/profile（无码项）；`*` 通配 ⇒ 4 项。红证（实跑过）：把 `sessions` 的码改成 `null` ⇒ 同文件 `Tests run: 14, Failures: 4`。证据：backend/admin-api/src/test/java/com/migao/admin/service/MobileSurfacesTest.java
 数据: 判据 2·**`/me` 的 `mobileTabs` 字段与序列化**：`$.data.mobileTabs[0].key/route`、`[1].title` 逐值（字段名 = 端侧依赖：改名/改蛇形 ⇒ 端侧底栏退回「照显 4 项」+ 本判据红）。证据：backend/admin-api/src/test/java/com/migao/admin/controller/AuthIntegrationTest.java
