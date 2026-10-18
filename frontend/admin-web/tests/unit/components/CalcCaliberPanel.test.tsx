@@ -213,33 +213,48 @@ describe('算料口径域面板（issue #6580 抽取后的行为面）', () => {
     expect(row.textContent).toContain(hint)
   })
 
-  it('设置页属性行（issue #7133）：标签+提示在左、控件在固定右列、同组同一属性列表', async () => {
+  it('标准字段（issue #7176）：标签在上、控件满列、单位做框内后缀 —— 全站配置面只有这一种字段形态', async () => {
     await renderPanel()
     const field = screen.getByTestId('param-per_fold_single')
-    // ① 行 = 「左：标签 + 提示」/「右：控件」两栏（flex + justify-between）
-    expect(field.className, '属性行必须是两栏布局').toContain('justify-between')
-    const left = field.firstElementChild as HTMLElement
-    expect(left.tagName, '左栏是标签块').toBe('DIV')
-    expect(left.textContent).toContain('单色每折用料')
-    // ② 控件在**右栏**（DOM 顺序：左栏 → 右栏），且右栏不参与收缩（`shrink-0` = 定宽列）
-    const right = field.lastElementChild as HTMLElement
+    // ① 字段 = `Field`：标签在上（`text-xs` 灰字），控件紧跟其后
+    const label = field.querySelector('label') as HTMLElement | null
+    expect(label?.tagName, '字段必须有标签元素').toBe('LABEL')
+    expect(label?.className, '标签在上、12px 灰字（与「阈值试算」同一套）').toContain('text-xs')
+    expect(field.firstElementChild, '标签必须是字段的第一个子元素（不顺排在控件左边）').toBe(label)
+    // ② 控件**满列**：宽度交给栅格列（定宽框在「标签在上」的版式里会留一排空白 —— #7176 的病灶）
     const input = screen.getByTestId('calc-caliber-scalar-per_fold_single')
-    expect(right.className).toContain('shrink-0')
-    expect(right.contains(input), '控件必须落在右栏里').toBe(true)
-    // ③ 同组字段落在同一个属性列表里（行间细线由容器 `divide-y` 给），且**只**含本组字段
-    const list = field.parentElement as HTMLElement
-    expect(list.className, '行间细线由容器给（行自己不带 border-b）').toContain('divide-y')
-    expect(list.contains(screen.getByTestId('param-margin_single'))).toBe(true)
-    // ④ 阈值另成一组（不与「用布与余量」混排）—— 分组靠区块标题表达
-    expect(list.contains(screen.getByTestId('param-oversize_width_threshold'))).toBe(false)
-    // ⑤ 行自己**不得**带行底细线（上一版「8 行 8 条线」的病灶；判据钉在行容器上）
-    expect(field.className).not.toContain('border-b')
+    expect(input.className, '控件满列').toMatch(/\bw-full\b/)
+    expect(input.className, '控件不得再定宽').not.toMatch(/\bw-(32|36|40|64)\b/)
+    // ③ 单位做**框内后缀**：控件右侧留出位置，单位仍来自 `CALC_PARAM_COPY` 的标签（只做展示拆分）
+    expect(input.className, '带单位的数值框要留出单位位').toMatch(/\bpr-9\b/)
+    expect(field.textContent).toContain('米')
+    // ④ 同组字段落在同一个 `grid` 里（不再是「一行一条细线」的属性列表）
+    const grid = field.parentElement as HTMLElement
+    expect(grid.className, '同组字段落在栅格里').toContain('grid')
+    expect(grid.className, '栅格有列定义（窄屏两列、sm 起按组铺开）').toMatch(/sm:grid-cols-(2|3|4)/)
+    expect(grid.contains(screen.getByTestId('param-margin_single')), '同组字段同在').toBe(true)
+    // ⑤ 组 = 浅底面板 + 标题（「阈值试算」那一套铬）
+    const panel = grid.parentElement as HTMLElement
+    expect(panel.className, '组是浅底面板').toContain('bg-neutral-50/50')
+    expect(panel.querySelector('h4')?.textContent, '组标题取自单一真值').toBe('用布与余量')
+    // 判别力自证：退回「属性行」形态（标签左 / 控件右 = justify-between；行间细线 = divide-y）即红
+    expect(field.className).not.toContain('justify-between')
+    expect(panel.querySelector('.divide-y'), '组内不再画行间细线').toBeNull()
   })
 
-  it('区块标题把参数分组（用布与余量 / 档位与拼色 / 超高 / 超宽阈值）', async () => {
+  it('区块标题把参数分组（用布与余量 / 工艺档位 / 拼色每折用料 / 备用用料公式 / 超高 / 超宽阈值）', async () => {
     await renderPanel()
-    for (const t of ['用布与余量', '档位与拼色', '超高 / 超宽阈值']) {
-      expect(screen.getByText(t), `缺区块标题「${t}」`).toBeInTheDocument()
+    // 每个分组标题都钉在**它自己的面板**上（`getByText` 会被下方术语表里的同名术语撞到）
+    const groups: [string, string][] = [
+      ['calc-caliber-group-materials', '用布与余量'],
+      ['calc-caliber-group-tiers', '工艺档位'],
+      ['calc-caliber-group-mixed', '拼色每折用料'],
+      ['calc-caliber-group-formula', '备用用料公式'],
+      ['calc-caliber-group-thresholds', '超高 / 超宽阈值'],
+    ]
+    for (const [testid, title] of groups) {
+      const panel = screen.getByTestId(testid)
+      expect(within(panel).getByRole('heading').textContent, `缺区块标题「${title}」`).toBe(title)
     }
   })
 
@@ -334,10 +349,10 @@ describe('判据 1（#6825）：域内就地可改 —— 逐键在位', () => {
 
   it('档位表逐行可改：显示名中文化（标准档 / 经济档），但**键**仍是 standard / economy；未知档给人话兜底', async () => {
     await renderPanel()
-    const rowOf = (name: string) =>
-      screen.getByTestId(`calc-caliber-tier-${name}-fullness`).closest('tr') as HTMLElement
-    expect(rowOf('standard')).toHaveTextContent('标准档')
-    expect(rowOf('economy')).toHaveTextContent('经济档')
+    // issue #7176：不再是表格（没有 `<tr>`）—— 每档两个字段同在一个浅底面板里
+    const tierPanel = () => screen.getByTestId('calc-caliber-group-tiers')
+    expect(tierPanel()).toHaveTextContent('标准档')
+    expect(tierPanel()).toHaveTextContent('经济档')
     // 提交给 API 的 tiers 键仍是英文键（中文只是显示名）
     expect(screen.getByTestId('calc-caliber-tier-standard-fullness')).toHaveValue('2')
     expect(screen.getByTestId('calc-caliber-tier-standard-label')).toHaveValue('标准工艺')
@@ -351,9 +366,8 @@ describe('判据 1（#6825）：域内就地可改 —— 逐键在位', () => {
       tiers: { ...ENGINE_DEFAULT_CALC_CONFIG.tiers, custom: { fullness: 2.4, label: '' } },
     } as unknown as CraftCalcConfig
     await renderPanel()
-    const customRow = screen.getByTestId('calc-caliber-tier-custom-fullness').closest('tr') as HTMLElement
-    expect(customRow).toHaveTextContent('未命名档位')
-    expect(customRow).not.toHaveTextContent('custom')
+    expect(tierPanel()).toHaveTextContent('未命名档位')
+    expect(tierPanel()).not.toHaveTextContent('custom')
   })
 
   it('拼色每折用料表逐行可改（拼 N 次 → 每折用料）', async () => {
@@ -637,38 +651,36 @@ it('调用方传只读读数（无 `onCalcChange`）⇒ 只渲染读数，不出
 // 可编辑输入只能**另起一行**、且 `inputCls` 是 `w-full` ⇒ 两位数字被拉满整列（真机 ≈670px）。
 // 判据 = 「输入框与名称**同一行**」+「定宽、非 `w-full`」+「行内不再有默认态徽标」。
 // ══════════════════════════════════════════════════════════════════════════════
-describe('判据 8（issue #7124 / #7133）：属性行 —— 标签在左、控件在右列、定宽、不标默认态', () => {
-  it('🔴 控件在**右栏**（退回「控件顺排在标签后面」⇒ 左边界随标签长短抖，红）', async () => {
+describe('判据 8（issue #7176 改判；前身 #7124 / #7133）：标准字段 + 不标默认态', () => {
+  it('🔴 字段自己不带行底细线、组内不画行间线（「8 行 8 条线」是用户判「丑陋」的那一版）', async () => {
     await renderPanel()
-    const input = screen.getByTestId('calc-caliber-scalar-per_fold_single')
-    const field = input.closest('[data-testid="param-per_fold_single"]') as HTMLElement
-    const left = field.firstElementChild as HTMLElement
-    const right = field.lastElementChild as HTMLElement
-    expect(left.tagName, '左栏是标签块').toBe('DIV')
-    expect(left.textContent).toContain('单色每折用料')
-    expect(right.contains(input), '控件必须落在右栏里').toBe(true)
-    expect(left.contains(input), '控件不得顺排在左栏（标签后面）').toBe(false)
-    // 行自己不带行底细线（「8 行 8 条线」正是用户判「丑陋」的那一版；线由容器 `divide-y` 给）
+    const field = screen.getByTestId('param-per_fold_single')
     expect(field.className, '字段不再画行底细线').not.toContain('border-b')
+    expect(field.parentElement?.className, '组内不画行间细线').not.toContain('divide-y')
     // 反向自证：口径提示仍在（撤的是线，不是信息）
     expect(field.textContent).toContain(CALC_PARAM_COPY.per_fold_single.hint.replace(/\*\*/g, ''))
   })
 
-  it('🔴 本域**所有**数值输入定宽（`w-full` 回归 ⇒ 红）', async () => {
+  it('🔴 本域**所有**控件满列、带单位的留单位位（退回定宽框 ⇒ 红）', async () => {
     await renderPanel()
     fireEvent.click(screen.getByTestId('param-advanced-toggle-calc'))
-    const bounded = ['calc-caliber-scalar-per_fold_single', 'calc-caliber-scalar-min_fullness', 'calc-caliber-tier-economy-fullness', 'calc-caliber-mixed-1']
-    for (const id of bounded) {
-      const el = screen.getByTestId(id)
-      const cls = el.className
-      expect(cls, `${id} 必须带统一定宽 token（w-40，issue #7124）`).toMatch(/\bw-40\b/)
-      expect(cls, `${id} 不得是整列宽（w-full）—— 正是 #6857 的病灶`).not.toMatch(/\bw-full\b/)
+    const filled = [
+      'calc-caliber-scalar-per_fold_single',
+      'calc-caliber-scalar-min_fullness',
+      'calc-caliber-tier-economy-fullness',
+      'calc-caliber-mixed-1',
+      'calc-caliber-tier-economy-label',
+      'calc-caliber-default_formula',
+    ]
+    for (const id of filled) {
+      const cls = screen.getByTestId(id).className
+      expect(cls, `${id} 必须满列（宽度由栅格列给，issue #7176）`).toMatch(/\bw-full\b/)
+      expect(cls, `${id} 不得再定宽（标签在上的版式里会留一排空白）`).not.toMatch(/\bw-(32|36|40|64)\b/)
     }
-    // 数值**左对齐**（右对齐会在 160px 的框里留一大片空白，看着像没填 —— 2026-10-17 用户判「劣质」的主因）
-    expect(screen.getByTestId('calc-caliber-scalar-per_fold_single').className).toMatch(/\btext-left\b/)
-    // 文本类与下拉也是定宽（显示名 w-40 / 备用公式 w-64）
-    expect(screen.getByTestId('calc-caliber-tier-economy-label').className).toMatch(/\bw-40\b/)
-    expect(screen.getByTestId('calc-caliber-default_formula').className).toMatch(/\bw-64\b/)
+    // 带单位的字段：单位做**框内后缀** ⇒ 控件右侧留位（`pr-9`）；无单位的（褶倍）不留
+    expect(screen.getByTestId('calc-caliber-scalar-per_fold_single').className).toMatch(/\bpr-9\b/)
+    expect(screen.getByTestId('calc-caliber-mixed-1').className).toMatch(/\bpr-9\b/)
+    expect(screen.getByTestId('calc-caliber-tier-economy-fullness').className).not.toMatch(/\bpr-9\b/)
   })
 
   it('🔴 保存出口**滚过首屏才吸底**（静止态吸底会盖住内容 —— 独立复核第二轮实测）', async () => {

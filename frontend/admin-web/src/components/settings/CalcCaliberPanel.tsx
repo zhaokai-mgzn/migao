@@ -60,10 +60,13 @@
  *
  * 旧 `type="number"` 会吞 `0.` 中间态、清空会把框渲染成字面量 `NaN` 且清不掉。
  */
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react'
 import { AlertCircle, ChevronDown, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { NumberInput } from '@/components/ui'
+// issue #7176：配置面表单的**唯一版式原语**（浅底面板 + 栅格 + 标签在上 + 单位入框）。
+// 🔴 本文件**不再自己拼 label + input 的版式** —— 那是「同一产品三种字段语言」的来源。
+import FormPanel, { FIELD_CONTROL, Field, FormGrid, fieldControl } from '@/components/ui/FormPanel'
 import { OversizeThresholdPreview } from '@/components/settings/OversizeThresholdPreview'
 import { CraftCalcGlossary } from '@/components/production/CraftCalcGlossary'
 import { productionApi } from '@/lib/api'
@@ -81,16 +84,12 @@ import {
 import type { CraftCalcConfig, CraftCalcConfigResponse } from '@/types'
 
 /**
- * 本域控件的统一「铬」：**与 `frontend/admin-web/src/components/ui/Input.tsx` 同款**
- * （`rounded-lg` / `border-neutral-300` / 主色聚焦环），但宽度**定宽**（配置页不许整列拉满 —— issue #6857）。
+ * 控件的「铬」已上收到 `frontend/admin-web/src/components/ui/FormPanel.tsx` 的 `FIELD_CONTROL`
+ * （issue #7176：同一产品只留一种字段形态 —— 浅底面板 + 栅格 + 标签在上 + 单位入框）。
  *
- * ⚠️ 不复用 `inputCls`：那份是 `rounded`（4px）。全站弹窗/表格里的 4px 与这里的 8px 并存是
- * 既有现状，但**同一页的表单控件**必须一致 —— 本文件里所有控件都走这一个常量。
+ * 🔴 这里**不再**定义第二份控件样式、也不再给控件定宽：宽度由 `FormGrid` 的列宽决定
+ * （定宽 `w-40` 曾在「标签在上」的版式里留出一排空白，见 issue #7176 的截图读数）。
  */
-const CALC_INPUT =
-  'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 placeholder:text-neutral-400'
-/** 数值框（右列、定宽、等宽数字；单位做框内后缀 ⇒ 留 `pr-9`） */
-const NUM_INPUT_WIDTH = 'w-40'
 
 /**
  * 一个参数字段（**标签在上、控件在下、口径提示收尾**）。
@@ -115,39 +114,25 @@ export function ParamField({
 }) {
   const { text, unit } = splitUnit(param.copy.label)
   return (
-    /* 版式 = **属性行**（主流设置页形态：Stripe / Linear / GitHub 一致）：
-       左 = 标签 + 一句口径提示，右 = **定宽控件列**（所有行共用同一条右边界）。
-       与「行式紧凑」的区别：控件不在标签后面顺排，而在**固定右列** ⇒ 左沿不会随标签长短抖动。 */
-    <div
-      data-testid={`param-${param.key}`}
-      className="flex flex-wrap items-start justify-between gap-x-8 gap-y-2 py-4"
+    /* 版式 = **标准字段**（issue #7176）：标签在上（`text-xs`）+ 控件在下 + 口径提示收尾。
+       与「属性行」的区别：控件不在标签右边，而是**占满所在栅格列** —— 全站配置面只有这一种字段形态。 */
+    <Field
+      testid={`param-${param.key}`}
+      label={<InlineMarkdown text={text} />}
+      /* 单位由 `Field` 画成**框内后缀**（只在有控件时）：只读值自己带单位，不需要叠一层 */
+      unit={control ? unit : null}
+      hint={<InlineMarkdown text={param.copy.hint} />}
     >
-      <div className="min-w-0 flex-1">
-        <span className="block text-sm font-medium leading-5 text-neutral-900">
-          <InlineMarkdown text={text} />
+      {control ?? (
+        <span
+          data-testid={`param-value-${param.key}`}
+          className="block text-sm leading-9 text-neutral-900"
+        >
+          {value}
+          {unit !== null && <span className="ml-1 text-xs text-neutral-500">{unit}</span>}
         </span>
-        <p className="mt-1 text-xs leading-5 text-neutral-500">
-          <InlineMarkdown text={param.copy.hint} />
-        </p>
-      </div>
-      <div className="flex shrink-0 items-center pt-0.5">
-        {control ? (
-          <div className="relative">
-            {control}
-            {unit !== null && (
-              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-neutral-500">
-                {unit}
-              </span>
-            )}
-          </div>
-        ) : (
-          <span data-testid={`param-value-${param.key}`} className="text-sm text-neutral-900">
-            {value}
-            {unit !== null && <span className="ml-1 text-xs text-neutral-500">{unit}</span>}
-          </span>
-        )}
-      </div>
-    </div>
+      )}
+    </Field>
   )
 }
 
@@ -163,32 +148,9 @@ export function splitUnit(label: string): { text: string; unit: string | null } 
 }
 
 /**
- * 表单里的**一个区块**（标题 + 内容）—— 分组靠它表达，`divider` 给区块之间的一条细分隔线
- * （区块内的字段之间**不画线**：那是上一版「8 行 8 条线」的病灶）。
+ * 表单里的**一个区块** = `FormPanel`（issue #7176）—— 分组靠它表达，区块之间**不画分隔线**：
+ * 浅底面板本身就是「一组」的边界，行内细线是上一版「8 行 8 条线」的病灶。
  */
-function FormSection({
-  title,
-  testid,
-  divider = true,
-  children,
-}: {
-  title: string
-  testid: string
-  divider?: boolean
-  children: ReactNode
-}) {
-  return (
-    <section
-      data-testid={testid}
-      className={divider ? 'border-t border-neutral-100 pt-6' : undefined}
-    >
-      <h3 className="text-base font-semibold text-neutral-900">{title}</h3>
-      {/* 行间细线由**容器**给（`divide-y`）：控件容器自己不带 `border-b` —— 「每行一条线」是上一版的病灶，
-          但那是「8 行 8 条线 + 没有标题 + 控件左沿抖动」三件事叠在一起；现在有区块标题、控件共一条右边界。 */}
-      <div className="mt-1 divide-y divide-neutral-100">{children}</div>
-    </section>
-  )
-}
 
 export interface CalcCaliberPanelProps {
   /**
@@ -373,7 +335,7 @@ export function CalcCaliberPanel({
         writable && displayConfig ? (
           // `NumberInput`（issue #5198 —— `type="number"` 会吞 `0.` / 清空变 `NaN`）
           <NumberInput
-            className={`${CALC_INPUT} ${NUM_INPUT_WIDTH} text-left tabular-nums pr-9`}
+            className={`${fieldControl(splitUnit(p.copy.label).unit)} tabular-nums`}
             aria-label={`${p.copy.label}`}
             data-testid={`calc-caliber-scalar-${p.key}`}
             value={numberOf(displayConfig, p.key)}
@@ -414,6 +376,9 @@ export function CalcCaliberPanel({
 
   const tiers = displayConfig?.tiers ?? {}
   const mixed = displayConfig?.per_fold_mixed_times ?? {}
+  /** 拼色每折用料的**单位**与**无单位标题**（从标签尾部拆出来做框内后缀；文案本身仍是单一真值） */
+  const mixedUnit = splitUnit(CALC_PARAM_COPY.per_fold_mixed_times.label).unit
+  const mixedTitle = splitUnit(CALC_PARAM_COPY.per_fold_mixed_times.label).text
 
   return (
     <div data-testid="calc-caliber-panel" className="space-y-4">
@@ -479,163 +444,132 @@ export function CalcCaliberPanel({
       {failed ? (
         <div data-testid="param-calc-read-failed" />
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {/* ── 用布与余量（及其它非阈值分组） ── */}
-          {leadingGroups.map((g, i) => (
-            <FormSection
-              key={g.key}
-              testid={`calc-caliber-group-${g.key}`}
-              title={g.title}
-              divider={i > 0}
-            >
-              {/* 字段落在**浅底面板**里（与「档位与拼色」两张卡同一层语言）：白卡 → 浅底面板 → 白输入框
-                  三级层次，字段不再是「浮在白纸上的一排框」。 */}
-              {g.params.map(renderScalar)}
-            </FormSection>
+          {leadingGroups.map((g) => (
+            <FormPanel key={g.key} testid={`calc-caliber-group-${g.key}`} title={g.title}>
+              <FormGrid>{g.params.map(renderScalar)}</FormGrid>
+            </FormPanel>
           ))}
 
-          {/* ══════════ 档位与拼色（原在板子的「算料配置」tab 里，issue #6825 并入本域） ══════════ */}
+          {/* ══════════ 档位与拼色（原在板子的「算料配置」tab 里，issue #6825 并入本域） ══════════
+              🔴 issue #7176：**不再是小表**。两张 `w-fit` 小表贴内容不撑行 ⇒ 真机右侧空出 78px
+              （读数：内容宽 764 时左卡 423 / 右卡 245 / 右侧空白 79）。
+              现在与「阈值试算」**同一套字段面板**（`FormPanel` + `FormGrid` + `Field`）：两组各占一半、
+              栅格撑满 ⇒ 右侧空白归零；单位仍做框内后缀（`米`），标签仍是文案单一真值。 */}
           {writable && displayConfig && (
-            <FormSection testid="calc-caliber-group-rules" title="档位与拼色">
-              {/* 🔴 两张表**上下排**（不是并排）：并排时每张只剩 ~370px，而「档位 + 显示名（w-40）+
-                  褶倍（w-36）」这三列合计就 ~360px ⇒ 真机 1440 实测右列被裁掉（验收读图实证）。
-                  定宽是 #6857 的成果、不能为了并排去缩它（缩了又回到「挤」），所以让容器让步。 */}
-              {/* 🔴 两张表**贴合内容、放得下就并排、放不下就换行**（不是撑满整行）：
-                  撑满整行时每张卡右侧会空出 357 / 535px（独立复核读图实测），
-                  并排 + `w-full` 时又会在 1440 下裁掉「褶倍」列（本包第一轮读图实测）。
-                  正解 = 卡宽贴合表格内容（`w-fit`）+ `flex-wrap`：1440 下两张并排且不裁切，
-                  窄容器下自动换行；`max-w-full` 兜住极窄容器。 */}
-              <div className="flex flex-wrap items-start gap-4">
-                {/* 档位表：一行一个档位（顾客看到的名字 + 褶倍） */}
-                <div className="w-fit max-w-full rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
-                  <h4 className="text-sm font-medium text-neutral-800">
-                    {CALC_PARAM_COPY.tiers.label}
-                  </h4>
-                  {/* 表格**不撑满**（无 `w-full`）：列宽贴合内容，同一行的「档位 / 显示名 / 褶倍」
-                      挨在一起读；撑满会把定宽输入框之间的空白拉成一道鸿沟（验收读图实证）。 */}
-                  <table className="mt-2 text-sm">
-                    <tbody>
-                      {/* 列头用 `td` 而不是 `th` **元素**：列头本来就短、这张表也不需要横向逃逸口，
-                          而 `list-table-nowrap-guard` 的射程是「带表头标签元素的表格」——
-                          不引它就不必造一个假的 overflow 容器（有意为之，不是漏了）。
-                          ⚠️ 注释里也**不要写那个角括号标签名**：该守卫按源码文本判，注释同样命中。 */}
-                      {/* 列头色 = `text-neutral-600`（对白底 6.2:1，过 AA）；**旧的 400 只有 2.28:1**，
-                          12px 小字在真机上是「看着脏」的来源（独立复核读图实测）。 */}
-                      <tr className="text-xs text-neutral-600">
-                        <td className="pb-1">档位</td>
-                        <td className="pb-1 pl-3">显示名</td>
-                        <td className="pb-1 text-right">褶倍</td>
-                      </tr>
-                      {Object.entries(tiers).map(([name, tier]) => (
-                        <tr key={name} className="border-t border-neutral-200/70">
-                          <td className="py-2 pr-3 whitespace-nowrap text-neutral-700">
-                            {tierLabelOf(name)}
-                          </td>
-                          <td className="py-2 pr-3">
-                            <input
-                              className={`${CALC_INPUT} w-40`}
-                              aria-label={`${tierLabelOf(name)} 显示名`}
-                              data-testid={`calc-caliber-tier-${name}-label`}
-                              value={tier.label ?? ''}
-                              onChange={(e) =>
-                                patchDraft({
-                                  ...displayConfig,
-                                  tiers: { ...tiers, [name]: { ...tier, label: e.target.value } },
-                                })
-                              }
-                            />
-                          </td>
-                          <td className="py-2">
-                            <NumberInput
-                              className={`${CALC_INPUT} ${NUM_INPUT_WIDTH} text-right tabular-nums`}
-                              aria-label={`${tierLabelOf(name)} 褶倍`}
-                              data-testid={`calc-caliber-tier-${name}-fullness`}
-                              value={
-                                typeof tier.fullness === 'number' && Number.isFinite(tier.fullness)
-                                  ? tier.fullness
-                                  : null
-                              }
-                              onChange={(v) =>
-                                patchDraft({
-                                  ...displayConfig,
-                                  tiers: {
-                                    ...tiers,
-                                    [name]: { ...tier, fullness: v === null ? Number.NaN : v },
-                                  },
-                                })
-                              }
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+            <div data-testid="calc-caliber-group-rules" className="space-y-4">
+              <div className="grid items-start gap-4 sm:grid-cols-2">
+                {/* 档位表：每档两个字段（顾客看到的名字 + 褶倍） */}
+                <FormPanel
+                  testid="calc-caliber-group-tiers"
+                  title={CALC_PARAM_COPY.tiers.label}
+                  hint={<InlineMarkdown text={CALC_PARAM_COPY.tiers.hint} />}
+                >
+                  <FormGrid cols={2}>
+                    {Object.entries(tiers).map(([name, tier]) => (
+                      <Fragment key={name}>
+                        <Field
+                          label={`${tierLabelOf(name)} 显示名`}
+                          htmlFor={`calc-caliber-tier-${name}-label`}
+                        >
+                          <input
+                            id={`calc-caliber-tier-${name}-label`}
+                            className={FIELD_CONTROL}
+                            aria-label={`${tierLabelOf(name)} 显示名`}
+                            data-testid={`calc-caliber-tier-${name}-label`}
+                            value={tier.label ?? ''}
+                            onChange={(e) =>
+                              patchDraft({
+                                ...displayConfig,
+                                tiers: { ...tiers, [name]: { ...tier, label: e.target.value } },
+                              })
+                            }
+                          />
+                        </Field>
+                        <Field
+                          label={`${tierLabelOf(name)} 褶倍`}
+                          htmlFor={`calc-caliber-tier-${name}-fullness`}
+                        >
+                          <NumberInput
+                            id={`calc-caliber-tier-${name}-fullness`}
+                            className={`${FIELD_CONTROL} tabular-nums`}
+                            aria-label={`${tierLabelOf(name)} 褶倍`}
+                            data-testid={`calc-caliber-tier-${name}-fullness`}
+                            value={
+                              typeof tier.fullness === 'number' && Number.isFinite(tier.fullness)
+                                ? tier.fullness
+                                : null
+                            }
+                            onChange={(v) =>
+                              patchDraft({
+                                ...displayConfig,
+                                tiers: {
+                                  ...tiers,
+                                  [name]: { ...tier, fullness: v === null ? Number.NaN : v },
+                                },
+                              })
+                            }
+                          />
+                        </Field>
+                      </Fragment>
+                    ))}
+                  </FormGrid>
+                </FormPanel>
 
-                {/* 拼色每折用料表：一行一个拼色次数 */}
-                <div className="w-fit max-w-full rounded-lg border border-neutral-200 bg-neutral-50/50 p-4">
-                  <h4 className="text-sm font-medium text-neutral-800">
-                    {CALC_PARAM_COPY.per_fold_mixed_times.label}
-                  </h4>
-                  {/* 同档位表：不撑满，行内元素挨着读 */}
-                  <table className="mt-2 text-sm">
-                    <tbody>
-                      <tr className="text-xs text-neutral-600">
-                        <td className="pb-1">拼色方式</td>
-                        <td className="pb-1 text-right">每折用料（米）</td>
-                      </tr>
-                      {Object.entries(mixed).map(([times, perFold]) => (
-                        <tr key={times} className="border-t border-neutral-200/70">
-                          <td className="py-2 pr-3 whitespace-nowrap text-neutral-700">
-                            拼{times}次
-                          </td>
-                          <td className="py-2">
-                            <NumberInput
-                              className={`${CALC_INPUT} ${NUM_INPUT_WIDTH} text-right tabular-nums`}
-                              aria-label={`拼${times}次 每折用料`}
-                              data-testid={`calc-caliber-mixed-${times}`}
-                              value={
-                                typeof perFold === 'number' && Number.isFinite(perFold)
-                                  ? perFold
-                                  : null
-                              }
-                              onChange={(v) =>
-                                patchDraft({
-                                  ...displayConfig,
-                                  per_fold_mixed_times: {
-                                    ...mixed,
-                                    [times]: v === null ? Number.NaN : v,
-                                  },
-                                })
-                              }
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                {/* 拼色每折用料：一行一个拼色次数（单位做框内后缀） */}
+                <FormPanel
+                  testid="calc-caliber-group-mixed"
+                  title={mixedTitle}
+                  hint={<InlineMarkdown text={CALC_PARAM_COPY.per_fold_mixed_times.hint} />}
+                >
+                  <FormGrid cols={2}>
+                    {Object.entries(mixed).map(([times, perFold]) => (
+                      <Field
+                        key={times}
+                        label={`拼${times}次`}
+                        unit={mixedUnit}
+                        htmlFor={`calc-caliber-mixed-${times}`}
+                      >
+                        <NumberInput
+                          id={`calc-caliber-mixed-${times}`}
+                          className={`${fieldControl(mixedUnit)} tabular-nums`}
+                          aria-label={`拼${times}次 每折用料`}
+                          data-testid={`calc-caliber-mixed-${times}`}
+                          value={
+                            typeof perFold === 'number' && Number.isFinite(perFold)
+                              ? perFold
+                              : null
+                          }
+                          onChange={(v) =>
+                            patchDraft({
+                              ...displayConfig,
+                              per_fold_mixed_times: {
+                                ...mixed,
+                                [times]: v === null ? Number.NaN : v,
+                              },
+                            })
+                          }
+                        />
+                      </Field>
+                    ))}
+                  </FormGrid>
+                </FormPanel>
               </div>
 
-              {/* 备用公式（工艺能推导时以工艺为准，这里只是推导表缺失时的兜底）——
-                  与标量字段**同一属性行**形态：标签+提示在左、控件在右列（否则右列在这里断一条） */}
-              <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-2 py-4">
-                <div className="min-w-0 flex-1">
-                  <label
-                    className="block text-sm font-medium leading-5 text-neutral-900"
-                    htmlFor="calc-caliber-formula"
-                  >
-                    {CALC_PARAM_COPY.default_formula.label}
-                  </label>
-                  <p className="mt-1 text-xs leading-5 text-neutral-500">
-                    <InlineMarkdown text={CALC_PARAM_COPY.default_formula.hint} />
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center pt-0.5">
+              {/* 备用公式（工艺能推导时以工艺为准，这里只是推导表缺失时的兜底）。
+                  标题即字段名（面板标题 = 视觉标签）+ 说明收口；控件与其余字段同一铬、同一条左沿。 */}
+              <FormPanel
+                testid="calc-caliber-group-formula"
+                title={CALC_PARAM_COPY.default_formula.label}
+                hint={<InlineMarkdown text={CALC_PARAM_COPY.default_formula.hint} />}
+              >
+                <div className="mt-3 max-w-xs">
                   {/* 取值域与文案 = **单一真值** `CRAFT_CALC_FORMULA_LABELS`（不另写一份映射） */}
                   <select
                     id="calc-caliber-formula"
-                    className={`${CALC_INPUT} w-64`}
+                    className={FIELD_CONTROL}
+                    aria-label={CALC_PARAM_COPY.default_formula.label}
                     data-testid="calc-caliber-default_formula"
                     value={displayConfig.default_formula}
                     onChange={(e) => patchDraft({ ...displayConfig, default_formula: e.target.value })}
@@ -647,15 +581,15 @@ export function CalcCaliberPanel({
                     ))}
                   </select>
                 </div>
-              </div>
-            </FormSection>
+              </FormPanel>
+            </div>
           )}
 
           {/* ── 超高 / 超宽阈值 + 试算（同一件事的两半：上半个改阈值，下半个看它会不会变） ── */}
           {thresholdGroup && (
-            <FormSection testid={`calc-caliber-group-${thresholdGroup.key}`} title={thresholdGroup.title}>
-              {thresholdGroup.params.map(renderScalar)}
-            </FormSection>
+            <FormPanel testid={`calc-caliber-group-${thresholdGroup.key}`} title={thresholdGroup.title}>
+              <FormGrid>{thresholdGroup.params.map(renderScalar)}</FormGrid>
+            </FormPanel>
           )}
 
           {/* §22 P4：改钱的参数给预览（本域唯一能做**真预演**的两个阈值） */}
@@ -680,14 +614,11 @@ export function CalcCaliberPanel({
                 <span className="text-xs font-normal text-neutral-500">一般不常改</span>
               </button>
               {advancedOpen && (
-                <div className="mt-4">
-                  <div
-                    data-testid={`param-advanced-${domain.key}`}
-                    className="divide-y divide-neutral-100"
-                  >
+                <FormPanel className="mt-4">
+                  <FormGrid testid={`param-advanced-${domain.key}`}>
                     {domain.advanced.map(renderScalar)}
-                  </div>
-                </div>
+                  </FormGrid>
+                </FormPanel>
               )}
             </div>
           )}

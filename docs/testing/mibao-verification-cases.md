@@ -10004,7 +10004,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（121 case）
+## 前端 UI 域（122 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -11754,6 +11754,20 @@
 ```
 溯源: 2026-10-17 新增（issue #7162）。落码：`WorkerProfilesPanel`（catalog 的 default_pages / optional_pages 消费 + 行内开/关 + 新建弹窗「单独开放」）+ `WorkerPageCatalogController`（追加两键）+ `WorkerPages.optionalPages()`。取号：见文首注释。 ｜ tags: worker-profile, quality-inspection, permission, ui
 
+### UI-122. 配置面的字段只有一种写法：区块 = 浅底面板 + 标题 + 说明，字段 = 标签在上 + 控件满列 + 单位入框（共享原语 + 类级守卫） 🔵
+```
+你: 用户 2026-10-18 裁定：「第二张图（阈值试算）可以作为一个标准来参考，后续都要形成固定的设计风格和组件，我们一个产品不要出现多种设计和风格样式」
+期望: direct_reply
+数据: 判据 1·**区块形态**：配置面的区块 = `FormPanel`（`rounded-lg border border-neutral-200 bg-neutral-50/50 p-4` + `h4.text-sm.font-semibold` + 可选一句 `text-xs` 说明）。证据：frontend/admin-web/src/components/ui/FormPanel.tsx
+数据: 判据 2·**字段形态**：标签在上（`label.text-xs`）、控件满列（`FIELD_CONTROL` 带 `w-full h-9 rounded-lg border border-neutral-300` + 主色聚焦环）、单位做**框内后缀**（带单位时 `pr-9`）。证据：同文件 + frontend/admin-web/src/components/settings/OversizeThresholdPreview.tsx（基准面，by construction 不改像素）
+数据: 判据 3·**受管面必须继续用原语**：算料口径全域（标量 / 档位与拼色 / 备用用料公式）、阈值试算、裁剪高度「预演（只读）」都从 `components/ui/FormPanel` 取字段版式（改回手拼 ⇒ 红）。证据：frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx、frontend/admin-web/tests/unit/design-system-form-fields.test.tsx
+数据: 判据 4·**「档位与拼色」不再是贴内容的小表**：两张 `w-fit` 小表在内容宽 764 时右侧空出 79px（读数）；改成两个并排 `FormPanel` 后 blank = 0，且每档 = 两个字段（显示名 / 褶倍）、拼 N 次 = 一个字段（单位入框）。证据：前端单测的 `calc-caliber-group-tiers` / `calc-caliber-group-mixed` 锚点 + PR 截图
+数据: 判据 5·**类级守卫**：业务面自己拼控件铬（`h-9 ... rounded-lg ... border-neutral-300` 字符串）⇒ 红；「标签顺排在控件左边」（`ml-1 inline-block`）⇒ 红；两处存量按台账**双向相等 + 只许缩短**。红证：守卫内有内存注入自证（造一份第二铬 / 一段旧形态源码 ⇒ 当场红并具名）。证据：frontend/admin-web/tests/unit/design-system-form-fields.test.tsx
+数据: **边界**：本单不改字段、默认值、保存语义、422 逐条理由与算料口径（纯版式）；美化本身仍由 §15.7 读图 + 人裁定。
+跳过: [backend-contract] 纯前端配置面（vitest 单测覆盖），非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-18 新增（issue #7176）。落码：`components/ui/FormPanel.tsx`（FormPanel / FormGrid / Field / FIELD_CONTROL）+ 三个受管面迁移 + 类级守卫 `design-system-form-fields.test.tsx` + 设计真值源 §9。取号：见文首注释。 ｜ tags: design-system, settings, form-field, ui
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -11783,8 +11797,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：807（活跃 133，跳过 674）
-- tier 分布：smoke 12 / normal 741 / adversarial 32
+- 用例总数：808（活跃 133，跳过 675）
+- tier 分布：smoke 12 / normal 742 / adversarial 32
 - 售后域：15
 - Agent 核心域：11
 - API 层域：21
@@ -11809,7 +11823,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：121
+- 前端 UI 域：122
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -12113,4 +12127,5 @@
 - UI-119: 作业单生产明细内嵌**质检区**：逐件成品帘最新判定（未检 = 未检）+ 录入/复检入口；读失败不画成「没有质检」（issue #7140）
 - UI-120: 工序进度表**三态数量列**（合格 / 返工 / 报废）：返工报废不进进度、与「已完成数量」分列、缺报工渲染 0（issue #7140）
 - UI-121: 工人档案：质检页逐人开（新建弹窗「单独开放」一栏 + 列表行「开/关质检」）；默认页面不含质检、未收窄显示「默认页面」
+- UI-122: 配置面的字段只有一种写法：区块 = 浅底面板 + 标题 + 说明，字段 = 标签在上 + 控件满列 + 单位入框（共享原语 + 类级守卫）
 

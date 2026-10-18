@@ -18,6 +18,8 @@ import { toast } from 'sonner'
 import { AlertCircle } from 'lucide-react'
 
 import { formatDraft } from '@/components/ui/NumberInput'
+// issue #7176：配置面表单的**唯一版式原语**（与「阈值试算」同一套：浅底面板 + 栅格 + 标签在上 + 单位入框）
+import FormPanel, { FIELD_CONTROL, Field, FormGrid, fieldControl } from '@/components/ui/FormPanel'
 import { cuttingHeightApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type {
@@ -352,16 +354,22 @@ export function CuttingHeightConfigPanel() {
         )}
       </section>
 
-      <section className="rounded-lg border border-neutral-200 bg-white p-5">
-        <h3 className="text-base font-medium text-neutral-900">预演（只读）</h3>
-        <p className="text-sm text-neutral-500">
-          填入一单的成品高与选配，看这次会给机器输什么值。<strong>不会写机器</strong>。
-        </p>
-        <div className="mt-3 flex flex-wrap items-end gap-3 text-sm">
-          <label>
-            部位
+      {/* 🔴 issue #7176：本块与「阈值试算」是**同一套字段语言**（此前是「标签顺排在控件左边 + 定宽框」，
+          与同页/同产品的其它配置面长得不一样 —— 用户逐字「一个产品不要出现多种设计和风格样式」）。 */}
+      <FormPanel
+        title="预演（只读）"
+        hint={
+          <>
+            填入一单的成品高与选配，看这次会给机器输什么值。<strong>不会写机器</strong>。
+          </>
+        }
+      >
+        {/* 列数按**标签长度**选（本组标签较长 ⇒ 两列，与「阈值试算」的四列同一个 `FormGrid`） */}
+        <FormGrid cols={2}>
+          <Field label="部位" htmlFor="cutting-height-probe-position">
             <select
-              className={cn(inputCls, 'ml-1 inline-block w-auto')}
+              id="cutting-height-probe-position"
+              className={FIELD_CONTROL}
               aria-label="预演部位"
               value={probe.position}
               onChange={(e) => setProbe({ ...probe, position: e.target.value })}
@@ -372,34 +380,36 @@ export function CuttingHeightConfigPanel() {
                 </option>
               ))}
             </select>
-          </label>
-          <label>
-            成品高（米）
+          </Field>
+          <Field label="成品高" unit="米" htmlFor="cutting-height-probe-height">
             <input
-              className={cn(inputCls, 'ml-1 inline-block w-24')}
+              id="cutting-height-probe-height"
+              className={fieldControl('米')}
               aria-label="预演成品高"
               value={probe.finishedHeight}
               onChange={(e) => setProbe({ ...probe, finishedHeight: e.target.value })}
             />
-          </label>
-          <label>
-            安装工艺
+          </Field>
+          <Field label="安装工艺" htmlFor="cutting-height-probe-craft">
             <input
-              className={cn(inputCls, 'ml-1 inline-block w-24')}
+              id="cutting-height-probe-craft"
+              className={FIELD_CONTROL}
               aria-label="预演工艺"
               value={probe.craft}
               onChange={(e) => setProbe({ ...probe, craft: e.target.value })}
             />
-          </label>
-          <label>
-            特殊选项（逗号分隔）
+          </Field>
+          <Field label="特殊选项（逗号分隔）" htmlFor="cutting-height-probe-options">
             <input
-              className={cn(inputCls, 'ml-1 inline-block w-40')}
+              id="cutting-height-probe-options"
+              className={FIELD_CONTROL}
               aria-label="预演特殊选项"
               value={probe.options}
               onChange={(e) => setProbe({ ...probe, options: e.target.value })}
             />
-          </label>
+          </Field>
+        </FormGrid>
+        <div className="mt-3">
           <button
             type="button"
             className="rounded border border-neutral-300 px-3 py-1.5"
@@ -439,7 +449,7 @@ export function CuttingHeightConfigPanel() {
             )}
           </div>
         )}
-      </section>
+      </FormPanel>
     </div>
   )
 }
