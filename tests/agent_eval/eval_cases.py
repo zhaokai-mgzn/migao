@@ -10337,6 +10337,24 @@ _CASE_PG_075 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PG-089 [EDGE] 工人端 H5 闲置登出定时器分片调度：30 天（43200 分钟）延时不得溢出 2^31-1 ⇒ 不得立即触发 / 不得每次装配多打一轮对账（单测覆盖，非 LLM 行为）（源: cases/processing.yml）──
+_CASE_PG_089 = EvalCase(
+    id='PG-089',
+    legacy_id='',
+    title='工人端 H5 闲置登出定时器分片调度：30 天（43200 分钟）延时不得溢出 2^31-1 ⇒ 不得立即触发 / 不得每次装配多打一轮对账（单测覆盖，非 LLM 行为）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.EDGE,
+    user_inputs=['工人这台手机放在工位上一直没退出，第二天打开还要再登录吗？'],
+    expectations=[],
+    data_checks=['**病根（修前实测读数，确定性）**：`frontend/worker-h5/src/app.mjs::armIdle` 把闲置延时会一次性塞进 `setTimeout(..., Math.max(1, minutes) * 60_000)`；默认 `minutes = 43200`（30 天，issue #6473 用户裁定）⇒ 2,592,000,000 ms **大于** 2^31-1（2,147,483,647）⇒ 浏览器 / Node 把延时钳成 ~1ms 立即触发（本机实测：`TimeoutOverflowWarning: 2592000000 does not fit into a 32-bit signed integer. Timeout duration was set to 1.` + `fired after 3 ms`）。后果 ①「闲置 30 天自动登出」从未按 30 天排期（`checkAlive` 节流分支不重排 ⇒ 之后不再有闲置登出）；② 每次 `armIdle()`（登录成功 / `resolved` / 每次 `checkAlive` 成功）立刻多打一轮 `GET /api/worker/production/current-worker` + `GET /api/worker/me`。', '**主判据（会红；改回单次超长定时器 ⇒ 读数 = ①/②/③/⑤ 红并打印 `2592000000`，② 打印 1ms 内已发两个请求）**：`idleMinutes = 43200` 装配后，每一次 `setTimeout` 入队（含续排分片）≤ 2^31-1；分片之和 = 43,200 × 60_000 ms（30 天口径不变）；装配后第一帧（1ms）内零对账；首片到期只续排、不到期不对账；到期时恰好发起一轮 `current-worker` + `/me`。断言 = frontend/worker-h5/tests/worker-h5-7251-idle-timer.test.mjs 的 ①②③⑤。', '**边界（2^31-1 ms 的两侧）**：35,791 分钟 = 2,147,460,000 ms ≤ 上限 ⇒ 仍是**单次**入队（与改前同形）；35,792 分钟 = 2,147,520,000 ms > 上限 ⇒ 必须分片且各片 ≤ 上限。断言 = 同文件 ④。', '**类级（不是只钉 43200）**：服务端可配区间 **5 ~ 43200 分钟逐个值**都成立 —— 每片 ≤ 2^31-1、各片之和 = 总延时、且「是否分片」正好等于「总延时是否 > 2^31-1」。断言 = 同文件 ⑥。', '**边界（如实登记）**：① 未改 30 天口径、未新增绝对有效期 —— 只改**调度**；「到期」语义仍 = `idle_minutes` 之后做一次后台对账（末片到期）；② 测试替身按平台规范把「> 2^31-1 ⇒ 1ms」建模进来（真实读数见 issue #7251 的 `node -e` 输出），替身只替换 `setTimeout` / `clearTimeout`，不碰被测逻辑；③ **未在真机**验证 24.8 天（首片上限）这一段的浏览器行为，也**不声称**设备休眠 / 后台挂起期间的定时器精度（与改前同级）。'],
+    skip_reason='[backend-contract] 本条只登记「长延时不得溢出 2^31-1 + 到期才发起一轮对账」这一层**确定性调度行为**（零网络，假时钟），由 frontend/worker-h5/tests/worker-h5-7251-idle-timer.test.mjs 单测执行 ⇒ 不进 agent-eval 冒烟。',
+    tags=['processing', 'worker', 'session', 'timer', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PR-001 [SMOKE] 商品搜索 - 关键词模糊匹配（源: cases/product.yml）──
 _CASE_PR_001 = EvalCase(
     id='PR-001',
@@ -15817,6 +15835,7 @@ ALL_CASES = (
     _CASE_PP_022,
     _CASE_PG_074,
     _CASE_PG_075,
+    _CASE_PG_089,
     _CASE_PR_001,
     _CASE_PR_002,
     _CASE_PR_003,

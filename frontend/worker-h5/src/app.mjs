@@ -140,6 +140,38 @@ const ALIVE_MIN_INTERVAL_MS = 5000
 /** 后台对账失败（**非**身份面）时的屏上措辞：说事实 + 说清**不影响报工**（§31：不摆内部标识、不吓人）。 */
 const ALIVE_UNREACHABLE_NOTICE = '与服务器核对没成功（网络不稳）：不影响报工，回到本页会自动再核对'
 
+/**
+ * `setTimeout` 能接受的最大延时 = 2^31-1 ms（issue #7251）。
+ *
+ * 超过它，浏览器 / Node 会把延时**钳成 ~1ms 立即触发**（Node 实测：
+ * `TimeoutOverflowWarning ... Timeout duration was set to 1` + `fired after 3 ms`；
+ * MDN：`delay > 2147483647ms` 按 1ms 处理）。30 天 = **2,592,000,000 ms** 正落在这一侧。
+ */
+export const MAX_TIMER_DELAY_MS = 2147483647
+
+/**
+ * 把闲置登出延时切成每片 ≤ `MAX_TIMER_DELAY_MS` 的片（issue #7251；纯函数，单测覆盖服务端全区间）。
+ *
+ * 🔴 **口径不变**：各片之和 = `Math.max(1, minutes) * 60_000`（30 天就是 30 天）。
+ * 变的只是**怎么排** —— 旧实现把整个延时一次性塞进 `setTimeout`：
+ * 超上限 ⇒ 被平台钳成 ~1ms ⇒ ① 「闲置 30 天登出」从未按 30 天排期（节流分支不重排 ⇒ 之后不再有闲置登出）；
+ * ② 每次 `armIdle()` 立刻多打一轮 `current-worker` + `/me`。
+ * 新实现按片上链：前 N-1 片到期**只续排**，**最后一片**到期才真的做一次后台对账。
+ *
+ * @param {number} minutes 服务端下发的 `idle_minutes`（`worker.session.idle-minutes`，可配区间 5~43200）
+ * @returns {number[]} 依次入队的分片（毫秒）；每片 ≤ `MAX_TIMER_DELAY_MS`，和 = 总延时
+ */
+export function idleSlices(minutes) {
+  let left = Math.max(1, minutes) * 60_000
+  const slices = []
+  while (left > 0) {
+    const slice = Math.min(left, MAX_TIMER_DELAY_MS)
+    slices.push(slice)
+    left -= slice
+  }
+  return slices
+}
+
 export function createApp({ doc, api, location = globalThis.location, storage = null }) {
   const href = typeof location === 'string' ? location : location?.href ?? ''
   // 企业编码（issue #6564）：短链 302 的 `?tenant_code=` 只是**初值**（预填进输入框，可编辑）
@@ -278,10 +310,20 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
    * 2026-10-07 用户裁定「延长到 1 个月」；上一版一周 10080）。正常链路服务端**恒回** `idle_minutes`
    * （登录响应就带 ⇒ 进 state），故兜底只在拿不到时生效；但字面 `15` 会让降级路径比服务端早 43185 分钟踢人。
    */
-  function armIdle() {
+  function armIdle(minutesArg) {
     if (idleTimer) clearTimeout(idleTimer)
-    const minutes = state.worker?.idleMinutes ?? DEFAULT_WORKER_IDLE_MINUTES
-    idleTimer = setTimeout(() => { void checkAlive() }, Math.max(1, minutes) * 60_000)
+    const minutes = minutesArg ?? state.worker?.idleMinutes ?? DEFAULT_WORKER_IDLE_MINUTES
+    // 🔴 分片排队（issue #7251）：旧实现是**单次** `setTimeout(30 天)`，而 2,592,000,000 ms
+    //    超过 2^31-1 ⇒ 平台把延时钳成 ~1ms **立即触发** ⇒ 30 天排期从未生效、且每次装配多打一轮对账。
+    //    现在只有**最后一片**到期才 `checkAlive()`；前几片只续排（首片到期 ≠ 闲置到期）。
+    const slices = idleSlices(minutes)
+    const schedule = (i) => {
+      idleTimer = setTimeout(() => {
+        if (i + 1 < slices.length) schedule(i + 1)
+        else void checkAlive()
+      }, slices[i])
+    }
+    schedule(0)
   }
 
   /**
