@@ -111,7 +111,9 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 `order:detail`；只有「只勾订单列表、不勾订单详情」的自定义岗位会打不开详情，且**不做存量回填**。
 类级元守卫 = `tests/unit_ci_workflows/test_rbac_derived_pages.py` 的
 `test_action_node_codes_are_consumed_by_at_least_one_endpoint`（动作码节点的码必须在 admin-api
-至少命中一个 `@RequirePermission`，否则具名判红；豁免台账 `ACTION_NODE_WITHOUT_ENDPOINT` 只许缩短）。
+至少命中一个 `@RequirePermission`，否则具名判红；豁免台账 `CODE_WITHOUT_ENFORCEMENT` 只许缩短，**issue #7282 起现取 = 0**）。
+
+> **同批普查的结论**（2026-10-18）：全目录 33 个可授予码里只有两个「可授予但服务端零消费」——`order:detail`（本单**接线**）与 `product:manage`（issue #7282 **删码**，用户裁定「可以删」）。`agent:chat` 一度被误判成第三个，复核发现它是 `AdminGate` 的**手写门**（黄金策唤出入口，不看 `@RequirePermission`）⇒ 已登记进 `EXPLICIT_GATES` 并做**活体校验**（门删了登记还在 ⇒ 红）。
 
 ## `/api/admin/**` 放行策略现状（issue #4727 实测，2026-09-20）
 
