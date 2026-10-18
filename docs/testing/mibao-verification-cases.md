@@ -10004,7 +10004,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（123 case）
+## 前端 UI 域（124 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -11786,6 +11786,17 @@
 ```
 溯源: 2026-10-18 新增（issue #7183）。落码：`frontend/admin-web/src/components/settings/CalcCaliberPanel.tsx`（防抖自动保存 + 保存态 + 删保存条）+ 设置页注释同步。取号：见文首注释。 ｜ tags: settings, craft-calc, autosave, ui
 
+### UI-123. 旧「工艺配置」页已下架：/production/routings 重定向到唯一写面，且全仓不再有写死的旧链接 🔵
+```
+你: 用户 2026-10-18 报障：「原工艺配置页面怎么未下架，从计件工资提示链接可以跳转到原页面，这里应该跳转到新页面了」
+期望: direct_reply
+数据: 判据 1·**旧路由重定向**：渲染 `/production/routings` ⇒ `router.replace('/settings?domain=operation-prices')`，且不渲染任何内容（不 404、不落空白）。证据：frontend/admin-web/tests/unit/pages/production-routings-legacy.test.tsx
+数据: 判据 2·**旧链接不再存在**：`src/` 里没有写死的 `href` / `redirect(` / `router.push|replace(` 指向 `/production/routings`（注释里的历史说明、`page-context` 的路由映射、`layout.tsx` 的权限前缀不算链接）。证据：同测试文件的 `linksToRetiredRoute()`
+数据: 判据 3·**定价入口与文案同源**：计件工资「去定价」的落点常量 = `/settings?domain=operation-prices`（文案写的是「企业基础设置 → 工序与部位单价」）。证据：frontend/admin-web/tests/unit/components/UnpricedNotice.test.tsx、ProductionProgressTable.test.tsx、PieceworkTable.test.tsx
+数据: 判据 4·**功能体仍有覆盖**：原借旧页当壳的两个测试改为直接渲染 `ProcessConfigBoard`（覆盖不随页面下架一起消失）。证据：OperationsScopeColumn.test.tsx、OperationsProvenance.test.tsx
+```
+溯源:  ｜ tags: navigation, settings, route-retirement, ui
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -11815,8 +11826,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：809（活跃 133，跳过 676）
-- tier 分布：smoke 12 / normal 743 / adversarial 32
+- 用例总数：810（活跃 134，跳过 676）
+- tier 分布：smoke 12 / normal 744 / adversarial 32
 - 售后域：15
 - Agent 核心域：11
 - API 层域：21
@@ -11841,7 +11852,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：123
+- 前端 UI 域：124
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -12147,4 +12158,5 @@
 - UI-121: 工人档案：质检页逐人开（新建弹窗「单独开放」一栏 + 列表行「开/关质检」）；默认页面不含质检、未收窄显示「默认页面」
 - UI-122: 配置面的字段只有一种写法：区块 = 浅底面板 + 标题 + 说明，字段 = 标签在上 + 控件满列 + 单位入框（共享原语 + 类级守卫）
 - UI-125: 算料口径改「变更即保存」：删掉保存 / 恢复默认两个按钮，防抖 0.6 秒自动 PUT（422 逐条理由、草稿不回滚）
+- UI-123: 旧「工艺配置」页已下架：/production/routings 重定向到唯一写面，且全仓不再有写死的旧链接
 

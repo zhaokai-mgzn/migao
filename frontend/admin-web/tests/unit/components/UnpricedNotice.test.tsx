@@ -36,12 +36,13 @@ describe('UnpricedNotice（issue #4696）', () => {
     expect(screen.getByTestId('piecework-unpriced').textContent).not.toContain('配料-布料')
   })
 
-  it('给出**定价入口**（按钮文案指向企业基础设置 → 工序与部位单价；href 仍是旧路径，机器跳转允许保留）', () => {
+  it('给出**定价入口**（文案与落点都指向 企业基础设置 → 工序与部位单价，issue #7182）', () => {
     render(<UnpricedNotice unpriced={unpriced} />)
 
     const link = screen.getByTestId('piecework-unpriced-pricing-link')
     expect(link).toHaveAttribute('href', PRICING_ENTRY_HREF)
-    expect(PRICING_ENTRY_HREF).toBe('/production/routings')
+    // 用户报障：文案写「企业基础设置 → 工序与部位单价」，点下去却跳旧「工艺配置」页 ⇒ 落点与文案同源
+    expect(PRICING_ENTRY_HREF).toBe('/settings?domain=operation-prices')
     expect(link).toHaveTextContent('去定价')
     // 按钮文案里的页面坐标（#6826：旧页名「工艺配置」已撤 ⇒ 按域 label 现取）
     expect(link).toHaveTextContent('企业基础设置 → 工序与部位单价')
