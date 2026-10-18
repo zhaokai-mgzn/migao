@@ -3,7 +3,7 @@
 > **真值源**：本文（业务仓）。
 > **研发模式侧的硬约束摘要**：预设仓 `zhaokai-mgzn/migao-agent-presets` 的 `migao-dev-flow` §32
 > （v1.113.0 起）—— 那边只放摘要与边界，**表格与判据以本文为准**。改动时两边同批改。
-> **实现**：`frontend/admin-web/src/components/ui/Button.tsx`（按钮）、`.../ui/FormPanel.tsx`（字段与区块）。
+> **实现**：`frontend/admin-web/src/components/ui/Button.tsx`（按钮：`variant` / `size` / **`icon`** / `loading` / `aria-busy`）、`.../ui/FormPanel.tsx`（字段与区块）。
 > **守卫**：`frontend/admin-web/tests/unit/design-system-form-fields.test.tsx`（字段/区块）+ 按钮守卫（issue #7184 落地）。
 
 ## 0. 这份规范怎么来的（用户逐字，2026-10-18）
@@ -73,8 +73,8 @@
 | 判据 | 会红的形态 | 状态 |
 |---|---|---|
 | 字段 / 区块 | 业务面自拼控件铬、标签顺排控件 | ✅ 已落：`design-system-form-fields.test.tsx` |
-| 按钮 chrome | 裸 `<button>` 带自制 chrome（`rounded` + `bg-*`/`border-*` 自拼） | #7184 落地（存量按**只许缩短**的台账收口） |
-| loading 双图标 | `loading` 且 children 自带 `mr-*` 图标 | #7184 落地 |
+| 按钮 chrome | 裸 `<button>` 自带**主色** chrome（`bg-primary-600`） | ✅ 已落：`design-system-buttons.test.tsx`（存量 10 处冻结台账，只许缩短） |
+| loading 双图标 / icon slot | `loading` 时页面自带图标仍渲染；图标手写 `mr-*` | ✅ 已落：`design-system-buttons.test.tsx`（`icon` prop + spinner 顶替 + `aria-busy`） |
 | 图标字形 | ≤16px 用叠置字形（`check-check` 一类）读成「图标重叠」 | ✅ 已落：`notifications.test.tsx` / `NotificationBell.test.tsx`（#7180） |
 
 ## 7. 边界（如实登记）

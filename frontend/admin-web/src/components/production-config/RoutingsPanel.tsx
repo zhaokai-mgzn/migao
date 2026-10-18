@@ -78,8 +78,7 @@ export function RoutingsPanel({
       )}
       {!hideActions && (
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button variant="secondary" size="sm" onClick={load} disabled={loading}>
-            <RefreshCw className={cn('w-4 h-4 mr-1.5', loading && 'animate-spin')} />
+          <Button variant="secondary" size="sm" onClick={load} disabled={loading} icon={<RefreshCw className="w-4 h-4" />}>
             刷新
           </Button>
           <Button
@@ -88,8 +87,8 @@ export function RoutingsPanel({
             /* 域写面出口标记（issue #6825）：类级守卫要求「可编辑控件 + 本域写出口」成对出现 */
             data-write-exit="craft-route"
             onClick={() => setNewRouteOpen(true)}
+            icon={<Plus className="w-4 h-4" />}
           >
-            <Plus className="w-4 h-4 mr-1.5" />
             新建路线
           </Button>
         </div>

@@ -6,6 +6,17 @@
 > **后续条目继续在本文件 `## [Unreleased]` 下累加。**
 
 ## [Unreleased]
+### 按钮统一到一套：图标走 slot、loading 时 spinner 顶替、裸按钮不许自拼主色（2026-10-18，issue #7184）
+
+用户四张截图同一屏并存三种按钮形态（「刷新 / 新增工序 / 新建路线」各自长一套）。本单落第一波：
+
+- `Button` 新增 `icon` prop（统一 16px + `mr-1.5` + `shrink-0` + `aria-hidden`），调用方不再手写 `mr-*`；
+- `loading` 时 spinner **顶替** icon（并排 = 双图标，真机被读成「图标重叠」），并补 `aria-busy`；
+- 工艺配置 / 加工项与分类 / 加工费组合 / 工序与部位单价四屏的 11 个按钮改走 `icon` slot（像素不变）；
+- 类级守卫：裸 `<button>` 不得自带主色 chrome（存量 10 处冻结台账，**只许缩短**）。
+
+规范正文见 `docs/design/ui-button-standard.md`；研发模式侧摘要 = 预设仓 `migao-dev-flow` §32。
+
 ### 通知中心「全部标记已读」的图标改单勾（2026-10-18，issue #7180）
 
 用户报障「红框的 icon 重叠了」：该按钮原用 lucide 的 `CheckCheck`（两条 path 叠置的双勾），
