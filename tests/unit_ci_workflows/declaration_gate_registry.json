@@ -303,6 +303,7 @@
         "where": "on.pull_request.paths",
         "paths": [
           "frontend/worker-h5/**",
+          "frontend/admin-web/tailwind.config.ts",
           ".github/workflows/worker-h5-tests.yml"
         ]
       },
