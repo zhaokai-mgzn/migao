@@ -4,15 +4,49 @@
    PAD（≥768px）：**远距离可点** —— 主按钮 ≥88px、正文 ≥20px、一屏放下「工序 + 应做数量 + 完成」。
    两断点由**纯 CSS** 做（无 JS 宽度分支）⇒ 同一份 HTML 在手机/PAD 都对。 */
 
+/* 🔴 调色板 = **商家端那一份**（issue #7237；用户 2026-10-18 逐字「整个工人页面都是这样的问题，
+   得和管理员登录的样式风格保持一致」）。
+   真值源 = `frontend/admin-web/tailwind.config.ts` 的 primary / neutral / accent 三组色阶
+   （+ `frontend/admin-web/src/app/globals.css` 的页面底）。工人端**不再自持**一套 Tailwind slate/teal：
+   逐值对账的守卫 = `tests/worker-h5-theme-parity.test.mjs`（商家端改一阶而这里没跟上 ⇒ 红；
+   这里自己发明一个近似色 ⇒ 也红；旧 hex 留一个 ⇒ 也红）。
+   ⚠️ 尺寸 / 触控目标（≥44px、PAD ≥88px）**不由调色板决定**，仍是车间口径（手套 + 弱光，issue #6667）。 */
 :root {
-  --wh5-bg: #0f172a;
+  /* 底与面 */
+  --wh5-bg: #faf7f2;            /* neutral-50 米白 */
+  --wh5-bg-end: #f6f2ea;        /* 「略暖的亚麻」（admin globals.css 的 background-end 同值） */
   --wh5-card: #ffffff;
-  --wh5-ink: #1e293b;
-  --wh5-muted: #64748b;
-  --wh5-brand: #0f766e;
-  --wh5-warn: #b45309;
+  --wh5-surface: #f2ede5;       /* neutral-100：悬停 / 已办底 / 分段容器 */
+  --wh5-surface-soft: #faf7f2;  /* neutral-50：行底（比卡片浅一档） */
+  /* 字 */
+  --wh5-ink: #312c26;           /* neutral-900 */
+  --wh5-ink-soft: #484036;      /* neutral-800：次要正文 */
+  --wh5-muted: #7e6f57;         /* neutral-600 */
+  /* 主色（= admin 主按钮 primary-600） */
+  --wh5-brand: #3a4e75;
+  --wh5-brand-strong: #2e3d5c;  /* primary-700：按下 / hover */
+  --wh5-brand-deep: #232e46;    /* primary-800 */
+  --wh5-brand-soft: #eef2f8;    /* primary-50：选中底 */
+  /* 语义色（= admin accent / danger） */
+  --wh5-warn: #a05531;          /* accent-600 */
+  --wh5-warn-soft: #faf0ea;     /* accent-50 */
+  --wh5-warn-line: #e7b99d;     /* accent-200 */
   --wh5-danger: #b91c1c;
-  --wh5-line: #e2e8f0;
+  /* 线 / 禁用 / 阴影（阴影 = admin 的 shadow-card，暖中性，不是冷灰） */
+  --wh5-line: #e6dfd3;          /* neutral-200 */
+  --wh5-line-strong: #d4c9b8;   /* neutral-300：控件描边（= admin secondary 按钮的 border） */
+  --wh5-disabled: #b8aa94;      /* neutral-400 */
+  --wh5-shadow: 0 1px 2px rgba(36, 31, 24, .04), 0 4px 16px rgba(36, 31, 24, .06);
+  /* 一体机（机台深色屏）：品牌深色三阶 —— 机台仍是深底（车间反光/粉尘），但不再是 Tailwind slate */
+  --wh5-machine-bg: #191f31;    /* primary-900 */
+  --wh5-machine-surface: #232e46; /* primary-800 */
+  --wh5-machine-line: #2e3d5c;  /* primary-700 */
+  --wh5-machine-ink: #d9e2ef;   /* primary-100 */
+  --wh5-machine-muted: #8ba4c7; /* primary-300 */
+  --wh5-machine-accent: #b3c4de; /* primary-200 */
+  /* 圆角：与 admin `rounded-lg`（控件）/ `rounded-2xl`（卡片）同口径 */
+  --wh5-radius: 8px;
+  --wh5-radius-lg: 16px;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -21,7 +55,8 @@ html, body {
   margin: 0;
   padding: 0;
   min-height: 100%;
-  background: #f1f5f9;
+  /* 与商家端登录页同一块底：米白 → 略暖亚麻的竖向渐变（issue #7237） */
+  background: linear-gradient(180deg, var(--wh5-bg) 0%, var(--wh5-bg-end) 100%);
   color: var(--wh5-ink);
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
   font-size: 16px;
@@ -49,8 +84,8 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--wh5-line);
-  border-radius: 10px;
+  border: 1px solid var(--wh5-line-strong);
+  border-radius: var(--wh5-radius);
   background: #fff;
   color: var(--wh5-brand);
   font-size: 15px;
@@ -63,18 +98,25 @@ html, body {
 .wh5-perm-notice {
   margin: 0 0 12px;
   padding: 10px 12px;
-  border: 1px solid #f0c36d;
-  border-radius: 10px;
-  background: #fff8e6;
-  color: #7a5b00;
+  border: 1px solid var(--wh5-warn-line);
+  border-radius: var(--wh5-radius);
+  background: var(--wh5-warn-soft);
+  color: var(--wh5-warn);
   font-size: 14px;
   line-height: 1.5;
 }
 .wh5-ghost {
+  /* issue #7232：本类**两种标签都在用**（`<button>` 9 处 + `<a>` 1 处「返回报工」）。
+     `<button>` 的文字天然垂直居中，而被 `.wh5-header` 块化的 `<a>` 不是 —— 不显式给 flex 对齐，
+     链接文字就贴在 44px 白框的上沿（用户 2026-10-18 逐字「返回报工按钮样式有问题」）。
+     同页 `.wh5-entry` 早就是 `display:flex + align-items:center` 的写法，这里与它对齐。 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 44px;
   padding: 0 14px;
-  border: 1px solid var(--wh5-line);
-  border-radius: 10px;
+  border: 1px solid var(--wh5-line-strong);
+  border-radius: var(--wh5-radius);
   background: #fff;
   color: var(--wh5-ink);
   font-size: 15px;
@@ -96,14 +138,14 @@ html, body {
 .wh5-choice { touch-action: manipulation; }
 .wh5-op-choice { touch-action: manipulation; }
 .wh5-entry { touch-action: manipulation; }
-.wh5-primary:active { background: #115e59; transform: translateY(1px); }
-.wh5-ghost:active { background: #f1f5f9; transform: translateY(1px); }
-.wh5-choice:active { background: #f1f5f9; transform: translateY(1px); }
-.wh5-op-choice:active { background: #f1f5f9; transform: translateY(1px); }
+.wh5-primary:active { background: var(--wh5-brand-strong); transform: translateY(1px); }
+.wh5-ghost:active { background: var(--wh5-surface); transform: translateY(1px); }
+.wh5-choice:active { background: var(--wh5-surface); transform: translateY(1px); }
+.wh5-op-choice:active { background: var(--wh5-surface); transform: translateY(1px); }
 
 /* 提交中（in-flight）：**视觉可分**，不只靠 `disabled` 属性 —— 弱网下这是唯一的反馈 */
 .wh5-primary[disabled] {
-  background: #94a3b8;
+  background: var(--wh5-disabled);
   cursor: default;
   transform: none;
 }
@@ -111,9 +153,9 @@ html, body {
 /* ---- 卡片 ---- */
 .wh5-card {
   background: var(--wh5-card);
-  border-radius: 14px;
+  border-radius: var(--wh5-radius-lg);
   padding: 16px;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, .08);
+  box-shadow: var(--wh5-shadow);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -126,8 +168,8 @@ html, body {
   min-height: 48px;
   padding: 10px 12px;
   font-size: 18px;
-  border: 1px solid var(--wh5-line);
-  border-radius: 10px;
+  border: 1px solid var(--wh5-line-strong);
+  border-radius: var(--wh5-radius);
   background: #fff;
   color: var(--wh5-ink);
 }
@@ -162,12 +204,12 @@ html, body {
   min-height: 48px;
   min-width: 88px;
   padding: 0 14px;
-  border: 1px solid var(--wh5-line);
-  border-radius: 10px;
+  border: 1px solid var(--wh5-line-strong);
+  border-radius: var(--wh5-radius);
   background: #fff;
   font-size: 17px;
 }
-.wh5-choice.is-on { border-color: var(--wh5-brand); background: #ccfbf1; font-weight: 700; }
+.wh5-choice.is-on { border-color: var(--wh5-brand); background: var(--wh5-brand-soft); font-weight: 700; }
 .wh5-pick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 15px; }
 .wh5-pick-label { color: var(--wh5-muted); }
 
@@ -233,24 +275,29 @@ html, body {
   min-height: 44px;
   padding: 4px 8px;
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--wh5-surface-soft);
   font-size: 15px;
 }
-.wh5-ov-op.is-done { color: var(--wh5-muted); background: #f1f5f9; }
+.wh5-ov-op.is-done { color: var(--wh5-muted); background: var(--wh5-surface); }
 .wh5-ov-name { font-weight: 600; }
 .wh5-ov-status { font-weight: 700; }
 .wh5-ov-op.is-done .wh5-ov-status { color: var(--wh5-brand); }
+/* issue #7232：下面三格**每行都在下发**却一直没有规则（应做 / 单价 / 已报 与工序名挤成一团）
+   ⇒ 按「次要读数」收口：能读、但不跟「工序名 + 状态」抢眼；数字列等宽（小数点不跳舞）。 */
+.wh5-ov-qty { font-variant-numeric: tabular-nums; }
+.wh5-ov-price { color: var(--wh5-muted); font-variant-numeric: tabular-nums; }
+.wh5-ov-done { font-size: 14px; color: var(--wh5-muted); font-variant-numeric: tabular-nums; }
 /* 工序选择器（issue #6635）：候选是**正常动作**（点哪道就领哪道），所以是实线可点按钮，
    不是改前那种"例外入口"的虚线小字；选中那道用 = 既有 .wh5-choice 的同一个品牌色口径。 */
 .wh5-op-choice {
   min-height: 44px;
   padding: 0 12px;
-  border: 1px solid var(--wh5-line);
-  border-radius: 10px;
+  border: 1px solid var(--wh5-line-strong);
+  border-radius: var(--wh5-radius);
   background: #fff;
   font-size: 16px;
 }
-.wh5-op-choice.is-on { border-color: var(--wh5-brand); background: #ccfbf1; font-weight: 700; }
+.wh5-op-choice.is-on { border-color: var(--wh5-brand); background: var(--wh5-brand-soft); font-weight: 700; }
 
 /* ---- PAD 断点（≥768px）：远距离可点（设计 §4.2 的下限建议） ---- */
 @media (min-width: 768px) {
@@ -289,26 +336,26 @@ html, body {
   display: block;
   min-height: 100vh;
   padding: 16px;
-  color: #f8fafc;
+  color: var(--wh5-machine-ink);
   font-size: 18px;
 }
 
 .wh5-machine__panel { display: flex; flex-direction: column; gap: 16px; min-height: 80vh; }
 .wh5-machine__head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .wh5-machine__head h1 { margin: 0; font-size: 30px; letter-spacing: 1px; }
-.wh5-machine__worker { margin-left: auto; font-size: 20px; color: #94a3b8; }
+.wh5-machine__worker { margin-left: auto; font-size: 20px; color: var(--wh5-machine-muted); }
 
 .wh5-machine__tabs { display: flex; gap: 12px; flex-wrap: wrap; }
 .wh5-machine__tab {
   min-height: 56px;
   padding: 0 20px;
-  border: 2px solid #334155;
+  border: 2px solid var(--wh5-machine-line);
   border-radius: 12px;
-  background: #1e293b;
-  color: #e2e8f0;
+  background: var(--wh5-machine-surface);
+  color: var(--wh5-machine-ink);
   font-size: 20px;
 }
-.wh5-machine__tab.is-active { border-color: #14b8a6; background: #134e4a; color: #fff; }
+.wh5-machine__tab.is-active { border-color: var(--wh5-machine-accent); background: var(--wh5-brand-deep); color: #fff; }
 
 .wh5-machine__body { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
 .wh5-machine__col { flex: 1 1 320px; min-width: 280px; display: flex; flex-direction: column; gap: 12px; }
@@ -340,13 +387,13 @@ html, body {
 .wh5-machine__sum dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
 
 .wh5-machine__big { margin: 0; font-size: 34px; line-height: 1.3; }
-.wh5-machine__big b { font-size: 1.6em; color: #5eead4; font-variant-numeric: tabular-nums; }
+.wh5-machine__big b { font-size: 1.6em; color: var(--wh5-machine-accent); font-variant-numeric: tabular-nums; }
 .wh5-machine__big--error { color: #fca5a5; }
 .wh5-machine__edited { margin: 0; color: #fde68a; font-size: 18px; }
 .wh5-machine__missing { margin: 0; color: #fde68a; font-size: 20px; }
 .wh5-machine__notice { margin: 0; color: #93c5fd; }
-.wh5-machine__hint { margin: 0; font-size: 20px; color: #94a3b8; }
-.wh5-machine__empty { color: #94a3b8; }
+.wh5-machine__hint { margin: 0; font-size: 20px; color: var(--wh5-machine-muted); }
+.wh5-machine__empty { color: var(--wh5-machine-muted); }
 
 .wh5-machine__actions { display: flex; gap: 16px; }
 .wh5-machine__cta, .wh5-machine__back {
@@ -360,9 +407,9 @@ html, body {
 .wh5-machine__back { touch-action: manipulation; }
 .wh5-machine__tab { touch-action: manipulation; }
 .wh5-machine__hit { touch-action: manipulation; }
-.wh5-machine__cta:active { background: #115e59; }
-.wh5-machine__back:active { background: #1e293b; }
-.wh5-machine__back { background: #334155; font-weight: 400; }
+.wh5-machine__cta:active { background: var(--wh5-brand-strong); }
+.wh5-machine__back:active { background: var(--wh5-machine-surface); }
+.wh5-machine__back { background: var(--wh5-machine-line); font-weight: 400; }
 /* 「去报工页」/「登录」出口（issue #6635 / #6667）：它们是**链接**、不是动作按钮 ⇒ 不套按钮底色
    （套了在机台深色屏上就是"深底深字"= 读不出来，2026-10-10 真浏览器截图实测）—— 用与
    `.wh5-machine__hint` 同族的浅色 + 下划线。
@@ -370,12 +417,12 @@ html, body {
    戴手套点不中）⇒ `inline-block` + `padding` 把命中区撑到 ≥44px；② 同为触屏目标 ⇒ `touch-action`。 */
 a.wh5-machine__back {
   display: inline-block;
-  background: none; color: #94a3b8; text-decoration: underline;
+  background: none; color: var(--wh5-machine-muted); text-decoration: underline;
   font-size: 20px; font-weight: 400; padding: 10px 12px; min-height: 44px;
   line-height: 1.4; box-sizing: border-box;
   touch-action: manipulation;
 }
-a.wh5-machine__back:active { color: #e2e8f0; }
+a.wh5-machine__back:active { color: var(--wh5-machine-ink); }
 
 /* 一体机 / PAD（≥768px，沿用既有断点）：远距离可读的大字 */
 @media (min-width: 768px) {
@@ -391,8 +438,8 @@ a.wh5-machine__back:active { color: #e2e8f0; }
 }
 
 /* 报工区（与裁高值同屏）：大字值 + 【完成】+ 回执/报错 —— 报工失败必须一眼看到 */
-.wh5-machine__report { display: flex; flex-direction: column; gap: 12px; background: #0b1220; border: 1px solid #1e293b; border-radius: 14px; padding: 16px; }
-.wh5-machine__done { margin: 0; font-size: 26px; font-weight: 700; color: #5eead4; }
+.wh5-machine__report { display: flex; flex-direction: column; gap: 12px; background: var(--wh5-machine-bg); border: 1px solid var(--wh5-machine-line); border-radius: var(--wh5-radius-lg); padding: 16px; }
+.wh5-machine__done { margin: 0; font-size: 26px; font-weight: 700; color: var(--wh5-machine-accent); }
 .wh5-machine__cta[disabled] { opacity: .5; }
 @media (min-width: 768px) {
   .wh5-machine__done { font-size: 32px; }
@@ -401,17 +448,148 @@ a.wh5-machine__back:active { color: #e2e8f0; }
 /* 质检区块（issue #7162）：扫水洗唛后录判定 → 生成质检单（工人端） */
 .wh5-quality { display: flex; flex-direction: column; gap: 8px; }
 .wh5-q-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.wh5-q-title { font-size: 18px; font-weight: 700; color: #0f172a; }
-.wh5-q-state { font-size: 14px; font-weight: 600; padding: 2px 10px; border-radius: 999px; border: 1px solid #cbd5e1; color: #475569; background: #f8fafc; white-space: nowrap; }
+.wh5-q-title { font-size: 18px; font-weight: 700; color: var(--wh5-ink); }
+.wh5-q-state { font-size: 14px; font-weight: 600; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--wh5-line-strong); color: var(--wh5-ink-soft); background: var(--wh5-surface-soft); white-space: nowrap; }
 .wh5-q-state.is-pending { color: #92400e; background: #fffbeb; border-color: #fde68a; }
 .wh5-q-state.is-pass { color: #065f46; background: #ecfdf5; border-color: #a7f3d0; }
 .wh5-q-state.is-rework { color: #9a3412; background: #fff7ed; border-color: #fed7aa; }
 .wh5-q-state.is-scrap { color: #991b1b; background: #fef2f2; border-color: #fecaca; }
-.wh5-q-meta, .wh5-q-reason { margin: 0; font-size: 13px; color: #64748b; }
-.wh5-q-reason { color: #334155; }
-.wh5-q-form { display: flex; flex-direction: column; gap: 10px; padding-top: 8px; border-top: 1px dashed #e2e8f0; }
+.wh5-q-meta, .wh5-q-reason { margin: 0; font-size: 13px; color: var(--wh5-muted); }
+.wh5-q-reason { color: var(--wh5-ink-soft); }
+.wh5-q-form { display: flex; flex-direction: column; gap: 10px; padding-top: 8px; border-top: 1px dashed var(--wh5-line); }
 .wh5-q-choices { display: flex; gap: 8px; flex-wrap: wrap; }
-.wh5-q-choice { flex: 1 1 0; min-height: 46px; border-radius: 10px; border: 1px solid #cbd5e1; background: #fff; color: #334155; font-size: 16px; font-weight: 600; touch-action: manipulation; }
-.wh5-q-choice.is-on { border-color: #0f766e; background: #ccfbf1; color: #115e59; }
+.wh5-q-choice { flex: 1 1 0; min-height: 46px; border-radius: var(--wh5-radius); border: 1px solid var(--wh5-line-strong); background: #fff; color: var(--wh5-ink-soft); font-size: 16px; font-weight: 600; touch-action: manipulation; }
+.wh5-q-choice.is-on { border-color: var(--wh5-brand); background: var(--wh5-brand-soft); color: var(--wh5-brand-strong); }
 .wh5-q-actions { display: flex; gap: 10px; }
 .wh5-q-actions .wh5-primary { flex: 1 1 auto; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   「我的计件」（issue #6767，**样式补齐** = issue #7232）
+   ════════════════════════════════════════════════════════════════════════════
+   病灶：本页下发的 12 个 `wh5-piecework-*` 类此前在 styles.css **一条规则都没有**
+   ⇒ 合计 / 件数 / 逐笔 / 未定价 / 月份切换全落回浏览器默认样式（`<dl>` 缩进、`<li>` 圆点、
+   默认外边距），用户 2026-10-18 读成「整页白色、没有样式」。
+   形态 = 一块**只读钱面**：合计是第一眼（金额用品牌色 + 大字号），逐笔是「哪道活 × 多少件 × 多少钱」。
+   数字列一律等宽（`tabular-nums`：同一列的小数点不会随数字跳行），金额右对齐。 */
+.wh5-piecework-summary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  align-items: baseline;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--wh5-radius-lg);
+  background: var(--wh5-surface-soft);
+}
+.wh5-piecework-summary dt { font-size: 15px; color: var(--wh5-muted); }
+.wh5-piecework-summary dd {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+/* 合计 = 这一页的主角（工人扫一眼就要知道这个月多少钱） */
+#wh5-piecework-total { font-size: 30px; line-height: 1.15; color: var(--wh5-brand); }
+.wh5-piecework-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.wh5-piecework-line {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 2px 12px;
+  align-items: baseline;
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: var(--wh5-radius);
+  background: var(--wh5-surface-soft);
+  font-size: 15px;
+  /* 工序名是商家自由文本 ⇒ 长串必须折行（含无空格的长串），不撑破卡片、不省略号 */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.wh5-piecework-line-name { font-weight: 600; }
+.wh5-piecework-line-qty { color: var(--wh5-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wh5-piecework-line-amount {
+  min-width: 5.5em;
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* 未定价（V90 口径：未定价 ≠ 0 元）—— 与报错**视觉可分**：它是「这笔还没算钱」，用描边卡不用红字 */
+.wh5-piecework-unpriced {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--wh5-warn-line);
+  border-radius: var(--wh5-radius);
+  background: var(--wh5-warn-soft);
+  color: var(--wh5-warn);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.wh5-piecework-unpriced-title { margin: 0; font-weight: 700; }
+.wh5-piecework-unpriced-detail { margin: 0; overflow-wrap: anywhere; word-break: break-word; }
+.wh5-piecework-unpriced-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+/* 空月：如实说「本月暂无计件」（不印 ¥0.00 充当读数） */
+.wh5-piecework-empty {
+  margin: 0;
+  padding: 28px 0;
+  text-align: center;
+  color: var(--wh5-muted);
+  font-size: 16px;
+}
+/* 期间切换（上/下月只按服务端 `can_prev` / `can_next` 出现） */
+.wh5-piecework-nav { display: flex; gap: 8px; }
+.wh5-piecework-nav .wh5-ghost { flex: 1 1 0; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   发货面（`src/shipment.mjs`，**样式补齐** = issue #7232）
+   ════════════════════════════════════════════════════════════════════════════
+   一单一块：单号 / 承运商 / 经手各算一件事实（一行一件，不重复念）；撤销打包用警示色**另起一行**。 */
+.wh5-shipments { display: flex; flex-direction: column; gap: 10px; }
+.wh5-totals { margin: 0; font-size: 16px; font-variant-numeric: tabular-nums; }
+.wh5-shipment {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--wh5-line);
+  border-radius: var(--wh5-radius-lg);
+  background: #fff;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.wh5-shipment h3 { margin: 0; font-size: 17px; }
+.wh5-shipment p { margin: 0; line-height: 1.5; }
+.wh5-shipment p:not(.wh5-unpack) { color: var(--wh5-muted); }
+.wh5-shipment ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.wh5-unpack { color: var(--wh5-warn); font-size: 14px; }
+
+/* PAD（≥768px）：远距离可读 —— 与既有断点同口径（正文 ≥20px、金额更大） */
+@media (min-width: 768px) {
+  .wh5-piecework-summary dt { font-size: 18px; }
+  .wh5-piecework-summary dd { font-size: 26px; }
+  #wh5-piecework-total { font-size: 40px; }
+  .wh5-piecework-line { font-size: 20px; }
+  .wh5-piecework-line-qty, .wh5-piecework-line-amount { font-size: 20px; }
+  .wh5-piecework-unpriced { font-size: 18px; }
+  .wh5-piecework-empty { font-size: 20px; }
+  .wh5-shipments { font-size: 20px; }
+  .wh5-shipment { font-size: 20px; }
+  .wh5-shipment h3 { font-size: 22px; }
+  .wh5-unpack { font-size: 18px; }
+}

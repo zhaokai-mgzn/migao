@@ -1,4 +1,4 @@
-// case_ids: PG-046, PG-058
+// case_ids: PG-046, PG-058, PG-060
 package com.migao.admin.service;
 
 import com.migao.admin.config.TenantContext;
@@ -24,6 +24,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
@@ -123,7 +124,11 @@ class ProductionScanServiceDetailFieldsTest {
     private ProductionOperationQueryService operationQueryService;
     @Mock
     private ClientRequestIdService clientRequestIdService;
+    /** 派工批次真值源（issue #5145 / #6754 / #7233）：`ProductionService` 里是 `@Autowired(required=false)` 字段注入。 */
+    @Mock
+    private StockBatchConsumptionService stockBatchConsumptionService;
 
+    private ProductionService productionService;
     private ProductionScanService service;
 
     @BeforeEach
@@ -131,8 +136,10 @@ class ProductionScanServiceDetailFieldsTest {
         TenantContext.setTenantId(TENANT);
         // 真实对象（只 mock Mapper）：规格快照必须走**同一份**实现（`orderSpecByItemId`），
         // mock 掉它等于把被测口径换成桩（"绿了但没跑"）。
-        ProductionService productionService = new ProductionService(processingOrderMapper,
+        productionService = new ProductionService(processingOrderMapper,
                 positionOperationMapper, workLogMapper, orderMapper, orderItemMapper, clientRequestIdService);
+        // 批次可见面（issue #7233）：与 `ProductionServiceTest` 同一注入方式（字段是 `@Autowired(required=false)`）。
+        ReflectionTestUtils.setField(productionService, "stockBatchConsumptionService", stockBatchConsumptionService);
         ProductionStuckPointService stuckPointService = new ProductionStuckPointService(
                 productionService, positionOperationMapper, orderSetMapper, 4.0);
         service = new ProductionScanService(setPartTokenMapper, orderSetMapper, processingOrderMapper,
@@ -359,6 +366,52 @@ class ProductionScanServiceDetailFieldsTest {
             assertThat(cloth).containsKey(key);
             assertThat(cloth.get(key)).as("键 %s 无订单行 ⇒ null", key).isNull();
         }
+    }
+
+    // ============================================================ ④ 派工批次（issue #7233）
+
+    /**
+     * 病灶（用户 2026-10-18 逐字「工人报工页面的裁剪没有展示布料批次号？没有批次号工人裁剪哪块布？」）：
+     * 批次盖章只发生在 {@code ProductionService#getOperations}（PG-060 判据覆盖），而**工人扫码面**
+     * {@code ProductionScanService#specByItemIdOf} 取完规格快照就返回 ⇒ {@code batch_no} / {@code batch_meters}
+     * 恒为 null ⇒ 前端 `positionSpecBlock`「缺值不渲染行」⇒ 屏上「本部位生产信息」里**没有批号**。
+     *
+     * <p>判据对象 = **工人真正看的那一屏**（{@code set_overview.positions[]}），不是 `getOperations`
+     * （那条已有 PG-060）。红证：本测试在补 {@code stampBatchAssignments} 调用前 fail（期望 {@code PC-…}，
+     * 实得 null）；补上后 pass。</p>
+     */
+    @Test
+    @DisplayName("④ 派工指派过批次 ⇒ 扫码详情面也带 batch_no / batch_meters（与 getOperations 同一份取数）")
+    void scanDetailStampsBatchAssignment() {
+        stubScan(CODE_CLOTH, ITEM_CLOTH, standardOps());
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(
+                orderItem(ITEM_CLOTH, "布艺遮光帘A", "2.92", "2.60", "韩褶", "布帘", 2, "定高买宽", true, "2.0")));
+        // 真值源 = 批次消耗台账（不是订单侧 processing_info.batchNo —— 那是纸面「批号」，两件事不互相冒充）
+        when(stockBatchConsumptionService.assignmentsOf(TENANT, PO_NO)).thenReturn(Map.of(
+                ITEM_CLOTH,
+                new StockBatchConsumptionService.BatchAssignment("PC-20261018-01", new BigDecimal("2.7"))));
+
+        Map<String, Object> cloth = positionOf(overviewPositions(service.resolve(CODE_CLOTH, null, TENANT)),
+                ITEM_CLOTH);
+
+        assertThat(cloth.get("batch_no")).isEqualTo("PC-20261018-01");
+        assertThat(cloth.get("batch_meters")).isEqualTo(new BigDecimal("2.7"));
+    }
+
+    @Test
+    @DisplayName("④-b 未指派批次 ⇒ 两键恒在且为 null（不拿别的批次顶、不折默认值）")
+    void scanDetailKeepsBatchKeysNullWhenNotAssigned() {
+        stubScan(CODE_CLOTH, ITEM_CLOTH, standardOps());
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(
+                orderItem(ITEM_CLOTH, "布艺遮光帘A", "2.92", "2.60", "韩褶", "布帘", 2, "定高买宽", true, "2.0")));
+        when(stockBatchConsumptionService.assignmentsOf(TENANT, PO_NO)).thenReturn(Map.of());
+
+        Map<String, Object> cloth = positionOf(overviewPositions(service.resolve(CODE_CLOTH, null, TENANT)),
+                ITEM_CLOTH);
+
+        assertThat(cloth).containsKeys("batch_no", "batch_meters");
+        assertThat(cloth.get("batch_no")).isNull();
+        assertThat(cloth.get("batch_meters")).isNull();
     }
 
     // ============================================================ 夹具
