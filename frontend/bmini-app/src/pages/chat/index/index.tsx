@@ -61,7 +61,8 @@ export default function ChatPage() {
     if (currentLandingCode().present) return
 
     // 检查登录状态（B 端首次登录需账号密码，无微信静默登录）
-    if (!checkAuth()) {
+    // 🔴 `checkAuth` 是异步的（issue #7249）：exp 过期时它会先续期，续不到才判未登录
+    if (!(await checkAuth())) {
       Taro.showToast({ title: '请先登录', icon: 'none' })
       setTimeout(() => Taro.redirectTo({ url: '/pages/auth/login/index' }), 600)
       return

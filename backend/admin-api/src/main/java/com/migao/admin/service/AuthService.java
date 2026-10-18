@@ -89,9 +89,6 @@ public class AuthService {
      */
     private static final String REFRESH_TOKEN_COOKIE = "refresh_token";
 
-    /** Refresh Token Cookie 有效期（秒）：7 天，与 JWT refresh-token-expiration 对齐 */
-    private static final int REFRESH_TOKEN_COOKIE_MAX_AGE = 604800;
-
     @Value("${jwt.cookie.name:access_token}")
     private String cookieName;
 
@@ -1180,11 +1177,15 @@ public class AuthService {
     }
 
     /**
-     * 设置 Refresh Token Cookie（HttpOnly+Secure+SameSite，7 天）。
+     * 设置 Refresh Token Cookie（HttpOnly+Secure+SameSite；有效期 = `jwt.refresh-token-expiration`）。
      * refresh token 仅经此通道下发（审计 07 P1-5），不进入响应体。
+     *
+     * <p>🔴 有效期**只有 `JwtTokenProvider` 一个来源**（issue #7249）：此前这里另抄了一份
+     * `604800` 字面量 ⇒ 与配置构成第二份真值（改一处漏一处 = 一类缺陷，不是一处笔误）。</p>
      */
     private void setRefreshTokenCookie(HttpServletResponse response, String refreshToken) {
-        setCookie(response, REFRESH_TOKEN_COOKIE, refreshToken, REFRESH_TOKEN_COOKIE_MAX_AGE);
+        setCookie(response, REFRESH_TOKEN_COOKIE, refreshToken,
+                (int) jwtTokenProvider.getRefreshTokenExpiration());
     }
 
     /**
