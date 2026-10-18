@@ -521,6 +521,24 @@ cmd_rebase() {
   echo "✅ rebase 完成：$(git -C "$path" log -1 --format='%h %s')"
 }
 
+cmd_hooks_install() {
+  # issue #7229：仓内 pre-commit 守卫（主工作树 × 非 main 分支 ⇒ 拒提交；见 .githooks/pre-commit）。
+  # `core.hooksPath` 写在主仓 .git/config ⇒ 对**所有工作区**同时生效；重复执行幂等。
+  # `MIGAO_HOOKS_GIT_DIR` / `MIGAO_HOOKS_DIR` 是**测试缝**（判据要能在临时仓库上验证幂等，
+  # 而 `REPO_ROOT` 由脚本位置推导、无法被 env 改向）—— 不是用户接口，正常用法不设。
+  # 判据 9（tests/unit_ci_workflows/test_dev_worktree_registry_drift.py）：**每个** cmd_* 入口
+  # 都必须先过「登记表 × 磁盘」前置断言 —— 本命令虽是写配置而非写工作区，也照同一入口纪律走
+  # （不给自己开豁免：豁免名单只许缩短）。
+  wt_registry_assert_for_entry "hooks-install" || exit 1
+  local git_dir="${MIGAO_HOOKS_GIT_DIR:-$REPO_ROOT}"
+  local hooks_dir="${MIGAO_HOOKS_DIR:-$REPO_ROOT/.githooks}"
+  git -C "$git_dir" config core.hooksPath .githooks
+  chmod +x "$hooks_dir/pre-commit" 2>/dev/null || true
+  echo "✅ 已启用仓内钩子：core.hooksPath=$(git -C "$git_dir" config --get core.hooksPath)"
+  echo "   守的是：主工作树里非 main 分支的提交（防提交落到别的会话的分支）+ acceptance/out 产物软警告"
+  echo "   逃逸口：MIGAO_MAIN_TREE_COMMIT=1 git commit ..."
+}
+
 cmd_add() {
   [ $# -ge 1 ] || usage
   local branch="$1"
@@ -588,6 +606,11 @@ cmd_add() {
     git -C "$REPO_ROOT" worktree add --track -b "$branch" "$path" "origin/$branch"
   fi
   lock_register "$branch" "$path"
+  # issue #7229：建工作区的时机顺带把仓内钩子接上（幂等；失败不阻塞建工作区）
+  if ! git -C "$REPO_ROOT" config --get core.hooksPath >/dev/null 2>&1; then
+    git -C "$REPO_ROOT" config core.hooksPath .githooks 2>/dev/null \
+      && echo "   🔐 已启用仓内 pre-commit 钩子（.githooks；见 ./scripts/dev-worktree.sh hooks-install）"
+  fi
 
   # v1.10（issue #4026）：与主干同步的时机顺带把**活锚镜像**带上预设仓 main ——
   # 否则「预设 PR 合并后活锚落后一格」会一直留到有人手动刷（改进到不了加载点）。
@@ -727,6 +750,7 @@ case "${1:-}" in
   list) cmd_list ;;
   rm)   shift; cmd_rm "$@" ;;
   rebase) shift; cmd_rebase "$@" ;;
+  hooks-install) cmd_hooks_install ;;
   preset-guard)
     # v1.8（issue #3851）：提交路径 fail-closed 守卫 —— 判定**业务仓** .agent-presets/** 是否构成版本下降。
     # v1.10（issue #4026）：同一守卫同时判**活锚新鲜度**（内容 + sha；落后/悬空即非零退出）
