@@ -312,7 +312,8 @@ describe('ProductionProgressTable 未定价（issue #4696）', () => {
     expect(within(row).getByTestId('op-unit-price')).not.toHaveTextContent('¥0.00')
     expect(within(row).getByTestId('op-unit-price-pricing-link')).toHaveAttribute(
       'href',
-      '/production/routings',
+      // issue #7182：旧「工艺配置」页已下架 ⇒ 落点 = 唯一写面（作业定价域）
+      '/settings?domain=operation-prices',
     )
   })
 

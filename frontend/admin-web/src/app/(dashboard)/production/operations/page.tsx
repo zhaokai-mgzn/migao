@@ -12,8 +12,11 @@ import { redirect } from 'next/navigation'
  * 照 #4357 的 `/processing-orders` → `/production` 先例。
  *
  * 工序库原有能力（分组目录 / 搜索 / 改单价 / 必完开关 / 作用域 / 新增工序 / 行业模板补套）
- * 已全部并入 `/production/routings` 的**左栏**，见 `production/routings/page.tsx`。
+ * 已全部并入**企业基础设置**的作业定价 / 工艺路线 / 裁高配置域（issue #7182 起旧「工艺配置」页已下架）。
  */
+/** 旧别名（`/production/operations`）⇒ 直接落到唯一写面（issue #7182：不再中转已下架的旧页） */
+const SETTINGS_HREF = '/settings?domain=operation-prices'
+
 export default function OperationsRedirectPage() {
-  redirect('/production/routings')
+  redirect(SETTINGS_HREF)
 }

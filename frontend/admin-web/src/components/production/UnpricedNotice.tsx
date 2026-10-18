@@ -26,7 +26,14 @@ interface UnpricedNoticeProps {
 }
 
 /** 定价入口（工序单价表就在「工艺配置」页；URL 与后端 hint 同源） */
-export const PRICING_ENTRY_HREF = '/production/routings'
+/**
+ * 「去定价」的落点 = **唯一写面** `/settings?domain=operation-prices`（作业定价域）。
+ *
+ * 🔴 issue #7182（2026-10-18 用户报障）：改前指向 `/production/routings`（旧「工艺配置」页）——
+ * 按钮文案早就写着「企业基础设置 → 工序与部位单价」，点下去却跳到旧页。旧路由已在本单下架
+ * （改成 `replace` 到同一个域），这里也一并对齐，口径只剩一处。
+ */
+export const PRICING_ENTRY_HREF = '/settings?domain=operation-prices'
 
 export default function UnpricedNotice({ unpriced, className }: UnpricedNoticeProps) {
   const rows = unpriced?.operations ?? []

@@ -59,7 +59,8 @@ vi.mock('@/lib/api', () => ({
 }))
 
 import { toast } from 'sonner'
-import ProcessConfigPage from '@/app/(dashboard)/production/routings/page'
+// issue #7182：旧路由已下架（改成重定向）⇒ 测试直接渲染功能体，不借旧页当壳
+import ProcessConfigBoard from '@/components/production-config/ProcessConfigBoard'
 
 /** 工序库（只用于 provenance 徽标与分组/单位写面的**库行**） */
 const CATALOG = {
@@ -96,7 +97,7 @@ const ok = (data: unknown) => ({ data: { success: true, data } })
 
 /** 打开某道工序的「管理▸」抽屉（分组 / 单位 / 停用 / 删除 的**唯一**入口） */
 const openVariant = async (operation: string) => {
-  render(<ProcessConfigPage />)
+  render(<ProcessConfigBoard />)
   await waitFor(() => expect(screen.getByTestId('operation-price-matrix')).toBeInTheDocument())
   await userEvent.click(screen.getByTestId(`matrix-manage-${operation}`))
   await waitFor(() => expect(screen.getByTestId('operations-manage-drawer')).toBeInTheDocument())
