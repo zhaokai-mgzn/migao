@@ -331,7 +331,7 @@ describe('Header', () => {
 
   // ─── #3099 用户信息卡片（点击展开）───
 
-  it('点击用户按钮展开下拉卡片，展示 姓名/手机号/岗位/所属企业（#3099）', async () => {
+  it('点击用户按钮展开下拉卡片，展示 姓名/账号名/岗位/所属企业（#3099；#7272 账号名不再标成手机号）', async () => {
     mockUseAuthStore.mockReturnValue({
       user: {
         id: '1',
@@ -351,12 +351,39 @@ describe('Header', () => {
     await user.click(screen.getByRole('button', { name: '用户菜单' }))
     // 姓名（卡片头部 + 按钮各出现一次）
     expect(screen.getAllByText('张老板').length).toBeGreaterThanOrEqual(1)
-    // 手机号（username=手机号；卡片头部子行与手机号行各出现一次）
-    expect(screen.getAllByText('13800138000').length).toBeGreaterThanOrEqual(1)
+    // 账号名（issue #7272：取值是 user.username；标签必须是「账号名」而不是「手机号」）
+    expect(screen.getByText('账号名')).toBeInTheDocument()
+    expect(screen.queryByText('手机号')).toBeNull()
+    // 账号只在「账号名」行出现一次（卡片头部副标题不再重复账号 —— 信息不重复）
+    expect(screen.getByText('13800138000')).toBeInTheDocument()
     // 岗位
     expect(screen.getByText('运营')).toBeInTheDocument()
     // 所属企业
     expect(screen.getByText('观星台布艺')).toBeInTheDocument()
+  })
+
+  it('非手机号账号（reg_sales）：显示「账号名」+ 账号，副标题放邮箱（#7272 用户截图同形态）', async () => {
+    mockUseAuthStore.mockReturnValue({
+      user: {
+        id: '1',
+        username: 'reg_sales',
+        nickname: '回归销售',
+        email: 'reg_sales@example.com',
+        position: '销售',
+        tenantName: '词元通达',
+      },
+      logout: mockLogout,
+    })
+    await act(async () => {
+      render(<Header />)
+    })
+    await user.click(screen.getByRole('button', { name: '用户菜单' }))
+
+    expect(screen.getByText('账号名')).toBeInTheDocument()
+    expect(screen.queryByText('手机号')).toBeNull()
+    expect(screen.getByText('reg_sales')).toBeInTheDocument()
+    // 副标题 = 邮箱（账号名已在独立一行，不重复）
+    expect(screen.getByText('reg_sales@example.com')).toBeInTheDocument()
   })
 
   it('再次点击用户按钮收起下拉卡片（#3099）', async () => {
