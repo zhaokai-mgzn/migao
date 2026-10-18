@@ -1,4 +1,4 @@
-// case_ids: PG-018, PG-039
+// case_ids: PG-018, PG-039, PG-086
 package com.migao.admin.service;
 
 import com.migao.admin.config.TenantContext;
@@ -276,6 +276,33 @@ class ProductionScanCompleteServiceTest {
                 // （设计 §5.3.1「拒绝码 = 契约面」）。红证：把源码里的 409 改成别的值 ⇒ 本断言红。
                 .hasFieldOrPropertyWithValue("code", "SET_ALREADY_COMPLETED")
                 .hasFieldOrPropertyWithValue("httpStatus", 409);
+
+        assertNothingWritten();
+    }
+
+    /**
+     * 🔴 <b>质检工序没有报工动作（issue #7186）</b>：用户 2026-10-18 逐字「质检员不需要报工这个动作，
+     * 只需要有一个质检动作，完成判定后自动报工，然后自动生成质检流水」。
+     *
+     * <p>判据与逐道报工入口<b>同一份</b>（{@code DocumentOperationLinkage#rejectManualReport}）——
+     * 本测试只钉「扫码闭环这条写入口也拦得住」：只留一道 pending 的「质检」⇒ 推断会选中它 ⇒
+     * 记账前必须 422，且<b>零写入</b>（不落报工明细 / 不推进做工数量 / 释放幂等占位）。</p>
+     *
+     * <p>红证：摘掉 {@code doComplete} 里那行 {@code DocumentOperationLinkage.rejectManualReport(op)}
+     * ⇒ 本测试变成「报工成功」⇒ 断言红（同一次注入在 {@code ProductionReportQualityGuardTest}
+     * 的另一条入口上同样会红）。</p>
+     */
+    @Test
+    @DisplayName("🔴 质检工序没有报工动作（issue #7186）：扫码完成 ⇒ 422 指向质检判定，且零写入")
+    void qualityOperationIsNotReportable() {
+        stubPending(op(OP_CLOTH, ITEM_CLOTH, 3, "质检", "1", "0", new BigDecimal("1.50")));
+
+        assertThatThrownBy(() -> service.complete(body(TOKEN), TENANT, "key-1", WORKER))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("质检")
+                .hasMessageContaining("判定")
+                .hasFieldOrPropertyWithValue("code", "VALIDATION_ERROR")
+                .hasFieldOrPropertyWithValue("httpStatus", 422);
 
         assertNothingWritten();
     }
