@@ -205,7 +205,8 @@ export function snapshotAttrParts(
 
 /**
  * 一道工序的**片段**（应做数量+单位、状态）—— 屏幕块与「复制全部」文本共用。
- * 显示名由两处各自调 `ProcessingDoc` 的同一份工序块口径（`operationDisplayName`）。
+ * 显示名一律走仓内唯一口径 `operationDisplayName()`（`@/lib/operation-display`）；
+ * 🔴 纸面自 issue #7274 起不再消费工序清单。
  */
 export function operationParts(op: ProductionOperation): string[] {
   const qty = quantityWithUnit({ quantity: op.qty, unit: op.unit })

@@ -433,7 +433,6 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
       <ProcessingDoc
         order={buildOrder()}
         processingOrder={buildProcessingOrder({ short_code: SHORT_CODE, scan_url: SCAN_URL })}
-        qrValue={SCAN_URL}
       />
     )
     // QR / 无码占位 / 短码行三种形态**都不出现**（移除是整块移除，不是隐藏）
@@ -442,7 +441,7 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
     expect(document.querySelector('[data-testid="processing-doc-short-code"]')).toBeNull()
   })
 
-  it('⑥ 加工单**不印金额**（实证 #3 无金额列）⇒ 天然没有第二份金额真值', () => {
+  it('加工单**不印金额**（实证 #3 无金额列）⇒ 天然没有第二份金额真值', () => {
     render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
     const text = doc()?.textContent || ''
     for (const money of ['本单应收', '单价', '金额', '小计']) {
@@ -450,7 +449,7 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
     }
   })
 
-  it('⑦ 打印隔离：portal 到 body + 共享标记类 + 隔离选择器排除所有打印单据 + 屏幕态隐藏', () => {
+  it('⑥ 打印隔离：portal 到 body + 共享标记类 + 隔离选择器排除所有打印单据 + 屏幕态隐藏', () => {
     render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
     const el = doc()
     expect(el?.parentElement).toBe(document.body)
@@ -461,7 +460,7 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
     expect(css()).toMatch(/\.processing-print-area\[data-print-target='processing'\]/)
   })
 
-  it('⑦ 未置位打印目标 ⇒ 不加 data-print-target（点别的单据时本单不参与显形）', () => {
+  it('⑥ 未置位打印目标 ⇒ 不加 data-print-target（点别的单据时本单不参与显形）', () => {
     render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
     expect(doc()?.getAttribute('data-print-target')).toBeNull()
     cleanup()
@@ -503,16 +502,6 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
     expect(broken.find((p, i) => declared[i].index === 7)).toBeLessThan(16)
   })
 })
-
-/**
- * 工序清单 + 数量单位（issue #6901）—— 用户逐字「加工单缺乏订单中的规格尺寸和加工信息，
- * 工人需要这些信息+商品信息来决定如何生产」。
- *
- * 纸面此前只有**商品 + 工艺规格**，**没有**「这张单要做哪几道工序」（显示名 / 单位 / 应做数量 / 状态）。
- * 判据面两条形态：
- * ① 有工序实例（读面 `positions[]` 按 `order_item_id` 对得上本行）⇒ 逐行印**服务端真值**；
- * ② 无/对不上 ⇒ **整块不出现**（不印空表、不印占位表头）。
- */
 
 /**
  * 纸面**不印**工序清单（issue #7274，用户 2026-10-18 逐字「工序细节不用在打印单上，

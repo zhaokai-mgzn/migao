@@ -567,6 +567,10 @@ SHIPMENT_DOC = "frontend/admin-web/src/components/orders/ShipmentDoc.tsx"
 SHIPMENT_PROCESSING_LINE_ANCHOR = 'data-testid="shipment-processing-items"'
 #: 退回逐项表格的形态（表头格）
 SHIPMENT_PROCESSING_TABLE_HEAD = "<DocTh>加工项</DocTh>"
+#: 同一行区块里必须同时有的两样真值（防「锚点在、内容被掏空」的假绿）：
+#: ① 逐项渲染模板（`名称×数量`）② 加工费合计标签（仍与逐项同一行区块）
+SHIPMENT_PROCESSING_ITEM_TEMPLATE = "{item.name}×"
+SHIPMENT_PROCESSING_FEE_LABEL = "加工费合计（元）"
 
 
 def _shipment_processing_line_problems(rel: str, code: str) -> list[str]:
@@ -580,6 +584,16 @@ def _shipment_processing_line_problems(rel: str, code: str) -> list[str]:
         problems.append(
             f"`{rel}` 又把加工项写回表格（命中 `{SHIPMENT_PROCESSING_TABLE_HEAD}`）—— "
             "加工项必须是一行 `名称×数量 + …`（issue #7275）"
+        )
+    if SHIPMENT_PROCESSING_ITEM_TEMPLATE not in code:
+        problems.append(
+            f"`{rel}` 找不到逐项渲染模板 `{SHIPMENT_PROCESSING_ITEM_TEMPLATE}` —— "
+            "「一行」里必须逐项印 `名称×数量`（只剩名字 = 把送货核对的米数丢了；issue #7275）"
+        )
+    if SHIPMENT_PROCESSING_FEE_LABEL not in code:
+        problems.append(
+            f"`{rel}` 找不到 `{SHIPMENT_PROCESSING_FEE_LABEL}` —— "
+            "加工费合计必须与加工项同一行区块（删掉 = 实物凭证少一行金额；issue #7275）"
         )
     return problems
 
@@ -599,8 +613,9 @@ def test_c9_shipment_processing_items_stay_on_one_line():
     )
     line = (
         '<span data-testid="shipment-processing-items">'
-        "{processingItems.map((it, i) => <span key={i}>{it.name}×{formatQty(it.quantity)}</span>)}"
+        "{processingItems.map((item, i) => <span key={i}>{item.name}×{formatQty(item.quantity)}</span>)}"
         "</span>"
+        "<span>加工费合计（元）：{formatAmount(processingFeeTotal)}</span>"
     )
     assert _shipment_processing_line_problems("(合成样本·修后)", line) == [], (
         "一行写法被判红 ⇒ C9 会把合规实现喂红（假红）"

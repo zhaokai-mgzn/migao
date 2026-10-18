@@ -18,7 +18,7 @@ import type { Order, OrderItem, ProcessingOrder, ProcessingOrderItem } from '@/t
  * ## 制式（四段，逐条对实证 #3）
  *
  * ① **表头**：订单日期 / 客户 / 电话 / 地址 / 备注 / **制单人** / **单号** / **交付日期** /
- *    **货运**；**右上角一张 QR**（加工单号码，见下「QR 口径」）；
+ *    **货运**（🔴 纸面**不印** QR / 短码，issue #7219）；
  * ② **正文**：**按套分块** —— 每块段头 `第N套/共M套`，块内一张 9 列表
  *    （{@link PROCESSING_DOC_COLUMNS}：品名 | 货号 | 颜色 | 门幅 | 尺寸 | 数量 | 组件 | 批号 | 备注）
  *    ＋ 一行「工艺：…」（原「部位信息」列的内容，issue #6869）；
@@ -73,24 +73,16 @@ import type { Order, OrderItem, ProcessingOrder, ProcessingOrderItem } from '@/t
  *   （不加限定会同特异性覆盖兄弟单据）；
  * - 守卫 = `tests/unit_ci_workflows/test_print_doc_convention_guard.py`。
  *
- * ## QR 口径（issue #6867 起）
+ * ## 纸面**不印** QR / 短码（issue #7219，本 PR 收口死参数）
  *
- * QR 内容由调用方给（`qrValue`）—— 现在是**加工单级稳定短链** `{base}/o/{短码}`
- * （设计 §11.3：调用方传 `processingOrder.scan_url ?? null`，**不再回落加工单号**；
- * 回落就退回「扫出来只有一串文本」的旧形态）。**前端不拼 URL**（base 是服务端真值）。
- * **缺码不画假码**（洗水码既有判据）：拿不到值 ⇒ 出一个虚线占位框 + 「无码」字样，
- * **不**编一个码、也不拿别的串顶替。
- * 纸面**再印一行人可读短码**（`processingOrder.short_code`，见 `processing-doc-short-code`）
- * —— 设计 §11.7「人可读短码**不是可选项**」：扫码失败 / 相机权限被拒 / 无扫码工具时，
- * 工人手输它 = 扫码（§11.4 的解析形态之一）；缺码印 `—`、**绝不编造**。
- * ⚠️ 上一版这里印的是单号（`docNo`）—— 单号已在表头「单号」格，同纸不重复印同一真值。
+ * 加工单纸面**不承载**扫码入口：QR / 无码占位框 / 可读短码行三种形态都不出现
+ * （扫码入口属于工人端 / 任务卡，不属于给车间的加工单纸面）⇒ `qrValue` prop 与
+ * `ProcessingDoc.test.tsx` 的旧 QR 用例同批退场。判据 = 同文件「🔴 ⑤ 加工单不再印 QR」。
  */
 interface ProcessingDocProps {
   order: Order
   /** 加工单（订单详情页已加载；缺省 ⇒ 单号回落订单号、交付日期回落要求到货日） */
   processingOrder?: ProcessingOrder | null
-  /** 右上 QR 的内容（**加工单级稳定短链** `{base}/o/{短码}`，issue #6867）；调用方给不出 ⇒ `null`（出占位框，不画假码） */
-  qrValue?: string | null
   /**
    * 本次打印的目标（`'processing'` = 打印本加工单）。**只在为 `'processing'` 时**置位
    * `data-print-target` —— 否则会把同页的发货单 / 报价单 / 销售单重新藏掉（#4965 实测回归）。
@@ -170,7 +162,6 @@ function formatDate(value?: string | null): string | null {
 export default function ProcessingDoc({
   order,
   processingOrder,
-  qrValue,
   printTarget,
   inline,
   className,

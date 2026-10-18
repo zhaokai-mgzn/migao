@@ -572,7 +572,7 @@ def test_c4_assignment_bypass_is_not_an_escape_hatch(tmp_path: Path):
 # ── C5：已退役面不得再渲染工序（退役 ≠ 无人管）──────────────────────────────
 
 def test_c5_retired_face_no_longer_renders_operations():
-    """C5：洗水码纸面**不再印工序**（issue #4964 的退场两项之一）—— 退役面不得被偷偷加回。
+    """C5：**纸面不再印工序**（洗水码 issue #4964 / A4 加工单 issue #7274）—— 退役面不得被偷偷加回。
 
     判据形态 = 退役面源码（**剥注释后**）里不得出现 `operationDisplayName`、不得出现「工序」字样、
     也不得在渲染位置直接渲染变体名。**为什么必须有这条**：面一旦移出 `FACES`，C2/C3 就不再管它 ⇒
@@ -583,10 +583,12 @@ def test_c5_retired_face_no_longer_renders_operations():
         code = _strip_comments(src)
         assert REQUIRED_IMPORT not in code, (
             f"`{rel}` 又用回了 `{REQUIRED_IMPORT}` ⇒ 工序被加回纸面了？确要加回：**同时**把它加回 "
-            "`FACES`（本守卫的覆盖面靠白名单，不加回 = #4630 的漏改形态复发）"
+            "`FACES`（本守卫的覆盖面靠白名单，不加回 = #4630 的漏改形态复发；"
+            "洗水码的退场来由 = issue #4964，A4 加工单 = issue #7274）"
         )
         assert "工序" not in code, (
-            f"`{rel}` 的纸面源码里出现了「工序」字样 ⇒ issue #4964 的退场项（工序摘要）被加回；"
+            f"`{rel}` 的纸面源码里出现了「工序」字样 ⇒ 纸面工序清单被加回"
+            "（洗水码 issue #4964 / A4 加工单 issue #7274）；"
             "确要加回请**同时**把它加回 `FACES` 并走 `operationDisplayName`"
         )
         assert _violations(src) == [], (

@@ -6,9 +6,10 @@ import { ChevronRight, Printer, Zap, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
 import DateTimeCell from '@/components/common/DateTimeCell'
-// 工序清单读面（issue #6901）：加工单纸面与商家端加工单块要印「这一单要做哪几道工序」——
+// 工序清单读面（issue #6901）：**屏幕**加工单块要印「这一单要做哪几道工序」——
 // **复用既有读面** `GET /api/admin/production/orders/{id}/operations`（权限码 order:list，
-// 与同页其它读面同码）；**不新造端点、不在打印组件里取数/重算**（组件只负责渲染）。
+// 与同页其它读面同码）；**不新造端点、不在展示组件里取数/重算**（组件只负责渲染）。
+// 🔴 纸面 `ProcessingDoc` 自 issue #7274 起**不印**工序（用户裁定「工序细节不用在打印单上」）。
 import { orderApi, productionApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
 import { Button, Loading, Modal } from '@/components/ui'
@@ -111,12 +112,12 @@ export default function OrderDetailPage() {
   const [processingOrder, setProcessingOrder] = useState<ProcessingOrder | null>(null)
 
   /**
-   * 工序清单（issue #6901）：加工单纸面（`ProcessingDoc`）与商家端加工单块
-   * （`ProcessingOrderBlock`）要印「这一单要做哪几道工序」—— 两个面**同一份**取数，
-   * 都在本页加载后向下传（组件自己不取数）。
+   * 工序清单（issue #6901 / #7274）：**屏幕**加工单块（`ProcessingOrderBlock`）要印
+   * 「这一单要做哪几道工序」—— 由本页加载后向下传（组件自己不取数）。纸面 `ProcessingDoc`
+   * 自 issue #7274 起**不印**工序 ⇒ 不再向下传。
    *
-   * 取不到 / 空 ⇒ `[]` ⇒ 两个面都**不出现**工序块（缺值不渲染，不印空表）。
-   * 失败**不打扰商家**（本轮不弹 toast）：它只影响纸面的一块内容，而工序读面失败与
+   * 取不到 / 空 ⇒ `[]` ⇒ 屏幕块**不出现**工序清单（缺值不渲染，不印空表）。
+   * 失败**不打扰商家**（本轮不弹 toast）：它只影响屏幕加工单块的一块内容，而工序读面失败与
    * 「订单/加工单读失败」不是一回事（后者必须让商家知道）。
    */
   const [orderOperations, setOrderOperations] = useState<ProductionPosition[]>([])
@@ -203,8 +204,8 @@ export default function OrderDetailPage() {
    * 端点 = 既有读面 `GET /api/admin/production/orders/{id}/operations`（权限码 `order:list`，
    * 与同页其它读面同码）；**不新造端点**。
    *
-   * 🔴 失败隔离：读不到 ⇒ 空清单（纸面/屏幕块都**不出现**工序块，不编工序、不猜状态），
-   * 且**不打扰商家** —— 它只影响纸面一块内容，与「订单详情读失败」不是一回事。
+   * 🔴 失败隔离：读不到 ⇒ 空清单（**屏幕**块不出现工序清单，不编工序、不猜状态），
+   * 且**不打扰商家** —— 它只影响屏幕加工单块的一块内容，与「订单详情读失败」不是一回事。
    */
   const loadOperations = useCallback(async () => {
     if (!orderId) return
@@ -470,7 +471,6 @@ export default function OrderDetailPage() {
       <ProcessingDoc
         order={order}
         processingOrder={processingOrder}
-        qrValue={processingOrder?.scan_url ?? null}
         printTarget={printTarget}
       />
 
@@ -509,7 +509,6 @@ export default function OrderDetailPage() {
           <ProcessingDoc
             order={order}
             processingOrder={processingOrder}
-            qrValue={processingOrder?.scan_url ?? null}
             inline
           />
         )}

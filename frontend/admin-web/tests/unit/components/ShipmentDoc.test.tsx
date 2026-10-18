@@ -174,6 +174,18 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
     expect(document.body.textContent).not.toContain('加工费合计（元）：0.00')
   })
 
+  it('#7275：缺数量的加工项仍**显式**印 `—`（`名称×—`，不静默吞掉）', () => {
+    const order = buildOrder({
+      hasProcessing: true,
+      items: [{ ...buildOrder().items![0], processingFee: 0 }],
+      processingItems: [{ id: 'pr-3', name: '打孔', quantity: undefined as unknown as number }],
+    })
+    render(<ShipmentDoc order={order} />)
+    // 缺值不静默留空（范式同 issue #6720 / `SHIPMENT_DOC_MISSING`）——
+    // 红证：把该项写成 `item.name`（丢掉数量）⇒ 本断言红
+    expect(screen.getByTestId('shipment-processing-items').textContent?.trim()).toBe('打孔×—')
+  })
+
   it('商品明细表的「单价(元/米)」「金额(元)」列**不受影响**（商品行语义，非加工项）', () => {
     render(<ShipmentDoc order={buildOrder()} />)
 
