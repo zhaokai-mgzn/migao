@@ -1,6 +1,7 @@
 // case_ids: OR-045, OR-047
 package com.migao.admin.service;
 
+import com.migao.admin.entity.OrderLogistics;
 import com.migao.admin.mapper.OrderLogisticsMapper;
 import com.migao.admin.config.TenantContext;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -121,7 +122,7 @@ class OrderLogisticsUpsertConcurrencyRealDbTest {
     // ────────────────────────────────────────────── 正例：并发两次 ⇒ 恰 1 行
 
     @Test
-    @DisplayName("🔴 正例：同一订单并发两次 upsert（6 轮）⇒ 每轮都恰好 1 行")
+    @DisplayName("🔴 正例：同一订单并发两次 upsert（6 轮）⇒ 每轮都恰好 1 行、且不抛错")
     void concurrentUpsertsLeaveExactlyOneRow() throws Exception {
         for (int rep = 0; rep < REPS; rep++) {
             String orderId = "race-" + rep;
@@ -138,7 +139,7 @@ class OrderLogisticsUpsertConcurrencyRealDbTest {
                     .as("并发两次发货后必须**恰好 1 条**物流记录（第 %d 轮）", rep)
                     .isEqualTo(1);
             assertThat(readTrackingNo(orderId))
-                    .as("留下的运单号必须是两次请求之一（不是被写成别的值，第 %d 轮）", rep)
+                    .as("留下的运单号必须是两次请求之一（第 %d 轮）", rep)
                     .isIn("SF-A", "SF-B");
             assertThat(readShippedAt(orderId))
                     .as("首次发货时刻必须落值（第 %d 轮）", rep)
@@ -146,30 +147,44 @@ class OrderLogisticsUpsertConcurrencyRealDbTest {
         }
     }
 
-    // ────────────────────────────────────────────── 反例：去掉唯一索引 ⇒ 必须能造出双行
+    // ────────────────────────────────────────────── 判别力自证（确定性，不靠抢跑）
 
     @Test
-    @DisplayName("🔴 判别力自证：删掉唯一索引后并发 ⇒ 会造出 2 行（否则本判据测的不是并发面）")
-    void withoutUniqueIndexTheRaceIsReproducible() throws Exception {
-        try (Connection conn = dataSource.getConnection(); Statement st = conn.createStatement()) {
-            st.execute("DROP INDEX IF EXISTS uk_order_logistics_tenant_order");
-        }
-        boolean sawTwoRows = false;
-        for (int rep = 0; rep < REPS; rep++) {
-            String orderId = "noindex-" + rep;
+    @DisplayName("🔴 判别力自证：修法前的读改写形状（一次空读 + 两次 insert）必然落成 2 行")
+    void readModifyWriteProducesTwoRows() throws Exception {
+        // 为什么不用「删索引 + 并发抢跑」来自证：那是**概率性**的 —— CI 的 2 核 runner 上两个线程可能被
+        // 串行执行，于是"没造出双行"⇒ 判据自己红（实测就是这么不稳）。这里把旧实现的**落库形状**
+        // 确定性地复刻：两个请求都在对方写之前读到空（同一次读数），然后各自 insert ⇒ 必然 2 行。
+        // 唯一索引正是修法的一部分，故先摘掉、finally 复原，避免影响其它用例。
+        dropUniqueIndex();
+        try {
+            String orderId = "rmw-1";
             seedOrder(orderId);
-            runConcurrently(
-                    () -> { upsert(orderId, "SF-A"); return null; },
-                    () -> { upsert(orderId, "SF-B"); return null; });
-            if (countRows(orderId) > 1) {
-                sawTwoRows = true;
-                break;
+            try (SqlSession s = factory.openSession(true)) {
+                OrderLogisticsMapper mapper = s.getMapper(OrderLogisticsMapper.class);
+                assertThat(mapper.selectByOrderId(orderId, TENANT))
+                        .as("并发窗口里两个请求都读到空（旧实现据此各自 insert）")
+                        .isEmpty();
+                for (int request = 0; request < 2; request++) {
+                    mapper.insert(OrderLogistics.builder()
+                            .tenantId(TENANT).orderId(orderId).logisticsCompany("顺丰")
+                            .trackingNo("SF-" + request).status("in_transit")
+                            .shippedAt(java.time.OffsetDateTime.now()).build());
+                }
             }
+            assertThat(countRows(orderId))
+                    .as("读改写形状必须真的落成 2 行 —— 这才证明「并发双行」这个病真实存在，"
+                            + "不是我在修一个不存在的问题")
+                    .isEqualTo(2);
+        } finally {
+            // 本用例**故意**留下 2 行重复行 ⇒ 不先清掉就建不了唯一索引（会 PSQL 报"无法创建唯一索引"）。
+            // 清的是本用例自己的夹具（rmw-1），不是别人的数据。
+            try (Connection conn = dataSource.getConnection(); Statement st = conn.createStatement()) {
+                st.executeUpdate("DELETE FROM order_logistics WHERE tenant_id = " + TENANT
+                        + " AND order_id = 'rmw-1'");
+            }
+            createUniqueIndex();
         }
-        assertThat(sawTwoRows)
-                .as("没有唯一索引时并发必须能造出双行 —— 否则本判据测不到并发面（空断言），"
-                        + "说明「恰好 1 行」不是因为修法生效")
-                .isTrue();
     }
 
     // ────────────────────────────────────────────── 工具
@@ -206,6 +221,19 @@ class OrderLogisticsUpsertConcurrencyRealDbTest {
         try (SqlSession s = factory.openSession(true)) {
             OrderLogisticsWriter.upsert(s.getMapper(OrderLogisticsMapper.class), TENANT, orderId,
                     "顺丰", trackingNo, null, () -> null);
+        }
+    }
+
+    private void dropUniqueIndex() throws Exception {
+        try (Connection conn = dataSource.getConnection(); Statement st = conn.createStatement()) {
+            st.execute("DROP INDEX IF EXISTS uk_order_logistics_tenant_order");
+        }
+    }
+
+    private void createUniqueIndex() throws Exception {
+        try (Connection conn = dataSource.getConnection(); Statement st = conn.createStatement()) {
+            st.execute("CREATE UNIQUE INDEX IF NOT EXISTS uk_order_logistics_tenant_order "
+                    + "ON order_logistics (tenant_id, order_id) WHERE deleted = 0");
         }
     }
 
