@@ -81,7 +81,7 @@
 多会话并发（多 Agent / 多分支同时开发）时的铁律：**一个会话一个独立工作区，会话之间零共享写路径**。
 
 1. **会话必须建在独立 worktree**：`./scripts/dev-worktree.sh add <branch>`（默认 `../migao-wt/<分支>`）。禁止多会话共用一个工作目录——同时改文件互相覆盖、`git add` 互带对方文件、同时跑 verify 抢资源。
-2. **会话锁**：`dev-worktree.sh add` 自动登记 `.sessions/<branch>.lock`（含 PID+时间戳）；同一分支已有活跃锁时**禁止**重复建工作区/推分支。提交/推送前先 `./scripts/dev-worktree.sh list` 确认锁状态。
+2. **会话锁**：`dev-worktree.sh add` 自动登记 `.git/sessions/<branch>.lock`（含 PID+时间戳+工作区路径）；存活判据 = **PID 仍活着 或 登记的工作区仍在且仍检出该分支**（`add` 是短命进程、PID 必先退出 —— issue #7216）；同一分支仍有活锁时**禁止**重复建工作区。`add` 入口会自动清掉失效锁（事件驱动，不新增 cron）；提交/推送前先 `./scripts/dev-worktree.sh list` 确认锁状态。
 3. **端口隔离**：本地服务端口用环境变量覆盖（`API_PORT`/`AGENT_PORT`/`WEB_PORT`），会话各自 `.env.local`，杜绝 8080/8001/3001 互抢。
 4. **主工作区只读**：主仓库（migao/）只做 `fetch/rebase/merge` 与 PR 管理，**不在主工作区直接改文件**（防止未提交改动静默携带）。
 5. **分支卫生**：验证完即 PR，CI 绿即合并，分支存活 < 1-2 天；定期 `git branch --merged origin/main` 全删 + 清理 `origin gone` 的本地分支。

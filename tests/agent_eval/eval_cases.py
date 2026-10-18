@@ -6812,6 +6812,25 @@ _CASE_MC_117 = EvalCase(
     precondition='前置 = ① `backend/admin-api/src/main/java/com/migao/admin/service/*.java` 可读；② 台账 backend/admin-api/src/test/resources/t3-delete-rowcount-ledger.json 可读且带 `exempt_baseline`。两者不成立 ⇒ **直接红**（不是跳过）——「空」不等于「全部合规」。',
 )
 
+# ── MC-118 [NORMAL] dev-worktree 会话锁判活：PID 已退出但登记的工作区仍在且仍检出该分支 ⇒ 仍算占用（issue #7216）；`add` 入口自动清失效锁，`rm` 释放锁，prune 侧同一口径（源: cases/misc.yml）──
+_CASE_MC_118 = EvalCase(
+    id='MC-118',
+    legacy_id='',
+    title='dev-worktree 会话锁判活：PID 已退出但登记的工作区仍在且仍检出该分支 ⇒ 仍算占用（issue #7216）；`add` 入口自动清失效锁，`rm` 释放锁，prune 侧同一口径',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['并行跑 4~5 个会话后，`./scripts/dev-worktree.sh lock` 全是 💀 —— 刚建好、还在里面干活的工作区也被判「进程已退出，锁失效」，同一分支重复建工作区不会被拦'],
+    expectations=[],
+    data_checks=['**病（2026-10-18 项目卫生现取，逐字）**：`lock_register` 写的是 `$$` = `dev-worktree.sh add` 自己的 PID（`add` 一返回该 PID 必已退出）⇒ 只按 `kill -0` 判活时**每把锁一建出来就是失效**：`./scripts/dev-worktree.sh lock` 现取 84 条全 💀（含 7212 / 7213 两个随后仍在推送提交的活跃会话）；「同一分支已有活跃锁 ⇒ 拒绝建区」永不触发；失效锁只增不减。', '**判据 1（实例判据，行为面，真 fixture + 真 git）**：`add` 返回后其 PID 已退出，锁仍必须显示 🔒 且理由含「工作区仍在」；判据 = tests/unit_ci_workflows/test_dev_worktree_lock_liveness.py::test_lock_stays_active_after_add_process_exits。', '**判据 2（修前红，注入式，§28.1 出口①）**：把判活退回「只按 PID」⇒ 同 fixture 必须显示 💀（注入后另做 `bash -n` 自证，防语法错冒充红证）；判据 = 同文件::test_injected_pid_only_liveness_regresses_to_stale。', '**判据 3（prune 判据）**：`lock --prune` 只清「PID 死了**且**工作区不在（或不在该分支上）」的锁；工作区仍在且检出该分支的锁必须保留；判据 = 同文件::test_prune_drops_stale_but_keeps_live_worktree_lock / ::test_lock_for_another_branch_is_stale。', '**判据 4（事件驱动自愈，铁律 10：不新增 cron）**：`add` 入口自动清失效锁；判据 = 同文件::test_add_prunes_stale_locks。', '**判据 5（rm 释放）**：`rm <branch>` 后锁文件必须消失（旧写法以 `lock_alive` 为前提、在 add 之后永假 ⇒ 锁从不在 rm 时释放）；判据 = 同文件::test_rm_releases_session_lock。', '**判据 6（类级元守卫：跨消费者同源）**：`scripts/agent-presets-guard.py::_locked_branches`（`prune` 用）与 bash 判活必须同一口径（PID 活着 **或** 工作区仍在且仍检出该分支）；只改 bash ⇒ `prune` 仍把有会话的工作区判「可安全移除」。行为判据 = 同文件::test_guard_prune_uses_same_liveness_rule；静态判据 = 同文件::test_liveness_rule_has_single_implementation（`lock_alive` 必须委托、`kill -0` 全脚本只许一处、prune 侧必须同时看 pid_alive/worktree_present）。', '**边界（照实登记，§19.1）**：① PID 只是「创建瞬间」证据 —— 本用例不判「同一会话是否还在用」，只判「这个分支是否仍被占用」（保守方向：宁可不判可安全移除）；② 不做心跳/租约（会引入新进程与超时语义，超出本单半径）；③ 只跑定点判据，不跑 `verify-all.sh gate` / 全量 pytest（重活串行，migao-dev-flow §27）。'],
+    skip_reason='[backend-contract] 真 fixture 行为守卫（真 git 仓库 / 真 worktree / 真会话锁一律造在 tmp_path，零网络、零其库、不碰真实工作区）+ 静态单一实现守卫，由 tests/unit_ci_workflows/test_dev_worktree_lock_liveness.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'dev-tooling', 'worktree', 'session-lock', 'liveness', 'meta-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯离线判据：前置 = `scripts/dev-worktree.sh` / `scripts/agent-presets-guard.py` 在场且可解析；行为面判据在 `tmp_path` 里真 `git init` + 真 `add` 造真 worktree 与真会话锁（零网络、零其库、不碰任何真实工作区；`gh` 用 rc=1 垫片、HOME 指向 tmp_path）。前置由判据自身持有：文件缺失 / 夹具造不出来 ⇒ 当场红；agent-eval 栈不跑它',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -15575,6 +15594,7 @@ ALL_CASES = (
     _CASE_MC_114,
     _CASE_MC_116,
     _CASE_MC_117,
+    _CASE_MC_118,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
