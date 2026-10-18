@@ -154,13 +154,21 @@ def _registered_tools() -> Dict[str, Any]:
 
 
 def mibao_reachable_tool_names() -> FrozenSet[str]:
-    """mibao 真实可达的工具名 = 其绑定 skill 的 `tool_names` 并集。"""
+    """mibao 真实可达的工具名 = **绑定 skill ∪ 兜底 skill** 的 `tool_names` 并集。
+
+    兜底 skill 必须并上（2026-10-19 现取修正）：`MIBAO_CONFIG.fallback_skill` 是低置信 /
+    跨域问题的最后出口，它同样能被路由到 ⇒ 它的工具对模型是**可达**的。
+    漏掉它会把 `general` 的只读工具（如 `nav_guide`）误判成不可达。
+    """
     from app.agents.agents.mibao import MIBAO_CONFIG
     from app.graph.skills.skill_registry import get_skill_registry
 
     registry = get_skill_registry()
+    skill_names = list(MIBAO_CONFIG.skill_names)
+    if MIBAO_CONFIG.fallback_skill:
+        skill_names.append(MIBAO_CONFIG.fallback_skill)
     names = set()
-    for skill_name in MIBAO_CONFIG.skill_names:
+    for skill_name in skill_names:
         cfg = registry.get(skill_name)
         if cfg is not None:
             names.update(cfg.tool_names or ())

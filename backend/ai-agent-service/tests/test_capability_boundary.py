@@ -66,7 +66,7 @@ def _independent_reachable() -> frozenset:
 
     registry = get_skill_registry()
     names: set[str] = set()
-    for skill_name in MIBAO_CONFIG.skill_names:
+    for skill_name in (*MIBAO_CONFIG.skill_names, MIBAO_CONFIG.fallback_skill):
         cfg = registry.get(skill_name)
         if cfg is not None:
             names.update(cfg.tool_names or ())
