@@ -221,7 +221,6 @@ export function OperationPricePanel({
             刷新
           </Button>
           <Button
-            variant="secondary"
             size="sm"
             data-testid="routings-new-operation"
             /* 域写面出口标记（issue #6825）：类级守卫要求「可编辑控件 + 本域写出口」成对出现 */
