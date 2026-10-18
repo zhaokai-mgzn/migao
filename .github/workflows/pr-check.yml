@@ -1058,10 +1058,72 @@ jobs:
         with:
           fetch-depth: 0
 
+      # 可观测性（issue #7208，实测事故）：这条腿曾**启动 ~1 秒即失败**，日志里既没有 findings
+      # 也没有原因（只有 node 弃用警告）—— "配置坏 / 限流 / 许可" 与 "真扫到密钥" **同形**，
+      # 当天我据此误判成"腿系统性坏了"。修法三步，且三者都不可省：
+      #   ① `continue-on-error` ⇒ 后续归因步骤一定跑得到（否则失败即收尾，永远看不到报告）
+      #   ② 报告一律上传（`always()`）⇒ 失败也能事后取证据
+      #   ③ 归因步骤把两种形态**分开**打印：有 findings（真扫到）/ 无报告（未判定，附常见原因）
       - name: Run gitleaks secret scan
+        id: gitleaks
         uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload gitleaks report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: |
+            results.sarif
+            gitleaks-report.json
+          if-no-files-found: warn
+
+      - name: Classify gitleaks outcome
+        if: always() && steps.gitleaks.outcome == 'failure'
+        shell: bash
+        run: |
+          # 归因：**有 findings** = 真扫到密钥；**无报告** = 未判定（动作早退 / API 限流 / 许可）。
+          # 两者都必须判红（fail-closed），但错误文案必须让人一眼分清 —— 这就是本步存在的全部理由。
+          set -uo pipefail
+          report=""
+          for f in results.sarif gitleaks-report.json; do
+            [ -s "$f" ] && { report="$f"; echo "📄 报告已生成：$f（$(wc -c <"$f" | tr -d ' ') 字节）"; break; }
+          done
+          if [ -z "$report" ]; then
+            echo "::error::GITLEAKS_NO_REPORT —— 扫描步骤失败，但**没有产出任何报告** ⇒ 这是**未判定**，不是「没有密钥」。"
+            echo "::error::已知原因（按怀疑度）：① action 早退（输入/版本不符）② GitHub API 限流（本仓 2026-10-18 实测 403 rate limit）③ 组织许可缺失（GITLEAKS_LICENSE）。"
+            echo "::error::复核：重跑本 job；若反复出现，改用官方二进制 gitleaks detect --report-format json --exit-code 1。"
+            exit 1
+          fi
+          python3 - "$report" <<'PY'
+          import json, sys
+          path = sys.argv[1]
+          with open(path, encoding="utf-8") as fh:
+              data = json.load(fh)
+          findings = []
+          if path.endswith(".sarif"):
+              for run in data.get("runs", []):
+                  for res in run.get("results", []):
+                      rule = res.get("ruleId") or (res.get("rule", {}) or {}).get("id") or "?"
+                      locs = res.get("locations") or [{}]
+                      phys = (locs[0].get("physicalLocation") or {})
+                      uri = (phys.get("artifactLocation") or {}).get("uri", "?")
+                      line = (phys.get("region") or {}).get("startLine", "?")
+                      findings.append(f"{uri}:{line}  rule={rule}")
+          else:
+              for item in data:
+                  findings.append(f"{item.get('File','?')}:{item.get('StartLine','?')}  rule={item.get('RuleID','?')}")
+          for row in findings[:50]:
+              print(f"   🔎 {row}")
+          if findings:
+              print(f"::error::GITLEAKS_FINDINGS —— 扫到 {len(findings)} 处疑似凭据（清单见上）。")
+              print("::error::处置：删掉凭据 → **不要只删文件**（历史里仍在：需 force-push 或轮换凭据）→ 再重跑本腿。")
+              sys.exit(1)
+          print("::error::GITLEAKS_FAILED_NO_FINDINGS —— 有报告但 report 里 **0 条 findings** ⇒ 失败原因不在密钥（动作/限流/许可），属未判定。")
+          sys.exit(1)
+          PY
 
   # ============ Danger Scan — PR 破坏性变更检测（workflow/批量删除/部署文件）============
   danger-scan:
