@@ -7107,7 +7107,7 @@
 ```
 溯源: 2026-10-14 新增（issue #6936 的类级固化，与 PG-074 同批）：沿用 #6928 的元守卫范式（扫描器非空跑自证 / 谓词完整性 / 未登记即红 / 登记必须兑现 / 豁免只许缩短 / 判别力自证），但**扩到本单的射程**（`ProductionOperationCommandService` 里 `production_operations.deleted` 的两条软删写路径：谓词三件套 + 显式写列 + 影响行数判定，另加写路径登记表），台账 = backend/admin-api/src/test/resources/production-operation-delete-cas-ledger.json（豁免基线 **0**）。既有判据**未放宽**（`InboundOrderStatusCasMetaGuardTest` 的 MC-100 一字未动）。取号 = PG-075（现取未占用）。 ｜ tags: production, operation, concurrency, meta_guard, backend-contract
 
-## 加工单域（73 case）
+## 加工单域（74 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -8093,6 +8093,23 @@
 跳过: [backend-contract] 服务端拒绝码 + 工人端渲染判据（零 LLM 行为），不进 agent-eval 冒烟
 ```
 溯源: 2026-10-18 新增（issue #7186；用户原话见 user_inputs）。落码：`DocumentOperationLinkage#rejectManualReport`（唯一判据，复用 `QUALITY_OPERATION_NAME`）+ `ProductionService.doReport` / `ProductionScanCompleteService.doComplete` 两处调用 + 工人端 `render.mjs`（`isQualityOperation` / `canReport` / `qualityOnlyNote`）。取号 = 现取 origin/main 已占号最大 PG-085 ⇒ 本单取 PG-086。 ｜ tags: quality-inspection, piecework, worker-h5, backend-contract
+
+### PG-087. 质检指标（P0+P1）：按件聚合的首检合格率 / 当前合格率 / 返工报废率 + 时间窗趋势 + 分组 Top-5 + 待检积压（近似待检时长） 🔵
+```
+你: 用户 2026-10-18 逐字：「质检记录我觉得缺乏一个合格率的指标？」
+你: 用户 2026-10-18 逐字：「那先做 p0 和 p1 吧」（采纳建议：主指标 = 首检合格率、默认本月、返工/报废单列、未检不进分母）
+数据: **判据 1·按件去重（P0 的根）**：同一件两条记录（先合格、后返工）⇒ 已检 **1 件**、首检合格 1、当前合格 0、返工 1；首检合格率 100%、当前合格率 0%、返工率 100%。红证：改成按记录条数聚合 ⇒ 已检变 2 ⇒ 断言红。证据：backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckStatsTest.java（aggregatesPerPieceNotPerRecord）
+数据: **判据 2·未检不进分母**：快照里没有记录的件**不**出现在已检/率里，只出现在 backlog.pending；红证：把未检算进分母（或折成「不合格」）⇒ 断言红。证据：同文件（pendingPiecesStayOutOfDenominator）
+数据: **判据 3·0 样本 ⇒ 率 = null**（前端显示「—」，**不是** 0%）；红证：`rate()` 在分母 0 时返回 0.0 ⇒ 断言红。证据：同文件（emptyCohortHasNullRates）+ frontend/admin-web/tests/unit/components/QualityMetricsPanel.test.tsx（「0 样本 ⇒ 显示『—』」）
+数据: **判据 4·窗口按首检时刻**：窗口外首检、窗口内复检的件**不进** cohort（否则窗口一半落在复检上、率不可比）。证据：同文件（windowUsesFirstInspectionMoment）
+数据: **判据 5·趋势与分组自洽**：趋势 Σ已检 = 已检件数 = 分组 Σ已检（第二份口径 ⇒ 红）。证据：同文件（trendAndGroupsAgreeWithCounts）
+数据: **判据 6·参数闸**：未知 bucket / 非法时间 / 反向窗口 ⇒ 422 具名（不静默回落 day）。证据：同文件（rejectsInvalidParameters）
+数据: **判据 7·前端只格式化不重算**：KPI / 趋势 / 分组 / 积压全部取服务端值；样本 < min_sample 标注「样本偏少」；待检时长必须带「近似」与起算点说明。证据：frontend/admin-web/tests/unit/components/QualityMetricsPanel.test.tsx + tests/unit/pages/quality-inspections.test.tsx（指标面板默认「本月」拉一次）
+数据: **边界（照实登记）**：① 待检时长是**近似**（无「进入待检」时间戳，按加工单生成时刻起算 = 上界）；② 原因分布 / 原因字典化、返工成本属 P2，本单不做；③ 待检清单与四态计数口径**一字未改**；④ 不改任何写入/判定口径。
+前置: 前置 = 若干活跃加工单的成品帘 + 已录判定（同一件可有返工后复检的多条记录）；指标读面只读，不依赖任何写入时序。
+跳过: [backend-contract] 纯读面聚合（服务端 SQL/Java 聚合 + 前端渲染判据，零 LLM 行为），不进 agent-eval 冒烟
+```
+溯源: 2026-10-18 新增（issue #7192；用户原话见 user_inputs）。落码：`QualityCheckService#stats`（P0 率 + P1 趋势/分组/积压）→ `GET /api/admin/quality-inspections/stats` → `QualityMetricsPanel` + 质检记录页接线。取号 = 现取 origin/main 已占号最大 PG-085（#7186 的 PG-086 在并行分支）⇒ 本单取 PG-087。 ｜ tags: quality-inspection, metrics, backend-contract, admin-web
 
 ## 商品域（125 case）
 
@@ -11853,8 +11870,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：812（活跃 135，跳过 677）
-- tier 分布：smoke 12 / normal 746 / adversarial 32
+- 用例总数：813（活跃 135，跳过 678）
+- tier 分布：smoke 12 / normal 747 / adversarial 32
 - 售后域：15
 - Agent 核心域：11
 - API 层域：21
@@ -11874,7 +11891,7 @@
 - 领域本体域：4
 - 订单域：68
 - 加工项域：30
-- 加工单域：73
+- 加工单域：74
 - 商品域：125
 - 工具注册器域：1
 - 设置域：10
@@ -12122,6 +12139,7 @@
 - PG-083: 单据联动工序：发货单生成 ⇒ 自动完成「发货/外帘发货」工序；质检合格 ⇒ 自动完成「质检」工序（工人端计件、商家端不计件）
 - PG-085: 删路线 / 删条件工序规则只 `.eq(id)` ⇒ 跨租户误删 + 0 行当成功；改写为 tenant 限定 + deleted=0 + 影响行数判定后恰一次成功（issue #6962）
 - PG-086: 质检工序没有报工动作：判定即报工（提交判定 ⇒ 自动写报工 + 生成质检流水），报工 / 扫码完成入口对质检工序 422 且零写入
+- PG-087: 质检指标（P0+P1）：按件聚合的首检合格率 / 当前合格率 / 返工报废率 + 时间窗趋势 + 分组 Top-5 + 待检积压（近似待检时长）
 - PP-007: 黄金策加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 黄金策加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）
