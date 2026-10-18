@@ -1,24 +1,23 @@
 /**
- * B 端底栏（**按岗位权限裁剪**）—— issue #6574（用户 2026-10-08 逐字「**1，按权限隐藏**」）
+ * B 端底栏（**4 项一律可见**，用户 2026-10-18 裁定）
  *
  * ## 为什么自己画一条底栏
  *
- * 微信小程序 / Taro 的 `tabBar` 是**构建期静态配置**：`Taro.setTabBarItem` 只能改文字与图标，
- * **不能按角色删掉某一格**（`hideTabBar` 只能整条收起）。⇒ 要「无 `agent:session` 的岗位不出现坐席」
- * 就得自己渲染底栏。
+ * 微信小程序 / Taro 的 `tabBar` 是**构建期静态配置**：`Taro.setTabBarItem` 只能改文字与图标。
+ * 本组件自绘一条底栏 + 把原生条收起来（`Taro.hideTabBar`），在原生条占的那一条
+ * （`50px + 安全区`）里画自己的内容 ⇒ 导航与高度模型都不动（`app.config.ts` 的 `tabBar` 保留：
+ * `Taro.switchTab` 只能落 tabBar 页，h5 的页面高度算式也依赖它）。
  *
- * ## 与既有架构契约的关系（不砍）
+ * ## 可见性口径（用户 2026-10-18 逐字裁定）
  *
- * `app.config.ts` 的 `tabBar` **保留不动**：① `Taro.switchTab` 只能落 tabBar 页；
- * ② Taro h5 的 `.taro_page.taro_tabbar_page{max-height: calc(100vh - var(--taro-tabbar-height) - env(safe-area-inset-bottom))}`
- * 页面高度算式依赖它。本组件的做法 = **把原生条收起来**（`Taro.hideTabBar`）+ 在原生条占的那一条
- * （`50px + 安全区`）里画自己的内容 ⇒ 导航与高度模型都不动。
+ * 「跟问黄金策那个菜单一样都可见，参考问黄金策那个菜单的做法即可」⇒ 底栏 4 项
+ * （问黄金策 / 数据 / 坐席 / 我的）**一律可见**，不再按权限删格；旧口径
+ * （issue #6574「1，按权限隐藏」）按本裁定退场。
  *
- * ## 可见性口径（服务端说了算）
- *
- * 渲染 `GET /api/auth/me` 的 `mobileTabs`（服务端 `MobileSurfaces.visibleTabsFor`）。端侧不判权限码。
- * 🔴 **拿不到菜单 / 服务端给了空清单 ⇒ 照显全部 4 项**：tab 是功能入口，藏掉用户有的功能比露出一个
- * 点进去 403 的入口更糟（与「数据」页待办块 `error ⇒ 照渲染` 同一条规则；显式错误行 + 重试在「我的」页）。
+ * 🔴 这**不是授权放宽**：数据面仍由服务端 `@RequirePermission` 拦（如移动坐席要求 `agent:session`），
+ * 页面自己给「无权限」引导；底栏只是**导航**，不替服务端判可见性。
+ * 服务端下发的 `mobileTabs` 仍用来取**标题**（文案不端侧自造），顺序取静态表
+ * （= `MobileSurfaces.TABS` = `app.config.ts` tabBar 的逐值镜像）。
  */
 import { useEffect } from 'react'
 import { View, Text, Image } from '@tarojs/components'
@@ -37,8 +36,16 @@ export default function MerchantTabBar({ current = '' }: { current?: string } = 
   const serverTabs: MerchantTab[] = menu.tabs
     .filter((tab) => !!tab.route)
     .map((tab) => ({ key: tab.key, title: tab.title, route: tab.route as string }))
-  const tabs: MerchantTab[] =
-    menu.state === 'ok' && serverTabs.length > 0 ? serverTabs : ALL_MERCHANT_TABS
+  // 🔴 用户 2026-10-18 裁定：4 项**一律可见**（与「问黄金策」一致），不按权限删格。
+  // 服务端清单只用来取**标题**；顺序取静态表（= 服务端 TABS 的逐值镜像）。
+  // 改前按 `mobileTabs` 删格 ⇒ 加载中先画 4 格、答复回来再缩成 3 格（用户实测
+  // 「没有坐席权限也能看到坐席，点进去后坐席又消失」）—— 那段三态兜底随本裁定一起退场：
+  // 可见性不再依赖那次 fetch，也就不存在「先出现再消失」。
+  const titleByKey = new Map(serverTabs.map((tab) => [tab.key, tab.title]))
+  const tabs: MerchantTab[] = ALL_MERCHANT_TABS.map((tab) => {
+    const title = titleByKey.get(tab.key)
+    return title ? { ...tab, title } : tab
+  })
 
   // 原生条收起来（内容由本组件决定）。**只用 useEffect**（不是 `useDidShow`）：
   // ① h5 侧原生条是启动时建一次、常驻的 DOM ⇒ 挂载时收一次就够；

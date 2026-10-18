@@ -9,7 +9,7 @@ import request from '@/lib/request'
 import { Button, Input, Modal, Badge, PageHeader, PageCard } from '@/components/ui'
 import type { Role, Permission, WorkerPageCatalogResponse } from '@/types'
 import DateTimeCell from '@/components/common/DateTimeCell'
-import { formatMobileTitles } from '@/lib/mobile-surface-label'
+import { formatMobileTitles, mobileTitlesByCodeFromTree } from '@/lib/mobile-surface-label'
 // issue #7146：默认菜单 = **后台 + 手机端**（一份权限码集的两面投影，纯函数、无本地字面表）
 import { deriveRoleDefaultMenu, roleDefaultMenuSummary } from '@/lib/role-default-menu'
 // #3002 权限分配与真实菜单一致：复用侧边栏菜单配置做单一来源，
@@ -183,16 +183,10 @@ export default function RolesPage() {
       .then((res: any) => {
         if (!alive) return
         const data = res?.data?.data || res?.data || []
-        const map: Record<string, string[]> = {}
-        for (const group of Array.isArray(data) ? data : []) {
-          for (const node of group?.children || []) {
-            if (node?.code && Array.isArray(node.mobileTitles) && node.mobileTitles.length > 0
-                && !(node.code in map)) {
-              map[node.code] = node.mobileTitles
-            }
-          }
-        }
-        setMobileTitlesByCode(map)
+        // 🔴 2026-10-18：改为扫**整棵树**（共享实现 `mobileTitlesByCodeFromTree`）—— 改前只扫
+        // `children`，而「经营看板」（`dashboard:view`）自 issue #7087 起是**顶层独立项** ⇒
+        // 手机端底栏「数据」从「默认菜单 · 手机端」里静默消失（与员工管理权限列显示英文码同一个口径）。
+        setMobileTitlesByCode(mobileTitlesByCodeFromTree(Array.isArray(data) ? data : []))
       })
       // 读不到 ⇒ 权限分配照常可用，只是没有手机端标注（不弹错、不阻塞）
       .catch(() => { if (alive) setMobileTitlesByCode({}) })

@@ -1,21 +1,23 @@
 // case_ids: BM-047
 /**
- * B 端底栏**按岗位权限裁剪**（issue #6574；用户 2026-10-08 逐字「**1，按权限隐藏**」）
+ * B 端底栏**4 项一律可见**（用户 2026-10-18 裁定；旧口径 issue #6574「按权限隐藏」退场）
  *
- * ## 治的形态
+ * ## 治的形态（两次改判，按时间读）
  *
- * `app.config.ts` 的 `tabBar` 是**构建期静态**的 4 项（问黄金策 / 数据 / 坐席 / 我的）：
- * `Taro.setTabBarItem` 只能改文字/图标、`hideTabBar` 只能整条收起 ⇒ 没有 `agent:session` 的岗位
- * （实测：商品管理员 8 码 / 财务 9 码）照样看到「坐席」。修法 = 服务端下发 `mobileTabs`
- * （`MobileSurfaces.visibleTabsFor`），端侧**自绘底栏** + 把原生条收起。
+ * ① 2026-10-08（#6574）：`app.config.ts` 的 `tabBar` 是构建期静态 4 项 ⇒ 没有 `agent:session`
+ *    的岗位照样看到「坐席」⇒ 改成服务端下发 `mobileTabs`、端侧自绘底栏按权限删格。
+ * ② **2026-10-18（本裁定，现行）**：用户逐字「跟问黄金策那个菜单一样都可见，参考问黄金策那个菜单
+ *    的做法即可」⇒ 底栏 4 项**一律可见**，不再按权限删格（删格会让「坐席」先出现再消失，
+ *    且用户裁定「都可见」）。🔴 这**不是授权放宽**：数据面仍由服务端 `@RequirePermission` 拦
+ *    （移动坐席要 `agent:session`），页面自己给「无权限」引导。
  *
  * ## 判据
  *
  * | # | 判据 | 红证（怎么让它单独变红） |
  * |---|---|---|
- * | 1 | 服务端给 3 项（无 `sessions`）⇒ 底栏**只有 3 格**，`坐席` 那一格不存在 | 端侧仍按静态 4 项渲染 ⇒ 红 |
- * | 2 | 服务端给 4 项 ⇒ 4 格，顺序与标题取服务端 | 端侧自造顺序/标题 ⇒ 红 |
- * | 3 | 🔴 拿不到菜单 ⇒ **照显 4 格**（tab 是功能入口：藏掉用户有的功能更糟） | 把 error 当「一个都没有」⇒ 红 |
+ * | 1 | 🔴 服务端给 3 项（无 `sessions`）⇒ 底栏**仍画 4 格**（2026-10-18 裁定） | 端侧跟着服务端删格 ⇒ 红 |
+ * | 2 | 服务端给 4 项 ⇒ 4 格，顺序取静态表、标题取服务端 | 端侧自造顺序/标题 ⇒ 红 |
+ * | 3 | 拿不到菜单 ⇒ 照显 4 格（裁定后与判据 1 同形：可见性不依赖那次 fetch） | 把 error 当「一个都没有」⇒ 红 |
  * | 4 | 空清单（服务端答复异常）⇒ 同 3（照显 4 格） | 空清单渲染 0 格 ⇒ 红 |
  * | 5 | 挂载即**收起原生条**（`Taro.hideTabBar({animation:false})`） | 忘了收起 ⇒ 两条底栏叠着 ⇒ 红 |
  * | 6 | 点未选中格 ⇒ `Taro.switchTab({url})`；点当前页 ⇒ 一次都不调 | 点当前页也跳 ⇒ 红 |
@@ -80,18 +82,19 @@ beforeEach(() => {
 })
 
 describe('底栏渲染 = 服务端下发的 mobileTabs', () => {
-  it('🔴 服务端给 3 项（无 session 码的岗位）⇒ 底栏只有 3 格，「坐席」那一格不存在', async () => {
+  it('🔴 2026-10-18 裁定：服务端给 3 项（无 session 码）⇒ 底栏**仍画 4 格**，「坐席」照显', async () => {
     stubNetwork(SERVER_NO_SESSIONS)
     render(<MerchantTabBar />)
 
     await waitFor(() => expect(screen.getByTestId('merchant-tab-chat')).toBeTruthy())
-    await waitFor(() => expect(screen.queryByTestId('merchant-tab-sessions')).toBeNull())
-
+    // 可见性不再依赖 `mobileTabs`：无权限的格子也照画（「跟问黄金策那个菜单一样都可见」）
     expect(keys()).toEqual([
       'merchant-tab-chat',
       'merchant-tab-dashboard',
+      'merchant-tab-sessions',
       'merchant-tab-profile',
     ])
+    expect(screen.getByText('坐席')).toBeTruthy()
   })
 
   it('服务端给 4 项 ⇒ 4 格，标题与顺序都取服务端', async () => {
