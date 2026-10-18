@@ -2275,7 +2275,7 @@ cases:
 
   - id: UI-064
     legacy_id: ""
-    title: "商家后台「企业设置」页手机端入口二维码 —— 地址单一配置、内容逐字等于该值、未配置不画假码（issue #5668）"
+    title: "商家后台「手机端入口」二维码 —— 顶栏主入口 + 设置页一行入口；地址单一配置、内容逐字等于该值、未配置不画假码（issue #5668 / #7198）"
     domains:
       - ui
       - frontend
@@ -2293,16 +2293,19 @@ cases:
     expectations:
       - tool: direct_reply
     data_checks:
-      - "判据 1·**有值 ⇒ 内容逐字等于配置值**：`NEXT_PUBLIC_BMINI_H5_URL` = `https://bmini-entry.invalid/b/`（哨兵值，与线上域名不同）时，二维码 svg 的 `<title>` 与可复制链接都逐字等于该值。红证：把 `QRCodeSVG` 的 value 改成硬编码线上地址 ⇒ 本格判红（实测：夹具用线上域名时该变异**判不出来** ⇒ 那是空断言方向，故改用哨兵值）。执行点 = frontend/admin-web/tests/unit/pages/settings.test.tsx 的「配置了 NEXT_PUBLIC_BMINI_H5_URL ⇒ 二维码内容逐字等于该值（哨兵值 ⇒ 硬编码实现必红）」。"
-      - "判据 2·**无值 ⇒ 明确「未配置」且不画码**：配置为空/纯空白时渲染 `data-testid=bmini-h5-unconfigured`（文案含「移动端地址未配置」），且入口卡片内 `querySelector('svg') === null`（不是「没找到 testid」，是确实没画）。红证：把渲染条件改成恒真 ⇒ 2 格判红（实测）。执行点 = 同文件「未配置 ⇒ 明确「未配置」提示，且**不生成二维码**」+「只有空白字符的配置值同样按「未配置」处理」。"
+      - "判据 1·**有值 ⇒ 内容逐字等于配置值**：`NEXT_PUBLIC_BMINI_H5_URL` = `https://bmini-entry.invalid/b/`（哨兵值，与线上域名不同）时，二维码 svg 的 `<title>` 与可复制链接都逐字等于该值。红证：把 `QRCodeSVG` 的 value/title 改成硬编码线上地址 ⇒ 本格判红（实测：夹具用线上域名时该变异**判不出来** ⇒ 那是空断言方向，故改用哨兵值）。执行点 = frontend/admin-web/tests/unit/components/MobileEntry.test.tsx 的「点击 ⇒ 展开弹层，二维码的标题与可复制地址逐字等于配置值（哨兵值 ⇒ 硬编码必红）」+ frontend/admin-web/tests/unit/pages/settings.test.tsx 的「配置了地址 ⇒ 设置页只留一行；点「显示二维码」后内容逐字等于该值」。"
+      - "判据 2·**无值 ⇒ 明确「未配置」且不画码**：配置为空/纯空白时渲染 `data-testid=bmini-h5-unconfigured`（文案含「尚未开通手机版」），且面板内 `querySelector('svg') === null`（不是「没找到 testid」，是确实没画）。红证：把渲染条件改成恒真 ⇒ 本格判红（实测）。执行点 = frontend/admin-web/tests/unit/components/MobileEntry.test.tsx 的「未配置 ⇒ 不画假码：零 svg + 逐字说明「未配置」」+「未配置 ⇒ 明确说明「未配置」且**零 svg**（缺码不画假码）」+ frontend/admin-web/tests/unit/pages/settings.test.tsx 的「未配置 ⇒ 明确说明且**不画码**（缺码不画假码）」。"
       - "判据 3·**唯一读取点**：`process.env.NEXT_PUBLIC_BMINI_H5_URL` 在全前端只允许出现在 frontend/admin-web/src/lib/bmini-h5-url.ts；组件经 `getBminiH5Url()` 取。红证：在第二个文件里再读一次 ⇒ 判红。执行点 = tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py。"
       - "判据 4·**前端源码零硬编码域名**：`frontend/admin-web/src/**` 与 `frontend/bmini-app/{src,config}/**` 的**代码**（注释不算 —— 否则判据会被自己的文档喂红）里不得出现 app.migaozn.com；豁免台账为空、未登记即红。执行点 = 同文件（含「注释剥离但字符串保留」的状态机，防 `https://` 被当注释切掉的假绿）。"
-      - "判据 5·**发布链三环在案**：Dockerfile 的 `ARG`+`ENV`、deploy-frontend.yml 的 `--build-arg`、.env.example 的说明 —— 任一环缺失 ⇒ 镜像里没有这个值 ⇒ 设置页永远显示「未配置」而没人会发现。红证：删任一环 ⇒ 判红（实测）。执行点 = 同文件。"
-      - "判据 6·**既有页零回归**：设置页既有 tab（基本设置 / AI 客服设置 / 工人端页面 / 通知设置）全在、既有 vitest 全绿（本单只加卡片，不动导航与保存逻辑）。⚠️ 2026-10-08（issue #6573）改判：原口径里的「参数总览」已**搬出本页**成为一级菜单项 ⇒ 本判据的 tab 清单不再含它（设置页的 tab 数 4 → 4，但成员变了）。"
-    skip_reason: "[backend-contract] 纯前端渲染 + 接线判据（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest（frontend/admin-web/tests/unit/pages/settings.test.tsx，39 格）与 pytest（tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py）执行"
-    merge_log: "2026-09-26 新增（issue #5668）：B 端 h5 的发布腿落位 app.migaozn.com/b/ 的同时，在商家后台「企业设置」页给出扫码入口。地址走单一配置 NEXT_PUBLIC_BMINI_H5_URL（反面教材 = craft-display 三份副本 #4393）；未配置时不画假码（同族：洗水码「缺码不画假码」）。取号 UI-064（**改号记录**：本包原先取 UI-061，而 #5651 的「A4 加工单打印」先合并并占用了 UI-061 ⇒ 按当前最大号 UI-063 顺延为 UI-064）。 ｜ 2026-10-08（issue #6573）**判据 6 改判**：设置页的 tab 清单里「参数总览」换成「工人端页面」（前者已升为一级菜单项 `/settings/params`）—— 同批把判据的**静态断言**加严两条：该页**不得**再出现 `label: '参数总览'`（两处入口 = 入口分裂）、且必须保留 `router.replace('/settings/params')`（旧深链不 404）；执行点 = tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py 的 test_qr_entry_is_on_the_settings_page_and_keeps_existing_tabs（前端侧同批改判见 frontend/admin-web/tests/unit/pages/settings.test.tsx）。"
+      - "判据 5·**发布链三环在案**：Dockerfile 的 `ARG`+`ENV`、deploy-frontend.yml 的 `--build-arg`、.env.example 的说明 —— 任一环缺失 ⇒ 镜像里没有这个值 ⇒ 页面永远显示「未配置」而没人会发现。红证：删任一环 ⇒ 判红（实测）。执行点 = 同文件。"
+      - "判据 6·**既有页零回归**：设置页既有域（企业信息 / AI 客服 / 通知设置）全在、既有 vitest 全绿（本单只换入口形态，不动域目录与保存逻辑）。⚠️ 2026-10-08（issue #6573）改判：原口径里的「参数总览」已**搬出本页**成为一级菜单项 ⇒ 本判据不再含它。"
+      - "判据 7·**落位（issue #7198）**：① 顶栏右上角挂「手机端入口」按钮（`aria-label`，`< lg` 隐藏），点击才画码、点击外部收起；② 设置页「企业信息」域只留**一行**（地址 + 复制链接 + 显示二维码），默认**不画码**；③ 二维码**只由 `MobileEntry.tsx` 渲染一处**（两处共用同一块面板，不许各画一份）。红证：从 Header 摘掉 `<MobileEntryHeader />` ⇒ 单源守卫判红（实测）；设置页恢复 112px 大码块 ⇒ 单源守卫的 `<MobileEntryInline />` 判据判红。执行点 = frontend/admin-web/tests/unit/components/MobileEntry.test.tsx + frontend/admin-web/tests/unit/components/Header.test.tsx 的「顶栏带「手机端入口」按钮」+ tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py 的 test_qr_entry_is_on_the_settings_page_and_keeps_existing_tabs。"
+    skip_reason: "[backend-contract] 纯前端渲染 + 接线判据（无 LLM 环节，不进 agent-eval 冒烟）：由 vitest（frontend/admin-web/tests/unit/components/MobileEntry.test.tsx、frontend/admin-web/tests/unit/pages/settings.test.tsx）与 pytest（tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py）执行"
+    merge_log: "2026-09-26 新增（issue #5668）：B 端 h5 的发布腿落位 app.migaozn.com/b/ 的同时，在商家后台「企业设置」页给出扫码入口。地址走单一配置 NEXT_PUBLIC_BMINI_H5_URL（反面教材 = craft-display 三份副本 #4393）；未配置时不画假码（同族：洗水码「缺码不画假码」）。取号 UI-064（**改号记录**：本包原先取 UI-061，而 #5651 的「A4 加工单打印」先合并并占用了 UI-061 ⇒ 按当前最大号 UI-063 顺延为 UI-064）。 ｜ 2026-10-08（issue #6573）**判据 6 改判**：设置页的 tab 清单里「参数总览」换成「工人端页面」；执行点 = tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py 的 test_qr_entry_is_on_the_settings_page_and_keeps_existing_tabs。 ｜ 2026-10-18（issue #7198）**落位改判**：用户逐字「这里的二维码放置到右上角是否合适？当前地方是临时放置的，需要有个更好的位置让用户方便扫码」⇒ 裁定「顶栏图标 + 按需弹层，设置页留一行入口」；主入口搬到**顶栏**（点击弹层；常驻面只多一个图标，§31 P1），设置页收成**一行**入口；二维码收敛到 `frontend/admin-web/src/components/layout/MobileEntry.tsx` 唯一渲染。判据 1/2/7 的执行点同批改判，判据只搬位置、不放宽。"
     traces:
       tests:
+        - "frontend/admin-web/tests/unit/components/MobileEntry.test.tsx"
+        - "frontend/admin-web/tests/unit/components/Header.test.tsx"
         - "frontend/admin-web/tests/unit/pages/settings.test.tsx"
         - "tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py"
       ci:
