@@ -16,11 +16,8 @@ vi.mock('@/lib/api', () => ({
 import ProcessingDoc, {
   MISSING,
   NOT_COLLECTED,
-  OPERATIONS_DOC_COLUMNS,
   PROCESSING_DOC_COLUMNS,
   PROCESSING_DOC_NOT_COLLECTED_FIELDS,
-  operationsByItem,
-  operationStatusText,
 } from '@/components/orders/ProcessingDoc'
 import type {
   Order,
@@ -518,80 +515,46 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
  * ① 有工序实例（读面 `positions[]` 按 `order_item_id` 对得上本行）⇒ 逐行印**服务端真值**；
  * ② 无/对不上 ⇒ **整块不出现**（不印空表、不印占位表头）。
  */
-describe('ProcessingDoc 工序清单（issue #6901）', () => {
-  it('🔴 逐道印工序：显示名（logical_name）/ 应做（数量+单位）/ 状态 —— 取读面真值，不重算', () => {
+
+/**
+ * 纸面**不印**工序清单（issue #7274，用户 2026-10-18 逐字「工序细节不用在打印单上，
+ * 移除掉工序相关的表格信息」）。
+ *
+ * 判据形态 = **回归探针**：按 issue #6901 时代的调用方形态把 `operations` 传进来（TS 面上已退场），
+ * 纸面必须**零**工序节点。若有人把工序块接回纸面 ⇒ 本文件立即红。
+ */
+describe('ProcessingDoc 纸面不印工序（issue #7274）', () => {
+  it('🔴 旧调用方仍传工序实例 ⇒ 纸面也**零**工序表 / 工序行 / 工序文案', () => {
+    // 旧 props 形态（issue #6901 的 `operations`）—— TS 面上已不存在，这里按旧调用方**照原样**传，
+    // 让「重新接回纸面」这件事可被判红（而不是只靠注释约定）。
+    const legacyCaller = { operations: [buildPosition()] } as unknown as Record<string, never>
     render(
-      <ProcessingDoc
-        order={buildOrder()}
-        processingOrder={buildProcessingOrder()}
-        operations={[buildPosition()]}
-      />
+      <ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} {...legacyCaller} />
     )
-    // 块头一行 + 每道一行（数据行 = `processing-doc-operation`）
-    expect(screen.getByTestId('processing-doc-operations')).toBeInTheDocument()
-    const rows = screen.getAllByTestId('processing-doc-operation')
-    expect(rows).toHaveLength(2)
-    const cellsOf = (row: HTMLElement): string[] =>
-      Array.from(row.querySelectorAll('td')).map((td) => td.textContent?.trim() ?? '')
-    expect(cellsOf(rows[0])).toEqual(['精裁', '12.5 米', '待做'])
-    expect(cellsOf(rows[1])).toEqual(['韩褶', '52 折', '已完成'])
-    // 🔴 纸面**不得**出现工人端快照名（读面键 `operation`，变体名）——只许印逻辑名
-    expect(doc()?.textContent).not.toContain('精裁-布')
-    // 块头列清单 = 唯一真值（乱序/漏列都会让这条红）
-    expect(screen.getByTestId('processing-doc-operations').textContent).toBe(
-      OPERATIONS_DOC_COLUMNS.join('')
-    )
+    const el = doc()
+    expect(el?.querySelector('[data-testid="processing-doc-operations"]')).toBeNull()
+    expect(el?.querySelectorAll('[data-testid="processing-doc-operation"]')).toHaveLength(0)
+    const text = el?.textContent || ''
+    // 工序实例里的显示名 / 状态 / 列标签一律不上纸（`韩褶` 是**工艺**值，纸面本该有，故不列）
+    for (const forbidden of ['工序', '精裁', '应做', '待做']) {
+      expect(text).not.toContain(forbidden)
+    }
   })
 
-  it('🔴 红证（注入式）：把显示名写成快照名 `operation` / 状态只印英文键 ⇒ 上面那条必红', () => {
-    render(
-      <ProcessingDoc
-        order={buildOrder()}
-        processingOrder={buildProcessingOrder()}
-        operations={[buildPosition()]}
-      />
-    )
-    const row = screen.getAllByTestId('processing-doc-operation')[0]
-    // ① 旧形态（直读 `operation`）⇒ 纸面会出现 `精裁-布`，上面那条 `not.toContain` 立即红
-    expect(row.textContent).toContain('精裁')
-    expect(row.textContent).not.toContain('精裁-布')
-    // ② 读面 `status` 是机器键：直接渲染会印 `pending` / `done`（工人看不懂）
-    expect(row.textContent).toContain('待做')
-    expect(row.textContent).not.toContain('pending')
-    // ③ 单位与数量同格（不是只印数字 —— 米/折是这道工序的**计量口径**）
-    expect(row.textContent).toContain('12.5 米')
+  it('🔴 起算点自证：纸面正文照旧渲染（上面那条不是「纸面整个没了」的空跑）', () => {
+    render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />)
+    const text = doc()?.textContent || ''
+    expect(text).toContain('布艺遮光帘A')
+    expect(text).toContain('工艺')
+    expect(text).not.toContain('工序')
   })
+})
 
-  it('🔴 无工序 / 挂不上订单行 ⇒ 工序块**整块不出现**（不印空表、不印占位表头）', () => {
-    const { unmount } = render(
-      <ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} />
-    )
-    // ① 没传读面（订单还没生成加工单）⇒ 一行都不出现
-    expect(screen.queryByTestId('processing-doc-operations')).toBeNull()
-    expect(screen.queryAllByTestId('processing-doc-operation')).toHaveLength(0)
-    unmount()
-
-    // ② 读面给了实例，但 `order_item_id` 与本订单行对不上 ⇒ **不猜**（不许把别人的工序印到这张单上）
-    render(
-      <ProcessingDoc
-        order={buildOrder()}
-        processingOrder={buildProcessingOrder()}
-        operations={[buildPosition({ order_item_id: 'another-item' })]}
-      />
-    )
-    expect(screen.queryByTestId('processing-doc-operations')).toBeNull()
-    // ③ 分组在、但 `operations` 为空 ⇒ 同样整块不出现（不是空表）
-    cleanup()
-    render(
-      <ProcessingDoc
-        order={buildOrder()}
-        processingOrder={buildProcessingOrder()}
-        operations={[buildPosition({ operations: [] })]}
-      />
-    )
-    expect(screen.queryByTestId('processing-doc-operations')).toBeNull()
-  })
-
+/**
+ * 数量列的单位随行（issue #6901）—— 列名与值**同出**
+ * `frontend/admin-web/src/lib/order-item-sku.ts::orderItemQuantity()`（口径收敛一处）。
+ */
+describe('ProcessingDoc 数量列单位（issue #6901）', () => {
   it('🔴 数量列单位随行：快照 `unit` 是套 ⇒ 列名印「数量(套)」且逐值同口径（口径收敛一处）', () => {
     render(
       <ProcessingDoc
@@ -622,33 +585,5 @@ describe('ProcessingDoc 工序清单（issue #6901）', () => {
     expect(headers).not.toContain('数量(米)')
     // 起算点：纸面**不许**出现任何自行断言的单位
     expect(doc()?.textContent).not.toContain('数量(米)')
-  })
-
-  it('🔴 负控：工序块上线后纸面仍**不印金额**（实证 #3 无金额列，issue #5651 硬约束）', () => {
-    render(
-      <ProcessingDoc
-        order={buildOrder()}
-        processingOrder={buildProcessingOrder()}
-        operations={[buildPosition()]}
-      />
-    )
-    const text = doc()?.textContent || ''
-    // 工序块带来「应做 / 状态」，**不得**顺手把读面的 `unit_price` / `price_state` 印上纸
-    expect(screen.getAllByTestId('processing-doc-operation')).toHaveLength(2)
-    for (const money of ['本单应收', '单价', '金额', '小计', '未定价', '¥']) {
-      expect(text).not.toContain(money)
-    }
-  })
-
-  it('🔴 纯函数判据（口径可复算）：`operationsByItem` 跳过无 `order_item_id` / 空工序，`operationStatusText` 二态', () => {
-    // 挂不到订单行 ⇒ 不索引（挂不上就不上纸面，不猜）
-    expect(operationsByItem([buildPosition({ order_item_id: null })]).size).toBe(0)
-    expect(operationsByItem([buildPosition({ operations: [] })]).size).toBe(0)
-    expect(operationsByItem(undefined).size).toBe(0)
-    expect(operationsByItem([buildPosition()]).get('item-1')?.operations).toHaveLength(2)
-    // 状态二态（读面只有 done / 其余；缺值按「待做」印，**不显示空**）
-    expect(operationStatusText('done')).toBe('已完成')
-    expect(operationStatusText('pending')).toBe('待做')
-    expect(operationStatusText(null)).toBe('待做')
   })
 })

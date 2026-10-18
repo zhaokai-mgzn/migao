@@ -9,10 +9,10 @@ import { craftSpecLine } from '@/lib/craft-display'
 // 数量 + 单位的**唯一**取值口（issue #6901：屏幕块与「复制全部」文本共用，不各拼一份 ——
 // 订单行自己的 `unit` 键 DTO 未下发 ⇒ 由调用方补加工单**快照行**的单位）
 import { craftRowsWithoutDoorWidth, quantityWithUnit } from '@/lib/order-item-sku'
-// 工序清单的索引 / 状态文案（issue #6901）：与加工单纸面**同一份**实现
-// （`lib/operation-list.ts`，由纸面单据 `./ProcessingDoc` 转出）；
+// 工序清单的索引 / 状态文案（issue #6901）：唯一实现 = `lib/operation-list.ts`
+// （🔴 纸面自 issue #7274 起**不印工序** ⇒ 屏幕块直接走这一份，不再经 `./ProcessingDoc` 转出）；
 // 显示名一律走仓内**唯一**口径 `lib/operation-display.ts`（issue #4621）
-import { operationsByItem, operationStatusText } from './ProcessingDoc'
+import { operationsByItem, operationStatusText } from '@/lib/operation-list'
 import { operationDisplayName } from '@/lib/operation-display'
 // 状态文案单一来源：与列表页共用（加工单状态机语义见 lib/processing-order.ts）；
 // issue #7079：作业单两型（加工单 / 出库作业单）的中文业务名与判定也取同一份 ——

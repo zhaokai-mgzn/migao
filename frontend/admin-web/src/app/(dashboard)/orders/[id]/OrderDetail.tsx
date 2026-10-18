@@ -471,7 +471,6 @@ export default function OrderDetailPage() {
         order={order}
         processingOrder={processingOrder}
         qrValue={processingOrder?.scan_url ?? null}
-        operations={orderOperations}
         printTarget={printTarget}
       />
 
@@ -511,7 +510,6 @@ export default function OrderDetailPage() {
             order={order}
             processingOrder={processingOrder}
             qrValue={processingOrder?.scan_url ?? null}
-            operations={orderOperations}
             inline
           />
         )}
