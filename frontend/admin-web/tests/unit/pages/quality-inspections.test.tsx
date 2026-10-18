@@ -1,4 +1,4 @@
-// case_ids: UI-118
+// case_ids: UI-118, PG-087
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -27,12 +27,14 @@ import userEvent from '@testing-library/user-event'
 const mockTargets = vi.fn()
 const mockList = vi.fn()
 const mockCreate = vi.fn()
+const mockStats = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   qualityInspectionApi: {
     targets: (...args: unknown[]) => mockTargets(...args),
     list: (...args: unknown[]) => mockList(...args),
     create: (...args: unknown[]) => mockCreate(...args),
+    stats: (...args: unknown[]) => mockStats(...args),
   },
 }))
 
@@ -115,7 +117,38 @@ describe('质检记录页（/quality-inspections）', () => {
     vi.clearAllMocks()
     mockList.mockResolvedValue({ data: { data: [passRecord] } })
     mockCreate.mockResolvedValue({ data: { data: passRecord } })
+    mockStats.mockResolvedValue({
+      data: {
+        data: {
+          window: { from: null, to: null, name: null },
+          bucket: 'day',
+          min_sample: 20,
+          counts: { inspected: 2, first_pass: 1, current_pass: 1, rework: 1, scrap: 0 },
+          rates: {
+            first_pass_rate: 0.5,
+            current_pass_rate: 0.5,
+            rework_rate: 0.5,
+            scrap_rate: 0,
+          },
+          trend: [],
+          by_processing_order: [],
+          by_product: [],
+          by_inspector: [],
+          backlog: { pending: 1, oldest_pending_hours: 2, approximate: true, approximate_from: 'processing_order.created_at' },
+        },
+      },
+    })
     mockOkTargets()
+  })
+
+  it('⓪ 指标面板：默认「本月」拉一次，首检合格率与样本量同屏（issue #7192）', async () => {
+    render(<QualityInspectionsPage />)
+
+    await waitFor(() => expect(mockStats).toHaveBeenCalledTimes(1))
+    expect(mockStats.mock.calls[0][0]).toMatchObject({ bucket: 'day' })
+    expect(await screen.findByTestId('quality-metric-first-pass')).toHaveTextContent('50.0%')
+    expect(screen.getByTestId('quality-metric-sample')).toHaveTextContent('已检 2 件')
+    expect(screen.getByTestId('quality-metrics-window-month')).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('① 待检清单：未检显示「未检」（不是「合格」）且操作位是「录入判定」', async () => {

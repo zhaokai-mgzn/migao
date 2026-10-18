@@ -110,3 +110,20 @@ export function qualityItemName(productName?: string | null, colorName?: string 
   if (color) return color
   return '—'
 }
+
+/**
+ * 比率展示（0~1 ⇒ 百分比，一位小数）。
+ *
+ * 🔴 `null` / 缺值 ⇒ `—`（**0 样本**），不是 `0%` —— 「还没有数据」与「合格率为零」
+ * 是两句话（issue #7192 的口径；服务端对 0 分母也只给 `null`）。
+ */
+export function formatRate(value?: number | null): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—'
+  return `${(value * 100).toFixed(1)}%`
+}
+
+/** 小时展示（一位小数）；缺值 ⇒ `—`（不印 `0.0 小时` 冒充「刚进来的」）。 */
+export function formatHours(value?: number | null): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return '—'
+  return `${value.toFixed(1)} 小时`
+}
