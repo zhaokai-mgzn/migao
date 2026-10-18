@@ -939,7 +939,9 @@ public class AuthService {
                         // 字段名与结构一字未动（/api/auth/me 的消费者很多，只改取值）。
                         .username(StringUtils.hasText(user.getUsername()) ? user.getUsername() : user.getPhone())
                         .nickname(user.getNickname())
-                        .position(user.getPosition())
+                        // 展示口径（2026-10-18 用户截图「这里的岗位不要用英文」）：存量行里 position
+                        // 存的是**角色码**（API / 脚本建号）⇒ 解析成岗位名再上屏；字段名/结构一字未动。
+                        .position(roleService.displayPosition(user.getPosition(), user.getTenantId()))
                         .avatar(user.getAvatar())
                         .tenantId(user.getTenantId())
                         .tenantName(tenantName)

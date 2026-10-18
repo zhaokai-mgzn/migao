@@ -22,7 +22,7 @@ import { markErrorToastShown } from '@/lib/api-error'
 const mockGetOrder = vi.fn()
 // 发货读面（issue #5651 收口）：销售单数量列消费的**实发**来源 —— 详情页加载订单时一并取
 const mockGetOrderShipments = vi.fn()
-// 工序读面（issue #6901）：加工单纸面与加工单块的工序清单来源（既有读面，按订单 id 取）
+// 工序读面（issue #6901）：**屏幕**加工单块的工序清单来源（既有读面，按订单 id 取）；纸面自 #7274 起不印工序
 const mockGetOrderOperations = vi.fn()
 const mockConfirmPayment = vi.fn()
 const mockRefundOrder = vi.fn()
@@ -179,8 +179,8 @@ describe('OrderDetailPage', () => {
     mockGetOrderShipments.mockResolvedValue({
       data: { data: { order_id: 'test-order-123', status: 'producing', shipments: [] } },
     })
-    // 工序读面（issue #6901）：默认给「无工序实例」—— 工序块的纸面/屏幕判据在
-    // ProcessingDoc.test.tsx / ProcessingOrderBlock.test.tsx（此处只要形状对得上，不让它抛）
+    // 工序读面（issue #6901 / #7274）：默认给「无工序实例」—— 工序清单的**屏幕**判据在
+    // ProcessingOrderBlock.test.tsx（纸面自 #7274 起不印工序；此处只要形状对得上，不让它抛）
     mockGetOrderOperations.mockResolvedValue({ data: { data: { positions: [] } } })
   })
 
@@ -567,12 +567,13 @@ describe('OrderDetailPage', () => {
 
   // ===== 工序清单读面接线（issue #6901）=====
   //
-  // 🔴 「加了 prop 不等于接线」：加工单纸面 / 加工单块 / 「复制全部」文本三处都靠本页把
+  // 🔴 「加了 prop 不等于接线」：**屏幕**加工单块（含「复制全部」文本）靠本页把
   // `GET /api/admin/production/orders/{id}/operations` 的结果传下去 —— 没有真实调用方时
   // 工序清单在生产里**永远不出现**，而组件单测喂夹具会全绿（本仓反复复发的假绿形态）。
   // 本用例直连**真实调用路径**（页面 → 读面 → state）；`ProcessingOrderBlock` 端子行逐值由
   // ProcessingOrderBlock.test.tsx 的工序用例负责（本文件把该组件替身成空壳）。
-  // 接线面的机械证据（两处 prop 都在）另见 PR body 的 `grep -n "operations={orderOperations}"`。
+  // 🔴 纸面 `ProcessingDoc` 自 issue #7274 起**不再接收** `operations`（工序细节不上纸）。
+  // 接线面的机械证据另见 PR body 的 `grep -n "operations={orderOperations}"`（现在只剩加工单块那一处）。
   it('🔴 工序读面接线（issue #6901）：详情页按订单 id 取 `orders/{id}/operations` 并向下传', async () => {
     const operations = [
       {

@@ -64,7 +64,21 @@ function stubNetwork(menu: typeof SERVER_MENU | null) {
   mockGet.mockImplementation(async (url: string) => {
     if (url === '/api/auth/me') {
       if (menu === null) throw Object.assign(new Error('Request failed with status 500'), { statusCode: 500 })
-      return { success: true, data: { permissions: ['*'], mobileSurfaces: menu } } as any
+      // 2026-10-18：`/me` 同时下发底栏 `mobileTabs`（服务端 `MobileSurfaces.visibleTabsFor`）——
+      // 本夹具给全 4 项（「数据」页的整页权限门按它判；同族判据见 dashboard-three-state）
+      return {
+        success: true,
+        data: {
+          permissions: ['*'],
+          mobileSurfaces: menu,
+          mobileTabs: [
+            { key: 'chat', title: '问黄金策', route: '/pages/chat/index/index' },
+            { key: 'dashboard', title: '数据', route: '/pages/dashboard/index/index' },
+            { key: 'sessions', title: '坐席', route: '/pages/sessions/index/index' },
+            { key: 'profile', title: '我的', route: '/pages/profile/index/index' },
+          ],
+        },
+      } as any
     }
     if (url === '/api/admin/production/todo-overview') {
       return {

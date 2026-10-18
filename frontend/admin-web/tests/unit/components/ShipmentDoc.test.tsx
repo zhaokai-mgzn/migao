@@ -144,39 +144,46 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
     expect(document.body.textContent).not.toContain('加工费合计（元）：—')
   })
 
-  it('#4882：加工项表只留「名称 / 数量」，单价与逐项金额列退场；加工费合计走行级落库值', () => {
+  it('#4882 / #7275：加工项压成**一行**（`名称×数量 + …`），加工费合计走行级落库值', () => {
     const order = buildOrder({
       hasProcessing: true,
       // 加工费真值源 = **行级落库 `processingFee`**（issue #4406：组合价 × 加工费米数）
       items: [{ ...buildOrder().items![0], processingFee: 37.5 }],
       // #4882：后端 `ProcessingItemBrief` 只剩 id / name / quantity（无 unitPrice / amount）
-      processingItems: [{ id: 'pr-1', name: '打孔', quantity: 12.5 }],
+      processingItems: [
+        { id: 'pr-1', name: '打孔', quantity: 12.5 },
+        { id: 'pr-2', name: '定型', quantity: 1 },
+      ],
     })
     render(<ShipmentDoc order={order} />)
 
-    // 「加工项」既是区块标题也是表头 → 命中多处是预期
-    expect(screen.getAllByText('加工项').length).toBeGreaterThanOrEqual(1)
+    // ① 逐项真值压成**一行**（issue #7275 用户逐字「加工项表格应该用一行表达…比如改成a+b+c这样？」）。
+    //    红证：退回逐项一行（`<table>` 两列）⇒ `toBe` 与 `closest('table')` 两条同时红
+    const itemsLine = screen.getByTestId('shipment-processing-items')
+    expect(itemsLine.textContent?.trim()).toBe('打孔×12.5 + 定型×1')
+    expect(screen.getByText('加工费合计（元）：37.50').closest('table')).toBeNull()
 
-    const procTable = screen.getByText('加工费合计（元）：37.50').closest('table') as HTMLElement
-    expect(procTable).not.toBeNull()
-
-    // ① 表头**逐字**只剩两列 —— 红证：把 `单价(元/米)` 或 `金额(元)` 加回加工项表即红
-    expect(Array.from(procTable.querySelectorAll('th')).map((th) => th.textContent)).toEqual([
-      '加工项',
-      '数量(米)',
-    ])
-    expect(within(procTable).queryByText('单价(元/米)')).toBeNull()
-    expect(within(procTable).queryByText('金额(元)')).toBeNull()
-
-    // ② 凭证的核对价值（名称 + 米数）仍在 —— 删列不得把「做了什么加工」一起删掉
-    expect(within(procTable).getByText('打孔')).toBeInTheDocument()
-    expect(within(procTable).getByText('12.5')).toBeInTheDocument()
+    // ② 凭证的核对价值（名称 + 米数）仍在 —— 省版面不得把「做了什么加工、各多少」一起删掉
+    expect(itemsLine.textContent).toContain('打孔')
+    expect(itemsLine.textContent).toContain('12.5')
 
     // ③ 加工费合计不是逐项金额相加（逐项 amount 已退场 ⇒ 那样恒 0.00），而是行级 processingFee
-    expect(within(procTable).getByText('加工费合计（元）：37.50')).toBeInTheDocument()
+    expect(screen.getByText('加工费合计（元）：37.50')).toBeInTheDocument()
 
     // ④ 反向护栏：把合计改回 `Σ processingItems[].amount` ⇒ 此处会印 0.00，本断言红
     expect(document.body.textContent).not.toContain('加工费合计（元）：0.00')
+  })
+
+  it('#7275：缺数量的加工项仍**显式**印 `—`（`名称×—`，不静默吞掉）', () => {
+    const order = buildOrder({
+      hasProcessing: true,
+      items: [{ ...buildOrder().items![0], processingFee: 0 }],
+      processingItems: [{ id: 'pr-3', name: '打孔', quantity: undefined as unknown as number }],
+    })
+    render(<ShipmentDoc order={order} />)
+    // 缺值不静默留空（范式同 issue #6720 / `SHIPMENT_DOC_MISSING`）——
+    // 红证：把该项写成 `item.name`（丢掉数量）⇒ 本断言红
+    expect(screen.getByTestId('shipment-processing-items').textContent?.trim()).toBe('打孔×—')
   })
 
   it('商品明细表的「单价(元/米)」「金额(元)」列**不受影响**（商品行语义，非加工项）', () => {

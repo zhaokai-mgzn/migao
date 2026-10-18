@@ -854,8 +854,9 @@ export interface ProcessingOrder {
    * 加工单二维码的**确切内容**（形如 `https://app.migaozn.com/o/7K3M9QP2`）—— 前端**不拼**、逐字用
    * （`{base}/o/{短码}` 由服务端装配；前端自己拼 = 域名/路径段的第二份真值）。
    *
-   * 🔴 它就是**印在纸上的那个码**（issue #6867）：缺它 ⇒ `qrValue` 给 `null`、纸面出「无码」占位框 ——
-   * **不回落加工单号**（回落 = 扫出来仍是纯文本、打不开任何页面，正是本单要治的病）。
+   * 🔴 它仍是**工人端扫码的稳定短链**（issue #6867）：缺它 ⇒ 扫码面出「无码」占位、**不回落加工单号**
+   * （回落 = 扫出来仍是纯文本、打不开任何页面，正是本单要治的病）。⚠️ 加工单**纸面**自 issue #7219
+   * 起不再印 QR（`ProcessingDoc` 的 `qrValue` prop 已退场），本字段不再影响纸面。
    */
   scan_url?: string | null
   items?: ProcessingOrderItem[]

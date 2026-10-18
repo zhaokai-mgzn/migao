@@ -371,6 +371,40 @@ class RoleServiceTest {
                 });
     }
 
+    // ======================== displayPosition 测试 ========================
+    // 2026-10-18 用户截图「这里的岗位不要用英文」：`users.position` 存角色码的老行，
+    // 展示层（/api/auth/me · /api/admin/user/info）必须解析成岗位名再上屏。
+
+    @Test
+    @DisplayName("岗位展示名 - 角色码 ⇒ 角色名（存量脚本建号的行不再印英文）")
+    void displayPosition_RoleCodeResolvesToName() {
+        // given：code 命中（`knowledge_editor` 是历史脚本建号写法）
+        when(roleMapper.selectOne(any(LambdaQueryWrapper.class)))
+                .thenReturn(Role.builder().code("knowledge_editor").name("知识编辑").build());
+
+        // when / then
+        assertThat(roleService.displayPosition("knowledge_editor", 1L)).isEqualTo("知识编辑");
+    }
+
+    @Test
+    @DisplayName("岗位展示名 - 中文岗位名 ⇒ 原样（不因为解析不到就丢掉人话）")
+    void displayPosition_UnknownPositionKeepsRaw() {
+        // given：code 与 name 两次查询都没命中（自定义岗位名，没有登记角色）
+        when(roleMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+
+        // when / then
+        assertThat(roleService.displayPosition("车间主任", 1L)).isEqualTo("车间主任");
+    }
+
+    @Test
+    @DisplayName("岗位展示名 - 空值 ⇒ 原样返回（不查库、不凭空造岗位名）")
+    void displayPosition_BlankStaysBlank() {
+        assertThat(roleService.displayPosition(null, 1L)).isNull();
+        assertThat(roleService.displayPosition("  ", 1L)).isEqualTo("  ");
+        // 反空跑：空值路径**一次库都不查**（否则 /me 对空岗位的员工多一次无意义查询）
+        verifyNoInteractions(roleMapper);
+    }
+
     // ======================== getUserRoles 测试 ========================
 
     @Test

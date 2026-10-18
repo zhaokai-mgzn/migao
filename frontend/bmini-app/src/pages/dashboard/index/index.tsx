@@ -23,6 +23,8 @@ import {
 import { formatMessageTime } from '../../../utils/datetime'
 // 手机端菜单（issue #6570）：生产待办块的开关在**服务端**（`mobileSurfaces` 的 `production-todos`）
 import { useMobileMenu } from '../../../components/admin/useMobileMenu'
+// 「没权限」= 与「问黄金策」同一做法（用户 2026-10-18 裁定）：授权缺失态的唯一呈现实现
+import AdminGrantGate, { surfaceGrantGuide } from '../../../components/admin/SurfaceAccessGate'
 // 商家面身份护栏（issue #6567）：纯工人设备打开本页 ⇒ 送回工人工作台
 import { useMerchantSurfaceGuard } from '../../../utils/roleGuard'
 import './index.scss'
@@ -152,6 +154,19 @@ export default function DashboardPage() {
         : todoResult?.status === 'ok'
           ? '今天没有待处理'
           : '正在加载…'
+
+  // 🔴 底栏常驻（用户 2026-10-18 裁定）⇒ 没有 `dashboard:view` 的岗位**也能点进本页**。
+  // 做法与「问黄金策」一致：整页给授权缺失态（逐字「需要管理员授权」+ 去哪开通），
+  // 而不是让几张卡各印一句「无权限」——判定只读**服务端** `mobileTabs`（无该 tab = 没权限），
+  // `loading` / `error` 一律不拦（拿不到菜单 ≠ 没权限，交给页面自己的失败态）。
+  if (menu.state === 'ok' && !menu.tabs.some((tab) => tab.key === 'dashboard')) {
+    return (
+      <View className='dashboard-page'>
+        <AdminGrantGate testid='dashboard-gate-denied' guide={surfaceGrantGuide('经营数据')} />
+        <MerchantTabBar current='dashboard' />
+      </View>
+    )
+  }
 
   if (loading && !statsResult) return renderLoading()
 
