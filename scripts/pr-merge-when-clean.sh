@@ -41,6 +41,8 @@ set -uo pipefail
 PR=""
 MAX_ATTEMPTS="${PMWC_MAX_ATTEMPTS:-6}"
 POLL_SECONDS="${PMWC_POLL_SECONDS:-40}"
+WAIT_TIMEOUT="${PMWC_WAIT_TIMEOUT:-1800}"   # 等 pending 的上限（秒）；**不**消耗轮次
+SECONDS=0
 DRY_RUN=0
 GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
@@ -55,6 +57,7 @@ while [ $# -gt 0 ]; do
     --dry-run) DRY_RUN=1; shift ;;
     --max-attempts) MAX_ATTEMPTS="${2:-6}"; shift 2 ;;
     --poll-seconds) POLL_SECONDS="${2:-40}"; shift 2 ;;
+    --timeout) WAIT_TIMEOUT="${2:-1800}"; shift 2 ;;
     -*) echo "未知参数：$1（--help 看用法）" >&2; exit 1 ;;
     *) PR="$1"; shift ;;
   esac
@@ -156,8 +159,14 @@ while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
   fi
 
   # BLOCKED / UNKNOWN / 其他：可能仍有 pending，也可能有别的 required（review / 标签）在拦
-  echo "  … mergeState=$merge_state 且无红项 ⇒ 等（pending=${pending}）；若长期停在此，跑 gh pr view $PR --json reviewDecision,labels,mergeStateStatus 看拦在哪"
-  attempt=$((attempt + 1))
+  if [ "$SECONDS" -ge "$WAIT_TIMEOUT" ]; then
+    echo "⏱ 等 pending 已超 ${WAIT_TIMEOUT}s（mergeState=${merge_state}，pending=${pending}）⇒ **未判定**（exit 3）"
+    echo "   续跑：$0 $PR --timeout $((WAIT_TIMEOUT * 2))"
+    exit 3
+  fi
+  # 注意：**等**不消耗轮次（轮次只被 update / merge 这类动作消耗）—— 一次 CI 要 8-10 min，
+  # 若「等」也计数，默认 4 轮连一轮 CI 都等不完（实测 #7188：19 个 pending）。
+  echo "  … mergeState=$merge_state 且无红项 ⇒ 等（pending=${pending}，已等 ${SECONDS}s/${WAIT_TIMEOUT}s）；若长期停在此，跑 gh pr view $PR --json reviewDecision,labels,mergeStateStatus 看拦在哪"
   sleep "$POLL_SECONDS"
 done
 
