@@ -3284,3 +3284,48 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # PG-087（issue #7192，2026-10-18）—— 质检**指标**：首检合格率 / 当前合格率 / 返工报废率 /
+  # 趋势 / 分组 Top-N / 待检积压（近似待检时长）。
+  #
+  # 用户逐字：「质检记录我觉得缺乏一个合格率的指标？」「那先做 p0 和 p1 吧」
+  # ══════════════════════════════════════════════════════════════════════════
+  - id: PG-087
+    legacy_id: ""
+    title: "质检指标（P0+P1）：按件聚合的首检合格率 / 当前合格率 / 返工报废率 + 时间窗趋势 + 分组 Top-5 + 待检积压（近似待检时长）"
+    domains:
+      - processing-order
+      - production
+      - backend
+      - quality
+    tier: normal
+    tags:
+      - quality-inspection
+      - metrics
+      - backend-contract
+      - admin-web
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-18 逐字：「质检记录我觉得缺乏一个合格率的指标？」"
+      - "用户 2026-10-18 逐字：「那先做 p0 和 p1 吧」（采纳建议：主指标 = 首检合格率、默认本月、返工/报废单列、未检不进分母）"
+    expectations: []
+    precondition: "前置 = 若干活跃加工单的成品帘 + 已录判定（同一件可有返工后复检的多条记录）；指标读面只读，不依赖任何写入时序。"
+    data_checks:
+      - "**判据 1·按件去重（P0 的根）**：同一件两条记录（先合格、后返工）⇒ 已检 **1 件**、首检合格 1、当前合格 0、返工 1；首检合格率 100%、当前合格率 0%、返工率 100%。红证：改成按记录条数聚合 ⇒ 已检变 2 ⇒ 断言红。证据：backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckStatsTest.java（aggregatesPerPieceNotPerRecord）"
+      - "**判据 2·未检不进分母**：快照里没有记录的件**不**出现在已检/率里，只出现在 backlog.pending；红证：把未检算进分母（或折成「不合格」）⇒ 断言红。证据：同文件（pendingPiecesStayOutOfDenominator）"
+      - "**判据 3·0 样本 ⇒ 率 = null**（前端显示「—」，**不是** 0%）；红证：`rate()` 在分母 0 时返回 0.0 ⇒ 断言红。证据：同文件（emptyCohortHasNullRates）+ frontend/admin-web/tests/unit/components/QualityMetricsPanel.test.tsx（「0 样本 ⇒ 显示『—』」）"
+      - "**判据 4·窗口按首检时刻**：窗口外首检、窗口内复检的件**不进** cohort（否则窗口一半落在复检上、率不可比）。证据：同文件（windowUsesFirstInspectionMoment）"
+      - "**判据 5·趋势与分组自洽**：趋势 Σ已检 = 已检件数 = 分组 Σ已检（第二份口径 ⇒ 红）。证据：同文件（trendAndGroupsAgreeWithCounts）"
+      - "**判据 6·参数闸**：未知 bucket / 非法时间 / 反向窗口 ⇒ 422 具名（不静默回落 day）。证据：同文件（rejectsInvalidParameters）"
+      - "**判据 7·前端只格式化不重算**：KPI / 趋势 / 分组 / 积压全部取服务端值；样本 < min_sample 标注「样本偏少」；待检时长必须带「近似」与起算点说明。证据：frontend/admin-web/tests/unit/components/QualityMetricsPanel.test.tsx + tests/unit/pages/quality-inspections.test.tsx（指标面板默认「本月」拉一次）"
+      - "**边界（照实登记）**：① 待检时长是**近似**（无「进入待检」时间戳，按加工单生成时刻起算 = 上界）；② 原因分布 / 原因字典化、返工成本属 P2，本单不做；③ 待检清单与四态计数口径**一字未改**；④ 不改任何写入/判定口径。"
+    skip_reason: "[backend-contract] 纯读面聚合（服务端 SQL/Java 聚合 + 前端渲染判据，零 LLM 行为），不进 agent-eval 冒烟"
+    merge_log: "2026-10-18 新增（issue #7192；用户原话见 user_inputs）。落码：`QualityCheckService#stats`（P0 率 + P1 趋势/分组/积压）→ `GET /api/admin/quality-inspections/stats` → `QualityMetricsPanel` + 质检记录页接线。取号 = 现取 origin/main 已占号最大 PG-085（#7186 的 PG-086 在并行分支）⇒ 本单取 PG-087。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/QualityCheckStatsTest.java"
+        - "frontend/admin-web/tests/unit/components/QualityMetricsPanel.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/quality-inspections.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

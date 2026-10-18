@@ -166,6 +166,7 @@ import type { OrderContentUpdateParams } from '@/types'
 import type {
   QualityInspectionRecord,
   QualityInspectionResult,
+  QualityStats,
   QualityTargetsResponse,
 } from '@/types'
 import { FrontendToBackendStatus } from '@/types'
@@ -1092,6 +1093,16 @@ export const qualityInspectionApi = {
     if (params.size) q.set('size', String(params.size))
     const suffix = q.toString() ? '?' + q.toString() : ''
     return request.get<ApiResponse<QualityTargetsResponse>>('/api/admin/quality-inspections/targets' + suffix)
+  },
+
+  /** 质检指标（P0+P1，issue #7192）：合格率 / 趋势 / 分组 Top-N / 待检积压；`from`/`to` 左闭右开 */
+  stats: (params: { from?: string; to?: string; bucket?: 'day' | 'week' | 'month' } = {}) => {
+    const q = new URLSearchParams()
+    if (params.from) q.set('from', params.from)
+    if (params.to) q.set('to', params.to)
+    if (params.bucket) q.set('bucket', params.bucket)
+    const suffix = q.toString() ? '?' + q.toString() : ''
+    return request.get<ApiResponse<QualityStats>>('/api/admin/quality-inspections/stats' + suffix)
   },
 
   /** 记录流水（按加工单 / 成品帘过滤；时间倒序 —— 同件可多条 = 返工后重检） */
