@@ -12,6 +12,7 @@ import com.migao.admin.mapper.OrderItemMapper;
 import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.QualityCheckMapper;
+import com.migao.admin.time.BusinessClock;
 import com.migao.admin.worker.WorkerIdentity;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -104,6 +105,24 @@ public class QualityCheckService {
     private final OrderMapper orderMapper;
     /** 加工单快照解析：`items_snapshot` 可能是 JSON 字符串形态（自定义 `@Select` 不经 typeHandler）。 */
     private final ObjectMapper objectMapper;
+
+    /**
+     * 业务时钟（issue #3802 单点口径）：时间窗、「本月」缺省、趋势兜底一律走它 ——
+     * **不**读 JVM 默认时区，也**不**自己拼 {@code Asia/Shanghai}。
+     *
+     * <p>字段注入的理由与上面的 {@code documentOperationLinkage} 同款（构造签名被单测显式装配）；
+     * 单测切片不装 Spring 容器 ⇒ 用 {@link #DEFAULT_CLOCK} 兜底（口径仍是同一个 {@link BusinessClock}，
+     * 不会出现第二套「今天」）。</p>
+     */
+    @Autowired(required = false)
+    private BusinessClock businessClock;
+
+    /** 未装 Spring 容器时的业务时钟（同口径，仅供单测/切片兜底）。 */
+    private static final BusinessClock DEFAULT_CLOCK = new BusinessClock();
+
+    private BusinessClock clock() {
+        return businessClock != null ? businessClock : DEFAULT_CLOCK;
+    }
 
     /**
      * 录入一条质检记录（成品帘级）。
@@ -354,8 +373,8 @@ public class QualityCheckService {
         OffsetDateTime to = parseMoment(toArg, "to");
         String window = null;
         if (from == null && to == null) {
-            from = LocalDate.now().withDayOfMonth(1)
-                    .atStartOfDay(ZoneId.systemDefault()).toOffsetDateTime();
+            from = clock().today().withDayOfMonth(1)
+                    .atStartOfDay(clock().zone()).toOffsetDateTime();
             window = "month";
         }
         if (from != null && to != null && !to.isAfter(from)) {
@@ -509,7 +528,7 @@ public class QualityCheckService {
         }
         Double hours = null;
         if (oldest != null) {
-            long minutes = Math.max(0, Duration.between(oldest, OffsetDateTime.now()).toMinutes());
+            long minutes = Math.max(0, Duration.between(oldest, clock().nowOffset()).toMinutes());
             hours = Math.round(minutes / 6.0) / 10.0;
         }
         Map<String, Object> out = new LinkedHashMap<>();
@@ -618,14 +637,14 @@ public class QualityCheckService {
     }
 
     /** 解析时间参数（缺省 ⇒ {@code null} = 该侧不限）；非法 ⇒ 422 具名报错（不静默忽略）。 */
-    private static OffsetDateTime parseMoment(String raw, String field) {
+    private OffsetDateTime parseMoment(String raw, String field) {
         if (!StringUtils.hasText(raw)) {
             return null;
         }
         String value = raw.trim();
         try {
             if (value.length() == 10) {
-                return LocalDate.parse(value).atStartOfDay(ZoneId.systemDefault()).toOffsetDateTime();
+                return LocalDate.parse(value).atStartOfDay(clock().zone()).toOffsetDateTime();
             }
             return OffsetDateTime.parse(value);
         } catch (DateTimeParseException e) {
@@ -642,8 +661,8 @@ public class QualityCheckService {
         return (from == null || !moment.isBefore(from)) && (to == null || moment.isBefore(to));
     }
 
-    private static LocalDate toLocalDate(OffsetDateTime moment) {
-        return moment == null ? null : moment.atZoneSameInstant(ZoneId.systemDefault()).toLocalDate();
+    private LocalDate toLocalDate(OffsetDateTime moment) {
+        return moment == null ? null : moment.atZoneSameInstant(clock().zone()).toLocalDate();
     }
 
     private static LocalDate bucketStart(LocalDate date, String bucket) {
@@ -673,11 +692,11 @@ public class QualityCheckService {
     }
 
     /** 桶序列（含零填充）：从窗口结尾往回最多 {@link #STATS_MAX_BUCKETS} 个桶，按时间升序。 */
-    private static Map<LocalDate, int[]> trendBuckets(OffsetDateTime from, OffsetDateTime to, String bucket) {
-        LocalDate end = toLocalDate(to != null ? to : OffsetDateTime.now());
+    private Map<LocalDate, int[]> trendBuckets(OffsetDateTime from, OffsetDateTime to, String bucket) {
+        LocalDate end = toLocalDate(to != null ? to : clock().nowOffset());
         LocalDate start = toLocalDate(from);
         if (end == null) {
-            end = LocalDate.now();
+            end = clock().today();
         }
         if (start == null) {
             start = end.minusMonths(1);
