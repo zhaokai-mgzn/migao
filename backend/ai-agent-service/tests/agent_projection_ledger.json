@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "why": "声明必须由真值投影（issue #7291）。任何对模型可见的能力 / 权限 / 意图声明，都要登记「真值源 → 渲染缝 → 判据」；未登记即红。",
+  "projections": [
+    {
+      "key": "capability_index",
+      "truth": "SkillConfig.tool_names × registry.read_only",
+      "render": "app.graph.skills.base_skill::_capability_index",
+      "guard": "backend/ai-agent-service/tests/test_capability_index_prompt.py"
+    },
+    {
+      "key": "capability_boundary",
+      "truth": "registry action enum × mibao 绑定 skill",
+      "render": "app.agents.capability_boundary::render_capability_boundary",
+      "guard": "backend/ai-agent-service/tests/test_capability_boundary.py"
+    },
+    {
+      "key": "permission_scope",
+      "truth": "admin-api 权限目录镜像 × 会话角色",
+      "render": "app.graph.skills.base_skill::_inject_permission_scope",
+      "guard": "backend/ai-agent-service/tests/test_permission_scope_injection.py"
+    },
+    {
+      "key": "intent_ownership",
+      "truth": "backend/ai-agent-service/app/ontology/schema.yaml::intent_ownership",
+      "render": "scripts/check_ontology_contract.py",
+      "guard": "backend/ai-agent-service/tests/test_ontology_contract.py"
+    }
+  ]
+}
