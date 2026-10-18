@@ -60,7 +60,7 @@
         "predicate_fn": "worker_h5_face_paths",
         "fail_closed": true
       },
-      "note": "零依赖：Node 内置 --test，无 node_modules（#4716）。本单（#5707 的 FM-E10 收口）加触发面：命中的**还包括 frontend/shared/**（它是本腿的跨目录输入，现取 = `frontend/shared/operation-display.mjs`，被 `frontend/worker-h5/src/render.mjs` 与测试执行）⇒ 缺 node 时那条间接覆盖也算「没跑」。🔴 issue #6306：该跨目录输入**已消失** —— 共享模块迁进树内 `frontend/worker-h5/src/shared/operation-display.mjs`（住发布集之外会让线上说明符落到 SPA 兜底 ⇒ 白屏），`frontend/shared/` 目录已删 ⇒ 触发面只剩 `frontend/worker-h5/**`。"
+      "note": "零依赖：Node 内置 --test，无 node_modules（#4716）。本单（#5707 的 FM-E10 收口）加触发面：命中的**还包括 frontend/shared/**（它是本腿的跨目录输入，现取 = `frontend/shared/operation-display.mjs`，被 `frontend/worker-h5/src/render.mjs` 与测试执行）⇒ 缺 node 时那条间接覆盖也算「没跑」。🔴 issue #6306：该跨目录输入**已消失** —— 共享模块迁进树内 `frontend/worker-h5/src/shared/operation-display.mjs`（住发布集之外会让线上说明符落到 SPA 兜底 ⇒ 白屏），`frontend/shared/` 目录已删 ⇒ 触发面只剩 `frontend/worker-h5/**`。🔴 issue #7237：新增跨目录输入 `frontend/admin-web/tailwind.config.ts`（工人端调色板的**真值源**，`tests/worker-h5-theme-parity.test.mjs` 逐值对账 primary/neutral/accent）⇒ **已纳入触发面**（`worker_h5_face_paths` 谓词 + CI `paths` 同批加）：「商家端改一阶而工人端没跟上」这条判据必须真的跑得起来。"
     },
     "frontend/bmini-app": {
       "tiers": ["gate"],
