@@ -732,7 +732,8 @@ describe('Header', () => {
   })
 
   // 🔴 issue #7198：扫码是**跨设备交接的工具**，不是一条配置 ⇒ 主入口移到顶栏（任何页面一键弹码）；
-  // 设置页只留一行入口。判据只钉「顶栏真的挂了它」，弹层行为由 components/MobileEntry.test.tsx 承担。
+  // issue #7212：设置页的入口块也整块移除（扫码只在顶栏）。判据只钉「顶栏真的挂了它」，
+  // 弹层行为由 components/MobileEntry.test.tsx 承担。
   it('顶栏带「手机端入口」按钮（#7198 主入口），且默认不画码', async () => {
     await act(async () => {
       render(<Header />)

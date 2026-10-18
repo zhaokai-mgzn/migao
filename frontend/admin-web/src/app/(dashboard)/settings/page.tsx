@@ -56,12 +56,11 @@
  * 五个生产域读面与三个企业级读面**全部**在本文的 effect 里发起（不藏进子组件）。
  */
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Building2, Bot, Bell, Newspaper, Smartphone, AlertCircle } from 'lucide-react'
+import { Building2, Bot, Bell, Newspaper, AlertCircle } from 'lucide-react'
 import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button, PageHeader } from '@/components/ui'
-import { MobileEntryInline } from '@/components/layout/MobileEntry'
 import { settingsApi, uploadApi, briefingApi, productionApi } from '@/lib/api'
 import { CalcCaliberPanel } from '@/components/settings/CalcCaliberPanel'
 import { RemnantItemSizesPanel } from '@/components/settings/RemnantItemSizesPanel'
@@ -72,7 +71,6 @@ import { OperationPricePanel } from '@/components/production-config/OperationPri
 import { RoutingsPanel } from '@/components/production-config/RoutingsPanel'
 import { CuttingHeightPanel } from '@/components/production-config/CuttingHeightPanel'
 import { readImageDimensions } from '@/lib/image-dimensions'
-import { getBminiH5Url } from '@/lib/bmini-h5-url'
 import { usePermission } from '@/lib/permission'
 import { useAuthStore } from '@/store/auth'
 import { REMNANT_PARAM_COPY } from '@/lib/tenant-params'
@@ -611,9 +609,6 @@ function EnterpriseDomainPanel() {
     }
   }
 
-  // 手机端入口（issue #7198）：二维码与地址的**唯一渲染处** = `@/components/layout/MobileEntry`
-  // （顶栏主入口与本页一行入口共用一块面板）；本页不再自己取地址、不再画第二份码。
-
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -750,24 +745,6 @@ function EnterpriseDomainPanel() {
                 </p>
               </div>
             </div>
-          </div>
-
-          {/* 手机端入口（issue #5668 建；issue #7198 改落位）：扫码是**跨设备交接的工具**，
-              不是这个域回答的问题（本域回答「这家店长什么样、谁能进来」）⇒ 主入口移到**顶栏**
-              （任何页面一键弹码），本域只留**一行**（地址 + 复制链接 + 显示二维码）。
-              🔴 二维码只由 `@/components/layout/MobileEntry` 渲染一处；未配置时**不画假码**，
-              由共享面板逐字说明「未配置」（判据仍由单源守卫与 UI-064 钉住）。 */}
-          <div className="border-t border-neutral-100 pt-6" data-testid="bmini-h5-entry">
-            <div className="flex items-start gap-3 mb-4">
-              <div className="w-9 h-9 rounded-lg bg-primary-50 flex items-center justify-center flex-shrink-0">
-                <Smartphone className="w-5 h-5 text-primary-600" />
-              </div>
-              <div>
-                <h3 className="text-base font-semibold text-neutral-900">手机端入口</h3>
-                <p className="text-sm text-neutral-500 mt-0.5">手机浏览器扫码使用黄金策商家端</p>
-              </div>
-            </div>
-            <MobileEntryInline />
           </div>
 
           {/* 智能每日经营简报（issue #3468，企业开关） */}

@@ -665,32 +665,19 @@ describe('判据 7：原四个 tab 的能力迁入域后零回归', () => {
     expect(toast.success).toHaveBeenCalledWith('已关闭系统通知')
   })
 
-  it('手机端入口（#5668）：未配置 ⇒ 明确说明且**不画码**（缺码不画假码）', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BMINI_H5_URL', '')
+  it('手机端入口（#7212）：企业信息域**不再**渲染入口块 —— 扫码入口只在顶栏右上角', async () => {
+    // 用户 2026-10-18 逐字「这块直接移除吧，已经迁移到右上角了」。
+    // 顶栏入口的行为判据在 components/MobileEntry.test.tsx；这里钉的是**设置页不再有第二个入口**。
+    vi.stubEnv('NEXT_PUBLIC_BMINI_H5_URL', 'https://bmini-entry.invalid/b/')
     mockSearchParams.mockReturnValue(new URLSearchParams('domain=enterprise'))
     try {
       render(<SettingsPage />)
-      const entry = await screen.findByTestId('bmini-h5-entry')
-      expect(screen.getByTestId('bmini-h5-unconfigured')).toHaveTextContent('尚未开通手机版')
-      expect(entry.querySelector('svg')).toBeNull()
+      expect(await screen.findByTestId('config-domain-panel-enterprise')).toBeInTheDocument()
+      expect(screen.queryByTestId('bmini-h5-entry')).toBeNull()
+      expect(screen.queryByTestId('bmini-h5-url')).toBeNull()
       expect(screen.queryByTestId('bmini-h5-qr')).toBeNull()
-    } finally {
-      vi.unstubAllEnvs()
-    }
-  })
-
-  it('手机端入口（#5668 / #7198）：配置了地址 ⇒ 设置页只留一行；点「显示二维码」后内容逐字等于该值（哨兵值 ⇒ 硬编码必红）', async () => {
-    const SENTINEL_URL = 'https://bmini-entry.invalid/b/'
-    vi.stubEnv('NEXT_PUBLIC_BMINI_H5_URL', SENTINEL_URL)
-    mockSearchParams.mockReturnValue(new URLSearchParams('domain=enterprise'))
-    try {
-      render(<SettingsPage />)
-      // issue #7198：112px 大码块收成**一行**入口 —— 默认不画码（弹层按需展开，§31 P1 常驻面克制）
-      expect(await screen.findByTestId('bmini-h5-url')).toHaveTextContent(SENTINEL_URL)
-      expect(screen.queryByTestId('bmini-h5-qr')).toBeNull()
-      fireEvent.click(screen.getByRole('button', { name: '显示二维码' }))
-      const qr = await screen.findByTestId('bmini-h5-qr')
-      expect(qr.querySelector('title')?.textContent).toBe(SENTINEL_URL)
+      expect(screen.queryByRole('button', { name: '复制链接' })).toBeNull()
+      expect(screen.queryByRole('button', { name: '显示二维码' })).toBeNull()
     } finally {
       vi.unstubAllEnvs()
     }
@@ -955,31 +942,6 @@ describe('判据 8：读面失败 ≠ 空态 / 关闭态（issue #6663）', () =
     )
   })
 
-  it('手机端入口未开通：说商家能行动的话，**不出现 env 名与构建指令**（§31 P3）', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BMINI_H5_URL', '')
-    mockSearchParams.mockReturnValue(new URLSearchParams('domain=enterprise'))
-    try {
-      render(<SettingsPage />)
-      const entry = await screen.findByTestId('bmini-h5-unconfigured')
-      expect(entry).toHaveTextContent('尚未开通手机版')
-      expect(entry).toHaveTextContent('请联系服务方')
-      // 环境变量名 / 构建指令不得上屏（§31 P3「不摆内部标识」）
-      expect(entry.textContent).not.toMatch(/NEXT_PUBLIC_/)
-      expect(entry.textContent).not.toMatch(/重新构建|部署|环境变量/)
-      /**
-       * 🔴 **同时**必须保留「未配置」逐字 —— 这两条约束是**一对张力**，本包实测踩过：
-       * 我第一轮只做了「去运维腔」，把「未配置」一起删掉 ⇒ CI 的既有元守卫
-       * `tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py` 判据 4 当场红
-       * （「无值分支必须逐字说明『未配置』（不许静默什么都不画）」）。
-       * ⇒ 口径是「**换措辞，不删锚点**」：商家看的是人话，而「未配置」是**状态锚点**。
-       * 这里把两条一起钉住，谁再单边改动都会当面红。
-       */
-      expect(entry.textContent).toContain('未配置')
-      expect(screen.queryByTestId('bmini-h5-qr')).toBeNull()
-    } finally {
-      vi.unstubAllEnvs()
-    }
-  })
 })
 
 // ══════════════════════════════════════════════════════════════════════════════
