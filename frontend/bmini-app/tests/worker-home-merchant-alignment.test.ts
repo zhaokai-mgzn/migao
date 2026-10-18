@@ -8,7 +8,7 @@
  * ## 病灶（读码，零成本复算）
  *
  * 商家端页面（`pages/auth/login` / `pages/profile` / `pages/dashboard`）统一 `@use
- * "../../../styles/variables.scss"`，页头是**品牌渐变带**（`$gradient-brand` / `$primary-color` →
+ * frontend/bmini-app/src/styles/variables.scss`，页头是**品牌渐变带**（`$gradient-brand` / `$primary-color` →
  * `$primary-light`，下缘大圆角），卡片 `$radius-lg` + `$border-color` + `$shadow-card`。
  *
  * 工人工作台（`pages/worker/home`）却**自持一套字面量**：`#0a2540` / `#1a73e8` / `#f5f7fa` /
