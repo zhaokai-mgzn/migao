@@ -13,7 +13,7 @@
  *
  * 现在本域就是**算料配置的唯一写面**（设计判死线第 1 条：同一份配置不许两个入口）：
  * 8 个标量（`CALC_SCALAR_KEYS`）/ 档位表 `tiers` / 拼色每折吃布表 `per_fold_mixed_times` /
- * 备用公式 `default_formula` **全部就地可改**，全域**只有一个保存按钮**；
+ * 备用公式 `default_formula` **全部就地可改**，**改完即保存**（issue #7183：没有保存按钮，见下节）；
  * 术语说明（`CraftCalcGlossary`）与阈值预览（`OversizeThresholdPreview`）随参数同屏。
  *
  * ## 版式（issue #7124，2026-10-17 用户裁定 —— 本文件最重要的一段注释）
@@ -43,6 +43,25 @@
  * （`@/lib/production-guard-reasons` 的 `craftCalcConfigGuardReasons`）、**草稿不回滚**、
  * **不谎报已保存**。
  *
+ * ## 🔴 变更即保存（issue #7183，2026-10-18 用户裁定）
+ *
+ * 用户逐字：「这里的两个按钮应该移除，一是不需要恢复默认功能，而是应该让用户在输入框变更后即保存，
+ * 这样增加界面简洁程度提高了用户体验」。⇒ 底部保存条（「恢复为默认值」+「保存」）**整体退场**，
+ * 改为草稿变更后**防抖 0.6 秒**自动 `PUT` 整份配置。四条不变量：
+ *
+ * 1. **首屏 / 读面刷新不写**：基线 = 读面给的整份配置，草稿与基线**深相等** ⇒ 一个请求都不发
+ *    （否则「打开设置页」就等于「拿这份配置覆盖一次」，而写面是整份替换）；
+ * 2. **防抖合并**：窗口内连续改多处 ⇒ 只发一次，正文是最后一次的**整份**草稿；
+ * 3. **在飞闸**：一次保存没回来时不并发第二个；期间又有变更 ⇒ 只留「最新一次」在飞结束后补发
+ *    （不排队 —— 队列长度会随敲键数增长）；
+ * 4. **失败不设基线**：422 ⇒ 理由逐条上屏、草稿**不回滚**，商家改对后下一次变更自动重试。
+ *
+ * 保存态（保存中 / 已保存 · 时间 / 保存失败 · N 条理由）在面板里**一处**小字说清（§31 P2）；
+ * 成功**不弹 toast**（每次变更弹一次会把商家淹掉），失败仍播一次（既有 `isErrorToastShown` 去重）。
+ *
+ * 🔴 「恢复为默认值」**随按钮一起去掉**（用户明确不要这个功能，不要再给它找替代入口）：
+ * 引擎默认值仍是**信息**（`source` 徽标 + 「本企业尚未保存过算料口径」横幅），不再是**动作**。
+ *
  * ## 🔴 它不判口径、不算钱（同 `config-readiness.ts` / `tenant-params.ts` 的纪律）
  *
  * 值一律来自服务端读面**原样**展示；三态解释只用 `@/lib/tenant-params` 的既有纯函数。
@@ -60,7 +79,7 @@
  *
  * 旧 `type="number"` 会吞 `0.` 中间态、清空会把框渲染成字面量 `NaN` 且清不掉。
  */
-import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AlertCircle, ChevronDown, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { NumberInput } from '@/components/ui'
@@ -98,8 +117,9 @@ import type { CraftCalcConfig, CraftCalcConfigResponse } from '@/types'
  * 长短不一的句子，同行布局下每个输入框的起点都不同 —— 一屏 6 个框排不出一条竖线（用户判「丑陋」的
  * 主因）。竖排后左边界由**栅格**决定，与标签长短无关。
  *
- * 默认值徽标**不在行内标**：默认态由域级信号承担（顶部横幅 + 口径徽标，§31 P2「信息不重复」），
- * 改动与回退由「恢复为默认值」按钮兜住。
+ * 默认值徽标**不在行内标**：默认态由域级信号承担（顶部横幅 + 口径徽标，§31 P2「信息不重复」）。
+ * 🔴 「恢复为默认值」按钮已随 issue #7183 退场（用户裁定不需要该功能）：引擎默认值仍是**信息**
+ * （由 `source` 徽标承担），不再是**动作** —— 不要按「缺了回退入口」把它加回来。
  */
 export function ParamField({
   param,
@@ -172,7 +192,10 @@ export interface CalcCaliberPanelProps {
   calcDraft?: CraftCalcConfig | null
   /**
    * 保存（**调用方**发 `PUT` —— 写面的错误归因与 toast 口径在页面一处）。
-   * 抛错 ⇒ 本面板把 `error.details[].message` 逐条上屏、**草稿不回滚**。
+   *
+   * 🔴 **给了它才**变更即保存（issue #7183）：草稿变更 → 防抖 0.6 秒 → 调它；
+   * 不给 ⇒ 只读退化形态，**一个写请求都不发**（本组件不自己造写面）。
+   * 抛错 ⇒ 本面板把 `error.details[].message` 逐条上屏、**草稿不回滚**（下一次变更自动重试）。
    */
   onCalcSave?: () => Promise<void>
   /** 失败行的重试出口（取数形态 = 重跑本面板那次读面；受控形态 = 调用方给） */
@@ -200,6 +223,48 @@ function numberOf(config: CraftCalcConfig, key: string): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null
 }
 
+/**
+ * 变更即保存的防抖窗口（issue #7183）。
+ *
+ * 为什么是 0.6 秒：同一个框里敲 `0.2` 会连着产生多次变更，逐个发 `PUT` 就是多次**整份替换**；
+ * 窗口要短到「敲完就觉得已经存了」，又要长到能合并这些中间态（用户裁定里的「输入框变更后即保存」）。
+ */
+const AUTOSAVE_DEBOUNCE_MS = 600
+
+/** 保存态（取代旧保存按钮的文案；§31 P2：同一个状态只在**一处**说） */
+type CalcSaveState =
+  | { kind: 'idle' }
+  | { kind: 'saving' }
+  | { kind: 'saved'; at: Date }
+  | { kind: 'failed'; count: number }
+
+/** 本地时间 `HH:mm`（保存态用；不做时区换算，也不为一行时间引格式化库） */
+function formatClock(at: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(at.getHours())}:${pad(at.getMinutes())}`
+}
+
+/**
+ * 整份配置的**深相等**（基线判据：「草稿 == 上次成功保存的那一份」⇒ 没有要保存的东西）。
+ *
+ * 🔴 为什么不用 `JSON.stringify` 比字符串：键序不同会把同一份配置判成「变了」⇒ 读面回写一次
+ * 就白发一次 `PUT`，而写面是**整份替换** —— 白发不是空操作（会把正在改的中间态盖回基线）。
+ * 比的是纯 JSON 结构（数字 / 字符串 / 布尔 / 对象 / 数组 / `NaN` 哨兵），不引第三方依赖。
+ */
+function calcConfigEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  // `NaN`（数字框被清空时落的哨兵）与自身不相等 —— 但「清空后再清空」是同一状态，不该判成变更
+  if (typeof a === 'number' && typeof b === 'number') return Number.isNaN(a) && Number.isNaN(b)
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false
+  const left = a as Record<string, unknown>
+  const right = b as Record<string, unknown>
+  const keys = Object.keys(left)
+  if (keys.length !== Object.keys(right).length) return false
+  return keys.every(
+    (k) => Object.prototype.hasOwnProperty.call(right, k) && calcConfigEqual(left[k], right[k]),
+  )
+}
+
 export function CalcCaliberPanel({
   calc: calcProp,
   calcError: calcErrorProp,
@@ -221,16 +286,8 @@ export function CalcCaliberPanel({
   const [ownCalc, setOwnCalc] = useState<CraftCalcConfigResponse | null>(null)
   const [ownDraft, setOwnDraft] = useState<CraftCalcConfig | null>(null)
   const [ownError, setOwnError] = useState('')
-  const [busy, setBusy] = useState(false)
-  /** 保存出口是否吸底（**滚过首屏才吸**）：静止态吸底会盖住内容（复核实测：盖住备用公式与下拉框） */
-  const [pinnedSave, setPinnedSave] = useState(false)
-
-  useEffect(() => {
-    const onScroll = () => setPinnedSave(window.scrollY > 320)
-    onScroll()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [])
+  /** 保存态（取代旧保存按钮的文案：保存中 / 已保存 · 时间 / 保存失败 · N 条理由） */
+  const [saveState, setSaveState] = useState<CalcSaveState>({ kind: 'idle' })
   /** 保存被拒的逐条理由（**不吞**成一句「保存失败」—— 后端一次列出每一处不合法） */
   const [reasons, setReasons] = useState<string[]>([])
 
@@ -270,38 +327,119 @@ export function CalcCaliberPanel({
   const displayConfig = draft ?? calc?.config ?? null
   const patchDraft = (next: CraftCalcConfig) => onCalcDraftChange?.(next)
 
-  async function save() {
-    if (!onCalcSave) return
-    setReasons([])
-    setBusy(true)
-    try {
-      await onCalcSave()
-      setReasons([])
-      toast.success('算料配置已保存，之后的算料按当前配置计算')
-    } catch (e) {
-      setReasons(craftCalcConfigGuardReasons(e))
-      if (!isErrorToastShown(e)) toast.error('算料配置保存失败')
-    } finally {
-      setBusy(false)
-    }
-  }
+  /**
+   * 🔴 **变更即保存**（issue #7183，2026-10-18 用户裁定）—— 底部保存条与「恢复为默认值」已整体退场。
+   *
+   * 四条不变量（对应 `frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx` 判据 9）：
+   * 1. **首屏 / 读面刷新不写**：基线 = 读面给的整份配置，草稿与它深相等 ⇒ 一个请求都不发；
+   * 2. **防抖合并**：窗口内连续改多处 ⇒ 只发一次（正文是最后一次的整份草稿）；
+   * 3. **在飞闸**：一次 `PUT` 没回来时不并发第二个；期间又有变更 ⇒ 只留「最新一次」，
+   *    回来后按**最新草稿**补发（不排队 —— 队列长度会随敲键数增长）；
+   * 4. **失败不设基线**：422 ⇒ 理由逐条上屏、草稿**不回滚**，商家改对后下一次变更自然重试。
+   *
+   * ⚠️ 只在 `typeof onCalcSave === 'function'` 时工作：只读退化形态一个请求都不发。
+   */
+  const saveWritable = typeof onCalcSave === 'function'
+  /** 基线：上次**成功保存**（或读面落地）时那份整份配置 */
+  const baselineRef = useRef<CraftCalcConfig | null>(null)
+  const baselineReadyRef = useRef(false)
+  /** 最新草稿 / 最新保存回调（防抖回调若读渲染期闭包，补发的会是**旧草稿** = 静默丢最后一次输入） */
+  const draftRef = useRef<CraftCalcConfig | null>(null)
+  const saveRef = useRef(onCalcSave)
+  /** 防抖计时器 / 在飞闸 / 「在飞期间又改过」标记（**布尔**不是队列：多次变更坍缩成一次补发） */
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const inFlightRef = useRef(false)
+  const pendingRef = useRef(false)
 
   /**
-   * 「恢复为默认值」（issue #6857，用户裁定）：把**整份**草稿写回引擎默认值。
+   * 基线 = **读面给的整份配置**（首屏与读面刷新都据此判「没有变更」，不写库）。
    *
-   * 后端 `defaults` = 引擎 `defaultConfig()` 的**整份配置**（含档位 / 拼色 / 备用公式，
-   * 见 `CraftCalcConfigService` 的 `withDefaults` 分支）；`defaults_source !== 'engine'`
-   * （本次取不到）⇒ **禁用并说明**，不拿一份猜的值冒充默认值。
-   *
-   * 🔴 **不自动保存**：本页的保存语义是显式点「保存」（整份替换 + 422 逐条理由），
-   *    恢复默认只改草稿 ⇒ 商家还有反悔余地（这正是不把默认态逐行标出来的补偿）。
+   * 依赖用 `calc` 的**对象标识**（每次读面落地都是新对象）—— 与页面里同步草稿的那条 effect 同源，
+   * 这样「保存成功 → 页面回填服务端新对象」也不会被当成一次新变更。
    */
-  const engineDefaults = calc?.defaults_source === 'engine' ? (calc?.defaults ?? null) : null
-  function restoreDefaults() {
-    if (!engineDefaults || !displayConfig) return
-    patchDraft({ ...displayConfig, ...engineDefaults })
-    toast.success('已恢复为引擎默认值（还没保存 —— 点「保存」后生效）')
-  }
+  useEffect(() => {
+    baselineRef.current = calc?.config ?? null
+    baselineReadyRef.current = true
+  }, [calc])
+
+  // 防抖回调必须读**最新**草稿与回调（每次渲染同步一次，比 useCallback 依赖链简单且不会漏）
+  useEffect(() => {
+    draftRef.current = draft
+    saveRef.current = onCalcSave
+  })
+
+  const flushSave = useCallback<() => Promise<void>>(async () => {
+    const save = saveRef.current
+    if (typeof save !== 'function') return
+    // 在飞闸：不发第二个；标记「回来后按最新草稿补发一次」（多次变更在这里坍缩成一次）
+    if (inFlightRef.current) {
+      pendingRef.current = true
+      return
+    }
+    const target = draftRef.current
+    if (target === null || calcConfigEqual(target, baselineRef.current)) return
+    inFlightRef.current = true
+    pendingRef.current = false
+    setSaveState({ kind: 'saving' })
+    try {
+      await save()
+      // 基线 = **刚提交成功的那一份**（不是「当前草稿」—— 期间可能又有新变更等着补发）
+      baselineRef.current = target
+      setSaveState({ kind: 'saved', at: new Date() })
+      setReasons([])
+    } catch (e) {
+      const nextReasons = craftCalcConfigGuardReasons(e)
+      setReasons(nextReasons)
+      setSaveState({ kind: 'failed', count: nextReasons.length })
+      // 失败仍播一次（既有 `isErrorToastShown` 去重）；**成功不播** —— 每次变更弹一次会把商家淹掉
+      if (!isErrorToastShown(e)) toast.error('算料配置保存失败')
+    } finally {
+      inFlightRef.current = false
+      if (pendingRef.current) {
+        pendingRef.current = false
+        void flushSave()
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!saveWritable || draft === null) return
+    // 首次挂载：基线 = 当前草稿（调用方已把它初始化为读面配置）⇒ 打开页面不写库
+    if (!baselineReadyRef.current) {
+      baselineRef.current = draft
+      baselineReadyRef.current = true
+      return
+    }
+    // 草稿回到基线（读面回写 / 商家改回原值）⇒ 没有可保存的东西，撤掉待发的那次
+    if (calcConfigEqual(draft, baselineRef.current)) {
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current)
+        timerRef.current = null
+      }
+      return
+    }
+    // 防抖：窗口内再改 ⇒ 只留最后一次
+    if (timerRef.current !== null) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null
+      void flushSave()
+    }, AUTOSAVE_DEBOUNCE_MS)
+  }, [draft, saveWritable, flushSave])
+
+  /**
+   * 卸载（切到别的域 / 离开本页）时把**待发的那一次**发出去。
+   *
+   * 不这么做，「敲完立刻切域」会静默丢掉最后一次输入 —— 而防抖窗口里还没有任何保存态可看。
+   */
+  useEffect(
+    () => () => {
+      if (timerRef.current === null) return
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+      void flushSave()
+    },
+    [flushSave],
+  )
 
   /** 本组件只管算料域（域定义取自单一真值模块，不在这里写第二份清单） */
   const domain: ParamDomain = PARAM_DOMAINS.find((d) => d.key === 'calc') ?? PARAM_DOMAINS[0]
@@ -445,6 +583,30 @@ export function CalcCaliberPanel({
         <div data-testid="param-calc-read-failed" />
       ) : (
         <div className="space-y-4">
+          {/* 🔴 「没有保存按钮」这件事必须**说出来**（同 #5899 企业信息域的做法）—— 否则商家会去找它。
+              静态说明 + 动态保存态同一行：§31 P2，同一个状态只在一处说，不另起第二条常驻横幅。 */}
+          {/* 只有**真能保存**时才说这句话（只给草稿回调、不给保存回调的形态下，「自动保存」是假话） */}
+          {saveWritable && displayConfig && (
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <span className="text-xs text-neutral-500">
+                修改后自动保存（约 0.6 秒），无需手动提交
+              </span>
+              <span
+                data-testid="calc-caliber-save-state"
+                /* 域写面台账的「出口」标记（issue #6825）：改前挂在保存按钮上，按钮随 #7183 退场 ——
+                   自动保存本身就是写出口，标记随「保存态」这处可见证据走。 */
+                data-write-exit="calc"
+                role="status"
+                aria-live="polite"
+                className="text-xs text-neutral-500"
+              >
+                {saveState.kind === 'saving' && '保存中…'}
+                {saveState.kind === 'saved' && `已保存 · ${formatClock(saveState.at)}`}
+                {saveState.kind === 'failed' && `保存失败 · ${saveState.count} 条理由`}
+              </span>
+            </div>
+          )}
+
           {/* ── 用布与余量（及其它非阈值分组） ── */}
           {leadingGroups.map((g) => (
             <FormPanel key={g.key} testid={`calc-caliber-group-${g.key}`} title={g.title}>
@@ -623,68 +785,19 @@ export function CalcCaliberPanel({
             </div>
           )}
 
-          {/* 全域**唯一**的保存出口（受控只读形态 / 读失败 ⇒ 不渲染）。
-              🔴 形态 = **右下角常驻的小条**（`sticky` + 右对齐 + 白底微模糊），不是整条白底横幅：
-              整条横幅在**静止首屏**会盖住内容（独立复核读图实测：盖住「备用用料公式」标签
-              15708px² / 下拉框上部 5632px²）—— 而小条在静止态落在面板右下角的空白区，
-              滚动时只压住一小角，且「保存」永远够得着（首屏不用滚 1.3 屏）。
-              重启条件：若商家反馈「小条挡住右下角内容」，改成滚动过表单首屏后才吸底。 */}
-          {writable && displayConfig && (
-            <div
-              data-testid="calc-caliber-save-dock"
-              className={pinnedSave ? 'sticky bottom-6 z-10 pt-2' : 'pt-2'}
+          {/* 护栏理由**逐条**展示（后端一次列出每一处不合法）—— 不吞成一句「保存失败」。
+              🔴 issue #7183：保存条已退场，但理由**位置沿用现状**（面板底部、字段下方，不另开弹窗）——
+              商家刚在哪个字段上出错，理由就在它附近；改对之后**下一次变更自动重试**（不需要按钮）。 */}
+          {saveWritable && reasons.length > 0 && (
+            <ul
+              /* §31 P1：逐条明细**封顶滚动**（不随条数把常驻面撑高）—— 后端一次可能列出多处不合法 */
+              className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600"
+              data-testid="calc-caliber-reasons"
             >
-              {/* 护栏理由**逐条**展示（后端一次列出每一处不合法）—— 不吞成一句「保存失败」；
-                  放在吸底容器里 ⇒ 保存被拒时理由不会滚出视口。 */}
-              {reasons.length > 0 && (
-                <ul
-                  /* §31 P1：逐条明细**封顶滚动**（不随条数把常驻面撑高）—— 后端一次可能列出多处不合法 */
-                  className="mb-2 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600"
-                  data-testid="calc-caliber-reasons"
-                >
-                  {reasons.map((r) => (
-                    <li key={r}>{r}</li>
-                  ))}
-                </ul>
-              )}
-              <div className="flex justify-end">
-                <div className="flex flex-wrap items-center justify-end gap-3 rounded-lg border border-neutral-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur-sm">
-                  {/* 说明**只在静止态**出现（吸底时它会把条撑宽、又压到内容）；常驻信息不重复 */}
-                  {!pinnedSave && (
-                    <span className="mr-1 text-xs text-neutral-500">
-                      保存后按当前配置计算；非法值会被整份拒绝并逐条说明理由。
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    data-testid="calc-caliber-restore-defaults"
-                    disabled={busy || !engineDefaults}
-                    title={
-                      engineDefaults
-                        ? '把全部算料口径恢复成算料引擎默认值（改完还要点「保存」）'
-                        : '本次没取到引擎默认值 ⇒ 无法恢复（重新打开本页可再试）'
-                    }
-                    onClick={restoreDefaults}
-                    className="rounded border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
-                  >
-                    恢复为默认值
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="calc-caliber-save"
-                    /* 域写面台账的「出口」标记（issue #6825）：类级守卫要求「可编辑控件 + 本域写出口」
-                       成对出现 —— 只看「域内有 input」会被**阈值试算**那类工具输入框满足（假绿）。 */
-                    data-write-exit="calc"
-                    disabled={busy}
-                    title="保存后按当前配置计算；非法值会被整份拒绝并逐条说明理由。"
-                    onClick={() => void save()}
-                    className="rounded bg-primary-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
-                  >
-                    {busy ? '保存中…' : '保存'}
-                  </button>
-                </div>
-              </div>
-            </div>
+              {reasons.map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
           )}
         </div>
       )}

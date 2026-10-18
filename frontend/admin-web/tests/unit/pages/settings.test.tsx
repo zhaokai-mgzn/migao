@@ -809,8 +809,11 @@ describe('判据 7：域内零 tab（两层导航并存 = 用户说的「分不�
     const input = await screen.findByTestId('calc-caliber-scalar-per_fold_single')
     fireEvent.change(input, { target: { value: '0.42' } })
 
-    await userEvent.click(screen.getByTestId('calc-caliber-save'))
-    await waitFor(() => expect(mockUpdateCraftCalcConfig).toHaveBeenCalledTimes(1))
+    /**
+     * issue #7183：保存按钮已退场 ⇒ 变更自己进**防抖窗口**（0.6 秒）后由面板发 `PUT`。
+     * 这里等「请求真的发出去了」，**不点任何按钮**（点不到才是对的形态）。
+     */
+    await waitFor(() => expect(mockUpdateCraftCalcConfig).toHaveBeenCalledTimes(1), { timeout: 5000 })
 
     // 🔴 红证：页面把 `calcDraft` 解构掉一个键再发（「只发改过的那个键」那种写法）⇒ 本断言当场红。
     //    面板侧的同类判据用的是测试自建的宿主，**盖不到页面这一跳**（实测：注入丢键 ⇒ 页面用例全绿）。
@@ -840,7 +843,10 @@ describe('判据 7：域内零 tab（两层导航并存 = 用户说的「分不�
     // 8 个标量里至少有一个输入框常驻（类级守卫逐域遍历在
     // frontend/admin-web/tests/unit/lib/domain-write-surface.test.tsx）
     expect(within(panel).getByTestId('calc-caliber-scalar-per_fold_single')).toBeInTheDocument()
-    expect(within(panel).getByTestId('calc-caliber-save')).toBeInTheDocument()
+    // issue #7183：写面还在，但**保存按钮不在**了 —— 改由「保存态」这处可见证据承担写出口标记
+    expect(within(panel).getByTestId('calc-caliber-save-state')).toBeInTheDocument()
+    expect(within(panel).queryByTestId('calc-caliber-save')).toBeNull()
+    expect(within(panel).queryByTestId('calc-caliber-restore-defaults')).toBeNull()
   })
 
   it('台账无幽灵 + 🔴 判别力自证（台账清零后循环体不执行 ⇒ 必须另有自证）', () => {
