@@ -82,12 +82,12 @@ UNITS: Tuple[CapabilityUnit, ...] = (
     CapabilityUnit(
         "category_write", "商品分类的创建与变更",
         tool="category_manage", actions=("create",),
-        next_step="后台「商品 → 分类」",
+        next_step="后台「商品管理 → 分类」",
     ),
     CapabilityUnit(
         "processing_item_write", "加工项的创建与变更",
         tool="processing_item_manage", actions=("create",),
-        next_step="后台「商品 → 加工项」",
+        next_step="后台「商品管理 → 加工项」",
     ),
     CapabilityUnit(
         "supplier_write", "供应商的创建与变更",
@@ -110,7 +110,7 @@ UNITS: Tuple[CapabilityUnit, ...] = (
     CapabilityUnit(
         "status_toggle", "商品上架 / 下架",
         decided_off=True,
-        next_step="后台「商品」页",
+        next_step="后台「商品管理」页",
     ),
 )
 

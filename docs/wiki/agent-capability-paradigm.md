@@ -49,7 +49,7 @@
 3. **绑定 persona**：`MIBAO_CONFIG.skill_names` / `SkillConfig.tool_names`（绑定面 = 可达性真值）。
 4. **面向用户可见的能力**：在 `app/agents/capability_boundary.py` 的 `UNITS` 加一条
    （标签 + 探针 + 后台路径），**不要**改 prompt 文案。
-5. **跑判据**：`pytest tests/test_capability_boundary.py` —— 现实快照会红，核对后更新快照。
+5. **跑判据**：`pytest backend/ai-agent-service/tests/test_capability_boundary.py` —— 现实快照会红，核对后更新快照。
 6. **补评测用例**：`.github/cases/*.yml` + 测试文件头 `# case_ids:`（否则 QA Growth Gate block）。
 7. **改 prompt 前的自问**：「这句话是不是在声明能力？」
    **是** ⇒ 去投影，不写这里；**否**（术语 / 默认值 / 格式 / 示例）⇒ 才写。
