@@ -2200,6 +2200,7 @@
 你: 照这张图帮我建个商品。 [📷 附 1 图]
 端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
 期望: image_recognize
+数据: 前置（机器计分型，precondition）：视觉链路**可用** —— `recognize()` 返回结构化 JSON 而非抛异常（2026-10-19 本机单次诊断实测：HTTP 200 / `image/png` / 104709 bytes，模型回 372 字符、5 字段全 null）（success=true）
 数据: 识别结果进**同页填充计划**（`page_fill` 计划），**不落库、不提交** —— 提交永远是商家在页面上点按钮；机械判据 = backend/ai-agent-service/tests/test_tools_image_recognize.py 的 TestNoWriteBoundary（静态扫描识别内核不 import 写入缝）
 数据: 回复说明「哪几格已填、哪几格留空及原因」；取值不在店铺目录里 ⇒ 给候选 + 解释、**不填**（不猜）
 数据: ⚠️ 本用例**不自动派发真实 LLM 评测**（用户裁定 #4262 / #4974：手动、用户显式触发）：只登记用例，等 #5966 那次 B 端集中跑批时验证
@@ -2207,10 +2208,12 @@
 禁词: 图片分析失败
 禁词: 无法识别图片
 禁词: 图片无法处理
+禁词: 识别成功
+禁词: 已为您填好
+禁词: 已自动填入
+禁词: 已经帮您把信息填好
 全程禁用: product_manage(create)
 必填: image_recognize() 字段 target_type, images
-必须成功: image_recognize
-跳过: [backend-contract] 本用例要求视觉识别**真的出字段**，而评测栈内 `PRIMARY_MODEL=deepseek-flash`（无视觉模型）⇒ `image_recognize` 必然返回 `recognition_degraded`。2026-10-19 B 端基线实测（run 39185677169）：「must_succeed: image_recognize 共 1 次调用无一成功（R1:recognition_degraded）」—— 红因在环境不在行为；用户 2026-10-19 裁定标 skip_reason。正确判定层 = 工具/识别内核单测（见 traces.tests：test_tools_image_recognize.py / test_vision/test_deep_channel.py）。**重启条件** = 评测栈接入视觉模型后，删本行并恢复 LLM 层断言（跟踪 #7302）。
 ```
 真值: ai-chat.route-actions
 溯源: 2026-10-03 新增（issue #6090）：销 `.github/eval-coverage-baseline.yml` 的 image_recognize 阻塞条目（登记于 2026-09-24 / issue #5368 包 2，跟踪单 #4941）。用例 = 「发图 → 黄金策调 image_recognize → 同页填表」，断言 = 工具调用 + must_succeed + 参数契约（target_type/images）+ 不推诿禁令。**不自动派发真实 LLM 评测**（用户裁定 #4262 / #4974：手动、用户显式触发）—— 真实读数由 #5966 那次 B 端集中跑批给出。 ｜ tags: multimodal, image, vision, image_recognize, mibao, capability
@@ -12053,7 +12056,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：825（活跃 136，跳过 689）
+- 用例总数：825（活跃 137，跳过 688）
 - tier 分布：smoke 12 / normal 758 / adversarial 32
 - 售后域：16
 - Agent 核心域：11

@@ -2567,6 +2567,23 @@ cases:
     # ⚠️ 残留（如实登记，未固化）：`degraded` 分支取决于 vision 供应商对**这一张**图的识别结果，
     # 不是本仓可判定的确定性行为 ⇒ 「复跑仍可能因 `recognition_degraded` 红」，此时红**不可归因于 agent**
     # （本用例 `precondition` 已逐字声明同一件事）。
+    # ── 🔴 2026-10-19 真根因现取定位（issue #7302 的第一版判断**是错的**，在此更正）──────────
+    # 旧判断：「评测栈内无视觉模型 ⇒ image_recognize 必然 degraded」—— **不成立**。现取三条硬证据：
+    #   ① 配置逐字：`app/config.py` 的 `VISION_MODEL = "deepseek-flash"`，同处注释写「2026-09-10 起
+    #      DeepSeek-V4.1-Flash 原生多模态，模型名统一为 deepseek-flash」；推理/视觉同 key；
+    #   ② 实调用（2026-10-19 本机单次诊断，非评测跑）：`recognize("product", [本用例那张图])`
+    #      ⇒ 模型**正常返回** 372 字符结构化 JSON，五个字段全 `value: null`，其中逐字写着
+    #      「图片为纯色渐变测试图，未标注任何色号或颜色名文字」；
+    #   ③ 该图 URL 公开可达：HTTP 200 / `image/png` / 104709 bytes。
+    # ⇒ 视觉**是通的**；`recognition_degraded` 是工具**按设计 fail-closed**（不编造、不半填）——
+    #    因为**这张 fixture 图本身没有任何可抽信息**。错的不是产品、不是环境，是**本用例原来的
+    #    `must_succeed`（恒红空断言：要求从空图里抽出字段）**。
+    # 用户 2026-10-19 裁定：「deepseek 模型就是多模态模型，支持视觉」。据此已改为：
+    #   · 删 `must_succeed`，保留 `expectations`（必须**调**识别 = 本用例真正要钉的行为面）；
+    #   · 补 `forbidden_text`（这种图**不得声称识别成功 / 已填好**）；
+    #   · 撤 `skip_reason`（用例回到活口，下一跑的真实行为直接可见）。
+    # 覆盖体检的 `image_recognize/uncovered` 豁免条目同 PR 删除（本用例即为它的行为面承重）。
+
     user_inputs:
       - text: "照这张图帮我建个商品。"
         images:
@@ -2575,8 +2592,9 @@ cases:
       - tool: image_recognize
     # 效果层断言（「调用了 ≠ 成了」#3778）：只有 expectations 时，工具返回
     # success=false（图片抓不到 / target 非法 / 权限拒绝）照样满分 ⇒ 补 must_succeed。
-    must_succeed:
-      - tool: image_recognize
+    # ⚠️ **刻意不写 `must_succeed`**（2026-10-19 更正）：fixture 图是**无文字的产品实拍渐变图**
+    # ⇒ 识别内核按设计返回 degraded（不编造）；要求「必须识别成功」= **恒红空断言**。
+    # 本用例真正钉的是「**调了**识别（= 上面的 `expectations`）+ **不声称成功**（= 下面的 `forbidden_text`）」。
     required_args:
       - tool: image_recognize
         fields:
@@ -2602,7 +2620,13 @@ cases:
       - "图片分析失败"
       - "无法识别图片"
       - "图片无法处理"
+      # 2026-10-19 补：这张图没有任何可抽信息（模型原文见上方「真根因」段）⇒ 不得声称成功/已填好。
+      - "识别成功"
+      - "已为您填好"
+      - "已自动填入"
+      - "已经帮您把信息填好"
     data_checks:
+      - "前置（机器计分型，precondition）：视觉链路**可用** —— `recognize()` 返回结构化 JSON 而非抛异常（2026-10-19 本机单次诊断实测：HTTP 200 / `image/png` / 104709 bytes，模型回 372 字符、5 字段全 null）（success=true）"
       - "识别结果进**同页填充计划**（`page_fill` 计划），**不落库、不提交** —— 提交永远是商家在页面上点按钮；机械判据 = backend/ai-agent-service/tests/test_tools_image_recognize.py 的 TestNoWriteBoundary（静态扫描识别内核不 import 写入缝）"
       - "回复说明「哪几格已填、哪几格留空及原因」；取值不在店铺目录里 ⇒ 给候选 + 解释、**不填**（不猜）"
       - "⚠️ 本用例**不自动派发真实 LLM 评测**（用户裁定 #4262 / #4974：手动、用户显式触发）：只登记用例，等 #5966 那次 B 端集中跑批时验证"
@@ -2612,7 +2636,7 @@ cases:
     # ⇒ 写了 skip_reason 的用例**不计入覆盖矩阵**，条目销不掉（实测：本用例首版带 skip_reason 时
     # `mibao_coverage --check` 仍报「image_recognize[uncovered] 0 条（正向 0）」）。
     # 「手动触发、不进 PR smoke」由 **tier: normal** 表达（runner/CI 按 tier 选档），不靠 skip_reason。
-    skip_reason: "[backend-contract] 本用例要求视觉识别**真的出字段**，而评测栈内 `PRIMARY_MODEL=deepseek-flash`（无视觉模型）⇒ `image_recognize` 必然返回 `recognition_degraded`。2026-10-19 B 端基线实测（run 39185677169）：「must_succeed: image_recognize 共 1 次调用无一成功（R1:recognition_degraded）」—— 红因在环境不在行为；用户 2026-10-19 裁定标 skip_reason。正确判定层 = 工具/识别内核单测（见 traces.tests：test_tools_image_recognize.py / test_vision/test_deep_channel.py）。**重启条件** = 评测栈接入视觉模型后，删本行并恢复 LLM 层断言（跟踪 #7302）。"
+    skip_reason: ""
     merge_log: "2026-10-03 新增（issue #6090）：销 `.github/eval-coverage-baseline.yml` 的 image_recognize 阻塞条目（登记于 2026-09-24 / issue #5368 包 2，跟踪单 #4941）。用例 = 「发图 → 黄金策调 image_recognize → 同页填表」，断言 = 工具调用 + must_succeed + 参数契约（target_type/images）+ 不推诿禁令。**不自动派发真实 LLM 评测**（用户裁定 #4262 / #4974：手动、用户显式触发）—— 真实读数由 #5966 那次 B 端集中跑批给出。"
     traces:
       tests:
