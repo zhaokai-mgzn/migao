@@ -19,6 +19,19 @@
 `frontend/admin-web/tests/unit/components/OrderDetailShipGuard.test.tsx`（wire 夹具渲染）、
 `tests/unit_ci_workflows/test_frontend_wire_key_consumer.py`（C1~C5）。
 
+### 卖布单不再挂「加工费未定价」假警报：布料单不涉及加工费（2026-10-19，issue #7320）
+
+改前：布料行没有加工项，定价引擎按「没有选配加工项 ⇒ 组合那半记 0」落库
+`processingFeeDetail.fee_source='unpriced'`；而订单详情的「费用构成」与行明细只按 `fee_source` 判
+⇒ 每一张卖布单都挂着「未定价 · 没有可匹配的组合（缺选配信息）」+ 黄条「有 1 行加工费未定价…
+请到「加工费组合」定价后再核对」，同一行的「工艺规格」里还印着「加工费米数 10 米」——
+而这是一张按米卖布、无加工的单，没有组合可定价。钱本身没错（合计 = 订单金额），错的是语义与告警。
+改后：布料行（`processingInfo.saleForm=布料`）不进费用构成、不计未定价、不印「加工费米数」；
+判定收敛到前端唯一读点 `lib/sale-form.ts::isFabricSaleLine`（类级守卫：别处再写 `'布料'` 字面量即红）。
+反向护栏：成品帘行缺加工项**仍**显式「未定价」（既有真值不砍）。
+判据 = `frontend/admin-web/tests/unit/lib/sale-form.test.ts`、`.../lib/order-fee-display.test.ts`、
+`.../lib/order-item-sku.test.ts`、`.../components/OrderItemList.test.tsx`。
+
 ### 手机端页面文案不再露出 markdown 星号与研发术语（2026-10-19，issue #7316）
 
 改前：Taro `<Text>` 不渲染 markdown，源里的 `**不会**` 把两个星号原样印在手机上；同一句还写着
@@ -31,6 +44,7 @@
 判据 = `frontend/bmini-app/tests/worker-copy-plain-text-guard.test.ts`（类级：全部手机端页面 + 共享组件 +
 登记文案源，markdown 标记 / 研发术语两条规则，修前实测具名 3 + 19 处）+ 两页实例判据（C9 / P10）+
 `tests/inbound-reprint-flow.test.ts::F5b`。
+
 ### 语音「未听清」不再吞掉真实原因：0 字节录音本地就不出网，服务端 4xx 原因原样回显（2026-10-19，issue #7310）
 
 改前：B 端 H5「按住说话」在华为 ArkWeb（支付宝 webview）上 7 次全部失败 —— 内核在 `stop()` 时补发一个

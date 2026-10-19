@@ -31,6 +31,7 @@
  * 报价单留空、加工单印 `—`（两份单据既有口径不同，属**有意**差异，本模块不替它们选）。
  */
 import { craftSpecRows, type CraftSpecRow } from './craft-display'
+import { isFabricSaleLine } from './sale-form'
 
 /**
  * 取值口接受的**最小形态** —— 详情行 `OrderItem` 与列表行 `OrderBriefItem` **都**满足它
@@ -119,7 +120,11 @@ export function quantityWithUnit(source: { quantity?: unknown; unit?: unknown })
  * `craftSpecRows` 直读键，两种形态都能取到值（加工单快照的行是**扁平**的：`it.doorWidth`）。
  */
 export function craftRowsWithoutDoorWidth(source: unknown): CraftSpecRow[] {
-  return craftSpecRows(source).filter((row) => row.label !== '门幅')
+  const rows = craftSpecRows(source)
+  // 布料行**没有工艺规格**（issue #7320）：`processingMeters` 是加工费口径的字段（展示名「加工费米数」），
+  // 而布料单不涉及加工费 ⇒ 该行不出现（与「门幅」同一套「本行另有口径」的过滤）。
+  const fabric = isFabricSaleLine(source)
+  return rows.filter((row) => row.label !== '门幅' && !(fabric && row.label === '加工费米数'))
 }
 
 export function orderItemSku(item: OrderItemSkuSource): OrderItemSku {

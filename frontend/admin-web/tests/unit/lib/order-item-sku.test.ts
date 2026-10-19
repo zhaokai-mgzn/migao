@@ -1,4 +1,4 @@
-// case_ids: UI-040, UI-053, UI-061, UI-062, UI-095
+// case_ids: UI-040, UI-053, UI-061, UI-062, UI-095, OR-039
 /**
  * 纸面「商品 SKU 身份」唯一取值口（issue #6869）—— 实例判据 + 红证。
  *
@@ -10,7 +10,7 @@
  * （`tests/unit_ci_workflows/test_print_media_matrix_guard.py` 判据 C7）钉住「单据必须走它」。
  */
 import { describe, expect, it } from 'vitest'
-import { orderItemSku, type OrderItemSkuSource } from '@/lib/order-item-sku'
+import { craftRowsWithoutDoorWidth, orderItemSku, type OrderItemSkuSource } from '@/lib/order-item-sku'
 import type { OrderItem } from '@/types'
 
 function buildItem(overrides: Partial<OrderItem> = {}): OrderItem {
@@ -87,5 +87,16 @@ describe('orderItemSku — 纸面商品身份唯一取值口（issue #6869）', 
       expect(sku.specRows).toEqual([])
       expect(sku.doorWidth).toBe('')
     }
+  })
+
+  /**
+   * issue #7320：布料行**不涉及加工费** —— `processingMeters`（加工费米数）是加工费口径的字段，
+   * 「工艺规格」组里出现它就是噪音（用户 2026-10-19 截图）。反向护栏：成品帘行照旧显示。
+   */
+  it('#7320 布料行不印「加工费米数」；成品帘行照旧印', () => {
+    expect(craftRowsWithoutDoorWidth({ saleForm: '布料', processingMeters: 10 })).toEqual([])
+    expect(craftRowsWithoutDoorWidth({ saleForm: '成品帘', processingMeters: 10 })).toEqual([
+      { label: '加工费米数', value: '10米' },
+    ])
   })
 })
