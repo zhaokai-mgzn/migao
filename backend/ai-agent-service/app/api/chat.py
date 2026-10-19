@@ -2872,6 +2872,28 @@ TOOL_SHORTCUTS: tuple[dict, ...] = (
 _CAPABILITY_ANCHOR_KEYS = ("skill", "tool")
 
 
+def _quick_action_visible(action: dict, current_user: UserIdentity) -> bool:
+    """该快捷入口对当前用户是否可见（issue #7358）。
+
+    **判定谓词唯一 = `BaseTool.check_permission`**（`app/tools/base.py`）—— 入口下发与
+    工具执行用同一个谓词，才不会出现「看得见却做不了」的第二份口径。
+
+    为什么按 `permissions` 而不是按岗位：权限自 issue #2969 起是**快照式**
+    （`users.permissions`，与岗位脱钩）⇒ 同一岗位两名员工权限可不同，岗位清单会漂移。
+
+    工具未注册 ⇒ 不可见（fail-closed；与能力锚判据同向：引导必须能追溯到真实能力）。
+    """
+    tool = get_tool_registry().get_tool(action["tool"])
+    if tool is None:
+        return False
+    return tool.check_permission(ToolContext(
+        tenant_id=current_user.tenant_id,
+        user_id=current_user.user_id,
+        role=current_user.role,
+        permissions=current_user.permissions,
+    ))
+
+
 @router.get("/quick-actions")
 async def get_quick_actions(
     current_user: UserIdentity = Depends(get_current_user),
@@ -2879,18 +2901,34 @@ async def get_quick_actions(
     """
     获取快捷功能菜单（B 端场景入口，单一真值见 `QUICK_ACTIONS`）
 
+    每条的可见性 = 其 `tool` 在当前用户权限下的可执行性（issue #7358）——
+    「引导了却做不到，比不引导更伤」（`docs/agent-feature-design.md` §九）。
+
     Returns:
         快捷功能列表（id / name / icon / emoji / prompt）
     """
     logger.debug(f"[chat/quick-actions] Fetching | tenant={current_user.tenant_id}")
 
+    all_entries = (*QUICK_ACTIONS, *TOOL_SHORTCUTS)
+    visible_ids = {a["id"] for a in all_entries if _quick_action_visible(a, current_user)}
+    # 观测口径（只进日志、不进 UI）：被过滤掉的入口 = 「该员工缺哪些授权」的可发现面。
+    # 没有它，漏授权会从「点下去报错」退化成「根本看不见」，从此没人发现（#7358 的已知风险）。
+    dropped = [a["id"] for a in all_entries if a["id"] not in visible_ids]
+    if dropped:
+        logger.info(
+            f"[chat/quick-actions] 按权限过滤 | tenant={current_user.tenant_id} "
+            f"role={current_user.role} dropped={dropped}"
+        )
+
     actions = [
         {k: v for k, v in action.items() if k not in _CAPABILITY_ANCHOR_KEYS}
         for action in QUICK_ACTIONS
+        if action["id"] in visible_ids
     ]
     tools = [
         {k: v for k, v in tool.items() if k not in _CAPABILITY_ANCHOR_KEYS}
         for tool in TOOL_SHORTCUTS
+        if tool["id"] in visible_ids
     ]
 
     return make_response(True, data={
