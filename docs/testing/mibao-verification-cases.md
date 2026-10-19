@@ -4,7 +4,7 @@
 > 单一源：`.github/cases/`（本仓唯一源）。
 > 启动服务后按序执行；每轮 Case 独立。tier：🟢 smoke / 🔵 normal / 🔴 adversarial。
 
-## 售后域（15 case）
+## 售后域（16 case）
 
 ### AS-001. 售后工单列表 🟢
 ```
@@ -223,6 +223,21 @@
 跳过: [backend-contract] 售后响应契约下线由 Java 单测验证（AfterSalesRefundMethodRetiredTest），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-03 新增（issue #6224，用户 2026-10-03 逐字裁定「退款方式 不用记」⇒ 执行选项 2 下线该字段）。修前实测：refundMethod 是零生产者字段（DB 列 after_sales_tickets.refund_method 全仓无 INSERT/UPDATE、无 setter 实参写入，响应里只有「实体 getter → DTO setter」直通）⇒ 线上恒不下发（NON_NULL）而前端 types 却声明了它。修法 = 移除实体/列表响应/详情响应三处字段声明 + 服务里两处直通 + frontend/admin-web/src/types/index.ts 的声明（保留 DB 列）。取号 AS-015（python3 scripts/next_case_id.py AS ⇒ main:001-010,013-014 + 在飞 PR #6230:011-012 ⇒ 最小空闲 AS-015）。 ｜ tags: refund, dead-field, response-contract, backend-contract
+
+### AS-016. 售后如实引导：客户说窗帘收到时有破洞 → 先查那单 + 说清后台怎么走，不承诺代办 🔵
+```
+你: 张三那单收到的窗帘布边上有个破洞，这怎么处理？
+端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
+期望: order_query or customer_manage
+数据: 前置（precondition）：订单夹具 `EVAL-MB-ORD-0001` 在库且客户名为「张三」（success=true；真值 = tests/agent_eval/fixtures/mibao_eval_seed.sql 的订单 INSERT 块）
+数据: 必须先**真的查**（order_query 按客户名/订单号定位张三的单，或 customer_manage 查档案），不得凭空说「已为您登记」
+数据: 售后**写面**已随 #5247 只读化下线 ⇒ 回复必须引导后台「售后」页面自行处理，且不得承诺代办（机器断言 = forbidden_text）
+前置: 前置 = 客户「张三」名下有夹具订单（`EVAL-MB-ORD-0001/0002`，customer_name=张三 / 13800138000，见 mibao_eval_seed.sql 的订单夹具块）；前置不成立 ⇒ agent 查不到单、判红会伪装成「不会处理售后」
+禁词: 已为您提交售后
+禁词: 已帮您申请售后
+禁词: 已登记售后
+```
+溯源: 2026-10-19 新增（issue #7027 的用例补齐）：售后域现有用例集中在工单状态机与退款口径（AS-001~015），缺「客户报损 → 商家问怎么处理」这条**商家视角**的真实旅程；且它与能力边界段（#7291）同源 —— 只读化之后模型最容易在这里承诺代办。 ｜ tags: aftersales, journey, capability-boundary
 
 ## Agent 核心域（11 case）
 
@@ -1480,7 +1495,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释）；2026-09-21（case-trust burn-down 缴费，issue #4971，metric=entries ⇒ 整条销账）：补 `must_succeed[category_manage(action=delete)]`（效果层：「调用了 ≠ 成了」，#3778）+ `namespaces[category:轻奢系列]`（弱证据，如实登记：夹具层无分类域复位/准备动作，且与 CT-002「建同一个分类」自动串行）+ 机器计分型前置断言；`user_inputs` / `expectations` / `data_checks` 原第 1 条 / `skip_reason` / `traces` 一字未动、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`category_manage` 的写 action `delete` 已删除（工具收窄为只读 `{tree}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `[interact(confirm), category_manage(action=delete)]` 改判为 `direct_reply`（如实说明 + 引导去后台商品分类页面：删除**没有存活的只读路径**），`must_succeed[category_manage(action=delete)]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）；`data_checks` 的写路径断言（「二次确认后才执行删除」+ 写面前置）改判为只读/如实说明口径（原第 1 条文本已并入新第 1 条保留为历史）。 ｜ tags: delete, destructive, confirm
 
-## 对话边界域（47 case）
+## 对话边界域（49 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -2240,6 +2255,42 @@
 跳过: [backend-contract] 判据全部是**纯函数 + 入口级**（零 LLM、零网络）：话术 grep、清洗形态/负控/幂等、SSE/落库/历史回放接线，由 backend/ai-agent-service/tests/test_route_hygiene.py 执行；「黄金策是否真的照新话术引导」属行为面，按用户裁定（#4262 / #4974）手动集中跑一次，本轮不自动派发真实 LLM 评测
 ```
 溯源: 2026-10-18 新增（issue #7236）：取号 = 现取 chat.yml 最大号 CH-047 + 1 = CH-048（chat 域，不用 UI 前缀；同批无其它 chat 号在飞）。覆盖两层修复：① 源头话术去路由（app/**/*.py 7 处 + 模型可见 references/*.md 41 处）；② 出站纯函数清洗兜底，并接在落库 / SSE 下发 / 历史回放三处收口（`_mask_for_customer` 语义不动，只在同一收口点追加一层）。 ｜ tags: chat, display-integrity, internal-route, sanitize
+
+### CH-049. 做不了的事如实说：问「帮我开个客服账号」不得承诺代办，须说清办不了 + 给后台落点 🔵
+```
+你: 帮我开个客服账号，姓名李四，手机号 13800009999
+你: 你别让我去后台，直接帮我建好就行
+端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
+数据: 前置（precondition）：`employee_manage` 在 B 端可达集里只有 list/detail、**无写 action**（success=true；真值 = app/tools/employee_manage.py 的 action 枚举 + capability_boundary.mibao_reachable_tool_names）
+数据: 两轮回复都必须给出**后台落点**：至少出现「组织管理」与「员工管理」（真实侧边栏节点；真值 = backend/ai-agent-service/app/agents/capability_boundary.py 的 UNITS，2026-10-19 渲染实测逐字为「员工账号的创建与变更 → 后台「组织管理 → 员工管理」」）
+数据: 不得用承诺代办的措辞替代落点（机器断言 = forbidden_text）：允许「我这边办不了 / 没有这个能力」，不允许「已在为您创建」
+数据: 工具面：employee_manage 只剩 list/detail（写 action 随 #5247 只读化下线）⇒ 任何写调用都不可能成功；本用例只判「不承诺 + 给落点」，**不要求**必须调工具
+前置: 前置 = 能力边界投影段在位且如实（`app/agents/capability_boundary.py` 渲染出「员工账号的创建与变更 → 后台「组织管理 → 员工管理」」，2026-10-19 实测 product/staff 两个 prompt 都已注入）；前置不成立 ⇒ 回复没有落点，判红会伪装成「agent 不会答」
+禁词: 已为您创建
+禁词: 已帮您创建
+禁词: 已提交创建申请
+禁词: 稍后为您创建
+```
+溯源: 2026-10-19 新增（issue #7027 的用例补齐）：当天 B 端基线 65/69 绿，但**没有一条用例**钉住「被问到做不了的事时怎么答」—— 而这正是 #7291 能力边界投影段要防的形态（旧 prompt 里 9 处写「非单据对象创建 ✅ 支持」，模型承诺后办不成）。取号 = 现取 chat.yml 最大号 CH-048 + 1。 ｜ tags: chat, capability-boundary, refusal-integrity
+
+### CH-050. 定时提醒真跑：说「3 天后提醒我跟进张先生」→ 确认卡 → 落一条待办；再说取消 🔵
+```
+你: 3 天后提醒我跟进张先生
+你: 确认
+你: 算了，把刚才那条提醒取消掉
+端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
+期望: scheduled_task_manage
+期望: interact
+期望: scheduled_task_manage
+数据: 三件套（fire_at / task_type / criterion）必须由模型从自然语言抽全 —— 工具本地 fail-closed：缺任一 ⇒ missing_arguments（在发 HTTP 之前就拒），**调用成功即证明抽全**
+数据: 写面必须走确认卡（interact component=confirm）：A 档可逆写不得免卡直写，商家点头后才落库
+数据: 第 3 轮的取消必须带创建时返回的 task id（工具 action 闭集 = create/list/cancel，真值见 AG-011 与 tests/test_scheduled_task_manage.py）
+前置: 前置 = 定时提醒流程绑定 `scheduled_task_manage` 且 DEBUG 身份有 admin/operator 角色（`app/graph/skills` 的 reminder skill 绑定 + 工具的 allowed_roles；2026-10-19 B 端可达集实测含该工具）；前置不成立 ⇒ 期望 unmatched，判红会伪装成「agent 不会建提醒」
+命名空间(同键互斥·自动串行): scheduled_task:跟进张先生
+必须成功: scheduled_task_manage
+```
+真值: agent-notification.scheduled-task-trio
+溯源: 2026-10-19 新增（issue #7027 的用例补齐）：定时提醒是 B 端现有写能力之一，但此前**只有工具面契约用例 AG-011**（走 `[backend-contract]` skip、零 LLM 行为）⇒ 商家说一句「3 天后提醒我跟进张先生」到底能不能落库，评测从来没跑过。本用例覆盖「建 + 取消」两段真实说法。 ｜ tags: chat, scheduled_task, write_path
 
 ## 跨域（3 case）
 
@@ -8170,7 +8221,7 @@
 ```
 溯源: 2026-10-18 新增（issue #7192；用户原话见 user_inputs）。落码：`QualityCheckService#stats`（P0 率 + P1 趋势/分组/积压）→ `GET /api/admin/quality-inspections/stats` → `QualityMetricsPanel` + 质检记录页接线。取号 = 现取 origin/main 已占号最大 PG-085（#7186 的 PG-086 在并行分支）⇒ 本单取 PG-087。 ｜ tags: quality-inspection, metrics, backend-contract, admin-web
 
-## 商品域（125 case）
+## 商品域（126 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -9898,6 +9949,17 @@
 跳过: [backend-contract] 真 PG 并发落库判据（initdb+pg_ctl 临时集群 + 真 ProductService 装配），非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-15 新增（issue #6961 的实例判据，与 PR-129 / MC-115 同批）：范式照抄 ProcessingOrderStatusCasRaceRealDbTest（#6955）。取号 = PG-084（开工时 main 现取 PG max=PG-075；PG-076 属并行在飞的 #6955 包，本单不碰）。 ｜ tags: product, concurrency, real-db, backend-contract, red-proof
+
+### PR-130. 报价问法真跑：问「2699 雪尼尔做 3 米宽一幅窗帘多少钱」→ 报商品真价 + 说清加工费口径，不得凭空给总价 🔵
+```
+你: 2699系列雪尼尔窗帘面料，2.8 米门幅，做 3 米宽的一幅窗帘，大概多少钱？
+端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
+期望: product_detail or product_search
+数据: 必须落到**商品真价 23.80 元/米**（夹具 prod_eval_2699 的 base_price；回复里出现 23.8 / 23.80 任一形态）
+数据: 必须说清**加工费/用料另有口径**（店铺加工项目录 15 项、按加工费组合计价）—— 不得把布料单价直接当总价，也不得凭空编一个总价数字
+数据: 不得出现「免费 / 一共 0 元」这类**未算就给结论**的形态
+```
+溯源: 2026-10-19 新增（issue #7027 的用例补齐）：报价是商家最高频的问法，但语料里只有「查商品详情」（PR-0xx）这种**工具签名式**用例，没有「按商家的说法问价」的旅程用例。本用例只钉可判定的两点（真价 + 口径），不规定措辞。 ｜ tags: product, pricing, journey
 
 ## 工具注册器域（1 case）
 
@@ -11976,15 +12038,15 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：820（活跃 133，跳过 687）
-- tier 分布：smoke 12 / normal 753 / adversarial 32
-- 售后域：15
+- 用例总数：824（活跃 137，跳过 687）
+- tier 分布：smoke 12 / normal 757 / adversarial 32
+- 售后域：16
 - Agent 核心域：11
 - API 层域：21
 - 登录认证域：13
 - B 端小程序域：47
 - 分类域：3
-- 对话边界域：47
+- 对话边界域：49
 - 跨域：3
 - 客户域：12
 - 数据域：24
@@ -11998,7 +12060,7 @@
 - 订单域：68
 - 加工项域：31
 - 加工单域：74
-- 商品域：125
+- 商品域：126
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
@@ -12007,6 +12069,7 @@
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
 - AS-015: 售后工单详情/列表响应不再携带恒空的 refundMethod 键（三个 Java 载体上字段/getter/setter 全无；键不存在而非值为 null）
+- AS-016: 售后如实引导：客户说窗帘收到时有破洞 → 先查那单 + 说清后台怎么走，不承诺代办
 - AG-013: 客服会话并发分配「读计数 × 再写」无互斥 ⇒ max_concurrent_sessions 被突破；改写为条件更新后并发数不超过上限（issue #6962）
 - API-013: 知识知识卡片数据模型 - knowledge_cards 表/实体/Mapper（LLM WIKI 板块 #3051）
 - API-014: 提炼候选数据模型 - knowledge_candidates 表/实体/Mapper（LLM WIKI 板块 #3051）
@@ -12031,6 +12094,7 @@
 - CH-046: 渠道欢迎语解析（元元）：四渠道默认文案 + 租户 botName 优先 + {bot_name} 占位符
 - CH-047: 页面上下文注入信封不得落库（切回会话时不得把内部提示当用户消息上屏）
 - CH-048: 黄金策回复不得暴露内部路由（后台「订单列表」页(/orders)）—— 源头话术去路由 + 出站清洗兜底 + 负控
+- CH-049: 做不了的事如实说：问「帮我开个客服账号」不得承诺代办，须说清办不了 + 给后台落点
 - DA-008: 智能每日经营简报：企业开关熔断（关闭=不生成+菜单隐藏，issue #3468）
 - DA-009: 智能每日经营简报：数字回填校验（LLM 编造即丢弃，issue #3468）
 - DA-010: 智能每日经营简报：PII 不进 prompt + RLS 隔离（issue #3468）
@@ -12282,6 +12346,7 @@
 - PR-129: 商品状态迁移改 DB 原子条件更新（CAS）：并发 on/off_sale 恰一个赢家，落败方 409 + 实际当前态
 - MC-115: 类级元守卫（#6961）：商品状态迁移写路径必须落到 SQL 谓词（CAS）+ 未登记即红 + 豁免只许缩短
 - PG-084: 🔴 真库并发（#6961）：商品状态迁移 = CAS（恰一个赢家 + 落败 409）+ 改品不得静默回滚并发状态迁移
+- PR-130: 报价问法真跑：问「2699 雪尼尔做 3 米宽一幅窗帘多少钱」→ 报商品真价 + 说清加工费口径，不得凭空给总价
 - UI-048: 工艺配置页：规则 / 工序删除的二次确认改**弹框**（与「删除工艺路线」同一形态；弹框写清删的是哪一条 + 删除中禁用 + 失败理由逐条）
 - UI-049: 工艺项页·**一张表装全部工序**（用户裁定 2026-09-21：删【打包发货】独立区块 ⇒ 两层分区退场；按车间分组可折叠；**不再有部位列**）
 - UI-050: 工艺项页·**【打包发货】独立区块已删除**（用户裁定 2026-09-21）+ 工艺路线并入该位置**同屏** + 两个 tab（工序管理 / 算料配置）+ **行为变更如实登记**（零价目行的工序**进表**：`data-state=no_row` + 行尾 `管理▸` 可停用/删除，issue #5875）
