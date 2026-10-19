@@ -6,10 +6,10 @@ AgentProductUpdateRequest 期望 {"basePrice": ...}（Jackson 忽略未知字段
 仍返回旧价 199（E2E Real test_product_update_price 稳定失败，重试无效）。
 product_manage 一直用 basePrice（正确），本测试防 product_update 再漂移。
 
-第二类回归（issue #3560）：product_update 把 status（上下架）写进请求体，而
-AgentProductUpdateRequest **没有 status 字段**，service 也从不读它 → 走 hasUpdate=false
-分支直接返回商品详情（HTTP 200 + success）→ 黄金策回「已下架」而库里状态没变（假成功）。
-本测试静态比对「本工具下发的请求体字段」与「admin-api DTO 声明的字段」，任一侧漂移即红。
+第二类回归（issue #3560）：product_update 曾把 status（上下架）写进请求体，而
+AgentProductUpdateRequest 没有 status 字段 → 静默丢弃 → 假成功。该历史缺陷的收口方向
+在 2026-10-19 改判：用户裁定「上下架都 ❌」（#7054 / #7334 裁定 A）⇒ **工具不再声明 status**，
+本文件改为钉住「status 不得回流」的负向契约（schema / execute 签名 / 能力话术三面）。
 """
 # case_ids: DF-010, PR-007
 import re
@@ -144,35 +144,40 @@ def _java_dto_fields(java_file: Path) -> set:
     return set(re.findall(r"private\s+[\w.<>,\[\]\s]+?\s+(\w+)\s*;", src))
 
 
-class TestStatusContractWithAdminApiDto:
-    """上下架 status 的跨端字段契约（issue #3560）
+class TestStatusNotExposed:
+    """上下架 status 不得回流（2026-10-16 裁定 / #7054 / #7334 裁定 A）。
 
-    「下发侧声明 → 接收侧必须存在」：ai-agent 工具 schema 里声明了 status 的字段，
-    admin-api 的 DTO 必须真的接收它。缺失 = Jackson 静默丢弃 = 假成功（本 issue 根因）。
-    原先「DTO 无 status 但工具照发」的漂移在修复前必红。
+    为什么是负向契约：旧缺陷是「工具声称支持、DTO 静默丢弃」；现在的产品口径是
+    **单件与批量上下架都不做** ⇒ 正确的工具面是「schema 没有 status、execute 不收 status、
+    话术明确说不在能力内」。任何一处长回来，模型就又有理由承诺上下架。
     """
 
-    def test_parser_canary(self):
-        """防「正则失配 → 空集合 → 断言空转变绿」：解析器必须能读到 DTO 的既有字段。"""
-        fields = _java_dto_fields(AGENT_PRODUCT_UPDATE_DTO)
-        assert {"name", "basePrice", "allowReturnRestock"} <= fields, (
-            f"DTO 字段解析失效（收到 {sorted(fields)}），契约断言会空转"
+    def test_tool_schema_does_not_declare_status(self, tool):
+        assert "status" not in tool.parameters["properties"], (
+            "product_update 不得再声明 status：上下架按 2026-10-16 裁定（单件/批量都 ❌）"
         )
 
-    def test_product_update_schema_fields_exist_in_dto(self, tool):
-        """schema 声明的字段（camelCase 化后）必须都在 DTO 里，否则请求体被静默丢弃。"""
+    def test_execute_signature_does_not_accept_status(self, tool):
+        import inspect
+
+        assert "status" not in inspect.signature(tool.execute).parameters, (
+            "execute 不得再接收 status；传了应当在入口就失败，而不是静默不下发"
+        )
+
+    def test_description_says_status_is_out_of_scope(self, tool):
+        assert "不在 B 端能力内" in tool.description, "工具描述必须明确说上下架不在能力内"
+        assert "禁止" in tool.description and "status" in tool.description, (
+            "工具描述必须明确禁止再传 status / 声称已上下架"
+        )
+
+    def test_schema_fields_exist_in_dto(self, tool):
+        """非 status 的 schema 字段仍须与 admin-api DTO 对齐（防旧 basePrice 类漂移）。"""
         props = tool.parameters["properties"]
         dto_fields = _java_dto_fields(AGENT_PRODUCT_UPDATE_DTO)
-        # snake_case → camelCase（product_id 是路径参数，不是请求体字段）
-        body_props = {k: k for k in props if k != "product_id"}
-        camel = {k: re.sub(r"_(\w)", lambda m: m.group(1).upper(), k) for k in body_props}
-        # price 是工具入参名，请求体实际下发 basePrice（见 TestProductUpdateRequestField）
-        camel["price"] = "basePrice"
-        # ⚠️ issue #5317 改判：`before_price` 此前是**预览声明、有意不下发**（本处曾以
-        # `PREVIEW_ONLY_PARAMS` 显式排除）；现在它**必须下发**（服务端据此与 DB 当前值按值核对，
-        # 不符即 422）⇒ 排除面删除，`before_price → beforePrice` 走**同一套** DTO 字段核对
-        # （下发即被静默丢弃的形态由本测试与 tests/test_tool_payload_backend_contract.py 双重钉住）。
-
+        camel = {
+            k: ("basePrice" if k == "price" else re.sub(r"_(\w)", lambda m: m.group(1).upper(), k))
+            for k in props if k != "product_id"
+        }
         missing = {k: v for k, v in camel.items() if v not in dto_fields}
         assert not missing, (
             f"schema 字段在 admin-api AgentProductUpdateRequest 中不存在 → 会被 Jackson 静默丢弃：{missing}"
@@ -180,24 +185,3 @@ class TestStatusContractWithAdminApiDto:
         assert "beforePrice" in dto_fields, (
             "DTO 缺 beforePrice ⇒ 改前价回查链路断了（服务端无从核对，护栏只防漏填不防填错）"
         )
-
-    def test_status_declared_on_both_sides(self, tool):
-        """status 必须两端都在：工具 schema 有，DTO 也有（本 issue 的直接断言）。"""
-        assert "status" in tool.parameters["properties"], "工具 schema 未声明 status"
-        assert "status" in _java_dto_fields(AGENT_PRODUCT_UPDATE_DTO), (
-            "admin-api AgentProductUpdateRequest 缺 status 字段 → product_update 的上下架会被静默丢弃（假成功）"
-        )
-
-    @pytest.mark.asyncio
-    async def test_status_transmitted_in_request_body(self, tool):
-        """execute(status=...) 必须把 status 放进 PATCH 请求体（且不额外塞字段）。"""
-        ctx = _admin_ctx()
-        patched = AsyncMock(return_value={"success": True, "data": {}})
-        with patch("app.tools.product_update.get_admin_api_client") as m:
-            m.return_value.patch = patched
-            result = await tool.execute(ctx, product_id="p1", status="off_sale")
-        assert result.success
-        _, kwargs = patched.call_args
-        body = kwargs.get("json_data") or {}
-        assert body.get("status") == "off_sale", f"请求体应含 status=off_sale: {body}"
-        assert set(body.keys()) == {"status"}, f"只传 status 时不应携带其他字段: {body}"

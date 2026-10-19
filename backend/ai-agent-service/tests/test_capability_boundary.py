@@ -1,31 +1,39 @@
 # case_ids: HR-009, DF-003, HR-002
-"""B 端能力边界的**投影判据**（issue #7291）。
+"""B 端能力边界的**投影判据**（issue #7291；#7334 二次审计收口）。
 
 为什么需要它：能力边界原先靠人工抄写在 10 个 prompt 文件里，其中 9 处与工具真值相反
-（`非单据对象创建 ✅ 支持`，而 `employee_manage` / `customer_manage` 的 action enum 里
-根本没有 create）—— 模型在同一个 system prompt 里同时看到互斥的两句话
-（Layer 2/3 手抄声明 vs Layer 2.6 能力索引）。
+（`非单据对象创建 ✅ 支持`，而 `employee_manage` / `customer_manage` 的 action enum
+里根本没有 create）—— 模型在同一个 system prompt 里同时看到互斥的两句话。
 
-本判据把「说的」钉在「能做的」上：
-- 探针必须指向**已注册**工具（拼错即红）
-- 渲染状态必须等于**独立复算**的注册表真值（不走被测模块的内部函数）
-- 真值变化即红：快照 `AVAILABILITY_SNAPSHOT` 是「现实变了」的闹钟 ——
-  例如 #7050 把 `employee_manage(create)` 接回来时，本判据会红，提示更新 UNITS 与渲染
-- `references/**` 不得再出现手写的能力声明（类级：防回流）
-- 只注入 mibao（C 端 prompt 逐字节不受影响）
+#7334 追加的四类判据（都带判别力自证）：
+- **字段级真值**：`product_update` / `sku_update` 没有 action 维度 ⇒ 用 `required_props`
+  探针（price / name / status），不再「工具可达就整条能力可用」；
+- **全覆盖**：所有 B 端可达写工具都必须被某个单元探到（`sku_update` 曾漏网）；
+- **反向真值**：`decided_off` 单元对应的工具字段/枚举值若仍暴露 ⇒
+  `forbidden_exposures()` 具名报红（上下架曾是「快照绿、工具还能做」）；
+- **话术一致**：手写 prompt（含 `SkillConfig.system_prompts` 的 Python 内联 prompt）
+  的支持/拒绝话术必须与当前真值一致（单元 ✅ 时不得说「不在能力内」，❌ 时不得说「支持」）。
 
-红证（判别力自证）：`test_probe_flips_when_tool_gains_action` 用内存替身给
-`employee_manage` 加 create action ⇒ 同一套解析逻辑把它判为可用。
+红证（判别力自证）：
+- `test_probe_flips_when_tool_gains_action`（create+update 都在 ⇒ 可用）
+- `test_partial_action_does_not_flip`（只加 create ⇒ 仍不可用，防「半条能力」）
+- `test_field_probe_distinguishes_price_and_name`
+- `test_write_tool_completeness_has_red_power`
+- `test_forbidden_exposure_has_red_power`
+- `test_prose_guard_has_red_power`
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
 
 from app.agents.capability_boundary import (
     UNITS,
+    _compute_mibao_reachable_tool_names,
+    forbidden_exposures,
     mibao_reachable_tool_names,
     render_capability_boundary,
     resolve_units,
@@ -35,11 +43,15 @@ _REFERENCES_DIR = (
     Path(__file__).resolve().parent.parent / "app" / "graph" / "skills" / "references"
 )
 
-#: 现实快照。**变了就更新这里** —— 它同时是 #7050 接线时的提醒装置。
+#: 现实快照。**变了就更新这里** —— 它同时是 #7050 接线 / 工具收窄的提醒装置。
 AVAILABILITY_SNAPSHOT = {
     "price_update": True,
+    "product_rename": True,
+    "sku_price_update": True,
     "batch_update": True,
+    "batch_revert": True,
     "notification_read": True,
+    "notification_read_all": True,
     "reminder": True,
     "employee_write": False,
     "role_write": False,
@@ -49,7 +61,8 @@ AVAILABILITY_SNAPSHOT = {
     "supplier_write": False,
     "document_create": False,
     "delete_object": False,
-    "status_toggle": False,
+    "single_status_toggle": False,
+    "batch_status_toggle": False,
 }
 
 
@@ -81,19 +94,26 @@ def _independent_reachable() -> frozenset:
 
 
 def _independent_available(unit, tools: dict, reachable: frozenset) -> bool:
-    """独立复算单条可用性（枚举 action 真值，不调用被测模块）。"""
+    """独立复算单条可用性（字段 / 枚举值 / action 真值，不调用被测模块）。"""
     if unit.decided_off or not unit.tool or unit.tool not in reachable:
         return False
     tool = tools.get(unit.tool)
     if tool is None or getattr(tool, "read_only", False):
         return False
-    if not unit.actions:
-        return True
     props = ((getattr(tool, "parameters", None) or {}).get("properties") or {})
-    enum = set(((props.get("action") or {}).get("enum") or []))
-    read_only_actions = set(getattr(tool, "read_only_actions", ()) or ())
-    writable = enum - read_only_actions
-    return set(unit.actions).issubset(writable)
+    if not set(unit.required_props).issubset(props):
+        return False
+    for prop, values in unit.required_prop_values:
+        enum = set(((props.get(prop) or {}).get("enum") or []))
+        if not set(values).issubset(enum):
+            return False
+    if unit.actions:
+        enum = set(((props.get("action") or {}).get("enum") or []))
+        read_only_actions = set(getattr(tool, "read_only_actions", ()) or ())
+        writable = enum - read_only_actions
+        if not set(unit.actions).issubset(writable):
+            return False
+    return True
 
 
 def test_probe_tools_are_registered():
@@ -121,29 +141,301 @@ def test_availability_snapshot_is_current():
     """现实快照：工具真值一变就红，逼更新 UNITS/渲染（#7050 落地时的提醒装置）。"""
     actual = resolve_units()
     assert actual == AVAILABILITY_SNAPSHOT, (
-        "B 端能力真值已变化（工具增删了写 action 或绑定面变了）。\n"
+        "B 端能力真值已变化（工具增删了写 action / 字段 / 批量类型或绑定面变了）。\n"
         f"现真值：{actual}\n"
         f"快照：  {AVAILABILITY_SNAPSHOT}\n"
         "处理：核对 app/agents/capability_boundary.py 的 UNITS 后更新本快照；"
-        "渲染文案由投影自动跟随，无需手改 prompt。"
+        "渲染文案与字段级探针由投影自动跟随，无需手改 prompt。"
     )
 
 
 def test_probe_flips_when_tool_gains_action():
-    """判别力自证：给 employee_manage 内存注入 create action ⇒ 同一套逻辑判为可用。"""
+    """判别力自证：给 employee_manage 内存注入 create+update ⇒ 同一套逻辑判为可用。"""
 
     class _FakeTool:
         name = "employee_manage"
         read_only = False
         read_only_actions = {"list", "detail"}
         parameters = {
-            "properties": {"action": {"enum": ["list", "detail", "create"]}}
+            "properties": {"action": {"enum": ["list", "detail", "create", "update"]}}
         }
 
     tools = _registered_tools()
     tools["employee_manage"] = _FakeTool()
     states = resolve_units(tools=tools, reachable=_independent_reachable())
     assert states["employee_write"] is True
+
+
+def test_partial_action_does_not_flip():
+    """只加 create、没有 update ⇒「员工账号的创建与变更」仍不可用（不宣称半条能力）。"""
+
+    class _FakeTool:
+        name = "employee_manage"
+        read_only = False
+        read_only_actions = {"list", "detail"}
+        parameters = {"properties": {"action": {"enum": ["list", "detail", "create"]}}}
+
+    tools = _registered_tools()
+    tools["employee_manage"] = _FakeTool()
+    states = resolve_units(tools=tools, reachable=_independent_reachable())
+    assert states["employee_write"] is False
+
+
+def test_field_probe_distinguishes_price_and_name():
+    """字段级真值：同名工具只留 price 时改价 ✅、改名 ❌（旧模型只看工具可达，两者同真）。"""
+
+    class _FakeTool:
+        name = "product_update"
+        read_only = False
+        parameters = {"properties": {"price": {"type": "number"}}}
+
+    tools = _registered_tools()
+    tools["product_update"] = _FakeTool()
+    states = resolve_units(tools=tools, reachable=_independent_reachable())
+    assert states["price_update"] is True
+    assert states["product_rename"] is False
+
+
+def _uncovered_write_tools(tools: dict, reachable: frozenset, units=UNITS) -> list[str]:
+    """B 端可达写工具里，没有被任何非 decided_off 单元探到的工具。"""
+    covered = {u.tool for u in units if u.tool and not u.decided_off}
+    return sorted(
+        name for name in reachable
+        if (tool := tools.get(name)) is not None
+        and not getattr(tool, "read_only", False)
+        and name not in covered
+    )
+
+
+def test_every_reachable_write_tool_is_probed():
+    """写工具全覆盖：新增一把 B 端写工具却没有能力单元 ⇒ 红（`sku_update` 曾漏网）。"""
+    uncovered = _uncovered_write_tools(_registered_tools(), _independent_reachable())
+    assert not uncovered, (
+        "以下 B 端可达写工具没有被任何能力单元探到 ⇒ 能力边界会静默漏掉它："
+        f"{uncovered}。修法：给 UNITS 加探针（字段级用 required_props），"
+        "或在测试里登记显式豁免（带理由）。"
+    )
+
+
+def test_write_tool_completeness_has_red_power():
+    """判别力自证：注入一把未登记的写工具 ⇒ 完备性检查必须点名它。"""
+
+    class _FakeTool:
+        name = "fake_write_capability"
+        read_only = False
+        read_only_actions = set()
+        parameters = {"properties": {}}
+
+    tools = _registered_tools()
+    tools["fake_write_capability"] = _FakeTool()
+    reachable = frozenset(set(_independent_reachable()) | {"fake_write_capability"})
+    assert _uncovered_write_tools(tools, reachable) == ["fake_write_capability"]
+
+
+def test_decided_off_status_is_not_exposed_by_tools():
+    """反向真值：上下架按裁定 A 不做 ⇒ 两把工具都不得再暴露 status / product_status。"""
+    problems = forbidden_exposures()
+    assert not problems, "产品裁定 ❌ 的上下架仍能从工具面执行：\n" + "\n".join(problems)
+
+
+def test_forbidden_exposure_has_red_power():
+    """判别力自证：把 status / product_status 注回去 ⇒ 两个单元都具名报红。"""
+
+    class _ProductUpdate:
+        name = "product_update"
+        read_only = False
+        parameters = {"properties": {"price": {"type": "number"},
+                                     "status": {"enum": ["on_sale", "off_sale"]}}}
+
+    class _Batch:
+        name = "product_batch_update"
+        read_only = False
+        read_only_actions = {"preview"}
+        parameters = {
+            "properties": {
+                "action": {"enum": ["preview", "execute", "revert"]},
+                "batch_type": {"enum": ["product_price", "product_status", "inventory_stock"]},
+            }
+        }
+
+    tools = _registered_tools()
+    tools["product_update"] = _ProductUpdate()
+    tools["product_batch_update"] = _Batch()
+    problems = forbidden_exposures(tools, _independent_reachable())
+    assert any("single_status_toggle" in p and "status" in p for p in problems), problems
+    assert any("batch_status_toggle" in p and "product_status" in p for p in problems), problems
+
+
+#: 单元 → 手写话术（只在**当前真值**下判）：
+#: · 单元 ✅ ⇒ 不得出现 deny 话术（「改名不在能力内」）
+#: · 单元 ❌ ⇒ 不得出现 support 话术（「支持创建员工」）
+#: 只收具名短语，不做 NLU —— 它抓的是「文案写死了一个与真值相反的事实」这类回归。
+UNIT_PROSE = {
+    "price_update": {"deny": ("改价不在能力内", "不支持改价", "不能改价", "改不了价")},
+    "product_rename": {
+        "deny": ("改名不在能力内", "不支持改名", "不能改名", "改不了名", "没有改名能力"),
+    },
+    "sku_price_update": {
+        "deny": ("SKU 改价不在能力内", "单规格调价不在能力内", "不支持 SKU 改价"),
+    },
+    "batch_update": {
+        "deny": ("批量改价不在能力内", "批量库存调整不在能力内", "不支持批量改价"),
+    },
+    "batch_revert": {"deny": ("批量撤销不在能力内", "不支持撤销", "不能撤销")},
+    "notification_read": {"deny": ("标记已读不在能力内", "不支持标记已读")},
+    "notification_read_all": {"deny": ("全部已读不在能力内", "不支持全部已读")},
+    "reminder": {"deny": ("定时提醒不在能力内", "不支持定时提醒")},
+    "employee_write": {
+        "support": ("可以创建员工", "支持创建员工", "能创建员工", "可以建员工", "能建员工"),
+        "deny": ("写能力未接线", "创建员工账号不在黄金策能力内", "创建/更新/删除员工"),
+    },
+    "role_write": {
+        "support": ("可以创建岗位", "支持创建岗位", "可以创建角色", "支持创建角色"),
+        "deny": ("写能力未接线", "建角色/改权限不在能力内", "创建/更新/删除岗位"),
+    },
+    "customer_write": {
+        "support": ("可以创建客户", "支持创建客户", "可以给客户打标签", "支持给客户打标签"),
+        "deny": ("打标签不在能力内", "修改资料不在能力内",
+                 "打标签、移除标签、创建/删除标签都不在能力内"),
+    },
+    "category_write": {
+        "support": ("可以创建分类", "支持创建分类", "能创建分类", "可以新增分类"),
+        "deny": ("分类增删改",),
+    },
+    "processing_item_write": {
+        "support": ("可以创建加工项", "支持创建加工项", "可以新增加工项", "可以修改加工项"),
+        "deny": ("加工项增删改",),
+    },
+    "supplier_write": {
+        "support": ("可以创建供应商", "支持创建供应商", "可以新增供应商"),
+    },
+    "document_create": {
+        "support": ("可以创建商品", "支持创建商品", "可以创建订单", "支持创建订单"),
+    },
+    "delete_object": {
+        "support": ("可以删除商品", "支持删除商品", "可以删除员工", "支持删除员工"),
+    },
+    "single_status_toggle": {
+        "support": ("支持上下架", "可以上下架", "能上架", "能下架", "可以上架", "可以下架"),
+    },
+    "batch_status_toggle": {
+        "support": ("支持批量上下架", "可以批量上下架", "批量上架", "批量下架"),
+    },
+}
+
+
+def _mibao_prompt_texts() -> dict[str, str]:
+    """B 端**实际进模型**的 prompt 文本：markdown 层 + SkillConfig 内联层。
+
+    只收 mibao persona：C 端元元的能力（如创建订单）不在本投影射程内，
+    混进来会把「C 端合法能力」误判成 B 端越界。
+    """
+    from app.agents.agents.mibao import MIBAO_CONFIG
+    from app.graph.skills.base_skill import _all_skill_configs
+
+    skill_names = list(MIBAO_CONFIG.skill_names)
+    if MIBAO_CONFIG.fallback_skill:
+        skill_names.append(MIBAO_CONFIG.fallback_skill)
+    texts: dict[str, str] = {}
+    for name in skill_names:
+        for rel in (f"prompts/{name}.md", f"EXAMPLES-{name}.md"):
+            path = _REFERENCES_DIR / rel
+            if path.is_file():
+                texts[str(path.relative_to(_REFERENCES_DIR))] = path.read_text(encoding="utf-8")
+    shared = _REFERENCES_DIR / "PROMPT-rules.md"
+    if shared.is_file():
+        texts["PROMPT-rules.md"] = shared.read_text(encoding="utf-8")
+    for cfg in _all_skill_configs():
+        text = (cfg.system_prompts or {}).get("mibao")
+        if text:
+            texts[f"SkillConfig[{cfg.name}::mibao]"] = text
+    return texts
+
+
+def _asserted_phrase(text: str, phrase: str) -> bool:
+    """短语是否被**肯定地**写出来（跳过「不得答/不要写/禁止说…」的否定语境）。
+
+    为什么需要：示例里会有「❌ 不得答『改名不在能力内』」这种**反向示范**，
+    以及「不能创建员工」这种拒绝话术。纯 `in` 会把它们当成能力声明（假红）。
+    """
+    start = 0
+    while True:
+        idx = text.find(phrase, start)
+        if idx < 0:
+            return False
+        prefix = text[max(0, idx - 8):idx]
+        if not any(neg in prefix for neg in ("不", "无法", "没", "别", "勿", "禁止", "不要", "不应")):
+            return True
+        start = idx + len(phrase)
+
+
+def _prose_offenders(texts: dict[str, str]) -> list[str]:
+    states = resolve_units()
+    offenders: list[str] = []
+    for where, text in texts.items():
+        for key, rules in UNIT_PROSE.items():
+            phrases = rules.get("deny") if states.get(key) else rules.get("support")
+            for phrase in phrases or ():
+                if _asserted_phrase(text, phrase):
+                    kind = "拒绝" if states.get(key) else "支持"
+                    offenders.append(f"{where}: {key} 当前为 {states.get(key)}，却出现{kind}话术「{phrase}」")
+    return offenders
+
+
+def test_capability_prose_matches_registry_state():
+    """类级防回流：手写 prompt（含 Python 内联 prompt）不得与当前真值相反。"""
+    offenders = _prose_offenders(_mibao_prompt_texts())
+    assert not offenders, (
+        "以下 prompt 的手写能力话术与注册表真值相反（单元 ✅ 说不能 / 单元 ❌ 说能）：\n"
+        + "\n".join(offenders)
+        + "\n修法：改成由【能力边界】段表述，或按当前真值改写；不要新增第二份能力矩阵。"
+    )
+
+
+def test_prose_guard_has_red_power():
+    """判别力自证：注入「支持创建员工」（当前 ❌）/「改名不在能力内」（当前 ✅）都红。"""
+    assert any("employee_write" in x for x in _prose_offenders({"fake.md": "支持创建员工"}))
+    assert any("product_rename" in x for x in _prose_offenders({"fake.md": "改名不在能力内"}))
+    assert not _prose_offenders({"fake.md": "改名可以做；上下架不在能力内；不能创建员工"})
+
+
+#: 完整 next_step 快照。叶子是**页面级标签**（不在侧边栏树里），这里冻结完整文案；
+#: 首级必须是真实侧边栏节点。改任一条都必须人工核对真实后台页面（#7334 的
+#: 「商品管理 → 加工项」就是只校验首级时漏掉的死链）。
+NEXT_STEP_SNAPSHOT = {
+    "employee_write": "后台「组织管理 → 员工管理」",
+    "role_write": "后台「组织管理 → 岗位权限」",
+    "customer_write": "后台「客户列表」",
+    "category_write": "后台「商品管理 → 商品分类管理」",
+    "processing_item_write": "后台「企业基础设置 → 加工项与加工费」",
+    "supplier_write": "后台「入库单」新增时填写供应商（暂无独立供应商管理页）",
+    "document_create": "对应业务页面（提交永远在页面）",
+    "delete_object": "对应业务页面",
+    "single_status_toggle": "后台「商品管理」页",
+    "batch_status_toggle": "后台「商品管理」页",
+}
+
+#: 真实侧边栏一级节点（含一级独立项）。改菜单时同步这里。
+REAL_SIDEBAR_ROOTS = frozenset({
+    "组织管理", "客户列表", "商品管理", "企业基础设置", "入库单",
+})
+
+
+def test_next_steps_match_frozen_navigation_snapshot():
+    actual = {u.key: u.next_step for u in UNITS if u.next_step}
+    assert actual == NEXT_STEP_SNAPSHOT, (
+        "next_step 文案变了：请人工核对真实后台页面后同步本快照。\n"
+        f"现取：{actual}\n快照：{NEXT_STEP_SNAPSHOT}"
+    )
+    for key, step in NEXT_STEP_SNAPSHOT.items():
+        match = re.search(r"「([^」]+)」", step)
+        if not match:
+            continue
+        first = match.group(1).split("→")[0].strip()
+        assert first in REAL_SIDEBAR_ROOTS, (
+            f"{key} 的后台路径首级「{first}」不是真实侧边栏节点"
+            f"（允许：{sorted(REAL_SIDEBAR_ROOTS)}）"
+        )
 
 
 def test_no_handwritten_capability_claims_in_prompts():
@@ -180,17 +472,19 @@ def test_boundary_injected_for_mibao_only():
 
 
 def test_reachability_probe_does_not_leak_tool_scope():
-    """探测不得有副作用：`mibao_reachable_tool_names()` 跑完必须还原执行域。
+    """探测不得有副作用：未缓存的探测跑完必须还原执行域。
 
     病灶（2026-10-19 实证）：`create_skill_registry` 会把本轮工具集写进全局 `tool_scope`
     （A5 设计）—— 探测函数若直接调它而不还原，执行域就停在最后一个 skill 上，
     后续流程把域内目标（如 `order_create`）判成越域，红在第一个人想不到的地方。
+
+    #7334：公开函数加了进程级缓存，泄漏红证必须打**未缓存**的 `_compute_...`，
+    否则缓存命中时它根本不调 `create_skill_registry`，测试会变成空转。
     """
     from app.tools.registry import get_tool_scope, set_tool_scope
-    from app.agents.capability_boundary import mibao_reachable_tool_names
 
     set_tool_scope(["order_query", "validate_input"])
     before = get_tool_scope()
-    mibao_reachable_tool_names()
+    _compute_mibao_reachable_tool_names()
     assert get_tool_scope() == before, "可达性探测泄漏了 tool_scope（执行域被改写）"
     set_tool_scope(None)

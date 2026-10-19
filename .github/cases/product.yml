@@ -4185,7 +4185,7 @@ cases:
         product_keyword: "北欧风窗帘"
         price: 128
     skip_reason: ""
-    merge_log: "2026-09-24 新增（issue #5314 的 Agent 侧包）：批量更新的**两段确认 + 撤销**（工具 `product_batch_update`，契约 = issue #5314 评论「批量更新能力 —— 设计 + 冻结契约」）。本用例覆盖改价批量（`product_price`）+ 撤销入口；上下架批量（`product_status`）、阈值、白名单与结构锁的确定性判据见 PR-109（非 LLM 面）。post_clean 复位两条共享夹具商品的**商品级价**（种子真值：遮光窗帘 168 / 北欧风窗帘 128，#4075 口径）。 ｜ 2026-10-16（issue #7048 **P10**）**第一段收成 OR**（与 P9 给 PR-014 的修法逐字同形，先例可比）：原写法把第一段硬绑在 `interact(component=choice, multiSelect=true)` 一条路径上，而本用例 R1 输入**自己就把集合给全**（两条商品逐一点名）⇒ 发 confirm 明细卡同样满足「改哪些在执行前经商家过目」这一内核。改前红证 = **两次全量权威跑**：run 2131 首跑 `unmatched expectation: interact(component=choice, multiSelect=True)`（重试发 choice 卡才通过 ⇒ 记为 llm-noise 放行）、run 2259 两次尝试同点判红（桶=`unstable` 阻塞）。**未放宽**：`multiSelect` 判据保留在 OR 第一条分支、第二段卡 / `execute` / `revert` / `required_args` 一字未删。"
+    merge_log: "2026-09-24 新增（issue #5314 的 Agent 侧包）：批量更新的**两段确认 + 撤销**（工具 `product_batch_update`，契约 = issue #5314 评论「批量更新能力 —— 设计 + 冻结契约」）。本用例覆盖改价批量（`product_price`）+ 撤销入口；上下架批量（`product_status`）已按 2026-10-16 裁定移除（#7334 裁定 A），阈值、白名单与结构锁的确定性判据见 PR-109（非 LLM 面）。post_clean 复位两条共享夹具商品的**商品级价**（种子真值：遮光窗帘 168 / 北欧风窗帘 128，#4075 口径）。 ｜ 2026-10-16（issue #7048 **P10**）**第一段收成 OR**（与 P9 给 PR-014 的修法逐字同形，先例可比）：原写法把第一段硬绑在 `interact(component=choice, multiSelect=true)` 一条路径上，而本用例 R1 输入**自己就把集合给全**（两条商品逐一点名）⇒ 发 confirm 明细卡同样满足「改哪些在执行前经商家过目」这一内核。改前红证 = **两次全量权威跑**：run 2131 首跑 `unmatched expectation: interact(component=choice, multiSelect=True)`（重试发 choice 卡才通过 ⇒ 记为 llm-noise 放行）、run 2259 两次尝试同点判红（桶=`unstable` 阻塞）。**未放宽**：`multiSelect` 判据保留在 OR 第一条分支、第二段卡 / `execute` / `revert` / `required_args` 一字未删。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_product_batch_update.py"
@@ -4213,7 +4213,7 @@ cases:
     expectations: []
     data_checks:
       - "判据① 阈值（边界双侧）：N=51 ⇒ `success=False` / `error=batch_too_large` / suggestion 含「分批」且**不发请求**；N=50 ⇒ 放行（判据是 `> 50`，不是 `>= 50`）"
-      - "判据② batchType 白名单**只有两个**：`product_price`（field=basePrice）/ `product_status`（field=status，取值 on_sale / off_sale）；传 `product_name` ⇒ `batch_type_unsupported` 且建议里点名两个合法值（通用批量有意不做）"
+      - "判据② batchType 白名单**只有两个**：`product_price`（field=basePrice）/ `inventory_stock`（field=stock，单位米）；传 `product_name` / `product_status` ⇒ `batch_type_unsupported` 且建议里点名两个合法值（通用批量有意不做；上下架按 2026-10-16 裁定单件/批量都 ❌，#7334 裁定 A 移除）"
       - "判据③ 两段确认的**结构锁**：`execute` / `revert` 不带 `batch_id` ⇒ `batch_preview_required` 且不发请求；`batch_id` 只能来自 `preview` ⇒「跳过预览直接执行」在结构上不可达（不是靠 prompt 自律）"
       - "判据④ 逐条 before → after：preview 返回 `preview[].fields` 逐条（商品ID / 改前价 / 改后价），且**逐字等于** `confirm_value.confirm_card_fields` 的产出（字段投影单一源，不新立第二份投影）"
       - "判据⑤ 撤销逐条还原：`revert` 打到 `/api/admin/agent/batches/{batchId}/revert`、话术含「还原」；部分失败逐条报告且执行路径**不得**顺带调用 revert（不做整体回滚）；可撤销性以服务端真值字段 `revertible` 为准（`false` ⇒ 话术不得承诺可撤销）"
@@ -4221,7 +4221,7 @@ cases:
       - "判据⑦ 写面接线：注册表 + 门面导出（`from app.tools import ProductBatchUpdateTool`）+ `product` skill 绑定 + 写标注显式表态（`read_only=False` / `requires_confirmation=True` / `idempotent=True` / `read_only_actions={'preview'}` —— preview 免确认门禁否则两段确认在第一段之后死锁）"
       - "红证（可执行）：以上每一条都由 backend/ai-agent-service/tests/test_product_batch_update.py 的对应用例**独立变红**（边界双侧 / 白名单 / 结构锁 / 单一源 / 端点归属 / 权限码 / 接线），不是一起红"
     skip_reason: "[backend-contract] 工具契约 / 阈值 / 两段确认结构锁 / 撤销端点归属 —— 全部由 pytest 单测（零 LLM、零网络，HTTP 客户端全程替身）执行，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-24 新增（issue #5314 的 Agent 侧包）：把「阈值 N>50 拒绝 / batchType 白名单两个 / 两段确认不可跳过 / 撤销逐条还原」从散文变成可执行判据（同 PR-104 / PR-107 的非 LLM 面形态：机器判据在 traces.tests）。LLM 行为面见 PR-108。"
+    merge_log: "2026-09-24 新增（issue #5314 的 Agent 侧包）：把「阈值 N>50 拒绝 / batchType 白名单两个 / 两段确认不可跳过 / 撤销逐条还原」从散文变成可执行判据（同 PR-104 / PR-107 的非 LLM 面形态：机器判据在 traces.tests）。LLM 行为面见 PR-108。 ｜ 2026-10-19（issue #7334 裁定 A）：用户裁定「上下架都 ❌」⇒ 移除 `product_status`，白名单改为 `product_price` / `inventory_stock`；判据②同步改判，`test_status_batch_type_is_rejected` 补负向红证。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_product_batch_update.py"

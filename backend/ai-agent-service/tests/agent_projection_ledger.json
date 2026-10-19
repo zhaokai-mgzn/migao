@@ -10,7 +10,7 @@
     },
     {
       "key": "capability_boundary",
-      "truth": "registry action enum × mibao 绑定 skill",
+      "truth": "registry action enum / 字段 required_props / 批量 batch_type 枚举值 × mibao 绑定 skill；产品裁定项另由 forbidden_exposures 反向钉住",
       "render": "app.agents.capability_boundary::render_capability_boundary",
       "guard": "backend/ai-agent-service/tests/test_capability_boundary.py"
     },
