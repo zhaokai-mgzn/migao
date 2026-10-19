@@ -37,7 +37,7 @@ def test_threshold_is_three_per_user_ruling():
 def test_two_prior_failures_make_three_and_speak_up():
     """历史 2 次 + 本次 = 连续 3 次 ⇒ 出声（systemic=True）。"""
     info = R.cross_run_recurrence(_entry(), _hist("r1", "r2"))
-    assert info is not None
+    assert isinstance(info, dict), f"连续 3 次未绿必须被判定为复发，实际={info!r}"
     assert info["streak_with_current"] == 3
     assert info["systemic"] is True
 
@@ -45,7 +45,7 @@ def test_two_prior_failures_make_three_and_speak_up():
 def test_one_prior_failure_is_not_enough():
     """历史 1 次 + 本次 = 连续 2 次 ⇒ 不算连续未绿（但仍是「跨 run 复发」）。"""
     info = R.cross_run_recurrence(_entry(), _hist("r1"))
-    assert info is not None, "出现过 1 次仍属跨 run 复发（另一条判据）"
+    assert isinstance(info, dict), "出现过 1 次仍属跨 run 复发（另一条判据）"
     assert info["streak_with_current"] == 2
     assert info["systemic"] is False
 
@@ -55,7 +55,7 @@ def test_pass_clears_the_streak():
     hist = R.merge_flake_history(_hist("r1", "r2"), [], "r3", passed_case_ids=["PP-015"])
     assert "PP-015" not in hist, "通过后该用例的指纹条目必须清零"
     info = R.cross_run_recurrence(_entry(), hist)
-    assert info is None, "清零后应连「复发」都不成立"
+    assert not info, "清零后应连「复发」都不成立"
 
 
 def test_failed_case_keeps_counting():
