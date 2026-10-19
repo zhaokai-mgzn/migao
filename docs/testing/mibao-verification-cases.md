@@ -12099,6 +12099,7 @@
 数据: 判据 2·链路收口（会红）：临时 URL 只允许从 *.aliyuncs.com 下载并转存 OSS（非百炼域名 ⇒ 422 且不下载）；样图必须 https；用途白名单 main/texture/craft/scene 之外 ⇒ 422 且不发起生成请求。
 数据: 判据 3·ai-agent 模型轮换（会红）：配额类错误（429 / AllocationQuota）与「模型接不了该请求」（HTTP 400 InvalidParameter，实测 qwen-mt-image-2.0，issue #7341）自动切下一个模型；审核类 400（DataInspectionFailed）不切模型；全部用尽 ⇒ 503；未配置 Key ⇒ 503 且不发外部请求。执行点 = backend/ai-agent-service/tests/test_generator.py。
 数据: 判据 4·前端（会红）：无样图 ⇒ 按钮 disabled + 先上传提示；默认用第 1 张、多图可切换样图（生成携带所选样图 URL + kind）；「用这张」主图走 onApplyMain、细节图走 onApplyDetail，且面板不收起 + 「已加入」反馈；生成中 loading；失败可见可行动错误。执行点 = frontend/admin-web/tests/unit/components/ProductImageAI.test.tsx。
+数据: 判据 5·存量补图（会红）：样图候选 = 已上传主图 + 详情图（去重、默认第 1 张），多图可切换（生成携带所选样图 URL）；「用这张」后面板不收起并给「已加入」反馈。执行点 = ProductImageAI.test.tsx + ProductForm.test.tsx（编辑态候选去重）。
 前置: 本用例是 [backend-contract] 纯前端/接口契约用例：前置（已上传样图、admin-api 端点、ai-agent 内部端点）由三端单测自建或 mock（admin-web mock `@/lib/api`；admin-api mock ProductImageClient/FileStorageService；ai-agent mock httpx），不依赖共享夹具与真实服务 ⇒ 前置不成立时对应单测直接红；agent-eval 栈不跑它
 跳过: [backend-contract] 纯页面 AI 辅助入口（不经过 LLM 对话/工具），由 admin-api 单测 + ai-agent pytest + 前端 vitest 执行，不进入 agent-eval 冒烟
 ```

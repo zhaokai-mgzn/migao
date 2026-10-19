@@ -28,7 +28,7 @@ const KINDS: Array<{ value: AiProductImageKind; label: string }> = [
 const FAILURE_MESSAGE = '生成失败，请稍后重试，或直接上传图片'
 
 interface ProductImageAIProps {
-  /** 样图候选 = 已上传的商品图（色卡 / 面料实拍）；为空时入口不可用。默认用第 1 张，可切换。 */
+  /** 样图候选 = 已上传的主图与详情图（色卡 / 面料实拍，调用方去重）；为空时入口不可用。默认用第 1 张，可切换。 */
   sampleImages?: string[]
   /** 商品名（提示词里用；可空） */
   productName?: string

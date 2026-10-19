@@ -48,6 +48,22 @@ vi.mock('@/lib/api', () => ({
 describe('ProductForm (#1284 — 表单行对齐)', () => {
   const mockOnSubmit = vi.fn().mockResolvedValue(undefined)
 
+  it('编辑态：样图候选 = 主图 + 详情图且去重（issue #7344）', () => {
+    render(
+      <ProductForm
+        onSubmit={mockOnSubmit}
+        initialData={{
+          name: '存量商品',
+          images: ['https://oss.example.com/main.png'],
+          detailImages: ['https://oss.example.com/detail.png', 'https://oss.example.com/main.png'],
+        } as never}
+      />
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
+    // 主图 1 张 + 详情图 1 张（重复的主图被去重）⇒ 2 个样图候选
+    expect(screen.getAllByRole('button', { name: /使用第\d张作为样图/ })).toHaveLength(2)
+  })
+
   it('「总库存」「拍下减库存」两行 label 均含 * 必填标记', () => {
     render(<ProductForm onSubmit={mockOnSubmit} />)
 
