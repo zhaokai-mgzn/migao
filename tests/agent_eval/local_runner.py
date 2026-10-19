@@ -80,20 +80,15 @@ def _env_int(name: str, default: int, *, min_value: int = 1,
 
 
 # ── 评测目标租户的**单一真值**（issue #6288）─────────────────────────────────
-# 环境变量 `EVAL_TENANT_ID`（**整型校验后**才进 SQL / 落身份），默认 25。
-# 取值真值（2026-10-04 云测试环境重建）：tenant 1「词元通达」连同全部数据已清空，
-# 当前云测试租户 = **tenant 25「米高测试环境」**（企业编码 `shop-8yn7`）⇒ 默认指向它，
-# 与 `backend/ai-agent-service/app/config.py` 的 `EVAL_TENANT_ID` 同值同变量名
-# （服务端 DEBUG 降级身份与本运行器的 SQL 定位口径必须是同一个租户 —— 否则
-# 「复位哪个租户」「db 校验查哪个租户」与「请求落到哪个租户」三者会悄悄分叉）。
-# ⚠️ **本地/CI docker 标准考场的租户 1 由栈内种子创建**（`scripts/eval_stack_seed.sh`
-# 注入 `fixtures/*_eval_seed.sql`，逐行写 tenant_id=1），与本重建无关 ⇒ 起本地栈的评测
-# workflow 显式设 `EVAL_TENANT_ID=1`（先例：`tests/smoke/config.py` 的 `TENANT_ID`
-# = local `1` / 云端 `CLOUD_TENANT_ID=25`）。
-# ⚠️ 默认值落在**云端测试租户**：本运行器的复位 / db 校验只对「它真正打的那套环境」有意义，
-# 而唯一打**已部署**云环境的是 `agent-eval.yml`（`ai-api.migaozn.com`）；本地运维裸跑时
-# 显式传 `EVAL_TENANT_ID=1` 才不会「查不到对象」。
-EVAL_TENANT_ID = _env_int("EVAL_TENANT_ID", 25)
+# 环境变量 `EVAL_TENANT_ID`（**整型校验后**才进 SQL / 落身份），默认 1。
+# 取值真值（2026-10-19，issue #7340 收口）：评测租户统一为 **tenant 1**
+# （= 本地/CI 栈内种子租户；`fixtures/*_eval_seed.sql` 逐行写 tenant_id=1）。
+# 2026-10-04 曾把云测试租户改到 25；2026-10-19 共享库只剩 tenant 46，25 不存在
+# ⇒ 建会话 `sessions_tenant_id_fkey` 违例（#7340）。现把服务端 `app/config.py`、
+# 本运行器、`agent-eval.yml` 三处收敛到同一个 seed 租户 1。
+# ⚠️ 本运行器的复位 / db 校验只对「它真正打的那套环境」有意义；本地/云端都必须是
+# «已 seed 出 tenant 1» 的那套库（`scripts/eval_stack_seed.sh` / 共享云一次 seed）。
+EVAL_TENANT_ID = _env_int("EVAL_TENANT_ID", 1)
 
 
 # ── C 端用例集选择（纯逻辑拆到 eval_case_filter，issue #3266）──
@@ -482,8 +477,8 @@ async def _reset_processing_order(order_no: str) -> str:
 
 # ── 夹具 ⇄ 运行器「租户口径」一致性自检（issue #7048，**跑前 fail-closed**）─────────
 # 病灶（2026-10-16 实测，单变量对照）：夹具 `fixtures/*_eval_seed.sql` 逐行写 **tenant 1**，
-# 而本运行器的 `EVAL_TENANT_ID` **缺省 = 25（云端测试租户）** ⇒ 本地裸跑（不显式给变量）
-# 时，前置探针 / 复位 SQL 查的是 **tenant 25 = 空** ⇒ `capture=0` ⇒ 被折进
+# 而本运行器的 `EVAL_TENANT_ID` **缺省 = 1（seed 租户）** ⇒ 本地裸跑（不显式给变量）
+# 时，前置探针 / 复位 SQL 查的是 **tenant 1 = 已 seed** ⇒ `capture>0`（反向对照）
 # 「📦 用例资产缺陷（前置未成立/漂移）」——**归因错人**：真因是**环境变量错配**，不是用例
 # 资产缺陷（实测：缺省 25 ⇒ AS-004 0%；显式 `EVAL_TENANT_ID=1` ⇒ 100%；
 # 真库 tenant1 该工单 = 1 行 / tenant25 = 0 行）。连带：复位落到错误租户 ⇒ 还会造出
@@ -526,7 +521,7 @@ def tenant_scope_mismatch_message(label: str, key: str, tenants) -> str:
         f"用例会被误判成「📦 用例资产缺陷（前置未成立）」，而真因是环境变量错配。\n"
         f"    · 夹具口径：tests/agent_eval/fixtures/*_eval_seed.sql 逐行写 tenant {where}；\n"
         f"    · 本地 / CI 临时栈请显式 `EVAL_TENANT_ID={ids[0]}` 重跑"
-        f"（**已部署**云环境才是 25，由 .github/workflows/agent-eval.yml 显式设定）。"
+        f"（**已部署**云环境也使用同一个 seed 租户，由 .github/workflows/agent-eval.yml 显式设定）。"
     )
 
 

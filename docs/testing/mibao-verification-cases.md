@@ -2889,14 +2889,14 @@
 你: （基建判据，非 LLM 行为用例）评测链路的 DEBUG 降级身份与前置复位/db 校验 SQL 必须指向同一个可注入租户
 期望: direct_reply
 数据: 🔴 源码面未登记即红：backend/ai-agent-service/app/utils/auth.py 与 tests/agent_eval/local_runner.py 的**代码行**里不得再出现裸 `tenant_id=1` / `tenant_id = 1`（注释豁免；判据 = tests/unit_ci_workflows/test_eval_tenant_single_source.py 的 audit_bare_tenant_literals）。红证：把本地运行器的一处参数化改回 `tenant_id = 1` ⇒ 该判据必红。
-数据: 配置面逐值：注入 EVAL_TENANT_ID=7 / 25 / 1000 ⇒ 运行器的 SQL 模板逐值落到注入租户（不是断言「非空」）；缺省/非法/越界（''、abc、0、-3、25.5）⇒ fail-closed 回落默认 25。判据 = 同文件 test_injected_tenant_value_is_used / test_sql_targets_use_the_configured_tenant。
+数据: 配置面逐值：注入 EVAL_TENANT_ID=7 / 25 / 1000 ⇒ 运行器的 SQL 模板逐值落到注入租户（不是断言「非空」）；缺省/非法/越界（''、abc、0、-3、25.5）⇒ fail-closed 回落默认 1。判据 = 同文件 test_injected_tenant_value_is_used / test_sql_targets_use_the_configured_tenant。
 数据: 🔴 反向护栏（缺一不可）：生产路径（settings.DEBUG=False）下即使注入租户（配置值 / X-Debug-Role 头）也**不生效** —— auth.py 的每一次 `tenant_id=DEBUG_FALLBACK_TENANT_ID` 都必须落在「settings.DEBUG + debug_role」守卫的 if 体内；非 DEBUG 路径的租户只来自 JWT payload（源码里不得出现 os.environ/getenv 租户回落）。红证：把身份构造挪出守卫 ⇒ audit_debug_tenant_is_guarded 必红；给 payload 分支加环境变量兜底 ⇒ audit_non_debug_tenant_from_payload_only 必红。
-数据: 单一真值不漂移：app/config.py 的 EVAL_TENANT_ID 字段默认值 ≡ local_runner.py 的 EVAL_TENANT_ID 默认值 ≡ 云测试租户 25（2026-10-04 环境重建后的 tenant「米高测试环境」）；只改一侧即红。
-数据: 已部署入口显式钉住：.github/workflows/agent-eval.yml（唯一打已部署云环境的入口）的评测步骤 EVAL_TENANT_ID == '25'；本地临时栈两条 workflow（post-deploy-eval / xiaobu-acceptance）显式回落 '1'（栈内种子租户），否则复位/校验「查不到对象」。
+数据: 单一真值不漂移：app/config.py 的 EVAL_TENANT_ID 字段默认值 ≡ local_runner.py 的 EVAL_TENANT_ID 默认值 ≡ seed 租户 1（2026-10-19 / #7340 收口：共享云库恢复 seed 租户 1；旧的 tenant 25 已不存在）；只改一侧即红。
+数据: 已部署入口显式钉住：.github/workflows/agent-eval.yml（唯一打已部署云环境的入口）的评测步骤 EVAL_TENANT_ID == '1'；本地临时栈两条 workflow（post-deploy-eval / xiaobu-acceptance）显式回落 '1'（栈内种子租户），三处同值。
 数据: 行为面（真请求对象）：DEBUG=true + X-Debug-Role ⇒ 返回身份的 tenant_id == 配置值（管理员与 C 端 customer 两条各一）；DEBUG=false + 注入的调试头 ⇒ 401 fail-closed（生产路径永不产生「配置租户」的身份）。判据 = backend/ai-agent-service/tests/test_eval_tenant_config.py。
 跳过: [backend-contract] 本用例是基建/安全护栏判据（非 LLM 行为）：静态与结构判据由 tests/unit_ci_workflows/test_eval_tenant_single_source.py 验证（零 LLM，pr-check 的 ci workflow helper unit tests job 每次 PR 都跑），行为面由 backend/ai-agent-service/tests/test_eval_tenant_config.py 验证（真 Request 打桩 + 真 auth 分支）。不进入 agent-eval 冒烟（它本身不产生 LLM 行为证据，且评测入口正在改的正是它自己）。
 ```
-溯源: 2026-10-09 新增（issue #6288）：云测试环境重建（2026-10-04，tenant 1「词元通达」连同全部数据清空 ⇒ 新云测试租户 = tenant 25「米高测试环境」）后，评测链路把租户写死成 1 —— auth.py 的 DEBUG 降级身份两处 + local_runner.py 的 8 处 SQL 字面量（前置复位 4 处 + db 校验 3 处 + 内联查询 3 处）。**未覆盖面（如实登记）**：① 「改后能否真打到 tenant 25」需一次人工择时的手动 workflow_dispatch（真实 LLM 成本，按 #4262 不自动派发）⇒ 本用例只钉可注入与护栏，不声称已打到；② 部署侧 .env.ai-agent 的 DEBUG 取值不在本机可得（外部输入）⇒ 服务端实际走哪条分支未取证；③ 默认值 25 的依据是仓内 durable 证据（tests/smoke/config.py 的 CLOUD_TENANT_ID=25 + acceptance/2026-10-04/BRIEF.md + .github/cases/bmini.yml 的 #6564 记录），非本机复探。 ｜ tags: eval-infra, tenant, single-source, security-guard
+溯源: 2026-10-09 新增（issue #6288）：云测试环境重建后，评测链路把租户写死成 1 —— auth.py 的 DEBUG 降级身份两处 + local_runner.py 的 8 处 SQL 字面量（前置复位 4 处 + db 校验 3 处 + 内联查询 3 处）。2026-10-19（issue #7340）再次收口：共享库实际只剩 tenant 46，旧的 tenant 25 已不存在；建会话在 sessions.tenant_id 外键上 500。现统一回 seed 租户 1（config.py / local_runner / agent-eval 三处同值），并给 create_session 的 IntegrityError 日志点名约束。**未覆盖面（如实登记）**：① 共享云端 tenant 1 需由 seed 恢复；本用例只钉静态真值与护栏，不声称共享云已 seed；② 部署侧 .env.ai-agent 的 DEBUG 取值不在本机可得（外部输入）⇒ 服务端实际走哪条分支未取证。 ｜ tags: eval-infra, tenant, single-source, security-guard
 
 ## 防御域（24 case）
 
