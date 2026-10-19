@@ -53,17 +53,9 @@ entries:
     issue: "#7302"
     reason: "评测栈无视觉模型（PRIMARY_MODEL=deepseek-flash）⇒ CH-044 只能走 [eval-env] skip；接入视觉模型后同 PR 销账"
     added: "2026-10-19"
-  # issue #6486 包 2（2026-10-07）：定时提醒（用户「预约」）的 A 档可逆写工具。
-  # 本 PR 只做到「工具面声明 + 本地 fail-closed」的**确定性判据**（用例 AG-011，
-  # traces = test_scheduled_task_manage.py，走 `[backend-contract]` skip ⇒ 覆盖体检不计）；
-  # LLM 行为面（黄金策真的发起确认卡并落一条待办）需真跑评测，按 #4262 用户裁定**不自动派发**
-  # ⇒ 用例待补（补完即删本条）。
-  - tool: scheduled_task_manage
-    kind: uncovered
-    persona: mibao
-    issue: "#6486"
-    reason: "包 2 新增工具：声明面与本地 fail-closed 已由 AG-011 钉住，LLM 行为面用例待补（#4262 不自动派发评测）"
-    added: "2026-10-07"
+  # ✅ 销账（2026-10-19，issue #7027）：`scheduled_task_manage` 的 uncovered 条目已删除
+  #    —— 配套 LLM 行为用例 CH-050 随 #7304 合并进 main（补用例与删条目同 PR）。
+  #    ⚠️ 本分支 rebase 时曾把该条目带回来（冲突解决取错一侧）⇒ coverage 门禁当场判红，已修。
   # ── 结构性缺失（阻塞项，靠本清单才保持绿）──────────────────────────────
   # ✅ 销账（2026-09-26，issue #3592 / 本 PR）：`briefing_query` / `craft_calc_config_query` /
   #    `processing_order_set_query` 三条 **uncovered** 条目**已删除** —— 配套用例
