@@ -189,7 +189,7 @@ export function printContentInsetMm(media: PrintMediaId): { xMm: number; yMm: nu
   const [first] = parts
   const second = parts.length > 1 ? parts[1] : parts[0]
   if (first === null || first === undefined || second === null || second === undefined) {
-    throw new Error(`介质 ${media} 的版面内缩=\`${css}\` 解析不出 mm —— 不猜`)
+    throw new Error(`介质 ${media} 的版面内缩「${css}」解析不出 mm —— 不猜`)
   }
   return { xMm: second, yMm: first }
 }
@@ -220,28 +220,28 @@ export function browserChromeMarginProblems(spec: PrintMediaSpec): string[] {
   const [first] = parts
   const second = parts.length > 1 ? parts[1] : parts[0]
   if (first === null || first === undefined || second === null || second === undefined) {
-    return [`介质 ${spec.id} 的 pageMargin=\`${spec.pageMargin}\` 解析不出 mm —— 判不了会不会画出页眉页脚`]
+    return [`介质 ${spec.id} 的纸型边距「${spec.pageMargin}」解析不出 mm —— 判不了会不会画出页眉页脚`]
   }
   const problems: string[] = []
   const vertical = first
   const thermal = spec.technology === 'thermal-transfer'
   if (vertical >= BROWSER_CHROME_MARGIN_MM) {
     problems.push(
-      `介质 ${spec.id} 的上下页边距 ${vertical}mm ≥ ${BROWSER_CHROME_MARGIN_MM}mm ⇒ 浏览器会把页眉页脚` +
-        '（日期 / 标题 / URL / 页码）画在纸面上；浏览器打印的纸应把 `@page` 边距写 0、' +
-        '版面内缩改由 `contentInset` + 单据容器 padding 承担（issue #7309）'
+      `介质 ${spec.id} 的上下页边距 ${vertical}mm 越过了浏览器会画页眉页脚的那条线` +
+        `（${BROWSER_CHROME_MARGIN_MM}mm）—— 纸面会多出日期、标题、网址与页码四行；` +
+        '浏览器打印的纸应把纸型边距写成 0，版面内缩改由单据容器承担'
     )
   }
   if (vertical === 0 && !thermal && !spec.contentInset) {
     problems.push(
-      `介质 ${spec.id} 的上下页边距是 0 且没有登记 \`contentInset\` ⇒ 内容会贴到纸边` +
-        '（打印机不可打区会裁掉首末行）；登记版面内缩，由单据容器 padding 承担（issue #7309）'
+      `介质 ${spec.id} 的上下页边距是 0 且没有登记版面内缩 ⇒ 内容会贴到纸边` +
+        '（打印机不能打印的边缘会裁掉首末行）；请登记版面内缩，由单据容器承担'
     )
   }
   if (spec.contentInset && vertical !== 0) {
     problems.push(
-      `介质 ${spec.id} 同时有 contentInset=\`${spec.contentInset}\` 与非零 @page 边距 \`${margin}\` ⇒ ` +
-        '两层内缩会叠加（版面悄悄变窄）；`contentInset` 只在 @page 边距为 0 时登记（issue #7309）'
+      `介质 ${spec.id} 同时有版面内缩 ${spec.contentInset} 与非零纸型边距 ${margin} ⇒ ` +
+        '两层内缩会叠加（版面悄悄变窄）；版面内缩只在纸型边距为 0 时登记'
     )
   }
   return problems
