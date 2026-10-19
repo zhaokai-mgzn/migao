@@ -270,7 +270,7 @@ export default function SalesDoc({
             width: 100%;
             /* 🔴 浏览器页眉页脚只画在纸边到版心的那段页边距里 ⇒ 切到 A4 时纸型边距写成 0，
                版面内缩改由这里承担（三联纸的页边距本就够用 ⇒ 本值为 0，纸面不变；issue #7309）。
-               box-decoration-break: clone 让**第 2 页起**也重复这段内缩。 */
+               box-decoration-break: clone 让第 2 页起也重复这段内缩。 */
             padding: ${printContentInsetCss(media)};
             -webkit-box-decoration-break: clone;
             box-decoration-break: clone;

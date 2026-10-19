@@ -209,7 +209,7 @@ export default function ProcessingDoc({
             width: 100%;
             /* 🔴 浏览器页眉页脚（版式日期 / 文档标题 / 页面 URL / 页码）只画在纸边到版心的
                那段页边距里 ⇒ A4 的纸型边距写成 0（介质矩阵），版面内缩 12mm 改由这里承担（issue #7309）。
-               box-decoration-break: clone 让**第 2 页起**也重复这段内缩
+               box-decoration-break: clone 让第 2 页起也重复这段内缩
                （实测：不 clone 时 padding-top 不重复，内容贴到纸边）。 */
             padding: ${printContentInsetCss('a4')};
             -webkit-box-decoration-break: clone;
