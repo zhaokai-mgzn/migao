@@ -2107,11 +2107,12 @@ export interface Order {
    * **发货前是否有需要报工的作业**（issue #7079 第 5 包；后端键 `needs_work`，详情面下发）
    * = 含加工项 **或** 有卖布行 —— 后端唯一实现点 = `OrderShipGuard.needsWork`（发货守卫读的同一份）。
    *
-   * ⚠️ 布尔形态与下面 `workOrderKind` **同源**（`workOrderKind !== null`），这里只如实声明 wire 键；
-   * 前端**唯一读点**是 `workOrderKind`（它同时承载「要不要作业」与「要哪一型」，两处都读会分裂口径）。
+   * ⚠️ 布尔形态与下面 `work_order_kind` **同源**（`work_order_kind !== null`），这里只如实声明 wire 键；
+   * 前端**唯一读点**是 `lib/processing-order.ts` 的 `workOrderKindOf`（它同时承载「要不要作业」与「要哪一型」，
+   * 两处都读会分裂口径）。🔴 **wire 键是 snake_case 冻结键**（issue #7319）—— 声明成 camelCase 就永远读不到。
    * 🔴 前端**不许**按「`processingItems` 长度」或「有没有卖布行」自己再推一次（那是第四份口径）。
    */
-  needsWork?: boolean
+  needs_work?: boolean
   /**
    * **没有作业单时该生成哪一型**（后端键 `work_order_kind`）：`processing` 加工单 /
    * `outbound` 出库作业单；缺键 = 无需要报工的作业（订单直发，屏上不该出现生成入口）。
@@ -2123,8 +2124,12 @@ export interface Order {
    * 与 `ProcessingOrder.order_kind` **同一份词表**（本键只在**还没有**作业单时才有值，
    * 有单之后类型以那张单自己的 `order_kind` 为准）。屏上一律渲染中文业务名（走
    * `workOrderKindLabelOf`），机器键不上屏。
+   *
+   * 🔴 **wire 键 = snake_case 冻结键 `work_order_kind`**（issue #7319）：后端
+   * `OrderDetailResponse` 用 `@JsonProperty("work_order_kind")` 下发，前端无响应键变换
+   * ⇒ 在这里声明成 camelCase 会让整条读面静默失效（生成作业单入口永不出现）。
    */
-  workOrderKind?: 'processing' | 'outbound' | null
+  work_order_kind?: 'processing' | 'outbound' | null
   // 🔴 issue #7110：`paymentDeadline`（支付截止时间）**已删** —— 系统没有这个真值源：
   // `orders` 无该列、无任何写入点、也没有「超时未付 ⇒ 自动取消」的规则 ⇒ 详情页那个
   // 「支付倒计时」**从来没有渲染过**（前置判断恒为假）。按幽灵字段撤下；

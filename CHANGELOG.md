@@ -6,6 +6,19 @@
 > **后续条目继续在本文件 `## [Unreleased]` 下累加。**
 
 ## [Unreleased]
+### 订单详情真的出现「生成作业单」入口：读面键 `work_order_kind` 的消费侧改回 snake_case（2026-10-19，issue #7319）
+
+改前：后端按冻结键 `work_order_kind`（snake_case）下发「该生成哪一型作业单」，而前端类型与
+`lib/processing-order.ts` 读的是 camelCase `workOrderKind`（全前端没有 snake→camel 响应变换）
+⇒ 该键**从未被读到**：「作业单」区块对**所有**订单都显示「该订单无需作业单（没有加工项，也不是卖布单）」，
+生成加工单 / 生成出库作业单的入口永不出现（卖布单因此找不到通知工人裁剪的地方）；详情页发货入口与
+发货页前置守卫同样恒放行，只剩后端 422 兜底。两边单测各自绿（前端夹具一律 camelCase）。
+改后：`Order` 接口与 `workOrderKindOf()` 读 `work_order_kind`，并新增跨端类级守卫
+（DTO 下发键 ⇄ 读面键登记面 ⇄ 前端消费键三者逐字比对，任何一处再写 camelCase 即红）。
+判据 = `frontend/admin-web/tests/unit/lib/processing-order.test.ts`（wire 形状逐值）、
+`frontend/admin-web/tests/unit/components/OrderDetailShipGuard.test.tsx`（wire 夹具渲染）、
+`tests/unit_ci_workflows/test_frontend_wire_key_consumer.py`（C1~C5）。
+
 ### 手机端页面文案不再露出 markdown 星号与研发术语（2026-10-19，issue #7316）
 
 改前：Taro `<Text>` 不渲染 markdown，源里的 `**不会**` 把两个星号原样印在手机上；同一句还写着

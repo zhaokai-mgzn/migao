@@ -38,16 +38,27 @@ export type WorkOrderKind = 'processing' | 'outbound' | null
 /**
  * 读面键 `work_order_kind`（订单详情面，issue #7079 第 5 包）→ 两型；`null` = 无需要报工的作业。
  *
+ * 🔴 **键名口径（issue #7319，实测断线）**：后端下发的是 **snake_case 冻结键**
+ * `work_order_kind`（`OrderDetailResponse` 的 `@JsonProperty("work_order_kind")`，
+ * 登记面 = `tests/unit_ci_workflows/read_face_json_key_ledger.json`）；全局 Jackson 没有
+ * SNAKE_CASE 策略、前端也没有 snake→camel 响应变换 ⇒ 本函数必须读 `order.work_order_kind`。
+ * 改前读的是 camelCase 键 `workOrderKind` —— 线上报文里没有这把键 ⇒ 恒 `null`
+ * ⇒ 生成作业单入口对**所有**订单都不出现，而全部单测用 camelCase 夹具 ⇒ 一直是绿的。
+ *
  * 🔴 这是「这单发货前要不要作业」在前端的**唯一**读点：详情页的生成入口、发货页的前置守卫、
  * 详情页的发货入口三处都读它，**不许**再按 `processingItems` 长度（只覆盖「含加工项」那一半）
  * 自己推 —— 卖布单（按米卖布、行上没有加工项）正是被那一侧漏掉的。
  */
-export function workOrderKindOf(order: { workOrderKind?: 'processing' | 'outbound' | null }): WorkOrderKind {
-  return order.workOrderKind === 'outbound' ? 'outbound' : order.workOrderKind === 'processing' ? 'processing' : null
+export function workOrderKindOf(order: { work_order_kind?: 'processing' | 'outbound' | null }): WorkOrderKind {
+  return order.work_order_kind === 'outbound'
+    ? 'outbound'
+    : order.work_order_kind === 'processing'
+      ? 'processing'
+      : null
 }
 
 /** 读面键 `work_order_kind` 的中文业务名（缺键 ⇒ `''`，调用方据此不渲染） */
-export function workOrderKindLabelOf(order: { workOrderKind?: 'processing' | 'outbound' | null }): string {
+export function workOrderKindLabelOf(order: { work_order_kind?: 'processing' | 'outbound' | null }): string {
   const kind = workOrderKindOf(order)
   return kind ? ORDER_KIND_LABELS[kind] : ''
 }
