@@ -169,8 +169,10 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
     const triTotal = text('sales-total')
     cleanup()
     render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} media="a4" paymentQrcodes={{}} printTarget="sales" />)
-    // 版面参数随介质变
-    expect(css()).toContain('@page { size: A4; margin: 12mm; }')
+    // 版面参数随介质变（issue #7309：切到 A4 后 `@page` 边距必须是 0 —— 否则浏览器会印出
+    // 自己的页眉页脚；版面内缩改由容器 padding 承担）
+    expect(css()).toContain('@page { size: A4; margin: 0; }')
+    expect(css()).toMatch(/\.sales-print-area\[data-print-target='sales'\]\s*\{[^}]*padding:\s*12mm/)
     expect(doc()?.getAttribute('data-print-media')).toBe('a4')
     expect(sheet()?.style.height).toBe('')
     // 而**字段映射一份都没变**（复制一份映射给 A4 ⇒ 这里会红）

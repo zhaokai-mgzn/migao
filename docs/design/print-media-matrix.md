@@ -24,9 +24,19 @@
 
 | 介质 id | 打印技术 | `@page` | 连续走纸 | 复写份数 | 版面预算（正文基准） | 实测状态 |
 |---|---|---|---|---|---|---|
-| `a4` | 激光 / 喷墨（浏览器 `window.print()`） | `size: A4; margin: 12mm` | 否 | 1 | 9pt（= 既有 12px 口径） | 已实测（既有单据在用） |
+| `a4` | 激光 / 喷墨（浏览器 `window.print()`） | `size: A4; margin: 0`（版面内缩 12mm 走容器 padding，issue #7309） | 否 | 1 | 9pt（= 既有 12px 口径） | 已实测（既有单据在用） |
 | `label-50x60` | 热敏 / 热转印（BLE 直打，通道归 #5052） | `size: 50mm 60mm; margin: 0` | 否 | 1 | 6pt | **已实测**（#5646：容器 49.998×59.998mm、PDF MediaBox 142.08×169.92pt） |
 | `continuous-241x140` | **针式点阵 + 连续纸 + 压感复写** | `size: 241mm 140mm; margin: 6mm 12mm` | **是** | **3**（纸承担） | 9pt（**通用下限**，待实测） | 🚧 **待现场实测**（见 §5） |
+
+
+🔴 **A4 的 `@page` 边距必须是 0**（issue #7309，用户 2026-10-19 逐字「我建议拿掉打印的页头和页脚」）：
+Chrome 把自己的页眉页脚（版式日期 / 文档标题 / 页面 URL / 页码）**画在 `@page` 的页边距里** ——
+实测（Chromium 1243 = Chrome 14x，A4）：`8.7mm` 不画、`8.8mm` 画、`12mm` 画（= 改前值）。
+⇒ 边距 0 时**没有可画之处**，页眉页脚必然不出（不依赖那条未文档化的阈值）。
+版面内缩 12mm 是**真值**，登记在 `contentInset`，由单据容器的 `padding` 承担；
+`box-decoration-break: clone` 让**第 2 页起**也重复这段内缩（实测：不 clone 时 `padding-top`
+不重复 ⇒ 内容贴到纸边）。可用版面仍 = 186 × 273mm，与「边距 12mm」时**逐值一致**。
+判据 = `print-media.ts::BROWSER_CHROME_MARGIN_MM` + `tests/unit_ci_workflows/test_print_media_matrix_guard.py` 的 C10。
 
 **四条技术要点（三联纸，实现前必读）**
 
@@ -46,7 +56,7 @@
 | 层 | 是什么 | 落在哪 | 判据 |
 |---|---|---|---|
 | ① 内容 / 字段映射 | 这张单据**印什么**（列清单 + 取值口径） | 各 `*Doc.tsx`，每张**只有一份** | `test_print_media_matrix_guard.py` C5（列清单全仓**恰好一个文件**命中）+ **C7**（商品身份走 `lib/order-item-sku.ts` 的 `orderItemSku()`、物流方式走 `lib/logistics.ts` 的 `freightText()`） |
-| ② 介质 | 印在**什么纸**上（尺寸 / 边距 / 技术 / 复写 / 字号） | `lib/print-media.json` + `.ts` | 同上 C2（单据 `@page` 与矩阵同源）、C4（待实测登记） |
+| ② 介质 | 印在**什么纸**上（尺寸 / 边距 / 技术 / 复写 / 字号） | `lib/print-media.json` + `.ts` | 同上 C2（单据 `@page` 与矩阵同源）、C4（待实测登记）、**C10**（纸面不带浏览器页眉页脚：A4 的 `@page` 边距必须为 0 + 内缩走容器 padding） |
 | ③ 打印隔离 | 一次只放**一份**单据上纸 | `body > *:not(.print-doc)`（#4983） | `test_print_doc_convention_guard.py` |
 | ④ 打印入口 / 纸型唯一 | `window.print()` 只在 `lib/print-doc.ts`（且**目标提交后**才调用）；`@page` 只在「本次目标是本单据」时发表 | `lib/print-doc.ts` + 各 `*Doc.tsx` 的条件 `<style>` | `test_print_single_doc_on_paper.py`（C1 / C2 / C3） |
 | ⑤ 打印前自检 + 截图 | 真尺寸纸框 + 溢出/页数 + 本次纸型；「打印」「复制截图」两个出口 | `components/orders/PrintDocPreview.tsx` + `lib/print-capture.ts` | `PrintDocPreview.test.tsx` + `tests/e2e/specs/orders/print-preview.spec.ts` |

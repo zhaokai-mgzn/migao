@@ -40,7 +40,8 @@ import {
  * 断言的是**纸面内容与版面契约**：
  * ① 表头九栏逐条命中（订单日期 / 客户 / 电话 / 地址 / 备注 / 制单人 / 单号 / 交付日期 / 货运）；
  * ② **按套分块**，每块 `第N套/共M套` + 一张 **9 列表**（列清单 = `PROCESSING_DOC_COLUMNS`，全仓唯一一份）；
- * ③ `@page { size: A4; margin: 12mm; }`（由介质矩阵生成）+ 分页不裁切（`break-inside: avoid`）
+ * ③ `@page { size: A4; margin: 0; }`（由介质矩阵生成；边距 0 = 浏览器页眉页脚无处可画，
+ *    版面内缩 12mm 由容器 padding 承担 —— issue #7309）+ 分页不裁切（`break-inside: avoid`）
  *    且长单分页时**表头重复**（`thead { display: table-header-group }`）；
  * ④ 🔴 **缺值不许静默留空**：一律显式占位 `—`；本系统**没有采集**的字段（制单人 / 批号）
  *    另标「未采集」——「客户没填」与「我们没有这个列」必须可区分；
@@ -338,7 +339,12 @@ describe('ProcessingDoc（A4 加工单，issue #5651）', () => {
 
   it('③ 版面：@page A4（由介质矩阵生成）+ 分页不裁切 + 表头重复', () => {
     render(<ProcessingDoc order={buildOrder()} processingOrder={buildProcessingOrder()} printTarget="processing" />)
-    expect(css()).toContain('@page { size: A4; margin: 12mm; }')
+    // 🔴 issue #7309：A4 的 `@page` 边距是 **0**（浏览器把页眉页脚画在页边距里，够大就照画），
+    // 版面内缩 12mm 由容器 padding 承担（下一行的断言）。
+    expect(css()).toContain('@page { size: A4; margin: 0; }')
+    expect(css()).toMatch(/\.processing-print-area\[data-print-target='processing'\]\s*\{[^}]*padding:\s*12mm/)
+    // 内缩必须**逐页重复**（第 2 页起也留边；不 clone ⇒ 内容贴到纸边）
+    expect(css()).toContain('box-decoration-break: clone')
     expect(doc()?.getAttribute('data-print-media')).toBe('a4')
     expect(css()).toMatch(/\.processing-set\s*\{[^}]*break-inside:\s*avoid/)
     // 长单跨页时表头重复（否则第 2 页起认不出列）

@@ -1,4 +1,4 @@
-# case_ids: UI-040, UI-061, UI-062, UI-063
+# case_ids: UI-040, UI-061, UI-062, UI-063, UI-128
 """打印**介质矩阵**守卫（issue #5651）—— 让「又一个 A4 模板」式蔓延进不来。
 
 ## 病根（实测，不是推断）
@@ -20,6 +20,7 @@
 | C6 | 注入式红证 + **内容指纹**自证（禁 mtime / size，issue #4260） | 注入未生效 ⇒ 红（红证自己是空断言） |
 | C8 | **纸面不印工序清单**（issue #7274：用户逐字「工序细节不用在打印单上，移除掉工序相关的表格信息」） | 把工序清单（`operationsByItem` / `OPERATIONS_DOC_COLUMNS` / `processing-doc-operation`）接回任一受管打印单据 ⇒ 红 |
 | C9 | **发货单「加工项」是一行、不是表格**（issue #7275：用户逐字「加工项表格应该用一行表达…比如改成a+b+c这样？」） | 退回逐项两列表（出现 `<DocTh>加工项</DocTh>` / 去掉 `shipment-processing-items` 锚点）⇒ 红 |
+| C10 | **纸面不带浏览器页眉页脚**（issue #7309：用户逐字「我建议拿掉打印的页头和页脚」，附打印成品截图） | 把浏览器打印介质的上下 `@page` 边距写回「够大」（≥ 8.7mm）/ A4 没有 `contentInset` / 单据容器不带内缩 + `box-decoration-break: clone` ⇒ 红 |
 
 ⚠️ **判据按「去注释后的代码」判定**：各单据的文件头都**用注释解释**这些坑（会写出反例），
 按原文判定会把解释性注释判成违规 = 假红。故本文件自带字符串感知的注释剥离器。
@@ -393,7 +394,7 @@ def test_c6_injected_regressions_are_red():
 
     # ── 注入 A2（C2 的**写法 B** 分支）：合成样本，保证「字面量必须与矩阵逐字一致」这条分支
     #    不会因为树里暂时没人用写法 B 就退化成空判据（issue #5914：五份单据已全部走写法 A）──
-    literal_doc = "const css = `@page { size: A4; margin: 12mm; }`"
+    literal_doc = "const css = `@page { size: A4; margin: 0; }`"
     assert _doc_page_problems("(合成样本)", media_id, literal_doc, matrix) == []
     drifted = {**matrix, "a4": {**matrix["a4"], "pageSize": "A3"}}
     assert _fingerprint(json.dumps(drifted, sort_keys=True)) != _fingerprint(
@@ -619,4 +620,151 @@ def test_c9_shipment_processing_items_stay_on_one_line():
     )
     assert _shipment_processing_line_problems("(合成样本·修后)", line) == [], (
         "一行写法被判红 ⇒ C9 会把合规实现喂红（假红）"
+    )
+
+
+# ── C10：纸面不带**浏览器页眉页脚**（issue #7309）─────────────────────────────────
+#
+# 用户 2026-10-19 逐字「我建议拿掉打印的页头和页脚」（附打印成品截图，四样被红框圈出：
+# 顶部 `2026/10/19 10:52` + `观星台 - AI经营管理平台`，底部订单 URL + `1/1`）——
+# 那四样**都不是我们画的内容**，是 **Chrome 的打印页眉页脚**，它画在 `@page` 的页边距里。
+#
+# 🔴 实测（不是推断）：Chromium 1243（= Chrome 14x）+ `displayHeaderFooter: true` +
+# `preferCSSPageSize: true`，A4 —— `@page { margin: 8.7mm }` **不画**、`8.8mm` **画**、
+# 12mm（= 改前 A4 的矩阵值）**画**、`0`（+ 容器内缩 12mm）**不画**。
+# 所以「够大的页边距」是一条**未文档化**的分界；本仓的口径是让 A4 走**结构性**的那一侧
+# （边距 0 ⇒ 没有可画的边距 ⇒ 必然不出），阈值只用来拦住把「够大的边距」写回来的形态。
+#
+# 两条判据（缺一即红）：
+# ① **矩阵侧**：浏览器打印介质的上下 `@page` 边距不得 ≥ 8.7mm；上下边距为 0 必须有非零
+#    `contentInset`（否则内容贴到纸边、被打印机不可打区裁掉）；`contentInset` 存在 ⇒ 边距必须为 0
+#    （两层内缩叠加 = 版面悄悄变窄）。
+# ② **单据侧**：浏览器打印的单据必须把内缩写进容器（`printContentInsetCss(`）+ 带
+#    `box-decoration-break: clone` —— 实测不 clone 时第 2 页起 `padding-top` 不重复，内容贴到纸边。
+
+#: 浏览器**会画页眉页脚**的上下 `@page` 边距下限（mm）—— 实测读数，取在 8.7/8.8 边界的安全侧
+BROWSER_CHROME_MARGIN_MM = 8.7
+#: 单据容器承担版面内缩的读取口（`frontend/admin-web/src/lib/print-media.ts::printContentInsetCss`）
+CONTENT_INSET_READER = "printContentInsetCss("
+#: 内缩必须**逐页重复**（否则第 2 页起贴纸边）
+DECORATION_CLONE = "box-decoration-break: clone"
+#: 「由浏览器打印」的介质技术 —— 热敏标签走设备侧点阵通道、整幅出图（纸边就是版心），不在本判据内
+BROWSER_PRINT_TECHNOLOGIES: tuple[str, ...] = ("laser-inkjet", "dot-matrix")
+
+
+def _margin_mm(value: object) -> float | None:
+    """`12mm` / `0` / `6mm` ⇒ mm；其它单位 ⇒ `None`（**不猜**，由调用方判红）。"""
+    text = str(value or "").strip()
+    if text == "0":
+        return 0.0
+    hit = re.fullmatch(r"([0-9.]+)mm", text)
+    return float(hit.group(1)) if hit else None
+
+
+def _browser_chrome_problems(
+    matrix: dict[str, dict],
+    docs: dict[str, str] | None = None,
+) -> list[str]:
+    """C10 的判定本体（纯函数：注入式红证用；`docs` = 文件相对路径 ⇒ 去注释后的源码）。"""
+    problems: list[str] = []
+
+    for media_id, spec in sorted(matrix.items()):
+        parts = [_margin_mm(p) for p in str(spec.get("pageMargin", "")).split()]
+        if not parts or parts[0] is None:
+            problems.append(
+                f"介质 `{media_id}` 的 pageMargin=`{spec.get('pageMargin')}` 解析不出 mm —— "
+                "判不了会不会画出浏览器页眉页脚（**不得**静默跳过）"
+            )
+            continue
+        vertical = parts[0]
+        inset = spec.get("contentInset")
+        if str(spec.get("technology")) not in BROWSER_PRINT_TECHNOLOGIES:
+            continue
+        if vertical >= BROWSER_CHROME_MARGIN_MM:
+            problems.append(
+                f"介质 `{media_id}` 的上下页边距 {vertical}mm ≥ {BROWSER_CHROME_MARGIN_MM}mm ⇒ "
+                "浏览器会把页眉页脚（日期 / 标题 / URL / 页码）画在纸面上；"
+                "浏览器打印的纸应把 `@page` 边距写 0、版面内缩改由 `contentInset` + 单据容器 padding 承担"
+                "（issue #7309）"
+            )
+        if vertical == 0 and not inset:
+            problems.append(
+                f"介质 `{media_id}` 的上下页边距是 0 却没有登记 `contentInset` ⇒ 内容贴到纸边"
+                "（打印机不可打区会裁掉首末行）；登记版面内缩（issue #7309）"
+            )
+        if inset and vertical != 0:
+            problems.append(
+                f"介质 `{media_id}` 同时有 contentInset=`{inset}` 与非零 @page 边距 "
+                f"`{spec.get('pageMargin')}` ⇒ 两层内缩会叠加（版面悄悄变窄；issue #7309）"
+            )
+
+    if docs is not None:
+        for rel, media_id in PRINT_DOCS:
+            spec = matrix.get(media_id) or {}
+            if str(spec.get("technology")) not in BROWSER_PRINT_TECHNOLOGIES:
+                continue
+            code = docs.get(rel)
+            if code is None:
+                problems.append(f"受管单据 `{rel}` 没有参与 C10 判定（**不得**静默跳过）")
+                continue
+            if CONTENT_INSET_READER not in code:
+                problems.append(
+                    f"`{rel}` 的打印样式没有承担版面内缩（找不到 `{CONTENT_INSET_READER}`）—— "
+                    "`@page` 边距为 0 后，内缩必须在单据容器上（issue #7309）"
+                )
+            if DECORATION_CLONE not in code:
+                problems.append(
+                    f"`{rel}` 的打印样式缺少 `{DECORATION_CLONE}` —— 第 2 页起内缩不重复，"
+                    "内容会贴到纸边（issue #7309）"
+                )
+    return problems
+
+
+def test_c10_browser_chrome_stays_off_the_paper():
+    """C10：纸面不带浏览器页眉页脚（矩阵侧结构性 + 单据侧接线），并自证判别力。"""
+    matrix = _matrix()
+    docs = {rel: _strip_comments(_read(rel)) for rel, _media in PRINT_DOCS}
+    problems = _browser_chrome_problems(matrix, docs)
+    assert problems == [], "纸面会带回浏览器页眉页脚（issue #7309）：\n  " + "\n  ".join(problems)
+
+    # 反空跑：矩阵侧至少有一份「浏览器打印」的介质被真的判过
+    browser_media = [
+        spec for spec in matrix.values() if str(spec.get("technology")) in BROWSER_PRINT_TECHNOLOGIES
+    ]
+    assert len(browser_media) >= 2, (
+        f"浏览器打印的介质只剩 {len(browser_media)} 份 ⇒ C10 的矩阵侧接近空跑"
+    )
+
+    # ── 判别力自证（内存注入，不碰真文件）──
+    before = dict(matrix["a4"])
+    before["pageMargin"] = "12mm"
+    before.pop("contentInset", None)
+    assert _browser_chrome_problems({"a4": before}) != [], (
+        "把 A4 的边距改回 12mm（= 修前形态）**没判红** ⇒ C10 是空判据"
+    )
+    no_inset = dict(before)
+    no_inset["pageMargin"] = "0"
+    assert _browser_chrome_problems({"a4": no_inset}) != [], (
+        "边距 0 但没有登记内缩（内容贴纸边）**没判红** ⇒ C10 漏了「纸边不可打」那一半"
+    )
+    doubled = dict(matrix["a4"])
+    doubled["pageMargin"] = "12mm"
+    assert _browser_chrome_problems({"a4": doubled}) != [], (
+        "内缩与 @page 边距叠加（双重内缩）**没判红** ⇒ C10 漏了版面变窄那一半"
+    )
+    thermal = {"id": "t", "technology": "thermal-transfer", "pageMargin": "0"}
+    assert _browser_chrome_problems({"t": thermal}) == [], (
+        "热敏标签（设备侧整幅出图、纸边即版心）被判红 ⇒ C10 会喂红合规实现（假红）"
+    )
+    # 单据侧：抹掉容器内缩 / clone ⇒ 必红（用真文件源码做内存变异）
+    clean = {"a4": dict(matrix["a4"])}
+    target = PRINT_DOCS[1][0]  # 报价单（A4）
+    assert _browser_chrome_problems(clean, docs) == [], (
+        "合规单据被 C10 判红 ⇒ 判据与实现不同口径（假红）"
+    )
+    stripped_source = docs[target].replace(CONTENT_INSET_READER, "").replace(DECORATION_CLONE, "")
+    assert stripped_source != docs[target], "找不到注入点 ⇒ 本红证会**空跑**"
+    stripped_docs = {**docs, target: stripped_source}
+    assert _browser_chrome_problems(clean, stripped_docs) != [], (
+        "抹掉容器内缩 / clone **没判红** ⇒ 单据侧判据是空断言"
     )

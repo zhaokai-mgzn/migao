@@ -33,8 +33,17 @@ export interface PrintMediaSpec {
   technology: PrintMediaTechnology
   /** `@page` 尺寸（CSS 值；三联纸 = 用户裁定的 241mm × 140mm 两等分单联） */
   pageSize: string
-  /** `@page` 边距（CSS 值） */
+  /** `@page` 边距（CSS 值）—— **浏览器吃的那一层**：页眉页脚就画在这段边距里（见 {@link BROWSER_CHROME_MARGIN_MM}） */
   pageMargin: string
+  /**
+   * **版面内缩**（CSS 长度，缺省 = 用 `pageMargin`）：纸边到版心的真实距离。
+   *
+   * 只在「`@page` 边距必须写成 0」的介质上登记（目前只有 A4，issue #7309）——那种介质里
+   * 内缩改由**单据容器的 padding** 承担（`printContentInsetCss()`），纸面观感与 `@page`
+   * 边距直接写 12mm 时逐毫米一致。
+   * 🔴 登记了它 ⇒ `pageMargin` 必须为 `0`（否则两层内缩叠加，版面悄悄变窄；`browserChromeMarginProblems()` 判红）。
+   */
+  contentInset?: string
   /**
    * **纸的整幅尺寸（mm）** —— 机器可读的「这张纸多大」：打印前的纸面自检（预览纸框 / 溢出与页数）
    * 读它。`pageSize` 是 CSS 值（可能是 `A4` 这种命名纸型，解析不出 mm），故 mm 口径单独放这里。
@@ -154,6 +163,90 @@ function millimetres(value: string): number | null {
   return hit ? Number(hit[1]) : null
 }
 
+/**
+ * 浏览器（Chrome）**画页眉页脚**的页边距下限（mm）—— 实测读数，不是推断（issue #7309）。
+ *
+ * A4 + `displayHeaderFooter: true` + `preferCSSPageSize: true`（Chromium 1243 = Chrome 14x）：
+ * `@page { margin: 8.7mm }` ⇒ **不画**；`8.8mm` ⇒ 画（版式日期 / 文档标题 / 页面 URL / 页码）；
+ * 12mm（= A4 改前的值）⇒ 画；`0`（+ 容器内缩 12mm）⇒ 不画。取 8.7mm 是这条**未文档化**
+ * 分界的安全侧。
+ *
+ * 本仓口径：**A4 一律把 `@page` 边距写成 0**（0 边距 = 没有可画的边距 = 必然不出，不依赖这条阈值），
+ * 版面内缩交给 `contentInset` + 单据容器 padding。这条阈值只用来**拦住**将来把「够大的页边距」写回来的形态。
+ */
+export const BROWSER_CHROME_MARGIN_MM = 8.7
+
+/**
+ * 一份介质的**版面内缩**（mm）：`contentInset` 优先，缺省即 `@page` 边距（解析不出 ⇒ 抛错，不猜）。
+ *
+ * `PrintDocPreview` 的纸框与纸面自检（可用版面）读它 —— 「印出来占多大地方」是版面真值，
+ * 与「浏览器把页眉页脚画在哪儿」是两件事，只有后者会被写成 0（issue #7309）。
+ */
+export function printContentInsetMm(media: PrintMediaId): { xMm: number; yMm: number } {
+  const spec = printMediaSpec(media)
+  const css = spec.contentInset ?? spec.pageMargin
+  const parts = css.trim().split(/\s+/).map(millimetres)
+  const [first] = parts
+  const second = parts.length > 1 ? parts[1] : parts[0]
+  if (first === null || first === undefined || second === null || second === undefined) {
+    throw new Error(`介质 ${media} 的版面内缩=\`${css}\` 解析不出 mm —— 不猜`)
+  }
+  return { xMm: second, yMm: first }
+}
+
+/**
+ * 单据容器要自己承担的**内缩 padding**（CSS 值）—— 与 `@page` 边距**互补**：
+ * `@page` 边距为 0 的介质（A4）返回 `12mm`，其余介质返回 `0`（内缩已由 `@page` 边距给过）。
+ *
+ * 用法（单据的 `@media print`）：`padding: ${printContentInsetCss(media)};` 并配
+ * `box-decoration-break: clone` —— 实测：不 clone 时第 2 页起 `padding-top` 不重复（内容贴到纸边）。
+ */
+export function printContentInsetCss(media: PrintMediaId): string {
+  return printMediaSpec(media).contentInset ?? '0'
+}
+
+/**
+ * **类级守卫**：介质矩阵里任何一行都不许落进「浏览器会画页眉页脚」的形态（issue #7309）。
+ *
+ * 三条判据（返回人读问题清单，空 = 合规）：
+ * 1. 上下 `@page` 边距 ≥ {@link BROWSER_CHROME_MARGIN_MM} ⇒ 页眉页脚会被画出来；
+ * 2. 上下边距为 0 却**没登记 `contentInset`** ⇒ 内容贴到纸边（打印机不可打区会裁掉首末行）——
+ *    热敏标签例外（整幅出图，纸边就是版心）；
+ * 3. 登记了 `contentInset` 而 `@page` 边距不为 0 ⇒ 两层内缩叠加（版面悄悄变窄）。
+ */
+export function browserChromeMarginProblems(spec: PrintMediaSpec): string[] {
+  const margin = (spec.pageMargin || '').trim()
+  const parts = margin.split(/\s+/).map(millimetres)
+  const [first] = parts
+  const second = parts.length > 1 ? parts[1] : parts[0]
+  if (first === null || first === undefined || second === null || second === undefined) {
+    return [`介质 ${spec.id} 的 pageMargin=\`${spec.pageMargin}\` 解析不出 mm —— 判不了会不会画出页眉页脚`]
+  }
+  const problems: string[] = []
+  const vertical = first
+  const thermal = spec.technology === 'thermal-transfer'
+  if (vertical >= BROWSER_CHROME_MARGIN_MM) {
+    problems.push(
+      `介质 ${spec.id} 的上下页边距 ${vertical}mm ≥ ${BROWSER_CHROME_MARGIN_MM}mm ⇒ 浏览器会把页眉页脚` +
+        '（日期 / 标题 / URL / 页码）画在纸面上；浏览器打印的纸应把 `@page` 边距写 0、' +
+        '版面内缩改由 `contentInset` + 单据容器 padding 承担（issue #7309）'
+    )
+  }
+  if (vertical === 0 && !thermal && !spec.contentInset) {
+    problems.push(
+      `介质 ${spec.id} 的上下页边距是 0 且没有登记 \`contentInset\` ⇒ 内容会贴到纸边` +
+        '（打印机不可打区会裁掉首末行）；登记版面内缩，由单据容器 padding 承担（issue #7309）'
+    )
+  }
+  if (spec.contentInset && vertical !== 0) {
+    problems.push(
+      `介质 ${spec.id} 同时有 contentInset=\`${spec.contentInset}\` 与非零 @page 边距 \`${margin}\` ⇒ ` +
+        '两层内缩会叠加（版面悄悄变窄）；`contentInset` 只在 @page 边距为 0 时登记（issue #7309）'
+    )
+  }
+  return problems
+}
+
 /** 纸的**整幅尺寸（mm）**（真值源 = 矩阵的 `pageBoxMm`，命名纸型如 `A4` 也在这里落到 mm） */
 export function printPageBoxMm(media: PrintMediaId): { widthMm: number; heightMm: number } {
   const spec = printMediaSpec(media)
@@ -165,27 +258,13 @@ export function printPageBoxMm(media: PrintMediaId): { widthMm: number; heightMm
 }
 
 /**
- * `@page` 边距（mm）：CSS 简写 `上下 左右`；单值 = 四边同值。非 mm ⇒ 抛错（不猜）。
- * ⚠️ 三联纸的边距是**待实测**通用参数（见矩阵 `pendingMeasurements`）。
- */
-export function printPageMarginMm(media: PrintMediaId): { xMm: number; yMm: number } {
-  const spec = printMediaSpec(media)
-  const parts = spec.pageMargin.trim().split(/\s+/).map(millimetres)
-  const [first] = parts
-  const second = parts.length > 1 ? parts[1] : parts[0]
-  if (first === null || first === undefined || second === null || second === undefined) {
-    throw new Error(`介质 ${media} 的 pageMargin=\`${spec.pageMargin}\` 解析不出 mm —— 不猜`)
-  }
-  return { xMm: second, yMm: first }
-}
-
-/**
- * 单张纸的**可用版面（mm）** = 纸 − 页边距。
+ * 单张纸的**可用版面（mm）** = 纸 − 版面内缩（`printContentInsetMm`，不是 `@page` 边距 ——
+ * A4 的 `@page` 边距是 0，内缩在容器 padding 上；issue #7309）。
  * 连续纸（针式）超出可用高度就会打到**下一联**（连续纸跨联 = 纸面与账目对不上的一种形态）。
  */
 export function printUsableBoxMm(media: PrintMediaId): { widthMm: number; heightMm: number } {
   const box = printPageBoxMm(media)
-  const margin = printPageMarginMm(media)
+  const margin = printContentInsetMm(media)
   return { widthMm: box.widthMm - margin.xMm * 2, heightMm: box.heightMm - margin.yMm * 2 }
 }
 
