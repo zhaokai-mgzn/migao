@@ -5516,6 +5516,7 @@ cases:
     forbidden_tools:
       - tool: marketing_poster
     data_checks:
+      - "`marketing_poster` 在本轮**未被调用**（计分锚点；真实机器判据 = forbidden_tools，调用即违规）。"
       - "必须给出 2~3 组**候选文案**（每组含主标题 + 2~3 条卖点），并明确请商家选一组或改写；候选必须基于商品事实（名称 / 规格 / 价格）。"
       - "**不得**在商家确认前调用 `marketing_poster`（机器断言 = forbidden_tools，调用即违规）；不得把候选当最终结果直接发卡。"
       - "候选不得编造折扣 / 赠品 / 材质 / 销量 / 「第一 / 最好 / 100%」等无依据表述；活动价、库存等不知道的事实先问商家。"
