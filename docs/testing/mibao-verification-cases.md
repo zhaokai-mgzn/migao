@@ -10156,7 +10156,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（127 case）
+## 前端 UI 域（128 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -10970,7 +10970,7 @@
 期望: direct_reply
 数据: 判据 1·**表头九栏逐条命中实证 #3**：订单日期 / 客户 / 电话 / 地址 / 备注 / 制单人 / 单号 / 交付日期 / 货运 九栏全部渲染，取值取服务端字段（订单日期 = order.createdAt；单号 = 加工单号、缺则回落订单号；交付日期 = 加工单交期、缺则回落订单「要求到货日」；货运 = logisticsType · logisticsCompany）。执行点 = frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 的「① 表头九栏逐条命中实证 #3 的制式」+「① 交付日期回落链」+「① 加工单缺失 ⇒ 单号回落订单号」。
 数据: 判据 2·**按套分块**：N 个商品行 ⇒ N 块，每块段头 `第N套/共M套`，块内一张 **9 列表**，列序逐字等于 PROCESSING_DOC_COLUMNS = ['品名','货号','颜色','门幅','尺寸','数量','组件','批号','备注']。🔴 2026-10-14 同批纠正一处**散文漂移**（非本批引入）：本条此前写的是「8 列表 = ['部位','部位信息','尺寸','组件','货号','用料','批号','备注']」，与真值（代码常量 + CI 守卫 C5 的钉住元组）**早已不符** —— 该判据执行点断言的本来就是当前版式，故不构成假绿，但散文必须与真值对齐。执行点 = 同文件「② 按套分块：3 个商品行 ⇒ 3 块」。
-数据: 判据 3·**A4 版面与分页不裁切**：样式里 `@page { size: A4; margin: 12mm; }`（由 `lib/print-media.ts` 的 printPageRule('a4') 生成，本组件不自写纸型）；`.processing-set { break-inside: avoid }` + `.processing-doc-table thead { display: table-header-group }`（长单跨页时表头重复）。执行点 = 同文件「③ 版面：@page A4（由介质矩阵生成）+ 分页不裁切 + 表头重复」。
+数据: 判据 3·**A4 版面与分页不裁切**：样式里 `@page { size: A4; margin: 0; }`（由 `lib/print-media.ts` 的 printPageRule('a4') 生成，本组件不自写纸型；🔴 issue #7309：边距 0 = 浏览器页眉页脚无处可画，版面内缩 12mm 由容器 padding + `box-decoration-break: clone` 承担）；`.processing-set { break-inside: avoid }` + `.processing-doc-table thead { display: table-header-group }`（长单跨页时表头重复）。执行点 = 同文件「③ 版面：@page A4（由介质矩阵生成）+ 分页不裁切 + 表头重复」。
 数据: 判据 4·**缺值不许静默留空**：客户名 / 电话 / 地址缺失 ⇒ 单元格为显式占位 `—`（不是空串）；本系统**未采集**的字段（制单人 / 批号）标「未采集」并出脚注 —— 二者必须可区分。执行点 = 同文件「🔴 ④ 缺字段可见」+「🔴 ④ 本系统未采集的字段必须显式标注」。
 数据: 判据 5·🔴 **纸面不印 QR**（issue #7219，本批收口死参数）：加工单纸面**零**扫码形态 —— `processing-doc-qr` / `processing-doc-qr-placeholder` / `processing-doc-short-code` 三者都取不到（即使夹具给了 `scan_url` / `short_code`）；`ProcessingDoc` 的 `qrValue` prop 同批退场（调用方不再传）。执行点 = 同文件「🔴 ⑤ 加工单不再印 QR」。⚠️ 原判据 5（缺码不画假码 / 虚线占位框）随 #7219 退场，不再是本用例的判据面。
 数据: 判据 6·**加工单不印金额**（实证 #3 无金额列）⇒ 天然没有第二份金额真值：纸面文本不含「本单应收 / 单价 / 金额 / 小计」。执行点 = 同文件「⑥ 加工单不印金额」。
@@ -11996,6 +11996,19 @@
 ```
 溯源: 2026-10-18 新增（issue #7276）。取号 = 本地复算 origin/main 现取最大 UI-126 ⇒ UI-127。病：order:detail 只活在权限树与岗位种子里（census 端点数 = 0；去向单 #5236 已关 ⇒ 无人承接）⇒ 岗位权限页勾了不生效；详情读面挂 order:list ⇒ 用户「提示没权限却仍能访问」。修：两读面收码 + 页面拒绝态 + 加工单块按 production:view 门控 + 工具码同批对齐 + 类级元守卫。零回归：种子岗位里持 order:list 的四个（客服/运营/销售/财务）本就都持 order:detail。 ｜ tags: rbac, permission, order-detail, class-level-guard
 
+### UI-128. A4 纸面不带浏览器页眉页脚：@page 边距写 0（浏览器无可画之处）+ 版面内缩 12mm 由单据容器承担、box-decoration-break: clone 逐页重复（issue #7309） 🔵
+```
+你: 「我建议拿掉打印的页头和页脚」（用户 2026-10-19，附 A4 报价单打印成品截图）
+期望: direct_reply
+数据: 判据 1·**结构性去页眉页脚**（会红）：介质矩阵 frontend/admin-web/src/lib/print-media.json 的 a4 必须是 pageMargin=0 + contentInset=12mm；printPageRule('a4') === '@page { size: A4; margin: 0; }'、printContentInsetCss('a4') === '12mm'、可用版面仍 = 186 × 273mm（与改前逐值一致）。执行点 = frontend/admin-web/tests/unit/lib/print-media.test.ts 的「⑤ 纸面不带浏览器页眉页脚」+「③ @page 规则由 printPageRule 唯一生成」。
+数据: 判据 2·**类级元守卫**（会红）：tests/unit_ci_workflows/test_print_media_matrix_guard.py::test_c10_browser_chrome_stays_off_the_paper —— 浏览器打印介质的上下 @page 边距不得 ≥ 8.7mm（实测：8.7mm 不画 / 8.8mm 画）；边距 0 必须登记 contentInset；contentInset 存在 ⇒ 边距必须为 0；且受管 A4 单据的打印 CSS 必须带 printContentInsetCss( + box-decoration-break: clone（缺一即红）。
+数据: 判据 3·**逐页内缩**（会红）：四份单据（发货单 / 报价单 / 加工单 / 销售单）的 @media print 容器规则里 padding 取介质内缩、并带 box-decoration-break: clone。执行点 = frontend/admin-web/tests/unit/components/ProcessingDoc.test.tsx 的「③ 版面：@page A4（由介质矩阵生成）+ 分页不裁切 + 表头重复」、frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 的「② 介质是**参数**不是副本：切 A4 后 @page 变、而逐格取值**逐字不变**」。
+数据: 🔴 红证（实跑）：① 把 a4 的 pageMargin 改回 12mm ⇒ 判据 1/2 必红（本机读数：vitest 4 failed / 5 passed）；② 抹掉容器的 printContentInsetCss( 与 box-decoration-break: clone ⇒ C10 的单据侧必红（内存变异逐条常驻，见该测试的「判别力自证」）。
+数据: 真机读数（Chromium 1243 = Chrome 14x；displayHeaderFooter: true + preferCSSPageSize: true；A4；两页样张）：改前 @page margin 12mm ⇒ 纸面出现 `10/19/26, 11:08 AM 观星台 - AI经营管理平台` + `about:blank 1/2`（= 用户截图同款四行）；改后 margin 0 + 容器内缩 12mm + clone ⇒ 零浏览器页眉页脚，且第 1 / 第 2 页首行 y 坐标**相同**（798.42pt）= 逐页内缩成立、版面未变。
+跳过: [backend-contract] 纯前端打印版式（无 LLM 环节）：断言由 vitest 与 tests/unit_ci_workflows/test_print_media_matrix_guard.py 执行
+```
+溯源: 2026-10-19 新增（issue #7309）。病：A4 的 @page 边距 12mm ≥ Chrome 画页眉页脚的分界（实测 8.7/8.8mm）⇒ 客户拿到的凭证顶部多出日期与后台标题、底部多出订单 URL 与页码。修：A4 的 @page 边距写 0（结构性、不依赖阈值），版面内缩 12mm 走 contentInset + 单据容器 padding（box-decoration-break: clone 逐页重复）⇒ 纸面版式与改前逐毫米一致。另：销售单可切 A4，同批补 padding（continuous 介质取 0，纸面不变）。 ｜ tags: print, a4, browser-chrome, class-level-guard
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -12025,8 +12038,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：823（活跃 137，跳过 686）
-- tier 分布：smoke 12 / normal 756 / adversarial 32
+- 用例总数：824（活跃 137，跳过 687）
+- tier 分布：smoke 12 / normal 757 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12051,7 +12064,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：127
+- 前端 UI 域：128
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -12368,4 +12381,5 @@
 - UI-123: 旧「工艺配置」页已下架：/production/routings 重定向到唯一写面，且全仓不再有写死的旧链接
 - UI-124: 按钮只有一种形态：icon slot 统一间距、loading 时 spinner 顶替图标（不并排）、裸 button 不得自拼主色 chrome
 - UI-127: 订单详情权限（order:detail）真正生效：详情/发货两读面收码 + 页面拒绝态 + 无权限的加工单块不发起请求（issue #7276）
+- UI-128: A4 纸面不带浏览器页眉页脚：@page 边距写 0（浏览器无可画之处）+ 版面内缩 12mm 由单据容器承担、box-decoration-break: clone 逐页重复（issue #7309）
 
