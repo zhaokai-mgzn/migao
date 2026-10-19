@@ -1508,7 +1508,7 @@
 真值: category-manage.delete, category-manage.delete-destructive, ai-chat.confirm-required
 溯源: verification 2.12 独有（二次确认行为在测试中未确认，见 category-manage.yml 缺口注释）；2026-09-21（case-trust burn-down 缴费，issue #4971，metric=entries ⇒ 整条销账）：补 `must_succeed[category_manage(action=delete)]`（效果层：「调用了 ≠ 成了」，#3778）+ `namespaces[category:轻奢系列]`（弱证据，如实登记：夹具层无分类域复位/准备动作，且与 CT-002「建同一个分类」自动串行）+ 机器计分型前置断言；`user_inputs` / `expectations` / `data_checks` 原第 1 条 / `skip_reason` / `traces` 一字未动、断言强度不放宽 ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：`category_manage` 的写 action `delete` 已删除（工具收窄为只读 `{tree}`）⇒ 本用例退役（理由写在 `skip_reason`，条目不删除）；`expectations` 由 `[interact(confirm), category_manage(action=delete)]` 改判为 `direct_reply`（如实说明 + 引导去后台商品分类页面：删除**没有存活的只读路径**），`must_succeed[category_manage(action=delete)]` 整格移除（否则成为永不满足的悬空声明，会阻塞 CI 的 action 绑定判据）；`data_checks` 的写路径断言（「二次确认后才执行删除」+ 写面前置）改判为只读/如实说明口径（原第 1 条文本已并入新第 1 条保留为历史）。 ｜ tags: delete, destructive, confirm
 
-## 对话边界域（49 case）
+## 对话边界域（51 case）
 
 ### CH-001. 空结果 + suggestion 引导修复 🔴
 ```
@@ -2287,8 +2287,18 @@
 禁词: 已帮您创建
 禁词: 已提交创建申请
 禁词: 稍后为您创建
+禁词: 正在为您创建
+禁词: 我这就帮您建
+禁词: 已经安排
+禁词: 稍后开通
+禁词: 同事会联系您
+禁词: 暂未接线
+禁词: 未接线
+必须: {'round': 1, 'text': '后台'}
+必须: {'round': 1, 'text': '员工管理'}
+必须: {'round': 2, 'any_of': ['后台', '组织管理', '员工管理']}
 ```
-溯源: 2026-10-19 新增（issue #7027 的用例补齐）：当天 B 端基线 65/69 绿，但**没有一条用例**钉住「被问到做不了的事时怎么答」—— 而这正是 #7291 能力边界投影段要防的形态（旧 prompt 里 9 处写「非单据对象创建 ✅ 支持」，模型承诺后办不成）。取号 = 现取 chat.yml 最大号 CH-048 + 1。 ｜ tags: chat, capability-boundary, refusal-integrity
+溯源: 2026-10-19 新增（issue #7027 的用例补齐）：当天 B 端基线 65/69 绿，但**没有一条用例**钉住「被问到做不了的事时怎么答」—— 而这正是 #7291 能力边界投影段要防的形态（旧 prompt 里 9 处写「非单据对象创建 ✅ 支持」，模型承诺后办不成）。取号 = 现取 chat.yml 最大号 CH-048 + 1。 ｜ 2026-10-19（issue #7334 二次审计）：补 `want_text`（两轮都要给「后台」落点、首轮要「员工管理」）+ 更多禁词（正在创建 / 我这就帮您建 / 已经安排 / 暂未接线 等）；此前「路径」只写在自然语义 data_checks 里，模型回一句「我办不了」也能过。 ｜ tags: chat, capability-boundary, refusal-integrity
 
 ### CH-050. 定时提醒真跑：说「3 天后提醒我跟进张先生」→ 确认卡 → 落一条待办；再说取消 🔵
 ```
@@ -2308,6 +2318,43 @@
 ```
 真值: agent-notification.scheduled-task-trio
 溯源: 2026-10-19 新增（issue #7027 的用例补齐）：定时提醒是 B 端现有写能力之一，但此前**只有工具面契约用例 AG-011**（走 `[backend-contract]` skip、零 LLM 行为）⇒ 商家说一句「3 天后提醒我跟进张先生」到底能不能落库，评测从来没跑过。本用例覆盖「建 + 取消」两段真实说法。 ｜ tags: chat, scheduled_task, write_path
+
+### CH-051. 能力边界正向：问「能改商品名称吗」不得被误判为不支持（改名是 ✅） 🔵
+```
+你: 你们能帮我把商品名称改一下吗？
+端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
+期望: direct_reply
+数据: 前置（precondition）：`product_update.parameters.properties` 含 `name`，且 `capability_boundary.UNITS.product_rename` 解析为 True（success=true；真值 = app/tools/product_update.py 的 schema + app/agents/capability_boundary.py 的 required_props=name；2026-10-19 实测）
+数据: 正向能力：`product_update(name=…)` 是 B 端可写面（`capability_boundary.UNITS.product_rename` required_props=name；`PRODUCT_SYSTEM_PROMPT` 与 `prompts/product.md` 都写改名可做）；回答应确认可以改名（或问清要改哪个商品），不出现 forbidden_text。
+数据: 本条是 #7291 投影段「✅ 清单不全」的反向对照：如果模型把「上下架不在能力内」泛化成「改名也不在能力内」，本用例必须红。
+前置: 前置 = 改名是可写能力：`product_update.parameters.properties` 含 `name`，且 `capability_boundary.UNITS.product_rename` 的 required_props=name 解析为 True（2026-10-19 实测）；前置不成立 ⇒ 模型可能被投影段误导成误拒，判红会伪装成「agent 不听话」
+禁词: 改名不在能力内
+禁词: 不支持改名
+禁词: 不能改名
+禁词: 改不了名
+禁词: 没有改名能力
+必须: {'any_of': ['改名', '名称']}
+```
+溯源: 2026-10-19 新增（issue #7334 二次审计 P0-2 的正向对照）：#7291 的投影段曾只列「商品改价」，而域名 prompt 说改名可做 ⇒ 模型有理由误拒。取号 = 现取 chat.yml 最大号 CH-050 + 1 = CH-051（open PR 现取只有 #7333 生产看板改名，不含 chat 用例面；next_case_id 60s 读在飞面超时，合并前若撞号会改号）。 ｜ tags: chat, capability-boundary, false-refusal
+
+### CH-052. 上下架按裁定 A 不做：问「批量下架」不得声称已下架，须给商品管理落点 🔵
+```
+你: 帮我把这两款商品批量下架
+端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
+期望: direct_reply
+数据: 前置（precondition）：`product_update.parameters` 无 status、`product_batch_update.batch_type.enum` 无 product_status（success=true；真值 = backend/ai-agent-service/tests/test_capability_boundary.py::test_decided_off_status_is_not_exposed_by_tools；2026-10-19 实测）
+数据: 上下架（单件与批量）按用户 2026-10-16 裁定都 ❌（#7334 裁定 A）；`product_update` 无 status 参数、`product_batch_update` 的 batch_type 只剩 product_price / inventory_stock（工具面拒绝，不是靠 prompt 自律）。
+数据: 回答必须给后台落点「商品管理」页；不得声称已下架/已提交/正在下架，也不得发写确认卡。
+前置: 前置 = A 口径已落地：`product_update.parameters` 无 status、`product_batch_update.batch_type.enum` 无 product_status（判据 = backend/ai-agent-service/tests/test_capability_boundary.py::test_decided_off_status_is_not_exposed_by_tools + test_product_batch_update.py::test_status_batch_type_is_rejected）；前置不成立 ⇒ 模型可能真的调用成功，判红会伪装成「agent 不听话」
+禁词: 已下架
+禁词: 已为您下架
+禁词: 已批量下架
+禁词: 批量下架成功
+禁词: 正在下架
+禁词: 已提交下架
+必须: {'any_of': ['后台', '商品管理']}
+```
+溯源: 2026-10-19 新增（issue #7334 二次审计 P0-A）：用户裁定「上下架都 ❌」后，补一条真实说法用例把「不得声称已下架 + 给后台落点」变成机器断言；此前只有 PR-007/PR-025 的退役条目，没有一条在跑的 B 端拒绝用例。取号 = CH-050 + 2 = CH-052（同 CH-051 的取号说明）。 ｜ tags: chat, capability-boundary, refusal-integrity
 
 ## 跨域（3 case）
 
@@ -9533,13 +9580,13 @@
 必填: product_batch_update(revert) 字段 batch_id
 必须成功: product_batch_update
 ```
-溯源: 2026-09-24 新增（issue #5314 的 Agent 侧包）：批量更新的**两段确认 + 撤销**（工具 `product_batch_update`，契约 = issue #5314 评论「批量更新能力 —— 设计 + 冻结契约」）。本用例覆盖改价批量（`product_price`）+ 撤销入口；上下架批量（`product_status`）、阈值、白名单与结构锁的确定性判据见 PR-109（非 LLM 面）。post_clean 复位两条共享夹具商品的**商品级价**（种子真值：遮光窗帘 168 / 北欧风窗帘 128，#4075 口径）。 ｜ 2026-10-16（issue #7048 **P10**）**第一段收成 OR**（与 P9 给 PR-014 的修法逐字同形，先例可比）：原写法把第一段硬绑在 `interact(component=choice, multiSelect=true)` 一条路径上，而本用例 R1 输入**自己就把集合给全**（两条商品逐一点名）⇒ 发 confirm 明细卡同样满足「改哪些在执行前经商家过目」这一内核。改前红证 = **两次全量权威跑**：run 2131 首跑 `unmatched expectation: interact(component=choice, multiSelect=True)`（重试发 choice 卡才通过 ⇒ 记为 llm-noise 放行）、run 2259 两次尝试同点判红（桶=`unstable` 阻塞）。**未放宽**：`multiSelect` 判据保留在 OR 第一条分支、第二段卡 / `execute` / `revert` / `required_args` 一字未删。 ｜ tags: batch, multi_turn, write, undo, two_stage_confirm
+溯源: 2026-09-24 新增（issue #5314 的 Agent 侧包）：批量更新的**两段确认 + 撤销**（工具 `product_batch_update`，契约 = issue #5314 评论「批量更新能力 —— 设计 + 冻结契约」）。本用例覆盖改价批量（`product_price`）+ 撤销入口；上下架批量（`product_status`）已按 2026-10-16 裁定移除（#7334 裁定 A），阈值、白名单与结构锁的确定性判据见 PR-109（非 LLM 面）。post_clean 复位两条共享夹具商品的**商品级价**（种子真值：遮光窗帘 168 / 北欧风窗帘 128，#4075 口径）。 ｜ 2026-10-16（issue #7048 **P10**）**第一段收成 OR**（与 P9 给 PR-014 的修法逐字同形，先例可比）：原写法把第一段硬绑在 `interact(component=choice, multiSelect=true)` 一条路径上，而本用例 R1 输入**自己就把集合给全**（两条商品逐一点名）⇒ 发 confirm 明细卡同样满足「改哪些在执行前经商家过目」这一内核。改前红证 = **两次全量权威跑**：run 2131 首跑 `unmatched expectation: interact(component=choice, multiSelect=True)`（重试发 choice 卡才通过 ⇒ 记为 llm-noise 放行）、run 2259 两次尝试同点判红（桶=`unstable` 阻塞）。**未放宽**：`multiSelect` 判据保留在 OR 第一条分支、第二段卡 / `execute` / `revert` / `required_args` 一字未删。 ｜ tags: batch, multi_turn, write, undo, two_stage_confirm
 
 ### PR-109. 批量更新 - 阈值 N>50 拒绝分批 + batchType 白名单只有两个 + 两段确认结构锁 + 撤销逐条还原（确定性判据，非 LLM 面） 🔵
 ```
 你: （非 LLM 面）一次提交 51 条批量改价 ⇒ 必须拒绝并提示分批；batch_type 传 product_name ⇒ 必须拒绝；execute/revert 不带 batch_id ⇒ 必须拒绝；preview 必须逐条给出「改前 → 改后」
 数据: 判据① 阈值（边界双侧）：N=51 ⇒ `success=False` / `error=batch_too_large` / suggestion 含「分批」且**不发请求**；N=50 ⇒ 放行（判据是 `> 50`，不是 `>= 50`）
-数据: 判据② batchType 白名单**只有两个**：`product_price`（field=basePrice）/ `product_status`（field=status，取值 on_sale / off_sale）；传 `product_name` ⇒ `batch_type_unsupported` 且建议里点名两个合法值（通用批量有意不做）
+数据: 判据② batchType 白名单**只有两个**：`product_price`（field=basePrice）/ `inventory_stock`（field=stock，单位米）；传 `product_name` / `product_status` ⇒ `batch_type_unsupported` 且建议里点名两个合法值（通用批量有意不做；上下架按 2026-10-16 裁定单件/批量都 ❌，#7334 裁定 A 移除）
 数据: 判据③ 两段确认的**结构锁**：`execute` / `revert` 不带 `batch_id` ⇒ `batch_preview_required` 且不发请求；`batch_id` 只能来自 `preview` ⇒「跳过预览直接执行」在结构上不可达（不是靠 prompt 自律）
 数据: 判据④ 逐条 before → after：preview 返回 `preview[].fields` 逐条（商品ID / 改前价 / 改后价），且**逐字等于** `confirm_value.confirm_card_fields` 的产出（字段投影单一源，不新立第二份投影）
 数据: 判据⑤ 撤销逐条还原：`revert` 打到 `/api/admin/agent/batches/{batchId}/revert`、话术含「还原」；部分失败逐条报告且执行路径**不得**顺带调用 revert（不做整体回滚）；可撤销性以服务端真值字段 `revertible` 为准（`false` ⇒ 话术不得承诺可撤销）
@@ -9548,7 +9595,7 @@
 数据: 红证（可执行）：以上每一条都由 backend/ai-agent-service/tests/test_product_batch_update.py 的对应用例**独立变红**（边界双侧 / 白名单 / 结构锁 / 单一源 / 端点归属 / 权限码 / 接线），不是一起红
 跳过: [backend-contract] 工具契约 / 阈值 / 两段确认结构锁 / 撤销端点归属 —— 全部由 pytest 单测（零 LLM、零网络，HTTP 客户端全程替身）执行，非 LLM 行为，不进入 agent-eval 冒烟
 ```
-溯源: 2026-09-24 新增（issue #5314 的 Agent 侧包）：把「阈值 N>50 拒绝 / batchType 白名单两个 / 两段确认不可跳过 / 撤销逐条还原」从散文变成可执行判据（同 PR-104 / PR-107 的非 LLM 面形态：机器判据在 traces.tests）。LLM 行为面见 PR-108。 ｜ tags: batch, threshold, static-guard, evidence-strength
+溯源: 2026-09-24 新增（issue #5314 的 Agent 侧包）：把「阈值 N>50 拒绝 / batchType 白名单两个 / 两段确认不可跳过 / 撤销逐条还原」从散文变成可执行判据（同 PR-104 / PR-107 的非 LLM 面形态：机器判据在 traces.tests）。LLM 行为面见 PR-108。 ｜ 2026-10-19（issue #7334 裁定 A）：用户裁定「上下架都 ❌」⇒ 移除 `product_status`，白名单改为 `product_price` / `inventory_stock`；判据②同步改判，`test_status_batch_type_is_rejected` 补负向红证。 ｜ tags: batch, threshold, static-guard, evidence-strength
 
 ### PR-014. 批量库存调整 - 两段确认（多选勾选集合 → 逐条「改前库存 → 改后库存」）→ 执行 → 撤销 🔵
 ```
@@ -12072,15 +12119,15 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：826（活跃 137，跳过 689）
-- tier 分布：smoke 12 / normal 758 / adversarial 32
+- 用例总数：828（活跃 139，跳过 689）
+- tier 分布：smoke 12 / normal 760 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
 - 登录认证域：13
 - B 端小程序域：48
 - 分类域：3
-- 对话边界域：49
+- 对话边界域：51
 - 跨域：3
 - 客户域：12
 - 数据域：24
@@ -12129,6 +12176,8 @@
 - CH-047: 页面上下文注入信封不得落库（切回会话时不得把内部提示当用户消息上屏）
 - CH-048: 黄金策回复不得暴露内部路由（后台「订单列表」页(/orders)）—— 源头话术去路由 + 出站清洗兜底 + 负控
 - CH-049: 做不了的事如实说：问「帮我开个客服账号」不得承诺代办，须说清办不了 + 给后台落点
+- CH-051: 能力边界正向：问「能改商品名称吗」不得被误判为不支持（改名是 ✅）
+- CH-052: 上下架按裁定 A 不做：问「批量下架」不得声称已下架，须给商品管理落点
 - DA-008: 智能每日经营简报：企业开关熔断（关闭=不生成+菜单隐藏，issue #3468）
 - DA-009: 智能每日经营简报：数字回填校验（LLM 编造即丢弃，issue #3468）
 - DA-010: 智能每日经营简报：PII 不进 prompt + RLS 隔离（issue #3468）

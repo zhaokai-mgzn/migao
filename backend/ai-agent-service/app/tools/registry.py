@@ -760,7 +760,7 @@ def create_default_registry() -> ToolRegistry:
     registry.register(CategoryManageTool())
     registry.register(ProcessingItemManageTool())
     registry.register(ProductUpdateTool())
-    # 批量更新（issue #5314 的 Agent 侧）：批量改价 / 批量上下架 + 撤销，走冻结契约的
+    # 批量更新（issue #5314 的 Agent 侧）：批量改价 / 批量库存调整 + 撤销，走冻结契约的
     # `/api/admin/agent/batches` 四个端点。注册表只决定「工具存在」；可达性由 persona 的
     # skill 工具集决定（黄金策 product；C 端一律不绑 —— 批量写是商户员工能力）。
     registry.register(ProductBatchUpdateTool())

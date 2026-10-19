@@ -3052,7 +3052,8 @@ _CASE_CH_049 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
-    forbidden_text=['已为您创建', '已帮您创建', '已提交创建申请', '稍后为您创建'],
+    forbidden_text=['已为您创建', '已帮您创建', '已提交创建申请', '稍后为您创建', '正在为您创建', '我这就帮您建', '已经安排', '稍后开通', '同事会联系您', '暂未接线', '未接线'],
+    want_text=[{'round': 1, 'text': '后台'}, {'round': 1, 'text': '员工管理'}, {'round': 2, 'any_of': ['后台', '组织管理', '员工管理']}],
     precondition='前置 = 能力边界投影段在位且如实（`app/agents/capability_boundary.py` 渲染出「员工账号的创建与变更 → 后台「组织管理 → 员工管理」」，2026-10-19 实测 product/staff 两个 prompt 都已注入）；前置不成立 ⇒ 回复没有落点，判红会伪装成「agent 不会答」',
 )
 
@@ -3075,6 +3076,48 @@ _CASE_CH_050 = EvalCase(
     must_succeed=[{'tool': 'scheduled_task_manage'}],
     namespaces=['scheduled_task:跟进张先生'],
     precondition='前置 = 定时提醒流程绑定 `scheduled_task_manage` 且 DEBUG 身份有 admin/operator 角色（`app/graph/skills` 的 reminder skill 绑定 + 工具的 allowed_roles；2026-10-19 B 端可达集实测含该工具）；前置不成立 ⇒ 期望 unmatched，判红会伪装成「agent 不会建提醒」',
+)
+
+# ── CH-051 [NORMAL] 能力边界正向：问「能改商品名称吗」不得被误判为不支持（改名是 ✅）（源: cases/chat.yml）──
+_CASE_CH_051 = EvalCase(
+    id='CH-051',
+    legacy_id='',
+    title='能力边界正向：问「能改商品名称吗」不得被误判为不支持（改名是 ✅）',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['你们能帮我把商品名称改一下吗？'],
+    expectations=['direct_reply'],
+    data_checks=['前置（precondition）：`product_update.parameters.properties` 含 `name`，且 `capability_boundary.UNITS.product_rename` 解析为 True（success=true；真值 = app/tools/product_update.py 的 schema + app/agents/capability_boundary.py 的 required_props=name；2026-10-19 实测）', '正向能力：`product_update(name=…)` 是 B 端可写面（`capability_boundary.UNITS.product_rename` required_props=name；`PRODUCT_SYSTEM_PROMPT` 与 `prompts/product.md` 都写改名可做）；回答应确认可以改名（或问清要改哪个商品），不出现 forbidden_text。', '本条是 #7291 投影段「✅ 清单不全」的反向对照：如果模型把「上下架不在能力内」泛化成「改名也不在能力内」，本用例必须红。'],
+    skip_reason='',
+    tags=['chat', 'capability-boundary', 'false-refusal'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['改名不在能力内', '不支持改名', '不能改名', '改不了名', '没有改名能力'],
+    want_text=[{'any_of': ['改名', '名称']}],
+    precondition='前置 = 改名是可写能力：`product_update.parameters.properties` 含 `name`，且 `capability_boundary.UNITS.product_rename` 的 required_props=name 解析为 True（2026-10-19 实测）；前置不成立 ⇒ 模型可能被投影段误导成误拒，判红会伪装成「agent 不听话」',
+)
+
+# ── CH-052 [NORMAL] 上下架按裁定 A 不做：问「批量下架」不得声称已下架，须给商品管理落点（源: cases/chat.yml）──
+_CASE_CH_052 = EvalCase(
+    id='CH-052',
+    legacy_id='',
+    title='上下架按裁定 A 不做：问「批量下架」不得声称已下架，须给商品管理落点',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我把这两款商品批量下架'],
+    expectations=['direct_reply'],
+    data_checks=['前置（precondition）：`product_update.parameters` 无 status、`product_batch_update.batch_type.enum` 无 product_status（success=true；真值 = backend/ai-agent-service/tests/test_capability_boundary.py::test_decided_off_status_is_not_exposed_by_tools；2026-10-19 实测）', '上下架（单件与批量）按用户 2026-10-16 裁定都 ❌（#7334 裁定 A）；`product_update` 无 status 参数、`product_batch_update` 的 batch_type 只剩 product_price / inventory_stock（工具面拒绝，不是靠 prompt 自律）。', '回答必须给后台落点「商品管理」页；不得声称已下架/已提交/正在下架，也不得发写确认卡。'],
+    skip_reason='',
+    tags=['chat', 'capability-boundary', 'refusal-integrity'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['已下架', '已为您下架', '已批量下架', '批量下架成功', '正在下架', '已提交下架'],
+    want_text=[{'any_of': ['后台', '商品管理']}],
+    precondition='前置 = A 口径已落地：`product_update.parameters` 无 status、`product_batch_update.batch_type.enum` 无 product_status（判据 = backend/ai-agent-service/tests/test_capability_boundary.py::test_decided_off_status_is_not_exposed_by_tools + test_product_batch_update.py::test_status_batch_type_is_rejected）；前置不成立 ⇒ 模型可能真的调用成功，判红会伪装成「agent 不听话」',
 )
 
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
@@ -12275,7 +12318,7 @@ _CASE_PR_109 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['（非 LLM 面）一次提交 51 条批量改价 ⇒ 必须拒绝并提示分批；batch_type 传 product_name ⇒ 必须拒绝；execute/revert 不带 batch_id ⇒ 必须拒绝；preview 必须逐条给出「改前 → 改后」'],
     expectations=[],
-    data_checks=['判据① 阈值（边界双侧）：N=51 ⇒ `success=False` / `error=batch_too_large` / suggestion 含「分批」且**不发请求**；N=50 ⇒ 放行（判据是 `> 50`，不是 `>= 50`）', '判据② batchType 白名单**只有两个**：`product_price`（field=basePrice）/ `product_status`（field=status，取值 on_sale / off_sale）；传 `product_name` ⇒ `batch_type_unsupported` 且建议里点名两个合法值（通用批量有意不做）', '判据③ 两段确认的**结构锁**：`execute` / `revert` 不带 `batch_id` ⇒ `batch_preview_required` 且不发请求；`batch_id` 只能来自 `preview` ⇒「跳过预览直接执行」在结构上不可达（不是靠 prompt 自律）', '判据④ 逐条 before → after：preview 返回 `preview[].fields` 逐条（商品ID / 改前价 / 改后价），且**逐字等于** `confirm_value.confirm_card_fields` 的产出（字段投影单一源，不新立第二份投影）', '判据⑤ 撤销逐条还原：`revert` 打到 `/api/admin/agent/batches/{batchId}/revert`、话术含「还原」；部分失败逐条报告且执行路径**不得**顺带调用 revert（不做整体回滚）；可撤销性以服务端真值字段 `revertible` 为准（`false` ⇒ 话术不得承诺可撤销）', '判据⑥ 权限码与逐条写**同码**：`required_permissions == ["product:create"]`（= `product_update` 的写码；契约正文本写的 `product:update` 在权限目录里**零命中**，用了会永久 403）', "判据⑦ 写面接线：注册表 + 门面导出（`from app.tools import ProductBatchUpdateTool`）+ `product` skill 绑定 + 写标注显式表态（`read_only=False` / `requires_confirmation=True` / `idempotent=True` / `read_only_actions={'preview'}` —— preview 免确认门禁否则两段确认在第一段之后死锁）", '红证（可执行）：以上每一条都由 backend/ai-agent-service/tests/test_product_batch_update.py 的对应用例**独立变红**（边界双侧 / 白名单 / 结构锁 / 单一源 / 端点归属 / 权限码 / 接线），不是一起红'],
+    data_checks=['判据① 阈值（边界双侧）：N=51 ⇒ `success=False` / `error=batch_too_large` / suggestion 含「分批」且**不发请求**；N=50 ⇒ 放行（判据是 `> 50`，不是 `>= 50`）', '判据② batchType 白名单**只有两个**：`product_price`（field=basePrice）/ `inventory_stock`（field=stock，单位米）；传 `product_name` / `product_status` ⇒ `batch_type_unsupported` 且建议里点名两个合法值（通用批量有意不做；上下架按 2026-10-16 裁定单件/批量都 ❌，#7334 裁定 A 移除）', '判据③ 两段确认的**结构锁**：`execute` / `revert` 不带 `batch_id` ⇒ `batch_preview_required` 且不发请求；`batch_id` 只能来自 `preview` ⇒「跳过预览直接执行」在结构上不可达（不是靠 prompt 自律）', '判据④ 逐条 before → after：preview 返回 `preview[].fields` 逐条（商品ID / 改前价 / 改后价），且**逐字等于** `confirm_value.confirm_card_fields` 的产出（字段投影单一源，不新立第二份投影）', '判据⑤ 撤销逐条还原：`revert` 打到 `/api/admin/agent/batches/{batchId}/revert`、话术含「还原」；部分失败逐条报告且执行路径**不得**顺带调用 revert（不做整体回滚）；可撤销性以服务端真值字段 `revertible` 为准（`false` ⇒ 话术不得承诺可撤销）', '判据⑥ 权限码与逐条写**同码**：`required_permissions == ["product:create"]`（= `product_update` 的写码；契约正文本写的 `product:update` 在权限目录里**零命中**，用了会永久 403）', "判据⑦ 写面接线：注册表 + 门面导出（`from app.tools import ProductBatchUpdateTool`）+ `product` skill 绑定 + 写标注显式表态（`read_only=False` / `requires_confirmation=True` / `idempotent=True` / `read_only_actions={'preview'}` —— preview 免确认门禁否则两段确认在第一段之后死锁）", '红证（可执行）：以上每一条都由 backend/ai-agent-service/tests/test_product_batch_update.py 的对应用例**独立变红**（边界双侧 / 白名单 / 结构锁 / 单一源 / 端点归属 / 权限码 / 接线），不是一起红'],
     skip_reason='[backend-contract] 工具契约 / 阈值 / 两段确认结构锁 / 撤销端点归属 —— 全部由 pytest 单测（零 LLM、零网络，HTTP 客户端全程替身）执行，非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['batch', 'threshold', 'static-guard', 'evidence-strength'],
     persona='',
@@ -15617,6 +15660,8 @@ ALL_CASES = (
     _CASE_CH_048,
     _CASE_CH_049,
     _CASE_CH_050,
+    _CASE_CH_051,
+    _CASE_CH_052,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,

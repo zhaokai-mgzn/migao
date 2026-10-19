@@ -785,7 +785,7 @@ TOOL_MENU_NODE: dict[str, str] = {
     "product_manage": "商品管理",
     "product_update": "商品管理",
     "sku_update": "商品管理",
-    # issue #5314：批量改价 / 批量上下架（`product:create` = 商品列表页的写码）
+    # issue #5314：批量改价 / 批量库存调整（`product:create` = 商品列表页的写码）
     "product_batch_update": "商品管理",
     "inventory_manage": "商品管理",
     "batch_stock_query": "商品管理",

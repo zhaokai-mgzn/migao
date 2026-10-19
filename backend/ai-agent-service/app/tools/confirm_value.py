@@ -50,7 +50,8 @@ _CONFIRM_FIELD_LABELS = {
     # 卡片上必须与人话标签成对出现 —— 否则商家看到的只是一个孤零零的"价格"，
     # 「改前 → 改后」的"改前"整个缺失（= 没有预览就让人确认改钱）。
     "before_price": "改前价",
-    # 批量上下架预览（issue #5314）：与 `before_price` **同一形态的镜像** ——
+    # 批量上下架预览（issue #5314；**历史兼容**：B 端已按 2026-10-16 裁定移除 product_status）：
+    # 与 `before_price` **同一形态的镜像** ——
     # 批量 `product_status` 的预览必须成对呈现「改前状态 → 改后状态」，
     # 而 `old_value` 同时是撤销（revert）的唯一依据 ⇒ 卡片上不能只出现改后状态。
     "before_status": "改前状态",
@@ -67,7 +68,7 @@ _CONFIRM_FIELD_LABELS = {
 #: （其余工具如 `product_manage` 的 `price` 仍是「价格」—— 口径只对改价这一对收窄）。
 _PRICE_AFTER_LABEL = "改后价"
 
-#: 同款镜像（issue #5314 的批量上下架）：`status` 在 `before_status` 在场时读作**改后状态**。
+#: 同款镜像（issue #5314 的批量上下架；**历史兼容**，B 端已不再写 status）：`status` 在 `before_status` 在场时读作**改后状态**。
 #: 判据必须在**本模块**（字段投影的单一源）里，否则批量预览就会另立第二份投影。
 _STATUS_AFTER_LABEL = "改后状态"
 

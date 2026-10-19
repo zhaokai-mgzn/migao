@@ -322,7 +322,7 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     # issue #5291：生产域已有专属读码 ⇒ 三端点改挂 `production:view`（写面不变）。
     "processing_order_set_query": ("production:view",),
     "processing_order_update": ("processing:update",),
-    # issue #5314：批量改价 / 批量上下架的端点码与**逐条写同码**（契约 §三「不新开权限面」；
+    # issue #5314：批量改价 / 批量库存调整的端点码与**逐条写同码**（契约 §三「不新开权限面」；
     # 契约正文括注的 `product:update` 在权限目录里不存在 ⇒ 取「同码」这条更硬的判据）。
     "product_batch_update": ("product:create",),
     "product_detail": ("product:list",),

@@ -340,7 +340,7 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
 A5_REANCHOR_ADDITIONS: dict[str, frozenset[str]] = {
     # ── issue #5314（批量更新，Agent 侧）────────────────────────────────────────
     # 形态与窄例外逐条对上：产品决策**新增**了一个 A 档写工具（`product_batch_update`：
-    # 批量改价 / 批量上下架 + 撤销），它回注册表、被 `product` skill 绑定 ⇒ 按 F6 必须有
+    # 批量改价 / 批量库存调整 + 撤销），它回注册表、被 `product` skill 绑定 ⇒ 按 F6 必须有
     # `_VALIDATION_RULES` 规则 ⇒ **域无关**的校验目标表新增一项 ⇒ 仍绑着 `validate_input`
     # 但执行不了它的 3 个 skill（customer_aftersales / customer_order / settings）各 +1 死角。
     # 三条正当性（`test_reanchored_additions_trace_to_a_real_product_change` 逐条核）：

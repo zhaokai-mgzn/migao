@@ -182,7 +182,7 @@ CHANGE_TOOLS_REQUIRED_ON_B_END: dict[str, str] = {
 A_TIER_REVERSIBLE_WRITES: frozenset = frozenset({
     "product_update",        # 商品级统一定价（PATCH /api/admin/agent/products/{id} → basePrice）
     "sku_update",            # 单规格调价（PATCH …/skus/price）
-    "product_batch_update",  # 批量改价 / 批量上下架 + revert 撤销（issue #5314）
+    "product_batch_update",  # 批量改价 / 批量库存调整 + revert 撤销（issue #5314）
     "scheduled_task_manage",  # 建 / 取消「到点提醒」待办（issue #6486 包 2）
 })
 

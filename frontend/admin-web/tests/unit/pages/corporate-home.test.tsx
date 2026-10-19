@@ -72,7 +72,7 @@ describe('CorporateHomePage（官网主页 v4：织物质感重设计 + 真实�
     expect(screen.getByText('窗帘算料报价：按尺寸与工艺算用料，给出估算报价')).toBeInTheDocument()
     expect(screen.getByText('售后受理：售后咨询与申请，工单恒为待商家审核')).toBeInTheDocument()
     // 能力边界写在明处（不把 AI 说成万能）
-    expect(screen.getByText(/写操作只有三类：改价、批量上下架、批量库存调整/)).toBeInTheDocument()
+    expect(screen.getByText(/可写的动作：改价、商品改名、批量改价与批量库存调整、通知标记已读、定时提醒/)).toBeInTheDocument()
     expect(
       screen.getByText(/不改价、不取消订单、不退款、不承诺优惠折扣，也不报库存数量/)
     ).toBeInTheDocument()

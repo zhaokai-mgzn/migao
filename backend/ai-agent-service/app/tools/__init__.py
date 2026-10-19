@@ -107,7 +107,7 @@ __all__ = [
     "NotificationManageTool", "SettingsManageTool",
     "SessionManageTool", "CategoryManageTool", "ProcessingItemManageTool",
     "ProductUpdateTool", "SkuUpdateTool",
-    # 批量更新（issue #5314 的 Agent 侧）：批量改价 / 批量上下架 + 撤销；
+    # 批量更新（issue #5314 的 Agent 侧）：批量改价 / 批量库存调整 + 撤销；
     # 与逐条写同码（product:create），登记形态与其余写工具一致（注册集双向核对 =
     # tests/test_tools_registry.py::TestToolsFacadeCompleteness）
     "ProductBatchUpdateTool",
