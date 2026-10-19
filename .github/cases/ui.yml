@@ -4746,6 +4746,7 @@ cases:
       - "用户 2026-10-18 报障：「原工艺配置页面怎么未下架，从计件工资提示链接可以跳转到原页面，这里应该跳转到新页面了」"
     expectations:
       - tool: direct_reply
+    skip_reason: "[backend-contract] 本用例判的是 admin-web 的**旧路由下架 + 链接面**（/production/routings → 重定向 /settings?domain=operation-prices、全仓无写死旧链接），**没有 Agent 面可跑**：user_inputs 是用户 2026-10-18 的报障原文，expectations 的 direct_reply 只是占位。承载体 = traces.tests 里的 6 个前端单测。2026-10-19 mibao 基线实测它被当成 LLM 用例跑（agent 调 nav_guide / craft_calc_config_query 等 ⇒ 误判红灯，issue #7027）。"
     data_checks:
       - "判据 1·**旧路由重定向**：渲染 `/production/routings` ⇒ `router.replace('/settings?domain=operation-prices')`，且不渲染任何内容（不 404、不落空白）。证据：frontend/admin-web/tests/unit/pages/production-routings-legacy.test.tsx"
       - "判据 2·**旧链接不再存在**：`src/` 里没有写死的 `href` / `redirect(` / `router.push|replace(` 指向 `/production/routings`（注释里的历史说明、`page-context` 的路由映射、`layout.tsx` 的权限前缀不算链接）。证据：同测试文件的 `linksToRetiredRoute()`"
@@ -4779,6 +4780,7 @@ cases:
       - "用户 2026-10-18 裁定：「还是老问题，按钮样式未统一 …… 制定一个统一规范并执行落地」「这个规范包含观星台所有功能，PC&手机端」"
     expectations:
       - tool: direct_reply
+    skip_reason: "[backend-contract] 本用例判的是 admin-web 的**设计系统按钮形态**（icon slot / loading 顶替 / 尺寸 token / 裸 button 冻结台账），**没有 Agent 面可跑**：user_inputs 是用户 2026-10-18 的裁定原文，expectations 的 direct_reply 只是占位。承载体 = traces.tests 里的前端单测。2026-10-19 mibao 基线里它同样被当成 LLM 用例跑（issue #7027）。"
     data_checks:
       - "判据 1·**icon slot**：前置图标走 `Button` 的 `icon` prop（slot 给 `mr-1.5 shrink-0` 且 `aria-hidden`），调用方不再手写 `mr-*`。证据：frontend/admin-web/tests/unit/design-system-buttons.test.tsx"
       - "判据 2·**loading 顶替**：`loading` 时只渲染 spinner，页面自带图标不出现（并排 = 双图标，真机读成「图标重叠」）；`aria-busy` 随 loading。证据：同文件"
