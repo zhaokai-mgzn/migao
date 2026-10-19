@@ -2210,6 +2210,7 @@
 全程禁用: product_manage(create)
 必填: image_recognize() 字段 target_type, images
 必须成功: image_recognize
+跳过: [backend-contract] 本用例要求视觉识别**真的出字段**，而评测栈内 `PRIMARY_MODEL=deepseek-flash`（无视觉模型）⇒ `image_recognize` 必然返回 `recognition_degraded`。2026-10-19 B 端基线实测（run 39185677169）：「must_succeed: image_recognize 共 1 次调用无一成功（R1:recognition_degraded）」—— 红因在环境不在行为；用户 2026-10-19 裁定标 skip_reason。正确判定层 = 工具/识别内核单测（见 traces.tests：test_tools_image_recognize.py / test_vision/test_deep_channel.py）。**重启条件** = 评测栈接入视觉模型后，删本行并恢复 LLM 层断言（跟踪 #7302）。
 ```
 真值: ai-chat.route-actions
 溯源: 2026-10-03 新增（issue #6090）：销 `.github/eval-coverage-baseline.yml` 的 image_recognize 阻塞条目（登记于 2026-09-24 / issue #5368 包 2，跟踪单 #4941）。用例 = 「发图 → 黄金策调 image_recognize → 同页填表」，断言 = 工具调用 + must_succeed + 参数契约（target_type/images）+ 不推诿禁令。**不自动派发真实 LLM 评测**（用户裁定 #4262 / #4974：手动、用户显式触发）—— 真实读数由 #5966 那次 B 端集中跑批给出。 ｜ tags: multimodal, image, vision, image_recognize, mibao, capability
@@ -12051,7 +12052,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：825（活跃 137，跳过 688）
+- 用例总数：825（活跃 136，跳过 689）
 - tier 分布：smoke 12 / normal 758 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
