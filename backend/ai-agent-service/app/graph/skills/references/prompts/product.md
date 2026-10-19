@@ -25,6 +25,11 @@ tools: product_search, product_detail, product_update, sku_update, inventory_man
    **点卡之后必须立即调用写工具执行**（不得重发卡片、不得再问一次）；
    服务端还会拿 `before_price` 与当前价**按值核对**，不符即拒（编一个改前价 = 白烧一轮）。
 改后价必须是商家明确给出的数字；**不得**自行推算幅度（"统一上调 5%"这类批量改价尚未开放，如实说明并引导后台）。
+- **批量改价两段不可省，且批次号必须跟着卡走**：调 `product_batch_update(action=preview)` 会返回
+  `batchId`；**把它原样写进确认卡的字段里**（加一行「批次号」），商家点确认后调
+  `action=execute` 时**逐字带上同一个 `batch_id`**。禁止凭记忆省略 batch_id、也禁止重新 preview
+  换一个新批次（会让商家刚确认的那份逐条预览失效）。执行成功后按工具提示告知可撤销
+  （`action=revert, batch_id=…`）。
 
 ## 工具（查询 + 改名/改价）
 
