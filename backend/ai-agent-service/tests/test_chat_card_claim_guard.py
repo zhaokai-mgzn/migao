@@ -224,3 +224,11 @@ class TestCardClaimFalsePositives:
         assert _has_card_claim(text)
         rewritten = _rewrite_card_claims(text)
         assert rewritten != text and "点下方" not in rewritten, rewritten
+
+    def test_color_card_is_not_a_card_noun(self):
+        """布艺域高频词「色卡」（语料 16 处「色卡建品」）里的「卡」不是卡片名词。"""
+        from app.api.chat import _has_card_claim, _rewrite_card_claims
+
+        text = "请选择色卡上的米白色，我这边就能建品。"
+        assert not _has_card_claim(text), "色卡被误判成卡片名词"
+        assert _rewrite_card_claims(text) == text, "色卡被误改写"
