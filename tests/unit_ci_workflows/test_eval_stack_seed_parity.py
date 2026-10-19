@@ -451,8 +451,19 @@ class TestNoMixedPersonaStack:
         if include:
             personas = sorted(leg.get("persona") for leg in include if leg.get("persona"))
         else:
-            # list 形态：`persona: [mibao, xiaobu]`（post-deploy-eval 现状）
-            personas = sorted(matrix.get("persona") or [])
+            raw = matrix.get("persona")
+            if isinstance(raw, str):
+                # #7340：矩阵由 dispatch 的 persona 输入动态收窄（both / mibao / xiaobu）。
+                # 这里锁「默认两腿都在 + 输入真的参与选择」，不把表达式求值成固定数组。
+                assert "fromJSON" in raw and "github.event.inputs.persona" in raw, (
+                    f"post-deploy-eval 的 matrix.persona 不是动态输入：{raw!r}"
+                )
+                assert "mibao" in raw and "xiaobu" in raw, (
+                    f"post-deploy-eval 的 matrix.persona 丢了双端默认值：{raw!r}"
+                )
+                return
+            # list 形态：`persona: [mibao, xiaobu]`
+            personas = sorted(raw or [])
         assert personas == ["mibao", "xiaobu"], (
             f"post-deploy-eval 的 matrix 腿 persona={personas} —— "
             "必须恰好 mibao + xiaobu 各一条（各自独立栈 + 独立新库，#3515）"

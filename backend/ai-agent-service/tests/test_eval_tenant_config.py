@@ -4,17 +4,16 @@
 ## 为什么这个文件必须有（不是「多写一层测试」）
 
 `app/utils/auth.py` 的 DEBUG 降级身份里，`tenant_id` 曾经写死 `1`。2026-10-04 云测试环境
-重建后 tenant 1「词元通达」连同全部数据已清空 ⇒ 写死 1 会让「**唯一打已部署环境**的评测
-入口」（`agent-eval.yml` → `tests/agent_eval/local_runner.py`，借本分支拿管理员身份）
-落到一个**不存在的租户**，而该入口的唯一触发是 `workflow_dispatch` ⇒ **不会报警**。
-
-修法 = 收敛到 `settings.EVAL_TENANT_ID`（环境变量 `EVAL_TENANT_ID`）。本文件钉住**两侧**：
+重建后一度把云测试租户改到 25；2026-10-19（issue #7340）共享库只剩 tenant 46、25 不存在
+⇒ 建会话在 `sessions_tenant_id_fkey` 上 500。现在统一回 **seed 租户 1**（本地/CI 栈内
+种子租户），并把配置收敛到 `settings.EVAL_TENANT_ID`（环境变量 `EVAL_TENANT_ID`）。
+本文件钉住**两侧**：
 
 | # | 侧 | 断言 |
 |---|---|---|
 | ① | **正向** | DEBUG 档下按配置取租户 ⇒ 生效（管理员身份 / C 端 customer 身份各一条，**逐值**） |
 | ② | **🔴 反向（缺一不可）** | **生产路径**（`DEBUG=False`）下即使有人注入了 tenant（头 / 配置） ⇒ **不生效**（401，永不降级） |
-| ③ | 配置面 | 逐值注入（如 7 / 12345）⇒ 走到身份里的就是注入值；`DEBUG_FALLBACK_TENANT_ID` ≡ `settings.EVAL_TENANT_ID`；默认值 = 云测试租户 25 |
+| ③ | 配置面 | 逐值注入（如 7 / 12345）⇒ 走到身份里的就是注入值；`DEBUG_FALLBACK_TENANT_ID` ≡ `settings.EVAL_TENANT_ID`；默认值 = seed 租户 1 |
 
 只有 ① 会「把一个越权通道当成特性交付」：`tenant_id=1` 是 P0-3（2026-09-03）刚钉住的
 越权面（注释逐字写着「降级为 tenant_id=1 的 dev_user 管理员，导致跨租户数据泄露」）
@@ -29,8 +28,8 @@ from app.utils import auth as auth_mod
 from app.utils.auth import get_current_user
 from fastapi import HTTPException
 
-# 云测试租户的真值（2026-10-04 云测试环境重建；依据见 PR body）
-CLOUD_TEST_TENANT_ID = 25
+# 评测/云测试租户的真值（2026-10-19 / #7340：统一 seed 租户 1）
+CLOUD_TEST_TENANT_ID = 1
 
 
 def _request(headers: dict | None = None) -> MagicMock:
@@ -52,7 +51,7 @@ class TestDebugFallbackTenantIsConfigurable:
         user = await get_current_user(_request({"X-Debug-Role": "mibao"}), authorization=None)
         assert user.role == "admin"
         assert user.tenant_id == auth_mod.DEBUG_FALLBACK_TENANT_ID
-        assert user.tenant_id == CLOUD_TEST_TENANT_ID  # 默认 = 云测试租户
+        assert user.tenant_id == CLOUD_TEST_TENANT_ID  # 默认 = seed 租户
 
     @patch("app.utils.auth.settings")
     @pytest.mark.asyncio
@@ -100,7 +99,7 @@ class TestConfiguredTenantIsTheSingleSource:
     def test_default_points_to_the_cloud_test_tenant(self):
         from app.config import settings
         assert settings.EVAL_TENANT_ID == CLOUD_TEST_TENANT_ID, (
-            f"EVAL_TENANT_ID 默认 {settings.EVAL_TENANT_ID} ≠ 云测试租户 {CLOUD_TEST_TENANT_ID}"
+            f"EVAL_TENANT_ID 默认 {settings.EVAL_TENANT_ID} ≠ seed 租户 {CLOUD_TEST_TENANT_ID}"
         )
 
     def test_env_var_injection_is_honoured(self, monkeypatch):

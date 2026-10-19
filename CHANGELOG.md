@@ -6,6 +6,19 @@
 > **后续条目继续在本文件 `## [Unreleased]` 下累加。**
 
 ## [Unreleased]
+### 评测入口收口：B 端可单腿跑，共享云租户回到 seed 1，建会话外键违例可读（2026-10-19，issue #7340）
+
+改前：B 端评测只能走共享云 `agent-eval.yml`，而共享库只剩 tenant 46、配置却钉 tenant 25
+⇒ `POST /api/chat/sessions` 在 `sessions.tenant_id` 外键上 500，4 次派发全部在建会话阶段失败、
+0 LLM token；同时 `post-deploy-eval.yml` 只能双端一起跑，无法只复验 B 端黄金策。
+
+改后：① `post-deploy-eval` 的 dispatch 新增 `persona`（both / mibao / xiaobu），默认 both；
+单腿只允许 `purpose=debug`，判定用途仍必须 both（单腿不冒充全量判定）；report 给单腿留档，
+debug 失败不建「部署后回归失败」issue。② 共享云评测租户统一回 **seed 租户 1**
+（`config.py` / `local_runner.py` / `agent-eval.yml` 三处同值；旧 tenant 25 已不存在），
+并按 `fixtures/*_eval_seed.sql` 恢复租户数据；共享云 SWAS compose 也显式钉 `EVAL_TENANT_ID=1`
+（environment 覆盖 `.env.ai-agent` 残留旧值）。③ `SessionMemory.create_session` 捕获
+`IntegrityError`，日志点名约束（如 `sessions_tenant_id_fkey`）与 sqlstate，不再只剩裸 500。
 ### AI 商品图额度用尽后不再断链：翻译模型不再排进回落链（2026-10-19，issue #7341）
 
 改前：默认回落链把 `qwen-mt-image-2.0`（**图片翻译**模型）排在 `qwen-image-2.1-turbo` 前面；免费额度
