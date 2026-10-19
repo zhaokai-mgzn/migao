@@ -6,6 +6,16 @@
 > **后续条目继续在本文件 `## [Unreleased]` 下累加。**
 
 ## [Unreleased]
+### 语音「未听清」不再吞掉真实原因：0 字节录音本地就不出网，服务端 4xx 原因原样回显（2026-10-19，issue #7310）
+
+改前：B 端 H5「按住说话」在华为 ArkWeb（支付宝 webview）上 7 次全部失败 —— 内核在 `stop()` 时补发一个
+**空 Blob**，客户端只判 `chunks.length` 就把 **0 字节音频** POST 出去；服务端 400「音频文件为空」，
+而客户端把所有非 200 一律降级成同一句「未听清，请重试」（同期 iPhone 16/16 成功，故障只在客户端录音腿）。
+改后：0 字节录音**本地拒收**（提示「未检测到声音，已取消转写」），上传前再兜一层；服务端的用户可读
+`detail`（400/503）原样回显，鉴权类英文 detail 不透传；服务端四个拒收分支各记一条带 `size` 的
+warning（此前只留 `status=400`，原因只能靠响应体字节数反解）。
+判据 = `frontend/bmini-app/tests/voice-transcribe.test.ts`、`tests/voice-browser-recorder.test.ts`、
+`backend/ai-agent-service/tests/test_asr.py::TestAsrRejectLogging`。
 ### 「3 天后提醒我跟进张先生」不再靠分类器猜：定时提醒问法确定性命中（2026-10-19，关联 issue #7038）
 
 改前：「定时提醒 / 到点提醒 / 待办提醒 / 提醒我跟进」这类问法在规则层没有关键词，整句交给

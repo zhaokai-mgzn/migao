@@ -40,6 +40,16 @@ MAX_AUDIO_DURATION_S = 60          # 最长 60 秒
 MIN_AUDIO_SIZE = 1024
 
 
+def _log_reject(reason: str, tenant_id, size: int, filename: Optional[str], content_type: Optional[str]) -> None:
+    """拒收必须**原因可读**（#7310：2026-10-19 生产 7 次 400 只记 `status=400`，
+    真实原因「0 字节音频」只能靠 nginx 响应体字节数反解才定位到）
+    """
+    logger.warning(
+        f"ASR 拒收：{reason} | tenant={tenant_id}, size={size} bytes, "
+        f"filename={filename!r}, content_type={content_type!r}"
+    )
+
+
 class TranscribeResponse(BaseModel):
     """语音转文字响应"""
     text: str = Field(description="转写文本")
@@ -212,11 +222,14 @@ async def transcribe_audio(
     # 校验文件大小与有效性（#2984：空/极小音频给友好 400，不再裸 500）
     audio_data = await audio.read()
     if len(audio_data) == 0:
+        _log_reject("音频为空", current_user.tenant_id, len(audio_data), audio.filename, audio.content_type)
         raise HTTPException(status_code=400, detail="音频文件为空，未检测到声音")
     if len(audio_data) < MIN_AUDIO_SIZE:
         # 极小文件 = 空口录音/误触录音，ASR 无法识别，前置拦截省一次外部调用
+        _log_reject("音频过小", current_user.tenant_id, len(audio_data), audio.filename, audio.content_type)
         raise HTTPException(status_code=400, detail="未检测到有效音频内容，录音可能过短或麦克风未开启")
     if len(audio_data) > MAX_AUDIO_SIZE:
+        _log_reject("音频过大", current_user.tenant_id, len(audio_data), audio.filename, audio.content_type)
         raise HTTPException(status_code=400, detail=f"音频文件过大，最大 {MAX_AUDIO_SIZE // 1024 // 1024}MB")
 
     # 推断格式
@@ -232,6 +245,13 @@ async def transcribe_audio(
         # WebM/MP3 有损压缩，按较高码率 128kbps 估算
         estimated_s = len(audio_data) / (128 * 1024 / 8)
     if estimated_s > MAX_AUDIO_DURATION_S + 5:  # 5s 容差
+        _log_reject(
+            f"时长超限（约 {int(estimated_s)}s）",
+            current_user.tenant_id,
+            len(audio_data),
+            audio.filename,
+            audio.content_type,
+        )
         raise HTTPException(
             status_code=400,
             detail=f"音频时长约 {int(estimated_s)}s，超过上限 {MAX_AUDIO_DURATION_S}s",

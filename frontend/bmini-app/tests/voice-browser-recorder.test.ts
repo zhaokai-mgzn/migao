@@ -32,6 +32,8 @@ import { isVoiceSupported, startRecording, stopRecording } from '../src/utils/vo
 class FakeMediaRecorder {
   static instances: FakeMediaRecorder[] = []
   static isTypeSupported = (mime: string) => mime.includes('webm') || mime.includes('mp4')
+  /** 模拟「内核在 stop 时补发一个空 Blob」——华为 ArkWeb 上的实测形态（issue #7310） */
+  static emitEmpty = false
   mimeType: string
   state = 'inactive'
   ondataavailable: ((e: any) => void) | null = null
@@ -46,7 +48,8 @@ class FakeMediaRecorder {
   }
   stop() {
     this.state = 'inactive'
-    this.ondataavailable?.({ data: new Blob(['audio-bytes'], { type: this.mimeType }) })
+    const bytes = FakeMediaRecorder.emitEmpty ? [] : ['audio-bytes']
+    this.ondataavailable?.({ data: new Blob(bytes, { type: this.mimeType }) })
     this.onstop?.()
   }
 }
@@ -75,6 +78,7 @@ function removeRecorder() {
 beforeEach(() => {
   jest.clearAllMocks()
   FakeMediaRecorder.instances = []
+  FakeMediaRecorder.emitEmpty = false
   // 本文件判的是 **h5 分支**（`getRecorder()` 在 h5 直接 return null ⇒ 走浏览器录音）。
   // 不设它的话会落到「非 h5」分支去碰 `Taro.getRecorderManager()` 的 mock，判据就测错了对象。
   process.env.TARO_ENV = 'h5'
@@ -125,5 +129,15 @@ describe('B 端 H5 浏览器录音链路（issue #6596）', () => {
     )
     startRecording()
     await expect(stopRecording()).rejects.toThrow(/麦克风权限/)
+  })
+
+  it('🔴 录音器只回 0 字节 chunk ⇒ 本地拒收，不交回可上传的 URL（issue #7310 生产实证）', async () => {
+    // 华为 ArkWeb（支付宝 webview）实测：请求体 0 字节 → 服务端 400「音频文件为空」
+    // → 客户端把所有非 200 吞成「未听清，请重试」。0 字节音频**根本不该出网**。
+    installRecorder()
+    FakeMediaRecorder.emitEmpty = true
+    startRecording()
+    await expect(stopRecording()).rejects.toThrow(/未检测到声音/)
+    expect((URL as any).createObjectURL).not.toHaveBeenCalled()
   })
 })

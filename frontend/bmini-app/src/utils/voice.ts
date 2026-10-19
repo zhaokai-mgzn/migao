@@ -26,7 +26,12 @@ import Taro from '@tarojs/taro'
 import { getToken } from './auth'
 import { AI_API_BASE_URL } from './constants'
 import { isH5 } from './platform'
-import { startBrowserRecording, supportsBrowserRecording, type BrowserRecording } from './voiceBrowserRecorder'
+import {
+  startBrowserRecording,
+  supportsBrowserRecording,
+  NO_AUDIO_MESSAGE,
+  type BrowserRecording,
+} from './voiceBrowserRecorder'
 
 export interface VoiceResult {
   text: string
@@ -38,6 +43,8 @@ interface TranscribeResponse {
   text?: string
   duration_ms?: number
   error?: { message?: string }
+  /** 服务端 4xx/5xx 的用户可读原因（`app/api/asr.py` 逐条维护，issue #7310） */
+  detail?: string
 }
 
 // ── 录音器懒加载单例（顶层禁止调用）──
@@ -181,6 +188,8 @@ export async function transcribeFile(tempFilePath: string): Promise<VoiceResult 
 
   if (isH5()) {
     const blob = await resolveAudioBlob(tempFilePath)
+    // 0 字节音频**不出网**（issue #7310：服务端只会 400「音频文件为空」，再被 UI 吞成「未听清」）
+    if (blob.size === 0) throw new Error(NO_AUDIO_MESSAGE)
     const form = new FormData()
     form.append('audio', blob, audioFileName(blob))
     form.append('language', 'zh')
@@ -221,6 +230,10 @@ export async function transcribeFile(tempFilePath: string): Promise<VoiceResult 
   }
 
   if (statusCode !== 200 || !parsed.text) {
+    // 400/503 的 detail 是**面向商家的可行动文案**（去重录音 / 靠近麦克风 / 稍后重试）；
+    // 401/403 等鉴权 detail 是英文（Not authenticated），**不透传** —— 仍走调用方的「未听清」（issue #7310）
+    const detail = statusCode === 400 || statusCode === 503 ? String(parsed.detail || '').trim() : ''
+    if (detail) throw new Error(detail)
     return null
   }
 
