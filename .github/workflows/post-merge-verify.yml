@@ -118,7 +118,9 @@ concurrency:
 jobs:
   verify:
     name: Post-Merge Verify (定向跑判据面)
-    runs-on: ubuntu-latest
+    # 钉版（issue #7365）：ubuntu-latest 已滚到 26.04，不再自带 PG 二进制（initdb/pg_ctl）
+    # ⇒ 真库判据的前置断言会失败。装 PG 不可行（apt 装到 18，BIN_DIRS 只认 14/15/16）。
+    runs-on: ubuntu-24.04
     # 上限（**不是判据**）：最坏情形 = 水位取不到退回 40 个提交的窗口，而该窗口实测命中
     # `tests/unit_ci_workflows` 的**绝大部分**（现取 371 个判据文件里 296 个）⇒ 本腿在**一个** runner 上
     # 要干 `pr-check.yml` **两片**的活（`ci workflow helper unit tests` 两个 matrix 分片各自

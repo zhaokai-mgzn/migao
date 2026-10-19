@@ -1182,7 +1182,7 @@ def main(argv=None):
     parser.add_argument("--json", action="store_true", help="写 JSON 结果文件")
     parser.add_argument("--json-file", default="growth-gate-result.json")
     parser.add_argument("--coverage-threshold", type=float, default=None,
-                        help="覆盖率%门禁阈值（如 60）；不设则跳过覆盖率检查")
+                        help="覆盖率%%门禁阈值（如 60）；不设则跳过覆盖率检查")
     parser.add_argument("--coverage-report",
                         help="覆盖率报告路径（jacoco.xml / coverage.json / coverage-summary.json）")
     parser.add_argument("--coverage-type", choices=["jacoco", "coverage", "vitest"],
