@@ -191,3 +191,36 @@ class TestStreamCardClaimGuard:
         saved = sm.save_message.await_args.kwargs.get("content")
         assert saved == CLAIM_SET, saved
         assert not any("确认卡片未显示" in e for e in events), "有 interact 调用不得追加提示"
+
+
+class TestCardClaimFalsePositives:
+    """判据的**负例**：不是"指向聊天卡片"的话术不得命中（否则改写 + 追加「确认卡片未显示」）。
+
+    用户 2026-10-19 报障：「有时候黄金策返回的文字末尾带一句（注：确认卡片未显示，请直接回复
+    确认继续），事实上回复的内容没有需要用户确认的」。复现出两条误判路径，均在此钉住。
+    """
+
+    def test_page_action_confirm_is_not_a_card_claim(self):
+        """「点击确认收货」是**页面动作**，不是指向聊天卡片（否则会把正常指引改成回复『确认』）。"""
+        from app.api.chat import _has_card_claim, _rewrite_card_claims
+
+        text = "您可以点击确认收货，系统会自动结算。"
+        assert not _has_card_claim(text), "页面动作被误判成卡片声称"
+        assert _rewrite_card_claims(text) == text, "页面动作被误改写"
+
+    def test_color_khaki_is_not_a_card_noun(self):
+        """布艺域高频词「卡其色」里的「卡」不是卡片名词（否则会改成「回复『确认』其色」）。"""
+        from app.api.chat import _has_card_claim, _rewrite_card_claims
+
+        text = "选择卡其色的话，货期会快一些。"
+        assert not _has_card_claim(text), "颜色词被误判成卡片名词"
+        assert _rewrite_card_claims(text) == text, "颜色词被误改写"
+
+    def test_real_card_claim_still_rewritten(self):
+        """正向对照：真·卡片声称必须仍被改写（本次收紧不得把判据松开）。"""
+        from app.api.chat import _has_card_claim, _rewrite_card_claims
+
+        text = "请点下方确认卡片完成设置。"
+        assert _has_card_claim(text)
+        rewritten = _rewrite_card_claims(text)
+        assert rewritten != text and "点下方" not in rewritten, rewritten
