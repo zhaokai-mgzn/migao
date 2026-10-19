@@ -100,7 +100,7 @@ export async function runInboundRecognize(deps: RecognizeFlowDeps): Promise<Reco
     urls.push(await deps.upload(photo))
   }
   const response = await deps.recognize({ images: urls })
-  notices.push('本机没能从照片里解出条码，已改用服务端识别（这一步会调用识别模型）。')
+  notices.push('照片里的条码没认出来，正在换一种方式再认一次（会稍慢一点）。')
   return {
     response,
     route: 'server-vision',

@@ -258,7 +258,11 @@ describe('拍照补打主链：解码优先 / 码空间门禁 / 404-410 分开 /
       lookup: async () => ({ success: true, message: '' }),
     })
     expect(state.kind).toBe('error')
-    if (state.kind === 'error') expect(state.message.trim().length).toBeGreaterThan(8)
+    if (state.kind === 'error') {
+      // 工人视角（issue #7316）：说清「系统暂时不可用 + 重试 + 报短码给文员」，不出现研发术语
+      expect(state.message).toContain('系统暂时不可用')
+      expect(state.message).not.toMatch(/服务端|识别模型|解码/)
+    }
   })
 
   it('F5c 手输抄错的码（O/I/L）走完整链路 ⇒ 服务端归一化后拿得到单据（端侧只原样送达）', async () => {

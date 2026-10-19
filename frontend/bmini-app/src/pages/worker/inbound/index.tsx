@@ -260,7 +260,7 @@ export default function WorkerInboundPage() {
     })
     setBusy(false)
     if (result.ok) {
-      setPrintState(`已送出打印（服务端记第 ${result.printCount} 次）`)
+      setPrintState(`已送出打印（系统记第 ${result.printCount} 次）`)
       const refreshed = await getInboundLabel(shortCode)
       if (refreshed.success && refreshed.data) setLabel(refreshed.data)
       return
@@ -334,7 +334,7 @@ export default function WorkerInboundPage() {
               <Text>拍照 / 选图（最多 {MAX_INBOUND_PHOTOS} 张）</Text>
             </View>
             <Text className='admin-card__meta'>
-              已选 {photos.length} 张 · 照片清楚、条码完整时本机直接解码，**不会**调用识别模型
+              已选 {photos.length} 张 · 条码拍清楚，手机当场就能认出来；认不出再交给系统认，会稍慢一点
             </Text>
             <View
               className={`admin-action admin-action--gold${busy || photos.length === 0 ? ' admin-action--disabled' : ''}`}
