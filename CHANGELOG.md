@@ -6,6 +6,14 @@
 > **后续条目继续在本文件 `## [Unreleased]` 下累加。**
 
 ## [Unreleased]
+### AI 商品图额度用尽后不再断链：翻译模型不再排进回落链（2026-10-19，issue #7341）
+
+改前：默认回落链把 `qwen-mt-image-2.0`（**图片翻译**模型）排在 `qwen-image-2.1-turbo` 前面；免费额度
+用尽、链走到它时回 `400 InvalidParameter`，被当成「其它错误」直接上抛 ⇒ **整条链中断**，后面可用的模型
+永远轮不到（线上实测：`AI_PRODUCT_IMAGE_UNAVAILABLE`）。改后：默认链去掉该模型；`400 InvalidParameter`
+视为「该模型接不了这类请求」⇒ 继续切下一个；审核类 400（`DataInspectionFailed`）仍不切模型
+（换模型只是把同一张违规图再送一遍）。判据 = `backend/ai-agent-service/tests/test_generator.py`。
+
 ### 黄金策不再做商品上下架；能力边界补齐「商品改名 / 单规格改价 / 批量撤销 / 全部已读」（2026-10-19，issue #7334）
 
 改前：能力边界投影段写「商品上下架 ❌」，但 `product_update` 仍接受并下发 `status`、
