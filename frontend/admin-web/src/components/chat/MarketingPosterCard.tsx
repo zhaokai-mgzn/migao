@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Download, Image as ImageIcon, RefreshCw } from 'lucide-react'
 import Button from '@/components/ui/Button'
 import { resolveImageUrl } from '@/lib/utils'
+import { extractApiErrorMessage } from '@/lib/api-error'
 import { posterViewFromCard, type MarketingPosterView } from '@/lib/marketing-poster-layout'
 import {
   renderMarketingPoster,
@@ -79,7 +80,7 @@ export default function MarketingPosterCard({ data }: MarketingPosterCardProps) 
       })
       .catch((error: unknown) => {
         if (!mounted) return
-        setState({ status: 'error', message: error instanceof Error ? error.message : '海报生成失败' })
+        setState({ status: 'error', message: extractApiErrorMessage(error, '海报生成失败，请重试') })
       })
     return () => {
       mounted = false
@@ -139,7 +140,7 @@ export default function MarketingPosterCard({ data }: MarketingPosterCardProps) 
             className="w-full rounded-lg border border-neutral-100"
           />
           {!state.hadImage && (
-            <p className="mt-1.5 text-[11px] text-amber-600" data-testid="marketing-poster-no-image">
+            <p className="mt-1.5 text-xs text-amber-600" data-testid="marketing-poster-no-image">
               商品图未能加载，已生成无图海报（商品名/价格/文案完整）
             </p>
           )}
@@ -152,9 +153,9 @@ export default function MarketingPosterCard({ data }: MarketingPosterCardProps) 
             >
               下载海报
             </Button>
-            <span className="text-[11px] text-neutral-400">尺寸 750×1000 PNG</span>
+            <span className="text-xs text-neutral-400">尺寸 750×1000 PNG</span>
           </div>
-          <p className="mt-1.5 text-[11px] text-neutral-400">
+          <p className="mt-1.5 text-xs text-neutral-400">
             想换文案直接告诉黄金策（如「海报主标题改成开门红」），我会重新生成。
           </p>
         </>

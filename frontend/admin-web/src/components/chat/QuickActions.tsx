@@ -47,7 +47,7 @@ export default function QuickActions() {
               key={action.id}
               onClick={() => handleClick(action.prompt)}
               disabled={isStreaming}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-primary-50 border border-neutral-200 hover:border-primary-200 rounded-full text-xs text-neutral-600 hover:text-primary-600 transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-primary-50 border border-neutral-200 hover:border-primary-200 rounded-full text-xs text-neutral-600 hover:text-primary-600 whitespace-nowrap transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {iconMap[action.icon] || <Sparkles className="w-3.5 h-3.5" />}
               {action.name}
@@ -61,7 +61,7 @@ export default function QuickActions() {
               onClick={() => handleClick(tool.prompt)}
               disabled={isStreaming}
               data-testid="quick-tool-action"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary-50 hover:bg-primary-100 border border-primary-200 rounded-full text-xs text-primary-700 transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary-50 hover:bg-primary-100 border border-primary-200 rounded-full text-xs text-primary-700 whitespace-nowrap transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {iconMap[tool.icon] || <Sparkles className="w-3.5 h-3.5" />}
               {tool.name}

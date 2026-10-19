@@ -123,6 +123,6 @@ describe('renderMarketingPoster', () => {
   it('拿不到 2d 上下文 ⇒ 抛错（不返回白图）', async () => {
     await expect(
       renderMarketingPoster(DATA, { createCanvas: () => fakeCanvas(null), loadImage: async () => IMAGE }),
-    ).rejects.toThrow(/画布拿不到 2d 上下文/)
+    ).rejects.toThrow(/海报生成失败，请重试/)
   })
 })

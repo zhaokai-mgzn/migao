@@ -91,7 +91,7 @@ function paintText(ctx: PosterContextLike, op: Extract<PosterOp, { kind: 'text' 
 /**
  * 渲染一张营销海报 ⇒ PNG data URL（750×1000）。
  *
- * @throws 画布拿不到 2d 上下文（不静默返回白图）；连无图版面都导不出时原样抛出，
+ * @throws 用户可读的「海报生成失败，请重试」（技术细节只进 console）；连无图版面都导不出时原样抛出，
  *         由组件展示失败态（「海报生成失败，请重试」）。
  */
 export async function renderMarketingPoster(
@@ -103,7 +103,10 @@ export async function renderMarketingPoster(
   canvas.width = layout.width
   canvas.height = layout.height
   const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('海报生成失败：画布拿不到 2d 上下文（不静默返回空白图）')
+  if (!ctx) {
+    console.error('营销海报渲染失败：画布拿不到 2d 上下文')
+    throw new Error('海报生成失败，请重试')
+  }
 
   let image: PosterImageLike | null = null
   if (view.product.image) {
@@ -129,7 +132,10 @@ export async function renderMarketingPoster(
     clean.width = layout.width
     clean.height = layout.height
     const cleanCtx = clean.getContext('2d')
-    if (!cleanCtx) throw new Error('海报生成失败：画布拿不到 2d 上下文（不静默返回空白图）')
+    if (!cleanCtx) {
+      console.error('营销海报渲染失败：画布拿不到 2d 上下文')
+      throw new Error('海报生成失败，请重试')
+    }
     paint(cleanCtx, layout, null)
     return {
       dataUrl: clean.toDataURL('image/png'),
