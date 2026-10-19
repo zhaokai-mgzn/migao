@@ -70,7 +70,7 @@ const EXPECTED_GROUPS: { key: string; name: string; keys: string[] }[] = [
     name: '生产管理',
     // 🔴 2026-10-09（issue #6580）：本组**由 5 项收拢为 3 项** —— 「加工项管理」「工艺配置」
     // 两个菜单项按用户裁定移除（功能体并入一级项「企业基础设置」页内的配置域）⇒
-    // 本组只剩「生产看板 → 智能派单 → 计件工资」。
+    // 本组只剩「作业看板 → 智能派单 → 计件工资」。
     keys: ['production-board', 'production-pool', 'production-piecework', 'quality-inspections'],
   },
   {
@@ -474,20 +474,20 @@ describe('resolveActivePath：命中项里取**最长**（否则会出现两项�
     ['/dashboard 归「经营看板」', '/dashboard', '/dashboard'],
     ['根路径 / 归「经营看板」', '/', '/dashboard'],
     ['/orders/new 归「订单列表」', '/orders/new', '/orders'],
-    ['/production 归「生产看板」', '/production', '/production'],
+    ['/production 归「作业看板」', '/production', '/production'],
     ['/production/pool ↔ /production 同时命中 ⇒ 取最长', '/production/pool', '/production/pool'],
     ['/production/saving-board 同时命中 /production ⇒ 取最长', '/production/saving-board', '/production/saving-board'],
     ['/production/remnants 同时命中 /production ⇒ 取最长', '/production/remnants', '/production/remnants'],
     // 🔴 2026-10-09（issue #6580）：「加工项管理」菜单项已移除（`/production/processing` 现为重定向薄壳、
-    // 无菜单节点）⇒ 该深链**只**命中 `/production`（生产看板）⇒ 高亮生产看板（不再是最长命中自己的项）。
-    ['旧深链 /production/processing 只命中 /production ⇒ 高亮「生产看板」（#6580 移除该菜单项）', '/production/processing', '/production'],
+    // 无菜单节点）⇒ 该深链**只**命中 `/production`（作业看板）⇒ 高亮作业看板（不再是最长命中自己的项）。
+    ['旧深链 /production/processing 只命中 /production ⇒ 高亮「作业看板」（#6580 移除该菜单项）', '/production/processing', '/production'],
     ['/inbound-orders 只命中自己', '/inbound-orders', '/inbound-orders'],
     // issue #5844：建单页从弹窗改成独立整页 ⇒ 深链 /inbound-orders/new 必须仍高亮「入库单」
     // （侧边栏 + 面包屑都靠 resolveActivePath；漏了会让新页「哪一项都不高亮」）
     ['/inbound-orders/new 归「入库单」（issue #5844）', '/inbound-orders/new', '/inbound-orders'],
     ['/notifications（独立项）', '/notifications', '/notifications'],
-    // issue #4439：真实菜单下的**用户可见判据** —— 旧深链必须高亮「生产看板」
-    ['旧深链 /processing-orders/{id}/production ⇒ 高亮「生产看板」（issue #4439）', '/processing-orders/88/production', '/production'],
+    // issue #4439：真实菜单下的**用户可见判据** —— 旧深链必须高亮「作业看板」
+    ['旧深链 /processing-orders/{id}/production ⇒ 高亮「作业看板」（issue #4439）', '/processing-orders/88/production', '/production'],
   ])('%s', (_name, current, expected) => {
     expect(resolveActivePath(allPaths, current as string)).toBe(expected)
   })
@@ -501,7 +501,7 @@ describe('resolveActivePath：命中项里取**最长**（否则会出现两项�
   })
 
   it('#4439 判别力：把别名表去掉 ⇒ 旧深链必然 0 项高亮（这条断言就是它存在的理由）', () => {
-    // 正向：别名在 ⇒ 命中「生产看板」
+    // 正向：别名在 ⇒ 命中「作业看板」
     expect(resolveActivePath(allPaths, '/processing-orders/88/production')).toBe('/production')
     // 反向（判别力自证）：仅用**不含别名的匹配口径**跑同一路径 ⇒ 必须无命中。
     // 这条对照说明：若 `matchesRoute` 退回「只认自身或子路径」，本用例的第一行就会红。
@@ -563,7 +563,7 @@ describe('resolveActiveGroupKey / initialExpandedGroups：默认只展开当前�
   })
 
   it('同前缀兄弟项不得抢走归组（回归 #5271 自动验收抓出的真 bug）', () => {
-    // 机制：曾用「取**首个**含命中项的组」，而 `/production`（生产看板）按「自身或子路径」前缀匹配
+    // 机制：曾用「取**首个**含命中项的组」，而 `/production`（作业看板）按「自身或子路径」前缀匹配
     // **也**命中 `/production/remnants` ⇒ 归到 `production-center`，导致**冷加载**该页时
     // 生产管理被展开、所在组收起，当前项（余料台账 / 省料看板）在侧边栏里**看不见**。
     // 现口径：先按最长前缀定出唯一激活项，再取它所属组。
@@ -694,9 +694,9 @@ describe('searchMenu：命中面 = 菜单名 ∪ 组名 ∪ keywords（+ 排序�
   it.each([
     ['菜单名前缀（rank 0）', '订单', ['orders']],
     // 🔴 #6580：「加工项管理」「工艺配置」两个菜单项已移除（其 keywords 里的「生产」族别名随之消失）
-    // ⇒ 「生产」只剩**菜单名前缀**命中「生产看板」这一项。
+    // ⇒ 「生产」靠**旧名关键词**「生产看板」命中「作业看板」这一项（rank 2）。
     // ⚠️ 另两项（智能派单 / 计件工资）靠**组名**「生产管理」命中（rank 3，同档内按菜单自身顺序）
-    ['菜单名前缀（rank 0）', '生产', ['production-board', 'production-pool', 'production-piecework', 'quality-inspections']],
+    ['旧名关键词（rank 2）+ 组名（rank 3）', '生产', ['production-board', 'production-pool', 'production-piecework', 'quality-inspections']],
     ['拼音首字母 keywords（rank 2）', 'ddlb', ['orders']],
     ['拼音首字母 keywords（rank 2）', 'yltz', ['production-remnants']],
     ['拼音首字母 keywords（rank 2）', 'sckb', ['production-board']],
@@ -788,7 +788,7 @@ describe('权限过滤的端到端口径（可见项 key 集合，逐条精确�
     ],
     [
       '生产（读码+管理码）/仓管混合权限 ⇒ 生产管理组 2 项 + 仓储与物料组 2 项 + 一级项「企业基础设置」（#6580）',
-      // issue #5291：生产看板/计件工资挂**读**码 production:view。
+      // issue #5291：作业看板/计件工资挂**读**码 production:view。
       // 🔴 issue #5699（P4）：**每个子菜单恰好一个码** —— 智能派单 = processing:view（该页读码）、
       // 省料看板 = product:list（该页读码）⇒ 本组权限（读码+管理码、无 product:list、无 processing:view）
       // 里这两项**都不在**。
@@ -800,7 +800,7 @@ describe('权限过滤的端到端口径（可见项 key 集合，逐条精确�
       },
       [
         // 顺序 = 渲染顺序：**最前席位**先出现（它的码 `dashboard:view` 在本权限集里），
-        // 然后 生产管理组（生产看板 → 计件工资）→ 仓储与物料组（入库单 → 余料台账）；
+        // 然后 生产管理组（作业看板 → 计件工资）→ 仓储与物料组（入库单 → 余料台账）；
         // 尾席位一级项各自按自己的码判定 —— 「商品管理」要 product:list（本权限集**无** ⇒ 不出现）、
         // 「企业基础设置」要 production:view（本权限集**有** ⇒ 出现）。
         'dashboard',
@@ -823,10 +823,10 @@ describe('权限过滤的端到端口径（可见项 key 集合，逐条精确�
       ['production-remnants', 'notifications'],
     ],
     [
-      '只持生产**读**码 production:view ⇒ 生产看板/计件工资/一级项「企业基础设置」（#6580）在；智能派单/余料/省料**不在**',
+      '只持生产**读**码 production:view ⇒ 作业看板/计件工资/一级项「企业基础设置」（#6580）在；智能派单/余料/省料**不在**',
       { permissions: ['production:view'] },
       [
-        // 🔴 #6580：生产管理组只剩「生产看板 → 计件工资」（加工项管理/工艺配置已移除）
+        // 🔴 #6580：生产管理组只剩「作业看板 → 计件工资」（加工项管理/工艺配置已移除）
         'production-board',
         'production-piecework',
         // 「企业基础设置」节点码 = 本码 ⇒ 一级项落在**所有分组之后**、通知中心之前

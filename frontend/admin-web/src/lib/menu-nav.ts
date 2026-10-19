@@ -236,7 +236,7 @@ export function resolveActivePath(paths: string[], pathname: string | null): str
  * 🔴 **必须与 `resolveActivePath` 同源**：先按「最长前缀」定出**唯一激活项**，再取它所属的组。
  * 曾经的实现是「取**首个**含命中项的组」，被实测证伪（issue #5271 的自动验收抓出）：
  * `/production/remnants`（余料台账，属**仓储与物料**组）会被**生产管理**组的 `/production`
- * （生产看板）**前缀命中**，而生产管理组在数组里更靠前 ⇒ 展开的是生产管理组、仓储与物料组收起，
+ * （作业看板）**前缀命中**，而生产管理组在数组里更靠前 ⇒ 展开的是生产管理组、仓储与物料组收起，
  * **当前项被高亮却看不见**（违反交互契约②）。穷举 20 项实测：只有 `/production/remnants`
  * 与 `/production/saving-board` 两条命中该形态（`/production/processing-fees` 是同族但属重定向页）。
  */

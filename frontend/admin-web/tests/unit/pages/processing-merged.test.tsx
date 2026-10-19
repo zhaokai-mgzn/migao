@@ -133,11 +133,11 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     expect(productionPaths).not.toContain('/inbound-orders')
     expect(productionPaths).not.toContain('/production/remnants')
     expect(productionPaths).not.toContain('/production/saving-board')
-    // issue #5291：生产看板/工艺配置/计件工资 = 读码 production:view；
+    // issue #5291：作业看板/工艺配置/计件工资 = 读码 production:view；
     // 🔴 issue #5699（P4）：智能派单 = 该页读码 processing:view（节点码 ≡ 页面第一屏读码）；
     // #5778：加工项管理 = production:view。
     expect(productionGroup()!.children.map((c) => c.permissionCode)).toEqual([
-      'production:view',    // 生产看板
+      'production:view',    // 作业看板
       'processing:view',    // 智能派单
       'production:view',    // 计件工资
       'production:inspect', // 质检记录（issue #7140）

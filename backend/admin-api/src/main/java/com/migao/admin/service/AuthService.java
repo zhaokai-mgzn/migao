@@ -1388,19 +1388,19 @@ public class AuthService {
         // 🔴 2026-10-09（issue #6580，用户裁定）：本组**再收拢为 3 项** —— 「加工项管理」
         // `/production/processing` 与「工艺配置」`/production/routings` 两个**菜单项已移除**
         //（功能体并入 `/settings` 企业基础设置页内的配置域；旧路径保留为重定向），
-        // 本组现为「生产看板 → 智能派单 → 计件工资」。
+        // 本组现为「作业看板 → 智能派单 → 计件工资」。
         // 三个节点**必须与 MenuController 的静态权限树、前端 config/menu.ts 三处同构**；漏一处
         // 就是「岗位权限页勾得动、侧边栏看不到」（#4203 点名的同族坑）。
         List<UserInfoResponse.MenuItem> productionChildren = new java.util.ArrayList<>();
-        // issue #5291：生产看板 / 计件工资按生产域**读**码门控；智能派单沿用 processing:view。
+        // issue #5291：作业看板 / 计件工资按生产域**读**码门控；智能派单沿用 processing:view。
         // 🔴 注释必须写在 `if` **之外**：`tests/unit_ci_workflows/` 的
         // `test_agent_permission_parity.py` 的 `_iter_menu_auth`（RBAC 单一真值源 P1~P5 的**唯一**
         // auth 菜单解析器）用的形态是 `permissions.contains("X")) {` **紧跟** `var.add(menuItem(...))`
         // —— `{` 与 `.add` 之间插入任何一行（注释也一样）⇒ 该项**静默从读数里消失**（实测：一行注释
-        // 曾让「生产看板」从 `rbac/readings.json` 的 `menus.auth` 里消失，「清单 == 生成物」对账因此判红）。
-        // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）。
+        // 曾让「作业看板」从 `rbac/readings.json` 的 `menus.auth` 里消失，「清单 == 生成物」对账因此判红）。
+        // /production = 作业单唯一入口（issue #4357 与原「加工单」菜单合并）。
         if (isAll || permissions.contains("production:view")) {
-            productionChildren.add(menuItem("production-board", "生产看板", "/production"));
+            productionChildren.add(menuItem("production-board", "作业看板", "/production"));
         }
         // 智能派单（issue #5177）：池化派单的决策屏。issue #5699 **P4** 起节点码 = 该页第一屏**读**码
         // `processing:view`（`ProductionPoolController` 的两个读端点同码）—— 此前节点挂
@@ -1423,7 +1423,7 @@ public class AuthService {
 
         // 仓储与物料分组（#5271 **新组**）：用户 2026-10-06 组内重排为
         // **单据（进 → 账 → 出）→ 台账 → 分析**，与「生产管理」组拆开（一个仓管找「入库单」时
-        // 不该在「生产看板」旁边找）。
+        // 不该在「作业看板」旁边找）。
         // 🔴 入库单（V111，issue #5034）权限码**独立**（inbound:view）且必须落在**自己的 if** 里：
         // 入库是仓储动作、不是加工动作 —— 塞进下面 processing:manage 的判定会让
         // 「有 inbound:view、没有 processing:manage」的仓管看不到菜单（#4203 同族坑）。

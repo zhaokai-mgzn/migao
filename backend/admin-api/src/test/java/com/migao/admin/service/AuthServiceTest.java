@@ -650,7 +650,7 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("生产管理组（#6580 收拢为 3 项 + #5291/#5699 P4）：production:view = 生产看板/计件工资，智能派单 = processing:view")
+    @DisplayName("生产管理组（#6580 收拢为 3 项 + #5291/#5699 P4）：production:view = 作业看板/计件工资，智能派单 = processing:view")
     void currentUserMenusExposeProductionGroup() {
         // issue #5291：生产域新增**读**码 `production:view` —— 「看得见这一页」与「改得动生产数据」
         // 就此分开；**智能派单**仍按 `processing:manage`（同组不同权，其读端点用 processing:view、
@@ -660,9 +660,9 @@ class AuthServiceTest {
         var production = groupByKey(readOnly, "production-center");
         assertThat(production.getName()).isEqualTo("生产管理");
         // 🔴 issue #6580：「加工项管理」「工艺配置」两个菜单项已移除（功能体并入一级项
-        // 「企业基础设置」页内的配置域）⇒ 只持 `production:view` 时本组剩「生产看板 + 计件工资」。
+        // 「企业基础设置」页内的配置域）⇒ 只持 `production:view` 时本组剩「作业看板 + 计件工资」。
         assertThat(namesOf(production.getChildren()))
-                .containsExactly("生产看板", "计件工资");
+                .containsExactly("作业看板", "计件工资");
         assertThat(pathsOf(production.getChildren())).containsExactly(
                 "/production", "/production/piecework");
         // 同组不同权：智能派单**不**随读码一起出现（拆码没有变成「一组一起放行」）
@@ -673,7 +673,7 @@ class AuthServiceTest {
         assertThat(allNames(readOnly)).contains("企业基础设置");
 
         // 🔴 issue #5699（P4，子菜单粒度）之后**各页按自己的码**门控（不再「同组一起放行」）：
-        //   · production:view ⇒ 生产看板 + 计件工资（+ #6580 起的一级项「企业基础设置」）
+        //   · production:view ⇒ 作业看板 + 计件工资（+ #6580 起的一级项「企业基础设置」）
         //   · processing:view ⇒ 智能派单（其页面读码）
         //   · product:list ⇒ 省料看板（其页面读码）
         // 反向断言（只持 processing:manage）：生产管理组**整组不出现**（该组没有任何节点再挂 manage），
@@ -749,7 +749,7 @@ class AuthServiceTest {
         assertThat(pathsOf(inventory.getChildren())).containsExactly("/inbound-orders");
         // 自证渲染面非空（入库单自己）+ 反向：processing:manage 的两项确实被门控挡在外面
         assertThat(allNames(menus)).contains("入库单");
-        assertThat(allNames(menus)).doesNotContain("余料台账", "省料看板", "生产看板");
+        assertThat(allNames(menus)).doesNotContain("余料台账", "省料看板", "作业看板");
     }
 
     @Test

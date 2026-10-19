@@ -34,9 +34,9 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   // 顺序敏感：必须在 /processing 之前（前缀匹配会先命中 /processing）
   { prefix: '/processing-orders', code: 'production:view' },
   { prefix: '/processing', code: 'production:view' },
-  // issue #4357：加工单唯一入口（生产看板）此前**没有**前端权限守卫，而它承接的
+  // issue #4357：作业单唯一入口（作业看板）此前**没有**前端权限守卫，而它承接的
   // 原 /processing-orders 是有的 ⇒ 合并后守卫必须跟着入口走，否则等于砍掉既有护栏。
-  // 🔴 issue #5291：生产域拆出**读**码 `production:view` ⇒ 生产看板 / 工艺配置 / 计件工资按读码；
+  // 🔴 issue #5291：生产域拆出**读**码 `production:view` ⇒ 作业看板 / 工艺配置 / 计件工资按读码；
   // **智能派单 / 余料台账 / 省料看板仍是 `processing:manage`**（同组不同权）⇒ 更具体的子路径
   // 必须排在 `/production` 之前（前缀匹配先命中），否则会把它们一起收权。
   // issue #5699（P4）：与 menu.ts 的节点码同批收敛到页面读码（节点码 ≠ 页面读码 = 判据 12 的残留）。

@@ -5,10 +5,10 @@
 //   issue #5034（V111）再加一项「入库单」（/inbound-orders，权限码 inbound:view）⇒ 三项 → 四项。
 // PG-024（issue #4303，**长期判据 = 加载竞态**）：列表请求时序保护 —— 先发出的慢请求晚到，
 //   其响应必须被丢弃，列表不得回退成旧数据。⚠️ 本文件是该保护的**迁移落点**：
-//   PG-038 把加工单列表页并入生产看板后，搜索/筛选/刷新全由看板承担 ⇒ 竞态保护必须随代码一起搬
+//   PG-038 把加工单列表页并入作业看板后，搜索/筛选/刷新全由看板承担 ⇒ 竞态保护必须随代码一起搬
 //   （留在被合并掉的页面里 = 保护随页面一起消失）。
-// PG-038（issue #4357）：加工单菜单并入生产管理组，且与生产看板**合并为单一入口** ——
-//   ① 侧边栏：订单管理组 = 订单列表 / 售后工单（**不含**加工单）；生产管理组 = 生产看板 / 工艺配置 /
+// PG-038（issue #4357）：加工单菜单并入生产管理组，且与作业看板**合并为单一入口** ——
+//   ① 侧边栏：订单管理组 = 订单列表 / 售后工单（**不含**加工单）；生产管理组 = 作业看板 / 工艺配置 /
 //      计件工资（issue #4490 规格修订后回到 3 项 —— 「加工项管理」归**商品管理**组）；
 //   ② /production 吸收加工单列表页的**全部**既有能力：关键词/状态筛选、重置、刷新、
 //      商品与数量快照摘要、「查看」跳订单详情（**合并 ≠ 丢能力**）；
@@ -187,7 +187,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     //    （功能体并入一级项「企业基础设置」页内的配置域）⇒ 5 → **3 项**。
     //    旧深链 `/production/processing`、`/production/routings` 保留为**重定向薄壳**（不 404）。
     expect(links).toHaveLength(4)
-    expect(links[0].textContent).toContain('生产看板')
+    expect(links[0].textContent).toContain('作业看板')
     expect(links[0]).toHaveAttribute('href', '/production')
     expect(links[1].textContent).toContain('智能派单')
     expect(links[1]).toHaveAttribute('href', '/production/pool')
@@ -236,7 +236,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
   it('「加工单」不再是独立菜单项：交易管理组只余两个业务项（issue #4357；#5778 收窄）', () => {
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
 
-    // 交易管理组：加工单已并入生产管理组（issue #4357 —— 与生产看板合并为单一入口）
+    // 交易管理组：加工单已并入生产管理组（issue #4357 —— 与作业看板合并为单一入口）
     // issue #5271：原「订单管理」组 + 原「客户管理」组的客户列表/财务对账**并为一组** ⇒ 4 项
     expect(screen.getByText('交易管理')).toBeInTheDocument()
     expandGroup('trade-center')
@@ -270,7 +270,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expect(hrefs).not.toContain('/processing-orders')
   })
 
-  it('权限码口径（#5291 + #5699 P4）：生产看板/工艺配置/计件工资 = production:view，智能派单 = processing:view，省料看板 = product:list', () => {
+  it('权限码口径（#5291 + #5699 P4）：作业看板/工艺配置/计件工资 = production:view，智能派单 = processing:view，省料看板 = product:list', () => {
     // issue #4490：合并**不改变权限码** —— 两个旧菜单项本来就是 processing:manage（组内同码）
     const group = menuGroups.find((g) => g.key === 'production-center')
     expect(group).toBeTruthy()
@@ -279,7 +279,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     // 只是它现在挂在**新组**「仓储与物料」下 ⇒ 本用例改判为「按组取码」而不是把它算进本组。
     // 🔴 #6580：本组由 5 项收拢为 3 项（「加工项管理」「工艺配置」菜单项已移除）。
     expect(group!.children.map((c) => c.permissionCode)).toEqual([
-      'production:view',    // 生产看板（issue #5291）
+      'production:view',    // 作业看板（issue #5291）
       'processing:view',    // 智能派单（issue #5699 P4：节点码 = 该页读端点码）
       'production:view',    // 计件工资
       'production:inspect', // 质检记录（issue #7140）
@@ -299,7 +299,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
   })
 })
 
-describe('生产看板页 /production（加工单唯一入口，PG-038）', () => {
+describe('作业看板页 /production（作业单唯一入口，PG-038）', () => {
   beforeEach(() => {
     authMock.state.user.permissions = ['*'] // 默认全权限；「无 order:list」的红线用例自行改写
     mockPush.mockReset()
@@ -497,7 +497,7 @@ describe('生产看板页 /production（加工单唯一入口，PG-038）', () =
     render(<ProductionBoardPage />)
     await waitFor(() => expect(screen.getByTestId('production-row-po-1')).toBeInTheDocument())
 
-    // ① 表头（用户逐字「生产看板的表头风格和其他单据的不一致」）：
+    // ① 表头（用户逐字「作业看板的表头风格和其他单据的不一致」）：
     //    与 `frontend/admin-web/src/components/orders/OrderTable.tsx` 的表头行逐字同源
     //    —— `bg-neutral-50` 底 + `text-neutral-600` 字，字号回到表格自己的 `text-sm`。
     // 注入：改回「无底色 + `text-xs text-neutral-500`」⇒ 下面四条同时红。
@@ -606,7 +606,7 @@ describe('生产看板页 /production（加工单唯一入口，PG-038）', () =
 })
 
 // ── issue #4360：请求扇出 ⇒ 分页 + 懒加载（判据 = HTTP 调用次数）──────────────
-describe('生产看板页 /production 分页 + 懒加载（issue #4360）', () => {
+describe('作业看板页 /production 分页 + 懒加载（issue #4360）', () => {
   const PAGE_SIZE = 20
   const detailCalls = () => mockGetOrderOperations.mock.calls.length
   const rowCount = () => screen.getAllByTestId(/^production-row-po-/).length

@@ -138,7 +138,7 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     # 生产管理（2026-10-06：先备资料 → 再生产与派单 → 最末结算）
     # 🔴 2026-10-09（issue #6580，用户裁定）：「加工项管理」「工艺配置」两个菜单项**移除**
     #（功能体并入 `/settings` 企业基础设置页内的配置域；旧路径保留为重定向）⇒ 本组只剩三项。
-    MenuNode("production-center", "生产看板", "/production", "production:view"),
+    MenuNode("production-center", "作业看板", "/production", "production:view"),
     MenuNode("production-center", "智能派单", "/production/pool", "processing:view"),
     MenuNode("production-center", "计件工资", "/production/piecework", "production:view"),
     # 质检记录（issue #7140 = #5652 的商家面）：节点码 = 该页第一屏读端点码
@@ -247,7 +247,9 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     NavFeature("after-sales", "售后工单（退换货）", (("customer-service", "售后工单"),), ("售后工单", "退换货")),
     NavFeature("orders", "订单列表（订单）", (("trade-center", "订单列表"),), ("订单列表", "订单")),
     NavFeature("finance", "财务对账（对账）", (("trade-center", "财务对账"),), ("财务对账", "对账")),
-    NavFeature("production-board", "生产看板（加工单）", (("production-center", "生产看板"),), ("生产看板", "加工单")),
+    # 2026-10-19（issue #7332）：菜单正名「作业看板」。登记名里保留「作业单 / 加工单 / 原生产看板」三个旧说法：
+    # 判据 6b（problems_aliases_grounded）要求说法与登记名有包含关系；菜单本身只叫「作业看板」。
+    NavFeature("production-board", "作业看板（作业单 / 加工单 / 原生产看板）", (("production-center", "作业看板"),), ("作业看板", "作业单", "加工单", "生产看板")),
     NavFeature("production-pool", "智能派单（派单）", (("production-center", "智能派单"),), ("智能派单", "派单")),
     # 🔴 2026-10-09（issue #6580）：「加工项管理」「工艺配置」两个菜单项已**移除**（功能体并入
     # 「企业基础设置」页内的配置域）⇒ 它们原来的两个登记项**同批删除**，不改成指向 `/settings`：

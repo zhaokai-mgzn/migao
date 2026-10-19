@@ -148,7 +148,7 @@ export default function DashboardPage() {
 
   const emptyText =
     todoResult?.status === 'forbidden'
-      ? '无权限查看生产待办（需生产看板权限）'
+      ? '无权限查看生产待办（需作业看板权限）'
       : todoResult?.status === 'error'
         ? '生产待办加载失败，请下拉刷新重试'
         : todoResult?.status === 'ok'

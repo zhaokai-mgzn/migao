@@ -84,7 +84,7 @@ class MenuControllerTest {
             "订单列表", "财务对账",
             // 🔴 2026-10-09（issue #6580，用户裁定「移除加工项管理和工艺配置这两个菜单」）：
             // 「加工项管理」「工艺配置」两个菜单项已移除（功能体并入「企业基础设置」页内的配置域）。
-            "生产看板", "智能派单", "计件工资",
+            "作业看板", "智能派单", "计件工资",
             // 🔴 2026-10-17（issue #7140）：生产管理组新增「质检记录」（读码 production:inspect）
             "质检记录",
             "入库单", "库存明细", "发货单", "余料台账", "省料看板",
@@ -313,21 +313,21 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("生产管理组（#6580 收拢为 3 项 + #5291/#5699 P4 + #6759 组尾动作码）：生产看板/计件工资 production:view、智能派单 processing:view、加工单操作 processing:update")
+    @DisplayName("生产管理组（#6580 收拢为 3 项 + #5291/#5699 P4 + #6759 组尾动作码）：作业看板/计件工资 production:view、智能派单 processing:view、加工单操作 processing:update")
     void productionCenterGroupMirrorsMenuTs() throws Exception {
         JsonNode production = group(fetchTree(), "production-center");
         assertEquals("生产管理", production.path("label").asText());
         // 🔴 2026-10-09（issue #6580）：本组**由 5 项收拢为 3 项** —— 「加工项管理」「工艺配置」
-        // 两个菜单项按用户裁定移除 ⇒ 只剩「生产看板 → 智能派单 → 计件工资」。
+        // 两个菜单项按用户裁定移除 ⇒ 只剩「作业看板 → 智能派单 → 计件工资」。
         // 🔴 2026-10-12（issue #6759）：**组尾**追加动作码节点「加工单操作」（`processing:update`
         // = 手机端派单的写码）—— 动作节点统一追加在组尾，导航项仍是它之前的连续前缀。
-        assertEquals(List.of("生产看板", "智能派单", "计件工资", "质检记录", "加工单操作"),
+        assertEquals(List.of("作业看板", "智能派单", "计件工资", "质检记录", "加工单操作"),
                 labels(production.path("children")));
         // issue #5699（P4，子菜单粒度）：每个节点码 ≡ 该页第一屏读码 —— 智能派单 = processing:view
         //（ProductionPoolController 两个读端点同码）；工艺配置 = production:view（该页第一屏 6 个读端点
         // 本次整页收敛到该码；两码持有岗位集合逐值相同 ⇒ 零 delta）；#5291 的 production:view
-        // 仍覆盖生产看板与计件工资。
-        // 🔴 #6580：两项移除后组内码为 [生产看板, 智能派单, 计件工资]；#6759 追加 processing:update。
+        // 仍覆盖作业看板与计件工资。
+        // 🔴 #6580：两项移除后组内码为 [作业看板, 智能派单, 计件工资]；#6759 追加 processing:update。
         assertEquals(List.of("production:view", "processing:view", "production:view",
                         "production:inspect", "processing:update"),
                 codes(production.path("children")));
@@ -479,7 +479,7 @@ class MenuControllerTest {
         }
 
         // ③ 两个**导航项**仍是动作节点之前的连续前缀（动作节点只许在组尾）
-        assertEquals(List.of("生产看板", "智能派单", "计件工资", "质检记录"),
+        assertEquals(List.of("作业看板", "智能派单", "计件工资", "质检记录"),
                 labels(processed).subList(0, processed.size() - 1));
         assertEquals(List.of("入库单", "库存明细", "发货单", "余料台账", "省料看板"),
                 labels(inventory).subList(0, inventory.size() - 1));
@@ -543,7 +543,7 @@ class MenuControllerTest {
                         new MenuNode("order:list", "发货单"))),
                 new MenuNode("production-center", "生产管理", List.of(
                         new MenuNode("processing:view", "智能派单"),
-                        new MenuNode("production:view", "生产看板"))));
+                        new MenuNode("production:view", "作业看板"))));
         MenuController.annotateMobileTitles(scratch, mutated);
 
         Map<String, List<String>> got = new LinkedHashMap<>();
@@ -610,7 +610,7 @@ class MenuControllerTest {
                 "名实不符的标注（节点名与面名没有任何公共子串，却把该面挂在它头上）：" + mislabeled);
 
         // ③ 真语料读数：真树上被标注的恰好是这 6 处（同码后继节点一个都不许再带标注）
-        assertEquals(List.of("经营看板", "在线接待", "售后工单", "生产看板", "智能派单", "入库单"),
+        assertEquals(List.of("经营看板", "在线接待", "售后工单", "作业看板", "智能派单", "入库单"),
                 new ArrayList<>(annotated.keySet()),
                 "真树上的标注点必须收敛到这 6 处（实得 = " + annotated + "）");
         // 🔴 2026-10-17（issue #7087）：「每日简报」删除、「经营看板」升为顶层一级项 ⇒ `dashboard:view`
@@ -618,7 +618,7 @@ class MenuControllerTest {
         // 改由 `production:view`（三处承载）承担，见下一个测试。
         assertEquals(List.of("经营看板"), carriers.get("dashboard:view"),
                 "`dashboard:view` 在真树上的承载节点（#7087 起只剩顶层一级项「经营看板」）");
-        assertEquals(List.of("生产看板", "计件工资", "企业基础设置"), carriers.get("production:view"),
+        assertEquals(List.of("作业看板", "计件工资", "企业基础设置"), carriers.get("production:view"),
                 "`production:view` 在真树上的承载节点（「同屏重复 / 名实不符」的语料）");
         // 逐点反向对照：两个同码后继节点在树上存在、但不得带任何标注
         for (String label : List.of("计件工资", "企业基础设置")) {
@@ -640,7 +640,7 @@ class MenuControllerTest {
         // 「经营看板」保留在语料里作**反向对照**（该码只有它一处承载 ⇒ 判据①不得命中它）。
         Map<String, List<String>> perNodeAnnotations = new LinkedHashMap<>();
         perNodeAnnotations.put("经营看板", List.of("数据"));
-        perNodeAnnotations.put("生产看板", List.of("计件工资报表", "生产待办"));
+        perNodeAnnotations.put("作业看板", List.of("计件工资报表", "生产待办"));
         perNodeAnnotations.put("计件工资", List.of("计件工资报表", "生产待办"));
         perNodeAnnotations.put("企业基础设置", List.of("计件工资报表", "生产待办"));
 
@@ -685,12 +685,12 @@ class MenuControllerTest {
     @DisplayName("🔴 #6781 红证②（注入式 · 不读磁盘）：把标注按码复制到每个承载节点 ⇒ 落在非首承载节点上即刻可判红；改回修后形态 ⇒ 绿")
     void injectedPerNodeCopyIsCaughtByTheFirstCarrierRule() {
         // 用真机制（`annotateMobileTitles`）造两棵树：同一组「承载节点」，唯一变量 = **回落策略**。
-        // 承载节点取**真语料**里的一对同码节点：`production:view` = 生产看板（树序首个）+ 计件工资
+        // 承载节点取**真语料**里的一对同码节点：`production:view` = 作业看板（树序首个）+ 计件工资
         // （🔴 2026-10-17 issue #7087：原用 `dashboard:view` 的「经营看板 + 每日简报」，但
         //  「每日简报」与「工作台」组已撤销 ⇒ 换成仍在树上的这一对，判据语义一字未变）。
         List<MenuNode> duplicated = List.of(
                 new MenuNode("production-center", "生产管理", List.of(
-                        new MenuNode("production:view", "生产看板"),
+                        new MenuNode("production:view", "作业看板"),
                         new MenuNode("production:view", "计件工资"))));
         MenuController.annotateMobileTitles(duplicated, MOBILE_SURFACES);
         // 注入「未修形态」：把树序首承载节点的标注按**同一个码**复制到它的同码后继节点上
@@ -709,7 +709,7 @@ class MenuControllerTest {
         // 修后形态（本单实现）：同一个码只标注树序首个承载节点 ⇒ 后继节点零标注
         List<MenuNode> fixed = List.of(
                 new MenuNode("production-center", "生产管理", List.of(
-                        new MenuNode("production:view", "生产看板"),
+                        new MenuNode("production:view", "作业看板"),
                         new MenuNode("production:view", "计件工资"))));
         MenuController.annotateMobileTitles(fixed, MOBILE_SURFACES);
         assertEquals(List.of("计件工资报表", "生产待办"), fixed.get(0).getChildren().get(0).getMobileTitles());
@@ -776,7 +776,7 @@ class MenuControllerTest {
     private static String codeOf(String label) {
         return switch (label) {
             case "经营看板" -> "dashboard:view";
-            case "生产看板", "计件工资", "企业基础设置" -> "production:view";
+            case "作业看板", "计件工资", "企业基础设置" -> "production:view";
             case "智能派单" -> "processing:view";
             case "入库单" -> "inbound:view";
             case "在线接待" -> "agent:session";

@@ -81,7 +81,7 @@ const GROUPS: { key: string; name: string; items: [string, string][] }[] = [
     // 🔴 2026-10-09（issue #6580）：「加工项管理」「工艺配置」两个菜单项按用户裁定**移除**
     //（功能体并入一级项「企业基础设置」页内的配置域）⇒ 本组由 5 项收拢为 3 项。
     items: [
-      ['production-board', '生产看板'],
+      ['production-board', '作业看板'],
       ['production-pool', '智能派单'],
       ['production-piecework', '计件工资'],
       // 质检记录（issue #7140 = #5652 的商家面）：排在本组末尾（三源同构：menu.ts / MenuController / AuthService）
@@ -336,7 +336,7 @@ describe('Sidebar', () => {
     expect(linkFor('售后工单')).toHaveAttribute('href', '/after-sales')
     expect(linkFor('客户列表')).toHaveAttribute('href', '/customers')
     expect(linkFor('财务对账')).toHaveAttribute('href', '/finance')
-    expect(linkFor('生产看板')).toHaveAttribute('href', '/production')
+    expect(linkFor('作业看板')).toHaveAttribute('href', '/production')
     expect(linkFor('智能派单')).toHaveAttribute('href', '/production/pool')
     expect(linkFor('计件工资')).toHaveAttribute('href', '/production/piecework')
     // issue #5271：面料进出与消耗移入新组「仓储与物料」（原生产管理组）
@@ -464,7 +464,7 @@ describe('Sidebar', () => {
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
     expect(activeKeys()).toEqual(['production-pool'])
     expect(getActiveClass(linkFor('智能派单'))).toContain('bg-primary-600')
-    expect(getActiveClass(linkFor('生产看板'))).not.toContain('bg-primary-600')
+    expect(getActiveClass(linkFor('作业看板'))).not.toContain('bg-primary-600')
   })
 
   // ── 分组折叠/展开 ──
@@ -879,7 +879,7 @@ describe('Sidebar', () => {
       expandGroups('inventory-center')
       expect(screen.getByText('余料台账')).toBeInTheDocument()
       expect(screen.queryByText('入库单')).not.toBeInTheDocument()
-      // issue #5291：生产看板/计件工资 改挂读码 production:view ⇒ 只持 processing:manage 时不在
+      // issue #5291：作业看板/计件工资 改挂读码 production:view ⇒ 只持 processing:manage 时不在
       //（#6580：「加工项管理」「工艺配置」两个菜单项已移除）；
       // 🔴 issue #5699（P4）：省料看板节点码 = 该页读码 `product:list`，**智能派单节点码 = processing:view**
       // ⇒ 只持 processing:manage 时两者都**不在**（仓储组只剩余料台账、生产组整组剔除）。

@@ -99,7 +99,7 @@ describe('mobileTitlesByCodeFromTree（整棵树收表）', () => {
       {
         code: 'group-a',
         label: 'A',
-        children: [{ code: 'production:view', label: '生产看板', mobileTitles: ['计件工资报表'] }],
+        children: [{ code: 'production:view', label: '作业看板', mobileTitles: ['计件工资报表'] }],
       },
       { code: 'production:view', label: '企业基础设置', mobileTitles: ['不该覆盖'] },
     ]

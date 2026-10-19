@@ -194,7 +194,7 @@ describe('加工单详情页（商家只读面）', () => {
     render(<OrderDetailPage />)
     await waitFor(() => expect(screen.getByTestId('order-detail-forbidden')).toBeTruthy())
 
-    expect(screen.getByText('无「生产看板」查看权限（需要权限码 production:view）')).toBeTruthy()
+    expect(screen.getByText('无「作业看板」查看权限（需要权限码 production:view）')).toBeTruthy()
     expect(screen.queryByTestId('order-detail-no-processing-order')).toBeNull()
     expect(screen.queryByTestId('order-detail-error')).toBeNull()
   })

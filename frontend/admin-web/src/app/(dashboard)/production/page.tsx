@@ -17,7 +17,7 @@ import { usePermission } from '@/lib/permission'
 import type { PieceworkSummary, ProcessingOrder, ProductionProgress } from '@/types'
 
 /**
- * 生产看板 /production（issue #4203；分页 + 懒加载 issue #4360；**加工单唯一入口** issue #4357）
+ * 作业看板 /production（issue #4203；分页 + 懒加载 issue #4360；**作业单唯一入口** issue #4357）
  *
  * 一屏回答「今天有多少加工单在产、各做到哪一道、各单计件多少钱」：
  * 加工单列表（复用 GET /api/admin/processing-orders）+ 每单工序进度与计件合计
@@ -35,7 +35,7 @@ import type { PieceworkSummary, ProcessingOrder, ProductionProgress } from '@/ty
  * 真值源：docs/curtain-production-rules.md §4 计件 / §5 扫码报工闭环。
  *
  * issue #4357：原「加工单」菜单项（订单管理组）与本页是**同一实体、同一端点**
- * （processingOrderApi.list）的两份渲染 ⇒ 合并为单一入口，本页即加工单唯一入口。
+ * （processingOrderApi.list）的两份渲染 ⇒ 合并为单一入口，本页即作业单唯一入口。
  * 原加工单列表页的能力**一条不丢**地并入本页：关键词/状态筛选、重置、商品与数量快照摘要、
  * 「查看」跳订单详情、筛选空态；其请求时序保护（issue #4303）随搜索能力一并迁入（`reqSeq`）。
  * issue #5913：那个入口**正名为「订单详情」**（「查看」在本行没有确定宾语），且按 `/orders` 的
@@ -209,7 +209,7 @@ export default function ProductionBoardPage() {
   return (
     <div className="p-6 space-y-4">
       <PageHeader
-        title="生产看板"
+        title="作业看板"
         subtitle="作业单在产进度与计件合计"
         actions={
           <Button variant="secondary" size="sm" onClick={refresh} disabled={loading}>
@@ -274,7 +274,7 @@ export default function ProductionBoardPage() {
       {/* issue #6717：本表 `rounded-lg border ... overflow-x-auto` —— 边框在**滚动容器自己**身上。
           `position: sticky` 在带 `border-radius` 的滚动容器内**不**失效（圆角只影响裁剪形状，
           不影响 sticky 的包含块）⇒ 右缘冻结照常生效；两档视口按钮中心点实测均命中自身。
-          🔴 2026-10-17 用户逐字「生产看板的表头风格和其他单据的不一致」⇒ 表头改为与**订单列表**
+          🔴 2026-10-17 用户逐字「作业看板的表头风格和其他单据的不一致」⇒ 表头改为与**订单列表**
           （`frontend/admin-web/src/components/orders/OrderTable.tsx`）逐字同源：
           `bg-neutral-50` 底 + `text-neutral-600` 表头字，字号回到表格的 `text-sm`
           （改前是 `text-xs text-neutral-500` + 无底色 ⇒ 同一仓两种表头）。

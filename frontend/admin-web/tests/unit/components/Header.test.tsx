@@ -529,21 +529,21 @@ describe('Header', () => {
     expect(screen.queryByText('加工项管理')).not.toBeInTheDocument()
     expect(screen.queryByText('工艺配置')).not.toBeInTheDocument()
     expect(screen.queryByText('加工费管理')).not.toBeInTheDocument()
-    // 不得回落到 /production 的「生产看板」（更具体子路径必须先命中）
-    expect(screen.queryByText('生产看板')).not.toBeInTheDocument()
+    // 不得回落到 /production 的「作业看板」（更具体子路径必须先命中）
+    expect(screen.queryByText('作业看板')).not.toBeInTheDocument()
     const nav = document.querySelector('nav')!
     expect(nav.textContent).toBe('企业基础设置')
   })
 
   // 生产管理组面包屑（issue #4357）：加工单并入生产管理组。此前 /production **没有任何面包屑条目**
   // ⇒ 落进兜底分支（当时是「工作台 > 经营看板」），§15.2「面包屑与侧边栏菜单名一致」不成立（本单补）。
-  it('/production 路径面包屑（生产管理 > 生产看板，issue #4357 补）', async () => {
+  it('/production 路径面包屑（生产管理 > 作业看板，issue #4357 补）', async () => {
     mockPathname = '/production'
     await act(async () => {
       render(<Header />)
     })
     expect(screen.getByText('生产管理')).toBeInTheDocument()
-    expect(screen.getByText('生产看板')).toBeInTheDocument()
+    expect(screen.getByText('作业看板')).toBeInTheDocument()
     // 不得回落成兜底面包屑（#7087 起兜底 = 单级「经营看板」）
     expect(screen.queryByText('工作台')).not.toBeInTheDocument()
   })
@@ -580,8 +580,8 @@ describe('Header', () => {
     })
     expect(screen.getByText('仓储与物料')).toBeInTheDocument()
     expect(screen.getByText('余料台账')).toBeInTheDocument()
-    // 不得退化成父路径的「生产看板」（本表 `find` 取首个命中 ⇒ 顺序敏感）
-    expect(screen.queryByText('生产看板')).not.toBeInTheDocument()
+    // 不得退化成父路径的「作业看板」（本表 `find` 取首个命中 ⇒ 顺序敏感）
+    expect(screen.queryByText('作业看板')).not.toBeInTheDocument()
     expect(screen.queryByText('生产管理')).not.toBeInTheDocument()
   })
 
@@ -592,7 +592,7 @@ describe('Header', () => {
     })
     expect(screen.getByText('仓储与物料')).toBeInTheDocument()
     expect(screen.getByText('省料看板')).toBeInTheDocument()
-    expect(screen.queryByText('生产看板')).not.toBeInTheDocument()
+    expect(screen.queryByText('作业看板')).not.toBeInTheDocument()
   })
 
   it('/production/pool 路径面包屑仍是「生产管理 > 智能派单」（不随面料动线搬家）', async () => {
@@ -602,7 +602,7 @@ describe('Header', () => {
     })
     expect(screen.getByText('生产管理')).toBeInTheDocument()
     expect(screen.getByText('智能派单')).toBeInTheDocument()
-    expect(screen.queryByText('生产看板')).not.toBeInTheDocument()
+    expect(screen.queryByText('作业看板')).not.toBeInTheDocument()
   })
 
   // ── issue #5271 移动端抽屉入口（Header 侧）──
