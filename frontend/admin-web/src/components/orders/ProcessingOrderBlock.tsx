@@ -528,7 +528,15 @@ export default function ProcessingOrderBlock({
             </p>
           </div>
         ) : (
-          <p className="mt-2 text-sm text-neutral-400">该订单无需作业单（没有加工项，也不是卖布单）。</p>
+          <>
+            <p className="mt-2 text-sm text-neutral-400">该订单无需作业单（没有加工项，也没有标记为卖布）。</p>
+            {/* 可行动出口（issue #7222）：只宣判不给出路 ⇒ 商家不知道去哪儿安排裁剪。
+                没标售卖形态时系统**不会**生成裁剪 / 打包作业，也不会拦发货（三段静默放行）。 */}
+            <p className="mt-1 text-sm text-neutral-400">
+              如果是卖布单（按米卖布），这张单还没有标记售卖形态 —— 系统不会生成裁剪 / 打包作业，
+              也不会拦发货。请作废后重新下单，并在下单页把「售卖形态」选成「布料」。
+            </p>
+          </>
         )
       )}
 

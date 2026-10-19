@@ -214,12 +214,54 @@ public class ProcessingOrderService {
      * 起落库）⇒ 该行走**布料路线**：部位维 = {@link #FABRIC_POSITION}（第 4 个部位），
      * 主线 = {@code 配料 → 打包}（2 道）。</p>
      *
-     * <p>⚠️ <b>缺键的存量单不得改变既有行为</b>（回归不变量）：判据是**逐字相等**的
-     * {@code "布料"}，缺键 / 其它取值（含 {@code 成品帘}）一律走原派生链。</p>
+     * <p>⚠️ 判据**不再只看这一个键**（issue #7222）：缺键时由
+     * {@link #isFabricSaleLine(Map)} 按已落库的布料专属事实（{@code sellingMethod} / {@code rollCount}）
+     * 兜底 —— API / 米宝 / 回归脚本漏写 {@code saleForm} 时，整条作业链会**三段同时静默放行**。</p>
      */
     public static final String SALE_FORM_FABRIC = "布料";
     /** 第 4 个部位（布料单专用）—— 与 {@code routing.py::FABRIC_POSITION} 逐字同源。 */
     public static final String FABRIC_POSITION = "布料";
+
+    /**
+     * **卖布行判据 —— 唯一实现点**（issue #4493 / #7079 / #7222）。
+     *
+     * <p>① **显式声明优先**：{@code processing_info.saleForm == 布料} ⇒ 卖布行；
+     * 非空且不是布料（如 {@code 成品帘}）⇒ **不是**卖布行 —— 有明确声明就不许被派生信号覆盖。</p>
+     *
+     * <p>② **缺键时按已落库的布料专属事实兜底**（issue #7222）：{@code sellingMethod}
+     * （{@code bulk_cut} 散剪 / {@code full_roll} 整卷）或 {@code rollCount}（整卷售卖，issue #5846）
+     * 非空 ⇒ 卖布行。这两项**只有布料行才有**（下单页上「卷数 / 每卷实际米数」只出现在布料行，
+     * 服务端也只用它做布料整卷分摊）⇒ 不是猜业务，而是把客户端（API / 米宝 / 回归脚本）
+     * **漏写**的声明按已落库事实补回来。漏写的后果 = 作业单 / 派单池 / 发货守卫**三段同时静默放行**，
+     * 工人拿不到裁剪活且不报错。</p>
+     *
+     * <p>③ 两者都没有 ⇒ 返回 {@code false}，保持存量语义（**缺键就是缺，不造值**）。</p>
+     */
+    public static boolean isFabricSaleLine(Map<String, Object> processingInfo) {
+        if (processingInfo == null) {
+            return false;
+        }
+        Object rawSaleForm = processingInfo.get("saleForm");
+        String saleForm = rawSaleForm == null ? null : String.valueOf(rawSaleForm).trim();
+        if (SALE_FORM_FABRIC.equals(saleForm)) {
+            return true;
+        }
+        if (saleForm != null && !saleForm.isEmpty()) {
+            return false;
+        }
+        // 🔴 **有加工项 ⇒ 一定不是卖布行**（卖布行按米卖，行上从无加工项 —— 这是它最硬的形态特征）。
+        // 不加这道闸，AI 建单时顺手带的「整卷发货偏好」（sellingMethod）会让一张**成品帘**
+        // 被误判成卖布单 ⇒ 走布料路线（只有裁剪/打包两道）、丢掉缝制工序，比原缺陷更糟。
+        if (processingInfo.get("processingItems") instanceof List<?> items && !items.isEmpty()) {
+            return false;
+        }
+        Object rawSellingMethod = processingInfo.get("sellingMethod");
+        String sellingMethod = rawSellingMethod == null ? null : String.valueOf(rawSellingMethod).trim();
+        if ("bulk_cut".equals(sellingMethod) || "full_roll".equals(sellingMethod)) {
+            return true;
+        }
+        return processingInfo.get("rollCount") != null;
+    }
 
     /**
      * 作业单类型 · **加工**（成品帘；**混合单**也在这一档）—— 与迁移 V159 的 CHECK / 前端联合类型逐值同源。
@@ -1721,7 +1763,8 @@ public class ProcessingOrderService {
             return ORDER_KIND_PROCESSING;
         }
         for (Map<String, Object> row : snapshot) {
-            if (!SALE_FORM_FABRIC.equals(str(row.get("saleForm")))) {
+            // 判据委托给唯一实现点（issue #7222）：显式 saleForm 优先，缺键按布料专属事实兜底。
+            if (!isFabricSaleLine(row)) {
                 return ORDER_KIND_PROCESSING;
             }
         }
@@ -2625,7 +2668,7 @@ public class ProcessingOrderService {
         //    ⇒ 10 米的布单只做 1 米、计件按 1 米算 —— 正是 #4208 红线要治的形态。
         //    取法与 ② 同源（**订单行 quantity 即米数**），不新增第二份口径；数量 ≤ 0（脏数据）
         //    时**不落键**：「绝不落 0」是端点的硬不变量（应做 0 ⇒ `done_qty ≥ qty` 恒真 ⇒ 假完工）。
-        if (!calc.containsKey("fabric_meters") && SALE_FORM_FABRIC.equals(str(entry.get("saleForm")))) {
+        if (!calc.containsKey("fabric_meters") && isFabricSaleLine(entry)) {
             Object quantity = entry.get("quantity");
             if (quantity != null && new BigDecimal(String.valueOf(quantity)).signum() > 0) {
                 calc.put("fabric_meters", quantity);
@@ -3148,7 +3191,7 @@ public class ProcessingOrderService {
         //    （主布/配布边/纱、布/纱/帘头…），用在布料单上必然错配成窗帘路线。
         //    工艺维对布料单无意义（布料主线只有 配料/打包）⇒ 仍取该租户默认工艺，仅为满足
         //    T3 的既有护栏（缺 `craft` 且无默认工艺 ⇒ fail-closed，本单不放宽该护栏）。
-        if (SALE_FORM_FABRIC.equals(str(entry.get("saleForm")))) {
+        if (isFabricSaleLine(entry)) {
             String fabricCraft = directCraft != null
                     ? directCraft : productionOperationQueryService.defaultCraft(tenantId);
             return new RouteKey(FABRIC_POSITION, fabricCraft, "direct");
@@ -3487,7 +3530,17 @@ public class ProcessingOrderService {
             // 于是 `buildPositionPayload` 的布料路线分支（`deriveRouteKey`，issue #4529）**永不执行**
             // ⇒ 整件商品零工序（真库实证：加工单 JG-20260921-8237 缺「9231 遮光窗帘」的裁剪/打包，issue #4909）。
             // 其余「无加工项」行仍按旧语义跳过（配件 / 赠品行不成部位，行为逐字不变）。
-            if (procs.isEmpty() && !SALE_FORM_FABRIC.equals(str(pi.get("saleForm")))) {
+            // 卖布判据（issue #7222）：缺 `saleForm` 时按**订单行已落库的布料专属事实**兜底 ——
+            // API / 米宝 / 回归脚本漏写 `saleForm` 时，这一行仍必须进快照，否则
+            // `buildPositionPayload` 的布料分支永不执行 ⇒ 工人拿不到裁剪 / 打包活（#4909 的同族形态）。
+            Map<String, Object> fabricEvidence = new LinkedHashMap<>(pi);
+            if (item.getSellingMethod() != null) {
+                fabricEvidence.put("sellingMethod", item.getSellingMethod());
+            }
+            if (item.getRollCount() != null) {
+                fabricEvidence.put("rollCount", item.getRollCount());
+            }
+            if (procs.isEmpty() && !isFabricSaleLine(fabricEvidence)) {
                 continue;
             }
             Map<String, Object> entry = new LinkedHashMap<>();
@@ -3502,6 +3555,14 @@ public class ProcessingOrderService {
             copyIfPresent(pi, entry, "skuCode", "sku");
             copyIfPresent(pi, entry, "colorName");
             copyIfPresent(pi, entry, "sellingMethod");
+            // 布料专属事实（issue #7222）：列值 = **服务端落库的事实**，优先于 processing_info 的同名键
+            // ⇒ 客户端漏写 `saleForm` 时，路线键与单据类型仍能认出这一行是卖布行。
+            if (item.getSellingMethod() != null) {
+                entry.put("sellingMethod", item.getSellingMethod());
+            }
+            if (item.getRollCount() != null) {
+                entry.put("rollCount", item.getRollCount());
+            }
             copyIfPresent(pi, entry, "doorWidth");
             copyIfPresent(pi, entry, "unit");
             // 特殊选项（issue #4230 v1a）：订单侧**新携带** specialOptions: string[]，

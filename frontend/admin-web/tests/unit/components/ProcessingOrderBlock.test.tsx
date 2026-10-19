@@ -566,7 +566,9 @@ describe('ProcessingOrderBlock 卖布单的生成出口（issue #7079 第 5 包�
     mockedDetail.mockRejectedValueOnce(new Error('404'))
     render(<ProcessingOrderBlock orderId="order-plain" orderStatus="confirmed" workOrderKind={null} />)
 
-    expect(await screen.findByText(/该订单无需作业单（没有加工项，也不是卖布单）/)).toBeInTheDocument()
+    expect(await screen.findByText(/该订单无需作业单（没有加工项，也没有标记为卖布）/)).toBeInTheDocument()
+    // issue #7222：只宣判不够 —— 必须给可行动出口（没标售卖形态的卖布单该去哪儿补）
+    expect(document.body.textContent ?? '').toContain('售卖形态')
     expect(screen.queryByText(/^生成/)).toBeNull()
     expect(document.body.textContent ?? '').not.toContain('无加工项订单无需加工环节')
   })

@@ -1,6 +1,6 @@
 package com.migao.admin.service;
 
-// case_ids: PG-026, PG-027, PG-028, PG-029, PG-030, PG-039, PG-063
+// case_ids: PG-026, PG-027, PG-028, PG-029, PG-030, PG-039, PG-063, PG-088
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -446,8 +446,11 @@ class ProcessingOrderRouteSourceTest {
     }
 
     /**
-     * 反向护栏（issue #4909 的边界）：**没有** `saleForm=布料` 的行（普通配件 / 赠品行）
-     * ⇒ 旧语义逐字不变 —— 无加工项仍不进快照（不成部位、不产工序、也不得凭空生成加工单）。
+     * 反向护栏（issue #4909 的边界；issue #7222 收窄夹具）：**没有**卖布声明、也**没有任何布料专属事实**
+     * 的行（普通配件 / 赠品行）⇒ 旧语义逐字不变 —— 无加工项仍不进快照（不成部位、不产工序、也不得凭空生成加工单）。
+     *
+     * <p>⚠️ 夹具**不得**再借用「卖布行」的 helper：它带 {@code sellingMethod=full_roll}，
+     * 而 #7222 起那本身就是卖布证据 ⇒ 借用会让本护栏测的其实是卖布单（假绿）。</p>
      */
     @Test
     @DisplayName("PG-063 反向护栏：无加工项且**非**卖布行 ⇒ 仍不进快照（旧语义不变）")
@@ -457,8 +460,12 @@ class ProcessingOrderRouteSourceTest {
         // ⇒ 不走 stubGenerate 的 selectActiveByOrderId / insert，避免严格桩判「备而不用」。
         when(orderMapper.selectById("order-001")).thenReturn(Order.builder()
                 .id("order-001").tenantId(TENANT).orderNo("ORD-20260919-0001").status("confirmed").build());
-        when(orderItemMapper.selectList(any())).thenReturn(
-                List.of(fabricItemWithoutProcessingItems("item-1", "普通配件", null)));
+        Map<String, Object> plainInfo = new LinkedHashMap<>();
+        plainInfo.put("colorName", "米白");
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(OrderItem.builder()
+                .id("item-1").tenantId(TENANT).orderId("order-001")
+                .productName("普通配件").quantity(BigDecimal.ONE)
+                .processingInfo(plainInfo).build()));
 
         var results = service().generate(List.of("order-001"), TENANT, "u1");
 
@@ -466,6 +473,33 @@ class ProcessingOrderRouteSourceTest {
                 .as("无加工项且非卖布行 ⇒ 订单仍判「无加工项，无需生成加工单」（改前语义，不得被本单放宽）")
                 .isFalse();
         assertThat(results.get(0).getMessage()).contains("无加工项");
+    }
+
+    /**
+     * issue #7222：**客户端漏写 `saleForm`** 的卖布单（API / 米宝 / 回归脚本建的单）——
+     * 行上仍有 `sellingMethod=full_roll`（布料专属事实，UI 只对布料行出「整卷」面板）⇒
+     * 必须进快照、走布料路线、判**出库作业单**。
+     *
+     * <p>红证：删掉 {@code ProcessingOrderService.isFabricSaleLine} 的兜底分支（退回只认显式
+     * {@code saleForm}）⇒ 本用例红（快照为空 ⇒「无加工项，无需生成加工单」⇒ 工人拿不到裁剪 / 打包活，
+     * 且发货守卫也不拦 —— 三段同时静默放行）。</p>
+     */
+    @Test
+    @DisplayName("PG-088 缺 saleForm、有 sellingMethod=full_roll ⇒ 仍进快照并判出库（API 建单漏写声明）")
+    void orderWithoutSaleFormButWithSellingMethodStillGetsOutboundJob() {
+        stubRoutings();
+        AtomicReference<ProcessingOrder> po = stubGenerate(List.of(
+                fabricItemWithoutProcessingItems("item-1", "9231 遮光窗帘", null)));
+
+        var results = service().generate(List.of("order-001"), TENANT, "u1");
+
+        assertThat(results.get(0).isSuccess()).isTrue();
+        assertThat(po.get().getOrderKind())
+                .as("漏写 saleForm 的卖布单 = 出库作业单（否则工人的裁剪活凭空消失）")
+                .isEqualTo(ProcessingOrderService.ORDER_KIND_OUTBOUND);
+        assertThat((List<Map<String, Object>>) po.get().getItemsSnapshot())
+                .as("该行必须进快照（不进 ⇒ 派单池 / 工序实例 / 报工全无）")
+                .hasSize(1);
     }
 
     // ══════════════════════ 单据类型 order_kind（V159，issue #7079）══════════════════════

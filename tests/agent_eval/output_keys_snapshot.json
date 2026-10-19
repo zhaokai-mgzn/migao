@@ -772,7 +772,7 @@
     "data=response.get('data', {})",
     "order_data ← response.get('data', {})"
    ],
-   "source_sha256": "da778ab34bc6611af504510bfb61eea8e8390b838513509e9cd73453bedb017b"
+   "source_sha256": "1fc26a95ecce7573440250892ec3eeedb256e7b07ea14c91224b91c3c2c45215"
   },
   "order_manage": {
    "actions": null,
