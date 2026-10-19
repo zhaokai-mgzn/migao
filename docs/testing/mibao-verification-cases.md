@@ -799,7 +799,7 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-18 新增（issue #7249）：现场 = 商家手机端 H5 隔一段时间打开必回登录页（access token 7200s、手机端零 refresh、initialize/checkAuth 过期即 logout）。冻结口径 = 方案 A（401 ⇒ refresh cookie 换 token 并重放一次，与 admin-web 同口径）+ 登录态 30 天（refresh 2592000）。 ｜ tags: auth, session, token-refresh, bmini
 
-## B 端小程序域（47 case）
+## B 端小程序域（48 case）
 
 ### BM-001. B 端员工小程序登录 - 账号密码（用户名@企业编码）登录，不再走微信手机号匹配 🔵
 ```
@@ -1458,6 +1458,19 @@
 ```
 真值: frontend-fix.no-api-change
 溯源: 2026-10-12 新增（issue #6761）：用户 2026-10-12 逐字「缺少了拍照生成发货单的菜单&功能」⇒ 落点裁定 = bmini 的工人工作台。现场是 #5648 的**半成品**（`gh pr view 5664` §9 逐字：页面装配未做）——后端 `/api/worker/shipment/**` 与纯逻辑早已就绪且可用，缺的只是入口。本单**零后端改动**：工作台补第 4 条入口 + 新页（拍照 → 识别 → 核对 → 定位订单 → 发货 → 实发读面）。**未做 / 边界（照实登记）**：① 识别只认得出一个总数、**不是**订单行的实发明细 ⇒ 实发明细由工人填一行（不按部位分行，也不从「应做数量」冒充实发 —— 与报工页 `workerShipItems` 那条口径的差别登记在此）；② `shipped` 之后**无回退**、商家侧无撤销打包入口（#5648 的既有**有意**口径，本单不扩面）；③ 订单可发货状态（confirmed / producing / packed）由**服务端**把关，端侧不重复判（不可发货时原样上屏服务端文案）；④ 本单不含真机 / 线上几何读数（无新增几何判据）。 ｜ tags: bmini, worker, shipment, page-flow
+
+### BM-051. 手机端页面文案：工人 / 商家可见纯文本（零 markdown 标记、零研发术语） 🔵
+```
+你: 工人 / 商家在手机上打开拍照入库 / 拍照补打入库标签 / 拍照发货 / 计件工资 / 派单 / 数据页：看到的字是能直接读懂的话（二维码拍清楚 ⇒ 手机当场就能认出来；认不出 ⇒ 换一种方式再认，会稍慢一点），屏幕上不出现 `**` 星号，也不出现「识别模型 / 服务端 / 解码 / 接口」这类研发术语
+期望: direct_reply
+数据: 判据 1·**零 markdown 标记**：手机端页面（frontend/bmini-app/src/pages/** + src/components/**）的 JSX 文本与字面量里没有 `**` / `__` / 行内反引号 / 行首标题，**含被拆到多个 JSX 子节点的裸标记**（`<Text>{'**'}{n}{'**'}</Text>`）—— Taro `<Text>` 不渲染 markdown ⇒ 星号原样印在手机上。红证（实跑：`git checkout origin/main -- frontend/bmini-app/src` 后跑本判据）：frontend/bmini-app/tests/worker-copy-plain-text-guard.test.ts 判据 1 判红并逐条具名 **3** 处（inbound:337 / reprint:319 / shipment:182，逐字含 `**不会**` 与 `**实发**`）；修后 3 passed。证据：frontend/bmini-app/tests/worker-copy-plain-text-guard.test.ts
+数据: 判据 2·**零研发术语**（识别模型 / 大模型 / LLM / 服务端 / 后端 / 解码 / 接口 / 安全上下文 / 落库 / 幂等 / 裁定 / 判据 / 快照）：同一次红证实跑具名 **19** 处 —— 4 处商家手机端页面（计件工资 2 / 派单 1 / 数据页 1）、4 条打印失败提示、2 条打印回执（「服务端记第 N 次」）、5 条识别链文案源（recognizeFlow / barcodeDecode ×4 / recognizeGate / reprintFlow）；修后同一判据 0 命中。证据：同判据 1 + frontend/bmini-app/tests/worker-inbound-page.test.tsx（C9）+ frontend/bmini-app/tests/worker-reprint-page.test.tsx（P10）
+数据: 判据 3·**过程不静默**（既有口径不弱化）：解码失败 / 降级仍给一句明说 + 下一步（「系统换一种方式再认了一次（会稍慢一点）。请核对下面的结果，不对就手工改。」）；补打的详情读失败仍是可行动的话（网络问题或系统暂时不可用 ⇒ 重试 / 报短码给文员）。证据：frontend/bmini-app/tests/inbound-decode-first.test.ts（C4）+ frontend/bmini-app/tests/inbound-reprint-flow.test.ts（F5b）
+数据: 判据 4·**射程可复核**（防假绿 / 防假红）：判别力自证 = 抽到 > 20 条文案、三个被点名页面与每个登记文案源都在射程内（路径写错 ⇒ 当场红）；`exported` 模式只扫**顶层导出字符串常量** ⇒ 同文件里混着的研发台账字段（gaps.ts / reprintFlow.ts 的 why / audience，本来就用 markdown 写实现细节、且从不上屏）不误报。证据：同判据 1
+跳过: [backend-contract] 确定性文案守卫（jest: frontend/bmini-app/tests/worker-copy-plain-text-guard.test.ts + worker-inbound-page / worker-reprint-page / inbound-decode-first / inbound-reprint-flow / inbound-print-channel），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-19 新增（issue #7316）：用户逐字「手机端的拍照入库功能页面文案有个mardown语法未正确渲染，显示成了**不会**」「不会调用识别模型这句文案应该改一下，改成工人能理解的文字，补打入库标签页面也有类似问题」。类级处置 = 实例判据（两页 + 解码链）+ 类级元守卫（扫全部手机端页面与共享组件 + 登记文案源；markdown 标记 / 研发术语两条规则）。**首版射程只到工人页，被独立复核指出两处实证漏洞**（printCapability 的打印失败提示与 gaps.ts 的上屏引导文案在射程外、守卫头把 gaps.ts 整体写成「从不上屏」与事实相反）⇒ 第二版把射程扩到 `src/pages/**` + `src/components/**`，并引入 `exported` 模式区分上屏常量与研发台账；同批收口商家手机端 4 处（计件工资 2 / 派单 1 / 数据页 1）、打印失败提示 4 条、打印回执 2 条。边界（照实登记）：只判「会不会被手机用户看到」——注释 / JSDoc 不在射程；`productionOffline.ts` 的「补传被服务端拒绝」目前无入队调用点（本仓不可达），未登记。 ｜ tags: bmini, worker, copy, inbound
 
 ## 分类域（3 case）
 
@@ -12038,13 +12051,13 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：824（活跃 137，跳过 687）
-- tier 分布：smoke 12 / normal 757 / adversarial 32
+- 用例总数：825（活跃 137，跳过 688）
+- tier 分布：smoke 12 / normal 758 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
 - 登录认证域：13
-- B 端小程序域：47
+- B 端小程序域：48
 - 分类域：3
 - 对话边界域：49
 - 跨域：3

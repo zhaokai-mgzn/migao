@@ -102,7 +102,7 @@ export default function AdminPieceworkPage({ now = new Date() }: { now?: Date } 
                 {formatYuanAmount(data.total)}
               </Text>
               <Text className='admin-card__note'>
-                共 {workers.length} 人 · 与电脑端「计件工资」读同一份服务端聚合
+                共 {workers.length} 人 · 与电脑端「计件工资」用的是同一份数据
               </Text>
             </View>
 
@@ -171,7 +171,7 @@ export default function AdminPieceworkPage({ now = new Date() }: { now?: Date } 
 
             {workers.length > 0 && (
               <Text className='admin-hint'>
-                金额 = Σ(合格数量 × 报工当时的单价快照)，返工/报废不计入；单位：元
+                金额 = 每次报工的合格数量 × 当次单价，逐笔累计；返工/报废不计入；单位：元
               </Text>
             )}
           </View>
