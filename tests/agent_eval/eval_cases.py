@@ -2949,7 +2949,7 @@ _CASE_CH_044 = EvalCase(
     user_inputs=[{'text': '照这张图帮我建个商品。', 'images': ['https://ai-customer-service-admin-dev.oss-cn-hangzhou.aliyuncs.com/vision-acceptance/curtain-fabric-1.png']}],
     expectations=['image_recognize'],
     data_checks=['识别结果进**同页填充计划**（`page_fill` 计划），**不落库、不提交** —— 提交永远是商家在页面上点按钮；机械判据 = backend/ai-agent-service/tests/test_tools_image_recognize.py 的 TestNoWriteBoundary（静态扫描识别内核不 import 写入缝）', '回复说明「哪几格已填、哪几格留空及原因」；取值不在店铺目录里 ⇒ 给候选 + 解释、**不填**（不猜）', '⚠️ 本用例**不自动派发真实 LLM 评测**（用户裁定 #4262 / #4974：手动、用户显式触发）：只登记用例，等 #5966 那次 B 端集中跑批时验证'],
-    skip_reason='[eval-env] 本用例要求视觉识别**真的出字段**，而评测栈内 `PRIMARY_MODEL=deepseek-flash`（无视觉模型）⇒ `image_recognize` 必然返回 `recognition_degraded`。2026-10-19 B 端基线实测（run 39185677169）：「must_succeed: image_recognize 共 1 次调用无一成功（R1:recognition_degraded）」—— 红因在环境不在行为；用户 2026-10-19 裁定标 skip_reason。识别面（target 归一 / 图片 URL 校验 / degraded 如实转达 / 同页填充计划）由工具单测承重。重启条件 = 评测栈接入视觉模型后删本行。',
+    skip_reason='[backend-contract] 本用例要求视觉识别**真的出字段**，而评测栈内 `PRIMARY_MODEL=deepseek-flash`（无视觉模型）⇒ `image_recognize` 必然返回 `recognition_degraded`。2026-10-19 B 端基线实测（run 39185677169）：「must_succeed: image_recognize 共 1 次调用无一成功（R1:recognition_degraded）」—— 红因在环境不在行为；用户 2026-10-19 裁定标 skip_reason。正确判定层 = 工具/识别内核单测（见 traces.tests：test_tools_image_recognize.py / test_vision/test_deep_channel.py）。**重启条件** = 评测栈接入视觉模型后，删本行并恢复 LLM 层断言（跟踪 #7302）。',
     tags=['multimodal', 'image', 'vision', 'image_recognize', 'mibao', 'capability'],
     persona='mibao',
     debug_user='',
