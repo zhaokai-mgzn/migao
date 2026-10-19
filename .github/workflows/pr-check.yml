@@ -51,7 +51,9 @@ jobs:
   # ============ admin-api 单测全量 ============
   admin-api-test:
     name: admin-api unit tests
-    runs-on: ubuntu-latest
+    # 钉版（issue #7365）：ubuntu-latest 已滚到 26.04，不再自带 PG 二进制（initdb/pg_ctl）
+    # ⇒ 真库判据的前置断言会失败。装 PG 不可行（apt 装到 18，BIN_DIRS 只认 14/15/16）。
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -184,7 +186,9 @@ jobs:
     #   + `pytest tests/unit_ci_workflows` ⇒ 收集数**逐值不变**），而 `addopts` 只是另一种"往 argv 贴东西"。
     #   ⇒ 收集面在本仓只有两个落点：argv（禁）或**判据目录**（本包走后者）。
     name: ci workflow helper unit tests${{ matrix.shard_suffix }}
-    runs-on: ubuntu-latest
+    # 钉版（issue #7365）：ubuntu-latest 已滚到 26.04，不再自带 PG 二进制（initdb/pg_ctl）
+    # ⇒ 真库判据的前置断言会失败。装 PG 不可行（apt 装到 18，BIN_DIRS 只认 14/15/16）。
+    runs-on: ubuntu-24.04
     strategy:
       # 两片**各自独立报告**：一片红不得让另一片被 cancel（否则红因只剩一半信息）
       fail-fast: false
