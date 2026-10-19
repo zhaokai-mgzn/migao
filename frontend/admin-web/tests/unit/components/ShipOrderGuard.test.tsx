@@ -70,7 +70,7 @@ const mockOrder = {
   processingItems: [{ name: '打孔', quantity: 2 }],
   // issue #7079 第 5 包：发货前置判据 = 订单详情读面键 `work_order_kind`（后端 OrderShipGuard.needsWork
   // 的同一份：含加工项 **或** 有卖布行）。缺键 = 无需要报工的作业 ⇒ 不再按 processingItems 单侧推。
-  workOrderKind: 'processing',
+  work_order_kind: 'processing',
 }
 
 const po = (status: string) => ({
@@ -150,7 +150,7 @@ describe('ShipOrder 加工单前置守卫', () => {
   })
 
   it('无加工项订单不查询加工单、直接渲染发货表单', async () => {
-    mockGetOrder.mockResolvedValue({ data: { data: { ...mockOrder, processingItems: [], workOrderKind: null } } })
+    mockGetOrder.mockResolvedValue({ data: { data: { ...mockOrder, processingItems: [], work_order_kind: null } } })
     render(<ShipOrder />)
     await waitFor(() => {
       expect(screen.getByText('确认发货')).toBeInTheDocument()
@@ -175,7 +175,7 @@ describe('ShipOrder 发货前置守卫：卖布单（issue #7079 第 5 包）', 
 
   it('UI-115 判据 1（红证）：卖布单 + 作业单未完成 ⇒ 阻断并给可行动出口，**不渲染**发货表单', async () => {
     mockGetOrder.mockResolvedValue({
-      data: { data: { ...mockOrder, processingItems: [], workOrderKind: 'outbound' } },
+      data: { data: { ...mockOrder, processingItems: [], work_order_kind: 'outbound' } },
     })
     mockPODetail.mockResolvedValue({ data: { data: po('issued') } })
     render(<ShipOrder />)
@@ -193,7 +193,7 @@ describe('ShipOrder 发货前置守卫：卖布单（issue #7079 第 5 包）', 
 
   it('UI-115 判据 2（红证）：卖布单 + 查不到作业单（404）⇒ 同样阻断（与后端 countCompleted==0 一致）', async () => {
     mockGetOrder.mockResolvedValue({
-      data: { data: { ...mockOrder, processingItems: [], workOrderKind: 'outbound' } },
+      data: { data: { ...mockOrder, processingItems: [], work_order_kind: 'outbound' } },
     })
     mockPODetail.mockRejectedValue(new Error('404'))
     render(<ShipOrder />)
@@ -205,7 +205,7 @@ describe('ShipOrder 发货前置守卫：卖布单（issue #7079 第 5 包）', 
 
   it('UI-115 判据 3（红证）：卖布单 + 作业单已完成 ⇒ 放行，发货表单照常（不误拦）', async () => {
     mockGetOrder.mockResolvedValue({
-      data: { data: { ...mockOrder, processingItems: [], workOrderKind: 'outbound' } },
+      data: { data: { ...mockOrder, processingItems: [], work_order_kind: 'outbound' } },
     })
     mockPODetail.mockResolvedValue({ data: { data: po('completed') } })
     render(<ShipOrder />)
@@ -217,7 +217,7 @@ describe('ShipOrder 发货前置守卫：卖布单（issue #7079 第 5 包）', 
 
   it('UI-115 判据 4（反向护栏）：无作业的普通单（缺键）⇒ 不查作业单、直接渲染发货表单', async () => {
     mockGetOrder.mockResolvedValue({
-      data: { data: { ...mockOrder, processingItems: [], workOrderKind: null } },
+      data: { data: { ...mockOrder, processingItems: [], work_order_kind: null } },
     })
     render(<ShipOrder />)
     await waitFor(() => {

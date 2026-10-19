@@ -109,7 +109,7 @@ const mockOrder = {
   ],
   processingItems: [],
   // issue #7079 第 5 包：发货前置判据 = 读面键 `work_order_kind`（缺键/null = 无需要报工的作业）
-  workOrderKind: null,
+  work_order_kind: null,
 }
 
 import ShipOrder from '@/app/(dashboard)/orders/[id]/ship/ShipOrder'
@@ -589,7 +589,7 @@ describe('ShipOrder', () => {
           ...mockOrder,
           hasProcessing: true,
           // #7079：守卫读 `work_order_kind` ⇒ 含加工项单必须显式给 'processing'（不给就绕过守卫 = 假绿）
-          workOrderKind: 'processing',
+          work_order_kind: 'processing',
           items: [{ ...mockOrder.items[0], processingFee: 37.5 }],
           // #4882：后端 `ProcessingItemBrief` 只剩 id / name / quantity
           processingItems: [{ id: 'pr-1', name: '打孔', quantity: 12.5 }],

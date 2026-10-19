@@ -318,7 +318,8 @@ export default function ProcessingOrderBlock({
   const outbound = kind === 'outbound'
   // 「要不要作业」+「要哪一型」都取**订单详情读面**的同一个信号（issue #7079 第 5 包）——
   // 卖布单行上没有加工项，只按 processingItems 推会判「不需要」⇒ 没有生成出口。
-  const neededKind = workOrderKindOf({ workOrderKind })
+  // wire 键是 snake_case（issue #7319）；本组件的 prop 保持 camelCase 的组件 API，这里显式换一次键。
+  const neededKind = workOrderKindOf({ work_order_kind: workOrderKind })
   const canGenerate = notFound && neededKind !== null && (orderStatus === 'confirmed' || orderStatus === 'producing')
   const canAct = po && !['completed', 'cancelled'].includes(po.status)
   // 工序清单按 `order_item_id` 索引一次（issue #6901；与洗水码/批号同一把钥匙）

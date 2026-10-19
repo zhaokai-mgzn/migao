@@ -79,7 +79,7 @@ const baseOrder = {
   ],
   processingItems: [{ name: '打孔', quantity: 2 }],
   // issue #7079 第 5 包：发货入口判据 = 读面键 `work_order_kind`（后端 OrderShipGuard.needsWork 的同一份）
-  workOrderKind: 'processing',
+  work_order_kind: 'processing',
 }
 
 const po = (status: string) => ({
@@ -129,7 +129,7 @@ describe('OrderDetail 发货入口守卫', () => {
 
   it('无加工项订单 → 发货按钮正常（不因加工单状态而阻断）', async () => {
     mockPODetail.mockRejectedValue(new Error('404'))
-    mockGetOrder.mockResolvedValue({ data: { data: { ...baseOrder, processingItems: [], workOrderKind: null } } })
+    mockGetOrder.mockResolvedValue({ data: { data: { ...baseOrder, processingItems: [], work_order_kind: null } } })
     render(<OrderDetailPage />)
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /^发货$/ })).toBeInTheDocument()
@@ -151,7 +151,7 @@ describe('OrderDetail 发货入口守卫：卖布单（issue #7079 第 5 包）'
 
   it('UI-115 判据 5（红证）：卖布单 + 无作业单 ⇒ 引导句按型换成「卖布单 / 出库作业单」，发货按钮不可点', async () => {
     mockGetOrder.mockResolvedValue({
-      data: { data: { ...baseOrder, processingItems: [], workOrderKind: 'outbound' } },
+      data: { data: { ...baseOrder, processingItems: [], work_order_kind: 'outbound' } },
     })
     mockPODetail.mockRejectedValue(new Error('404'))
     render(<OrderDetailPage />)
@@ -164,7 +164,7 @@ describe('OrderDetail 发货入口守卫：卖布单（issue #7079 第 5 包）'
 
   it('UI-115 判据 6（红证）：卖布单 + 作业单已完成 ⇒ 发货按钮可点（与后端 countCompleted>0 放行一致）', async () => {
     mockGetOrder.mockResolvedValue({
-      data: { data: { ...baseOrder, processingItems: [], workOrderKind: 'outbound' } },
+      data: { data: { ...baseOrder, processingItems: [], work_order_kind: 'outbound' } },
     })
     mockPODetail.mockResolvedValue({ data: { data: po('completed') } })
     render(<OrderDetailPage />)
@@ -175,7 +175,7 @@ describe('OrderDetail 发货入口守卫：卖布单（issue #7079 第 5 包）'
 
   it('UI-115 判据 7（反向护栏）：无作业的普通单（缺键）⇒ 不出现任何引导句，发货按钮照常', async () => {
     mockGetOrder.mockResolvedValue({
-      data: { data: { ...baseOrder, processingItems: [], workOrderKind: null } },
+      data: { data: { ...baseOrder, processingItems: [], work_order_kind: null } },
     })
     mockPODetail.mockRejectedValue(new Error('404'))
     render(<OrderDetailPage />)
