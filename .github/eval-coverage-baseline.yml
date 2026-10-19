@@ -38,14 +38,24 @@ version: 2
 # ⚠️ 本文件由 `yaml_light`（仓库零依赖解析器）读取 —— 只能用**单行标量**：
 #    多行字符串（`>-`）/ flow style 会让解析在缩进更深的行处**静默停止**，
 #    entries 整段读成空 = 存量缺口全部当作新缺口阻塞（门禁全红，且看不出原因）。
-note: "存量缺口 burn-down 清单（#3575 引入）。只豁免已登记项；新缺口照旧阻塞；补完用例即删条目（陈旧登记被判红）。当前 **1 条阻塞**（nav_guide，跟踪 #5989）+ **1 条薄覆盖**（validate_input，跟踪 #3558），全部有归属。2026-10-03（issue #6090 销账）：`image_recognize`/uncovered 一条**销账删除** —— 配套用例 CH-044（发图 → 黄金策调 image_recognize → 同页填表）在**同一个 PR** 补上（补用例与删条目必须同 PR，否则陈旧登记被判红）。2026-09-26（issue #3592 销账）：briefing_query / craft_calc_config_query / processing_order_set_query 三条 uncovered + session_manage/thin_positive 一条**销账删除** —— 配套用例 DA-019 / PP-015 / PG-064 / DA-020 在**同一个 PR** 补上（补用例与删条目必须同 PR，否则陈旧登记被判红）。2026-09-24（issue #5247，B 端只读化）：order_manage/missing_positive 与 sku_update/thin_positive 两条**销账删除** —— 两个工具已从 B 端解绑（不再是 B 端工具 ⇒ 登记被判无效/阻塞）。"
+note: "存量缺口 burn-down 清单（#3575 引入）。只豁免已登记项；新缺口照旧阻塞；补完用例即删条目（陈旧登记被判红）。当前 **2 条阻塞**（nav_guide 跟踪 #5989；image_recognize 跟踪 #7302 —— 2026-10-19 因评测栈无视觉模型重新登记）+ **1 条薄覆盖**（validate_input，跟踪 #3558），全部有归属。2026-10-03（issue #6090 销账）：`image_recognize`/uncovered 一条**销账删除** —— 配套用例 CH-044（发图 → 黄金策调 image_recognize → 同页填表）在**同一个 PR** 补上（补用例与删条目必须同 PR，否则陈旧登记被判红）。2026-09-26（issue #3592 销账）：briefing_query / craft_calc_config_query / processing_order_set_query 三条 uncovered + session_manage/thin_positive 一条**销账删除** —— 配套用例 DA-019 / PP-015 / PG-064 / DA-020 在**同一个 PR** 补上（补用例与删条目必须同 PR，否则陈旧登记被判红）。2026-09-24（issue #5247，B 端只读化）：order_manage/missing_positive 与 sku_update/thin_positive 两条**销账删除** —— 两个工具已从 B 端解绑（不再是 B 端工具 ⇒ 登记被判无效/阻塞）。"
 
 entries:
-  # ✅ 销账（2026-10-19，issue #7027 / 本 PR）：`scheduled_task_manage` 的 **uncovered（阻塞）**
-  #    条目**已删除** —— 配套 LLM 行为用例 **CH-050**（`.github/cases/chat.yml`：商家说
-  #    「3 天后提醒我跟进张先生」→ 确认卡 → 落一条待办；再说「取消」，断言 = 调用 + must_succeed
-  #    + 三件套/确认门禁/取消带 task id 的 data_checks）在**同一个 PR** 里补上。
-  #    工具面契约用例仍是 AG-011（走 `[backend-contract]` skip，不计覆盖）。
+  # issue #7302（2026-10-19，**重新登记**）：`image_recognize` 的 uncovered（阻塞型）豁免。
+  # 为什么回归：CH-044 本是 2026-10-03（#6090）为销掉这条豁免而补的用例；但评测栈
+  # `PRIMARY_MODEL=deepseek-flash`（**无视觉模型**）⇒ 该用例必然 `recognition_degraded`。
+  # 2026-10-19 B 端基线实测即此形态，用户当日裁定「标 skip_reason（零成本）」⇒
+  # CH-044 走 `[eval-env]` 豁免 ⇒ 覆盖体检重新报 uncovered，故按机制登记。
+  # 销账条件 = 评测栈接入视觉模型后，删 CH-044 的 skip_reason 与本条（**同 PR**），见 #7302。
+  - tool: image_recognize
+    kind: uncovered
+    persona: mibao
+    issue: "#7302"
+    reason: "评测栈无视觉模型（PRIMARY_MODEL=deepseek-flash）⇒ CH-044 只能走 [eval-env] skip；接入视觉模型后同 PR 销账"
+    added: "2026-10-19"
+  # ✅ 销账（2026-10-19，issue #7027）：`scheduled_task_manage` 的 uncovered 条目已删除
+  #    —— 配套 LLM 行为用例 CH-050 随 #7304 合并进 main（补用例与删条目同 PR）。
+  #    ⚠️ 本分支 rebase 时曾把该条目带回来（冲突解决取错一侧）⇒ coverage 门禁当场判红，已修。
   # ── 结构性缺失（阻塞项，靠本清单才保持绿）──────────────────────────────
   # ✅ 销账（2026-09-26，issue #3592 / 本 PR）：`briefing_query` / `craft_calc_config_query` /
   #    `processing_order_set_query` 三条 **uncovered** 条目**已删除** —— 配套用例
