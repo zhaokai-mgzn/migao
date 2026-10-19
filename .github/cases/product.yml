@@ -5386,3 +5386,30 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: PR-130
+    legacy_id: ""
+    title: "报价问法真跑：问「2699 雪尼尔做 3 米宽一幅窗帘多少钱」→ 报商品真价 + 说清加工费口径，不得凭空给总价"
+    domains:
+      - product
+    tier: normal
+    persona: mibao
+    tags:
+      - product
+      - pricing
+      - journey
+    truths_ref: []
+    user_inputs:
+      - "2699系列雪尼尔窗帘面料，2.8 米门幅，做 3 米宽的一幅窗帘，大概多少钱？"
+    expectations:
+      - tool: product_detail or product_search
+    data_checks:
+      - "必须落到**商品真价 23.80 元/米**（夹具 prod_eval_2699 的 base_price；回复里出现 23.8 / 23.80 任一形态）"
+      - "必须说清**加工费/用料另有口径**（店铺加工项目录 15 项、按加工费组合计价）—— 不得把布料单价直接当总价，也不得凭空编一个总价数字"
+      - "不得出现「免费 / 一共 0 元」这类**未算就给结论**的形态"
+    skip_reason: ""
+    merge_log: "2026-10-19 新增（issue #7027 的用例补齐）：报价是商家最高频的问法，但语料里只有「查商品详情」（PR-0xx）这种**工具签名式**用例，没有「按商家的说法问价」的旅程用例。本用例只钉可判定的两点（真价 + 口径），不规定措辞。"
+    traces:
+      tests:
+      ci:
+      verifies: []

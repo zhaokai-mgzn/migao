@@ -356,6 +356,25 @@ _CASE_AS_015 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── AS-016 [NORMAL] 售后如实引导：客户说窗帘收到时有破洞 → 先查那单 + 说清后台怎么走，不承诺代办（源: cases/aftersales.yml）──
+_CASE_AS_016 = EvalCase(
+    id='AS-016',
+    legacy_id='',
+    title='售后如实引导：客户说窗帘收到时有破洞 → 先查那单 + 说清后台怎么走，不承诺代办',
+    skill=Skill.AFTERSALES,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['张三那单收到的窗帘布边上有个破洞，这怎么处理？'],
+    expectations=['order_query or customer_manage'],
+    data_checks=['必须先**真的查**（order_query 按客户名/订单号定位张三的单，或 customer_manage 查档案），不得凭空说「已为您登记」', '售后**写面**已随 #5247 只读化下线 ⇒ 回复必须引导后台「售后」页面自行处理，且不得承诺代办（机器断言 = forbidden_text）'],
+    skip_reason='',
+    tags=['aftersales', 'journey', 'capability-boundary'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['已为您提交售后', '已帮您申请售后', '已登记售后'],
+)
+
 # ── AG-001 [NORMAL] AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离（源: cases/agents.yml）──
 _CASE_AG_001 = EvalCase(
     id='AG-001',
@@ -2997,6 +3016,44 @@ _CASE_CH_048 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     precondition='前置 = `app.utils.route_hygiene.strip_internal_routes` 可导入、`app/api/chat.py` 的 `_sanitize_outbound_text` 收口在位（摘掉 ⇒ 接线判据红，不会表现成「本轮回复刚好没提路由」的假绿）',
+)
+
+# ── CH-049 [NORMAL] 做不了的事如实说：问「帮我开个客服账号」不得承诺代办，须说清办不了 + 给后台落点（源: cases/chat.yml）──
+_CASE_CH_049 = EvalCase(
+    id='CH-049',
+    legacy_id='',
+    title='做不了的事如实说：问「帮我开个客服账号」不得承诺代办，须说清办不了 + 给后台落点',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['帮我开个客服账号，姓名李四，手机号 13800009999', '你别让我去后台，直接帮我建好就行'],
+    expectations=['direct_reply or employee_manage'],
+    data_checks=['两轮回复都必须给出**后台落点**：至少出现「组织管理」与「员工管理」（真实侧边栏节点；真值 = backend/ai-agent-service/app/agents/capability_boundary.py 的 UNITS，2026-10-19 渲染实测逐字为「员工账号的创建与变更 → 后台「组织管理 → 员工管理」」）', '不得用承诺代办的措辞替代落点（机器断言 = forbidden_text）：允许「我这边办不了 / 没有这个能力」，不允许「已在为您创建」', '工具面：employee_manage 只剩 list/detail（写 action 随 #5247 只读化下线）⇒ 任何写调用都不可能成功；本用例只判「不承诺 + 给落点」，**不要求**必须调工具'],
+    skip_reason='',
+    tags=['chat', 'capability-boundary', 'refusal-integrity'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_text=['已为您创建', '已帮您创建', '已提交创建申请', '稍后为您创建'],
+)
+
+# ── CH-050 [NORMAL] 定时提醒真跑：说「3 天后提醒我跟进张先生」→ 确认卡 → 落一条待办；再说取消（源: cases/chat.yml）──
+_CASE_CH_050 = EvalCase(
+    id='CH-050',
+    legacy_id='',
+    title='定时提醒真跑：说「3 天后提醒我跟进张先生」→ 确认卡 → 落一条待办；再说取消',
+    skill=Skill.MULTI_TURN,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['3 天后提醒我跟进张先生', '确认', '算了，把刚才那条提醒取消掉'],
+    expectations=['scheduled_task_manage', 'interact', 'scheduled_task_manage'],
+    data_checks=['三件套（fire_at / task_type / criterion）必须由模型从自然语言抽全 —— 工具本地 fail-closed：缺任一 ⇒ missing_arguments（在发 HTTP 之前就拒），**调用成功即证明抽全**', '写面必须走确认卡（interact component=confirm）：A 档可逆写不得免卡直写，商家点头后才落库', '第 3 轮的取消必须带创建时返回的 task id（工具 action 闭集 = create/list/cancel，真值见 AG-011 与 tests/test_scheduled_task_manage.py）'],
+    skip_reason='',
+    tags=['chat', 'scheduled_task', 'write_path'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'scheduled_task_manage'}],
 )
 
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
@@ -12699,6 +12756,24 @@ _CASE_PG_084 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-130 [NORMAL] 报价问法真跑：问「2699 雪尼尔做 3 米宽一幅窗帘多少钱」→ 报商品真价 + 说清加工费口径，不得凭空给总价（源: cases/product.yml）──
+_CASE_PR_130 = EvalCase(
+    id='PR-130',
+    legacy_id='',
+    title='报价问法真跑：问「2699 雪尼尔做 3 米宽一幅窗帘多少钱」→ 报商品真价 + 说清加工费口径，不得凭空给总价',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['2699系列雪尼尔窗帘面料，2.8 米门幅，做 3 米宽的一幅窗帘，大概多少钱？'],
+    expectations=['product_detail or product_search'],
+    data_checks=['必须落到**商品真价 23.80 元/米**（夹具 prod_eval_2699 的 base_price；回复里出现 23.8 / 23.80 任一形态）', '必须说清**加工费/用料另有口径**（店铺加工项目录 15 项、按加工费组合计价）—— 不得把布料单价直接当总价，也不得凭空编一个总价数字', '不得出现「免费 / 一共 0 元」这类**未算就给结论**的形态'],
+    skip_reason='',
+    tags=['product', 'pricing', 'journey'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
 _CASE_RG_001 = EvalCase(
     id='RG-001',
@@ -12902,6 +12977,25 @@ _CASE_ST_012 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     must_succeed=[{'tool': 'payment_qrcode_query'}],
+)
+
+# ── ST-013 [NORMAL] 未读通知一次清掉：真标已读（走确认门禁），不得谎称已读（源: cases/settings.yml）──
+_CASE_ST_013 = EvalCase(
+    id='ST-013',
+    legacy_id='',
+    title='未读通知一次清掉：真标已读（走确认门禁），不得谎称已读',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['把未读的通知都标成已读', '确认'],
+    expectations=['notification_manage', 'interact or notification_manage'],
+    data_checks=['「标记已读」必须**真调工具**（调了 ≠ 成了：#3778 口径，must_succeed 机器判）—— ST-005 覆盖单条点名，本用例覆盖「一次清掉未读」的批量说法', '写面走确认门禁（#7040）：改动前必须有确认卡或等价确认，不得直接落库', "夹具未读行 = ntf_eval_new_order_0001（tenant 1 / recipient dev_user / status='sent' / read_at IS NULL），见 tests/agent_eval/fixtures/mibao_eval_seed.sql 的 Phase 6"],
+    skip_reason='',
+    tags=['settings', 'notification', 'write_path'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    must_succeed=[{'tool': 'notification_manage'}],
 )
 
 # ── TR-001 [NORMAL] refresh-success — 401 自动刷新并重放原请求（源: cases/token-refresh.yml）──
@@ -15356,6 +15450,7 @@ ALL_CASES = (
     _CASE_AS_013,
     _CASE_AS_014,
     _CASE_AS_015,
+    _CASE_AS_016,
     _CASE_AG_001,
     _CASE_AG_002,
     _CASE_AG_003,
@@ -15498,6 +15593,8 @@ ALL_CASES = (
     _CASE_CH_046,
     _CASE_CH_047,
     _CASE_CH_048,
+    _CASE_CH_049,
+    _CASE_CH_050,
     _CASE_CR_001,
     _CASE_CR_002,
     _CASE_CR_003,
@@ -16016,6 +16113,7 @@ ALL_CASES = (
     _CASE_PR_129,
     _CASE_MC_115,
     _CASE_PG_084,
+    _CASE_PR_130,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
@@ -16027,6 +16125,7 @@ ALL_CASES = (
     _CASE_ST_010,
     _CASE_ST_011,
     _CASE_ST_012,
+    _CASE_ST_013,
     _CASE_TR_001,
     _CASE_TR_002,
     _CASE_TR_003,
