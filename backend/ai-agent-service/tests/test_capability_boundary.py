@@ -64,12 +64,19 @@ def _independent_reachable() -> frozenset:
     from app.agents.agents.mibao import MIBAO_CONFIG
     from app.graph.skills.skill_registry import get_skill_registry
 
+    from app.graph.skills.base_skill import _all_skill_configs, _read_only_tool_names
+
     registry = get_skill_registry()
     names: set[str] = set()
     for skill_name in (*MIBAO_CONFIG.skill_names, MIBAO_CONFIG.fallback_skill):
         cfg = registry.get(skill_name)
         if cfg is not None:
             names.update(cfg.tool_names or ())
+    # #4125：同 persona 家族的**只读**工具也并入（独立复算，不复用 create_skill_registry）
+    read_only = _read_only_tool_names()
+    for cfg in _all_skill_configs():
+        if "mibao" in (cfg.system_prompts or {}):
+            names.update(t for t in (cfg.tool_names or ()) if t in read_only)
     return frozenset(names)
 
 
@@ -170,3 +177,20 @@ def test_boundary_injected_for_mibao_only():
     _PROMPT_CACHE.clear()
     assert _CAPABILITY_BOUNDARY_MARKER in _build_system_prompt("staff")
     assert _CAPABILITY_BOUNDARY_MARKER not in _build_system_prompt("customer_general")
+
+
+def test_reachability_probe_does_not_leak_tool_scope():
+    """探测不得有副作用：`mibao_reachable_tool_names()` 跑完必须还原执行域。
+
+    病灶（2026-10-19 实证）：`create_skill_registry` 会把本轮工具集写进全局 `tool_scope`
+    （A5 设计）—— 探测函数若直接调它而不还原，执行域就停在最后一个 skill 上，
+    后续流程把域内目标（如 `order_create`）判成越域，红在第一个人想不到的地方。
+    """
+    from app.tools.registry import get_tool_scope, set_tool_scope
+    from app.agents.capability_boundary import mibao_reachable_tool_names
+
+    set_tool_scope(["order_query", "validate_input"])
+    before = get_tool_scope()
+    mibao_reachable_tool_names()
+    assert get_tool_scope() == before, "可达性探测泄漏了 tool_scope（执行域被改写）"
+    set_tool_scope(None)
