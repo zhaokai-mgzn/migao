@@ -50,3 +50,41 @@
     font-weight: 500;
   }
 }
+
+// 工具类入口（issue #7351）：独立一行、主色描边 —— 与问句六格区分；
+// 六格仍是 2×3 等权（上面的 `&__item` 判据一字不动）。
+.quick-actions {
+  &__tools {
+    margin-top: 16px;
+  }
+
+  &__tool {
+    display: flex;
+    align-items: center;
+    padding: 20px 24px;
+    border-radius: $radius-lg;
+    border: 1px solid rgba(26, 115, 232, 0.35);
+    background: $primary-light;
+
+    &:active {
+      background: rgba(26, 115, 232, 0.14);
+    }
+  }
+
+  &__tool-icon {
+    font-size: 34px;
+    margin-right: 14px;
+  }
+
+  &__tool-label {
+    font-size: 28px;
+    font-weight: 600;
+    color: $primary-color;
+  }
+
+  &__tool-hint {
+    margin-left: auto;
+    font-size: 22px;
+    color: $text-tertiary;
+  }
+}

@@ -47,6 +47,8 @@ interface ChatState {
   isLoadingSessions: boolean
   isLoadingMessages: boolean
   quickActions: QuickAction[]
+  /** 工具类快捷入口（issue #7351：营销海报等动作入口） */
+  quickTools: QuickAction[]
   error: string | null
 
   // 转人工状态（handedOff 后消息走人工客服通道）
@@ -84,6 +86,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   isLoadingSessions: false,
   isLoadingMessages: false,
   quickActions: [],
+  quickTools: [],
   error: null,
   handedOff: false,
   agentSessionId: null,
@@ -540,8 +543,8 @@ export const useChatStore = create<ChatState>()((set, get) => ({
    */
   loadQuickActions: async () => {
     try {
-      const actions = await apiGetQuickActions()
-      set({ quickActions: actions })
+      const { actions, tools } = await apiGetQuickActions()
+      set({ quickActions: actions, quickTools: tools })
     } catch (error) {
       console.error('获取快捷操作失败:', error)
     }

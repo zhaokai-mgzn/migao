@@ -19,6 +19,7 @@ import OrderCard from '../cards/OrderCard'
 import QuotationCard from '../cards/QuotationCard'
 import ProductionProgressCard from '../cards/ProductionProgressCard'
 import BatchStockCard from '../cards/BatchStockCard'
+import PosterCard from '../cards/PosterCard'
 import ConfirmCard from '../cards/ConfirmCard'
 import ChoiceCard from '../cards/ChoiceCard'
 import FormCard from '../cards/FormCard'
@@ -105,6 +106,13 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
       // 批次账 / 省料度量卡（issue #5188）。该工具只绑黄金策 Skill（`product:list` 门禁 ⇒
       // C 端恒不可达）⇒ 按 persona 推导只需 B 端两端渲染（本端 + admin-web 桌面）。
       return <BatchStockCard key={`card-${idx}`} data={data} />
+    }
+
+    case 'marketing_poster': {
+      // 营销海报卡（issue #7351）：商品事实 + 商家确认的文案 → 750×1000 PNG。
+      // 只绑黄金策（`product:list`）⇒ C 端不可达，B 端两端都要能渲染
+      // （判据 = backend/ai-agent-service/tests/test_card_type_cross_end_contract.py）。
+      return <PosterCard key={`card-${idx}`} data={data} />
     }
 
     default:

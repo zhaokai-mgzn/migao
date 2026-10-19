@@ -326,6 +326,8 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     # 契约正文括注的 `product:update` 在权限目录里不存在 ⇒ 取「同码」这条更硬的判据）。
     "product_batch_update": ("product:create",),
     "product_detail": ("product:list",),
+    # issue #7351：营销海报工具只调用 `GET /api/admin/products/{id}`（与 product_detail 同码）。
+    "marketing_poster": ("product:list",),
     "product_manage": ("product:create",),
     "product_search": ("product:list",),
     "product_update": ("product:create",),
@@ -407,6 +409,8 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     # issue #5314：与 `product_update` 同码 ⇒ 放行集**逐字相同**（目录推导，不额外授予）
     "product_batch_update": frozenset({"operator", "product_manager"}),
     "product_detail": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
+    # issue #7351：与 `product_detail` 同码 ⇒ 放行集逐字相同（目录推导，不额外授予）。
+    "marketing_poster": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
     "product_manage": frozenset({"operator", "product_manager"}),
     "product_search": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
     "product_update": frozenset({"operator", "product_manager"}),

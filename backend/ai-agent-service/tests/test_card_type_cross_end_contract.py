@@ -139,6 +139,9 @@ _CARD_TOOL_ANCHORS = {
     # #4085 第 1 项「补发射点」（同款裁定）：`payment_qrcode_query` 的 data 即
     # payment 卡载荷；数据源复用 GET /api/admin/agent/payment-qrcodes（不新造数据源）
     "payment_qrcode_query": "payment",
+    # #7351「补发射点」：营销海报工具返回的 data 即卡载荷
+    # （{product: {...}, copy: {title, selling_points}}）；只绑黄金策 ⇒ B 端两端渲染。
+    "marketing_poster": "marketing_poster",
 }
 
 # 交互组件（renderInteractive 的 switch）——不得被算作卡型

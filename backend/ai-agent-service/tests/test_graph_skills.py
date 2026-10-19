@@ -165,6 +165,9 @@ class TestSkillToolSubsets:
             # ── issue #5989（P1 导航类指引）新增：纯本地只读的「功能 ⇄ 页面 ⇄ 权限」指引 ──
             "nav_guide",                  # 只答导航（在哪一页 / 有没有权限），**不答步骤**；
                                           # 「XX 在哪一页」无专属意图 ⇒ 兜底必须绑（同上惯例）
+            # ── issue #7351（营销海报）新增：只读、「做海报」无专属意图 ⇒ 兜底必须绑 ──
+            "marketing_poster",           # 商品事实 + 商家确认的文案 → 海报卡载荷；
+                                          # 文案缺失由工具 fail-closed（不自动编文案）
         }
         assert set(GENERAL_TOOLS) == expected
 

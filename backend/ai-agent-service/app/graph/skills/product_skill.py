@@ -24,6 +24,9 @@ from app.graph.skills.skill_config import SkillConfig
 PRODUCT_TOOLS = [
     "product_search",
     "product_detail",
+    # 营销海报（issue #7351）：**只读** —— 查商品事实 + 回传操作员确认过的文案。
+    # 海报卡只由 B 端渲染（黄金策 product / general；元元不绑）。
+    "marketing_poster",
     "inventory_manage",        # 只读化后仅剩 query / low_stock_alert（#5247）
     # 批次账 / 省料度量只读（issue #5188）：商品/库存域的「哪些批次快用尽了 / 剩料分布 /
     # 省了多少料」—— 只读、声明 `product:list`（仅 B 端）
@@ -115,11 +118,23 @@ PRODUCT_SYSTEM_PROMPT = """## 本域写边界（issue #5303 A 档可逆写补回
 
 口径：改后价必须是商家明确给出的数字；价格改完可再调回（可逆），但仍须走上面的预览流程。
 
+## 营销海报（issue #7351：文案必须由商家提供）
+
+商家说「做海报 / 生成营销图 / 商品宣传图 / 发圈图」时：
+1. 先定位商品：`product_search` 按商品名查；命中多个先发 choice 卡消歧，再 `product_detail` 取事实。
+2. **必须先问文案**：海报主标题（如「新品上市」「限时特惠」）+ 2~3 条卖点（每条 ≤30 字）。
+   **不得**用商品描述自动拼卖点，**不得**编折扣 / 赠品 / 材质。商家说「你帮我写」⇒ 给 2~3 个
+   候选让商家选定或修改；**商家确认前不得调用 `marketing_poster`**。
+3. 拿到确认文案后调用 `marketing_poster(product_id, promo_title, selling_points)` —— 卡片含
+   商品主图 / 名称 / 价格 / 单位 / 文案；商家可在 PC 下载、手机长按保存到相册。
+4. 发卡后提示：想换文案直接说「海报改成…」，重新调用本工具即可。
+
 ## 工具速查
 
 | 场景 | 工具 |
 |------|------|
 | 搜商品 / 看商品档案与 SKU 价格 | product_search / product_detail |
+| 做营销海报（**先问商家要文案**） | marketing_poster |
 | **改价（商品级 / 单规格）** | product_update / sku_update（**先 confirm 预览**） |
 | **改名** | product_update(name=新名称)（与改价同一条确认链） |
 | **批量改价 / 批量库存调整（多条）** | product_batch_update（**两段确认：勾选集合 → 逐条预览 → 执行；可 revert 撤销**） |

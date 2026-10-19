@@ -170,15 +170,24 @@ export async function getSessionMessages(
  * 获取快捷操作列表
  * GET /api/chat/quick-actions
  */
-export async function getQuickActions(): Promise<QuickAction[]> {
-  const res = await get<ApiResponse<{ actions: QuickAction[] }>>(
+export interface QuickActionsPayload {
+  actions: QuickAction[]
+  /** 工具类快捷入口（issue #7351：营销海报）；旧服务端没有该字段 ⇒ 空数组 */
+  tools: QuickAction[]
+}
+
+export async function getQuickActions(): Promise<QuickActionsPayload> {
+  const res = await get<ApiResponse<{ actions: QuickAction[]; tools?: QuickAction[] }>>(
     '/api/chat/quick-actions',
     { baseURL: AI_API_BASE_URL },
   )
   if (!res.success || !res.data) {
-    return []
+    return { actions: [], tools: [] }
   }
-  return res.data.actions || []
+  return {
+    actions: res.data.actions || [],
+    tools: res.data.tools || [],
+  }
 }
 
 /**
