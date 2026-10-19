@@ -38,6 +38,8 @@
  * （{@link feeFormula} / {@link isUnpriced} / {@link readFeeDetail}，issue #5843 由该组件上移到本文件）。
  */
 
+import { isFabricSaleLine } from './sale-form'
+
 /** 一行特殊选项的展示数据 */
 export interface SpecialOptionDisplayRow {
   /** React key（同一行内选项名唯一，服务端已按 Unicode 码点升序去重） */
@@ -403,6 +405,11 @@ export function buildOrderFeeComposition(
     const unpriced = isUnpriced(detail)
     // 布料单：金额 0 且不是「未定价」⇒ 这一行不进费用构成（不渲染空行 / ¥0.00 行）
     if (amount === 0 && !unpriced) return
+    // 布料单**不涉及加工费**（issue #7320）：定价引擎把「没有选配加工项」一律记 `unpriced`
+    // （它不认售卖形态）⇒ 布料行的落库 detail 就是 `fee_source=unpriced`。那不是「未定价」，
+    // 是「本来就没有这笔费用」⇒ 不进费用构成、不计入未定价（下单页早有同一豁免，此处补齐读面）。
+    // ⚠️ 只在金额为 0 时豁免：真落了非零加工费的行照常展示（不藏钱）。
+    if (amount === 0 && isFabricSaleLine(row?.processingInfo)) return
     const label = typeof row?.productName === 'string' && row.productName !== '' ? row.productName : `第 ${index + 1} 行`
     const unpricedLabel = unpriced ? unpricedCombinationLabel(detail ?? undefined) : null
     if (unpricedLabel !== null && !unpricedLabels.includes(unpricedLabel)) {

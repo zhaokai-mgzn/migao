@@ -9,6 +9,8 @@ import { craftSpecLine } from '@/lib/craft-display'
 // 数量 + 单位的**唯一**取值口（issue #6901：屏幕块与「复制全部」文本共用，不各拼一份 ——
 // 订单行自己的 `unit` 键 DTO 未下发 ⇒ 由调用方补加工单**快照行**的单位）
 import { craftRowsWithoutDoorWidth, quantityWithUnit } from '@/lib/order-item-sku'
+// 售卖形态的唯一读点（issue #7320）：卖布行 = `saleForm=布料`，判据不再各写一份字面量比较。
+import { isFabricSaleLine } from '@/lib/sale-form'
 // 工序清单的索引 / 状态文案（issue #6901）：唯一实现 = `lib/operation-list.ts`
 // （🔴 纸面自 issue #7274 起**不印工序** ⇒ 屏幕块直接走这一份，不再经 `./ProcessingDoc` 转出）；
 // 显示名一律走仓内**唯一**口径 `lib/operation-display.ts`（issue #4621）
@@ -145,7 +147,7 @@ function assignSourcesOf(items: OrderItem[]): AssignSource[] {
   for (const it of items) {
     const info = (it.processingInfo ?? {}) as Record<string, unknown>
     const procs = Array.isArray(info.processingItems) ? info.processingItems : []
-    if (procs.length === 0 && info.saleForm !== '布料') continue
+    if (procs.length === 0 && !isFabricSaleLine(info)) continue
     const meters = Number(it.quantity)
     // 🔴 issue #5904：`info.skuId` 是**雪花号字符串**（≈2.1e18 > 2^53）—— `Number()` 会吞掉末位，
     // 拿一个"看起来像"的 id 去查候选批次 ⇒ 查不到（或串到不存在的 SKU）。这里只判「是不是正整数串」。
