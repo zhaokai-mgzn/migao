@@ -87,7 +87,12 @@ modules:
           # 元元配置/欢迎语 + 租户 AI 配置的既有测试
           - 'tests/test_xiaobu.py'
           - 'tests/test_tenant_config.py'
-      # 商品图生成（issue #7335）：内核 app/images/generator.py → tests/test_generator.py
+      # 商品图生成（issue #7335）：内核 app/images/generator.py → tests/test_generator.py；
+      # 包声明 __init__.py 的公开面（KINDS / generate_product_image）由**同一条**可收集测试覆盖
+      # （不建 tests/test___init__.py —— 那个路径会让其它包的「无测试」登记表集体失效）
+      - pattern: 'backend/ai-agent-service/app/images/__init__\.py'
+        tests:
+          - 'tests/test_generator.py'
       - pattern: 'backend/ai-agent-service/app/images/(.+)\.py'
         tests:
           - 'tests/test_{1}.py'
