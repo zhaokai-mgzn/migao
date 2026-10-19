@@ -3087,7 +3087,7 @@ _CASE_CH_051 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['你们能帮我把商品名称改一下吗？'],
     expectations=['direct_reply'],
-    data_checks=['前置（precondition）：`product_update.parameters.properties` 含 `name`，且 `capability_boundary.UNITS.product_rename` 解析为 True（success=true；真值 = app/tools/product_update.py 的 schema + app/agents/capability_boundary.py 的 required_props=name；2026-10-19 实测）', '正向能力：`product_update(name=…)` 是 B 端可写面（`capability_boundary.UNITS.product_rename` required_props=name；`PRODUCT_SYSTEM_PROMPT` 与 `prompts/product.md` 都写改名可做）；回答应确认可以改名（或问清要改哪个商品），不出现 forbidden_text。', '本条是 #7291 投影段「✅ 清单不全」的反向对照：如果模型把「上下架不在能力内」泛化成「改名也不在能力内」，本用例必须红。'],
+    data_checks=['前置（precondition）：`product_update.parameters.properties` 含 `name`，且 `capability_boundary.UNITS.product_rename` 解析为 True（success=true；真值 = app/tools/product_update.py 的 schema + app/agents/capability_boundary.py 的 required_props=name；2026-10-19 实测）', '正向能力：`product_update(name=…)` 是 B 端可写面（`capability_boundary.UNITS.product_rename` required_props=name；`PRODUCT_SYSTEM_PROMPT` 与 `prompts/product.md` 都写改名可做）；回答应确认可以改名（或问清要改哪个商品），不出现 forbidden_text。', '本条是 #7291 投影段「✅ 清单不全」的反向对照：如果模型把「上下架不在能力内」泛化成「改名也不在能力内」，本用例必须红。', '能力询问先直接回答（#7347/CH-051）：`prompts/product.md` 写明「能力询问先答改名、不要预调工具」，`product_update` 工具描述写明「只问能不能/可以吗 ⇒ 直接回答能力，不预调 product_search/product_update」；判据 = backend/ai-agent-service/tests/test_product_prompt_capability_question.py。'],
     skip_reason='',
     tags=['chat', 'capability-boundary', 'false-refusal'],
     persona='mibao',
