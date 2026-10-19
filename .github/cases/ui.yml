@@ -4902,6 +4902,7 @@ cases:
     user_inputs:
       - 「当前缺乏商品的主图和明细图，你能否根据用户提供的样本图通过大模型来补充一份接近商品的样品图」（用户 2026-10-19）
       - 「如果效果可以的话，我希望做成商品创建中的功能的一部分」（用户 2026-10-19）
+    precondition: "本用例是 [backend-contract] 纯前端/接口契约用例：前置（已上传样图、admin-api 端点、ai-agent 内部端点）由三端单测自建或 mock（admin-web mock `@/lib/api`；admin-api mock ProductImageClient/FileStorageService；ai-agent mock httpx），不依赖共享夹具与真实服务 ⇒ 前置不成立时对应单测直接红；agent-eval 栈不跑它"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -4913,7 +4914,7 @@ cases:
     merge_log: "2026-10-19 新增（issue #7335）。数据侧：同日已为测试租户 46 的 6 个无图商品生成 24 张（6 主图 + 18 明细图）并写入 products.main_image / images / detail_images（qwen-image-3.0 封面 + 2.1-pro/mt-image-2.0/2.1-turbo 明细图自动切换）。功能侧：模型/提示词内核在 ai-agent（不落库、配额轮换），转存与页面入口在 admin-api/admin-web；平台统一 Key（用户 2026-10-19 裁定）。"
     traces:
       tests:
-        - "backend/ai-agent-service/tests/test_image_generation.py"
+        - "backend/ai-agent-service/tests/test_generator.py"
         - "backend/admin-api/src/test/java/com/migao/admin/controller/ProductImageControllerTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/ProductImageGenerationServiceTest.java"
         - "frontend/admin-web/tests/unit/components/ProductImageAI.test.tsx"

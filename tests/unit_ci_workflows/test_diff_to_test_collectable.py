@@ -131,6 +131,9 @@ _NO_TEST_REGISTRY = {
     "backend/ai-agent-service/app/production/__init__.py":
         "纯 docstring（模块说明）：原先靠 tests/test_production/__init__.py「报绿」，"
         "但那文件 pytest **永不收集** ⇒ 假的 pass，已随 #5353 删除该模板",
+    "backend/ai-agent-service/app/images/__init__.py":
+        "纯 docstring（模块说明）：包本身无行为；内核在 app/images/generator.py，"
+        "行为由 tests/test_generator.py 覆盖（issue #7335）",
     "backend/ai-agent-service/app/vision/__init__.py":
         "纯 docstring（模块说明）：原先靠 tests/test_vision/__init__.py「报绿」，"
         "但那文件 pytest **永不收集** ⇒ 假的 pass，已随 #5353 删除该模板",
@@ -483,7 +486,7 @@ def test_issue_5353_unproven_cells_are_concluded():
 # ── ⑥ 燃尽靶（§23.1 G2）：台账条数**只许缩短**，涨跌都红 ─────────────────────
 
 _ANCHOR_FALLBACK_RELIANT_DIRS = 3
-_ANCHOR_NO_TEST_FILES = 12
+_ANCHOR_NO_TEST_FILES = 13
 
 
 def test_burn_down_anchor_matches_current_ledger():

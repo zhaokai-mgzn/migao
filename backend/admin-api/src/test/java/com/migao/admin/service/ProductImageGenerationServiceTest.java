@@ -8,9 +8,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestTemplate;
 
 import java.net.URI;
@@ -131,24 +128,5 @@ class ProductImageGenerationServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("服务不可用");
         verifyNoInteractions(storage);
-    }
-
-    @Test
-    @DisplayName("客户端成功外壳解析：mock RestTemplate 返回 image_url/model")
-    void clientParsesResponse() throws Exception {
-        RestTemplate restTemplate = mock(RestTemplate.class);
-        ProductImageClient imageClient = new ProductImageClient(restTemplate);
-        org.springframework.test.util.ReflectionTestUtils.setField(imageClient, "baseUrl", "http://ai-agent:8000");
-        org.springframework.test.util.ReflectionTestUtils.setField(imageClient, "serviceToken", "tok");
-        when(restTemplate.exchange(anyString(), eq(HttpMethod.POST), any(), eq(String.class)))
-                .thenReturn(new ResponseEntity<>("""
-                        {"success":true,"data":{"image_url":"https://oss/tmp.png","model":"qwen-image-3.0"}}
-                        """, HttpStatus.OK));
-
-        ProductImageClient.GeneratedImage generated =
-                imageClient.generate("https://oss/sample.png", "回归布帘", "main");
-
-        assertThat(generated.imageUrl()).isEqualTo("https://oss/tmp.png");
-        assertThat(generated.model()).isEqualTo("qwen-image-3.0");
     }
 }

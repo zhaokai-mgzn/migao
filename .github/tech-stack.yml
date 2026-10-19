@@ -87,6 +87,10 @@ modules:
           # 元元配置/欢迎语 + 租户 AI 配置的既有测试
           - 'tests/test_xiaobu.py'
           - 'tests/test_tenant_config.py'
+      # 商品图生成（issue #7335）：内核 app/images/generator.py → tests/test_generator.py
+      - pattern: 'backend/ai-agent-service/app/images/(.+)\.py'
+        tests:
+          - 'tests/test_{1}.py'
       - pattern: 'backend/ai-agent-service/app/utils/(.+)\.py'
         tests:
           - 'tests/test_utils_{1}.py'

@@ -15478,6 +15478,7 @@ _CASE_UI_129 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端/接口契约用例：前置（已上传样图、admin-api 端点、ai-agent 内部端点）由三端单测自建或 mock（admin-web mock `@/lib/api`；admin-api mock ProductImageClient/FileStorageService；ai-agent mock httpx），不依赖共享夹具与真实服务 ⇒ 前置不成立时对应单测直接红；agent-eval 栈不跑它',
 )
 
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
