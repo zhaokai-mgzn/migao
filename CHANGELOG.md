@@ -6,6 +6,13 @@
 > **后续条目继续在本文件 `## [Unreleased]` 下累加。**
 
 ## [Unreleased]
+### 能力询问先直接回答：商品名称可以改，不预调工具（2026-10-19，issue #7347）
+
+CH-051 实测「你们能帮我把商品名称改一下吗？」两次同指纹失败：期望 `direct_reply`，实际先调了工具。
+产品侧确认**商品名称可以改**（改名 ✅，`product_update.name` 真值可达）。修法：`prompts/product.md`
+新增「能力询问先直接回答、不要先调 `product_search` / `product_detail` / `product_update`」规则；
+`product_update` 工具描述区分「明确要求执行」与「只问能不能」；黄金策 greeting/capabilities
+点名「商品改名 + 新名称是什么」。静态判据 = `tests/test_product_prompt_capability_question.py`。
 ### 评测入口收口：B 端可单腿跑，共享云租户回到 seed 1，建会话外键违例可读（2026-10-19，issue #7340）
 
 改前：B 端评测只能走共享云 `agent-eval.yml`，而共享库只剩 tenant 46、配置却钉 tenant 25

@@ -2327,6 +2327,7 @@
 数据: 前置（precondition）：`product_update.parameters.properties` 含 `name`，且 `capability_boundary.UNITS.product_rename` 解析为 True（success=true；真值 = app/tools/product_update.py 的 schema + app/agents/capability_boundary.py 的 required_props=name；2026-10-19 实测）
 数据: 正向能力：`product_update(name=…)` 是 B 端可写面（`capability_boundary.UNITS.product_rename` required_props=name；`PRODUCT_SYSTEM_PROMPT` 与 `prompts/product.md` 都写改名可做）；回答应确认可以改名（或问清要改哪个商品），不出现 forbidden_text。
 数据: 本条是 #7291 投影段「✅ 清单不全」的反向对照：如果模型把「上下架不在能力内」泛化成「改名也不在能力内」，本用例必须红。
+数据: 能力询问先直接回答（#7347/CH-051）：`prompts/product.md` 写明「能力询问先答改名、不要预调工具」，`product_update` 工具描述写明「只问能不能/可以吗 ⇒ 直接回答能力，不预调 product_search/product_update」；判据 = backend/ai-agent-service/tests/test_product_prompt_capability_question.py。
 前置: 前置 = 改名是可写能力：`product_update.parameters.properties` 含 `name`，且 `capability_boundary.UNITS.product_rename` 的 required_props=name 解析为 True（2026-10-19 实测）；前置不成立 ⇒ 模型可能被投影段误导成误拒，判红会伪装成「agent 不听话」
 禁词: 改名不在能力内
 禁词: 不支持改名
@@ -2335,7 +2336,7 @@
 禁词: 没有改名能力
 必须: {'any_of': ['改名', '名称']}
 ```
-溯源: 2026-10-19 新增（issue #7334 二次审计 P0-2 的正向对照）：#7291 的投影段曾只列「商品改价」，而域名 prompt 说改名可做 ⇒ 模型有理由误拒。取号 = 现取 chat.yml 最大号 CH-050 + 1 = CH-051（open PR 现取只有 #7333 生产看板改名，不含 chat 用例面；next_case_id 60s 读在飞面超时，合并前若撞号会改号）。 ｜ tags: chat, capability-boundary, false-refusal
+溯源: 2026-10-19 新增（issue #7334 二次审计 P0-2 的正向对照）：#7291 的投影段曾只列「商品改价」，而域名 prompt 说改名可做 ⇒ 模型有理由误拒。2026-10-19 收口（#7347）：实测该问句两次触发 tool calls（expect direct_reply），已把「能力询问先直接回答、不预调工具」写进 product.md / 工具描述 / 直接回复，并加静态判据；取号说明保留。 ｜ tags: chat, capability-boundary, false-refusal
 
 ### CH-052. 上下架按裁定 A 不做：问「批量下架」不得声称已下架，须给商品管理落点 🔵
 ```
