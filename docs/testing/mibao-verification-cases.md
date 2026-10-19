@@ -11967,6 +11967,7 @@
 数据: 判据 2·**旧链接不再存在**：`src/` 里没有写死的 `href` / `redirect(` / `router.push|replace(` 指向 `/production/routings`（注释里的历史说明、`page-context` 的路由映射、`layout.tsx` 的权限前缀不算链接）。证据：同测试文件的 `linksToRetiredRoute()`
 数据: 判据 3·**定价入口与文案同源**：计件工资「去定价」的落点常量 = `/settings?domain=operation-prices`（文案写的是「企业基础设置 → 工序与部位单价」）。证据：frontend/admin-web/tests/unit/components/UnpricedNotice.test.tsx、ProductionProgressTable.test.tsx、PieceworkTable.test.tsx
 数据: 判据 4·**功能体仍有覆盖**：原借旧页当壳的两个测试改为直接渲染 `ProcessConfigBoard`（覆盖不随页面下架一起消失）。证据：OperationsScopeColumn.test.tsx、OperationsProvenance.test.tsx
+跳过: [backend-contract] 本用例判的是 admin-web 的**旧路由下架 + 链接面**（/production/routings → 重定向 /settings?domain=operation-prices、全仓无写死旧链接），**没有 Agent 面可跑**：user_inputs 是用户 2026-10-18 的报障原文，expectations 的 direct_reply 只是占位。承载体 = traces.tests 里的 6 个前端单测。2026-10-19 mibao 基线实测它被当成 LLM 用例跑（agent 调 nav_guide / craft_calc_config_query 等 ⇒ 误判红灯，issue #7027）。
 ```
 溯源:  ｜ tags: navigation, settings, route-retirement, ui
 
@@ -11979,6 +11980,7 @@
 数据: 判据 3·**尺寸 token**：sm=h-8 / md=h-9 / lg=h-10，圆角 rounded-lg（改映射 ⇒ 红）。证据：同文件
 数据: 判据 4·**类级**：裸 `<button>` 不得自带主色 chrome（`bg-primary-600`）；存量 10 处按冻结台账只许缩短，新增文件/同文件变多 ⇒ 红并具名。证据：同文件 `NAKED_PRIMARY_LEDGER`
 数据: 迁移面：工艺配置（刷新/新增工序/新建路线）、加工项与分类（加工分类/新增加工项）、加工费组合（新建组合）、工序与部位单价（刷新/新增工序）—— 全部改走 `icon` slot。证据：frontend/admin-web/src/components/production-config/*.tsx
+跳过: [backend-contract] 本用例判的是 admin-web 的**设计系统按钮形态**（icon slot / loading 顶替 / 尺寸 token / 裸 button 冻结台账），**没有 Agent 面可跑**：user_inputs 是用户 2026-10-18 的裁定原文，expectations 的 direct_reply 只是占位。承载体 = traces.tests 里的前端单测。2026-10-19 mibao 基线里它同样被当成 LLM 用例跑（issue #7027）。
 ```
 溯源:  ｜ tags: design-system, button, ui
 
@@ -12023,7 +12025,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：823（活跃 139，跳过 684）
+- 用例总数：823（活跃 137，跳过 686）
 - tier 分布：smoke 12 / normal 756 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
