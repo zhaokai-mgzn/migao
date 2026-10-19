@@ -2642,7 +2642,7 @@ cases:
   # 不新建 SSE 主动推 / 定时 / 队列等推送基础设施。
   - id: MC-070
     legacy_id: ""
-    title: "黄金策**主动新手引导**（issue #5989 · P2）：首次进某个已登记页面 ⇒ 对话区主动发一条**导航提示**；**每页每会话最多 1 次**（服务端判，不靠前端自觉）· **只推该角色可见的**（只读服务端会话权限）· **未登记页面不推**（默认拒绝，静默）· **只给导航不给步骤**（结构 + 文案双层）· 拿不到「在哪一页 / 这页能做什么」⇒ **不发**（可行动性）"
+    title: "黄金策**主动新手引导**（issue #5989 · P2）：首次进某个已登记页面 ⇒ 对话区主动发一条**导航提示**；**每页每会话最多 1 次**（服务端判，不靠前端自觉）· **只推该角色可见的**（只读服务端会话权限）· **未登记页面不推**（默认拒绝，静默）· **只给导航不给步骤**（结构 + 文案双层）· 拿不到「你在哪一页 / 入口怎么走」⇒ **不发**（可行动性）· 文案只写**商家话术**（内部标识 / 元指令不上屏）· **不落进会话历史**（存量行读侧消化，issue #7324）"
     domains:
       - misc
       - ai
@@ -2658,7 +2658,7 @@ cases:
       - red-proof
     truths_ref: []
     user_inputs:
-      - "用户**首次进入**某个已登记页面（如商品管理 /products）⇒ 黄金策在对话区主动发一条：「你在【商品管理】（/products）。这页能做：…（登记项 #products → 一级项「商品管理」）（只给导航：在哪一页 / 这页有什么。操作步骤不在本轮。）」"
+      - "用户**首次进入**某个已登记页面（如商品管理 /products）⇒ 黄金策在对话区主动发一条**商家话术**：「你在【商品管理】。入口在左侧菜单。想了解这一页怎么用，直接问我就行。」（组内页面则给完整入口，如「你在【订单列表】。入口在左侧菜单「交易管理」→「订单列表」。想了解这一页怎么用，直接问我就行。」）——**不出现** route（/products）/ 登记项 id（#products）/ 菜单组 key（trade-center）/ 「只给导航…」元指令；同一会话再进同一页 ⇒ 静默；**这条提示不进会话历史**（换端 / 重登后不会回放）。"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -2667,10 +2667,11 @@ cases:
       - "**角色裁剪**：只按**服务端会话**的 `permissions` 判（`build_proactive_push` 签名里**没有 role** ⇒ 客户端递交的 role/permissions 结构上读不到）。无权 ⇒ `not_visible` ⇒ 静默。红证：删掉裁剪 ⇒ 无权角色照样收到路径（红）。"
       - "**未登记页面不推**：route → 功能唯一对应（`_ROUTE_FEATURES` 从 `MENU_TREE`/`NAV_FEATURES` **现算**）；未登记 / 被多条登记项覆盖（歧义）⇒ `unregistered` / `ambiguous_route` ⇒ 静默。红证：把未登记 route 放行 ⇒ 红。"
       - "**只给导航不给步骤（结构 + 文案双层）**：① 结构 = `ProactivePush.to_data()` 的键闭集 `{proactive, featureId, label, route, capabilities, citation}`（**没有** steps / 操作说明 / 图文）；② 文案 = `render()` / `capabilities` 不含受控步骤词（复用 `tests/unit_ci_workflows/test_menu_navigator.py::STEP_WORDS` 同一份词表）。红证：给 `data` 塞一个 `steps` 键 ⇒ 红。"
-      - "**可行动性**：文案必须带「在哪一页」（label + route）+「这页能做什么」（capabilities 非空），否则 `unregistered` ⇒ **不发**（宁可静默）。红证：让 label/route/capabilities 取空仍发 ⇒ 红。"
+      - "**可行动性**：文案必须带「你在哪一页」（`label`）+「入口怎么走」（`capabilities` 非空，且组名取 `MENU_GROUP_LABELS` 的**显示名**），否则 `unregistered` ⇒ **不发**（宁可静默）。`route` 只做判定入参、**不上屏**。红证：让 label/capabilities 取空仍发 ⇒ 红。"
+      - "**内部标识不上屏 + 不落历史（issue #7324，2026-10-19 用户裁定）**：① `render()` 的输出**不含** `登记项` / `只给导航` / 菜单组 key（`MENU_GROUPS` 的英文 key）/ `route` / `（只给导航…）` 元指令 —— 追溯锚只留在 `to_data().citation` 与审计里（红证：把 `self.citation` / `self.route` 拼回 `render()` ⇒ `tests/unit_ci_workflows/test_proactive_onboarding.py::test_render_has_no_internal_identifiers` 红；把 `node.group` 当显示名 ⇒ `test_capabilities_use_display_labels` 红）；② 主动推送段**不调用** `_save_message_or_report`（不落库；红证：恢复落库 ⇒ `test_push_is_not_written_into_history` + 行为面 `test_pushed_message_is_not_saved_into_history` 红）；③ 存量行（`（只给导航：` 签名）在 `get_history` 与 `_convert_history_to_agent_format` **读侧跳过**（不回放、不进模型历史；不回写库 —— 与 #7112 / #7236 同口径）。"
       - '**不新建推送基础设施**：运输形态 = 客户端在路由变化时发 `__PAGE_ENTER__|{"route": "…"}`（复用既有 `POST /api/chat/send`），服务端判定后**不经 LLM** 直接回一条 `text` + `done`（文案全部来自登记表）。判据核「`chat.py` 不含**任何**定时 / 队列 / 主动 SSE 推送的原语（`asyncio.create_task` / `sleep` / `Queue` 等）」与「进页前缀的分派在 `page_context` 之前」。'
     skip_reason: "[backend-contract] 判定本体是**零依赖纯函数**（登记表 + 会话权限 + 已推集三样入参）⇒ 由 tests/unit_ci_workflows/test_proactive_onboarding.py（静态面，**不 import `app.*` 运行时依赖**，CI 的 helper job 只装 pytest/pyyaml）+ backend/ai-agent-service/tests/test_proactive_onboarding.py（行为面，真跑 `_handle_page_enter_request`）+ frontend/admin-web/tests/unit/store/chat-proactive-onboarding.test.ts（前端只递交、不判定）验证，**非 LLM 行为**，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-02 集成侧 rebase 让号：本用例原取 MC-067，与同日落 main 的 #6009 承载体用例（MC-067）撞号 ⇒ 按取号台账「后合入者让号」改判为 **MC-070**，并同 PR 补 `.github/cases/claims/6030-MC-070.json`（accumulating ledger）。2026-10-02 新增（issue #5989 的下半场；上半场 P1 = 导航真值源 #5996 已在 main）。用户 2026-10-02 裁定形态 = **A：对话区 + 首次进页触发**，口径逐字：「每页每会话最多 1 次 · 只推该角色可见的 · 未登记页面不推 · 只给导航不给步骤」。落地 = ① `menu_navigator.py` 新增 route→功能解析 + `build_proactive_push` 纯函数判定（四种 fail-closed 出口）+ `ProactivePush`（结构不含 steps）；② `chat.py` 新增 `__PAGE_ENTER__|` 客户端触发入口（**不经 LLM**）+ 会话级上限（`session_states`，先记账后推送）；③ 前端 store `notifyPageEnter` + dashboard layout 路由变化触发（只在有会话时递，无用户气泡）。**有意不做**（未覆盖）：服务端主动推（SSE 定时/队列）、「用户可关闭 / 静默」设置面、**子页面**（`/orders/123` 这类非菜单路径）不推（严格按菜单节点判定）。取号 **MC-067**：现取（main ∪ 全部 open PR ∪ 工作区）= main 最大 MC-065、在飞 **PR #6021 占 MC-066**（该 PR 的 `misc.yml` 现取最大 = MC-066）⇒ 按「现取最大号 + 1」= MC-067；`.github/cases/claims/` 机制尚未落地（#6017 仍 draft）⇒ 待 #6017 落地后迁移。⚠️ `scripts/next_case_id.py MC` 给的是**历史空档 MC-049**，与 MC-055/056/058/064 的先例一致地**不采用**（空档号 ≠ 可用号：该号写在已 CLOSED 的 PR 分支里）。"
+    merge_log: "2026-10-02 集成侧 rebase 让号：本用例原取 MC-067，与同日落 main 的 #6009 承载体用例（MC-067）撞号 ⇒ 按取号台账「后合入者让号」改判为 **MC-070**，并同 PR 补 `.github/cases/claims/6030-MC-070.json`（accumulating ledger）。2026-10-02 新增（issue #5989 的下半场；上半场 P1 = 导航真值源 #5996 已在 main）。用户 2026-10-02 裁定形态 = **A：对话区 + 首次进页触发**，口径逐字：「每页每会话最多 1 次 · 只推该角色可见的 · 未登记页面不推 · 只给导航不给步骤」。落地 = ① `menu_navigator.py` 新增 route→功能解析 + `build_proactive_push` 纯函数判定（四种 fail-closed 出口）+ `ProactivePush`（结构不含 steps）；② `chat.py` 新增 `__PAGE_ENTER__|` 客户端触发入口（**不经 LLM**）+ 会话级上限（`session_states`，先记账后推送）；③ 前端 store `notifyPageEnter` + dashboard layout 路由变化触发（只在有会话时递，无用户气泡）。**有意不做**（未覆盖）：服务端主动推（SSE 定时/队列）、「用户可关闭 / 静默」设置面、**子页面**（`/orders/123` 这类非菜单路径）不推（严格按菜单节点判定）。取号 **MC-067**：现取（main ∪ 全部 open PR ∪ 工作区）= main 最大 MC-065、在飞 **PR #6021 占 MC-066**（该 PR 的 `misc.yml` 现取最大 = MC-066）⇒ 按「现取最大号 + 1」= MC-067；`.github/cases/claims/` 机制尚未落地（#6017 仍 draft）⇒ 待 #6017 落地后迁移。⚠️ `scripts/next_case_id.py MC` 给的是**历史空档 MC-049**，与 MC-055/056/058/064 的先例一致地**不采用**（空档号 ≠ 可用号：该号写在已 CLOSED 的 PR 分支里）。 ｜ 2026-10-19 修订（issue #7324，用户裁定「文案改商家话术 + 不再落进历史」）：① `ProactivePush.render()` 去掉 citation（`登记项 #…`）/ route / 「只给导航…」元指令，组名改走 `MENU_GROUP_LABELS` 显示名（`trade-center` → `交易管理`）；② 主动提示**不再落库**（`_push_stream` 只 yield `text` + `done`），存量行按 `LEGACY_PROACTIVE_TIP_MARK` 在 `get_history` / `_convert_history_to_agent_format` 读侧跳过（不回写库）；③ 判据同批改：静态 `test_render_has_no_internal_identifiers` / `test_capabilities_use_display_labels` / `test_push_is_not_written_into_history` / `test_legacy_rows_are_filtered_on_read`，行为 `test_criterion_9_no_internal_identifiers_on_screen` / `test_pushed_message_is_not_saved_into_history` / `test_legacy_rows_are_dropped_on_read`。"
     traces:
       tests:
         - tests/unit_ci_workflows/test_proactive_onboarding.py
