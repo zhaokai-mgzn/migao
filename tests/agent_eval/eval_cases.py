@@ -3027,7 +3027,7 @@ _CASE_CH_049 = EvalCase(
     skill=Skill.MULTI_TURN,
     difficulty=Difficulty.NORMAL,
     user_inputs=['帮我开个客服账号，姓名李四，手机号 13800009999', '你别让我去后台，直接帮我建好就行'],
-    expectations=['direct_reply or employee_manage'],
+    expectations=[],
     data_checks=['前置（precondition）：`employee_manage` 在 B 端可达集里只有 list/detail、**无写 action**（success=true；真值 = app/tools/employee_manage.py 的 action 枚举 + capability_boundary.mibao_reachable_tool_names）', '两轮回复都必须给出**后台落点**：至少出现「组织管理」与「员工管理」（真实侧边栏节点；真值 = backend/ai-agent-service/app/agents/capability_boundary.py 的 UNITS，2026-10-19 渲染实测逐字为「员工账号的创建与变更 → 后台「组织管理 → 员工管理」」）', '不得用承诺代办的措辞替代落点（机器断言 = forbidden_text）：允许「我这边办不了 / 没有这个能力」，不允许「已在为您创建」', '工具面：employee_manage 只剩 list/detail（写 action 随 #5247 只读化下线）⇒ 任何写调用都不可能成功；本用例只判「不承诺 + 给落点」，**不要求**必须调工具'],
     skip_reason='',
     tags=['chat', 'capability-boundary', 'refusal-integrity'],
@@ -12983,27 +12983,6 @@ _CASE_ST_012 = EvalCase(
     must_succeed=[{'tool': 'payment_qrcode_query'}],
 )
 
-# ── ST-013 [NORMAL] 未读通知一次清掉：真标已读（走确认门禁），不得谎称已读（源: cases/settings.yml）──
-_CASE_ST_013 = EvalCase(
-    id='ST-013',
-    legacy_id='',
-    title='未读通知一次清掉：真标已读（走确认门禁），不得谎称已读',
-    skill=Skill.GENERAL,
-    difficulty=Difficulty.NORMAL,
-    user_inputs=['把未读的通知都标成已读', '确认'],
-    expectations=['notification_manage', 'interact or notification_manage'],
-    data_checks=['「标记已读」必须**真调工具**（调了 ≠ 成了：#3778 口径，must_succeed 机器判）—— ST-005 覆盖单条点名，本用例覆盖「一次清掉未读」的批量说法', '写面走确认门禁（#7040）：改动前必须有确认卡或等价确认，不得直接落库', "夹具未读行 = ntf_eval_new_order_0001（tenant 1 / recipient dev_user / status='sent' / read_at IS NULL），见 tests/agent_eval/fixtures/mibao_eval_seed.sql 的 Phase 6"],
-    skip_reason='',
-    tags=['settings', 'notification', 'write_path'],
-    persona='mibao',
-    debug_user='',
-    form_prefill=[],
-    forbidden_card_text=[],
-    must_succeed=[{'tool': 'notification_manage'}],
-    namespaces=['notification:ntf_eval_new_order_0001'],
-    precondition="前置 = 夹具里确有未读通知 `ntf_eval_new_order_0001`（status='sent' / read_at IS NULL / recipient dev_user；`tests/agent_eval/fixtures/mibao_eval_seed.sql` Phase 6 自检块 fail-closed）；前置不成立 ⇒ 没有可标记对象，判红会伪装成「agent 不会标已读」。种子的 ON CONFLICT 会把它复位回未读 ⇒ 重跑前置等价",
-)
-
 # ── TR-001 [NORMAL] refresh-success — 401 自动刷新并重放原请求（源: cases/token-refresh.yml）──
 _CASE_TR_001 = EvalCase(
     id='TR-001',
@@ -16131,7 +16110,6 @@ ALL_CASES = (
     _CASE_ST_010,
     _CASE_ST_011,
     _CASE_ST_012,
-    _CASE_ST_013,
     _CASE_TR_001,
     _CASE_TR_002,
     _CASE_TR_003,

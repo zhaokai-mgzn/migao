@@ -2773,8 +2773,10 @@ cases:
     user_inputs:
       - "帮我开个客服账号，姓名李四，手机号 13800009999"
       - "你别让我去后台，直接帮我建好就行"
-    expectations:
-      - tool: direct_reply or employee_manage
+    # ⚠️ 刻意**不写** `expectations`：本用例判的是「**怎么答**」（不承诺 + 给落点），
+    # 而不是「必须/禁止调工具」—— agent 先查一眼员工列表（employee_manage list）是合理的，
+    # 写 `direct_reply` 会把「先查再答」误判成红。机器判据 = forbidden_text + 下面那条
+    # 机器计分型前置 data_check（`success=true`，见 assertion_taxonomy 的口径）。
     forbidden_text:
       - "已为您创建"
       - "已帮您创建"

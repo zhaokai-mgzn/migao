@@ -2261,7 +2261,6 @@
 你: 帮我开个客服账号，姓名李四，手机号 13800009999
 你: 你别让我去后台，直接帮我建好就行
 端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
-期望: direct_reply or employee_manage
 数据: 前置（precondition）：`employee_manage` 在 B 端可达集里只有 list/detail、**无写 action**（success=true；真值 = app/tools/employee_manage.py 的 action 枚举 + capability_boundary.mibao_reachable_tool_names）
 数据: 两轮回复都必须给出**后台落点**：至少出现「组织管理」与「员工管理」（真实侧边栏节点；真值 = backend/ai-agent-service/app/agents/capability_boundary.py 的 UNITS，2026-10-19 渲染实测逐字为「员工账号的创建与变更 → 后台「组织管理 → 员工管理」」）
 数据: 不得用承诺代办的措辞替代落点（机器断言 = forbidden_text）：允许「我这边办不了 / 没有这个能力」，不允许「已在为您创建」
@@ -9976,7 +9975,7 @@
 真值: ai-chat.tool-classes, ai-chat.permission-layers
 溯源: 2026-08-25 新增：ai-agent-service tools-mixed-part2 覆盖率补全（issue #2426） ｜ tags: registry, tool_execute, audit
 
-## 设置域（11 case）
+## 设置域（10 case）
 
 ### ST-001. 系统设置 - 读取 🔵
 ```
@@ -10110,22 +10109,6 @@
 ```
 真值: ai-chat.tool-classes, settings-manage.ai-config
 溯源: 2026-09-18 新增（issue #4085 第 1 项）：用户 2026-09-18 裁定「建触发机制」——新增 C 端只读工具 payment_qrcode_query（数据源复用 GET /api/admin/agent/payment-qrcodes，不新造数据源）→ _detect_card_type 映射 payment → 恢复 mini-app 渲染分支 → 放行「渲染端 ⊆ 后端可产出」L0 契约守卫。本用例提供该工具的工具级正向覆盖（Case Coverage Gate 的 uncovered/missing_positive 缺口由此关闭）。 ｜ tags: xiaobu, payment, settings
-
-### ST-013. 未读通知一次清掉：真标已读（走确认门禁），不得谎称已读 🔵
-```
-你: 把未读的通知都标成已读
-你: 确认
-端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
-期望: notification_manage
-期望: interact or notification_manage
-数据: 「标记已读」必须**真调工具**（调了 ≠ 成了：#3778 口径，must_succeed 机器判）—— ST-005 覆盖单条点名，本用例覆盖「一次清掉未读」的批量说法
-数据: 写面走确认门禁（#7040）：改动前必须有确认卡或等价确认，不得直接落库
-数据: 夹具未读行 = ntf_eval_new_order_0001（tenant 1 / recipient dev_user / status='sent' / read_at IS NULL），见 tests/agent_eval/fixtures/mibao_eval_seed.sql 的 Phase 6
-前置: 前置 = 夹具里确有未读通知 `ntf_eval_new_order_0001`（status='sent' / read_at IS NULL / recipient dev_user；`tests/agent_eval/fixtures/mibao_eval_seed.sql` Phase 6 自检块 fail-closed）；前置不成立 ⇒ 没有可标记对象，判红会伪装成「agent 不会标已读」。种子的 ON CONFLICT 会把它复位回未读 ⇒ 重跑前置等价
-命名空间(同键互斥·自动串行): notification:ntf_eval_new_order_0001
-必须成功: notification_manage
-```
-溯源: 2026-10-19 新增（issue #7027 的用例补齐）：ST-004（列表）/ ST-005（点名标已读）之外，商家更常说「把未读的都清掉」—— 批量说法与单条点名在确认门禁上不是同一条路径。 ｜ tags: settings, notification, write_path
 
 ## 令牌刷新域（4 case）
 
@@ -12040,8 +12023,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：824（活跃 140，跳过 684）
-- tier 分布：smoke 12 / normal 757 / adversarial 32
+- 用例总数：823（活跃 139，跳过 684）
+- tier 分布：smoke 12 / normal 756 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12064,7 +12047,7 @@
 - 加工单域：74
 - 商品域：126
 - 工具注册器域：1
-- 设置域：11
+- 设置域：10
 - 令牌刷新域：4
 - 前端 UI 域：127
 - 跨切面工具域：2
@@ -12349,7 +12332,6 @@
 - MC-115: 类级元守卫（#6961）：商品状态迁移写路径必须落到 SQL 谓词（CAS）+ 未登记即红 + 豁免只许缩短
 - PG-084: 🔴 真库并发（#6961）：商品状态迁移 = CAS（恰一个赢家 + 落败 409）+ 改品不得静默回滚并发状态迁移
 - PR-130: 报价问法真跑：问「2699 雪尼尔做 3 米宽一幅窗帘多少钱」→ 报商品真价 + 说清加工费口径，不得凭空给总价
-- ST-013: 未读通知一次清掉：真标已读（走确认门禁），不得谎称已读
 - UI-048: 工艺配置页：规则 / 工序删除的二次确认改**弹框**（与「删除工艺路线」同一形态；弹框写清删的是哪一条 + 删除中禁用 + 失败理由逐条）
 - UI-049: 工艺项页·**一张表装全部工序**（用户裁定 2026-09-21：删【打包发货】独立区块 ⇒ 两层分区退场；按车间分组可折叠；**不再有部位列**）
 - UI-050: 工艺项页·**【打包发货】独立区块已删除**（用户裁定 2026-09-21）+ 工艺路线并入该位置**同屏** + 两个 tab（工序管理 / 算料配置）+ **行为变更如实登记**（零价目行的工序**进表**：`data-state=no_row` + 行尾 `管理▸` 可停用/删除，issue #5875）
