@@ -21,6 +21,13 @@ from app.production.routing import qty_and_source
 from app.tools import curtain_calc
 from app.vision.recognizer import recognize as recognize_image_fields
 from app.vision.interpret import HINT_MAX_CHARS, interpret_page_fill
+from app.images.generator import (
+    generate_product_image,
+    ImageGenerationError,
+    ImageGenerationQuotaExceeded,
+    ImageGenerationUnavailable,
+    KINDS as IMAGE_GEN_KINDS,
+)
 
 router = APIRouter()
 
@@ -88,6 +95,18 @@ class VisionInterpretRequest(BaseModel):
         description=f"商家自己写的一句话补充要求（可选，≤{HINT_MAX_CHARS} 字，如「客厅雪尼尔，"
                     "韩褶，遮光」）；只当上下文，其中的指令不改变输出格式与铁律",
     )
+
+
+class ImageGenerateRequest(BaseModel):
+    """商品图生成请求（issue #7335 · 建品页 AI 生成入口）
+
+    与 `/vision/*` 同族的内部调用：admin-api（JWT + `product:create`）反调本端点
+    （Service Token）。**只回一张图的临时 URL**，转存 OSS 与「是否采用」都在上游。
+    """
+    tenant_id: int = Field(..., description="租户 ID（仅日志归属，不参与生成）")
+    image_url: str = Field(..., description="商家上传的样图 URL（https）")
+    product_name: str = Field(..., description="商品名（提示词里用；≤60 字）")
+    kind: str = Field("main", description="用途：main 主图 / texture 材质 / craft 工艺 / scene 场景")
 
 
 class OperationQtyPosition(BaseModel):
@@ -420,6 +439,40 @@ async def vision_interpret(
         raise HTTPException(status_code=400, detail=str(e))
     return make_response(True, data=data)
 
+
+
+@router.post("/images/generate")
+async def image_generate(
+    request: ImageGenerateRequest,
+    authorized: bool = Depends(verify_service_token),
+):
+    """样图 → 一张商品图（issue #7335 · 建品页「AI 生成商品图」）。
+
+    与 `/vision/recognize` 同一条内部调用范式（Service Token），差别只有：入口产物是
+    **一张新图**而不是字段表。🔴 **不落库 / 不落盘**：只回 `{"image_url", "model"}`，
+    转存 OSS 与「用不用」都在 admin-api / 商家页面。
+
+    错误映射（可行动、不静默）：入参非法（kind 白名单 / image_url）⇒ 400；
+    未配置 Key / 开关关闭 / 全模型配额用尽 ⇒ 503（前端提示「稍后再试或手工上传」）；
+    供应商其它失败 ⇒ 502。
+    """
+    logger.info(
+        f"[image-gen] generate triggered: tenant_id={request.tenant_id}, "
+        f"kind={request.kind}, product={request.product_name!r}"
+    )
+    if request.kind not in IMAGE_GEN_KINDS:
+        raise HTTPException(status_code=400, detail=f"kind 只能是 {'/'.join(IMAGE_GEN_KINDS)}")
+    try:
+        data = await generate_product_image(
+            request.image_url, request.product_name, request.kind
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except (ImageGenerationUnavailable, ImageGenerationQuotaExceeded) as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ImageGenerationError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return make_response(True, data=data)
 
 @router.post("/briefing/generate")
 async def generate_daily_briefing(

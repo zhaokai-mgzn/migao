@@ -6,6 +6,7 @@ import { Plus, RotateCcw, Settings2, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button, Input, Loading, Modal, NumberInput, Select } from '@/components/ui'
 import ImageUploader from './ImageUploader'
+import ProductImageAI from './ProductImageAI'
 import SkuMatrix from './SkuMatrix'
 import ProductAttributes from './ProductAttributes'
 import RichTextEditor from './RichTextEditor'
@@ -635,6 +636,16 @@ export default function ProductForm({
                 multiple
                 showOrderBadge
                 confirmRemove
+              />
+              <ProductImageAI
+                sampleImage={form.images?.[0]}
+                productName={form.name}
+                onApplyMain={(url) =>
+                  updateField('images', [url, ...(form.images || [])].slice(0, 5))
+                }
+                onApplyDetail={(url) =>
+                  updateField('detailImages', [...(form.detailImages || []), url].slice(0, 9))
+                }
               />
               {errors.images && (
                 <p className="text-sm text-red-600 mt-2">{errors.images}</p>
