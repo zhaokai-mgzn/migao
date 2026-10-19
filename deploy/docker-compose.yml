@@ -84,6 +84,13 @@ services:
       # （.gitignore:81 显式白名单）——仅用于本地/CI dev 栈，不涉及生产密钥。
       JWT_PRIVATE_KEY_PEM: ${JWT_PRIVATE_KEY_PEM:-}
       JWT_PUBLIC_KEY_PEM: ${JWT_PUBLIC_KEY_PEM:-}
+      # ⚠️ 经 ai-agent 的链路（算料试算 / 入驻甄别）必须显式给这两个（issue #7027 实证）：
+      # `application.yml` 的两个默认值都是**坏的** —— `base-url` 默认 http://localhost:8000
+      # （容器内指向自己，不是 ai-agent 服务）、`service-token` 默认**空** ⇒ 不给就**静默**
+      # fail-closed（PP-015 实测：「未配置 ai-agent.service-token」），而 ai-agent 看着完全健康。
+      # 容器内用**服务名**寻址：ai-agent-service:8000 = 容器端口（宿主侧才是 8001）。
+      AI_AGENT_BASE_URL: ${AI_AGENT_BASE_URL:-http://ai-agent-service:8000}
+      AI_AGENT_SERVICE_TOKEN: ${DEV_SERVICE_TOKEN:?请先 export DEV_SERVICE_TOKEN（与 ai-agent 保持一致）}
     ports:
       - "8080:8080"
     depends_on:
