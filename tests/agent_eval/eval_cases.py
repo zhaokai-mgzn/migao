@@ -2035,17 +2035,17 @@ _CASE_BM_050 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── BM-051 [NORMAL] 工人端拍照入库 / 拍照补打 / 拍照发货页文案：工人可见纯文本（零 markdown 标记、零研发术语）（源: cases/bmini.yml）──
+# ── BM-051 [NORMAL] 手机端页面文案：工人 / 商家可见纯文本（零 markdown 标记、零研发术语）（源: cases/bmini.yml）──
 _CASE_BM_051 = EvalCase(
     id='BM-051',
     legacy_id='',
-    title='工人端拍照入库 / 拍照补打 / 拍照发货页文案：工人可见纯文本（零 markdown 标记、零研发术语）',
+    title='手机端页面文案：工人 / 商家可见纯文本（零 markdown 标记、零研发术语）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
-    user_inputs=['工人（工号 + PIN）在手机上打开拍照入库 / 拍照补打入库标签：拍照步的提示是工人能直接读懂的话（条码拍清楚 ⇒ 手机当场就能认出来；认不出 ⇒ 换一种方式再认一次，会稍慢一点），屏幕上不出现 `**` 星号，也不出现「识别模型 / 服务端 / 解码」这类研发术语'],
+    user_inputs=['工人 / 商家在手机上打开拍照入库 / 拍照补打入库标签 / 拍照发货 / 计件工资 / 派单 / 数据页：看到的字是能直接读懂的话（二维码拍清楚 ⇒ 手机当场就能认出来；认不出 ⇒ 换一种方式再认，会稍慢一点），屏幕上不出现 `**` 星号，也不出现「识别模型 / 服务端 / 解码 / 接口」这类研发术语'],
     expectations=['direct_reply'],
-    data_checks=['判据 1·**零 markdown 标记**：工人页面（frontend/bmini-app/src/pages/worker/**）与页面直渲文案源的 JSX 文本 / 中文字面量里没有 `**` / `__` —— Taro `<Text>` 不渲染 markdown ⇒ 星号原样印在工人手机上。红证（实跑过：`git stash push -- src` 还原 origin/main 形态后跑本判据）：frontend/bmini-app/tests/worker-copy-plain-text-guard.test.ts 判据 1 判红并逐条具名（inbound:337 / reprint:319 / shipment:182 三处页面文案），修后 3 passed。证据：frontend/bmini-app/tests/worker-copy-plain-text-guard.test.ts', '判据 2·**零研发术语**：工人可见文案不含「识别模型 / 大模型 / LLM / 服务端 / 解码」，改成工人视角的后果与动作（当场认出来 / 换一种方式再认一次 / 会稍慢一点 / 系统记第 N 次）。红证（同一次实跑）：判据 2 逐条具名 10 处（两页拍照提示 + 「服务端记第 N 次」+ recognizeFlow / barcodeDecode / recognizeGate / reprintFlow 的文案源）。证据：同判据 1 + frontend/bmini-app/tests/worker-inbound-page.test.tsx（C9）+ frontend/bmini-app/tests/worker-reprint-page.test.tsx（P10）', '判据 3·**过程不静默**（既有口径不弱化）：解码失败 / 降级时仍给一句明说，只是措辞换成工人能懂的「换一种方式再认一次」。证据：frontend/bmini-app/tests/inbound-decode-first.test.ts（C4）+ frontend/bmini-app/tests/inbound-reprint-flow.test.ts（F5b）', '判据 4·**射程可复核**（防假绿）：守卫带判别力自证 —— 抽到 > 10 条文案、三个页面各自在射程内、改后的正向锚点（换一种方式再认一次）命中；台账类文件（gaps / pageEntries / reprintFlow 的 `why` / `audience` 字段）不在射程（它们从不上屏），该取舍写在守卫文件头。证据：同判据 1'],
-    skip_reason='[backend-contract] 确定性文案守卫（jest: frontend/bmini-app/tests/worker-copy-plain-text-guard.test.ts + worker-inbound-page / worker-reprint-page / inbound-decode-first / inbound-reprint-flow），非 LLM 行为，不进入 agent-eval 冒烟',
+    data_checks=["判据 1·**零 markdown 标记**：手机端页面（frontend/bmini-app/src/pages/** + src/components/**）的 JSX 文本与字面量里没有 `**` / `__` / 行内反引号 / 行首标题，**含被拆到多个 JSX 子节点的裸标记**（`<Text>{'**'}{n}{'**'}</Text>`）—— Taro `<Text>` 不渲染 markdown ⇒ 星号原样印在手机上。红证（实跑：`git checkout origin/main -- frontend/bmini-app/src` 后跑本判据）：frontend/bmini-app/tests/worker-copy-plain-text-guard.test.ts 判据 1 判红并逐条具名 **3** 处（inbound:337 / reprint:319 / shipment:182，逐字含 `**不会**` 与 `**实发**`）；修后 3 passed。证据：frontend/bmini-app/tests/worker-copy-plain-text-guard.test.ts", '判据 2·**零研发术语**（识别模型 / 大模型 / LLM / 服务端 / 后端 / 解码 / 接口 / 安全上下文 / 落库 / 幂等 / 裁定 / 判据 / 快照）：同一次红证实跑具名 **19** 处 —— 4 处商家手机端页面（计件工资 2 / 派单 1 / 数据页 1）、4 条打印失败提示、2 条打印回执（「服务端记第 N 次」）、5 条识别链文案源（recognizeFlow / barcodeDecode ×4 / recognizeGate / reprintFlow）；修后同一判据 0 命中。证据：同判据 1 + frontend/bmini-app/tests/worker-inbound-page.test.tsx（C9）+ frontend/bmini-app/tests/worker-reprint-page.test.tsx（P10）', '判据 3·**过程不静默**（既有口径不弱化）：解码失败 / 降级仍给一句明说 + 下一步（「系统换一种方式再认了一次（会稍慢一点）。请核对下面的结果，不对就手工改。」）；补打的详情读失败仍是可行动的话（网络问题或系统暂时不可用 ⇒ 重试 / 报短码给文员）。证据：frontend/bmini-app/tests/inbound-decode-first.test.ts（C4）+ frontend/bmini-app/tests/inbound-reprint-flow.test.ts（F5b）', '判据 4·**射程可复核**（防假绿 / 防假红）：判别力自证 = 抽到 > 20 条文案、三个被点名页面与每个登记文案源都在射程内（路径写错 ⇒ 当场红）；`exported` 模式只扫**顶层导出字符串常量** ⇒ 同文件里混着的研发台账字段（gaps.ts / reprintFlow.ts 的 why / audience，本来就用 markdown 写实现细节、且从不上屏）不误报。证据：同判据 1'],
+    skip_reason='[backend-contract] 确定性文案守卫（jest: frontend/bmini-app/tests/worker-copy-plain-text-guard.test.ts + worker-inbound-page / worker-reprint-page / inbound-decode-first / inbound-reprint-flow / inbound-print-channel），非 LLM 行为，不进入 agent-eval 冒烟',
     tags=['bmini', 'worker', 'copy', 'inbound'],
     persona='',
     debug_user='',

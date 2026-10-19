@@ -248,7 +248,7 @@ export default function DashboardPage() {
             </Text>
             {numeric(todoStats.stuck_threshold_hours) !== null && (
               <Text className='dashboard-section__note'>
-                卡在哪判据：上道做完后等待超过 {todoStats.stuck_threshold_hours} 小时
+                多久算卡住：上道做完后等待超过 {todoStats.stuck_threshold_hours} 小时
                 （阈值来源：{thresholdSourceLabel(todoStats.threshold_source)}）
               </Text>
             )}

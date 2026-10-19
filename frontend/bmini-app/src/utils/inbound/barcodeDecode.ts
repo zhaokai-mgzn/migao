@@ -32,8 +32,7 @@ export type DecodeSource = 'h5-dom-canvas' | 'weapp-offscreen'
  * 小程序端**取不到像素**时给工人的话（文案在**调用点**，台账只登记它 —— 见 `./gaps`）。
  * 「登记而不接线」的机械形态就是：文案写在一个从没被渲染过的地方。
  */
-export const WEAPP_DECODE_UNAVAILABLE_HINT =
-  '这台手机暂时读不了照片里的条码，正在换一种方式再认一次。'
+export const WEAPP_DECODE_UNAVAILABLE_HINT = '在小程序里读不了照片里的二维码，换用另一种方式认。'
 
 export interface DecodeOutcome {
   /** 条码/二维码原文（`null` = 没解出来 ⇒ 交给服务端 vision 兜底） */
@@ -140,10 +139,10 @@ export async function decodeBarcodeFromPhoto(photo: PendingPhoto): Promise<Decod
     const src = photo.file ?? photo.tempFilePath ?? null
     const pixels = src ? await loadPixelsFromFileH5(src as Blob | string) : null
     if (!pixels) {
-      return { text: null, source: null, hint: '这张照片打不开（可能不是图片），正在换一种方式再认一次。' }
+      return { text: null, source: null, hint: '这张照片打不开（可能不是图片）。' }
     }
     const text = decodeQrFromImageData(pixels)
-    return { text, source: 'h5-dom-canvas', hint: text ? '' : '这张照片里没找到二维码，正在换一种方式再认一次。' }
+    return { text, source: 'h5-dom-canvas', hint: text ? '' : '这张照片里没找到二维码。' }
   }
   const path = photo.tempFilePath ?? (typeof photo.file === 'string' ? photo.file : null)
   const pixels = path ? await loadPixelsFromPathWeapp(path) : null
@@ -155,5 +154,5 @@ export async function decodeBarcodeFromPhoto(photo: PendingPhoto): Promise<Decod
     }
   }
   const text = decodeQrFromImageData(pixels)
-  return { text, source: 'weapp-offscreen', hint: text ? '' : '照片里没找到二维码，正在换一种方式再认一次。' }
+  return { text, source: 'weapp-offscreen', hint: text ? '' : '照片里没找到二维码。' }
 }

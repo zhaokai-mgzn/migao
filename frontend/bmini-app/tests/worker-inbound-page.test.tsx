@@ -184,6 +184,7 @@ describe('工人拍照入库页', () => {
     render(<WorkerInboundPage />)
     const photo = screen.getByTestId('inbound-step-photo').textContent || ''
     expect(photo).toContain('手机当场就能认出来')
+    expect(photo).toContain('拍完整')
     // 🔴 红证：写回 `**不会**` ⇒ 星号上屏，本断言当场红（同 worker-copy-plain-text-guard.test.ts）
     expect(photo).not.toContain('*')
     expect(photo).not.toMatch(/识别模型|服务端|解码/)

@@ -176,7 +176,8 @@ describe('识别主链：解码优先（0 次 LLM 调用）', () => {
       recognize: server.recognize,
     })
     expect(result.notices.join('\n')).toContain('读不出像素')
-    expect(result.notices.join('\n')).toContain('换一种方式再认一次')
+    expect(result.notices.join('\n')).toContain('换一种方式再认')
+    expect(result.notices.join('\n')).toContain('请核对下面的结果')
   })
 
   it('一张照片都没有 ⇒ 明说（不静默走一次空请求）', async () => {

@@ -334,7 +334,7 @@ export default function WorkerInboundPage() {
               <Text>拍照 / 选图（最多 {MAX_INBOUND_PHOTOS} 张）</Text>
             </View>
             <Text className='admin-card__meta'>
-              已选 {photos.length} 张 · 条码拍清楚，手机当场就能认出来；认不出再交给系统认，会稍慢一点
+              已选 {photos.length} 张 · 二维码拍清楚、拍完整，手机当场就能认出来；认不出再交给系统认，会稍慢一点
             </Text>
             <View
               className={`admin-action admin-action--gold${busy || photos.length === 0 ? ' admin-action--disabled' : ''}`}

@@ -1,20 +1,30 @@
 // case_ids: BM-051
 /**
- * 工人可见文案「纯文本」类级守卫（issue #7316）
+ * 手机端页面文案「纯文本」类级守卫（issue #7316）
  *
- * 治的病：**给商家 / 工人看的字，是给评审 / 研发看的写法**。
+ * 治的病：**给工人 / 商家看的字，是给评审 / 研发看的写法**。
  * 两个真实形态（2026-10-19 用户逐字「markdown语法未正确渲染，显示成了**不会**」
  * 「不会调用识别模型这句文案应该改一下，改成工人能理解的文字」）：
- * ① Taro `<Text>` **不渲染 markdown** ⇒ 源里的 `**不会**` 把两个星号原样印在工人手机上；
+ * ① Taro `<Text>` **不渲染 markdown** ⇒ 源里的 `**不会**` 把两个星号原样印在手机上；
  * ② 研发术语上屏（「本机直接解码」「调用识别模型」「服务端识别」）—— 工人看不懂，也不知道下一步做什么。
  *
  * 为什么是**类级**而不是再补一条实例断言：这两类文案缺陷都不挑页面 ——
  * 谁在 JSX 里写一句带 `**` 的话、谁把服务端视角的词抄进提示，就得有人重新发现一次。
- * 所以本守卫扫**全部工人页面**（`src/pages/worker/**`）+ 页面直渲的文案源（`COPY_SOURCES`，登记制）。
+ * 所以本守卫扫：
+ *  - **全部页面与共享组件**（`src/pages/**` + `src/components/**`：JSX 文本 + 字面量）；
+ *  - **页面直渲的文案源**（`COPY_SOURCES`，**登记制**）：`all` = 整文件所有中文字面量都上屏；
+ *    `exported` = 只扫**顶层导出的字符串常量**（同文件里还混着研发台账，如 `gaps.ts` / `reprintFlow.ts`
+ *    的 `why` / `audience` 字段 —— 那些从不上屏，且本来就用 markdown 写实现细节）。
  *
- * 射程边界（照实登记）：判的是「**会不会被工人看到**」，不是「源码里有没有这个词」——
- * 注释 / JSDoc / `src/utils/inbound/gaps.ts` 这类**研发台账**（从不上屏）不在射程内；
- * 纯逻辑字符串（无中文）也不在射程内。
+ * 规则（两条，都带判别力自证）：
+ *  1. **零 markdown 标记**：`**` / `__`（强调）、`` `x` ``（行内代码）、行首 `#`（标题）——
+ *     包括被拆到多个 JSX 子节点里的裸标记（`<Text>{'**'}{n}{'**'}</Text>`）；
+ *  2. **零研发术语**：识别模型 / 大模型 / LLM / 服务端 / 后端 / 解码 / 接口 / 安全上下文 / 落库 / 幂等。
+ *
+ * 射程边界（照实登记）：判的是「**会不会被手机用户看到**」，不是「源码里有没有这个词」——
+ * 注释 / JSDoc 不在射程；纯逻辑字符串（无中文、且不是裸标记）不在射程；
+ * `productionOffline.ts` 的 `补传被服务端拒绝` 目前**无入队调用点**（本仓不可达），未登记；
+ * admin-web 另有同口径机械面（`user-copy-scan.mjs` + `user-copy-jargon-guard.test.ts`）。
  */
 import fs from 'fs'
 import path from 'path'
@@ -22,27 +32,30 @@ import ts from 'typescript'
 
 const ROOT = path.resolve(__dirname, '..')
 
-/** 工人可见页面目录（JSX 文本 + 中文字面量都会被扫） */
-const PAGE_DIR = path.join(ROOT, 'src/pages/worker')
+/** 页面与共享组件（JSX 文本 + 字面量都会被扫） */
+const SCAN_DIRS = ['src/pages', 'src/components']
 
 /**
  * 页面直接渲染的文案源（**登记制**：新增一处「页面拿 utils 文案直接上屏」就登记进来）。
- * 不登记 `reprintFlow.ts` / `gaps.ts` / `pageEntries.ts` —— 它们同时承载**研发登记表**
- * （`why` / `audience` 这类字段里的中文本来就用 markdown 写实现细节，且从不上屏），
- * 整文件扫描会把台账误报成工人文案；`reprintFlow.ts` 的唯一上屏文案
- * （`REPRINT_DETAIL_ERROR_MESSAGE`）由 `tests/inbound-reprint-flow.test.ts::F5b` 实例判据覆盖。
+ * `all` = 文件里所有中文串都上屏（`notices` / hint / message）；
+ * `exported` = 只扫顶层导出的字符串常量（文件里同时有研发台账，台账字段从不上屏）。
  */
-const COPY_SOURCES = [
-  'src/utils/inbound/recognizeFlow.ts',
-  'src/utils/inbound/barcodeDecode.ts',
-  'src/utils/inbound/recognizeGate.ts',
+const COPY_SOURCES: { file: string; mode: 'all' | 'exported' }[] = [
+  { file: 'src/utils/inbound/recognizeFlow.ts', mode: 'all' },
+  { file: 'src/utils/inbound/barcodeDecode.ts', mode: 'all' },
+  { file: 'src/utils/inbound/recognizeGate.ts', mode: 'all' },
+  { file: 'src/utils/inbound/printCapability.ts', mode: 'all' },
+  { file: 'src/utils/inbound/gaps.ts', mode: 'exported' },
+  { file: 'src/utils/inbound/reprintFlow.ts', mode: 'exported' },
 ]
 
-/** markdown 强调标记（Taro 不渲染 ⇒ 原样上屏） */
-const BOLD_MARKERS = /\*\*|__/
-
-/** 研发术语（工人视角应有的是「后果 + 该做什么」） */
-const JARGON = /识别模型|大模型|LLM|服务端|解码/
+/** markdown 强调 / 行内代码 / 标题（Taro 不渲染 ⇒ 原样上屏） */
+const MARKDOWN = /\*\*|__|`[^`]+`|(^|\n)\s*#{1,6}\s/
+/** 裸标记被拆到多个 JSX 子节点里的形态（`{'**'}{n}{'**'}`） */
+const BARE_MARKER = /^(\*\*|__|`)$/
+/** 研发术语 / 研发过程语（手机端文案应有的是「后果 + 该做什么」） */
+const JARGON = /识别模型|大模型|LLM|服务端|后端|解码|接口|安全上下文|落库|幂等|裁定|判据|快照/
+const CJK = /[\u4e00-\u9fa5]/
 
 interface Hit {
   file: string
@@ -60,23 +73,36 @@ function listSourceFiles(dir: string): string[] {
   return out
 }
 
-/** 抽「工人可能看到的字」：JSX 文本 + 字符串 / 模板串字面量（只留含中文的） */
+/** 抽「手机用户可能看到的字」 */
 function collectUserFacingText(): Hit[] {
-  const files = [...listSourceFiles(PAGE_DIR), ...COPY_SOURCES.map((rel) => path.join(ROOT, rel))]
+  const files = [
+    ...SCAN_DIRS.flatMap((dir) => listSourceFiles(path.join(ROOT, dir))),
+    ...COPY_SOURCES.map(({ file }) => path.join(ROOT, file)),
+  ]
+  const exportedOnly = new Set(COPY_SOURCES.filter((s) => s.mode === 'exported').map((s) => s.file))
   const hits: Hit[] = []
   for (const file of files) {
     const source = fs.readFileSync(file, 'utf8')
+    const rel = path.relative(ROOT, file)
     const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
     const push = (node: ts.Node, text: string) => {
-      if (!/[\u4e00-\u9fa5]/.test(text)) return
       hits.push({
-        file: path.relative(ROOT, file),
+        file: rel,
         line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
         text: text.trim(),
       })
     }
     const visit = (node: ts.Node) => {
-      if (ts.isJsxText(node)) push(node, node.getText(sf))
+      if (exportedOnly.has(rel)) {
+        // 只认「export const X = '…'」这类**上屏常量**；台账（数组 / 对象字段）跳过
+        if (ts.isVariableStatement(node) && node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) {
+          for (const decl of node.declarationList.declarations) {
+            if (decl.initializer && (ts.isStringLiteral(decl.initializer) || ts.isNoSubstitutionTemplateLiteral(decl.initializer))) {
+              push(decl.initializer, decl.initializer.text)
+            }
+          }
+        }
+      } else if (ts.isJsxText(node)) push(node, node.getText(sf))
       else if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) push(node, node.text)
       else if (ts.isTemplateExpression(node)) {
         push(node, node.head.text)
@@ -90,24 +116,31 @@ function collectUserFacingText(): Hit[] {
 }
 
 const HITS = collectUserFacingText()
-const format = (hit: Hit) => `${hit.file}:${hit.line} → ${hit.text.slice(0, 80)}`
+const format = (hit: Hit) => `${hit.file}:${hit.line} → ${hit.text.slice(0, 100)}`
 
-describe('工人可见文案：纯文本（无 markdown 标记、无研发术语）', () => {
+describe('手机端页面文案：纯文本（无 markdown 标记、无研发术语）', () => {
   it('判别力自证：扫描器真读到了文案（路径写错 ⇒ 零命中会假装通过）', () => {
-    expect(HITS.length).toBeGreaterThan(10)
-    // 三个页面都在射程内（各自至少一条中文文案被抽到）
-    for (const page of ['src/pages/worker/inbound/index.tsx', 'src/pages/worker/reprint/index.tsx', 'src/pages/worker/shipment/index.tsx']) {
-      expect(HITS.some((hit) => hit.file === page)).toBe(true)
+    expect(HITS.length).toBeGreaterThan(20)
+    // 三个被用户点名的页面 + 每个登记在案的文案源都在射程内
+    for (const file of [
+      'src/pages/worker/inbound/index.tsx',
+      'src/pages/worker/reprint/index.tsx',
+      'src/pages/worker/shipment/index.tsx',
+      ...COPY_SOURCES.map((s) => s.file),
+    ]) {
+      expect(HITS.some((hit) => hit.file === file)).toBe(true)
     }
-    // 文案源也在射程内（改完后的正向锚点）
-    expect(HITS.some((hit) => hit.text.includes('换一种方式再认一次'))).toBe(true)
   })
 
-  it('判据 1：工人页面上不出现 markdown 强调标记（`**` / `__` 会原样印在手机上）', () => {
-    expect(HITS.filter((hit) => BOLD_MARKERS.test(hit.text)).map(format)).toEqual([])
+  it('判据 1：手机端页面上不出现 markdown 标记（`**` / `__` / 反引号 / 标题会原样上屏）', () => {
+    const offenders = HITS.filter((hit) => CJK.test(hit.text)).filter((hit) => MARKDOWN.test(hit.text))
+    // 裸标记可能被拆到独立 JSX 子节点（无中文）—— 单独按「整段就是一个标记」判
+    const bare = HITS.filter((hit) => BARE_MARKER.test(hit.text))
+    expect([...offenders, ...bare].map(format)).toEqual([])
   })
 
-  it('判据 2：工人页面上不出现研发术语（识别模型 / 服务端 / 解码 …）', () => {
-    expect(HITS.filter((hit) => JARGON.test(hit.text)).map(format)).toEqual([])
+  it('判据 2：手机端页面上不出现研发术语（识别模型 / 服务端 / 解码 / 接口 …）', () => {
+    const offenders = HITS.filter((hit) => CJK.test(hit.text)).filter((hit) => JARGON.test(hit.text))
+    expect(offenders.map(format)).toEqual([])
   })
 })
