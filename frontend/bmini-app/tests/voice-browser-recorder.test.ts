@@ -57,6 +57,17 @@ class FakeMediaRecorder {
 const gum = jest.fn(async () => ({ getTracks: () => [{ stop: jest.fn() }] }))
 const originalMediaRecorder = (globalThis as any).MediaRecorder
 const originalCreateObjectURL = (URL as any).createObjectURL
+const originalUserAgent = navigator.userAgent
+
+function setUserAgent(ua: string) {
+  Object.defineProperty(window.navigator, 'userAgent', { value: ua, configurable: true })
+}
+
+/** 真机 UA（2026-10-19 服务端 nginx 逐字）：华为 ALN-AL00 + 支付宝 webview */
+const ALIPAY_UA =
+  'Mozilla/5.0 (OpenHarmony 2; ALN-AL00) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 ' +
+  'Safari/537.36 ArkWeb/4.1.6.1 Mobile HuaweiBrowser/1.2.9.353 Nebula AlipayDefined(nt:WIFI,ws:360|0|3.375) ' +
+  'AliApp(AP/12.12.30.5600) AlipayClient/12.12.30.5600 Language/zh-Hans'
 
 function installRecorder() {
   ;(globalThis as any).MediaRecorder = FakeMediaRecorder
@@ -86,6 +97,7 @@ beforeEach(() => {
 
 afterEach(() => {
   ;(process.env as Record<string, string | undefined>).TARO_ENV = undefined
+  Object.defineProperty(window.navigator, 'userAgent', { value: originalUserAgent, configurable: true })
   if (originalMediaRecorder === undefined) delete (globalThis as any).MediaRecorder
   else (globalThis as any).MediaRecorder = originalMediaRecorder
   ;(URL as any).createObjectURL = originalCreateObjectURL
@@ -133,11 +145,22 @@ describe('B 端 H5 浏览器录音链路（issue #6596）', () => {
 
   it('🔴 录音器只回 0 字节 chunk ⇒ 本地拒收，不交回可上传的 URL（issue #7310 生产实证）', async () => {
     // 华为 ArkWeb（支付宝 webview）实测：请求体 0 字节 → 服务端 400「音频文件为空」
-    // → 客户端把所有非 200 吞成「未听清，请重试」。0 字节音频**根本不该出网**。
     installRecorder()
     FakeMediaRecorder.emitEmpty = true
     startRecording()
     await expect(stopRecording()).rejects.toThrow(/未检测到声音/)
     expect((URL as any).createObjectURL).not.toHaveBeenCalled()
+  })
+
+  it('🔴 支付宝内置浏览器：有 MediaRecorder 也判不可用（真机对照，issue #7310）', () => {
+    // 同一台华为 ALN-AL00：支付宝 8/8 次上传 0 字节；换百度 App 同链路 2 次 200 转写成功
+    // ⇒ 不是设备问题，是支付宝 webview 拦截了麦克风数据 ⇒ 不摆按不动的键
+    installRecorder()
+    setUserAgent(ALIPAY_UA)
+    expect(isVoiceSupported()).toBe(false)
+
+    // 反向对照：同一个桩、换成微信 UA ⇒ 仍然可用（不是把所有 webview 一刀切判死）
+    setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 26_6_2 like Mac OS X) MicroMessenger/8.0.79')
+    expect(isVoiceSupported()).toBe(true)
   })
 })

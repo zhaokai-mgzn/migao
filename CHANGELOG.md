@@ -14,8 +14,12 @@
 改后：0 字节录音**本地拒收**（提示「未检测到声音，已取消转写」），上传前再兜一层；服务端的用户可读
 `detail`（400/503）原样回显，鉴权类英文 detail 不透传；服务端四个拒收分支各记一条带 `size` 的
 warning（此前只留 `status=400`，原因只能靠响应体字节数反解）。
+**支付宝内置浏览器内不再摆「按住说话」**：同一台华为 ALN-AL00 真机对照（支付宝 8/8 次上传 0 字节；
+换百度 App 同链路 2 次转写成功）确认是**支付宝 webview 拦截了麦克风数据** ⇒ 按「不摆按不动的键」
+回落文字输入，切换键给一句点名支付宝的解释（「支付宝里无法使用语音输入：请用手机浏览器打开，
+或直接用文字发送」）。重启条件：某版支付宝放开麦克风时，按真机读数复核后再撤这道门。
 判据 = `frontend/bmini-app/tests/voice-transcribe.test.ts`、`tests/voice-browser-recorder.test.ts`、
-`backend/ai-agent-service/tests/test_asr.py::TestAsrRejectLogging`。
+`tests/message-input.test.tsx`、`backend/ai-agent-service/tests/test_asr.py::TestAsrRejectLogging`。
 ### 「3 天后提醒我跟进张先生」不再靠分类器猜：定时提醒问法确定性命中（2026-10-19，关联 issue #7038）
 
 改前：「定时提醒 / 到点提醒 / 待办提醒 / 提醒我跟进」这类问法在规则层没有关键词，整句交给

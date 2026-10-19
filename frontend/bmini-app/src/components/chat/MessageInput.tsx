@@ -3,7 +3,7 @@ import { View, Text, Textarea, Image } from '@tarojs/components'
 import Taro from '@tarojs/taro'
 import { chooseImages, uploadImages } from '../../utils/imageUpload'
 import { startRecording, stopAndTranscribe, isVoiceSupported } from '../../utils/voice'
-import { isH5, H5_VOICE_UNAVAILABLE_HINT } from '../../utils/platform'
+import { isH5, voiceUnavailableHint } from '../../utils/platform'
 import {
   ICON_AUDIO_LINES,
   ICON_KEYBOARD,
@@ -87,7 +87,8 @@ export default function MessageInput({
    */
   const handleSwitchToVoice = useCallback(() => {
     if (!voiceSupported) {
-      Taro.showToast({ title: H5_VOICE_UNAVAILABLE_HINT, icon: 'none' })
+      // 点名的解释：支付宝内要点「支付宝」（用户才知道换 App，issue #7310），其余走通用文案
+      Taro.showToast({ title: voiceUnavailableHint(), icon: 'none' })
       return
     }
     setVoiceMode(true)

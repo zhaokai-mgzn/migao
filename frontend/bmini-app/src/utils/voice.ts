@@ -25,7 +25,7 @@
 import Taro from '@tarojs/taro'
 import { getToken } from './auth'
 import { AI_API_BASE_URL } from './constants'
-import { isH5 } from './platform'
+import { isH5, isAlipayWebview } from './platform'
 import {
   startBrowserRecording,
   supportsBrowserRecording,
@@ -74,11 +74,15 @@ function getRecorder(): any {
  *
  * - **h5**：现取浏览器能力（`MediaRecorder` + `getUserMedia`）—— 有就是有，**不写死**。
  *   微信 webview / Safari / Chrome 都具备 ⇒ B 端默认语音模式在真机上才是真的。
+ *   ⚠️ 例外 = **支付宝内置浏览器**：内核有这两个 API，但流里拿不到有效音频（issue #7310 真机对照：
+ *   上传 0 字节）⇒ 判为不可用（回落文字模式），见 `isAlipayWebview()`。
  * - **weapp**：`RecorderManager` 具备 `onStop` / `start`。
  * - 其余编译目标：无语音入口。
  */
 export function isVoiceSupported(): boolean {
-  if (isH5()) return supportsBrowserRecording()
+  // 支付宝内置浏览器：内核**有** MediaRecorder，但流里没有有效音频（上传 0 字节，issue #7310 真机对照）
+  // ⇒ 按「不摆按不动的键」判为不可用，输入条回落文字模式 + 点名支付宝的解释
+  if (isH5()) return !isAlipayWebview() && supportsBrowserRecording()
   const rm = getRecorder()
   return !!rm && typeof rm.onStop === 'function' && typeof rm.start === 'function'
 }
