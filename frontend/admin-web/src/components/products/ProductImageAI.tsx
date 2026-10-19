@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import { Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui'
@@ -28,8 +28,8 @@ const KINDS: Array<{ value: AiProductImageKind; label: string }> = [
 const FAILURE_MESSAGE = '生成失败，请稍后重试，或直接上传图片'
 
 interface ProductImageAIProps {
-  /** 样图 = 已上传的第一张商品图（色卡 / 面料实拍；为空时入口不可用） */
-  sampleImage?: string
+  /** 样图候选 = 已上传的商品图（色卡 / 面料实拍）；为空时入口不可用。默认用第 1 张，可切换。 */
+  sampleImages?: string[]
   /** 商品名（提示词里用；可空） */
   productName?: string
   /** 主图：插到 `images[0]`（封面位） */
@@ -39,23 +39,36 @@ interface ProductImageAIProps {
 }
 
 export default function ProductImageAI({
-  sampleImage,
+  sampleImages = [],
   productName,
   onApplyMain,
   onApplyDetail,
 }: ProductImageAIProps) {
   const [open, setOpen] = useState(false)
+  const [sample, setSample] = useState(sampleImages[0] || '')
   const [kind, setKind] = useState<AiProductImageKind>('main')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState('')
   const [error, setError] = useState('')
+  const [applied, setApplied] = useState('')
+
+  /** 图片列表变化（上传 / 删除 / 用这张后插封面）时，样图始终指向仍然存在的一张。 */
+  useEffect(() => {
+    if (!sampleImages.includes(sample)) setSample(sampleImages[0] || '')
+  }, [sampleImages, sample])
+
+  const clearFeedback = () => {
+    setResult('')
+    setError('')
+    setApplied('')
+  }
 
   const generate = async () => {
-    if (!sampleImage || loading) return
+    if (!sample || loading) return
     setLoading(true)
     setError('')
     try {
-      const res = await aiProductImageApi.generate({ imageUrl: sampleImage, productName, kind })
+      const res = await aiProductImageApi.generate({ imageUrl: sample, productName, kind })
       const url = res.data.data?.url
       if (!url) {
         setError(FAILURE_MESSAGE)
@@ -75,43 +88,74 @@ export default function ProductImageAI({
     if (!result) return
     if (kind === 'main') {
       onApplyMain(result)
+      setApplied('已插入封面位')
     } else {
       onApplyDetail(result)
+      setApplied('已加入「详情图」')
     }
-    setOpen(false)
+    // 不收起面板：存量商品常要一次补主图 + 材质 + 工艺 + 场景，收起后每张都要重开。
+    setResult('')
   }
 
   return (
     <div className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50/60 px-3 py-2.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-neutral-500">
-          以第一张图为样图，生成接近实物的商品图（约 40 秒，每次 1 张）。
+          以样图生成接近实物的商品图（约 40 秒，每次 1 张）。
         </p>
         <Button
           type="button"
           variant="secondary"
           size="sm"
           icon={<Sparkles className="w-4 h-4" />}
-          disabled={!sampleImage}
+          disabled={sampleImages.length === 0}
           aria-expanded={open}
           onClick={() => {
             setOpen((v) => !v)
-            setResult('')
-            setError('')
+            clearFeedback()
           }}
         >
           AI 生成商品图
         </Button>
       </div>
 
-      {!sampleImage && (
+      {sampleImages.length === 0 && (
         <p className="mt-1.5 text-xs text-neutral-400">
           先上传一张样图（建议色卡或面料实拍），再点生成。
         </p>
       )}
 
-      {open && sampleImage && (
+      {open && sampleImages.length > 0 && (
         <div className="mt-3 space-y-3 border-t border-neutral-200 pt-3">
+          {sampleImages.length > 1 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-neutral-500">样图</span>
+              {sampleImages.slice(0, 5).map((url, index) => (
+                <button
+                  key={url}
+                  type="button"
+                  aria-label={`使用第${index + 1}张作为样图`}
+                  aria-pressed={sample === url}
+                  onClick={() => {
+                    setSample(url)
+                    clearFeedback()
+                  }}
+                  className={`rounded-md border p-0.5 ${
+                    sample === url ? 'border-primary-500 ring-1 ring-primary-500' : 'border-neutral-200'
+                  }`}
+                >
+                  <Image
+                    src={url}
+                    alt={`样图 ${index + 1}`}
+                    width={40}
+                    height={40}
+                    unoptimized
+                    className="h-10 w-10 rounded object-cover"
+                  />
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex flex-wrap gap-1.5" role="group" aria-label="生成用途">
             {KINDS.map((item) => (
               <Button
@@ -123,8 +167,7 @@ export default function ProductImageAI({
                 className={kind === item.value ? 'border-primary-500 text-primary-600' : undefined}
                 onClick={() => {
                   setKind(item.value)
-                  setResult('')
-                  setError('')
+                  clearFeedback()
                 }}
               >
                 {item.label}
@@ -144,6 +187,11 @@ export default function ProductImageAI({
             </Button>
             <span className="text-xs text-neutral-400">细节图会加入下方「详情图」。</span>
             {error && <span className="text-xs text-red-600">{error}</span>}
+            {applied && (
+              <span role="status" className="text-xs text-green-600">
+                {applied}；可继续生成其他用途。
+              </span>
+            )}
           </div>
 
           {result && (

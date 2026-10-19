@@ -638,7 +638,7 @@ export default function ProductForm({
                 confirmRemove
               />
               <ProductImageAI
-                sampleImage={form.images?.[0]}
+                sampleImages={form.images}
                 productName={form.name}
                 onApplyMain={(url) =>
                   updateField('images', [url, ...(form.images || [])].slice(0, 5))
