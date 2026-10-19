@@ -980,7 +980,7 @@ export const inboundOrderApi = {
 /**
  * 发货单**列表**读面（issue #5939）—— 大菜单「仓储与物料 ▸ 发货单」的第一屏数据源。
  *
- * `GET /api/admin/shipments?keyword=`；权限码 `order:list`（与订单列表/按单发货读面**同一把尺子**）。
+ * `GET /api/admin/shipments?keyword=`；权限码 `order:list`（与销售订单/按单发货读面**同一把尺子**）。
  * 关键词匹配 发货单号 / 订单号 / 客户名；不传 = 本租户最近的 200 张（服务端 `LIST_LIMIT`）。
  *
  * 🔴 「实发」的消费口径：`shippedTotals` 由服务端 `OrderShipmentService.totals()` 给出

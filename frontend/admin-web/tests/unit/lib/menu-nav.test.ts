@@ -411,8 +411,8 @@ describe('filterMenuItems / visibleMenuGroups：过滤保持顺序 + 空组剔�
   })
 
   it('空组**整组**剔除（组内一项不剩 ⇒ 组名也不渲染）', () => {
-    // 只有 order:list ⇒ 只剩「交易管理」（仅订单列表）+「仓储与物料」（#5939 起**发货单也用该码**
-    // —— 它与订单列表是同一批人在用，故同码不同页；这正是「取既有码、零授权 delta」的可见后果）。
+    // 只有 order:list ⇒ 只剩「交易管理」（仅销售订单）+「仓储与物料」（#5939 起**发货单也用该码**
+    // —— 它与销售订单是同一批人在用，故同码不同页；这正是「取既有码、零授权 delta」的可见后果）。
     // 🔴 2026-10-17（issue #7087）：「工作台」组**已整组撤销**（经营看板改为最前席位一级项，
     // 它未出现在本清单里是因为本权限集无 `dashboard:view` —— 与旧口径的可见后果一致）。
     const groups = visibleMenuGroups(menuGroups, { permissions: ['order:list'] })
@@ -473,7 +473,7 @@ describe('resolveActivePath：命中项里取**最长**（否则会出现两项�
   it.each([
     ['/dashboard 归「经营看板」', '/dashboard', '/dashboard'],
     ['根路径 / 归「经营看板」', '/', '/dashboard'],
-    ['/orders/new 归「订单列表」', '/orders/new', '/orders'],
+    ['/orders/new 归「销售订单」', '/orders/new', '/orders'],
     ['/production 归「作业看板」', '/production', '/production'],
     ['/production/pool ↔ /production 同时命中 ⇒ 取最长', '/production/pool', '/production/pool'],
     ['/production/saving-board 同时命中 /production ⇒ 取最长', '/production/saving-board', '/production/saving-board'],
@@ -733,15 +733,15 @@ describe('searchMenu：命中面 = 菜单名 ∪ 组名 ∪ keywords（+ 排序�
       'human-sessions', // rank 2：keywords「人工」
       'production-board', // rank 2：keywords「加工单」
     ])
-    // `lb`：三个 keywords 命中（rank 2）按菜单自身顺序 ⇒ 客户列表 → 订单列表 → 商品管理
+    // `lb`：三个 keywords 命中（rank 2）按菜单自身顺序 ⇒ 客户列表 → 销售订单 → 商品管理
     // （2026-10-06 方案 A1：客户列表沉到「客户服务」组末、商品管理沉到**所有分组之后** ⇒ 顺序随之改判）
     expect(searchMenu(items, 'lb').map((i) => i.key)).toEqual(['customers', 'orders', 'products'])
   })
 
   it('命中面**只**来自传入的项：无权限项不在输入面 ⇒ 搜不到（搜索不是绕过权限的口子）', () => {
     const restricted = allItems({ permissions: ['order:list'], roles: [] })
-    // 🔴 issue #5699（P4）：经营看板节点码 = `dashboard:view` ⇒ 受限面 = 交易管理的订单列表
-    // + **仓储与物料的发货单**（#5939：与订单列表同码 `order:list`，同一批人在用）+ 独立项
+    // 🔴 issue #5699（P4）：经营看板节点码 = `dashboard:view` ⇒ 受限面 = 交易管理的销售订单
+    // + **仓储与物料的发货单**（#5939：与销售订单同码 `order:list`，同一批人在用）+ 独立项
     expect(restricted.map((i) => i.key)).toEqual(['orders', 'shipments', 'notifications'])
     // `splb`（商品列表的拼音）在全量面里命中，在受限面里必须为空
     expect(searchMenu(items, 'splb').map((i) => i.key)).toEqual(['products'])
@@ -870,7 +870,7 @@ describe('🔴 landingPath（登录落点 = 第一个可见菜单项，issue #67
   })
 
   it('🔴 不持 `dashboard:view` ⇒ **不落** `/dashboard`，走第一个可见项（逐岗位点名读数）', () => {
-    // 只有 order:list ⇒ 首个可见项 = 交易管理的「订单列表」（**分组**项）
+    // 只有 order:list ⇒ 首个可见项 = 交易管理的「销售订单」（**分组**项）
     expect(landingPath({ permissions: ['order:list'], roles: [] })).toBe('/orders')
     // 只有 product:list ⇒ 仓储与物料的「库存明细」在前、「商品管理」（尾席位）在后 ⇒ 仍不落 /dashboard
     expect(landingPath({ permissions: ['product:list'], roles: [] })).toBe('/stock-ledger')

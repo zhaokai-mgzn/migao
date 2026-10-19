@@ -115,13 +115,13 @@ describe('Header', () => {
   })
 
   // issue #5271：原「订单管理」组与原「客户管理」组的客户列表/财务对账**并为一组**「交易管理」
-  it('/orders 路径应显示"交易管理 > 订单列表"面包屑', async () => {
+  it('/orders 路径应显示"交易管理 > 销售订单"面包屑', async () => {
     mockPathname = '/orders'
     await act(async () => {
       render(<Header />)
     })
     expect(screen.getByText('交易管理')).toBeInTheDocument()
-    expect(screen.getByText('订单列表')).toBeInTheDocument()
+    expect(screen.getByText('销售订单')).toBeInTheDocument()
   })
 
   // 🔴 #5778：客户列表由「交易管理」移入**客户服务**组（「客户管理不属于交易管理」）
@@ -489,7 +489,7 @@ describe('Header', () => {
 
   it('多级面包屑应显示 / 分隔符', async () => {
     // ⚠️ #5877：本用例原来用 `/products`（当时是两级同名面包屑）；该路径现为**单级**
-    //（一级项无父组）⇒ 改用真正的多级路径「交易管理 / 订单列表」，用例强度不变。
+    //（一级项无父组）⇒ 改用真正的多级路径「交易管理 / 销售订单」，用例强度不变。
     mockPathname = '/orders'
     await act(async () => {
       render(<Header />)

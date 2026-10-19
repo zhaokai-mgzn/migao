@@ -688,7 +688,7 @@ class AuthServiceTest {
         // 新码持有者的正向读数（各自只点亮自己那一页 ⇒ 证明节点码 ≡ 页面读码）
         var poolOnly = groupByKey(menusForPermissions("processing:view"), "production-center");
         assertThat(namesOf(poolOnly.getChildren())).containsExactly("智能派单");
-        // issue #6404：`product:list` 现在点亮**两页**（省料看板 + 库存明细）—— 与「订单列表 / 发货单」
+        // issue #6404：`product:list` 现在点亮**两页**（省料看板 + 库存明细）—— 与「销售订单 / 发货单」
         // 同取 `order:list` 同式：**同码 ≠ 同权**，两页各自的读端点注解就是这个码。
         // ⚠️ 2026-10-06（issue #6457）：组内顺序变为「进 → 账 → 出 → 台账 → 分析」
         // ⇒ 本权限集（只有这两页可见）的顺序是**库存明细 → 省料看板**。
@@ -720,7 +720,7 @@ class AuthServiceTest {
         // 顶层只有「交易管理 + 仓储与物料 + 通知中心」—— 经营看板按 dashboard:view 门控（#5699 P4），
         // 🔴 #7087 起它是**顶层一级项** ⇒ 无该码时**这一项**不出现（旧形态「工作台组整组消失」随组
         // 撤销一并消失；「每日简报」则根本不再下发）。
-        // 🔴 #5939：「仓储与物料」在**该权限下可见**了 —— 因为「发货单」取的就是 order:list（与订单列表
+        // 🔴 #5939：「仓储与物料」在**该权限下可见**了 —— 因为「发货单」取的就是 order:list（与销售订单
         // 同一批人在用）。这不是放宽门禁：该组里**只有**发货单一项，余料台账/省料看板仍各要自己的码
         // （见下方「同组不等于同权」专条）。
         assertThat(keysOf(menus)).containsExactly("trade-center", "inventory-center", "notifications");

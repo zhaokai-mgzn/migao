@@ -277,7 +277,7 @@ describe('RolesPage', () => {
     // 组织管理组的组内项**升为一级项**（渲染在 `perm-standalone-top` 里，见下方断言）。
     expect(tree.queryByText('加工项管理')).not.toBeInTheDocument()
     expect(tree.queryByText('工艺配置')).not.toBeInTheDocument()
-    expect(tree.getByText('订单列表')).toBeInTheDocument()
+    expect(tree.getByText('销售订单')).toBeInTheDocument()
     expect(tree.getByText('售后工单')).toBeInTheDocument()
     expect(tree.getByText('客户列表')).toBeInTheDocument()
     expect(tree.getByText('财务对账')).toBeInTheDocument()
@@ -345,7 +345,7 @@ describe('RolesPage', () => {
     })
   })
 
-  it('编辑岗位按菜单回显：角色已有 order:list → 「订单列表」勾选', async () => {
+  it('编辑岗位按菜单回显：角色已有 order:list → 「销售订单」勾选', async () => {
     mockGetRoles.mockResolvedValue({
       data: {
         data: {
@@ -359,7 +359,7 @@ describe('RolesPage', () => {
     await screen.findByText('订单客服')
     fireEvent.click(screen.getByTitle('编辑'))
     await screen.findByText('编辑岗位')
-    const orderItem = (await screen.findByText('订单列表')).closest('label')!
+    const orderItem = (await screen.findByText('销售订单')).closest('label')!
     expect(orderItem.querySelector('input')!.checked).toBe(true)
     // 未授予的菜单项不勾选
     const knowledgeItem = screen.getByText('知识库').closest('label')!
@@ -727,7 +727,7 @@ describe('RolesPage 默认菜单 = 后台 + 手机端（issue #7146）', () => {
           label: '客户服务',
           children: [
             { code: 'agent:session', label: '在线接待', mobileTitles: titles['agent:session'] || [] },
-            { code: 'order:list', label: '订单列表', mobileTitles: titles['order:list'] || [] },
+            { code: 'order:list', label: '销售订单', mobileTitles: titles['order:list'] || [] },
           ],
         },
       ],
@@ -752,7 +752,7 @@ describe('RolesPage 默认菜单 = 后台 + 手机端（issue #7146）', () => {
 
     fireEvent.click(within(card).getByRole('button', { name: /默认菜单/ }))
     expect(await screen.findByTestId('role-default-menu-backend-customer_service')).toHaveTextContent(
-      '经营看板、在线接待、订单列表',
+      '经营看板、在线接待、销售订单',
     )
     expect(screen.getByTestId('role-default-menu-mobile-customer_service')).toHaveTextContent('数据、坐席')
     expect(within(card).getByRole('button', { name: /默认菜单/ })).toHaveAttribute('aria-expanded', 'true')

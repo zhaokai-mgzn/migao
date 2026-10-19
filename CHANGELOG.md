@@ -6,6 +6,19 @@
 > **后续条目继续在本文件 `## [Unreleased]` 下累加。**
 
 ## [Unreleased]
+### 菜单「订单列表」正名为「销售订单」（2026-10-20，issue #7354）
+
+用户逐字：「把菜单订单列表改成销售订单」。四处菜单源同批改名：前端 `config/menu.ts`、
+`MenuController.MENU_TREE`、`AuthService.buildMenusByPermissions`、黄金策导航真值源
+`menu_navigator.py`；面包屑（`Header.ROUTE_BREADCRUMB_MAP`）、页头标题、页内面包屑
+（订单详情 / 发货页的「返回销售订单」）、官网能力图与 Agent 引导话术同步跟上。
+
+**零变更**：路由 `/orders`、权限码 `order:list` / `order:detail`、机器键与表结构；
+权限目录名（岗位权限页里的「订单列表」= `order:list` 的授权条目名）不动 —— 与 #5271
+「客户管理 → 客户列表」同一口径（菜单名与权限名义各自独立）。
+旧名「订单列表」保留为 **⌘K 关键词 + Agent 说法**（老用户按旧叫法仍能找到这一页）。
+判据：三源同构 / Agent 导航接地与双向覆盖 / 面包屑末项 == 菜单名（PG-038）/
+RBAC 读数新鲜度 / cases 生成物新鲜度。
 ### 能力询问先直接回答：商品名称可以改，不预调工具（2026-10-19，issue #7347）
 
 CH-051 实测「你们能帮我把商品名称改一下吗？」两次同指纹失败：期望 `direct_reply`，实际先调了工具。

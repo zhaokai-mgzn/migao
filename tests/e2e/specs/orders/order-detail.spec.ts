@@ -86,7 +86,7 @@ test.describe('订单详情 - 待付款状态', () => {
     await expect(page.getByRole('heading', { name: '订单详情' })).toBeVisible()
     // ⚠️ 角色契约：面包屑项渲染的是 <button>（OrderDetail.tsx 的面包屑用 router.push），
     //    不是 <a>/link ⇒ 断言 role=link 恒空（2026-09-15 归因，截图实证面包屑可见）。
-    await expect(page.getByRole('button', { name: '订单列表' }).first()).toBeVisible()
+    await expect(page.getByRole('button', { name: '销售订单' }).first()).toBeVisible()
   })
 
   test('待付款应显示"待买家付款"', async ({ page }) => {
@@ -229,7 +229,7 @@ test.describe('订单详情 - 已完成状态', () => {
   })
 
   test('面包屑应可点击返回订单列表', async ({ page }) => {
-    await page.getByRole('button', { name: '订单列表' }).first().click()
+    await page.getByRole('button', { name: '销售订单' }).first().click()
     await page.waitForURL(/\/orders/)
   })
 })

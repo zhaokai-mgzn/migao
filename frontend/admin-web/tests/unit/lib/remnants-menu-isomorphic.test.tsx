@@ -173,7 +173,7 @@ describe('余料台账菜单三处同构（PR-106 / issue #5191）', () => {
     const { container } = render(<Sidebar collapsed={false} onToggle={() => {}} />)
     // 自证渲染面非空：先展开「交易管理」，菜单渲染失败时 queryByRole 恒 null = 空断言
     fireEvent.click(screen.getByTestId('sidebar-group-toggle-trade-center'))
-    expect(within(container).getByRole('link', { name: '订单列表' })).toBeInTheDocument()
+    expect(within(container).getByRole('link', { name: '销售订单' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: NAME })).toBeNull()
     // 🔴 issue #5939 改判（**收窄，不放宽**）：`order:list` 现在会带出**同一组**的「发货单」
     // ⇒ 「仓储与物料」组不再整组消失。更强的形态随之改成：**组在、组内恰是发货单一项**，

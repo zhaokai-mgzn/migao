@@ -274,7 +274,7 @@ export default function ProductionBoardPage() {
       {/* issue #6717：本表 `rounded-lg border ... overflow-x-auto` —— 边框在**滚动容器自己**身上。
           `position: sticky` 在带 `border-radius` 的滚动容器内**不**失效（圆角只影响裁剪形状，
           不影响 sticky 的包含块）⇒ 右缘冻结照常生效；两档视口按钮中心点实测均命中自身。
-          🔴 2026-10-17 用户逐字「作业看板的表头风格和其他单据的不一致」⇒ 表头改为与**订单列表**
+          🔴 2026-10-17 用户逐字「作业看板的表头风格和其他单据的不一致」⇒ 表头改为与**销售订单**
           （`frontend/admin-web/src/components/orders/OrderTable.tsx`）逐字同源：
           `bg-neutral-50` 底 + `text-neutral-600` 表头字，字号回到表格的 `text-sm`
           （改前是 `text-xs text-neutral-500` + 无底色 ⇒ 同一仓两种表头）。
@@ -400,7 +400,7 @@ export default function ProductionBoardPage() {
                         ⚠️ 本单元格内容是 `flex-wrap`（窄列宽时按钮会换到第二行）⇒ 冻结后**列宽会收窄到
                         按钮的 max-content**，不再把整表撑出容器；这正是「操作列不再需要横向滚动」的形态。 */}
                     <td className="sticky right-0 z-10 border-l border-neutral-100 bg-white px-4 py-4 whitespace-nowrap">
-                      {/* 行内动作（2026-10-17 用户裁定「不要有多种风格设计」）：与订单列表
+                      {/* 行内动作（2026-10-17 用户裁定「不要有多种风格设计」）：与销售订单
                           （`frontend/admin-web/src/components/orders/OrderTable.tsx`）**同一个**
                           共享原语 `RowActionLink`（链接式），不再是两个描边按钮。
                           角色仍是 `button`（既有判据按 `getByRole('button', { name })` 定位，未变），

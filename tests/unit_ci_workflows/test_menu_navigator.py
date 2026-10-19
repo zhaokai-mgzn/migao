@@ -817,14 +817,14 @@ class TestEveryJudgementCanGoRed:
             _load_mutated(
                 tmp_path,
                 lambda s: s.replace(
-                    '    MenuNode("trade-center", "订单列表", "/orders", "order:list"),\n', ""
+                    '    MenuNode("trade-center", "销售订单", "/orders", "order:list"),\n', ""
                 ),
             )
         except Exception as exc:  # noqa: BLE001 - 读数就是「抛了什么」
             caught = exc
         with capsys.disabled():
             print(f"[MC-065][红证1b] 删节点 ⇒ 导入期自检抛 {type(caught).__name__}: {str(caught)[:90]}")
-        assert "订单列表" in str(caught), (
+        assert "销售订单" in str(caught), (
             f"删掉登记节点后**没有**被具名拦下（caught={caught!r}）⇒ fail-closed 失效"
         )
 
@@ -999,8 +999,8 @@ class TestEveryJudgementCanGoRed:
             _load_mutated(
                 tmp_path,
                 lambda s: s.replace(
-                    'NavFeature("orders", "订单列表（订单）", (("trade-center", "订单列表"),), ("订单列表", "订单"))',
-                    'NavFeature("orders", "订单列表（订单）", (("trade-center", "订单列表"),), ("订单列表", "库存盘点"))',
+                    'NavFeature("orders", "销售订单（订单列表 / 订单）", (("trade-center", "销售订单"),), ("销售订单", "订单列表", "订单"))',
+                    'NavFeature("orders", "销售订单（订单列表 / 订单）", (("trade-center", "销售订单"),), ("销售订单", "订单列表", "库存盘点"))',
                 ),
             )
         except Exception as exc:  # noqa: BLE001 - 读数就是「抛了什么」

@@ -242,7 +242,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expandGroup('trade-center')
     const tradeGroup = screen.getByText('交易管理').closest('[data-group-key]') as HTMLElement
     expect(within(tradeGroup).queryByText('加工单')).not.toBeInTheDocument()
-    expect(within(tradeGroup).getByText('订单列表')).toBeInTheDocument()
+    expect(within(tradeGroup).getByText('销售订单')).toBeInTheDocument()
     expect(within(tradeGroup).getByText('财务对账')).toBeInTheDocument()
     // #5778：售后工单 / 客户列表已移入「客户服务」组 ⇒ 本组只余「下单 → 收款」两项
     expect(tradeGroup.querySelectorAll('a')).toHaveLength(2)
@@ -288,7 +288,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expect(inventory!.children.map((c) => c.permissionCode)).toEqual([
       'inbound:view',
       'product:list',       // 库存明细（issue #6404：同取既有 product:list ⇒ 零授权 delta）
-      'order:list',         // 发货单（issue #5939：取**既有** order:list ⇒ 与订单列表同码、零授权 delta）
+      'order:list',         // 发货单（issue #5939：取**既有** order:list ⇒ 与销售订单同码、零授权 delta）
       'processing:manage',
       'product:list',       // 省料看板（issue #5699 P4：节点码 = 该页两个读端点的码）
     ])
@@ -493,7 +493,7 @@ describe('作业看板页 /production（作业单唯一入口，PG-038）', () =
     ).toBeInTheDocument()
   })
 
-  it('表头与订单列表**同源** + 行内动作是**链接式**（2026-10-17 用户裁定）', async () => {
+  it('表头与销售订单**同源** + 行内动作是**链接式**（2026-10-17 用户裁定）', async () => {
     render(<ProductionBoardPage />)
     await waitFor(() => expect(screen.getByTestId('production-row-po-1')).toBeInTheDocument())
 
@@ -512,7 +512,7 @@ describe('作业看板页 /production（作业单唯一入口，PG-038）', () =
     ).toContain('bg-neutral-50')
 
     // ② 行内动作（用户逐字「操作行内的按钮样式能否保持让全部单据统一向订单保持一致，
-    //    不要有多种风格设计」）：与订单列表共用 `@/components/ui/RowActionLink`。
+    //    不要有多种风格设计」）：与销售订单共用 `@/components/ui/RowActionLink`。
     // 注入：改回 `Button variant="secondary"`（描边按钮）⇒ 两条都红。
     const action = within(screen.getByTestId('production-row-po-1')).getByRole('button', {
       name: '生产明细',

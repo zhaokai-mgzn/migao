@@ -201,7 +201,7 @@ describe('OrderDetailPage', () => {
     render(<OrderDetailPage />)
     await waitFor(() => {
       expect(screen.getByText('首页')).toBeInTheDocument()
-      expect(screen.getByText('订单列表')).toBeInTheDocument()
+      expect(screen.getByText('销售订单')).toBeInTheDocument()
     })
   })
 

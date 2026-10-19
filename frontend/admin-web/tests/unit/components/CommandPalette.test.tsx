@@ -142,7 +142,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     mockUser = { permissions: ['order:list'], roles: [] }
     render(<CommandPalette open onClose={mockOnClose} />)
     await waitFor(() => expect(renderedKeys()).toHaveLength(3))
-    // 面非空（不是「全被过滤光」造成的恒真空集）：订单列表 + **发货单**（#5939：与订单列表同码）
+    // 面非空（不是「全被过滤光」造成的恒真空集）：销售订单 + **发货单**（#5939：与销售订单同码）
     // + 独立项
     // 🔴 issue #5699（P4）：经营看板要 `dashboard:view` ⇒ 本权限集**无**该码 ⇒ 它（最前席位）不在。
     expect(renderedKeys()).toEqual(['orders', 'shipments', 'notifications'])
@@ -151,12 +151,12 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     expect(screen.queryByTestId('command-palette-item-dashboard')).toBeNull()
   })
 
-  it('关键字命中（拼音首字母 `ddlb` ⇒ 订单列表，且显示所属组名）', async () => {
+  it('关键字命中（拼音首字母 `ddlb` ⇒ 销售订单，且显示所属组名）', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
     typeQuery('ddlb')
     expect(renderedKeys()).toEqual(['orders'])
     const item = screen.getByTestId('command-palette-item-orders')
-    expect(item.textContent).toContain('订单列表')
+    expect(item.textContent).toContain('销售订单')
     expect(item.textContent).toContain('交易管理')
     // 未命中的项**不出现**（不是只把命中项排前面）
     expect(screen.queryByTestId('command-palette-item-products')).toBeNull()
@@ -193,8 +193,8 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
 
   it('↑/↓ 移动高亮 + Enter 跳转：router.push 收到**被高亮那一项**的 path', () => {
     render(<CommandPalette open onClose={mockOnClose} />)
-    typeQuery('lb') // keywords 命中：商品列表(splb) / 订单列表(ddlb) / 客户列表(khlb)
-    // 顺序 = **菜单自身顺序**（同档稳定）⇒ 2026-10-06 方案 A1 后：客户列表（客户服务）→ 订单列表（交易管理）
+    typeQuery('lb') // keywords 命中：商品列表(splb) / 销售订单(ddlb) / 客户列表(khlb)
+    // 顺序 = **菜单自身顺序**（同档稳定）⇒ 2026-10-06 方案 A1 后：客户列表（客户服务）→ 销售订单（交易管理）
     // → 商品管理（一级项，排在所有分组之后）
     expect(renderedKeys()).toEqual(['customers', 'orders', 'products'])
     expect(highlightedKeys()).toEqual(['customers'])
@@ -212,7 +212,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
 
   it('↑ 从首项回绕到末项（不是停在原地），Enter 跳到末项', () => {
     render(<CommandPalette open onClose={mockOnClose} />)
-    typeQuery('lb')   // 多结果集：客户列表 → 订单列表 → 商品管理（顺序 = 菜单自身顺序）
+    typeQuery('lb')   // 多结果集：客户列表 → 销售订单 → 商品管理（顺序 = 菜单自身顺序）
     press('ArrowUp')
     expect(highlightedKeys()).toEqual(['products'])
     press('Enter')

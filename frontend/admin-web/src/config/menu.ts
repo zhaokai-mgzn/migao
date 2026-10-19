@@ -78,7 +78,7 @@
 //      与**原「智能客服」组**（在线接待 / 知识库）合并为**「客户服务」组**
 //      （key = `customer-service`）—— 用户原话：「客户管理也不属于交易管理」
 //      「收购（=售后）和客户管理应该属于一类？都属于服务客户的功能」。
-//   ③ **交易管理只留「下单 → 收款」**：订单列表 + 财务对账（两项）。
+//   ③ **交易管理只留「下单 → 收款」**：销售订单 + 财务对账（两项）。
 //   ④ **「商品与加工项」→「商品」**：加工项搬走后原组名不再成立（组内只剩商品列表）。
 //
 // ## 为什么①②是本次的核心口径（证据 = 岗位权限矩阵，**零可见性 delta**）
@@ -224,7 +224,9 @@ export const menuGroups: MenuGroup[] = [
     name: '交易管理',
     icon: 'ShoppingCart',
     children: [
-      { key: 'orders', name: '订单列表', icon: 'ClipboardList', path: '/orders', permissionCode: 'order:list', keywords: ['ddlb', 'dingdan'] },
+      // 🔴 2026-10-20（issue #7354，用户逐字「把菜单订单列表改成销售订单」）：菜单正名「销售订单」。
+      // 旧名「订单列表」保留为关键词（⌘K 按老叫法仍能搜到）；权限码 `order:list` / 路径 `/orders` 一字不动。
+      { key: 'orders', name: '销售订单', icon: 'ClipboardList', path: '/orders', permissionCode: 'order:list', keywords: ['xsdd', 'xiaoshou', 'ddlb', 'dingdan', '订单列表'] },
       // #2969：财务对账原在「客户管理」组；#5271 并入交易管理组（订单 → 收款 → 对账）
       { key: 'finance', name: '财务对账', icon: 'Calculator', path: '/finance', permissionCode: 'finance:view', keywords: ['cw', 'caiwu', 'duizhang', '对账'] },
     ],
@@ -319,7 +321,7 @@ export const menuGroups: MenuGroup[] = [
       // 发货单（issue #5939，用户 2026-10-02 裁定）：**与「入库单」对称**的出口单据 ——
       // 用户原话「我让你开发过发货单的，但是在大菜单上没见到这个单据」。
       // 在此之前发货单只有**按单**入口（订单详情 →「发货」/「打印发货单」），全量发货单无处可查。
-      // 🔴 权限码 = `order:list`（**既有**码，不新造）：与「订单列表」节点、页面守卫、以及该页第一屏
+      // 🔴 权限码 = `order:list`（**既有**码，不新造）：与「销售订单」节点、页面守卫、以及该页第一屏
       // 读端点 `GET /api/admin/shipments` 的 @RequirePermission 四处逐字同码 ⇒ **零授权 delta**
       //（能看订单的人就能看发货单）。反例：新造 `shipment:view` ⇒ 今天没有任何岗位持有该码 ⇒
       // 菜单节点对**所有人**不可见（#4203 同族坑：「有权限码但没人持有 = 零菜单入口」）。

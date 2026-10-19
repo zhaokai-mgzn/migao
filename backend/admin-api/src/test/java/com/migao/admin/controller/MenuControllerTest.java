@@ -81,7 +81,7 @@ class MenuControllerTest {
     private static final List<String> MENU_ITEM_LABELS = List.of(
             "经营看板",
             "在线接待", "知识库", "售后工单", "客户列表",
-            "订单列表", "财务对账",
+            "销售订单", "财务对账",
             // 🔴 2026-10-09（issue #6580，用户裁定「移除加工项管理和工艺配置这两个菜单」）：
             // 「加工项管理」「工艺配置」两个菜单项已移除（功能体并入「企业基础设置」页内的配置域）。
             "作业看板", "智能派单", "计件工资",
@@ -301,12 +301,12 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("交易管理组（#5778 收窄）：订单列表 + 财务对账 + 组尾动作码（订单详情）")
+    @DisplayName("交易管理组（#5778 收窄）：销售订单 + 财务对账 + 组尾动作码（订单详情）")
     void tradeCenterGroupMirrorsMenuTs() throws Exception {
         JsonNode trade = group(fetchTree(), "trade-center");
         assertEquals("交易管理", trade.path("label").asText());
         // 本轮：客户列表 / 售后工单已移入「客户服务」组 ⇒ 只剩「下单 → 收款」两项 + 组尾动作码
-        assertEquals(List.of("订单列表", "财务对账", "订单详情"),
+        assertEquals(List.of("销售订单", "财务对账", "订单详情"),
                 labels(trade.path("children")));
         assertEquals(List.of("order:list", "finance:view", "order:detail"),
                 codes(trade.path("children")));
@@ -346,7 +346,7 @@ class MenuControllerTest {
         // 入库单是**仓储**动作、权限码独立为 inbound:view —— 并进 processing:manage 会让
         // 「有 inbound:view、没有 processing:manage」的仓管看不到菜单（#4203 点名的同族坑）。
         // issue #5699（P4）：省料看板节点码 = 该页第一屏读码 product:list（StockBatchController）。
-        // issue #5939：「发货单」取**既有** order:list（与订单列表同码、与页面/端点同码）⇒ 零授权 delta。
+        // issue #5939：「发货单」取**既有** order:list（与销售订单同码、与页面/端点同码）⇒ 零授权 delta。
         // 🔴 issue #6404：「库存明细」同样取**既有** product:list（与省料看板同码；
         // 码不唯一是有意的 —— 两个页面各自的读端点注解就是这个码）。
         assertEquals(List.of("inbound:view", "product:list", "order:list", "processing:manage", "product:list",
@@ -519,7 +519,7 @@ class MenuControllerTest {
         assertEquals(List.of("入库过账"), actual.get("inbound:view"),
                 "`inbound:view` 的手机端面必须是「入库过账」（MobileSurfaces 的 inbound）");
         assertFalse(actual.containsKey("order:list"),
-                "`order:list`（订单列表 / 发货单）在手机端没有任何面 ⇒ 不得有标注（不在手机上多一个入口）");
+                "`order:list`（销售订单 / 发货单）在手机端没有任何面 ⇒ 不得有标注（不在手机上多一个入口）");
         assertFalse(actual.containsKey("employee:create"),
                 "`employee:create`（新增员工）在手机端没有任何面 ⇒ 不得有标注");
     }

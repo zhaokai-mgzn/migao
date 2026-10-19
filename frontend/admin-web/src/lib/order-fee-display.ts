@@ -145,7 +145,7 @@ export function readFeeDetail(info: unknown): ProcessingFeeDetail | null {
  *
  * 🔴 **不许先读 `processingInfo.processingFee`**：那是**客户端副本**（下单页 / 探针脚本写进来，
  * 服务端既不校验也不覆盖）⇒ 与权威值可以是两个数 —— dev 实证（2026-10-17，tenant 32）：
- * 副本 15 元 / 权威 0 元·`fee_source=unpriced` ⇒ 订单列表「+ 加工费15元」与详情「未定价」自相矛盾。
+ * 副本 15 元 / 权威 0 元·`fee_source=unpriced` ⇒ 销售订单「+ 加工费15元」与详情「未定价」自相矛盾。
  *
  * ⚠️ 别处再拼一份取值判定 = 迟早与详情分叉（判据 = `tests/unit/order-fee-source-guard.test.ts`）。
  */

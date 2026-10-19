@@ -203,7 +203,7 @@ ACTION_NODE_CODES: dict[str, dict[str, str]] = {
     "订单详情": {
         "code": "order:detail",
         "reason": (
-            "「订单详情」是订单列表页内的**子页面动作**（不是首屏）——它有自己的 path 语义（`/orders/{id}`）"
+            "「订单详情」是销售订单页内的**子页面动作**（不是首屏）——它有自己的 path 语义（`/orders/{id}`）"
             "但不进侧边栏。🔴 issue #7276（人类 2026-10-18 裁定「让订单详情这个码真正生效」）起，本码"
             "**不再是零消费死码**：`GET /api/admin/orders/{id}` 与 `GET /api/admin/orders/{id}/shipments`"
             "两条读面的生效码就是它（现取见 `test_agent_permission_parity.py::AUTHORIZATION_CENSUS"

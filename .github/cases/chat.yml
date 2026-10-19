@@ -2750,7 +2750,7 @@ cases:
 
   - id: CH-048
     legacy_id: ""
-    title: "黄金策回复不得暴露内部路由（后台「订单列表」页(/orders)）—— 源头话术去路由 + 出站清洗兜底 + 负控"
+    title: "黄金策回复不得暴露内部路由（后台「销售订单」页(/orders)）—— 源头话术去路由 + 出站清洗兜底 + 负控"
     domains:
       - chat
     tier: normal
@@ -2763,7 +2763,7 @@ cases:
     # 条目 ⇒ truths_ref 为空（truths.py check 对该形态只告警不阻塞）；新增真值须另开单改模板。
     truths_ref: []
     user_inputs:
-      - "商家问「这个订单怎么发货」⇒ 黄金策如实说明不能代办并引导到后台「订单列表」页；回复里**只允许中文页面名**，不得出现内部前端路由（`(/orders)` 形态）。2026-10-18 生产实证：session `sess_742201cbf83f4f58` 的 assistant 正文逐字含「发货操作在后台「订单列表」页(/orders)对应订单上点「发货」即可」"
+      - "商家问「这个订单怎么发货」⇒ 黄金策如实说明不能代办并引导到后台「销售订单」页；回复里**只允许中文页面名**，不得出现内部前端路由（`(/orders)` 形态）。2026-10-18 生产实证：session `sess_742201cbf83f4f58` 的 assistant 正文逐字含「发货操作在后台「订单列表」页(/orders)对应订单上点「发货」即可」"
     expectations:
       - tool: direct_reply
     data_checks:

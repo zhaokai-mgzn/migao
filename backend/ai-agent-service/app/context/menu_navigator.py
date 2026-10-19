@@ -133,7 +133,8 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     MenuNode("customer-service", "售后工单", "/after-sales", "after_sales:view"),
     MenuNode("customer-service", "客户列表", "/customers", "customer:view"),
     # 交易管理
-    MenuNode("trade-center", "订单列表", "/orders", "order:list"),
+    # 2026-10-20（issue #7354）：菜单正名「销售订单」（旧名「订单列表」保留为说法）。
+    MenuNode("trade-center", "销售订单", "/orders", "order:list"),
     MenuNode("trade-center", "财务对账", "/finance", "finance:view"),
     # 生产管理（2026-10-06：先备资料 → 再生产与派单 → 最末结算）
     # 🔴 2026-10-09（issue #6580，用户裁定）：「加工项管理」「工艺配置」两个菜单项**移除**
@@ -148,7 +149,7 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     # 仓储与物料（2026-10-06：单据（进 → 账 → 出）→ 台账 → 分析）
     MenuNode("inventory-center", "入库单", "/inbound-orders", "inbound:view"),
     # issue #6404：库存明细（与省料看板同码 `product:list` —— 两者都是该页的**读**码；
-    # 先例 = 「发货单」与「订单列表」同取 `order:list`，issue #5939）
+    # 先例 = 「发货单」与「销售订单」同取 `order:list`，issue #5939）
     MenuNode("inventory-center", "库存明细", "/stock-ledger", "product:list"),
     MenuNode("inventory-center", "发货单", "/shipments", "order:list"),
     MenuNode("inventory-center", "余料台账", "/production/remnants", "processing:manage"),
@@ -245,7 +246,8 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     NavFeature("customers", "客户列表（客户）", (("customer-service", "客户列表"),), ("客户列表", "客户")),
     NavFeature("knowledge", "知识库", (("customer-service", "知识库"),), ("知识库",)),
     NavFeature("after-sales", "售后工单（退换货）", (("customer-service", "售后工单"),), ("售后工单", "退换货")),
-    NavFeature("orders", "订单列表（订单）", (("trade-center", "订单列表"),), ("订单列表", "订单")),
+    # 2026-10-20（issue #7354）：菜单正名「销售订单」；旧名「订单列表」保留为说法（老用户按旧叫法仍能命中）。
+    NavFeature("orders", "销售订单（订单列表 / 订单）", (("trade-center", "销售订单"),), ("销售订单", "订单列表", "订单")),
     NavFeature("finance", "财务对账（对账）", (("trade-center", "财务对账"),), ("财务对账", "对账")),
     # 2026-10-19（issue #7332）：菜单正名「作业看板」。登记名里保留「作业单 / 加工单 / 原生产看板」三个旧说法：
     # 判据 6b（problems_aliases_grounded）要求说法与登记名有包含关系；菜单本身只叫「作业看板」。

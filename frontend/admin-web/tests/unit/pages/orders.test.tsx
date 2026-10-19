@@ -205,7 +205,7 @@ describe('OrdersPage', () => {
 
   it('should render page title', () => {
     render(<OrdersPage />)
-    expect(screen.getByText('订单列表')).toBeInTheDocument()
+    expect(screen.getByText('销售订单')).toBeInTheDocument()
   })
 
   it('should render create order button', () => {
