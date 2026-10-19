@@ -9,6 +9,7 @@ LLM 开发时按需加载对应页面 (~50 行/页，按场景索引)：
 | 写代码前确认规范 | [Development](Development.md) |
 | **改了某个面 ⇒ 还该跑哪几条具名判据（窄集由射程反推）** | **[Change-Blast-Radius](Change-Blast-Radius.md)** |
 | **写码最少化（防过度建设/加依赖前）** | **[Code-Minimalism](Code-Minimalism.md)** |
+| **加表/加列/加 JSONB 前（防 ERP 化：事实/派生/视图、列预算、孤儿列、JSONB 登记）** | **[Domain-Modeling](Domain-Modeling.md)** |
 | **并行开发/契约一致性** | **[CONTRACT-LEDGER](CONTRACT-LEDGER.md)** + **[DEV-FLOW](DEV-FLOW.md)** |
 | 改前端/小程序 | [Frontend](Frontend.md) |
 | **设计基线（颜色/字号/阴影真值源在哪 + 四态契约 + 自检五问）** | **[design-baseline](../design/design-baseline.md)**（真值 = `frontend/admin-web/tailwind.config.ts` + `frontend/admin-web/src/lib/design-tokens.ts`） |

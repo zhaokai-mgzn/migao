@@ -6989,6 +6989,25 @@ _CASE_MC_118 = EvalCase(
     precondition='本用例是 [backend-contract] 纯离线判据：前置 = `scripts/dev-worktree.sh` / `scripts/agent-presets-guard.py` 在场且可解析；行为面判据在 `tmp_path` 里真 `git init` + 真 `add` 造真 worktree 与真会话锁（零网络、零其库、不碰任何真实工作区；`gh` 用 rc=1 垫片、HOME 指向 tmp_path）。前置由判据自身持有：文件缺失 / 夹具造不出来 ⇒ 当场红；agent-eval 栈不跑它',
 )
 
+# ── MC-119 [NORMAL] schema 形态健康：单表列预算 ≤ 30（超限须台账具名 + 只许缩短）/ 孤儿列零增长（生产代码语料）/ JSONB 双向登记（issue #7359，防 ERP 化）（源: cases/misc.yml）──
+_CASE_MC_119 = EvalCase(
+    id='MC-119',
+    legacy_id='',
+    title='schema 形态健康：单表列预算 ≤ 30（超限须台账具名 + 只许缩短）/ 孤儿列零增长（生产代码语料）/ JSONB 双向登记（issue #7359，防 ERP 化）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-20，逐字）：「传统 ERP 软件就是堆积各种单据，最后显得臃肿庞大，一个单据几十几百个字段，领域建模很弱，我们的项目如何规避这种情况」—— 要求把规避手段落成规范与判据，而不是只写在文档里。'],
+    expectations=[],
+    data_checks=['**基线（2026-10-20 现取，逐字）**：`backend/admin-api/src/main/resources/db/init/schema.sql` = **84 张表 / 1140 列 / 平均 13.6 列**；超列预算 1 张（`customer_profiles` 42 列，台账具名登记并给收敛计划）；**孤儿列 0**（生产代码语料）；**JSONB 48 列**（全部登记）。台账 = `tests/unit_ci_workflows/schema_health_ledger.json`。', '**判据 1（列预算）**：`tests/unit_ci_workflows/test_schema_health_guards.py::test_no_table_exceeds_the_column_budget` —— 单表列数 > `column_ceiling`（30）且未登记 ⇒ 具名判红；台账宽度与现取不符（增宽 / 已收窄却仍留条目）⇒ 也红（台账只许缩短）。红证：拆掉台账里的 `customer_profiles` 例外 ⇒ 判红（`test_unregistered_wide_table_goes_red`）；把该表切到 20 列而台账不动 ⇒ 判「例外条目必须删除」（`test_wide_table_shrinking_forces_ledger_shrink`）。', '**判据 2（孤儿列零增长）**：同文件::`test_orphan_columns_do_not_grow` —— 生产代码语料（`CORPUS_ROOTS`，不含 tests/docs）里 `snake_case` 与 `camelCase` 都零引用的列出现即红；台账里的死列已被引用却没缩短也红。红证：给 `narrow` 表加 `nobody_reads_me` ⇒ 具名判红。', '**判据 3（JSONB 双向登记）**：同文件::`test_every_jsonb_column_is_registered` —— 新增 JSONB 未进台账 ⇒ 判红（强制一次显式决策：能排序/聚合/约束的应该是一列）；台账留了已删除的 JSONB ⇒ 也红。红证：`narrow.bag` / `gone.removed` 两向注入。', '**判据 4（判别力自证）**：同文件::`test_toy_world_is_green` 是负控 —— 合成世界与**真语料**都必须绿，否则上面四条红证是空跑。', '**边界（照实登记，§19.1）**：① 判不了设计判断（这张表该不该有、这个字段该不该拆）—— 那是评审与 `docs/wiki/Domain-Modeling.md` 的准入判据；② 孤儿列语料是**冻结清单**（新增服务目录须同 PR 加进语料，否则假红；这是有意的 fail-closed 方向）；③ 不新增 required check，跑在既有 `ci workflow helper unit tests` 腿里；④ 不改任何 schema —— 本单只加判据与台账，收敛 `customer_profiles` / `order_items` 属后续单（issue #7359 的承接项）。'],
+    skip_reason='[backend-contract] 纯静态 schema 形态判据（只读建库脚本与生产代码语料），由 tests/unit_ci_workflows/test_schema_health_guards.py 验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'schema-health', 'domain-modeling', 'erp-bloat', 'column-budget', 'orphan-column', 'jsonb-registry', 'meta-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯静态判据：前置 = `backend/admin-api/src/main/resources/db/init/schema.sql` 与 `tests/unit_ci_workflows/schema_health_ledger.json` 在场且可解析；生产代码语料只读（不小于 500 个文件，语料口径坏了判据当场红）。零网络、零时钟、不起真库。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -15948,6 +15967,7 @@ ALL_CASES = (
     _CASE_MC_116,
     _CASE_MC_117,
     _CASE_MC_118,
+    _CASE_MC_119,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
