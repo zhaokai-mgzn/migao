@@ -67,12 +67,12 @@ class MarketingPosterTool(BaseTool):
             },
             "promo_title": {
                 "type": "string",
-                "description": "海报主标题，必须逐字来自商家（如「新品上市」「限时特惠」）",
+                "description": "海报主标题（≤24 字），必须逐字等于商家确认的文案（商家自己给，或从你给的候选里选定/改写后确认）",
             },
             "selling_points": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "1~3 条卖点，必须逐字来自商家（每条 ≤30 字）",
+                "description": "1~3 条卖点（每条 ≤30 字），必须逐字等于商家确认的文案；不得自动编造",
             },
         },
         "required": ["product_id", "promo_title", "selling_points"],

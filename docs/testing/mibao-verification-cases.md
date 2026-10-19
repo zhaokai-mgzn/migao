@@ -8303,7 +8303,7 @@
 ```
 溯源: 2026-10-18 新增（issue #7222，用户截图实证：AI 回归建的卖布单在订单详情报「该订单无需作业单」）。取号 = 当时 origin/main 已占号最大 PG-087 ⇒ 本单取 PG-088。 ｜ tags: fabric-sale, ship-guard, backend-contract
 
-## 商品域（128 case）
+## 商品域（129 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -10045,7 +10045,7 @@
 
 ### PR-053. 营销海报 - 商品事实 + 商家确认文案生成海报卡（缺文案 fail-closed；PC 下载 / 手机保存相册） 🔵
 ```
-数据: 判据 0·**机器可判**：缺文案时 `error.code=COPY_REQUIRED`（缺主标题 / 缺卖点）、越界时 `error.code=COPY_INVALID`；成功时 `success=true` 且 `data.product.name` 逐字等于 admin-api 返回的商品名。
+数据: 判据 0·**机器可判**：缺文案 / 越界时工具必须失败（`must_fail[marketing_poster]`；工具错误码为 `COPY_REQUIRED` / `COPY_INVALID`，属工具结果级、不是轮级 SSE 错误）；成功时 `success=true` 且 `data.product.name` 逐字等于 admin-api 返回的商品名。
 数据: 判据 1·🔴 **文案必须由操作员提供**（issue #7351；用户逐字「不要无脑的直接生成」）：`marketing_poster` 缺 `promo_title` / 缺 `selling_points` / 卖点 >3 条 ⇒ `success=False`（`COPY_REQUIRED` / `COPY_INVALID`），且**零 admin-api 调用**、`_should_send_card` 为 False（前端不会画「空头海报」）。注入红证：允许空标题发卡 ⇒ 变红。
 数据: 判据 2·**商品事实只来自 admin-api**：主图 / 名称 / 价格（缺 price 回退 basePrice）/ 单位 / 规格逐字段来自 `GET /api/admin/products/{id}`；商品描述里的营销词**不得**被搬进 `copy`。注入红证：把 description 拼进卖点 ⇒ 变红。
 数据: 判据 3·**租户隔离 + 权限码**：响应 tenantId ≠ 会话租户 ⇒ 按「商品不存在」拒绝；无 `product:list` 的 C 端上下文 ⇒ 权限拒绝（`c_end_reachable=False`）。注入红证：删掉 tenant 校验 ⇒ 变红。
@@ -10053,6 +10053,7 @@
 数据: 判据 5·**PC 下载**：`MarketingPosterCard` 点「下载海报」触发带 `download="营销海报-<商品名>.png"` 与 `data:image/png` href 的锚点；版面纯函数固定 750×1000、标题 ≤2 行、卖点 ≤3 行、缺价显示「价格面议」（不伪装 ¥0.00）。注入红证：把 download 改成新窗口打开 ⇒ 变红。
 数据: 判据 6·**手机保存到相册**：`PosterCard` 在微信内置浏览器弹「长按图片保存」提示（JS 无法直接写相册，不谎报已保存）；其它浏览器触发 `<a download>` + toast；商品图跨域失败 ⇒ 降级为无图海报并明说。注入红证：微信分支改成 toast「已保存」⇒ 变红。
 数据: 判据 7·**快捷入口**：`GET /api/chat/quick-actions` 的 `actions` 仍恰好 6 条（2×3 契约不变），新增 `tools` 字段含「营销海报」；两端按工具行独立渲染并发送服务端 prompt（前端不写死入口内容）。注入红证：把海报塞进 actions 变第 7 格 ⇒ 六格判据红。
+必须失败: marketing_poster
 跳过: [backend-contract] 工具 + 两端渲染契约（无 LLM 环节）：断言由 backend/ai-agent-service/tests/test_marketing_poster.py、test_chat.py::TestQuickActions、test_card_type_cross_end_contract.py 与两端前端单测执行
 ```
 溯源: 2026-10-19 新增（issue #7351：黄金策营销海报工具 —— 对话工具 + 快捷入口；PC 下载 / 手机保存相册；文案必须由操作员提供）。 ｜ tags: product, poster, marketing, tool, backend_contract
@@ -10070,6 +10071,18 @@
 前置: product_count_for_keyword(source=2699)
 ```
 溯源: 2026-10-19 新增（issue #7351）：营销海报的**引导补文案**旅程。按用户裁定 #4262，本用例**不在合入时自动跑**，留给下一次手动集中评测。 ｜ tags: product, poster, journey, marketing
+
+### PR-073. 营销海报 - 商家让 AI 写文案：先按营销三板斧给 2~3 组候选，确认前不得调海报工具 🔵
+```
+你: 我要给 2699 系列雪尼尔窗帘面料做张海报，文案你帮我写吧，随便写
+端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
+数据: 必须给出 2~3 组**候选文案**（每组含主标题 + 2~3 条卖点），并明确请商家选一组或改写；候选必须基于商品事实（名称 / 规格 / 价格）。
+数据: **不得**在商家确认前调用 `marketing_poster`（机器断言 = forbidden_tools，调用即违规）；不得把候选当最终结果直接发卡。
+数据: 候选不得编造折扣 / 赠品 / 材质 / 销量 / 「第一 / 最好 / 100%」等无依据表述；活动价、库存等不知道的事实先问商家。
+前置: product_count_for_keyword(source=2699)
+全程禁用: marketing_poster
+```
+溯源: 2026-10-20 新增（issue #7351；用户 2026-10-20 裁定「B. A + AI 给候选文案，商家确认后采用」）：营销三板斧候选流程的机器判据 = 未确认前禁止调工具。按 #4262，本用例不在合入时自动跑，留给下一次手动集中评测。 ｜ tags: product, poster, journey, marketing, fail_closed
 
 ## 工具注册器域（1 case）
 
@@ -12163,8 +12176,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：831（活跃 140，跳过 691）
-- tier 分布：smoke 12 / normal 763 / adversarial 32
+- 用例总数：832（活跃 141，跳过 691）
+- tier 分布：smoke 12 / normal 764 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12185,7 +12198,7 @@
 - 订单域：68
 - 加工项域：31
 - 加工单域：75
-- 商品域：128
+- 商品域：129
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
@@ -12477,6 +12490,7 @@
 - PR-130: 报价问法真跑：问「2699 雪尼尔做 3 米宽一幅窗帘多少钱」→ 报商品真价 + 说清加工费口径，不得凭空给总价
 - PR-053: 营销海报 - 商品事实 + 商家确认文案生成海报卡（缺文案 fail-closed；PC 下载 / 手机保存相册）
 - PR-054: 营销海报旅程 - 先问商家要文案，拿到「开门红 + 卖点」后才调海报工具（不得自行编文案）
+- PR-073: 营销海报 - 商家让 AI 写文案：先按营销三板斧给 2~3 组候选，确认前不得调海报工具
 - UI-048: 工艺配置页：规则 / 工序删除的二次确认改**弹框**（与「删除工艺路线」同一形态；弹框写清删的是哪一条 + 删除中禁用 + 失败理由逐条）
 - UI-049: 工艺项页·**一张表装全部工序**（用户裁定 2026-09-21：删【打包发货】独立区块 ⇒ 两层分区退场；按车间分组可折叠；**不再有部位列**）
 - UI-050: 工艺项页·**【打包发货】独立区块已删除**（用户裁定 2026-09-21）+ 工艺路线并入该位置**同屏** + 两个 tab（工序管理 / 算料配置）+ **行为变更如实登记**（零价目行的工序**进表**：`data-state=no_row` + 行尾 `管理▸` 可停用/删除，issue #5875）

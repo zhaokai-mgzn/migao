@@ -12866,13 +12866,14 @@ _CASE_PR_053 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=[],
     expectations=[],
-    data_checks=['判据 0·**机器可判**：缺文案时 `error.code=COPY_REQUIRED`（缺主标题 / 缺卖点）、越界时 `error.code=COPY_INVALID`；成功时 `success=true` 且 `data.product.name` 逐字等于 admin-api 返回的商品名。', '判据 1·🔴 **文案必须由操作员提供**（issue #7351；用户逐字「不要无脑的直接生成」）：`marketing_poster` 缺 `promo_title` / 缺 `selling_points` / 卖点 >3 条 ⇒ `success=False`（`COPY_REQUIRED` / `COPY_INVALID`），且**零 admin-api 调用**、`_should_send_card` 为 False（前端不会画「空头海报」）。注入红证：允许空标题发卡 ⇒ 变红。', '判据 2·**商品事实只来自 admin-api**：主图 / 名称 / 价格（缺 price 回退 basePrice）/ 单位 / 规格逐字段来自 `GET /api/admin/products/{id}`；商品描述里的营销词**不得**被搬进 `copy`。注入红证：把 description 拼进卖点 ⇒ 变红。', '判据 3·**租户隔离 + 权限码**：响应 tenantId ≠ 会话租户 ⇒ 按「商品不存在」拒绝；无 `product:list` 的 C 端上下文 ⇒ 权限拒绝（`c_end_reachable=False`）。注入红证：删掉 tenant 校验 ⇒ 变红。', "判据 4·**卡型跨端契约**：`_detect_card_type('marketing_poster')` → `marketing_poster`；该工具只绑黄金策 product/general ⇒ B 端桌面 `ToolResultCard` 与 B 端移动 `MessageBubble` 都必须有渲染分支（`test_card_type_cross_end_contract.py` 现算，缺一端即红）。", '判据 5·**PC 下载**：`MarketingPosterCard` 点「下载海报」触发带 `download="营销海报-<商品名>.png"` 与 `data:image/png` href 的锚点；版面纯函数固定 750×1000、标题 ≤2 行、卖点 ≤3 行、缺价显示「价格面议」（不伪装 ¥0.00）。注入红证：把 download 改成新窗口打开 ⇒ 变红。', '判据 6·**手机保存到相册**：`PosterCard` 在微信内置浏览器弹「长按图片保存」提示（JS 无法直接写相册，不谎报已保存）；其它浏览器触发 `<a download>` + toast；商品图跨域失败 ⇒ 降级为无图海报并明说。注入红证：微信分支改成 toast「已保存」⇒ 变红。', '判据 7·**快捷入口**：`GET /api/chat/quick-actions` 的 `actions` 仍恰好 6 条（2×3 契约不变），新增 `tools` 字段含「营销海报」；两端按工具行独立渲染并发送服务端 prompt（前端不写死入口内容）。注入红证：把海报塞进 actions 变第 7 格 ⇒ 六格判据红。'],
+    data_checks=['判据 0·**机器可判**：缺文案 / 越界时工具必须失败（`must_fail[marketing_poster]`；工具错误码为 `COPY_REQUIRED` / `COPY_INVALID`，属工具结果级、不是轮级 SSE 错误）；成功时 `success=true` 且 `data.product.name` 逐字等于 admin-api 返回的商品名。', '判据 1·🔴 **文案必须由操作员提供**（issue #7351；用户逐字「不要无脑的直接生成」）：`marketing_poster` 缺 `promo_title` / 缺 `selling_points` / 卖点 >3 条 ⇒ `success=False`（`COPY_REQUIRED` / `COPY_INVALID`），且**零 admin-api 调用**、`_should_send_card` 为 False（前端不会画「空头海报」）。注入红证：允许空标题发卡 ⇒ 变红。', '判据 2·**商品事实只来自 admin-api**：主图 / 名称 / 价格（缺 price 回退 basePrice）/ 单位 / 规格逐字段来自 `GET /api/admin/products/{id}`；商品描述里的营销词**不得**被搬进 `copy`。注入红证：把 description 拼进卖点 ⇒ 变红。', '判据 3·**租户隔离 + 权限码**：响应 tenantId ≠ 会话租户 ⇒ 按「商品不存在」拒绝；无 `product:list` 的 C 端上下文 ⇒ 权限拒绝（`c_end_reachable=False`）。注入红证：删掉 tenant 校验 ⇒ 变红。', "判据 4·**卡型跨端契约**：`_detect_card_type('marketing_poster')` → `marketing_poster`；该工具只绑黄金策 product/general ⇒ B 端桌面 `ToolResultCard` 与 B 端移动 `MessageBubble` 都必须有渲染分支（`test_card_type_cross_end_contract.py` 现算，缺一端即红）。", '判据 5·**PC 下载**：`MarketingPosterCard` 点「下载海报」触发带 `download="营销海报-<商品名>.png"` 与 `data:image/png` href 的锚点；版面纯函数固定 750×1000、标题 ≤2 行、卖点 ≤3 行、缺价显示「价格面议」（不伪装 ¥0.00）。注入红证：把 download 改成新窗口打开 ⇒ 变红。', '判据 6·**手机保存到相册**：`PosterCard` 在微信内置浏览器弹「长按图片保存」提示（JS 无法直接写相册，不谎报已保存）；其它浏览器触发 `<a download>` + toast；商品图跨域失败 ⇒ 降级为无图海报并明说。注入红证：微信分支改成 toast「已保存」⇒ 变红。', '判据 7·**快捷入口**：`GET /api/chat/quick-actions` 的 `actions` 仍恰好 6 条（2×3 契约不变），新增 `tools` 字段含「营销海报」；两端按工具行独立渲染并发送服务端 prompt（前端不写死入口内容）。注入红证：把海报塞进 actions 变第 7 格 ⇒ 六格判据红。'],
     skip_reason='[backend-contract] 工具 + 两端渲染契约（无 LLM 环节）：断言由 backend/ai-agent-service/tests/test_marketing_poster.py、test_chat.py::TestQuickActions、test_card_type_cross_end_contract.py 与两端前端单测执行',
     tags=['product', 'poster', 'marketing', 'tool', 'backend_contract'],
     persona='',
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    must_fail=[{'tool': 'marketing_poster'}],
 )
 
 # ── PR-054 [NORMAL] 营销海报旅程 - 先问商家要文案，拿到「开门红 + 卖点」后才调海报工具（不得自行编文案）（源: cases/product.yml）──
@@ -12891,6 +12892,26 @@ _CASE_PR_054 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '2699'}],
+)
+
+# ── PR-073 [NORMAL] 营销海报 - 商家让 AI 写文案：先按营销三板斧给 2~3 组候选，确认前不得调海报工具（源: cases/product.yml）──
+_CASE_PR_073 = EvalCase(
+    id='PR-073',
+    legacy_id='',
+    title='营销海报 - 商家让 AI 写文案：先按营销三板斧给 2~3 组候选，确认前不得调海报工具',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我要给 2699 系列雪尼尔窗帘面料做张海报，文案你帮我写吧，随便写'],
+    expectations=[],
+    data_checks=['必须给出 2~3 组**候选文案**（每组含主标题 + 2~3 条卖点），并明确请商家选一组或改写；候选必须基于商品事实（名称 / 规格 / 价格）。', '**不得**在商家确认前调用 `marketing_poster`（机器断言 = forbidden_tools，调用即违规）；不得把候选当最终结果直接发卡。', '候选不得编造折扣 / 赠品 / 材质 / 销量 / 「第一 / 最好 / 100%」等无依据表述；活动价、库存等不知道的事实先问商家。'],
+    skip_reason='',
+    tags=['product', 'poster', 'journey', 'marketing', 'fail_closed'],
+    persona='mibao',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    forbidden_tools=[{'tool': 'marketing_poster'}],
     precondition=[{'type': 'product_count_for_keyword', 'source': '2699'}],
 )
 
@@ -16240,6 +16261,7 @@ ALL_CASES = (
     _CASE_PR_130,
     _CASE_PR_053,
     _CASE_PR_054,
+    _CASE_PR_073,
     _CASE_RG_001,
     _CASE_ST_001,
     _CASE_ST_002,
