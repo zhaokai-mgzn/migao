@@ -17,6 +17,22 @@
 判据 = `backend/ai-agent-service/tests/test_chat_card_claim_guard.py::TestCardClaimFalsePositives`
 （两条负例 + **正向对照**：真卡片声称必须仍被改写，防判据被改松）。
 
+### 黄金策的进页导航提示只说商家话术，且不再留在会话历史里（2026-10-19，issue #7324）
+
+改前：首次进入某个菜单页时，对话区会冒出一条 `🤖 AI 助手` 气泡，内容是内部追溯串 + 研发口径：
+「你在【订单列表】（/orders）。这页能做：查看「订单列表」、从菜单组「trade-center」进入这一页。
+（登记项 #orders → 菜单组「trade-center」「订单列表」）（只给导航：在哪一页 / 这页有什么。
+操作步骤不在本轮。）」——商家读到的是 `trade-center` / `#orders` 这类内部标识。更麻烦的是它被当作
+普通消息**落进会话历史**：退出重登 / 换到手机端后仍以「AI 助手」气泡回放，还说「你在【订单列表】」，
+而用户当下在对话页。
+改后：文案 = 「你在【订单列表】。入口在左侧菜单「交易管理」→「订单列表」。想了解这一页怎么用，
+直接问我就行。」（菜单组用显示名；route / 登记项 id /「只给导航…」元指令不上屏）；提示**只在当次进页
+推一次、不落历史**（每页每会话 ≤ 1 次仍由服务端会话状态保证）；库里已存的旧提示在**读侧**跳过
+（展示面与模型历史都不再回放，不回写数据库）。
+判据 = `tests/unit_ci_workflows/test_proactive_onboarding.py`（`render()` 无内部标识 / 组名走显示名 /
+推送段不落库 / 存量行读侧过滤）+ `backend/ai-agent-service/tests/test_proactive_onboarding.py`
+（逐节点文案无内部标识、`save_message` 零调用、存量行被丢弃）。
+
 ### 订单详情真的出现「生成作业单」入口：读面键 `work_order_kind` 的消费侧改回 snake_case（2026-10-19，issue #7319）
 
 改前：后端按冻结键 `work_order_kind`（snake_case）下发「该生成哪一型作业单」，而前端类型与

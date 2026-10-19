@@ -47,7 +47,7 @@ from app.context.page_registry import (
     strip_page_context_envelope,
 )
 # 主动新手引导（issue #5989 · P2）：route→功能登记表（复用 P1 真值源）+ 推送判定（纯函数）
-from app.context.menu_navigator import build_proactive_push
+from app.context.menu_navigator import build_proactive_push, is_legacy_proactive_tip
 from app.utils.auth import get_current_user, UserIdentity
 import app.utils.error_incident as _err_inc
 # 内部路由清洗（issue #7236）：出站展示文案只写中文页面名，不得带前端路由
@@ -369,6 +369,15 @@ def _history_user_text(role: Any, content: Any) -> Any:
     return content
 
 
+def _is_legacy_proactive_tip_row(msg: Dict[str, Any]) -> bool:
+    """历史里的一条**存量主动导航提示**（issue #7324）：读侧消化，不回放、不进模型历史。
+
+    这类行是 #6030 起落库的（后缀带「（只给导航：…）」元指令）。**新行已不再落库**；旧行**不回写**，
+    只在读的两处（`get_history` / `_convert_history_to_agent_format`）跳过 —— 与 #7112 同口径。
+    """
+    return msg.get("role") == "assistant" and is_legacy_proactive_tip(msg.get("content"))
+
+
 def _format_datetime(dt: Any) -> str:
     """格式化日期时间为 ISO 8601 字符串（UTC，以 Z 结尾）"""
     if isinstance(dt, datetime):
@@ -459,6 +468,8 @@ def _convert_history_to_agent_format(messages: List[Dict[str, Any]]) -> List[Dic
     import re
     history = []
     for msg in messages:
+        if _is_legacy_proactive_tip_row(msg):
+            continue  # 存量主动导航提示不进模型历史（issue #7324）
         role = msg.get("role", "user")
         content = msg.get("content", "")
         if role == "assistant":
@@ -2158,10 +2169,12 @@ async def _handle_page_enter_request(
     1. route ↔ 功能**唯一**对应（未登记 / 歧义 ⇒ 不推）；
     2. 该页在**服务端会话权限**下可见（客户端递交的 role / permissions **一律不读**）；
     3. 「**每页每会话最多 1 次**」——**服务端**判（`session_states`），不靠前端自觉；
-    4. **可行动性**：文案必须带「在哪一页 + 这页能做什么」，否则不发。
+    4. **可行动性**：文案必须带「你在哪一页 + 入口怎么走」，否则不发。
 
-    命中时**不经 LLM**（文案来自登记表 ⇒ 结构上不含步骤）：只回一条 `text` + `done`，并落进
-    会话历史（用户下次打开会话仍能看到这条导航）。
+    命中时**不经 LLM**（文案来自登记表 ⇒ 结构上不含步骤）：只回一条 `text` + `done`。
+    🔴 **不落库**（issue #7324，用户裁定）：主动导航提示是**当次进页**的轻提示 —— 落进历史后会在
+    换端 / 退出重登时以普通「AI 助手」气泡回放（内容还说「你在【X】」，而用户当下在对话页），
+    与 #7112（页面上下文信封被落库）同一形态。频率上限记在会话状态里，**不依赖**历史。
     """
     from app.memory.session_service import SessionService
     from app.utils.log_sanitizer import LogSanitizer
@@ -2212,11 +2225,8 @@ async def _handle_page_enter_request(
     text = verdict.push.render()
 
     async def _push_stream():
-        # 落进会话历史（用户重开会话时仍能看到这条导航）；落库失败不打断 —— 文案已经能推给他
-        await _save_message_or_report(
-            session_memory, source="chat.proactive",
-            session_id=session_id, role="assistant", content=text, tenant_id=tenant_id,
-        )
+        # 🔴 **不落库**（issue #7324）：见 handler docstring —— 历史里回放会让「你在【X】」永远停在
+        # 重登后的对话区。提示只属于当次进页；频率上限由上面 `_commit_pushed_feature` 保证。
         yield SSEEvent.text(text)
         yield SSEEvent.done(session_id, None)
 
@@ -2676,6 +2686,9 @@ async def get_history(
     # 格式化响应
     formatted_messages = []
     for msg in messages:
+        # 存量主动导航提示不回放（issue #7324）：#6030 起这类行曾落库，读侧消化、不回写库
+        if _is_legacy_proactive_tip_row(msg):
+            continue
         # 解析 metadata 获取 images
         metadata = msg.get("metadata")
         msg_images = None

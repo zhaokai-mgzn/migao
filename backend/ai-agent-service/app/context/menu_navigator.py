@@ -88,6 +88,11 @@ MENU_GROUPS: Tuple[Tuple[str, str], ...] = (
     ("org-center", "组织管理"),
 )
 
+#: 菜单组 key → **商家可见**的组名（上表的显示名一列）。
+#: 🔴 上屏文案**只许用显示名**（issue #7324）：`trade-center` / `production-center` 这类内部 key
+#: **不得**进商家可见面（`migao-dev-flow` §31 P3「不摆内部标识」）。
+MENU_GROUP_LABELS: Dict[str, str] = dict(MENU_GROUPS)
+
 #: 一级独立菜单项（`menu.ts` 的 `standaloneTopItems` / `standaloneItems`）的组归属哨兵。
 #: 它们**不在任何组里** —— 用字面量而不是空串，避免「漏填」与「真的没有组」长得一样。
 STANDALONE_GROUP = "(一级独立项)"
@@ -593,11 +598,14 @@ PUSH_REASONS: Tuple[str, ...] = (
     PUSH_REASON_AMBIGUOUS_ROUTE,
 )
 
-#: 主动推送的**步骤禁令**（常量；结构上推不出步骤 ⇒ 本句只是「文案里也别写成步骤」的机械落点）。
-PROACTIVE_STEPS_NOTICE = "（只给导航：在哪一页 / 这页有什么。操作步骤不在本轮。）"
+#: 存量旧行的**读侧签名**（issue #7324 之前，主动提示曾被落进会话历史）：整句里含这一句即可机械识别。
+#: 只用于**读**侧消化（不回放、不进模型历史），**不回写数据库**（与 #7112 / #7236 同口径）。
+LEGACY_PROACTIVE_TIP_MARK = "（只给导航："
 
-#: 「这一页能做什么」的自述前缀（**可行动性判据的结构锚**：说不出它 ⇒ 这条推送不该发）。
-PROACTIVE_CAPABILITY_PREFIX = "这页能做："
+
+def is_legacy_proactive_tip(content: Any) -> bool:
+    """一条**历史消息文本**是不是 #7324 之前落库的主动导航提示（读侧消化用）。"""
+    return isinstance(content, str) and LEGACY_PROACTIVE_TIP_MARK in content
 
 
 @dataclass(frozen=True)
@@ -612,11 +620,12 @@ class ProactivePush:
     route: str
     #: 页面所属菜单组（`STANDALONE_GROUP` = 一级独立项）
     group: str
-    #: 「这页能做什么」的自述（导航级：能看到什么、入口在哪 —— **不含**操作顺序）
+    #: 「这一页在哪儿」的自述（导航级：入口怎么走 —— **不含**操作顺序）
     capabilities: Tuple[str, ...]
 
     @property
     def citation(self) -> str:
+        """追溯锚（**只进 `to_data` / 审计，不上屏**，issue #7324）：登记项 → 菜单节点。"""
         where = "一级项" if self.group == STANDALONE_GROUP else f"菜单组「{self.group}」"
         return f"登记项 #{self.feature_id} → {where}「{self.label}」"
 
@@ -632,12 +641,15 @@ class ProactivePush:
         }
 
     def render(self) -> str:
-        """上屏文案 —— 「你在【X】，这页能做 A、B」+ citation。**只给导航，不给步骤。**"""
-        caps = "、".join(self.capabilities)
-        return (
-            f"你在【{self.label}】（{self.route}）。{PROACTIVE_CAPABILITY_PREFIX}{caps}。"
-            f"（{self.citation}）{PROACTIVE_STEPS_NOTICE}"
-        )
+        """上屏文案（**商家话术**）：先说「你在哪一页」，再说「入口怎么走」。
+
+        🔴 **内部标识不上屏**（issue #7324；`migao-dev-flow` §31 P2/P3/P4）：登记项 id（`#orders`）、
+        菜单组 key（`trade-center`）、route（`/orders`）与「只给导航…」这类元指令**一律不写** ——
+        前两者是**追溯锚**（留在 `citation` / `to_data` 与审计里），后者是**研发口径**，都不是商家该读的话。
+        **只给导航，不给步骤**（不写点击顺序，判据核受控步骤词）。
+        """
+        caps = "；".join(self.capabilities)
+        return f"你在【{self.label}】。{caps}。想了解这一页怎么用，直接问我就行。"
 
 
 @dataclass(frozen=True)
@@ -649,18 +661,25 @@ class ProactiveVerdict:
 
     @property
     def should_push(self) -> bool:
-        """可行动性判据的入口：`True` ⇒ 一定带得出「在哪一页 + 这页能做什么」。"""
+        """可行动性判据的入口：`True` ⇒ 一定带得出「你在哪一页 + 入口怎么走」。"""
         return self.push is not None
 
 
 def page_capabilities(node: MenuNode) -> Tuple[str, ...]:
-    """「这页能做什么」——**导航级**自述（能看到什么 / 从哪进）。
+    """「这一页在哪儿」——**导航级**自述：入口在左侧菜单的哪个位置。
 
-    🔴 **不是操作步骤**：不写点击顺序、不写字段名、不写「第一步」。文案由**结构**生成
-    （菜单组 + 菜单名），判据核「文案里不含受控步骤词」。
+    🔴 **不是操作步骤**：不写点击顺序、不写字段名、不写「第一步」（判据核受控步骤词）。
+    🔴 **不是内部标识**（issue #7324）：只写**显示名**（`交易管理`），不写菜单组 key（`trade-center`）——
+    文案由**结构**生成（`MENU_GROUPS` 的显示名 + 菜单名）。
+    组名未登记 ⇒ 返回空元组 ⇒ 调用方按「说不出可行动信息」**不发**（fail-closed）。
     """
-    where = "菜单" if node.group == STANDALONE_GROUP else f"菜单组「{node.group}」"
-    return (f"查看「{node.label}」", f"从{where}进入这一页")
+    if node.group == STANDALONE_GROUP:
+        # 一级独立项没有父组可指 ⇒ 只说「在左侧菜单」（再说一遍菜单名就是同屏重复，§31 P2）
+        return ("入口在左侧菜单",)
+    group_label = MENU_GROUP_LABELS.get(node.group, "")
+    if not group_label:
+        return ()
+    return (f"入口在左侧菜单「{group_label}」→「{node.label}」",)
 
 
 def _route_feature_ids() -> Dict[str, Tuple[str, ...]]:
@@ -756,7 +775,7 @@ def build_proactive_push(
     2. 该节点在**当前会话权限**下可见 —— 看不到 ⇒ `not_visible`
        （推了就是让用户去看他看不到的页面，既越权又不可行动）；
     3. 本会话还没推过这一页（`already_pushed`）—— 推过 ⇒ `already_pushed`（每页每会话 ≤ 1 次）；
-    4. 🔴 **可行动性**：文案必须能说出「**在哪一页**（label + route）+ **这页能做什么**」
+    4. 🔴 **可行动性**：文案必须能说出「**你在哪一页**」+「**入口怎么走**」
        —— 任一为空 ⇒ **不发**（`unregistered`，宁可静默）。
 
     ⚠️ `permissions` **只能来自服务端会话**（`ToolContext.permissions` / `UserIdentity.permissions`）；
@@ -774,10 +793,11 @@ def build_proactive_push(
         return ProactiveVerdict(PUSH_REASON_NOT_VISIBLE)
     if feature_id in set(already_pushed or ()):
         return ProactiveVerdict(PUSH_REASON_ALREADY_PUSHED)
-    # 可行动性：说不出「在哪一页」或「这页能做什么」⇒ 不发（宁可静默）
+    # 可行动性：说不出「你在哪一页」或「入口怎么走」⇒ 不发（宁可静默）
     # ⚠️ 判的是**即将上屏的那两个值**（`record`），不是登记表字段 —— 判登记表字段的话，
     # 构造时把 route/label 弄空也不会有东西红（实测：一条 `push.route in text` 的弱断言
     # 对空串恒真 ⇒ 红证 `⑥ 可行动性` **跑不红**）。本仓口径：**不会红的判据 = 空断言**。
+    # 🔴 route 只做**判定入参**、不上屏（issue #7324）：可行动性看的是 "label + 入口文案"，不是 URL。
     capabilities = page_capabilities(node)
     record = ProactivePush(
         feature_id=feature_id, label=node.label, route=node.path,

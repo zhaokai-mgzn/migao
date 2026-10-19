@@ -23,6 +23,8 @@ CI 的 `ci workflow helper unit tests` job **只装 `pytest pyyaml`**（不装 `
 | 6 | **默认拒绝**：不发理由的闭集 `PUSH_REASONS` 四种齐全（一个不多一个不少） | 少一种 / 多一种 ⇒ 红 |
 | 7 | **权限码不新造**：本包**没有**新增权限码 / 菜单码（不碰 `menu.ts`、不碰权限目录） | 让本包去改 `menu.ts` ⇒ 红 |
 | 8 | **前端只递交不判定**：TS 侧把 route 放进 `__PAGE_ENTER__|` 消息体，且**不**自带「哪些页面能推」的清单 | 前端抄一份页面清单 ⇒ 红 |
+| 9 | **内部标识不上屏**（issue #7324）：`render()` 里不出现 `self.citation` / `self.route` / 菜单组 key / 元指令 | 把 `（登记项 #…）` 或 `trade-center` 拼回文案 ⇒ 红 |
+| 10 | **不落历史 + 旧行读侧消化**（issue #7324）：主动推送段不调用落库；`get_history` / 模型历史跳过存量提示行 | 恢复落库 / 摘掉读侧过滤 ⇒ 红 |
 
 ## 明确不在本文件射程（照实登记）
 
@@ -85,6 +87,20 @@ def _step_words() -> Tuple[str, ...]:
             assert words, "受控步骤词表为空 ⇒ 判据 5 会退化成恒绿"
             return tuple(words)
     raise AssertionError("在 P1 判据里找不到 STEP_WORDS（受控词表单一源漂移 ⇒ 红）")
+
+
+def _menu_groups() -> Tuple[Tuple[str, str], ...]:
+    """`menu_navigator.MENU_GROUPS` 的 (key, 显示名) 逐值 —— 判据 9 用它核「key 不上屏」。
+
+    ⚠️ 表为空 ⇒ 判据会退化成恒绿，故**空表即报错**（不是 skip）。
+    """
+    tree = ast.parse(_read(NAV_MODULE))
+    for node in tree.body:
+        if isinstance(node, ast.AnnAssign) and getattr(node.target, "id", "") == "MENU_GROUPS":
+            groups = ast.literal_eval(node.value)
+            assert groups, "菜单组表为空 ⇒ 判据 9 会退化成恒绿"
+            return tuple(groups)
+    raise AssertionError("在 menu_navigator 里找不到 MENU_GROUPS（菜单组单一源漂移 ⇒ 红）")
 
 
 def _p2_section(source: str) -> str:
@@ -299,11 +315,48 @@ class TestNoStepsSurface:
             hits = [w for w in words if w in body]
             assert hits == [], f"`{fn}` 的文案里出现受控步骤词 {hits}"
 
-    def test_no_steps_notice_is_rendered(self) -> None:
-        """如实告知「不给步骤」那句必须在文案里（用户裁定的口径要能被用户看见）。"""
+    def test_render_has_no_internal_identifiers(self) -> None:
+        """判据 9（issue #7324）：上屏文案**只写商家话术**，内部标识 / 元指令一律不拼进 `render()`。
+
+        红证：把 `self.citation`（`登记项 #…`）、`self.route`、菜单组 key 或「（只给导航…）」拼回去 ⇒ 红。
+        """
         section = _p2_section(_read(NAV_MODULE))
-        assert "PROACTIVE_STEPS_NOTICE" in _function_source(section, "render")
-        assert "操作步骤不在本轮" in section
+        body = _function_source(section, "render", drop_docstring=True)
+        for banned in ("self.citation", "self.route", "登记项", "只给导航", "操作步骤不在本轮"):
+            assert banned not in body, f"render() 把内部标识/元指令拼进了商家文案：{banned}"
+        for key, _label in _menu_groups():
+            assert key not in body, f"render() 直接用了菜单组 key「{key}」（显示名才是上屏口径）"
+        # 正面锚：商家话术的两段（你在哪一页 + 入口怎么走）必须从 capabilities 来
+        assert "self.capabilities" in body, "render() 没消费 capabilities ⇒ 文案与可行动性脱钩"
+
+    def test_capabilities_use_display_labels(self) -> None:
+        """判据 9 的另一半：组名只从 `MENU_GROUP_LABELS`（显示名）取，**不读** `node.group`。"""
+        body = _function_source(_p2_section(_read(NAV_MODULE)), "page_capabilities", drop_docstring=True)
+        assert "MENU_GROUP_LABELS" in body, "page_capabilities 没用显示名表 ⇒ 组 key 迟早会上屏"
+        assert "node.group}" not in body and "node.group)" not in body, (
+            "page_capabilities 直接把 node.group（内部 key）拼进文案"
+        )
+
+
+class TestNotPersistedOnScreenHistory:
+    """判据 10（issue #7324）：主动提示**不落历史**；存量行在读侧消化。"""
+
+    def test_push_is_not_written_into_history(self) -> None:
+        body = _function_source(_read(CHAT_API), "_handle_page_enter_request")
+        assert "_save_message_or_report(" not in body, (
+            "主动导航提示又落库了 ⇒ 换端 / 重登后会以普通「AI 助手」气泡回放（#7324 的现场形态）"
+        )
+
+    def test_legacy_rows_are_filtered_on_read(self) -> None:
+        source = _read(CHAT_API)
+        history = _function_source(source, "get_history")
+        assert "_is_legacy_proactive_tip_row" in history, "展示面没有消化存量提示行 ⇒ 重登仍看得到"
+        converted = _function_source(source, "_convert_history_to_agent_format")
+        assert "_is_legacy_proactive_tip_row" in converted, "模型历史里仍带着存量提示行（污染上下文）"
+        # 判别力锚：识别函数必须真的按 #7324 的旧文案签名判，不是恒真/恒假
+        nav_source = _read(NAV_MODULE)
+        assert "LEGACY_PROACTIVE_TIP_MARK" in nav_source
+        assert "（只给导航：" in nav_source
 
 
 class TestFailClosedSurface:
