@@ -25159,6 +25159,139 @@
         "tests/unit_ci_workflows/test_guard_parsing_is_comment_aware.py::test_quote_parsing_is_ledgered"
       ],
       "unknown_reason": "两次尝试都红、且落在同一个步骤，但**只有步骤级事实**（GitHub 的 jobs API 只给步骤名，不给断言文本）⇒ 不足以判断是否同一断言（同一 SHA 两跑都红也可能是宽窗口竞态），**不归因**。要归因：取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。"
+    },
+    {
+      "workflow": "PR Check",
+      "job": "admin-api unit tests",
+      "run_id": 39129278070,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/39129278070",
+      "pr": 7283,
+      "head_sha": "905bc9347b50a16007612dcbc8a57ca510a0d35a",
+      "head_branch": "chore/remove-product-manage-7282",
+      "first_failure_step": "Run unit tests",
+      "rerun_result": "failure",
+      "kind": "unknown",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "admin-api unit tests",
+          "step": "Run unit tests",
+          "assertion": null,
+          "timestamp": "2026-10-18T12:58:16Z"
+        },
+        {
+          "attempt": 2,
+          "job": "admin-api unit tests",
+          "step": "Run unit tests",
+          "assertion": null,
+          "timestamp": "2026-10-18T13:08:40Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-10-18T13:08:48Z",
+      "reason": "两次尝试都失败，但**事实不足以归因** ⇒ fail-closed：**既不判 flaky、也不判确定性**（同一 SHA 两跑都红也可能是宽窗口竞态；见条目的 `unknown_reason` 与 `attempts`）",
+      "remedy": "取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": [],
+      "unknown_reason": "两次尝试都红、且落在同一个步骤，但**只有步骤级事实**（GitHub 的 jobs API 只给步骤名，不给断言文本）⇒ 不足以判断是否同一断言（同一 SHA 两跑都红也可能是宽窗口竞态），**不归因**。要归因：取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。"
+    },
+    {
+      "workflow": "PR Check",
+      "job": "ci workflow helper unit tests（后半）",
+      "run_id": 39177809774,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/39177809774",
+      "pr": 7293,
+      "head_sha": "a1b89cd48897b93462f347b778f6355525736494",
+      "head_branch": "feat/7291-capability-boundary",
+      "first_failure_step": "Run ci workflow helper tests",
+      "rerun_result": "failure",
+      "kind": "unknown",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "ci workflow helper unit tests（后半）",
+          "step": "Run ci workflow helper tests",
+          "assertion": null,
+          "timestamp": "2026-10-18T23:50:26Z"
+        },
+        {
+          "attempt": 2,
+          "job": "ci workflow helper unit tests（后半）",
+          "step": "Run ci workflow helper tests",
+          "assertion": null,
+          "timestamp": "2026-10-19T00:01:01Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-10-19T00:01:09Z",
+      "reason": "两次尝试都失败，但**事实不足以归因** ⇒ fail-closed：**既不判 flaky、也不判确定性**（同一 SHA 两跑都红也可能是宽窗口竞态；见条目的 `unknown_reason` 与 `attempts`）",
+      "remedy": "取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": [
+        "tests/unit_ci_workflows/test_recomputable_command_paths.py::test_no_unregistered_stale_recomputable_paths",
+        "tests/unit_ci_workflows/test_recomputable_command_paths.py::test_three_migration_specimens_are_named_when_ledger_is_empty",
+        "tests/unit_ci_workflows/test_remedy_registry_guard.py::test_legacy_page_pointers_match_the_real_sidebar",
+        "tests/unit_ci_workflows/test_remedy_registry_guard.py::test_every_judgement_can_go_red"
+      ],
+      "unknown_reason": "两次尝试都红、且落在同一个步骤，但**只有步骤级事实**（GitHub 的 jobs API 只给步骤名，不给断言文本）⇒ 不足以判断是否同一断言（同一 SHA 两跑都红也可能是宽窗口竞态），**不归因**。要归因：取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。"
+    },
+    {
+      "workflow": "AI Agent Service Unit Tests",
+      "job": "ai-agent-service unit tests",
+      "run_id": 39180377391,
+      "run_attempt": 2,
+      "run_url": "https://github.com/zhaokai-mgzn/migao/actions/runs/39180377391",
+      "pr": 7294,
+      "head_sha": "facb8b8f23743e561a0e920d3ba94492fb675eda",
+      "head_branch": "fix/6984-7038-mibao-baseline",
+      "first_failure_step": "Run unit tests",
+      "rerun_result": "failure",
+      "kind": "unknown",
+      "attempts": [
+        {
+          "attempt": 1,
+          "job": "ai-agent-service unit tests",
+          "step": "Run unit tests",
+          "assertion": null,
+          "timestamp": "2026-10-19T00:26:35Z"
+        },
+        {
+          "attempt": 2,
+          "job": "ai-agent-service unit tests",
+          "step": "Run unit tests",
+          "assertion": null,
+          "timestamp": "2026-10-19T00:30:47Z"
+        }
+      ],
+      "failed_at": "",
+      "rerun_at": "",
+      "failed_bucket": null,
+      "rerun_bucket": null,
+      "rerun_bucket_verdict": null,
+      "observed_at": "2026-10-19T00:30:47Z",
+      "reason": "两次尝试都失败，但**事实不足以归因** ⇒ fail-closed：**既不判 flaky、也不判确定性**（同一 SHA 两跑都红也可能是宽窗口竞态；见条目的 `unknown_reason` 与 `attempts`）",
+      "remedy": "取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。",
+      "status": "open",
+      "follow_up": null,
+      "requires_follow_up": null,
+      "failing_tests": [
+        "tests/test_order_cross_skill_tool_not_found.py::TestCrossSkillValidateInputIsRejected::test_in_domain_validate_input_still_persists_pending"
+      ],
+      "unknown_reason": "两次尝试都红、且落在同一个步骤，但**只有步骤级事实**（GitHub 的 jobs API 只给步骤名，不给断言文本）⇒ 不足以判断是否同一断言（同一 SHA 两跑都红也可能是宽窗口竞态），**不归因**。要归因：取证（#5088 口径）：`gh api repos/<owner>/<repo>/actions/runs/<run_id>/attempts/<n>/jobs` 取失败 job 的 id，再 `gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs` 拉**两次尝试**的日志，比对是否**同一断言同一错误**；然后回填（**字段级**，不新增/删除/重排条目）：`python3 .github/scripts/flaky_ledger.py attest --ledger .github/flaky-ledger.json --run-id <run_id> --job '<job>' --attempt1-assertion '<断言+错误>' --attempt2-assertion '<断言+错误>' --evidence '<凭据：run/attempt 与日志取法>'`；两次同一 ⇒ `deterministic`；不同 ⇒ 仍 `unknown`（**不许**凭 `kind` 归因）。"
     }
   ]
 }
