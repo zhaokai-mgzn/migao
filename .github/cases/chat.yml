@@ -2780,7 +2780,9 @@ cases:
       - "已帮您创建"
       - "已提交创建申请"
       - "稍后为您创建"
+    precondition: "前置 = 能力边界投影段在位且如实（`app/agents/capability_boundary.py` 渲染出「员工账号的创建与变更 → 后台「组织管理 → 员工管理」」，2026-10-19 实测 product/staff 两个 prompt 都已注入）；前置不成立 ⇒ 回复没有落点，判红会伪装成「agent 不会答」"
     data_checks:
+      - "前置（precondition）：`employee_manage` 在 B 端可达集里只有 list/detail、**无写 action**（success=true；真值 = app/tools/employee_manage.py 的 action 枚举 + capability_boundary.mibao_reachable_tool_names）"
       - "两轮回复都必须给出**后台落点**：至少出现「组织管理」与「员工管理」（真实侧边栏节点；真值 = backend/ai-agent-service/app/agents/capability_boundary.py 的 UNITS，2026-10-19 渲染实测逐字为「员工账号的创建与变更 → 后台「组织管理 → 员工管理」」）"
       - "不得用承诺代办的措辞替代落点（机器断言 = forbidden_text）：允许「我这边办不了 / 没有这个能力」，不允许「已在为您创建」"
       - "工具面：employee_manage 只剩 list/detail（写 action 随 #5247 只读化下线）⇒ 任何写调用都不可能成功；本用例只判「不承诺 + 给落点」，**不要求**必须调工具"
@@ -2814,6 +2816,9 @@ cases:
       - tool: scheduled_task_manage
     must_succeed:
       - tool: scheduled_task_manage
+    namespaces:
+      - "scheduled_task:跟进张先生"
+    precondition: "前置 = 定时提醒流程绑定 `scheduled_task_manage` 且 DEBUG 身份有 admin/operator 角色（`app/graph/skills` 的 reminder skill 绑定 + 工具的 allowed_roles；2026-10-19 B 端可达集实测含该工具）；前置不成立 ⇒ 期望 unmatched，判红会伪装成「agent 不会建提醒」"
     data_checks:
       - "三件套（fire_at / task_type / criterion）必须由模型从自然语言抽全 —— 工具本地 fail-closed：缺任一 ⇒ missing_arguments（在发 HTTP 之前就拒），**调用成功即证明抽全**"
       - "写面必须走确认卡（interact component=confirm）：A 档可逆写不得免卡直写，商家点头后才落库"

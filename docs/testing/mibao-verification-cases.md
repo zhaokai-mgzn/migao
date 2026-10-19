@@ -229,8 +229,10 @@
 你: 张三那单收到的窗帘布边上有个破洞，这怎么处理？
 端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
 期望: order_query or customer_manage
+数据: 前置（precondition）：订单夹具 `EVAL-MB-ORD-0001` 在库且客户名为「张三」（success=true；真值 = tests/agent_eval/fixtures/mibao_eval_seed.sql 的订单 INSERT 块）
 数据: 必须先**真的查**（order_query 按客户名/订单号定位张三的单，或 customer_manage 查档案），不得凭空说「已为您登记」
 数据: 售后**写面**已随 #5247 只读化下线 ⇒ 回复必须引导后台「售后」页面自行处理，且不得承诺代办（机器断言 = forbidden_text）
+前置: 前置 = 客户「张三」名下有夹具订单（`EVAL-MB-ORD-0001/0002`，customer_name=张三 / 13800138000，见 mibao_eval_seed.sql 的订单夹具块）；前置不成立 ⇒ agent 查不到单、判红会伪装成「不会处理售后」
 禁词: 已为您提交售后
 禁词: 已帮您申请售后
 禁词: 已登记售后
@@ -2260,9 +2262,11 @@
 你: 你别让我去后台，直接帮我建好就行
 端: mibao（单端 —— 仅黄金策腿跑，元元腿跳过）
 期望: direct_reply or employee_manage
+数据: 前置（precondition）：`employee_manage` 在 B 端可达集里只有 list/detail、**无写 action**（success=true；真值 = app/tools/employee_manage.py 的 action 枚举 + capability_boundary.mibao_reachable_tool_names）
 数据: 两轮回复都必须给出**后台落点**：至少出现「组织管理」与「员工管理」（真实侧边栏节点；真值 = backend/ai-agent-service/app/agents/capability_boundary.py 的 UNITS，2026-10-19 渲染实测逐字为「员工账号的创建与变更 → 后台「组织管理 → 员工管理」」）
 数据: 不得用承诺代办的措辞替代落点（机器断言 = forbidden_text）：允许「我这边办不了 / 没有这个能力」，不允许「已在为您创建」
 数据: 工具面：employee_manage 只剩 list/detail（写 action 随 #5247 只读化下线）⇒ 任何写调用都不可能成功；本用例只判「不承诺 + 给落点」，**不要求**必须调工具
+前置: 前置 = 能力边界投影段在位且如实（`app/agents/capability_boundary.py` 渲染出「员工账号的创建与变更 → 后台「组织管理 → 员工管理」」，2026-10-19 实测 product/staff 两个 prompt 都已注入）；前置不成立 ⇒ 回复没有落点，判红会伪装成「agent 不会答」
 禁词: 已为您创建
 禁词: 已帮您创建
 禁词: 已提交创建申请
@@ -2282,6 +2286,8 @@
 数据: 三件套（fire_at / task_type / criterion）必须由模型从自然语言抽全 —— 工具本地 fail-closed：缺任一 ⇒ missing_arguments（在发 HTTP 之前就拒），**调用成功即证明抽全**
 数据: 写面必须走确认卡（interact component=confirm）：A 档可逆写不得免卡直写，商家点头后才落库
 数据: 第 3 轮的取消必须带创建时返回的 task id（工具 action 闭集 = create/list/cancel，真值见 AG-011 与 tests/test_scheduled_task_manage.py）
+前置: 前置 = 定时提醒流程绑定 `scheduled_task_manage` 且 DEBUG 身份有 admin/operator 角色（`app/graph/skills` 的 reminder skill 绑定 + 工具的 allowed_roles；2026-10-19 B 端可达集实测含该工具）；前置不成立 ⇒ 期望 unmatched，判红会伪装成「agent 不会建提醒」
+命名空间(同键互斥·自动串行): scheduled_task:跟进张先生
 必须成功: scheduled_task_manage
 ```
 真值: agent-notification.scheduled-task-trio
@@ -10115,6 +10121,8 @@
 数据: 「标记已读」必须**真调工具**（调了 ≠ 成了：#3778 口径，must_succeed 机器判）—— ST-005 覆盖单条点名，本用例覆盖「一次清掉未读」的批量说法
 数据: 写面走确认门禁（#7040）：改动前必须有确认卡或等价确认，不得直接落库
 数据: 夹具未读行 = ntf_eval_new_order_0001（tenant 1 / recipient dev_user / status='sent' / read_at IS NULL），见 tests/agent_eval/fixtures/mibao_eval_seed.sql 的 Phase 6
+前置: 前置 = 夹具里确有未读通知 `ntf_eval_new_order_0001`（status='sent' / read_at IS NULL / recipient dev_user；`tests/agent_eval/fixtures/mibao_eval_seed.sql` Phase 6 自检块 fail-closed）；前置不成立 ⇒ 没有可标记对象，判红会伪装成「agent 不会标已读」。种子的 ON CONFLICT 会把它复位回未读 ⇒ 重跑前置等价
+命名空间(同键互斥·自动串行): notification:ntf_eval_new_order_0001
 必须成功: notification_manage
 ```
 溯源: 2026-10-19 新增（issue #7027 的用例补齐）：ST-004（列表）/ ST-005（点名标已读）之外，商家更常说「把未读的都清掉」—— 批量说法与单条点名在确认门禁上不是同一条路径。 ｜ tags: settings, notification, write_path

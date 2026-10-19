@@ -544,6 +544,9 @@ cases:
       - tool: interact or notification_manage
     must_succeed:
       - tool: notification_manage
+    namespaces:
+      - "notification:ntf_eval_new_order_0001"
+    precondition: "前置 = 夹具里确有未读通知 `ntf_eval_new_order_0001`（status='sent' / read_at IS NULL / recipient dev_user；`tests/agent_eval/fixtures/mibao_eval_seed.sql` Phase 6 自检块 fail-closed）；前置不成立 ⇒ 没有可标记对象，判红会伪装成「agent 不会标已读」。种子的 ON CONFLICT 会把它复位回未读 ⇒ 重跑前置等价"
     data_checks:
       - "「标记已读」必须**真调工具**（调了 ≠ 成了：#3778 口径，must_succeed 机器判）—— ST-005 覆盖单条点名，本用例覆盖「一次清掉未读」的批量说法"
       - "写面走确认门禁（#7040）：改动前必须有确认卡或等价确认，不得直接落库"

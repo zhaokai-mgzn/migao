@@ -365,7 +365,7 @@ _CASE_AS_016 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['张三那单收到的窗帘布边上有个破洞，这怎么处理？'],
     expectations=['order_query or customer_manage'],
-    data_checks=['必须先**真的查**（order_query 按客户名/订单号定位张三的单，或 customer_manage 查档案），不得凭空说「已为您登记」', '售后**写面**已随 #5247 只读化下线 ⇒ 回复必须引导后台「售后」页面自行处理，且不得承诺代办（机器断言 = forbidden_text）'],
+    data_checks=['前置（precondition）：订单夹具 `EVAL-MB-ORD-0001` 在库且客户名为「张三」（success=true；真值 = tests/agent_eval/fixtures/mibao_eval_seed.sql 的订单 INSERT 块）', '必须先**真的查**（order_query 按客户名/订单号定位张三的单，或 customer_manage 查档案），不得凭空说「已为您登记」', '售后**写面**已随 #5247 只读化下线 ⇒ 回复必须引导后台「售后」页面自行处理，且不得承诺代办（机器断言 = forbidden_text）'],
     skip_reason='',
     tags=['aftersales', 'journey', 'capability-boundary'],
     persona='mibao',
@@ -373,6 +373,7 @@ _CASE_AS_016 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_text=['已为您提交售后', '已帮您申请售后', '已登记售后'],
+    precondition='前置 = 客户「张三」名下有夹具订单（`EVAL-MB-ORD-0001/0002`，customer_name=张三 / 13800138000，见 mibao_eval_seed.sql 的订单夹具块）；前置不成立 ⇒ agent 查不到单、判红会伪装成「不会处理售后」',
 )
 
 # ── AG-001 [NORMAL] AgentResponse/AgentContext 数据结构 + _extract_msg_content think 剥离（源: cases/agents.yml）──
@@ -3027,7 +3028,7 @@ _CASE_CH_049 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['帮我开个客服账号，姓名李四，手机号 13800009999', '你别让我去后台，直接帮我建好就行'],
     expectations=['direct_reply or employee_manage'],
-    data_checks=['两轮回复都必须给出**后台落点**：至少出现「组织管理」与「员工管理」（真实侧边栏节点；真值 = backend/ai-agent-service/app/agents/capability_boundary.py 的 UNITS，2026-10-19 渲染实测逐字为「员工账号的创建与变更 → 后台「组织管理 → 员工管理」」）', '不得用承诺代办的措辞替代落点（机器断言 = forbidden_text）：允许「我这边办不了 / 没有这个能力」，不允许「已在为您创建」', '工具面：employee_manage 只剩 list/detail（写 action 随 #5247 只读化下线）⇒ 任何写调用都不可能成功；本用例只判「不承诺 + 给落点」，**不要求**必须调工具'],
+    data_checks=['前置（precondition）：`employee_manage` 在 B 端可达集里只有 list/detail、**无写 action**（success=true；真值 = app/tools/employee_manage.py 的 action 枚举 + capability_boundary.mibao_reachable_tool_names）', '两轮回复都必须给出**后台落点**：至少出现「组织管理」与「员工管理」（真实侧边栏节点；真值 = backend/ai-agent-service/app/agents/capability_boundary.py 的 UNITS，2026-10-19 渲染实测逐字为「员工账号的创建与变更 → 后台「组织管理 → 员工管理」」）', '不得用承诺代办的措辞替代落点（机器断言 = forbidden_text）：允许「我这边办不了 / 没有这个能力」，不允许「已在为您创建」', '工具面：employee_manage 只剩 list/detail（写 action 随 #5247 只读化下线）⇒ 任何写调用都不可能成功；本用例只判「不承诺 + 给落点」，**不要求**必须调工具'],
     skip_reason='',
     tags=['chat', 'capability-boundary', 'refusal-integrity'],
     persona='mibao',
@@ -3035,6 +3036,7 @@ _CASE_CH_049 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     forbidden_text=['已为您创建', '已帮您创建', '已提交创建申请', '稍后为您创建'],
+    precondition='前置 = 能力边界投影段在位且如实（`app/agents/capability_boundary.py` 渲染出「员工账号的创建与变更 → 后台「组织管理 → 员工管理」」，2026-10-19 实测 product/staff 两个 prompt 都已注入）；前置不成立 ⇒ 回复没有落点，判红会伪装成「agent 不会答」',
 )
 
 # ── CH-050 [NORMAL] 定时提醒真跑：说「3 天后提醒我跟进张先生」→ 确认卡 → 落一条待办；再说取消（源: cases/chat.yml）──
@@ -3054,6 +3056,8 @@ _CASE_CH_050 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     must_succeed=[{'tool': 'scheduled_task_manage'}],
+    namespaces=['scheduled_task:跟进张先生'],
+    precondition='前置 = 定时提醒流程绑定 `scheduled_task_manage` 且 DEBUG 身份有 admin/operator 角色（`app/graph/skills` 的 reminder skill 绑定 + 工具的 allowed_roles；2026-10-19 B 端可达集实测含该工具）；前置不成立 ⇒ 期望 unmatched，判红会伪装成「agent 不会建提醒」',
 )
 
 # ── CR-001 [NORMAL] 查商品 → 下单（跨 Skill 复用 UUID）（源: cases/cross.yml）──
@@ -12996,6 +13000,8 @@ _CASE_ST_013 = EvalCase(
     form_prefill=[],
     forbidden_card_text=[],
     must_succeed=[{'tool': 'notification_manage'}],
+    namespaces=['notification:ntf_eval_new_order_0001'],
+    precondition="前置 = 夹具里确有未读通知 `ntf_eval_new_order_0001`（status='sent' / read_at IS NULL / recipient dev_user；`tests/agent_eval/fixtures/mibao_eval_seed.sql` Phase 6 自检块 fail-closed）；前置不成立 ⇒ 没有可标记对象，判红会伪装成「agent 不会标已读」。种子的 ON CONFLICT 会把它复位回未读 ⇒ 重跑前置等价",
 )
 
 # ── TR-001 [NORMAL] refresh-success — 401 自动刷新并重放原请求（源: cases/token-refresh.yml）──
