@@ -3635,7 +3635,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（118 case）
+## 杂项域（119 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5427,6 +5427,20 @@
 跳过: [backend-contract] 真 fixture 行为守卫（真 git 仓库 / 真 worktree / 真会话锁一律造在 tmp_path，零网络、零其库、不碰真实工作区）+ 静态单一实现守卫，由 tests/unit_ci_workflows/test_dev_worktree_lock_liveness.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-18 新增（issue #7216，P3 研发工具）。落码 = ① `scripts/dev-worktree.sh`：判活改为 `lock_file_alive`（PID 活着 **或** 登记工作区仍在），`lock_prune` 复用同一判据并支持 `--quiet`，`add` 入口自动清失效锁，`rm` 无条件释放锁；② `scripts/agent-presets-guard.py::_locked_branches` 同口径（prune 侧）；③ 判据 tests/unit_ci_workflows/test_dev_worktree_lock_liveness.py（6 条：实例 / 修前红注入 / prune / add 自愈 / rm 释放 / 跨消费者同源与单一实现）；④ 台账 tests/unit_ci_workflows/scripts_locked_tail_ledger.json 删掉陈旧豁免（`dev-worktree.sh::lock_alive` 已不再是 `[ … ] && …` 形态，只许缩短）。⚠️ **红证读数（可复算）**：改前 `./scripts/dev-worktree.sh add <b> && ./scripts/dev-worktree.sh lock` ⇒ 该行 💀（PID 已退出）；改后同命令 ⇒ 🔒（工作区仍在）；注入「只按 PID」后 ⇒ 回到 💀。⚠️ **不入 CHANGELOG**（铁律 7 豁免：研发工具 / `scripts/` 改动，对用户无可观察影响）。取号 = 现取 origin/main 的 MC 最大 117 ⇒ MC-118。 ｜ tags: backend-contract, dev-tooling, worktree, session-lock, liveness, meta-guard, red-proof
+
+### MC-119. schema 形态健康：单表列预算 ≤ 30（超限须台账具名 + 只许缩短）/ 孤儿列零增长（生产代码语料）/ JSONB 双向登记（issue #7359，防 ERP 化） 🔵
+```
+你: 用户（2026-10-20，逐字）：「传统 ERP 软件就是堆积各种单据，最后显得臃肿庞大，一个单据几十几百个字段，领域建模很弱，我们的项目如何规避这种情况」—— 要求把规避手段落成规范与判据，而不是只写在文档里。
+数据: **基线（2026-10-20 现取，逐字）**：`backend/admin-api/src/main/resources/db/init/schema.sql` = **84 张表 / 1140 列 / 平均 13.6 列**；超列预算 1 张（`customer_profiles` 42 列，台账具名登记并给收敛计划）；**孤儿列 0**（生产代码语料）；**JSONB 48 列**（全部登记）。台账 = `tests/unit_ci_workflows/schema_health_ledger.json`。
+数据: **判据 1（列预算）**：`tests/unit_ci_workflows/test_schema_health_guards.py::test_no_table_exceeds_the_column_budget` —— 单表列数 > `column_ceiling`（30）且未登记 ⇒ 具名判红；台账宽度与现取不符（增宽 / 已收窄却仍留条目）⇒ 也红（台账只许缩短）。红证：拆掉台账里的 `customer_profiles` 例外 ⇒ 判红（`test_unregistered_wide_table_goes_red`）；把该表切到 20 列而台账不动 ⇒ 判「例外条目必须删除」（`test_wide_table_shrinking_forces_ledger_shrink`）。
+数据: **判据 2（孤儿列零增长）**：同文件::`test_orphan_columns_do_not_grow` —— 生产代码语料（`CORPUS_ROOTS`，不含 tests/docs）里 `snake_case` 与 `camelCase` 都零引用的列出现即红；台账里的死列已被引用却没缩短也红。红证：给 `narrow` 表加 `nobody_reads_me` ⇒ 具名判红。
+数据: **判据 3（JSONB 双向登记）**：同文件::`test_every_jsonb_column_is_registered` —— 新增 JSONB 未进台账 ⇒ 判红（强制一次显式决策：能排序/聚合/约束的应该是一列）；台账留了已删除的 JSONB ⇒ 也红。红证：`narrow.bag` / `gone.removed` 两向注入。
+数据: **判据 4（判别力自证）**：同文件::`test_toy_world_is_green` 是负控 —— 合成世界与**真语料**都必须绿，否则上面四条红证是空跑。
+数据: **边界（照实登记，§19.1）**：① 判不了设计判断（这张表该不该有、这个字段该不该拆）—— 那是评审与 `docs/wiki/Domain-Modeling.md` 的准入判据；② 孤儿列语料是**冻结清单**（新增服务目录须同 PR 加进语料，否则假红；这是有意的 fail-closed 方向）；③ 不新增 required check，跑在既有 `ci workflow helper unit tests` 腿里；④ 不改任何 schema —— 本单只加判据与台账，收敛 `customer_profiles` / `order_items` 属后续单（issue #7359 的承接项）。
+前置: 本用例是 [backend-contract] 纯静态判据：前置 = `backend/admin-api/src/main/resources/db/init/schema.sql` 与 `tests/unit_ci_workflows/schema_health_ledger.json` 在场且可解析；生产代码语料只读（不小于 500 个文件，语料口径坏了判据当场红）。零网络、零时钟、不起真库。
+跳过: [backend-contract] 纯静态 schema 形态判据（只读建库脚本与生产代码语料），由 tests/unit_ci_workflows/test_schema_health_guards.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-20 新增（issue #7359，用户要求把「如何规避传统 ERP 的臃肿」落成规范与判据）。落码 = ① docs/wiki/Domain-Modeling.md（六条纪律 + 新增实体正判据 + 三指标复算命令 + 两处具名漂移）；② tests/unit_ci_workflows/test_schema_health_guards.py（3 条真语料判据 + 4 条注入式红证 + 1 条负控）；③ 台账 tests/unit_ci_workflows/schema_health_ledger.json（列预算例外 1 条 / 孤儿列基线 0 / JSONB 登记 48 条）；④ docs/wiki/INDEX.md 增入口；⑤ product/capability-gap-midsize.md（中型企业能力差距评估，issue #7360）。⚠️ **未做（照实登记）**：不收敛 customer_profiles(42) 与 order_items(28) —— 收敛是迁移级改动，另开单；本单只让「再长一列」需要显式登记。⚠️ **不入 CHANGELOG**（铁律 7 豁免：docs + 纯测试/研发工具面，对用户无可观察影响）。取号 = 现取 origin/main 的 MC 最大 118 ⇒ MC-119。 ｜ tags: backend-contract, schema-health, domain-modeling, erp-bloat, column-budget, orphan-column, jsonb-registry, meta-guard, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12178,8 +12192,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：832（活跃 141，跳过 691）
-- tier 分布：smoke 12 / normal 764 / adversarial 32
+- 用例总数：833（活跃 141，跳过 692）
+- tier 分布：smoke 12 / normal 765 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12194,7 +12208,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：118
+- 杂项域：119
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12355,6 +12369,7 @@
 - MC-116: 类级元守卫（#6962）：会话分配 / 候选处置 / 路线删除三类写面必须落到带谓词的条件更新（未登记即红 + 豁免只许缩短）
 - MC-117: 类级元守卫（#6956）：T3 逻辑删除族调用方必须判影响行数（未登记即红 + 豁免只许缩短）
 - MC-118: dev-worktree 会话锁判活：PID 已退出但登记的工作区仍在且仍检出该分支 ⇒ 仍算占用（issue #7216）；`add` 入口自动清失效锁，`rm` 释放锁，prune 侧同一口径
+- MC-119: schema 形态健康：单表列预算 ≤ 30（超限须台账具名 + 只许缩短）/ 孤儿列零增长（生产代码语料）/ JSONB 双向登记（issue #7359，防 ERP 化）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
