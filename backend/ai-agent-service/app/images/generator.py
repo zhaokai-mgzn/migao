@@ -13,7 +13,7 @@
    「是否采用」都在 admin-api / 商家页面（与 `vision` 的 `TestNoWriteBoundary` 同口径）。
 2. 🔴 **模型可轮换**：`IMAGE_GEN_MODELS` 按顺序尝试；只有**配额类**错误
    （429 / `AllocationQuota` / `Throttling` / free tier）与**模型不可用**
-   （ModelNotFound / InvalidParameter 里的 model）才切下一个 —— 其它错误直接上抛，
+   （ModelNotFound / UnsupportedModel / HTTP 400 InvalidParameter）才切下一个 —— 其它错误直接上抛，
    不把「提示词写错了」伪装成「换个模型试试」。
 3. 🔴 **缺 Key 即 fail-closed**：`IMAGE_GEN_API_KEY` 未配置且 `ASR_API_KEY` 也为空 ⇒
    `ImageGenerationUnavailable`（端点 503），**不发任何外部请求**。
@@ -105,10 +105,20 @@ def _is_quota(data: Dict, status: int) -> bool:
     ))
 
 
-def _is_model_unavailable(data: Dict) -> bool:
+def _is_model_unavailable(data: Dict, status: int) -> bool:
+    """该模型**接不了这类请求** ⇒ 切下一个（不是我们的输入错，也不是配额）。
+
+    实测（issue #7341）：图片翻译模型 `qwen-mt-image-2.0` 对多模态图生图的
+    `messages` 载荷回 **HTTP 400 + InvalidParameter**，旧逻辑把它当「其它错误」直接上抛
+    ⇒ 回落链在它这里整条断掉，后面的可用模型永远轮不到。
+    只对 400 + InvalidParameter 放宽：内容审核类 400（DataInspectionFailed）不切模型
+    —— 换个模型重试只会把同一张违规图再送一遍。
+    """
     code = str(data.get("code") or "")
     message = str(data.get("message") or "")
-    return any(k in code or k in message for k in ("ModelNotFound", "model not found", "UnsupportedModel"))
+    if any(k in code or k in message for k in ("ModelNotFound", "model not found", "UnsupportedModel")):
+        return True
+    return status == 400 and "InvalidParameter" in code
 
 
 def _extract_image(data: Dict) -> Optional[str]:
@@ -144,7 +154,7 @@ async def _request_one(model: str, prompt: str, image_url: str, client: httpx.As
     if resp.status_code != 200 or data.get("output") is None:
         if _is_quota(data, resp.status_code):
             raise ImageGenerationQuotaExceeded(f"{model}: {data.get('code') or data.get('message')}")
-        if _is_model_unavailable(data):
+        if _is_model_unavailable(data, resp.status_code):
             raise ImageGenerationUnavailable(f"{model}: {data.get('code') or data.get('message')}")
         raise ImageGenerationError(
             f"{model} 生图失败（HTTP {resp.status_code}）：{data.get('code') or data.get('message')}")

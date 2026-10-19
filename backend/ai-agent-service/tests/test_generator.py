@@ -107,18 +107,45 @@ def test_all_models_quota_raises_quota_exceeded(monkeypatch):
             "https://oss/sample.png", "某商品", "main", client=_client(handler)))
 
 
-def test_non_quota_error_does_not_switch_model(monkeypatch):
+def test_invalid_parameter_switches_to_next_model(monkeypatch):
+    """issue #7341 红证：旧逻辑把 400 InvalidParameter 当「其它错误」，回落链整条断掉。"""
+    _settings(monkeypatch)
+    calls = []
+
+    def handler(request):
+        calls.append(request.read().decode())
+        if len(calls) == 1:
+            return httpx.Response(400, json={"code": "InvalidParameter", "message": "model does not support messages"})
+        return _ok()
+
+    data = asyncio.run(gen.generate_product_image(
+        "https://oss/sample.png", "某商品", "main", client=_client(handler)))
+    assert data["model"] == "model-b"
+    assert len(calls) == 2
+
+
+def test_content_moderation_error_does_not_switch_model(monkeypatch):
+    """审核类 400 不切模型：换模型只会把同一张违规图再送一遍。"""
     _settings(monkeypatch)
     calls = []
 
     def handler(request):
         calls.append(1)
-        return httpx.Response(400, json={"code": "InvalidParameter", "message": "bad image"})
+        return httpx.Response(400, json={"code": "DataInspectionFailed", "message": "input image may contain unsafe content"})
 
     with pytest.raises(gen.ImageGenerationError):
         asyncio.run(gen.generate_product_image(
             "https://oss/sample.png", "某商品", "main", client=_client(handler)))
     assert len(calls) == 1
+
+
+def test_default_models_exclude_image_translation_model():
+    """默认回落链不得再排 qwen-mt-image-2.0（它不接图生图，issue #7341）。"""
+    from app.config import Settings
+
+    default = Settings.model_fields["IMAGE_GEN_MODELS"].default
+    assert "qwen-mt-image-2.0" not in default
+    assert default.split(",")[-1] == "qwen-image-2.1-turbo"
 
 
 def test_internal_endpoint_returns_only_preview_fields(monkeypatch):

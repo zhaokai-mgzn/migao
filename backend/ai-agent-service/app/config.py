@@ -117,7 +117,9 @@ class Settings(BaseSettings):
     # 模型按顺序轮换：只有配额类错误才切下一个（见 app/images/generator.py 的边界 2）。
     IMAGE_GEN_ENABLED: bool = True
     IMAGE_GEN_API_KEY: str = ""
-    IMAGE_GEN_MODELS: str = "qwen-image-3.0,qwen-image-2.1-pro,qwen-mt-image-2.0,qwen-image-2.1-turbo"
+        # 回落链：按免费额度从多到少排。**不放 qwen-mt-image-2.0** —— 它是图片翻译模型，
+    # 实测对图生图载荷回 400 InvalidParameter（issue #7341），排进链里只会制造一个必然失败节点。
+    IMAGE_GEN_MODELS: str = "qwen-image-3.0,qwen-image-2.1-pro,qwen-image-2.1-turbo"
     IMAGE_GEN_BASE_URL: str = (
         "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
     )
