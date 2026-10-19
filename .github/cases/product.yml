@@ -5469,6 +5469,9 @@ cases:
       - journey
       - marketing
     truths_ref: []
+    precondition:
+      - type: product_count_for_keyword
+        source: "2699"
     user_inputs:
       - "帮我给「2699系列雪尼尔窗帘面料」做一张营销海报"
       - "主标题写「开门红」，卖点写「高遮光、免烫易打理」"

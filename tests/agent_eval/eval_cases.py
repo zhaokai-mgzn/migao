@@ -12891,6 +12891,7 @@ _CASE_PR_054 = EvalCase(
     debug_user='',
     form_prefill=[],
     forbidden_card_text=[],
+    precondition=[{'type': 'product_count_for_keyword', 'source': '2699'}],
 )
 
 # ── RG-001 [NORMAL] ToolRegistry 注册/查询/执行审计（源: cases/registry.yml）──
