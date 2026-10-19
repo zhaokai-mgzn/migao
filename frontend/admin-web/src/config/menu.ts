@@ -257,7 +257,7 @@ export const menuGroups: MenuGroup[] = [
       // 「加工项管理」`/production/processing` 与「工艺配置」`/production/routings` 两个**菜单项已移除**
       //（用户逐字：「我的目的是要能移除加工项管理和工艺配置这两个菜单」），功能体并入
       // `/settings`（企业基础设置）页内的配置域（设计真值源：`docs/design/enterprise-settings-redesign.md`）；
-      // 两个旧路径保留为重定向（旧深链不 404）⇒ 本组现为「生产看板 → 智能派单 → 计件工资」。
+      // 两个旧路径保留为重定向（旧深链不 404）⇒ 本组现为「作业看板 → 智能派单 → 计件工资」。
       // ⚠️ 被移除的两项从此**没有菜单节点**，其旧路由登记在
       // `tests/unit_ci_workflows/test_agent_permission_parity.py` 的 `ROUTE_WITHOUT_MENU_NODE`。
       //
@@ -271,8 +271,9 @@ export const menuGroups: MenuGroup[] = [
       //     路线是**用工序名拼出的有序序列**）；工序库半边 = 该页**左栏**；
       //   · 节点码（两者）自 issue #5291 起 = 生产域**读**码 `production:view`；
       //   · issue #5699（P4）：工艺配置页第一屏 6 个读端点整页收敛到**页面码** production:view。
-      // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）
-      { key: 'production-board', name: '生产看板', icon: 'ClipboardCheck', path: '/production', permissionCode: 'production:view', keywords: ['sckb', 'shengchan', 'jiagongdan', '加工单'] },
+      // /production = 作业单唯一入口（issue #4357 与原「加工单」菜单合并；#7079 起上位概念 = 作业单）
+      // 2026-10-19（issue #7332）：菜单正名「作业看板」；旧名「生产看板」保留为**关键词**（⌘K 按老叫法仍能搜到）。
+      { key: 'production-board', name: '作业看板', icon: 'ClipboardCheck', path: '/production', permissionCode: 'production:view', keywords: ['sckb', 'shengchan', 'jiagongdan', '加工单', '作业', '作业单', '作业看板', 'zuoye', 'zykb', '生产看板', '生产'] },
       // 智能派单（issue #5177）：池化派单的**决策屏** —— 加急插队区（不进池、立即单派）
       // + 物料分组成批区（勾选 → 预览 → 一键成批派单）+ 超时未派告警。
       // issue #5699（P4）：节点码 = 该页第一屏读码 `processing:view`（此前挂 processing:manage ⇒ 节点码 ≠ 页面读码），

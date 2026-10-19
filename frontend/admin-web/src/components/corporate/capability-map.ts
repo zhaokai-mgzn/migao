@@ -122,8 +122,8 @@ export const capabilityDomains: CapabilityDomain[] = [
     summary: '布艺行业纵深环节：加工单、工序、报工与计件。',
     items: [
       {
-        name: '生产看板',
-        detail: '加工单列表 + 每单工序进度 + 计件合计；加工单的唯一入口。',
+        name: '作业看板',
+        detail: '作业单列表 + 每单工序进度 + 计件合计；作业单的唯一入口（加工单 / 出库作业单两型）。',
         icon: ClipboardCheck,
       },
       {

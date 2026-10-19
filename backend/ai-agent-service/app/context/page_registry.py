@@ -223,7 +223,7 @@ PAGE_REGISTRY: Tuple[PageEntry, ...] = (
         entity_permissions=(),
     ),
     PageEntry(
-        # 生产看板（= 加工单唯一入口，issue #4357）：订单 → 加工单的形态与粒度
+        # 作业看板（= 作业单唯一入口，issue #4357）：订单 → 加工单的形态与粒度
         route="/production",
         truth_source="curtain-production-rules",
         page_permissions=("production:view",),

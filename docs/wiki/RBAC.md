@@ -186,7 +186,7 @@ users.permissions (JSON 权限码)               （员工权限快照：员工�
 > `AgentProductionController` 的三个 GET、`ProcessingOrderSetController` 三个读端点、
 > `ProcessingItemController` 两个 GET、`ProductionController` 的 `/operations-catalog`、`/routings`
 > 与 **`/piecework/summary`**（最后一条由 issue #5675 补齐 —— 它是「计件工资」页的**第一屏读端点**，
-> #5291 漏改了它）、`CraftCalcConfigController` 的 GET），侧边栏「生产看板 / 工艺配置 / 计件工资 /
+> #5291 漏改了它）、`CraftCalcConfigController` 的 GET），侧边栏「作业看板 / 工艺配置 / 计件工资 /
 > 加工项管理」四个节点同码；
 > 写面仍是 `processing:manage` / `processing:update`。现存唯一仍用 `processing:view` 的端点是
 > `ProductionPoolController` 的两个读端点（无 Agent 工具调用，已登记为残留）。**方向只收窄**：

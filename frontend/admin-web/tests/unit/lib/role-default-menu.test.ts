@@ -81,7 +81,7 @@ describe('deriveRoleDefaultMenu（后台 + 手机端 = 一份默认菜单）', (
   })
 
   it('同一个面由多个权限码承载时只出现一次（不按节点重复）', () => {
-    // `production:view` 在树上由「生产看板 / 计件工资 / 企业基础设置」三处承载 —— 面名不得重复
+    // `production:view` 在树上由「作业看板 / 计件工资 / 企业基础设置」三处承载 —— 面名不得重复
     const menu = deriveRoleDefaultMenu(['production:view', 'processing:view'], MOBILE_TITLES)
     expect(menu.mobile.filter(t => t === '计件工资报表')).toHaveLength(1)
     expect(menu.mobile.filter(t => t === '生产待办')).toHaveLength(1)

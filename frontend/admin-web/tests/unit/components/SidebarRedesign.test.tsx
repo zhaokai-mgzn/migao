@@ -230,7 +230,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     expect(menuKeys()).toEqual([
       // 最前席位恒在（不分组的项不受展开态影响）
       'dashboard',
-      // 🔴 #6580：生产管理组只剩「生产看板 → 智能派单 → 计件工资」（加工项管理/工艺配置已移除）
+      // 🔴 #6580：生产管理组只剩「作业看板 → 智能派单 → 计件工资」（加工项管理/工艺配置已移除）
       'production-board',
       'production-pool',
       'production-piecework',

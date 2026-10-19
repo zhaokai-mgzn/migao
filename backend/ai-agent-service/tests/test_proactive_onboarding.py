@@ -133,7 +133,7 @@ class TestDecisionBody:
         ⚠️ 2026-10-09（issue #6580）：宿主路径从 `/production/routings` 换成 `/production`
         —— 前者**已不再是菜单节点**（工艺配置菜单被收拢进「企业基础设置」，见下一条判据），
         对它的推送会被判 `unregistered`（另一条理由），拿它当 `not_visible` 的样本会**测错对象**。
-        本判据判的是「已注册但没有该码 ⇒ 不推」，故取一个**仍在菜单里**的路径（生产看板 `/production`）。
+        本判据判的是「已注册但没有该码 ⇒ 不推」，故取一个**仍在菜单里**的路径（作业看板 `/production`）。
         """
         denied = nav.build_proactive_push("/production", ["order:list"])
         assert denied.should_push is False

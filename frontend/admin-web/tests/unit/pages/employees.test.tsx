@@ -526,7 +526,7 @@ describe('EmployeesPage', () => {
               // 手机端有面 ⇒ 必须出现标注
               { code: 'processing:view', label: '智能派单', mobileTitles: ['智能派单'] },
               // 手机端没有面 ⇒ 不得出现标注（纯 PC 权限）
-              { code: 'production:view', label: '生产看板', mobileTitles: [] },
+              { code: 'production:view', label: '作业看板', mobileTitles: [] },
             ],
           },
           {
@@ -552,8 +552,8 @@ describe('EmployeesPage', () => {
     expect(screen.getByText('入库单 · 手机端：入库过账')).toBeInTheDocument()
 
     // ② 没有手机端面的码 ⇒ **不追加任何标注**（不摆内部标识、不产生噪音）
-    expect(screen.getByText('生产看板')).toBeInTheDocument()
-    expect(screen.queryByText(/生产看板 · 手机端/)).not.toBeInTheDocument()
+    expect(screen.getByText('作业看板')).toBeInTheDocument()
+    expect(screen.queryByText(/作业看板 · 手机端/)).not.toBeInTheDocument()
     expect(screen.getByText('发货单')).toBeInTheDocument()
     expect(screen.queryByText(/发货单 · 手机端/)).not.toBeInTheDocument()
     // ③ 反向自证：整个树上「手机端：」只出现**两处**（= 服务端给了 mobileTitles 的那两个码）
@@ -658,7 +658,7 @@ describe('EmployeesPage', () => {
             label: '生产管理',
             children: [
               { code: 'processing:view', label: '智能派单', mobileTitles: ['智能派单'] },
-              { code: 'production:view', label: '生产看板', mobileTitles: ['计件工资报表', '生产待办'] },
+              { code: 'production:view', label: '作业看板', mobileTitles: ['计件工资报表', '生产待办'] },
             ],
           },
         ],

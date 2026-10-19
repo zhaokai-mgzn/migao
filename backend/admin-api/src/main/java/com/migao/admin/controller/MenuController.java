@@ -140,13 +140,13 @@ public class MenuController {
         MenuNode f1 = new MenuNode("finance:view", "财务对账");
         // 动作码节点：组尾追加（与权限页「操作权限」一节单独勾选的形态一致）
         MenuNode o2 = new MenuNode("order:detail", "订单详情");
-        // 生产管理（issue #4203/#4205/#4308/#5177）：本组现有**生产看板 / 智能派单 / 计件工资**
+        // 生产管理（issue #4203/#4205/#4308/#5177）：本组现有**作业看板 / 智能派单 / 计件工资**
         // 三项（🔴 2026-10-09 issue #6580：「加工项管理」「工艺配置」两个菜单项已移除 ⇒ 原四项降为三项）。
-        // 「生产看板 / 计件工资」按 issue #5291 挂生产域**读**码 `production:view`（「看得见这一页」与
+        // 「作业看板 / 计件工资」按 issue #5291 挂生产域**读**码 `production:view`（「看得见这一页」与
         // 「改得动生产数据」就此分开）；「智能派单」按 `processing:view`（其读端点同码）。
         // 与 `AuthService.buildMenusByPermissions` 的侧边栏节点、前端 menu.ts **三处同构**
         // （漏一处 = 「岗位权限页勾得动、侧边栏看不到」）。
-        MenuNode pr1 = new MenuNode("production:view", "生产看板");
+        MenuNode pr1 = new MenuNode("production:view", "作业看板");
         MenuNode prPool = new MenuNode("processing:view", "智能派单");   // #5699 P4：= 该页读码
         MenuNode pr3 = new MenuNode("production:view", "计件工资");
         // 质检记录（issue #7140 = #5652 的**商家面**）：节点码 = 该页三个端点的**方法级**
@@ -214,7 +214,7 @@ public class MenuController {
             new MenuNode("customer-service", "客户服务", List.of(cs1, cs2, o3, c1)),
             // 交易管理（本轮收窄为「下单 → 收款」两项）
             new MenuNode("trade-center", "交易管理", List.of(o1, f1, o2)),
-            // 生产管理（用户 2026-10-06 组内重排后，再随 issue #6580 收拢为**生产看板 → 智能派单
+            // 生产管理（用户 2026-10-06 组内重排后，再随 issue #6580 收拢为**作业看板 → 智能派单
             // → 计件工资**三项 —— 「加工项管理」「工艺配置」两个菜单项按用户裁定**移除**，
             // 功能体并入 `/settings`（企业基础设置）页内的配置域；旧路径保留为重定向）。
             new MenuNode("production-center", "生产管理", List.of(pr1, prPool, pr3, pr4, prUpdate)),
@@ -275,9 +275,9 @@ public class MenuController {
     public static void annotateMobileTitles(List<MenuNode> tree, List<MobileSurfaces.Surface> surfaces) {
         Map<String, List<String>> byCode = mobileTitlesByCode(surfaces);
         // 🔴 issue #6781（修法 1）：一个权限码在树上有多个承载节点（#5699/#5291 的有意设计面，
-        // 如 `production:view` 三处承载 = 生产看板 / 计件工资 / 企业基础设置）——
+        // 如 `production:view` 三处承载 = 作业看板 / 计件工资 / 企业基础设置）——
         // 标注**只落到该码在树序上的首个承载节点**。逐节点复制会同时踩两条 §31：
-        //   · P2 信息不重复：「生产看板 · 手机端：计件工资报表、生产待办 / 计件工资 · 手机端：计件工资报表、
+        //   · P2 信息不重复：「作业看板 · 手机端：计件工资报表、生产待办 / 计件工资 · 手机端：计件工资报表、
         //     生产待办」同屏两条一模一样的标注；
         //   · P4 可据以行动：「企业基础设置 · 手机端：计件工资报表、生产待办」名实不符
         //     （勾它的真实意图是配置生产面，与手机端报表无关）。

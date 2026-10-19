@@ -317,7 +317,7 @@
       "订单列表": "order:list",
       "财务对账": "finance:view",
       "生产管理": null,
-      "生产看板": "production:view",
+      "作业看板": "production:view",
       "智能派单": "processing:view",
       "计件工资": "production:view",
       "质检记录": "production:inspect",
@@ -344,7 +344,7 @@
       "客户列表": "customer:view",
       "财务对账": "finance:view",
       "订单详情": "order:detail",
-      "生产看板": "production:view",
+      "作业看板": "production:view",
       "智能派单": "processing:view",
       "计件工资": "production:view",
       "质检记录": "production:inspect",
@@ -368,7 +368,7 @@
       "客户列表": "customer:view",
       "订单列表": "order:list",
       "财务对账": "finance:view",
-      "生产看板": "production:view",
+      "作业看板": "production:view",
       "智能派单": "processing:view",
       "计件工资": "production:view",
       "质检记录": "production:inspect",
@@ -447,7 +447,7 @@
     },
     {
       "key": "production-board",
-      "name": "生产看板",
+      "name": "作业看板",
       "path": "/production",
       "code": "production:view"
     },
@@ -784,7 +784,7 @@
     },
     {
       "key": "production-board",
-      "name": "生产看板",
+      "name": "作业看板",
       "path": "/production",
       "gate": "production:view",
       "units": {

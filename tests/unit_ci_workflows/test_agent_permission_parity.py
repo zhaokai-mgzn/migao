@@ -792,11 +792,11 @@ TOOL_MENU_NODE: dict[str, str] = {
     "category_manage": "商品管理",
     "processing_item_query": "企业基础设置",
     "processing_item_manage": "企业基础设置",
-    "processing_order_query": "生产看板",
-    "processing_order_generate": "生产看板",
-    "processing_order_update": "生产看板",
-    "production_progress_query": "生产看板",
-    "production_worklog_query": "生产看板",
+    "processing_order_query": "作业看板",
+    "processing_order_generate": "作业看板",
+    "processing_order_update": "作业看板",
+    "production_progress_query": "作业看板",
+    "production_worklog_query": "作业看板",
     "piecework_query": "计件工资",
     "knowledge_search": "知识库",
     # ── B 端只读模块覆盖（issue #5247）：新增只读工具 → 逐个登记「它的码属于哪个菜单节点」──
@@ -807,7 +807,7 @@ TOOL_MENU_NODE: dict[str, str] = {
     # 的锚点改钉**仍在树上的**「经营看板」节点（该码现在只由它承载，零授权 delta）。
     "briefing_query": "经营看板",                # dashboard:view
     "craft_calc_config_query": "企业基础设置",   # processing:manage（生产域无专属读码）
-    "processing_order_set_query": "生产看板",    # processing:manage（套件读面 = 加工单读面同码，#5246 收尾）
+    "processing_order_set_query": "作业看板",    # processing:manage（套件读面 = 加工单读面同码，#5246 收尾）
     # 工艺配置读面聚合（issue #4923）：6 个读端点；工具声明生产域**读**码 `production:view`
     # （与「企业基础设置」节点同码）。⚠️ 端点侧生效码仍分三档（order:list / processing:manage /
     # production:view）⇒ 判据 2 的「工具码 ≡ 端点码」现为**具名缺口**，见 `CODE_DIVERGENCE_EXCEPTIONS`。
@@ -1860,7 +1860,7 @@ class ReadCodeAnchor:
 #:   ① `auth` 源只登记**解析器看得见**的节点（`_iter_menu_auth` 只取 `permissions.contains(...)` 块内
 #:      **首个** `menuItem`，而生产组那三个节点的 `if` 块以注释开头 ⇒ 解析面看不见它们）。
 #:      `AuthService` 侧的同码由 `AuthServiceTest` 的**渲染面**断言兜住（按 `production:view` 拿菜单，
-#:      断言「生产看板/工艺配置/计件工资」可见、按 `processing:manage` 拿只剩池看板）—— 那是行为级判据，
+#:      断言「作业看板/工艺配置/计件工资」可见、按 `processing:manage` 拿只剩池看板）—— 那是行为级判据，
 #:      不是文本级判据。本表**不**用「源码里出现过这个字符串」来假装覆盖。
 #:   ② `system:view` 的 `role_holders` 为空是**有意**：内置岗位里只有 admin 持 `system:manage`（恒 `*`），
 #:      其余岗位**一个都不给** —— 给 operator 就是让运营看见「岗位权限」页并读到权限目录（放宽，禁止）。
@@ -1888,7 +1888,7 @@ READ_CODE_ANCHORS: dict[str, ReadCodeAnchor] = {
         domain="生产域",
         tool="processing_order_query",
         node_sources=(
-            ("frontend", "生产看板"), ("controller", "生产看板"),
+            ("frontend", "作业看板"), ("controller", "作业看板"),
             ("frontend", "计件工资"), ("controller", "计件工资"),
             # 🔴 2026-10-09（issue #6580）：「加工项管理」「工艺配置」两个节点已**移除**，
             # 合并后的入口 = 尾部独立项「企业基础设置」（节点码即本读码）。
@@ -2056,7 +2056,7 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     "/production/pool": "智能派单",
     "/production/remnants": "余料台账",
     "/production/saving-board": "省料看板",
-    "/production": "生产看板",
+    "/production": "作业看板",
     # 质检记录（issue #7140 = #5652 的商家面）：守卫码 = 菜单节点码 = 该页三个端点的**方法级**
     # `production:inspect`（读待检清单 / 读流水 / 录判定同码 —— 写面也在该码下，故不登记写例外）。
     "/quality-inspections": "质检记录",
@@ -2095,7 +2095,7 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
 ROUTE_WITHOUT_MENU_NODE: dict[str, str] = {
     "/chat": "会话页没有侧边栏节点（「在线接待」的路径是 `/agent-workspace/human-sessions`）⇒ 守卫码 `agent:session` 无节点可钉",
     "/categories": "分类管理**没有独立侧边栏节点**（入口在商品列表页内，同 `READ_CODE_ANCHORS`）⇒ 该码由判据 10 的 `PAGE_READ_CODES['product:list']` 承担",
-    "/processing-orders": "加工单唯一入口已并入「生产看板」（issue #4357）⇒ 本前缀只作旧链接兼容，节点归「生产看板」",
+    "/processing-orders": "作业单唯一入口已并入「作业看板」（issue #4357）⇒ 本前缀只作旧链接兼容，节点归「作业看板」",
     # 🔴 2026-10-09（issue #6580）：下面三条都是「**旧入口保留、不再有菜单项**」的兼容前缀 ——
     # 仓内口径 = 旧深链不 404 ⇒ 页面/重定向保留、守卫码保留，但**菜单项已移除**（故无节点可钉）。
     # ⚠️ 判据 11③ 的「无节点必须逐条带理由」正是为这种形态设的：删菜单项时**必须**来这里登记，
@@ -2237,7 +2237,7 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
         "customerApi.getCustomers", "customerApi.getCustomerTags")),
     "/finance": MenuReadAnchor("财务对账", "finance/page.tsx", (
         "financeApi.getSummary", "financeApi.getTransactions", "financeApi.getReconciliation")),
-    "/production": MenuReadAnchor("生产看板", "production/page.tsx", ("processingOrderApi.list",)),
+    "/production": MenuReadAnchor("作业看板", "production/page.tsx", ("processingOrderApi.list",)),
     "/production/pool": MenuReadAnchor("智能派单", "production/pool/page.tsx",
                                        ("poolBoardApi.getBoard",)),
     # 计件工资（issue #5653 追加）：本页第一屏**两块读面** —— 报表（`summary`）+ 结算单列表
@@ -2708,7 +2708,7 @@ COMMENT_CLAIMS: tuple[CommentClaim, ...] = (
         kind="menu-node-count",
         arg=("production:view", 3),
         why=(
-            "生产域读码的三个侧边栏节点（生产看板 / 计件工资 / 企业基础设置）"
+            "生产域读码的三个侧边栏节点（作业看板 / 计件工资 / 企业基础设置）"
             "—— 🔴 2026-10-09（issue #6580）：原五个里的「加工项管理」「工艺配置」两个菜单项已移除、"
             "「参数总览」一级项已撤掉，合并后的唯一入口「企业基础设置」节点码由 system:manage 改为本读码"
         ),
@@ -3581,22 +3581,22 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
             lambda s: _drop_role_code(s, "operatorRole", "product:list"),
             problems_leakage,
         ),
-        "⑬ 把生产读码从**前端菜单源**删掉（生产看板 → 无码）⇒ 判据 10 红": (
+        "⑬ 把生产读码从**前端菜单源**删掉（作业看板 → 无码）⇒ 判据 10 红": (
             # issue #5291 的**真实回归形态**：节点仍在、只是 `permissionCode` 没了 ⇒
             # 判据 3 的锚定会**跳过**它（无码节点被读成「全员可见」）、交会同构也不再比它
             # ⇒ 只有判据 10 能拦（这正是「删读码必须有一条能红的判据」的理由）。
             "menu:frontend",
-            # 锚点 = **生产看板**那一行（`path: '/production'`）—— 与注入名逐字对应；
+            # 锚点 = **作业看板**那一行（`path: '/production'`）—— 与注入名逐字对应；
             # 用「第一个 production:view」当锚会让失败文案点名另一个节点（读数与结论不符）。
             lambda s: s.replace(
                 "path: '/production', permissionCode: 'production:view', ", "path: '/production', ", 1),
             problems_read_code_anchoring,
         ),
-        "⑭ 生产读码只在**一处菜单源**回退成管理码（MenuController 生产看板）⇒ 判据 10 红": (
+        "⑭ 生产读码只在**一处菜单源**回退成管理码（MenuController 作业看板）⇒ 判据 10 红": (
             "menu:controller",
             lambda s: s.replace(
-                'new MenuNode("production:view", "生产看板")',
-                'new MenuNode("processing:manage", "生产看板")', 1),
+                'new MenuNode("production:view", "作业看板")',
+                'new MenuNode("processing:manage", "作业看板")', 1),
             problems_read_code_anchoring,
         ),
         "⑮ 承载工具退回管理码（processing_order_query → processing:manage）⇒ 判据 10 红": (
@@ -3868,16 +3868,16 @@ def _regrow_fourth_source_renamed(text: str) -> str:
 
 
 def _diverge_shared_node(text: str) -> str:
-    """把 `MenuController` 的『生产看板』节点码改成**与其它菜单源不同**的值。
+    """把 `MenuController` 的『作业看板』节点码改成**与其它菜单源不同**的值。
 
-    选『生产看板』而不是『售后工单』：前者在三处菜单源里**同名**（才落在交集判据的射程内），
+    选『作业看板』而不是『售后工单』：前者在三处菜单源里**同名**（才落在交集判据的射程内），
     后者在 `MenuController` 里叫「退换货」—— 名字都不同的节点本就不参与同构比对
     （这正是 `REGISTERED_RESIDUALS` 所登记「菜单源不做全树同构」的含义）。
     """
-    m = re.search(r'new MenuNode\("([^"]+)", "生产看板"\)', text)
-    assert m, "注入锚点失配：`MenuController` 里找不到『生产看板』节点（同步本判据）"
+    m = re.search(r'new MenuNode\("([^"]+)", "作业看板"\)', text)
+    assert m, "注入锚点失配：`MenuController` 里找不到『作业看板』节点（同步本判据）"
     other = "order:list" if m.group(1) != "order:list" else "processing:manage"
-    return text.replace(m.group(0), f'new MenuNode("{other}", "生产看板")', 1)
+    return text.replace(m.group(0), f'new MenuNode("{other}", "作业看板")', 1)
 
 
 def test_fourth_source_comment_mention_stays_green() -> None:

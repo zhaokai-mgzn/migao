@@ -71,32 +71,32 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   //   · `/production/processing-fees`（同上页的第二个 tab）→ 同前
   //   · `/production/routings`（原「工艺配置」）→ `/settings?domain=craft-route`
   //   · `/processing`（更早的旧路径）→ 同 `/production/processing`
-  // ⚠️ 必须排在 `/production` 之前（本表 `find` 取首个命中，否则会被「生产看板」抢走）。
+  // ⚠️ 必须排在 `/production` 之前（本表 `find` 取首个命中，否则会被「作业看板」抢走）。
   {
     match: (p) =>
       p.startsWith('/production/processing') || p.startsWith('/production/routings') || p.startsWith('/processing'),
     crumbs: [{ label: '企业基础设置' }],
   },
   // 智能派单（issue #5177）：**必须排在 `/production` 之前** —— 本表是 `find` 取**首个命中**，
-  // `/production` 那条会抢走 `/production/pool`（面包屑会退化成「生产看板」= §15.2 不成立）。
+  // `/production` 那条会抢走 `/production/pool`（面包屑会退化成「作业看板」= §15.2 不成立）。
   // 组名/菜单名与 `config/menu.ts` 的 `production-pool`、服务端两处菜单节点逐字一致。
   { match: (p) => p.startsWith('/production/pool'), crumbs: [{ label: '生产管理' }, { label: '智能派单' }] },
   // 省料看板（issue #5159）：同样**必须排在 `/production` 之前**（本表 `find` 取首个命中，
-  // `/production` 会抢走它 ⇒ 面包屑退化成「生产看板」= §15.2 不成立）。
+  // `/production` 会抢走它 ⇒ 面包屑退化成「作业看板」= §15.2 不成立）。
   // 组名/菜单名与 `config/menu.ts` 的 `production-saving-board`、服务端两处菜单节点逐字一致。
   { match: (p) => p.startsWith('/production/saving-board'), crumbs: [{ label: '仓储与物料' }, { label: '省料看板' }] },
   // 余料台账（issue #5146 建页 / issue #5191 **进侧边栏**）：菜单项名 = 「余料台账」，
   // 与 `config/menu.ts` 的 `production-remnants`、服务端两处菜单节点**逐字一致**
   // （§15.2「面包屑末项 == 侧边栏菜单名」；守卫 tests/unit/lib/menu-breadcrumb-coverage.test.tsx）。
-  // ⚠️ 必须排在下面的 `/production` 之前（本表 `find` 取首个命中，否则面包屑退化成「生产看板」）。
+  // ⚠️ 必须排在下面的 `/production` 之前（本表 `find` 取首个命中，否则面包屑退化成「作业看板」）。
   // issue #5271：本页随「面料进出与消耗」动线**移入「仓储与物料」组**（原生产管理组）。
   { match: (p) => p.startsWith('/production/remnants'), crumbs: [{ label: '仓储与物料' }, { label: '余料台账' }] },
   { match: (p) => p.startsWith('/production/piecework'), crumbs: [{ label: '生产管理' }, { label: '计件工资' }] },
   // 质检记录（issue #7140）：菜单名与 `config/menu.ts` 的 `quality-inspections`、服务端两处菜单节点
   // **逐字一致**（§15.2「面包屑末项 == 侧边栏菜单名」，守卫 menu-breadcrumb-coverage.test.tsx）。
   { match: (p) => p.startsWith('/quality-inspections'), crumbs: [{ label: '生产管理' }, { label: '质检记录' }] },
-  // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）
-  { match: (p) => p.startsWith('/production'), crumbs: [{ label: '生产管理' }, { label: '生产看板' }] },
+  // /production = 作业单唯一入口（issue #4357 与原「加工单」菜单合并）
+  { match: (p) => p.startsWith('/production'), crumbs: [{ label: '生产管理' }, { label: '作业看板' }] },
   // 入库单（issue #5071）：V111（#5034）新增菜单项时**漏了本表这一处** ⇒ 面包屑只剩「工作台」一项。
   // 组名/菜单名与侧边栏 `config/menu.ts` 的 `inbound-orders` 逐字一致；
   // issue #5271：随「面料进出与消耗」动线**移入「仓储与物料」组**（原生产管理组）。

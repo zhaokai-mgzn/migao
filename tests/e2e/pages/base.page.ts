@@ -60,7 +60,7 @@ const SIDEBAR_MENU: Record<string, string> = {
   '/customers': '客户列表',
   '/finance': '财务对账',
   // 生产管理
-  '/production': '生产看板',
+  '/production': '作业看板',
   '/production/pool': '池看板',
   '/production/routings': '工艺配置',
   '/production/piecework': '计件工资',
