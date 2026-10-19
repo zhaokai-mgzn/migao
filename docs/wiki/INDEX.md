@@ -14,6 +14,7 @@ LLM 开发时按需加载对应页面 (~50 行/页，按场景索引)：
 | **设计基线（颜色/字号/阴影真值源在哪 + 四态契约 + 自检五问）** | **[design-baseline](../design/design-baseline.md)**（真值 = `frontend/admin-web/tailwind.config.ts` + `frontend/admin-web/src/lib/design-tokens.ts`） |
 | 改 AI 服务/Tool/Skill | [AI-Agent](AI-Agent.md) |
 | **Skill/Tool 设计范式** | **[Agent-Design-Standard](agent-design-standard.md)** |
+| **Agent 能力研发范式（声明=投影 / 元守卫 / 现实快照）** | **[agent-capability-paradigm](agent-capability-paradigm.md)** |
 | **B 端 Agent 写操作边界（去留清单 / 补回前提）** | **[agent-write-boundary](agent-write-boundary.md)** |
 | **B 端 Agent 功能设计（能力地图 / 判据来源）** | **[agent-feature-design](../agent-feature-design.md)** |
 | 改架构/数据模型/路由 | [Architecture](Architecture.md) |

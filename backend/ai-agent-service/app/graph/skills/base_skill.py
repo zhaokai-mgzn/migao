@@ -511,6 +511,29 @@ def _capability_index(skill_name: str) -> str:
     return _CAPABILITY_INDEX_HEADER + "\n" + "\n".join(lines)
 
 
+#: 能力边界段首标记（issue #7291）。与 `_CAPABILITY_INDEX_MARKER` 同族但**不同物**：
+#: 索引回答「哪个域有哪些写工具」，边界回答「能办什么 / 不能办什么 / 不能办去哪」。
+_CAPABILITY_BOUNDARY_MARKER = "【能力边界】"
+
+
+def _capability_boundary(skill_name: str) -> str:
+    """B 端能力边界段（**只给 mibao**，C 端逐字节不受影响）。
+
+    为什么由代码投影而不是写在 prompt 文件里：边界声明原先手抄在 10 个文件里，
+    其中 9 处与工具真值相反（#7291 现取证据）。投影的单一事实源 = 注册表 × mibao 绑定面，
+    工具一变文案自动跟随；真值变化由 `tests/test_capability_boundary.py` 的快照判据变红提醒。
+    """
+    cfg = _skill_config(skill_name)
+    if cfg is None or "mibao" not in set(cfg.system_prompts or {}):
+        return ""
+    from app.agents.capability_boundary import MARKER, render_capability_boundary
+
+    text = render_capability_boundary()
+    # 两处常量漂移会让「段在不在」被判错（测试也抓不到的那类静默失效）⇒ 就地自证。
+    assert text.startswith(MARKER) and MARKER == _CAPABILITY_BOUNDARY_MARKER
+    return text
+
+
 def create_skill_registry(tool_names: List[str]) -> ToolRegistry:
     """创建仅包含指定 Tool 的 Registry 子集
 
@@ -778,6 +801,12 @@ def _build_system_prompt(skill_name: str, inline_prompt: str = "") -> str:
     capability_index = _capability_index(skill_name)
     if capability_index:
         parts.append(capability_index)
+
+    # Layer 2.7: 能力边界（issue #7291）—— 与 2.6 同族：2.6 是「哪个域有哪些写工具」的地图，
+    # 2.7 是「能办什么 / 不能办什么 / 不能办去哪」的口径。**只给 mibao**（见 _capability_boundary）。
+    capability_boundary = _capability_boundary(skill_name)
+    if capability_boundary:
+        parts.append(capability_boundary)
 
     # Layer 3: 领域 Prompt
     domain = _read_cached(_os.path.join(_ref_dir, "prompts", f"{skill_name}.md"))
