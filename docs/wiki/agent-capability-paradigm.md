@@ -71,8 +71,13 @@
 ## 五、能力变更 → 用例库（防「尺子没跟上」）
 
 能力的**声明**投影了，如果**评测期望**没跟上，同样会产出"看起来在测、实际恒假"的假绿/假红。
-2026-10-19 现取（#6984）：三条 B 端用例写 `tool: direct_reply or validate_input`，
-而 `validate_input` 不在 mibao 可达集 ⇒ 第二条支**恒假**（空断言）。
+**教训（2026-10-19，本范式自己踩过，照实登记）**：一度把三条用例的
+`direct_reply or validate_input` 判成空断言，依据是「手搓可达集（`skill_names` 的
+`tool_names` 并集）」—— 而真实工具集还要并入**同一 persona 家族的只读工具**（#4125，
+实现点是 `create_skill_registry`）⇒ `validate_input` / `settings_manage` 其实**可达**。
+方向整个反了：差点把三条正确用例改成更弱的断言。
+**结论：可达性只许走真实现**（`create_skill_registry(...).get_tool_names()`），
+手搓并集就是下一处漂移。
 
 | 规则 | 判据 |
 |---|---|

@@ -154,26 +154,29 @@ def _registered_tools() -> Dict[str, Any]:
 
 
 def mibao_reachable_tool_names() -> FrozenSet[str]:
-    """mibao 真实可达的工具名 = **绑定 skill ∪ 兜底 skill** 的 `tool_names` 并集。
+    """mibao 真实可达的工具名 = 每个绑定 skill（∪ 兜底）**实际注册后**的工具名并集。
 
-    兜底 skill 必须并上（2026-10-19 现取修正）：`MIBAO_CONFIG.fallback_skill` 是低置信 /
-    跨域问题的最后出口，它同样能被路由到 ⇒ 它的工具对模型是**可达**的。
-    漏掉它会把 `general` 的只读工具（如 `nav_guide`）误判成不可达。
+    ⚠️ 必须走 `create_skill_registry` 这条真实现：它按 #4125 把「同一 persona 家族的
+    **只读**工具」并入每个 skill（`settings_skill` 的 `default_persona=mibao` ⇒
+    `validate_input` / `settings_manage` / `notification_manage` 对黄金策可达）。
+    手搓「skill_names 的 tool_names 并集」会漏掉这条通道 —— 2026-10-19 实证：据此把三条
+    用例误判成「空断言」，方向整个反了（见 docs/wiki/agent-capability-paradigm.md §五）。
     """
     from app.agents.agents.mibao import MIBAO_CONFIG
+    from app.graph.skills.base_skill import create_skill_registry
     from app.graph.skills.skill_registry import get_skill_registry
 
     registry = get_skill_registry()
     skill_names = list(MIBAO_CONFIG.skill_names)
     if MIBAO_CONFIG.fallback_skill:
         skill_names.append(MIBAO_CONFIG.fallback_skill)
-    names = set()
+    names: set[str] = set()
     for skill_name in skill_names:
         cfg = registry.get(skill_name)
-        if cfg is not None:
-            names.update(cfg.tool_names or ())
+        if cfg is None:
+            continue
+        names.update(create_skill_registry(list(cfg.tool_names or ())).get_tool_names())
     return frozenset(names)
-
 
 def render_capability_boundary(states: Optional[Mapping[str, bool]] = None) -> str:
     """渲染 prompt 段。分组顺序固定（可直接办理 → 暂未接线 → 按裁定不做）。"""

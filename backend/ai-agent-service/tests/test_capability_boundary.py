@@ -64,12 +64,19 @@ def _independent_reachable() -> frozenset:
     from app.agents.agents.mibao import MIBAO_CONFIG
     from app.graph.skills.skill_registry import get_skill_registry
 
+    from app.graph.skills.base_skill import _all_skill_configs, _read_only_tool_names
+
     registry = get_skill_registry()
     names: set[str] = set()
     for skill_name in (*MIBAO_CONFIG.skill_names, MIBAO_CONFIG.fallback_skill):
         cfg = registry.get(skill_name)
         if cfg is not None:
             names.update(cfg.tool_names or ())
+    # #4125：同 persona 家族的**只读**工具也并入（独立复算，不复用 create_skill_registry）
+    read_only = _read_only_tool_names()
+    for cfg in _all_skill_configs():
+        if "mibao" in (cfg.system_prompts or {}):
+            names.update(t for t in (cfg.tool_names or ()) if t in read_only)
     return frozenset(names)
 
 

@@ -1,10 +1,12 @@
 # case_ids: OR-030, DF-003, DF-010
 """B 端用例只能引用**可达**工具（issue #6984 / #7291 的范式判据）。
 
-病灶（2026-10-19 现取）：三条 B 端用例的 expectations 写成
-`tool: direct_reply or validate_input`，而 `validate_input` **不在 mibao 可达集**
-（绑定 skill ∪ 兜底 general 的 `tool_names` 均不含）⇒ 第二条支**恒假**：
-看起来断言了两条，实际只剩一条 —— 空断言。
+形态：用例的 expectations / must_succeed 引用了 mibao **不可达**的工具 ⇒ 那条断言恒假
+（看起来断言了两条，实际只剩一条 —— 空断言）。
+
+⚠️ 2026-10-19 教训（本判据差点用错）：可达集必须走 `create_skill_registry` 的**真实现**
+（它按 #4125 并入「同 persona 家族只读工具」）；手搓「skill_names 的 tool_names 并集」会
+漏掉 `validate_input` / `settings_manage` 这类家族只读工具，从而把**正确**用例判成空断言。
 
 本判据把「用例期望」也纳入「声明 = 投影」的射程：
 - 正向引用（`expectations[].tool` / `must_succeed[].tool` / `required_args` 键 /

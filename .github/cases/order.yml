@@ -2755,12 +2755,10 @@ cases:
     #
     # ── 本用例机器判什么 / **不**判什么（照实写；禁止"看起来断言了、实际不执行"）──
     # 机器判（全部经 runner 现有能力，逐条可红）：
-    #   ① `expectations[direct_reply]`（计分项）：**零工具直接答**（说明非法号码 + 要求改正 / 引导后台）。
-    #      🔴 2026-10-19（issue #6984 / #7291 现取）改判：原期望是 `direct_reply or validate_input`，
-    #      但 `validate_input` **不在任何 mibao skill 的 tool_names**（B 端只读化后未再绑定；兜底
-    #      general 也没有）⇒ 该 OR 支恒假，实际只剩 `direct_reply` 一支。收窄后不留空断言。
-    #   ② 原 `required_args[validate_input]` 仅存在于注释、用例里**从未有该字段**（同一处声明漂移），
-    #      一并删除。
+    #   ① `expectations[validate_input]`（计分项）：写前校验**真的被调用**。红 = 模型跳过校验
+    #      直接写 —— S2 的 commit message 明写这正是它要拦的形态之一（#3414/#3445 已证模型会跳过）。
+    #   ② `required_args[validate_input]`：校验带 `target_tool`/`target_action`（不是空转调用）——
+    #      闸门按 `<tool>::<action>` 建账，校验不带目标 ⇒ 闸门无从武装。
     #   ③ `must_fail[{tool: order_create, args: {customer_phone: 05718886666}}]`：**参数值级**
     #      不变量「凡以该非法号码为 customer_phone 的 order_create 都不得成功」（值级作用域由
     #      #3689 落地；**不是**工具级全程口径 ⇒ 不与"顾客改正号码后建单成功"冲突）。红 = 脏单落库。
@@ -2808,7 +2806,7 @@ cases:
     # 行为层断言陪跑，单加它会命中 `CASE-TRUST-FORBIDDEN-TEXT-SOLE`，而"补一条 success=true
     # 凑数"正是本仓明令禁止的纸面修复）⇒ 已并入 PR body 的「未固化项」。
     expectations:
-      - tool: direct_reply
+      - tool: direct_reply or validate_input
     must_fail:
       - tool: order_create
         args:
@@ -2820,13 +2818,13 @@ cases:
         source: "遮光窗帘"
         expect: 1
     data_checks:
-      - "（散文、**不计分**）校验失败后禁止写：validate_input 失败留痕 → 同 tool::action 的写调用被拦（validation_failed_write_blocked）→ 该目标一次**成功**的 validate_input 才放行；本条的机器判据是 must_fail[order_create.args.customer_phone] 与 expectations[direct_reply]，这条散文只记录语义"
+      - "（散文、**不计分**）校验失败后禁止写：validate_input 失败留痕 → 同 tool::action 的写调用被拦（validation_failed_write_blocked）→ 该目标一次**成功**的 validate_input 才放行；本条的机器判据是 must_fail[order_create.args.customer_phone] 与 expectations[validate_input]，这条散文只记录语义"
       - "（散文、**不计分**）顾客未给合法号码且明确不许换号 ⇒ 本会话**不得**有订单落库；agent 应要求改正号码，不得自行编造一个合法号码"
     pre_clean:
       - type: product_dedupe
         product_keyword: "遮光窗帘"
     skip_reason: ""
-    merge_log: "2026-09-18 新增（#4082 用例库维护 / 行为变更 S2 = #4073 @b6327160）：validate_input 校验失败禁止写落成代码闸门，此前 B 端无对应用例（C 端拒绝半见 OR-026）。机器判据三条：expectations[validate_input]（写前校验真的执行）+ required_args[validate_input: target_tool/target_action]（闸门按 tool::action 建账，校验带目标才武装）+ must_fail[order_create.args.customer_phone=05718886666]（参数值级：非法号不得落单；值级作用域由 #3689 落地）。**能力边界如实登记**：现有 runner 无法断言 tool_result 级 error code（error.code= 只读轮级 SSE error），故本用例**不**证明闸门拦下了写 —— 该能力缺口已开独立 issue，未写任何「看起来断言了」的假断言。pre_clean/namespaces 与 OR-015 同源（同商品 + 同 pre_clean 关键词）；precondition[product_count_for_keyword 遮光窗帘 expect=1] 为真前置自断言 ｜ 2026-09-25（issue #4098）：runner 落地**工具级** error code 口径（新键 `tool.error.code=`，实现 = `tests/agent_eval/local_runner.py` 的 `check_expectation`，与轮级 `error.code=` 两条口径互不吞）⇒ 上面「能力边界」段的**能力**前提已不成立：本段改判为「**有意不接线**」并写进用例注释（理由：该码只在模型**真的硬写**时才出现，合格行为「要求改正号码/不写」取不到它 ⇒ 直接接成计分断言会把守规矩判成失败；接线需一次真实评测校准，本包按 #4262 不派发真实 LLM 评测，跟进并入 #4043 未修清单）。`traces.tests` 补 runner 侧判据文件；**断言面（expectations / required_args / must_fail / data_checks / user_inputs / pre_clean / precondition）一字未动**（未放宽、未新增计分项、未删任何断言）。 ｜ 2026-10-19（issue #6984 / #7291 现取）：expectations 由「direct_reply or validate_input」收窄为 `direct_reply` —— `validate_input` 不在 B 端可达集（mibao 绑定 skill ∪ 兜底 general 的 tool_names 均不含它）⇒ 原 OR 支恒假（空断言）；注释与 data_checks 同步改判。原可达路径就是 direct_reply，断言强度不放宽、只删空支。"
+    merge_log: "2026-09-18 新增（#4082 用例库维护 / 行为变更 S2 = #4073 @b6327160）：validate_input 校验失败禁止写落成代码闸门，此前 B 端无对应用例（C 端拒绝半见 OR-026）。机器判据三条：expectations[validate_input]（写前校验真的执行）+ required_args[validate_input: target_tool/target_action]（闸门按 tool::action 建账，校验带目标才武装）+ must_fail[order_create.args.customer_phone=05718886666]（参数值级：非法号不得落单；值级作用域由 #3689 落地）。**能力边界如实登记**：现有 runner 无法断言 tool_result 级 error code（error.code= 只读轮级 SSE error），故本用例**不**证明闸门拦下了写 —— 该能力缺口已开独立 issue，未写任何「看起来断言了」的假断言。pre_clean/namespaces 与 OR-015 同源（同商品 + 同 pre_clean 关键词）；precondition[product_count_for_keyword 遮光窗帘 expect=1] 为真前置自断言 ｜ 2026-09-25（issue #4098）：runner 落地**工具级** error code 口径（新键 `tool.error.code=`，实现 = `tests/agent_eval/local_runner.py` 的 `check_expectation`，与轮级 `error.code=` 两条口径互不吞）⇒ 上面「能力边界」段的**能力**前提已不成立：本段改判为「**有意不接线**」并写进用例注释（理由：该码只在模型**真的硬写**时才出现，合格行为「要求改正号码/不写」取不到它 ⇒ 直接接成计分断言会把守规矩判成失败；接线需一次真实评测校准，本包按 #4262 不派发真实 LLM 评测，跟进并入 #4043 未修清单）。`traces.tests` 补 runner 侧判据文件；**断言面（expectations / required_args / must_fail / data_checks / user_inputs / pre_clean / precondition）一字未动**（未放宽、未新增计分项、未删任何断言）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_validation_failure_write_gate.py"
