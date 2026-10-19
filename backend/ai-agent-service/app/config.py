@@ -112,6 +112,17 @@ class Settings(BaseSettings):
     ASR_MODEL: str = "paraformer-realtime-8k-v2"          # 实时语音识别模型（免费 36,000s）
     ASR_LANGUAGE_HINTS: str = "zh"                         # 默认语言/方言
 
+    # 商品图生成（issue #7335）— 百炼图生图（qwen-image 系列）。
+    # Key 未单独配置时复用 ASR_API_KEY（同一个百炼账号）；**不回落 PRIMARY_API_KEY**（DeepSeek Key）。
+    # 模型按顺序轮换：只有配额类错误才切下一个（见 app/images/generator.py 的边界 2）。
+    IMAGE_GEN_ENABLED: bool = True
+    IMAGE_GEN_API_KEY: str = ""
+    IMAGE_GEN_MODELS: str = "qwen-image-3.0,qwen-image-2.1-pro,qwen-mt-image-2.0,qwen-image-2.1-turbo"
+    IMAGE_GEN_BASE_URL: str = (
+        "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+    )
+    IMAGE_GEN_TIMEOUT: int = 180                           # 单次生图读超时（实测 30~60s）
+
     DASHSCOPE_EMBEDDING_MODEL: str = "text-embedding-v3"
     INTENT_MODEL: str = "deepseek-flash"                 # 意图分类/摘要（快速模型）
 

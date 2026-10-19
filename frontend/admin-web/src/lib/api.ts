@@ -853,6 +853,29 @@ export const imageRecognizeApi = {
     }),
 }
 
+/** AI 生成的商品图（`url` = 已转存 OSS 的永久地址；`model` = 实际模型，排障用）。 */
+export interface AiProductImageResult {
+  url: string
+  model: string
+}
+
+/** 生成用途（与 admin-api `ProductImageGenerationService.KINDS` 同源）。 */
+export type AiProductImageKind = 'main' | 'texture' | 'craft' | 'scene'
+
+/**
+ * 商品图生成 API（issue #7335）—— 建品页「AI 生成商品图」。
+ *
+ * 请求 = 已上传的**样图 URL** + 商品名 + 用途；响应 = 一张**已转存 OSS** 的永久 URL。
+ * 🔴 **不落库**：生成结果只进表单预览，提交仍走既有建品保存链路。
+ * 🔴 超时单独放宽到 210s：生图实测 30~60s（长尾 ~120s），沿用全局 30s 会必然超时。
+ */
+export const aiProductImageApi = {
+  generate: (payload: { imageUrl: string; productName?: string; kind: AiProductImageKind }) =>
+    request.post<ApiResponse<AiProductImageResult>>('/api/admin/products/ai-images', payload, {
+      timeout: 210000,
+    }),
+}
+
 /**
  * 智能派单 API（issue #5177；消费 #5169 已交付的三个端点）。
  *
