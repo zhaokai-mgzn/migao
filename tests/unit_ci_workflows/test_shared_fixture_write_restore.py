@@ -267,6 +267,13 @@ PRODUCT_ATTR_WRITERS: dict = {
     #   · 写的是**收件人自己的通知状态**（`PUT /api/admin/notifications/{id}/read`），
     #     **不触达任何商品属性** ⇒ 属性键 = `""`（与 `order_create` / `aftersale_create` 同档）；
     #     据此判据 ②③（要不要复位）对它**不适用**，而不是被豁免。
+    # ── #7027（2026-10-19）：`CH-050` 让「定时提醒」第一次成为**活写方** ──────────
+    # 写的是**待办行**（`scheduled_tasks`：fire_at / task_type / criterion / 落点文案），
+    # **不触达任何商品属性** ⇒ 属性键 = `""`（与 `order_create` / `aftersale_create` 同档）；
+    # 判据 ②③（要不要复位）对它**不适用**，而不是被豁免。
+    # 前置等价性由用例自己承担（CH-050 声明 `namespaces: scheduled_task:…` 并行互斥，
+    # 且第 3 轮就地把该提醒**取消**掉 ⇒ 重跑前置等价）。
+    ("scheduled_task_manage", ""): "",
     ("notification_manage", "mark_read"): "",
     ("notification_manage", "read_all"): "",
     # ── 具名批量写方（issue #5314）：属性由**用例声明的 `batch_type`** 决定 ⇒ 3 元组键 ──
