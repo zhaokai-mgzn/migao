@@ -1,16 +1,19 @@
-// case_ids: UI-063
+// case_ids: UI-063, UI-128
 // @vitest-environment jsdom
 
 import { describe, it, expect } from 'vitest'
 import matrix from '@/lib/print-media.json'
 import {
+  BROWSER_CHROME_MARGIN_MM,
   PRINT_MEDIA_IDS,
   PRINT_MEDIA_SPECS,
+  browserChromeMarginProblems,
   isContinuousFeed,
   printBodyFontPt,
+  printContentInsetCss,
+  printContentInsetMm,
   printMediaSpec,
   printPageBoxMm,
-  printPageMarginMm,
   printPageRule,
   printUsableBoxMm,
   printUsableHeightMm,
@@ -77,7 +80,11 @@ describe('打印介质矩阵（issue #5651）', () => {
   })
 
   it('③ @page 规则由 printPageRule 唯一生成（三联纸 = 241mm 140mm，用户 2026-09-26 裁定）', () => {
-    expect(printPageRule('a4')).toBe('@page { size: A4; margin: 12mm; }')
+    // issue #7309：A4 的 `@page` 边距**必须是 0** —— 浏览器（Chrome）把自己的页眉页脚
+    // （版式日期 / 文档标题 / 页面 URL / 页码）画在 `@page` 的页边距里，够大就照画
+    // （实测阈值见 `BROWSER_CHROME_MARGIN_MM`）；0 边距 = 没有可画的边距 = 必然不出。
+    // 版面内缩（12mm）改由单据容器 padding 承担，见 ⑤ 那一组。
+    expect(printPageRule('a4')).toBe('@page { size: A4; margin: 0; }')
     expect(printPageRule('label-50x60')).toBe('@page { size: 50mm 60mm; margin: 0; }')
     expect(printPageRule('continuous-241x140')).toBe('@page { size: 241mm 140mm; margin: 6mm 12mm; }')
   })
@@ -134,11 +141,56 @@ describe('打印介质矩阵（issue #5651）', () => {
     expect(printPageBoxMm('label-50x60')).toEqual({ widthMm: 50, heightMm: 60 })
     expect(printUsableHeightMm('a4')).toBe(273) // 297 − 12×2（命名纸型不再返回 null）
     expect(printUsableHeightMm('label-50x60')).toBe(60) // 标签无边距
-    expect(printPageMarginMm('continuous-241x140')).toEqual({ xMm: 12, yMm: 6 })
+    expect(printContentInsetMm('continuous-241x140')).toEqual({ xMm: 12, yMm: 6 })
     expect(printUsableBoxMm('continuous-241x140')).toEqual({ widthMm: 217, heightMm: 128 })
     expect(isContinuousFeed('continuous-241x140')).toBe(true)
     expect(isContinuousFeed('a4')).toBe(false)
     // 针打**不复用** A4 的字号预算（A4 的 6pt 量级在针打上会糊）
     expect(printBodyFontPt('continuous-241x140')).toBeGreaterThanOrEqual(printBodyFontPt('label-50x60'))
+  })
+
+  it('⑤ 纸面不带**浏览器页眉页脚**：A4 的 @page 边距为 0，版面内缩改由单据容器承担（issue #7309）', () => {
+    // 用户 2026-10-19 逐字「我建议拿掉打印的页头和页脚」（附打印成品截图：顶部 `2026/10/19 10:52` +
+    // `观星台 - AI经营管理平台`，底部订单 URL + `1/1`）—— 那四样**都不是我们画的内容**，
+    // 是 Chrome 的打印页眉页脚。
+    expect(printPageRule('a4')).toBe('@page { size: A4; margin: 0; }')
+    // 版面内缩是**真值**（12mm）：改由单据容器 padding 承担，纸面观感与改前逐毫米一致
+    expect(printContentInsetCss('a4')).toBe('12mm')
+    expect(printContentInsetMm('a4')).toEqual({ xMm: 12, yMm: 12 })
+    // 🔴 可用版面与改前**逐值不变**（210−24 × 297−24）：抑制页眉页脚**不许**动版面，
+    // 也不许动纸面自检的判据面（`PrintDocPreview` 读的就是这两个函数）
+    expect(printUsableBoxMm('a4')).toEqual({ widthMm: 186, heightMm: 273 })
+    // 页边距本就在阈值以下的介质**不许**被顺手改（销售单三联纸 6mm / 标签 0）
+    expect(printContentInsetCss('continuous-241x140')).toBe('0')
+    expect(printContentInsetCss('label-50x60')).toBe('0')
+  })
+
+  it('⑤ 类级元守卫：矩阵里任何介质都不许落进「浏览器会画页眉页脚」的页边距区间', () => {
+    const offenders = matrix.media.flatMap((spec) =>
+      browserChromeMarginProblems(spec as PrintMediaSpec)
+    )
+    expect(offenders).toEqual([])
+    // 反空跑：扫描面必须真有介质
+    expect(matrix.media.length).toBeGreaterThanOrEqual(3)
+
+    // ── 判别力自证（内存注入，不碰真文件）：修前形态必须判红、修后形态必须判绿 ──
+    const before: PrintMediaSpec = {
+      ...(printMediaSpec('a4') as PrintMediaSpec),
+      pageMargin: '12mm',
+      contentInset: undefined,
+    }
+    expect(browserChromeMarginProblems(before).length).toBeGreaterThan(0)
+    // ① 页边距 0 但**没登记内缩** ⇒ 内容贴纸边（打印机不可打区会裁掉）⇒ 红
+    const noInset: PrintMediaSpec = { ...before, pageMargin: '0' }
+    expect(browserChromeMarginProblems(noInset).length).toBeGreaterThan(0)
+    // ② 内缩与 @page 边距叠加（双重内缩，版面悄悄变窄）⇒ 红
+    const doubled: PrintMediaSpec = {
+      ...(printMediaSpec('a4') as PrintMediaSpec),
+      pageMargin: '12mm',
+      contentInset: '12mm',
+    }
+    expect(browserChromeMarginProblems(doubled).length).toBeGreaterThan(0)
+    // ③ 阈值本身必须**取在实测边界的安全侧**（实测：8.7mm 不画 / 8.8mm 画）
+    expect(BROWSER_CHROME_MARGIN_MM).toBeLessThanOrEqual(8.7)
   })
 })

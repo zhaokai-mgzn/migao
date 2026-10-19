@@ -5,8 +5,8 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui'
 import {
   printBodyFontPt,
+  printContentInsetMm,
   printPageBoxMm,
-  printPageMarginMm,
   printUsableBoxMm,
   type PrintMediaId,
 } from '@/lib/print-media'
@@ -126,7 +126,8 @@ export default function PrintDocPreview({
   actions,
 }: PrintDocPreviewProps) {
   const box = printPageBoxMm(media)
-  const margin = printPageMarginMm(media)
+  // 纸框的**版面内缩**（不是 `@page` 边距：A4 的 `@page` 边距是 0、内缩在单据容器 padding 上，issue #7309）
+  const margin = printContentInsetMm(media)
   const usable = printUsableBoxMm(media)
   const stageRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)

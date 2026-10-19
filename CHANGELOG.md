@@ -20,6 +20,20 @@ warning（此前只留 `status=400`，原因只能靠响应体字节数反解）
 或直接用文字发送」）。重启条件：某版支付宝放开麦克风时，按真机读数复核后再撤这道门。
 判据 = `frontend/bmini-app/tests/voice-transcribe.test.ts`、`tests/voice-browser-recorder.test.ts`、
 `tests/message-input.test.tsx`、`backend/ai-agent-service/tests/test_asr.py::TestAsrRejectLogging`。
+
+### 打印出来的纸面不再带浏览器的页眉页脚（日期 / 后台标题 / 订单链接 / 页码）（2026-10-19，issue #7309）
+
+改前：A4 单据（发货单 / 报价单 / 加工单）的 `@page` 边距是 12mm，而 Chrome 把自己的页眉页脚
+（版式日期、`观星台 - AI经营管理平台`、页面 URL、`1/1`）画在这段页边距里 ⇒ 客户拿到的凭证顶部 / 底部
+多出四行内部信息，其中一行是后台订单地址。
+
+改后：A4 的 `@page` 边距写 0（没有可画的边距 ⇒ 浏览器页眉页脚必然不出；实测 8.7mm 不画 / 8.8mm 画，
+12mm 就是改前的值），版面内缩 12mm 改由单据容器的 padding 承担、并用 `box-decoration-break: clone`
+逐页重复 ⇒ **纸面版式与改前逐毫米一致**，只是少了那四行。三联纸（6mm）与标签（0）本就在浏览器
+不画页眉页脚的区间，未改动。判据 = `frontend/admin-web/tests/unit/lib/print-media.test.ts` 的
+「⑤ 纸面不带浏览器页眉页脚」+ 类级守卫
+`tests/unit_ci_workflows/test_print_media_matrix_guard.py::test_c10_browser_chrome_stays_off_the_paper`。
+
 ### 「3 天后提醒我跟进张先生」不再靠分类器猜：定时提醒问法确定性命中（2026-10-19，关联 issue #7038）
 
 改前：「定时提醒 / 到点提醒 / 待办提醒 / 提醒我跟进」这类问法在规则层没有关键词，整句交给
