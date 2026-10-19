@@ -165,17 +165,25 @@ def mibao_reachable_tool_names() -> FrozenSet[str]:
     from app.agents.agents.mibao import MIBAO_CONFIG
     from app.graph.skills.base_skill import create_skill_registry
     from app.graph.skills.skill_registry import get_skill_registry
+    from app.tools.registry import get_tool_scope, set_tool_scope
 
     registry = get_skill_registry()
     skill_names = list(MIBAO_CONFIG.skill_names)
     if MIBAO_CONFIG.fallback_skill:
         skill_names.append(MIBAO_CONFIG.fallback_skill)
     names: set[str] = set()
-    for skill_name in skill_names:
-        cfg = registry.get(skill_name)
-        if cfg is None:
-            continue
-        names.update(create_skill_registry(list(cfg.tool_names or ())).get_tool_names())
+    # ⚠️ `create_skill_registry` 会把本轮工具集写进全局 `tool_scope`（A5 设计）——
+    # 本函数是**只读探测**，必须原样还原，否则会把执行域留在最后一个 skill 上，
+    # 让后续流程把域内目标判成越域（2026-10-19 实证：order_create 被误拒）。
+    previous_scope = get_tool_scope()
+    try:
+        for skill_name in skill_names:
+            cfg = registry.get(skill_name)
+            if cfg is None:
+                continue
+            names.update(create_skill_registry(list(cfg.tool_names or ())).get_tool_names())
+    finally:
+        set_tool_scope(previous_scope)
     return frozenset(names)
 
 def render_capability_boundary(states: Optional[Mapping[str, bool]] = None) -> str:

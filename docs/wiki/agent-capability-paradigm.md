@@ -64,6 +64,7 @@
 | 共享层写 persona 专属声明 | `PROMPT-rules.md` 的 B 端能力段进了 C 端 prompt；C 端身份层写的是黄金策（#7292） | persona 门控（`_capability_boundary` 只给 mibao） |
 | 只改工具不改声明 | #7054：裁定「上下架都 ❌」而 `product_batch_update` 仍提供 `product_status` | 边界按**产品裁定**渲染 ❌，工具侧缺口另单收口 |
 | prompt 当限流器 | `general.md` 曾写「`processing_item_query` 只允许每轮调用一次」 | 代码兜底（限流/去重） |
+| 探测 / 投影函数改全局状态 | #7291 实证：可达性探测调 `create_skill_registry`（它按设计写 `tool_scope`）⇒ 执行域停在最后一个 skill，`order_create` 被误判越域 | 探测只读：保存并还原 `tool_scope`；判据 `test_reachability_probe_does_not_leak_tool_scope` |
 | 声明只活在 issue 里 | 「#7050 要接回非单据对象创建」没有承载体 | 写进 `UNITS` 探针 + issue |
 
 ---

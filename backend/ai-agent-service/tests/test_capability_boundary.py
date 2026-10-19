@@ -177,3 +177,20 @@ def test_boundary_injected_for_mibao_only():
     _PROMPT_CACHE.clear()
     assert _CAPABILITY_BOUNDARY_MARKER in _build_system_prompt("staff")
     assert _CAPABILITY_BOUNDARY_MARKER not in _build_system_prompt("customer_general")
+
+
+def test_reachability_probe_does_not_leak_tool_scope():
+    """探测不得有副作用：`mibao_reachable_tool_names()` 跑完必须还原执行域。
+
+    病灶（2026-10-19 实证）：`create_skill_registry` 会把本轮工具集写进全局 `tool_scope`
+    （A5 设计）—— 探测函数若直接调它而不还原，执行域就停在最后一个 skill 上，
+    后续流程把域内目标（如 `order_create`）判成越域，红在第一个人想不到的地方。
+    """
+    from app.tools.registry import get_tool_scope, set_tool_scope
+    from app.agents.capability_boundary import mibao_reachable_tool_names
+
+    set_tool_scope(["order_query", "validate_input"])
+    before = get_tool_scope()
+    mibao_reachable_tool_names()
+    assert get_tool_scope() == before, "可达性探测泄漏了 tool_scope（执行域被改写）"
+    set_tool_scope(None)
