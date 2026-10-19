@@ -155,6 +155,17 @@ REMEDIES: tuple[Remedy, ...] = (
         remedy="请告诉我商品的名称或编号，我先查到确切单价再为您报价。",
         entry="tool:product_search",
     ),
+    # 营销海报（issue #7351）：文案是**商家提供的输入**，不是系统能补的东西
+    Remedy(
+        code="COPY_REQUIRED",
+        reason="海报还缺少商家提供的文案",
+        remedy="请先问一下商家：海报主标题想写什么、要突出哪几条卖点，拿到文案后再生成。",
+    ),
+    Remedy(
+        code="COPY_INVALID",
+        reason="商家提供的文案超出了海报版面",
+        remedy="请让商家把主标题或卖点精简一下，再重新生成海报。",
+    ),
     Remedy(
         code="order_confirmation_mismatch",
         reason="确认卡上的内容和实际订单对不上",

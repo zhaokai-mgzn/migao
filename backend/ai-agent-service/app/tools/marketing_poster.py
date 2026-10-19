@@ -124,7 +124,10 @@ class MarketingPosterTool(BaseTool):
             if not response.get("success"):
                 error_code = (response.get("error") or {}).get("code", "")
                 error_msg = (response.get("error") or {}).get("message", "查询失败")
-                if error_code == "NOT_FOUND" or "不存在" in error_msg:
+                # 结构化判定（只认 error.code）—— 不对中文文案做子串匹配
+                # （判据 = tests/unit_ci_workflows/test_tool_input_contract_guards.py 的
+                #  「中文措辞当判据」基线，只许缩短）。
+                if error_code == "NOT_FOUND":
                     return admin_api_failure(
                         response,
                         error="商品不存在",
