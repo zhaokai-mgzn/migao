@@ -502,7 +502,7 @@ export default function OrdersPage() {
     <div className="p-6 space-y-4">
       {/* 标题 */}
       <PageHeader
-        title="订单列表"
+        title="销售订单"
         actions={
           canWrite && (
             <button

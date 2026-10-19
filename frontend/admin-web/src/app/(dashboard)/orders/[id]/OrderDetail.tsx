@@ -365,7 +365,7 @@ export default function OrderDetailPage() {
     return (
       <div className="p-6 text-center py-12">
         <p className="text-neutral-500 mb-4">订单不存在或已被删除</p>
-        <Button onClick={() => router.push('/orders')}>返回订单列表</Button>
+        <Button onClick={() => router.push('/orders')}>返回销售订单</Button>
       </div>
     )
   }
@@ -383,7 +383,7 @@ export default function OrderDetailPage() {
         <span>交易管理</span>
         <ChevronRight className="w-3.5 h-3.5" />
         <button onClick={() => router.push('/orders')} className="hover:text-primary-600 transition-colors">
-          订单列表
+          销售订单
         </button>
         <ChevronRight className="w-3.5 h-3.5" />
         <span className="text-neutral-900">订单详情</span>

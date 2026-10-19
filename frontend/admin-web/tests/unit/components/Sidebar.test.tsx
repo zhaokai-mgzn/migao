@@ -74,7 +74,7 @@ const GROUPS: { key: string; name: string; items: [string, string][] }[] = [
       ['customers', '客户列表'],
     ],
   },
-  { key: 'trade-center', name: '交易管理', items: [['orders', '订单列表'], ['finance', '财务对账']] },
+  { key: 'trade-center', name: '交易管理', items: [['orders', '销售订单'], ['finance', '财务对账']] },
   {
     key: 'production-center',
     name: '生产管理',
@@ -332,7 +332,7 @@ describe('Sidebar', () => {
     expect(linkFor('商品管理')).toHaveAttribute('href', '/products')
     // #6580：第二个一级项「企业基础设置」→ /settings（「加工项管理」「工艺配置」已不是菜单项）
     expect(linkFor('企业基础设置')).toHaveAttribute('href', '/settings')
-    expect(linkFor('订单列表')).toHaveAttribute('href', '/orders')
+    expect(linkFor('销售订单')).toHaveAttribute('href', '/orders')
     expect(linkFor('售后工单')).toHaveAttribute('href', '/after-sales')
     expect(linkFor('客户列表')).toHaveAttribute('href', '/customers')
     expect(linkFor('财务对账')).toHaveAttribute('href', '/finance')
@@ -447,13 +447,13 @@ describe('Sidebar', () => {
     expect(activeKeys()).toEqual([])
   })
 
-  it('/orders/new 时「订单列表」高亮（嵌套路由前缀匹配回归保护）', () => {
+  it('/orders/new 时「销售订单」高亮（嵌套路由前缀匹配回归保护）', () => {
     mockUsePathname.mockReturnValue('/orders/new')
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    // #5778：交易管理组现为「订单列表 + 财务对账」（售后工单已移入客户服务组）——
-    // 同组对照项随之换成「财务对账」，断言**强度一条没减**（仍是「前缀命中只高亮订单列表」）。
+    // #5778：交易管理组现为「销售订单 + 财务对账」（售后工单已移入客户服务组）——
+    // 同组对照项随之换成「财务对账」，断言**强度一条没减**（仍是「前缀命中只高亮销售订单」）。
     expandGroups('trade-center')
-    const ordersLink = linkFor('订单列表')
+    const ordersLink = linkFor('销售订单')
     const financeLink = linkFor('财务对账')
     expect(getActiveClass(ordersLink)).toContain('bg-primary-600')
     expect(getActiveClass(financeLink)).not.toContain('bg-primary-600')
@@ -684,13 +684,13 @@ describe('Sidebar', () => {
       expect(screen.getByText('商品管理')).toBeInTheDocument()
       expect(screen.getByText('交易管理')).toBeInTheDocument()
       expandGroups('trade-center')
-      expect(screen.getByText('订单列表')).toBeInTheDocument()
-      expect(screen.getByText('订单列表')).toBeInTheDocument()
+      expect(screen.getByText('销售订单')).toBeInTheDocument()
+      expect(screen.getByText('销售订单')).toBeInTheDocument()
       // 无权限的
       expect(screen.queryByText('商品分类管理')).not.toBeInTheDocument()
       expect(screen.queryByText('加工项管理')).not.toBeInTheDocument()
       expect(screen.queryByText('售后工单')).not.toBeInTheDocument()
-      // #5271: 客户列表/财务对账与订单列表**同组**（交易管理）⇒ 无码时只有它们从组内消失，组本身仍在
+      // #5271: 客户列表/财务对账与销售订单**同组**（交易管理）⇒ 无码时只有它们从组内消失，组本身仍在
       expect(screen.queryByText('客户列表')).not.toBeInTheDocument()
       expect(screen.queryByText('财务对账')).not.toBeInTheDocument()
       // 旧「客户管理」组已不存在（#5271 并入交易管理）
@@ -715,8 +715,8 @@ describe('Sidebar', () => {
       // 可见项**精确**清单（渲染顺序）：
       // 🔴 本用例的可见项里**没有** `org-center`（员工管理要 employee:list）⇒ 一级项挂到**可见分组末尾**
       // （回落方向 = 「挂到末尾」，**不是**跳到最前）
-      // 经营看板 → 订单列表 → **库存明细**（2026-10-06：紧随入库单）→ **发货单**
-      // （#5939：与订单列表同码 order:list）→ 省料看板 → 商品管理（一级项）→ 通知中心
+      // 经营看板 → 销售订单 → **库存明细**（2026-10-06：紧随入库单）→ **发货单**
+      // （#5939：与销售订单同码 order:list）→ 省料看板 → 商品管理（一级项）→ 通知中心
       expect(menuKeys()).toEqual(
         ['dashboard', 'orders', 'stock-ledger', 'shipments', 'production-saving-board', 'products',
           'notifications'])
@@ -802,7 +802,7 @@ describe('Sidebar', () => {
       // #5778：售后工单已随「服务客户」动线移入**客户服务**组（原交易管理组）
       expandGroups('customer-service')
       expect(screen.getByText('售后工单')).toBeInTheDocument()
-      expect(screen.queryByText('订单列表')).not.toBeInTheDocument()
+      expect(screen.queryByText('销售订单')).not.toBeInTheDocument()
       expect(menuKeys()).toEqual(['after-sales', 'notifications'])   // #5699 P4：经营看板要 dashboard:view
       unmount()
 
@@ -845,7 +845,7 @@ describe('Sidebar', () => {
       // 交易管理 group should show (has order:list)
       expect(screen.getByText('交易管理')).toBeInTheDocument()
       expandGroups('trade-center')
-      expect(screen.getByText('订单列表')).toBeInTheDocument()
+      expect(screen.getByText('销售订单')).toBeInTheDocument()
       // 但售后工单不应该出现
       expect(screen.queryByText('售后工单')).not.toBeInTheDocument()
       // 商品与加工项 group should be completely hidden（无 product:list / processing:manage）
@@ -968,8 +968,8 @@ describe('Sidebar', () => {
       expect(within(pinnedSec).getByText('常用')).toBeInTheDocument()
       expect(screen.getByTestId('sidebar-pinned-count').textContent).toBe('1/6')
       // 钉住的项在「常用」区里可点，且 href 正确
-      expect(within(pinnedSec).getByText('订单列表')).toBeInTheDocument()
-      expect(within(pinnedSec).getByText('订单列表').closest('a')).toHaveAttribute('href', '/orders')
+      expect(within(pinnedSec).getByText('销售订单')).toBeInTheDocument()
+      expect(within(pinnedSec).getByText('销售订单').closest('a')).toHaveAttribute('href', '/orders')
       // 渲染序（#5877 / #7087）：**常用**区在最顶部 → **最前席位**「经营看板」→ 各分组 → 尾席位 → 尾部独立项
       const allKeys = menuKeys()
       expect(allKeys[0]).toBe('orders')
@@ -1030,7 +1030,7 @@ describe('Sidebar', () => {
       const pinnedSec = document.querySelector('[data-group-key="pinned"]') as HTMLElement
       expect(within(pinnedSec).queryByText('商品管理')).toBeNull()
       expect(within(pinnedSec).queryByText('经营看板')).toBeNull()
-      expect(within(pinnedSec).getByText('订单列表')).toBeInTheDocument()
+      expect(within(pinnedSec).getByText('销售订单')).toBeInTheDocument()
       expect(screen.getByTestId('sidebar-pinned-count').textContent).toBe('1/6')
       // 两个一级项本身**照旧各渲染一次**（不进「常用」≠ 从侧边栏消失）
       expect(screen.getAllByText('商品管理')).toHaveLength(1)

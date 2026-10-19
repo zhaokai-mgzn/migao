@@ -37,7 +37,7 @@ const PATH = '/stock-ledger'
 const NAME = '库存明细'
 /**
  * ⚠️ 初版用的是 `ClipboardList` —— `menu-icons.test.ts` 的判据④（issue #5582「图标两两不同」）
- * **当场判红**：`ClipboardList` 已被「订单列表」占用（`ClipboardList → 订单列表、库存明细`）。
+ * **当场判红**：`ClipboardList` 已被「销售订单」占用（`ClipboardList → 销售订单、库存明细`）。
  * 该判据要求同屏相邻节点图标不得重复 ⇒ 换成 `ScrollText`（台账/卷册语义），
  * 并按它的出口「**三处同批**」登记：`config/menu.ts` 的 icon 名 + `config/menu-icons.ts` 注册
  * + `tests/setup.ts` 的 lucide 白名单（漏白名单会让任何渲染 Sidebar 的用例当场抛错）。

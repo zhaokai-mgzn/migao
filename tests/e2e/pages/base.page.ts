@@ -55,7 +55,7 @@ const SIDEBAR_MENU: Record<string, string> = {
   // issue #4542：菜单名 =「加工项管理」（与服务端同名，页面仍是两个 tab）
   '/production/processing': '加工项管理',
   // 交易管理（issue #5271：原「订单管理」+「客户列表/财务对账」并为一行）
-  '/orders': '订单列表',
+  '/orders': '销售订单',
   '/after-sales': '售后工单',
   '/customers': '客户列表',
   '/finance': '财务对账',

@@ -105,7 +105,7 @@ export const capabilityDomains: CapabilityDomain[] = [
     summary: '订单与账目从下单记录到对账。',
     items: [
       {
-        name: '订单列表',
+        name: '销售订单',
         detail: '按订单号 / 收货人 / 下单时间 / 商品编码 / 是否含加工多维检索，支持备注、关闭与发货。',
         icon: ClipboardList,
       },

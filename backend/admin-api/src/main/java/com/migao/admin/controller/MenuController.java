@@ -129,7 +129,9 @@ public class MenuController {
         // = 删的是**权限树上的两个勾选项**，**不是权限码**：`product:create` / `product:category`
         // 仍在权限目录里、仍可被角色授予（判据：`test_rbac_derived_pages.py` 的 `ACTION_NODE_CODES`
         // 台账同批删除这两条，见该文件的「只许缩短」口径）。
-        MenuNode o1 = new MenuNode("order:list", "订单列表");
+        // 2026-10-20（issue #7354，用户逐字「把菜单订单列表改成销售订单」）：菜单正名「销售订单」——
+        // 前端 `menu.ts` / `AuthService` 三源同批改名；权限码 `order:list` 与路径 `/orders` 一字不动。
+        MenuNode o1 = new MenuNode("order:list", "销售订单");
         // 旧 label「退换货」→「售后工单」（#5271 改名消除与菜单名的漂移）；
         // code 由 issue #5246 改为**读**码 `after_sales:view`（原写码 `order:refund`）。
         // 本轮（2026-09-29 用户裁定）：随「服务客户」动线移入**客户服务组**（原交易管理组）。
@@ -160,10 +162,10 @@ public class MenuController {
         // 余料台账（issue #5191）/ 省料看板（issue #5159）沿用 processing:manage ——
         // 与 RemnantController 的类级 @RequirePermission 同码（门禁不放宽也不收紧）。
         MenuNode i1 = new MenuNode("inbound:view", "入库单");
-        // 发货单（issue #5939）：**取既有码 order:list**（与「订单列表」节点、以及该页第一屏读端点
+        // 发货单（issue #5939）：**取既有码 order:list**（与「销售订单」节点、以及该页第一屏读端点
         // GET /api/admin/shipments 的 @RequirePermission 逐字同码）—— 不新造 `shipment:view`：
         // 新码今天没有任何岗位持有 ⇒ 节点对所有人不可见（#4203 同族坑）。
-        // ⚠️ 与「订单列表」节点**同码不同项**是**有意**的（同族先例：`product:list` 同时挂
+        // ⚠️ 与「销售订单」节点**同码不同项**是**有意**的（同族先例：`product:list` 同时挂
         // 「商品管理」与「省料看板」/「库存明细」—— 码 = 「谁看得见」，几页本来就是同一批人在用）。
         // （2026-10-17 issue #7087 前这里举的先例是「经营看板 + 每日简报」；后者菜单项已撤，换例。）
         MenuNode i2 = new MenuNode("order:list", "发货单");

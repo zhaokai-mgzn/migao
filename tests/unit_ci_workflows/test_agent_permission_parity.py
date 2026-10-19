@@ -765,10 +765,10 @@ def parse_agent_skills(sources: dict[str, str], agent: str) -> tuple[frozenset[s
 #: 取值口径（issue #5246 的裁定）：**节点的码就是该工具应当持有的码**；
 #: 节点无码（全员可见）⇒ 该工具只受端点层约束。
 TOOL_MENU_NODE: dict[str, str] = {
-    "order_query": "订单列表",
-    "order_manage": "订单列表",
-    "logistics_track": "订单列表",
-    "order_create": "订单列表",
+    "order_query": "销售订单",
+    "order_manage": "销售订单",
+    "logistics_track": "销售订单",
+    "order_create": "销售订单",
     "after_sales_manage": "售后工单",
     "customer_manage": "客户列表",
     "dashboard_stats": "经营看板",
@@ -2046,7 +2046,7 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     # ⇒ 销账后回到「有节点锚」这一侧。
     "/dashboard": "经营看板",
     "/after-sales": "售后工单",
-    "/orders": "订单列表",
+    "/orders": "销售订单",
     "/products": "商品管理",
     # 🔴 2026-10-09（issue #6580）：「加工项管理」节点已移除 ⇒ 本前缀改钉**合并后的入口节点**
     # 「企业基础设置」（旧路径 `/production/processing` 现为重定向到该页的兼容前缀）。
@@ -2231,7 +2231,7 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
         ("agentSessionApi.getSessions", "agentSessionApi.getSession")),
     "/knowledge": MenuReadAnchor("知识库", "knowledge/page.tsx", ("knowledgeApi.getCards",)),
     "/products": MenuReadAnchor("商品管理", "products/page.tsx", ("productApi.getProducts",)),
-    "/orders": MenuReadAnchor("订单列表", "orders/page.tsx", ("orderApi.getOrders",)),
+    "/orders": MenuReadAnchor("销售订单", "orders/page.tsx", ("orderApi.getOrders",)),
     "/after-sales": MenuReadAnchor("售后工单", "after-sales/page.tsx", ("afterSalesApi.getTickets",)),
     "/customers": MenuReadAnchor("客户列表", "customers/page.tsx", (
         "customerApi.getCustomers", "customerApi.getCustomerTags")),
@@ -3060,9 +3060,9 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
         # 🔴 issue #7276：详情读面 `GET /api/admin/orders/{}` 与同页发货读面 `.../shipments`
         # **移出**本码（改挂 `order:detail`）—— 本码从此只管「列表 + 统计 + 改单/建单的试算族」。
         endpoints=('GET /api/admin/agent/orders/mine', 'GET /api/admin/agent/orders/resolve', 'GET /api/admin/agent/payment-qrcodes', 'GET /api/admin/orders', 'GET /api/admin/orders/follow-status/stats', 'GET /api/admin/orders/statistics', 'GET /api/admin/orders/{}/follow-status', 'GET /api/admin/production/orders/{}/operations', 'GET /api/admin/production/orders/{}/piecework', 'GET /api/admin/production/route-signals', 'GET /api/admin/production/routing-gaps', 'GET /api/admin/production/scan', 'GET /api/admin/production/stuck-points', 'POST /api/admin/orders/auto-features', 'POST /api/admin/orders/craft-calc', 'POST /api/admin/orders/door-width-plan', 'POST /api/admin/orders/fee-preview'),
-        menu_nodes=('auth:订单列表', 'controller:订单列表', 'frontend:订单列表'),
+        menu_nodes=('auth:销售订单', 'controller:销售订单', 'frontend:销售订单'),
         tools=('logistics_track', 'order_query'),
-        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「订单列表」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；17 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/agent/orders/mine；GET /api/admin/agent/orders/resolve；GET /api/admin/agent/payment-qrcodes 等）；Agent 侧 2 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（logistics_track / order_query）。'),
+        reachable=('补码前这三岗在回退路径上**零权限**（连「经营看板」都看不见）⇒ 补码后：「销售订单」菜单节点（三处菜单源一致）对这些岗位**由不可见变可见**；17 个端点的生效码就是本码 ⇒ 由 403 变可读/可写（GET /api/admin/agent/orders/mine；GET /api/admin/agent/orders/resolve；GET /api/admin/agent/payment-qrcodes 等）；Agent 侧 2 个工具声明本码 ⇒ 黄金策对这批账号由「权限不足」变为可达（logistics_track / order_query）。'),
     ),
     "order:create": AuthorizationCensusEntry(
         # issue #5988（2026-10-02 人类裁定「应允许」）：销售**下单**是本职。
@@ -3072,7 +3072,7 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
         tools=('order_create',),
         reachable=('issue #5988（人类 2026-10-02 裁定「应允许」）：销售此前持 `order:list`/`order:detail`'
                    '（看得见订单）却没有 `order:create` ⇒ 建单 403（#5246 有意把写码只给运营）。'
-                   '本码不挂菜单节点（订单列表的节点码是 `order:list`）⇒ 补它**不改变任何菜单可见性**，'
+                   '本码不挂菜单节点（销售订单的节点码是 `order:list`）⇒ 补它**不改变任何菜单可见性**，'
                    '只把「下单」这个动作打通：2 个端点的生效码就是本码 ⇒ 由 403 变为可写'
                    '（POST /api/admin/agent/orders；POST /api/admin/orders）；'
                    'Agent 侧 1 个工具声明本码 ⇒ 黄金策的建单工具对销售由「权限不足」变为可达（order_create）。'),

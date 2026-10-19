@@ -836,7 +836,7 @@
     "data ← response.get('data', {})",
     "data=response.get('data', {})"
    ],
-   "source_sha256": "93a2af646ba0ec01d83d6173e0f381eef34ab6704048a82ce9988394eb2b1e83"
+   "source_sha256": "a1f0a5d9dd210916e43f92542ca6b2778357dd28b18994bc4c0e5a05e6d68261"
   },
   "payment_qrcode_query": {
    "actions": null,

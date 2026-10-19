@@ -159,7 +159,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     mockPathname = '/orders'
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
     await waitFor(() =>
-      // #5778：交易管理组只剩「订单列表 + 财务对账」；2026-10-06：尾席位「商品管理」恒渲染，
+      // #5778：交易管理组只剩「销售订单 + 财务对账」；2026-10-06：尾席位「商品管理」恒渲染，
       // 且因它排在**所有分组之后** ⇒ 落在「交易管理」两项之后、「通知中心」之前；
       // 🔴 #7087：最前席位「经营看板」恒渲染（在**所有分组之前**）—— 旧形态下它此时**不渲染**
       //（属「工作台」组且该组收起）。
@@ -298,14 +298,14 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     for (const name of Object.values(GROUP_NAMES)) {
       expect(screen.queryByText(name)).toBeNull()
     }
-    for (const name of ['经营看板', '通知中心', '订单列表', '余料台账', '岗位权限']) {
+    for (const name of ['经营看板', '通知中心', '销售订单', '余料台账', '岗位权限']) {
       expect(screen.queryByText(name)).toBeNull()
     }
     // 但链接元素**在**（图标栏），且文本被剥掉（只剩图标）
     expect(document.querySelector('[data-menu-key="orders"]')!.textContent).toBe('')
     // 🔴 #7087：最前席位同样按「图标栏」处理（图标在、文本剥掉）
     expect(document.querySelector('[data-menu-key="dashboard"]')!.textContent).toBe('')
-    // #5778：交易管理组只剩 2 项（订单列表 / 财务对账），客户侧已移入「客户服务」组
+    // #5778：交易管理组只剩 2 项（销售订单 / 财务对账），客户侧已移入「客户服务」组
     expect(within(groupEl('trade-center')).getAllByRole('link')).toHaveLength(2)
   })
 

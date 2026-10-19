@@ -16,7 +16,7 @@ export { default as NumberInput } from './NumberInput'
 export { default as PageHeader } from './PageHeader'
 export { default as PageCard } from './PageCard'
 export { default as SearchPanel } from './SearchPanel'
-// 2026-10-17：单据列表**行内动作**的唯一形态（订单列表 / 作业看板共用一份定义）
+// 2026-10-17：单据列表**行内动作**的唯一形态（销售订单 / 作业看板共用一份定义）
 export { default as RowActionLink } from './RowActionLink'
 
 export type { TableColumn } from './Table'

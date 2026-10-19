@@ -111,7 +111,7 @@ const ROUTE_BREADCRUMB_MAP: Array<{
 
   // 交易管理组（本轮 2026-09-29 收窄为**「下单 → 收款」两项**：客户列表 / 售后工单已移入
   // 「客户服务」组 —— 用户原话「客户管理也不属于交易管理」「（售后）和客户管理……都属于服务客户的功能」）
-  { match: (p) => p.startsWith('/orders'), crumbs: [{ label: '交易管理' }, { label: '订单列表' }] },
+  { match: (p) => p.startsWith('/orders'), crumbs: [{ label: '交易管理' }, { label: '销售订单' }] },
   { match: (p) => p.startsWith('/finance'), crumbs: [{ label: '交易管理' }, { label: '财务对账' }] },
 
   // 客户服务组的两项业务页（与上面的 /agent-workspace、/knowledge 同组）

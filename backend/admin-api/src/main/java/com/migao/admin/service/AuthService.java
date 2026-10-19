@@ -1371,10 +1371,10 @@ public class AuthService {
 
         // 交易管理分组（本轮 2026-09-29 收窄为**「下单 → 收款」两项**：客户列表 / 售后工单
         // 已移入「客户服务」组 —— 用户原话「客户管理也不属于交易管理」）。
-        // 顺序 = 订单列表 → 财务对账（与 `menu.ts` 的 `trade-center` 组逐值一致）。
+        // 顺序 = 销售订单 → 财务对账（与 `menu.ts` 的 `trade-center` 组逐值一致）。
         List<UserInfoResponse.MenuItem> tradeChildren = new java.util.ArrayList<>();
         if (isAll || permissions.contains("order:list")) {
-            tradeChildren.add(menuItem("orders", "订单列表", "/orders"));
+            tradeChildren.add(menuItem("orders", "销售订单", "/orders"));
         }
         if (isAll || permissions.contains("finance:view")) {
             tradeChildren.add(menuItem("finance", "财务对账", "/finance"));

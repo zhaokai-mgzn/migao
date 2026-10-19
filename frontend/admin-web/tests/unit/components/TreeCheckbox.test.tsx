@@ -10,7 +10,7 @@ import * as TreeCheckboxModule from '../../../src/components/ui/TreeCheckbox'
 const MOCK_MENUS: TreeNode[] = [
   { code: 'dashboard', label: '工作台', children: [{ code: 'dashboard.view', label: '数据看板' }] },
   { code: 'orders', label: '订单管理', children: [
-    { code: 'orders.list', label: '订单列表' }, { code: 'orders.detail', label: '订单详情' }, { code: 'orders.refund', label: '退换货' },
+    { code: 'orders.list', label: '销售订单' }, { code: 'orders.detail', label: '订单详情' }, { code: 'orders.refund', label: '退换货' },
   ]},
   { code: 'products', label: '商品管理', children: [
     { code: 'products.list', label: '商品列表' }, { code: 'products.create', label: '新增商品' },
