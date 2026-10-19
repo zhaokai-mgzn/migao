@@ -208,6 +208,39 @@ def _load() -> tuple[str, str, dict, str]:
 
 # ────────────────────────────────────── 判据 1~3（真语料）
 
+EVAL_SEED = REPO / "tests" / "agent_eval" / "fixtures" / "mibao_eval_seed.sql"
+#: eval seed 自检里的目录项阈值形态：`... OR v_pi < N THEN`
+_SEED_PI_RE = re.compile(r"v_pi\s*<\s*(\d+)")
+
+
+def eval_seed_catalog_threshold(sql: str) -> int:
+    """eval seed 自检声明的「目录项数」下限（读不出 ⇒ fail-closed）。"""
+    m = _SEED_PI_RE.search(sql)
+    assert m, "读不出 eval seed 的 v_pi 阈值 —— 形态变了，本判据 fail-closed"
+    return int(m.group(1))
+
+
+def test_eval_seed_catalog_threshold_converges_with_live_migrations():
+    """**类级守卫**：eval seed 的目录项阈值必须等于今天存活的目录项数（建库脚本 − 撤出项）。
+
+    为什么值得守（issue #7027 实证）：V123（#5230）撤出「接高」后阈值仍写 16 ⇒
+    B 端评测腿在 **seed 阶段**就 `RAISE EXCEPTION`（rc=3），一行 LLM 都没跑到，
+    而日志只显示「fixture 注入失败」—— 极易被读成环境抖动。新撤一项而漏改这里 ⇒ 本判据当场红。
+    """
+    expected = expected_catalog(bootstrap_catalog(), processing_item_renames(), all_retired_names())
+    actual = eval_seed_catalog_threshold(EVAL_SEED.read_text(encoding="utf-8"))
+    assert actual == len(expected), (
+        f"eval seed 的目录阈值 {actual} ≠ 今天存活目录 {len(expected)} 项"
+        f"（建库脚本 {len(bootstrap_catalog())} 项 − 撤出 {sorted(all_retired_names())}）—— "
+        "撤项迁移落地后必须同步 mibao_eval_seed.sql，否则评测腿在 seed 阶段 rc=3"
+    )
+
+
+def test_red_proof_seed_threshold_drift_is_detectable():
+    """判别力自证：阈值写回 16（漂移形态）⇒ 解析出 16 ≠ 今天存活目录 ⇒ 上面的断言必红。"""
+    assert eval_seed_catalog_threshold("IF v_prod < 1 OR v_colors < 1 OR v_pi < 16 THEN") == 16
+
+
 def test_java_catalog_converges_with_the_live_database_catalog():
     """判据 1：Java 种子目录 == （基线目录 − 撤出项 + 改名映射）逐条同值。"""
     service_text, _checklist, expected, _sql = _load()

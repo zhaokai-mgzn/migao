@@ -113,6 +113,12 @@ services:
       # `X-Debug-Role: customer` 请求被 401 AUTH_REQUIRED 拒绝 → C 端评测 100% 失败。
       # 本地栈评测必需；生产 compose 不设该变量（保持 fail-closed）。
       DEBUG: ${DEBUG:-false}
+      # ⚠️ 评测目标租户必须透传（issue #7027 实证）：`app/config.py` 的 `EVAL_TENANT_ID`
+      # 默认值已按 #6288 改为**云测试租户 25**（2026-10-04 环境重建），而本地/CI 标准考场的
+      # 租户 1 由栈内种子 `fixtures/*_eval_seed.sql` 创建 ⇒ 不传本变量时容器回落到 25，
+      # 建会话直接 `sessions_tenant_id_fkey` 违例、整条腿在「Run … normal」就红。
+      # 默认 1 = 栈内种子租户；打已部署云环境的入口是 agent-eval.yml（那边显式钉 25）。
+      EVAL_TENANT_ID: ${EVAL_TENANT_ID:-1}
       PRIMARY_API_KEY: ${PRIMARY_API_KEY:-}
       PRIMARY_MODEL: ${PRIMARY_MODEL:-deepseek-flash}
       DASHVECTOR_API_KEY: ${DASHVECTOR_API_KEY:-}

@@ -45,6 +45,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 AUTH_PATH = REPO_ROOT / "backend/ai-agent-service/app/utils/auth.py"
 CONFIG_PATH = REPO_ROOT / "backend/ai-agent-service/app/config.py"
 RUNNER_PATH = REPO_ROOT / "tests/agent_eval/local_runner.py"
+COMPOSE_PATH = REPO_ROOT / "deploy" / "docker-compose.yml"
 WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 
 # 云测试租户的真值（2026-10-04 云测试环境重建；依据见 PR body）
@@ -324,6 +325,40 @@ def test_workflow_pins_configured_tenant_on_deployed_entry():
         f"agent-eval.yml 评测步骤的 EVAL_TENANT_ID={env.get('EVAL_TENANT_ID')!r} ≠ "
         f"{CLOUD_TEST_TENANT_ID}（云测试租户）—— 该入口打的是已部署环境，"
         "必须显式钉住目标租户"
+    )
+
+
+def ai_agent_tenant_env(compose: dict) -> str:
+    """栈内 ai-agent 容器的 `EVAL_TENANT_ID` 原始值（形态变化 ⇒ fail-closed）。"""
+    svc = (compose.get("services") or {}).get("ai-agent-service") or {}
+    env = svc.get("environment") or {}
+    assert isinstance(env, dict), f"ai-agent-service.environment 形态变了：{type(env)}"
+    return str(env.get("EVAL_TENANT_ID", ""))
+
+
+def test_red_proof_missing_container_tenant_env_is_detectable():
+    """判别力自证：容器 env 缺 `EVAL_TENANT_ID` ⇒ 取值为空串（上面的断言必红）。"""
+    assert ai_agent_tenant_env(
+        {"services": {"ai-agent-service": {"environment": {"DEBUG": "false"}}}}) == ""
+    assert str(LOCAL_STACK_TENANT_ID) in ai_agent_tenant_env(
+        {"services": {"ai-agent-service": {"environment": {"EVAL_TENANT_ID": "${EVAL_TENANT_ID:-1}"}}}})
+
+
+def test_eval_stack_container_pins_tenant():
+    """④ **容器侧**也要显式钉住目标租户（issue #7027 实证）。
+
+    只钉 runner 步骤的 env 不够：建会话的是 **ai-agent 容器**，它读 `app/config.py` 的
+    `EVAL_TENANT_ID`。该默认值按 #6288 改成云测试租户 25 之后，本地栈（种子里只有租户 1）
+    会在建会话时 `sessions_tenant_id_fkey` 违例 —— 2026-10-19 的 post-deploy-eval run
+    39183565645 两条腿都死在这里（评测一行没跑）。
+    """
+    import yaml
+    compose = yaml.safe_load(COMPOSE_PATH.read_text(encoding="utf-8")) or {}
+    raw = ai_agent_tenant_env(compose)
+    assert str(LOCAL_STACK_TENANT_ID) in raw, (
+        f"deploy/docker-compose.yml 的 ai-agent-service 没把评测租户钉到本地栈租户 "
+        f"{LOCAL_STACK_TENANT_ID}（实测 EVAL_TENANT_ID={raw!r}）—— 容器会回落到云测试租户 "
+        f"{CLOUD_TEST_TENANT_ID}，本地栈建会话 FK 违例（#7027）"
     )
 
 
