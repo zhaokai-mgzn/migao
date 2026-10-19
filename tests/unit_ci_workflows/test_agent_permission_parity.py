@@ -812,6 +812,9 @@ TOOL_MENU_NODE: dict[str, str] = {
     # （与「企业基础设置」节点同码）。⚠️ 端点侧生效码仍分三档（order:list / processing:manage /
     # production:view）⇒ 判据 2 的「工具码 ≡ 端点码」现为**具名缺口**，见 `CODE_DIVERGENCE_EXCEPTIONS`。
     "craft_config_query": "企业基础设置",
+    # 营销海报（issue #7351）：只读，码 `product:list` 与「商品管理」节点逐字同码
+    # （它读的就是商品档案；海报是商品素材的衍生，不新增页面/权限面）。
+    "marketing_poster": "商品管理",
 }
 
 #: 该菜单**页**允许的写码（判据 3 的「写工具可持页内写码」口径）：

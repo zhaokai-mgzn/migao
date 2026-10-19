@@ -3,7 +3,7 @@
  *
  * 覆盖: 会话管理(创建/加载/删除/选择)、消息管理、流式状态
  */
-// case_ids: UI-013, CH-030, CH-031, UI-079
+// case_ids: UI-013, CH-030, CH-031, UI-079, PR-053
 
 // Mock chatService
 jest.mock('../src/services/chatService', () => ({
@@ -254,11 +254,16 @@ describe('chatStore', () => {
       const actions = [
         { id: 'q1', name: '查订单', prompt: '查一下我的订单' },
       ]
-      mockQa.mockResolvedValueOnce(actions)
+      const tools = [
+        { id: 'marketing_poster', name: '营销海报', prompt: '我要给商品做一张营销海报' },
+      ]
+      // issue #7351：getQuickActions 返回 {actions, tools}（工具类入口与六格分开）
+      mockQa.mockResolvedValueOnce({ actions, tools })
 
       await store.getState().loadQuickActions()
 
       expect(store.getState().quickActions).toEqual(actions)
+      expect(store.getState().quickTools).toEqual(tools)
     })
   })
 

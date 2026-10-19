@@ -28,6 +28,7 @@ export default function ChatPage() {
     error,
     handedOff,
     quickActions,
+    quickTools,
     loadQuickActions,
     ensureLatestSession,
     createSession,
@@ -207,7 +208,9 @@ export default function ChatPage() {
               onInteract={handleSend}
               onScrollOffset={handleScrollOffset}
             />
-            {showQuickActions && <QuickActions actions={quickActions} onAction={handleQuickAction} />}
+            {showQuickActions && (
+              <QuickActions actions={quickActions} tools={quickTools} onAction={handleQuickAction} />
+            )}
           </>
         )}
       </View>

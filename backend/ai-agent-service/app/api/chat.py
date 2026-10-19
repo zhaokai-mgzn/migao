@@ -520,6 +520,10 @@ def _detect_card_type(tool_name: str, result: Dict[str, Any]) -> Optional[str]:
         return "product_list"
     elif tool_name == "product_detail":
         return "product_detail"
+    elif tool_name == "marketing_poster":
+        # 营销海报卡（issue #7351）：工具返回的 `data` 就是卡载荷
+        # （`{product: {...}, copy: {title, selling_points}}`），前端渲染成 750×1000 PNG。
+        return "marketing_poster"
     elif tool_name in ("logistics_track", "customer_logistics_track"):
         return "logistics"
     elif tool_name in ("order_query", "customer_order_query"):
@@ -563,6 +567,20 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
     if tool_name == "product_detail":
         data = result.get("data", {})
         return data.get("product") is not None
+
+    # 营销海报（issue #7351）：**文案缺一不发卡** —— 载荷必须同时有商品事实与商家确认的文案，
+    # 否则前端会渲染一张没有主标题的海报（「空头海报」= 误导）。
+    if tool_name == "marketing_poster":
+        data = result.get("data", {})
+        if not isinstance(data, dict):
+            return False
+        copy = data.get("copy")
+        return (
+            isinstance(data.get("product"), dict)
+            and isinstance(copy, dict)
+            and bool(str(copy.get("title") or "").strip())
+            and bool(copy.get("selling_points"))
+        )
     
     # 物流查询有结果时发送卡片
     # - B 端 logistics_track: 单笔物流（data.tracking_number）
@@ -2834,6 +2852,22 @@ QUICK_ACTIONS: tuple[dict, ...] = (
     },
 )
 
+#: 快捷入口里的**工具类**入口（issue #7351）：与上面的「问句型」六格分开下发 ——
+#: 「做海报」不是提问，而是一个需要引导补文案的动作。前端把 `tools` 渲染成独立的工具行，
+#: 六格 `actions` 的数量/形态**一字不动**（既有 #5747/#6468 的 2×3 契约不受影响）。
+#: 能力锚判据同 `TestQuickActions`：必须有真实注册、且黄金策已绑定的能力。
+TOOL_SHORTCUTS: tuple[dict, ...] = (
+    {
+        "id": "marketing_poster",
+        "name": "营销海报",
+        "icon": "image",
+        "emoji": "🖼️",
+        "prompt": "我要给商品做一张营销海报",
+        "skill": "product",
+        "tool": "marketing_poster",
+    },
+)
+
 #: 能力锚字段 —— **只用于服务端自证**（`tests/test_chat.py` 的机械投影判据），不进响应体
 _CAPABILITY_ANCHOR_KEYS = ("skill", "tool")
 
@@ -2854,9 +2888,15 @@ async def get_quick_actions(
         {k: v for k, v in action.items() if k not in _CAPABILITY_ANCHOR_KEYS}
         for action in QUICK_ACTIONS
     ]
-    
+    tools = [
+        {k: v for k, v in tool.items() if k not in _CAPABILITY_ANCHOR_KEYS}
+        for tool in TOOL_SHORTCUTS
+    ]
+
     return make_response(True, data={
         "actions": actions,
+        # 工具类快捷入口（issue #7351）：与六格 actions 分开 —— 六格「问句」契约不动。
+        "tools": tools,
     })
 
 

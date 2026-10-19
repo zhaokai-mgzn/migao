@@ -96,10 +96,9 @@ const FROZEN_PILLS: string[] = [
   'src/app/(corporate)/page.tsx::<div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-xs text-neutral-200 sm:text-sm">',
   'src/app/(corporate)/page.tsx::<span className="inline-flex items-center rounded-full border border-primary-200 bg-primary-50 px-3 py-1 align-middle text-sm font-bold text-primary-700">',
   'src/app/(dashboard)/after-sales/page.tsx::className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-100"',
-  'src/components/chat/QuickActions.tsx::className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-primary-50 border border-neutral-200 hover:border-primary-200 rounded-full text-xs text-neutral-600 hover:text-primary-600 transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"',
   'src/components/orders/EditOrderContentModal.tsx::\'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs cursor-pointer\',',
 ]
-const PILL_BASELINE = 5
+const PILL_BASELINE = 4
 
 const stripTags = (s: string): string =>
   s

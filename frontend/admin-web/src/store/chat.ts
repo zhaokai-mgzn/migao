@@ -59,6 +59,8 @@ interface ChatState {
   isLoadingMessages: boolean
   searchKeyword: string
   quickActions: QuickAction[]
+  /** 工具类快捷入口（issue #7351：营销海报等「动作」入口，与六格问句分开渲染） */
+  quickTools: QuickAction[]
   isLoadingQuickActions: boolean
   // choice 多选勾选（key = `${sessionId}:${tool}`，跨页保留）
   // 加工项选择场景：点击选项仅本地勾选累积，不触发 agent 回复，
@@ -171,6 +173,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
   isLoadingMessages: false,
   searchKeyword: '',
   quickActions: [],
+  quickTools: [],
   isLoadingQuickActions: false,
   choiceSelections: {},
 
@@ -218,7 +221,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
       if (!res.ok) throw new Error('获取快捷操作失败')
       const data = await res.json()
       const actions = data?.data?.actions || []
-      set({ quickActions: actions })
+      // 工具类快捷入口（issue #7351）：与六格问句分开下发/渲染，旧服务端没有该字段 ⇒ 空数组
+      const tools = data?.data?.tools || []
+      set({ quickActions: actions, quickTools: tools })
     } catch (e) {
       // ai-agent 未启动时静默失败，页面已有空状态提示
     } finally {

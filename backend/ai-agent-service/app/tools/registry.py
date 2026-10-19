@@ -651,6 +651,8 @@ def create_default_registry() -> ToolRegistry:
     """
     from app.tools.product_search import ProductSearchTool
     from app.tools.product_detail import ProductDetailTool
+    # 营销海报（issue #7351）：商品事实 + 操作员确认的文案 → 海报卡载荷（纯只读）
+    from app.tools.marketing_poster import MarketingPosterTool
     from app.tools.logistics_track import LogisticsTrackTool
     from app.tools.customer_logistics_track import CustomerLogisticsTrackTool
     from app.tools.knowledge_search import KnowledgeSearchTool
@@ -727,6 +729,9 @@ def create_default_registry() -> ToolRegistry:
     # 注册所有 Tool
     registry.register(ProductSearchTool())
     registry.register(ProductDetailTool())
+    # 营销海报（issue #7351）：只读、仅 B 端；可达性由 persona 的 skill 工具集决定
+    # （黄金策 product / general；C 端一律不绑）。
+    registry.register(MarketingPosterTool())
     registry.register(LogisticsTrackTool())
     registry.register(CustomerLogisticsTrackTool())
     registry.register(KnowledgeSearchTool())

@@ -727,6 +727,12 @@ class TestQuickActions:
         assert all(a["icon"] and a["name"] and a["prompt"].endswith("？") for a in actions)
         # 能力锚（skill / tool）只用于服务端自证，不进响应体
         assert all(set(a) == {"id", "name", "icon", "emoji", "prompt"} for a in actions)
+        # 工具类快捷入口（issue #7351）：与六格 actions **分开下发** —— 六格数量/形态一字不动。
+        tools = result["data"]["tools"]
+        assert [(t["id"], t["name"], t["prompt"]) for t in tools] == [
+            ("marketing_poster", "营销海报", "我要给商品做一张营销海报"),
+        ]
+        assert all(set(t) == {"id", "name", "icon", "emoji", "prompt"} for t in tools)
 
     def test_prompts_are_b_side_scenarios_not_c_side_copy(self):
         """负向：#6468 的形态是「B 端入口抄了 C 端的顾客问句」⇒ 这些串不得回填。"""
@@ -752,7 +758,8 @@ class TestQuickActions:
 
         registry = get_skill_registry()
         offenders: list[str] = []
-        for action in QUICK_ACTIONS:
+        from app.api.chat import TOOL_SHORTCUTS
+        for action in (*QUICK_ACTIONS, *TOOL_SHORTCUTS):
             skill_name, tool_name = action["skill"], action["tool"]
             if skill_name not in MIBAO_CONFIG.skill_names:
                 offenders.append(

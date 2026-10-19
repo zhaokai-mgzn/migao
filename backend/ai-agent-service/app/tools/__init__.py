@@ -34,6 +34,8 @@ from app.tools.registry import (
 # **不进**本清单；加工单三工具按 issue #4196 恢复注册 ⇒ 一并回到本清单。
 from app.tools.product_search import ProductSearchTool
 from app.tools.product_detail import ProductDetailTool
+# 营销海报（issue #7351）：只读工具；注册集双向核对 = tests/test_tools_registry.py
+from app.tools.marketing_poster import MarketingPosterTool
 from app.tools.logistics_track import LogisticsTrackTool
 from app.tools.customer_logistics_track import CustomerLogisticsTrackTool
 from app.tools.knowledge_search import KnowledgeSearchTool
@@ -95,7 +97,7 @@ __all__ = [
     "ToolRegistry", "get_tool_registry", "reset_tool_registry",
     "create_default_registry", "set_tool_context", "get_tool_context",
     # Tool 实现（= create_default_registry() 注册的全部类）
-    "ProductSearchTool", "ProductDetailTool", "LogisticsTrackTool",
+    "ProductSearchTool", "ProductDetailTool", "MarketingPosterTool", "LogisticsTrackTool",
     "CustomerLogisticsTrackTool", "KnowledgeSearchTool", "OrderQueryTool",
     "CustomerOrderQueryTool", "CustomerAddressQueryTool", "OrderManageTool",
     "OrderCreateTool", "ProductManageTool", "InventoryManageTool",

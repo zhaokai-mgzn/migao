@@ -5413,3 +5413,116 @@ cases:
       tests:
       ci:
       verifies: []
+
+  - id: PR-053
+    legacy_id: ""
+    title: "营销海报 - 商品事实 + 商家确认文案生成海报卡（缺文案 fail-closed；PC 下载 / 手机保存相册）"
+    domains:
+      - product
+    tier: normal
+    persona: ""
+    tags:
+      - product
+      - poster
+      - marketing
+      - tool
+      - backend_contract
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    must_fail:
+      - tool: marketing_poster
+    data_checks:
+      - "判据 0·**机器可判**：缺文案 / 越界时工具必须失败（`must_fail[marketing_poster]`；工具错误码为 `COPY_REQUIRED` / `COPY_INVALID`，属工具结果级、不是轮级 SSE 错误）；成功时 `success=true` 且 `data.product.name` 逐字等于 admin-api 返回的商品名。"
+      - "判据 1·🔴 **文案必须由操作员提供**（issue #7351；用户逐字「不要无脑的直接生成」）：`marketing_poster` 缺 `promo_title` / 缺 `selling_points` / 卖点 >3 条 ⇒ `success=False`（`COPY_REQUIRED` / `COPY_INVALID`），且**零 admin-api 调用**、`_should_send_card` 为 False（前端不会画「空头海报」）。注入红证：允许空标题发卡 ⇒ 变红。"
+      - "判据 2·**商品事实只来自 admin-api**：主图 / 名称 / 价格（缺 price 回退 basePrice）/ 单位 / 规格逐字段来自 `GET /api/admin/products/{id}`；商品描述里的营销词**不得**被搬进 `copy`。注入红证：把 description 拼进卖点 ⇒ 变红。"
+      - "判据 3·**租户隔离 + 权限码**：响应 tenantId ≠ 会话租户 ⇒ 按「商品不存在」拒绝；无 `product:list` 的 C 端上下文 ⇒ 权限拒绝（`c_end_reachable=False`）。注入红证：删掉 tenant 校验 ⇒ 变红。"
+      - "判据 4·**卡型跨端契约**：`_detect_card_type('marketing_poster')` → `marketing_poster`；该工具只绑黄金策 product/general ⇒ B 端桌面 `ToolResultCard` 与 B 端移动 `MessageBubble` 都必须有渲染分支（`test_card_type_cross_end_contract.py` 现算，缺一端即红）。"
+      - "判据 5·**PC 下载**：`MarketingPosterCard` 点「下载海报」触发带 `download=\"营销海报-<商品名>.png\"` 与 `data:image/png` href 的锚点；版面纯函数固定 750×1000、标题 ≤2 行、卖点 ≤3 行、缺价显示「价格面议」（不伪装 ¥0.00）。注入红证：把 download 改成新窗口打开 ⇒ 变红。"
+      - "判据 6·**手机保存到相册**：`PosterCard` 在微信内置浏览器弹「长按图片保存」提示（JS 无法直接写相册，不谎报已保存）；其它浏览器触发 `<a download>` + toast；商品图跨域失败 ⇒ 降级为无图海报并明说。注入红证：微信分支改成 toast「已保存」⇒ 变红。"
+      - "判据 7·**快捷入口**：`GET /api/chat/quick-actions` 的 `actions` 仍恰好 6 条（2×3 契约不变），新增 `tools` 字段含「营销海报」；两端按工具行独立渲染并发送服务端 prompt（前端不写死入口内容）。注入红证：把海报塞进 actions 变第 7 格 ⇒ 六格判据红。"
+    skip_reason: "[backend-contract] 工具 + 两端渲染契约（无 LLM 环节）：断言由 backend/ai-agent-service/tests/test_marketing_poster.py、test_chat.py::TestQuickActions、test_card_type_cross_end_contract.py 与两端前端单测执行"
+    merge_log: "2026-10-19 新增（issue #7351：黄金策营销海报工具 —— 对话工具 + 快捷入口；PC 下载 / 手机保存相册；文案必须由操作员提供）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_marketing_poster.py"
+        - "backend/ai-agent-service/tests/test_chat.py"
+        - "backend/ai-agent-service/tests/test_card_type_cross_end_contract.py"
+        - "frontend/admin-web/tests/unit/lib/marketing-poster-layout.test.ts"
+        - "frontend/admin-web/tests/unit/components/MarketingPosterCard.test.tsx"
+        - "frontend/admin-web/tests/unit/components/QuickActions.test.tsx"
+        - "frontend/bmini-app/tests/poster-layout.test.ts"
+        - "frontend/bmini-app/tests/poster-card.test.tsx"
+        - "frontend/bmini-app/tests/quick-actions.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  - id: PR-054
+    legacy_id: ""
+    title: "营销海报旅程 - 先问商家要文案，拿到「开门红 + 卖点」后才调海报工具（不得自行编文案）"
+    domains:
+      - product
+    tier: normal
+    persona: mibao
+    tags:
+      - product
+      - poster
+      - journey
+      - marketing
+    truths_ref: []
+    precondition:
+      - type: product_count_for_keyword
+        source: "2699"
+    user_inputs:
+      - "帮我给「2699系列雪尼尔窗帘面料」做一张营销海报"
+      - "主标题写「开门红」，卖点写「高遮光、免烫易打理」"
+    expectations:
+      - tool: product_search
+      - tool: marketing_poster
+        args:
+          promo_title: 开门红
+    data_checks:
+      - "第一轮：**不得直接生成海报**（商家还没给文案）—— 必须先问「主标题 + 2~3 条卖点」，不得用商品描述自动拼卖点、不得编造折扣/赠品/材质。"
+      - "第二轮：商家逐字给出「开门红」+「高遮光」「免烫易打理」后才调用 `marketing_poster`；工具入参 `promo_title` 必须逐字等于「开门红」（模型自己换词 = 红）。"
+      - "回复出现营销海报卡（商品主图 + 名称 + 价格 + 单位 + 文案），并提示商家可在 PC 下载 / 手机长按保存到相册。"
+    skip_reason: ""
+    merge_log: "2026-10-19 新增（issue #7351）：营销海报的**引导补文案**旅程。按用户裁定 #4262，本用例**不在合入时自动跑**，留给下一次手动集中评测。"
+    traces:
+      tests: []
+      ci: []
+      verifies: []
+
+  - id: PR-073
+    legacy_id: ""
+    title: "营销海报 - 商家让 AI 写文案：先按营销三板斧给 2~3 组候选，确认前不得调海报工具"
+    domains:
+      - product
+    tier: normal
+    persona: mibao
+    tags:
+      - product
+      - poster
+      - journey
+      - marketing
+      - fail_closed
+    truths_ref: []
+    precondition:
+      - type: product_count_for_keyword
+        source: "2699"
+    user_inputs:
+      - "我要给 2699 系列雪尼尔窗帘面料做张海报，文案你帮我写吧，随便写"
+    expectations: []
+    forbidden_tools:
+      - tool: marketing_poster
+    data_checks:
+      - "`marketing_poster` 在本轮**未被调用**（计分锚点；真实机器判据 = forbidden_tools，调用即违规）。"
+      - "必须给出 2~3 组**候选文案**（每组含主标题 + 2~3 条卖点），并明确请商家选一组或改写；候选必须基于商品事实（名称 / 规格 / 价格）。"
+      - "**不得**在商家确认前调用 `marketing_poster`（机器断言 = forbidden_tools，调用即违规）；不得把候选当最终结果直接发卡。"
+      - "候选不得编造折扣 / 赠品 / 材质 / 销量 / 「第一 / 最好 / 100%」等无依据表述；活动价、库存等不知道的事实先问商家。"
+    skip_reason: ""
+    merge_log: "2026-10-20 新增（issue #7351；用户 2026-10-20 裁定「B. A + AI 给候选文案，商家确认后采用」）：营销三板斧候选流程的机器判据 = 未确认前禁止调工具。按 #4262，本用例不在合入时自动跑，留给下一次手动集中评测。"
+    traces:
+      tests: []
+      ci: []
+      verifies: []

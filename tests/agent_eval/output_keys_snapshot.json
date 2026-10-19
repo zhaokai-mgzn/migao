@@ -675,6 +675,20 @@
    ],
    "source_sha256": "14951e249fbfd96d7d3ef1d5eef778b6c3dbfe533b672e19b31766cae4e2238b"
   },
+  "marketing_poster": {
+   "actions": null,
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/marketing_poster.py",
+   "keys": [
+    "copy",
+    "product"
+   ],
+   "literal_keys": [
+    "copy",
+    "product"
+   ],
+   "source_sha256": "eae98b44c101460a394ce3e2af3771103ffbd23c8c2e84150e62089d1aefbfa3"
+  },
   "nav_guide": {
    "actions": null,
    "dynamic": true,
