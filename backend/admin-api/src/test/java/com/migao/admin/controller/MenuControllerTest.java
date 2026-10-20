@@ -63,11 +63,11 @@ class MenuControllerTest {
      *  尾席位「商品管理」「企业基础设置」），它们**不是组**（见 `topLevelStandaloneItemMirrorsFrontend`）。 */
     private static final List<String> GROUP_KEYS = List.of(
             "customer-service", "trade-center",
-            "production-center", "inventory-center", "org-center");
+            "production-center", "supply-chain", "inventory-center", "org-center");
 
     /** 顶层组名（与 GROUP_KEYS 同序）。 */
     private static final List<String> GROUP_LABELS = List.of(
-            "客户服务", "交易管理", "生产管理", "仓储与物料", "组织管理");
+            "客户服务", "交易管理", "生产管理", "供应链", "仓储与物料", "组织管理");
 
     /** 菜单项名总表（一项不少不减；「通知中心」是一级独立项、不在本权限树内）。
      *  ⚠️ #6404：菜单项 21 → 22（+「库存明细」`/stock-ledger`）。
@@ -196,7 +196,7 @@ class MenuControllerTest {
                 // 🔴 2026-10-17（issue #7087）：**最前席位一级项「经营看板」+ 五大组 + 两个尾席位一级项
                 // 「商品管理」「企业基础设置」= 8 个顶层条目**（与「六大组 + 两个一级项」同数不同序：
                 //  「工作台」组撤销、经营看板由组内项升为最前席位一级项、「每日简报」项删除）。
-                .andExpect(jsonPath("$.data.length()").value(8));
+                .andExpect(jsonPath("$.data.length()").value(9));
     }
 
     @Test
@@ -342,7 +342,7 @@ class MenuControllerTest {
         // 🔴 2026-10-06（issue #6457，方案 A1）：单据（进 → 账 → 出）→ 台账 → 分析。
         // 🔴 2026-10-12（issue #6759）：**组尾**追加动作码节点「入库单操作」（`inbound:create`
         // = 手机端过账的写码）。
-        assertEquals(List.of("入库单", "供应商", "采购单", "库存明细", "发货单", "余料台账", "省料看板", "入库单操作"),
+        assertEquals(List.of("库存明细", "发货单", "余料台账", "省料看板", "入库单操作"),
                 labels(inventory.path("children")));
         // 入库单是**仓储**动作、权限码独立为 inbound:view —— 并进 processing:manage 会让
         // 「有 inbound:view、没有 processing:manage」的仓管看不到菜单（#4203 点名的同族坑）。
@@ -351,9 +351,9 @@ class MenuControllerTest {
         // 🔴 issue #6404：「库存明细」同样取**既有** product:list（与省料看板同码；
         // 码不唯一是有意的 —— 两个页面各自的读端点注解就是这个码）。
         // issue #7369：「供应商」与「入库单」同码（inbound:view）—— 档案面与单据面同群，零授权 delta。
-        // 🔴 issue #7369 段 4：「采购单」同样取 inbound:view（采购与收货同岗位）⇒ 组内第三个同码节点。
-        assertEquals(List.of("inbound:view", "inbound:view", "inbound:view", "product:list", "order:list",
-                        "processing:manage", "product:list", "inbound:create"),
+        // 用户 2026-10-20：单据类节点（入库单/供应商/采购单）已移到「供应链」组 ⇒ 本组只剩库存与出库。
+        assertEquals(List.of("product:list", "order:list", "processing:manage", "product:list",
+                        "inbound:create"),
                 codes(inventory.path("children")));
     }
 
@@ -484,7 +484,7 @@ class MenuControllerTest {
         // ③ 两个**导航项**仍是动作节点之前的连续前缀（动作节点只许在组尾）
         assertEquals(List.of("作业看板", "智能派单", "计件工资", "质检记录"),
                 labels(processed).subList(0, processed.size() - 1));
-        assertEquals(List.of("入库单", "供应商", "采购单", "库存明细", "发货单", "余料台账", "省料看板"),
+        assertEquals(List.of("库存明细", "发货单", "余料台账", "省料看板"),
                 labels(inventory).subList(0, inventory.size() - 1));
     }
 

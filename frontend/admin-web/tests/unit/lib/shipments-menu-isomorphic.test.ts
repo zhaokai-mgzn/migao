@@ -10,7 +10,7 @@
 // 本文件是**静态文本守卫**：不启动 Spring，因此不可能被「后端没跑起来」掩盖 ——
 // 而三处漂移正是那种「本地全绿、线上菜单少了」的形态。全树逐值比对另见
 // `tests/unit_ci_workflows/test_menu_three_sources_are_isomorphic.py`；本文件钉的是
-// **本节点自己的三件事**：组归属（仓储与物料，与「入库单」同组同序）、路径、权限码。
+// **本节点自己的三件事**：组归属（仓储与物料，与「入库单」镜像对称（不再同组））、路径、权限码。
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -44,7 +44,7 @@ function enclosingGroupKey(src: string, index: number): string | null {
 }
 
 describe('发货单菜单三处同构（UI-078 / issue #5939）', () => {
-  it('① 前端 config/menu.ts：路径 /shipments、权限码 order:list、图标 Truck，且落在「仓储与物料」组、紧跟「入库单」', () => {
+  it('① 前端 config/menu.ts：路径 /shipments、权限码 order:list、图标 Truck，且落在「仓储与物料」组、与「入库单」**镜像对称**（issue #7369 段 5 起两者已在不同大菜单：入库单在「供应链」，发货单在「仓储与物料」）', () => {
     const idx = MENU_TS.indexOf("path: '/shipments'")
     expect(idx, 'config/menu.ts 缺 /shipments 菜单项 —— 大菜单里就看不到发货单').toBeGreaterThan(-1)
     const line = MENU_TS.slice(MENU_TS.lastIndexOf('\n', idx) + 1, MENU_TS.indexOf('\n', idx))

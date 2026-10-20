@@ -326,6 +326,7 @@
       "智能派单": "processing:view",
       "计件工资": "production:view",
       "质检记录": "production:inspect",
+      "供应链": null,
       "仓储与物料": null,
       "入库单": "inbound:view",
       "库存明细": "product:list",
@@ -481,8 +482,8 @@
       "code": "production:inspect"
     },
     {
-      "key": "inventory-center",
-      "name": "仓储与物料",
+      "key": "supply-chain",
+      "name": "供应链",
       "path": null,
       "code": null
     },
@@ -503,6 +504,12 @@
       "name": "采购单",
       "path": "/purchase-orders",
       "code": "inbound:view"
+    },
+    {
+      "key": "inventory-center",
+      "name": "仓储与物料",
+      "path": null,
+      "code": null
     },
     {
       "key": "stock-ledger",

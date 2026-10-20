@@ -202,40 +202,46 @@ describe('生产管理菜单入口（侧边栏）', () => {
     // 企业基础设置页内，结构与图标断言在 processing-merged.test.tsx / production-routings.test.tsx）。
     expect(Array.from(links).map((a) => a.textContent).join('|')).not.toContain('加工项管理')
     expect(Array.from(links).map((a) => a.textContent).join('|')).not.toContain('工艺配置')
-    // issue #5271：面料三项也不在本组（移入「仓储与物料」组）
+    // issue #5271：面料三项也不在本组（移入「仓储与物料」组）；issue #7369：单据三项再拆去「供应链」
     const productionText = Array.from(links).map((a) => a.textContent).join('|')
     expect(productionText).not.toContain('入库单')
     expect(productionText).not.toContain('余料台账')
     expect(productionText).not.toContain('省料看板')
   })
 
-  it('面料三项落在「仓储与物料」组（issue #5271 新组），点得到且 href 正确', () => {
+  it('单据三项落在新组「供应链」、库存/余料/省料仍在「仓储与物料」（issue #5271 + #7369），点得到且 href 正确', () => {
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
+    // 当前路由是 /production ⇒ 两组都默认收起，先展开再断言（断言强度不变）
+    expect(screen.getByText('供应链')).toBeInTheDocument()
+    expandGroup('supply-chain')
+    const supplyGroup = screen.getByText('供应链').closest('[data-group-key]') as HTMLElement
+    const supplyLinks = supplyGroup.querySelectorAll('a')
+    // issue #7369（用户 2026-10-20 裁定「得加个新大菜单」）：新组 = 入库单 → 供应商 → 采购单
+    //（谁供货 → 买什么 → 到货登记；入库单排第一，手机端标注取树序首个承载节点，#6781）
+    expect(supplyLinks).toHaveLength(3)
+    expect(supplyLinks[0].textContent).toContain('入库单')
+    expect(supplyLinks[0]).toHaveAttribute('href', '/inbound-orders')
+    expect(supplyLinks[1].textContent).toContain('供应商')
+    expect(supplyLinks[1]).toHaveAttribute('href', '/suppliers')
+    expect(supplyLinks[2].textContent).toContain('采购单')
+    expect(supplyLinks[2]).toHaveAttribute('href', '/purchase-orders')
+
+    // 仓储与物料组：issue #7369 起只留 库存 → 出库 → 台账 → 分析（单据三项已整组搬出）
     expect(screen.getByText('仓储与物料')).toBeInTheDocument()
-    // 当前路由是 /production ⇒ 该组默认收起，先展开再断言（断言强度不变）
     expandGroup('inventory-center')
     const group = screen.getByText('仓储与物料').closest('[data-group-key]') as HTMLElement
     const links = group.querySelectorAll('a')
-    // #5939：本组 3 → 4 项（+「发货单」`/shipments`）
-    // #6404：本组 4 → 5 项（+「库存明细」`/stock-ledger`）
-    // 🔴 2026-10-06（issue #6457，方案 A1）：顺序改为「单据（进 → 账 → 出）→ 台账 → 分析」
-    //    ⇒ 库存明细**紧随入库单**、发货单退到其后。
-    // #7369：本组 5 → 6 项（+「供应商」`/suppliers`，紧随入库单 —— 档案面与单据面同群）
-    // #7369 段 4：本组 6 → 7 项（+「采购单」`/purchase-orders`，紧随供应商 —— 采购与收货同群）
-    expect(links[0].textContent).toContain('入库单')
-    expect(links[0]).toHaveAttribute('href', '/inbound-orders')
-    expect(links[1].textContent).toContain('供应商')
-    expect(links[1]).toHaveAttribute('href', '/suppliers')
-    expect(links[2].textContent).toContain('采购单')
-    expect(links[2]).toHaveAttribute('href', '/purchase-orders')
-    expect(links[3].textContent).toContain('库存明细')
-    expect(links[3]).toHaveAttribute('href', '/stock-ledger')
-    expect(links[4].textContent).toContain('发货单')
-    expect(links[4]).toHaveAttribute('href', '/shipments')
-    expect(links[5].textContent).toContain('余料台账')
-    expect(links[5]).toHaveAttribute('href', '/production/remnants')
-    expect(links[6].textContent).toContain('省料看板')
-    expect(links[6]).toHaveAttribute('href', '/production/saving-board')
+    expect(links).toHaveLength(4)
+    expect(links[0].textContent).toContain('库存明细')
+    expect(links[0]).toHaveAttribute('href', '/stock-ledger')
+    expect(links[1].textContent).toContain('发货单')
+    expect(links[1]).toHaveAttribute('href', '/shipments')
+    expect(links[2].textContent).toContain('余料台账')
+    expect(links[2]).toHaveAttribute('href', '/production/remnants')
+    expect(links[3].textContent).toContain('省料看板')
+    expect(links[3]).toHaveAttribute('href', '/production/saving-board')
+    // 反恒真：入库单**不再**出现在本组（搬组不得只搬半边）
+    expect(Array.from(links).map((a) => a.textContent).join('|')).not.toContain('入库单')
   })
 
   it('「加工单」不再是独立菜单项：交易管理组只余两个业务项（issue #4357；#5778 收窄）', () => {
@@ -262,6 +268,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
       'customer-service',
       'trade-center',
       'production-center',
+      'supply-chain',
       'inventory-center',
       'org-center',
     ]) {
@@ -270,8 +277,9 @@ describe('生产管理菜单入口（侧边栏）', () => {
     const hrefs = Array.from(document.querySelectorAll('a')).map((a) => a.getAttribute('href'))
     // 🔴 #6580：24 项 → 21 项（生产管理组 5 → 3；「参数总览」一级项随页合并撤销、
     // 一级项席位改「企业基础设置」）；🔴 #7087：「工作台」组撤销（经营看板 → 最前席位、
-    // 每日简报 → 删除）⇒ 20 项；🔴 #7140：生产管理组 +「质检记录」⇒ 21 项。
-    expect(hrefs).toHaveLength(23) // 22 项 = 最前席位 1 + 组内 18（#7369 +供应商）+ 尾席位 2 + 尾部独立项 1（见 menu-nav.test.ts）
+    // 每日简报 → 删除）⇒ 20 项；🔴 #7140：生产管理组 +「质检记录」⇒ 21 项；
+    // 🔴 2026-10-20（issue #7369）：新增「供应链」组（组内项总数不变 ⇒ 项数不变）。
+    expect(hrefs).toHaveLength(23) // 23 项 = 最前席位 1 + 组内 19（#7369：+供应商 / +采购单）+ 尾席位 2 + 尾部独立项 1（见 menu-nav.test.ts）
     expect(hrefs).not.toContain('/processing-orders')
   })
 
@@ -289,14 +297,19 @@ describe('生产管理菜单入口（侧边栏）', () => {
       'production:view',    // 计件工资
       'production:inspect', // 质检记录（issue #7140）
     ])
-    const inventory = menuGroups.find((g) => g.key === 'inventory-center')
-    expect(inventory!.children.map((c) => c.permissionCode)).toEqual([
-      'inbound:view',
+    // issue #7369：单据三项整组搬去「供应链」⇒ 三项**同码** inbound:view（采购与收货同岗位，零授权 delta），
+    // 入库单仍排组内第一（手机端标注取树序首个承载节点，#6781）。
+    const supply = menuGroups.find((g) => g.key === 'supply-chain')
+    expect(supply!.children.map((c) => c.permissionCode)).toEqual([
+      'inbound:view',       // 入库单
       'inbound:view',       // 供应商（issue #7369：档案面与入库单同码 ⇒ 零授权 delta）
       'inbound:view',       // 采购单（issue #7369 段 4：采购与收货同岗位同码 ⇒ 零授权 delta）
+    ])
+    const inventory = menuGroups.find((g) => g.key === 'inventory-center')
+    expect(inventory!.children.map((c) => c.permissionCode)).toEqual([
       'product:list',       // 库存明细（issue #6404：同取既有 product:list ⇒ 零授权 delta）
       'order:list',         // 发货单（issue #5939：取**既有** order:list ⇒ 与销售订单同码、零授权 delta）
-      'processing:manage',
+      'processing:manage',  // 余料台账（`RemnantController` 类级码）
       'product:list',       // 省料看板（issue #5699 P4：节点码 = 该页两个读端点的码）
     ])
     // 反恒真（issue #5291）：组内**不是**同码 —— 若有人把四项一起改回去（或一起改过来），本条必红。

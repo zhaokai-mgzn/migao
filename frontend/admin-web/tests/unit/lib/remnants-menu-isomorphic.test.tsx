@@ -185,16 +185,17 @@ describe('余料台账菜单三处同构（PR-106 / issue #5191）', () => {
     cleanup()
   })
 
-  it('④ 负控（同组混权）：有 inbound:view、无 processing:manage ⇒ 组在、入库单在，余料台账**不在**', async () => {
-    // 「入库单」与「余料台账」同组但权限码不同（inbound:view vs processing:manage）——
-    // 这条证明**同组不等于同权**：开菜单没有顺手把 processing:manage 的项带出来。
+  it('④ 负控（跨组混权）：有 inbound:view、无 processing:manage ⇒ 「供应链」组在、入库单在，余料台账**不在**', async () => {
+    // 「入库单」与「余料台账」权限码不同（inbound:view vs processing:manage），issue #7369 起还分属
+    // 两个组（供应链 / 仓储与物料）—— 这条证明**同码不等于同权、同权也不跨组**：开菜单没有顺手
+    // 把 processing:manage 的项带出来。
     mockPermissions = ['inbound:view']
     render(<Sidebar collapsed={false} onToggle={() => {}} />)
-    fireEvent.click(screen.getByTestId('sidebar-group-toggle-inventory-center'))
+    fireEvent.click(screen.getByTestId('sidebar-group-toggle-supply-chain'))
     expect(await screen.findByRole('link', { name: '入库单' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: NAME })).toBeNull()
     // 本组 = 3 项：入库单 + 供应商 + 采购单（issue #7369：档案 / 单据 / 采购同码，同一条 inbound:view 带出）
-    expect(within(screen.getByText('仓储与物料').closest('[data-group-key]') as HTMLElement)
+    expect(within(screen.getByText('供应链').closest('[data-group-key]') as HTMLElement)
       .queryAllByRole('link')).toHaveLength(3)
     cleanup()
   })

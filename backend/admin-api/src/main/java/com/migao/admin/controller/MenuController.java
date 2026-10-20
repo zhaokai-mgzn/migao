@@ -228,9 +228,13 @@ public class MenuController {
             // → 计件工资**三项 —— 「加工项管理」「工艺配置」两个菜单项按用户裁定**移除**，
             // 功能体并入 `/settings`（企业基础设置）页内的配置域；旧路径保留为重定向）。
             new MenuNode("production-center", "生产管理", List.of(pr1, prPool, pr3, pr4, prUpdate)),
-            // 仓储与物料（用户 2026-10-06 组内重排：单据（进 → 账 → 出）→ 台账 → 分析）
+            // 供应链（issue #7369，用户 2026-10-20 裁定「新增的菜单不能放到仓储与物料下，得加个新大菜单」）：
+            // 谁供货 → 买什么 → 到货登记；三项同码 inbound:view（采购与收货同岗位）。
+            // ⚠️「入库单」必须排本组第一个：手机端标注取该码树序首个承载节点（#6781）。
+            new MenuNode("supply-chain", "供应链", List.of(i1, iSupplier, iPurchases)),
+            // 仓储与物料（用户 2026-10-20 起只留**库存与出库**：单据类节点已移到「供应链」）
             // 🔴 issue #6759：组尾追加动作码节点「入库单操作」（`inbound:create` = 手机端过账的写码）。
-            new MenuNode("inventory-center", "仓储与物料", List.of(i1, iSupplier, iPurchases, prLedger, i2, prRemnants, prSaving, iCreate)),
+            new MenuNode("inventory-center", "仓储与物料", List.of(prLedger, i2, prRemnants, prSaving, iCreate)),
             new MenuNode("org-center", "组织管理", List.of(e1, r1, s1, e2)),
             // 🔴 尾部独立项（不属于任何组）：**排在所有分组之后**（用户 2026-10-06 裁定，原为「工作台组之后」）
             // —— 组名即「分组」，渲染在组与组之间会让「大菜单并列」自相矛盾。

@@ -578,11 +578,11 @@ class AuthServiceTest {
         // → 通知中心）—— 与前端渲染顺序逐项一致。
         assertThat(keysOf(menus)).containsExactly(
                 "dashboard", "customer-service", "trade-center",
-                "production-center", "inventory-center", "org-center",
+                "production-center", "supply-chain", "inventory-center", "org-center",
                 "products", "settings", "notifications");
         assertThat(namesOf(menus)).containsExactly(
                 "经营看板", "客户服务", "交易管理",
-                "生产管理", "仓储与物料", "组织管理",
+                "生产管理", "供应链", "仓储与物料", "组织管理",
                 "商品管理", "企业基础设置", "通知中心");
 
         // 🔴 #7087：最前席位 = 「经营看板」**顶层一级项**（不是组）—— key / name / path 三项逐值，
@@ -620,15 +620,16 @@ class AuthServiceTest {
         assertThat(pathsOf(production.getChildren())).containsExactly(
                 "/production", "/production/pool", "/production/piecework", "/quality-inspections");
 
+        // 🔴 2026-10-20（issue #7369，用户裁定「得加个新大菜单」）：单据三节点已移到「供应链」组；
+        // 本组只剩库存与出库（库存明细 → 发货单 → 余料台账 → 省料看板）。
+        var supplyChain = groupByKey(menus, "supply-chain");
+        assertThat(keysOf(supplyChain.getChildren())).containsExactly(
+                "inbound-orders", "suppliers", "purchase-orders");
         var inventory = groupByKey(menus, "inventory-center");
-        // 🔴 2026-10-06（方案 A1）：单据（进 → 账 → 出）→ 台账 → 分析
-        // 🔴 2026-10-20（issue #7369 段 4）：「采购单」紧随「供应商」（采购 → 收货同群，同取 inbound:view）
         assertThat(keysOf(inventory.getChildren())).containsExactly(
-                "inbound-orders", "suppliers", "purchase-orders", "stock-ledger", "shipments",
-                "production-remnants", "production-saving-board");
+                "stock-ledger", "shipments", "production-remnants", "production-saving-board");
         assertThat(pathsOf(inventory.getChildren())).containsExactly(
-                "/inbound-orders", "/suppliers", "/purchase-orders", "/stock-ledger", "/shipments",
-                "/production/remnants", "/production/saving-board");
+                "/stock-ledger", "/shipments", "/production/remnants", "/production/saving-board");
 
         var org = groupByKey(menus, "org-center");
         // 🔴 issue #6580：「企业基础设置」由本组**升为顶层一级项** ⇒ 本组只剩「员工管理 / 岗位权限」
@@ -743,11 +744,11 @@ class AuthServiceTest {
 
         // #5699 P4：经营看板也按 `dashboard:view` 门控（#7087 起它是**顶层一级项**）⇒ 只持 inbound:view 时
         //**它这一项**不出现（本条因此顺带成为「经营看板不再无条件出现」的负控）。
-        assertThat(keysOf(menus)).containsExactly("inventory-center", "notifications");
-        var inventory = groupByKey(menus, "inventory-center");
-        assertThat(inventory.getName()).isEqualTo("仓储与物料");
-        assertThat(namesOf(inventory.getChildren())).containsExactly("入库单", "供应商", "采购单");
-        assertThat(pathsOf(inventory.getChildren()))
+        assertThat(keysOf(menus)).containsExactly("supply-chain", "notifications");
+        var supply = groupByKey(menus, "supply-chain");
+        assertThat(supply.getName()).isEqualTo("供应链");
+        assertThat(namesOf(supply.getChildren())).containsExactly("入库单", "供应商", "采购单");
+        assertThat(pathsOf(supply.getChildren()))
                 .containsExactly("/inbound-orders", "/suppliers", "/purchase-orders");
         // 自证渲染面非空（入库单自己）+ 反向：processing:manage 的两项确实被门控挡在外面
         assertThat(allNames(menus)).contains("入库单");

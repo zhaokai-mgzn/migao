@@ -1132,8 +1132,10 @@ class TestEveryJudgementCanGoRed:
             _load_mutated(
                 tmp_path,
                 lambda s: s.replace(
-                    'NavFeature("inbound-orders", "入库单（入库）", (("inventory-center", "入库单"),), ("入库单", "入库"))',
-                    'NavFeature("inbound-orders", "入库单（入库/发货单列表）", (("inventory-center", "入库单"),), ("入库单", "发货单列表"))',
+                    # ⚠️ 注入锚点必须**逐字**等于真源码（issue #7369 段 5：把入库单挪到「供应链」组后
+                    # 这里的旧锚点失配 ⇒ 注入变成空操作 ⇒ 本红证当场报「注入未生效」——机制在起作用）
+                    'NavFeature("inbound-orders", "入库单（入库）", (("supply-chain", "入库单"),), ("入库单", "入库"))',
+                    'NavFeature("inbound-orders", "入库单（入库/发货单列表）", (("supply-chain", "入库单"),), ("入库单", "发货单列表"))',
                     1,
                 ),
             )

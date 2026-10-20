@@ -30,7 +30,7 @@ describe('ServicesPage（官网产品与服务 v4：双 AI + 四终端 + 六能�
   it('renders 页头事实标签（AI 数 / 能力域数 / 终端数 / 行业纵深）', () => {
     render(<ServicesPage />)
     expect(screen.getByText('2 个 AI：元元与黄金策')).toBeInTheDocument()
-    expect(screen.getByText(/6 个能力域 · \d+ 项功能/)).toBeInTheDocument()
+    expect(screen.getByText(/7 个能力域 · \d+ 项功能/)).toBeInTheDocument()
     expect(screen.getByText('4 个终端')).toBeInTheDocument()
     expect(screen.getByText('算料 · 工序 · 批次 · 计件')).toBeInTheDocument()
   })
