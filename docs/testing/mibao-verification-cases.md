@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（126 case）
+## 杂项域（127 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5563,6 +5563,25 @@
 跳过: [backend-contract] 账龄分档与汇总恒等式，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-20 新增（issue #7370 段 2）。落码 = 纯函数 `ReceivableAging`（到期日/逾期天数/五档/余额/汇总）+ `OrderMapper.selectReceivableRows`（未收款单调，上限 2000）+ `CustomerService.receivableAging` + `GET /api/admin/customers/receivable-aging`（customer:view）。 ｜ tags: backend-contract, receivable, aging, red-proof
+
+### AR-002. 客户收款核销：一笔收款冲多张订单 / 收款侧与订单侧双上限 / 同批逐行余量（issue #7370 段 3） 🔵
+```
+你: 用户（2026-10-20，逐字）：「继续推进，不要停止」—— 承接 issue #7370 的验收判据「收款核销：收款流水可指定订单」。
+数据: **判据 1（收款侧上限）**：同一流水的 Σ核销 ≤ 流水金额；已核销 900 / 流水 1000 ⇒ 最多再冲 100，101 拒且报出「超出 1」。判据 = `ReceiptAllocationPolicyTest#receiptSideCapWinsWhenReceiptIsSmaller`。
+数据: **判据 2（订单侧上限）**：某单的 Σ核销 ≤ 货值 − 退款；货值 600 / 退 100 / 已核销 400 ⇒ 最多再冲 100（流水的 10000 不作数）。判据 = `#orderSideCapWinsWhenOrderIsSmaller`。红证方向：只取收款侧剩余 ⇒ 当场红。
+数据: **判据 3（取小 + 归零）**：可核销 = min(两侧剩余)；两侧任一为负（存量脏数据）一律归 0，不让页面 500。判据 = `#negativeCapacityIsClampedToZero` + `#fullyRefundedOrderHasNothingToAllocate`。
+数据: **判据 4（0/负数/空值一律拒）**：不产生「冲了一点点」的空行；但「申请 0」时仍要如实给出可核销上限（前端要能显示「这单还能冲多少」）。判据 = `#zeroAndNegativeAreRejected`。
+数据: **判据 5（批量逐行余量）**：一次提交多行时，第二行必须在「含第一行」的余量上判；两行各 600 对流水 1000 ⇒ 第二行拒。判据 = `ReceiptAllocationServiceTest#batchLinesShareTheReceiptCapacity`。
+数据: **判据 6（只有收入且成功的流水能核销）**：退款/失败流水一律拒（现金真值源是 finance_transactions，核销只是去向）。判据 = `#onlySuccessfulIncomeReceiptsCanBeAllocated`。
+数据: **判据 7（同客户 / 取消单 / 同批重复）**：冲到别人单上拒；已取消订单拒；同一张单在同一批出现两次直接拒（否则合计绕过单张单上限）。判据 = `#cannotAllocateToAnotherCustomersOrder` / `#cancelledOrderCannotBeAllocated` / `#duplicateOrderInOneBatchIsRejected`。
+数据: **判据 8（金额准入与落库精度）**：超两位小数直接拒（issue #6221）；落库金额一律两位小数（列 NUMERIC(16,4)，值不许带第三位）。判据 = `#overPrecisionAmountIsRejected` / `#writesAmountThroughSingleSetter` + `MoneyEntryPrecisionMetaGuardTest` 的台账条目。
+数据: **判据 9（端点契约）**：写 `POST /api/admin/finance/receipts/{id}/allocations` 用既有 `finance:create`，读面继承类级 `finance:view`；写端点标归属认定 `receiptTransaction`（注册在 TenantResourceOwnership）。判据 = `ReceiptAllocationControllerTest` + `TenantOwnedWriteEndpointGuardTest`。
+数据: **判据 10（账龄口径升级）**：应收余额改为 `货值 − 退款 − Σ核销`（段 2 的 `ReceivableAgingRow` javadoc 已写明这是段 3 的收口点）。判据 = `ReceivableAgingTest` 全绿 + `OrderMapper.selectReceivableRows` 的 SQL 子查询。
+数据: **边界（照实登记）**：核销的**撤回**（软删明细）尚无端点；账期利息/多币种/发票不在范围；账龄页面与报表中心（P1-4）未做；黄金策暂无核销工具。
+前置: 本用例是 [backend-contract]：前置 = `finance_transactions`（现金真值）+ `receipt_allocations`（V176）。零网络、零 LLM。
+跳过: [backend-contract] 核销上限算法与服务接线，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-20 新增（issue #7370 段 3）。落码 = 纯函数 `ReceiptAllocationPolicy` + `ReceiptAllocationService`（批量逐行余量）+ `ReceiptAllocation`/`ReceiptAllocationMapper` + `POST|GET /api/admin/finance/receipts/{id}/allocations` + V176 + 账龄 SQL 减核销。 ｜ tags: backend-contract, receivable, allocation, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12345,8 +12364,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：843（活跃 141，跳过 702）
-- tier 分布：smoke 12 / normal 775 / adversarial 32
+- 用例总数：844（活跃 141，跳过 703）
+- tier 分布：smoke 12 / normal 776 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12361,7 +12380,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：126
+- 杂项域：127
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12531,6 +12550,7 @@
 - SP-005: 采购单：一单可分多次收货（状态由 Σ收货派生）；收货不许超收；提前关闭必须写原因（issue #7369 段 4）
 - SP-006: 采购单页面：列表真值 + 收货进度派生 + 建单/收货/关单三条写面（issue #7369 段 4-B）
 - AR-001: 应收账龄：到期日当天归未到期 / 五档边界逐格 / 汇总恒等式（issue #7370 段 2）
+- AR-002: 客户收款核销：一笔收款冲多张订单 / 收款侧与订单侧双上限 / 同批逐行余量（issue #7370 段 3）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

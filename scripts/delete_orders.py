@@ -34,7 +34,8 @@ from pathlib import Path
 #    否则 DELETE 父表时会被外键拦下（issue #4242：V49 加了两层，脚本没跟上 ⇒ 带加工单的订单删不掉；
 #    issue #4698 切片 ⓪ 的 V92 又加了两层 = 套号载体 + 部位码载体，同款漏一处即删不掉；
 #    issue #4709 的 V94 再补一层 = 未定价实例补价动作账，同款；
-#    issue #4733 的 V98 再补一层 = 报工身份旁路账（工人登录态落地后每笔报工 1:1 一行），同款）。
+#    issue #4733 的 V98 再补一层 = 报工身份旁路账（工人登录态落地后每笔报工 1:1 一行），同款；
+#    issue #7370 段 3 的 V176 再补一层 = 收款核销明细（一笔收款冲多张单，每行引用一张订单），同款）。
 #    护栏（**不写死表名**，schema 加一层就自动要求跟上）：tests/unit_ci_workflows/test_delete_orders_fk_order.py
 DELETE_PLAN = (
     # 质检记录（V157，issue #5652）同时引用**加工单**与**成品帘**两张父表（processing_order_id /
@@ -53,6 +54,8 @@ DELETE_PLAN = (
     ("processing_orders", "order_id", "order"),
     ("order_items", "order_id", "order"),
     ("order_logistics", "order_id", "order"),
+    # 收款核销明细（V176，issue #7370 段 3）引用**订单**（order_id 是真外键）⇒ 必须早于 orders 删
+    ("receipt_allocations", "order_id", "order"),
     ("orders", "id", "order"),
 )
 TABLE_LABELS = {
@@ -66,6 +69,7 @@ TABLE_LABELS = {
     "processing_orders": "加工单",
     "order_items": "订单明细",
     "order_logistics": "物流",
+    "receipt_allocations": "收款核销明细",
     "orders": "订单",
 }
 

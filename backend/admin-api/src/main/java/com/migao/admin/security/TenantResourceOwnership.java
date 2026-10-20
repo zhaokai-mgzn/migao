@@ -4,6 +4,7 @@ import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.AfterSalesTicketMapper;
 import com.migao.admin.mapper.CategoryMapper;
 import com.migao.admin.mapper.CustomerProfileMapper;
+import com.migao.admin.mapper.FinanceTransactionMapper;
 import com.migao.admin.mapper.SupplierMapper;
 import com.migao.admin.mapper.PurchaseOrderMapper;
 import com.migao.admin.mapper.SupplierPaymentMapper;
@@ -63,6 +64,12 @@ public class TenantResourceOwnership {
     /** 客户档案的归属认定（issue #7370 的授信写端点）：与 product/category 同款 —— 只判「本租户可见吗」。 */
     private final CustomerProfileMapper customerProfileMapper;
 
+    /**
+     * 收款流水的归属认定（issue #7370 段 3 的核销写端点）：`finance_transactions` 是现金真值源，
+     * 核销要能确认「这笔水流属于本租户」—— 只判可见性，不动金额。
+     */
+    private final FinanceTransactionMapper financeTransactionMapper;
+
     /** 供应商档案的归属认定（issue #7369）：只判「本租户可见吗」，不改任何业务状态。 */
     private final SupplierMapper supplierMapper;
 
@@ -119,6 +126,11 @@ public class TenantResourceOwnership {
         checks.put("purchaseOrder", id -> {
             if (purchaseOrderMapper.selectById(id) == null) {
                 throw BusinessException.notFound("采购单");
+            }
+        });
+        checks.put("receiptTransaction", id -> {
+            if (financeTransactionMapper.selectById(id) == null) {
+                throw BusinessException.notFound("收款流水");
             }
         });
         checks.put("customer", id -> {

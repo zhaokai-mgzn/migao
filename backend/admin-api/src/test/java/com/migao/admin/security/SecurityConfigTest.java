@@ -540,6 +540,16 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.mapper.FinanceTransactionMapper financeTransactionMapper;
 
+    // 客户收款核销（issue #7370 段 3）：`ReceiptAllocationService` 的构造依赖 ⇒ 本上下文必须能装配它。
+    // Mapper **与** Service 都要 mock（同上方计件结算单那条的实测口径）：本上下文
+    // `@EnableAutoConfiguration(exclude = {MybatisPlusAutoConfiguration})` ⇒ 真 Mapper 建不出来
+    // （`Property 'sqlSessionFactory' or 'sqlSessionTemplate' are required`）⇒ 整个上下文起不来、
+    // 本类全部判据变 error（不是一条红）。
+    @MockBean
+    private com.migao.admin.mapper.ReceiptAllocationMapper receiptAllocationMapper;
+    @MockBean
+    private com.migao.admin.service.ReceiptAllocationService receiptAllocationService;
+
     @MockBean
     private com.migao.admin.service.FinanceService financeService;
 

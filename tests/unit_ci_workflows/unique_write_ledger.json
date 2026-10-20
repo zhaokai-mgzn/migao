@@ -139,6 +139,11 @@
     "backend/admin-api/src/main/java/com/migao/admin/service/WorkerAdminService.java::userMapper": {
       "table": "users",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/service/WorkerAdminService.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ReceiptAllocationService.java::allocationMapper": {
+      "table": "receipt_allocations",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/ReceiptAllocationService.java",
+      "note": "同一流水对同一单至多一行（部分唯一索引 uk_receipt_allocations_pair）；服务层先按「同批重复订单直接拒」+ 双上限准入再 insert，冲突映射留给唯一索引兜底（连点双击 ⇒ DuplicateKeyException 由 GlobalExceptionHandler 映射 409）"
     }
   }
 }
