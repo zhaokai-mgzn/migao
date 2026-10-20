@@ -16,6 +16,10 @@
       "table": "craft_calc_configs",
       "handling": "none"
     },
+    "backend/admin-api/src/main/java/com/migao/admin/service/CustomerProfileWriter.java::mapper": {
+      "table": "customer_profiles",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/CustomerProfileMapper.java"
+    },
     "backend/admin-api/src/main/java/com/migao/admin/service/CuttingHeightConfigService.java::cuttingHeightConfigMapper": {
       "table": "cutting_height_configs",
       "handling": "none"
@@ -31,6 +35,14 @@
     "backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java::inboundOrderMapper": {
       "table": "inbound_orders",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/service/InboundOrderService.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/OrderLogisticsService.java::orderLogisticsMapper": {
+      "table": "order_logistics",
+      "handling": "none"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/OrderLogisticsWriter.java::orderLogisticsMapper": {
+      "table": "order_logistics",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/OrderLogisticsWriter.java"
     },
     "backend/admin-api/src/main/java/com/migao/admin/service/OrderService.java::financeTransactionMapper": {
       "table": "finance_transactions",
@@ -104,6 +116,18 @@
       "table": "stock_batch_consumptions",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/StockBatchConsumptionMapper.java"
     },
+    "backend/admin-api/src/main/java/com/migao/admin/service/SupplierPaymentService.java::allocationMapper": {
+      "table": "supplier_payment_allocations",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/SupplierPaymentService.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/SupplierPaymentService.java::paymentMapper": {
+      "table": "supplier_payments",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/SupplierPaymentService.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/UserRoleWriter.java::userRoleMapper": {
+      "table": "user_roles",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/UserRoleMapper.java"
+    },
     "backend/admin-api/src/main/java/com/migao/admin/service/UserService.java::userMapper": {
       "table": "users",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/service/UserService.java"
@@ -111,22 +135,6 @@
     "backend/admin-api/src/main/java/com/migao/admin/service/WorkerAdminService.java::userMapper": {
       "table": "users",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/service/WorkerAdminService.java"
-    },
-    "backend/admin-api/src/main/java/com/migao/admin/service/CustomerProfileWriter.java::mapper": {
-      "table": "customer_profiles",
-      "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/CustomerProfileMapper.java"
-    },
-    "backend/admin-api/src/main/java/com/migao/admin/service/OrderLogisticsService.java::orderLogisticsMapper": {
-      "table": "order_logistics",
-      "handling": "none"
-    },
-    "backend/admin-api/src/main/java/com/migao/admin/service/OrderLogisticsWriter.java::orderLogisticsMapper": {
-      "table": "order_logistics",
-      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/OrderLogisticsWriter.java"
-    },
-    "backend/admin-api/src/main/java/com/migao/admin/service/UserRoleWriter.java::userRoleMapper": {
-      "table": "user_roles",
-      "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/UserRoleMapper.java"
     }
   }
 }

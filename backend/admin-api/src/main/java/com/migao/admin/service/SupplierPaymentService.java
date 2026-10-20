@@ -15,6 +15,7 @@ import com.migao.admin.mapper.SupplierPaymentMapper;
 import com.migao.admin.time.BusinessClock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -161,16 +162,26 @@ public class SupplierPaymentService {
                 .status(SupplierPayment.STATUS_POSTED)
                 .createdBy(operator)
                 .build();
-        paymentMapper.insert(payment);
+        // 唯一键处理（唯一写入点台账）：`uk_supplier_payments_no` 是原子闸 —— 并发同号只能有一个落库。
+        // 撞了就**换号重试**（同一天序号 +1），重试仍撞才 409：财务不该因为两个人同时点而看到失败。
+        insertWithRetry(payment);
 
         int seq = 0;
         for (SupplierPaymentRequest.Allocation a : allocations) {
-            allocationMapper.insert(SupplierPaymentAllocation.builder()
-                    .tenantId(tenantId)
-                    .paymentId(payment.getId())
-                    .inboundOrderId(a.inboundOrderId())
-                    .amount(allocationAmounts.get(a.inboundOrderId()))
-                    .build());
+            try {
+                allocationMapper.insert(SupplierPaymentAllocation.builder()
+                        .tenantId(tenantId)
+                        .paymentId(payment.getId())
+                        .inboundOrderId(a.inboundOrderId())
+                        .amount(allocationAmounts.get(a.inboundOrderId()))
+                        .build());
+            } catch (DuplicateKeyException e) {
+                // 唯一键处理（唯一写入点台账）：`uk_supplier_payment_allocations_pair` —— 同一笔付款
+                // 对同一张单只能有一行（上面的内存判重挡的是同一请求，这道挡的是并发/重放）。
+                throw BusinessException.conflict(
+                        "同一张入库单在一笔付款里只能冲抵一次：" + a.inboundOrderId(),
+                        "请刷新后重试；若要改金额，请作废这笔付款后重新登记");
+            }
             seq++;
         }
         log.info("登记供应商付款: tenant={}, paymentNo={}, supplier={}, amount={}, 冲抵={} 笔",
@@ -258,6 +269,31 @@ public class SupplierPaymentService {
                 payment.getVoidedAt(),
                 payment.getVoidedReason(),
                 views);
+    }
+
+    /**
+     * 落库付款单（撞唯一号则换号重试，最多 3 次）。
+     *
+     * <p>为什么不是简单的 try/catch 一次：`payment_no` 是「当天序号」派生的，两个人同一秒登记
+     * 会算出同一个号 —— 一次重试就够，但保留 3 次是为了挡住「恰好又有人插进来」的窄窗口。</p>
+     */
+    private void insertWithRetry(SupplierPayment payment) {
+        DuplicateKeyException last = null;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try {
+                paymentMapper.insert(payment);
+                return;
+            } catch (DuplicateKeyException e) {
+                last = e;
+                payment.setId(null);
+                payment.setPaymentNo(nextPaymentNo(payment.getTenantId(), payment.getPaidAt()));
+                log.warn("付款单号撞车（第 {} 次），换号重试: tenant={}, no={}",
+                        attempt + 1, payment.getTenantId(), payment.getPaymentNo());
+            }
+        }
+        throw BusinessException.conflict(
+                "付款单号连续冲突，登记未完成：" + (last == null ? "未知" : payment.getPaymentNo()),
+                "请稍后重试；重复点击不会产生两笔付款");
     }
 
     /** 某张入库单已被**有效**付款冲抵的合计（作废的付款不计）。 */
