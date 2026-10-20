@@ -122,6 +122,25 @@ public class RoleService {
     }
 
     /**
+     * 该用户的**生效数据范围**（issue #7372 段 1）：取所有角色里**最宽**的那个。
+     *
+     * <p>取数复用 {@link #getUserRoles}（本仓「用户有哪些角色」的单一实现点）——
+     * 不在这里重写一套关联查询，否则角色表一变就有两份口径。</p>
+     *
+     * @param userId 用户 id（可空 ⇒ 按最宽处理，见 {@code DataScope.resolve}）
+     */
+    public String resolveDataScope(String userId) {
+        if (!org.springframework.util.StringUtils.hasText(userId)) {
+            return com.migao.admin.security.DataScope.TENANT;
+        }
+        java.util.List<Role> roles = getUserRoles(userId);
+        java.util.List<String> scopes = roles.stream()
+                .map(Role::getDataScope)
+                .collect(java.util.stream.Collectors.toList());
+        return com.migao.admin.security.DataScope.resolve(scopes);
+    }
+
+    /**
      * 根据用户ID查询用户的所有角色代码
      *
      * @param userId 用户ID

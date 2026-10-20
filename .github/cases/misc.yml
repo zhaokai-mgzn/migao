@@ -4795,3 +4795,34 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: AR-004
+    legacy_id: ""
+    title: "数据范围 data scope：角色两态（tenant/self）+ 多角色取宽 + 越权=不存在（issue #7372 段 1）"
+    domains:
+      - misc
+      - backend
+    tier: normal
+    tags: [backend-contract, rbac, data-scope, red-proof]
+    truths_ref: []
+    user_inputs:
+      - "用户（2026-10-20，逐字）：「继续推进，不要停止」—— 承接 issue #7372 的验收判据「越权对象返回空集而非 403（不泄露存在性）」「判据必须覆盖新增一个查询面时默认继承范围（元守卫）」。"
+    expectations: []
+    data_checks:
+      - "**判据 1（两态 + 默认零回归）**：`roles.data_scope` ∈ {`tenant`（默认，全租户）, `self`（只看本人创建）}；存量角色都是默认值 ⇒ 行为与改前逐字一致。判据 = `DataScopeTest#scopeCodesAreStable` + V177 的 `ck_roles_data_scope`。"
+      - "**判据 2（多角色取宽）**：权限取并集 ⇒ 数据范围也取**最宽**：只要有一个 `tenant`，该用户就是 `tenant`；只有全部 `self` 才收窄。反向陷阱：多给一个只读角色**不许**缩小可见面。判据 = `#anyTenantRoleWins`。红证方向：改成取窄 ⇒ 当场红。"
+      - "**判据 3（配置缺失/拼错的分界）**：`null`（没写进来）⇒ 按默认 `tenant`；**拼错的取值**（如 `department`）⇒ 按最窄 `self`（fail-closed：宁可少给数据，不可因拼写错误放开全公司）。判据 = `#missingConfigFallsBackToTenant` + `#unknownValueNarrowsToSelf`。"
+      - "**判据 4（越权 = 不存在）**：`self` 范围下详情读面返回与「不存在」**同一个 404**，绝不 403 —— 403 等于告诉调用方「这个 id 存在」。判据 = `#outOfScopeIsIndistinguishableFromMissing` + `OrderService.getOrderById(id, owner)` 的同一条 notFound。"
+      - "**判据 5（列表与详情同一口径）**：列表按 `created_by = 当前用户` 收窄（`DataScope.ownerFilter` 产出过滤值），详情按同一条判定放行；控制器**不自己比较** `created_by`（单一出口）。判据 = `OrderDataScopeGuardTest`。"
+      - "**判据 6（元守卫：新查询面默认继承）**：订单域「按 id 读单张」的方法必须存在带 `dataScopeOwnerId` 的重载；列表方法的**最后一个参数**必须是范围 owner —— 新增读面若绕开范围就红。判据 = `OrderDataScopeGuardTest#detailHasScopedOverload` + `#listTakesScopeOwnerAsLastParameter`。"
+      - "**边界（照实登记）**：**门店 / 部门 / 指定人员**三个维度本段不做（门店与部门在仓里没有实体 = 另一张需要人裁定的组织模型；指定人员是第三态需要关联表）⇒ 后续段；客户域、**导出面**、**黄金策工具查询**尚未接入（agent 走服务令牌、无最终用户身份 ⇒ 需要身份透传设计，属需裁定项）。"
+    precondition: "本用例是 [backend-contract]：前置 = `roles.data_scope`（V177）+ 订单表的 `created_by`（V142）。零网络、零 LLM。"
+    skip_reason: "[backend-contract] 数据范围解析与越权语义，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟"
+    merge_log: "2026-10-21 新增（issue #7372 段 1）。落码 = 纯函数 `DataScope` + `RoleService.resolveDataScope`（复用 getUserRoles）+ `Role.dataScope` + `OrderService.getOrderPage/getOrderById` 接范围 + `OrderController` 两处读面接线 + V177 + 元守卫。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/security/DataScopeTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/OrderDataScopeGuardTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

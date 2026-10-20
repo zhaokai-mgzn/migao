@@ -47,6 +47,10 @@ class OrderIntegrationTest {
     @Mock
     private OrderLogisticsService orderLogisticsService;
 
+    /** 数据范围解析（issue #7372）：未打桩 ⇒ 返回 null ⇒ 不收窄（与本类「验列表/详情接线」的意图一致）。 */
+    @Mock
+    private com.migao.admin.service.RoleService roleService;
+
     @InjectMocks
     private OrderController orderController;
 
@@ -168,7 +172,7 @@ class OrderIntegrationTest {
 
         PageResponse<OrderListResponse> pageResponse = PageResponse.of(2L, 1L, 20L, List.of(order1, order2));
 
-        when(orderService.getOrderPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(1L), isNull(), isNull()))
+        when(orderService.getOrderPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), isNull(), eq(1L), isNull(), isNull(), isNull()))
                 .thenReturn(pageResponse);
 
         // When & Then
@@ -199,7 +203,7 @@ class OrderIntegrationTest {
         PageResponse<OrderListResponse> pageResponse = PageResponse.of(1L, 1L, 20L, List.of(order1));
 
         when(orderService.getOrderPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), isNull(),
-                eq("2025-01-01"), eq("2025-12-31"), isNull(), isNull(), isNull(), isNull(), eq(1L), isNull(), isNull()))
+                eq("2025-01-01"), eq("2025-12-31"), isNull(), isNull(), isNull(), isNull(), eq(1L), isNull(), isNull(), isNull()))
                 .thenReturn(pageResponse);
 
         // When & Then
@@ -216,7 +220,7 @@ class OrderIntegrationTest {
                 .andExpect(jsonPath("$.data.items[0].orderNo").value("ORD20250425001"));
 
         verify(orderService).getOrderPage(eq(1L), eq(20L), isNull(), isNull(), isNull(), isNull(),
-                eq("2025-01-01"), eq("2025-12-31"), isNull(), isNull(), isNull(), isNull(), eq(1L), isNull(), isNull());
+                eq("2025-01-01"), eq("2025-12-31"), isNull(), isNull(), isNull(), isNull(), eq(1L), isNull(), isNull(), isNull());
     }
 
     // ======================== 查询订单详情 ========================
@@ -235,7 +239,7 @@ class OrderIntegrationTest {
         logistics.setShippedAt(OffsetDateTime.now());
         detail.setLogistics(logistics);
 
-        when(orderService.getOrderById(TEST_ORDER_ID)).thenReturn(detail);
+        when(orderService.getOrderById(eq(TEST_ORDER_ID), isNull())).thenReturn(detail);
 
         // When & Then
         mockMvc.perform(get("/api/admin/orders/" + TEST_ORDER_ID)
@@ -404,7 +408,7 @@ class OrderIntegrationTest {
     void testUpdateLogistics_ShippedStatus() throws Exception {
         // Given
         OrderDetailResponse detail = buildOrderDetail(TEST_ORDER_ID, "ORD20250425001", "shipped");
-        when(orderService.getOrderById(TEST_ORDER_ID)).thenReturn(detail);
+        when(orderService.getOrderById(eq(TEST_ORDER_ID), isNull())).thenReturn(detail);
         when(orderLogisticsService.getByOrderId(TEST_ORDER_ID)).thenReturn(List.of());
         when(orderLogisticsService.save(any(OrderLogistics.class))).thenReturn(true);
 
@@ -420,7 +424,7 @@ class OrderIntegrationTest {
     void testUpdateLogistics_PendingStatusRejected() throws Exception {
         // Given
         OrderDetailResponse detail = buildOrderDetail(TEST_ORDER_ID, "ORD20250425001", "pending");
-        when(orderService.getOrderById(TEST_ORDER_ID)).thenReturn(detail);
+        when(orderService.getOrderById(eq(TEST_ORDER_ID), isNull())).thenReturn(detail);
 
         // When & Then: validationError 返回 422
         mockMvc.perform(put("/api/admin/orders/" + TEST_ORDER_ID + "/logistics")

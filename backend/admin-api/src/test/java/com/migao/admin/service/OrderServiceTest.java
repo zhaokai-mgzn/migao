@@ -193,7 +193,7 @@ class OrderServiceTest {
                 .thenReturn(mockPage);
 
         // when
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, null);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, null, null);
 
         // then
         assertThat(result).isNotNull();
@@ -214,7 +214,7 @@ class OrderServiceTest {
                 .thenReturn(mockPage);
 
         // when
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 10, "pending", "张三", null, null, null, null, null, null, null, null, 1L, null, null);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 10, "pending", "张三", null, null, null, null, null, null, null, null, 1L, null, null, null);
 
         // then
         assertThat(result).isNotNull();
@@ -234,7 +234,7 @@ class OrderServiceTest {
                 .thenReturn(emptyPage);
 
         // when
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, null);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, null, null);
 
         // then
         assertThat(result.getTotal()).isEqualTo(0);
@@ -267,7 +267,7 @@ class OrderServiceTest {
 
         // when
         PageResponse<OrderListResponse> result = orderService.getOrderPage(
-                1, 20, null, null, null, null, null, null, null, null, "SKU-9", null, 1L, null, null);
+                1, 20, null, null, null, null, null, null, null, null, "SKU-9", null, 1L, null, null, null);
 
         // then：过滤条件 = 「按 sku_code 查出来的商品主键」
         ArgumentCaptor<LambdaQueryWrapper<OrderItem>> captor =
@@ -289,7 +289,7 @@ class OrderServiceTest {
 
         // when
         PageResponse<OrderListResponse> result = orderService.getOrderPage(
-                1, 20, null, null, null, null, null, null, null, null, "NO-SUCH-SKU", null, 1L, null, null);
+                1, 20, null, null, null, null, null, null, null, null, "NO-SUCH-SKU", null, 1L, null, null, null);
 
         // then
         assertThat(result.getItems()).isEmpty();
@@ -313,7 +313,7 @@ class OrderServiceTest {
 
         // when
         PageResponse<OrderListResponse> result = orderService.getOrderPage(
-                1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, null);
+                1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, null, null);
 
         // then：余料「按商品行搜索」靠这个 id 指认「是哪一行」
         OrderListResponse.OrderItemBrief brief = result.getItems().get(0).getItems().get(0);
@@ -341,7 +341,7 @@ class OrderServiceTest {
                 .thenReturn(mockPage);
 
         // when：C 端查询必须传 userId（数据隔离强制点）
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, "user-abc", null);
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, "user-abc", null, null);
 
         // then：wrapper 必须含 user_id 条件，且绑定值 = user-abc（值存于 paramNameValuePairs）
         assertThat(result).isNotNull();
@@ -355,7 +355,7 @@ class OrderServiceTest {
     @DisplayName("订单分页查询 - 含加工项过滤：子查询投影必须包含 processing_info（回归：漏投影导致恒为空集）")
     void getOrderPage_HasProcessingFilter_SubQueryProjectionIncludesProcessingInfo() {
         // when：hasProcessing=true 触发 order_items 子查询过滤
-        orderService.getOrderPage(1, 20, null, null, null, true, null, null, null, null, null, null, 1L, null, null);
+        orderService.getOrderPage(1, 20, null, null, null, true, null, null, null, null, null, null, 1L, null, null, null);
 
         // then：子查询 SELECT 必须同时取回 processingInfo 列。
         //   根因（2026-08-29 真实数据复现）：之前只 select(orderId)，MyBatis-Plus 只投影 order_id 一列，
@@ -424,7 +424,7 @@ class OrderServiceTest {
         mockPage.setTotal(0);
         when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class))).thenReturn(mockPage);
 
-        orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, "蒋");
+        orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, "蒋", null);
 
         ArgumentCaptor<LambdaQueryWrapper<Order>> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
         verify(orderMapper).selectPage(any(Page.class), captor.capture());
@@ -447,7 +447,7 @@ class OrderServiceTest {
         mockPage.setTotal(0);
         when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class))).thenReturn(mockPage);
 
-        orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, "   ");
+        orderService.getOrderPage(1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, "   ", null);
 
         ArgumentCaptor<LambdaQueryWrapper<Order>> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
         verify(orderMapper).selectPage(any(Page.class), captor.capture());
@@ -2333,7 +2333,7 @@ class OrderServiceTest {
         mockPage.setTotal(1);
         when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class))).thenReturn(mockPage);
         PageResponse<OrderListResponse> page = orderService.getOrderPage(
-                1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, null);
+                1, 20, null, null, null, null, null, null, null, null, null, null, 1L, null, null, null);
         assertThat(page.getItems().get(0).getProcessingFee()).isEqualByComparingTo("98.40");
     }
 
@@ -3588,7 +3588,7 @@ class OrderServiceTest {
                 .thenReturn(new Page<>());
 
         orderService.getOrderPage(1, 20, null, "张三", null, null, null, null, null,
-                null, null, null, 1L, null, null);
+                null, null, null, 1L, null, null, null);
 
         ArgumentCaptor<LambdaQueryWrapper> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
         verify(orderMapper).selectPage(any(Page.class), captor.capture());

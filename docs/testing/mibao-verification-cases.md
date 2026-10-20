@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（128 case）
+## 杂项域（129 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5602,6 +5602,21 @@
 跳过: [backend-contract] 毛利算式与「未知当 0」禁令，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-21 新增（issue #7371 段 1），同日段 2 扩写（加工成本 + 运费未采集标记）。落码 = 纯函数 `OrderMargin` + `OrderMarginService`（复用 `ProductionService.piecework` 的计件聚合）+ `OrderMapper.selectFabricCost` + `GET /api/admin/finance/orders/{id}/margin`。 ｜ tags: backend-contract, margin, cost, red-proof
+
+### AR-004. 数据范围 data scope：角色两态（tenant/self）+ 多角色取宽 + 越权=不存在（issue #7372 段 1） 🔵
+```
+你: 用户（2026-10-20，逐字）：「继续推进，不要停止」—— 承接 issue #7372 的验收判据「越权对象返回空集而非 403（不泄露存在性）」「判据必须覆盖新增一个查询面时默认继承范围（元守卫）」。
+数据: **判据 1（两态 + 默认零回归）**：`roles.data_scope` ∈ {`tenant`（默认，全租户）, `self`（只看本人创建）}；存量角色都是默认值 ⇒ 行为与改前逐字一致。判据 = `DataScopeTest#scopeCodesAreStable` + V177 的 `ck_roles_data_scope`。
+数据: **判据 2（多角色取宽）**：权限取并集 ⇒ 数据范围也取**最宽**：只要有一个 `tenant`，该用户就是 `tenant`；只有全部 `self` 才收窄。反向陷阱：多给一个只读角色**不许**缩小可见面。判据 = `#anyTenantRoleWins`。红证方向：改成取窄 ⇒ 当场红。
+数据: **判据 3（配置缺失/拼错的分界）**：`null`（没写进来）⇒ 按默认 `tenant`；**拼错的取值**（如 `department`）⇒ 按最窄 `self`（fail-closed：宁可少给数据，不可因拼写错误放开全公司）。判据 = `#missingConfigFallsBackToTenant` + `#unknownValueNarrowsToSelf`。
+数据: **判据 4（越权 = 不存在）**：`self` 范围下详情读面返回与「不存在」**同一个 404**，绝不 403 —— 403 等于告诉调用方「这个 id 存在」。判据 = `#outOfScopeIsIndistinguishableFromMissing` + `OrderService.getOrderById(id, owner)` 的同一条 notFound。
+数据: **判据 5（列表与详情同一口径）**：列表按 `created_by = 当前用户` 收窄（`DataScope.ownerFilter` 产出过滤值），详情按同一条判定放行；控制器**不自己比较** `created_by`（单一出口）。判据 = `OrderDataScopeGuardTest`。
+数据: **判据 6（元守卫：新查询面默认继承）**：订单域「按 id 读单张」的方法必须存在带 `dataScopeOwnerId` 的重载；列表方法的**最后一个参数**必须是范围 owner —— 新增读面若绕开范围就红。判据 = `OrderDataScopeGuardTest#detailHasScopedOverload` + `#listTakesScopeOwnerAsLastParameter`。
+数据: **边界（照实登记）**：**门店 / 部门 / 指定人员**三个维度本段不做（门店与部门在仓里没有实体 = 另一张需要人裁定的组织模型；指定人员是第三态需要关联表）⇒ 后续段；客户域、**导出面**、**黄金策工具查询**尚未接入（agent 走服务令牌、无最终用户身份 ⇒ 需要身份透传设计，属需裁定项）。
+前置: 本用例是 [backend-contract]：前置 = `roles.data_scope`（V177）+ 订单表的 `created_by`（V142）。零网络、零 LLM。
+跳过: [backend-contract] 数据范围解析与越权语义，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-21 新增（issue #7372 段 1）。落码 = 纯函数 `DataScope` + `RoleService.resolveDataScope`（复用 getUserRoles）+ `Role.dataScope` + `OrderService.getOrderPage/getOrderById` 接范围 + `OrderController` 两处读面接线 + V177 + 元守卫。 ｜ tags: backend-contract, rbac, data-scope, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12384,8 +12399,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：845（活跃 141，跳过 704）
-- tier 分布：smoke 12 / normal 777 / adversarial 32
+- 用例总数：846（活跃 141，跳过 705）
+- tier 分布：smoke 12 / normal 778 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12400,7 +12415,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：128
+- 杂项域：129
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12572,6 +12587,7 @@
 - AR-001: 应收账龄：到期日当天归未到期 / 五档边界逐格 / 汇总恒等式（issue #7370 段 2）
 - AR-002: 客户收款核销：一笔收款冲多张订单 / 收款侧与订单侧双上限 / 同批逐行余量（issue #7370 段 3）
 - AR-003: 订单毛利：收入−退款−面料−加工，且**成本未知绝不当 0**（issue #7371 段 1+2）
+- AR-004: 数据范围 data scope：角色两态（tenant/self）+ 多角色取宽 + 越权=不存在（issue #7372 段 1）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
