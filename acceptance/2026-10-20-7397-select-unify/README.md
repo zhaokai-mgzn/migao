@@ -48,6 +48,8 @@ knowledge:
 | 4 | 表格分页「每页 20 条」下拉：紧凑档（h-8）也换成同一份箭尖 | `pager-select.png` + `production.png` | ✅ |
 | 5 | 版式零回退：作业看板查询区仍在页内一行、列表列宽/行高/操作列冻结与改前同构；知识库 Tab 栏/表格/分页不变 | `production.png` / `knowledge.png` | ✅ |
 | 6 | 无脚本报错：采集期控制台只有两条与本次无关的资源错误（`ERR_NAME_NOT_RESOLVED`，第三方图标；`two children with the same key`，作业看板行 key 的存量告警） | 采集 stdout | ⚠️ 存量观察项，非本包引入 |
+| 7 | 扩展抽查（同一次登录会话）：「判定状态」下拉 `rounded h-9 w=415` + 箭尖；商品管理筛选 `rounded h-9 w=242` + 箭尖；企业基础设置·算料口径的下拉 `rounded-lg h-9 w=320`（表单字段面 8px 与 `Input` 一致） | `quality.png` / `products.png` / `calc.png` + 采集 stdout | ✅ 三种面各自与邻控件同值 |
+| 8 | 订单页（#7388 起查询区默认收起）DOM 里 **0 个** `<select>` —— 未展开时不渲染筛选控件，属于既有折叠契约，不是本包回归 | 采集 stdout（`orders []`） | ✅（有意如此） |
 
 ## 观察项（照实登记，不当作通过也不当作缺陷结论）
 
@@ -55,6 +57,8 @@ knowledge:
 - 作业看板控制台有 `Encountered two children with the same key` 的存量告警（同一条作业单在分页返回里出现两次，
   改前就有）；本包未处理 —— 重启条件 = 用户看到重复行 / 台账要求清零。
 - 输入框自身的 4px / 8px 圆角差异（筛选面 4px、表单字段面 8px）**有意保留**（见 issue #7397 边界节）。
+- 抽查时 ai-agent（:8001）未起，企业基础设置页弹了「算料服务不可用」的 toast（`Connection refused`）——
+  与本包无关的本地依赖缺失，截图保留原样、未做美化。
 
 ## 复现
 
