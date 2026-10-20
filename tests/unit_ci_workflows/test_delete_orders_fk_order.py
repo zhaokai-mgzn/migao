@@ -46,6 +46,7 @@ from unit_ci_workflows._migration_paths import migration_files  # noqa: E402
 # `test_plan_covers_every_table_referencing_orders` 就是从 schema 反推闭包来守它的）：
 # issue #4698 切片 ⓪ 的 V92 新增两层 —— `processing_set_part_tokens`（码行，引用套行）必须排在
 # `processing_order_sets` **之前**，两者都在 `processing_orders` 之前。
+# issue #7370 段 3 的 V176 又加一层：`receipt_allocations`（收款核销明细）引用 `orders` ⇒ 早于 `orders`。
 EXPECTED_DELETE_ORDER = (
     # V94（issue #4709）新增：补价动作账引用 **processing_orders** 与 **processing_position_operations**
     # 两张父表 ⇒ 必须最先删（`test_plan_covers_every_table_referencing_orders` 会自动要求它出现；
@@ -65,6 +66,8 @@ EXPECTED_DELETE_ORDER = (
     "processing_orders",
     "order_items",
     "order_logistics",
+    # V176（issue #7370 段 3）新增：收款核销明细引用 **orders**（order_id 是真外键）⇒ 必须早于 orders 删。
+    "receipt_allocations",
     "orders",
 )
 

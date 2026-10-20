@@ -127,7 +127,14 @@ public class ReceiptAllocationService {
             allocation.setAmount(amount);
             allocation.setCreatedBy(operator);
             allocation.setDeleted(Boolean.FALSE);
-            allocationMapper.insert(allocation);
+            try {
+                allocationMapper.insert(allocation);
+            } catch (org.springframework.dao.DuplicateKeyException dup) {
+                // 连点两次 / 并发提交：唯一索引 uk_receipt_allocations_pair 兜住「同一流水同一单两行」
+                // ⇒ 映射成可读的 409，而不是把 5xx 冒到用户面前（台账 unique_write_ledger 就记这一处）
+                throw BusinessException.validationError(
+                        "同一笔收款对同一张订单已经核销过了，请刷新后重试（要改金额请先删掉原核销记录）");
+            }
 
             // 下一行要在「包含本行」的余量上再判 —— 否则两行合起来超过流水金额
             receiptAllocated = receiptAllocated.add(amount);
