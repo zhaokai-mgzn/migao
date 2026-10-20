@@ -2462,6 +2462,44 @@ export interface UnassignedInboundSupplier {
   lastInboundDate?: string | null
 }
 
+/** 采购单状态（后端派生，前端只读）。 */
+export type PurchaseOrderStatus = 'ordered' | 'partially_received' | 'received' | 'closed'
+
+/** 采购单读面（issue #7369 段 4）：已收/未收是派生值。 */
+export interface PurchaseOrderView {
+  id: string
+  poNo: string
+  supplierId: string
+  supplierName?: string | null
+  orderDate: string
+  expectedDate?: string | null
+  status: PurchaseOrderStatus
+  totalAmount: number
+  remark?: string | null
+  closedAt?: string | null
+  closedReason?: string | null
+  items: {
+    id: string
+    skuId: string
+    productId?: string | null
+    quantity: number
+    unitPrice: number
+    amount: number
+    receivedQuantity: number
+    remainingQuantity: number
+  }[]
+  receipts: { id: string; itemId: string; quantity: number; receivedAt: string; inboundOrderId?: string | null }[]
+}
+
+/** 建采购单请求（状态由后端派生，请求里没有 status）。 */
+export interface PurchaseOrderCreateRequest {
+  supplierId: string
+  orderDate?: string | null
+  expectedDate?: string | null
+  remark?: string | null
+  items: { skuId: string; quantity: number; unitPrice: number; productId?: string | null }[]
+}
+
 /** 付款方式域（与后端 CHECK 逐值同域）。 */
 export type SupplierPaymentMethod = 'cash' | 'transfer' | 'wechat' | 'alipay' | 'other'
 

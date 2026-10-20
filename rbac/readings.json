@@ -324,6 +324,7 @@
       "仓储与物料": null,
       "入库单": "inbound:view",
       "供应商": "inbound:view",
+      "采购单": "inbound:view",
       "库存明细": "product:list",
       "发货单": "order:list",
       "余料台账": "processing:manage",
@@ -350,6 +351,7 @@
       "计件工资": "production:view",
       "质检记录": "production:inspect",
       "供应商": "inbound:view",
+      "采购单": "inbound:view",
       "入库单": "inbound:view",
       "发货单": "order:list",
       "余料台账": "processing:manage",
@@ -376,6 +378,7 @@
       "质检记录": "production:inspect",
       "入库单": "inbound:view",
       "供应商": "inbound:view",
+      "采购单": "inbound:view",
       "库存明细": "product:list",
       "发货单": "order:list",
       "余料台账": "processing:manage",
@@ -488,6 +491,12 @@
       "key": "suppliers",
       "name": "供应商",
       "path": "/suppliers",
+      "code": "inbound:view"
+    },
+    {
+      "key": "purchase-orders",
+      "name": "采购单",
+      "path": "/purchase-orders",
       "code": "inbound:view"
     },
     {
@@ -626,6 +635,10 @@
     ],
     [
       "/suppliers",
+      "inbound:view"
+    ],
+    [
+      "/purchase-orders",
       "inbound:view"
     ],
     [
@@ -864,6 +877,18 @@
       "units": {
         "product:list": [
           "GET /api/admin/products"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "purchase-orders",
+      "name": "采购单",
+      "path": "/purchase-orders",
+      "gate": "inbound:view",
+      "units": {
+        "inbound:view": [
+          "GET /api/admin/purchase-orders"
         ]
       },
       "visibility_rule": "all"

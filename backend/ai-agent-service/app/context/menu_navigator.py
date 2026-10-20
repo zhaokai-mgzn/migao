@@ -149,6 +149,8 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     # 仓储与物料（2026-10-06：单据（进 → 账 → 出）→ 台账 → 分析）
     MenuNode("inventory-center", "入库单", "/inbound-orders", "inbound:view"),
     MenuNode("inventory-center", "供应商", "/suppliers", "inbound:view"),
+    # 采购单（issue #7369 段 4）：与「供应商」「入库单」同码 —— 采购与收货同岗位，零授权 delta。
+    MenuNode("inventory-center", "采购单", "/purchase-orders", "inbound:view"),
     # issue #6404：库存明细（与省料看板同码 `product:list` —— 两者都是该页的**读**码；
     # 先例 = 「发货单」与「销售订单」同取 `order:list`，issue #5939）
     MenuNode("inventory-center", "库存明细", "/stock-ledger", "product:list"),
@@ -265,6 +267,9 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     #（它命中不了节点 = 不可达，登记了会变成空断言）。
     NavFeature("quality-inspection", "质检记录（质检判定）", (("production-center", "质检记录"),), ("质检记录", "质检")),
     NavFeature("suppliers", "供应商档案", (("inventory-center", "供应商"),), ("供应商", "供应商档案")),
+    # 采购单（issue #7369 段 4）：说法必须**逐字落在菜单名里**（「采购单」的子串），
+    # 「采购」「下单」「到货」这类更宽的说法不登记 —— 命中不了节点就是空断言（判据「接地」）。
+    NavFeature("purchase-orders", "采购单（采购与收货）", (("inventory-center", "采购单"),), ("采购单",)),
     NavFeature("inbound-orders", "入库单（入库）", (("inventory-center", "入库单"),), ("入库单", "入库")),
     NavFeature("shipments", "发货单（出库）", (("inventory-center", "发货单"),), ("发货单", "出库")),
     NavFeature("remnants", "余料台账（余料）", (("inventory-center", "余料台账"),), ("余料台账", "余料")),

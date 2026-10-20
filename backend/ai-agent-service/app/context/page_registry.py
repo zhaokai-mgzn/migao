@@ -107,6 +107,13 @@ class TruthSource:
 TRUTH_SOURCES: Dict[str, TruthSource] = {
     # 供应商档案（issue #7369，P0-1 段 1）：口径写在服务层 javadoc（账期三态 / 状态域 / 与单据快照的区别），
     # 不编第二份说明文档。
+    # 采购单（issue #7369 段 4）：状态派生 / 不许超收 / 关单须写原因的**全部口径**都在服务层 javadoc，
+    # 不在别处再写一份（两份口径必然漂）。
+    "purchase-order-lifecycle": TruthSource(
+        label="采购单与收货（下单 / 分次收货 / 关闭）",
+        citation="依据：采购单状态与收货口径（服务层说明）",
+        path="backend/admin-api/src/main/java/com/migao/admin/service/PurchaseOrderService.java",
+    ),
     "supplier-master-data": TruthSource(
         label="供应商档案（供应商主数据）",
         citation="依据：供应商档案口径（服务层说明）",
@@ -177,6 +184,13 @@ class PageEntry:
 
 #: route → 真值源登记表（**未登记即不注入**；本表是「哪一页能注入」的唯一真值）。
 PAGE_REGISTRY: Tuple[PageEntry, ...] = (
+    # 采购单（issue #7369 段 4）：问「为什么还是部分收货 / 能不能改数量 / 关单干嘛用」⇒ 引服务层口径。
+    PageEntry(
+        route="/purchase-orders",
+        truth_source="purchase-order-lifecycle",
+        page_permissions=("inbound:view",),
+        entity_permissions=(),
+    ),
     # 供应商档案（issue #7369）：页面上问「账期怎么算 / 停用是什么意思」⇒ 引服务层口径。
     PageEntry(
         route="/suppliers",

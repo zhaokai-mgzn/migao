@@ -7122,6 +7122,25 @@ _CASE_SP_005 = EvalCase(
     precondition='本用例是 [backend-contract]：前置 = `suppliers`(V170) + `inbound_orders.supplier_id`(V173) + 采购三表(V175)。零网络、零 LLM。',
 )
 
+# ── SP-006 [NORMAL] 采购单页面：列表真值 + 收货进度派生 + 建单/收货/关单三条写面（issue #7369 段 4-B）（源: cases/misc.yml）──
+_CASE_SP_006 = EvalCase(
+    id='SP-006',
+    legacy_id='',
+    title='采购单页面：列表真值 + 收货进度派生 + 建单/收货/关单三条写面（issue #7369 段 4-B）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-20，逐字）：「继续推进，直到目标任务都交付」—— 段 4 的后端面已合入（PR #7414），本用例盯**用户真正看得见的那一层**：菜单能进、列表能读、写面不猜。'],
+    expectations=[],
+    data_checks=['**判据 1（列表真值）**：第一屏读服务端，收货进度 `40 / 100` 是**后端派生值**（前端不自己算），金额两位小数。判据 = `purchase-orders.test.tsx#第一屏拉服务端列表`。', '**判据 2（状态人话 + 不回显机器值）**：四种状态各自中文；未登记的值给「其他」而不是 `cancelled_by_server`（issue #6668 出口安全）。判据 = `#状态上屏是人话`。', '**判据 3（建单不写状态）**：payload 里**没有 `status`**（状态由后端派生）；本地先拦「没选供应商 / 数量 ≤ 0」⇒ 不发请求。判据 = `#建单 payload` + `#建单拦截`。', '**判据 4（收货双保险）**：超过未收数量**本地先拦**（后端也会拦）；正常提交只带 `itemId + quantity`。判据 = `#收货`。', '**判据 5（关单须写原因）**：不写原因不发请求；写了才调接口 —— 单据不删，原因留着备查。判据 = `#关单`。', '**判据 6（只读岗位）**：无 `inbound:create` ⇒ 列表可读、三个写按钮一个都不渲染。判据 = `#只读岗位`。', '**判据 7（失败态不冒充空态）**：加载失败给可重试错误面，且**不**同时画「还没有采购单」（那是业务结论）。判据 = `#加载失败`（本条写完当场抓到页面一开始的错，已修）。', '**类级守卫（同批被它们判红并已修）**：`wide-table-action-column-guard`（操作列 `sticky right-0`）、`user-copy-jargon-guard`（副标题不写实现链路）、`no-native-dialog-for-destructive-copy-guard`（关单原因改页面内弹层，不用 `window.prompt`）、`design-baseline-expression-fallback`（状态走 `displayEnum`）。', '**边界（照实登记）**：收货**不自动生成**入库单（可关联已过账入库单）；采购单编辑（`ordered` 状态下改明细）未做 —— 要改就关单重开；按单勾对/对账单属后续段。'],
+    skip_reason='[frontend-contract] 页面写面与读面契约，由 vitest 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['frontend-contract', 'purchase', 'receiving', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [frontend-contract]：零网络（`@/lib/api` 全 mock）、零 LLM。菜单与路由守卫另行由 `menu-nav` / `remnants-menu-isomorphic` / `test_agent_permission_parity` 承担。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -16126,6 +16145,7 @@ ALL_CASES = (
     _CASE_SP_003,
     _CASE_SP_004,
     _CASE_SP_005,
+    _CASE_SP_006,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

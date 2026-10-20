@@ -622,12 +622,13 @@ class AuthServiceTest {
 
         var inventory = groupByKey(menus, "inventory-center");
         // 🔴 2026-10-06（方案 A1）：单据（进 → 账 → 出）→ 台账 → 分析
+        // 🔴 2026-10-20（issue #7369 段 4）：「采购单」紧随「供应商」（采购 → 收货同群，同取 inbound:view）
         assertThat(keysOf(inventory.getChildren())).containsExactly(
-                "inbound-orders", "suppliers", "stock-ledger", "shipments", "production-remnants",
-                "production-saving-board");
+                "inbound-orders", "suppliers", "purchase-orders", "stock-ledger", "shipments",
+                "production-remnants", "production-saving-board");
         assertThat(pathsOf(inventory.getChildren())).containsExactly(
-                "/inbound-orders", "/suppliers", "/stock-ledger", "/shipments", "/production/remnants",
-                "/production/saving-board");
+                "/inbound-orders", "/suppliers", "/purchase-orders", "/stock-ledger", "/shipments",
+                "/production/remnants", "/production/saving-board");
 
         var org = groupByKey(menus, "org-center");
         // 🔴 issue #6580：「企业基础设置」由本组**升为顶层一级项** ⇒ 本组只剩「员工管理 / 岗位权限」
@@ -737,7 +738,7 @@ class AuthServiceTest {
     @DisplayName("仓储与物料组：入库单落在**独立的** inbound:view 判定里（不得塞进 processing:manage）")
     void currentUserMenusGateInboundOrdersIndependently() {
         // 只有 inbound:view、没有 processing:manage ⇒ 入库单必须可见（否则仓管看不到菜单），
-        // 且该组只含它一项
+        // 且该组只含它这一族：入库单 / 供应商 / 采购单（issue #7369 两段：档案面与采购面同取 inbound:view）
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("inbound:view");
 
         // #5699 P4：经营看板也按 `dashboard:view` 门控（#7087 起它是**顶层一级项**）⇒ 只持 inbound:view 时
@@ -745,8 +746,9 @@ class AuthServiceTest {
         assertThat(keysOf(menus)).containsExactly("inventory-center", "notifications");
         var inventory = groupByKey(menus, "inventory-center");
         assertThat(inventory.getName()).isEqualTo("仓储与物料");
-        assertThat(namesOf(inventory.getChildren())).containsExactly("入库单", "供应商");
-        assertThat(pathsOf(inventory.getChildren())).containsExactly("/inbound-orders", "/suppliers");
+        assertThat(namesOf(inventory.getChildren())).containsExactly("入库单", "供应商", "采购单");
+        assertThat(pathsOf(inventory.getChildren()))
+                .containsExactly("/inbound-orders", "/suppliers", "/purchase-orders");
         // 自证渲染面非空（入库单自己）+ 反向：processing:manage 的两项确实被门控挡在外面
         assertThat(allNames(menus)).contains("入库单");
         assertThat(allNames(menus)).doesNotContain("余料台账", "省料看板", "作业看板");

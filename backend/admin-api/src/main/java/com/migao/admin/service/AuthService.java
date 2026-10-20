@@ -1438,6 +1438,10 @@ public class AuthService {
         if (isAll || permissions.contains("inbound:view")) {
             inventoryChildren.add(menuItem("suppliers", "供应商", "/suppliers"));
         }
+        // 采购单（issue #7369 段 4）：一条 add 一个 if —— 合并进上面的 if 会让解析器只读到第一条（#6781 同族）。
+        if (isAll || permissions.contains("inbound:view")) {
+            inventoryChildren.add(menuItem("purchase-orders", "采购单", "/purchase-orders"));
+        }
         // 库存明细（issue #6404）：SKU 级库存**变化流水**的读面 —— 后端端点（issue #4055）与 agent
         // 工具（issue #5247）早就有，页面是该控制器 javadoc 里逐字登记的显式延后项。
         // 🔴 权限码与**方法级** `@RequirePermission("product:list")` 逐字同码：不新造码

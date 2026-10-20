@@ -9,6 +9,7 @@ import {
   Coins,
   Factory,
   Handshake,
+  ShoppingBag,
   Headphones,
   Layers,
   LifeBuoy,
@@ -154,6 +155,12 @@ export const capabilityDomains: CapabilityDomain[] = [
         detail:
           '谁在供货、账期几天、停没停：名称 / 联系人 / 电话 / 账期（未设置、现结、N 天）/ 在用或停用，一处维护；采购单与收货随后接上。',
         icon: Handshake,
+      },
+      {
+        name: '采购单',
+        detail:
+          '采购登记、分次到货、关闭都在同一处：采购单下可分几次收货，已收和未收按收货记录实时算；到不齐或断货就关闭并写原因，单据不删除、原因留着备查。',
+        icon: ShoppingBag,
       },
       {
         name: '入库单',

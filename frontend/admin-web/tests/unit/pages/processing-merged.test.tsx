@@ -153,6 +153,7 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     expect(inventoryGroup()!.children.map((c) => c.path)).toEqual([
       '/inbound-orders',
       '/suppliers',
+      '/purchase-orders',   // #7369 段 4：采购单（入库单之后、供应商之后 —— 采购 → 收货同群）
       '/stock-ledger',
       '/shipments',
       '/production/remnants',
@@ -163,6 +164,7 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     expect(inventoryGroup()!.children.map((c) => c.permissionCode)).toEqual([
       'inbound:view',
       'inbound:view',   // 供应商（#7369：与入库单同码 ⇒ 零授权 delta）
+      'inbound:view',   // 采购单（#7369 段 4：同上，零授权 delta）
       'product:list',   // 库存明细（#6404：同取既有 product:list ⇒ 零授权 delta；2026-10-06 起紧随入库单）
       'order:list',     // 发货单（#5939：取既有 order:list ⇒ 与订单列表同码、零授权 delta）
       'processing:manage',
@@ -185,9 +187,9 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // #5778/#5939「+发货单」/#6404「+库存明细」的历次增减见 menu-nav.test.ts；
     // 🔴 2026-10-17（issue #7087）：本判据**不受影响** —— 撤销的「工作台」组两项里，
     // 「经营看板」升为**最前席位一级项**（不入任何组）、「每日简报」菜单项删除 ⇒ 组内项 18 → 16）
-    // #7369：+「供应商」⇒ 组内项 17 → 18
-    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(18)
-    expect(allNames).toHaveLength(18)
+    // #7369：+「供应商」⇒ 组内项 17 → 18；段 4 再 +「采购单」⇒ 18 → 19
+    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(19)
+    expect(allNames).toHaveLength(19)
   })
 })
 

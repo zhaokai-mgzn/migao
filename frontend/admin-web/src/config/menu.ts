@@ -313,6 +313,10 @@ export const menuGroups: MenuGroup[] = [
       // 码取既有的 inbound:view（不新造 supplier:view —— 新码无人持有 ⇒ 菜单对所有人不可见，#4203 同族坑；
       // 同组「发货单」取 order:list 是同一先例）。停用后仍要能看见（档案要能改回来）⇒ 不按状态门控。
       { key: 'suppliers', name: '供应商', icon: 'Handshake', path: '/suppliers', permissionCode: 'inbound:view', keywords: ['gys', 'gongyingshang', 'caigou', 'supplier'] },
+      // 采购单（issue #7369，P0-1 段 4）：下单（买什么/多少钱/什么时候到）→ 分次收货 → 关闭。
+      // 码取既有的 inbound:view（不新造 purchase:view —— 新码今天没有岗位持有 ⇒ 菜单对所有人不可见，#4203 同族坑）；
+      // ⚠️ 必须排在「入库单」之后：手机端标注取该码树序**首个**承载节点（#6781）。
+      { key: 'purchase-orders', name: '采购单', icon: 'ShoppingBag', path: '/purchase-orders', permissionCode: 'inbound:view', keywords: ['cgd', 'caigou', 'caigoudan', 'purchase', 'po'] },
       // 库存明细（issue #6404）：SKU 级库存**变化流水**的读面。后端端点（issue #4055）与
       // agent 工具（issue #5247）**早就有**，页面是 `StockLedgerController` 的 javadoc 里逐字登记的
       // **显式延后项**（「本轮只做只读端点，不做前端页面」）⇒ 结果是同一个问题黄金策答得出、

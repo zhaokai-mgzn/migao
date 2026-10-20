@@ -10,6 +10,8 @@ import type {
   Supplier,
   SupplierPayableSummary,
   SupplierPaymentRequest,
+  PurchaseOrderCreateRequest,
+  PurchaseOrderView,
   SupplierPaymentView,
   UnassignedInboundSupplier,
 } from '@/types'
@@ -1638,6 +1640,27 @@ export const chatApi = {
 }
 
 // 供应商主数据（issue #7369）：档案 CRUD；停用/启用走同一条 update（不单独开端点）。
+/**
+ * 采购单（issue #7369 段 4）：一单可分多次收货；`status` 由后端派生，前端只读。
+ *
+ * <p>与 `supplierApi` **分开**：采购单不是供应商的子资源（它挂的是 purchase_orders 自己的端点），
+ * 混在一个对象里会让「谁的端点」在调用处看不出来。</p>
+ */
+export const purchaseOrderApi = {
+  list: (params?: { status?: string; supplierId?: string }) =>
+    request.get<ApiResponse<PurchaseOrderView[]>>('/api/admin/purchase-orders', { params }),
+  detail: (id: string) =>
+    request.get<ApiResponse<PurchaseOrderView>>(`/api/admin/purchase-orders/${id}`),
+  create: (data: PurchaseOrderCreateRequest) =>
+    request.post<ApiResponse<PurchaseOrderView>>('/api/admin/purchase-orders', data),
+  receive: (
+    id: string,
+    data: { receivedAt?: string | null; remark?: string | null; lines: { itemId: string; quantity: number; inboundOrderId?: string | null }[] },
+  ) => request.post<ApiResponse<PurchaseOrderView>>(`/api/admin/purchase-orders/${id}/receive`, data),
+  close: (id: string, reason: string) =>
+    request.post<ApiResponse<PurchaseOrderView>>(`/api/admin/purchase-orders/${id}/close`, { reason }),
+}
+
 export const supplierApi = {
   list: (keyword?: string) =>
     request.get<ApiResponse<Supplier[]>>('/api/admin/suppliers', {

@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（124 case）
+## 杂项域（125 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5530,6 +5530,23 @@
 跳过: [backend-contract] 单据状态机与收货约束，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-20 新增（issue #7369 段 4）。落码 = V175 三表 + `PurchaseOrderService`（状态派生 / 不许超收 / 关单须写原因 / 关联入库单校验）+ `PurchaseOrderController`（复用 inbound:view/create，带 id 的端点标归属认定）+ 三个 Mapper 判据。**未做（照实登记）**：采购单前端页面与菜单、收货自动生成入库单、按采购单看应付。 ｜ tags: backend-contract, purchase, receiving, red-proof
+
+### SP-006. 采购单页面：列表真值 + 收货进度派生 + 建单/收货/关单三条写面（issue #7369 段 4-B） 🔵
+```
+你: 用户（2026-10-20，逐字）：「继续推进，直到目标任务都交付」—— 段 4 的后端面已合入（PR #7414），本用例盯**用户真正看得见的那一层**：菜单能进、列表能读、写面不猜。
+数据: **判据 1（列表真值）**：第一屏读服务端，收货进度 `40 / 100` 是**后端派生值**（前端不自己算），金额两位小数。判据 = `purchase-orders.test.tsx#第一屏拉服务端列表`。
+数据: **判据 2（状态人话 + 不回显机器值）**：四种状态各自中文；未登记的值给「其他」而不是 `cancelled_by_server`（issue #6668 出口安全）。判据 = `#状态上屏是人话`。
+数据: **判据 3（建单不写状态）**：payload 里**没有 `status`**（状态由后端派生）；本地先拦「没选供应商 / 数量 ≤ 0」⇒ 不发请求。判据 = `#建单 payload` + `#建单拦截`。
+数据: **判据 4（收货双保险）**：超过未收数量**本地先拦**（后端也会拦）；正常提交只带 `itemId + quantity`。判据 = `#收货`。
+数据: **判据 5（关单须写原因）**：不写原因不发请求；写了才调接口 —— 单据不删，原因留着备查。判据 = `#关单`。
+数据: **判据 6（只读岗位）**：无 `inbound:create` ⇒ 列表可读、三个写按钮一个都不渲染。判据 = `#只读岗位`。
+数据: **判据 7（失败态不冒充空态）**：加载失败给可重试错误面，且**不**同时画「还没有采购单」（那是业务结论）。判据 = `#加载失败`（本条写完当场抓到页面一开始的错，已修）。
+数据: **类级守卫（同批被它们判红并已修）**：`wide-table-action-column-guard`（操作列 `sticky right-0`）、`user-copy-jargon-guard`（副标题不写实现链路）、`no-native-dialog-for-destructive-copy-guard`（关单原因改页面内弹层，不用 `window.prompt`）、`design-baseline-expression-fallback`（状态走 `displayEnum`）。
+数据: **边界（照实登记）**：收货**不自动生成**入库单（可关联已过账入库单）；采购单编辑（`ordered` 状态下改明细）未做 —— 要改就关单重开；按单勾对/对账单属后续段。
+前置: 本用例是 [frontend-contract]：零网络（`@/lib/api` 全 mock）、零 LLM。菜单与路由守卫另行由 `menu-nav` / `remnants-menu-isomorphic` / `test_agent_permission_parity` 承担。
+跳过: [frontend-contract] 页面写面与读面契约，由 vitest 单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-20 新增（issue #7369 段 4-B）。落码 = `/purchase-orders` 页面（列表 / 建单 / 收货 / 关单 + 只读门控）+ 菜单三源同构（`menu.ts` / `MenuController` / `AuthService`）+ 路由守卫 / 面包屑 / 页面上下文注册 + RBAC 清单与读数重生成。 ｜ tags: frontend-contract, purchase, receiving, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12312,8 +12329,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：841（活跃 141，跳过 700）
-- tier 分布：smoke 12 / normal 773 / adversarial 32
+- 用例总数：842（活跃 141，跳过 701）
+- tier 分布：smoke 12 / normal 774 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12328,7 +12345,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：124
+- 杂项域：125
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12496,6 +12513,7 @@
 - SP-003: 供应商应付对账（A 段轻口径）：按供应商累计收货额 + 合计；付款登记未做 ⇒ 显式标 paymentsRecorded=false 并显示「未登记」（issue #7369 段 3-A）
 - SP-004: 供应商付款：一笔付款可冲抵多张入库单；差额=预付合法；单张单不许超付；作废留痕必须写原因（issue #7369 段 3-B）
 - SP-005: 采购单：一单可分多次收货（状态由 Σ收货派生）；收货不许超收；提前关闭必须写原因（issue #7369 段 4）
+- SP-006: 采购单页面：列表真值 + 收货进度派生 + 建单/收货/关单三条写面（issue #7369 段 4-B）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

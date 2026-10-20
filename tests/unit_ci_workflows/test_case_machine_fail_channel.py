@@ -131,8 +131,9 @@ def exempt_channel_problems(cases, repo_root):
     problems = []
     for c in cases:
         cid = str(c.get("id") or "?")
-        if not str(c.get("skip_reason") or "").strip().startswith(tax.BACKEND_CONTRACT_MARKER):
-            problems.append(f"{cid}: 走了豁免通道却没有 `{tax.BACKEND_CONTRACT_MARKER}` skip_reason")
+        if not tax.is_backend_contract_case(c):
+            problems.append(
+                f"{cid}: 走了豁免通道却没有契约标记 skip_reason（{tax.CONTRACT_MARKERS}）")
             continue
         refs = [str(r) for r in ((c.get("traces") or {}).get("tests") or [])]
         if not refs:
