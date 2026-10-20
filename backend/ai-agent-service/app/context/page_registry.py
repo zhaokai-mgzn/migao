@@ -105,6 +105,13 @@ class TruthSource:
 
 #: 真值源登记表。**未登记的真值源 id ⇒ 那条 route 不生效**（fail-closed，见 `build_page_context`）。
 TRUTH_SOURCES: Dict[str, TruthSource] = {
+    # 供应商档案（issue #7369，P0-1 段 1）：口径写在服务层 javadoc（账期三态 / 状态域 / 与单据快照的区别），
+    # 不编第二份说明文档。
+    "supplier-master-data": TruthSource(
+        label="供应商档案（供应商主数据）",
+        citation="依据：供应商档案口径（服务层说明）",
+        path="backend/admin-api/src/main/java/com/migao/admin/service/SupplierService.java",
+    ),
     "curtain-fabric-quote-rules": TruthSource(
         label="窗帘布料算料与计价口径",
         citation="依据：本店算料与计价口径说明",
@@ -170,6 +177,13 @@ class PageEntry:
 
 #: route → 真值源登记表（**未登记即不注入**；本表是「哪一页能注入」的唯一真值）。
 PAGE_REGISTRY: Tuple[PageEntry, ...] = (
+    # 供应商档案（issue #7369）：页面上问「账期怎么算 / 停用是什么意思」⇒ 引服务层口径。
+    PageEntry(
+        route="/suppliers",
+        truth_source="supplier-master-data",
+        page_permissions=("inbound:view",),
+        entity_permissions=(),
+    ),
     PageEntry(
         route="/orders/new",
         truth_source="curtain-fabric-quote-rules",

@@ -3725,5 +3725,37 @@ COMMENT ON COLUMN quality_inspections.inspector_kind IS '检验人身份类别�
 COMMENT ON COLUMN quality_inspections.inspected_at IS '检验时刻：取业务时钟单点 BusinessClock（Asia/Shanghai）—— 不使用无参 now()（issue #3802 / BusinessClockSourceGuardTest）';
 
 -- ================================================
+-- 供应商主数据（issue #7369，P0-1 段 1；V170 的终态同步）
+-- ================================================
+CREATE TABLE IF NOT EXISTS suppliers (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    name VARCHAR(128) NOT NULL,
+    contact_name VARCHAR(64),
+    contact_phone VARCHAR(32),
+    payment_terms_days INTEGER,
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    remark TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    CONSTRAINT ck_suppliers_status CHECK (status IN ('active', 'inactive')),
+    CONSTRAINT ck_suppliers_terms CHECK (payment_terms_days IS NULL OR (payment_terms_days >= 0 AND payment_terms_days <= 365))
+);
+
+CREATE INDEX IF NOT EXISTS idx_suppliers_tenant_name
+    ON suppliers (tenant_id, name)
+    WHERE deleted = FALSE;
+
+COMMENT ON TABLE suppliers IS '供应商主数据（issue #7369，P0-1 段 1）：一行 = 一家供应商。单据侧引用（supplier_id）由段 2 落地 —— 本表不参与任何既有单据写面。';
+COMMENT ON COLUMN suppliers.payment_terms_days IS '账期天数：NULL = 未设置；0 = 现结；正数 = 账期（0~365，越界由 CHECK 与服务层双向拦）';
+COMMENT ON COLUMN suppliers.status IS '档案状态：active 在用 / inactive 停用（停用后不可再被新单据选中，由段 2 在写面拦）';
+
+ALTER TABLE suppliers ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation_suppliers ON suppliers;
+CREATE POLICY tenant_isolation_suppliers ON suppliers
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+
+-- ================================================
 -- END OF SCHEMA
 -- ================================================

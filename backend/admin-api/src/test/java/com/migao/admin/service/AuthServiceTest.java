@@ -623,10 +623,10 @@ class AuthServiceTest {
         var inventory = groupByKey(menus, "inventory-center");
         // 🔴 2026-10-06（方案 A1）：单据（进 → 账 → 出）→ 台账 → 分析
         assertThat(keysOf(inventory.getChildren())).containsExactly(
-                "inbound-orders", "stock-ledger", "shipments", "production-remnants",
+                "inbound-orders", "suppliers", "stock-ledger", "shipments", "production-remnants",
                 "production-saving-board");
         assertThat(pathsOf(inventory.getChildren())).containsExactly(
-                "/inbound-orders", "/stock-ledger", "/shipments", "/production/remnants",
+                "/inbound-orders", "/suppliers", "/stock-ledger", "/shipments", "/production/remnants",
                 "/production/saving-board");
 
         var org = groupByKey(menus, "org-center");
@@ -745,8 +745,8 @@ class AuthServiceTest {
         assertThat(keysOf(menus)).containsExactly("inventory-center", "notifications");
         var inventory = groupByKey(menus, "inventory-center");
         assertThat(inventory.getName()).isEqualTo("仓储与物料");
-        assertThat(namesOf(inventory.getChildren())).containsExactly("入库单");
-        assertThat(pathsOf(inventory.getChildren())).containsExactly("/inbound-orders");
+        assertThat(namesOf(inventory.getChildren())).containsExactly("入库单", "供应商");
+        assertThat(pathsOf(inventory.getChildren())).containsExactly("/inbound-orders", "/suppliers");
         // 自证渲染面非空（入库单自己）+ 反向：processing:manage 的两项确实被门控挡在外面
         assertThat(allNames(menus)).contains("入库单");
         assertThat(allNames(menus)).doesNotContain("余料台账", "省料看板", "作业看板");

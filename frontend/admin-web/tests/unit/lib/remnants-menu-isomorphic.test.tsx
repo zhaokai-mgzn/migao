@@ -193,8 +193,9 @@ describe('余料台账菜单三处同构（PR-106 / issue #5191）', () => {
     fireEvent.click(screen.getByTestId('sidebar-group-toggle-inventory-center'))
     expect(await screen.findByRole('link', { name: '入库单' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: NAME })).toBeNull()
+    // 本组 = 2 项：入库单 + 供应商（issue #7369：档案面与单据面同码，同一条 inbound:view 带出）
     expect(within(screen.getByText('仓储与物料').closest('[data-group-key]') as HTMLElement)
-      .queryAllByRole('link')).toHaveLength(1)
+      .queryAllByRole('link')).toHaveLength(2)
     cleanup()
   })
 })

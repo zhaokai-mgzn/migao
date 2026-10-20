@@ -85,7 +85,7 @@ const GROUP_NAMES: Record<string, string> = {
 const HEAD_KEYS = ['dashboard']
 const HEAD_TESTID = 'sidebar-standalone-head'
 /**
- * 21 项（最前席位 → 全部分组 → 尾席位 → 独立项）的渲染顺序
+ * 22 项（最前席位 → 全部分组 → 尾席位 → 独立项）的渲染顺序
  * （#5778；#5939 加「发货单」；#6404 加「库存明细」；**2026-10-06 方案 A1 重排 + 尾席位沉底**；
  *  **#6580 生产管理组收拢为 3 项、第二个一级项由「参数总览」改为「企业基础设置」**；
  *  **#7087 撤销「工作台」组 + 经营看板升最前席位 + 删「每日简报」菜单项**）。
@@ -105,7 +105,7 @@ const ALL_MENU_KEYS = [
   'production-pool',
   'production-piecework',
   'quality-inspections',
-  'inbound-orders',
+  'inbound-orders', 'suppliers',
   'stock-ledger',
   'shipments',
   'production-remnants',
@@ -183,8 +183,8 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     expect(toggle('inventory-center').getAttribute('aria-expanded')).toBe('true')
     expect(menuKeys()).toEqual([
       ...HEAD_KEYS,
-      'inbound-orders',
-      'stock-ledger',
+      'inbound-orders', 'suppliers',
+  'stock-ledger',
       'shipments',
       'production-remnants',
       'production-saving-board',
@@ -235,7 +235,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
       'production-pool',
       'production-piecework',
       'quality-inspections',
-      'inbound-orders',    // 2026-10-06：仓储与物料组内重排（进 → 账 → 出 → 台账 → 分析）
+      'inbound-orders', 'suppliers',    // 2026-10-06：仓储与物料组内重排（进 → 账 → 出 → 台账 → 分析）
       'stock-ledger',
       'shipments',
       'production-remnants',
@@ -278,7 +278,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
   it('③ 折叠态：**5 个** `sidebar-group-anchor-<key>` 都在，`title` == 组名', async () => {
     render(<Sidebar collapsed onToggle={() => {}} />)
     await waitFor(() =>
-      expect(menuKeys()).toHaveLength(21),
+      expect(menuKeys()).toHaveLength(22),
     )
     for (const key of GROUP_KEYS) {
       const anchor = screen.getByTestId(`sidebar-group-anchor-${key}`)
@@ -294,7 +294,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
 
   it('③ 折叠态：**组名文本**与**菜单名文本**都不渲染（原判据仍须成立）', async () => {
     render(<Sidebar collapsed onToggle={() => {}} />)
-    await waitFor(() => expect(menuKeys()).toHaveLength(21))
+    await waitFor(() => expect(menuKeys()).toHaveLength(22))
     for (const name of Object.values(GROUP_NAMES)) {
       expect(screen.queryByText(name)).toBeNull()
     }
@@ -309,16 +309,16 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     expect(within(groupEl('trade-center')).getAllByRole('link')).toHaveLength(2)
   })
 
-  it('③ 折叠态：**所有组**的项都渲染（图标栏），项 key 序列 == 21 项全量（#6404 +库存明细；#6580 生产组收拢；#7087 撤工作台组 + 最前席位）', async () => {
+  it('③ 折叠态：**所有组**的项都渲染（图标栏），项 key 序列 == 22 项全量（#6404 +库存明细；#6580 生产组收拢；#7087 撤工作台组 + 最前席位）', async () => {
     render(<Sidebar collapsed onToggle={() => {}} />)
-    await waitFor(() => expect(menuKeys()).toHaveLength(21))
+    await waitFor(() => expect(menuKeys()).toHaveLength(22))
     expect(menuKeys()).toEqual(ALL_MENU_KEYS)
     // 每组项数与其组内项数一致（分组信息没丢）；「工作台」组已撤销 ⇒ 探针换成首组
     expect(within(groupEl('customer-service')).getAllByRole('link')).toHaveLength(4)
     // 🔴 #6580：生产管理组 5 → **3 项**（加工项管理/工艺配置已移除）；组织管理组 3 → **2 项**
     //（「企业基础设置」升为一级项）；🔴 #7140：生产管理组再 **+1**（「质检记录」）⇒ 现 **4 项**
     expect(within(groupEl('production-center')).getAllByRole('link')).toHaveLength(4)
-    expect(within(groupEl('inventory-center')).getAllByRole('link')).toHaveLength(5)
+    expect(within(groupEl('inventory-center')).getAllByRole('link')).toHaveLength(6)
     expect(within(groupEl('org-center')).getAllByRole('link')).toHaveLength(2)
     // 🔴 #7087：最前席位**不在**任何组里（它挂在 `sidebar-standalone-head` 块上）
     expect(within(screen.getByTestId(HEAD_TESTID)).getAllByRole('link')).toHaveLength(1)
@@ -327,7 +327,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
   it('③ 折叠态高亮仍生效：/production/pool ⇒ 该项带 `bg-primary-600`，且只有它一个', async () => {
     mockPathname = '/production/pool'
     render(<Sidebar collapsed onToggle={() => {}} />)
-    await waitFor(() => expect(menuKeys()).toHaveLength(21))
+    await waitFor(() => expect(menuKeys()).toHaveLength(22))
     const active = document.querySelector('[data-menu-key="production-pool"]') as HTMLElement
     expect(active.className).toContain('bg-primary-600')
     expect(

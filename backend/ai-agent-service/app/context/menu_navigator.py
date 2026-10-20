@@ -148,6 +148,7 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     MenuNode("production-center", "质检记录", "/quality-inspections", "production:inspect"),
     # 仓储与物料（2026-10-06：单据（进 → 账 → 出）→ 台账 → 分析）
     MenuNode("inventory-center", "入库单", "/inbound-orders", "inbound:view"),
+    MenuNode("inventory-center", "供应商", "/suppliers", "inbound:view"),
     # issue #6404：库存明细（与省料看板同码 `product:list` —— 两者都是该页的**读**码；
     # 先例 = 「发货单」与「销售订单」同取 `order:list`，issue #5939）
     MenuNode("inventory-center", "库存明细", "/stock-ledger", "product:list"),
@@ -263,6 +264,7 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     # 「质检记录」与它的子串「质检」；「合格判定」这类不在菜单名里的说法**不登记**
     #（它命中不了节点 = 不可达，登记了会变成空断言）。
     NavFeature("quality-inspection", "质检记录（质检判定）", (("production-center", "质检记录"),), ("质检记录", "质检")),
+    NavFeature("suppliers", "供应商档案", (("inventory-center", "供应商"),), ("供应商", "供应商档案")),
     NavFeature("inbound-orders", "入库单（入库）", (("inventory-center", "入库单"),), ("入库单", "入库")),
     NavFeature("shipments", "发货单（出库）", (("inventory-center", "发货单"),), ("发货单", "出库")),
     NavFeature("remnants", "余料台账（余料）", (("inventory-center", "余料台账"),), ("余料台账", "余料")),

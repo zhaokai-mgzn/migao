@@ -7027,6 +7027,25 @@ _CASE_MC_119 = EvalCase(
     precondition='本用例是 [backend-contract] 纯静态判据：前置 = `backend/admin-api/src/main/resources/db/init/schema.sql` 与 `tests/unit_ci_workflows/schema_health_ledger.json` 在场且可解析；生产代码语料只读（不小于 500 个文件，语料口径坏了判据当场红）。零网络、零时钟、不起真库。',
 )
 
+# ── SP-001 [NORMAL] 供应商主数据：新表 + 档案 CRUD（校验三态：名称/账期/状态）+ 菜单三源与路由守卫同构（issue #7369，P0-1 段 1）（源: cases/misc.yml）──
+_CASE_SP_001 = EvalCase(
+    id='SP-001',
+    legacy_id='',
+    title='供应商主数据：新表 + 档案 CRUD（校验三态：名称/账期/状态）+ 菜单三源与路由守卫同构（issue #7369，P0-1 段 1）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-20，逐字）：「p0 p1 逐步推进落地」—— P0-1 = 供应商主数据 + 采购收货 + 应付基础，本用例守其**段 1**（档案本身）。'],
+    expectations=[],
+    data_checks=['**现状（改前，代码实测）**：供应商在系统里只是入库单上的**一段文本** —— `InboundLabelView` 自注「MVP 不建主数据」；同族纪律见 `docs/wiki/Domain-Modeling.md`（主数据 vs 单据快照不得混表）。', '**判据 1（服务层三态校验）**：`backend/admin-api/src/test/java/com/migao/admin/service/SupplierServiceTest.java`（6 条）——① 名称去空白后为空 ⇒ 拒且**不落库**；② 账期 -1 / 366 ⇒ 拒，0 与 365 是合法边界；③ 状态只接受 active / inactive（`disabled` ⇒ 拒），`INACTIVE` 归一为 `inactive`；④ 跨租户 id 更新 ⇒ 404 且不落库。', '**判据 2（写端点归属先于载荷校验）**：`PUT /api/admin/suppliers/{id}` 标 `@TenantOwnedResource("supplier")`，认定键登记在 `TenantResourceOwnership.registerChecks()`（与 product/category 同款）；判据 = `ServiceLayerValidatedWriteEndpointGuardTest`（#6167）+ `TenantOwnedWriteEndpointGuardTest`（#6158）。', '**判据 3（页面判据）**：`frontend/admin-web/tests/unit/pages/suppliers.test.tsx`（5 条）—— 第一屏拉服务端列表并如实渲染；账期三态口径（未设置/现结/N 天）；建档名称去空白 + 账期留空发 **null**（不是 0）；停用走同一条更新写面；账期越界前端拦下且**不发请求**。', '**判据 4（菜单三源 + 路由守卫同构）**：节点「供应商」在 `menu.ts` / `MenuController` / `AuthService` 三处**逐字同码** `inbound:view`（不新造 `supplier:*` —— 新码无人持有 ⇒ 节点对所有人不可见，#4203 同族坑；同组「发货单」取 `order:list` 是先例）；路由守卫 `(dashboard)/layout.tsx` 的 `ROUTE_PERMISSION_MAP` 与节点成对登记。判据 = `test_agent_permission_parity.py`（判据 11/12）+ `test_rbac_derived_pages.py`。', '**判据 5（表形态）**：`suppliers` 11 列（无孤儿列：每列都被服务/页面消费）；租户 RLS 策略 `tenant_isolation_suppliers`；建库脚本与 V170 终态同步。判据 = `test_schema_health_guards.py` + 迁移指纹账本。', '**边界（照实登记）**：本用例**不覆盖**任何单据联动 —— 入库单仍写自己的文本供应商，`supplier_id` 引用、停用拦截、采购单/收货/应付全部属**段 2**（issue #7369 保持 OPEN）。'],
+    skip_reason='[backend-contract] 主数据 CRUD 的服务层校验 + 菜单/守卫同构契约，由 Java 单测与 vitest 页面判据验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'supplier', 'master-data', 'rbac', 'menu-parity', 'route-guard', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `suppliers` 表在场（V170 + 建库脚本终态）、`/api/admin/suppliers` 三个端点在控制器上、菜单节点「供应商」三源同构且路由守卫登记。零网络、零 LLM。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -16007,6 +16026,7 @@ ALL_CASES = (
     _CASE_MC_117,
     _CASE_MC_118,
     _CASE_MC_119,
+    _CASE_SP_001,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

@@ -1,0 +1,128 @@
+package com.migao.admin.service;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.migao.admin.entity.Supplier;
+import com.migao.admin.exception.BusinessException;
+import com.migao.admin.mapper.SupplierMapper;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
+
+import java.util.List;
+
+/**
+ * 供应商主数据服务（issue #7369，P0-1 段 1）。
+ *
+ * <h3>本段只做「档案」，不做任何单据联动</h3>
+ * 入库单/采购单侧的 {@code supplier_id} 引用是**段 2**。这里刻意不含「停用后禁止收货」这类跨单据判定 ——
+ * 那些判定的正确位置在单据写面（段 2 落地时加），提前写在这里只会变成第二套判定点。
+ *
+ * <h3>校验口径（逐条会红）</h3>
+ * <ul>
+ *   <li>名称去空白后不得为空（同一家被录成三种写法正是本表要治的病灶之一）；</li>
+ *   <li>账期天数 0~365（NULL = 未设置；0 = 现结）；</li>
+ *   <li>状态只接受 {@code active} / {@code inactive}（与 V170 的 CHECK 同域，服务层先拦以便给出可行动提示）。</li>
+ * </ul>
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class SupplierService {
+
+    /** 与 V170 的 {@code ck_suppliers_status} 同域。 */
+    public static final String STATUS_ACTIVE = "active";
+    public static final String STATUS_INACTIVE = "inactive";
+
+    private final SupplierMapper supplierMapper;
+
+    /** 本租户供应商列表：可按名称/联系人/电话模糊搜；在用在前、名称升序（停用的沉底，不平铺打扰）。 */
+    public List<Supplier> list(Long tenantId, String keyword) {
+        LambdaQueryWrapper<Supplier> wrapper = new LambdaQueryWrapper<Supplier>()
+                .eq(Supplier::getTenantId, tenantId);
+        if (StringUtils.hasText(keyword)) {
+            String kw = keyword.trim();
+            wrapper.and(w -> w.like(Supplier::getName, kw)
+                    .or().like(Supplier::getContactName, kw)
+                    .or().like(Supplier::getContactPhone, kw));
+        }
+        wrapper.orderByAsc(Supplier::getStatus).orderByAsc(Supplier::getName);
+        return supplierMapper.selectList(wrapper);
+    }
+
+    public Supplier create(Long tenantId, Supplier input) {
+        String name = normalizeName(input.getName());
+        validateTerms(input.getPaymentTermsDays());
+        String status = normalizeStatus(input.getStatus());
+        Supplier supplier = Supplier.builder()
+                .tenantId(tenantId)
+                .name(name)
+                .contactName(trimToNull(input.getContactName()))
+                .contactPhone(trimToNull(input.getContactPhone()))
+                .paymentTermsDays(input.getPaymentTermsDays())
+                .status(status)
+                .remark(trimToNull(input.getRemark()))
+                .deleted(Boolean.FALSE)
+                .build();
+        supplierMapper.insert(supplier);
+        log.info("[supplier] 建档 | tenant={} id={} name={}", tenantId, supplier.getId(), name);
+        return supplier;
+    }
+
+    /**
+     * 更新档案。**停用靠这里改 status**（不单独开端点：少一个写面就少一处权限/归属判定）。
+     */
+    public Supplier update(String id, Long tenantId, Supplier input) {
+        Supplier existing = supplierMapper.selectById(id);
+        if (existing == null || !tenantId.equals(existing.getTenantId())) {
+            throw BusinessException.notFound("供应商");
+        }
+        String name = normalizeName(input.getName());
+        validateTerms(input.getPaymentTermsDays());
+        existing.setName(name);
+        existing.setContactName(trimToNull(input.getContactName()));
+        existing.setContactPhone(trimToNull(input.getContactPhone()));
+        existing.setPaymentTermsDays(input.getPaymentTermsDays());
+        existing.setStatus(normalizeStatus(input.getStatus()));
+        existing.setRemark(trimToNull(input.getRemark()));
+        supplierMapper.updateById(existing);
+        log.info("[supplier] 更新 | tenant={} id={} status={}", tenantId, id, existing.getStatus());
+        return existing;
+    }
+
+    private String normalizeName(String raw) {
+        String name = raw == null ? "" : raw.trim();
+        if (name.isEmpty()) {
+            throw BusinessException.validationError("供应商名称不能为空");
+        }
+        if (name.length() > 128) {
+            throw BusinessException.validationError("供应商名称过长（上限 128 字）：" + name.length());
+        }
+        return name;
+    }
+
+    private void validateTerms(Integer days) {
+        if (days != null && (days < 0 || days > 365)) {
+            throw BusinessException.validationError("账期天数须在 0~365 之间（0 = 现结）：" + days);
+        }
+    }
+
+    private String normalizeStatus(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return STATUS_ACTIVE;
+        }
+        String status = raw.trim().toLowerCase();
+        if (!STATUS_ACTIVE.equals(status) && !STATUS_INACTIVE.equals(status)) {
+            throw BusinessException.validationError("供应商状态只接受 active / inactive：" + raw);
+        }
+        return status;
+    }
+
+    private String trimToNull(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String v = raw.trim();
+        return v.isEmpty() ? null : v;
+    }
+}

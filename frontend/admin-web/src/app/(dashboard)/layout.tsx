@@ -67,6 +67,8 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   // 此前只有菜单一道防线 ⇒ 无 `inbound:view` 者地址栏直达 `/inbound-orders` 不被拦。
   // 一条前缀同时覆盖 `/inbound-orders/new`（**不单列** —— 更宽的父前缀排在前面会让子路径成为
   // `find()` 永不命中的死条目，判据 11① 判红）。
+  // 供应商（issue #7369）：档案面与入库单同码（inbound:view）—— 菜单隐藏时地址栏直达也要被拦。
+  { prefix: '/suppliers', code: 'inbound:view' },
   { prefix: '/inbound-orders', code: 'inbound:view' },
   // 库存明细（issue #6404）：页面守卫码 = 菜单节点码 = 该页第一屏读端点码
   //（`StockLedgerController` 的**方法级** `product:list`）—— 取**既有**码，不新造。

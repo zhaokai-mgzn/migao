@@ -161,6 +161,11 @@ public class MenuController {
         // 入库单（V111，issue #5034）权限码**独立**（inbound:view，与 @RequirePermission 同码）；
         // 余料台账（issue #5191）/ 省料看板（issue #5159）沿用 processing:manage ——
         // 与 RemnantController 的类级 @RequirePermission 同码（门禁不放宽也不收紧）。
+        // 供应商（issue #7369，P0-1 段 1）：**取既有码 inbound:view** —— 不新造 supplier:view
+        // ⚠️ 必须落在「入库单」**之后**：手机端可见面标注按「该码在树序上的首个承载节点」派生
+        // （#6781）⇒ 排在前面会让「供应商」被标成「入库过账」（它没有移动页）。
+        // （新码今天无人持有 ⇒ 节点对所有人不可见，#4203 同族坑；同组「发货单」取 order:list 是先例）。
+        MenuNode iSupplier = new MenuNode("inbound:view", "供应商");
         MenuNode i1 = new MenuNode("inbound:view", "入库单");
         // 发货单（issue #5939）：**取既有码 order:list**（与「销售订单」节点、以及该页第一屏读端点
         // GET /api/admin/shipments 的 @RequirePermission 逐字同码）—— 不新造 `shipment:view`：
@@ -222,7 +227,7 @@ public class MenuController {
             new MenuNode("production-center", "生产管理", List.of(pr1, prPool, pr3, pr4, prUpdate)),
             // 仓储与物料（用户 2026-10-06 组内重排：单据（进 → 账 → 出）→ 台账 → 分析）
             // 🔴 issue #6759：组尾追加动作码节点「入库单操作」（`inbound:create` = 手机端过账的写码）。
-            new MenuNode("inventory-center", "仓储与物料", List.of(i1, prLedger, i2, prRemnants, prSaving, iCreate)),
+            new MenuNode("inventory-center", "仓储与物料", List.of(i1, iSupplier, prLedger, i2, prRemnants, prSaving, iCreate)),
             new MenuNode("org-center", "组织管理", List.of(e1, r1, s1, e2)),
             // 🔴 尾部独立项（不属于任何组）：**排在所有分组之后**（用户 2026-10-06 裁定，原为「工作台组之后」）
             // —— 组名即「分组」，渲染在组与组之间会让「大菜单并列」自相矛盾。
