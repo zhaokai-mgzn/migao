@@ -146,6 +146,49 @@ class SupplierServiceTest {
     }
 
     @Test
+    @DisplayName("应付对账：逐家映射 + 合计 + 诚实标记 paymentsRecorded=false（A 段没有付款登记）")
+    void payableSummaryMapsRowsAndTotals() {
+        java.util.Map<String, Object> withOrders = new java.util.HashMap<>();
+        withOrders.put("supplier_id", "sup-1");
+        withOrders.put("supplier_name", "杭州染整一厂");
+        withOrders.put("supplier_status", "active");
+        withOrders.put("received_amount", new java.math.BigDecimal("12500.4000"));
+        withOrders.put("order_count", 4L);
+        withOrders.put("first_inbound_date", "2026-09-01");
+        withOrders.put("last_inbound_date", "2026-10-10");
+        // 刚建档还没收过货：金额 0、日期 null（LEFT JOIN 才看得见「建档了但没录单」）
+        java.util.Map<String, Object> empty = new java.util.HashMap<>();
+        empty.put("supplier_id", "sup-2");
+        empty.put("supplier_name", "宏达布行");
+        empty.put("supplier_status", "inactive");
+        empty.put("received_amount", java.math.BigDecimal.ZERO);
+        empty.put("order_count", 0L);
+        empty.put("first_inbound_date", null);
+        empty.put("last_inbound_date", null);
+        when(inboundOrderMapper.selectSupplierPayables(TENANT))
+                .thenReturn(java.util.List.of(withOrders, empty));
+
+        var summary = supplierService.payableSummary(TENANT);
+
+        assertThat(summary.suppliers()).hasSize(2);
+        var first = summary.suppliers().get(0);
+        assertThat(first.supplierName()).isEqualTo("杭州染整一厂");
+        assertThat(first.receivedAmount()).isEqualByComparingTo("12500.40");
+        assertThat(first.orderCount()).isEqualTo(4);
+        assertThat(first.lastInboundDate()).isEqualTo(java.time.LocalDate.of(2026, 10, 10));
+        assertThat(first.paidAmount()).isEqualByComparingTo("0");
+        assertThat(first.outstanding()).isEqualByComparingTo("12500.40");
+        assertThat(first.paymentsRecorded()).isFalse();
+        // 空档案：日期为 null、金额 0，不掉行
+        assertThat(summary.suppliers().get(1).lastInboundDate()).isNull();
+        assertThat(summary.suppliers().get(1).receivedAmount()).isEqualByComparingTo("0");
+        // 合计与「A 段恒等」：totalReceived == totalOutstanding（没有付款登记）
+        assertThat(summary.totalReceived()).isEqualByComparingTo("12500.40");
+        assertThat(summary.totalOutstanding()).isEqualByComparingTo("12500.40");
+        assertThat(summary.paymentsRecorded()).isFalse();
+    }
+
+    @Test
     @DisplayName("更新：停用走同一条写面（status=inactive 落库）")
     void updateCanDeactivate() {
         when(supplierMapper.selectById("sup-1")).thenReturn(

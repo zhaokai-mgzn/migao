@@ -7065,6 +7065,25 @@ _CASE_SP_002 = EvalCase(
     precondition='本用例是 [backend-contract]：前置 = `inbound_orders.supplier_id` 列在场（V173 + 建库脚本终态）、`suppliers` 表在场（V170）。零网络、零 LLM。',
 )
 
+# ── SP-003 [NORMAL] 供应商应付对账（A 段轻口径）：按供应商累计收货额 + 合计；付款登记未做 ⇒ 显式标 paymentsRecorded=false 并显示「未登记」（issue #7369 段 3-A）（源: cases/misc.yml）──
+_CASE_SP_003 = EvalCase(
+    id='SP-003',
+    legacy_id='',
+    title='供应商应付对账（A 段轻口径）：按供应商累计收货额 + 合计；付款登记未做 ⇒ 显式标 paymentsRecorded=false 并显示「未登记」（issue #7369 段 3-A）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-20，逐字）：「a」—— 在段 3 的三选一里选 **A（轻）**：只做「欠这家供应商多少」的对账视图，**不做付款流水**。'],
+    expectations=[],
+    data_checks=['**改前**：系统里没有任何「按供应商看金额」的读面 —— 采购额只能靠人把入库单按名字肉眼加总。', "**判据 1（金额口径唯一真值）**：`InboundOrderMapper.selectSupplierPayables` 只算 `status = 'posted'` 的入库单（draft 未进库存、cancelled 作废，都不构成应付），金额取 `inbound_orders.total_amount`（过账时冻结），LEFT JOIN 让「刚建档没收货」的供应商也出现（金额 0、日期 null）。", '**判据 2（诚实标记）**：A 段没有付款登记 ⇒ `paidAmount = 0` 且 `paymentsRecorded = false`；前端据此把「已付」列显示为「未登记」而**不是**「¥0.00」。判据 = `SupplierServiceTest#payableSummaryMapsRowsAndTotals` + `suppliers.test.tsx`（断言行内含「未登记」且不含伪造的已付金额）。', '**判据 3（合计不重算）**：合计 = 逐行金额之和（服务层累加），前端只展示服务端给的 `totalReceived`；`totalReceived == totalOutstanding`（A 段恒等，付款段上线后才会分开）。', '**越权面**：读码沿用 `inbound:view`（该页读者与入库单同群，入库单列表本来就带金额）⇒ **不新增暴露面**，也不新造 `supplier:*`/`finance:*` 码（新码今天没有岗位持有 = 菜单对所有人才不可见）。', '**边界（照实登记）**：不做付款登记 / 账龄 / 对账单 / 红冲；不做「未挂档案的单据」金额汇总（由待指派清单承接，两处不重叠）。'],
+    skip_reason='[backend-contract] 只读聚合 + 响应契约 + 页面文案，由 Java 单测与 vitest 页面判据验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'supplier', 'payables', 'read-model', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `suppliers`(V170) + `inbound_orders.supplier_id`(V173) 在场。零网络、零 LLM。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -16066,6 +16085,7 @@ ALL_CASES = (
     _CASE_MC_119,
     _CASE_SP_001,
     _CASE_SP_002,
+    _CASE_SP_003,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

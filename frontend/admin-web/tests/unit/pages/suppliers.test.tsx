@@ -34,6 +34,7 @@ vi.mock('@/lib/permission', () => ({
 
 const mockList = vi.fn()
 const mockUnassigned = vi.fn()
+const mockPayables = vi.fn()
 const mockCreate = vi.fn()
 const mockUpdate = vi.fn()
 
@@ -41,6 +42,7 @@ vi.mock('@/lib/api', () => ({
   supplierApi: {
     list: (...args: unknown[]) => mockList(...args),
     unassignedInbound: (...args: unknown[]) => mockUnassigned(...args),
+    payables: (...args: unknown[]) => mockPayables(...args),
     create: (...args: unknown[]) => mockCreate(...args),
     update: (...args: unknown[]) => mockUpdate(...args),
   },
@@ -60,6 +62,9 @@ describe('供应商档案页', () => {
     mockHas.mockImplementation((code: string) => code === 'inbound:create')
     mockList.mockResolvedValue({ data: { data: ROWS } })
     mockUnassigned.mockResolvedValue({ data: { data: [] } })
+    mockPayables.mockResolvedValue({ data: { data: {
+      suppliers: [], totalReceived: 0, totalOutstanding: 0, paymentsRecorded: false,
+    } } })
     mockCreate.mockResolvedValue({ data: { data: ROWS[0] } })
     mockUpdate.mockResolvedValue({ data: { data: ROWS[0] } })
   })
@@ -166,5 +171,37 @@ describe('供应商档案页', () => {
     render(<SuppliersPage />)
     await waitFor(() => expect(screen.getByTestId('supplier-table')).toBeInTheDocument())
     expect(screen.queryByTestId('supplier-unassigned')).toBeNull()
+  })
+
+  it('应付对账卡：逐家累计收货额 + 合计；A 段把「已付」显示成「未登记」而不是 ¥0.00', async () => {
+    mockPayables.mockResolvedValue({ data: { data: {
+      suppliers: [
+        { supplierId: 'sup-1', supplierName: '杭州染整一厂', status: 'active', receivedAmount: 12500.4,
+          orderCount: 4, firstInboundDate: '2026-09-01', lastInboundDate: '2026-10-10',
+          paidAmount: 0, paymentsRecorded: false, outstanding: 12500.4 },
+        { supplierId: 'sup-2', supplierName: '宏达布行', status: 'inactive', receivedAmount: 0,
+          orderCount: 0, firstInboundDate: null, lastInboundDate: null,
+          paidAmount: 0, paymentsRecorded: false, outstanding: 0 },
+      ],
+      totalReceived: 12500.4, totalOutstanding: 12500.4, paymentsRecorded: false,
+    } } })
+    render(<SuppliersPage />)
+
+    await waitFor(() => expect(screen.getByTestId('supplier-payables')).toBeInTheDocument())
+    const row = screen.getByTestId('payable-sup-1')
+    expect(row).toHaveTextContent('杭州染整一厂')
+    expect(row).toHaveTextContent('¥12500.40')
+    expect(row).toHaveTextContent('2026-10-10')
+    // 关键：不能说「已付 ¥0.00」——那是把「没做付款登记」说成「一分没付」
+    expect(row).toHaveTextContent('未登记')
+    expect(screen.getByTestId('supplier-payables')).toHaveTextContent('合计 ¥12500.40')
+    expect(screen.getByTestId('supplier-payables')).toHaveTextContent('不是「尚欠」')
+    expect(screen.getByTestId('payable-sup-2')).toHaveTextContent('已停用')
+  })
+
+  it('没有任何收货额 ⇒ 整卡不渲染（空表比没有表更吵）', async () => {
+    render(<SuppliersPage />)
+    await waitFor(() => expect(screen.getByTestId('supplier-table')).toBeInTheDocument())
+    expect(screen.queryByTestId('supplier-payables')).toBeNull()
   })
 })

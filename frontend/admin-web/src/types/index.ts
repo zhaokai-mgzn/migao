@@ -2462,6 +2462,28 @@ export interface UnassignedInboundSupplier {
   lastInboundDate?: string | null
 }
 
+/** 一家供应商的应付对账面（issue #7369 段 3-A）：A 段只做对账视图，`paymentsRecorded=false` 表示「未做付款登记」。 */
+export interface SupplierPayable {
+  supplierId: string
+  supplierName: string
+  status: 'active' | 'inactive'
+  receivedAmount: number
+  orderCount: number
+  firstInboundDate?: string | null
+  lastInboundDate?: string | null
+  paidAmount: number
+  paymentsRecorded: boolean
+  outstanding: number
+}
+
+/** 应付对账汇总（合计 + 诚实标记）。 */
+export interface SupplierPayableSummary {
+  suppliers: SupplierPayable[]
+  totalReceived: number
+  totalOutstanding: number
+  paymentsRecorded: boolean
+}
+
 export interface CustomerCreditStatus {
   customerId: string
   creditLimit: number | null

@@ -3,6 +3,8 @@ package com.migao.admin.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.migao.admin.entity.Supplier;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.dto.SupplierPayable;
+import com.migao.admin.dto.SupplierPayableSummary;
 import com.migao.admin.dto.UnassignedInboundSupplier;
 import com.migao.admin.mapper.InboundOrderMapper;
 import com.migao.admin.mapper.SupplierMapper;
@@ -114,6 +116,51 @@ public class SupplierService {
                     date == null ? null : java.time.LocalDate.parse(String.valueOf(date))));
         }
         return out;
+    }
+
+    /**
+     * 供应商应付对账（issue #7369 段 3-A，用户 2026-10-20 裁定「A（轻）」）。
+     *
+     * <h3>A 段只做对账视图，不做付款流水</h3>
+     * <p>{@code paidAmount} 恒 0、{@code paymentsRecorded = false}：这不是「一分钱没付」，而是
+     * **还没有付款登记通道**。前端据 {@code paymentsRecorded} 显示「未登记」而不是「¥0.00」——
+     * 把「没做」画成「没有」会让商家按错的余额做决策。</p>
+     *
+     * <p>金额口径的唯一真值在 SQL（`InboundOrderMapper.selectSupplierPayables`：只算 posted），
+     * 这里只做映射与总计，**不重算**。</p>
+     */
+    public SupplierPayableSummary payableSummary(Long tenantId) {
+        List<Map<String, Object>> rows = inboundOrderMapper.selectSupplierPayables(tenantId);
+        List<SupplierPayable> payables = new ArrayList<>();
+        java.math.BigDecimal totalReceived = java.math.BigDecimal.ZERO;
+        for (Map<String, Object> row : rows) {
+            java.math.BigDecimal received = toAmount(row.get("received_amount"));
+            java.math.BigDecimal paid = java.math.BigDecimal.ZERO;
+            payables.add(new SupplierPayable(
+                    String.valueOf(row.get("supplier_id")),
+                    String.valueOf(row.get("supplier_name")),
+                    String.valueOf(row.get("supplier_status")),
+                    received,
+                    ((Number) row.get("order_count")).intValue(),
+                    toDate(row.get("first_inbound_date")),
+                    toDate(row.get("last_inbound_date")),
+                    paid,
+                    false,
+                    received.subtract(paid)));
+            totalReceived = totalReceived.add(received);
+        }
+        return new SupplierPayableSummary(payables, totalReceived, totalReceived, false);
+    }
+
+    private static java.math.BigDecimal toAmount(Object raw) {
+        if (raw == null) {
+            return java.math.BigDecimal.ZERO;
+        }
+        return raw instanceof java.math.BigDecimal bd ? bd : new java.math.BigDecimal(String.valueOf(raw));
+    }
+
+    private static java.time.LocalDate toDate(Object raw) {
+        return raw == null ? null : java.time.LocalDate.parse(String.valueOf(raw));
     }
 
     private String normalizeName(String raw) {
