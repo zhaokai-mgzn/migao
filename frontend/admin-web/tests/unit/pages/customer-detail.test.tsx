@@ -1,4 +1,4 @@
-// case_ids: CU-002, CU-009, CU-010
+// case_ids: CU-002, CU-009, CU-010, CU-013
 // 追加（issue #6669 第 1 条）：客户详情「未完成页签不出入口」。
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest'
