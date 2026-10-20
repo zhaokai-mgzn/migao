@@ -166,5 +166,53 @@ python3 tests/unit_ci_workflows/test_migration_immutability.py --write-ledger
 （判据**空转** = 假绿）。下一次搬目录只改这一个文件；`.github/danger_scan.py` 与
 `scripts/drift_audit.py` 同样按两个目录取扫描面（判据强度一字未改）。
 
+## 生产环境建站（一条命令）
+
+```bash
+PGHOST=... PGPORT=5432 PGDATABASE=migao PGPASSWORD=... \
+  ./deploy/init/prod-bootstrap.sh --yes          # 非交互必须 --yes；先看计划用 --dry-run
+```
+
+它**不复制任何 DDL**：唯一真值源仍是 `backend/admin-api/src/main/resources/db/init/schema.sql`
+（表 + 索引 + RLS + 终态种子）与 `db/migration/V*.sql`（切点之后的增量）。
+脚本只负责**顺序 + 前置检查 + 失败即停 + 跑完自证**：
+
+| 步骤 | 做什么 | 语义 |
+|---|---|---|
+| 0 | 读目标库状态（库在不在 / `tenants` 在不在） | 只读；`--dry-run` 只打印计划 |
+| 1 | 库不存在才 `CREATE DATABASE` | **不 drop、不重建** |
+| 2 | `psql -v ON_ERROR_STOP=1 -f schema.sql` | 失败即停（半成品站点比明确报错危险） |
+| 3 | 按**数值**版本号依次跑活迁移 | 已记账的跳过（台账 = `schema_migrations`，与 `MigrationRunner` 同一张表） |
+| 4 | 自检：从 schema.sql 现取**全部表名/索引名**，逐个 `to_regclass` | 缺任一 ⇒ 具名判红并 exit 1 |
+
+三条硬约束（都实测过）：
+
+- **不重建**：库已初始化且没给 `--allow-existing` ⇒ 直接拒绝（exit 1）；
+- **不猜**：库已初始化但 `schema_migrations` 为空 ⇒ 拒绝（无法判定哪些迁移跑过，数据迁移重放会自己回滚）；
+- **不写在脚本里**：首个租户（`tenants.id=1`）由 schema.sql 的终态种子建立；改名/建管理员是**上线后的显式动作**，
+  脚本只在结尾打印出来（不替人做）。
+
+## 索引上线口径（存量库）
+
+迁移里的 `CREATE INDEX`（非 `CONCURRENTLY`）会**短暂阻塞写**，且 `MigrationRunner` 单文件单事务、
+不支持 `CONCURRENTLY`（它不能在事务块内跑）。存量生产库的大表应在**维护窗口**由运维手工执行同一份幂等文件：
+
+```bash
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/admin-api/src/main/resources/db/migration/V170__add_hot_path_indexes.sql
+```
+
+## 数据保留期（人工执行，无定时任务）
+
+`audit_logs` / `notifications` 只增不减，索引挡不住表无限增长。保留期脚本 = `deploy/ops/db-retention.sql`：
+
+```bash
+psql "$DATABASE_URL" -f deploy/ops/db-retention.sql                          # 只读：看超期行数
+psql "$DATABASE_URL" -f deploy/ops/db-retention.sql -v mode=purge \
+     -v audit_days=365 -v notify_days=180                                    # 删除
+```
+
+**有意不做 schedule/cron**（铁律 10：无人值守的删除/破坏性动作不安全）。
+`session_messages` / `stock_ledger_entries` 是业务事实（追溯/对账），**不在**保留期射程内。
+
 ---
 详见: [schema.sql](../../backend/admin-api/src/main/resources/db/init/schema.sql) · [架构](Architecture.md)
