@@ -7,10 +7,13 @@ import { toast } from 'sonner'
 import { Button, Badge } from '@/components/ui'
 import { useRouteId } from '@/lib/use-route-id'
 import { customerApi } from '@/lib/api'
-import type { CustomerDetail, CustomerTag, CustomerOrder, CustomerSession, CustomerChannel, CustomerDetailResponse } from '@/types'
+import type { CustomerDetail, CustomerTag, CustomerOrder, CustomerSession, CustomerChannel, CustomerDetailResponse, CustomerCreditStatus } from '@/types'
 import { CustomerChannelLabels } from '@/types'
 import { LOGISTICS_COMPANIES, LOGISTICS_TYPES } from '@/lib/logistics'
 import dayjs from 'dayjs'
+
+const fmtMoney = (v: number | null | undefined) =>
+  v == null ? '—' : Number(v).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const TAG_COLORS = [
   '#48618f', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
@@ -86,6 +89,12 @@ export default function CustomerDetailPage() {
   })
   const [savingReceiver, setSavingReceiver] = useState(false)
 
+  // 授信与往来（issue #7370）
+  const [credit, setCredit] = useState<CustomerCreditStatus | null>(null)
+  const [creditLimitInput, setCreditLimitInput] = useState('')
+  const [creditTermsInput, setCreditTermsInput] = useState('')
+  const [savingCredit, setSavingCredit] = useState(false)
+
   // 标签管理
   const [allTags, setAllTags] = useState<CustomerTag[]>([])
   const [showTagPicker, setShowTagPicker] = useState(false)
@@ -95,12 +104,17 @@ export default function CustomerDetailPage() {
     setLoading(true)
     try {
       // 并行加载：客户详情 + 全量标签定义
-      const [detailRes, tagsRes] = await Promise.all([
+      const [detailRes, tagsRes, creditRes] = await Promise.all([
         customerApi.getCustomer(id),
         customerApi.getCustomerTags(),
+        customerApi.getCredit(id),
       ])
       const detail = detailRes.data.data
       setAllTags(tagsRes.data.data || [])
+      const creditData = creditRes.data.data
+      setCredit(creditData)
+      setCreditLimitInput(creditData?.creditLimit == null ? '' : String(creditData.creditLimit))
+      setCreditTermsInput(creditData?.paymentTermsDays == null ? '' : String(creditData.paymentTermsDays))
       const mapped = mapCustomerDetail(detail)
       setCustomer(mapped)
       setRemark(mapped.remark || '')
@@ -202,6 +216,31 @@ export default function CustomerDetailPage() {
     }
   }
 
+  const handleSaveCredit = async () => {
+    if (!id) return
+    const limit = creditLimitInput.trim() === '' ? null : Number(creditLimitInput)
+    const terms = creditTermsInput.trim() === '' ? null : Number(creditTermsInput)
+    if (limit != null && (Number.isNaN(limit) || limit < 0)) {
+      toast.error('授信额度必须是不小于 0 的数字（留空 = 不启用授信）')
+      return
+    }
+    if (terms != null && (Number.isNaN(terms) || terms < 0 || terms > 365)) {
+      toast.error('账期天数须在 0~365 之间（0 = 现结）')
+      return
+    }
+    setSavingCredit(true)
+    try {
+      const res = await customerApi.updateCredit(id, { creditLimit: limit, paymentTermsDays: terms })
+      setCredit(res.data.data)
+      toast.success('授信设置已保存')
+    } catch (error) {
+      toast.error('保存授信失败')
+      console.error('保存授信失败:', error)
+    } finally {
+      setSavingCredit(false)
+    }
+  }
+
   const handleAddTag = async (tag: CustomerTag) => {
     if (!customer) return
     const tags = customer.tags || []
@@ -290,6 +329,50 @@ export default function CustomerDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 左侧：客户信息卡片 */}
         <div className="lg:col-span-1 space-y-4">
+          {/* 授信与往来（issue #7370）：额度 / 账期 / 已欠 / 可用 */}
+          <div className="bg-white border border-neutral-200 rounded-lg p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-neutral-900">授信与往来</h3>
+              <span className="text-xs text-neutral-500" data-testid="credit-available">
+                {credit?.creditLimit == null ? '未启用授信' : `可用 ¥${fmtMoney(credit?.available)}`}
+              </span>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-neutral-500 mb-1">授信额度（元，留空 = 不启用）</label>
+                <input
+                  data-testid="credit-limit"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={creditLimitInput}
+                  onChange={(e) => setCreditLimitInput(e.target.value)}
+                  placeholder="不限"
+                  className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-neutral-500 mb-1">账期天数（0 = 现结）</label>
+                <input
+                  data-testid="credit-terms"
+                  type="number"
+                  min={0}
+                  max={365}
+                  value={creditTermsInput}
+                  onChange={(e) => setCreditTermsInput(e.target.value)}
+                  placeholder="未设置"
+                  className="w-full px-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+              <div className="flex items-center justify-between text-xs text-neutral-500">
+                <span>已欠 ¥{fmtMoney(credit?.outstanding)}</span>
+              </div>
+              <Button size="sm" onClick={handleSaveCredit} disabled={savingCredit}>
+                {savingCredit ? '保存中...' : '保存授信'}
+              </Button>
+            </div>
+          </div>
+
           {/* 基本信息 */}
           <div className="bg-white border border-neutral-200 rounded-lg p-6">
             <div className="flex items-center gap-4 mb-4">

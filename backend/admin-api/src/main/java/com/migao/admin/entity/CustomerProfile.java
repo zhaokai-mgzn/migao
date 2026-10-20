@@ -51,6 +51,12 @@ public class CustomerProfile {
     /** normal / vip1 / vip2 / vip3 */
     private String vipLevel;
 
+    /** 授信额度（issue #7370）：null = 未启用授信；0 = 启用但零额度；正数 = 额度 */
+    private BigDecimal creditLimit;
+
+    /** 账期天数（issue #7370）：null = 未设置；0 = 现结；正数 = 账期 */
+    private Integer paymentTermsDays;
+
     /** active / silent / churn_warning / churned */
     private String customerStatus;
 

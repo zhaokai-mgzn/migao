@@ -2431,6 +2431,20 @@ export interface CustomerProfile {
 }
 
 // 客户详情页响应（后端契约：{ id, profile, tags, orders, sessions }）
+/**
+ * 客户授信与往来读数（issue #7370）。
+ *
+ * `creditLimit == null` = **未启用授信**（老客户默认）—— 与「额度 0」必须可区分：
+ * 后者 `available = 0` 且任何赊销都被服务端拒绝。
+ */
+export interface CustomerCreditStatus {
+  customerId: string
+  creditLimit: number | null
+  paymentTermsDays: number | null
+  outstanding: number
+  available: number | null
+}
+
 export interface CustomerDetailResponse {
   id: string
   profile: CustomerProfile

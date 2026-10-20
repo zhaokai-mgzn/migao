@@ -9,6 +9,7 @@ import org.apache.ibatis.annotations.Select;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.math.BigDecimal;
 import java.util.Map;
 
 /**
@@ -25,6 +26,15 @@ public interface OrderMapper extends BaseMapper<Order> {
     @Select("SELECT status, COUNT(*) as count FROM orders " +
             "WHERE deleted = 0 GROUP BY status")
     List<Map<String, Object>> selectOrderStatusDistribution();
+
+    /**
+     * 客户已欠金额（issue #7370 授信闸门）：未结清订单的金额合计。
+     * 口径 = `paid_at IS NULL` 且未取消；逐笔核销上线后（P0-2 段 3）扩展为「Σ订单 - Σ核销」。
+     */
+    @Select("SELECT COALESCE(SUM(total_amount), 0) FROM orders " +
+            "WHERE deleted = 0 AND tenant_id = #{tenantId} AND customer_phone = #{phone} " +
+            "AND paid_at IS NULL AND status <> 'cancelled'")
+    BigDecimal selectOutstandingTotal(@Param("tenantId") Long tenantId, @Param("phone") String phone);
 
     /**
      * 看板 stats 订单维度聚合（#2886 性能优化：替代原来 8 次串行 selectCount/selectList）。

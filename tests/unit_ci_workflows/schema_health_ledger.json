@@ -3,8 +3,8 @@
   "column_ceiling": 30,
   "column_overrides": {
     "customer_profiles": {
-      "columns": 42,
-      "why": "四类对象挤一张表（微信身份 / RFM 派生快照 / 默认收货地址 / 工艺偏好）—— 见 docs/wiki/Domain-Modeling.md §二 ①",
+      "columns": 44,
+      "why": "四类对象挤一张表（微信身份 / RFM 派生快照 / 默认收货地址 / 工艺偏好） + 授信与账期两列（issue #7370）—— 见 docs/wiki/Domain-Modeling.md §二 ①",
       "plan": "身份 → user_identities；默认地址 → 地址簿实体；RFM → 物化快照表；craft_* → 版本化 JSONB（issue #7359 承接，未排期）"
     }
   },

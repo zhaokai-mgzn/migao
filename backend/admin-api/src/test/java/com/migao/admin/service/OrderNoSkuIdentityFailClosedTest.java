@@ -79,7 +79,11 @@ class OrderNoSkuIdentityFailClosedTest {
     private static final Long TENANT_ID = 1L;
     private static final String PRODUCT_ID = "p-nosku-3881";
 
-    @InjectMocks
+        /** issue #7370：OrderService 的授信闸门调 customerService（真实类实例化 ⇒ 不声明就 NPE）。 */
+    @org.mockito.Mock
+    private com.migao.admin.service.CustomerService customerService;
+
+@InjectMocks
     private OrderService orderService;
     /**
      * 制单人留痕（issue #5835）：本类不涉及制单人口径 ⇒ 解析恒为 null ⇒ 两列不写

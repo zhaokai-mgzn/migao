@@ -2,11 +2,14 @@ package com.migao.admin.controller;
 
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
+import com.migao.admin.dto.CreditSettingsRequest;
+import com.migao.admin.dto.CreditStatusResponse;
 import com.migao.admin.dto.PageResponse;
 import com.migao.admin.entity.CustomerProfile;
 import com.migao.admin.entity.CustomerTag;
 import com.migao.admin.service.CustomerService;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.security.TenantOwnedResource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -110,6 +113,30 @@ public class CustomerController {
         log.info("更新客户档案: id={}", id);
         CustomerProfile updated = customerService.updateCustomer(id, profile);
         return ApiResponse.success(updated);
+    }
+
+    /**
+     * 客户授信读数（issue #7370）：额度 / 账期 / 已欠 / 可用。
+     *
+     * <p>「未启用授信」与「额度 0」在响应上必须可区分（前者 creditLimit/available 为 null）。
+     */
+    @GetMapping("/api/admin/customers/{id}/credit")
+    @RequirePermission("customer:view")
+    public ApiResponse<CreditStatusResponse> getCredit(@PathVariable String id) {
+        return ApiResponse.success(customerService.creditStatus(id));
+    }
+
+    /**
+     * 设置/清空客户授信（显式 null = 停用授信）。issue #7370。
+     */
+    @PutMapping("/api/admin/customers/{id}/credit")
+    @RequirePermission("customer:create")
+    @TenantOwnedResource("customer")
+    public ApiResponse<CreditStatusResponse> updateCredit(
+            @PathVariable String id,
+            @RequestBody CreditSettingsRequest request) {
+        log.info("设置客户授信: id={}", id);
+        return ApiResponse.success(customerService.updateCreditSettings(id, request));
     }
 
     /**

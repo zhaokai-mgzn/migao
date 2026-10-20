@@ -54,7 +54,11 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class OrderServiceTest {
 
-    @InjectMocks
+        /** issue #7370：OrderService 的授信闸门调 customerService（真实类实例化 ⇒ 不声明就 NPE）。 */
+    @org.mockito.Mock
+    private com.migao.admin.service.CustomerService customerService;
+
+@InjectMocks
     private OrderService orderService;
 
     @Mock
