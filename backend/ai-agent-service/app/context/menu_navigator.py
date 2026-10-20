@@ -264,7 +264,7 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     # 「质检记录」与它的子串「质检」；「合格判定」这类不在菜单名里的说法**不登记**
     #（它命中不了节点 = 不可达，登记了会变成空断言）。
     NavFeature("quality-inspection", "质检记录（质检判定）", (("production-center", "质检记录"),), ("质检记录", "质检")),
-    NavFeature("suppliers", "供应商档案", (("inventory-center", "供应商"),), ("供应商", "供货商", "厂商")),
+    NavFeature("suppliers", "供应商档案", (("inventory-center", "供应商"),), ("供应商", "供应商档案")),
     NavFeature("inbound-orders", "入库单（入库）", (("inventory-center", "入库单"),), ("入库单", "入库")),
     NavFeature("shipments", "发货单（出库）", (("inventory-center", "发货单"),), ("发货单", "出库")),
     NavFeature("remnants", "余料台账（余料）", (("inventory-center", "余料台账"),), ("余料台账", "余料")),
