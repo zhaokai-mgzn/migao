@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（120 case）
+## 杂项域（121 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5470,6 +5470,19 @@
 跳过: [backend-contract] 主数据 CRUD 的服务层校验 + 菜单/守卫同构契约，由 Java 单测与 vitest 页面判据验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-20 新增（issue #7369，P0-1 段 1；用户「p0 p1 逐步推进落地」）。落码 = ① V170 迁移（表 + 索引 + RLS + 终态对账 DO 块）+ 建库脚本同步；② Supplier 实体/Mapper/Service/Controller（三端点，权限码复用 inbound:view / inbound:create）；③ 归属认定登记 supplier 键；④ 菜单三源 + 路由守卫 + ai-agent 导航镜像 + RBAC 清单/读数；⑤ 供应商页 + 5 条页面判据；⑥ CHANGELOG。⚠️ **未做（照实登记）**：采购单 / 收货 / 应付（段 2/3）、停用拦截、单据侧 supplier_id 引用。取号 = 现取 origin/main 无 SP 前缀 ⇒ SP-001。 ｜ tags: backend-contract, supplier, master-data, rbac, menu-parity, route-guard, red-proof
+
+### SP-002. 入库单挂供应商档案：A 口径（名称精确匹配自动挂 / 同名多家不猜留 NULL / 待指派清单兜人工）（issue #7369 段 2） 🔵
+```
+你: 用户（2026-10-20，逐字）：「A,继续推进交付」—— 在 A/B/不迁移 三选里选了 **A（保守）**：按名称精确匹配自动填 supplier_id，匹配不上的留 NULL 并出一张「待指派」清单，**不改任何历史字段值**。
+数据: **现状（改前）**：`inbound_orders.supplier` 是自由文本（V111 起的快照列），没有任何到 `suppliers` 档案的引用 ⇒ 「这家供应商一共收了多少货 / 还欠多少」在数据层无从聚合。
+数据: **判据 1（回填口径 = A）**：V173 只新增 `supplier_id` 列并用 `btrim(o.supplier) = btrim(s.name)` **精确匹配**回填（同租户、双方未软删、**同名多家不填**）；`inbound_orders` 的既有列**一个字节都不改**。判据 = 迁移文件头 + 迁移指纹账本 + `test_migration_idempotency`（终态对账 DO 块）。
+数据: **判据 2（服务层三分支）**：`backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderSupplierLinkTest.java`（6 条）——① 显式在用档案原样采用、不按名猜；② 跨租户/不存在 ⇒ 422「供应商档案不存在」（不泄露对方存在性）；③ 停用 ⇒ 422 并给可行动出口；④ 无 id + 文本唯一精确匹配 ⇒ 自动挂；⑤ **同名多家 = 歧义 ⇒ 留 NULL（不猜，猜错不可逆）**；⑥ 匹配不上/无文本 ⇒ NULL。
+数据: **判据 3（人工出口）**：`GET /api/admin/suppliers/unassigned-inbound` 按文本名分组返回「有文本无档案」的入库单（单数 / 最近入库日）；前端供应商页置顶卡片列出并支持「建档」预填名字（`suppliers.test.tsx` 2 条）。判据 = `SupplierServiceTest#unassignedInboundSuppliersMapsRows` + `suppliers.test.tsx`。
+数据: **边界（照实登记）**：本切片**不**做采购单/收货/应付；**不**做「把待指派批量指派到已有档案」（需要一次人工确认 UI，属下一段）；**不**改任何历史 `supplier` 文本。
+前置: 本用例是 [backend-contract]：前置 = `inbound_orders.supplier_id` 列在场（V173 + 建库脚本终态）、`suppliers` 表在场（V170）。零网络、零 LLM。
+跳过: [backend-contract] 迁移回填口径 + 服务层三分支 + 待指派清单契约，由 Java 单测与 vitest 页面判据验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-20 新增（issue #7369 段 2；用户「A,继续推进交付」）。落码 = ① V173 迁移（加列 + 部分索引 + A 口径精确匹配回填 + 终态对账 DO 块 + 回滚段）+ 建库脚本同步；② 实体/DTO 加 `supplierId`，建单响应经 BeanUtils 自动透传；③ `InboundOrderService.resolveSupplierId` 三分支；④ `GET /api/admin/suppliers/unassigned-inbound` + 供应商页待指派卡（建档预填）。⚠️ 迁移号让号：main 已有 V172（#7391 索引收敛）⇒ 本迁移取 V173。**未做（照实登记）**：采购单/收货/应付、「批量指派到已有档案」的确认 UI。 ｜ tags: backend-contract, supplier, master-data, migration, backfill, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12252,8 +12265,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：837（活跃 141，跳过 696）
-- tier 分布：smoke 12 / normal 769 / adversarial 32
+- 用例总数：838（活跃 141，跳过 697）
+- tier 分布：smoke 12 / normal 770 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12268,7 +12281,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：120
+- 杂项域：121
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12432,6 +12445,7 @@
 - MC-118: dev-worktree 会话锁判活：PID 已退出但登记的工作区仍在且仍检出该分支 ⇒ 仍算占用（issue #7216）；`add` 入口自动清失效锁，`rm` 释放锁，prune 侧同一口径
 - MC-119: schema 形态健康：单表列预算 ≤ 30（超限须台账具名 + 只许缩短）/ 孤儿列零增长（生产代码语料）/ JSONB 双向登记（issue #7359，防 ERP 化）
 - SP-001: 供应商主数据：新表 + 档案 CRUD（校验三态：名称/账期/状态）+ 菜单三源与路由守卫同构（issue #7369，P0-1 段 1）
+- SP-002: 入库单挂供应商档案：A 口径（名称精确匹配自动挂 / 同名多家不猜留 NULL / 待指派清单兜人工）（issue #7369 段 2）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

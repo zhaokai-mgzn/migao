@@ -7,7 +7,7 @@ import { Button, PageCard, PageHeader } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
 import { supplierApi } from '@/lib/api'
 import { usePermission } from '@/lib/permission'
-import type { Supplier } from '@/types'
+import type { Supplier, UnassignedInboundSupplier } from '@/types'
 
 /**
  * 供应商 `/suppliers`（issue #7369，P0-1 段 1）—— 大菜单「仓储与物料 ▸ 供应商」的第一屏。
@@ -70,6 +70,7 @@ export default function SuppliersPage() {
   const [keyword, setKeyword] = useState('')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [unassigned, setUnassigned] = useState<UnassignedInboundSupplier[]>([])
   const [form, setForm] = useState<FormState | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -88,9 +89,22 @@ export default function SuppliersPage() {
     }
   }, [])
 
+  // 待指派清单（issue #7369 段 2）：A 口径「匹配不上不猜」的人工出口 —— 不列出来那批单据就是沉默的。
+  // 它是**补充信息**：单独拉、失败就当作没有（主列表的读失败仍由 ListLoadError 承接，二者不混）。
+  const loadUnassigned = useCallback(async () => {
+    try {
+      const res = await supplierApi.unassignedInbound()
+      setUnassigned(res.data.data || [])
+    } catch (error) {
+      setUnassigned([])
+      console.error('加载待指派清单失败:', error)
+    }
+  }, [])
+
   useEffect(() => {
     load()
-  }, [load])
+    loadUnassigned()
+  }, [load, loadUnassigned])
 
   const openCreate = () => setForm({ ...EMPTY_FORM })
 
@@ -137,7 +151,7 @@ export default function SuppliersPage() {
         toast.success('供应商已建档')
       }
       setForm(null)
-      await load(keyword)
+      await Promise.all([load(keyword), loadUnassigned()])
     } catch (error) {
       toast.error(form.id ? '更新供应商失败' : '新建供应商失败')
       console.error('保存供应商失败:', error)
@@ -179,6 +193,38 @@ export default function SuppliersPage() {
           ) : null
         }
       />
+
+      {unassigned.length > 0 && (
+        <PageCard className="mt-4">
+          <div data-testid="supplier-unassigned">
+          <div className="text-sm text-neutral-700 mb-1">
+            有 <strong>{unassigned.length}</strong> 个入库单上的供应商名还没建档（这些单据暂按名字统计不到供应商）
+          </div>
+          <div className="text-xs text-neutral-500 mb-3">
+            按名称精确匹配能对上的已自动挂上；对不上或同名多家的一律不猜，留给你决定（历史单据的文本一字未改）。
+          </div>
+          <ul className="divide-y divide-neutral-100">
+            {unassigned.map((u) => (
+              <li key={u.supplierName} className="py-2 flex items-center justify-between text-sm" data-testid={`unassigned-${u.supplierName}`}>
+                <span className="text-neutral-900">
+                  {u.supplierName}
+                  <span className="ml-2 text-xs text-neutral-500">{u.orderCount} 张入库单{u.lastInboundDate ? ` · 最近 ${u.lastInboundDate}` : ''}</span>
+                </span>
+                {canWrite && (
+                  <button
+                    className="text-primary-600 hover:underline"
+                    data-testid={`unassigned-create-${u.supplierName}`}
+                    onClick={() => setForm({ ...EMPTY_FORM, name: u.supplierName })}
+                  >
+                    建档
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+          </div>
+        </PageCard>
+      )}
 
       <PageCard className="mt-4">
         <div className="flex items-center gap-2 mb-4">

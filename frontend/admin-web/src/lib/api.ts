@@ -5,7 +5,7 @@ import {
   buildCloseOrderPayload,
   buildRefundPayload,
 } from './data-adapter'
-import type { CustomerCreditStatus, Supplier } from '@/types'
+import type { CustomerCreditStatus, Supplier, UnassignedInboundSupplier } from '@/types'
 import type { RefundOrderParams } from './data-adapter'
 // 发货读面（issue #5651）：真值 owner = `OrderShipmentService.readShipment`，这里只声明形状
 import type { OrderShipmentRead } from './sales-shipment'
@@ -1642,6 +1642,10 @@ export const supplierApi = {
 
   update: (id: string, data: Partial<Supplier>) =>
     request.put<ApiResponse<Supplier>>(`/api/admin/suppliers/${id}`, data),
+
+  // 「待指派」清单（issue #7369 段 2）：入库单上有供应商文本、但没挂档案的（A 口径不猜的人工出口）
+  unassignedInbound: () =>
+    request.get<ApiResponse<UnassignedInboundSupplier[]>>('/api/admin/suppliers/unassigned-inbound'),
 }
 
 // 客户管理 API

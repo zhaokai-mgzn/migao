@@ -2455,6 +2455,13 @@ export interface Supplier {
   updatedAt?: string
 }
 
+/** 「待指派」的入库单供应商名（issue #7369 段 2）：文本有、档案没挂。 */
+export interface UnassignedInboundSupplier {
+  supplierName: string
+  orderCount: number
+  lastInboundDate?: string | null
+}
+
 export interface CustomerCreditStatus {
   customerId: string
   creditLimit: number | null

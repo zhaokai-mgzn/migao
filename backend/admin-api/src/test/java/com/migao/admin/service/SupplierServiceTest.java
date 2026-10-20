@@ -4,6 +4,8 @@ package com.migao.admin.service;
 
 import com.migao.admin.entity.Supplier;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.dto.UnassignedInboundSupplier;
+import com.migao.admin.mapper.InboundOrderMapper;
 import com.migao.admin.mapper.SupplierMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,6 +41,9 @@ class SupplierServiceTest {
 
     @Mock
     private SupplierMapper supplierMapper;
+
+    @Mock
+    private InboundOrderMapper inboundOrderMapper;
 
     @InjectMocks
     private SupplierService supplierService;
@@ -114,6 +119,30 @@ class SupplierServiceTest {
                 Supplier.builder().name("改名").build()))
                 .isInstanceOf(BusinessException.class);
         verify(supplierMapper, never()).updateById(any(Supplier.class));
+    }
+
+    @Test
+    @DisplayName("待指派清单：按文本名分组映射（名字 / 单数 / 最近入库日），空值不掉行")
+    void unassignedInboundSuppliersMapsRows() {
+        // ⚠️ 不能用 Map.of：它不接受 null 值（第二行的 last_inbound_date 就是 null）⇒ 直接在构造时就 NPE。
+        java.util.Map<String, Object> withDate = new java.util.HashMap<>();
+        withDate.put("supplier_name", "没建过档的厂");
+        withDate.put("order_count", 3L);
+        withDate.put("last_inbound_date", "2026-10-01");
+        java.util.Map<String, Object> withoutDate = new java.util.HashMap<>();
+        withoutDate.put("supplier_name", "老数据厂");
+        withoutDate.put("order_count", 1L);
+        withoutDate.put("last_inbound_date", null);
+        when(inboundOrderMapper.selectUnassignedSupplierNames(TENANT))
+                .thenReturn(java.util.List.of(withDate, withoutDate));
+
+        java.util.List<UnassignedInboundSupplier> rows = supplierService.unassignedInboundSuppliers(TENANT);
+
+        assertThat(rows).hasSize(2);
+        assertThat(rows.get(0).supplierName()).isEqualTo("没建过档的厂");
+        assertThat(rows.get(0).orderCount()).isEqualTo(3);
+        assertThat(rows.get(0).lastInboundDate()).isEqualTo(java.time.LocalDate.of(2026, 10, 1));
+        assertThat(rows.get(1).lastInboundDate()).isNull();
     }
 
     @Test
