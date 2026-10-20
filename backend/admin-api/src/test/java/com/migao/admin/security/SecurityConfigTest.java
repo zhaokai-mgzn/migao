@@ -159,6 +159,16 @@ class SecurityConfigTest {
 
     @MockBean
     private com.migao.admin.mapper.SupplierPaymentAllocationMapper supplierPaymentAllocationMapper;
+
+    // issue #7369 段 4：采购单三表（Spring 上下文装配需要）
+    @MockBean
+    private com.migao.admin.mapper.PurchaseOrderMapper purchaseOrderMapper;
+
+    @MockBean
+    private com.migao.admin.mapper.PurchaseOrderItemMapper purchaseOrderItemMapper;
+
+    @MockBean
+    private com.migao.admin.mapper.PurchaseOrderReceiptMapper purchaseOrderReceiptMapper;
     @MockBean
     private com.migao.admin.service.AfterSalesTicketService afterSalesTicketService;
 

@@ -1732,6 +1732,62 @@ ALTER TABLE supplier_payments ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_supplier_payments ON supplier_payments
     USING (tenant_id::text = current_setting('app.current_tenant_id'));
 
+-- 采购单（V175，issue #7369 段 4）：一张单可分多次收货；状态由 Σ收货派生，客户端不可写。
+-- ⚠️ 必须排在 `suppliers` 之后（外键）且 `purchase_order_receipts` 要排在 `inbound_orders` 之后。
+CREATE TABLE IF NOT EXISTS purchase_orders (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    po_no VARCHAR(32) NOT NULL,                      -- CG-yyyyMMdd-NNNN（租户内唯一）
+    supplier_id VARCHAR(64) NOT NULL REFERENCES suppliers(id),
+    order_date DATE NOT NULL,
+    expected_date DATE,
+    status VARCHAR(24) NOT NULL DEFAULT 'ordered' CONSTRAINT ck_purchase_orders_status
+        CHECK (status IN ('ordered', 'partially_received', 'received', 'closed')),
+    total_amount NUMERIC(16,4) NOT NULL DEFAULT 0,
+    closed_at TIMESTAMP WITH TIME ZONE,
+    closed_by VARCHAR(64),
+    closed_reason TEXT,
+    remark TEXT,
+    created_by VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_purchase_orders_no
+    ON purchase_orders (tenant_id, po_no)
+    WHERE deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_tenant_supplier
+    ON purchase_orders (tenant_id, supplier_id, order_date DESC)
+    WHERE deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_tenant_status
+    ON purchase_orders (tenant_id, status, order_date DESC)
+    WHERE deleted = FALSE;
+ALTER TABLE purchase_orders ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_purchase_orders ON purchase_orders
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+
+CREATE TABLE IF NOT EXISTS purchase_order_items (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    purchase_order_id VARCHAR(64) NOT NULL REFERENCES purchase_orders(id),
+    line_no INT NOT NULL DEFAULT 1,
+    product_id VARCHAR(64),
+    sku_id VARCHAR(64) NOT NULL,
+    quantity NUMERIC(16,4) NOT NULL CONSTRAINT ck_purchase_order_items_qty CHECK (quantity > 0),
+    unit_price NUMERIC(16,4) NOT NULL DEFAULT 0 CONSTRAINT ck_purchase_order_items_price CHECK (unit_price >= 0),
+    amount NUMERIC(16,4) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE INDEX IF NOT EXISTS idx_purchase_order_items_po
+    ON purchase_order_items (tenant_id, purchase_order_id)
+    WHERE deleted = FALSE;
+ALTER TABLE purchase_order_items ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_purchase_order_items ON purchase_order_items
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+
 CREATE TABLE IF NOT EXISTS inbound_orders (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
@@ -1797,6 +1853,34 @@ CREATE INDEX IF NOT EXISTS idx_supplier_payment_allocations_order
     WHERE deleted = FALSE;
 ALTER TABLE supplier_payment_allocations ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_supplier_payment_allocations ON supplier_payment_allocations
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+
+-- 采购收货记录（V175，issue #7369 段 4）：一次到货一行；可挂到生成的那张入库单。
+CREATE TABLE IF NOT EXISTS purchase_order_receipts (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    purchase_order_id VARCHAR(64) NOT NULL REFERENCES purchase_orders(id),
+    purchase_order_item_id VARCHAR(64) NOT NULL REFERENCES purchase_order_items(id),
+    inbound_order_id VARCHAR(64) REFERENCES inbound_orders(id),
+    quantity NUMERIC(16,4) NOT NULL CONSTRAINT ck_purchase_order_receipts_qty CHECK (quantity > 0),
+    received_at DATE NOT NULL,
+    remark TEXT,
+    created_by VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE INDEX IF NOT EXISTS idx_purchase_order_receipts_po
+    ON purchase_order_receipts (tenant_id, purchase_order_id)
+    WHERE deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_purchase_order_receipts_item
+    ON purchase_order_receipts (tenant_id, purchase_order_item_id)
+    WHERE deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_purchase_order_receipts_inbound
+    ON purchase_order_receipts (tenant_id, inbound_order_id)
+    WHERE inbound_order_id IS NOT NULL AND deleted = FALSE;
+ALTER TABLE purchase_order_receipts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_purchase_order_receipts ON purchase_order_receipts
     USING (tenant_id::text = current_setting('app.current_tenant_id'));
 COMMENT ON TABLE inbound_orders IS
     '入库单（V111，issue #5034）：一次布料收货 = 一张单。draft 不动库存，posted 才加库存（只允许 draft→posted 一次），cancelled 仅 draft 可作废（已过账不得作废，冲销另开单）';

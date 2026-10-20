@@ -4,7 +4,7 @@
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
 -- （2026-09-11 实测，逐表比对 backend/admin-api/src/main/resources/db/init/schema.sql）：
 --
---   本文件缺失（schema.sql 已有，共 48 张）：
+--   本文件缺失（schema.sql 已有，共 51 张）：
 --     agent_batches, agent_batch_items
 --      批量更新的批次资源（V127，issue #5314 服务端包 —— 一张批次 + 一张逐条明细；
 --      明细的 old_value 是**撤销的唯一依据**，**不得**改用 audit_logs：审计是有界 fail-open、丢行允许），
@@ -45,6 +45,9 @@
 --      作废留痕不物理删），
 --     supplier_payment_allocations
 --      付款冲抵明细（同 V174 —— 一行 = 这笔钱冲到哪张入库单、多少；合计 ≤ 付款额、单张单累计 ≤ 该单金额），
+--     purchase_orders, purchase_order_items, purchase_order_receipts
+--      采购单 + 明细 + 收货记录（V175，issue #7369 段 4 —— 一单可多次收货：头/明细/每次到货各一行；
+--      「已收多少」是 Σ 收货的派生值，不在明细上累加；提前关闭留原因、不删单），
 --     suppliers
 --      供应商主数据（V170，issue #7369 P0-1 段 1 —— 一行 = 一家供应商：名称 / 联系人 / 电话 /
 --      账期天数（NULL=未设置、0=现结、正数=N 天）/ 状态（active|inactive）/ 备注）。

@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（123 case）
+## 杂项域（124 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5514,6 +5514,22 @@
 跳过: [backend-contract] 涉钱写面的约束与读面聚合，由 Java 单测与 vitest 页面判据验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-20 新增（issue #7369 段 3-B；用户「按实际的来」）。落码 = V174 两表 + `SupplierPaymentService`（四条硬约束）+ `SupplierPaymentController`（finance:create / finance:view）+ 对账聚合扣减已付 + 供应商页「登记付款」弹窗（只登记实付金额，不猜冲抵）。**未做（照实登记）**：按单勾对 UI / 对账单 / 账龄 / 红冲 / 付款审批。 ｜ tags: backend-contract, supplier, payables, money, red-proof
+
+### SP-005. 采购单：一单可分多次收货（状态由 Σ收货派生）；收货不许超收；提前关闭必须写原因（issue #7369 段 4） 🔵
+```
+你: 用户（2026-10-20，逐字）：「继续推进，直到目标任务都交付」+ 前一轮「2.根据常见做法来裁定」—— 采购单按常见做法：与入库单**一对多**（支持部分收货）、允许提前关闭并必须写原因。
+数据: **改前**：只有入库单（货已到），没有「我要买什么、多少钱」的单据面 ⇒ 采购金额只能事后从入库单反推。
+数据: **判据 1（状态是派生值）**：`status` 不在请求体里；`receive`/`close` 之后按 Σ收货重算（部分 ⇒ partially_received、收齐 ⇒ received、关单 ⇒ closed）。判据 = `PurchaseOrderServiceTest#statusIsDerivedFromReceipts`。
+数据: **判据 2（不许超收）**：本次收货数量 ≤ 采购数量 − 已收（收多了账永远对不上）。判据 = `#receiveCannotExceedRemaining`。红证方向：删掉上限比较 ⇒ 当场红。
+数据: **判据 3（终态不可绕过）**：已关闭 / 已收齐都不能再收货；已关闭不能重复关；收齐的不能关。判据 = `#closedOrReceivedOrderCannotReceive` + `#closeRequiresReason`。
+数据: **判据 4（关单必须写原因）**：断货 / 取消 / 到不齐都要留一句（半年后要能解释为什么少了货）；不删单。判据 = `#closeRequiresReason`。
+数据: **判据 5（供应商与金额）**：停用供应商不许下新单；单价最多两位小数（`MoneyScale` 准入）；单号 `CG-yyyyMMdd-NNNN` 撞车换号重试（唯一键台账登记）。判据 = `#createRejectsInvalidInput` + 唯一键守卫。
+数据: **判据 6（关联入库单）**：可把已过账、同供应商的入库单挂到收货行上（一对多的证据面）；跨供应商 / 草稿单拒。判据 = `#linkedInboundOrderMustMatch`。
+数据: **边界（照实登记）**：本段只做采购单与收货记账，**不自动生成入库单**（收货行可关联已存在的入库单）；采购单页面与菜单属段 4-B。
+前置: 本用例是 [backend-contract]：前置 = `suppliers`(V170) + `inbound_orders.supplier_id`(V173) + 采购三表(V175)。零网络、零 LLM。
+跳过: [backend-contract] 单据状态机与收货约束，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-20 新增（issue #7369 段 4）。落码 = V175 三表 + `PurchaseOrderService`（状态派生 / 不许超收 / 关单须写原因 / 关联入库单校验）+ `PurchaseOrderController`（复用 inbound:view/create，带 id 的端点标归属认定）+ 三个 Mapper 判据。**未做（照实登记）**：采购单前端页面与菜单、收货自动生成入库单、按采购单看应付。 ｜ tags: backend-contract, purchase, receiving, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12296,8 +12312,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：840（活跃 141，跳过 699）
-- tier 分布：smoke 12 / normal 772 / adversarial 32
+- 用例总数：841（活跃 141，跳过 700）
+- tier 分布：smoke 12 / normal 773 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12312,7 +12328,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：123
+- 杂项域：124
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12479,6 +12495,7 @@
 - SP-002: 入库单挂供应商档案：A 口径（名称精确匹配自动挂 / 同名多家不猜留 NULL / 待指派清单兜人工）（issue #7369 段 2）
 - SP-003: 供应商应付对账（A 段轻口径）：按供应商累计收货额 + 合计；付款登记未做 ⇒ 显式标 paymentsRecorded=false 并显示「未登记」（issue #7369 段 3-A）
 - SP-004: 供应商付款：一笔付款可冲抵多张入库单；差额=预付合法；单张单不许超付；作废留痕必须写原因（issue #7369 段 3-B）
+- SP-005: 采购单：一单可分多次收货（状态由 Σ收货派生）；收货不许超收；提前关闭必须写原因（issue #7369 段 4）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

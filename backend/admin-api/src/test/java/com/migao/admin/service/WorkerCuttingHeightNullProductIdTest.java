@@ -405,6 +405,11 @@ class WorkerCuttingHeightNullProductIdTest {
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/WorkerCuttingHeightService.java|items",
                         new IndexSite("items", "itemsOf", "itemId", "entry.get(\"order_item_id\")", 152, Verdict.KEY_NULLABLE,
                                 "itemId 来自扫描结果可能为 null ⇒ `itemId == null ? null : items.get(itemId)` 短路")),
+                Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/PurchaseOrderService.java|itemsById",
+                        new IndexSite("itemsById", "itemsOf", "itemId", "line.itemId()", 179,
+                                Verdict.READ_IS_NULL_TOLERANT,
+                                "issue #7369 段 4：itemsOf 返回 LinkedHashMap（可变表）⇒ get(null) 不抛 NPE；"
+                                + "且第 176 行已对 itemId 判空并抛 422")),
                 // ── 存量：读法本身与表可变性无关（getOrDefault / containsKey） ──
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/DailyBriefingService.java|skusByProduct",
                         new IndexSite("skusByProduct", "costSkusByProduct", "line.getProductId()", "line.getProductId()", 1025,
