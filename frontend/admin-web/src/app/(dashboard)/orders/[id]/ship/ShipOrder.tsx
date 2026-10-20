@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import { toastRequestError } from '@/lib/api-error'
 import { orderApi, productionApi, processingOrderApi, customerApi } from '@/lib/api'
 import { useRouteId } from '@/lib/use-route-id'
-import { Button, Loading } from '@/components/ui'
+import { Button, Loading, SELECT_CONTROL } from '@/components/ui'
 import { PrintDocPreview, ShipmentDoc, PRINT_TARGET_SPECS, usePrintDoc } from '@/components/orders'
 import { useAuthStore } from '@/store/auth'
 import type { Order, OrderItem } from '@/types'
@@ -494,15 +494,7 @@ export default function ShipOrder() {
                     setLogisticsCompany(e.target.value)
                     setLogisticsTouched(true)
                   }}
-                  className={cn(
-                    'h-9 px-3 pr-9 rounded border border-neutral-300 bg-white text-sm appearance-none min-w-[220px]',
-                    'focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15',
-                    'bg-no-repeat bg-[right_0.75rem_center]'
-                  )}
-                  style={{
-                    backgroundImage:
-                      "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")",
-                  }}
+                  className={cn(SELECT_CONTROL, 'min-w-[220px]')}
                 >
                   {logisticsCompanyOptions.map((c) => (
                     <option key={c} value={c}>

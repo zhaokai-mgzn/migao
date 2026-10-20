@@ -10324,7 +10324,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（130 case）
+## 前端 UI 域（131 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -12207,6 +12207,22 @@
 ```
 溯源: 2026-10-20 新增（issue #7388）；同日追加「收起态引导」（用户逐字「折叠状态需要引导用户可以打开区域查询」⇒ 入口做成描边按钮形态 + title）。折叠能力落在共享原语 `SearchPanel`（`collapsible` / `defaultCollapsed` / `summary`），订单页显式传 `collapsible`；其它使用该原语的页面（客户 / 售后 / 品检 / 员工）本轮**有意不动**，重启条件 = 它们各自的筛选区字段数增长到压掉首屏列表时。 ｜ tags: search-panel, collapse, orders-list
 
+### UI-131. 全站下拉框只有一种形态（共享 SELECT_CONTROL / 自绘箭尖）+ 筛选条字段参与伸缩（issue #7397） 🔵
+```
+你: 「输入框长度不够，文字被遮住了」（用户 2026-10-20，知识库关键词输入框截图红框）
+你: 「我们所有页面的下拉框都看着很别扭，不协调」（用户 2026-10-20，作业看板状态筛选截图红框）
+你: 「都是这种不协调的问题」（用户 2026-10-20，第三张下拉截图）
+期望: direct_reply
+数据: 判据 1·业务面下拉必须引用共享铬（会红）：`src/**`（除 `src/components/ui/**`）里每个真实 `<select>` 开标签必须含 `SELECT_CONTROL`；只借箭尖（`SELECT_CHEVRON`）的面必须登记在冻结台账且台账只许缩短。执行点 = frontend/admin-web/tests/unit/select-control-unification.test.tsx（describe「判据 1」）。
+数据: 判据 2·共享铬不许被削弱（会红）：`SELECT_CONTROL` 仍带 `appearance-none` / `h-9` / `border-neutral-300` / `pr-9` / `rounded` / 自绘箭尖背景 / 焦点环 / disabled 态；表单面 `SELECT_CONTROL_FIELD` = 同一套 + `rounded-lg`。执行点同上（判据 2）。
+数据: 判据 3·单一份箭尖图形（会红）：`Select` 原语不再 import `ChevronDown`、不再叠第二个箭头，改用 `SELECT_CONTROL_FIELD`。执行点同上（判据 3）。
+数据: 判据 4·筛选条字段参与伸缩（会红）：`SearchBar` 字段容器带 `flex-1` + `basis-[22rem]`、不再有定宽 `min-w-[200px]`；输入框 `w-full` 吃满容器 ⇒ 长占位文案（「搜索标题 / 关键词 / 常见问法 / 回答内容」）不再被截断。执行点同上（判据 4）。
+数据: 判据 5·判别力自证（会红）：注入「自己拼铬」「台账外的 SELECT_CHEVRON」「注释里的 <select> 字样」三种形态，纯函数必须在内存里分别判红 / 判红 / 放行（不制造假红）。执行点同上（describe「判别力自证」）。
+前置: 本用例是 [backend-contract] 纯前端版式契约用例：源码扫描 + jsdom 渲染，不依赖共享夹具与真实服务 ⇒ 前置不成立时对应单测直接红；agent-eval 栈不跑它
+跳过: [backend-contract] 纯前端版式契约（不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-20 新增（issue #7397）。38 处业务 `<select>` 全部改引用 `SELECT_CONTROL`（`Select.tsx` 唯一真值：appearance-none + 自绘暖色箭尖 + h-9 + 焦点环），`Pagination` 紧凑档与 `register` 大字面只借 `SELECT_CHEVRON`（后者登记台账，理由：h-11 表单硬塞 h-9 会与同页输入框不齐）。顺带修 `SearchBar` 定宽字段（占位文案截断）。`Select` 原语去掉叠层 `ChevronDown`（同一份箭尖图形）。判据 = 新增类级元守卫 + 既有 design-system-form-fields / filter-area-primitive-guard 全绿。 ｜ tags: design-system, select, search-bar, control-chrome
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -12236,8 +12252,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：836（活跃 141，跳过 695）
-- tier 分布：smoke 12 / normal 768 / adversarial 32
+- 用例总数：837（活跃 141，跳过 696）
+- tier 分布：smoke 12 / normal 769 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12262,7 +12278,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：130
+- 前端 UI 域：131
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -12591,4 +12607,5 @@
 - UI-128: A4 纸面不带浏览器页眉页脚：@page 边距写 0（浏览器无可画之处）+ 版面内缩 12mm 由单据容器承担、box-decoration-break: clone 逐页重复（issue #7309）
 - UI-129: 建品页 AI 生成商品图：样图 → 百炼图生图 → 预览后选用（不自动落库，issue #7335）
 - UI-130: 销售订单列表查询区默认折叠：常驻一行摘要 + 展开才渲染筛选项（issue #7388）
+- UI-131: 全站下拉框只有一种形态（共享 SELECT_CONTROL / 自绘箭尖）+ 筛选条字段参与伸缩（issue #7397）
 

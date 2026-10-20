@@ -7,13 +7,14 @@ import { toastRequestError } from '@/lib/api-error'
 import { employeeApi } from '@/lib/api'
 import request from '@/lib/request'
 import { usePermission } from '@/lib/permission'
-import { Button, Input, Select, Modal, Table, Pagination, Badge, PageHeader, PageCard, SearchPanel } from '@/components/ui'
+import { Button, Input, Select, Modal, Table, Pagination, Badge, PageHeader, PageCard, SearchPanel, SELECT_CONTROL } from '@/components/ui'
 import type { TableColumn, SearchFieldSpec } from '@/components/ui'
 import type { Employee, EmployeeStatus, EmployeeFormData } from '@/types'
 import { TreeCheckbox, type TreeNode } from '@/components/ui/TreeCheckbox'
 import DateTimeCell from '@/components/common/DateTimeCell'
 import WorkerProfilesPanel from '@/components/employees/WorkerProfilesPanel'
 import { mobileTitlesByCodeFromTree } from '@/lib/mobile-surface-label'
+import { cn } from '@/lib/utils'
 
 // #2969 岗位=角色体系：岗位列表来自 roleApi.getAllRoles（每岗位含默认权限），不再用硬编码预设
 /** 筛选控件统一形态：与 `SearchPanel` 的 `CONTROL_CLASS` 同口径 */
@@ -506,7 +507,7 @@ export default function EmployeesPage() {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as EmployeeStatus | '')}
-          className={SEARCH_CONTROL}
+          className={cn(SELECT_CONTROL, 'w-full')}
         >
           <option value="">全部状态</option>
           <option value="active">启用</option>

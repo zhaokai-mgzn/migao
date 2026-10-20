@@ -3,10 +3,11 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { AlertCircle, FolderTree, Plus } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button, Modal } from '@/components/ui'
+import { Button, Modal, SELECT_CONTROL } from '@/components/ui'
 import { processingCategoryApi, processingItemApi } from '@/lib/api'
 import type { ProcessingCategory, ProcessingItem } from '@/types'
 import { DISCOUNT_OPTIONS, EMPTY_FORM, ItemForm, QTY_OPTIONS } from './processing-shared'
+import { cn } from '@/lib/utils'
 
 /**
  * 「加工项与加工费」域的**加工项面板**（issue #6585 从 `ProcessingBoard` 拆出，cut & paste + 补 import）。
@@ -438,9 +439,7 @@ export default function ProcessingItemsPanel({
             </label>
             {categories.length > 0 ? (
               <select
-                className={`h-9 w-full appearance-none rounded border bg-white px-3 pr-8 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15 ${
-                  errors.categoryId ? 'border-red-500' : 'border-neutral-300'
-                }`}
+                className={cn(SELECT_CONTROL, 'w-full', errors.categoryId && 'border-red-500 focus:border-red-500 focus:ring-red-500/15')}
                 value={form.categoryId}
                 onChange={(e) => updateField('categoryId', e.target.value)}
               >
@@ -489,7 +488,7 @@ export default function ProcessingItemsPanel({
           <div>
             <label className="mb-1.5 block text-sm font-medium text-neutral-800">设置优惠</label>
             <select
-              className="h-9 w-full appearance-none rounded border border-neutral-300 bg-white px-3 pr-8 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className={cn(SELECT_CONTROL, 'w-full')}
               value={form.discount}
               onChange={(e) => updateField('discount', e.target.value)}
             >
@@ -503,7 +502,7 @@ export default function ProcessingItemsPanel({
             {form.discount === 'amount_off' && (
               <div className="mt-2 flex items-center gap-2">
                 <select
-                  className="h-9 appearance-none rounded border border-neutral-300 bg-white px-3 pr-8 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  className={SELECT_CONTROL}
                   value={form.discountQty}
                   onChange={(e) => updateField('discountQty', e.target.value)}
                 >

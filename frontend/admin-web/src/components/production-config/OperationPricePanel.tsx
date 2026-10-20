@@ -21,7 +21,7 @@
  * `embedded=true` 只影响**区块标题**（指挥台的域标题已经回答「这是什么」），其余一字不变。
  */
 import { Check, Pencil, Plus, RefreshCw, AlertCircle, X } from 'lucide-react'
-import { Button, Modal } from '@/components/ui'
+import { Button, Modal, SELECT_CONTROL } from '@/components/ui'
 import {
   inputCls,
   metaInconsistentOf as metaInconsistent,
@@ -734,7 +734,7 @@ export function OperationPricePanel({
                     id="condition-value"
                     aria-label="什么时候生效"
                     data-testid="condition-value"
-                    className={cn(inputCls, 'mt-2')}
+                    className={cn(SELECT_CONTROL, 'w-full', 'mt-2')}
                     value={conditionDraft.trigger_value}
                     onChange={(e) => setConditionDraft((d) => ({ ...d, trigger_value: e.target.value }))}
                   >
@@ -765,7 +765,7 @@ export function OperationPricePanel({
                   <select
                     id="condition-action"
                     data-testid="condition-action"
-                    className={inputCls}
+                    className={cn(SELECT_CONTROL, 'w-full')}
                     value={conditionDraft.action}
                     onChange={(e) => {
                       const action = e.target.value as 'insert' | 'remove'
@@ -785,7 +785,7 @@ export function OperationPricePanel({
                     <select
                       id="condition-anchor"
                       data-testid="condition-anchor"
-                      className={inputCls}
+                      className={cn(SELECT_CONTROL, 'w-full')}
                       value={conditionDraft.after_operation}
                       onChange={(e) => setConditionDraft((d) => ({ ...d, after_operation: e.target.value }))}
                     >
@@ -968,7 +968,7 @@ export function OperationPricePanel({
                 <select
                   id="new-option-operation"
                   data-testid="routings-create-option-operation"
-                  className={inputCls}
+                  className={cn(SELECT_CONTROL, 'w-full')}
                   value={newOption.operation}
                   onChange={(e) =>
                     setNewOption({
@@ -993,7 +993,7 @@ export function OperationPricePanel({
                 <select
                   id="new-option-after_operation"
                   data-testid="routings-create-option-after_operation"
-                  className={inputCls}
+                  className={cn(SELECT_CONTROL, 'w-full')}
                   value={newOption.after_operation}
                   onChange={(e) => setNewOption({ ...newOption, after_operation: e.target.value })}
                 >

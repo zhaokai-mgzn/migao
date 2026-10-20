@@ -82,7 +82,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AlertCircle, ChevronDown, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
-import { NumberInput } from '@/components/ui'
+import { NumberInput, SELECT_CONTROL, SELECT_CONTROL_FIELD } from '@/components/ui'
 // issue #7176：配置面表单的**唯一版式原语**（浅底面板 + 栅格 + 标签在上 + 单位入框）。
 // 🔴 本文件**不再自己拼 label + input 的版式** —— 那是「同一产品三种字段语言」的来源。
 import FormPanel, { FIELD_CONTROL, Field, FormGrid, fieldControl } from '@/components/ui/FormPanel'
@@ -101,6 +101,7 @@ import {
   type ScalarParam,
 } from '@/lib/tenant-params'
 import type { CraftCalcConfig, CraftCalcConfigResponse } from '@/types'
+import { cn } from '@/lib/utils'
 
 /**
  * 控件的「铬」已上收到 `frontend/admin-web/src/components/ui/FormPanel.tsx` 的 `FIELD_CONTROL`
@@ -730,7 +731,7 @@ export function CalcCaliberPanel({
                   {/* 取值域与文案 = **单一真值** `CRAFT_CALC_FORMULA_LABELS`（不另写一份映射） */}
                   <select
                     id="calc-caliber-formula"
-                    className={FIELD_CONTROL}
+                    className={cn(SELECT_CONTROL_FIELD, 'w-full')}
                     aria-label={CALC_PARAM_COPY.default_formula.label}
                     data-testid="calc-caliber-default_formula"
                     value={displayConfig.default_formula}

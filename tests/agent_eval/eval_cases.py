@@ -15615,6 +15615,25 @@ _CASE_UI_130 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端版式/交互契约用例：页面渲染时 mock `@/lib/api` 与 `@/components/orders`，不依赖共享夹具与真实服务 ⇒ 前置不成立时对应单测直接红；agent-eval 栈不跑它',
 )
 
+# ── UI-131 [NORMAL] 全站下拉框只有一种形态（共享 SELECT_CONTROL / 自绘箭尖）+ 筛选条字段参与伸缩（issue #7397）（源: cases/ui.yml）──
+_CASE_UI_131 = EvalCase(
+    id='UI-131',
+    legacy_id='',
+    title='全站下拉框只有一种形态（共享 SELECT_CONTROL / 自绘箭尖）+ 筛选条字段参与伸缩（issue #7397）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['「输入框长度不够，文字被遮住了」（用户 2026-10-20，知识库关键词输入框截图红框）', '「我们所有页面的下拉框都看着很别扭，不协调」（用户 2026-10-20，作业看板状态筛选截图红框）', '「都是这种不协调的问题」（用户 2026-10-20，第三张下拉截图）'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·业务面下拉必须引用共享铬（会红）：`src/**`（除 `src/components/ui/**`）里每个真实 `<select>` 开标签必须含 `SELECT_CONTROL`；只借箭尖（`SELECT_CHEVRON`）的面必须登记在冻结台账且台账只许缩短。执行点 = frontend/admin-web/tests/unit/select-control-unification.test.tsx（describe「判据 1」）。', '判据 2·共享铬不许被削弱（会红）：`SELECT_CONTROL` 仍带 `appearance-none` / `h-9` / `border-neutral-300` / `pr-9` / `rounded` / 自绘箭尖背景 / 焦点环 / disabled 态；表单面 `SELECT_CONTROL_FIELD` = 同一套 + `rounded-lg`。执行点同上（判据 2）。', '判据 3·单一份箭尖图形（会红）：`Select` 原语不再 import `ChevronDown`、不再叠第二个箭头，改用 `SELECT_CONTROL_FIELD`。执行点同上（判据 3）。', '判据 4·筛选条字段参与伸缩（会红）：`SearchBar` 字段容器带 `flex-1` + `basis-[22rem]`、不再有定宽 `min-w-[200px]`；输入框 `w-full` 吃满容器 ⇒ 长占位文案（「搜索标题 / 关键词 / 常见问法 / 回答内容」）不再被截断。执行点同上（判据 4）。', '判据 5·判别力自证（会红）：注入「自己拼铬」「台账外的 SELECT_CHEVRON」「注释里的 <select> 字样」三种形态，纯函数必须在内存里分别判红 / 判红 / 放行（不制造假红）。执行点同上（describe「判别力自证」）。'],
+    skip_reason='[backend-contract] 纯前端版式契约（不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟',
+    tags=['design-system', 'select', 'search-bar', 'control-chrome'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端版式契约用例：源码扫描 + jsdom 渲染，不依赖共享夹具与真实服务 ⇒ 前置不成立时对应单测直接红；agent-eval 栈不跑它',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -16486,6 +16505,7 @@ ALL_CASES = (
     _CASE_UI_128,
     _CASE_UI_129,
     _CASE_UI_130,
+    _CASE_UI_131,
     _CASE_UT_001,
     _CASE_UT_002,
 )

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertCircle, RefreshCw, Search } from 'lucide-react'
-import { Button, Pagination, PageHeader, RowActionLink } from '@/components/ui'
+import { Button, Pagination, PageHeader, RowActionLink, SELECT_CONTROL } from '@/components/ui'
 import StatusBadge from '@/components/ui/StatusBadge'
 import { chipToneClasses } from '@/lib/status-chip'
 import {
@@ -15,6 +15,7 @@ import {
 import { processingOrderApi, productionApi } from '@/lib/api'
 import { usePermission } from '@/lib/permission'
 import type { PieceworkSummary, ProcessingOrder, ProductionProgress } from '@/types'
+import { cn } from '@/lib/utils'
 
 /**
  * 作业看板 /production（issue #4203；分页 + 懒加载 issue #4360；**作业单唯一入口** issue #4357）
@@ -242,7 +243,7 @@ export default function ProductionBoardPage() {
               aria-label="状态筛选"
               value={statusInput}
               onChange={(e) => setStatusInput(e.target.value)}
-              className="min-w-[140px] h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className={cn(SELECT_CONTROL, 'min-w-[140px]')}
             >
               {STATUS_FILTER_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Plus, Search, FileText, ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 import { afterSalesApi, orderApi } from '@/lib/api'
-import { Pagination, Modal, Button, Badge, StatusBadge, PageHeader, PageCard, SearchPanel } from '@/components/ui'
+import { Pagination, Modal, Button, Badge, StatusBadge, PageHeader, PageCard, SearchPanel, SELECT_CONTROL } from '@/components/ui'
 import type { SearchFieldSpec } from '@/components/ui'
 import type {
   AfterSalesTicket,
@@ -242,7 +242,7 @@ export default function AfterSalesPage() {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as AfterSalesStatus | '')}
-            className={SEARCH_CONTROL}
+            className={cn(SELECT_CONTROL, 'w-full')}
           >
             <option value="">全部状态</option>
             <option value="pending">待处理</option>

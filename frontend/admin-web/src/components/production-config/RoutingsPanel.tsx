@@ -17,7 +17,7 @@
  * `embedded=true` 只影响**区块标题**，其余一字不变。
  */
 import { AlertCircle, ArrowDown, ArrowUp, Check, Pencil, Plus, RefreshCw, Star, Trash2, X } from 'lucide-react'
-import { Button, Modal } from '@/components/ui'
+import { Button, Modal, SELECT_CONTROL } from '@/components/ui'
 import { conditionText, inputCls, money, RulePriceCell } from '@/components/production-config/utils'
 import { useRoutingsFeature, type RoutingsFeature } from '@/components/production-config/features'
 import { cn } from '@/lib/utils'
@@ -299,7 +299,7 @@ export function RoutingsPanel({
                               data-testid={`routing-add-select-${id}`}
                               value={picked}
                               onChange={(e) => setPicked(e.target.value)}
-                              className="h-9 min-w-56 flex-1 rounded border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:border-primary-500"
+                              className={cn(SELECT_CONTROL, 'min-w-56', 'flex-1')}
                             >
                               <option value="">从工序库选择要添加的工序…</option>
                               {paletteOps.map((o) => (
