@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（119 case）
+## 杂项域（120 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5455,6 +5455,21 @@
 跳过: [backend-contract] 纯静态 schema 形态判据（只读建库脚本与生产代码语料），由 tests/unit_ci_workflows/test_schema_health_guards.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 溯源: 2026-10-20 新增（issue #7359，用户要求把「如何规避传统 ERP 的臃肿」落成规范与判据）。落码 = ① docs/wiki/Domain-Modeling.md（六条纪律 + 新增实体正判据 + 三指标复算命令 + 两处具名漂移）；② tests/unit_ci_workflows/test_schema_health_guards.py（3 条真语料判据 + 4 条注入式红证 + 1 条负控）；③ 台账 tests/unit_ci_workflows/schema_health_ledger.json（列预算例外 1 条 / 孤儿列基线 0 / JSONB 登记 48 条）；④ docs/wiki/INDEX.md 增入口；⑤ product/capability-gap-midsize.md（中型企业能力差距评估，issue #7360）。⚠️ **未做（照实登记）**：不收敛 customer_profiles(42) 与 order_items(28) —— 收敛是迁移级改动，另开单；本单只让「再长一列」需要显式登记。⚠️ **不入 CHANGELOG**（铁律 7 豁免：docs + 纯测试/研发工具面，对用户无可观察影响）。取号 = 现取 origin/main 的 MC 最大 118 ⇒ MC-119。 ｜ tags: backend-contract, schema-health, domain-modeling, erp-bloat, column-budget, orphan-column, jsonb-registry, meta-guard, red-proof
+
+### SP-001. 供应商主数据：新表 + 档案 CRUD（校验三态：名称/账期/状态）+ 菜单三源与路由守卫同构（issue #7369，P0-1 段 1） 🔵
+```
+你: 用户（2026-10-20，逐字）：「p0 p1 逐步推进落地」—— P0-1 = 供应商主数据 + 采购收货 + 应付基础，本用例守其**段 1**（档案本身）。
+数据: **现状（改前，代码实测）**：供应商在系统里只是入库单上的**一段文本** —— `InboundLabelView` 自注「MVP 不建主数据」；同族纪律见 `docs/wiki/Domain-Modeling.md`（主数据 vs 单据快照不得混表）。
+数据: **判据 1（服务层三态校验）**：`backend/admin-api/src/test/java/com/migao/admin/service/SupplierServiceTest.java`（6 条）——① 名称去空白后为空 ⇒ 拒且**不落库**；② 账期 -1 / 366 ⇒ 拒，0 与 365 是合法边界；③ 状态只接受 active / inactive（`disabled` ⇒ 拒），`INACTIVE` 归一为 `inactive`；④ 跨租户 id 更新 ⇒ 404 且不落库。
+数据: **判据 2（写端点归属先于载荷校验）**：`PUT /api/admin/suppliers/{id}` 标 `@TenantOwnedResource("supplier")`，认定键登记在 `TenantResourceOwnership.registerChecks()`（与 product/category 同款）；判据 = `ServiceLayerValidatedWriteEndpointGuardTest`（#6167）+ `TenantOwnedWriteEndpointGuardTest`（#6158）。
+数据: **判据 3（页面判据）**：`frontend/admin-web/tests/unit/pages/suppliers.test.tsx`（5 条）—— 第一屏拉服务端列表并如实渲染；账期三态口径（未设置/现结/N 天）；建档名称去空白 + 账期留空发 **null**（不是 0）；停用走同一条更新写面；账期越界前端拦下且**不发请求**。
+数据: **判据 4（菜单三源 + 路由守卫同构）**：节点「供应商」在 `menu.ts` / `MenuController` / `AuthService` 三处**逐字同码** `inbound:view`（不新造 `supplier:*` —— 新码无人持有 ⇒ 节点对所有人不可见，#4203 同族坑；同组「发货单」取 `order:list` 是先例）；路由守卫 `(dashboard)/layout.tsx` 的 `ROUTE_PERMISSION_MAP` 与节点成对登记。判据 = `test_agent_permission_parity.py`（判据 11/12）+ `test_rbac_derived_pages.py`。
+数据: **判据 5（表形态）**：`suppliers` 11 列（无孤儿列：每列都被服务/页面消费）；租户 RLS 策略 `tenant_isolation_suppliers`；建库脚本与 V170 终态同步。判据 = `test_schema_health_guards.py` + 迁移指纹账本。
+数据: **边界（照实登记）**：本用例**不覆盖**任何单据联动 —— 入库单仍写自己的文本供应商，`supplier_id` 引用、停用拦截、采购单/收货/应付全部属**段 2**（issue #7369 保持 OPEN）。
+前置: 本用例是 [backend-contract]：前置 = `suppliers` 表在场（V170 + 建库脚本终态）、`/api/admin/suppliers` 三个端点在控制器上、菜单节点「供应商」三源同构且路由守卫登记。零网络、零 LLM。
+跳过: [backend-contract] 主数据 CRUD 的服务层校验 + 菜单/守卫同构契约，由 Java 单测与 vitest 页面判据验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-20 新增（issue #7369，P0-1 段 1；用户「p0 p1 逐步推进落地」）。落码 = ① V170 迁移（表 + 索引 + RLS + 终态对账 DO 块）+ 建库脚本同步；② Supplier 实体/Mapper/Service/Controller（三端点，权限码复用 inbound:view / inbound:create）；③ 归属认定登记 supplier 键；④ 菜单三源 + 路由守卫 + ai-agent 导航镜像 + RBAC 清单/读数；⑤ 供应商页 + 5 条页面判据；⑥ CHANGELOG。⚠️ **未做（照实登记）**：采购单 / 收货 / 应付（段 2/3）、停用拦截、单据侧 supplier_id 引用。取号 = 现取 origin/main 无 SP 前缀 ⇒ SP-001。 ｜ tags: backend-contract, supplier, master-data, rbac, menu-parity, route-guard, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12237,7 +12252,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：119
+- 杂项域：120
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12400,6 +12415,7 @@
 - MC-117: 类级元守卫（#6956）：T3 逻辑删除族调用方必须判影响行数（未登记即红 + 豁免只许缩短）
 - MC-118: dev-worktree 会话锁判活：PID 已退出但登记的工作区仍在且仍检出该分支 ⇒ 仍算占用（issue #7216）；`add` 入口自动清失效锁，`rm` 释放锁，prune 侧同一口径
 - MC-119: schema 形态健康：单表列预算 ≤ 30（超限须台账具名 + 只许缩短）/ 孤儿列零增长（生产代码语料）/ JSONB 双向登记（issue #7359，防 ERP 化）
+- SP-001: 供应商主数据：新表 + 档案 CRUD（校验三态：名称/账期/状态）+ 菜单三源与路由守卫同构（issue #7369，P0-1 段 1）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

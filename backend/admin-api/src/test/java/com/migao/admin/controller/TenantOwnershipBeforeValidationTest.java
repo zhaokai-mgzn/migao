@@ -107,7 +107,7 @@ class TenantOwnershipBeforeValidationTest extends BaseControllerTest {
     void setUp() {
         super.baseSetUp();
         ownership = new TenantResourceOwnership(productMapper, categoryMapper, processingItemMapper,
-                processingCategoryMapper, afterSalesTicketMapper, orderService, null, null, workerAdminService, null);
+                processingCategoryMapper, afterSalesTicketMapper, orderService, null, null, workerAdminService, null, null);
         ownership.registerChecks();
     }
 

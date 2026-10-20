@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Coins,
   Factory,
+  Handshake,
   Headphones,
   Layers,
   LifeBuoy,
@@ -148,6 +149,12 @@ export const capabilityDomains: CapabilityDomain[] = [
     name: '仓储与物料',
     summary: '按布料的真实形态记账：批次、缸号与余料。',
     items: [
+      {
+        name: '供应商',
+        detail:
+          '谁在供货、账期几天、停没停：名称 / 联系人 / 电话 / 账期（未设置、现结、N 天）/ 在用或停用，一处维护；采购单与收货随后接上。',
+        icon: Handshake,
+      },
       {
         name: '入库单',
         detail:

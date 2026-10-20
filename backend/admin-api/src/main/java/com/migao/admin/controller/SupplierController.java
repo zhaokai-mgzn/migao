@@ -1,0 +1,64 @@
+package com.migao.admin.controller;
+
+import com.migao.admin.config.TenantContext;
+import com.migao.admin.dto.ApiResponse;
+import com.migao.admin.entity.Supplier;
+import com.migao.admin.security.RequirePermission;
+import com.migao.admin.security.TenantOwnedResource;
+import com.migao.admin.service.SupplierService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+/**
+ * 供应商主数据（issue #7369，P0-1 段 1）。
+ *
+ * <p>前端对齐：{@code supplierApi}（frontend/admin-web/src/lib/api.ts）
+ * <ul>
+ *   <li>GET  /api/admin/suppliers           → 列表（keyword 可模糊搜名称/联系人/电话）</li>
+ *   <li>POST /api/admin/suppliers           → 建档</li>
+ *   <li>PUT  /api/admin/suppliers/{id}      → 更新（**停用也走这里**改 status）</li>
+ * </ul>
+ *
+ * <h3>为什么权限码取 {@code inbound:view} / {@code inbound:create}（不新造 {@code supplier:*}）</h3>
+ * 新码今天**没有任何岗位持有** ⇒ 页面与菜单对所有人不可见（#4203 同族坑，同组「发货单」取
+ * {@code order:list}、省料看板取 {@code product:list} 是同一先例）。供应商档案的读者与入库单**同群**
+ * （仓管看收货、财务看账期）⇒ 本段复用入库码，**零授权 delta**；采购域（段 2 的采购单）引入自己的码时，
+ * 再评估把供应商读写拆成 {@code supplier:*}。
+ */
+@Slf4j
+@RestController
+@RequiredArgsConstructor
+public class SupplierController {
+
+    private final SupplierService supplierService;
+
+    /** 供应商列表。 */
+    @GetMapping("/api/admin/suppliers")
+    @RequirePermission("inbound:view")
+    public ApiResponse<List<Supplier>> list(@RequestParam(required = false) String keyword) {
+        Long tenantId = TenantContext.getTenantId();
+        return ApiResponse.success(supplierService.list(tenantId, keyword));
+    }
+
+    /** 新建供应商档案。 */
+    @PostMapping("/api/admin/suppliers")
+    @RequirePermission("inbound:create")
+    public ApiResponse<Supplier> create(@RequestBody Supplier supplier) {
+        Long tenantId = TenantContext.getTenantId();
+        log.info("新建供应商: tenantId={} name={}", tenantId, supplier.getName());
+        return ApiResponse.success(supplierService.create(tenantId, supplier));
+    }
+
+    /** 更新供应商档案（含停用/启用）。归属认定先于载荷校验（#6158）。 */
+    @PutMapping("/api/admin/suppliers/{id}")
+    @RequirePermission("inbound:create")
+    @TenantOwnedResource("supplier")
+    public ApiResponse<Supplier> update(@PathVariable String id, @RequestBody Supplier supplier) {
+        Long tenantId = TenantContext.getTenantId();
+        log.info("更新供应商: tenantId={} id={}", tenantId, id);
+        return ApiResponse.success(supplierService.update(id, tenantId, supplier));
+    }
+}

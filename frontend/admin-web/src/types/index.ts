@@ -2437,6 +2437,24 @@ export interface CustomerProfile {
  * `creditLimit == null` = **未启用授信**（老客户默认）—— 与「额度 0」必须可区分：
  * 后者 `available = 0` 且任何赊销都被服务端拒绝。
  */
+/**
+ * 供应商主数据（issue #7369，P0-1 段 1）。
+ *
+ * `paymentTermsDays`：null = 未设置 / 0 = 现结 / 正数 = 账期天数；
+ * `status`：active 在用 / inactive 停用（停用后不可被新单据选中，段 2 在单据写面拦）。
+ */
+export interface Supplier {
+  id: string
+  name: string
+  contactName?: string | null
+  contactPhone?: string | null
+  paymentTermsDays?: number | null
+  status: 'active' | 'inactive'
+  remark?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
 export interface CustomerCreditStatus {
   customerId: string
   creditLimit: number | null

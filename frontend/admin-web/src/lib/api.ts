@@ -5,7 +5,7 @@ import {
   buildCloseOrderPayload,
   buildRefundPayload,
 } from './data-adapter'
-import type { CustomerCreditStatus } from '@/types'
+import type { CustomerCreditStatus, Supplier } from '@/types'
 import type { RefundOrderParams } from './data-adapter'
 // 发货读面（issue #5651）：真值 owner = `OrderShipmentService.readShipment`，这里只声明形状
 import type { OrderShipmentRead } from './sales-shipment'
@@ -1628,6 +1628,20 @@ export const chatApi = {
 
   /** AI 服务基地址 */
   AI_SERVICE_URL,
+}
+
+// 供应商主数据（issue #7369）：档案 CRUD；停用/启用走同一条 update（不单独开端点）。
+export const supplierApi = {
+  list: (keyword?: string) =>
+    request.get<ApiResponse<Supplier[]>>('/api/admin/suppliers', {
+      params: keyword ? { keyword } : undefined,
+    }),
+
+  create: (data: Partial<Supplier>) =>
+    request.post<ApiResponse<Supplier>>('/api/admin/suppliers', data),
+
+  update: (id: string, data: Partial<Supplier>) =>
+    request.put<ApiResponse<Supplier>>(`/api/admin/suppliers/${id}`, data),
 }
 
 // 客户管理 API

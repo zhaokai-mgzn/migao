@@ -100,6 +100,8 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // 入库单（issue #5071）：V111（#5034）新增菜单项时**漏了本表这一处** ⇒ 面包屑只剩「工作台」一项。
   // 组名/菜单名与侧边栏 `config/menu.ts` 的 `inbound-orders` 逐字一致；
   // issue #5271：随「面料进出与消耗」动线**移入「仓储与物料」组**（原生产管理组）。
+  // 供应商（issue #7369）：新增菜单项同批补面包屑（V111/#5034 漏过一次的教训）。
+  { match: (p) => p.startsWith('/suppliers'), crumbs: [{ label: '仓储与物料' }, { label: '供应商' }] },
   { match: (p) => p.startsWith('/inbound-orders'), crumbs: [{ label: '仓储与物料' }, { label: '入库单' }] },
   // 发货单（issue #5939，用户 2026-10-02 裁定）：与「入库单」对称的出口单据，同属「仓储与物料」组。
   // 组名/菜单名与侧边栏 `config/menu.ts` 的 `shipments`、服务端两处菜单节点逐字一致（判据 PG-038）。

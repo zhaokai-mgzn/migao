@@ -323,6 +323,7 @@
       "质检记录": "production:inspect",
       "仓储与物料": null,
       "入库单": "inbound:view",
+      "供应商": "inbound:view",
       "库存明细": "product:list",
       "发货单": "order:list",
       "余料台账": "processing:manage",
@@ -348,6 +349,7 @@
       "智能派单": "processing:view",
       "计件工资": "production:view",
       "质检记录": "production:inspect",
+      "供应商": "inbound:view",
       "入库单": "inbound:view",
       "发货单": "order:list",
       "余料台账": "processing:manage",
@@ -373,6 +375,7 @@
       "计件工资": "production:view",
       "质检记录": "production:inspect",
       "入库单": "inbound:view",
+      "供应商": "inbound:view",
       "库存明细": "product:list",
       "发货单": "order:list",
       "余料台账": "processing:manage",
@@ -479,6 +482,12 @@
       "key": "inbound-orders",
       "name": "入库单",
       "path": "/inbound-orders",
+      "code": "inbound:view"
+    },
+    {
+      "key": "suppliers",
+      "name": "供应商",
+      "path": "/suppliers",
       "code": "inbound:view"
     },
     {
@@ -614,6 +623,10 @@
     [
       "/shipments",
       "order:list"
+    ],
+    [
+      "/suppliers",
+      "inbound:view"
     ],
     [
       "/inbound-orders",
@@ -917,6 +930,18 @@
       "units": {
         "product:list": [
           "GET /api/admin/stock-ledger"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "suppliers",
+      "name": "供应商",
+      "path": "/suppliers",
+      "gate": "inbound:view",
+      "units": {
+        "inbound:view": [
+          "GET /api/admin/suppliers"
         ]
       },
       "visibility_rule": "all"

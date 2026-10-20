@@ -2081,6 +2081,8 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     "/shipments": "发货单",
     # 入库单（issue #5976）：菜单节点早有码 `inbound:view`，而守卫表此前**没有这一项** ⇒
     # 「菜单隐藏、地址栏直达不被拦」。本前缀同时覆盖 `/inbound-orders/new`。
+    # 供应商（issue #7369）：新菜单节点 ⇒ 守卫与节点成对登记（判据 11 ③）。
+    "/suppliers": "供应商",
     "/inbound-orders": "入库单",
     # 在线接待（issue #5977）：守卫表此前只有 `/chat` ⇒ 覆盖不到 `/agent-workspace/*`。
     # 登记的是**父前缀** `/agent-workspace`（子树唯一菜单节点 = 「在线接待」；根 = 重定向占位页、
@@ -2256,6 +2258,9 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
     "/quality-inspections": MenuReadAnchor("质检记录", "quality-inspections/page.tsx",
                                            ("qualityInspectionApi.targets",
                                             "qualityInspectionApi.list")),
+    # 供应商（issue #7369）：节点码 inbound:view = 本页第一屏读端点（GET /api/admin/suppliers）的
+    # 方法级 @RequirePermission（逐字同码，不新造 supplier:view）。
+    "/suppliers": MenuReadAnchor("供应商", "suppliers/page.tsx", ("supplierApi.list",)),
     "/inbound-orders": MenuReadAnchor("入库单", "inbound-orders/page.tsx", ("inboundOrderApi.list",)),
     # 发货单（issue #5939）：菜单节点码 `order:list` = 本页第一屏读端点码（GET /api/admin/shipments）
     # —— 取**既有**码（不新造 shipment:view），与「订单列表」同一把尺子。
@@ -3021,15 +3026,18 @@ AUTHORIZATION_CENSUS: dict[str, AuthorizationCensusEntry] = {
     ),
     "inbound:create": AuthorizationCensusEntry(
         roles=('operator',),
-        endpoints=('GET /api/admin/inbound-orders/opening-template', 'PATCH /api/admin/inbound-orders/{}', 'POST /api/admin/inbound-orders', 'POST /api/admin/inbound-orders/opening-import'),
+        # issue #7369：供应商建档/更新两个写端点复用本码（档案写面与入库单写面同群）。
+        endpoints=('GET /api/admin/inbound-orders/opening-template', 'PATCH /api/admin/inbound-orders/{}', 'POST /api/admin/inbound-orders', 'POST /api/admin/inbound-orders/opening-import', 'POST /api/admin/suppliers', 'PUT /api/admin/suppliers/{}'),
         menu_nodes=(),
         tools=(),
         reachable=('建单 / 改单 / 期初导入三个写端点（外加期初模板读端点，注解口径如实照录）改用本码 ⇒ 补码前回退账号进得去「入库单」页（若已持 `inbound:view`）却**建不了单**；补码后与种子路径的运营同权。本码不挂菜单节点、无 Agent 工具声明它。'),
     ),
     "inbound:view": AuthorizationCensusEntry(
         roles=('customer_service', 'finance', 'operator', 'sales'),
-        endpoints=('GET /api/admin/inbound-orders', 'GET /api/admin/inbound-orders/batches', 'GET /api/admin/inbound-orders/{}'),
-        menu_nodes=('auth:入库单', 'controller:入库单', 'frontend:入库单'),
+        # issue #7369：供应商档案页的第一屏读端点（`GET /api/admin/suppliers`）也挂本码。
+        endpoints=('GET /api/admin/inbound-orders', 'GET /api/admin/inbound-orders/batches', 'GET /api/admin/inbound-orders/{}', 'GET /api/admin/suppliers'),
+        # issue #7369：节点「供应商」在三处菜单源上与本码同码（档案面与入库单同群）。
+        menu_nodes=('auth:入库单', 'auth:供应商', 'controller:入库单', 'controller:供应商', 'frontend:入库单', 'frontend:供应商'),
         tools=('inbound_order_query',),
         reachable=('「入库单」菜单节点的**节点码就是本码**（三处菜单源一致）⇒ 补码前回退账号**根本看不见该节点**（issue #5271 新增的页面 = 菜单凭空消失）；补码后节点出现且三个读端点同时可读。Agent 侧 `inbound_order_query`（只读）同批对回退账号开放。'),
     ),

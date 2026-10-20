@@ -337,7 +337,8 @@
       "岗位权限": "system:view",
       "商品管理": "product:list",
       "企业基础设置": "production:view",
-      "通知中心": null
+      "通知中心": null,
+      "供应商": "inbound:view"
     },
     "controller": {
       "经营看板": "dashboard:view",
@@ -363,7 +364,8 @@
       "企业基础设置（经营域）": "system:manage",
       "新增员工": "employee:create",
       "加工单操作": "processing:update",
-      "入库单操作": "inbound:create"
+      "入库单操作": "inbound:create",
+      "供应商": "inbound:view"
     },
     "auth": {
       "经营看板": "dashboard:view",
@@ -385,7 +387,8 @@
       "员工管理": "employee:list",
       "岗位权限": "system:view",
       "商品管理": "product:list",
-      "企业基础设置": "production:view"
+      "企业基础设置": "production:view",
+      "供应商": "inbound:view"
     },
     "user": {}
   },
@@ -484,6 +487,12 @@
       "key": "inbound-orders",
       "name": "入库单",
       "path": "/inbound-orders",
+      "code": "inbound:view"
+    },
+    {
+      "key": "suppliers",
+      "name": "供应商",
+      "path": "/suppliers",
       "code": "inbound:view"
     },
     {
@@ -619,6 +628,10 @@
     [
       "/shipments",
       "order:list"
+    ],
+    [
+      "/suppliers",
+      "inbound:view"
     ],
     [
       "/inbound-orders",
@@ -922,6 +935,18 @@
       "units": {
         "product:list": [
           "GET /api/admin/stock-ledger"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "suppliers",
+      "name": "供应商",
+      "path": "/suppliers",
+      "gate": "inbound:view",
+      "units": {
+        "inbound:view": [
+          "GET /api/admin/suppliers"
         ]
       },
       "visibility_rule": "all"

@@ -188,6 +188,7 @@ vi.mock('lucide-react', async (importOriginal) => {
   Mail: iconStub('mail'),
   MapPin: iconStub('map-pin'),
   Truck: iconStub('truck'),
+  Handshake: iconStub('handshake'),
   // #3102: 下单选客户（选择客户入口）
   UserPlus: iconStub('user-plus'),
   Building2: iconStub('building2'),

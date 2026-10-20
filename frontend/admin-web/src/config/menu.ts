@@ -308,6 +308,11 @@ export const menuGroups: MenuGroup[] = [
       // ⚠️ 权限码独立（inbound:view）—— 塞进 processing:manage 的判定里会让
       // 「有 inbound:view、没有 processing:manage」的人看不到菜单（#4203 点名的同族坑）。
       { key: 'inbound-orders', name: '入库单', icon: 'PackageOpen', path: '/inbound-orders', permissionCode: 'inbound:view', keywords: ['rkd', 'ruku', 'caigou'] },
+      // ⚠️ 必须排在「入库单」之后：手机端可见面标注取该码树序**首个**承载节点（#6781）。
+      // 供应商（issue #7369，P0-1 段 1）：进货**之前**的主数据（谁供货、账期几天、停没停）。
+      // 码取既有的 inbound:view（不新造 supplier:view —— 新码无人持有 ⇒ 菜单对所有人不可见，#4203 同族坑；
+      // 同组「发货单」取 order:list 是同一先例）。停用后仍要能看见（档案要能改回来）⇒ 不按状态门控。
+      { key: 'suppliers', name: '供应商', icon: 'Handshake', path: '/suppliers', permissionCode: 'inbound:view', keywords: ['gys', 'gongyingshang', 'caigou', 'supplier'] },
       // 库存明细（issue #6404）：SKU 级库存**变化流水**的读面。后端端点（issue #4055）与
       // agent 工具（issue #5247）**早就有**，页面是 `StockLedgerController` 的 javadoc 里逐字登记的
       // **显式延后项**（「本轮只做只读端点，不做前端页面」）⇒ 结果是同一个问题黄金策答得出、

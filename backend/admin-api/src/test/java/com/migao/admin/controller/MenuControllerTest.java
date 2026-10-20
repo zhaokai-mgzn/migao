@@ -87,7 +87,7 @@ class MenuControllerTest {
             "作业看板", "智能派单", "计件工资",
             // 🔴 2026-10-17（issue #7140）：生产管理组新增「质检记录」（读码 production:inspect）
             "质检记录",
-            "入库单", "库存明细", "发货单", "余料台账", "省料看板",
+            "入库单", "供应商", "库存明细", "发货单", "余料台账", "省料看板",
             "员工管理", "岗位权限",
             // 组内的**权限码节点**（无 path、不是菜单项）：只为让经营域的码仍可授予
             "企业基础设置（经营域）",
@@ -341,7 +341,7 @@ class MenuControllerTest {
         // 🔴 2026-10-06（issue #6457，方案 A1）：单据（进 → 账 → 出）→ 台账 → 分析。
         // 🔴 2026-10-12（issue #6759）：**组尾**追加动作码节点「入库单操作」（`inbound:create`
         // = 手机端过账的写码）。
-        assertEquals(List.of("入库单", "库存明细", "发货单", "余料台账", "省料看板", "入库单操作"),
+        assertEquals(List.of("入库单", "供应商", "库存明细", "发货单", "余料台账", "省料看板", "入库单操作"),
                 labels(inventory.path("children")));
         // 入库单是**仓储**动作、权限码独立为 inbound:view —— 并进 processing:manage 会让
         // 「有 inbound:view、没有 processing:manage」的仓管看不到菜单（#4203 点名的同族坑）。
@@ -349,8 +349,9 @@ class MenuControllerTest {
         // issue #5939：「发货单」取**既有** order:list（与销售订单同码、与页面/端点同码）⇒ 零授权 delta。
         // 🔴 issue #6404：「库存明细」同样取**既有** product:list（与省料看板同码；
         // 码不唯一是有意的 —— 两个页面各自的读端点注解就是这个码）。
-        assertEquals(List.of("inbound:view", "product:list", "order:list", "processing:manage", "product:list",
-                        "inbound:create"),
+        // issue #7369：「供应商」与「入库单」同码（inbound:view）—— 档案面与单据面同群，零授权 delta。
+        assertEquals(List.of("inbound:view", "inbound:view", "product:list", "order:list", "processing:manage",
+                        "product:list", "inbound:create"),
                 codes(inventory.path("children")));
     }
 
@@ -481,7 +482,7 @@ class MenuControllerTest {
         // ③ 两个**导航项**仍是动作节点之前的连续前缀（动作节点只许在组尾）
         assertEquals(List.of("作业看板", "智能派单", "计件工资", "质检记录"),
                 labels(processed).subList(0, processed.size() - 1));
-        assertEquals(List.of("入库单", "库存明细", "发货单", "余料台账", "省料看板"),
+        assertEquals(List.of("入库单", "供应商", "库存明细", "发货单", "余料台账", "省料看板"),
                 labels(inventory).subList(0, inventory.size() - 1));
     }
 
