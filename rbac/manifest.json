@@ -338,7 +338,8 @@
       "商品管理": "product:list",
       "企业基础设置": "production:view",
       "通知中心": null,
-      "供应商": "inbound:view"
+      "供应商": "inbound:view",
+      "采购单": "inbound:view"
     },
     "controller": {
       "经营看板": "dashboard:view",
@@ -365,7 +366,8 @@
       "新增员工": "employee:create",
       "加工单操作": "processing:update",
       "入库单操作": "inbound:create",
-      "供应商": "inbound:view"
+      "供应商": "inbound:view",
+      "采购单": "inbound:view"
     },
     "auth": {
       "经营看板": "dashboard:view",
@@ -388,7 +390,8 @@
       "岗位权限": "system:view",
       "商品管理": "product:list",
       "企业基础设置": "production:view",
-      "供应商": "inbound:view"
+      "供应商": "inbound:view",
+      "采购单": "inbound:view"
     },
     "user": {}
   },
@@ -493,6 +496,12 @@
       "key": "suppliers",
       "name": "供应商",
       "path": "/suppliers",
+      "code": "inbound:view"
+    },
+    {
+      "key": "purchase-orders",
+      "name": "采购单",
+      "path": "/purchase-orders",
       "code": "inbound:view"
     },
     {
@@ -631,6 +640,10 @@
     ],
     [
       "/suppliers",
+      "inbound:view"
+    ],
+    [
+      "/purchase-orders",
       "inbound:view"
     ],
     [
@@ -869,6 +882,18 @@
       "units": {
         "product:list": [
           "GET /api/admin/products"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "purchase-orders",
+      "name": "采购单",
+      "path": "/purchase-orders",
+      "gate": "inbound:view",
+      "units": {
+        "inbound:view": [
+          "GET /api/admin/purchase-orders"
         ]
       },
       "visibility_rule": "all"

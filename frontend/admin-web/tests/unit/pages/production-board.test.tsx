@@ -221,19 +221,21 @@ describe('生产管理菜单入口（侧边栏）', () => {
     // 🔴 2026-10-06（issue #6457，方案 A1）：顺序改为「单据（进 → 账 → 出）→ 台账 → 分析」
     //    ⇒ 库存明细**紧随入库单**、发货单退到其后。
     // #7369：本组 5 → 6 项（+「供应商」`/suppliers`，紧随入库单 —— 档案面与单据面同群）
-    expect(links).toHaveLength(6)
+    // #7369 段 4：本组 6 → 7 项（+「采购单」`/purchase-orders`，紧随供应商 —— 采购与收货同群）
     expect(links[0].textContent).toContain('入库单')
     expect(links[0]).toHaveAttribute('href', '/inbound-orders')
     expect(links[1].textContent).toContain('供应商')
     expect(links[1]).toHaveAttribute('href', '/suppliers')
-    expect(links[2].textContent).toContain('库存明细')
-    expect(links[2]).toHaveAttribute('href', '/stock-ledger')
-    expect(links[3].textContent).toContain('发货单')
-    expect(links[3]).toHaveAttribute('href', '/shipments')
-    expect(links[4].textContent).toContain('余料台账')
-    expect(links[4]).toHaveAttribute('href', '/production/remnants')
-    expect(links[5].textContent).toContain('省料看板')
-    expect(links[5]).toHaveAttribute('href', '/production/saving-board')
+    expect(links[2].textContent).toContain('采购单')
+    expect(links[2]).toHaveAttribute('href', '/purchase-orders')
+    expect(links[3].textContent).toContain('库存明细')
+    expect(links[3]).toHaveAttribute('href', '/stock-ledger')
+    expect(links[4].textContent).toContain('发货单')
+    expect(links[4]).toHaveAttribute('href', '/shipments')
+    expect(links[5].textContent).toContain('余料台账')
+    expect(links[5]).toHaveAttribute('href', '/production/remnants')
+    expect(links[6].textContent).toContain('省料看板')
+    expect(links[6]).toHaveAttribute('href', '/production/saving-board')
   })
 
   it('「加工单」不再是独立菜单项：交易管理组只余两个业务项（issue #4357；#5778 收窄）', () => {
@@ -269,7 +271,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     // 🔴 #6580：24 项 → 21 项（生产管理组 5 → 3；「参数总览」一级项随页合并撤销、
     // 一级项席位改「企业基础设置」）；🔴 #7087：「工作台」组撤销（经营看板 → 最前席位、
     // 每日简报 → 删除）⇒ 20 项；🔴 #7140：生产管理组 +「质检记录」⇒ 21 项。
-    expect(hrefs).toHaveLength(22) // 22 项 = 最前席位 1 + 组内 18（#7369 +供应商）+ 尾席位 2 + 尾部独立项 1（见 menu-nav.test.ts）
+    expect(hrefs).toHaveLength(23) // 22 项 = 最前席位 1 + 组内 18（#7369 +供应商）+ 尾席位 2 + 尾部独立项 1（见 menu-nav.test.ts）
     expect(hrefs).not.toContain('/processing-orders')
   })
 
@@ -291,6 +293,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expect(inventory!.children.map((c) => c.permissionCode)).toEqual([
       'inbound:view',
       'inbound:view',       // 供应商（issue #7369：档案面与入库单同码 ⇒ 零授权 delta）
+      'inbound:view',       // 采购单（issue #7369 段 4：采购与收货同岗位同码 ⇒ 零授权 delta）
       'product:list',       // 库存明细（issue #6404：同取既有 product:list ⇒ 零授权 delta）
       'order:list',         // 发货单（issue #5939：取**既有** order:list ⇒ 与销售订单同码、零授权 delta）
       'processing:manage',
