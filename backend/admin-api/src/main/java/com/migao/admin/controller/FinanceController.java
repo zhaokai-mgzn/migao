@@ -30,6 +30,9 @@ public class FinanceController {
 
     private final FinanceService financeService;
 
+    /** 客户收款核销（issue #7370 段 3）：现金真值仍只认 finance_transactions，本服务只记核销去向。 */
+    private final com.migao.admin.service.ReceiptAllocationService receiptAllocationService;
+
     // issue #5246 追加单：写面（登记收支流水）用方法级 finance:create 覆盖类级读码 ——
     // PermissionInterceptor 的解析顺序是**方法级优先、其次类级**，故 GET 三个读面仍吃 finance:view，
     // 而记账不再需要把 finance:view 当写权用（原形态：能看账 = 能记账）。
@@ -91,6 +94,29 @@ public class FinanceController {
     }
 
     /**
+     * 客户收款核销（issue #7370，P0-2 段 3）：把一笔收入流水冲抵到一张或多张订单。
+     *
+     * <p>两条硬约束都在服务层（纯函数 `ReceiptAllocationPolicy` 判定）：
+     * 同一流水 Σ核销 ≤ 流水金额（差额 = 预收 / 待勾对）、同一订单 Σ核销 ≤ 货值 − 退款。</p>
+     */
+    @PostMapping("/receipts/{transactionId}/allocations")
+    @RequirePermission("finance:create")
+    @com.migao.admin.security.TenantOwnedResource("receiptTransaction")
+    public ApiResponse<ReceiptAllocationView> allocateReceipt(
+            @PathVariable String transactionId,
+            @RequestBody ReceiptAllocationRequest request) {
+        String operator = currentOperator();
+        return ApiResponse.success(receiptAllocationService.allocate(
+                transactionId, request, TenantContext.getTenantId(), operator));
+    }
+
+    /** 核销读面：这笔收款已核销多少、还剩多少未核销（预收 / 待勾对）。 */
+    @GetMapping("/receipts/{transactionId}/allocations")
+    public ApiResponse<ReceiptAllocationView> receiptAllocations(@PathVariable String transactionId) {
+        return ApiResponse.success(receiptAllocationService.view(transactionId));
+    }
+
+    /**
      * 应收对账（订单维度）
      *
      * GET /api/admin/finance/reconciliation?page=1&size=20&startDate=&endDate=&keyword=
@@ -120,5 +146,14 @@ public class FinanceController {
             // 非 Web 上下文或无认证信息时降级
         }
         return "系统";
+    }
+
+    /** 当前登录用户名（核销要能追到人；与流水登记的取法同源）。 */
+    private String currentOperator() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof SecurityUser user) {
+            return user.getUsername();
+        }
+        return null;
     }
 }

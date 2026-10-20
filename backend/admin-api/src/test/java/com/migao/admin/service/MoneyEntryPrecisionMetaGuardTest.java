@@ -147,6 +147,9 @@ class MoneyEntryPrecisionMetaGuardTest {
                         Admission.EQUIVALENT_GATED,
                         "特殊选项对客单价经 optionalCustomerPrice 的 setScale(2, UNNECESSARY) 准入"),
 
+                site("com/migao/admin/service/ReceiptAllocationService.java", "setAmount", Admission.GATED,
+                        "客户收款核销（issue #7370 段 3）：核销金额落库前过 MoneyScale.requireTwoDecimalsOrNull"
+                                + "（超精度输入直接拒，不静默四舍五入）"),
                 site("com/migao/admin/service/SupplierPaymentService.java", "SupplierPayment.builder()",
                         Admission.GATED,
                         "供应商付款金额（issue #7369 段 3-B）：落库前过 "

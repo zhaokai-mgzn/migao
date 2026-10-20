@@ -4721,3 +4721,40 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: AR-002
+    legacy_id: ""
+    title: "客户收款核销：一笔收款冲多张订单 / 收款侧与订单侧双上限 / 同批逐行余量（issue #7370 段 3）"
+    domains:
+      - misc
+      - backend
+    tier: normal
+    tags: [backend-contract, receivable, allocation, red-proof]
+    truths_ref: []
+    user_inputs:
+      - "用户（2026-10-20，逐字）：「继续推进，不要停止」—— 承接 issue #7370 的验收判据「收款核销：收款流水可指定订单」。"
+    expectations: []
+    data_checks:
+      - "**判据 1（收款侧上限）**：同一流水的 Σ核销 ≤ 流水金额；已核销 900 / 流水 1000 ⇒ 最多再冲 100，101 拒且报出「超出 1」。判据 = `ReceiptAllocationPolicyTest#receiptSideCapWinsWhenReceiptIsSmaller`。"
+      - "**判据 2（订单侧上限）**：某单的 Σ核销 ≤ 货值 − 退款；货值 600 / 退 100 / 已核销 400 ⇒ 最多再冲 100（流水的 10000 不作数）。判据 = `#orderSideCapWinsWhenOrderIsSmaller`。红证方向：只取收款侧剩余 ⇒ 当场红。"
+      - "**判据 3（取小 + 归零）**：可核销 = min(两侧剩余)；两侧任一为负（存量脏数据）一律归 0，不让页面 500。判据 = `#negativeCapacityIsClampedToZero` + `#fullyRefundedOrderHasNothingToAllocate`。"
+      - "**判据 4（0/负数/空值一律拒）**：不产生「冲了一点点」的空行；但「申请 0」时仍要如实给出可核销上限（前端要能显示「这单还能冲多少」）。判据 = `#zeroAndNegativeAreRejected`。"
+      - "**判据 5（批量逐行余量）**：一次提交多行时，第二行必须在「含第一行」的余量上判；两行各 600 对流水 1000 ⇒ 第二行拒。判据 = `ReceiptAllocationServiceTest#batchLinesShareTheReceiptCapacity`。"
+      - "**判据 6（只有收入且成功的流水能核销）**：退款/失败流水一律拒（现金真值源是 finance_transactions，核销只是去向）。判据 = `#onlySuccessfulIncomeReceiptsCanBeAllocated`。"
+      - "**判据 7（同客户 / 取消单 / 同批重复）**：冲到别人单上拒；已取消订单拒；同一张单在同一批出现两次直接拒（否则合计绕过单张单上限）。判据 = `#cannotAllocateToAnotherCustomersOrder` / `#cancelledOrderCannotBeAllocated` / `#duplicateOrderInOneBatchIsRejected`。"
+      - "**判据 8（金额准入与落库精度）**：超两位小数直接拒（issue #6221）；落库金额一律两位小数（列 NUMERIC(16,4)，值不许带第三位）。判据 = `#overPrecisionAmountIsRejected` / `#writesAmountThroughSingleSetter` + `MoneyEntryPrecisionMetaGuardTest` 的台账条目。"
+      - "**判据 9（端点契约）**：写 `POST /api/admin/finance/receipts/{id}/allocations` 用既有 `finance:create`，读面继承类级 `finance:view`；写端点标归属认定 `receiptTransaction`（注册在 TenantResourceOwnership）。判据 = `ReceiptAllocationControllerTest` + `TenantOwnedWriteEndpointGuardTest`。"
+      - "**判据 10（账龄口径升级）**：应收余额改为 `货值 − 退款 − Σ核销`（段 2 的 `ReceivableAgingRow` javadoc 已写明这是段 3 的收口点）。判据 = `ReceivableAgingTest` 全绿 + `OrderMapper.selectReceivableRows` 的 SQL 子查询。"
+      - "**边界（照实登记）**：核销的**撤回**（软删明细）尚无端点；账期利息/多币种/发票不在范围；账龄页面与报表中心（P1-4）未做；黄金策暂无核销工具。"
+    precondition: "本用例是 [backend-contract]：前置 = `finance_transactions`（现金真值）+ `receipt_allocations`（V176）。零网络、零 LLM。"
+    skip_reason: "[backend-contract] 核销上限算法与服务接线，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟"
+    merge_log: "2026-10-20 新增（issue #7370 段 3）。落码 = 纯函数 `ReceiptAllocationPolicy` + `ReceiptAllocationService`（批量逐行余量）+ `ReceiptAllocation`/`ReceiptAllocationMapper` + `POST|GET /api/admin/finance/receipts/{id}/allocations` + V176 + 账龄 SQL 减核销。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ReceiptAllocationPolicyTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ReceiptAllocationServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/ReceiptAllocationControllerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/ReceiptAllocationMapperTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []

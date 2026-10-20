@@ -1873,6 +1873,8 @@ CREATE TABLE IF NOT EXISTS purchase_order_receipts (
 CREATE INDEX IF NOT EXISTS idx_purchase_order_receipts_po
     ON purchase_order_receipts (tenant_id, purchase_order_id)
     WHERE deleted = FALSE;
+
+
 CREATE INDEX IF NOT EXISTS idx_purchase_order_receipts_item
     ON purchase_order_receipts (tenant_id, purchase_order_item_id)
     WHERE deleted = FALSE;
@@ -2492,7 +2494,6 @@ CREATE INDEX idx_processing_items_deleted ON processing_items(deleted);
 -- （原 `processing_rules` 的两条索引随该表一并删除，issue #5245 A5）
 
 
-
 -- tenant_apps 索引
 CREATE INDEX idx_tenant_apps_tenant ON tenant_apps(tenant_id);
 CREATE INDEX idx_tenant_apps_status ON tenant_apps(status);
@@ -2851,6 +2852,46 @@ CREATE TABLE IF NOT EXISTS finance_transactions (
 CREATE UNIQUE INDEX IF NOT EXISTS uk_finance_txn_no ON finance_transactions(tenant_id, transaction_no);
 CREATE INDEX IF NOT EXISTS idx_finance_txn_order ON finance_transactions(order_id);
 CREATE INDEX IF NOT EXISTS idx_finance_txn_occurred ON finance_transactions(tenant_id, occurred_at);
+
+-- 客户收款核销（V176，issue #7370 段 3）：一笔收入流水可冲抵多张订单。
+-- 🔴 现金真值源仍**只**是 finance_transactions（这里只存「冲到哪张单、各多少」，
+-- 不复制金额 —— 复制 = 第二份会漂移的真相）；应收余额 = 货值 − 退款 − Σ核销。
+CREATE TABLE IF NOT EXISTS receipt_allocations (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    transaction_id VARCHAR(36) NOT NULL REFERENCES finance_transactions(id),
+    order_id VARCHAR(36) NOT NULL REFERENCES orders(id),
+    amount NUMERIC(16,4) NOT NULL CONSTRAINT ck_receipt_allocations_amount CHECK (amount > 0),
+    created_by VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+-- 同一笔收款对同一张单只允许一行（要改金额就删了重记，不留两份口径）
+CREATE UNIQUE INDEX IF NOT EXISTS uk_receipt_allocations_pair
+    ON receipt_allocations (transaction_id, order_id)
+    WHERE deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_receipt_allocations_order
+    ON receipt_allocations (tenant_id, order_id)
+    WHERE deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_receipt_allocations_transaction
+    ON receipt_allocations (tenant_id, transaction_id)
+    WHERE deleted = FALSE;
+
+ALTER TABLE receipt_allocations ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+         WHERE tablename = 'receipt_allocations'
+           AND policyname = 'tenant_isolation_receipt_allocations'
+    ) THEN
+        CREATE POLICY tenant_isolation_receipt_allocations ON receipt_allocations
+            USING (tenant_id::text = current_setting('app.current_tenant_id'));
+    END IF;
+END $$;
 
 -- 角色权限表（V16）
 CREATE TABLE IF NOT EXISTS role_permissions (

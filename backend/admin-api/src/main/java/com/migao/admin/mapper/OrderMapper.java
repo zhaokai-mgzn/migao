@@ -30,7 +30,10 @@ public interface OrderMapper extends BaseMapper<Order> {
     List<Map<String, Object>> selectOrderStatusDistribution();
 
     /**
-     * 应收账龄取数（issue #7370，P0-2 段 2）：每笔**余额 &gt; 0** 的订单一行。
+     * 应收账龄取数（issue #7370，P0-2 段 2 + 段 3）：每笔**余额 &gt; 0** 的订单一行。
+     *
+     * <p>🔴 段 3 起余额再减「已核销收款合计」（{@code receipt_allocations}）：一笔收款可冲抵多张单，
+     * 部分收款的单不能再按「有没有 `paid_at`」整单算欠。
      *
      * <p>口径与「财务对账」逐字同源（{@code 应收 − 实收 + 已退}）：
      * {@code actual_amount} 为 NULL 视为已收满（既有约定），退款取 {@code type=refund ∧ status=success} 成功流水。
@@ -50,7 +53,9 @@ public interface OrderMapper extends BaseMapper<Order> {
             + "AND f.type = 'refund' AND f.status = 'success' AND f.deleted = 0), 0) AS refunded, "
             + "COALESCE(o.total_amount, 0) - COALESCE((SELECT SUM(f.amount) FROM finance_transactions f "
             + "WHERE f.tenant_id = o.tenant_id AND f.order_id = o.id "
-            + "AND f.type = 'refund' AND f.status = 'success' AND f.deleted = 0), 0) AS remaining, "
+            + "AND f.type = 'refund' AND f.status = 'success' AND f.deleted = 0), 0) "
+            + "- COALESCE((SELECT SUM(a.amount) FROM receipt_allocations a "
+            + "WHERE a.tenant_id = o.tenant_id AND a.order_id = o.id AND a.deleted = FALSE), 0) AS remaining, "
             + "o.created_at AS created_at "
             + "FROM orders o WHERE o.deleted = 0 AND o.tenant_id = #{tenantId} AND o.status <> 'cancelled' "
             + "AND o.paid_at IS NULL"
