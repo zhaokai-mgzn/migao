@@ -84,6 +84,12 @@ MENU_GROUPS: Tuple[Tuple[str, str], ...] = (
     ("customer-service", "客户服务"),
     ("trade-center", "交易管理"),
     ("production-center", "生产管理"),
+    # 供应链（issue #7369，用户 2026-10-20 裁定新增大菜单）：组 key → **商家可见**显示名。
+    # 🔴 这张表是菜单的**第五份副本**（menu.ts / MenuController / AuthService / MENU_TREE / 本表），
+    # 漏登记不会让菜单出错，但会让主动引导**静默不发**：`page_capabilities` 查不到组名 ⇒ 返回空元组 ⇒
+    # `build_proactive_push` 按「说不出入口在哪」fail-closed。判据 = tests/test_proactive_onboarding.py
+    # 的判据 4/9（逐功能遍历 NAV_FEATURES，漏一组即红）。
+    ("supply-chain", "供应链"),
     ("inventory-center", "仓储与物料"),
     ("org-center", "组织管理"),
 )
