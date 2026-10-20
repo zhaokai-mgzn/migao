@@ -111,6 +111,22 @@
     "backend/admin-api/src/main/java/com/migao/admin/service/WorkerAdminService.java::userMapper": {
       "table": "users",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/service/WorkerAdminService.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/CustomerProfileWriter.java::mapper": {
+      "table": "customer_profiles",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/CustomerProfileMapper.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/OrderLogisticsService.java::orderLogisticsMapper": {
+      "table": "order_logistics",
+      "handling": "none"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/OrderLogisticsWriter.java::orderLogisticsMapper": {
+      "table": "order_logistics",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/OrderLogisticsWriter.java"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/UserRoleWriter.java::userRoleMapper": {
+      "table": "user_roles",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/UserRoleMapper.java"
     }
   }
 }
