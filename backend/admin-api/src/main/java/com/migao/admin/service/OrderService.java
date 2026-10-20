@@ -269,9 +269,14 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * @param creator         制单人姓名（issue #5835：非空时按 {@code created_by_name} **模糊**匹配）
      * @return 分页响应
      */
-    public PageResponse<OrderListResponse> getOrderPage(long page, long size, String status, String keyword, String followStatus, Boolean hasProcessing, String startDate, String endDate, String orderId, String receiver, String productCode, String productTitle, Long tenantId, String userId, String creator) {
+    public PageResponse<OrderListResponse> getOrderPage(long page, long size, String status, String keyword, String followStatus, Boolean hasProcessing, String startDate, String endDate, String orderId, String receiver, String productCode, String productTitle, Long tenantId, String userId, String creator, String dataScopeOwnerId) {
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
 
+        // 数据范围（issue #7372 段 1）：非 null ⇒ 只看该用户创建的单据（角色范围 = self）。
+        // ⚠️ 与下面的 C 端隔离是**两件事**：本参数来自**服务端角色配置**，userId 来自查询入参。
+        if (StringUtils.hasText(dataScopeOwnerId)) {
+            wrapper.eq(Order::getCreatedBy, dataScopeOwnerId);
+        }
         // C 端数据隔离：按下单用户过滤（必须精确匹配 user_id，忽略其他模糊条件）
         if (StringUtils.hasText(userId)) {
             wrapper.eq(Order::getUserId, userId);
@@ -564,8 +569,25 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * @return 订单详情响应
      */
     public OrderDetailResponse getOrderById(String id) {
+        return getOrderById(id, null);
+    }
+
+    /**
+     * 详情读面 + **数据范围**（issue #7372 段 1）。
+     *
+     * <p>范围外 ⇒ 与「不存在」**同一个 404**（不 403）：403 会告诉调用方「这个 id 存在，只是你看不到」，
+     * 那本身就是泄露。判据 = {@code DataScopeTest#outOfScopeIsIndistinguishableFromMissing}。</p>
+     *
+     * @param dataScopeOwnerId 非 null ⇒ 只允许读该用户创建的单据
+     */
+    public OrderDetailResponse getOrderById(String id, String dataScopeOwnerId) {
         Order order = orderMapper.selectById(id);
         if (order == null) {
+            throw BusinessException.notFound("订单");
+        }
+        if (StringUtils.hasText(dataScopeOwnerId)
+                && !dataScopeOwnerId.equals(order.getCreatedBy())) {
+            // 越权对象 = 不存在（同一句提示，不泄露存在性）
             throw BusinessException.notFound("订单");
         }
 

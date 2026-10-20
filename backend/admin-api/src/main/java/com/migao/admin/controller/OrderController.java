@@ -35,6 +35,12 @@ import org.springframework.web.bind.annotation.*;
 public class OrderController {
 
     private final OrderService orderService;
+
+    /**
+     * 数据范围（issue #7372 段 1）：`order:list` / `order:detail` 两处读面都要按角色范围收窄。
+     * 取数复用 {@code RoleService.getUserRoles}（「用户有哪些角色」的单一实现点）。
+     */
+    private final com.migao.admin.service.RoleService roleService;
     private final OrderLogisticsService orderLogisticsService;
     private final OrderShipmentService orderShipmentService;
 
@@ -65,7 +71,10 @@ public class OrderController {
             @RequestParam(required = false) String creator) {
         log.info("查询订单列表: page={}, size={}, status={}, keyword={}, orderId={}, receiver={}, startDate={}, endDate={}", page, size, status, keyword, orderId, receiver, startDate, endDate);
         Long tenantId = TenantContext.getTenantId();
-        PageResponse<OrderListResponse> result = orderService.getOrderPage(page, size, status, keyword, followStatus, hasProcessing, startDate, endDate, orderId, receiver, productCode, productTitle, tenantId, userId, creator);
+        // 数据范围（issue #7372）：本人范围 ⇒ 只取自己创建的单据（null = 不收窄）
+        String scopeOwnerId = com.migao.admin.security.DataScope.ownerFilter(
+                roleService.resolveDataScope(currentUserId()), currentUserId());
+        PageResponse<OrderListResponse> result = orderService.getOrderPage(page, size, status, keyword, followStatus, hasProcessing, startDate, endDate, orderId, receiver, productCode, productTitle, tenantId, userId, creator, scopeOwnerId);
         return ApiResponse.success(result);
     }
 
@@ -202,7 +211,10 @@ public class OrderController {
     @GetMapping("/{id:[0-9a-fA-F-]+}")
     public ApiResponse<OrderDetailResponse> getOrderById(@PathVariable String id) {
         log.info("查询订单详情: id={}", id);
-        OrderDetailResponse order = orderService.getOrderById(id);
+        // 数据范围（issue #7372）：范围外 ⇒ 与「不存在」同一个 404（不 403，不泄露存在性）
+        String scopeOwnerId = com.migao.admin.security.DataScope.ownerFilter(
+                roleService.resolveDataScope(currentUserId()), currentUserId());
+        OrderDetailResponse order = orderService.getOrderById(id, scopeOwnerId);
         return ApiResponse.success(order);
     }
 
@@ -427,7 +439,10 @@ public class OrderController {
         Long tenantId = TenantContext.getTenantId();
 
         // 检查订单是否存在并校验状态
-        OrderDetailResponse orderDetail = orderService.getOrderById(id);
+        // 数据范围（issue #7372）：改单前也要按范围放行 —— 范围外 = 不存在（同一个 404）
+        String scopedOwner = com.migao.admin.security.DataScope.ownerFilter(
+                roleService.resolveDataScope(currentUserId()), currentUserId());
+        OrderDetailResponse orderDetail = orderService.getOrderById(id, scopedOwner);
         String orderStatus = orderDetail.getStatus();
         if (!"shipped".equals(orderStatus) && !"confirmed".equals(orderStatus) && !"producing".equals(orderStatus)) {
             throw com.migao.admin.exception.BusinessException.validationError(
@@ -505,5 +520,21 @@ public class OrderController {
         }
 
         return ApiResponse.success();
+    }
+
+    /**
+     * 当前登录用户 id（数据范围的判定主体）。
+     *
+     * <p>⚠️ **只**从服务端安全上下文取（`SecurityUser.userId`）—— 不接受客户端递交的用户/角色；
+     * 拿不到（内部服务令牌 / 匿名）⇒ 返回 null ⇒ 范围解析按最宽处理（`DataScope.resolve` 的既有口径）。</p>
+     */
+    private String currentUserId() {
+        var authentication = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication();
+        if (authentication != null
+                && authentication.getPrincipal() instanceof com.migao.admin.security.SecurityUser user) {
+            return user.getUserId();
+        }
+        return null;
     }
 }

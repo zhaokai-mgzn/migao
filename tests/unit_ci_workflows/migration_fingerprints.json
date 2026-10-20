@@ -171,7 +171,8 @@
     "V173__add_inbound_order_supplier_id.sql": "sha256:7973a24a1d2fd9f37c8c62808f973de5044f635a74c6d4bf2f61bb87d3de7c19",
     "V174__create_supplier_payments.sql": "sha256:eb20dd956f98e5f762a9e36beb597e13ffadecf1154fe61c41f25f46775ddb8e",
     "V175__create_purchase_orders.sql": "sha256:f32f90b0ba84913476c059c5209a5fb1b2b9959872767a3e5dc70eac344c1b45",
-    "schema.sql": "sha256:6150ae8a607a97ed92e17b404202144a08c458f88e82a1a6b9766626cc68435b",
-    "V176__create_receipt_allocations.sql": "sha256:2c05a07d3cb0a596d6ebb44b3788b83696a66745f650189edd11f68e9a22f78b"
+    "schema.sql": "sha256:afd23532a8fa2895405d8e4de92ef78740397f23f32ae1f0e839ba6ae85cdefd",
+    "V176__create_receipt_allocations.sql": "sha256:2c05a07d3cb0a596d6ebb44b3788b83696a66745f650189edd11f68e9a22f78b",
+    "V177__add_role_data_scope.sql": "sha256:ee37bd29bd6e49e89e1b1a082635514125db763998aa7c182d0a3162b6ae3057"
   }
 }

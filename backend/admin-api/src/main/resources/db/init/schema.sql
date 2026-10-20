@@ -77,6 +77,9 @@ CREATE TABLE roles (
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
     name VARCHAR(128) NOT NULL,
     code VARCHAR(64) NOT NULL,
+    -- 数据范围（V177，issue #7372）：tenant = 全租户（默认，存量零回归）/ self = 只看本人创建的单据；
+    -- 多角色取**最宽**（只要有一个 tenant，该用户就是 tenant）。
+    data_scope VARCHAR(16) NOT NULL DEFAULT 'tenant',
     description TEXT,
     status VARCHAR(32) DEFAULT 'active',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
