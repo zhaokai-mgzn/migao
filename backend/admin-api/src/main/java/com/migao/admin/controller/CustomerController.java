@@ -39,6 +39,12 @@ public class CustomerController {
 
     private final CustomerService customerService;
 
+    /**
+     * 数据范围（issue #7372 段 2）：客户列表与详情按角色范围收窄。取数复用
+     * {@code RoleService.getUserRoles}（「用户有哪些角色」的单一实现点）。
+     */
+    private final com.migao.admin.service.RoleService roleService;
+
     // ==================== 客户档案 ====================
 
     /**
@@ -61,7 +67,10 @@ public class CustomerController {
             @RequestParam(required = false) String keyword) {
         Long tenantId = TenantContext.getTenantId();
         log.info("查询客户列表: page={}, size={}, keyword={}, tenantId={}", page, size, keyword, tenantId);
-        PageResponse<CustomerProfile> result = customerService.getCustomerPage(page, size, sourceChannel, vipLevel, keyword, tenantId);
+        // 数据范围（issue #7372 段 2）：本人范围 ⇒ 只看自己负责 / 自己出过单的客户（null = 不收窄）
+        String scopeOwnerId = com.migao.admin.security.DataScope.ownerFilter(
+                roleService.resolveDataScope(currentUserId()), currentUserId());
+        PageResponse<CustomerProfile> result = customerService.getCustomerPage(page, size, sourceChannel, vipLevel, keyword, tenantId, scopeOwnerId);
         return ApiResponse.success(result);
     }
 
@@ -88,6 +97,24 @@ public class CustomerController {
     }
 
     /**
+     * 指派 / 撤回客户负责人（issue #7372 段 2）。
+     *
+     * <p>`PUT /api/admin/customers/{id}/owner`，body `{"ownerUserId": "..."}`；
+     * **不传 / 传空 = 撤回指派**（回到未指派）。写面用 `customer:create`（与改档案同码）。</p>
+     */
+    @PutMapping("/api/admin/customers/{id}/owner")
+    @RequirePermission("customer:create")
+    // 归属认定（#6158）：带 {id} 的写端点必须声明归属键，否则越权面无人认领
+    @com.migao.admin.security.TenantOwnedResource("customer")
+    public ApiResponse<Void> assignOwner(@PathVariable String id,
+                                         @RequestBody(required = false) Map<String, String> body) {
+        String ownerUserId = body == null ? null : body.get("ownerUserId");
+        log.info("指派客户负责人: customerId={}, ownerUserId={}", id, ownerUserId);
+        customerService.assignOwner(id, ownerUserId);
+        return ApiResponse.success(null);
+    }
+
+    /**
      * 查询客户详情
      *
      * GET /api/admin/customers/{id}
@@ -96,7 +123,10 @@ public class CustomerController {
     @RequirePermission("customer:view")
     public ApiResponse<Map<String, Object>> getCustomer(@PathVariable String id) {
         log.info("查询客户详情: id={}", id);
-        Map<String, Object> detail = customerService.getCustomerDetail(id);
+        // 数据范围（issue #7372 段 2）：范围外 ⇒ 与「不存在」同一个 404（不 403，不泄露存在性）
+        String scopeOwnerId = com.migao.admin.security.DataScope.ownerFilter(
+                roleService.resolveDataScope(currentUserId()), currentUserId());
+        Map<String, Object> detail = customerService.getCustomerDetail(id, scopeOwnerId);
         return ApiResponse.success(detail);
     }
 
@@ -250,5 +280,19 @@ public class CustomerController {
         log.info("删除客户标签: id={}", id);
         customerService.deleteTag(id);
         return ApiResponse.success();
+    }
+
+    /**
+     * 当前登录用户 id（数据范围的判定主体）：只从服务端安全上下文取，不接受客户端递交；
+     * 拿不到（内部服务令牌 / 匿名）⇒ null ⇒ 范围解析按最宽处理。
+     */
+    private String currentUserId() {
+        var authentication = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication();
+        if (authentication != null
+                && authentication.getPrincipal() instanceof com.migao.admin.security.SecurityUser user) {
+            return user.getUserId();
+        }
+        return null;
     }
 }
