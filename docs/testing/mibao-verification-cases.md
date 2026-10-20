@@ -5583,7 +5583,7 @@
 ```
 溯源: 2026-10-20 新增（issue #7370 段 3）。落码 = 纯函数 `ReceiptAllocationPolicy` + `ReceiptAllocationService`（批量逐行余量）+ `ReceiptAllocation`/`ReceiptAllocationMapper` + `POST|GET /api/admin/finance/receipts/{id}/allocations` + V176 + 账龄 SQL 减核销。 ｜ tags: backend-contract, receivable, allocation, red-proof
 
-### AR-003. 订单毛利：收入−退款−面料成本，且**成本未知绝不当 0**（issue #7371 段 1） 🔵
+### AR-003. 订单毛利：收入−退款−面料−加工，且**成本未知绝不当 0**（issue #7371 段 1+2） 🔵
 ```
 你: 用户（2026-10-20，逐字）：「继续推进，不要停止」—— 承接 issue #7371 的验收判据「成本未知 ⇒ 显示「成本未知」，绝不填 0（负向对照：缺进价时毛利不得显示为收入全额）」。
 数据: **判据 1（未知 ≠ 0）**：有扣料行缺批次进价（`stock_batches.unit_cost IS NULL`）⇒ `fabricCost`/`grossMargin`/`marginRate` **全部 null**、`costKnown=false`；负向对照 = 绝不出现「毛利 = 收入全额」。判据 = `OrderMarginTest#unknownCostIsNeverZero` + `OrderMarginServiceTest#unknownCostIsNullNotZero`。红证方向：把未知当 0 ⇒ 当场红。
@@ -5592,14 +5592,16 @@
 数据: **判据 4（亏本单不截断）**：成本 > 净收入 ⇒ 毛利为负、毛利率为负（不许截断成 0）。判据 = `#negativeMarginIsKept`。
 数据: **判据 5（净收入 ≤ 0）**：退满/退超 ⇒ 毛利率 null（不做 0 除、不给负无穷），毛利照实给。判据 = `#rateIsNullWhenNetRevenueIsNotPositive`。
 数据: **判据 6（脏值不 500）**：收入/退款 null、SQL 返回 null 一律当 0 处理，不 NPE。判据 = `#nullsAreTolerated` + `OrderMarginServiceTest#nullRowIsTreatedAsNoConsumption`。
-数据: **判据 7（口径自述）**：`scope = revenue_minus_refund_minus_fabric` —— 本段只算**面料毛利**，加工费与运费未计入，不许被读成完全成本毛利。判据 = `#scopeIsSelfDescribing` + `#knownCostProducesMargin`。
+数据: **判据 7（口径自述）**：`scope = revenue_minus_refund_minus_fabric_minus_labor` —— 段 2 起含**加工成本**；运费**系统未采集** ⇒ `freightCaptured=false`（数据缺口，不是 0 运费），不许被读成完全成本毛利。判据 = `#scopeIsSelfDescribing` + `OrderMarginServiceTest#knownCostProducesMargin`。
+数据: **判据 7b（加工成本复用单一聚合）**：加工成本 = `ProductionService.piecework(...)` 的 `total` —— 与计件工资/期间报表**同一份聚合**（不新造第二套口径）。判据 = `OrderMarginServiceTest#knownCostProducesMargin`（150 计入）。
+数据: **判据 7c（未定价报工 ⇒ 加工未知）**：有未定价报工（issue #4696 口径：未定价不进金额但必须能被数出来）⇒ `laborCost` 与 `grossMargin` 都 null、`unpricedLaborLines > 0`。判据 = `OrderMarginTest#unpricedLaborMakesCostUnknown` + `OrderMarginServiceTest#unpricedLaborMakesMarginUnknown`。
 数据: **判据 8（取数口径）**：面料成本取自 `stock_batch_consumptions`（`reason='processing_order' ∧ deleted=0`，按 `order_no` 归属）× 该行 `unit_cost`（V119 起的**当时**快照）；退款取 `finance_transactions`（`refund ∧ success`）。判据 = `OrderMapper.selectFabricCost` 的 SQL + 上述用例。
 数据: **判据 9（端点契约）**：`GET /api/admin/finance/orders/{orderId}/margin` 逐字，继承类级 `finance:view`；只有订单 id 一个入参（毛利算出来的，不接受客户端传金额）。判据 = `OrderMarginControllerTest`。
-数据: **边界（照实登记）**：加工费（计件/工序价）与运费**未计入**；退货的成本侧冲减（退回来的货回库）未做；批次级成本、标准成本/移动加权不在范围；黄金策暂无毛利工具；报表中心（P1-4）未做。
+数据: **边界（照实登记）**：**运费未采集**（系统没有运费字段 —— 是数据缺口，不是 0）；退货的成本侧冲减（退回来的货回库）未做；批次级成本、标准成本/移动加权不在范围；订单/商品/客户三视图与报表中心（P1-4）未做；黄金策暂无毛利工具。
 前置: 本用例是 [backend-contract]：前置 = `stock_batches.unit_cost` + `stock_batch_consumptions.unit_cost`（V119 快照）+ `finance_transactions`。零网络、零 LLM、无迁移（纯读面）。
 跳过: [backend-contract] 毛利算式与「未知当 0」禁令，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
-溯源: 2026-10-21 新增（issue #7371 段 1）。落码 = 纯函数 `OrderMargin` + `OrderMarginService` + `OrderMapper.selectFabricCost` + `GET /api/admin/finance/orders/{id}/margin`。 ｜ tags: backend-contract, margin, cost, red-proof
+溯源: 2026-10-21 新增（issue #7371 段 1），同日段 2 扩写（加工成本 + 运费未采集标记）。落码 = 纯函数 `OrderMargin` + `OrderMarginService`（复用 `ProductionService.piecework` 的计件聚合）+ `OrderMapper.selectFabricCost` + `GET /api/admin/finance/orders/{id}/margin`。 ｜ tags: backend-contract, margin, cost, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12569,7 +12571,7 @@
 - SP-006: 采购单页面：列表真值 + 收货进度派生 + 建单/收货/关单三条写面（issue #7369 段 4-B）
 - AR-001: 应收账龄：到期日当天归未到期 / 五档边界逐格 / 汇总恒等式（issue #7370 段 2）
 - AR-002: 客户收款核销：一笔收款冲多张订单 / 收款侧与订单侧双上限 / 同批逐行余量（issue #7370 段 3）
-- AR-003: 订单毛利：收入−退款−面料成本，且**成本未知绝不当 0**（issue #7371 段 1）
+- AR-003: 订单毛利：收入−退款−面料−加工，且**成本未知绝不当 0**（issue #7371 段 1+2）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

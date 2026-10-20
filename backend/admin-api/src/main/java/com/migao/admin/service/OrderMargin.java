@@ -15,15 +15,18 @@ import java.math.RoundingMode;
  * <h3>本段覆盖哪些成本</h3>
  * <ul>
  *   <li>✅ <b>面料</b>：Σ（该单扣料行 `planned_meters` × 该批次**当时**的 `unit_cost` 快照）；</li>
- *   <li>✅ <b>退货</b>：成功退款流水合计（收入侧与成本侧同批冲减：收入减、成本不动）；</li>
- *   <li>🚫 <b>加工费 / 运费</b>：本段**不计入**（口径未裁定，见 issue 依赖）⇒ 毛利是「面料毛利」，
- *       DTO 里明确标注 `scope`，不许让读者以为是完全成本毛利。</li>
+ *   <li>✅ <b>加工</b>（段 2）：该单计件金额（`ProductionService.piecework` 的同一份聚合，
+ *       **不新造第二套口径**）；有**未定价报工** ⇒ 加工成本未知（issue #4696 的既有口径：
+ *       未定价**不进金额**，但必须能被数出来）；</li>
+ *   <li>✅ <b>退货</b>：成功退款流水合计（收入侧冲减）；</li>
+ *   <li>🚫 <b>运费</b>：系统**未采集**运费字段 ⇒ 明确标注「未采集」，不是「算成 0」
+ *       （DTO 的 `freightCaptured=false`）—— 这是数据缺口，不是成本为 0。</li>
  * </ul>
  */
 public final class OrderMargin {
 
-    /** 成本口径：上屏要能自述「这个毛利算到了哪一步」（不许让用户以为是完全成本）。 */
-    public static final String SCOPE_FABRIC_ONLY = "revenue_minus_refund_minus_fabric";
+    /** 成本口径（段 2 起）：面料 + 加工（运费未采集）。上屏自述「算到了哪一步」。 */
+    public static final String SCOPE_FABRIC_AND_LABOR = "revenue_minus_refund_minus_fabric_minus_labor";
 
     private OrderMargin() {
     }
@@ -32,35 +35,42 @@ public final class OrderMargin {
      * 计算结果。
      *
      * @param fabricCost   面料成本（未知时为 {@code null}）
-     * @param grossMargin  毛利（成本未知或收入未知时为 {@code null}）
+     * @param laborCost    加工成本（未知时为 {@code null}）
+     * @param grossMargin  毛利（任一成本未知时为 {@code null}）
      * @param marginRate   毛利率（0~1；成本未知时为 {@code null}）
-     * @param costKnown    面料成本是否已知（有任一扣料行缺进价 ⇒ false）
+     * @param costKnown    成本是否已知（有扣料行缺进价 **或** 有未定价报工 ⇒ false）
      */
-    public record Result(BigDecimal fabricCost, BigDecimal grossMargin,
+    public record Result(BigDecimal fabricCost, BigDecimal laborCost, BigDecimal grossMargin,
                          BigDecimal marginRate, boolean costKnown) {
     }
 
     /**
      * @param revenue       收入（订单货值 `total_amount`）
      * @param refunded      已退款合计（成功退款流水；null ⇒ 0）
-     * @param fabricCost    Σ（扣料米数 × 批次进价快照）；null ⇒ 有行缺进价 ⇒ 成本未知
+     * @param fabricCost    Σ（扣料米数 × 批次进价快照）；null ⇒ 有行缺进价 ⇒ 面料成本未知
      * @param unknownLines  缺进价的扣料行数（&gt; 0 ⇒ 成本未知；仅用于提示「哪几行要补」）
+     * @param laborCost     加工成本（计件金额）；null ⇒ 有未定价报工 ⇒ 加工成本未知
+     * @param unpricedLaborLines 未定价报工行数（&gt; 0 ⇒ 成本未知）
      */
     public static Result compute(BigDecimal revenue,
                                 BigDecimal refunded,
                                 BigDecimal fabricCost,
-                                int unknownLines) {
-        boolean costKnown = fabricCost != null && unknownLines == 0;
+                                int unknownLines,
+                                BigDecimal laborCost,
+                                int unpricedLaborLines) {
+        boolean costKnown = fabricCost != null && unknownLines == 0
+                && laborCost != null && unpricedLaborLines == 0;
         if (!costKnown) {
-            return new Result(null, null, null, false);
+            return new Result(null, null, null, null, false);
         }
-        BigDecimal net = nz(revenue).subtract(nz(refunded)).subtract(fabricCost);
+        BigDecimal net = nz(revenue).subtract(nz(refunded))
+                .subtract(fabricCost).subtract(laborCost);
         BigDecimal netRevenue = nz(revenue).subtract(nz(refunded));
         // 毛利率分母 = 净收入（收入 − 退款）；净收入 ≤ 0 时无意义 ⇒ null（不是 0、也不是负数百分比）
         BigDecimal rate = netRevenue.signum() > 0
                 ? net.divide(netRevenue, 4, RoundingMode.HALF_UP)
                 : null;
-        return new Result(scale(fabricCost), scale(net), rate, true);
+        return new Result(scale(fabricCost), scale(laborCost), scale(net), rate, true);
     }
 
     private static BigDecimal nz(BigDecimal value) {
