@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（125 case）
+## 杂项域（126 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5547,6 +5547,22 @@
 跳过: [frontend-contract] 页面写面与读面契约，由 vitest 单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-20 新增（issue #7369 段 4-B）。落码 = `/purchase-orders` 页面（列表 / 建单 / 收货 / 关单 + 只读门控）+ 菜单三源同构（`menu.ts` / `MenuController` / `AuthService`）+ 路由守卫 / 面包屑 / 页面上下文注册 + RBAC 清单与读数重生成。 ｜ tags: frontend-contract, purchase, receiving, red-proof
+
+### AR-001. 应收账龄：到期日当天归未到期 / 五档边界逐格 / 汇总恒等式（issue #7370 段 2） 🔵
+```
+你: 用户（2026-10-20，逐字）：「继续推进，直到目标任务都交付」—— 承接 issue #7370 的验收判据「账龄分档边界逐档有判据（到期日当天归未到期）」「余额恒等式」。
+数据: **判据 1（到期日当天不算逾期）**：逾期天数 = 今天 − 到期日，`<= 0` 即未到期 ⇒ 客户今天付款仍算及时；昨天下单的现结客户才是逾期 1 天。判据 = `ReceivableAgingTest#dueDateItselfIsNotOverdue`。红证方向：把 `<= 0` 改 `< 0` ⇒ 当场红。
+数据: **判据 2（五档边界逐格）**：0/负数→未到期 · 1→1-30 · 30→1-30 · **31 跳档** · 60 · **61 跳档** · 90 · **91 跳档**；枚举顺序 = 上屏顺序。判据 = `#bucketBoundaries`。
+数据: **判据 3（账期口径）**：到期日 = 下单日 + 账期；账期 `null`/0 ⇒ **现结（到期日 = 下单日）**，不是「永不到期」（后者会让这类客户的应收永不出现在逾期面上）。判据 = `#dueDateFollowsTerms` + `#dueDateItselfIsNotOverdue`。
+数据: **判据 4（应收口径 = 未收款订单）**：以 `paid_at IS NULL` 定性（与授信闸门 `selectOutstandingTotal` 同一真值源），应收 = 货值 − Σ退款。**不**用 `actual_amount IS NULL ⇒ 已收满` 的旧兜底 —— 那会把「没登记的收款」读成「已付清」，欠款静默消失。判据 = `ReceivableAgingRow` javadoc + `#remainingIsNetReceivable`。
+数据: **判据 5（汇总恒等式）**：`totalOutstanding == Σ五档 == Σ客户行`，且逐档笔数正确；已对平/多收的单不进账龄面。判据 = `#summaryKeepsTheIdentity`。
+数据: **判据 6（缺字段不丢钱）**：没留电话的散客单归到具名分组，不因缺字段从应收面消失。判据 = `#rowsWithoutPhoneAreKept`。
+数据: **判据 7（端点契约）**：路由 `GET /api/admin/customers/receivable-aging` 逐字；权限码复用既有 `customer:view`（零授权 delta）；不带 id 不标归属认定。判据 = `ReceivableAgingControllerTest`。
+数据: **边界（照实登记）**：部分收款（一笔钱冲多张单）随段 3「逐笔核销」上线；账龄页面/报表（段 4）与导出未做；黄金策暂无账龄工具（先用页面读面）。
+前置: 本用例是 [backend-contract]：前置 = `orders.paid_at`(V160) + `customer_profiles.credit_limit/payment_terms_days`(授信段) + `finance_transactions`。零网络、零 LLM。
+跳过: [backend-contract] 账龄分档与汇总恒等式，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-20 新增（issue #7370 段 2）。落码 = 纯函数 `ReceivableAging`（到期日/逾期天数/五档/余额/汇总）+ `OrderMapper.selectReceivableRows`（未收款单调，上限 2000）+ `CustomerService.receivableAging` + `GET /api/admin/customers/receivable-aging`（customer:view）。 ｜ tags: backend-contract, receivable, aging, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12329,8 +12345,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：842（活跃 141，跳过 701）
-- tier 分布：smoke 12 / normal 774 / adversarial 32
+- 用例总数：843（活跃 141，跳过 702）
+- tier 分布：smoke 12 / normal 775 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12345,7 +12361,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：125
+- 杂项域：126
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12514,6 +12530,7 @@
 - SP-004: 供应商付款：一笔付款可冲抵多张入库单；差额=预付合法；单张单不许超付；作废留痕必须写原因（issue #7369 段 3-B）
 - SP-005: 采购单：一单可分多次收货（状态由 Σ收货派生）；收货不许超收；提前关闭必须写原因（issue #7369 段 4）
 - SP-006: 采购单页面：列表真值 + 收货进度派生 + 建单/收货/关单三条写面（issue #7369 段 4-B）
+- AR-001: 应收账龄：到期日当天归未到期 / 五档边界逐格 / 汇总恒等式（issue #7370 段 2）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

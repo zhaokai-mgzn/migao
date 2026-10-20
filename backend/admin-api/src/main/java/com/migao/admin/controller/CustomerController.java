@@ -120,6 +120,17 @@ public class CustomerController {
      *
      * <p>「未启用授信」与「额度 0」在响应上必须可区分（前者 creditLimit/available 为 null）。
      */
+    /**
+     * 应收账龄（issue #7370，P0-2 段 2）：五档（未到期 / 1-30 / 31-60 / 61-90 / 90+），
+     * 全局合计 + 按客户分行。码复用既有 {@code customer:view}（欠款结构是客户档案的延伸面，
+     * 不新造 {@code credit:view} —— 新码今天没人持有，页面会对所有人不可见）。
+     */
+    @GetMapping("/api/admin/customers/receivable-aging")
+    @RequirePermission("customer:view")
+    public ApiResponse<com.migao.admin.dto.ReceivableAgingResponse> receivableAging() {
+        return ApiResponse.success(customerService.receivableAging(TenantContext.getTenantId()));
+    }
+
     @GetMapping("/api/admin/customers/{id}/credit")
     @RequirePermission("customer:view")
     public ApiResponse<CreditStatusResponse> getCredit(@PathVariable String id) {
