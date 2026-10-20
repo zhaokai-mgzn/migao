@@ -3880,6 +3880,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_customer_profiles_phone
 CREATE UNIQUE INDEX IF NOT EXISTS uk_customer_profiles_openid
     ON customer_profiles (tenant_id, wechat_openid);
 
+-- 13. `order_items` 的「含加工项」筛选（V172，第二刀的配套索引）
+-- 读面：OrderService#getOrderPage 的 hasProcessing 过滤（先取有加工信息的明细，再内存精确判定）
+CREATE INDEX IF NOT EXISTS idx_order_items_tenant_processing
+    ON order_items (tenant_id, order_id)
+    WHERE deleted = 0 AND processing_info IS NOT NULL;
+
 -- ================================================
 -- END OF SCHEMA
 -- ================================================
