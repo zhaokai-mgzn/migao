@@ -252,4 +252,20 @@ public interface StockBatchConsumptionMapper extends BaseMapper<StockBatchConsum
         private BigDecimal deltaSum;
         private BigDecimal formulaSum;
     }
+
+    /**
+     * Σ领料成本 = {@code Σ(|planned_meters| × unit_cost)}（issue #7408 的下推面，源口径同 V119 随行快照）。
+     *
+     * <p>改前 {@code RemnantService#issuedCostTotal} 把本租户**全部**「有均价且有计划米数」的消耗行
+     * 读进 JVM 累乘 —— 这张表行数比余料表更多（一次领料/消耗一行）⇒ 每次打开余料台账页都要全量搬运。
+     * 下推后回一行标量，且 {@code (tenant_id, …)} 前导索引可用。</p>
+     *
+     * <p>均价未知 / 计划米数未知的行**不参与**（与改前 {@code isNotNull} 两个谓词逐字一致）——
+     * 拿今天的批次价折算历史领料成本正是 V119 要防的那件事。</p>
+     */
+    @Select("SELECT COALESCE(SUM(ABS(planned_meters) * unit_cost), 0) "
+            + "FROM stock_batch_consumptions "
+            + "WHERE tenant_id = #{tenantId} AND deleted = 0 "
+            + "AND unit_cost IS NOT NULL AND planned_meters IS NOT NULL")
+    BigDecimal sumIssuedCost(@Param("tenantId") Long tenantId);
 }

@@ -4,9 +4,11 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.migao.admin.entity.FabricRemnant;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.time.OffsetDateTime;
 
 /**
@@ -120,4 +122,31 @@ public interface FabricRemnantMapper extends BaseMapper<FabricRemnant> {
                      @Param("reason") String reason,
                      @Param("scrappedAt") OffsetDateTime scrappedAt,
                      @Param("operator") String operator);
+
+    /**
+     * 余料台账**按状态**聚合（issue #7408）：`RemnantService#summary` 的 SQL 下推面。
+     *
+     * <p>改前是 {@code selectList(tenant_id = ?)} 把本租户**全部余料行**读进 JVM 再 switch 累加 ——
+     * 每次打开余料台账页（列表 + 汇总一次回）都要走一遍，成本随租户历史线性增长。
+     * 下推后响应行数 = 状态数（≤4），且 {@code fabric_remnants (tenant_id, status, id)} 这条索引正好可用。</p>
+     *
+     * <p>口径**逐项不变**：米数求和把 NULL 当 0（{@code SUM} 本来就跳过 NULL）；未知/空状态
+     * 由调用方忽略（与改前 {@code default -> {}} 一致）。</p>
+     */
+    @Select("SELECT status, COUNT(*) AS cnt, "
+            + "COALESCE(SUM(length_m), 0) AS meters, "
+            + "COALESCE(SUM(recovered_amount), 0) AS recovered_amount "
+            + "FROM fabric_remnants "
+            + "WHERE tenant_id = #{tenantId} AND deleted = 0 "
+            + "GROUP BY status")
+    List<RemnantStatusSum> sumByStatus(@Param("tenantId") Long tenantId);
+
+    /** {@link #sumByStatus} 的一行（status 维度）。 */
+    @lombok.Data
+    class RemnantStatusSum {
+        private String status;
+        private Long cnt;
+        private BigDecimal meters;
+        private BigDecimal recoveredAmount;
+    }
 }
