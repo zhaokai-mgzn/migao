@@ -2,6 +2,7 @@ package com.migao.admin.service;
 // case_ids: OR-006, FN-001, OR-001, PG-003, PG-009, PG-010, PG-042, OR-023, OR-046, OR-053, FN-006
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.migao.admin.config.TenantContext;
+import com.migao.admin.time.BusinessClock;
 import com.migao.admin.dto.*;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
@@ -432,8 +433,9 @@ class OrderServiceTest {
                 .as("过滤必须落在 created_by_name 快照列上（LIKE 模糊匹配）")
                 .contains("created_by_name")
                 .contains("LIKE");
-        assertThat(wrapper.getParamNameValuePairs().values())
-                .as("绑定值 = LIKE 的 `%值%`（两端通配由 MyBatis-Plus 的 like 语义补）")
+        assertThat(wrapper.getParamNameValuePairs().values().stream().filter(String.class::isInstance).toList())
+                .as("绑定值 = LIKE 的 `%值%`（两端通配由 MyBatis-Plus 的 like 语义补）；"
+                        + "只挑字符串形态 —— issue #7404 的窗口兜底会额外绑定两个时间值")
                 .containsExactly("%蒋%");
     }
 
@@ -3541,5 +3543,59 @@ class OrderServiceTest {
         Object v = w.getParamNameValuePairs().values().stream()
                 .filter(String.class::isInstance).reduce((a, b) -> b).orElse(null);
         return v == null ? fallback : (String) v;
+    }
+
+    // ── issue #7404：订单列表「不允许查全部」的时间窗兜底 ──────────────────────
+    // 用户裁定：「需要做个兜底，不允许查全部」「最多回溯 近3年」。
+    // 红证（会怎么红）：把 `OrderService.resolveListWindow` 的兜底分支删掉（只保留显式区间）⇒
+    // `noDatesYieldsThreeYearWindow` / `endOnlyAnchorsAtEndDate` / `getOrderPageAppliesTheWindow` 必红；
+    // 把 `DEFAULT_LOOKBACK_MONTHS` 从 36 改成 12 ⇒ 前两条的窗口断言必红。
+
+    @Test
+    @DisplayName("#7404 不给日期 ⇒ 窗口 = 最近 36 个月（而不是没有任何时间谓词）")
+    void noDatesYieldsThreeYearWindow() {
+        BusinessClock clock = new BusinessClock();
+        OrderService.ListDateWindow window = OrderService.resolveListWindow(null, null, clock);
+
+        assertThat(window.start()).isEqualTo(clock.startOfDay(clock.today().minusMonths(36)));
+        assertThat(window.end()).isEqualTo(clock.startOfDay(clock.today().plusDays(1)));
+    }
+
+    @Test
+    @DisplayName("#7404 只给截止日 ⇒ 起点 = 截止日往前 36 个月（以截止日为准，不是以今天）")
+    void endOnlyAnchorsAtEndDate() {
+        BusinessClock clock = new BusinessClock();
+        OrderService.ListDateWindow window = OrderService.resolveListWindow(null, "2024-03-31", clock);
+
+        assertThat(window.start()).isEqualTo(clock.startOfDay(java.time.LocalDate.parse("2021-03-31")));
+        assertThat(window.end()).isEqualTo(clock.startOfDay(java.time.LocalDate.parse("2024-04-01")));
+    }
+
+    @Test
+    @DisplayName("#7404 显式区间原样透传（查更早的单不被静默截断到 3 年）")
+    void explicitRangePassesThrough() {
+        BusinessClock clock = new BusinessClock();
+        OrderService.ListDateWindow window = OrderService.resolveListWindow("2019-01-01", "2019-12-31", clock);
+
+        assertThat(window.start()).isEqualTo(clock.startOfDay(java.time.LocalDate.parse("2019-01-01")));
+        assertThat(window.end()).isEqualTo(clock.startOfDay(java.time.LocalDate.parse("2020-01-01")));
+    }
+
+    @Test
+    @DisplayName("#7404 列表查询真的带上这个窗口（不是只算不用）")
+    void getOrderPageAppliesTheWindow() {
+        when(orderMapper.selectPage(any(Page.class), any(LambdaQueryWrapper.class)))
+                .thenReturn(new Page<>());
+
+        orderService.getOrderPage(1, 20, null, "张三", null, null, null, null, null,
+                null, null, null, 1L, null, null);
+
+        ArgumentCaptor<LambdaQueryWrapper> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(orderMapper).selectPage(any(Page.class), captor.capture());
+        String sql = captor.getValue().getSqlSegment();
+        assertThat(sql)
+                .as("关键词查询必须同时有下界与上界（下界 = 最近 36 个月）")
+                .contains("created_at >=")
+                .contains("created_at < ");
     }
 }

@@ -67,6 +67,47 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     @Autowired(required = false)
     private BusinessClock businessClock = new BusinessClock();
 
+    /**
+     * 订单列表的**默认回溯窗口**（issue #7404：用户裁定「不允许查全部」／「最多回溯近 3 年」）。
+     *
+     * <p>只在不给下单时间范围时生效（见 {@code getOrderPage}）—— 显式区间原样透传，不被截断。
+     * 取 3 年而不是 12 个月：常见诉求是「翻去年的单 / 客户查三年前的记录」，
+     * 而 3 年窗口下单租户的订单量仍是万级（月订单几千），关键词 {@code LIKE '%kw%'} 逐行匹配在毫秒级。</p>
+     */
+    static final int DEFAULT_LOOKBACK_MONTHS = 36;
+
+    /** 订单列表的生效时间窗：半开区间 {@code [start, end)}，两条边界**恒非空**（兜底在 {@link #resolveListWindow}）。 */
+    record ListDateWindow(OffsetDateTime start, OffsetDateTime end) {
+    }
+
+    /**
+     * 解析订单列表的**生效**下单时间窗（issue #7404）。
+     *
+     * <p>口径（顺序即安全顺序）：</p>
+     * <ol>
+     *   <li>显式给了 {@code startDate}/{@code endDate} ⇒ **原样**使用（要查更早的历史单，自己选日期即可）；</li>
+     *   <li>没给起点 ⇒ 起点 = 「终止日（没给就是今天）− {@value #DEFAULT_LOOKBACK_MONTHS} 个月」；</li>
+     *   <li>没给终点 ⇒ 终点 = 「今天 + 1 天」（与显式区间同口径的半开区间）。</li>
+     * </ol>
+     *
+     * <p>⇒ 「忘选 / 清空日期」不再退化成**无时间谓词**的查询。为什么必须兜底：关键词是
+     * {@code LIKE '%kw%'}（name / phone / order_no 三列 OR），B-tree 用不上 ⇒ 无时间谓词时是
+     * 「本租户全部订单逐行匹配」，且分页每次 {@code COUNT(*)} 都要再来一遍。</p>
+     *
+     * <p>为什么是「补齐」而不是 400 拒绝：AI 侧 {@code logistics_track} 工具用
+     * {@code GET /api/admin/orders?keyword=<单号>}（**不带日期**）解析订单号 —— 拒绝会让物流追踪当场坏掉。</p>
+     */
+    static ListDateWindow resolveListWindow(String startDate, String endDate, BusinessClock clock) {
+        boolean hasStart = StringUtils.hasText(startDate);
+        boolean hasEnd = StringUtils.hasText(endDate);
+        LocalDate today = clock.today();
+        LocalDate startDay = hasStart
+                ? LocalDate.parse(startDate)
+                : (hasEnd ? LocalDate.parse(endDate) : today).minusMonths(DEFAULT_LOOKBACK_MONTHS);
+        LocalDate endDayExclusive = hasEnd ? LocalDate.parse(endDate).plusDays(1) : today.plusDays(1);
+        return new ListDateWindow(clock.startOfDay(startDay), clock.startOfDay(endDayExclusive));
+    }
+
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
     private final OrderLogisticsMapper orderLogisticsMapper;
@@ -255,12 +296,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // 时间范围筛选（issue #6200：日界 = 业务日 +08，不是 UTC 日）
         // 半开区间 [D 00:00+08, D+1 00:00+08)：原写法把两端拼成 UTC 日的 00:00 与 23:59:59，把
         // 北京 00:00–08:00 的单归错天 / 月 / 年，且与走 businessClock 的看板 / 趋势互相矛盾。
-        if (StringUtils.hasText(startDate)) {
-            wrapper.ge(Order::getCreatedAt, businessClock.startOfDay(LocalDate.parse(startDate)));
-        }
-        if (StringUtils.hasText(endDate)) {
-            wrapper.lt(Order::getCreatedAt, businessClock.startOfDay(LocalDate.parse(endDate).plusDays(1)));
-        }
+        ListDateWindow window = resolveListWindow(startDate, endDate, businessClock);
+        wrapper.ge(Order::getCreatedAt, window.start());
+        wrapper.lt(Order::getCreatedAt, window.end());
 
         // 订单ID精确搜索
         if (StringUtils.hasText(orderId)) {

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
+import { formatYmd, resolveOrderDateWindow } from '@/lib/order-search-window'
 import { toastRequestError } from '@/lib/api-error'
 import { cn } from '@/lib/utils'
 import { orderApi } from '@/lib/api'
@@ -26,19 +27,14 @@ interface SearchState {
 }
 
 // 将 Date 格式化为 YYYY-MM-DD（与 <input type="date"> 及后端 OrderListParams 一致）
-function formatDate(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
+
 
 // 默认下单时间范围：最近一个月（开始日期 = 今天往前推一个月，结束日期 = 今天）
 function getDefaultDateRange(): { startDate: string; endDate: string } {
   const end = new Date()
   const start = new Date()
   start.setMonth(start.getMonth() - 1)
-  return { startDate: formatDate(start), endDate: formatDate(end) }
+  return { startDate: formatYmd(start), endDate: formatYmd(end) }
 }
 
 const DEFAULT_DATE_RANGE = getDefaultDateRange()
@@ -278,13 +274,21 @@ export default function OrdersPage() {
   }, [loadOrders])
 
   const handleSearch = () => {
+    // issue #7404：下单时间两端都清空时不允许「查全部」——兜底最近 3 年，并把输入框回填成
+    // **实际查询的窗口**（否则界面空着、结果却是 3 年，等于骗人）。
+    const window = resolveOrderDateWindow(startDate, endDate)
+    if (window.filled) {
+      setStartDate(window.startDate)
+      setEndDate(window.endDate)
+      toast.info('未选择下单时间，已按最近 3 年查询')
+    }
     setCurrent(1)
     setSearch({
       orderId: orderId.trim(),
       receiver: receiver.trim(),
       creator: creator.trim(),
-      startDate,
-      endDate,
+      startDate: window.startDate,
+      endDate: window.endDate,
       productCode: productCode.trim(),
       productTitle: productTitle.trim(),
       hasProcessing,
