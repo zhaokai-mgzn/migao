@@ -33,6 +33,9 @@ public class FinanceController {
     /** 客户收款核销（issue #7370 段 3）：现金真值仍只认 finance_transactions，本服务只记核销去向。 */
     private final com.migao.admin.service.ReceiptAllocationService receiptAllocationService;
 
+    /** 订单毛利（issue #7371 段 1）：只读算得出，不落派生列。 */
+    private final com.migao.admin.service.OrderMarginService orderMarginService;
+
     // issue #5246 追加单：写面（登记收支流水）用方法级 finance:create 覆盖类级读码 ——
     // PermissionInterceptor 的解析顺序是**方法级优先、其次类级**，故 GET 三个读面仍吃 finance:view，
     // 而记账不再需要把 finance:view 当写权用（原形态：能看账 = 能记账）。
@@ -108,6 +111,19 @@ public class FinanceController {
         String operator = currentOperator();
         return ApiResponse.success(receiptAllocationService.allocate(
                 transactionId, request, TenantContext.getTenantId(), operator));
+    }
+
+    /**
+     * 订单毛利（issue #7371，P0-3 段 1）：收入 − 退款 − **面料成本**。
+     *
+     * <p>🔴 成本未知（有扣料行缺批次进价）⇒ `grossMargin` / `marginRate` 返回 null、
+     * `costKnown=false`，前端显示「成本未知」。**绝不当 0**：那会让毛利率虚高。</p>
+     *
+     * <p>本段只算面料毛利（`scope` 自述）：加工费与运费尚未计入。</p>
+     */
+    @GetMapping("/orders/{orderId}/margin")
+    public ApiResponse<OrderMarginView> orderMargin(@PathVariable String orderId) {
+        return ApiResponse.success(orderMarginService.margin(orderId));
     }
 
     /** 核销读面：这笔收款已核销多少、还剩多少未核销（预收 / 待勾对）。 */

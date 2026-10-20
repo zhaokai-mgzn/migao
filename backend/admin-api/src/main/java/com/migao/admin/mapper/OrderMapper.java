@@ -30,6 +30,27 @@ public interface OrderMapper extends BaseMapper<Order> {
     List<Map<String, Object>> selectOrderStatusDistribution();
 
     /**
+     * 订单面料成本（issue #7371，P0-3 段 1）：该单所有**扣料行**的米数 × 当时批次进价快照。
+     *
+     * <p>口径：`stock_batch_consumptions` 里 `reason = 'processing_order'` 且 `deleted = 0` 的行，
+     * 按 `order_no` 归属到订单；成本 = `planned_meters × unit_cost`（`planned_meters` 已带符号，
+     * 扣减行为正 ⇒ 直接求和）。</p>
+     *
+     * <p>🔴 返回三件事（不是只返回金额）：`fabric_cost`（**只累加有进价的行**）、
+     * `unknown_lines`（缺进价的行数）、`lines`（总行数）。缺进价的行必须被**数出来** ——
+     * 「未知当 0」会让毛利率虚高（把成本当成没花钱），这是 P0-3 明令禁止的形态
+     * （issue #7371 验收判据：成本未知 ⇒ 显示「成本未知」，绝不填 0）。</p>
+     */
+    @Select("SELECT COALESCE(SUM(c.planned_meters * c.unit_cost), 0) AS fabric_cost, "
+            + "COUNT(*) FILTER (WHERE c.unit_cost IS NULL) AS unknown_lines, "
+            + "COUNT(*) AS lines "
+            + "FROM stock_batch_consumptions c "
+            + "WHERE c.deleted = 0 AND c.tenant_id = #{tenantId} AND c.order_no = #{orderNo} "
+            + "AND c.reason = 'processing_order'")
+    java.util.Map<String, Object> selectFabricCost(@Param("tenantId") Long tenantId,
+                                                   @Param("orderNo") String orderNo);
+
+    /**
      * 应收账龄取数（issue #7370，P0-2 段 2 + 段 3）：每笔**余额 &gt; 0** 的订单一行。
      *
      * <p>🔴 段 3 起余额再减「已核销收款合计」（{@code receipt_allocations}）：一笔收款可冲抵多张单，
