@@ -780,10 +780,9 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
         if (!StringUtils.hasText(phone)) {
             return;
         }
-        CustomerProfile profile = customerProfileMapper.selectOne(new LambdaQueryWrapper<CustomerProfile>()
-                .eq(CustomerProfile::getTenantId, tenantId)
-                .eq(CustomerProfile::getPhone, phone)
-                .last("LIMIT 1"));
+        // issue #7257 纪律：客户档案**读侧不用 selectOne**（历史重复行会抛 TooManyResults ⇒ 500）
+        // ⇒ 走单一读实现点 findFirstByPhone（与建档写面的判重同一口径）。
+        CustomerProfile profile = customerProfileMapper.findFirstByPhone(tenantId, phone);
         if (profile == null || profile.getCreditLimit() == null) {
             return;
         }

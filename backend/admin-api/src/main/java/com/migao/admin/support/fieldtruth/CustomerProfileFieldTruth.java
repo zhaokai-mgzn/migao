@@ -70,7 +70,7 @@ public final class CustomerProfileFieldTruth {
         // 两列都是**有真值**：写入点 = CustomerService#updateCreditSettings（PUT /customers/{id}/credit，
         // customerProfileMapper.updateById）；且**语义上 null 就是真值**（= 未启用授信），
         // 不是「未知」—— 所以不进遮蔽清单，也绝不能被读面当成 0（0 = 启用但零额度）。
-        f.put("creditLimit", has("CustomerService#updateCreditSettings 显式写入（PUT /api/admin/customers/{id}/credit）；null = 未启用授信（真值，不是未知），0 = 零额度"));
+        f.put("creditLimit", has("CustomerService#updateCreditSettings 显式写入（客户详情「授信与往来」保存）；null = 未启用授信（真值，不是未知），0 = 零额度"));
         f.put("paymentTermsDays", has("CustomerService#updateCreditSettings 显式写入（同上端点）；null = 未设置，0 = 现结"));
 
         // ── RFM 评分（issue #5362 的核心取证面：有列、有读面、无计算）──
