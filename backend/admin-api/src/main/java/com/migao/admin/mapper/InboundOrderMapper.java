@@ -71,6 +71,10 @@ public interface InboundOrderMapper extends BaseMapper<InboundOrder> {
      */
     @Select("SELECT s.id AS supplier_id, s.name AS supplier_name, s.status AS supplier_status, "
             + "       COALESCE(SUM(o.total_amount), 0) AS received_amount, "
+            // 已付（段 3-B）：只算有效付款；作废的付款不计（status 过滤是唯一口径，不另存"余额"列）
+            + "       COALESCE((SELECT SUM(p.amount) FROM supplier_payments p "
+            + "                  WHERE p.tenant_id = s.tenant_id AND p.supplier_id = s.id "
+            + "                    AND p.status = 'posted' AND p.deleted = FALSE), 0) AS paid_amount, "
             + "       count(o.id) AS order_count, "
             + "       min(o.inbound_date) AS first_inbound_date, "
             + "       max(o.inbound_date) AS last_inbound_date "

@@ -1697,6 +1697,41 @@ CREATE POLICY tenant_isolation_suppliers ON suppliers
 
 -- 供应商主数据（issue #7369，P0-1 段 1；V170 终态）：**必须排在 `inbound_orders` 之前** ——
 -- 后者的 `supplier_id` 是外键（V173），建库脚本按文件顺序执行，反了就是「关系 suppliers 不存在」。
+-- 供应商付款（V174，issue #7369 段 3-B）：一笔付款可冲抵多张入库单；作废留痕不物理删。
+-- ⚠️ 必须排在 `suppliers` 之后（外键），且 `supplier_payment_allocations` 要排在
+--    `supplier_payments` 与 `inbound_orders` 之后。
+CREATE TABLE IF NOT EXISTS supplier_payments (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    supplier_id VARCHAR(64) NOT NULL REFERENCES suppliers(id),
+    payment_no VARCHAR(32) NOT NULL,                 -- FK-yyyyMMdd-NNNN（租户内唯一）
+    paid_at DATE NOT NULL,
+    amount NUMERIC(16,4) NOT NULL CONSTRAINT ck_supplier_payments_amount CHECK (amount > 0),
+    method VARCHAR(16) NOT NULL CONSTRAINT ck_supplier_payments_method
+        CHECK (method IN ('cash', 'transfer', 'wechat', 'alipay', 'other')),
+    reference_no VARCHAR(64),
+    remark TEXT,
+    status VARCHAR(16) NOT NULL DEFAULT 'posted' CONSTRAINT ck_supplier_payments_status
+        CHECK (status IN ('posted', 'voided')),
+    voided_at TIMESTAMP WITH TIME ZONE,
+    voided_by VARCHAR(64),
+    voided_reason TEXT,
+    created_by VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_supplier_payments_no
+    ON supplier_payments (tenant_id, payment_no)
+    WHERE deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_supplier_payments_tenant_supplier
+    ON supplier_payments (tenant_id, supplier_id, paid_at DESC)
+    WHERE deleted = FALSE;
+ALTER TABLE supplier_payments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_supplier_payments ON supplier_payments
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+
 CREATE TABLE IF NOT EXISTS inbound_orders (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
@@ -1742,6 +1777,27 @@ CREATE INDEX IF NOT EXISTS idx_inbound_orders_supplier_id
     WHERE supplier_id IS NOT NULL AND deleted = 0;
 CREATE INDEX IF NOT EXISTS idx_inbound_orders_tenant_supplier
     ON inbound_orders (tenant_id, supplier);
+
+-- 付款冲抵明细（V174，issue #7369 段 3-B）：同一笔付款对同一张单至多一行。
+CREATE TABLE IF NOT EXISTS supplier_payment_allocations (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    payment_id VARCHAR(64) NOT NULL REFERENCES supplier_payments(id),
+    inbound_order_id VARCHAR(64) NOT NULL REFERENCES inbound_orders(id),
+    amount NUMERIC(16,4) NOT NULL CONSTRAINT ck_supplier_payment_allocations_amount CHECK (amount > 0),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_supplier_payment_allocations_pair
+    ON supplier_payment_allocations (payment_id, inbound_order_id)
+    WHERE deleted = FALSE;
+CREATE INDEX IF NOT EXISTS idx_supplier_payment_allocations_order
+    ON supplier_payment_allocations (tenant_id, inbound_order_id)
+    WHERE deleted = FALSE;
+ALTER TABLE supplier_payment_allocations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_supplier_payment_allocations ON supplier_payment_allocations
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
 COMMENT ON TABLE inbound_orders IS
     '入库单（V111，issue #5034）：一次布料收货 = 一张单。draft 不动库存，posted 才加库存（只允许 draft→posted 一次），cancelled 仅 draft 可作废（已过账不得作废，冲销另开单）';
 COMMENT ON COLUMN inbound_orders.inbound_no IS

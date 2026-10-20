@@ -152,6 +152,13 @@ class SecurityConfigTest {
     // ⇒ 不顶替整个上下文起不来 —— 本族坑第 5 次，判据 = tests/unit_ci_workflows/test_security_config_mapper_mocks.py）。
     @MockBean
     private com.migao.admin.mapper.SupplierMapper supplierMapper;
+
+    // issue #7369 段 3-B：付款单与其冲抵明细（Spring 上下文装配需要，同 mapper 同款）
+    @MockBean
+    private com.migao.admin.mapper.SupplierPaymentMapper supplierPaymentMapper;
+
+    @MockBean
+    private com.migao.admin.mapper.SupplierPaymentAllocationMapper supplierPaymentAllocationMapper;
     @MockBean
     private com.migao.admin.service.AfterSalesTicketService afterSalesTicketService;
 

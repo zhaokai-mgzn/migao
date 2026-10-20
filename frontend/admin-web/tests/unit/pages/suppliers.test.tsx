@@ -27,7 +27,7 @@ vi.mock('lucide-react', async (importOriginal) => {
 })
 
 // 写面按 `inbound:create` 门控（#5983 范式）：默认给足写码；「只读」用例另行覆盖。
-const mockHas = vi.fn((code: string) => code === 'inbound:create')
+const mockHas = vi.fn((code: string) => code === 'inbound:create' || code === 'finance:create')
 vi.mock('@/lib/permission', () => ({
   usePermission: () => ({ has: (code: string) => mockHas(code), loading: false }),
 }))
@@ -35,6 +35,7 @@ vi.mock('@/lib/permission', () => ({
 const mockList = vi.fn()
 const mockUnassigned = vi.fn()
 const mockPayables = vi.fn()
+const mockCreatePayment = vi.fn()
 const mockCreate = vi.fn()
 const mockUpdate = vi.fn()
 
@@ -43,6 +44,7 @@ vi.mock('@/lib/api', () => ({
     list: (...args: unknown[]) => mockList(...args),
     unassignedInbound: (...args: unknown[]) => mockUnassigned(...args),
     payables: (...args: unknown[]) => mockPayables(...args),
+    createPayment: (...args: unknown[]) => mockCreatePayment(...args),
     create: (...args: unknown[]) => mockCreate(...args),
     update: (...args: unknown[]) => mockUpdate(...args),
   },
@@ -59,12 +61,13 @@ const ROWS = [
 describe('供应商档案页', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockHas.mockImplementation((code: string) => code === 'inbound:create')
+    mockHas.mockImplementation((code: string) => code === 'inbound:create' || code === 'finance:create')
     mockList.mockResolvedValue({ data: { data: ROWS } })
     mockUnassigned.mockResolvedValue({ data: { data: [] } })
     mockPayables.mockResolvedValue({ data: { data: {
-      suppliers: [], totalReceived: 0, totalOutstanding: 0, paymentsRecorded: false,
+      suppliers: [], totalReceived: 0, totalOutstanding: 0, paymentsRecorded: true,
     } } })
+    mockCreatePayment.mockResolvedValue({ data: { data: {} } })
     mockCreate.mockResolvedValue({ data: { data: ROWS[0] } })
     mockUpdate.mockResolvedValue({ data: { data: ROWS[0] } })
   })
@@ -203,5 +206,50 @@ describe('供应商档案页', () => {
     render(<SuppliersPage />)
     await waitFor(() => expect(screen.getByTestId('supplier-table')).toBeInTheDocument())
     expect(screen.queryByTestId('supplier-payables')).toBeNull()
+  })
+
+  it('登记付款：只提交实付金额与方式（不猜冲抵哪几张单），提交后刷新对账', async () => {
+    mockPayables.mockResolvedValue({ data: { data: {
+      suppliers: [{ supplierId: 'sup-1', supplierName: '杭州染整一厂', status: 'active',
+        receivedAmount: 12500.4, orderCount: 4, firstInboundDate: null, lastInboundDate: '2026-10-10',
+        paidAmount: 2500.4, paymentsRecorded: true, outstanding: 10000 }],
+      totalReceived: 12500.4, totalOutstanding: 10000, paymentsRecorded: true,
+    } } })
+    render(<SuppliersPage />)
+
+    await waitFor(() => expect(screen.getByTestId('payable-sup-1')).toBeInTheDocument())
+    // 尚欠 = 收货额 − 已付（段 3-B 起是真值）
+    expect(screen.getByTestId('payable-sup-1')).toHaveTextContent('¥10000.00')
+
+    fireEvent.click(screen.getByTestId('payable-pay-sup-1'))
+    fireEvent.change(screen.getByTestId('pay-amount'), { target: { value: '1200' } })
+    fireEvent.change(screen.getByTestId('pay-method'), { target: { value: 'cash' } })
+    fireEvent.click(screen.getByTestId('pay-submit'))
+
+    await waitFor(() => expect(mockCreatePayment).toHaveBeenCalledTimes(1))
+    const payload = mockCreatePayment.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.supplierId).toBe('sup-1')
+    expect(payload.amount).toBe(1200)
+    expect(payload.method).toBe('cash')
+    // 关键：不带 allocations —— 不替财务猜「这笔钱付的是哪几张单」
+    expect(payload.allocations).toBeUndefined()
+  })
+
+  it('付款金额非法 ⇒ 前端就拦下（不发请求）', async () => {
+    mockPayables.mockResolvedValue({ data: { data: {
+      suppliers: [{ supplierId: 'sup-1', supplierName: '杭州染整一厂', status: 'active',
+        receivedAmount: 500, orderCount: 1, firstInboundDate: null, lastInboundDate: '2026-10-10',
+        paidAmount: 0, paymentsRecorded: true, outstanding: 500 }],
+      totalReceived: 500, totalOutstanding: 500, paymentsRecorded: true,
+    } } })
+    render(<SuppliersPage />)
+    await waitFor(() => expect(screen.getByTestId('payable-pay-sup-1')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId('payable-pay-sup-1'))
+    fireEvent.change(screen.getByTestId('pay-amount'), { target: { value: '0' } })
+    fireEvent.click(screen.getByTestId('pay-submit'))
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('必须大于 0'))
+    expect(mockCreatePayment).not.toHaveBeenCalled()
   })
 })

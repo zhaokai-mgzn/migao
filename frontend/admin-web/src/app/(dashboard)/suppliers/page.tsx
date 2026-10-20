@@ -6,8 +6,15 @@ import { toast } from 'sonner'
 import { Button, PageCard, PageHeader } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
 import { supplierApi } from '@/lib/api'
+import { SELECT_CONTROL_FIELD } from '@/components/ui/Select'
 import { usePermission } from '@/lib/permission'
-import type { Supplier, SupplierPayableSummary, UnassignedInboundSupplier } from '@/types'
+import type {
+  Supplier,
+  SupplierPayable,
+  SupplierPayableSummary,
+  SupplierPaymentMethod,
+  UnassignedInboundSupplier,
+} from '@/types'
 
 /**
  * 供应商 `/suppliers`（issue #7369，P0-1 段 1）—— 大菜单「仓储与物料 ▸ 供应商」的第一屏。
@@ -48,6 +55,17 @@ export function paymentTermsLabel(days: number | null | undefined): string {
   return `${days} 天`
 }
 
+/** 登记付款的表单态（金额留字符串：输入框原样，提交时才校验与转数）。 */
+type PayFormState = {
+  supplierId: string
+  supplierName: string
+  amount: string
+  paidAt: string
+  method: SupplierPaymentMethod
+  referenceNo: string
+  remark: string
+}
+
 type FormState = {
   id?: string
   name: string
@@ -72,12 +90,17 @@ export default function SuppliersPage() {
   // 而不是点下去才 403（菜单节点码是读码 `inbound:view`）。
   const { has: hasPermission } = usePermission()
   const canWrite = hasPermission('inbound:create')
+  // 付款是财务动作（后端 finance:create）⇒ 按钮按该码门控，不按档案写码
+  const canPay = hasPermission('finance:create')
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [keyword, setKeyword] = useState('')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [unassigned, setUnassigned] = useState<UnassignedInboundSupplier[]>([])
   const [payables, setPayables] = useState<SupplierPayableSummary | null>(null)
+  const [payForm, setPayForm] = useState<PayFormState | null>(null)
+  const [payError, setPayError] = useState<string | null>(null)
+  const [paySaving, setPaySaving] = useState(false)
   const [form, setForm] = useState<FormState | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -179,6 +202,40 @@ export default function SuppliersPage() {
     }
   }
 
+  const openPay = (p: SupplierPayable) => {
+    setPayError(null)
+    setPayForm({ supplierId: p.supplierId, supplierName: p.supplierName, amount: '', paidAt: '', method: 'transfer', referenceNo: '', remark: '' })
+  }
+
+  const submitPay = async () => {
+    if (!payForm) return
+    const amount = Number(payForm.amount)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setPayError('付款金额必须大于 0')
+      return
+    }
+    setPaySaving(true)
+    setPayError(null)
+    try {
+      // 不传 allocations = 整笔挂账（预付 / 待勾对）——这是真实业务，不是缺陷
+      await supplierApi.createPayment({
+        supplierId: payForm.supplierId,
+        amount,
+        paidAt: payForm.paidAt || null,
+        method: payForm.method,
+        referenceNo: payForm.referenceNo || null,
+        remark: payForm.remark || null,
+      })
+      setPayForm(null)
+      await Promise.all([load(keyword), loadPayables()])
+    } catch (error) {
+      const err = error as { response?: { data?: { message?: string } } }
+      setPayError(err.response?.data?.message || '登记付款失败')
+    } finally {
+      setPaySaving(false)
+    }
+  }
+
   const toggleStatus = async (s: Supplier) => {
     const next: 'active' | 'inactive' = s.status === 'active' ? 'inactive' : 'active'
     try {
@@ -270,6 +327,7 @@ export default function SuppliersPage() {
                     <th className="py-2 font-normal whitespace-nowrap text-right">入库单</th>
                     <th className="py-2 font-normal whitespace-nowrap">最近入库</th>
                     <th className="py-2 font-normal whitespace-nowrap text-right">已付</th>
+                    <th className="py-2 font-normal whitespace-nowrap text-right">尚欠</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -278,12 +336,26 @@ export default function SuppliersPage() {
                       <td className="py-2 whitespace-nowrap">
                         {p2.supplierName}
                         {p2.status === 'inactive' && <span className="ml-2 text-xs text-neutral-400">已停用</span>}
+                        {canPay && (
+                          <button
+                            className="ml-3 text-xs text-primary-600 hover:underline"
+                            data-testid={`payable-pay-${p2.supplierId}`}
+                            onClick={() => openPay(p2)}
+                          >
+                            登记付款
+                          </button>
+                        )}
                       </td>
                       <td className="py-2 whitespace-nowrap text-right">¥{formatAmount(p2.receivedAmount)}</td>
                       <td className="py-2 whitespace-nowrap text-right">{p2.orderCount}</td>
                       <td className="py-2 whitespace-nowrap text-neutral-500">{p2.lastInboundDate || '—'}</td>
-                      <td className="py-2 whitespace-nowrap text-right text-neutral-400">
+                      <td className="py-2 whitespace-nowrap text-right text-neutral-500">
                         {p2.paymentsRecorded ? `¥${formatAmount(p2.paidAmount)}` : '未登记'}
+                      </td>
+                      <td className="py-2 whitespace-nowrap text-right">
+                        {p2.outstanding < 0
+                          ? <span className="text-primary-600">预付 ¥{formatAmount(-p2.outstanding)}</span>
+                          : `¥${formatAmount(p2.outstanding)}`}
                       </td>
                     </tr>
                   ))}
@@ -382,6 +454,68 @@ export default function SuppliersPage() {
           </div>
         )}
       </PageCard>
+
+      {payForm && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-5 w-[420px]">
+            <h3 className="text-base font-medium mb-1">登记付款 · {payForm.supplierName}</h3>
+            <p className="text-xs text-neutral-500 mb-3">
+              只登记实付金额（挂在与该供应商的往来账上）。要冲抵具体入库单，走后续的按单勾对：
+              这里不会替你猜「这笔钱付的是哪几张单」。
+            </p>
+            <label className="block text-sm mb-1">金额</label>
+            <input
+              className="w-full border border-neutral-200 rounded px-3 py-2 mb-3"
+              data-testid="pay-amount"
+              value={payForm.amount}
+              onChange={(e) => setPayForm({ ...payForm, amount: e.target.value })}
+              placeholder="0.00"
+            />
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label className="block text-sm mb-1">付款日期</label>
+                <input
+                  type="date"
+                  className="w-full border border-neutral-200 rounded px-3 py-2"
+                  data-testid="pay-date"
+                  value={payForm.paidAt}
+                  onChange={(e) => setPayForm({ ...payForm, paidAt: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm mb-1">方式</label>
+                <select
+                  // 业务面下拉必须引用共享铬（issue #7397），不许自己拼
+                  className={`w-full ${SELECT_CONTROL_FIELD}`}
+                  data-testid="pay-method"
+                  value={payForm.method}
+                  onChange={(e) => setPayForm({ ...payForm, method: e.target.value as SupplierPaymentMethod })}
+                >
+                  <option value="transfer">银行转账</option>
+                  <option value="cash">现金</option>
+                  <option value="wechat">微信</option>
+                  <option value="alipay">支付宝</option>
+                  <option value="other">其他</option>
+                </select>
+              </div>
+            </div>
+            <label className="block text-sm mb-1">回单号（可选）</label>
+            <input
+              className="w-full border border-neutral-200 rounded px-3 py-2 mb-3"
+              data-testid="pay-reference"
+              value={payForm.referenceNo}
+              onChange={(e) => setPayForm({ ...payForm, referenceNo: e.target.value })}
+            />
+            {payError && <div className="text-sm text-red-600 mb-2" role="alert">{payError}</div>}
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setPayForm(null)}>取消</Button>
+              <Button onClick={submitPay} disabled={paySaving} data-testid="pay-submit">
+                {paySaving ? '提交中…' : '确认登记'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {form && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">

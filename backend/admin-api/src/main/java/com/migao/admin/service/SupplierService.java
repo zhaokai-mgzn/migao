@@ -122,9 +122,9 @@ public class SupplierService {
      * 供应商应付对账（issue #7369 段 3-A，用户 2026-10-20 裁定「A（轻）」）。
      *
      * <h3>A 段只做对账视图，不做付款流水</h3>
-     * <p>{@code paidAmount} 恒 0、{@code paymentsRecorded = false}：这不是「一分钱没付」，而是
-     * **还没有付款登记通道**。前端据 {@code paymentsRecorded} 显示「未登记」而不是「¥0.00」——
-     * 把「没做」画成「没有」会让商家按错的余额做决策。</p>
+     * <p>段 3-B 起 {@code paidAmount} 取**有效付款之和**（作废的付款不计），
+     * {@code paymentsRecorded = true}。{@code outstanding = 收货额 − 已付}：**负数 = 预付**
+     * （先打款后到货），这是合法状态，页面照样显示，不许截零。</p>
      *
      * <p>金额口径的唯一真值在 SQL（`InboundOrderMapper.selectSupplierPayables`：只算 posted），
      * 这里只做映射与总计，**不重算**。</p>
@@ -133,9 +133,10 @@ public class SupplierService {
         List<Map<String, Object>> rows = inboundOrderMapper.selectSupplierPayables(tenantId);
         List<SupplierPayable> payables = new ArrayList<>();
         java.math.BigDecimal totalReceived = java.math.BigDecimal.ZERO;
+        java.math.BigDecimal totalPaid = java.math.BigDecimal.ZERO;
         for (Map<String, Object> row : rows) {
             java.math.BigDecimal received = toAmount(row.get("received_amount"));
-            java.math.BigDecimal paid = java.math.BigDecimal.ZERO;
+            java.math.BigDecimal paid = toAmount(row.get("paid_amount"));
             payables.add(new SupplierPayable(
                     String.valueOf(row.get("supplier_id")),
                     String.valueOf(row.get("supplier_name")),
@@ -145,11 +146,12 @@ public class SupplierService {
                     toDate(row.get("first_inbound_date")),
                     toDate(row.get("last_inbound_date")),
                     paid,
-                    false,
+                    true,
                     received.subtract(paid)));
             totalReceived = totalReceived.add(received);
+            totalPaid = totalPaid.add(paid);
         }
-        return new SupplierPayableSummary(payables, totalReceived, totalReceived, false);
+        return new SupplierPayableSummary(payables, totalReceived, totalReceived.subtract(totalPaid), true);
     }
 
     private static java.math.BigDecimal toAmount(Object raw) {
