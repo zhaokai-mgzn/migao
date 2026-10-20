@@ -550,6 +550,11 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.service.ReceiptAllocationService receiptAllocationService;
 
+    // 订单毛利（issue #7371 段 2）：它现在依赖 `ProductionService` ⇒ 在这个「排除 MyBatis 自动配置」的
+    // 上下文里，真身会把整条计件聚合链拉起来（判据要的是鉴权面，不是车间聚合）⇒ 按本文件既有口径 mock。
+    @MockBean
+    private com.migao.admin.service.OrderMarginService orderMarginService;
+
     @MockBean
     private com.migao.admin.service.FinanceService financeService;
 

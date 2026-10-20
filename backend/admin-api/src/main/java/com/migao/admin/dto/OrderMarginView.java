@@ -13,7 +13,8 @@ import java.math.BigDecimal;
  * <p>🔴 `costKnown = false` 时：`fabricCost` / `grossMargin` / `marginRate` **都是 null**，
  * 前端显示「成本未知」。「未知当 0」会让毛利率虚高（把成本当成没花钱）—— 这是本段最不能犯的错。</p>
  *
- * <p>本段只算 **面料毛利**（`scope` 自述口径）：加工费与运费**尚未计入**。</p>
+ * <p>段 2 起 `scope` = **面料 + 加工**（`revenue_minus_refund_minus_fabric_minus_labor`）；
+ * **运费系统未采集** ⇒ `freightCaptured = false`（数据缺口，不是「运费为 0」）。</p>
  */
 @Data
 @Builder
@@ -32,6 +33,15 @@ public class OrderMarginView {
 
     /** 收入 = 订单货值 */
     private BigDecimal revenue;
+
+    /** 加工成本 = 该单计件金额（与计件工资/期间报表**同一份聚合**）；未定价报工存在时为 null */
+    private BigDecimal laborCost;
+
+    /** 未定价报工行数（> 0 ⇒ 加工成本未知：未定价不进金额，但必须能被数出来） */
+    private int unpricedLaborLines;
+
+    /** 运费是否已采集（当前恒 false：系统没有运费字段 —— 是数据缺口，不是 0 运费） */
+    private boolean freightCaptured;
 
     /** 已退款（成功退款流水合计） */
     private BigDecimal refunded;

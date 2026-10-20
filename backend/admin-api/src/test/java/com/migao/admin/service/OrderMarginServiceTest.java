@@ -33,14 +33,18 @@ class OrderMarginServiceTest {
 
     private OrderMapper orderMapper;
     private FinanceTransactionMapper financeTransactionMapper;
+    private ProductionService productionService;
     private OrderMarginService service;
 
     @BeforeEach
     void setUp() {
         orderMapper = Mockito.mock(OrderMapper.class);
         financeTransactionMapper = Mockito.mock(FinanceTransactionMapper.class);
+        productionService = Mockito.mock(ProductionService.class);
+        // 默认：该单没有报工（计件金额 0、无未定价行）—— 与「还没开工」的真实形态一致
+        when(productionService.piecework(anyString(), any())).thenReturn(piecework("0", "0"));
         when(financeTransactionMapper.selectList(any())).thenReturn(List.of());
-        service = new OrderMarginService(orderMapper, financeTransactionMapper);
+        service = new OrderMarginService(orderMapper, financeTransactionMapper, productionService);
     }
 
     private Order order(String id, String no, String total, String status) {
@@ -53,6 +57,16 @@ class OrderMarginServiceTest {
         return o;
     }
 
+    /** 计件聚合的最小形状（真身由 ProductionService 的同一份聚合产出）。 */
+    private static Map<String, Object> piecework(String total, String unpricedQty) {
+        Map<String, Object> row = new HashMap<>();
+        row.put("total", new BigDecimal(total));
+        row.put("per_worker", new HashMap<String, Object>());
+        row.put("per_operation", List.of());
+        row.put("unpriced", Map.of("qty", new BigDecimal(unpricedQty), "rows", List.of()));
+        return row;
+    }
+
     private static Map<String, Object> fabric(String cost, int unknown, long lines) {
         Map<String, Object> row = new HashMap<>();
         row.put("fabric_cost", cost == null ? null : new BigDecimal(cost));
@@ -62,10 +76,11 @@ class OrderMarginServiceTest {
     }
 
     @Test
-    @DisplayName("正常：面料成本已知 ⇒ 毛利 = 收入 − 退款 − 面料，口径自述随身带")
+    @DisplayName("正常：面料 + 加工都已知 ⇒ 毛利 = 收入 − 退款 − 面料 − 加工，口径自述随身带")
     void knownCostProducesMargin() {
         when(orderMapper.selectById("o1")).thenReturn(order("o1", "SO-1", "1000", "completed"));
         when(orderMapper.selectFabricCost(1L, "SO-1")).thenReturn(fabric("400", 0, 3));
+        when(productionService.piecework("o1", 1L)).thenReturn(piecework("150", "0"));
         FinanceTransaction refund = new FinanceTransaction();
         refund.setAmount(new BigDecimal("100"));
         when(financeTransactionMapper.selectList(any())).thenReturn(List.of(refund));
@@ -75,11 +90,14 @@ class OrderMarginServiceTest {
         assertThat(view.isCostKnown()).isTrue();
         assertThat(view.getFabricCost()).isEqualByComparingTo("400");
         assertThat(view.getRefunded()).isEqualByComparingTo("100");
-        assertThat(view.getGrossMargin()).isEqualByComparingTo("500");
-        assertThat(view.getMarginRate()).isEqualByComparingTo("0.5556");
+        assertThat(view.getLaborCost()).isEqualByComparingTo("150");
+        assertThat(view.getGrossMargin()).isEqualByComparingTo("350");
+        assertThat(view.getMarginRate()).isEqualByComparingTo("0.3889");
+        assertThat(view.getUnpricedLaborLines()).isZero();
+        assertThat(view.isFreightCaptured()).as("运费未采集是数据缺口，不许伪装成 0").isFalse();
         assertThat(view.getFabricLines()).isEqualTo(3);
         assertThat(view.getUnknownFabricLines()).isZero();
-        assertThat(view.getScope()).isEqualTo(OrderMargin.SCOPE_FABRIC_ONLY);
+        assertThat(view.getScope()).isEqualTo(OrderMargin.SCOPE_FABRIC_AND_LABOR);
     }
 
     @Test
@@ -98,7 +116,22 @@ class OrderMarginServiceTest {
     }
 
     @Test
-    @DisplayName("没有扣料行 ⇒ 面料成本是**真 0**（还没领料），毛利 = 收入 − 退款")
+    @DisplayName("🔴 有未定价报工 ⇒ 加工成本未知 ⇒ 毛利 null（不许按面料成本就当毛利）")
+    void unpricedLaborMakesMarginUnknown() {
+        when(orderMapper.selectById("o5")).thenReturn(order("o5", "SO-5", "1000", "completed"));
+        when(orderMapper.selectFabricCost(1L, "SO-5")).thenReturn(fabric("400", 0, 2));
+        when(productionService.piecework("o5", 1L)).thenReturn(piecework("150", "12"));
+
+        var view = service.margin("o5");
+
+        assertThat(view.isCostKnown()).isFalse();
+        assertThat(view.getLaborCost()).isNull();
+        assertThat(view.getGrossMargin()).isNull();
+        assertThat(view.getUnpricedLaborLines()).as("未定价的活儿必须被数出来（不是静默 0）").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("没有扣料行 ⇒ 面料成本是**真 0**（还没领料），毛利 = 收入 − 退款 − 加工")
     void noConsumptionIsRealZero() {
         when(orderMapper.selectById("o3")).thenReturn(order("o3", "SO-3", "800", "confirmed"));
         when(orderMapper.selectFabricCost(1L, "SO-3")).thenReturn(fabric("0", 0, 0));
@@ -107,6 +140,7 @@ class OrderMarginServiceTest {
 
         assertThat(view.isCostKnown()).isTrue();
         assertThat(view.getFabricCost()).isEqualByComparingTo("0");
+        assertThat(view.getLaborCost()).isEqualByComparingTo("0");
         assertThat(view.getGrossMargin()).isEqualByComparingTo("800");
         assertThat(view.getFabricLines()).isZero();
     }

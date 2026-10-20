@@ -20,29 +20,30 @@ import static org.assertj.core.api.Assertions.assertThat;
 class OrderMarginTest {
 
     @Test
-    @DisplayName("常规：收入 1000 · 退 100 · 面料 400 ⇒ 毛利 500，毛利率 500/900")
+    @DisplayName("常规：收入 1000 · 退 100 · 面料 400 · 加工 150 ⇒ 毛利 350，毛利率 350/900")
     void plainMargin() {
         var r = OrderMargin.compute(new BigDecimal("1000"), new BigDecimal("100"),
-                new BigDecimal("400"), 0);
+                new BigDecimal("400"), 0, new BigDecimal("150"), 0);
         assertThat(r.costKnown()).isTrue();
         assertThat(r.fabricCost()).isEqualByComparingTo("400");
-        assertThat(r.grossMargin()).isEqualByComparingTo("500");
-        // 毛利率 = 毛利 / 净收入（1000 − 100 = 900）⇒ 0.5556
-        assertThat(r.marginRate()).isEqualByComparingTo("0.5556");
+        assertThat(r.laborCost()).isEqualByComparingTo("150");
+        assertThat(r.grossMargin()).isEqualByComparingTo("350");
+        // 毛利率 = 毛利 / 净收入（1000 − 100 = 900）⇒ 0.3889
+        assertThat(r.marginRate()).isEqualByComparingTo("0.3889");
     }
 
     @Test
     @DisplayName("🔴 成本未知（有行缺进价）⇒ 毛利与毛利率都是 null，成本也不填 0")
     void unknownCostIsNeverZero() {
         var byUnknownLines = OrderMargin.compute(new BigDecimal("1000"), BigDecimal.ZERO,
-                new BigDecimal("400"), 2);
+                new BigDecimal("400"), 2, new BigDecimal("150"), 0);
         assertThat(byUnknownLines.costKnown()).isFalse();
         assertThat(byUnknownLines.fabricCost()).isNull();
         assertThat(byUnknownLines.grossMargin()).as("不能拿「收入全额」当毛利").isNull();
         assertThat(byUnknownLines.marginRate()).isNull();
 
         // fabricCost 直接传 null 也走同一条路（服务层的两种未知表达都要被兜住）
-        var byNullCost = OrderMargin.compute(new BigDecimal("1000"), BigDecimal.ZERO, null, 0);
+        var byNullCost = OrderMargin.compute(new BigDecimal("1000"), BigDecimal.ZERO, null, 0, new BigDecimal("150"), 0);
         assertThat(byNullCost.costKnown()).isFalse();
         assertThat(byNullCost.grossMargin()).isNull();
     }
@@ -50,7 +51,7 @@ class OrderMarginTest {
     @Test
     @DisplayName("面料成本 0（还没领料）是**真 0**：毛利 = 净收入，不是「未知」")
     void zeroCostIsKnown() {
-        var r = OrderMargin.compute(new BigDecimal("1000"), BigDecimal.ZERO, BigDecimal.ZERO, 0);
+        var r = OrderMargin.compute(new BigDecimal("1000"), BigDecimal.ZERO, BigDecimal.ZERO, 0, BigDecimal.ZERO, 0);
         assertThat(r.costKnown()).isTrue();
         assertThat(r.grossMargin()).isEqualByComparingTo("1000");
         assertThat(r.marginRate()).isEqualByComparingTo("1");
@@ -59,7 +60,7 @@ class OrderMarginTest {
     @Test
     @DisplayName("亏本单：毛利为负（不截断成 0）")
     void negativeMarginIsKept() {
-        var r = OrderMargin.compute(new BigDecimal("1000"), BigDecimal.ZERO, new BigDecimal("1300"), 0);
+        var r = OrderMargin.compute(new BigDecimal("1000"), BigDecimal.ZERO, new BigDecimal("1300"), 0, BigDecimal.ZERO, 0);
         assertThat(r.grossMargin()).isEqualByComparingTo("-300");
         assertThat(r.marginRate()).isEqualByComparingTo("-0.3");
     }
@@ -68,7 +69,7 @@ class OrderMarginTest {
     @DisplayName("净收入 ≤ 0（退满 / 退超）⇒ 毛利率 null，但毛利照实给（不做 0 除）")
     void rateIsNullWhenNetRevenueIsNotPositive() {
         var r = OrderMargin.compute(new BigDecimal("1000"), new BigDecimal("1000"),
-                new BigDecimal("400"), 0);
+                new BigDecimal("400"), 0, BigDecimal.ZERO, 0);
         assertThat(r.grossMargin()).isEqualByComparingTo("-400");
         assertThat(r.marginRate()).as("净收入 0 ⇒ 分母无意义，不许给 0 或负无穷").isNull();
     }
@@ -76,15 +77,31 @@ class OrderMarginTest {
     @Test
     @DisplayName("空值兜底：收入/退款 null 当 0 但不产生 NPE（存量脏行不让页面 500）")
     void nullsAreTolerated() {
-        var r = OrderMargin.compute(null, null, new BigDecimal("10"), 0);
+        var r = OrderMargin.compute(null, null, new BigDecimal("10"), 0, BigDecimal.ZERO, 0);
         assertThat(r.costKnown()).isTrue();
         assertThat(r.grossMargin()).isEqualByComparingTo("-10");
         assertThat(r.marginRate()).isNull();   // 净收入 0 ⇒ null
     }
 
     @Test
-    @DisplayName("口径自述常量：本段只算面料毛利（不许被读成完全成本毛利）")
+    @DisplayName("🔴 加工成本未知（有未定价报工）⇒ 毛利同样为 null（不许只算面料就当毛利）")
+    void unpricedLaborMakesCostUnknown() {
+        var d = OrderMargin.compute(new BigDecimal("1000"), BigDecimal.ZERO,
+                new BigDecimal("400"), 0, new BigDecimal("150"), 2);
+        assertThat(d.costKnown()).isFalse();
+        assertThat(d.grossMargin()).isNull();
+        assertThat(d.laborCost()).isNull();
+
+        // 加工成本直接传 null（服务层表达「未知」的另一条路）也走同一条路
+        var byNull = OrderMargin.compute(new BigDecimal("1000"), BigDecimal.ZERO,
+                new BigDecimal("400"), 0, null, 0);
+        assertThat(byNull.costKnown()).isFalse();
+    }
+
+    @Test
+    @DisplayName("口径自述常量（段 2 起含加工）：不许被读成完全成本毛利（运费仍未采集）")
     void scopeIsSelfDescribing() {
-        assertThat(OrderMargin.SCOPE_FABRIC_ONLY).isEqualTo("revenue_minus_refund_minus_fabric");
+        assertThat(OrderMargin.SCOPE_FABRIC_AND_LABOR)
+                .isEqualTo("revenue_minus_refund_minus_fabric_minus_labor");
     }
 }

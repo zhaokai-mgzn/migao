@@ -12,7 +12,7 @@ import java.util.Arrays;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 订单毛利端点契约（issue #7371，P0-3 段 1）：路由逐字 + 读码来自类级 `finance:view`。
+ * 订单毛利端点契约（issue #7371，P0-3 段 1+2）：路由逐字 + 读码来自类级 `finance:view`。
  *
  * <p>读端点带 `{orderId}` ⇒ 不覆写方法级码（继承类级 finance:view）；`TenantOwnedResource` 的读面
  * 由 `order` 资源键在写面已登记覆盖，读面的越权面是「按 id 查不到」——服务层 `selectById` 走租户插件。</p>

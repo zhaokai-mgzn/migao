@@ -17,14 +17,18 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 订单毛利（issue #7371，P0-3 段 1）：收入 − 退款 − 面料成本。
+ * 订单毛利（issue #7371，P0-3 段 1 + 段 2）：收入 − 退款 − 面料成本 − 加工成本。
  *
- * <h3>取数</h3>
+ * <h3>取数（每一条都复用既有口径，不新造第二套）</h3>
  * <ul>
  *   <li>面料成本：`stock_batch_consumptions` 的扣料行（`reason = 'processing_order'`，按 `order_no` 归属）
  *       × 该行 `unit_cost`（**当时**的批次进价快照，V119 起就有了）；</li>
+ *   <li>加工成本（段 2）：`ProductionService.piecework(...)` 的 `total` —— 与计件工资 / 期间报表
+ *       **同一份聚合**；该聚合的 `unpriced` 块给出**未定价报工**的数量（issue #4696 的既有口径：
+ *       未定价**不进金额**，但必须能被数出来）⇒ 有未定价 ⇒ **加工成本未知**；</li>
  *   <li>退款：`finance_transactions` 的 `refund ∧ success` 合计；</li>
- *   <li>判定：纯函数 {@link OrderMargin}（未知成本绝不当 0）。</li>
+ *   <li>运费：**系统未采集**（表里没有运费字段）⇒ `freightCaptured = false`，**不按 0 计入**；</li>
+ *   <li>判定：纯函数 {@link OrderMargin}（任一成本未知 ⇒ 毛利 null，绝不当 0）。</li>
  * </ul>
  *
  * <p>⚠️ 本服务**只读**：不改任何金额、不落任何派生列（毛利是算出来的，不是存出来的 ——
@@ -37,6 +41,12 @@ public class OrderMarginService {
 
     private final OrderMapper orderMapper;
     private final FinanceTransactionMapper financeTransactionMapper;
+
+    /**
+     * 计件金额的唯一聚合口径（issue #4205 / #4696）：加工成本**复用**它，不在这里重算一遍
+     * —— 重算就是第二条会漂移的真相（车间工资单与毛利会是两个数）。
+     */
+    private final ProductionService productionService;
 
     /** 单个订单的毛利。 */
     public OrderMarginView margin(String orderId) {
@@ -59,17 +69,26 @@ public class OrderMarginService {
         }
 
         BigDecimal refunded = sumRefund(order.getId(), tenantId);
+        Map<String, Object> piecework = productionService.piecework(order.getId(), tenantId);
+        BigDecimal laborCost = toDecimal(piecework.get("total")).setScale(2, RoundingMode.HALF_UP);
+        int unpricedLines = countUnpricedLabor(piecework);
+        if (unpricedLines > 0) {
+            laborCost = null;   // 有未定价报工 ⇒ 加工成本未知（不按 0 计入）
+        }
         OrderMargin.Result result = OrderMargin.compute(
-                order.getTotalAmount(), refunded, fabricCost, unknownLines);
+                order.getTotalAmount(), refunded, fabricCost, unknownLines, laborCost, unpricedLines);
 
         return OrderMarginView.builder()
                 .orderId(order.getId())
                 .orderNo(order.getOrderNo())
                 .status(order.getStatus())
-                .scope(OrderMargin.SCOPE_FABRIC_ONLY)
+                .scope(OrderMargin.SCOPE_FABRIC_AND_LABOR)
                 .revenue(scale(order.getTotalAmount()))
                 .refunded(scale(refunded))
                 .fabricCost(result.fabricCost())
+                .laborCost(result.laborCost())
+                .unpricedLaborLines(unpricedLines)
+                .freightCaptured(false)
                 .grossMargin(result.grossMargin())
                 .marginRate(result.marginRate())
                 .costKnown(result.costKnown())
@@ -90,6 +109,27 @@ public class OrderMarginService {
             sum = sum.add(row.getAmount() == null ? BigDecimal.ZERO : row.getAmount());
         }
         return sum;
+    }
+
+    /**
+     * 未定价报工**行数**（issue #4696 的口径：未定价不进金额，但必须能被数出来）。
+     *
+     * <p>取 `piecework` 返回里 `unpriced.qty` 的数量类读数：&gt; 0 表示「有活儿干了但没定价」
+     * ⇒ 加工成本**未知**（不是 0）。</p>
+     */
+    private static int countUnpricedLabor(Map<String, Object> piecework) {
+        Object unpriced = piecework == null ? null : piecework.get("unpriced");
+        if (!(unpriced instanceof Map<?, ?> block)) {
+            return 0;
+        }
+        Object qty = block.get("qty");
+        if (qty instanceof Number number) {
+            return number.doubleValue() > 0 ? 1 : 0;   // 有数量 ⇒ 至少一行未定价
+        }
+        if (qty instanceof BigDecimal decimal) {
+            return decimal.signum() > 0 ? 1 : 0;
+        }
+        return 0;
     }
 
     private static BigDecimal toDecimal(Object value) {
