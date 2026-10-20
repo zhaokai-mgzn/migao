@@ -156,6 +156,15 @@ class MoneyEntryPrecisionMetaGuardTest {
                         "付款冲抵金额（issue #7369 段 3-B）：逐行落库前过 "
                         + "MoneyScale.requireTwoDecimalsOrNull(part, \"冲抵金额\")"),
 
+                site("com/migao/admin/service/PurchaseOrderService.java", "PurchaseOrder.builder()",
+                        Admission.GATED,
+                        "采购单总额（issue #7369 段 4）：逐行 amount 由已准入的 unitPrice × 数量算得并 setScale(2)，"
+                        + "总额再 setScale(4)"),
+                site("com/migao/admin/service/PurchaseOrderService.java", "PurchaseOrderItem.builder()",
+                        Admission.GATED,
+                        "采购明细单价/金额（issue #7369 段 4）：单价落库前过 "
+                        + "MoneyScale.requireTwoDecimalsOrNull(price, \"采购单价\")，金额由它算出"),
+
                 // ── ③ #6228 补齐的金额入口（GATED：落库前复用 MoneyScale 单点准入）────
                 site("com/migao/admin/service/AfterSalesTicketService.java", "setRefundAmount", Admission.GATED,
                         "建单入口 createTicket 开头过 MoneyScale：工单 refund_amount 列 NUMERIC(10,2)；"

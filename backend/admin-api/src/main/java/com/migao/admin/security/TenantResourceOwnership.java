@@ -5,6 +5,7 @@ import com.migao.admin.mapper.AfterSalesTicketMapper;
 import com.migao.admin.mapper.CategoryMapper;
 import com.migao.admin.mapper.CustomerProfileMapper;
 import com.migao.admin.mapper.SupplierMapper;
+import com.migao.admin.mapper.PurchaseOrderMapper;
 import com.migao.admin.mapper.SupplierPaymentMapper;
 import com.migao.admin.mapper.ProcessingCategoryMapper;
 import com.migao.admin.mapper.ProcessingItemMapper;
@@ -68,6 +69,9 @@ public class TenantResourceOwnership {
     /** 付款单的归属认定（issue #7369 段 3-B 作废端点）：同上，只判本租户可见。 */
     private final SupplierPaymentMapper supplierPaymentMapper;
 
+    /** 采购单的归属认定（issue #7369 段 4 的详情/收货/关闭端点）：同上。 */
+    private final PurchaseOrderMapper purchaseOrderMapper;
+
     /**
      * 资源键 → 归属认定（认定不过 ⇒ 抛 {@code NOT_FOUND}，与既有 404 路径同一份异常与文案）。
      *
@@ -110,6 +114,11 @@ public class TenantResourceOwnership {
         checks.put("supplierPayment", id -> {
             if (supplierPaymentMapper.selectById(id) == null) {
                 throw BusinessException.notFound("付款单");
+            }
+        });
+        checks.put("purchaseOrder", id -> {
+            if (purchaseOrderMapper.selectById(id) == null) {
+                throw BusinessException.notFound("采购单");
             }
         });
         checks.put("customer", id -> {

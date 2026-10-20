@@ -92,6 +92,10 @@
       "table": "processing_set_part_tokens",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingSetPartTokenMapper.java"
     },
+    "backend/admin-api/src/main/java/com/migao/admin/service/PurchaseOrderService.java::orderMapper": {
+      "table": "purchase_orders",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/PurchaseOrderService.java"
+    },
     "backend/admin-api/src/main/java/com/migao/admin/service/RegistrationService.java::rolePermissionMapper": {
       "table": "role_permissions",
       "handling": "none"
