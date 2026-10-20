@@ -9,6 +9,7 @@ import com.migao.admin.entity.CustomerProfile;
 import com.migao.admin.entity.CustomerTag;
 import com.migao.admin.service.CustomerService;
 import com.migao.admin.security.RequirePermission;
+import com.migao.admin.security.TenantOwnedResource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -130,6 +131,7 @@ public class CustomerController {
      */
     @PutMapping("/api/admin/customers/{id}/credit")
     @RequirePermission("customer:create")
+    @TenantOwnedResource("customer")
     public ApiResponse<CreditStatusResponse> updateCredit(
             @PathVariable String id,
             @RequestBody CreditSettingsRequest request) {

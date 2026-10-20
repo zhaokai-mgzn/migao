@@ -3,6 +3,7 @@ package com.migao.admin.security;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.AfterSalesTicketMapper;
 import com.migao.admin.mapper.CategoryMapper;
+import com.migao.admin.mapper.CustomerProfileMapper;
 import com.migao.admin.mapper.ProcessingCategoryMapper;
 import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProductMapper;
@@ -56,6 +57,9 @@ public class TenantResourceOwnership {
      */
     private final WorkerAdminService workerAdminService;
 
+    /** 客户档案的归属认定（issue #7370 的授信写端点）：与 product/category 同款 —— 只判「本租户可见吗」。 */
+    private final CustomerProfileMapper customerProfileMapper;
+
     /**
      * 资源键 → 归属认定（认定不过 ⇒ 抛 {@code NOT_FOUND}，与既有 404 路径同一份异常与文案）。
      *
@@ -90,6 +94,11 @@ public class TenantResourceOwnership {
      */
     @PostConstruct
     public void registerChecks() {
+        checks.put("customer", id -> {
+            if (customerProfileMapper.selectById(id) == null) {
+                throw BusinessException.notFound("客户");
+            }
+        });
         checks.put("product", id -> {
             if (productMapper.selectById(id) == null) {
                 throw BusinessException.notFound("商品");
