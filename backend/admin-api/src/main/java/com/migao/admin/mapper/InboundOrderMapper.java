@@ -4,6 +4,11 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.migao.admin.entity.InboundOrder;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
+
+import java.util.List;
+import java.util.Map;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Update;
 
 import java.time.OffsetDateTime;
@@ -13,6 +18,40 @@ import java.time.OffsetDateTime;
  */
 @Mapper
 public interface InboundOrderMapper extends BaseMapper<InboundOrder> {
+
+    /**
+     * 按名称**精确匹配**本租户的供应商档案 id（issue #7369 段 2，用户 2026-10-20 裁定 A 口径）。
+     *
+     * <p>返回<b>全部</b>匹配（不在这里判唯一）：同名多家 = 歧义 ⇒ 调用方必须留 NULL，
+     * 「猜一家」正是本口径要避免的。⚠️ 手写 SQL **不走** {@code TenantLineInnerInterceptor}
+     * ⇒ `tenant_id` 必须自己写（漏写 = 跨租户串档）。</p>
+     */
+    @Select("SELECT id FROM suppliers "
+            + "WHERE tenant_id = #{tenantId} AND deleted = FALSE AND btrim(name) = btrim(#{name})")
+    List<String> selectSupplierIdsByExactName(@Param("tenantId") Long tenantId, @Param("name") String name);
+
+    /**
+     * 显式指定的供应商档案是否属于本租户（返回 status；空 = 不存在或跨租户）。
+     *
+     * <p>跨租户与不存在**同一个结果**（都当「不存在」处理，不泄露对方的存在性）。</p>
+     */
+    @Select("SELECT status FROM suppliers "
+            + "WHERE tenant_id = #{tenantId} AND id = #{supplierId} AND deleted = FALSE")
+    String selectSupplierStatusInTenant(@Param("tenantId") Long tenantId,
+                                       @Param("supplierId") String supplierId);
+
+    /**
+     * 「待指派」清单：有供应商**文本**但没有档案**引用**的入库单，按文本名分组（issue #7369 段 2）。
+     *
+     * <p>这是 A 口径的**人工出口**：精确匹配不上的行不许猜，也不许丢 —— 列出来让人建档或指派。</p>
+     */
+    @Select("SELECT btrim(supplier) AS supplier_name, count(*) AS order_count, "
+            + "       max(inbound_date) AS last_inbound_date "
+            + "FROM inbound_orders "
+            + "WHERE tenant_id = #{tenantId} AND deleted = 0 AND supplier_id IS NULL "
+            + "  AND supplier IS NOT NULL AND btrim(supplier) <> '' "
+            + "GROUP BY btrim(supplier) ORDER BY count(*) DESC, btrim(supplier) LIMIT 200")
+    List<Map<String, Object>> selectUnassignedSupplierNames(@Param("tenantId") Long tenantId);
 
     /**
      * 过账的**原子闸**：条件更新（CAS）—— 只有当前仍是 {@code draft} 才置 {@code posted}。

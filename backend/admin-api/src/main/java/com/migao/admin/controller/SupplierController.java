@@ -2,6 +2,7 @@ package com.migao.admin.controller;
 
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
+import com.migao.admin.dto.UnassignedInboundSupplier;
 import com.migao.admin.entity.Supplier;
 import com.migao.admin.security.RequirePermission;
 import com.migao.admin.security.TenantOwnedResource;
@@ -41,6 +42,18 @@ public class SupplierController {
     public ApiResponse<List<Supplier>> list(@RequestParam(required = false) String keyword) {
         Long tenantId = TenantContext.getTenantId();
         return ApiResponse.success(supplierService.list(tenantId, keyword));
+    }
+
+    /**
+     * 「待指派」清单（issue #7369 段 2）：入库单上有供应商**文本**、但还没挂档案的，按名字分组。
+     *
+     * <p>这是 A 口径（精确匹配、不猜）的**人工出口** —— 读码与列表同码（能看档案的人才能看这批缺口）。</p>
+     */
+    @GetMapping("/api/admin/suppliers/unassigned-inbound")
+    @RequirePermission("inbound:view")
+    public ApiResponse<List<UnassignedInboundSupplier>> unassignedInbound() {
+        Long tenantId = TenantContext.getTenantId();
+        return ApiResponse.success(supplierService.unassignedInboundSuppliers(tenantId));
     }
 
     /** 新建供应商档案。 */

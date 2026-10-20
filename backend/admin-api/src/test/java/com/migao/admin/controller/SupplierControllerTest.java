@@ -77,7 +77,7 @@ class SupplierControllerTest {
     }
 
     @Test
-    @DisplayName("控制器只有三个端点（新增端点必须同批补判据，不许悄悄长出口）")
+    @DisplayName("控制器端点面冻结：列表 / 建档 / 更新 / 待指派（新增端点必须同批补判据，不许悄悄长出口）")
     void controllerSurfaceIsFrozen() {
         List<String> mappingMethods = Arrays.stream(SupplierController.class.getDeclaredMethods())
                 .filter(m -> m.getAnnotation(GetMapping.class) != null
@@ -86,7 +86,18 @@ class SupplierControllerTest {
                 .map(Method::getName)
                 .sorted()
                 .toList();
-        assertThat(mappingMethods).containsExactly("create", "list", "update");
+        // 待指派清单（issue #7369 段 2）：A 口径「不猜」的人工出口，读码与列表同码
+        assertThat(mappingMethods).containsExactly("create", "list", "unassignedInbound", "update");
+    }
+
+    @Test
+    @DisplayName("待指派端点：GET /api/admin/suppliers/unassigned-inbound + 读码 inbound:view（无 id ⇒ 不标归属）")
+    void unassignedEndpointContract() {
+        java.lang.reflect.Method m = method("unassignedInbound");
+        assertThat(m.getAnnotation(GetMapping.class).value())
+                .containsExactly("/api/admin/suppliers/unassigned-inbound");
+        assertThat(permissionOf(m)).isEqualTo("inbound:view");
+        assertThat(m.getAnnotation(TenantOwnedResource.class)).isNull();
     }
 
     @Test

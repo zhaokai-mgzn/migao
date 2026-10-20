@@ -7046,6 +7046,25 @@ _CASE_SP_001 = EvalCase(
     precondition='本用例是 [backend-contract]：前置 = `suppliers` 表在场（V170 + 建库脚本终态）、`/api/admin/suppliers` 三个端点在控制器上、菜单节点「供应商」三源同构且路由守卫登记。零网络、零 LLM。',
 )
 
+# ── SP-002 [NORMAL] 入库单挂供应商档案：A 口径（名称精确匹配自动挂 / 同名多家不猜留 NULL / 待指派清单兜人工）（issue #7369 段 2）（源: cases/misc.yml）──
+_CASE_SP_002 = EvalCase(
+    id='SP-002',
+    legacy_id='',
+    title='入库单挂供应商档案：A 口径（名称精确匹配自动挂 / 同名多家不猜留 NULL / 待指派清单兜人工）（issue #7369 段 2）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-20，逐字）：「A,继续推进交付」—— 在 A/B/不迁移 三选里选了 **A（保守）**：按名称精确匹配自动填 supplier_id，匹配不上的留 NULL 并出一张「待指派」清单，**不改任何历史字段值**。'],
+    expectations=[],
+    data_checks=['**现状（改前）**：`inbound_orders.supplier` 是自由文本（V111 起的快照列），没有任何到 `suppliers` 档案的引用 ⇒ 「这家供应商一共收了多少货 / 还欠多少」在数据层无从聚合。', '**判据 1（回填口径 = A）**：V173 只新增 `supplier_id` 列并用 `btrim(o.supplier) = btrim(s.name)` **精确匹配**回填（同租户、双方未软删、**同名多家不填**）；`inbound_orders` 的既有列**一个字节都不改**。判据 = 迁移文件头 + 迁移指纹账本 + `test_migration_idempotency`（终态对账 DO 块）。', '**判据 2（服务层三分支）**：`backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderSupplierLinkTest.java`（6 条）——① 显式在用档案原样采用、不按名猜；② 跨租户/不存在 ⇒ 422「供应商档案不存在」（不泄露对方存在性）；③ 停用 ⇒ 422 并给可行动出口；④ 无 id + 文本唯一精确匹配 ⇒ 自动挂；⑤ **同名多家 = 歧义 ⇒ 留 NULL（不猜，猜错不可逆）**；⑥ 匹配不上/无文本 ⇒ NULL。', '**判据 3（人工出口）**：`GET /api/admin/suppliers/unassigned-inbound` 按文本名分组返回「有文本无档案」的入库单（单数 / 最近入库日）；前端供应商页置顶卡片列出并支持「建档」预填名字（`suppliers.test.tsx` 2 条）。判据 = `SupplierServiceTest#unassignedInboundSuppliersMapsRows` + `suppliers.test.tsx`。', '**边界（照实登记）**：本切片**不**做采购单/收货/应付；**不**做「把待指派批量指派到已有档案」（需要一次人工确认 UI，属下一段）；**不**改任何历史 `supplier` 文本。'],
+    skip_reason='[backend-contract] 迁移回填口径 + 服务层三分支 + 待指派清单契约，由 Java 单测与 vitest 页面判据验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'supplier', 'master-data', 'migration', 'backfill', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `inbound_orders.supplier_id` 列在场（V173 + 建库脚本终态）、`suppliers` 表在场（V170）。零网络、零 LLM。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -16046,6 +16065,7 @@ ALL_CASES = (
     _CASE_MC_118,
     _CASE_MC_119,
     _CASE_SP_001,
+    _CASE_SP_002,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

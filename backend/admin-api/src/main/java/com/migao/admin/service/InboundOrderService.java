@@ -145,10 +145,12 @@ public class InboundOrderService {
             }
         }
 
+        String supplierText = trimToNull(req.getSupplier());
         InboundOrder order = InboundOrder.builder()
                 .tenantId(tenantId)
                 .inboundNo(nextFreeInboundNo(tenantId))
-                .supplier(trimToNull(req.getSupplier()))
+                .supplier(supplierText)
+                .supplierId(resolveSupplierId(tenantId, req.getSupplierId(), supplierText))
                 .supplierDocNo(trimToNull(req.getSupplierDocNo()))
                 .warehouse(trimToNull(req.getWarehouse()))
                 .inboundDate(req.getInboundDate() != null ? req.getInboundDate() : businessClock.today())
@@ -722,6 +724,42 @@ public class InboundOrderService {
      */
     private record Validated(List<InboundOrderCreateRequest.Item> items, Map<Long, ProductSku> skuById,
                              String source) {}
+
+    /**
+     * 解析供应商档案引用（issue #7369 段 2，用户 2026-10-20 裁定 **A 口径**）。
+     *
+     * <h3>三条分支（逐条有判据）</h3>
+     * <ol>
+     *   <li><b>显式给了 {@code supplierId}</b> ⇒ 必须是本租户、未软删、**在用**的档案：
+     *       跨租户/不存在 ⇒ 422「供应商档案不存在」；停用 ⇒ 422「已停用，不能收货」。
+     *       <b>不猜、不兜底</b>：档案状态是商家自己的决定，系统不替它放宽。</li>
+     *   <li><b>没给、但文本能精确匹配到唯一一家</b> ⇒ 自动补上（省掉一次手工选择；
+     *       这也是历史行回填用的同一把尺子）。</li>
+     *   <li><b>都没成</b>（无文本 / 匹配不上 / 同名多家 = 歧义）⇒ **留 NULL**，进「待指派」清单。
+     *       绝不按模糊匹配猜一家 —— 猜错等于把两家的账并成一家，不可逆。</li>
+     * </ol>
+     */
+    // 包私有（非 private）仅为可直接判据：它只碰 inboundOrderMapper，不需要起整个建单流程。
+    String resolveSupplierId(Long tenantId, String requestedId, String supplierText) {
+        String explicitId = trimToNull(requestedId);
+        if (explicitId != null) {
+            String status = inboundOrderMapper.selectSupplierStatusInTenant(tenantId, explicitId);
+            if (status == null) {
+                throw BusinessException.validationError("供应商档案不存在或不属于当前租户：" + explicitId);
+            }
+            if (SupplierService.STATUS_INACTIVE.equals(status)) {
+                throw BusinessException.validationError(
+                        "供应商已停用，不能用于新建入库单：若要继续收货，请先在「供应商」页启用它");
+            }
+            return explicitId;
+        }
+        if (supplierText == null) {
+            return null;
+        }
+        List<String> matched = inboundOrderMapper.selectSupplierIdsByExactName(tenantId, supplierText);
+        // 唯一匹配才自动补；0 家 = 未建档、多家 = 同名歧义 ⇒ 都留 NULL（人工出口 = 待指派清单）
+        return matched.size() == 1 ? matched.get(0) : null;
+    }
 
     /** 该商品在本租户下的全部 SKU（id → 实体） */
     private Map<Long, ProductSku> skusOfProduct(String productId) {

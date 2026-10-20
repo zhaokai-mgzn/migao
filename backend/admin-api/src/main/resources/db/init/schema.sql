@@ -1663,11 +1663,48 @@ CREATE INDEX IF NOT EXISTS idx_stock_ledger_tenant_ref
 -- 单号 RK-yyyyMMdd-NNNN **租户内唯一**（V117 统一口径：改前是全局唯一索引，与建表注释矛盾）；
 -- import_run_id + source 见 V117（建单幂等键 / 单据来源）。
 -- 行业依据（缸号/批次）见 docs/curtain-selling-method-industry-research.md §1/§8.2。
+-- ================================================
+-- 供应商主数据（issue #7369，P0-1 段 1；V170 的终态同步）
+-- ================================================
+CREATE TABLE IF NOT EXISTS suppliers (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    name VARCHAR(128) NOT NULL,
+    contact_name VARCHAR(64),
+    contact_phone VARCHAR(32),
+    payment_terms_days INTEGER,
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    remark TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    CONSTRAINT ck_suppliers_status CHECK (status IN ('active', 'inactive')),
+    CONSTRAINT ck_suppliers_terms CHECK (payment_terms_days IS NULL OR (payment_terms_days >= 0 AND payment_terms_days <= 365))
+);
+
+CREATE INDEX IF NOT EXISTS idx_suppliers_tenant_name
+    ON suppliers (tenant_id, name)
+    WHERE deleted = FALSE;
+
+COMMENT ON TABLE suppliers IS '供应商主数据（issue #7369，P0-1 段 1）：一行 = 一家供应商。单据侧引用（supplier_id）由段 2 落地 —— 本表不参与任何既有单据写面。';
+COMMENT ON COLUMN suppliers.payment_terms_days IS '账期天数：NULL = 未设置；0 = 现结；正数 = 账期（0~365，越界由 CHECK 与服务层双向拦）';
+COMMENT ON COLUMN suppliers.status IS '档案状态：active 在用 / inactive 停用（停用后不可再被新单据选中，由段 2 在写面拦）';
+
+ALTER TABLE suppliers ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation_suppliers ON suppliers;
+CREATE POLICY tenant_isolation_suppliers ON suppliers
+    USING (tenant_id::text = current_setting('app.current_tenant_id'));
+
+-- 供应商主数据（issue #7369，P0-1 段 1；V170 终态）：**必须排在 `inbound_orders` 之前** ——
+-- 后者的 `supplier_id` 是外键（V173），建库脚本按文件顺序执行，反了就是「关系 suppliers 不存在」。
 CREATE TABLE IF NOT EXISTS inbound_orders (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
     inbound_no VARCHAR(32) NOT NULL,                 -- RK-yyyyMMdd-NNNN（租户内唯一）
     supplier VARCHAR(128),
+    -- 供应商档案引用（V173，issue #7369 段 2）：NULL = 未建档 / 待指派；历史行按**名称精确匹配**回填
+    --（用户 2026-10-20 裁定 A 口径），既有 supplier 文本列一字未改。
+    supplier_id VARCHAR(64) REFERENCES suppliers(id),
     supplier_doc_no VARCHAR(64),
     warehouse VARCHAR(64),
     inbound_date DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -1700,6 +1737,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_inbound_orders_tenant_import_run
     WHERE import_run_id IS NOT NULL AND deleted = 0;
 CREATE INDEX IF NOT EXISTS idx_inbound_orders_tenant_status_date
     ON inbound_orders (tenant_id, status, inbound_date DESC);
+CREATE INDEX IF NOT EXISTS idx_inbound_orders_supplier_id
+    ON inbound_orders (tenant_id, supplier_id)
+    WHERE supplier_id IS NOT NULL AND deleted = 0;
 CREATE INDEX IF NOT EXISTS idx_inbound_orders_tenant_supplier
     ON inbound_orders (tenant_id, supplier);
 COMMENT ON TABLE inbound_orders IS
@@ -2390,8 +2430,8 @@ CREATE INDEX idx_ticket_notes_tenant ON ticket_notes(tenant_id);
 
 -- orders 索引
 CREATE INDEX idx_orders_tenant ON orders(tenant_id);
--- ⚠️ `idx_orders_order_no` 已于 V171 删除（与 `order_no` 的 UNIQUE 约束索引完全重复）；
--- 新建库不再建它，存量库由 `V171__add_hot_path_indexes.sql` 的 `DROP INDEX IF EXISTS` 收敛。
+-- ⚠️ `idx_orders_order_no` 已于 V173 删除（与 `order_no` 的 UNIQUE 约束索引完全重复）；
+-- 新建库不再建它，存量库由 `V173__add_hot_path_indexes.sql` 的 `DROP INDEX IF EXISTS` 收敛。
 CREATE INDEX idx_orders_status ON orders(status);
 CREATE INDEX idx_orders_created_at ON orders(created_at DESC);
 CREATE INDEX idx_orders_deleted ON orders(deleted);
@@ -3728,42 +3768,11 @@ COMMENT ON COLUMN quality_inspections.inspector_id IS '检验人（独立质检�
 COMMENT ON COLUMN quality_inspections.inspector_kind IS '检验人身份类别（V163 / issue #7162）：employee 观星台员工 / worker 工人端（工人 session）；存量行默认 employee';
 COMMENT ON COLUMN quality_inspections.inspected_at IS '检验时刻：取业务时钟单点 BusinessClock（Asia/Shanghai）—— 不使用无参 now()（issue #3802 / BusinessClockSourceGuardTest）';
 
--- ================================================
--- 供应商主数据（issue #7369，P0-1 段 1；V170 的终态同步）
--- ================================================
-CREATE TABLE IF NOT EXISTS suppliers (
-    id VARCHAR(64) PRIMARY KEY,
-    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
-    name VARCHAR(128) NOT NULL,
-    contact_name VARCHAR(64),
-    contact_phone VARCHAR(32),
-    payment_terms_days INTEGER,
-    status VARCHAR(16) NOT NULL DEFAULT 'active',
-    remark TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    deleted BOOLEAN NOT NULL DEFAULT FALSE,
-    CONSTRAINT ck_suppliers_status CHECK (status IN ('active', 'inactive')),
-    CONSTRAINT ck_suppliers_terms CHECK (payment_terms_days IS NULL OR (payment_terms_days >= 0 AND payment_terms_days <= 365))
-);
-
-CREATE INDEX IF NOT EXISTS idx_suppliers_tenant_name
-    ON suppliers (tenant_id, name)
-    WHERE deleted = FALSE;
-
-COMMENT ON TABLE suppliers IS '供应商主数据（issue #7369，P0-1 段 1）：一行 = 一家供应商。单据侧引用（supplier_id）由段 2 落地 —— 本表不参与任何既有单据写面。';
-COMMENT ON COLUMN suppliers.payment_terms_days IS '账期天数：NULL = 未设置；0 = 现结；正数 = 账期（0~365，越界由 CHECK 与服务层双向拦）';
-COMMENT ON COLUMN suppliers.status IS '档案状态：active 在用 / inactive 停用（停用后不可再被新单据选中，由段 2 在写面拦）';
-
-ALTER TABLE suppliers ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS tenant_isolation_suppliers ON suppliers;
-CREATE POLICY tenant_isolation_suppliers ON suppliers
-    USING (tenant_id::text = current_setting('app.current_tenant_id'));
--- 15. 热点查询索引补齐（V171，2026-10-20 索引审查第一刀）
+-- 15. 热点查询索引补齐（V173，2026-10-20 索引审查第一刀）
 -- ================================================
 -- 为什么集中放在文件末尾：这些索引的承载表里有收尾才建的（如 `quality_inspections`），
 -- 放在各自建表语句旁边会**越序**（表还没建就建索引）。
--- 判据：`tests/unit_ci_workflows/test_db_hot_path_indexes.py`（本段 ⇄ V171 逐条对账 + 前导列断言）；
+-- 判据：`tests/unit_ci_workflows/test_db_hot_path_indexes.py`（本段 ⇄ V173 逐条对账 + 前导列断言）；
 -- 真库形态由 `tests/unit_ci_workflows/test_schema_bootstrap_order.py` 的
 -- `ON_ERROR_STOP=1` 全文执行兜底。
 --

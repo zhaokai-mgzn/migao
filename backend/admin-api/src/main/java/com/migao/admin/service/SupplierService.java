@@ -3,13 +3,17 @@ package com.migao.admin.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.migao.admin.entity.Supplier;
 import com.migao.admin.exception.BusinessException;
+import com.migao.admin.dto.UnassignedInboundSupplier;
+import com.migao.admin.mapper.InboundOrderMapper;
 import com.migao.admin.mapper.SupplierMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 供应商主数据服务（issue #7369，P0-1 段 1）。
@@ -35,6 +39,9 @@ public class SupplierService {
     public static final String STATUS_INACTIVE = "inactive";
 
     private final SupplierMapper supplierMapper;
+
+    /** 待指派清单的聚合查询落在单据侧（issue #7369 段 2）—— 语义属入库单，不在这里写第二份 SQL。 */
+    private final InboundOrderMapper inboundOrderMapper;
 
     /** 本租户供应商列表：可按名称/联系人/电话模糊搜；在用在前、名称升序（停用的沉底，不平铺打扰）。 */
     public List<Supplier> list(Long tenantId, String keyword) {
@@ -88,6 +95,25 @@ public class SupplierService {
         supplierMapper.updateById(existing);
         log.info("[supplier] 更新 | tenant={} id={} status={}", tenantId, id, existing.getStatus());
         return existing;
+    }
+
+    /**
+     * 「待指派」清单（issue #7369 段 2，A 口径的人工出口）：有供应商**文本**但没有档案**引用**的入库单。
+     *
+     * <p>为什么必须有这个出口：A 口径明令「匹配不上不猜」—— 不猜就必须**看得见**，否则那批单据
+     * 永远停在「按供应商统计不到」的状态，而没有任何东西会提醒。按文本名分组、单数多的在前。</p>
+     */
+    public List<UnassignedInboundSupplier> unassignedInboundSuppliers(Long tenantId) {
+        List<Map<String, Object>> rows = inboundOrderMapper.selectUnassignedSupplierNames(tenantId);
+        List<UnassignedInboundSupplier> out = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            Object date = row.get("last_inbound_date");
+            out.add(new UnassignedInboundSupplier(
+                    String.valueOf(row.get("supplier_name")),
+                    ((Number) row.get("order_count")).intValue(),
+                    date == null ? null : java.time.LocalDate.parse(String.valueOf(date))));
+        }
+        return out;
     }
 
     private String normalizeName(String raw) {

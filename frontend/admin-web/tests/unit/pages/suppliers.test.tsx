@@ -33,12 +33,14 @@ vi.mock('@/lib/permission', () => ({
 }))
 
 const mockList = vi.fn()
+const mockUnassigned = vi.fn()
 const mockCreate = vi.fn()
 const mockUpdate = vi.fn()
 
 vi.mock('@/lib/api', () => ({
   supplierApi: {
     list: (...args: unknown[]) => mockList(...args),
+    unassignedInbound: (...args: unknown[]) => mockUnassigned(...args),
     create: (...args: unknown[]) => mockCreate(...args),
     update: (...args: unknown[]) => mockUpdate(...args),
   },
@@ -57,6 +59,7 @@ describe('供应商档案页', () => {
     vi.clearAllMocks()
     mockHas.mockImplementation((code: string) => code === 'inbound:create')
     mockList.mockResolvedValue({ data: { data: ROWS } })
+    mockUnassigned.mockResolvedValue({ data: { data: [] } })
     mockCreate.mockResolvedValue({ data: { data: ROWS[0] } })
     mockUpdate.mockResolvedValue({ data: { data: ROWS[0] } })
   })
@@ -141,5 +144,27 @@ describe('供应商档案页', () => {
     expect(screen.queryByText('新建供应商')).toBeNull()
     expect(screen.queryByTestId('supplier-toggle-sup-1')).toBeNull()
     expect(screen.getAllByText('只读').length).toBeGreaterThan(0)
+  })
+
+  it('待指派清单：卡上列出名字 / 单数 / 最近日期，且「建档」把名字预填进表单', async () => {
+    mockUnassigned.mockResolvedValue({ data: { data: [
+      { supplierName: '没建过档的厂', orderCount: 3, lastInboundDate: '2026-10-01' },
+      { supplierName: '老数据厂', orderCount: 1, lastInboundDate: null },
+    ] } })
+    render(<SuppliersPage />)
+
+    await waitFor(() => expect(screen.getByTestId('supplier-unassigned')).toBeInTheDocument())
+    expect(screen.getByText('没建过档的厂')).toBeInTheDocument()
+    expect(screen.getByTestId('unassigned-没建过档的厂')).toHaveTextContent('3 张入库单')
+    expect(screen.getByTestId('unassigned-没建过档的厂')).toHaveTextContent('2026-10-01')
+
+    fireEvent.click(screen.getByTestId('unassigned-create-没建过档的厂'))
+    expect(screen.getByTestId('supplier-form-name')).toHaveValue('没建过档的厂')
+  })
+
+  it('无待指派 ⇒ 整卡不渲染（空卡比没有卡更吵）', async () => {
+    render(<SuppliersPage />)
+    await waitFor(() => expect(screen.getByTestId('supplier-table')).toBeInTheDocument())
+    expect(screen.queryByTestId('supplier-unassigned')).toBeNull()
   })
 })
