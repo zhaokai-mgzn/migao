@@ -5,6 +5,7 @@ import {
   buildCloseOrderPayload,
   buildRefundPayload,
 } from './data-adapter'
+import type { CustomerCreditStatus } from '@/types'
 import type { RefundOrderParams } from './data-adapter'
 // 发货读面（issue #5651）：真值 owner = `OrderShipmentService.readShipment`，这里只声明形状
 import type { OrderShipmentRead } from './sales-shipment'
@@ -1646,6 +1647,13 @@ export const customerApi = {
     }
     return request.put<ApiResponse<Customer>>(`/api/admin/customers/${id}`, payload)
   },
+
+  // 客户授信（issue #7370）：额度 / 账期 / 已欠 / 可用。null = 未启用授信（与额度 0 可区分）。
+  getCredit: (id: string) =>
+    request.get<ApiResponse<CustomerCreditStatus>>(`/api/admin/customers/${id}/credit`),
+
+  updateCredit: (id: string, data: { creditLimit: number | null; paymentTermsDays: number | null }) =>
+    request.put<ApiResponse<CustomerCreditStatus>>(`/api/admin/customers/${id}/credit`, data),
 
   getCustomerTags: () =>
     request.get<ApiResponse<CustomerTag[]>>('/api/admin/customer-tags'),

@@ -595,6 +595,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         BigDecimal totalAmount = MoneyScale.requireTwoDecimalsOrNull(
                 computeItemsTotal(request.getItems(), itemFees), "订单总额");
 
+        // ── 授信额度闸门（issue #7370，P0-2 段 1）──
+        // 口径见 CreditPolicy：NULL = 未启用（存量客户零回归）；0 = 零额度（拒一切赊销）。
+        // 判在**任何写之前**，且挂在三条路径（表单 / Agent / 程序化）共用的唯一入口上。
+        customerService.assertWithinCredit(tenantId, request.getCustomerPhone(), totalAmount);
+
         // ── 建单同步回加工费组合配置（issue #4872）──
         // 用户原话「当订单创建成功后，同步新增加工费组合&单价到加工费配置中」。
         // 口径：只对 **fee_source=manual** 的行（= 组合未命中活跃价目 ∧ 本行给了正数 override）

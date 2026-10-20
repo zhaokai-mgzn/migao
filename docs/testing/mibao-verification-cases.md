@@ -2429,7 +2429,7 @@
 真值: ai-chat.context-memory, ai-chat.intent-domains, order.states, order.logistics, id-resolve.index
 溯源: eval M007 独有（物流查询是旅程一环，独立用例见 OR-005）。2026-09-14 消除顺序依赖（issue #3568）：① 「看看第一个的详情」→ 点名「遮光窗帘」（推荐列表返回顺序依赖，同 OR-024 #3408）；② 色号「白色」→ 种子真实色号「米白」；③ 收尾裸文本「确认下单/确认」→ 答卡轮（#3518 口径）；④ 补 pre_clean product_dedupe + must_succeed[order_create]；2026-09-18 补前置自断言 precondition[product_count_for_keyword 遮光窗帘 expect=1]（issue #4046 的 OR-* 优先档 burn-down） ｜ 2026-09-24（issue #5247，用户裁定 2026-09-23 B 端只读化）：order_create 从 B 端解绑 ⇒ 本用例退役（理由写在 skip_reason，条目不删除）；expectations 由 [product_search, product_detail, order_create, order_query] 改判为 [product_search, product_detail, order_query]，must_succeed 里的 order_create 同步移除（否则成为永不满足的悬空声明）；user_inputs / auto_fill / pre_clean / precondition / namespaces / data_checks 原样未动（下单剧本保留为历史记录、不再进运行期）。 ｜ 2026-10-16（issue #7048 P1 · 项 C，按 #7035 第一相审计报告 §2.2）：新增 `forbidden_tools[order_create]` + `want_text[订单]`（同口径）—— 全旅程中段「下单」不再是合格行为，改成「不得真去下单 + 如实说明并引导后台订单页」；`user_inputs` / `expectations` / `pre_clean` / `precondition` / `namespaces` / `data_checks` 一字未动（剧本改写归产品侧 un-skip 批次 #7040）。 ｜ tags: multi_turn, real_scenario, cross_skill, full_journey
 
-## 客户域（12 case）
+## 客户域（13 case）
 
 ### CU-001. 客户列表 🟢
 ```
@@ -2602,6 +2602,20 @@
 ```
 真值: customer-list.profile-view
 溯源: 2026-10-03 新增（issue #6217 / 族 3 · 包 4 / V1）：族 3（跨域具名视图）此前只有 product_health（#5369）与 customer_profile（#5456），本条目为**客户价值分层 / 流失预警**视图的专属用例 —— 它答的是页面结构上做不到的问题（客户列表只有单客户维度，无法按流失风险排序）。⚠️ 不并进简报表快照（先例 #5458 裁定：权限面不同 ⇒ 复用即越权）；取数只用三条既有只读端点。 ｜ tags: query, tool, cross-domain, disclosure, churn
+
+### CU-013. 客户授信额度与账期：超限拒单（服务端闸门）/ 未启用不拦（零回归）/「额度 0」≠「未启用」（issue #7370，P0-2 段 1） 🔵
+```
+你: 用户（2026-10-20，逐字）：「p0 p1 逐步推进落地」—— 要求把中型企业能力缺口按 P0→P1 逐项做成可合并的最小闭环，P0-2 = 授信/账期/应收。
+数据: **口径（本单裁定，两处同源）**：`credit_limit` **NULL = 未启用授信**（存量客户默认 ⇒ 一律放行，零回归）；**0 = 启用但零额度**（拒一切赊销）；正数 = 额度（闭区间，恰好等于可用额度放行）；负额度 = 配置错误 ⇒ 抛（不许静默当 0 或不限）。落地 = `backend/admin-api/src/main/java/com/migao/admin/service/CreditPolicy.java`。
+数据: **判据 1（纯函数逐格）**：`backend/admin-api/src/test/java/com/migao/admin/service/CreditPolicyTest.java`（7 条：NULL 放行 / 额度内可用=额度-已欠 / 超额给 excess / 闭区间边界 / 零额度拒 0.01 / null 金额视为 0 / 负额度抛）。红证 = TDD 第一步实测 `./mvnw -o -Dtest=CreditPolicyTest test` ⇒ `找不到符号: CreditPolicy`（编译级红）。
+数据: **判据 2（下单闸门挂在唯一入口）**：`OrderService.createOrder` 在算出 `totalAmount` 之后、**任何写之前**调 `customerService.assertWithinCredit(...)` —— 该方法是表单 / Agent（`createOrderForAgent` 手工 new 请求）/ 程序化三条路径的共用入口，故闸门无死角。
+数据: **判据 3（已欠口径可复算）**：`OrderMapper.selectOutstandingTotal` = `SUM(total_amount)` where `paid_at IS NULL AND status <> 'cancelled'`；未建档客户（按手机号匹配不到）⇒ 不校验（不猜）。⚠️ 部分收款仍按全额计入（偏保守），逐笔核销属 P0-2 段 3。
+数据: **判据 4（前端不发假读数）**：`frontend/admin-web/tests/unit/pages/customer-detail.test.tsx`（4 条：显示服务端额度/账期/已欠/可用；保存发**数字**；清空发 **null** 而非 0；负额度前端拦下且不发请求）。
+数据: **边界（照实登记）**：① 只拦「赊销超限」，不拦现结订单（订单尚未区分付款方式，P0-2 段 3 承接）；② 审批出口（谁可批超额）归 P1-2；③ 账龄分档（0-30/31-60/…）与收款核销未在本段落地（issue #7370 段 2/3）。
+前置: 本用例是 [backend-contract]：前置 = `customer_profiles` 有 `credit_limit` / `payment_terms_days` 两列（V169 迁移 + 建库脚本终态）；客户详情页与 `GET/PUT /api/admin/customers/{id}/credit` 在场。零网络、零 LLM。
+跳过: [backend-contract] 服务端授权/金额闸门 + 页面读数契约，由 Java 单测与 vitest 页面判据验证，非 LLM 行为，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-20 新增（issue #7370，P0-1 之后按用户「逐步推进」落地为 P0-2 段 1）。落码 = ① V169 迁移（两列）+ 建库脚本终态同步；② CreditPolicy（纯函数口径）+ 7 条判据；③ OrderService 下单闸门；④ CustomerService.creditStatus/updateCreditSettings + 两个端点；⑤ 客户详情页「授信与往来」卡片 + 4 条页面判据；⑥ CHANGELOG。⚠️ **未做（照实登记）**：部分收款核销、账龄分档、审批出口、现结订单豁免 —— 分属 #7370 段 2/3 与 #7374(P1-2)。取号 = 现取 origin/main 的 CU 最大 012 ⇒ CU-013。 ｜ tags: backend-contract, credit, credit-limit, payment-terms, receivable, admin-api, red-proof
 
 ## 数据域（24 case）
 
@@ -12192,8 +12206,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：833（活跃 141，跳过 692）
-- tier 分布：smoke 12 / normal 765 / adversarial 32
+- 用例总数：834（活跃 141，跳过 693）
+- tier 分布：smoke 12 / normal 766 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12202,7 +12216,7 @@
 - 分类域：3
 - 对话边界域：51
 - 跨域：3
-- 客户域：12
+- 客户域：13
 - 数据域：24
 - 防御域：24
 - 财务对账域：6
@@ -12251,6 +12265,7 @@
 - CH-049: 做不了的事如实说：问「帮我开个客服账号」不得承诺代办，须说清办不了 + 给后台落点
 - CH-051: 能力边界正向：问「能改商品名称吗」不得被误判为不支持（改名是 ✅）
 - CH-052: 上下架按裁定 A 不做：问「批量下架」不得声称已下架，须给商品管理落点
+- CU-013: 客户授信额度与账期：超限拒单（服务端闸门）/ 未启用不拦（零回归）/「额度 0」≠「未启用」（issue #7370，P0-2 段 1）
 - DA-008: 智能每日经营简报：企业开关熔断（关闭=不生成+菜单隐藏，issue #3468）
 - DA-009: 智能每日经营简报：数字回填校验（LLM 编造即丢弃，issue #3468）
 - DA-010: 智能每日经营简报：PII 不进 prompt + RLS 隔离（issue #3468）

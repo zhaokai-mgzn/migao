@@ -515,6 +515,8 @@ CREATE TABLE customer_profiles (
 
     -- 客户等级与状态
     vip_level VARCHAR(16) DEFAULT 'normal',  -- normal / vip1 / vip2 / vip3
+    credit_limit NUMERIC(12,2),              -- 授信额度（issue #7370）：NULL = 未启用；0 = 零额度
+    payment_terms_days INTEGER,              -- 账期天数（issue #7370）：NULL = 未设置；0 = 现结
     customer_status VARCHAR(32) DEFAULT 'active',  -- active / silent / churn_warning / churned
     source_channel VARCHAR(32) DEFAULT 'wechat_mini',  -- wechat_mini / h5 / web
 

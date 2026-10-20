@@ -3415,6 +3415,25 @@ _CASE_CU_012 = EvalCase(
     precondition='本用例是 [backend-contract] 的**视图契约**用例（不进 agent-eval 冒烟）：两条 user_inputs 是**同一能力**的两种问法（「哪些老客户最近不下单了」/「谁最值得维护」），不是两次会话。前置 = 三条既有只读端点可用且当前账号同持 customer:view + order:list + after_sales:view（缺任一面 ⇒ 工具 fail-closed 并点名缺哪个码）。该前置由 backend/ai-agent-service/tests/test_customer_manage.py 的 TestCustomerValueAction 逐面构造并断言（三面各失败一次都必须 cross_domain_fetch_failed + 点名权限码）⇒ 前置不成立（端点 / 权限码改名）时单测直接红，不会表现为「agent 不干活」',
 )
 
+# ── CU-013 [NORMAL] 客户授信额度与账期：超限拒单（服务端闸门）/ 未启用不拦（零回归）/「额度 0」≠「未启用」（issue #7370，P0-2 段 1）（源: cases/customer.yml）──
+_CASE_CU_013 = EvalCase(
+    id='CU-013',
+    legacy_id='',
+    title='客户授信额度与账期：超限拒单（服务端闸门）/ 未启用不拦（零回归）/「额度 0」≠「未启用」（issue #7370，P0-2 段 1）',
+    skill=Skill.CUSTOMER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-20，逐字）：「p0 p1 逐步推进落地」—— 要求把中型企业能力缺口按 P0→P1 逐项做成可合并的最小闭环，P0-2 = 授信/账期/应收。'],
+    expectations=[],
+    data_checks=['**口径（本单裁定，两处同源）**：`credit_limit` **NULL = 未启用授信**（存量客户默认 ⇒ 一律放行，零回归）；**0 = 启用但零额度**（拒一切赊销）；正数 = 额度（闭区间，恰好等于可用额度放行）；负额度 = 配置错误 ⇒ 抛（不许静默当 0 或不限）。落地 = `backend/admin-api/src/main/java/com/migao/admin/service/CreditPolicy.java`。', '**判据 1（纯函数逐格）**：`backend/admin-api/src/test/java/com/migao/admin/service/CreditPolicyTest.java`（7 条：NULL 放行 / 额度内可用=额度-已欠 / 超额给 excess / 闭区间边界 / 零额度拒 0.01 / null 金额视为 0 / 负额度抛）。红证 = TDD 第一步实测 `./mvnw -o -Dtest=CreditPolicyTest test` ⇒ `找不到符号: CreditPolicy`（编译级红）。', '**判据 2（下单闸门挂在唯一入口）**：`OrderService.createOrder` 在算出 `totalAmount` 之后、**任何写之前**调 `customerService.assertWithinCredit(...)` —— 该方法是表单 / Agent（`createOrderForAgent` 手工 new 请求）/ 程序化三条路径的共用入口，故闸门无死角。', "**判据 3（已欠口径可复算）**：`OrderMapper.selectOutstandingTotal` = `SUM(total_amount)` where `paid_at IS NULL AND status <> 'cancelled'`；未建档客户（按手机号匹配不到）⇒ 不校验（不猜）。⚠️ 部分收款仍按全额计入（偏保守），逐笔核销属 P0-2 段 3。", '**判据 4（前端不发假读数）**：`frontend/admin-web/tests/unit/pages/customer-detail.test.tsx`（4 条：显示服务端额度/账期/已欠/可用；保存发**数字**；清空发 **null** 而非 0；负额度前端拦下且不发请求）。', '**边界（照实登记）**：① 只拦「赊销超限」，不拦现结订单（订单尚未区分付款方式，P0-2 段 3 承接）；② 审批出口（谁可批超额）归 P1-2；③ 账龄分档（0-30/31-60/…）与收款核销未在本段落地（issue #7370 段 2/3）。'],
+    skip_reason='[backend-contract] 服务端授权/金额闸门 + 页面读数契约，由 Java 单测与 vitest 页面判据验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['backend-contract', 'credit', 'credit-limit', 'payment-terms', 'receivable', 'admin-api', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `customer_profiles` 有 `credit_limit` / `payment_terms_days` 两列（V169 迁移 + 建库脚本终态）；客户详情页与 `GET/PUT /api/admin/customers/{id}/credit` 在场。零网络、零 LLM。',
+)
+
 # ── DA-001 [NORMAL] 经营概览（源: cases/data.yml）──
 _CASE_DA_001 = EvalCase(
     id='DA-001',
@@ -15773,6 +15792,7 @@ ALL_CASES = (
     _CASE_CU_010,
     _CASE_CU_011,
     _CASE_CU_012,
+    _CASE_CU_013,
     _CASE_DA_001,
     _CASE_DA_002,
     _CASE_DA_003,

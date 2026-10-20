@@ -731,4 +731,95 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
         }
         return row;
     }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // 客户授信与往来（issue #7370，P0-2 段 1）
+    // 口径：NULL = 未启用授信（存量客户零回归）；0 = 启用但零额度；正数 = 额度（闭区间）。
+    // 判定谓词在 CreditPolicy（纯函数，逐格有判据）；本类只做「取数 + 调它 + 落库」。
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 该客户的已欠合计（未结清订单金额）。
+     *
+     * <p>口径 = `paid_at IS NULL` 且未取消的订单金额之和；逐笔核销（P0-2 段 3）上线后换成
+     * 「Σ订单 - Σ核销收款 + Σ退款」，本方法签名不变。
+     */
+    public BigDecimal creditOutstanding(Long tenantId, String phone) {
+        if (!StringUtils.hasText(phone)) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal value = orderMapper.selectOutstandingTotal(tenantId, phone);
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
+    /** 授信读数：未启用授信 ⇒ creditLimit/available 为 null（与「额度 0」可区分）。 */
+    public com.migao.admin.dto.CreditStatusResponse creditStatus(String customerId) {
+        CustomerProfile profile = customerProfileMapper.selectById(customerId);
+        if (profile == null) {
+            throw BusinessException.notFound("客户");
+        }
+        BigDecimal limit = profile.getCreditLimit();
+        BigDecimal outstanding = creditOutstanding(profile.getTenantId(), profile.getPhone());
+        BigDecimal available = limit == null
+                ? null
+                : CreditPolicy.evaluate(limit, outstanding, BigDecimal.ZERO).available();
+        return com.migao.admin.dto.CreditStatusResponse.builder()
+                .customerId(customerId)
+                .creditLimit(limit)
+                .paymentTermsDays(profile.getPaymentTermsDays())
+                .outstanding(outstanding)
+                .available(available)
+                .build();
+    }
+
+    /**
+     * 下单闸门：超出授信额度 ⇒ 拒绝（提示含额度 / 已欠 / 本单 / 尚缺）。
+     * 未建档客户或未启用授信 ⇒ 放行（与存量行为逐字一致）。
+     */
+    public void assertWithinCredit(Long tenantId, String phone, BigDecimal amount) {
+        if (!StringUtils.hasText(phone)) {
+            return;
+        }
+        CustomerProfile profile = customerProfileMapper.selectOne(new LambdaQueryWrapper<CustomerProfile>()
+                .eq(CustomerProfile::getTenantId, tenantId)
+                .eq(CustomerProfile::getPhone, phone)
+                .last("LIMIT 1"));
+        if (profile == null || profile.getCreditLimit() == null) {
+            return;
+        }
+        BigDecimal outstanding = creditOutstanding(tenantId, phone);
+        CreditPolicy.Decision decision = CreditPolicy.evaluate(profile.getCreditLimit(), outstanding, amount);
+        if (!decision.allowed()) {
+            log.info("[credit] 超授信被拒 | tenant={} customer={} limit={} outstanding={} amount={} excess={}",
+                    tenantId, profile.getId(), profile.getCreditLimit(), outstanding, amount, decision.excess());
+            throw BusinessException.validationError(String.format(
+                    "超出客户授信额度：本单 ¥%s + 已欠 ¥%s > 额度 ¥%s，尚缺 ¥%s。"
+                            + "请先收款/冲账，或由管理员在客户详情调整授信额度。",
+                    amount.toPlainString(), outstanding.toPlainString(),
+                    profile.getCreditLimit().toPlainString(), decision.excess().toPlainString()));
+        }
+    }
+
+    /** 设置/清空授信（显式 null = 停用授信）。 */
+    public com.migao.admin.dto.CreditStatusResponse updateCreditSettings(
+            String customerId, com.migao.admin.dto.CreditSettingsRequest request) {
+        CustomerProfile profile = customerProfileMapper.selectById(customerId);
+        if (profile == null) {
+            throw BusinessException.notFound("客户");
+        }
+        BigDecimal limit = request.getCreditLimit();
+        Integer terms = request.getPaymentTermsDays();
+        if (limit != null && limit.signum() < 0) {
+            throw BusinessException.validationError("授信额度不得为负：" + limit.toPlainString());
+        }
+        if (terms != null && (terms < 0 || terms > 365)) {
+            throw BusinessException.validationError("账期天数须在 0~365 之间：" + terms);
+        }
+        profile.setCreditLimit(limit);
+        profile.setPaymentTermsDays(terms);
+        customerProfileMapper.updateById(profile);
+        log.info("[credit] 授信设置 | tenant={} customer={} limit={} terms={}",
+                profile.getTenantId(), customerId, limit, terms);
+        return creditStatus(customerId);
+    }
 }
