@@ -65,7 +65,32 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
     public PageResponse<CustomerProfile> getCustomerPage(long page, long size,
                                                           String sourceChannel, String vipLevel,
                                                           String keyword, Long tenantId) {
+        return getCustomerPage(page, size, sourceChannel, vipLevel, keyword, tenantId, null);
+    }
+
+    /**
+     * 客户列表 + **数据范围**（issue #7372 段 2）。
+     *
+     * <p>口径（用户 2026-10-21 裁定）：「加『客户负责人』字段，未指派的按『有单的客户』兜底」⇒
+     * `owner_user_id = 我` **或**（`owner_user_id IS NULL` 且我有该客户（按 phone 关联）的单）。
+     * 没有兜底的话，存量客户全是未指派 ⇒ 业务员上线当天看不见任何客户，看起来像数据丢了。</p>
+     *
+     * @param scopeOwnerId 非 null ⇒ 本人范围（值 = 当前用户 id）；null ⇒ 不收窄（租户级）
+     */
+    public PageResponse<CustomerProfile> getCustomerPage(long page, long size,
+                                                          String sourceChannel, String vipLevel,
+                                                          String keyword, Long tenantId,
+                                                          String scopeOwnerId) {
         LambdaQueryWrapper<CustomerProfile> wrapper = new LambdaQueryWrapper<>();
+        if (StringUtils.hasText(scopeOwnerId)) {
+            // 本人范围：我负责的 + 未指派但我出过单的（子查询按 phone 归属，与账龄口径同键）
+            wrapper.and(w -> w.eq(CustomerProfile::getOwnerUserId, scopeOwnerId)
+                    .or()
+                    .apply("(owner_user_id IS NULL AND EXISTS ("
+                            + "SELECT 1 FROM orders o WHERE o.tenant_id = customer_profiles.tenant_id"
+                            + " AND o.deleted = 0 AND o.created_by = {0}"
+                            + " AND o.customer_phone = customer_profiles.phone))", scopeOwnerId));
+        }
 
         // 来源渠道筛选
         if (StringUtils.hasText(sourceChannel)) {
@@ -117,8 +142,22 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
      * @return 客户详情Map
      */
     public Map<String, Object> getCustomerDetail(String customerId) {
+        return getCustomerDetail(customerId, null);
+    }
+
+    /**
+     * 客户详情 + **数据范围**（issue #7372 段 2）：范围外 ⇒ 与「不存在」**同一个 404**（不 403，
+     * 不泄露「这个客户存在」）。
+     *
+     * <p>判据与列表**同一条**（{@link #ownedByMe}）：列表筛掉的和详情拦掉的必须是同一批，
+     * 否则会出现「列表里没有、拼 id 却打得开」这种半成品。</p>
+     */
+    public Map<String, Object> getCustomerDetail(String customerId, String scopeOwnerId) {
         CustomerProfile profile = customerProfileMapper.selectById(customerId);
         if (profile == null) {
+            throw BusinessException.notFound("客户");
+        }
+        if (StringUtils.hasText(scopeOwnerId) && !ownedByMe(profile, scopeOwnerId)) {
             throw BusinessException.notFound("客户");
         }
 
@@ -878,4 +917,53 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
     }
 
 
+
+    /**
+     * 指派 / 撤回客户负责人（issue #7372 段 2）—— 这一列**唯一**的写入点。
+     *
+     * <p>为什么必须有这个入口：没有写入点，`owner_user_id` 永远只有 `NULL`（未指派），
+     * 数据范围 `self` 就只能靠「出过单」兜底 ⇒ 「把客户分给某人」这件事在系统里**不存在**。
+     * 有了它，兜底才只是兜底，而不是唯一规则。</p>
+     *
+     * @param ownerUserId 新负责人 id；**null / 空白 = 撤回指派**（回到「未指派」，重新走兜底）
+     */
+    public void assignOwner(String customerId, String ownerUserId) {
+        CustomerProfile profile = customerProfileMapper.selectById(customerId);
+        if (profile == null) {
+            throw BusinessException.notFound("客户");
+        }
+        String normalized = org.springframework.util.StringUtils.hasText(ownerUserId)
+                ? ownerUserId.trim() : null;
+        // 走实体 setter + updateById（本仓既有写法）：字段真值判据按 setter 识别写入点，
+        // 用 Lambda 的 `.set(...)` 会被判成「零写入点」而红（那是判据的射程，改判据不如按既有写法写）
+        profile.setOwnerUserId(normalized);
+        customerProfileMapper.updateById(profile);
+    }
+
+    /**
+     * 客户是否属于该用户的**本人范围**（issue #7372 段 2）：与列表 SQL **同一口径**，
+     * 不另写第二份规则。
+     *
+     * <ul>
+     *   <li>负责人是本人 ⇒ 可见；</li>
+     *   <li>未指派（`owner_user_id IS NULL`）且本人有该客户（按 phone）的单 ⇒ 可见（存量兜底）；</li>
+     *   <li>已指派给别人 ⇒ 不可见（哪怕本人出过单 —— 指派是明确的业务决定，不能被兜底覆盖）。</li>
+     * </ul>
+     */
+    private boolean ownedByMe(CustomerProfile profile, String userId) {
+        if (userId.equals(profile.getOwnerUserId())) {
+            return true;
+        }
+        if (profile.getOwnerUserId() != null) {
+            return false;
+        }
+        if (!org.springframework.util.StringUtils.hasText(profile.getPhone())) {
+            return false;
+        }
+        Long count = orderMapper.selectCount(new LambdaQueryWrapper<com.migao.admin.entity.Order>()
+                .eq(com.migao.admin.entity.Order::getTenantId, profile.getTenantId())
+                .eq(com.migao.admin.entity.Order::getCreatedBy, userId)
+                .eq(com.migao.admin.entity.Order::getCustomerPhone, profile.getPhone()));
+        return count != null && count > 0;
+    }
 }

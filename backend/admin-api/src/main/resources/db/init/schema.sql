@@ -520,6 +520,9 @@ CREATE TABLE customer_profiles (
     avatar_url VARCHAR(512),
 
     -- 客户等级与状态
+    -- 客户负责人（V178，issue #7372）：NULL = 未指派；数据范围 self 时「本人可见」= 自己是负责人，
+    -- 或未指派且自己有该客户（按 phone 关联 orders.created_by）的单。
+    owner_user_id VARCHAR(64),
     vip_level VARCHAR(16) DEFAULT 'normal',  -- normal / vip1 / vip2 / vip3
     credit_limit NUMERIC(12,2),              -- 授信额度（issue #7370）：NULL = 未启用；0 = 零额度
     payment_terms_days INTEGER,              -- 账期天数（issue #7370）：NULL = 未设置；0 = 现结
@@ -2538,6 +2541,9 @@ CREATE INDEX idx_agent_messages_tenant ON agent_messages(tenant_id);
 
 -- customer_profiles 索引
 CREATE INDEX idx_customer_profiles_tenant ON customer_profiles(tenant_id);
+-- 负责人下的客户（V178，issue #7372 段 2）：数据范围 self 的列表查询走这条
+CREATE INDEX IF NOT EXISTS idx_customer_profiles_owner
+    ON customer_profiles (tenant_id, owner_user_id);
 CREATE INDEX idx_customer_profiles_phone ON customer_profiles(phone);
 CREATE INDEX idx_customer_profiles_wechat ON customer_profiles(wechat_openid);
 CREATE INDEX idx_customer_profiles_status ON customer_profiles(customer_status);
