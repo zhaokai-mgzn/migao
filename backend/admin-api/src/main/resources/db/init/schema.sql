@@ -110,8 +110,11 @@ CREATE TABLE user_roles (
     role_id VARCHAR(64) NOT NULL REFERENCES roles(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    deleted INTEGER DEFAULT 0,
-    UNIQUE(user_id, role_id)
+    deleted INTEGER DEFAULT 0
+    -- 🔴 原 `UNIQUE(user_id, role_id)`（全表唯一）已于 V166（issue #7256）删除：
+    -- 全表唯一会把「软删 → 重新授予同一角色」永久挡住。终态 = 部分唯一索引
+    -- `uk_user_roles_active (user_id, role_id) WHERE deleted = 0`（见本文件第 15 节）。
+    -- 新建库曾经只为「存量库删了、脚本没删」而保留这条约束 ⇒ 两库行为不同（已随本段收敛）。
 );
 
 -- 用户身份表：支持多种登录方式（微信小程序、公众号、密码等）
@@ -2387,7 +2390,8 @@ CREATE INDEX idx_ticket_notes_tenant ON ticket_notes(tenant_id);
 
 -- orders 索引
 CREATE INDEX idx_orders_tenant ON orders(tenant_id);
-CREATE INDEX idx_orders_order_no ON orders(order_no);
+-- ⚠️ `idx_orders_order_no` 已于 V171 删除（与 `order_no` 的 UNIQUE 约束索引完全重复）；
+-- 新建库不再建它，存量库由 `V171__add_hot_path_indexes.sql` 的 `DROP INDEX IF EXISTS` 收敛。
 CREATE INDEX idx_orders_status ON orders(status);
 CREATE INDEX idx_orders_created_at ON orders(created_at DESC);
 CREATE INDEX idx_orders_deleted ON orders(deleted);
@@ -3755,6 +3759,126 @@ ALTER TABLE suppliers ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation_suppliers ON suppliers;
 CREATE POLICY tenant_isolation_suppliers ON suppliers
     USING (tenant_id::text = current_setting('app.current_tenant_id'));
+-- 15. 热点查询索引补齐（V171，2026-10-20 索引审查第一刀）
+-- ================================================
+-- 为什么集中放在文件末尾：这些索引的承载表里有收尾才建的（如 `quality_inspections`），
+-- 放在各自建表语句旁边会**越序**（表还没建就建索引）。
+-- 判据：`tests/unit_ci_workflows/test_db_hot_path_indexes.py`（本段 ⇄ V171 逐条对账 + 前导列断言）；
+-- 真库形态由 `tests/unit_ci_workflows/test_schema_bootstrap_order.py` 的
+-- `ON_ERROR_STOP=1` 全文执行兜底。
+--
+-- 形态说明：老表是「单列拼盘」（tenant_id / status / deleted 各一条），真实读面却是
+-- `WHERE tenant_id = ? AND deleted = 0 [AND 过滤列] ORDER BY <时间列> DESC LIMIT n`
+-- ⇒ 只能取本租户全部行再 Sort。本段把老表补到与新表同形态（`(tenant_id, …) WHERE deleted = 0`）。
+
+-- 1. 订单：列表 / 状态筛选 / 客户页 / C 端「我的订单」
+CREATE INDEX IF NOT EXISTS idx_orders_tenant_created
+    ON orders (tenant_id, created_at DESC, id) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_orders_tenant_status_created
+    ON orders (tenant_id, status, created_at DESC) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_orders_tenant_phone
+    ON orders (tenant_id, customer_phone) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_orders_tenant_user_created
+    ON orders (tenant_id, user_id, created_at DESC) WHERE deleted = 0;
+
+-- 2. 通知：收件箱分页 + 未读数（前端 30s 轮询；`<>` 只能作部分索引谓词）
+CREATE INDEX IF NOT EXISTS idx_notifications_inbox
+    ON notifications (tenant_id, recipient_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_unread
+    ON notifications (tenant_id, recipient_id) WHERE status <> 'read';
+
+-- 3. 审计日志：列表 / 登录日志
+CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant_created
+    ON audit_logs (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant_action_created
+    ON audit_logs (tenant_id, action, created_at DESC);
+
+-- 4. 库存：批次消耗按 batch_id（既有索引建在 batch_no 上，与读面错位）/ 台账按 sku 汇总
+CREATE INDEX IF NOT EXISTS idx_consumptions_tenant_batch_id
+    ON stock_batch_consumptions (tenant_id, batch_id) INCLUDE (delta) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_ledger_tenant_sku_cover
+    ON stock_ledger_entries (tenant_id, sku_id) INCLUDE (reason, delta) WHERE deleted = 0;
+
+-- 5. 生产：工人计件按 worker_id（既有索引第二列是 worker_name）/ 期间报表按 work_date
+CREATE INDEX IF NOT EXISTS idx_work_logs_tenant_worker_id_date
+    ON production_work_logs (tenant_id, worker_id, work_date) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_work_logs_tenant_date
+    ON production_work_logs (tenant_id, work_date) WHERE deleted = 0;
+
+-- 6. 扫码：OR 两支用不上 COALESCE 表达式唯一索引 ⇒ 两条单列部分索引（BitmapOr）
+CREATE INDEX IF NOT EXISTS idx_labels_short_code
+    ON inbound_labels (short_code) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_labels_revoked_code
+    ON inbound_labels (revoked_code) WHERE deleted = 0;
+
+-- 7. 商品：列表分页 / 导入幂等键
+CREATE INDEX IF NOT EXISTS idx_products_tenant_created
+    ON products (tenant_id, created_at DESC, id DESC) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_products_tenant_sku_code
+    ON products (tenant_id, sku_code, id) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_skus_tenant_sku_code
+    ON product_skus (tenant_id, sku_code);
+
+-- 8. CRM / 客服会话 / 质检 / 加工单
+CREATE INDEX IF NOT EXISTS idx_customer_profiles_tenant_created
+    ON customer_profiles (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_sessions_tenant_created
+    ON agent_sessions (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_sessions_ended
+    ON agent_sessions (tenant_id, ended_at DESC) WHERE status = 'ended';
+CREATE INDEX IF NOT EXISTS idx_quality_inspections_tenant_time
+    ON quality_inspections (tenant_id, inspected_at) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_processing_orders_tenant_created
+    ON processing_orders (tenant_id, created_at DESC) WHERE deleted = 0;
+
+-- 9. 部位码 / 部位工序 / 发货单（列表按 COALESCE 表达式排序 ⇒ 表达式索引）
+CREATE INDEX IF NOT EXISTS idx_set_part_tokens_order
+    ON processing_set_part_tokens (tenant_id, processing_order_id) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_position_operations_tenant_set
+    ON processing_position_operations (tenant_id, set_id)
+    WHERE deleted = 0 AND set_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_shipments_tenant_list
+    ON order_shipments (tenant_id, (COALESCE(shipped_at, packed_at, created_at)) DESC, id DESC)
+    WHERE deleted = 0;
+
+-- 10. 知识卡片 / 员工 / 加工项 / 会话
+CREATE INDEX IF NOT EXISTS idx_knowledge_cards_tenant_status_updated
+    ON knowledge_cards (tenant_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_users_tenant_created
+    ON users (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_processing_items_tenant_created
+    ON processing_items (tenant_id, created_at DESC) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_sessions_tenant_updated
+    ON sessions (tenant_id, updated_at DESC) WHERE deleted = 0;
+
+-- 11. 权限判定 / 入库明细聚合
+CREATE INDEX IF NOT EXISTS idx_role_permissions_permission
+    ON role_permissions (permission_id);
+CREATE INDEX IF NOT EXISTS idx_inbound_items_tenant_order
+    ON inbound_order_items (tenant_id, inbound_order_id) INCLUDE (quantity, batch_no)
+    WHERE deleted = 0;
+
+-- 12. 补齐：建库脚本 ⇄ 已发布迁移的**存量漂移**（2026-10-20 索引审查顺带发现）
+-- 判据：`tests/unit_ci_workflows/test_db_hot_path_indexes.py` 的
+-- `test_every_live_migration_index_reaches_bootstrap`（活目录里每条 `CREATE INDEX` 的产成品
+-- 都必须在建库脚本里逐字存在；被后续迁移 DROP 掉的对象按「表已不在脚本」自动豁免）。
+-- 这四条索引/约束的迁移早已发布，但效果**从未同步进建库脚本** ⇒ 新建库与存量库是两份真相
+-- （最严重的一条：`user_roles` 新建库还留着全表 `UNIQUE(user_id, role_id)`，会让
+-- 「软删后重新授予同一角色」在新建库上失败、在存量库上成功）。
+CREATE INDEX IF NOT EXISTS idx_orders_tenant_status_shipped_at
+    ON orders (tenant_id, shipped_at)
+    WHERE status = 'shipped' AND deleted = 0;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_order_logistics_tenant_order
+    ON order_logistics (tenant_id, order_id) WHERE deleted = 0;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_user_roles_active
+    ON user_roles (user_id, role_id) WHERE deleted = 0;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_customer_profiles_phone
+    ON customer_profiles (tenant_id, phone);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_customer_profiles_openid
+    ON customer_profiles (tenant_id, wechat_openid);
 
 -- ================================================
 -- END OF SCHEMA

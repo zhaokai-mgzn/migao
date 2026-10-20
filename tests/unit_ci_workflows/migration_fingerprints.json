@@ -166,6 +166,7 @@
     "V168__drop_product_manage_permission.sql": "sha256:364c90af0825a013bcc7aea4ed40b2c681b71bf116294055809180c10092d6e5",
     "V169__add_customer_credit_terms.sql": "sha256:bf6e15a77c601a26cb18cb2980feaa1d1e30f30dadd1c1d094c186b4b350c539",
     "V170__create_suppliers.sql": "sha256:777a48246697e093fde679ce879a93a29a13d8798dfc5ef96709534ba37a5839",
-    "schema.sql": "sha256:67d919fc9a9b6782fd45c5c0b38c83eaf33465768346a329366d023030df3222"
+    "schema.sql": "sha256:28984a4b58858a395049e2909cbaf1a3ab493d3b75a520f2c4e828a4ec255ba3",
+    "V171__add_hot_path_indexes.sql": "sha256:0f3f72900dad67a58e33b47253bb85eab67ac1c2c5aaa2ec61f7e48352ccfb91"
   }
 }
