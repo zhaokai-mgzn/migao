@@ -147,6 +147,15 @@ class MoneyEntryPrecisionMetaGuardTest {
                         Admission.EQUIVALENT_GATED,
                         "特殊选项对客单价经 optionalCustomerPrice 的 setScale(2, UNNECESSARY) 准入"),
 
+                site("com/migao/admin/service/SupplierPaymentService.java", "SupplierPayment.builder()",
+                        Admission.GATED,
+                        "供应商付款金额（issue #7369 段 3-B）：落库前过 "
+                        + "MoneyScale.requireTwoDecimalsOrNull(amount, \"付款金额\")"),
+                site("com/migao/admin/service/SupplierPaymentService.java",
+                        "SupplierPaymentAllocation.builder()", Admission.GATED,
+                        "付款冲抵金额（issue #7369 段 3-B）：逐行落库前过 "
+                        + "MoneyScale.requireTwoDecimalsOrNull(part, \"冲抵金额\")"),
+
                 // ── ③ #6228 补齐的金额入口（GATED：落库前复用 MoneyScale 单点准入）────
                 site("com/migao/admin/service/AfterSalesTicketService.java", "setRefundAmount", Admission.GATED,
                         "建单入口 createTicket 开头过 MoneyScale：工单 refund_amount 列 NUMERIC(10,2)；"

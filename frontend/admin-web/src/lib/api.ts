@@ -9,6 +9,8 @@ import type {
   CustomerCreditStatus,
   Supplier,
   SupplierPayableSummary,
+  SupplierPaymentRequest,
+  SupplierPaymentView,
   UnassignedInboundSupplier,
 } from '@/types'
 import type { RefundOrderParams } from './data-adapter'
@@ -1655,6 +1657,15 @@ export const supplierApi = {
   // 应付对账（issue #7369 段 3-A）：累计收货额 / 单据数 / 尚欠（A 段无付款登记）
   payables: () =>
     request.get<ApiResponse<SupplierPayableSummary>>('/api/admin/suppliers/payables'),
+
+  // 付款（issue #7369 段 3-B）：一笔付款可冲抵多张入库单；不传 allocations = 挂账/预付
+  createPayment: (data: SupplierPaymentRequest) =>
+    request.post<ApiResponse<SupplierPaymentView>>('/api/admin/supplier-payments', data),
+  voidPayment: (id: string, reason: string) =>
+    request.post<ApiResponse<SupplierPaymentView>>(`/api/admin/supplier-payments/${id}/void`, { reason }),
+  listPayments: (supplierId?: string) =>
+    request.get<ApiResponse<SupplierPaymentView[]>>('/api/admin/supplier-payments',
+      supplierId ? { params: { supplierId } } : undefined),
 }
 
 // 客户管理 API

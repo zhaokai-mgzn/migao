@@ -7084,6 +7084,25 @@ _CASE_SP_003 = EvalCase(
     precondition='本用例是 [backend-contract]：前置 = `suppliers`(V170) + `inbound_orders.supplier_id`(V173) 在场。零网络、零 LLM。',
 )
 
+# ── SP-004 [NORMAL] 供应商付款：一笔付款可冲抵多张入库单；差额=预付合法；单张单不许超付；作废留痕必须写原因（issue #7369 段 3-B）（源: cases/misc.yml）──
+_CASE_SP_004 = EvalCase(
+    id='SP-004',
+    legacy_id='',
+    title='供应商付款：一笔付款可冲抵多张入库单；差额=预付合法；单张单不许超付；作废留痕必须写原因（issue #7369 段 3-B）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-20，逐字）：「按实际的来，2.根据常见做法来裁定」—— 段 3-B 付款按**实际业务**：一笔付款冲抵多张入库单（付款单 + 冲抵明细），支持先打款后到票（预付）；采购单按常见做法允许部分收货与提前关闭。'],
+    expectations=[],
+    data_checks=['**改前**：只有「累计收货额」这一个发生额视图（段 3-A），没有付款登记 ⇒ 「尚欠」永远等于收货额。', '**判据 1（一张付款多张单）**：`supplier_payments` + `supplier_payment_allocations`（V174）；`InboundOrderSupplierLinkTest` 之外由 `SupplierPaymentServiceTest#createAllocatesAcrossTwoOrders` 断言「1 笔付款 → 2 行冲抵、未冲抵=差额」。', '**判据 2（预付合法）**：不冲任何单 = 整笔未冲抵（`unallocatedAmount = amount`），**不许当错误拒**。判据 = `SupplierPaymentServiceTest#paymentWithoutAllocationIsPrepayment`。', '**判据 3（不许超付同一张单）**：单张单累计冲抵（仅计**有效**付款）≤ 该单金额。判据 = `#allocationCannotExceedOrderRemaining`；作废后额度释放 = `#voidedPaymentNoLongerOccupiesOrder`。红证方向：删掉这条比较 ⇒ 当场红。', '**判据 4（只冲本供应商的 posted 单）**：跨供应商 / 草稿单都拒。判据 = `#onlyOwnPostedOrdersCanBeAllocated`。', "**判据 5（作废留痕）**：`status='voided'` + 谁/何时/为什么，必须写原因、不许重复作废；作废不计入聚合。判据 = `#voidRequiresReasonAndIsIdempotentGuarded`。", '**判据 6（对账真值）**：`GET /api/admin/suppliers/payables` 的 `paidAmount` = 有效付款之和，`outstanding = 收货额 − 已付`（**负数 = 预付**，页面显示「预付 ¥x」而不截零）。判据 = `SupplierServiceTest#payableSummaryMapsRowsAndTotals` + `suppliers.test.tsx`。', '**判据 7（不替财务猜单）**：前端「登记付款」只提交金额/日期/方式，**不带 allocations**。判据 = `suppliers.test.tsx`（断言 payload.allocations === undefined）。', '**边界（照实登记）**：不做按单勾对 UI、不做对账单/账龄/红冲、不做付款审批流（属 P1-2 具名审批）。'],
+    skip_reason='[backend-contract] 涉钱写面的约束与读面聚合，由 Java 单测与 vitest 页面判据验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'supplier', 'payables', 'money', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `suppliers`(V170) + `inbound_orders.supplier_id`(V173) + 两张付款表(V174)。零网络、零 LLM。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -16086,6 +16105,7 @@ ALL_CASES = (
     _CASE_SP_001,
     _CASE_SP_002,
     _CASE_SP_003,
+    _CASE_SP_004,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

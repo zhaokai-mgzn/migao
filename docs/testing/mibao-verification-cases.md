@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（122 case）
+## 杂项域（123 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5497,6 +5497,23 @@
 跳过: [backend-contract] 只读聚合 + 响应契约 + 页面文案，由 Java 单测与 vitest 页面判据验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-20 新增（issue #7369 段 3-A；用户「a」）。落码 = ① `InboundOrderMapper.selectSupplierPayables`（posted-only 聚合）；② `SupplierPayable` / `SupplierPayableSummary` 记录 + `SupplierService.payableSummary`；③ `GET /api/admin/suppliers/payables`（`inbound:view`）；④ 供应商页「按供应商累计收货额（应付对账）」卡（逐家 + 合计 + 已付列显示「未登记」）。**未做（照实登记）**：付款流水 / 账龄 / 对账单 / 红冲。 ｜ tags: backend-contract, supplier, payables, read-model, red-proof
+
+### SP-004. 供应商付款：一笔付款可冲抵多张入库单；差额=预付合法；单张单不许超付；作废留痕必须写原因（issue #7369 段 3-B） 🔵
+```
+你: 用户（2026-10-20，逐字）：「按实际的来，2.根据常见做法来裁定」—— 段 3-B 付款按**实际业务**：一笔付款冲抵多张入库单（付款单 + 冲抵明细），支持先打款后到票（预付）；采购单按常见做法允许部分收货与提前关闭。
+数据: **改前**：只有「累计收货额」这一个发生额视图（段 3-A），没有付款登记 ⇒ 「尚欠」永远等于收货额。
+数据: **判据 1（一张付款多张单）**：`supplier_payments` + `supplier_payment_allocations`（V174）；`InboundOrderSupplierLinkTest` 之外由 `SupplierPaymentServiceTest#createAllocatesAcrossTwoOrders` 断言「1 笔付款 → 2 行冲抵、未冲抵=差额」。
+数据: **判据 2（预付合法）**：不冲任何单 = 整笔未冲抵（`unallocatedAmount = amount`），**不许当错误拒**。判据 = `SupplierPaymentServiceTest#paymentWithoutAllocationIsPrepayment`。
+数据: **判据 3（不许超付同一张单）**：单张单累计冲抵（仅计**有效**付款）≤ 该单金额。判据 = `#allocationCannotExceedOrderRemaining`；作废后额度释放 = `#voidedPaymentNoLongerOccupiesOrder`。红证方向：删掉这条比较 ⇒ 当场红。
+数据: **判据 4（只冲本供应商的 posted 单）**：跨供应商 / 草稿单都拒。判据 = `#onlyOwnPostedOrdersCanBeAllocated`。
+数据: **判据 5（作废留痕）**：`status='voided'` + 谁/何时/为什么，必须写原因、不许重复作废；作废不计入聚合。判据 = `#voidRequiresReasonAndIsIdempotentGuarded`。
+数据: **判据 6（对账真值）**：`GET /api/admin/suppliers/payables` 的 `paidAmount` = 有效付款之和，`outstanding = 收货额 − 已付`（**负数 = 预付**，页面显示「预付 ¥x」而不截零）。判据 = `SupplierServiceTest#payableSummaryMapsRowsAndTotals` + `suppliers.test.tsx`。
+数据: **判据 7（不替财务猜单）**：前端「登记付款」只提交金额/日期/方式，**不带 allocations**。判据 = `suppliers.test.tsx`（断言 payload.allocations === undefined）。
+数据: **边界（照实登记）**：不做按单勾对 UI、不做对账单/账龄/红冲、不做付款审批流（属 P1-2 具名审批）。
+前置: 本用例是 [backend-contract]：前置 = `suppliers`(V170) + `inbound_orders.supplier_id`(V173) + 两张付款表(V174)。零网络、零 LLM。
+跳过: [backend-contract] 涉钱写面的约束与读面聚合，由 Java 单测与 vitest 页面判据验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-20 新增（issue #7369 段 3-B；用户「按实际的来」）。落码 = V174 两表 + `SupplierPaymentService`（四条硬约束）+ `SupplierPaymentController`（finance:create / finance:view）+ 对账聚合扣减已付 + 供应商页「登记付款」弹窗（只登记实付金额，不猜冲抵）。**未做（照实登记）**：按单勾对 UI / 对账单 / 账龄 / 红冲 / 付款审批。 ｜ tags: backend-contract, supplier, payables, money, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12279,8 +12296,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：839（活跃 141，跳过 698）
-- tier 分布：smoke 12 / normal 771 / adversarial 32
+- 用例总数：840（活跃 141，跳过 699）
+- tier 分布：smoke 12 / normal 772 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12295,7 +12312,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：122
+- 杂项域：123
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12461,6 +12478,7 @@
 - SP-001: 供应商主数据：新表 + 档案 CRUD（校验三态：名称/账期/状态）+ 菜单三源与路由守卫同构（issue #7369，P0-1 段 1）
 - SP-002: 入库单挂供应商档案：A 口径（名称精确匹配自动挂 / 同名多家不猜留 NULL / 待指派清单兜人工）（issue #7369 段 2）
 - SP-003: 供应商应付对账（A 段轻口径）：按供应商累计收货额 + 合计；付款登记未做 ⇒ 显式标 paymentsRecorded=false 并显示「未登记」（issue #7369 段 3-A）
+- SP-004: 供应商付款：一笔付款可冲抵多张入库单；差额=预付合法；单张单不许超付；作废留痕必须写原因（issue #7369 段 3-B）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

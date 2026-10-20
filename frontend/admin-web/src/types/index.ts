@@ -2462,6 +2462,38 @@ export interface UnassignedInboundSupplier {
   lastInboundDate?: string | null
 }
 
+/** 付款方式域（与后端 CHECK 逐值同域）。 */
+export type SupplierPaymentMethod = 'cash' | 'transfer' | 'wechat' | 'alipay' | 'other'
+
+/** 付款单读面（issue #7369 段 3-B）：`unallocatedAmount` = 未冲抵（预付/待勾对）。 */
+export interface SupplierPaymentView {
+  id: string
+  paymentNo: string
+  supplierId: string
+  paidAt: string
+  amount: number
+  allocatedAmount: number
+  unallocatedAmount: number
+  method: SupplierPaymentMethod
+  referenceNo?: string | null
+  remark?: string | null
+  status: 'posted' | 'voided'
+  voidedAt?: string | null
+  voidedReason?: string | null
+  allocations: { inboundOrderId: string; inboundNo?: string | null; amount: number }[]
+}
+
+/** 登记付款的请求体（allocations 省略 = 整笔挂账/预付）。 */
+export interface SupplierPaymentRequest {
+  supplierId: string
+  paidAt?: string | null
+  amount: number
+  method: SupplierPaymentMethod
+  referenceNo?: string | null
+  remark?: string | null
+  allocations?: { inboundOrderId: string; amount: number }[]
+}
+
 /** 一家供应商的应付对账面（issue #7369 段 3-A）：A 段只做对账视图，`paymentsRecorded=false` 表示「未做付款登记」。 */
 export interface SupplierPayable {
   supplierId: string
