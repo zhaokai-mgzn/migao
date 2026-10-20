@@ -4,7 +4,7 @@
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
 -- （2026-09-11 实测，逐表比对 backend/admin-api/src/main/resources/db/init/schema.sql）：
 --
---   本文件缺失（schema.sql 已有，共 45 张）：
+--   本文件缺失（schema.sql 已有，共 46 张）：
 --     agent_batches, agent_batch_items
 --      批量更新的批次资源（V127，issue #5314 服务端包 —— 一张批次 + 一张逐条明细；
 --      明细的 old_value 是**撤销的唯一依据**，**不得**改用 audit_logs：审计是有界 fail-open、丢行允许），
@@ -40,6 +40,11 @@
 --      「是按成品帘来检查的」）⇒ **没有** operation_id 列；记 检验人 / 检验时刻 / 判定（pass·rework·scrap）
 --      / 不合格原因（判定≠pass 时必填，服务层裁）；与报工是**两套并存、互不覆盖**的口径
 --      （报工 = 数量事实、质检 = 成品帘判定）—— 质检不重算报工数量、不参与计件），
+--     suppliers
+--      供应商主数据（V170，issue #7369 P0-1 段 1 —— 一行 = 一家供应商：名称 / 联系人 / 电话 /
+--      账期天数（NULL=未设置、0=现结、正数=N 天）/ 状态（active|inactive）/ 备注）。
+--      与入库单上的 `supplier` **文本列**不是同一件东西：那是单据快照，这是档案（可改名、可停用、
+--      被多张单据引用）；单据侧 `supplier_id` 引用属 issue #7369 段 2，本条只登记表本身，
 --     production_work_logs, remnant_small_item_specs, role_permissions,
 --     session_states, stock_ledger_entries,
 --     tenant_param_audit（V131，issue #5131 §22 P6：企业参数变更留痕 = 一行一个参数键的一次变更；
