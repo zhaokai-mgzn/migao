@@ -193,6 +193,9 @@ export default function SearchPanel({
         data-testid="search-panel-toggle"
         aria-expanded={expanded}
         onClick={() => setExpanded((v) => !v)}
+        // 收起态必须**看得出还能查**（用户 2026-10-20：「折叠状态需要引导用户可以打开区域查询」）：
+        // 右侧是描边按钮形态的「展开筛选」（不是一行弱文字），再补一条 title 给悬停/读屏。
+        title={expanded ? '收起筛选区' : '展开筛选区，按字段组合查询'}
         className={cn(
           'w-full flex items-center gap-2 px-5 py-3 text-left hover:bg-neutral-50 rounded-lg',
           expanded && 'rounded-b-none'
@@ -209,7 +212,19 @@ export default function SearchPanel({
             {summary}
           </span>
         )}
-        <span className="ml-auto text-sm text-primary-600 shrink-0">{expanded ? '收起' : '展开筛选'}</span>
+        {/* 收起 = **按钮形态**的入口（描边 + 放大镜）：收起态只有一行文字时，商家读不出「这里能点、
+            点了能查」；展开后同一位置降级成弱文字「收起」（主操作是查询，不与它抢视觉）。 */}
+        <span
+          data-testid="search-panel-toggle-label"
+          className={cn(
+            'ml-auto shrink-0 inline-flex items-center gap-1.5',
+            expanded
+              ? 'text-sm text-primary-600'
+              : 'h-8 px-3 rounded-lg border border-neutral-300 bg-white text-sm font-medium text-primary-700'
+          )}
+        >
+          {expanded ? '收起' : <><Search className="w-4 h-4" />展开筛选</>}
+        </span>
       </button>
 
       {/* 折叠态 body **不渲染**（不是 CSS 隐藏）⇒ 页面高度不随字段数增长 */}

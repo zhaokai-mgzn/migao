@@ -248,6 +248,8 @@ describe('OrdersPage', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     // 默认时间范围一直在生效 ⇒ 收起态必须说出来，否则看着像「全部订单」。
     expect(screen.getByTestId('search-panel-summary').textContent).toContain('近一个月')
+    // 收起态要**引导**「这里能打开去查询」（用户 2026-10-20 追加要求）。
+    expect(screen.getByTestId('search-panel-toggle-label').textContent).toContain('展开筛选')
     expect(screen.queryByPlaceholderText('请输入订单ID')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '查询' })).not.toBeInTheDocument()
   })

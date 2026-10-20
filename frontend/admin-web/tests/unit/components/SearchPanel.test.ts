@@ -317,7 +317,15 @@ describe('SearchPanel —— collapsible（issue #7388）', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     // 收起态必须说清「在筛什么」：只有一行标题的折叠条会让商家以为列表是全部订单。
     expect(screen.getByTestId('search-panel-summary').textContent).toContain('近一个月')
-    expect(screen.getByText('展开筛选')).toBeTruthy()
+
+    // 收起 ≠ 没有筛选：必须有**看得出能点**的入口（用户 2026-10-20：「折叠状态需要引导用户
+    // 可以打开区域查询」）。判据 = 入口文案 + 按钮形态（描边）+ 悬停提示都在，
+    // 只把「展开筛选」写成一行弱文字（无描边）也算没做到 —— 红证：去掉 `border` token ⇒ 红。
+    const label = screen.getByTestId('search-panel-toggle-label')
+    expect(label.textContent).toContain('展开筛选')
+    expect(tokens(label)).toContain('border')
+    expect(tokens(label)).toContain('rounded-lg')
+    expect(toggle.getAttribute('title')).toContain('展开筛选区')
   })
 
   it('点「展开筛选」⇒ 字段与按钮逐个回来、aria-expanded 翻转；再点 ⇒ 又收起', () => {
@@ -334,7 +342,10 @@ describe('SearchPanel —— collapsible（issue #7388）', () => {
     expect(screen.getByRole('button', { name: '刷新' })).toBeTruthy()
     // 展开后字段本身就在说「在筛什么」⇒ 摘要不再渲染（§31 P2：不重复同屏已有信息）。
     expect(screen.queryByTestId('search-panel-summary')).toBeNull()
-    expect(screen.getByText('收起')).toBeTruthy()
+    const label = screen.getByTestId('search-panel-toggle-label')
+    expect(label.textContent).toBe('收起')
+    // 展开后入口降级成弱文字：不与「查询」抢视觉（一屏至多一个 primary，见 ui-button-standard §2）。
+    expect(tokens(label)).not.toContain('border')
 
     fireEvent.click(toggle)
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
