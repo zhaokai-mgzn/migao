@@ -38,7 +38,7 @@ vi.mock('@/lib/api', () => ({
 import CommandPalette from '@/components/layout/CommandPalette'
 
 /**
- * 新 IA 全量 **22 项**（**2026-10-17 issue #7087**：**最前席位** → 全部分组 → 尾席位 → 独立项，
+ * 新 IA 全量 **23 项**（**2026-10-17 issue #7087**：**最前席位** → 全部分组 → 尾席位 → 独立项，
  * == `flattenMenu` 顺序；#5939 +「发货单」；#6404 +「库存明细」；#6573 +第二个一级项；
  * **#6580 生产管理组收拢为 3 项、一级项由「参数总览」改为「企业基础设置」**；
  * **#7087 撤销「工作台」组、经营看板升最前席位、删「每日简报」菜单项**）。
@@ -103,7 +103,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     expect(document.querySelectorAll('[data-testid^="command-palette-item-"]')).toHaveLength(0)
   })
 
-  it('空查询 = 全量索引：列出全部 22 项（含独立项「通知中心」），顺序 = 菜单自身顺序', async () => {
+  it('空查询 = 全量索引：列出全部 23 项（含独立项「通知中心」），顺序 = 菜单自身顺序', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
     await waitFor(() => expect(renderedKeys()).toHaveLength(23))
     expect(renderedKeys()).toEqual(ALL_KEYS)
@@ -162,11 +162,10 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     expect(screen.queryByTestId('command-palette-item-products')).toBeNull()
   })
 
-  it('组名命中：`仓储` ⇒ 仓储与物料组的 5 项（顺序 = 组内顺序；2026-10-06 库存明细紧随入库单）', async () => {
+  it('组名命中：`仓储` ⇒ 仓储与物料组的 4 项（顺序 = 组内顺序：库存明细 → 发货单 → 余料台账 → 省料看板；issue #7369 起单据三项已搬去「供应链」组）', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
     typeQuery('仓储')
-    expect(renderedKeys()).toEqual(['inbound-orders', 'suppliers', 'purchase-orders', 'stock-ledger', 'shipments', 'production-remnants',
-      'production-saving-board'])
+    expect(renderedKeys()).toEqual(['stock-ledger', 'shipments', 'production-remnants', 'production-saving-board'])
   })
 
   it('无结果：给可读文案，且列表清空（不是留着上一轮结果）', async () => {

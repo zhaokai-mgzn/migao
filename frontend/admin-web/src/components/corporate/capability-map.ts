@@ -146,14 +146,14 @@ export const capabilityDomains: CapabilityDomain[] = [
     ],
   },
   {
-    key: 'inventory-center',
-    name: '仓储与物料',
-    summary: '按布料的真实形态记账：批次、缸号与余料。',
+    key: 'supply-chain',
+    name: '供应链',
+    summary: '从谁家进的货、买了什么、什么时候到，上下游看全。',
     items: [
       {
         name: '供应商',
         detail:
-          '谁在供货、账期几天、停没停：名称 / 联系人 / 电话 / 账期（未设置、现结、N 天）/ 在用或停用，一处维护；采购单与收货随后接上。',
+          '谁在供货、账期几天、停没停：名称 / 联系人 / 电话 / 账期（未设置、现结、N 天）/ 在用或停用，一处维护。',
         icon: Handshake,
       },
       {
@@ -168,6 +168,13 @@ export const capabilityDomains: CapabilityDomain[] = [
           '草稿不动库存；过账自动生成批次号、增加库存并按移动加权平均记成本；期初建账支持 Excel 批量导入并逐行给出校验报告。',
         icon: PackageOpen,
       },
+    ],
+  },
+  {
+    key: 'inventory-center',
+    name: '仓储与物料',
+    summary: '按布料的真实形态记账：批次、缸号与余料。',
+    items: [
       {
         name: '发货单',
         detail: '全量发货单（单号 / 订单 / 客户 / 来源 / 发货人 / 实发），支持按真实尺寸 A4 补打。',

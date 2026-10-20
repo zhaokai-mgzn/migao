@@ -25,7 +25,7 @@ interface HeaderProps {
 // 路由 → 面包屑映射（与侧边栏菜单结构对齐）
 // 🔴 issue #5271 重设计后，本表的**组名**必须与 `config/menu.ts` 的 `MenuGroup.name` 逐字一致：
 //    商品管理 → **商品与加工项**；订单管理/客户管理 → **交易管理**（客户列表、财务对账并入）；
-//    入库单/余料台账/省料看板 → **仓储与物料**（新组，原在生产管理组）。
+//    入库单 → **供应链**（issue #7369：采购到货的登记面，随供应链走）；余料台账/省料看板 → **仓储与物料**。
 //    判据：tests/unit/lib/menu-breadcrumb-coverage.test.tsx（PG-038，逐菜单项断言末项 == 菜单名）。
 // 顺序敏感：更具体的子路径放在前面，避免被父路径前缀匹配
 const ROUTE_BREADCRUMB_MAP: Array<{
@@ -101,9 +101,11 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // 组名/菜单名与侧边栏 `config/menu.ts` 的 `inbound-orders` 逐字一致；
   // issue #5271：随「面料进出与消耗」动线**移入「仓储与物料」组**（原生产管理组）。
   // 供应商（issue #7369）：新增菜单项同批补面包屑（V111/#5034 漏过一次的教训）。
-  { match: (p) => p.startsWith('/suppliers'), crumbs: [{ label: '仓储与物料' }, { label: '供应商' }] },
-  { match: (p) => p.startsWith('/purchase-orders'), crumbs: [{ label: '仓储与物料' }, { label: '采购单' }] },
-  { match: (p) => p.startsWith('/inbound-orders'), crumbs: [{ label: '仓储与物料' }, { label: '入库单' }] },
+  // 🔴 issue #7369（用户 2026-10-20 裁定「得加个新大菜单」）：三项已从「仓储与物料」移到「供应链」
+  // —— 面包屑的组名必须与菜单组名逐字一致（本文件文件头的硬约束），漏改就是「同页面两个组名」。
+  { match: (p) => p.startsWith('/suppliers'), crumbs: [{ label: '供应链' }, { label: '供应商' }] },
+  { match: (p) => p.startsWith('/purchase-orders'), crumbs: [{ label: '供应链' }, { label: '采购单' }] },
+  { match: (p) => p.startsWith('/inbound-orders'), crumbs: [{ label: '供应链' }, { label: '入库单' }] },
   // 发货单（issue #5939，用户 2026-10-02 裁定）：与「入库单」对称的出口单据，同属「仓储与物料」组。
   // 组名/菜单名与侧边栏 `config/menu.ts` 的 `shipments`、服务端两处菜单节点逐字一致（判据 PG-038）。
   { match: (p) => p.startsWith('/shipments'), crumbs: [{ label: '仓储与物料' }, { label: '发货单' }] },

@@ -298,55 +298,48 @@ export const menuGroups: MenuGroup[] = [
   // 类级码逐字同码）。⚠️ **省料看板不是同码**（issue #5675 的判据 12 首次发现并登记）：它的
   // 读端点在 `StockBatchController` 上沿用 `product:list` ⇒ 节点码与该页**第一屏读端点码**不一致，
   // 已具名登记在判据 12 的残留台账（本组旧注记「另两项与各自页面的类级码同码」对省料看板不成立）。
+  // 供应链（issue #7369，用户 2026-10-20 裁定「新增的菜单不能放到仓储与物料下，得加个新大菜单」）：
+  // 这条链是「谁供货 → 买什么 → 到货登记」—— 三个节点同码 `inbound:view`（采购与收货同岗位，
+  // 零授权 delta；不新造 supplier:*/purchase:* —— 新码今天没人持有 ⇒ 菜单对所有人不可见，#4203 同族坑）。
+  // ⚠️「入库单」必须排在本组**第一个**：手机端可见面标注取该码树序**首个**承载节点（#6781），
+  // 而入库单是三者里唯一有移动端页面的（过账）。
+  {
+    key: 'supply-chain',
+    name: '供应链',
+    icon: 'Route',
+    children: [
+      // 入库单（V111，issue #5034）：商品布料入库 —— 建单（草稿）/ 过账（自动生成批次号 +
+      // 自动加库存 + 移动加权平均成本）/ 作废（仅草稿）；批次与库存台账可查。
+      // 用户 2026-10-20 裁定：它是**采购到货**的登记面，随供应链走（不在仓储与物料里）。
+      { key: 'inbound-orders', name: '入库单', icon: 'PackageOpen', path: '/inbound-orders', permissionCode: 'inbound:view', keywords: ['rkd', 'ruku', 'caigou'] },
+      // 供应商（issue #7369，P0-1 段 1）：进货**之前**的主数据（谁供货、账期几天、停没停）。
+      // ⚠️ 必须排在「入库单」之后：手机端标注取该码树序首个承载节点（#6781）。
+      // 停用后仍要能看见（档案要能改回来）⇒ 不按状态门控。
+      { key: 'suppliers', name: '供应商', icon: 'Handshake', path: '/suppliers', permissionCode: 'inbound:view', keywords: ['gys', 'gongyingshang', 'caigou', 'supplier'] },
+      // 采购单（issue #7369，P0-1 段 4）：下单（买什么/多少钱/什么时候到）→ 分次收货 → 关闭。
+      // 与入库单**一对多**（支持部分收货）；状态由后端按 Σ收货派生。
+      { key: 'purchase-orders', name: '采购单', icon: 'ShoppingBag', path: '/purchase-orders', permissionCode: 'inbound:view', keywords: ['cgd', 'caigou', 'caigoudan', 'purchase', 'po'] },
+    ],
+  },
+  // 仓储与物料（用户 2026-10-20 裁定：本组不再含单据类节点，只留**库存与出库**）
   {
     key: 'inventory-center',
     name: '仓储与物料',
     icon: 'Boxes',
     children: [
-      // 入库单（V111，issue #5034）：商品布料入库 —— 建单（草稿）/ 过账（自动生成批次号 +
-      // 自动加库存 + 移动加权平均成本）/ 作废（仅草稿）；批次与库存台账可查。
-      // ⚠️ 权限码独立（inbound:view）—— 塞进 processing:manage 的判定里会让
-      // 「有 inbound:view、没有 processing:manage」的人看不到菜单（#4203 点名的同族坑）。
-      { key: 'inbound-orders', name: '入库单', icon: 'PackageOpen', path: '/inbound-orders', permissionCode: 'inbound:view', keywords: ['rkd', 'ruku', 'caigou'] },
-      // ⚠️ 必须排在「入库单」之后：手机端可见面标注取该码树序**首个**承载节点（#6781）。
-      // 供应商（issue #7369，P0-1 段 1）：进货**之前**的主数据（谁供货、账期几天、停没停）。
-      // 码取既有的 inbound:view（不新造 supplier:view —— 新码无人持有 ⇒ 菜单对所有人不可见，#4203 同族坑；
-      // 同组「发货单」取 order:list 是同一先例）。停用后仍要能看见（档案要能改回来）⇒ 不按状态门控。
-      { key: 'suppliers', name: '供应商', icon: 'Handshake', path: '/suppliers', permissionCode: 'inbound:view', keywords: ['gys', 'gongyingshang', 'caigou', 'supplier'] },
-      // 采购单（issue #7369，P0-1 段 4）：下单（买什么/多少钱/什么时候到）→ 分次收货 → 关闭。
-      // 码取既有的 inbound:view（不新造 purchase:view —— 新码今天没有岗位持有 ⇒ 菜单对所有人不可见，#4203 同族坑）；
-      // ⚠️ 必须排在「入库单」之后：手机端标注取该码树序**首个**承载节点（#6781）。
-      { key: 'purchase-orders', name: '采购单', icon: 'ShoppingBag', path: '/purchase-orders', permissionCode: 'inbound:view', keywords: ['cgd', 'caigou', 'caigoudan', 'purchase', 'po'] },
-      // 库存明细（issue #6404）：SKU 级库存**变化流水**的读面。后端端点（issue #4055）与
-      // agent 工具（issue #5247）**早就有**，页面是 `StockLedgerController` 的 javadoc 里逐字登记的
-      // **显式延后项**（「本轮只做只读端点，不做前端页面」）⇒ 结果是同一个问题黄金策答得出、
-      // 商家在后台点不出来。本节点把那个缺口补上。
-      // 🔴 节点码 = 该页第一屏读端点（`GET /api/admin/stock-ledger`）的**方法级**
-      // `@RequirePermission("product:list")`（逐字同码，不新造码 —— 新码今天无人持有 ⇒
-      // 节点对所有人不可见，#4203 同族坑）。同组「省料看板」是同款先例（issue #5699 P4）。
-      // ⚠️ 组内顺序（用户 2026-10-06 方案 A1）：**紧跟进库单** —— 进仓之后第一件要看的就是**账**
-      // （「为什么系统说还有 30 米、实际只剩 12 米」只有流水答得出）。
+      // 库存明细（issue #6404）：SKU 级库存**变化流水**的读面（「为什么系统说还有 30 米、实际只剩 12 米」）。
+      // 节点码 = 该页第一屏读端点（`GET /api/admin/stock-ledger`）的方法级 `product:list`（逐字同码）。
+      // 先例 = 「省料看板」同取 `product:list`（issue #5699 P4）。
       { key: 'stock-ledger', name: '库存明细', icon: 'ScrollText', path: '/stock-ledger', permissionCode: 'product:list', keywords: ['kcmx', 'kucun', 'mingxi', 'liushui', 'taizhang', '台账'] },
-      // 发货单（issue #5939，用户 2026-10-02 裁定）：**与「入库单」对称**的出口单据 ——
-      // 用户原话「我让你开发过发货单的，但是在大菜单上没见到这个单据」。
-      // 在此之前发货单只有**按单**入口（订单详情 →「发货」/「打印发货单」），全量发货单无处可查。
-      // 🔴 权限码 = `order:list`（**既有**码，不新造）：与「销售订单」节点、页面守卫、以及该页第一屏
-      // 读端点 `GET /api/admin/shipments` 的 @RequirePermission 四处逐字同码 ⇒ **零授权 delta**
-      //（能看订单的人就能看发货单）。反例：新造 `shipment:view` ⇒ 今天没有任何岗位持有该码 ⇒
-      // 菜单节点对**所有人**不可见（#4203 同族坑：「有权限码但没人持有 = 零菜单入口」）。
+      // 发货单（issue #5939，用户 2026-10-02 裁定）：与「入库单」对称的**出口**单据；
+      // 取**既有** `order:list`（与销售订单同码、零授权 delta）。
       { key: 'shipments', name: '发货单', icon: 'Truck', path: '/shipments', permissionCode: 'order:list', keywords: ['fhd', 'fahuo', 'shipment', 'chuku', '出库', '发货'] },
-      // 余料台账（issue #5146 建页 / issue #5191 进侧边栏）：L2 批次余量的台账面。
-      // 权限码沿用 processing:manage —— 与 `RemnantController` 的类级 `@RequirePermission("processing:manage")`
-      // 逐字同码（**不放宽也不收紧**既有门禁；新开权限码反而会让既有 operator 岗位凭空多一处授权缺口）。
+      // 余料台账（PR-106 / issue #5191）：码 = `processing:manage`（`RemnantController` 类级码逐字同码）
       { key: 'production-remnants', name: '余料台账', icon: 'Recycle', path: '/production/remnants', permissionCode: 'processing:manage', keywords: ['yltz', 'yuliao', 'huishou'] },
-      // 省料看板（issue #5159）：L2 批次余量分档聚合 + L3 单位产出的面料消耗。
-      // 一屏同时给两条指标（①「剩余 ≤0.2m 的批次占比」②「入库/采购总米数」）并把
-      // 「单看①会被排料省料误导」写在页面上；存量导入批次单独成组、不与切换后混算。
-      // issue #5699（P4）：节点码 = 该页第一屏读码 `product:list`（StockBatchController 方法级注解），路由守卫同批同码。
+      // 省料看板（issue #5699 P4）：两个读端点在 `StockBatchController` 上是方法级 `product:list`
       { key: 'production-saving-board', name: '省料看板', icon: 'TrendingDown', path: '/production/saving-board', permissionCode: 'product:list', keywords: ['slkb', 'shengliao', 'haoliao'] },
     ],
   },
-  // #2969: 组织管理组（员工管理 + 岗位权限 + 企业基础信息）
   {
     key: 'org-center',
     name: '组织管理',

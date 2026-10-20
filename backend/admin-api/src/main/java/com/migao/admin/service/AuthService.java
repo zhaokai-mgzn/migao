@@ -1427,20 +1427,22 @@ public class AuthService {
         // 🔴 入库单（V111，issue #5034）权限码**独立**（inbound:view）且必须落在**自己的 if** 里：
         // 入库是仓储动作、不是加工动作 —— 塞进下面 processing:manage 的判定会让
         // 「有 inbound:view、没有 processing:manage」的仓管看不到菜单（#4203 同族坑）。
+        // 供应链（issue #7369，用户 2026-10-20 裁定「得加个新大菜单」）：谁供货 → 买什么 → 到货登记
+        List<UserInfoResponse.MenuItem> supplyChainChildren = new java.util.ArrayList<>();
         List<UserInfoResponse.MenuItem> inventoryChildren = new java.util.ArrayList<>();
         // 供应商（issue #7369）：档案面，码与 MenuController / menu.ts 三处逐字一致（inbound:view）。
         // 与「入库单」**各自一个 if**：本仓的菜单解析器认「`permissions.contains(...)` 之后紧接
         // `xxx.add(menuItem(...))`」这一形态（每条 add 一个 if 是既有写法，两个 add 塞一个 if 会让
         // 解析器只认第一条 —— 实测 `auth:入库单` 与 `auth:供应商` 同时读成 None）。
         if (isAll || permissions.contains("inbound:view")) {
-            inventoryChildren.add(menuItem("inbound-orders", "入库单", "/inbound-orders"));
+            supplyChainChildren.add(menuItem("inbound-orders", "入库单", "/inbound-orders"));
         }
         if (isAll || permissions.contains("inbound:view")) {
-            inventoryChildren.add(menuItem("suppliers", "供应商", "/suppliers"));
+            supplyChainChildren.add(menuItem("suppliers", "供应商", "/suppliers"));
         }
         // 采购单（issue #7369 段 4）：一条 add 一个 if —— 合并进上面的 if 会让解析器只读到第一条（#6781 同族）。
         if (isAll || permissions.contains("inbound:view")) {
-            inventoryChildren.add(menuItem("purchase-orders", "采购单", "/purchase-orders"));
+            supplyChainChildren.add(menuItem("purchase-orders", "采购单", "/purchase-orders"));
         }
         // 库存明细（issue #6404）：SKU 级库存**变化流水**的读面 —— 后端端点（issue #4055）与 agent
         // 工具（issue #5247）早就有，页面是该控制器 javadoc 里逐字登记的显式延后项。
@@ -1467,6 +1469,9 @@ public class AuthService {
         // ⇒ 按子菜单粒度把节点码收敛到该读码（此前节点挂 processing:manage = 节点码 ≠ 页面读码）。
         if (isAll || permissions.contains("product:list")) {
             inventoryChildren.add(menuItem("production-saving-board", "省料看板", "/production/saving-board"));
+        }
+        if (!supplyChainChildren.isEmpty()) {
+            menus.add(menuGroup("supply-chain", "供应链", supplyChainChildren));
         }
         if (!inventoryChildren.isEmpty()) {
             menus.add(menuGroup("inventory-center", "仓储与物料", inventoryChildren));

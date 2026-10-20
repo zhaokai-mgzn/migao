@@ -18,7 +18,7 @@ P3 做三件事，**都不改行为**（零 delta）：
 | 面 | 派生（本文件的被测对象） | 现值（对照） |
 |---|---|---|
 | `pages[]`（**新进清单**） | 23 页：`gate` 菜单可见码 + `units` 第一屏读码 → 端点 + 逐页 `visibility_rule` | 四跳现取（菜单节点 → 页面锚点 → `lib/api.ts` → Java 生效码） |
-| C1 / C3 码列 | `menu_node_codes`（28 节点）/ `auth_menu_codes`（22 条） | `parse_menu_ts_nodes` / `parse_menus()['auth']` |
+| C1 / C3 码列 | `menu_node_codes`（29 节点）/ `auth_menu_codes`（22 条） | `parse_menu_ts_nodes` / `parse_menus()['auth']` |
 | C4 守卫码列 | `route_guard_codes`（每页 `path → gate`） | `parse_route_guard`（29 条前缀） |
 | 页面面两张台账 | `multi_code_pages`（一页多码）/ `parity_residual_pages`（节点码 ≠ 页面读码） | `MULTI_READ_ENDPOINT_PAGES`（0）/ `MENU_READ_PARITY_RESIDUALS`（0） |
 | 可见性 | `visibility`（按 `visibility_rule` 把 units 投影成「看得见该菜单的岗位集」） | 现值岗位集（`seed` ∪ `fallback` 的持码者） |

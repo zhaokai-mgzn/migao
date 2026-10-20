@@ -559,13 +559,14 @@ describe('Header', () => {
 
   // 入库单（issue #5071）：V111（#5034）新增该菜单项时**漏了 Header 的匹配表** ⇒ 该页面包屑
   // 落兜底分支（当时只剩「工作台」一项，实测），§15.2「面包屑与侧边栏菜单名一致」不成立。
-  // issue #5271：随「面料进出与消耗」动线**移入新组「仓储与物料」**（原生产管理组）。
-  it('/inbound-orders 路径面包屑（仓储与物料 > 入库单，issue #5071 补 / #5271 改判组名）', async () => {
+  // 🔴 issue #7369（用户 2026-10-20 裁定「得加个新大菜单」）：入库单已从「仓储与物料」移到新组「供应链」
+  // —— 面包屑组名必须与菜单组名逐字一致（`Header.tsx` 文件头的硬约束），本用例就是钉它的那一处。
+  it('/inbound-orders 路径面包屑（供应链 > 入库单，issue #5071 补 / #5271 原判仓储与物料 / #7369 改判供应链）', async () => {
     mockPathname = '/inbound-orders'
     await act(async () => {
       render(<Header />)
     })
-    expect(screen.getByText('仓储与物料')).toBeInTheDocument()
+    expect(screen.getByText('供应链')).toBeInTheDocument()
     expect(screen.getByText('入库单')).toBeInTheDocument()
     // 不得回落成兜底（#7087 起兜底 = 单级「经营看板」）
     expect(screen.queryByText('工作台')).not.toBeInTheDocument()

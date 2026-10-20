@@ -60,9 +60,10 @@ describe('菜单图标注册表（issue #5271 / PR-106 / MC-019）', () => {
   it('判据① 正向不漏：`menu.ts` 的每个图标名都已注册（漏注册 = 静默回落 BarChart3）', () => {
     // 面非空自检：解析失灵（0 条）时下面的断言会恒真 ⇒ 先自证
     expect(iconNamesFromSource(MENU_TS).length).toBeGreaterThanOrEqual(27)
-    // 2026-10-20（issue #7369 段 4）：**28 个节点** = 5 组头 + 19 组内项（+供应商 / +采购单）+ 最前席位 1 项 + 尾席位 2 项 + 尾部独立项 1 项
-    //（「工作台」组整组撤销 ⇒ 组头 6→5、组内项 18→16、「每日简报」菜单项删除）
-    expect(allItems().length).toBe(28)
+    // 2026-10-20（issue #7369 段 4 / 新 IA）：**29 个节点** = **6 组头**（新增「供应链」）+ 19 组内项
+    //（+供应商 / +采购单）+ 最前席位 1 项 + 尾席位 2 项 + 尾部独立项 1 项
+    //（「工作台」组整组撤销 ⇒ 组头 6→5；issue #7369 新增「供应链」组 ⇒ 组头 5→6；组内项总数不变）
+    expect(allItems().length).toBe(29)
 
     const usedFromSource = Array.from(new Set(iconNamesFromSource(MENU_TS)))
     const usedFromObjects = Array.from(new Set(allItems().map((i) => i.icon)))
@@ -131,10 +132,10 @@ describe('菜单图标注册表（issue #5271 / PR-106 / MC-019）', () => {
       .map(([icon, names]) => `${icon} → ${names.join('、')}`)
   }
 
-  it('🔴 判据④ 图标两两不同：28 个节点（5 组 + 1 最前席位 + 2 尾席位 + 19 子项 + 1 独立项）的图标互不重复（issue #5582）', () => {
+  it('🔴 判据④ 图标两两不同：29 个节点（6 组 + 1 最前席位 + 2 尾席位 + 19 子项 + 1 独立项）的图标互不重复（issue #5582）', () => {
     const items = allItems()
     // 面非空自证：解析失灵（0 条）时下面的断言会恒真 ⇒ 先自证，并点名几个已知节点
-    expect(items.length).toBe(28)
+    expect(items.length).toBe(29)
     expect(items.map((i) => i.name)).toEqual(
       expect.arrayContaining(['经营看板', '省料看板', '售后工单', '岗位权限', '财务对账', '计件工资', '组织管理', '企业基础设置']),
     )

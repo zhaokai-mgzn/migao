@@ -7,14 +7,17 @@
  * 重设计前「权限过滤 / 高亮选中 / 分组展开」三件事全内联在 `Sidebar.tsx` 里 ——
  * 只能靠渲染整个 Sidebar 才能验证（依赖 auth store / next-navigation / lucide 白名单三个替身），
  * 且**无法对「同一路由下哪个项高亮」做表驱动穷举**。issue #5271 把它们抽成
- * `frontend/admin-web/src/lib/menu-nav.ts` 的纯函数 ⇒ 本文件对**全部 22 项 × 若干路由**
+ * `frontend/admin-web/src/lib/menu-nav.ts` 的纯函数 ⇒ 本文件对**全部 23 项 × 若干路由**
  * 逐条断言（渲染面另有 `Sidebar.test.tsx` / `SidebarRedesign.test.tsx`）。
  *
  * ## 本文件同时是新 IA 的**表驱动事实源**
  *
- * （2026-10-17 issue #7087，用户两条裁定：**5 组 / 16 个组内项 + 3 个一级项**
- * （最前席位「经营看板」+ 尾席位「商品管理」「企业基础设置」）+ 1 个尾部独立项「通知中心」
- * = **22 项**；「工作台」组整组撤销、「每日简报」菜单项删除。）
+ * （issue #7087 + #7369：**6 组 / 19 个组内项 + 3 个一级项**（最前席位「经营看板」+ 尾席位
+ * 「商品管理」「企业基础设置」）+ 1 个尾部独立项「通知中心」= **23 项**。
+ * 2026-10-17（issue #7087）「工作台」组整组撤销、「每日简报」菜单项删除；
+ * 2026-10-20（issue #7369，用户裁定「新增的菜单不能放到仓储与物料下，得加个新大菜单」）
+ * 新增组「供应链」（组 key `supply-chain`：入库单 → 供应商 → 采购单），组内项总数不变
+ * （原「仓储与物料」组的三个单据节点整组搬出，本组只留库存明细 / 发货单 / 余料台账 / 省料看板）。）
  *
  * `EXPECTED_GROUPS` 逐字写下 issue #5271 的组 key / 组名 / 组内项顺序 —— 它不是从实现读出来的
  * （不是拿 `menuGroups` 反推 `menuGroups`），而是**独立写死的期望值**：实现漂了这里就红。
@@ -49,7 +52,7 @@ import {
  * 新 IA（issue #5778；#5939 +「发货单」；#6404 +「库存明细」；**2026-10-06 用户裁定方案 A1 重排**；
  * **#6573 +第二个一级项「参数总览」**；**#6580 收拢生产管理组、一级项改为「企业基础设置」**；
  * **2026-10-17 issue #7087 撤销「工作台」组、经营看板升为最前席位一级项、删「每日简报」菜单项**）：
- * **5 组 / 19 个组内项 + 3 个一级项 + 1 个尾部独立项 = 22 项**。
+ * **6 组 / 19 个组内项 + 3 个一级项 + 1 个尾部独立项 = 23 项**（issue #7369 新增「供应链」组）。
  *
  * 本表是**独立写死**的期望值（不拿 `menuGroups` 反推 `menuGroups`）= **顺序契约的承载体**：
  * 2026-10-06 的组内重排与一级项落位若被无声改回，这里当场红并具名报出差异。
@@ -74,10 +77,17 @@ const EXPECTED_GROUPS: { key: string; name: string; keys: string[] }[] = [
     keys: ['production-board', 'production-pool', 'production-piecework', 'quality-inspections'],
   },
   {
+    key: 'supply-chain',
+    name: '供应链',
+    // issue #7369（用户 2026-10-20 裁定）：谁供货（供应商）→ 买什么（采购单）→ 到货登记（入库单）；
+    // 入库单必须留在**组内第一个**（手机端可见面标注取该码树序首个承载节点，#6781）。
+    keys: ['inbound-orders', 'suppliers', 'purchase-orders'],
+  },
+  {
     key: 'inventory-center',
     name: '仓储与物料',
-    // 2026-10-06：单据（进 → 账 → 出）→ 台账 → 分析
-    keys: ['inbound-orders', 'suppliers', 'purchase-orders', 'stock-ledger', 'shipments', 'production-remnants', 'production-saving-board'],
+    // issue #7369：单据类节点整组搬去「供应链」⇒ 本组只留 库存 → 出库 → 台账 → 分析（组内相对顺序不变）
+    keys: ['stock-ledger', 'shipments', 'production-remnants', 'production-saving-board'],
   },
   { key: 'org-center', name: '组织管理', keys: ['employees', 'roles'] },
 ]
@@ -139,7 +149,7 @@ const allItems = (opts: MenuFilterOptions = adminFor()) =>
     filterMenuItems(standaloneItems, opts),
   )
 
-describe('新 IA 事实（issue #5778 + #6404 + #6457 + #6573 + #6580 + #7087 + #7140：5 组 + 三个一级项 + 尾部独立项 = 23 项，一项不少不减）', () => {
+describe('新 IA 事实（issue #5778 + #6404 + #6457 + #6573 + #6580 + #7087 + #7140 + #7369：6 组 + 三个一级项 + 尾部独立项 = 23 项，一项不少不减）', () => {
   it('组 key / 组名 / 组顺序逐值相等，且无 `customer-center` / `product-center` / 旧 `production`', () => {
     expect(menuGroups.map((g) => g.key)).toEqual(EXPECTED_GROUPS.map((g) => g.key))
     expect(menuGroups.map((g) => g.name)).toEqual(EXPECTED_GROUPS.map((g) => g.name))
@@ -153,7 +163,7 @@ describe('新 IA 事实（issue #5778 + #6404 + #6457 + #6573 + #6580 + #7087 + 
     expect(menuGroups.map((g) => g.name)).not.toContain('智能客服')
   })
 
-  it('每组组内项 key 序列逐值相等（顺序敏感），且总数恒为 22', () => {
+  it('每组组内项 key 序列逐值相等（顺序敏感），且总数恒为 23', () => {
     expect(
       menuGroups.map((g) => ({ key: g.key, keys: g.children.map((c) => c.key) })),
     ).toEqual(EXPECTED_GROUPS.map((g) => ({ key: g.key, keys: g.keys })))
@@ -423,8 +433,8 @@ describe('filterMenuItems / visibleMenuGroups：过滤保持顺序 + 空组剔�
       { key: 'trade-center', keys: ['orders'] },
       { key: 'inventory-center', keys: ['shipments'] },
     ])
-    // 反恒真：确实被削过（5 组 → 2 组，3 个空组整组消失）
-    expect(menuGroups).toHaveLength(5)
+    // 反恒真：确实被削过（6 组 → 2 组，4 个空组整组消失）
+    expect(menuGroups).toHaveLength(6)
   })
 
   it('组被过滤时组名/组图标保留原值（不是重建对象）', () => {
@@ -626,7 +636,7 @@ describe('splitGroupsAtTopItemSlot：一级项的插入位（#5877）', () => {
   it('slot 组在可见分组里 ⇒ head 含 slot 组（含）及其之前，tail 为其余组', () => {
     const { head, tail } = splitGroupsAtTopItemSlot(menuGroups, 'trade-center')
     expect(head.map((g) => g.key)).toEqual(['customer-service', 'trade-center'])
-    expect(tail.map((g) => g.key)).toEqual(['production-center', 'inventory-center', 'org-center'])
+    expect(tail.map((g) => g.key)).toEqual(['production-center', 'supply-chain', 'inventory-center', 'org-center'])
     // 两段拼起来恰好是全量（无重复、无丢失）
     expect([...head, ...tail].map((g) => g.key)).toEqual(EXPECTED_GROUPS.map((g) => g.key))
   })
@@ -701,7 +711,7 @@ describe('searchMenu：命中面 = 菜单名 ∪ 组名 ∪ keywords（+ 排序�
     ['拼音首字母 keywords（rank 2）', 'yltz', ['production-remnants']],
     ['拼音首字母 keywords（rank 2）', 'sckb', ['production-board']],
     ['大小写不敏感', 'DINGDAN', ['orders']],
-    ['组名命中（rank 3）', '仓储', ['inbound-orders', 'suppliers', 'purchase-orders', 'stock-ledger', 'shipments', 'production-remnants', 'production-saving-board']],
+    ['组名命中（rank 3）', '仓储', ['stock-ledger', 'shipments', 'production-remnants', 'production-saving-board']],
     // 🔴 2026-10-17（issue #7087）：旧**组名**「工作台」不再存在于任何分组的 `groupName` 里，
     // 但它作为**别名**（`menu.ts` 里 `dashboard` 的 keywords）保留 ⇒ 用户按老叫法搜仍能搜到
     // **最前席位**「经营看板」（rank 2，不是组名档 —— 这条同时钉住了「组名档与 keywords 档不是一回事」）。
@@ -775,7 +785,7 @@ describe('权限过滤的端到端口径（可见项 key 集合，逐条精确�
 
   it.each([
     [
-      '超管 `*` + admin 角色 ⇒ 22 项全可见（含最前席位「经营看板」）',
+      '超管 `*` + admin 角色 ⇒ 23 项全可见（含最前席位「经营看板」）',
       { permissions: ['*'], roles: ['admin'] },
       ALL_KEYS,
     ],
@@ -787,7 +797,7 @@ describe('权限过滤的端到端口径（可见项 key 集合，逐条精确�
       ALL_KEYS.filter((k) => k !== 'dashboard'),
     ],
     [
-      '生产（读码+管理码）/仓管混合权限 ⇒ 生产管理组 2 项 + 仓储与物料组 2 项 + 一级项「企业基础设置」（#6580）',
+      '生产（读码+管理码）/仓管混合权限 ⇒ 生产管理组 2 项 + 供应链组 3 项 + 仓储与物料组 1 项 + 一级项「企业基础设置」（#6580）',
       // issue #5291：作业看板/计件工资挂**读**码 production:view。
       // 🔴 issue #5699（P4）：**每个子菜单恰好一个码** —— 智能派单 = processing:view（该页读码）、
       // 省料看板 = product:list（该页读码）⇒ 本组权限（读码+管理码、无 product:list、无 processing:view）
@@ -800,7 +810,8 @@ describe('权限过滤的端到端口径（可见项 key 集合，逐条精确�
       },
       [
         // 顺序 = 渲染顺序：**最前席位**先出现（它的码 `dashboard:view` 在本权限集里），
-        // 然后 生产管理组（作业看板 → 计件工资）→ 仓储与物料组（入库单 → 余料台账）；
+        // 然后 生产管理组（作业看板 → 计件工资）→ 供应链组（入库单 → 供应商 → 采购单）
+        // → 仓储与物料组（余料台账，issue #7369 起单据三项已搬去供应链组）；
         // 尾席位一级项各自按自己的码判定 —— 「商品管理」要 product:list（本权限集**无** ⇒ 不出现）、
         // 「企业基础设置」要 production:view（本权限集**有** ⇒ 出现）。
         'dashboard',
@@ -813,7 +824,7 @@ describe('权限过滤的端到端口径（可见项 key 集合，逐条精确�
       ],
     ],
     [
-      '只有 inbound:view ⇒ 「仓储与物料」组**只剩入库单**（余料要 processing:manage、省料要 product:list）',
+      '只有 inbound:view ⇒ 「供应链」组 3 项（入库单 / 供应商 / 采购单）在；「仓储与物料」组整组不在（余料要 processing:manage、省料要 product:list）',
       { permissions: ['inbound:view'] },
       ['inbound-orders', 'suppliers', 'purchase-orders', 'notifications'],
     ],
