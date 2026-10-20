@@ -18,6 +18,7 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.lang.reflect.Field;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -32,6 +33,9 @@ import java.util.stream.Collectors;
 public class CustomerService extends ServiceImpl<CustomerProfileMapper, CustomerProfile> {
 
     private final CustomerProfileMapper customerProfileMapper;
+
+    /** 业务「今天」/业务时区单点（issue #3802）：账龄分档的基准日不许多头算。 */
+    private final com.migao.admin.time.BusinessClock businessClock;
     private final CustomerTagMapper customerTagMapper;
     private final CustomerSegmentMapper customerSegmentMapper;
     private final CustomerSegmentMemberMapper customerSegmentMemberMapper;
@@ -821,4 +825,57 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
                 profile.getTenantId(), customerId, limit, terms);
         return creditStatus(customerId);
     }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // 应收账龄（issue #7370，P0-2 段 2）
+    // 分档规则钉在纯函数 ReceivableAging（逐格判据）；本方法只做「取数 → 分档 → 汇总」。
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 应收账龄：全局合计 + 按客户分行，各五档（未到期 / 1-30 / 31-60 / 61-90 / 90+）。
+     *
+     * <p>到期日 = 下单日的**业务日期** + 该客户账期天数（{@code null}/0 ⇒ 现结，到期日 = 下单日）。
+     * 「业务日期」由 {@link BusinessClock} 给出（容器是 UTC，直接取 {@code LocalDate.ofInstant(UTC)} 会差一天）。</p>
+     *
+     * <p>恒等式（判据复算）：{@code totalOutstanding == Σ五档 == Σ客户行}。</p>
+     */
+    public com.migao.admin.dto.ReceivableAgingResponse receivableAging(Long tenantId) {
+        LocalDate today = businessClock.today();
+        List<com.migao.admin.dto.ReceivableAgingRow> rows = orderMapper.selectReceivableRows(tenantId);
+        // 业务日期换算**只在这里**做（容器是 UTC：取 UTC 日期会让「当天」差一天，见 #3802/#6200）——
+        // 换算用 BusinessClock.zone()，下游纯函数只做日期运算（不引时区 ⇒ 逐格可测）。
+        for (com.migao.admin.dto.ReceivableAgingRow row : rows) {
+            if (row.getCreatedAt() != null) {
+                row.setBusinessDate(LocalDate.ofInstant(row.getCreatedAt().toInstant(), businessClock.zone()));
+            }
+        }
+        return ReceivableAging.summarize(rows, termsByPhone(tenantId, rows), today);
+    }
+
+    /** 该租户下「电话 → 账期天数」；读侧不用 selectOne（#7257：历史重复行会抛 TooManyResults）。 */
+    private Map<String, Integer> termsByPhone(Long tenantId, List<com.migao.admin.dto.ReceivableAgingRow> rows) {
+        Set<String> phones = new LinkedHashSet<>();
+        for (com.migao.admin.dto.ReceivableAgingRow row : rows) {
+            if (StringUtils.hasText(row.getCustomerPhone())) {
+                phones.add(row.getCustomerPhone());
+            }
+        }
+        if (phones.isEmpty()) {
+            // 空集**不返回不可变表**（issue #6219：调用方一旦用空键索引就 NPE 500）⇒ 返回可变表
+            return new HashMap<>();
+        }
+        List<CustomerProfile> profiles = customerProfileMapper.selectList(
+                new LambdaQueryWrapper<CustomerProfile>()
+                        .eq(CustomerProfile::getTenantId, tenantId)
+                        .in(CustomerProfile::getPhone, phones));
+        Map<String, Integer> terms = new HashMap<>();
+        for (CustomerProfile profile : profiles) {
+            if (profile.getPhone() != null && !terms.containsKey(profile.getPhone())) {
+                terms.put(profile.getPhone(), profile.getPaymentTermsDays());
+            }
+        }
+        return terms;
+    }
+
+
 }

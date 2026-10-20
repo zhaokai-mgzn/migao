@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.annotation.InterceptorIgnore;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Result;
+import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 
 import java.time.OffsetDateTime;
@@ -26,6 +28,41 @@ public interface OrderMapper extends BaseMapper<Order> {
     @Select("SELECT status, COUNT(*) as count FROM orders " +
             "WHERE deleted = 0 GROUP BY status")
     List<Map<String, Object>> selectOrderStatusDistribution();
+
+    /**
+     * 应收账龄取数（issue #7370，P0-2 段 2）：每笔**余额 &gt; 0** 的订单一行。
+     *
+     * <p>口径与「财务对账」逐字同源（{@code 应收 − 实收 + 已退}）：
+     * {@code actual_amount} 为 NULL 视为已收满（既有约定），退款取 {@code type=refund ∧ status=success} 成功流水。
+     * 余额 ≤ 0 的单**不进账龄面**（对平的不必看、多收的不冲抵别的单）。</p>
+     *
+     * <p>🔴 到期日与分档**不在 SQL 里算**：账期是客户档案属性，分档规则（到期日当天归未到期等）
+     * 钉在纯函数 {@code ReceivableAging} 上、逐格有判据；埋在 {@code CASE WHEN} 里只能靠「上线后看数字」发现错。</p>
+     *
+     * <p>上限 2000 行：账龄是「看欠款结构」的读面，不是导出台账；超限时前端会看到
+     * {@code truncated=true}（不静默截断成「刚好这么多」）。</p>
+     */
+    @Select("SELECT * FROM ("
+            + "SELECT o.id AS order_id, o.order_no AS order_no, o.customer_name AS customer_name, "
+            + "o.customer_phone AS customer_phone, COALESCE(o.total_amount, 0) AS receivable, "
+            + "COALESCE((SELECT SUM(f.amount) FROM finance_transactions f "
+            + "WHERE f.tenant_id = o.tenant_id AND f.order_id = o.id "
+            + "AND f.type = 'refund' AND f.status = 'success' AND f.deleted = 0), 0) AS refunded, "
+            + "COALESCE(o.total_amount, 0) - COALESCE((SELECT SUM(f.amount) FROM finance_transactions f "
+            + "WHERE f.tenant_id = o.tenant_id AND f.order_id = o.id "
+            + "AND f.type = 'refund' AND f.status = 'success' AND f.deleted = 0), 0) AS remaining, "
+            + "o.created_at AS created_at "
+            + "FROM orders o WHERE o.deleted = 0 AND o.tenant_id = #{tenantId} AND o.status <> 'cancelled' "
+            + "AND o.paid_at IS NULL"
+            + ") t WHERE t.remaining > 0 ORDER BY t.remaining DESC LIMIT 2000")
+    @Results({
+            @Result(column = "order_id", property = "orderId"),
+            @Result(column = "order_no", property = "orderNo"),
+            @Result(column = "customer_name", property = "customerName"),
+            @Result(column = "customer_phone", property = "customerPhone"),
+            @Result(column = "created_at", property = "createdAt")
+    })
+    List<com.migao.admin.dto.ReceivableAgingRow> selectReceivableRows(@Param("tenantId") Long tenantId);
 
     /**
      * 客户已欠金额（issue #7370 授信闸门）：未结清订单的金额合计。

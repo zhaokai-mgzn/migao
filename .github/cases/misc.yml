@@ -4689,3 +4689,35 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: AR-001
+    legacy_id: ""
+    title: "应收账龄：到期日当天归未到期 / 五档边界逐格 / 汇总恒等式（issue #7370 段 2）"
+    domains:
+      - misc
+      - backend
+    tier: normal
+    tags: [backend-contract, receivable, aging, red-proof]
+    truths_ref: []
+    user_inputs:
+      - "用户（2026-10-20，逐字）：「继续推进，直到目标任务都交付」—— 承接 issue #7370 的验收判据「账龄分档边界逐档有判据（到期日当天归未到期）」「余额恒等式」。"
+    expectations: []
+    data_checks:
+      - "**判据 1（到期日当天不算逾期）**：逾期天数 = 今天 − 到期日，`<= 0` 即未到期 ⇒ 客户今天付款仍算及时；昨天下单的现结客户才是逾期 1 天。判据 = `ReceivableAgingTest#dueDateItselfIsNotOverdue`。红证方向：把 `<= 0` 改 `< 0` ⇒ 当场红。"
+      - "**判据 2（五档边界逐格）**：0/负数→未到期 · 1→1-30 · 30→1-30 · **31 跳档** · 60 · **61 跳档** · 90 · **91 跳档**；枚举顺序 = 上屏顺序。判据 = `#bucketBoundaries`。"
+      - "**判据 3（账期口径）**：到期日 = 下单日 + 账期；账期 `null`/0 ⇒ **现结（到期日 = 下单日）**，不是「永不到期」（后者会让这类客户的应收永不出现在逾期面上）。判据 = `#dueDateFollowsTerms` + `#dueDateItselfIsNotOverdue`。"
+      - "**判据 4（应收口径 = 未收款订单）**：以 `paid_at IS NULL` 定性（与授信闸门 `selectOutstandingTotal` 同一真值源），应收 = 货值 − Σ退款。**不**用 `actual_amount IS NULL ⇒ 已收满` 的旧兜底 —— 那会把「没登记的收款」读成「已付清」，欠款静默消失。判据 = `ReceivableAgingRow` javadoc + `#remainingIsNetReceivable`。"
+      - "**判据 5（汇总恒等式）**：`totalOutstanding == Σ五档 == Σ客户行`，且逐档笔数正确；已对平/多收的单不进账龄面。判据 = `#summaryKeepsTheIdentity`。"
+      - "**判据 6（缺字段不丢钱）**：没留电话的散客单归到具名分组，不因缺字段从应收面消失。判据 = `#rowsWithoutPhoneAreKept`。"
+      - "**判据 7（端点契约）**：路由 `GET /api/admin/customers/receivable-aging` 逐字；权限码复用既有 `customer:view`（零授权 delta）；不带 id 不标归属认定。判据 = `ReceivableAgingControllerTest`。"
+      - "**边界（照实登记）**：部分收款（一笔钱冲多张单）随段 3「逐笔核销」上线；账龄页面/报表（段 4）与导出未做；黄金策暂无账龄工具（先用页面读面）。"
+    precondition: "本用例是 [backend-contract]：前置 = `orders.paid_at`(V160) + `customer_profiles.credit_limit/payment_terms_days`(授信段) + `finance_transactions`。零网络、零 LLM。"
+    skip_reason: "[backend-contract] 账龄分档与汇总恒等式，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟"
+    merge_log: "2026-10-20 新增（issue #7370 段 2）。落码 = 纯函数 `ReceivableAging`（到期日/逾期天数/五档/余额/汇总）+ `OrderMapper.selectReceivableRows`（未收款单调，上限 2000）+ `CustomerService.receivableAging` + `GET /api/admin/customers/receivable-aging`（customer:view）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ReceivableAgingTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/ReceivableAgingControllerTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
