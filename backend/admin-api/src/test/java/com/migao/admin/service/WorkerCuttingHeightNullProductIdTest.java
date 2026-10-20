@@ -384,7 +384,12 @@ class WorkerCuttingHeightNullProductIdTest {
                         + "`METHOD_DECL` ⇒ **跨行声明的方法整条被漏掉**，实测同时浮出本方法与 `ensureSetsFor`）"),
                 Map.entry("partTokensByItemId", "ProductionService｜现取无索引调用点（存量）"),
                 Map.entry("assignmentsOf", "StockBatchConsumptionService｜现取无索引调用点（工人端读面待接）"),
-                Map.entry("snapshotSkus", "StockLedgerService｜现取无索引调用点（存量）"));
+                Map.entry("snapshotSkus", "StockLedgerService｜现取无索引调用点（存量）"),
+                Map.entry("activeOperationsById", "ProductionService｜空集（本批报工为空）时 `return Collections.emptyMap()`。"
+                        + "现取**无**变量级 index site：调用方只用方法引用 `instancesById::get` 取值（形态是 "
+                        + "`aggregate(logs, instancesById::get, …)`，不是 `instancesById.get(…)`）⇒ 缺 id 时得 null，"
+                        + "由 `aggregate` 的「实例缺失 = 不计价（unpriced）」既有分支承接（issue #4205 判据 ④，"
+                        + "`ProductionPieceworkSummaryTest` 守）。2026-10-20 收窄扫描面时新增"));
 
         /**
          * 索引调用点台账：键 = {@code <仓库相对路径>|<变量>}。

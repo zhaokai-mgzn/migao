@@ -594,4 +594,43 @@ class ProductionPieceworkSummaryTest {
         assertThat(rowsOf(report, "per_position")).isEmpty();
         assertThat(rowsOf(report, "per_set")).isEmpty();
     }
+
+    // ── 无界扫描回归（2026-10-20 索引审查第二刀）────────────────────────────
+    // 旧实现：工序实例只按 tenant_id + deleted=0 取**全租户**（≈ 加工单 × 部位 × 工序）
+    // ⇒ 每次打开计件页都把本租户全部实例拉进 JVM，成本随租户历史线性增长。
+    // 新实现：先取本批报工，再按报工行的 processing_order_id 收窄。
+    // 红证：把 activeOperationsById 的 `.in(processing_order_id, …)` 去掉 ⇒ 本判据必红
+    //      （SQL 段里不再有 processing_order_id，绑定值里也不再有 PO_ID）。
+
+    @Test
+    @DisplayName("计件报表只加载本批报工涉及的加工单的工序实例（无界扫描回归）")
+    void pieceworkSummaryOnlyLoadsOperationInstancesOfTheLoggedOrders() {
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                log("op-1", "精裁-布", "张三", "3", "normal", LocalDate.of(2026, 9, 18))));
+        when(positionOperationMapper.selectList(any())).thenReturn(List.of(
+                op("op-1", "精裁-布", "0.40", "1.00")));
+
+        service.pieceworkSummary("2026-09", null, TENANT);
+
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        ArgumentCaptor<QueryWrapper<ProcessingPositionOperation>> captor =
+                (ArgumentCaptor) ArgumentCaptor.forClass(QueryWrapper.class);
+        verify(positionOperationMapper).selectList(captor.capture());
+
+        // 服务端用**字符串列名**的 QueryWrapper（与期间报表同款）⇒ 纯单测里也能取到 SQL 段
+        // （Lambda 列引用要 MyBatis-Plus 的 lambda cache，Mockito 单测会抛 can not find lambda cache）。
+        assertThat(captor.getValue().getSqlSegment())
+                .as("工序实例查询必须按 processing_order_id 收窄，而不是只带 tenant_id")
+                .contains("processing_order_id");
+    }
+
+    @Test
+    @DisplayName("本批报工为空 ⇒ 一次都不去查工序实例表（空集不该发起全租户扫描）")
+    void emptyLogsSkipOperationInstanceQuery() {
+        when(workLogMapper.selectList(any())).thenReturn(List.of());
+
+        service.pieceworkSummary("2026-09", null, TENANT);
+
+        verify(positionOperationMapper, org.mockito.Mockito.never()).selectList(any());
+    }
 }

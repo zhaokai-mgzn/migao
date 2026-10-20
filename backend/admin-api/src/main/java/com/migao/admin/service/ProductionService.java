@@ -1661,8 +1661,9 @@ public class ProductionService {
             wrapper.eq("worker_name", workerName.trim());
         }
 
-        Map<String, ProcessingPositionOperation> instancesById = activeOperationsById(tenantId);
         List<ProductionWorkLog> logs = list(wrapper);
+        Map<String, ProcessingPositionOperation> instancesById =
+                activeOperationsById(tenantId, processingOrderIdsOf(logs));
         PieceworkTotals totals = aggregate(logs, instancesById::get,
                 windowGroupKeyByItemId(logs, instancesById, tenantId));
 
@@ -1993,12 +1994,25 @@ public class ProductionService {
      * <p>判据与 {@link #listOperations}（per-order）一致 = {@code tenant_id + deleted=0}：
      * 若改用 {@code selectById} 逐条查，已软删实例会被算进来 ⇒ 同一笔报工在报表里计价、
      * 在 per-order 里不计价（两套端点数值不等，正是 #4205 验收判据要防的漂移）。</p>
+     *
+     * <p>🔴 **必须按加工单收窄**（2026-10-20 索引审查）：旧实现只带 {@code tenant_id + deleted=0}，
+     * 无加工单、无期间、无 LIMIT ⇒ 每次打开计件页都把**本租户全部工序实例**
+     * （≈ 加工单 × 部位 × 工序）拉进 JVM，成本随租户历史线性增长。
+     * 调用方拿到的报工行自带 {@code processing_order_id} ⇒ 由它反推加工单集合，
+     * 把扫描面收窄到**这一批报工真正用到的那几张单**。聚合取值口径不变（仍按 {@code instancesById::get}）。</p>
      */
-    private Map<String, ProcessingPositionOperation> activeOperationsById(Long tenantId) {
+    private Map<String, ProcessingPositionOperation> activeOperationsById(Long tenantId,
+                                                                        Set<String> processingOrderIds) {
+        if (processingOrderIds == null || processingOrderIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
         List<ProcessingPositionOperation> rows = positionOperationMapper.selectList(
-                new LambdaQueryWrapper<ProcessingPositionOperation>()
-                        .eq(ProcessingPositionOperation::getTenantId, tenantId)
-                        .eq(ProcessingPositionOperation::getDeleted, 0));
+                // 字符串列名（非 Lambda）：与上方期间报表同款 —— 收窄谓词要能被 Standalone 单测
+                // 取到 SQL 段（Lambda 列引用需要 MyBatis-Plus 的 lambda cache，纯单测里取不到）。
+                new QueryWrapper<ProcessingPositionOperation>()
+                        .eq("tenant_id", tenantId)
+                        .eq("deleted", 0)
+                        .in("processing_order_id", processingOrderIds));
         Map<String, ProcessingPositionOperation> byId = new HashMap<>();
         if (rows != null) {
             for (ProcessingPositionOperation op : rows) {
@@ -2006,6 +2020,17 @@ public class ProductionService {
             }
         }
         return byId;
+    }
+
+    /** 本批报工涉及的加工单 id 集合（去重、保序、跳过 NULL）—— 供 {@link #activeOperationsById} 收窄扫描面。 */
+    private static Set<String> processingOrderIdsOf(List<ProductionWorkLog> logs) {
+        if (logs == null || logs.isEmpty()) {
+            return Collections.emptySet();
+        }
+        return logs.stream()
+                .map(ProductionWorkLog::getProcessingOrderId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     /**
@@ -2105,8 +2130,9 @@ public class ProductionService {
                 .lt("work_date", next.atDay(1))
                 .orderByAsc("work_date");
 
-        Map<String, ProcessingPositionOperation> instancesById = activeOperationsById(tenantId);
         List<ProductionWorkLog> logs = list(wrapper);
+        Map<String, ProcessingPositionOperation> instancesById =
+                activeOperationsById(tenantId, processingOrderIdsOf(logs));
         PieceworkTotals totals = aggregate(logs, instancesById::get,
                 windowGroupKeyByItemId(logs, instancesById, tenantId));
 
