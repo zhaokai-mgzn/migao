@@ -15577,6 +15577,25 @@ _CASE_UI_129 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端/接口契约用例：前置（已上传样图、admin-api 端点、ai-agent 内部端点）由三端单测自建或 mock（admin-web mock `@/lib/api`；admin-api mock ProductImageClient/FileStorageService；ai-agent mock httpx），不依赖共享夹具与真实服务 ⇒ 前置不成立时对应单测直接红；agent-eval 栈不跑它',
 )
 
+# ── UI-130 [NORMAL] 销售订单列表查询区默认折叠：常驻一行摘要 + 展开才渲染筛选项（issue #7388）（源: cases/ui.yml）──
+_CASE_UI_130 = EvalCase(
+    id='UI-130',
+    legacy_id='',
+    title='销售订单列表查询区默认折叠：常驻一行摘要 + 展开才渲染筛选项（issue #7388）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['「这里的查询区域默认折叠起来」（用户 2026-10-20，销售订单页截图）'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·原语 opt-in（会红）：不传 `collapsible` 的 `SearchPanel` 字段常驻且无折叠开关（客户 / 售后 / 品检 / 员工四页行为零变化）。执行点 = frontend/admin-web/tests/unit/components/SearchPanel.test.ts（describe「collapsible（issue #7388）」）。', '判据 2·折叠态 DOM 在场性（会红）：`collapsible` 默认收起时 `fields[].control` 与「查询/重置/刷新」三个按钮 `queryBy*` 为 null，`search-panel-toggle` 的 `aria-expanded=false` 且 `search-panel-summary` 在。执行点同上。', '判据 3·两态往返（会红）：点「展开筛选」⇒ 字段与三个按钮逐个回来、`aria-expanded=true`、摘要不再渲染；再点 ⇒ 字段又消失。执行点同上 + frontend/admin-web/tests/unit/pages/orders.test.tsx。', '判据 4·订单页默认收起且摘要说清时间范围（会红）：首屏取不到「请输入订单ID」与「查询」按钮，`search-panel-summary` 含「近一个月」；展开后 5 个文本框 + 2 个日期框 + 查询/重置/刷新全在。执行点 = orders.test.tsx。', '判据 5·版式判据不被折叠绕过（会红）：`orders-query-area-overflow.test.tsx` 的单一 grid / 无溢出 / label 定宽 / 字段格可缩在**展开态**逐条仍成立（不是靠容器里没有 grid 而假绿）。'],
+    skip_reason='[backend-contract] 纯前端版式与交互契约（不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟',
+    tags=['search-panel', 'collapse', 'orders-list'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端版式/交互契约用例：页面渲染时 mock `@/lib/api` 与 `@/components/orders`，不依赖共享夹具与真实服务 ⇒ 前置不成立时对应单测直接红；agent-eval 栈不跑它',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -16446,6 +16465,7 @@ ALL_CASES = (
     _CASE_UI_127,
     _CASE_UI_128,
     _CASE_UI_129,
+    _CASE_UI_130,
     _CASE_UT_001,
     _CASE_UT_002,
 )

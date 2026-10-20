@@ -54,7 +54,36 @@ const EMPTY_SEARCH: SearchState = {
   hasProcessing: '',
 }
 
+/** 收起态摘要里点名的筛选字段（顺序 = 筛选区里的顺序；label 与筛选区同源，不另写一套口径） */
+const SUMMARY_FIELDS: { key: 'orderId' | 'receiver' | 'creator' | 'productCode' | 'productTitle' | 'hasProcessing'; label: string }[] = [
+  { key: 'orderId', label: '订单ID' },
+  { key: 'receiver', label: '收货人' },
+  { key: 'creator', label: '制单人' },
+  { key: 'productCode', label: '商品货号' },
+  { key: 'productTitle', label: '商品标题' },
+  { key: 'hasProcessing', label: '是否加工' },
+]
 
+/**
+ * 筛选区收起时的一行摘要（issue #7388）：只读**已提交**的 `search`，不读表单草稿
+ * （草稿还没点「查询」，写进摘要会骗人 —— 商家会以为列表已经按它筛过）。
+ *
+ * 时间范围必须显式说出来：收起态本就像「全部订单」，而列表其实一直只覆盖最近一个月。
+ */
+function summarizeSearch(search: SearchState): string {
+  const parts: string[] = []
+  if (search.startDate === DEFAULT_DATE_RANGE.startDate && search.endDate === DEFAULT_DATE_RANGE.endDate) {
+    parts.push('近一个月')
+  } else if (search.startDate || search.endDate) {
+    parts.push(`${search.startDate || '不限'} 至 ${search.endDate || '不限'}`)
+  }
+  const active = SUMMARY_FIELDS.filter(({ key }) => search[key]).map(({ label }) => label)
+  if (active.length > 0) {
+    // 一行摘要 ≠ 枚举全部：超过 3 项就点名前 3 个 + 计数（条数再多也不撑行）。
+    parts.push(active.length > 3 ? `${active.slice(0, 3).join('、')} 等 ${active.length} 项` : active.join('、'))
+  }
+  return parts.join(' · ')
+}
 
 /** 将 URL 参数中的中文标签映射为内部 tab key */
 function resolveCategoryParam(raw: string | null): OrderStatusTab | null {
@@ -526,13 +555,19 @@ export default function OrdersPage() {
           列梯 1 / 2 / 4（<768 一列、≥768 两列、≥1536 四列）：大轨道数只放在 ≥1536 —— #5850 的病根就是
           窄屏轨道太多、只能把控件**压扁**。每格 `min-w-0`：宽度由**轨道**给，不再靠 `min-w-[…]` 撑（#5841 的溢出）。
           排布：第 1 行 = 下单时间（跨 2 轨）· 订单ID · 收货人；第 2 行 = 制单人 · 商品货号 · 商品标题 · 是否加工；
-          第 3 行 = 按钮行（`col-span-full` 独占一行 + `justify-end` 右对齐）—— 主操作不再埋在第 2 行末尾。 */}
+          第 3 行 = 按钮行（`col-span-full` 独占一行 + `justify-end` 右对齐）—— 主操作不再埋在第 2 行末尾。
+
+          issue #7388（用户 2026-10-20 截图圈出整块查询区「默认折叠起来」）：这块 3 行的常驻面把首屏真正要看的
+          列表推到了折叠线以下 ⇒ 走原语的 `collapsible`（**默认收起**），收起态只占一行：标题 + 摘要 + 展开入口。
+          展开/收起只是版式（字段折叠态不进 DOM），查询行为、默认时间范围、URL 参数一律不变。 */}
       <SearchPanel
         fields={searchPanelFields}
         onSearch={handleSearch}
         onReset={handleReset}
         onRefresh={() => loadOrders()}
         loading={loading}
+        collapsible
+        summary={summarizeSearch(search)}
       />
 
       {/* 表格 + Tab */}
