@@ -7,7 +7,7 @@ import { toastRequestError } from '@/lib/api-error'
 import { cn } from '@/lib/utils'
 import { orderApi } from '@/lib/api'
 import { OrderTable, CloseOrderModal, RemarkModal, RefundOrderModal } from '@/components/orders'
-import { Button, Modal, PageHeader, SearchPanel } from '@/components/ui'
+import { Button, Modal, PageHeader, SearchPanel, SELECT_CONTROL } from '@/components/ui'
 import type { SearchFieldSpec } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
 import { usePermission } from '@/lib/permission'
@@ -517,7 +517,7 @@ export default function OrdersPage() {
       control: (
         <select value={hasProcessing}
           onChange={(e) => setHasProcessing(e.target.value as '' | 'true' | 'false')}
-          className={SEARCH_CONTROL}>
+          className={cn(SELECT_CONTROL, 'flex-1 min-w-0 w-full')}>
           <option value="">全部</option>
           <option value="true">是</option>
           <option value="false">否</option>

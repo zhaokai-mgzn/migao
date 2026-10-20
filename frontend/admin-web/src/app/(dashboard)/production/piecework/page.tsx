@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, Check, RefreshCw, Search, X } from 'lucide-react'
-import { Button, PageHeader } from '@/components/ui'
+import { Button, PageHeader, SELECT_CONTROL } from '@/components/ui'
 import { productionApi } from '@/lib/api'
 import { isAxiosError } from 'axios'
 // 工序显示名的**唯一**口径（issue #4621）：逻辑名 · 部位 —— 本页**不得**直接渲染变体名
@@ -459,7 +459,7 @@ function SettlementSection({ period, workers }: { period: string; workers: Piece
               data-testid="settlement-worker-select"
               value={pickedWorker}
               onChange={(e) => setPickedWorker(e.target.value)}
-              className="h-9 min-w-[200px] rounded border border-neutral-300 bg-white px-3 text-sm"
+              className={cn(SELECT_CONTROL, 'min-w-[200px]')}
             >
               <option value="">请选择工人</option>
               {workers.map((w) => (

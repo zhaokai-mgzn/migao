@@ -23,6 +23,7 @@ import FormPanel, { FIELD_CONTROL, Field, FormGrid, fieldControl } from '@/compo
 import { cuttingHeightApi } from '@/lib/api'
 import { CRAFT_OPTIONS, SPECIAL_OPTIONS } from '@/lib/order-craft-fields'
 import { cn } from '@/lib/utils'
+import { SELECT_CONTROL, SELECT_CONTROL_FIELD } from '@/components/ui'
 import type {
   CuttingHeightConfigBody,
   CuttingHeightConfigResponse,
@@ -288,7 +289,7 @@ export function CuttingHeightConfigPanel() {
                       </td>
                       <td className="py-1 pr-2">
                         <select
-                          className={inputCls}
+                          className={cn(SELECT_CONTROL, 'w-full')}
                           aria-label={`触发类型-${index}`}
                           value={item.hit.trigger_kind}
                           onChange={(e) => patchHit(index, { trigger_kind: e.target.value })}
@@ -310,7 +311,7 @@ export function CuttingHeightConfigPanel() {
                       </td>
                       <td className="py-1 pr-2">
                         <select
-                          className={inputCls}
+                          className={cn(SELECT_CONTROL, 'w-full')}
                           aria-label={`部位-${index}`}
                           value={item.hit.position ?? ''}
                           onChange={(e) => patchHit(index, { position: e.target.value || null })}
@@ -369,7 +370,7 @@ export function CuttingHeightConfigPanel() {
               <label className="text-sm text-neutral-600">
                 取整
                 <select
-                  className={cn(inputCls, 'ml-1 inline-block w-auto')}
+                  className={cn(SELECT_CONTROL, 'ml-1 inline-block w-auto')}
                   aria-label="取整方式"
                   value={config.rounding.mode}
                   onChange={(e) =>
@@ -384,7 +385,7 @@ export function CuttingHeightConfigPanel() {
               <label className="text-sm text-neutral-600">
                 保留
                 <select
-                  className={cn(inputCls, 'ml-1 inline-block w-auto')}
+                  className={cn(SELECT_CONTROL, 'ml-1 inline-block w-auto')}
                   aria-label="保留位数"
                   value={String(config.rounding.digits)}
                   onChange={(e) =>
@@ -427,7 +428,7 @@ export function CuttingHeightConfigPanel() {
           <Field label="部位" htmlFor="cutting-height-probe-position">
             <select
               id="cutting-height-probe-position"
-              className={FIELD_CONTROL}
+              className={cn(SELECT_CONTROL_FIELD, 'w-full')}
               aria-label="预演部位"
               value={probe.position}
               onChange={(e) => setProbe({ ...probe, position: e.target.value })}
@@ -451,7 +452,7 @@ export function CuttingHeightConfigPanel() {
           <Field label="安装工艺" htmlFor="cutting-height-probe-craft">
             <select
               id="cutting-height-probe-craft"
-              className={FIELD_CONTROL}
+              className={cn(SELECT_CONTROL_FIELD, 'w-full')}
               aria-label="预演工艺"
               value={probe.craft}
               onChange={(e) => setProbe({ ...probe, craft: e.target.value })}

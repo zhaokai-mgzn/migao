@@ -4,13 +4,14 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Phone, MapPin, Star, Plus, X, MessageSquare, ShoppingCart, Save } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button, Badge } from '@/components/ui'
+import { Button, Badge, SELECT_CONTROL } from '@/components/ui'
 import { useRouteId } from '@/lib/use-route-id'
 import { customerApi } from '@/lib/api'
 import type { CustomerDetail, CustomerTag, CustomerOrder, CustomerSession, CustomerChannel, CustomerDetailResponse, CustomerCreditStatus } from '@/types'
 import { CustomerChannelLabels } from '@/types'
 import { LOGISTICS_COMPANIES, LOGISTICS_TYPES } from '@/lib/logistics'
 import dayjs from 'dayjs'
+import { cn } from '@/lib/utils'
 
 const fmtMoney = (v: number | null | undefined) =>
   v == null ? '—' : Number(v).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -458,7 +459,7 @@ export default function CustomerDetailPage() {
               <label className="block">
                 <span className="text-xs text-neutral-500">常用物流方式</span>
                 <select
-                  className="mt-1 w-full h-9 px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                  className={cn(SELECT_CONTROL, 'mt-1', 'w-full')}
                   value={receiver.logisticsType}
                   onChange={(e) => setReceiver({ ...receiver, logisticsType: e.target.value })}
                 >

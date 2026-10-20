@@ -35,7 +35,7 @@ import {
 import { orderApi, productApi, customerApi, processingItemApi, productionApi, craftCalcApi, autoFeaturesApi, doorWidthPlanApi, feePreviewApi, type AutoFeaturesParams, type AutoFeaturesResult, type CraftCalcResult, type CraftCalcParams, type DoorWidthPlanParams, type DoorWidthPlanResult, type FeePreviewResult, type FeePreviewRow, type RecognizedField } from '@/lib/api'
 import { resolveImageUrl, cn } from '@/lib/utils'
 import { useOrderAmounts } from '@/hooks/useOrderAmounts'
-import { Button, Card, Input, Modal, NumberInput, PageHeader } from '@/components/ui'
+import { Button, Card, Input, Modal, NumberInput, PageHeader, SELECT_CONTROL } from '@/components/ui'
 import OrderCraftFields from '@/components/orders/OrderCraftFields'
 import OrderExtraOptions from '@/components/orders/OrderExtraOptions'
 import {
@@ -3427,7 +3427,7 @@ export default function NewOrderPage() {
                     data-testid="order-logistics-type"
                     value={logisticsType}
                     onChange={(e) => setLogisticsType(e.target.value)}
-                    className="w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                    className={cn(SELECT_CONTROL, 'w-full')}
                   >
                     {/* 「未指定」是真值：客户没录过常用物流时**不编造**「快递」（#4419 口径） */}
                     <option value="">未指定</option>
@@ -4594,7 +4594,7 @@ function ProductGroupBlock({
               const picked = skuOptions.find((sku) => String(sku.id) === e.target.value)
               if (picked) onSelectSku(picked)
             }}
-            className="h-9 min-w-[15rem] max-w-full rounded border border-neutral-300 bg-white px-2 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+            className={cn(SELECT_CONTROL, 'min-w-[15rem]', 'max-w-full')}
           >
             {group.selectedSku === null && <option value="">请选择规格</option>}
             {skuOptions.map((sku) => (

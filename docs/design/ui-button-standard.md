@@ -56,6 +56,13 @@
 配置面字段一律 `Field`（**标签在上** + 控件满列 + 单位入框），区块一律 `FormPanel`
 （浅底面板 `rounded-lg border bg-neutral-50/50 p-4` + `text-sm font-semibold` 标题 + 一句 `text-xs` 说明）。
 
+**控件的同一句话（下拉，issue #7397）**：业务面**不许**自己拼下拉样式 —— 一律引用
+`frontend/admin-web/src/components/ui/Select.tsx` 的 `SELECT_CONTROL`（筛选 / 行内面）或
+`SELECT_CHEVRON`（自有尺寸面，须登记台账）。箭尖是**自绘**的（内联 SVG 背景），
+不交给操作系统画：原生箭头会随 macOS / Windows / 浏览器版本变成三种形态，正是用户
+2026-10-20 截图里「所有页面的下拉框都看着很别扭」的成因。判据 =
+`frontend/admin-web/tests/unit/select-control-unification.test.tsx`。
+
 **改版式的唯一合法路径 = 改共享原语**（改一处全站跟着变），**不是**在页面里覆盖 class ——
 后者正是「一个产品长出多种写法」的源头（issue #7176 的实测病灶）。
 

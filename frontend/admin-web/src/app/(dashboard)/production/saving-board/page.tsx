@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Layers, RefreshCw } from 'lucide-react'
 import { extractApiErrorMessage, toastRequestError } from '@/lib/api-error'
 import { savingBoardApi } from '@/lib/api'
-import { Button, Card, PageHeader } from '@/components/ui'
+import { Button, Card, PageHeader, SELECT_CONTROL } from '@/components/ui'
 import { cn } from '@/lib/utils'
 import {
   NO_DATA,
@@ -113,7 +113,7 @@ export default function SavingBoardPage() {
               data-testid="saving-granularity"
               value={granularity}
               onChange={(e) => setGranularity(e.target.value)}
-              className="h-9 rounded-md border border-neutral-300 bg-white px-2 text-sm text-neutral-700"
+              className={SELECT_CONTROL}
             >
               {GRANULARITIES.map((g) => (
                 <option key={g.value} value={g.value}>

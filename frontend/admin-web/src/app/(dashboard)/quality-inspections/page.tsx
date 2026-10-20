@@ -10,6 +10,7 @@ import {
   PageHeader,
   Pagination,
   SearchPanel,
+  SELECT_CONTROL,
 } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
 import QualityCheckForm from '@/components/production/QualityCheckForm'
@@ -23,6 +24,7 @@ import {
   qualityStateChipClass,
   qualityStateLabel,
 } from '@/lib/quality-check'
+import { cn } from '@/lib/utils'
 import type {
   QualityInspectionRecord,
   QualityStats,
@@ -295,7 +297,7 @@ export default function QualityInspectionsPage() {
               <select
                 id="quality-status"
                 aria-label="按判定状态筛选"
-                className="h-9 w-full rounded border border-neutral-300 bg-white px-3 text-sm text-neutral-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/15"
+                className={cn(SELECT_CONTROL, 'w-full')}
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
               >

@@ -5,7 +5,7 @@ import { Plus, Pencil, Trash2, Send, Archive, Eye, RotateCcw } from 'lucide-reac
 import { toast } from 'sonner'
 import { knowledgeApi } from '@/lib/api'
 import { extractApiErrorMessage } from '@/lib/api-error'
-import { Table, Pagination, Modal, Button, Badge, SearchBar, PageHeader } from '@/components/ui'
+import { Table, Pagination, Modal, Button, Badge, SearchBar, PageHeader, SELECT_CONTROL } from '@/components/ui'
 import type { TableColumn } from '@/components/ui'
 import type { KnowledgeCard, KnowledgeCardStatus, KnowledgeCandidate, KnowledgeTemplateInfo } from '@/types'
 import DateTimeCell from '@/components/common/DateTimeCell'
@@ -473,7 +473,7 @@ export default function KnowledgePage() {
 
             <div data-testid="knowledge-filter-row" className="flex flex-wrap items-center gap-3">
               <select
-                className="h-9 min-w-[9rem] px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                className={cn(SELECT_CONTROL, 'min-w-[9rem]')}
                 value={category}
                 onChange={(e) => { setCategory(e.target.value); setCurrent(1) }}
               >
@@ -483,7 +483,7 @@ export default function KnowledgePage() {
                 ))}
               </select>
               <select
-                className="h-9 min-w-[9rem] px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                className={cn(SELECT_CONTROL, 'min-w-[9rem]')}
                 value={sourceFilter}
                 onChange={(e) => { setSourceFilter(e.target.value); setCurrent(1) }}
                 aria-label="来源筛选"
@@ -494,7 +494,7 @@ export default function KnowledgePage() {
                 ))}
               </select>
               <select
-                className="h-9 min-w-[9rem] px-3 rounded border border-neutral-300 bg-white text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                className={cn(SELECT_CONTROL, 'min-w-[9rem]')}
                 value={statusFilter}
                 onChange={(e) => { setStatusFilter(e.target.value); setCurrent(1) }}
               >
@@ -621,7 +621,7 @@ export default function KnowledgePage() {
           <div>
             <label className="text-sm font-medium">分类</label>
             <select
-              className="mt-1 w-full h-9 px-3 rounded border border-neutral-300 text-sm focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+              className={cn(SELECT_CONTROL, 'mt-1', 'w-full')}
               value={form.category}
               onChange={(e) => setForm({ ...form, category: e.target.value })}
             >

@@ -39,7 +39,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, RefreshCw, Search } from 'lucide-react'
-import { Button, Modal, Pagination, PageHeader } from '@/components/ui'
+import { Button, Modal, Pagination, PageHeader, SELECT_CONTROL } from '@/components/ui'
 import { orderApi, remnantApi } from '@/lib/api'
 import { InlineMarkdown } from '@/lib/inline-markdown'
 // 订单行商品身份（颜色 / 门幅）的唯一读取口 —— issue #6882
@@ -515,7 +515,7 @@ export default function RemnantLedgerPage() {
             // 换筛选条件 ⇒ 回到第 1 页（否则停在第 N 页的筛选结果短于 N 页时 = 空表）
             setPage(1)
           }}
-          className="px-2 py-1 text-xs border border-neutral-300 rounded"
+          className={SELECT_CONTROL}
         >
           <option value="">全部状态</option>
           {Object.entries(STATUS_LABEL).map(([k, v]) => (

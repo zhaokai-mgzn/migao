@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Modal } from '@/components/ui'
+import { Button, Modal, SELECT_CONTROL } from '@/components/ui'
 import { batchStockApi, processingOrderApi } from '@/lib/api'
 // 工艺规格展示的单一真值定义（设计文档 §4.9「一份 spec，三处渲染」）
 import { craftSpecLine } from '@/lib/craft-display'
@@ -39,6 +39,7 @@ import type {
   ProductionPosition,
 } from '@/types'
 import { SellingMethodLabels } from '@/types'
+import { cn } from '@/lib/utils'
 
 interface Props {
   /**
@@ -569,7 +570,7 @@ export default function ProcessingOrderBlock({
                 <select
                   data-testid={`batch-select-${row.itemId}`}
                   aria-label={`${row.label}批次`}
-                  className="mt-2 w-full rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm"
+                  className={cn(SELECT_CONTROL, 'mt-2', 'w-full')}
                   value={picks[row.itemId] ?? ''}
                   onChange={(e) => setPicks({ ...picks, [row.itemId]: e.target.value })}
                 >

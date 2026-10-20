@@ -8,6 +8,7 @@ import { AI_ROLES } from '@/config/ai-roles'
 import { authApi } from '@/lib/api'
 import { fileApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { SELECT_CHEVRON } from '@/components/ui/Select'
 import { INDUSTRY_OPTIONS } from '@/lib/industry'
 import Logo from '@/components/ui/Logo'
 import type { RegistrationData, RegistrationResult } from '@/types'
@@ -373,7 +374,7 @@ export default function RegisterPage() {
                   name="industry"
                   value={companyForm.industry}
                   onChange={handleCompanyChange}
-                  className={cn(inputClassName(false), 'bg-white')}
+                  className={cn(inputClassName(false), 'bg-white appearance-none pl-3.5 pr-9', SELECT_CHEVRON)}
                 >
                   <option value="">请选择行业（选填）</option>
                   {INDUSTRY_OPTIONS.map((o) => (

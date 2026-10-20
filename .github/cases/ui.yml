@@ -4966,3 +4966,50 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # UI-131（issue #7397，2026-10-20）—— 全站下拉框收口到「共享控件铬」+ 筛选条字段可增长。
+  #   用户逐字（三张截图）：「输入框长度不够，文字被遮住了」「我们所有页面的下拉框都看着很别扭，不协调」
+  #   「都是这种不协调的问题」。
+  #   病：业务面 38 处原生 <select> 各页自拼铬 —— 一部分没 appearance-none（系统原生箭头，
+  #   macOS 上是带框的小箭头，正是截图③红框圈住的那个）；写了 appearance-none 的几处又没有自绘箭尖
+  #   （下拉看起来「没有箭头」）；共享原语 Select 是第三种形态（rounded-lg + 叠层 ChevronDown）。
+  #   同时 SearchBar 的字段容器定宽 min-w-[200px] 且不 grow ⇒ 长占位文案被截断、按钮左侧留大片空白。
+
+  - id: UI-131
+    legacy_id: ""
+    title: "全站下拉框只有一种形态（共享 SELECT_CONTROL / 自绘箭尖）+ 筛选条字段参与伸缩（issue #7397）"
+    domains:
+      - ui
+      - frontend
+    tier: normal
+    tags:
+      - design-system
+      - select
+      - search-bar
+      - control-chrome
+    truths_ref: []
+    user_inputs:
+      - 「输入框长度不够，文字被遮住了」（用户 2026-10-20，知识库关键词输入框截图红框）
+      - 「我们所有页面的下拉框都看着很别扭，不协调」（用户 2026-10-20，作业看板状态筛选截图红框）
+      - 「都是这种不协调的问题」（用户 2026-10-20，第三张下拉截图）
+    precondition: "本用例是 [backend-contract] 纯前端版式契约用例：源码扫描 + jsdom 渲染，不依赖共享夹具与真实服务 ⇒ 前置不成立时对应单测直接红；agent-eval 栈不跑它"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·业务面下拉必须引用共享铬（会红）：`src/**`（除 `src/components/ui/**`）里每个真实 `<select>` 开标签必须含 `SELECT_CONTROL`；只借箭尖（`SELECT_CHEVRON`）的面必须登记在冻结台账且台账只许缩短。执行点 = frontend/admin-web/tests/unit/select-control-unification.test.tsx（describe「判据 1」）。"
+      - "判据 2·共享铬不许被削弱（会红）：`SELECT_CONTROL` 仍带 `appearance-none` / `h-9` / `border-neutral-300` / `pr-9` / `rounded` / 自绘箭尖背景 / 焦点环 / disabled 态；表单面 `SELECT_CONTROL_FIELD` = 同一套 + `rounded-lg`。执行点同上（判据 2）。"
+      - "判据 3·单一份箭尖图形（会红）：`Select` 原语不再 import `ChevronDown`、不再叠第二个箭头，改用 `SELECT_CONTROL_FIELD`。执行点同上（判据 3）。"
+      - "判据 4·筛选条字段参与伸缩（会红）：`SearchBar` 字段容器带 `flex-1` + `basis-[22rem]`、不再有定宽 `min-w-[200px]`；输入框 `w-full` 吃满容器 ⇒ 长占位文案（「搜索标题 / 关键词 / 常见问法 / 回答内容」）不再被截断。执行点同上（判据 4）。"
+      - "判据 5·判别力自证（会红）：注入「自己拼铬」「台账外的 SELECT_CHEVRON」「注释里的 <select> 字样」三种形态，纯函数必须在内存里分别判红 / 判红 / 放行（不制造假红）。执行点同上（describe「判别力自证」）。"
+    skip_reason: "[backend-contract] 纯前端版式契约（不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟"
+    merge_log: "2026-10-20 新增（issue #7397）。38 处业务 `<select>` 全部改引用 `SELECT_CONTROL`（`Select.tsx` 唯一真值：appearance-none + 自绘暖色箭尖 + h-9 + 焦点环），`Pagination` 紧凑档与 `register` 大字面只借 `SELECT_CHEVRON`（后者登记台账，理由：h-11 表单硬塞 h-9 会与同页输入框不齐）。顺带修 `SearchBar` 定宽字段（占位文案截断）。`Select` 原语去掉叠层 `ChevronDown`（同一份箭尖图形）。判据 = 新增类级元守卫 + 既有 design-system-form-fields / filter-area-primitive-guard 全绿。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/select-control-unification.test.tsx"
+        - "frontend/admin-web/tests/unit/components/SearchBar.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/knowledge.test.tsx"
+        - "frontend/admin-web/tests/unit/design-system-form-fields.test.tsx"
+        - "frontend/admin-web/tests/unit/filter-area-primitive-guard.test.ts"
+      ci:
+        - pr-check.yml
+      verifies: []
