@@ -54,6 +54,36 @@ public interface InboundOrderMapper extends BaseMapper<InboundOrder> {
     List<Map<String, Object>> selectUnassignedSupplierNames(@Param("tenantId") Long tenantId);
 
     /**
+     * 供应商应付对账（issue #7369 段 3-A）：每家供应商的**累计收货额**与收货面读数。
+     *
+     * <h3>口径（逐条写清，别让读的人猜）</h3>
+     * <ul>
+     *   <li>只算 <b>posted</b>（已过账）的入库单：draft 还没进库存、cancelled 是作废，两者都不构成应付；</li>
+     *   <li>金额取 {@code inbound_orders.total_amount}（过账时冻结的金额），不在这里重算明细 ——
+     *       重算就是第二套口径；</li>
+     *   <li><b>LEFT JOIN</b>：刚建档还没收过货的供应商也出现在清单里（金额 0），否则「建档了但没录单」
+     *       这件事在页面上看不出来；</li>
+     *   <li>只能统计**已挂档案**的单（{@code supplier_id} 非空）；未挂的由「待指派」清单承接 ——
+     *       两处不重叠、也不互相顶替。</li>
+     * </ul>
+     *
+     * <p>⚠️ 手写 SQL **不走** {@code TenantLineInnerInterceptor} ⇒ `tenant_id` 在 JOIN 两侧都自己写。</p>
+     */
+    @Select("SELECT s.id AS supplier_id, s.name AS supplier_name, s.status AS supplier_status, "
+            + "       COALESCE(SUM(o.total_amount), 0) AS received_amount, "
+            + "       count(o.id) AS order_count, "
+            + "       min(o.inbound_date) AS first_inbound_date, "
+            + "       max(o.inbound_date) AS last_inbound_date "
+            + "FROM suppliers s "
+            + "LEFT JOIN inbound_orders o "
+            + "       ON o.tenant_id = s.tenant_id AND o.supplier_id = s.id "
+            + "      AND o.deleted = 0 AND o.status = 'posted' "
+            + "WHERE s.tenant_id = #{tenantId} AND s.deleted = FALSE "
+            + "GROUP BY s.id, s.name, s.status "
+            + "ORDER BY received_amount DESC, s.name LIMIT 500")
+    List<Map<String, Object>> selectSupplierPayables(@Param("tenantId") Long tenantId);
+
+    /**
      * 过账的**原子闸**：条件更新（CAS）—— 只有当前仍是 {@code draft} 才置 {@code posted}。
      *
      * <p>为什么不用「先读 status 判 draft，再 {@code updateById} 写」：读与写之间有窗口，

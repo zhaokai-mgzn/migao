@@ -7,7 +7,7 @@ import { Button, PageCard, PageHeader } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
 import { supplierApi } from '@/lib/api'
 import { usePermission } from '@/lib/permission'
-import type { Supplier, UnassignedInboundSupplier } from '@/types'
+import type { Supplier, SupplierPayableSummary, UnassignedInboundSupplier } from '@/types'
 
 /**
  * 供应商 `/suppliers`（issue #7369，P0-1 段 1）—— 大菜单「仓储与物料 ▸ 供应商」的第一屏。
@@ -36,6 +36,12 @@ import type { Supplier, UnassignedInboundSupplier } from '@/types'
  */
 
 /** 账期展示口径：未设置 / 现结 / N 天（与 V170 的列注释逐字一致）。 */
+/** 金额上屏：两位小数、千分位留给浏览器；null/undefined 一律 0.00（不显示 NaN）。 */
+function formatAmount(value: number | null | undefined): string {
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : 0
+  return n.toFixed(2)
+}
+
 export function paymentTermsLabel(days: number | null | undefined): string {
   if (days === null || days === undefined) return '未设置'
   if (days === 0) return '现结'
@@ -71,6 +77,7 @@ export default function SuppliersPage() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [unassigned, setUnassigned] = useState<UnassignedInboundSupplier[]>([])
+  const [payables, setPayables] = useState<SupplierPayableSummary | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -101,10 +108,22 @@ export default function SuppliersPage() {
     }
   }, [])
 
+  // 应付对账（issue #7369 段 3-A）：只读汇总，与本页列表相互独立 —— 它失败不该让档案列表变空。
+  const loadPayables = useCallback(async () => {
+    try {
+      const res = await supplierApi.payables()
+      setPayables(res.data.data || null)
+    } catch (error) {
+      setPayables(null)
+      console.error('加载应付对账失败:', error)
+    }
+  }, [])
+
   useEffect(() => {
     load()
     loadUnassigned()
-  }, [load, loadUnassigned])
+    loadPayables()
+  }, [load, loadUnassigned, loadPayables])
 
   const openCreate = () => setForm({ ...EMPTY_FORM })
 
@@ -151,7 +170,7 @@ export default function SuppliersPage() {
         toast.success('供应商已建档')
       }
       setForm(null)
-      await Promise.all([load(keyword), loadUnassigned()])
+      await Promise.all([load(keyword), loadUnassigned(), loadPayables()])
     } catch (error) {
       toast.error(form.id ? '更新供应商失败' : '新建供应商失败')
       console.error('保存供应商失败:', error)
@@ -222,6 +241,55 @@ export default function SuppliersPage() {
               </li>
             ))}
           </ul>
+          </div>
+        </PageCard>
+      )}
+
+      {payables && payables.suppliers.length > 0 && (
+        <PageCard className="mt-4">
+          <div data-testid="supplier-payables">
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-sm text-neutral-700">
+                按供应商累计收货额（应付对账）
+              </div>
+              <div className="text-sm text-neutral-900">
+                合计 <span className="font-medium">¥{formatAmount(payables.totalReceived)}</span>
+              </div>
+            </div>
+            <div className="text-xs text-neutral-500 mb-3">
+              {payables.paymentsRecorded
+                ? `尚欠合计 ¥${formatAmount(payables.totalOutstanding)}`
+                : '付款登记还没做：这里给出的是累计收货额（应付发生额），不是「尚欠」'}
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-neutral-500 border-b border-neutral-100">
+                    <th className="py-2 font-normal whitespace-nowrap">供应商</th>
+                    <th className="py-2 font-normal whitespace-nowrap text-right">累计收货额</th>
+                    <th className="py-2 font-normal whitespace-nowrap text-right">入库单</th>
+                    <th className="py-2 font-normal whitespace-nowrap">最近入库</th>
+                    <th className="py-2 font-normal whitespace-nowrap text-right">已付</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payables.suppliers.map((p2) => (
+                    <tr key={p2.supplierId} className="border-b border-neutral-50" data-testid={`payable-${p2.supplierId}`}>
+                      <td className="py-2 whitespace-nowrap">
+                        {p2.supplierName}
+                        {p2.status === 'inactive' && <span className="ml-2 text-xs text-neutral-400">已停用</span>}
+                      </td>
+                      <td className="py-2 whitespace-nowrap text-right">¥{formatAmount(p2.receivedAmount)}</td>
+                      <td className="py-2 whitespace-nowrap text-right">{p2.orderCount}</td>
+                      <td className="py-2 whitespace-nowrap text-neutral-500">{p2.lastInboundDate || '—'}</td>
+                      <td className="py-2 whitespace-nowrap text-right text-neutral-400">
+                        {p2.paymentsRecorded ? `¥${formatAmount(p2.paidAmount)}` : '未登记'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </PageCard>
       )}

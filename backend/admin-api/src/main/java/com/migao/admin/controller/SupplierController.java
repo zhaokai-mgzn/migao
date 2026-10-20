@@ -2,6 +2,7 @@ package com.migao.admin.controller;
 
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.dto.ApiResponse;
+import com.migao.admin.dto.SupplierPayableSummary;
 import com.migao.admin.dto.UnassignedInboundSupplier;
 import com.migao.admin.entity.Supplier;
 import com.migao.admin.security.RequirePermission;
@@ -54,6 +55,20 @@ public class SupplierController {
     public ApiResponse<List<UnassignedInboundSupplier>> unassignedInbound() {
         Long tenantId = TenantContext.getTenantId();
         return ApiResponse.success(supplierService.unassignedInboundSuppliers(tenantId));
+    }
+
+    /**
+     * 供应商应付对账（issue #7369 段 3-A）：每家供应商的累计收货额 / 单据数 / 首末入库日 / 尚欠。
+     *
+     * <p>⚠️ <b>A 段没有付款登记</b>：响应里 {@code paymentsRecorded = false}、{@code paidAmount = 0}，
+     * 前端据此显示「未登记」而不是「已付 ¥0」。读码沿用 {@code inbound:view} —— 该页读者与入库单同群，
+     * 且入库单列表本来就带金额，不新增暴露面。</p>
+     */
+    @GetMapping("/api/admin/suppliers/payables")
+    @RequirePermission("inbound:view")
+    public ApiResponse<SupplierPayableSummary> payables() {
+        Long tenantId = TenantContext.getTenantId();
+        return ApiResponse.success(supplierService.payableSummary(tenantId));
     }
 
     /** 新建供应商档案。 */
