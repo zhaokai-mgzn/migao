@@ -293,10 +293,23 @@ def machine_scored_data_checks(case: dict) -> list[str]:
 # 分流的是「谁给它计分」，不是「它免检」。
 BACKEND_CONTRACT_MARKER = "[backend-contract]"
 
+#: 与 `[backend-contract]` **等价**的契约标记（issue #7369 段 4-B 扩面）。
+#:
+#: 病灶：本分流的判据是「**计分通道在 `traces.tests`**」，但入口条件只认字面上的
+#: `[backend-contract]` ⇒ 形态完全相同的**前端契约用例**（vitest 判据、不进 agent-eval）
+#: 被判成「空断言（恒绿）」，唯一出路只能是纸面修复或编造 runner 断言 —— 正是本分流通篇
+#: 反对的两条路。故入口条件改为「任一 `[*-contract]` 标记」；分流的**结构性条件**
+#: （`traces.tests` 非空且逐个 `is_file()`）一字不放宽。
+CONTRACT_MARKERS = (BACKEND_CONTRACT_MARKER, "[frontend-contract]")
+
 
 def is_backend_contract_case(case: dict) -> bool:
-    """该用例是否声明为 `[backend-contract]`（不进 agent-eval 冒烟、非 LLM 行为）。"""
-    return str(case.get("skip_reason") or "").strip().startswith(BACKEND_CONTRACT_MARKER)
+    """该用例是否声明了契约标记（判据在 `traces.tests`、不进 agent-eval 冒烟、非 LLM 行为）。
+
+    ⚠️ 函数名沿用历史形态（`backend` 二字现在只是**其中一个**标记）；语义 = 「契约类用例」。
+    """
+    reason = str(case.get("skip_reason") or "").strip()
+    return any(reason.startswith(marker) for marker in CONTRACT_MARKERS)
 
 
 def backend_contract_scoring_channel(case: dict, repo_root=None) -> bool:
