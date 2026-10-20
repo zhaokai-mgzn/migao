@@ -10309,7 +10309,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（129 case）
+## 前端 UI 域（130 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -12177,6 +12177,21 @@
 ```
 溯源: 2026-10-19 新增（issue #7335）。数据侧：同日已为测试租户 46 的 6 个无图商品生成 24 张（6 主图 + 18 明细图）并写入 products.main_image / images / detail_images（qwen-image-3.0 封面 + 2.1-pro/mt-image-2.0/2.1-turbo 明细图自动切换）。功能侧：模型/提示词内核在 ai-agent（不落库、配额轮换），转存与页面入口在 admin-api/admin-web；平台统一 Key（用户 2026-10-19 裁定）。2026-10-19 追加（issue #7341）：默认回落链去掉图片翻译模型 qwen-mt-image-2.0，400 InvalidParameter 转为「切下一个模型」。2026-10-19 追加（issue #7344，用户 20:21 建议「编辑页也支持补图」）：入口本就在共享 ProductForm（编辑页可用），本次补多图切换样图 + 用这张后面板不收起。 ｜ tags: ai-image, product-create, image-generation
 
+### UI-130. 销售订单列表查询区默认折叠：常驻一行摘要 + 展开才渲染筛选项（issue #7388） 🔵
+```
+你: 「这里的查询区域默认折叠起来」（用户 2026-10-20，销售订单页截图）
+期望: direct_reply
+数据: 判据 1·原语 opt-in（会红）：不传 `collapsible` 的 `SearchPanel` 字段常驻且无折叠开关（客户 / 售后 / 品检 / 员工四页行为零变化）。执行点 = frontend/admin-web/tests/unit/components/SearchPanel.test.ts（describe「collapsible（issue #7388）」）。
+数据: 判据 2·折叠态 DOM 在场性（会红）：`collapsible` 默认收起时 `fields[].control` 与「查询/重置/刷新」三个按钮 `queryBy*` 为 null，`search-panel-toggle` 的 `aria-expanded=false` 且 `search-panel-summary` 在。执行点同上。
+数据: 判据 3·两态往返（会红）：点「展开筛选」⇒ 字段与三个按钮逐个回来、`aria-expanded=true`、摘要不再渲染；再点 ⇒ 字段又消失。执行点同上 + frontend/admin-web/tests/unit/pages/orders.test.tsx。
+数据: 判据 4·订单页默认收起且摘要说清时间范围（会红）：首屏取不到「请输入订单ID」与「查询」按钮，`search-panel-summary` 含「近一个月」；展开后 5 个文本框 + 2 个日期框 + 查询/重置/刷新全在。执行点 = orders.test.tsx。
+数据: 判据 5·版式判据不被折叠绕过（会红）：`orders-query-area-overflow.test.tsx` 的单一 grid / 无溢出 / label 定宽 / 字段格可缩在**展开态**逐条仍成立（不是靠容器里没有 grid 而假绿）。
+数据: 判据 6·收起态要**引导**用户去查询（会红，用户 2026-10-20 追加「折叠状态需要引导用户可以打开区域查询」）：收起时入口必须是**按钮形态**（`search-panel-toggle-label` 带 `border` + `rounded-lg`）且文案「展开筛选」、`title` 含「展开筛选区」；展开后同一位置降级成弱文字「收起」（无描边，不与「查询」抢 primary）。执行点 = SearchPanel.test.ts（判据 2/3）+ orders.test.tsx。
+前置: 本用例是 [backend-contract] 纯前端版式/交互契约用例：页面渲染时 mock `@/lib/api` 与 `@/components/orders`，不依赖共享夹具与真实服务 ⇒ 前置不成立时对应单测直接红；agent-eval 栈不跑它
+跳过: [backend-contract] 纯前端版式与交互契约（不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟
+```
+溯源: 2026-10-20 新增（issue #7388）；同日追加「收起态引导」（用户逐字「折叠状态需要引导用户可以打开区域查询」⇒ 入口做成描边按钮形态 + title）。折叠能力落在共享原语 `SearchPanel`（`collapsible` / `defaultCollapsed` / `summary`），订单页显式传 `collapsible`；其它使用该原语的页面（客户 / 售后 / 品检 / 员工）本轮**有意不动**，重启条件 = 它们各自的筛选区字段数增长到压掉首屏列表时。 ｜ tags: search-panel, collapse, orders-list
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -12206,8 +12221,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：834（活跃 141，跳过 693）
-- tier 分布：smoke 12 / normal 766 / adversarial 32
+- 用例总数：835（活跃 141，跳过 694）
+- tier 分布：smoke 12 / normal 767 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12232,7 +12247,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：129
+- 前端 UI 域：130
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -12559,4 +12574,5 @@
 - UI-127: 订单详情权限（order:detail）真正生效：详情/发货两读面收码 + 页面拒绝态 + 无权限的加工单块不发起请求（issue #7276）
 - UI-128: A4 纸面不带浏览器页眉页脚：@page 边距写 0（浏览器无可画之处）+ 版面内缩 12mm 由单据容器承担、box-decoration-break: clone 逐页重复（issue #7309）
 - UI-129: 建品页 AI 生成商品图：样图 → 百炼图生图 → 预览后选用（不自动落库，issue #7335）
+- UI-130: 销售订单列表查询区默认折叠：常驻一行摘要 + 展开才渲染筛选项（issue #7388）
 

@@ -46,7 +46,7 @@
 // 故它们是**被替换**（各自的病由新判据 ① 的列梯 + ⑧ 的可缩性承接），而**控件侧的不可收缩形态（⑥）一字未动**。
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 const mockGetOrders = vi.fn()
 
@@ -372,6 +372,8 @@ describe('订单列表查询区 · 单一 grid（#5880）/ 不溢出（#5841）/
   it('① 查询区恰有一个 grid 容器，且列梯为「基档 1 列 + 大轨道数只在 ≥1536px」', async () => {
     render(<OrdersPage />)
     await waitFor(() => expect(mockGetOrders).toHaveBeenCalled())
+    // issue #7388：筛选区默认收起 ⇒ 版式判据必须先展开（折叠态根本没有 grid / label）。
+    fireEvent.click(screen.getByTestId('search-panel-toggle'))
 
     expect(singleGridProblems(queryArea())).toEqual([])
     // 字段格与按钮行都必须是这个 grid 的直接子元素（不给「第二个 grid」留位置）
@@ -382,6 +384,8 @@ describe('订单列表查询区 · 单一 grid（#5880）/ 不溢出（#5841）/
   it('② 筛选项一个不少：input/select 数量与 placeholder 集合与改前逐值相同', async () => {
     render(<OrdersPage />)
     await waitFor(() => expect(mockGetOrders).toHaveBeenCalled())
+    // issue #7388：筛选区默认收起 ⇒ 版式判据必须先展开（折叠态根本没有 grid / label）。
+    fireEvent.click(screen.getByTestId('search-panel-toggle'))
 
     expect(fieldSetProblems(queryArea())).toEqual([])
   })
@@ -389,6 +393,8 @@ describe('订单列表查询区 · 单一 grid（#5880）/ 不溢出（#5841）/
   it('③ 下单时间单元格跨 2 轨（两个日期框 + 「至」是一个整体控件组）', async () => {
     render(<OrdersPage />)
     await waitFor(() => expect(mockGetOrders).toHaveBeenCalled())
+    // issue #7388：筛选区默认收起 ⇒ 版式判据必须先展开（折叠态根本没有 grid / label）。
+    fireEvent.click(screen.getByTestId('search-panel-toggle'))
 
     expect(dateRangeSpanProblems(layoutGrid())).toEqual([])
   })
@@ -396,6 +402,8 @@ describe('订单列表查询区 · 单一 grid（#5880）/ 不溢出（#5841）/
   it('④ 按钮行是查询区最后一个 grid item、右对齐，且「刷新」与筛选动作之间有分层分隔', async () => {
     render(<OrdersPage />)
     await waitFor(() => expect(mockGetOrders).toHaveBeenCalled())
+    // issue #7388：筛选区默认收起 ⇒ 版式判据必须先展开（折叠态根本没有 grid / label）。
+    fireEvent.click(screen.getByTestId('search-panel-toggle'))
 
     expect(buttonRowProblems(layoutGrid())).toEqual([])
   })
@@ -403,6 +411,8 @@ describe('订单列表查询区 · 单一 grid（#5880）/ 不溢出（#5841）/
   it('⑤ 查询区内所有 label 共用同一个固定宽（行间起点才对齐）', async () => {
     render(<OrdersPage />)
     await waitFor(() => expect(mockGetOrders).toHaveBeenCalled())
+    // issue #7388：筛选区默认收起 ⇒ 版式判据必须先展开（折叠态根本没有 grid / label）。
+    fireEvent.click(screen.getByTestId('search-panel-toggle'))
 
     const labels = [...queryArea().querySelectorAll('label')]
     expect(labels.length).toBeGreaterThanOrEqual(7) // fail-closed
@@ -412,6 +422,8 @@ describe('订单列表查询区 · 单一 grid（#5880）/ 不溢出（#5841）/
   it('⑥ 查询区表单控件不得同时带 flex-1 与固定 min-w-[…]（缩不下去 = 撑爆所在格）', async () => {
     render(<OrdersPage />)
     await waitFor(() => expect(mockGetOrders).toHaveBeenCalled())
+    // issue #7388：筛选区默认收起 ⇒ 版式判据必须先展开（折叠态根本没有 grid / label）。
+    fireEvent.click(screen.getByTestId('search-panel-toggle'))
 
     const bad = queryControls().flatMap((el) =>
       fixedMinWidthControls(el).map((cls) => `${el.tagName.toLowerCase()}[${cls}] = ${el.className}`)
@@ -422,6 +434,8 @@ describe('订单列表查询区 · 单一 grid（#5880）/ 不溢出（#5841）/
   it('⑦ 防 A 类回潮：查询区若又出现 grid 行，其 fr 轨道必须是 minmax(0,…)', async () => {
     render(<OrdersPage />)
     await waitFor(() => expect(mockGetOrders).toHaveBeenCalled())
+    // issue #7388：筛选区默认收起 ⇒ 版式判据必须先展开（折叠态根本没有 grid / label）。
+    fireEvent.click(screen.getByTestId('search-panel-toggle'))
 
     const grids = [queryArea(), ...queryArea().querySelectorAll('*')].filter((el) => hasGridCols(el.className))
     expect(grids.length).toBeGreaterThanOrEqual(1) // fail-closed：没有 grid ⇒ 该判据会空转
@@ -432,6 +446,8 @@ describe('订单列表查询区 · 单一 grid（#5880）/ 不溢出（#5841）/
   it('⑧ 每个字段格必须可缩（min-w-0，且不得带固定 min-w-[…]）', async () => {
     render(<OrdersPage />)
     await waitFor(() => expect(mockGetOrders).toHaveBeenCalled())
+    // issue #7388：筛选区默认收起 ⇒ 版式判据必须先展开（折叠态根本没有 grid / label）。
+    fireEvent.click(screen.getByTestId('search-panel-toggle'))
 
     const cells = [...layoutGrid().children].filter((el) => el.querySelector('input, select, textarea') !== null)
     expect(cells.length).toBeGreaterThanOrEqual(7) // fail-closed
@@ -441,6 +457,8 @@ describe('订单列表查询区 · 单一 grid（#5880）/ 不溢出（#5841）/
   it('⑨ fail-closed：查询区确实是 grid、且字段格 / 控件 / label 都在（删光即红）', async () => {
     render(<OrdersPage />)
     await waitFor(() => expect(mockGetOrders).toHaveBeenCalled())
+    // issue #7388：筛选区默认收起 ⇒ 版式判据必须先展开（折叠态根本没有 grid / label）。
+    fireEvent.click(screen.getByTestId('search-panel-toggle'))
 
     // 🔴 issue #7116：筛选区改为由共享原语 `SearchPanel` 承载 ⇒ `search-area` 现在是**外层**容器
     // （`bg-white rounded-lg … p-5`），栅格是它的**直接子元素**（`grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4`）。

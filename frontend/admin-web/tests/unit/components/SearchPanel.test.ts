@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// case_ids: UI-103
+// case_ids: UI-103, UI-130
 /**
  * `SearchPanel` 共享原语判据（issue #7007）。
  *
@@ -54,7 +54,7 @@
  * 一律 `React.createElement`。仓内先例：`tests/unit/pages/after-sales-detail.test.tsx`。
  */
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { createElement as h } from 'react'
 import SearchPanel, { SEARCH_CONTROL_CLASS, type SearchFieldSpec } from '@/components/ui/SearchPanel'
 
@@ -278,5 +278,83 @@ describe('SearchPanel —— 列表页筛选区共享原语（issue #7007）', (
     expect(tokens(root)).toContain('mb-2')
     expect(tokens(root)).toContain('bg-white')
     expect(tokens(root)).toContain('rounded-lg')
+  })
+})
+
+/**
+ * 可折叠（issue #7388）：判据一律落在 **DOM 在场性**上，不是类名 ——
+ * 折叠若只是 CSS 隐藏，页面高度与无障碍树都还在涨（§31 P1 的机器读数 = `queryBy*` 为 `null`）。
+ */
+describe('SearchPanel —— collapsible（issue #7388）', () => {
+  const collapsibleProps = {
+    fields: fields(),
+    onSearch: () => {},
+    onReset: () => {},
+    onRefresh: () => {},
+    collapsible: true,
+    summary: '近一个月 · 收货人',
+  }
+
+  it('不传 collapsible ⇒ 字段常驻、没有折叠开关（存量页面行为逐字不变）', () => {
+    render(h(SearchPanel, { fields: fields(), onSearch: () => {} }))
+    // 红证（已执行）：把 `collapsible = false` 的默认值改成 `true` ⇒ 这里当场红
+    // —— 客户 / 售后 / 品检 / 员工四页会在没人要求的情况下一起改成折叠。
+    expect(screen.getByLabelText('客户名称输入')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '查询' })).toBeTruthy()
+    expect(screen.queryByTestId('search-panel-toggle')).toBeNull()
+  })
+
+  it('collapsible 默认收起：字段与按钮行**不在 DOM**，摘要与展开入口在', () => {
+    render(h(SearchPanel, collapsibleProps))
+    // 红证（已执行）：把 body 改成常驻 + `hidden` / CSS 隐藏 ⇒ 这两条当场红（DOM 还在 = 假折叠）。
+    expect(screen.queryByLabelText('客户名称输入')).toBeNull()
+    expect(screen.queryByLabelText('下单时间输入')).toBeNull()
+    expect(screen.queryByRole('button', { name: '查询' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '刷新' })).toBeNull()
+
+    const toggle = screen.getByTestId('search-panel-toggle')
+    expect(toggle.tagName).toBe('BUTTON')
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    // 收起态必须说清「在筛什么」：只有一行标题的折叠条会让商家以为列表是全部订单。
+    expect(screen.getByTestId('search-panel-summary').textContent).toContain('近一个月')
+
+    // 收起 ≠ 没有筛选：必须有**看得出能点**的入口（用户 2026-10-20：「折叠状态需要引导用户
+    // 可以打开区域查询」）。判据 = 入口文案 + 按钮形态（描边）+ 悬停提示都在，
+    // 只把「展开筛选」写成一行弱文字（无描边）也算没做到 —— 红证：去掉 `border` token ⇒ 红。
+    const label = screen.getByTestId('search-panel-toggle-label')
+    expect(label.textContent).toContain('展开筛选')
+    expect(tokens(label)).toContain('border')
+    expect(tokens(label)).toContain('rounded-lg')
+    expect(toggle.getAttribute('title')).toContain('展开筛选区')
+  })
+
+  it('点「展开筛选」⇒ 字段与按钮逐个回来、aria-expanded 翻转；再点 ⇒ 又收起', () => {
+    render(h(SearchPanel, collapsibleProps))
+    const toggle = screen.getByTestId('search-panel-toggle')
+
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    for (const name of ['客户名称输入', '手机号输入', '下单时间输入']) {
+      expect(screen.getByLabelText(name)).toBeTruthy()
+    }
+    expect(screen.getByRole('button', { name: '查询' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '重置' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '刷新' })).toBeTruthy()
+    // 展开后字段本身就在说「在筛什么」⇒ 摘要不再渲染（§31 P2：不重复同屏已有信息）。
+    expect(screen.queryByTestId('search-panel-summary')).toBeNull()
+    const label = screen.getByTestId('search-panel-toggle-label')
+    expect(label.textContent).toBe('收起')
+    // 展开后入口降级成弱文字：不与「查询」抢视觉（一屏至多一个 primary，见 ui-button-standard §2）。
+    expect(tokens(label)).not.toContain('border')
+
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByLabelText('客户名称输入')).toBeNull()
+  })
+
+  it('defaultCollapsed={false} ⇒ 可折叠但初始展开（需要常驻的页面有出口）', () => {
+    render(h(SearchPanel, { ...collapsibleProps, defaultCollapsed: false }))
+    expect(screen.getByLabelText('客户名称输入')).toBeTruthy()
+    expect(screen.getByTestId('search-panel-toggle').getAttribute('aria-expanded')).toBe('true')
   })
 })
