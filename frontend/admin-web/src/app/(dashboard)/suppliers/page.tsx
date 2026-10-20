@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Button, PageCard, PageHeader } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
 import { supplierApi } from '@/lib/api'
+import { usePermission } from '@/lib/permission'
 import type { Supplier } from '@/types'
 
 /**
@@ -61,6 +62,10 @@ const EMPTY_FORM: FormState = {
 }
 
 export default function SuppliersPage() {
+  // 写面按 `inbound:create` 门控（#5983 范式）：无写码的岗位**看不到**建/改入口，
+  // 而不是点下去才 403（菜单节点码是读码 `inbound:view`）。
+  const { has: hasPermission } = usePermission()
+  const canWrite = hasPermission('inbound:create')
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [keyword, setKeyword] = useState('')
   const [loading, setLoading] = useState(true)
@@ -166,10 +171,12 @@ export default function SuppliersPage() {
         title="供应商"
         subtitle="谁在供货、账期几天、还收不收货 —— 一处维护，单据侧引用（采购/收货）随后接上"
         actions={
-          <Button onClick={openCreate}>
-            <Plus className="w-4 h-4 mr-1" />
-            新建供应商
-          </Button>
+          canWrite ? (
+            <Button onClick={openCreate}>
+              <Plus className="w-4 h-4 mr-1" />
+              新建供应商
+            </Button>
+          ) : null
         }
       />
 
@@ -205,7 +212,7 @@ export default function SuppliersPage() {
         ) : loadError ? null : suppliers.length === 0 ? (
           <div className="py-12 text-center text-sm text-neutral-500" data-testid="supplier-empty">
             <Truck className="w-8 h-8 mx-auto mb-2 text-neutral-300" />
-            {keyword ? '没有匹配的供应商' : '还没有供应商档案 —— 点右上角「新建供应商」开始'}
+            {keyword ? '没有匹配的供应商' : canWrite ? '还没有供应商档案 —— 点右上角「新建供应商」开始' : '还没有供应商档案'}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -239,14 +246,20 @@ export default function SuppliersPage() {
                     </span>
                   </td>
                   <td className="py-2 text-right whitespace-nowrap sticky right-0 bg-white">
-                    <button className="text-primary-600 hover:underline mr-3" onClick={() => openEdit(s)}>编辑</button>
-                    <button
-                      className="text-neutral-500 hover:underline"
-                      data-testid={`supplier-toggle-${s.id}`}
-                      onClick={() => toggleStatus(s)}
-                    >
-                      {s.status === 'active' ? '停用' : '启用'}
-                    </button>
+                    {canWrite ? (
+                      <>
+                        <button className="text-primary-600 hover:underline mr-3" onClick={() => openEdit(s)}>编辑</button>
+                        <button
+                          className="text-neutral-500 hover:underline"
+                          data-testid={`supplier-toggle-${s.id}`}
+                          onClick={() => toggleStatus(s)}
+                        >
+                          {s.status === 'active' ? '停用' : '启用'}
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-xs text-neutral-400">只读</span>
+                    )}
                   </td>
                 </tr>
               ))}

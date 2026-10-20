@@ -26,6 +26,12 @@ vi.mock('lucide-react', async (importOriginal) => {
   return { ...actual, Plus: stub('plus'), Search: stub('search'), Truck: stub('truck') }
 })
 
+// 写面按 `inbound:create` 门控（#5983 范式）：默认给足写码；「只读」用例另行覆盖。
+const mockHas = vi.fn((code: string) => code === 'inbound:create')
+vi.mock('@/lib/permission', () => ({
+  usePermission: () => ({ has: (code: string) => mockHas(code), loading: false }),
+}))
+
 const mockList = vi.fn()
 const mockCreate = vi.fn()
 const mockUpdate = vi.fn()
@@ -49,6 +55,7 @@ const ROWS = [
 describe('供应商档案页', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockHas.mockImplementation((code: string) => code === 'inbound:create')
     mockList.mockResolvedValue({ data: { data: ROWS } })
     mockCreate.mockResolvedValue({ data: { data: ROWS[0] } })
     mockUpdate.mockResolvedValue({ data: { data: ROWS[0] } })
@@ -125,5 +132,14 @@ describe('供应商档案页', () => {
       expect(toast.error).toHaveBeenCalledWith('账期天数须在 0~365 之间（0 = 现结，留空 = 未设置）')
     })
     expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  it('无写码 ⇒ 建/改入口整项不渲染（不是点下去才 403，#5983 范式）', async () => {
+    mockHas.mockImplementation(() => false)
+    render(<SuppliersPage />)
+    await waitFor(() => expect(screen.getByTestId('supplier-table')).toBeInTheDocument())
+    expect(screen.queryByText('新建供应商')).toBeNull()
+    expect(screen.queryByTestId('supplier-toggle-sup-1')).toBeNull()
+    expect(screen.getAllByText('只读').length).toBeGreaterThan(0)
   })
 })
