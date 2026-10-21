@@ -7388,6 +7388,25 @@ _CASE_RPT_001 = EvalCase(
     precondition='本用例是 [backend-contract]：前置 = P0-3 毛利（`OrderMarginService`）+ P0-4 数据范围（`role.data_scope`）。零网络、零 LLM、无迁移（纯只读面）。',
 )
 
+# ── RPT-002 [NORMAL] 报表中心：库存周转与滞销（满 90 天未出库 / 从未出库按入库日 / 缺日期不猜）（issue #7376 段 2）（源: cases/misc.yml）──
+_CASE_RPT_002 = EvalCase(
+    id='RPT-002',
+    legacy_id='',
+    title='报表中心：库存周转与滞销（满 90 天未出库 / 从未出库按入库日 / 缺日期不猜）（issue #7376 段 2）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-22，逐字）：「继续做」—— 继续推进 P1-4，做老板第二张表：库存周转与滞销。'],
+    expectations=[],
+    data_checks=['**判据 1（滞销口径写死）**：滞销 = **还有货** 且距上次出库满 `slowMovingDays`（默认 **90 天**，随响应自述）；阈值是**含边界**的（第 90 天算，89 天不算）。判据 = `InventoryAgePolicyTest#thresholdIsInclusive` + `#thresholdOverride`。', '**判据 2（无货不算滞销）**：0 库存批次不参与判定（谈压货没有意义，只会淹没清单）。判据 = `#zeroOnHandIsNotSlowMoving`。', '**判据 3（🔴 从未出库 ⇒ 按入库日起算）**：否则「一直没人动」的货永远进不了滞销清单 —— 最该被看见的反而隐身。判据 = `InventoryReportServiceTest#neverMovedUsesReceivedDate`。', '**判据 4（🔴 上次出库日现算，不落派生列）**：从 `stock_batch_consumptions` 的扣减行聚合（`delta<0`）；落一列就得在扣料/盘点/调拨每个写面同步，漏一处永久漂。判据 = `#recentOutboundClearsSlowMoving`。', '**判据 5（缺日期不猜）**：连入库日都没有 ⇒ 不判定、天数记 -1 并计入 `undeterminedRows`（不是 0 天，也不是假装滞销）。判据 = `InventoryAgePolicyTest#missingDatesAreNotJudged` + `InventoryReportServiceTest#missingAnchorIsCountedNotGuessed`；未来日期（脏数据）同样不判（`#futureDatesAreNotJudged`）。', '**判据 6（空数据 ≠ 0；合计=明细之和）**：没有命中批次 ⇒ 合计 null、`hasData=false`；滞销量为 0 时合计滞销量为 null（「没有滞销」与「滞销 0 米」不混）。判据 = `#emptyReportHasNullTotals` + `#recentOutboundClearsSlowMoving` 的合计断言。', '**判据 7（口径自述 + 零授权 delta）**：响应带 `slowMovingDays`（页面要显示「满 N 天未出库算滞销」）；读面沿用类级 `dashboard:view`，只读。判据 = `#thresholdIsSelfDescribed` + `ReportControllerTest`。', '**边界（照实登记）**：① **员工业绩报表、账龄报表化、CSV 导出**未做（段 3）；② 滞销只按**米数**衡量，**未折算金额**（要金额需批次成本，成本未知的批次会把合计拉偏，口径待裁定）；③ 「周转率」未算（需要期间出库量 / 平均库存，本段只做滞销侧）；④ 报表页面未做。'],
+    skip_reason='[backend-contract] 滞销判定与合计口径，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'report', 'inventory', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `stock_batches` + `stock_batch_consumptions`（V119 快照）+ P0-4 数据范围。零网络、零 LLM、无迁移（纯只读面）。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -16406,6 +16425,7 @@ ALL_CASES = (
     _CASE_PRC_003,
     _CASE_PRC_004,
     _CASE_RPT_001,
+    _CASE_RPT_002,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

@@ -43,6 +43,10 @@ public class ReportService {
     private static final int MAX_ROWS = 500;
 
     private final OrderMapper orderMapper;
+
+    /** 库存周转/滞销（段 2）：批次 + 出库流水（复用时序，不新造「最后出库日」列 —— 那是会漂的派生值）。 */
+    private final com.migao.admin.mapper.StockBatchMapper stockBatchMapper;
+    private final com.migao.admin.mapper.StockBatchConsumptionMapper stockBatchConsumptionMapper;
     private final OrderMarginService orderMarginService;
     private final com.migao.admin.time.BusinessClock businessClock;
 
@@ -120,6 +124,95 @@ public class ReportService {
                 .rows(rows)
                 .totals(totals)
                 .unknownCostOrders(unknownCost)
+                .build();
+    }
+
+    /**
+     * 库存周转与滞销报表（issue #7376 段 2）。
+     *
+     * <p>取数**不新造派生列**：「上次出库日」现从 `stock_batch_consumptions` 的扣减行里聚合
+     * （`reason='processing_order'` 且 `delta<0`）—— 落一列就会漂（扣料路径不止一条）。
+     * 从未出库的批次用**入库日**起算（否则「一直没人动」的货永远进不了滞销清单）。</p>
+     *
+     * @param thresholdDays 滞销阈值（可空 ⇒ 默认 90 天）
+     * @param warehouseCode 仓编码过滤（可空 ⇒ 全部仓）
+     */
+    public com.migao.admin.dto.InventoryReportView inventoryAging(Integer thresholdDays, String warehouseCode) {
+        int threshold = thresholdDays == null || thresholdDays <= 0
+                ? InventoryAgePolicy.SLOW_MOVING_DAYS : thresholdDays;
+        LocalDate today = businessClock.today();
+
+        LambdaQueryWrapper<com.migao.admin.entity.StockBatch> batchQuery =
+                new LambdaQueryWrapper<com.migao.admin.entity.StockBatch>()
+                        .gt(com.migao.admin.entity.StockBatch::getQuantity, BigDecimal.ZERO)
+                        .orderByAsc(com.migao.admin.entity.StockBatch::getBatchNo);
+        if (StringUtils.hasText(warehouseCode)) {
+            batchQuery.eq(com.migao.admin.entity.StockBatch::getWarehouse, warehouseCode.trim());
+        }
+
+        java.util.Map<Long, LocalDate> lastOutbound = new java.util.HashMap<>();
+        for (com.migao.admin.entity.StockBatchConsumption row : stockBatchConsumptionMapper.selectList(
+                new LambdaQueryWrapper<com.migao.admin.entity.StockBatchConsumption>()
+                        .lt(com.migao.admin.entity.StockBatchConsumption::getDelta, BigDecimal.ZERO))) {
+            if (row.getBatchId() == null || row.getCreatedAt() == null) {
+                continue;
+            }
+            LocalDate day = LocalDate.ofInstant(row.getCreatedAt().toInstant(), businessClock.zone());
+            LocalDate existing = lastOutbound.get(row.getBatchId());
+            if (existing == null || day.isAfter(existing)) {
+                lastOutbound.put(row.getBatchId(), day);
+            }
+        }
+
+        List<com.migao.admin.dto.InventoryReportView.Row> rows = new ArrayList<>();
+        List<BigDecimal> onHands = new ArrayList<>();
+        List<BigDecimal> slowOnHands = new ArrayList<>();
+        int slowBatches = 0;
+        int undetermined = 0;
+
+        for (com.migao.admin.entity.StockBatch batch : stockBatchMapper.selectList(batchQuery)) {
+            // 从未出库 ⇒ 用入库日起算（`received_date` 可空 ⇒ 再退到创建时间）
+            LocalDate anchor = lastOutbound.get(batch.getId());
+            if (anchor == null) {
+                anchor = batch.getReceivedDate() != null
+                        ? batch.getReceivedDate()
+                        : (batch.getCreatedAt() == null ? null
+                        : LocalDate.ofInstant(batch.getCreatedAt().toInstant(), businessClock.zone()));
+            }
+            InventoryAgePolicy.Decision decision =
+                    InventoryAgePolicy.evaluate(batch.getQuantity(), anchor, today, threshold);
+            if (decision.daysSinceMovement() < 0) {
+                undetermined++;
+            }
+            onHands.add(batch.getQuantity());
+            if (decision.slowMoving()) {
+                slowBatches++;
+                slowOnHands.add(batch.getQuantity());
+            }
+            rows.add(com.migao.admin.dto.InventoryReportView.Row.builder()
+                    .batchId(batch.getId())
+                    .batchNo(batch.getBatchNo())
+                    .skuCode(batch.getSkuCode())
+                    .warehouse(batch.getWarehouse())
+                    .onHand(batch.getQuantity())
+                    .lastMovementDate(anchor == null ? null : anchor.toString())
+                    .daysSinceMovement(decision.daysSinceMovement())
+                    .slowMoving(decision.slowMoving())
+                    .reason(decision.reason())
+                    .build());
+        }
+
+        boolean hasData = !rows.isEmpty();
+        return com.migao.admin.dto.InventoryReportView.builder()
+                .slowMovingDays(threshold)
+                .hasData(hasData)
+                .rows(rows)
+                .totals(hasData ? com.migao.admin.dto.InventoryReportView.Totals.builder()
+                        .onHand(ReportTotals.sum(onHands))
+                        .slowMovingOnHand(ReportTotals.sum(slowOnHands))
+                        .slowMovingBatches(slowBatches)
+                        .build() : null)
+                .undeterminedRows(undetermined)
                 .build();
     }
 

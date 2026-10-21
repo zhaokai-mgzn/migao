@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（138 case）
+## 杂项域（139 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5769,6 +5769,22 @@
 跳过: [backend-contract] 报表合计口径与空数据语义，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-22 新增（issue #7376 段 1）。落码 = `ReportTotals`（纯函数：合计/复算/空数据判定）+ `ReportService`（复用 `OrderMarginService` 的同一份毛利计算，不重算口径）+ `OrderMarginReportView` + `GET /api/admin/reports/order-margins`（`dashboard:view`）。 ｜ tags: backend-contract, report, red-proof, data-scope
+
+### RPT-002. 报表中心：库存周转与滞销（满 90 天未出库 / 从未出库按入库日 / 缺日期不猜）（issue #7376 段 2） 🔵
+```
+你: 用户（2026-10-22，逐字）：「继续做」—— 继续推进 P1-4，做老板第二张表：库存周转与滞销。
+数据: **判据 1（滞销口径写死）**：滞销 = **还有货** 且距上次出库满 `slowMovingDays`（默认 **90 天**，随响应自述）；阈值是**含边界**的（第 90 天算，89 天不算）。判据 = `InventoryAgePolicyTest#thresholdIsInclusive` + `#thresholdOverride`。
+数据: **判据 2（无货不算滞销）**：0 库存批次不参与判定（谈压货没有意义，只会淹没清单）。判据 = `#zeroOnHandIsNotSlowMoving`。
+数据: **判据 3（🔴 从未出库 ⇒ 按入库日起算）**：否则「一直没人动」的货永远进不了滞销清单 —— 最该被看见的反而隐身。判据 = `InventoryReportServiceTest#neverMovedUsesReceivedDate`。
+数据: **判据 4（🔴 上次出库日现算，不落派生列）**：从 `stock_batch_consumptions` 的扣减行聚合（`delta<0`）；落一列就得在扣料/盘点/调拨每个写面同步，漏一处永久漂。判据 = `#recentOutboundClearsSlowMoving`。
+数据: **判据 5（缺日期不猜）**：连入库日都没有 ⇒ 不判定、天数记 -1 并计入 `undeterminedRows`（不是 0 天，也不是假装滞销）。判据 = `InventoryAgePolicyTest#missingDatesAreNotJudged` + `InventoryReportServiceTest#missingAnchorIsCountedNotGuessed`；未来日期（脏数据）同样不判（`#futureDatesAreNotJudged`）。
+数据: **判据 6（空数据 ≠ 0；合计=明细之和）**：没有命中批次 ⇒ 合计 null、`hasData=false`；滞销量为 0 时合计滞销量为 null（「没有滞销」与「滞销 0 米」不混）。判据 = `#emptyReportHasNullTotals` + `#recentOutboundClearsSlowMoving` 的合计断言。
+数据: **判据 7（口径自述 + 零授权 delta）**：响应带 `slowMovingDays`（页面要显示「满 N 天未出库算滞销」）；读面沿用类级 `dashboard:view`，只读。判据 = `#thresholdIsSelfDescribed` + `ReportControllerTest`。
+数据: **边界（照实登记）**：① **员工业绩报表、账龄报表化、CSV 导出**未做（段 3）；② 滞销只按**米数**衡量，**未折算金额**（要金额需批次成本，成本未知的批次会把合计拉偏，口径待裁定）；③ 「周转率」未算（需要期间出库量 / 平均库存，本段只做滞销侧）；④ 报表页面未做。
+前置: 本用例是 [backend-contract]：前置 = `stock_batches` + `stock_batch_consumptions`（V119 快照）+ P0-4 数据范围。零网络、零 LLM、无迁移（纯只读面）。
+跳过: [backend-contract] 滞销判定与合计口径，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-22 新增（issue #7376 段 2）。落码 = `InventoryAgePolicy`（纯判定，含 90 天阈值与「不猜」语义）+ `ReportService.inventoryAging`（现算出库日、复用 `ReportTotals` 求和）+ `InventoryReportView` + `GET /api/admin/reports/inventory-aging`。 ｜ tags: backend-contract, report, inventory, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12551,8 +12567,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：855（活跃 141，跳过 714）
-- tier 分布：smoke 12 / normal 787 / adversarial 32
+- 用例总数：856（活跃 141，跳过 715）
+- tier 分布：smoke 12 / normal 788 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12567,7 +12583,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：138
+- 杂项域：139
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12749,6 +12765,7 @@
 - PRC-003: 价格本可维护：协议价 / 等级价 / 阶梯价 upsert + 价格必须 > 0（issue #7375 段 3）
 - PRC-004: 改价闸门：价格低于 SKU 成本必须先有「改价」审批（issue #7375 段 4）
 - RPT-001: 报表中心：订单毛利报表（合计=明细之和 / 空数据≠0 / 成本未知单独计数）（issue #7376 段 1）
+- RPT-002: 报表中心：库存周转与滞销（满 90 天未出库 / 从未出库按入库日 / 缺日期不猜）（issue #7376 段 2）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
