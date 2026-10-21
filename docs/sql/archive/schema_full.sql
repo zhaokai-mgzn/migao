@@ -4,7 +4,7 @@
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
 -- （2026-09-11 实测，逐表比对 backend/admin-api/src/main/resources/db/init/schema.sql）：
 --
---   本文件缺失（schema.sql 已有，共 52 张）：
+--   本文件缺失（schema.sql 已有，共 55 张）：
 --     agent_batches, agent_batch_items
 --      批量更新的批次资源（V127，issue #5314 服务端包 —— 一张批次 + 一张逐条明细；
 --      明细的 old_value 是**撤销的唯一依据**，**不得**改用 audit_logs：审计是有界 fail-open、丢行允许），
@@ -13,6 +13,10 @@
 --     receipt_allocations
 --      客户收款核销（V176，issue #7370 段 3 —— 一笔收款冲抵多张订单；现金真值仍在 finance_transactions，
 --      本表只记「冲到哪张单、各多少」，故与 finance_transactions 必须**一起**出现在缺失清单里），
+--     customer_sku_prices, vip_level_prices, sku_tier_prices
+--      价格本三张（V179，issue #7375 段 1 —— 协议价 / 等级价 / 阶梯价）。三张必须**一起**列出：
+--      解析优先级就在它们之间判定（协议 > 等级 > 阶梯 > SKU 标准价），缺任何一张都会让
+--      「该按哪个价」失去依据；四层皆无时的「未定价」也不是 0 元。
 --     knowledge_candidates,
 --     knowledge_cards, processing_fee_combination_versions, processing_fee_combinations,
 --     processing_orders, processing_order_sets, processing_position_operations,
