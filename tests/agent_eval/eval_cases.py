@@ -7236,6 +7236,25 @@ _CASE_PRC_001 = EvalCase(
     precondition='本用例是 [backend-contract]：前置 = 三张价格本（V179）+ `product_skus.price` + `customer_profiles.vip_level`。零网络、零 LLM。',
 )
 
+# ── PRC-002 [NORMAL] 下单服务端定价：价格本命中以服务端为准 + 逐行留痕（issue #7375 段 2）（源: cases/misc.yml）──
+_CASE_PRC_002 = EvalCase(
+    id='PRC-002',
+    legacy_id='',
+    title='下单服务端定价：价格本命中以服务端为准 + 逐行留痕（issue #7375 段 2）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-21，裁定段 2 前置走 A，逐字选项）：「下单请求补 skuId / skuCode，服务端有则用、无则按现有方式反推」；承接 issue #7375 判据 2「客户端传价与服务端解析不一致 ⇒ 服务端为准且记录差异」。'],
+    expectations=[],
+    data_checks=['**判据 1（服务端为准）**：请求`processingInfo` 带 SKU 且价格本命中 ⇒ 服务端解析价**覆盖**客户端 `unitPrice`，落库金额按服务端价重算。判据 = `OrderPricingServiceTest#protocolPriceOverridesClientPrice`。', '**判据 1b（SKU 只在既有键族）**：SKU 从 `processingInfo.skuId/skuCode` 读，**不加顶层字段** —— `OrderDtoContractTest` 的 D1 判据（顶层 skuCode 是死字段）必须先绿。判据 = `OrderDtoContractTest`（divergenceDisposition）。', '**判据 2（留痕）**：被改写的行记录「改前是多少」（`order_items.price_client_unit_price`）+ 命中层级（`price_source`）+ 一条 `price_server_override` 审计（details 逐行 client_price → 服务端价）。判据 = `#protocolPriceOverridesClientPrice` + `OrderPriceOverrideTest#clientPriceRecordedOnlyWhenOverridden`。', '**判据 3（🔴 无价格本依据不覆盖）**：只有 SKU 标准价（`STANDARD`）或根本未定价（`UNPRICED`）⇒ **不动**客户端价（覆盖 = 凭空改单，会让存量订单一夜变价），但标签如实写 `sku_standard_price` / `no_price_book`。判据 = `#standardPriceDoesNotTouchClientPrice` + `#unpricedKeepsClientPriceButIsLabelled`。', '**判据 4（无 SKU 不参与）**：明细没有 `skuId`/`skuCode`（手工行、存量调用）⇒ 不查价格、不改价、不报错，标签 `client`。判据 = `#itemWithoutSkuIsNotPriced`。', '**判据 5（货号定位）**：`processingInfo` 只给 `skuCode` ⇒ 按「租户 + 货号（+ 商品）」定位 SKU 后再定价，定位到的 `skuId` 写进 `order_items.sku_id`。判据 = `#skuCodeResolvesSku`。', '**判据 8（金额准入）**：改写值同样过 `MoneyScale.requireTwoDecimalsOrNull`（超两位小数直接拒，不静默四舍五入）—— 金额入口台账（#6228）登记为 `GATED` 且**真调用**。判据 = `MoneyEntryPrecisionMetaGuardTest`。', '**判据 6（散客不崩）**：无手机号 ⇒ 取不到客户 ⇒ 仍能定价/下单（按标准价，不 500）。判据 = `#noPhoneStillResolves`。', '**判据 7（只覆盖承诺过的价）**：覆盖判据集中在 `OrderPriceOverride.shouldOverride`（协议/等级/阶梯 = 是；标准/未定价 = 否），别处不再各写一套。判据 = `OrderPriceOverrideTest#priceBookHitsOverride` + `#standardAndUnpricedDoNotOverride`。红证方向：把 STANDARD 也算覆盖 ⇒ 存量订单全变价，判据当场红。', '**边界（照实登记）**：改单路径**不做**服务端定价（改价属 P1-2 审批面，`price_source` 留空）；低于底价审批未接；价格本录入端点/页面未做；带 `skuCode` 命中多条同货号 SKU 时取第一条（按租户+货号+商品限定后仍多条 = 数据问题，不是定价问题）。'],
+    skip_reason='[backend-contract] 下单定价覆盖与留痕，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'pricing', 'audit', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = 价格本三张表（V179）+ `order_items` 定价依据四列（V180）+ `product_skus.sku_code`。零网络、零 LLM。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -16246,6 +16265,7 @@ ALL_CASES = (
     _CASE_AR_003,
     _CASE_AR_004,
     _CASE_PRC_001,
+    _CASE_PRC_002,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
