@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（136 case）
+## 杂项域（137 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5740,6 +5740,20 @@
 跳过: [backend-contract] 价格本录入校验与 upsert 语义，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-21 新增（issue #7375 段 3）。落码 = `PriceBookService`（upsert/读面/软删，冲突条款 + 精度准入）+ `PriceBookView` + `PricingController` 五个新端点。 ｜ tags: backend-contract, pricing, red-proof
+
+### PRC-004. 改价闸门：价格低于 SKU 成本必须先有「改价」审批（issue #7375 段 4） 🔵
+```
+你: 用户（2026-10-21，逐字）：「继续主动推进，不要一直让我点头」—— 自主推进 P1-3 段 4，把 `price_change` 这个具名审批接到实际写面上。
+数据: **判据 1（低于成本需审批）**：价格本录入价 < 该 SKU 成本（`product_skus.avg_cost`）⇒ 必须有一条**已通过且未用掉**的 `price_change` 审批（对象 = SKU id，金额 = 成本价），否则**写面直接拒**并给出申请路径。判据 = `PriceBookFloorGateTest#belowCostWithoutApprovalIsRejected` + `PriceFloorPolicyTest#belowCostNeedsApproval`。
+数据: **判据 2（批过放行且消费）**：命中审批 ⇒ 当场消费（一笔一批），并记下「用的是哪条审批」。判据 = `#belowCostWithApprovalPasses`。
+数据: **判据 3（等于/高于成本不阻断）**：等于成本不算亏本；不低于成本时不查审批（不给正常改价加一次写）。判据 = `PriceFloorPolicyTest#atOrAboveCostIsFine` + `#atOrAboveCostNeverTouchesApprovals`。
+数据: **判据 4（🔴 成本未知不阻断，但如实留痕）**：`avg_cost` 为 NULL/0/负数 = 没有可信成本 ⇒ **放行**且标 `costUnknown`。理由：拿未知当零成本会让闸门变假；一律阻断则存量商品全都改不了价（运营会绕开系统）。判据 = `PriceFloorPolicyTest#unknownCostDoesNotBlockButIsLabelled` + `PriceBookFloorGateTest#unknownCostPassesWithoutApproval`。
+数据: **判据 5（无装置不造假闸门）**：没有成本读数装置（切片上下文 / 直接 new 的老单测）⇒ 退回**改前行为**（无闸门），而不是静默放行或静默拒绝。判据 = `#withoutCostWiringGateIsAbsent`。
+数据: **边界（照实登记）**：① 闸门只接在**价格本录入**（协议价/等级价/阶梯价）上；**商品/SKU 基础售价**的改价写面（`ProductService`）尚未接（下一段，动核心写面风险高）；② 底价是「成本」而非「最低毛利率」（毛利率口径未裁定）；③ 价格本页面未做；④ 成本未知的存量商品会以无闸门方式放行 —— 已在判据 4 显式登记，不假绿。
+前置: 本用例是 [backend-contract]：前置 = 价格本三表（V179）+ `approvals`（V181）+ `product_skus.avg_cost`。零网络、零 LLM。
+跳过: [backend-contract] 改价闸门判定与消费，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-21 新增（issue #7375 段 4）。落码 = `PriceFloorPolicy`（纯判定，含成本未知取舍）+ `PriceBookService` 三处 upsert 前置闸门（接 `ApprovalService.consume(TYPE_PRICE_CHANGE)`）。 ｜ tags: backend-contract, pricing, approval, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12522,8 +12536,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：853（活跃 141，跳过 712）
-- tier 分布：smoke 12 / normal 785 / adversarial 32
+- 用例总数：854（活跃 141，跳过 713）
+- tier 分布：smoke 12 / normal 786 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12538,7 +12552,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：136
+- 杂项域：137
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12718,6 +12732,7 @@
 - OPS-001: 云上「采购单加载失败」根因：BOOLEAN 逻辑删列 + 全局整数语义 ⇒ 真库 500（issue #7373 复盘）
 - STK-001: 盘点单：账面快照 + 差异必经审批 + 调整只改数量（issue #7373 段 2）
 - PRC-003: 价格本可维护：协议价 / 等级价 / 阶梯价 upsert + 价格必须 > 0（issue #7375 段 3）
+- PRC-004: 改价闸门：价格低于 SKU 成本必须先有「改价」审批（issue #7375 段 4）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

@@ -37,6 +37,16 @@ public class PriceBookService {
 
     private final JdbcTemplate jdbcTemplate;
 
+    /**
+     * 改价闸门（issue #7375 段 4）：低于成本必须先有已通过的 `price_change` 审批。
+     * 可空注入 ⇒ 切片上下文/老单测退回「无闸门」= 改前行为，不静默放宽（那需要显式给 bean）。
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.migao.admin.mapper.ProductSkuMapper productSkuMapper;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ApprovalService approvalService;
+
     /** 价格本读面：按 SKU（可选客户）一次性给出三层价格，供页面渲染「这个 SKU 现在有几档价」。 */
     public PriceBookView list(Long tenantId, Long skuId, String customerId) {
         PriceBookView view = new PriceBookView();
@@ -70,6 +80,7 @@ public class PriceBookService {
         requirePrice(price);
         requireText(customerId, "客户");
         requireSku(skuId);
+        assertPriceFloorAllows(skuId, price, "协议价");
         jdbcTemplate.update(
                 "INSERT INTO customer_sku_prices (tenant_id, customer_id, sku_id, price, note)"
                         + " VALUES (?, ?, ?, ?, ?)"
@@ -86,6 +97,7 @@ public class PriceBookService {
         requirePrice(price);
         requireText(vipLevel, "客户等级");
         requireSku(skuId);
+        assertPriceFloorAllows(skuId, price, "等级价");
         jdbcTemplate.update(
                 "INSERT INTO vip_level_prices (tenant_id, vip_level, sku_id, price) VALUES (?, ?, ?, ?)"
                         + " ON CONFLICT (tenant_id, vip_level, sku_id) WHERE deleted = 0"
@@ -105,6 +117,7 @@ public class PriceBookService {
         if (maxQty != null && maxQty.compareTo(minQty) < 0) {
             throw BusinessException.validationError("阶梯的上限不能小于起订量");
         }
+        assertPriceFloorAllows(skuId, price, "阶梯价");
         jdbcTemplate.update(
                 "INSERT INTO sku_tier_prices (tenant_id, sku_id, min_qty, max_qty, price) VALUES (?, ?, ?, ?, ?)"
                         + " ON CONFLICT (tenant_id, sku_id, min_qty) WHERE deleted = 0"
@@ -130,6 +143,39 @@ public class PriceBookService {
         if (updated == 0) {
             throw BusinessException.notFound("价格本记录");
         }
+    }
+
+    /**
+     * 改价闸门（issue #7375 段 4）：价低于该 SKU 成本 ⇒ 必须有一条**已通过且未用掉**的
+     * `price_change` 审批（对象 = SKU id，金额 = 成本价），否则写面直接拒。
+     *
+     * <p>成本未知 ⇒ 放行（见 {@link PriceFloorPolicy} 的取舍），但日志里标明「这次无底价可依」。</p>
+     */
+    private void assertPriceFloorAllows(Long skuId, BigDecimal price, String label) {
+        if (productSkuMapper == null) {
+            return;   // 无成本读数 ⇒ 退回改前行为（不静默造一道假闸门）
+        }
+        com.migao.admin.entity.ProductSku sku = productSkuMapper.selectById(skuId);
+        PriceFloorPolicy.Decision decision = PriceFloorPolicy.evaluate(price,
+                sku == null ? null : sku.getAvgCost());
+        if (!decision.needsApproval()) {
+            if (decision.costUnknown()) {
+                log.info("[price-book] {} 成本未知 ⇒ 不阻断，但也无底价可依 | sku={} price={}", label, skuId, price);
+            }
+            return;
+        }
+        String consumed = approvalService == null ? null
+                : approvalService.consume(com.migao.admin.entity.Approval.TYPE_PRICE_CHANGE,
+                        String.valueOf(skuId), sku.getAvgCost(), "sku:" + skuId);
+        if (consumed == null) {
+            throw BusinessException.validationError(String.format(
+                    "%s ¥%s 低于该 SKU 成本 ¥%s（差 ¥%s），必须先有已通过的「改价」审批："
+                            + "objectType=price_change，objectRef=%s，金额 ≥ 成本价",
+                    label, price.toPlainString(), sku.getAvgCost().toPlainString(),
+                    decision.shortfall().toPlainString(), skuId));
+        }
+        log.info("[price-book] {} 低于成本经审批放行 | sku={} price={} cost={} approval={}",
+                label, skuId, price, sku.getAvgCost(), consumed);
     }
 
     private static Map<String, Object> normalize(Map<String, Object> row) {
