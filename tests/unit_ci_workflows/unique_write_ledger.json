@@ -159,6 +159,16 @@
       "table": "stock_transfers",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/service/StockTransferService.java",
       "note": "单号 TT+业务日期+4 位随机，同租户唯一索引 uk_stock_transfers_no 兜底；本段是即时调拨（无重试/幂等键需求），撞车概率 = 同日 9000 分之一，冲突由 GlobalExceptionHandler 映射（handling=none 已如实登记）"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/StocktakeService.java::stocktakeMapper": {
+      "table": "stocktakes",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/StocktakeService.java",
+      "note": "两个部分唯一索引：uk_stocktakes_no（单号唯一，同租户）与 uk_stocktakes_one_open_per_warehouse（同仓只能一个进行中）。服务层先查进行中给出可读提示；并发下由索引兜底，DuplicateKeyException 映射成可读 409（「该仓刚有另一个盘点被发起」）"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/StocktakeService.java::itemMapper": {
+      "table": "stocktake_items",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/StocktakeService.java",
+      "note": "uk_stocktake_items_batch（同一次盘点同批次只一行）：出任务时按批次快照、每批次只插一次；重复插入由唯一索引兜底（GlobalExceptionHandler 映射），录实盘走 updateById 不改批次归属"
     }
   }
 }

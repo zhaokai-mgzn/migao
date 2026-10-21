@@ -405,6 +405,13 @@ class WorkerCuttingHeightNullProductIdTest {
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/WorkerCuttingHeightService.java|items",
                         new IndexSite("items", "itemsOf", "itemId", "entry.get(\"order_item_id\")", 152, Verdict.KEY_NULLABLE,
                                 "itemId 来自扫描结果可能为 null ⇒ `itemId == null ? null : items.get(itemId)` 短路")),
+                // issue #7373 段 2：盘点完成时按**下标**对齐「明细行 ↔ 计算行」——
+                // 两个 List 都是本方法内直接构造的可变 ArrayList/stream().toList()，
+                // 下标由 `for (int i = 0; i < items.size(); i++)` 给出 ⇒ 永不为 null，也不查不可变表。
+                Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/StocktakeService.java|items",
+                        new IndexSite("items", "itemsOf", "i", "循环下标 i（0 <= i < items.size()）", 237,
+                                Verdict.KEY_PROVABLY_NON_NULL,
+                                "同源同长：items 与 lines 由同一批明细一次构造，按下标配对；下标不可能为 null")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/PurchaseOrderService.java|itemsById",
                         new IndexSite("itemsById", "itemsOf", "itemId", "line.itemId()", 179,
                                 Verdict.READ_IS_NULL_TOLERANT,
