@@ -216,6 +216,82 @@ public class ReportService {
                 .build();
     }
 
+    /**
+     * 员工业绩报表（issue #7376 段 3）：按**制单人**归集订单数 / 收入 / 退款 / 客单价。
+     *
+     * <p>口径三条：① **没有制单人的订单单独成档**（存量订单 / C 端自助单）—— 摊给某人就是凭空加分；
+     * ② 客单价 = 收入 / 单数，单数为 0 ⇒ {@code null}（不做 0 除）；③ 合计 = 各行之和。</p>
+     *
+     * <p>⚠️ **退款本段不给**：退款真值在 `finance_transactions`（每单一次查询 = N+1），本段先只做
+     * 「单数 + 收入 + 客单价」。宁可少一列，也不放一个恒为 0 的假字段（那会被读成「这人没退过款」）。</p>
+     *
+     * @param startDate    下单日期起（可空）
+     * @param endDate      下单日期止（可空）
+     * @param scopeOwnerId P0-4 数据范围：非空 ⇒ 只统计本人创建的单（业绩报表里就是「只看自己的业绩」）
+     */
+    public com.migao.admin.dto.StaffPerformanceView staffPerformance(String startDate, String endDate,
+                                                                    String scopeOwnerId) {
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<Order>()
+                .orderByDesc(Order::getCreatedAt)
+                .last("LIMIT " + MAX_ROWS);
+        if (StringUtils.hasText(scopeOwnerId)) {
+            wrapper.eq(Order::getCreatedBy, scopeOwnerId);
+        }
+        ZoneId zone = businessClock.zone();
+        if (StringUtils.hasText(startDate)) {
+            wrapper.ge(Order::getCreatedAt, startOfDay(startDate, zone));
+        }
+        if (StringUtils.hasText(endDate)) {
+            wrapper.lt(Order::getCreatedAt, startOfDay(endDate, zone).plusDays(1));
+        }
+
+        // 按制单人归集（保持首次出现顺序，便于人读日志）
+        java.util.Map<String, List<Order>> byStaff = new java.util.LinkedHashMap<>();
+        int unattributed = 0;
+        for (Order order : orderMapper.selectList(wrapper)) {
+            if (!StringUtils.hasText(order.getCreatedBy())) {
+                unattributed++;
+                continue;
+            }
+            byStaff.computeIfAbsent(order.getCreatedBy(), k -> new ArrayList<>()).add(order);
+        }
+
+        List<com.migao.admin.dto.StaffPerformanceView.Row> rows = new ArrayList<>();
+        List<BigDecimal> revenues = new ArrayList<>();
+        List<BigDecimal> refunds = new ArrayList<>();
+        int totalOrders = 0;
+        for (java.util.Map.Entry<String, List<Order>> entry : byStaff.entrySet()) {
+            BigDecimal revenue = BigDecimal.ZERO;
+            for (Order order : entry.getValue()) {
+                revenue = revenue.add(order.getTotalAmount() == null ? BigDecimal.ZERO : order.getTotalAmount());
+            }
+            int count = entry.getValue().size();
+            revenues.add(revenue);
+            totalOrders += count;
+            rows.add(com.migao.admin.dto.StaffPerformanceView.Row.builder()
+                    .staffId(entry.getKey())
+                    .staffName(entry.getValue().get(0).getCreatedByName())
+                    .orderCount(count)
+                    .revenue(revenue.setScale(2, java.math.RoundingMode.HALF_UP))
+                    .avgOrderValue(count == 0 ? null
+                            : revenue.divide(BigDecimal.valueOf(count), 2, java.math.RoundingMode.HALF_UP))
+                    .build());
+        }
+
+        boolean hasData = !rows.isEmpty();
+        return com.migao.admin.dto.StaffPerformanceView.builder()
+                .startDate(startDate)
+                .endDate(endDate)
+                .hasData(hasData)
+                .rows(rows)
+                .totals(hasData ? com.migao.admin.dto.StaffPerformanceView.Totals.builder()
+                        .orderCount(totalOrders)
+                        .revenue(ReportTotals.sum(revenues))
+                        .build() : null)
+                .unattributedOrders(unattributed)
+                .build();
+    }
+
     private static OffsetDateTime startOfDay(String date, ZoneId zone) {
         return LocalDate.parse(date.trim()).atStartOfDay(zone).toOffsetDateTime();
     }
