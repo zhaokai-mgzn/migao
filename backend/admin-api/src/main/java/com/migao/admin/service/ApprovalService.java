@@ -74,7 +74,14 @@ public class ApprovalService {
                 .requestedByName(operator == null ? null : operator.displayName())
                 .requestedAt(OffsetDateTime.now())
                 .build();
-        approvalMapper.insert(approval);
+        try {
+            approvalMapper.insert(approval);
+        } catch (org.springframework.dao.DuplicateKeyException duplicate) {
+            // 并发下两个请求同时提交同一对象（部分唯一索引 uk_approvals_pending 兜住）
+            // ⇒ 映射成可读冲突，而不是把 5xx 冒给申请人（台账 unique_write_ledger 记这一处）
+            throw BusinessException.validationError(
+                    "这个对象刚有另一条待审申请被提交，请刷新后处理那一条");
+        }
         log.info("[approval] 提交 | type={} ref={} amount={} by={}",
                 approval.getObjectType(), approval.getObjectRef(), approval.getAmount(),
                 approval.getRequestedBy());

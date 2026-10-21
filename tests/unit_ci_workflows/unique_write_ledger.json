@@ -144,6 +144,11 @@
       "table": "receipt_allocations",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/service/ReceiptAllocationService.java",
       "note": "同一流水对同一单至多一行（部分唯一索引 uk_receipt_allocations_pair）；服务层先按「同批重复订单直接拒」+ 双上限准入再 insert，冲突映射留给唯一索引兜底（连点双击 ⇒ DuplicateKeyException 由 GlobalExceptionHandler 映射 409）"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ApprovalService.java::approvalMapper": {
+      "table": "approvals",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/ApprovalService.java",
+      "note": "同一对象同一类型只允许一个待审（部分唯一索引 uk_approvals_pending WHERE status='pending'）；服务层先查 pending 给出可读提示，并发下由唯一索引兜底（连点两次提交 ⇒ DuplicateKeyException 由 GlobalExceptionHandler 映射 409），状态流转/消费另走 CAS 条件更新按影响行数判成败"
     }
   }
 }
