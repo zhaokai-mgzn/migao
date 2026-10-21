@@ -190,6 +190,13 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private AuditLogService auditLogService;
 
     /**
+     * 下单时的服务端定价（issue #7375 段 2）：价格本命中 ⇒ 以服务端为准 + 逐行留痕。
+     * 只在请求带 SKU（或能按货号定位）时生效 ⇒ 存量调用零回归。
+     */
+    @Autowired(required = false)
+    private OrderPricingService orderPricingService = OrderPricingService.NOOP;
+
+    /**
      * <b>测试探针</b>（issue #6955，生产恒为 {@code 0}）：在 {@link #cancelOrder} 的「读判加工单为
      * {@code generated}」之后、「联动作废（CAS）」之前暂停指定毫秒。
      *
@@ -642,6 +649,13 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // → **超卖防线被绕过**；0 < 数量 < 1 → 库存/销量零扣减（本条 issue #3682）。
         assertItemAmountsValid(request.getItems());
 
+        // ── 服务端定价（issue #7375 段 2）──
+        // 口径见 OrderPricingService：只有**价格本命中**（协议/等级/阶梯）才覆盖客户端价 ——
+        // 那是「承诺过的价」；没有价格本依据时不动（覆盖 = 凭空改单，且存量订单会一夜变价）。
+        // 判在任何金额计算之前，且挂在三条路径（表单 / Agent / 程序化）共用的唯一入口上。
+        List<OrderPricingService.LinePricing> linePricings =
+                orderPricingService.applyServerPrices(request.getItems(), request.getCustomerPhone(), tenantId);
+
         // 计算总金额（后端独立计算：unitPrice * quantity + 加工费，不依赖前端 subtotal 防止不一致）
         // ── 加工费取价（issue #4406，用户裁定 2026-09-19）──
         // 口径 = 「按选配组合匹配 `processing_fee_combinations` → 取单价 → × 加工费米数」；
@@ -749,7 +763,11 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         orderMapper.insert(order);
 
         // 保存订单明细
-        persistOrderItems(order, request.getItems(), itemFees, tenantId);
+        persistOrderItems(order, request.getItems(), itemFees, tenantId, linePricings);
+
+        // 定价改写留痕（issue #7375 段 2，判据「不一致 ⇒ 服务端为准且记录差异」）：
+        // 只在**真的改写了**某行时写一条审计（没有改写 = 没有差异 = 不制造噪音）。
+        recordPriceOverrideAudit(order, linePricings);
 
         log.info("创建订单成功: id={}, orderNo={}, totalAmount={}", order.getId(), order.getOrderNo(), totalAmount);
 
@@ -864,7 +882,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      * 「改单后整卷分配不再重算」——都是静默的（没有任何东西会变红）。</p>
      */
     private void persistOrderItems(Order order, List<OrderCreateRequest.OrderItemRequest> items,
-                                   List<ProcessingFeeCalculator.Fee> itemFees, Long tenantId) {
+                                   List<ProcessingFeeCalculator.Fee> itemFees, Long tenantId,
+                                   List<OrderPricingService.LinePricing> linePricings) {
         for (int i = 0; i < items.size(); i++) {
             OrderCreateRequest.OrderItemRequest itemRequest = items.get(i);
             // ── 加工费可审计构成落库（issue #4406）──
@@ -885,6 +904,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             item.setTenantId(tenantId);
             item.setOrderId(order.getId());
             item.setProductId(itemRequest.getProductId());
+            // 定价依据落列（V180，issue #7375 段 2）：SKU + 命中层级 + 被改写前的客户端价
+            applyPricingTrace(item, linePricings, i);
             item.setProductName(itemRequest.getProductName());
             item.setQuantity(itemRequest.getQuantity());
             item.setUnitPrice(itemRequest.getUnitPrice());
@@ -903,6 +924,64 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             item.setSubtotal(resolveItemSubtotal(itemRequest));
             orderItemMapper.insert(item);
         }
+    }
+
+    /**
+     * 定价改写审计（issue #7375 段 2）：`action = price_server_override`，details 带逐行
+     * 「客户端价 → 服务端价 / 命中层级」。
+     *
+     * <p>只记被改写的行：审计是**证据**，不是流水账 —— 把没改的行也写进去会让真差异淹在噪音里。</p>
+     */
+    private void recordPriceOverrideAudit(Order order, List<OrderPricingService.LinePricing> linePricings) {
+        if (linePricings == null || linePricings.isEmpty()) {
+            return;
+        }
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (int i = 0; i < linePricings.size(); i++) {
+            OrderPricingService.LinePricing pricing = linePricings.get(i);
+            if (pricing == null || pricing.clientPrice() == null) {
+                continue;   // 未被改写
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("line", i + 1);
+            row.put("sku_id", pricing.skuId());
+            row.put("sku_code", pricing.skuCode());
+            row.put("client_price", pricing.clientPrice().toPlainString());
+            row.put("price_source", pricing.priceSource());
+            rows.add(row);
+        }
+        if (rows.isEmpty()) {
+            return;
+        }
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("order_no", order.getOrderNo());
+        details.put("overridden_lines", rows);
+        UserService.CurrentOperator operator = userService.resolveCurrentOperator();
+        auditLogService.recordLog(order.getTenantId(),
+                operator != null ? operator.userId() : null,
+                operator != null ? operator.displayName() : null,
+                "price_server_override", "order", null,
+                order.getId(), order.getOrderNo(), details, null, null);
+    }
+
+    /**
+     * 定价依据落列（issue #7375 段 2）：SKU + 命中层级 + **被改写前的客户端价**。
+     *
+     * <p>只写有依据的那几列：没有 SKU/没参与定价的行保持 null（缺就是缺，不猜、不填 0）。
+     * `priceClientUnitPrice` 只在**真被改写**时写 —— 否则「一样的价」会被记成「改过」。</p>
+     */
+    private void applyPricingTrace(OrderItem item, List<OrderPricingService.LinePricing> linePricings, int index) {
+        if (linePricings == null || index >= linePricings.size()) {
+            return;
+        }
+        OrderPricingService.LinePricing pricing = linePricings.get(index);
+        if (pricing == null) {
+            return;
+        }
+        item.setSkuId(pricing.skuId());
+        item.setSkuCode(pricing.skuCode());
+        item.setPriceSource(pricing.priceSource());
+        item.setPriceClientUnitPrice(pricing.clientPrice());
     }
 
     /**
@@ -1077,7 +1156,8 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
 
         // ⑧ 明细整体替换：旧行**软删**（@TableLogic）后按新明细落库（与建单同一份 persistOrderItems）
         orderItemMapper.delete(new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderId, order.getId()));
-        persistOrderItems(order, items, itemFees, tenantId);
+        // 改单路径不做服务端定价（改价属于 P1-2 审批面）：传 null ⇒ 不写定价依据列
+        persistOrderItems(order, items, itemFees, tenantId, null);
 
         recordContentEditAudit(order, before,
                 contentSnapshot(orderMapper.selectById(order.getId()), loadOrderItems(order.getId(), tenantId)));

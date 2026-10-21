@@ -736,6 +736,12 @@ CREATE TABLE order_items (
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
     order_id VARCHAR(36) NOT NULL REFERENCES orders(id),
     product_id VARCHAR(36),                         -- 关联商品
+    -- 下单时的 SKU 与定价依据（V180，issue #7375 段 2）：无外键（SKU 会硬删重建），追溯优先用 sku_code。
+    -- 缺就是缺：存量行与手工行没有 SKU，不回填、不猜。
+    sku_id BIGINT,
+    sku_code VARCHAR(64),
+    price_source VARCHAR(32),                       -- price_book_* / sku_standard_price / no_price_book / client
+    price_client_unit_price NUMERIC(12,2),          -- 服务端改写前的客户端单价（NULL = 未改写）
     product_name VARCHAR(200),                      -- 商品名称
     quantity DECIMAL(10,2) DEFAULT 1,               -- 数量（计价方式口径：per_meter=米数/per_set=1/per_area=宽×高㎡，issue #3666）
     unit_price DECIMAL(12,2),                       -- 单价

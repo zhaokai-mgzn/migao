@@ -6,6 +6,11 @@
       "columns": 45,
       "why": "四类对象挤一张表（微信身份 / RFM 派生快照 / 默认收货地址 / 工艺偏好） + 授信与账期两列（issue #7370）+ 客户负责人一列（issue #7372）—— 见 docs/wiki/Domain-Modeling.md §二 ①",
       "plan": "身份 → user_identities；默认地址 → 地址簿实体；RFM → 物化快照表；craft_* → 版本化 JSONB（issue #7359 承接，未排期）"
+    },
+    "order_items": {
+      "columns": 32,
+      "why": "一行要同时承载「卖的是什么（商品+工艺规格）/ 怎么卖（售卖方式、整卷分配）/ 定价依据（V180：sku_id/sku_code/price_source/price_client_unit_price）」三类事实 —— 见 docs/wiki/Domain-Modeling.md §二",
+      "plan": "定价依据 → 拆到 order_item_pricing_events（与改价审批 P1-2 同批）；工艺规格 → 版本化 JSONB（issue #7359 承接，未排期）"
     }
   },
   "orphan_columns": [],
