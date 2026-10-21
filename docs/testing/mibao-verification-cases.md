@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（133 case）
+## 杂项域（134 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5691,6 +5691,20 @@
 跳过: [backend-contract] 仓库约束与调拨守恒，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-21 新增（issue #7373 段 1）。落码 = `Warehouse`/`StockTransfer`/`StockTransferItem` + 三个 Mapper + `WarehouseService`（默认仓切换/编码冲突）+ `StockTransferPolicy`（守恒纯函数）+ `StockTransferService`（即时调拨，批次改仓、缸号随行）+ `WarehouseController` + V182。 ｜ tags: backend-contract, inventory, warehouse, transfer, red-proof
+
+### OPS-001. 云上「采购单加载失败」根因：BOOLEAN 逻辑删列 + 全局整数语义 ⇒ 真库 500（issue #7373 复盘） 🔵
+```
+你: 用户（2026-10-21，逐字）：「如果是 500：这里有个真缺陷，我建议一并修，现在页面就有问题，你自己去验证下」—— 要求自查云上采购单页面打不开的根因，而不是猜。
+数据: **判据 1（真库现形）**：在**终态建库脚本**上真跑 `PurchaseOrderService.list/detail` —— 改前必红（`操作符不存在: boolean = integer`），改后必须读得出来（含逐行已收/未收）。判据 = `PurchaseOrderListRealDbTest`。
+数据: **判据 2（根因）**：全局 `logic-not-delete-value: 0` ⇒ 自动追加 `deleted = 0`；若列是 `BOOLEAN`（`suppliers` / `supplier_payments` / `purchase_orders` / `purchase_order_items` / `purchase_order_receipts` / `supplier_payment_allocations` / `receipt_allocations` 七张）⇒ PG 直接报类型错误、读面 500。修法 = 七张表对应实体显式声明布尔语义的逻辑删注解（`@TableLogic(value = false, delval = true)`，**零迁移**：列本来就该是布尔）。判据 = `LogicDeleteColumnTypeGuardTest`。
+数据: **判据 3（类级元守卫）**：扫全部实体的 `@TableLogic` 字段 × 建库脚本列类型：BOOLEAN 列必须用布尔注解、INTEGER 列必须用整数默认 —— 双向都拦（反向是 `integer = boolean`）。判据 = `LogicDeleteColumnTypeGuardTest#logicDeleteAnnotationMatchesColumnType`。红证方向：把 `PurchaseOrder.deleted` 的布尔注解摘掉 ⇒ 当场红（云上 500 的形态）。
+数据: **判据 4（前提自证）**：建库脚本里仍存在 `deleted BOOLEAN`（否则上条判据永远绿、该退场）。判据 = `#booleanDeletedColumnsStillExist`。
+数据: **判据 5（不是「猜」而是「移」）**：这次**没有**写迁移去把列改成 INTEGER —— 那会让历史迁移（V170/V173/V174/V175/V176 的 `WHERE deleted = FALSE` 部分索引）在 bootstrap 库上先红，且要重建 15 个索引；正确修法是把**代码**对齐既有列语义（零数据变更、零停机）。判据 = `MigrationRunnerLiveChainRealDbTest` + `MigrationBaselineSemanticsTest` 保持全绿。
+数据: **边界（照实登记）**：`@TableLogic` 的布尔值语义只对 PostgreSQL 的 `BOOLEAN` 列成立（本仓仅 7 张表）；若将来统一改成 INTEGER，本守卫会连同注释一起退场（`#booleanDeletedColumnsStillExist` 会先红提醒）。
+前置: 本用例 [backend-contract] + 真库：前置 = 真实 PG 集群（`PgCluster`，CI 注入 `MIGAO_REQUIRE_REALDB`）+ 终态建库脚本。零网络、零 LLM。
+跳过: [backend-contract] 逻辑删列类型与采购单真库读面，由 Java 单测/真库判据验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-21 新增（issue #7373 复盘）。落码 = `PurchaseOrderListRealDbTest`（真库复现+回归）+ 七张表实体 `@TableLogic(value=false/delval=true)` + `LogicDeleteColumnTypeGuardTest`（类级元守卫）。**无迁移**（列语义本来正确，错的是代码对齐）。 ｜ tags: backend-contract, realdb, logic-delete, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12473,8 +12487,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：850（活跃 141，跳过 709）
-- tier 分布：smoke 12 / normal 782 / adversarial 32
+- 用例总数：851（活跃 141，跳过 710）
+- tier 分布：smoke 12 / normal 783 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12489,7 +12503,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：133
+- 杂项域：134
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12666,6 +12680,7 @@
 - PRC-002: 下单服务端定价：价格本命中以服务端为准 + 逐行留痕（issue #7375 段 2）
 - APP-001: 具名审批流：四态 + 不能自批 + 单次消费 + 超授信闸门出口（issue #7374 段 1）
 - WH-001: 多仓与调拨：仓库实体 + 默认仓唯一 + 调拨守恒与缸号随行（issue #7373 段 1）
+- OPS-001: 云上「采购单加载失败」根因：BOOLEAN 逻辑删列 + 全局整数语义 ⇒ 真库 500（issue #7373 复盘）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
