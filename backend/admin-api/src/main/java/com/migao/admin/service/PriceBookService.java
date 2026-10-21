@@ -1,0 +1,177 @@
+package com.migao.admin.service;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.migao.admin.dto.PriceBookView;
+import com.migao.admin.exception.BusinessException;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 价格本录入与读面（issue #7375，P1-3 段 3）—— 让「协议价 / 等级价 / 阶梯价」**可被运营维护**。
+ *
+ * <h3>为什么需要它</h3>
+ * <p>段 1 立了三张价格本 + 解析链，段 2 让下单按它定价，但**没有任何录入入口** —— 只能直接写库。
+ * 一个只有工程师能维护的价格体系，等于没有。</p>
+ *
+ * <h3>三条纪律</h3>
+ * <ol>
+ *   <li><b>价格必须是正数</b>：0 或负数一律拒（0 元成交 = 白送；这是段 1 就定下的口径）；</li>
+ *   <li><b>upsert 靠唯一索引</b>：同一客户同 SKU / 同等级同 SKU / 同 SKU 同门槛只留一条生效价
+ *       （部分唯一索引兜住，冲突映射成可读 409，不靠服务层查一遍）；</li>
+ *   <li><b>金额精度过闸</b>：落库前过 {@code MoneyScale}（两位小数，超精度直接拒）。</li>
+ * </ol>
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class PriceBookService {
+
+    private final JdbcTemplate jdbcTemplate;
+
+    /** 价格本读面：按 SKU（可选客户）一次性给出三层价格，供页面渲染「这个 SKU 现在有几档价」。 */
+    public PriceBookView list(Long tenantId, Long skuId, String customerId) {
+        PriceBookView view = new PriceBookView();
+        view.setSkuId(skuId);
+        view.setCustomerId(customerId);
+        if (skuId == null) {
+            throw BusinessException.validationError("必须指定 skuId（价格本是按 SKU 维护的）");
+        }
+        view.setProtocol(jdbcTemplate.queryForList(
+                "SELECT id::text AS id, customer_id, price FROM customer_sku_prices"
+                        + " WHERE tenant_id = ? AND sku_id = ? AND deleted = 0"
+                        + (customerId == null ? "" : " AND customer_id = ?") + " ORDER BY customer_id",
+                customerId == null
+                        ? new Object[]{tenantId, skuId}
+                        : new Object[]{tenantId, skuId, customerId}).stream()
+                .map(PriceBookService::normalize).toList());
+        view.setVipLevels(jdbcTemplate.queryForList(
+                "SELECT id::text AS id, vip_level, price FROM vip_level_prices"
+                        + " WHERE tenant_id = ? AND sku_id = ? AND deleted = 0 ORDER BY vip_level",
+                tenantId, skuId).stream().map(PriceBookService::normalize).toList());
+        view.setTiers(jdbcTemplate.queryForList(
+                "SELECT id::text AS id, min_qty, max_qty, price FROM sku_tier_prices"
+                        + " WHERE tenant_id = ? AND sku_id = ? AND deleted = 0 ORDER BY min_qty",
+                tenantId, skuId).stream().map(PriceBookService::normalize).toList());
+        return view;
+    }
+
+    /** 协议价 upsert（客户 × SKU）。 */
+    @Transactional
+    public void upsertProtocol(Long tenantId, String customerId, Long skuId, BigDecimal price, String note) {
+        requirePrice(price);
+        requireText(customerId, "客户");
+        requireSku(skuId);
+        jdbcTemplate.update(
+                "INSERT INTO customer_sku_prices (tenant_id, customer_id, sku_id, price, note)"
+                        + " VALUES (?, ?, ?, ?, ?)"
+                        + " ON CONFLICT (tenant_id, customer_id, sku_id) WHERE deleted = 0"
+                        + " DO UPDATE SET price = EXCLUDED.price, note = EXCLUDED.note,"
+                        + " updated_at = NOW()",
+                tenantId, customerId.trim(), skuId, money(price), note);
+        log.info("[price-book] 协议价 | tenant={} customer={} sku={} price={}", tenantId, customerId, skuId, price);
+    }
+
+    /** 等级价 upsert（VIP 等级 × SKU）。 */
+    @Transactional
+    public void upsertVipLevel(Long tenantId, String vipLevel, Long skuId, BigDecimal price) {
+        requirePrice(price);
+        requireText(vipLevel, "客户等级");
+        requireSku(skuId);
+        jdbcTemplate.update(
+                "INSERT INTO vip_level_prices (tenant_id, vip_level, sku_id, price) VALUES (?, ?, ?, ?)"
+                        + " ON CONFLICT (tenant_id, vip_level, sku_id) WHERE deleted = 0"
+                        + " DO UPDATE SET price = EXCLUDED.price, updated_at = NOW()",
+                tenantId, vipLevel.trim(), skuId, money(price));
+        log.info("[price-book] 等级价 | tenant={} level={} sku={} price={}", tenantId, vipLevel, skuId, price);
+    }
+
+    /** 阶梯价 upsert（SKU + 门槛）。 */
+    @Transactional
+    public void upsertTier(Long tenantId, Long skuId, BigDecimal minQty, BigDecimal maxQty, BigDecimal price) {
+        requirePrice(price);
+        requireSku(skuId);
+        if (minQty == null || minQty.signum() <= 0) {
+            throw BusinessException.validationError("阶梯的起订量必须大于 0");
+        }
+        if (maxQty != null && maxQty.compareTo(minQty) < 0) {
+            throw BusinessException.validationError("阶梯的上限不能小于起订量");
+        }
+        jdbcTemplate.update(
+                "INSERT INTO sku_tier_prices (tenant_id, sku_id, min_qty, max_qty, price) VALUES (?, ?, ?, ?, ?)"
+                        + " ON CONFLICT (tenant_id, sku_id, min_qty) WHERE deleted = 0"
+                        + " DO UPDATE SET max_qty = EXCLUDED.max_qty, price = EXCLUDED.price, updated_at = NOW()",
+                tenantId, skuId, minQty, maxQty, money(price));
+        log.info("[price-book] 阶梯价 | tenant={} sku={} min={} max={} price={}",
+                tenantId, skuId, minQty, maxQty, price);
+    }
+
+    /** 软删一条价格本记录（`kind` 决定表；各表的 id 类型不同 ⇒ 分别处理）。 */
+    @Transactional
+    public void remove(Long tenantId, String kind, String id) {
+        String table = switch (kind == null ? "" : kind) {
+            case "protocol" -> "customer_sku_prices";
+            case "vip-level" -> "vip_level_prices";
+            case "tier" -> "sku_tier_prices";
+            default -> throw BusinessException.validationError(
+                    "价格本类型必须是 protocol / vip-level / tier 之一");
+        };
+        int updated = jdbcTemplate.update(
+                "UPDATE " + table + " SET deleted = 1, updated_at = NOW()"
+                        + " WHERE tenant_id = ? AND id = ? AND deleted = 0", tenantId, id);
+        if (updated == 0) {
+            throw BusinessException.notFound("价格本记录");
+        }
+    }
+
+    private static Map<String, Object> normalize(Map<String, Object> row) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        row.forEach((k, v) -> out.put(k, v instanceof BigDecimal decimal ? decimal.stripTrailingZeros() : v));
+        return out;
+    }
+
+    private static void requirePrice(BigDecimal price) {
+        if (price == null) {
+            throw BusinessException.validationError("价格不能为空");
+        }
+        if (price.signum() <= 0) {
+            throw BusinessException.validationError("价格必须大于 0（0 元 = 白送；未定价就不录）");
+        }
+    }
+
+    private static void requireText(String value, String label) {
+        if (value == null || value.isBlank()) {
+            throw BusinessException.validationError(label + "不能为空");
+        }
+    }
+
+    private static void requireSku(Long skuId) {
+        if (skuId == null) {
+            throw BusinessException.validationError("必须指定 SKU");
+        }
+    }
+
+    /** 金额精度准入（#6228）：两位小数，超精度直接拒（不静默四舍五入）。 */
+    private static BigDecimal money(BigDecimal price) {
+        return MoneyScale.requireTwoDecimalsOrNull(price, "价格");
+    }
+
+    /** 读面里的三层价格（页面按需渲染，缺层就是没有该层价）。 */
+    public record Snapshot(List<Map<String, Object>> protocol,
+                           List<Map<String, Object>> vipLevels,
+                           List<Map<String, Object>> tiers) {
+    }
+
+    /** 供测试/读面复用的空值包装（避免调用方各自判 null）。 */
+    static List<Map<String, Object>> emptyIfNull(List<Map<String, Object>> rows) {
+        return rows == null ? new ArrayList<>() : rows;
+    }
+}
