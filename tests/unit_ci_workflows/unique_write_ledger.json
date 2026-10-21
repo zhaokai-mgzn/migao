@@ -149,6 +149,16 @@
       "table": "approvals",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/service/ApprovalService.java",
       "note": "同一对象同一类型只允许一个待审（部分唯一索引 uk_approvals_pending WHERE status='pending'）；服务层先查 pending 给出可读提示，并发下由唯一索引兜底（连点两次提交 ⇒ DuplicateKeyException 由 GlobalExceptionHandler 映射 409），状态流转/消费另走 CAS 条件更新按影响行数判成败"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/WarehouseService.java::warehouseMapper": {
+      "table": "warehouses",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/WarehouseService.java",
+      "note": "两个部分唯一索引：uk_warehouses_code（同租户编码唯一）与 uk_warehouses_single_default（同租户只能一个默认仓）。服务层先取消旧默认仓再插入；并发下任一冲突由 DuplicateKeyException 映射成可读 409（「仓编码已存在，或并发设置了第二个默认仓」）"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/StockTransferService.java::transferMapper": {
+      "table": "stock_transfers",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/StockTransferService.java",
+      "note": "单号 TT+业务日期+4 位随机，同租户唯一索引 uk_stock_transfers_no 兜底；本段是即时调拨（无重试/幂等键需求），撞车概率 = 同日 9000 分之一，冲突由 GlobalExceptionHandler 映射（handling=none 已如实登记）"
     }
   }
 }

@@ -4934,3 +4934,39 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: WH-001
+    legacy_id: ""
+    title: "多仓与调拨：仓库实体 + 默认仓唯一 + 调拨守恒与缸号随行（issue #7373 段 1）"
+    domains:
+      - misc
+      - backend
+    tier: normal
+    tags: [backend-contract, inventory, warehouse, transfer, red-proof]
+    truths_ref: []
+    user_inputs:
+      - "用户（2026-10-21，逐字）：「继续推进」—— 承接 issue #7373 验收判据「调拨两端数量守恒」「跨仓同批次可追溯（缸号不因调拨丢失）」。"
+    expectations: []
+    data_checks:
+      - "**判据 1（仓库实体）**：`warehouses` 有编码/名称/类型（`store` / `processing`，CHECK 封闭）/默认仓/状态；同租户编码唯一（部分唯一索引）。判据 = `WarehouseServiceTest#createDefaultsToStoreType` + `#unknownTypeRejected`。"
+      - "**判据 2（🔴 默认仓唯一是数据库约束）**：同租户只能一个默认仓 —— 部分唯一索引 `uk_warehouses_single_default WHERE is_default` 兜住，服务层「先取消旧默认」只是正常路径；并发建两个会被拦并映射成可读冲突。判据 = `StockTransferMapperTest#singleDefaultWarehouseIsAConstraint` + `WarehouseServiceTest#settingDefaultClearsPrevious` + `#duplicateCodeIsReadableConflict`。"
+      - "**判据 3（🔴 调拨两端数量守恒）**：调拨只改批次**归属仓**，**不改数量**；调拨前后总量一字不变（差 0.1 米也算错）。判据 = `StockTransferServiceTest#transferMovesWarehouseButKeepsQtyAndDyeLot` + `StockTransferPolicyTest#conservationHolds`。红证方向：把调拨写成「出库 + 新入库」或两边都减 ⇒ 当场红。"
+      - "**判据 4（🔴 缸号不因调拨丢失）**：调拨明细引用 `batch_id`（同一行改仓）⇒ `dye_lot` 与 `unit_cost` 原样保留，可追溯。判据 = `#transferMovesWarehouseButKeepsQtyAndDyeLot`（断言 dyeLot/unitCost 一字不动）+ `StockTransferMapperTest#transferItemsAreBatchScoped`。"
+      - "**判据 5（可调量与同仓拒）**：不能超过批次在调出仓的现有量（段 1 不做负库存）；调出 = 调入 一律拒（无意义且会掩盖写错仓，表上另有 `ck_stock_transfers_not_same`）。判据 = `StockTransferPolicyTest#movableUpToAvailable` + `StockTransferServiceTest#overAvailableRejected` + `#sameWarehouseRejected`。"
+      - "**判据 6（写错仓必须拦）**：批次不在调出仓 ⇒ 拒（写错仓 / 已调走两种都必须拦，不许「尽力而为」）。判据 = `#batchNotInFromWarehouseRejected`。"
+      - "**判据 7（脏值不猜）**：批次数量未知（null）、调拨量 0/负数/空 ⇒ 一律拒，不猜 0、不放行。判据 = `StockTransferPolicyTest#unknownBatchQtyCannotMove` + `#nonPositiveQtyIsRejected`。"
+      - "**判据 8（端点与零授权 delta）**：`GET|POST /api/admin/warehouses`、`POST /api/admin/stock-transfers`、`GET /api/admin/stock-transfers/{id}` 逐字；读 `inbound:view` / 写 `inbound:create`（仓与库存同域，不新造码）；调拨入参只认仓库 **id**（不接受目标仓字符串 —— 文本改仓正是本段要治的形态）。判据 = `WarehouseControllerTest`。"
+      - "**边界（照实登记）**：① **两阶段在途（`in_transit`）与「调拨中不可售」本段不做** —— 段 1 是即时调拨（确认即到位），没有在途窗口；② 仓库承载仍是 `stock_batches.warehouse`（文本，本服务改成调入仓编码），换成 `warehouse_id` 外键是结构性改造（段 2，要迁存量文本值）；③ **盘点单**未做（段 2，与 P1-2 的 `stocktake_diff` 审批同批）；④ 仓位/库位、负库存拦截（可配置豁免）未做（issue 明列非目标/后续）。"
+    precondition: "本用例是 [backend-contract]：前置 = `warehouses` / `stock_transfers` / `stock_transfer_items`（V182）+ `stock_batches`。零网络、零 LLM。"
+    skip_reason: "[backend-contract] 仓库约束与调拨守恒，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟"
+    merge_log: "2026-10-21 新增（issue #7373 段 1）。落码 = `Warehouse`/`StockTransfer`/`StockTransferItem` + 三个 Mapper + `WarehouseService`（默认仓切换/编码冲突）+ `StockTransferPolicy`（守恒纯函数）+ `StockTransferService`（即时调拨，批次改仓、缸号随行）+ `WarehouseController` + V182。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/WarehouseServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/StockTransferPolicyTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/StockTransferServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/WarehouseControllerTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/mapper/StockTransferMapperTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
