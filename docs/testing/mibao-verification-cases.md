@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（137 case）
+## 杂项域（138 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5754,6 +5754,21 @@
 跳过: [backend-contract] 改价闸门判定与消费，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-21 新增（issue #7375 段 4）。落码 = `PriceFloorPolicy`（纯判定，含成本未知取舍）+ `PriceBookService` 三处 upsert 前置闸门（接 `ApprovalService.consume(TYPE_PRICE_CHANGE)`）。 ｜ tags: backend-contract, pricing, approval, red-proof
+
+### RPT-001. 报表中心：订单毛利报表（合计=明细之和 / 空数据≠0 / 成本未知单独计数）（issue #7376 段 1） 🔵
+```
+你: 用户（2026-10-22，逐字）：「继续做」—— 自主推进 P1-4 报表中心，先做老板最常看的一张：订单毛利。
+数据: **判据 1（合计 = 明细之和）**：逐单算完再求和（**不写第二条聚合 SQL**），判据用同一份纯函数复算；少算一行立刻不成立。判据 = `ReportTotalsTest#sumEqualsDetails` + `ReportServiceTest#totalsAreSumOfRows`。
+数据: **判据 2（🔴 空数据 ≠ 0）**：没有命中订单时合计为 **null**、`hasData=false`；「本月毛利 0 元」与「本月还没有已完工订单」是两件相反的事。判据 = `ReportTotalsTest#emptyIsNullNotZero` + `ReportServiceTest#emptyReportHasNullTotals`。
+数据: **判据 3（🔴 成本未知不进合计但单独计数）**：缺进价/有未定价报工的单**不进毛利合计**（当 0 会让毛利虚高），但 `unknownCostOrders` 要告诉读者「合计少算了 N 单」；若所有单都未知 ⇒ 合计毛利为 null。判据 = `#unknownCostRowsAreExcludedAndCounted` + `#allUnknownCostKeepsRevenueButNullMargin`。
+数据: **判据 4（缺值与零的分界）**：明细里的 null 不参与求和也不当 0；全为 null ⇒ 没有合计。判据 = `ReportTotalsTest#nullDetailsAreSkipped`。
+数据: **判据 5（数据范围同 P0-4 口径）**：`self` 范围只统计本人创建的订单；范围由**服务端**从角色配置解析，**不接受客户端递交**（客户端能传「看全公司」那范围就形同虚设）。判据 = `ReportControllerTest#takesOnlyDateRange` + `ReportServiceTest#dataScopeIsAppliedToQuery`。
+数据: **判据 6（零授权 delta + 只读）**：读面沿用既有 `dashboard:view`（报表与看板同域，不新造权限码）；端点只有 GET，无写面。判据 = `ReportControllerTest`。
+数据: **边界（照实登记）**：① **库存周转/滞销、员工业绩、应收账龄报表化**未做（段 2；账龄已有独立端点，报表化要新增分组读面）；② **CSV 导出**未做（issue 目标里写了，属段 2）；③ 明细上限 500 行（`LIMIT 500`），超出部分**未分页** —— 合计只覆盖命中的前 500 单，这一点必须在页面提示（否则合计会被误读成全量）；④ 报表页面未做（接口已就位）。
+前置: 本用例是 [backend-contract]：前置 = P0-3 毛利（`OrderMarginService`）+ P0-4 数据范围（`role.data_scope`）。零网络、零 LLM、无迁移（纯只读面）。
+跳过: [backend-contract] 报表合计口径与空数据语义，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-22 新增（issue #7376 段 1）。落码 = `ReportTotals`（纯函数：合计/复算/空数据判定）+ `ReportService`（复用 `OrderMarginService` 的同一份毛利计算，不重算口径）+ `OrderMarginReportView` + `GET /api/admin/reports/order-margins`（`dashboard:view`）。 ｜ tags: backend-contract, report, red-proof, data-scope
 
 ## 商家入驻域（7 case）
 
@@ -12536,8 +12551,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：854（活跃 141，跳过 713）
-- tier 分布：smoke 12 / normal 786 / adversarial 32
+- 用例总数：855（活跃 141，跳过 714）
+- tier 分布：smoke 12 / normal 787 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12552,7 +12567,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：137
+- 杂项域：138
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12733,6 +12748,7 @@
 - STK-001: 盘点单：账面快照 + 差异必经审批 + 调整只改数量（issue #7373 段 2）
 - PRC-003: 价格本可维护：协议价 / 等级价 / 阶梯价 upsert + 价格必须 > 0（issue #7375 段 3）
 - PRC-004: 改价闸门：价格低于 SKU 成本必须先有「改价」审批（issue #7375 段 4）
+- RPT-001: 报表中心：订单毛利报表（合计=明细之和 / 空数据≠0 / 成本未知单独计数）（issue #7376 段 1）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

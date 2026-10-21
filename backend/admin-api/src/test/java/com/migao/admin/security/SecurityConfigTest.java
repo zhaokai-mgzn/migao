@@ -564,6 +564,10 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.service.PriceBookService priceBookService;
 
+    // 报表中心（issue #7376 段 1）：`ReportController` 的构造依赖 ⇒ 本上下文要能装配。
+    @MockBean
+    private com.migao.admin.service.ReportService reportService;
+
     // 具名审批（issue #7374 段 1）：`ApprovalController` 的构造依赖 + `CustomerService`/`OrderService`
     // 的可空注入点 ⇒ 本上下文要能装配（真身只依赖一个 Mapper，仍按既有口径 mock）。
     @MockBean
