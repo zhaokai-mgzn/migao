@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（132 case）
+## 杂项域（133 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5674,6 +5674,23 @@
 跳过: [backend-contract] 审批四态 / 单次消费 / 超授信闸门，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-21 新增（issue #7374 段 1）。落码 = `ApprovalState`（纯状态机）+ `Approval`/`ApprovalMapper` + `ApprovalService`（申请/裁决/撤回/单次消费/CAS）+ `ApprovalController` + 超授信闸门出口（`CustomerService.assertWithinCreditOrApproved`）+ `OrderService` 回填 `consumed_ref` + V181。 ｜ tags: backend-contract, approval, red-proof
+
+### WH-001. 多仓与调拨：仓库实体 + 默认仓唯一 + 调拨守恒与缸号随行（issue #7373 段 1） 🔵
+```
+你: 用户（2026-10-21，逐字）：「继续推进」—— 承接 issue #7373 验收判据「调拨两端数量守恒」「跨仓同批次可追溯（缸号不因调拨丢失）」。
+数据: **判据 1（仓库实体）**：`warehouses` 有编码/名称/类型（`store` / `processing`，CHECK 封闭）/默认仓/状态；同租户编码唯一（部分唯一索引）。判据 = `WarehouseServiceTest#createDefaultsToStoreType` + `#unknownTypeRejected`。
+数据: **判据 2（🔴 默认仓唯一是数据库约束）**：同租户只能一个默认仓 —— 部分唯一索引 `uk_warehouses_single_default WHERE is_default` 兜住，服务层「先取消旧默认」只是正常路径；并发建两个会被拦并映射成可读冲突。判据 = `StockTransferMapperTest#singleDefaultWarehouseIsAConstraint` + `WarehouseServiceTest#settingDefaultClearsPrevious` + `#duplicateCodeIsReadableConflict`。
+数据: **判据 3（🔴 调拨两端数量守恒）**：调拨只改批次**归属仓**，**不改数量**；调拨前后总量一字不变（差 0.1 米也算错）。判据 = `StockTransferServiceTest#transferMovesWarehouseButKeepsQtyAndDyeLot` + `StockTransferPolicyTest#conservationHolds`。红证方向：把调拨写成「出库 + 新入库」或两边都减 ⇒ 当场红。
+数据: **判据 4（🔴 缸号不因调拨丢失）**：调拨明细引用 `batch_id`（同一行改仓）⇒ `dye_lot` 与 `unit_cost` 原样保留，可追溯。判据 = `#transferMovesWarehouseButKeepsQtyAndDyeLot`（断言 dyeLot/unitCost 一字不动）+ `StockTransferMapperTest#transferItemsAreBatchScoped`。
+数据: **判据 5（可调量与同仓拒）**：不能超过批次在调出仓的现有量（段 1 不做负库存）；调出 = 调入 一律拒（无意义且会掩盖写错仓，表上另有 `ck_stock_transfers_not_same`）。判据 = `StockTransferPolicyTest#movableUpToAvailable` + `StockTransferServiceTest#overAvailableRejected` + `#sameWarehouseRejected`。
+数据: **判据 6（写错仓必须拦）**：批次不在调出仓 ⇒ 拒（写错仓 / 已调走两种都必须拦，不许「尽力而为」）。判据 = `#batchNotInFromWarehouseRejected`。
+数据: **判据 7（脏值不猜）**：批次数量未知（null）、调拨量 0/负数/空 ⇒ 一律拒，不猜 0、不放行。判据 = `StockTransferPolicyTest#unknownBatchQtyCannotMove` + `#nonPositiveQtyIsRejected`。
+数据: **判据 8（端点与零授权 delta）**：`GET|POST /api/admin/warehouses`、`POST /api/admin/stock-transfers`、`GET /api/admin/stock-transfers/{id}` 逐字；读 `inbound:view` / 写 `inbound:create`（仓与库存同域，不新造码）；调拨入参只认仓库 **id**（不接受目标仓字符串 —— 文本改仓正是本段要治的形态）。判据 = `WarehouseControllerTest`。
+数据: **边界（照实登记）**：① **两阶段在途（`in_transit`）与「调拨中不可售」本段不做** —— 段 1 是即时调拨（确认即到位），没有在途窗口；② 仓库承载仍是 `stock_batches.warehouse`（文本，本服务改成调入仓编码），换成 `warehouse_id` 外键是结构性改造（段 2，要迁存量文本值）；③ **盘点单**未做（段 2，与 P1-2 的 `stocktake_diff` 审批同批）；④ 仓位/库位、负库存拦截（可配置豁免）未做（issue 明列非目标/后续）。
+前置: 本用例是 [backend-contract]：前置 = `warehouses` / `stock_transfers` / `stock_transfer_items`（V182）+ `stock_batches`。零网络、零 LLM。
+跳过: [backend-contract] 仓库约束与调拨守恒，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-21 新增（issue #7373 段 1）。落码 = `Warehouse`/`StockTransfer`/`StockTransferItem` + 三个 Mapper + `WarehouseService`（默认仓切换/编码冲突）+ `StockTransferPolicy`（守恒纯函数）+ `StockTransferService`（即时调拨，批次改仓、缸号随行）+ `WarehouseController` + V182。 ｜ tags: backend-contract, inventory, warehouse, transfer, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12456,8 +12473,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：849（活跃 141，跳过 708）
-- tier 分布：smoke 12 / normal 781 / adversarial 32
+- 用例总数：850（活跃 141，跳过 709）
+- tier 分布：smoke 12 / normal 782 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12472,7 +12489,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：132
+- 杂项域：133
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12648,6 +12665,7 @@
 - PRC-001: 价格解析：协议价 > 等级价 > 阶梯价 > 标准价，且**未定价绝不给 0**（issue #7375 段 1）
 - PRC-002: 下单服务端定价：价格本命中以服务端为准 + 逐行留痕（issue #7375 段 2）
 - APP-001: 具名审批流：四态 + 不能自批 + 单次消费 + 超授信闸门出口（issue #7374 段 1）
+- WH-001: 多仓与调拨：仓库实体 + 默认仓唯一 + 调拨守恒与缸号随行（issue #7373 段 1）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

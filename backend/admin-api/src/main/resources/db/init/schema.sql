@@ -4179,3 +4179,62 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_approvals_pending
 CREATE INDEX IF NOT EXISTS idx_approvals_gate
     ON approvals (tenant_id, object_type, object_ref, status)
     WHERE deleted = 0;
+
+-- ══════════════════════════════════════════════════════════════════════════════
+-- 多仓 + 调拨（V182，issue #7373 P1-1 段 1）：仓库实体 + 调拨单（逐批次明细，缸号随行）
+-- 段 1 = 即时调拨（确认即两端到位）；两阶段在途与负库存拦截见段 2。
+-- ══════════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS warehouses (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    code VARCHAR(32) NOT NULL,
+    name VARCHAR(128) NOT NULL,
+    warehouse_type VARCHAR(32) NOT NULL DEFAULT 'store',
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    remark VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_warehouses_type CHECK (warehouse_type IN ('store', 'processing')),
+    CONSTRAINT ck_warehouses_status CHECK (status IN ('active', 'inactive'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_warehouses_code
+    ON warehouses (tenant_id, code) WHERE deleted = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_warehouses_single_default
+    ON warehouses (tenant_id) WHERE is_default AND deleted = 0;
+
+CREATE TABLE IF NOT EXISTS stock_transfers (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    transfer_no VARCHAR(32) NOT NULL,
+    from_warehouse_id BIGINT NOT NULL REFERENCES warehouses(id),
+    to_warehouse_id BIGINT NOT NULL REFERENCES warehouses(id),
+    status VARCHAR(16) NOT NULL DEFAULT 'completed',
+    note VARCHAR(255),
+    created_by VARCHAR(64),
+    created_by_name VARCHAR(64),
+    completed_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_stock_transfers_not_same CHECK (from_warehouse_id <> to_warehouse_id),
+    CONSTRAINT ck_stock_transfers_status CHECK (status IN ('draft', 'in_transit', 'completed', 'cancelled'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_stock_transfers_no
+    ON stock_transfers (tenant_id, transfer_no) WHERE deleted = 0;
+
+CREATE TABLE IF NOT EXISTS stock_transfer_items (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    transfer_id VARCHAR(64) NOT NULL REFERENCES stock_transfers(id),
+    batch_id BIGINT NOT NULL REFERENCES stock_batches(id),
+    batch_no VARCHAR(32) NOT NULL,
+    sku_id BIGINT,
+    sku_code VARCHAR(64),
+    qty NUMERIC(12,1) NOT NULL CHECK (qty > 0),
+    unit_cost NUMERIC(12,4),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_stock_transfer_items_transfer
+    ON stock_transfer_items (tenant_id, transfer_id);

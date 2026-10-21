@@ -567,6 +567,22 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.mapper.ApprovalMapper approvalMapper;
 
+    // 多仓与调拨（issue #7373 段 1）：`WarehouseController` 的构造依赖 ⇒ 本上下文要能装配。
+    @MockBean
+    private com.migao.admin.service.WarehouseService warehouseService;
+    @MockBean
+    private com.migao.admin.service.StockTransferService stockTransferService;
+
+    // 三个 Mapper 也要 mock：本上下文排除了 MyBatis 自动配置，真 Mapper 建不出来
+    // （`Property 'sqlSessionFactory' or 'sqlSessionTemplate' are required`）⇒ 整个上下文起不来、
+    // 59 条判据全 error（不是一条红）。
+    @MockBean
+    private com.migao.admin.mapper.WarehouseMapper warehouseMapper;
+    @MockBean
+    private com.migao.admin.mapper.StockTransferMapper stockTransferMapper;
+    @MockBean
+    private com.migao.admin.mapper.StockTransferItemMapper stockTransferItemMapper;
+
     @MockBean
     private com.migao.admin.service.FinanceService financeService;
 

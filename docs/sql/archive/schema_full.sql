@@ -4,7 +4,7 @@
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
 -- （2026-09-11 实测，逐表比对 backend/admin-api/src/main/resources/db/init/schema.sql）：
 --
---   本文件缺失（schema.sql 已有，共 56 张）：
+--   本文件缺失（schema.sql 已有，共 59 张）：
 --     agent_batches, agent_batch_items
 --      批量更新的批次资源（V127，issue #5314 服务端包 —— 一张批次 + 一张逐条明细；
 --      明细的 old_value 是**撤销的唯一依据**，**不得**改用 audit_logs：审计是有界 fail-open、丢行允许），
@@ -13,6 +13,9 @@
 --     receipt_allocations
 --      客户收款核销（V176，issue #7370 段 3 —— 一笔收款冲抵多张订单；现金真值仍在 finance_transactions，
 --      本表只记「冲到哪张单、各多少」，故与 finance_transactions 必须**一起**出现在缺失清单里），
+--     warehouses, stock_transfers, stock_transfer_items
+--      多仓与调拨（V182，issue #7373 段 1）。三张必须**一起**列：调拨单头与明细分表，
+--      而「仓库」在本迁移前只是若干表上的**文本字段**；缺任何一张，「调拨两端数量守恒」都无从判定。
 --     approvals
 --      具名审批（V181，issue #7374 段 1 —— 改价 / 超授信 / 退款 / 采购超额 / 盘点差异五类共用一张表）。
 --      **业务对象不存审批结论副本**：订单等按 object_ref 读本表；超授信类单次消费（consumed_at）。

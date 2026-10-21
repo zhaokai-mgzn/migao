@@ -156,6 +156,10 @@ class MoneyEntryPrecisionMetaGuardTest {
                 site("com/migao/admin/service/ApprovalService.java", "Approval.builder()", Admission.GATED,
                         "具名审批（issue #7374 段 1）：审批金额入库前过 MoneyScale.requireTwoDecimalsOrNull"
                                 + "（「批了多少钱」是凭据，超精度直接拒，不静默四舍五入）"),
+                site("com/migao/admin/service/StockTransferService.java", "StockTransferItem.builder()", Admission.NO_NEW_INPUT_SOURCE,
+                        "调拨明细（issue #7373 段 1）：成本是 **stock_batches.unit_cost 的库列回读搬运**，"
+                                + "该列是 NUMERIC(12,4)（元/米 四位小数）⇒ **不套 2 位准入**（套了会把合法进价 12.3456 判成超精度）；"
+                                + "调拨不重算成本、不引入新的超精度输入源"),
                 site("com/migao/admin/service/SupplierPaymentService.java", "SupplierPayment.builder()",
                         Admission.GATED,
                         "供应商付款金额（issue #7369 段 3-B）：落库前过 "
