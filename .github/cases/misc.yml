@@ -4831,7 +4831,7 @@ cases:
         - pr-check.yml
       verifies: []
 
-  - id: PR-001
+  - id: PRC-001
     legacy_id: ""
     title: "价格解析：协议价 > 等级价 > 阶梯价 > 标准价，且**未定价绝不给 0**（issue #7375 段 1）"
     domains:

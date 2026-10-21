@@ -5622,7 +5622,7 @@
 ```
 溯源: 2026-10-21 新增（issue #7372 段 1）。落码 = 纯函数 `DataScope` + `RoleService.resolveDataScope`（复用 getUserRoles）+ `Role.dataScope` + `OrderService.getOrderPage/getOrderById` 接范围 + `OrderController` 两处读面接线 + V177 + 元守卫。 ｜ tags: backend-contract, rbac, data-scope, red-proof
 
-### PR-001. 价格解析：协议价 > 等级价 > 阶梯价 > 标准价，且**未定价绝不给 0**（issue #7375 段 1） 🔵
+### PRC-001. 价格解析：协议价 > 等级价 > 阶梯价 > 标准价，且**未定价绝不给 0**（issue #7375 段 1） 🔵
 ```
 你: 用户（2026-10-21，选定优先推进 P1-3）：承接 issue #7375 的验收判据「同一 SKU 对三个客户等级分别命中正确价格」「价格缺失时不得静默取 0（未定价 ≠ ¥0.00）」。
 数据: **判据 1（优先级）**：同一 SKU 同时存在协议价 / 等级价 / 阶梯价 / 标准价时，按 **协议 > 等级 > 阶梯 > 标准** 命中。判据 = `PriceResolutionTest#protocolBeatsEverything` + `#fallsBackThroughLayersInOrder`。红证方向：改成标准价优先 ⇒ 当场红。
@@ -12608,7 +12608,7 @@
 - AR-002: 客户收款核销：一笔收款冲多张订单 / 收款侧与订单侧双上限 / 同批逐行余量（issue #7370 段 3）
 - AR-003: 订单毛利：收入−退款−面料−加工，且**成本未知绝不当 0**（issue #7371 段 1+2）
 - AR-004: 数据范围 data scope：角色两态（tenant/self）+ 多角色取宽 + 越权=不存在（issue #7372 段 1）
-- PR-001: 价格解析：协议价 > 等级价 > 阶梯价 > 标准价，且**未定价绝不给 0**（issue #7375 段 1）
+- PRC-001: 价格解析：协议价 > 等级价 > 阶梯价 > 标准价，且**未定价绝不给 0**（issue #7375 段 1）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

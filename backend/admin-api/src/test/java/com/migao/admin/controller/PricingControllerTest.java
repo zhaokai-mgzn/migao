@@ -1,4 +1,4 @@
-// case_ids: PR-001
+// case_ids: PRC-001
 package com.migao.admin.controller;
 
 import com.migao.admin.security.RequirePermission;

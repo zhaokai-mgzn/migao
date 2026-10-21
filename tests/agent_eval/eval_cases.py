@@ -7217,9 +7217,9 @@ _CASE_AR_004 = EvalCase(
     precondition='本用例是 [backend-contract]：前置 = `roles.data_scope`（V177）+ 订单表的 `created_by`（V142）。零网络、零 LLM。',
 )
 
-# ── PR-001 [NORMAL] 价格解析：协议价 > 等级价 > 阶梯价 > 标准价，且**未定价绝不给 0**（issue #7375 段 1）（源: cases/misc.yml）──
-_CASE_PR_001 = EvalCase(
-    id='PR-001',
+# ── PRC-001 [NORMAL] 价格解析：协议价 > 等级价 > 阶梯价 > 标准价，且**未定价绝不给 0**（issue #7375 段 1）（源: cases/misc.yml）──
+_CASE_PRC_001 = EvalCase(
+    id='PRC-001',
     legacy_id='',
     title='价格解析：协议价 > 等级价 > 阶梯价 > 标准价，且**未定价绝不给 0**（issue #7375 段 1）',
     skill=Skill.GENERAL,
@@ -16245,7 +16245,7 @@ ALL_CASES = (
     _CASE_AR_002,
     _CASE_AR_003,
     _CASE_AR_004,
-    _CASE_PR_001,
+    _CASE_PRC_001,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
