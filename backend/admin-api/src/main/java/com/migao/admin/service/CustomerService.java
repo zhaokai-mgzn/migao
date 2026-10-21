@@ -36,6 +36,15 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
 
     /** 业务「今天」/业务时区单点（issue #3802）：账龄分档的基准日不许多头算。 */
     private final com.migao.admin.time.BusinessClock businessClock;
+
+    /**
+     * 审批出口（issue #7374，P1-2 段 1）：超授信时找「已通过且未用掉」的审批放行。
+     *
+     * <p>{@code @Autowired(required = false)}：不扫 Spring 组件的切片上下文与直接 new 构造的既有单测
+     * 没有该 bean ⇒ 退回**改前行为**（没有审批出口，超限即拒），不是静默放行。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ApprovalService approvalService;
     private final CustomerTagMapper customerTagMapper;
     private final CustomerSegmentMapper customerSegmentMapper;
     private final CustomerSegmentMemberMapper customerSegmentMemberMapper;
@@ -820,26 +829,55 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
      * 未建档客户或未启用授信 ⇒ 放行（与存量行为逐字一致）。
      */
     public void assertWithinCredit(Long tenantId, String phone, BigDecimal amount) {
+        assertWithinCreditOrApproved(tenantId, phone, amount);
+    }
+
+    /**
+     * 授信闸门 + **审批出口**（issue #7374，P1-2 段 1）。
+     *
+     * <p>改前：超授信只能「先收款 / 调额度」两条路，「这一单特殊，请主管批」没有出口 —— 只能线下
+     * 微信说一声，事后查不到谁批的。改后：超限时去 {@code approvals} 找一条**已通过、未用掉、
+     * 金额覆盖本次超出额** 的 `credit_override`；命中即放行并**当场消费**（一笔一批），
+     * 没命中照旧拒，但错误信息给出「怎么申请」的路径。</p>
+     *
+     * <p>🔴 审批结论**不落副本**在任何业务表上：这里只是读审批表 + 消费，订单不存「已批准」布尔
+     * （否则审批被撤回后订单还写着已批准 —— 双真值）。</p>
+     *
+     * @return 被消费的审批 id（{@code null} = 本单没有用审批放行）
+     */
+    public String assertWithinCreditOrApproved(Long tenantId, String phone, BigDecimal amount) {
         if (!StringUtils.hasText(phone)) {
-            return;
+            return null;
         }
         // issue #7257 纪律：客户档案**读侧不用 selectOne**（历史重复行会抛 TooManyResults ⇒ 500）
         // ⇒ 走单一读实现点 findFirstByPhone（与建档写面的判重同一口径）。
         CustomerProfile profile = customerProfileMapper.findFirstByPhone(tenantId, phone);
         if (profile == null || profile.getCreditLimit() == null) {
-            return;
+            return null;
         }
         BigDecimal outstanding = creditOutstanding(tenantId, phone);
         CreditPolicy.Decision decision = CreditPolicy.evaluate(profile.getCreditLimit(), outstanding, amount);
-        if (!decision.allowed()) {
-            log.info("[credit] 超授信被拒 | tenant={} customer={} limit={} outstanding={} amount={} excess={}",
-                    tenantId, profile.getId(), profile.getCreditLimit(), outstanding, amount, decision.excess());
-            throw BusinessException.validationError(String.format(
-                    "超出客户授信额度：本单 ¥%s + 已欠 ¥%s > 额度 ¥%s，尚缺 ¥%s。"
-                            + "请先收款/冲账，或由管理员在客户详情调整授信额度。",
-                    amount.toPlainString(), outstanding.toPlainString(),
-                    profile.getCreditLimit().toPlainString(), decision.excess().toPlainString()));
+        if (decision.allowed()) {
+            return null;
         }
+        // 审批出口：已通过 + 未用掉 + 金额覆盖**本次超出额**（批 5000 不能用来过 8000 的单）
+        String consumed = approvalService == null ? null
+                : approvalService.consume(com.migao.admin.entity.Approval.TYPE_CREDIT_OVERRIDE,
+                        phone.trim(), decision.excess(), null);
+        if (consumed != null) {
+            log.info("[credit] 超授信经审批放行 | tenant={} customer={} excess={} approval={}",
+                    tenantId, profile.getId(), decision.excess(), consumed);
+            return consumed;
+        }
+        log.info("[credit] 超授信被拒 | tenant={} customer={} limit={} outstanding={} amount={} excess={}",
+                tenantId, profile.getId(), profile.getCreditLimit(), outstanding, amount, decision.excess());
+        throw BusinessException.validationError(String.format(
+                "超出客户授信额度：本单 ¥%s + 已欠 ¥%s > 额度 ¥%s，尚缺 ¥%s。"
+                        + "请先收款/冲账、由管理员调整授信额度，"
+                        + "或提交「超授信下单」审批（objectType=credit_override，objectRef=%s，金额 ≥ 尚缺额度）后重试。",
+                amount.toPlainString(), outstanding.toPlainString(),
+                profile.getCreditLimit().toPlainString(), decision.excess().toPlainString(),
+                phone.trim()));
     }
 
     /** 设置/清空授信（显式 null = 停用授信）。 */

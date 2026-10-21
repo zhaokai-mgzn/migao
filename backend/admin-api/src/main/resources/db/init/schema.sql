@@ -4141,3 +4141,41 @@ CREATE TABLE IF NOT EXISTS sku_tier_prices (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_sku_tier_prices_edge
     ON sku_tier_prices (tenant_id, sku_id, min_qty) WHERE deleted = 0;
+
+-- 具名审批流（V181，issue #7374 P1-2）：改价 / 超授信 / 退款 / 采购超额 / 盘点差异
+-- 四态 pending → approved | rejected | withdrawn；业务对象**不存审批结论副本**（读本表）；超授信类单次消费。
+CREATE TABLE IF NOT EXISTS approvals (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    object_type VARCHAR(32) NOT NULL,
+    object_ref VARCHAR(128) NOT NULL,
+    object_label VARCHAR(255),
+    amount NUMERIC(16,4),
+    payload JSONB,
+    reason VARCHAR(500),
+    status VARCHAR(16) NOT NULL DEFAULT 'pending',
+    requested_by VARCHAR(64),
+    requested_by_name VARCHAR(64),
+    requested_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    decided_by VARCHAR(64),
+    decided_by_name VARCHAR(64),
+    decided_at TIMESTAMP WITH TIME ZONE,
+    decision_note VARCHAR(500),
+    consumed_at TIMESTAMP WITH TIME ZONE,
+    consumed_ref VARCHAR(128),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_approvals_object_type CHECK (object_type IN (
+        'credit_override', 'price_change', 'refund', 'purchase_over', 'stocktake_diff')),
+    CONSTRAINT ck_approvals_status CHECK (status IN ('pending', 'approved', 'rejected', 'withdrawn')),
+    CONSTRAINT ck_approvals_decided_shape CHECK (
+        (status = 'pending' AND decided_at IS NULL)
+        OR (status <> 'pending' AND decided_at IS NOT NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_approvals_pending
+    ON approvals (tenant_id, object_type, object_ref)
+    WHERE status = 'pending' AND deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_approvals_gate
+    ON approvals (tenant_id, object_type, object_ref, status)
+    WHERE deleted = 0;

@@ -19,6 +19,7 @@
     "after_sales_tickets.images",
     "agent_employees.skills",
     "agent_sessions.ai_context_messages",
+    "approvals.payload",
     "audit_logs.action_details",
     "client_request_keys.response_payload",
     "craft_calc_configs.per_fold_mixed_times",

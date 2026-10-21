@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（131 case）
+## 杂项域（132 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5655,6 +5655,25 @@
 跳过: [backend-contract] 下单定价覆盖与留痕，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-21 新增（issue #7375 段 2）。落码 = `OrderPricingService`（服务端定价，SKU 取自 `processingInfo` 既有键族）+ `OrderPriceOverride`（覆盖判据/标签）+ `OrderService.createOrder` 接线（金额计算前定价、落库后写 `price_server_override` 审计）+ V180 四列。 ｜ tags: backend-contract, pricing, audit, red-proof
+
+### APP-001. 具名审批流：四态 + 不能自批 + 单次消费 + 超授信闸门出口（issue #7374 段 1） 🔵
+```
+你: 用户（2026-10-21，逐字）：「继续推进」—— 承接 issue #7374 的验收判据「未审批的超阈动作**写面直接拒绝**（不是前端隐藏）；审批通过后同一动作放行」「审批结果与对象状态**不出现双真值**」「每条审批有完整留痕（谁/何时/旧值/新值）」。
+数据: **判据 1（四态流转）**：`pending` 只能到 `approved | rejected | withdrawn`；只有待审能裁决、只有待审能撤回（已裁决的「撤回」等于绕过留痕）。判据 = `ApprovalStateTest#onlyPendingCanBeDecided` + `#onlyPendingCanBeWithdrawn`。
+数据: **判据 2（不能自批）**：申请人不能裁决自己提交的那条（审批的全部意义）。判据 = `ApprovalServiceTest#cannotSelfApprove`。
+数据: **判据 3（并发 CAS）**：裁决 / 撤回 / 消费都带 `status='pending'`（或 `consumed_at IS NULL`）条件按影响行数判成败 ⇒ 两个人同时点「通过」只有一个成功，另一个拿到可读的 409 语义而不是覆盖别人的结论。判据 = `#concurrentDecisionLosesCas` + `#consumeMarksUsed`。
+数据: **判据 4（🔴 单次消费）**：超授信审批「批一次用一次」：只有**已通过 + 未用掉 + 金额覆盖本次超出额**的能被消费；消费后 `consumed_at` 非空，再下单不会再放行。判据 = `ApprovalStateTest#onlyApprovedAndUnconsumedCanBeConsumed` + `ApprovalServiceTest#consumeRequiresEnoughAmount`。
+数据: **判据 5（🔴 未审批即拒，写面直接拒）**：超授信且没有可用审批 ⇒ 下单**写面**直接拒（不是前端藏按钮），错误信息给出申请路径（`objectType=credit_override` + `objectRef` + 金额下限）。判据 = `CreditApprovalGateTest#overLimitWithoutApprovalIsRejected`。
+数据: **判据 6（审批通过后放行）**：同一条路径上有已通过审批（金额够）⇒ 放行并返回审批 id，下单成功后回填 `consumed_ref`（事后可查「这条审批用在哪张单」）。判据 = `#overLimitWithApprovalPassesAndConsumes`。
+数据: **判据 7（额度内零开销）**：额度内不查审批、不消费（不给正常单增加一次写）。判据 = `#withinLimitNeverTouchesApprovals`。
+数据: **判据 8（无不静默放行）**：没有审批组件（切片上下文 / 直接 new 的老单测）⇒ 退回**改前行为**（超限即拒），绝不静默放行。判据 = `#withoutApprovalBeanBehavesAsBefore`。
+数据: **判据 9（不出现双真值）**：业务对象（订单）**不存**审批结论副本 —— 闸门只读 `approvals` + 消费；订单用 `consumed_ref` 反向指向审批。判据 = 代码结构（`OrderService` 无「已批准」字段）+ `#overLimitWithApprovalPassesAndConsumes`。
+数据: **判据 10（类型封闭 + 端点契约）**：`object_type` 是五类封闭集合（表 CHECK + 服务层校验双保险，新增一类必须改迁移 + 改判据）；端点 `POST /api/admin/approvals`、`POST /{id}/approve|reject|withdraw`、`GET /`、`GET /{id}` 逐字；写面 `finance:create`、读面继承类级 `finance:view`（零授权 delta）。判据 = `ApprovalServiceTest#unknownTypeIsRejected` + `ApprovalControllerTest`。
+数据: **边界（照实登记）**：本段只把**超授信下单**接到闸门上；改价（`price_change`）、退款（`refund`）、采购超额（`purchase_over`）、盘点差异（`stocktake_diff`）四类**类型与表已就位、闸门未接**（分别依赖 P1-3 改单审批面、退款流程改造、P0-1 采购预算、P1-1 盘点）；多级会签 / 条件分支 / SLA 升级不在范围；审批 UI 未做（接口已就位）。
+前置: 本用例是 [backend-contract]：前置 = `approvals`（V181）+ 客户授信（P0-2 段 1）。零网络、零 LLM。
+跳过: [backend-contract] 审批四态 / 单次消费 / 超授信闸门，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-21 新增（issue #7374 段 1）。落码 = `ApprovalState`（纯状态机）+ `Approval`/`ApprovalMapper` + `ApprovalService`（申请/裁决/撤回/单次消费/CAS）+ `ApprovalController` + 超授信闸门出口（`CustomerService.assertWithinCreditOrApproved`）+ `OrderService` 回填 `consumed_ref` + V181。 ｜ tags: backend-contract, approval, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12437,8 +12456,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：848（活跃 141，跳过 707）
-- tier 分布：smoke 12 / normal 780 / adversarial 32
+- 用例总数：849（活跃 141，跳过 708）
+- tier 分布：smoke 12 / normal 781 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12453,7 +12472,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：131
+- 杂项域：132
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12628,6 +12647,7 @@
 - AR-004: 数据范围 data scope：角色两态（tenant/self）+ 多角色取宽 + 越权=不存在（issue #7372 段 1）
 - PRC-001: 价格解析：协议价 > 等级价 > 阶梯价 > 标准价，且**未定价绝不给 0**（issue #7375 段 1）
 - PRC-002: 下单服务端定价：价格本命中以服务端为准 + 逐行留痕（issue #7375 段 2）
+- APP-001: 具名审批流：四态 + 不能自批 + 单次消费 + 超授信闸门出口（issue #7374 段 1）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
