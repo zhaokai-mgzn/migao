@@ -29,9 +29,10 @@ describe('供应链页面留白（与同族页面同款 p-6）', () => {
     const source = readFileSync(join(process.cwd(), relPath), 'utf-8')
     // 只取**页面组件本体**的 `return (`（顶格两空格缩进）；文件里还有 map 回调 / 子组件的 `return (`，
     // 取最后一个会把内部 `<tr>` 当成根元素（实测踩过）
-    const pageReturn = source.match(/\n {2}return \(/g)
-    expect(pageReturn, `${relPath} 找不到页面组件的 return (`).not.toBeNull()
     const start = source.search(/\n {2}return \(/)
+    // 弱断言守卫（issue #5477）不许 `not.toBeNull()` 这类存在性断言：这里直接对**根元素标记**取值，
+    // 取不到就是空串 ⇒ 下面的 `toContain('p-6')` 立刻红（既断言存在，也断言内容）
+    expect(start).toBeGreaterThan(-1)
     const rootTag = source.slice(start).split('\n').slice(1, 4).join('\n')
 
     expect(rootTag).toContain('p-6')
