@@ -7350,6 +7350,25 @@ _CASE_PRC_003 = EvalCase(
     precondition='本用例是 [backend-contract]：前置 = 三张价格本（V179）。零网络、零 LLM。',
 )
 
+# ── PRC-004 [NORMAL] 改价闸门：价格低于 SKU 成本必须先有「改价」审批（issue #7375 段 4）（源: cases/misc.yml）──
+_CASE_PRC_004 = EvalCase(
+    id='PRC-004',
+    legacy_id='',
+    title='改价闸门：价格低于 SKU 成本必须先有「改价」审批（issue #7375 段 4）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-21，逐字）：「继续主动推进，不要一直让我点头」—— 自主推进 P1-3 段 4，把 `price_change` 这个具名审批接到实际写面上。'],
+    expectations=[],
+    data_checks=['**判据 1（低于成本需审批）**：价格本录入价 < 该 SKU 成本（`product_skus.avg_cost`）⇒ 必须有一条**已通过且未用掉**的 `price_change` 审批（对象 = SKU id，金额 = 成本价），否则**写面直接拒**并给出申请路径。判据 = `PriceBookFloorGateTest#belowCostWithoutApprovalIsRejected` + `PriceFloorPolicyTest#belowCostNeedsApproval`。', '**判据 2（批过放行且消费）**：命中审批 ⇒ 当场消费（一笔一批），并记下「用的是哪条审批」。判据 = `#belowCostWithApprovalPasses`。', '**判据 3（等于/高于成本不阻断）**：等于成本不算亏本；不低于成本时不查审批（不给正常改价加一次写）。判据 = `PriceFloorPolicyTest#atOrAboveCostIsFine` + `#atOrAboveCostNeverTouchesApprovals`。', '**判据 4（🔴 成本未知不阻断，但如实留痕）**：`avg_cost` 为 NULL/0/负数 = 没有可信成本 ⇒ **放行**且标 `costUnknown`。理由：拿未知当零成本会让闸门变假；一律阻断则存量商品全都改不了价（运营会绕开系统）。判据 = `PriceFloorPolicyTest#unknownCostDoesNotBlockButIsLabelled` + `PriceBookFloorGateTest#unknownCostPassesWithoutApproval`。', '**判据 5（无装置不造假闸门）**：没有成本读数装置（切片上下文 / 直接 new 的老单测）⇒ 退回**改前行为**（无闸门），而不是静默放行或静默拒绝。判据 = `#withoutCostWiringGateIsAbsent`。', '**边界（照实登记）**：① 闸门只接在**价格本录入**（协议价/等级价/阶梯价）上；**商品/SKU 基础售价**的改价写面（`ProductService`）尚未接（下一段，动核心写面风险高）；② 底价是「成本」而非「最低毛利率」（毛利率口径未裁定）；③ 价格本页面未做；④ 成本未知的存量商品会以无闸门方式放行 —— 已在判据 4 显式登记，不假绿。'],
+    skip_reason='[backend-contract] 改价闸门判定与消费，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'pricing', 'approval', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = 价格本三表（V179）+ `approvals`（V181）+ `product_skus.avg_cost`。零网络、零 LLM。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -16366,6 +16385,7 @@ ALL_CASES = (
     _CASE_OPS_001,
     _CASE_STK_001,
     _CASE_PRC_003,
+    _CASE_PRC_004,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
