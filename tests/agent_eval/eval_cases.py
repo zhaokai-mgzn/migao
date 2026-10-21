@@ -7255,6 +7255,25 @@ _CASE_PRC_002 = EvalCase(
     precondition='本用例是 [backend-contract]：前置 = 价格本三张表（V179）+ `order_items` 定价依据四列（V180）+ `product_skus.sku_code`。零网络、零 LLM。',
 )
 
+# ── APP-001 [NORMAL] 具名审批流：四态 + 不能自批 + 单次消费 + 超授信闸门出口（issue #7374 段 1）（源: cases/misc.yml）──
+_CASE_APP_001 = EvalCase(
+    id='APP-001',
+    legacy_id='',
+    title='具名审批流：四态 + 不能自批 + 单次消费 + 超授信闸门出口（issue #7374 段 1）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-21，逐字）：「继续推进」—— 承接 issue #7374 的验收判据「未审批的超阈动作**写面直接拒绝**（不是前端隐藏）；审批通过后同一动作放行」「审批结果与对象状态**不出现双真值**」「每条审批有完整留痕（谁/何时/旧值/新值）」。'],
+    expectations=[],
+    data_checks=['**判据 1（四态流转）**：`pending` 只能到 `approved | rejected | withdrawn`；只有待审能裁决、只有待审能撤回（已裁决的「撤回」等于绕过留痕）。判据 = `ApprovalStateTest#onlyPendingCanBeDecided` + `#onlyPendingCanBeWithdrawn`。', '**判据 2（不能自批）**：申请人不能裁决自己提交的那条（审批的全部意义）。判据 = `ApprovalServiceTest#cannotSelfApprove`。', "**判据 3（并发 CAS）**：裁决 / 撤回 / 消费都带 `status='pending'`（或 `consumed_at IS NULL`）条件按影响行数判成败 ⇒ 两个人同时点「通过」只有一个成功，另一个拿到可读的 409 语义而不是覆盖别人的结论。判据 = `#concurrentDecisionLosesCas` + `#consumeMarksUsed`。", '**判据 4（🔴 单次消费）**：超授信审批「批一次用一次」：只有**已通过 + 未用掉 + 金额覆盖本次超出额**的能被消费；消费后 `consumed_at` 非空，再下单不会再放行。判据 = `ApprovalStateTest#onlyApprovedAndUnconsumedCanBeConsumed` + `ApprovalServiceTest#consumeRequiresEnoughAmount`。', '**判据 5（🔴 未审批即拒，写面直接拒）**：超授信且没有可用审批 ⇒ 下单**写面**直接拒（不是前端藏按钮），错误信息给出申请路径（`objectType=credit_override` + `objectRef` + 金额下限）。判据 = `CreditApprovalGateTest#overLimitWithoutApprovalIsRejected`。', '**判据 6（审批通过后放行）**：同一条路径上有已通过审批（金额够）⇒ 放行并返回审批 id，下单成功后回填 `consumed_ref`（事后可查「这条审批用在哪张单」）。判据 = `#overLimitWithApprovalPassesAndConsumes`。', '**判据 7（额度内零开销）**：额度内不查审批、不消费（不给正常单增加一次写）。判据 = `#withinLimitNeverTouchesApprovals`。', '**判据 8（无不静默放行）**：没有审批组件（切片上下文 / 直接 new 的老单测）⇒ 退回**改前行为**（超限即拒），绝不静默放行。判据 = `#withoutApprovalBeanBehavesAsBefore`。', '**判据 9（不出现双真值）**：业务对象（订单）**不存**审批结论副本 —— 闸门只读 `approvals` + 消费；订单用 `consumed_ref` 反向指向审批。判据 = 代码结构（`OrderService` 无「已批准」字段）+ `#overLimitWithApprovalPassesAndConsumes`。', '**判据 10（类型封闭 + 端点契约）**：`object_type` 是五类封闭集合（表 CHECK + 服务层校验双保险，新增一类必须改迁移 + 改判据）；端点 `POST /api/admin/approvals`、`POST /{id}/approve|reject|withdraw`、`GET /`、`GET /{id}` 逐字；写面 `finance:create`、读面继承类级 `finance:view`（零授权 delta）。判据 = `ApprovalServiceTest#unknownTypeIsRejected` + `ApprovalControllerTest`。', '**边界（照实登记）**：本段只把**超授信下单**接到闸门上；改价（`price_change`）、退款（`refund`）、采购超额（`purchase_over`）、盘点差异（`stocktake_diff`）四类**类型与表已就位、闸门未接**（分别依赖 P1-3 改单审批面、退款流程改造、P0-1 采购预算、P1-1 盘点）；多级会签 / 条件分支 / SLA 升级不在范围；审批 UI 未做（接口已就位）。'],
+    skip_reason='[backend-contract] 审批四态 / 单次消费 / 超授信闸门，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'approval', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `approvals`（V181）+ 客户授信（P0-2 段 1）。零网络、零 LLM。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -16266,6 +16285,7 @@ ALL_CASES = (
     _CASE_AR_004,
     _CASE_PRC_001,
     _CASE_PRC_002,
+    _CASE_APP_001,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

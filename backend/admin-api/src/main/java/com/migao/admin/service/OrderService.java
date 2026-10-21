@@ -197,6 +197,13 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
     private OrderPricingService orderPricingService = OrderPricingService.NOOP;
 
     /**
+     * 具名审批（issue #7374 段 1）：超授信下单被审批放行时，回填「这条审批用在哪」。
+     * 可空注入（切片上下文 / 直接 new 的单测没有该 bean ⇒ 仅少一次回填，不影响下单）。
+     */
+    @Autowired(required = false)
+    private ApprovalService approvalService;
+
+    /**
      * <b>测试探针</b>（issue #6955，生产恒为 {@code 0}）：在 {@link #cancelOrder} 的「读判加工单为
      * {@code generated}」之后、「联动作废（CAS）」之前暂停指定毫秒。
      *
@@ -672,7 +679,9 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
         // ── 授信额度闸门（issue #7370，P0-2 段 1）──
         // 口径见 CreditPolicy：NULL = 未启用（存量客户零回归）；0 = 零额度（拒一切赊销）。
         // 判在**任何写之前**，且挂在三条路径（表单 / Agent / 程序化）共用的唯一入口上。
-        customerService.assertWithinCredit(tenantId, request.getCustomerPhone(), totalAmount);
+        // 审批出口（issue #7374 段 1）：超限时可由「已通过且未用掉」的超授信审批放行（一笔一批）
+        String creditApprovalId =
+                customerService.assertWithinCreditOrApproved(tenantId, request.getCustomerPhone(), totalAmount);
 
         // ── 建单同步回加工费组合配置（issue #4872）──
         // 用户原话「当订单创建成功后，同步新增加工费组合&单价到加工费配置中」。
@@ -764,6 +773,12 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
 
         // 保存订单明细
         persistOrderItems(order, request.getItems(), itemFees, tenantId, linePricings);
+
+        // 审批留痕回填（issue #7374 段 1）：超授信是被审批放行的，把那笔审批的「用在哪」补成这张订单
+        // （闸门跑在下单之前，那时还没有 order id —— 所以是事后回填，不是闸门内直接写）
+        if (creditApprovalId != null && approvalService != null) {
+            approvalService.attachConsumedRef(creditApprovalId, order.getId());
+        }
 
         // 定价改写留痕（issue #7375 段 2，判据「不一致 ⇒ 服务端为准且记录差异」）：
         // 只在**真的改写了**某行时写一条审计（没有改写 = 没有差异 = 不制造噪音）。

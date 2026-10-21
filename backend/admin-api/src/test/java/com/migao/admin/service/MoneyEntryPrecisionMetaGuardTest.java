@@ -153,6 +153,9 @@ class MoneyEntryPrecisionMetaGuardTest {
                 site("com/migao/admin/service/OrderPricingService.java", "setUnitPrice", Admission.GATED,
                         "下单服务端定价（issue #7375 段 2）：改写单价的值来自 PriceResolution（纯函数内已 setScale(2)"
                                 + " 两位小数）⇒ 落库前不缺准入；此处登记的是「写面只有一个、且值只从解析结果来」"),
+                site("com/migao/admin/service/ApprovalService.java", "Approval.builder()", Admission.GATED,
+                        "具名审批（issue #7374 段 1）：审批金额入库前过 MoneyScale.requireTwoDecimalsOrNull"
+                                + "（「批了多少钱」是凭据，超精度直接拒，不静默四舍五入）"),
                 site("com/migao/admin/service/SupplierPaymentService.java", "SupplierPayment.builder()",
                         Admission.GATED,
                         "供应商付款金额（issue #7369 段 3-B）：落库前过 "
