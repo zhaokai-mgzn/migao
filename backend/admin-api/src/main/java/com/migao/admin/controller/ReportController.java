@@ -58,6 +58,21 @@ public class ReportController {
         return ApiResponse.success(reportService.inventoryAging(thresholdDays, warehouseCode));
     }
 
+    /**
+     * 员工业绩报表：`GET /api/admin/reports/staff-performance?startDate=&endDate=`。
+     *
+     * <p>口径：按制单人归集单数与收入；**没有制单人的订单单独成档**（不摊给任何人）；客单价 = 收入/单数，
+     * 单数为 0 ⇒ null。数据范围同 P0-4（`self` 只看自己的业绩）。</p>
+     */
+    @GetMapping("/staff-performance")
+    public ApiResponse<com.migao.admin.dto.StaffPerformanceView> staffPerformance(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
+        String scopeOwnerId = com.migao.admin.security.DataScope.ownerFilter(
+                roleService.resolveDataScope(currentUserId()), currentUserId());
+        return ApiResponse.success(reportService.staffPerformance(startDate, endDate, scopeOwnerId));
+    }
+
     /** 数据范围解析（与 P0-4 同口径：仓储在 role.data_scope，读权在 RoleService）。 */
     private final RoleService roleService;
 

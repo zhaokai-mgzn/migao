@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 210
+    "backend_contract_scoring_zero": 211
   },
   "history": [
     {
@@ -827,6 +827,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 210,
       "note": "issue #7376 段 2（库存周转与滞销报表）新增 1 条 [backend-contract] 用例 RPT-002 ⇒ 209 → 210。判红通道 = InventoryAgePolicyTest(5) + InventoryReportServiceTest(5)。"
+    },
+    {
+      "sha": "feat/7376-staff-report",
+      "date": "2026-10-22",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 211,
+      "note": "issue #7376 段 3（员工业绩报表）新增 1 条 [backend-contract] 用例 RPT-003 ⇒ 210 → 211。判红通道 = StaffPerformanceReportTest(5)。"
     }
   ]
 }

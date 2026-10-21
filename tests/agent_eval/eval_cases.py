@@ -7407,6 +7407,25 @@ _CASE_RPT_002 = EvalCase(
     precondition='本用例是 [backend-contract]：前置 = `stock_batches` + `stock_batch_consumptions`（V119 快照）+ P0-4 数据范围。零网络、零 LLM、无迁移（纯只读面）。',
 )
 
+# ── RPT-003 [NORMAL] 报表中心：员工业绩（按制单人归集 / 无主单不摊 / 客单价不做 0 除）（issue #7376 段 3）（源: cases/misc.yml）──
+_CASE_RPT_003 = EvalCase(
+    id='RPT-003',
+    legacy_id='',
+    title='报表中心：员工业绩（按制单人归集 / 无主单不摊 / 客单价不做 0 除）（issue #7376 段 3）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-22，逐字）：「继续做」—— 继续推进 P1-4，做老板第三张表：员工业绩。'],
+    expectations=[],
+    data_checks=['**判据 1（按制单人归集）**：单数 / 收入 / 客单价（= 收入 ÷ 单数）逐人给出；合计 = 各行之和。判据 = `StaffPerformanceReportTest#groupsByStaff`。', '**判据 2（🔴 无主订单不摊给任何人）**：没有制单人的订单（存量 / C 端自助单）**单独计数**（`unattributedOrders`），不计入任何人的业绩 —— 摊了就是凭空给人加分，而且不会有任何东西报错。判据 = `#unattributedOrdersAreNotBlamedOnAnyone`。', '**判据 3（客单价不做 0 除）**：单数为 0 ⇒ `avgOrderValue` 为 null；金额为 null 的订单按 0 计入收入但单数照算（不让一行脏值吞掉整单）。判据 = `#nullAmountCountsAsZeroButOrderStillCounted`。', '**判据 4（空数据 ≠ 0）**：没有命中订单 ⇒ 合计 null、`hasData=false`（与另两张报表同口径）。判据 = `#emptyReportHasNullTotals`。', '**判据 5（数据范围同 P0-4）**：`self` 范围只统计本人创建的单（业绩报表里就是「只看自己的业绩」）；范围由服务端解析，端点入参只有日期区间。判据 = `#dataScopeRestrictsToOwnPerformance` + `ReportControllerTest#takesOnlyDateRange`。', '**边界（照实登记）**：① **退款列本段不给** —— 退款真值在 `finance_transactions`（每单一次查询 = N+1），本段先只做「单数 + 收入 + 客单价」；宁可少一列，也不放一个恒为 0 的假字段（那会被读成「这人没退过款」）。② 明细上限 500 行且未分页 ⇒ 合计只覆盖命中的部分；③ 账龄报表化、CSV 导出、报表页面未做。'],
+    skip_reason='[backend-contract] 业绩归集口径与无主单语义，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'report', 'red-proof', 'data-scope'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `orders.created_by` / `created_by_name` + P0-4 数据范围。零网络、零 LLM、无迁移（纯只读面）。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -16426,6 +16445,7 @@ ALL_CASES = (
     _CASE_PRC_004,
     _CASE_RPT_001,
     _CASE_RPT_002,
+    _CASE_RPT_003,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
