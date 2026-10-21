@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（135 case）
+## 杂项域（136 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5725,6 +5725,21 @@
 跳过: [backend-contract] 盘点恒等式 / 差异审批闸门 / 真库列一致性，由 Java 单测与真库判据验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-21 新增（issue #7373 段 2）。落码 = `Stocktake`/`StocktakeItem` + 两个 Mapper + `StocktakePolicy`（恒等式与准入）+ `StocktakeService`（出任务/录实盘/完成/作废，差异接 `ApprovalService.consume`）+ `StocktakeController` + V184 + 真库判据。 ｜ tags: backend-contract, realdb, inventory, stocktake, approval, red-proof
+
+### PRC-003. 价格本可维护：协议价 / 等级价 / 阶梯价 upsert + 价格必须 > 0（issue #7375 段 3） 🔵
+```
+你: 用户（2026-10-21，逐字）：「继续主动推进，不要一直让我点头」—— 自主推进 P1-3 段 3，把价格本从「只能写库」变成可维护。
+数据: **判据 1（价格必须 > 0）**：0 元与负数一律拒（0 元成交 = 白送；未定价就不该录）。判据 = `PriceBookServiceTest#priceMustBePositive`。
+数据: **判据 2（阶梯区间合法）**：起订量必须 > 0，上限不得小于起订量。判据 = `#tierRangeMustBeSane`。
+数据: **判据 3（upsert 靠唯一索引）**：协议价 / 等级价 / 阶梯价都走 `ON CONFLICT … DO UPDATE`（同客户同 SKU / 同等级同 SKU / 同 SKU 同门槛只留一条生效价），不靠服务层先查一遍。判据 = `#protocolUpsertUsesConflictClause`。
+数据: **判据 4（软删与类型封闭）**：`kind` 必须是 protocol / vip-level / tier；找不到记录 ⇒ 404 语义（不是静默成功）。判据 = `#removeValidatesKindAndExistence`。
+数据: **判据 5（读面按 SKU）**：读面必须指定 SKU（价格本是按 SKU 维护的），一次给出三层价（缺层 = 没有该层价）。判据 = `#listRequiresSku`。
+数据: **判据 6（零授权 delta）**：读面沿用类级 `order:view`、写面 `product:create`（与商品维护同码，不新造权限码）。判据 = `PricingController`（既有报价端点契约 + 本段新增写面同码）。
+数据: **边界（照实登记）**：**改价审批闸门（低于底价/成本必须审批）未接**（属 P1-3 段 4，要动 `ProductService` 的价格写面）；价格本**页面**未做（接口已就位）；客户分组价 / 币种 / 促销不在范围。
+前置: 本用例是 [backend-contract]：前置 = 三张价格本（V179）。零网络、零 LLM。
+跳过: [backend-contract] 价格本录入校验与 upsert 语义，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-21 新增（issue #7375 段 3）。落码 = `PriceBookService`（upsert/读面/软删，冲突条款 + 精度准入）+ `PriceBookView` + `PricingController` 五个新端点。 ｜ tags: backend-contract, pricing, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12507,8 +12522,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：852（活跃 141，跳过 711）
-- tier 分布：smoke 12 / normal 784 / adversarial 32
+- 用例总数：853（活跃 141，跳过 712）
+- tier 分布：smoke 12 / normal 785 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12523,7 +12538,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：135
+- 杂项域：136
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12702,6 +12717,7 @@
 - WH-001: 多仓与调拨：仓库实体 + 默认仓唯一 + 调拨守恒与缸号随行（issue #7373 段 1）
 - OPS-001: 云上「采购单加载失败」根因：BOOLEAN 逻辑删列 + 全局整数语义 ⇒ 真库 500（issue #7373 复盘）
 - STK-001: 盘点单：账面快照 + 差异必经审批 + 调整只改数量（issue #7373 段 2）
+- PRC-003: 价格本可维护：协议价 / 等级价 / 阶梯价 upsert + 价格必须 > 0（issue #7375 段 3）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
