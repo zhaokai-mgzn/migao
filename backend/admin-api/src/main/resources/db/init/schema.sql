@@ -4238,3 +4238,46 @@ CREATE TABLE IF NOT EXISTS stock_transfer_items (
 );
 CREATE INDEX IF NOT EXISTS idx_stock_transfer_items_transfer
     ON stock_transfer_items (tenant_id, transfer_id);
+
+-- ══════════════════════════════════════════════════════════════════════════════
+-- 盘点单（V184，issue #7373 P1-1 段 2）：按仓库出任务 → 录实盘 → 差异经审批后调整
+-- 恒等式：Σ账面 − Σ实盘 = Σ差异（逐批次）；差异调整只改数量，不动成本快照
+-- ══════════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS stocktakes (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    stocktake_no VARCHAR(32) NOT NULL,
+    warehouse_id BIGINT NOT NULL REFERENCES warehouses(id),
+    status VARCHAR(16) NOT NULL DEFAULT 'counting',
+    note VARCHAR(255),
+    counted_by VARCHAR(64),
+    counted_by_name VARCHAR(64),
+    completed_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_stocktakes_status CHECK (status IN ('counting', 'completed', 'cancelled'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_stocktakes_no
+    ON stocktakes (tenant_id, stocktake_no) WHERE deleted = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_stocktakes_one_open_per_warehouse
+    ON stocktakes (tenant_id, warehouse_id) WHERE status = 'counting' AND deleted = 0;
+
+CREATE TABLE IF NOT EXISTS stocktake_items (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    stocktake_id VARCHAR(64) NOT NULL REFERENCES stocktakes(id),
+    batch_id BIGINT NOT NULL REFERENCES stock_batches(id),
+    batch_no VARCHAR(32) NOT NULL,
+    sku_code VARCHAR(64),
+    book_qty NUMERIC(12,1) NOT NULL,
+    counted_qty NUMERIC(12,1),
+    diff_qty NUMERIC(12,1),
+    unit_cost NUMERIC(12,4),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_stocktake_items_batch
+    ON stocktake_items (tenant_id, stocktake_id, batch_id) WHERE deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_stocktake_items_stocktake
+    ON stocktake_items (tenant_id, stocktake_id) WHERE deleted = 0;

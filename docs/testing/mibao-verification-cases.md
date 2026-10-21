@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（134 case）
+## 杂项域（135 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5708,6 +5708,23 @@
 跳过: [backend-contract] 逻辑删列类型与采购单真库读面，由 Java 单测/真库判据验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-21 新增（issue #7373 复盘）。落码 = `PurchaseOrderListRealDbTest`（真库复现+回归）+ 七张表实体 `@TableLogic(value=false/delval=true)` + `LogicDeleteColumnTypeGuardTest`（类级元守卫）。**无迁移**（列语义本来正确，错的是代码对齐）。 ｜ tags: backend-contract, realdb, logic-delete, red-proof
+
+### STK-001. 盘点单：账面快照 + 差异必经审批 + 调整只改数量（issue #7373 段 2） 🔵
+```
+你: 用户（2026-10-21，逐字）：「继续主动推进，不要一直让我点头」—— 主动推进 P1-1 段 2（盘点单），承接 issue #7373 判据「盘点差异调整前后库存恒等式」与 issue #7374 的 `stocktake_diff` 闸门。
+数据: **判据 1（账面快照）**：出任务时把该仓**当前有货**批次的量快照成 `book_qty`（NOT NULL）。不留快照，事后 `stock_batches.quantity` 早变了，差异就无法复算、也解释不了「当时为什么判它少了 3 米」。判据 = `StocktakeServiceTest#openSnapshotsBookQty` + `StocktakeMapperTest#bookQtyIsNotNull`。
+数据: **判据 2（逐批次差异）**：`差异 = 实盘 − 账面`；**未录实盘 ⇒ 差异 null（不是 0）**。判据 = `StocktakePolicyTest#diffPerLine` + `#uncountedIsNullNotZero`。
+数据: **判据 3（🔴 差异必经审批）**：完成盘点时有差异 ⇒ 必须有**已通过且未用掉**的 `stocktake_diff` 审批（对象 = 盘点单号，金额 = |差异| 合计），否则**写面直接拒**并给出申请路径；命中则当场消费（一笔一批）。判据 = `StocktakeServiceTest#completeRejectsDiffWithoutApproval`（红证：无审批即拒）。
+数据: **判据 4（无差异不逼审批）**：账实相符 ⇒ 直接完成（把「盘点过、一样」也逼去审批，只会让人绕过盘点）。判据 = `#completeWithoutDiffNeedsNoApproval`。
+数据: **判据 5（🔴 调整只改数量）**：差异调整只改 `stock_batches.quantity`，**不动 `unit_cost`**（盘点是账实对齐，不是成本重估；顺手改成本会让毛利凭空变化）。判据 = `#completeAppliesDiffAndKeepsCost` + 真库 `StocktakeRealDbTest#fullFlowWithoutDiff`（断言 cost 一字不动）。
+数据: **判据 6（恒等式与准入）**：`Σ(实盘−账面) == Σ存储差异`（抓「改了实盘没同步差异」的脏数据）；有一条没录实盘就不能完成；调整后数量不得为负。判据 = `StocktakePolicyTest#storedColumnsAgree` + `#allCountedRequired` + `#adjustmentNeverNegative`。
+数据: **判据 7（同仓唯一进行中）**：同一仓库同时只能有一个 `counting` 盘点 —— **部分唯一索引**兜住（不是服务层查一遍），并发发起时映射成可读冲突。判据 = `StocktakeMapperTest#oneOpenStocktakePerWarehouseIsAConstraint` + `StocktakeServiceTest#openRejectsSecondOpenStocktake`。
+数据: **判据 8（并发与端点契约）**：完成走 CAS（`status='counting'` 条件更新，落空 ⇒ 可读 409）；路由逐字、读 `inbound:view` / 写 `inbound:create`（零授权 delta）；**完成面只收盘点单 id**（差异/调整量由服务端算，客户端递进来就等于绕过审批）。判据 = `#completeLosesCas` + `StocktakeControllerTest`。
+数据: **边界（照实登记）**：① **周期盘点计划**（定时生成任务）未做；② **库位级盘点**（issue 明列非目标）未做；③ **盘点差异的成本重估**未做（成本随行不动）；④ 盘点页面未做（接口已就位）；⑤ 差异审批的**申请人入口**复用既有 `/api/admin/approvals`（无独立页面）。
+前置: 本用例 [backend-contract] + 真库：前置 = `stocktakes`/`stocktake_items`（V184）+ `approvals`（V181）+ 真实 PG 集群（CI 注入 `MIGAO_REQUIRE_REALDB`）。零网络、零 LLM。
+跳过: [backend-contract] 盘点恒等式 / 差异审批闸门 / 真库列一致性，由 Java 单测与真库判据验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-21 新增（issue #7373 段 2）。落码 = `Stocktake`/`StocktakeItem` + 两个 Mapper + `StocktakePolicy`（恒等式与准入）+ `StocktakeService`（出任务/录实盘/完成/作废，差异接 `ApprovalService.consume`）+ `StocktakeController` + V184 + 真库判据。 ｜ tags: backend-contract, realdb, inventory, stocktake, approval, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12490,8 +12507,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：851（活跃 141，跳过 710）
-- tier 分布：smoke 12 / normal 783 / adversarial 32
+- 用例总数：852（活跃 141，跳过 711）
+- tier 分布：smoke 12 / normal 784 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12506,7 +12523,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：134
+- 杂项域：135
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12684,6 +12701,7 @@
 - APP-001: 具名审批流：四态 + 不能自批 + 单次消费 + 超授信闸门出口（issue #7374 段 1）
 - WH-001: 多仓与调拨：仓库实体 + 默认仓唯一 + 调拨守恒与缸号随行（issue #7373 段 1）
 - OPS-001: 云上「采购单加载失败」根因：BOOLEAN 逻辑删列 + 全局整数语义 ⇒ 真库 500（issue #7373 复盘）
+- STK-001: 盘点单：账面快照 + 差异必经审批 + 调整只改数量（issue #7373 段 2）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

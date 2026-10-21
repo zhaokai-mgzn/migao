@@ -573,6 +573,15 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.service.StockTransferService stockTransferService;
 
+    // 盘点（issue #7373 段 2）：`StocktakeController` 的构造依赖 + 两个 Mapper 都要 mock ——
+    // 本上下文排除 MyBatis 自动配置，真 Mapper 建不出来（`sqlSessionFactory` 缺失）⇒ 59 条判据全 error。
+    @MockBean
+    private com.migao.admin.service.StocktakeService stocktakeService;
+    @MockBean
+    private com.migao.admin.mapper.StocktakeMapper stocktakeMapper;
+    @MockBean
+    private com.migao.admin.mapper.StocktakeItemMapper stocktakeItemMapper;
+
     // 三个 Mapper 也要 mock：本上下文排除了 MyBatis 自动配置，真 Mapper 建不出来
     // （`Property 'sqlSessionFactory' or 'sqlSessionTemplate' are required`）⇒ 整个上下文起不来、
     // 59 条判据全 error（不是一条红）。

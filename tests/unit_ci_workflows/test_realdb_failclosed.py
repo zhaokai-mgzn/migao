@@ -81,6 +81,9 @@ REALDB_FILES: dict[str, str] = {
     # （`deleted BOOLEAN` + 全局整数逻辑删 ⇒ `boolean = integer`）。单元测试把 Mapper 全 mock 掉，
     # 这类「实体列 ↔ 建库列」不一致**只有**真 PG 能现形 ⇒ 它必须留在真库族里（不许悄悄退化）。
     _SVC + "PurchaseOrderListRealDbTest.java": "direct",
+    # issue #7373 段 2：**盘点单**的真库判据 —— 读写的列最多（账面快照/实盘/差异/成本快照），
+    # 上一轮「采购单加载失败」的教训就是「实体列 ↔ 建库列」只有真 PG 能现形。
+    _SVC + "StocktakeRealDbTest.java": "direct",
     # issue #5939：发货单**列表**读面（GET /api/admin/shipments）的真库判据 —— 只真 PG 能证的四条：
     # 跨租户不可见（+ 反向自证对方租户自己读得到）/ 软删明细不计进 itemCount / 客户名取自 orders 连接 /
     # 未发货按 packed_at 参与排序，以及 LIMIT 生效。
