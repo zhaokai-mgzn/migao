@@ -7369,6 +7369,25 @@ _CASE_PRC_004 = EvalCase(
     precondition='本用例是 [backend-contract]：前置 = 价格本三表（V179）+ `approvals`（V181）+ `product_skus.avg_cost`。零网络、零 LLM。',
 )
 
+# ── RPT-001 [NORMAL] 报表中心：订单毛利报表（合计=明细之和 / 空数据≠0 / 成本未知单独计数）（issue #7376 段 1）（源: cases/misc.yml）──
+_CASE_RPT_001 = EvalCase(
+    id='RPT-001',
+    legacy_id='',
+    title='报表中心：订单毛利报表（合计=明细之和 / 空数据≠0 / 成本未知单独计数）（issue #7376 段 1）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-22，逐字）：「继续做」—— 自主推进 P1-4 报表中心，先做老板最常看的一张：订单毛利。'],
+    expectations=[],
+    data_checks=['**判据 1（合计 = 明细之和）**：逐单算完再求和（**不写第二条聚合 SQL**），判据用同一份纯函数复算；少算一行立刻不成立。判据 = `ReportTotalsTest#sumEqualsDetails` + `ReportServiceTest#totalsAreSumOfRows`。', '**判据 2（🔴 空数据 ≠ 0）**：没有命中订单时合计为 **null**、`hasData=false`；「本月毛利 0 元」与「本月还没有已完工订单」是两件相反的事。判据 = `ReportTotalsTest#emptyIsNullNotZero` + `ReportServiceTest#emptyReportHasNullTotals`。', '**判据 3（🔴 成本未知不进合计但单独计数）**：缺进价/有未定价报工的单**不进毛利合计**（当 0 会让毛利虚高），但 `unknownCostOrders` 要告诉读者「合计少算了 N 单」；若所有单都未知 ⇒ 合计毛利为 null。判据 = `#unknownCostRowsAreExcludedAndCounted` + `#allUnknownCostKeepsRevenueButNullMargin`。', '**判据 4（缺值与零的分界）**：明细里的 null 不参与求和也不当 0；全为 null ⇒ 没有合计。判据 = `ReportTotalsTest#nullDetailsAreSkipped`。', '**判据 5（数据范围同 P0-4 口径）**：`self` 范围只统计本人创建的订单；范围由**服务端**从角色配置解析，**不接受客户端递交**（客户端能传「看全公司」那范围就形同虚设）。判据 = `ReportControllerTest#takesOnlyDateRange` + `ReportServiceTest#dataScopeIsAppliedToQuery`。', '**判据 6（零授权 delta + 只读）**：读面沿用既有 `dashboard:view`（报表与看板同域，不新造权限码）；端点只有 GET，无写面。判据 = `ReportControllerTest`。', '**边界（照实登记）**：① **库存周转/滞销、员工业绩、应收账龄报表化**未做（段 2；账龄已有独立端点，报表化要新增分组读面）；② **CSV 导出**未做（issue 目标里写了，属段 2）；③ 明细上限 500 行（`LIMIT 500`），超出部分**未分页** —— 合计只覆盖命中的前 500 单，这一点必须在页面提示（否则合计会被误读成全量）；④ 报表页面未做（接口已就位）。'],
+    skip_reason='[backend-contract] 报表合计口径与空数据语义，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'report', 'red-proof', 'data-scope'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = P0-3 毛利（`OrderMarginService`）+ P0-4 数据范围（`role.data_scope`）。零网络、零 LLM、无迁移（纯只读面）。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -16386,6 +16405,7 @@ ALL_CASES = (
     _CASE_STK_001,
     _CASE_PRC_003,
     _CASE_PRC_004,
+    _CASE_RPT_001,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
