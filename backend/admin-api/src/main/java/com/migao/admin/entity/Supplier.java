@@ -53,6 +53,6 @@ public class Supplier {
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private OffsetDateTime updatedAt;
 
-    @TableLogic
+    @TableLogic(value = "false", delval = "true")
     private Boolean deleted;
 }

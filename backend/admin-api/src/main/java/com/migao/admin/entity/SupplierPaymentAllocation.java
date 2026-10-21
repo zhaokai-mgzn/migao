@@ -41,6 +41,6 @@ public class SupplierPaymentAllocation {
     @TableField(fill = FieldFill.INSERT)
     private OffsetDateTime createdAt;
 
-    @TableLogic
+    @TableLogic(value = "false", delval = "true")
     private Boolean deleted;
 }

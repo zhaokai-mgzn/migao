@@ -77,6 +77,10 @@ REALDB_FILES: dict[str, str] = {
     # 再与「DTO 字段台账」和「ProductService 写面收口上限」三方对账（列长度改了而收口没跟 ⇒
     # `LENGTH-DRIFT` 判红）。列元数据在 mock 面上不存在 ⇒ 这份判据的真值**只有**真 PG 能给。
     _SVC + "ProductTextColumnAdmissionMetaGuardTest.java": "direct",
+    # issue #7373 复盘：**采购单读面**的真库判据 —— 云上「采购单加载失败」就是这条路径 500
+    # （`deleted BOOLEAN` + 全局整数逻辑删 ⇒ `boolean = integer`）。单元测试把 Mapper 全 mock 掉，
+    # 这类「实体列 ↔ 建库列」不一致**只有**真 PG 能现形 ⇒ 它必须留在真库族里（不许悄悄退化）。
+    _SVC + "PurchaseOrderListRealDbTest.java": "direct",
     # issue #5939：发货单**列表**读面（GET /api/admin/shipments）的真库判据 —— 只真 PG 能证的四条：
     # 跨租户不可见（+ 反向自证对方租户自己读得到）/ 软删明细不计进 itemCount / 客户名取自 orders 连接 /
     # 未发货按 packed_at 参与排序，以及 LIMIT 生效。

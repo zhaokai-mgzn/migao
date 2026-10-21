@@ -51,6 +51,6 @@ public class PurchaseOrderItem {
     @TableField(fill = FieldFill.INSERT)
     private OffsetDateTime createdAt;
 
-    @TableLogic
+    @TableLogic(value = "false", delval = "true")
     private Boolean deleted;
 }
