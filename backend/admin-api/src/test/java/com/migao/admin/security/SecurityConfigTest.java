@@ -555,6 +555,11 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.service.OrderMarginService orderMarginService;
 
+    // 报价（issue #7375 段 1）：`PricingController` 的构造依赖 ⇒ 本上下文必须能装配它。
+    // 真身依赖 `JdbcTemplate` + 两个 Mapper（本上下文排除 MyBatis 自动配置）⇒ 按既有口径 mock。
+    @MockBean
+    private com.migao.admin.service.PriceService priceService;
+
     @MockBean
     private com.migao.admin.service.FinanceService financeService;
 

@@ -171,9 +171,10 @@
     "V173__add_inbound_order_supplier_id.sql": "sha256:7973a24a1d2fd9f37c8c62808f973de5044f635a74c6d4bf2f61bb87d3de7c19",
     "V174__create_supplier_payments.sql": "sha256:eb20dd956f98e5f762a9e36beb597e13ffadecf1154fe61c41f25f46775ddb8e",
     "V175__create_purchase_orders.sql": "sha256:f32f90b0ba84913476c059c5209a5fb1b2b9959872767a3e5dc70eac344c1b45",
-    "schema.sql": "sha256:114cd0add3c1245ce4b0ae879e0c0ffb9773c8f4052ea678a18e8505b42a16cf",
+    "schema.sql": "sha256:eb31849fac5a01b01f79087ee04e1ede35756ec8b347a8d6e22ab1ca532e52bc",
     "V176__create_receipt_allocations.sql": "sha256:2c05a07d3cb0a596d6ebb44b3788b83696a66745f650189edd11f68e9a22f78b",
     "V177__add_role_data_scope.sql": "sha256:ee37bd29bd6e49e89e1b1a082635514125db763998aa7c182d0a3162b6ae3057",
-    "V178__add_customer_owner.sql": "sha256:ec64020dc8ef6fd7987a4415ddbea0338800ae800c0b6dee726fa5601d34c72b"
+    "V178__add_customer_owner.sql": "sha256:ec64020dc8ef6fd7987a4415ddbea0338800ae800c0b6dee726fa5601d34c72b",
+    "V179__create_price_books.sql": "sha256:301e028291b8ec94a61ff4548e3444e5ea864fd4aa8e72b3f2d6a2dc2d7bbbe0"
   }
 }

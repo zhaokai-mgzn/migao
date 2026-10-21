@@ -4088,3 +4088,50 @@ CREATE INDEX IF NOT EXISTS idx_order_items_tenant_processing
 -- ================================================
 -- END OF SCHEMA
 -- ================================================
+
+-- ══════════════════════════════════════════════════════════════════════════════
+-- 价格本（V179，issue #7375 P1-3 段 1）：协议价 / 等级价 / 阶梯价
+-- 解析优先级：协议价 > 等级价 > 阶梯价 > SKU 标准价；四层皆无 ⇒ **未定价（不是 ¥0.00）**
+-- ══════════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS customer_sku_prices (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    customer_id VARCHAR(64) NOT NULL REFERENCES customer_profiles(id),
+    sku_id BIGINT NOT NULL REFERENCES product_skus(id),
+    price NUMERIC(12,2) NOT NULL CHECK (price >= 0),
+    note VARCHAR(255),
+    created_by VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_customer_sku_prices_pair
+    ON customer_sku_prices (tenant_id, customer_id, sku_id) WHERE deleted = 0;
+
+CREATE TABLE IF NOT EXISTS vip_level_prices (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    vip_level VARCHAR(16) NOT NULL,
+    sku_id BIGINT NOT NULL REFERENCES product_skus(id),
+    price NUMERIC(12,2) NOT NULL CHECK (price >= 0),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_vip_level_prices_pair
+    ON vip_level_prices (tenant_id, vip_level, sku_id) WHERE deleted = 0;
+
+CREATE TABLE IF NOT EXISTS sku_tier_prices (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    sku_id BIGINT NOT NULL REFERENCES product_skus(id),
+    min_qty NUMERIC(12,1) NOT NULL CHECK (min_qty > 0),
+    max_qty NUMERIC(12,1),
+    price NUMERIC(12,2) NOT NULL CHECK (price >= 0),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_sku_tier_range CHECK (max_qty IS NULL OR max_qty >= min_qty)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_sku_tier_prices_edge
+    ON sku_tier_prices (tenant_id, sku_id, min_qty) WHERE deleted = 0;

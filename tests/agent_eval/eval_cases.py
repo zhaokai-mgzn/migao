@@ -7217,6 +7217,25 @@ _CASE_AR_004 = EvalCase(
     precondition='本用例是 [backend-contract]：前置 = `roles.data_scope`（V177）+ 订单表的 `created_by`（V142）。零网络、零 LLM。',
 )
 
+# ── PRC-001 [NORMAL] 价格解析：协议价 > 等级价 > 阶梯价 > 标准价，且**未定价绝不给 0**（issue #7375 段 1）（源: cases/misc.yml）──
+_CASE_PRC_001 = EvalCase(
+    id='PRC-001',
+    legacy_id='',
+    title='价格解析：协议价 > 等级价 > 阶梯价 > 标准价，且**未定价绝不给 0**（issue #7375 段 1）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-21，选定优先推进 P1-3）：承接 issue #7375 的验收判据「同一 SKU 对三个客户等级分别命中正确价格」「价格缺失时不得静默取 0（未定价 ≠ ¥0.00）」。'],
+    expectations=[],
+    data_checks=['**判据 1（优先级）**：同一 SKU 同时存在协议价 / 等级价 / 阶梯价 / 标准价时，按 **协议 > 等级 > 阶梯 > 标准** 命中。判据 = `PriceResolutionTest#protocolBeatsEverything` + `#fallsBackThroughLayersInOrder`。红证方向：改成标准价优先 ⇒ 当场红。', '**判据 2（逐格）**：三个客户等级（vip1/vip2/vip3）各自命中自己的等级价；没有该等级专属价 ⇒ 落到阶梯/标准价。判据 = `PriceServiceTest#vipLevelPriceUsedWhenNoProtocol`（按 `customer_profiles.vip_level` 取数，不按客户 id）。', '**判据 3（阶梯闭区间）**：区间 `[min, max]` 闭区间；`max IS NULL` = 无上限；多档重叠取**门槛更高**的那档（高价优先拦住「按便宜的档收」）。判据 = `#tierBoundariesAreInclusive`。', '**判据 4（🔴 未定价 ≠ 0）**：四层都没有价 ⇒ `source = unpriced`、`price = null`；SKU 标准价 `DEFAULT 0` **不算有价**（0 元 = 白送）。判据 = `#unpricedIsNeverZero` + `#zeroStandardPriceIsNotAPrice` + `PriceServiceTest#zeroStandardPriceIsUnpriced`。', '**判据 5（脏配置不崩）**：协议价/等级价/阶梯价为负或 0 一律跳过；数量为 null ⇒ 阶梯不参与（区间无法判定）。判据 = `#dirtyConfigFallsThrough`。', '**判据 6（端点契约）**：`GET /api/admin/pricing/quote?customerId=&skuId=&quantity=`；只读码沿用既有 `order:view`（不新造码）；入参**只有**客户 + SKU + 数量 —— 价格不接受客户端传值（段 2「服务端为准」的前提）。判据 = `PricingControllerTest`。', '**判据 7（金额与自述）**：`amount = 单价 × 数量`（两位小数）；单价或数量缺失 ⇒ `amount = null`（不是 0）；`source` 自述命中层级（改价争议的第一份证据）。判据 = `PricingController.quote` + `PriceQuoteView` 契约。', '**边界（照实登记）**：**下单侧「服务端为准 + 客户端传价差异留痕」尚未接线**（段 2）；改价审批（P1-2）未接；促销/优惠券/满减/客户分组价/币种不在范围；价格本**管理端点**（录入协议价/等级价/阶梯价）未做（表与解析已就位）。'],
+    skip_reason='[backend-contract] 价格解析优先级与「未定价≠0」，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'pricing', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = 三张价格本（V179）+ `product_skus.price` + `customer_profiles.vip_level`。零网络、零 LLM。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -16226,6 +16245,7 @@ ALL_CASES = (
     _CASE_AR_002,
     _CASE_AR_003,
     _CASE_AR_004,
+    _CASE_PRC_001,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

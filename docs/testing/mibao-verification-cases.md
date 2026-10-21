@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（129 case）
+## 杂项域（130 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5621,6 +5621,22 @@
 跳过: [backend-contract] 数据范围解析与越权语义，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-21 新增（issue #7372 段 1）。落码 = 纯函数 `DataScope` + `RoleService.resolveDataScope`（复用 getUserRoles）+ `Role.dataScope` + `OrderService.getOrderPage/getOrderById` 接范围 + `OrderController` 两处读面接线 + V177 + 元守卫。 ｜ tags: backend-contract, rbac, data-scope, red-proof
+
+### PRC-001. 价格解析：协议价 > 等级价 > 阶梯价 > 标准价，且**未定价绝不给 0**（issue #7375 段 1） 🔵
+```
+你: 用户（2026-10-21，选定优先推进 P1-3）：承接 issue #7375 的验收判据「同一 SKU 对三个客户等级分别命中正确价格」「价格缺失时不得静默取 0（未定价 ≠ ¥0.00）」。
+数据: **判据 1（优先级）**：同一 SKU 同时存在协议价 / 等级价 / 阶梯价 / 标准价时，按 **协议 > 等级 > 阶梯 > 标准** 命中。判据 = `PriceResolutionTest#protocolBeatsEverything` + `#fallsBackThroughLayersInOrder`。红证方向：改成标准价优先 ⇒ 当场红。
+数据: **判据 2（逐格）**：三个客户等级（vip1/vip2/vip3）各自命中自己的等级价；没有该等级专属价 ⇒ 落到阶梯/标准价。判据 = `PriceServiceTest#vipLevelPriceUsedWhenNoProtocol`（按 `customer_profiles.vip_level` 取数，不按客户 id）。
+数据: **判据 3（阶梯闭区间）**：区间 `[min, max]` 闭区间；`max IS NULL` = 无上限；多档重叠取**门槛更高**的那档（高价优先拦住「按便宜的档收」）。判据 = `#tierBoundariesAreInclusive`。
+数据: **判据 4（🔴 未定价 ≠ 0）**：四层都没有价 ⇒ `source = unpriced`、`price = null`；SKU 标准价 `DEFAULT 0` **不算有价**（0 元 = 白送）。判据 = `#unpricedIsNeverZero` + `#zeroStandardPriceIsNotAPrice` + `PriceServiceTest#zeroStandardPriceIsUnpriced`。
+数据: **判据 5（脏配置不崩）**：协议价/等级价/阶梯价为负或 0 一律跳过；数量为 null ⇒ 阶梯不参与（区间无法判定）。判据 = `#dirtyConfigFallsThrough`。
+数据: **判据 6（端点契约）**：`GET /api/admin/pricing/quote?customerId=&skuId=&quantity=`；只读码沿用既有 `order:view`（不新造码）；入参**只有**客户 + SKU + 数量 —— 价格不接受客户端传值（段 2「服务端为准」的前提）。判据 = `PricingControllerTest`。
+数据: **判据 7（金额与自述）**：`amount = 单价 × 数量`（两位小数）；单价或数量缺失 ⇒ `amount = null`（不是 0）；`source` 自述命中层级（改价争议的第一份证据）。判据 = `PricingController.quote` + `PriceQuoteView` 契约。
+数据: **边界（照实登记）**：**下单侧「服务端为准 + 客户端传价差异留痕」尚未接线**（段 2）；改价审批（P1-2）未接；促销/优惠券/满减/客户分组价/币种不在范围；价格本**管理端点**（录入协议价/等级价/阶梯价）未做（表与解析已就位）。
+前置: 本用例是 [backend-contract]：前置 = 三张价格本（V179）+ `product_skus.price` + `customer_profiles.vip_level`。零网络、零 LLM。
+跳过: [backend-contract] 价格解析优先级与「未定价≠0」，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-21 新增（issue #7375 段 1）。落码 = 纯函数 `PriceResolution` + `PriceService`（三表取数）+ `GET /api/admin/pricing/quote` + V179 三张价格本。 ｜ tags: backend-contract, pricing, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12403,8 +12419,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：846（活跃 141，跳过 705）
-- tier 分布：smoke 12 / normal 778 / adversarial 32
+- 用例总数：847（活跃 141，跳过 706）
+- tier 分布：smoke 12 / normal 779 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12419,7 +12435,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：129
+- 杂项域：130
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12592,6 +12608,7 @@
 - AR-002: 客户收款核销：一笔收款冲多张订单 / 收款侧与订单侧双上限 / 同批逐行余量（issue #7370 段 3）
 - AR-003: 订单毛利：收入−退款−面料−加工，且**成本未知绝不当 0**（issue #7371 段 1+2）
 - AR-004: 数据范围 data scope：角色两态（tenant/self）+ 多角色取宽 + 越权=不存在（issue #7372 段 1）
+- PRC-001: 价格解析：协议价 > 等级价 > 阶梯价 > 标准价，且**未定价绝不给 0**（issue #7375 段 1）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
