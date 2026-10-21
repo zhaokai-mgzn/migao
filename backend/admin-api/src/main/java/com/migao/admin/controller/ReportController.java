@@ -45,6 +45,19 @@ public class ReportController {
         return ApiResponse.success(reportService.orderMargins(startDate, endDate, scopeOwnerId));
     }
 
+    /**
+     * 库存周转与滞销报表：`GET /api/admin/reports/inventory-aging?thresholdDays=&warehouseCode=`。
+     *
+     * <p>滞销口径自述（`slowMovingDays`）：满 N 天未出库且还有货；从未出库的按入库日起算。
+     * 缺日期的行**不猜**，单独计数（`undeterminedRows`）。</p>
+     */
+    @GetMapping("/inventory-aging")
+    public ApiResponse<com.migao.admin.dto.InventoryReportView> inventoryAging(
+            @RequestParam(required = false) Integer thresholdDays,
+            @RequestParam(required = false) String warehouseCode) {
+        return ApiResponse.success(reportService.inventoryAging(thresholdDays, warehouseCode));
+    }
+
     /** 数据范围解析（与 P0-4 同口径：仓储在 role.data_scope，读权在 RoleService）。 */
     private final RoleService roleService;
 

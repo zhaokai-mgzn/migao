@@ -34,7 +34,8 @@ class ReportServiceTest {
     void setUp() {
         orderMapper = Mockito.mock(OrderMapper.class);
         orderMarginService = Mockito.mock(OrderMarginService.class);
-        service = new ReportService(orderMapper, orderMarginService, new com.migao.admin.time.BusinessClock());
+        service = new ReportService(orderMapper, null, null, orderMarginService,
+                new com.migao.admin.time.BusinessClock());
     }
 
     private static Order order(String id) {
