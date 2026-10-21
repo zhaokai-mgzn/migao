@@ -1069,6 +1069,11 @@ UNANNOTATED_ENDPOINTS: dict[str, str] = {
     # ⚠️ 它**没有** `@RequirePermission`：本守卫只读注解 ⇒ 必须在此显式登记（沉默放行 = 本单要治的失效模式）。
     # 判据 = `tests/unit_ci_workflows/test_agent_permission_parity.py::test_every_judgement_is_green`。
     "GET /api/version": "版本探针（issue #6951）：只读、无鉴权、只回构建身份 5 字段，无租户/业务数据",
+    # issue #7373 复盘：**迁移事实**——`GET /api/version/migrations` 与上面那条同源、同性质：
+    # 只读、无鉴权（部署后要和构建身份一起被**未带凭据**的探针读到），响应体只有三个计数
+    # （真实失败 / 已知存量非幂等 / 台账已应用），**不含**迁移文件名、不含租户/业务数据。
+    # 加权限码的后果与版本探针一致：探不到 ⇒ 判据退化成假绿。
+    "GET /api/version/migrations": "迁移事实（issue #7373 复盘）：只读、无鉴权、只回三个计数，无文件名/租户/业务数据",
     "GET /api/admin/notifications*": "自助通知中心：收件人一律取 `SecurityContext` 当前用户（#4727 第 4 行）",
     "PUT /api/admin/notifications*": "同上（标记已读）",
     "DELETE /api/admin/notifications*": "同上（删除自己的通知）",
