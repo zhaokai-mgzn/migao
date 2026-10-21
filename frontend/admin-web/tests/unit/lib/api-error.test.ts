@@ -1,77 +1,54 @@
-// case_ids: UI-024
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+// case_ids: OPS-001
+import { describe, expect, it } from 'vitest'
+import { loadErrorMessage } from '@/lib/api-error'
 
-// Mock sonner 顶层（toastRequestError 依赖）
-vi.mock('sonner', () => ({
-  toast: { error: vi.fn(), dismiss: vi.fn() },
-}))
-
-import { toast } from 'sonner'
-import {
-  isErrorToastShown,
-  markErrorToastShown,
-  toastRequestError,
-} from '@/lib/api-error'
-
-describe('api-error（请求错误提示去重）', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+/**
+ * 常驻失败态文案（issue #7373 复盘）：服务端原文优先 + 状态码可核对 + 兜底仍是人话。
+ *
+ * 与 `extractApiErrorMessage` 的分工：那个用于登录/改密（必须逐字透传、不得改写）；
+ * 这个用于列表失败卡片（会一直挂在屏幕上，所以要补「该找谁 / 该做什么」）。
+ */
+describe('loadErrorMessage', () => {
+  const axiosLike = (status: number, error?: Record<string, unknown>) => ({
+    isAxiosError: true,
+    response: { status, data: error ? { error } : {} },
   })
 
-  describe('isErrorToastShown', () => {
-    it('未标记的错误返回 false', () => {
-      expect(isErrorToastShown(new Error('x'))).toBe(false)
-    })
-
-    it('非对象/空值返回 false（防御，不抛错）', () => {
-      expect(isErrorToastShown(null)).toBe(false)
-      expect(isErrorToastShown(undefined)).toBe(false)
-      expect(isErrorToastShown('string')).toBe(false)
-      expect(isErrorToastShown(42)).toBe(false)
-    })
-
-    it('markErrorToastShown 标记后返回 true', () => {
-      const err = new Error('库存不足')
-      markErrorToastShown(err)
-      expect(isErrorToastShown(err)).toBe(true)
-    })
+  it('服务端有 message ⇒ 原样转述（不改写业务文案，也不加协议字样）', () => {
+    const text = loadErrorMessage(axiosLike(400, { message: '供应商名称不能为空' }), '供应商加载失败')
+    expect(text).toContain('供应商名称不能为空')
   })
 
-  describe('markErrorToastShown', () => {
-    it('对非对象静默忽略（不抛错）', () => {
-      expect(() => markErrorToastShown(null)).not.toThrow()
-      expect(() => markErrorToastShown('str')).not.toThrow()
-    })
+  it('500 且服务端无原因 ⇒ 说清「系统出了点问题」（不是「请重试」一句了事）', () => {
+    const text = loadErrorMessage(axiosLike(500), '采购单加载失败')
+    expect(text).toContain('系统出了点问题')
+    expect(text).toContain('技术支持')
   })
 
-  describe('toastRequestError', () => {
-    it('错误已被拦截器提示过（已标记）→ 不再弹 fallback', () => {
-      const err = new Error('商品库存不足')
-      markErrorToastShown(err)
-      toastRequestError(err, '确认付款失败')
-      expect(toast.error).not.toHaveBeenCalled()
-    })
+  it('🔴 传输层技术语言不上屏（`Request failed with status code` 不许出现在界面）', () => {
+    const axiosError = {
+      isAxiosError: true,
+      message: 'Request failed with status code 500',
+      response: { status: 500, data: {} },
+    }
+    const text = loadErrorMessage(axiosError, '采购单加载失败')
+    expect(text).not.toContain('Request failed')
+    // 协议细节同样不上屏（issue #6488 R1）：只说处境，不说 HTTP 码
+    expect(text).not.toContain('HTTP')
+    expect(text).toContain('系统出了点问题')
+  })
 
-    it('未标记的错误 → 弹 fallback', () => {
-      const err = new Error('client-side error')
-      toastRequestError(err, '确认付款失败')
-      expect(toast.error).toHaveBeenCalledTimes(1)
-      expect(toast.error).toHaveBeenCalledWith('确认付款失败')
-    })
+  it('403 ⇒ 说清找管理员；401 ⇒ 说清重新登录', () => {
+    expect(loadErrorMessage(axiosLike(403), '采购单加载失败')).toContain('没有查看权限')
+    expect(loadErrorMessage(axiosLike(401), '采购单加载失败')).toContain('重新登录')
+  })
 
-    it('已标记 + 传 loading toast id → dismiss 该 id，不弹 fallback（loading 不卡住）', () => {
-      const err = { message: 'x' }
-      markErrorToastShown(err)
-      toastRequestError(err, '确认付款失败', { id: 'loading-1' })
-      expect(toast.dismiss).toHaveBeenCalledWith('loading-1')
-      expect(toast.error).not.toHaveBeenCalled()
-    })
+  it('断网（没到服务端）⇒ 说网络，不冒充服务端错误', () => {
+    const text = loadErrorMessage({ isAxiosError: true, request: {} }, '采购单加载失败')
+    expect(text).toContain('网络连不上')
+  })
 
-    it('未标记 + 传 loading toast id → toast.error 以 { id } 替换 loading', () => {
-      const err = new Error('y')
-      toastRequestError(err, '确认付款失败', { id: 'loading-2' })
-      expect(toast.error).toHaveBeenCalledTimes(1)
-      expect(toast.error).toHaveBeenCalledWith('确认付款失败', { id: 'loading-2' })
-    })
+  it('拿不到任何结构 ⇒ 退回本页兜底句（不抛、不留空）', () => {
+    expect(loadErrorMessage(null, '供应商加载失败')).toBe('供应商加载失败')
   })
 })
