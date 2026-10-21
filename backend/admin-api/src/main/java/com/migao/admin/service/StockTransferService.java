@@ -124,7 +124,13 @@ public class StockTransferService {
                     .build());
         }
 
-        transferMapper.insert(transfer);
+        try {
+            transferMapper.insert(transfer);
+        } catch (org.springframework.dao.DuplicateKeyException duplicate) {
+            // 单号撞车（同日 4 位随机撞上，uk_stock_transfers_no）⇒ 映射成可读冲突，让调用方重试；
+            // 不把 5xx 冒给仓管（台账 unique_write_ledger 记这一处）
+            throw BusinessException.validationError("调拨单号刚刚被占用，请重试一次");
+        }
         for (StockTransferItem item : items) {
             item.setTransferId(transfer.getId());
             itemMapper.insert(item);
