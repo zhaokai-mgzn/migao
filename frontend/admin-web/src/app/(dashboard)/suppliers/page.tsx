@@ -5,6 +5,7 @@ import { Plus, Search, Truck } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button, PageCard, PageHeader } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
+import { loadErrorMessage } from '@/lib/api-error'
 import { supplierApi } from '@/lib/api'
 import { SELECT_CONTROL_FIELD } from '@/components/ui/Select'
 import { usePermission } from '@/lib/permission'
@@ -111,8 +112,8 @@ export default function SuppliersPage() {
       const res = await supplierApi.list(kw)
       setSuppliers(res.data.data || [])
     } catch (error) {
-      // 加载失败必须可见（不许把「拉不到」渲染成「没有供应商」）
-      setLoadError('failed')
+      // 加载失败必须可见（不许把「拉不到」渲染成「没有供应商」），且要带上服务端原文
+      setLoadError(loadErrorMessage(error, '供应商加载失败'))
       console.error('加载供应商失败:', error)
     } finally {
       setLoading(false)
@@ -387,7 +388,7 @@ export default function SuppliersPage() {
         {loadError && (
           <ListLoadError
             testId="suppliers-load-error"
-            message="供应商列表读不到（不是没有供应商）"
+            message={loadError}
             onRetry={() => load(keyword)}
             retrying={loading}
           />

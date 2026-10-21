@@ -5700,6 +5700,9 @@
 数据: **判据 3（类级元守卫）**：扫全部实体的 `@TableLogic` 字段 × 建库脚本列类型：BOOLEAN 列必须用布尔注解、INTEGER 列必须用整数默认 —— 双向都拦（反向是 `integer = boolean`）。判据 = `LogicDeleteColumnTypeGuardTest#logicDeleteAnnotationMatchesColumnType`。红证方向：把 `PurchaseOrder.deleted` 的布尔注解摘掉 ⇒ 当场红（云上 500 的形态）。
 数据: **判据 4（前提自证）**：建库脚本里仍存在 `deleted BOOLEAN`（否则上条判据永远绿、该退场）。判据 = `#booleanDeletedColumnsStillExist`。
 数据: **判据 5（不是「猜」而是「移」）**：这次**没有**写迁移去把列改成 INTEGER —— 那会让历史迁移（V170/V173/V174/V175/V176 的 `WHERE deleted = FALSE` 部分索引）在 bootstrap 库上先红，且要重建 15 个索引；正确修法是把**代码**对齐既有列语义（零数据变更、零停机）。判据 = `MigrationRunnerLiveChainRealDbTest` + `MigrationBaselineSemanticsTest` 保持全绿。
+数据: **判据 6（失败态说清为什么）**：页面失败态不再是一句「请重试」，而是「本页兜底句 + 服务端原文 + HTTP 状态码」；403 说权限、401 说要重新登录、断网说网络、服务端无原因时把状态码说出来。判据 = `api-error.test.ts`（6 格）+ 采购单/供应商两页接线。
+数据: **判据 6b（页面外壳留白）**：供应链两页（供应商 / 采购单）根元素必须带页面级 `p-6`（与同族 `orders` / `products` / `inbound-orders` 一致）—— 缺了它标题/按钮/卡片全部贴边，整页视觉「歪」，而这种错**不报错也不白屏**。只钉这两页而非全仓 45 页（其余 18 页各有留白方案，写全仓守卫要 18 条例外）。判据 = `page-shell-padding.test.ts`。
+数据: **判据 7（迁移事实可查）**：`GET /api/version/migrations` 暴露三个计数（真实失败 / 已知存量非幂等 / 台账已应用）；**取不到 runner 报 unknown 而不是 0**（0 会被读成「跑了且全过」）；只读 405；**不暴露迁移文件名**（公开端点不泄露内部表结构）。不塞进 `/api/version`（该端点字段面被 #6951 冻结为 4 个，是部署腿比对 served sha 的契约）。判据 = `VersionMigrationsEndpointTest`(4)。
 数据: **边界（照实登记）**：`@TableLogic` 的布尔值语义只对 PostgreSQL 的 `BOOLEAN` 列成立（本仓仅 7 张表）；若将来统一改成 INTEGER，本守卫会连同注释一起退场（`#booleanDeletedColumnsStillExist` 会先红提醒）。
 前置: 本用例 [backend-contract] + 真库：前置 = 真实 PG 集群（`PgCluster`，CI 注入 `MIGAO_REQUIRE_REALDB`）+ 终态建库脚本。零网络、零 LLM。
 跳过: [backend-contract] 逻辑删列类型与采购单真库读面，由 Java 单测/真库判据验证，非 LLM 行为，不进 agent-eval 冒烟

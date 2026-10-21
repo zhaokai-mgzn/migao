@@ -72,6 +72,52 @@ export function extractApiErrorMessage(error: unknown, fallback: string): string
 }
 
 /**
+ * **常驻失败态**的文案（issue #7373 复盘）：服务端原文优先，没原因时按处境给能行动的话。
+ *
+ * <p>与 {@link extractApiErrorMessage} 的分工：那个用于「登录 / 改密」这类**必须逐字透传**的页面
+ * （反枚举纪律要求不得改写服务端文案）；本函数用于**列表读面失败卡片** —— 它会长久挂在屏幕上，
+ * 所以除了转述原文，还要在没有原因时说清「该找谁 / 该做什么」。</p>
+ *
+ * <p>🔴 两条既有纪律必须同时遵守：</p>
+ * <ol>
+ *   <li><b>传输层技术语言不上屏</b>（`Request failed with status code NNN` 不进界面）；</li>
+ *   <li><b>协议细节不上屏</b>（issue #6488，R1 判据）：不写 `HTTP 500` 这种商家读不懂的字样 ——
+ *       状态码的**含义**用业务话讲出来（「服务端出错了」/「没有查看权限」），码本身留给日志与客服。</li>
+ * </ol>
+ *
+ * @param error    捕获到的异常
+ * @param fallback 拿不到任何原因时的本页兜底句（例：「采购单加载失败」）
+ */
+export function loadErrorMessage(error: unknown, fallback: string): string {
+  const err = error as { response?: { status?: number }; request?: unknown } | null
+  const status = err?.response?.status
+  const serverText = extractApiErrorMessage(error, '')
+
+  // ① 服务端给了业务原因 ⇒ 原样转述（那是给人看的，别用通用句盖掉）
+  if (serverText) {
+    return serverText
+  }
+  // ② 没原因但有状态码 ⇒ 把**处境**讲成人话（不同处境该做的事不同）
+  if (status === 401) {
+    return '登录状态已失效，请重新登录'
+  }
+  if (status === 403) {
+    return '当前账号没有查看权限，请联系管理员分配'
+  }
+  if (status !== undefined && status >= 500) {
+    return `${fallback}：系统出了点问题，请稍后重试；若一直这样请联系技术支持`
+  }
+  if (status !== undefined) {
+    return `${fallback}：这次没读成功，请刷新后重试；若仍不行请联系技术支持`
+  }
+  // ③ 压根没到服务端（断网 / 跨域 / 请求被取消）
+  if (err?.request) {
+    return '网络连不上，请检查网络后重试'
+  }
+  return fallback
+}
+
+/**
  * 页面 catch 块的统一错误提示入口：
  * - 拦截器已提示后端具体错误 → 不重复弹；若传了 loading id 先 dismiss（防止「操作中…」滞留）
  * - 未经拦截器（客户端校验等本地错误）→ 弹 fallback

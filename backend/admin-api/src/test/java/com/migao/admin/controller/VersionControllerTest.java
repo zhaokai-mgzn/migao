@@ -58,7 +58,11 @@ class VersionControllerTest extends BaseControllerTest {
     private MockMvc mvcWith(String sha, String tag, String builtAt) {
         MockEnvironment env = new MockEnvironment();
         env.setProperty("spring.application.name", "admin-api");
-        return buildMockMvc(new VersionController(sha, tag, builtAt, env));
+        // 迁移事实走独立端点（`/api/version/migrations`）：本端点的字段面**保持 4 个**，
+        // 装配时给一个空 provider 即可（空 ⇒ 该端点报 unknown，且不在本响应里出现）
+        return buildMockMvc(new VersionController(sha, tag, builtAt, env,
+                new org.springframework.beans.factory.support.StaticListableBeanFactory()
+                        .getBeanProvider(com.migao.admin.config.MigrationRunner.class)));
     }
 
     @Test

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button, PageCard, PageHeader } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
+import { loadErrorMessage } from '@/lib/api-error'
 import { SELECT_CONTROL_FIELD } from '@/components/ui/Select'
 import { supplierApi, purchaseOrderApi } from '@/lib/api'
 import { usePermission } from '@/lib/permission'
@@ -72,7 +73,8 @@ export default function PurchaseOrdersPage() {
       setOrders(res.data.data || [])
     } catch (error) {
       console.error('加载采购单失败:', error)
-      setLoadError('采购单加载失败，请重试')
+      // 失败态要说清**为什么**（403 没权限 / 500 服务端炸 / 断网 是三种处境，不能同一句话）
+      setLoadError(loadErrorMessage(error, '采购单加载失败'))
     } finally {
       setLoading(false)
     }
@@ -217,7 +219,9 @@ export default function PurchaseOrdersPage() {
   }
 
   return (
-    <div>
+    // 与全站页面对齐的外边距（其余页面同款 `p-6`）：缺了它内容会贴着侧边栏，
+    // 标题、按钮、卡片三者不在同一条网格上（观感就是「页面是歪的」）。
+    <div className="p-6">
       <PageHeader
         title="采购单"
         subtitle="下单、分次收货、关闭都在这一页；已收和未收按收货记录实时算"
