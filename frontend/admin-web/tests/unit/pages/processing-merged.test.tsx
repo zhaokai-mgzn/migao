@@ -165,6 +165,7 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // 反恒真：入库单的 inbound:view **不得**再出现在本组（否则「搬组」只搬了半边）。
     expect(inventoryGroup()!.children.map((c) => c.path)).toEqual([
       '/stock-ledger',
+      '/stocktakes',
       '/shipments',
       '/production/remnants',
       '/production/saving-board',
@@ -173,6 +174,7 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // 所有人不可见，见 #4203 同族坑）。
     expect(inventoryGroup()!.children.map((c) => c.permissionCode)).toEqual([
       'product:list',   // 库存明细（#6404：同取既有 product:list ⇒ 零授权 delta）
+      'inbound:view',   // 盘点单（#7373：与入库/仓库同域 ⇒ 复用既有码，零授权 delta）
       'order:list',     // 发货单（#5939：取既有 order:list ⇒ 与订单列表同码、零授权 delta）
       'processing:manage',
       'product:list',   // 省料看板（#5699 P4）
@@ -196,8 +198,8 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // 「经营看板」升为**最前席位一级项**（不入任何组）、「每日简报」菜单项删除 ⇒ 组内项 18 → 16）
     // #7369：+「供应商」⇒ 组内项 17 → 18；段 4 再 +「采购单」⇒ 18 → 19；
     // #7375 段 3：交易管理 +「价格本」⇒ 19 → 20
-    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(20)
-    expect(allNames).toHaveLength(20)
+    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(21)
+    expect(allNames).toHaveLength(21)
   })
 })
 

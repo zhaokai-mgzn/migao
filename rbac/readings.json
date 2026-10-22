@@ -329,6 +329,7 @@
       "采购单": "inbound:view",
       "仓储与物料": null,
       "库存明细": "product:list",
+      "盘点单": "inbound:view",
       "发货单": "order:list",
       "余料台账": "processing:manage",
       "省料看板": "product:list",
@@ -366,7 +367,8 @@
       "企业基础设置（经营域）": "system:manage",
       "新增员工": "employee:create",
       "加工单操作": "processing:update",
-      "入库单操作": "inbound:create"
+      "入库单操作": "inbound:create",
+      "盘点单": "inbound:view"
     },
     "auth": {
       "经营看板": "dashboard:view",
@@ -386,6 +388,7 @@
       "供应商": "inbound:view",
       "采购单": "inbound:view",
       "库存明细": "product:list",
+      "盘点单": "inbound:view",
       "发货单": "order:list",
       "余料台账": "processing:manage",
       "省料看板": "product:list",
@@ -528,6 +531,12 @@
       "name": "库存明细",
       "path": "/stock-ledger",
       "code": "product:list"
+    },
+    {
+      "key": "stocktakes",
+      "name": "盘点单",
+      "path": "/stocktakes",
+      "code": "inbound:view"
     },
     {
       "key": "shipments",
@@ -680,6 +689,10 @@
     [
       "/stock-ledger",
       "product:list"
+    ],
+    [
+      "/stocktakes",
+      "inbound:view"
     ],
     [
       "/employees",
@@ -1014,6 +1027,18 @@
       "units": {
         "product:list": [
           "GET /api/admin/stock-ledger"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "stocktakes",
+      "name": "盘点单",
+      "path": "/stocktakes",
+      "gate": "inbound:view",
+      "units": {
+        "inbound:view": [
+          "GET /api/admin/stocktakes"
         ]
       },
       "visibility_rule": "all"

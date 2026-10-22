@@ -19,6 +19,7 @@ import {
   Package,
   PackageOpen,
   Recycle,
+  ScanLine,
   Ruler,
   ScrollText,
   Settings,
@@ -213,6 +214,12 @@ export const capabilityDomains: CapabilityDomain[] = [
         detail:
           '逐笔列出 SKU 级库存变更（变动前 → 变动后），按时间 / 货号 / 原因 / 单据号 / 操作人成行，想查库存为什么变，顺着它往下看。',
         icon: ScrollText,
+      },
+      {
+        name: '盘点单',
+        detail:
+          '按仓出盘点任务，逐批次录实盘并自动算差异；有差异要先走「盘点差异」审批，完成时按差异调批次数量（不动成本）。',
+        icon: ScanLine,
       },
     ],
   },

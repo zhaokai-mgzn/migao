@@ -26,6 +26,8 @@ import type {
   ReportQualityCost,
   ReportStaffPerformance,
 } from '@/types/reports'
+// 盘点读面类型（issue #7373 段 3 前端）：与后端 `StocktakeView` 字段逐字对齐
+import type { Stocktake, Warehouse } from '@/types/stocktake'
 // 「识别 + 一次性推理」端点回的是**同一条字段计划**（issue #6367 包 P3）—— 复用它的形状，
 // 不另造第二份（两份定义迟早让 `source` / `fields` 漂移）。**类型导入**，运行时零依赖。
 import type { PageFillPlan } from './agent-page-fill'
@@ -2138,4 +2140,38 @@ export const cuttingHeightApi = {
 // 页面的开放范围由每位工人档案上的收窄决定（`PUT /api/admin/workers/{id}/pages`）。
 export const workerPageCatalogApi = {
   get: () => request.get<ApiResponse<WorkerPageCatalogResponse>>('/api/admin/worker-pages'),
+}
+
+// ── 盘点（issue #7373 段 3 前端）──
+// 授权零 delta：读挂 `inbound:view`、写挂 `inbound:create`（与仓 / 库存同域，`StocktakeController` 同码）。
+export const warehouseApi = {
+  /** 仓库列表（默认仓排最前）：`GET /api/admin/warehouses`，码 `inbound:view`。 */
+  list: () => request.get<ApiResponse<Warehouse[]>>('/api/admin/warehouses'),
+}
+
+/**
+ * 盘点单（`StocktakeController`）：出任务 → 录实盘 → 完成（有差异须先审批）/ 作废。
+ *
+ * ⚠️ 列表接口只回**单头**（`items` 恒空数组、`warehouseCode` 恒 null）⇒ 逐批次明细走 `detail`；
+ * 仓名由页面用 `warehouseApi.list()` 自己查（服务端 `view(.., null, ..)` 没回填仓编码）。
+ */
+export const stocktakeApi = {
+  list: () => request.get<ApiResponse<Stocktake[]>>('/api/admin/stocktakes'),
+
+  detail: (id: string) => request.get<ApiResponse<Stocktake>>(`/api/admin/stocktakes/${id}`),
+
+  /** 出任务：`POST /api/admin/stocktakes?warehouseId=&note=`（账面数 = 当刻快照）。 */
+  open: (warehouseId: number, note?: string) =>
+    request.post<ApiResponse<Stocktake>>('/api/admin/stocktakes', undefined, {
+      params: note ? { warehouseId, note } : { warehouseId },
+    }),
+
+  /** 录实盘：body `{"counts": {"<batchId>": 12.5}}`。 */
+  count: (id: string, counts: Record<string, number>) =>
+    request.post<ApiResponse<Stocktake>>(`/api/admin/stocktakes/${id}/count`, { counts }),
+
+  /** 完成：有差异且没有已通过的 `stocktake_diff` 审批 ⇒ 服务端拒绝（原样展示其文案）。 */
+  complete: (id: string) => request.post<ApiResponse<Stocktake>>(`/api/admin/stocktakes/${id}/complete`),
+
+  cancel: (id: string) => request.post<ApiResponse<Stocktake>>(`/api/admin/stocktakes/${id}/cancel`),
 }

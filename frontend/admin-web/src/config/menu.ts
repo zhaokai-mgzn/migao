@@ -339,6 +339,10 @@ export const menuGroups: MenuGroup[] = [
       // 节点码 = 该页第一屏读端点（`GET /api/admin/stock-ledger`）的方法级 `product:list`（逐字同码）。
       // 先例 = 「省料看板」同取 `product:list`（issue #5699 P4）。
       { key: 'stock-ledger', name: '库存明细', icon: 'ScrollText', path: '/stock-ledger', permissionCode: 'product:list', keywords: ['kcmx', 'kucun', 'mingxi', 'liushui', 'taizhang', '台账'] },
+      // 盘点单（issue #7373 段 2 后端 / 本项 = 商家面）：账面快照 → 逐批次录实盘 → 有差异先审批再完成。
+      // 节点码 = 该页第一屏读端点码（`GET /api/admin/stocktakes` 的**方法级** `inbound:view`）—— 逐字同码
+      //（repo 规则「每页恰好一个码」）。紧跟「库存明细」：先看账，再对账。
+      { key: 'stocktakes', name: '盘点单', icon: 'ScanLine', path: '/stocktakes', permissionCode: 'inbound:view', keywords: ['pdb', 'pandian', 'kucunpandian', 'pandian', '盘点', '盘点单', '盘库', '盘亏', '盘盈'] },
       // 发货单（issue #5939，用户 2026-10-02 裁定）：与「入库单」对称的**出口**单据；
       // 取**既有** `order:list`（与销售订单同码、零授权 delta）。
       { key: 'shipments', name: '发货单', icon: 'Truck', path: '/shipments', permissionCode: 'order:list', keywords: ['fhd', 'fahuo', 'shipment', 'chuku', '出库', '发货'] },

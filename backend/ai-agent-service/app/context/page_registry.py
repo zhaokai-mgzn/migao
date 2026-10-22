@@ -128,6 +128,12 @@ TRUTH_SOURCES: Dict[str, TruthSource] = {
         citation="依据：报表口径说明（合计与明细可复算；没有数据留空而不写 0；算不出的成本标未知）",
         path="backend/admin-api/src/main/java/com/migao/admin/service/ReportService.java",
     ),
+    # 盘点（issue #7373）：账面快照 / 差异必须经审批 / 只改数量不动成本 —— 全部口径在服务层 javadoc。
+    "stocktake-counting": TruthSource(
+        label="盘点（账面快照 · 实盘 · 差异审批）",
+        citation="依据：盘点口径说明（账面是出任务当刻的快照；有差异须先经审批；只调数量不动成本）",
+        path="backend/admin-api/src/main/java/com/migao/admin/service/StocktakeService.java",
+    ),
     "supplier-master-data": TruthSource(
         label="供应商档案（供应商主数据）",
         citation="依据：供应商档案口径（服务层说明）",
@@ -217,6 +223,13 @@ PAGE_REGISTRY: Tuple[PageEntry, ...] = (
         route="/reports",
         truth_source="report-center",
         page_permissions=("dashboard:view",),
+        entity_permissions=(),
+    ),
+    # 盘点单（issue #7373）：问「差异为什么没批 / 盘亏怎么调账 / 账面数会不会变」⇒ 引服务层口径。
+    PageEntry(
+        route="/stocktakes",
+        truth_source="stocktake-counting",
+        page_permissions=("inbound:view",),
         entity_permissions=(),
     ),
     # 供应商档案（issue #7369）：页面上问「账期怎么算 / 停用是什么意思」⇒ 引服务层口径。

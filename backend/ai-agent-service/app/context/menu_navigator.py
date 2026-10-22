@@ -166,6 +166,8 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     # issue #6404：库存明细（与省料看板同码 `product:list` —— 两者都是该页的**读**码；
     # 先例 = 「发货单」与「销售订单」同取 `order:list`，issue #5939）
     MenuNode("inventory-center", "库存明细", "/stock-ledger", "product:list"),
+    # 盘点单（issue #7373）：读码 `inbound:view` —— 与 menu.ts / MenuController / AuthService 逐字同码。
+    MenuNode("inventory-center", "盘点单", "/stocktakes", "inbound:view"),
     MenuNode("inventory-center", "发货单", "/shipments", "order:list"),
     MenuNode("inventory-center", "余料台账", "/production/remnants", "processing:manage"),
     MenuNode("inventory-center", "省料看板", "/production/saving-board", "product:list"),
@@ -297,6 +299,10 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     NavFeature("remnants", "余料台账（余料）", (("inventory-center", "余料台账"),), ("余料台账", "余料")),
     NavFeature("saving-board", "省料看板（省料）", (("inventory-center", "省料看板"),), ("省料看板", "省料")),
     NavFeature("stock-ledger", "库存明细（库存流水）", (("inventory-center", "库存明细"),), ("库存明细", "库存流水")),
+    # 盘点单（issue #7373）：账实核对的落点 —— 用户问「盘亏怎么办 / 怎么对账」时引到这里。
+    NavFeature("stocktakes", "盘点单（账实核对）",
+               (("inventory-center", "盘点单"),),
+               ("盘点单", "盘点", "账实核对")),
     NavFeature("employees", "员工管理（员工开账号）", (("org-center", "员工管理"),), ("员工管理", "员工开账号")),
     NavFeature("roles", "岗位权限（角色权限）", (("org-center", "岗位权限"),), ("岗位权限", "角色权限")),
     # 企业基础设置（原「企业基础信息」，issue #6580 改名 + 升为独立项）。
