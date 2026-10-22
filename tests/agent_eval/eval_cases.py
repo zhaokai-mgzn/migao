@@ -7502,6 +7502,25 @@ _CASE_PRC_005 = EvalCase(
     precondition='本用例是 [frontend-contract]：前置 = 价格本接口（#7462）+ 菜单五副本 + rbac 清单 + 页面锚点/页面上下文登记。零网络、零 LLM。',
 )
 
+# ── STK-002 [NORMAL] 盘点单页面：账面快照 → 逐批次录实盘 → 差异须审批才完成（issue #7373 段 2 的商家面）（源: cases/misc.yml）──
+_CASE_STK_002 = EvalCase(
+    id='STK-002',
+    legacy_id='',
+    title='盘点单页面：账面快照 → 逐批次录实盘 → 差异须审批才完成（issue #7373 段 2 的商家面）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-22，逐字）：「继续主动推进，不要一直让我点头」+「新模块尽量一步到位，不要反复返工，最近几次界面都没验收过」—— 盘点后端与接口已在 #7458 落地，商家界面上没有入口，等于能力不存在。'],
+    expectations=[],
+    data_checks=['**判据 1（菜单归位）**：「盘点单」落在「仓储与物料」组、**紧跟库存明细**（先看账 → 再对账），码 = `inbound:view`（该页第一屏读端点码，与入库单/仓库同域、零授权 delta）⇒ 三处同一个码。判据 = `menu-nav.test.ts`（`EXPECTED_GROUPS` 的 inventory-center）+ `Sidebar.test.tsx` + `test_rbac_derived_pages.py`。', '**判据 2（🔴 未数 ≠ 0）**：还没录实盘的批次，实盘量与差异两列都写「未数」，输入框**留空**（不预填 0）；差异只显示服务端算出的 `diffQty`，前端不现算。判据 = `stocktakes.test.tsx#明细：账面 / 实盘 / 差异逐格；没数的行写「未数」`。', '**判据 3（🔴 部分未数不给合计）**：还有批次没数时，差异合计写「待录入（还有 N 个批次没数）」，**不给出一个看起来已对账的合计**；全部数完后照实显示（含 0）。判据 = 同文件两条合计用例。', '**判据 4（有差异要审批）**：完成被服务端拒绝（「必须先有已通过的盘点差异审批」）时，页面**原样显示服务端原文**，不吞成「操作失败」。判据 = 同文件#完成被服务端拒绝。', '**判据 5（实盘允许 0）**：实盘量可以提交 0（盘空的真实结果）、最多 1 位小数；两位小数/负数在前端拦下且不打接口。判据 = 同文件#录实盘：0 可以提交。', '**判据 6（出任务必须选仓）**：不选仓 ⇒ 页面自己拦住且不打接口；选了仓 ⇒ `POST /api/admin/stocktakes?warehouseId=`（账面数 = 出任务当刻快照）。判据 = 同文件#出盘点任务。', '**边界（照实登记）**：① 不在本页建仓/改仓（仓库主数据归仓储域）；② 周期盘点计划（到点自动出任务）未做；③ 列表接口只回单头（`items` 恒空、`warehouseCode` 恒 null）⇒ 仓名由页面按 id 查、逐批次明细点击后才拉；④ 视觉验收走 mock `/api/**` 的生产构建截图（`acceptance/2026-10-22-7373-stocktake-page/`），验布局/空态/落位，不验真库读数（真库由后端单测承担）。'],
+    skip_reason='[frontend-contract] 盘点页的展示纪律（未数≠0 / 差异须审批）与菜单归位，由前端单测与 rbac 判据验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['frontend-contract', 'inventory', 'stocktake', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [frontend-contract]：前置 = 盘点接口（#7458）+ 菜单五副本 + rbac 清单。零网络、零 LLM。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -16526,6 +16545,7 @@ ALL_CASES = (
     _CASE_QC_002,
     _CASE_RPT_004,
     _CASE_PRC_005,
+    _CASE_STK_002,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

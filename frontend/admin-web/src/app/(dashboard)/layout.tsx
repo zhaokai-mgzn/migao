@@ -84,6 +84,9 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   // 没有这一条就只有菜单一道防线：无 `product:list` 者地址栏直达 `/stock-ledger` 不被拦
   //（同 #5976 入库单的现场形态）。
   { prefix: '/stock-ledger', code: 'product:list' },
+  // 盘点单（issue #7373）：守卫码 = 菜单节点码 = 该页第一屏读端点码（`StocktakeController` 的
+  // 方法级 `inbound:view`）—— 三处同一个码，零授权 delta（与入库单/仓库同域）。
+  { prefix: '/stocktakes', code: 'inbound:view' },
   { prefix: '/employees', code: 'employee:list' },
   // 🔴 2026-10-09（issue #6580）：`/settings/params`（原「参数总览」一级项）是**旧入口兼容**前缀
   // —— 该一级项已撤掉（内容回到 `/settings` 页内的配置域）⇒ 路由保留、守卫码取新入口的页面码。

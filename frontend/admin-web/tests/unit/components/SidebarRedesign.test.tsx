@@ -111,6 +111,7 @@ const ALL_MENU_KEYS = [
   'quality-inspections',
   'inbound-orders', 'suppliers', 'purchase-orders',
   'stock-ledger',
+  'stocktakes',
   'shipments',
   'production-remnants',
   'production-saving-board',
@@ -191,6 +192,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     expect(menuKeys()).toEqual([
       ...HEAD_KEYS,
       'stock-ledger',
+  'stocktakes',
       'shipments',
       'production-remnants',
       'production-saving-board',
@@ -243,6 +245,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
       'quality-inspections',
       // issue #7369：仓储与物料组只留 库存 → 出库 → 台账 → 分析（单据三项在「供应链」组，未展开 ⇒ 不渲染）
       'stock-ledger',
+  'stocktakes',
       'shipments',
       'production-remnants',
       'production-saving-board',
@@ -326,8 +329,8 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     //（「企业基础设置」升为一级项）；🔴 #7140：生产管理组再 **+1**（「质检记录」）⇒ 现 **4 项**
     expect(within(groupEl('production-center')).getAllByRole('link')).toHaveLength(4)
     // #7369 段 4 + 2026-10-20 新 IA：仓储与物料组由 7 项回到 **4 项**（入库单 / 供应商 / 采购单
-    // 已整组搬去新组「供应链」）
-    expect(within(groupEl('inventory-center')).getAllByRole('link')).toHaveLength(4)
+    // 已整组搬去新组「供应链」）；#7373 再 +「盘点单」⇒ **5 项**
+    expect(within(groupEl('inventory-center')).getAllByRole('link')).toHaveLength(5)
     // issue #7369：新组「供应链」= 入库单 → 供应商 → 采购单
     expect(within(groupEl('supply-chain')).getAllByRole('link')).toHaveLength(3)
     expect(within(groupEl('org-center')).getAllByRole('link')).toHaveLength(2)

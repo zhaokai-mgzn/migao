@@ -1464,6 +1464,11 @@ public class AuthService {
         if (isAll || permissions.contains("product:list")) {
             inventoryChildren.add(menuItem("stock-ledger", "库存明细", "/stock-ledger"));
         }
+        // 盘点单（issue #7373 段 3 前端）：读码 `inbound:view`（与仓 / 入库同域；仓管做账实核对）。
+        // 与 MenuController 的 `stocktakes`、前端 `config/menu.ts` 的 `stocktakes` 三处同构。
+        if (isAll || permissions.contains("inbound:view")) {
+            inventoryChildren.add(menuItem("stocktakes", "盘点单", "/stocktakes"));
+        }
         // 发货单（issue #5939）：与按单读面（GET /api/admin/orders/{id}/shipments）**逐字同码**
         // `order:list` ⇒ 零授权 delta（能看订单的人就能看发货单）；新造码会让菜单对所有人不可见
         // （#4203 同族坑），故**必须**落在自己的 if 里、且码与 MenuController / menu.ts 三处一致。

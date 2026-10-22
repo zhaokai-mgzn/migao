@@ -63,6 +63,7 @@ const ALL_KEYS = [
   'quality-inspections',
   'inbound-orders', 'suppliers', 'purchase-orders',
   'stock-ledger',
+  'stocktakes',
   'shipments',
   'production-remnants',
   'production-saving-board',
@@ -171,7 +172,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
   it('组名命中：`仓储` ⇒ 仓储与物料组的 4 项（顺序 = 组内顺序：库存明细 → 发货单 → 余料台账 → 省料看板；issue #7369 起单据三项已搬去「供应链」组）', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
     typeQuery('仓储')
-    expect(renderedKeys()).toEqual(['stock-ledger', 'shipments', 'production-remnants', 'production-saving-board'])
+    expect(renderedKeys()).toEqual(['stock-ledger', 'stocktakes', 'shipments', 'production-remnants', 'production-saving-board'])
   })
 
   it('无结果：给可读文案，且列表清空（不是留着上一轮结果）', async () => {

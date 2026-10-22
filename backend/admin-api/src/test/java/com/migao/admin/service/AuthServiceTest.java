@@ -1,4 +1,4 @@
-// case_ids: API-010, CU-006, PG-021
+// case_ids: API-010, CU-006, PG-021, STK-002
 package com.migao.admin.service;
 
 import com.migao.admin.dto.LoginRequest;
@@ -630,9 +630,10 @@ class AuthServiceTest {
                 "inbound-orders", "suppliers", "purchase-orders");
         var inventory = groupByKey(menus, "inventory-center");
         assertThat(keysOf(inventory.getChildren())).containsExactly(
-                "stock-ledger", "shipments", "production-remnants", "production-saving-board");
+                "stock-ledger", "stocktakes", "shipments", "production-remnants", "production-saving-board");
         assertThat(pathsOf(inventory.getChildren())).containsExactly(
-                "/stock-ledger", "/shipments", "/production/remnants", "/production/saving-board");
+                "/stock-ledger", "/stocktakes", "/shipments", "/production/remnants",
+                "/production/saving-board");
 
         var org = groupByKey(menus, "org-center");
         // 🔴 issue #6580：「企业基础设置」由本组**升为顶层一级项** ⇒ 本组只剩「员工管理 / 岗位权限」
@@ -748,12 +749,16 @@ class AuthServiceTest {
 
         // #5699 P4：经营看板也按 `dashboard:view` 门控（#7087 起它是**顶层一级项**）⇒ 只持 inbound:view 时
         //**它这一项**不出现（本条因此顺带成为「经营看板不再无条件出现」的负控）。
-        assertThat(keysOf(menus)).containsExactly("supply-chain", "notifications");
+        // #7373：盘点单也持 inbound:view ⇒ 本权限集下「仓储与物料」组**在**（组内只这一项）
+        assertThat(keysOf(menus)).containsExactly("supply-chain", "inventory-center", "notifications");
         var supply = groupByKey(menus, "supply-chain");
         assertThat(supply.getName()).isEqualTo("供应链");
         assertThat(namesOf(supply.getChildren())).containsExactly("入库单", "供应商", "采购单");
         assertThat(pathsOf(supply.getChildren()))
                 .containsExactly("/inbound-orders", "/suppliers", "/purchase-orders");
+        var inventoryGroup = groupByKey(menus, "inventory-center");
+        assertThat(namesOf(inventoryGroup.getChildren())).containsExactly("盘点单");
+        assertThat(pathsOf(inventoryGroup.getChildren())).containsExactly("/stocktakes");
         // 自证渲染面非空（入库单自己）+ 反向：processing:manage 的两项确实被门控挡在外面
         assertThat(allNames(menus)).contains("入库单");
         assertThat(allNames(menus)).doesNotContain("余料台账", "省料看板", "作业看板");
