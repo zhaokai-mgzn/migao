@@ -183,15 +183,34 @@ describe('Sidebar', () => {
     expect(screen.getByTestId('logo')).toBeInTheDocument()
   })
 
-  it('品牌副标题直接叫「观星台」（不带「商家管理后台」后缀 · issue #6590）', () => {
+  // issue #7476（用户 2026-10-22 裁定）：左上角那一格的语义位是**租户身份**，品牌与企业名并列会被
+  // 读成「两个主体并列」（商家上传自家 Logo 后尤甚）⇒ 顶部只留企业身份，平台品牌沉到底部署名。
+  it('左上角只留企业身份，平台品牌沉到侧边栏底部署名（issue #7476）', () => {
     mockUseAuthStore.mockReturnValue({
       user: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], permissions: ['*'], tenantName: '测试企业' },
     })
     render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
-    // 企业名一行 + 品牌名一行；品牌名逐字就是「观星台」
-    expect(screen.getByText('测试企业')).toBeInTheDocument()
-    expect(screen.getByText('观星台')).toBeInTheDocument()
-    expect(screen.queryByText('观星台商家管理后台')).not.toBeInTheDocument()
+    // 顶部主位：逐字只有企业名（品牌不再作为第二行与企业名并列）
+    expect(screen.getByText('测试企业').parentElement?.textContent).toBe('测试企业')
+    // 底部署名：逐字「观星台」，且整栏只出现这一次
+    expect(screen.getByTestId('sidebar-brand').textContent).toBe('观星台')
+    expect(screen.getAllByText('观星台')).toHaveLength(1)
+  })
+
+  it('企业名缺失时品牌占主位，且全栏只出现一次（issue #7476）', () => {
+    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    expect(screen.getAllByText('观星台')).toHaveLength(1)
+    // 主位已经是品牌名 ⇒ 底部不再重复署名
+    expect(screen.queryByTestId('sidebar-brand')).toBeNull()
+  })
+
+  it('折叠态不渲染品牌文本（issue #7476）', () => {
+    mockUseAuthStore.mockReturnValue({
+      user: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], permissions: ['*'], tenantName: '测试企业' },
+    })
+    render(<Sidebar collapsed={true} onToggle={mockOnToggle} />)
+    expect(screen.queryByTestId('sidebar-brand')).toBeNull()
+    expect(screen.queryByText('观星台')).toBeNull()
   })
 
   it('未设置企业 Logo 时回退观星台默认 Logo', () => {

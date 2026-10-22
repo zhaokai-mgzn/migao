@@ -354,14 +354,12 @@ export default function Sidebar({
           ) : (
             <Logo size="small" />
           )}
+          {/* 企业身份块（issue #7476）：这里只回答「我在哪家企业」，平台品牌署名在侧边栏底部 */}
           {!collapsed && (
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold leading-tight text-white">
                 {user?.tenantName || '观星台'}
               </div>
-              {user?.tenantName && (
-                <div className="mt-0.5 text-[11px] leading-tight text-neutral-400">观星台</div>
-              )}
             </div>
           )}
         </div>
@@ -466,6 +464,17 @@ export default function Sidebar({
 
       {/* 底部折叠按钮（桌面端）—— 移动端抽屉另有「关闭」语义，由遮罩承担 */}
       <div className="border-t border-white/5 p-2">
+        {/* 平台署名（issue #7476，用户 2026-10-22 裁定：顶部归企业、底部归平台）。
+            企业名缺失时品牌已占主位 ⇒ 此处不重复；折叠态不渲染文字（顶部图标栏已有 Logo）。 */}
+        {!collapsed && user?.tenantName && (
+          <div
+            data-testid="sidebar-brand"
+            title="观星台 · AI经营管理平台"
+            className="px-2 pb-1 text-[11px] leading-tight text-neutral-400"
+          >
+            观星台
+          </div>
+        )}
         <button
           type="button"
           onClick={onToggle}
