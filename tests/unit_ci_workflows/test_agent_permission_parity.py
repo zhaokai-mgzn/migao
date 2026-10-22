@@ -2052,6 +2052,9 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     # `ROUTE_WITHOUT_MENU_NODE`）；P4 把节点码补成 `dashboard:view`（= 该页第一屏读码 = 守卫码）
     # ⇒ 销账后回到「有节点锚」这一侧。
     "/dashboard": "经营看板",
+    # issue #7376：报表中心（`/reports`）的守卫码锚到它自己的菜单节点（同码 `dashboard:view`，
+    # 与经营看板同一把尺子 —— 报表是看板的下钻）。
+    "/reports": "报表中心",
     "/after-sales": "售后工单",
     "/orders": "销售订单",
     "/products": "商品管理",
@@ -2231,6 +2234,11 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
         "dashboardApi.getStats", "dashboardApi.getOrderTrend",
         "dashboardApi.getProductRanking", "dashboardApi.getRecentOrders",
         "briefingApi.getConfig")),
+    # 🔴 issue #7376：报表中心（`/reports`）第一屏读四个只读报表端点，全部 `dashboard:view`
+    # ⇒ 节点码与第一屏读码同一把尺子（`dashboard:view`，与经营看板同码 —— 报表是看板的下钻）。
+    "/reports": MenuReadAnchor("报表中心", "reports/page.tsx", (
+        "reportApi.orderMargins", "reportApi.inventoryAging",
+        "reportApi.staffPerformance", "reportApi.qualityCost")),
     # 🔴 2026-10-17（issue #7087）：`/briefing` 的锚点**销账** —— 该页只剩 `redirect('/dashboard')`
     # （正文删除）⇒ **第一屏没有任何读端点调用**，而本台账的每个 `path` 都必须对应一个菜单节点
     # （「节点码 ≡ 该页第一屏读端点码」这条判据在**没有节点**时无从成立）。

@@ -576,12 +576,14 @@ class AuthServiceTest {
         // 一级项「经营看板」（前端 `menu.ts` 的 `standaloneHeadItems` 的对应物），随后才是五个组；
         // 「每日简报」菜单项删除。尾席位沿用 #6457 的口径（**所有分组之后**：商品管理 → 企业基础设置
         // → 通知中心）—— 与前端渲染顺序逐项一致。
+        // 🔴 2026-10-22（issue #7376）：最前席位增至**两项** —— 经营看板 → 报表中心
+        //（同属经营数据面：报表是看板的下钻；同码 `dashboard:view` ⇒ 零授权 delta）。
         assertThat(keysOf(menus)).containsExactly(
-                "dashboard", "customer-service", "trade-center",
+                "dashboard", "reports", "customer-service", "trade-center",
                 "production-center", "supply-chain", "inventory-center", "org-center",
                 "products", "settings", "notifications");
         assertThat(namesOf(menus)).containsExactly(
-                "经营看板", "客户服务", "交易管理",
+                "经营看板", "报表中心", "客户服务", "交易管理",
                 "生产管理", "供应链", "仓储与物料", "组织管理",
                 "商品管理", "企业基础设置", "通知中心");
 
@@ -699,12 +701,13 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("🔴 #7087：经营看板 = 顶层**一级项**（最前席位）；持 dashboard:view 时只点亮它 + 通知中心")
+    @DisplayName("🔴 #7087 + #7376：最前席位两项（经营看板 → 报表中心）；持 dashboard:view 时点亮两项 + 通知中心")
     void currentUserMenusExposeDashboardAsTopLevelItem() {
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("dashboard:view");
 
-        // 旧形态 = 「工作台」组（组内 经营看板 + 每日简报）；#7087 起组没了、简报项没了 ⇒ 只剩这个一级项。
-        assertThat(keysOf(menus)).containsExactly("dashboard", "notifications");
+        // 旧形态 = 「工作台」组（组内 经营看板 + 每日简报）；#7087 起组没了、简报项没了。
+        // 🔴 #7376：`dashboard:view` 现由**两个**最前席位一级项承载（经营看板 + 报表中心）。
+        assertThat(keysOf(menus)).containsExactly("dashboard", "reports", "notifications");
         var dashboard = menus.get(0);
         assertThat(dashboard.getName()).isEqualTo("经营看板");
         assertThat(dashboard.getPath()).isEqualTo("/dashboard");

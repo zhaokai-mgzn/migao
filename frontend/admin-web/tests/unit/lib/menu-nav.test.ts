@@ -7,13 +7,13 @@
  * 重设计前「权限过滤 / 高亮选中 / 分组展开」三件事全内联在 `Sidebar.tsx` 里 ——
  * 只能靠渲染整个 Sidebar 才能验证（依赖 auth store / next-navigation / lucide 白名单三个替身），
  * 且**无法对「同一路由下哪个项高亮」做表驱动穷举**。issue #5271 把它们抽成
- * `frontend/admin-web/src/lib/menu-nav.ts` 的纯函数 ⇒ 本文件对**全部 23 项 × 若干路由**
+ * `frontend/admin-web/src/lib/menu-nav.ts` 的纯函数 ⇒ 本文件对**全部 24 项 × 若干路由**
  * 逐条断言（渲染面另有 `Sidebar.test.tsx` / `SidebarRedesign.test.tsx`）。
  *
  * ## 本文件同时是新 IA 的**表驱动事实源**
  *
  * （issue #7087 + #7369：**6 组 / 19 个组内项 + 3 个一级项**（最前席位「经营看板」+ 尾席位
- * 「商品管理」「企业基础设置」）+ 1 个尾部独立项「通知中心」= **23 项**。
+ * 「商品管理」「企业基础设置」）+ 1 个尾部独立项「通知中心」= **24 项**。
  * 2026-10-17（issue #7087）「工作台」组整组撤销、「每日简报」菜单项删除；
  * 2026-10-20（issue #7369，用户裁定「新增的菜单不能放到仓储与物料下，得加个新大菜单」）
  * 新增组「供应链」（组 key `supply-chain`：入库单 → 供应商 → 采购单），组内项总数不变
@@ -52,7 +52,7 @@ import {
  * 新 IA（issue #5778；#5939 +「发货单」；#6404 +「库存明细」；**2026-10-06 用户裁定方案 A1 重排**；
  * **#6573 +第二个一级项「参数总览」**；**#6580 收拢生产管理组、一级项改为「企业基础设置」**；
  * **2026-10-17 issue #7087 撤销「工作台」组、经营看板升为最前席位一级项、删「每日简报」菜单项**）：
- * **6 组 / 19 个组内项 + 3 个一级项 + 1 个尾部独立项 = 23 项**（issue #7369 新增「供应链」组）。
+ * **6 组 / 19 个组内项 + 3 个一级项 + 1 个尾部独立项 = 24 项**（issue #7369 新增「供应链」组；#7376 新增「报表中心」一级项）。
  *
  * 本表是**独立写死**的期望值（不拿 `menuGroups` 反推 `menuGroups`）= **顺序契约的承载体**：
  * 2026-10-06 的组内重排与一级项落位若被无声改回，这里当场红并具名报出差异。
@@ -111,7 +111,8 @@ const EXPECTED_GROUPS: { key: string; name: string; keys: string[] }[] = [
  * （`products` → `params`）。
  */
 /** 最前席位（issue #7087）：渲染在**所有分组之前**的唯一一项 */
-const EXPECTED_STANDALONE_HEAD = ['dashboard']
+// 报表中心（issue #7376 / #7377）：与经营看板同属经营数据面 ⇒ 最前席位第二项。
+const EXPECTED_STANDALONE_HEAD = ['dashboard', 'reports']
 const EXPECTED_STANDALONE_TOP = ['products', 'settings']
 const EXPECTED_STANDALONE = ['notifications']
 /** 一级项的**插入位**（本表是独立写死的期望值，不是从实现反推的） */
@@ -149,7 +150,7 @@ const allItems = (opts: MenuFilterOptions = adminFor()) =>
     filterMenuItems(standaloneItems, opts),
   )
 
-describe('新 IA 事实（issue #5778 + #6404 + #6457 + #6573 + #6580 + #7087 + #7140 + #7369：6 组 + 三个一级项 + 尾部独立项 = 23 项，一项不少不减）', () => {
+describe('新 IA 事实（issue #5778 + #6404 + #6457 + #6573 + #6580 + #7087 + #7140 + #7369：6 组 + 三个一级项 + 尾部独立项 = 24 项，一项不少不减）', () => {
   it('组 key / 组名 / 组顺序逐值相等，且无 `customer-center` / `product-center` / 旧 `production`', () => {
     expect(menuGroups.map((g) => g.key)).toEqual(EXPECTED_GROUPS.map((g) => g.key))
     expect(menuGroups.map((g) => g.name)).toEqual(EXPECTED_GROUPS.map((g) => g.name))
@@ -163,20 +164,21 @@ describe('新 IA 事实（issue #5778 + #6404 + #6457 + #6573 + #6580 + #7087 + 
     expect(menuGroups.map((g) => g.name)).not.toContain('智能客服')
   })
 
-  it('每组组内项 key 序列逐值相等（顺序敏感），且总数恒为 23', () => {
+  it('每组组内项 key 序列逐值相等（顺序敏感），且总数恒为 24', () => {
     expect(
       menuGroups.map((g) => ({ key: g.key, keys: g.children.map((c) => c.key) })),
     ).toEqual(EXPECTED_GROUPS.map((g) => ({ key: g.key, keys: g.keys })))
-    expect(ALL_KEYS).toHaveLength(23)
+    expect(ALL_KEYS).toHaveLength(24)
     expect(visibleKeys(ADMIN)).toEqual(ALL_KEYS)
   })
 
-  it('🔴 最前席位 =「经营看板」（issue #7087）：渲染在**所有分组之前**，且不占任何组', () => {
+  it('🔴 最前席位 =「经营看板」→「报表中心」（#7087 + #7376）：渲染在**所有分组之前**，且不占任何组', () => {
     // 用户 2026-10-17 逐字：「经营看板直接作为一级菜单，移除工作台，这样用户一进来就很直观的看到经营看板了」
     expect(standaloneHeadItems.map((i) => i.key)).toEqual(EXPECTED_STANDALONE_HEAD)
-    expect(standaloneHeadItems.map((i) => i.name)).toEqual(['经营看板'])
-    expect(standaloneHeadItems.map((i) => i.path)).toEqual(['/dashboard'])
-    expect(standaloneHeadItems.map((i) => i.permissionCode)).toEqual(['dashboard:view'])
+    // 报表中心（issue #7376 / #7377）**紧随其后**：两者同属经营数据面，位置本身是信息架构决定
+    expect(standaloneHeadItems.map((i) => i.name)).toEqual(['经营看板', '报表中心'])
+    expect(standaloneHeadItems.map((i) => i.path)).toEqual(['/dashboard', '/reports'])
+    expect(standaloneHeadItems.map((i) => i.permissionCode)).toEqual(['dashboard:view', 'dashboard:view'])
     // 它**不得**同时出现在任何组里（升为一级项 = 从原组移出）
     const groupedKeys = menuGroups.flatMap((g) => g.children.map((c) => c.key))
     for (const k of EXPECTED_STANDALONE_HEAD) expect(groupedKeys).not.toContain(k)
@@ -240,7 +242,8 @@ describe('新 IA 事实（issue #5778 + #6404 + #6457 + #6573 + #6580 + #7087 + 
     // 类型侧由 `npx tsc --noEmit` 兜底（调用点漏传参数 = 编译错误，不是静默漂移）。
     expect(flattenMenu.length).toBe(4)
     // 空 groups + 非空 head ⇒ head 项照旧在索引里（不是「没有组就丢掉一级项」）
-    expect(flattenMenu([], standaloneHeadItems, [], []).map((i) => i.key)).toEqual(['dashboard'])
+    expect(flattenMenu([], standaloneHeadItems, [], []).map((i) => i.key))
+      .toEqual(['dashboard', 'reports'])
   })
 })
 
@@ -283,11 +286,11 @@ describe('isItemVisible：两条件（adminOnly ∧ permissionCode）', () => {
     expect(allMenuItems.filter((i) => 'briefingToggle' in i)).toEqual([])
     // ② 同一权限集下，带不带（已废弃的）`briefingEnabled` 字段 ⇒ 可见项**逐值相同**
     const opts = { permissions: ['dashboard:view'], roles: [] as string[] }
-    expect(filterMenuItems(standaloneHeadItems, opts).map((i) => i.key)).toEqual(['dashboard'])
+    expect(filterMenuItems(standaloneHeadItems, opts).map((i) => i.key)).toEqual(['dashboard', 'reports'])
     expect(
       filterMenuItems(standaloneHeadItems, { ...opts, briefingEnabled: true } as MenuFilterOptions)
         .map((i) => i.key),
-    ).toEqual(['dashboard'])
+    ).toEqual(['dashboard', 'reports'])
   })
 
   it.each([
@@ -326,7 +329,7 @@ describe('岗位矩阵：role_permissions（种子）× menu.ts 两条件 ⇒ �
         'processing:view', 'inbound:view', 'after_sales:view', 'knowledge:view',
         'agent:session:manage', 'production:execute', 'order:refund',
       ],
-      expected: ['dashboard', 'human-sessions', 'knowledge', 'after-sales', 'customers', 'orders',
+      expected: ['dashboard', 'reports', 'human-sessions', 'knowledge', 'after-sales', 'customers', 'orders',
         'production-pool', 'inbound-orders', 'suppliers', 'purchase-orders', 'shipments', 'notifications'],
     },
     {
@@ -335,7 +338,7 @@ describe('岗位矩阵：role_permissions（种子）× menu.ts 两条件 ⇒ �
         'dashboard:view', 'order:list', 'order:detail', 'customer:view', 'processing:view',
         'product:list', 'inbound:view', 'order:create', 'production:execute',
       ],
-      expected: ['dashboard', 'customers', 'orders', 'production-pool', 'inbound-orders', 'suppliers', 'purchase-orders', 'stock-ledger',
+      expected: ['dashboard', 'reports', 'customers', 'orders', 'production-pool', 'inbound-orders', 'suppliers', 'purchase-orders', 'stock-ledger',
         'shipments', 'production-saving-board', 'products', 'notifications'],
     },
     {
@@ -344,13 +347,13 @@ describe('岗位矩阵：role_permissions（种子）× menu.ts 两条件 ⇒ �
         'dashboard:view', 'order:list', 'order:detail', 'customer:view', 'finance:view',
         'processing:view', 'inbound:view', 'finance:create', 'production:execute',
       ],
-      expected: ['dashboard', 'customers', 'orders', 'finance', 'production-pool',
+      expected: ['dashboard', 'reports', 'customers', 'orders', 'finance', 'production-pool',
         'inbound-orders', 'suppliers', 'purchase-orders', 'shipments', 'notifications'],
     },
     {
       name: '知识编辑 knowledge_editor（4 码）',
       permissions: ['dashboard:view', 'knowledge:view', 'knowledge:manage', 'product:list'],
-      expected: ['dashboard', 'knowledge', 'stock-ledger', 'production-saving-board', 'products', 'notifications'],
+      expected: ['dashboard', 'reports', 'knowledge', 'stock-ledger', 'production-saving-board', 'products', 'notifications'],
     },
     {
       name: '商品管理员 product_manager（8 码）',
@@ -358,7 +361,7 @@ describe('岗位矩阵：role_permissions（种子）× menu.ts 两条件 ⇒ �
         'dashboard:view', 'product:list', 'product:create', 'product:category',
         'product:category:view', 'processing:view', 'processing:manage', 'production:view',
       ],
-      expected: ['dashboard', 'production-board', 'production-pool',
+      expected: ['dashboard', 'reports', 'production-board', 'production-pool',
         'production-piecework', 'stock-ledger', 'production-remnants', 'production-saving-board',
         'products', 'settings', 'notifications'],
     },
@@ -371,7 +374,7 @@ describe('岗位矩阵：role_permissions（种子）× menu.ts 两条件 ⇒ �
         'inbound:view', 'inbound:create', 'customer:view', 'customer:create', 'finance:view', 'finance:create',
         'agent:session', 'agent:session:manage', 'employee:list', 'after_sales:view', 'knowledge:view',
       ],
-      expected: ['dashboard', 'human-sessions', 'knowledge', 'after-sales', 'customers',
+      expected: ['dashboard', 'reports', 'human-sessions', 'knowledge', 'after-sales', 'customers',
         'orders', 'finance', 'production-board', 'production-pool',
         'production-piecework', 'inbound-orders', 'suppliers', 'purchase-orders', 'stock-ledger', 'shipments', 'production-remnants',
         'production-saving-board', 'employees', 'products', 'settings', 'notifications'],
@@ -616,14 +619,16 @@ describe('resolveActiveGroupKey / initialExpandedGroups：默认只展开当前�
 describe('flattenMenu：最前席位 → 全部分组 → 尾席位 → 尾部独立项（命令面板的索引面）', () => {
   const flat = flattenMenu(menuGroups, standaloneHeadItems, standaloneTopItems, standaloneItems)
 
-  it('顺序 = 23 项全部，且与组结构逐项对齐', () => {
+  it('顺序 = 24 项全部，且与组结构逐项对齐', () => {
     expect(flat.map((i) => i.key)).toEqual(ALL_KEYS)
-    expect(flat).toHaveLength(23)
+    expect(flat).toHaveLength(24)
     const expected = EXPECTED_GROUPS.flatMap((g) => g.keys.map((k) => ({ key: k, groupKey: g.key, groupName: g.name })))
     // 🔴 issue #7087：最前席位（「经营看板」）由 `head` 参数承载、**排在最前**；
     // 尾席位一级项仍排在**所有分组之后**（席位组可见与否**同序** —— 见 `ALL_KEYS` 的注释）
     expect(flat.map((i) => ({ key: i.key, groupKey: i.groupKey, groupName: i.groupName }))).toEqual([
       { key: 'dashboard', groupKey: '', groupName: '' },
+      // 报表中心（#7376）：同为最前席位、紧随经营看板
+      { key: 'reports', groupKey: '', groupName: '' },
       ...expected,
       { key: 'products', groupKey: '', groupName: '' },
       { key: 'settings', groupKey: '', groupName: '' },
@@ -691,8 +696,8 @@ describe('splitGroupsAtTopItemSlot：一级项的插入位（#5877）', () => {
 describe('searchMenu：命中面 = 菜单名 ∪ 组名 ∪ keywords（+ 排序档位）', () => {
   const items = allItems()
 
-  it('面非空自检：可搜索面 = 23 项', () => {
-    expect(items).toHaveLength(23)
+  it('面非空自检：可搜索面 = 24 项', () => {
+    expect(items).toHaveLength(24)
   })
 
   it('空查询 / 纯空白 ⇒ 空数组（面板的「空查询列全量」由调用方实现，不是本函数）', () => {
@@ -785,16 +790,16 @@ describe('权限过滤的端到端口径（可见项 key 集合，逐条精确�
 
   it.each([
     [
-      '超管 `*` + admin 角色 ⇒ 23 项全可见（含最前席位「经营看板」）',
+      '超管 `*` + admin 角色 ⇒ 24 项全可见（含最前席位「经营看板」+「报表中心」）',
       { permissions: ['*'], roles: ['admin'] },
       ALL_KEYS,
     ],
     [
-      '🔴 除 `dashboard:view` 外的全部菜单码 ⇒ **恰少最前席位「经营看板」**（issue #7087）',
+      '🔴 除 `dashboard:view` 外的全部菜单码 ⇒ **恰少最前席位两项**（经营看板 + 报表中心，同码 #7376）',
       // 旧形态里「工作台」组会整组消失（组内两项都挂 `dashboard:view`）；新形态下该组不存在，
       // 唯一被这个码挡掉的就是一级项「经营看板」—— 且它被挡掉时**不**留下空席位（不占位、不留空块）。
       { permissions: ALL_MENU_CODES_EXCEPT_DASHBOARD, roles: ['admin'] },
-      ALL_KEYS.filter((k) => k !== 'dashboard'),
+      ALL_KEYS.filter((k) => k !== 'dashboard' && k !== 'reports'),
     ],
     [
       '生产（读码+管理码）/仓管混合权限 ⇒ 生产管理组 2 项 + 供应链组 3 项 + 仓储与物料组 1 项 + 一级项「企业基础设置」（#6580）',
@@ -809,12 +814,12 @@ describe('权限过滤的端到端口径（可见项 key 集合，逐条精确�
         roles: ['operator'],
       },
       [
-        // 顺序 = 渲染顺序：**最前席位**先出现（它的码 `dashboard:view` 在本权限集里），
+        // 顺序 = 渲染顺序：**最前席位两项**先出现（同码 `dashboard:view`，本权限集里有），
         // 然后 生产管理组（作业看板 → 计件工资）→ 供应链组（入库单 → 供应商 → 采购单）
         // → 仓储与物料组（余料台账，issue #7369 起单据三项已搬去供应链组）；
         // 尾席位一级项各自按自己的码判定 —— 「商品管理」要 product:list（本权限集**无** ⇒ 不出现）、
         // 「企业基础设置」要 production:view（本权限集**有** ⇒ 出现）。
-        'dashboard',
+        'dashboard', 'reports',
         'production-board',
         'production-piecework',
         'inbound-orders', 'suppliers', 'purchase-orders',

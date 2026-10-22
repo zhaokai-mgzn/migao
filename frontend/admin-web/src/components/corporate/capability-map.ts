@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  FileSpreadsheet,
   Bell,
   BookOpen,
   Boxes,
@@ -66,6 +67,14 @@ export const capabilityDomains: CapabilityDomain[] = [
         detail:
           '订单量、销售额、环比与待处理事项一屏可见；无上期可比数据时显示「—」，不以 0 代替。',
         icon: BarChart3,
+      },
+      {
+        // issue #7376：看板的下钻报表（同属经营数据面，所以放在同一能力域里讲）。
+        // 口径必须与后台一致：「没有数据」显示留空/「—」，不写成 0。
+        name: '报表中心',
+        detail:
+          '订单毛利、库存滞销、员工业绩、质量成本四张报表；合计与明细可复算，没有数据时留空而不显示 0，算不出的成本明确标「未知」。',
+        icon: FileSpreadsheet,
       },
       {
         name: '每日简报',

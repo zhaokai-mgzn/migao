@@ -38,7 +38,7 @@ vi.mock('@/lib/api', () => ({
 import CommandPalette from '@/components/layout/CommandPalette'
 
 /**
- * 新 IA 全量 **23 项**（**2026-10-17 issue #7087**：**最前席位** → 全部分组 → 尾席位 → 独立项，
+ * 新 IA 全量 **24 项**（**2026-10-17 issue #7087**：**最前席位** → 全部分组 → 尾席位 → 独立项，
  * == `flattenMenu` 顺序；#5939 +「发货单」；#6404 +「库存明细」；#6573 +第二个一级项；
  * **#6580 生产管理组收拢为 3 项、一级项由「参数总览」改为「企业基础设置」**；
  * **#7087 撤销「工作台」组、经营看板升最前席位、删「每日简报」菜单项**）。
@@ -46,8 +46,9 @@ import CommandPalette from '@/components/layout/CommandPalette'
  * 顺序是本表**独立写死**的期望值 ⇒ 组内重排 / 席位落位被无声改回 ⇒ 本用例当场红。
  */
 const ALL_KEYS = [
-  // 最前席位（issue #7087）：⌘K 索引的**第 1 项**（它在所有分组之前）
+  // 最前席位（issue #7087 + #7376）：⌘K 索引的**前两项**（都在所有分组之前）
   'dashboard',
+  'reports',
   'human-sessions',
   'knowledge',
   'after-sales',
@@ -103,20 +104,23 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     expect(document.querySelectorAll('[data-testid^="command-palette-item-"]')).toHaveLength(0)
   })
 
-  it('空查询 = 全量索引：列出全部 23 项（含独立项「通知中心」），顺序 = 菜单自身顺序', async () => {
+  it('空查询 = 全量索引：列出全部 24 项（含独立项「通知中心」），顺序 = 菜单自身顺序', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
-    await waitFor(() => expect(renderedKeys()).toHaveLength(23))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(24))
     expect(renderedKeys()).toEqual(ALL_KEYS)
     expect(input().value).toBe('')
   })
 
   it('🔴 索引**第 1 项** = 最前席位「经营看板」（issue #7087，判据 = `flattenMenu` 的 head 参数）', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
-    await waitFor(() => expect(renderedKeys()).toHaveLength(23))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(24))
     // ① 第 1 项就是它（旧形态是「工作台」组的第一项 —— 也是它，但那时它属一个**组**）
+    // ① 第 1 项仍是经营看板（登录落点不变）
     expect(renderedKeys()[0]).toBe('dashboard')
-    // ② 默认高亮也在它身上（键盘路径的第一跳 = 登录落点那一页）
-    expect(highlightedKeys()).toEqual(['dashboard'])
+    // ② 第 2 项是报表中心（#7376：同为最前席位、按 menu.ts 顺序紧跟其后）
+    expect(renderedKeys()[1]).toBe('reports')
+    // ③ 默认高亮也在第 1 项身上（键盘路径的第一跳 = 登录落点那一页）
+    expect(highlightedKeys()[0]).toBe('dashboard')
     // ③ 它是**一级项**：面板上不显示组名标签（`groupName` 空串）
     const item = screen.getByTestId('command-palette-item-dashboard')
     expect(item.textContent).toContain('经营看板')
@@ -126,7 +130,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
 
   it('🔴 ⌘K 里取不到「工作台」与「每日简报」（issue #7087）', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
-    await waitFor(() => expect(renderedKeys()).toHaveLength(23))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(24))
     // 已撤销的组名 / 已删除的菜单项都不在（`queryByText` 是**精确**文本匹配 ⇒ 不会误命中
     // 含「工作台」三字的其它文案，如别处的「客服工作台」）
     expect(screen.queryByText('工作台')).toBeNull()
@@ -267,7 +271,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
 
   it('🔴 ⌘K **不再**拉企业简报配置（issue #7087：旧接线回潮 ⇒ 当场红）', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
-    await waitFor(() => expect(renderedKeys()).toHaveLength(23))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(24))
     // 旧形态：面板打开时调一次 `briefingApi.getConfig()`，用返回值决定「每日简报」是否进索引。
     // 菜单项与菜单级开关机制一起撤掉后，这次请求必须**消失**（过滤器只剩权限一维）。
     expect(mockBriefingGetConfig).not.toHaveBeenCalled()
@@ -281,7 +285,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     rerender(<CommandPalette open={false} onClose={mockOnClose} />)
     rerender(<CommandPalette open onClose={mockOnClose} />)
 
-    await waitFor(() => expect(renderedKeys()).toHaveLength(23))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(24))
     expect(input().value).toBe('')
   })
 })

@@ -133,6 +133,8 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     # 最前席位一级项（2026-10-17 issue #7087）：渲染在**所有分组之前** —— 用户要的「一进来就
     # 很直观看到经营看板」靠它实现（登录落点 = 第一个可见菜单项）。
     MenuNode(STANDALONE_GROUP, "经营看板", "/dashboard", "dashboard:view"),
+    # 报表中心（issue #7376 / #7377）：与经营看板同属经营数据面 ⇒ 紧随其后；同码零授权 delta。
+    MenuNode(STANDALONE_GROUP, "报表中心", "/reports", "dashboard:view"),
     # 客户服务（2026-10-06：接待与工具相邻 → 售后出口 → 客户档案）
     MenuNode("customer-service", "在线接待", "/agent-workspace/human-sessions", "agent:session"),
     MenuNode("customer-service", "知识库", "/knowledge", "knowledge:view"),
@@ -253,6 +255,11 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     # ⚠️ 不登记「工作台」这类旧组名当说法：判据「接地」要求说法与所属节点菜单名 / 本功能 label
     # 有包含关系 —— 已不存在的组名既不接地、也会把「说到一个没有的页面」变成可命中路径。
     NavFeature("dashboard", "经营看板（经营数据）", ((STANDALONE_GROUP, "经营看板"),), ("经营看板", "经营数据")),
+    # 报表中心（issue #7376 / #7377）：经营数据面的「下钻」—— 用户问「毛利多少 / 哪些货压着 /
+    # 谁卖得多 / 质量成本多少」时引导到这里（四张表都在这一页）。
+    NavFeature("reports", "报表中心（毛利 / 滞销 / 业绩 / 质量成本）",
+               ((STANDALONE_GROUP, "报表中心"),),
+               ("报表", "报表中心", "毛利", "滞销", "业绩", "质量成本")),
     NavFeature("human-sessions", "在线接待（人工接待）", (("customer-service", "在线接待"),), ("在线接待", "人工接待")),
     NavFeature("customers", "客户列表（客户）", (("customer-service", "客户列表"),), ("客户列表", "客户")),
     NavFeature("knowledge", "知识库", (("customer-service", "知识库"),), ("知识库",)),

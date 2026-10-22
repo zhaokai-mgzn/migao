@@ -214,7 +214,7 @@ describe('「常用（收藏）」：权限与有效性过滤（🔴 不得成�
     expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).not.toContain('products')
     // 🔴 2026-10-17（issue #7087）：最前席位（「经营看板」）是**第三个席位** ⇒ 同一条口径同样适用
     //（它也没有星标：见 Sidebar.test.tsx 的 `sidebar-standalone-head` 渲染面判据）
-    expect(standaloneHeadItems.map((i) => i.key)).toEqual(['dashboard'])
+    expect(standaloneHeadItems.map((i) => i.key)).toEqual(['dashboard', 'reports'])
     expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).not.toContain('dashboard')
     // 一级项没星标、也不进「常用」⇒ 解析为空（**不是**「找不到就静默跳过」的假绿：见下一行对照）
     expect(resolvePinnedItems(menuGroups, standaloneItems, ['products'], ADMIN)).toEqual([])

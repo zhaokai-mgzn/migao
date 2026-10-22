@@ -85,10 +85,11 @@ const GROUP_NAMES: Record<string, string> = {
  * `data-testid="sidebar-standalone-head"`、**不受任何组的展开态影响**（这是与旧形态最大的差别：
  * 旧形态里「经营看板」是「工作台」组的组内项 ⇒ 该组收起时它**不渲染**）。
  */
-const HEAD_KEYS = ['dashboard']
+// 报表中心（#7376）：同为最前席位、紧跟经营看板
+const HEAD_KEYS = ['dashboard', 'reports']
 const HEAD_TESTID = 'sidebar-standalone-head'
 /**
- * 23 项（最前席位 → 全部分组 → 尾席位 → 独立项）的渲染顺序
+ * 24 项（最前席位 → 全部分组 → 尾席位 → 独立项）的渲染顺序
  * （#5778；#5939 加「发货单」；#6404 加「库存明细」；**2026-10-06 方案 A1 重排 + 尾席位沉底**；
  *  **#6580 生产管理组收拢为 3 项、第二个一级项由「参数总览」改为「企业基础设置」**；
  *  **#7087 撤销「工作台」组 + 经营看板升最前席位 + 删「每日简报」菜单项**）。
@@ -167,7 +168,8 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
       // 且因它排在**所有分组之后** ⇒ 落在「交易管理」两项之后、「通知中心」之前；
       // 🔴 #7087：最前席位「经营看板」恒渲染（在**所有分组之前**）—— 旧形态下它此时**不渲染**
       //（属「工作台」组且该组收起）。
-      expect(menuKeys()).toEqual(['dashboard', 'orders', 'finance', 'products', 'settings', 'notifications']),
+      expect(menuKeys()).toEqual(['dashboard', 'reports', 'orders', 'finance', 'products', 'settings',
+        'notifications']),
     )
     expect(toggle('trade-center').getAttribute('aria-expanded')).toBe('true')
     expect(document.querySelector('[data-menu-key="dashboard"]')).toHaveAttribute('href', '/dashboard')
@@ -232,8 +234,8 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     // 已手动展开的「仓储与物料」保持展开（用户意图不被顶掉）
     expect(toggle('inventory-center').getAttribute('aria-expanded')).toBe('true')
     expect(menuKeys()).toEqual([
-      // 最前席位恒在（不分组的项不受展开态影响）
-      'dashboard',
+      // 最前席位恒在（不分组的项不受展开态影响）：经营看板 → 报表中心（#7376）
+      'dashboard', 'reports',
       // 🔴 #6580：生产管理组只剩「作业看板 → 智能派单 → 计件工资」（加工项管理/工艺配置已移除）
       'production-board',
       'production-pool',
@@ -282,7 +284,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
   it('③ 折叠态：**5 个** `sidebar-group-anchor-<key>` 都在，`title` == 组名', async () => {
     render(<Sidebar collapsed onToggle={() => {}} />)
     await waitFor(() =>
-      expect(menuKeys()).toHaveLength(23),
+      expect(menuKeys()).toHaveLength(24),
     )
     for (const key of GROUP_KEYS) {
       const anchor = screen.getByTestId(`sidebar-group-anchor-${key}`)
@@ -298,7 +300,7 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
 
   it('③ 折叠态：**组名文本**与**菜单名文本**都不渲染（原判据仍须成立）', async () => {
     render(<Sidebar collapsed onToggle={() => {}} />)
-    await waitFor(() => expect(menuKeys()).toHaveLength(23))
+    await waitFor(() => expect(menuKeys()).toHaveLength(24))
     for (const name of Object.values(GROUP_NAMES)) {
       expect(screen.queryByText(name)).toBeNull()
     }
@@ -313,9 +315,9 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     expect(within(groupEl('trade-center')).getAllByRole('link')).toHaveLength(2)
   })
 
-  it('③ 折叠态：**所有组**的项都渲染（图标栏），项 key 序列 == 23 项全量（#6404 +库存明细；#6580 生产组收拢；#7087 撤工作台组 + 最前席位）', async () => {
+  it('③ 折叠态：**所有组**的项都渲染（图标栏），项 key 序列 == 24 项全量（#6404 +库存明细；#6580 生产组收拢；#7087 撤工作台组 + 最前席位）', async () => {
     render(<Sidebar collapsed onToggle={() => {}} />)
-    await waitFor(() => expect(menuKeys()).toHaveLength(23))
+    await waitFor(() => expect(menuKeys()).toHaveLength(24))
     expect(menuKeys()).toEqual(ALL_MENU_KEYS)
     // 每组项数与其组内项数一致（分组信息没丢）；「工作台」组已撤销 ⇒ 探针换成首组
     expect(within(groupEl('customer-service')).getAllByRole('link')).toHaveLength(4)
@@ -329,13 +331,14 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     expect(within(groupEl('supply-chain')).getAllByRole('link')).toHaveLength(3)
     expect(within(groupEl('org-center')).getAllByRole('link')).toHaveLength(2)
     // 🔴 #7087：最前席位**不在**任何组里（它挂在 `sidebar-standalone-head` 块上）
-    expect(within(screen.getByTestId(HEAD_TESTID)).getAllByRole('link')).toHaveLength(1)
+    // 最前席位是**两项**（经营看板 + 报表中心，#7376）
+    expect(within(screen.getByTestId(HEAD_TESTID)).getAllByRole('link')).toHaveLength(2)
   })
 
   it('③ 折叠态高亮仍生效：/production/pool ⇒ 该项带 `bg-primary-600`，且只有它一个', async () => {
     mockPathname = '/production/pool'
     render(<Sidebar collapsed onToggle={() => {}} />)
-    await waitFor(() => expect(menuKeys()).toHaveLength(23))
+    await waitFor(() => expect(menuKeys()).toHaveLength(24))
     const active = document.querySelector('[data-menu-key="production-pool"]') as HTMLElement
     expect(active.className).toContain('bg-primary-600')
     expect(
@@ -417,6 +420,6 @@ describe('Sidebar 重设计 · 新交互（issue #5271 / UI-028）', () => {
     expect(screen.getByTestId('sidebar-search-trigger').textContent).toContain('搜索菜单')
     // 🔴 #7087：/dashboard 属**最前席位**（不入任何组）⇒ 6 组全收起，
     // 因此这一屏 = 最前席位 + 尾席位两项 + 尾部项（旧形态里它是「工作台」组的组内项）
-    expect(menuKeys()).toEqual(['dashboard', 'products', 'settings', 'notifications'])
+    expect(menuKeys()).toEqual(['dashboard', 'reports', 'products', 'settings', 'notifications'])
   })
 })

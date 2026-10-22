@@ -1330,6 +1330,12 @@ public class AuthService {
             menus.add(menuItem("dashboard", "经营看板", "/dashboard"));
         }
 
+        // 报表中心（issue #7376 / #7377）：与经营看板同属经营数据面 ⇒ 紧随其后；同码零 delta。
+        // ⚠️ 位置在三处同批表达：本处 / `MenuController.MENU_TREE` 顶层第二节点 / 前端 `standaloneHeadItems`。
+        if (isAll || permissions.contains("dashboard:view")) {
+            menus.add(menuItem("reports", "报表中心", "/reports"));
+        }
+
         // 商品管理（2026-09-29 用户裁定「商品列表改成商品管理，直接作为一级菜单使用」）：
         // **顶层一级项**（不是组）—— 与前端 `menu.ts` 的 `standaloneTopItems` 逐值同构。
         // 🔴 位置（用户 2026-10-06 三次裁定）：**排在所有分组之后**（原「紧跟工作台组之后」）——
