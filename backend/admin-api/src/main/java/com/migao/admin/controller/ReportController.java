@@ -73,6 +73,19 @@ public class ReportController {
         return ApiResponse.success(reportService.staffPerformance(startDate, endDate, scopeOwnerId));
     }
 
+    /**
+     * 质量成本报表：`GET /api/admin/reports/quality-cost?startDate=&endDate=`。
+     *
+     * <p>三项分列（返工工时 / 报废料 / 赔付）；未知项**不折成 0**，合计只累加已知项，
+     * `complete=false` 时页面必须标注「这是可算的那部分」。</p>
+     */
+    @GetMapping("/quality-cost")
+    public ApiResponse<com.migao.admin.dto.QualityCostView> qualityCost(
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
+        return ApiResponse.success(reportService.qualityCost(startDate, endDate));
+    }
+
     /** 数据范围解析（与 P0-4 同口径：仓储在 role.data_scope，读权在 RoleService）。 */
     private final RoleService roleService;
 

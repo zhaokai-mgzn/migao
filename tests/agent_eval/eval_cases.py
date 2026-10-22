@@ -7426,6 +7426,25 @@ _CASE_RPT_003 = EvalCase(
     precondition='本用例是 [backend-contract]：前置 = `orders.created_by` / `created_by_name` + P0-4 数据范围。零网络、零 LLM、无迁移（纯只读面）。',
 )
 
+# ── QC-001 [NORMAL] 质量成本：返工工时 / 报废料 / 赔付三项分列，未知不折成 0（issue #7377 段 1）（源: cases/misc.yml）──
+_CASE_QC_001 = EvalCase(
+    id='QC-001',
+    legacy_id='',
+    title='质量成本：返工工时 / 报废料 / 赔付三项分列，未知不折成 0（issue #7377 段 1）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-22，逐字）：「继续做」—— 自主推进 P1-5，先把「质量成本到底多少」变成可看的数。'],
+    expectations=[],
+    data_checks=['**判据 1（三项分列）**：质量成本 = 返工工时 / 报废料 / 赔付三项**分别给出**（合并成一个数会让读者无法判断「高在哪」—— 三种成因对应三种处置）。判据 = `QualityCostPolicyTest` + `QualityCostReportTest#reworkUsesUnitPriceSnapshot`。', "**判据 2（返工工时口径）**：`production_work_logs.work_type='rework'` × **单价快照**（`unit_price`）；不读实例当前价（改价不能改历史）。判据 = `#reworkUsesUnitPriceSnapshot`。", "**判据 3（🔴 未定价 ≠ 0 元工时）**：`price_state='unpriced'`（或 `unit_price` 为空）的返工行**不计金额**，该项标未知并给出未定价行数；只算有价行然后当真 = 成本偏低。判据 = `QualityCostPolicyTest#reworkCostHonoursUnpricedRows` + `QualityCostReportTest#unpricedReworkIsNotZeroCost`。", '**判据 4（🔴 报废料恒未知）**：本仓**没有**质检记录→批次的关联（质检只到成品帘级）⇒ 该项未采集、金额为 null、说明里写明「不填 0」（填 0 会被读成「本月没有报废损失」）。判据 = `#scrapIsAlwaysUnknown` + `QualityCostReportTest#scrapIsUnknownNotZero`。', '**判据 5（🔴 未发生 ≠ 已核实为零）**：窗口内没有退款流水 ⇒ 赔付未知；有流水 ⇒ 按订单退款口径汇总（本仓无售后单→流水关联，口径差异写在 note 里）。判据 = `#compensationWithoutRefundsIsUnknown` + `QualityCostReportTest#noRefundsMeansUnknownCompensation` + `#refundsCountIntoTotal`。', '**判据 6（合计只加已知项 + 完整性自述）**：`total = Σ已知项`；任一未知 ⇒ `complete=false` 且 `unknownComponents` 列出 code；全未知 ⇒ total 为 null（不是 0）。判据 = `QualityCostPolicyTest#totalOnlySumsKnownComponents` + `#allUnknownGivesNullTotal`。', '**边界（照实登记）**：① **售后单 → 返工单的关联与回写未做**（issue 目标 1：需要新单据实体与状态机，段 2）；② **客户 / 商品 / 工序三维汇总未做**（段 2，要 join 加工单与订单）；③ **缺陷原因字典**未做（段 2，与 #7197 同源）；④ 报废料成本**仍未采集**（要先补「质检 → 批次」的关联）；⑤ 报表页面未做。'],
+    skip_reason='[backend-contract] 质量成本构成与未知传播，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'report', 'quality', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `production_work_logs`（V61 单价快照 / V90 定价三态）+ `finance_transactions`。零网络、零 LLM、无迁移（纯只读面）。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -16446,6 +16465,7 @@ ALL_CASES = (
     _CASE_RPT_001,
     _CASE_RPT_002,
     _CASE_RPT_003,
+    _CASE_QC_001,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
