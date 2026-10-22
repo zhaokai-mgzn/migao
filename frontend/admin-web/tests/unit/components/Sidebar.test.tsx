@@ -223,11 +223,10 @@ describe('Sidebar', () => {
     expect(within(brand).getByTestId('sidebar-brand-name').textContent).toBe('观星台')
     // issue #7487：MIGAO 已移除（观星台 = 米高，同一个名字不说两遍）
     expect(within(footer).queryByText('MIGAO')).toBeNull()
-    // 公司法定名称：成为 lockup 的第二行 —— 在品牌块内、排在「观星台」之后（issue #7485 / #7487）
-    const company = within(brand).getByTestId('sidebar-company')
-    const brandName = within(brand).getByTestId('sidebar-brand-name')
-    expect(company.textContent).toBe('杭州词元通达科技有限公司')
-    expect(brandName.compareDocumentPosition(company) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // issue #7491：公司法定名**撤出侧边栏**（侧边栏是租户的地盘，不挂供应商名）——
+    // 它改到顶栏用户菜单「关于观星台」按需查看；这里出现即红。
+    expect(screen.queryByTestId('sidebar-company')).toBeNull()
+    expect(screen.queryByText('杭州词元通达科技有限公司')).toBeNull()
   })
 
   it('折叠态不渲染品牌文本（issue #7476）', () => {
