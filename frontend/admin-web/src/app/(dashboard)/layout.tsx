@@ -63,8 +63,8 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   // 没有这一条就只有菜单一道防线：无该码者地址栏直达 `/reports` 不被拦（同 #5976 的现场形态）。
   { prefix: '/reports', code: 'dashboard:view' },
   // 价格本（issue #7375 段 3）：守卫码 = 菜单节点码 = 该页第一屏读码（`GET /api/admin/pricing/books`
-  // 的类级 `order:view`）… 🔴 这里取 `product:list`（菜单可见码）：价格本是商品维护的一部分，
-  // 两个码都在现网种子岗位里，取更宽的那个与菜单可见性同源（否则「菜单看得见、点进去被拦」）。
+  // 的类级 `order:list`）—— 三处**同一个码**（repo 规则「每页恰好一个码」），零授权 delta：
+  // `order:list` 是现网四个岗位已持有的读码，不新造码。
   { prefix: '/price-books', code: 'order:list' },
   { prefix: '/customers', code: 'customer:view' },
   { prefix: '/finance', code: 'finance:view' },

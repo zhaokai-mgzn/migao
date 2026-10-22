@@ -231,7 +231,7 @@ export const menuGroups: MenuGroup[] = [
       // 🔴 2026-10-20（issue #7354，用户逐字「把菜单订单列表改成销售订单」）：菜单正名「销售订单」。
       // 旧名「订单列表」保留为关键词（⌘K 按老叫法仍能搜到）；权限码 `order:list` / 路径 `/orders` 一字不动。
       // 价格本（issue #7375 段 3）：**交易前置** —— 先把价定下来，才谈得上开单与收款，
-      // 所以排在「销售订单」之前。节点码 `order:view` = 该页第一屏读码（`GET /api/admin/pricing/books`
+      // 所以排在「销售订单」之前。节点码 `order:list` = 该页第一屏读码（`GET /api/admin/pricing/books`
       // 的类级码）—— 与「每页恰好一个码」的既有口径一致（#7087 / #6580）。
       { key: 'price-books', name: '价格本', icon: 'Tags', path: '/price-books', permissionCode: 'order:list', keywords: ['jgb', 'jiage', 'price', '价格', '协议价', '等级价', '阶梯价'] },
       { key: 'orders', name: '销售订单', icon: 'ClipboardList', path: '/orders', permissionCode: 'order:list', keywords: ['xsdd', 'xiaoshou', 'ddlb', 'dingdan', '订单列表'] },

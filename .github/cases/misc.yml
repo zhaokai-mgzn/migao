@@ -150,7 +150,7 @@ cases:
     tags: [rbac, permission-annotation, endpoint-ledger, class-level-guard, red-proof]
     truths_ref: []
     user_inputs:
-      - "当 AdminRoleController（`/api/admin/roles/**`）新增/改动端点却没登记它要哪把权限码，或已登记的注解被删/被改成别的码，或注解里的码不在权限目录里，或 `/api/admin/**` 上「无任何生效码」的端点总数增长时，必须有东西**具名**报出"
+      - "当 AdminRoleController（`/api/admin/roles/**`）新增/改动端点却没登记它要哪把权限码，或已登记的注解被删/被改成别的码，或**任何 controller 的 `@RequirePermission`（含类级注解）写了权限目录里不存在的码**（现场：`PricingController` 类级 `order:view` ⇒ 三层价接口对所有人恒 403），或 `/api/admin/**` 上「无任何生效码」的端点总数增长时，必须有东西**具名**报出"
     expectations:
       - tool: direct_reply
     data_checks:
@@ -160,7 +160,8 @@ cases:
       - "**判据 5（对照读数只许缩短）**：`/api/admin/**` 上「无任何生效码」的端点总数 ≤ 10（修前实测 13，本单 -3）；增长 ⇒ 红，缩短后须调低台账读数（台账读数与现取不一致亦红）"
       - "**判据 6（判别力自证）**：五种坏形态（新增无注解读端点 / 摘掉注解 / 幽灵台账条目 / 码拼错 / 重新标 exempt）在**内存构造的源码**上各自判红；只改注释 ⇒ **不红**（对照读数）"
       - "**跨码面（真值在同 PR 的判据 2）**：`/roles/all` 与黄金策 `role_manage` 工具跨码（页面守卫 `employee:list` vs 工具 `system:view`）⇒ 具名登记在 `CODE_DIVERGENCE_EXCEPTIONS['role_manage']`，未登记/陈旧 ⇒ 判据 2 红"
-      - "**覆盖面照实登记**：判据只裁这一个 controller（其余 `/api/admin/**` 无码端点归既有 `UNANNOTATED_ENDPOINTS` 台账）；判「注解面」不判运行时授权（运行时身份级读数在 SecurityConfigTest）"
+      - "**判据 4b（类级尺度，2026-10-22 加）**：**全注解面**（剥注释后扫全部 controller，类级/方法级一视同仁）的码都必须在权限目录里 —— 现场 = `PricingController` 类级 `order:view`（目录不存在 ⇒ 报价与价格本对所有人恒 403，而旧判据只裁 AdminRoleController ⇒ 无东西会红）；红证 = 把该类级码改成 `order:view` ⇒ 具名报红；对照 = 只在注释里写幽灵码 ⇒ **不红**"
+      - "**覆盖面照实登记**：判据 1~3 只裁 `AdminRoleController` 这一个 controller（其余 `/api/admin/**` 无码端点归既有 `UNANNOTATED_ENDPOINTS` 台账）；**判据 4b 覆盖全部 controller 的注解面**；判「注解面」不判运行时授权（运行时身份级读数在 SecurityConfigTest）"
     skip_reason: "[backend-contract] 注解面 / 台账的离线判据（零 LLM、秒级；只读源码文本，不连库/不跑 LLM）由 tests/unit_ci_workflows/test_admin_role_read_surface_guard.py 验证，非 LLM 行为，不进入 agent-eval 冒烟"
     merge_log: "2026-10-02 新增（issue #5980：`GET /api/admin/roles` 与 `/roles/all` 无 `@RequirePermission` ⇒ 按 `docs/wiki/RBAC.md` 的「放行策略现状」分支 ③ 对全部商户员工开放，含 0 权限岗位）。落码 = `AdminRoleController` 三条读端点的方法级注解（`/roles`·`/roles/{id}` → 既有读码 `system:view`；`/roles/all` → 既有读码 `employee:list`）+ 本判据 test_admin_role_read_surface_guard.py + 端点台账 `admin_role_read_surface_ledger.json`（`exempt` 面落地后为空 = 只许缩短）+ 既有台账三处同步：判据 8 的 `UNANNOTATED_ENDPOINTS` 删三条（陈旧即红）、`CODE_DIVERGENCE_EXCEPTIONS['role_manage']` 新增（上限 1→2，同 diff 显式）、`rbac/manifest.json` 的 `pages[employees|roles].units` 与 `rbac/readings.json` 重生成。**选码口径（逐调用方核对，零回归）**：`/roles/all` 唯一调用方 = `employeeApi.loadPositions()`（员工管理页岗位下拉，该页守卫码 `employee:list`）；`/roles` 是岗位权限页**第一屏**（`roleApi.getRoles()`，该页守卫码 `system:view`）⇒ 各取**该页**的既有读码，**不新增权限码、不改岗位矩阵**。取号 MC-005/006（现取最小空闲号：main ∪ 在飞 PR #5993/#5994 已占 MC-062；#5951 退役留下的空号由本单收回，与那两条无继承关系）。"
     traces:
@@ -4849,7 +4850,7 @@ cases:
       - "**判据 3（阶梯闭区间）**：区间 `[min, max]` 闭区间；`max IS NULL` = 无上限；多档重叠取**门槛更高**的那档（高价优先拦住「按便宜的档收」）。判据 = `#tierBoundariesAreInclusive`。"
       - "**判据 4（🔴 未定价 ≠ 0）**：四层都没有价 ⇒ `source = unpriced`、`price = null`；SKU 标准价 `DEFAULT 0` **不算有价**（0 元 = 白送）。判据 = `#unpricedIsNeverZero` + `#zeroStandardPriceIsNotAPrice` + `PriceServiceTest#zeroStandardPriceIsUnpriced`。"
       - "**判据 5（脏配置不崩）**：协议价/等级价/阶梯价为负或 0 一律跳过；数量为 null ⇒ 阶梯不参与（区间无法判定）。判据 = `#dirtyConfigFallsThrough`。"
-      - "**判据 6（端点契约）**：`GET /api/admin/pricing/quote?customerId=&skuId=&quantity=`；只读码沿用既有 `order:view`（不新造码）；入参**只有**客户 + SKU + 数量 —— 价格不接受客户端传值（段 2「服务端为准」的前提）。判据 = `PricingControllerTest`。"
+      - "**判据 6（端点契约）**：`GET /api/admin/pricing/quote?customerId=&skuId=&quantity=`；只读码 = 类级 `order:list`（既有读码，不新造码）；入参**只有**客户 + SKU + 数量 —— 价格不接受客户端传值（段 2「服务端为准」的前提）。判据 = `PricingControllerTest`。⚠️ **2026-10-22 归正**：原文写「沿用既有 `order:view`」是错的 —— 权限目录里**没有** `order:view`（两处种子目录都没有）⇒ 报价/价格本端点对所有人恒 403；类级尺度兜底见 `test_admin_role_read_surface_guard.py` 判据 4b。"
       - "**判据 7（金额与自述）**：`amount = 单价 × 数量`（两位小数）；单价或数量缺失 ⇒ `amount = null`（不是 0）；`source` 自述命中层级（改价争议的第一份证据）。判据 = `PricingController.quote` + `PriceQuoteView` 契约。"
       - "**边界（照实登记）**：**下单侧「服务端为准 + 客户端传价差异留痕」尚未接线**（段 2）；改价审批（P1-2）未接；促销/优惠券/满减/客户分组价/币种不在范围；价格本**管理端点**（录入协议价/等级价/阶梯价）未做（表与解析已就位）。"
     precondition: "本用例是 [backend-contract]：前置 = 三张价格本（V179）+ `product_skus.price` + `customer_profiles.vip_level`。零网络、零 LLM。"

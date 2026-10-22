@@ -2239,7 +2239,7 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
     # 🔴 issue #7376：报表中心（`/reports`）第一屏读四个只读报表端点，全部 `dashboard:view`
     # ⇒ 节点码与第一屏读码同一把尺子（`dashboard:view`，与经营看板同码 —— 报表是看板的下钻）。
     # 🔴 issue #7375 段 3：价格本（`/price-books`）第一屏读 `GET /api/admin/pricing/books`
-    # （类级 `order:view`）；菜单可见码取更宽的 `product:list`（价格本是商品维护的一部分）。
+    # （类级 `order:list`）；节点码取同一把尺子 `order:list`（「每页恰好一个码」）。
     "/price-books": MenuReadAnchor("价格本", "price-books/page.tsx", ("priceBookApi.list",)),
     "/reports": MenuReadAnchor("报表中心", "reports/page.tsx", (
         "reportApi.orderMargins", "reportApi.inventoryAging",
