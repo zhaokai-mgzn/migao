@@ -4281,3 +4281,33 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_stocktake_items_batch
     ON stocktake_items (tenant_id, stocktake_id, batch_id) WHERE deleted = 0;
 CREATE INDEX IF NOT EXISTS idx_stocktake_items_stocktake
     ON stocktake_items (tenant_id, stocktake_id) WHERE deleted = 0;
+
+-- ══════════════════════════════════════════════════════════════════════════════
+-- 返工单（V185，issue #7377 P1-5 段 2）：售后 → 返工 → 回写；同一售后单同时只能一个未完结
+-- 四态：draft → in_progress → done | cancelled
+-- ══════════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS rework_orders (
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+    rework_no VARCHAR(32) NOT NULL,
+    after_sales_ticket_id VARCHAR(64) NOT NULL REFERENCES after_sales_tickets(id),
+    order_id VARCHAR(36),
+    processing_order_id VARCHAR(64),
+    status VARCHAR(16) NOT NULL DEFAULT 'draft',
+    reason VARCHAR(500),
+    created_by VARCHAR(64),
+    created_by_name VARCHAR(64),
+    started_at TIMESTAMP WITH TIME ZONE,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    deleted INT NOT NULL DEFAULT 0,
+    CONSTRAINT ck_rework_orders_status CHECK (status IN ('draft', 'in_progress', 'done', 'cancelled'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_rework_orders_no
+    ON rework_orders (tenant_id, rework_no) WHERE deleted = 0;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_rework_orders_open_per_ticket
+    ON rework_orders (tenant_id, after_sales_ticket_id)
+    WHERE status IN ('draft', 'in_progress') AND deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_rework_orders_ticket
+    ON rework_orders (tenant_id, after_sales_ticket_id) WHERE deleted = 0;

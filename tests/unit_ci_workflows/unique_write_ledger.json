@@ -169,6 +169,11 @@
       "table": "stocktake_items",
       "handling": "backend/admin-api/src/main/java/com/migao/admin/service/StocktakeService.java",
       "note": "uk_stocktake_items_batch（同一次盘点同批次只一行）：出任务时按批次快照、每批次只插一次；重复插入由唯一索引兜底（GlobalExceptionHandler 映射），录实盘走 updateById 不改批次归属"
+    },
+    "backend/admin-api/src/main/java/com/migao/admin/service/ReworkOrderService.java::reworkOrderMapper": {
+      "table": "rework_orders",
+      "handling": "backend/admin-api/src/main/java/com/migao/admin/service/ReworkOrderService.java",
+      "note": "两个部分唯一索引：uk_rework_orders_no（单号唯一）与 uk_rework_orders_open_per_ticket（同一售后单只能一个未完结）。服务层开单前先查未完结给可读提示；并发下由索引兜底，DuplicateKeyException 映射成可读 409（「刚有另一个返工单被开出来」）；状态流转走 CAS 条件更新"
     }
   }
 }

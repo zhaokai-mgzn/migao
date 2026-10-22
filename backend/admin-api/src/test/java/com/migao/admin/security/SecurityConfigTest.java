@@ -568,6 +568,12 @@ class SecurityConfigTest {
     @MockBean
     private com.migao.admin.service.ReportService reportService;
 
+    // 返工单（issue #7377 段 2）：`ReworkOrderController` 的构造依赖 + 新 Mapper（本上下文排除 MyBatis 自动配置）。
+    @MockBean
+    private com.migao.admin.service.ReworkOrderService reworkOrderService;
+    @MockBean
+    private com.migao.admin.mapper.ReworkOrderMapper reworkOrderMapper;
+
     // 具名审批（issue #7374 段 1）：`ApprovalController` 的构造依赖 + `CustomerService`/`OrderService`
     // 的可空注入点 ⇒ 本上下文要能装配（真身只依赖一个 Mapper，仍按既有口径 mock）。
     @MockBean

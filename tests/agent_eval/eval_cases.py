@@ -7445,6 +7445,25 @@ _CASE_QC_001 = EvalCase(
     precondition='本用例是 [backend-contract]：前置 = `production_work_logs`（V61 单价快照 / V90 定价三态）+ `finance_transactions`。零网络、零 LLM、无迁移（纯只读面）。',
 )
 
+# ── QC-002 [NORMAL] 返工单：售后 → 返工 → 回写，闭环唯一（不得「已闭环但返工单还在做」）（issue #7377 段 2）（源: cases/misc.yml）──
+_CASE_QC_002 = EvalCase(
+    id='QC-002',
+    legacy_id='',
+    title='返工单：售后 → 返工 → 回写，闭环唯一（不得「已闭环但返工单还在做」）（issue #7377 段 2）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-22，逐字）：「继续做」—— 继续推进 P1-5 段 2，补上这条链唯一缺的实体（返工单）。'],
+    expectations=[],
+    data_checks=['**判据 1（四态状态机）**：`draft → in_progress → done | cancelled`；只有 draft 能开工、只有 in_progress 能完成（未开工就完成 = 跳过返工）、未完结才能取消。判据 = `ReworkStateTest#transitionsAreStrict` + `ReworkOrderServiceTest#cannotCompleteDraft`。', '**判据 2（🔴 闭环唯一——issue 判据原文）**：已闭环/已驳回的售后单**不能再开返工**（否则就是「闭环了单子还在做」）；同一售后单**同时只能有一个未完结返工单**（部分唯一索引 `uk_rework_orders_open_per_ticket` 兜住，不是服务层查一遍）。判据 = `ReworkStateTest#closedTicketsCannotOpenRework` + `ReworkOrderServiceTest#closedTicketCannotOpen` + `#secondOpenReworkIsRejected` + `ReworkOrderMapperTest#oneOpenPerTicketIsAConstraint`。', '**判据 3（🔴 回写只从 processing 推进）**：完成时售后单是 `processing` ⇒ 推进 `resolved`；`pending`/`closed`/`rejected` **一律不动**（覆盖它们等于替客服下结论）；回写本身也是 CAS（别人先改过就不覆盖）。判据 = `ReworkStateTest#writeBackOnlyFromProcessing` + `ReworkOrderServiceTest#completeWritesBackFromProcessing` + `#completeDoesNotOverridePending`。', '**判据 4（取消不回退售后）**：返工取消 ≠ 售后已解决 ⇒ 不改售后状态。判据 = `#cancelDoesNotTouchTicket`。', '**判据 5（并发 CAS）**：start / complete / cancel 都以「当前状态」为条件更新，落空 ⇒ 可读 409（不静默覆盖）。判据 = `#casLosesOnStatusChange`。', '**判据 6（🔴 权限码零 delta）**：读面复用 `after_sales:view`；写面复用 `order:refund`（售后处理既有写码）。**不得新造 `after_sales:create`** —— 全仓权限目录只有 `after_sales:view`，新造码会让端点对所有人不可达（#4203 同族，采购单段 4-B 踩过）。判据 = `ReworkOrderControllerTest#permissionCodesReuseExisting`。', '**判据 7（真外键）**：`after_sales_ticket_id` 是真外键 ⇒ 返工单不能挂在不存在的售后单上。判据 = `ReworkOrderMapperTest#ticketReferenceIsForeignKey`。', "**边界（照实登记）**：① **返工成本归集到单据**未做（段 3：需 join 报工与批次成本）；② 客户/商品/工序**三维汇总**未做；③ **缺陷原因字典**未做（与 #7197 同源）；④ 返工页面未做（接口已就位）；⑤ 返工**工序明细**不新建表（沿用报工的 `work_type='rework'`）。"],
+    skip_reason='[backend-contract] 返工状态机与闭环一致性，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['backend-contract', 'quality', 'state-machine', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract]：前置 = `rework_orders`（V185）+ `after_sales_tickets`。零网络、零 LLM。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -16466,6 +16485,7 @@ ALL_CASES = (
     _CASE_RPT_002,
     _CASE_RPT_003,
     _CASE_QC_001,
+    _CASE_QC_002,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
