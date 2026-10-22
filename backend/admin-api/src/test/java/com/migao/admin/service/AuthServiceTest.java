@@ -607,10 +607,11 @@ class AuthServiceTest {
                 "/agent-workspace/human-sessions", "/knowledge", "/after-sales", "/customers");
 
         var trade = groupByKey(menus, "trade-center");
+        // 🔴 2026-10-22（issue #7375 段 3）：交易管理组新增「价格本」（交易前置）⇒ 组内第一项
         assertThat(keysOf(trade.getChildren()))
-                .containsExactly("orders", "finance");
+                .containsExactly("price-books", "orders", "finance");
         assertThat(pathsOf(trade.getChildren()))
-                .containsExactly("/orders", "/finance");
+                .containsExactly("/price-books", "/orders", "/finance");
 
         var production = groupByKey(menus, "production-center");
         // 🔴 2026-10-09（issue #6580）：本组**由 5 项收拢为 3 项** —— 「加工项管理」

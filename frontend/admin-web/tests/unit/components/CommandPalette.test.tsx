@@ -38,7 +38,7 @@ vi.mock('@/lib/api', () => ({
 import CommandPalette from '@/components/layout/CommandPalette'
 
 /**
- * 新 IA 全量 **24 项**（**2026-10-17 issue #7087**：**最前席位** → 全部分组 → 尾席位 → 独立项，
+ * 新 IA 全量 **25 项**（**2026-10-17 issue #7087**：**最前席位** → 全部分组 → 尾席位 → 独立项，
  * == `flattenMenu` 顺序；#5939 +「发货单」；#6404 +「库存明细」；#6573 +第二个一级项；
  * **#6580 生产管理组收拢为 3 项、一级项由「参数总览」改为「企业基础设置」**；
  * **#7087 撤销「工作台」组、经营看板升最前席位、删「每日简报」菜单项**）。
@@ -53,6 +53,8 @@ const ALL_KEYS = [
   'knowledge',
   'after-sales',
   'customers',
+  // 价格本（#7375 段 3）：交易管理组内第一项
+  'price-books',
   'orders',
   'finance',
   'production-board',
@@ -104,16 +106,16 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     expect(document.querySelectorAll('[data-testid^="command-palette-item-"]')).toHaveLength(0)
   })
 
-  it('空查询 = 全量索引：列出全部 24 项（含独立项「通知中心」），顺序 = 菜单自身顺序', async () => {
+  it('空查询 = 全量索引：列出全部 25 项（含独立项「通知中心」），顺序 = 菜单自身顺序', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
-    await waitFor(() => expect(renderedKeys()).toHaveLength(24))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(25))
     expect(renderedKeys()).toEqual(ALL_KEYS)
     expect(input().value).toBe('')
   })
 
   it('🔴 索引**第 1 项** = 最前席位「经营看板」（issue #7087，判据 = `flattenMenu` 的 head 参数）', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
-    await waitFor(() => expect(renderedKeys()).toHaveLength(24))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(25))
     // ① 第 1 项就是它（旧形态是「工作台」组的第一项 —— 也是它，但那时它属一个**组**）
     // ① 第 1 项仍是经营看板（登录落点不变）
     expect(renderedKeys()[0]).toBe('dashboard')
@@ -130,7 +132,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
 
   it('🔴 ⌘K 里取不到「工作台」与「每日简报」（issue #7087）', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
-    await waitFor(() => expect(renderedKeys()).toHaveLength(24))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(25))
     // 已撤销的组名 / 已删除的菜单项都不在（`queryByText` 是**精确**文本匹配 ⇒ 不会误命中
     // 含「工作台」三字的其它文案，如别处的「客服工作台」）
     expect(screen.queryByText('工作台')).toBeNull()
@@ -145,11 +147,11 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
   it('空查询 + 受限权限：只列有权项（负控：搜索不是绕过权限的口子）', async () => {
     mockUser = { permissions: ['order:list'], roles: [] }
     render(<CommandPalette open onClose={mockOnClose} />)
-    await waitFor(() => expect(renderedKeys()).toHaveLength(3))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(4))
     // 面非空（不是「全被过滤光」造成的恒真空集）：销售订单 + **发货单**（#5939：与销售订单同码）
     // + 独立项
     // 🔴 issue #5699（P4）：经营看板要 `dashboard:view` ⇒ 本权限集**无**该码 ⇒ 它（最前席位）不在。
-    expect(renderedKeys()).toEqual(['orders', 'shipments', 'notifications'])
+    expect(renderedKeys()).toEqual(['price-books', 'orders', 'shipments', 'notifications'])
     expect(screen.queryByTestId('command-palette-item-products')).toBeNull()
     expect(screen.queryByTestId('command-palette-item-finance')).toBeNull()
     expect(screen.queryByTestId('command-palette-item-dashboard')).toBeNull()
@@ -199,6 +201,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     typeQuery('lb') // keywords 命中：商品列表(splb) / 销售订单(ddlb) / 客户列表(khlb)
     // 顺序 = **菜单自身顺序**（同档稳定）⇒ 2026-10-06 方案 A1 后：客户列表（客户服务）→ 销售订单（交易管理）
     // → 商品管理（一级项，排在所有分组之后）
+    // 「lb」只命中三个 keyword（商品列表 / 销售订单 / 客户列表）—— 价格本的关键词不含 lb
     expect(renderedKeys()).toEqual(['customers', 'orders', 'products'])
     expect(highlightedKeys()).toEqual(['customers'])
 
@@ -271,7 +274,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
 
   it('🔴 ⌘K **不再**拉企业简报配置（issue #7087：旧接线回潮 ⇒ 当场红）', async () => {
     render(<CommandPalette open onClose={mockOnClose} />)
-    await waitFor(() => expect(renderedKeys()).toHaveLength(24))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(25))
     // 旧形态：面板打开时调一次 `briefingApi.getConfig()`，用返回值决定「每日简报」是否进索引。
     // 菜单项与菜单级开关机制一起撤掉后，这次请求必须**消失**（过滤器只剩权限一维）。
     expect(mockBriefingGetConfig).not.toHaveBeenCalled()
@@ -285,7 +288,7 @@ describe('CommandPalette（⌘K 菜单搜索，issue #5271）', () => {
     rerender(<CommandPalette open={false} onClose={mockOnClose} />)
     rerender(<CommandPalette open onClose={mockOnClose} />)
 
-    await waitFor(() => expect(renderedKeys()).toHaveLength(24))
+    await waitFor(() => expect(renderedKeys()).toHaveLength(25))
     expect(input().value).toBe('')
   })
 })

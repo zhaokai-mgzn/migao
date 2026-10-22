@@ -114,6 +114,13 @@ TRUTH_SOURCES: Dict[str, TruthSource] = {
         citation="依据：采购单状态与收货口径（服务层说明）",
         path="backend/admin-api/src/main/java/com/migao/admin/service/PurchaseOrderService.java",
     ),
+    # 价格本（issue #7375 段 3）：优先级链（协议 > 等级 > 阶梯 > 标准）/ 价必须 > 0 /
+    # 低于成本要审批 —— 全部口径写在服务层 javadoc。
+    "price-books": TruthSource(
+        label="价格本（协议价 / 等级价 / 阶梯价）",
+        citation="依据：价格本与改价口径说明（优先级与审批）",
+        path="backend/admin-api/src/main/java/com/migao/admin/service/PriceBookService.java",
+    ),
     # 报表中心（issue #7376 / #7377）：四条口径（合计 = 明细之和 / 空数据 ≠ 0 / 未知不填 0 /
     # 数据范围同 P0-4）全部写在服务层 javadoc，不在别处再写一份。
     "report-center": TruthSource(
@@ -196,6 +203,13 @@ PAGE_REGISTRY: Tuple[PageEntry, ...] = (
         route="/purchase-orders",
         truth_source="purchase-order-lifecycle",
         page_permissions=("inbound:view",),
+        entity_permissions=(),
+    ),
+    # 价格本（issue #7375 段 3）：问「为什么按这个价 / 怎么加协议价 / 为什么保存被拒」⇒ 引服务层口径。
+    PageEntry(
+        route="/price-books",
+        truth_source="price-books",
+        page_permissions=("order:list",),
         entity_permissions=(),
     ),
     # 报表中心（issue #7376 / #7377）：问「毛利怎么算 / 为什么是空的 / 质量成本缺哪项」⇒ 引服务层口径。

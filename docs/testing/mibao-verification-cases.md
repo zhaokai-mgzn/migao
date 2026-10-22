@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（143 case）
+## 杂项域（144 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5845,6 +5845,22 @@
 跳过: [frontend-contract] 报表页展示纪律与菜单归位，由前端单测与 rbac 判据验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-22 新增（issue #7376 段 4）。落码 = `reports/page.tsx` + `lib/api.ts` 的 `reportApi` + `types/reports.ts` + 菜单五副本（menu.ts / MenuController / AuthService / ai-agent MENU_TREE + FEATURE_MAP）+ Header 面包屑 + 官网能力地图 + rbac 清单与 readings + page_registry。 ｜ tags: frontend-contract, report, menu, red-proof
+
+### PRC-005. 价格本页面：三层价一页录（协议/等级/阶梯）+ 价必须 > 0 + 后端拒因原样上屏（issue #7375 段 3 前端） 🔵
+```
+你: 用户（2026-10-22，逐字）：「继续做吧，新菜单要符合当前业务逻辑」+「新模块尽量一步到位…界面没验收过就部署了」—— 价格本接口已就位但界面上没入口；本次先截图验收再合并。
+数据: **判据 1（菜单归位）**：「价格本」放在**交易管理**组内、**销售订单之前**（先定价，才谈得开单与收款）；节点码 `order:list` = 该页第一屏读码（repo 规则「每页恰好一个码」）。判据 = `menu-nav.test.ts` + `MenuControllerTest#tradeCenterGroupMirrorsMenuTs` + `AuthServiceTest`。
+数据: **判据 2（🔴 没填 SKU 不打接口）**：价格本按 SKU 维护 ⇒ SKU 为空时只给提示，不发请求。判据 = `price-books.test.tsx#没填 SKU 时只给提示`。
+数据: **判据 3（🔴 空层写「未设置」而非 ¥0.00）**：三层任一为空 ⇒ 该卡显示「未设置 —— 这一层没有专属价，下单会继续往下找」。判据 = `#三层价格为空时各自显示未设置`。
+数据: **判据 4（三层分行）**：协议价显示客户、等级价显示等级、阶梯价显示门槛。判据 = `#有价时按层列出`。
+数据: **判据 5（🔴 价必须 > 0，前端先拦）**：0/负数在提交前就拒，且不打保存接口。判据 = `#价格 ≤ 0 时前端先拦`。
+数据: **判据 6（🔴 后端拒因原样上屏）**：低于成本的改价被后端拒时，把服务端原文（含「改价审批」路径）显示在表单下，而不是一句「保存失败」。判据 = `#后端拒绝时显示服务端原文`。
+数据: **判据 7（视觉验收）**：`scripts/visual-check/price-books-page.mjs` 出「有价 / 无价」两张图，人看三层卡对齐、金额右对齐、删除按钮在位。**不进 CI**（runner 无浏览器二进制）。
+数据: **边界（照实登记）**：① 只有汇总卡式列表，没有逐条编辑弹窗（改价 = 重新录入，靠 upsert）；② 协议价要手填客户 id（没有客户选择器，等客户页联动）；③ 缺「生效期 / 审批中」状态展示（审批在 approvals 页面上看）；④ 价格本无导入导出。
+前置: 本用例是 [frontend-contract]：前置 = 价格本接口（#7462）+ 菜单五副本 + rbac 清单 + 页面锚点/页面上下文登记。零网络、零 LLM。
+跳过: [frontend-contract] 价格本页展示与提交前置校验，由前端单测与视觉脚本验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-22 新增（issue #7375 段 3 前端）。落码 = `price-books/page.tsx` + `priceBookApi` + `types/pricing.ts` + 菜单五副本 + 路由守卫/面包屑/官网能力地图 + rbac 清单与 readings + 页面锚点/页面上下文 + 视觉脚本。**同批修正 `PricingController` 的读码**（原 `order:view` 在权限目录里不存在 ⇒ 端点对所有人不可达）。 ｜ tags: frontend-contract, pricing, menu, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12627,8 +12643,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：860（活跃 141，跳过 719）
-- tier 分布：smoke 12 / normal 792 / adversarial 32
+- 用例总数：861（活跃 141，跳过 720）
+- tier 分布：smoke 12 / normal 793 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12643,7 +12659,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：143
+- 杂项域：144
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12830,6 +12846,7 @@
 - QC-001: 质量成本：返工工时 / 报废料 / 赔付三项分列，未知不折成 0（issue #7377 段 1）
 - QC-002: 返工单：售后 → 返工 → 回写，闭环唯一（不得「已闭环但返工单还在做」）（issue #7377 段 2）
 - RPT-004: 报表中心页面：四张报表上屏 + 菜单归位「经营看板之后」+ 空数据不写 0（issue #7376 段 4）
+- PRC-005: 价格本页面：三层价一页录（协议/等级/阶梯）+ 价必须 > 0 + 后端拒因原样上屏（issue #7375 段 3 前端）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

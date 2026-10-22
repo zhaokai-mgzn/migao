@@ -7483,6 +7483,25 @@ _CASE_RPT_004 = EvalCase(
     precondition='本用例是 [frontend-contract]：前置 = 四张报表接口（#7466 / #7468 / #7470 / #7472）+ 菜单五副本 + rbac 清单。零网络、零 LLM。',
 )
 
+# ── PRC-005 [NORMAL] 价格本页面：三层价一页录（协议/等级/阶梯）+ 价必须 > 0 + 后端拒因原样上屏（issue #7375 段 3 前端）（源: cases/misc.yml）──
+_CASE_PRC_005 = EvalCase(
+    id='PRC-005',
+    legacy_id='',
+    title='价格本页面：三层价一页录（协议/等级/阶梯）+ 价必须 > 0 + 后端拒因原样上屏（issue #7375 段 3 前端）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-22，逐字）：「继续做吧，新菜单要符合当前业务逻辑」+「新模块尽量一步到位…界面没验收过就部署了」—— 价格本接口已就位但界面上没入口；本次先截图验收再合并。'],
+    expectations=[],
+    data_checks=['**判据 1（菜单归位）**：「价格本」放在**交易管理**组内、**销售订单之前**（先定价，才谈得开单与收款）；节点码 `order:list` = 该页第一屏读码（repo 规则「每页恰好一个码」）。判据 = `menu-nav.test.ts` + `MenuControllerTest#tradeCenterGroupMirrorsMenuTs` + `AuthServiceTest`。', '**判据 2（🔴 没填 SKU 不打接口）**：价格本按 SKU 维护 ⇒ SKU 为空时只给提示，不发请求。判据 = `price-books.test.tsx#没填 SKU 时只给提示`。', '**判据 3（🔴 空层写「未设置」而非 ¥0.00）**：三层任一为空 ⇒ 该卡显示「未设置 —— 这一层没有专属价，下单会继续往下找」。判据 = `#三层价格为空时各自显示未设置`。', '**判据 4（三层分行）**：协议价显示客户、等级价显示等级、阶梯价显示门槛。判据 = `#有价时按层列出`。', '**判据 5（🔴 价必须 > 0，前端先拦）**：0/负数在提交前就拒，且不打保存接口。判据 = `#价格 ≤ 0 时前端先拦`。', '**判据 6（🔴 后端拒因原样上屏）**：低于成本的改价被后端拒时，把服务端原文（含「改价审批」路径）显示在表单下，而不是一句「保存失败」。判据 = `#后端拒绝时显示服务端原文`。', '**判据 7（视觉验收）**：`scripts/visual-check/price-books-page.mjs` 出「有价 / 无价」两张图，人看三层卡对齐、金额右对齐、删除按钮在位。**不进 CI**（runner 无浏览器二进制）。', '**边界（照实登记）**：① 只有汇总卡式列表，没有逐条编辑弹窗（改价 = 重新录入，靠 upsert）；② 协议价要手填客户 id（没有客户选择器，等客户页联动）；③ 缺「生效期 / 审批中」状态展示（审批在 approvals 页面上看）；④ 价格本无导入导出。'],
+    skip_reason='[frontend-contract] 价格本页展示与提交前置校验，由前端单测与视觉脚本验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['frontend-contract', 'pricing', 'menu', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [frontend-contract]：前置 = 价格本接口（#7462）+ 菜单五副本 + rbac 清单 + 页面锚点/页面上下文登记。零网络、零 LLM。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -16506,6 +16525,7 @@ ALL_CASES = (
     _CASE_QC_001,
     _CASE_QC_002,
     _CASE_RPT_004,
+    _CASE_PRC_005,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

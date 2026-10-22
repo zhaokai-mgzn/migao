@@ -320,6 +320,7 @@
       "售后工单": "after_sales:view",
       "客户列表": "customer:view",
       "交易管理": null,
+      "价格本": "order:list",
       "销售订单": "order:list",
       "财务对账": "finance:view",
       "生产管理": null,
@@ -348,6 +349,7 @@
       "在线接待": "agent:session",
       "知识库": "knowledge:view",
       "商品管理": "product:list",
+      "价格本": "order:list",
       "销售订单": "order:list",
       "售后工单": "after_sales:view",
       "客户列表": "customer:view",
@@ -378,6 +380,7 @@
       "知识库": "knowledge:view",
       "售后工单": "after_sales:view",
       "客户列表": "customer:view",
+      "价格本": "order:list",
       "销售订单": "order:list",
       "财务对账": "finance:view",
       "作业看板": "production:view",
@@ -446,6 +449,12 @@
       "name": "交易管理",
       "path": null,
       "code": null
+    },
+    {
+      "key": "price-books",
+      "name": "价格本",
+      "path": "/price-books",
+      "code": "order:list"
     },
     {
       "key": "orders",
@@ -646,6 +655,10 @@
       "dashboard:view"
     ],
     [
+      "/price-books",
+      "order:list"
+    ],
+    [
       "/customers",
       "customer:view"
     ],
@@ -828,6 +841,18 @@
       "units": {
         "order:list": [
           "GET /api/admin/orders"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "price-books",
+      "name": "价格本",
+      "path": "/price-books",
+      "gate": "order:list",
+      "units": {
+        "order:list": [
+          "GET /api/admin/pricing/books"
         ]
       },
       "visibility_rule": "all"

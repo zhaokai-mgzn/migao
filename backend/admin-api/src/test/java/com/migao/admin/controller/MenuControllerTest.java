@@ -81,6 +81,8 @@ class MenuControllerTest {
     private static final List<String> MENU_ITEM_LABELS = List.of(
             "经营看板",
             "在线接待", "知识库", "售后工单", "客户列表",
+            // 🔴 2026-10-22（issue #7375 段 3）：交易管理组新增「价格本」（组内第一项，码 order:list）
+            "价格本",
             "销售订单", "财务对账",
             // 🔴 2026-10-09（issue #6580，用户裁定「移除加工项管理和工艺配置这两个菜单」）：
             // 「加工项管理」「工艺配置」两个菜单项已移除（功能体并入「企业基础设置」页内的配置域）。
@@ -309,14 +311,16 @@ class MenuControllerTest {
     }
 
     @Test
-    @DisplayName("交易管理组（#5778 收窄）：销售订单 + 财务对账 + 组尾动作码（订单详情）")
+    @DisplayName("交易管理组（#5778 收窄 + #7375）：价格本 + 销售订单 + 财务对账 + 组尾动作码（订单详情）")
     void tradeCenterGroupMirrorsMenuTs() throws Exception {
         JsonNode trade = group(fetchTree(), "trade-center");
         assertEquals("交易管理", trade.path("label").asText());
-        // 本轮：客户列表 / 售后工单已移入「客户服务」组 ⇒ 只剩「下单 → 收款」两项 + 组尾动作码
-        assertEquals(List.of("销售订单", "财务对账", "订单详情"),
+        // 本轮：客户列表 / 售后工单已移入「客户服务」组 ⇒ 只剩「定价 → 下单 → 收款」+ 组尾动作码
+        // 🔴 2026-10-22（issue #7375 段 3）：新增组内第一项「价格本」（码 order:list —— 与销售订单同码，
+        // 因为价格本页第一屏读的就是 PricingController 的类级 `order:list`）。
+        assertEquals(List.of("价格本", "销售订单", "财务对账", "订单详情"),
                 labels(trade.path("children")));
-        assertEquals(List.of("order:list", "finance:view", "order:detail"),
+        assertEquals(List.of("order:list", "order:list", "finance:view", "order:detail"),
                 codes(trade.path("children")));
     }
 
@@ -440,7 +444,7 @@ class MenuControllerTest {
         // `topLevelStandaloneItemMirrorsFrontend` 单独断言（避免两处都算它 ⇒ 重复计数）。
         assertEquals(MENU_ITEM_LABELS.size() - TOP_LEVEL_STANDALONE_LABELS.size() + ACTION_NODE_LABELS.size(),
                 all.size(),
-                "组内节点总数 = 18 组内菜单项 + 4 动作码节点（实得全表 = " + all + "）");
+                "组内节点总数 = 19 组内菜单项 + 4 动作码节点（实得全表 = " + all + "）");
         // 🔴 #6759：动作码节点由 2 → 4（+「加工单操作」`processing:update` / 「入库单操作」`inbound:create`）
         assertEquals(4, ACTION_NODE_LABELS.size(),
                 "动作码节点台账应恰有 4 条（订单详情 / 新增员工 / 加工单操作 / 入库单操作）");

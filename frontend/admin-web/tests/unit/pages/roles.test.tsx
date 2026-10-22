@@ -750,7 +750,7 @@ describe('RolesPage 默认菜单 = 后台 + 手机端（issue #7146）', () => {
     const card = await screen.findByTestId('role-default-menu-customer_service')
     await waitFor(() =>
       expect(within(card).getByTestId('role-default-menu-summary-customer_service')).toHaveTextContent(
-        '默认菜单：后台 5 项 · 手机端 2 个入口',
+        '默认菜单：后台 6 项 · 手机端 2 个入口',
       ),
     )
     // §31 P1 常驻面克制：折叠态下清单不渲染（不是 CSS 隐藏）
@@ -759,7 +759,7 @@ describe('RolesPage 默认菜单 = 后台 + 手机端（issue #7146）', () => {
     fireEvent.click(within(card).getByRole('button', { name: /默认菜单/ }))
     // 报表中心（#7376）与经营看板同码 ⇒ 勾了 dashboard:view 的岗位默认菜单里**两项都在**
     expect(await screen.findByTestId('role-default-menu-backend-customer_service')).toHaveTextContent(
-      '经营看板、报表中心、在线接待、销售订单',
+      '经营看板、报表中心、在线接待、价格本、销售订单',
     )
     expect(screen.getByTestId('role-default-menu-mobile-customer_service')).toHaveTextContent('数据、坐席')
     expect(within(card).getByRole('button', { name: /默认菜单/ })).toHaveAttribute('aria-expanded', 'true')
@@ -785,7 +785,8 @@ describe('RolesPage 默认菜单 = 后台 + 手机端（issue #7146）', () => {
     const card = await screen.findByTestId('role-default-menu-customer_service')
     await waitFor(() =>
       expect(within(card).getByTestId('role-default-menu-summary-customer_service')).toHaveTextContent(
-        '默认菜单：后台 2 项 · 手机端 0 个入口',
+        // #7375 段 3：`order:list` 现在覆盖三项（价格本 / 销售订单 / 发货单）⇒ 后台 2 项 → 3 项
+        '默认菜单：后台 3 项 · 手机端 0 个入口',
       ),
     )
     fireEvent.click(within(card).getByRole('button', { name: /默认菜单/ }))

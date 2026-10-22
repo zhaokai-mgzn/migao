@@ -142,6 +142,8 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     MenuNode("customer-service", "客户列表", "/customers", "customer:view"),
     # 交易管理
     # 2026-10-20（issue #7354）：菜单正名「销售订单」（旧名「订单列表」保留为说法）。
+    # 价格本（issue #7375 段 3）：交易前置 ⇒ 组内第一项；读面码 product:list。
+    MenuNode("trade-center", "价格本", "/price-books", "order:list"),
     MenuNode("trade-center", "销售订单", "/orders", "order:list"),
     MenuNode("trade-center", "财务对账", "/finance", "finance:view"),
     # 生产管理（2026-10-06：先备资料 → 再生产与派单 → 最末结算）
@@ -255,6 +257,11 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     # ⚠️ 不登记「工作台」这类旧组名当说法：判据「接地」要求说法与所属节点菜单名 / 本功能 label
     # 有包含关系 —— 已不存在的组名既不接地、也会把「说到一个没有的页面」变成可命中路径。
     NavFeature("dashboard", "经营看板（经营数据）", ((STANDALONE_GROUP, "经营看板"),), ("经营看板", "经营数据")),
+    # 价格本（issue #7375 段 3）：用户问「这个客户什么价 / 能不能便宜 / 阶梯价怎么设」时引导到这里。
+    # ⚠️ 说法里必须**逐字**含菜单名「价格本」（判据要求每个菜单节点都有一条能被问到的说法）。
+    NavFeature("price-books", "价格本（协议价 / 等级价 / 阶梯价）",
+               (("trade-center", "价格本"),),
+               ("价格本", "价格本协议价", "价格本等级价", "价格本阶梯价", "价格本改价")),
     # 报表中心（issue #7376 / #7377）：经营数据面的「下钻」—— 用户问「毛利多少 / 哪些货压着 /
     # 谁卖得多 / 质量成本多少」时引导到这里（四张表都在这一页）。
     NavFeature("reports", "报表中心（毛利 / 滞销 / 业绩 / 质量成本）",
