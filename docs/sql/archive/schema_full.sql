@@ -4,7 +4,7 @@
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
 -- （2026-09-11 实测，逐表比对 backend/admin-api/src/main/resources/db/init/schema.sql）：
 --
---   本文件缺失（schema.sql 已有，共 61 张）：
+--   本文件缺失（schema.sql 已有，共 62 张）：
 --     agent_batches, agent_batch_items
 --      批量更新的批次资源（V127，issue #5314 服务端包 —— 一张批次 + 一张逐条明细；
 --      明细的 old_value 是**撤销的唯一依据**，**不得**改用 audit_logs：审计是有界 fail-open、丢行允许），
@@ -13,6 +13,9 @@
 --     receipt_allocations
 --      客户收款核销（V176，issue #7370 段 3 —— 一笔收款冲抵多张订单；现金真值仍在 finance_transactions，
 --      本表只记「冲到哪张单、各多少」，故与 finance_transactions 必须**一起**出现在缺失清单里），
+--     rework_orders
+--      返工单（V185，issue #7377 段 2 —— 售后工单 → 返工 → 完成回写；同一售后单同时只能有一个
+--      未完结返工单，由部分唯一索引兜住）。缺这张表，「已闭环但返工单还在做」就无从判定。
 --     stocktakes, stocktake_items
 --      盘点单（V184，issue #7373 段 2 —— 按仓库出任务 → 录实盘 → 差异经 `approvals.stocktake_diff` 审批后调整）。
 --      两张必须一起列：单头没有明细就是一张空任务，明细没有单头就没有「哪次盘点的快照」。
