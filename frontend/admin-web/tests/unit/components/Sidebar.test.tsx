@@ -194,7 +194,7 @@ describe('Sidebar', () => {
     // 顶部主位：逐字只有企业名（品牌不再作为第二行与企业名并列）
     expect(screen.getByText('测试企业').parentElement?.textContent).toBe('测试企业')
     // 底部署名：逐字「观星台」，且整栏只出现这一次
-    expect(screen.getByTestId('sidebar-brand').textContent).toBe('观星台')
+    expect(screen.getByTestId('sidebar-brand-name').textContent).toBe('观星台')
     expect(screen.getAllByText('观星台')).toHaveLength(1)
   })
 
@@ -221,7 +221,9 @@ describe('Sidebar', () => {
     expect(brand.nextElementSibling).toBe(collapse)
     // 品牌图形在位**且取品牌金**（删掉星标 / 改色都会红 —— 不写成「非空」那种空断言）
     expect(brand.querySelector('svg path')?.getAttribute('fill')).toBe(gold[400])
-    expect(brand.textContent).toBe('观星台')
+    expect(within(brand).getByTestId('sidebar-brand-name').textContent).toBe('观星台')
+    // 两行 lockup 的拉丁微标必须在牌内（用户 2026-10-22「先加 1」）
+    expect(within(brand).getByText('MIGAO')).toBeInTheDocument()
   })
 
   it('折叠态不渲染品牌文本（issue #7476）', () => {

@@ -483,7 +483,7 @@ export default function Sidebar({
           <div
             data-testid="sidebar-brand"
             title="观星台 · AI 经营平台"
-            className="flex items-center gap-2"
+            className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-gold-600/[0.14] via-white/[0.05] to-white/[0.03] px-2.5 py-1 ring-1 ring-white/10"
           >
             {/* 四角星 = 「观星」的星；刻意不用通用 sparkle 图标（那是 AI 语义，不是品牌语义） */}
             <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" className="shrink-0">
@@ -492,8 +492,17 @@ export default function Sidebar({
                 fill={gold[400]}
               />
             </svg>
-            <span className="text-[13px] font-medium leading-none tracking-[0.2em] text-[#ded7c7]">
-              观星台
+            {/* 两行 lockup：上「观星台」、下拉丁微标「MIGAO」（用户 2026-10-22：「先加 1 2」） */}
+            <span className="flex flex-col">
+              <span
+                data-testid="sidebar-brand-name"
+                className="text-[13px] font-medium leading-none tracking-[0.18em] text-[#ded7c7]"
+              >
+                观星台
+              </span>
+              <span className="mt-0.5 text-[9px] font-semibold leading-none tracking-[0.3em] text-neutral-400">
+                MIGAO
+              </span>
             </span>
           </div>
         )}
