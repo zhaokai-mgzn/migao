@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（145 case）
+## 杂项域（146 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5877,6 +5877,21 @@
 跳过: [frontend-contract] 盘点页的展示纪律（未数≠0 / 差异须审批）与菜单归位，由前端单测与 rbac 判据验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-22 新增（issue #7373 段 3 前端）。落码 = `stocktakes/page.tsx` + `lib/api.ts` 的 `stocktakeApi`/`warehouseApi` + `types/stocktake.ts` + 菜单五副本（menu.ts / MenuController / AuthService / ai-agent MENU_TREE + FEATURE_MAP）+ 路由守卫 + Header 面包屑 + 官网能力地图 + rbac 清单与 readings + page_registry。 ｜ tags: frontend-contract, inventory, stocktake, red-proof
+
+### RPT-005. 应收账龄进报表中心：合计=明细之和、空数据不画 0、CSV 导出（issue #7376 段 5） 🔵
+```
+你: 用户（2026-10-22，逐字）：「继续主动推进，不要一直让我点头」—— 账龄接口 P0-2 就有，但老板要看「谁欠得久」还得问 agent 或人工捞。
+数据: **判据 1（🔴 空数据 ≠ 0）**：没有未结清应收时后端给 `hasData=false` 且 `totals=null`，页面写「暂无数据」——**不出现 ¥0.00**。判据 = `ReportReceivableAgingServiceTest#emptyAgingHasNullTotalsNotZero`（红证：把 `hasData` 改成恒 true ⇒ 该用例当场红，实测 `expected: null`）+ `reports.test.tsx#没有数据时显示「暂无数据」`。
+数据: **判据 2（合计 = 明细之和）**：`totals.outstanding == Σ五档 == Σ客户行`；单数 = Σ各档单数（金额里读不出「欠了多少张单」）。判据 = `ReportReceivableAgingServiceTest#totalsEqualSumOfRows`。
+数据: **判据 3（分档不重算）**：报表**不重算**分档/账期，直接复用 `ReceivableAging.summarize`（P0-2 真值源）；改分档规则只该改一处。判据 = `ReportService.receivableAging` 的实现 + `ReportReceivableAgingServiceTest`（桩住真值源，报表只搬数）。
+数据: **判据 4（数据范围下传）**：`self` 范围把制单人原样交给账龄真值源（SQL 里 `AND (createdBy IS NULL OR o.created_by = createdBy)`）——报表不自己过滤，否则账龄口径分叉成两份。判据 = `ReportReceivableAgingServiceTest#scopeOwnerIsPassedThroughToTheAgingTruthSource` + `ReportControllerTest#receivableAgingRouteAndSignature`（端点零入参：范围不接受客户端传）。
+数据: **判据 5（CSV 导出）**：导出的是**已加载**的读数（不额外请求、不重算）；带 UTF-8 BOM（Excel 中文不乱码）、缺值留空而**真 0 照写 0**、含逗号/引号/换行按 RFC 4180 转义。判据 = `csv.test.ts`（三条）+ `reports.test.tsx#导出 CSV`（断言 Blob 内容与「不额外请求」）。
+数据: **判据 6（逾期要标出来）**：客户行除总额外，逾期额单列（总额里读不出「谁欠得久」）。判据 = `reports.test.tsx#账龄：有欠款时给合计与客户行`。
+数据: **边界（照实登记）**：① 统一筛选控件（时间/仓库/客户/业务员）**未做**；② 只有五档汇总与客户 Top3 上行，**没有**逐单明细表；③ 导出是本页 CSV（Excel 双向迁移按 P2）；④ 分档基准 = 业务日（+08），跨日那一刻由服务端 `BusinessClock` 定，前端不自己算。
+前置: 本用例是 [frontend-contract]：前置 = 账龄真值源（P0-2 / #7370）+ 报表中心四张表（#7376 段 1~4）。零网络、零 LLM。
+跳过: [frontend-contract] 账龄报表的展示纪律（空数据≠0 / 合计=明细之和）与 CSV 导出，由前端与 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-23 新增（issue #7376 段 5）。落码 = `ReportController` + `ReportService.receivableAging` + `ReceivableAgingReportView` + `OrderMapper.selectReceivableRows(createdBy)` + `reports/page.tsx` 账龄卡与五张卡的导出按钮 + `lib/csv.ts`。 ｜ tags: frontend-contract, report, receivable, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12659,8 +12674,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：862（活跃 141，跳过 721）
-- tier 分布：smoke 12 / normal 794 / adversarial 32
+- 用例总数：863（活跃 141，跳过 722）
+- tier 分布：smoke 12 / normal 795 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12675,7 +12690,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：145
+- 杂项域：146
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12864,6 +12879,7 @@
 - RPT-004: 报表中心页面：四张报表上屏 + 菜单归位「经营看板之后」+ 空数据不写 0（issue #7376 段 4）
 - PRC-005: 价格本页面：三层价一页录（协议/等级/阶梯）+ 价必须 > 0 + 后端拒因原样上屏（issue #7375 段 3 前端）
 - STK-002: 盘点单页面：账面快照 → 逐批次录实盘 → 差异须审批才完成（issue #7373 段 2 的商家面）
+- RPT-005: 应收账龄进报表中心：合计=明细之和、空数据不画 0、CSV 导出（issue #7376 段 5）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

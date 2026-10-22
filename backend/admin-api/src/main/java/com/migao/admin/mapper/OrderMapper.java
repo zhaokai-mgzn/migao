@@ -79,7 +79,9 @@ public interface OrderMapper extends BaseMapper<Order> {
             + "WHERE a.tenant_id = o.tenant_id AND a.order_id = o.id AND a.deleted = FALSE), 0) AS remaining, "
             + "o.created_at AS created_at "
             + "FROM orders o WHERE o.deleted = 0 AND o.tenant_id = #{tenantId} AND o.status <> 'cancelled' "
-            + "AND o.paid_at IS NULL"
+            + "AND o.paid_at IS NULL "
+            // 🔴 P0-4 数据范围（issue #7376 段 5）：`self` 范围只算本人创建的单；null ⇒ 不裁（财务看全量）
+            + "AND (#{createdBy} IS NULL OR o.created_by = #{createdBy})"
             + ") t WHERE t.remaining > 0 ORDER BY t.remaining DESC LIMIT 2000")
     @Results({
             @Result(column = "order_id", property = "orderId"),
@@ -88,7 +90,8 @@ public interface OrderMapper extends BaseMapper<Order> {
             @Result(column = "customer_phone", property = "customerPhone"),
             @Result(column = "created_at", property = "createdAt")
     })
-    List<com.migao.admin.dto.ReceivableAgingRow> selectReceivableRows(@Param("tenantId") Long tenantId);
+    List<com.migao.admin.dto.ReceivableAgingRow> selectReceivableRows(@Param("tenantId") Long tenantId,
+                                                                     @Param("createdBy") String createdBy);
 
     /**
      * 客户已欠金额（issue #7370 授信闸门）：未结清订单的金额合计。
