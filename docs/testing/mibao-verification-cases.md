@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（141 case）
+## 杂项域（142 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5814,6 +5814,22 @@
 跳过: [backend-contract] 质量成本构成与未知传播，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-22 新增（issue #7377 段 1）。落码 = `QualityCostPolicy`（三项分列 + 未知传播 + 合计恒等式）+ `ReportService.qualityCost` + `QualityCostView` + `GET /api/admin/reports/quality-cost`。**自查剔除了初版的 `orderCount`**（它把加工单 id 与订单 id 混在一个集合里数）。 ｜ tags: backend-contract, report, quality, red-proof
+
+### QC-002. 返工单：售后 → 返工 → 回写，闭环唯一（不得「已闭环但返工单还在做」）（issue #7377 段 2） 🔵
+```
+你: 用户（2026-10-22，逐字）：「继续做」—— 继续推进 P1-5 段 2，补上这条链唯一缺的实体（返工单）。
+数据: **判据 1（四态状态机）**：`draft → in_progress → done | cancelled`；只有 draft 能开工、只有 in_progress 能完成（未开工就完成 = 跳过返工）、未完结才能取消。判据 = `ReworkStateTest#transitionsAreStrict` + `ReworkOrderServiceTest#cannotCompleteDraft`。
+数据: **判据 2（🔴 闭环唯一——issue 判据原文）**：已闭环/已驳回的售后单**不能再开返工**（否则就是「闭环了单子还在做」）；同一售后单**同时只能有一个未完结返工单**（部分唯一索引 `uk_rework_orders_open_per_ticket` 兜住，不是服务层查一遍）。判据 = `ReworkStateTest#closedTicketsCannotOpenRework` + `ReworkOrderServiceTest#closedTicketCannotOpen` + `#secondOpenReworkIsRejected` + `ReworkOrderMapperTest#oneOpenPerTicketIsAConstraint`。
+数据: **判据 3（🔴 回写只从 processing 推进）**：完成时售后单是 `processing` ⇒ 推进 `resolved`；`pending`/`closed`/`rejected` **一律不动**（覆盖它们等于替客服下结论）；回写本身也是 CAS（别人先改过就不覆盖）。判据 = `ReworkStateTest#writeBackOnlyFromProcessing` + `ReworkOrderServiceTest#completeWritesBackFromProcessing` + `#completeDoesNotOverridePending`。
+数据: **判据 4（取消不回退售后）**：返工取消 ≠ 售后已解决 ⇒ 不改售后状态。判据 = `#cancelDoesNotTouchTicket`。
+数据: **判据 5（并发 CAS）**：start / complete / cancel 都以「当前状态」为条件更新，落空 ⇒ 可读 409（不静默覆盖）。判据 = `#casLosesOnStatusChange`。
+数据: **判据 6（🔴 权限码零 delta）**：读面复用 `after_sales:view`；写面复用 `order:refund`（售后处理既有写码）。**不得新造 `after_sales:create`** —— 全仓权限目录只有 `after_sales:view`，新造码会让端点对所有人不可达（#4203 同族，采购单段 4-B 踩过）。判据 = `ReworkOrderControllerTest#permissionCodesReuseExisting`。
+数据: **判据 7（真外键）**：`after_sales_ticket_id` 是真外键 ⇒ 返工单不能挂在不存在的售后单上。判据 = `ReworkOrderMapperTest#ticketReferenceIsForeignKey`。
+数据: **边界（照实登记）**：① **返工成本归集到单据**未做（段 3：需 join 报工与批次成本）；② 客户/商品/工序**三维汇总**未做；③ **缺陷原因字典**未做（与 #7197 同源）；④ 返工页面未做（接口已就位）；⑤ 返工**工序明细**不新建表（沿用报工的 `work_type='rework'`）。
+前置: 本用例是 [backend-contract]：前置 = `rework_orders`（V185）+ `after_sales_tickets`。零网络、零 LLM。
+跳过: [backend-contract] 返工状态机与闭环一致性，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-22 新增（issue #7377 段 2）。落码 = `ReworkState`（四态 + 闭环一致性纯函数）+ `ReworkOrder`/`ReworkOrderMapper` + `ReworkOrderService`（开单/开工/完成回写/取消，全走 CAS）+ `ReworkOrderController` + V185（含 part 唯一索引）。 ｜ tags: backend-contract, quality, state-machine, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12596,8 +12612,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：858（活跃 141，跳过 717）
-- tier 分布：smoke 12 / normal 790 / adversarial 32
+- 用例总数：859（活跃 141，跳过 718）
+- tier 分布：smoke 12 / normal 791 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12612,7 +12628,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：141
+- 杂项域：142
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12797,6 +12813,7 @@
 - RPT-002: 报表中心：库存周转与滞销（满 90 天未出库 / 从未出库按入库日 / 缺日期不猜）（issue #7376 段 2）
 - RPT-003: 报表中心：员工业绩（按制单人归集 / 无主单不摊 / 客单价不做 0 除）（issue #7376 段 3）
 - QC-001: 质量成本：返工工时 / 报废料 / 赔付三项分列，未知不折成 0（issue #7377 段 1）
+- QC-002: 返工单：售后 → 返工 → 回写，闭环唯一（不得「已闭环但返工单还在做」）（issue #7377 段 2）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
