@@ -18,6 +18,16 @@ function money(value: number | null | undefined): string {
   return `¥${Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+/**
+ * 未知分项的**中文名**：拿 `components` 里同 code 的 label；查不到就退成「未采集项」——
+ * 绝不把 `scrap_material` 这类内部码摆到商家面前（§31「不摆内部标识」）。
+ */
+function unknownLabels(quality: ReportQualityCost): string[] {
+  return quality.unknownComponents.map(
+    (code) => quality.components.find((c) => c.code === code)?.label ?? '未采集项',
+  )
+}
+
 function qty(value: number | null | undefined): string {
   if (value === null || value === undefined) return '—'
   return `${Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 1 })} 米`
@@ -200,7 +210,8 @@ export default function ReportsPage() {
               {!quality.complete && (
                 <p className="text-xs text-amber-600" data-testid="reports-quality-incomplete">
                   这不是完整质量成本：还缺 {quality.unknownComponents.length} 项（
-                  {quality.unknownComponents.join(' / ')}）
+                  {/* 用同一响应里的中文名，**不摆内部码**（`scrap_material` 这种商家读不懂，§31） */}
+                  {unknownLabels(quality).join(' / ')}）
                 </p>
               )}
             </div>

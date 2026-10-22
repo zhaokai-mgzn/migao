@@ -88,7 +88,11 @@ describe('报表中心页面', () => {
 
     await waitFor(() => expect(screen.getByTestId('reports-quality-body')).toBeInTheDocument())
     expect(screen.getByTestId('reports-quality-body').textContent).toContain('未采集 / 未知')
-    expect(screen.getByTestId('reports-quality-incomplete').textContent).toContain('不是完整质量成本')
+    const notice = screen.getByTestId('reports-quality-incomplete').textContent || ''
+    expect(notice).toContain('不是完整质量成本')
+    // 🔴 不摆内部码（`scrap_material` 这种商家读不懂）：未知项用中文名
+    expect(notice).toContain('报废料')
+    expect(notice).not.toContain('scrap_material')
     expect(screen.getByTestId('reports-quality-total').textContent).toContain('100.00')
   })
 
