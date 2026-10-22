@@ -332,7 +332,7 @@ export default function LoginPage() {
           )}
         </div>
 
-        <p className="mt-6 text-center text-xs text-neutral-400">© 2026 词元通达 · 观星台</p>
+        <p className="mt-6 text-center text-xs text-neutral-400">© 2026 杭州词元通达科技有限公司 · 观星台</p>
       </div>
     </div>
   )
