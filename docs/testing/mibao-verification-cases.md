@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（140 case）
+## 杂项域（141 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5799,6 +5799,21 @@
 跳过: [backend-contract] 业绩归集口径与无主单语义，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-22 新增（issue #7376 段 3）。落码 = `ReportService.staffPerformance`（按制单人归集，复用 `ReportTotals`）+ `StaffPerformanceView` + `GET /api/admin/reports/staff-performance`。**自查剔除了初版里「退款恒为 0」的假字段**。 ｜ tags: backend-contract, report, red-proof, data-scope
+
+### QC-001. 质量成本：返工工时 / 报废料 / 赔付三项分列，未知不折成 0（issue #7377 段 1） 🔵
+```
+你: 用户（2026-10-22，逐字）：「继续做」—— 自主推进 P1-5，先把「质量成本到底多少」变成可看的数。
+数据: **判据 1（三项分列）**：质量成本 = 返工工时 / 报废料 / 赔付三项**分别给出**（合并成一个数会让读者无法判断「高在哪」—— 三种成因对应三种处置）。判据 = `QualityCostPolicyTest` + `QualityCostReportTest#reworkUsesUnitPriceSnapshot`。
+数据: **判据 2（返工工时口径）**：`production_work_logs.work_type='rework'` × **单价快照**（`unit_price`）；不读实例当前价（改价不能改历史）。判据 = `#reworkUsesUnitPriceSnapshot`。
+数据: **判据 3（🔴 未定价 ≠ 0 元工时）**：`price_state='unpriced'`（或 `unit_price` 为空）的返工行**不计金额**，该项标未知并给出未定价行数；只算有价行然后当真 = 成本偏低。判据 = `QualityCostPolicyTest#reworkCostHonoursUnpricedRows` + `QualityCostReportTest#unpricedReworkIsNotZeroCost`。
+数据: **判据 4（🔴 报废料恒未知）**：本仓**没有**质检记录→批次的关联（质检只到成品帘级）⇒ 该项未采集、金额为 null、说明里写明「不填 0」（填 0 会被读成「本月没有报废损失」）。判据 = `#scrapIsAlwaysUnknown` + `QualityCostReportTest#scrapIsUnknownNotZero`。
+数据: **判据 5（🔴 未发生 ≠ 已核实为零）**：窗口内没有退款流水 ⇒ 赔付未知；有流水 ⇒ 按订单退款口径汇总（本仓无售后单→流水关联，口径差异写在 note 里）。判据 = `#compensationWithoutRefundsIsUnknown` + `QualityCostReportTest#noRefundsMeansUnknownCompensation` + `#refundsCountIntoTotal`。
+数据: **判据 6（合计只加已知项 + 完整性自述）**：`total = Σ已知项`；任一未知 ⇒ `complete=false` 且 `unknownComponents` 列出 code；全未知 ⇒ total 为 null（不是 0）。判据 = `QualityCostPolicyTest#totalOnlySumsKnownComponents` + `#allUnknownGivesNullTotal`。
+数据: **边界（照实登记）**：① **售后单 → 返工单的关联与回写未做**（issue 目标 1：需要新单据实体与状态机，段 2）；② **客户 / 商品 / 工序三维汇总未做**（段 2，要 join 加工单与订单）；③ **缺陷原因字典**未做（段 2，与 #7197 同源）；④ 报废料成本**仍未采集**（要先补「质检 → 批次」的关联）；⑤ 报表页面未做。
+前置: 本用例是 [backend-contract]：前置 = `production_work_logs`（V61 单价快照 / V90 定价三态）+ `finance_transactions`。零网络、零 LLM、无迁移（纯只读面）。
+跳过: [backend-contract] 质量成本构成与未知传播，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-22 新增（issue #7377 段 1）。落码 = `QualityCostPolicy`（三项分列 + 未知传播 + 合计恒等式）+ `ReportService.qualityCost` + `QualityCostView` + `GET /api/admin/reports/quality-cost`。**自查剔除了初版的 `orderCount`**（它把加工单 id 与订单 id 混在一个集合里数）。 ｜ tags: backend-contract, report, quality, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12581,8 +12596,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：857（活跃 141，跳过 716）
-- tier 分布：smoke 12 / normal 789 / adversarial 32
+- 用例总数：858（活跃 141，跳过 717）
+- tier 分布：smoke 12 / normal 790 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12597,7 +12612,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：140
+- 杂项域：141
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12781,6 +12796,7 @@
 - RPT-001: 报表中心：订单毛利报表（合计=明细之和 / 空数据≠0 / 成本未知单独计数）（issue #7376 段 1）
 - RPT-002: 报表中心：库存周转与滞销（满 90 天未出库 / 从未出库按入库日 / 缺日期不猜）（issue #7376 段 2）
 - RPT-003: 报表中心：员工业绩（按制单人归集 / 无主单不摊 / 客单价不做 0 除）（issue #7376 段 3）
+- QC-001: 质量成本：返工工时 / 报废料 / 赔付三项分列，未知不折成 0（issue #7377 段 1）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

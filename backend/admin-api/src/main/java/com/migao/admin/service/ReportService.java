@@ -46,6 +46,10 @@ public class ReportService {
 
     /** 库存周转/滞销（段 2）：批次 + 出库流水（复用时序，不新造「最后出库日」列 —— 那是会漂的派生值）。 */
     private final com.migao.admin.mapper.StockBatchMapper stockBatchMapper;
+
+    /** 质量成本（段 4）：返工报工 + 退款流水（都是既有真值源，不新造表）。 */
+    private final com.migao.admin.mapper.ProductionWorkLogMapper productionWorkLogMapper;
+    private final com.migao.admin.mapper.FinanceTransactionMapper financeTransactionMapper;
     private final com.migao.admin.mapper.StockBatchConsumptionMapper stockBatchConsumptionMapper;
     private final OrderMarginService orderMarginService;
     private final com.migao.admin.time.BusinessClock businessClock;
@@ -289,6 +293,70 @@ public class ReportService {
                         .revenue(ReportTotals.sum(revenues))
                         .build() : null)
                 .unattributedOrders(unattributed)
+                .build();
+    }
+
+    /**
+     * **质量成本报表**（issue #7377，P1-5 段 1）：返工工时 / 报废料 / 赔付三项分列。
+     *
+     * <p>🔴 三种「未知」的处理各不相同，都不许折成 0：</p>
+     * <ul>
+     *   <li>返工报工**未定价**（`price_state='unpriced'`）⇒ 金额不计入，单独计行数；</li>
+     *   <li>**报废料**本仓未采集（质检只到成品帘级，没有到批次）⇒ 该项恒未知；</li>
+     *   <li>窗口内**没有退款流水** ⇒ 赔付未知（不是「赔付 0」的结论）。</li>
+     * </ul>
+     */
+    public com.migao.admin.dto.QualityCostView qualityCost(String startDate, String endDate) {
+        List<com.migao.admin.dto.QualityCostView.Component> components = new ArrayList<>();
+        List<com.migao.admin.entity.ProductionWorkLog> reworkLogs =
+                productionWorkLogMapper.selectList(new LambdaQueryWrapper<com.migao.admin.entity.ProductionWorkLog>()
+                        .eq(com.migao.admin.entity.ProductionWorkLog::getWorkType, "rework"));
+
+        BigDecimal reworkAmount = BigDecimal.ZERO;
+        int unpriced = 0;
+        for (com.migao.admin.entity.ProductionWorkLog log : reworkLogs) {
+            if ("unpriced".equals(log.getPriceState()) || log.getUnitPrice() == null) {
+                unpriced++;
+                continue;   // 🔴 未定价**不计金额**（未定价 ≠ 0 元工时）
+            }
+            BigDecimal qty = log.getQty() == null ? BigDecimal.ZERO : log.getQty();
+            reworkAmount = reworkAmount.add(log.getUnitPrice().multiply(qty));
+        }
+        QualityCostPolicy.Component rework = QualityCostPolicy.reworkCost(
+                unpriced == reworkLogs.size() && !reworkLogs.isEmpty() ? null : reworkAmount, unpriced);
+        components.add(com.migao.admin.dto.QualityCostView.Component.builder()
+                .code(rework.code()).label(rework.label()).amount(rework.amount()).known(rework.known())
+                .note(rework.note()).unknownItems(rework.unknownItems()).build());
+
+        QualityCostPolicy.Component scrap = QualityCostPolicy.scrapCost();
+        components.add(com.migao.admin.dto.QualityCostView.Component.builder()
+                .code(scrap.code()).label(scrap.label()).amount(scrap.amount()).known(scrap.known())
+                .note(scrap.note()).unknownItems(scrap.unknownItems()).build());
+
+        // 赔付：按订单退款流水口径（`finance_transactions` 无售后单关联列 ⇒ 无法按售后单归集）
+        List<com.migao.admin.entity.FinanceTransaction> refunds = financeTransactionMapper.selectList(
+                new LambdaQueryWrapper<com.migao.admin.entity.FinanceTransaction>()
+                        .eq(com.migao.admin.entity.FinanceTransaction::getType, "refund")
+                        .eq(com.migao.admin.entity.FinanceTransaction::getStatus, "success"));
+        BigDecimal refundAmount = BigDecimal.ZERO;
+        for (com.migao.admin.entity.FinanceTransaction refund : refunds) {
+            refundAmount = refundAmount.add(refund.getAmount() == null ? BigDecimal.ZERO : refund.getAmount());
+        }
+        QualityCostPolicy.Component compensation =
+                QualityCostPolicy.compensation(refundAmount, !refunds.isEmpty());
+        components.add(com.migao.admin.dto.QualityCostView.Component.builder()
+                .code(compensation.code()).label(compensation.label()).amount(compensation.amount())
+                .known(compensation.known()).note(compensation.note())
+                .unknownItems(compensation.unknownItems()).build());
+
+        QualityCostPolicy.Total total = QualityCostPolicy.total(List.of(rework, scrap, compensation));
+        return com.migao.admin.dto.QualityCostView.builder()
+                .startDate(startDate)
+                .endDate(endDate)
+                .components(components)
+                .total(total.amount())
+                .complete(total.complete())
+                .unknownComponents(total.unknownComponents())
                 .build();
     }
 
