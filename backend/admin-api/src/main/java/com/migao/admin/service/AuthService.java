@@ -1379,6 +1379,11 @@ public class AuthService {
         // 已移入「客户服务」组 —— 用户原话「客户管理也不属于交易管理」）。
         // 顺序 = 销售订单 → 财务对账（与 `menu.ts` 的 `trade-center` 组逐值一致）。
         List<UserInfoResponse.MenuItem> tradeChildren = new java.util.ArrayList<>();
+        // 价格本（issue #7375 段 3）：**交易前置**（先定价，再开单）⇒ 组内第一项；
+        // 读面码 `order:list`（= `PricingController` 的类级码 = 该页第一屏读码，repo 规则「每页恰好一个码」）。
+        if (isAll || permissions.contains("order:list")) {
+            tradeChildren.add(menuItem("price-books", "价格本", "/price-books"));
+        }
         if (isAll || permissions.contains("order:list")) {
             tradeChildren.add(menuItem("orders", "销售订单", "/orders"));
         }

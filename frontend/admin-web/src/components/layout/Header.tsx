@@ -107,6 +107,8 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // 🔴 issue #7369（用户 2026-10-20 裁定「得加个新大菜单」）：三项已从「仓储与物料」移到「供应链」
   // —— 面包屑的组名必须与菜单组名逐字一致（本文件文件头的硬约束），漏改就是「同页面两个组名」。
   { match: (p) => p.startsWith('/suppliers'), crumbs: [{ label: '供应链' }, { label: '供应商' }] },
+  // 价格本（issue #7375 段 3）：归属「交易管理」组 —— 定价是交易前置。
+  { match: (p) => p.startsWith('/price-books'), crumbs: [{ label: '交易管理' }, { label: '价格本' }] },
   { match: (p) => p.startsWith('/purchase-orders'), crumbs: [{ label: '供应链' }, { label: '采购单' }] },
   { match: (p) => p.startsWith('/inbound-orders'), crumbs: [{ label: '供应链' }, { label: '入库单' }] },
   // 发货单（issue #5939，用户 2026-10-02 裁定）：与「入库单」对称的出口单据，同属「仓储与物料」组。

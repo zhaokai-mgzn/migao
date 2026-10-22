@@ -1,6 +1,7 @@
 import {
   BarChart3,
   FileSpreadsheet,
+  Tags,
   Bell,
   BookOpen,
   Boxes,
@@ -113,8 +114,15 @@ export const capabilityDomains: CapabilityDomain[] = [
   {
     key: 'trade-center',
     name: '交易管理',
-    summary: '订单与账目从下单记录到对账。',
+    summary: '先定价，再下单，最后对账。',
     items: [
+      {
+        // issue #7375：价格本是交易的前置配置（先定价，才谈得上开单与收款）。
+        name: '价格本',
+        detail:
+          '商品对客户、等级、数量各自可以有价：协议价优先于等级价，等级价优先于阶梯价；价格必须大于 0，低于成本的改价要先走审批。',
+        icon: Tags,
+      },
       {
         name: '销售订单',
         detail: '按订单号 / 收货人 / 下单时间 / 商品编码 / 是否含加工多维检索，支持备注、关闭与发货。',

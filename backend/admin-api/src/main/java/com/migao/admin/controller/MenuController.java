@@ -131,6 +131,8 @@ public class MenuController {
         // 台账同批删除这两条，见该文件的「只许缩短」口径）。
         // 2026-10-20（issue #7354，用户逐字「把菜单订单列表改成销售订单」）：菜单正名「销售订单」——
         // 前端 `menu.ts` / `AuthService` 三源同批改名；权限码 `order:list` 与路径 `/orders` 一字不动。
+        // 价格本（issue #7375 段 3）：读面码 = 该页第一屏读码 `order:list`（`PricingController` 类级码）
+        MenuNode priceBooks = new MenuNode("order:list", "价格本");
         MenuNode o1 = new MenuNode("order:list", "销售订单");
         // 旧 label「退换货」→「售后工单」（#5271 改名消除与菜单名的漂移）；
         // code 由 issue #5246 改为**读**码 `after_sales:view`（原写码 `order:refund`）。
@@ -226,7 +228,8 @@ public class MenuController {
             // —— 三源同构守卫按**前缀子序列**比对，乱序即红。
             new MenuNode("customer-service", "客户服务", List.of(cs1, cs2, o3, c1)),
             // 交易管理（本轮收窄为「下单 → 收款」两项）
-            new MenuNode("trade-center", "交易管理", List.of(o1, f1, o2)),
+            // 价格本（issue #7375 段 3）：交易前置 ⇒ 排在「销售订单」之前（同组，码 order:list）
+            new MenuNode("trade-center", "交易管理", List.of(priceBooks, o1, f1, o2)),
             // 生产管理（用户 2026-10-06 组内重排后，再随 issue #6580 收拢为**作业看板 → 智能派单
             // → 计件工资**三项 —— 「加工项管理」「工艺配置」两个菜单项按用户裁定**移除**，
             // 功能体并入 `/settings`（企业基础设置）页内的配置域；旧路径保留为重定向）。

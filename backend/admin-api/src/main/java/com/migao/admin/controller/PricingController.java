@@ -22,14 +22,17 @@ import java.math.BigDecimal;
 /**
  * 报价（issue #7375，P1-3 段 1）：**服务端**说出这个客户买这个 SKU 该按哪个价、凭哪一条。
  *
- * <p>只读面：权限码沿用既有的 `order:view`（报价是下单读面的一部分，不新造码 ——
- * 新码会让现网种子岗位全体失效，而这一步只是把「本来就能看到的价格」变成服务端判定）。</p>
+ * <p>只读面：权限码沿用既有的 `order:list`（报价是下单读面的一部分）。</p>
+ *
+ * <p>🔴 **2026-10-22 修正**：本类此前写的是 `order:view` —— 而权限目录里**没有**这个码
+ * （只有 `order:list` / `order:detail` / `order:create` / `order:update` / `order:refund`）⇒
+ * 端点对**所有人**不可达（#4203 同族静默坑：码写错不报错，只是永远 403）。已改为 `order:list`。</p>
  */
 @Slf4j
 @RestController
 @RequestMapping("/api/admin/pricing")
 @RequiredArgsConstructor
-@RequirePermission("order:view")
+@RequirePermission("order:list")
 public class PricingController {
 
     private final PriceService priceService;

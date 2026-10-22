@@ -18,6 +18,7 @@ import type {
 import type { RefundOrderParams } from './data-adapter'
 // 发货读面（issue #5651）：真值 owner = `OrderShipmentService.readShipment`，这里只声明形状
 import type { OrderShipmentRead } from './sales-shipment'
+import type { PriceBookView } from '@/types/pricing'
 // 报表读面类型（issue #7376 / #7377）：单列一个文件，避免 api.ts 继续膨胀
 import type {
   ReportInventoryAging,
@@ -1659,6 +1660,24 @@ export const chatApi = {
  * 🔴 响应里**空数据时 totals 为 null**（不是 0）—— 页面必须区分「没有数据」与「合计为零」；
  * 未定价/未采集/未发生的分项也各自是 null，并带 `complete=false` + `unknownComponents`。
  */
+/**
+ * 价格本（issue #7375 段 3）：协议价 / 等级价 / 阶梯价的录入与读面。
+ *
+ * 🔴 写面价必须 > 0（0 元 = 白送）；低于该 SKU 成本时后端还会要求「改价」审批。
+ */
+export const priceBookApi = {
+  list: (params: { skuId: number; customerId?: string }) =>
+    request.get<ApiResponse<PriceBookView>>('/api/admin/pricing/books', { params }),
+  upsertProtocol: (data: { customerId: string; skuId: number; price: number; note?: string }) =>
+    request.put<ApiResponse>('/api/admin/pricing/books/protocol', data),
+  upsertVipLevel: (data: { vipLevel: string; skuId: number; price: number }) =>
+    request.put<ApiResponse>('/api/admin/pricing/books/vip-level', data),
+  upsertTier: (data: { skuId: number; minQty: number; maxQty?: number; price: number }) =>
+    request.put<ApiResponse>('/api/admin/pricing/books/tier', data),
+  remove: (kind: 'protocol' | 'vip-level' | 'tier', id: string) =>
+    request.delete<ApiResponse>(`/api/admin/pricing/books/${kind}/${id}`),
+}
+
 export const reportApi = {
   orderMargins: (params?: { startDate?: string; endDate?: string }) =>
     request.get<ApiResponse<ReportOrderMargins>>('/api/admin/reports/order-margins', { params }),

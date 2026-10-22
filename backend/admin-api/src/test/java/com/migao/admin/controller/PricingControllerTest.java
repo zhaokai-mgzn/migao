@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * 报价端点契约（issue #7375，P1-3 段 1）：路由逐字 + 只读码 + **未定价不给 0**（读面契约）。
  */
-@DisplayName("报价端点契约：路由逐字 + 读码 order:view + 金额算式")
+@DisplayName("报价端点契约：路由逐字 + 读码 order:list + 金额算式")
 class PricingControllerTest {
 
     private static Method quote() {
@@ -31,11 +31,17 @@ class PricingControllerTest {
     }
 
     @Test
-    @DisplayName("只读码：类级 order:view，方法不覆写（报价是下单读面的一部分，不新造码）")
+    /**
+     * 🔴 2026-10-22 修正（issue #7375 段 3）：此处原写 `order:view` —— 而**权限目录里没有这个码**
+     * （`RegistrationService` / `PermissionService` 两处种子目录都没有）⇒ 报价与价格本
+     * **对所有人恒 403**。类级码改回目录里真实存在的 `order:list`。
+     * 类级尺度的兜底判据 = `tests/unit_ci_workflows/test_admin_role_read_surface_guard.py` 判据 4b。
+     */
+    @DisplayName("只读码：类级 order:list，方法不覆写（报价是下单读面的一部分，不新造码）")
     void usesExistingReadCode() {
         assertThat(quote().getAnnotation(RequirePermission.class)).isNull();
         assertThat(PricingController.class.getAnnotation(RequirePermission.class).value())
-                .isEqualTo("order:view");
+                .isEqualTo("order:list");
     }
 
     @Test

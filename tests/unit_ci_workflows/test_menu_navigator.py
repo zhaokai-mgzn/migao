@@ -776,7 +776,8 @@ class TestJudgementsOnRealObject:
         # 🔴 2026-10-17（issue #7087）：`/briefing` 的**菜单项已删除**（结论卡改挂在经营看板上）
         # ⇒ 本集合里不再有它；`/dashboard` 仍在（节点码一字未动 = `dashboard:view`，零授权 delta）。
         # issue #7376：报表中心与经营看板同码 ⇒ `/reports` 也在这批可见项里
-        assert visible == {"/orders", "/shipments", "/notifications", "/dashboard", "/reports"}
+        # issue #7375 段 3：价格本节点码也是 `order:list` ⇒ `/price-books` 也在本权限集的可见项里
+        assert visible == {"/orders", "/shipments", "/notifications", "/dashboard", "/reports", "/price-books"}
         # 🔴 2026-10-09（issue #6580）：「工艺配置」「加工项管理」两个菜单项已移除（功能体并入
         # 「企业基础设置」页内的配置域）⇒ 夹具改用合并后的入口 `settings`（其节点 = `/settings`）。
         nodes = nav.nodes_for_feature("settings")

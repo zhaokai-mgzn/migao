@@ -2052,6 +2052,8 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     # `ROUTE_WITHOUT_MENU_NODE`）；P4 把节点码补成 `dashboard:view`（= 该页第一屏读码 = 守卫码）
     # ⇒ 销账后回到「有节点锚」这一侧。
     "/dashboard": "经营看板",
+    # issue #7375 段 3：价格本（`/price-books`）的守卫码锚到它自己的菜单节点（product:list）。
+    "/price-books": "价格本",
     # issue #7376：报表中心（`/reports`）的守卫码锚到它自己的菜单节点（同码 `dashboard:view`，
     # 与经营看板同一把尺子 —— 报表是看板的下钻）。
     "/reports": "报表中心",
@@ -2236,6 +2238,9 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
         "briefingApi.getConfig")),
     # 🔴 issue #7376：报表中心（`/reports`）第一屏读四个只读报表端点，全部 `dashboard:view`
     # ⇒ 节点码与第一屏读码同一把尺子（`dashboard:view`，与经营看板同码 —— 报表是看板的下钻）。
+    # 🔴 issue #7375 段 3：价格本（`/price-books`）第一屏读 `GET /api/admin/pricing/books`
+    # （类级 `order:list`）；节点码取同一把尺子 `order:list`（「每页恰好一个码」）。
+    "/price-books": MenuReadAnchor("价格本", "price-books/page.tsx", ("priceBookApi.list",)),
     "/reports": MenuReadAnchor("报表中心", "reports/page.tsx", (
         "reportApi.orderMargins", "reportApi.inventoryAging",
         "reportApi.staffPerformance", "reportApi.qualityCost")),
