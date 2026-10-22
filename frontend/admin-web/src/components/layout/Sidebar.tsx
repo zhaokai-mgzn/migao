@@ -463,7 +463,9 @@ export default function Sidebar({
         </div>
       </nav>
 
-      {/* 页脚（issue #7476 / #7480 / #7482 / #7485 / #7487）：**星标 + 两行 lockup** 的署名。
+      {/* 页脚（issue #7476 / #7480 / #7482 / #7487 / #7491）：**星标 + 品牌署名**。
+          #7491 起公司法定名**撤出侧边栏**（用户 2026-10-22：「我们的公司名？放左下角用户会有想法的吧」
+          —— 侧边栏是租户的地盘，不挂供应商名）⇒ 公司名改到顶栏用户菜单「关于观星台」按需查看。
           用户 2026-10-22：「移除米高的叫法，观星台=米高了，这样太丑了，你设计的好看些」
           ⇒ 去掉 MIGAO（同一个名字说两遍）与圆角小牌（方框把署名做成了「按钮」形状），
           上「观星台」、下「杭州词元通达科技有限公司」—— 公司名成为 lockup 的第二行。
@@ -488,20 +490,11 @@ export default function Sidebar({
                   fill={gold[400]}
                 />
               </svg>
-              <span className="flex flex-col">
-                <span
-                  data-testid="sidebar-brand-name"
-                  className="text-[13px] font-medium leading-none tracking-[0.2em] text-[#ded7c7]"
-                >
-                  观星台
-                </span>
-                {/* 公司法定名称（issue #7485）：作为 lockup 的第二行，与品牌名左对齐 */}
-                <span
-                  data-testid="sidebar-company"
-                  className="mt-1 text-[9px] leading-none tracking-[0.04em] text-neutral-500"
-                >
-                  杭州词元通达科技有限公司
-                </span>
+              <span
+                data-testid="sidebar-brand-name"
+                className="text-[13px] font-medium leading-none tracking-[0.2em] text-[#ded7c7]"
+              >
+                观星台
               </span>
             </div>
           )}

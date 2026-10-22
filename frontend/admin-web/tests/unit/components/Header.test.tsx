@@ -362,6 +362,21 @@ describe('Header', () => {
     expect(screen.getByText('观星台布艺')).toBeInTheDocument()
   })
 
+  it('用户菜单里有「关于观星台」：新标签页打开官网关于页（issue #7491）', async () => {
+    mockUseAuthStore.mockReturnValue({
+      user: { id: '1', username: '13800138000', nickname: '张老板', tenantName: '观星台布艺' },
+      logout: mockLogout,
+    })
+    await act(async () => {
+      render(<Header />)
+    })
+    await user.click(screen.getByRole('button', { name: '用户菜单' }))
+    const about = screen.getByRole('link', { name: /关于观星台/ })
+    expect(about).toHaveAttribute('href', '/about')
+    expect(about).toHaveAttribute('target', '_blank')
+    expect(about.getAttribute('rel')).toContain('noopener')
+  })
+
   it('非手机号账号（reg_sales）：显示「账号名」+ 账号，副标题放邮箱（#7272 用户截图同形态）', async () => {
     mockUseAuthStore.mockReturnValue({
       user: {

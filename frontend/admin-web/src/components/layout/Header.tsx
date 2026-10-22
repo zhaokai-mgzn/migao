@@ -9,6 +9,7 @@ import {
   Briefcase,
   Building2,
   Menu,
+  Info,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
@@ -316,6 +317,18 @@ export default function Header({ title, breadcrumbs, onOpenMobileNav }: HeaderPr
                   <span className="truncate text-neutral-800">{user?.tenantName || '-'}</span>
                 </div>
               </div>
+
+              {/* 关于观星台（issue #7491）：公司名 / 产品介绍的去处 —— 按需查看，不占租户工作台的常驻面。
+                  新标签页打开，不把商家从当前工作台带走（target=_blank + noopener）。 */}
+              <a
+                href="/about"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex w-full items-center gap-2 border-t border-neutral-100 px-4 py-2.5 text-sm text-neutral-600 transition-colors hover:bg-neutral-50"
+              >
+                <Info className="h-4 w-4 text-neutral-400" />
+                关于观星台
+              </a>
 
               <button
                 onClick={handleLogout}
