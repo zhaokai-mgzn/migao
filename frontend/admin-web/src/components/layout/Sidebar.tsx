@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 import { ChevronLeft, ChevronRight, Search, Star, Pin } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
+import { gold } from '@/lib/brand-palette'
 import Logo from '@/components/ui/Logo'
 // #3002: 菜单配置单源化 —— menuGroups/standaloneItems 移至 @/config/menu，
 // 与岗位权限弹窗共用，保证「权限分配」展示的菜单与真实侧边栏一致
@@ -462,35 +463,56 @@ export default function Sidebar({
         </div>
       </nav>
 
-      {/* 底部折叠按钮（桌面端）—— 移动端抽屉另有「关闭」语义，由遮罩承担 */}
-      <div className="border-t border-white/5 p-2">
-        {/* 平台署名（issue #7476，用户 2026-10-22 裁定：顶部归企业、底部归平台）。
-            企业名缺失时品牌已占主位 ⇒ 此处不重复；折叠态不渲染文字（顶部图标栏已有 Logo）。 */}
+      {/* 页脚（issue #7476 / #7480）：左 = 平台署名、右 = 折叠控制，**同一行**。
+          署名不再是一行孤零零的灰字（用户 2026-10-22：「这样放置设计的太丑陋了，让我们品牌高大上一点」）
+          —— 金色四角星 + 暖白署名 + 拉开的字距；折叠控制收成右侧小号 ghost。
+          企业名缺失时品牌已占顶部主位 ⇒ 此处不重复；折叠态只留展开图标（桌面端）。 */}
+      <div
+        data-testid="sidebar-footer"
+        className={cn(
+          'relative flex items-center border-t border-white/5 px-3 py-2.5',
+          collapsed && 'justify-center',
+        )}
+      >
+        {/* 页脚细线在品牌一侧透一层金（不是整条金线 —— 只是让署名有个「压印」的落点） */}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 -top-px h-px bg-gradient-to-r from-gold-600/50 via-gold-600/10 to-transparent"
+        />
         {!collapsed && user?.tenantName && (
           <div
             data-testid="sidebar-brand"
-            title="观星台 · AI经营管理平台"
-            className="px-2 pb-1 text-[11px] leading-tight text-neutral-400"
+            title="观星台 · AI 经营平台"
+            className="flex items-center gap-2"
           >
-            观星台
+            {/* 四角星 = 「观星」的星；刻意不用通用 sparkle 图标（那是 AI 语义，不是品牌语义） */}
+            <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" className="shrink-0">
+              <path
+                d="M12 1.6c.72 5.34 4.34 8.96 9.68 9.68-5.34.72-8.96 4.34-9.68 9.68-.72-5.34-4.34-8.96-9.68-9.68C7.66 10.56 11.28 6.94 12 1.6Z"
+                fill={gold[400]}
+              />
+            </svg>
+            <span className="text-[13px] font-medium leading-none tracking-[0.2em] text-[#ded7c7]">
+              观星台
+            </span>
           </div>
         )}
         <button
           type="button"
           onClick={onToggle}
           className={cn(
-            'hidden w-full items-center justify-center rounded-md p-2 transition-colors lg:flex',
+            'hidden items-center justify-center rounded-md p-1.5 transition-colors lg:flex',
             'text-neutral-500 hover:bg-white/5 hover:text-white',
-            collapsed && 'px-2',
+            collapsed ? 'mx-auto' : 'ml-auto',
           )}
           title={collapsed ? '展开侧边栏' : '收起侧边栏'}
         >
           {collapsed ? (
-            <ChevronRight className="h-5 w-5" />
+            <ChevronRight className="h-4 w-4" />
           ) : (
             <>
-              <ChevronLeft className="h-5 w-5" />
-              <span className="ml-2 text-sm">收起</span>
+              <ChevronLeft className="h-4 w-4" />
+              <span className="ml-1 text-[12px]">收起</span>
             </>
           )}
         </button>

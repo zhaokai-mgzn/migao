@@ -25,6 +25,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { gold } from '@/lib/brand-palette'
 
 // Mock useAuthStore
 const mockUseAuthStore = vi.fn()
@@ -202,6 +203,25 @@ describe('Sidebar', () => {
     expect(screen.getAllByText('观星台')).toHaveLength(1)
     // 主位已经是品牌名 ⇒ 底部不再重复署名
     expect(screen.queryByTestId('sidebar-brand')).toBeNull()
+  })
+
+  // issue #7480（用户 2026-10-22：「这样放置设计的太丑陋了，让我们品牌高大上一点」）：
+  // 品牌不是一行孤零零的灰字 —— 它和折叠控制同处**页脚一行**，且带品牌图形。
+  it('品牌署名与折叠控制同处页脚一行（issue #7480）', () => {
+    mockUseAuthStore.mockReturnValue({
+      user: { id: '1', username: 'admin', name: '管理员', roles: ['admin'], permissions: ['*'], tenantName: '测试企业' },
+    })
+    render(<Sidebar collapsed={false} onToggle={mockOnToggle} />)
+    const footer = screen.getByTestId('sidebar-footer')
+    const brand = screen.getByTestId('sidebar-brand')
+    const collapse = within(footer).getByTitle('收起侧边栏')
+    // 同一行：署名与折叠按钮同父、互为相邻兄弟（退回「两行各居一侧」即红）
+    expect(brand.parentElement).toBe(footer)
+    expect(collapse.parentElement).toBe(footer)
+    expect(brand.nextElementSibling).toBe(collapse)
+    // 品牌图形在位**且取品牌金**（删掉星标 / 改色都会红 —— 不写成「非空」那种空断言）
+    expect(brand.querySelector('svg path')?.getAttribute('fill')).toBe(gold[400])
+    expect(brand.textContent).toBe('观星台')
   })
 
   it('折叠态不渲染品牌文本（issue #7476）', () => {
