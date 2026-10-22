@@ -221,12 +221,13 @@ describe('Sidebar', () => {
     // 品牌图形在位**且取品牌金**（删掉星标 / 改色都会红 —— 不写成「非空」那种空断言）
     expect(brand.querySelector('svg path')?.getAttribute('fill')).toBe(gold[400])
     expect(within(brand).getByTestId('sidebar-brand-name').textContent).toBe('观星台')
-    // 两行 lockup 的拉丁微标必须在牌内（用户 2026-10-22「先加 1」）
-    expect(within(brand).getByText('MIGAO')).toBeInTheDocument()
-    // 公司法定名称：页脚内、品牌行**下方**一行（issue #7485）
-    const company = within(footer).getByTestId('sidebar-company')
+    // issue #7487：MIGAO 已移除（观星台 = 米高，同一个名字不说两遍）
+    expect(within(footer).queryByText('MIGAO')).toBeNull()
+    // 公司法定名称：成为 lockup 的第二行 —— 在品牌块内、排在「观星台」之后（issue #7485 / #7487）
+    const company = within(brand).getByTestId('sidebar-company')
+    const brandName = within(brand).getByTestId('sidebar-brand-name')
     expect(company.textContent).toBe('杭州词元通达科技有限公司')
-    expect(brand.compareDocumentPosition(company) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(brandName.compareDocumentPosition(company) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('折叠态不渲染品牌文本（issue #7476）', () => {

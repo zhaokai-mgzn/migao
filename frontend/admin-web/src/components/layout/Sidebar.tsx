@@ -463,10 +463,11 @@ export default function Sidebar({
         </div>
       </nav>
 
-      {/* 页脚（issue #7476 / #7480 / #7482 / #7485）：品牌小牌 + 折叠控制同一行，公司名一行在下方。
-          署名不再是一行孤零零的灰字（用户 2026-10-22：「这样放置设计的太丑陋了，让我们品牌高大上一点」）
-          —— 金色四角星 + 暖白署名 + 拉开的字距；折叠控制收成右侧小号 ghost。
-          企业名缺失时品牌已占顶部主位 ⇒ 此处不重复；折叠态只留展开图标（桌面端）。 */}
+      {/* 页脚（issue #7476 / #7480 / #7482 / #7485 / #7487）：**星标 + 两行 lockup** 的署名。
+          用户 2026-10-22：「移除米高的叫法，观星台=米高了，这样太丑了，你设计的好看些」
+          ⇒ 去掉 MIGAO（同一个名字说两遍）与圆角小牌（方框把署名做成了「按钮」形状），
+          上「观星台」、下「杭州词元通达科技有限公司」—— 公司名成为 lockup 的第二行。
+          企业名缺失时品牌已占顶部主位 ⇒ 此处不渲染；折叠态只留展开图标（桌面端）。 */}
       <div data-testid="sidebar-footer" className="relative border-t border-white/5 px-3 py-2.5">
         {/* 页脚细线在品牌一侧透一层金（不是整条金线 —— 只是让署名有个「压印」的落点） */}
         <span
@@ -478,25 +479,28 @@ export default function Sidebar({
             <div
               data-testid="sidebar-brand"
               title="观星台 · AI 经营平台"
-              className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-gold-600/[0.14] via-white/[0.05] to-white/[0.03] px-2.5 py-1 ring-1 ring-white/10"
+              className="flex items-center gap-2.5"
             >
               {/* 四角星 = 「观星」的星；刻意不用通用 sparkle 图标（那是 AI 语义，不是品牌语义） */}
-              <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" className="shrink-0">
+              <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" className="shrink-0">
                 <path
                   d="M12 1.6c.72 5.34 4.34 8.96 9.68 9.68-5.34.72-8.96 4.34-9.68 9.68-.72-5.34-4.34-8.96-9.68-9.68C7.66 10.56 11.28 6.94 12 1.6Z"
                   fill={gold[400]}
                 />
               </svg>
-              {/* 两行 lockup：上「观星台」、下拉丁微标「MIGAO」（用户 2026-10-22：「先加 1 2」） */}
               <span className="flex flex-col">
                 <span
                   data-testid="sidebar-brand-name"
-                  className="text-[13px] font-medium leading-none tracking-[0.18em] text-[#ded7c7]"
+                  className="text-[13px] font-medium leading-none tracking-[0.2em] text-[#ded7c7]"
                 >
                   观星台
                 </span>
-                <span className="mt-0.5 text-[9px] font-semibold leading-none tracking-[0.3em] text-neutral-400">
-                  MIGAO
+                {/* 公司法定名称（issue #7485）：作为 lockup 的第二行，与品牌名左对齐 */}
+                <span
+                  data-testid="sidebar-company"
+                  className="mt-1 text-[9px] leading-none tracking-[0.04em] text-neutral-500"
+                >
+                  杭州词元通达科技有限公司
                 </span>
               </span>
             </div>
@@ -521,16 +525,6 @@ export default function Sidebar({
             )}
           </button>
         </div>
-        {/* 公司法定名称（issue #7485）：品牌行下方一行暗淡小字 —— 产品内唯一的**常驻归属**信息。
-            折叠态 / 企业名缺失时不渲染（避免出现「只有公司名、没有品牌」的残缺页脚）。 */}
-        {!collapsed && user?.tenantName && (
-          <p
-            data-testid="sidebar-company"
-            className="mt-2 text-[10px] leading-none tracking-[0.02em] text-neutral-500"
-          >
-            杭州词元通达科技有限公司
-          </p>
-        )}
       </div>
     </aside>
   )
