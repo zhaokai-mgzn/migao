@@ -90,6 +90,13 @@ describe('LoginPage', () => {
     })
   })
 
+  it('页脚版权行用公司法定全称（issue #7493）', () => {
+    render(<LoginPage />)
+    expect(screen.getByText('© 2026 杭州词元通达科技有限公司 · 观星台')).toBeInTheDocument()
+    // 旧短名不得残留（出现即红）—— 与官网页脚 / 注册页同源同文
+    expect(screen.queryByText('© 2026 词元通达 · 观星台')).toBeNull()
+  })
+
   // ── 两个入口：谁用哪个要一眼看懂（#5485）──
 
   it('渲染两个登录入口：员工登录 / 管理员登录，并默认停在员工登录', () => {
