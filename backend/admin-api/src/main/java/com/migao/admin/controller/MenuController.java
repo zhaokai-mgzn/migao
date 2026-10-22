@@ -217,6 +217,9 @@ public class MenuController {
             // `AuthService.buildMenusByPermissions` 的**首个**顶层 `menus.add` /
             // 前端 `menu.ts` 的 `standaloneHeadItems`（三源同构守卫按**顶层布局序列**比对，含位置）。
             new MenuNode("dashboard:view", "经营看板"),
+            // 报表中心（issue #7376 / #7377）：与经营看板同属**经营数据面** ⇒ 紧随其后、同为最前席位；
+            // 码取同一把尺子 `dashboard:view`（报表是看板的下钻，零授权 delta）。
+            new MenuNode("dashboard:view", "报表中心"),
             // 客户服务（#5778 新建）：原「智能客服」组 + 客户侧两项（客户列表 / 售后工单）合并。
             // 🔴 **组内顺序 = `menu.ts` 的 `customer-service` 组顺序**（在线接待 / 知识库 /
             // 售后工单 / 客户列表 —— 用户 2026-10-06 调整：接待与工具相邻、档案沉底）

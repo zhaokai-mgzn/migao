@@ -10,16 +10,16 @@ C1 / C2 / C3 / C4 的**码列**（**不动**分组/顺序/icon/keywords）」+ �
 
 「某页面要什么码」这个事实在仓里有 **4 份手写副本**（设计 §1.3 的 C 类）：`menu.ts` 的节点码、
 `MenuController` 的 `MENU_TREE`、`AuthService` 的登录菜单、以及**判据自己的锚点表**
-（`MENU_READ_ENDPOINT_ANCHORS` 的 23 条「页面 → 第一屏调用」+ 两张页面面台账）。P1/P2 把「角色 → 码」
+（`MENU_READ_ENDPOINT_ANCHORS` 的 24 条「页面 → 第一屏调用」+ 两张页面面台账）。P1/P2 把「角色 → 码」
 与「码目录」搬进了清单，**「页面 → 码」当时一处都没进清单** ⇒ 「谁新写一张页面 → 码 的表」不会有东西变红。
 
 P3 做三件事，**都不改行为**（零 delta）：
 
 | 面 | 派生（本文件的被测对象） | 现值（对照） |
 |---|---|---|
-| `pages[]`（**新进清单**） | 23 页：`gate` 菜单可见码 + `units` 第一屏读码 → 端点 + 逐页 `visibility_rule` | 四跳现取（菜单节点 → 页面锚点 → `lib/api.ts` → Java 生效码） |
-| C1 / C3 码列 | `menu_node_codes`（29 节点）/ `auth_menu_codes`（22 条） | `parse_menu_ts_nodes` / `parse_menus()['auth']` |
-| C4 守卫码列 | `route_guard_codes`（每页 `path → gate`） | `parse_route_guard`（29 条前缀） |
+| `pages[]`（**新进清单**） | 24 页：`gate` 菜单可见码 + `units` 第一屏读码 → 端点 + 逐页 `visibility_rule` | 四跳现取（菜单节点 → 页面锚点 → `lib/api.ts` → Java 生效码） |
+| C1 / C3 码列 | `menu_node_codes`（30 节点）/ `auth_menu_codes`（23 条） | `parse_menu_ts_nodes` / `parse_menus()['auth']` |
+| C4 守卫码列 | `route_guard_codes`（每页 `path → gate`） | `parse_route_guard`（30 条前缀） |
 | 页面面两张台账 | `multi_code_pages`（一页多码）/ `parity_residual_pages`（节点码 ≠ 页面读码） | `MULTI_READ_ENDPOINT_PAGES`（0）/ `MENU_READ_PARITY_RESIDUALS`（0） |
 | 可见性 | `visibility`（按 `visibility_rule` 把 units 投影成「看得见该菜单的岗位集」） | 现值岗位集（`seed` ∪ `fallback` 的持码者） |
 
@@ -42,7 +42,7 @@ P3 的派生**必须保留「一页多码」这一结构事实**（一页并发*
 设计 §3.4 问题 3 的结论：`/production/processing` 需要「任一 unit 可用即可见」，而 `/settings` 的语义是
 「整页管理」——「允许半个页面可见」会造出新的「看得见做不了」⇒ **逐页声明 + 默认 `all`（fail-closed）**。
 本判据把「现值要求」机械算出来（`all` ∩ / `any` ∪ 能否复现现值岗位集），并要求清单声明**逐页相等**：
-现取 = `all` **22** 页 / `any` **0** 页 / `node-code` **1** 页（后者 = 投影复现不了现值，进
+现取 = `all` **23** 页 / `any` **0** 页 / `node-code` **1** 页（后者 = 投影复现不了现值，进
 `PAGE_VISIBILITY_GAPS`，只许缩短，出口由 P4 逐条人裁定）。
 ⇒ 任何人把某页改成 `any`（放宽）而现值不要求它 ⇒ **红**。
 
@@ -752,7 +752,7 @@ def menu_column_problems(derived: dict, present: dict) -> list[str]:
          （理由 + 谁的负责 + 码**冻结**：涨跌都要同 PR 更新）；
       ③ **只许缩短**：两张台账里登记了却已对不上 / 已不在码列里 ⇒ 红。
 
-    ⚠️ **节点集不属本面**：C2 只有 **26** 个节点、C3 只有 **22** 个（登录菜单是页面的**子集**）——
+    ⚠️ **节点集不属本面**：C2 只有 **26** 个节点、C3 只有 **23** 个（登录菜单是页面的**子集**）——
     「哪些节点进哪一列」是菜单结构的事实，不由 `pages[]` 决定；本函数只判**码**（逐条点名）。
     """
     node_gates = dict(derived["menu_node_codes"])

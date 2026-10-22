@@ -18,6 +18,13 @@ import type {
 import type { RefundOrderParams } from './data-adapter'
 // 发货读面（issue #5651）：真值 owner = `OrderShipmentService.readShipment`，这里只声明形状
 import type { OrderShipmentRead } from './sales-shipment'
+// 报表读面类型（issue #7376 / #7377）：单列一个文件，避免 api.ts 继续膨胀
+import type {
+  ReportInventoryAging,
+  ReportOrderMargins,
+  ReportQualityCost,
+  ReportStaffPerformance,
+} from '@/types/reports'
 // 「识别 + 一次性推理」端点回的是**同一条字段计划**（issue #6367 包 P3）—— 复用它的形状，
 // 不另造第二份（两份定义迟早让 `source` / `fields` 漂移）。**类型导入**，运行时零依赖。
 import type { PageFillPlan } from './agent-page-fill'
@@ -1646,6 +1653,23 @@ export const chatApi = {
  * <p>与 `supplierApi` **分开**：采购单不是供应商的子资源（它挂的是 purchase_orders 自己的端点），
  * 混在一个对象里会让「谁的端点」在调用处看不出来。</p>
  */
+/**
+ * 报表中心（issue #7376 / #7377）：四张只读报表。
+ *
+ * 🔴 响应里**空数据时 totals 为 null**（不是 0）—— 页面必须区分「没有数据」与「合计为零」；
+ * 未定价/未采集/未发生的分项也各自是 null，并带 `complete=false` + `unknownComponents`。
+ */
+export const reportApi = {
+  orderMargins: (params?: { startDate?: string; endDate?: string }) =>
+    request.get<ApiResponse<ReportOrderMargins>>('/api/admin/reports/order-margins', { params }),
+  inventoryAging: (params?: { thresholdDays?: number; warehouseCode?: string }) =>
+    request.get<ApiResponse<ReportInventoryAging>>('/api/admin/reports/inventory-aging', { params }),
+  staffPerformance: (params?: { startDate?: string; endDate?: string }) =>
+    request.get<ApiResponse<ReportStaffPerformance>>('/api/admin/reports/staff-performance', { params }),
+  qualityCost: (params?: { startDate?: string; endDate?: string }) =>
+    request.get<ApiResponse<ReportQualityCost>>('/api/admin/reports/quality-cost', { params }),
+}
+
 export const purchaseOrderApi = {
   list: (params?: { status?: string; supplierId?: string }) =>
     request.get<ApiResponse<PurchaseOrderView[]>>('/api/admin/purchase-orders', { params }),

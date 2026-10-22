@@ -775,7 +775,8 @@ class TestJudgementsOnRealObject:
         visible = {n.path for n in nav.visible_nodes(["order:list", "dashboard:view"])}
         # 🔴 2026-10-17（issue #7087）：`/briefing` 的**菜单项已删除**（结论卡改挂在经营看板上）
         # ⇒ 本集合里不再有它；`/dashboard` 仍在（节点码一字未动 = `dashboard:view`，零授权 delta）。
-        assert visible == {"/orders", "/shipments", "/notifications", "/dashboard"}
+        # issue #7376：报表中心与经营看板同码 ⇒ `/reports` 也在这批可见项里
+        assert visible == {"/orders", "/shipments", "/notifications", "/dashboard", "/reports"}
         # 🔴 2026-10-09（issue #6580）：「工艺配置」「加工项管理」两个菜单项已移除（功能体并入
         # 「企业基础设置」页内的配置域）⇒ 夹具改用合并后的入口 `settings`（其节点 = `/settings`）。
         nodes = nav.nodes_for_feature("settings")
@@ -879,8 +880,8 @@ class TestEveryJudgementCanGoRed:
                 '    MenuNode("customer-service", "在线接待", "/agent-workspace/human-sessions", "agent:session"),\n',
             ),
         )
-        # ⚠️ 首节点是**最前席位**「经营看板」（`/dashboard`，#7087）⇒ 被注入的是紧跟其后的首组两项。
-        assert [n.path for n in mutated.MENU_TREE][1:3] == ["/knowledge", "/agent-workspace/human-sessions"], (
+        # ⚠️ 前两个节点是最前席位（经营看板 → 报表中心，#7087 + #7376）⇒ 被注入的是紧跟其后的首组两项。
+        assert [n.path for n in mutated.MENU_TREE][2:4] == ["/knowledge", "/agent-workspace/human-sessions"], (
             "前提自证失败（注入没生效 ⇒ 红证无信息量）")
         assert problems_coverage(mutated, menu_ts_nodes), "判据 1b 没看见顺序漂移 ⇒ 空断言"
 

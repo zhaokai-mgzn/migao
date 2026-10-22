@@ -93,6 +93,7 @@ describe('deriveRoleDefaultMenu（后台 + 手机端 = 一份默认菜单）', (
 
   it('摘要行把两面放进同一句（§31 P2：同卡不重复摆两套清单）', () => {
     const menu = deriveRoleDefaultMenu(['dashboard:view', 'processing:view'], MOBILE_TITLES)
-    expect(roleDefaultMenuSummary(menu)).toBe('默认菜单：后台 2 项 · 手机端 2 个入口')
+    // dashboard:view 承载两个菜单项（经营看板 + 报表中心，#7376）⇒ 后台 3 项
+    expect(roleDefaultMenuSummary(menu)).toBe('默认菜单：后台 3 项 · 手机端 2 个入口')
   })
 })

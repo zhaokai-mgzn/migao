@@ -848,6 +848,13 @@
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 213,
       "note": "issue #7377 段 2（返工单 + 闭环唯一）新增 1 条 [backend-contract] 用例 QC-002 ⇒ 212 → 213。判红通道 = ReworkStateTest(4) + ReworkOrderServiceTest(8) + ReworkOrderControllerTest(4) + ReworkOrderMapperTest(5)。"
+    },
+    {
+      "sha": "feat/7376-reports-page",
+      "date": "2026-10-22",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 213,
+      "note": "issue #7376 段 4（报表中心页面 + 菜单归位）新增 1 条 [frontend-contract] 用例 RPT-004 ⇒ 用例库 860（backend_contract_scoring_zero 不变，本用例走 frontend 通道）。"
     }
   ]
 }

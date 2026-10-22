@@ -164,6 +164,10 @@ export const standaloneHeadItems: MenuItem[] = [
   // 经营看板（原「工作台」组的首项）：issue #5699（P4）节点码 = 该页第一屏读码 `dashboard:view`
   //（5 个读端点与前端路由守卫同码）—— 「菜单看得见」与「点进去进得去」必须同一把尺子。
   { key: 'dashboard', name: '经营看板', icon: 'BarChart3', path: '/dashboard', permissionCode: 'dashboard:view', keywords: ['jycb', 'kanban', '看板', '工作台'] },
+  // 报表中心（issue #7376 / #7377）：与「经营看板」同属**经营数据面**，所以紧跟其后、同为最前席位
+  // 一级项（而不是塞进「交易管理」——报表不是交易操作）。码取**同一把尺子** `dashboard:view`
+  // （报表就是看板的下钻，零授权 delta）；`/dashboard` 仍是登录落点（= 第一个可见项，未变）。
+  { key: 'reports', name: '报表中心', icon: 'FileSpreadsheet', path: '/reports', permissionCode: 'dashboard:view', keywords: ['bb', 'baobiao', 'report', '报表', '毛利', '滞销', '业绩', '质量成本'] },
 ]
 
 // 带子级的菜单组（本轮 2026-10-17 改判：**五大组**；顺序即渲染顺序与三源比对顺序）

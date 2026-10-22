@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（142 case）
+## 杂项域（143 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5830,6 +5830,21 @@
 跳过: [backend-contract] 返工状态机与闭环一致性，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-22 新增（issue #7377 段 2）。落码 = `ReworkState`（四态 + 闭环一致性纯函数）+ `ReworkOrder`/`ReworkOrderMapper` + `ReworkOrderService`（开单/开工/完成回写/取消，全走 CAS）+ `ReworkOrderController` + V185（含 part 唯一索引）。 ｜ tags: backend-contract, quality, state-machine, red-proof
+
+### RPT-004. 报表中心页面：四张报表上屏 + 菜单归位「经营看板之后」+ 空数据不写 0（issue #7376 段 4） 🔵
+```
+你: 用户（2026-10-22，逐字）：「继续做吧，新菜单要符合当前业务逻辑」—— 报表已有接口但界面上看不到；新菜单必须按业务逻辑归位，不能乱塞。
+数据: **判据 1（菜单归位）**：「报表中心」挂在**最前席位第二项**（经营看板之后）—— 两者同属经营数据面（报表是看板的下钻），所以不进「交易管理」等操作组；同码 `dashboard:view`（零授权 delta）。判据 = `menu-nav.test.ts`（`EXPECTED_STANDALONE_HEAD = ['dashboard','reports']`）+ `Sidebar.test.tsx`。
+数据: **判据 2（🔴 空数据不写 0）**：四张报表没有数据时显示「暂无数据」，**不出现 ¥0.00**；金额缺值渲染成「—」。判据 = `reports.test.tsx#没有数据时显示「暂无数据」`。
+数据: **判据 3（未知不填 0）**：质量成本未知分项显示「未采集 / 未知」，并在 `complete=false` 时明写「这不是完整质量成本，还缺 N 项」。判据 = `reports.test.tsx#质量成本未知分项显示「未采集 / 未知」`。
+数据: **判据 4（成本未知要提示）**：毛利卡片在 `unknownCostOrders > 0` 时提示「另有 N 单成本未知，未计入以上毛利（不是 0 元）」。判据 = `reports.test.tsx#有数据时给出合计`。
+数据: **判据 5（读失败常驻可见）**：四张报表任一失败 ⇒ 常驻失败卡片（不是空白页）+ 重试出口。判据 = `reports.test.tsx#加载失败`。
+数据: **判据 6（路由守卫与黄金策页面上下文）**：`/reports` 有页面守卫码 `dashboard:view`（无码者地址栏直达被拦）；并在 `page_registry` 登记（真值源 = `ReportService` 的 javadoc 口径），否则黄金策在这页拿不到口径。判据 = `test_rbac_derived_pages.py` / `test_agent_permission_parity.py` / `test_page_context_registry_coverage.py`。
+数据: **边界（照实登记）**：① 报表只有**汇总卡**，尚未做逐行明细表/导出/日期筛选控件（接口已支持 startDate/endDate/thresholdDays）；② 账龄报表化、CSV 导出仍未做；③ 菜单项与经营看板同码 ⇒ 权限树里同码出现两处（与「入库单/供应商/采购单同取 inbound:view」同款，已在 roles 用例登记）。
+前置: 本用例是 [frontend-contract]：前置 = 四张报表接口（#7466 / #7468 / #7470 / #7472）+ 菜单五副本 + rbac 清单。零网络、零 LLM。
+跳过: [frontend-contract] 报表页展示纪律与菜单归位，由前端单测与 rbac 判据验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-22 新增（issue #7376 段 4）。落码 = `reports/page.tsx` + `lib/api.ts` 的 `reportApi` + `types/reports.ts` + 菜单五副本（menu.ts / MenuController / AuthService / ai-agent MENU_TREE + FEATURE_MAP）+ Header 面包屑 + 官网能力地图 + rbac 清单与 readings + page_registry。 ｜ tags: frontend-contract, report, menu, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12612,8 +12627,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：859（活跃 141，跳过 718）
-- tier 分布：smoke 12 / normal 791 / adversarial 32
+- 用例总数：860（活跃 141，跳过 719）
+- tier 分布：smoke 12 / normal 792 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12628,7 +12643,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：142
+- 杂项域：143
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12814,6 +12829,7 @@
 - RPT-003: 报表中心：员工业绩（按制单人归集 / 无主单不摊 / 客单价不做 0 除）（issue #7376 段 3）
 - QC-001: 质量成本：返工工时 / 报废料 / 赔付三项分列，未知不折成 0（issue #7377 段 1）
 - QC-002: 返工单：售后 → 返工 → 回写，闭环唯一（不得「已闭环但返工单还在做」）（issue #7377 段 2）
+- RPT-004: 报表中心页面：四张报表上屏 + 菜单归位「经营看板之后」+ 空数据不写 0（issue #7376 段 4）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

@@ -114,6 +114,13 @@ TRUTH_SOURCES: Dict[str, TruthSource] = {
         citation="依据：采购单状态与收货口径（服务层说明）",
         path="backend/admin-api/src/main/java/com/migao/admin/service/PurchaseOrderService.java",
     ),
+    # 报表中心（issue #7376 / #7377）：四条口径（合计 = 明细之和 / 空数据 ≠ 0 / 未知不填 0 /
+    # 数据范围同 P0-4）全部写在服务层 javadoc，不在别处再写一份。
+    "report-center": TruthSource(
+        label="报表中心（毛利 / 滞销 / 业绩 / 质量成本）",
+        citation="依据：报表口径说明（合计与明细可复算；没有数据留空而不写 0；算不出的成本标未知）",
+        path="backend/admin-api/src/main/java/com/migao/admin/service/ReportService.java",
+    ),
     "supplier-master-data": TruthSource(
         label="供应商档案（供应商主数据）",
         citation="依据：供应商档案口径（服务层说明）",
@@ -189,6 +196,13 @@ PAGE_REGISTRY: Tuple[PageEntry, ...] = (
         route="/purchase-orders",
         truth_source="purchase-order-lifecycle",
         page_permissions=("inbound:view",),
+        entity_permissions=(),
+    ),
+    # 报表中心（issue #7376 / #7377）：问「毛利怎么算 / 为什么是空的 / 质量成本缺哪项」⇒ 引服务层口径。
+    PageEntry(
+        route="/reports",
+        truth_source="report-center",
+        page_permissions=("dashboard:view",),
         entity_permissions=(),
     ),
     # 供应商档案（issue #7369）：页面上问「账期怎么算 / 停用是什么意思」⇒ 引服务层口径。

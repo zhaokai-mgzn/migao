@@ -205,6 +205,7 @@ vi.mock('lucide-react', async (importOriginal) => {
   ShoppingCart: iconStub('shopping-cart'),
   FileText: iconStub('file-text'),
   BarChart3: iconStub('bar-chart3'),
+  FileSpreadsheet: iconStub('table2'),
   BookOpen: iconStub('book-open'),
   Scissors: iconStub('scissors'),
   Bot: iconStub('bot'),
