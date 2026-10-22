@@ -216,14 +216,17 @@ describe('Sidebar', () => {
     const brand = screen.getByTestId('sidebar-brand')
     const collapse = within(footer).getByTitle('收起侧边栏')
     // 同一行：署名与折叠按钮同父、互为相邻兄弟（退回「两行各居一侧」即红）
-    expect(brand.parentElement).toBe(footer)
-    expect(collapse.parentElement).toBe(footer)
+    expect(brand.parentElement).toBe(collapse.parentElement)
     expect(brand.nextElementSibling).toBe(collapse)
     // 品牌图形在位**且取品牌金**（删掉星标 / 改色都会红 —— 不写成「非空」那种空断言）
     expect(brand.querySelector('svg path')?.getAttribute('fill')).toBe(gold[400])
     expect(within(brand).getByTestId('sidebar-brand-name').textContent).toBe('观星台')
     // 两行 lockup 的拉丁微标必须在牌内（用户 2026-10-22「先加 1」）
     expect(within(brand).getByText('MIGAO')).toBeInTheDocument()
+    // 公司法定名称：页脚内、品牌行**下方**一行（issue #7485）
+    const company = within(footer).getByTestId('sidebar-company')
+    expect(company.textContent).toBe('杭州词元通达科技有限公司')
+    expect(brand.compareDocumentPosition(company) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('折叠态不渲染品牌文本（issue #7476）', () => {
@@ -232,6 +235,7 @@ describe('Sidebar', () => {
     })
     render(<Sidebar collapsed={true} onToggle={mockOnToggle} />)
     expect(screen.queryByTestId('sidebar-brand')).toBeNull()
+    expect(screen.queryByTestId('sidebar-company')).toBeNull()
     expect(screen.queryByText('观星台')).toBeNull()
   })
 

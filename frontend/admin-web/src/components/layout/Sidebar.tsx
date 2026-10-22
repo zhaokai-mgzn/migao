@@ -463,68 +463,74 @@ export default function Sidebar({
         </div>
       </nav>
 
-      {/* 页脚（issue #7476 / #7480）：左 = 平台署名、右 = 折叠控制，**同一行**。
+      {/* 页脚（issue #7476 / #7480 / #7482 / #7485）：品牌小牌 + 折叠控制同一行，公司名一行在下方。
           署名不再是一行孤零零的灰字（用户 2026-10-22：「这样放置设计的太丑陋了，让我们品牌高大上一点」）
           —— 金色四角星 + 暖白署名 + 拉开的字距；折叠控制收成右侧小号 ghost。
           企业名缺失时品牌已占顶部主位 ⇒ 此处不重复；折叠态只留展开图标（桌面端）。 */}
-      <div
-        data-testid="sidebar-footer"
-        className={cn(
-          'relative flex items-center border-t border-white/5 px-3 py-2.5',
-          collapsed && 'justify-center',
-        )}
-      >
+      <div data-testid="sidebar-footer" className="relative border-t border-white/5 px-3 py-2.5">
         {/* 页脚细线在品牌一侧透一层金（不是整条金线 —— 只是让署名有个「压印」的落点） */}
         <span
           aria-hidden="true"
           className="pointer-events-none absolute inset-x-0 -top-px h-px bg-gradient-to-r from-gold-600/50 via-gold-600/10 to-transparent"
         />
-        {!collapsed && user?.tenantName && (
-          <div
-            data-testid="sidebar-brand"
-            title="观星台 · AI 经营平台"
-            className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-gold-600/[0.14] via-white/[0.05] to-white/[0.03] px-2.5 py-1 ring-1 ring-white/10"
+        <div className={cn('flex items-center', collapsed && 'justify-center')}>
+          {!collapsed && user?.tenantName && (
+            <div
+              data-testid="sidebar-brand"
+              title="观星台 · AI 经营平台"
+              className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-gold-600/[0.14] via-white/[0.05] to-white/[0.03] px-2.5 py-1 ring-1 ring-white/10"
+            >
+              {/* 四角星 = 「观星」的星；刻意不用通用 sparkle 图标（那是 AI 语义，不是品牌语义） */}
+              <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" className="shrink-0">
+                <path
+                  d="M12 1.6c.72 5.34 4.34 8.96 9.68 9.68-5.34.72-8.96 4.34-9.68 9.68-.72-5.34-4.34-8.96-9.68-9.68C7.66 10.56 11.28 6.94 12 1.6Z"
+                  fill={gold[400]}
+                />
+              </svg>
+              {/* 两行 lockup：上「观星台」、下拉丁微标「MIGAO」（用户 2026-10-22：「先加 1 2」） */}
+              <span className="flex flex-col">
+                <span
+                  data-testid="sidebar-brand-name"
+                  className="text-[13px] font-medium leading-none tracking-[0.18em] text-[#ded7c7]"
+                >
+                  观星台
+                </span>
+                <span className="mt-0.5 text-[9px] font-semibold leading-none tracking-[0.3em] text-neutral-400">
+                  MIGAO
+                </span>
+              </span>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={onToggle}
+            className={cn(
+              'hidden items-center justify-center rounded-md p-1.5 transition-colors lg:flex',
+              'text-neutral-500 hover:bg-white/5 hover:text-white',
+              collapsed ? 'mx-auto' : 'ml-auto',
+            )}
+            title={collapsed ? '展开侧边栏' : '收起侧边栏'}
           >
-            {/* 四角星 = 「观星」的星；刻意不用通用 sparkle 图标（那是 AI 语义，不是品牌语义） */}
-            <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true" className="shrink-0">
-              <path
-                d="M12 1.6c.72 5.34 4.34 8.96 9.68 9.68-5.34.72-8.96 4.34-9.68 9.68-.72-5.34-4.34-8.96-9.68-9.68C7.66 10.56 11.28 6.94 12 1.6Z"
-                fill={gold[400]}
-              />
-            </svg>
-            {/* 两行 lockup：上「观星台」、下拉丁微标「MIGAO」（用户 2026-10-22：「先加 1 2」） */}
-            <span className="flex flex-col">
-              <span
-                data-testid="sidebar-brand-name"
-                className="text-[13px] font-medium leading-none tracking-[0.18em] text-[#ded7c7]"
-              >
-                观星台
-              </span>
-              <span className="mt-0.5 text-[9px] font-semibold leading-none tracking-[0.3em] text-neutral-400">
-                MIGAO
-              </span>
-            </span>
-          </div>
+            {collapsed ? (
+              <ChevronRight className="h-4 w-4" />
+            ) : (
+              <>
+                <ChevronLeft className="h-4 w-4" />
+                <span className="ml-1 text-[12px]">收起</span>
+              </>
+            )}
+          </button>
+        </div>
+        {/* 公司法定名称（issue #7485）：品牌行下方一行暗淡小字 —— 产品内唯一的**常驻归属**信息。
+            折叠态 / 企业名缺失时不渲染（避免出现「只有公司名、没有品牌」的残缺页脚）。 */}
+        {!collapsed && user?.tenantName && (
+          <p
+            data-testid="sidebar-company"
+            className="mt-2 text-[10px] leading-none tracking-[0.02em] text-neutral-500"
+          >
+            杭州词元通达科技有限公司
+          </p>
         )}
-        <button
-          type="button"
-          onClick={onToggle}
-          className={cn(
-            'hidden items-center justify-center rounded-md p-1.5 transition-colors lg:flex',
-            'text-neutral-500 hover:bg-white/5 hover:text-white',
-            collapsed ? 'mx-auto' : 'ml-auto',
-          )}
-          title={collapsed ? '展开侧边栏' : '收起侧边栏'}
-        >
-          {collapsed ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
-            <>
-              <ChevronLeft className="h-4 w-4" />
-              <span className="ml-1 text-[12px]">收起</span>
-            </>
-          )}
-        </button>
       </div>
     </aside>
   )
