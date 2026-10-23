@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, ChevronDown, ChevronRight, Ruler, Search, Package, User, Receipt, Settings2, Plus, Trash2, UserPlus, Phone, MapPin, Zap } from 'lucide-react'
 import { toast } from 'sonner'
-import { toastRequestError } from '@/lib/api-error'
+import { loadErrorMessage, toastRequestError } from '@/lib/api-error'
+import RequestApprovalModal from '@/components/approvals/RequestApprovalModal'
+import { creditDraftFromRejection, type ApprovalDraft } from '@/lib/approval-request'
 import { urgencyRequestFields } from '@/lib/order-urgency'
 import {
   buildOrderPrefill,
@@ -1561,6 +1563,8 @@ function edgeMetersOf(line: OrderLineItem): number {
 export default function NewOrderPage() {
   const router = useRouter()
   const [submitting, setSubmitting] = useState(false)
+  // 超授信被拦时就地开一张授信审批（issue #7374 段 4）：ref = 客户手机号，金额 = 本次超出额
+  const [approvalDraft, setApprovalDraft] = useState<ApprovalDraft | null>(null)
 
   // ===== 行项数组 =====
   const [lineItems, setLineItems] = useState<OrderLineItem[]>(() => [createEmptyLineItem()])
@@ -3151,6 +3155,16 @@ export default function NewOrderPage() {
       router.push('/orders')
     } catch (err) {
       toastRequestError(err, '创建订单失败')
+      // 🔴 授信闸门拒时，服务端原文里带「尚缺 ¥X」——就地开出申请入口，
+      //    金额预填「尚缺」那个数（不是订单总额：批多了会白占额度），拿不到就退回订单总额。
+      // 服务端原话在 `response.data.message`（不是 axios 的 `err.message`）⇒ 用统一提取器；
+      // 解析与兜底都在 `creditDraftFromRejection`（纯函数，可逐句断言），页面只负责挂弹窗
+      const draft = creditDraftFromRejection(loadErrorMessage(err, '创建订单失败'), {
+        customerPhone,
+        customerName: customerName.trim() || null,
+        fallbackAmount: actual,
+      })
+      if (draft) setApprovalDraft(draft)
     } finally {
       setSubmitting(false)
     }
@@ -3159,6 +3173,13 @@ export default function NewOrderPage() {
   // ====== 渲染 ======
   return (
     <div className="p-6 max-w-[1280px] mx-auto">
+      {/* 授信审批弹窗（issue #7374 段 4）：被「超出客户授信额度」拒时就地申请，
+          ref = 客户手机号、金额预填「尚缺」那个数 —— 门槛与 ref 口径见 `lib/approval-request.ts` */}
+      <RequestApprovalModal
+        open={approvalDraft !== null}
+        onClose={() => setApprovalDraft(null)}
+        draft={approvalDraft}
+      />
       {/* 顶部：返回 + 标题 */}
       <div className="flex items-center gap-3 mb-6">
         <button
