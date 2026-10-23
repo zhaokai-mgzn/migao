@@ -5050,6 +5050,7 @@ cases:
         - "frontend/admin-web/tests/unit/components/FormInterpretCard.test.tsx"
         - "frontend/admin-web/tests/unit/pages/products-new-recognize-entry.test.tsx"
         - "frontend/admin-web/tests/unit/lib/image-recognize.test.ts"
+        - "frontend/admin-web/tests/unit/lib/product-attribute-options.test.ts"
       ci:
         - pr-check.yml
       verifies: []
