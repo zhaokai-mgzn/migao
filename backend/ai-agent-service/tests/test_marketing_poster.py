@@ -262,3 +262,30 @@ class TestCardEmission:
             "data": {"copy": {"title": "新品上市", "selling_points": ["a"]}},
         }) is False
         assert _should_send_card("marketing_poster", {"success": False}) is False
+
+class TestRuleDisambiguation:
+    """规则歧义回归（issue #7510，实证会话 sess_5742c5b5c43a48b1）。
+
+    旧描述把「调用前必须先问商家（先用 product_search 定位 product_id）」写在同一句里 ⇒
+    模型在「查商品算不算『调用』」上反复权衡，最后把权衡过程当回复发给商家。
+    历史红线必须分成两条：**商品可以先查**、**文案必须先问**。
+    """
+
+    def test_description_allows_product_search_first(self):
+        desc = MarketingPosterTool.description
+        assert "允许先" in desc and "product_search" in desc, "缺「商品可以先查」的放行口径"
+        assert "不属于" in desc, "缺「查商品不算被禁止的调用」的显式豁免"
+
+    def test_description_forbids_call_without_copy(self):
+        desc = MarketingPosterTool.description
+        assert "不要调用本工具" in desc
+        assert "不得自行拍板" in desc
+
+    def test_old_ambiguous_phrasing_gone(self):
+        assert "（先用 product_search 定位 product_id）" not in MarketingPosterTool.description
+
+    def test_general_prompt_bifurcates_product_and_copy(self):
+        from app.graph.skills.general_agent import GENERAL_SYSTEM_PROMPT
+        assert "可以直接" in GENERAL_SYSTEM_PROMPT and "`product_search`" in GENERAL_SYSTEM_PROMPT
+        assert "必须先问" in GENERAL_SYSTEM_PROMPT
+        assert "只把结论说给商家" in GENERAL_SYSTEM_PROMPT
