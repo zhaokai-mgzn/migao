@@ -10777,7 +10777,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（131 case）
+## 前端 UI 域（132 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -12676,6 +12676,22 @@
 ```
 溯源: 2026-10-20 新增（issue #7397）。38 处业务 `<select>` 全部改引用 `SELECT_CONTROL`（`Select.tsx` 唯一真值：appearance-none + 自绘暖色箭尖 + h-9 + 焦点环），`Pagination` 紧凑档与 `register` 大字面只借 `SELECT_CHEVRON`（后者登记台账，理由：h-11 表单硬塞 h-9 会与同页输入框不齐）。顺带修 `SearchBar` 定宽字段（占位文案截断）。`Select` 原语去掉叠层 `ChevronDown`（同一份箭尖图形）。判据 = 新增类级元守卫 + 既有 design-system-form-fields / filter-area-primitive-guard 全绿。 ｜ tags: design-system, select, search-bar, control-chrome
 
+### UI-132. 黄金策悬浮助手「全屏（最大化）」必须铺满视口 —— 历史拖拽 px 尺寸不得覆盖全屏布局，全屏不渲染缩放手柄（issue #7508） 🔵
+```
+你: 这里最大化之后显示的有问题，没有呈现最大化的状态
+你: 我看只有我电脑是这样的，我换一台电脑就正常了
+期望: direct_reply
+数据: 判据 1·全屏铺满（会红）：localStorage 残留 `mibao_chat_panel_width/height`（620×480）时点「全屏」⇒ 面板根 `chat-panel-resize-container` 的 style 必须是 `width:100%` / `height:100%`（修前实测 `620px` / `480px`，即左上角小窗 + 右上露出底层页面）。执行点 = frontend/admin-web/tests/unit/floating-assistant.test.tsx（describe「全屏」）
+数据: 判据 2·全屏无缩放手柄（会红）：全屏态四个手柄（`chat-panel-resize-handle` / `-top` / `-horizontal` / `-corner`）全部不渲染；退出全屏后全部恢复（最大化窗口不可再被拖成小窗，也阻断在最大化态把 px 写回 localStorage）。执行点同上
+数据: 判据 3·退出全屏可逆（会红）：退出全屏后遮罩 `float-assistant-overlay` 回来、面板回到历史 px（620/480）；无历史 px 时全屏同样 100%（对照：不是靠清缓存才正常）。执行点同上
+数据: 判据 4·模式外观契约矩阵（类级，未登记即红）：closed / centered / fullscreen / minimized 四模式 × {面板根 / 模态遮罩 / 悬浮球 / 最小化浮窗 / 缩放手柄} 逐格断言 —— 新增或改动任一模式必须在该表加行。执行点 = 同文件 describe「模式外观契约」的 it.each
+数据: 既有判据零放宽：UI-021 / UI-022 / UI-023 / UI-029 的拖拽缩放、持久化、双击复位、最小化浮窗行为全绿（MibaoChatPanel.test.tsx / floating-assistant.test.tsx 一条断言都没改弱）
+前置: 本用例是 [backend-contract] 纯前端布局契约用例（jsdom 渲染 + 源码行为），不依赖真实服务与共享夹具；前置不成立时对应单测直接红，agent-eval 栈不跑它
+跳过: [backend-contract] 纯前端 React 组件/布局契约，由 admin-web vitest 执行（jsdom + 真机截图取证），非 LLM 行为，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-23 新增（issue #7508，用户真机截图 + 逐字「这里最大化之后显示的有问题，没有呈现最大化的状态」「我看只有我电脑是这样的，我换一台电脑就正常了」）：`MibaoChatPanel` 的 `containerStyle` 里 hooks 残留 px **优先于** `defaultWidth/defaultHeight` ⇒ 拖过一次面板后，`FloatingAssistant` 全屏分支传的 `100%/100vh` 被判无效，面板停在左上角旧 px 尺寸。修法 = 新增显式 `fullscreen` 模式位（尺寸归视口所有：`100%`/`100%`）+ 全屏不渲染缩放手柄；持久化语义与四模式状态机一字未改（退出全屏仍回到用户拖过的尺寸）。 ｜ tags: ui, admin-web, floating-assistant, fullscreen, resize
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -12705,8 +12721,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：865（活跃 141，跳过 724）
-- tier 分布：smoke 12 / normal 797 / adversarial 32
+- 用例总数：866（活跃 141，跳过 725）
+- tier 分布：smoke 12 / normal 798 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12731,7 +12747,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：131
+- 前端 UI 域：132
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
