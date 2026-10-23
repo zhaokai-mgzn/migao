@@ -1,7 +1,7 @@
-// case_ids: RPT-001
+// case_ids: RPT-001, RPT-007
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import ReportsPage from '@/app/(dashboard)/reports/page'
+import ReportsPage, { presetRange } from '@/app/(dashboard)/reports/page'
 
 /**
  * 报表中心页面（issue #7376 / #7377）—— 三条展示纪律的**前端**判据。
@@ -275,5 +275,86 @@ describe('报表中心页面', () => {
     await waitFor(() => expect(screen.getByTestId('reports-quality-breakdown-empty')).toBeInTheDocument())
     expect(screen.getByTestId('reports-quality-breakdown-empty').textContent).toContain('暂无数据')
     expect(document.body.textContent).not.toContain('¥0.00')
+  })
+
+  // ── 时间区间（issue #7376 段 6，case RPT-007）────────────────────────────────
+
+  it('区间预设四档的日期都是「当天算出来」的（上月 31 天/30 天/闰年 2 月不许差一天）', () => {
+    // 注入 today ⇒ 判据能钉死（不靠跑测那一天是哪天）
+    expect(presetRange('thisMonth', new Date(2026, 9, 23))).toEqual({ from: '2026-10-01', to: '2026-10-23' })
+    expect(presetRange('lastMonth', new Date(2026, 9, 23))).toEqual({ from: '2026-09-01', to: '2026-09-30' })
+    // 跨年：1 月的「上月」是去年 12 月
+    expect(presetRange('lastMonth', new Date(2026, 0, 5))).toEqual({ from: '2025-12-01', to: '2025-12-31' })
+    // 闰年 2 月
+    expect(presetRange('lastMonth', new Date(2024, 2, 10))).toEqual({ from: '2024-02-01', to: '2024-02-29' })
+    expect(presetRange('last90', new Date(2026, 9, 23))).toEqual({ from: '2026-07-26', to: '2026-10-23' })
+    expect(presetRange('all', new Date(2026, 9, 23))).toEqual({ from: '', to: '' })
+  })
+
+  it('🔴 只有「按下单日/报工日」统计的三张表吃区间——库存与账龄是此刻读数，不重取', async () => {
+    emptyAll()
+    render(<ReportsPage />)
+    await waitFor(() => expect(reportApi.orderMargins).toHaveBeenCalledTimes(1))
+    expect(reportApi.inventoryAging).toHaveBeenCalledTimes(1)
+    expect(reportApi.receivableAging).toHaveBeenCalledTimes(1)
+
+    fireEvent.change(screen.getByTestId('reports-filter-from'), { target: { value: '2026-10-01' } })
+    fireEvent.change(screen.getByTestId('reports-filter-to'), { target: { value: '2026-10-31' } })
+
+    await waitFor(() =>
+      expect(reportApi.orderMargins).toHaveBeenLastCalledWith({ startDate: '2026-10-01', endDate: '2026-10-31' }),
+    )
+    expect(reportApi.staffPerformance).toHaveBeenLastCalledWith({ startDate: '2026-10-01', endDate: '2026-10-31' })
+    expect(reportApi.qualityCost).toHaveBeenLastCalledWith({ startDate: '2026-10-01', endDate: '2026-10-31' })
+    // 维度汇总也用同一区间（否则「贵在哪」和上面的合计对不上）
+    expect(reportApi.qualityCostBreakdown).toHaveBeenLastCalledWith('customer', {
+      startDate: '2026-10-01',
+      endDate: '2026-10-31',
+    })
+    // 🔴 此刻读数两张表**没有**被重取（传日期给它们只会是「传了但没用」的假筛选）
+    expect(reportApi.inventoryAging).toHaveBeenCalledTimes(1)
+    expect(reportApi.receivableAging).toHaveBeenCalledTimes(1)
+  })
+
+  it('点「本月」⇒ 输入框被填成当月 1 号 ~ 今天，并按该区间重取', async () => {
+    emptyAll()
+    render(<ReportsPage />)
+    await waitFor(() => expect(reportApi.orderMargins).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(screen.getByTestId('reports-filter-this-month'))
+    const expected = presetRange('thisMonth')
+
+    await waitFor(() =>
+      expect(reportApi.orderMargins).toHaveBeenLastCalledWith({
+        startDate: expected.from,
+        endDate: expected.to,
+      }),
+    )
+    expect((screen.getByTestId('reports-filter-from') as HTMLInputElement).value).toBe(expected.from)
+    expect((screen.getByTestId('reports-filter-to') as HTMLInputElement).value).toBe(expected.to)
+  })
+
+  it('点「全部」⇒ 清空区间，请求不带日期参数（不是传两个空串）', async () => {
+    emptyAll()
+    render(<ReportsPage />)
+    await waitFor(() => expect(reportApi.orderMargins).toHaveBeenCalledTimes(1))
+
+    fireEvent.change(screen.getByTestId('reports-filter-from'), { target: { value: '2026-10-01' } })
+    await waitFor(() => expect(reportApi.orderMargins).toHaveBeenLastCalledWith({ startDate: '2026-10-01' }))
+
+    fireEvent.click(screen.getByTestId('reports-filter-all'))
+    await waitFor(() => expect(reportApi.orderMargins).toHaveBeenLastCalledWith({}))
+  })
+
+  it('🔴 页面上写明「哪些表吃区间」——不写就会出现「我筛了 10 月，滞销怎么没变」', async () => {
+    emptyAll()
+    render(<ReportsPage />)
+    await waitFor(() => expect(screen.getByTestId('reports-filter-note')).toBeInTheDocument())
+    const note = screen.getByTestId('reports-filter-note').textContent || ''
+    expect(note).toContain('订单毛利')
+    expect(note).toContain('返工报工日')
+    expect(note).toContain('不受区间影响')
+    // 文案不许留字面 markdown 星号（会逐字上屏）
+    expect(note).not.toContain('**')
   })
 })
