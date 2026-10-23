@@ -98,7 +98,7 @@ VALUES
   ('opp-v186-02', 1, '出库', '布帘', NULL, FALSE, 'active'),
   ('opp-v186-03', 1, '出库', '纱帘', NULL, FALSE, 'active'),
   ('opp-v186-04', 1, '出库', '帘头', NULL, FALSE, 'active')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 INSERT INTO production_operation_positions
     (id, tenant_id, logical_name, position, unit_price, applicable, status)
@@ -116,7 +116,7 @@ SELECT 'opp-v186-' || t.id || '-' || p.position,
        SELECT 1 FROM production_operation_positions e
         WHERE e.tenant_id = t.id AND e.logical_name = '出库'
           AND e.position = p.position AND e.deleted = 0)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 -- ══════════════════════════════════════════════════════════════════════════════════════
 -- ④ 售卖方式规则（每活跃租户 2 条）：整卷 ⇒ 出库 → 打包
@@ -127,7 +127,7 @@ INSERT INTO production_route_rules
 VALUES
   ('rr-v186-01', 1, 'sales_form', 'full_roll', NULL, 'insert', '出库', '裁剪', 270, 'active'),
   ('rr-v186-02', 1, 'sales_form', 'full_roll', NULL, 'remove', '裁剪', NULL, 280, 'active')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
 
 INSERT INTO production_route_rules
     (id, tenant_id, trigger_kind, trigger_value, position, action,
@@ -148,4 +148,4 @@ SELECT 'rr-v186-' || t.id || '-' || r.rid, t.id, r.trigger_kind, r.trigger_value
           AND e.action = r.action
           AND e.operation = r.operation
           AND e.deleted = 0)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT DO NOTHING;
