@@ -1,4 +1,4 @@
-# case_ids: UI-040, UI-053
+# case_ids: UI-040, UI-053, UI-062
 """打印单据**共享隔离约定**守卫（issue #4983；机制来自 #4965 的实测）。
 
 ## 病根（实测，不是推断）
@@ -23,6 +23,8 @@
 | C3 | **反空跑**：登记表非空 + 每个登记路径**存在**（路径漂移不得静默跳过） | 清空登记表 / 改坏路径 ⇒ 必红 |
 | C4 | **已登记的非符合形态仍须非符合**（死亡条件） | 给它加上 `print-doc` ⇒ 必红（必须销账并转正） |
 | C5 | 注入式红证 + **内容指纹**自证（禁 mtime/size，issue #4260） | 注入未生效 ⇒ 必红 |
+| C6 | **纸面收款码只属于报价单**（issue #7589）：其余受管单据的去注释代码里不得出现收款码痕迹 | 往销售单加回收款码块 ⇒ 必红 |
+| C7 | C6 的注入式红证：往销售单注入 `usePaymentQrcodes` ⇒ 必红；**允许清单内**的单据注入后仍判绿 | 红证空跑 ⇒ 必红 |
 
 ⚠️ **为什么 C4 是反向判据**：非符合登记表若只许"加了就红、永远留着"，就会退化成**永久豁免**
 （本仓反复登记的反模式）。它必须有**死亡条件** —— 这里就是「它一旦符合新约定 ⇒ 登记必须销账并转正」。
@@ -222,3 +224,57 @@ def test_c5_injected_self_selector_is_red():
     injected_b = re.sub(r"\bprint-doc\b", "", original, count=1)
     assert injected_b != original, "找不到 `print-doc` 注入点 ⇒ 本红证会**空跑**"
     assert _doc_problems(injected_b), "去掉 `print-doc` 后判据**没判红** ⇒ 守卫是空判据"
+
+
+# ── C6 / C7：纸面收款码只属于报价单（issue #7589）──────────────────────────────
+
+#: 允许在纸面上读取 / 渲染企业收款码的单据（**唯一**一份）。
+#: 销售单自 issue #7589 起不再印收款码（用户 2026-10-24 逐字「销售单打印处右下角的二维码移除掉」）；
+#: 加工单的二维码已在 issue #7219 移除。这串只许**缩短**：新增任何带码单据都要先问「用户要它在纸上吗」。
+PAYMENT_QR_ALLOWED_DOCS: frozenset[str] = frozenset(
+    {"frontend/admin-web/src/components/orders/QuotationDoc.tsx"}
+)
+
+#: 收款码的**纸面痕迹**（读取口 / testid 前缀 / 渲染投影变量名）—— 只在**去注释后**的代码里查，
+#: 否则解释性注释（本文件与各单据文件头大量提及）会被判成违规 = 假红。
+_PAYMENT_QR_RE = re.compile(r"usePaymentQrcodes|sales-qr-|qrEntries")
+
+
+def _payment_qr_problems(rel: str, code: str) -> list[str]:
+    """该单据是否在纸面引入收款码。纯函数，便于注入式红证。允许清单内的单据恒为 `[]`。"""
+    if rel in PAYMENT_QR_ALLOWED_DOCS:
+        return []
+    hits = sorted(set(_PAYMENT_QR_RE.findall(code)))
+    return [f"{rel}: 出现收款码痕迹 {hits}"] if hits else []
+
+
+def test_c6_payment_qr_belongs_to_quotation_paper_only():
+    """C6：非报价单的受管纸面**不得**出现收款码 —— 销售单页脚只留温馨提示（issue #7589）。"""
+    offenders: list[str] = []
+    for rel in PORTALED_PRINT_DOCS:
+        offenders.extend(_payment_qr_problems(rel, _strip_comments(_read(rel))))
+    assert offenders == [], (
+        "销售单 / 发货单 / 加工单纸面**不印企业收款码**（issue #7589 用户裁定「销售单打印处右下角的"
+        "二维码移除掉」；收款码只属于报价单）：\n  "
+        + "\n  ".join(offenders)
+        + "\n修法：删掉该单据的 `usePaymentQrcodes` 与 QR 块；若确有新单据要带码，先加进"
+        " `PAYMENT_QR_ALLOWED_DOCS`（这份清单只许缩短，加项须有用户裁定）。"
+    )
+
+
+def test_c7_payment_qr_guard_is_not_vacuous():
+    """C7：注入式红证 —— 往销售单注入 `usePaymentQrcodes` ⇒ C6 必红；报价单（允许清单）注入后仍绿。"""
+    rel = "frontend/admin-web/src/components/orders/SalesDoc.tsx"
+    original = _strip_comments(_read(rel))
+    assert _payment_qr_problems(rel, original) == [], (
+        f"`{rel}` 原文件本应干净（C6 已单独判）—— 这里先红说明判据或预期已变：{_payment_qr_problems(rel, original)}"
+    )
+    injected = original + "\nconst qrcodes = usePaymentQrcodes(paymentQrcodes)\n"
+    assert injected != original, "注入点没生效 ⇒ 本红证会**空跑**"
+    assert _fingerprint(injected) != _fingerprint(original), "注入后内容指纹未变（**禁 mtime/size**）"
+    assert _payment_qr_problems(rel, injected), "注入 `usePaymentQrcodes` 后判据**没判红** ⇒ 守卫是空判据"
+    # 负控：允许清单内的单据（报价单）同样注入 ⇒ **不**判红（否则任何单据都进不了白名单，等于把报价单也砍了）
+    allowed = "frontend/admin-web/src/components/orders/QuotationDoc.tsx"
+    assert _payment_qr_problems(allowed, injected) == [], "允许清单内的单据被误判红 ⇒ 白名单失效"
+    # 反空跑：受管清单本身不得被清空（清空后 C6 恒绿）
+    assert len(PORTALED_PRINT_DOCS) >= 5, "受管清单被清空到 <5 ⇒ C6 会空跑通过"
