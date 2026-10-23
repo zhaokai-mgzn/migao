@@ -18,6 +18,7 @@ node scripts/visual-check/reports-page.mjs        # 报表中心（在仓库根�
 node scripts/visual-check/price-books-page.mjs    # 价格本
 node scripts/visual-check/stocktakes-page.mjs     # 盘点单（issue #7373）
 node scripts/visual-check/rework-orders-page.mjs   # 返工单（issue #7377）
+node scripts/visual-check/after-sales-rework-entry.mjs  # 售后详情「发起返工」入口（issue #7377 段 4）
 open /tmp/reports-filled.png /tmp/reports-empty.png
 ```
 

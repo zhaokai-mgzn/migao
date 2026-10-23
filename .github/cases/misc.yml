@@ -5432,3 +5432,35 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: RWK-002
+    legacy_id: ""
+    title: "售后详情页一键发起返工：已闭环不给入口、已有未完结不可点、返工读不到不拖垮页面（issue #7377 段 4）"
+    domains:
+      - misc
+      - frontend
+      - quality
+    tier: normal
+    tags: [frontend-contract, rework, after-sales, red-proof]
+    truths_ref: []
+    user_inputs:
+      - "用户（2026-10-23，逐字）：「继续推进」—— 承接 #7377 的目标「售后工单可发起返工单」，段 3 只给了独立页面（要手抄售后单号），本段把它接到售后详情上。"
+    expectations: []
+    data_checks:
+      - "**判据 1（🔴 已闭环不给入口）**：售后单 `closed` / `resolved` / `rejected` ⇒ **不显示**「发起返工」（与后端 `ReworkState.canOpenFor` 同口径）。判据 = `after-sales-detail.test.tsx#已闭环的售后单 ⇒ 不显示入口`（红证：把 `closed` 判定改成恒 false ⇒ 该用例当场红，已注入并回滚）。"
+      - "**判据 2（🔴 已有未完结不可点）**：本单已有 `draft`/`in_progress` 返工单 ⇒ 入口**显示但 disabled**，并在提示里点出是哪一张（服务端同样拒，入口先讲清）；返工单也列在页面上（能看见在路上的那张）。判据 = `#已有未完结返工单 ⇒ 入口显示但不可点`。"
+      - "**判据 3（写权 = 开单权）**：只有读权 `after_sales:view` ⇒ 不显示入口（反恒真：状态动作照旧在）；开单走 `order:refund`（与返工单写码同码）。判据 = `#无 order:refund 写权 ⇒ 不显示发起返工`。"
+      - "**判据 4（原因必填）**：原因为空 ⇒ 当场拦、**不发请求**（师傅要知道返哪一步）。判据 = `#原因留空当场拦、不发请求`。"
+      - "**判据 5（开单参数）**：带本单 id + 原因；加工单号留空则**不传空串**（服务端 `@RequestParam(required=false)` 收到空串会当成一个值）。开完刷新返工列表。判据 = `#填了原因就开单`。"
+      - "**判据 6（🔴 附属读数不拖垮主业务）**：返工接口读不到 ⇒ 工单本身照常可看可操作，只在返工区块写一行失败提示。判据 = `#返工接口读不到 ⇒ 工单本身照常看`。"
+      - "**边界（照实登记）**：① 本页只**发起**返工，推进（开工/完工/取消）仍在 `/rework-orders`；② 不录返工工时/成本；③ 不做「售后单 → 关联加工单」的自动推断（要人填）；④ 返工取消不回退售后状态（服务端口径）。"
+    precondition: "本用例是 [frontend-contract]：前置 = 返工单后端（#7377 段 2）+ 返工单页（段 3）+ 售后详情页。零网络、零 LLM。"
+    skip_reason: "[frontend-contract] 售后详情页的返工入口口径（已闭环不给、已有未完结不可点、附属读数不拖垮主业务），由前端单测验证，非 LLM 行为，不进 agent-eval 冒烟"
+    merge_log: "2026-10-23 新增（issue #7377 段 4）。落码 = `AfterSalesDetail.tsx` 的 `reworkEntry()` 纯函数 + 返工区块 + 开单弹窗 + `loadRework()`（失败不阻塞）。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/after-sales-detail.test.tsx"
+        - "frontend/admin-web/tests/unit/pages/after-sales-detail-hydration.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

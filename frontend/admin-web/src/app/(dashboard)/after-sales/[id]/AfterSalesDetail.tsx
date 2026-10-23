@@ -17,11 +17,14 @@ import {
 } from 'lucide-react'
 import Image from 'next/image'
 import { toast } from 'sonner'
-import { afterSalesApi } from '@/lib/api'
+import { afterSalesApi, reworkOrderApi } from '@/lib/api'
+import { loadErrorMessage } from '@/lib/api-error'
+import { displayEnum } from '@/lib/enum-display'
 import { Button, Card, Loading, Modal, Badge } from '@/components/ui'
 import { useRouteId } from '@/lib/use-route-id'
 import { usePermission } from '@/lib/permission'
 import type { AfterSalesTicket, AfterSalesStatus } from '@/types'
+import type { ReworkOrder, ReworkStatus } from '@/types/rework'
 import {
   AfterSalesStatusLabels,
   AfterSalesTypeLabels,
@@ -60,6 +63,43 @@ const statusActions: Record<AfterSalesStatus, { label: string; targetStatus: Aft
   closed: [],
 }
 
+/**
+ * 售后单上「发起返工」这个入口的显隐/可用性（issue #7377 段 4）。
+ *
+ * 🔴 与后端 `ReworkState.canOpenFor` **同口径**：已闭环（closed / resolved / rejected）不许开；
+ * 这张单已有未完结返工单也不许开（服务端同样拒，此处在入口上先讲清，避免点进去才报错）。
+ * 这里只是**入口口径**，不是安全边界 —— 服务端仍然照拒。
+ *
+ * @returns `visible` 是否显示入口；`disabled` 显示但不可点（已有未完结返工单）；`reason` 为什么
+ */
+export function reworkEntry(
+  ticketStatus: AfterSalesStatus | undefined,
+  hasWrite: boolean,
+  orders: ReworkOrder[],
+): { visible: boolean; disabled: boolean; reason: string; openOrder: ReworkOrder | null } {
+  const openOrder = orders.find((o) => o.status === 'draft' || o.status === 'in_progress') ?? null
+  if (!ticketStatus) return { visible: false, disabled: false, reason: '', openOrder }
+  const closed = ['closed', 'resolved', 'rejected'].includes(ticketStatus)
+  const visible = hasWrite && !closed
+  if (!visible) return { visible, disabled: false, reason: '', openOrder }
+  if (openOrder) {
+    return {
+      visible,
+      disabled: true,
+      reason: `这张售后单已有未完结的返工单（${openOrder.reworkNo}），先完成或取消它`,
+      openOrder,
+    }
+  }
+  return { visible, disabled: false, reason: '', openOrder }
+}
+
+const REWORK_STATUS_LABEL: Record<ReworkStatus, string> = {
+  draft: '待开工',
+  in_progress: '返工中',
+  done: '已完成',
+  cancelled: '已取消',
+}
+
 // 时间线图标
 const statusTimelineIcon: Record<AfterSalesStatus, typeof CheckCircle2> = {
   pending: AlertCircle,
@@ -91,6 +131,16 @@ export default function AfterSalesDetailPage() {
   const [ticket, setTicket] = useState<AfterSalesTicket | null>(null)
   const [loading, setLoading] = useState(true)
 
+  // 返工单（issue #7377 段 4）：本页是**发起返工**的入口，返工本身的推进在 `/rework-orders`
+  const [reworkOrders, setReworkOrders] = useState<ReworkOrder[]>([])
+  const [reworkLoadFailed, setReworkLoadFailed] = useState(false)
+  const [reworkOpen, setReworkOpen] = useState(false)
+  const [reworkReason, setReworkReason] = useState('')
+  const [reworkProcessing, setReworkProcessing] = useState('')
+  const [reworkError, setReworkError] = useState('')
+  const [reworkBusy, setReworkBusy] = useState(false)
+  const canWriteRework = has('order:refund')
+
   // 状态更新
   const [statusConfirmOpen, setStatusConfirmOpen] = useState(false)
   const [pendingAction, setPendingAction] = useState<{ label: string; targetStatus: AfterSalesStatus } | null>(null)
@@ -113,9 +163,56 @@ export default function AfterSalesDetailPage() {
     }
   }, [ticketId])
 
+  /**
+   * 读这张售后单的返工单（issue #7377 段 4）。
+   *
+   * ⚠️ **失败不拖垮整页**：返工接口读不到时工单本身仍然可看可操作，只在返工区块写一行失败提示
+   * （把「售后详情」这块主业务挡住去换一个附属读数，是本末倒置）。
+   */
+  const loadRework = useCallback(async () => {
+    if (!ticketId) return
+    try {
+      const res = await reworkOrderApi.list(ticketId)
+      setReworkOrders((res.data?.data ?? []) as ReworkOrder[])
+      setReworkLoadFailed(false)
+    } catch (error) {
+      console.error('加载返工单失败:', error)
+      setReworkLoadFailed(true)
+    }
+  }, [ticketId])
+
   useEffect(() => {
     loadTicket()
-  }, [loadTicket])
+    loadRework()
+  }, [loadTicket, loadRework])
+
+  async function submitRework() {
+    if (!ticket) return
+    setReworkError('')
+    const reason = reworkReason.trim()
+    if (!reason) {
+      setReworkError('写一句返工原因 —— 师傅要知道返哪一步')
+      return
+    }
+    setReworkBusy(true)
+    try {
+      await reworkOrderApi.create({
+        afterSalesTicketId: ticket.id,
+        reason,
+        processingOrderId: reworkProcessing.trim() || undefined,
+      })
+      toast.success('返工单已开，去「返工单」页开工/完工')
+      setReworkOpen(false)
+      setReworkReason('')
+      setReworkProcessing('')
+      await Promise.all([loadTicket(), loadRework()])
+    } catch (e) {
+      // 🔴 服务端拒绝原话上屏（已闭环 / 已有未完结返工单 / 并发撞索引）
+      setReworkError(loadErrorMessage(e, '开返工单'))
+    } finally {
+      setReworkBusy(false)
+    }
+  }
 
   // 打开状态确认弹窗
   const handleStatusAction = (action: { label: string; targetStatus: AfterSalesStatus }) => {
@@ -202,7 +299,25 @@ export default function AfterSalesDetailPage() {
             <p className="text-sm text-neutral-500 mt-1 font-mono">工单号: {ticket.ticketNo}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {/*
+            🔴 发起返工（issue #7377 段 4）：售后判定要返工 ⇒ 就在这里开单，不必再手抄单号去返工单页。
+            显隐/可用性由 `reworkEntry()` 一处判定（已闭环不显示；已有未完结返工单显示但不可点）。
+          */}
+          {reworkEntry(ticket.status, canWriteRework, reworkOrders).visible && (
+            <Button
+              variant="secondary"
+              disabled={reworkEntry(ticket.status, canWriteRework, reworkOrders).disabled}
+              title={reworkEntry(ticket.status, canWriteRework, reworkOrders).reason || undefined}
+              onClick={() => {
+                setReworkError('')
+                setReworkOpen(true)
+              }}
+              data-testid="after-sales-rework-create"
+            >
+              发起返工
+            </Button>
+          )}
           {actions.map((action) => (
             <Button
               key={action.targetStatus}
@@ -291,6 +406,51 @@ export default function AfterSalesDetailPage() {
               )}
             </div>
           </Card>
+
+          {/* 返工单（issue #7377 段 4）：只在有读数或读失败时出现 —— 没返工的空区块只是噪音 */}
+          {(reworkOrders.length > 0 || reworkLoadFailed) && (
+            <Card>
+              <div className="p-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <Package className="w-5 h-5 text-neutral-500" />
+                  <h2 className="text-lg font-semibold text-neutral-900">返工单</h2>
+                  <span className="text-xs text-neutral-500">返工的推进在「返工单」页</span>
+                </div>
+                {reworkLoadFailed ? (
+                  <p className="text-sm text-neutral-500" data-testid="after-sales-rework-load-error">
+                    返工单没读到 —— 不影响这张工单本身的操作，可稍后刷新。
+                  </p>
+                ) : (
+                  <div className="space-y-2" data-testid="after-sales-rework-list">
+                    {reworkOrders.map((order) => (
+                      <div
+                        key={order.id}
+                        className="flex flex-wrap items-center justify-between gap-2 text-sm"
+                        data-testid={`after-sales-rework-row-${order.id}`}
+                      >
+                        <span className="font-mono text-neutral-800">{order.reworkNo}</span>
+                        <span className="text-neutral-600">{displayEnum(REWORK_STATUS_LABEL, order.status)}</span>
+                        <span className="text-neutral-500">{order.reason || '—'}</span>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => router.push('/rework-orders')}
+                          data-testid={`after-sales-rework-goto-${order.id}`}
+                        >
+                          查看返工单
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {reworkEntry(ticket.status, canWriteRework, reworkOrders).reason && (
+                  <p className="mt-2 text-xs text-amber-600" data-testid="after-sales-rework-hint">
+                    {reworkEntry(ticket.status, canWriteRework, reworkOrders).reason}
+                  </p>
+                )}
+              </div>
+            </Card>
+          )}
 
           {/* 处理时间线 */}
           <Card>
@@ -464,6 +624,54 @@ export default function AfterSalesDetailPage() {
           </Card>
         </div>
       </div>
+
+      {/* 开返工弹窗（issue #7377 段 4）：原因必填（师傅要知道返哪一步），加工单号可留空 */}
+      <Modal
+        open={reworkOpen}
+        onClose={() => setReworkOpen(false)}
+        title="发起返工"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setReworkOpen(false)}>
+              取消
+            </Button>
+            <Button loading={reworkBusy} onClick={() => void submitRework()} data-testid="after-sales-rework-submit">
+              开单
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-neutral-600">
+            开出来是「待开工」；师傅在「返工单」页开工、完工，完工后这张售后单才会推进到「已解决」。
+          </p>
+          <label className="block text-sm font-medium text-neutral-700">
+            返工原因
+            <input
+              data-testid="after-sales-rework-reason"
+              value={reworkReason}
+              onChange={(e) => setReworkReason(e.target.value)}
+              placeholder="例如：帘头褶皱不齐，需重做帘头"
+              className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none"
+            />
+          </label>
+          <label className="block text-sm font-medium text-neutral-700">
+            关联加工单号（可留空）
+            <input
+              data-testid="after-sales-rework-processing"
+              value={reworkProcessing}
+              onChange={(e) => setReworkProcessing(e.target.value)}
+              placeholder="例如：JG-20261023-0008"
+              className="mt-1.5 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none"
+            />
+          </label>
+          {reworkError && (
+            <p className="text-sm text-red-600" data-testid="after-sales-rework-error">
+              {reworkError}
+            </p>
+          )}
+        </div>
+      </Modal>
 
       {/* 状态确认弹窗 */}
       <Modal

@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（147 case）
+## 杂项域（148 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5908,6 +5908,21 @@
 跳过: [frontend-contract] 返工单页面的状态机纪律与「本页不产生金额」口径，由前端单测 + 菜单三源判据验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-23 新增（issue #7377 段 3，商家面）。落码 = `rework-orders/page.tsx` + `types/rework.ts` + `reworkOrderApi` + 菜单五副本（menu.ts / MenuController / AuthService / menu_navigator / rbac manifest）+ `page_registry` 的 `rework-order-lifecycle`。 ｜ tags: frontend-contract, rework, quality, red-proof
+
+### RWK-002. 售后详情页一键发起返工：已闭环不给入口、已有未完结不可点、返工读不到不拖垮页面（issue #7377 段 4） 🔵
+```
+你: 用户（2026-10-23，逐字）：「继续推进」—— 承接 #7377 的目标「售后工单可发起返工单」，段 3 只给了独立页面（要手抄售后单号），本段把它接到售后详情上。
+数据: **判据 1（🔴 已闭环不给入口）**：售后单 `closed` / `resolved` / `rejected` ⇒ **不显示**「发起返工」（与后端 `ReworkState.canOpenFor` 同口径）。判据 = `after-sales-detail.test.tsx#已闭环的售后单 ⇒ 不显示入口`（红证：把 `closed` 判定改成恒 false ⇒ 该用例当场红，已注入并回滚）。
+数据: **判据 2（🔴 已有未完结不可点）**：本单已有 `draft`/`in_progress` 返工单 ⇒ 入口**显示但 disabled**，并在提示里点出是哪一张（服务端同样拒，入口先讲清）；返工单也列在页面上（能看见在路上的那张）。判据 = `#已有未完结返工单 ⇒ 入口显示但不可点`。
+数据: **判据 3（写权 = 开单权）**：只有读权 `after_sales:view` ⇒ 不显示入口（反恒真：状态动作照旧在）；开单走 `order:refund`（与返工单写码同码）。判据 = `#无 order:refund 写权 ⇒ 不显示发起返工`。
+数据: **判据 4（原因必填）**：原因为空 ⇒ 当场拦、**不发请求**（师傅要知道返哪一步）。判据 = `#原因留空当场拦、不发请求`。
+数据: **判据 5（开单参数）**：带本单 id + 原因；加工单号留空则**不传空串**（服务端 `@RequestParam(required=false)` 收到空串会当成一个值）。开完刷新返工列表。判据 = `#填了原因就开单`。
+数据: **判据 6（🔴 附属读数不拖垮主业务）**：返工接口读不到 ⇒ 工单本身照常可看可操作，只在返工区块写一行失败提示。判据 = `#返工接口读不到 ⇒ 工单本身照常看`。
+数据: **边界（照实登记）**：① 本页只**发起**返工，推进（开工/完工/取消）仍在 `/rework-orders`；② 不录返工工时/成本；③ 不做「售后单 → 关联加工单」的自动推断（要人填）；④ 返工取消不回退售后状态（服务端口径）。
+前置: 本用例是 [frontend-contract]：前置 = 返工单后端（#7377 段 2）+ 返工单页（段 3）+ 售后详情页。零网络、零 LLM。
+跳过: [frontend-contract] 售后详情页的返工入口口径（已闭环不给、已有未完结不可点、附属读数不拖垮主业务），由前端单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-23 新增（issue #7377 段 4）。落码 = `AfterSalesDetail.tsx` 的 `reworkEntry()` 纯函数 + 返工区块 + 开单弹窗 + `loadRework()`（失败不阻塞）。 ｜ tags: frontend-contract, rework, after-sales, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12690,8 +12705,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：864（活跃 141，跳过 723）
-- tier 分布：smoke 12 / normal 796 / adversarial 32
+- 用例总数：865（活跃 141，跳过 724）
+- tier 分布：smoke 12 / normal 797 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12706,7 +12721,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：147
+- 杂项域：148
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12897,6 +12912,7 @@
 - STK-002: 盘点单页面：账面快照 → 逐批次录实盘 → 差异须审批才完成（issue #7373 段 2 的商家面）
 - RPT-005: 应收账龄进报表中心：合计=明细之和、空数据不画 0、CSV 导出（issue #7376 段 5）
 - RWK-001: 返工单进观星台：售后 → 返工 → 完工回写（状态机唯一 · 本页不产生金额 · 服务端原话上屏）（issue #7377 段 3）
+- RWK-002: 售后详情页一键发起返工：已闭环不给入口、已有未完结不可点、返工读不到不拖垮页面（issue #7377 段 4）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
