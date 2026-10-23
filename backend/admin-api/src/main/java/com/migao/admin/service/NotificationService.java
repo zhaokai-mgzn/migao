@@ -287,7 +287,11 @@ public class NotificationService {
         ruleWrapper.and(w -> w.eq(NotificationRule::getTenantId, tenantId)
                         .or().eq(NotificationRule::getTenantId, 0L))
                 .eq(NotificationRule::getEventType, eventType)
-                .eq(NotificationRule::getEnabled, true);
+                .eq(NotificationRule::getEnabled, true)
+                // 顺序即优先级（issue #7524）：同一事件可能同时命中「租户自定义规则」和「系统规则」，
+                // 而 #7524 的去重键不含 ruleId（同一事件 × 同一单据 × 同一收件人只留一条）
+                // ⇒ 不排序的话，留下哪一条模板是**库返回顺序**决定的（租户自定义内容会被静默吞掉）。
+                .orderByDesc(NotificationRule::getTenantId);
 
         List<NotificationRule> rules = notificationRuleMapper.selectList(ruleWrapper);
         if (rules.isEmpty()) {
