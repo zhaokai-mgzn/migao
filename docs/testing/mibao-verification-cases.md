@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（148 case）
+## 杂项域（149 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5923,6 +5923,23 @@
 跳过: [frontend-contract] 售后详情页的返工入口口径（已闭环不给、已有未完结不可点、附属读数不拖垮主业务），由前端单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-23 新增（issue #7377 段 4）。落码 = `AfterSalesDetail.tsx` 的 `reworkEntry()` 纯函数 + 返工区块 + 开单弹窗 + `loadRework()`（失败不阻塞）。 ｜ tags: frontend-contract, rework, after-sales, red-proof
+
+### QC-003. 质量成本能按客户/工序摊开：合计=Σ行+无法归属、赔付无工序信息、未定价不计金额（issue #7377 段 5） 🔵
+```
+你: 用户（2026-10-23，逐字）：「继续」—— 承接 #7377 目标 2「质量成本 … 按客户/商品/工序三维汇总」：整表只回答「贵多少」，回答不了「贵在谁身上 / 贵在哪一步」。
+数据: **判据 1（🔴 恒等式：合计 = Σ行 + 无法归属）**：关联不上的金额（报工没挂加工单 / 退款没挂订单）必须进 `unattributed` 并带原因 —— 悄悄丢掉会让「各行之和」比整表小，而每行单看都正常。判据 = `QualityCostBreakdownTest#totalsEqualRowsPlusUnattributed`（逐项复算 rework / compensation，不只看总和）。
+数据: **判据 2（🔴 工序维度下赔付整体进未归属）**：退款流水没有工序字段 ⇒ 工序维度里赔付全部计入 `unattributed`，且说明里点出「不是『赔付为 0』」。判据 = `#processDimensionPutsCompensationIntoUnattributed`。
+数据: **判据 3（未标工序的报工不编行）**：报工行没记工序名 ⇒ 进未归属（不造一个「其他」行把金额藏起来）。判据 = 同上。
+数据: **判据 4（未定价不计金额但被数出来）**：`price_state='unpriced'` 的行不计金额，`notes` 里给行数。判据 = `#unpricedReworkIsCountedButNotAmounted`。
+数据: **判据 5（🔴 窗口真的生效）**：窗外报工/退款不计；**整表（质量成本卡）也同批修**——原实现收了 `startDate/endDate` 却**没用**。判据 = `#windowFiltersBothSides` + `#qualityCostCardAlsoHonoursWindow`。
+数据: **判据 6（空数据 ≠ 0）**：没有读数 ⇒ `hasData=false`、`totals=null`，页面写「暂无数据」不画 ¥0.00。判据 = `#emptyWindowHasNoData` + `reports.test.tsx#维度汇总空态`。
+数据: **判据 7（维度非法 ⇒ 400）**：`dimension` 只接受 `customer`/`process`，其它值抛可读校验错（不静默返回空表）。判据 = `#unknownDimensionIsRejected`。
+数据: **判据 8（前端只重取这一块）**：切维度只重取维度汇总，不重打整页五个端点；未归属金额单独一行展示（红证：把该行条件改成恒 false ⇒ 前端用例当场红，已注入并回滚）。判据 = `reports.test.tsx#维度汇总：默认按客户…` + `#无法归属的金额必须露出来`。
+数据: **边界（照实登记）**：① **商品维度未做**（订单多商品 ⇒ 单一归属会编数，需先定按行拆分口径）；② 报废料不进本视图（本仓未采集）；③ 本视图不含售后单维度（退款流水无售后单关联列）。
+前置: 本用例前端+后端口径：前置 = 质量成本整表（#7377 段 1）+ 返工报工（P0-3 成本快照）+ 退款流水。零网络、零 LLM。
+跳过: [frontend-contract] 维度汇总的恒等式与「未归属必须露出来」，由 Java 单测 + 前端单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-23 新增（issue #7377 段 5）。落码 = `QualityCostBreakdownView` + `ReportService.qualityCostBreakdown` + `ReportController` 端点 + `reports/page.tsx` 维度切换块 + 质量成本卡窗口修复。 ｜ tags: frontend-contract, quality-cost, breakdown, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12721,8 +12738,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：866（活跃 141，跳过 725）
-- tier 分布：smoke 12 / normal 798 / adversarial 32
+- 用例总数：867（活跃 141，跳过 726）
+- tier 分布：smoke 12 / normal 799 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12737,7 +12754,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：148
+- 杂项域：149
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12929,6 +12946,7 @@
 - RPT-005: 应收账龄进报表中心：合计=明细之和、空数据不画 0、CSV 导出（issue #7376 段 5）
 - RWK-001: 返工单进观星台：售后 → 返工 → 完工回写（状态机唯一 · 本页不产生金额 · 服务端原话上屏）（issue #7377 段 3）
 - RWK-002: 售后详情页一键发起返工：已闭环不给入口、已有未完结不可点、返工读不到不拖垮页面（issue #7377 段 4）
+- QC-003: 质量成本能按客户/工序摊开：合计=Σ行+无法归属、赔付无工序信息、未定价不计金额（issue #7377 段 5）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

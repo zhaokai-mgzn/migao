@@ -111,3 +111,45 @@ export interface ReportReceivableAging {
   customers: AgingCustomer[]
   totals: { outstanding: number | null; overdue: number | null; orderCount: number } | null
 }
+
+/** 质量成本维度汇总的一行（issue #7377 段 5）。 */
+export interface QualityCostBreakdownRow {
+  key: string
+  label: string
+  rework: number | null
+  reworkLines: number
+  compensation: number | null
+  compensationCount: number
+  total: number | null
+}
+
+/**
+ * 质量成本的维度汇总（issue #7377 段 5）。
+ *
+ * 🔴 恒等式：`totals == Σrows + unattributed` —— 归属不了的金额**必须露出来**，
+ * 页面据此写「另有 X 无法归属」，不许把它们悄悄丢掉。
+ */
+export interface ReportQualityCostBreakdown {
+  dimension: 'customer' | 'process'
+  scope: string
+  startDate: string | null
+  endDate: string | null
+  hasData: boolean
+  rows: QualityCostBreakdownRow[]
+  totals: {
+    rework: number | null
+    reworkLines: number
+    compensation: number | null
+    compensationCount: number
+    total: number | null
+  } | null
+  unattributed: {
+    rework: number | null
+    reworkLines: number
+    compensation: number | null
+    compensationCount: number
+    total: number | null
+    reason: string
+  }
+  notes: string[]
+}

@@ -40,7 +40,7 @@ class InventoryReportServiceTest {
         stockBatchMapper = Mockito.mock(StockBatchMapper.class);
         consumptionMapper = Mockito.mock(StockBatchConsumptionMapper.class);
         service = new ReportService(orderMapper, stockBatchMapper, null, null, consumptionMapper, null,
-                new com.migao.admin.time.BusinessClock(), null);
+                new com.migao.admin.time.BusinessClock(), null, null);
         when(consumptionMapper.selectList(any())).thenReturn(List.of());
     }
 

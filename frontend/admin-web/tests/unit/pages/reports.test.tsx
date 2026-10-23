@@ -16,6 +16,7 @@ const reportApi = vi.hoisted(() => ({
   staffPerformance: vi.fn(),
   qualityCost: vi.fn(),
   receivableAging: vi.fn(),
+  qualityCostBreakdown: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({ reportApi }))
@@ -38,6 +39,15 @@ const emptyAll = () => {
   // 账龄报表（issue #7376 段 5）：空态 = hasData=false + totals=null（与其余四张同口径）
   reportApi.receivableAging.mockImplementation(() =>
     wrap({ asOf: '2026-10-23', hasData: false, customerCount: 0, buckets: [], customers: [], totals: null }),
+  )
+  // 质量成本维度汇总（issue #7377 段 5）：空态 = hasData=false + totals=null
+  reportApi.qualityCostBreakdown.mockImplementation((dim: string) =>
+    wrap({
+      dimension: dim, scope: dim === 'customer' ? 'rework_and_compensation_by_customer' : 'rework_by_processing_operation',
+      startDate: null, endDate: null, hasData: false, rows: [], totals: null,
+      unattributed: { rework: 0, reworkLines: 0, compensation: 0, compensationCount: 0, total: 0, reason: '' },
+      notes: [],
+    }),
   )
 }
 
@@ -205,5 +215,65 @@ describe('报表中心页面', () => {
 
     await waitFor(() => expect(screen.getByTestId('reports-load-error')).toBeInTheDocument())
     expect(screen.getByTestId('reports-load-error-retry')).toBeInTheDocument()
+  })
+
+  it('🔴 维度汇总：默认按客户，切到按工序只重取这一块（不重打整页）', async () => {
+    emptyAll()
+    const calls: string[] = []
+    reportApi.qualityCostBreakdown.mockImplementation((dim: string) => {
+      calls.push(dim)
+      return wrap({
+        dimension: dim, scope: 'x', startDate: null, endDate: null, hasData: false, rows: [], totals: null,
+        unattributed: { rework: 0, reworkLines: 0, compensation: 0, compensationCount: 0, total: 0, reason: '' },
+        notes: [],
+      })
+    })
+    render(<ReportsPage />)
+
+    await waitFor(() => expect(calls).toEqual(['customer']))
+    fireEvent.click(screen.getByTestId('reports-quality-dim-process'))
+    await waitFor(() => expect(calls).toEqual(['customer', 'process']))
+    // 整页的五个端点**没有**被重取（只有维度这一块重取）
+    expect(reportApi.orderMargins).toHaveBeenCalledTimes(1)
+  })
+
+  it('🔴 无法归属的金额必须露出来（恒等式：合计 = Σ行 + 无法归属）', async () => {
+    emptyAll()
+    reportApi.qualityCost.mockImplementation(() =>
+      wrap({ components: [], total: null, complete: true, unknownComponents: [] }),
+    )
+    reportApi.qualityCostBreakdown.mockImplementation((dim: string) =>
+      wrap({
+        dimension: dim, scope: 'x', startDate: null, endDate: null, hasData: true,
+        rows: [
+          { key: 'cus:138', label: '张记布艺', rework: 60, reworkLines: 2, compensation: 120, compensationCount: 1, total: 180 },
+        ],
+        totals: { rework: 110, reworkLines: 3, compensation: 200, compensationCount: 2, total: 310 },
+        unattributed: {
+          rework: 50, reworkLines: 1, compensation: 80, compensationCount: 1, total: 130,
+          reason: '这些返工报工关联不到加工单/订单，或退款流水关联不到订单',
+        },
+        notes: ['报废料不在本视图：本仓未采集'],
+      }),
+    )
+    render(<ReportsPage />)
+
+    await waitFor(() => expect(screen.getAllByTestId('reports-quality-breakdown-row')).toHaveLength(1))
+    const row = screen.getAllByTestId('reports-quality-breakdown-row')[0]
+    expect(row.textContent).toContain('张记布艺')
+    expect(row.textContent).toContain('180.00')
+    // 🔴 未归属单独一行、带原因、金额不许被并进任何行
+    const unattributed = screen.getByTestId('reports-quality-breakdown-unattributed')
+    expect(unattributed.textContent).toContain('130.00')
+    expect(unattributed.textContent).toContain('无法归属')
+    expect(screen.getByTestId('reports-quality-breakdown-notes').textContent).toContain('报废料不在本视图')
+  })
+
+  it('维度汇总空态：写「暂无数据」，不画 ¥0.00', async () => {
+    emptyAll()
+    render(<ReportsPage />)
+    await waitFor(() => expect(screen.getByTestId('reports-quality-breakdown-empty')).toBeInTheDocument())
+    expect(screen.getByTestId('reports-quality-breakdown-empty').textContent).toContain('暂无数据')
+    expect(document.body.textContent).not.toContain('¥0.00')
   })
 })
