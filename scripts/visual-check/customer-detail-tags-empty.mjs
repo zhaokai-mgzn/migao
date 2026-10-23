@@ -115,7 +115,23 @@ async function newPage({ systemTags, customerTags }) {
   await page.close()
 }
 
-// ③ 深链：/customers?manageTags=1 直接打开标签管理（空态里那个按钮真正落到哪）
+// ③ 用户截图的真实场景：客户已经打上系统里**唯一**的标签「优质」⇒ 没有可加的标签
+{
+  const page = await newPage({ systemTags: [TAG], customerTags: [TAG] })
+  await page.goto(`${BASE}/customers/cus-001`, { waitUntil: 'domcontentloaded' })
+  await page.getByText('张三').first().waitFor({ timeout: 45000 })
+  const trigger = page.getByRole('button', { name: '添加标签' })
+  await trigger.scrollIntoViewIfNeeded()
+  await page.waitForTimeout(600)
+  await trigger.click()
+  await page.waitForTimeout(500)
+  await page.screenshot({ path: '/tmp/customer-tags-all-applied-popover.png' })
+  const empty = page.getByTestId('customer-tag-empty')
+  console.log('「已打满」空态在场:', await empty.count(), '| 文案:', ((await empty.innerText()) || '').replace(/\s+/g, ' '))
+  await page.close()
+}
+
+// ④ 深链：/customers?manageTags=1 直接打开标签管理（空态里那个按钮真正落到哪）
 {
   const page = await newPage({ systemTags: [], customerTags: [] })
   await page.goto(`${BASE}/customers?manageTags=1`, { waitUntil: 'domcontentloaded' })
