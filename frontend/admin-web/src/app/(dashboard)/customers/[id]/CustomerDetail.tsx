@@ -526,7 +526,8 @@ export default function CustomerDetailPage() {
                         </p>
                         <Button
                           size="sm"
-                          variant="ghost"
+                          variant="secondary"
+                          className="w-full"
                           onClick={() => router.push('/customers?manageTags=1')}
                         >
                           {allTags.length === 0 ? '去添加标签' : '管理标签'}
