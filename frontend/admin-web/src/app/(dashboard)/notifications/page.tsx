@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { AlertCircle, Bell, Check, Trash2, Mail, MailOpen, Inbox } from 'lucide-react'
 import { toast } from 'sonner'
 import { notificationApi } from '@/lib/api'
-import { Pagination, Modal, Button, PageCard, PageHeader } from '@/components/ui'
+import { Pagination, Modal, Button, PageCard, PageHeader, Select } from '@/components/ui'
 import type { Notification, NotificationStatus, NotificationChannel } from '@/types'
 import { cn } from '@/lib/utils'
 
@@ -38,6 +39,21 @@ const ChannelLabels: Record<NotificationChannel, string> = {
   email: '邮件',
 }
 
+// 业务类型筛选（#7524）：订单/售后/入库单混在一个列表里，商家要找的是「哪一类」
+const bizTypeOptions = [
+  { value: '', label: '全部类型' },
+  { value: 'order', label: '订单' },
+  { value: 'after_sales', label: '售后' },
+  { value: 'inbound_order', label: '入库单' },
+]
+
+/** 严重级圆点（#7524）：urgent 红 / warn 琥珀 / info 主色；老数据为空按 info */
+const SEVERITY_DOT: Record<string, string> = {
+  info: 'bg-primary-500',
+  warn: 'bg-amber-500',
+  urgent: 'bg-red-500',
+}
+
 // 状态筛选 Tab 配置
 const statusTabs: { key: NotificationStatus | ''; label: string; emptyText: string }[] = [
   { key: '', label: '全部', emptyText: '暂无通知' },
@@ -46,6 +62,7 @@ const statusTabs: { key: NotificationStatus | ''; label: string; emptyText: stri
 ]
 
 export default function NotificationsPage() {
+  const router = useRouter()
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(false)
   const [total, setTotal] = useState(0)
@@ -54,6 +71,7 @@ export default function NotificationsPage() {
 
   // 筛选
   const [statusFilter, setStatusFilter] = useState<NotificationStatus | ''>('')
+  const [bizTypeFilter, setBizTypeFilter] = useState('')
 
   // 删除确认
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
@@ -70,6 +88,7 @@ export default function NotificationsPage() {
         size: pageSize,
       }
       if (statusFilter) params.status = statusFilter
+      if (bizTypeFilter) params.bizType = bizTypeFilter
 
       const res = await notificationApi.getNotifications(params as any)
       const pageData = res.data?.data
@@ -83,7 +102,7 @@ export default function NotificationsPage() {
     } finally {
       setLoading(false)
     }
-  }, [current, pageSize, statusFilter])
+  }, [current, pageSize, statusFilter, bizTypeFilter])
 
   useEffect(() => {
     loadNotifications()
@@ -93,6 +112,29 @@ export default function NotificationsPage() {
   const handleTabChange = (status: NotificationStatus | '') => {
     setStatusFilter(status)
     setCurrent(1)
+  }
+
+  // 类型切换（#7524）：换类型回到第 1 页，否则会停在一个空页上
+  const handleBizTypeChange = (bizType: string) => {
+    setBizTypeFilter(bizType)
+    setCurrent(1)
+  }
+
+  // 点开通知（#7524）：有落地页 ⇒ 标已读后跳转；没有 ⇒ 只标已读（与改前一致）
+  const handleOpenNotification = async (notification: Notification) => {
+    if (notification.status !== 'read') {
+      try {
+        await notificationApi.markAsRead(notification.id)
+        setNotifications(prev =>
+          prev.map(n => n.id === notification.id ? { ...n, status: 'read' as const, readAt: new Date().toISOString() } : n)
+        )
+      } catch (e) {
+        // 跳转优先：标已读失败不阻塞打开单据
+      }
+    }
+    if (notification.targetPath) {
+      router.push(notification.targetPath)
+    }
   }
 
   // 全部标记已读：在飞行态 + 禁用（issue #6669 第 5 条）。
@@ -201,6 +243,15 @@ export default function NotificationsPage() {
             )}
           </button>
         ))}
+        <div className="ml-auto px-3 py-2">
+          <Select
+            aria-label="按业务类型筛选"
+            value={bizTypeFilter}
+            onChange={(e) => handleBizTypeChange(e.target.value)}
+            options={bizTypeOptions}
+            className="w-[132px]"
+          />
+        </div>
       </div>
 
       {/* 🔴 issue #6714：读失败 ⇒ 常驻失败面 + 真重发（与下面的空态**互斥**）。
@@ -241,9 +292,13 @@ export default function NotificationsPage() {
             {notifications.map((notification) => (
               <div
                 key={notification.id}
+                data-testid={`notification-item-${notification.id}`}
+                onClick={() => void handleOpenNotification(notification)}
                 className={cn(
                   'px-5 py-4 transition-colors hover:bg-neutral-50',
-                  notification.status !== 'read' && 'bg-primary-50/30'
+                  notification.status !== 'read' && 'bg-primary-50/30',
+                  // 有落地页才给可点反馈；无 targetPath 的行不假装可点（#7524）
+                  notification.targetPath && 'cursor-pointer'
                 )}
               >
                 <div className="flex gap-3">
@@ -252,7 +307,9 @@ export default function NotificationsPage() {
                     <div
                       className={cn(
                         'w-2.5 h-2.5 rounded-full',
-                        notification.status !== 'read' ? 'bg-primary-500' : 'bg-transparent'
+                        notification.status !== 'read'
+                          ? (SEVERITY_DOT[notification.severity || 'info'] || 'bg-primary-500')
+                          : 'bg-transparent'
                       )}
                     />
                   </div>
@@ -280,7 +337,7 @@ export default function NotificationsPage() {
                       <div className="flex items-center gap-1 ml-auto">
                         {notification.status !== 'read' ? (
                           <button
-                            onClick={() => handleMarkAsRead(notification)}
+                            onClick={(e) => { e.stopPropagation(); void handleMarkAsRead(notification) }}
                             className="flex items-center gap-1 px-2 py-1 text-xs text-neutral-500 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors"
                             title="标记已读"
                           >
@@ -294,7 +351,7 @@ export default function NotificationsPage() {
                           </span>
                         )}
                         <button
-                          onClick={() => handleDelete(notification)}
+                          onClick={(e) => { e.stopPropagation(); handleDelete(notification) }}
                           className="flex items-center gap-1 px-2 py-1 text-xs text-neutral-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
                           title="删除"
                         >

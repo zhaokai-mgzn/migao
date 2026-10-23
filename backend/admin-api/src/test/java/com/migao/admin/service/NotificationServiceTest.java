@@ -2,6 +2,7 @@ package com.migao.admin.service;
 // case_ids: ST-004, ST-005, ST-009
 
 import com.migao.admin.dto.CreateNotificationRequest;
+import com.migao.admin.dto.NotificationEvent;
 import com.migao.admin.dto.NotificationDTO;
 import com.migao.admin.dto.NotificationQueryRequest;
 import com.migao.admin.dto.PageResponse;
@@ -93,7 +94,7 @@ class NotificationServiceTest {
         Page<Notification> page = new Page<>(1, 10);
         page.setTotal(1);
         page.setRecords(List.of(n));
-        when(notificationMapper.selectByRecipientId(any(), any(), any(), any(Page.class)))
+        when(notificationMapper.selectByRecipientId(any(), any(), any(), any(), any(Page.class)))
                 .thenReturn((com.baomidou.mybatisplus.core.metadata.IPage<Notification>) page);
 
         NotificationQueryRequest queryRequest = new NotificationQueryRequest();
@@ -501,5 +502,129 @@ class NotificationServiceTest {
         // then: 正常命中规则并落库
         verify(notificationMapper).insert(argThat((Notification n) ->
                 "user-1".equals(n.getRecipientId()) && "新订单ORD-001已创建".equals(n.getContent())));
+    }
+
+    // ============== #7524 结构化业务信息：可点开 / 可按类型筛 / 可去重 ==============
+
+    /** 入库过账规则（系统级 tenantId=0） */
+    private NotificationRule inboundRule() {
+        NotificationRule rule = new NotificationRule();
+        rule.setId("rule-sys-0005");
+        rule.setTenantId(0L);
+        rule.setEventType("inbound_posted");
+        rule.setRecipientType("employee");
+        rule.setChannels("internal");
+        rule.setEnabled(true);
+        rule.setTemplateId("tpl-sys-inbound-posted");
+        return rule;
+    }
+
+    /** 入库过账模板：**标题带单号**（title_template），正文带供应商/行数/米数/金额/操作人 */
+    private NotificationTemplate inboundTemplate() {
+        NotificationTemplate template = new NotificationTemplate();
+        template.setId("tpl-sys-inbound-posted");
+        template.setName("入库过账通知");
+        template.setTitleTemplate("入库单 {{inboundNo}} 已过账");
+        template.setChannel("internal");
+        template.setTemplateContent(
+                "供应商 {{supplier}}，共 {{lineCount}} 行、入库 {{totalMeters}} 米，金额 {{amount}} 元；操作人 {{operator}}。");
+        template.setStatus("active");
+        return template;
+    }
+
+    private java.util.Map<String, String> inboundVars() {
+        java.util.Map<String, String> ctx = new java.util.HashMap<>();
+        ctx.put("recipientId", "admin-1");
+        ctx.put("recipientType", "employee");
+        ctx.put("inboundNo", "RK-20261023-0001");
+        ctx.put("supplier", "柯桥××布行");
+        ctx.put("lineCount", "2");
+        ctx.put("totalMeters", "60.5");
+        ctx.put("amount", "756.25");
+        ctx.put("operator", "13800000000");
+        return ctx;
+    }
+
+    @Test
+    @DisplayName("#7524 triggerByEvent（带 event）— 落 biz 字段、标题渲染单号、severity/occurredAt 原样落库")
+    void triggerByEvent_withEvent_persistsStructuredBizFields() {
+        when(notificationRuleMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(inboundRule()));
+        when(notificationTemplateMapper.selectById("tpl-sys-inbound-posted")).thenReturn(inboundTemplate());
+        when(notificationMapper.countByDedupeKey(anyLong(), anyString())).thenReturn(0L);
+        when(notificationMapper.insert(any(Notification.class))).thenReturn(1);
+
+        java.time.OffsetDateTime occurredAt = java.time.OffsetDateTime.now().minusMinutes(5);
+        notificationService.triggerByEvent(9L, "inbound_posted", inboundVars(), NotificationEvent.builder()
+                .bizType("inbound_order")
+                .bizId("inbound-uuid-1")
+                .bizNo("RK-20261023-0001")
+                .targetPath("/inbound-orders?keyword=RK-20261023-0001")
+                .severity("warn")
+                .occurredAt(occurredAt)
+                .build());
+
+        verify(notificationMapper).insert(argThat((Notification n) ->
+                "入库单 RK-20261023-0001 已过账".equals(n.getTitle())
+                        && "供应商 柯桥××布行，共 2 行、入库 60.5 米，金额 756.25 元；操作人 13800000000。".equals(n.getContent())
+                        && "inbound_order".equals(n.getBizType())
+                        && "inbound-uuid-1".equals(n.getBizId())
+                        && "RK-20261023-0001".equals(n.getBizNo())
+                        && "/inbound-orders?keyword=RK-20261023-0001".equals(n.getTargetPath())
+                        && "warn".equals(n.getSeverity())
+                        && occurredAt.equals(n.getOccurredAt())
+                        && "inbound_posted:inbound-uuid-1:admin-1".equals(n.getDedupeKey())));
+    }
+
+    @Test
+    @DisplayName("#7524 triggerByEvent — 同一事件同一单据同一收件人重复触发不落第二条（幂等）")
+    void triggerByEvent_duplicateEvent_skipsInsert() {
+        when(notificationRuleMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(inboundRule()));
+        when(notificationTemplateMapper.selectById("tpl-sys-inbound-posted")).thenReturn(inboundTemplate());
+        when(notificationMapper.countByDedupeKey(anyLong(), anyString())).thenReturn(1L);
+
+        notificationService.triggerByEvent(9L, "inbound_posted", inboundVars(), NotificationEvent.builder()
+                .bizType("inbound_order")
+                .bizId("inbound-uuid-1")
+                .build());
+
+        verify(notificationMapper, never()).insert(any(Notification.class));
+    }
+
+    @Test
+    @DisplayName("#7524 triggerByEvent（无 event）— 老调用方行为逐字不变：不写 biz 列、不去重")
+    void triggerByEvent_withoutEvent_keepsLegacyBehavior() {
+        when(notificationRuleMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(inboundRule()));
+        when(notificationTemplateMapper.selectById("tpl-sys-inbound-posted")).thenReturn(inboundTemplate());
+        when(notificationMapper.insert(any(Notification.class))).thenReturn(1);
+
+        notificationService.triggerByEvent(9L, "inbound_posted", inboundVars());
+
+        verify(notificationMapper, never()).countByDedupeKey(anyLong(), anyString());
+        verify(notificationMapper).insert(argThat((Notification n) ->
+                n.getBizType() == null && n.getBizId() == null && n.getDedupeKey() == null
+                        // severity/occurredAt 有默认值（不改前端读法：老行按 info 渲染）
+                        && "info".equals(n.getSeverity())
+                        && n.getOccurredAt() != null
+                        // 标题仍按 title_template 渲染（模板能力对老调用方同样生效）
+                        && "入库单 RK-20261023-0001 已过账".equals(n.getTitle())));
+    }
+
+    @Test
+    @DisplayName("#7524 createFromTemplate — 标题按 title_template 渲染（为空回落 name）")
+    void createFromTemplate_rendersTitleTemplate() {
+        NotificationTemplate template = new NotificationTemplate();
+        template.setName("入库过账通知");
+        template.setTitleTemplate("入库单 {{inboundNo}} 已过账");
+        template.setChannel("internal");
+        template.setTemplateContent("共 {{lineCount}} 行");
+        template.setStatus("active");
+        when(notificationTemplateMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(template);
+        when(notificationMapper.insert(any(Notification.class))).thenReturn(1);
+
+        notificationService.createFromTemplate(9L, "入库过账通知", "admin-1", "employee",
+                java.util.Map.of("inboundNo", "RK-1", "lineCount", "2"));
+
+        verify(notificationMapper).insert(argThat((Notification n) ->
+                "入库单 RK-1 已过账".equals(n.getTitle()) && "共 2 行".equals(n.getContent())));
     }
 }

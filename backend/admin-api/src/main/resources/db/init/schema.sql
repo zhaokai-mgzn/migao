@@ -2366,6 +2366,7 @@ CREATE TABLE notification_templates (
     -- 加 FK 会让 V28 种子插不进去（实测：违反外键约束），**迁移链从 V28 起整条中断**。
     tenant_id BIGINT NOT NULL DEFAULT 0,
     name VARCHAR(128) NOT NULL,
+    title_template VARCHAR(255),  -- 标题模板（支持 {{var}}）；空 = 回落 name（issue #7524）
     type VARCHAR(64) NOT NULL,  -- ticket_assigned / ticket_status_changed / refund_success / shipment / etc.
     channel VARCHAR(32) NOT NULL,  -- wechat / sms / email / internal
     template_content TEXT NOT NULL,
@@ -2408,6 +2409,14 @@ CREATE TABLE notifications (
     channel VARCHAR(32) NOT NULL,
     title VARCHAR(255),
     content TEXT NOT NULL,
+    -- 业务对象（issue #7524）：让站内信挂得住单据（可点开 / 可按类型筛），而不只是一段文本
+    biz_type VARCHAR(32),  -- order / after_sales / inbound_order
+    biz_id VARCHAR(64),  -- 业务对象主键（跳转与幂等的挂载点）
+    biz_no VARCHAR(64),  -- 业务对象单号（展示用，如 RK-20261023-0001）
+    target_path VARCHAR(255),  -- 前端落地页（含 query）；空 = 无可跳转页面
+    severity VARCHAR(16),  -- info / warn / urgent；存量行 NULL 按 info 渲染
+    occurred_at TIMESTAMP WITH TIME ZONE,  -- 业务发生时间（与 created_at 区分）
+    dedupe_key VARCHAR(160),  -- 幂等键 eventType:bizId:recipientId（唯一索引兜底）
     status VARCHAR(32) DEFAULT 'pending',  -- pending / sent / failed / read
     sent_at TIMESTAMP WITH TIME ZONE,
     read_at TIMESTAMP WITH TIME ZONE,
@@ -2628,6 +2637,9 @@ CREATE INDEX idx_notifications_tenant ON notifications(tenant_id);
 CREATE INDEX idx_notifications_recipient ON notifications(recipient_id);
 CREATE INDEX idx_notifications_status ON notifications(status);
 CREATE INDEX idx_notifications_created ON notifications(created_at DESC);
+-- 通知幂等 + 按业务类型筛（issue #7524）
+CREATE UNIQUE INDEX uk_notifications_dedupe ON notifications(tenant_id, dedupe_key) WHERE dedupe_key IS NOT NULL;
+CREATE INDEX idx_notifications_biz ON notifications(recipient_id, biz_type, created_at DESC) WHERE biz_type IS NOT NULL;
 
 -- tenant_applications 索引
 CREATE INDEX idx_tenant_applications_phone ON tenant_applications(phone);
