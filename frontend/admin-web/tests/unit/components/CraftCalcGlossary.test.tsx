@@ -63,6 +63,8 @@ const CONFIG: CraftCalcConfig = {
   per_fold_mixed_times: { '1': 0.65, '2': 1.2 },
   margin_single: 0.2,
   margin_multi: 0.3,
+  margin_mixed_single: 0.15,
+  margin_mixed_multi: 0.2,
   min_fullness: 1.5,
   tiers: { standard: { fullness: 2.0, label: '标准工艺' }, economy: { fullness: 1.8, label: '经济工艺' } },
   default_formula: 'pleat',

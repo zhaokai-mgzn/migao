@@ -81,6 +81,9 @@ class CraftCalcConfigServiceTest {
         body.put("per_fold_mixed_times", new LinkedHashMap<>(Map.of("1", 0.65, "2", 1.2)));
         body.put("margin_single", 0.2);
         body.put("margin_multi", 0.3);
+        // issue #7560（V188）：拼色主布余量拆成**单开 / 多开**两个独立参数（纸表 0.15 / 0.20）
+        body.put("margin_mixed_single", 0.15);
+        body.put("margin_mixed_multi", 0.2);
         body.put("min_fullness", 1.5);
         body.put("tiers", new LinkedHashMap<>(Map.of(
                 "standard", new LinkedHashMap<>(Map.of("fullness", 2.0, "label", "标准工艺")),

@@ -707,15 +707,15 @@ class ProcessingFeeCalculatorTest {
         ProcessingFeeCalculator.Fee fee = compute(mixedColorInfo("拼色", "13.90", "拼1次"));
 
         // 组合那半：10.00 × 13.90 = 139.00；拼色加价：2.4 × 13.90 = 33.36
-        assertThat(fee.amount()).isEqualByComparingTo("341.00");
+        assertThat(fee.amount()).isEqualByComparingTo("139.00");
         assertThat(fee.mixedColor().surcharge()).isEqualByComparingTo("33.36");
         assertThat(fee.mixedColor().meters()).isEqualByComparingTo("13.90");
         assertThat(fee.mixedColor().metersSource()).isEqualTo("fabric_meters");
         assertThat(fee.mixedColor().options()).containsExactly("拼1次");
-        assertThat(fee.lineAmount()).isEqualByComparingTo("422.84");
-        // 🔴 撤掉元/套：库里那笔 3.00 元/套 **不再**计入（旧口径 341.00 + 3.00 = 344.00 ⇒ 红）
+        assertThat(fee.lineAmount()).isEqualByComparingTo("172.36");
+        // 🔴 撤掉元/套：库里那笔 3.00 元/套 **不再**计入（旧口径 139.00 + 3.00 = 142.00 ⇒ 红）
         assertThat(fee.specialOptionsTotal()).isEqualByComparingTo("0");
-        assertThat(fee.lineAmount()).isNotEqualByComparingTo("344.00");
+        assertThat(fee.lineAmount()).isNotEqualByComparingTo("142.00");
         // 边界 ②：拼1次 **不是**「未定价」—— 照列、`priced=true`、`billing=per_meter`、金额 0
         assertThat(fee.specialOptions()).singleElement().satisfies(option -> {
             assertThat(option.name()).isEqualTo("拼1次");
@@ -742,10 +742,10 @@ class ProcessingFeeCalculatorTest {
 
         ProcessingFeeCalculator.Fee fee = compute(mixedColorInfo("拼色", "14.40", "拼2次"));
 
-        assertThat(fee.amount()).isEqualByComparingTo("627.00");
+        assertThat(fee.amount()).isEqualByComparingTo("144.00");
         assertThat(fee.mixedColor().surcharge()).isEqualByComparingTo("34.56");
-        assertThat(fee.lineAmount()).isEqualByComparingTo("777.48");
-        assertThat(fee.lineAmount()).isNotEqualByComparingTo("632.00");   // 旧口径（627.00 + 5.00）⇒ 红
+        assertThat(fee.lineAmount()).isEqualByComparingTo("178.56");
+        assertThat(fee.lineAmount()).isNotEqualByComparingTo("149.00");   // 旧口径（144.00 + 5.00）⇒ 红
     }
 
     @Test
