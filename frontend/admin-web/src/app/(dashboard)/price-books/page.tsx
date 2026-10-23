@@ -83,7 +83,9 @@ export default function PriceBooksPage() {
     // ⚠️ 必须**直接调用** `load()`（而不是 `setTimeout(load, 300)`）：判据 12 的「第一屏读端点」
     // 只认 `useEffect` 块体里被 `name(` 调用到的本地函数 —— 把函数当参数传进去会让 api 调用
     // 掉出 effect 驱动面（实测：判据当场判「锚点声明的调用不在 effect 驱动面上」）。
-    const timer = setTimeout(() => { void load() }, 300)   // 输入 SKU 时防抖：避免每敲一个字都打一次接口
+    // 防抖只服务于「客户筛选」那格输入（避免每敲一个字都打一次接口）；
+    // SKU 已由选品器**显式选定**（issue #7567），不再逐字请求。
+    const timer = setTimeout(() => { void load() }, 300)
     return () => clearTimeout(timer)
   }, [load])
 

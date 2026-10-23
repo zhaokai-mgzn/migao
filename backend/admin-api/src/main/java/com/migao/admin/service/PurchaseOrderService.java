@@ -324,7 +324,10 @@ public class PurchaseOrderService {
             }
         }
         if (ids.isEmpty()) {
-            return Map.of();
+            // 🔴 空集必须返回**可变**表（不是 `Map.of()`）：不可变空表的 `get(null)` 直接抛 NPE
+            //    （issue #6219 实测语义）—— 展示名解析发生在读面上，500 的代价远大于省一行分配。
+            //    类级判据 = `WorkerCuttingHeightNullProductIdTest` 的「空不可变表产出方」普查。
+            return new HashMap<>();
         }
         List<ProductSku> rows = skuMapper.selectList(new LambdaQueryWrapper<ProductSku>()
                 .eq(ProductSku::getTenantId, tenantId)
@@ -347,7 +350,8 @@ public class PurchaseOrderService {
             }
         }
         if (ids.isEmpty()) {
-            return Map.of();
+            // 同上：可变空表（issue #6219 口径）
+            return new HashMap<>();
         }
         List<Product> rows = productMapper.selectList(new LambdaQueryWrapper<Product>()
                 .eq(Product::getTenantId, tenantId)
