@@ -502,6 +502,19 @@
       "sort_order": 41,
       "status": "active",
       "source": "推算"
+    },
+    {
+      "id": "op-v186-01",
+      "name": "出库",
+      "group": "后道",
+      "position": null,
+      "unit": "卷",
+      "unit_price": 0,
+      "is_start_marker": false,
+      "sort_order": 42,
+      "status": "active",
+      "source": "占位待确认",
+      "scope": "position"
     }
   ],
   "routings": [

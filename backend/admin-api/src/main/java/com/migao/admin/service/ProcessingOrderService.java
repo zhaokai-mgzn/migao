@@ -165,6 +165,16 @@ public class ProcessingOrderService {
     public static final String TRIGGER_KIND_POSITION = "position";
 
     /**
+     * 触发类型 · **售卖方式**（issue #7523，用户裁定 2026-10-23）。
+     *
+     * <p>取值 = 订单行 {@code sellingMethod}：{@code full_roll}（整卷）/ {@code bulk_cut}（散剪）。
+     * **只对布料产品形态生效**：整卷 ⇒ {@code 出库 → 打包}（不裁剪，工人按卷/批次拣货）；
+     * 散剪 ⇒ 主线原样 {@code 裁剪 → 打包}。与真值源 {@code routing.py::ROUTE_RULES} 的两条
+     * sales_form 规则逐条同源（insert 出库 after 裁剪 → remove 裁剪，priority 270/280）。</p>
+     */
+    public static final String TRIGGER_KIND_SALES_FORM = "sales_form";
+
+    /**
      * 路线引用的工序在工序库无活跃行时的错误码（fail-closed）。
      * 可见位置同 {@link #ERR_ROUTING_NOT_FOUND}。
      */
@@ -296,7 +306,9 @@ public class ProcessingOrderService {
      */
     private static final List<String> CALC_INFO_KEYS = List.of(
             "fabric_meters", "meters", "pleat_count", "holes", "panels", "set_count", "source",
-            "per_panel_pleats", "fullness", "fullness_actual");
+            "per_panel_pleats", "fullness", "fullness_actual",
+            // 整卷出库（issue #7523）：出库工序的应做数量 = 订单行卷数（真实订单事实）
+            "roll_count");
 
     /**
      * 加工单快照要固化的**算料输出**键（issue #4354，设计文档 §4.9）：订单侧下单时已落库的算料输出
@@ -2492,6 +2504,11 @@ public class ProcessingOrderService {
         if ("processing_item".equals(kind)) {
             return processingItems.contains(rule.getTriggerValue());
         }
+        if (TRIGGER_KIND_SALES_FORM.equals(kind)) {
+            // 售卖方式规则由 `buildRoute` 统一处理（与 `craft` 同款：这里返回 false = 不重复插入，
+            // **不是**「未实现」—— 挪到下面的显式失败会让每张布料单实例化时 422）。
+            return false;
+        }
         if (TRIGGER_KIND_POSITION.equals(kind)) {
             // 部位维（issue #4962）：`trigger_value` = 部位名，写面把它**镜像**进 `position` 列
             // ⇒ 「这条规则限哪个部位」只有**一处**判据（{@link #rulePositionMatches}，见两个调用方的
@@ -2724,6 +2741,12 @@ public class ProcessingOrderService {
             if (value != null) {
                 calc.put(key, value);
             }
+        }
+        // ①b 整卷出库（issue #7523）：快照键是 camelCase `rollCount`，算料口径键是 `roll_count`
+        //     （与 routing.py::ROLL_KEYS 逐字同源）。缺键 ⇒ 不落（Python 侧兜底 1，绝不落 0）。
+        Object rollCount = entry.get("rollCount");
+        if (rollCount != null) {
+            calc.put("roll_count", rollCount);
         }
         // ② 该订单行是米类（判据见 isMeterBasedLine 的三段契约）⇒ 订单行数量即米数
         if (!calc.containsKey("fabric_meters") && isMeterBasedLine(entry)) {
@@ -3036,8 +3059,11 @@ public class ProcessingOrderService {
                 .thenComparing(r -> r.getId() == null ? "" : r.getId()));
         for (ProductionRouteRule rule : ordered) {
             String kind = rule.getTriggerKind();
-            if (isFabricForm) {
-                // 布料产品形态不套用工艺规则（见上方注释；与真值源同一份口径）
+            // 产品形态分派（issue #7523）：布料单**只**吃 `sales_form`（售卖方式）规则；
+            // 窗帘单**不**吃 sales_form（售卖方式只属于卖布行）。其余规则维持原口径 ——
+            // 布料单不套用窗帘工艺规则（与真值源 `routing.py::build_route_v2` 同款）。
+            boolean salesFormRule = TRIGGER_KIND_SALES_FORM.equals(kind);
+            if (isFabricForm != salesFormRule) {
                 continue;
             }
             if ("craft".equals(kind)) {
@@ -3046,6 +3072,12 @@ public class ProcessingOrderService {
                 }
             } else if ("option".equals(kind)) {
                 if (!options.contains(rule.getTriggerValue())) {
+                    continue;
+                }
+            } else if (TRIGGER_KIND_SALES_FORM.equals(kind)) {
+                // 售卖方式（issue #7523）：整卷 full_roll / 散剪 bulk_cut，与订单行**精确相等**
+                // （快照键 sellingMethod；缺键 ⇒ 不命中，存量单行为不变）
+                if (!Objects.equals(rule.getTriggerValue(), str(entry.get("sellingMethod")))) {
                     continue;
                 }
             } else if ("processing_item".equals(kind)) {

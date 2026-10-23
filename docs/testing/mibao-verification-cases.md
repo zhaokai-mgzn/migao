@@ -7827,7 +7827,7 @@
 ```
 溯源: 2026-10-18 新增（issue #7251）：只修**调度**，不改 30 天口径 —— `armIdle()` 改为按 `idleSlices()` 分片排队（每片 ≤ `MAX_TIMER_DELAY_MS`，前 N-1 片只续排、末片到期才 `checkAlive()`），并新增同文件 ⑥ 的全区间类级判据；同批修好测试侧因「长定时器不再 1ms 立即触发」而挂住测试进程的一处（frontend/worker-h5/tests/worker-h5-6749-stale-login-error.test.mjs 用 `t.after(() => app.destroy())` 显式销毁）。取号 = PG-089（`python3 scripts/next_case_id.py pg` 实跑：PG → main:001-087 · PR #7224:088 → 取 PG-089）。 ｜ tags: processing, worker, session, timer, backend-contract
 
-## 加工单域（76 case）
+## 加工单域（77 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -8862,6 +8862,19 @@
 跳过: [backend-contract] admin-api 单测 + 前端 vitest + prompt 文本判据（无 LLM 行为面；B 端 agent 写能力自 #5247 起已下线，本单只同步文案）
 ```
 溯源: 2026-10-23 新增（issue #7507，用户原话「为什么从订单可以直接生成加工单，而不是默认走智能派单流程？这里得限制下」；裁定 = 选项 A「统一入口」+ agent 同限）。取号 = 当时 origin/main 已占号最大 PG-089 ⇒ 本单取 PG-090。 ｜ tags: dispatch, pool-board, backend-contract
+
+### PG-091. 整卷布料单「出库」独立工序：散剪 裁剪→打包 / 整卷 出库→打包（批次号即卷号） 🔵
+```
+数据: **判据 1（会红，Java 路由）**：整卷布料单实例化出的工序序列 = `[出库, 打包]`，**不含 `裁剪`**；散剪单 = `[裁剪, 打包]`，**不含 `出库`**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionRouteParityTest.java 的 `fabricFullRollIsOutboundThenPacking` / `fabricBulkCutKeepsCutting`。**红证**：把 sales_form 规则摘掉（或把 buildRoute 的 `isFabricForm != salesFormRule` 分派改回 `if (isFabricForm) continue;`）⇒ 整卷序列退回 `[裁剪, 打包]` ⇒ 判据 1 红。
+数据: **判据 2（数量口径）**：`出库` 应做数量 = 订单行卷数（2 卷），算料请求 `calc_info` 必带 `roll_count`。执行点 = 同文件 `fabricFullRollIsOutboundThenPacking` 的 ArgumentCaptor 断言 + backend/ai-agent-service/tests/test_production/test_operation_qty.py（卷单位直接供数）/ test_production/test_fabric_route.py（full_roll 路线）。**红证**：把 `ProcessingOrderService#calcInfo` 的 roll_count 透传删掉 ⇒ Java 断言红；把 `routing.py::_qty_for` 的「卷」分支删掉 ⇒ Python 用例红。
+数据: **判据 3（工人屏可读）**：扫码读面的部位规格含 `roll_count`（卷数，单位 卷）与 `batch_no`（批次号即卷号）；散剪单缺键不渲染。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/PositionDetailFieldsTest.java 的键集守卫 + frontend/worker-h5/tests/worker-h5-position-spec.test.mjs 的 `卷数` 上屏断言。**红证**：从 `PositionDetailFields.DETAIL_KEYS` 删掉 `roll_count` ⇒ 后端键集守卫红；从 `POSITION_SPEC_KEYS` 删掉该行 ⇒ worker-h5 用例红。
+数据: **判据 4（配置页人话）**：工序配置页把 sales_form 规则读成「售卖方式 = 整卷/散剪」中文业务名，机器值不上屏。执行点 = frontend/admin-web/tests/unit/components/RollOutboundCondition.test.tsx。**红证**：把 `TRIGGER_KIND_LABEL.sales_form` 删掉 ⇒ 渲染出 `sales_form = full_roll` ⇒ 用例红。
+数据: **判据 5（种子五源收敛）**：`routing.py::OPERATION_CATALOG/_POSITION_PRICE_ROWS/ROUTE_RULES` ↔ V186 迁移 ↔ schema.sql ↔ 开租模板 ↔ Java 常量逐值一致（出库单位 卷；价目行 `出库 × 布料` 适用但未定价；规则 insert/remove 优先级 270/280）。执行点 = tests/unit_ci_workflows/test_production_catalog_seed.py（55 passed）+ backend/admin-api/src/test/java/com/migao/admin/service/ProductionSeedTemplateServiceTest.java 的 `apply_createsAllSeedRows`。
+数据: **判据 6（发货守卫不变）**：作业单 completed 才能发货的既有判据一字不动；整卷单只是少了「裁剪」一道。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderShipGuardTest.java（本单未改）。
+前置: 卖布行订单（processing_info.saleForm=布料、无加工项）：A 单 sellingMethod=full_roll + rollCount=2；B 单 sellingMethod=bulk_cut。
+跳过: [backend-contract] admin-api 单测 + ai-agent 路由真值源 + 前端 vitest/worker-h5 node:test（无 LLM 行为面；工序序列由确定性规则产生）
+```
+溯源: 2026-10-23 新增（issue #7523，用户裁定：「1.出库做独立工序 2.批次号即卷号 3.维持」）。取号 = 当时 origin/main 已占号最大 PG-090 ⇒ 本单取 PG-091。 ｜ tags: processing-order, route-rule, fabric
 
 ## 商品域（129 case）
 
@@ -12835,7 +12848,7 @@
 - 领域本体域：4
 - 订单域：68
 - 加工项域：31
-- 加工单域：76
+- 加工单域：77
 - 商品域：129
 - 工具注册器域：1
 - 设置域：10
@@ -13126,6 +13139,7 @@
 - PG-087: 质检指标（P0+P1）：按件聚合的首检合格率 / 当前合格率 / 返工报废率 + 时间窗趋势 + 分组 Top-5 + 待检积压（近似待检时长）
 - PG-088: 客户端漏写 saleForm 的卖布单仍必须被认出（sellingMethod / rollCount 兜底）⇒ 作业单 / 派单池 / 发货守卫三段不再静默放行（issue #7222）
 - PG-090: 直派收敛：非加急订单不得从订单详情直接生成作业单（服务端逐单拒绝并指路智能派单）；加急单保留直派（issue #7507）
+- PG-091: 整卷布料单「出库」独立工序：散剪 裁剪→打包 / 整卷 出库→打包（批次号即卷号）
 - PP-007: 黄金策加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 黄金策加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）

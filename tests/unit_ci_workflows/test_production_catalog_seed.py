@@ -89,7 +89,11 @@ MIGRATION_DIR = REPO / "backend/admin-api/src/main/resources/db/migration-archiv
 import sys as _sys
 from pathlib import Path as _Path
 _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
-from unit_ci_workflows._migration_paths import LIVE_DIR as _LIVE_MIGRATION_DIR, migration_files as _migration_files
+from unit_ci_workflows._migration_paths import (
+    LIVE_DIR as _LIVE_MIGRATION_DIR,
+    MIGRATION_DIRS as _MIGRATION_DIRS,
+    migration_files as _migration_files,
+)
 # 退休台账（issue #4365）—— 定义处在 `_retired_craft_rules.py`（**单一真相源**），本模块只 re-export
 # （判据与注入自证共用同一份；别再在本文件里定义第二份 —— 两套真相源 = 改一处漏一处）。
 from unit_ci_workflows._retired_craft_rules import (  # noqa: E402
@@ -116,21 +120,26 @@ def version_key(name: str):
     return (int(match.group(1)) if match else 1 << 30, base)
 
 
-def seed_sources_for(table: str, migration_dir: Path = MIGRATION_DIR) -> tuple:
+def seed_sources_for(table: str, migration_dir: Path = None) -> tuple:
     """**按内容**发现某个表的种子源迁移（判据 1，issue #4235）。
 
     判据 = 「文件里有 `INSERT INTO <table>`」⇒ 新增种子迁移**无需改本文件**即被纳入；
     取 `(路径,)` 时按版本号**数值序**（先初始、后增量 ⇒ 聚合行序 = 序号顺序，与真值源字典序可比）。
     空集不是合法的"恰好没有" —— 由 `seed_sqls` / `routing_sqls` 夹具 fail-closed 拦下。
     """
-    directory = Path(migration_dir)
+    # issue #7523：默认扫**两个载体目录**（归档链 + 活目录）。只看归档 ⇒ 新迁移不在射程
+    # ⇒ 本守卫对「将来的增量种子」失效（`_migration_paths` 的既定口径，这里此前漏了）。
+    dirs = (Path(migration_dir),) if migration_dir is not None else _MIGRATION_DIRS
     pattern = re.compile(r"INSERT\s+INTO\s+" + table + r"\b", re.I)
-    found = [p for p in sorted(directory.glob(MIGRATION_GLOB), key=lambda p: version_key(p.name))
-             if pattern.search(p.read_text(encoding="utf-8"))]
+    found = []
+    for directory in dirs:
+        for path in sorted(directory.glob(MIGRATION_GLOB), key=lambda p: version_key(p.name)):
+            if pattern.search(path.read_text(encoding="utf-8")):
+                found.append(path)
     return tuple(found)
 
 
-def values_sources_for(table: str, migration_dir: Path = MIGRATION_DIR) -> tuple:
+def values_sources_for(table: str, migration_dir: Path = None) -> tuple:
     """`seed_sources_for` 的**只认 `VALUES` 形态**变体（issue #4432 = 母单 #4423 P2）。
 
     ## 为什么必须分流（否则守卫自己会假红）
@@ -145,7 +154,7 @@ def values_sources_for(table: str, migration_dir: Path = MIGRATION_DIR) -> tuple
     ⇒ 判据分流：**字面量种子源**（三源收敛比对射程）= 含 `VALUES` 的那些；
     **派生回填源** = 只有 `SELECT` 的那些（另守）。
     """
-    directory = Path(migration_dir)
+    dirs = (Path(migration_dir),) if migration_dir is not None else _MIGRATION_DIRS
     # ⚠️ 只认 `INSERT INTO <table> … VALUES`（`VALUES` 必须出现在该语句的 **FROM 之前**）。
     # 不能只看「语句里有没有 VALUES 这个词」：V72 的规则回填是
     # `INSERT INTO production_route_rules … SELECT … JOIN (VALUES …) AS r(...)` ——
@@ -154,9 +163,10 @@ def values_sources_for(table: str, migration_dir: Path = MIGRATION_DIR) -> tuple
     literal_pattern = re.compile(
         r"INSERT\s+INTO\s+" + table + r"\b(?:(?!\bFROM\b)[\s\S])*?\bVALUES\b", re.I)
     found = []
-    for p in sorted(directory.glob(MIGRATION_GLOB), key=lambda p: version_key(p.name)):
-        if literal_pattern.search(p.read_text(encoding="utf-8")):
-            found.append(p)
+    for directory in dirs:
+        for p in sorted(directory.glob(MIGRATION_GLOB), key=lambda p: version_key(p.name)):
+            if literal_pattern.search(p.read_text(encoding="utf-8")):
+                found.append(p)
     return tuple(found)
 
 
@@ -548,8 +558,8 @@ def test_frozen_seed_must_finish_is_the_recorded_history(catalog_rows):
     assert got == ["外帘装袋"], (
         f"冻结迁移种子里 `is_must_finish = TRUE` 的存活工序 = {got}，期望恰好 `外帘装袋`"
         f"（V54 的历史口径；已发布迁移不可改 ⇒ 改了这个值必须解释）")
-    assert len(catalog_rows) == 41, (
-        f"迁移侧工序库种子解析出 {len(catalog_rows)} 行，期望 41 ⇒ 解析失效或种子被改")
+    assert len(catalog_rows) == 42, (
+        f"迁移侧工序库种子解析出 {len(catalog_rows)} 行，期望 42 ⇒ 解析失效或种子被改")
     values = {normalize_value(r["is_must_finish"]) for r in catalog_rows}
     assert values <= {"TRUE", "FALSE"}, f"该列出现了 TRUE/FALSE 之外的值：{values}"
 
@@ -564,8 +574,8 @@ def test_must_finish_is_false_in_every_terminal_source(schema_sql, template_json
     `tests/unit_ci_workflows/test_must_finish_retire_migration.py`。
     """
     schema_ops = parse_seed(schema_sql, "production_operations", OP_COLUMNS)
-    assert len(schema_ops) == 41, (
-        f"schema.sql 的工序库种子解析出 {len(schema_ops)} 行，期望 41 ⇒ 解析失效或种子被改")
+    assert len(schema_ops) == 42, (
+        f"schema.sql 的工序库种子解析出 {len(schema_ops)} 行，期望 42 ⇒ 解析失效或种子被改")
     boot_true = _live_seed_true_names(schema_ops)
     assert boot_true == [], (
         f"bootstrap（schema.sql）仍有存活工序 `is_must_finish = TRUE`：{boot_true} —— "
@@ -774,7 +784,8 @@ def test_template_sources_are_the_frozen_provenance_mapping(template_json, catal
     与 V62/V79 迁移的回填同口径由 `ProductionSourceProvenanceMigrationTest` 另行钉（Java 侧）。
     """
     def expected_source(op_id: str) -> str:
-        if op_id.startswith("op-v54-") or op_id.startswith("op-v79-") or op_id.startswith("rt-v54-"):
+        if (op_id.startswith("op-v54-") or op_id.startswith("op-v79-")
+                or op_id.startswith("op-v186-") or op_id.startswith("rt-v54-")):
             return "占位待确认"
         return "推算"
 
@@ -795,7 +806,7 @@ def test_template_sources_are_the_frozen_provenance_mapping(template_json, catal
         "（出现「实证」= 多标：今天没有任何工序/路线够得上实证，#4343 已证明 布帘×韩褶 与客户真实加工单不符）")
     # 🔴 issue #4937：`推算` 档 5 → **9**（新增 4 道纱帘变体，id = `op-v56-06..09` ——
     # 与 V56 同族「行业推算」档；`占位待确认` 仍是 32）
-    assert sum(1 for e in template_json["operations"] if e["source"] == "占位待确认") == 32
+    assert sum(1 for e in template_json["operations"] if e["source"] == "占位待确认") == 33
     assert sum(1 for e in template_json["operations"] if e["source"] == "推算") == 9
     assert sum(1 for e in template_json["routings"] if e["source"] == "占位待确认") == 6
     assert sum(1 for e in template_json["routings"] if e["source"] == "推算") == 3
@@ -838,8 +849,8 @@ def test_every_template_source_is_really_read(template_json):
     """
     assert template_json.get("templateId") == "curtain"
     # 🔴 issue #4937：37 → **41**（补 4 道纱帘变体 —— `applicable` 过滤退场后它们会进纱帘路线）
-    assert len(template_json["operations"]) == 41, (
-        "模板工序数不是 41（35 + #4529 的 配料/打包 + issue #4937 的 4 道纱帘变体）")
+    assert len(template_json["operations"]) == 42, (
+        "模板工序数不是 42（35 + #4529 的 配料/打包 + issue #4937 的 4 道纱帘变体 + #7523 的出库）")
     assert len(template_json["routings"]) == 9, "模板路线数不是 9"
     assert len(template_json["option_routings"]) == 16
     assert len(template_json["option_factors"]) >= 1
@@ -1726,9 +1737,9 @@ def test_position_prices_converge_across_three_sources(schema_sql):
     truth = _truth_price_rows()
     migration = position_price_rows_multi(POSITION_SEED_SQLS)
     bootstrap = schema_terminal_price_rows(schema_sql)
-    assert len(truth) == 30, f"真值源的价目不是 30 行（一道逻辑工序一行）：{len(truth)}"
-    assert len(migration) == 30, f"迁移侧的价目不是 30 行：{len(migration)}"
-    assert len(bootstrap) == 30, f"bootstrap 的价目不是 30 行：{len(bootstrap)}"
+    assert len(truth) == 31, f"真值源的价目不是 31 行（一道逻辑工序一行）：{len(truth)}"
+    assert len(migration) == 31, f"迁移侧的价目不是 31 行：{len(migration)}"
+    assert len(bootstrap) == 31, f"bootstrap 的价目不是 31 行：{len(bootstrap)}"
     assert migration == truth, f"价目：迁移侧 ≠ routing.py：{_diff_keys(migration, truth)}"
     assert bootstrap == truth, (
         f"价目：schema.sql 终态 ≠ routing.py：{_diff_keys(bootstrap, truth)} —— "

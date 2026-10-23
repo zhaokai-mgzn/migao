@@ -208,6 +208,13 @@ export const TRIGGER_KIND_LABEL: Record<string, string> = {
   shaped: '是否定型',
   processing_item: '加工项',
   position: '部位',
+  sales_form: '售卖方式',
+}
+
+/** 售卖方式触发的**机器值 → 人话**（issue #7523）：规则里存 `full_roll`/`bulk_cut`，屏上读「整卷/散剪」。 */
+export const SALES_FORM_LABEL: Record<string, string> = {
+  full_roll: '整卷',
+  bulk_cut: '散剪',
 }
 
 /**
@@ -220,7 +227,10 @@ export const TRIGGER_KIND_LABEL: Record<string, string> = {
  */
 export const conditionText = (rule: import('@/types').RouteRule) => {
   const kind = TRIGGER_KIND_LABEL[rule.trigger_kind ?? ''] ?? rule.trigger_kind ?? '—'
-  const value = rule.trigger_value ?? '—'
+  const rawValue = rule.trigger_value ?? '—'
+  const value = rule.trigger_kind === 'sales_form'
+    ? (SALES_FORM_LABEL[rawValue] ?? rawValue)
+    : rawValue
   const positionClause = rule.position ? `${TRIGGER_KIND_LABEL.position} = ${rule.position}` : ''
   const triggerClause = rule.trigger_kind === 'position' ? '' : `${kind} = ${value}`
   const when = [positionClause, triggerClause].filter(Boolean).join('、') || `${kind} = ${value}`

@@ -342,6 +342,11 @@ public class ProductionSeedTemplateService {
             {"打包", "纱帘", null, "true"},
             {"打包", "帘头", null, "true"},
             {"打包", "布料", null, "true"},
+            // issue #7523：整卷出库（只对布料适用；三个窗帘部位显式 FALSE）
+            {"出库", "布料", null, "true"},
+            {"出库", "布帘", null, "false"},
+            {"出库", "纱帘", null, "false"},
+            {"出库", "帘头", null, "false"},
     };
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -624,6 +629,13 @@ public class ProductionSeedTemplateService {
             addRule(plan, existing, available, tenantId, "processing_item", rule[0],
                     PROCESSING_ITEM_POSITION, rule[1], rule[2], rule[3], priority, null);
         }
+        // ③b 售卖方式（issue #7523）：整卷布料单 ⇒ `出库 → 打包`（不裁剪）。只对布料形态生效
+        //     （ProcessingOrderService#buildRoute 按产品形态分派）；priority 270/280 与 V186 逐值一致。
+        //     顺序敏感：先 insert 出库（锚点 裁剪）再 remove 裁剪，反过来会得到 `打包 → 出库`。
+        addRule(plan, existing, available, tenantId, ProcessingOrderService.TRIGGER_KIND_SALES_FORM,
+                "full_roll", null, "insert", "出库", "裁剪", 270, null);
+        addRule(plan, existing, available, tenantId, ProcessingOrderService.TRIGGER_KIND_SALES_FORM,
+                "full_roll", null, "remove", "裁剪", null, 280, null);
         // ④ 计件系数档（模板 JSON 逐条搬迁；operation_name 为空 = 平摊档 ⇒ operation 落 NULL）
         for (JsonNode node : template.path("option_factors")) {
             priority += 10;

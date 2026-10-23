@@ -89,7 +89,7 @@ public class ProductionOperationQueryService {
      * 由 {@code tests/unit_ci_workflows/test_production_catalog_seed.py} 的
      * {@code test_java_engine_qty_catalog_matches_python_catalog} 双向钉住。</p>
      */
-    private static final List<String> ENGINE_QTY_OPERATIONS_EXTRA = List.of("配料", "打包");
+    private static final List<String> ENGINE_QTY_OPERATIONS_EXTRA = List.of("配料", "打包", "出库");
 
     /**
      * 🔴 <b>引擎数量目录（= 算料引擎 {@code routing.py::OPERATION_CATALOG} 的键集）的 Java 侧单一份</b>

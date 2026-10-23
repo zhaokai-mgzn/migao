@@ -59,7 +59,9 @@ final class PositionDetailFields {
      * 在扫码侧另算一份就是第二份口径。</p>
      */
     static final List<String> PRODUCT_IDENTITY_KEYS = List.of(
-            "product_name", "sku", "color_name", "door_width", "selling_method", "unit");
+            "product_name", "sku", "color_name", "door_width", "selling_method", "unit",
+            // 整卷卷数（issue #7523）：批次号即卷号 ⇒ 工人屏需要「整卷 N 卷」；散剪单缺键不渲染
+            "roll_count");
 
     /** 规格尺寸键（组 2）：{@code order_items} 的 V63 列。 */
     static final List<String> SPEC_SIZE_KEYS = List.of("width", "height");
@@ -151,7 +153,7 @@ final class PositionDetailFields {
     /** 数字键（wire 上必须是数字；快照里 `processing_info` 的引擎值可能是字符串）。 */
     private static final Set<String> NUMERIC_KEYS = Set.of(
             "width", "height", "fullness", "fullness_actual", "fabric_meters",
-            "pattern_repeat", "batch_meters", "processing_meters");
+            "pattern_repeat", "batch_meters", "processing_meters", "roll_count");
 
     private static List<String> allKeys() {
         Set<String> keys = new LinkedHashSet<>(PRODUCT_IDENTITY_KEYS);

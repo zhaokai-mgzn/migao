@@ -711,6 +711,7 @@ export function OperationPricePanel({
                       { key: 'option', label: '特殊选项' },
                       { key: 'processing_item', label: '加工项' },
                       { key: 'position', label: '部位' },
+                      { key: 'sales_form', label: '售卖方式' },
                     ] as const).map((k) => (
                       <button
                         key={k.key}
@@ -743,16 +744,22 @@ export function OperationPricePanel({
                         ? '从加工项列表里选…'
                         : conditionDraft.trigger_kind === 'position'
                           ? '从部位列表里选…'
-                          : '从特殊选项列表里选…'}
+                          : conditionDraft.trigger_kind === 'sales_form'
+                            ? '整卷还是散剪…'
+                            : '从特殊选项列表里选…'}
                     </option>
                     {(conditionDraft.trigger_kind === 'processing_item'
                       ? ruleOptions.processing_items
                       : conditionDraft.trigger_kind === 'position'
                         ? ruleOptions.positions
-                        : optionNames
+                        : conditionDraft.trigger_kind === 'sales_form'
+                          ? ['full_roll', 'bulk_cut']
+                          : optionNames
                     ).map((name) => (
                       <option key={name} value={name}>
-                        {name}
+                        {conditionDraft.trigger_kind === 'sales_form'
+                          ? ({ full_roll: '整卷', bulk_cut: '散剪' } as Record<string, string>)[name] ?? name
+                          : name}
                       </option>
                     ))}
                   </select>

@@ -222,7 +222,10 @@ import {
  */
 const conditionText = (rule: RouteRule) => {
   const kind = TRIGGER_KIND_LABEL[rule.trigger_kind ?? ''] ?? rule.trigger_kind ?? '—'
-  const value = rule.trigger_value ?? '—'
+  const rawValue = rule.trigger_value ?? '—'
+  const value = rule.trigger_kind === 'sales_form'
+    ? ({ full_roll: '整卷', bulk_cut: '散剪' } as Record<string, string>)[rawValue] ?? rawValue
+    : rawValue
   const positionClause = rule.position ? `${TRIGGER_KIND_LABEL.position} = ${rule.position}` : ''
   // `position` 档的「什么时候」**就是**部位（`trigger_value` = `position`）⇒ 只说一遍
   const triggerClause = rule.trigger_kind === 'position' ? '' : `${kind} = ${value}`

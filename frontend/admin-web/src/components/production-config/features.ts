@@ -477,6 +477,7 @@ export function useOperationFeature({ enabled = true }: { enabled?: boolean } = 
         craft: '请选择什么时候生效：工艺必须从列表里选（手输一个不在列表里的名字 = 这条条件永远不命中）',
         processing_item: '请选择什么时候生效：加工项必须从列表里选（触发键 = 订单里的加工项名，精确相等）',
         position: '请选择什么时候生效：部位必须从列表里选（部位 = 布帘/纱帘/帘头/布料，空 = 不限部位）',
+        sales_form: '请选择什么时候生效：售卖方式必须是 整卷(full_roll) 或 散剪(bulk_cut)（机器值，写错永不命中）',
         option: '请选择什么时候生效：特殊选项必须从列表里选（选项名是订单里的键，错一个字就查不到）',
       }
       reasons.push(reasonByKind[conditionDraft.trigger_kind] ?? reasonByKind.option)
@@ -1173,6 +1174,7 @@ export function useRoutingsFeature({
         craft: '请选择什么时候生效：工艺必须从列表里选（手输一个不在列表里的名字 = 这条条件永远不命中）',
         processing_item: '请选择什么时候生效：加工项必须从列表里选（触发键 = 订单里的加工项名，精确相等）',
         position: '请选择什么时候生效：部位必须从列表里选（部位 = 布帘/纱帘/帘头/布料，空 = 不限部位）',
+        sales_form: '请选择什么时候生效：售卖方式必须是 整卷(full_roll) 或 散剪(bulk_cut)（机器值，写错永不命中）',
         option: '请选择什么时候生效：特殊选项必须从列表里选（选项名是订单里的键，错一个字就查不到）',
       }
       reasons.push(reasonByKind[kind] ?? reasonByKind.option)
