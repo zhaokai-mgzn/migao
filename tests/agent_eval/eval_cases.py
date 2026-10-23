@@ -16204,16 +16204,16 @@ _CASE_UI_128 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── UI-129 [NORMAL] 建品页 AI 生成商品图：样图 → 百炼图生图 → 预览后选用（不自动落库，issue #7335）（源: cases/ui.yml）──
+# ── UI-129 [NORMAL] 建品页 AI 生成商品图：样图 → 百炼图生图 → 生成即自动填入图片位（再生成替换，不落库；issue #7335 / #7533）（源: cases/ui.yml）──
 _CASE_UI_129 = EvalCase(
     id='UI-129',
     legacy_id='',
-    title='建品页 AI 生成商品图：样图 → 百炼图生图 → 预览后选用（不自动落库，issue #7335）',
+    title='建品页 AI 生成商品图：样图 → 百炼图生图 → 生成即自动填入图片位（再生成替换，不落库；issue #7335 / #7533）',
     skill=Skill.GENERAL,
     difficulty=Difficulty.NORMAL,
     user_inputs=['「当前缺乏商品的主图和明细图，你能否根据用户提供的样本图通过大模型来补充一份接近商品的样品图」（用户 2026-10-19）', '「如果效果可以的话，我希望做成商品创建中的功能的一部分」（用户 2026-10-19）'],
     expectations=['direct_reply'],
-    data_checks=['判据 1·后端不落库（会红）：POST /api/admin/products/ai-images 只回 {url, model}（data 恰好两个键）；控制器依赖面恰好 ProductImageGenerationService（无 ProductService / Mapper）。执行点 = ProductImageControllerTest + ProductImageGenerationServiceTest。', '判据 2·链路收口（会红）：临时 URL 只允许从 *.aliyuncs.com 下载并转存 OSS（非百炼域名 ⇒ 422 且不下载）；样图必须 https；用途白名单 main/texture/craft/scene 之外 ⇒ 422 且不发起生成请求。', '判据 3·ai-agent 模型轮换（会红）：配额类错误（429 / AllocationQuota）与「模型接不了该请求」（HTTP 400 InvalidParameter，实测 qwen-mt-image-2.0，issue #7341）自动切下一个模型；审核类 400（DataInspectionFailed）不切模型；默认链 = qwen-mt-image-2.0（用户 2026-10-23 裁定：qwen-image-* 免费额度用尽，issue #7538）且它不接图生图 ⇒ 全链不可用时报「模型不接这类请求（非配额原因）」而不是「额度用尽」；全部用尽 ⇒ 503；未配置 Key ⇒ 503 且不发外部请求。执行点 = backend/ai-agent-service/tests/test_generator.py。', '判据 4·前端（会红）：无样图 ⇒ 按钮 disabled + 先上传提示；默认用第 1 张、多图可切换样图（生成携带所选样图 URL + kind）；「用这张」主图走 onApplyMain、细节图走 onApplyDetail，且面板不收起 + 「已加入」反馈；生成中 loading；失败可见可行动错误。执行点 = frontend/admin-web/tests/unit/components/ProductImageAI.test.tsx。', '判据 5·存量补图（会红）：样图候选 = 已上传主图 + 详情图（去重、默认第 1 张），多图可切换（生成携带所选样图 URL）；「用这张」后面板不收起并给「已加入」反馈。执行点 = ProductImageAI.test.tsx + ProductForm.test.tsx（编辑态候选去重）。'],
+    data_checks=['判据 1·后端不落库（会红）：POST /api/admin/products/ai-images 只回 {url, model}（data 恰好两个键）；控制器依赖面恰好 ProductImageGenerationService（无 ProductService / Mapper）。执行点 = ProductImageControllerTest + ProductImageGenerationServiceTest。', '判据 2·链路收口（会红）：临时 URL 只允许从 *.aliyuncs.com 下载并转存 OSS（非百炼域名 ⇒ 422 且不下载）；样图必须 https；用途白名单 main/texture/craft/scene 之外 ⇒ 422 且不发起生成请求。', '判据 3·ai-agent 模型轮换（会红）：配额类错误（429 / AllocationQuota）与「模型接不了该请求」（HTTP 400 InvalidParameter，实测 qwen-mt-image-2.0，issue #7341）自动切下一个模型；审核类 400（DataInspectionFailed）不切模型；默认链 = qwen-mt-image-2.0（用户 2026-10-23 裁定：qwen-image-* 免费额度用尽，issue #7538）且它不接图生图 ⇒ 全链不可用时报「模型不接这类请求（非配额原因）」而不是「额度用尽」；全部用尽 ⇒ 503；未配置 Key ⇒ 503 且不发外部请求。执行点 = backend/ai-agent-service/tests/test_generator.py。', '判据 4·前端（会红，issue #7533 改判）：无样图 ⇒ 按钮 disabled + 先上传提示；默认用第 1 张、多图可切换样图（生成携带所选样图 URL + kind）；**生成成功即自动填入图片位**（主图 ⇒ onApplyMain / images[0]；细节·工艺·场景 ⇒ onApplyDetail / detailImages 末位），**不存在「用这张」按钮**（回归守卫）；**再生成一张 ⇒ 携带上一次自动填入的 URL 作为 replaceUrl**（替换、不叠加；换用途跨槽位同样先摘旧位）；生成中 loading；失败**不落位**且错误可见可行动。执行点 = frontend/admin-web/tests/unit/components/ProductImageAI.test.tsx。', '判据 5·落位闭环（会红，issue #7533）：渲染真实 `ProductForm` ⇒ 生成成功**无需任何额外点击**主图位即变为 [生成图, 原图]；点「提交并上架」⇒ `onSubmit` 载荷 `images` 带上该 URL（= 用户逐字「保存后也没有」的判据）；再生成 ⇒ 替换不叠加；细节用途 ⇒ `detailImages` 末位；**生成期间（~40s）商家改过图片列表 ⇒ 落位基于最新列表**（删掉的图不复活、新图不丢，靠函数式更新）。执行点 = frontend/admin-web/tests/unit/components/ProductFormAIImage.test.tsx；编辑态样图候选去重 = ProductForm.test.tsx。'],
     skip_reason='[backend-contract] 纯页面 AI 辅助入口（不经过 LLM 对话/工具），由 admin-api 单测 + ai-agent pytest + 前端 vitest 执行，不进入 agent-eval 冒烟',
     tags=['ai-image', 'product-create', 'image-generation'],
     persona='',

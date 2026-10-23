@@ -8,11 +8,16 @@ import { aiProductImageApi, type AiProductImageKind } from '@/lib/api'
 import { toastRequestError } from '@/lib/api-error'
 
 /**
- * 建品页「AI 生成商品图」入口（issue #7335）。
+ * 建品页「AI 生成商品图」入口（issue #7335 / #7533）。
  *
- * 交互：商家先上传一张**样图**（色卡 / 面料实拍）→ 选用途 → 生成 → 预览 → 「用这张」。
- * 只回预览，不自动保存；「用这张」只是写进表单（主图插到封面位 / 细节图追加到详情图），
- * 提交仍是商家的动作。
+ * 交互：先上传样图（色卡 / 面料实拍）→ 选用途 → 生成 ⇒ **生成成功即自动填入图片位**：
+ * 主图写进封面位（`images[0]`），细节 / 工艺 / 场景追加到详情图末位。不再需要「用这张」——
+ * 改前那一步藏在预览旁，商家漏点就等于**白生成**：表单没变 ⇒ 提交载荷没有该 URL ⇒ 保存后也没有
+ * （issue #7533 的实测根因）。
+ *
+ * 同一面板内再次生成 ⇒ **替换**上一张（把上次自动填入的 URL 从两个列表里摘掉），不叠加 ——
+ * 否则连点两次「再生成一张」会在图片位留下一串近似图。
+ * 仍**不落库**：结果只写进表单，提交永远是商家的动作。
  *
  * 设计口径（§31）：常驻面只有一行提示 + 一个按钮；面板按需展开，生成中禁用按钮，
  * 文案只陈述事实与该做什么（不催、不夸大）。
@@ -32,10 +37,13 @@ interface ProductImageAIProps {
   sampleImages?: string[]
   /** 商品名（提示词里用；可空） */
   productName?: string
-  /** 主图：插到 `images[0]`（封面位） */
-  onApplyMain: (url: string) => void
-  /** 细节图：追加到 `detailImages` */
-  onApplyDetail: (url: string) => void
+  /**
+   * 主图：写进 `images[0]`（封面位）。
+   * `replaceUrl` = 本组件上一次自动填入的那张（再生成时替换，不叠加）。
+   */
+  onApplyMain: (url: string, replaceUrl?: string) => void
+  /** 细节图：追加到 `detailImages`（`replaceUrl` 同上）。 */
+  onApplyDetail: (url: string, replaceUrl?: string) => void
 }
 
 export default function ProductImageAI({
@@ -50,9 +58,15 @@ export default function ProductImageAI({
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState('')
   const [error, setError] = useState('')
-  const [applied, setApplied] = useState('')
+  /**
+   * 上一次**自动填入表单**的结果（不是提示文案）。
+   *
+   * 🔴 切换用途 / 切换样图时**不清空**：它记录的是「此刻表单里哪张图是本组件写的」，
+   * 下一次生成据此替换；清空会让第二次生成变成叠加（issue #7533）。
+   */
+  const [applied, setApplied] = useState<{ url: string; kind: AiProductImageKind } | null>(null)
 
-  /** 图片列表变化（上传 / 删除 / 用这张后插封面）时，样图始终指向仍然存在的一张。 */
+  /** 图片列表变化（上传 / 删除 / 自动填入）时，样图始终指向仍然存在的一张。 */
   useEffect(() => {
     if (!sampleImages.includes(sample)) setSample(sampleImages[0] || '')
   }, [sampleImages, sample])
@@ -60,7 +74,13 @@ export default function ProductImageAI({
   const clearFeedback = () => {
     setResult('')
     setError('')
-    setApplied('')
+  }
+
+  /** 写进表单：主图 ⇒ 封面位；其余 ⇒ 详情图末位。同时记住这张，供下次替换。 */
+  const apply = (url: string, target: AiProductImageKind) => {
+    if (target === 'main') onApplyMain(url, applied?.url)
+    else onApplyDetail(url, applied?.url)
+    setApplied({ url, kind: target })
   }
 
   const generate = async () => {
@@ -75,6 +95,8 @@ export default function ProductImageAI({
         return
       }
       setResult(url)
+      // 生成成功即落位（issue #7533）：多一步「用这张」= 商家漏点即白生成。
+      apply(url, kind)
     } catch (e) {
       setError(FAILURE_MESSAGE)
       // 拦截器已统一提示时这里不重复弹（toastRequestError 内部判定）
@@ -82,19 +104,6 @@ export default function ProductImageAI({
     } finally {
       setLoading(false)
     }
-  }
-
-  const apply = () => {
-    if (!result) return
-    if (kind === 'main') {
-      onApplyMain(result)
-      setApplied('已插入封面位')
-    } else {
-      onApplyDetail(result)
-      setApplied('已加入「详情图」')
-    }
-    // 不收起面板：存量商品常要一次补主图 + 材质 + 工艺 + 场景，收起后每张都要重开。
-    setResult('')
   }
 
   return (
@@ -183,13 +192,13 @@ export default function ProductImageAI({
               loading={loading}
               onClick={generate}
             >
-              {result ? '再生成一张' : '生成'}
+              {applied ? '再生成一张' : '生成'}
             </Button>
             <span className="text-xs text-neutral-400">细节图会加入下方「详情图」。</span>
             {error && <span className="text-xs text-red-600">{error}</span>}
             {applied && (
               <span role="status" className="text-xs text-green-600">
-                {applied}；可继续生成其他用途。
+                {applied.kind === 'main' ? '已填入主图封面位' : '已加入「详情图」'}；可继续生成其他用途。
               </span>
             )}
           </div>
@@ -204,12 +213,9 @@ export default function ProductImageAI({
                 unoptimized
                 className="h-40 w-40 rounded-lg border border-neutral-200 object-cover"
               />
-              <div className="space-y-2">
-                <p className="text-xs text-neutral-500">已生成，请核对颜色与工艺后再使用。</p>
-                <Button type="button" size="sm" onClick={apply}>
-                  用这张
-                </Button>
-              </div>
+              <p className="text-xs text-neutral-500">
+                请核对颜色与工艺；不满意可再生成一张（替换这一张），或在图片列表里删除。
+              </p>
             </div>
           )}
         </div>

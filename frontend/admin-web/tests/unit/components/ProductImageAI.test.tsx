@@ -1,14 +1,14 @@
 // case_ids: UI-129
 /**
- * ProductImageAI 组件测试（issue #7335 · 建品页「AI 生成商品图」）。
+ * ProductImageAI 组件测试（issue #7335 · 建品页「AI 生成商品图」；issue #7533 改为生成即落位）。
  *
  * 判据：
  * 1. 没有样图 ⇒ 入口不可用 + 明确提示（不让商家点了才发现没样图）；
  * 2. 有样图 ⇒ 选用途后「生成」调 `aiProductImageApi.generate`（imageUrl = 样图）；
- * 3. 多张图可切换样图（存量商品常要挑一张最像实物的）；切换后按新样图生成；
- * 4. 「用这张」：主图 ⇒ `onApplyMain`；细节图 ⇒ `onApplyDetail`（不自动落库，只是写表单）；
- *    用后面板**不收起**并给出「已加入」反馈（一次补齐主图 + 材质 + 工艺 + 场景）；
- * 5. 生成中按钮 loading（不可重复提交）；失败可见错误文案。
+ * 3. **生成成功即自动填入图片位**：主图 ⇒ `onApplyMain(url)`，细节 ⇒ `onApplyDetail(url)`，
+ *    无需再点任何按钮（issue #7533：改前多一步「用这张」，商家漏点 = 白生成 ⇒ 保存后也没有）；
+ * 4. **再生成 = 替换**：第二次落位携带 `replaceUrl` = 上一次自动填入的那张（不叠加）；
+ * 5. 多张图可切换样图（生成携带所选样图 URL）；生成中按钮 loading；失败不落位且错误可见。
  */
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -29,6 +29,7 @@ const generate = vi.mocked(aiProductImageApi.generate)
 const SAMPLE = 'https://oss.example.com/sample.png'
 const SAMPLE_2 = 'https://oss.example.com/sample-2.png'
 const RESULT = 'https://oss.example.com/generated.png'
+const RESULT_2 = 'https://oss.example.com/generated-2.png'
 
 const ok = (url = RESULT) =>
   ({ data: { success: true, data: { url, model: 'qwen-image-3.0' } } }) as never
@@ -60,28 +61,61 @@ describe('ProductImageAI', () => {
     expect(screen.getByText(/先上传一张样图/)).toBeInTheDocument()
   })
 
-  it('选「材质细节」生成后，「用这张」走 onApplyDetail', async () => {
+  it('默认主图：生成成功即自动填入封面位（无需再点「用这张」）', async () => {
+    const { onApplyMain, onApplyDetail } = renderAI()
+
+    fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
+    fireEvent.click(screen.getByRole('button', { name: '生成' }))
+
+    await waitFor(() => expect(onApplyMain).toHaveBeenCalledWith(RESULT, undefined))
+    expect(onApplyDetail).not.toHaveBeenCalled()
+    expect(generate).toHaveBeenCalledWith({
+      imageUrl: SAMPLE,
+      productName: '回归布帘-遮光提花',
+      kind: 'main',
+    })
+    // 落位反馈可见；旧的「用这张」入口已消失（回归守卫：别再让商家多点一步）
+    expect(await screen.findByRole('status')).toHaveTextContent('已填入主图封面位')
+    expect(screen.queryByRole('button', { name: '用这张' })).toBeNull()
+  })
+
+  it('选「材质细节」生成后自动走 onApplyDetail', async () => {
     const { onApplyMain, onApplyDetail } = renderAI()
 
     fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
     fireEvent.click(screen.getByRole('button', { name: '材质细节' }))
     fireEvent.click(screen.getByRole('button', { name: '生成' }))
 
-    await waitFor(() =>
-      expect(generate).toHaveBeenCalledWith({
-        imageUrl: SAMPLE,
-        productName: '回归布帘-遮光提花',
-        kind: 'texture',
-      })
-    )
-    const apply = await screen.findByRole('button', { name: '用这张' })
-    fireEvent.click(apply)
-
-    expect(onApplyDetail).toHaveBeenCalledWith(RESULT)
+    await waitFor(() => expect(onApplyDetail).toHaveBeenCalledWith(RESULT, undefined))
     expect(onApplyMain).not.toHaveBeenCalled()
-    // 面板不收起：继续生成其他用途的入口仍在，且有「已加入」反馈
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({ kind: 'texture' }))
     expect(await screen.findByRole('status')).toHaveTextContent('已加入「详情图」')
-    expect(screen.getByRole('button', { name: '材质细节' })).toBeInTheDocument()
+  })
+
+  it('再生成一张 = 替换：第二次携带上一次自动填入的 URL', async () => {
+    generate.mockResolvedValueOnce(ok(RESULT)).mockResolvedValueOnce(ok(RESULT_2))
+    const { onApplyMain } = renderAI()
+
+    fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
+    fireEvent.click(screen.getByRole('button', { name: '生成' }))
+    await waitFor(() => expect(onApplyMain).toHaveBeenCalledWith(RESULT, undefined))
+
+    fireEvent.click(screen.getByRole('button', { name: '再生成一张' }))
+    await waitFor(() => expect(onApplyMain).toHaveBeenCalledWith(RESULT_2, RESULT))
+    expect(onApplyMain).toHaveBeenCalledTimes(2)
+  })
+
+  it('换用途后再生成：跨槽位也带上上一次的 URL（先摘旧位再写新位）', async () => {
+    generate.mockResolvedValueOnce(ok(RESULT)).mockResolvedValueOnce(ok(RESULT_2))
+    const { onApplyMain, onApplyDetail } = renderAI()
+
+    fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
+    fireEvent.click(screen.getByRole('button', { name: '生成' }))
+    await waitFor(() => expect(onApplyMain).toHaveBeenCalledWith(RESULT, undefined))
+
+    fireEvent.click(screen.getByRole('button', { name: '工艺细节' }))
+    fireEvent.click(screen.getByRole('button', { name: '再生成一张' }))
+    await waitFor(() => expect(onApplyDetail).toHaveBeenCalledWith(RESULT_2, RESULT))
   })
 
   it('多张图时可切换样图，按选中的样图生成', async () => {
@@ -100,23 +134,11 @@ describe('ProductImageAI', () => {
     )
   })
 
-  it('默认主图：生成后「用这张」走 onApplyMain', async () => {
-    const { onApplyMain, onApplyDetail } = renderAI()
-
-    fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
-    fireEvent.click(screen.getByRole('button', { name: '生成' }))
-    fireEvent.click(await screen.findByRole('button', { name: '用这张' }))
-
-    expect(onApplyMain).toHaveBeenCalledWith(RESULT)
-    expect(onApplyDetail).not.toHaveBeenCalled()
-    expect(generate).toHaveBeenCalledWith(expect.objectContaining({ kind: 'main' }))
-  })
-
-  it('生成中按钮 loading；失败时展示可行动错误', async () => {
+  it('生成中按钮 loading；失败时不落位、展示可行动错误', async () => {
     let reject!: (e: unknown) => void
     generate.mockReturnValue(new Promise((_, r) => { reject = r }) as never)
+    const { onApplyMain } = renderAI()
 
-    renderAI()
     fireEvent.click(screen.getByRole('button', { name: 'AI 生成商品图' }))
     fireEvent.click(screen.getByRole('button', { name: '生成' }))
 
@@ -125,5 +147,6 @@ describe('ProductImageAI', () => {
 
     reject(new Error('boom'))
     expect(await screen.findByText(/生成失败，请稍后重试/)).toBeInTheDocument()
+    expect(onApplyMain).not.toHaveBeenCalled()
   })
 })
