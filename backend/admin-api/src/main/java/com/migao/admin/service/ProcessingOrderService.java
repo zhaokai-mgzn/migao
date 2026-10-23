@@ -1539,6 +1539,77 @@ public class ProcessingOrderService {
     }
 
     /**
+     * **直派关闸**的机器可判错误码（issue #7507）。
+     *
+     * <p>与「生成失败」区分开：调用方（订单详情页 / agent）据此知道该**换个入口**（去智能派单），
+     * 而不是去修订单或工序库 —— 同族口径见 {@code ERR_ROUTING_NOT_FOUND} 的「码 + suggestion」。</p>
+     */
+    public static final String ERR_DIRECT_DISPATCH_POOL_REQUIRED = "DIRECT_DISPATCH_POOL_REQUIRED";
+
+    /** 直派被拒的商家可见文案（单一真值：@see #generateDirect）。 */
+    public static final String DIRECT_DISPATCH_POOL_REQUIRED_MESSAGE =
+            "该订单未加急：请到「智能派单」合并派单（同料合并更省料）";
+
+    /** 直派被拒时的可行动建议（加急例外必须**同句说清**，否则商家以为彻底派不了）。 */
+    public static final String DIRECT_DISPATCH_POOL_REQUIRED_SUGGESTION =
+            "到后台「智能派单」页勾选该单派单；加急订单可直接在此生成作业单。";
+
+    /**
+     * 订单详情页 / agent 的**直派**入口（issue #7507：非加急订单必须走智能派单）。
+     *
+     * <h2>为什么要在这里关闸（而不是只藏按钮）</h2>
+     * {@code POST /api/admin/processing-orders/generate} 与智能派单的
+     * {@code POST /api/admin/production/pool/dispatch} 最终都落到 {@link #generate}，但前者的
+     * {@code pooled} 缺省 = 关 ⇒ 只做逐单排料、**不做跨单同料合并**；而且它会在自动成批
+     * （{@code AUTO_BATCH_DEFAULT_ENABLED}，事件驱动）评估之前把订单派走 ⇒ 那一单永久离开池子、
+     * 失去合并省料的机会（用户 2026-10-23：「为什么从订单可以直接生成加工单，而不是默认走智能派单流程」）。
+     * 只藏前端按钮挡不住 API / agent ⇒ 闸落在服务端这一处。
+     *
+     * <h2>加急单为什么放行</h2>
+     * 既有裁定（issue #5177）：「允许加急的订单直接派，不加急的同批次候选池优先」。加急单**不进池**
+     * （派单页把它放插队区单派），故直派这条出口保留，口径与池的插队区一致。
+     *
+     * <h2>结果面</h2>
+     * 与 {@link #generate} 逐单同一形状：被拒的单记 {@code GenerateResult.fail(rawId, code, message,
+     * suggestion)}，**一行都不写**；未加急的单被拒不影响同批里的加急单（顺序 = {@code orderIds} 顺序）。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public List<GenerateResult> generateDirect(List<String> orderIds, List<BatchAssignment> batches,
+                                               Long tenantId, String operator, String assignmentRule) {
+        if (orderIds == null || orderIds.isEmpty()) {
+            throw BusinessException.validationError("orderIds 不能为空");
+        }
+        // 与 generate() 同一道「未匹配指派」校验（在任何写库之前）—— 语义不得因为多一层闸而漂移。
+        Map<String, List<BatchAssignment>> byOrder = assignmentsByOrder(orderIds, batches);
+        GenerateResult[] slots = new GenerateResult[orderIds.size()];
+        List<String> allowed = new ArrayList<>();
+        List<Integer> allowedSlots = new ArrayList<>();
+        List<BatchAssignment> allowedBatches = new ArrayList<>();
+        for (int i = 0; i < orderIds.size(); i++) {
+            String rawId = orderIds.get(i);
+            Order order = resolveOrder(rawId, tenantId);
+            // 解析不到的订单**不在这里另造文案**：留给 generate() 的既有 ORDER_NOT_FOUND 分支
+            // （两处文案必然漂移；「哪一步先失败」也是既有契约的一部分）。
+            if (order != null && !Boolean.TRUE.equals(order.getIsUrgent())) {
+                slots[i] = GenerateResult.fail(rawId, ERR_DIRECT_DISPATCH_POOL_REQUIRED,
+                        DIRECT_DISPATCH_POOL_REQUIRED_MESSAGE, DIRECT_DISPATCH_POOL_REQUIRED_SUGGESTION);
+                continue;
+            }
+            allowed.add(rawId);
+            allowedSlots.add(i);
+            allowedBatches.addAll(byOrder.getOrDefault(rawId, List.of()));
+        }
+        if (!allowed.isEmpty()) {
+            List<GenerateResult> generated = generate(allowed, allowedBatches, tenantId, operator,
+                    assignmentRule);
+            for (int k = 0; k < allowedSlots.size(); k++) {
+                slots[allowedSlots.get(k)] = generated.get(k);
+            }
+        }
+        return new ArrayList<>(java.util.Arrays.asList(slots));
+    }
+
+    /**
      * 批次指派 → {@code orderId → 逐行指派}（**任何写库之前**的唯一装配点；
      * 逐单派、池化派、成批预览三条路径共用 ⇒ ① 的 fail-closed 不可能只在一处生效）。
      *
