@@ -7797,7 +7797,7 @@
 ```
 溯源: 2026-10-18 新增（issue #7251）：只修**调度**，不改 30 天口径 —— `armIdle()` 改为按 `idleSlices()` 分片排队（每片 ≤ `MAX_TIMER_DELAY_MS`，前 N-1 片只续排、末片到期才 `checkAlive()`），并新增同文件 ⑥ 的全区间类级判据；同批修好测试侧因「长定时器不再 1ms 立即触发」而挂住测试进程的一处（frontend/worker-h5/tests/worker-h5-6749-stale-login-error.test.mjs 用 `t.after(() => app.destroy())` 显式销毁）。取号 = PG-089（`python3 scripts/next_case_id.py pg` 实跑：PG → main:001-087 · PR #7224:088 → 取 PG-089）。 ｜ tags: processing, worker, session, timer, backend-contract
 
-## 加工单域（75 case）
+## 加工单域（76 case）
 
 ### PG-001. 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305） 🔵
 ```
@@ -8816,6 +8816,22 @@
 跳过: [backend-contract] admin-api 单测面（mock mapper），不进 agent-eval 冒烟
 ```
 溯源: 2026-10-18 新增（issue #7222，用户截图实证：AI 回归建的卖布单在订单详情报「该订单无需作业单」）。取号 = 当时 origin/main 已占号最大 PG-087 ⇒ 本单取 PG-088。 ｜ tags: fabric-sale, ship-guard, backend-contract
+
+### PG-090. 直派收敛：非加急订单不得从订单详情直接生成作业单（服务端逐单拒绝并指路智能派单）；加急单保留直派（issue #7507） 🔵
+```
+你: 在订单详情页给一张普通订单点「生成加工单」（旧入口）
+你: 把同一张订单标记加急后，再看作业单区块
+数据: **判据 1（会红，服务端）**：`POST /api/admin/processing-orders/generate` 对**非加急**订单逐单返回 `success=false` + `code=DIRECT_DISPATCH_POOL_REQUIRED` + message 含「智能派单」+ suggestion 含「加急」，且**一行都不写**（never insert 加工单）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java 的 `directGenerateRejectsNonUrgentOrderAndPointsToPool`。**红证**：把 `generateDirect` 的 `!Boolean.TRUE.equals(order.getIsUrgent())` 判定摘掉（或控制器改回调 `generate`）⇒ 该用例红（会真的落加工单）。
+数据: **判据 2（加急例外，不许把闸整个拆掉）**：加急订单（`is_urgent=true`）走同一入口 ⇒ `success=true` 且照常落加工单。执行点 = 同文件 `directGenerateAllowsUrgentOrder`。**红证**：去掉加急豁免（一律拒绝）⇒ 该用例红。
+数据: **判据 3（批量混合：顺序 + 不静默少派）**：入参 `[非加急, 加急]` ⇒ 结果顺序 = 入参顺序（第一行失败带码、第二行成功），且 `insert` 只发生 1 次。执行点 = 同文件 `directGenerateRejectsOnlyNonUrgentOrdersInMixedBatch`。
+数据: **判据 4（端点透传）**：HTTP 响应逐字带 `code` / `message` / `suggestion`（订单详情页据此上屏指路文案）。执行点 = backend/admin-api/src/test/java/com/migao/admin/controller/ProcessingOrderControllerTest.java 的 `generatePassesThroughDirectDispatchRejection`。
+数据: **判据 5（前端入口，会红）**：非加急订单在订单详情块**不渲染**「生成…」按钮、渲染「去智能派单」并可跳 `/production/pool`；加急订单相反；漏传 `isUrgent`（缺省）落**受限**一侧。执行点 = frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx 的「直派收敛（issue #7507）」组。**红证**：把组件的 `{isUrgent ? (` 改回 `{true ? (`（= 改前形态）⇒ 判据 1/3/4 红。
+数据: **判据 6（B 端 agent 指引）**：`prompts/order.md` 的「生成加工单不在能力内」指引指向「智能派单」（非加急；同料合并更省料）并写明加急例外；工具语义（`ProcessingOrderGenerateTool.description`）同口径。执行点 = backend/ai-agent-service/tests/test_issue_7507_direct_dispatch_pool.py。**红证**：把指引改回「作业看板」⇒ 该用例红。
+数据: **判据 7（只读口径不许漂移）**：`/api/admin/production/pool/dispatch`（智能派单页，唯一派单面）不受该闸影响 —— 非加急单从派单页 `pooled=true` 仍可派。执行点 = `backend/admin-api/src/test/java/com/migao/admin/controller/ProductionPoolControllerTest.java` 与 `backend/admin-api/src/test/java/com/migao/admin/service/PooledDispatchRealDbTest.java`（本单未改这些路径）。
+前置: 两张已确认订单：order-001 未加急（`is_urgent` 缺省 / false）、order-002 加急（`is_urgent=true`）。
+跳过: [backend-contract] admin-api 单测 + 前端 vitest + prompt 文本判据（无 LLM 行为面；B 端 agent 写能力自 #5247 起已下线，本单只同步文案）
+```
+溯源: 2026-10-23 新增（issue #7507，用户原话「为什么从订单可以直接生成加工单，而不是默认走智能派单流程？这里得限制下」；裁定 = 选项 A「统一入口」+ agent 同限）。取号 = 当时 origin/main 已占号最大 PG-089 ⇒ 本单取 PG-090。 ｜ tags: dispatch, pool-board, backend-contract
 
 ## 商品域（129 case）
 
@@ -12738,8 +12754,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：867（活跃 141，跳过 726）
-- tier 分布：smoke 12 / normal 799 / adversarial 32
+- 用例总数：868（活跃 141，跳过 727）
+- tier 分布：smoke 12 / normal 800 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12759,7 +12775,7 @@
 - 领域本体域：4
 - 订单域：68
 - 加工项域：31
-- 加工单域：75
+- 加工单域：76
 - 商品域：129
 - 工具注册器域：1
 - 设置域：10
@@ -13047,6 +13063,7 @@
 - PG-086: 质检工序没有报工动作：判定即报工（提交判定 ⇒ 自动写报工 + 生成质检流水），报工 / 扫码完成入口对质检工序 422 且零写入
 - PG-087: 质检指标（P0+P1）：按件聚合的首检合格率 / 当前合格率 / 返工报废率 + 时间窗趋势 + 分组 Top-5 + 待检积压（近似待检时长）
 - PG-088: 客户端漏写 saleForm 的卖布单仍必须被认出（sellingMethod / rollCount 兜底）⇒ 作业单 / 派单池 / 发货守卫三段不再静默放行（issue #7222）
+- PG-090: 直派收敛：非加急订单不得从订单详情直接生成作业单（服务端逐单拒绝并指路智能派单）；加急单保留直派（issue #7507）
 - PP-007: 黄金策加工项 LLM 行为：只改描述不清空其它字段（部分更新语义）
 - PP-008: 黄金策加工项 LLM 行为：停用加工项（toggle_item_status → inactive）
 - PP-009: 加工项已无单价与计价方式 ⇒ calculate_price 端点与 action 整体退场（退场守卫）
