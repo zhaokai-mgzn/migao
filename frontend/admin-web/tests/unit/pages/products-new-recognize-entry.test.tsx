@@ -1,4 +1,4 @@
-// case_ids: PR-120, PR-022
+// case_ids: PR-120, PR-022, PR-074
 /**
  * 新增商品页：「拍照 / 上传识别」入口的**落点**与**功能**（issue #5918，用户 2026-10-01 走查裁定）。
  *
@@ -53,19 +53,35 @@ vi.mock('@/components/products/ImageUploader', () => ({
   },
 }))
 vi.mock('@/components/products/SkuMatrix', () => ({
-  // 透出收到的门幅清单：本组件在页面上就是「规格尺寸」区块的宿主（issue #6403 判据 2c）
-  default: ({ value }: { value?: { doorWidths?: string[] } }) => {
+  // 透出收到的门幅清单 / 颜色 / SKU 行：本组件在页面上就是「规格尺寸」区块的宿主
+  // （issue #6403 判据 2c；issue #7528 判据 2d 还要看颜色与 SKU 行数）
+  default: ({
+    value,
+  }: {
+    value?: {
+      doorWidths?: string[]
+      colors?: Array<{ colorName: string }>
+      skus?: unknown[]
+    }
+  }) => {
     const R = require('react')
     return R.createElement('div', {
       'data-testid': 'sku-matrix',
       'data-door-widths': JSON.stringify(value?.doorWidths ?? []),
+      'data-colors': JSON.stringify((value?.colors ?? []).map((c) => c.colorName)),
+      'data-sku-count': String((value?.skus ?? []).length),
     })
   },
 }))
 vi.mock('@/components/products/ProductAttributes', () => ({
-  default: () => {
+  // 透出货号与规格属性：判据 2d 要断言「货号 2659 / 属性按那句话选中」（issue #7528）
+  default: ({ value }: { value?: { skuCode?: string; specifications?: Record<string, string> } }) => {
     const R = require('react')
-    return R.createElement('div', { 'data-testid': 'product-attributes' })
+    return R.createElement('div', {
+      'data-testid': 'product-attributes',
+      'data-sku-code': value?.skuCode ?? '',
+      'data-specifications': JSON.stringify(value?.specifications ?? {}),
+    })
   },
 }))
 vi.mock('@/components/products/RichTextEditor', () => ({
@@ -250,5 +266,66 @@ describe('#5918 新增商品页：识别入口的落点与功能', () => {
       ),
     )
     expect(screen.getByTestId('form-interpret-card')).toBeTruthy()
+  })
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // issue #7528：那句「补充一句」里的字面事实 ⇒ 货号 / 门幅 / 颜色 / SKU 全就位
+  // ══════════════════════════════════════════════════════════════════════════
+  it('判据 2d（issue #7528）：补充一句写下货号 2659 / 门幅 2.8+3.2 / 颜色命名规则 ⇒ 一键填入后四项全就位', async () => {
+    mockUploadImage.mockResolvedValue({ data: { data: { url: 'https://cdn.example.com/roll.jpg' } } })
+    // 推理只给「图上抄到的颜色」（货号 / 门幅 / 命名规则不在后端字段表里 —— 那是本单的根因）
+    mockInterpret.mockResolvedValue({
+      data: {
+        data: {
+          component: 'page_fill',
+          target_type: 'product',
+          fields: [
+            {
+              key: 'color',
+              label: '颜色',
+              value: '01米白、02雾霾蓝',
+              source: '[图片识别]',
+              reason: null,
+              candidates: [],
+              note: null,
+              note_source: null,
+            },
+          ],
+        },
+      },
+    })
+    render(<NewProductPage />)
+
+    // 商家那句原文（逐字）—— 与用户 2026-10-23 的输入相同
+    fireEvent.change(screen.getByTestId('image-recognize-hint'), {
+      target: { value: '这个商品的货号是2659，颜色格式是2659-序号+颜色名，门幅是2.8和3.2' },
+    })
+    fireEvent.change(screen.getByTestId('image-recognize-input'), {
+      target: { files: [new File(['x'], 'a.png', { type: 'image/png' })] },
+    })
+    await waitFor(() => expect(screen.getByTestId('form-interpret-card')).toBeTruthy())
+
+    // 那句文字真的随请求送出去了
+    expect(mockInterpret.mock.calls[0][2]).toBe(
+      '这个商品的货号是2659，颜色格式是2659-序号+颜色名，门幅是2.8和3.2',
+    )
+
+    fireEvent.click(screen.getByTestId('form-interpret-fill'))
+
+    // ① 货号进「商品属性」；② 门幅进「规格尺寸」；③ 颜色按规则改名；④ SKU = 2 色 × 2 门幅
+    await waitFor(() =>
+      expect(screen.getByTestId('product-attributes').getAttribute('data-sku-code')).toBe('2659'),
+    )
+    expect(
+      screen.getByTestId('sku-matrix').getAttribute('data-door-widths'),
+    ).toBe('["2.8","3.2"]')
+    expect(screen.getByTestId('sku-matrix').getAttribute('data-colors')).toBe(
+      '["2659-1米白","2659-2雾霾蓝"]',
+    )
+    expect(screen.getByTestId('sku-matrix').getAttribute('data-sku-count')).toBe('4')
+    // 「商家填写」的格**不挂识别徽标**（不是从图上抄的，别重复提醒）
+    expect(screen.queryByTestId('recognized-marker-sku_code')).toBeNull()
+    // 仍然不落库
+    expect(mockCreateProduct).not.toHaveBeenCalled()
   })
 })

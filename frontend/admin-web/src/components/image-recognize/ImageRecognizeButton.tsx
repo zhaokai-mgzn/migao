@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Image as ImageIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui'
@@ -8,6 +8,7 @@ import { toastRequestError } from '@/lib/api-error'
 import { imageRecognizeApi, uploadApi } from '@/lib/api'
 import type { RecognizedField } from '@/lib/api'
 import { filledFields, hasReference, RECOGNIZE_NO_REASON, RECOGNIZE_SOURCE_TAG, referenceFields } from '@/lib/image-recognize'
+import { parseDeclaredFacts } from '@/lib/declared-facts'
 import FormInterpretCard, { type FormInterpretFields } from './FormInterpretCard'
 
 /** 识别不出来时的统一提示（degraded 与「零个可用字段」两种情形同一条） */
@@ -82,6 +83,10 @@ export default function ImageRecognizeButton({
   const [plan, setPlan] = useState<FormInterpretFields | null>(null)
   const [imageUrl, setImageUrl] = useState('')
   const [failure, setFailure] = useState('')
+  // 商家那句话里的**字面事实**（货号 / 门幅 / 颜色命名规则 / 规格属性，issue #7528）：
+  // 确定性解析、零 LLM —— 与「推理结果」是两件事，所以单独算、单独成段（来源 `[商家填写]`）。
+  // 商家改了那句话，这一段会**立刻**跟着变（不必再跑一次识别）。
+  const declaredFacts = useMemo(() => parseDeclaredFacts(hint), [hint])
 
   const handleFile = async (file: File) => {
     setLoading(true)
@@ -180,7 +185,13 @@ export default function ImageRecognizeButton({
       )}
       {interpret && plan && imageUrl && (
         /* 结果卡就嵌在按钮下方（表单内）——不是弹窗、不是对话、不留上下文 */
-        <FormInterpretCard key={imageUrl} imageUrl={imageUrl} fields={plan} onFill={onRecognized} />
+        <FormInterpretCard
+          key={imageUrl}
+          imageUrl={imageUrl}
+          fields={plan}
+          facts={declaredFacts}
+          onFill={onRecognized}
+        />
       )}
       {fields.length > 0 && (
         <div
