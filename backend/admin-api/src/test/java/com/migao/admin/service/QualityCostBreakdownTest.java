@@ -1,4 +1,4 @@
-// case_ids: QC-003, QC-004
+// case_ids: QC-003, QC-004, QC-005
 package com.migao.admin.service;
 
 import com.migao.admin.entity.FinanceTransaction;
@@ -55,6 +55,14 @@ class QualityCostBreakdownTest {
                 new com.migao.admin.time.BusinessClock(), null, processingOrderMapper, orderItemMapper);
         when(financeMapper.selectList(any())).thenReturn(List.of());
         when(workLogMapper.selectList(any())).thenReturn(List.of());
+    }
+
+    /** 报废报工（issue #7377 段 8）：与返工同一张表，只换 work_type。 */
+    private static ProductionWorkLog scrap(String operation, String processingOrderId, String qty,
+                                           String unitPrice, String priceState, String workDate) {
+        ProductionWorkLog log = rework(operation, processingOrderId, qty, unitPrice, priceState, workDate);
+        log.setWorkType("scrap");
+        return log;
     }
 
     private static ProductionWorkLog rework(String operation, String processingOrderId, String qty,
@@ -311,5 +319,74 @@ class QualityCostBreakdownTest {
 
         assertThat(view.getRows()).hasSize(2);
         assertThat(view.getRows()).allSatisfy(r -> assertThat(r.getCompensation()).isEqualByComparingTo("50.00"));
+    }
+
+    // ── 报废工时（issue #7377 段 8）：报工三态里的 scrap，与返工同构 ──
+
+    @Test
+    @DisplayName("报废工时按工序维度成行：与返工**分列**，行合计含两者")
+    void scrapLaborHasItsOwnColumn() {
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                rework("缝制", "po1", "1", "80", "priced", "2026-10-20"),
+                scrap("缝制", "po1", "2", "30", "priced", "2026-10-20")));
+
+        var view = service.qualityCostBreakdown("process", null, null);
+
+        var row = view.getRows().get(0);
+        assertThat(row.getRework()).isEqualByComparingTo("80.00");
+        assertThat(row.getScrap()).isEqualByComparingTo("60.00");
+        assertThat(row.getTotal()).isEqualByComparingTo("140.00");
+        assertThat(view.getTotals().getScrap()).isEqualByComparingTo("60.00");
+        assertThat(view.getTotals().getTotal()).isEqualByComparingTo("140.00");
+    }
+
+    @Test
+    @DisplayName("🔴 恒等式：合计 = Σ行 + 未归属（报废工时也各归各的）")
+    void scrapKeepsIdentity() {
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                scrap("缝制", "po1", "2", "30", "priced", "2026-10-20"),     // 60 → 有工序
+                scrap(null, "po1", "1", "15", "priced", "2026-10-20")));     // 15 → 没工序名 ⇒ 未归属
+        when(financeMapper.selectList(any())).thenReturn(List.of());
+
+        var view = service.qualityCostBreakdown("process", null, null);
+
+        BigDecimal rowScrap = view.getRows().stream().map(r -> r.getScrap())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(rowScrap).isEqualByComparingTo("60.00");
+        assertThat(view.getUnattributed().getScrap()).isEqualByComparingTo("15.00");
+        assertThat(view.getTotals().getScrap()).isEqualByComparingTo(rowScrap.add(view.getUnattributed().getScrap()));
+    }
+
+    @Test
+    @DisplayName("未定价的报废报工不计金额，但被数进 notes（未定价 ≠ 0 元）")
+    void unpricedScrapIsCounted() {
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                scrap("缝制", "po1", "1", null, "unpriced", "2026-10-20")));
+
+        var view = service.qualityCostBreakdown("process", null, null);
+
+        assertThat(view.getRows()).isEmpty();
+        assertThat(view.getUnattributed().getScrap()).isEqualByComparingTo("0");
+        assertThat(String.join("|", view.getNotes())).contains("未定价");
+    }
+
+    @Test
+    @DisplayName("商品维度：报废工时也按订单行小计占比摊")
+    void scrapLaborIsAllocatedInProductDimension() {
+        // 商品维度要经「报工 → 加工单 → 订单 → 行」⇒ 加工单得能查到订单
+        customer("o1", "po1", "张记布艺", "13800000001");
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(
+                item("o1", "p-A", "遮光布", "300"),
+                item("o1", "p-B", "纱帘", "100")));
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                scrap("缝制", "po1", "1", "80", "priced", "2026-10-20")));
+
+        var view = service.qualityCostBreakdown("product", null, null);
+
+        var a = view.getRows().stream().filter(r -> "遮光布".equals(r.getLabel())).findFirst().orElseThrow();
+        var b = view.getRows().stream().filter(r -> "纱帘".equals(r.getLabel())).findFirst().orElseThrow();
+        assertThat(a.getScrap()).isEqualByComparingTo("60.00");
+        assertThat(b.getScrap()).isEqualByComparingTo("20.00");
+        assertThat(view.getTotals().getScrap()).isEqualByComparingTo("80.00");
     }
 }

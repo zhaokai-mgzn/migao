@@ -328,10 +328,16 @@ public class ReportService {
         LocalDate from = parseDay(startDate);
         LocalDate to = parseDay(endDate);
         List<com.migao.admin.entity.ProductionWorkLog> reworkLogs = new ArrayList<>();
+        List<com.migao.admin.entity.ProductionWorkLog> scrapLogs = new ArrayList<>();
         for (com.migao.admin.entity.ProductionWorkLog log : productionWorkLogMapper.selectList(
                 new LambdaQueryWrapper<com.migao.admin.entity.ProductionWorkLog>()
-                        .eq(com.migao.admin.entity.ProductionWorkLog::getWorkType, "rework"))) {
-            if (inWindow(workDay(log), from, to)) {
+                        .in(com.migao.admin.entity.ProductionWorkLog::getWorkType, "rework", "scrap"))) {
+            if (!inWindow(workDay(log), from, to)) {
+                continue;
+            }
+            if ("scrap".equals(log.getWorkType())) {
+                scrapLogs.add(log);
+            } else {
                 reworkLogs.add(log);
             }
         }
@@ -351,6 +357,24 @@ public class ReportService {
         components.add(com.migao.admin.dto.QualityCostView.Component.builder()
                 .code(rework.code()).label(rework.label()).amount(rework.amount()).known(rework.known())
                 .note(rework.note()).unknownItems(rework.unknownItems()).build());
+
+        // 报废**工时**（issue #7377 段 8）：报工三态里的 scrap，与返工同一套定价字段 ⇒ 可采集
+        BigDecimal scrapAmount = BigDecimal.ZERO;
+        int scrapUnpriced = 0;
+        for (com.migao.admin.entity.ProductionWorkLog log : scrapLogs) {
+            if ("unpriced".equals(log.getPriceState()) || log.getUnitPrice() == null) {
+                scrapUnpriced++;
+                continue;
+            }
+            BigDecimal qty = log.getQty() == null ? BigDecimal.ZERO : log.getQty();
+            scrapAmount = scrapAmount.add(log.getUnitPrice().multiply(qty));
+        }
+        QualityCostPolicy.Component scrapLabor = QualityCostPolicy.scrapLabor(
+                scrapLogs.isEmpty() ? null : scrapAmount, scrapUnpriced, !scrapLogs.isEmpty());
+        components.add(com.migao.admin.dto.QualityCostView.Component.builder()
+                .code(scrapLabor.code()).label(scrapLabor.label()).amount(scrapLabor.amount())
+                .known(scrapLabor.known()).note(scrapLabor.note())
+                .unknownItems(scrapLabor.unknownItems()).build());
 
         QualityCostPolicy.Component scrap = QualityCostPolicy.scrapCost();
         components.add(com.migao.admin.dto.QualityCostView.Component.builder()
@@ -379,7 +403,8 @@ public class ReportService {
                 .known(compensation.known()).note(compensation.note())
                 .unknownItems(compensation.unknownItems()).build());
 
-        QualityCostPolicy.Total total = QualityCostPolicy.total(List.of(rework, scrap, compensation));
+        QualityCostPolicy.Total total =
+                QualityCostPolicy.total(List.of(rework, scrapLabor, scrap, compensation));
         return com.migao.admin.dto.QualityCostView.builder()
                 .startDate(startDate)
                 .endDate(endDate)
@@ -456,10 +481,12 @@ public class ReportService {
         int unpricedLines = 0;
         BigDecimal unattributedRework = BigDecimal.ZERO;
         int unattributedReworkLines = 0;
+        BigDecimal unattributedScrap = BigDecimal.ZERO;
+        int unattributedScrapLines = 0;
 
         for (com.migao.admin.entity.ProductionWorkLog log : productionWorkLogMapper.selectList(
                 new LambdaQueryWrapper<com.migao.admin.entity.ProductionWorkLog>()
-                        .eq(com.migao.admin.entity.ProductionWorkLog::getWorkType, "rework"))) {
+                        .in(com.migao.admin.entity.ProductionWorkLog::getWorkType, "rework", "scrap"))) {
             if (!inWindow(workDay(log), from, to)) {
                 continue;
             }
@@ -469,21 +496,35 @@ public class ReportService {
             }
             BigDecimal amount = log.getUnitPrice().multiply(
                     log.getQty() == null ? BigDecimal.ZERO : log.getQty());
+            boolean isScrap = "scrap".equals(log.getWorkType());
             if (byProduct) {
                 String orderId = orderIdOfProcessingOrder(log.getProcessingOrderId());
-                int before = allocatedUnits(rows);
-                boolean ok = allocateToProducts(rows, orderId, amount, itemCache, true);
+                boolean ok = allocateToProducts(rows, orderId, amount, itemCache,
+                        isScrap ? "scrap" : "rework");
                 if (!ok) {
-                    unattributedRework = unattributedRework.add(amount);
-                    unattributedReworkLines++;
+                    if (isScrap) {
+                        unattributedScrap = unattributedScrap.add(amount);
+                        unattributedScrapLines++;
+                    } else {
+                        unattributedRework = unattributedRework.add(amount);
+                        unattributedReworkLines++;
+                    }
                 }
                 continue;
             }
             com.migao.admin.dto.QualityCostBreakdownView.Row row =
                     byProcess ? rowForProcess(rows, log) : rowForCustomer(rows, log);
             if (row == null) {
-                unattributedRework = unattributedRework.add(amount);
-                unattributedReworkLines++;
+                if (isScrap) {
+                    unattributedScrap = unattributedScrap.add(amount);
+                    unattributedScrapLines++;
+                } else {
+                    unattributedRework = unattributedRework.add(amount);
+                    unattributedReworkLines++;
+                }
+            } else if (isScrap) {
+                row.setScrap(row.getScrap().add(amount));
+                row.setScrapLines(row.getScrapLines() + 1);
             } else {
                 row.setRework(row.getRework().add(amount));
                 row.setReworkLines(row.getReworkLines() + 1);
@@ -501,7 +542,7 @@ public class ReportService {
             }
             BigDecimal amount = refund.getAmount() == null ? BigDecimal.ZERO : refund.getAmount();
             if (byProduct) {
-                boolean ok = allocateToProducts(rows, refund.getOrderId(), amount, itemCache, false);
+                boolean ok = allocateToProducts(rows, refund.getOrderId(), amount, itemCache, "compensation");
                 if (!ok) {
                     unattributedCompensation = unattributedCompensation.add(amount);
                     unattributedCompensationCount++;
@@ -522,29 +563,36 @@ public class ReportService {
 
         List<com.migao.admin.dto.QualityCostBreakdownView.Row> list = new ArrayList<>(rows.values());
         for (com.migao.admin.dto.QualityCostBreakdownView.Row row : list) {
-            row.setTotal(row.getRework().add(row.getCompensation()));
+            row.setTotal(row.getRework().add(row.getScrap()).add(row.getCompensation()));
         }
         list.sort((a, b) -> b.getTotal().compareTo(a.getTotal()));
 
         BigDecimal rowRework = BigDecimal.ZERO;
+        BigDecimal rowScrap = BigDecimal.ZERO;
         BigDecimal rowCompensation = BigDecimal.ZERO;
         int rowReworkLines = 0;
+        int rowScrapLines = 0;
         int rowCompensationCount = 0;
         for (com.migao.admin.dto.QualityCostBreakdownView.Row row : list) {
             rowRework = rowRework.add(row.getRework());
+            rowScrap = rowScrap.add(row.getScrap());
             rowCompensation = rowCompensation.add(row.getCompensation());
             rowReworkLines += row.getReworkLines();
+            rowScrapLines += row.getScrapLines();
             rowCompensationCount += row.getCompensationCount();
         }
-        BigDecimal unattributedTotal = unattributedRework.add(unattributedCompensation);
+        BigDecimal unattributedTotal =
+                unattributedRework.add(unattributedScrap).add(unattributedCompensation);
         boolean hasData = !list.isEmpty() || unattributedTotal.signum() != 0
-                || unattributedReworkLines > 0 || unattributedCompensationCount > 0;
+                || unattributedReworkLines > 0 || unattributedScrapLines > 0
+                || unattributedCompensationCount > 0;
 
         List<String> notes = new ArrayList<>();
-        notes.add("报废料不在本视图：本仓未采集（质检只到成品帘级），摊到任何维度都是编数");
+        notes.add("报废工时已计入（报工 work_type=scrap × 工序单价快照）；"
+                + "报废料仍不在本视图：本仓未采集（质检只到成品帘级），摊到任何维度都是编数");
         if (byProduct) {
-            notes.add("商品维度按**订单行小计占比**分摊赔付与返工（余数给金额最大的一行，逐分对得上）");
-            notes.add("多商品订单的赔付分摊是**口径**而非事实：退款流水本身不区分商品");
+            notes.add("商品维度按订单行小计占比分摊赔付与返工（余数给金额最大的一行，逐分对得上）");
+            notes.add("多商品订单的赔付分摊是口径而非事实：退款流水本身不区分商品");
         } else if (byProcess) {
             notes.add("赔付（退款口径）没有工序信息 ⇒ 全部计入「无法归属」（不是「赔付为 0」）");
         } else {
@@ -556,7 +604,8 @@ public class ReportService {
 
         return com.migao.admin.dto.QualityCostBreakdownView.builder()
                 .dimension(dim)
-                .scope(byProcess ? "rework_by_processing_operation" : "rework_and_compensation_by_customer")
+                .scope(byProcess ? "rework_scrap_and_compensation_by_operation"
+                        : "rework_scrap_and_compensation_by_customer")
                 .startDate(startDate)
                 .endDate(endDate)
                 .hasData(hasData)
@@ -564,19 +613,23 @@ public class ReportService {
                 .totals(!hasData ? null : com.migao.admin.dto.QualityCostBreakdownView.Totals.builder()
                         .rework(scale2(rowRework.add(unattributedRework)))
                         .reworkLines(rowReworkLines + unattributedReworkLines)
+                        .scrap(scale2(rowScrap.add(unattributedScrap)))
+                        .scrapLines(rowScrapLines + unattributedScrapLines)
                         .compensation(scale2(rowCompensation.add(unattributedCompensation)))
                         .compensationCount(rowCompensationCount + unattributedCompensationCount)
-                        .total(scale2(rowRework.add(rowCompensation).add(unattributedTotal)))
+                        .total(scale2(rowRework.add(rowScrap).add(rowCompensation).add(unattributedTotal)))
                         .build())
                 .unattributed(com.migao.admin.dto.QualityCostBreakdownView.Unattributed.builder()
                         .rework(scale2(unattributedRework))
                         .reworkLines(unattributedReworkLines)
+                        .scrap(scale2(unattributedScrap))
+                        .scrapLines(unattributedScrapLines)
                         .compensation(scale2(unattributedCompensation))
                         .compensationCount(unattributedCompensationCount)
                         .total(scale2(unattributedTotal))
                         .reason(byProcess
-                                ? "这些返工报工没记工序名；赔付流水本就没有工序字段"
-                                : "这些返工报工关联不到加工单/订单，或退款流水关联不到订单")
+                                ? "这些返工/报废报工没记工序名；赔付流水本就没有工序字段"
+                                : "这些返工/报废报工关联不到加工单/订单，或退款流水关联不到订单")
                         .build())
                 .notes(notes)
                 .build();
@@ -633,6 +686,7 @@ public class ReportService {
         return com.migao.admin.dto.QualityCostBreakdownView.Row.builder()
                 .key(key).label(label)
                 .rework(BigDecimal.ZERO).reworkLines(0)
+                .scrap(BigDecimal.ZERO).scrapLines(0)
                 .compensation(BigDecimal.ZERO).compensationCount(0)
                 .total(BigDecimal.ZERO)
                 .build();
@@ -664,14 +718,14 @@ public class ReportService {
      *       订单查不到 / 没有明细行 ⇒ 返回 {@code false}（调用方计入未归属，不许静默丢）。</li>
      * </ol>
      *
-     * @param asRework true ⇒ 计入返工列；false ⇒ 计入赔付列
+     * @param column 计入哪一列：`rework` / `scrap` / `compensation`（报废工时，issue #7377 段 8）
      */
     private boolean allocateToProducts(
             java.util.Map<String, com.migao.admin.dto.QualityCostBreakdownView.Row> rows,
             String orderId,
             BigDecimal amount,
             java.util.Map<String, java.util.List<com.migao.admin.entity.OrderItem>> itemCache,
-            boolean asRework) {
+            String column) {
         if (!StringUtils.hasText(orderId) || amount == null) {
             return false;
         }
@@ -732,9 +786,12 @@ public class ReportService {
             String key = "prod:" + (StringUtils.hasText(item.getProductId()) ? item.getProductId() : label);
             com.migao.admin.dto.QualityCostBreakdownView.Row row =
                     rows.computeIfAbsent(key, k -> newRow(k, label));
-            if (asRework) {
+            if ("rework".equals(column)) {
                 row.setRework(row.getRework().add(shares.get(i)));
                 row.setReworkLines(row.getReworkLines() + 1);
+            } else if ("scrap".equals(column)) {
+                row.setScrap(row.getScrap().add(shares.get(i)));
+                row.setScrapLines(row.getScrapLines() + 1);
             } else {
                 row.setCompensation(row.getCompensation().add(shares.get(i)));
                 row.setCompensationCount(row.getCompensationCount() + 1);

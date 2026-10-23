@@ -118,6 +118,9 @@ export interface QualityCostBreakdownRow {
   label: string
   rework: number | null
   reworkLines: number
+  /** 报废工时（issue #7377 段 8）：与返工分列，别加在一起看 */
+  scrap: number | null
+  scrapLines: number
   compensation: number | null
   compensationCount: number
   total: number | null
@@ -139,6 +142,8 @@ export interface ReportQualityCostBreakdown {
   totals: {
     rework: number | null
     reworkLines: number
+    scrap: number | null
+    scrapLines: number
     compensation: number | null
     compensationCount: number
     total: number | null
@@ -146,6 +151,8 @@ export interface ReportQualityCostBreakdown {
   unattributed: {
     rework: number | null
     reworkLines: number
+    scrap: number | null
+    scrapLines: number
     compensation: number | null
     compensationCount: number
     total: number | null

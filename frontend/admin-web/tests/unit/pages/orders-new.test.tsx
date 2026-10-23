@@ -2255,17 +2255,22 @@ describe('NewOrderPage', () => {
 
     // 弹窗自动出来：对象显示客户名（人看的），**提交的 ref 仍是手机号**（闸门找审批的键），
     // 金额 = 尚缺 600（不是订单总额 —— 批多了会白占客户额度）
-    const target = await screen.findByTestId('approval-request-target', undefined, { timeout: 3000 })
+    // CI 负载下这条链（多步向导 → 建单失败 → 弹窗）会更慢，给 10s（不是放宽判据，是等同一个确定性结果）
+    const target = await screen.findByTestId('approval-request-target', undefined, { timeout: 10000 })
     expect(target.textContent).toContain('张三')
-    expect((screen.getByTestId('approval-request-amount') as HTMLInputElement).value).toBe('600')
+    // 金额是弹窗 `useEffect` 里按 draft 预填的 ⇒ 必须等一拍再读（实测：高并发下同步读会拿到空串）
+    await waitFor(() =>
+      expect((screen.getByTestId('approval-request-amount') as HTMLInputElement).value).toBe('600'),
+    )
 
     fireEvent.change(screen.getByTestId('approval-request-reason'), { target: { value: '老客户集中下单' } })
     fireEvent.click(screen.getByTestId('approval-request-submit'))
     await waitFor(() =>
       expect(mockApprovalSubmit).toHaveBeenCalledWith(
         expect.objectContaining({ objectType: 'credit_override', objectRef: '13800138000', amount: 600 }),
-      ),
-    )
+        ),
+        { timeout: 10000 },
+      )
     // 多步向导 + 建单失败 + 弹窗：这条链比同文件的单点判据重，给足超时（默认 5s 会在负载下假红）
   }, 20000)
 })
