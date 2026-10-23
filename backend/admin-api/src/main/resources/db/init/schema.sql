@@ -1150,8 +1150,7 @@ COMMENT ON COLUMN craft_calc_configs.per_fold_mixed_times IS
     '拼色「拼次 → 每折吃布（米）」映射（JSONB，键 = 正整数拼次的**字符串形态**）。'
     '护栏：非空、键为正整数、值 > 0；未登记拼次不得静默退回单色系数（少算用料）。';
 COMMENT ON COLUMN craft_calc_configs.min_fullness IS
-    '褶倍下限（护栏，行业美学红线）。引擎默认 1.5。可配：**0 = 关闭该护栏**（issue #7548，用户裁定「都允许设置为0」）；'
-    '0 以外的值不得低于 1.5（红线以下的灰区仍 422 —— 那既不守美感、也不是明确选择）。';
+    '褶倍下限（护栏，行业美学红线）。引擎默认 1.5。**可配但不可关**：写面护栏要求 >= 引擎默认值。';
 COMMENT ON COLUMN craft_calc_configs.tiers IS
     '工艺档位（JSONB：{档位名: {fullness, label}}）。护栏：非空、每档 fullness > 0 且 >= min_fullness。';
 COMMENT ON COLUMN craft_calc_configs.default_formula IS
@@ -1159,21 +1158,20 @@ COMMENT ON COLUMN craft_calc_configs.default_formula IS
     '⚠️ 只是**工艺推导表缺失时的兜底**（韩褶/打孔由 craft 推导），不是恒定生效的默认值。';
 COMMENT ON COLUMN craft_calc_configs.hem_margin IS
     '高方向**上下卷边**合计（米；脚位+止口），引擎默认 0.3（V110，issue #4976 包 1b）。'
-    '护栏：>= 0（0 = 上下不留边；issue #7548）。消费点：定高可行性 / 定宽买高每幅长 / 折数法 / 罗马帘（**几何层**）。'
+    '护栏：必须 > 0。消费点：定高可行性 / 定宽买高每幅长 / 折数法 / 罗马帘（**几何层**）。'
     '⚠️ issue #5130 起它**不再**参与自动特征「超高」的判定（那条门幅判据已退役）；'
     '⚠️ 宽方向**没有**余量（订单宽 = 净窗宽 ⇒ 成品宽 = 净窗宽；`side_margin` 已随 issue #5030 退场）。';
 COMMENT ON COLUMN craft_calc_configs.meters_rounding_step IS
-    '用料米数**向上进位**步长（米），引擎默认 0.1。护栏：>= 0（**0 = 不进位**，issue #7548）；'
-    '截断 / 四舍五入仍不允许（进位只能由商家**显式**关掉）。';
+    '用料米数**向上进位**步长（米），引擎默认 0.1。护栏：必须 > 0（截断/四舍五入 = 抹零）。';
 COMMENT ON COLUMN craft_calc_configs.oversize_width_threshold IS
     '**超宽**阈值（净窗宽，米），引擎默认 6（V114，issue #5130；= 常量 OVERSIZE_WIDTH_THRESHOLD）。'
     '判据：净窗宽 > 本值 ⇒ 特征名「超宽」（进加工费组合键 = 工艺分档，用户裁定 D1）。'
-    '护栏：>= 0（0 = 全部按超宽/超高；负 ⇒ 写面 422，不静默回退默认值；issue #7548）。'
+    '护栏：必须 > 0（0/负 ⇒ 写面 422，不静默回退默认值）。'
     '⚠️ 与**几何层**（门幅 / 褶倍 ⇒ 分幅与用料）是两件事，不得混用。';
 COMMENT ON COLUMN craft_calc_configs.oversize_height_threshold IS
     '**超高**阈值（净窗高，米），引擎默认 4（V114，issue #5130；= 常量 OVERSIZE_HEIGHT_THRESHOLD）。'
     '判据：净窗高 > 本值 ⇒ 特征名「超高」（进加工费组合键）。'
-    '护栏：>= 0（0 = 全部按超宽/超高；负 ⇒ 写面 422，不静默回退默认值；issue #7548）。'
+    '护栏：必须 > 0（0/负 ⇒ 写面 422，不静默回退默认值）。'
     '⚠️ issue #5130 起「超高」**不再**由「成品高 + 上下卷边 > 门幅」判定（该门幅判据已退役）。';
 COMMENT ON COLUMN craft_calc_configs.status IS
     '配置行状态（范式同 production_crafts，V72）。读面按 deleted = 0 取行，不按 status 过滤。';
