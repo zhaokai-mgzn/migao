@@ -23,11 +23,13 @@ import { PRINT_MEDIA_IDS } from '@/lib/print-media'
  */
 
 function Harness() {
-  const { printTarget, previewTarget, requestPrint, openPreview, closePreview } = usePrintDoc()
+  const { printTarget, previewTarget, requestPrint, openPreview, selectPreview, closePreview } =
+    usePrintDoc()
   return (
     <div>
       <button onClick={() => requestPrint('sales')}>打印销售单</button>
       <button onClick={() => openPreview('quotation')}>预览报价单</button>
+      <button onClick={() => selectPreview('processing')}>换看加工单</button>
       <button onClick={closePreview}>关闭预览</button>
       <div data-testid="docs">
         {PRINT_TARGETS.map((target) => (
@@ -91,6 +93,20 @@ describe('打印入口 usePrintDoc（issue #5914）', () => {
     fireEvent.click(getByText('关闭预览'))
     expect(getByTestId('preview').textContent).toBe('none')
     expect(getByTestId('print-target').textContent).toBe('quotation')
+  })
+
+  it('⑤ `selectPreview` 只换预览、**不动打印目标**（issue #7544：换一份看看 ≠ 这次就印它）', () => {
+    const { getByText, getByTestId } = render(<Harness />)
+    // 先按正常路径打开预览（报价单）——此时打印目标也已置位
+    fireEvent.click(getByText('预览报价单'))
+    expect(getByTestId('print-target').textContent).toBe('quotation')
+
+    // 在打印层里换单据：预览换、打印目标**保持原样**、且不因此开印
+    fireEvent.click(getByText('换看加工单'))
+    expect(getByTestId('preview').textContent).toBe('processing')
+    expect(getByTestId('print-target').textContent).toBe('quotation')
+    expect(seen).toEqual([])
+    expect(document.querySelectorAll('[data-print-target]')).toHaveLength(1)
   })
 
   it('④ 目标位与介质 id 都在册：每个 target 有标题 + 一个**矩阵里真实存在**的介质', () => {

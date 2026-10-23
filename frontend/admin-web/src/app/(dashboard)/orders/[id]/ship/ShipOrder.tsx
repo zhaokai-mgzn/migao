@@ -538,7 +538,7 @@ export default function ShipOrder() {
       {/*
         纸质发货单：屏幕上隐藏（display:none），仅 @media print 呈现 ——
         本页屏幕布局已有商品/收货信息，再显示一份会重复；发货前打印时物流栏留空供手写，
-        发货后如需带运单号/发货人的单据，到订单详情页「打印发货单」补打。
+        发货后如需带运单号/发货人的单据，到订单详情页点「打印」→ 选「发货单」补打（issue #7544）。
       */}
       <ShipmentDoc order={order} shipperName={shipperName} printTarget={printTarget} />
 

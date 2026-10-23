@@ -54,6 +54,13 @@ export interface PrintDocController {
   requestPrint: (target: PrintTarget) => void
   /** 点「预览」：置位目标 + 打开纸面自检层 */
   openPreview: (target: PrintTarget) => void
+  /**
+   * **只换预览的单据**（issue #7544）—— 打印中心里的单据标签用它。
+   *
+   * 🔴 与 `openPreview` 的差别就一格：**不动 `printTarget`**。换单据是「看一眼另一份」，
+   * 不是「这次就印它」；混用会让「打印前 Ctrl+P」打出用户没选的那一份（纸是耗材）。
+   */
+  selectPreview: (target: PrintTarget) => void
   closePreview: () => void
 }
 
@@ -85,7 +92,9 @@ export function usePrintDoc(singleDocTarget?: PrintTarget): PrintDocController {
     setPreviewTarget(target)
   }, [])
 
+  const selectPreview = useCallback((target: PrintTarget) => setPreviewTarget(target), [])
+
   const closePreview = useCallback(() => setPreviewTarget(null), [])
 
-  return { printTarget, previewTarget, requestPrint, openPreview, closePreview }
+  return { printTarget, previewTarget, requestPrint, openPreview, selectPreview, closePreview }
 }
