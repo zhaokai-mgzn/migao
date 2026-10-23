@@ -343,10 +343,11 @@ public class ProductionSeedTemplateService {
             {"打包", "帘头", null, "true"},
             {"打包", "布料", null, "true"},
             // issue #7523：整卷出库（只对布料适用；三个窗帘部位显式 FALSE）
-            {"出库", "布料", null, "true"},
+            // ⚠️ 行序与 routing.py::_POSITION_PRICE_ROWS 逐行同值（三源收敛判据逐行比对）
             {"出库", "布帘", null, "false"},
             {"出库", "纱帘", null, "false"},
             {"出库", "帘头", null, "false"},
+            {"出库", "布料", null, "true"},
     };
 
     private final ObjectMapper objectMapper = new ObjectMapper();
