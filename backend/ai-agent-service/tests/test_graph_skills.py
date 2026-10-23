@@ -1014,8 +1014,8 @@ class TestExtractContentThinkingGuard:
     """_extract_content 思考内容安全提取
 
     当 Vision LLM 启用了 thinking 时，DashScope 返回 reasoning_content + content。
-    _extract_content 应优先返回 content（真实回复），仅在 content 为空时
-    才回退到 reasoning_content。
+    _extract_content 只返回 content（真实回复）；content 为空时**返回空串**
+    —— reasoning_content 不得上屏（issue #7510：旧实现会把它当回复发给商家）。
     """
 
     def test_normal_content_no_thinking(self):
@@ -1034,13 +1034,13 @@ class TestExtractContentThinkingGuard:
         assert "这是一张色卡图片" in result
         assert "<think>" not in result
 
-    def test_reasoning_content_as_fallback(self):
-        """content 为空时回退到 reasoning_content"""
+    def test_reasoning_content_never_surfaces(self):
+        """content 为空时返回空串，reasoning_content 不上屏（issue #7510）"""
         response = MagicMock(spec=AIMessage)
         response.content = ""
         response.additional_kwargs = {"reasoning_content": "分析图片：色卡包含16个色号"}
         result = _extract_content(response)
-        assert "16个色号" in result
+        assert result == ""
 
     def test_reasoning_content_not_leaked_when_content_exists(self):
         """关键场景：reasoning_content 存在但 content 也有内容时，只返回 content"""

@@ -164,13 +164,18 @@ def _is_cancel_message(text: str) -> bool:
 
 
 def _extract_content(response: AIMessage) -> str:
-    """从 AIMessage 中提取有效文本内容
+    """从 AIMessage 中提取**用户可见**的文本内容 —— 思考内容一律不上屏。
 
-    兼容 MiniMax 思考模式：
-    1. 优先取 response.content 并移除 <think> 标签
-    2. 若 stripped 结果仍含 <think> 标签（仅 thinking 内容），提取内部文本
-    3. 再 fallback 到 additional_kwargs 中的 reasoning_content
-    4. 仍为空则返回原始 content（保留 think 标签，确保有文字输出）
+    🔴 单一口径（issue #7510，实证会话 sess_5742c5b5c43a48b1）：本函数的结果会直接进入
+    回复气泡并落库（`react_turn` 的 `final_content = new_text`）⇒ **不得**回退到任何形态的
+    思考文本：
+
+    1. 取 `response.content` 并移除 `<think>…</think>` 块；
+    2. content 为空、或**只有**思考（`<think>` 内部文本 / `reasoning_content` 有值而正文为空）
+       ⇒ 返回 `""`，由调用方给固定话术或重答；
+    3. 旧实现的两种回退（`<think>` 内文、`reasoning_content`）已删除 —— 它们正是
+       「商家看到模型自问自答」的成因：模型把输出预算全花在思考上时正文为空，
+       回退把思考原文当答复发出去了。宁可这轮没话说，也不能把思考当回复。
     """
     content = response.content or ""
     if isinstance(content, list):
@@ -184,41 +189,25 @@ def _extract_content(response: AIMessage) -> str:
 
     stripped = _strip_think_tags(content)
 
-    # _strip_think_tags 在 stripping 结果为空时回退到原文本（含标签）。
-    # 二次检测：如果 stripped 仍含标签，说明只有 thinking 内容，需提取其内部文本。
+    # _strip_think_tags 在剥离后为空时会回退到原文（带标签）⇒ 这里必须再判一次：
+    # 仍含 <think> 说明**只有思考**，宁可返回空（调用方的兜底话术接管），也不上屏。
+    if stripped and "<think>" in stripped:
+        logger.warning(
+            "[_extract_content] Only thinking content found, refusing to surface it"
+        )
+        return ""
+
     if stripped:
-        if "<think>" in stripped:
-            # thinking-only 情况：提取标签内的思考文本，不暴露给用户
-            think_match = re.search(r"<think>([\s\S]*?)</think>", stripped, re.DOTALL)
-            if think_match:
-                fallback = think_match.group(1).strip()
-                if fallback:
-                    logger.warning(
-                        "[_extract_content] Only thinking content found, using thinking text as fallback"
-                    )
-                    return fallback
-            # 提取失败，至少返回带标签的原文总比空好
-            return stripped
         return stripped
 
-    # Fallback: 某些模型将回复放在 additional_kwargs 或 response_metadata
+    # 只有 reasoning_content、没有正文 ⇒ 同样不上屏（旧实现从这里把思考原文发出去）
     extra = getattr(response, "additional_kwargs", {}) or {}
     resp_meta = getattr(response, "response_metadata", {}) or {}
-    reasoning = extra.get("reasoning_content") or resp_meta.get("reasoning_content")
-    if reasoning:
+    if extra.get("reasoning_content") or resp_meta.get("reasoning_content"):
         logger.warning(
-            "[_extract_content] No main content, falling back to reasoning_content"
+            "[_extract_content] Empty content with reasoning_content present, refusing to surface reasoning"
         )
-        return reasoning
-
-    # 终极兜底：返回原始 content（保留 think 标签也不如让用户看到思考过程）
-    if content:
-        logger.info(
-            f"[_extract_content] Returning original content (preserve thinking tags)"
-        )
-        return content
-
-    return content
+    return ""
 
 
 # 需要深度思考的意图（仅保留真正需要多步推理的场景）
