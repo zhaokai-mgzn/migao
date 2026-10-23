@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PageCard, PageHeader } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
 import { loadErrorMessage } from '@/lib/api-error'
@@ -29,6 +29,32 @@ function unknownLabels(quality: ReportQualityCost): string[] {
   return quality.unknownComponents.map(
     (code) => quality.components.find((c) => c.code === code)?.label ?? '未采集项',
   )
+}
+
+/**
+ * 时间区间的**预设**（issue #7376 段 6）：本月 / 上月 / 近 90 天 / 全部。
+ *
+ * 🔴 只算**日期字符串**（`YYYY-MM-DD`），不碰时区：服务端把日期按业务时区（+08）解释，
+ * 前端再换一次时区只会造出「月末少一天」这类错。`today` 可注入 ⇒ 判据能钉死结果。
+ */
+export function presetRange(
+  preset: 'thisMonth' | 'lastMonth' | 'last90' | 'all',
+  today: Date = new Date(),
+): { from: string; to: string } {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  const y = today.getFullYear()
+  const m = today.getMonth()
+  if (preset === 'all') return { from: '', to: '' }
+  if (preset === 'thisMonth') return { from: `${y}-${pad(m + 1)}-01`, to: fmt(today) }
+  if (preset === 'lastMonth') {
+    const first = new Date(y, m - 1, 1)
+    const last = new Date(y, m, 0)
+    return { from: fmt(first), to: fmt(last) }
+  }
+  const start = new Date(today)
+  start.setDate(start.getDate() - 89)
+  return { from: fmt(start), to: fmt(today) }
 }
 
 /** 「导出 CSV」小按钮：五张卡同一实现（`data-testid` 区分是第几张卡）。 */
@@ -70,16 +96,41 @@ export default function ReportsPage() {
   const [qcBreakdownLoading, setQcBreakdownLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  // 时间区间（issue #7376 段 6）：空串 = 该侧不设界；默认全部（不传参）
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const rangeParams = useMemo(
+    () => ({ ...(from ? { startDate: from } : {}), ...(to ? { endDate: to } : {}) }),
+    [from, to],
+  )
 
+  /**
+   * 吃区间的三张表（毛利 / 业绩 / 质量成本）：换区间只重取这三张。
+   *
+   * 🔴 库存滞销与应收账龄是**此刻**读数（读面根本不收日期），换区间重取它们既是白跑，
+   * 也会让商家以为「筛了 10 月，滞销数字该变」。
+   */
+  const loadDated = useCallback(async () => {
+    const [m, s, q] = await Promise.all([
+      reportApi.orderMargins(rangeParams),
+      reportApi.staffPerformance(rangeParams),
+      reportApi.qualityCost(rangeParams),
+    ])
+    setMargins(m.data.data || null)
+    setStaff(s.data.data || null)
+    setQuality(q.data.data || null)
+  }, [rangeParams])
+
+  /** 挂载与「失败重试」时把五张表都取一遍（重试要能救回任何一张）。 */
   const load = useCallback(async () => {
     setLoading(true)
     setLoadError(null)
     try {
       const [m, i, s, q, a] = await Promise.all([
-        reportApi.orderMargins(),
+        reportApi.orderMargins(rangeParams),
         reportApi.inventoryAging(),
-        reportApi.staffPerformance(),
-        reportApi.qualityCost(),
+        reportApi.staffPerformance(rangeParams),
+        reportApi.qualityCost(rangeParams),
         reportApi.receivableAging(),
       ])
       setMargins(m.data.data || null)
@@ -93,11 +144,26 @@ export default function ReportsPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [rangeParams])
 
   useEffect(() => {
     load()
-  }, [load])
+    // ⚠️ 只在挂载时整页取一次；换区间走下面的 `loadDated`（见 `skipFirstRangeRun`）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 换区间：只重取吃区间的那三张（首次挂载已由上面的 `load()` 覆盖，跳过一跳）
+  const skipFirstRangeRun = useRef(true)
+  useEffect(() => {
+    if (skipFirstRangeRun.current) {
+      skipFirstRangeRun.current = false
+      return
+    }
+    void loadDated().catch((error) => {
+      console.error('加载报表失败:', error)
+      setLoadError(loadErrorMessage(error, '报表加载失败'))
+    })
+  }, [loadDated])
 
   /**
    * 维度汇总单独取（不进 `load` 的 Promise.all）：切维度只该重取这一块，
@@ -106,7 +172,7 @@ export default function ReportsPage() {
   const loadBreakdown = useCallback(async (dim: 'customer' | 'process') => {
     setQcBreakdownLoading(true)
     try {
-      const res = await reportApi.qualityCostBreakdown(dim)
+      const res = await reportApi.qualityCostBreakdown(dim, rangeParams)
       setQcBreakdown(res.data?.data || null)
     } catch (error) {
       console.error('加载质量成本维度失败:', error)
@@ -114,7 +180,7 @@ export default function ReportsPage() {
     } finally {
       setQcBreakdownLoading(false)
     }
-  }, [])
+  }, [rangeParams])
 
   useEffect(() => {
     void loadBreakdown(qcDim)
@@ -134,6 +200,64 @@ export default function ReportsPage() {
         title="报表中心"
         subtitle="毛利、滞销、业绩、质量成本、应收账龄 —— 合计与明细对得上，没数据时留空而不是写 0"
       />
+
+      {/*
+        时间区间（issue #7376 段 6）：五张表不是同一条时间轴 —— 只给「按下单日 / 报工日」统计的三张表
+        传区间，库存滞销与应收账龄是「此刻」读数。**这一点必须写在页面上**，否则商家会以为
+        「我筛了 10 月，滞销数字怎么没变」。
+      */}
+      <PageCard className="mt-4">
+        <div className="flex flex-wrap items-end gap-3" data-testid="reports-filter">
+          <div>
+            <label className="block text-xs text-neutral-500 mb-1" htmlFor="reports-filter-from">从</label>
+            <input
+              id="reports-filter-from"
+              type="date"
+              data-testid="reports-filter-from"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              className="border border-neutral-200 rounded px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-neutral-500 mb-1" htmlFor="reports-filter-to">到</label>
+            <input
+              id="reports-filter-to"
+              type="date"
+              data-testid="reports-filter-to"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              className="border border-neutral-200 rounded px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            {([
+              ['thisMonth', '本月', 'reports-filter-this-month'],
+              ['lastMonth', '上月', 'reports-filter-last-month'],
+              ['last90', '近 90 天', 'reports-filter-last90'],
+              ['all', '全部', 'reports-filter-all'],
+            ] as const).map(([preset, label, testId]) => (
+              <button
+                key={preset}
+                type="button"
+                data-testid={testId}
+                onClick={() => {
+                  const range = presetRange(preset)
+                  setFrom(range.from)
+                  setTo(range.to)
+                }}
+                className="text-xs px-2 py-1 rounded border border-neutral-200 text-neutral-600 hover:bg-neutral-50"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-neutral-500" data-testid="reports-filter-note">
+            区间只作用于「订单毛利 / 员工业绩（按下单日期）」与「质量成本（按返工报工日、退款发生日）」；
+            库存滞销与应收账龄是「此刻」读数，不受区间影响。
+          </p>
+        </div>
+      </PageCard>
 
       {loadError && <ListLoadError message={loadError} onRetry={load} testId="reports-load-error" />}
 
