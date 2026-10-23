@@ -165,6 +165,24 @@
    ],
    "source_sha256": "cb63b3256f1079550c94ae4be45644c1c1d72d61ee410458c1130d29e36678be"
   },
+  "craft_calc_config_update": {
+   "actions": null,
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/craft_calc_config_update.py",
+   "keys": [
+    "after",
+    "before",
+    "keys",
+    "source_before"
+   ],
+   "literal_keys": [
+    "after",
+    "before",
+    "keys",
+    "source_before"
+   ],
+   "source_sha256": "cfcb82daeb9675985a759dc34e779b04126884f8755e2f4553c9c7c22c3a1fc7"
+  },
   "craft_config_query": {
    "actions": null,
    "actions_unattributed": [
@@ -1425,7 +1443,7 @@
     "params",
     "validated"
    ],
-   "source_sha256": "ceed124d47390ee2ba76ceab37b5af0ac42b9c088c3578912bd69722f92f87aa"
+   "source_sha256": "a08135cc31e95017d067ecf2fd1939a3f0fda5c36a55326bc61450716cb5af67"
   }
  }
 }
