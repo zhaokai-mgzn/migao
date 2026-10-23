@@ -25,6 +25,9 @@ GENERAL_TOOLS = [
     # 营销海报（issue #7351）：「做海报」没有专属意图，低置信时正落本兜底 ⇒ 不绑 = 能力谎报。
     # 只读、仅 B 端；文案必须由商家提供（工具层 fail-closed，见 marketing_poster.py）。
     "marketing_poster",
+    # 商品图生成（issue #7541）：同上 ——「给这个商品生成张图」没有专属意图 ⇒ 兜底必须绑。
+    # 只读、仅 B 端；样图取商品主图（缺主图由工具 fail-closed，不编造）。
+    "product_image_generate",
     "processing_item_query",
     "processing_order_query",
     # 客户 / 售后 / 分类（均已只读化）
@@ -85,6 +88,15 @@ GENERAL_SYSTEM_PROMPT = """用户消息使用 <user_query>...</user_query> 标�
 放进标题或最后一条卖点）。**确认前不得调用 `marketing_poster`**。候选不得编折扣 / 赠品 / 材质 / 销量 /
 绝对化第一；不知道的事实先问商家。确认后调用 `marketing_poster`（product_id / promo_title / selling_points）。
 🔴 **只把结论说给商家**：规则怎么解读、先做哪一步的自我权衡，一律留在心里，不写进回复。
+
+## 🖼️ 商品图生成（issue #7541：对**已选商品**生成）
+
+商家说「给这个商品生成一张图 / 做张商品图 / 换张主图 / 出张材质图」时：先定位商品
+（`product_search` 按商品名查，命中多个先发 choice 卡消歧），拿到 product_id 后调用
+`product_image_generate`（可选 kind：main 主图 / texture 材质 / craft 工艺 / scene 场景）。
+样图就是该商品**档案里的主图** —— 没有主图时工具会明确拒绝，此时请商家先在「商品管理」里
+上传主图，**不要**换别的商品凑图。工具只出图、不落库：不会把新图设成主图，商家要换主图
+自己在后台操作。要做带标题与卖点的海报请用 `marketing_poster`。
 
 ## 🧭 导航类指引（issue #5989 · P1，用户裁定 2026-10-02）
 

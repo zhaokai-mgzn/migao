@@ -130,6 +130,9 @@ KNOWN_REGISTERED_TOOLS: frozenset[str] = frozenset({
     # 营销海报（issue #7351）：只读；文案必须由商家确认（缺文案工具层 fail-closed）。
     # read_only=True ⇒ **不进** taxonomy 的 `WRITE_TOOLS`；本条只同步注册表真值。
     "marketing_poster",
+    # 商品图生成（issue #7541）：只读；样图取商品主图，缺主图 / 生图不可用由工具 fail-closed。
+    # read_only=True ⇒ **不进** taxonomy 的 `WRITE_TOOLS`；本条只同步注册表真值。
+    "product_image_generate",
     # B 端只读化新接入的 6 个只读查询工具（issue #5247，用户裁定 2026-09-23）：
     # `stock_ledger_query`（库存台账）/ `inbound_order_query`（入库单·批次）/
     # `operation_catalog_query`（工序库·工艺路线）/ `craft_calc_config_query`（算料配置）/

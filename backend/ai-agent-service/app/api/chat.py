@@ -524,6 +524,10 @@ def _detect_card_type(tool_name: str, result: Dict[str, Any]) -> Optional[str]:
         # 营销海报卡（issue #7351）：工具返回的 `data` 就是卡载荷
         # （`{product: {...}, copy: {title, selling_points}}`），前端渲染成 750×1000 PNG。
         return "marketing_poster"
+    elif tool_name == "product_image_generate":
+        # 商品图生成卡（issue #7541）：工具返回的 `data` 就是卡载荷
+        # （`{image_url, model, product: {id, name, kind}}`），前端预览 + PC 下载 / 手机存相册。
+        return "generated_image"
     elif tool_name in ("logistics_track", "customer_logistics_track"):
         return "logistics"
     elif tool_name in ("order_query", "customer_order_query"):
@@ -582,6 +586,14 @@ def _should_send_card(tool_name: str, result: Dict[str, Any]) -> bool:
             and bool(copy.get("selling_points"))
         )
     
+    # 商品图生成（issue #7541）：**成功且真有图才发卡** —— 失败或空图一律不发，
+    # 否则前端会渲染一个空图片框（「说好了生成、却没有图」= 凭空承诺）。
+    if tool_name == "product_image_generate":
+        data = result.get("data", {})
+        if not isinstance(data, dict):
+            return False
+        return bool(str(data.get("image_url") or "").strip())
+
     # 物流查询有结果时发送卡片
     # - B 端 logistics_track: 单笔物流（data.tracking_number）
     # - C 端 customer_logistics_track: 在途订单列表（data.logistics_list 非空；卡片取第一笔 data.logistics）

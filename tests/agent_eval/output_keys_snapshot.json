@@ -1130,6 +1130,22 @@
    ],
    "source_sha256": "4bb1144c6443bfdc4abbd1947b4b825d4c44f9bd918d4b272a3e145466ffe175"
   },
+  "product_image_generate": {
+   "actions": null,
+   "dynamic": false,
+   "file": "backend/ai-agent-service/app/tools/product_image_generate.py",
+   "keys": [
+    "image_url",
+    "model",
+    "product"
+   ],
+   "literal_keys": [
+    "image_url",
+    "model",
+    "product"
+   ],
+   "source_sha256": "d682b803dce4f6014aff0805c92bc5e6d490bbbd96b3cefe9172f7c8be7596ec"
+  },
   "product_manage": {
    "actions": {
     "create": {

@@ -142,6 +142,9 @@ _CARD_TOOL_ANCHORS = {
     # #7351「补发射点」：营销海报工具返回的 data 即卡载荷
     # （{product: {...}, copy: {title, selling_points}}）；只绑黄金策 ⇒ B 端两端渲染。
     "marketing_poster": "marketing_poster",
+    # #7541「补发射点」：商品图生成工具返回的 data 即卡载荷
+    # （{image_url, model, product: {id, name, kind}}）；只绑黄金策 ⇒ B 端两端渲染。
+    "product_image_generate": "generated_image",
 }
 
 # 交互组件（renderInteractive 的 switch）——不得被算作卡型

@@ -5526,3 +5526,41 @@ cases:
       tests: []
       ci: []
       verifies: []
+
+  - id: PR-074
+    legacy_id: ""
+    title: "商品图生成 - 对已选商品生成商品图（缺主图/能力不可用都可行动拒绝；成功发卡：PC 下载 / 手机保存相册）"
+    domains:
+      - product
+    tier: normal
+    persona: ""
+    tags:
+      - product
+      - image_generation
+      - tool
+      - backend_contract
+      - fail_closed
+    truths_ref: []
+    user_inputs: []
+    expectations: []
+    must_fail:
+      - tool: product_image_generate
+    data_checks:
+      - "判据 0·**机器可判**：缺 `product_id` / `kind` 不在白名单 / 商品没有可用主图 ⇒ `success=False`（`missing_params` 或工具错误码 `IMAGE_SOURCE_MISSING`）；成功时 `success=true`、`data.image_url` 非空、`data.product.name` 逐字等于 admin-api 返回的商品名（判据源 = `backend/ai-agent-service/tests/test_product_image_generate.py`）。"
+      - "判据 1·**入口 = 已选商品**（issue #7541；用户 2026-10-23 裁定）：`product_id` 必填，模型先 `product_search` / `product_detail` 定位；缺参 / `kind` 越界 ⇒ 立刻失败且**零 admin-api 调用、零生图调用**。注入红证：缺参放行到取商品 ⇒ 变红。"
+      - "判据 2·**样图只来自该商品主图**：样图取 `GET /api/admin/products/{id}` 的 `mainImage`（缺失回退 `images[0]`）；两者都没有、或不是 http(s) 完整地址 ⇒ `IMAGE_SOURCE_MISSING` + **零生图调用**，不拿别的商品凑、不编造。注入红证：缺主图时改传空串给内核 ⇒ 变红。"
+      - "判据 3·**不写表单、不落库**：全程只有一次 `GET /api/admin/products/{id}`，`post` / `put` / `patch` / `delete` 一个都不调；生成图只作为卡载荷回给对话（转存与「用不用」都在商家后台）。注入红证：成功后顺手 PATCH 商品主图 ⇒ 变红。"
+      - "判据 4·🔴 **失败语义如实**：`ImageGenerationUnavailable`（含模型不接这类图生图请求）⇒ `IMAGE_GEN_UNAVAILABLE`；`ImageGenerationQuotaExceeded` ⇒ `IMAGE_GEN_QUOTA_EXCEEDED`；其它供应商失败 ⇒ `IMAGE_GEN_FAILED`。三者**互不冒充**，`IMAGE_GEN_UNAVAILABLE` 的用户话术里**不得**出现「额度」。注入红证：把前两者合成一个码 ⇒ 变红。"
+      - "判据 5·**卡发射条件**：`_detect_card_type('product_image_generate')` → `generated_image`；`_should_send_card` 只在 `success=true` **且** `data.image_url` 非空时为真（失败 / 空图不发卡，避免前端画空图框）。注入红证：去掉 image_url 判据 ⇒ 变红。"
+      - "判据 6·**跨端契约**：该工具只绑黄金策 `product` / `general` ⇒ B 端桌面 `ToolResultCard` 与 B 端移动 `MessageBubble` 都必须有 `generated_image` 渲染分支，C 端（元元）不可达（判据 = `backend/ai-agent-service/tests/test_card_type_cross_end_contract.py` 现算）。注入红证：删掉任一端的分支 ⇒ 变红。"
+      - "判据 7·**PC 下载 / 手机保存到相册**：桌面卡点「下载图片」走「取文件再按 `商品图-<商品名>.png` 存盘」，取不到时打开原图并明说可「图片另存为」（不谎报已下载）；移动卡在微信内置浏览器弹「长按图片保存」（JS 无法直接写相册，不谎报已保存）。注入红证：微信分支改成提示「已保存」⇒ 变红。"
+    skip_reason: "[backend-contract] 工具 + 两端渲染契约（无 LLM 环节）：断言由 backend/ai-agent-service/tests/test_product_image_generate.py、test_card_type_cross_end_contract.py 与 frontend/admin-web/tests/unit/components/GeneratedImageCard.test.tsx 执行；真实出图还依赖生图模型可用性（#7538：qwen-mt-image-2.0 不接图生图），合入时**不跑**端到端生成"
+    merge_log: "2026-10-23 新增（issue #7541：黄金策「对已选商品生成商品图」—— 工具 + 对话卡预览；PC 下载 / 手机保存相册；不写表单、不落库；失败语义三分）。按 #4262，本用例不在合入时自动跑，留给下一次手动集中评测。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_product_image_generate.py"
+        - "backend/ai-agent-service/tests/test_card_type_cross_end_contract.py"
+        - "frontend/admin-web/tests/unit/components/GeneratedImageCard.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

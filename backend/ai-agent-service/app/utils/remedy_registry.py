@@ -166,6 +166,33 @@ REMEDIES: tuple[Remedy, ...] = (
         reason="商家提供的文案超出了海报版面",
         remedy="请让商家把主标题或卖点精简一下，再重新生成海报。",
     ),
+    # 商品图生成（issue #7541）：四种失败**语义分开**，尤其「能力不可用」不得说成「额度用尽」。
+    # 入口 = 一级项「商品管理」（商品主图的落点）；该一级项已进页面真值源
+    # （`tests/unit_ci_workflows/test_remedy_registry_guard.py::page_labels`，#7541 链内修）。
+    Remedy(
+        code="IMAGE_SOURCE_MISSING",
+        reason="这个商品还没有可用作样图的主图",
+        remedy="请商家先在「商品管理」里给该商品上传一张主图，之后就能生成商品图。",
+        entry="page:商品管理",
+    ),
+    Remedy(
+        code="IMAGE_GEN_UNAVAILABLE",
+        reason="商品图生成能力现在用不了",
+        remedy="可以稍后让我生成，或先在「商品管理」里手工上传一张商品图。",
+        entry="page:商品管理",
+    ),
+    Remedy(
+        code="IMAGE_GEN_QUOTA_EXCEEDED",
+        reason="商品图生成额度暂时用尽",
+        remedy="可以稍后让我生成，或先在「商品管理」里手工上传一张商品图。",
+        entry="page:商品管理",
+    ),
+    Remedy(
+        code="IMAGE_GEN_FAILED",
+        reason="商品图没有生成成功",
+        remedy="可以让我再生成一次；如仍不行，请先在「商品管理」里手工上传一张商品图。",
+        entry="page:商品管理",
+    ),
     Remedy(
         code="order_confirmation_mismatch",
         reason="确认卡上的内容和实际订单对不上",

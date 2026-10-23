@@ -3049,7 +3049,7 @@ export type SSEEventType = 'message_start' | 'text_delta' | 'text' | 'tool_start
 // - 新增 `batch_stock`（issue #5188）：批次/省料只读工具 `batch_stock_query` 的卡载荷
 // - 移除 `knowledge`：后端从不下发该卡型（ToolResultCard 死分支已同批删除）
 // 契约守卫：backend/ai-agent-service/tests/test_card_type_cross_end_contract.py（双向）
-export type CardType = 'product_list' | 'product_detail' | 'logistics' | 'order' | 'production_progress' | 'batch_stock' | 'marketing_poster'
+export type CardType = 'product_list' | 'product_detail' | 'logistics' | 'order' | 'production_progress' | 'batch_stock' | 'marketing_poster' | 'generated_image'
 
 // 卡片数据
 export interface ChatCard {

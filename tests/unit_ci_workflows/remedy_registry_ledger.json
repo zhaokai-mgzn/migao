@@ -7,17 +7,17 @@
     "  ② 账户**只许缩短**：`awaiting_rows` 里已登记 / 已不在码集的陈旧条目 ⇒ 判红（防止账户变成永久豁免）。",
     "  ③ 「每个失败码都有出口」的判据 = `登记码 ∪ awaiting_rows == 现取码集`（逐值相等，涨跌都红）。",
     "  ④ `anchor` = 冻结时刻的现取读数（条数），与现取逐值相等；不许把它当解释性上限。",
-    "现状（2026-10-19，issue #7351 追加 2 条海报文案码）：现取失败码 20 条，其中 15 条已有登记行、5 条走**默认话术**（本账户）。",
+    "现状（2026-10-23，issue #7541 追加 4 条商品图生成码）：现取失败码 24 条，其中 19 条已有登记行、5 条走**默认话术**（本账户）。",
     "默认话术**本身**也受全部文本面判据约束（纯中文 / 无重试字样 / 非「未知错误」）—— 所以「走默认」不等于「免检」，",
     "它只是**不够贴切**（这几条的归因与出路还没有人写），故作为**可见欠账**在册。"
   ],
   "issue": "#5441",
   "frozen_at": "2026-09-25",
   "anchor": {
-    "face": 20,
-    "registered": 15,
+    "face": 24,
+    "registered": 19,
     "awaiting": 5,
-    "note": "现取读数（`python3 -m pytest tests/unit_ci_workflows/test_remedy_registry_guard.py -q -s` 会打印）。20 = 15 已登记 + 5 走默认话术。"
+    "note": "现取读数（`python3 -m pytest tests/unit_ci_workflows/test_remedy_registry_guard.py -q -s` 会打印）。24 = 19 已登记 + 5 走默认话术。"
   },
   "awaiting_rows": [
     "REVIEW_ERROR",
