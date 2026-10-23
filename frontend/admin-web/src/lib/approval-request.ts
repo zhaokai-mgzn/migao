@@ -79,3 +79,27 @@ export function creditOverrideDraft(input: {
     reasonHint: '例如：老客户本月集中下单，临时提额',
   }
 }
+
+/**
+ * 从「超出客户授信额度」的**服务端原话**里生成授信申请草稿（issue #7374 段 4）。
+ *
+ * 为什么做成纯函数：订单创建页是个多步向导，把「解析尚缺额 + 兜底」的判据塞进页面测试会很脆；
+ * 抽出来后可以逐句断言不同文案形态。**不是**授信拒绝的文案 ⇒ 返回 `null`（页面上不该凭空冒入口）。
+ */
+export function creditDraftFromRejection(
+  message: string,
+  ctx: { customerPhone: string; customerName?: string | null; fallbackAmount: number | null },
+): ApprovalDraft | null {
+  if (!message || !message.includes('超出客户授信额度')) return null
+  const phone = (ctx.customerPhone || '').trim()
+  if (!phone) return null
+  // 千分位逗号要一起吃掉：`尚缺 ¥1,200.50` 若只认到 `1`，申请的额度会小 1000+ 倍 ⇒ 批了还是过不了
+  const shortfall = message.match(/尚缺\s*¥?\s*([0-9][0-9,]*(?:\.[0-9]+)?)/)
+  // 金额取「尚缺额」（批多了会白占额度）；解析不到才退回订单实收总额
+  const excess = shortfall ? Number(shortfall[1].replace(/,/g, '')) : ctx.fallbackAmount
+  return creditOverrideDraft({
+    customerPhone: phone,
+    customerName: ctx.customerName ?? null,
+    excess: Number.isFinite(excess as number) ? (excess as number) : null,
+  })
+}
