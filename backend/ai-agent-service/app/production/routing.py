@@ -72,6 +72,12 @@ OPERATION_CATALOG: Dict[str, Dict[str, Any]] = {
     "定型-纱": {"group": "后道", "unit": "米", "unit_price": 0.4},
     "复烫-纱": {"group": "后道", "unit": "米", "unit_price": 0.35},
     "车被-纱": {"group": "后道", "unit": "米", "unit_price": 0.4},
+    # ── issue #7523（用户裁定 2026-10-23）：整卷布料单的**出库**独立工序 ──
+    # 散剪卖布 = `裁剪 → 打包`；整卷卖布 = `出库 → 打包`（不裁剪，工人按卷/批次拣货）。
+    # 单位 = **卷**：应做数量取订单行 `roll_count`（真实订单事实，不推算；缺键兜底 1）。
+    # 单价 0 是 `production_operations.unit_price NOT NULL DEFAULT 0` 的 DDL 产物；
+    # 「未定价」的真载体是部位价目行（`出库 × 布料` 为 `None` + applicable=True）。
+    "出库": {"group": "后道", "unit": "卷", "unit_price": 0.0},
 }
 
 # ── 工艺路线模板（**工艺 → 基准工序序列**）──
@@ -260,12 +266,16 @@ FOLD_KEYS = ("pleat_count",)               # 韩褶褶数法才产出；非褶�
 HOLE_KEYS = ("holes",)                     # 引擎暂未产出 ⇒ 按 HOLE_PER_METER 估算（见 _qty_for）
 PANEL_KEYS = ("panels",)                   # 引擎暂未产出（build_quote 内部局部量）⇒ 兜底 1，待补
 SET_KEYS = ("set_count",)                  # 引擎暂未产出 ⇒ 兜底 1（一个部位 = 一樘，语义成立）
+# 整卷布料单「出库」的应做数量键（issue #7523）：订单行 `rollCount` 由 Java 侧
+# `ProcessingOrderService#calcInfo` 透传为 `roll_count`。**真实订单事实**，不是算料推导。
+# 缺键（散剪单 / 存量单）⇒ 兜底 1（「一次出库作业」），绝不落 0。
+ROLL_KEYS = ("roll_count",)
 
 # 孔数估算：引擎不产出 `holes` 时的行业口径（每米约 6 孔；12.3 米 → 72 孔与现场核对一致）
 HOLE_PER_METER = 6
 
 # 引擎有数量口径的单位（= `_qty_for` 的分支覆盖范围，且 `_qty_keys_for_unit` 给得出候选键）。
-KNOWN_QTY_UNITS = ("米", "折", "孔", "幅", "套")
+KNOWN_QTY_UNITS = ("米", "折", "孔", "幅", "套", "卷")
 
 # 引擎**不产出**该数量的单位（issue #4228 ①，**显式登记**）：「个 / 件」类工序的应做数量
 # 在真值源里**没有定义** —— `docs/curtain-production-rules.md` §4 的「数量口径」清单只列
@@ -299,6 +309,8 @@ def _qty_keys_for_unit(unit: Optional[str]) -> tuple:
         return PANEL_KEYS
     if unit == "套":
         return SET_KEYS
+    if unit == "卷":
+        return ROLL_KEYS
     if unit == "米":
         return METER_KEYS
     # 引擎不产出该量的单位（`FIXED_ONE_UNITS` 的「个 / 件」类）与未登记单位：
@@ -308,7 +320,7 @@ def _qty_keys_for_unit(unit: Optional[str]) -> tuple:
 # 非「孔」单位**直接供数**的键（命中即报键名）：引擎真产出 `fabric_meters`/`pleat_count`。
 # 「孔」的直采键是 `holes`（引擎暂未产出，见 HOLE_KEYS 注释，但调用方可按现场口径给出），
 # 在 `qty_and_source` 的「孔」分支单独处理 —— 该分支还有「按米估算」这一中间态。
-DIRECT_QTY_KEYS = ("fabric_meters", "pleat_count")
+DIRECT_QTY_KEYS = ("fabric_meters", "pleat_count", "roll_count")
 
 # `qty_source` 的三态语义（字段存在的唯一理由：让「真兜底」与「有依据的推算」可区分）
 #   ① 键名（DIRECT_QTY_KEYS）           = 该键直接供数（算料输出 / 现场给定）
@@ -345,6 +357,9 @@ def _qty_for(operation: str, calc_info: Dict[str, Any]) -> float:
         return float(_pick(calc_info, PANEL_KEYS, 1))
     if unit == "套":
         return float(_pick(calc_info, SET_KEYS, 1))
+    if unit == "卷":
+        # 整卷出库：应做数量 = 订单行卷数（issue #7523）；缺键兜底 1（一次出库作业）
+        return float(_pick(calc_info, ROLL_KEYS, 1))
     if unit == "米":
         return float(_pick(calc_info, METER_KEYS, 1))
     # 引擎不产出该量的单位（FIXED_ONE_UNITS 的「个 / 件」类）**与未登记单位**：兜底 1 ——
@@ -772,6 +787,11 @@ _POSITION_PRICE_ROWS: List[tuple] = [
     ("打包", "纱帘", None, True),
     ("打包", "帘头", None, True),
     ("打包", "布料", None, True),
+    # ── issue #7523：整卷出库（只对布料适用；三个窗帘部位显式 FALSE）──
+    ("出库", "布帘", None, False),
+    ("出库", "纱帘", None, False),
+    ("出库", "帘头", None, False),
+    ("出库", "布料", None, True),
 ]
 
 
@@ -964,6 +984,15 @@ ROUTE_RULES: List[Dict[str, Any]] = [
      "operation": "扣环", "after_operation": "三边", "priority": 250},
     {"trigger_kind": "option", "trigger_value": "防翘扣", "action": "insert",
      "operation": "防翘扣", "after_operation": "三边", "priority": 260},
+    # ── 售卖方式（trigger_kind='sales_form'，issue #7523）──
+    # 🔴 **只对布料产品形态生效**（build_route_v2 按 `is_fabric` 分派；与 Java 侧同款）：
+    # 整卷 = `出库 → 打包`；散剪 = 主线原样 `裁剪 → 打包`。顺序敏感：先 insert 出库（锚点 裁剪），
+    # 再 remove 裁剪 —— 反过来会先把锚点删掉，导致出库被追加到末尾（`打包 → 出库`，顺序错）。
+    # `position` 维**不写**：本触发只在布料形态生效，写部位是第二份口径（#4937 / O2 口径）。
+    {"trigger_kind": "sales_form", "trigger_value": "full_roll", "action": "insert",
+     "operation": "出库", "after_operation": "裁剪", "priority": 270},
+    {"trigger_kind": "sales_form", "trigger_value": "full_roll", "action": "remove",
+     "operation": "裁剪", "after_operation": None, "priority": 280},
 ]
 
 
@@ -978,6 +1007,10 @@ def _rule_triggers(rule: Dict[str, Any], position: Dict[str, Any]) -> bool:
         return rule["trigger_value"] == position.get("craft")
     if kind == "option":
         return rule["trigger_value"] in (position.get("special_options") or ())
+    if kind == "sales_form":
+        # 售卖方式触发（issue #7523）：`full_roll`（整卷）/ `bulk_cut`（散剪）。
+        # 键 = 订单行 `sellingMethod`（Java 快照同名字段；build_route_v2 的入参键 `selling_method`）。
+        return rule["trigger_value"] == position.get("selling_method")
     if kind == "processing_item":
         # 加工项触发（issue #4577，用户裁定「加工项也触发工序」）：触发键 = 该行
         # `processingInfo.processingItems[].name`（Java 侧同一口径；**精确相等** ——
@@ -1048,7 +1081,7 @@ def build_route_v2(position: Dict[str, Any]) -> List[str]:
         # 必须由**产品形态**（而不是部位）表达 —— 否则布料单的工序数会当场从 2 变 4。
         # ⚠️ 与 Java 侧 `ProcessingOrderService.buildRoute` 的
         # `routeTemplateFor(tenantId, 部位)` 同款：**模板（主线）与规则只对匹配的产品形态生效**。
-        if is_fabric:
+        if is_fabric != (rule["trigger_kind"] == "sales_form"):
             continue
         if not _rule_triggers(rule, position):
             continue

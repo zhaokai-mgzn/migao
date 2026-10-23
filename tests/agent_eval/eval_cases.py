@@ -10608,6 +10608,25 @@ _CASE_PG_090 = EvalCase(
     precondition='两张已确认订单：order-001 未加急（`is_urgent` 缺省 / false）、order-002 加急（`is_urgent=true`）。',
 )
 
+# ── PG-091 [NORMAL] 整卷布料单「出库」独立工序：散剪 裁剪→打包 / 整卷 出库→打包（批次号即卷号）（源: cases/processing-order.yml）──
+_CASE_PG_091 = EvalCase(
+    id='PG-091',
+    legacy_id='',
+    title='整卷布料单「出库」独立工序：散剪 裁剪→打包 / 整卷 出库→打包（批次号即卷号）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=[],
+    expectations=[],
+    data_checks=['**判据 1（会红，Java 路由）**：整卷布料单实例化出的工序序列 = `[出库, 打包]`，**不含 `裁剪`**；散剪单 = `[裁剪, 打包]`，**不含 `出库`**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionRouteParityTest.java 的 `fabricFullRollIsOutboundThenPacking` / `fabricBulkCutKeepsCutting`。**红证**：把 sales_form 规则摘掉（或把 buildRoute 的 `isFabricForm != salesFormRule` 分派改回 `if (isFabricForm) continue;`）⇒ 整卷序列退回 `[裁剪, 打包]` ⇒ 判据 1 红。', '**判据 2（数量口径）**：`出库` 应做数量 = 订单行卷数（2 卷），算料请求 `calc_info` 必带 `roll_count`。执行点 = 同文件 `fabricFullRollIsOutboundThenPacking` 的 ArgumentCaptor 断言 + backend/ai-agent-service/tests/test_production/test_operation_qty.py（卷单位直接供数）/ test_production/test_fabric_route.py（full_roll 路线）。**红证**：把 `ProcessingOrderService#calcInfo` 的 roll_count 透传删掉 ⇒ Java 断言红；把 `routing.py::_qty_for` 的「卷」分支删掉 ⇒ Python 用例红。', '**判据 3（工人屏可读）**：扫码读面的部位规格含 `roll_count`（卷数，单位 卷）与 `batch_no`（批次号即卷号）；散剪单缺键不渲染。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/PositionDetailFieldsTest.java 的键集守卫 + frontend/worker-h5/tests/worker-h5-position-spec.test.mjs 的 `卷数` 上屏断言。**红证**：从 `PositionDetailFields.DETAIL_KEYS` 删掉 `roll_count` ⇒ 后端键集守卫红；从 `POSITION_SPEC_KEYS` 删掉该行 ⇒ worker-h5 用例红。', '**判据 4（配置页人话）**：工序配置页把 sales_form 规则读成「售卖方式 = 整卷/散剪」中文业务名，机器值不上屏。执行点 = frontend/admin-web/tests/unit/components/RollOutboundCondition.test.tsx。**红证**：把 `TRIGGER_KIND_LABEL.sales_form` 删掉 ⇒ 渲染出 `sales_form = full_roll` ⇒ 用例红。', '**判据 5（种子五源收敛）**：`routing.py::OPERATION_CATALOG/_POSITION_PRICE_ROWS/ROUTE_RULES` ↔ V186 迁移 ↔ schema.sql ↔ 开租模板 ↔ Java 常量逐值一致（出库单位 卷；价目行 `出库 × 布料` 适用但未定价；规则 insert/remove 优先级 270/280）。执行点 = tests/unit_ci_workflows/test_production_catalog_seed.py（55 passed）+ backend/admin-api/src/test/java/com/migao/admin/service/ProductionSeedTemplateServiceTest.java 的 `apply_createsAllSeedRows`。', '**判据 6（发货守卫不变）**：作业单 completed 才能发货的既有判据一字不动；整卷单只是少了「裁剪」一道。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderShipGuardTest.java（本单未改）。'],
+    skip_reason='[backend-contract] admin-api 单测 + ai-agent 路由真值源 + 前端 vitest/worker-h5 node:test（无 LLM 行为面；工序序列由确定性规则产生）',
+    tags=['processing-order', 'route-rule', 'fabric'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='卖布行订单（processing_info.saleForm=布料、无加工项）：A 单 sellingMethod=full_roll + rollCount=2；B 单 sellingMethod=bulk_cut。',
+)
+
 # ── PP-002 [NORMAL] 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query）（源: cases/processing.yml）──
 _CASE_PP_002 = EvalCase(
     id='PP-002',
@@ -16897,6 +16916,7 @@ ALL_CASES = (
     _CASE_PG_087,
     _CASE_PG_088,
     _CASE_PG_090,
+    _CASE_PG_091,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,

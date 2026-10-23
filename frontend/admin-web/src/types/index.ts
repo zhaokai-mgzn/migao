@@ -1742,7 +1742,7 @@ export interface RouteRuleCreateParams {
 }
 
 /** 条件工序规则的触发维（issue #4616；与后端闭词表 `TRIGGER_KINDS` 同口径；#4962 加第 4 档 `position`）。 */
-export type RouteRuleTriggerKind = 'craft' | 'option' | 'processing_item' | 'position'
+export type RouteRuleTriggerKind = 'craft' | 'option' | 'processing_item' | 'position' | 'sales_form'
 
 /**
  * 规则创建弹窗的**触发值取值域**（issue #4616；`GET /api/admin/production/route-rule-options`）。

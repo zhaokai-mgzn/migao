@@ -864,6 +864,12 @@ public class ProductionService {
             // 宽/高：V63 列（下单页必填，issue #4420 起真的会写）
             spec.put("width", item.getWidth());
             spec.put("height", item.getHeight());
+            // 整卷卷数（issue #7523）：`order_items.roll_count` 是列、不在 processing_info 里
+            // （`PositionDetailFields.PROCESSING_INFO_SOURCE_KEYS` 取不到它）⇒ 这里显式补；
+            // 缺值不写（散剪单不渲染该行，不造 0）。
+            if (item.getRollCount() != null) {
+                spec.put("roll_count", item.getRollCount());
+            }
             // 工艺规格：**唯一映射点**（OrderLineCraftFields）—— 不在此另写一份键名翻译
             spec.putAll(OrderLineCraftFields.toSnapshotKeys(item));
             // 算料输出（单一真值 = ai-agent 引擎）：逐字取 processing_info 里已落的值

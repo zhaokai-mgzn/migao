@@ -995,7 +995,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_production_route_templates_tenant_default
 CREATE TABLE IF NOT EXISTS production_route_rules (
     id VARCHAR(64) PRIMARY KEY,
     tenant_id BIGINT NOT NULL REFERENCES tenants(id),
-    trigger_kind VARCHAR(24) NOT NULL CHECK (trigger_kind IN ('craft', 'option', 'shaped', 'processing_item', 'position')),
+    trigger_kind VARCHAR(24) NOT NULL CHECK (trigger_kind IN ('craft', 'option', 'shaped', 'processing_item', 'position', 'sales_form')),
     trigger_value VARCHAR(64) NOT NULL,               -- 工艺名 / 特殊选项名（逐字 = ERP 写法；它是 join key）
     position VARCHAR(16),                             -- 部位限定；NULL = 不限
     action VARCHAR(16) NOT NULL CHECK (action IN ('insert', 'remove', 'factor')),
@@ -3066,7 +3066,9 @@ VALUES
   ('op-v54-31', 1, '熨烫-纱', '后道', '纱帘', '米', 0.35, FALSE, FALSE, 38, 'active', 0),
   ('op-v54-32', 1, '定型-纱', '后道', '纱帘', '米', 0.4, FALSE, FALSE, 39, 'active', 0),
   ('op-v54-33', 1, '复烫-纱', '后道', '纱帘', '米', 0.35, FALSE, FALSE, 40, 'active', 0),
-  ('op-v54-34', 1, '车被-纱', '后道', '纱帘', '米', 0.4, FALSE, FALSE, 41, 'active', 0)
+  ('op-v54-34', 1, '车被-纱', '后道', '纱帘', '米', 0.4, FALSE, FALSE, 41, 'active', 0),
+  -- issue #7523（用户裁定 2026-10-23）：整卷布料单的「出库」独立工序（单位 卷；原值 0 = 未定价载体在价目矩阵）
+  ('op-v186-01', 1, '出库', '后道', NULL, '卷', 0, FALSE, FALSE, 42, 'active', 0)
 ON CONFLICT (tenant_id, name) WHERE deleted = 0 DO NOTHING;
 
 -- 工艺路线模板种子（V54 的 6 条 + V58 的 3 条，issue #4246 的纱帘路线补齐）。
@@ -3106,9 +3108,10 @@ SET source = CASE
         WHEN id LIKE 'op-v54-%' THEN '占位待确认'
         WHEN id LIKE 'op-v56-%' THEN '推算'
         WHEN id LIKE 'op-v79-%' THEN '占位待确认'
+        WHEN id LIKE 'op-v186-%' THEN '占位待确认'
     END
 WHERE source IS NULL
-  AND (id LIKE 'op-v54-%' OR id LIKE 'op-v56-%' OR id LIKE 'op-v79-%');
+  AND (id LIKE 'op-v54-%' OR id LIKE 'op-v56-%' OR id LIKE 'op-v79-%' OR id LIKE 'op-v186-%');
 
 -- 工序作用域回填（V67，issue #4384 A1；`打包` 由 V79 / issue #4529 追加）：与迁移
 -- **逐字同集合** —— 三道外帘工序 + `打包` 是套级（每樘窗一次），其余全部由列默认值 'position'
@@ -3313,7 +3316,12 @@ VALUES
   ('opp-v79-33', 1, '打包', '通用', NULL, TRUE, 'active', 0),
   ('opp-v79-34', 1, '打包', '纱帘', NULL, TRUE, 'active', 1),
   ('opp-v79-35', 1, '打包', '帘头', NULL, TRUE, 'active', 1),
-  ('opp-v79-36', 1, '打包', '布料', NULL, TRUE, 'active', 1)
+  ('opp-v79-36', 1, '打包', '布料', NULL, TRUE, 'active', 1),
+  -- ── issue #7523：出库（布料 = 适用但未定价；O4 终态 = 通用一行存活、其余软删）──
+  ('opp-v186-01', 1, '出库', '通用', NULL, TRUE, 'active', 0),
+  ('opp-v186-02', 1, '出库', '布帘', NULL, FALSE, 'active', 1),
+  ('opp-v186-03', 1, '出库', '纱帘', NULL, FALSE, 'active', 1),
+  ('opp-v186-04', 1, '出库', '布料', NULL, TRUE, 'active', 1)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO production_route_templates
@@ -3366,6 +3374,17 @@ VALUES
   ('rr-v70-24', 1, 'option', '加立边', NULL, 'insert', '立边', '三边', 240, 'active'),
   ('rr-v70-25', 1, 'option', '扣环', NULL, 'insert', '扣环', '三边', 250, 'active'),
   ('rr-v70-26', 1, 'option', '防翘扣', NULL, 'insert', '防翘扣', '三边', 260, 'active')
+ON CONFLICT (id) DO NOTHING;
+
+-- issue #7523：整卷布料单 = 出库 → 打包（先 insert 出库（锚点 裁剪），再 remove 裁剪）。
+-- 🔴 **独立成块**（不并进 rr-v70）：rr-v70 是与 V71 逐行冻结的来源镜像
+-- （tests/unit_ci_workflows/test_v93_route_rules_backfill.py 的 `_RULE_BLOCK_SOURCES`）。
+INSERT INTO production_route_rules
+    (id, tenant_id, trigger_kind, trigger_value, position, action,
+     operation, after_operation, priority, status)
+VALUES
+  ('rr-v186-01', 1, 'sales_form', 'full_roll', NULL, 'insert', '出库', '裁剪', 270, 'active'),
+  ('rr-v186-02', 1, 'sales_form', 'full_roll', NULL, 'remove', '裁剪', NULL, 280, 'active')
 ON CONFLICT (id) DO NOTHING;
 
 -- ── 工序路线模型重构 P2 的终态种子（V72，issue #4432 = 母单 #4423 P2/3）──

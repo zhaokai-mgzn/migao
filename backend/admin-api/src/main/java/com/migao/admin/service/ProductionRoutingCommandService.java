@@ -70,7 +70,8 @@ public class ProductionRoutingCommandService {
      * {@code ProcessingOrderService#rulePositionMatches}）。DB 的 CHECK 约束同批由
      * {@code backend/admin-api/src/main/resources/db/migration-archive/V109__allow_position_trigger_kind.sql} 放开。</p>
      */
-    private static final Set<String> TRIGGER_KINDS = Set.of("craft", "option", "processing_item", "position");
+    private static final Set<String> TRIGGER_KINDS = Set.of(
+            "craft", "option", "processing_item", "position", "sales_form");
 
     /** 规则动作（路线编排档）：插入 / 移除（与读面 {@code ROUTE_ACTIONS} 同口径）。 */
     private static final Set<String> ACTIONS = Set.of("insert", "remove");
@@ -78,6 +79,10 @@ public class ProductionRoutingCommandService {
     private static final String TRIGGER_KIND_OPTION = "option";
     private static final String TRIGGER_KIND_CRAFT = "craft";
     private static final String TRIGGER_KIND_PROCESSING_ITEM = "processing_item";
+    /** 售卖方式维（issue #7523）：{@code full_roll}（整卷）/ {@code bulk_cut}（散剪）。 */
+    private static final String TRIGGER_KIND_SALES_FORM = "sales_form";
+    /** 售卖方式触发值的**闭词表**（与订单行 {@code sellingMethod} 的机器值逐字一致）。 */
+    private static final Set<String> SALES_FORM_VOCABULARY = Set.of("full_roll", "bulk_cut");
     /** 部位维（issue #4962）—— 见 {@link #TRIGGER_KINDS} 的类注释。 */
     private static final String TRIGGER_KIND_POSITION = ProcessingOrderService.TRIGGER_KIND_POSITION;
 
@@ -480,7 +485,8 @@ public class ProductionRoutingCommandService {
         if (!TRIGGER_KINDS.contains(triggerKind)) {
             details.add(BusinessException.detail("trigger_kind", String.format(
                     "触发类型「%s」不在取值域内（只能是 工艺 craft / 特殊选项 option / 加工项 processing_item"
-                            + " / 部位 position）—— `shaped` 是表结构预留、没有规则行可落，故不收", triggerKind)));
+                            + " / 部位 position / 售卖方式 sales_form）—— `shaped` 是表结构预留、"
+                            + "没有规则行可落，故不收", triggerKind)));
         }
         if (!ACTIONS.contains(action)) {
             details.add(BusinessException.detail("action", String.format(
@@ -587,6 +593,10 @@ public class ProductionRoutingCommandService {
             // （与上面 `position` 键**同一份**判据，不另抄一份）。
             return ProductionOperationQueryService.POSITION_LIMIT_VOCABULARY.contains(triggerValue);
         }
+        if (TRIGGER_KIND_SALES_FORM.equals(triggerKind)) {
+            // 售卖方式（issue #7523）：闭词表 = 订单行 sellingMethod 的机器值
+            return SALES_FORM_VOCABULARY.contains(triggerValue);
+        }
         if (TRIGGER_KIND_CRAFT.equals(triggerKind)) {
             return productionOperationQueryService.activeCraftNames(tenantId).contains(triggerValue);
         }
@@ -603,6 +613,10 @@ public class ProductionRoutingCommandService {
 
     /** 触发值不在词表时的**可行动**理由（逐 kind 说清去哪儿建）。 */
     private static String triggerValueMissingReason(String triggerKind, String triggerValue) {
+        if (TRIGGER_KIND_SALES_FORM.equals(triggerKind)) {
+            return String.format("售卖方式「%s」不在取值域里 —— 实例化侧只可能传「整卷」或「散剪」，"
+                            + "写别的值这条规则**永不生效**，请从列表里选", triggerValue);
+        }
         if (TRIGGER_KIND_POSITION.equals(triggerKind)) {
             return String.format("部位「%s」不在部位闭词表（%s）里 —— 实例化侧只可能传这几个部位，"
                             + "写别的值这条规则**永不生效**，请从列表里选",
