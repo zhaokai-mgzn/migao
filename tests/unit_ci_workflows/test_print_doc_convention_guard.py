@@ -24,7 +24,7 @@
 | C4 | **已登记的非符合形态仍须非符合**（死亡条件） | 给它加上 `print-doc` ⇒ 必红（必须销账并转正） |
 | C5 | 注入式红证 + **内容指纹**自证（禁 mtime/size，issue #4260） | 注入未生效 ⇒ 必红 |
 | C6 | **纸面收款码只属于报价单**（issue #7589）：其余受管单据的去注释代码里不得出现收款码痕迹 | 往销售单加回收款码块 ⇒ 必红 |
-| C7 | C6 的注入式红证：往销售单注入 `usePaymentQrcodes` ⇒ 必红；**允许清单内**的单据注入后仍判绿 | 红证空跑 ⇒ 必红 |
+| C7 | C6 的注入式红证 + 负控：注入 `usePaymentQrcodes` ⇒ 必红；允许清单内的报价单**确实**在印码且不被误判红 | 红证空跑 / 白名单空转 ⇒ 必红 |
 
 ⚠️ **为什么 C4 是反向判据**：非符合登记表若只许"加了就红、永远留着"，就会退化成**永久豁免**
 （本仓反复登记的反模式）。它必须有**死亡条件** —— 这里就是「它一旦符合新约定 ⇒ 登记必须销账并转正」。
@@ -273,8 +273,13 @@ def test_c7_payment_qr_guard_is_not_vacuous():
     assert injected != original, "注入点没生效 ⇒ 本红证会**空跑**"
     assert _fingerprint(injected) != _fingerprint(original), "注入后内容指纹未变（**禁 mtime/size**）"
     assert _payment_qr_problems(rel, injected), "注入 `usePaymentQrcodes` 后判据**没判红** ⇒ 守卫是空判据"
-    # 负控：允许清单内的单据（报价单）同样注入 ⇒ **不**判红（否则任何单据都进不了白名单，等于把报价单也砍了）
+    # 负控 ①：允许清单里的单据**确实**在印收款码 —— 否则白名单是空转的，且正则可能从未命中过真实代码
     allowed = "frontend/admin-web/src/components/orders/QuotationDoc.tsx"
-    assert _payment_qr_problems(allowed, injected) == [], "允许清单内的单据被误判红 ⇒ 白名单失效"
+    allowed_code = _strip_comments(_read(allowed))
+    assert _PAYMENT_QR_RE.search(allowed_code), (
+        "允许清单里的报价单已经不再印收款码 ⇒ `PAYMENT_QR_ALLOWED_DOCS` 必须缩短（白名单只许缩短）"
+    )
+    # 负控 ②：允许清单内的单据不会被 C6 判红（否则白名单失效 = 等于把报价单也砍了）
+    assert _payment_qr_problems(allowed, allowed_code) == [], "允许清单内的单据被误判红 ⇒ 白名单失效"
     # 反空跑：受管清单本身不得被清空（清空后 C6 恒绿）
     assert len(PORTALED_PRINT_DOCS) >= 5, "受管清单被清空到 <5 ⇒ C6 会空跑通过"
