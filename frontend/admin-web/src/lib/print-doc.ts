@@ -1,7 +1,40 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { peekPaymentQrcodes } from './use-payment-qrcodes'
 import type { PrintMediaId } from './print-media'
+
+/**
+ * 打印前的异步素材等待（issue #7536）—— 目前唯一的异步素材是收款码。
+ *
+ * 🔴 **不等就出纸的形态**：`beforeprint` 派发完当帧快照 ⇒ 异步取回的码来不及进 DOM
+ * ⇒ 「第一次打印没有收款码、第二次才有」（实测读数见 `use-payment-qrcodes.ts` 口径 3）。
+ *
+ * 只等**已经在取**的那一份（`peekPaymentQrcodes()`）：没人要码的页面（洗水唛 / 发货单）
+ * 不会因此多发一次请求 —— 而那条请求要 `order:list`，在别的页面上会变成 403 提示。
+ * 上限 2.5s：请求卡住时**宁可出纸**也不让「打印」按钮变成没反应的死键。
+ */
+export const PRINT_ASSET_WAIT_MS = 2500
+
+async function waitForPendingPrintAssets(): Promise<void> {
+  const pending = peekPaymentQrcodes()
+  if (!pending) return
+  await Promise.race([
+    pending.catch(() => undefined),
+    new Promise((resolve) => setTimeout(resolve, PRINT_ASSET_WAIT_MS)),
+  ])
+}
+
+/** 让出一帧（两次 rAF：一次等 React 提交，一次等浏览器布局）；无 rAF 的环境退化为 setTimeout */
+function afterNextPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame !== 'function') {
+      setTimeout(resolve, 0)
+      return
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
+}
 
 /**
  * 打印 / 预览 / 截图的**唯一入口**（issue #5914）—— 一次只允许**一份**单据上纸。
@@ -79,7 +112,25 @@ export function usePrintDoc(singleDocTarget?: PrintTarget): PrintDocController {
   // 不许把 `window.print()` 挪回点击处理器里 —— 那正是 #5914 的「首次打印空白纸」。
   useEffect(() => {
     if (printNonce === 0) return
-    window.print()
+    // 没有异步素材在飞（发货单 / 洗水唛 / 没人要收款码的页面）⇒ **同步开印**，
+    // 与 #5914 的行为一字不差（也保住既有判据的「同一段同步代码」读数）。
+    if (!peekPaymentQrcodes()) {
+      window.print()
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      // 🔴 纸面上的**异步素材**必须先到（issue #7536）：收款码是取回来的，而浏览器在
+      // `beforeprint` 派发完**当帧**就对 DOM 做纸面快照 ⇒ 不等它，第一次打印的纸上没有码
+      //（实测：当帧 img 数 0，1.5s 后才是 1）。
+      await waitForPendingPrintAssets()
+      // 再让一帧：等 React 把取回来的码提交进 DOM（提交发生在 Promise 回调之后）
+      await afterNextPaint()
+      if (!cancelled) window.print()
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [printNonce])
 
   const requestPrint = useCallback((target: PrintTarget) => {

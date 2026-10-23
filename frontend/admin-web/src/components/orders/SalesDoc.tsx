@@ -255,7 +255,10 @@ export default function SalesDoc({
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
 
-  const qrcodes = usePaymentQrcodes(paymentQrcodes)
+  // `active`：预览层（inline）或本次打印目标就是销售单 ⇒ 才取码（常驻挂载时不打扰，issue #7536）
+  const qrcodes = usePaymentQrcodes(paymentQrcodes, {
+    active: Boolean(inline) || printTarget === 'sales',
+  })
   const companyName = useCompanyName()
 
   if (!mounted) return null

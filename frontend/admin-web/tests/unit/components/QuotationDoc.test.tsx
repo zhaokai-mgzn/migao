@@ -13,9 +13,13 @@ vi.mock('@/lib/use-company-name', () => ({ useCompanyName: () => '米高布艺' 
 vi.mock('@/lib/api', () => ({
   settingsApi: { getPaymentQrcodes: (...args: unknown[]) => mockGetPaymentQrcodes(...args) },
 }))
+// 裁边算法有自己的判据（tests/unit/lib/qr-image.test.ts）；这里桩成恒等，免得 jsdom 的
+// 图片加载把收款码用例拖进 2s 超时（issue #7536）
+vi.mock('@/lib/qr-image', () => ({ trimWhiteMargin: (url: string) => Promise.resolve(url) }))
 
 import QuotationDoc from '@/components/orders/QuotationDoc'
 import ShipmentDoc from '@/components/orders/ShipmentDoc'
+import { __resetPaymentQrcodesCache } from '@/lib/use-payment-qrcodes'
 import { dataTables, collectTableIntegrity } from '@/components/orders/doc-tables'
 import {
   PAPER_MISSING,
@@ -585,6 +589,8 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       render(<QuotationDoc order={buildOrder()} />)
       await act(async () => {
         window.dispatchEvent(new Event('beforeprint'))
+        await Promise.resolve()
+        await Promise.resolve()
       })
       expect(mockGetPaymentQrcodes).toHaveBeenCalledTimes(1)
       expect(doc()?.querySelector('img')?.getAttribute('src')).toContain('wx.png')
@@ -592,12 +598,30 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       // 失败路径：抛错 ⇒ 按「无码」处理（整块不出现），不画假码
       mockGetPaymentQrcodes.mockReset()
       mockGetPaymentQrcodes.mockRejectedValue(new Error('403'))
+      __resetPaymentQrcodesCache()
       cleanup()
       render(<QuotationDoc order={buildOrder()} />)
       await act(async () => {
         window.dispatchEvent(new Event('beforeprint'))
       })
       expect(doc()?.querySelector('img')).toBeNull()
+    })
+
+    it('🔴 红证（issue #7536）：预览层（inline）**挂载即**出码 —— 不等 beforeprint', async () => {
+      mockGetPaymentQrcodes.mockClear()
+      mockGetPaymentQrcodes.mockResolvedValue({
+        data: { data: { wechat: { imageUrl: 'https://oss.example.com/wx.png', payeeName: '亿家纺织' } } },
+      })
+      __resetPaymentQrcodesCache()
+      render(<QuotationDoc order={buildOrder()} inline />)
+      // 修前形态 = 预览层里**永远**没有码（旧实现只挂 beforeprint，而预览层不派发该事件）
+      expect(doc()?.querySelector('img')).toBeNull()
+      await act(async () => {
+        await Promise.resolve()
+        await Promise.resolve()
+      })
+      expect(doc()?.querySelector('img')?.getAttribute('src')).toContain('wx.png')
+      expect(docText()).toContain('微信')
     })
   })
 

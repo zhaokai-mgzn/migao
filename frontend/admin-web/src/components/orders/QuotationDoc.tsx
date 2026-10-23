@@ -156,9 +156,12 @@ export default function QuotationDoc({
   useEffect(() => setMounted(true), [])
 
   // 收款码读取口：与销售单（#5651）**同一份**实现（`lib/use-payment-qrcodes.ts`）——
-  // 口径（调用方注入优先 / 打印时自取 / 失败或为空即「无码」）见该文件头，
+  // 口径（调用方注入优先 / 要出纸时自取 / 失败或为空即「无码」）见该文件头，
   // **不在组件里再写一遍**（同一件事实两处各写一次 ⇒ 将来改一处、另一处静默不一致）。
-  const qrcodes = usePaymentQrcodes(paymentQrcodes)
+  // `active`：预览层（inline）或本次打印目标就是报价单 ⇒ 才取码（常驻挂载时不打扰，issue #7536）
+  const qrcodes = usePaymentQrcodes(paymentQrcodes, {
+    active: Boolean(inline) || printTarget === 'quotation',
+  })
   const companyName = useCompanyName()
 
   if (!mounted) return null

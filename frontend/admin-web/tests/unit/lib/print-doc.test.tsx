@@ -1,10 +1,22 @@
-// case_ids: UI-027
+// case_ids: UI-027, UI-135
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, fireEvent, cleanup } from '@testing-library/react'
+import { render, fireEvent, cleanup, waitFor } from '@testing-library/react'
+
+// 收款码取面（issue #7536）：本文件只用来「让某份异步素材在飞」，具体口径见 use-payment-qrcodes.test.ts
+const mockGetPaymentQrcodes = vi.fn()
+vi.mock('@/lib/api', () => ({
+  settingsApi: { getPaymentQrcodes: (...args: unknown[]) => mockGetPaymentQrcodes(...args) },
+}))
+// 裁边算法在自己文件里判（qr-image.test.ts）；这里桩成恒等，免得 jsdom 的图片加载拖时间
+vi.mock('@/lib/qr-image', () => ({ trimWhiteMargin: (url: string) => Promise.resolve(url) }))
 
 import { PRINT_TARGETS, PRINT_TARGET_SPECS, usePrintDoc } from '@/lib/print-doc'
+import {
+  loadPaymentQrcodesOnce,
+  __resetPaymentQrcodesCache,
+} from '@/lib/use-payment-qrcodes'
 import { PRINT_MEDIA_IDS } from '@/lib/print-media'
 
 /**
@@ -52,6 +64,8 @@ describe('打印入口 usePrintDoc（issue #5914）', () => {
 
   beforeEach(() => {
     seen = []
+    mockGetPaymentQrcodes.mockReset()
+    __resetPaymentQrcodesCache()
     realPrint = window.print
     // 记下「print 被调用那一刻」DOM 里的打印目标 —— 这条读数就是判据本体
     window.print = vi.fn(() => {
@@ -107,6 +121,27 @@ describe('打印入口 usePrintDoc（issue #5914）', () => {
     expect(getByTestId('print-target').textContent).toBe('quotation')
     expect(seen).toEqual([])
     expect(document.querySelectorAll('[data-print-target]')).toHaveLength(1)
+  })
+
+  it('⑥ 🔴 红证（issue #7536）：收款码在飞 ⇒ print **等它 resolve 之后**才调用', async () => {
+    // 「宿主已经在取码」的形态（预览层 / 打印目标单据的 hook 在同一个 commit 里发起）
+    let resolveQr!: (value: unknown) => void
+    mockGetPaymentQrcodes.mockReturnValue(
+      new Promise((resolve) => {
+        resolveQr = resolve
+      })
+    )
+    const pending = loadPaymentQrcodesOnce()
+    const { getByText } = render(<Harness />)
+    fireEvent.click(getByText('打印销售单'))
+
+    // 码还没回来 ⇒ **不许**出纸（修前形态：这里 print 已经被调用 ⇒ 纸上无码）
+    await waitFor(() => expect(seen).toEqual([]))
+    expect(seen).toEqual([])
+
+    resolveQr({ data: { data: { wechat: { imageUrl: '/uploads/w.png' } } } })
+    await pending
+    await waitFor(() => expect(seen).toEqual(['sales']))
   })
 
   it('④ 目标位与介质 id 都在册：每个 target 有标题 + 一个**矩阵里真实存在**的介质', () => {
