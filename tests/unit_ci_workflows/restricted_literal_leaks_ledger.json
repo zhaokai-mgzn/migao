@@ -87,7 +87,7 @@
     {
       "path": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionSeedTemplateService.java",
       "literal": "POST /api/admin/production/seed-templates/{templateId}/apply 手动补套）",
-      "line": 373,
+      "line": 379,
       "hits": 1,
       "issue": "#6841",
       "kind": "登记（跟踪 #6841，B1 射程外）",
