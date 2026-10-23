@@ -20,7 +20,7 @@
 |---|---|---|
 | 1 | 缺 `config` ⇒ 与包 D 默认结果**逐值相同**（13.3 米） | 端点把 `config` 写死成某个非默认值 ⇒ 红 |
 | 2 | 传 `config.margin_multi=0.5` ⇒ 褶数法用料 13.3 → **13.5** | `config` 被忽略 ⇒ 仍 13.3 ⇒ 红 |
-| 3 | 传 `config.per_fold_mixed_times={"1":0.5}` + 拼1次 ⇒ **26.3**（不是 34.1 / 不是 13.3） | ①忽略配置 ⇒ 34.1；②键没归一成 int ⇒ 引擎 `ValueError` ⇒ 400 |
+| 3 | 传 `config.per_fold_mixed_times={"1":0.5}` + 拼1次 ⇒ **13.7**（不是 13.9 / 不是 13.3） | ①忽略配置 ⇒ 13.9；②键没归一成 int ⇒ 引擎 `ValueError` ⇒ 400 |
 | 4 | 传 `config.tiers.standard.fullness=2.2` ⇒ 褶数/用料随档位变（**14.8**，不是 13.3） | 档位配置不生效 ⇒ 13.3 ⇒ 红 |
 | 5 | 非法配置（`min_fullness=0`）⇒ **400**（不静默回退默认值） | 静默用默认值算出一个数 ⇒ 200 ⇒ 红 |
 | 6 | 模块级默认**不被污染**：自定义配置调用后，`DEFAULT_CRAFT_CALC_CONFIG` 逐值不变 + 下一次不传配置仍 13.3 | 实现里 `cfg = DEFAULT; cfg.update(config)`（模块级可变全局）⇒ 红 |
@@ -49,7 +49,7 @@ CONFIG_ENDPOINT = "/api/internal/production/craft-calc-config"
 FROZEN = {"width": 6.6, "height": 2.5, "open_count": 2, "mounting": "s_hook",
           "craft_tier": "standard", "formula": "pleat"}
 
-# 拼色·拼1次（同一扇窗）：默认每折吃布 0.65 ⇒ 0.65×52+0.3 = 34.1 米
+# 拼色·拼1次（同一扇窗）：默认配布 0.65 米 ⇒ 0.25×52+0.2 = 13.2 米 + 0.65 = 13.85 ⇒ 13.9 米（issue #7560）
 FROZEN_MIXED = {**FROZEN, "style": "拼色", "special_options": ["拼1次"]}
 
 
@@ -108,7 +108,7 @@ class TestConfigPassthrough:
         assert _meters(client, {**FROZEN, "config": {"margin_multi": 0.5}}) == 13.5
 
     def test_mixed_per_fold_config_uses_string_keys(self, client):
-        """判据 3：拼1次系数 0.65 → 0.5 ⇒ **26.3** 米（0.5×52+0.3）。
+        """判据 3：拼1次配布 0.65 → 0.5 ⇒ **13.7** 米（0.25×52+0.2 = 13.2 + 0.5）。
 
         ⚠️ 配置在**线上是 JSON**：对象键恒为字符串（`{"1": 0.5}`），而引擎的
         `per_fold_mixed_times` 键必须是**正整数拼次**（`{1: 0.5}`，`resolve_craft_calc_config`
@@ -116,8 +116,8 @@ class TestConfigPassthrough:
         红证（不归一）：引擎 `ValueError` ⇒ 400（不是 200/26.3）；
         红证（配置被忽略）：退回单色系数 0.25 ⇒ 13.3；红证（用默认系数）：34.1。
         """
-        assert _meters(client, FROZEN_MIXED) == 34.1
-        assert _meters(client, {**FROZEN_MIXED, "config": {"per_fold_mixed_times": {"1": 0.5}}}) == 26.3
+        assert _meters(client, FROZEN_MIXED) == 13.9
+        assert _meters(client, {**FROZEN_MIXED, "config": {"per_fold_mixed_times": {"1": 0.5}}}) == 13.7
 
     def test_tier_config_changes_pleats(self, client):
         """判据 4：标准档 fullness 2.0 → 2.2 ⇒ 褶数/用料随档位变（**14.8** 米 / 58 折）。

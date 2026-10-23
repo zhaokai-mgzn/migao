@@ -458,7 +458,7 @@ export interface CraftCalcResult {
   pleat_count: number
   /** 每片褶数 */
   per_panel_pleats?: number
-  /** 每折吃布（米）：单色 0.25 / 拼色·拼1次 0.65 / 拼色·拼2次 1.2 */
+  /** 每折吃布（米）：恒为单色系数 —— **拼色不改每折吃布**（issue #7560），配布另计 */
   per_fold: number
   /** **理论**褶倍（随档位） */
   fullness: number
@@ -467,7 +467,7 @@ export interface CraftCalcResult {
   formula_used?: string
   /**
    * 可读公式串（**后端产出，前端只渲染**）—— 串首写明所用公式，issue #4527：
-   * `韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米` /
+   * `韩褶公式：6.6×2−0.3 = 12.9 ÷ 0.25 = 51.6 → 52折 → 0.25×52+0.3 = 13.3米` /
    * `褶倍数公式：(5.5÷2)×2 → 每片 2.75×2=5.5米 ×2片 = 11.0米`
    */
   formula_text: string

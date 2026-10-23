@@ -621,7 +621,7 @@ async def craft_calc(
     `formula_text` 亦由后端按**同一份数字**产出 —— 前端不得自拼公式。
 
     返回 `data`：`fabric_meters` / `pleat_count` / `per_panel_pleats` / `open_count` / `margin` /
-    `per_fold`（每折吃布：单色 0.25 / 拼1次 0.65 / 拼2次 1.2）/
+    `per_fold`（每折吃布，**拼色与单色同为 0.25**）/ `patch_meters`（拼色**配布定长**：拼1次 0.65 / 拼2次 1.2，单色 0.0）/
     `fullness`（档位**理论**倍数）/ `fullness_actual`（用料÷窗宽，**实际**倍数）/
     `formula_used` / `formula_text` / `source` / `craft_tier` / `warning` /
     `auto_features`（**自动特征**：超高/超宽/倒幅，issue #4976 包 1a —— 键恒在，空列表 = 不判）。
@@ -689,7 +689,7 @@ async def craft_calc(
     # 拼色缺口判定**先于**算料：纸表只有「1个折 0.65 / 2个折 1.2」两行，
     # `拼3次` 是表外项 ⇒ 不猜、不插值，显式报缺口（issue #4421 边界）。
     # ⚠️ 传 `config`（issue #4528）：已登记档位由**该租户的配置**决定，不是模块常量。
-    gap = curtain_calc.mixed_per_fold_gap(request.special_options, config)
+    gap = curtain_calc.mixed_patch_gap(request.special_options, config)
     if gap:
         raise HTTPException(
             status_code=400,
@@ -699,7 +699,7 @@ async def craft_calc(
                     "code": "MIXED_PER_FOLD_NOT_REGISTERED",
                     "message": (
                         f"特殊选项「{gap}」的拼色用料系数纸表未登记（已登记："
-                        f"{'/'.join(f'拼{n}次' for n in sorted(curtain_calc.MIXED_COLOR_PER_FOLD_BY_TIMES))}）——"
+                        f"{'/'.join(f'拼{n}次' for n in sorted(curtain_calc.MIXED_COLOR_PATCH_METERS_BY_TIMES))}）——"
                         "不插值、不按单色系数估算，请先裁定该拼次的每折吃布（米/折）"
                     ),
                 },
@@ -767,6 +767,8 @@ async def craft_calc(
         "open_count": request.open_count,
         "margin": quote.get("margin"),
         "per_fold": quote.get("per_fold"),
+        # 拼色**配布长度**（米，整幅一次；单色 ⇒ 0.0）—— issue #7560。键恒在 ⇒ 前端可判空。
+        "patch_meters": quote.get("patch_meters"),
         "fullness": quote["fullness"],
         "fullness_actual": quote.get("fullness_actual"),
         "formula_used": quote["formula_used"],

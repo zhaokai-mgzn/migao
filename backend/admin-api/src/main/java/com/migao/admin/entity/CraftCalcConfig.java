@@ -46,7 +46,8 @@ public class CraftCalcConfig {
     /** 单色每折吃布（米）；引擎默认 0.25 */
     private BigDecimal perFoldSingle;
 
-    /** 拼色「拼次 → 每折吃布（米）」；JSONB，键为拼次的**字符串形态**（JSON 对象键恒为字符串） */
+    /** 拼色「拼次 → **配布长度**（米，整幅一次）」；JSONB，键为拼次的**字符串形态**（JSON 对象键恒为字符串）。
+     *  ⚠️ 键名是跨端冻结的历史名（issue #7560：值语义 = 配布长度，不是每折系数） */
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Object perFoldMixedTimes;
 

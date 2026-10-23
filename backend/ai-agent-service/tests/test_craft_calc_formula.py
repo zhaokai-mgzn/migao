@@ -184,7 +184,9 @@ class TestDefaultFormula:
         """`formula_text` 必须**明确写出所用公式**（韩折），不得只有算式没有公式名。"""
         q = build_quote(**DOUBLE_6_6)
         assert q["formula_text"].startswith("韩褶公式：")
-        assert q["formula_text"] == "韩褶公式：(6.6+0.3)×2 → 52折 → 0.25×52+0.3 = 13.3米"
+        assert q["formula_text"] == (
+            "韩褶公式：6.6×2−0.3 = 12.9 ÷ 0.25 = 51.6 → 52折 → 0.25×52+0.3 = 13.3米"
+        )
     def test_fullness_formula_text_names_the_formula(self):
         """`fullness` 的公式串同样写明公式名 + 逐片表达式 + 米数（与数值同源）。"""
         q = build_quote(formula="fullness", **ANCHOR)
@@ -382,7 +384,8 @@ class TestConfigContract:
         cfg = DEFAULT_CRAFT_CALC_CONFIG
         assert set(REQUIRED_CONFIG_KEYS) <= set(cfg)
         assert cfg["per_fold_single"] == curtain_calc.PLEAT_FABRIC_PER_FOLD == 0.25
-        assert cfg["per_fold_mixed_times"] == curtain_calc.MIXED_COLOR_PER_FOLD_BY_TIMES == {1: 0.65, 2: 1.2}
+        # 值 = **配布长度**（米），键名 `per_fold_mixed_times` 是跨端冻结的历史名（issue #7560）
+        assert cfg["per_fold_mixed_times"] == curtain_calc.MIXED_COLOR_PATCH_METERS_BY_TIMES == {1: 0.65, 2: 1.2}
         assert cfg["margin_single"] == curtain_calc.MARGIN_SINGLE == 0.2
         assert cfg["margin_multi"] == curtain_calc.MARGIN_MULTI == 0.3
         assert cfg["min_fullness"] == curtain_calc.MIN_FULLNESS == 1.5
@@ -521,12 +524,17 @@ class TestLegacyOutputsRegression:
         q = build_quote(formula="pleat", **{**DOUBLE_6_6, "craft_tier": "economy"})
         assert (q["pleat_count"], q["fabric_meters"]) == (46, 11.8)
 
-    def test_mixed_color_per_fold_unchanged(self):
-        """拼色每折吃布（拼1次 0.65）逐值不变：52 折双开 ⇒ 34.1 米。"""
+    def test_mixed_color_patch_length(self):
+        """拼色**配布定长**（拼1次 0.65 米）：52 折双开 ⇒ 13.2 + 0.65 = 13.85 ⇒ 13.9 米。
+
+        issue #7560（用户 2026-10-23 裁定）：0.65/1.2 是**配布长度**、不是米/折 —— 按米/折算会得 34.1 米，
+        与同页纸表「主布拼色对开 52 折 = 13.2 米」自相矛盾。
+        """
         q = build_quote(formula="pleat", style="拼色",
                         special_options=["拼1次"], **DOUBLE_6_6)
-        assert q["per_fold"] == 0.65
-        assert q["fabric_meters"] == 34.1
+        assert q["per_fold"] == 0.25
+        assert q["patch_meters"] == 0.65
+        assert q["fabric_meters"] == 13.9
 
 
 class TestPatternRepeatReachesTheEngine:

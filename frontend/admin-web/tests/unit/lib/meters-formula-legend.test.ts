@@ -31,10 +31,11 @@ describe('用料公式参数说明（2026-09-29 用户裁定）', () => {
       fullness: 2,
       config: CONFIG,
     })
+    // 顺序 = 公式串里的先后（issue #7560：`窗宽×褶倍−整幅余量` ⇒ 褶倍在余量之前）
     expect(legend!.params).toEqual([
       { value: '6.6', name: '净窗宽（米）' },
-      { value: '0.3', name: '每片余量（米 · 算料配置）' },
       { value: '2', name: '褶倍（算料配置）' },
+      { value: '0.3', name: '整幅余量（米 · 算料配置）' },
       { value: '52', name: '自动算出的褶数' },
       { value: '0.25', name: '每折吃布（米 · 算料配置）' },
     ])
@@ -66,7 +67,7 @@ describe('用料公式参数说明（2026-09-29 用户裁定）', () => {
       fullness: 2,
       config,
     })
-    expect(legend!.params[1]).toEqual({ value: '0.35', name: '每片余量（米 · 算料配置）' })
+    expect(legend!.params[2]).toEqual({ value: '0.35', name: '整幅余量（米 · 算料配置）' })
   })
 
   it('判据 ②：缺值不编 —— 配置未加载 / 试算未回来 ⇒ 对应那条**整条不出现**', () => {

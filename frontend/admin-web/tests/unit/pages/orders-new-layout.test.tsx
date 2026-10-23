@@ -474,7 +474,7 @@ describe('#OR-052 下单页版面重排（2026-09-29 两步化：尺寸优先 / 
     // 数值取自**同一次算料响应 / 算料配置**（`CALC_OK` 的 52 折 / 0.25 / 褶倍 2 + 配置的余量 0.3）
     const legend = await screen.findByTestId('meters-formula-legend')
     expect(legend.textContent).toContain('6.6=净窗宽（米）')
-    expect(legend.textContent).toContain('0.3=每片余量（米 · 算料配置）')
+    expect(legend.textContent).toContain('0.3=整幅余量（米 · 算料配置）')
     expect(legend.textContent).toContain('2=褶倍（算料配置）')
     expect(legend.textContent).toContain('52=自动算出的褶数')
     expect(legend.textContent).toContain('0.25=每折吃布（米 · 算料配置）')
