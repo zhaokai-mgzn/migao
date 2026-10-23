@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（154 case）
+## 杂项域（155 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -6018,6 +6018,21 @@
 跳过: [frontend-contract] 报表筛选的挂载位置与请求参数，由前端单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-23 新增（issue #7377 段 7，用户授权 AI 自裁「多维筛选」）。落码 = 报表页 `invWarehouse` + `reloadInventory()` + 库存滞销卡下拉。 ｜ tags: frontend-contract, report, filter, warehouse, red-proof
+
+### QC-005. 质量成本补上「报废工时」：报工 work_type=scrap 可采集，报废「料」仍未采集（issue #7377 段 8） 🔵
+```
+你: 用户（2026-10-23，逐字）：「按你建议继续做」—— 授权按 AI 建议处理「报废料未采集」这条缺口。
+数据: **建议与依据（AI 裁定，2026-10-23）**：报废**料**（物料成本）确实采不到（`quality_inspections` 只到成品帘级，没有到批次）；但报工表有**三态** `normal/rework/scrap` 且每条报工带**单价快照** ⇒ 报废**工时**可采。所以**补工时、不编料**：新增分项「报废工时」，与返工同构同维度，`报废料` 一项照旧恒未知。
+数据: **判据 1（整表）**：`work_type=scrap` 的报工按单价快照计入「报废工时」；窗口内没有报废报工 ⇒ 该项**未知**（未发生 ≠ 0），并进 `unknownComponents`。判据 = `QualityCostReportTest#scrapLaborIsCollected` / `#noScrapLogsMeansUnknownScrapLabor`。
+数据: **判据 2（报废料仍恒未知）**：`scrap_material` 的 `known=false`、`amount=null` —— 补了工时**不许**顺手把料也填个数。判据 = `#scrapMaterialIsUnknownNotZero`。
+数据: **判据 3（🔴 维度表分列 + 恒等式）**：维度汇总新增 `scrap` 列；行合计 = 返工 + 报废 + 赔付；`合计 == Σ行 + 未归属` 在含报废时仍成立；未定价报废报工不计金额但被数进 notes。判据 = `QualityCostBreakdownTest#scrapLaborHasItsOwnColumn` / `#scrapKeepsIdentity` / `#unpricedScrapIsCounted`。
+数据: **判据 4（商品维度同构）**：报废工时也按订单行小计占比摊（与返工同一条 `allocateToProducts`）。判据 = `#scrapLaborIsAllocatedInProductDimension`。
+数据: **判据 5（前端分列展示）**：维度行同时显示「返工 X · 报废 Y · 赔付 Z」，不把两者相加成一个数；CSV 增「报废工时 / 报废行数」两列；notes 写清「工时已采集、料未采集」。判据 = `reports.test.tsx#维度汇总：按客户列出金额与无法归属`。
+数据: **边界（照实登记）**：① 报废**料**（物料成本）仍未采集，需要质检记录到批次才可采；② 报废工时是**报工成本**（工时×工序单价），不是物料价值；③ 报废工时精度取决于报工是否按实填写。
+前置: 本用例前後端口径：前置 = 质量成本四维（#7377 段 5/6）。零网络、零 LLM。
+跳过: [frontend-contract] 报废工时的采集口径与分列展示，由 Java 单测 + 前端单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-23 新增（issue #7377 段 8，用户「按你建议继续做」）。落码 = `QualityCostPolicy.scrapLabor()` + `ReportService.qualityCost/qualityCostBreakdown` 的 scrap 列 + 报表页分列展示与 CSV 列。 ｜ tags: frontend-contract, quality-cost, scrap, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12893,8 +12908,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：877（活跃 141，跳过 736）
-- tier 分布：smoke 12 / normal 809 / adversarial 32
+- 用例总数：878（活跃 141，跳过 737）
+- tier 分布：smoke 12 / normal 810 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12909,7 +12924,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：154
+- 杂项域：155
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -13107,6 +13122,7 @@
 - APV-002: 业务页就地申请审批：ref 与金额门槛按闸门口径预填（改价 / 盘点差异 / 超授信）（issue #7374 段 3）
 - QC-004: 质量成本按商品摊开：订单行小计占比分摊、逐分对得上、权重缺失不编（issue #7377 段 6）
 - RPT-008: 报表筛选只挂在「吃该维度」的表上：库存滞销按仓库筛（issue #7377 段 7）
+- QC-005: 质量成本补上「报废工时」：报工 work_type=scrap 可采集，报废「料」仍未采集（issue #7377 段 8）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

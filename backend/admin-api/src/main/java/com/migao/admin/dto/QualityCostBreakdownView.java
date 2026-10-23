@@ -74,11 +74,15 @@ public class QualityCostBreakdownView {
         private BigDecimal rework;
         /** 该行命中的返工报工行数（金额可能是 0 但有行 ⇒ 不是「没有返工」）。 */
         private int reworkLines;
+        /** 报废工时金额（issue #7377 段 8，已定价那部分）。 */
+        private BigDecimal scrap;
+        /** 该行命中的报废报工行数。 */
+        private int scrapLines;
         /** 赔付（退款口径）金额。 */
         private BigDecimal compensation;
         /** 该行命中的退款流水条数。 */
         private int compensationCount;
-        /** 合计 = rework + compensation。 */
+        /** 合计 = rework + scrap + compensation。 */
         private BigDecimal total;
     }
 
@@ -90,6 +94,8 @@ public class QualityCostBreakdownView {
     public static class Totals {
         private BigDecimal rework;
         private int reworkLines;
+        private BigDecimal scrap;
+        private int scrapLines;
         private BigDecimal compensation;
         private int compensationCount;
         private BigDecimal total;
@@ -103,6 +109,8 @@ public class QualityCostBreakdownView {
     public static class Unattributed {
         private BigDecimal rework;
         private int reworkLines;
+        private BigDecimal scrap;
+        private int scrapLines;
         private BigDecimal compensation;
         private int compensationCount;
         private BigDecimal total;

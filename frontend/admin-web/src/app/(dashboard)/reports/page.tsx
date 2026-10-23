@@ -539,13 +539,15 @@ export default function ReportsPage() {
                     onClick={() =>
                       exportCsv(
                         `质量成本-${qcDim === 'customer' ? '按客户' : qcDim === 'process' ? '按工序' : '按商品'}.csv`,
-                        ['对象', '返工工时', '赔付', '合计', '返工行数', '退款笔数'],
+                        ['对象', '返工工时', '报废工时', '赔付', '合计', '返工行数', '报废行数', '退款笔数'],
                         (qcBreakdown?.rows ?? []).map((row) => [
                           row.label,
                           row.rework,
+                          row.scrap,
                           row.compensation,
                           row.total,
                           row.reworkLines,
+                          row.scrapLines,
                           row.compensationCount,
                         ]),
                       )
@@ -559,7 +561,7 @@ export default function ReportsPage() {
                   </p>
                 ) : !qcBreakdown?.hasData ? (
                   <p className="mt-2 text-xs text-neutral-500" data-testid="reports-quality-breakdown-empty">
-                    暂无数据 —— 这个时间范围里没有返工报工或退款
+                    暂无数据 —— 这个时间范围里没有返工/报废报工或退款
                   </p>
                 ) : (
                   <div className="mt-2 space-y-1">
@@ -574,6 +576,8 @@ export default function ReportsPage() {
                           {money(row.total)}
                           <span className="ml-2 text-neutral-400">
                             返工 {money(row.rework)}
+                            {/* 报废工时与返工**分列**：两个成因两种处置（issue #7377 段 8） */}
+                            {row.scrapLines > 0 && ` · 报废 ${money(row.scrap)}`}
                             {row.compensationCount > 0 && ` · 赔付 ${money(row.compensation)}`}
                           </span>
                         </span>

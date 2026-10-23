@@ -7692,6 +7692,25 @@ _CASE_RPT_008 = EvalCase(
     precondition='本用例是 [frontend-contract]：前置 = 报表中心（#7377 段 4/5/6）。零网络、零 LLM。',
 )
 
+# ── QC-005 [NORMAL] 质量成本补上「报废工时」：报工 work_type=scrap 可采集，报废「料」仍未采集（issue #7377 段 8）（源: cases/misc.yml）──
+_CASE_QC_005 = EvalCase(
+    id='QC-005',
+    legacy_id='',
+    title='质量成本补上「报废工时」：报工 work_type=scrap 可采集，报废「料」仍未采集（issue #7377 段 8）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-23，逐字）：「按你建议继续做」—— 授权按 AI 建议处理「报废料未采集」这条缺口。'],
+    expectations=[],
+    data_checks=['**建议与依据（AI 裁定，2026-10-23）**：报废**料**（物料成本）确实采不到（`quality_inspections` 只到成品帘级，没有到批次）；但报工表有**三态** `normal/rework/scrap` 且每条报工带**单价快照** ⇒ 报废**工时**可采。所以**补工时、不编料**：新增分项「报废工时」，与返工同构同维度，`报废料` 一项照旧恒未知。', '**判据 1（整表）**：`work_type=scrap` 的报工按单价快照计入「报废工时」；窗口内没有报废报工 ⇒ 该项**未知**（未发生 ≠ 0），并进 `unknownComponents`。判据 = `QualityCostReportTest#scrapLaborIsCollected` / `#noScrapLogsMeansUnknownScrapLabor`。', '**判据 2（报废料仍恒未知）**：`scrap_material` 的 `known=false`、`amount=null` —— 补了工时**不许**顺手把料也填个数。判据 = `#scrapMaterialIsUnknownNotZero`。', '**判据 3（🔴 维度表分列 + 恒等式）**：维度汇总新增 `scrap` 列；行合计 = 返工 + 报废 + 赔付；`合计 == Σ行 + 未归属` 在含报废时仍成立；未定价报废报工不计金额但被数进 notes。判据 = `QualityCostBreakdownTest#scrapLaborHasItsOwnColumn` / `#scrapKeepsIdentity` / `#unpricedScrapIsCounted`。', '**判据 4（商品维度同构）**：报废工时也按订单行小计占比摊（与返工同一条 `allocateToProducts`）。判据 = `#scrapLaborIsAllocatedInProductDimension`。', '**判据 5（前端分列展示）**：维度行同时显示「返工 X · 报废 Y · 赔付 Z」，不把两者相加成一个数；CSV 增「报废工时 / 报废行数」两列；notes 写清「工时已采集、料未采集」。判据 = `reports.test.tsx#维度汇总：按客户列出金额与无法归属`。', '**边界（照实登记）**：① 报废**料**（物料成本）仍未采集，需要质检记录到批次才可采；② 报废工时是**报工成本**（工时×工序单价），不是物料价值；③ 报废工时精度取决于报工是否按实填写。'],
+    skip_reason='[frontend-contract] 报废工时的采集口径与分列展示，由 Java 单测 + 前端单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['frontend-contract', 'quality-cost', 'scrap', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例前後端口径：前置 = 质量成本四维（#7377 段 5/6）。零网络、零 LLM。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -16840,6 +16859,7 @@ ALL_CASES = (
     _CASE_APV_002,
     _CASE_QC_004,
     _CASE_RPT_008,
+    _CASE_QC_005,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

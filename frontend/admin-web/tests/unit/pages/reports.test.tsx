@@ -257,11 +257,13 @@ describe('报表中心页面', () => {
       wrap({
         dimension: dim, scope: 'x', startDate: null, endDate: null, hasData: true,
         rows: [
-          { key: 'cus:138', label: '张记布艺', rework: 60, reworkLines: 2, compensation: 120, compensationCount: 1, total: 180 },
+          { key: 'cus:138', label: '张记布艺', rework: 60, reworkLines: 2, scrap: 40, scrapLines: 1,
+            compensation: 120, compensationCount: 1, total: 220 },
         ],
-        totals: { rework: 110, reworkLines: 3, compensation: 200, compensationCount: 2, total: 310 },
+        totals: { rework: 110, reworkLines: 3, scrap: 60, scrapLines: 2,
+          compensation: 200, compensationCount: 2, total: 370 },
         unattributed: {
-          rework: 50, reworkLines: 1, compensation: 80, compensationCount: 1, total: 130,
+          rework: 50, reworkLines: 1, scrap: 20, scrapLines: 1, compensation: 80, compensationCount: 1, total: 150,
           reason: '这些返工报工关联不到加工单/订单，或退款流水关联不到订单',
         },
         notes: ['报废料不在本视图：本仓未采集'],
@@ -272,12 +274,17 @@ describe('报表中心页面', () => {
     await waitFor(() => expect(screen.getAllByTestId('reports-quality-breakdown-row')).toHaveLength(1))
     const row = screen.getAllByTestId('reports-quality-breakdown-row')[0]
     expect(row.textContent).toContain('张记布艺')
-    expect(row.textContent).toContain('180.00')
+    expect(row.textContent).toContain('220.00')
+    // 报废工时与返工**分列**展示（两个成因两种处置）
+    expect(row.textContent).toContain('报废')
+    expect(row.textContent).toContain('40.00')
     // 🔴 未归属单独一行、带原因、金额不许被并进任何行
     const unattributed = screen.getByTestId('reports-quality-breakdown-unattributed')
-    expect(unattributed.textContent).toContain('130.00')
+    expect(unattributed.textContent).toContain('150.00')
     expect(unattributed.textContent).toContain('无法归属')
-    expect(screen.getByTestId('reports-quality-breakdown-notes').textContent).toContain('报废料不在本视图')
+    // note 现在把「工时已采集 / 料未采集」说清楚（issue #7377 段 8）
+    expect(screen.getByTestId('reports-quality-breakdown-notes').textContent).toContain('报废')
+    expect(screen.getByTestId('reports-quality-breakdown-notes').textContent).toContain('未采集')
   })
 
   it('维度汇总空态：写「暂无数据」，不画 ¥0.00', async () => {

@@ -4,14 +4,19 @@ const filled = {
   'order-margins': { hasData: true, rows: [], totals: { revenue: 128600, refunded: 3200, fabricCost: 74200, laborCost: 18600, grossMargin: 32600 }, unknownCostOrders: 3 },
   'inventory-aging': { slowMovingDays: 90, hasData: true, rows: [], totals: { onHand: 8420.5, slowMovingOnHand: 2310.4, slowMovingBatches: 7 }, undeterminedRows: 2 },
   'staff-performance': { hasData: true, rows: [ { staffId: 'u1', staffName: '王小美', orderCount: 42, revenue: 86500, avgOrderValue: 2059.52 }, { staffId: 'u2', staffName: '李建国', orderCount: 31, revenue: 42100, avgOrderValue: 1358.06 } ], totals: { orderCount: 73, revenue: 128600 }, unattributedOrders: 18 },
-  'quality-cost': { components: [ { code: 'rework_labor', label: '返工工时', amount: 4820, known: true, note: '', unknownItems: 0 }, { code: 'scrap_material', label: '报废料', amount: null, known: false, note: '本仓未采集', unknownItems: 0 }, { code: 'compensation', label: '赔付（退款口径）', amount: 3200, known: true, note: '', unknownItems: 0 } ], total: 8020, complete: false, unknownComponents: ['scrap_material'] },
+  'quality-cost': { components: [
+    { code: 'rework_labor', label: '返工工时', amount: 4820, known: true, note: '', unknownItems: 0 },
+    { code: 'scrap_labor', label: '报废工时', amount: 1240, known: true, note: '按报废报工（work_type=scrap）× 工序单价快照汇总', unknownItems: 0 },
+    { code: 'scrap_material', label: '报废料', amount: null, known: false, note: '本仓未采集', unknownItems: 0 },
+    { code: 'compensation', label: '赔付（退款口径）', amount: 3200, known: true, note: '', unknownItems: 0 },
+  ], total: 9260, complete: false, unknownComponents: ['scrap_material'] },
   'receivable-aging': { asOf: '2026-10-23', hasData: true, customerCount: 6, buckets: [ { bucket: 'NOT_DUE', label: '未到期', amount: 61200, orderCount: 22 }, { bucket: 'DAYS_1_30', label: '逾期 1-30 天', amount: 8400, orderCount: 7 }, { bucket: 'DAYS_31_60', label: '逾期 31-60 天', amount: 5200, orderCount: 5 }, { bucket: 'DAYS_61_90', label: '逾期 61-90 天', amount: 1000, orderCount: 1 }, { bucket: 'DAYS_90_PLUS', label: '逾期 90 天以上', amount: 1400, orderCount: 2 } ], customers: [{ customerName: '张记布艺', customerPhone: '13800000001', paymentTermsDays: 30, total: 42600, overdue: 8600, buckets: [] }, { customerName: '李家窗帘', customerPhone: '13800000002', paymentTermsDays: 45, total: 31800, overdue: 0, buckets: [] }, { customerName: '王家软装', customerPhone: '13800000003', paymentTermsDays: null, total: 12400, overdue: 2400, buckets: [] } ], totals: { outstanding: 86200, overdue: 11000, orderCount: 37 } },
 }
 
 // 质量成本维度汇总（issue #7377 段 5）：含「无法归属」的样本 —— 它必须单独露出来
 const breakdown = (dim) => ({
   dimension: dim,
-  scope: dim === 'customer' ? 'rework_and_compensation_by_customer' : 'rework_by_processing_operation',
+  scope: dim === 'customer' ? 'rework_scrap_and_compensation_by_customer' : 'rework_scrap_and_compensation_by_operation',
   startDate: null, endDate: null, hasData: true,
   rows: dim === 'product'
     ? [
@@ -20,7 +25,7 @@ const breakdown = (dim) => ({
       ]
     : dim === 'customer'
     ? [
-        { key: 'cus:13800000001', label: '张记布艺', rework: 860, reworkLines: 6, compensation: 1200, compensationCount: 2, total: 2060 },
+        { key: 'cus:13800000001', label: '张记布艺', rework: 860, reworkLines: 6, scrap: 240, scrapLines: 2, compensation: 1200, compensationCount: 2, total: 2300 },
         { key: 'cus:13800000002', label: '李家窗帘', rework: 420, reworkLines: 3, compensation: 0, compensationCount: 0, total: 420 },
       ]
     : [
@@ -38,9 +43,9 @@ const breakdown = (dim) => ({
       : '这些返工报工关联不到加工单/订单，或退款流水关联不到订单',
   },
   notes: dim === 'process'
-    ? ['报废料不在本视图：本仓未采集（质检只到成品帘级），摊到任何维度都是编数',
+    ? ['报废工时已计入（报工 work_type=scrap × 工序单价快照）；报废料仍不在本视图：本仓未采集（质检只到成品帘级），摊到任何维度都是编数',
        '赔付（退款口径）没有工序信息 ⇒ 全部计入「无法归属」（不是「赔付为 0」）']
-    : ['报废料不在本视图：本仓未采集（质检只到成品帘级），摊到任何维度都是编数',
+    : ['报废工时已计入（报工 work_type=scrap × 工序单价快照）；报废料仍不在本视图：本仓未采集（质检只到成品帘级），摊到任何维度都是编数',
        '返工经「报工 → 加工单 → 订单 → 客户」归属；赔付经「退款流水 → 订单 → 客户」归属'],
 })
 

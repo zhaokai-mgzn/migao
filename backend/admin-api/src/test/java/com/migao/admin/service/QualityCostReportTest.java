@@ -42,6 +42,12 @@ class QualityCostReportTest {
         when(financeMapper.selectList(any())).thenReturn(List.of());
     }
 
+    private static ProductionWorkLog scrap(String qty, String unitPrice, String priceState) {
+        ProductionWorkLog log = rework(qty, unitPrice, priceState);
+        log.setWorkType("scrap");
+        return log;
+    }
+
     private static ProductionWorkLog rework(String qty, String unitPrice, String priceState) {
         ProductionWorkLog log = new ProductionWorkLog();
         log.setProcessingOrderId("po-1");
@@ -80,15 +86,40 @@ class QualityCostReportTest {
     }
 
     @Test
-    @DisplayName("🔴 报废料恒未知：不填 0（填 0 会被读成「本月没有报废损失」）")
-    void scrapIsUnknownNotZero() {
+    @DisplayName("🔴 报废**料**恒未知：不填 0（填 0 会被读成「本月没有报废损失」）")
+    void scrapMaterialIsUnknownNotZero() {
         when(workLogMapper.selectList(any())).thenReturn(List.of());
 
-        var scrap = service.qualityCost(null, null).getComponents().get(1);
+        var scrap = service.qualityCost(null, null).getComponents().get(2);
 
         assertThat(scrap.getCode()).isEqualTo("scrap_material");
         assertThat(scrap.isKnown()).isFalse();
         assertThat(scrap.getAmount()).isNull();
+    }
+
+    @Test
+    @DisplayName("报废**工时**（work_type=scrap）可采集：按单价快照计入，不再是「未采集」")
+    void scrapLaborIsCollected() {
+        when(workLogMapper.selectList(any())).thenReturn(List.of(scrap("1", "20", "priced")));
+
+        var view = service.qualityCost(null, null);
+        var labor = view.getComponents().get(1);
+
+        assertThat(labor.getCode()).isEqualTo("scrap_labor");
+        assertThat(labor.isKnown()).isTrue();
+        assertThat(labor.getAmount()).isEqualByComparingTo("20");
+    }
+
+    @Test
+    @DisplayName("窗口内没有报废报工 ⇒ 报废工时未知（未发生 ≠ 0）")
+    void noScrapLogsMeansUnknownScrapLabor() {
+        when(workLogMapper.selectList(any())).thenReturn(List.of(rework("1", "10", "priced")));
+
+        var labor = service.qualityCost(null, null).getComponents().get(1);
+
+        assertThat(labor.getCode()).isEqualTo("scrap_labor");
+        assertThat(labor.isKnown()).isFalse();
+        assertThat(labor.getNote()).contains("没有报废报工");
     }
 
     @Test
@@ -98,9 +129,10 @@ class QualityCostReportTest {
 
         var view = service.qualityCost(null, null);
 
-        assertThat(view.getComponents().get(2).isKnown()).isFalse();
+        assertThat(view.getComponents().get(3).isKnown()).isFalse();
         assertThat(view.isComplete()).isFalse();
-        assertThat(view.getUnknownComponents()).contains("scrap_material", "compensation");
+        assertThat(view.getUnknownComponents())
+                .contains("scrap_labor", "scrap_material", "compensation");
         assertThat(view.getTotal()).as("只累加已知项 ⇒ 返工 10 元").isEqualByComparingTo("10");
     }
 
@@ -118,7 +150,7 @@ class QualityCostReportTest {
 
         var view = service.qualityCost(null, null);
 
-        assertThat(view.getComponents().get(2).getAmount()).isEqualByComparingTo("300");
-        assertThat(view.getTotal()).isEqualByComparingTo("310");
+        assertThat(view.getComponents().get(3).getAmount()).isEqualByComparingTo("300");   // 赔付（第 4 项）
+        assertThat(view.getTotal()).isEqualByComparingTo("310");   // 返工 10 + 赔付 300（报废两项未知）
     }
 }
