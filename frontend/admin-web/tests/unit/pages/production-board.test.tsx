@@ -259,7 +259,8 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expect(within(tradeGroup).getByText('销售订单')).toBeInTheDocument()
     expect(within(tradeGroup).getByText('财务对账')).toBeInTheDocument()
     // #5778：售后工单 / 客户列表已移入「客户服务」组 ⇒ 本组只余「下单 → 收款」两项
-    // 价格本（#7375 段 3）加入后三项；#7374 再加「审批中心」⇒ 四项（价格本 / 销售订单 / 财务对账 / 审批中心）
+    // 价格本（#7375 段 3）加入后三项；#7374 曾加「审批中心」⇒ 四项；#7593（用户裁定）撤掉审批中心
+    //（入口改顶栏 `ApprovalBell`）⇒ 回到三项（价格本 / 销售订单 / 财务对账）
     expect(tradeGroup.querySelectorAll('a')).toHaveLength(4)
     expect(within(tradeGroup).queryByText('售后工单')).not.toBeInTheDocument()
     expect(within(tradeGroup).queryByText('客户列表')).not.toBeInTheDocument()
