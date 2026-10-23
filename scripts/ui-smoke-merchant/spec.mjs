@@ -1038,7 +1038,7 @@ async function productsNew(page) {
     fixture.withSkus = skus.length
     if (skus.length < 2) throw new Error(`自造商品 ${rec.id} 只有 ${skus.length} 条 SKU（应 ≥2）：冒烟数据不合格（SDQS D1）`)
     const badPrice = skus.filter((s) => !(Number(s.price) > 0))
-    const badDoor = skus.filter((s) => !/^[0-9]+(\.[0-9]+)?$/.test(String(s.doorWidth ?? s.doorWidth ?? '')))
+    const badDoor = skus.filter((s) => !/^[0-9]+(\.[0-9]+)?$/.test(String(s.doorWidth ?? '')))
     if (badPrice.length || badDoor.length) {
       throw new Error(`SKU 数据不合格：价格≤0 ${badPrice.length} 条 / 门幅非 canonical ${badDoor.length} 条：${JSON.stringify(skus).slice(0, 240)}`)
     }
