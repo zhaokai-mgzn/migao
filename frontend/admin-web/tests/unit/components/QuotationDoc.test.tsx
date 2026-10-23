@@ -31,7 +31,7 @@ import type { Order, OrderItem } from '@/types'
  * 报价单（可打印纸质文档，issue #4965）—— 照真实报价单 A4 制式（亿家纺织 CSO260918-03182）。
  *
  * 断言的是**纸面内容**：表头（单号/货运/客户·电话·地址/备注）→ 每个商品行一段
- * （`第N套/共M套` + `本套金额` + 一张 9 列表 + 一行工艺说明）→ 汇总（本单总金额/优惠金额/本单应收）
+ * （`第N套/共M套` + `本套金额` + 一张 8 列表）→ 汇总（本单总金额/优惠金额/本单应收）
  * → 页脚（温馨提示 + 扫码支付码）。
  *
  * 用户裁定（2026-09-21，勿自行改）：
@@ -40,9 +40,10 @@ import type { Order, OrderItem } from '@/types'
  * ③ 参照物把加工费并进面料单价，而我们 `unitPrice` / `processingFee` 是**两笔真实金额**
  *    ⇒ 必须**分别列示**（否则商家对不上账）。
  *
- * 展示真值：品名 / 货号 / 颜色 / 门幅 走 `lib/order-item-sku.ts` 的 `orderItemSku()`；
- * 「工艺：…／算料：…」行走 `lib/craft-display.ts` 的 `craftSpecRows()`（§4.9「一份 spec，
- * 三处渲染」）—— 本文件不另写一份推导，只断言「渲染了同一份真值」。
+ * 展示真值：货号 / 颜色 / 门幅 走 `lib/order-item-sku.ts` 的 `orderItemSku()`。
+ * 🔴 **品名列与工艺行已退场**（issue #7527，用户 2026-10-23 逐字「报价单不要品名列和工艺行」）：
+ * 前者在面料行 / 加工费行**连印两遍**；后者是**生产侧**信息（加工类型 / 用料公式 / 算料）。
+ * ⇒ 本文件的判据面因此**反向**：纸面**不得**出现商品名，也不得出现工艺 / 算料文案。
  *
  * 🔴 issue #6869（用户 2026-10-14）：「缺了商品 sku 的信息」+「报价单展示部位是啥意思」。
  * 夹具按**真 wire 形态**写（`skuCode` + `processingInfo.colorName/doorWidth`）——
@@ -199,10 +200,9 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       expect(text).toContain('第3套/共3套')
     })
 
-    it('9 列表头齐全（品名/组件/货号/颜色/门幅/尺寸/数量(米)/单价(元/米)/小计）—— issue #6869', () => {
+    it('8 列表头齐全（组件/货号/颜色/门幅/尺寸/数量(米)/单价(元/米)/小计）—— issue #6869 / #7527', () => {
       render(<QuotationDoc order={buildOrder()} />)
       for (const col of [
-        '品名',
         '组件',
         '货号',
         '颜色',
@@ -214,16 +214,21 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       ]) {
         expect(screen.getAllByText(col).length).toBeGreaterThanOrEqual(1)
       }
-      // 退场的三列（用户裁定：「部位」在 #4521 后对普通订单恒空；「部位信息/部位备注」并入工艺行）
+      // 表头列数 = 8（品名退出后不多不少；多出一格 ⇒ 下面这条红）
+      const head = doc()!.querySelector('.quotation-set thead tr') as HTMLElement
+      expect(head.querySelectorAll('th')).toHaveLength(8)
+      // 退场的列（按时间顺序）：部位（#4521 后对普通订单恒空）→ 品名（#7527，与加工费行重复）
+      expect(screen.queryByText('品名')).toBeNull()
       expect(screen.queryByText('部位')).toBeNull()
       expect(screen.queryByText('部位信息')).toBeNull()
       expect(screen.queryByText('部位备注')).toBeNull()
     })
 
-    it('面料行：品名 = productName / 组件 = componentRole / 货号 = skuCode / 颜色 = colorName / 门幅 = doorWidth / 数量 = quantity 米 / 单价 = unitPrice / 小计 = subtotal', () => {
+    it('面料行：组件 = componentRole / 货号 = skuCode / 颜色 = colorName / 门幅 = doorWidth / 数量 = quantity 米 / 单价 = unitPrice / 小计 = subtotal', () => {
       render(<QuotationDoc order={buildOrder()} />)
       const text = docText()
-      expect(text).toContain('布艺遮光帘A')
+      // 🔴 issue #7527：品名（`productName`）**不上纸** —— 把「品名」列加回来这条当场红
+      expect(text).not.toContain('布艺遮光帘A')
       expect(text).toContain('主布')
       // 🔴 货号取响应真字段 `skuCode` —— 夹具**没有** `productCode`（幽灵字段），
       // 旧实现（读 `productCode`）在这一格印空 ⇒ 本判据即红证
@@ -235,20 +240,21 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       expect(text).toContain('1,250.00')
     })
 
-    it('工艺说明行承载原「部位信息 / 部位备注」，且「部位」并入其中（不再单独成列）', () => {
+    it('🔴 红证（issue #7527）：工艺行已退场 —— 纸面不出现「工艺」行、部位与算料文案', () => {
       render(<QuotationDoc order={buildOrder()} />)
       const text = docText()
-      expect(text).toContain('部位：布帘')
-      expect(text).toContain('算料：')
-      // 「门幅」有自己的列 ⇒ 工艺行里不得重复印同一真值
-      expect(text).not.toContain('门幅：2.8米')
-      // 🔴 行标签「工艺」在**首格**，不再是「工艺：…」前缀：明细里本来就有一行「工艺：韩褶」，
-      // 前缀会让纸面出现「工艺：部位：纱帘；工艺：韩褶…」（真机取证实测到的重复，已修）
+      // 修前形态 = 一行「工艺 | 工艺：韩褶；加工类型：定高买宽；… 算料：…」⇒ 下面三条当红
+      expect(text).not.toContain('部位：布帘')
+      expect(text).not.toContain('算料：')
       const craftRow = Array.from(doc()!.querySelectorAll('.quotation-set tbody tr')).find(
         (tr) => tr.querySelector('td')?.textContent?.trim() === '工艺'
       )
-      expect(craftRow).toBeTruthy()
-      expect(text).not.toContain('工艺：部位：')
+      expect(craftRow).toBeUndefined()
+      // 每一行的首格只剩「组件」（面料行 = 主布 / 加工费行 = 加工费）
+      const firstCells = Array.from(doc()!.querySelectorAll('.quotation-set tbody tr')).map((tr) =>
+        tr.querySelector('td')?.textContent?.trim()
+      )
+      expect(firstCells).toEqual(['主布'])
     })
 
     it('组件缺 componentRole ⇒ 按主布印（缺省即主布）', () => {
@@ -277,20 +283,16 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       expect(docText()).not.toContain('×2.6')
     })
 
-    it('工艺说明行来自 craftSpecRows（§4.9 单一真值）：工艺/加工类型/打开方式/是否定型 + 算料组', () => {
+    it('工艺规格文案一律不上纸（工艺 / 加工类型 / 打开方式 / 是否定型 / 算料）—— issue #7527', () => {
       render(<QuotationDoc order={buildOrder()} />)
       const text = docText()
-      // 原始输入组
-      expect(text).toContain('韩褶')
-      expect(text).toContain('定高买宽')
-      expect(text).toContain('双开')
-      expect(text).toContain('是')
-      // 算料输出组
-      expect(text).toContain('36')
-      expect(text).toContain('18')
+      // ⚠️ 只列**工艺专属词**：`36` / `18` 这类纯数字会撞单号（`CSO260918-03182` 含 `18`）⇒ 假红
+      for (const absent of ['韩褶', '定高买宽', '双开', 'pleat', '工艺', '加工类型', '打开方式', '是否定型', '算料']) {
+        expect(text).not.toContain(absent)
+      }
     })
 
-    it('缺工艺键 ⇒ 工艺说明行不出现，不渲染 undefined/null/NaN', () => {
+    it('缺工艺键 ⇒ 纸面照旧只有数据行（工艺行已退场，不因缺值多出空行）', () => {
       render(
         <QuotationDoc
           order={buildOrder({
@@ -303,8 +305,8 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       expect(text).not.toContain('null')
       expect(text).not.toContain('NaN')
       expect(text).not.toContain('否')
-      // 只剩「部位：布帘」一项也照印（该行不为空；行标签「工艺」在首格）
-      expect(text).toContain('部位：布帘')
+      expect(text).not.toContain('部位：布帘')
+      expect(doc()!.querySelectorAll('.quotation-set tbody tr')).toHaveLength(1)
     })
 
     it('加工费行：processingFee > 0 才出，组件 = 加工费 / 数量 = quantity 米 / 单价 = 小计 = processingFee', () => {
@@ -409,7 +411,7 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
     expect(paperTextOf(doc())).toContain('本套金额 —')
     expect(docText()).not.toContain('本套金额 0.00')
     // 同一张纸自洽：这一行的小计栏也是 `—`（#6720 的修复），段头不得比它更「确定」
-    expect(paperNumericColumn(doc(), { column: 8 })).toEqual(['—'])
+    expect(paperNumericColumn(doc(), { column: 7 })).toEqual(['—'])
   })
 
   it('🔴 红证（issue #6731）：subtotal 缺席 + processingFee > 0 ⇒ 仍是「不可知 + 已知 = 不可知」', () => {
@@ -454,11 +456,11 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
         })}
       />
     )
-    // 判据面 = 9 列表的**小计列**（index 8，唯一由「金额是否算得出」决定的那一格）
+    // 判据面 = 8 列表的**小计列**（index 7，唯一由「金额是否算得出」决定的那一格）
     // —— 不做整页子串判：汇总里的 `100.00` 是**真值**，整页判会把真值判红
     // （issue #6720 明令的反向对照失败形态）。
     // 单据：报价单 QuotationDoc
-    assertNoPaperZeroFill(paperNumericColumn(doc(), { column: 8 }), {
+    assertNoPaperZeroFill(paperNumericColumn(doc(), { column: 7 }), {
       label: '报价单 QuotationDoc',
       presence: ['缺 subtotal/processingFee 的行（小计列）'],
     })

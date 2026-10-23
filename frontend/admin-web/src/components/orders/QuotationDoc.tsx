@@ -9,9 +9,6 @@ import { usePaymentQrcodes } from '@/lib/use-payment-qrcodes'
 import { useCompanyName } from '@/lib/use-company-name'
 import { printBodyFontPt, printContentInsetCss, printPageRule } from '@/lib/print-media'
 import { resolveImageUrl } from '@/lib/utils'
-// 「算料输出」行的标签（原始输入 vs 算料输出的分组口径）—— 从既有那份 import，
-// 不复制一份会漂移的副本（见文件头第 5 条）
-import { CALC_OUTPUT_LABELS } from './OrderItemList'
 import type { PrintTarget } from './index'
 import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
 
@@ -22,9 +19,14 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  * 这是 A4 大小，这个用来参考设计我们的打印制式」。四段制式：
  *   ① 表头：报价单 / 单号 / 货运 / 客户·电话·地址 / 备注
  *   ② 正文：**每个商品行自成一套**（用户裁定 ②）—— 段头 `第N套/共M套` + `本套金额`，
- *      每段一张 9 列表：品名 | 组件 | 货号 | 颜色 | 门幅 | 尺寸 | 数量(米) | 单价(元/米) | 小计
+ *      每段一张 8 列表：组件 | 货号 | 颜色 | 门幅 | 尺寸 | 数量(米) | 单价(元/米) | 小计
  *      （列清单改自 issue #6869：用户 2026-10-14 逐字「缺了商品 sku 的信息」+
- *      「报价单展示部位是啥意思」）＋ 一行「工艺：…」承载原「部位信息 / 部位备注」两列的内容
+ *      「报价单展示部位是啥意思」）
+ *      🔴 **「品名」列与「工艺」行已退场**（issue #7527，用户 2026-10-23 逐字「报价单不要品名列和工艺行」）：
+ *      品名在面料行 / 加工费行**连印两遍**（加工费行本来就靠「组件 = 加工费」区分）；
+ *      工艺行是**生产侧**信息（加工类型 / 用料公式 / 算料），出现在发给客户的凭证上只占版面。
+ *      ⇒ 本组件**不再**消费 `craftSpecRows()`：部位 / 算料只在**订单详情页**与**加工单**
+ *      （`ProcessingDoc`）上印。
  *   ③ 汇总：本单总金额 / 优惠金额 / 本单应收
  *   ④ 页脚：温馨提示常量 + 右下扫码支付码
  *
@@ -54,16 +56,13 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  * 4. **每页只挂一份**：`.quotation-print-area` 是全局选择器，挂两份会打印出两套单据。
  *
  * 数据口径（四条硬约束，勿随手改）：
- * 5. **展示真值单一来源**：品名 / 货号 / 颜色 / 门幅 一律取 `lib/order-item-sku.ts` 的
+ * 5. **展示真值单一来源**：货号 / 颜色 / 门幅 一律取 `lib/order-item-sku.ts` 的
  *    `orderItemSku(item)`（**唯一**取值口；货号真字段是响应里的 `skuCode`，原先读的 `productCode`
  *    **不在响应里** ⇒ 纸面货号恒空 —— 那正是 issue #6869 的根因）；
- *    工艺说明取 `lib/craft-display.ts` 的 `craftSpecRows()`（设计文档 §4.9「一份 spec，三处渲染」），
- *    本组件**不另写一份推导**；「门幅」已由 `orderItemSku` 排除（它有独立的列，同一真值不重复印），
- *    而「部位」（`curtainType`）**保留在工艺说明里** —— issue #4521 之后它只有纱帘行才有值，
- *    独立成列时恒空（用户原话「报价单展示部位是啥意思」），并入工艺说明才不丢信息。
- *    两组沿用既有「原始输入 / 算料输出」切分（§4.3 表 B）：`工艺：…　算料：…`。
- *    `craftSpecRows` 已丢弃缺值行 ⇒ 键缺席 / null / 空串 / 空数组的行不出现，
- *    纸面**绝不**出现 `undefined` / `null` / `NaN`。
+ *    「门幅」已由 `orderItemSku` 排除（它有独立的列，同一真值不重复印）。
+ *    🔴 **品名与工艺说明都不再上纸**（issue #7527）⇒ 本组件不再读 `orderItemSku().name`
+ *    与 `craftSpecRows()`（部位 / 用料公式属**生产侧**信息，留在订单详情页与加工单）。
+ *    「缺值不印」这条口径不变：纸面**绝不**出现 `undefined` / `null` / `NaN`。
  * 6. **金额口径单一来源**：行小计 = `lib/order-amount.ts` 的 `paperLineSubtotal(item)`
  *    （= `subtotal + processingFee`，与屏幕 `OrderItemList` 同处一个模块、**只在「面料小计不可知」
  *    那一格分叉**：屏幕折 `0`、本纸面印 `—`）；汇总三个数字只读订单字段
@@ -325,7 +324,8 @@ export default function QuotationDoc({
 // ========== 每套（= 每个商品行）一段 ==========
 
 function SetBlock({ item, index, total }: { item: OrderItem; index: number; total: number }) {
-  // 商品身份（品名 / 货号 / 颜色 / 门幅）—— **唯一**取值口，见文件头第 5 条
+  // 商品身份（货号 / 颜色 / 门幅）—— **唯一**取值口，见文件头第 5 条
+  // （品名不印：issue #7527；`sku.name` 仍由发货单 / 销售单等其它纸面消费）
   const sku = orderItemSku(item)
   const info = (item.processingInfo ?? {}) as Record<string, unknown>
 
@@ -337,19 +337,6 @@ function SetBlock({ item, index, total }: { item: OrderItem; index: number; tota
   const quantity = numberOrNull(item.quantity)
   const processingFee = numberOrNull(item.processingFee) ?? 0
 
-  // 工艺说明：craftSpecRows 的**同一份**真值（§4.9）—— 「门幅」已由 orderItemSku 排除
-  // （它有自己的列，重复印同一真值只是噪音）；其余按「算料输出」与否分两组（§4.3 表 B），
-  // 两组并入**同一行**（纸面要省版面）。
-  // ⚠️ 「部位」（curtainType）**保留**在这里 —— #4521 移除录入面后它只有纱帘行才有值，
-  // 独立成列时恒空（用户原话「报价单展示部位是啥意思」），并入工艺说明才不丢信息。
-  const craftText = specText(sku.specRows.filter((row) => !CALC_OUTPUT_LABELS.has(row.label)))
-  const calcText = specText(sku.specRows.filter((row) => CALC_OUTPUT_LABELS.has(row.label)))
-  // 行首那一格放「工艺」作**行标签**（不是再拼一个「工艺：」前缀 —— 明细里本来就有一行
-  // 「工艺：韩褶」，前缀会让纸面出现「工艺：…工艺：…」的重复，真机取证时一眼可见）
-  const specLine = [craftText, calcText !== '' ? `算料：${calcText}` : '']
-    .filter(Boolean)
-    .join('　')
-
   return (
     <div className="quotation-set mb-3">
       <div className="flex items-center justify-between font-semibold mb-1">
@@ -359,31 +346,29 @@ function SetBlock({ item, index, total }: { item: OrderItem; index: number; tota
         <span>本套金额 {formatAmount(paperLineSubtotal(item))}</span>
       </div>
       {/* table-layout: fixed —— 列宽由表头声明的百分比决定（auto 布局按内容分配，
-          长工艺文案会把列撑歪，纸面每单都可能不一样） */}
+          纸面每单都可能不一样）。8 列宽度合计 100%（issue #7527：品名列出场后其余列重新归一）。 */}
       <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            <DocTh className="w-[16%]">品名</DocTh>
-            <DocTh className="w-[8%]">组件</DocTh>
-            <DocTh className="w-[11%]">货号</DocTh>
-            <DocTh className="w-[8%]">颜色</DocTh>
-            <DocTh className="w-[7%]">门幅</DocTh>
+            <DocTh className="w-[9%]">组件</DocTh>
+            <DocTh className="w-[16%]">货号</DocTh>
+            <DocTh className="w-[11%]">颜色</DocTh>
+            <DocTh className="w-[8%]">门幅</DocTh>
             <DocTh className="w-[10%]">尺寸</DocTh>
             <DocTh align="right" className="w-[11%]">
               数量(米)
             </DocTh>
-            <DocTh align="right" className="w-[12%]">
+            <DocTh align="right" className="w-[14%]">
               单价(元/米)
             </DocTh>
-            <DocTh align="right" className="w-[17%]">
+            <DocTh align="right" className="w-[21%]">
               小计
             </DocTh>
           </tr>
         </thead>
         <tbody>
-          {/* 面料行 */}
+          {/* 面料行（品名不再成列 —— issue #7527；商品身份由「货号 + 颜色 + 门幅」承担） */}
           <tr>
-            <DocTd>{sku.name}</DocTd>
             <DocTd>{componentRole}</DocTd>
             <DocTd>{sku.code}</DocTd>
             <DocTd>{sku.color}</DocTd>
@@ -397,7 +382,6 @@ function SetBlock({ item, index, total }: { item: OrderItem; index: number; tota
               必须分别列示，否则商家对不上账 —— 见文件头第 7 条） */}
           {processingFee > 0 && (
             <tr>
-              <DocTd>{sku.name}</DocTd>
               <DocTd>加工费</DocTd>
               <DocTd>{sku.code}</DocTd>
               <DocTd>{sku.color}</DocTd>
@@ -408,15 +392,6 @@ function SetBlock({ item, index, total }: { item: OrderItem; index: number; tota
               <DocTd align="right">{formatAmount(processingFee)}</DocTd>
             </tr>
           )}
-          {/* 工艺说明行：整行承载原「部位信息 / 部位备注」两列（issue #6869）；首格 = 行标签「工艺」。
-              🔴 整行必须占满 9 列（1 + `colSpan` 8）—— 少一格 ⇒ 那一列在数据行
-              没有单元格、也就没有边框（issue #6595 实测形态）。 */}
-          {specLine !== '' && (
-            <tr>
-              <DocTd>工艺</DocTd>
-              <DocTd colSpan={8}>{specLine}</DocTd>
-            </tr>
-          )}
         </tbody>
       </table>
     </div>
@@ -424,11 +399,6 @@ function SetBlock({ item, index, total }: { item: OrderItem; index: number; tota
 }
 
 // ========== 打印友好的表格原子（纯边框、无底色，避免打印丢背景） ==========
-
-/** 一组 craftSpecRows ⇒ 分号拼接（缺值行已由 craftSpecRows 丢弃 ⇒ 空组为空串） */
-function specText(rows: { label: string; value: string }[]): string {
-  return rows.map((row) => `${row.label}：${row.value}`).join('；')
-}
 
 function DocCell({
   label,

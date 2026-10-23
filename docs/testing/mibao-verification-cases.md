@@ -6892,10 +6892,10 @@
 ```
 溯源: 2026-09-19 新增（issue #4431 B7 的用例追溯补正）：#4362（S1 下单行要素结构化落库，V63）的行为此前**零评测用例**，新增测试借 `OR-008`（创建订单先查商品 SKU）与 `PG-031`（V60 信号种子迁移契约）过门禁 —— 两条都**不覆盖**被测行为（PG-031 更是完全不相干的域）。本用例把判据挂到真实行为上：键名映射的**单一实现点**（写面 `materialize` → DB 列；读面 `toSnapshotKeys` → 加工单快照键，两面键名口径不同 ⇒ 各写一遍就是第二份口径）。**不改运行时行为、不改断言强度**。 ｜ tags: order, craft_spec, order_item, backend_contract
 
-### OR-034. 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染 🔵
+### OR-034. 工艺规格「一份 spec，多处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染（issue #7527 起报价单纸面不再渲染工艺行） 🔵
 ```
 你: （无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）
-数据: **一份定义吃两种键名口径**（设计文档 §4.9「一份 spec，三处渲染」）：`craft-display` 的 `craftSpecRows` 同时吃**订单/快照层 camelCase**（`order_items.processing_info` / `items_snapshot`）与**报价单 snake_case**（`curtain_calc` 输出）—— 两处各写一套定义 = 第二份口径，漂移的那一份不会变红。
+数据: **一份定义吃两种键名口径**（设计文档 §4.9「一份 spec，三处渲染」）：`craft-display` 的 `craftSpecRows` 同时吃**订单/快照层 camelCase**（`order_items.processing_info` / `items_snapshot`）与**报价单 snake_case**（`curtain_calc` 输出）—— 两处各写一套定义 = 第二份口径，漂移的那一份不会变红。⚠️ **2026-10-23 起（issue #7527）报价单纸面不再渲染工艺行**（用户 2026-10-23 逐字「报价单不要品名列和工艺行」）⇒ 渲染面由三处收敛为**订单详情页 + 加工单**（`ProcessingDoc`）两处；`craftSpecRows` 的**两种键名口径不变**（函数仍吃 snake_case，只是纸面不再调用它）。
 数据: **§4.9 字段表逐项渲染**：**17** 个字段按表出（部位 / 工艺 / 加工类型 / 打开方式 / 是否定型 / 款式 / 特殊选项 / 总褶数 / 褶数（每片）/ 幅数 / 褶倍 / 实际褶倍 / 米数 / 加工费米数 / 算料公式 / 是否对花 / 花距）；格式化口径 = 布尔 → 是/否、米数带单位、倍数带单位、选项数组顿号连接。⚠️ **2026-09-21 改判（issue #4876）**：原表里的「**褶距**」行**已整体删除**（用户裁定「应该直接删除这个字段，要做就做干净」）⇒ 字段数由 18 变 17，且**存量单也不再渲染褶距**（载荷里仍带 `pleatSpacing` 时断言它**不被渲染** —— 见 `craft-display.test.ts` 的 #4876 判据与三个组件测试的反向断言）。工位口径：`OrderLineCraftFields.materialize` / `order_items.pleat_spacing` 列**仍在**（DB 列与 Java 读面未删，属数据层存量；删的是**展示行**）。
 数据: **打开方式 1/2/3/4 → 单开/双开/三开/四开**（issue #4387 判据 1：候选必须含三开）；未知开数如实标「N 开」（不猜、不落默认值）。
 数据: **加工类型取真值来源 `formula_used`**：`fixed_height*` → 定高买宽、`fixed_width*` / `roman_panel` → 定宽买高；未知 formula **fail-closed**（宁少一行，不漏内部代号给顾客）；订单层 `cuttingMode` 直存中文时优先于 `formula_used`。
@@ -6903,7 +6903,7 @@
 数据: **订单详情直读不二次推导**：真值来源 = `order_items.processing_info`（camelCase，§4.5），`OrderDetail` 的「商品明细」表按它渲染工艺规格与算料口径两块；`processingInfo=null`（存量单）时页面正常且无工艺块。
 跳过: [backend-contract] 前端展示契约（admin-web 组件 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-display.test.ts 与 frontend/admin-web/tests/unit/components/OrderDetailCraftSpec.test.tsx 执行
 ```
-溯源: 2026-09-19 新增（issue #4431 B7 的用例追溯补正）：#4355（三处展示工艺规格）的行为此前**零评测用例**，新增测试借 `OR-001`（订单列表查询）与 `UI-020`（订单列表采购明细的**加工费**展示）过门禁 —— 后者虽在订单页但测的是加工费行，**不覆盖**工艺规格字段的渲染/格式化/缺值口径。本用例把判据挂到真实行为上：展示映射是**三处共用的同一份定义**，故它的判据必须覆盖两种键名口径 + 缺值硬约束。**不改运行时行为、不改断言强度**。 ｜ tags: order, craft_spec, display, backend_contract
+溯源: 2026-09-19 新增（issue #4431 B7 的用例追溯补正）：#4355（三处展示工艺规格）的行为此前**零评测用例**，新增测试借 `OR-001`（订单列表查询）与 `UI-020`（订单列表采购明细的**加工费**展示）过门禁 —— 后者虽在订单页但测的是加工费行，**不覆盖**工艺规格字段的渲染/格式化/缺值口径。本用例把判据挂到真实行为上：展示映射是**多处共用的同一份定义**，故它的判据必须覆盖两种键名口径 + 缺值硬约束。**不改运行时行为、不改断言强度**。2026-10-23（issue #7527）同步事实：报价单纸面撤掉工艺行 ⇒ 渲染面收敛为两处（订单详情页 + 加工单），映射定义与判据强度均未变。 ｜ tags: order, craft_spec, display, backend_contract
 
 ### OR-035. 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫 🔵
 ```
@@ -11605,14 +11605,14 @@
 ```
 溯源: 2026-09-19 新增（issue #4721 P1-1，补 #4677 的行为进用例库）：就绪度判据由「数条数」改为「点名缺哪条」；补套入口由「工序库为空才显示」改为「缺失即显示」。 ｜ 2026-10-01（issue #5858 用例库同步）：就绪度向导**四步 → 五步**（补第 ⑤ 步「裁高配置」）+ 数字与所在区块**同源** + 每步一个**可点**的去处 + 首屏真值 + 补套卡补上「孤儿工序」这一类；**判据一格不放宽** —— 就绪度②的「点名缺哪条」、补套幂等、不把「没加载 / 读失败」误报成「没配」逐条保留。 ｜ 2026-10-01（issue #5874 / #5875 用例库同步）：① 补套入口与后端两端点**整体退场**（判据 2/3 改判如上；开租自动套用保留）；② **无价目行的工序进表**（`data-state=no_row` + `管理▸`），`matrix-orphan-hint` 退场。 ｜ 2026-10-01（issue #5860 用例库同步，同页文案）：抽屉那一行的三个概念（分组 / 单位 / 单价来源）由**裸词**改判为带标签 + 一句人话（`单价：初始价（待确认）` / `分组「车位」 · 单位「米」` / 文字按钮「改分组 / 单位」）；**判据一格不放宽**（「未定价 ≠ ¥0.00」「实证 / 推算 不得被说成待确认」逐条保留）。 ｜ tags: ui, production-routing, seed-template, admin-web
 
-### UI-053. 订单详情页「打印报价单」A4 — 按商品行成套 + 部位/部位信息/部位备注/宽*高/组件/货号/用料/价格/小计 + 金额汇总 + 扫码支付（issue #4965） 🔵
+### UI-053. 订单详情页「打印报价单」A4 — 按商品行成套 + 组件/货号/颜色/门幅/尺寸/数量/单价/小计 + 金额汇总 + 扫码支付（issue #4965 / #7527） 🔵
 ```
 你: 这是从订单上打印的报价单，用来发给客户的，也可用于生产，这是A4大小，这个用来参考设计我们的打印制式
 你: 把订单的打印功能改成这样的报价单
 期望: direct_reply
 数据: 订单详情页点页面级唯一「打印」入口 → 在打印层里选**报价单**标签，先看纸面预览再出纸（`window.print()` 仍只在 `usePrintDoc` 一处；issue #7544 起入口与订单状态无关，任何状态都能补打）—— 改前是 shipped/completed 操作区的「打印报价单」按钮（issue #4965 的形态，2026-10-23 改判）；`QuotationDoc` 在**页面级**挂载一份（不进 Modal、每页只挂一份）
-数据: 纸面四段齐全（A4，`@page { size: A4 }`）：① 表头 = 报价单 / 单号 `orderNo` / 货运（`logisticsType` + `logisticsCompany`，两者都缺 ⇒ 该栏不印）/ 客户·电话·地址 / 备注；② 正文 = **每个商品行自成一套**（用户裁定：不做樘窗分组），段头 `第N套/共M套` + `本套金额`，每段一张 10 列表 `部位 | 部位信息 | 部位备注 | 宽*高 | 组件 | 货号 | 用料 | 价格 | 小计 | 备注`；③ 汇总 = 本单总金额 / 优惠金额 / 本单应收；④ 页脚 = 温馨提示常量 + 扫码支付码
-数据: 逐列映射：部位 = `processingInfo.curtainType`；部位信息 / 部位备注 = `lib/craft-display.ts` 的 `craftSpecRows()`（§4.9 单一真值，不另写推导；「部位」行已有自己的列 ⇒ 从两列排除；两列切分沿用既有「原始输入 / 算料输出」分组）；宽*高 = `width`×`height`（米，任一缺 ⇒ 不印）；组件 = 面料行 `processingInfo.componentRole`（缺省即主布）/ 加工费行「加工费」；货号 = `productCode` + `processingInfo.colorName`；用料 = `quantity`（米）；价格/小计 = 面料行 `unitPrice`/`subtotal`、加工费行 `processingFee`/`processingFee`
+数据: 纸面四段齐全（A4，`@page { size: A4 }`）：① 表头 = 报价单 / 单号 `orderNo` / 货运（`logisticsType` + `logisticsCompany`，两者都缺 ⇒ 该栏不印）/ 客户·电话·地址 / 备注；② 正文 = **每个商品行自成一套**（用户裁定：不做樘窗分组），段头 `第N套/共M套` + `本套金额`，每段一张 8 列表 `组件 | 货号 | 颜色 | 门幅 | 尺寸 | 数量(米) | 单价(元/米) | 小计`（🔴 issue #7527：**品名列与工艺行不印** —— 用户 2026-10-23 逐字「报价单不要品名列和工艺行」）；③ 汇总 = 本单总金额 / 优惠金额 / 本单应收；④ 页脚 = 温馨提示常量 + 扫码支付码
+数据: 逐列映射（issue #7527 后 8 列）：组件 = 面料行 `processingInfo.componentRole`（缺省即主布）/ 加工费行「加工费」；货号 = `skuCode`（经 `lib/order-item-sku.ts::orderItemSku()` 唯一取值口；原读的 `productCode` 不在响应里 ⇒ 纸面恒空，issue #6869）；颜色 = `processingInfo.colorName`；门幅 = `processingInfo.doorWidth`（同一取值口格式化为 `2.8米`）；尺寸 = `width`×`height`（米，任一缺 ⇒ 不印）；数量 = `quantity`（米）；单价 / 小计 = 面料行 `unitPrice`/`subtotal`、加工费行 `processingFee`/`processingFee`。**品名与工艺文案都不上纸**（issue #7527）：品名在面料行 / 加工费行连印两遍（产品设计原则 P2「信息不重复」），工艺（部位 / 加工类型 / 用料公式 / 算料）属生产侧信息，留在订单详情页与 `ProcessingDoc`
 数据: 加工费**单独成行**（`processingFee > 0` 才出）：与参照物的一处**有意差异** —— 参照物把加工费并进面料单价，而我们 `unitPrice` 与 `processingFee` 是两笔真实金额，必须分别列示，否则商家对不上账
 数据: 金额口径单一真值：行小计（本套金额）= `lib/order-amount.ts` 的 `lineSubtotal(item)` = `subtotal + processingFee`，与 `OrderItemList` 的明细行小计**同一份**实现（不各算一套）；汇总三个数字只读订单字段 `totalAmount` / `discountAmount` / `actualAmount`，**不自己求和**
 数据: 缺值不渲染（用户裁定 ①）：上期余额 / 预存抵扣 / 账户余额 / 交付日期 / 制单人一律不印；键缺席 / null / 空串 / 空数组 ⇒ 该行不出现；纸面绝不出现 `undefined` / `null` / `NaN`（含整单缺值扫描）
@@ -11622,7 +11622,7 @@
 跳过: [backend-contract] 纯前端打印纸面 + 既有端点只读（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/QuotationDoc.test.tsx、tests/unit/pages/order-detail.test.tsx、tests/unit/lib/logistics.test.ts 执行
 ```
 真值: frontend-fix.vitest, frontend-fix.tsc
-溯源: 2026-09-21 新增（issue #4965）：订单详情页新增「打印报价单」A4 —— 照真实报价单制式（按商品行成套 + 10 列明细 + 金额汇总 + 页脚扫码支付）；缺值不印（我们没有的字段一律不印）、加工费单独成行（与参照物的有意差异）、行小计与 OrderItemList 同源（`lib/order-amount.ts`） ｜ tags: ui, order, quotation, print, admin-web
+溯源: 2026-09-21 新增（issue #4965）：订单详情页新增「打印报价单」A4 —— 照真实报价单制式（按商品行成套 + 10 列明细 + 金额汇总 + 页脚扫码支付）；缺值不印（我们没有的字段一律不印）、加工费单独成行（与参照物的有意差异）、行小计与 OrderItemList 同源（`lib/order-amount.ts`）。2026-10-23（issue #7527）纸面收窄：撤「品名」列（9 列 → 8 列，列宽重新归一）+ 撤整条「工艺」行（部位 / 算料不再上纸）—— 用户逐字「报价单不要品名列和工艺行」 ｜ tags: ui, order, quotation, print, admin-web
 
 ### UI-054. 企业基础设置页「算料口径」域 - 按域分组 + 每参数三件套 + 默认值可见 + 行式配置只给入口 🔵
 ```
@@ -13127,7 +13127,7 @@
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）
 - OR-033: 订单行工艺规格落库与快照键名（V63 列）——11 键逐键落列 + 缺键就是缺 + 两面键名口径分离
-- OR-034: 工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染
+- OR-034: 工艺规格「一份 spec，多处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染（issue #7527 起报价单纸面不再渲染工艺行）
 - OR-035: 下单页工艺规格写侧录入 —— 缺值不写 + 枚举逐字 = 库侧 + 默认档常量与算料引擎同步守卫
 - OR-036: 下单页算料试算 —— 用料米数按工艺派生公式自动算（韩褶⇒褶数法 / 打孔⇒倍数法）+ 公式串可见 + 四条 fail-closed（不猜、不静默改回）
 - OR-038: 下单页移除「部位」—— 购买情况（布帘 / 只买纱帘 / 布料）+ **纱帘与布帘用料算法完全一致**（2026-09-21 反转原「纱帘不算料」口径）

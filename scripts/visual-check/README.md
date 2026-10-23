@@ -23,6 +23,7 @@ node scripts/visual-check/after-sales-rework-entry.mjs  # 售后详情「发起�
 node scripts/visual-check/customer-detail-tags-empty.mjs # 客户详情「标签」空态 + 去处（issue #7526）
 node scripts/visual-check/settings-calc-caliber-decimals.mjs # 算料口径 3 位小数 + 允许设 0（issue #7548）
 node scripts/visual-check/order-detail-print-entry.mjs   # 订单详情唯一「打印」入口 + 打印层选单据（issue #7544）
+node scripts/visual-check/quotation-print-preview.mjs   # 订单详情「打印报价单」预览层（issue #7527）
 open /tmp/reports-filled.png /tmp/reports-empty.png
 ```
 
