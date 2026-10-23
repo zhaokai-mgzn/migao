@@ -66,6 +66,8 @@ public class ReportService {
     private final CustomerService customerService;
     /** 返工按客户/工序归集的桥：报工行只有 `processing_order_id`，客户要经「加工单 → 订单」才拿得到。 */
     private final com.migao.admin.mapper.ProcessingOrderMapper processingOrderMapper;
+    /** 商品维度（issue #7377 段 6）：赔付/返工要按**订单行金额比例**摊到商品上，权重来自订单行小计。 */
+    private final com.migao.admin.mapper.OrderItemMapper orderItemMapper;
 
     /**
      * 订单毛利报表。
@@ -438,13 +440,17 @@ public class ReportService {
     public com.migao.admin.dto.QualityCostBreakdownView qualityCostBreakdown(
             String dimension, String startDate, String endDate) {
         String dim = dimension == null ? "" : dimension.trim();
-        if (!"customer".equals(dim) && !"process".equals(dim)) {
+        if (!"customer".equals(dim) && !"process".equals(dim) && !"product".equals(dim)) {
             throw com.migao.admin.exception.BusinessException.validationError(
-                    "不支持的质量成本维度（只支持 customer / process）：" + dim);
+                    "不支持的质量成本维度（只支持 customer / process / product）：" + dim);
         }
         LocalDate from = parseDay(startDate);
         LocalDate to = parseDay(endDate);
         boolean byProcess = "process".equals(dim);
+        // 商品维度（issue #7377 段 6，用户 2026-10-23 裁定「按比例」）：一张单多个商品时，
+        // 赔付与返工都按**订单行小计占比**摊开（余数给金额最大的一行，保证逐分对得上）。
+        boolean byProduct = "product".equals(dim);
+        java.util.Map<String, java.util.List<com.migao.admin.entity.OrderItem>> itemCache = new java.util.HashMap<>();
 
         java.util.Map<String, com.migao.admin.dto.QualityCostBreakdownView.Row> rows = new java.util.LinkedHashMap<>();
         int unpricedLines = 0;
@@ -463,6 +469,16 @@ public class ReportService {
             }
             BigDecimal amount = log.getUnitPrice().multiply(
                     log.getQty() == null ? BigDecimal.ZERO : log.getQty());
+            if (byProduct) {
+                String orderId = orderIdOfProcessingOrder(log.getProcessingOrderId());
+                int before = allocatedUnits(rows);
+                boolean ok = allocateToProducts(rows, orderId, amount, itemCache, true);
+                if (!ok) {
+                    unattributedRework = unattributedRework.add(amount);
+                    unattributedReworkLines++;
+                }
+                continue;
+            }
             com.migao.admin.dto.QualityCostBreakdownView.Row row =
                     byProcess ? rowForProcess(rows, log) : rowForCustomer(rows, log);
             if (row == null) {
@@ -484,6 +500,14 @@ public class ReportService {
                 continue;
             }
             BigDecimal amount = refund.getAmount() == null ? BigDecimal.ZERO : refund.getAmount();
+            if (byProduct) {
+                boolean ok = allocateToProducts(rows, refund.getOrderId(), amount, itemCache, false);
+                if (!ok) {
+                    unattributedCompensation = unattributedCompensation.add(amount);
+                    unattributedCompensationCount++;
+                }
+                continue;
+            }
             // 🔴 退款流水没有工序信息 ⇒ 工序维度下赔付**整体**进未归属（不是「赔付为 0」）
             com.migao.admin.dto.QualityCostBreakdownView.Row row =
                     byProcess ? null : rowForCustomerOrder(rows, refund.getOrderId());
@@ -518,7 +542,10 @@ public class ReportService {
 
         List<String> notes = new ArrayList<>();
         notes.add("报废料不在本视图：本仓未采集（质检只到成品帘级），摊到任何维度都是编数");
-        if (byProcess) {
+        if (byProduct) {
+            notes.add("商品维度按**订单行小计占比**分摊赔付与返工（余数给金额最大的一行，逐分对得上）");
+            notes.add("多商品订单的赔付分摊是**口径**而非事实：退款流水本身不区分商品");
+        } else if (byProcess) {
             notes.add("赔付（退款口径）没有工序信息 ⇒ 全部计入「无法归属」（不是「赔付为 0」）");
         } else {
             notes.add("返工经「报工 → 加工单 → 订单 → 客户」归属；赔付经「退款流水 → 订单 → 客户」归属");
@@ -609,6 +636,111 @@ public class ReportService {
                 .compensation(BigDecimal.ZERO).compensationCount(0)
                 .total(BigDecimal.ZERO)
                 .build();
+    }
+
+    /** 报工 → 加工单 → 订单 id（商品维度的桥；任一环缺失 ⇒ null）。 */
+    private String orderIdOfProcessingOrder(String processingOrderId) {
+        if (!StringUtils.hasText(processingOrderId)) {
+            return null;
+        }
+        com.migao.admin.entity.ProcessingOrder po = processingOrderMapper.selectById(processingOrderId);
+        return po == null ? null : po.getOrderId();
+    }
+
+    /** 已分配过的行数（只用于「商品维度下返工/赔付有没有真的摊出去」的旁证，不参与金额）。 */
+    private static int allocatedUnits(
+            java.util.Map<String, com.migao.admin.dto.QualityCostBreakdownView.Row> rows) {
+        return rows.size();
+    }
+
+    /**
+     * 把一笔金额按**订单行小计占比**摊到商品行（issue #7377 段 6，用户裁定「按比例」）。
+     *
+     * <p>🔴 两条硬约束：</p>
+     * <ol>
+     *   <li><b>逐分对得上</b>：按占比算出各行金额后，累计与总额的差额（四舍五入残差）**补给金额最大的一行**，
+     *       否则「Σ行 + 未归属 ≠ 合计」这条恒等式会破在分位上；</li>
+     *   <li><b>权重缺失不许编</b>：订单行全无金额 ⇒ 按**行数等分**（仍是按比例的一种特例，且不留空）；
+     *       订单查不到 / 没有明细行 ⇒ 返回 {@code false}（调用方计入未归属，不许静默丢）。</li>
+     * </ol>
+     *
+     * @param asRework true ⇒ 计入返工列；false ⇒ 计入赔付列
+     */
+    private boolean allocateToProducts(
+            java.util.Map<String, com.migao.admin.dto.QualityCostBreakdownView.Row> rows,
+            String orderId,
+            BigDecimal amount,
+            java.util.Map<String, java.util.List<com.migao.admin.entity.OrderItem>> itemCache,
+            boolean asRework) {
+        if (!StringUtils.hasText(orderId) || amount == null) {
+            return false;
+        }
+        java.util.List<com.migao.admin.entity.OrderItem> items = itemCache.computeIfAbsent(orderId, id ->
+                orderItemMapper == null ? java.util.List.of()
+                        : orderItemMapper.selectList(new LambdaQueryWrapper<com.migao.admin.entity.OrderItem>()
+                                .eq(com.migao.admin.entity.OrderItem::getOrderId, id)));
+        if (items.isEmpty()) {
+            return false;
+        }
+        java.util.List<BigDecimal> weights = new ArrayList<>();
+        BigDecimal totalWeight = BigDecimal.ZERO;
+        for (com.migao.admin.entity.OrderItem item : items) {
+            BigDecimal weight = item.getSubtotal() != null ? item.getSubtotal()
+                    : (item.getUnitPrice() != null && item.getQuantity() != null
+                        ? item.getUnitPrice().multiply(item.getQuantity())
+                        : BigDecimal.ZERO);
+            if (weight.signum() < 0) {
+                weight = BigDecimal.ZERO;
+            }
+            weights.add(weight);
+            totalWeight = totalWeight.add(weight);
+        }
+        if (totalWeight.signum() == 0) {
+            // 全是 0（或没有金额）⇒ 按行数等分：每行权重 1
+            weights = new ArrayList<>(java.util.Collections.nCopies(items.size(), BigDecimal.ONE));
+            totalWeight = new BigDecimal(items.size());
+        }
+
+        BigDecimal allocated = BigDecimal.ZERO;
+        int largestIdx = 0;
+        BigDecimal largestAmount = BigDecimal.valueOf(-1);
+        java.util.List<BigDecimal> shares = new ArrayList<>();
+        for (int i = 0; i < items.size(); i++) {
+            BigDecimal share = amount.multiply(weights.get(i))
+                    .divide(totalWeight, 2, java.math.RoundingMode.HALF_UP);
+            shares.add(share);
+            allocated = allocated.add(share);
+            if (share.compareTo(largestAmount) > 0) {
+                largestAmount = share;
+                largestIdx = i;
+            }
+        }
+        // 残差补给最大行 ⇒ Σ 分摊 == amount（逐分不差）
+        BigDecimal residual = amount.setScale(2, java.math.RoundingMode.HALF_UP).subtract(allocated);
+        if (residual.signum() != 0) {
+            shares.set(largestIdx, shares.get(largestIdx).add(residual));
+        }
+
+        for (int i = 0; i < items.size(); i++) {
+            com.migao.admin.entity.OrderItem item = items.get(i);
+            String label = StringUtils.hasText(item.getProductName()) ? item.getProductName()
+                    : (StringUtils.hasText(item.getProductId()) ? item.getProductId() : null);
+            if (label == null) {
+                // 行上连商品都没有 ⇒ 这笔钱同样不许静默丢（调用方无法区分，故整单退回未归属）
+                return false;
+            }
+            String key = "prod:" + (StringUtils.hasText(item.getProductId()) ? item.getProductId() : label);
+            com.migao.admin.dto.QualityCostBreakdownView.Row row =
+                    rows.computeIfAbsent(key, k -> newRow(k, label));
+            if (asRework) {
+                row.setRework(row.getRework().add(shares.get(i)));
+                row.setReworkLines(row.getReworkLines() + 1);
+            } else {
+                row.setCompensation(row.getCompensation().add(shares.get(i)));
+                row.setCompensationCount(row.getCompensationCount() + 1);
+            }
+        }
+        return true;
     }
 
     private static BigDecimal scale2(BigDecimal value) {

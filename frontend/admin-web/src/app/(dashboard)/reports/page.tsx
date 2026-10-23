@@ -91,7 +91,7 @@ export default function ReportsPage() {
   const [quality, setQuality] = useState<ReportQualityCost | null>(null)
   const [aging, setAging] = useState<ReportReceivableAging | null>(null)
   // 质量成本的维度汇总（issue #7377 段 5）：默认按客户 —— 「贵在谁身上」比「贵在哪一步」更常问
-  const [qcDim, setQcDim] = useState<'customer' | 'process'>('customer')
+  const [qcDim, setQcDim] = useState<'customer' | 'process' | 'product'>('customer')
   const [qcBreakdown, setQcBreakdown] = useState<ReportQualityCostBreakdown | null>(null)
   const [qcBreakdownLoading, setQcBreakdownLoading] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -169,7 +169,7 @@ export default function ReportsPage() {
    * 维度汇总单独取（不进 `load` 的 Promise.all）：切维度只该重取这一块，
    * 不该把另外五张表一起打一遍。
    */
-  const loadBreakdown = useCallback(async (dim: 'customer' | 'process') => {
+  const loadBreakdown = useCallback(async (dim: 'customer' | 'process' | 'product') => {
     setQcBreakdownLoading(true)
     try {
       const res = await reportApi.qualityCostBreakdown(dim, rangeParams)
@@ -475,7 +475,7 @@ export default function ReportsPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-neutral-500">贵在哪：</span>
-                    {(['customer', 'process'] as const).map((dim) => (
+                    {(['customer', 'process', 'product'] as const).map((dim) => (
                       <button
                         key={dim}
                         type="button"
@@ -487,7 +487,7 @@ export default function ReportsPage() {
                             : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50'
                         }`}
                       >
-                        {dim === 'customer' ? '按客户' : '按工序'}
+                        {dim === 'customer' ? '按客户' : dim === 'process' ? '按工序' : '按商品'}
                       </button>
                     ))}
                   </div>
@@ -495,7 +495,7 @@ export default function ReportsPage() {
                     testId="reports-quality-breakdown-export"
                     onClick={() =>
                       exportCsv(
-                        `质量成本-${qcDim === 'customer' ? '按客户' : '按工序'}.csv`,
+                        `质量成本-${qcDim === 'customer' ? '按客户' : qcDim === 'process' ? '按工序' : '按商品'}.csv`,
                         ['对象', '返工工时', '赔付', '合计', '返工行数', '退款笔数'],
                         (qcBreakdown?.rows ?? []).map((row) => [
                           row.label,

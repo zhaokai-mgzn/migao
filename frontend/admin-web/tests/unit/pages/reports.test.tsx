@@ -233,6 +233,9 @@ describe('报表中心页面', () => {
     await waitFor(() => expect(calls).toEqual(['customer']))
     fireEvent.click(screen.getByTestId('reports-quality-dim-process'))
     await waitFor(() => expect(calls).toEqual(['customer', 'process']))
+    // 商品维度（issue #7377 段 6，用户 2026-10-23 裁定「按比例」）
+    fireEvent.click(screen.getByTestId('reports-quality-dim-product'))
+    await waitFor(() => expect(calls).toEqual(['customer', 'process', 'product']))
     // 整页的五个端点**没有**被重取（只有维度这一块重取）
     expect(reportApi.orderMargins).toHaveBeenCalledTimes(1)
   })
