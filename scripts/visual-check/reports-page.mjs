@@ -80,6 +80,12 @@ async function shoot(payload, out, path = '/reports') {
     body: JSON.stringify({ success: true, data: { id: 'u1', username: 'admin', name: '管理员', tenantId: 1, roles: ['admin'], permissions: ['*'], menus: [] } }) }))
   await page.route('**/api/admin/user/info', r => r.fulfill({ status: 200, contentType: 'application/json',
     body: JSON.stringify({ success: true, data: { id: 'u1', username: 'admin', name: '管理员', tenantId: 1, roles: ['admin'], permissions: ['*'], menus: [] } }) }))
+  // 仓库列表（库存滞销的仓库下拉，issue #7377 段 7）
+  await page.route('**/api/admin/warehouses', r => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ success: true, data: [
+      { id: 1, code: 'WH01', name: '主仓' },
+      { id: 2, code: 'WH02', name: '次仓' },
+    ] }) }))
   await page.route('**/api/admin/reports/**', r => {
     const url = r.request().url()
     const key = Object.keys(payload).find(k => url.includes(k))

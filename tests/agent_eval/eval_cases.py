@@ -7673,6 +7673,25 @@ _CASE_QC_004 = EvalCase(
     precondition='本用例前后端口径：前置 = 质量成本维度汇总（#7377 段 5）+ 订单行（`order_items.subtotal`）。零网络、零 LLM。',
 )
 
+# ── RPT-008 [NORMAL] 报表筛选只挂在「吃该维度」的表上：库存滞销按仓库筛（issue #7377 段 7）（源: cases/misc.yml）──
+_CASE_RPT_008 = EvalCase(
+    id='RPT-008',
+    legacy_id='',
+    title='报表筛选只挂在「吃该维度」的表上：库存滞销按仓库筛（issue #7377 段 7）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-23，逐字）：「3，这个你自己决定，我也不清楚了」—— 授权 AI 裁定「多维筛选」怎么做。'],
+    expectations=[],
+    data_checks=['**裁定的依据（AI 自裁，2026-10-23）**：三张报表**没有共同的归属键**（订单毛利按订单、员工业绩按制单人、质量成本按客户/工序/商品、库存滞销按仓库）⇒ 不做全局筛选条，只给「吃该维度」的表加控件。第一处落地 = 库存滞销卡的**仓库下拉**（读端点 `/api/admin/reports/inventory` 本就支持 `warehouseCode`）。', '**判据 1（🔴 只重取这一张）**：换仓时**只**重打库存滞销，毛利/业绩/质量成本/账龄**不重打**（判据用调用次数前后对比）。判据 = `reports.test.tsx#库存滞销按仓库筛`（红证：把 `warehouseCode` 从请求里去掉 ⇒ 该用例当场红，已注入回滚）。', "**判据 2（参数带对）**：`inventoryAging` 收到 `{ warehouseCode: 'WH02' }`；「全部仓库」则不带参数（不是传空串）。", '**判据 3（下拉可用）**：选项 = 全部仓库 + `warehouseApi.list()` 回来的仓库名；取不到仓库列表时只剩「全部仓库」，**不挡报表本身**（可选增强不得变成新的失败面）。', '**边界（照实登记）**：① 其余四张表**没有**筛选控件（没有对应维度，不做假控件）；② 质量成本缺仓库维度（报工/退款都不带仓库，需先定「按哪张单的仓库算」）；③ 不做全局筛选条（裁定见判据 1 的依据）。'],
+    skip_reason='[frontend-contract] 报表筛选的挂载位置与请求参数，由前端单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['frontend-contract', 'report', 'filter', 'warehouse', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [frontend-contract]：前置 = 报表中心（#7377 段 4/5/6）。零网络、零 LLM。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -16820,6 +16839,7 @@ ALL_CASES = (
     _CASE_APV_001,
     _CASE_APV_002,
     _CASE_QC_004,
+    _CASE_RPT_008,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
