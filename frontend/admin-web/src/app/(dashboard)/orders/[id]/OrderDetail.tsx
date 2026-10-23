@@ -933,7 +933,7 @@ function CraftSpecList({ source }: { source?: Record<string, unknown> }) {
     <div className="mt-1 space-y-0.5" data-testid="order-craft-spec">
       <div className="text-xs font-medium text-neutral-500">工艺规格</div>
       {rows.map((row) => (
-        <div key={row.label} className="flex flex-wrap gap-x-1.5 text-xs">
+        <div key={row.label} className="flex flex-wrap justify-center gap-x-1.5 text-xs">
           <span className="text-neutral-400">{row.label}</span>
           <span className="text-neutral-700">{row.value}</span>
         </div>
@@ -952,14 +952,17 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
       <table className="w-full text-sm">
         <thead className="bg-neutral-50 text-neutral-600">
           <tr>
-            <Th className="pl-0">商品</Th>
-            <Th className="pl-0">商品货号</Th>
+            {/* 整表统一居中（issue #7590）：改前 商品/货号/颜色/规格 左对齐、数量居中、金额三列右对齐
+                ⇒ 同一张表三种对齐并存，列与列之间没有稳定参照边（用户截图）。
+                现在对齐由下面的 `Th` / `Td` 一处承担，调用点不再逐列传 `align`。 */}
+            <Th>商品</Th>
+            <Th>商品货号</Th>
             <Th>颜色</Th>
             <Th>规格尺寸</Th>
-            <Th align="right">单价</Th>
-            <Th align="center">数量</Th>
-            <Th align="right">金额</Th>
-            <Th align="right">商品合计</Th>
+            <Th>单价</Th>
+            <Th>数量</Th>
+            <Th>金额</Th>
+            <Th>商品合计</Th>
           </tr>
         </thead>
         <tbody className="divide-y divide-neutral-100">
@@ -969,14 +972,14 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
                 {rowIdx === 0 && (
                   <td
                     rowSpan={group.rows.length}
-                    className="pl-0 pr-3 py-3 align-top border-r border-neutral-100 font-medium text-neutral-900"
+                    className="px-3 py-3 text-center align-top border-r border-neutral-100 font-medium text-neutral-900"
                   >
                     {group.productName}
                   </td>
                 )}
                 {/* 🔴 issue #6882：原读 `row.sku` —— 详情响应里**没有这个键**（真值 = `skuCode`，
                     由 `OrderService.convertToItemResponse` 从 `products.sku_code` 回填）⇒ 这一列恒 `-`。 */}
-                <Td className="pl-0">{row.skuCode || '-'}</Td>
+                <Td>{row.skuCode || '-'}</Td>
                 <Td>{(row.processingInfo as any)?.colorName || '-'}</Td>
                 <Td>
                   {(() => {
@@ -1001,7 +1004,7 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
                     (row.processingInfo as any).remark.trim() !== '' && (
                       <div
                         data-testid="order-item-remark"
-                        className="mt-1 flex flex-wrap gap-x-1.5 text-xs"
+                        className="mt-1 flex flex-wrap justify-center gap-x-1.5 text-xs"
                       >
                         <span className="text-neutral-400">部位备注</span>
                         <span className="text-neutral-700">
@@ -1010,19 +1013,19 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
                       </div>
                     )}
                 </Td>
-                <Td align="right" className="text-red-500 font-medium">
+                <Td className="text-red-500 font-medium">
                   {formatAmount(row.unitPrice)}
                 </Td>
-                <Td align="center" className="text-primary-600 font-medium">
+                <Td className="text-primary-600 font-medium">
                   {row.quantity}
                 </Td>
-                <Td align="right" className="text-primary-600 font-medium">
+                <Td className="text-primary-600 font-medium">
                   {formatAmount(getItemAmount(row))}
                 </Td>
                 {rowIdx === 0 && (
                   <td
                     rowSpan={group.rows.length}
-                    className="px-3 py-3 text-right align-top border-l border-neutral-100 text-primary-600 font-semibold"
+                    className="px-3 py-3 text-center align-top border-l border-neutral-100 text-primary-600 font-semibold"
                   >
                     {formatAmount(group.groupTotal)}
                   </td>
@@ -1036,22 +1039,18 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
   )
 }
 
-function Th({
-  children,
-  align = 'left',
-  className,
-}: {
-  children: React.ReactNode
-  align?: 'left' | 'right' | 'center'
-  className?: string
-}) {
+/**
+ * 表头 / 数据格（issue #7590）：**整表一律居中**。
+ *
+ * 改前对齐是**逐列参数**（商品/货号/颜色/规格 左、数量 中、单价/金额/商品合计 右）⇒ 同一张表
+ * 三种对齐并存。用户裁定「都设计成居中」⇒ 对齐收敛成**表级一条规则**：这两个组件只服务这一张
+ * 订单商品表（非导出），要改对齐就改这里，调用点不再有可漂移的旋钮。
+ */
+function Th({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <th
       className={cn(
-        'px-3 py-2.5 text-xs font-semibold text-neutral-600 whitespace-nowrap',
-        align === 'right' && 'text-right',
-        align === 'center' && 'text-center',
-        align === 'left' && 'text-left',
+        'px-3 py-2.5 text-xs font-semibold text-neutral-600 whitespace-nowrap text-center',
         className
       )}
     >
@@ -1060,28 +1059,8 @@ function Th({
   )
 }
 
-function Td({
-  children,
-  align = 'left',
-  className,
-}: {
-  children: React.ReactNode
-  align?: 'left' | 'right' | 'center'
-  className?: string
-}) {
-  return (
-    <td
-      className={cn(
-        'px-3 py-3 text-neutral-700',
-        align === 'right' && 'text-right',
-        align === 'center' && 'text-center',
-        align === 'left' && 'text-left',
-        className
-      )}
-    >
-      {children}
-    </td>
-  )
+function Td({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <td className={cn('px-3 py-3 text-neutral-700 text-center', className)}>{children}</td>
 }
 
 // ===== 金额汇总：订单金额 / 优惠金额 / 已退款 / 实收款 — issue #672 =====
