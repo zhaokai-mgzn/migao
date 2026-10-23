@@ -12,7 +12,7 @@
  * —— 那个 tab 的入口已随 #6580 从菜单撤掉 ⇒ **商家从任何导航都改不到这些参数**。
  *
  * 现在本域就是**算料配置的唯一写面**（设计判死线第 1 条：同一份配置不许两个入口）：
- * 8 个标量（`CALC_SCALAR_KEYS`）/ 档位表 `tiers` / 拼色配布长度表 `per_fold_mixed_times` /
+ * 10 个标量（`CALC_SCALAR_KEYS`）/ 档位表 `tiers` / 拼色配布长度表 `per_fold_mixed_times` /
  * 备用公式 `default_formula` **全部就地可改**，**改完即保存**（issue #7183：没有保存按钮，见下节）；
  * 术语说明（`CraftCalcGlossary`）与阈值预览（`OversizeThresholdPreview`）随参数同屏。
  *
