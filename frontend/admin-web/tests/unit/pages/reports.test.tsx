@@ -1,4 +1,4 @@
-// case_ids: RPT-001, RPT-007
+// case_ids: RPT-001, RPT-007, RPT-008
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import ReportsPage, { presetRange } from '@/app/(dashboard)/reports/page'
@@ -19,9 +19,17 @@ const reportApi = vi.hoisted(() => ({
   qualityCostBreakdown: vi.fn(),
 }))
 
-vi.mock('@/lib/api', () => ({ reportApi }))
+const warehouseApi = vi.hoisted(() => ({ list: vi.fn() }))
+vi.mock('@/lib/api', () => ({ reportApi, warehouseApi }))
 
 const wrap = <T,>(data: T) => Promise.resolve({ data: { success: true, data } })
+// 仓库下拉的默认桩：两个仓（用例可覆盖）
+warehouseApi.list.mockImplementation(() =>
+  Promise.resolve({ data: { success: true, data: [
+    { id: 1, code: 'WH01', name: '主仓' },
+    { id: 2, code: 'WH02', name: '次仓' },
+  ] } }),
+)
 
 const emptyAll = () => {
   reportApi.orderMargins.mockImplementation(() =>
@@ -233,6 +241,9 @@ describe('报表中心页面', () => {
     await waitFor(() => expect(calls).toEqual(['customer']))
     fireEvent.click(screen.getByTestId('reports-quality-dim-process'))
     await waitFor(() => expect(calls).toEqual(['customer', 'process']))
+    // 商品维度（issue #7377 段 6，用户 2026-10-23 裁定「按比例」）
+    fireEvent.click(screen.getByTestId('reports-quality-dim-product'))
+    await waitFor(() => expect(calls).toEqual(['customer', 'process', 'product']))
     // 整页的五个端点**没有**被重取（只有维度这一块重取）
     expect(reportApi.orderMargins).toHaveBeenCalledTimes(1)
   })
@@ -356,5 +367,29 @@ describe('报表中心页面', () => {
     expect(note).toContain('不受区间影响')
     // 文案不许留字面 markdown 星号（会逐字上屏）
     expect(note).not.toContain('**')
+  })
+
+  it('🔴 库存滞销按仓库筛：换仓只重取这一张，且带 warehouseCode（其余表不动）', async () => {
+    reportApi.inventoryAging.mockImplementation((params?: { warehouseCode?: string }) =>
+      wrap({ slowMovingDays: 90, hasData: true,
+        totals: { onHand: 10, slowMovingOnHand: params?.warehouseCode === 'WH02' ? 4 : 10, slowMovingBatches: 1 },
+        undeterminedRows: 0,
+        rows: [{ batchNo: 'PC-' + (params?.warehouseCode || 'ALL'), skuCode: 'SKU-A', warehouse: '主仓',
+          onHand: 10, lastMovementDate: '2026-06-01', daysSince: 120, slowMoving: true }] }))
+
+    render(<ReportsPage />)
+    await waitFor(() => expect(screen.getByTestId('reports-inventory-warehouse')).toBeInTheDocument())
+
+    const marginsBefore = reportApi.orderMargins.mock.calls.length
+    fireEvent.change(screen.getByTestId('reports-inventory-warehouse'), { target: { value: 'WH02' } })
+
+    // 只重打滞销这一张：带 warehouseCode，而且**不动**毛利那张
+    await waitFor(() =>
+      expect(reportApi.inventoryAging).toHaveBeenLastCalledWith({ warehouseCode: 'WH02' }),
+    )
+    expect(reportApi.orderMargins.mock.calls.length).toBe(marginsBefore)
+    // 下拉的选项来自仓库列表（全部仓库 + 两个仓）
+    expect(screen.getByTestId('reports-inventory-warehouse').textContent).toContain('全部仓库')
+    expect(screen.getByTestId('reports-inventory-warehouse').textContent).toContain('主仓')
   })
 })

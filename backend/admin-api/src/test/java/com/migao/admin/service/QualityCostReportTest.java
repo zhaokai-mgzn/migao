@@ -38,7 +38,7 @@ class QualityCostReportTest {
         workLogMapper = Mockito.mock(ProductionWorkLogMapper.class);
         financeMapper = Mockito.mock(FinanceTransactionMapper.class);
         service = new ReportService(orderMapper, null, workLogMapper, financeMapper, null, null,
-                new com.migao.admin.time.BusinessClock(), null, null);
+                new com.migao.admin.time.BusinessClock(), null, null, null);
         when(financeMapper.selectList(any())).thenReturn(List.of());
     }
 

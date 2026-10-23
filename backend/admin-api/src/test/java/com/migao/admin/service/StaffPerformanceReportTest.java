@@ -30,7 +30,7 @@ class StaffPerformanceReportTest {
     void setUp() {
         orderMapper = Mockito.mock(OrderMapper.class);
         service = new ReportService(orderMapper, null, null, null, null, null,
-                new com.migao.admin.time.BusinessClock(), null, null);
+                new com.migao.admin.time.BusinessClock(), null, null, null);
     }
 
     private static Order order(String createdBy, String createdByName, String amount) {

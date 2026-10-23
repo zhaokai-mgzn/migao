@@ -1743,7 +1743,7 @@ export const reportApi = {
   qualityCost: (params?: { startDate?: string; endDate?: string }) =>
     request.get<ApiResponse<ReportQualityCost>>('/api/admin/reports/quality-cost', { params }),
   // 质量成本维度汇总（issue #7377 段 5）：维度必填（customer / process），日期可选
-  qualityCostBreakdown: (dimension: 'customer' | 'process', params?: { startDate?: string; endDate?: string }) =>
+  qualityCostBreakdown: (dimension: 'customer' | 'process' | 'product', params?: { startDate?: string; endDate?: string }) =>
     request.get<ApiResponse<ReportQualityCostBreakdown>>('/api/admin/reports/quality-cost/breakdown', {
       params: { dimension, ...(params ?? {}) },
     }),

@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（152 case）
+## 杂项域（154 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5985,6 +5985,35 @@
 跳过: [frontend-contract] 审批申请的 ref/金额口径与就地预填，由前端单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-23 新增（issue #7374 段 3）。落码 = `lib/approval-request.ts`（三口径纯函数）+ `components/approvals/RequestApprovalModal.tsx` + `approvalApi.submit` + 盘点单页/价格本页接线。 ｜ tags: frontend-contract, approval, red-proof
+
+### QC-004. 质量成本按商品摊开：订单行小计占比分摊、逐分对得上、权重缺失不编（issue #7377 段 6） 🔵
+```
+你: 用户（2026-10-23，逐字）：「1.按比例」—— 裁定商品维度的分摊口径：一个订单多商品时按订单行金额比例摊。
+数据: **判据 1（按比例）**：一单两行小计 600/400、赔付 100 ⇒ 摊成 60/40（不是平均分、也不是只算单商品订单）。判据 = `QualityCostBreakdownTest#productDimensionSplitsCompensationByLineSubtotal`。
+数据: **判据 2（🔴 逐分对得上）**：100.01 摊两行 ⇒ Σ行 == 100.01（残差补给金额最大的一行）；否则「Σ行 + 未归属 = 合计」会破在分位上。判据 = `#productDimensionKeepsCentIdentity`。
+数据: **判据 3（返工也按行摊）**：报工经「加工单 → 订单 → 行」按同一比例摊。判据 = `#productDimensionAttributesReworkThroughOrderLines`。
+数据: **判据 4（🔴 权重缺失不编）**：订单查不到 / 没有明细行 / 报工没挂加工单 ⇒ 进未归属（恒等式仍成立）；行上连商品名都没有 ⇒ 整笔退回未归属，不静默丢。判据 = `#productDimensionFallsBackToUnattributed`。
+数据: **判据 5（行金额全缺 ⇒ 等分）**：所有行都没有小计/单价 ⇒ 按行数等分（按比例的特例），不留空不编数。判据 = `#productDimensionSplitsEquallyWhenWeightsAreMissing`。
+数据: **判据 6（维度白名单与前端）**：`product` 进白名单（非法值仍 400，三合法维度都不抛）；报表页维度切换三档（按客户 / 按工序 / 按商品），切到商品只重取这一块。判据 = `#unknownDimensionIsRejected` + `reports.test.tsx#维度汇总：默认按客户…`。
+数据: **口径自述（notes 上屏）**：商品维度写明「多商品订单的赔付分摊是**口径**而非事实：退款流水本身不区分商品」。
+数据: **边界（照实登记）**：① 分摊**不复刻**加工单的 items_snapshot（那是另一套归属键），统一按订单行小计比例；② 报废料仍不进本视图（未采集）；③ 退款流水不区分商品 ⇒ 分摊是口径，不是事实。
+前置: 本用例前后端口径：前置 = 质量成本维度汇总（#7377 段 5）+ 订单行（`order_items.subtotal`）。零网络、零 LLM。
+跳过: [frontend-contract] 商品维度的分摊算法与恒等式，由 Java 单测 + 前端单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-23 新增（issue #7377 段 6，用户裁定「按比例」）。落码 = `ReportService.qualityCostBreakdown` 的 `allocateToProducts()`（最大行补残差）+ 报表页第三个维度 chip。 ｜ tags: frontend-contract, quality-cost, breakdown, product, red-proof
+
+### RPT-008. 报表筛选只挂在「吃该维度」的表上：库存滞销按仓库筛（issue #7377 段 7） 🔵
+```
+你: 用户（2026-10-23，逐字）：「3，这个你自己决定，我也不清楚了」—— 授权 AI 裁定「多维筛选」怎么做。
+数据: **裁定的依据（AI 自裁，2026-10-23）**：三张报表**没有共同的归属键**（订单毛利按订单、员工业绩按制单人、质量成本按客户/工序/商品、库存滞销按仓库）⇒ 不做全局筛选条，只给「吃该维度」的表加控件。第一处落地 = 库存滞销卡的**仓库下拉**（读端点 `/api/admin/reports/inventory` 本就支持 `warehouseCode`）。
+数据: **判据 1（🔴 只重取这一张）**：换仓时**只**重打库存滞销，毛利/业绩/质量成本/账龄**不重打**（判据用调用次数前后对比）。判据 = `reports.test.tsx#库存滞销按仓库筛`（红证：把 `warehouseCode` 从请求里去掉 ⇒ 该用例当场红，已注入回滚）。
+数据: **判据 2（参数带对）**：`inventoryAging` 收到 `{ warehouseCode: 'WH02' }`；「全部仓库」则不带参数（不是传空串）。
+数据: **判据 3（下拉可用）**：选项 = 全部仓库 + `warehouseApi.list()` 回来的仓库名；取不到仓库列表时只剩「全部仓库」，**不挡报表本身**（可选增强不得变成新的失败面）。
+数据: **边界（照实登记）**：① 其余四张表**没有**筛选控件（没有对应维度，不做假控件）；② 质量成本缺仓库维度（报工/退款都不带仓库，需先定「按哪张单的仓库算」）；③ 不做全局筛选条（裁定见判据 1 的依据）。
+前置: 本用例是 [frontend-contract]：前置 = 报表中心（#7377 段 4/5/6）。零网络、零 LLM。
+跳过: [frontend-contract] 报表筛选的挂载位置与请求参数，由前端单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-23 新增（issue #7377 段 7，用户授权 AI 自裁「多维筛选」）。落码 = 报表页 `invWarehouse` + `reloadInventory()` + 库存滞销卡下拉。 ｜ tags: frontend-contract, report, filter, warehouse, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12860,8 +12889,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：875（活跃 141，跳过 734）
-- tier 分布：smoke 12 / normal 807 / adversarial 32
+- 用例总数：877（活跃 141，跳过 736）
+- tier 分布：smoke 12 / normal 809 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12876,7 +12905,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：152
+- 杂项域：154
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -13072,6 +13101,8 @@
 - RPT-007: 报表中心统一时间区间：只有按下单日/报工日的三张表吃区间，库存与账龄是此刻读数（issue #7376 段 6）
 - APV-001: 审批中心进观星台：只对「待审」给动作、批一次用一次、不能自批（issue #7374 段 2）
 - APV-002: 业务页就地申请审批：ref 与金额门槛按闸门口径预填（改价 / 盘点差异 / 超授信）（issue #7374 段 3）
+- QC-004: 质量成本按商品摊开：订单行小计占比分摊、逐分对得上、权重缺失不编（issue #7377 段 6）
+- RPT-008: 报表筛选只挂在「吃该维度」的表上：库存滞销按仓库筛（issue #7377 段 7）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

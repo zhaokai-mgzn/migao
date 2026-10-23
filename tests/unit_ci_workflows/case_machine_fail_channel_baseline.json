@@ -7,7 +7,7 @@
   "_anchor_note": "读数取自该 sha 的 `origin/main`（本判据首次落地时的基线）。它只是**出处留档**，不是判据 —— 判据只比对实测值与 `entries`。",
   "entries": {
     "no_channel_total": 0,
-    "backend_contract_scoring_zero": 224
+    "backend_contract_scoring_zero": 226
   },
   "history": [
     {
@@ -920,16 +920,25 @@
       "note": "issue #7374 段 2（审批中心页面）新增 1 条 [frontend-contract] 用例 APV-001 ⇒ 口径计数 221 → 222。"
     },
     {
-      "sha": "feat/7523-roll-outbound-operation",
-      "date": "2026-10-23",
-      "no_channel_total": 0,
-      "backend_contract_scoring_zero": 223,
-      "note": "issue #7523（整卷布料单「出库」独立工序）新增 1 条 [backend-contract] 用例 PG-091 ⇒ 口径计数 222 → 223（用例库 868 → 872，增量含 rebase 带入的 main 新用例）。机器判红通道 = traces.tests 的 Java 单测（ProductionRouteParityTest / ProductionSeedTemplateServiceTest / PositionDetailFieldsTest）+ ai-agent pytest（test_fabric_route / test_operation_qty）+ admin-web vitest（RollOutboundCondition）+ worker-h5 node:test，逐条非空且真实存在；真债务 no_channel_total 仍为 0。",
       "sha": "feat/7374-approval-entry",
       "date": "2026-10-23",
       "no_channel_total": 0,
       "backend_contract_scoring_zero": 224,
       "note": "issue #7374 段 3（业务页就地申请审批）新增 1 条 [frontend-contract] 用例 APV-002 ⇒ 口径计数 223 → 224。"
+    },
+    {
+      "sha": "feat/7377-qc-product",
+      "date": "2026-10-23",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 225,
+      "note": "issue #7377 段 6（质量成本商品维度，按比例摊）新增 1 条 [frontend-contract] 用例 QC-004 ⇒ 口径计数 224 → 225。"
+    },
+    {
+      "sha": "feat/7377-report-filters",
+      "date": "2026-10-23",
+      "no_channel_total": 0,
+      "backend_contract_scoring_zero": 226,
+      "note": "issue #7377 段 7（报表筛选只挂吃该维度的表：库存滞销按仓库筛）新增 1 条 [frontend-contract] 用例 RPT-008 ⇒ 口径计数 225 → 226。"
     }
   ]
 }
