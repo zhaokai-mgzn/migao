@@ -727,9 +727,17 @@ def check_sync_copy(a: Audit) -> CheckResult:
     src_txt = a.read(DEV_FLOW_SKILL) or preset_skill_text(a.repo, "skills/migao-dev-flow/SKILL.md")
     cp_txt = a.read(DEV_FLOW_COPY)
     if src_txt is None:
-        r.status = "unknown"
-        r.notes.append(_preset_moved_note("权威源 `migao-dev-flow/SKILL.md`"))
-        return r
+        # 🔴 #6640 尾部：**对象结构性不在本环境** ⇒ 具名 `not_applicable`，不是 `unknown`。
+        # 旧写法的代价是实测过的：定时腿 `--fail-on-unknown` 把这条折成 `3`，与「确实漂移」
+        # 同码 ⇒ 即使全仓零漂移也永远红（run 39993089601 即此形态）。判别力不放宽 —— 预设语料
+        # 可达时照常比版本/章节（下面所有断言一个字没动）。
+        return not_applicable(
+            r,
+            "预设语料（权威源 `migao-dev-flow/SKILL.md`）",
+            "本仓已不承载 `.agent-presets/**`（S4 / issue #6020），本环境也取不到预设镜像 "
+            "⇒ 判据没有可比对象（evaluated=0；**未跑 ≠ 通过**）",
+            "本机建镜像（`$MIGAO_PRESET_MIRROR` / `~/migao-dev-preset-anchor`）或 CI 检出预设仓",
+        )
     if cp_txt is None:
         r.status = "error"
         r.error = f"缺文件：{DEV_FLOW_COPY}（副本在本仓，它不该消失）"
@@ -2034,7 +2042,11 @@ def run_audit(a: Audit, baseline: dict, only: list[str] | None,
         # · 判定面为空（`empty-surface`）：这条判据的输入没了，结论无从谈起；
         # · 需要网络而本次离线：`heartbeat` 的 gh 查询全返「未知」⇒ `never-succeeded`
         #   这类条目看起来归零，无条件判陈旧就是**凭空判红**。
-        unverifiable = res.status in ("error", "unknown") or (c.network and a.offline)
+        # ⚠️ `not_applicable` 也算「本轮没能重算」：判定对象不在本环境 ⇒ 它名下的旧基线条目
+        # 不得被读成「已不漂移」（#6640 实测：`sync-copy` 的两条 `sections-diverged` / `version`
+        # 差一步被归零未删阻塞；而"没跑"必须长得像"没跑"）。
+        unverifiable = res.status in ("error", "unknown", "not_applicable") \
+            or (c.network and a.offline)
         cmp_ = compare_baseline(res, base_entries, changed, recorded_entries=recorded,
                                 base_check_entries=(base_entries_all or {}).get(c.id, {}),
                                 unverifiable=unverifiable)

@@ -401,3 +401,62 @@ def test_real_repo_minute_crons_are_judged_against_the_registered_bound(drift_mo
         eff, note = drift_mod._effective_period(period, throttle, problem)
         assert eff == max(period, throttle), f"{name} 的有效周期不是 max(声明周期, 登记值)：{eff}"
         assert "节流" in note, f"{name} 的报告说明没有写清「为什么用有效周期」：{note}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 判据 10：判定对象结构性不存在 ⇒ `not_applicable`（#6640 的尾部：sync-copy 不再把定时腿折成 3）
+# ─────────────────────────────────────────────────────────────────────────────
+def _repo_without_presets(tmp_path: Path, monkeypatch) -> Path:
+    """夹具：**从零建**一个没有预设语料的 git 仓库（= CI runner 的真实形态）。
+
+    不能拿 `mk_repo` 删目录了事：`preset_root()` 还会读 `HEAD~1` / `origin/main` 的 git 基线，
+    删除提交之前的历史仍能取到预设 ⇒ 判据照旧"有对象"（实测首版夹具就踩到，记成 `error`）。
+    """
+    repo = tmp_path / "repo-no-preset"
+    copy = repo / "docs" / "wiki" / "DEV-FLOW.md"
+    copy.parent.mkdir(parents=True, exist_ok=True)
+    copy.write_text("---\nversion: 1.0.0\n---\n\n# 副本\n\n正文甲。\n", encoding="utf-8")
+    wf = repo / WF_REL
+    wf.parent.mkdir(parents=True, exist_ok=True)
+    wf.write_text(WF_TMPL, encoding="utf-8")
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "fixture@example.com")
+    _git(repo, "config", "user.name", "fixture")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "no presets")
+    # 本机可能真有 `~/migao-dev-preset-anchor` 镜像 ⇒ 显式指到不存在处，保证判据面确定。
+    monkeypatch.setenv("MIGAO_PRESET_MIRROR", str(tmp_path / "no-such-mirror"))
+    return repo
+
+
+def test_sync_copy_absent_preset_is_not_applicable_not_unknown(tmp_path, monkeypatch):
+    """预设语料在业务仓与本环境都不存在 ⇒ sync-copy 记**具名 not_applicable**。
+
+    病灶（实测 run 39993089601）：判据把「对象不在」记成 `unknown` ⇒ 定时腿 `--fail-on-unknown`
+    折成 `3`，与「确实漂移」同码 ⇒ 即使全仓零漂移也永远红。
+    """
+    repo = _repo_without_presets(tmp_path, monkeypatch)
+    rc, out, rep = audit(repo, *GATE, "--only", "sync-copy")
+    chk = check_of(rep, "sync-copy")
+    assert chk["status"] == "not_applicable", (
+        f"对象不存在应记 not_applicable，实得 {chk['status']}\n{out}")
+    assert chk["evaluated"] == 0, f"未跑必须如实记 evaluated=0：{chk}\n{out}"
+    assert "not_applicable" in out and "预设语料" in out, f"必须具名（谁/为什么/怎么处置）：\n{out}"
+    assert rep["summary"]["tri_state"] == 0, rep["summary"]
+    assert rc == 0, f"--fail-on-unknown 把 not_applicable 折成非零了：rc={rc}\n{out}"
+
+
+def test_not_applicable_does_not_stale_block_its_baseline_entries(tmp_path, monkeypatch):
+    """没跑 ≠ 已不漂移：判据不可判（对象不在）⇒ 它名下的旧基线条目不得被读成「归零未删」。"""
+    repo = _repo_without_presets(tmp_path, monkeypatch)
+    baseline = repo / "scripts" / "drift_audit_baseline.json"
+    baseline.parent.mkdir(parents=True, exist_ok=True)
+    baseline.write_text(json.dumps(
+        {"entries": {"sync-copy": {"sections-diverged": 1, "version": 1}}}),
+        encoding="utf-8")
+    rc, out, rep = audit(repo, "--check", "--strict-stale", "--fail-on-unknown",
+                         "--only", "sync-copy")
+    chk = check_of(rep, "sync-copy")
+    assert chk["status"] == "not_applicable", out
+    assert rc == 0, f"不可判的判据被读成陈旧 ⇒ 阻塞：rc={rc}\n{out}"
+    assert "归零未删 0" in out, f"基线条目被误判为陈旧：\n{out}"
