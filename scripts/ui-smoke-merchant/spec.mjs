@@ -240,8 +240,6 @@ const markSkipped = (h, why) => h.done(true, why, undefined, 'skip')
 // `orderId` 恒空 ⇒ `16` 报「无目标订单」、`17` 导航到 `/orders//ship` 让前端把订单 id 拼成 `ship`
 // ⇒ api 日志 `请求的资源不存在: GET /api/admin/orders/ship`（issue #6790 B 类 ③）。
 // 现在一律用**浏览器会话的 cookie** 走 node 侧 `adminApi`（本文件既有形态）自造。
-const SMOKE_PRODUCT_ID = 'deff0be6c885cbf0469abe4f7b8da608'
-
 /** 建品/建单要一个**真存在的分类 id**（探针实测：`分类ID不能为空` ⇒ 422）。 */
 let _categoryId = ''
 async function defaultCategoryId(page) {
@@ -254,16 +252,38 @@ async function defaultCategoryId(page) {
   return _categoryId
 }
 
+// ⚠️ 2026-10-24 现取实测：旧形态写死的 `deff0be6c885cbf0469abe4f7b8da608` 在云 dev/生产共用库里
+//    **已不存在**（`select ... where id='deff0be6…'` 空集）⇒ 前置单要么 422、要么挂一条**指向不存在商品**的脏明细。
+//    ⇒ 改成**现取本租户**一件有价商品（同一族：不要把「别人的对象 / 历史对象」当自己的前置，见 issue #6942 ①）。
+let _orderProduct = null
+async function defaultOrderProduct(page) {
+  if (_orderProduct) return _orderProduct
+  const api = await adminApi(page)
+  const res = await api.get('/api/admin/products?page=1&size=20')
+  const items = res?.data?.items ?? res?.data ?? []
+  // 🔴 2026-10-24 真栈实测：列表**按创建时间倒序** ⇒ 本冒烟自己刚造的「冒烟…」商品排在首位，
+  //    而它们没有工艺属性（无路线 ⇒ 不自动生成加工单、直派也被拒 [DIRECT_DISPATCH_POOL_REQUIRED]）
+  //    ⇒ 32- 旅程据此建出来的单「既没按钮也没加工单」。⇒ 取数**优先真实种子商品**，排除冒烟自造件。
+  const isSmoke = (x) => String(x?.name ?? '').startsWith('冒烟')
+  const priced = items.filter((x) => Number(x.price ?? x.basePrice ?? 0) > 0)
+  const p = priced.find((x) => !isSmoke(x)) || priced[0] || items[0]
+  if (!p?.id) throw new Error(`建单前置失败：/api/admin/products 无可用商品（${JSON.stringify(res).slice(0, 180)}）`)
+  _orderProduct = p
+  return p
+}
+
 /** 自造一张含加工项的订单（pending），返回订单 id；调用方负责在跑完后 `cleanupOrder`。 */
 async function createOrderFixture(page, tag) {
   const api = await adminApi(page)
+  const prod = await defaultOrderProduct(page)
+  const unitPrice = Number(prod.price ?? prod.basePrice ?? 23.8) || 23.8
   const created = await api.post('/api/admin/orders', {
     customerName: tag, customerPhone: '13900002222', customerAddress: '杭州市西湖区冒烟路 2 号',
     // 探针实测：`常用物流/快递不能为空` + `常用物流公司不能为空`（422）
     logisticsType: 'express', logisticsCompany: '顺丰速运',
     discountAmount: 0, items: [{
-      productId: SMOKE_PRODUCT_ID, productName: '2699系列雪尼尔窗帘面料',
-      quantity: 2, unitPrice: 23.8, subtotal: 47.6,
+      productId: prod.id, productName: prod.name,
+      quantity: 2, unitPrice, subtotal: Number((unitPrice * 2).toFixed(2)),
       processingInfo: { sellingMethod: 'bulk_cut', doorWidth: '2.8', processingFee: 15,
         processingItems: [{ id: 'proc_item_1', name: '锁边', quantity: 2, unit: '米' }] }
     }],
@@ -307,9 +327,19 @@ async function processingRouteAvailable(page) {
   // 生成加工单要求订单**已确认**（服务端逐字：「当前状态 [pending] 不允许生成加工单，须为已确认」）⇒
   // 前置**自造**：先确认收款（pending → confirmed）再探生成能力（不自造就会把「没确认」误判成「租户没配路线」）。
   await api.put(`/api/admin/orders/${probeId}/payment`).catch(() => {})
+  // 🔴 2026-10-24 真栈读数：默认直派对**非加急**单会被拒（#7507「默认走智能派单」），
+  //    服务端逐字「该订单未加急：请到「智能派单」合并派单」[DIRECT_DISPATCH_POOL_REQUIRED]。
+  //    探针按该规则的**加急例外**走（与 `ProcessingOrderController` 的注释同源），
+  //    否则会把「业务规则正常工作」误读成「本租户没有工艺路线」⇒ 17/32 以错误理由 skip。
+  await api.put(`/api/admin/orders/${probeId}/urgency`, { isUrgent: true }).catch(() => {})
   const gen = await api.post('/api/admin/processing-orders/generate', { orderIds: [probeId] })
   const results = Array.isArray(gen?.data) ? gen.data : []
+  // 🔴 2026-10-24 真栈实测：**下单即自动生成加工单**（服务端返回 `data.id` 与 JG 号），
+  //    于是本探针的显式 generate 会回 `success:false` + 「已有加工单 JG-…，请勿重复生成」。
+  //    旧判据把它当「能力不可用」⇒ 16/17/32 以**错误理由 skip**（skip = 未覆盖）。
+  //    「已有加工单」本身就是**能力可用**的证据 ⇒ 计入 ok。
   const ok = results.some((r) => r && r.success !== false)
+    || results.some((r) => String(r?.message ?? '').includes('已有加工单'))
   // 归因**只用服务端逐字**（禁止再抄历史叙事 —— 那是 2026-10-14 实测过的错归因来源）
   const detail = results
     .map((r) => `${r?.orderRef ?? '?'} → ${r?.message ?? '(服务端未给 message)'}${r?.code ? ` [${r.code}]` : ''}`)
@@ -740,8 +770,13 @@ async function chatPage(page) {
     await nav(page, '/chat', '')
     await page.waitForTimeout(1500)
     const input = page.locator('textarea, input[type="text"]').first()
-    const hasInput = await input.isVisible().catch(() => false)
-    if (!hasInput) throw new Error('对话输入框不可见')
+    // 🔴 2026-10-24 真栈实测：旧形态「定长 1.5s 后盲取」⇒ 页面还在「加载中…」（会话列表首屏）就判红，
+    //    是**假红**（同 issue #4226② 的「定长 sleep 后盲取」纪律）。改成有界等待；超时则把页面文案
+    //    印进错误面，便于区分「卡加载」/「需要管理员授权」/「空态」。
+    if (!(await waitVisible(input, 20000))) {
+      const bodyText = (await page.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 200)
+      throw new Error(`对话输入框 20s 内未出现（页面文案：${bodyText || '<空>'}）`)
+    }
     await h.done(true, '', '对话页输入框可用（ai-agent 未起）— UI-only')
   } catch (e) {
     await h.done(false, `对话页失败: ${String(e).slice(0, 300)}`)
@@ -835,9 +870,12 @@ async function productsNew(page) {
         throw new Error(`商品列表 20s 内未就位（url=${page.url()}）`)
       }
     }
-    await page.waitForTimeout(1800)
-    const visible = await page.locator(`text=${pname}`).first().isVisible().catch(() => false)
-    if (!visible) throw new Error('新建商品未出现在列表（结果不可见）')
+    // 🔴 2026-10-24 真栈实测：表头「商品标题」先渲染、**行数据仍在「加载中…」** ⇒ 定长 1.8s 后
+    //    判可见是**假红**（截图：列表区 spinner 仍在转，本旅程却判红）。改成有界等待自造商品名出现。
+    if (!(await waitVisible(page.locator(`text=${pname}`).first(), 20000))) {
+      const bodyText = (await page.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 160)
+      throw new Error(`新建商品未出现在列表（20s 内未见「${pname}」；页面文案：${bodyText || '<空>'}）`)
+    }
     await h.done(true, '', `门幅 值/显示分离 ✓(${JSON.stringify(optInfo)}→'${storedValue}') + 建品可见 ✓(${pname})`)
   } catch (e) {
     await h.done(false, `新建商品页失败: ${String(e).slice(0, 300)}`)
@@ -1072,7 +1110,9 @@ async function ordersListJourney(page) {
   const h = await journey('14-orders-list')(page)
   try {
     await ensureLoggedIn(page)
-    await nav(page, '/orders', '订单列表')
+    // ⚠️ 2026-10-24 真栈实测：页面标题已从「订单列表」改为「销售订单」
+    //    ⇒ 旧断言 `expectText('订单列表')` 8s 超时，页面明明是好的却判红（截图里标题就是「销售订单」）。
+    await nav(page, '/orders', '销售订单')
     await page.waitForTimeout(1500)
     const rows = page.locator('tbody tr, [role="row"]')
     const n = await rows.count().catch(() => 0)
@@ -1173,11 +1213,24 @@ async function ordersNewJourney(page) {
     //   DELETE 401，上一版就是这么漏掉一件的：`清理失败 —— 留痕由残留计数断言承接` 却没人红）
     const nAfterClean = await cleanupFixture('选品后立刻清')
     // 提交订单
-    await page.getByRole('button', { name: /提交订单/ }).first().click().catch(() => {})
+    // 🔴 2026-10-24 真栈实测（同一轮暴露两处缺陷）：
+    //   ① 按钮找不到时 `.catch(() => {})` 把失败**吞掉** ⇒ 一次都没点；
+    //   ② 成功判据 `url.includes('/orders')` 对 `/orders/new` **同样成立** ⇒ 提交失败停在新单页也记 ✅
+    //      （证据：同轮 `14-orders-list` 读到「共 0 条」，本旅程却绿）。
+    // ⇒ 按钮找不到**出声**；成功判据改为「到达订单详情 `/orders/<id>`」（或成功 toast）。
+    const submitBtn = page.getByRole('button', { name: /提交订单|创建订单|确认下单/ }).first()
+    if (!(await waitVisible(submitBtn, 8000))) {
+      const names = await page
+        .locator('button')
+        .evaluateAll((els) => els.map((e) => (e.textContent || '').trim()).filter(Boolean).slice(0, 12))
+      throw new Error(`未找到提交按钮（/提交订单|创建订单|确认下单/）；页面按钮=${JSON.stringify(names).slice(0, 240)}`)
+    }
+    await submitBtn.click()
     await page.waitForTimeout(2500)
     const url = page.url()
-    if (url.includes('/orders')) {
-      await h.done(true, '', `新建订单提交后跳转 ${url}（自造商品 ${fxName} 已清理，商品总数 ${n0}→${nAfterClean ?? '?'}）`)
+    const onDetail = /\/orders\/[^/]+$/.test(new URL(url).pathname) && !url.endsWith('/orders/new')
+    if (onDetail) {
+      await h.done(true, '', `新建订单提交后到达详情 ${url}（自造商品 ${fxName} 已清理，商品总数 ${n0}→${nAfterClean ?? '?'}）`)
     } else {
       const toastOk = await page.getByText('订单创建成功').first().isVisible().catch(() => false)
       if (toastOk) { await h.done(true, '', '新建订单 toast 成功') }
@@ -1344,13 +1397,16 @@ async function productionQrJourney(page) {
     if (!dep.ok) { await markSkipped(h, `前置不满足（生产路线/默认工艺未配置）：${dep.why}`); return }
 
     // ① 建单（含加工项）—— 独立数据，不污染存量
+    // 商品**现取本租户**的：写死 id 在云库已不存在（见 createOrderFixture 的同一条注释）
+    const prod32 = await defaultOrderProduct(page)
+    const up32 = Number(prod32.price ?? prod32.basePrice ?? 23.8) || 23.8
     const created = await api.post('/api/admin/orders', {
       customerName: '生产旅程', customerPhone: '13900003333', customerAddress: '杭州市西湖区生产路 1 号',
       // ⚠️ 真栈 422 逐字：「常用物流/快递不能为空」+「常用物流公司不能为空」⇒ 必填（与 createOrderFixture 同法）
       logisticsType: 'express', logisticsCompany: '顺丰速运',
       discountAmount: 0, items: [{
-        productId: 'deff0be6c885cbf0469abe4f7b8da608', productName: '2699系列雪尼尔窗帘面料',
-        quantity: 2, unitPrice: 23.8, subtotal: 47.6,
+        productId: prod32.id, productName: prod32.name,
+        quantity: 2, unitPrice: up32, subtotal: Number((up32 * 2).toFixed(2)),
         processingInfo: { sellingMethod: 'bulk_cut', doorWidth: '2.8', processingFee: 15,
           processingItems: [{ id: 'proc_item_1', name: '锁边', quantity: 2, unit: '米' }] }
       }],
@@ -1379,11 +1435,27 @@ async function productionQrJourney(page) {
     // 等按钮出现而不是定长 sleep：确认收款 → 订单转 confirmed → 加工单块才渲染生成按钮
     const genBtn = page.getByRole('button', { name: /生成加工单/ }).first()
     const canGen = await genBtn.waitFor({ state: 'visible', timeout: 12000 }).then(() => true).catch(() => false)
-    if (!canGen) {
-      const st = (await api.get(`/api/admin/orders/${orderId}`).catch(() => ({})))?.data?.status
-      throw new Error(`[② 生成加工单] 确认付款后 12s 内仍未出现「生成加工单」按钮（order.status=${st}，期望 confirmed/producing）`)
+    if (canGen) {
+      await safeClick(page, genBtn, '生成加工单')
+    } else {
+      // 🔴 2026-10-24 真栈：本租户**下单即自动生成加工单**（创建响应就带 JG 号）⇒ 详情页没有
+      //    「生成加工单」按钮是**正确形态**，不是缺陷。判据改成「加工单真的存在」（API 读面），
+      //    存在即继续（并刷新页面让加工单块渲染）；不存在才判红。
+      // ⏱ 自动生成是**异步**的（库里实测：付款后数秒才落加工单）⇒ 有界轮询 20s，别用一次性读数判死。
+      let hasPo = false
+      for (let i = 0; i < 20 && !hasPo; i++) {
+        const list = await api.get('/api/admin/processing-orders?keyword=&status=&page=1&size=100').catch(() => null)
+        // ⚠️ 该端点**两种形状**都见过：本参数组合下 `data` 是**数组**，另一些调用点回 `{items}` ⇒ 两种都收。
+        const rows32 = Array.isArray(list?.data) ? list.data : (list?.data?.items ?? [])
+        hasPo = rows32.some((x) => x.orderId === orderId)
+        if (!hasPo) await page.waitForTimeout(1000)
+      }
+      if (!hasPo) {
+        const st = (await api.get(`/api/admin/orders/${orderId}`).catch(() => ({})))?.data?.status
+        throw new Error(`[② 生成加工单] 确认付款后既无「生成加工单」按钮、API 也查不到本单加工单（order.status=${st}）`)
+      }
+      await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {})
     }
-    await safeClick(page, genBtn, '生成加工单')
     // 等生成效果可见（加工单块渲染出加工单号）再读 API：生成是后端点 + 前端 load()，定长 sleep 会假红
     await page.getByText(/JG-\d{8}-\d+/).first().waitFor({ state: 'visible', timeout: 12000 }).catch(() => {})
 
@@ -1493,12 +1565,15 @@ async function orderShipJourney(page, orderId) {
 /** 建一张**不含加工项**的订单（发货表单可提交；含加工项的单走加工单守卫 ⇒ 由 `17-` 承担）。 */
 async function createPlainOrderFixture(page, tag) {
   const api = await adminApi(page)
+  // 商品**现取本租户**的（写死 id 在云库已不存在，见 createOrderFixture 的同一条注释）
+  const prod = await defaultOrderProduct(page)
+  const unitPrice = Number(prod.price ?? prod.basePrice ?? 23.8) || 23.8
   const created = await api.post('/api/admin/orders', {
     customerName: tag, customerPhone: '13900002223', customerAddress: '杭州市西湖区冒烟路 3 号',
     logisticsType: 'express', logisticsCompany: '顺丰速运',
     discountAmount: 0, items: [{
-      productId: SMOKE_PRODUCT_ID, productName: '2699系列雪尼尔窗帘面料',
-      quantity: 2, unitPrice: 23.8, subtotal: 47.6,
+      productId: prod.id, productName: prod.name,
+      quantity: 2, unitPrice, subtotal: Number((unitPrice * 2).toFixed(2)),
     }],
   })
   const id = created?.data?.id
@@ -1770,12 +1845,18 @@ async function afterSalesDetailJourney(page, ticketId) {
       const remarkInput = page.locator('textarea, input[placeholder*="原因"], input[placeholder*="备注"]').first()
       await remarkInput.fill(reason).catch(() => {})
       await page.getByRole('button', { name: /确认/ }).last().click().catch(() => {})
-      await page.waitForTimeout(1800)
-      // 结果可见：详情页展示关闭原因
+      // 🔴 2026-10-24 真栈实测：定长 1.8s 就 reload ⇒ 关闭请求可能**还在飞**（同一份代码三轮里
+      //    两绿一红 = 假红）。改成等「服务端真的关了」（API 轮询 status=closed）再 reload，
+      //    然后**有界等待**原因文本出现。
+      let closed = false
+      for (let i = 0; i < 15 && !closed; i++) {
+        const st = (await api.get(`/api/admin/after-sales/${ticketId}`).catch(() => null))?.data?.status
+        closed = st === 'closed'
+        if (!closed) await page.waitForTimeout(1000)
+      }
       await page.reload({ waitUntil: 'domcontentloaded' })
-      await page.waitForTimeout(1800)
-      const reasonVisible = await page.getByText(reason).first().isVisible().catch(() => false)
-      await h.done(reasonVisible, reasonVisible ? '' : '关闭原因未回显', `关闭原因落库回显=${reasonVisible}`)
+      const reasonVisible = await waitVisible(page.getByText(reason).first(), 15000)
+      await h.done(reasonVisible, reasonVisible ? '' : `关闭原因未回显（服务端 status=closed? ${closed}）`, `关闭原因落库回显=${reasonVisible}`)
     } else {
       await h.done(true, '工单状态不可关闭（可能已终态），仅验证渲染', '')
     }
@@ -2132,6 +2213,14 @@ async function main() {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const page = await ctx.newPage()
   page.on('response', (r) => { if (r.status() >= 400) failedResponses.push(`${r.status()} ${r.request().method()} ${r.url()}`) })
+  // 🔴 网络级失败（DNS / 连接被拒 / TLS 握手）此前**只留下一条不带 URL 的 console 文案**
+  //    ⇒ 2026-10-24 实测把「某资源域名解析不了」读成了「整站挂了」（33 旅程全红、无归因）。
+  //    这里把 host 一起记进 `failedResponses`，让 `[netfail]` 与 `[http]` 一样**可指名**。
+  page.on('requestfailed', (r) => {
+    let host = ''
+    try { host = new URL(r.url()).host } catch { host = r.url().slice(0, 60) }
+    failedResponses.push(`netfail ${host} ${r.failure()?.errorText ?? ''} ${r.url().slice(0, 160)}`)
+  })
 
   // 登录 + 会话保持（同一上下文内完成，保证后续旅程带登录态）
   await jrun('01-login', async (p) => {
@@ -2188,7 +2277,14 @@ async function main() {
     recordSkip('16-order-detail-processing-order')
   }
   // #4186 收口：加工单二维码 / 工序列 / 计件的**正向**分支（自带建单，不依赖 16- 的数据）
-  await jrun('32-production-qr-and-piecework', productionQrJourney, page)
+  // 🔴 2026-10-24：本旅程**不再走 `jrun` 的 45s 硬超时**（与 16-/17b- 同范式）—— 本租户「下单即自动
+  //    生成加工单」且生成是**异步**的（库里实测付款后数秒才落 JG），故它要**有界轮询 20s** 才判得出
+  //    「按钮不出现是正确形态」；45s 上限会把这段合法等待切成「超时」= 假红。内部每一步仍有显式等待。
+  if (inGroup('32-production-qr-and-piecework')) {
+    await productionQrJourney(page)
+  } else {
+    recordSkip('32-production-qr-and-piecework')
+  }
   if (inGroup('17-order-ship')) {
     await orderShipJourney(page, detOrderId)
   } else {
