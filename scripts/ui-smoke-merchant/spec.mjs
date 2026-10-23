@@ -774,7 +774,7 @@ async function chatPage(page) {
     //    是**假红**（同 issue #4226② 的「定长 sleep 后盲取」纪律）。改成有界等待；超时则把页面文案
     //    印进错误面，便于区分「卡加载」/「需要管理员授权」/「空态」。
     if (!(await waitVisible(input, 20000))) {
-      const bodyText = (await page.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 200)
+      const bodyText = (await page.evaluate(() => document.body.innerText).catch(() => '')).replace(/\s+/g, ' ').slice(0, 200)
       throw new Error(`对话输入框 20s 内未出现（页面文案：${bodyText || '<空>'}）`)
     }
     await h.done(true, '', '对话页输入框可用（ai-agent 未起）— UI-only')
@@ -873,7 +873,7 @@ async function productsNew(page) {
     // 🔴 2026-10-24 真栈实测：表头「商品标题」先渲染、**行数据仍在「加载中…」** ⇒ 定长 1.8s 后
     //    判可见是**假红**（截图：列表区 spinner 仍在转，本旅程却判红）。改成有界等待自造商品名出现。
     if (!(await waitVisible(page.locator(`text=${pname}`).first(), 20000))) {
-      const bodyText = (await page.locator('body').innerText().catch(() => '')).replace(/\s+/g, ' ').slice(0, 160)
+      const bodyText = (await page.evaluate(() => document.body.innerText).catch(() => '')).replace(/\s+/g, ' ').slice(0, 160)
       throw new Error(`新建商品未出现在列表（20s 内未见「${pname}」；页面文案：${bodyText || '<空>'}）`)
     }
     await h.done(true, '', `门幅 值/显示分离 ✓(${JSON.stringify(optInfo)}→'${storedValue}') + 建品可见 ✓(${pname})`)
@@ -1221,8 +1221,13 @@ async function ordersNewJourney(page) {
     const submitBtn = page.getByRole('button', { name: /提交订单|创建订单|确认下单/ }).first()
     if (!(await waitVisible(submitBtn, 8000))) {
       const names = await page
-        .locator('button')
-        .evaluateAll((els) => els.map((e) => (e.textContent || '').trim()).filter(Boolean).slice(0, 12))
+        .evaluate(() =>
+          Array.from(document.querySelectorAll('button'))
+            .map((e) => (e.textContent || '').trim())
+            .filter(Boolean)
+            .slice(0, 12),
+        )
+        .catch(() => [])
       throw new Error(`未找到提交按钮（/提交订单|创建订单|确认下单/）；页面按钮=${JSON.stringify(names).slice(0, 240)}`)
     }
     await submitBtn.click()
