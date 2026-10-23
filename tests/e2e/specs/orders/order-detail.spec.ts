@@ -223,8 +223,9 @@ test.describe('订单详情 - 已完成状态', () => {
 
   test('已完成状态不应显示操作按钮', async ({ page }) => {
     await expect(page.getByRole('button', { name: '关闭订单' })).toBeHidden()
-    // ⚠️ 子串误匹配：completed 态合法渲染「打印发货单」，其 accessible name 含「发货」⇒
-    //    { name: '发货' } 默认按子串匹配 ⇒ 恒命中该按钮。用 exact 收窄到真正的「发货」动作键。
+    // ⚠️ 子串误匹配：`{ name: '发货' }` 默认按**子串**匹配 —— 页面上的「打印」入口、
+    //    「编辑物流」等非动作键都可能被误命中（改前 completed 态还渲染过「打印发货单」，其
+    //    accessible name 含「发货」，正是这条 exact 的来历）。仍用 exact 收窄到真正的「发货」动作键。
     await expect(page.getByRole('button', { name: '发货', exact: true })).toBeHidden()
   })
 
