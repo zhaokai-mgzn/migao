@@ -37,7 +37,7 @@
 | 2 | `超高` ⟺ **净窗高 > 阈值**（严格大于） | 把判据改回 `成品高 + 上下卷边 > 门幅` ⇒ 红 |
 | 3 | 输出顺序恒为 `超宽 → 超高 → 倒幅` | 交换两段 ⇒ 红 |
 | 4 | 阈值是**企业参数**：`config` 改它 ⇒ 判定随之变（判据读 `cfg`，不读模块常量） | 判据内联成字面量 ⇒ 红 |
-| 5 | 默认阈值 == 模块常量 `6` / `4`（D7），且在 `_POSITIVE_CONFIG_KEYS`（0/负 ⇒ 报错） | 默认值写成别的数 ⇒ 红；漏登记 ⇒ 红 |
+| 5 | 默认阈值 == 模块常量 `6` / `4`（D7），且在 `_NON_NEGATIVE_CONFIG_KEYS`（负数 ⇒ 报错；issue #7548 起 0 合法 = 全部按超额） | 默认值写成别的数 ⇒ 红；漏登记 ⇒ 红 |
 | 6 | **D11 签名收窄**：`fabric_width` / `fullness` **已不是入参**（新判据不读它们） | 传 `fabric_width=` ⇒ `TypeError` ⇒ 红 |
 | 7 | `倒幅` 仍**只在** `定宽买高` 时产出（D11 保留 `cutting_mode` 的唯一理由） | `定高买宽` 也推倒幅 ⇒ 红 |
 | 8 | 加工类型**缺省 / 表外 ⇒ `超宽`/`超高` 照判**（改判 ③：旧「都不判」是为分流服务的） | 缺省时短路成 `[]` ⇒ 红 |
@@ -228,13 +228,13 @@ class TestTenantConfigKeys:
         assert curtain_calc.OVERSIZE_WIDTH_THRESHOLD == 6.0
         assert curtain_calc.OVERSIZE_HEIGHT_THRESHOLD == 4.0
 
-    def test_keys_are_registered_as_positive_scalars(self):
-        # 注入：漏登记 ⇒ 0/负数被静默接受 ⇒ 红
-        assert "oversize_width_threshold" in curtain_calc._POSITIVE_CONFIG_KEYS
-        assert "oversize_height_threshold" in curtain_calc._POSITIVE_CONFIG_KEYS
+    def test_keys_are_registered_as_non_negative_scalars(self):
+        # 注入：漏登记 ⇒ 负数被静默接受 ⇒ 红（issue #7548：0 合法 = 全部按超额，负数仍拒）
+        assert "oversize_width_threshold" in curtain_calc._NON_NEGATIVE_CONFIG_KEYS
+        assert "oversize_height_threshold" in curtain_calc._NON_NEGATIVE_CONFIG_KEYS
 
     @pytest.mark.parametrize("key", ["oversize_width_threshold", "oversize_height_threshold"])
-    @pytest.mark.parametrize("bad", [0, -1, "abc"])
+    @pytest.mark.parametrize("bad", [-1, "abc"])
     def test_invalid_threshold_is_rejected(self, key, bad):
         with pytest.raises(ValueError):
             curtain_calc.resolve_craft_calc_config({key: bad})

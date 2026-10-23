@@ -138,6 +138,13 @@ class TestCeilToOneTenth:
         """`2.3×10 = 22.999999999999996` 这类二进制噪声**不得**被当成「要进位」（否则纸表 12.3 → 12.4）。"""
         assert ceil_to_step(2.3 * 10, 1.0) == 23.0
 
+    def test_ceil_to_step_zero_step_means_no_rounding(self):
+        """issue #7548：进位步长 **0 = 不进位**（原值返回）；负数仍是配置错误。"""
+        assert ceil_to_step(6.35, 0) == 6.35
+        assert ceil_to_step(13.3449, 0) == 13.3449
+        with pytest.raises(ValueError):
+            ceil_to_step(6.35, -0.1)
+
     def test_fabric_meters_is_a_whole_tenth(self):
         """端到端：用料米数一律落在 0.1 的格点上（构造 x.xx5 的输入 ⇒ 进位可见）。"""
         q = build_quote(formula="pleat", **DOUBLE_6_6)
@@ -430,14 +437,28 @@ class TestConfigGuardrails:
         ("per_fold_single", -0.25),
         ("margin_single", -0.1),
         ("margin_multi", -0.1),
-        ("min_fullness", 0),
+        ("min_fullness", -0.1),
         ("hem_margin", -0.3),
-        ("meters_rounding_step", 0),
         ("meters_rounding_step", -0.1),
+        ("oversize_width_threshold", -1),
     ])
-    def test_non_positive_numbers_rejected(self, key, value):
+    def test_invalid_numbers_rejected(self, key, value):
+        """负数**一律**拒；`per_fold_single=0` 也拒（0 米/折 ⇒ 0 米用料 ⇒ 0 元报价）。
+
+        🔴 issue #7548 改判：`min_fullness` / `meters_rounding_step` 的 **0** 已合法
+        （用户 2026-10-23「另外还要都允许设置为0」）⇒ 从本参数表移出，见下一条正控。
+        """
         with pytest.raises(ValueError):
             resolve_craft_calc_config({**DEFAULT_CRAFT_CALC_CONFIG, key: value})
+
+    @pytest.mark.parametrize("key", [
+        "margin_single", "margin_multi", "min_fullness", "hem_margin",
+        "meters_rounding_step", "oversize_width_threshold", "oversize_height_threshold",
+    ])
+    def test_zero_is_allowed_for_zero_meaningful_keys(self, key):
+        """issue #7548：这 7 个键的 **0 合法**且原样保留（不留边 / 关闭护栏 / 不进位 / 全部按超额）。"""
+        cfg = resolve_craft_calc_config({**DEFAULT_CRAFT_CALC_CONFIG, key: 0})
+        assert cfg[key] == 0
 
     def test_empty_tiers_rejected(self):
         with pytest.raises(ValueError):

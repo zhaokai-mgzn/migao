@@ -28,6 +28,9 @@ import NumberInput from '@/components/ui/NumberInput'
 // issue #7176：本块的版式**就是标准**（浅底面板 + 栅格 + 标签在上 + 单位入框）。
 // 把它抽成原语后由本块第一个改用：其余配置面跟着它对齐，而不是各写一份。
 import FormPanel, { Field, FormGrid, fieldControl } from '@/components/ui/FormPanel'
+// issue #7548：小数位与配置面**同一口径**（3 位 = 毫米）；本块与配置项同屏，两边精度不一致会被读成
+// 「同一个参数两套精度」。
+import { CALC_INPUT_DECIMALS } from '@/lib/craft-calc-glossary'
 
 /** 一个示例窗（默认值只是**举例**，商家可改；它是值、不是文案） */
 const EXAMPLE = { width: 5.5, height: 3.2 } as const
@@ -137,7 +140,7 @@ export function OversizeThresholdPreview({ config }: Props) {
             改为「**这里只试算** + 要改口径去哪改」，既不承诺保存、又给出动作。
             🔴 2026-10-17（issue #7147）：去口语与内部机制名 —— 「加工费组合 / 收不到这笔钱」改为
             商家可读的「按哪一档计价 / 那一档没配价时按未定价处理」。 */
-        <InlineMarkdown text="超高 / 超宽会影响加工费按哪一档计价（那一档没配价时按未定价处理，不会自动补价）。改阈值前先在这里试算一扇窗，看看会不会变。判定由系统给出；**这里只试算** —— 要改口径请改上面的阈值后点「保存」。" />
+        <InlineMarkdown text="超高 / 超宽会影响加工费按哪一档计价（那一档没配价时按未定价处理，不会自动补价）。改阈值前先在这里试算一扇窗，看看会不会变。判定由系统给出；**这里只试算** —— 要改口径请改上面的阈值（改完自动保存，无需手动提交）。" />
       }
     >
       <FormGrid cols={4}>
@@ -160,6 +163,7 @@ export function OversizeThresholdPreview({ config }: Props) {
               data-testid={testid}
               value={value === '' ? null : value}
               onChange={(v) => (setter as (v: number | '') => void)(v === null ? '' : v)}
+              decimals={CALC_INPUT_DECIMALS}
               className={`${fieldControl(unit)} text-left tabular-nums`}
             />
           </Field>

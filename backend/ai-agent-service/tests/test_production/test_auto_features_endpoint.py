@@ -150,11 +150,21 @@ class TestTenantConfig:
         tuned = _data(client, {**BASE, "config": {"oversize_height_threshold": 3}})
         assert _names(tuned["auto_features"]) == ["超宽", "超高", "倒幅"]
 
-    def test_invalid_threshold_is_rejected_with_400(self, client):
-        # 护栏：0 / 负 ⇒ 400（**不静默回退默认值**）
-        resp = _post(client, {**BASE, "config": {"oversize_width_threshold": 0}})
+    def test_negative_threshold_is_rejected_with_400(self, client):
+        # 护栏：负数 ⇒ 400（**不静默回退默认值**）；issue #7548 起 **0 合法**（= 全部按超额）
+        resp = _post(client, {**BASE, "config": {"oversize_width_threshold": -1}})
         assert resp.status_code == 400
         assert resp.json()["detail"]["error"]["code"] == "CRAFT_CALC_INVALID_INPUT"
+
+    def test_zero_threshold_means_everything_is_oversize(self, client):
+        """issue #7548（用户 2026-10-23「另外还要都允许设置为0」）：阈值 0 是**合法配置**。
+
+        0 ⇒ 每一扇窗的净窗宽 / 净窗高都 > 阈值 ⇒ 恒判「超宽」「超高」——
+        既不是 400，也不是静默回退默认 6 / 4（回退的话 `BASE` 会只剩「倒幅」）。
+        """
+        data = _data(client, {**BASE, "config": {
+            "oversize_width_threshold": 0, "oversize_height_threshold": 0}})
+        assert _names(data["auto_features"]) == ["超宽", "超高", "倒幅"]
 
     def test_hem_margin_in_config_does_not_change_the_verdict(self, client):
         """改判：`hem_margin` 已**离开判定面**（它仍管几何层 —— 见 `notices` 与用料）。

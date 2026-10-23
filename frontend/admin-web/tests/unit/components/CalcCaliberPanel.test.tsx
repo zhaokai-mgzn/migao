@@ -451,6 +451,73 @@ describe('判据 1（#6825）：域内就地可改 —— 逐键在位', () => {
   })
 })
 
+// ══════════════════════════════════════════════════════════════════════════════
+// 判据 10 / 11（2026-10-23 用户裁定，issue #7548）：3 位小数 + 允许设 0
+// ══════════════════════════════════════════════════════════════════════════════
+/**
+ * 用户逐字：「算料口径的输入框都允许设置3位小数，当前是只能输入两位小数」「另外还要都允许设置为0」。
+ *
+ * 已定口径（同一轮裁定选 A）：3 位 = 毫米精度，与各列 `NUMERIC(6,3)` 同口径，**第 4 位仍归一**；
+ * 0 只对「0 有含义」的键放开（每折吃布 / 档位褶倍仍须 > 0 —— 那几项 0 = 0 米 = 0 元报价）。
+ */
+describe('判据 10（#7548）：算料口径**所有**数字框允许 3 位小数（毫米口径）', () => {
+  /** 面板里的**数字**框（`NumberInput` 的形态 = `inputmode=decimal`；档位「显示名」是文本 ⇒ 不在内） */
+  function numericInputs(): HTMLInputElement[] {
+    const panel = screen.getByTestId('calc-caliber-panel')
+    return Array.from(panel.querySelectorAll('input')).filter(
+      (el) => el.getAttribute('inputmode') === 'decimal',
+    ) as HTMLInputElement[]
+  }
+
+  it('标量 / 档位褶倍 / 拼色每折用料：0.125 失焦后**原样留住**（改前被归一成 0.13）', async () => {
+    await renderPanel()
+    for (const id of [
+      'calc-caliber-scalar-per_fold_single',
+      'calc-caliber-tier-standard-fullness',
+      'calc-caliber-mixed-1',
+    ]) {
+      const el = screen.getByTestId(id)
+      fireEvent.change(el, { target: { value: '0.125' } })
+      fireEvent.blur(el)
+      expect(el, `${id} 必须留住第 3 位小数`).toHaveValue('0.125')
+    }
+  })
+
+  it('类级：本域**每一个**数字框（含高级项与阈值试算 4 格）都按 3 位归一 ⇒ 新增字段漏传 `decimals` 即红', async () => {
+    await renderPanel()
+    fireEvent.click(screen.getByTestId('param-advanced-toggle-calc'))
+    const inputs = numericInputs()
+    // 自证非空：一个框都没取到时，下面的循环恒真（空断言 = 假绿）
+    expect(inputs.length, '算料口径域应当有 ≥12 个数字框（8 标量 + 档位 + 拼色 + 试算 4 格）').toBeGreaterThanOrEqual(12)
+    for (const el of inputs) {
+      const label = el.getAttribute('data-testid') ?? el.id
+      fireEvent.change(el, { target: { value: '0.125' } })
+      fireEvent.blur(el)
+      expect(el, `${label} 必须按 3 位小数归一`).toHaveValue('0.125')
+      // 第 4 位仍归一：3 位是**口径**，不是「不限制位数」
+      fireEvent.change(el, { target: { value: '0.1234' } })
+      fireEvent.blur(el)
+      expect(el, `${label} 第 4 位按 3 位归一`).toHaveValue('0.123')
+    }
+  })
+})
+
+describe('判据 11（#7548）：0 可设 —— 框里留住 0、正文就是 0（不是空、不回落默认值）', () => {
+  it('单开余量输 0 ⇒ 框内 `0`，防抖后的 PUT 正文 `margin_single` = 0', async () => {
+    const sent: CraftCalcConfig[] = []
+    await renderPanel(async (draft) => {
+      sent.push(draft)
+      await productionApi.updateCraftCalcConfig(draft)
+    })
+    const el = screen.getByTestId('calc-caliber-scalar-margin_single')
+    fireEvent.change(el, { target: { value: '0' } })
+    fireEvent.blur(el)
+    expect(el, '0 是合法值：不许被当成「空」清掉').toHaveValue('0')
+    await waitFor(() => expect(sent).toHaveLength(1), { timeout: 5000 })
+    expect((sent[0] as unknown as Record<string, unknown>).margin_single).toBe(0)
+  })
+})
+
 /**
  * 判据 1b：术语说明区块与参数**同屏**，且它的行内标记**渲染成元素**（issue #4975 → #5194 改判）
  *

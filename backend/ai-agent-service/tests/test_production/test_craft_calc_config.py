@@ -136,14 +136,32 @@ class TestConfigPassthrough:
         assert data["fullness"] == 2.2
 
     def test_invalid_config_is_rejected_not_silently_defaulted(self, client):
-        """判据 5：非法配置（`min_fullness=0`）⇒ **400**，**不得**静默回退默认值。
+        """判据 5：非法配置（`per_fold_single=0`）⇒ **400**，**不得**静默回退默认值。
 
         静默回退 = 商家以为改了、系统按默认算 ⇒ 算错钱且无人知道（issue #4528 护栏）。
         红证：静默回退 ⇒ 200 + 13.3 ⇒ 红。
+
+        🔴 issue #7548 改判：本条原用 `min_fullness=0` 当非法样本 —— 用户 2026-10-23 裁定
+        「都允许设置为0」后 **`min_fullness=0` 已合法**（= 关闭护栏）⇒ 换成仍然非法的
+        `per_fold_single=0`（0 米/折 = 0 元报价，用户同轮选定**不**放开）。正控见下一条。
         """
-        resp = _post(client, {**FROZEN, "config": {"min_fullness": 0}})
+        resp = _post(client, {**FROZEN, "config": {"per_fold_single": 0}})
         assert resp.status_code == 400, resp.text
         assert resp.json()["detail"]["error"]["code"] == "CRAFT_CALC_INVALID_INPUT"
+
+    def test_zero_margin_is_honoured_not_rejected(self, client):
+        """判据 5b（issue #7548）：`margin_multi=0` 合法 ⇒ 200，且 `margin` 回显 **0**（不是默认 0.3）。
+
+        红证（改前）：0 被引擎拒 ⇒ 400（正是用户「另外还要都允许设置为0」要解决的形态）；
+        红证（静默回默认）：`margin` 仍是 0.3、用料仍是 13.3。
+        ⚠️ 强断言是 `margin == 0` 而不是用料：余量参与**褶数**推导（余量 0 ⇒ 褶数 52→54 ⇒ 13.5 米），
+        所以「用料是不是 13.0」不能单独指认「0 生效了」。
+        """
+        resp = _post(client, {**FROZEN, "config": {"margin_multi": 0}})
+        assert resp.status_code == 200, resp.text
+        data = resp.json()["data"]
+        assert data["margin"] == 0
+        assert data["fabric_meters"] == 13.5
 
     def test_unparseable_mixed_times_key_is_rejected(self, client):
         """判据 3 的负例：拼次键不是整数（`"一次"`）⇒ **400**，不得静默丢档。
