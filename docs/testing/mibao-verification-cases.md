@@ -12707,7 +12707,7 @@
 ```
 溯源: 2026-10-19 新增（issue #7309）。病：A4 的 @page 边距 12mm ≥ Chrome 画页眉页脚的分界（实测 8.7/8.8mm）⇒ 客户拿到的凭证顶部多出日期与后台标题、底部多出订单 URL 与页码。修：A4 的 @page 边距写 0（结构性、不依赖阈值），版面内缩 12mm 走 contentInset + 单据容器 padding（box-decoration-break: clone 逐页重复）⇒ 纸面版式与改前逐毫米一致。另：销售单可切 A4，同批补 padding（continuous 介质取 0，纸面不变）。 ｜ tags: print, a4, browser-chrome, class-level-guard
 
-### UI-129. 建品页 AI 生成商品图：样图 → 百炼图生图 → 预览后选用（不自动落库，issue #7335） 🔵
+### UI-129. 建品页 AI 生成商品图：样图 → 百炼图生图 → 生成即自动填入图片位（再生成替换，不落库；issue #7335 / #7533） 🔵
 ```
 你: 「当前缺乏商品的主图和明细图，你能否根据用户提供的样本图通过大模型来补充一份接近商品的样品图」（用户 2026-10-19）
 你: 「如果效果可以的话，我希望做成商品创建中的功能的一部分」（用户 2026-10-19）
@@ -12715,12 +12715,12 @@
 数据: 判据 1·后端不落库（会红）：POST /api/admin/products/ai-images 只回 {url, model}（data 恰好两个键）；控制器依赖面恰好 ProductImageGenerationService（无 ProductService / Mapper）。执行点 = ProductImageControllerTest + ProductImageGenerationServiceTest。
 数据: 判据 2·链路收口（会红）：临时 URL 只允许从 *.aliyuncs.com 下载并转存 OSS（非百炼域名 ⇒ 422 且不下载）；样图必须 https；用途白名单 main/texture/craft/scene 之外 ⇒ 422 且不发起生成请求。
 数据: 判据 3·ai-agent 模型轮换（会红）：配额类错误（429 / AllocationQuota）与「模型接不了该请求」（HTTP 400 InvalidParameter，实测 qwen-mt-image-2.0，issue #7341）自动切下一个模型；审核类 400（DataInspectionFailed）不切模型；默认链 = qwen-mt-image-2.0（用户 2026-10-23 裁定：qwen-image-* 免费额度用尽，issue #7538）且它不接图生图 ⇒ 全链不可用时报「模型不接这类请求（非配额原因）」而不是「额度用尽」；全部用尽 ⇒ 503；未配置 Key ⇒ 503 且不发外部请求。执行点 = backend/ai-agent-service/tests/test_generator.py。
-数据: 判据 4·前端（会红）：无样图 ⇒ 按钮 disabled + 先上传提示；默认用第 1 张、多图可切换样图（生成携带所选样图 URL + kind）；「用这张」主图走 onApplyMain、细节图走 onApplyDetail，且面板不收起 + 「已加入」反馈；生成中 loading；失败可见可行动错误。执行点 = frontend/admin-web/tests/unit/components/ProductImageAI.test.tsx。
-数据: 判据 5·存量补图（会红）：样图候选 = 已上传主图 + 详情图（去重、默认第 1 张），多图可切换（生成携带所选样图 URL）；「用这张」后面板不收起并给「已加入」反馈。执行点 = ProductImageAI.test.tsx + ProductForm.test.tsx（编辑态候选去重）。
+数据: 判据 4·前端（会红，issue #7533 改判）：无样图 ⇒ 按钮 disabled + 先上传提示；默认用第 1 张、多图可切换样图（生成携带所选样图 URL + kind）；**生成成功即自动填入图片位**（主图 ⇒ onApplyMain / images[0]；细节·工艺·场景 ⇒ onApplyDetail / detailImages 末位），**不存在「用这张」按钮**（回归守卫）；**再生成一张 ⇒ 携带上一次自动填入的 URL 作为 replaceUrl**（替换、不叠加；换用途跨槽位同样先摘旧位）；生成中 loading；失败**不落位**且错误可见可行动。执行点 = frontend/admin-web/tests/unit/components/ProductImageAI.test.tsx。
+数据: 判据 5·落位闭环（会红，issue #7533）：渲染真实 `ProductForm` ⇒ 生成成功**无需任何额外点击**主图位即变为 [生成图, 原图]；点「提交并上架」⇒ `onSubmit` 载荷 `images` 带上该 URL（= 用户逐字「保存后也没有」的判据）；再生成 ⇒ 替换不叠加；细节用途 ⇒ `detailImages` 末位；**生成期间（~40s）商家改过图片列表 ⇒ 落位基于最新列表**（删掉的图不复活、新图不丢，靠函数式更新）。执行点 = frontend/admin-web/tests/unit/components/ProductFormAIImage.test.tsx；编辑态样图候选去重 = ProductForm.test.tsx。
 前置: 本用例是 [backend-contract] 纯前端/接口契约用例：前置（已上传样图、admin-api 端点、ai-agent 内部端点）由三端单测自建或 mock（admin-web mock `@/lib/api`；admin-api mock ProductImageClient/FileStorageService；ai-agent mock httpx），不依赖共享夹具与真实服务 ⇒ 前置不成立时对应单测直接红；agent-eval 栈不跑它
 跳过: [backend-contract] 纯页面 AI 辅助入口（不经过 LLM 对话/工具），由 admin-api 单测 + ai-agent pytest + 前端 vitest 执行，不进入 agent-eval 冒烟
 ```
-溯源: 2026-10-19 新增（issue #7335）。数据侧：同日已为测试租户 46 的 6 个无图商品生成 24 张（6 主图 + 18 明细图）并写入 products.main_image / images / detail_images（qwen-image-3.0 封面 + 2.1-pro/mt-image-2.0/2.1-turbo 明细图自动切换）。功能侧：模型/提示词内核在 ai-agent（不落库、配额轮换），转存与页面入口在 admin-api/admin-web；平台统一 Key（用户 2026-10-19 裁定）。2026-10-19 追加（issue #7341）：默认回落链去掉图片翻译模型 qwen-mt-image-2.0，400 InvalidParameter 转为「切下一个模型」。2026-10-19 追加（issue #7344，用户 20:21 建议「编辑页也支持补图」）：入口本就在共享 ProductForm（编辑页可用），本次补多图切换样图 + 用这张后面板不收起。2026-10-23 追加（issue #7538，用户裁定）：默认链切到 qwen-mt-image-2.0（qwen-image-* 免费额度用尽）；它是图片翻译模型、不接图生图（#7341）⇒ 生成返回 503「模型不接这类请求（非配额原因）」，恢复 = 换回可用模型（裁定断言会提示同步配置注释 / .env.example / 本判据）。 ｜ tags: ai-image, product-create, image-generation
+溯源: 2026-10-19 新增（issue #7335）。数据侧：同日已为测试租户 46 的 6 个无图商品生成 24 张（6 主图 + 18 明细图）并写入 products.main_image / images / detail_images（qwen-image-3.0 封面 + 2.1-pro/mt-image-2.0/2.1-turbo 明细图自动切换）。功能侧：模型/提示词内核在 ai-agent（不落库、配额轮换），转存与页面入口在 admin-api/admin-web；平台统一 Key（用户 2026-10-19 裁定）。2026-10-19 追加（issue #7341）：默认回落链去掉图片翻译模型 qwen-mt-image-2.0，400 InvalidParameter 转为「切下一个模型」。2026-10-19 追加（issue #7344，用户 20:21 建议「编辑页也支持补图」）：入口本就在共享 ProductForm（编辑页可用），本次补多图切换样图 + 用这张后面板不收起。2026-10-23 追加（issue #7538，用户裁定）：默认链切到 qwen-mt-image-2.0（qwen-image-* 免费额度用尽）；它是图片翻译模型、不接图生图（#7341）⇒ 生成返回 503「模型不接这类请求（非配额原因）」，恢复 = 换回可用模型（裁定断言会提示同步配置注释 / .env.example / 本判据）。2026-10-23 改判（issue #7533，用户逐字「商品的AI生图点击生成后，不会自动设置到对应图片位置，而且保存后也没有」）：**生成成功即自动填入图片位**，取消「用这张」这一步（实测：改前生成后 images 不变、点用这张后才变、提交载荷正常 ⇒ 缺的只是自动落位）；再生成 = 替换上一张（replaceUrl 从两个列表摘除，不叠加）。 ｜ tags: ai-image, product-create, image-generation
 
 ### UI-130. 销售订单列表查询区默认折叠：常驻一行摘要 + 展开才渲染筛选项（issue #7388） 🔵
 ```
@@ -13214,7 +13214,7 @@
 - UI-124: 按钮只有一种形态：icon slot 统一间距、loading 时 spinner 顶替图标（不并排）、裸 button 不得自拼主色 chrome
 - UI-127: 订单详情权限（order:detail）真正生效：详情/发货两读面收码 + 页面拒绝态 + 无权限的加工单块不发起请求（issue #7276）
 - UI-128: A4 纸面不带浏览器页眉页脚：@page 边距写 0（浏览器无可画之处）+ 版面内缩 12mm 由单据容器承担、box-decoration-break: clone 逐页重复（issue #7309）
-- UI-129: 建品页 AI 生成商品图：样图 → 百炼图生图 → 预览后选用（不自动落库，issue #7335）
+- UI-129: 建品页 AI 生成商品图：样图 → 百炼图生图 → 生成即自动填入图片位（再生成替换，不落库；issue #7335 / #7533）
 - UI-130: 销售订单列表查询区默认折叠：常驻一行摘要 + 展开才渲染筛选项（issue #7388）
 - UI-131: 全站下拉框只有一种形态（共享 SELECT_CONTROL / 自绘箭尖）+ 筛选条字段参与伸缩（issue #7397）
 
