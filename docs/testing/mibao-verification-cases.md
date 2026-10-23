@@ -7550,11 +7550,11 @@
 期望: craft_calc_config_query
 数据: success=true
 数据: （散文、不计分）逐项来自服务端：配置项与数值只能来自工具返回（`GET /api/admin/production/craft-calc-config`），不得用行业常识 / 代码里的默认常量顶替，也不得编造服务端没返回的键；取不到时如实说「暂未取到算料配置」
-数据: （散文、不计分）只读边界：本工具**不做算料**（不给某一单算米数 / 报价）⇒ 要算具体一单必须引导到后台算料页填尺寸；配置修改不在能力内 ⇒ 引导「企业基础设置 → 算料口径」，**不得声称已修改**（工具 read_only=true，无任何写 action）
+数据: （散文、不计分）边界：本工具**不做算料**（不给某一单算米数 / 报价）⇒ 要算具体一单必须引导到后台算料页填尺寸；**改口径**只走 `craft_calc_config_update`（issue #7514：A 档可逆变更）—— 先 `craft_calc_config_query` 取本店真值，再发确认卡**逐项**展示「改前 → 改后」（中文字段名，不摆内部键名），**点卡之后**才执行；未点卡**不得声称已修改**，也**不支持**「重置为默认值」（引导到后台「企业基础设置 → 工艺与路线 → 算料口径」页）
 必须成功: craft_calc_config_query
 ```
 真值: fabric-calc.craft-calc-config, ai-chat.tool-classes
-溯源: 2026-09-26 新增（issue #3592 销账）：#5247 新接入的只读工具 craft_calc_config_query 首次获得 LLM 行为面覆盖（原缺口 = .github/eval-coverage-baseline.yml 的 craft_calc_config_query/uncovered，同 PR 删除该条目）。取号 PP-015：库内 PP-001~PP-014（PP-002/003/004/005 为历史空号，不复用已发布的号段习惯）—— PP-015 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。 ｜ tags: craft_calc, config, mibao, readonly, llm_behavior
+溯源: 2026-09-26 新增（issue #3592 销账）：#5247 新接入的只读工具 craft_calc_config_query 首次获得 LLM 行为面覆盖（原缺口 = .github/eval-coverage-baseline.yml 的 craft_calc_config_query/uncovered，同 PR 删除该条目）。取号 PP-015：库内 PP-001~PP-014（PP-002/003/004/005 为历史空号，不复用已发布的号段习惯）—— PP-015 在 main 与全部在飞 ref 上均未占用（逐 ref 核过，见 PR body）。 ｜ 2026-10-23（issue #7514，用户裁定「黄金策要能支持算料配置的创建和变更」）：**改判第 3 条 data_check** —— 原文案「配置修改不在能力内 ⇒ 引导…**不得声称已修改**（工具 read_only=true，无任何写 action）」是**改前的能力边界**，留着就是**假真值**（评测会继续要求 agent 拒绝一个已支持的能力）；改为「改口径只走 `craft_calc_config_update`：先取真值 → 确认卡逐项『改前 → 改后』→ 点卡后才执行；未点卡不得声称已修改；不支持重置默认」。`user_inputs` / `expectations` / `must_succeed` / `skip_reason` / 前两条 data_check **一字未动**；traces 补新工具的单测文件（只加不改）。 ｜ tags: craft_calc, config, mibao, readonly, llm_behavior
 
 ### PP-016. 工艺路线缺口查询（只读）—— 黄金策调 craft_config_query(action=routing_gaps) 并逐条转述缺口（覆盖 #4923 零覆盖端点） 🔵
 ```

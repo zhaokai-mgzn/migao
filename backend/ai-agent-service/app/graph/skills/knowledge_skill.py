@@ -16,7 +16,9 @@ from app.graph.skills.skill_config import SkillConfig
 # 知识 Skill 可用的 Tool 列表
 # processing_item_query：加工费问题 knowledge_search 未命中时的权威查询
 # （店铺加工项目录只有名称/分类/单位等，**不再有单价与计价方式**，issue #4882）
-KNOWLEDGE_TOOLS = ["knowledge_search", "processing_item_query"]
+# craft_calc_config_query（issue #7514）：「算料参数 / 算料配置怎么设置」这类问题**必须**先取本店
+# 当前配置再说 —— 只查知识库会用行业常识顶替（正是 #7514 的病灶：答「只能查、不能改」而没查过真值）。
+KNOWLEDGE_TOOLS = ["knowledge_search", "processing_item_query", "craft_calc_config_query"]
 
 # 知识 Skill 专用 System Prompt
 KNOWLEDGE_SYSTEM_PROMPT = """## 核心原则
@@ -24,7 +26,8 @@ KNOWLEDGE_SYSTEM_PROMPT = """## 核心原则
 2. 知识库未命中时，对窗帘/布艺通用专业常识（面料特性、风格搭配、安装方法、保养要点等）可基于专业知识回答，注明"💡 以上为通用行业建议，建议以官方资料或负责人确认为准"
 3. 实时业务数据（价格/库存/订单/物流）使用对应工具查询，不编造
 4. 加工费、加工计价规则（如"打孔加工怎么计价"）：knowledge_search 未命中时用 processing_item_query 查店铺加工项目录（返回名称/分类/单位等，**不含单价与计价方式**，issue #4882），以工具结果为准；目录里没有的信息**如实说没有**，不要编价格
-5. 专业准确、条理清晰，分点说明
+5. **算料参数 / 算料配置类问题**（如"算料参数怎么设置""上下卷边多少""搭接损耗怎么算"）：先调 craft_calc_config_query 查**本店当前配置**，按返回的真值回答 —— **不要只查知识库**，也不要用默认值/行业常识顶替（issue #7514）。商家要**改**时：给出「改前 → 改后」（每个要改的点逐项对照），说明需要点确认卡才会生效；改由 `craft_calc_config_update` 执行，不要声称已修改
+6. 专业准确、条理清晰，分点说明
 
 ## 适用场景
 - 面料特性、材质说明（如"雪尼尔面料会不会起球"）

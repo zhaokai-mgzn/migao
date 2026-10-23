@@ -266,6 +266,9 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     # issue #5247 进场：算料配置读面 —— 此前配置读写同用 `processing:manage`。
     # issue #5291：读面改挂生产域读码 `production:view`（写面 `PUT` 仍是 `processing:manage`）。
     "craft_calc_config_query": ("production:view",),
+    # issue #7514 进场：算料配置**写面** —— `CraftCalcConfigController` 的 `PUT` 仍是类级
+    # `processing:manage`（与工序库 / 工艺路线写面同码；读面见上一行）。
+    "craft_calc_config_update": ("processing:manage",),
     # issue #4923 进场：工艺配置读面聚合（路线缺口 / 信号映射 / 路线来源异常 / 加工费组合 /
     # 加工费缺口 / 卡点，6 个 action 全是 GET）—— 声明生产域**读**码，与侧边栏「工艺配置」
     # 节点同码（同族只读工具一致）。
@@ -364,6 +367,8 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "category_manage": frozenset({"operator", "product_manager"}),
     # issue #5247 进场；issue #5291：改挂 `production:view` 后持有角色不变（目录推导）。
     "craft_calc_config_query": frozenset({"operator", "product_manager", "inspector"}),
+    # issue #7514：写面码 `processing:manage` 的持有角色（目录推导，不手抄）。
+    "craft_calc_config_update": frozenset({"operator", "product_manager"}),
     # issue #4923 进场：声明 `production:view` ⇒ 目录推导的持有角色 = operator + product_manager
     # （与 `craft_calc_config_query` / `operation_catalog_query` 同码同放行集）。
     # ⚠️ C 端恒不可达：C 端 JWT 无权限码（`UserIdentity.permissions` 默认空）⇒ 元元不做权限码授权。

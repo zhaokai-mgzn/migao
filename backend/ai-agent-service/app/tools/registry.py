@@ -98,6 +98,8 @@ _NO_ACTION_PARAM_TOOL_ACTION: Dict[str, str] = {
     "aftersale_create": "create",
     "product_update": "update",
     "sku_update": "update",
+    # 算料配置变更（issue #7514）：单一动作 = 改配置里点名的键，无 `action` 参数。
+    "craft_calc_config_update": "update",
     # human_handoff 建的是**投诉工单**（description：「自动创建投诉工单 → 通知管理员」）
     # ⚠️ 该工具**已按用户裁定退场（模型不可达，见 `create_default_registry` 的注册行注释）**，
     #    但本条目**保留**：本表的判据口径是「源码里 `read_only = False` 的工具」
@@ -711,6 +713,9 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.operation_catalog_query import OperationCatalogQueryTool
     from app.tools.briefing_query import BriefingQueryTool
     from app.tools.craft_calc_config_query import CraftCalcConfigQueryTool
+    # 算料配置**写面**（issue #7514，用户 2026-10-23 裁定「黄金策要能支持算料配置的创建和变更」）：
+    # A 档可逆写（改单键/多键 + 逐键前后对照）—— `read_only=False` + `requires_confirmation=True`。
+    from app.tools.craft_calc_config_update import CraftCalcConfigUpdateTool
     from app.tools.processing_order_set_query import ProcessingOrderSetQueryTool
     # 工艺配置读面缺口/异常/卡点/加工费组合（issue #4923）：6 个此前零覆盖的**只读**端点。
     from app.tools.craft_config_query import CraftConfigQueryTool
@@ -801,6 +806,9 @@ def create_default_registry() -> ToolRegistry:
     registry.register(OperationCatalogQueryTool())
     registry.register(BriefingQueryTool())
     registry.register(CraftCalcConfigQueryTool())
+    # 算料配置写面（issue #7514）：只绑 `general`（A 档补回域由
+    # tests/unit_ci_workflows/test_mibao_b_end_readonly.py 的 A_TIER_SKILLS 机械钉住）。
+    registry.register(CraftCalcConfigUpdateTool())
     registry.register(ProcessingOrderSetQueryTool())
     registry.register(CraftConfigQueryTool())
 

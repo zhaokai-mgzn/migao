@@ -147,7 +147,16 @@ def test_skill_prompt_length_reasonable(skill):
     #   每个 skill 的提示因此变长。**实测最大值 = order 14598**（命令自证：本文件即判据）
     #   ⇒ 取 14800（留 ~200 余量）。⚠️ 本硬上限**不再是** order 的判据：order 的 per-skill
     #   预算见 `expected_max`（本次同步上调到同一档）。
-    assert 200 < len(prompt) < 15000, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
+    # 2026-10-23（issue #7514）：硬上限 14900→**15100**。增量 = **机械投影**，无可 trim：
+    #   #4125 的「能力索引」层按 `SkillConfig.tool_names` × 注册表 `read_only` 现算
+    #   「域 → 该域可执行的写工具」，本单把 `craft_calc_config_update`（A 档可逆写）接进
+    #   `general` ⇒ **所有 skill** 的索引层各多一行 `- general: craft_calc_config_update`
+    #   （+36 字符，逐档同量）。实测（命令自证：本文件即判据）
+    #   `cd backend/ai-agent-service && pytest tests/test_prompt_snapshots.py -q`：
+    #   product 14998→**15034**、order 14934→14970、data 8589→8625、general 8370→8406。
+    #   ⚠️ 同批已同步 `expected_max` 的 `data`（8600→8700，实测 8625，按"实测上取整到百位"惯例）；
+    #   其余档位仍在各自预算内 ⇒ 不动（**未放宽任何断言语义**：超限仍判红）。
+    assert 200 < len(prompt) < 15100, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
 
 
 # ============ 领域隔离检查 ============
@@ -431,7 +440,10 @@ def test_snapshot_all_skills():
         #   「实测 +200、上取整到百位」取 8600；**未放宽其它域**。
         "settings": 8600, # +1600: 领域 prompt 补齐配置/通知流程（Round 34）
         # 🔴 2026-10-16（issue #7040）：7600→8500 —— 同共享层口径（机械投影、无可 trim）+ 本域边界块；实测 8181，上取整到百位。
-        "data": 8600,     # +1700: 领域 prompt 补齐看板/会话流程（Round 34）；+300（issue #4107 F7）：共享层 `base/principles.md` 权限归因规则补后半（达 6660）
+        "data": 8700,     # issue #7514：8600→8700（实测 8625）—— 增量 = #4125 能力索引层对新接回的
+                          # A 档写工具 `craft_calc_config_update` 的机械投影（`- general: craft_calc_config_update`，
+                          # +36 字符，注入所有 skill、无可 trim）；按本 dict 惯例上取整到百位。
+        # +1700: 领域 prompt 补齐看板/会话流程（Round 34）；+300（issue #4107 F7）：共享层 `base/principles.md` 权限归因规则补后半（达 6660）
         # 🔴 2026-10-16（issue #7040）：7400→7600 —— 能力边界段按用户当日裁定
         # 「能力边界 终版」重写（**变更 ✅ / 创建·删除 ❌** 三段 + 「变更类别不要照搬拒绝话术」
         # 反例）；按惯例先 trim 措辞（未删任何规则）后实测 7638，故显式抬本 per-skill 预算。

@@ -807,6 +807,9 @@ TOOL_MENU_NODE: dict[str, str] = {
     # 的锚点改钉**仍在树上的**「经营看板」节点（该码现在只由它承载，零授权 delta）。
     "briefing_query": "经营看板",                # dashboard:view
     "craft_calc_config_query": "企业基础设置",   # processing:manage（生产域无专属读码）
+    # issue #7514：算料配置**写面**（`processing:manage` = 该页的页内写码，见 PAGE_WRITE_CODES
+    # 的 `production:view` 键）⇒ 判据 3 的「写工具可持页内写码」口径成立，零授权面改动。
+    "craft_calc_config_update": "企业基础设置",
     "processing_order_set_query": "作业看板",    # processing:manage（套件读面 = 加工单读面同码，#5246 收尾）
     # 工艺配置读面聚合（issue #4923）：6 个读端点；工具声明生产域**读**码 `production:view`
     # （与「企业基础设置」节点同码）。⚠️ 端点侧生效码仍分三档（order:list / processing:manage /
@@ -947,6 +950,31 @@ CODE_DIVERGENCE_EXCEPTIONS: dict[str, dict[str, object]] = {
             "要么按 #5699 P4 的口径继续具名保留）；收口后本条目必须**删除**（陈旧即红）。"
         ),
     },
+    # ── issue #7514（第三条；上限同批显式 2 → 3）────────────────────────────────
+    # 「**写工具**的读前校验与写面同路径、但生效码不同」——`GET` 按 issue #5291 挂方法级
+    # **读**码 `production:view`，`PUT` 仍是类级**写**码 `processing:manage`。
+    # 这不是漂移，是**读写分码**的必然结果：本工具既要取「改前真值」（读面，只读权限即可）
+    # 又要写回（写面）。
+    "craft_calc_config_update": {
+        "code": "processing:manage",
+        "diverges": ["/api/admin/production/craft-calc-config"],
+        "live": {"/api/admin/production/craft-calc-config": "production:view"},
+        "why": (
+            "issue #7514：算料配置的写面必须「先 GET 取当前真值 → 逐键核对 before → 整体 PUT」"
+            "（`PUT` 是 upsert + 全量替换，少带一个键就等于把它清空）。GET 与 PUT 是**同一路径"
+            "不同方法**、生效码不同：`CraftCalcConfigController.get` 挂方法级读码 "
+            "`production:view`（issue #5291），`put` 走类级写码 `processing:manage`。"
+            "工具声明写面码（A 档可逆写的写权限口径），工具层 `check_permission` 只放行持 "
+            "`processing:manage` 的岗位 = {operator, product_manager}（⊂ 持 `production:view` 的"
+            "岗位集合）⇒ **零授权面放宽**；读前校验那一步由端点侧读码在服务端再兜一次。"
+        ),
+        "where": (
+            "**本单不改任何权限面**（`CraftCalcConfigController` 零改动）⇒ 工具声明的写码 ≠ GET 的"
+            "既有读码，是**接受的缺口**。重启条件 = 该控制器读写面收敛到同一码（届时按语义改判本条："
+            "若读面回到 `processing:manage`，`diverges` 变空 ⇒ 本条目**必须删除**，陈旧即红）；"
+            "若将来把写面拆出独立写码，也在同一次改动里改判本条目。"
+        ),
+    },
     # ── issue #5980（第二条；上限同批显式 1 → 2）────────────────────────────────
     # 「同一条 API 被**两个守卫码不同的页面/消费者**共用」——这是**结构事实**，不是漂移：
     # `GET /api/admin/roles/all` 的唯一前端调用方是「员工管理」页岗位下拉
@@ -1025,7 +1053,9 @@ CODE_DIVERGENCE_EXCEPTIONS: dict[str, dict[str, object]] = {
 #: `CODE_DIVERGENCE_EXCEPTIONS` 的**条数上限**（**现取** ⇒ 加条目必须在同一 diff 里改这一行）。
 #: issue #5980：1 → 2（新增 `role_manage` 那条；上限本身就是「例外表只许缩短」的闸门）。
 #: issue #6217：2 → 3（新增 `customer_manage` 那条 —— 跨域视图横跨三个权限面，仓内无单码可覆盖）。
-CODE_DIVERGENCE_EXCEPTIONS_CEILING = 3
+#: issue #7514：3 → 4（新增 `craft_calc_config_update` 那条 —— 写工具的「读前校验 + 写面」
+#: 同路径不同方法、读写分码，工具声明写面码后与 GET 的读码结构性不等）。
+CODE_DIVERGENCE_EXCEPTIONS_CEILING = 4
 
 #: **在飞端点**的显式登记（判据 1/2 的补集；issue #5314）。
 #:

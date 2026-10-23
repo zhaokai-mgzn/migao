@@ -184,6 +184,10 @@ A_TIER_REVERSIBLE_WRITES: frozenset = frozenset({
     "sku_update",            # 单规格调价（PATCH …/skus/price）
     "product_batch_update",  # 批量改价 / 批量库存调整 + revert 撤销（issue #5314）
     "scheduled_task_manage",  # 建 / 取消「到点提醒」待办（issue #6486 包 2）
+    # 算料配置的**改单键/多键**（PUT /api/admin/production/craft-calc-config；只覆盖点名的键）
+    # —— issue #7514，用户 2026-10-23 裁定「黄金策要能支持算料配置的创建和变更」，
+    # 语义 = 改单键/多键 + 逐键前后对照（不做整份编辑、不做重置默认）。
+    "craft_calc_config_update",
 })
 
 #: A 档工具 → **必须**绑在的 skill（补回域**逐条**钉住；漂移到别的域即红）。
@@ -192,6 +196,9 @@ A_TIER_SKILLS: dict[str, str] = {
     "sku_update": "product",
     "product_batch_update": "product",
     "scheduled_task_manage": "reminder",
+    # issue #7514：「算料参数怎么设置」没有专属意图、低置信时落 general 兜底（会话
+    # sess_5742c5b5c43a48b1 的实测路由）⇒ 补回域 = general，**不得**绑 knowledge / product。
+    "craft_calc_config_update": "general",
 }
 
 #: 写 action **闭词表**（判据 3 / 7 的兜底）：action 名命中即视为写能力。
@@ -225,6 +232,9 @@ FORBIDDEN_CAPABILITY_PHRASES = (
 A_TIER_CLAIM_WORDS: dict[str, tuple[str, ...]] = {
     "product": ("改价", "调价"),
     "reminder": ("提醒",),
+    # issue #7514：算料配置的变更是**本域唯一**的写能力 —— greeting / capabilities 必须
+    # 明说能改（说了做不到由本条反向钉住；做不到却不说 = 能力接回了没人知道）。
+    "general": ("算料配置",),
 }
 
 #: **变更**能力在能力文案里的**承诺词**（判据 6b 的扫描面）—— 按工具。
@@ -301,6 +311,29 @@ def _source_map() -> dict[str, str]:
         for p in sorted(CASES_DIR.rglob("*.yml")):
             out[f"case:{p.relative_to(CASES_DIR)}"] = p.read_text(encoding="utf8")
     return out
+
+
+def _skill_source_keys() -> dict[str, str]:
+    """`skill 名 → 源键`（`skill:<文件名>`）——**现取**，不按命名规律拼。
+
+    为什么不能拼 `<skill>_skill.py`（issue #7514 实测）：兜底域的 skill 文件叫
+    `general_agent.py`（历史命名），拼出来的键根本不存在 ⇒ 判据 6 的注入当场 KeyError、
+    整条红证链断掉。文件名的命名规律**不是本判据要表达的事实**，判据要的是
+    「把这个域绑定的 A 档工具解绑」⇒ 按源文本里的 `SkillConfig(name="<domain>")` 解析。
+    """
+
+    out: dict[str, str] = {}
+    for key, text in _source_map().items():
+        if not key.startswith("skill:"):
+            continue
+        for matched in re.finditer(r'SkillConfig\(\s*name="([a-z_]+)"', text):
+            out.setdefault(matched.group(1), key)
+    return out
+
+
+def _skill_source_key(skill: str) -> str:
+    """`domain` → 它的源键；解析不出来才回退旧口径（回退不静默：注入会因锚点失配而红）。"""
+    return _skill_source_keys().get(skill, f"skill:{skill}_skill.py")
 
 
 def _literal(node: ast.AST):
@@ -1382,7 +1415,7 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
         # ── 判据 6：A 档 / 变更能力「文案 ↔ 绑定」双向 ───────────────────────────
         **{
             f"⑥ 解绑 {_sk} 域**全部** A 档工具（文案仍承诺）⇒ 判据 6 红（谎报方向）": (
-                f"skill:{_sk}_skill.py",
+                _skill_source_key(_sk),
                 (lambda _tools: (
                     lambda s: functools.reduce(
                         lambda acc, t: _unbind_from_c_skill(acc, t), _tools, s)
