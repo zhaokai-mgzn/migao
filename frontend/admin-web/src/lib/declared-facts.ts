@@ -230,4 +230,3 @@ export function baseColorName(name: string, code: string): string {
   return stripped || base
 }
 
-export const __testing = { COLOR_RULE_RE, COLOR_TEMPLATE_CODE_RE, WIDTH_RE, CODE_RE }
