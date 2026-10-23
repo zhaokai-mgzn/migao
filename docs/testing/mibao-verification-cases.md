@@ -11605,14 +11605,14 @@
 ```
 溯源: 2026-09-19 新增（issue #4721 P1-1，补 #4677 的行为进用例库）：就绪度判据由「数条数」改为「点名缺哪条」；补套入口由「工序库为空才显示」改为「缺失即显示」。 ｜ 2026-10-01（issue #5858 用例库同步）：就绪度向导**四步 → 五步**（补第 ⑤ 步「裁高配置」）+ 数字与所在区块**同源** + 每步一个**可点**的去处 + 首屏真值 + 补套卡补上「孤儿工序」这一类；**判据一格不放宽** —— 就绪度②的「点名缺哪条」、补套幂等、不把「没加载 / 读失败」误报成「没配」逐条保留。 ｜ 2026-10-01（issue #5874 / #5875 用例库同步）：① 补套入口与后端两端点**整体退场**（判据 2/3 改判如上；开租自动套用保留）；② **无价目行的工序进表**（`data-state=no_row` + `管理▸`），`matrix-orphan-hint` 退场。 ｜ 2026-10-01（issue #5860 用例库同步，同页文案）：抽屉那一行的三个概念（分组 / 单位 / 单价来源）由**裸词**改判为带标签 + 一句人话（`单价：初始价（待确认）` / `分组「车位」 · 单位「米」` / 文字按钮「改分组 / 单位」）；**判据一格不放宽**（「未定价 ≠ ¥0.00」「实证 / 推算 不得被说成待确认」逐条保留）。 ｜ tags: ui, production-routing, seed-template, admin-web
 
-### UI-053. 订单详情页「打印报价单」A4 — 按商品行成套 + 部位/部位信息/部位备注/宽*高/组件/货号/用料/价格/小计 + 金额汇总 + 扫码支付（issue #4965） 🔵
+### UI-053. 订单详情页「打印报价单」A4 — 按商品行成套 + 组件/货号/颜色/门幅/尺寸/数量/单价/小计 + 金额汇总 + 扫码支付（issue #4965 / #7527） 🔵
 ```
 你: 这是从订单上打印的报价单，用来发给客户的，也可用于生产，这是A4大小，这个用来参考设计我们的打印制式
 你: 把订单的打印功能改成这样的报价单
 期望: direct_reply
 数据: 订单详情页点页面级唯一「打印」入口 → 在打印层里选**报价单**标签，先看纸面预览再出纸（`window.print()` 仍只在 `usePrintDoc` 一处；issue #7544 起入口与订单状态无关，任何状态都能补打）—— 改前是 shipped/completed 操作区的「打印报价单」按钮（issue #4965 的形态，2026-10-23 改判）；`QuotationDoc` 在**页面级**挂载一份（不进 Modal、每页只挂一份）
-数据: 纸面四段齐全（A4，`@page { size: A4 }`）：① 表头 = 报价单 / 单号 `orderNo` / 货运（`logisticsType` + `logisticsCompany`，两者都缺 ⇒ 该栏不印）/ 客户·电话·地址 / 备注；② 正文 = **每个商品行自成一套**（用户裁定：不做樘窗分组），段头 `第N套/共M套` + `本套金额`，每段一张 10 列表 `部位 | 部位信息 | 部位备注 | 宽*高 | 组件 | 货号 | 用料 | 价格 | 小计 | 备注`；③ 汇总 = 本单总金额 / 优惠金额 / 本单应收；④ 页脚 = 温馨提示常量 + 扫码支付码
-数据: 逐列映射：部位 = `processingInfo.curtainType`；部位信息 / 部位备注 = `lib/craft-display.ts` 的 `craftSpecRows()`（§4.9 单一真值，不另写推导；「部位」行已有自己的列 ⇒ 从两列排除；两列切分沿用既有「原始输入 / 算料输出」分组）；宽*高 = `width`×`height`（米，任一缺 ⇒ 不印）；组件 = 面料行 `processingInfo.componentRole`（缺省即主布）/ 加工费行「加工费」；货号 = `productCode` + `processingInfo.colorName`；用料 = `quantity`（米）；价格/小计 = 面料行 `unitPrice`/`subtotal`、加工费行 `processingFee`/`processingFee`
+数据: 纸面四段齐全（A4，`@page { size: A4 }`）：① 表头 = 报价单 / 单号 `orderNo` / 货运（`logisticsType` + `logisticsCompany`，两者都缺 ⇒ 该栏不印）/ 客户·电话·地址 / 备注；② 正文 = **每个商品行自成一套**（用户裁定：不做樘窗分组），段头 `第N套/共M套` + `本套金额`，每段一张 8 列表 `组件 | 货号 | 颜色 | 门幅 | 尺寸 | 数量(米) | 单价(元/米) | 小计`（🔴 issue #7527：**品名列与工艺行不印** —— 用户 2026-10-23 逐字「报价单不要品名列和工艺行」）；③ 汇总 = 本单总金额 / 优惠金额 / 本单应收；④ 页脚 = 温馨提示常量 + 扫码支付码
+数据: 逐列映射（issue #7527 后 8 列）：组件 = 面料行 `processingInfo.componentRole`（缺省即主布）/ 加工费行「加工费」；货号 = `skuCode`（经 `lib/order-item-sku.ts::orderItemSku()` 唯一取值口；原读的 `productCode` 不在响应里 ⇒ 纸面恒空，issue #6869）；颜色 = `processingInfo.colorName`；门幅 = `processingInfo.doorWidth`（同一取值口格式化为 `2.8米`）；尺寸 = `width`×`height`（米，任一缺 ⇒ 不印）；数量 = `quantity`（米）；单价 / 小计 = 面料行 `unitPrice`/`subtotal`、加工费行 `processingFee`/`processingFee`。**品名与工艺文案都不上纸**（issue #7527）：品名在面料行 / 加工费行连印两遍（产品设计原则 P2「信息不重复」），工艺（部位 / 加工类型 / 用料公式 / 算料）属生产侧信息，留在订单详情页与 `ProcessingDoc`
 数据: 加工费**单独成行**（`processingFee > 0` 才出）：与参照物的一处**有意差异** —— 参照物把加工费并进面料单价，而我们 `unitPrice` 与 `processingFee` 是两笔真实金额，必须分别列示，否则商家对不上账
 数据: 金额口径单一真值：行小计（本套金额）= `lib/order-amount.ts` 的 `lineSubtotal(item)` = `subtotal + processingFee`，与 `OrderItemList` 的明细行小计**同一份**实现（不各算一套）；汇总三个数字只读订单字段 `totalAmount` / `discountAmount` / `actualAmount`，**不自己求和**
 数据: 缺值不渲染（用户裁定 ①）：上期余额 / 预存抵扣 / 账户余额 / 交付日期 / 制单人一律不印；键缺席 / null / 空串 / 空数组 ⇒ 该行不出现；纸面绝不出现 `undefined` / `null` / `NaN`（含整单缺值扫描）
@@ -11622,7 +11622,7 @@
 跳过: [backend-contract] 纯前端打印纸面 + 既有端点只读（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/QuotationDoc.test.tsx、tests/unit/pages/order-detail.test.tsx、tests/unit/lib/logistics.test.ts 执行
 ```
 真值: frontend-fix.vitest, frontend-fix.tsc
-溯源: 2026-09-21 新增（issue #4965）：订单详情页新增「打印报价单」A4 —— 照真实报价单制式（按商品行成套 + 10 列明细 + 金额汇总 + 页脚扫码支付）；缺值不印（我们没有的字段一律不印）、加工费单独成行（与参照物的有意差异）、行小计与 OrderItemList 同源（`lib/order-amount.ts`） ｜ tags: ui, order, quotation, print, admin-web
+溯源: 2026-09-21 新增（issue #4965）：订单详情页新增「打印报价单」A4 —— 照真实报价单制式（按商品行成套 + 10 列明细 + 金额汇总 + 页脚扫码支付）；缺值不印（我们没有的字段一律不印）、加工费单独成行（与参照物的有意差异）、行小计与 OrderItemList 同源（`lib/order-amount.ts`）。2026-10-23（issue #7527）纸面收窄：撤「品名」列（9 列 → 8 列，列宽重新归一）+ 撤整条「工艺」行（部位 / 算料不再上纸）—— 用户逐字「报价单不要品名列和工艺行」 ｜ tags: ui, order, quotation, print, admin-web
 
 ### UI-054. 企业基础设置页「算料口径」域 - 按域分组 + 每参数三件套 + 默认值可见 + 行式配置只给入口 🔵
 ```
