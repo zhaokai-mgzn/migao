@@ -31,6 +31,16 @@ mkdirSync(join(OUT, 'screenshots'), { recursive: true })
 
 const results = []
 const failReasons = new Map()
+// ── 冒烟自造对象台账（SDQS D4，docs/testing/smoke-data-quality.md）──────────────
+// 为什么需要它：自造数据要能**枚举 / 体检 / 清理自证**。旧形态里 `productsNew` 建完就不管
+// （商品列表长期被「冒烟SKU商品…」占据），而「自造了几件 / 几件有 SKU / 清掉了几件」没有任何读数
+// ⇒ `scripts/smoke_data_quality.py` 的 DQ-2 / DQ-5 无从判定（数据面只能靠人看）。
+const FIXTURES = { products: [], orders: [] }
+const recordFixture = (kind, rec) => { FIXTURES[kind].push(rec); return rec }
+const markFixtureCleaned = (id) => {
+  const f = FIXTURES.products.find((x) => x.id === id)
+  if (f) f.cleaned = true
+}
 // 失败响应账本（本轮新增）：`console.error` 只说「401」不说是**谁**返回的 —— 没有 URL 就无法归因
 // （2026-10-14 实测：单看 console 文案分不清是 admin-api 还是 ai-agent，归因卡死）。
 const failedResponses = []
@@ -140,6 +150,11 @@ function journey(name, opts = {}) {
       return { page, rec: null, done: async () => null, skipped: true }
     }
     const rec = { journey: name, pass: true, errors: [], notes: [], evidence: [], skipped: false, unconfigured: false, error_class: null }
+    // 同一旅程名**只允许一条记录**：整轮看门狗到点后会先给「没跑到的」补记 skip，而 `runAll`
+    // 仍在继续 —— 跑到时再 push 就是同名两条（汇总计数与名册对账都会失真）。
+    // 口径：真跑出来的记录**顶替**那条占位 skip（它证明「其实跑到了」）。
+    const prior = results.findIndex((r) => r.journey === name)
+    if (prior >= 0) results.splice(prior, 1)
     results.push(rec)
     const errs = []
     // 判据红证的注入点（issue #6942 ①）：`SMOKE_PRODUCT_404_STRICT=1` 时把这一条塞进本旅程的错误面
@@ -393,6 +408,7 @@ async function cleanupProductStrict(page, rec, id, phase) {
     await ensureLoggedIn(page).catch(() => {})
     res = await cleanupProduct(page, id)
   }
+  if (res.after === 404) markFixtureCleaned(id)
   const cnt = await productCount(page).catch(() => null)
   if (res.after !== 404) {
     rec.pass = false
@@ -415,15 +431,152 @@ async function cleanupProductStrict(page, rec, id, phase) {
  */
 async function createProductFixture(page, { name, skuCode }) {
   const api = await adminApi(page)
+  // 🔴 SDQS D1/D2（docs/testing/smoke-data-quality.md）：商品夹具**必须**带 SKU 矩阵
+  //    （颜色 × 门幅 × 价格 × 库存 × 货号）。旧形态只 POST 商品级字段 ⇒ `product_skus` 零行
+  //    ⇒「SKU 选择 / 价格本 / 采购单 / 库存」全链没有数据可测，而页面照样渲染、冒烟照样绿。
+  //    2026-10-23 用户投诉的「冒烟数据商品 SKU 都没有」就是这条。
+  const colors = [{ colorName: '米白', mainColorHex: '#F5EFE0' }, { colorName: '浅灰', mainColorHex: '#C9C9C9' }]
+  const doorWidths = ['2.8', '3.2']
+  const basePrice = 30.8
+  const skus = colors.flatMap((c) => doorWidths.map((w) => ({
+    colorName: c.colorName,
+    doorWidth: w,
+    price: basePrice,
+    stock: 120,
+    skuCode: `${skuCode}-${c.colorName}-${w}`,
+  })))
   const created = await api.post('/api/admin/products', {
     name, skuCode, unit: '米', pricingType: 'per_meter',
-    categoryId: process.env.SMOKE_CATEGORY_ID || await defaultCategoryId(page), basePrice: 10,
-    status: 'on_sale', doorWidths: ['2.8'], colors: [{ colorName: '冒烟红', mainColorHex: '#ff0000' }],
-    sellingMethods: ['bulk_cut'],
+    categoryId: process.env.SMOKE_CATEGORY_ID || await defaultCategoryId(page), basePrice,
+    status: 'on_sale', doorWidths, colors, sellingMethods: ['bulk_cut'], skus,
   })
   const id = created?.data?.id || created?.id || ''
   if (!id) throw new Error(`前置建品失败（未返回 id）：${JSON.stringify(created).slice(0, 200)}`)
+  recordFixture('products', { id, name, withSkus: skus.length, cleaned: false })
   return id
+}
+
+/** 按名字读回商品（建品旅程用：DOM 可见 ≠ 数据落地，SDQS D5）。 */
+async function readProductByName(page, name) {
+  const api = await adminApi(page)
+  const res = await api.get(`/api/admin/products?page=1&size=100&keyword=${encodeURIComponent(name)}`)
+  const items = res?.data?.items ?? res?.data?.records ?? []
+  return items.find((p) => p.name === name) || items[0] || null
+}
+
+/** 读回商品的 SKU 行（`ProductResponse.skus`；取不到返回空数组，不猜）。 */
+async function readProductSkus(page, id) {
+  const api = await adminApi(page)
+  const res = await api.get(`/api/admin/products/${id}`)
+  const detail = res?.data ?? res
+  return Array.isArray(detail?.skus) ? detail.skus : []
+}
+
+/**
+ * 数据质量快照（SDQS §3.1）：跑完从**管理端 API 现读**各实体面，写 `smoke-data.json`。
+ *
+ * 🔴 为什么不从 DOM 统计：DOM 只能证明「渲染了」，证明不了「数据在」——
+ *    2026-10-23 那次 33/33 绿，DOM 上是「商品列表 1 行」，而数据面 `product_skus` 是 0 行。
+ * 🔴 任何一片读不到都写 `collected: false` + `why`（fail-closed）：`smoke_data_quality.py`
+ *    会把它判成 `DQ-U` 不可判定（退出码 3），**不许**当通过。
+ */
+async function collectDataSnapshot(page) {
+  const snap = {
+    schema_version: 1,
+    collected_at: new Date().toISOString(),
+    base_url: BASE,
+    ran_journeys: [...new Set(results.map((r) => r.journey))],
+    run: { journeys_total: results.length, journeys_pass: results.filter((r) => r.pass).length },
+    entities: {},
+    fixtures: {},
+    collection_errors: [],
+  }
+  const finishFixtures = () => {
+    const created = FIXTURES.products
+    snap.fixtures = {
+      products_created: created.length,
+      products_with_skus: created.filter((f) => Number(f.withSkus) > 0).length,
+      products_residue: created.filter((f) => !f.cleaned).length,
+      residue_samples: created.filter((f) => !f.cleaned).map((f) => f.name || f.id).slice(0, 5),
+      orders_created: FIXTURES.orders.length,
+    }
+  }
+  const items = (res) => {
+    const d = res?.data
+    if (Array.isArray(d)) return d
+    if (Array.isArray(d?.items)) return d.items
+    if (Array.isArray(d?.records)) return d.records
+    return []
+  }
+  const totalOf = (res, list) => Number(res?.data?.total ?? res?.data?.pagination?.total ?? list.length)
+
+  let api
+  try {
+    api = await adminApi(page)
+  } catch (e) {
+    const why = `登录态不可用，数据快照无法采集：${String(e).slice(0, 160)}`
+    for (const name of ['products', 'skus', 'orders', 'customers', 'after_sales']) {
+      snap.entities[name] = { collected: false, why }
+    }
+    snap.collection_errors.push(why)
+    finishFixtures()
+    return snap
+  }
+
+  // 商品 + SKU（SKU 只在商品详情里）
+  try {
+    const listRes = await api.get('/api/admin/products?page=1&size=100')
+    const list = items(listRes)
+    const sampled = list.slice(0, 60)
+    const skuRows = []
+    let withSkus = 0
+    for (const p of sampled) {
+      try {
+        const rows = await readProductSkus(page, p.id)
+        if (rows.length) withSkus++
+        skuRows.push(...rows)
+      } catch (e) {
+        snap.collection_errors.push(`product/${p.id}: ${String(e).slice(0, 120)}`)
+      }
+    }
+    snap.entities.products = { collected: true, total: totalOf(listRes, list), sampled: sampled.length, with_skus: withSkus }
+    // 门幅 canonical = 裸数值（与 SkuMatrix.tsx 的 normalizeDoorWidth 同口径）
+    const canonical = (v) => /^[0-9]+(\.[0-9]+)?$/.test(String(v ?? ''))
+    const bad = skuRows.filter((s) => !canonical(s.doorWidth ?? s.door_width))
+    snap.entities.skus = {
+      collected: true,
+      total: skuRows.length,
+      door_width_noncanonical: bad.length,
+      door_width_noncanonical_samples: [...new Set(bad.map((s) => String(s.doorWidth ?? s.door_width ?? '')))].slice(0, 5),
+      without_price: skuRows.filter((s) => !(Number(s.price) > 0)).length,
+    }
+  } catch (e) {
+    const why = `商品面读取失败：${String(e).slice(0, 160)}`
+    snap.entities.products = { collected: false, why }
+    snap.entities.skus = { collected: false, why }
+    snap.collection_errors.push(why)
+  }
+
+  // 订单 / 客户 / 售后（分页 total 读数；订单另记「有明细」条数）
+  for (const [name, path] of [
+    ['orders', '/api/admin/orders?page=1&size=100'],
+    ['customers', '/api/admin/customers?page=1&size=1'],
+    ['after_sales', '/api/admin/after-sales?page=1&size=100'],
+  ]) {
+    try {
+      const res = await api.get(path)
+      const list = items(res)
+      const ent = { collected: true, total: totalOf(res, list) }
+      if (name === 'orders') ent.with_items = list.filter((o) => Array.isArray(o.items) && o.items.length > 0).length
+      snap.entities[name] = ent
+    } catch (e) {
+      snap.entities[name] = { collected: false, why: `${name} 读取失败：${String(e).slice(0, 160)}` }
+      snap.collection_errors.push(`${name}: ${String(e).slice(0, 160)}`)
+    }
+  }
+
+  finishFixtures()
+  return snap
 }
 
 
@@ -762,16 +915,23 @@ async function productsList(page) {
       }
     }
     // 列表有行（种子/存量商品）
+    // 🔴 SDQS D1/D5（docs/testing/smoke-data-quality.md）：**空态/加载态不得冒充通过**。
+    //    旧形态在 0 行时记 ✅（「列表为空（允许），仅验证渲染」），且截图可能拍在「加载中…」——
+    //    「没加载完」被读成「数据空」、又被读成「通过」。现在：有界等待**有内容的行**；
+    //    等不到 ⇒ 判红（数据前置不合格，由 DQ-1/DQ-4 与旅程**双面**兜住）。
     const rows = page.locator('tbody tr, [class*="Table"] [class*="row"], [role="row"]')
-    const n = await rows.count().catch(() => 0)
-    if (n === 0) {
-      // 允许空列表（干净环境），但标题必须渲染
-      const title = await page.getByText('商品列表').first().isVisible().catch(() => false)
-      if (!title) throw new Error('商品列表页标题不可见')
-      await h.done(true, '列表为空（允许），仅验证渲染', `rows=${n}`)
-      return
+    let n = 0
+    let firstRowText = ''
+    for (let i = 0; i < 20; i++) {
+      const texts = (await rows.allInnerTexts().catch(() => [])).map((t) => t.trim()).filter((t) => t && !t.includes('加载中'))
+      if (texts.length > 0) { n = texts.length; firstRowText = texts[0]; break }
+      await page.waitForTimeout(500)
     }
-    await h.done(true, '', `商品列表渲染 ${n} 行`)
+    if (n === 0) {
+      throw new Error('商品列表 10s 内没有任何数据行 —— 空态/加载态不是有效结论（SDQS D1/D5；'
+        + '先确认冒烟环境有商品种子，再跑本旅程）')
+    }
+    await h.done(true, '', `商品列表渲染 ${n} 行；首行：${firstRowText.replace(/\s+/g, ' ').slice(0, 40)}`)
   } catch (e) {
     await h.done(false, `商品列表失败: ${String(e).slice(0, 300)}`)
   }
@@ -779,8 +939,12 @@ async function productsList(page) {
 
 async function productsNew(page) {
   // `--group` 过滤掉的旅程记 skip（没跑 ≠ 失败）；这几条**没接在 `jrun` 上**，故各自守卫（#6790）
-  if (!inGroup('09-products-new')) { await markSkipped(h, '--group 09-products-new 过滤（本轮未跑）'); return }
+  // ⚠️ `h` 必须在 guard **之前**取：旧形态先 `markSkipped(h, …)` 后 `const h` ⇒ 过滤档命中时
+  //    `h` 还在 TDZ 里（ReferenceError）——「没跑」变成了「崩了」。
   const h = await journey('09-products-new')(page)
+  if (!inGroup('09-products-new')) { await markSkipped(h, '--group 09-products-new 过滤（本轮未跑）'); return }
+  // 自造对象台账（SDQS D4）：建了哪件、几件有 SKU、清掉了没有 —— 快照据此判 DQ-2/DQ-5
+  const fixture = recordFixture('products', { id: '', name: '', withSkus: 0, cleaned: false })
   try {
     await ensureLoggedIn(page)
     await nav(page, '/products/new', '')
@@ -826,6 +990,29 @@ async function productsNew(page) {
     const catOpts = await catSelect.locator('option').allTextContents().catch(() => [])
     const catIdx = catOpts.findIndex(t => t && !t.includes('请选择'))
     if (catIdx > 0) await catSelect.selectOption({ index: catIdx })
+    // ── SDQS D1（docs/testing/smoke-data-quality.md）：建品**必须**把 SKU 矩阵填出来 ──
+    // 旧形态只填标题 + 一档门幅就「存草稿」⇒ 造出来的商品 `product_skus` **零行**，而旅程照记 ✅
+    // （2026-10-23 用户投诉「冒烟数据商品 SKU 都没有」）。这里填「2 颜色 × 1 门幅」= 2 条 SKU：
+    // 颜色走批量输入框（`BatchColorInput`），价格/库存走批量填写（`SkuMatrix` 的批量工具栏）。
+    const colorInput = page.locator('textarea[placeholder*="每行一个颜色名称"]').first()
+    if (!(await waitVisible(colorInput, 10000))) throw new Error('建品页 10s 内未见「批量添加颜色」输入框')
+    await colorInput.fill('米白,浅灰')
+    await page.getByRole('button', { name: '添加颜色', exact: true }).first().click()
+    await page.waitForTimeout(600)
+    const priceInput = page.locator('input[placeholder="价格"]').first()
+    if (!(await waitVisible(priceInput, 8000))) throw new Error('建品页未见 SKU 批量「价格」输入框')
+    await priceInput.fill('30.8')
+    const stockInput = page.locator('input[placeholder="数量"]').first()
+    await stockInput.fill('120')
+    await page.getByRole('button', { name: '批量填写', exact: true }).first().click()
+    await page.waitForTimeout(600)
+    // SKU 矩阵逐行非空（只数行数会被「空行」骗过 —— 价格/库存是逐格 input）
+    const matrixRows = page.locator('table:has(th:has-text("价格（元）")) tbody tr')
+    const skuRowCount = await matrixRows.count()
+    if (skuRowCount < 2) throw new Error(`SKU 矩阵应 ≥2 行（2 颜色 × 1 门幅），现取 ${skuRowCount} 行`)
+    const cellValues = await matrixRows.evaluateAll((rows) => rows.map((r) => [...r.querySelectorAll('input')].map((i) => i.value)))
+    const emptyCells = cellValues.filter((vals) => vals.length < 2 || !vals[0] || vals[1] === '').length
+    if (emptyCells > 0) throw new Error(`SKU 矩阵有 ${emptyCells} 行价格/库存为空：${JSON.stringify(cellValues).slice(0, 200)}`)
     await page.getByRole('button', { name: /存草稿|存为草稿/ }).first().click().catch(() => {})
     await page.waitForTimeout(2500)
     await nav(page, '/products', '')
@@ -835,12 +1022,42 @@ async function productsNew(page) {
         throw new Error(`商品列表 20s 内未就位（url=${page.url()}）`)
       }
     }
-    await page.waitForTimeout(1800)
-    const visible = await page.locator(`text=${pname}`).first().isVisible().catch(() => false)
-    if (!visible) throw new Error('新建商品未出现在列表（结果不可见）')
-    await h.done(true, '', `门幅 值/显示分离 ✓(${JSON.stringify(optInfo)}→'${storedValue}') + 建品可见 ✓(${pname})`)
+    // 🔴 2026-10-24 真栈实测：表头「商品标题」先渲染、**行数据仍在「加载中…」** ⇒ 定长 1.8s 后
+    //    判可见是**假红**（截图：列表区 spinner 仍在转，本旅程却判红）。改成有界等待自造商品名出现。
+    if (!(await waitVisible(page.locator(`text=${pname}`).first(), 20000))) {
+      const bodyText = (await page.evaluate(() => document.body.innerText).catch(() => '')).replace(/\s+/g, ' ').slice(0, 160)
+      throw new Error(`新建商品未出现在列表（20s 内未见「${pname}」；页面文案：${bodyText || '<空>'}）`)
+    }
+    // ── 读回（SDQS D5：DOM 可见 ≠ 数据落地）──
+    // 列表里能看到 ≠ `product_skus` 有行：2026-10-23 那次正是「列表可见 + SKU 零行」还记了 ✅。
+    const rec = await readProductByName(page, pname)
+    if (!rec?.id) throw new Error(`建品后 API 读不到「${pname}」（列表可见、接口读不到 ⇒ 数据没落地）`)
+    fixture.id = rec.id
+    fixture.name = pname
+    const skus = await readProductSkus(page, rec.id)
+    fixture.withSkus = skus.length
+    if (skus.length < 2) throw new Error(`自造商品 ${rec.id} 只有 ${skus.length} 条 SKU（应 ≥2）：冒烟数据不合格（SDQS D1）`)
+    const badPrice = skus.filter((s) => !(Number(s.price) > 0))
+    const badDoor = skus.filter((s) => !/^[0-9]+(\.[0-9]+)?$/.test(String(s.doorWidth ?? '')))
+    if (badPrice.length || badDoor.length) {
+      throw new Error(`SKU 数据不合格：价格≤0 ${badPrice.length} 条 / 门幅非 canonical ${badDoor.length} 条：${JSON.stringify(skus).slice(0, 240)}`)
+    }
+    await h.done(true, '', `门幅 值/显示分离 ✓(${JSON.stringify(optInfo)}→'${storedValue}') + 建品可见 ✓(${pname})`
+      + ` + 读回 SKU ${skus.length} 条 ✓(${skus.map((s) => `${s.colorName}/${s.doorWidth}/¥${s.price}/${s.stock}`).join('; ')})`)
   } catch (e) {
     await h.done(false, `新建商品页失败: ${String(e).slice(0, 300)}`)
+  } finally {
+    // 清理自证（SDQS D4/DQ-5）：草稿可删；删不掉 ⇒ 本旅程判红（**不是** note —— 旧形态正是「建完不管」）
+    if (fixture.id) {
+      const res = await cleanupProduct(page, fixture.id)
+      if (res.after === 404) {
+        markFixtureCleaned(fixture.id)
+        h.rec.notes.push(`自造商品 ${fixture.id} 已清理（GET 404）`)
+      } else {
+        h.rec.pass = false
+        h.rec.errors.push(`自造商品清理失败：id=${fixture.id} DELETE→${res.del} / 清理后 GET→${res.after}（${res.why}）`)
+      }
+    }
   }
 }
 
@@ -2236,6 +2453,24 @@ async function main() {
       error_class: null, errors: [why], notes: [], evidence: [] })
     console.log(`❌ journey-name-ledger\n   ${why}`)
   }
+
+  // ── 数据质量快照（SDQS，docs/testing/smoke-data-quality.md）──────────────
+  // 🔴 旅程绿 ≠ 数据可用：2026-10-23 报 33/33 绿，而同轮自造商品一条 SKU 都没有。
+  //    快照从**管理端 API 现读**各实体面；壳脚本用 scripts/smoke_data_quality.py 判 DQ-*，
+  //    非零即折进整体退出码（数据不合格 = 冒烟红）。
+  const snap = await collectDataSnapshot(page).catch((e) => ({
+    schema_version: 1,
+    collected_at: new Date().toISOString(),
+    ran_journeys: [...new Set(results.map((r) => r.journey))],
+    run: { journeys_total: results.length, journeys_pass: results.filter((r) => r.pass).length },
+    entities: {},
+    fixtures: {},
+    collection_errors: [`快照采集异常：${String(e).slice(0, 300)}`],
+  }))
+  wfs(join(OUT, 'smoke-data.json'), JSON.stringify(snap, null, 2))
+  console.log(`\n== 数据质量快照: ${join(OUT, 'smoke-data.json')}`
+    + `（商品 ${snap.entities?.products?.total ?? '?'} 件 / 有 SKU ${snap.entities?.products?.with_skus ?? '?'} 件`
+    + ` / 自造 ${snap.fixtures?.products_created ?? '?'} 件·带 SKU ${snap.fixtures?.products_with_skus ?? '?'} 件）`)
 
   await browser.close()
 
