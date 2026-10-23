@@ -53,6 +53,7 @@ AVAILABILITY_SNAPSHOT = {
     "notification_read": True,
     "notification_read_all": True,
     "reminder": True,
+    "craft_calc_config_update": True,  # issue #7514：A 档可逆写（product 域）
     "employee_write": False,
     "role_write": False,
     "customer_write": False,

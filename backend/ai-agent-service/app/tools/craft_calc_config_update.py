@@ -344,15 +344,17 @@ class CraftCalcConfigUpdateTool(BaseTool):
                     f"{idx}. {config_key_label(d['field'])}：{d['message']}"
                     for idx, d in enumerate(details, 1)
                 )
-                return ToolResult(
-                    success=False,
+                # 必须经唯一映射点（`admin_api_failure`）：绕过它 = 授权类失败会被降级成套话
+                # （判据 `tests/test_admin_api_failure_mapping.py` 的「零绕过」）。
+                return admin_api_failure(
+                    written,
                     error="craft_calc_config_invalid",
-                    data={"details": details},
                     message=f"这几个值没通过校验，**本次修改没有生效**：{lines}",
                     suggestion=(
                         "按上面每一条的说法把值改到合法范围后，**重新发确认卡**（改前 → 改后）"
                         "让商家再点一次；不要原样重试同一组值"
                     ),
+                    data={"details": details},
                 )
             error_info = written.get("error", {})
             error_msg = (

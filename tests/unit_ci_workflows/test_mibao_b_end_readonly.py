@@ -196,9 +196,11 @@ A_TIER_SKILLS: dict[str, str] = {
     "sku_update": "product",
     "product_batch_update": "product",
     "scheduled_task_manage": "reminder",
-    # issue #7514：「算料参数怎么设置」没有专属意图、低置信时落 general 兜底（会话
-    # sess_5742c5b5c43a48b1 的实测路由）⇒ 补回域 = general，**不得**绑 knowledge / product。
-    "craft_calc_config_update": "general",
+    # issue #7514：算料口径变更 = **写操作** ⇒ 补回域必须是**有确认链的领域 Skill**，
+    # 兜底域（general）保持零写工具（判据 `tests/test_skill_routing_integrity.py`
+    # 的 `test_general_has_only_read_tools`）。product 域已有 `interact` + 改价确认卡，
+    # 且「工艺配置 / 加工项」的写面本就在该域 ⇒ 补回域 = product，**只在此域**。
+    "craft_calc_config_update": "product",
 }
 
 #: 写 action **闭词表**（判据 3 / 7 的兜底）：action 名命中即视为写能力。
@@ -230,11 +232,10 @@ FORBIDDEN_CAPABILITY_PHRASES = (
 
 #: A 档写能力在能力文案里的**承诺词**（判据 6 的扫描面）—— **按域**。
 A_TIER_CLAIM_WORDS: dict[str, tuple[str, ...]] = {
-    "product": ("改价", "调价"),
+    # issue #7514：「算料配置」随 `craft_calc_config_update` 一起归 product 域 —— greeting /
+    # capabilities 必须明说能改（说了做不到由本条反向钉住；能做却不说 = 接回了没人知道）。
+    "product": ("改价", "调价", "算料配置"),
     "reminder": ("提醒",),
-    # issue #7514：算料配置的变更是**本域唯一**的写能力 —— greeting / capabilities 必须
-    # 明说能改（说了做不到由本条反向钉住；做不到却不说 = 能力接回了没人知道）。
-    "general": ("算料配置",),
 }
 
 #: **变更**能力在能力文案里的**承诺词**（判据 6b 的扫描面）—— 按工具。
@@ -1424,9 +1425,14 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
             )
             for _sk in sorted(set(A_TIER_SKILLS.values()))
         },
-        "⑥b 文案抹掉改价承诺、工具仍绑在 B 端 ⇒ 判据 6 红（漏报方向）": (
+        "⑥b 文案抹掉本域**全部**承诺词、工具仍绑在 B 端 ⇒ 判据 6 红（漏报方向）": (
             "agent:mibao",
-            lambda s: re.sub(r"改价|调价", "改款", s),
+            # 口径 = 「抹掉该域的**全部**承诺词」，词表从 `A_TIER_CLAIM_WORDS` **现取** ——
+            # 写死成 `改价|调价` 会在承诺词表扩容后（issue #7514 加了「算料配置」）只抹一半，
+            # 剩下的词仍让 `claimed` 非空 ⇒ 注入永不生效（红证退化成空断言，实测踩到）。
+            lambda s: functools.reduce(
+                lambda acc, word: acc.replace(word, "改款"),
+                A_TIER_CLAIM_WORDS["product"], s),
             problems_a_tier_capability_parity,
         ),
         "⑥c 文案承诺标记已读、但变更工具被解绑 ⇒ 判据 6 红（谎报方向）": (

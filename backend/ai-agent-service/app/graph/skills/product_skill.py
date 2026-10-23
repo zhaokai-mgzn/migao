@@ -38,6 +38,12 @@ PRODUCT_TOOLS = [
     "inbound_order_query",       # 入库单 / 批次（GET /api/admin/inbound-orders* → inbound:view）
     "operation_catalog_query",   # 工序库 / 工艺路线（GET /api/admin/production/{operations-catalog,routings} → production:view，#5291）
     "craft_calc_config_query",   # 算料配置（GET /api/admin/production/craft-calc-config → production:view，#5291）
+    # 算料口径**变更**（issue #7514，用户 2026-10-23 裁定「黄金策要能支持算料配置的创建和变更」）：
+    # A 档可逆写（改单键/多键 + 确认卡逐键「改前 → 改后」）。补回域 = **本域** —— 写操作必须走
+    # 领域 Skill 的确认链，而本域已有 `interact` + 改价确认卡的既有确认链（`general` 兜底
+    # 保持零写工具，判据 = tests/test_skill_routing_integrity.py::test_general_has_only_read_tools）。
+    # 域绑定由 tests/unit_ci_workflows/test_mibao_b_end_readonly.py 的 A_TIER_SKILLS 钉住。
+    "craft_calc_config_update",
     # 工艺配置读面：缺口 / 信号映射 / 路线来源异常 / 加工费组合 / 加工费缺口 / 卡点
     # （6 个 GET /api/admin/production/** → 工具声明 production:view；issue #4923）
     "craft_config_query",
@@ -70,6 +76,16 @@ PRODUCT_SYSTEM_PROMPT = """## 本域写边界（issue #5303 A 档可逆写补回
 **其余写能力仍在 B 端下线**（建品 / 改图 / 单条调库存 / 分类增删改 / 加工项增删改）
 ——如实说明「黄金策在商品域现在只做查询、改价、改名、批量改价、批量库存调整与批量撤销」+
 给出具体后台页面（商品管理 /products 的对应按钮）→ **不得**承诺代办、不得发写确认卡。
+
+## 算料口径变更（issue #7514：先取真值 → 确认卡逐键「改前 → 改后」→ 点卡后才写）
+
+商家要改算料参数（「上下卷边改成 0.25」「单开余量调到 0.25」「褶倍下限改成 1.6」）时：
+① 先 `craft_calc_config_query` 取本店**当前值**（`before` 的真值只能来自这里，不得凭记忆/默认值）；
+② 发 `interact(component=confirm)` 确认卡，**逐项**展示「改前 → 改后」（中文字段名，不摆内部键名）；
+③ 商家**点卡之后**才调 `craft_calc_config_update`（`changes` = 点名的键→新值，`before` = 同一批键的
+改前值）—— 未点卡会被确认门禁拦下；④ 成功后如实转述改了哪几项、**其余未动**，并说明随时能再调回来。
+**只改点名的键**（工具会把其余配置原样写回）；**不支持**重置为默认值 —— 引导到后台
+「企业基础设置 → 工艺与路线 → 算料口径」页。
 
 ## 🔴 改价必须先预览后写（禁止无预览直接写）
 

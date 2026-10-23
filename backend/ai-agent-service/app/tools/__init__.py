@@ -83,6 +83,7 @@ from app.tools.inbound_order_query import InboundOrderQueryTool
 from app.tools.operation_catalog_query import OperationCatalogQueryTool
 from app.tools.briefing_query import BriefingQueryTool
 from app.tools.craft_calc_config_query import CraftCalcConfigQueryTool
+from app.tools.craft_calc_config_update import CraftCalcConfigUpdateTool
 from app.tools.craft_config_query import CraftConfigQueryTool
 from app.tools.processing_order_set_query import ProcessingOrderSetQueryTool
 # Agent 深通道（issue #5368 包 2）：图 → 同页填充计划（纯本地只读；绑 B 端 product / order）
@@ -122,7 +123,8 @@ __all__ = [
     # B 端只读模块覆盖（issue #5247）：6 个新只读工具类（必须与 registry 注册集逐一对应 ——
     # tests/test_tools_registry.py::TestToolsFacadeCompleteness 会双向核对）
     "StockLedgerQueryTool", "InboundOrderQueryTool", "OperationCatalogQueryTool",
-    "BriefingQueryTool", "CraftCalcConfigQueryTool", "ProcessingOrderSetQueryTool",
+    "BriefingQueryTool", "CraftCalcConfigQueryTool", "CraftCalcConfigUpdateTool",
+    "ProcessingOrderSetQueryTool",
     # 工艺配置读面聚合（issue #4923）：6 个零覆盖读端点（注册集双向核对同上）
     "CraftConfigQueryTool",
     # Agent 深通道（issue #5368 包 2）：同页填充计划的构造者（注册集双向核对同上）

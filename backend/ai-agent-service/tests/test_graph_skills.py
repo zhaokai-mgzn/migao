@@ -11,8 +11,6 @@ LangGraph Skill 节点测试
 # case_ids: AG-004, CH-003, CH-023, MC-008, DF-018, HR-005, CU-003, CH-010, CH-012, OR-017, OR-021, OR-022, AS-003, AS-007, OR-025, AS-009, CH-013, CH-014, CH-015
 
 import json
-from pathlib import Path
-
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, ToolMessage
@@ -37,17 +35,6 @@ from app.graph.skills.base_skill import (
 import app.graph.skills.base_skill as lr2
 from app.graph.skills.skill_registry import SkillRegistry
 from app.tools.base import ToolContext
-
-#: general 兜底**允许**的写工具（A 档可逆写，**逐条列名**）。
-#: 权威台账 = 根仓 `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 的 `A_TIER_SKILLS`
-#: （工具 → 必须绑定的 skill）；本条只是它的派生视图，由
-#: `test_general_allowed_write_tools_match_the_a_tier_ledger` 逐条比对（防两份口径漂移）。
-GENERAL_ALLOWED_WRITE_TOOLS = frozenset({
-    # issue #7514：算料配置的改单键 / 改多键（A 档可逆写；确认卡逐键「改前 → 改后」）。
-    "craft_calc_config_update",
-})
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 # ========== 辅助 ==========
@@ -99,6 +86,9 @@ class TestSkillToolSubsets:
         # PP-006 的 premise（"商品 skill 绑了它"）随之消失；加工项**查询**仍绑
         # （`processing_item_query`，只读），能力误宣的防线由只读工具集承担。
         assert "order_query" not in PRODUCT_TOOLS
+        # issue #7514：算料口径**变更**（A 档可逆写）补回本域 —— 写操作走领域 Skill 的确认链，
+        # 兜底域（general）保持零写工具（判据 test_skill_routing_integrity）。
+        assert "craft_calc_config_update" in PRODUCT_TOOLS
 
     def test_knowledge_tools(self):
         """知识 Skill 绑定 knowledge_search + processing_item_query + craft_calc_config_query
@@ -190,9 +180,9 @@ class TestSkillToolSubsets:
             # ── issue #7351（营销海报）新增：只读、「做海报」无专属意图 ⇒ 兜底必须绑 ──
             "marketing_poster",           # 商品事实 + 商家确认的文案 → 海报卡载荷；
                                           # 文案缺失由工具 fail-closed（不自动编文案）
-            # ── issue #7514（算料配置变更）新增：A 档可逆写，兜底域**唯一**的写工具 ──
-            "craft_calc_config_update",   # 改单键/多键（确认卡逐键「改前 → 改后」）；
-                                          # 「算料参数怎么设置」低置信落 general ⇒ 不绑=能力谎报
+            # ⚠️ issue #7514：算料配置**变更**（`craft_calc_config_update`）是 A 档可逆写，
+            # 但它是**写操作** ⇒ 补回域 = `product`（有 interact 确认链），**不进**本兜底域
+            # （判据 `tests/test_skill_routing_integrity.py::test_general_has_only_read_tools`）。
         }
         assert set(GENERAL_TOOLS) == expected
 
@@ -206,11 +196,9 @@ class TestSkillToolSubsets:
         人工清单恒红（§19.1）。判据改为**注册表派生**：general 绑定的工具里不得有任何
         `read_only=False` 者 —— 比原清单更强（新写工具落地即入射程）。
 
-        issue #7514 改判（**口径迁移，不是放宽**）：用户 2026-10-16 裁定「变更 ✅ 必须支持」+
-        2026-10-23 裁定「算料配置可改」⇒ 兜底域需要**恰好一把** A 档可逆写
-        （补回域由根仓 `tests/unit_ci_workflows/test_mibao_b_end_readonly.py` 的 `A_TIER_SKILLS`
-        钉死为 general）。判据从「零写工具」换成「写工具 ⊆ `GENERAL_ALLOWED_WRITE_TOOLS`」——
-        仍然**逐条具名**：任何未列名的写工具落地即红；且白名单**不得**变成空集（防空跑）。
+        issue #7514 复核：算料配置**变更**（`craft_calc_config_update`）是 A 档可逆写，但它
+        **不进**本兜底域 —— 写操作必须走领域 Skill 的确认链（`product` 域已有 `interact`），
+        判据见 `tests/test_skill_routing_integrity.py::test_general_has_only_read_tools`。
         """
         from app.tools.registry import get_tool_registry
 
@@ -219,26 +207,10 @@ class TestSkillToolSubsets:
             name for name in GENERAL_TOOLS
             if (tool := tools.get_tool(name)) is not None and not tool.read_only
         )
-        unlisted = sorted(set(write_bound) - GENERAL_ALLOWED_WRITE_TOOLS)
-        assert not unlisted, (
-            f"general 兜底 Skill 绑定了**未登记**的非只读 Tool {unlisted} —— "
-            "兜底域只放登记在案的 A 档可逆写（其余写操作走领域 Skill 的确认链）"
+        assert not write_bound, (
+            f"general 兜底 Skill 绑定了非只读 Tool {write_bound} —— "
+            f"写操作必须走领域 Skill 的确认链（#5247：B 端兜底同样只读）"
         )
-        assert write_bound, (
-            "general 一把写工具都没有 ⇒ 本判据退化成空断言（#7514 接回的算料配置变更丢了）"
-        )
-
-    def test_general_allowed_write_tools_match_the_a_tier_ledger(self):
-        """白名单里每个名字都必须在根仓 A 档台账里登记为「补回域 = general」（防第二份口径漂移）。"""
-        ledger = (
-            REPO_ROOT / "tests" / "unit_ci_workflows" / "test_mibao_b_end_readonly.py"
-        ).read_text(encoding="utf8")
-        assert GENERAL_ALLOWED_WRITE_TOOLS, "白名单为空 ⇒ 本条会空跑"
-        for name in sorted(GENERAL_ALLOWED_WRITE_TOOLS):
-            assert f'"{name}": "general"' in ledger, (
-                f"{name} 在 test_graph_skills 的白名单里，但根仓 A 档台账没把它登记到 general 域 ⇒ "
-                "两份口径已漂移（改能力边界必须显式改 A_TIER_SKILLS）"
-            )
 
     def test_general_tools_has_query_tools(self):
         """通用兜底 Skill 保留核心查询能力"""
