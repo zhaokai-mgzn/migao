@@ -142,14 +142,14 @@ export default function GeneratedImageCard({ data }: GeneratedImageCardProps) {
         >
           下载图片
         </Button>
-        <span className="inline-flex items-center gap-1 text-[11px] text-neutral-400">
+        <span className="inline-flex items-center gap-1 text-xs text-neutral-400">
           <ImageIcon className="w-3 h-3" aria-hidden />
           手机上可在对话里保存到相册
         </span>
       </div>
 
       {hint && (
-        <p data-testid="generated-image-card-hint" className="text-[11px] text-neutral-500">
+        <p data-testid="generated-image-card-hint" className="text-xs text-neutral-500">
           {hint}
         </p>
       )}
