@@ -5,6 +5,7 @@ LLM 开发时按需加载对应页面 (~50 行/页，按场景索引)：
 | 场景 | 先读 |
 |------|------|
 | 不了解项目整体 | [Home](Home.md) |
+| **跑冒烟 / 引用冒烟结论（数据质量 SDQS：空态不得冒充绿 / 必须带 SKU / 清理自证）** | **[smoke-data-quality](../testing/smoke-data-quality.md)** |
 | 首次搭建/运行 | [Quick-Start](Quick-Start.md) |
 | 写代码前确认规范 | [Development](Development.md) |
 | **改了某个面 ⇒ 还该跑哪几条具名判据（窄集由射程反推）** | **[Change-Blast-Radius](Change-Blast-Radius.md)** |
