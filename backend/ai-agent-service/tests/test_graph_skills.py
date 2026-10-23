@@ -86,13 +86,25 @@ class TestSkillToolSubsets:
         # PP-006 的 premise（"商品 skill 绑了它"）随之消失；加工项**查询**仍绑
         # （`processing_item_query`，只读），能力误宣的防线由只读工具集承担。
         assert "order_query" not in PRODUCT_TOOLS
+        # issue #7514：算料口径**变更**（A 档可逆写）补回本域 —— 写操作走领域 Skill 的确认链，
+        # 兜底域（general）保持零写工具（判据 test_skill_routing_integrity）。
+        assert "craft_calc_config_update" in PRODUCT_TOOLS
 
     def test_knowledge_tools(self):
-        """知识 Skill 绑定 knowledge_search + processing_item_query（issue #3085：加工计价走工具实时查询；knowledge_manage 管理操作走 admin-web，不注册工具）"""
+        """知识 Skill 绑定 knowledge_search + processing_item_query + craft_calc_config_query
+
+        issue #3085：加工计价走工具实时查询；knowledge_manage 管理操作走 admin-web，不注册工具。
+        issue #7514：「算料参数怎么设置」落进 knowledge 域（会话 sess_5742c5b5c43a48b1 的实测路由）
+        而本域当时**没有**算料配置工具 ⇒ 只能靠知识库/行业常识，答「只能查、不能改」。
+        故补绑只读的 `craft_calc_config_query`（先查本店当前配置再说）。
+        """
         assert "knowledge_search" in KNOWLEDGE_TOOLS
         assert "processing_item_query" in KNOWLEDGE_TOOLS
         assert "knowledge_manage" not in KNOWLEDGE_TOOLS
-        assert len(KNOWLEDGE_TOOLS) == 2
+        # issue #7514：算料配置读面（只读工具；写面 `craft_calc_config_update` **不得**进本域）
+        assert "craft_calc_config_query" in KNOWLEDGE_TOOLS
+        assert "craft_calc_config_update" not in KNOWLEDGE_TOOLS
+        assert len(KNOWLEDGE_TOOLS) == 3
 
     def test_aftersales_tools(self):
         """售后 Skill 包含正确的 Tool（knowledge_search 已禁用）
@@ -168,6 +180,9 @@ class TestSkillToolSubsets:
             # ── issue #7351（营销海报）新增：只读、「做海报」无专属意图 ⇒ 兜底必须绑 ──
             "marketing_poster",           # 商品事实 + 商家确认的文案 → 海报卡载荷；
                                           # 文案缺失由工具 fail-closed（不自动编文案）
+            # ⚠️ issue #7514：算料配置**变更**（`craft_calc_config_update`）是 A 档可逆写，
+            # 但它是**写操作** ⇒ 补回域 = `product`（有 interact 确认链），**不进**本兜底域
+            # （判据 `tests/test_skill_routing_integrity.py::test_general_has_only_read_tools`）。
         }
         assert set(GENERAL_TOOLS) == expected
 
@@ -180,6 +195,10 @@ class TestSkillToolSubsets:
         `role_manage` 已被产品裁定**收窄为只读工具** ⇒ 它们进 general 是预期形态，
         人工清单恒红（§19.1）。判据改为**注册表派生**：general 绑定的工具里不得有任何
         `read_only=False` 者 —— 比原清单更强（新写工具落地即入射程）。
+
+        issue #7514 复核：算料配置**变更**（`craft_calc_config_update`）是 A 档可逆写，但它
+        **不进**本兜底域 —— 写操作必须走领域 Skill 的确认链（`product` 域已有 `interact`），
+        判据见 `tests/test_skill_routing_integrity.py::test_general_has_only_read_tools`。
         """
         from app.tools.registry import get_tool_registry
 

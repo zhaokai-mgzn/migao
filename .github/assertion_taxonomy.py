@@ -131,6 +131,12 @@ WRITE_TOOLS: frozenset[str] = frozenset({
     # `order_manage` / `product_manage` 同因（#5247）已移出本表，见上方注释。
     # （同批移出的 `product_update` / `sku_update` 已按 **#5303** **补回** —— 它们重新绑定了
     #  B 端 product skill（A 档可逆写），理由见上方 #5303 注释。）
+    # 🔴 issue #7514（2026-10-23 用户裁定「黄金策要能支持算料配置的创建和变更」）：
+    #    `craft_calc_config_update` 是 A 档可逆写（`read_only=False`，无 read_only action；
+    #    `changes` 是绝对目标值 ⇒ 幂等），可达性 = general 兜底绑定 ⇒ **必须进本表**：
+    #    本表是「写用例必须有效果层断言 / 必须声明自清理」的**唯一判据源**，名字不在表里
+    #    会让含它期望的用例（PP-023）不被分类为写用例 ⇒ 效果层规则对它静默失效。
+    "craft_calc_config_update",    # WRITE|IDEMPOTENT（算料配置改单键/多键；确认卡 + before 真值核对）
 })
 
 # `WRITE_TOOL_ACTIONS`：工具级 read_only=False，但**只有部分 action 是写**

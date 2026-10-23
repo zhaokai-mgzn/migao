@@ -98,6 +98,12 @@ UNITS: Tuple[CapabilityUnit, ...] = (
         tool="notification_manage", actions=("read_all",),
     ),
     CapabilityUnit(
+        "craft_calc_config_update", "算料口径变更",
+        # 字段级探针（issue #7514）：无 action 维度 ⇒ `required_props` 钉住「必须能收
+        # changes（要改的键）+ before（改前真值）」—— 两者缺一，逐键「改前 → 改后」就不成立。
+        tool="craft_calc_config_update", required_props=("changes", "before"),
+    ),
+    CapabilityUnit(
         "reminder", "定时提醒的建与取消",
         tool="scheduled_task_manage", actions=("create", "cancel"),
     ),

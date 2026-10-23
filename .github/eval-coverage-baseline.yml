@@ -108,6 +108,23 @@ entries:
     reason: C 端仅 OR-023 一条（正向）；缺"非法输入必须挡住写操作"的拒绝半
     added: "2026-09-14"
 
+  # ── 结构性缺失（本 PR 新增；issue #7514，2026-10-23）────────────────────────
+  # `craft_calc_config_update`（算料配置变更，A 档可逆写）首次接入 B 端。
+  # **已覆盖的**：契约层由 `backend/ai-agent-service/tests/test_tools_craft_calc_config_update.py`
+  # 全量钉住（只改点名键 / stale 零写入 / 无权限零调用 / 422 逐条透传 / 类属性）。
+  # **未覆盖的（本条）**：LLM 行为面 —— 模型是否真的先 `craft_calc_config_query` 取真值、
+  # 再发确认卡逐键「改前 → 改后」、点卡后才写。
+  # 为什么本 PR 不补用例（照实登记，**不是豁免证书**）：eval 栈夹具层 `_CLEAN_TYPES`
+  # （tests/agent_eval/local_runner.py）**没有「算料配置复位」类型** ⇒ 写类用例缺 `post_clean`
+  # 会被 Case Trust 判 `CASE-TRUST-NO-SELF-CLEAN`，且真跑会污染评测租户的算料配置。
+  # 重启条件 = 夹具层补上配置复位类型时，**同 PR** 补行为用例 + **删除本条**（补用例与删条目必须同 PR）。
+  - tool: craft_calc_config_update
+    kind: uncovered
+    persona: mibao
+    issue: "#5966"
+    reason: 算料配置变更（A 档可逆写）的 LLM 行为用例待补（eval 夹具层缺配置复位类型）；契约层单测已全覆盖
+    added: "2026-10-23"
+
   # ✅ 销账（2026-09-14，issue #3568 / PR #3589）：`processing_order_generate` 的
   #    thin_positive 条目**已删除** —— 该工具现由 PG-013 + PG-015 + PG-016 三条覆盖
   #    （不再「仅 PG-013 一条」）；且原条目追踪的 `#3589` 是本 PR，合并后即非 open。

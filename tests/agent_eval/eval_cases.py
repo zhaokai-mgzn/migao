@@ -10818,7 +10818,7 @@ _CASE_PP_015 = EvalCase(
     difficulty=Difficulty.NORMAL,
     user_inputs=['我们店的算料配置现在是什么？'],
     expectations=['craft_calc_config_query'],
-    data_checks=['success=true', '（散文、不计分）逐项来自服务端：配置项与数值只能来自工具返回（`GET /api/admin/production/craft-calc-config`），不得用行业常识 / 代码里的默认常量顶替，也不得编造服务端没返回的键；取不到时如实说「暂未取到算料配置」', '（散文、不计分）只读边界：本工具**不做算料**（不给某一单算米数 / 报价）⇒ 要算具体一单必须引导到后台算料页填尺寸；配置修改不在能力内 ⇒ 引导「企业基础设置 → 算料口径」，**不得声称已修改**（工具 read_only=true，无任何写 action）'],
+    data_checks=['success=true', '（散文、不计分）逐项来自服务端：配置项与数值只能来自工具返回（`GET /api/admin/production/craft-calc-config`），不得用行业常识 / 代码里的默认常量顶替，也不得编造服务端没返回的键；取不到时如实说「暂未取到算料配置」', '（散文、不计分）边界：本工具**不做算料**（不给某一单算米数 / 报价）⇒ 要算具体一单必须引导到后台算料页填尺寸；**改口径**只走 `craft_calc_config_update`（issue #7514：A 档可逆变更）—— 先 `craft_calc_config_query` 取本店真值，再发确认卡**逐项**展示「改前 → 改后」（中文字段名，不摆内部键名），**点卡之后**才执行；未点卡**不得声称已修改**，也**不支持**「重置为默认值」（引导到后台「企业基础设置 → 工艺与路线 → 算料口径」页）'],
     skip_reason='',
     tags=['craft_calc', 'config', 'mibao', 'readonly', 'llm_behavior'],
     persona='mibao',
