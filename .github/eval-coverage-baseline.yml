@@ -125,6 +125,24 @@ entries:
     reason: 算料配置变更（A 档可逆写）的 LLM 行为用例待补（eval 夹具层缺配置复位类型）；契约层单测已全覆盖
     added: "2026-10-23"
 
+  # ── 结构性缺失（本 PR 新增；issue #7541，2026-10-23）────────────────────────
+  # `product_image_generate`（对已选商品生成商品图，B 端只读）首次接入黄金策。
+  # **已覆盖的**：契约层由 `backend/ai-agent-service/tests/test_product_image_generate.py`
+  # 全量钉住（参数校验 / 缺主图 / 不落库 / 失败语义四分 / 卡发射条件），跨端渲染由
+  # `test_card_type_cross_end_contract.py` 与两端前端单测覆盖；用例 PR-074 是这套契约的载体。
+  # **未覆盖的（本条）**：LLM 行为面 —— 模型是否真的先 product_search 定位商品、再按用途调生成、
+  # 生成不可用时**如实说不可用而不是说额度用尽**。
+  # 为什么本 PR 不补行为用例（照实登记，**不是豁免证书**）：现役 `qwen-mt-image-2.0` 不接图生图
+  # （#7538 / #7540 已把失败理由改成「非配额原因」）⇒ 端到端生成**当前必失败**，
+  # 一条「模型能否正确交付图片」的行为用例跑不过也不能归因。
+  # 重启条件 = 模型可用性恢复（换回可用的 IMAGE_GEN_MODELS）时，**同 PR** 补行为用例 + **删除本条**。
+  - tool: product_image_generate
+    kind: uncovered
+    persona: mibao
+    issue: "#7541"
+    reason: 现役生图模型不接图生图（#7538）⇒ 端到端生成不可验收，行为用例待模型可用性恢复后补；契约层判据见 PR-074
+    added: "2026-10-23"
+
   # ✅ 销账（2026-09-14，issue #3568 / PR #3589）：`processing_order_generate` 的
   #    thin_positive 条目**已删除** —— 该工具现由 PG-013 + PG-015 + PG-016 三条覆盖
   #    （不再「仅 PG-013 一条」）；且原条目追踪的 `#3589` 是本 PR，合并后即非 open。

@@ -66,6 +66,9 @@ KIND_LABELS = {
 
 
 #: 四种失败语义的**可行动**话术（互不冒充；用户面一律不说成「额度用尽」）。
+#: 调用点一律就地构造 `ToolResult(success=False, error=…, message=…, suggestion=…)`
+#: （**不**包一层自定义构造器：模型可见文本的射程判据只认已登记的构造点，
+#: 判据 = `tests/unit_ci_workflows/test_dead_capability_meta_guard.py::test_suggestion_kwarg_is_only_on_registered_builders`）。
 #: 🔴 码写在这里的**字面** `"error"` 里（不靠日志文案推断），因为失败码现取判据
 #: （`tests/unit_ci_workflows/test_remedy_registry_guard.py`）只认静态可见的短码，
 #: 而「每个失败码都要有补救登记」正是靠它落地的。
@@ -94,27 +97,6 @@ _IMAGE_FAILURES: Dict[str, Dict[str, str]] = {
         "suggestion": "可以让我再生成一次；如仍失败，先在「商品管理」里手工上传一张商品图。",
     },
 }
-
-
-def _failure_result(
-    code: str,
-    *,
-    suggestion: Optional[str] = None,
-    missing_params: Optional[list] = None,
-) -> ToolResult:
-    """一个**带可行动建议**的失败结果（四类失败语义的唯一出口）。
-
-    `suggestion=` 显式写在 `ToolResult(...)` 调用里（不是靠 `**` 展开）——
-    失败面静态判据 `tests/test_tool_failure_suggestions.py` 逐处可见才可判。
-    """
-    row = _IMAGE_FAILURES[code]
-    return ToolResult(
-        success=False,
-        error=row["error"],
-        message=row["message"],
-        suggestion=suggestion or row["suggestion"],
-        missing_params=missing_params,
-    )
 
 
 class ProductImageGenerateTool(BaseTool):
@@ -259,15 +241,25 @@ class ProductImageGenerateTool(BaseTool):
         image_url = _sample_image(data)
         if not image_url:
             logger.info(f"Product image generate: no sample image, product={product_id}")
-            return _failure_result("IMAGE_SOURCE_MISSING", missing_params=[])
+            failure = _IMAGE_FAILURES["IMAGE_SOURCE_MISSING"]
+            return ToolResult(
+                success=False,
+                error=failure["error"],
+                message=failure["message"],
+                suggestion=failure["suggestion"],
+                missing_params=[],
+            )
 
         # 生图内核只接 http(s) 样图；相对路径 / 本地文件一律按「样图不可用」如实拒绝，
         # 不拼接、不猜测域名（猜错只会把请求打到错误的主机上）。
         if not image_url.startswith(("http://", "https://")):
             logger.warning(
                 f"Product image generate: sample image is not absolute url, product={product_id}")
-            return _failure_result(
-                "IMAGE_SOURCE_MISSING",
+            failure = _IMAGE_FAILURES["IMAGE_SOURCE_MISSING"]
+            return ToolResult(
+                success=False,
+                error=failure["error"],
+                message=failure["message"],
                 suggestion="该商品的主图地址不是完整可访问的图片地址，请商家在「商品管理」里"
                            "重新上传主图后再让我生成。",
             )
@@ -285,16 +277,40 @@ class ProductImageGenerateTool(BaseTool):
             # 本工具的映射与该真值一一对应（判据 = tests/test_product_image_generate.py
             # 的 TestFailureSemantics），不在这里二次猜测原因。
             logger.warning(f"Product image generate unavailable: product={product_id}, err={e}")
-            return _failure_result("IMAGE_GEN_UNAVAILABLE")
+            failure = _IMAGE_FAILURES["IMAGE_GEN_UNAVAILABLE"]
+            return ToolResult(
+                success=False,
+                error=failure["error"],
+                message=failure["message"],
+                suggestion=failure["suggestion"],
+            )
         except ImageGenerationQuotaExceeded as e:
             logger.warning(f"Product image generate quota exceeded: product={product_id}, err={e}")
-            return _failure_result("IMAGE_GEN_QUOTA_EXCEEDED")
+            failure = _IMAGE_FAILURES["IMAGE_GEN_QUOTA_EXCEEDED"]
+            return ToolResult(
+                success=False,
+                error=failure["error"],
+                message=failure["message"],
+                suggestion=failure["suggestion"],
+            )
         except ImageGenerationError as e:
             logger.error(f"Product image generate failed: product={product_id}, err={e}")
-            return _failure_result("IMAGE_GEN_FAILED")
+            failure = _IMAGE_FAILURES["IMAGE_GEN_FAILED"]
+            return ToolResult(
+                success=False,
+                error=failure["error"],
+                message=failure["message"],
+                suggestion=failure["suggestion"],
+            )
         except Exception as e:  # noqa: BLE001 —— 兜底同样给出可行动出路，不静默
             logger.error(f"Product image generate error: {e}", exc_info=True)
-            return _failure_result("IMAGE_GEN_FAILED")
+            failure = _IMAGE_FAILURES["IMAGE_GEN_FAILED"]
+            return ToolResult(
+                success=False,
+                error=failure["error"],
+                message=failure["message"],
+                suggestion=failure["suggestion"],
+            )
 
         label = KIND_LABELS[kind]
         logger.info(
