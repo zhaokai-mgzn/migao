@@ -60,6 +60,24 @@ class ReportControllerTest {
                 .isEqualTo("dashboard:view");
     }
 
+    private static Method qualityCostBreakdown() {
+        return Arrays.stream(ReportController.class.getDeclaredMethods())
+                .filter(m -> m.getName().equals("qualityCostBreakdown"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("ReportController 里没有 qualityCostBreakdown"));
+    }
+
+    @Test
+    @DisplayName("质量成本维度汇总：GET /quality-cost/breakdown，只收维度 + 可选日期")
+    void qualityCostBreakdownRouteAndSignature() {
+        assertThat(qualityCostBreakdown().getAnnotation(GetMapping.class).value())
+                .containsExactly("/quality-cost/breakdown");
+        assertThat(Arrays.stream(qualityCostBreakdown().getParameters()).map(p -> p.getName()).toList())
+                .containsExactly("dimension", "startDate", "endDate");
+        // 与其余报表同码：类级 dashboard:view，方法不覆写
+        assertThat(qualityCostBreakdown().getAnnotation(RequirePermission.class)).isNull();
+    }
+
     @Test
     @DisplayName("🔴 入参只有日期区间：数据范围由服务端解析，不接受客户端递交")
     void takesOnlyDateRange() {

@@ -35,7 +35,7 @@ class ReportReceivableAgingServiceTest {
     void setUp() {
         customerService = Mockito.mock(CustomerService.class);
         service = new ReportService(null, null, null, null, null, null,
-                new com.migao.admin.time.BusinessClock(), customerService);
+                new com.migao.admin.time.BusinessClock(), customerService, null);
     }
 
     private static ReceivableAgingResponse.BucketAmount bucket(String code, String label, String amount, int count) {
