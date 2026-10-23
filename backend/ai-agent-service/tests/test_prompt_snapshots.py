@@ -150,10 +150,11 @@ def test_skill_prompt_length_reasonable(skill):
     # 2026-10-23（issue #7514）：硬上限 14900→**15100**。增量 = **机械投影**，无可 trim：
     #   #4125 的「能力索引」层按 `SkillConfig.tool_names` × 注册表 `read_only` 现算
     #   「域 → 该域可执行的写工具」，本单把 `craft_calc_config_update`（A 档可逆写）接进
-    #   `general` ⇒ **所有 skill** 的索引层各多一行 `- general: craft_calc_config_update`
-    #   （+36 字符，逐档同量）。实测（命令自证：本文件即判据）
+    #   `product` ⇒ **所有 skill** 的索引层各多一行 `- product: craft_calc_config_update`
+    #   （+36 字符，逐档同量；写面最终归 `product` 域 —— 兜底 `general` 保持零写工具）。
+    #   实测（命令自证：本文件即判据）
     #   `cd backend/ai-agent-service && pytest tests/test_prompt_snapshots.py -q`：
-    #   product 14998→**15034**、order 14934→14970、data 8589→8625、general 8370→8406。
+    #   product **15030**、order **14966**、data **8625**（均 ≤ 各自 per-skill 预算）。
     #   ⚠️ 同批已同步 `expected_max` 的 `data`（8600→8700，实测 8625，按"实测上取整到百位"惯例）；
     #   其余档位仍在各自预算内 ⇒ 不动（**未放宽任何断言语义**：超限仍判红）。
     assert 200 < len(prompt) < 15100, f"{skill}: prompt 长度异常 ({len(prompt)} chars)"
