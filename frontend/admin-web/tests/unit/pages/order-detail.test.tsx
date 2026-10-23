@@ -106,6 +106,10 @@ vi.mock('@/components/orders', async (importOriginal) => {
   // 打印层（issue #5914 / #7544）：**走真货**，不替身 —— 本文件要验的正是
   // 「页面唯一入口 → 预览层的单据标签（`docs` / `onSelect` 接线）→ 打印」这条链，
   // 替身成壳会让「选单据」变成空断言（几何自检那半边由 PrintDocPreview.test.tsx 负责）。
+  // ⚠️ 仍然显式写出这一条（值 = 真组件直通）：`test_orders_barrel_mock_guard.py` 的 C2 要求
+  // 「页面 import 的桶组件在 mock 里都有键」（它不解析 `...actual` 的展开）—— 写在这里既满足
+  // 该守卫，又保住「不替身」这一点。
+  PrintDocPreview: actual.PrintDocPreview,
   EditOrderContentModal: ({ open }: any) =>
     open ? <div data-testid="edit-order-content-modal">EditOrderContentModal</div> : null,
   // 加工单缺码提示 + 一键补码（issue #6867 / B5）：本文件不验它的行为（缺码提示的判据在
