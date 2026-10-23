@@ -16242,6 +16242,25 @@ _CASE_UI_132 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端布局契约用例（jsdom 渲染 + 源码行为），不依赖真实服务与共享夹具；前置不成立时对应单测直接红，agent-eval 栈不跑它',
 )
 
+# ── UI-133 [NORMAL] 客户详情「标签」：没有标签可加时点「+」必须给出可见反馈 + 去处（系统无标签 / 客户已打满两种空态）（源: cases/ui.yml）──
+_CASE_UI_133 = EvalCase(
+    id='UI-133',
+    legacy_id='',
+    title='客户详情「标签」：没有标签可加时点「+」必须给出可见反馈 + 去处（系统无标签 / 客户已打满两种空态）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['当系统没有标签时，点击+号无反应，应该引导客户去添加标签'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·系统无标签时点「+」有反馈（会红）：`getCustomerTags` 返回空数组时点触发器 ⇒ 面板 `customer-tag-empty` 在场、文案说明「系统还没有标签」、入口「去添加标签」把路由推到 `/customers?manageTags=1`。修前形态 = 面板被 `availableTags.length > 0` 门控 ⇒ 点「+」零反馈（触发器可点、DOM 无任何变化）。执行点 = frontend/admin-web/tests/unit/pages/customer-detail-tags-empty.test.tsx', '判据 2·两种空态不混（会红）：标签存在但该客户已全部关联 ⇒ 文案是「全部标签」、不得说成「系统还没有标签」，入口换为「管理标签」且同样推到 `/customers?manageTags=1`。执行点同上', '判据 3·负控（会红）：未点击时无空态面板且 `aria-expanded=false`；有可加标签时不出空态、选择器照常列出可加的那一条（空态不得掩盖正常选择器）。执行点同上', '判据 4·深链一步到位（会红）：`/customers?manageTags=1` ⇒ 客户列表页直接打开「标签管理」模态（「新建标签」表单 / 「已有标签」块在场）；不带参数 ⇒ 不自动打开（进客户列表不该被弹窗打断）。执行点 = frontend/admin-web/tests/unit/pages/customers-tag-deeplink.test.tsx', '判据 5·类级元守卫（会红）：`frontend/admin-web/src/**` 里 0 处「state 开合的浮层被 `列表.length > 0` 门控」的形态（`{showXxx && 某处.length > 0 && (`）—— 修前恰 1 处 = 本单病灶；判别力自证 = 修前那一行原样注入必须命中、良性写法（只由 state 门控 / 只判列表非空 / 整行注释里的反例）必须放行；扫描面非空（文件数 > 100）防「空集比空集」的假绿。执行点 = frontend/admin-web/tests/unit/popover-empty-gate-guard.test.ts'],
+    skip_reason='[backend-contract] 纯前端交互 + 源码形态契约（不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟',
+    tags=['ui', 'admin-web', 'customer-tag', 'empty-state', 'inert-trigger'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端交互契约用例（jsdom 渲染 + 源码形态扫描），不依赖真实服务与共享夹具；前置不成立时对应单测直接红，agent-eval 栈不跑它',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -17146,6 +17165,7 @@ ALL_CASES = (
     _CASE_UI_130,
     _CASE_UI_131,
     _CASE_UI_132,
+    _CASE_UI_133,
     _CASE_UT_001,
     _CASE_UT_002,
 )

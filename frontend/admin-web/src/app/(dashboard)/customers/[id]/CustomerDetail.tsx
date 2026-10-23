@@ -494,22 +494,45 @@ export default function CustomerDetailPage() {
               <div className="relative">
                 <button
                   className="p-1 text-neutral-400 hover:text-primary-600 transition-colors"
+                  aria-label="添加标签"
+                  aria-expanded={showTagPicker}
+                  aria-haspopup="true"
                   onClick={() => setShowTagPicker(!showTagPicker)}
                 >
                   <Plus className="w-4 h-4" />
                 </button>
-                {showTagPicker && availableTags.length > 0 && (
+                {/* 面板**每次**都要出现（issue #7526）：修前面板被 `availableTags.length > 0` 门控 ⇒
+                    系统没有任何标签（或客户已打满全部标签）时点「+」零反馈，按钮像坏了。
+                    没有标签可加 ⇒ 说清原因 + 给出可点的去处（客户管理 → 标签管理）。 */}
+                {showTagPicker && (
                   <div className="absolute right-0 top-8 bg-white border border-neutral-200 rounded-lg shadow-lg py-2 min-w-[150px] z-10">
-                    {availableTags.map((tag) => (
-                      <button
-                        key={tag.id}
-                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-neutral-50 flex items-center gap-2"
-                        onClick={() => handleAddTag(tag)}
-                      >
-                        <span className="w-3 h-3 rounded-full" style={{ backgroundColor: tag.color }} />
-                        {tag.name}
-                      </button>
-                    ))}
+                    {availableTags.length > 0 ? (
+                      availableTags.map((tag) => (
+                        <button
+                          key={tag.id}
+                          className="w-full text-left px-3 py-1.5 text-sm hover:bg-neutral-50 flex items-center gap-2"
+                          onClick={() => handleAddTag(tag)}
+                        >
+                          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: tag.color }} />
+                          {tag.name}
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-3 py-2 w-60" data-testid="customer-tag-empty">
+                        <p className="text-xs text-neutral-500 leading-relaxed mb-2">
+                          {allTags.length === 0
+                            ? '系统还没有标签。先创建一个标签，再回来给客户打标。'
+                            : '这个客户已经用上系统里全部标签了。'}
+                        </p>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => router.push('/customers?manageTags=1')}
+                        >
+                          {allTags.length === 0 ? '去添加标签' : '管理标签'}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
