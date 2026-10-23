@@ -85,6 +85,8 @@ export const CALC_SCALAR_KEYS = [
   'per_fold_single',
   'margin_single',
   'margin_multi',
+  'margin_mixed_single',
+  'margin_mixed_multi',
   'min_fullness',
   'hem_margin',
   'meters_rounding_step',
@@ -130,7 +132,8 @@ export const CALC_FIELD_GROUPS = [
   {
     key: 'materials',
     title: '用布与余量',
-    keys: ['per_fold_single', 'margin_single', 'margin_multi', 'hem_margin'],
+    keys: ['per_fold_single', 'margin_single', 'margin_multi',
+           'margin_mixed_single', 'margin_mixed_multi', 'hem_margin'],
   },
   {
     key: 'thresholds',
@@ -179,6 +182,16 @@ export const CALC_PARAM_COPY: Record<string, CalcParamCopy> = {
     label: '多开余量（米）',
     hint: '一幅裁成双开 / 四开时，包边 + 内侧对缝留出的布',
     impact: '多开时每片加在用料上的量（包边 + 内侧对缝）。开数只改每片宽度与这里的加量，**总用料仍然是「每片用料 × 开数」**',
+  },
+  margin_mixed_single: {
+    label: '拼色单开余量（米）',
+    hint: '拼色帘整幅一幅做（单开）时，主布两边包边留出的布',
+    impact: '只作用于**拼色款**的单开主布（比单色的单开余量略少：拼缝处不重复留边）',
+  },
+  margin_mixed_multi: {
+    label: '拼色多开余量（米）',
+    hint: '拼色帘裁成双开 / 四开时，主布包边 + 内侧对缝留出的布',
+    impact: '只作用于**拼色款**的多开主布；与「拼色单开余量」是**两个独立参数**（纸表单开 / 对开读数不同）',
   },
   min_fullness: {
     label: '褶倍下限',

@@ -89,13 +89,15 @@ public class CraftCalcConfigService {
      */
     public static final List<String> CONFIG_KEYS = List.of(
             "per_fold_single", "per_fold_mixed_times", "margin_single", "margin_multi",
+            "margin_mixed_single", "margin_mixed_multi",
             "min_fullness", "tiers", "default_formula", "hem_margin",
             "meters_rounding_step", "oversize_width_threshold", "oversize_height_threshold");
 
     /** 全部**数值**标量键（引擎 {@code DEFAULT_CRAFT_CALC_CONFIG} 的数值键，逐字同名；顺序 = 读面键序）。 */
     private static final List<String> NUMERIC_KEYS = List.of(
-            "per_fold_single", "margin_single", "margin_multi", "min_fullness",
-            "hem_margin", "meters_rounding_step",
+            "per_fold_single", "margin_single", "margin_multi",
+            "margin_mixed_single", "margin_mixed_multi",
+            "min_fullness", "hem_margin", "meters_rounding_step",
             "oversize_width_threshold", "oversize_height_threshold");
 
     /**
@@ -115,7 +117,8 @@ public class CraftCalcConfigService {
      * 与引擎 {@code curtain_calc._NON_NEGATIVE_CONFIG_KEYS} 同集合（同口径守卫）。</p>
      */
     private static final List<String> NON_NEGATIVE_KEYS = List.of(
-            "margin_single", "margin_multi", "min_fullness", "hem_margin",
+            "margin_single", "margin_multi", "margin_mixed_single", "margin_mixed_multi",
+            "min_fullness", "hem_margin",
             "meters_rounding_step", "oversize_width_threshold", "oversize_height_threshold");
 
     private final CraftCalcConfigMapper craftCalcConfigMapper;

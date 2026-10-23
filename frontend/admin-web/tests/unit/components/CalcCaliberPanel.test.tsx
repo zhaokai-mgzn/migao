@@ -68,15 +68,17 @@ import type { CraftCalcConfig } from '@/types'
 /**
  * 算料引擎**默认配置**（逐值写死 = 后端会回什么；**不从前端实现推导**）。
  *
- * 🔴 11 个键的清单也**写死在这里**（不从 `CALC_SCALAR_KEYS` 推导全量键 —— 那样
+ * 🔴 **13 个键**的清单也**写死在这里**（不从 `CALC_SCALAR_KEYS` 推导全量键 —— 那样
  * 「漏发某个键」会在两边同时漏掉，判据恒真）。`CALC_SCALAR_KEYS` 只用来逐个断言
- * 「8 个标量输入框都在」。
+ * 「10 个标量输入框都在」。
  */
 const ENGINE_DEFAULT_CALC_CONFIG = {
   per_fold_single: 0.25,
   per_fold_mixed_times: { '1': 0.65, '2': 1.2 },
   margin_single: 0.2,
   margin_multi: 0.3,
+  margin_mixed_single: 0.15,
+  margin_mixed_multi: 0.2,
   min_fullness: 1.5,
   tiers: {
     standard: { fullness: 2.0, label: '标准工艺' },
@@ -89,12 +91,14 @@ const ENGINE_DEFAULT_CALC_CONFIG = {
   oversize_height_threshold: 4,
 }
 
-/** 全量替换的 11 个键（后端 `PUT` 契约；**写死**，不从实现推导） */
+/** 全量替换的 13 个键（后端 `PUT` 契约；**写死**，不从实现推导） */
 const FULL_KEYS = [
   'per_fold_single',
   'per_fold_mixed_times',
   'margin_single',
   'margin_multi',
+  'margin_mixed_single',
+  'margin_mixed_multi',
   'min_fullness',
   'tiers',
   'default_formula',
@@ -362,7 +366,7 @@ describe('算料口径域面板（issue #6580 抽取后的行为面）', () => {
 // 判据 1（冻结）：域内 8 标量 + tiers + 拼色 + 公式**逐键在位**
 // ══════════════════════════════════════════════════════════════════════════════
 describe('判据 1（#6825）：域内就地可改 —— 逐键在位', () => {
-  it('8 个标量键各有一个输入框（键集取自 `CALC_SCALAR_KEYS`，逐键钉住）', async () => {
+  it('10 个标量键各有一个输入框（键集取自 `CALC_SCALAR_KEYS`，逐键钉住）', async () => {
     await renderPanel()
     // 高级组默认收起（§22 P2 渐进披露）⇒ 先按**用户路径**展开，再逐键断言
     fireEvent.click(screen.getByTestId('param-advanced-toggle-calc'))
@@ -372,7 +376,7 @@ describe('判据 1（#6825）：域内就地可改 —— 逐键在位', () => {
       expect(input).toHaveAttribute('type', 'text')
     }
     // 自证键集不是空集（空集上的循环是空断言）
-    expect(CALC_SCALAR_KEYS.length).toBe(8)
+    expect(CALC_SCALAR_KEYS.length).toBe(10)
   })
 
   it('高级组默认收起 ⇒ 展开后才渲染（渐进披露不变）', async () => {
@@ -565,7 +569,7 @@ describe('判据 1b：术语说明区块与参数同屏（口径与术语不丢�
 // 判据 2（冻结）：保存发**全量键**（#7183 起触发方式 = 防抖自动保存，正文口径不变）
 // ══════════════════════════════════════════════════════════════════════════════
 describe('判据 2（#6825；#7183 改判触发方式）：保存发**全量键**（后端是整份替换，缺键会静默回默认值）', () => {
-  it('改「单色每折用料」⇒ 防抖后 PUT 正文逐键齐全（11 键）+ 改的那个键是新值', async () => {
+  it('改「单色每折用料」⇒ 防抖后 PUT 正文逐键齐全（13 键）+ 改的那个键是新值', async () => {
     const sent: CraftCalcConfig[] = []
     await renderPanel(async (draft) => {
       sent.push(draft)

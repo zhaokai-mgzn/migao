@@ -40,6 +40,8 @@ CURRENT_CONFIG = {
     "per_fold_mixed_times": {"2": 0.3, "3": 0.35},
     "margin_single": 0.2,
     "margin_multi": 0.3,
+    "margin_mixed_single": 0.15,
+    "margin_mixed_multi": 0.2,
     "min_fullness": 1.5,
     "tiers": {
         "标准": {"fullness": 2.0, "label": "2.0 倍"},
@@ -87,7 +89,7 @@ class TestDeclaration:
         assert params["properties"]["before"]["type"] == "object"
 
     def test_allowed_keys_match_the_admin_api_config_map(self):
-        """11 个键与 `CraftCalcConfig.toConfigMap()` 逐字同名（跨源对账见根仓契约守卫）。"""
+        """13 个键与 `CraftCalcConfig.toConfigMap()` 逐字同名且**同序**（跨源对账见根仓契约守卫）。"""
         assert list(ALLOWED_CONFIG_KEYS) == list(CURRENT_CONFIG)
 
 
@@ -111,7 +113,7 @@ class TestOnlyNamedKeysAreChanged:
     """① 只改点名的键，其余原样保留（`PUT` 全量替换语义）"""
 
     @patch("app.tools.craft_calc_config_update.get_admin_api_client")
-    async def test_other_ten_keys_are_written_back_verbatim(self, mock_get_client):
+    async def test_other_twelve_keys_are_written_back_verbatim(self, mock_get_client):
         client = _client()
         mock_get_client.return_value = client
 
@@ -127,7 +129,7 @@ class TestOnlyNamedKeysAreChanged:
         assert set(body) == set(ALLOWED_CONFIG_KEYS)
         assert body["hem_margin"] == 0.25
         untouched = [key for key in CURRENT_CONFIG if key != "hem_margin"]
-        assert len(untouched) == 10
+        assert len(untouched) == 12   # 13 键 − 改掉的那 1 个
         for key in untouched:
             assert body[key] == CURRENT_CONFIG[key], f"{key} 被写坏了（{PUT_HINT}）"
 

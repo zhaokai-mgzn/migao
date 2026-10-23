@@ -1617,6 +1617,10 @@ export interface CraftCalcConfig {
   margin_single: number
   /** 多开余量（米） */
   margin_multi: number
+  /** **拼色**单开余量（米）—— 与单开余量并列的独立参数（issue #7560） */
+  margin_mixed_single: number
+  /** **拼色**多开余量（米） */
+  margin_mixed_multi: number
   /** 褶倍下限（行业红线，可配但不可关） */
   min_fullness: number
   /** 工艺档位 `{档位名: {fullness, label}}` */

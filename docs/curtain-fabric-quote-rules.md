@@ -31,7 +31,8 @@
 | `PLEAT_FABRIC_PER_FOLD` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `PLEAT_FABRIC_PER_FOLD` | 韩褶每折吃布（**单色**口径） | 0.25 |
 | `MARGIN_SINGLE` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `MARGIN_SINGLE` | 韩褶单开余量（两侧包边各 10cm） | 0.2 |
 | `MARGIN_MULTI` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `MARGIN_MULTI` | 韩褶对开/四开余量 | 0.3 |
-| `MIXED_MARGIN_DEDUCTION_PER_PANEL` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `MIXED_MARGIN_DEDUCTION_PER_PANEL` | 拼色**主布**余量相对单色的**每幅**扣减（米） | 0.05 |
+| `MARGIN_MIXED_SINGLE` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `MARGIN_MIXED_SINGLE` | **拼色**主布余量 · 单开（米；配置键 `margin_mixed_single`） | 0.15 |
+| `MARGIN_MIXED_MULTI` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `MARGIN_MIXED_MULTI` | **拼色**主布余量 · 多开（米；配置键 `margin_mixed_multi`） | 0.2 |
 | `MIN_FULLNESS` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `MIN_FULLNESS` | 褶皱倍数下限（行业红线） | 1.5 |
 | `EYELET_TAPE_PRICE` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `EYELET_TAPE_PRICE` | 孔带单价（元/米） | 8.0 |
 | `ROD_PRICE` | `backend/ai-agent-service/app/tools/curtain_calc.py` 的 `ROD_PRICE` | 罗马杆单价（元/米） | 25.0 |
@@ -255,15 +256,18 @@
   纸质「韩折下料速查表」表头原文「拼色下料 **1个折 0.65** ／ **2个折 1.2**」——
   这两个数是**配布定长**（米/幅），**不是**米/折。同页四列（单开/对开 × 下料/主布拼色）逐行精确复现出：
   · **主布**仍 `PLEAT_FABRIC_PER_FOLD × 褶数 + 余量`（四条列斜率**同为 0.25** ⇒ 拼色不改每折吃布）；
-  · **主布余量** = 单色余量 − `MIXED_MARGIN_DEDUCTION_PER_PANEL` × 开数（单开 0.15 / 对开 0.20）；
+  · **主布余量** = `MARGIN_MIXED_SINGLE`（单开）/ `MARGIN_MIXED_MULTI`（多开）—— 与单色的
+    `MARGIN_SINGLE` / `MARGIN_MULTI` **并列的两套独立参数**，不是「单色余量减固定值」推导出来的
+    （用户 2026-10-23：「单开和对开的参数不太一样，在参数上要体现出来」）；
   · **配布** = 拼次对应的**定长**（拼1次 0.65 / 拼2次 1.2 米，整幅一次）。
   52 折双开：单色 13.3 / 拼1次 **13.9**（13.2+0.65 进位）/ 拼2次 **14.4** 米。
-  落码位置 = `curtain_calc.MIXED_COLOR_PATCH_METERS_BY_TIMES` / `MIXED_MARGIN_DEDUCTION_PER_PANEL` +
+  落码位置 = `curtain_calc.MIXED_COLOR_PATCH_METERS_BY_TIMES` / `MARGIN_MIXED_SINGLE` / `MARGIN_MIXED_MULTI` +
   `mixed_patch_meters` / `mixed_margin_for_open_count` / `mixed_patch_gap`（改前名 = 每折系数 + `resolve_per_fold`）。
   🔴 **改判依据（内部矛盾，无需外部资料）**：按「0.65 米/折」算，52 折 = 34.1 米，而同页纸表
   「主布拼色对开」52 折只写 **13.2 米** ⇒ 两个数不可能同时成立。
   ⚠️ **边界**：① 配布**整幅一次**（纸表表头未按开数区分；对开翻倍需客户另给读数）；
-  ② 四开余量 0.10 是**外推**（纸表无四开拼色行）；③ 配置键名 `per_fold_mixed_times` **不改名**
+  ② 四开与对开**同键**（`margin_mixed_multi`，与单色的 `margin_multi` 同口径；纸表无四开拼色行）；
+  ③ 配置键名 `per_fold_mixed_times` **不改名**
   （跨端冻结；值语义已是配布长度）。
   ⚠️ **口径更正（同一次裁定）**：本条此前把同一行记成「拼色**计价** = 按褶数加价（1 折 0.65、2 折 1.2
   ≈ 0.6 元/折）」—— 那是**误记**：错的是**单位/形态**（纸表那行是**米/折**的用料，不是**元/折**的计价），
