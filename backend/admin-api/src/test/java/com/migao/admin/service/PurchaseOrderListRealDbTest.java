@@ -8,6 +8,8 @@ import com.baomidou.mybatisplus.extension.plugins.handler.TenantLineHandler;
 import com.baomidou.mybatisplus.extension.plugins.inner.TenantLineInnerInterceptor;
 import com.migao.admin.entity.PurchaseOrder;
 import com.migao.admin.mapper.InboundOrderMapper;
+import com.migao.admin.mapper.ProductMapper;
+import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.PurchaseOrderItemMapper;
 import com.migao.admin.mapper.PurchaseOrderMapper;
 import com.migao.admin.mapper.PurchaseOrderReceiptMapper;
@@ -102,7 +104,9 @@ class PurchaseOrderListRealDbTest {
         }));
         configuration.addInterceptor(tenantLine);
         for (Class<?> mapper : List.of(PurchaseOrderMapper.class, PurchaseOrderItemMapper.class,
-                PurchaseOrderReceiptMapper.class, SupplierMapper.class, InboundOrderMapper.class)) {
+                PurchaseOrderReceiptMapper.class, SupplierMapper.class, InboundOrderMapper.class,
+                // issue #7567：读面补展示名（按 skuId 反查规格 / 商品）⇒ 这两张表的 mapper 也必须在场
+                ProductSkuMapper.class, ProductMapper.class)) {
             configuration.addMapper(mapper);
         }
         SqlSessionFactory factory = new MybatisSqlSessionFactoryBuilder().build(configuration);
@@ -113,6 +117,8 @@ class PurchaseOrderListRealDbTest {
                 session.getMapper(PurchaseOrderReceiptMapper.class),
                 session.getMapper(SupplierMapper.class),
                 session.getMapper(InboundOrderMapper.class),
+                session.getMapper(ProductSkuMapper.class),
+                session.getMapper(ProductMapper.class),
                 new BusinessClock());
     }
 

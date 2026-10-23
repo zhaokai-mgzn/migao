@@ -1721,13 +1721,15 @@ export const chatApi = {
  * 🔴 写面价必须 > 0（0 元 = 白送）；低于该 SKU 成本时后端还会要求「改价」审批。
  */
 export const priceBookApi = {
-  list: (params: { skuId: number; customerId?: string }) =>
+  // 🔴 `skuId` 是**雪花号字符串**（≈2.1e18 > 2^53）—— 全程原样透传，不许 `Number()`
+  //    （一转换就吞末位 ⇒ 服务端查不到该 SKU；#5904 同族，issue #7567）。
+  list: (params: { skuId: string; customerId?: string }) =>
     request.get<ApiResponse<PriceBookView>>('/api/admin/pricing/books', { params }),
-  upsertProtocol: (data: { customerId: string; skuId: number; price: number; note?: string }) =>
+  upsertProtocol: (data: { customerId: string; skuId: string; price: number; note?: string }) =>
     request.put<ApiResponse>('/api/admin/pricing/books/protocol', data),
-  upsertVipLevel: (data: { vipLevel: string; skuId: number; price: number }) =>
+  upsertVipLevel: (data: { vipLevel: string; skuId: string; price: number }) =>
     request.put<ApiResponse>('/api/admin/pricing/books/vip-level', data),
-  upsertTier: (data: { skuId: number; minQty: number; maxQty?: number; price: number }) =>
+  upsertTier: (data: { skuId: string; minQty: number; maxQty?: number; price: number }) =>
     request.put<ApiResponse>('/api/admin/pricing/books/tier', data),
   remove: (kind: 'protocol' | 'vip-level' | 'tier', id: string) =>
     request.delete<ApiResponse>(`/api/admin/pricing/books/${kind}/${id}`),

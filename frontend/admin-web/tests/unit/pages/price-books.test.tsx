@@ -18,28 +18,65 @@ const priceBookApi = vi.hoisted(() => ({
 }))
 
 const approvalApi = vi.hoisted(() => ({ submit: vi.fn() }))
-vi.mock('@/lib/api', () => ({ priceBookApi, approvalApi }))
+const productApi = vi.hoisted(() => ({ getProducts: vi.fn(), getProduct: vi.fn() }))
+vi.mock('@/lib/api', () => ({ priceBookApi, approvalApi, productApi }))
 vi.mock('@/lib/permission', () => ({ usePermission: () => ({ has: () => true, permissions: [], isAdmin: true }) }))
 
 const wrap = <T,>(data: T) => Promise.resolve({ data: { success: true, data } })
 
-const EMPTY_BOOK = { skuId: 1024, protocol: [], vipLevels: [], tiers: [] }
+/** 线上真实量级：SKU id 是雪花号字符串（> 2^53），`Number()` 会吞末位（#5904 同族） */
+const SKU_ID = '2097126615461462018'
+const EMPTY_BOOK = { skuId: SKU_ID, protocol: [], vipLevels: [], tiers: [] }
+
+/** 选 SKU 的走法（issue #7567）：搜商品 → 点商品 → 单选那个 SKU（**没有**手打编号的输入框） */
+async function pickSku() {
+  fireEvent.change(screen.getByLabelText('搜索商品'), { target: { value: '遮光' } })
+  fireEvent.click(await screen.findByRole('button', { name: /遮光窗帘布/ }, { timeout: 3000 }))
+  fireEvent.click(await screen.findByRole('radio', undefined, { timeout: 3000 }))
+}
 
 describe('价格本页面', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     priceBookApi.list.mockImplementation(() => wrap(EMPTY_BOOK))
+    productApi.getProducts.mockResolvedValue({
+      data: { data: { items: [{ id: 'prod-1', name: '遮光窗帘布', skuCode: 'HUOHAO-01' }] } },
+    })
+    productApi.getProduct.mockResolvedValue({
+      data: {
+        data: {
+          id: 'prod-1',
+          name: '遮光窗帘布',
+          skus: [{ id: SKU_ID, colorName: '米白', doorWidth: '3.2', stock: 86, price: 30, status: 'active' }],
+        },
+      },
+    })
   })
 
-  it('🔴 没填 SKU 时只给提示，不打接口（价格本按 SKU 维护）', async () => {
+  it('🔴 没选 SKU 时只给提示，不打接口；页面上**没有**手打 SKU 编号的输入框（issue #7567）', async () => {
     render(<PriceBooksPage />)
     await waitFor(() => expect(screen.getByTestId('price-books-hint')).toBeInTheDocument())
+    expect(screen.queryByTestId('price-books-sku')).not.toBeInTheDocument()
     expect(priceBookApi.list).not.toHaveBeenCalled()
+  })
+
+  it('🔴 选中的 SKU 原样字符串交给后端（雪花号不得经 Number() 截断，issue #5904 同族）', async () => {
+    render(<PriceBooksPage />)
+    await pickSku()
+
+    await waitFor(() => expect(priceBookApi.list).toHaveBeenCalled())
+    const params = priceBookApi.list.mock.calls[0][0] as { skuId: unknown }
+    expect(typeof params.skuId).toBe('string')
+    expect(params.skuId).toBe(SKU_ID)
+    expect(params.skuId).not.toBe(String(Number(SKU_ID)))
+    // 页面上说清「正在维护哪个 SKU」，且**不印**雪花号
+    await waitFor(() => expect(screen.getByTestId('price-books-selected')).toHaveTextContent('遮光窗帘布'))
+    expect(screen.queryByText(SKU_ID)).not.toBeInTheDocument()
   })
 
   it('三层价格为空时各自显示「未设置」，**不显示 ¥0.00**', async () => {
     render(<PriceBooksPage />)
-    fireEvent.change(screen.getByTestId('price-books-sku'), { target: { value: '1024' } })
+    await pickSku()
 
     await waitFor(() => expect(screen.getByTestId('price-books-empty-protocol')).toBeInTheDocument())
     expect(screen.getByTestId('price-books-empty-vip-level')).toBeInTheDocument()
@@ -50,13 +87,13 @@ describe('价格本页面', () => {
 
   it('有价时按层列出（协议价显示客户、等级价显示等级、阶梯价显示门槛）', async () => {
     priceBookApi.list.mockImplementation(() => wrap({
-      skuId: 1024,
+      skuId: SKU_ID,
       protocol: [{ id: 'p1', customer_id: 'c-9', price: 88 }],
       vipLevels: [{ id: 'v1', vip_level: 'vip2', price: 92 }],
       tiers: [{ id: 't1', min_qty: 50, max_qty: 99, price: 85 }],
     }))
     render(<PriceBooksPage />)
-    fireEvent.change(screen.getByTestId('price-books-sku'), { target: { value: '1024' } })
+    await pickSku()
 
     await waitFor(() => expect(screen.getByTestId('price-books-list-protocol')).toBeInTheDocument())
     expect(screen.getByTestId('price-books-list-protocol').textContent).toContain('c-9')
@@ -66,7 +103,7 @@ describe('价格本页面', () => {
 
   it('🔴 价格 ≤ 0 时前端先拦（0 元等于白送），且不打保存接口', async () => {
     render(<PriceBooksPage />)
-    fireEvent.change(screen.getByTestId('price-books-sku'), { target: { value: '1024' } })
+    await pickSku()
     await waitFor(() => expect(screen.getByTestId('price-books-empty-protocol')).toBeInTheDocument())
 
     fireEvent.click(screen.getByText('新增价格'))
@@ -84,7 +121,7 @@ describe('价格本页面', () => {
       response: { status: 400, data: { error: { message: '协议价 ¥80.00 低于该 SKU 成本 ¥100.00，必须先有「改价」审批' } } },
     })
     render(<PriceBooksPage />)
-    fireEvent.change(screen.getByTestId('price-books-sku'), { target: { value: '1024' } })
+    await pickSku()
     await waitFor(() => expect(screen.getByTestId('price-books-empty-protocol')).toBeInTheDocument())
 
     fireEvent.click(screen.getByText('新增价格'))
@@ -108,7 +145,7 @@ describe('价格本页面', () => {
     })
     approvalApi.submit.mockResolvedValue({ data: { success: true, data: { id: 'ap-9' } } })
     render(<PriceBooksPage />)
-    fireEvent.change(screen.getByTestId('price-books-sku'), { target: { value: '1024' } })
+    await pickSku()
     await waitFor(() => expect(screen.getByTestId('price-books-empty-protocol')).toBeInTheDocument())
 
     fireEvent.click(screen.getByText('新增价格'))
@@ -118,8 +155,8 @@ describe('价格本页面', () => {
 
     // 服务端原话照旧上屏
     await waitFor(() => expect(screen.getByTestId('price-books-form-error').textContent).toContain('改价'))
-    // 申请入口自动摆出来：对象 = SKU 1024，金额不预填（前端拿不到成本价）但提示点名门槛
-    expect((await screen.findByTestId('approval-request-target')).textContent).toContain('SKU 1024')
+    // 申请入口自动摆出来：对象 = 选中的 SKU（展示名），金额不预填（前端拿不到成本价）但提示点名门槛
+    expect((await screen.findByTestId('approval-request-target')).textContent).toContain('遮光窗帘布')
     expect((screen.getByTestId('approval-request-amount') as HTMLInputElement).value).toBe('')
     expect(screen.getByTestId('approval-request-amount-hint').textContent).toContain('成本价')
 
@@ -130,7 +167,7 @@ describe('价格本页面', () => {
       expect(approvalApi.submit).toHaveBeenCalledWith(
         expect.objectContaining({
           objectType: 'price_change',
-          objectRef: '1024',
+          objectRef: SKU_ID,
           amount: 95,
           reason: '老客户长期合作',
         }),
