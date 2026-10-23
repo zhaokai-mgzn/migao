@@ -55,13 +55,14 @@ class StocktakeRealDbTest {
     private static final Long TENANT_ID = 73731L;
 
     private static PgCluster cluster;
+    private static DataSource dataSource;
     private static SqlSession session;
     private static StocktakeService service;
 
     @BeforeAll
     static void startRealPostgresAndFixtures() throws Exception {
         cluster = PgCluster.startOrAbort();
-        DataSource dataSource = cluster.dataSource();
+        dataSource = cluster.dataSource();
         try (Connection conn = dataSource.getConnection(); Statement st = conn.createStatement()) {
             st.execute(schemaSql());
             st.execute("INSERT INTO tenants (id, name, code) OVERRIDING SYSTEM VALUE VALUES ("
@@ -138,6 +139,44 @@ class StocktakeRealDbTest {
         StockBatch batch = session.getMapper(StockBatchMapper.class).selectById(batchId);
         assertThat(batch.getQuantity()).as("账实相符 ⇒ 数量不变").isEqualByComparingTo("100");
         assertThat(batch.getUnitCost()).as("成本快照不动").isEqualByComparingTo("12.3456");
+    }
+
+    @Test
+    @DisplayName("🔴 默认仓也收「未指定仓」的批次：warehouse 为空 ⇒ 进主仓盘点；别的仓 ⇒ 不进（issue #7592）")
+    void defaultWarehouseAlsoCountsUnspecifiedBatches() throws Exception {
+        try (Connection conn = dataSource.getConnection(); Statement st = conn.createStatement()) {
+            // 入库单的「仓库 / 仓位」是自由文本 ⇒ 商家留空 = NULL（不是「另一个仓」）
+            st.execute("INSERT INTO stock_batches (tenant_id, batch_no, product_id, quantity, unit_cost,"
+                    + " warehouse, dye_lot) VALUES (" + TENANT_ID + ", 'PC-7373-BLANK', 'P-7373', 50.0, 9.0,"
+                    + " NULL, 'LOT-2')");
+            // 别的仓的批次：默认仓**不许**把它算进来（写错仓就是写错仓）
+            st.execute("INSERT INTO stock_batches (tenant_id, batch_no, product_id, quantity, unit_cost,"
+                    + " warehouse, dye_lot) VALUES (" + TENANT_ID + ", 'PC-7373-B', 'P-7373', 30.0, 8.0,"
+                    + " 'WH-B', 'LOT-3')");
+        }
+
+        String openedId = null;
+        try {
+            var opened = service.open(1L, "默认仓口径", null);
+            openedId = opened.getId();
+            System.out.println("[#7592] 默认仓盘点的批次 = " + opened.getItems().stream()
+                    .map(i -> i.getBatchNo()).toList());
+            assertThat(opened.getItems())
+                    .as("默认仓 = 编码匹配 + 未指定仓（空文本）").hasSize(2);
+            assertThat(opened.getItems()).extracting(i -> i.getBatchNo())
+                    .contains("PC-7373-1", "PC-7373-BLANK")
+                    .doesNotContain("PC-7373-B");
+        } finally {
+            // 收口：本类另一条用例断言「该仓只有 1 个批次」，且同仓同时只能有一个进行中的盘点
+            // ⇒ 本用例的夹具与盘点单必须清掉（否则换个执行顺序就红）。
+            try (Connection conn = dataSource.getConnection(); Statement st = conn.createStatement()) {
+                if (openedId != null) {
+                    st.execute("DELETE FROM stocktake_items WHERE stocktake_id = '" + openedId + "'");
+                    st.execute("DELETE FROM stocktakes WHERE id = '" + openedId + "'");
+                }
+                st.execute("DELETE FROM stock_batches WHERE batch_no IN ('PC-7373-BLANK', 'PC-7373-B')");
+            }
+        }
     }
 
     /** 终态建库脚本（不手抄列清单）。 */

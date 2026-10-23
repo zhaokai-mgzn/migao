@@ -4979,6 +4979,39 @@ cases:
         - pr-check.yml
       verifies: []
 
+  - id: WH-002
+    legacy_id: ""
+    title: "开租即种默认主仓 + 盘点默认仓收「未指定仓」的批次（issue #7592）"
+    domains:
+      - misc
+      - backend
+    tier: normal
+    tags: [backend-contract, inventory, warehouse, onboarding, red-proof]
+    truths_ref: []
+    user_inputs:
+      - "用户（2026-10-24，逐字）：「盘点单的上的仓库下拉选择没有数据，这个需要在先创建仓库吧？在哪去创建？」"
+    expectations: []
+    data_checks:
+      - "**判据 1（开租种默认主仓·真库）**：空库真跑入驻链路 ⇒ 该租户 `warehouses` 恰 1 行，`code`/`name` = `OnboardingInitialData.DEFAULT_WAREHOUSE_CODE/NAME`、`is_default = true`；再调一次播种 ⇒ 返回 0、行数仍 1（幂等、不种出第二个仓）。判据 = `NewTenantOnboardingCategoryRealDbTest#onboardingSeedsDefaultCategoryAndFirstProductSucceeds` + `WarehouseSeedServiceTest`。"
+      - "**判据 2（🔴 漏种必须红·注入红证）**：摘掉播种 + 摘掉后置条件探针 ⇒ 入驻「成功」但仓 0 行（= issue #7592 的原始读数：仓库下拉为空）；只摘播种、保留后置条件 ⇒ 入驻当场失败 `ONBOARDING_REQUIRED_DATA_MISSING`（缺 `default_warehouse`）。判据 = `#neuteredWarehouseSeedReproducesEmptyDropdown`。"
+      - "**判据 3（类级元守卫）**：开租必需初始数据清单 ⇄ 入驻链路双向对账（未登记即红、enforced 项的键必须在 `assertRequiredInitialData` 方法体内）。判据 = `tests/unit_ci_workflows/test_onboarding_required_seed_guard.py`。"
+      - "**判据 4（🔴 默认仓收「未指定仓」批次·真库）**：默认仓出任务 ⇒ 快照包含 `warehouse` 为空/空白的批次（入库单的「仓库」是自由文本，留空 ≠ 别的仓），且**不**包含别的仓（`WH-B`）的批次。判据 = `StocktakeRealDbTest#defaultWarehouseAlsoCountsUnspecifiedBatches`。"
+      - "**判据 5（迁移回填·幂等）**：V189 只给「一个仓都没有」的租户补一条默认主仓（`NOT EXISTS deleted = 0`）；已有仓档案的租户一行不动、不碰 `uk_warehouses_single_default`。"
+      - "**边界（照实登记）**：① 不做仓库管理页 / 调拨页（用户 2026-10-24 裁定「零 UI 最小解」）—— 多仓仍只能走 `POST /api/admin/warehouses`；② **不改写**历史批次的仓库自由文本 ⇒ 文本既非编码也非仓名、且非空的批次不计入主仓盘点（多仓建档页的归属）；③ 库存滞销报表「按仓筛选」按 `code` 与批次文本比对 ⇒ 对历史自由文本不生效（后续单）。"
+    precondition: "本用例是 [backend-contract]：前置 = `warehouses`（V182）+ 默认主仓播种（`WarehouseSeedService`）+ V189 回填。零网络、零 LLM。"
+    skip_reason: "[backend-contract] 开租播种与盘点快照口径，由 Java 单测/真库验证，非 LLM 行为，不进 agent-eval 冒烟"
+    merge_log: "2026-10-24 新增（issue #7592）。落码 = `WarehouseSeedService`（幂等播种）+ `RegistrationService` 接线 + `OnboardingInitialData.REQUIRED` 登记 + 后置条件探针 + V189（存量租户回填）+ `StocktakeService.open` 默认仓收「未指定仓」。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/WarehouseSeedServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/NewTenantOnboardingCategoryRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/StocktakeRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/RegistrationServiceTest.java"
+        - "tests/unit_ci_workflows/test_onboarding_required_seed_guard.py"
+      ci:
+        - pr-check.yml
+      verifies: []
+
   - id: OPS-001
     legacy_id: ""
     title: "云上「采购单加载失败」根因：BOOLEAN 逻辑删列 + 全局整数语义 ⇒ 真库 500（issue #7373 复盘）"
