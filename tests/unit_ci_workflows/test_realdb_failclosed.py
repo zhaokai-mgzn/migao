@@ -84,6 +84,10 @@ REALDB_FILES: dict[str, str] = {
     # issue #7373 段 2：**盘点单**的真库判据 —— 读写的列最多（账面快照/实盘/差异/成本快照），
     # 上一轮「采购单加载失败」的教训就是「实体列 ↔ 建库列」只有真 PG 能现形。
     _SVC + "StocktakeRealDbTest.java": "direct",
+    # issue #7376 段 5：**账龄取数 SQL 的可选范围参数**（P0-4）的真库判据 —— 参数落在
+    # `#{createdBy} IS NULL` 的**主语位**（issue #5975 形态）：NULL 实参在 PG 上推不出类型 ⇒ 500。
+    # 单元测试把 Mapper 全 mock 掉，这类故障只有真 PG 能现形 ⇒ 必须留在真库族（不许退化）。
+    _SVC + "ReceivableAgingScopeRealDbTest.java": "direct",
     # issue #5939：发货单**列表**读面（GET /api/admin/shipments）的真库判据 —— 只真 PG 能证的四条：
     # 跨租户不可见（+ 反向自证对方租户自己读得到）/ 软删明细不计进 itemCount / 客户名取自 orders 连接 /
     # 未发货按 packed_at 参与排序，以及 LIMIT 生效。

@@ -5884,7 +5884,8 @@
 数据: **判据 1（🔴 空数据 ≠ 0）**：没有未结清应收时后端给 `hasData=false` 且 `totals=null`，页面写「暂无数据」——**不出现 ¥0.00**。判据 = `ReportReceivableAgingServiceTest#emptyAgingHasNullTotalsNotZero`（红证：把 `hasData` 改成恒 true ⇒ 该用例当场红，实测 `expected: null`）+ `reports.test.tsx#没有数据时显示「暂无数据」`。
 数据: **判据 2（合计 = 明细之和）**：`totals.outstanding == Σ五档 == Σ客户行`；单数 = Σ各档单数（金额里读不出「欠了多少张单」）。判据 = `ReportReceivableAgingServiceTest#totalsEqualSumOfRows`。
 数据: **判据 3（分档不重算）**：报表**不重算**分档/账期，直接复用 `ReceivableAging.summarize`（P0-2 真值源）；改分档规则只该改一处。判据 = `ReportService.receivableAging` 的实现 + `ReportReceivableAgingServiceTest`（桩住真值源，报表只搬数）。
-数据: **判据 4（数据范围下传）**：`self` 范围把制单人原样交给账龄真值源（SQL 里 `AND (createdBy IS NULL OR o.created_by = createdBy)`）——报表不自己过滤，否则账龄口径分叉成两份。判据 = `ReportReceivableAgingServiceTest#scopeOwnerIsPassedThroughToTheAgingTruthSource` + `ReportControllerTest#receivableAgingRouteAndSignature`（端点零入参：范围不接受客户端传）。
+数据: **判据 4（数据范围下传）**：`self` 范围把制单人原样交给账龄真值源 —— 报表不自己过滤，否则账龄口径分叉成两份。判据 = `ReportReceivableAgingServiceTest#scopeOwnerIsPassedThroughToTheAgingTruthSource` + `ReportControllerTest#receivableAgingRouteAndSignature`（端点零入参：范围不接受客户端传）。
+数据: **判据 4b（🔴 可选参数不许写成 `#{x} IS NULL`）**：PG 在该位置推不出参数类型 ⇒ 实参为 NULL 时 `无法确定参数 $2 的数据类型` ⇒ 接口 500（issue #5975 形态）。**真库实证**：先按 `AND (#{createdBy,jdbcType=VARCHAR} IS NULL OR …)` 写，`ReceivableAgingScopeRealDbTest` 三例**全红**（`PSQLException: 无法确定参数 $2 的数据类型`）；改成 `<script>`+`<if test='createdBy != null'>` 拼条件后三例全绿。静态守卫 = `test_mapper_null_param_type_guard.py`。
 数据: **判据 5（CSV 导出）**：导出的是**已加载**的读数（不额外请求、不重算）；带 UTF-8 BOM（Excel 中文不乱码）、缺值留空而**真 0 照写 0**、含逗号/引号/换行按 RFC 4180 转义。判据 = `csv.test.ts`（三条）+ `reports.test.tsx#导出 CSV`（断言 Blob 内容与「不额外请求」）。
 数据: **判据 6（逾期要标出来）**：客户行除总额外，逾期额单列（总额里读不出「谁欠得久」）。判据 = `reports.test.tsx#账龄：有欠款时给合计与客户行`。
 数据: **边界（照实登记）**：① 统一筛选控件（时间/仓库/客户/业务员）**未做**；② 只有五档汇总与客户 Top3 上行，**没有**逐单明细表；③ 导出是本页 CSV（Excel 双向迁移按 P2）；④ 分档基准 = 业务日（+08），跨日那一刻由服务端 `BusinessClock` 定，前端不自己算。

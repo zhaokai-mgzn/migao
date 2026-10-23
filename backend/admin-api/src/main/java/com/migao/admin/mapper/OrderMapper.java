@@ -66,7 +66,10 @@ public interface OrderMapper extends BaseMapper<Order> {
      * <p>上限 2000 行：账龄是「看欠款结构」的读面，不是导出台账；超限时前端会看到
      * {@code truncated=true}（不静默截断成「刚好这么多」）。</p>
      */
-    @Select("SELECT * FROM ("
+    // ⚠️ `<script>` + `<if>` 不是花样：可选范围参数**不能**写成 `#{createdBy} IS NULL`
+    //（PG 在该位置推不出参数类型 ⇒ 实参为 NULL 时 500，issue #5975；真库实证见
+    //  `ReceivableAgingScopeRealDbTest`）⇒ 只有非空时才把条件拼进 SQL。
+    @Select("<script>SELECT * FROM ("
             + "SELECT o.id AS order_id, o.order_no AS order_no, o.customer_name AS customer_name, "
             + "o.customer_phone AS customer_phone, COALESCE(o.total_amount, 0) AS receivable, "
             + "COALESCE((SELECT SUM(f.amount) FROM finance_transactions f "
@@ -78,11 +81,11 @@ public interface OrderMapper extends BaseMapper<Order> {
             + "- COALESCE((SELECT SUM(a.amount) FROM receipt_allocations a "
             + "WHERE a.tenant_id = o.tenant_id AND a.order_id = o.id AND a.deleted = FALSE), 0) AS remaining, "
             + "o.created_at AS created_at "
-            + "FROM orders o WHERE o.deleted = 0 AND o.tenant_id = #{tenantId} AND o.status <> 'cancelled' "
+            + "FROM orders o WHERE o.deleted = 0 AND o.tenant_id = #{tenantId} AND o.status != 'cancelled' "
             + "AND o.paid_at IS NULL "
             // 🔴 P0-4 数据范围（issue #7376 段 5）：`self` 范围只算本人创建的单；null ⇒ 不裁（财务看全量）
-            + "AND (#{createdBy} IS NULL OR o.created_by = #{createdBy})"
-            + ") t WHERE t.remaining > 0 ORDER BY t.remaining DESC LIMIT 2000")
+            + "<if test='createdBy != null'> AND o.created_by = #{createdBy}</if>"
+            + ") t WHERE t.remaining > 0 ORDER BY t.remaining DESC LIMIT 2000</script>")
     @Results({
             @Result(column = "order_id", property = "orderId"),
             @Result(column = "order_no", property = "orderNo"),
