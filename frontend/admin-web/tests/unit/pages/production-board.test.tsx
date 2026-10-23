@@ -186,7 +186,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     //    ⇒ 4 → 5 项；#5778 之后 #6580（2026-10-09 用户裁定）**把「加工项管理」「工艺配置」两项移除**
     //    （功能体并入一级项「企业基础设置」页内的配置域）⇒ 5 → **3 项**。
     //    旧深链 `/production/processing`、`/production/routings` 保留为**重定向薄壳**（不 404）。
-    expect(links).toHaveLength(4)
+    expect(links).toHaveLength(5)
     expect(links[0].textContent).toContain('作业看板')
     expect(links[0]).toHaveAttribute('href', '/production')
     expect(links[1].textContent).toContain('智能派单')
@@ -284,7 +284,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     // 每日简报 → 删除）⇒ 20 项；🔴 #7140：生产管理组 +「质检记录」⇒ 21 项；
     // 🔴 2026-10-20（issue #7369）：新增「供应链」组（组内项总数不变 ⇒ 项数不变）。
     // 🔴 2026-10-22（#7375 段 3）：交易管理 +「价格本」⇒ 组内 20 项 ⇒ 全站 25 项
-    expect(hrefs).toHaveLength(26) // 25 项 = 最前席位 2（#7376 +报表中心）+ 组内 20（#7369：+供应商 / +采购单；#7375：+价格本）+ 尾席位 2 + 尾部独立项 1（见 menu-nav.test.ts）
+    expect(hrefs).toHaveLength(27) // 25 项 = 最前席位 2（#7376 +报表中心）+ 组内 20（#7369：+供应商 / +采购单；#7375：+价格本）+ 尾席位 2 + 尾部独立项 1（见 menu-nav.test.ts）
     expect(hrefs).not.toContain('/processing-orders')
   })
 
@@ -301,6 +301,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
       'processing:view',    // 智能派单（issue #5699 P4：节点码 = 该页读端点码）
       'production:view',    // 计件工资
       'production:inspect', // 质检记录（issue #7140）
+      'after_sales:view',   // 返工单（issue #7377：复用售后读码 ⇒ 零授权 delta）
     ])
     // issue #7369：单据三项整组搬去「供应链」⇒ 三项**同码** inbound:view（采购与收货同岗位，零授权 delta），
     // 入库单仍排组内第一（手机端标注取树序首个承载节点，#6781）。
@@ -321,7 +322,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     // 反恒真（issue #5291）：组内**不是**同码 —— 若有人把四项一起改回去（或一起改过来），本条必红。
     // issue #5699（P4）：智能派单的码由 processing:manage 收敛为 processing:view ⇒ 本集合同批改准。
     expect(new Set(group!.children.map((c) => c.permissionCode)))
-      .toEqual(new Set(['production:view', 'processing:view', 'production:inspect']))
+      .toEqual(new Set(['production:view', 'processing:view', 'production:inspect', 'after_sales:view']))
   })
 })
 

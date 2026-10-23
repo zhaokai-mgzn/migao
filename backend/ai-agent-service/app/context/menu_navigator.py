@@ -156,6 +156,8 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     # （`GET /api/admin/quality-inspections/targets` 的**方法级** `production:inspect`）。
     # ⚠️ 该码只授质检员 + 管理员 ⇒ 本节点对其它岗位**必然不可见**（有意，用户 2026-10-17 裁定）。
     MenuNode("production-center", "质检记录", "/quality-inspections", "production:inspect"),
+    # 返工单（issue #7377）：节点码 = 该页第一屏读端点码 `after_sales:view`（与售后工单同码）。
+    MenuNode("production-center", "返工单", "/rework-orders", "after_sales:view"),
     # 供应链（issue #7369，用户 2026-10-20 裁定「得加个新大菜单」）：谁供货 → 买什么 → 到货登记。
     # 三项同码 inbound:view（采购与收货同岗位，零授权 delta）；入库单排第一（#6781 手机端标注）。
     MenuNode("supply-chain", "入库单", "/inbound-orders", "inbound:view"),
@@ -290,6 +292,9 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     # 「质检记录」与它的子串「质检」；「合格判定」这类不在菜单名里的说法**不登记**
     #（它命中不了节点 = 不可达，登记了会变成空断言）。
     NavFeature("quality-inspection", "质检记录（质检判定）", (("production-center", "质检记录"),), ("质检记录", "质检")),
+    # 返工单（issue #7377）：说法必须**逐字落在菜单名里**（判据「接地」）⇒ 只登记「返工单」「返工」，
+    # 「返修」这类不在菜单名里的**不作为别名**（命中不了节点 = 不可达，登记了会变成空断言）。
+    NavFeature("rework-order", "返工单（售后返工）", (("production-center", "返工单"),), ("返工单", "返工")),
     NavFeature("suppliers", "供应商档案", (("supply-chain", "供应商"),), ("供应商", "供应商档案")),
     # 采购单（issue #7369 段 4）：说法必须**逐字落在菜单名里**（「采购单」的子串），
     # 「采购」「下单」「到货」这类更宽的说法不登记 —— 命中不了节点就是空断言（判据「接地」）。

@@ -348,6 +348,7 @@ describe('加工费组合 tab（issue #4386；issue #4490 合并后为 /producti
       '/production/pool',
       '/production/piecework',
       '/quality-inspections',
+      '/rework-orders',   // issue #7377：返工单（紧跟质检记录）
     ])
     // 原「商品与加工项」组已撤销 ⇒ 不得再存在（商品管理表现为独立一级项，不属任何组）
     expect(menuGroups.find((g) => g.key === 'product-center')).toBeUndefined()

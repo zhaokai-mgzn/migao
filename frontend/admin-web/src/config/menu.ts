@@ -297,6 +297,11 @@ export const menuGroups: MenuGroup[] = [
       // 🔴 节点码 = 该页第一屏读端点码 = 写端点码 `production:inspect`（三处逐字同码）：
       // 该码只授给独立质检员 + 管理员 ⇒ **零权限放宽**（用户 2026-10-17 三个选项里选了「保持现状」）。
       { key: 'quality-inspections', name: '质检记录', icon: 'BadgeCheck', path: '/quality-inspections', permissionCode: 'production:inspect', keywords: ['zjjl', 'zhijian', 'quality', 'jiance', 'hege'] },
+      // 返工单（issue #7377，P1-5 质量闭环的商家面）：售后判定要返工 ⇒ 开单 → 开工 → 完工。
+      // 🔴 节点码 = 该页第一屏读端点码 `after_sales:view`（＝路由守卫码，三处逐字同码）：
+      // 与售后工单同域复用既有码 ⇒ **零授权 delta**；写动作走 `order:refund`（与售后改状态同码）。
+      // 为什么不新造 `rework:*`：今天没有任何角色持有它 ⇒ 节点与页面会对所有人不可见（#4203 同族坑）。
+      { key: 'rework-orders', name: '返工单', icon: 'Wrench', path: '/rework-orders', permissionCode: 'after_sales:view', keywords: ['fgd', 'fangong', 'rework', '返工', '返修', 'rework-order', '返工单'] },
     ],
   },
   // issue #5271 **新组**：面料进出与消耗 —— 入库 → 批次 → 余料 → 省料，是**同一条物流动线**，

@@ -89,6 +89,8 @@ class MenuControllerTest {
             "作业看板", "智能派单", "计件工资",
             // 🔴 2026-10-17（issue #7140）：生产管理组新增「质检记录」（读码 production:inspect）
             "质检记录",
+            // 🔴 2026-10-23（issue #7377）：生产管理组新增「返工单」（复用售后读码 after_sales:view）
+            "返工单",
             // 🔴 2026-10-20（issue #7369 段 4）：仓储与物料组新增「采购单」（同取 inbound:view，紧随供应商）
             "入库单", "供应商", "采购单", "库存明细",
             // 🔴 2026-10-22（issue #7373）：仓储与物料组新增「盘点单」（读码 inbound:view，紧随库存明细）
@@ -336,15 +338,16 @@ class MenuControllerTest {
         // 两个菜单项按用户裁定移除 ⇒ 只剩「作业看板 → 智能派单 → 计件工资」。
         // 🔴 2026-10-12（issue #6759）：**组尾**追加动作码节点「加工单操作」（`processing:update`
         // = 手机端派单的写码）—— 动作节点统一追加在组尾，导航项仍是它之前的连续前缀。
-        assertEquals(List.of("作业看板", "智能派单", "计件工资", "质检记录", "加工单操作"),
+        assertEquals(List.of("作业看板", "智能派单", "计件工资", "质检记录", "返工单", "加工单操作"),
                 labels(production.path("children")));
         // issue #5699（P4，子菜单粒度）：每个节点码 ≡ 该页第一屏读码 —— 智能派单 = processing:view
         //（ProductionPoolController 两个读端点同码）；工艺配置 = production:view（该页第一屏 6 个读端点
         // 本次整页收敛到该码；两码持有岗位集合逐值相同 ⇒ 零 delta）；#5291 的 production:view
         // 仍覆盖作业看板与计件工资。
         // 🔴 #6580：两项移除后组内码为 [作业看板, 智能派单, 计件工资]；#6759 追加 processing:update。
+        // 🔴 2026-10-23（issue #7377）：追加「返工单」= after_sales:view（复用售后读码 ⇒ 零授权 delta）
         assertEquals(List.of("production:view", "processing:view", "production:view",
-                        "production:inspect", "processing:update"),
+                        "production:inspect", "after_sales:view", "processing:update"),
                 codes(production.path("children")));
     }
 
@@ -497,7 +500,7 @@ class MenuControllerTest {
         }
 
         // ③ 两个**导航项**仍是动作节点之前的连续前缀（动作节点只许在组尾）
-        assertEquals(List.of("作业看板", "智能派单", "计件工资", "质检记录"),
+        assertEquals(List.of("作业看板", "智能派单", "计件工资", "质检记录", "返工单"),
                 labels(processed).subList(0, processed.size() - 1));
         assertEquals(List.of("库存明细", "盘点单", "发货单", "余料台账", "省料看板"),
                 labels(inventory).subList(0, inventory.size() - 1));

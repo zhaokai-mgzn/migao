@@ -618,10 +618,13 @@ class AuthServiceTest {
         //（`processing`）「工艺配置」（`production-process`）两个菜单项按用户裁定移除
         //（功能体并入一级项「企业基础设置」页内的配置域；旧路径保留为重定向）。
         // 🔴 2026-10-17（issue #7140）：本组新增「质检记录」（`production:inspect`）
+        // 🔴 2026-10-23（issue #7377）：本组新增「返工单」（`after_sales:view`，复用售后读码 ⇒ 零授权 delta）
         assertThat(keysOf(production.getChildren())).containsExactly(
-                "production-board", "production-pool", "production-piecework", "quality-inspections");
+                "production-board", "production-pool", "production-piecework", "quality-inspections",
+                "rework-orders");
         assertThat(pathsOf(production.getChildren())).containsExactly(
-                "/production", "/production/pool", "/production/piecework", "/quality-inspections");
+                "/production", "/production/pool", "/production/piecework", "/quality-inspections",
+                "/rework-orders");
 
         // 🔴 2026-10-20（issue #7369，用户裁定「得加个新大菜单」）：单据三节点已移到「供应链」组；
         // 本组只剩库存与出库（库存明细 → 发货单 → 余料台账 → 省料看板）。

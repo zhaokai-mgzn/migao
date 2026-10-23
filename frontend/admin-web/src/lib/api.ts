@@ -27,6 +27,8 @@ import type {
   ReportReceivableAging,
   ReportStaffPerformance,
 } from '@/types/reports'
+// 返工单读面类型（issue #7377）：与后端 `ReworkOrderView` 字段逐字对齐
+import type { ReworkOrder, ReworkOrderCreateRequest } from '@/types/rework'
 // 盘点读面类型（issue #7373 段 3 前端）：与后端 `StocktakeView` 字段逐字对齐
 import type { Stocktake, Warehouse } from '@/types/stocktake'
 // 「识别 + 一次性推理」端点回的是**同一条字段计划**（issue #6367 包 P3）—— 复用它的形状，
@@ -698,6 +700,31 @@ export const knowledgeApi = {
 }
 
 // 售后工单 API
+/**
+ * 返工单（issue #7377，P1-5 质量闭环）：售后单 → 返工单 → 完工回写售后状态。
+ *
+ * 🔴 读码 `after_sales:view`（＝菜单节点码＝路由守卫码）、写码 `order:refund` —— 与售后工单同域复用，
+ * 零授权 delta。开单参数是**查询串**（服务端 `@RequestParam`），不是 JSON body。
+ */
+export const reworkOrderApi = {
+  list: (afterSalesTicketId?: string) =>
+    request.get<ApiResponse<ReworkOrder[]>>('/api/admin/rework-orders', {
+      params: afterSalesTicketId ? { afterSalesTicketId } : undefined,
+    }),
+  detail: (id: string) => request.get<ApiResponse<ReworkOrder>>(`/api/admin/rework-orders/${id}`),
+  create: (data: ReworkOrderCreateRequest) =>
+    request.post<ApiResponse<ReworkOrder>>('/api/admin/rework-orders', null, {
+      params: {
+        afterSalesTicketId: data.afterSalesTicketId,
+        ...(data.reason ? { reason: data.reason } : {}),
+        ...(data.processingOrderId ? { processingOrderId: data.processingOrderId } : {}),
+      },
+    }),
+  start: (id: string) => request.post<ApiResponse<ReworkOrder>>(`/api/admin/rework-orders/${id}/start`),
+  complete: (id: string) => request.post<ApiResponse<ReworkOrder>>(`/api/admin/rework-orders/${id}/complete`),
+  cancel: (id: string) => request.post<ApiResponse<ReworkOrder>>(`/api/admin/rework-orders/${id}/cancel`),
+}
+
 export const afterSalesApi = {
   getTickets: (params?: AfterSalesListParams) =>
     request.get<ApiResponse<PageResponse<AfterSalesTicket>>>('/api/admin/after-sales', { params }),

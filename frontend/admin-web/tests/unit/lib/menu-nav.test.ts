@@ -75,7 +75,7 @@ const EXPECTED_GROUPS: { key: string; name: string; keys: string[] }[] = [
     // 🔴 2026-10-09（issue #6580）：本组**由 5 项收拢为 3 项** —— 「加工项管理」「工艺配置」
     // 两个菜单项按用户裁定移除（功能体并入一级项「企业基础设置」页内的配置域）⇒
     // 本组只剩「作业看板 → 智能派单 → 计件工资」。
-    keys: ['production-board', 'production-pool', 'production-piecework', 'quality-inspections'],
+    keys: ['production-board', 'production-pool', 'production-piecework', 'quality-inspections', 'rework-orders'],
   },
   {
     key: 'supply-chain',
@@ -169,7 +169,7 @@ describe('新 IA 事实（issue #5778 + #6404 + #6457 + #6573 + #6580 + #7087 + 
     expect(
       menuGroups.map((g) => ({ key: g.key, keys: g.children.map((c) => c.key) })),
     ).toEqual(EXPECTED_GROUPS.map((g) => ({ key: g.key, keys: g.keys })))
-    expect(ALL_KEYS).toHaveLength(26)
+    expect(ALL_KEYS).toHaveLength(27)
     expect(visibleKeys(ADMIN)).toEqual(ALL_KEYS)
   })
 
@@ -271,7 +271,7 @@ describe('isItemVisible：两条件（adminOnly ∧ permissionCode）', () => {
     const withAdminOnly = menuGroups.flatMap((g) => g.children).filter((c) => c.adminOnly)
     expect(withAdminOnly).toEqual([])
     // 面非空自检：上面的空数组不是因为解析失灵（issue #7140 后 = 19 个组内项）
-    expect(menuGroups.flatMap((g) => g.children)).toHaveLength(21)
+    expect(menuGroups.flatMap((g) => g.children)).toHaveLength(22)
   })
 
   it('🔴 过滤**只有两条件**（adminOnly ∧ permissionCode）：`briefingToggle` 随「每日简报」菜单项撤掉（issue #7087）', () => {
@@ -331,7 +331,8 @@ describe('岗位矩阵：role_permissions（种子）× menu.ts 两条件 ⇒ �
         'agent:session:manage', 'production:execute', 'order:refund',
       ],
       expected: ['dashboard', 'reports', 'human-sessions', 'knowledge', 'after-sales', 'customers', 'price-books', 'orders',
-        'production-pool', 'inbound-orders', 'suppliers', 'purchase-orders', 'stocktakes', 'shipments', 'notifications'],
+        'production-pool', 'rework-orders', 'inbound-orders', 'suppliers', 'purchase-orders', 'stocktakes', 'shipments',
+        'notifications'],
     },
     {
       name: '销售 sales（9 码）',
@@ -377,7 +378,7 @@ describe('岗位矩阵：role_permissions（种子）× menu.ts 两条件 ⇒ �
       ],
       expected: ['dashboard', 'reports', 'human-sessions', 'knowledge', 'after-sales', 'customers',
         'price-books', 'orders', 'finance', 'production-board', 'production-pool',
-        'production-piecework', 'inbound-orders', 'suppliers', 'purchase-orders', 'stock-ledger', 'stocktakes',
+        'production-piecework', 'rework-orders', 'inbound-orders', 'suppliers', 'purchase-orders', 'stock-ledger', 'stocktakes',
         'shipments', 'production-remnants',
         'production-saving-board', 'employees', 'products', 'settings', 'notifications'],
     },
@@ -555,8 +556,8 @@ describe('resolveActiveGroupKey / initialExpandedGroups：默认只展开当前�
         return [item.path, g.key] as const
       }),
     )
-    expect(cases).toHaveLength(21)
-    expect(menuGroups.flatMap((g) => g.children)).toHaveLength(21)
+    expect(cases).toHaveLength(22)
+    expect(menuGroups.flatMap((g) => g.children)).toHaveLength(22)
     for (const [path, groupKey] of cases) {
       expect(`${path} ⇒ ${resolveActiveGroupKey(menuGroups, path)}`).toBe(`${path} ⇒ ${groupKey}`)
     }
@@ -625,7 +626,7 @@ describe('flattenMenu：最前席位 → 全部分组 → 尾席位 → 尾部�
 
   it('顺序 = 25 项全部，且与组结构逐项对齐', () => {
     expect(flat.map((i) => i.key)).toEqual(ALL_KEYS)
-    expect(flat).toHaveLength(26)
+    expect(flat).toHaveLength(27)
     const expected = EXPECTED_GROUPS.flatMap((g) => g.keys.map((k) => ({ key: k, groupKey: g.key, groupName: g.name })))
     // 🔴 issue #7087：最前席位（「经营看板」）由 `head` 参数承载、**排在最前**；
     // 尾席位一级项仍排在**所有分组之后**（席位组可见与否**同序** —— 见 `ALL_KEYS` 的注释）
@@ -702,7 +703,7 @@ describe('searchMenu：命中面 = 菜单名 ∪ 组名 ∪ keywords（+ 排序�
   const items = allItems()
 
   it('面非空自检：可搜索面 = 26 项', () => {
-    expect(items).toHaveLength(26)
+    expect(items).toHaveLength(27)
   })
 
   it('空查询 / 纯空白 ⇒ 空数组（面板的「空查询列全量」由调用方实现，不是本函数）', () => {
@@ -716,7 +717,7 @@ describe('searchMenu：命中面 = 菜单名 ∪ 组名 ∪ keywords（+ 排序�
     // 🔴 #6580：「加工项管理」「工艺配置」两个菜单项已移除（其 keywords 里的「生产」族别名随之消失）
     // ⇒ 「生产」靠**旧名关键词**「生产看板」命中「作业看板」这一项（rank 2）。
     // ⚠️ 另两项（智能派单 / 计件工资）靠**组名**「生产管理」命中（rank 3，同档内按菜单自身顺序）
-    ['旧名关键词（rank 2）+ 组名（rank 3）', '生产', ['production-board', 'production-pool', 'production-piecework', 'quality-inspections']],
+    ['旧名关键词（rank 2）+ 组名（rank 3）', '生产', ['production-board', 'production-pool', 'production-piecework', 'quality-inspections', 'rework-orders']],
     ['拼音首字母 keywords（rank 2）', 'ddlb', ['orders']],
     ['拼音首字母 keywords（rank 2）', 'yltz', ['production-remnants']],
     ['拼音首字母 keywords（rank 2）', 'sckb', ['production-board']],
@@ -748,6 +749,7 @@ describe('searchMenu：命中面 = 菜单名 ∪ 组名 ∪ keywords（+ 排序�
     expect(searchMenu(items, '工').map((i) => i.key)).toEqual([
       'after-sales', // rank 1：菜单名「售后工单」包含「工」
       'production-piecework', // rank 1：菜单名「计件工资」包含「工」
+      'rework-orders', // rank 1：菜单名「返工单」包含「工」
       'employees', // rank 1：菜单名「员工管理」包含「工」
       'dashboard', // rank 2：keywords「工作台」（且是索引第 0 项 ⇒ 同档最前）
       'human-sessions', // rank 2：keywords「人工」
@@ -868,9 +870,10 @@ describe('权限过滤的端到端口径（可见项 key 集合，逐条精确�
       ['notifications'],
     ],
     [
-      '只持售后**读**码 after_sales:view ⇒ 售后工单可见（issue #5246：节点码是读码）',
+      // issue #7377：「返工单」与售后工单**同码** `after_sales:view` ⇒ 只持读码两者都可见
+      '只持售后**读**码 after_sales:view ⇒ 售后工单 + 返工单可见（issue #5246 读码 / #7377 同码复用）',
       { permissions: ['after_sales:view'] },
-      ['after-sales', 'notifications'],
+      ['after-sales', 'rework-orders', 'notifications'],
     ],
     [
       '只持售后**写**码 order:refund ⇒ 售后工单隐藏（写码不再等于页面可见性）',

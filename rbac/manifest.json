@@ -343,7 +343,8 @@
       "企业基础设置": "production:view",
       "通知中心": null,
       "供应商": "inbound:view",
-      "采购单": "inbound:view"
+      "采购单": "inbound:view",
+      "返工单": "after_sales:view"
     },
     "controller": {
       "经营看板": "dashboard:view",
@@ -373,7 +374,8 @@
       "加工单操作": "processing:update",
       "入库单操作": "inbound:create",
       "供应商": "inbound:view",
-      "采购单": "inbound:view"
+      "采购单": "inbound:view",
+      "返工单": "after_sales:view"
     },
     "auth": {
       "经营看板": "dashboard:view",
@@ -400,7 +402,8 @@
       "商品管理": "product:list",
       "企业基础设置": "production:view",
       "供应商": "inbound:view",
-      "采购单": "inbound:view"
+      "采购单": "inbound:view",
+      "返工单": "after_sales:view"
     },
     "user": {}
   },
@@ -500,6 +503,12 @@
       "name": "质检记录",
       "path": "/quality-inspections",
       "code": "production:inspect"
+    },
+    {
+      "key": "rework-orders",
+      "name": "返工单",
+      "path": "/rework-orders",
+      "code": "after_sales:view"
     },
     {
       "key": "supply-chain",
@@ -658,6 +667,10 @@
     [
       "/quality-inspections",
       "production:inspect"
+    ],
+    [
+      "/rework-orders",
+      "after_sales:view"
     ],
     [
       "/reports",
@@ -979,6 +992,18 @@
           "GET /api/admin/reports/order-margins",
           "GET /api/admin/reports/quality-cost",
           "GET /api/admin/reports/staff-performance"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "rework-orders",
+      "name": "返工单",
+      "path": "/rework-orders",
+      "gate": "after_sales:view",
+      "units": {
+        "after_sales:view": [
+          "GET /api/admin/rework-orders"
         ]
       },
       "visibility_rule": "all"

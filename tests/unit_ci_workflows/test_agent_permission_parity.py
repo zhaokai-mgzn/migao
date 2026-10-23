@@ -2072,6 +2072,9 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     # 质检记录（issue #7140 = #5652 的商家面）：守卫码 = 菜单节点码 = 该页三个端点的**方法级**
     # `production:inspect`（读待检清单 / 读流水 / 录判定同码 —— 写面也在该码下，故不登记写例外）。
     "/quality-inspections": "质检记录",
+    # 返工单（issue #7377）：守卫码 = 菜单节点码 = 该页第一屏读端点（GET /api/admin/rework-orders）的
+    # 方法级 `after_sales:view`（与售后工单同码）—— 写动作走 `order:refund`，不在菜单码里体现。
+    "/rework-orders": "返工单",
     "/customers": "客户列表",
     "/finance": "财务对账",
     "/employees": "员工管理",
@@ -2279,6 +2282,9 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
     "/quality-inspections": MenuReadAnchor("质检记录", "quality-inspections/page.tsx",
                                            ("qualityInspectionApi.targets",
                                             "qualityInspectionApi.list")),
+    # 返工单（issue #7377）：节点码 `after_sales:view` = 本页第一屏读端点（`reworkOrderApi.list`）的
+    # 方法级码 —— 与售后工单同域复用，零授权 delta。
+    "/rework-orders": MenuReadAnchor("返工单", "rework-orders/page.tsx", ("reworkOrderApi.list",)),
     # 供应商（issue #7369）：节点码 inbound:view = 本页第一屏读端点（GET /api/admin/suppliers）的
     # 方法级 @RequirePermission（逐字同码，不新造 supplier:view）。
     "/suppliers": MenuReadAnchor("供应商", "suppliers/page.tsx", ("supplierApi.list",)),
@@ -3535,14 +3541,17 @@ def _injections() -> dict[str, tuple[str, "callable", "callable"]]:
             lambda s: _add_role_code(s, "financeRole", "product:category:view"),
             problems_leakage,
         ),
-        "③b 码没有任何菜单节点（改掉『售后工单』节点码）⇒ 判据 4 红": (
+        "③b 码没有任何菜单节点（改掉『售后工单』+『返工单』两个节点码）⇒ 判据 4 红": (
             # 锚点口径（issue #5247 改判）：**被改的节点码必须是「某个 B 端可达工具仍声明的码」**，
             # 否则判据 4 连这个码都不看（原锚改成的 `order:refund` 随 `after_sales_manage`
             # 收窄而退出 B 端声明面 ⇒ 注入变空断言）。现锚改成的 `order:list` 仍是 B 端声明码
             # （`order_query`/`logistics_track`），且改完后 `after_sales:view` 在四处菜单源里
             # **一个节点都没有** ⇒ 「Agent 查得到、页面里看不到」成立。
+            # 🔴 issue #7377 起 `after_sales:view` 有**两个**节点（售后工单 + 返工单）⇒ 只改第一个
+            # 留下一半，注入就变成空断言（实测：「判据没有变红 ⇒ 它是空断言」）⇒ 这里**全量替换**
+            # （不带 count），把这个码从菜单面上真正清空。
             "menu:frontend",
-            lambda s: s.replace("permissionCode: 'after_sales:view'", "permissionCode: 'order:list'", 1),
+            lambda s: s.replace("permissionCode: 'after_sales:view'", "permissionCode: 'order:list'"),
             problems_leakage,
         ),
         "④ 只改一处菜单源的节点码 ⇒ 判据 3 红": (

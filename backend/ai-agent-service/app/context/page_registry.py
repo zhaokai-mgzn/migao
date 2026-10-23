@@ -134,6 +134,13 @@ TRUTH_SOURCES: Dict[str, TruthSource] = {
         citation="依据：盘点口径说明（账面是出任务当刻的快照；有差异须先经审批；只调数量不动成本）",
         path="backend/admin-api/src/main/java/com/migao/admin/service/StocktakeService.java",
     ),
+    # 返工（issue #7377）：状态机（待开工/返工中/已完成/已取消）+ 完工回写售后 + 成本口径
+    # （返工成本 = 返工报工计件金额，返工单本身不产生金额）—— 全部口径在服务层 javadoc。
+    "rework-order-lifecycle": TruthSource(
+        label="返工单口径（状态机 · 完工回写售后 · 成本走返工报工）",
+        citation="依据：返工单口径说明（同一售后单同时只能有一张未完结返工单；完工才回写售后状态；本单不产生金额）",
+        path="backend/admin-api/src/main/java/com/migao/admin/service/ReworkOrderService.java",
+    ),
     "supplier-master-data": TruthSource(
         label="供应商档案（供应商主数据）",
         citation="依据：供应商档案口径（服务层说明）",
@@ -230,6 +237,13 @@ PAGE_REGISTRY: Tuple[PageEntry, ...] = (
         route="/stocktakes",
         truth_source="stocktake-counting",
         page_permissions=("inbound:view",),
+        entity_permissions=(),
+    ),
+    # 返工单（issue #7377）：问「为什么开不了返工 / 完工后售后怎么变 / 返工花了多少钱」⇒ 引服务层口径。
+    PageEntry(
+        route="/rework-orders",
+        truth_source="rework-order-lifecycle",
+        page_permissions=("after_sales:view",),
         entity_permissions=(),
     ),
     # 供应商档案（issue #7369）：页面上问「账期怎么算 / 停用是什么意思」⇒ 引服务层口径。
