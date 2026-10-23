@@ -7521,6 +7521,25 @@ _CASE_STK_002 = EvalCase(
     precondition='本用例是 [frontend-contract]：前置 = 盘点接口（#7458）+ 菜单五副本 + rbac 清单。零网络、零 LLM。',
 )
 
+# ── RPT-005 [NORMAL] 应收账龄进报表中心：合计=明细之和、空数据不画 0、CSV 导出（issue #7376 段 5）（源: cases/misc.yml）──
+_CASE_RPT_005 = EvalCase(
+    id='RPT-005',
+    legacy_id='',
+    title='应收账龄进报表中心：合计=明细之和、空数据不画 0、CSV 导出（issue #7376 段 5）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-22，逐字）：「继续主动推进，不要一直让我点头」—— 账龄接口 P0-2 就有，但老板要看「谁欠得久」还得问 agent 或人工捞。'],
+    expectations=[],
+    data_checks=['**判据 1（🔴 空数据 ≠ 0）**：没有未结清应收时后端给 `hasData=false` 且 `totals=null`，页面写「暂无数据」——**不出现 ¥0.00**。判据 = `ReportReceivableAgingServiceTest#emptyAgingHasNullTotalsNotZero`（红证：把 `hasData` 改成恒 true ⇒ 该用例当场红，实测 `expected: null`）+ `reports.test.tsx#没有数据时显示「暂无数据」`。', '**判据 2（合计 = 明细之和）**：`totals.outstanding == Σ五档 == Σ客户行`；单数 = Σ各档单数（金额里读不出「欠了多少张单」）。判据 = `ReportReceivableAgingServiceTest#totalsEqualSumOfRows`。', '**判据 3（分档不重算）**：报表**不重算**分档/账期，直接复用 `ReceivableAging.summarize`（P0-2 真值源）；改分档规则只该改一处。判据 = `ReportService.receivableAging` 的实现 + `ReportReceivableAgingServiceTest`（桩住真值源，报表只搬数）。', '**判据 4（数据范围下传）**：`self` 范围把制单人原样交给账龄真值源 —— 报表不自己过滤，否则账龄口径分叉成两份。判据 = `ReportReceivableAgingServiceTest#scopeOwnerIsPassedThroughToTheAgingTruthSource` + `ReportControllerTest#receivableAgingRouteAndSignature`（端点零入参：范围不接受客户端传）。', "**判据 4b（🔴 可选参数不许写成 `#{x} IS NULL`）**：PG 在该位置推不出参数类型 ⇒ 实参为 NULL 时 `无法确定参数 $2 的数据类型` ⇒ 接口 500（issue #5975 形态）。**真库实证**：先按 `AND (#{createdBy,jdbcType=VARCHAR} IS NULL OR …)` 写，`ReceivableAgingScopeRealDbTest` 三例**全红**（`PSQLException: 无法确定参数 $2 的数据类型`）；改成 `<script>`+`<if test='createdBy != null'>` 拼条件后三例全绿。静态守卫 = `test_mapper_null_param_type_guard.py`。", '**判据 5（CSV 导出）**：导出的是**已加载**的读数（不额外请求、不重算）；带 UTF-8 BOM（Excel 中文不乱码）、缺值留空而**真 0 照写 0**、含逗号/引号/换行按 RFC 4180 转义。判据 = `csv.test.ts`（三条）+ `reports.test.tsx#导出 CSV`（断言 Blob 内容与「不额外请求」）。', '**判据 6（逾期要标出来）**：客户行除总额外，逾期额单列（总额里读不出「谁欠得久」）。判据 = `reports.test.tsx#账龄：有欠款时给合计与客户行`。', '**边界（照实登记）**：① 统一筛选控件（时间/仓库/客户/业务员）**未做**；② 只有五档汇总与客户 Top3 上行，**没有**逐单明细表；③ 导出是本页 CSV（Excel 双向迁移按 P2）；④ 分档基准 = 业务日（+08），跨日那一刻由服务端 `BusinessClock` 定，前端不自己算。'],
+    skip_reason='[frontend-contract] 账龄报表的展示纪律（空数据≠0 / 合计=明细之和）与 CSV 导出，由前端与 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['frontend-contract', 'report', 'receivable', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [frontend-contract]：前置 = 账龄真值源（P0-2 / #7370）+ 报表中心四张表（#7376 段 1~4）。零网络、零 LLM。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -16546,6 +16565,7 @@ ALL_CASES = (
     _CASE_RPT_004,
     _CASE_PRC_005,
     _CASE_STK_002,
+    _CASE_RPT_005,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,

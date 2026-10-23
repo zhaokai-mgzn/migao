@@ -24,6 +24,7 @@ import type {
   ReportInventoryAging,
   ReportOrderMargins,
   ReportQualityCost,
+  ReportReceivableAging,
   ReportStaffPerformance,
 } from '@/types/reports'
 // 盘点读面类型（issue #7373 段 3 前端）：与后端 `StocktakeView` 字段逐字对齐
@@ -1689,6 +1690,9 @@ export const reportApi = {
     request.get<ApiResponse<ReportStaffPerformance>>('/api/admin/reports/staff-performance', { params }),
   qualityCost: (params?: { startDate?: string; endDate?: string }) =>
     request.get<ApiResponse<ReportQualityCost>>('/api/admin/reports/quality-cost', { params }),
+  // 账龄报表（issue #7376 段 5）：零入参 —— 数据范围与租户都由服务端取（客户端传范围 = 范围形同虚设）
+  receivableAging: () =>
+    request.get<ApiResponse<ReportReceivableAging>>('/api/admin/reports/receivable-aging'),
 }
 
 export const purchaseOrderApi = {

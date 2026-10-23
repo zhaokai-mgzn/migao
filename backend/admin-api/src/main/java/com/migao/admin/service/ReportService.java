@@ -62,6 +62,8 @@ public class ReportService {
     private final com.migao.admin.mapper.StockBatchConsumptionMapper stockBatchConsumptionMapper;
     private final OrderMarginService orderMarginService;
     private final com.migao.admin.time.BusinessClock businessClock;
+    /** 账龄真值源（P0-2）：报表中心不重算分档/账期，只把它的底稿套上报表口径（issue #7376 段 5）。 */
+    private final CustomerService customerService;
 
     /**
      * 订单毛利报表。
@@ -366,6 +368,42 @@ public class ReportService {
                 .total(total.amount())
                 .complete(total.complete())
                 .unknownComponents(total.unknownComponents())
+                .build();
+    }
+
+    /**
+     * **应收账龄报表**（issue #7376 段 5，P1-4）：五档 + 按客户分行的报表读面。
+     *
+     * <p>与客户档案里的账龄页**同一份底稿**（{@link CustomerService#receivableAging(Long, String)} →
+     * {@code ReceivableAging.summarize}）—— 报表不重算分档，只补三条报表口径：</p>
+     *
+     * <ol>
+     *   <li><b>空数据 ≠ 0</b>：没有欠款单 ⇒ {@code hasData=false} 且 {@code totals=null}
+     *       （页面写「暂无数据」，不是「应收 0.00」）；</li>
+     *   <li><b>合计 = 明细之和</b>：{@code totals.outstanding} 取纯函数的 {@code totalOutstanding}
+     *       （恒等式 {@code == Σ五档 == Σ客户行} 由 {@code ReceivableAging} 承担）；</li>
+     *   <li><b>单数单列</b>：{@code totals.orderCount} = Σ五档的单数 —— 金额里读不出「欠了多少张单」。</li>
+     * </ol>
+     *
+     * @param scopeOwnerId P0-4 数据范围：非空 ⇒ 只算本人创建的单（{@code self}）
+     */
+    public com.migao.admin.dto.ReceivableAgingReportView receivableAging(Long tenantId, String scopeOwnerId) {
+        var base = customerService.receivableAging(tenantId, scopeOwnerId);
+        boolean hasData = !base.getCustomers().isEmpty();
+        int orderCount = base.getBuckets().stream()
+                .mapToInt(com.migao.admin.dto.ReceivableAgingResponse.BucketAmount::getOrderCount)
+                .sum();
+        return com.migao.admin.dto.ReceivableAgingReportView.builder()
+                .asOf(base.getAsOf())
+                .hasData(hasData)
+                .customerCount(base.getCustomers().size())
+                .buckets(base.getBuckets())
+                .customers(base.getCustomers())
+                .totals(hasData ? com.migao.admin.dto.ReceivableAgingReportView.Totals.builder()
+                        .outstanding(base.getTotalOutstanding())
+                        .overdue(base.getTotalOverdue())
+                        .orderCount(orderCount)
+                        .build() : null)   // 🔴 空数据 ⇒ null（不是 0）
                 .build();
     }
 

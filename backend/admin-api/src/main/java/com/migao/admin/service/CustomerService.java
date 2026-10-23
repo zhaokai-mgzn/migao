@@ -917,8 +917,18 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
      * <p>恒等式（判据复算）：{@code totalOutstanding == Σ五档 == Σ客户行}。</p>
      */
     public com.migao.admin.dto.ReceivableAgingResponse receivableAging(Long tenantId) {
+        return receivableAging(tenantId, null);
+    }
+
+    /**
+     * 应收账龄（可选按**制单人**收窄 —— 报表中心的数据范围 P0-4 同口径）。
+     *
+     * @param createdBy 非空 ⇒ 只算该用户创建的单（{@code self} 范围）；{@code null} ⇒ 全量（财务口径）
+     */
+    public com.migao.admin.dto.ReceivableAgingResponse receivableAging(Long tenantId, String createdBy) {
         LocalDate today = businessClock.today();
-        List<com.migao.admin.dto.ReceivableAgingRow> rows = orderMapper.selectReceivableRows(tenantId);
+        List<com.migao.admin.dto.ReceivableAgingRow> rows =
+                orderMapper.selectReceivableRows(tenantId, createdBy);
         // 业务日期换算**只在这里**做（容器是 UTC：取 UTC 日期会让「当天」差一天，见 #3802/#6200）——
         // 换算用 BusinessClock.zone()，下游纯函数只做日期运算（不引时区 ⇒ 逐格可测）。
         for (com.migao.admin.dto.ReceivableAgingRow row : rows) {

@@ -1,6 +1,6 @@
 // case_ids: RPT-001
 import { describe, expect, it, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import ReportsPage from '@/app/(dashboard)/reports/page'
 
 /**
@@ -15,6 +15,7 @@ const reportApi = vi.hoisted(() => ({
   inventoryAging: vi.fn(),
   staffPerformance: vi.fn(),
   qualityCost: vi.fn(),
+  receivableAging: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({ reportApi }))
@@ -34,6 +35,10 @@ const emptyAll = () => {
   reportApi.qualityCost.mockImplementation(() =>
     wrap({ components: [], total: null, complete: true, unknownComponents: [] }),
   )
+  // 账龄报表（issue #7376 段 5）：空态 = hasData=false + totals=null（与其余四张同口径）
+  reportApi.receivableAging.mockImplementation(() =>
+    wrap({ asOf: '2026-10-23', hasData: false, customerCount: 0, buckets: [], customers: [], totals: null }),
+  )
 }
 
 describe('报表中心页面', () => {
@@ -49,6 +54,7 @@ describe('报表中心页面', () => {
     expect(screen.getByTestId('reports-margin-empty').textContent).toContain('暂无数据')
     expect(screen.getByTestId('reports-inventory-empty')).toBeInTheDocument()
     expect(screen.getByTestId('reports-staff-empty')).toBeInTheDocument()
+    expect(screen.getByTestId('reports-aging-empty').textContent).toContain('暂无数据')
     // 空态下不该出现任何金额
     expect(screen.queryByTestId('reports-margin-revenue')).toBeNull()
     expect(document.body.textContent).not.toContain('¥0.00')
@@ -96,11 +102,105 @@ describe('报表中心页面', () => {
     expect(screen.getByTestId('reports-quality-total').textContent).toContain('100.00')
   })
 
+  it('🔴 账龄：有欠款时给合计与客户行，逾期单独标出', async () => {
+    emptyAll()
+    reportApi.receivableAging.mockImplementation(() =>
+      wrap({
+        asOf: '2026-10-23',
+        hasData: true,
+        customerCount: 2,
+        buckets: [
+          { bucket: 'NOT_DUE', label: '未到期', amount: 1800, orderCount: 3 },
+          { bucket: 'DAYS_1_30', label: '逾期 1-30 天', amount: 200, orderCount: 1 },
+        ],
+        customers: [
+          {
+            customerName: '张记布艺', customerPhone: '13800000001', paymentTermsDays: 30,
+            total: 1200, overdue: 200,
+            buckets: [
+              { bucket: 'NOT_DUE', label: '未到期', amount: 1000, orderCount: 1 },
+              { bucket: 'DAYS_1_30', label: '逾期 1-30 天', amount: 200, orderCount: 1 },
+            ],
+          },
+          {
+            customerName: '李家窗帘', customerPhone: '13800000002', paymentTermsDays: 30,
+            total: 800, overdue: 0,
+            buckets: [{ bucket: 'NOT_DUE', label: '未到期', amount: 800, orderCount: 2 }],
+          },
+        ],
+        totals: { outstanding: 2000, overdue: 200, orderCount: 4 },
+      }),
+    )
+    render(<ReportsPage />)
+
+    await waitFor(() => expect(screen.getByTestId('reports-aging-body')).toBeInTheDocument())
+    expect(screen.getByTestId('reports-aging-outstanding').textContent).toContain('2,000.00')
+    expect(screen.getByTestId('reports-aging-overdue').textContent).toContain('200.00')
+    expect(screen.getByTestId('reports-aging-counts').textContent).toContain('2 家客户')
+    expect(screen.getByTestId('reports-aging-counts').textContent).toContain('4 张单')
+    // 五档是这张表的正文（合计只回答「欠多少」，分档才回答「欠了多久」）
+    expect(screen.getByTestId('reports-aging-bucket-NOT_DUE').textContent).toContain('未到期')
+    expect(screen.getByTestId('reports-aging-bucket-NOT_DUE').textContent).toContain('1,800.00')
+    expect(screen.getByTestId('reports-aging-bucket-DAYS_1_30').textContent).toContain('逾期 1-30 天')
+    expect(screen.getByTestId('reports-aging-bucket-DAYS_1_30').textContent).toContain('200.00')
+    const rows = screen.getAllByTestId('reports-aging-customer')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].textContent).toContain('张记布艺')
+    // 逾期的客户行必须标出来（总额里读不出「谁欠得久」）
+    expect(rows[0].textContent).toContain('逾期')
+    expect(rows[1].textContent).not.toContain('逾期')
+  })
+
+  it('导出 CSV：把**已加载**的账龄读数写进文件（不额外请求，缺值留空）', async () => {
+    emptyAll()
+    reportApi.receivableAging.mockImplementation(() =>
+      wrap({
+        asOf: '2026-10-23',
+        hasData: true,
+        customerCount: 1,
+        buckets: [{ bucket: 'NOT_DUE', label: '未到期', amount: 1200, orderCount: 1 }],
+        customers: [
+          {
+            customerName: '张记布艺', customerPhone: '13800000001', paymentTermsDays: 30,
+            total: 1200, overdue: null,
+            buckets: [
+              { bucket: 'NOT_DUE', label: '未到期', amount: 1200, orderCount: 1 },
+              { bucket: 'DAYS_1_30', label: '逾期 1-30 天', amount: 0, orderCount: 0 },
+            ],
+          },
+        ],
+        totals: { outstanding: 1200, overdue: 0, orderCount: 1 },
+      }),
+    )
+    const blobs: Blob[] = []
+    const createObjectURL = vi.fn((blob: Blob) => {
+      blobs.push(blob)
+      return 'blob:mock'
+    })
+    const revokeObjectURL = vi.fn()
+    Object.assign(URL, { createObjectURL, revokeObjectURL })
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    render(<ReportsPage />)
+    await waitFor(() => expect(screen.getByTestId('reports-aging-body')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('reports-aging-export'))
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1)
+    const text = await blobs[0].text()
+    // ⚠️ jsdom 的 `Blob.text()` 会吃掉 UTF-8 BOM ⇒ BOM 由 `csv.test.ts` 直接对 `toCsv()` 断言
+    expect(text).toContain('客户,账期(天),应收,逾期,未到期,逾期1-30')
+    expect(text).toContain('张记布艺,30,1200,,1200,0')      // 逾期缺值留空（不是 0）
+    expect(clickSpy).toHaveBeenCalled()
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock')
+    clickSpy.mockRestore()
+  })
+
   it('加载失败 ⇒ 常驻失败态（不是空白页），且带可重试出口', async () => {
     reportApi.orderMargins.mockRejectedValue({ response: { status: 500, data: {} } })
     reportApi.inventoryAging.mockRejectedValue(new Error('x'))
     reportApi.staffPerformance.mockRejectedValue(new Error('x'))
     reportApi.qualityCost.mockRejectedValue(new Error('x'))
+    reportApi.receivableAging.mockRejectedValue(new Error('x'))
     render(<ReportsPage />)
 
     await waitFor(() => expect(screen.getByTestId('reports-load-error')).toBeInTheDocument())

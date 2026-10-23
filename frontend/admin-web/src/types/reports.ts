@@ -78,3 +78,36 @@ export interface ReportQualityCost {
   complete: boolean
   unknownComponents: string[]
 }
+
+/** 账龄一档（金额 + 该档单数；`bucket` 是稳定标识，`label` 是中文名）。 */
+export interface AgingBucket {
+  bucket: string
+  label: string
+  amount: number | null
+  orderCount: number
+}
+
+/** 按客户的账龄分行。 */
+export interface AgingCustomer {
+  customerName: string | null
+  customerPhone: string | null
+  paymentTermsDays: number | null
+  total: number | null
+  overdue: number | null
+  buckets: AgingBucket[]
+}
+
+/**
+ * 应收账龄报表（issue #7376 段 5）。
+ *
+ * 🔴 与其余四张表同口径：`totals` 在**没有欠款单时是 null**（不是 0）——
+ * 页面据此写「暂无数据」，绝不画成「应收 0.00」。
+ */
+export interface ReportReceivableAging {
+  asOf: string | null
+  hasData: boolean
+  customerCount: number
+  buckets: AgingBucket[]
+  customers: AgingCustomer[]
+  totals: { outstanding: number | null; overdue: number | null; orderCount: number } | null
+}

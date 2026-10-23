@@ -86,6 +86,21 @@ public class ReportController {
         return ApiResponse.success(reportService.qualityCost(startDate, endDate));
     }
 
+    /**
+     * 应收账龄报表：`GET /api/admin/reports/receivable-aging`（issue #7376 段 5）。
+     *
+     * <p>五档（未到期 / 1-30 / 31-60 / 61-90 / 90+）+ 按客户分行；**没有欠款时合计为 null（不是 0）**。
+     * 到期日 = 下单业务日 + 客户账期，分档规则钉在纯函数 {@code ReceivableAging} 上（本端点不重算）。
+     * 数据范围同 P0-4（`self` 只算本人创建的单）。</p>
+     */
+    @GetMapping("/receivable-aging")
+    public ApiResponse<com.migao.admin.dto.ReceivableAgingReportView> receivableAging() {
+        String scopeOwnerId = com.migao.admin.security.DataScope.ownerFilter(
+                roleService.resolveDataScope(currentUserId()), currentUserId());
+        return ApiResponse.success(reportService.receivableAging(
+                com.migao.admin.config.TenantContext.getTenantId(), scopeOwnerId));
+    }
+
     /** 数据范围解析（与 P0-4 同口径：仓储在 role.data_scope，读权在 RoleService）。 */
     private final RoleService roleService;
 

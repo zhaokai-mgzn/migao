@@ -5,10 +5,12 @@ import { PageCard, PageHeader } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
 import { loadErrorMessage } from '@/lib/api-error'
 import { reportApi } from '@/lib/api'
+import { downloadCsv, toCsv, type CsvCell } from '@/lib/csv'
 import type {
   ReportInventoryAging,
   ReportOrderMargins,
   ReportQualityCost,
+  ReportReceivableAging,
   ReportStaffPerformance,
 } from '@/types/reports'
 
@@ -25,6 +27,20 @@ function money(value: number | null | undefined): string {
 function unknownLabels(quality: ReportQualityCost): string[] {
   return quality.unknownComponents.map(
     (code) => quality.components.find((c) => c.code === code)?.label ?? '未采集项',
+  )
+}
+
+/** 「导出 CSV」小按钮：五张卡同一实现（`data-testid` 区分是第几张卡）。 */
+function ExportButton({ testId, onClick }: { testId: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      data-testid={testId}
+      className="text-xs text-primary-600 hover:underline"
+    >
+      导出 CSV
+    </button>
   )
 }
 
@@ -46,6 +62,7 @@ export default function ReportsPage() {
   const [inventory, setInventory] = useState<ReportInventoryAging | null>(null)
   const [staff, setStaff] = useState<ReportStaffPerformance | null>(null)
   const [quality, setQuality] = useState<ReportQualityCost | null>(null)
+  const [aging, setAging] = useState<ReportReceivableAging | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -53,16 +70,18 @@ export default function ReportsPage() {
     setLoading(true)
     setLoadError(null)
     try {
-      const [m, i, s, q] = await Promise.all([
+      const [m, i, s, q, a] = await Promise.all([
         reportApi.orderMargins(),
         reportApi.inventoryAging(),
         reportApi.staffPerformance(),
         reportApi.qualityCost(),
+        reportApi.receivableAging(),
       ])
       setMargins(m.data.data || null)
       setInventory(i.data.data || null)
       setStaff(s.data.data || null)
       setQuality(q.data.data || null)
+      setAging(a.data.data || null)
     } catch (error) {
       console.error('加载报表失败:', error)
       setLoadError(loadErrorMessage(error, '报表加载失败'))
@@ -75,11 +94,19 @@ export default function ReportsPage() {
     load()
   }, [load])
 
+  /**
+   * 导出当前**已加载**的读数（不额外请求、不重算）：CSV 里的数与页面上的数必然同源。
+   * 缺值留空（不是 0）；数值不加货币符号与千分位 —— 进 Excel 要能直接求和。
+   */
+  const exportCsv = useCallback((filename: string, headers: string[], rows: CsvCell[][]) => {
+    downloadCsv(filename, toCsv(headers, rows))
+  }, [])
+
   return (
     <div className="p-6">
       <PageHeader
         title="报表中心"
-        subtitle="毛利、滞销、业绩、质量成本 —— 合计与明细对得上，没数据时留空而不是写 0"
+        subtitle="毛利、滞销、业绩、质量成本、应收账龄 —— 合计与明细对得上，没数据时留空而不是写 0"
       />
 
       {loadError && <ListLoadError message={loadError} onRetry={load} testId="reports-load-error" />}
@@ -88,7 +115,25 @@ export default function ReportsPage() {
         <PageCard>
           <div className="flex items-baseline justify-between">
             <h2 className="text-base font-medium text-neutral-800">订单毛利</h2>
-            <span className="text-xs text-neutral-500">收入 − 退款 − 面料 − 加工</span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-neutral-500">收入 − 退款 − 面料 − 加工</span>
+              <ExportButton
+                testId="reports-margin-export"
+                onClick={() =>
+                  exportCsv(
+                    '订单毛利.csv',
+                    ['指标', '金额'],
+                    [
+                      ['收入', margins?.totals?.revenue],
+                      ['退款', margins?.totals?.refunded],
+                      ['面料成本', margins?.totals?.fabricCost],
+                      ['加工成本', margins?.totals?.laborCost],
+                      ['毛利', margins?.totals?.grossMargin],
+                    ],
+                  )
+                }
+              />
+            </div>
           </div>
           {loading ? (
             <p className="mt-3 text-sm text-neutral-500" data-testid="reports-margin-loading">加载中…</p>
@@ -122,9 +167,29 @@ export default function ReportsPage() {
         <PageCard>
           <div className="flex items-baseline justify-between">
             <h2 className="text-base font-medium text-neutral-800">库存滞销</h2>
-            <span className="text-xs text-neutral-500">
-              满 {inventory?.slowMovingDays ?? 90} 天未出库
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-neutral-500">
+                满 {inventory?.slowMovingDays ?? 90} 天未出库
+              </span>
+              <ExportButton
+                testId="reports-inventory-export"
+                onClick={() =>
+                  exportCsv(
+                    '库存滞销.csv',
+                    ['批次号', 'SKU', '仓库', '在库量', '最后变动日', '距今天数', '是否滞销'],
+                    (inventory?.rows ?? []).map((row) => [
+                      row.batchNo,
+                      row.skuCode,
+                      row.warehouse,
+                      row.onHand,
+                      row.lastMovementDate,
+                      row.daysSinceMovement,
+                      row.slowMoving ? '是' : '否',
+                    ]),
+                  )
+                }
+              />
+            </div>
           </div>
           {loading ? (
             <p className="mt-3 text-sm text-neutral-500">加载中…</p>
@@ -154,7 +219,24 @@ export default function ReportsPage() {
         <PageCard>
           <div className="flex items-baseline justify-between">
             <h2 className="text-base font-medium text-neutral-800">员工业绩</h2>
-            <span className="text-xs text-neutral-500">按制单人归集</span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-neutral-500">按制单人归集</span>
+              <ExportButton
+                testId="reports-staff-export"
+                onClick={() =>
+                  exportCsv(
+                    '员工业绩.csv',
+                    ['制单人', '单数', '收入', '客单价'],
+                    (staff?.rows ?? []).map((row) => [
+                      row.staffName || row.staffId,
+                      row.orderCount,
+                      row.revenue,
+                      row.avgOrderValue,
+                    ]),
+                  )
+                }
+              />
+            </div>
           </div>
           {loading ? (
             <p className="mt-3 text-sm text-neutral-500">加载中…</p>
@@ -185,7 +267,24 @@ export default function ReportsPage() {
         <PageCard>
           <div className="flex items-baseline justify-between">
             <h2 className="text-base font-medium text-neutral-800">质量成本</h2>
-            <span className="text-xs text-neutral-500">返工 + 报废 + 赔付</span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-neutral-500">返工 + 报废 + 赔付</span>
+              <ExportButton
+                testId="reports-quality-export"
+                onClick={() =>
+                  exportCsv(
+                    '质量成本.csv',
+                    ['项目', '金额', '是否已采集', '说明'],
+                    (quality?.components ?? []).map((component) => [
+                      component.label,
+                      component.known ? component.amount : null,
+                      component.known ? '是' : '未采集',
+                      component.note,
+                    ]),
+                  )
+                }
+              />
+            </div>
           </div>
           {loading ? (
             <p className="mt-3 text-sm text-neutral-500">加载中…</p>
@@ -214,6 +313,91 @@ export default function ReportsPage() {
                   {unknownLabels(quality).join(' / ')}）
                 </p>
               )}
+            </div>
+          )}
+        </PageCard>
+
+        <PageCard>
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-base font-medium text-neutral-800">应收账龄</h2>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-neutral-500">按客户账期分档</span>
+              <ExportButton
+                testId="reports-aging-export"
+                onClick={() =>
+                  exportCsv(
+                    `应收账龄-${aging?.asOf ?? ''}.csv`,
+                    ['客户', '账期(天)', '应收', '逾期', '未到期', '逾期1-30', '逾期31-60', '逾期61-90', '逾期90+'],
+                    (aging?.customers ?? []).map((customer) => [
+                      customer.customerName,
+                      customer.paymentTermsDays,
+                      customer.total,
+                      customer.overdue,
+                      ...customer.buckets.map((bucket) => bucket.amount),
+                    ]),
+                  )
+                }
+              />
+            </div>
+          </div>
+          {loading ? (
+            <p className="mt-3 text-sm text-neutral-500" data-testid="reports-aging-loading">
+              加载中…
+            </p>
+          ) : !aging?.hasData ? (
+            <p className="mt-3 text-sm text-neutral-500" data-testid="reports-aging-empty">
+              暂无数据 —— 没有未结清的应收
+            </p>
+          ) : (
+            <div className="mt-3 space-y-2 text-sm" data-testid="reports-aging-body">
+              <div className="flex justify-between">
+                <span className="text-neutral-500">应收合计</span>
+                <span data-testid="reports-aging-outstanding">{money(aging.totals?.outstanding)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-500">其中逾期</span>
+                <span data-testid="reports-aging-overdue">{money(aging.totals?.overdue)}</span>
+              </div>
+              <p className="text-xs text-neutral-500" data-testid="reports-aging-counts">
+                {aging.customerCount} 家客户 · {aging.totals?.orderCount ?? 0} 张单
+                {aging.asOf ? ` · 截至 ${aging.asOf}` : ''}
+              </p>
+              {/* 五档是这张表的正文：合计只回答「欠多少」，分档才回答「欠了多久」 */}
+              <div
+                className="grid grid-cols-2 gap-x-4 gap-y-1 border-t border-neutral-100 pt-2 text-xs text-neutral-600"
+                data-testid="reports-aging-buckets"
+              >
+                {aging.buckets.map((bucket) => (
+                  <div
+                    key={bucket.bucket}
+                    className="flex justify-between gap-2"
+                    data-testid={`reports-aging-bucket-${bucket.bucket}`}
+                  >
+                    <span className="text-neutral-500">{bucket.label}</span>
+                    <span className="whitespace-nowrap">
+                      {money(bucket.amount)}
+                      {bucket.orderCount > 0 && ` · ${bucket.orderCount} 单`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-1 border-t border-neutral-100 pt-2">
+                {aging.customers.slice(0, 3).map((customer) => (
+                  <div
+                    key={`${customer.customerName ?? ''}-${customer.customerPhone ?? ''}`}
+                    className="flex justify-between gap-3"
+                    data-testid="reports-aging-customer"
+                  >
+                    <span className="truncate text-neutral-700">{customer.customerName || '（未留名）'}</span>
+                    <span className="whitespace-nowrap">
+                      {money(customer.total)}
+                      {Number(customer.overdue ?? 0) > 0 && (
+                        <span className="ml-2 text-amber-600">逾期 {money(customer.overdue)}</span>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </PageCard>
