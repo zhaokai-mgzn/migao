@@ -242,7 +242,7 @@
     "**{'panels': panels} if panels is not None else {}",
     "data=(None, meters_fixed_height, f'fixed_height{suffix}', '')"
    ],
-   "source_sha256": "4feae16031ebf6b2134fa3e0eda8b19dddb71941434f737c84b91aed0ee8d8f9"
+   "source_sha256": "bffae387c0d47d640919047c48b08582f62c1fe34ac796a95e06d7b0acea7b44"
   },
   "customer_address_query": {
    "actions": null,
