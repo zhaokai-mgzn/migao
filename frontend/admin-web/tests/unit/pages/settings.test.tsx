@@ -111,6 +111,13 @@ const mockGetSmallItemSpecs = vi.fn()
 const mockBriefingGetConfig = vi.fn()
 const mockBriefingUpdateConfig = vi.fn()
 
+// issue #7536：白边在**上传时**裁（本单裁定「直接改成上传时裁」）—— 桩成「返回裁好的文件」，
+// 这样判据能钉住「上传的是裁后的那份、不是原图」。
+const mockTrimWhiteMarginFile = vi.fn()
+vi.mock('@/lib/qr-image', () => ({
+  trimWhiteMarginFile: (...args: unknown[]) => mockTrimWhiteMarginFile(...args),
+}))
+
 vi.mock('@/lib/api', () => ({
   settingsApi: {
     getSettings: (...args: any[]) => mockGetSettings(...args),
@@ -628,6 +635,48 @@ describe('判据 7：原四个 tab 的能力迁入域后零回归', () => {
     expect(screen.getByRole('button', { name: /更换收款码/ })).toBeInTheDocument()
     // 支付宝未上传 ⇒ 上传入口（不是「更换」）
     expect(screen.getByRole('button', { name: /上传收款码/ })).toBeInTheDocument()
+  })
+
+  it('🔴 收款码上传前先裁白边（issue #7536）：上传的是**裁后**的文件，落库的是它的 URL', async () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams('domain=enterprise'))
+    mockGetPaymentQrcodes.mockResolvedValue({ data: { data: {} } })
+    const original = new File(['original'], 'qr-with-margin.png', { type: 'image/png' })
+    const trimmed = new File(['trimmed'], 'qr-with-margin.png', { type: 'image/png' })
+    mockTrimWhiteMarginFile.mockResolvedValue(trimmed)
+    mockUploadImage.mockResolvedValue({ data: { data: { url: 'https://oss.example.com/wx-trimmed.png' } } })
+    mockUpdatePaymentQrcode.mockResolvedValue({ data: { data: {} } })
+
+    render(<SettingsPage />)
+    const panel = await screen.findByTestId('settings-payment-qrcodes')
+    const input = panel.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [original] } })
+
+    await waitFor(() => expect(mockUploadImage).toHaveBeenCalledTimes(1))
+    // 上传的是**裁后**那份（不是用户选的原图）—— 把裁边去掉 ⇒ 这里当场红
+    expect(mockUploadImage.mock.calls[0][0]).toBe(trimmed)
+    await waitFor(() =>
+      expect(mockUpdatePaymentQrcode).toHaveBeenCalledWith('wechat', {
+        imageUrl: 'https://oss.example.com/wx-trimmed.png',
+      })
+    )
+  })
+
+  it('裁边失败（返回原文件）⇒ 照常上传，不把上传流程堵死（issue #7536）', async () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams('domain=enterprise'))
+    mockGetPaymentQrcodes.mockResolvedValue({ data: { data: {} } })
+    const original = new File(['original'], 'qr.png', { type: 'image/png' })
+    mockTrimWhiteMarginFile.mockResolvedValue(original)
+    mockUploadImage.mockResolvedValue({ data: { data: { url: 'https://oss.example.com/qr.png' } } })
+    mockUpdatePaymentQrcode.mockResolvedValue({ data: { data: {} } })
+
+    render(<SettingsPage />)
+    const panel = await screen.findByTestId('settings-payment-qrcodes')
+    const input = panel.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [original] } })
+
+    await waitFor(() => expect(mockUploadImage).toHaveBeenCalledTimes(1))
+    expect(mockUploadImage.mock.calls[0][0]).toBe(original)
+    await waitFor(() => expect(mockUpdatePaymentQrcode).toHaveBeenCalled())
   })
 
   it('企业信息域：公司名称 / 企业编码 失焦即保存（#5899，无保存按钮）', async () => {

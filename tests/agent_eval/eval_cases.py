@@ -16413,6 +16413,25 @@ _CASE_UI_134 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端打印版式契约（jsdom 渲染），不依赖真实服务与共享夹具；前置不成立时对应单测直接红，agent-eval 栈不跑它',
 )
 
+# ── UI-135 [NORMAL] 纸面收款码：预览层与真打印都出码（打印前等异步取码）+ 上传图自动裁白边 + 缺码不画假码（issue #7536）（源: cases/ui.yml）──
+_CASE_UI_135 = EvalCase(
+    id='UI-135',
+    legacy_id='',
+    title='纸面收款码：预览层与真打印都出码（打印前等异步取码）+ 上传图自动裁白边 + 缺码不画假码（issue #7536）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['我上传了微信二维码，为什么报价单上没有展示收款码', '我上传的二维码周围有白色区域，在报价单上不要展示白色区域，只把二维码展示上去'],
+    expectations=['direct_reply'],
+    data_checks=['判据 1·**取码时点**（会红）：预览层（`inline`）或「本次打印目标就是本单据」⇒ **立刻**取码；常驻挂载的屏幕态**零请求**（该读端点要 `order:list`，在无该码的页面上会变成「一进页面弹一条 403」，与 use-company-name 的 #7285 同族）。执行点 = frontend/admin-web/tests/unit/lib/use-payment-qrcodes.test.ts 的「② 未注入 + 未要出纸 ⇒ 零请求」「③ 🔴 红证：active（预览层 / 本次打印目标）⇒ 挂载即取」', '判据 2·🔴 **打印前等码**（会红）：`usePrintDoc` 在 `window.print()` 之前 await 同一份取码 Promise（上限 `PRINT_ASSET_WAIT_MS` = 2.5s，超时也出纸），并让出一帧等 React 提交；**没有码在飞**时走同步路径（发货单 / 洗水唛的既有读数一字未变）。执行点 = frontend/admin-web/tests/unit/lib/print-doc.test.tsx 的「⑤ 🔴 红证（issue #7536）：收款码在飞 ⇒ print 等它 resolve 之后才调用」', '判据 3·🔴 **裁白边发生在上传时**（会红，用户 2026-10-23 追加裁定「直接改成上传时裁」）：`settings/page.tsx` 的收款码上传先过 `trimWhiteMarginFile(file)` —— canvas 亮度扫描（阈值 `QR_CONTENT_LUMINANCE` = 245，亮度 ≥ 阈值为背景）取内容外接框后重绘成 PNG；四边留白不对称也裁对；无白边（整帧即内容）⇒ 原文件不重编码；**任何失败（无 canvas / 解码超时或失败 / 编码失败 / 全白）一律退回原文件**（上传宁可有白边，不许传不上去）。执行点 = frontend/admin-web/tests/unit/lib/qr-image.test.ts（①~⑫）+ tests/unit/pages/settings.test.tsx 的「🔴 收款码上传前先裁白边」「裁边失败 ⇒ 照常上传」', '判据 4·**缺码不画假码 / 注入优先仍然成立**：调用方注入 map ⇒ 一次请求都不发、连裁边都不做；拉取失败或空响应 ⇒ 整块不渲染。执行点 = use-payment-qrcodes.test.ts 的「① 注入」「⑥ 失败 ⇒ 空 map」+ QuotationDoc.test.tsx 的「收款码缺 imageUrl ⇒ 不画假码」', '🔴 红证（真实 Chromium 实测读数，修前）：预览纸框内 img = 0、收款码请求 0 次；模拟 `beforeprint` 当帧 img = 0，1.5s 后才是 1（纸面快照早已完成）⇒ 预览永远无码、第一次打印纸上无码。修后：预览纸框内出码、`window.print()` 在取码 resolve 之后才调用。', '边界（照实登记）：① 裁边只作用于**新上传**的图 —— **存量带白边的图不会自动变干净**，需在「企业基础设置 → 收款码」重新上传一次（界面文案已提示）；② 不做服务端重编码（无新依赖）；③ 渲染口不碰像素（不依赖 OSS 的 CORS，口径对所有人一致）。'],
+    skip_reason='[backend-contract] 纯前端取数时点 + 图片裁边（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/use-payment-qrcodes.test.ts、tests/unit/lib/qr-image.test.ts、tests/unit/lib/print-doc.test.tsx、tests/unit/components/QuotationDoc.test.tsx 执行',
+    tags=['ui', 'admin-web', 'print', 'quotation', 'sales-doc', 'payment-qrcode'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端取数/图片处理契约用例：收款码 map 由单测自建并注入 settingsApi 打桩（不碰真库、不依赖共享夹具）；前置不成立时对应单测直接红，agent-eval 栈不跑它',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -17326,6 +17345,7 @@ ALL_CASES = (
     _CASE_UI_132,
     _CASE_UI_133,
     _CASE_UI_134,
+    _CASE_UI_135,
     _CASE_UT_001,
     _CASE_UT_002,
 )

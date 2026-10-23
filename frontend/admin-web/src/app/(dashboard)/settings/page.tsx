@@ -71,6 +71,7 @@ import { OperationPricePanel } from '@/components/production-config/OperationPri
 import { RoutingsPanel } from '@/components/production-config/RoutingsPanel'
 import { CuttingHeightPanel } from '@/components/production-config/CuttingHeightPanel'
 import { readImageDimensions } from '@/lib/image-dimensions'
+import { trimWhiteMarginFile } from '@/lib/qr-image'
 import { usePermission } from '@/lib/permission'
 import { useAuthStore } from '@/store/auth'
 import { REMNANT_PARAM_COPY } from '@/lib/tenant-params'
@@ -639,7 +640,10 @@ function EnterpriseDomainPanel() {
     }
     setUploadingPaymentQr(type)
     try {
-      const up = await uploadApi.uploadImage(file)
+      // 🔴 上传前先裁掉白边（issue #7536，用户裁定「直接改成上传时裁」）：
+      //    输入是**本地文件**，没有跨域限制；裁失败 ⇒ 原文件照传（不因裁边失败而传不上去）
+      const prepared = await trimWhiteMarginFile(file)
+      const up = await uploadApi.uploadImage(prepared)
       const imageUrl = up.data.data.url
       await settingsApi.updatePaymentQrcode(type, { imageUrl })
       setPaymentQrcodes((prev) => ({ ...prev, [type]: { ...(prev[type] ?? {}), imageUrl } }))
@@ -801,7 +805,8 @@ function EnterpriseDomainPanel() {
               <div>
                 <h3 className="text-base font-semibold text-neutral-900">收款码</h3>
                 <p className="text-sm text-neutral-500 mt-0.5">
-                  上传微信 / 支付宝收款码，打印报价单时自动印在右上角（顾客扫码直接付给企业，平台不经手资金）
+                  上传微信 / 支付宝收款码，打印报价单时自动印在右上角（顾客扫码直接付给企业，平台不经手资金）；
+                  图片四周的白边会在上传时自动裁掉 —— 之前上传的图如带白边，重新上传一次即可
                 </p>
               </div>
             </div>
