@@ -11,7 +11,7 @@
     "被驱动面 = frontend/admin-web/src/** + scripts/ui-smoke-merchant/**（不含 spec.mjs 自身）。"
   ],
   "baseline_count": {
-    "exact": 2,
+    "exact": 4,
     "registered_matchers": 34
   },
   "exact": [
@@ -43,6 +43,30 @@
       "reason": "登录页 tab 按钮（frontend/admin-web/src/app/login/page.tsx）内含**两个**文本节点：标题「管理员登录」+ 副标题「手机验证码」⇒ 真 DOM 可及名字 = 「管理员登录 手机验证码」（2026-10-12 19:04 +08 真栈现取：getByRole('tab',{name:'管理员登录',exact:true}) count=0，非 exact count=1）。这条是**未修形态的入口**：spec 改回 exact 时判据 N 具名红。",
       "driver_files": [
         "frontend/admin-web/src/app/login/page.tsx"
+      ]
+    },
+    {
+      "declared": "添加颜色",
+      "line_anchor": "awaitpage.getByRole('button',{name:'添加颜色',exact:true}).first().click()",
+      "kind": "exact_single_node",
+      "driver": [
+        "frontend/admin-web/src/components/products/SkuMatrix.tsx::<button>添加颜色</button>"
+      ],
+      "reason": "建品页批量颜色区（SkuMatrix 的 BatchColorInput）的「添加颜色」按钮：该元素唯一的文本节点就是这四个字 ⇒ exact 合法。同页还有「添加颜色分类」（逐色添加）——exact 用来保证点到的是批量入口，而不是另一个同前缀按钮。",
+      "driver_files": [
+        "frontend/admin-web/src/components/products/SkuMatrix.tsx"
+      ]
+    },
+    {
+      "declared": "批量填写",
+      "line_anchor": "awaitpage.getByRole('button',{name:'批量填写',exact:true}).first().click()",
+      "kind": "exact_single_node",
+      "driver": [
+        "frontend/admin-web/src/components/products/SkuMatrix.tsx::<button>批量填写</button>"
+      ],
+      "reason": "SKU 矩阵工具栏的「批量填写」按钮：唯一文本节点就是这四个字 ⇒ exact 合法；同段提示文案里的同名字样不是按钮节点，exact 不会把它算进来。",
+      "driver_files": [
+        "frontend/admin-web/src/components/products/SkuMatrix.tsx"
       ]
     }
   ],

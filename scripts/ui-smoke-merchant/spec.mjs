@@ -150,6 +150,11 @@ function journey(name, opts = {}) {
       return { page, rec: null, done: async () => null, skipped: true }
     }
     const rec = { journey: name, pass: true, errors: [], notes: [], evidence: [], skipped: false, unconfigured: false, error_class: null }
+    // 同一旅程名**只允许一条记录**：整轮看门狗到点后会先给「没跑到的」补记 skip，而 `runAll`
+    // 仍在继续 —— 跑到时再 push 就是同名两条（汇总计数与名册对账都会失真）。
+    // 口径：真跑出来的记录**顶替**那条占位 skip（它证明「其实跑到了」）。
+    const prior = results.findIndex((r) => r.journey === name)
+    if (prior >= 0) results.splice(prior, 1)
     results.push(rec)
     const errs = []
     // 判据红证的注入点（issue #6942 ①）：`SMOKE_PRODUCT_404_STRICT=1` 时把这一条塞进本旅程的错误面

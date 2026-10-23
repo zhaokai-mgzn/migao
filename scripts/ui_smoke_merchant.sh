@@ -357,7 +357,7 @@ fi
 DQ_EXIT=0
 if [ -f "$OUT_DIR/smoke-data.json" ]; then
   set +e
-  "${PYTHON_BIN:-python3}" "$REPO_ROOT/scripts/smoke_data_quality.py" \
+  "${PYTHON_BIN:-python3}" "${REPO_ROOT:-$SCRIPT_DIR/..}/scripts/smoke_data_quality.py" \
     --snapshot "$OUT_DIR/smoke-data.json" --md "$OUT_DIR/smoke-data-quality.md"
   DQ_EXIT=$?
   set -e
