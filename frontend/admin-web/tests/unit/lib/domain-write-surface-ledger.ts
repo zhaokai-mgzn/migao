@@ -39,7 +39,7 @@ import { CONFIG_DOMAINS } from '../../../src/lib/config-center-domains'
  * 🔴 新增域 / 给只读域接入写面 ⇒ **必须**在这里加一行；否则守卫的「未登记即红」当场失败（具名报出）。
  */
 export const DOMAIN_WRITE_SURFACES: Readonly<Partial<Record<ConfigDomainKey, string>>> = {
-  // 算料口径（issue #6825）：8 个标量就地可改（tiers / 拼色 / 公式 / 保存同在面板内）
+  // 算料口径（issue #6825）：10 个标量就地可改（tiers / 拼色 / 公式 / 保存同在面板内）
   calc: 'calc-caliber-scalar-per_fold_single',
   // 加工项与分类（`ProcessingItemsPanel`）：新建加工项入口（面板内「新建」）
   'processing-items': 'processing-item-new',

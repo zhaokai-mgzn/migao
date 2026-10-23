@@ -435,7 +435,8 @@ public class CraftCalcClient {
      * @param fabricMeters 用料米数（褶数法：`每折吃布 × 褶数 + 余量`）
      * @param pleatCount 褶数（按开数取整后的总褶数）
      * @param perPanelPleats 每片褶数
-     * @param perFold 每折吃布（米）：单色 0.25 / 拼色·拼1次 0.65 / 拼色·拼2次 1.2（用户 2026-09-19 裁定）
+     * @param perFold 每折吃布（米）：**恒为单色系数**（拼色不改每折吃布 —— issue #7560）；
+     *                拼色的「0.65 / 1.2 米」是**配布定长**，不是每折系数
      * @param fullness **理论**倍数（档位名义值，standard 2.0 / economy 1.8）
      * @param fullnessActual **实际**倍数（用料 ÷ 窗宽；与理论倍数语义不同，展示取实际值）
      * @param formulaUsed 算式（{@code fixed_height_pleats} / {@code fixed_width_pleats}）

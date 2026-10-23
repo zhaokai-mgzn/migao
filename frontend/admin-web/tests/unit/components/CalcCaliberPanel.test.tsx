@@ -11,7 +11,7 @@
  * 3. 域自己就是编辑面 ⇒ **不许**再挂「去算料配置」那种跳出本页的外链。
  *
  * **② issue #6825：域内就地可改（唯一写面）**
- * - 8 个标量（`CALC_SCALAR_KEYS`）+ 档位表 + 拼色每折吃布表 + 备用公式，**逐键在位**；
+ * - 10 个标量（`CALC_SCALAR_KEYS`）+ 档位表 + 拼色配布长度表 + 备用公式，**逐键在位**；
  * - 改值 ⇒ `PUT` 正文是**全量键**（后端是全量替换，缺键会静默回默认值 —— 缺键即红）；
  * - 422 ⇒ **逐条**理由上屏（`error.details[].message`）+ **草稿不回滚** + `source` 徽标不变；
  * - 读失败 ⇒ **没有输入框**、不出现「未配置」。
@@ -68,15 +68,17 @@ import type { CraftCalcConfig } from '@/types'
 /**
  * 算料引擎**默认配置**（逐值写死 = 后端会回什么；**不从前端实现推导**）。
  *
- * 🔴 11 个键的清单也**写死在这里**（不从 `CALC_SCALAR_KEYS` 推导全量键 —— 那样
+ * 🔴 **13 个键**的清单也**写死在这里**（不从 `CALC_SCALAR_KEYS` 推导全量键 —— 那样
  * 「漏发某个键」会在两边同时漏掉，判据恒真）。`CALC_SCALAR_KEYS` 只用来逐个断言
- * 「8 个标量输入框都在」。
+ * 「10 个标量输入框都在」。
  */
 const ENGINE_DEFAULT_CALC_CONFIG = {
   per_fold_single: 0.25,
   per_fold_mixed_times: { '1': 0.65, '2': 1.2 },
   margin_single: 0.2,
   margin_multi: 0.3,
+  margin_mixed_single: 0.15,
+  margin_mixed_multi: 0.2,
   min_fullness: 1.5,
   tiers: {
     standard: { fullness: 2.0, label: '标准工艺' },
@@ -89,12 +91,14 @@ const ENGINE_DEFAULT_CALC_CONFIG = {
   oversize_height_threshold: 4,
 }
 
-/** 全量替换的 11 个键（后端 `PUT` 契约；**写死**，不从实现推导） */
+/** 全量替换的 13 个键（后端 `PUT` 契约；**写死**，不从实现推导） */
 const FULL_KEYS = [
   'per_fold_single',
   'per_fold_mixed_times',
   'margin_single',
   'margin_multi',
+  'margin_mixed_single',
+  'margin_mixed_multi',
   'min_fullness',
   'tiers',
   'default_formula',
@@ -278,13 +282,13 @@ describe('算料口径域面板（issue #6580 抽取后的行为面）', () => {
     expect(panel.querySelector('.divide-y'), '组内不再画行间细线').toBeNull()
   })
 
-  it('区块标题把参数分组（用布与余量 / 工艺档位 / 拼色每折用料 / 备用用料公式 / 超高 / 超宽阈值）', async () => {
+  it('区块标题把参数分组（用布与余量 / 工艺档位 / 拼色配布长度 / 备用用料公式 / 超高 / 超宽阈值）', async () => {
     await renderPanel()
     // 每个分组标题都钉在**它自己的面板**上（`getByText` 会被下方术语表里的同名术语撞到）
     const groups: [string, string][] = [
       ['calc-caliber-group-materials', '用布与余量'],
       ['calc-caliber-group-tiers', '工艺档位'],
-      ['calc-caliber-group-mixed', '拼色每折用料'],
+      ['calc-caliber-group-mixed', '拼色配布长度'],
       ['calc-caliber-group-formula', '备用用料公式'],
       ['calc-caliber-group-thresholds', '超高 / 超宽阈值'],
     ]
@@ -322,7 +326,7 @@ describe('算料口径域面板（issue #6580 抽取后的行为面）', () => {
    * §31 P2「信息不重复」的**成对判据**（2026-10-13 真机读图复核逼出来的返修）。
    *
    * 改前 `renderScalar` 里右列值 `valueOf(p.key)` 与输入框 `numberOf(displayConfig, p.key)`
-   * **同源**（都读草稿）⇒ 同一行把同一个数印两遍（真机：8 个标量逐行同款），
+   * **同源**（都读草稿）⇒ 同一行把同一个数印两遍（真机：10 个标量逐行同款），
    * 而两次都不可解释「谁是**要改的**那个」（是回声，不是「已保存 vs 正在改」的对照）。
    *
    * ⇒ 判据必须**成对**，否则「把右列值一律删掉」这种改法也能绿 —— 那会把**只读形态**
@@ -362,7 +366,7 @@ describe('算料口径域面板（issue #6580 抽取后的行为面）', () => {
 // 判据 1（冻结）：域内 8 标量 + tiers + 拼色 + 公式**逐键在位**
 // ══════════════════════════════════════════════════════════════════════════════
 describe('判据 1（#6825）：域内就地可改 —— 逐键在位', () => {
-  it('8 个标量键各有一个输入框（键集取自 `CALC_SCALAR_KEYS`，逐键钉住）', async () => {
+  it('10 个标量键各有一个输入框（键集取自 `CALC_SCALAR_KEYS`，逐键钉住）', async () => {
     await renderPanel()
     // 高级组默认收起（§22 P2 渐进披露）⇒ 先按**用户路径**展开，再逐键断言
     fireEvent.click(screen.getByTestId('param-advanced-toggle-calc'))
@@ -372,7 +376,7 @@ describe('判据 1（#6825）：域内就地可改 —— 逐键在位', () => {
       expect(input).toHaveAttribute('type', 'text')
     }
     // 自证键集不是空集（空集上的循环是空断言）
-    expect(CALC_SCALAR_KEYS.length).toBe(8)
+    expect(CALC_SCALAR_KEYS.length).toBe(10)
   })
 
   it('高级组默认收起 ⇒ 展开后才渲染（渐进披露不变）', async () => {
@@ -406,7 +410,7 @@ describe('判据 1（#6825）：域内就地可改 —— 逐键在位', () => {
     expect(tierPanel()).not.toHaveTextContent('custom')
   })
 
-  it('拼色每折用料表逐行可改（拼 N 次 → 每折用料）', async () => {
+  it('拼色配布长度表逐行可改（拼 N 次 → 配布长度）', async () => {
     await renderPanel()
     expect(screen.getByTestId('calc-caliber-mixed-1')).toHaveValue('0.65')
     expect(screen.getByTestId('calc-caliber-mixed-2')).toHaveValue('1.2')
@@ -469,7 +473,7 @@ describe('判据 10（#7548）：算料口径**所有**数字框允许 3 位小�
     ) as HTMLInputElement[]
   }
 
-  it('标量 / 档位褶倍 / 拼色每折用料：0.125 失焦后**原样留住**（改前被归一成 0.13）', async () => {
+  it('标量 / 档位褶倍 / 拼色配布：0.125 失焦后**原样留住**（改前被归一成 0.13）', async () => {
     await renderPanel()
     for (const id of [
       'calc-caliber-scalar-per_fold_single',
@@ -565,7 +569,7 @@ describe('判据 1b：术语说明区块与参数同屏（口径与术语不丢�
 // 判据 2（冻结）：保存发**全量键**（#7183 起触发方式 = 防抖自动保存，正文口径不变）
 // ══════════════════════════════════════════════════════════════════════════════
 describe('判据 2（#6825；#7183 改判触发方式）：保存发**全量键**（后端是整份替换，缺键会静默回默认值）', () => {
-  it('改「单色每折用料」⇒ 防抖后 PUT 正文逐键齐全（11 键）+ 改的那个键是新值', async () => {
+  it('改「单色每折用料」⇒ 防抖后 PUT 正文逐键齐全（13 键）+ 改的那个键是新值', async () => {
     const sent: CraftCalcConfig[] = []
     await renderPanel(async (draft) => {
       sent.push(draft)

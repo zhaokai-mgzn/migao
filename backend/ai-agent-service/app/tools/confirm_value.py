@@ -70,8 +70,10 @@ _CONFIRM_FIELD_LABELS = {
 #: 逐字同名，跨源漂移由 `tests/unit_ci_workflows/test_craft_calc_config_contract.py` 对账。
 CRAFT_CALC_CONFIG_FIELD_LABELS = {
     "per_fold_single": "单色每折吃布",
-    "per_fold_mixed_times": "拼色每折吃布",
+    "per_fold_mixed_times": "拼色配布长度",
     "margin_single": "单开余量",
+    "margin_mixed_single": "拼色单开余量",
+    "margin_mixed_multi": "拼色多开余量",
     "margin_multi": "多开余量",
     "min_fullness": "褶倍下限",
     "tiers": "工艺档位",

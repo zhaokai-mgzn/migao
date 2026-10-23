@@ -1610,12 +1610,17 @@ export interface OperationLayers {
 export interface CraftCalcConfig {
   /** 单色每折吃布（米）—— 褶数法：用料 = 每折吃布 × 褶数 + 余量 */
   per_fold_single: number
-  /** 拼色「拼次 → 每折吃布（米）」；键是拼次的字符串形态（JSON 对象键恒为字符串） */
+  /** 拼色「拼次 → **配布长度**（米，整幅一次）」；键是拼次的字符串形态（JSON 对象键恒为字符串）。
+   *  ⚠️ 键名 `per_fold_mixed_times` 是跨端冻结的历史名（issue #7560：值语义已改为配布长度） */
   per_fold_mixed_times: Record<string, number>
   /** 单开余量（米） */
   margin_single: number
   /** 多开余量（米） */
   margin_multi: number
+  /** **拼色**单开余量（米）—— 与单开余量并列的独立参数（issue #7560） */
+  margin_mixed_single: number
+  /** **拼色**多开余量（米） */
+  margin_mixed_multi: number
   /** 褶倍下限（行业红线，可配但不可关） */
   min_fullness: number
   /** 工艺档位 `{档位名: {fullness, label}}` */

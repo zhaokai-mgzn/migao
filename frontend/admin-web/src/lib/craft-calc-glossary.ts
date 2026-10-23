@@ -38,7 +38,7 @@
  * | 改前 | 改后 | 为什么 |
  * |---|---|---|
  * | `单色每折吃布（米）` | **`单色每折用料（米）`** | 「吃布」是车间口语，说明里既说「吃布」又说「用料」⇒ 同一件事两个词；统一成「用料」 |
- * | `拼色每折吃布（米）` | **`拼色每折用料（米）`** | 同上 |
+ * | `拼色每折吃布（米）` | **`拼色配布长度（米）`** | 同上 + issue #7560：它是**配布定长**，不是每折系数 |
  * | `褶数法（韩褶公式）` | **`按褶数算（韩褶）`** | 「褶数法 / 倍数法」是**算法名**，商家要的是「按什么算」 |
  * | `倍数法（褶倍数公式）` | **`按褶倍算（打孔一类）`** | 同上 |
  * | 「进加工费组合」 | **「加工费按含它的那一档单价算」** | 「组合键」是实现里的名词（R2 内部机制名） |
@@ -62,7 +62,7 @@
  * 2. **口语与研发腔下屏**：「真值来源 / 勾选才是真值 / 窗帘的常态 / 收不到这笔钱 / 按设计未定价 /
  *    计件系数档 / 不会替你估系数 / 不是这里自己编的 / 看着像一回事」等一律改写为商家视角的陈述句。
  * 3. **拼3次的门禁写准**（读源纠错）：真实门禁 = **勾选该拼次即算料报错**
- *    （`backend/ai-agent-service/app/api/internal.py` 的 `mixed_per_fold_gap(request.special_options, config)`
+ *    （`backend/ai-agent-service/app/api/internal.py` 的 `mixed_patch_gap(request.special_options, config)`
  *    **不看款式**）—— 旧文写成「拼色 + 拼3次 时才算料报错」，把条件写窄了。
  * 4. **拼N次补上裁定的另一半**（用户 2026-09-22 裁定 = `docs/design/order-auto-derivation.md` §4 R3）：
  *    拼N次 ≠ 拼色；**单色款式下拼N次只加工序，每折用料仍按单色公式**（旧文只讲了拼色那一半）。
@@ -85,6 +85,8 @@ export const CALC_SCALAR_KEYS = [
   'per_fold_single',
   'margin_single',
   'margin_multi',
+  'margin_mixed_single',
+  'margin_mixed_multi',
   'min_fullness',
   'hem_margin',
   'meters_rounding_step',
@@ -102,7 +104,7 @@ export type CalcScalarKey = (typeof CALC_SCALAR_KEYS)[number]
  * 3 位 = **毫米精度**，与 `craft_calc_configs` 各列 `NUMERIC(6,3)` 同口径
  * （存得下 3 位而前端只收 2 位 = 输入被静默改值）。
  *
- * 🔴 **本常量是唯一口径**：`CalcCaliberPanel`（标量 / 档位褶倍 / 拼色每折）与
+ * 🔴 **本常量是唯一口径**：`CalcCaliberPanel`（标量 / 档位褶倍 / 拼色配布）与
  * `OversizeThresholdPreview`（试算 4 格）都从它取 —— 新增数字框漏传 ⇒
  * `frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx` 的「判据 10 类级」当场红。
  * ⚠️ 3 位是**口径**不是「不限制」：第 4 位仍由 `NumberInput` 失焦归一掉。
@@ -130,7 +132,8 @@ export const CALC_FIELD_GROUPS = [
   {
     key: 'materials',
     title: '用布与余量',
-    keys: ['per_fold_single', 'margin_single', 'margin_multi', 'hem_margin'],
+    keys: ['per_fold_single', 'margin_single', 'margin_multi',
+           'margin_mixed_single', 'margin_mixed_multi', 'hem_margin'],
   },
   {
     key: 'thresholds',
@@ -166,9 +169,9 @@ export const CALC_PARAM_COPY: Record<string, CalcParamCopy> = {
     impact: '**改它，单色帘的用料米数跟着变**',
   },
   per_fold_mixed_times: {
-    label: '拼色每折用料（米）',
-    hint: '拼色帘按拼的次数各取一档，每个褶用掉的布量',
-    impact: '**拼色帘的每折用料按拼次取值**；余量与单色相同。该拼次未设置每折用料时，系统直接拒绝算料，不估算、也不按单色计算',
+    label: '拼色配布长度（米）',
+    hint: '拼色帘在主布之外另配的一段布：按拼的次数各取一个长度，与褶数无关',
+    impact: '**拼色帘另加这段配布（整幅一次）**；主布仍按单色每折用料算，主布余量比单色每幅略少（拼缝处不重复留边）。该拼次没设置时系统直接拒绝算料，不估算、也不按单色计算',
   },
   margin_single: {
     label: '单开余量（米）',
@@ -179,6 +182,16 @@ export const CALC_PARAM_COPY: Record<string, CalcParamCopy> = {
     label: '多开余量（米）',
     hint: '一幅裁成双开 / 四开时，包边 + 内侧对缝留出的布',
     impact: '多开时每片加在用料上的量（包边 + 内侧对缝）。开数只改每片宽度与这里的加量，**总用料仍然是「每片用料 × 开数」**',
+  },
+  margin_mixed_single: {
+    label: '拼色单开余量（米）',
+    hint: '拼色帘整幅一幅做（单开）时，主布两边包边留出的布',
+    impact: '只作用于**拼色款**的单开主布（比单色的单开余量略少：拼缝处不重复留边）',
+  },
+  margin_mixed_multi: {
+    label: '拼色多开余量（米）',
+    hint: '拼色帘裁成双开 / 四开时，主布包边 + 内侧对缝留出的布',
+    impact: '只作用于**拼色款**的多开主布；与「拼色单开余量」是**两个独立参数**（纸表单开 / 对开读数不同）',
   },
   min_fullness: {
     label: '褶倍下限',

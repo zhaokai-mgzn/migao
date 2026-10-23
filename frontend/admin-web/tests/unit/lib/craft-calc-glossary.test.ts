@@ -103,6 +103,8 @@ const ENGINE_DEFAULT_CALC_CONFIG: CraftCalcConfig = {
   per_fold_mixed_times: { '1': 0.65, '2': 1.2 },
   margin_single: 0.2,
   margin_multi: 0.3,
+  margin_mixed_single: 0.15,
+  margin_mixed_multi: 0.2,
   min_fullness: 1.5,
   tiers: { standard: { fullness: 2.0, label: '标准工艺' }, economy: { fullness: 1.8, label: '经济工艺' } },
   default_formula: 'pleat',
@@ -478,7 +480,7 @@ describe('特殊选项术语（issue #4986）', () => {
     expect(text).toContain('未设置每折用料')
     expect(text).toContain('不估算')
     // 🔴 2026-10-17（#7147，读源纠错）：门禁**不看款式** —— `backend/ai-agent-service/app/api/internal.py`
-    // 的 `mixed_per_fold_gap(request.special_options, config)` 只读 special_options
+    // 的 `mixed_patch_gap(request.special_options, config)` 只读 special_options
     // ⇒ 不得再写成「拼色 + 拼3次」才算料报错（旧文把条件写窄了）。
     expect(text).not.toContain('拼色 + 拼3次')
   })

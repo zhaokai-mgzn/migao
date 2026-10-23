@@ -263,7 +263,7 @@ function mockApiSuccess() {
   )
   mockGetFeeCombinations.mockResolvedValue(ok({ total: 3, combinations: [] }))
   mockGetFeeGaps.mockResolvedValue(ok({ unpriced_combination_total: 0 }))
-  // ⚠️ 读面**整份 11 键**（issue #6825）：改前只回 { hem_margin } 一个键 —— 那是「后端只回一个键」
+  // ⚠️ 读面**整份 13 键**（issue #6825；#7560 起含拼色单开/多开两键）：改前只回 { hem_margin } 一个键 —— 那是「后端只回一个键」
   // 的假形状，会让本页保存那一跳的「全量键」判据**恒真**（缺键是因为夹具本来就缺，不是因为代码对）。
   mockGetCraftCalcConfig.mockResolvedValue(
     ok({
@@ -273,6 +273,8 @@ function mockApiSuccess() {
         per_fold_mixed_times: { '1': 0.65, '2': 0.7 },
         margin_single: 0.2,
         margin_multi: 0.3,
+        margin_mixed_single: 0.15,
+        margin_mixed_multi: 0.2,
         min_fullness: 1.5,
         tiers: { standard: { fullness: 2, label: '标准工艺' }, economy: { fullness: 1.8, label: '经济工艺' } },
         default_formula: 'pleat',
@@ -831,6 +833,8 @@ describe('判据 7：域内零 tab（两层导航并存 = 用户说的「分不�
         'per_fold_mixed_times',
         'margin_single',
         'margin_multi',
+        'margin_mixed_single',
+        'margin_mixed_multi',
         'min_fullness',
         'tiers',
         'default_formula',
@@ -847,7 +851,7 @@ describe('判据 7：域内零 tab（两层导航并存 = 用户说的「分不�
     mockSearchParams.mockReturnValue(new URLSearchParams('domain=calc'))
     render(<SettingsPage />)
     const panel = await screen.findByTestId('config-domain-panel-calc')
-    // 8 个标量里至少有一个输入框常驻（类级守卫逐域遍历在
+    // 10 个标量里至少有一个输入框常驻（类级守卫逐域遍历在
     // frontend/admin-web/tests/unit/lib/domain-write-surface.test.tsx）
     expect(within(panel).getByTestId('calc-caliber-scalar-per_fold_single')).toBeInTheDocument()
     // issue #7183：写面还在，但**保存按钮不在**了 —— 改由「保存态」这处可见证据承担写出口标记

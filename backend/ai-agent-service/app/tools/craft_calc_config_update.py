@@ -60,6 +60,8 @@ ALLOWED_CONFIG_KEYS: tuple = (
     "per_fold_mixed_times",
     "margin_single",
     "margin_multi",
+    "margin_mixed_single",
+    "margin_mixed_multi",
     "min_fullness",
     "tiers",
     "default_formula",

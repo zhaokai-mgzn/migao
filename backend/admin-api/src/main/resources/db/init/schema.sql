@@ -1100,6 +1100,8 @@ CREATE TABLE IF NOT EXISTS craft_calc_configs (
     per_fold_mixed_times JSONB NOT NULL DEFAULT '{"1": 0.65, "2": 1.2}'::jsonb,
     margin_single NUMERIC(6,3) NOT NULL DEFAULT 0.2,
     margin_multi NUMERIC(6,3) NOT NULL DEFAULT 0.3,
+    margin_mixed_single NUMERIC(6,3) NOT NULL DEFAULT 0.15,   -- 拼色单开余量（V188，issue #7560）
+    margin_mixed_multi NUMERIC(6,3) NOT NULL DEFAULT 0.20,    -- 拼色多开余量（V188）
     min_fullness NUMERIC(6,3) NOT NULL DEFAULT 1.5,
     tiers JSONB NOT NULL DEFAULT
         '{"standard": {"fullness": 2.0, "label": "标准工艺"}, "economy": {"fullness": 1.8, "label": "经济工艺"}}'::jsonb,

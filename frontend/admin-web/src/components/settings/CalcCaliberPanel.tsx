@@ -12,7 +12,7 @@
  * —— 那个 tab 的入口已随 #6580 从菜单撤掉 ⇒ **商家从任何导航都改不到这些参数**。
  *
  * 现在本域就是**算料配置的唯一写面**（设计判死线第 1 条：同一份配置不许两个入口）：
- * 8 个标量（`CALC_SCALAR_KEYS`）/ 档位表 `tiers` / 拼色每折吃布表 `per_fold_mixed_times` /
+ * 10 个标量（`CALC_SCALAR_KEYS`）/ 档位表 `tiers` / 拼色配布长度表 `per_fold_mixed_times` /
  * 备用公式 `default_formula` **全部就地可改**，**改完即保存**（issue #7183：没有保存按钮，见下节）；
  * 术语说明（`CraftCalcGlossary`）与阈值预览（`OversizeThresholdPreview`）随参数同屏。
  *
@@ -521,7 +521,7 @@ export function CalcCaliberPanel({
 
   const tiers = displayConfig?.tiers ?? {}
   const mixed = displayConfig?.per_fold_mixed_times ?? {}
-  /** 拼色每折用料的**单位**与**无单位标题**（从标签尾部拆出来做框内后缀；文案本身仍是单一真值） */
+  /** 拼色配布长度的**单位**与**无单位标题**（从标签尾部拆出来做框内后缀；文案本身仍是单一真值） */
   const mixedUnit = splitUnit(CALC_PARAM_COPY.per_fold_mixed_times.label).unit
   const mixedTitle = splitUnit(CALC_PARAM_COPY.per_fold_mixed_times.label).text
 
@@ -687,7 +687,7 @@ export function CalcCaliberPanel({
                   </FormGrid>
                 </FormPanel>
 
-                {/* 拼色每折用料：一行一个拼色次数（单位做框内后缀） */}
+                {/* 拼色配布长度：一行一个拼色次数（单位做框内后缀） */}
                 <FormPanel
                   testid="calc-caliber-group-mixed"
                   title={mixedTitle}
