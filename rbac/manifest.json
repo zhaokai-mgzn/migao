@@ -344,8 +344,7 @@
       "通知中心": null,
       "供应商": "inbound:view",
       "采购单": "inbound:view",
-      "返工单": "after_sales:view",
-      "审批中心": "finance:view"
+      "返工单": "after_sales:view"
     },
     "controller": {
       "经营看板": "dashboard:view",
@@ -376,8 +375,7 @@
       "入库单操作": "inbound:create",
       "供应商": "inbound:view",
       "采购单": "inbound:view",
-      "返工单": "after_sales:view",
-      "审批中心": "finance:view"
+      "返工单": "after_sales:view"
     },
     "auth": {
       "经营看板": "dashboard:view",
@@ -405,8 +403,7 @@
       "企业基础设置": "production:view",
       "供应商": "inbound:view",
       "采购单": "inbound:view",
-      "返工单": "after_sales:view",
-      "审批中心": "finance:view"
+      "返工单": "after_sales:view"
     },
     "user": {}
   },
@@ -475,12 +472,6 @@
       "key": "finance",
       "name": "财务对账",
       "path": "/finance",
-      "code": "finance:view"
-    },
-    {
-      "key": "approvals",
-      "name": "审批中心",
-      "path": "/approvals",
       "code": "finance:view"
     },
     {
@@ -776,18 +767,6 @@
         "agent:session": [
           "GET /api/admin/agent-sessions",
           "GET /api/admin/agent-sessions/{}"
-        ]
-      },
-      "visibility_rule": "all"
-    },
-    {
-      "key": "approvals",
-      "name": "审批中心",
-      "path": "/approvals",
-      "gate": "finance:view",
-      "units": {
-        "finance:view": [
-          "GET /api/admin/approvals"
         ]
       },
       "visibility_rule": "all"

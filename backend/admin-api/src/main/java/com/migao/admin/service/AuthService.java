@@ -1390,11 +1390,10 @@ public class AuthService {
         if (isAll || permissions.contains("finance:view")) {
             tradeChildren.add(menuItem("finance", "财务对账", "/finance"));
         }
-        // 审批中心（issue #7374）：节点码 = 该页第一屏读端点码 `finance:view`（与财务对账同码）
-        // ⇒ 有财务读权就能看到（零授权 delta）；写动作走 finance:create，不在菜单码里体现。
-        if (isAll || permissions.contains("finance:view")) {
-            tradeChildren.add(menuItem("approvals", "审批中心", "/approvals"));
-        }
+        // 🔴 2026-10-24（issue #7593，用户裁定「审批中心菜单放置到右上角……不要单独搞个菜单」）：
+        // 「审批中心」**菜单节点已撤除**（原 issue #7374 在此下发 `approvals`）—— 页面 `/approvals`
+        // 与路由守卫（`finance:view`）一字不动，入口改到顶栏待办入口（前端 `ApprovalBell`）。
+        // ⇒ 有 `finance:view` 的岗位仍是「看得见财务对账、点得进审批中心」，**零授权 delta**。
         if (!tradeChildren.isEmpty()) {
             menus.add(menuGroup("trade-center", "交易管理", tradeChildren));
         }

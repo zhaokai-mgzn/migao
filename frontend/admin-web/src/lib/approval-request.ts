@@ -10,6 +10,20 @@
 
 export type ApprovalObjectKind = 'price_change' | 'stocktake_diff' | 'credit_override'
 
+/**
+ * 五类审批对象的**显示名**（**不把内部码摆到商家面前**，§31 P3）。
+ *
+ * 🔴 单一真值源：审批中心页 `/approvals` 与顶栏待办入口 `components/layout/ApprovalBell.tsx`
+ * 共用它 —— 两处各写一份会让「新增一类审批」时一处显示人话、另一处漏出 `purchase_over`。
+ */
+export const APPROVAL_TYPE_LABEL: Record<string, string> = {
+  credit_override: '超授信',
+  price_change: '改价',
+  refund: '退款',
+  purchase_over: '采购超量',
+  stocktake_diff: '盘点差异',
+}
+
 export interface ApprovalDraft {
   objectType: ApprovalObjectKind
   /** 闸门用来找审批的键（见上：skuId / 盘点单号 / 客户手机号）。 */

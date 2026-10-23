@@ -31,6 +31,11 @@ vi.mock('@/components/layout/NotificationBell', () => ({
   default: () => <div data-testid="notification-bell">NotificationBell</div>,
 }))
 
+// ─── Mock ApprovalBell（issue #7593：顶栏待审批入口，自身判据在 ApprovalBell.test.tsx）───
+vi.mock('@/components/layout/ApprovalBell', () => ({
+  default: () => <div data-testid="approval-bell">ApprovalBell</div>,
+}))
+
 // ─── Mock next/navigation ───
 const mockRouterPush = vi.fn()
 let mockPathname = '/'
@@ -487,6 +492,14 @@ describe('Header', () => {
       render(<Header />)
     })
     expect(screen.getByTestId('notification-bell')).toBeInTheDocument()
+  })
+
+  // 顶栏待审批入口（issue #7593）：与通知铃铛**并列**的两条入口（通知 = FYI；审批 = 要动手）
+  it('应渲染 ApprovalBell 子组件（顶栏待审批入口）', async () => {
+    await act(async () => {
+      render(<Header />)
+    })
+    expect(screen.getByTestId('approval-bell')).toBeInTheDocument()
   })
 
   // ─── Header 结构 ───

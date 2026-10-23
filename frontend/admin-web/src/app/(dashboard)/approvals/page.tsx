@@ -5,6 +5,9 @@ import { toast } from 'sonner'
 import { Button, EmptyState, Input, Modal, PageCard, PageHeader } from '@/components/ui'
 import { SELECT_CONTROL_FIELD } from '@/components/ui/Select'
 import { displayEnum } from '@/lib/enum-display'
+// 五类对象显示名的唯一真值源（issue #7593）：顶栏待办入口 `ApprovalBell` 共用同一份，
+// 避免「新增一类审批」时一处显示人话、另一处漏出内部码（§31 P3）。
+import { APPROVAL_TYPE_LABEL as TYPE_LABEL } from '@/lib/approval-request'
 import ListLoadError from '@/components/common/ListLoadError'
 import { loadErrorMessage } from '@/lib/api-error'
 import { approvalApi } from '@/lib/api'
@@ -52,15 +55,6 @@ const STATUS_BADGE: Record<ApprovalStatus, string> = {
   approved: 'bg-emerald-50 text-emerald-700',
   rejected: 'bg-red-50 text-red-700',
   withdrawn: 'bg-neutral-100 text-neutral-500',
-}
-
-/** 五类业务对象的中文名（**不把内部码摆到商家面前**，§31）。 */
-const TYPE_LABEL: Record<string, string> = {
-  credit_override: '超授信',
-  price_change: '改价',
-  refund: '退款',
-  purchase_over: '采购超量',
-  stocktake_diff: '盘点差异',
 }
 
 /** 状态筛选的顺序（待审永远第一：那是要人动手的一档）。 */
