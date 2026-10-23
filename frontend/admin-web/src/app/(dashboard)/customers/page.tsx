@@ -206,11 +206,19 @@ export default function CustomersPage() {
   }
 
   // 标签管理
-  const openTagManager = () => {
+  const openTagManager = useCallback(() => {
     setEditingTag(null)
     setTagForm({ name: '', color: TAG_COLORS[0] })
     setTagModalOpen(true)
-  }
+  }, [])
+
+  // 深链（issue #7526）：客户详情「标签」空态里的「去添加标签」带 `?manageTags=1` 进来 ⇒ 直接打开
+  // 标签管理，不让商家回到列表页再自己找一遍。用 `window.location` 而不是 `useSearchParams`
+  // （与入库单深链 #7524 同口径：少一层 Suspense 约束，也不给整模块 hook 替身多要一个导出）。
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (new URLSearchParams(window.location.search).get('manageTags') === '1') openTagManager()
+  }, [openTagManager])
 
   const handleSaveTag = async () => {
     if (!tagForm.name.trim()) {

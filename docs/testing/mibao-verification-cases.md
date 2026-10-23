@@ -10824,7 +10824,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（132 case）
+## 前端 UI 域（133 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -12739,6 +12739,21 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-23 新增（issue #7508，用户真机截图 + 逐字「这里最大化之后显示的有问题，没有呈现最大化的状态」「我看只有我电脑是这样的，我换一台电脑就正常了」）：`MibaoChatPanel` 的 `containerStyle` 里 hooks 残留 px **优先于** `defaultWidth/defaultHeight` ⇒ 拖过一次面板后，`FloatingAssistant` 全屏分支传的 `100%/100vh` 被判无效，面板停在左上角旧 px 尺寸。修法 = 新增显式 `fullscreen` 模式位（尺寸归视口所有：`100%`/`100%`）+ 全屏不渲染缩放手柄；持久化语义与四模式状态机一字未改（退出全屏仍回到用户拖过的尺寸）。 ｜ tags: ui, admin-web, floating-assistant, fullscreen, resize
 
+### UI-133. 客户详情「标签」：没有标签可加时点「+」必须给出可见反馈 + 去处（系统无标签 / 客户已打满两种空态） 🔵
+```
+你: 当系统没有标签时，点击+号无反应，应该引导客户去添加标签
+期望: direct_reply
+数据: 判据 1·系统无标签时点「+」有反馈（会红）：`getCustomerTags` 返回空数组时点触发器 ⇒ 面板 `customer-tag-empty` 在场、文案说明「系统还没有标签」、入口「去添加标签」把路由推到 `/customers?manageTags=1`。修前形态 = 面板被 `availableTags.length > 0` 门控 ⇒ 点「+」零反馈（触发器可点、DOM 无任何变化）。执行点 = frontend/admin-web/tests/unit/pages/customer-detail-tags-empty.test.tsx
+数据: 判据 2·两种空态不混（会红）：标签存在但该客户已全部关联 ⇒ 文案是「全部标签」、不得说成「系统还没有标签」，入口换为「管理标签」且同样推到 `/customers?manageTags=1`。执行点同上
+数据: 判据 3·负控（会红）：未点击时无空态面板且 `aria-expanded=false`；有可加标签时不出空态、选择器照常列出可加的那一条（空态不得掩盖正常选择器）。执行点同上
+数据: 判据 4·深链一步到位（会红）：`/customers?manageTags=1` ⇒ 客户列表页直接打开「标签管理」模态（「新建标签」表单 / 「已有标签」块在场）；不带参数 ⇒ 不自动打开（进客户列表不该被弹窗打断）。执行点 = frontend/admin-web/tests/unit/pages/customers-tag-deeplink.test.tsx
+数据: 判据 5·类级元守卫（会红）：`frontend/admin-web/src/**` 里 0 处「state 开合的浮层被 `列表.length > 0` 门控」的形态（`{showXxx && 某处.length > 0 && (`）—— 修前恰 1 处 = 本单病灶；判别力自证 = 修前那一行原样注入必须命中、良性写法（只由 state 门控 / 只判列表非空 / 整行注释里的反例）必须放行；扫描面非空（文件数 > 100）防「空集比空集」的假绿。执行点 = frontend/admin-web/tests/unit/popover-empty-gate-guard.test.ts
+前置: 本用例是 [backend-contract] 纯前端交互契约用例（jsdom 渲染 + 源码形态扫描），不依赖真实服务与共享夹具；前置不成立时对应单测直接红，agent-eval 栈不跑它
+跳过: [backend-contract] 纯前端交互 + 源码形态契约（不经过 LLM 对话/工具），由 admin-web vitest 执行，不进入 agent-eval 冒烟
+```
+真值: frontend-fix.no-api-change
+溯源: 2026-10-23 新增（issue #7526，用户客户详情截图 + 逐字「当系统没有标签时，点击+号无反应，应该引导客户去添加标签」）：面板渲染条件由 `showTagPicker && availableTags.length > 0` 改为「`showTagPicker` 每次都渲染」+ 内容三分支（可加标签列表 / 系统无标签空态 / 客户已打满空态），空态里给「去添加标签 | 管理标签」→ `/customers?manageTags=1`；客户列表页按该参数直接打开标签管理模态（`window.location` 读参，与入库单 #7524 深链同口径）。触发器补 `aria-label`/`aria-expanded`/`aria-haspopup`（纯图标按钮的无障碍名）。类级固化 = 源码形态守卫 `popover-empty-gate-guard.test.ts`（修前 1 处、修后 0 处）。不改后端、不改标签数据模型，标签绑定语义一字未动。 ｜ tags: ui, admin-web, customer-tag, empty-state, inert-trigger
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -12768,8 +12783,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：869（活跃 141，跳过 728）
-- tier 分布：smoke 12 / normal 801 / adversarial 32
+- 用例总数：870（活跃 141，跳过 729）
+- tier 分布：smoke 12 / normal 802 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12794,7 +12809,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：132
+- 前端 UI 域：133
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）

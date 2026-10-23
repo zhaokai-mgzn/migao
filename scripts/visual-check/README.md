@@ -19,6 +19,7 @@ node scripts/visual-check/price-books-page.mjs    # 价格本
 node scripts/visual-check/stocktakes-page.mjs     # 盘点单（issue #7373）
 node scripts/visual-check/rework-orders-page.mjs   # 返工单（issue #7377）
 node scripts/visual-check/after-sales-rework-entry.mjs  # 售后详情「发起返工」入口（issue #7377 段 4）
+node scripts/visual-check/customer-detail-tags-empty.mjs # 客户详情「标签」空态 + 去处（issue #7526）
 open /tmp/reports-filled.png /tmp/reports-empty.png
 ```
 
