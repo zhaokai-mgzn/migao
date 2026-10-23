@@ -62,7 +62,7 @@
  * 2. **口语与研发腔下屏**：「真值来源 / 勾选才是真值 / 窗帘的常态 / 收不到这笔钱 / 按设计未定价 /
  *    计件系数档 / 不会替你估系数 / 不是这里自己编的 / 看着像一回事」等一律改写为商家视角的陈述句。
  * 3. **拼3次的门禁写准**（读源纠错）：真实门禁 = **勾选该拼次即算料报错**
- *    （`backend/ai-agent-service/app/api/internal.py` 的 `mixed_per_fold_gap(request.special_options, config)`
+ *    （`backend/ai-agent-service/app/api/internal.py` 的 `mixed_patch_gap(request.special_options, config)`
  *    **不看款式**）—— 旧文写成「拼色 + 拼3次 时才算料报错」，把条件写窄了。
  * 4. **拼N次补上裁定的另一半**（用户 2026-09-22 裁定 = `docs/design/order-auto-derivation.md` §4 R3）：
  *    拼N次 ≠ 拼色；**单色款式下拼N次只加工序，每折用料仍按单色公式**（旧文只讲了拼色那一半）。
