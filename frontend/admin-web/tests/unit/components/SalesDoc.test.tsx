@@ -29,7 +29,7 @@ import {
   assertPaperKeepsMissingDistinct,
   paperNumericColumn,
 } from '@/lib/print-doc-paper'
-import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
+import type { Order, OrderItem, PaymentQrcodeMap, ProcessingOrder } from '@/types'
 
 /**
  * 销售单（**三联纸 241mm × 140mm**，issue #5651）—— 照客户现行实物制式（实证表 #4）。
@@ -47,6 +47,9 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  * ⑤ 🔴 **缺值可见 / 长名截断可见**：缺值显式占位 `—`；长名走 CSS 省略号（`sales-cut`）
  *    且**不裁字符串**（纸面是给人看的，静默裁切 = 账实不符的另一种形态）；
  * ⑥ **缺码不画假码** + 打印隔离沿用 #4983 / #4965 范式（共享 `print-doc`）；
+ * ⑧ **左上角作业单扫码报工码**（issue #7530）：码值**逐字**取服务端下发的
+ *    `processingOrder.scan_url`（`{base}/o/{短码}` ⇒ 302 到工人报工页 `/w/`），前端**不拼**；
+ *    无码 ⇒ 整块不出现（不画占位框、不回落作业单号）。见 describe「⑬」；
  * ⑦ **数量列消费实发**（issue #5651 收口）：经 admin 读面 `GET /api/admin/orders/{id}/shipments`
  *    拿 `order_shipment_items` 的**实发**，四态（已发货 / 部分发货 / 未发货 / 读面没取到）
  *    **各自可判**、纸面**标明基准**、**永不印 0**、挂不到订单行的实发行**显式提示**。
@@ -90,6 +93,26 @@ function buildOrder(overrides: Partial<Order> = {}): Order {
   }
 }
 
+/**
+ * 作业单（`processingOrder`）夹具 —— 销售单左上角扫码报工码的来源（issue #7530）。
+ *
+ * 🔴 `scan_url` 刻意用**非 `app.migaozn.com`** 的示例域：纸面**只认**服务端下发的这个值，
+ * 前端自己拼 `{base}/o/{短码}` 会印出另一个地址 ⇒ 那条红证靠这个差集判得出来
+ * （前端拼域名 / 路径段 = 第二份真值，换域名时纸面与读面会静默不一致）。
+ */
+function buildProcessingOrder(overrides: Partial<ProcessingOrder> = {}): ProcessingOrder {
+  return {
+    id: 'po-1',
+    orderId: 'order-1',
+    processingOrderNo: 'CK-20261023-0001',
+    order_kind: 'outbound',
+    status: 'generated',
+    short_code: '7K3M9QP2',
+    scan_url: 'https://print.example.test/o/7K3M9QP2',
+    ...overrides,
+  }
+}
+
 /** 「未发货」读面（发货单列表非空、但一条实发明细都没有的两种形态都覆盖得到） */
 const NO_SHIPMENT: OrderShipmentRead = { status: 'producing', shipments: [] }
 
@@ -122,8 +145,12 @@ const css = (): string =>
 const text = (testId: string): string =>
   document.querySelector(`[data-testid="${testId}"]`)?.textContent?.trim() ?? ''
 const sheet = (): HTMLElement | null => document.querySelector('[data-testid="sales-sheet"]')
+/** 左上角作业单扫码报工码的块（无码 ⇒ `null`）与它的**确切内容**（`<svg><title>` = qrcode.react 的 value） */
+const workOrderQr = (): Element | null => document.querySelector('[data-testid="sales-work-order-qr"]')
+const workOrderQrValue = (): string =>
+  workOrderQr()?.querySelector('svg title')?.textContent?.trim() ?? ''
 
-/** 明细区逐格取值（序号/品名/货号/颜色/门幅/数量/单位/单价/金额）—— 用于「切介质取值不变」的逐格比对 */
+/** 明细区逐格取值（序号/货号/颜色/门幅/数量/单位/单价/金额）—— 用于「切介质取值不变」的逐格比对 */
 function rowCells(): string[][] {
   return Array.from(document.querySelectorAll('[data-testid^="sales-item-"]')).map((tr) =>
     Array.from(tr.querySelectorAll('td')).map((td) => td.textContent?.trim() || '')
@@ -160,28 +187,49 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
   })
 
   it('② 介质是**参数**不是副本：切 A4 后 @page 变、而逐格取值**逐字不变**', () => {
-    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} printTarget="sales" />)
+    render(
+      <SalesDoc
+        order={buildOrder()}
+        shipments={NO_SHIPMENT}
+        processingOrder={buildProcessingOrder()}
+        paymentQrcodes={{}}
+        printTarget="sales"
+      />
+    )
     const tri = rowCells()
     const triHeader = Array.from(document.querySelectorAll('.sales-doc-table thead th')).map(
       (th) => th.textContent?.trim()
     )
     const triDue = text('sales-total-due')
     const triTotal = text('sales-total')
+    const triQr = workOrderQrValue()
     cleanup()
-    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} media="a4" paymentQrcodes={{}} printTarget="sales" />)
+    render(
+      <SalesDoc
+        order={buildOrder()}
+        shipments={NO_SHIPMENT}
+        processingOrder={buildProcessingOrder()}
+        media="a4"
+        paymentQrcodes={{}}
+        printTarget="sales"
+      />
+    )
     // 版面参数随介质变（issue #7309：切到 A4 后 `@page` 边距必须是 0 —— 否则浏览器会印出
     // 自己的页眉页脚；版面内缩改由容器 padding 承担）
     expect(css()).toContain('@page { size: A4; margin: 0; }')
     expect(css()).toMatch(/\.sales-print-area\[data-print-target='sales'\]\s*\{[^}]*padding:\s*12mm/)
     expect(doc()?.getAttribute('data-print-media')).toBe('a4')
     expect(sheet()?.style.height).toBe('')
-    // 而**字段映射一份都没变**（复制一份映射给 A4 ⇒ 这里会红）
+    // 而**字段映射一份都没变**（复制一份映射给 A4 ⇒ 这里会红）：
+    // 逐格取值 / 表头 / 金额汇总 / 扫码报工码值 一律逐字相同
     expect(rowCells()).toEqual(tri)
     expect(
       Array.from(document.querySelectorAll('.sales-doc-table thead th')).map((th) => th.textContent?.trim())
     ).toEqual(triHeader)
     expect(text('sales-total-due')).toBe(triDue)
     expect(text('sales-total')).toBe(triTotal)
+    expect(triQr).toBe('https://print.example.test/o/7K3M9QP2')
+    expect(workOrderQrValue()).toBe(triQr)
   })
 
   it('② 列清单 = SALES_DOC_COLUMNS（全仓唯一一份；商品行粒度，不是报价单的按套粒度）', () => {
@@ -190,32 +238,16 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
       (th) => th.textContent?.trim()
     )
     expect(headers).toEqual([...SALES_DOC_COLUMNS])
-    // issue #6869：补上商品 SKU 四件套（品名/颜色/门幅），撤掉恒空的「备注」（原读 `item.color`）
-    expect([...SALES_DOC_COLUMNS]).toEqual([
-      '序号',
-      '品名',
-      '货号',
-      '颜色',
-      '门幅',
-      '数量',
-      '单位',
-      '单价',
-      '金额',
-    ])
+    // issue #6869：商品 SKU 四件套里补过「品名」与「颜色 / 门幅」，撤掉恒空的「备注」；
+    // 🔴 issue #7530（用户 2026-10-23 逐字「销售单不要品名」）：「品名」列**退场**，
+    // 单据身份改由货号 / 颜色 / 门幅承载 ⇒ 9 列变 8 列。
+    expect([...SALES_DOC_COLUMNS]).toEqual(['序号', '货号', '颜色', '门幅', '数量', '单位', '单价', '金额'])
     expect(rowCells()).toHaveLength(1)
     // 🔴 货号取响应真字段 `skuCode` —— 夹具**没有** `productCode`（幽灵字段）：
     // 旧实现（`productCode || productName`）在这一格印的是品名 ⇒ 本判据即红证
-    expect(rowCells()[0]).toEqual([
-      '1',
-      '布艺遮光帘A',
-      '0012',
-      '米白',
-      '2.8米',
-      '3',
-      '米',
-      '10.00',
-      '500.00',
-    ])
+    expect(rowCells()[0]).toEqual(['1', '0012', '米白', '2.8米', '3', '米', '10.00', '500.00'])
+    // 🔴 品名**整列退场**：纸面任何一处都不再印商品名（去掉表头却留着单元格 = 串列）
+    expect(doc()?.textContent).not.toContain('布艺遮光帘A')
   })
 
   it('🔴 ③ 金额取服务端字段：行金额 = item.amount（≠ 单价×数量），本单应收 = order.actualAmount', () => {
@@ -281,8 +313,8 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
       />
     )
     // 判据面 = **缺值那一行**（真 0 的对照行在另一行：缺值行不得有 0.00，真 0 行不得有「—」）
-    // 金额列 index = 8（9 列表：序号0 品名1 货号2 颜色3 门幅4 数量5 单位6 单价7 金额8）
-    const amountColumn = paperNumericColumn(doc(), { column: 8 })
+    // 金额列 index = 7（issue #7530 起 8 列表：序号0 货号1 颜色2 门幅3 数量4 单位5 单价6 金额7）
+    const amountColumn = paperNumericColumn(doc(), { column: 7 })
     // 单据：销售单 SalesDoc
     assertNoPaperZeroFill(amountColumn.slice(0, 1), {
       label: '销售单 SalesDoc',
@@ -487,5 +519,88 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
     expect(text('sales-qty-basis')).toContain('1 行实发明细未挂到订单行')
     // 挂不上的那行**不进**本表（不猜归属），但绝不静默
     expect(document.querySelectorAll('[data-testid^="sales-item-"]')).toHaveLength(1)
+  })
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // ⑬ 左上角作业单扫码报工二维码（issue #7530）
+  //   码值 = **服务端下发**的 `processingOrder.scan_url`（`{base}/o/{短码}` ⇒ 302 到工人报工页 `/w/`）
+  // ══════════════════════════════════════════════════════════════════════════════
+
+  it('⑬ 有作业单扫码短链 ⇒ 纸面**左上角**出码，码值逐字 = 服务端 scan_url', () => {
+    render(
+      <SalesDoc
+        order={buildOrder()}
+        shipments={NO_SHIPMENT}
+        processingOrder={buildProcessingOrder()}
+        paymentQrcodes={{}}
+      />
+    )
+    const qr = workOrderQr()
+    expect(qr).not.toBeNull()
+    // ① 码值**逐字**取服务端值（qrcode.react 把 value 写进 `<svg><title>`）
+    expect(workOrderQrValue()).toBe('https://print.example.test/o/7K3M9QP2')
+    // ② 位置 = 纸面**左上角**：QR 块在 `.sales-sheet` 的第一段里，且文档顺序在「销售单」抬头之前
+    //    （不是页脚 / 右下角、也不与收款码混在一处）
+    const title = Array.from(sheet()?.querySelectorAll('span') ?? []).find(
+      (el) => el.textContent?.trim() === '销售单'
+    )
+    expect(title).toBeTruthy()
+    expect(sheet()?.firstElementChild?.contains(qr)).toBe(true)
+    expect(Boolean(qr!.compareDocumentPosition(title!) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true)
+    expect(qr!.closest('[data-testid^="sales-qr-"]')).toBeNull()
+  })
+
+  it('⑬ 短码人可读：扫码枪 / 相机读不出时由印在码旁的短码兜底', () => {
+    render(
+      <SalesDoc
+        order={buildOrder()}
+        shipments={NO_SHIPMENT}
+        processingOrder={buildProcessingOrder()}
+        paymentQrcodes={{}}
+      />
+    )
+    expect(text('sales-work-order-qr-label')).toBe('扫码报工')
+    expect(text('sales-work-order-short-code')).toBe('7K3M9QP2')
+  })
+
+  it('⑬ 缺码**不画假码**：无 scan_url ⇒ 整块不出现（零 QR / 零占位框 / 不回落作业单号）', () => {
+    render(
+      <SalesDoc
+        order={buildOrder()}
+        shipments={NO_SHIPMENT}
+        // 只有短码、没有服务端下发的短链（存量单未实例化 / 读面没取到）—— 前端**不自己拼**
+        processingOrder={buildProcessingOrder({ scan_url: null })}
+        paymentQrcodes={{}}
+      />
+    )
+    expect(workOrderQr()).toBeNull()
+    // 不画占位框；不回落作业单号；也不把裸短码印成「一个码」（扫出来只有文本、打不开页面）
+    expect(doc()?.querySelector('[data-testid="sales-work-order-qr-placeholder"]')).toBeNull()
+    expect(doc()?.textContent).not.toContain('CK-20261023-0001')
+    expect(doc()?.textContent).not.toContain('7K3M9QP2')
+    // 页脚收款码那侧的「缺码不画假码」口径不受影响（无码 ⇒ 整块不出现）
+    expect(doc()?.querySelectorAll('img')).toHaveLength(0)
+
+    cleanup()
+    // 没有作业单（订单详情页读面没取到）⇒ 同样整块不出现
+    render(<SalesDoc order={buildOrder()} shipments={NO_SHIPMENT} paymentQrcodes={{}} />)
+    expect(workOrderQr()).toBeNull()
+  })
+
+  it('⑬ 红证：前端自己拼 `{base}/o/{短码}` ⇒ 码值与服务端下发值不同 ⇒ 上面那条必红', () => {
+    const serverScanUrl = 'https://print.example.test/o/7K3M9QP2'
+    render(
+      <SalesDoc
+        order={buildOrder()}
+        shipments={NO_SHIPMENT}
+        processingOrder={buildProcessingOrder({ scan_url: serverScanUrl })}
+        paymentQrcodes={{}}
+      />
+    )
+    // 「前端自己拼」的写法 —— 与服务端下发值不同（域名 / 路径段是第二份真值）
+    const fabricated = 'https://app.migaozn.com/o/7K3M9QP2'
+    expect(fabricated).not.toBe(serverScanUrl)
+    expect(workOrderQrValue()).toBe(serverScanUrl)
+    expect(workOrderQrValue()).not.toBe(fabricated)
   })
 })

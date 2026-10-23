@@ -20,6 +20,7 @@
 | C6 | 注入式红证 + **内容指纹**自证（禁 mtime / size，issue #4260） | 注入未生效 ⇒ 红（红证自己是空断言） |
 | C8 | **纸面不印工序清单**（issue #7274：用户逐字「工序细节不用在打印单上，移除掉工序相关的表格信息」） | 把工序清单（`operationsByItem` / `OPERATIONS_DOC_COLUMNS` / `processing-doc-operation`）接回任一受管打印单据 ⇒ 红 |
 | C9 | **发货单「加工项」是一行、不是表格**（issue #7275：用户逐字「加工项表格应该用一行表达…比如改成a+b+c这样？」） | 退回逐项两列表（出现 `<DocTh>加工项</DocTh>` / 去掉 `shipment-processing-items` 锚点）⇒ 红 |
+| C11 | **纸面扫码码值只取服务端下发**（issue #7530）：受管打印单据里不得出现扫码短链路径段（`/o/` 作业单级 · `/s/` 部位级）—— 前端拼域名 / 路径段 = 第二份真值，而**纸上的码印出去就收不回来** | 把销售单的码值改成 `` `${base}/o/${processingOrder.short_code}` `` ⇒ 红 |
 | C10 | **纸面不带浏览器页眉页脚**（issue #7309：用户逐字「我建议拿掉打印的页头和页脚」，附打印成品截图） | 把浏览器打印介质的上下 `@page` 边距写回「够大」（≥ 8.7mm）/ A4 没有 `contentInset` / 单据容器不带内缩 + `box-decoration-break: clone` ⇒ 红 |
 
 ⚠️ **判据按「去注释后的代码」判定**：各单据的文件头都**用注释解释**这些坑（会写出反例），
@@ -62,7 +63,8 @@ SINGLE_PROJECTION: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "销售单",
         "frontend/admin-web/src/components/orders/SalesDoc.tsx",
-        ("序号", "品名", "货号", "颜色", "门幅", "数量", "单位", "单价", "金额"),
+        # issue #7530（用户 2026-10-23「销售单不要品名」）：「品名」列退场 ⇒ 9 列变 8 列
+        ("序号", "货号", "颜色", "门幅", "数量", "单位", "单价", "金额"),
     ),
 )
 
@@ -768,3 +770,40 @@ def test_c10_browser_chrome_stays_off_the_paper():
     assert _browser_chrome_problems(clean, stripped_docs) != [], (
         "抹掉容器内缩 / clone **没判红** ⇒ 单据侧判据是空断言"
     )
+
+# ── C11：纸面扫码入口的码值只取服务端下发（issue #7530）──────────────────────────
+
+#: 扫码稳定短链的**路径段**（服务端装配：`{base}/o/{短码}` = 作业单级、`{base}/s/{短码}` = 部位级）。
+#: 🔴 判定只认「路径段字面量」而不是「有没有 app.migaozn.com」：域名来自配置（`scan_url` 已由服务端
+#: 装配好），**拼路径段**才是「前端自己造码值」的那一步。
+_SHORT_LINK_SEGMENTS: tuple[str, ...] = ("/o/", "/s/")
+
+
+def _short_link_segments(code: str) -> list[str]:
+    """C11 判据本体：代码（已剥注释）里出现的扫码短链路径段。"""
+    return [seg for seg in _SHORT_LINK_SEGMENTS if seg in code]
+
+
+def test_c11_print_docs_never_assemble_scan_short_links():
+    """C11：受管打印单据**不得**自己拼扫码短链（码值只许逐字取服务端下发的 `scan_url`）。
+
+    病（issue #7530）：销售单左上角的作业单扫码报工码，码值必须逐字取 `processingOrder.scan_url`
+    —— 那是服务端装配的稳定短链（`{base}/o/{短码}` ⇒ 302 到工人报工页）。单据里自己拼域名 /
+    路径段 = **第二份真值**：换域名或换路径段时纸面与读面会静默不一致，而**纸上的码印出去就收不回来**。
+
+    红证 = 内存注入（不写盘）：拼路径段的样本必须被判红，逐字取 `scan_url` 的样本必须判绿。
+    """
+    problems: list[str] = []
+    for rel, _media in PRINT_DOCS:
+        hits = _short_link_segments(_strip_comments(_read(rel)))
+        if hits:
+            problems.append(
+                f"{rel} 出现扫码短链路径段 {hits} —— 纸面码值必须逐字取服务端下发的 `scan_url`"
+                "（单据自己拼域名 / 路径段 = 第二份真值）"
+            )
+    assert problems == [], "\n".join(problems)
+
+    # 判别力自证（内存注入）：两类样本必须**一红一绿**，否则本判据是空断言
+    assert _short_link_segments("const v = `${base}/o/${po.short_code}`") == ["/o/"]
+    assert _short_link_segments("const v = `${base}/s/${part_short_code}`") == ["/s/"]
+    assert _short_link_segments("const v = processingOrder.scan_url") == []
