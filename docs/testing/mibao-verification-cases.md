@@ -10522,7 +10522,7 @@
 ```
 溯源: 2026-10-06 新增（issue #6403，P1·图片识别预填）。取号 = `scripts/next_case_id.py PR` 现取最小空闲号（判取 **PR-022**，历史空档）。红→绿（判据先落、实现后落）：改前 `npx vitest run` 四个文件 ⇒ 4 failed files / **9 failed | 11 passed (20)**（含 3 failed 为断言读数、页面级 2c 超时、`rich-text-plain` 整文件因模块不存在而红）；实现后同一批 **120 passed（10 files）**，并加跑包内相关面（lib / components / pages/products）。真浏览器两屏（上传图 → 识别卡片 → 一键填入）**未覆盖**（承载体没有上传图片的口，见 PR body 的「未覆盖项」）。 ｜ tags: image-recognize, door-width, frontend, prefill, regression
 
-### PR-074. 图片建品「补充一句」的字面事实落表单：货号 2659 / 门幅 2.8+3.2 / 颜色按「货号-序号+颜色名」/ SKU 4 行（issue #7528） 🔵
+### PR-131. 图片建品「补充一句」的字面事实落表单：货号 2659 / 门幅 2.8+3.2 / 颜色按「货号-序号+颜色名」/ SKU 4 行（issue #7528） 🔵
 ```
 你: 建品页「拍照 / 上传识别」的补充一句里逐字写：「这个商品的货号是2659，颜色格式是2659-序号+颜色名，门幅是2.8和3.2」，再上传一张色卡图
 期望: direct_reply
@@ -10537,7 +10537,7 @@
 数据: **边界（如实登记）**：只认三类显式说法（货号/款号/商品编号、门幅/幅宽/门宽、颜色格式/命名）；那句话里枚举颜色名**本单不做**（颜色内容仍必须来自图）；后端契约与 `INTERPRETABLE_KEYS` 白名单**零改动**（判据：backend/ai-agent-service/tests/test_vision/test_interpret.py 全绿）。
 跳过: [backend-contract] 确定性契约/机械判据，由 vitest（declared-facts / FormInterpretCard / products-new-recognize-entry / image-recognize）验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
-溯源: 2026-10-23 新增（issue #7528）。取号 = `python3 scripts/next_case_id.py PR`（判取 PR-074，历史空档）。红→绿（注入式双向对照，实跑）：注入 = 去掉 `facts={declaredFacts}` + 摘掉 `sku_code` 映射 ⇒ `Tests 3 failed | 37 passed (40)`（页面级判据 2d + declared-facts 判据 6 两条）；撤回注入 ⇒ `Tests 40 passed (40)`。旁证：Growth Gate 首轮判 ❌（新模块 `product-attribute-options.ts` 缺测）⇒ 补 `tests/unit/lib/product-attribute-options.test.ts` 后 `blockers=0`。 ｜ tags: image-recognize, declared-facts, prefill, frontend, regression
+溯源: 2026-10-23 新增（issue #7528）。取号 = `python3 scripts/next_case_id.py PR`（原取 PR-074 历史空档；rebase 到 main 后与 main 的 PR-074（#7545 生图）撞号 ⇒ 按 next id 重编号为 PR-131）。红→绿（注入式双向对照，实跑）：注入 = 去掉 `facts={declaredFacts}` + 摘掉 `sku_code` 映射 ⇒ `Tests 3 failed | 37 passed (40)`（页面级判据 2d + declared-facts 判据 6 两条）；撤回注入 ⇒ `Tests 40 passed (40)`。旁证：Growth Gate 首轮判 ❌（新模块 `product-attribute-options.ts` 缺测）⇒ 补 `tests/unit/lib/product-attribute-options.test.ts` 后 `blockers=0`。 ｜ tags: image-recognize, declared-facts, prefill, frontend, regression
 
 ### PR-023. 余料「回收 / 报废」的状态迁移走 DB 原子条件更新（CAS）⇒ 并发双 recover 恰一次回收额入账、回收×报废恰一个赢家（issue #6960） 🔵
 ```
@@ -13285,7 +13285,7 @@
 - PR-016: 建品/改品 status 枚举准入：非法值 4xx 且列出合法枚举；状态机死行（active/on_shelf）可改回 off_sale/draft 自救
 - PR-020: 图片识别色号清单拆行：一张色卡的 16 个色号 ⇒ 16 行颜色（改前塞成一格、被 30 字符输入框削断）（issue #6354）
 - PR-022: 图片识别门幅清单拆行 + 识别卡片描述转可读纯文本：一键填入后「规格尺寸」不再 (0)、卡片不再裸显示 <p>（issue #6403）
-- PR-074: 图片建品「补充一句」的字面事实落表单：货号 2659 / 门幅 2.8+3.2 / 颜色按「货号-序号+颜色名」/ SKU 4 行（issue #7528）
+- PR-131: 图片建品「补充一句」的字面事实落表单：货号 2659 / 门幅 2.8+3.2 / 颜色按「货号-序号+颜色名」/ SKU 4 行（issue #7528）
 - PR-028: Agent 批次「执行 / 撤销」的准入走 DB 原子条件更新（CAS）⇒ 并发 execute/revert 恰一轮 apply、商品终态可复算（issue #6960）
 - PR-124: 米宝解读可落值的商品字段放开为 name/material/craft/color；door_width 与 price 只写 note 建议、值不落地（issue #6361）
 - PR-125: 米宝解读额外生成商品描述文案 ⇒ 预填建品页「图文描述」富文本区（来源 [米宝解读]、有值才写键、不覆盖商家内容）（issue #6362）

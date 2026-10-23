@@ -5013,7 +5013,7 @@ cases:
   # PR-074（issue #7528，P1·图片建品）：建品页「补充一句」里的货号 / 门幅 / 颜色命名规则
   #   必须真的落进表单（改前整条丢弃 ⇒ 货号空缺、门幅未选中、颜色不按格式、SKU 0 行）
   # ==========================================================================
-  - id: PR-074
+  - id: PR-131
     legacy_id: ""
     title: "图片建品「补充一句」的字面事实落表单：货号 2659 / 门幅 2.8+3.2 / 颜色按「货号-序号+颜色名」/ SKU 4 行（issue #7528）"
     domains:
@@ -5043,7 +5043,7 @@ cases:
       - "**判据 7（不覆盖 / 可覆盖）**：`[图片识别]` 已有值的格不被覆盖；`[米宝解读]` 的推断值可被商家明说的字面事实覆盖。执行点 = frontend/admin-web/tests/unit/components/FormInterpretCard.test.tsx「判据 6~9」。"
       - "**边界（如实登记）**：只认三类显式说法（货号/款号/商品编号、门幅/幅宽/门宽、颜色格式/命名）；那句话里枚举颜色名**本单不做**（颜色内容仍必须来自图）；后端契约与 `INTERPRETABLE_KEYS` 白名单**零改动**（判据：backend/ai-agent-service/tests/test_vision/test_interpret.py 全绿）。"
     skip_reason: "[backend-contract] 确定性契约/机械判据，由 vitest（declared-facts / FormInterpretCard / products-new-recognize-entry / image-recognize）验证，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-23 新增（issue #7528）。取号 = `python3 scripts/next_case_id.py PR`（判取 PR-074，历史空档）。红→绿（注入式双向对照，实跑）：注入 = 去掉 `facts={declaredFacts}` + 摘掉 `sku_code` 映射 ⇒ `Tests 3 failed | 37 passed (40)`（页面级判据 2d + declared-facts 判据 6 两条）；撤回注入 ⇒ `Tests 40 passed (40)`。旁证：Growth Gate 首轮判 ❌（新模块 `product-attribute-options.ts` 缺测）⇒ 补 `tests/unit/lib/product-attribute-options.test.ts` 后 `blockers=0`。"
+    merge_log: "2026-10-23 新增（issue #7528）。取号 = `python3 scripts/next_case_id.py PR`（原取 PR-074 历史空档；rebase 到 main 后与 main 的 PR-074（#7545 生图）撞号 ⇒ 按 next id 重编号为 PR-131）。红→绿（注入式双向对照，实跑）：注入 = 去掉 `facts={declaredFacts}` + 摘掉 `sku_code` 映射 ⇒ `Tests 3 failed | 37 passed (40)`（页面级判据 2d + declared-facts 判据 6 两条）；撤回注入 ⇒ `Tests 40 passed (40)`。旁证：Growth Gate 首轮判 ❌（新模块 `product-attribute-options.ts` 缺测）⇒ 补 `tests/unit/lib/product-attribute-options.test.ts` 后 `blockers=0`。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/lib/declared-facts.test.ts"

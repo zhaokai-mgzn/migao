@@ -13417,9 +13417,9 @@ _CASE_PR_022 = EvalCase(
     forbidden_card_text=[],
 )
 
-# ── PR-074 [NORMAL] 图片建品「补充一句」的字面事实落表单：货号 2659 / 门幅 2.8+3.2 / 颜色按「货号-序号+颜色名」/ SKU 4 行（issue #7528）（源: cases/product.yml）──
-_CASE_PR_074 = EvalCase(
-    id='PR-074',
+# ── PR-131 [NORMAL] 图片建品「补充一句」的字面事实落表单：货号 2659 / 门幅 2.8+3.2 / 颜色按「货号-序号+颜色名」/ SKU 4 行（issue #7528）（源: cases/product.yml）──
+_CASE_PR_131 = EvalCase(
+    id='PR-131',
     legacy_id='',
     title='图片建品「补充一句」的字面事实落表单：货号 2659 / 门幅 2.8+3.2 / 颜色按「货号-序号+颜色名」/ SKU 4 行（issue #7528）',
     skill=Skill.PRODUCT,
@@ -17199,7 +17199,7 @@ ALL_CASES = (
     _CASE_PR_016,
     _CASE_PR_020,
     _CASE_PR_022,
-    _CASE_PR_074,
+    _CASE_PR_131,
     _CASE_PR_023,
     _CASE_PR_028,
     _CASE_PR_124,
