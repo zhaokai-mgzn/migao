@@ -1,5 +1,9 @@
-# case_ids: UI-014, UI-016
+# case_ids: MC-012
 """冒烟数据质量判据的守卫（SDQS，issue #7580 现场；规范 = `docs/testing/smoke-data-quality.md`）。
+
+> **case 声明口径**：`.github/cases/` 目前**没有**「冒烟数据质量」域的条目；本文件与同族守卫
+> （`tests/unit_ci_workflows/test_ui_smoke_*.py` 四份）一致声明 **MC-012**（研发工具/基建判据的登记号）。
+> 若将来为该域立真实用例，应由用例库所有权包登记后改写本行（不自己编 ID）。
 
 ## 病灶（2026-10-23 现取读数）
 

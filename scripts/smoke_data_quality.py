@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# case_ids: UI-014, UI-016
+# case_ids: MC-012
 """冒烟**数据质量**体检（SDQS：`docs/testing/smoke-data-quality.md`）。
 
 ## 为什么要有它（2026-10-23 现取读数）
