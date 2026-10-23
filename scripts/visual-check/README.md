@@ -21,6 +21,7 @@ node scripts/visual-check/rework-orders-page.mjs   # 返工单（issue #7377）
 node scripts/visual-check/after-sales-rework-entry.mjs  # 售后详情「发起返工」入口（issue #7377 段 4）
 node scripts/visual-check/customer-detail-tags-empty.mjs # 客户详情「标签」空态 + 去处（issue #7526）
 node scripts/visual-check/settings-calc-caliber-decimals.mjs # 算料口径 3 位小数 + 允许设 0（issue #7548）
+node scripts/visual-check/order-detail-print-entry.mjs   # 订单详情唯一「打印」入口 + 打印层选单据（issue #7544）
 open /tmp/reports-filled.png /tmp/reports-empty.png
 ```
 
@@ -35,5 +36,5 @@ open /tmp/reports-filled.png /tmp/reports-empty.png
 
 ## 边界
 
-- 只覆盖**报表中心**一页（新增视觉脚本时照它的形状加：`page.route` mock + 两个状态截图）。
+- 每个脚本**只覆盖它点名的那一页/那一处**（新增视觉脚本时照现有脚本的形状加：`page.route` mock + 关键状态截图）。
 - 不进 CI（runner 上没有浏览器二进制，装它会拖慢每条腿）⇒ 它是**本地验收工具**，不是门禁。

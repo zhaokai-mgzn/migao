@@ -283,7 +283,7 @@ export default function PrintDocPreview({
                   {spec.title}
                   {/* 纸型**从介质矩阵取**（不是标签自带的第二份字面量）—— 换纸后这里跟着变 */}
                   <span className="text-xs font-normal text-neutral-400">
-                    {box.widthMm}×{box.heightMm}
+                    {box.widthMm}×{box.heightMm}mm
                   </span>
                 </button>
               )
