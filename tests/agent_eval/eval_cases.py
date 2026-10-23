@@ -13417,6 +13417,24 @@ _CASE_PR_022 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── PR-131 [NORMAL] 图片建品「补充一句」的字面事实落表单：货号 2659 / 门幅 2.8+3.2 / 颜色按「货号-序号+颜色名」/ SKU 4 行（issue #7528）（源: cases/product.yml）──
+_CASE_PR_131 = EvalCase(
+    id='PR-131',
+    legacy_id='',
+    title='图片建品「补充一句」的字面事实落表单：货号 2659 / 门幅 2.8+3.2 / 颜色按「货号-序号+颜色名」/ SKU 4 行（issue #7528）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['建品页「拍照 / 上传识别」的补充一句里逐字写：「这个商品的货号是2659，颜色格式是2659-序号+颜色名，门幅是2.8和3.2」，再上传一张色卡图'],
+    expectations=['direct_reply'],
+    data_checks=['**病（用户 2026-10-23 实测，五项同时缺失）**：货号空缺 / 商品属性全空 / 门幅未选中 / 颜色不按格式 / SKU 0 行。根因四条：① 货号**不在** backend/ai-agent-service/app/vision/targets.py 的 `TARGET_FIELDS["product"]`；② 门幅的**推理值**被冻结契约拦掉（关联 #6356 的裁定）；③ 那句话只当推理上下文（提示词逐字「不得改变输出格式与铁律」）；④ SKU = 颜色 × 门幅，门幅空 ⇒ 0 行。', "**判据 1**：解析用户原句 ⇒ 货号 `2659`、门幅 `['2.8','3.2']`、命名规则 `{code:'2659'}`。执行点 = frontend/admin-web/tests/unit/lib/declared-facts.test.ts。", '**判据 2（负例，防「见数字就抓」）**：`这款有2659个颜色` 不产货号/门幅；`颜色格式按序号+颜色名`（无货号）不产规则；门幅超区间（26）不认；超过 3 根门幅不认。', '**判据 3**：`01米白、02雾霾蓝` ⇒ `2659-1米白、2659-2雾霾蓝`（序号 1 起、不补零、丢图上原序号）；幂等；改名后超 30 字 ⇒ 整体不改（输入框会静默削断，半截名字更糟）。', '**判据 4**：规格属性命中内置选项即选中；否定前缀（`不要提花` / `无需遮光`）与单字选项（`棉` / `麻`）不参与。', "**判据 5（类级守卫 + 注入式反证）**：解析产出的键必须落在 `sku_code` / `door_width` / `SPEC_EN_TO_CN` 全键里；手造 `{key:'price'}` 事实 ⇒ 被过滤（涉钱面不许被一句话带进表单）。", "**判据 6（页面级，改前必红）**：真 `/products/new` 页 —— 填那句话 + 上传 ⇒ 一键填入后 `ProductAttributes.skuCode='2659'`、`SkuMatrix` 收到 `doorWidths=['2.8','3.2']`、颜色两行改名、SKU **4 行**，且仍零 create/update。执行点 = frontend/admin-web/tests/unit/pages/products-new-recognize-entry.test.tsx「判据 2d」。", '**判据 7（不覆盖 / 可覆盖）**：`[图片识别]` 已有值的格不被覆盖；`[米宝解读]` 的推断值可被商家明说的字面事实覆盖。执行点 = frontend/admin-web/tests/unit/components/FormInterpretCard.test.tsx「判据 6~9」。', '**边界（如实登记）**：只认三类显式说法（货号/款号/商品编号、门幅/幅宽/门宽、颜色格式/命名）；那句话里枚举颜色名**本单不做**（颜色内容仍必须来自图）；后端契约与 `INTERPRETABLE_KEYS` 白名单**零改动**（判据：backend/ai-agent-service/tests/test_vision/test_interpret.py 全绿）。'],
+    skip_reason='[backend-contract] 确定性契约/机械判据，由 vitest（declared-facts / FormInterpretCard / products-new-recognize-entry / image-recognize）验证，非 LLM 行为，不进入 agent-eval 冒烟',
+    tags=['image-recognize', 'declared-facts', 'prefill', 'frontend', 'regression'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PR-023 [NORMAL] 余料「回收 / 报废」的状态迁移走 DB 原子条件更新（CAS）⇒ 并发双 recover 恰一次回收额入账、回收×报废恰一个赢家（issue #6960）（源: cases/product.yml）──
 _CASE_PR_023 = EvalCase(
     id='PR-023',
@@ -17181,6 +17199,7 @@ ALL_CASES = (
     _CASE_PR_016,
     _CASE_PR_020,
     _CASE_PR_022,
+    _CASE_PR_131,
     _CASE_PR_023,
     _CASE_PR_028,
     _CASE_PR_124,
