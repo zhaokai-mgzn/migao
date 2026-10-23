@@ -20,8 +20,13 @@ node scripts/visual-check/stocktakes-page.mjs     # 盘点单（issue #7373）
 node scripts/visual-check/rework-orders-page.mjs   # 返工单（issue #7377）
 node scripts/visual-check/after-sales-rework-entry.mjs  # 售后详情「发起返工」入口（issue #7377 段 4）
 node scripts/visual-check/customer-detail-tags-empty.mjs # 客户详情「标签」空态 + 去处（issue #7526）
+node scripts/visual-check/settings-calc-caliber-decimals.mjs # 算料口径 3 位小数 + 允许设 0（issue #7548）
 open /tmp/reports-filled.png /tmp/reports-empty.png
 ```
+
+- ⚠️ 若 `node` 报 `ERR_MODULE_NOT_FOUND: playwright`：ESM **不认** `NODE_PATH`，而本仓根
+  `node_modules` 可能是空目录（历史上被跨工作区软链打穿过）。做法 = `cp scripts/visual-check/<脚本> /tmp/`
+  后在 `/tmp` 跑（`node_modules` 就在旁边），脚本内容不变。
 
 - 端口可用 `VISUAL_BASE=http://127.0.0.1:3001` 覆盖。
 - 脚本 **mock 掉全部 `/api/**`**（不碰真库、不需要登录），所以任何机器都能跑。
