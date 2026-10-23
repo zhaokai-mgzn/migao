@@ -1567,8 +1567,19 @@ def _rule_rows(rows) -> dict:
 
 
 def route_rule_rows(sql: str) -> dict:
-    """规则行 → `{(触发类型, 触发值, 部位, 动作, 工序, 锚点): priority}`（`NULL` → `None`）。"""
-    return _rule_rows(parse_seed(sql, "production_route_rules", ROUTE_RULE_COLUMNS))
+    """规则行 → `{(触发类型, 触发值, 部位, 动作, 工序, 锚点): priority}`（`NULL` → `None`）。
+
+    ⚠️ schema.sql 的规则种子块**不止一条 INSERT**（`rr-v70` / `rr-v186` 各自成块）⇒ 必须**逐块**
+    解析再合并；`parse_seed` 只认第一条 ⇒ 只用它会把后一块**静默漏掉**（「绿了但没跑」）。
+    """
+    out = {}
+    for statement in re.findall(r"INSERT\s+INTO\s+production_route_rules\b[\s\S]*?;", sql, re.I):
+        # 派生块（`SELECT … FROM tenants JOIN (VALUES …)`）行形不是 10 列字面量 ⇒ 跳过；
+        # 它的行与字面量块同键（新租户回填），终态比对只需字面量块。
+        if re.search(r"\bFROM\s+tenants\b", statement, re.I):
+            continue
+        out.update(_rule_rows(parse_seed(statement, "production_route_rules", ROUTE_RULE_COLUMNS)))
+    return out
 
 
 def _aggregate_text(seed_paths) -> str:

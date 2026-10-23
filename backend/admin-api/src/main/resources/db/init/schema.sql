@@ -3373,8 +3373,16 @@ VALUES
   ('rr-v70-23', 1, 'option', '加logo条', NULL, 'insert', 'logo条', '三边', 230, 'active'),
   ('rr-v70-24', 1, 'option', '加立边', NULL, 'insert', '立边', '三边', 240, 'active'),
   ('rr-v70-25', 1, 'option', '扣环', NULL, 'insert', '扣环', '三边', 250, 'active'),
-  ('rr-v70-26', 1, 'option', '防翘扣', NULL, 'insert', '防翘扣', '三边', 260, 'active'),
-  -- issue #7523：整卷布料单 = 出库 → 打包（先 insert 出库（锚点 裁剪），再 remove 裁剪）
+  ('rr-v70-26', 1, 'option', '防翘扣', NULL, 'insert', '防翘扣', '三边', 260, 'active')
+ON CONFLICT (id) DO NOTHING;
+
+-- issue #7523：整卷布料单 = 出库 → 打包（先 insert 出库（锚点 裁剪），再 remove 裁剪）。
+-- 🔴 **独立成块**（不并进 rr-v70）：rr-v70 是与 V71 逐行冻结的来源镜像
+-- （tests/unit_ci_workflows/test_v93_route_rules_backfill.py 的 `_RULE_BLOCK_SOURCES`）。
+INSERT INTO production_route_rules
+    (id, tenant_id, trigger_kind, trigger_value, position, action,
+     operation, after_operation, priority, status)
+VALUES
   ('rr-v186-01', 1, 'sales_form', 'full_roll', NULL, 'insert', '出库', '裁剪', 270, 'active'),
   ('rr-v186-02', 1, 'sales_form', 'full_roll', NULL, 'remove', '裁剪', NULL, 280, 'active')
 ON CONFLICT (id) DO NOTHING;

@@ -98,8 +98,9 @@ public class ProductionOperationQueryService {
      * **口径本身一字不改**（用户 2026-10-03 裁定「保留兜底 1，但写面告警 + 读面标记」）。
      *
      * <p><b>为什么不能另造第二份清单</b>：{@link #OPERATION_LOGICAL_NAMES} 的**键集**本就是引擎目录
-     * 的键集减 {@link #ENGINE_QTY_OPERATIONS_EXTRA 两道}——实测：{@code OPERATION_CATALOG} 41 键 =
-     * 该表 39 键 + {@code 配料} / {@code 打包}，且该表键集与 {@code OPERATION_CATALOG} 键集**无差**。
+     * 的键集减 {@link #ENGINE_QTY_OPERATIONS_EXTRA 三道}——实测：{@code OPERATION_CATALOG} 42 键 =
+     * 该表 39 键 + {@code 配料} / {@code 打包} / {@code 出库}，且该表键集与 {@code OPERATION_CATALOG}
+     * 键集**无差**（issue #7523 追加「出库」：整卷布料单的出库工序，单位 卷）。
      * 而该表已由 {@code ProductionOperationQueryServiceTest#logicalNameTableMatchesTruthSource}
      * **逐条双向**对着 {@code routing.py::_LOGICAL_NAME_PAIRS} 钉住（Java 无法 import Python ⇒
      * 逐字解析真值源文本是唯一可失败的同源判据）。故此处只增加「差额 + 判定」，

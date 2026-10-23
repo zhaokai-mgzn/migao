@@ -104,13 +104,13 @@ INSERT INTO production_operation_positions
     (id, tenant_id, logical_name, position, unit_price, applicable, status)
 SELECT 'opp-v186-' || t.id || '-' || p.position,
        t.id, '出库', p.position, NULL::numeric, p.applicable, 'active'
-  FROM tenants t
-  JOIN (VALUES
-      ('布料', TRUE::boolean),
-      ('布帘', FALSE::boolean),
-      ('纱帘', FALSE::boolean),
-      ('帘头', FALSE::boolean)
-  ) AS p(position, applicable) ON TRUE
+  FROM tenants t,
+       (VALUES
+           ('布料', TRUE::boolean),
+           ('布帘', FALSE::boolean),
+           ('纱帘', FALSE::boolean),
+           ('帘头', FALSE::boolean)
+       ) AS p(position, applicable)
  WHERE t.deleted = 0
    AND NOT EXISTS (
        SELECT 1 FROM production_operation_positions e

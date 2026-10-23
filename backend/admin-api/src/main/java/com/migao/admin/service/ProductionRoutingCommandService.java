@@ -614,9 +614,8 @@ public class ProductionRoutingCommandService {
     /** 触发值不在词表时的**可行动**理由（逐 kind 说清去哪儿建）。 */
     private static String triggerValueMissingReason(String triggerKind, String triggerValue) {
         if (TRIGGER_KIND_SALES_FORM.equals(triggerKind)) {
-            return String.format("售卖方式「%s」不在闭词表（%s）里 —— 实例化侧只可能传这两个机器值，"
-                            + "写别的值这条规则**永不生效**，请从 整卷(full_roll) / 散剪(bulk_cut) 里选",
-                    triggerValue, String.join(" / ", SALES_FORM_VOCABULARY));
+            return String.format("售卖方式「%s」不在取值域里 —— 实例化侧只可能传「整卷」或「散剪」，"
+                            + "写别的值这条规则**永不生效**，请从列表里选", triggerValue);
         }
         if (TRIGGER_KIND_POSITION.equals(triggerKind)) {
             return String.format("部位「%s」不在部位闭词表（%s）里 —— 实例化侧只可能传这几个部位，"

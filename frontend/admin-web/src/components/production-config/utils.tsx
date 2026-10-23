@@ -229,7 +229,7 @@ export const conditionText = (rule: import('@/types').RouteRule) => {
   const kind = TRIGGER_KIND_LABEL[rule.trigger_kind ?? ''] ?? rule.trigger_kind ?? '—'
   const rawValue = rule.trigger_value ?? '—'
   const value = rule.trigger_kind === 'sales_form'
-    ? (SALES_FORM_LABEL[rawValue] ?? rawValue)
+    ? (SALES_FORM_LABEL[rawValue] ?? '—')
     : rawValue
   const positionClause = rule.position ? `${TRIGGER_KIND_LABEL.position} = ${rule.position}` : ''
   const triggerClause = rule.trigger_kind === 'position' ? '' : `${kind} = ${value}`

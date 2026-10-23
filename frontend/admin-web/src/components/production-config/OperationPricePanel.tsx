@@ -758,7 +758,7 @@ export function OperationPricePanel({
                     ).map((name) => (
                       <option key={name} value={name}>
                         {conditionDraft.trigger_kind === 'sales_form'
-                          ? ({ full_roll: '整卷', bulk_cut: '散剪' } as Record<string, string>)[name] ?? name
+                          ? ({ full_roll: '整卷', bulk_cut: '散剪' } as Record<string, string>)[name] ?? '—'
                           : name}
                       </option>
                     ))}

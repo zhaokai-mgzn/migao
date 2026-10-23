@@ -180,7 +180,7 @@
     "V182__create_warehouses_and_transfers.sql": "sha256:3016c8c1b2cd59bb079f11697b497ea7bed890e81c91462922a59740cf34247d",
     "V184__create_stocktakes.sql": "sha256:fe4408801600c377b80f449441574307ab3767b98519c93bba2ef5b3b090d8c4",
     "V185__create_rework_orders.sql": "sha256:f4dc6524a2d7e2e04526060111bc218b7a7770d28bac974f814d76ef80a340f1",
-    "V186__roll_outbound_operation.sql": "sha256:cbea86dc8644abaf49b7eb11421dc331929560b8380d069f81bb63ac2b828c36",
-    "schema.sql": "sha256:940e55cb904aa2548001ae669874f9efb86bb791f4cf8acd0dfc1924a333897c"
+    "V186__roll_outbound_operation.sql": "sha256:4c0fc67fbbbe56f830e87c8ec4a6ccdb85a77a84bbbf4a045e25a8909e2fbb44",
+    "schema.sql": "sha256:36c83302545d7353634c85e4091e72cecde0f5f4d90699482bb298fa08c23ddb"
   }
 }
