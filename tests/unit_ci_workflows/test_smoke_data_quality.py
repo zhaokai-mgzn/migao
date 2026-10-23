@@ -102,6 +102,15 @@ def test_no_sku_at_all_is_red():
     assert "SKU" in violations[0]["why"]
 
 
+def test_empty_product_face_is_red():
+    """空商品面也是「空态冒充绿」（Q1）：0 件商品 ⇒ `DQ-1` 判红，不是通过。"""
+    checker = _load_checker()
+    violations, _ = checker.evaluate(_bad(entities__products={"collected": True, "total": 0,
+                                                              "sampled": 0, "with_skus": 0}))
+    assert "DQ-1" in _codes(violations)
+    assert "0 行" in violations[0]["why"]
+
+
 def test_fixture_product_without_sku_is_red():
     checker = _load_checker()
     violations, _ = checker.evaluate(_bad(fixtures={"products_created": 2, "products_with_skus": 0,
