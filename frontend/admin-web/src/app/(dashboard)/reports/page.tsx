@@ -85,6 +85,9 @@ function qty(value: number | null | undefined): string {
  * 2. **未知不填 0**：成本未知、未定价、未采集、未发生的分项显示「—」并说明原因；
  * 3. **合计不完整要标注**：质量成本 `complete=false` 时明写「这不是完整质量成本，还缺…」。
  */
+/** 五张卡各自的加载态（每张卡一个独立请求，见 `loadMargins` / `loadInventory` / …）。 */
+type CardKey = 'margins' | 'inventory' | 'staff' | 'quality' | 'aging'
+
 export default function ReportsPage() {
   const [margins, setMargins] = useState<ReportOrderMargins | null>(null)
   const [inventory, setInventory] = useState<ReportInventoryAging | null>(null)
@@ -99,7 +102,15 @@ export default function ReportsPage() {
   const [qcDim, setQcDim] = useState<'customer' | 'process' | 'product'>('customer')
   const [qcBreakdown, setQcBreakdown] = useState<ReportQualityCostBreakdown | null>(null)
   const [qcBreakdownLoading, setQcBreakdownLoading] = useState(false)
-  const [loading, setLoading] = useState(true)
+  // 🔴 一张表一个加载态（issue #7582）：原来五张共用一个 `loading`，最慢的「订单毛利」把另外
+  // 四张一起锁在「加载中…」—— 它们本来就是五个独立请求，谁先回来谁先上屏。
+  const [loadingCards, setLoadingCards] = useState<Record<CardKey, boolean>>({
+    margins: true,
+    inventory: true,
+    staff: true,
+    quality: true,
+    aging: true,
+  })
   const [loadError, setLoadError] = useState<string | null>(null)
   // 时间区间（issue #7376 段 6）：空串 = 该侧不设界；默认全部（不传参）
   const [from, setFrom] = useState('')
@@ -115,41 +126,84 @@ export default function ReportsPage() {
    * 🔴 库存滞销与应收账龄是**此刻**读数（读面根本不收日期），换区间重取它们既是白跑，
    * 也会让商家以为「筛了 10 月，滞销数字该变」。
    */
-  const loadDated = useCallback(async () => {
-    const [m, s, q] = await Promise.all([
-      reportApi.orderMargins(rangeParams),
-      reportApi.staffPerformance(rangeParams),
-      reportApi.qualityCost(rangeParams),
-    ])
-    setMargins(m.data.data || null)
-    setStaff(s.data.data || null)
-    setQuality(q.data.data || null)
-  }, [rangeParams])
+  const settle = useCallback((card: CardKey, loading: boolean) => {
+    setLoadingCards((prev) => ({ ...prev, [card]: loading }))
+  }, [])
+
+  const failCard = useCallback((error: unknown) => {
+    console.error('加载报表失败:', error)
+    setLoadError(loadErrorMessage(error, '报表加载失败'))
+  }, [])
+
+  const loadMargins = useCallback(async () => {
+    settle('margins', true)
+    try {
+      const res = await reportApi.orderMargins(rangeParams)
+      setMargins(res.data.data || null)
+    } catch (error) {
+      failCard(error)
+    } finally {
+      settle('margins', false)
+    }
+  }, [rangeParams, settle, failCard])
+
+  const loadStaff = useCallback(async () => {
+    settle('staff', true)
+    try {
+      const res = await reportApi.staffPerformance(rangeParams)
+      setStaff(res.data.data || null)
+    } catch (error) {
+      failCard(error)
+    } finally {
+      settle('staff', false)
+    }
+  }, [rangeParams, settle, failCard])
+
+  const loadQuality = useCallback(async () => {
+    settle('quality', true)
+    try {
+      const res = await reportApi.qualityCost(rangeParams)
+      setQuality(res.data.data || null)
+    } catch (error) {
+      failCard(error)
+    } finally {
+      settle('quality', false)
+    }
+  }, [rangeParams, settle, failCard])
+
+  /** 库存滞销吃仓库维度（`invWarehouse`），不吃时间区间 —— 换仓库只重取这一张。 */
+  const loadInventory = useCallback(async () => {
+    settle('inventory', true)
+    try {
+      const res = await reportApi.inventoryAging(
+        invWarehouse ? { warehouseCode: invWarehouse } : undefined,
+      )
+      setInventory(res.data.data || null)
+    } catch (error) {
+      failCard(error)
+    } finally {
+      settle('inventory', false)
+    }
+  }, [invWarehouse, settle, failCard])
+
+  /** 应收账龄是「此刻」读数：不收任何参数。 */
+  const loadAging = useCallback(async () => {
+    settle('aging', true)
+    try {
+      const res = await reportApi.receivableAging()
+      setAging(res.data.data || null)
+    } catch (error) {
+      failCard(error)
+    } finally {
+      settle('aging', false)
+    }
+  }, [settle, failCard])
 
   /** 挂载与「失败重试」时把五张表都取一遍（重试要能救回任何一张）。 */
   const load = useCallback(async () => {
-    setLoading(true)
     setLoadError(null)
-    try {
-      const [m, i, s, q, a] = await Promise.all([
-        reportApi.orderMargins(rangeParams),
-        reportApi.inventoryAging(invWarehouse ? { warehouseCode: invWarehouse } : undefined),
-        reportApi.staffPerformance(rangeParams),
-        reportApi.qualityCost(rangeParams),
-        reportApi.receivableAging(),
-      ])
-      setMargins(m.data.data || null)
-      setInventory(i.data.data || null)
-      setStaff(s.data.data || null)
-      setQuality(q.data.data || null)
-      setAging(a.data.data || null)
-    } catch (error) {
-      console.error('加载报表失败:', error)
-      setLoadError(loadErrorMessage(error, '报表加载失败'))
-    } finally {
-      setLoading(false)
-    }
-  }, [rangeParams, invWarehouse])
+    await Promise.all([loadMargins(), loadInventory(), loadStaff(), loadQuality(), loadAging()])
+  }, [loadMargins, loadInventory, loadStaff, loadQuality, loadAging])
 
   useEffect(() => {
     // 仓库下拉是「可选增强」：取不到就只显示「全部仓库」，不挡报表本身
@@ -161,7 +215,7 @@ export default function ReportsPage() {
 
   useEffect(() => {
     load()
-    // ⚠️ 只在挂载时整页取一次；换区间走下面的 `loadDated`（见 `skipFirstRangeRun`）
+    // ⚠️ 只在挂载时整页取一次；换区间走下面的三个 `load*`（见 `skipFirstRangeRun`）
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -172,11 +226,8 @@ export default function ReportsPage() {
       skipFirstRangeRun.current = false
       return
     }
-    void loadDated().catch((error) => {
-      console.error('加载报表失败:', error)
-      setLoadError(loadErrorMessage(error, '报表加载失败'))
-    })
-  }, [loadDated])
+    void Promise.all([loadMargins(), loadStaff(), loadQuality()])
+  }, [loadMargins, loadStaff, loadQuality])
 
   /**
    * 维度汇总单独取（不进 `load` 的 Promise.all）：切维度只该重取这一块，
@@ -184,13 +235,16 @@ export default function ReportsPage() {
    */
   /** 换仓库只重取「库存滞销」这一张（别把五张表全打一遍）。 */
   const reloadInventory = useCallback(async (warehouseCode: string) => {
+    settle('inventory', true)
     try {
       const res = await reportApi.inventoryAging(warehouseCode ? { warehouseCode } : undefined)
       setInventory(res.data.data || null)
     } catch (error) {
       toastRequestError(error, loadErrorMessage(error, '库存滞销加载失败'))
+    } finally {
+      settle('inventory', false)
     }
-  }, [])
+  }, [settle])
 
   const loadBreakdown = useCallback(async (dim: 'customer' | 'process' | 'product') => {
     setQcBreakdownLoading(true)
@@ -308,7 +362,7 @@ export default function ReportsPage() {
               />
             </div>
           </div>
-          {loading ? (
+          {loadingCards.margins ? (
             <p className="mt-3 text-sm text-neutral-500" data-testid="reports-margin-loading">加载中…</p>
           ) : !margins?.hasData ? (
             <p className="mt-3 text-sm text-neutral-500" data-testid="reports-margin-empty">
@@ -384,7 +438,7 @@ export default function ReportsPage() {
               />
             </div>
           </div>
-          {loading ? (
+          {loadingCards.inventory ? (
             <p className="mt-3 text-sm text-neutral-500">加载中…</p>
           ) : !inventory?.hasData ? (
             <p className="mt-3 text-sm text-neutral-500" data-testid="reports-inventory-empty">
@@ -431,7 +485,7 @@ export default function ReportsPage() {
               />
             </div>
           </div>
-          {loading ? (
+          {loadingCards.staff ? (
             <p className="mt-3 text-sm text-neutral-500">加载中…</p>
           ) : !staff?.hasData ? (
             <p className="mt-3 text-sm text-neutral-500" data-testid="reports-staff-empty">
@@ -479,7 +533,7 @@ export default function ReportsPage() {
               />
             </div>
           </div>
-          {loading ? (
+          {loadingCards.quality ? (
             <p className="mt-3 text-sm text-neutral-500">加载中…</p>
           ) : !quality || quality.components.length === 0 ? (
             <p className="mt-3 text-sm text-neutral-500" data-testid="reports-quality-empty">
@@ -629,7 +683,7 @@ export default function ReportsPage() {
               />
             </div>
           </div>
-          {loading ? (
+          {loadingCards.aging ? (
             <p className="mt-3 text-sm text-neutral-500" data-testid="reports-aging-loading">
               加载中…
             </p>

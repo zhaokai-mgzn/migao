@@ -45,6 +45,23 @@ public interface ProcessingOrderMapper extends BaseMapper<ProcessingOrder> {
     ProcessingOrder selectActiveByOrderId(@Param("orderId") String orderId, @Param("tenantId") Long tenantId);
 
     /**
+     * **批量**活跃加工单（issue #7582，报表中心订单毛利用）：把 N 次 {@link #selectActiveByOrderId} 压成 1 次。
+     *
+     * <p>🔴 状态白名单与单条版**逐字相同**（{@code generated/issued/in_processing/completed} + 未软删 + 同租户）——
+     * 两处口径一旦不同，「单张订单页的毛利」与「报表里这一单」会算出两个加工成本，
+     * 而那是同一份钱的两个读数（判据见 {@code OrderMarginBatchTest}）。</p>
+     *
+     * @param orderIds 非空集合（调用方保证；空集合渲染成 {@code IN ()} 是语法错误）
+     */
+    @ResultMap("mybatis-plus_ProcessingOrder")
+    @Select("<script>SELECT * FROM processing_orders WHERE order_id IN "
+            + "<foreach collection='orderIds' item='orderId' open='(' separator=',' close=')'>#{orderId}</foreach> "
+            + "AND tenant_id = #{tenantId} AND deleted = 0 "
+            + "AND status IN ('generated','issued','in_processing','completed')</script>")
+    java.util.List<ProcessingOrder> selectActiveByOrderIds(
+            @Param("orderIds") java.util.Collection<String> orderIds, @Param("tenantId") Long tenantId);
+
+    /**
      * 按加工单号/订单号/订单UUID 解析加工单（租户隔离）
      *
      * <p>⚠️ 与 {@link #selectActiveByOrderId} 同款：{@code po.*} 同样打 {@code items_snapshot}，

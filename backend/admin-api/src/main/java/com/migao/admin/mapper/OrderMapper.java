@@ -51,6 +51,27 @@ public interface OrderMapper extends BaseMapper<Order> {
                                                    @Param("orderNo") String orderNo);
 
     /**
+     * **批量**订单面料成本（issue #7582，报表中心订单毛利用）：{@link #selectFabricCost} 的 `GROUP BY` 版。
+     *
+     * <p>🔴 三元组与单条版**逐字相同**（同一 {@code reason} / {@code deleted = 0} / {@code tenant_id}；
+     * 同样返回 {@code fabric_cost} + {@code unknown_lines} + {@code lines}）——
+     * 口径不许因为「取数换了个形状」而漂移：缺进价的行仍必须被**数出来**（未知 ≠ 0）。</p>
+     *
+     * @param orderNos 非空集合（调用方保证；空集合渲染成 {@code IN ()} 是语法错误）
+     */
+    @Select("<script>SELECT c.order_no AS order_no, "
+            + "COALESCE(SUM(c.planned_meters * c.unit_cost), 0) AS fabric_cost, "
+            + "COUNT(*) FILTER (WHERE c.unit_cost IS NULL) AS unknown_lines, "
+            + "COUNT(*) AS lines "
+            + "FROM stock_batch_consumptions c "
+            + "WHERE c.deleted = 0 AND c.tenant_id = #{tenantId} "
+            + "AND c.reason = 'processing_order' AND c.order_no IN "
+            + "<foreach collection='orderNos' item='orderNo' open='(' separator=',' close=')'>#{orderNo}</foreach> "
+            + "GROUP BY c.order_no</script>")
+    java.util.List<java.util.Map<String, Object>> selectFabricCosts(
+            @Param("tenantId") Long tenantId, @Param("orderNos") java.util.Collection<String> orderNos);
+
+    /**
      * 应收账龄取数（issue #7370，P0-2 段 2 + 段 3）：每笔**余额 &gt; 0** 的订单一行。
      *
      * <p>🔴 段 3 起余额再减「已核销收款合计」（{@code receipt_allocations}）：一笔收款可冲抵多张单，
