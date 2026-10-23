@@ -68,7 +68,7 @@ const EXPECTED_GROUPS: { key: string; name: string; keys: string[] }[] = [
     keys: ['human-sessions', 'knowledge', 'after-sales', 'customers'],
   },
   // 价格本（#7375 段 3）：交易前置 ⇒ 组内第一项
-  { key: 'trade-center', name: '交易管理', keys: ['price-books', 'orders', 'finance'] },
+  { key: 'trade-center', name: '交易管理', keys: ['price-books', 'orders', 'finance', 'approvals'] },
   {
     key: 'production-center',
     name: '生产管理',
@@ -169,7 +169,7 @@ describe('新 IA 事实（issue #5778 + #6404 + #6457 + #6573 + #6580 + #7087 + 
     expect(
       menuGroups.map((g) => ({ key: g.key, keys: g.children.map((c) => c.key) })),
     ).toEqual(EXPECTED_GROUPS.map((g) => ({ key: g.key, keys: g.keys })))
-    expect(ALL_KEYS).toHaveLength(27)
+    expect(ALL_KEYS).toHaveLength(28)
     expect(visibleKeys(ADMIN)).toEqual(ALL_KEYS)
   })
 
@@ -271,7 +271,7 @@ describe('isItemVisible：两条件（adminOnly ∧ permissionCode）', () => {
     const withAdminOnly = menuGroups.flatMap((g) => g.children).filter((c) => c.adminOnly)
     expect(withAdminOnly).toEqual([])
     // 面非空自检：上面的空数组不是因为解析失灵（issue #7140 后 = 19 个组内项）
-    expect(menuGroups.flatMap((g) => g.children)).toHaveLength(22)
+    expect(menuGroups.flatMap((g) => g.children)).toHaveLength(23)
   })
 
   it('🔴 过滤**只有两条件**（adminOnly ∧ permissionCode）：`briefingToggle` 随「每日简报」菜单项撤掉（issue #7087）', () => {
@@ -349,7 +349,7 @@ describe('岗位矩阵：role_permissions（种子）× menu.ts 两条件 ⇒ �
         'dashboard:view', 'order:list', 'order:detail', 'customer:view', 'finance:view',
         'processing:view', 'inbound:view', 'finance:create', 'production:execute',
       ],
-      expected: ['dashboard', 'reports', 'customers', 'price-books', 'orders', 'finance', 'production-pool',
+      expected: ['dashboard', 'reports', 'customers', 'price-books', 'orders', 'finance', 'approvals', 'production-pool',
         'inbound-orders', 'suppliers', 'purchase-orders', 'stocktakes', 'shipments', 'notifications'],
     },
     {
@@ -377,7 +377,7 @@ describe('岗位矩阵：role_permissions（种子）× menu.ts 两条件 ⇒ �
         'agent:session', 'agent:session:manage', 'employee:list', 'after_sales:view', 'knowledge:view',
       ],
       expected: ['dashboard', 'reports', 'human-sessions', 'knowledge', 'after-sales', 'customers',
-        'price-books', 'orders', 'finance', 'production-board', 'production-pool',
+        'price-books', 'orders', 'finance', 'approvals', 'production-board', 'production-pool',
         'production-piecework', 'rework-orders', 'inbound-orders', 'suppliers', 'purchase-orders', 'stock-ledger', 'stocktakes',
         'shipments', 'production-remnants',
         'production-saving-board', 'employees', 'products', 'settings', 'notifications'],
@@ -424,7 +424,7 @@ describe('filterMenuItems / visibleMenuGroups：过滤保持顺序 + 空组剔�
     expect(filterMenuItems(items, { permissions: ['finance:view', 'order:list'] }).map((i) => i.key)).toEqual([
       'price-books',
       'orders',
-      'finance',
+      'finance', 'approvals',
     ])
   })
 
@@ -556,8 +556,8 @@ describe('resolveActiveGroupKey / initialExpandedGroups：默认只展开当前�
         return [item.path, g.key] as const
       }),
     )
-    expect(cases).toHaveLength(22)
-    expect(menuGroups.flatMap((g) => g.children)).toHaveLength(22)
+    expect(cases).toHaveLength(23)
+    expect(menuGroups.flatMap((g) => g.children)).toHaveLength(23)
     for (const [path, groupKey] of cases) {
       expect(`${path} ⇒ ${resolveActiveGroupKey(menuGroups, path)}`).toBe(`${path} ⇒ ${groupKey}`)
     }
@@ -626,7 +626,7 @@ describe('flattenMenu：最前席位 → 全部分组 → 尾席位 → 尾部�
 
   it('顺序 = 25 项全部，且与组结构逐项对齐', () => {
     expect(flat.map((i) => i.key)).toEqual(ALL_KEYS)
-    expect(flat).toHaveLength(27)
+    expect(flat).toHaveLength(28)
     const expected = EXPECTED_GROUPS.flatMap((g) => g.keys.map((k) => ({ key: k, groupKey: g.key, groupName: g.name })))
     // 🔴 issue #7087：最前席位（「经营看板」）由 `head` 参数承载、**排在最前**；
     // 尾席位一级项仍排在**所有分组之后**（席位组可见与否**同序** —— 见 `ALL_KEYS` 的注释）
@@ -703,7 +703,7 @@ describe('searchMenu：命中面 = 菜单名 ∪ 组名 ∪ keywords（+ 排序�
   const items = allItems()
 
   it('面非空自检：可搜索面 = 26 项', () => {
-    expect(items).toHaveLength(27)
+    expect(items).toHaveLength(28)
   })
 
   it('空查询 / 纯空白 ⇒ 空数组（面板的「空查询列全量」由调用方实现，不是本函数）', () => {

@@ -200,8 +200,8 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // 「经营看板」升为**最前席位一级项**（不入任何组）、「每日简报」菜单项删除 ⇒ 组内项 18 → 16）
     // #7369：+「供应商」⇒ 组内项 17 → 18；段 4 再 +「采购单」⇒ 18 → 19；
     // #7375 段 3：交易管理 +「价格本」⇒ 19 → 20
-    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(22)
-    expect(allNames).toHaveLength(22)
+    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(23)
+    expect(allNames).toHaveLength(23)
   })
 })
 

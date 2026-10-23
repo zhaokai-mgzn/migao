@@ -100,6 +100,8 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   { match: (p) => p.startsWith('/quality-inspections'), crumbs: [{ label: '生产管理' }, { label: '质检记录' }] },
   // 返工单（issue #7377）：与 `config/menu.ts` 的 `rework-orders`、服务端两处菜单节点同名同组
   { match: (p) => p.startsWith('/rework-orders'), crumbs: [{ label: '生产管理' }, { label: '返工单' }] },
+  // 审批中心（issue #7374）：与 `config/menu.ts` 的 `approvals`、服务端两处菜单节点同名同组
+  { match: (p) => p.startsWith('/approvals'), crumbs: [{ label: '交易管理' }, { label: '审批中心' }] },
   // /production = 作业单唯一入口（issue #4357 与原「加工单」菜单合并）
   { match: (p) => p.startsWith('/production'), crumbs: [{ label: '生产管理' }, { label: '作业看板' }] },
   // 入库单（issue #5071）：V111（#5034）新增菜单项时**漏了本表这一处** ⇒ 面包屑只剩「工作台」一项。

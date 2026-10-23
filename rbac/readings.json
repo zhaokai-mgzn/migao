@@ -318,6 +318,7 @@
       "价格本": "order:list",
       "销售订单": "order:list",
       "财务对账": "finance:view",
+      "审批中心": "finance:view",
       "生产管理": null,
       "作业看板": "production:view",
       "智能派单": "processing:view",
@@ -352,6 +353,7 @@
       "客户列表": "customer:view",
       "财务对账": "finance:view",
       "订单详情": "order:detail",
+      "审批中心": "finance:view",
       "作业看板": "production:view",
       "智能派单": "processing:view",
       "计件工资": "production:view",
@@ -382,6 +384,7 @@
       "价格本": "order:list",
       "销售订单": "order:list",
       "财务对账": "finance:view",
+      "审批中心": "finance:view",
       "作业看板": "production:view",
       "智能派单": "processing:view",
       "计件工资": "production:view",
@@ -467,6 +470,12 @@
       "key": "finance",
       "name": "财务对账",
       "path": "/finance",
+      "code": "finance:view"
+    },
+    {
+      "key": "approvals",
+      "name": "审批中心",
+      "path": "/approvals",
       "code": "finance:view"
     },
     {
@@ -668,6 +677,10 @@
       "after_sales:view"
     ],
     [
+      "/approvals",
+      "finance:view"
+    ],
+    [
       "/reports",
       "dashboard:view"
     ],
@@ -758,6 +771,18 @@
         "agent:session": [
           "GET /api/admin/agent-sessions",
           "GET /api/admin/agent-sessions/{}"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "approvals",
+      "name": "审批中心",
+      "path": "/approvals",
+      "gate": "finance:view",
+      "units": {
+        "finance:view": [
+          "GET /api/admin/approvals"
         ]
       },
       "visibility_rule": "all"

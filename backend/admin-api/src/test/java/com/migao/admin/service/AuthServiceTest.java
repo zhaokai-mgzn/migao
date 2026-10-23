@@ -608,10 +608,11 @@ class AuthServiceTest {
 
         var trade = groupByKey(menus, "trade-center");
         // 🔴 2026-10-22（issue #7375 段 3）：交易管理组新增「价格本」（交易前置）⇒ 组内第一项
+        // 🔴 2026-10-23（issue #7374）：交易管理组末位新增「审批中心」（读码 finance:view）
         assertThat(keysOf(trade.getChildren()))
-                .containsExactly("price-books", "orders", "finance");
+                .containsExactly("price-books", "orders", "finance", "approvals");
         assertThat(pathsOf(trade.getChildren()))
-                .containsExactly("/price-books", "/orders", "/finance");
+                .containsExactly("/price-books", "/orders", "/finance", "/approvals");
 
         var production = groupByKey(menus, "production-center");
         // 🔴 2026-10-09（issue #6580）：本组**由 5 项收拢为 3 项** —— 「加工项管理」
@@ -782,8 +783,9 @@ class AuthServiceTest {
         assertThat(pathsOf(customerService.getChildren())).containsExactly("/customers");
         var trade = groupByKey(menus, "trade-center");
         assertThat(trade.getName()).isEqualTo("交易管理");
-        assertThat(namesOf(trade.getChildren())).containsExactly("财务对账");
-        assertThat(pathsOf(trade.getChildren())).containsExactly("/finance");
+        // 🔴 2026-10-23（issue #7374）：只持 finance:view ⇒ 交易管理组 = 财务对账 + 审批中心（同码）
+        assertThat(namesOf(trade.getChildren())).containsExactly("财务对账", "审批中心");
+        assertThat(pathsOf(trade.getChildren())).containsExactly("/finance", "/approvals");
         assertThat(keysOf(menus)).doesNotContain("customer-center", "customers", "finance");
     }
 

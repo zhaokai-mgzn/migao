@@ -5529,3 +5529,35 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: APV-001
+    legacy_id: ""
+    title: "审批中心进观星台：只对「待审」给动作、批一次用一次、不能自批（issue #7374 段 2）"
+    domains:
+      - misc
+      - frontend
+      - finance
+    tier: normal
+    tags: [frontend-contract, approval, governance, red-proof]
+    truths_ref: []
+    user_inputs:
+      - "用户（2026-10-23，逐字）：「继续任务」—— 承接 #7374 的目标：审批闸门早就在服务端（改价/超授信/退款/采购超量/盘点差异），但观星台里**没有任何入口**，谁能批、批到哪一步全靠问人。"
+    expectations: []
+    data_checks:
+      - "**判据 1（🔴 只对「待审」给动作）**：`actionsFor()` 按状态 × 写权 × 是否本人 × 是否已用 判定 —— 已通过/已驳回/已撤回**一律没有动作**。判据 = `approvals.test.tsx#动作矩阵`（纯函数逐格）+ `#已裁决的行不给通过/驳回按钮`。"
+      - "**判据 2（🔴 批一次用一次）**：`consumedAt` 非空 ⇒ 行上挂「已使用」且**不再给裁决按钮**，不让「已通过」被读成「还能再批一次」。判据 = `#批一次用一次`。"
+      - "**判据 3（撤回只对申请人本人）**：别人的申请没有「撤回」，自己的才有（服务端同样按当前操作人判）。判据 = `#撤回只对申请人本人显形`。"
+      - "**判据 4（驳回必须写原因）**：驳回不写原因 ⇒ 当场拦、**不发请求**（申请人会看到这句）；通过可以留空。判据 = `#驳回必须写原因`。"
+      - "**判据 5（服务端原话上屏）**：自批 / 已裁决过 ⇒ 服务端拒绝的 message 原样显示。判据 = `#服务端拒绝原话上屏`。"
+      - "**判据 6（金额为空写「—」）**：审批不对金额设限时 `amount=null` ⇒ 「—」，整页不出现 ¥0.00（没有金额约束 ≠ 金额为零）。判据 = `#金额为空写「—」`。"
+      - "**判据 7（三源同码 · 零授权 delta）**：菜单节点码 = 页面第一屏读端点码 = 路由守卫码 = `finance:view`（与财务对账同码）；写动作走 `finance:create`（与后端 ApprovalController 逐字同码）。判据 = `test_agent_permission_parity` 的两个锚点 + `MenuControllerTest` / `AuthServiceTest` 的交易组序 + 前端五个菜单用例。"
+      - "**边界（照实登记）**：① 本页**不发起**申请（发起在各自的业务页）；② 不展示 `payload` 原文（内部 JSON 不上屏）；③ 不做「谁有权批哪一类」的具名配置（统一由 `finance:create` 决定）—— 具名到人是 #7374 的后续段。"
+    precondition: "本用例是 [frontend-contract]：前置 = 审批后端（#7374 段 1：`ApprovalController` / `ApprovalService` / `ApprovalState`）。零网络、零 LLM。"
+    skip_reason: "[frontend-contract] 审批中心的裁决动作口径（只对待审、批一次用一次、不能自批），由前端单测 + 菜单三源判据验证，非 LLM 行为，不进 agent-eval 冒烟"
+    merge_log: "2026-10-23 新增（issue #7374 段 2，商家面）。落码 = `approvals/page.tsx` + `types/approval.ts` + `approvalApi` + 菜单五副本 + `page_registry` 的 `approval-decision`。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/approvals.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

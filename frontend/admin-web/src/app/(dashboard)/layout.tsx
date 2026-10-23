@@ -61,6 +61,9 @@ const ROUTE_PERMISSION_MAP: Array<{ prefix: string; code: string }> = [
   // 返工单（issue #7377）：读 `after_sales:view`（与售后工单同码）——
   // 没有这一条就只有菜单一道防线：无该码者地址栏直达 `/rework-orders` 不被拦
   { prefix: '/rework-orders', code: 'after_sales:view' },
+  // 审批中心（issue #7374）：读 `finance:view`（与财务对账同码）——
+  // 没有这一条就只有菜单一道防线：无该码者地址栏直达 `/approvals` 不被拦
+  { prefix: '/approvals', code: 'finance:view' },
   // 报表中心（issue #7376）：页面守卫码 = 菜单节点码 = 该页第一屏四个报表端点的码
   //（`ReportController` 类级 `dashboard:view`）—— 取**既有**码、与经营看板同一把尺子。
   // 没有这一条就只有菜单一道防线：无该码者地址栏直达 `/reports` 不被拦（同 #5976 的现场形态）。

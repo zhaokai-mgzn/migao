@@ -2107,6 +2107,8 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     "/rework-orders": "返工单",
     "/customers": "客户列表",
     "/finance": "财务对账",
+    # 审批中心（issue #7374）：守卫码 = 菜单节点码 = 该页第一屏读端点（GET /api/admin/approvals）的类级 finance:view
+    "/approvals": "审批中心",
     "/employees": "员工管理",
     # 🔴 2026-10-09（issue #6580）：节点改名「企业基础信息」→「**企业基础设置**」、节点码改
     # `production:view`（守卫码同批改，见 `(dashboard)/layout.tsx` 的 `ROUTE_PERMISSION_MAP`）。
@@ -2296,6 +2298,8 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
         "customerApi.getCustomers", "customerApi.getCustomerTags")),
     "/finance": MenuReadAnchor("财务对账", "finance/page.tsx", (
         "financeApi.getSummary", "financeApi.getTransactions", "financeApi.getReconciliation")),
+    # 审批中心（issue #7374）：节点码 `finance:view` = 本页第一屏读端点（`approvalApi.list`）的类级码
+    "/approvals": MenuReadAnchor("审批中心", "approvals/page.tsx", ("approvalApi.list",)),
     "/production": MenuReadAnchor("作业看板", "production/page.tsx", ("processingOrderApi.list",)),
     "/production/pool": MenuReadAnchor("智能派单", "production/pool/page.tsx",
                                        ("poolBoardApi.getBoard",)),
