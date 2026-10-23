@@ -716,6 +716,14 @@ export const approvalApi = {
   list: (params?: { objectType?: string; status?: string }) =>
     request.get<ApiResponse<ApprovalItem[]>>('/api/admin/approvals', { params }),
   detail: (id: string) => request.get<ApiResponse<ApprovalItem>>(`/api/admin/approvals/${id}`),
+  // 提交申请（issue #7374 段 3）：五类对象共用；金额门槛与 objectRef 口径见 `lib/approval-request.ts`
+  submit: (data: {
+    objectType: string
+    objectRef: string
+    objectLabel?: string
+    amount?: number | null
+    reason?: string
+  }) => request.post<ApiResponse<ApprovalItem>>('/api/admin/approvals', data),
   approve: (id: string, note?: string) =>
     request.post<ApiResponse<ApprovalItem>>(`/api/admin/approvals/${id}/approve`, note ? { note } : null),
   reject: (id: string, note?: string) =>

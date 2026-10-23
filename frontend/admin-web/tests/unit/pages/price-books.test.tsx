@@ -1,4 +1,4 @@
-// case_ids: PRC-005
+// case_ids: PRC-005, APV-002
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import PriceBooksPage from '@/app/(dashboard)/price-books/page'
@@ -17,7 +17,8 @@ const priceBookApi = vi.hoisted(() => ({
   remove: vi.fn(),
 }))
 
-vi.mock('@/lib/api', () => ({ priceBookApi }))
+const approvalApi = vi.hoisted(() => ({ submit: vi.fn() }))
+vi.mock('@/lib/api', () => ({ priceBookApi, approvalApi }))
 vi.mock('@/lib/permission', () => ({ usePermission: () => ({ has: () => true, permissions: [], isAdmin: true }) }))
 
 const wrap = <T,>(data: T) => Promise.resolve({ data: { success: true, data } })
@@ -93,5 +94,47 @@ describe('价格本页面', () => {
 
     await waitFor(() => expect(screen.getByTestId('price-books-form-error')).toBeInTheDocument())
     expect(screen.getByTestId('price-books-form-error').textContent).toContain('改价')
+  })
+
+  it('🔴 低于成本被拒 ⇒ 就地开「改价」审批：ref = 当前 SKU id（不必手抄）', async () => {
+    priceBookApi.upsertProtocol.mockRejectedValue({
+      response: {
+        status: 400,
+        data: {
+          message:
+            '协议价 ¥50 低于该 SKU 成本 ¥95（差 ¥45），必须先有已通过的「改价」审批：objectType=price_change，objectRef=1024，金额 ≥ 成本价',
+        },
+      },
+    })
+    approvalApi.submit.mockResolvedValue({ data: { success: true, data: { id: 'ap-9' } } })
+    render(<PriceBooksPage />)
+    fireEvent.change(screen.getByTestId('price-books-sku'), { target: { value: '1024' } })
+    await waitFor(() => expect(screen.getByTestId('price-books-empty-protocol')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByText('新增价格'))
+    fireEvent.change(screen.getByTestId('price-books-target'), { target: { value: 'c-9' } })
+    fireEvent.change(screen.getByTestId('price-books-price'), { target: { value: '50' } })
+    fireEvent.click(screen.getByTestId('price-books-save'))
+
+    // 服务端原话照旧上屏
+    await waitFor(() => expect(screen.getByTestId('price-books-form-error').textContent).toContain('改价'))
+    // 申请入口自动摆出来：对象 = SKU 1024，金额不预填（前端拿不到成本价）但提示点名门槛
+    expect((await screen.findByTestId('approval-request-target')).textContent).toContain('SKU 1024')
+    expect((screen.getByTestId('approval-request-amount') as HTMLInputElement).value).toBe('')
+    expect(screen.getByTestId('approval-request-amount-hint').textContent).toContain('成本价')
+
+    fireEvent.change(screen.getByTestId('approval-request-amount'), { target: { value: '95' } })
+    fireEvent.change(screen.getByTestId('approval-request-reason'), { target: { value: '老客户长期合作' } })
+    fireEvent.click(screen.getByTestId('approval-request-submit'))
+    await waitFor(() =>
+      expect(approvalApi.submit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          objectType: 'price_change',
+          objectRef: '1024',
+          amount: 95,
+          reason: '老客户长期合作',
+        }),
+      ),
+    )
   })
 })

@@ -6,6 +6,8 @@ import { toast } from 'sonner'
 import { Button, PageCard, PageHeader } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
 import { loadErrorMessage, toastRequestError } from '@/lib/api-error'
+import RequestApprovalModal from '@/components/approvals/RequestApprovalModal'
+import { priceChangeDraft, type ApprovalDraft } from '@/lib/approval-request'
 import { priceBookApi } from '@/lib/api'
 import { SELECT_CONTROL_FIELD } from '@/components/ui/Select'
 import { usePermission } from '@/lib/permission'
@@ -44,6 +46,8 @@ export default function PriceBooksPage() {
 
   const [form, setForm] = useState<{ kind: 'protocol' | 'vip' | 'tier'; price: string; target: string; maxQty: string } | null>(null)
   const [saving, setSaving] = useState(false)
+  // 被「低于成本」拒时，就地开一张改价审批（issue #7374 段 3）：ref = 该 SKU id，金额门槛 = 成本价
+  const [approvalDraft, setApprovalDraft] = useState<ApprovalDraft | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -114,6 +118,12 @@ export default function PriceBooksPage() {
       const message = loadErrorMessage(error, '保存失败')
       setFormError(message)
       toastRequestError(error, message)
+      // 服务端原文里带着「必须先有已通过的『改价』审批」⇒ 顺手把申请入口摆出来（不必手抄 SKU id）
+      if (/改价/.test(message)) {
+        setApprovalDraft(
+          priceChangeDraft({ skuId: String(id), skuLabel: `SKU ${id}` }),
+        )
+      }
     } finally {
       setSaving(false)
     }
@@ -302,6 +312,14 @@ export default function PriceBooksPage() {
           ))}
         </div>
       ) : null}
+      {/* 改价审批（issue #7374 段 3）：ref 用当前 SKU id，金额门槛见提示 —— 批错金额等于白批 */}
+      <RequestApprovalModal
+        open={approvalDraft !== null}
+        onClose={() => setApprovalDraft(null)}
+        draft={approvalDraft}
+        onSubmitted={() => void load()}
+      />
     </div>
   )
+
 }

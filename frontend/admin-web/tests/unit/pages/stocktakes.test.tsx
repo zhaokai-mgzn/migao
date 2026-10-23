@@ -1,4 +1,4 @@
-// case_ids: STK-002
+// case_ids: STK-002, APV-002
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import StocktakesPage from '@/app/(dashboard)/stocktakes/page'
@@ -20,7 +20,8 @@ const stocktakeApi = vi.hoisted(() => ({
 }))
 const warehouseApi = vi.hoisted(() => ({ list: vi.fn() }))
 
-vi.mock('@/lib/api', () => ({ stocktakeApi, warehouseApi }))
+const approvalApi = vi.hoisted(() => ({ submit: vi.fn() }))
+vi.mock('@/lib/api', () => ({ stocktakeApi, warehouseApi, approvalApi }))
 vi.mock('@/lib/permission', () => ({
   usePermission: () => ({ has: () => true, permissions: [], isAdmin: true }),
 }))
@@ -183,5 +184,53 @@ describe('盘点单页面', () => {
 
     await waitFor(() => expect(screen.getByTestId('stocktake-form-error')).toBeInTheDocument())
     expect(screen.getByTestId('stocktake-form-error').textContent).toContain('「盘点差异」审批')
+  })
+
+  it('🔴 完成被拒（缺盘点差异审批）⇒ 就地预填申请：ref = 盘点单号、金额 = 差异合计', async () => {
+    stocktakeApi.list.mockImplementation(() => wrap([HEAD]))
+    // 全部数完（差异合计 = -2）：没数完时金额不预填、提示「先补齐实盘」——那是另一条口径
+    stocktakeApi.detail.mockImplementation(() =>
+      wrap({
+        ...HEAD,
+        items: [
+          { batchId: 11, batchNo: 'PC-A', skuCode: 'SKU-A', bookQty: 10, countedQty: 8, diffQty: -2 },
+          { batchId: 12, batchNo: 'PC-B', skuCode: 'SKU-B', bookQty: 5, countedQty: 5, diffQty: 0 },
+        ],
+      }),
+    )
+    stocktakeApi.complete.mockRejectedValue({
+      response: {
+        status: 400,
+        data: { message: '盘点有差异（合计 2），必须先有已通过的「盘点差异」审批：objectType=stocktake_diff，objectRef=PD202610220001' },
+      },
+    })
+    approvalApi.submit.mockResolvedValue({ data: { success: true, data: { id: 'ap-1' } } })
+    render(<StocktakesPage />)
+
+    fireEvent.click(await screen.findByTestId('stocktake-open-detail-st1'))
+    fireEvent.click(await screen.findByTestId('stocktake-complete'))
+    fireEvent.click(await screen.findByTestId('stocktake-confirm-submit'))
+
+    // 服务端原话照旧上屏（不吞成「完成盘点失败」）
+    await waitFor(() =>
+      expect(screen.getByTestId('stocktake-form-error').textContent).toContain('盘点差异'),
+    )
+    // 申请入口自动摆出来：对象 = 盘点单号，金额预填差异合计（这里 -2 的绝对值）
+    const target = await screen.findByTestId('approval-request-target')
+    expect(target.textContent).toContain('PD202610220001')
+    expect((screen.getByTestId('approval-request-amount') as HTMLInputElement).value).toBe('2')
+
+    fireEvent.change(screen.getByTestId('approval-request-reason'), { target: { value: '帘头受潮报废' } })
+    fireEvent.click(screen.getByTestId('approval-request-submit'))
+    await waitFor(() =>
+      expect(approvalApi.submit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          objectType: 'stocktake_diff',
+          objectRef: 'PD202610220001',
+          amount: 2,
+          reason: '帘头受潮报废',
+        }),
+      ),
+    )
   })
 })
