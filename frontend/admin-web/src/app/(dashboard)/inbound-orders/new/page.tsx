@@ -19,15 +19,15 @@
 //   草稿**不发号**（批次号 = 「真的收货了」的标识）⇒ 本页明细列的批次号恒为「过账后生成」，
 //   列在这里是为了让商家建单时就知道「这批货将来靠哪个号追溯」。
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, FileText, Layers, Package, Search } from 'lucide-react'
+import { ArrowLeft, FileText, Package } from 'lucide-react'
 import { toast } from 'sonner'
-import { inboundOrderApi, productApi } from '@/lib/api'
+import { inboundOrderApi } from '@/lib/api'
 import { Button, PageCard, PageHeader, Input, Select } from '@/components/ui'
-import type { Product, ProductSku } from '@/types'
+import SkuPicker, { type SkuPickerChoice, skuLineLabel } from '@/components/products/SkuPicker'
 import { cn } from '@/lib/utils'
-import { checkStockQuantity, formatStockQuantity } from '@/lib/stock-quantity'
+import { checkStockQuantity } from '@/lib/stock-quantity'
 
 /** 入库明细行（含 SKU 的展示快照，提交时只取 productId/skuId/quantity/unitCost/dyeLot/legacyBatchNo/rollLengthM） */
 interface DraftLine {
@@ -73,15 +73,6 @@ function localToday(): string {
 export default function NewInboundOrderPage() {
   const router = useRouter()
 
-  const [productKeyword, setProductKeyword] = useState('')
-  const [productOptions, setProductOptions] = useState<Product[]>([])
-  /** 商品搜索读失败（issue #6691）：与「输入关键词搜索商品」空态**互斥** */
-  const [productSearchFailed, setProductSearchFailed] = useState(false)
-  const [pickedProduct, setPickedProduct] = useState<Product | null>(null)
-  const [productSkus, setProductSkus] = useState<ProductSku[]>([])
-  const [skuLoading, setSkuLoading] = useState(false)
-  /** 规格明细读失败（issue #6691）：与「该商品还没有 SKU」空态**互斥** */
-  const [skuLoadFailed, setSkuLoadFailed] = useState(false)
   const [draftLines, setDraftLines] = useState<DraftLine[]>([])
   const [form, setForm] = useState({
     supplier: '',
@@ -93,65 +84,10 @@ export default function NewInboundOrderPage() {
   })
   const [submitting, setSubmitting] = useState(false)
 
-  /**
-   * 商品搜索（防抖）。
-   *
-   * 读失败 ⇒ `productSearchFailed`（issue #6691）：改前只 `setProductOptions([])` ⇒ 那格
-   * 显示「输入关键词搜索商品」，把**故障**说成「你还没搜」。
-   */
-  const searchProducts = useCallback(async () => {
-    try {
-      const res = await productApi.getProducts({
-        keyword: productKeyword || undefined,
-        page: 1,
-        size: 20,
-      })
-      setProductOptions(res.data.data?.items ?? [])
-      setProductSearchFailed(false)
-    } catch {
-      // 拦截器已 toast；此处只标失败态（列表保持不清零 —— 故障不冒充「搜不到」）
-      setProductSearchFailed(true)
-    }
-  }, [productKeyword])
-
-  useEffect(() => {
-    const t = setTimeout(() => void searchProducts(), 300)
-    return () => clearTimeout(t)
-  }, [searchProducts])
-
-  /**
-   * 选中商品的**规格明细**读面。
-   *
-   * 读失败 ⇒ `skuLoadFailed`（issue #6691）：改前只 `setProductSkus([])` ⇒ 显示
-   * 「该商品还没有 SKU，请先在商品详情维护 SKU」，把**读故障**说成**数据事实**
-   * ⇒ 商家会去商品详情白找一遍。
-   */
-  const loadSkus = useCallback(async (p: Product) => {
-    setSkuLoading(true)
-    try {
-      const res = await productApi.getProduct(p.id)
-      setProductSkus(res.data.data?.skus ?? [])
-      setSkuLoadFailed(false)
-    } catch {
-      // 拦截器已 toast；只标失败态（不冒充「没有规格」）
-      setSkuLoadFailed(true)
-    } finally {
-      setSkuLoading(false)
-    }
-  }, [])
-
-  const pickProduct = async (p: Product) => {
-    setPickedProduct(p)
-    await loadSkus(p)
-  }
-
-  /** 勾选 SKU ⇒ 加入/移出草稿行（保留已填的数量/单价/缸号/旧系统批次号） */
-  const toggleSku = (sku: ProductSku) => {
-    const product = pickedProduct
-    if (!product) return
+  /** 勾选 SKU ⇒ 加入/移出草稿行（勾选器只报「哪个商品的哪个 SKU」，留不留原文不动） */
+  const toggleSku = ({ product, sku }: SkuPickerChoice) => {
     setDraftLines((prev) => {
-      const exists = prev.some((l) => l.skuId === sku.id)
-      if (exists) {
+      if (prev.some((l) => l.skuId === sku.id)) {
         return prev.filter((l) => l.skuId !== sku.id)
       }
       return [
@@ -159,7 +95,7 @@ export default function NewInboundOrderPage() {
         {
           productId: product.id,
           skuId: sku.id,
-          label: `${product.name} / ${sku.colorName || '默认色'} / ${sku.doorWidth || '默认门幅'}`,
+          label: skuLineLabel(product, sku),
           stock: sku.stock ?? 0,
           quantity: '1',
           unitCost: '',
@@ -169,6 +105,11 @@ export default function NewInboundOrderPage() {
         },
       ]
     })
+  }
+
+  /** 行内「×」：按 skuId 摘掉这一行（不经勾选器 —— 勾选器只认它自己右栏里列出的 SKU） */
+  const removeLine = (skuId: string) => {
+    setDraftLines((prev) => prev.filter((l) => l.skuId !== skuId))
   }
 
   const patchLine = (skuId: string, patch: Partial<DraftLine>) => {
@@ -342,118 +283,15 @@ export default function NewInboundOrderPage() {
               </span>
             </div>
 
-            {/* 选品：左「搜商品」/ 右「勾 SKU」—— 两栏各自滚动，不再被页脚截断 */}
-            <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div className="rounded-lg border border-neutral-200 overflow-hidden">
-                <div className="flex items-center gap-2 px-3 h-10 border-b border-neutral-100 bg-neutral-50/60">
-                  <Search className="w-4 h-4 text-neutral-400 shrink-0" />
-                  <input
-                    aria-label="搜索商品"
-                    placeholder="商品名称 / 货号"
-                    value={productKeyword}
-                    onChange={(e) => setProductKeyword(e.target.value)}
-                    className="flex-1 min-w-0 bg-transparent text-sm focus:outline-none placeholder:text-neutral-400"
-                  />
-                </div>
-                <div className="max-h-72 overflow-auto">
-                  {productOptions.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => void pickProduct(p)}
-                      className={cn(
-                        'w-full text-left px-3 py-2 text-sm border-b border-neutral-100 last:border-0 hover:bg-neutral-50',
-                        pickedProduct?.id === p.id && 'bg-primary-50',
-                      )}
-                    >
-                      {p.name}
-                      {p.skuCode ? <span className="text-neutral-400 ml-2">({p.skuCode})</span> : null}
-                    </button>
-                  ))}
-                  {productSearchFailed ? (
-                    // 失败态与空态**分离**（issue #6691）：说清「没读到」+ 重试出口
-                    <div
-                      data-testid="inbound-product-search-error"
-                      role="alert"
-                      className="px-3 py-6 text-sm text-center text-neutral-600"
-                    >
-                      商品搜索失败 —— 没读到数据，请检查网络后重试
-                      <button
-                        type="button"
-                        data-testid="inbound-product-search-retry"
-                        onClick={() => void searchProducts()}
-                        className="ml-2 text-primary-600 underline"
-                      >
-                        重试
-                      </button>
-                    </div>
-                  ) : (
-                    productOptions.length === 0 && (
-                      <div className="px-3 py-6 text-sm text-neutral-400 text-center">输入关键词搜索商品</div>
-                    )
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-neutral-200 overflow-hidden">
-                <div className="flex items-center gap-2 px-3 h-10 border-b border-neutral-100 bg-neutral-50/60">
-                  <Layers className="w-4 h-4 text-neutral-400 shrink-0" />
-                  <span className="text-sm text-neutral-600">
-                    选择入库 SKU（勾选即加入明细，一行 = 一个批次）
-                  </span>
-                </div>
-                <div className="max-h-72 overflow-auto">
-                  {!pickedProduct && (
-                    <div className="px-3 py-6 text-sm text-neutral-400 text-center">
-                      先在左侧选一个商品
-                    </div>
-                  )}
-                  {pickedProduct &&
-                    productSkus.map((sku) => {
-                      const checked = draftLines.some((l) => l.skuId === sku.id)
-                      return (
-                        <label
-                          key={sku.id}
-                          className="flex items-center gap-3 px-3 py-2 text-sm border-b border-neutral-100 last:border-0 hover:bg-neutral-50 cursor-pointer"
-                        >
-                          <input type="checkbox" checked={checked} onChange={() => toggleSku(sku)} />
-                          <span className="flex-1 min-w-0">
-                            {sku.colorName || '默认色'} / {sku.doorWidth || '默认门幅'}
-                          </span>
-                          <span className="text-neutral-500 shrink-0">
-                            当前库存 {formatStockQuantity(sku.stock ?? 0)}
-                          </span>
-                        </label>
-                      )
-                    })}
-                  {pickedProduct && !skuLoading && skuLoadFailed && (
-                    // 读失败 ⇒ 说「没读到」（**不**说「该商品还没有 SKU」——那是数据事实，issue #6691）
-                    <div
-                      data-testid="inbound-sku-error"
-                      role="alert"
-                      className="px-3 py-6 text-sm text-center text-neutral-600"
-                    >
-                      规格读取失败 —— 没读到这个商品的规格，请检查网络后重试
-                      <button
-                        type="button"
-                        data-testid="inbound-sku-retry"
-                        onClick={() => pickedProduct && void loadSkus(pickedProduct)}
-                        className="ml-2 text-primary-600 underline"
-                      >
-                        重试
-                      </button>
-                    </div>
-                  )}
-                  {pickedProduct && !skuLoading && !skuLoadFailed && productSkus.length === 0 && (
-                    <div className="px-3 py-6 text-sm text-neutral-400 text-center">
-                      该商品还没有 SKU，请先在商品详情维护 SKU
-                    </div>
-                  )}
-                  {pickedProduct && skuLoading && (
-                    <div className="px-3 py-6 text-sm text-neutral-400 text-center">加载中…</div>
-                  )}
-                </div>
-              </div>
+            {/* 选品：公共件（issue #7567）—— 左「搜商品」/ 右「勾 SKU」，两栏各自滚动。
+                交互与读失败/空态的分离规则都收在 `SkuPicker` 里（采购单 / 价格本共用同一份）。 */}
+            <div className="mt-4">
+              <SkuPicker
+                testIdPrefix="inbound"
+                title="选择入库 SKU（勾选即加入明细，一行 = 一个批次）"
+                selectedSkuIds={draftLines.map((l) => l.skuId)}
+                onToggle={toggleSku}
+              />
             </div>
 
             {/* 明细表 */}
@@ -538,7 +376,7 @@ export default function NewInboundOrderPage() {
                           <button
                             type="button"
                             aria-label={`移除 ${l.label}`}
-                            onClick={() => toggleSku({ id: String(l.skuId) } as ProductSku)}
+                            onClick={() => removeLine(l.skuId)}
                             className="text-neutral-400 hover:text-red-600 px-2"
                           >
                             ×

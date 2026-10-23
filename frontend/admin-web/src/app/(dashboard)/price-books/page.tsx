@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button, PageCard, PageHeader } from '@/components/ui'
+import SkuPicker, { type SkuPickerChoice, skuLineLabel } from '@/components/products/SkuPicker'
 import ListLoadError from '@/components/common/ListLoadError'
 import { loadErrorMessage, toastRequestError } from '@/lib/api-error'
 import RequestApprovalModal from '@/components/approvals/RequestApprovalModal'
@@ -27,6 +28,11 @@ function money(value: number | null | undefined): string {
  * <p>价格决定毛利，而改前价格本只能直接写库 —— 只有工程师能维护的价格体系等于没有。本页把三层价格
  * 放在一处：按 **SKU** 查（价格本按 SKU 维护），录入 / 停用都在这里。</p>
  *
+ * <h3>issue #7567：SKU 只从选品器里选</h3>
+ * <p>改前是一格 `<input placeholder="如 1024">` + `Number(skuId)` —— 而 SKU id 是**雪花号字符串**
+ * （≈2.1e18 > 2^53）⇒ `Number()` 一转换就吞末位，查不到该 SKU（#5904 同族）。现在与入库单/采购单
+ * 共用 `components/products/SkuPicker`（单选态）：选中即按**原样字符串**查这个 SKU 的三层价。</p>
+ *
  * <h3>三条纪律（与后端一致）</h3>
  * <ol>
  *   <li><b>价格必须 &gt; 0</b>：0 元 = 白送，前端先拦一次（后端也拦）；</li>
@@ -39,6 +45,8 @@ export default function PriceBooksPage() {
   const canWrite = hasPermission('product:create')
 
   const [skuId, setSkuId] = useState('')
+  /** 选中 SKU 的展示名（页面上要说清「正在维护哪个 SKU」，不印雪花号） */
+  const [skuLabel, setSkuLabel] = useState('')
   const [customerId, setCustomerId] = useState('')
   const [book, setBook] = useState<PriceBookView | null>(null)
   const [loading, setLoading] = useState(false)
@@ -51,8 +59,7 @@ export default function PriceBooksPage() {
   const [formError, setFormError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    const id = Number(skuId)
-    if (!skuId.trim() || Number.isNaN(id) || id <= 0) {
+    if (!skuId.trim()) {
       setBook(null)
       setLoadError(null)
       return
@@ -60,7 +67,8 @@ export default function PriceBooksPage() {
     setLoading(true)
     setLoadError(null)
     try {
-      const res = await priceBookApi.list({ skuId: id, customerId: customerId.trim() || undefined })
+      // 🔴 skuId 原样交给后端（字符串）：雪花号经 `Number()` 会吞末位（#5904 同族）
+      const res = await priceBookApi.list({ skuId, customerId: customerId.trim() || undefined })
       setBook(res.data.data || null)
     } catch (error) {
       console.error('加载价格本失败:', error)
@@ -75,14 +83,23 @@ export default function PriceBooksPage() {
     // ⚠️ 必须**直接调用** `load()`（而不是 `setTimeout(load, 300)`）：判据 12 的「第一屏读端点」
     // 只认 `useEffect` 块体里被 `name(` 调用到的本地函数 —— 把函数当参数传进去会让 api 调用
     // 掉出 effect 驱动面（实测：判据当场判「锚点声明的调用不在 effect 驱动面上」）。
-    const timer = setTimeout(() => { void load() }, 300)   // 输入 SKU 时防抖：避免每敲一个字都打一次接口
+    // 防抖只服务于「客户筛选」那格输入（避免每敲一个字都打一次接口）；
+    // SKU 已由选品器**显式选定**（issue #7567），不再逐字请求。
+    const timer = setTimeout(() => { void load() }, 300)
     return () => clearTimeout(timer)
   }, [load])
+
+  /** 单选：点另一个 SKU 就换人；再点当前这个不取消（避免一次误点把正在维护的价格视图清空）。 */
+  const pickSku = ({ product, sku }: SkuPickerChoice) => {
+    if (sku.id === skuId) return
+    setSkuId(sku.id)
+    setSkuLabel(skuLineLabel(product, sku))
+    setBook(null)
+  }
 
   const submit = async () => {
     if (!form) return
     const price = Number(form.price)
-    const id = Number(skuId)
     if (!form.price.trim() || Number.isNaN(price) || price <= 0) {
       setFormError('价格必须大于 0（0 元等于白送；未定价就不要录）')
       return
@@ -99,12 +116,12 @@ export default function PriceBooksPage() {
     setFormError(null)
     try {
       if (form.kind === 'protocol') {
-        await priceBookApi.upsertProtocol({ customerId: form.target.trim(), skuId: id, price })
+        await priceBookApi.upsertProtocol({ customerId: form.target.trim(), skuId, price })
       } else if (form.kind === 'vip') {
-        await priceBookApi.upsertVipLevel({ vipLevel: form.target, skuId: id, price })
+        await priceBookApi.upsertVipLevel({ vipLevel: form.target, skuId, price })
       } else {
         await priceBookApi.upsertTier({
-          skuId: id,
+          skuId,
           minQty: Number(form.target),
           maxQty: form.maxQty.trim() ? Number(form.maxQty) : undefined,
           price,
@@ -121,7 +138,7 @@ export default function PriceBooksPage() {
       // 服务端原文里带着「必须先有已通过的『改价』审批」⇒ 顺手把申请入口摆出来（不必手抄 SKU id）
       if (/改价/.test(message)) {
         setApprovalDraft(
-          priceChangeDraft({ skuId: String(id), skuLabel: `SKU ${id}` }),
+          priceChangeDraft({ skuId, skuLabel: skuLabel || '当前 SKU' }),
         )
       }
     } finally {
@@ -167,17 +184,6 @@ export default function PriceBooksPage() {
       <PageCard className="mt-4">
         <div className="flex flex-wrap items-end gap-3">
           <label className="text-sm text-neutral-600">
-            <span className="block mb-1">SKU 编号</span>
-            <input
-              data-testid="price-books-sku"
-              className="w-40 rounded border border-neutral-200 px-3 py-2 text-sm"
-              value={skuId}
-              onChange={(e) => setSkuId(e.target.value)}
-              placeholder="如 1024"
-              inputMode="numeric"
-            />
-          </label>
-          <label className="text-sm text-neutral-600">
             <span className="block mb-1">只看这个客户（可选）</span>
             <input
               data-testid="price-books-customer"
@@ -188,6 +194,20 @@ export default function PriceBooksPage() {
             />
           </label>
         </div>
+        <div className="mt-3">
+          <SkuPicker
+            mode="single"
+            testIdPrefix="price-books"
+            title="选一个 SKU（这一页维护它的三层价格）"
+            selectedSkuIds={skuId ? [skuId] : []}
+            onToggle={pickSku}
+          />
+        </div>
+        {skuId && (
+          <p data-testid="price-books-selected" className="mt-3 text-sm text-neutral-700">
+            正在维护：<span className="font-medium">{skuLabel}</span>
+          </p>
+        )}
       </PageCard>
 
       {loadError && <ListLoadError message={loadError} onRetry={load} testId="price-books-load-error" />}
@@ -267,7 +287,7 @@ export default function PriceBooksPage() {
         <p className="mt-4 text-sm text-neutral-500" data-testid="price-books-loading">加载中…</p>
       ) : !skuId.trim() ? (
         <p className="mt-4 text-sm text-neutral-500" data-testid="price-books-hint">
-          输入 SKU 编号查看这个 SKU 的三层价格（协议价 / 等级价 / 阶梯价）
+          在上面选一个 SKU —— 它的三层价格（协议价 / 等级价 / 阶梯价）都在这一页维护
         </p>
       ) : book ? (
         <div className="mt-4 grid gap-4 lg:grid-cols-3">

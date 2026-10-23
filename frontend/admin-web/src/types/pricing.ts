@@ -13,7 +13,8 @@ export interface PriceBookRow {
 }
 
 export interface PriceBookView {
-  skuId: number
+  /** 服务端回的 SKU id（雪花号可能超出 JS 安全整数 ⇒ 只做展示/对账，**不要**再拿它去算） */
+  skuId: number | string
   customerId?: string | null
   protocol: PriceBookRow[]
   vipLevels: PriceBookRow[]

@@ -47,6 +47,11 @@ public record PurchaseOrderView(String id,
      * @param amount          金额（数量 × 单价，2 位小数）
      * @param receivedQuantity 已收（Σ receipts）
      * @param remainingQuantity 未收（采购数量 − 已收；收齐 = 0）
+     * @param productName     商品名（issue #7567：收货面要认得出是哪块布 —— 服务端给**展示名**，
+     *                        前端不拿 `skuId` 雪花号上屏、也不在页面里切字符串）
+     * @param skuCode         货号（业务面标识，可与商品名并列展示）
+     * @param colorName       颜色（SKU 的第一维）
+     * @param doorWidth       门幅（SKU 的第二维）
      */
     public record ItemView(String id,
                            String skuId,
@@ -55,7 +60,11 @@ public record PurchaseOrderView(String id,
                            BigDecimal unitPrice,
                            BigDecimal amount,
                            BigDecimal receivedQuantity,
-                           BigDecimal remainingQuantity) {
+                           BigDecimal remainingQuantity,
+                           String productName,
+                           String skuCode,
+                           String colorName,
+                           String doorWidth) {
     }
 
     /**

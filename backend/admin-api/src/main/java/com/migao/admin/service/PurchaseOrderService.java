@@ -5,12 +5,16 @@ import com.migao.admin.dto.PurchaseOrderCreateRequest;
 import com.migao.admin.dto.PurchaseOrderReceiveRequest;
 import com.migao.admin.dto.PurchaseOrderView;
 import com.migao.admin.entity.InboundOrder;
+import com.migao.admin.entity.Product;
+import com.migao.admin.entity.ProductSku;
 import com.migao.admin.entity.PurchaseOrder;
 import com.migao.admin.entity.PurchaseOrderItem;
 import com.migao.admin.entity.PurchaseOrderReceipt;
 import com.migao.admin.entity.Supplier;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.InboundOrderMapper;
+import com.migao.admin.mapper.ProductMapper;
+import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.PurchaseOrderItemMapper;
 import com.migao.admin.mapper.PurchaseOrderMapper;
 import com.migao.admin.mapper.PurchaseOrderReceiptMapper;
@@ -29,6 +33,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -66,6 +71,9 @@ public class PurchaseOrderService {
     private final PurchaseOrderReceiptMapper receiptMapper;
     private final SupplierMapper supplierMapper;
     private final InboundOrderMapper inboundOrderMapper;
+    /** 明细展示名（issue #7567）：按 skuId 反查商品 / 颜色 / 门幅 —— 收货面不许印雪花号。 */
+    private final ProductSkuMapper skuMapper;
+    private final ProductMapper productMapper;
     private final BusinessClock businessClock;
 
     /** 建单（状态一律 {@code ordered}；明细金额在这里算并冻结）。 */
@@ -275,13 +283,24 @@ public class PurchaseOrderService {
                     row.getReceivedAt(), row.getInboundOrderId()));
         }
 
+        // 明细展示名（issue #7567）：N 行只做 2 次批量查询（SKU → 商品），不逐行回查。
+        // 查不到（SKU 已删 / test 用假 id）⇒ 四个展示字段留 null，**绝不拿 skuId 冒充商品名**。
+        Map<Long, ProductSku> skuById = skusOf(items.values(), tenantId);
+        Map<String, Product> productById = productsOf(skuById.values(), tenantId);
         List<PurchaseOrderView.ItemView> itemViews = new ArrayList<>();
         for (PurchaseOrderItem item : items.values()) {
             BigDecimal received = receivedByItem.getOrDefault(item.getId(), ZERO);
+            Long skuKey = parseId(item.getSkuId());
+            ProductSku sku = skuKey == null ? null : skuById.get(skuKey);
+            Product product = sku == null ? null : productById.get(sku.getProductId());
             itemViews.add(new PurchaseOrderView.ItemView(
                     item.getId(), item.getSkuId(), item.getProductId(),
                     item.getQuantity(), item.getUnitPrice(), item.getAmount(),
-                    received, item.getQuantity().subtract(received)));
+                    received, item.getQuantity().subtract(received),
+                    product == null ? null : product.getName(),
+                    sku == null ? null : sku.getSkuCode(),
+                    sku == null ? null : sku.getColorName(),
+                    sku == null ? null : sku.getDoorWidth()));
         }
 
         Supplier supplier = supplierMapper.selectById(order.getSupplierId());
@@ -294,6 +313,76 @@ public class PurchaseOrderService {
     }
 
     // ─────────────────────────────── 内部 ───────────────────────────────
+
+    /** 按 SKU id 批量取规格（租户内；`skuId` 非数字 / 不存在 ⇒ 不进 map）。 */
+    private Map<Long, ProductSku> skusOf(Collection<PurchaseOrderItem> items, Long tenantId) {
+        Set<Long> ids = new java.util.LinkedHashSet<>();
+        for (PurchaseOrderItem item : items) {
+            Long id = parseId(item.getSkuId());
+            if (id != null) {
+                ids.add(id);
+            }
+        }
+        if (ids.isEmpty()) {
+            // 🔴 空集必须返回**可变**表（不是 `Map.of()`）：不可变空表的 `get(null)` 直接抛 NPE
+            //    （issue #6219 实测语义）—— 展示名解析发生在读面上，500 的代价远大于省一行分配。
+            //    类级判据 = `WorkerCuttingHeightNullProductIdTest` 的「空不可变表产出方」普查。
+            return new HashMap<>();
+        }
+        List<ProductSku> rows = skuMapper.selectList(new LambdaQueryWrapper<ProductSku>()
+                .eq(ProductSku::getTenantId, tenantId)
+                .in(ProductSku::getId, ids));
+        Map<Long, ProductSku> out = new HashMap<>();
+        if (rows != null) {
+            for (ProductSku row : rows) {
+                out.put(row.getId(), row);
+            }
+        }
+        return out;
+    }
+
+    /** 按商品 id 批量取商品名（租户内）。 */
+    private Map<String, Product> productsOf(Collection<ProductSku> skus, Long tenantId) {
+        Set<String> ids = new java.util.LinkedHashSet<>();
+        for (ProductSku sku : skus) {
+            if (sku.getProductId() != null) {
+                ids.add(sku.getProductId());
+            }
+        }
+        if (ids.isEmpty()) {
+            // 同上：可变空表（issue #6219 口径）
+            return new HashMap<>();
+        }
+        List<Product> rows = productMapper.selectList(new LambdaQueryWrapper<Product>()
+                .eq(Product::getTenantId, tenantId)
+                .in(Product::getId, ids));
+        Map<String, Product> out = new HashMap<>();
+        if (rows != null) {
+            for (Product row : rows) {
+                out.put(row.getId(), row);
+            }
+        }
+        return out;
+    }
+
+    /** 雪花号 / 数字串 → Long（非法或溢出 ⇒ null，不抛异常：展示名取不到不该让读面 500）。 */
+    private static Long parseId(String raw) {
+        String text = trimToNull(raw);
+        if (text == null) {
+            return null;
+        }
+        for (int i = 0; i < text.length(); i++) {
+            if (!Character.isDigit(text.charAt(i))) {
+                return null;
+            }
+        }
+        try {
+            return Long.valueOf(text);
+        } catch (NumberFormatException overflow) {
+            return null;
+        }
+    }
+
 
     /**
      * 按 Σ收货重算状态并返回读面。

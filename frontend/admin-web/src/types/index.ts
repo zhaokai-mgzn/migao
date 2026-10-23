@@ -2492,6 +2492,11 @@ export interface PurchaseOrderView {
     amount: number
     receivedQuantity: number
     remainingQuantity: number
+    /** 展示名（issue #7567，服务端解析）：收货面认商品用 —— 缺值 = 该 SKU 已删/查不到，**不拿 skuId 顶替** */
+    productName?: string | null
+    skuCode?: string | null
+    colorName?: string | null
+    doorWidth?: string | null
   }[]
   receipts: { id: string; itemId: string; quantity: number; receivedAt: string; inboundOrderId?: string | null }[]
 }

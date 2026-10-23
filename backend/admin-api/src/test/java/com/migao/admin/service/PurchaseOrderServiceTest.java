@@ -5,12 +5,16 @@ import com.migao.admin.dto.PurchaseOrderCreateRequest;
 import com.migao.admin.dto.PurchaseOrderReceiveRequest;
 import com.migao.admin.dto.PurchaseOrderView;
 import com.migao.admin.entity.InboundOrder;
+import com.migao.admin.entity.Product;
+import com.migao.admin.entity.ProductSku;
 import com.migao.admin.entity.PurchaseOrder;
 import com.migao.admin.entity.PurchaseOrderItem;
 import com.migao.admin.entity.PurchaseOrderReceipt;
 import com.migao.admin.entity.Supplier;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.InboundOrderMapper;
+import com.migao.admin.mapper.ProductMapper;
+import com.migao.admin.mapper.ProductSkuMapper;
 import com.migao.admin.mapper.PurchaseOrderItemMapper;
 import com.migao.admin.mapper.PurchaseOrderMapper;
 import com.migao.admin.mapper.PurchaseOrderReceiptMapper;
@@ -57,6 +61,8 @@ class PurchaseOrderServiceTest {
     @Mock private PurchaseOrderReceiptMapper receiptMapper;
     @Mock private SupplierMapper supplierMapper;
     @Mock private InboundOrderMapper inboundOrderMapper;
+    @Mock private ProductSkuMapper skuMapper;
+    @Mock private ProductMapper productMapper;
     @Mock private BusinessClock businessClock;
 
     @InjectMocks private PurchaseOrderService service;
@@ -117,6 +123,53 @@ class PurchaseOrderServiceTest {
         assertThat(view.totalAmount()).isEqualByComparingTo("1000");
         assertThat(view.items()).hasSize(1);
         assertThat(view.items().get(0).remainingQuantity()).isEqualByComparingTo("100");
+    }
+
+    @Test
+    @DisplayName("明细带展示名（issue #7567）：收货面要认得出是哪块布 —— 服务端解析商品 / 颜色 / 门幅")
+    void itemViewCarriesDisplayNames() {
+        // 真实量级的雪花号（> 2^53）：用玩具 id 测不出「字符串被数字化」那类洞
+        String snowflake = "2097126615461462018";
+        when(orderMapper.selectById(PO)).thenReturn(order(PurchaseOrder.STATUS_ORDERED));
+        lenient().when(itemMapper.selectList(any())).thenReturn(List.of(
+                PurchaseOrderItem.builder().id(ITEM).tenantId(TENANT).purchaseOrderId(PO).lineNo(1)
+                        .skuId(snowflake).productId("prod-1")
+                        .quantity(new BigDecimal("100")).unitPrice(new BigDecimal("10.00"))
+                        .amount(new BigDecimal("1000.00")).build()));
+        lenient().when(receiptMapper.selectList(any())).thenReturn(List.of());
+        lenient().when(skuMapper.selectList(any())).thenReturn(List.of(
+                ProductSku.builder().id(Long.valueOf(snowflake)).tenantId(TENANT).productId("prod-1")
+                        .skuCode("H-2699-01").colorName("米白").doorWidth("3.2").build()));
+        lenient().when(productMapper.selectList(any())).thenReturn(List.of(
+                Product.builder().id("prod-1").tenantId(TENANT).name("遮光窗帘布").build()));
+
+        PurchaseOrderView view = service.detail(PO, TENANT);
+
+        PurchaseOrderView.ItemView line = view.items().get(0);
+        assertThat(line.skuId()).isEqualTo(snowflake);
+        assertThat(line.productName()).isEqualTo("遮光窗帘布");
+        assertThat(line.skuCode()).isEqualTo("H-2699-01");
+        assertThat(line.colorName()).isEqualTo("米白");
+        assertThat(line.doorWidth()).isEqualTo("3.2");
+    }
+
+    @Test
+    @DisplayName("取不到商品时展示字段留空（**绝不**拿 skuId 冒充商品名 —— 内部标识不上屏）")
+    void itemViewLeavesDisplayNamesNullWhenSkuMissing() {
+        when(orderMapper.selectById(PO)).thenReturn(order(PurchaseOrder.STATUS_ORDERED));
+        lenient().when(itemMapper.selectList(any())).thenReturn(List.of(item("100")));
+        lenient().when(receiptMapper.selectList(any())).thenReturn(List.of());
+        // item("100") 的 skuId = "SKU-1"（非数字）⇒ 不进批量查询 ⇒ 展示字段全 null
+        PurchaseOrderView view = service.detail(PO, TENANT);
+
+        // 非数字 id 连查询都不该发（也就不会把 null 当键去取 map）
+        verify(skuMapper, never()).selectList(any());
+
+        PurchaseOrderView.ItemView line = view.items().get(0);
+        assertThat(line.productName()).isNull();
+        assertThat(line.skuCode()).isNull();
+        assertThat(line.colorName()).isNull();
+        assertThat(line.doorWidth()).isNull();
     }
 
     @Test
