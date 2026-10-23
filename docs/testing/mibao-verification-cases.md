@@ -8876,7 +8876,7 @@
 ```
 溯源: 2026-10-23 新增（issue #7523，用户裁定：「1.出库做独立工序 2.批次号即卷号 3.维持」）。取号 = 当时 origin/main 已占号最大 PG-090 ⇒ 本单取 PG-091。 ｜ tags: processing-order, route-rule, fabric
 
-## 商品域（129 case）
+## 商品域（130 case）
 
 ### PR-001. 商品搜索 - 关键词模糊匹配 🟢
 ```
@@ -10657,6 +10657,21 @@
 全程禁用: marketing_poster
 ```
 溯源: 2026-10-20 新增（issue #7351；用户 2026-10-20 裁定「B. A + AI 给候选文案，商家确认后采用」）：营销三板斧候选流程的机器判据 = 未确认前禁止调工具。按 #4262，本用例不在合入时自动跑，留给下一次手动集中评测。 ｜ tags: product, poster, journey, marketing, fail_closed
+
+### PR-074. 商品图生成 - 对已选商品生成商品图（缺主图/能力不可用都可行动拒绝；成功发卡：PC 下载 / 手机保存相册） 🔵
+```
+数据: 判据 0·**机器可判**：缺 `product_id` / `kind` 不在白名单 / 商品没有可用主图 ⇒ `success=False`（`missing_params` 或工具错误码 `IMAGE_SOURCE_MISSING`）；成功时 `success=true`、`data.image_url` 非空、`data.product.name` 逐字等于 admin-api 返回的商品名（判据源 = `backend/ai-agent-service/tests/test_product_image_generate.py`）。
+数据: 判据 1·**入口 = 已选商品**（issue #7541；用户 2026-10-23 裁定）：`product_id` 必填，模型先 `product_search` / `product_detail` 定位；缺参 / `kind` 越界 ⇒ 立刻失败且**零 admin-api 调用、零生图调用**。注入红证：缺参放行到取商品 ⇒ 变红。
+数据: 判据 2·**样图只来自该商品主图**：样图取 `GET /api/admin/products/{id}` 的 `mainImage`（缺失回退 `images[0]`）；两者都没有、或不是 http(s) 完整地址 ⇒ `IMAGE_SOURCE_MISSING` + **零生图调用**，不拿别的商品凑、不编造。注入红证：缺主图时改传空串给内核 ⇒ 变红。
+数据: 判据 3·**不写表单、不落库**：全程只有一次 `GET /api/admin/products/{id}`，`post` / `put` / `patch` / `delete` 一个都不调；生成图只作为卡载荷回给对话（转存与「用不用」都在商家后台）。注入红证：成功后顺手 PATCH 商品主图 ⇒ 变红。
+数据: 判据 4·🔴 **失败语义如实**：`ImageGenerationUnavailable`（含模型不接这类图生图请求）⇒ `IMAGE_GEN_UNAVAILABLE`；`ImageGenerationQuotaExceeded` ⇒ `IMAGE_GEN_QUOTA_EXCEEDED`；其它供应商失败 ⇒ `IMAGE_GEN_FAILED`。三者**互不冒充**，`IMAGE_GEN_UNAVAILABLE` 的用户话术里**不得**出现「额度」。注入红证：把前两者合成一个码 ⇒ 变红。
+数据: 判据 5·**卡发射条件**：`_detect_card_type('product_image_generate')` → `generated_image`；`_should_send_card` 只在 `success=true` **且** `data.image_url` 非空时为真（失败 / 空图不发卡，避免前端画空图框）。注入红证：去掉 image_url 判据 ⇒ 变红。
+数据: 判据 6·**跨端契约**：该工具只绑黄金策 `product` / `general` ⇒ B 端桌面 `ToolResultCard` 与 B 端移动 `MessageBubble` 都必须有 `generated_image` 渲染分支，C 端（元元）不可达（判据 = `backend/ai-agent-service/tests/test_card_type_cross_end_contract.py` 现算）。注入红证：删掉任一端的分支 ⇒ 变红。
+数据: 判据 7·**PC 下载 / 手机保存到相册**：桌面卡点「下载图片」走「取文件再按 `商品图-<商品名>.png` 存盘」，取不到时打开原图并明说可「图片另存为」（不谎报已下载）；移动卡在微信内置浏览器弹「长按图片保存」（JS 无法直接写相册，不谎报已保存）。注入红证：微信分支改成提示「已保存」⇒ 变红。
+必须失败: product_image_generate
+跳过: [backend-contract] 工具 + 两端渲染契约（无 LLM 环节）：断言由 backend/ai-agent-service/tests/test_product_image_generate.py、test_card_type_cross_end_contract.py 与 frontend/admin-web/tests/unit/components/GeneratedImageCard.test.tsx 执行；真实出图还依赖生图模型可用性（#7538：qwen-mt-image-2.0 不接图生图），合入时**不跑**端到端生成
+```
+溯源: 2026-10-23 新增（issue #7541：黄金策「对已选商品生成商品图」—— 工具 + 对话卡预览；PC 下载 / 手机保存相册；不写表单、不落库；失败语义三分）。按 #4262，本用例不在合入时自动跑，留给下一次手动集中评测。 ｜ tags: product, image_generation, tool, backend_contract, fail_closed
 
 ## 工具注册器域（1 case）
 
@@ -12828,8 +12843,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：873（活跃 141，跳过 732）
-- tier 分布：smoke 12 / normal 805 / adversarial 32
+- 用例总数：874（活跃 141，跳过 733）
+- tier 分布：smoke 12 / normal 806 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12850,7 +12865,7 @@
 - 订单域：68
 - 加工项域：31
 - 加工单域：77
-- 商品域：129
+- 商品域：130
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
@@ -13179,6 +13194,7 @@
 - PR-053: 营销海报 - 商品事实 + 商家确认文案生成海报卡（缺文案 fail-closed；PC 下载 / 手机保存相册）
 - PR-054: 营销海报旅程 - 先问商家要文案，拿到「开门红 + 卖点」后才调海报工具（不得自行编文案）
 - PR-073: 营销海报 - 商家让 AI 写文案：先按营销三板斧给 2~3 组候选，确认前不得调海报工具
+- PR-074: 商品图生成 - 对已选商品生成商品图（缺主图/能力不可用都可行动拒绝；成功发卡：PC 下载 / 手机保存相册）
 - UI-048: 工艺配置页：规则 / 工序删除的二次确认改**弹框**（与「删除工艺路线」同一形态；弹框写清删的是哪一条 + 删除中禁用 + 失败理由逐条）
 - UI-049: 工艺项页·**一张表装全部工序**（用户裁定 2026-09-21：删【打包发货】独立区块 ⇒ 两层分区退场；按车间分组可折叠；**不再有部位列**）
 - UI-050: 工艺项页·**【打包发货】独立区块已删除**（用户裁定 2026-09-21）+ 工艺路线并入该位置**同屏** + 两个 tab（工序管理 / 算料配置）+ **行为变更如实登记**（零价目行的工序**进表**：`data-state=no_row` + 行尾 `管理▸` 可停用/删除，issue #5875）

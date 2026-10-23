@@ -331,6 +331,8 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     "product_detail": ("product:list",),
     # issue #7351：营销海报工具只调用 `GET /api/admin/products/{id}`（与 product_detail 同码）。
     "marketing_poster": ("product:list",),
+    # issue #7541：商品图生成工具只调用 `GET /api/admin/products/{id}`（与 product_detail 同码）。
+    "product_image_generate": ("product:list",),
     "product_manage": ("product:create",),
     "product_search": ("product:list",),
     "product_update": ("product:create",),
@@ -416,6 +418,8 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "product_detail": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
     # issue #7351：与 `product_detail` 同码 ⇒ 放行集逐字相同（目录推导，不额外授予）。
     "marketing_poster": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
+    # issue #7541：与 `product_detail` 同码 ⇒ 放行集逐字相同（目录推导，不额外授予）。
+    "product_image_generate": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
     "product_manage": frozenset({"operator", "product_manager"}),
     "product_search": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
     "product_update": frozenset({"operator", "product_manager"}),

@@ -1,0 +1,76 @@
+.gen-image-card {
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  padding: 24px;
+
+  &--empty {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  &__empty-text {
+    font-size: 26px;
+    color: #0a2540;
+  }
+
+  &__empty-hint {
+    font-size: 24px;
+    color: #9ca3af;
+  }
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  &__title {
+    font-size: 30px;
+    font-weight: 600;
+    color: #0a2540;
+  }
+
+  &__subtitle {
+    font-size: 24px;
+    color: #9ca3af;
+    max-width: 60%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  &__image {
+    width: 100%;
+    display: block;
+    border-radius: 12px;
+    border: 1px solid #f3f4f6;
+  }
+
+  &__actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 20px;
+  }
+
+  &__save {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 68px;
+    padding: 0 32px;
+    border-radius: 12px;
+    background: #2563eb;
+    color: #ffffff;
+    font-size: 26px;
+  }
+
+  &__hint {
+    display: block;
+    margin-top: 12px;
+    font-size: 22px;
+    color: #9ca3af;
+  }
+}

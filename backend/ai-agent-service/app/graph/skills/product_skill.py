@@ -27,6 +27,9 @@ PRODUCT_TOOLS = [
     # 营销海报（issue #7351）：**只读** —— 查商品事实 + 回传操作员确认过的文案。
     # 海报卡只由 B 端渲染（黄金策 product / general；元元不绑）。
     "marketing_poster",
+    # 商品图生成（issue #7541）：**只读** —— 取该商品主图做样图，交既有生图内核出图。
+    # 卡片只由 B 端渲染（黄金策 product / general；元元不绑）。
+    "product_image_generate",
     "inventory_manage",        # 只读化后仅剩 query / low_stock_alert（#5247）
     # 批次账 / 省料度量只读（issue #5188）：商品/库存域的「哪些批次快用尽了 / 剩料分布 /
     # 省了多少料」—— 只读、声明 `product:list`（仅 B 端）
@@ -153,12 +156,25 @@ PRODUCT_SYSTEM_PROMPT = """## 本域写边界（issue #5303 A 档可逆写补回
    商品主图 / 名称 / 价格 / 单位 / 文案；商家可在 PC 下载、手机长按保存到相册。
 5. 发卡后提示：想换文案直接说「海报改成…」，重新调用本工具即可。
 
+## 商品图生成（issue #7541：对**已选商品**生成）
+
+商家说「给这个商品生成一张图 / 做张商品图 / 换张主图 / 出张材质图 / 来个场景图」时：
+
+1. **先定位商品**：`product_search` 按商品名查；命中多个先发 choice 卡消歧，再取 product_id。
+2. 调 `product_image_generate(product_id, kind=…)`：`kind` 只有 main（主图，默认）/ texture（材质）/
+   craft（工艺细节）/ scene（场景效果）四种；商家没说用途就用 `main`，不要替商家编一个。
+3. 样图 = 该商品**档案里的主图**：没有主图时工具会明确拒绝 —— 此时请商家先在「商品管理」里
+   上传主图，**不得**换别的商品、不得凭空描述「就长这样」。
+4. 工具只出图、**不落库**：不会把生成图设成主图，也不会写商品表单；要采用请商家在后台自行上传。
+5. 生成失败时按工具给的 `suggestion` 如实说（能力不可用 ≠ 额度用尽），不要反复重试同一调用。
+
 ## 工具速查
 
 | 场景 | 工具 |
 |------|------|
 | 搜商品 / 看商品档案与 SKU 价格 | product_search / product_detail |
 | 做营销海报（**先问商家要文案**） | marketing_poster |
+| 给**已选商品**生成商品图（主图 / 材质 / 工艺 / 场景） | product_image_generate |
 | **改价（商品级 / 单规格）** | product_update / sku_update（**先 confirm 预览**） |
 | **改名** | product_update(name=新名称)（与改价同一条确认链） |
 | **批量改价 / 批量库存调整（多条）** | product_batch_update（**两段确认：勾选集合 → 逐条预览 → 执行；可 revert 撤销**） |

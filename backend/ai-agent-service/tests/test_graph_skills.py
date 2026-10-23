@@ -180,6 +180,9 @@ class TestSkillToolSubsets:
             # ── issue #7351（营销海报）新增：只读、「做海报」无专属意图 ⇒ 兜底必须绑 ──
             "marketing_poster",           # 商品事实 + 商家确认的文案 → 海报卡载荷；
                                           # 文案缺失由工具 fail-closed（不自动编文案）
+            # ── issue #7541（商品图生成）新增：只读、「给这个商品生成张图」无专属意图 ⇒ 兜底必须绑 ──
+            "product_image_generate",     # 商品主图 → 既有生图内核 → 商品图卡载荷；
+                                          # 缺主图 / 生图不可用由工具 fail-closed（不编造商品图）
             # ⚠️ issue #7514：算料配置**变更**（`craft_calc_config_update`）是 A 档可逆写，
             # 但它是**写操作** ⇒ 补回域 = `product`（有 interact 确认链），**不进**本兜底域
             # （判据 `tests/test_skill_routing_integrity.py::test_general_has_only_read_tools`）。

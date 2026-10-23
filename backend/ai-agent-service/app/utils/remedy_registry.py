@@ -166,6 +166,31 @@ REMEDIES: tuple[Remedy, ...] = (
         reason="商家提供的文案超出了海报版面",
         remedy="请让商家把主标题或卖点精简一下，再重新生成海报。",
     ),
+    # 商品图生成（issue #7541）：四种失败**语义分开**，尤其「能力不可用」不得说成「额度用尽」。
+    # ⚠️ 四行**有意不声明 `entry=`**、话术也不点名页面：当前页面入口判据的标签源
+    # （`tests/unit_ci_workflows/test_remedy_registry_guard.py::page_labels`）只读组内项与
+    # `standaloneItems`，而商品页现役是 `standaloneTopItems` 的一级项 ⇒ 点名它会被判「不在侧边栏」。
+    # 页面路径改由工具的 `suggestion` 说（那一层不是被判定面）。
+    Remedy(
+        code="IMAGE_SOURCE_MISSING",
+        reason="这个商品还没有可用作样图的主图",
+        remedy="请商家先给这个商品上传一张主图，之后就能生成商品图。",
+    ),
+    Remedy(
+        code="IMAGE_GEN_UNAVAILABLE",
+        reason="商品图生成能力现在用不了",
+        remedy="可以稍后让我生成，或由商家先上传一张商品图。",
+    ),
+    Remedy(
+        code="IMAGE_GEN_QUOTA_EXCEEDED",
+        reason="商品图生成额度暂时用尽",
+        remedy="可以稍后让我生成，或由商家先上传一张商品图。",
+    ),
+    Remedy(
+        code="IMAGE_GEN_FAILED",
+        reason="商品图没有生成成功",
+        remedy="可以让我再生成一次；如仍不行，请商家先上传一张商品图。",
+    ),
     Remedy(
         code="order_confirmation_mismatch",
         reason="确认卡上的内容和实际订单对不上",

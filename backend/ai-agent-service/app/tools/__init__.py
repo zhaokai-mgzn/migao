@@ -36,6 +36,8 @@ from app.tools.product_search import ProductSearchTool
 from app.tools.product_detail import ProductDetailTool
 # 营销海报（issue #7351）：只读工具；注册集双向核对 = tests/test_tools_registry.py
 from app.tools.marketing_poster import MarketingPosterTool
+# 商品图生成（issue #7541）：只读工具；注册集双向核对 = tests/test_tools_registry.py
+from app.tools.product_image_generate import ProductImageGenerateTool
 from app.tools.logistics_track import LogisticsTrackTool
 from app.tools.customer_logistics_track import CustomerLogisticsTrackTool
 from app.tools.knowledge_search import KnowledgeSearchTool
@@ -98,7 +100,8 @@ __all__ = [
     "ToolRegistry", "get_tool_registry", "reset_tool_registry",
     "create_default_registry", "set_tool_context", "get_tool_context",
     # Tool 实现（= create_default_registry() 注册的全部类）
-    "ProductSearchTool", "ProductDetailTool", "MarketingPosterTool", "LogisticsTrackTool",
+    "ProductSearchTool", "ProductDetailTool", "MarketingPosterTool",
+    "ProductImageGenerateTool", "LogisticsTrackTool",
     "CustomerLogisticsTrackTool", "KnowledgeSearchTool", "OrderQueryTool",
     "CustomerOrderQueryTool", "CustomerAddressQueryTool", "OrderManageTool",
     "OrderCreateTool", "ProductManageTool", "InventoryManageTool",

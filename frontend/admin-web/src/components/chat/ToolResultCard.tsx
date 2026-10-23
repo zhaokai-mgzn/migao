@@ -8,6 +8,7 @@ import LogisticsCard from './LogisticsCard'
 import ProductionProgressCard, { type ProductionProgressCardData } from './ProductionProgressCard'
 import BatchStockCard, { type BatchStockCardData } from './BatchStockCard'
 import MarketingPosterCard from './MarketingPosterCard'
+import GeneratedImageCard from './GeneratedImageCard'
 
 interface ToolResultCardProps {
   card: ChatCard
@@ -36,6 +37,11 @@ export default function ToolResultCard({ card }: ToolResultCardProps) {
       // 同样只绑黄金策（`product:list`）⇒ C 端不可达，B 端两端都要能渲染
       // （判据 = backend/ai-agent-service/tests/test_card_type_cross_end_contract.py）。
       return <MarketingPosterCard data={card.data} />
+    case 'generated_image':
+      // 商品图生成卡（issue #7541）：数据 = 一张临时图片地址 + 商品名，本端负责预览 + 下载。
+      // 同样只绑黄金策（`product:list`）⇒ C 端不可达，B 端两端都要能渲染
+      // （判据 = backend/ai-agent-service/tests/test_card_type_cross_end_contract.py）。
+      return <GeneratedImageCard data={card.data} />
     default:
       // 未知卡片类型：不回显内部 type（避免把内部类型名泄漏给商家用户），
       // 给出可理解的通用占位（与 C 端「消息内容暂不支持预览」同族口径，issue #3960）

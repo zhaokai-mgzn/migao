@@ -20,6 +20,7 @@ import QuotationCard from '../cards/QuotationCard'
 import ProductionProgressCard from '../cards/ProductionProgressCard'
 import BatchStockCard from '../cards/BatchStockCard'
 import PosterCard from '../cards/PosterCard'
+import GeneratedImageCard from '../cards/GeneratedImageCard'
 import ConfirmCard from '../cards/ConfirmCard'
 import ChoiceCard from '../cards/ChoiceCard'
 import FormCard from '../cards/FormCard'
@@ -113,6 +114,13 @@ function renderCard(card: CardData, idx: number, onInteract?: (value: string) =>
       // 只绑黄金策（`product:list`）⇒ C 端不可达，B 端两端都要能渲染
       // （判据 = backend/ai-agent-service/tests/test_card_type_cross_end_contract.py）。
       return <PosterCard key={`card-${idx}`} data={data} />
+    }
+
+    case 'generated_image': {
+      // 商品图生成卡（issue #7541）：服务商回一张临时图片地址 ⇒ 预览 + 保存到相册。
+      // 只绑黄金策（`product:list`）⇒ C 端不可达，B 端两端都要能渲染
+      // （判据 = backend/ai-agent-service/tests/test_card_type_cross_end_contract.py）。
+      return <GeneratedImageCard key={`card-${idx}`} data={data} />
     }
 
     default:
