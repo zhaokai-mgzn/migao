@@ -704,12 +704,12 @@ class ProcessingFeeCalculatorTest {
         givenCombinations(combination("韩褶", "10.00"));
         givenOptionRules(optionRule("拼1次", "3.00"));
 
-        ProcessingFeeCalculator.Fee fee = compute(mixedColorInfo("拼色", "34.10", "拼1次"));
+        ProcessingFeeCalculator.Fee fee = compute(mixedColorInfo("拼色", "13.90", "拼1次"));
 
-        // 组合那半：10.00 × 34.10 = 341.00；拼色加价：2.4 × 34.10 = 81.84
+        // 组合那半：10.00 × 13.90 = 139.00；拼色加价：2.4 × 13.90 = 33.36
         assertThat(fee.amount()).isEqualByComparingTo("341.00");
-        assertThat(fee.mixedColor().surcharge()).isEqualByComparingTo("81.84");
-        assertThat(fee.mixedColor().meters()).isEqualByComparingTo("34.10");
+        assertThat(fee.mixedColor().surcharge()).isEqualByComparingTo("33.36");
+        assertThat(fee.mixedColor().meters()).isEqualByComparingTo("13.90");
         assertThat(fee.mixedColor().metersSource()).isEqualTo("fabric_meters");
         assertThat(fee.mixedColor().options()).containsExactly("拼1次");
         assertThat(fee.lineAmount()).isEqualByComparingTo("422.84");
@@ -727,23 +727,23 @@ class ProcessingFeeCalculatorTest {
         assertThat(fee.hint()).isNull();   // 米数齐全 ⇒ 无「未定价 / 缺米数」提示
         // detail 契约（#4855：新增键只加不改）
         assertThat(fee.detail())
-                .containsEntry("mixed_color_surcharge", new BigDecimal("81.84"))
+                .containsEntry("mixed_color_surcharge", new BigDecimal("33.36"))
                 .containsEntry("mixed_color_surcharge_per_meter", new BigDecimal("2.4"))
-                .containsEntry("mixed_color_meters", new BigDecimal("34.10"))
+                .containsEntry("mixed_color_meters", new BigDecimal("13.90"))
                 .containsEntry("mixed_color_meters_source", "fabric_meters");
         assertThat(fee.detail().get("mixed_color_options")).isEqualTo(List.of("拼1次"));
     }
 
     @Test
-    @DisplayName("#4855 判据 1b·真值源 §10 算例逐值：拼2次 62.7 米 ⇒ 150.48 元（旧口径 5.00 元/套）")
+    @DisplayName("#4855 判据 1b·真值源 §10 算例逐值：拼2次 14.4 米 ⇒ 34.56 元（旧口径 5.00 元/套；米数随 #7560 改判）")
     void mixedColorSurchargeMatchesTruthSourceExample() {
         givenCombinations(combination("韩褶", "10.00"));
         givenOptionRules(optionRule("拼2次", "5.00"));
 
-        ProcessingFeeCalculator.Fee fee = compute(mixedColorInfo("拼色", "62.70", "拼2次"));
+        ProcessingFeeCalculator.Fee fee = compute(mixedColorInfo("拼色", "14.40", "拼2次"));
 
         assertThat(fee.amount()).isEqualByComparingTo("627.00");
-        assertThat(fee.mixedColor().surcharge()).isEqualByComparingTo("150.48");
+        assertThat(fee.mixedColor().surcharge()).isEqualByComparingTo("34.56");
         assertThat(fee.lineAmount()).isEqualByComparingTo("777.48");
         assertThat(fee.lineAmount()).isNotEqualByComparingTo("632.00");   // 旧口径（627.00 + 5.00）⇒ 红
     }
