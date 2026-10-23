@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PageCard, PageHeader } from '@/components/ui'
 import ListLoadError from '@/components/common/ListLoadError'
-import { loadErrorMessage } from '@/lib/api-error'
-import { reportApi } from '@/lib/api'
+import { SELECT_CONTROL } from '@/components/ui/Select'
+import { loadErrorMessage, toastRequestError } from '@/lib/api-error'
+import { reportApi, warehouseApi } from '@/lib/api'
 import { downloadCsv, toCsv, type CsvCell } from '@/lib/csv'
 import type {
   ReportInventoryAging,
@@ -87,6 +88,10 @@ function qty(value: number | null | undefined): string {
 export default function ReportsPage() {
   const [margins, setMargins] = useState<ReportOrderMargins | null>(null)
   const [inventory, setInventory] = useState<ReportInventoryAging | null>(null)
+  // 库存滞销按仓库筛（issue #7377 段 7）：**只有这张表吃仓库维度** ⇒ 筛选只挂这张卡，
+  // 不做全局筛选条（三张报表没有共同归属键，硬做会出现「选了仓库，毛利不知道该怎么变」的死角）。
+  const [invWarehouse, setInvWarehouse] = useState('')
+  const [warehouses, setWarehouses] = useState<{ code: string; name: string }[]>([])
   const [staff, setStaff] = useState<ReportStaffPerformance | null>(null)
   const [quality, setQuality] = useState<ReportQualityCost | null>(null)
   const [aging, setAging] = useState<ReportReceivableAging | null>(null)
@@ -128,7 +133,7 @@ export default function ReportsPage() {
     try {
       const [m, i, s, q, a] = await Promise.all([
         reportApi.orderMargins(rangeParams),
-        reportApi.inventoryAging(),
+        reportApi.inventoryAging(invWarehouse ? { warehouseCode: invWarehouse } : undefined),
         reportApi.staffPerformance(rangeParams),
         reportApi.qualityCost(rangeParams),
         reportApi.receivableAging(),
@@ -144,7 +149,15 @@ export default function ReportsPage() {
     } finally {
       setLoading(false)
     }
-  }, [rangeParams])
+  }, [rangeParams, invWarehouse])
+
+  useEffect(() => {
+    // 仓库下拉是「可选增强」：取不到就只显示「全部仓库」，不挡报表本身
+    warehouseApi
+      .list()
+      .then((res) => setWarehouses((res.data.data || []).map((w) => ({ code: w.code, name: w.name }))))
+      .catch(() => setWarehouses([]))
+  }, [])
 
   useEffect(() => {
     load()
@@ -169,6 +182,16 @@ export default function ReportsPage() {
    * 维度汇总单独取（不进 `load` 的 Promise.all）：切维度只该重取这一块，
    * 不该把另外五张表一起打一遍。
    */
+  /** 换仓库只重取「库存滞销」这一张（别把五张表全打一遍）。 */
+  const reloadInventory = useCallback(async (warehouseCode: string) => {
+    try {
+      const res = await reportApi.inventoryAging(warehouseCode ? { warehouseCode } : undefined)
+      setInventory(res.data.data || null)
+    } catch (error) {
+      toastRequestError(error, loadErrorMessage(error, '库存滞销加载失败'))
+    }
+  }, [])
+
   const loadBreakdown = useCallback(async (dim: 'customer' | 'process' | 'product') => {
     setQcBreakdownLoading(true)
     try {
@@ -321,6 +344,26 @@ export default function ReportsPage() {
               <span className="text-xs text-neutral-500">
                 满 {inventory?.slowMovingDays ?? 90} 天未出库
               </span>
+              <select
+                data-testid="reports-inventory-warehouse"
+                aria-label="按仓库筛选库存滞销"
+                // 下拉铬必须用共享的（`select-control-unification` 未登记即红）；
+                // `self-center` 抵消卡头的 `items-baseline` —— 否则 36px 高的下拉会贴着基线掉下去
+                className={`${SELECT_CONTROL} self-center`}
+                value={invWarehouse}
+                onChange={(e) => {
+                  const next = e.target.value
+                  setInvWarehouse(next)
+                  void reloadInventory(next)
+                }}
+              >
+                <option value="">全部仓库</option>
+                {warehouses.map((w) => (
+                  <option key={w.code} value={w.code}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
               <ExportButton
                 testId="reports-inventory-export"
                 onClick={() =>
