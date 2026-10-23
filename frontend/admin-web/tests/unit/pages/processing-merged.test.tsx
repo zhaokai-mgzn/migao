@@ -114,7 +114,7 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     expect(productGroup()).toBeUndefined()
     // 生产管理组（#6580 起 **3 项**；两项已移除）
     expect(productionGroup()!.children.map((c) => c.key)).toEqual([
-      'production-board', 'production-pool', 'production-piecework', 'quality-inspections',
+      'production-board', 'production-pool', 'production-piecework', 'quality-inspections', 'rework-orders',
     ])
   })
 
@@ -130,6 +130,7 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
       '/production/pool',
       '/production/piecework',
       '/quality-inspections',   // issue #7140：质检记录
+      '/rework-orders',         // issue #7377：返工单（紧跟质检记录：判定 → 要返工就开单）
     ])
     // 反向：面料三项**不得**在本科目里（它们属「供应链」/「仓储与物料」）
     expect(productionPaths).not.toContain('/inbound-orders')
@@ -143,6 +144,7 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
       'processing:view',    // 智能派单
       'production:view',    // 计件工资
       'production:inspect', // 质检记录（issue #7140）
+      'after_sales:view',   // 返工单（issue #7377：复用售后读码 ⇒ 零授权 delta）
     ])
     // 拆出去的单据三项落在**新组「供应链」**，且三项**同码** inbound:view（采购与收货同岗位 ⇒
     // 零授权 delta；不新造 supplier:* / purchase:* —— 新码今天没人持有 ⇒ 菜单对所有人不可见）：
@@ -198,8 +200,8 @@ describe('菜单结构（#5778 用户裁定：加工项管理归**生产管理**
     // 「经营看板」升为**最前席位一级项**（不入任何组）、「每日简报」菜单项删除 ⇒ 组内项 18 → 16）
     // #7369：+「供应商」⇒ 组内项 17 → 18；段 4 再 +「采购单」⇒ 18 → 19；
     // #7375 段 3：交易管理 +「价格本」⇒ 19 → 20
-    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(21)
-    expect(allNames).toHaveLength(21)
+    expect(menuGroups.flatMap((g) => g.children.map((c) => c.key))).toHaveLength(22)
+    expect(allNames).toHaveLength(22)
   })
 })
 

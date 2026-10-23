@@ -158,6 +158,10 @@ public class MenuController {
         // （用户 2026-10-17 裁定「保持现状」⇒ 零权限放宽）。放在「计件工资」之后 = 与
         // `AuthService` 的 add 顺序、前端 `menu.ts` 的 children 顺序**逐项一致**（三源同构判据）。
         MenuNode pr4 = new MenuNode("production:inspect", "质检记录");
+        // 返工单（issue #7377，P1-5 质量闭环）：节点码 = 该页第一屏读端点码 `after_sales:view`
+        // （与售后工单同域复用 ⇒ 零授权 delta）；写动作走 `order:refund`，不在菜单码里体现。
+        // 位置 = 「质检记录」之后（质检判定 → 要返工 ⇒ 开单），三源（本树 / AuthService / menu.ts）同序。
+        MenuNode prRework = new MenuNode("after_sales:view", "返工单");
         // 仓储与物料（issue #5271 **新组**）：面料进出与消耗 —— 用户 2026-10-06 组内重排为
         // **单据（进 → 账 → 出）→ 台账 → 分析**（原序「库存明细」在组末、被「省料看板」隔开）。
         // 入库单（V111，issue #5034）权限码**独立**（inbound:view，与 @RequirePermission 同码）；
@@ -236,7 +240,7 @@ public class MenuController {
             // 生产管理（用户 2026-10-06 组内重排后，再随 issue #6580 收拢为**作业看板 → 智能派单
             // → 计件工资**三项 —— 「加工项管理」「工艺配置」两个菜单项按用户裁定**移除**，
             // 功能体并入 `/settings`（企业基础设置）页内的配置域；旧路径保留为重定向）。
-            new MenuNode("production-center", "生产管理", List.of(pr1, prPool, pr3, pr4, prUpdate)),
+            new MenuNode("production-center", "生产管理", List.of(pr1, prPool, pr3, pr4, prRework, prUpdate)),
             // 供应链（issue #7369，用户 2026-10-20 裁定「新增的菜单不能放到仓储与物料下，得加个新大菜单」）：
             // 谁供货 → 买什么 → 到货登记；三项同码 inbound:view（采购与收货同岗位）。
             // ⚠️「入库单」必须排本组第一个：手机端标注取该码树序首个承载节点（#6781）。

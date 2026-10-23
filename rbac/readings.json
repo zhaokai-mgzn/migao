@@ -323,6 +323,7 @@
       "智能派单": "processing:view",
       "计件工资": "production:view",
       "质检记录": "production:inspect",
+      "返工单": "after_sales:view",
       "供应链": null,
       "入库单": "inbound:view",
       "供应商": "inbound:view",
@@ -355,6 +356,7 @@
       "智能派单": "processing:view",
       "计件工资": "production:view",
       "质检记录": "production:inspect",
+      "返工单": "after_sales:view",
       "供应商": "inbound:view",
       "采购单": "inbound:view",
       "入库单": "inbound:view",
@@ -384,6 +386,7 @@
       "智能派单": "processing:view",
       "计件工资": "production:view",
       "质检记录": "production:inspect",
+      "返工单": "after_sales:view",
       "入库单": "inbound:view",
       "供应商": "inbound:view",
       "采购单": "inbound:view",
@@ -495,6 +498,12 @@
       "name": "质检记录",
       "path": "/quality-inspections",
       "code": "production:inspect"
+    },
+    {
+      "key": "rework-orders",
+      "name": "返工单",
+      "path": "/rework-orders",
+      "code": "after_sales:view"
     },
     {
       "key": "supply-chain",
@@ -653,6 +662,10 @@
     [
       "/quality-inspections",
       "production:inspect"
+    ],
+    [
+      "/rework-orders",
+      "after_sales:view"
     ],
     [
       "/reports",
@@ -974,6 +987,18 @@
           "GET /api/admin/reports/order-margins",
           "GET /api/admin/reports/quality-cost",
           "GET /api/admin/reports/staff-performance"
+        ]
+      },
+      "visibility_rule": "all"
+    },
+    {
+      "key": "rework-orders",
+      "name": "返工单",
+      "path": "/rework-orders",
+      "gate": "after_sales:view",
+      "units": {
+        "after_sales:view": [
+          "GET /api/admin/rework-orders"
         ]
       },
       "visibility_rule": "all"

@@ -1428,6 +1428,11 @@ public class AuthService {
         if (isAll || permissions.contains("production:inspect")) {
             productionChildren.add(menuItem("quality-inspections", "质检记录", "/quality-inspections"));
         }
+        // 返工单（issue #7377）：节点码 = 该页第一屏读端点码 `after_sales:view`（与售后工单同码）
+        // ⇒ 有售后读权就能看到（零授权 delta）；写动作走 `order:refund`，不在菜单码里体现。
+        if (isAll || permissions.contains("after_sales:view")) {
+            productionChildren.add(menuItem("rework-orders", "返工单", "/rework-orders"));
+        }
         if (!productionChildren.isEmpty()) {
             menus.add(menuGroup("production-center", "生产管理", productionChildren));
         }

@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（146 case）
+## 杂项域（147 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5893,6 +5893,21 @@
 跳过: [frontend-contract] 账龄报表的展示纪律（空数据≠0 / 合计=明细之和）与 CSV 导出，由前端与 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-23 新增（issue #7376 段 5）。落码 = `ReportController` + `ReportService.receivableAging` + `ReceivableAgingReportView` + `OrderMapper.selectReceivableRows(createdBy)` + `reports/page.tsx` 账龄卡与五张卡的导出按钮 + `lib/csv.ts`。 ｜ tags: frontend-contract, report, receivable, red-proof
+
+### RWK-001. 返工单进观星台：售后 → 返工 → 完工回写（状态机唯一 · 本页不产生金额 · 服务端原话上屏）（issue #7377 段 3） 🔵
+```
+你: 用户（2026-10-22，逐字）：「继续主动推进，不要一直让我点头」—— 承接 #7377 的目标「售后工单可发起返工单；返工完成回写售后状态」。
+数据: **判据 1（🔴 状态机唯一）**：动作按钮只按状态给 —— 待开工只有「开工/取消」、返工中只有「完工/取消」、已闭环（done/cancelled）**一个动作都没有**。负向对照 = 已闭环那张单的「完工」按钮必须不存在（否则就是验收里那条「已闭环但返工单还在做」）。判据 = `rework-orders.test.tsx#已闭环的单**不出现**完工/开工按钮`（红证：把 `actionsFor(...).includes('complete')` 改成恒 true ⇒ 该用例当场红）+ `#状态机唯一`。
+数据: **判据 2（🔴 本页不产生金额）**：返工成本 = **返工报工**（`work_type='rework'`）的计件金额，由质量成本报表汇总；返工单页**整页不出现 ¥0.00**，并写明「返工成本按『返工报工』的计件金额计入质量成本」+ 给出去报表中心的出口。判据 = `#本页不产生金额`（断言 `document.body.textContent` 不含 `¥0.00`）。
+数据: **判据 3（服务端拒绝原话上屏）**：「已闭环/已驳回的售后单不许开返工」「同一售后单已有未完结返工单」都是**服务端**判的 ⇒ 页面把 `message` 原样显示，不吞成「操作失败」。判据 = `#服务端拒绝的原话上屏`。
+数据: **判据 4（开单必填）**：售后单号为空 ⇒ 当场拦、**不发请求**（返工是挂在售后单上的，空单号只会得到服务端的 404）。判据 = `#开单：售后单号必填`（`expect(reworkOrderApi.create).not.toHaveBeenCalled()`）。
+数据: **判据 5（计数口径）**：未完结 = 待开工 + 返工中，与「已闭环但还在做」同一条口径；页面单列 已完成 / 已取消。判据 = `#状态计数`。
+数据: **判据 6（三源同码 · 零授权 delta）**：菜单节点码 = 页面第一屏读端点码 = 路由守卫码 = `after_sales:view`（与售后工单同域复用，不新造 `rework:*`）；写动作走 `order:refund`。判据 = `test_agent_permission_parity.py` 的 `MENU_READ_ENDPOINT_ANCHORS['/rework-orders']` + `ROUTE_MENU_ANCHORS['/rework-orders']` + `MenuControllerTest` / `AuthServiceTest` 的生产组序 + 前端 `menu-nav` / `Sidebar` / `CommandPalette` / `SidebarRedesign` / `menu-icons` 五处。
+数据: **边界（照实登记）**：① 本页不录返工工时/成本（成本口径 = 返工报工，另一条动线）；② 不改售后单状态机（只触发「完工回写」，且服务端仅在售后单为 `processing` 时推进）；③ 退回售后单原始状态（返工取消）不回退售后；④ 没有物理删除（开错就取消，留痕）。
+前置: 本用例是 [frontend-contract]：前置 = 返工单后端（issue #7377 段 2：`ReworkOrderController` / `ReworkOrderService`）+ 售后工单页。零网络、零 LLM。
+跳过: [frontend-contract] 返工单页面的状态机纪律与「本页不产生金额」口径，由前端单测 + 菜单三源判据验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-23 新增（issue #7377 段 3，商家面）。落码 = `rework-orders/page.tsx` + `types/rework.ts` + `reworkOrderApi` + 菜单五副本（menu.ts / MenuController / AuthService / menu_navigator / rbac manifest）+ `page_registry` 的 `rework-order-lifecycle`。 ｜ tags: frontend-contract, rework, quality, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12675,8 +12690,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：863（活跃 141，跳过 722）
-- tier 分布：smoke 12 / normal 795 / adversarial 32
+- 用例总数：864（活跃 141，跳过 723）
+- tier 分布：smoke 12 / normal 796 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12691,7 +12706,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：146
+- 杂项域：147
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -12881,6 +12896,7 @@
 - PRC-005: 价格本页面：三层价一页录（协议/等级/阶梯）+ 价必须 > 0 + 后端拒因原样上屏（issue #7375 段 3 前端）
 - STK-002: 盘点单页面：账面快照 → 逐批次录实盘 → 差异须审批才完成（issue #7373 段 2 的商家面）
 - RPT-005: 应收账龄进报表中心：合计=明细之和、空数据不画 0、CSV 导出（issue #7376 段 5）
+- RWK-001: 返工单进观星台：售后 → 返工 → 完工回写（状态机唯一 · 本页不产生金额 · 服务端原话上屏）（issue #7377 段 3）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

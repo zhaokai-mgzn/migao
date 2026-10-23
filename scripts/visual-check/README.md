@@ -17,6 +17,7 @@ npx playwright install chromium     # 仅首次
 node scripts/visual-check/reports-page.mjs        # 报表中心（在仓库根跑）
 node scripts/visual-check/price-books-page.mjs    # 价格本
 node scripts/visual-check/stocktakes-page.mjs     # 盘点单（issue #7373）
+node scripts/visual-check/rework-orders-page.mjs   # 返工单（issue #7377）
 open /tmp/reports-filled.png /tmp/reports-empty.png
 ```
 
