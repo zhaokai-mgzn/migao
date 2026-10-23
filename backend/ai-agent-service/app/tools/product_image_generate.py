@@ -280,6 +280,10 @@ class ProductImageGenerateTool(BaseTool):
             )
         except ImageGenerationUnavailable as e:
             # 含「模型接不了这类请求」—— 与额度用尽**必须**分开，不冒充。
+            # 内核自 #7540 起已把这件事分开抛：全链「都不接这类请求」⇒ 本异常
+            # （消息含「非配额原因」）；命中配额 ⇒ `ImageGenerationQuotaExceeded`。
+            # 本工具的映射与该真值一一对应（判据 = tests/test_product_image_generate.py
+            # 的 TestFailureSemantics），不在这里二次猜测原因。
             logger.warning(f"Product image generate unavailable: product={product_id}, err={e}")
             return _failure_result("IMAGE_GEN_UNAVAILABLE")
         except ImageGenerationQuotaExceeded as e:
