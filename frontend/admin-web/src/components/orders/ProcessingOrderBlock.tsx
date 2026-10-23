@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button, Modal, SELECT_CONTROL } from '@/components/ui'
 import { batchStockApi, processingOrderApi } from '@/lib/api'
 // 工艺规格展示的单一真值定义（设计文档 §4.9「一份 spec，三处渲染」）
@@ -57,6 +58,17 @@ interface Props {
    * 卖布单没有生成出口）。值由服务端 `OrderShipGuard.requiredOrderKind` 给出（与发货守卫同一份判据）。
    */
   workOrderKind: WorkOrderKind
+  /**
+   * **是否加急**（`orders.is_urgent`，issue #5177 / #7507）—— 决定「生成作业单」入口的去向：
+   *
+   * - `true` ⇒ 保留**直派**（加急单不参与合并，派单页走插队区单派；沿用 2026-10-09 裁定）；
+   * - `false` / 缺省 ⇒ **不直派**：本块只给「去智能派单」入口（非加急单默认走智能派单，
+   *   同料订单合并领料更省料）。缺省取「受限」一侧 ⇒ 新调用方漏传也**不会**绕过限制。
+   *
+   * 服务端同口径守卫在 `POST /api/admin/processing-orders/generate`（非加急逐单拒绝）——
+   * 前端只负责**不给假的可用性**，闸不在这里。
+   */
+  isUrgent?: boolean
   /**
    * @deprecated issue #7079 第 5 包起**不再消费**（只覆盖「含加工项」的单侧信号，卖布单被漏掉）；
    * 判据一律走 {@link Props.workOrderKind}。保留字段只为兼容存量调用点，新代码不要传。
@@ -267,12 +279,14 @@ export default function ProcessingOrderBlock({
   orderId,
   orderStatus,
   workOrderKind,
+  isUrgent = false,
   items,
   operations,
   onStatusChange,
   onPrintProcessing,
   onReloadReady,
 }: Props) {
+  const router = useRouter()
   const [po, setPo] = useState<ProcessingOrder | null>(null)
   const [notFound, setNotFound] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -503,12 +517,32 @@ export default function ProcessingOrderBlock({
 
       {!loading && canGenerate && neededKind && (
         <div className="mt-3 rounded-lg border border-primary-100 bg-primary-50/50 p-4">
-          <p className="text-sm text-neutral-600">{WORK_ORDER_NEEDED_COPY[neededKind].generateIntro}</p>
-          {/* 按钮文案 = 「生成」+ 该型的**中文业务名**（`ORDER_KIND_LABELS`，不新造词）：
-              卖布单出「生成出库作业单」、成品帘单出「生成加工单」。 */}
-          <Button className="mt-3" size="sm" disabled={busy} onClick={handleGenerate}>
-            {busy ? '生成中…' : `生成${ORDER_KIND_LABELS[neededKind]}`}
-          </Button>
+          {isUrgent ? (
+            <>
+              {/* 加急例外（issue #7507 / #5177）：加急单不参与合并 ⇒ 保留直派这条路
+                  （派单页也把加急单放插队区单派，两处口径一致）。 */}
+              <p className="text-sm text-neutral-600">{WORK_ORDER_NEEDED_COPY[neededKind].generateIntro}</p>
+              <p className="mt-1 text-xs text-neutral-500">加急单不参与合并，可直接生成作业单。</p>
+              {/* 按钮文案 = 「生成」+ 该型的**中文业务名**（`ORDER_KIND_LABELS`，不新造词）：
+                  卖布单出「生成出库作业单」、成品帘单出「生成加工单」。 */}
+              <Button className="mt-3" size="sm" disabled={busy} onClick={handleGenerate}>
+                {busy ? '生成中…' : `生成${ORDER_KIND_LABELS[neededKind]}`}
+              </Button>
+            </>
+          ) : (
+            <>
+              {/* 🔴 非加急单**不在这里直派**（issue #7507，用户裁定「默认走智能派单」）：
+                  直派走 `pooled=false` ⇒ 不做跨单同料合并，还会抢在自动成批评估之前把单派走
+                  （那一单永久离开池子）。本块只给**入口**，闸在服务端
+                  （`POST /processing-orders/generate` 对非加急单逐单拒绝）。 */}
+              <p className="text-sm text-neutral-600">
+                该订单需要{ORDER_KIND_LABELS[neededKind]}。到「智能派单」勾选本单派单 —— 同料订单合并领料，更省料。
+              </p>
+              <Button className="mt-3" size="sm" onClick={() => router.push('/production/pool')}>
+                去智能派单
+              </Button>
+            </>
+          )}
           {/* 对话框开着时失败提示在对话框里（两处只会有一处可见，避免同一句话出现两遍） */}
           {error && !assign && <div className="mt-2">{errorBlock}</div>}
         </div>
@@ -524,8 +558,8 @@ export default function ProcessingOrderBlock({
               请先
               {orderStatus === 'pending_shipment'
                 ? '在生产待办里生成作业单'
-                : '确认订单（订单进入「已确认」后即可生成）'}
-              ，再回来生成{ORDER_KIND_LABELS[neededKind]}。
+                : '确认订单（订单进入「已确认」后即可派单）'}
+              ，再{isUrgent ? `回来生成${ORDER_KIND_LABELS[neededKind]}` : '到「智能派单」派单'}。
             </p>
           </div>
         ) : (

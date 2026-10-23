@@ -481,6 +481,9 @@ export default function OrderDetailPage() {
         // issue #7079 第 5 包：要不要作业 / 要哪一型，一律取服务端读面（`work_order_kind`）——
         // 旧写法 `processingItems.length > 0` 只覆盖「含加工项」那一半，卖布单被漏掉 ⇒ 没有生成出口。
         workOrderKind={workOrderKindOf(order)}
+        // issue #7507：加急 = 唯一保留的「详情页直派」例外（非加急默认走智能派单）；
+        // 真值来自订单读面 `is_urgent`（缺键 = 不加急 ⇒ 受限一侧，不做客户端默认）。
+        isUrgent={order.isUrgent === true}
         items={order.items ?? []}
         operations={orderOperations}
         onStatusChange={setProcessingOrder}

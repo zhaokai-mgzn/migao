@@ -38,7 +38,7 @@ intent_ownership:
   processing_order_generate:
     route_key: order
     agents: [mibao]
-    description: 生成加工单（批量，写操作确认闸；联动订单进入 producing）
+    description: 生成加工单（批量；**非加急单须走智能派单**，直派在服务端关闸；加急单可直派）
   processing_order_query:
     route_key: order
     agents: [mibao]

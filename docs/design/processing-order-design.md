@@ -115,6 +115,18 @@ completed                                        （冻结：不可取消/改状
 - 有加工项 → 必须走加工单，订单停在 producing
 - 无加工项（现货成品）→ 维持现状 `confirmed → shipped` 直跳
 
+### 4.5 派单入口（唯一化，issue #7507）
+
+- **默认 = 智能派单**（`/production/pool`）：同料订单跨单合并排料、与自动成批同一套口径
+  （`AUTO_BATCH_DEFAULT_ENABLED`）。订单详情页**不再提供**普通订单的直派入口。
+- **加急例外**：`orders.is_urgent = true` 的订单不参与合并（派单页走插队区单派），
+  保留订单详情页直派（沿用 issue #5177 的裁定）。
+- **闸在服务端**：`POST /api/admin/processing-orders/generate` 对非加急订单逐单返回
+  `success=false` + `code=DIRECT_DISPATCH_POOL_REQUIRED`（message / suggestion 指路智能派单），
+  **一行不写**；`POST /api/admin/production/pool/dispatch`（派单页）不受影响 —— 它是唯一派单面。
+- **边界**：详情页因此不再是「逐行挑批次」的入口（派单页按 `fifo` 由服务端补位）；
+  如商家确需挑批次，另开单把该能力搬进派单页。
+
 ## 五、权限与安全
 
 | # | 项 | 决定 |

@@ -10551,6 +10551,25 @@ _CASE_PG_088 = EvalCase(
     precondition='一张**卖布单**由 API / 米宝 / 回归脚本创建：订单行 `processing_info` **缺 `saleForm` 键**，但该行带布料专属事实（`sellingMethod = bulk_cut|full_roll` 或 `rollCount` 非空 —— 下单页只对布料行出「整卷」面板）。',
 )
 
+# ── PG-090 [NORMAL] 直派收敛：非加急订单不得从订单详情直接生成作业单（服务端逐单拒绝并指路智能派单）；加急单保留直派（issue #7507）（源: cases/processing-order.yml）──
+_CASE_PG_090 = EvalCase(
+    id='PG-090',
+    legacy_id='',
+    title='直派收敛：非加急订单不得从订单详情直接生成作业单（服务端逐单拒绝并指路智能派单）；加急单保留直派（issue #7507）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['在订单详情页给一张普通订单点「生成加工单」（旧入口）', '把同一张订单标记加急后，再看作业单区块'],
+    expectations=[],
+    data_checks=['**判据 1（会红，服务端）**：`POST /api/admin/processing-orders/generate` 对**非加急**订单逐单返回 `success=false` + `code=DIRECT_DISPATCH_POOL_REQUIRED` + message 含「智能派单」+ suggestion 含「加急」，且**一行都不写**（never insert 加工单）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProcessingOrderServiceTest.java 的 `directGenerateRejectsNonUrgentOrderAndPointsToPool`。**红证**：把 `generateDirect` 的 `!Boolean.TRUE.equals(order.getIsUrgent())` 判定摘掉（或控制器改回调 `generate`）⇒ 该用例红（会真的落加工单）。', '**判据 2（加急例外，不许把闸整个拆掉）**：加急订单（`is_urgent=true`）走同一入口 ⇒ `success=true` 且照常落加工单。执行点 = 同文件 `directGenerateAllowsUrgentOrder`。**红证**：去掉加急豁免（一律拒绝）⇒ 该用例红。', '**判据 3（批量混合：顺序 + 不静默少派）**：入参 `[非加急, 加急]` ⇒ 结果顺序 = 入参顺序（第一行失败带码、第二行成功），且 `insert` 只发生 1 次。执行点 = 同文件 `directGenerateRejectsOnlyNonUrgentOrdersInMixedBatch`。', '**判据 4（端点透传）**：HTTP 响应逐字带 `code` / `message` / `suggestion`（订单详情页据此上屏指路文案）。执行点 = backend/admin-api/src/test/java/com/migao/admin/controller/ProcessingOrderControllerTest.java 的 `generatePassesThroughDirectDispatchRejection`。', '**判据 5（前端入口，会红）**：非加急订单在订单详情块**不渲染**「生成…」按钮、渲染「去智能派单」并可跳 `/production/pool`；加急订单相反；漏传 `isUrgent`（缺省）落**受限**一侧。执行点 = frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx 的「直派收敛（issue #7507）」组。**红证**：把组件的 `{isUrgent ? (` 改回 `{true ? (`（= 改前形态）⇒ 判据 1/3/4 红。', '**判据 6（B 端 agent 指引）**：`prompts/order.md` 的「生成加工单不在能力内」指引指向「智能派单」（非加急；同料合并更省料）并写明加急例外；工具语义（`ProcessingOrderGenerateTool.description`）同口径。执行点 = backend/ai-agent-service/tests/test_issue_7507_direct_dispatch_pool.py。**红证**：把指引改回「作业看板」⇒ 该用例红。', '**判据 7（只读口径不许漂移）**：`/api/admin/production/pool/dispatch`（智能派单页，唯一派单面）不受该闸影响 —— 非加急单从派单页 `pooled=true` 仍可派。执行点 = 既有 PooledDispatchTest / PooledDispatchRealDbTest（本单未改这些路径）。'],
+    skip_reason='[backend-contract] admin-api 单测 + 前端 vitest + prompt 文本判据（无 LLM 行为面；B 端 agent 写能力自 #5247 起已下线，本单只同步文案）',
+    tags=['dispatch', 'pool-board', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='两张已确认订单：order-001 未加急（`is_urgent` 缺省 / false）、order-002 加急（`is_urgent=true`）。',
+)
+
 # ── PP-002 [NORMAL] 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query）（源: cases/processing.yml）──
 _CASE_PP_002 = EvalCase(
     id='PP-002',
@@ -16799,6 +16818,7 @@ ALL_CASES = (
     _CASE_PG_086,
     _CASE_PG_087,
     _CASE_PG_088,
+    _CASE_PG_090,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,
