@@ -3319,6 +3319,9 @@ export type NotificationChannel = 'internal' | 'sms' | 'wechat' | 'email'
 // 接收人类型
 export type NotificationRecipientType = 'user' | 'employee'
 
+// 严重级（#7524）：站内信圆点/排序口径；老数据为空按 info 渲染
+export type NotificationSeverity = 'info' | 'warn' | 'urgent'
+
 // 通知
 export interface Notification {
   id: string
@@ -3331,6 +3334,18 @@ export interface Notification {
   title: string
   content: string
   status: NotificationStatus
+  /** 业务对象类型：order / after_sales / inbound_order（#7524） */
+  bizType?: string
+  /** 业务对象 ID（主键，不用于展示） */
+  bizId?: string
+  /** 业务对象单号（展示用，如 RK-20261023-0001） */
+  bizNo?: string
+  /** 前端落地页（含 query）；有值 ⇒ 条目可点开对应单据 */
+  targetPath?: string
+  /** 严重级；空 = info（老数据） */
+  severity?: NotificationSeverity
+  /** 业务发生时间（与 createdAt 区分） */
+  occurredAt?: string
   sentAt?: string
   readAt?: string
   errorMessage?: string
@@ -3342,6 +3357,8 @@ export interface Notification {
 export interface NotificationQueryParams extends PageParams {
   status?: NotificationStatus | ''
   channel?: NotificationChannel | ''
+  /** 按业务类型筛（#7524）：order / after_sales / inbound_order */
+  bizType?: string
   dateFrom?: string
   dateTo?: string
 }

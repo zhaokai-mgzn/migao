@@ -24,6 +24,12 @@ public class SaveNotificationTemplateRequest {
     private String channel = "internal";
 
     /**
+     * 标题模板（可选，issue #7524）：支持 {{var}}（如「入库单 {{inboundNo}} 已过账」）；
+     * 不传则标题回落为 {@link #name}（老模板零改动）
+     */
+    private String titleTemplate;
+
+    /**
      * 模板内容，变量用 {{var}} 占位
      */
     private String templateContent;

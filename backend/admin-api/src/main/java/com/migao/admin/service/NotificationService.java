@@ -109,13 +109,10 @@ public class NotificationService {
             return null;
         }
 
-        // 替换模板变量
-        String content = template.getTemplateContent();
-        if (variables != null) {
-            for (Map.Entry<String, String> entry : variables.entrySet()) {
-                content = content.replace("{{" + entry.getKey() + "}}", entry.getValue());
-            }
-        }
+        // 替换模板变量（issue #7524：标题与正文同一份渲染）
+        String content = render(template.getTemplateContent(), variables);
+        String title = render(template.getTitleTemplate() != null ? template.getTitleTemplate() : templateName,
+                variables);
 
         // 创建通知
         Notification notification = Notification.builder()
@@ -124,7 +121,7 @@ public class NotificationService {
                 .recipientId(recipientId)
                 .recipientType(recipientType)
                 .channel(template.getChannel())
-                .title(templateName)
+                .title(title)
                 .content(content)
                 .status("sent")
                 .sentAt(OffsetDateTime.now())
@@ -150,7 +147,8 @@ public class NotificationService {
         Page<Notification> page = new Page<>(queryRequest.getPage(), queryRequest.getSize());
 
         IPage<Notification> resultPage = notificationMapper.selectByRecipientId(
-                recipientId, queryRequest.getStatus(), queryRequest.getChannel(), page);
+                recipientId, queryRequest.getStatus(), queryRequest.getChannel(),
+                queryRequest.getBizType(), page);
 
         List<NotificationDTO> dtos = resultPage.getRecords().stream()
                 .map(this::convertToDTO)
@@ -262,6 +260,23 @@ public class NotificationService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void triggerByEvent(Long tenantId, String eventType, Map<String, String> contextData) {
+        triggerByEvent(tenantId, eventType, contextData, null);
+    }
+
+    /**
+     * 根据事件触发通知（带**结构化业务信息**，issue #7524）。
+     *
+     * <p>与三参版的唯一差别：多一个 {@link NotificationEvent}，把「哪一单、点去哪、多急、什么时候发生」
+     * 一并落库（改前只有渲染好的 title/content 两段文本 ⇒ 铃铛点不进单据、也无法按类型筛）。</p>
+     *
+     * <p>幂等：同一 {@code eventType + bizId + recipientId} 只落一条（业务事件重放/事务重试不得刷屏），
+     * 由唯一索引 {@code uk_notifications_dedupe} 兜底。</p>
+     *
+     * @param event 结构化业务信息；{@code null} = 老调用方（行为与改前逐字一致：不写 biz 列、不去重）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void triggerByEvent(Long tenantId, String eventType, Map<String, String> contextData,
+                               NotificationEvent event) {
         // #3003：租户关闭「启用系统通知」→ 自动站内信直接跳过（历史通知保留）
         if (!tenantNotificationsEnabled(tenantId)) {
             log.debug("租户已关闭系统通知，跳过事件通知: tenantId={}, eventType={}", tenantId, eventType);
@@ -302,16 +317,26 @@ public class NotificationService {
                 continue;
             }
 
-            // 替换模板变量
-            String content = template.getTemplateContent();
-            if (contextData != null) {
-                for (Map.Entry<String, String> entry : contextData.entrySet()) {
-                    content = content.replace("{{" + entry.getKey() + "}}", entry.getValue());
-                }
-            }
+            // 替换模板变量（标题也渲染 —— 改前标题恒等于模板名，铃铛里没有单号）
+            String content = render(template.getTemplateContent(), contextData);
+            String title = render(template.getTitleTemplate() != null ? template.getTitleTemplate() : template.getName(),
+                    contextData);
 
             // 使用规则中的 recipientType（如果 contextData 中未提供）
             String finalRecipientType = recipientType != null ? recipientType : rule.getRecipientType();
+
+            // 幂等（issue #7524）：同一事件 × 同一业务对象 × 同一收件人只落一条。
+            // 先查一次而不是直接撞索引 —— PG 事务里撞唯一索引会让整条事务 aborted（多管理员循环会连带失败）。
+            String dedupeKey = null;
+            if (event != null && event.getBizId() != null && recipientId != null) {
+                dedupeKey = eventType + ":" + event.getBizId() + ":" + recipientId;
+                Long existing = notificationMapper.countByDedupeKey(tenantId, dedupeKey);
+                if (existing != null && existing > 0) {
+                    log.debug("事件已通知过，跳过重复落库: eventType={}, bizId={}, recipientId={}",
+                            eventType, event.getBizId(), recipientId);
+                    continue;
+                }
+            }
 
             // 创建站内通知
             Notification notification = Notification.builder()
@@ -321,8 +346,16 @@ public class NotificationService {
                     .recipientId(recipientId)
                     .recipientType(finalRecipientType)
                     .channel("internal")
-                    .title(template.getName())
+                    .title(title)
                     .content(content)
+                    .bizType(event != null ? event.getBizType() : null)
+                    .bizId(event != null ? event.getBizId() : null)
+                    .bizNo(event != null ? event.getBizNo() : null)
+                    .targetPath(event != null ? event.getTargetPath() : null)
+                    .severity(event != null && event.getSeverity() != null ? event.getSeverity() : "info")
+                    .occurredAt(event != null && event.getOccurredAt() != null
+                            ? event.getOccurredAt() : OffsetDateTime.now())
+                    .dedupeKey(dedupeKey)
                     .status("sent")
                     .sentAt(OffsetDateTime.now())
                     .retryCount(0)
@@ -348,6 +381,16 @@ public class NotificationService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void triggerForTenantAdmins(Long tenantId, String eventType, Map<String, String> vars) {
+        triggerForTenantAdmins(tenantId, eventType, vars, null);
+    }
+
+    /**
+     * 面向租户管理员的待办事件广播（带结构化业务信息，issue #7524）。
+     * 收件人路由与三参版**逐字相同**（租户 admin 角色），只是把 event 一并透传给 {@link #triggerByEvent}。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void triggerForTenantAdmins(Long tenantId, String eventType, Map<String, String> vars,
+                                       NotificationEvent event) {
         // #3003：租户关闭「启用系统通知」→ 待办广播直接跳过（避免无谓查管理员/逐管理员触发）
         if (!tenantNotificationsEnabled(tenantId)) {
             log.debug("租户已关闭系统通知，跳过管理员待办广播: tenantId={}, eventType={}", tenantId, eventType);
@@ -367,12 +410,32 @@ public class NotificationService {
                 Map<String, String> ctx = vars != null ? new HashMap<>(vars) : new HashMap<>();
                 ctx.put("recipientId", admin.getId());
                 ctx.put("recipientType", "employee");
-                triggerByEvent(tenantId, eventType, ctx);
+                triggerByEvent(tenantId, eventType, ctx, event);
             } catch (Exception e) {
                 log.warn("管理员待办通知发送失败，忽略: adminId={}, eventType={}, error={}",
                         admin.getId(), eventType, e.getMessage());
             }
         }
+    }
+
+    /**
+     * 渲染模板：把 {@code {{var}}} 替换为上下文值（issue #7524 —— 标题与正文走同一份渲染）。
+     *
+     * <p>未提供的变量**保留占位原样**（与改前逐字一致：老模板缺变量时不静默清空，
+     * 反而让人一眼看出漏传）；显式传 {@code null} 值才渲染为空串。</p>
+     */
+    private static String render(String template, Map<String, String> variables) {
+        if (template == null) {
+            return null;
+        }
+        String rendered = template;
+        if (variables != null) {
+            for (Map.Entry<String, String> entry : variables.entrySet()) {
+                rendered = rendered.replace("{{" + entry.getKey() + "}}",
+                        entry.getValue() == null ? "" : entry.getValue());
+            }
+        }
+        return rendered;
     }
 
     /**

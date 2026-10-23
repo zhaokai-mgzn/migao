@@ -5,6 +5,7 @@ import com.migao.admin.dto.InboundBatchView;
 import com.migao.admin.dto.InboundOrderCreateRequest;
 import com.migao.admin.dto.InboundOrderLine;
 import com.migao.admin.dto.InboundOrderResponse;
+import com.migao.admin.dto.NotificationEvent;
 import com.migao.admin.entity.InboundOrder;
 import com.migao.admin.entity.InboundOrderItem;
 import com.migao.admin.entity.Product;
@@ -100,6 +101,16 @@ public class InboundOrderService {
      */
     @Autowired(required = false)
     private PoolChangeNotifier poolChangeNotifier;
+
+    /**
+     * 站内信（issue #7524）：入库是本仓**唯一**改库存/成本/台账的时点，
+     * 改前它一条通知都不发 —— 过账后除了操作人没人知道库存变了。
+     *
+     * <p>与 {@link #poolChangeNotifier} 同款：字段注入 + {@code required = false} +
+     * 调用侧 fail-soft（{@code null} 或异常 ⇒ 跳过/留痕）——**过账事实不因通知失败而回滚**。</p>
+     */
+    @Autowired(required = false)
+    private NotificationService notificationService;
 
     // ============================================================ 建单
 
@@ -292,6 +303,7 @@ public class InboundOrderService {
         }
 
         List<String> batchNos = new ArrayList<>(lines.size());
+        BigDecimal totalMeters = BigDecimal.ZERO;
         OffsetDateTime now = OffsetDateTime.now();
 
         // ⓪ 抢过账权：条件更新（CAS），判断与写入同一条语句 + PG 行锁 ⇒ 并发/双击只有一个能进来。
@@ -320,6 +332,7 @@ public class InboundOrderService {
             // 🔴 入库米数 = 库存/批次/台账/成本的**唯一换算源**（issue #6812）：photo 单 = 卷数 × 每卷米数；
             //    其余来源 = 数量（米，逐字保持现状）。明细行的「数量」列本身不改写 —— photo 单它存的就是卷数。
             BigDecimal meters = metersFor(order.getSource(), line.getQuantity(), line.getRollLengthM());
+            totalMeters = totalMeters.add(meters);
             BigDecimal unitCost = line.getUnitCost();
 
             // ① 批次台账 + **原子取号**（issue #6248）：一个 SKU 行 = 一个批次（V111 裁定）——
@@ -423,6 +436,17 @@ public class InboundOrderService {
         // fail-soft 通知点（过账语义、事务边界、异常语义逐字不变）。
         PoolChangeNotifier.notifySafely(poolChangeNotifier, tenantId,
                 PoolChangeNotifier.TRIGGER_INBOUND_POSTED);
+
+        // 入库过账 → 站内信（issue #7524）：单号可点、供应商/行数/米数/金额/操作人一次说清。
+        // 与上面同口径：**既有过账全部完成之后**的 fail-soft 追加，不改任何过账语义。
+        Map<String, String> postedVars = new HashMap<>();
+        postedVars.put("inboundNo", order.getInboundNo());
+        postedVars.put("supplier", order.getSupplier() == null ? "" : order.getSupplier());
+        postedVars.put("lineCount", String.valueOf(lines.size()));
+        postedVars.put("totalMeters", totalMeters.stripTrailingZeros().toPlainString());
+        postedVars.put("amount", order.getTotalAmount() == null ? "0" : order.getTotalAmount().toPlainString());
+        postedVars.put("operator", operator == null ? "" : operator);
+        notifyInboundEvent(order, "inbound_posted", "info", postedVars);
         return detail(order.getId(), tenantId);
     }
 
@@ -476,6 +500,13 @@ public class InboundOrderService {
         order.setCancelledReason(reason);
         log.info("入库单已作废: tenant={}, inboundNo={}, operator={}, reason={}",
                 tenantId, order.getInboundNo(), operator, reason);
+
+        // 作废 → 站内信（issue #7524）：warn 级 —— 「单据没进库存」这件事必须让负责的人看见
+        Map<String, String> cancelledVars = new HashMap<>();
+        cancelledVars.put("inboundNo", order.getInboundNo());
+        cancelledVars.put("reason", reason == null ? "" : reason);
+        cancelledVars.put("operator", operator == null ? "" : operator);
+        notifyInboundEvent(order, "inbound_cancelled", "warn", cancelledVars);
         return detail(order.getId(), tenantId);
     }
 
@@ -986,6 +1017,38 @@ public class InboundOrderService {
         // 放这里会让"拒绝"发生在草稿单 insert 之后（@Transactional 虽会回滚，但判据面上
         // 「超精度 ⇒ 零写入」就不成立了，见 issue #6228 的实例判据）。
         return unitCost == null ? null : unitCost.multiply(StockQuantity.orZero(quantity));
+    }
+
+    /**
+     * 入库事件站内信（issue #7524）。
+     *
+     * <p><b>fail-soft 的边界写清</b>：通知是「事实之后的追加」，不是事实的一部分 ——
+     * 未注入（既有单测 / 切片上下文）或发送异常都只留痕，**绝不**把已经提交的库存/台账回滚，
+     * 也不改调用方的返回值（异常在 catch 内消化，方法签名不带 {@code throws}）。</p>
+     *
+     * <p>幂等由 {@link NotificationEvent#getBizId()} 参与的去重键保证（服务层先查 + 唯一索引兜底）
+     * —— 过账/作废都是 CAS 幂等闸，重放不会产生第二条站内信。</p>
+     */
+    private void notifyInboundEvent(InboundOrder order, String eventType, String severity,
+                                    Map<String, String> vars) {
+        if (notificationService == null) {
+            return;
+        }
+        try {
+            NotificationEvent event = NotificationEvent.builder()
+                    .bizType("inbound_order")
+                    .bizId(order.getId())
+                    .bizNo(order.getInboundNo())
+                    // 落地页 = 入库单列表 + 单号搜索（列表页读 keyword 查询参数，issue #7524）
+                    .targetPath("/inbound-orders?keyword=" + order.getInboundNo())
+                    .severity(severity)
+                    .occurredAt(OffsetDateTime.now())
+                    .build();
+            notificationService.triggerForTenantAdmins(order.getTenantId(), eventType, vars, event);
+        } catch (Exception e) {
+            log.warn("入库通知发送失败（已忽略，不影响单据事实）: tenant={}, inboundNo={}, eventType={}, error={}",
+                    order.getTenantId(), order.getInboundNo(), eventType, e.getMessage());
+        }
     }
 
     private static String trimToNull(String s) {

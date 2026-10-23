@@ -103,6 +103,7 @@ public class NotificationTemplateService {
         NotificationTemplate template = NotificationTemplate.builder()
                 .tenantId(tenantId)
                 .name(request.getName().trim())
+                .titleTemplate(request.getTitleTemplate())
                 .type(request.getType())
                 .channel(StringUtils.hasText(request.getChannel()) ? request.getChannel().trim() : "internal")
                 .templateContent(request.getTemplateContent().trim())
@@ -129,6 +130,7 @@ public class NotificationTemplateService {
         assertTenantOwned(tenantId, existing.getTenantId(), "模板");
 
         existing.setName(request.getName().trim());
+        existing.setTitleTemplate(request.getTitleTemplate());
         existing.setType(request.getType());
         existing.setChannel(StringUtils.hasText(request.getChannel()) ? request.getChannel().trim() : "internal");
         existing.setTemplateContent(request.getTemplateContent().trim());
