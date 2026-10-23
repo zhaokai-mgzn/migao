@@ -510,8 +510,15 @@ export default function OrderDetailPage() {
       />
 
       {/* 纸质销售单（**三联纸 241mm × 140mm**，issue #5651）：随货给客户的那张；
-          扫码支付走与报价单**同一份**收款码读取口（`lib/use-payment-qrcodes.ts`）。 */}
-      <SalesDoc order={order} shipments={shipments} printTarget={printTarget} />
+          扫码支付走与报价单**同一份**收款码读取口（`lib/use-payment-qrcodes.ts`）。
+          `processingOrder` 只用于左上角的**作业单扫码报工码**（issue #7530）：码值取服务端
+          `scan_url`，与 `ProcessingDoc` **同一份来源**（不新增读面）；无码 ⇒ 该块不出现。 */}
+      <SalesDoc
+        order={order}
+        shipments={shipments}
+        processingOrder={processingOrder}
+        printTarget={printTarget}
+      />
 
       {/* 打印前的**纸面自检层**（issue #5914）：真尺寸纸框 + 溢出/页数自检 + 「打印 / 复制截图」。
           🔴 预览实例**不传 printTarget** ⇒ 打印媒体下仍是 display:none（否则一次会出两份）。 */}
@@ -547,7 +554,9 @@ export default function OrderDetailPage() {
             inline
           />
         )}
-        {previewTarget === 'sales' && <SalesDoc order={order} shipments={shipments} inline />}
+        {previewTarget === 'sales' && (
+          <SalesDoc order={order} shipments={shipments} processingOrder={processingOrder} inline />
+        )}
       </PrintDocPreview>
 
       {/* 收货信息 */}

@@ -1,4 +1,4 @@
-// case_ids: UI-027
+// case_ids: UI-027, UI-134
 /**
  * 打印链路（issue #5914）—— 真实浏览器判据。
  *
@@ -231,6 +231,75 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
     // 纵向**只做下界限**：销售单单联固定 128mm，明细少的单子底部本来就是空白
     // （实测 2 行 ⇒ inkH≈0.64），拿它当「铺满」判据会假红；缩在左上角的截图会同时掉到 <0.55。
     expect(shot.inkHeightRatio).toBeGreaterThan(0.5)
+  })
+
+  // 🔴 issue #7530（用户 2026-10-23「把作业出库单手机端链接对应的二维码信息放置在左上角，
+  //    工人可以通过扫码进入报工页面」）：jsdom 判得了「码值 / 位置 / 缺码不画」，判不了
+  //    「真浏览器里它到底在不在纸框左上角」—— 这里用真 Chrome 量一遍相对纸框的偏移并截图留证。
+  test('⑤ 销售单左上角：作业单扫码报工码（有码 ⇒ 出图且贴左上角；无码 ⇒ 不画假码）', async ({ page }) => {
+    await mockOrderApi(page, baseOrder(2))
+    // 作业单读面（GET /api/admin/processing-orders/{orderId}）：服务端下发的短链 + 短码
+    const workOrder = (scanUrl: string | null) => ({
+      success: true,
+      data: {
+        id: 'po-1',
+        orderId: ORDER_ID,
+        orderNo: 'ORD20261001001',
+        processingOrderNo: 'CK-20261023-0001',
+        order_kind: 'outbound',
+        status: 'generated',
+        short_code: '7K3M9QP2',
+        scan_url: scanUrl,
+        items: [],
+      },
+    })
+    await page.route('**/api/admin/processing-orders/**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(workOrder('https://app.migaozn.com/o/7K3M9QP2')),
+      })
+    )
+
+    await page.goto(`/orders/${ORDER_ID}`)
+    await page.getByRole('button', { name: /打印销售单/ }).click()
+    const preview = page.getByTestId('print-preview')
+    await expect(preview).toBeVisible()
+
+    const qr = preview.locator('[data-testid="sales-work-order-qr"]')
+    await expect(qr).toBeVisible()
+    // 码值**逐字** = 服务端下发值（qrcode.react 把 value 写进 <svg><title>）
+    await expect(qr.locator('svg title')).toHaveText('https://app.migaozn.com/o/7K3M9QP2')
+    // 短码人可读（扫码枪 / 相机读不出时手输兜底）
+    await expect(qr).toContainText('扫码报工')
+    await expect(qr).toContainText('7K3M9QP2')
+
+    // 位置 = 纸面**左上角**：码块相对单联纸框的左上偏移都在 20px 内（纸框本身是缩放适配的）
+    const sheet = preview.locator('[data-testid="sales-sheet"]')
+    await expect(sheet).toBeVisible()
+    const sheetBox = (await sheet.boundingBox())!
+    const qrBox = (await qr.boundingBox())!
+    expect(qrBox.x - sheetBox.x).toBeLessThan(20)
+    expect(qrBox.y - sheetBox.y).toBeLessThan(20)
+
+    // 多模态取证（真浏览器截图，人工读图用）
+    await preview.screenshot({ path: '/tmp/ui7530-sales-doc-work-order-qr.png' })
+
+    // 缺码**不画假码**：读面没有 scan_url ⇒ 整块不出现（不画占位框、不印作业单号冒充可扫码）
+    await page.unroute('**/api/admin/processing-orders/**')
+    await page.route('**/api/admin/processing-orders/**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(workOrder(null)),
+      })
+    )
+    await page.reload()
+    await page.getByRole('button', { name: /打印销售单/ }).click()
+    const preview2 = page.getByTestId('print-preview')
+    await expect(preview2).toBeVisible()
+    await expect(preview2.locator('[data-testid="sales-work-order-qr"]')).toHaveCount(0)
+    await expect(preview2.locator('[data-testid="sales-sheet"]')).not.toContainText('CK-20261023-0001')
   })
 })
 

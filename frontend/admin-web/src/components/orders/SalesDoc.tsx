@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import dayjs from 'dayjs'
+import { QRCodeSVG } from 'qrcode.react'
 import {
   isContinuousFeed,
   printBodyFontPt,
@@ -23,7 +24,7 @@ import { cn, resolveImageUrl } from '@/lib/utils'
 // 页脚「温馨提示」与报价单**同一句**（#4965）—— 从既有那份 import，不复制一份会漂移的副本
 import { QUOTATION_FOOTER_NOTICE } from './QuotationDoc'
 import type { PrintTarget } from './index'
-import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
+import type { Order, OrderItem, PaymentQrcodeMap, ProcessingOrder } from '@/types'
 
 /**
  * 销售单（可打印纸质文档 · **三联纸 241mm × 140mm**，issue #5651）——
@@ -53,10 +54,12 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  *
  * ## 制式（四段，逐条对实证 #4）
  *
- * ① 表头：销售单 / 单号 / 日期 / 客户 / 电话 / 地址 / 订货电话；
- * ② 明细：{@link SALES_DOC_COLUMNS}（序号 | 品名 | 货号 | 颜色 | 门幅 | 数量 | 单位 | 单价 | 金额）——
+ * ① 表头：**左上角作业单扫码报工码** + 销售单 / 单号 / 日期 / 客户 / 电话 / 地址 / 订货电话；
+ * ② 明细：{@link SALES_DOC_COLUMNS}（序号 | 货号 | 颜色 | 门幅 | 数量 | 单位 | 单价 | 金额）——
  *    **商品行粒度**（与报价单的「按套」粒度**不是同一个数据投影**，不许互套）；
- *    品名 / 货号 / 颜色 / 门幅 取 `lib/order-item-sku.ts` 的 `orderItemSku()`（issue #6869）；
+ *    货号 / 颜色 / 门幅 取 `lib/order-item-sku.ts` 的 `orderItemSku()`（issue #6869）；
+ *    🔴 「品名」列自 issue #7530 起**退场**（用户 2026-10-23 逐字「销售单不要品名」）——
+ *    单据身份由货号 / 颜色 / 门幅承载，不印商品名；
  * ③ 汇总：上期余额 / 预存抵扣 / 优惠金额 / **本单应收** / 账户余额；
  * ④ 页脚：温馨提示 + 扫码支付 QR（无码 ⇒ 整块不出现，**不画假码**）。
  *
@@ -103,6 +106,22 @@ import type { Order, OrderItem, PaymentQrcodeMap } from '@/types'
  *
  * 🔴 **`shipments` 是必填 prop**（`null` = 读面没取到，是**调用方要做的决定**）：
  * 让"忘了接读面"在**编译期**就红 —— 那正是本单要修的半成品形态（读面只落了一面）。
+ *
+ * ## 左上角的作业单扫码报工码（issue #7530）
+ *
+ * 用户 2026-10-23 逐字「把作业出库单手机端链接对应的二维码信息放置在左上角，工人可以通过扫码
+ * 进入报工页面」。实现口径（三条，勿随手改）：
+ * 1. **码值 = 服务端下发的 `processingOrder.scan_url`**（= `{base}/o/{短码}` ⇒ 服务端 302 到
+ *    工人报工页 `/w/`，issue #6867）—— 前端**不拼**：域名 / 路径段是第二份真值，换域名时
+ *    纸面与读面会静默不一致（红证：`SalesDoc.test.tsx` 的「⑬ 红证」）；
+ * 2. **缺码不画假码**：没有 `scan_url`（存量单未实例化短码 / 没有作业单 / 读面没取到）⇒
+ *    **整块不出现**，不画占位框、**不回落作业单号**（回落 = 扫出来只有一串文本、打不开任何页面，
+ *    正是 #6867 治过的病）；
+ * 3. **短码人可读**：码旁印 `processingOrder.short_code`（8 位）—— 扫码枪 / 相机读不出时
+ *    工人可**手输**（#6867 设计 §11.7「不是可选项」）。
+ *
+ * 🔴 版面预算：二维码块与抬头**并排**（≈15mm 见方、`level="M"`），不额外起一段 ——
+ * 三联纸单联可用高只有 128mm，多起一段会挤掉「本单应收 / 收款码」。
  */
 interface SalesDocProps {
   order: Order
@@ -114,6 +133,14 @@ interface SalesDocProps {
    * 判定与四态见 `lib/sales-shipment.ts` 的 `resolveSalesQuantity`。
    */
   shipments: OrderShipmentRead | null
+  /**
+   * 作业单读面（订单详情页已加载，与 `ProcessingDoc` **同一份**来源）—— 左上角扫码报工码的
+   * **唯一**取值来源，只读两个服务端字段：
+   * `scan_url`（码值，前端**不拼**）与 `short_code`（码旁人可读短码）。
+   *
+   * 缺省 / `null` = 没有作业单或读面没取到 ⇒ 二维码**整块不出现**（不画假码，见文件头）。
+   */
+  processingOrder?: ProcessingOrder | null
   /**
    * 介质（缺省三联纸 241mm × 140mm）。切介质**只**改版面参数，字段映射只有一份
    * （见文件头「介质是参数，不是副本」）。
@@ -148,10 +175,13 @@ interface SalesDocProps {
  * 「颜色」列承载，而 `item.specification` 是「品名 + colorName」的同义重复（§31 P2 信息不重复）；
  * 更要紧的是三联纸单联只有 128mm 可用高，多一行子行会挤掉「本单应收 / 收款码」
  * （实测 >6 行即溢出被裁，见 `lib/print-media.json` 与 `PrintDocPreview` 的自检）。
+ *
+ * 🔴 issue #7530（用户 2026-10-23 逐字「销售单不要品名」）：「品名」列**退场** ⇒ 9 列变 8 列。
+ * 它承载的信息在纸面上仍有真值——货号 / 颜色 / 门幅 三列合起来足以认出是哪一款布
+ * （同一次裁定的另一半是把作业单扫码报工码放到左上角，见文件头「左上角…」节）。
  */
 export const SALES_DOC_COLUMNS = [
   '序号',
-  '品名',
   '货号',
   '颜色',
   '门幅',
@@ -214,6 +244,7 @@ const PAYMENT_TYPE_LABELS: Record<string, string> = {
 export default function SalesDoc({
   order,
   shipments,
+  processingOrder,
   media = 'continuous-241x140',
   paymentQrcodes,
   printTarget,
@@ -247,6 +278,12 @@ export default function SalesDoc({
   const docNo = paperText(order.orderNo)
   const date = formatDate(order.createdAt)
   const hasDiscount = typeof order.discountAmount === 'number'
+  /**
+   * 左上角作业单扫码报工码（issue #7530）—— 码值**逐字**取服务端 `scan_url`，前端不拼；
+   * 短码只用于码旁人可读（手输兜底）。两者都缺 ⇒ 整块不渲染（缺码不画假码）。
+   */
+  const workOrderQrValue = (processingOrder?.scan_url ?? '').trim()
+  const workOrderShortCode = (processingOrder?.short_code ?? '').trim()
 
   const doc = (
     <div
@@ -299,17 +336,51 @@ export default function SalesDoc({
         style={sheetHeightMm !== null ? { height: `${sheetHeightMm}mm`, overflow: 'hidden' } : undefined}
       >
         {/* ===== ① 表头（issue #7219：企业名称） ===== */}
-        {companyName && (
-          <div className="text-center text-[0.9em] font-medium text-neutral-700 mb-0.5" data-testid="doc-company-name">
-            {companyName}
+        {/* 抬头与**左上角作业单扫码报工码**并排（issue #7530）：码块占左侧 ≈15mm，
+            企业名称 / 销售单 / 单号 在其右侧 —— 不额外起一段（单联 128mm 的版面预算见文件头）。
+            🔴 码值取服务端 `scan_url`；无码 ⇒ 整块不出现（不画占位框、不回落作业单号）。 */}
+        <div className="mb-1 flex items-start gap-2">
+          {workOrderQrValue !== '' && (
+            <div
+              className="flex shrink-0 items-center gap-1.5"
+              data-testid="sales-work-order-qr"
+            >
+              <QRCodeSVG
+                value={workOrderQrValue}
+                size={56}
+                level="M"
+                title={workOrderQrValue}
+                data-testid="sales-work-order-qr-svg"
+              />
+              <div className="leading-tight text-neutral-500">
+                <div className="text-[0.7em]" data-testid="sales-work-order-qr-label">
+                  扫码报工
+                </div>
+                {workOrderShortCode !== '' && (
+                  <div
+                    className="font-mono text-[0.85em] leading-tight font-semibold text-neutral-700"
+                    data-testid="sales-work-order-short-code"
+                  >
+                    {workOrderShortCode}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            {companyName && (
+              <div className="text-center text-[0.9em] font-medium text-neutral-700 mb-0.5" data-testid="doc-company-name">
+                {companyName}
+              </div>
+            )}
+            <div className="flex items-baseline justify-between border-b border-neutral-400 pb-1">
+              <span className="text-base font-semibold tracking-[0.3em]">销售单</span>
+              <span className="text-[0.9em] text-neutral-600">
+                单号 {docNo}
+                {date ? ` · ${date}` : ''}
+              </span>
+            </div>
           </div>
-        )}
-        <div className="flex items-baseline justify-between border-b border-neutral-400 pb-1 mb-1">
-          <span className="text-base font-semibold tracking-[0.3em]">销售单</span>
-          <span className="text-[0.9em] text-neutral-600">
-            单号 {docNo}
-            {date ? ` · ${date}` : ''}
-          </span>
         </div>
 
         <table className="w-full border-collapse mb-1">
@@ -328,7 +399,7 @@ export default function SalesDoc({
           </tbody>
         </table>
 
-        {/* ===== ② 明细：商品行粒度（序号|货号|数量|单位|单价|金额|备注） ===== */}
+        {/* ===== ② 明细：商品行粒度（序号|货号|颜色|门幅|数量|单位|单价|金额；「品名」自 #7530 退场） ===== */}
         {/* 🔴 数量列的**口径**必须印在纸面上（印的是实发还是订单数量、单据处于什么状态）——
             静默留空 / 印 0 都会让「账实不符」在纸上不可判（issue #5651 硬约束）。 */}
         <div className="text-[0.85em] text-neutral-600 mb-0.5" data-testid="sales-qty-basis">
@@ -341,19 +412,18 @@ export default function SalesDoc({
           <thead>
             <tr>
               <DocTh className="w-[6%]">{SALES_DOC_COLUMNS[0]}</DocTh>
-              <DocTh className="w-[24%]">{SALES_DOC_COLUMNS[1]}</DocTh>
-              <DocTh className="w-[12%]">{SALES_DOC_COLUMNS[2]}</DocTh>
-              <DocTh className="w-[9%]">{SALES_DOC_COLUMNS[3]}</DocTh>
-              <DocTh className="w-[8%]">{SALES_DOC_COLUMNS[4]}</DocTh>
-              <DocTh align="right" className="w-[9%]">
-                {SALES_DOC_COLUMNS[5]}
+              <DocTh className="w-[14%]">{SALES_DOC_COLUMNS[1]}</DocTh>
+              <DocTh className="w-[16%]">{SALES_DOC_COLUMNS[2]}</DocTh>
+              <DocTh className="w-[12%]">{SALES_DOC_COLUMNS[3]}</DocTh>
+              <DocTh align="right" className="w-[10%]">
+                {SALES_DOC_COLUMNS[4]}
               </DocTh>
-              <DocTh className="w-[6%]">{SALES_DOC_COLUMNS[6]}</DocTh>
-              <DocTh align="right" className="w-[12%]">
-                {SALES_DOC_COLUMNS[7]}
-              </DocTh>
+              <DocTh className="w-[8%]">{SALES_DOC_COLUMNS[5]}</DocTh>
               <DocTh align="right" className="w-[14%]">
-                {SALES_DOC_COLUMNS[8]}
+                {SALES_DOC_COLUMNS[6]}
+              </DocTh>
+              <DocTh align="right" className="w-[20%]">
+                {SALES_DOC_COLUMNS[7]}
               </DocTh>
             </tr>
           </thead>
@@ -369,13 +439,12 @@ export default function SalesDoc({
               </tr>
             ) : (
               items.map((item: OrderItem, idx: number) => {
-                // 品名 / 货号 / 颜色 / 门幅 = 纸面身份四件套（issue #6869）——
+                // 货号 / 颜色 / 门幅 = 纸面身份三件套（issue #6869；「品名」自 #7530 退场）——
                 // 唯一取值口，缺值一律显式占位 `—`（不静默留空，见文件头硬约束）
                 const sku = orderItemSku(item)
                 return (
                   <tr key={item.id || idx} data-testid={`sales-item-${idx}`}>
                     <DocTd align="right">{idx + 1}</DocTd>
-                    <DocTd cut>{sku.name || SALES_DOC_MISSING}</DocTd>
                     <DocTd cut testId={`sales-code-${idx}`}>
                       {sku.code || SALES_DOC_MISSING}
                     </DocTd>

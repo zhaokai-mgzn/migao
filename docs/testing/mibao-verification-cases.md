@@ -10840,7 +10840,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（133 case）
+## 前端 UI 域（134 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -11666,13 +11666,13 @@
 真值: frontend-fix.no-api-change, frontend-fix.vitest
 溯源: 2026-09-26 新增（issue #5651）：补客户现行四张单据里的 A4 加工单 —— 表头九栏 + 右上 QR + 按套分块 8 列 + 分页不裁切/表头重复 + 缺值显式占位（制单人/批号为本系统未采集，标「未采集」不编值）。 ｜ 2026-10-14 追加（母单 #6901）：① 补**每套工序块**（取数走既有读面 `GET /api/admin/production/orders/{id}/operations`；纸面**不取数**，由调用方按 `order_item_id` 对齐后向下传）；② 数量列名不再写死单位（`数量` / `数量(米)` 按本行 `unit`）；③ 同批纠正判据 2 的**散文漂移**（旧 8 列 → 真值 9 列，非本批引入）。 ｜ 2026-10-18（issue #7274，用户逐字「工序细节不用在打印单上，移除掉工序相关的表格信息」）：**工序块整块移除**（`OPERATIONS_DOC_COLUMNS` / `operations` prop / 纸面节点一并退场）；工序信息改由屏幕加工单块与工人扫码面承载。判据 7 改判为「纸面零工序节点」回归探针 + 类级守卫 C8。 ｜ 2026-10-18 同批收口 **#7219 遗留**：`qrValue` 死 prop 与旧 QR 用例退场，判据 5 改判「纸面不印 QR」（原「缺码不画假码」随码一起退场）；title 去掉「右上 QR」并补 issue #7219。 ｜ tags: ui, order, print, processing-doc, a4
 
-### UI-062. 销售单打印（三联纸 241mm × 140mm 两等分）：@page 241mm 140mm + 只渲染一页（复写由压感纸承担）+ 明细 序号|货号|数量|单位|单价|金额|备注 + 金额一律取服务端字段 + 缺口金额栏不编数（issue #5651） 🔵
+### UI-062. 销售单打印（三联纸 241mm × 140mm 两等分）：@page 241mm 140mm + 只渲染一页（复写由压感纸承担）+ 明细 序号|货号|颜色|门幅|数量|单位|单价|金额（「品名」列自 issue #7530 退场）+ 金额一律取服务端字段 + 缺口金额栏不编数（issue #5651） 🔵
 ```
 你: 客户现行四张单据里的销售单（2026-09-26 用户提供实物照，去 PII 后登记在 issue #5651 的实证表 #4）；用户逐字裁定「要，而且挂在发货链上」并以「241mm × 140mm（两等分）」定连续纸规格
 期望: direct_reply
 数据: 判据 1·**三联纸纸型**：样式里 `@page { size: 241mm 140mm; margin: 6mm 12mm; }`（由 printPageRule('continuous-241x140') 生成），容器带 data-print-media='continuous-241x140'。执行点 = frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 的「① 介质：@page 241mm × 140mm（两等分）」。
 数据: 判据 2·🔴 **只渲染一页**（复写是纸的特性，不是软件的事）：DOM 里 `.sales-sheet` **恰好一份**；容器高度 = printUsableHeightMm('continuous-241x140') = 128mm（页长 140 − 上下边距 12）且 overflow: hidden ⇒ 浏览器不会再分页（跨联 = 纸面与账目对不上）。执行点 = 同文件「① 介质」+「① 红证：改坏只渲染一页 ⇒ 必红」。
-数据: 判据 3·**介质是参数不是副本**：`media` 是 prop，切到 'a4' 后 @page 变 A4，而**逐格取值（序号/货号/数量/单位/单价/金额/备注）、表头、金额汇总逐字不变** —— 复制一份字段映射给 A4 版本 ⇒ 必红。执行点 = 同文件「② 介质是参数不是副本：切 A4 后 @page 变、而逐格取值逐字不变」+「② 列清单 = SALES_DOC_COLUMNS」。
+数据: 判据 3·**介质是参数不是副本**：`media` 是 prop，切到 'a4' 后 @page 变 A4，而**逐格取值（序号/货号/颜色/门幅/数量/单位/单价/金额）、表头、金额汇总、扫码报工码值逐字不变** —— 复制一份字段映射给 A4 版本 ⇒ 必红。执行点 = 同文件「② 介质是参数不是副本：切 A4 后 @page 变、而逐格取值逐字不变」+「② 列清单 = SALES_DOC_COLUMNS」。
 数据: 判据 4·🔴 **金额一律取服务端字段**（前端现算 = 第二份真值）：构造的服务端值与前端求和**故意不同**（行 unitPrice×quantity = 30 而服务端 amount = 500；行金额之和 = 500 而 actualAmount = 888.88）⇒ 纸面必须印 500.00 / 888.88 / 999.99 / 111.11。执行点 = 同文件「🔴 ③ 金额取服务端字段」+「🔴 ③ 红证：让前端现算 ⇒ 必红」。
 数据: 判据 5·🔴 **缺口金额栏不编数**：上期余额 / 预存抵扣 / 账户余额 服务端无字段（Order DTO 与 SystemSettings 均无余额面）⇒ 纸面标「未采集」，**不含任何数字**（印 0.00 = 把「没有这个数」画成「余额为零」）。执行点 = 同文件「🔴 ④ 缺口金额栏标未采集且不含数字」+「🔴 ④ 红证：编成 0.00 ⇒ 必红」。
 数据: 判据 6·**缺值可见 / 长名截断可见**：客户 / 电话 / 地址缺失 ⇒ 显式占位 `—`（不是空串）；长客户名**不裁字符串**（全文仍在 DOM）且截断走 CSS 省略号（sales-cut 的 text-overflow: ellipsis + overflow: hidden）。执行点 = 同文件「🔴 ⑤ 缺值可见」+「⑤ 长名截断可见」+两条对应的红证用例。
@@ -11680,7 +11680,7 @@
 跳过: [backend-contract] 纯前端打印版式与金额取值（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 执行
 ```
 真值: frontend-fix.no-api-change, frontend-fix.vitest
-溯源: 2026-09-26 新增（issue #5651）：补客户现行四张单据里的销售单 —— 三联纸 241mm × 140mm（针式 + 连续纸 + 压感复写，全仓此前零支持）；介质做成 prop（切 A4 不产生第二份字段映射）；金额一律取服务端字段；上期余额/预存抵扣/账户余额 服务端无字段 ⇒ 标「未采集」不编数；挂发货链待 order_shipment_items（#5648/#5664）落地。 ｜ tags: ui, order, print, sales-doc, continuous-paper, dot-matrix
+溯源: 2026-09-26 新增（issue #5651）：补客户现行四张单据里的销售单 —— 三联纸 241mm × 140mm（针式 + 连续纸 + 压感复写，全仓此前零支持）；介质做成 prop（切 A4 不产生第二份字段映射）；金额一律取服务端字段；上期余额/预存抵扣/账户余额 服务端无字段 ⇒ 标「未采集」不编数；挂发货链待 order_shipment_items（#5648/#5664）落地。｜2026-10-23 更新（issue #7530）：用户逐字「销售单不要品名」⇒ 列清单 9 → 8（撤「品名」，列宽重分配）；「品名」不再出现在纸面任何位置（去表头却留单元格 = 串列 ⇒ 必红）。 ｜ tags: ui, order, print, sales-doc, continuous-paper, dot-matrix
 
 ### UI-063. 打印介质矩阵分层：A4 / 标签 50×60 / 三联纸 241×140 三介质显式在册；可打印单据必须声明介质（未声明即红）+ @page 与矩阵同源 + 三联纸待实测登记 + 同一单据只许一份字段映射（issue #5651） 🔵
 ```
@@ -12770,6 +12770,21 @@
 真值: frontend-fix.no-api-change
 溯源: 2026-10-23 新增（issue #7526，用户客户详情截图 + 逐字「当系统没有标签时，点击+号无反应，应该引导客户去添加标签」）：面板渲染条件由 `showTagPicker && availableTags.length > 0` 改为「`showTagPicker` 每次都渲染」+ 内容三分支（可加标签列表 / 系统无标签空态 / 客户已打满空态），空态里给「去添加标签 | 管理标签」→ `/customers?manageTags=1`；客户列表页按该参数直接打开标签管理模态（`window.location` 读参，与入库单 #7524 深链同口径）。触发器补 `aria-label`/`aria-expanded`/`aria-haspopup`（纯图标按钮的无障碍名）。类级固化 = 源码形态守卫 `popover-empty-gate-guard.test.ts`（修前 1 处、修后 0 处）。不改后端、不改标签数据模型，标签绑定语义一字未动。 ｜ tags: ui, admin-web, customer-tag, empty-state, inert-trigger
 
+### UI-134. 销售单左上角「作业单扫码报工」二维码：码值逐字取服务端 processingOrder.scan_url（前端不拼域名/路径）+ 短码人可读 + 缺码不画假码（不回落作业单号），工人扫码进报工页（issue #7530） 🔵
+```
+你: 销售单不要品名，并且把作业出库单手机端链接对应的二维码信息放置在左上角，工人可以通过扫码进入报工页面
+期望: direct_reply
+数据: 判据 1·码值只认服务端下发（会红）：纸面二维码的内容逐字 = `processingOrder.scan_url`（示例域刻意不用 app.migaozn.com）⇒ 前端自己拼 `{base}/o/{短码}` 会印出另一个地址 ⇒ 必红。执行点 = frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 的「⑬ 有作业单扫码短链 ⇒ 纸面左上角出码，码值逐字 = 服务端 scan_url」+「⑬ 红证：前端自己拼 `{base}/o/{短码}` ⇒ 码值与服务端下发值不同 ⇒ 上面那条必红」
+数据: 判据 2·位置在纸面左上角（会红）：二维码块属于 `.sales-sheet` 的第一段（与抬头并排），且文档顺序在「销售单」标题之前；不与页脚收款码混在一处。执行点 = 同文件「⑬ 有作业单扫码短链…」
+数据: 判据 3·短码人可读（会红）：码旁印 `processingOrder.short_code`（8 位）与「扫码报工」标签 —— 扫码枪 / 相机读不出时工人可手输。执行点 = 同文件「⑬ 短码人可读」
+数据: 判据 4·缺码不画假码（会红）：无 `scan_url`（存量单未实例化短码 / 没有作业单 / 读面没取到）⇒ 零二维码、零占位框，纸面既不出现作业单号也不出现裸短码（扫出来只有一串文本、打不开任何页面 = issue #6867 治过的病）。执行点 = 同文件「⑬ 缺码不画假码」
+数据: 判据 5·**类级元守卫**（让同类进不来）：受管打印单据里不得出现扫码短链路径段（`/o/` 作业单级 · `/s/` 部位级）—— 谁再在纸面拼域名 / 路径段 ⇒ 红（含内存注入自证：拼路径段的样本判红、逐字取 `scan_url` 的样本判绿，防「空判据」）。执行点 = tests/unit_ci_workflows/test_print_media_matrix_guard.py 的 C11（test_c11_print_docs_never_assemble_scan_short_links）
+前置: 本用例是 [backend-contract] 纯前端打印版式契约（jsdom 渲染），不依赖真实服务与共享夹具；前置不成立时对应单测直接红，agent-eval 栈不跑它
+跳过: [backend-contract] 纯前端打印版式与扫码入口取值（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 执行
+```
+真值: frontend-fix.no-api-change, frontend-fix.vitest
+溯源: 2026-10-23 新增（issue #7530，用户逐字「销售单不要品名，并且把作业出库单手机端链接对应的二维码信息放置在左上角，工人可以通过扫码进入报工页面」）：销售单抬头左侧加作业单扫码报工码 —— 码值 = 服务端 `scan_url`（`{base}/o/{短码}` ⇒ 服务端 302 到工人报工页 `/w/`），短码印在码旁作手输兜底，无码整块不出现；数据来源 = 订单详情页既有的 `processingOrder` 读面（与 `ProcessingDoc` 同一份，不新增后端接口）。 ｜ tags: ui, order, print, sales-doc, work-order-qr
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -12799,8 +12814,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：871（活跃 141，跳过 730）
-- tier 分布：smoke 12 / normal 803 / adversarial 32
+- 用例总数：872（活跃 141，跳过 731）
+- tier 分布：smoke 12 / normal 804 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12825,7 +12840,7 @@
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：133
+- 前端 UI 域：134
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
