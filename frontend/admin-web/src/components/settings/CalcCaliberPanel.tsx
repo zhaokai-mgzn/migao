@@ -78,6 +78,11 @@
  * ## 数字输入一律用 `NumberInput`（issue #5198 / #5218）
  *
  * 旧 `type="number"` 会吞 `0.` 中间态、清空会把框渲染成字面量 `NaN` 且清不掉。
+ *
+ * 🔴 小数位统一取 `CALC_INPUT_DECIMALS`（3 位 = 毫米，与各列 `NUMERIC(6,3)` 同口径；
+ * issue #7548 —— 用户 2026-10-23：「算料口径的输入框都允许设置3位小数」）。**不传 `decimals`**
+ * 就是组件默认的 2 位 ⇒ 失焦把 `0.125` 归一成 `0.13`（输入被静默改值）。
+ * 判据：`frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx` 判据 10（含类级）。
  */
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AlertCircle, ChevronDown, ChevronRight } from 'lucide-react'
@@ -92,7 +97,7 @@ import { productionApi } from '@/lib/api'
 import { isErrorToastShown } from '@/lib/api-error'
 import { InlineMarkdown } from '@/lib/inline-markdown'
 import { CRAFT_CALC_FORMULA_LABELS } from '@/lib/craft-calc-request'
-import { CALC_FIELD_GROUPS, CALC_PARAM_COPY } from '@/lib/craft-calc-glossary'
+import { CALC_FIELD_GROUPS, CALC_INPUT_DECIMALS, CALC_PARAM_COPY } from '@/lib/craft-calc-glossary'
 import { craftCalcConfigGuardReasons } from '@/lib/production-guard-reasons'
 import {
   PARAM_DOMAINS,
@@ -478,6 +483,7 @@ export function CalcCaliberPanel({
             aria-label={`${p.copy.label}`}
             data-testid={`calc-caliber-scalar-${p.key}`}
             value={numberOf(displayConfig, p.key)}
+            decimals={CALC_INPUT_DECIMALS}
             onChange={(v) =>
               patchDraft({ ...displayConfig, [p.key]: v === null ? Number.NaN : v } as CraftCalcConfig)
             }
@@ -659,6 +665,7 @@ export function CalcCaliberPanel({
                             className={`${FIELD_CONTROL} tabular-nums`}
                             aria-label={`${tierLabelOf(name)} 褶倍`}
                             data-testid={`calc-caliber-tier-${name}-fullness`}
+                            decimals={CALC_INPUT_DECIMALS}
                             value={
                               typeof tier.fullness === 'number' && Number.isFinite(tier.fullness)
                                 ? tier.fullness
@@ -699,6 +706,7 @@ export function CalcCaliberPanel({
                           className={`${fieldControl(mixedUnit)} tabular-nums`}
                           aria-label={`拼${times}次 每折用料`}
                           data-testid={`calc-caliber-mixed-${times}`}
+                          decimals={CALC_INPUT_DECIMALS}
                           value={
                             typeof perFold === 'number' && Number.isFinite(perFold)
                               ? perFold

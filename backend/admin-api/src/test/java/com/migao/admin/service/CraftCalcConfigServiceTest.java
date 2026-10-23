@@ -152,7 +152,7 @@ class CraftCalcConfigServiceTest {
     // ══════════════════════════════════════════════════════════════════════
 
     @Test
-    @DisplayName("min_fullness 低于行业红线 1.5 ⇒ 422（可配但不可关）")
+    @DisplayName("min_fullness 落在 0 与行业红线 1.5 之间 ⇒ 422（0 = 关闭；灰区仍拒）")
     void minFullnessBelowRedLineRejected() {
         assertThatThrownBy(() -> service.put(7L, withKey("min_fullness", 1.0)))
                 .isInstanceOf(BusinessException.class)
@@ -165,7 +165,7 @@ class CraftCalcConfigServiceTest {
     }
 
     @Test
-    @DisplayName("每折吃布 / 余量 ≤ 0 ⇒ 422（引擎也会拒 0 ⇒ 存进去也算不出料）")
+    @DisplayName("每折吃布 0 / 任意数值键负数 ⇒ 422（0 米报价 / 负数无意义）")
     void nonPositiveNumbersRejected() {
         assertThatThrownBy(() -> service.put(7L, withKey("per_fold_single", 0)))
                 .isInstanceOf(BusinessException.class)
@@ -175,6 +175,34 @@ class CraftCalcConfigServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> assertThat(fieldsOf(detailsOf((BusinessException) e)))
                         .contains("margin_single"));
+    }
+
+    @Test
+    @DisplayName("0 可设（issue #7548）：余量 / 卷边 / 超阈 / 褶倍下限 / 进位步长 的 0 **收下且落库**")
+    void zeroAcceptedForZeroMeaningfulKeys() {
+        authenticate();
+        when(mapper.selectActiveByTenant(7L)).thenReturn(null);
+        Map<String, Object> body = validBody();
+        body.put("margin_single", 0);
+        body.put("hem_margin", 0);
+        body.put("oversize_width_threshold", 0);
+        body.put("min_fullness", 0);
+        body.put("meters_rounding_step", 0);
+
+        Map<String, Object> data = service.put(7L, body);
+
+        // 落库逐列都是 0（不是被静默换回默认值）
+        ArgumentCaptor<CraftCalcConfig> saved = ArgumentCaptor.forClass(CraftCalcConfig.class);
+        verify(mapper).insert(saved.capture());
+        CraftCalcConfig row = saved.getValue();
+        assertThat(row.getMarginSingle()).isEqualByComparingTo("0");
+        assertThat(row.getHemMargin()).isEqualByComparingTo("0");
+        assertThat(row.getOversizeWidthThreshold()).isEqualByComparingTo("0");
+        assertThat(row.getMinFullness()).isEqualByComparingTo("0");
+        assertThat(row.getMetersRoundingStep()).isEqualByComparingTo("0");
+        // 读面回显也是 0
+        assertThat(configOf(data)).containsEntry("margin_single", new BigDecimal("0"));
+        assertThat(configOf(data)).containsEntry("meters_rounding_step", new BigDecimal("0"));
     }
 
     @Test
@@ -260,14 +288,16 @@ class CraftCalcConfigServiceTest {
         Map<String, Object> body = validBody();
         body.put("min_fullness", 1.0);
         body.put("default_formula", "hanzhe");
-        body.put("meters_rounding_step", 0);
+        // ⚠️ issue #7548：`meters_rounding_step = 0` 已合法（= 不进位）⇒ 本样本换成仍非法的
+        // `per_fold_single = 0`（0 米/折 = 0 元报价）
+        body.put("per_fold_single", 0);
 
         assertThatThrownBy(() -> service.put(7L, body))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(e -> {
                     List<ApiResponse.ErrorDetail> details = detailsOf((BusinessException) e);
                     assertThat(fieldsOf(details))
-                            .contains("min_fullness", "default_formula", "meters_rounding_step");
+                            .contains("min_fullness", "default_formula", "per_fold_single");
                     assertThat(details).hasSize(3);
                     assertThat(((BusinessException) e).getSuggestion()).contains("craft-calc-config");
                 });
@@ -351,6 +381,16 @@ class CraftCalcConfigServiceTest {
                 .status("active")
                 .deleted(0)
                 .build();
+    }
+
+    @Test
+    @DisplayName("hem_margin = 0 是合法配置 ⇒ 排料读面给 0（不是 null「本次不排料」）（issue #7548）")
+    void hemMarginZeroIsHonouredByCuttingPlan() {
+        CraftCalcConfig stored = row(7L, "0.25", "0.3");
+        stored.setHemMargin(BigDecimal.ZERO);
+        when(mapper.selectActiveByTenant(7L)).thenReturn(stored);
+
+        assertThat(service.hemMarginOrNull(7L)).isEqualByComparingTo("0");
     }
 
     // ══════════════════════════════════════════════════════════════════════

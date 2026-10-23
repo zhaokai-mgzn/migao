@@ -220,11 +220,19 @@ DEFAULT_CRAFT_CALC_CONFIG: MappingProxyType = MappingProxyType({
     "oversize_height_threshold": OVERSIZE_HEIGHT_THRESHOLD,    # 超高阈值（净窗高，米；issue #5130）
 })
 
-#: 配置里必须是**正数**的键（0/负数 ⇒ 显式报错，不静默回退默认值）
-_POSITIVE_CONFIG_KEYS = (
-    "per_fold_single", "margin_single", "margin_multi",
-    "min_fullness", "hem_margin", "meters_rounding_step",
-    "oversize_width_threshold", "oversize_height_threshold",
+#: 配置里必须是**正数**的键（0/负数 ⇒ 显式报错，不静默回退默认值）。
+#: 🔴 issue #7548（用户 2026-10-23 裁定「都允许设置为0」）后**只剩这一项**：0 米/折 ⇒ 用料 0 米
+#: ⇒ 0 元报价，且 `derive_pleat_count` 要除以它（数学上也不成立）⇒ 有意不放开。
+_POSITIVE_CONFIG_KEYS = ("per_fold_single",)
+
+#: 配置里允许 **0** 的键（负数仍报错）—— 用户 2026-10-23 裁定（issue #7548）。
+#: 每一项的 0 都有明确语义、且不会把用料算成 0：
+#: 余量 / 上下卷边（0 = 不留边）、两个超阈（0 = 全部按超宽/超高）、
+#: 褶倍下限（0 = **关闭**该护栏）、进位步长（0 = **不进位**，见 `ceil_to_step`）。
+#: ⚠️ 与 Java 侧 `CraftCalcConfigService.NON_NEGATIVE_KEYS` 同集合（写面护栏同口径）。
+_NON_NEGATIVE_CONFIG_KEYS = (
+    "margin_single", "margin_multi", "min_fullness", "hem_margin",
+    "meters_rounding_step", "oversize_width_threshold", "oversize_height_threshold",
 )
 
 
@@ -673,7 +681,8 @@ def resolve_craft_calc_config(config: Optional[Dict[str, Any]] = None) -> Dict[s
     **fail-closed**：配置来自商家（**不可信输入**）⇒ 非法值**显式报错**，
     **不得**静默回退默认值（静默 = 算错钱且无人知道）。校验项：
 
-    - 数值键必须 > 0（`per_fold_single` / 余量 / `min_fullness` / `hem_margin` / 进位步长）；
+    - 数值键：`per_fold_single` 必须 > 0；其余（余量 / `min_fullness` / `hem_margin` / 进位步长 /
+      两个超阈）允许 **0**（issue #7548：0 = 不留边 / 关闭护栏 / 不进位 / 全部按超额），负数仍拒；
     - `per_fold_mixed_times` 的键必须是**正整数**、值必须 > 0；
     - `tiers` 非空，且每档 `fullness` > 0；
     - `default_formula` 必须是已登记的公式名。
@@ -685,6 +694,10 @@ def resolve_craft_calc_config(config: Optional[Dict[str, Any]] = None) -> Dict[s
         value = merged.get(key)
         if not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
             raise ValueError(f"算料配置 {key} 必须是正数（收到 {value!r}）")
+    for key in _NON_NEGATIVE_CONFIG_KEYS:
+        value = merged.get(key)
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+            raise ValueError(f"算料配置 {key} 必须是非负数（0 允许、负数不行；收到 {value!r}）")
     mixed = merged.get("per_fold_mixed_times")
     if not isinstance(mixed, dict) or not mixed:
         raise ValueError(f"算料配置 per_fold_mixed_times 必须是非空映射（收到 {mixed!r}）")
@@ -717,9 +730,15 @@ def ceil_to_step(value: float, step: float) -> float:
     ⚠️ 二进制噪声：`2.3 * 10 == 22.999999999999996`、`13.3 * 10 == 133.00000000000003`
     —— 若直接 `ceil`，前者会被当成「要进位」（纸表 12.3 → 12.4）。故先用
     `round(..., 9)` 把 1e-9 级的表示误差吸掉，**再**进位（1e-9 米 = 1 纳米，物理上无意义）。
+
+    🔴 `step == 0` ⇒ **不进位**（原值返回，同样只吸 1e-9 级噪声）—— 用户 2026-10-23 裁定
+    「都允许设置为0」（issue #7548）：商家把「用料进位步长」设 0 就是「我不要求按 0.1 米进位」。
+    负数仍是配置错误（写面已拒，引擎也 fail-closed）。
     """
-    if step <= 0:
-        raise ValueError(f"进位步长必须是正数（收到 {step}）")
+    if step < 0:
+        raise ValueError(f"进位步长不能为负数（收到 {step}）")
+    if step == 0:
+        return round(value, 9)
     units = round(value / step, 9)
     return round(math.ceil(units) * step, 9)
 

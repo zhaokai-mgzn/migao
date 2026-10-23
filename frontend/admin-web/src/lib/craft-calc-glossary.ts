@@ -96,6 +96,20 @@ export const CALC_SCALAR_KEYS = [
 export type CalcScalarKey = (typeof CALC_SCALAR_KEYS)[number]
 
 /**
+ * 算料口径数字框的**小数位**（用户 2026-10-23 裁定，issue #7548）。
+ *
+ * 用户逐字：「算料口径的输入框都允许设置3位小数，当前是只能输入两位小数」。
+ * 3 位 = **毫米精度**，与 `craft_calc_configs` 各列 `NUMERIC(6,3)` 同口径
+ * （存得下 3 位而前端只收 2 位 = 输入被静默改值）。
+ *
+ * 🔴 **本常量是唯一口径**：`CalcCaliberPanel`（标量 / 档位褶倍 / 拼色每折）与
+ * `OversizeThresholdPreview`（试算 4 格）都从它取 —— 新增数字框漏传 ⇒
+ * `frontend/admin-web/tests/unit/components/CalcCaliberPanel.test.tsx` 的「判据 10 类级」当场红。
+ * ⚠️ 3 位是**口径**不是「不限制」：第 4 位仍由 `NumberInput` 失焦归一掉。
+ */
+export const CALC_INPUT_DECIMALS = 3
+
+/**
  * 算料表单里的**字段分组**（issue #7124，2026-10-17 用户裁定「算料口径这里还是太丑陋」）。
  *
  * ## 为什么分组清单放在这里（而不是组件里）
