@@ -13,7 +13,12 @@ const breakdown = (dim) => ({
   dimension: dim,
   scope: dim === 'customer' ? 'rework_and_compensation_by_customer' : 'rework_by_processing_operation',
   startDate: null, endDate: null, hasData: true,
-  rows: dim === 'customer'
+  rows: dim === 'product'
+    ? [
+        { key: 'prod:sku-1', label: '遮光布 米白 2.8m', rework: 620, reworkLines: 4, compensation: 900, compensationCount: 2, total: 1520 },
+        { key: 'prod:sku-2', label: '纱帘 象牙白 2.8m', rework: 480, reworkLines: 3, compensation: 300, compensationCount: 1, total: 780 },
+      ]
+    : dim === 'customer'
     ? [
         { key: 'cus:13800000001', label: '张记布艺', rework: 860, reworkLines: 6, compensation: 1200, compensationCount: 2, total: 2060 },
         { key: 'cus:13800000002', label: '李家窗帘', rework: 420, reworkLines: 3, compensation: 0, compensationCount: 0, total: 420 },
@@ -126,9 +131,14 @@ await shoot(empty, '/tmp/reports-empty.png')
   await page.waitForSelector('h1', { timeout: 45000 }).catch(() => {})
   await page.waitForTimeout(1200)
   await page.getByTestId('reports-quality-dim-process').click()
-  await page.waitForTimeout(800)
+  await page.waitForTimeout(600)
   await page.screenshot({ path: '/tmp/reports-breakdown-process.png', fullPage: true })
   console.log('shot process-dim | body len:', (await page.textContent('body'))?.length)
+  await page.getByTestId('reports-quality-dim-product').click()
+  await page.waitForTimeout(800)
+  await page.waitForTimeout(800)
+  await page.screenshot({ path: '/tmp/reports-breakdown-product.png', fullPage: true })
+  console.log('shot product-dim | body len:', (await page.textContent('body'))?.length)
   await page.close()
 }
 await browser.close()

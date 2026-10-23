@@ -130,7 +130,7 @@ export interface QualityCostBreakdownRow {
  * 页面据此写「另有 X 无法归属」，不许把它们悄悄丢掉。
  */
 export interface ReportQualityCostBreakdown {
-  dimension: 'customer' | 'process'
+  dimension: 'customer' | 'process' | 'product'
   scope: string
   startDate: string | null
   endDate: string | null

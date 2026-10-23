@@ -1,4 +1,4 @@
-// case_ids: QC-003
+// case_ids: QC-003, QC-004
 package com.migao.admin.service;
 
 import com.migao.admin.entity.FinanceTransaction;
@@ -40,6 +40,7 @@ class QualityCostBreakdownTest {
     private FinanceTransactionMapper financeMapper;
     private OrderMapper orderMapper;
     private ProcessingOrderMapper processingOrderMapper;
+    private com.migao.admin.mapper.OrderItemMapper orderItemMapper;
     private ReportService service;
 
     @BeforeEach
@@ -48,8 +49,10 @@ class QualityCostBreakdownTest {
         financeMapper = Mockito.mock(FinanceTransactionMapper.class);
         orderMapper = Mockito.mock(OrderMapper.class);
         processingOrderMapper = Mockito.mock(ProcessingOrderMapper.class);
+        orderItemMapper = Mockito.mock(com.migao.admin.mapper.OrderItemMapper.class);
+        when(orderItemMapper.selectList(any())).thenReturn(List.of());
         service = new ReportService(orderMapper, null, workLogMapper, financeMapper, null, null,
-                new com.migao.admin.time.BusinessClock(), null, processingOrderMapper);
+                new com.migao.admin.time.BusinessClock(), null, processingOrderMapper, orderItemMapper);
         when(financeMapper.selectList(any())).thenReturn(List.of());
         when(workLogMapper.selectList(any())).thenReturn(List.of());
     }
@@ -198,10 +201,115 @@ class QualityCostBreakdownTest {
     @Test
     @DisplayName("维度非法 ⇒ 可读的 400（不静默返回空表）")
     void unknownDimensionIsRejected() {
-        assertThatThrownBy(() -> service.qualityCostBreakdown("product", null, null))
+        // product 在 issue #7377 段 6 起是**合法**维度 ⇒ 这里换成真正非法的取值
+        assertThatThrownBy(() -> service.qualityCostBreakdown("supplier", null, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("不支持的质量成本维度");
-        // 反恒真：合法维度不抛
-        assertThat(service.qualityCostBreakdown("customer", null, null)).isNotNull();
+        // 反恒真：三个合法维度都不抛
+        for (String legal : List.of("customer", "process", "product")) {
+            assertThat(service.qualityCostBreakdown(legal, null, null)).isNotNull();
+        }
+    }
+
+    // ── 商品维度：按订单行小计占比分摊（issue #7377 段 6，用户 2026-10-23 裁定「按比例」）──
+
+    private static com.migao.admin.entity.OrderItem item(String orderId, String productId,
+                                                         String name, String subtotal) {
+        com.migao.admin.entity.OrderItem it = new com.migao.admin.entity.OrderItem();
+        it.setOrderId(orderId);
+        it.setProductId(productId);
+        it.setProductName(name);
+        it.setSubtotal(subtotal == null ? null : new BigDecimal(subtotal));
+        return it;
+    }
+
+    @Test
+    @DisplayName("🔴 商品维度：赔付按**订单行小计占比**摊开（60/40 的单 ⇒ 60/40）")
+    void productDimensionSplitsCompensationByLineSubtotal() {
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(
+                item("o1", "p-A", "遮光布", "600"),
+                item("o1", "p-B", "纱帘", "400")));
+        when(financeMapper.selectList(any())).thenReturn(List.of(refund("o1", "100")));
+
+        var view = service.qualityCostBreakdown("product", null, null);
+
+        assertThat(view.getDimension()).isEqualTo("product");
+        assertThat(view.getRows()).hasSize(2);
+        var a = view.getRows().stream().filter(r -> "遮光布".equals(r.getLabel())).findFirst().orElseThrow();
+        var b = view.getRows().stream().filter(r -> "纱帘".equals(r.getLabel())).findFirst().orElseThrow();
+        assertThat(a.getCompensation()).isEqualByComparingTo("60.00");
+        assertThat(b.getCompensation()).isEqualByComparingTo("40.00");
+        assertThat(view.getTotals().getCompensation()).isEqualByComparingTo("100.00");
+        assertThat(view.getUnattributed().getCompensation()).isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    @DisplayName("🔴 逐分对得上：100.01 摊两行 ⇒ 50.01 / 50.00（Σ == 总额，残差补给最大行）")
+    void productDimensionKeepsCentIdentity() {
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(
+                item("o1", "p-A", "遮光布", "100"),
+                item("o1", "p-B", "纱帘", "100")));
+        when(financeMapper.selectList(any())).thenReturn(List.of(refund("o1", "100.01")));
+
+        var view = service.qualityCostBreakdown("product", null, null);
+
+        BigDecimal sum = view.getRows().stream().map(r -> r.getCompensation())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(sum).isEqualByComparingTo("100.01");                    // 不差一分
+        assertThat(view.getTotals().getCompensation()).isEqualByComparingTo(sum);
+    }
+
+    @Test
+    @DisplayName("商品维度：返工也经「报工 → 加工单 → 订单 → 行」按比例摊")
+    void productDimensionAttributesReworkThroughOrderLines() {
+        customer("o1", "po1", "张记布艺", "13800000001");
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(
+                item("o1", "p-A", "遮光布", "300"),
+                item("o1", "p-B", "纱帘", "100")));
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                rework("缝制", "po1", "1", "80", "priced", "2026-10-20")));
+
+        var view = service.qualityCostBreakdown("product", null, null);
+
+        var a = view.getRows().stream().filter(r -> "遮光布".equals(r.getLabel())).findFirst().orElseThrow();
+        var b = view.getRows().stream().filter(r -> "纱帘".equals(r.getLabel())).findFirst().orElseThrow();
+        assertThat(a.getRework()).isEqualByComparingTo("60.00");   // 80 × 300/400
+        assertThat(b.getRework()).isEqualByComparingTo("20.00");
+    }
+
+    @Test
+    @DisplayName("🔴 权重缺失不编：订单没有明细行 / 报工没挂加工单 ⇒ 进未归属（恒等式仍成立）")
+    void productDimensionFallsBackToUnattributed() {
+        // 报工没挂加工单 ⇒ 拿不到订单
+        when(workLogMapper.selectList(any())).thenReturn(List.of(
+                rework("缝制", null, "1", "50", "priced", "2026-10-20"),
+                rework("缝制", "po-x", "1", "30", "priced", "2026-10-20")));
+        // 退款挂了一个查不到明细的订单
+        when(orderItemMapper.selectList(any())).thenReturn(List.of());
+        when(financeMapper.selectList(any())).thenReturn(List.of(refund("o-ghost", "70")));
+
+        var view = service.qualityCostBreakdown("product", null, null);
+
+        assertThat(view.getRows()).isEmpty();
+        assertThat(view.getUnattributed().getRework()).isEqualByComparingTo("80.00");
+        assertThat(view.getUnattributed().getCompensation()).isEqualByComparingTo("70.00");
+        // 恒等式：合计 = Σ行 + 未归属（这里 Σ行为 0）
+        assertThat(view.getTotals().getRework()).isEqualByComparingTo(view.getUnattributed().getRework());
+        assertThat(view.getTotals().getCompensation())
+                .isEqualByComparingTo(view.getUnattributed().getCompensation());
+    }
+
+    @Test
+    @DisplayName("商品维度：订单行全无金额 ⇒ 按行数等分（仍是按比例的特例，不丢不编）")
+    void productDimensionSplitsEquallyWhenWeightsAreMissing() {
+        when(orderItemMapper.selectList(any())).thenReturn(List.of(
+                item("o1", "p-A", "遮光布", null),
+                item("o1", "p-B", "纱帘", null)));
+        when(financeMapper.selectList(any())).thenReturn(List.of(refund("o1", "100")));
+
+        var view = service.qualityCostBreakdown("product", null, null);
+
+        assertThat(view.getRows()).hasSize(2);
+        assertThat(view.getRows()).allSatisfy(r -> assertThat(r.getCompensation()).isEqualByComparingTo("50.00"));
     }
 }

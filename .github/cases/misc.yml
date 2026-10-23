@@ -5598,3 +5598,37 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: QC-004
+    legacy_id: ""
+    title: "质量成本按商品摊开：订单行小计占比分摊、逐分对得上、权重缺失不编（issue #7377 段 6）"
+    domains:
+      - misc
+      - backend
+      - frontend
+      - quality
+    tier: normal
+    tags: [frontend-contract, quality-cost, breakdown, product, red-proof]
+    truths_ref: []
+    user_inputs:
+      - "用户（2026-10-23，逐字）：「1.按比例」—— 裁定商品维度的分摊口径：一个订单多商品时按订单行金额比例摊。"
+    expectations: []
+    data_checks:
+      - "**判据 1（按比例）**：一单两行小计 600/400、赔付 100 ⇒ 摊成 60/40（不是平均分、也不是只算单商品订单）。判据 = `QualityCostBreakdownTest#productDimensionSplitsCompensationByLineSubtotal`。"
+      - "**判据 2（🔴 逐分对得上）**：100.01 摊两行 ⇒ Σ行 == 100.01（残差补给金额最大的一行）；否则「Σ行 + 未归属 = 合计」会破在分位上。判据 = `#productDimensionKeepsCentIdentity`。"
+      - "**判据 3（返工也按行摊）**：报工经「加工单 → 订单 → 行」按同一比例摊。判据 = `#productDimensionAttributesReworkThroughOrderLines`。"
+      - "**判据 4（🔴 权重缺失不编）**：订单查不到 / 没有明细行 / 报工没挂加工单 ⇒ 进未归属（恒等式仍成立）；行上连商品名都没有 ⇒ 整笔退回未归属，不静默丢。判据 = `#productDimensionFallsBackToUnattributed`。"
+      - "**判据 5（行金额全缺 ⇒ 等分）**：所有行都没有小计/单价 ⇒ 按行数等分（按比例的特例），不留空不编数。判据 = `#productDimensionSplitsEquallyWhenWeightsAreMissing`。"
+      - "**判据 6（维度白名单与前端）**：`product` 进白名单（非法值仍 400，三合法维度都不抛）；报表页维度切换三档（按客户 / 按工序 / 按商品），切到商品只重取这一块。判据 = `#unknownDimensionIsRejected` + `reports.test.tsx#维度汇总：默认按客户…`。"
+      - "**口径自述（notes 上屏）**：商品维度写明「多商品订单的赔付分摊是**口径**而非事实：退款流水本身不区分商品」。"
+      - "**边界（照实登记）**：① 分摊**不复刻**加工单的 items_snapshot（那是另一套归属键），统一按订单行小计比例；② 报废料仍不进本视图（未采集）；③ 退款流水不区分商品 ⇒ 分摊是口径，不是事实。"
+    precondition: "本用例前后端口径：前置 = 质量成本维度汇总（#7377 段 5）+ 订单行（`order_items.subtotal`）。零网络、零 LLM。"
+    skip_reason: "[frontend-contract] 商品维度的分摊算法与恒等式，由 Java 单测 + 前端单测验证，非 LLM 行为，不进 agent-eval 冒烟"
+    merge_log: "2026-10-23 新增（issue #7377 段 6，用户裁定「按比例」）。落码 = `ReportService.qualityCostBreakdown` 的 `allocateToProducts()`（最大行补残差）+ 报表页第三个维度 chip。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/QualityCostBreakdownTest.java"
+        - "frontend/admin-web/tests/unit/pages/reports.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
