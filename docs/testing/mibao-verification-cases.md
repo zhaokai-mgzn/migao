@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（151 case）
+## 杂项域（152 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5970,6 +5970,21 @@
 跳过: [frontend-contract] 审批中心的裁决动作口径（只对待审、批一次用一次、不能自批），由前端单测 + 菜单三源判据验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-23 新增（issue #7374 段 2，商家面）。落码 = `approvals/page.tsx` + `types/approval.ts` + `approvalApi` + 菜单五副本 + `page_registry` 的 `approval-decision`。 ｜ tags: frontend-contract, approval, governance, red-proof
+
+### APV-002. 业务页就地申请审批：ref 与金额门槛按闸门口径预填（改价 / 盘点差异 / 超授信）（issue #7374 段 3） 🔵
+```
+你: 用户（2026-10-23，逐字）：「继续」—— 审批中心有了裁决面，但业务页被闸门拒时仍然只能看到一句「必须先有已通过的审批」，没有提交入口。
+数据: **判据 1（🔴 ref 与门槛必须按闸门口径）**：`price_change` ⇒ ref = **SKU id**；`stocktake_diff` ⇒ ref = **盘点单号**（不是 id）；`credit_override` ⇒ ref = **客户手机号**。写错 ref 的后果是「审批通过了却用不上」，而审批中心看起来完全正常。判据 = `approval-request.test.ts` 三条逐格（含「盘点差异用 stocktakeNo」的注释级红证）。
+数据: **判据 2（金额默认取门槛）**：盘点差异预填 = 差异合计**绝对值**（盘盈盘亏都要正数门槛）；改价不预填（前端拿不到成本价）但提示点名「要 ≥ 成本价」；差异合计未知（还没数完）⇒ 不预填并换提示。判据 = 同上 + `#还没数完` 用例。
+数据: **判据 3（金额留空不传 0）**：留空 ⇒ 请求里**没有** `amount` 字段（传 0 会让「金额 ≥ 门槛」恒不成立，等于白提）。判据 = `RequestApprovalModal.test.tsx#金额留空 ⇒ 请求里不带 amount`。
+数据: **判据 4（理由必填）**：不写理由当场拦、不发请求。判据 = `#理由必填`。
+数据: **判据 5（服务端原话上屏）**：同一对象已有待审申请等拒绝原话照实显示。判据 = `#服务端拒的原话上屏`。
+数据: **判据 6（🔴 就地预填 · 端到端）**：盘点单「完成」被拒（含「盘点差异」字样）⇒ 自动摆出申请弹窗，对象 = 该盘点单号、金额 = 差异合计；提交 payload 逐字正确。价格本保存被拒（含「改价」字样）⇒ 对象 = 当前 SKU id。判据 = `stocktakes.test.tsx#完成被拒 ⇒ 就地预填申请`（红证：把自动摆出的条件改恒 false ⇒ 该用例当场红，已注入并回滚）+ `price-books.test.tsx#低于成本被拒 ⇒ 就地开「改价」审批`。
+数据: **边界（照实登记）**：① 只接了**两个真正被闸门消费**的类型（改价 / 盘点差异）；`credit_override` 的口径已写好但订单创建页的入口未接；② 退款 / 采购超量**没有闸门在消费**（`consume` 调用点只有三处）⇒ 不做假入口；③ 不做「谁会批」的展示（审批人由 `finance:create` 决定）。
+前置: 本用例是 [frontend-contract]：前置 = 审批后端（#7374 段 1）+ 裁决面（段 2）。零网络、零 LLM。
+跳过: [frontend-contract] 审批申请的 ref/金额口径与就地预填，由前端单测验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-23 新增（issue #7374 段 3）。落码 = `lib/approval-request.ts`（三口径纯函数）+ `components/approvals/RequestApprovalModal.tsx` + `approvalApi.submit` + 盘点单页/价格本页接线。 ｜ tags: frontend-contract, approval, red-proof
 
 ## 商家入驻域（7 case）
 
@@ -12845,8 +12860,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：874（活跃 141，跳过 733）
-- tier 分布：smoke 12 / normal 806 / adversarial 32
+- 用例总数：875（活跃 141，跳过 734）
+- tier 分布：smoke 12 / normal 807 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12861,7 +12876,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：151
+- 杂项域：152
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -13056,6 +13071,7 @@
 - QC-003: 质量成本能按客户/工序摊开：合计=Σ行+无法归属、赔付无工序信息、未定价不计金额（issue #7377 段 5）
 - RPT-007: 报表中心统一时间区间：只有按下单日/报工日的三张表吃区间，库存与账龄是此刻读数（issue #7376 段 6）
 - APV-001: 审批中心进观星台：只对「待审」给动作、批一次用一次、不能自批（issue #7374 段 2）
+- APV-002: 业务页就地申请审批：ref 与金额门槛按闸门口径预填（改价 / 盘点差异 / 超授信）（issue #7374 段 3）
 - OR-061: 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262）
 - OR-058: 发货方式 shippingMethod 接线：order_logistics 落库（V147）+ 详情回吐 + 服务端白名单 fail-closed + 「物流发货 ⇒ 运单号必填」在服务端成立（issue #6239）
 - OR-059: 发货方式 shippingMethod 半接线收口：未采集（NULL）不再被静默写成 logistics（编辑物流弹窗不造数据、不覆盖已记录的 none）

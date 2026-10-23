@@ -42,7 +42,7 @@ BEGIN
         SELECT 1 FROM information_schema.columns
          WHERE table_name = 'craft_calc_configs' AND column_name = 'margin_mixed_multi'
     ) THEN
-        RAISE EXCEPTION 'V187 终态对账失败：craft_calc_configs 缺少 margin_mixed_single / margin_mixed_multi';
+        RAISE EXCEPTION 'V188 终态对账失败：craft_calc_configs 缺少 margin_mixed_single / margin_mixed_multi';
     END IF;
 END $$;
 

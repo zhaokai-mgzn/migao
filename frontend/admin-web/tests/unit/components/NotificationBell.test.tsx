@@ -503,4 +503,48 @@ describe('NotificationBell', () => {
     })
     expect(screen.queryByText('0')).not.toBeInTheDocument()
   })
+
+  // ─── #7524 结构化通知：点开回到单据 ───
+
+  it('#7524 有落地页的通知：点开先标已读、再跳单据页并收起面板', async () => {
+    mockGetNotifications.mockResolvedValue({
+      data: {
+        data: {
+          items: [createNotification({
+            id: 'n1',
+            status: 'sent',
+            bizType: 'inbound_order',
+            bizNo: 'RK-20261023-0001',
+            targetPath: '/inbound-orders?keyword=RK-20261023-0001',
+            severity: 'info',
+          })],
+          total: 1,
+          page: 1,
+          size: 5,
+        },
+      },
+    })
+    render(<NotificationBell />)
+    await user.click(screen.getByTestId('icon-bell').closest('button')!)
+    const item = await screen.findByTestId('notification-bell-item')
+    await user.click(item)
+
+    await waitFor(() => expect(mockMarkAsRead).toHaveBeenCalledWith('n1'))
+    await waitFor(() => expect(mockRouterPush).toHaveBeenCalledWith('/inbound-orders?keyword=RK-20261023-0001'))
+    // 点开即离开：面板收起（不留在「已读但没动」的半态）
+    await waitFor(() => expect(screen.queryByText('通知')).not.toBeInTheDocument())
+  })
+
+  it('#7524 没有落地页的通知：点开只标已读、不跳转（老通知不假装可点）', async () => {
+    mockGetNotifications.mockResolvedValue({
+      data: { data: { items: [createNotification({ id: 'n2', status: 'sent' })], total: 1, page: 1, size: 5 } },
+    })
+    render(<NotificationBell />)
+    await user.click(screen.getByTestId('icon-bell').closest('button')!)
+    const item = await screen.findByTestId('notification-bell-item')
+    await user.click(item)
+
+    await waitFor(() => expect(mockMarkAsRead).toHaveBeenCalledWith('n2'))
+    expect(mockRouterPush).not.toHaveBeenCalled()
+  })
 })

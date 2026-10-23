@@ -11,6 +11,8 @@ import { loadErrorMessage } from '@/lib/api-error'
 import { stocktakeApi, warehouseApi } from '@/lib/api'
 import { formatStockQuantity } from '@/lib/stock-quantity'
 import { usePermission } from '@/lib/permission'
+import RequestApprovalModal from '@/components/approvals/RequestApprovalModal'
+import { stocktakeDiffDraft, type ApprovalDraft } from '@/lib/approval-request'
 import type { Stocktake, StocktakeLine, StocktakeStatus, Warehouse } from '@/types/stocktake'
 
 /**
@@ -97,6 +99,8 @@ export default function StocktakesPage() {
   const [counts, setCounts] = useState<Record<number, string>>({})
   const [actionBusy, setActionBusy] = useState(false)
   const [formError, setFormError] = useState('')
+  // 有差异但缺「盘点差异」审批时，就地开申请（issue #7374 段 3）：ref = 盘点单号，金额 = 差异合计
+  const [approvalDraft, setApprovalDraft] = useState<ApprovalDraft | null>(null)
 
   const [openForm, setOpenForm] = useState(false)
   const [formWarehouseId, setFormWarehouseId] = useState('')
@@ -239,7 +243,14 @@ export default function StocktakesPage() {
       await load()
     } catch (e) {
       // 🔴 「有差异但没有已通过的盘点差异审批」是**服务端**拒绝 —— 原样显示它给的下一步
-      setFormError(loadErrorMessage(e, confirm === 'complete' ? '完成盘点' : '作废盘点'))
+      const message = loadErrorMessage(e, confirm === 'complete' ? '完成盘点' : '作废盘点')
+      setFormError(message)
+      // 顺手把申请入口摆出来（差异合计页面本来就有，直接预填 —— 金额低于差异合计等于白批）
+      if (confirm === 'complete' && detail && /盘点差异/.test(message)) {
+        setApprovalDraft(
+          stocktakeDiffDraft({ stocktakeNo: detail.stocktakeNo, diffTotal: diffTotal(detail.items) }),
+        )
+      }
       setConfirm(null)
     } finally {
       setActionBusy(false)
@@ -541,6 +552,13 @@ export default function StocktakesPage() {
         </p>
       </Modal>
 
+      {/* 盘点差异审批（issue #7374 段 3）：ref = 盘点单号，金额预填差异合计 */}
+      <RequestApprovalModal
+        open={approvalDraft !== null}
+        onClose={() => setApprovalDraft(null)}
+        draft={approvalDraft}
+      />
     </div>
   )
+
 }

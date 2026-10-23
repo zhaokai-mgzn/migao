@@ -7,12 +7,28 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 // Mock API
 const mockGetNotifications = vi.fn()
 const mockMarkAllAsRead = vi.fn()
+const mockMarkAsRead = vi.fn()
+
+// Mock 导航（#7524：点开通知要能跳到单据页 —— 断言 push 的**稳定**引用）
+const mockRouterPush = vi.fn()
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: (...args: any[]) => mockRouterPush(...args),
+    replace: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    refresh: vi.fn(),
+    prefetch: vi.fn(),
+  }),
+  usePathname: () => '/notifications',
+  useSearchParams: () => new URLSearchParams(),
+}))
 
 vi.mock('@/lib/api', () => ({
   notificationApi: {
     getNotifications: (...args: any[]) => mockGetNotifications(...args),
     markAllAsRead: (...args: any[]) => mockMarkAllAsRead(...args),
-    markAsRead: vi.fn(),
+    markAsRead: (...args: any[]) => mockMarkAsRead(...args),
     deleteNotification: vi.fn(),
   },
 }))
@@ -193,5 +209,63 @@ describe('NotificationsPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('pagination')).toBeInTheDocument()
     })
+  })
+
+  // ─── #7524 结构化通知：按业务类型筛 + 点开回到单据 ───
+
+  it('#7524 按业务类型筛：选「入库单」⇒ 请求带 bizType=inbound_order（且回到第 1 页）', async () => {
+    render(<NotificationsPage />)
+    await waitFor(() => expect(mockGetNotifications).toHaveBeenCalled())
+
+    fireEvent.change(screen.getByLabelText('按业务类型筛选'), { target: { value: 'inbound_order' } })
+
+    await waitFor(() =>
+      expect(mockGetNotifications).toHaveBeenCalledWith(
+        expect.objectContaining({ bizType: 'inbound_order', page: 1 }),
+      ),
+    )
+  })
+
+  it('#7524 有落地页的通知：点开先标已读、再跳到单据页；无落地页的不跳', async () => {
+    mockMarkAsRead.mockResolvedValue({ data: {} })
+    mockGetNotifications.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            {
+              id: '1',
+              title: '入库单 RK-20261023-0001 已过账',
+              content: '供应商 ××布行，共 1 行、入库 30 米',
+              channel: 'internal',
+              status: 'sent',
+              bizType: 'inbound_order',
+              bizNo: 'RK-20261023-0001',
+              targetPath: '/inbound-orders?keyword=RK-20261023-0001',
+              severity: 'info',
+              createdAt: '2026-10-23T10:00:00',
+            },
+            {
+              id: '2',
+              title: '系统维护通知',
+              content: '系统将于今晚维护',
+              channel: 'internal',
+              status: 'sent',
+              createdAt: '2026-10-23T09:00:00',
+            },
+          ],
+          total: 2,
+        },
+      },
+    })
+
+    render(<NotificationsPage />)
+    fireEvent.click(await screen.findByTestId('notification-item-1'))
+    await waitFor(() => expect(mockMarkAsRead).toHaveBeenCalledWith('1'))
+    await waitFor(() => expect(mockRouterPush).toHaveBeenCalledWith('/inbound-orders?keyword=RK-20261023-0001'))
+
+    // 负控：没有 targetPath 的老通知点开不跳转（不假装可点）
+    fireEvent.click(screen.getByTestId('notification-item-2'))
+    await waitFor(() => expect(mockMarkAsRead).toHaveBeenCalledWith('2'))
+    expect(mockRouterPush).toHaveBeenCalledTimes(1)
   })
 })

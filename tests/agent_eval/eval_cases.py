@@ -7635,6 +7635,25 @@ _CASE_APV_001 = EvalCase(
     precondition='本用例是 [frontend-contract]：前置 = 审批后端（#7374 段 1：`ApprovalController` / `ApprovalService` / `ApprovalState`）。零网络、零 LLM。',
 )
 
+# ── APV-002 [NORMAL] 业务页就地申请审批：ref 与金额门槛按闸门口径预填（改价 / 盘点差异 / 超授信）（issue #7374 段 3）（源: cases/misc.yml）──
+_CASE_APV_002 = EvalCase(
+    id='APV-002',
+    legacy_id='',
+    title='业务页就地申请审批：ref 与金额门槛按闸门口径预填（改价 / 盘点差异 / 超授信）（issue #7374 段 3）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户（2026-10-23，逐字）：「继续」—— 审批中心有了裁决面，但业务页被闸门拒时仍然只能看到一句「必须先有已通过的审批」，没有提交入口。'],
+    expectations=[],
+    data_checks=['**判据 1（🔴 ref 与门槛必须按闸门口径）**：`price_change` ⇒ ref = **SKU id**；`stocktake_diff` ⇒ ref = **盘点单号**（不是 id）；`credit_override` ⇒ ref = **客户手机号**。写错 ref 的后果是「审批通过了却用不上」，而审批中心看起来完全正常。判据 = `approval-request.test.ts` 三条逐格（含「盘点差异用 stocktakeNo」的注释级红证）。', '**判据 2（金额默认取门槛）**：盘点差异预填 = 差异合计**绝对值**（盘盈盘亏都要正数门槛）；改价不预填（前端拿不到成本价）但提示点名「要 ≥ 成本价」；差异合计未知（还没数完）⇒ 不预填并换提示。判据 = 同上 + `#还没数完` 用例。', '**判据 3（金额留空不传 0）**：留空 ⇒ 请求里**没有** `amount` 字段（传 0 会让「金额 ≥ 门槛」恒不成立，等于白提）。判据 = `RequestApprovalModal.test.tsx#金额留空 ⇒ 请求里不带 amount`。', '**判据 4（理由必填）**：不写理由当场拦、不发请求。判据 = `#理由必填`。', '**判据 5（服务端原话上屏）**：同一对象已有待审申请等拒绝原话照实显示。判据 = `#服务端拒的原话上屏`。', '**判据 6（🔴 就地预填 · 端到端）**：盘点单「完成」被拒（含「盘点差异」字样）⇒ 自动摆出申请弹窗，对象 = 该盘点单号、金额 = 差异合计；提交 payload 逐字正确。价格本保存被拒（含「改价」字样）⇒ 对象 = 当前 SKU id。判据 = `stocktakes.test.tsx#完成被拒 ⇒ 就地预填申请`（红证：把自动摆出的条件改恒 false ⇒ 该用例当场红，已注入并回滚）+ `price-books.test.tsx#低于成本被拒 ⇒ 就地开「改价」审批`。', '**边界（照实登记）**：① 只接了**两个真正被闸门消费**的类型（改价 / 盘点差异）；`credit_override` 的口径已写好但订单创建页的入口未接；② 退款 / 采购超量**没有闸门在消费**（`consume` 调用点只有三处）⇒ 不做假入口；③ 不做「谁会批」的展示（审批人由 `finance:create` 决定）。'],
+    skip_reason='[frontend-contract] 审批申请的 ref/金额口径与就地预填，由前端单测验证，非 LLM 行为，不进 agent-eval 冒烟',
+    tags=['frontend-contract', 'approval', 'red-proof'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [frontend-contract]：前置 = 审批后端（#7374 段 1）+ 裁决面（段 2）。零网络、零 LLM。',
+)
+
 # ── OB-001 [NORMAL] 商家入驻 - AI 自动甄别通过 → 秒级开通租户+管理员（源: cases/onboarding.yml）──
 _CASE_OB_001 = EvalCase(
     id='OB-001',
@@ -16780,6 +16799,7 @@ ALL_CASES = (
     _CASE_QC_003,
     _CASE_RPT_007,
     _CASE_APV_001,
+    _CASE_APV_002,
     _CASE_OB_001,
     _CASE_OB_002,
     _CASE_OB_003,
