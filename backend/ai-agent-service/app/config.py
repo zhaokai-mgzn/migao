@@ -113,12 +113,16 @@ class Settings(BaseSettings):
 
     # 商品图生成（issue #7335）— 百炼图生图（qwen-image 系列）。
     # Key 未单独配置时复用 ASR_API_KEY（同一个百炼账号）；**不回落 PRIMARY_API_KEY**（DeepSeek Key）。
-    # 模型按顺序轮换：只有配额类错误才切下一个（见 app/images/generator.py 的边界 2）。
+    # 模型按顺序轮换：配额类错误与「模型接不了该请求」才切下一个（见 app/images/generator.py 的边界 2）。
     IMAGE_GEN_ENABLED: bool = True
     IMAGE_GEN_API_KEY: str = ""
-        # 回落链：按免费额度从多到少排。**不放 qwen-mt-image-2.0** —— 它是图片翻译模型，
-    # 实测对图生图载荷回 400 InvalidParameter（issue #7341），排进链里只会制造一个必然失败节点。
-    IMAGE_GEN_MODELS: str = "qwen-image-3.0,qwen-image-2.1-pro,qwen-image-2.1-turbo"
+    # 🔴 2026-10-23 用户裁定：qwen-image-* 的免费额度已用尽 ⇒ 切到 qwen-mt-image-2.0。
+    # **已知代价（如实登记，不粉饰）**：qwen-mt-image-2.0 是「图片翻译」模型（把图内文字翻成目标语言），
+    # **不接**本模块的图生图载荷 —— issue #7341 实测回 HTTP 400 InvalidParameter。⇒ 在额度恢复 /
+    # 换回可用模型之前，商家点「AI 生成商品图」会得到 503「模型不接这类请求（非配额原因）」，而不是一张图。
+    # **恢复方式 = 改这一行**（换成已确认可图生图的模型），并同步 .env.example +
+    # tests/test_generator.py 的裁定断言 + .github/cases/ui.yml 的 UI-129 判据 3。
+    IMAGE_GEN_MODELS: str = "qwen-mt-image-2.0"
     IMAGE_GEN_BASE_URL: str = (
         "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
     )

@@ -15,6 +15,10 @@
    （429 / `AllocationQuota` / `Throttling` / free tier）与**模型不可用**
    （ModelNotFound / UnsupportedModel / HTTP 400 InvalidParameter）才切下一个 —— 其它错误直接上抛，
    不把「提示词写错了」伪装成「换个模型试试」。
+   ⚠️ **当前配置（用户 2026-10-23 裁定，见 app/config.py 的 `IMAGE_GEN_MODELS`）**：链里只有
+   `qwen-mt-image-2.0`（qwen-image-* 免费额度用尽）。它是**图片翻译**模型，不接本模块的图生图载荷
+   ⇒ 全链不可用时这里报 `ImageGenerationUnavailable`（「模型不接这类请求」），**不报**「额度用尽」
+   —— 两者给商家的行动方向相反（等额度 vs 找平台换模型）。
 3. 🔴 **缺 Key 即 fail-closed**：`IMAGE_GEN_API_KEY` 未配置且 `ASR_API_KEY` 也为空 ⇒
    `ImageGenerationUnavailable`（端点 503），**不发任何外部请求**。
 """
@@ -187,7 +191,8 @@ async def generate_product_image(
 
     owned = client is None
     http_client = client or httpx.AsyncClient(timeout=settings.IMAGE_GEN_TIMEOUT)
-    last_error: Optional[Exception] = None
+    reasons: List[str] = []
+    quota_hit = False
     try:
         for model in models:
             try:
@@ -195,14 +200,21 @@ async def generate_product_image(
                 logger.info(f"[image-gen] ok model={model} kind={kind} product={product_name!r}")
                 return {"image_url": url, "model": model}
             except ImageGenerationQuotaExceeded as e:
-                last_error = e
+                quota_hit = True
+                reasons.append(str(e))
                 logger.warning(f"[image-gen] quota exhausted, next model: {e}")
             except ImageGenerationUnavailable as e:
-                last_error = e
+                reasons.append(str(e))
                 logger.warning(f"[image-gen] model unavailable, next model: {e}")
-        raise ImageGenerationQuotaExceeded(
-            "生图额度已用尽（所有模型均不可用）：" + (str(last_error) if last_error else "")
-        )
+        detail = "；".join(reasons) or "无"
+        if quota_hit:
+            raise ImageGenerationQuotaExceeded(
+                f"生图额度已用尽（{len(models)} 个模型均不可用）：{detail}")
+        # 全部模型都「接不了这类请求」≠ 额度用尽：2026-10-23 起的默认链正是这种形态
+        # （qwen-mt-image-2.0 是图片翻译模型，不接图生图，issue #7341）。理由必须是真的 ——
+        # 说成「额度用尽」会把商家引向「等额度」，而真正的动作是「找平台换回可用模型」。
+        raise ImageGenerationUnavailable(
+            f"生图模型不可用：配置的 {len(models)} 个模型都不接这类图生图请求（非配额原因）：{detail}")
     finally:
         if owned:
             await http_client.aclose()
