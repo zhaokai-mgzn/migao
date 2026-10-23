@@ -95,7 +95,7 @@ const PARKED_WITH_REASON: ReadonlyArray<readonly [string, string]> = [
   ['src/app/(dashboard)/agent-workspace/human-sessions/page.tsx',
    '同上（在线接待工作台，同族同布局）'],
   ['src/app/(dashboard)/orders/[id]/OrderDetail.tsx',
-   '标题与「返回」按钮同排；且该页首屏还有发货明细读失败告警区，改页头要连带重排版式'],
+   '标题行右侧是**页面级唯一的「打印」入口**（issue #7544：打印与订单状态解耦，故不能落进任何状态分支）；且该页首屏还有发货明细读失败告警区，改页头要连带重排版式'],
   ['src/app/(dashboard)/orders/[id]/ship/ShipOrder.tsx',
    '标题行内含 `Zap` 图标，右侧是「打印发货单」+ 确认发货两个动作，与运单号表单是一体的'],
   ['src/app/(dashboard)/processing-orders/[id]/production/page.tsx',

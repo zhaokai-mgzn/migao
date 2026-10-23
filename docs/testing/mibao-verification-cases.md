@@ -4918,19 +4918,19 @@
 ```
 溯源: 2026-10-06 新增（issue #6418，P1·ops「部署三腿 push 触发已死」）。取号 MC-084：main 上 misc 域现取为 MC-001~MC-083（MC-083 的 merge_log 记「MC-001~MC-082 ⇒ 取 MC-083」）⇒ 取 MC-084；查同时刻 open PR：无一条改 `.github/cases/misc.yml`（`gh pr list --state open` × `gh pr view --json files` 逐条核）。本单 = 合并凭据换非内置（PAT 优先 + 显式具名回落）+ 类级元守卫（arm job 登记表双向对齐）+ Danger Scan 的 owner 确认通道（fail-closed，逐名比对）+ 同批重锚两处快照与两处假真值订正。⚠️ **未固化（照实登记）**：见 data_checks 末条覆盖边界三条 —— 尤其「运行期真的不再被抑制」只能靠合并后的 push run 读数自证（本单在 PR body 与 issue #6418 里给了那条复算命令）。 ｜ tags: backend-contract, ci, auto-merge, credential, trigger-surface, fail-closed, red-proof
 
-### MC-085. 订单详情打印入口矩阵守卫：矩阵覆盖 OrderStatus 全部取值 + 四个必填状态非空 + 页面不得手写打印按钮字面量 + PrintActions 接线 ≥4 且定义唯一（issue #6434） 🔵
+### MC-085. 订单详情打印入口收口守卫：打印不跟订单状态挂钩（无「状态 × 单据」矩阵）+ 全页只有一个打印入口且不在状态分支里 + 单据名不手写 + 打印层选择器接线齐全 + 作业单区块无第二入口（issue #6434 → #7544 改判） 🔵
 ```
-你: 「之前让你设计过打印销售单，报价单等功能，我在订单详情中没有看到打印功能」（2026-10-06 用户报障）—— 用户看到的是「入口不存在」，不是「功能没做」；这类缺陷的形态是**同一件事被抄成多份、其中一份漏了**，所以要在源码面钉住「只许有一张表」。
-数据: **病（issue #6434 的形态）**：四个打印入口原先在 `status === 'shipped'` 与 `status === 'completed'` 两个分支里**各写一份 JSX 字面量** ⇒ 「待发货 / 生产中 / 待付款」三个状态区一个按钮都没有（2026-10-06 用户报障），而这三张单据恰恰是发货**之前**就要用的。单修一处 = 没修：下次再加状态、再抄一份，同样的漏挂会原样复发。
-数据: **判据 1（实例：状态 × 入口矩阵）**：frontend/admin-web/tests/unit/pages/order-detail.test.tsx 的表驱动六条（待付款/待发货/生产中/已发货/已完成/已关闭 × 应有/不该有）—— 改前实测 **3 红 3 绿**，落实现后 46/46 绿。执行点 = 同文件::「打印入口矩阵：…」。
-数据: **判据 2（类级元守卫：唯一声明处）**：frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx 必须 ① 含 `PRINT_TARGETS_BY_STATUS` 矩阵且其键集 == frontend/admin-web/src/types/index.ts 的 `OrderStatus` 全部成员（**现取**，不硬编码）② `pending_payment`/`pending_shipment`/`shipped`/`completed` 四项非空 ③ 代码里（**去注释后**）不得出现 `打印发货单|打印报价单|打印加工单|打印销售单` 任何一个字面量（文案只能来自 `PRINT_TARGET_SPECS[*].title`）④ `<PrintActions>` 接线 ≥4 且 `function PrintActions(` 只有一份。判据 = tests/unit_ci_workflows/test_order_print_entry_matrix.py::TestRealSources（4 条）。
-数据: **判据 3（判别力自证 + 对照读数）**：G1~G4 各有一条**注入式**红证（删状态键 / 清空待发货 / 写回字面量按钮 / 摘掉一处接线）—— 每条都断言「注入真生效（文本确实变了）」，防止锚点漂移把红证变成空断言；另有**对照读数**：只往页面里加注释（哪怕注释里写满四个按钮名）⇒ 一条都不红。判据 = 同文件::TestDiscriminatingPower（5 条）。
-数据: 🔴 **覆盖边界（照实登记）**：① 本判据只读**仓内两份语料**（零网络、零时钟、零运行时）⇒ 它判「入口矩阵覆盖得对不对」，**不判**「真机上点得开、纸出得来」（那属 #5688 的现场待办）；② 它不校验每个状态分支的**按钮顺序/布局**（只判集合），视觉回归由 `./check-ui-regression.sh` 与页面级旅程承接；③ 矩阵里「某状态该有几张单据」是产品口径，判据只钉「不许清空四个必填状态、不许漏登记状态键」——**有意不做**语义一刀切（例如 closed 为空是合法的）。
-前置: 本用例是 [backend-contract] 纯静态用例：前置 = ① frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx 在场且含 `PRINT_TARGETS_BY_STATUS` 矩阵；② frontend/admin-web/src/types/index.ts 在场且含 `export type OrderStatus` 联合类型（成员**现取**，不硬编码）。前置由判据自身持有：文件缺失 / 正则取不到矩阵或状态成员 ⇒ 判据当场 fail-closed 判红（不会表现成「agent 不干活」）；agent-eval 栈不跑它
-跳过: [backend-contract] 纯静态判据（零 LLM、零网络、零时钟；只读 OrderDetail.tsx 与 types/index.ts 两份语料）由 tests/unit_ci_workflows/test_order_print_entry_matrix.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
+你: 「这几个打印按钮不要跟状态挂钩，允许任何状态都能进行打印这些单据，另外把按钮收拢到一个打印统一入口中？作业单区域也有两个按钮，应该都统一收口到打印中，点击打印后可以选择不同的单据预览再进行打印」（2026-10-23 用户逐字，附两张截图：状态卡右侧的「退款 | 打印报价单 | 打印加工单 | 打印销售单」+ 作业单区块右侧的「复制全部 | 打印」）—— 用户要的是「一个入口、与状态无关、进来再选单据」；旧形态（#6434 的状态 × 单据矩阵）把可用性绑在状态上，且四个按钮常驻占位。
+数据: **改判前后（写清为什么口径反过来）**：issue #6434（2026-10-06）把「四个打印按钮」从两个状态分支里的字面量副本收敛成 enum `PRINT_TARGETS_BY_STATUS` 一张「状态 × 可打单据」表；而 2026-10-23 用户裁定这条矩阵本身是病灶的另一半 —— `closed` / `refund` 两个状态**一张单据都打不出来**（商家要给客户补一张报价单时是死路），四个按钮又常驻把操作行铺满。⇒ 新口径 = **打印与订单状态完全解耦 + 全页唯一入口**，要打哪一份由打印层里的单据标签选（issue #7544）。
+数据: **判据 1（实例：任何状态都有且只有一个入口）**：frontend/admin-web/tests/unit/pages/order-detail.test.tsx 的表驱动七条（待付款 / 待发货 / 生产中 / 已发货 / 已完成 / **已关闭** / **退款中**），每个状态断言「以『打印』开头的按钮**恰好 1 个**」（改前是 4 个，且后两个状态是 0 个）；另两条接线用例：①「点打印 → 在预览层换单据 → 打印」默认销售单（三联纸 241×140）、换加工单后纸型变 A4 210×297 且**换单据不出纸**；②「已关闭订单也能打开打印层」。执行点 = 同文件::「打印不跟订单状态挂钩（issue #7544）…」/「点「打印」→ 在预览层里换单据 → 打印…」。
+数据: **判据 2（类级元守卫：唯一入口）**：frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx 必须 ① **不含**「状态 → 可打单据」矩阵（`PRINT_TARGETS_BY_STATUS` 或任何 `Record<OrderStatus, …>`；去注释后判）② 「打印」入口（`data-testid="order-print-entry"`）**恰好 1 处**且**不在** `StatusSection` 里 ③ 代码里不得手写 `打印发货单|打印报价单|打印加工单|打印销售单` 字面量（单据名只能来自 `PRINT_TARGET_SPECS[*].title`）④ 打印层选择器接线齐全（`docs={ORDER_PRINT_DOCS}` + `onSelect={selectPreview}`），且清单含四份必打单据、每项都在 frontend/admin-web/src/lib/print-doc.ts 的 `PRINT_TARGETS`（**现取**，不硬编码）⑤ frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx 不得再有打印入口（`onPrintProcessing` / `打印` 按钮）。判据 = tests/unit_ci_workflows/test_order_print_entry_matrix.py::TestRealSources（5 条）。
+数据: **判据 3（判别力自证 + 对照读数）**：G1~G5 各有**注入式**红证（把状态矩阵加回去 / 复制第二个入口 / 把入口搬进 `StatusSection` 函数体 / 写回字面量按钮 / 摘掉 `docs=` 与 `onSelect=` / 清单写错键 `'sale'` / 清单漏掉发货单 / 作业单区块加回 `onPrintProcessing`），每条都断言「注入真生效（文本确实变了）」，防止锚点漂移把红证变成空断言；另有**对照读数**：只往页面里加注释（哪怕注释里写满四个按钮名与旧矩阵名）⇒ 一条都不红。判据 = 同文件::TestDiscriminatingPower（7 条）。
+数据: 🔴 **覆盖边界（照实登记）**：① 本判据只读**仓内三份语料**（零网络、零时钟、零运行时）⇒ 它判「入口是不是唯一、是不是还在跟状态走」，**不判**「真机上点得开、纸出得来、选不同单据出纸是对的」—— 那半边的机器判据 = tests/e2e/specs/orders/print-preview.spec.ts（真浏览器 `beforeprint` 抓 `data-print-target`，含「已关闭订单照样能打」那条）；② 它不校验入口的**位置/布局**（只判「不在状态分支里」），视觉回归由 `./check-ui-regression.sh` 与页面级旅程承接；③ 单据清单的**顺序**是产品口径（用得最多的在前），判据只钉「四份都在集合里」，不钉顺序。
+前置: 本用例是 [backend-contract] 纯静态用例：前置 = ① frontend/admin-web/src/app/(dashboard)/orders/[id]/OrderDetail.tsx 在场且含 `ORDER_PRINT_DOCS` 清单与唯一入口锚点；② frontend/admin-web/src/lib/print-doc.ts 在场且含 `export const PRINT_TARGETS`；③ frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx 在场。前置由判据自身持有：文件缺失 / 正则取不到清单或目标位集合 ⇒ 判据当场 fail-closed 判红（不会表现成「agent 不干活」）；agent-eval 栈不跑它
+跳过: [backend-contract] 纯静态判据（零 LLM、零网络、零时钟；只读 OrderDetail.tsx / lib/print-doc.ts / ProcessingOrderBlock.tsx 三份语料）由 tests/unit_ci_workflows/test_order_print_entry_matrix.py 验证，非 LLM 行为，不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.print-single-doc-on-paper
-溯源: 2026-10-06 新增（issue #6434）。本包把「四个打印入口」从两个状态分支里的字面量副本收敛成 `PRINT_TARGETS_BY_STATUS` 一张表 + `PrintActions` 一个渲染器，并把入口补到待付款/待发货/生产中；本守卫钉住**收敛**这件事本身（覆盖全部状态键、四个必填状态非空、页面不许再手写字面量、接线 ≥4 且定义唯一），并带 5 条注入式判别力自证与 1 条「只加注释不红」的对照读数。取号 MC-085（`python3 scripts/next_case_id.py MC`，现取 main 最大 = MC-084）。 ｜ tags: backend-contract, frontend, order, print, entry-matrix, reuse-guard, red-proof
+溯源: 2026-10-06 新增（issue #6434）。本包把「四个打印入口」从两个状态分支里的字面量副本收敛成 `PRINT_TARGETS_BY_STATUS` 一张表 + `PrintActions` 一个渲染器，并把入口补到待付款/待发货/生产中；本守卫钉住**收敛**这件事本身，并带 5 条注入式判别力自证与 1 条「只加注释不红」的对照读数。取号 MC-085（`python3 scripts/next_case_id.py MC`，现取 main 最大 = MC-084）。 ｜ 2026-10-23（issue #7544，**改判 + 判据反向**，用户逐字「这几个打印按钮不要跟状态挂钩…收拢到一个打印统一入口中」）：矩阵本身被判为病灶 —— `closed` / `refund` 两个状态零入口。⇒ ① 页面删掉 `PRINT_TARGETS_BY_STATUS` 与 `PrintActions`，改为**页面级唯一入口** + 打印层内的单据标签（`docs` / `onSelect`）选择；② 作业单区块的「打印」退场（加工单走同一入口），「复制全部」保留（文本通道，不是打印通道）；③ 本守卫的 G1~G5 随之反转为「不得有状态矩阵 / 入口唯一且不在状态分支 / 选择器必须接线 / 作业单区块不得有第二入口」，判别力自证从 5 条扩到 7 条（新增「入口搬进 StatusSection」与「清单错键」两条红证）；④ `user_inputs` 换成本次用户的逐字裁定（旧句是 #6434 的报障原文，判据对象已改判 ⇒ 留着会让看用例的人去找那 4 个不存在的按钮），`title` / `data_checks` / `precondition` / `skip_reason` / `traces` 同批订正；⑤ 实例判据从「状态 × 应有/不该有」改为「每个状态有且只有一个入口」+ 换单据预览。**判据一格不放宽**（唯一入口 / 不跟状态走 / 不写字面量 / 选择器接线，只增不减）。 ｜ tags: backend-contract, frontend, order, print, single-entry, reuse-guard, red-proof
 
 ### MC-086. 控制台口令面「只能建、不能救」的死角进不来：建号即设口令的 client 必须同时有同族重置出口（未配对即红 / 台账只许缩短 / 零命中即红 + 判别力自证） 🔵
 ```
@@ -11395,7 +11395,7 @@
 数据: 更新已有物流时**仅**在显式传入非空才覆盖发货人：改运单号/纠错不等于换经手人；存量订单（shipper_name 为 NULL）不为历史数据猜经手人
 数据: order_logistics.shipper_name 必须 nullable：存量已发货订单历史上无此数据，纸面「发货人」栏显示「-」（#3818 裁定，不得留白、不得 undefined/null），不得回填假值（否则迁移失败或纸面出现伪造经手人）
 数据: 新增可打印「发货单」（ShipmentDoc）：A4（@page size: A4）+ body visibility 隔离；纸面含 订单号/下单时间/收货人/电话/地址/商品明细（品名·货号·颜色·规格·数量·单价·金额）/合计（总数量+总金额）/加工费合计（`ShipmentDoc.tsx` 的纸面标签真值）/备注/发货人（存量空值显示「-」）/物流公司·运单号（发货前留空供手写，发货后带出）
-数据: 入口两处：发货页（发货前打印，发货人取当前输入值，未保存也印）+ 订单详情页 shipped/completed 状态「打印发货单」（补打——发货页有状态守卫，shipped 后进不去）；待付款等未发货状态不显示该入口
+数据: 入口两处：发货页（发货前打印，发货人取当前输入值，未保存也印）+ 订单详情页页面级「打印」入口里选**发货单**（补打——发货页有状态守卫，shipped 后进不去）。🔴 issue #7544 改判：详情页不再有独立的「打印发货单」按钮，也不再按状态显隐（待付款等未发货状态同样能补打，只是纸面物流 / 发货人栏为空）
 数据: 发货单渲染在页面级，**不得**放进 Modal（Modal 为 max-h-full + 内部 overflow-y-auto，打印只会打出可视一屏、多页明细被裁）；每页只挂一份（.shipment-print-area 为全局选择器，挂两份会打印出两套单据）
 数据: 不向 C 端顾客泄漏发货人：customer_logistics_track 按白名单字段构造返回（order_id/order_no/tracking_number/company/status/status_text/latest/traces），响应中不含 shipperName
 数据: 加工项区（issue #7275，用户 2026-10-18 逐字「加工项表格应该用一行表达，这样节省空间，比如改成a+b+c这样？」）：纸面「加工项」压成**一行** `名称×数量 + 名称×数量 …`，加工费合计同行右对齐（内容过长时自动折行，不裁项）；逐项名称 / 数量仍是服务端快照真值（不聚合重名行、不重算），缺数量印 `打孔×—`（显式占位）。执行点 = `frontend/admin-web/tests/unit/components/ShipmentDoc.test.tsx` 的「#4882 / #7275」+「#7275：缺数量的加工项仍显式印 `—`」；类级判据 = `tests/unit_ci_workflows/test_print_media_matrix_guard.py::test_c9_shipment_processing_items_stay_on_one_line`
@@ -11547,7 +11547,7 @@
 你: 这是从订单上打印的报价单，用来发给客户的，也可用于生产，这是A4大小，这个用来参考设计我们的打印制式
 你: 把订单的打印功能改成这样的报价单
 期望: direct_reply
-数据: 订单详情页 shipped/completed 操作区在「打印发货单」旁并列新增「打印报价单」（`window.print()`，与既有按钮同一权限口径与写法）；`QuotationDoc` 在**页面级**挂载一份（不进 Modal、每页只挂一份）
+数据: 订单详情页点页面级唯一「打印」入口 → 在打印层里选**报价单**标签，先看纸面预览再出纸（`window.print()` 仍只在 `usePrintDoc` 一处；issue #7544 起入口与订单状态无关，任何状态都能补打）—— 改前是 shipped/completed 操作区的「打印报价单」按钮（issue #4965 的形态，2026-10-23 改判）；`QuotationDoc` 在**页面级**挂载一份（不进 Modal、每页只挂一份）
 数据: 纸面四段齐全（A4，`@page { size: A4 }`）：① 表头 = 报价单 / 单号 `orderNo` / 货运（`logisticsType` + `logisticsCompany`，两者都缺 ⇒ 该栏不印）/ 客户·电话·地址 / 备注；② 正文 = **每个商品行自成一套**（用户裁定：不做樘窗分组），段头 `第N套/共M套` + `本套金额`，每段一张 10 列表 `部位 | 部位信息 | 部位备注 | 宽*高 | 组件 | 货号 | 用料 | 价格 | 小计 | 备注`；③ 汇总 = 本单总金额 / 优惠金额 / 本单应收；④ 页脚 = 温馨提示常量 + 扫码支付码
 数据: 逐列映射：部位 = `processingInfo.curtainType`；部位信息 / 部位备注 = `lib/craft-display.ts` 的 `craftSpecRows()`（§4.9 单一真值，不另写推导；「部位」行已有自己的列 ⇒ 从两列排除；两列切分沿用既有「原始输入 / 算料输出」分组）；宽*高 = `width`×`height`（米，任一缺 ⇒ 不印）；组件 = 面料行 `processingInfo.componentRole`（缺省即主布）/ 加工费行「加工费」；货号 = `productCode` + `processingInfo.colorName`；用料 = `quantity`（米）；价格/小计 = 面料行 `unitPrice`/`subtotal`、加工费行 `processingFee`/`processingFee`
 数据: 加工费**单独成行**（`processingFee > 0` 才出）：与参照物的一处**有意差异** —— 参照物把加工费并进面料单价，而我们 `unitPrice` 与 `processingFee` 是两笔真实金额，必须分别列示，否则商家对不上账
@@ -12179,20 +12179,22 @@
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-10-06 新增（issue #6417，用户实测报告）：用户 2026-10-06「库存明细还是缺乏单批次的剩余量，比如 1 卷 = 67 米，经过加工裁剪后应该有个剩余米数」。诊断（读码）：库存明细页（PR #6407）是 SKU 级流水；批次余量读面（`GET /api/admin/batch-stock/batches`，`BatchRemaining`：inboundMeters / consumedMeters / remainingMeters）与商品详情 →「批次账」面板**早就有**，但商家在「库存明细」里点不出来 ⇒ 属**可达性缺口**，不是数据缺口。本包补视图②（八列 + 不重算见证批次 + 未选商品不拉全量 + 两本账不串），**权限不新造码**（批次读面与页面菜单节点码逐字同码 `product:list`）。取号 UI-089（`python3 scripts/next_case_id.py ui`，现取 main 最大 = UI-088）。 ｜ tags: ui, stock, batch, admin-web
 
-### UI-090. 订单详情打印入口 × 订单状态矩阵：待付款出报价单；待发货/生产中出报价单+加工单+销售单；已发货/已完成四单齐全；已关闭零入口（issue #6434） 🔵
+### UI-090. 订单详情打印收口成**单一入口**：任何状态（含已关闭 / 退款中）都只有一个「打印」，点开后选单据（销售单/加工单/报价单/发货单）先预览再打印（issue #6434 → #7544 改判） 🔵
 ```
-你: 「之前让你设计过打印销售单，报价单等功能，我在订单详情中没有看到打印功能」（2026-10-06 用户报障；追问确认场景 = 待发货订单 / merchant.migaozn.com）；用户同时裁定要覆盖的状态 = 待付款（报价单先行）+ 待发货 + 生产中（车间要加工单、随货要销售单）
+你: 「这几个打印按钮不要跟状态挂钩，允许任何状态都能进行打印这些单据，另外把按钮收拢到一个打印统一入口中？作业单区域也有两个按钮，应该都统一收口到打印中，点击打印后可以选择不同的单据预览再进行打印」（2026-10-23 用户逐字，附两张截图：状态卡右侧四个打印按钮、作业单区块右侧「复制全部 | 打印」）
 期望: direct_reply
-数据: 病根读数（现取 `origin/main`）：订单详情页的四个打印入口只在 `status === 'shipped'` 与 `status === 'completed'` 两个分支里渲染；`pending_payment` / `pending_shipment`（含 `producing`）分支里**一个打印按钮都没有**，而 `CHANGELOG` 的 #5651 条目声称的是「在「待发货」与「已完成」两个状态区」⇒ **声称与实现不符**（`git log -S 打印销售单` 只有一个提交 = 引入提交 #5669）。复算 = `git show origin/main:frontend/admin-web/src/app/\(dashboard\)/orders/\[id\]/OrderDetail.tsx | grep -n "打印销售单\|pending_shipment"`。
-数据: 判据 1·🔴 **状态 × 入口矩阵**（表驱动）：待付款 ⇒ 只有「打印报价单」（且不得出现发货单/加工单/销售单）；待发货 ⇒ 报价单 + 加工单 + 销售单（**不得**出现发货单：未发货谈不上补打）；生产中（`producing`）⇒ 同待发货；已发货 / 已完成 ⇒ 四单齐全；已关闭 ⇒ 零入口。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx::「打印入口矩阵：…」六条（`it.each`）。
-数据: 判据 2·🔴 **红证（改前实测，`migao-dev-flow` §28.1 出口①）**：判据 1 先在 `origin/main` 上跑 ⇒ **3 红 3 绿**（红 = 待付款/待发货/生产中；绿 = 已发货/已完成/已关闭）—— 红只归因于本包缺口，同时证明矩阵**不是空断言**；落实现后 ⇒ 该文件 46/46 全绿。复算（在 frontend/admin-web 目录下执行）= `npx vitest run --dir tests/unit/pages order-detail -t 打印入口矩阵`。
-数据: 判据 3·**类级元守卫（唯一声明处）**：① 矩阵覆盖 `OrderStatus` 全部取值（新增状态忘登记 ⇒ 红）② 四个「有单据可出」的状态非空（清空 ⇒ 红）③ 页面代码里不得再出现手写的 `打印发货单/报价单/加工单/销售单` 字面量（再抄一份 ⇒ 红）④ `<PrintActions>` 接线 ≥4 且定义只有一份。判据 = tests/unit_ci_workflows/test_order_print_entry_matrix.py（5 条真语料 + 5 条判别力自证，含「只加注释 ⇒ 不红」的对照读数）。
-数据: 判据 4·**文案单一真值**：按钮文案 = `打印${PRINT_TARGET_SPECS[target].title}`（与纸面自检层标题**同一份**），页面不手写字面量 ⇒ 改文案 / 新增单据只改 frontend/admin-web/src/lib/print-doc.ts 一处。
-前置: 本用例是 [backend-contract] 纯前端入口面：前置由单测自建 —— frontend/admin-web/tests/unit/pages/order-detail.test.tsx mock 了 `@/lib/api` 的 `orderApi.getOrder`（逐状态给 status）与组件桶；页面里的 `PRINT_TARGETS_BY_STATUS` 矩阵是判据的唯一真值源。文件缺失 / 矩阵被删 / 状态键漂移 ⇒ 判据当场红（不会表现成「agent 不干活」）；agent-eval 栈不跑它
-跳过: [backend-contract] 纯前端入口面（零 LLM、零网络、零后端契约改动：矩阵只决定按钮渲染，打印仍走 #5914 的共享入口 usePrintDoc），不进入 agent-eval 冒烟
+数据: 改判说明（写清为什么反向）：issue #6434 曾把四个打印按钮收敛成「状态 × 可打单据」矩阵并给 待付款/待发货/生产中 补入口；2026-10-23 用户裁定**打印不该跟状态挂钩**、且要**收拢成一个入口**。旧矩阵的两个可见病灶：① `closed` / `refund` 状态**一张单据都打不出来**；② 四个按钮常驻把状态卡操作行铺满。⇒ 新形态 = 页面级唯一「打印」入口（与状态无关）+ 打印层内单据标签选择。
+数据: 判据 1·🔴 **任何状态都有且只有一个入口**（表驱动 7 条）：待付款 / 待发货 / 生产中 / 已发货 / 已完成 / 已关闭 / 退款中 —— 每个状态断言「以『打印』开头的按钮**恰好 1 个**」（改前：前五个状态分别 1/3/3/4/4 个，后两个 0 个）。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx::「打印不跟订单状态挂钩（issue #7544）…」。
+数据: 判据 2·🔴 **入口 → 预览 → 选单据 → 打印**（接线）：点「打印」打开打印层（此时**不出纸**）⇒ 四份单据各一签（文案取 `PRINT_TARGET_SPECS`）、默认选中销售单（纸型读数 241mm × 140mm）⇒ 点「加工单」标签后纸型变 210mm × 297mm 且**仍未出纸** ⇒ 点「打印」才 `window.print()` 一次。另有一条「已关闭订单也能打开打印层」（旧矩阵下这是死路）。执行点 = 同文件::「点「打印」→ 在预览层里换单据 → 打印…」/「已关闭订单也能打开打印层」。
+数据: 判据 3·**选择器本体**（组件级）：frontend/admin-web/tests/unit/components/PrintDocPreview.test.tsx::「打印层的单据选择器（issue #7544）」三条 —— 一单一签且纸型读介质矩阵、点标签只回调 `onSelect` 不触发打印、不传 `docs` 时没有选择器（发货页 / 加工单生产页形态不变）；frontend/admin-web/tests/unit/lib/print-doc.test.tsx::「`selectPreview` 只换预览、不动打印目标」。
+数据: 判据 4·**类级元守卫**（让「再加一个打印入口」进不来）：页面不得有状态矩阵、入口恰好一处且不在 `StatusSection`、不手写单据名、选择器接线齐全且清单每项都是真实 target、作业单区块不得再有打印入口。判据 = tests/unit_ci_workflows/test_order_print_entry_matrix.py（5 条真语料 + 7 条注入式判别力自证，含「只加注释 ⇒ 不红」的对照读数），用例 MC-085。
+数据: 判据 5·**真浏览器**：tests/e2e/specs/orders/print-preview.spec.ts 的「已关闭的单子照样能打开打印层、能选单据、能出纸」—— 抓 `beforeprint` 那一刻的 `data-print-target`，断言换到加工单后出纸的正是 `processing`（纸型/目标不是默认那份）。
+数据: 🔴 **覆盖边界（照实登记）**：① 单测只判「入口唯一 / 可打开 / 选中的单据与纸型对」，**不判**真机点击与真纸输出（由 Playwright 那条 + 现场承接）；② 单据的**展示顺序**（销售单 → 加工单 → 报价单 → 发货单，用得最多的在前）是产品口径，判据只钉「四份都在」；③ 作业单区块的「复制全部」**有意保留**（文本通道：作业单文本发加工方 / 贴 Excel；塞进打印层会把一键复制变成三步）—— 本用例只收口**打印**通道。
+前置: 本用例是 [backend-contract] 纯前端入口面：前置由单测自建 —— frontend/admin-web/tests/unit/pages/order-detail.test.tsx mock 了 `@/lib/api` 的 `orderApi.getOrder`（逐状态给 status）与组件桶；页面的 `ORDER_PRINT_DOCS` 清单与唯一入口锚点 `data-testid="order-print-entry"` 是判据的抓手。文件缺失 / 清单被删 / 锚点漂移 ⇒ 判据当场 fail-closed 判红（不会表现成「agent 不干活」）；agent-eval 栈不跑它
+跳过: [backend-contract] 纯前端入口面（零 LLM、零网络、零后端契约改动：入口只是前端可见面的收口，打印仍走 #5914 的共享入口 usePrintDoc；端点 / 权限 / 纸型矩阵一字未动），不进入 agent-eval 冒烟
 ```
 真值: frontend-fix.print-single-doc-on-paper, frontend-fix.no-api-change
-溯源: 2026-10-06 新增（issue #6434，用户实测报告「订单详情中没有看到打印功能」）。修法 = 把四个入口从两个状态分支里的**字面量副本**收敛成 `PRINT_TARGETS_BY_STATUS` 一张表 + `<PrintActions>` 一个渲染器（文案取 `PRINT_TARGET_SPECS[*].title`），并把入口补到待付款（报价单）/ 待发货 / 生产中（报价单 + 加工单 + 销售单）；已发货 / 已完成四单口径**一字未变**（只做加法，不回归既有入口）。取号 UI-090（`python3 scripts/next_case_id.py UI`，现取 main 最大 = UI-089）。⚠️ **未固化 / 有意不做（照实登记）**：① 「真机上点得开、纸出得来」仍属 #5688 的现场待办（本用例只判**入口可达与矩阵覆盖**）；② 不为打印入口新造权限码（沿用既有页面口径 `order:list`）；③ 待付款**不加**发货单入口（未发货谈不上补打，既有判据「待付款订单没有发货单入口」保持绿）。 ｜ tags: ui, order, print, entry-matrix, red-proof
+溯源: 2026-10-06 新增（issue #6434，用户实测「订单详情中没有看到打印功能」）：四个入口从两个状态分支里的字面量副本收敛成 `PRINT_TARGETS_BY_STATUS` 一张表 + `<PrintActions>` 渲染器。 ｜ 2026-10-23（issue #7544，**改判 + 判据反向**，用户逐字「不要跟状态挂钩…收拢到一个打印统一入口中」）：矩阵与四个常驻按钮一起退场 ⇒ 页面级唯一「打印」入口（任何状态可点，含已关闭 / 退款中）+ 打印层内的单据标签（`docs` / `onSelect`）选择，先预览再出纸；「作业单」区块的打印按钮同批退场（加工单走同一入口），**「复制全部」保留**（文本通道）。实例判据由「状态 × 应有/不该有」改为「每个状态恰好一个入口」+ 换单据预览 + 已关闭可打开；类级元守卫（MC-085）判据反向，判别力自证 5 → 7 条。**判据一格不放宽**（唯一入口 / 不跟状态走 / 不写字面量 / 选择器接线只增不减）。取号不变（本用例即 #6434 的同一个面，改判而非新开）。 ｜ tags: ui, order, print, single-entry, red-proof
 
 ### UI-091. 订单详情打印入口 × 订单状态矩阵：待付款出报价单；待发货/生产中出报价单+加工单+销售单；已发货/已完成四单齐全；已关闭零入口（issue #6434） 🔵
 ```

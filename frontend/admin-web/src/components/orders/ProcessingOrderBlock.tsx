@@ -43,11 +43,6 @@ import { SellingMethodLabels } from '@/types'
 import { cn } from '@/lib/utils'
 
 interface Props {
-  /**
-   * 点「打印」时交给调用方（= 页面级共享打印入口，issue #5914）。**不传 ⇒ 不渲染该按钮** ——
-   * 本组件不再自带打印实现（旧实现是全局副作用源，见按钮处注释）。
-   */
-  onPrintProcessing?: () => void
   orderId: string
   orderStatus: string
   /**
@@ -283,7 +278,6 @@ export default function ProcessingOrderBlock({
   items,
   operations,
   onStatusChange,
-  onPrintProcessing,
   onReloadReady,
 }: Props) {
   const router = useRouter()
@@ -499,16 +493,12 @@ export default function ProcessingOrderBlock({
 
       <div className="flex items-center justify-between po-no-print">
         <h3 className="text-base font-semibold text-neutral-900">作业单</h3>
+        {/* 「复制全部」留在这里：它是**文本通道**（作业单文本发给加工方 / 贴进 Excel），
+            不是打印通道。issue #7544 只把**打印**收口到页面级唯一入口（预览层里选「加工单」），
+            区块内不再有自己的打印按钮 —— 同页两个打印入口正是这张单里要消掉的形态。 */}
         {po && (
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={handleCopy}>复制全部</Button>
-            {/* 打印 = 走**共享打印入口**（issue #5914）：与本页「打印加工单」是同一份 A4 制式。
-                旧写法（`@media print { body * { visibility: hidden } }` + 打印屏幕区块）已被删除 ——
-                它是**全局副作用源**（隐藏元素仍占版面 ⇒ 空白页，issue #3896 / #3912 的遗留项），
-                且与门户式单据共页时会把整个外壳 `display:none` 掉（#4983 登记的既有缺陷）。 */}
-            {onPrintProcessing && (
-              <Button variant="secondary" size="sm" onClick={onPrintProcessing}>打印</Button>
-            )}
           </div>
         )}
       </div>

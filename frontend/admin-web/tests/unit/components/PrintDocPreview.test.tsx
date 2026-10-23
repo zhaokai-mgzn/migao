@@ -173,3 +173,74 @@ describe('纸面自检层 PrintDocPreview（issue #5914）', () => {
     expect(screen.queryByTestId('extra-action')).toBeNull()
   })
 })
+
+/**
+ * 单据选择器（issue #7544）—— 订单详情页把「4 个打印按钮」收成一个「打印」入口之后，
+ * **选哪一份**这件事搬到了本层。这里判三件事：
+ *
+ * ① 给了 `docs` ⇒ 一单一签、文案取 `PRINT_TARGET_SPECS`、纸型读介质矩阵（不另写一份字面量）；
+ * ② 点标签 = **换单据**（回调拿到 target），**不触发打印** —— 换一份看看不是出纸；
+ * ③ 不传 `docs` ⇒ 没有选择器（发货页 / 加工单生产页各只有一份单据，形态必须与改前逐字一致）。
+ */
+describe('打印层的单据选择器（issue #7544）', () => {
+  const DOCS = ['sales', 'processing', 'quotation', 'shipment'] as const
+
+  function open(
+    docs: readonly (typeof DOCS)[number][] | undefined,
+    onSelect: (t: string) => void = () => {},
+  ) {
+    return render(
+      <PrintDocPreview
+        target="sales"
+        title="销售单"
+        media="continuous-241x140"
+        docs={docs}
+        onSelect={onSelect}
+        onPrint={() => {}}
+        onClose={() => {}}
+      >
+        <div>单据</div>
+      </PrintDocPreview>,
+    )
+  }
+
+  it('① 一单一签，标题 + 纸型都来自真值源（A4 / 三联纸）', () => {
+    open(DOCS)
+    expect(screen.getByTestId('print-preview-docs')).toBeInTheDocument()
+    expect(screen.getByTestId('print-preview-doc-sales')).toHaveTextContent('销售单')
+    expect(screen.getByTestId('print-preview-doc-sales')).toHaveTextContent('241×140')
+    expect(screen.getByTestId('print-preview-doc-processing')).toHaveTextContent('加工单')
+    expect(screen.getByTestId('print-preview-doc-processing')).toHaveTextContent('210×297')
+    expect(screen.getByTestId('print-preview-doc-quotation')).toHaveTextContent('报价单')
+    expect(screen.getByTestId('print-preview-doc-shipment')).toHaveTextContent('发货单')
+    // 当前单据 = 唯一选中项
+    expect(screen.getByTestId('print-preview-doc-sales')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('print-preview-doc-processing')).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('② 点标签只换单据（回调拿到 target），不触发打印', () => {
+    const onSelect = vi.fn()
+    const onPrint = vi.fn()
+    render(
+      <PrintDocPreview
+        target="sales"
+        title="销售单"
+        media="continuous-241x140"
+        docs={DOCS}
+        onSelect={onSelect}
+        onPrint={onPrint}
+        onClose={() => {}}
+      >
+        <div>单据</div>
+      </PrintDocPreview>,
+    )
+    fireEvent.click(screen.getByTestId('print-preview-doc-processing'))
+    expect(onSelect).toHaveBeenCalledWith('processing')
+    expect(onPrint).not.toHaveBeenCalled()
+  })
+
+  it('③ 不传 docs ⇒ 没有选择器（单份单据页的形态不变）', () => {
+    open(undefined)
+    expect(screen.queryByTestId('print-preview-docs')).toBeNull()
+  })
+})

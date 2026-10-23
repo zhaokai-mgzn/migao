@@ -60,6 +60,7 @@ Chrome 把自己的页眉页脚（版式日期 / 文档标题 / 页面 URL / 页
 | ③ 打印隔离 | 一次只放**一份**单据上纸 | `body > *:not(.print-doc)`（#4983） | `test_print_doc_convention_guard.py` |
 | ④ 打印入口 / 纸型唯一 | `window.print()` 只在 `lib/print-doc.ts`（且**目标提交后**才调用）；`@page` 只在「本次目标是本单据」时发表 | `lib/print-doc.ts` + 各 `*Doc.tsx` 的条件 `<style>` | `test_print_single_doc_on_paper.py`（C1 / C2 / C3） |
 | ⑤ 打印前自检 + 截图 | 真尺寸纸框 + 溢出/页数 + 本次纸型；「打印」「复制截图」两个出口 | `components/orders/PrintDocPreview.tsx` + `lib/print-capture.ts` | `PrintDocPreview.test.tsx` + `tests/e2e/specs/orders/print-preview.spec.ts` |
+| ⑥ 打印入口（商家可见面） | **一处**入口，且与订单状态**解耦**：订单详情页只有一个「打印」（页面级，不在任何状态分支里），进来后在自检层顶部以**单据标签**选（销售单 / 加工单 / 报价单 / 发货单），先预览再出纸 | `OrderDetail.tsx` 的 `ORDER_PRINT_DOCS`（清单唯一声明处）+ `PrintDocPreview.tsx` 的 `docs` / `onSelect` | `tests/unit_ci_workflows/test_order_print_entry_matrix.py`（G1~G5）+ `frontend/admin-web/tests/unit/pages/order-detail.test.tsx` |
 
 🔴 **介质是参数，不是复制粘贴出来的页面**：同一份字段映射可以落不同介质 ⇒
 `SalesDoc` 把介质做成 **prop**（缺省三联纸，可切 A4）。判据两条：
@@ -182,7 +183,11 @@ Chrome 把自己的页眉页脚（版式日期 / 文档标题 / 页面 URL / 页
    `visibility` 防御**限定本单据的 `data-print-target`**（#4983 / #4965）；
 4. 在 `tests/unit_ci_workflows/test_print_media_matrix_guard.py` 的 `PRINT_DOCS` 登记
    （**未登记 ⇒ C3 判红**）；若该单据有列清单，登记进 `SINGLE_PROJECTION`；
-5. 在 `components/orders/index.ts` 的 `PrintTarget` 加 target，并在页面**点谁置谁**；
+5. 在 `lib/print-doc.ts` 的 `PRINT_TARGETS` 加 target（标题与介质的**唯一真值**），并在页面的
+   **可打印清单**（订单详情 = `OrderDetail.tsx` 的 `ORDER_PRINT_DOCS`）里登记 ——
+   🔴 **不要再加一个按钮**（issue #7544）：同页多份单据的入口是**页面级唯一那个「打印」**，
+   加的是菜单里的一项；入口与订单状态无关（`closed` / `refund` 同样能补打），
+   所以也不许把入口塞进任何一个 `status === …` 分支（判据 = `test_order_print_entry_matrix.py` 的 G2）；
 6. 测试要带**红证**（把实现改坏 ⇒ 判据必红）；缺值/缺码/长名的处置见 §4 与
    `SalesDoc.test.tsx` / `ProcessingDoc.test.tsx` 的判据。
 
@@ -195,7 +200,9 @@ Chrome 把自己的页眉页脚（版式日期 / 文档标题 / 页面 URL / 页
    报「超出 N mm」；
 2. **本次是哪张纸** —— 非标纸型（241×140 / 50×60）在驱动里没登记自定义纸型时会有落差，自检把
    纸型与版心（mm）明写在标题行；
-3. **这次到底打哪一份** —— 同页四份单据时，自检层只摆**本次那一份**。
+3. **这次到底打哪一份** —— 同页四份单据时，自检层只摆**本次那一份**；换一份不用退出重进：
+   自检层顶部那排**单据标签**就是选择器（issue #7544，点标签只换预览、**不改这次的打印目标**，
+   也不会因此出纸 —— 只有点「打印」才 `requestPrint`）。
 
 两个出口：**打印**（走 `usePrintDoc().requestPrint()`，目标提交后才 `window.print()`）与
 **复制截图**（`lib/print-capture.ts`：计算样式内联 → `SVG foreignObject` → canvas → PNG → 剪贴板；
