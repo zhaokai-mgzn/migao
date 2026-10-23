@@ -237,6 +237,10 @@ export const menuGroups: MenuGroup[] = [
       { key: 'orders', name: '销售订单', icon: 'ClipboardList', path: '/orders', permissionCode: 'order:list', keywords: ['xsdd', 'xiaoshou', 'ddlb', 'dingdan', '订单列表'] },
       // #2969：财务对账原在「客户管理」组；#5271 并入交易管理组（订单 → 收款 → 对账）
       { key: 'finance', name: '财务对账', icon: 'Calculator', path: '/finance', permissionCode: 'finance:view', keywords: ['cw', 'caiwu', 'duizhang', '对账'] },
+      // 审批中心（issue #7374，P1-2 的商家面）：改价 / 超授信 / 退款 / 采购超量 / 盘点差异 的裁决屏。
+      // 🔴 节点码 = 该页第一屏读端点码 = 路由守卫码 `finance:view`（与后端 `ApprovalController` 的类级码逐字同码）；
+      // 写动作走 `finance:create` ⇒ **零授权 delta**（不新造 approval:*，今天没人持有该码）。
+      { key: 'approvals', name: '审批中心', icon: 'Stamp', path: '/approvals', permissionCode: 'finance:view', keywords: ['sp', 'shenpi', 'approval', '审批', '待办', '裁决'] },
     ],
   },
   // 🔴 2026-10-09（issue #6580）：本组现为 **3 项**（加工项管理 / 工艺配置已移除 —— 见下方 children 前的注释）。

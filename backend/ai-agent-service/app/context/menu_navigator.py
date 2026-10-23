@@ -146,6 +146,8 @@ MENU_TREE: Tuple[MenuNode, ...] = (
     MenuNode("trade-center", "价格本", "/price-books", "order:list"),
     MenuNode("trade-center", "销售订单", "/orders", "order:list"),
     MenuNode("trade-center", "财务对账", "/finance", "finance:view"),
+    # 审批中心（issue #7374）：节点码 = 该页第一屏读端点码 `finance:view`（与财务对账同码）
+    MenuNode("trade-center", "审批中心", "/approvals", "finance:view"),
     # 生产管理（2026-10-06：先备资料 → 再生产与派单 → 最末结算）
     # 🔴 2026-10-09（issue #6580，用户裁定）：「加工项管理」「工艺配置」两个菜单项**移除**
     #（功能体并入 `/settings` 企业基础设置页内的配置域；旧路径保留为重定向）⇒ 本组只剩三项。
@@ -278,6 +280,9 @@ NAV_FEATURES: Tuple[NavFeature, ...] = (
     # 2026-10-20（issue #7354）：菜单正名「销售订单」；旧名「订单列表」保留为说法（老用户按旧叫法仍能命中）。
     NavFeature("orders", "销售订单（订单列表 / 订单）", (("trade-center", "销售订单"),), ("销售订单", "订单列表", "订单")),
     NavFeature("finance", "财务对账（对账）", (("trade-center", "财务对账"),), ("财务对账", "对账")),
+    # 审批中心（issue #7374）：说法必须**逐字落在菜单名里**（判据「接地」）⇒ 只登记「审批中心」「审批」；
+    # 「待办 / 裁决」这类不在菜单名里的说法不登记（命中不了节点 = 空断言）。
+    NavFeature("approvals", "审批中心（审批裁决）", (("trade-center", "审批中心"),), ("审批中心", "审批")),
     # 2026-10-19（issue #7332）：菜单正名「作业看板」。登记名里保留「作业单 / 加工单 / 原生产看板」三个旧说法：
     # 判据 6b（problems_aliases_grounded）要求说法与登记名有包含关系；菜单本身只叫「作业看板」。
     NavFeature("production-board", "作业看板（作业单 / 加工单 / 原生产看板）", (("production-center", "作业看板"),), ("作业看板", "作业单", "加工单", "生产看板")),

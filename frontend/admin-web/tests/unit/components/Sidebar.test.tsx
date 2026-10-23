@@ -20,7 +20,7 @@
  * 新 IA 下**分组默认只展开当前路由所在组** ⇒ 想断言「其它组的项在不在」就必须
  * **先展开该组**（`data-testid="sidebar-group-toggle-<key>"`）。因此下列用例里凡断言
  * 非当前组项的，都先调 `expandGroups(...)` / `expandAll()` —— 断言本身**一条没删、没放宽**
- * （有 `expect(links).toHaveLength(27)` 这类**更强**的新钉子作反向证明）。
+ * （有 `expect(links).toHaveLength(28)` 这类**更强**的新钉子作反向证明）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within, cleanup } from '@testing-library/react'
@@ -78,7 +78,7 @@ const GROUPS: { key: string; name: string; items: [string, string][] }[] = [
     ],
   },
   // 价格本（#7375 段 3）：交易前置 ⇒ 组内第一项
-  { key: 'trade-center', name: '交易管理', items: [['price-books', '价格本'], ['orders', '销售订单'], ['finance', '财务对账']] },
+  { key: 'trade-center', name: '交易管理', items: [['price-books', '价格本'], ['orders', '销售订单'], ['finance', '财务对账'], ['approvals', '审批中心']] },
   {
     key: 'production-center',
     name: '生产管理',
@@ -323,7 +323,7 @@ describe('Sidebar', () => {
       // 报表中心（#7376）：经营看板之后、分组之前
       'reports',
       'human-sessions', 'knowledge', 'after-sales', 'customers',
-      'price-books', 'orders', 'finance',
+      'price-books', 'orders', 'finance', 'approvals',
       'production-board', 'production-pool', 'production-piecework', 'quality-inspections', 'rework-orders',
       'inbound-orders', 'suppliers', 'purchase-orders', 'stock-ledger', 'stocktakes', 'shipments', 'production-remnants',
       'production-saving-board',
@@ -332,7 +332,7 @@ describe('Sidebar', () => {
       'settings',
       'notifications',
     ])
-    expect(menuKeys()).toHaveLength(27)
+    expect(menuKeys()).toHaveLength(28)
   })
 
   // ── 🔴 issue #7087 新形态（会红的那几条）────────────────────────────────────────
@@ -511,7 +511,7 @@ describe('Sidebar', () => {
     // /chat 不属于任何菜单项 ⇒ **全部组默认收起**（这本身就是「无高亮」的一种形态）；
     // 展开全部组后再断言「25 项都在 DOM 里，仍然一个都不高亮」
     expandAll()
-    await waitFor(() => expect(document.querySelectorAll('nav a')).toHaveLength(27))
+    await waitFor(() => expect(document.querySelectorAll('nav a')).toHaveLength(28))
     expect(activeKeys()).toEqual([])
   })
 
@@ -737,7 +737,7 @@ describe('Sidebar', () => {
       expect(screen.getByText('通知中心')).toBeInTheDocument()
       // UI-005/UI-011: admin 可见智能客服大类及其子菜单（#3094 黄金策·在线对话 入口已移除）
       expect(screen.queryByText('黄金策 · 在线对话')).not.toBeInTheDocument()
-      expect(menuKeys()).toHaveLength(27)
+      expect(menuKeys()).toHaveLength(28)
     })
 
     it('should filter out items user has no permission for', () => {
@@ -999,7 +999,7 @@ describe('Sidebar', () => {
       .filter(([, names]) => names.length > 1)
       .map(([icon, names]) => `${icon} → ${names.join('、')}`)
 
-    expect(items, '面非空自证：25 项（最前席位 2 + 尾席位 2 + 19 组内项 + 通知中心；#7140 / #7369 / #7376）').toHaveLength(27)
+    expect(items, '面非空自证：25 项（最前席位 2 + 尾席位 2 + 19 组内项 + 通知中心；#7140 / #7369 / #7376）').toHaveLength(28)
     expect(
       collisions,
       `以下菜单项在侧边栏里渲染出**同一个图标**（紧挨着出现 = 没有区分度，issue #5582）：\n${collisions.join('\n')}\n`

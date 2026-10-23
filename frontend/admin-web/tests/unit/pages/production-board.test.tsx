@@ -259,8 +259,8 @@ describe('生产管理菜单入口（侧边栏）', () => {
     expect(within(tradeGroup).getByText('销售订单')).toBeInTheDocument()
     expect(within(tradeGroup).getByText('财务对账')).toBeInTheDocument()
     // #5778：售后工单 / 客户列表已移入「客户服务」组 ⇒ 本组只余「下单 → 收款」两项
-    // 价格本（#7375 段 3）加入后，交易管理组是三项（价格本 / 销售订单 / 财务对账）
-    expect(tradeGroup.querySelectorAll('a')).toHaveLength(3)
+    // 价格本（#7375 段 3）加入后三项；#7374 再加「审批中心」⇒ 四项（价格本 / 销售订单 / 财务对账 / 审批中心）
+    expect(tradeGroup.querySelectorAll('a')).toHaveLength(4)
     expect(within(tradeGroup).queryByText('售后工单')).not.toBeInTheDocument()
     expect(within(tradeGroup).queryByText('客户列表')).not.toBeInTheDocument()
 
@@ -284,7 +284,7 @@ describe('生产管理菜单入口（侧边栏）', () => {
     // 每日简报 → 删除）⇒ 20 项；🔴 #7140：生产管理组 +「质检记录」⇒ 21 项；
     // 🔴 2026-10-20（issue #7369）：新增「供应链」组（组内项总数不变 ⇒ 项数不变）。
     // 🔴 2026-10-22（#7375 段 3）：交易管理 +「价格本」⇒ 组内 20 项 ⇒ 全站 25 项
-    expect(hrefs).toHaveLength(27) // 25 项 = 最前席位 2（#7376 +报表中心）+ 组内 20（#7369：+供应商 / +采购单；#7375：+价格本）+ 尾席位 2 + 尾部独立项 1（见 menu-nav.test.ts）
+    expect(hrefs).toHaveLength(28) // 25 项 = 最前席位 2（#7376 +报表中心）+ 组内 20（#7369：+供应商 / +采购单；#7375：+价格本）+ 尾席位 2 + 尾部独立项 1（见 menu-nav.test.ts）
     expect(hrefs).not.toContain('/processing-orders')
   })
 

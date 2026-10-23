@@ -29,6 +29,7 @@ import type {
   ReportStaffPerformance,
 } from '@/types/reports'
 // 返工单读面类型（issue #7377）：与后端 `ReworkOrderView` 字段逐字对齐
+import type { ApprovalItem } from '@/types/approval'
 import type { ReworkOrder, ReworkOrderCreateRequest } from '@/types/rework'
 // 盘点读面类型（issue #7373 段 3 前端）：与后端 `StocktakeView` 字段逐字对齐
 import type { Stocktake, Warehouse } from '@/types/stocktake'
@@ -707,6 +708,21 @@ export const knowledgeApi = {
  * 🔴 读码 `after_sales:view`（＝菜单节点码＝路由守卫码）、写码 `order:refund` —— 与售后工单同域复用，
  * 零授权 delta。开单参数是**查询串**（服务端 `@RequestParam`），不是 JSON body。
  */
+/**
+ * 审批中心（issue #7374，P1-2）：读继承类级 `finance:view`、写走 `finance:create`。
+ * 与后端 `ApprovalController` 逐字对齐；「撤回」只对申请人本人有效（服务端也这样判）。
+ */
+export const approvalApi = {
+  list: (params?: { objectType?: string; status?: string }) =>
+    request.get<ApiResponse<ApprovalItem[]>>('/api/admin/approvals', { params }),
+  detail: (id: string) => request.get<ApiResponse<ApprovalItem>>(`/api/admin/approvals/${id}`),
+  approve: (id: string, note?: string) =>
+    request.post<ApiResponse<ApprovalItem>>(`/api/admin/approvals/${id}/approve`, note ? { note } : null),
+  reject: (id: string, note?: string) =>
+    request.post<ApiResponse<ApprovalItem>>(`/api/admin/approvals/${id}/reject`, note ? { note } : null),
+  withdraw: (id: string) => request.post<ApiResponse<ApprovalItem>>(`/api/admin/approvals/${id}/withdraw`),
+}
+
 export const reworkOrderApi = {
   list: (afterSalesTicketId?: string) =>
     request.get<ApiResponse<ReworkOrder[]>>('/api/admin/rework-orders', {

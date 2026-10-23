@@ -141,6 +141,12 @@ TRUTH_SOURCES: Dict[str, TruthSource] = {
         citation="依据：返工单口径说明（同一售后单同时只能有一张未完结返工单；完工才回写售后状态；本单不产生金额）",
         path="backend/admin-api/src/main/java/com/migao/admin/service/ReworkOrderService.java",
     ),
+    # 审批（issue #7374）：四态状态机 + 「批一次用一次」的 CAS + 不能自批 —— 全部口径在服务层 javadoc。
+    "approval-decision": TruthSource(
+        label="审批口径（待审/已通过/已驳回/已撤回 · 批一次用一次 · 不能自批）",
+        citation="依据：审批口径说明（通过后业务用一次就失效；已裁决的不能再裁；不能裁决自己提交的申请）",
+        path="backend/admin-api/src/main/java/com/migao/admin/service/ApprovalService.java",
+    ),
     "supplier-master-data": TruthSource(
         label="供应商档案（供应商主数据）",
         citation="依据：供应商档案口径（服务层说明）",
@@ -244,6 +250,13 @@ PAGE_REGISTRY: Tuple[PageEntry, ...] = (
         route="/rework-orders",
         truth_source="rework-order-lifecycle",
         page_permissions=("after_sales:view",),
+        entity_permissions=(),
+    ),
+    # 审批中心（issue #7374）：问「为什么不能再批 / 谁批的 / 为什么我的撤回不了」⇒ 引服务层口径。
+    PageEntry(
+        route="/approvals",
+        truth_source="approval-decision",
+        page_permissions=("finance:view",),
         entity_permissions=(),
     ),
     # 供应商档案（issue #7369）：页面上问「账期怎么算 / 停用是什么意思」⇒ 引服务层口径。

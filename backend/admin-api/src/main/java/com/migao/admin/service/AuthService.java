@@ -1390,6 +1390,11 @@ public class AuthService {
         if (isAll || permissions.contains("finance:view")) {
             tradeChildren.add(menuItem("finance", "财务对账", "/finance"));
         }
+        // 审批中心（issue #7374）：节点码 = 该页第一屏读端点码 `finance:view`（与财务对账同码）
+        // ⇒ 有财务读权就能看到（零授权 delta）；写动作走 finance:create，不在菜单码里体现。
+        if (isAll || permissions.contains("finance:view")) {
+            tradeChildren.add(menuItem("approvals", "审批中心", "/approvals"));
+        }
         if (!tradeChildren.isEmpty()) {
             menus.add(menuGroup("trade-center", "交易管理", tradeChildren));
         }
