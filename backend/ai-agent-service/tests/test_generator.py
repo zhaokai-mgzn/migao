@@ -5,6 +5,8 @@
 - 非法 kind / 缺 Key 的 fail-closed；
 - 配额类错误（429 / AllocationQuota）自动切下一个模型；全部用尽 ⇒ 明确错误；
 - 非配额错误不静默换模型；
+- 全链都「接不了这类请求」⇒ 报不可用而非「额度用尽」（2026-10-23 起的默认链即此形态）；
+- 默认链 = 用户 2026-10-23 的裁定（qwen-mt-image-2.0）；
 - 内部端点只回 `image_url` / `model`（不落库、不返回临时凭据）。
 """
 # case_ids: UI-129
@@ -139,13 +141,37 @@ def test_content_moderation_error_does_not_switch_model(monkeypatch):
     assert len(calls) == 1
 
 
-def test_default_models_exclude_image_translation_model():
-    """默认回落链不得再排 qwen-mt-image-2.0（它不接图生图，issue #7341）。"""
+def test_default_chain_is_the_2026_10_23_user_decision():
+    """默认链 = qwen-mt-image-2.0（用户 2026-10-23 裁定：qwen-image-* 免费额度用尽）。
+
+    🔴 这条断言**有意钉住一个已知不可用的模型**：qwen-mt-image-2.0 是图片翻译模型，不接图生图
+    （issue #7341）。所以它红了通常是**好消息** —— 有人换回了可用模型 ⇒ 请一并更新
+    app/config.py 的裁定注释、.env.example、.github/cases/ui.yml 的 UI-129 判据 3（别只删断言）。
+    """
     from app.config import Settings
 
     default = Settings.model_fields["IMAGE_GEN_MODELS"].default
-    assert "qwen-mt-image-2.0" not in default
-    assert default.split(",")[-1] == "qwen-image-2.1-turbo"
+    assert [m.strip() for m in default.split(",") if m.strip()] == ["qwen-mt-image-2.0"]
+
+
+def test_all_models_unsupported_is_not_reported_as_quota(monkeypatch):
+    """全链都「接不了这类请求」⇒ 报不可用，不报「额度用尽」（商家看到的理由必须是真的）。
+
+    形态来源 = 2026-10-23 起的默认链（qwen-mt-image-2.0，issue #7341 实测 400 InvalidParameter）。
+    """
+    _settings(monkeypatch, IMAGE_GEN_MODELS="qwen-mt-image-2.0")
+
+    def handler(request):
+        return httpx.Response(
+            400, json={"code": "InvalidParameter", "message": "model does not support messages"})
+
+    with pytest.raises(gen.ImageGenerationUnavailable) as excinfo:
+        asyncio.run(gen.generate_product_image(
+            "https://oss/sample.png", "某商品", "main", client=_client(handler)))
+    message = str(excinfo.value)
+    assert "qwen-mt-image-2.0" in message
+    assert "不接" in message
+    assert "额度" not in message
 
 
 def test_internal_endpoint_returns_only_preview_fields(monkeypatch):
