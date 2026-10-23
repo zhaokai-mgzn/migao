@@ -64,6 +64,8 @@ public class ReportService {
     private final com.migao.admin.time.BusinessClock businessClock;
     /** 账龄真值源（P0-2）：报表中心不重算分档/账期，只把它的底稿套上报表口径（issue #7376 段 5）。 */
     private final CustomerService customerService;
+    /** 返工按客户/工序归集的桥：报工行只有 `processing_order_id`，客户要经「加工单 → 订单」才拿得到。 */
+    private final com.migao.admin.mapper.ProcessingOrderMapper processingOrderMapper;
 
     /**
      * 订单毛利报表。
@@ -319,9 +321,18 @@ public class ReportService {
      */
     public com.migao.admin.dto.QualityCostView qualityCost(String startDate, String endDate) {
         List<com.migao.admin.dto.QualityCostView.Component> components = new ArrayList<>();
-        List<com.migao.admin.entity.ProductionWorkLog> reworkLogs =
-                productionWorkLogMapper.selectList(new LambdaQueryWrapper<com.migao.admin.entity.ProductionWorkLog>()
-                        .eq(com.migao.admin.entity.ProductionWorkLog::getWorkType, "rework"));
+        // 🔴 窗口过滤：本方法一直收着 startDate/endDate 却**没用**（issue #7377 段 5 修）——
+        // 「参数收了不用」比没有参数更坏：调用方以为筛过了，实际拿到的是全量。
+        LocalDate from = parseDay(startDate);
+        LocalDate to = parseDay(endDate);
+        List<com.migao.admin.entity.ProductionWorkLog> reworkLogs = new ArrayList<>();
+        for (com.migao.admin.entity.ProductionWorkLog log : productionWorkLogMapper.selectList(
+                new LambdaQueryWrapper<com.migao.admin.entity.ProductionWorkLog>()
+                        .eq(com.migao.admin.entity.ProductionWorkLog::getWorkType, "rework"))) {
+            if (inWindow(workDay(log), from, to)) {
+                reworkLogs.add(log);
+            }
+        }
 
         BigDecimal reworkAmount = BigDecimal.ZERO;
         int unpriced = 0;
@@ -345,10 +356,16 @@ public class ReportService {
                 .note(scrap.note()).unknownItems(scrap.unknownItems()).build());
 
         // 赔付：按订单退款流水口径（`finance_transactions` 无售后单关联列 ⇒ 无法按售后单归集）
-        List<com.migao.admin.entity.FinanceTransaction> refunds = financeTransactionMapper.selectList(
+        List<com.migao.admin.entity.FinanceTransaction> refunds = new ArrayList<>();
+        for (com.migao.admin.entity.FinanceTransaction refund : financeTransactionMapper.selectList(
                 new LambdaQueryWrapper<com.migao.admin.entity.FinanceTransaction>()
                         .eq(com.migao.admin.entity.FinanceTransaction::getType, "refund")
-                        .eq(com.migao.admin.entity.FinanceTransaction::getStatus, "success"));
+                        .eq(com.migao.admin.entity.FinanceTransaction::getStatus, "success"))) {
+            // 退款按「发生日」（没有则按创建日）卡窗口，与返工报工同一个窗口口径
+            if (inWindow(txnDay(refund), from, to)) {
+                refunds.add(refund);
+            }
+        }
         BigDecimal refundAmount = BigDecimal.ZERO;
         for (com.migao.admin.entity.FinanceTransaction refund : refunds) {
             refundAmount = refundAmount.add(refund.getAmount() == null ? BigDecimal.ZERO : refund.getAmount());
@@ -405,6 +422,237 @@ public class ReportService {
                         .orderCount(orderCount)
                         .build() : null)   // 🔴 空数据 ⇒ null（不是 0）
                 .build();
+    }
+
+    /**
+     * **质量成本的维度汇总**（issue #7377 段 5）：把返工工时与赔付按「客户」或「工序」摊开。
+     *
+     * <p>🔴 恒等式 {@code 整表合计 == Σ行 + 未归属}：关联不上的金额**必须露出来**并写明原因 ——
+     * 悄悄丢掉会让「各行之和」比整表小，而每行单看都正常。</p>
+     *
+     * <p>各维度可归因性：客户 = 返工走「报工 → 加工单 → 订单 → 客户」、赔付走「退款流水 → 订单 → 客户」；
+     * 工序 = 返工直接取报工行的工序名，**赔付流水没有工序信息** ⇒ 工序维度下赔付整体进未归属。</p>
+     *
+     * @param dimension `customer` 或 `process`（其它值 ⇒ 400，不静默返回空）
+     */
+    public com.migao.admin.dto.QualityCostBreakdownView qualityCostBreakdown(
+            String dimension, String startDate, String endDate) {
+        String dim = dimension == null ? "" : dimension.trim();
+        if (!"customer".equals(dim) && !"process".equals(dim)) {
+            throw com.migao.admin.exception.BusinessException.validationError(
+                    "不支持的质量成本维度（只支持 customer / process）：" + dim);
+        }
+        LocalDate from = parseDay(startDate);
+        LocalDate to = parseDay(endDate);
+        boolean byProcess = "process".equals(dim);
+
+        java.util.Map<String, com.migao.admin.dto.QualityCostBreakdownView.Row> rows = new java.util.LinkedHashMap<>();
+        int unpricedLines = 0;
+        BigDecimal unattributedRework = BigDecimal.ZERO;
+        int unattributedReworkLines = 0;
+
+        for (com.migao.admin.entity.ProductionWorkLog log : productionWorkLogMapper.selectList(
+                new LambdaQueryWrapper<com.migao.admin.entity.ProductionWorkLog>()
+                        .eq(com.migao.admin.entity.ProductionWorkLog::getWorkType, "rework"))) {
+            if (!inWindow(workDay(log), from, to)) {
+                continue;
+            }
+            if ("unpriced".equals(log.getPriceState()) || log.getUnitPrice() == null) {
+                unpricedLines++;   // 🔴 未定价不计金额（与整表同口径）
+                continue;
+            }
+            BigDecimal amount = log.getUnitPrice().multiply(
+                    log.getQty() == null ? BigDecimal.ZERO : log.getQty());
+            com.migao.admin.dto.QualityCostBreakdownView.Row row =
+                    byProcess ? rowForProcess(rows, log) : rowForCustomer(rows, log);
+            if (row == null) {
+                unattributedRework = unattributedRework.add(amount);
+                unattributedReworkLines++;
+            } else {
+                row.setRework(row.getRework().add(amount));
+                row.setReworkLines(row.getReworkLines() + 1);
+            }
+        }
+
+        BigDecimal unattributedCompensation = BigDecimal.ZERO;
+        int unattributedCompensationCount = 0;
+        for (com.migao.admin.entity.FinanceTransaction refund : financeTransactionMapper.selectList(
+                new LambdaQueryWrapper<com.migao.admin.entity.FinanceTransaction>()
+                        .eq(com.migao.admin.entity.FinanceTransaction::getType, "refund")
+                        .eq(com.migao.admin.entity.FinanceTransaction::getStatus, "success"))) {
+            if (!inWindow(txnDay(refund), from, to)) {
+                continue;
+            }
+            BigDecimal amount = refund.getAmount() == null ? BigDecimal.ZERO : refund.getAmount();
+            // 🔴 退款流水没有工序信息 ⇒ 工序维度下赔付**整体**进未归属（不是「赔付为 0」）
+            com.migao.admin.dto.QualityCostBreakdownView.Row row =
+                    byProcess ? null : rowForCustomerOrder(rows, refund.getOrderId());
+            if (row == null) {
+                unattributedCompensation = unattributedCompensation.add(amount);
+                unattributedCompensationCount++;
+            } else {
+                row.setCompensation(row.getCompensation().add(amount));
+                row.setCompensationCount(row.getCompensationCount() + 1);
+            }
+        }
+
+        List<com.migao.admin.dto.QualityCostBreakdownView.Row> list = new ArrayList<>(rows.values());
+        for (com.migao.admin.dto.QualityCostBreakdownView.Row row : list) {
+            row.setTotal(row.getRework().add(row.getCompensation()));
+        }
+        list.sort((a, b) -> b.getTotal().compareTo(a.getTotal()));
+
+        BigDecimal rowRework = BigDecimal.ZERO;
+        BigDecimal rowCompensation = BigDecimal.ZERO;
+        int rowReworkLines = 0;
+        int rowCompensationCount = 0;
+        for (com.migao.admin.dto.QualityCostBreakdownView.Row row : list) {
+            rowRework = rowRework.add(row.getRework());
+            rowCompensation = rowCompensation.add(row.getCompensation());
+            rowReworkLines += row.getReworkLines();
+            rowCompensationCount += row.getCompensationCount();
+        }
+        BigDecimal unattributedTotal = unattributedRework.add(unattributedCompensation);
+        boolean hasData = !list.isEmpty() || unattributedTotal.signum() != 0
+                || unattributedReworkLines > 0 || unattributedCompensationCount > 0;
+
+        List<String> notes = new ArrayList<>();
+        notes.add("报废料不在本视图：本仓未采集（质检只到成品帘级），摊到任何维度都是编数");
+        if (byProcess) {
+            notes.add("赔付（退款口径）没有工序信息 ⇒ 全部计入「无法归属」（不是「赔付为 0」）");
+        } else {
+            notes.add("返工经「报工 → 加工单 → 订单 → 客户」归属；赔付经「退款流水 → 订单 → 客户」归属");
+        }
+        if (unpricedLines > 0) {
+            notes.add("另有 " + unpricedLines + " 行未定价返工报工未计入金额（未定价 ≠ 0 元）");
+        }
+
+        return com.migao.admin.dto.QualityCostBreakdownView.builder()
+                .dimension(dim)
+                .scope(byProcess ? "rework_by_processing_operation" : "rework_and_compensation_by_customer")
+                .startDate(startDate)
+                .endDate(endDate)
+                .hasData(hasData)
+                .rows(list)
+                .totals(!hasData ? null : com.migao.admin.dto.QualityCostBreakdownView.Totals.builder()
+                        .rework(scale2(rowRework.add(unattributedRework)))
+                        .reworkLines(rowReworkLines + unattributedReworkLines)
+                        .compensation(scale2(rowCompensation.add(unattributedCompensation)))
+                        .compensationCount(rowCompensationCount + unattributedCompensationCount)
+                        .total(scale2(rowRework.add(rowCompensation).add(unattributedTotal)))
+                        .build())
+                .unattributed(com.migao.admin.dto.QualityCostBreakdownView.Unattributed.builder()
+                        .rework(scale2(unattributedRework))
+                        .reworkLines(unattributedReworkLines)
+                        .compensation(scale2(unattributedCompensation))
+                        .compensationCount(unattributedCompensationCount)
+                        .total(scale2(unattributedTotal))
+                        .reason(byProcess
+                                ? "这些返工报工没记工序名；赔付流水本就没有工序字段"
+                                : "这些返工报工关联不到加工单/订单，或退款流水关联不到订单")
+                        .build())
+                .notes(notes)
+                .build();
+    }
+
+    /** 工序维度的一行：键 = 工序名（报工行直接带）。工序名缺失 ⇒ 返回 null（进未归属）。 */
+    private com.migao.admin.dto.QualityCostBreakdownView.Row rowForProcess(
+            java.util.Map<String, com.migao.admin.dto.QualityCostBreakdownView.Row> rows,
+            com.migao.admin.entity.ProductionWorkLog log) {
+        String name = log.getOperationName();
+        if (!StringUtils.hasText(name)) {
+            return null;
+        }
+        return rows.computeIfAbsent("op:" + name,
+                k -> newRow(name, name));
+    }
+
+    /** 客户维度的一行：报工 → 加工单 → 订单 → 客户；任一环缺失 ⇒ null（进未归属）。 */
+    private com.migao.admin.dto.QualityCostBreakdownView.Row rowForCustomer(
+            java.util.Map<String, com.migao.admin.dto.QualityCostBreakdownView.Row> rows,
+            com.migao.admin.entity.ProductionWorkLog log) {
+        if (!StringUtils.hasText(log.getProcessingOrderId())) {
+            return null;
+        }
+        com.migao.admin.entity.ProcessingOrder processingOrder =
+                processingOrderMapper.selectById(log.getProcessingOrderId());
+        if (processingOrder == null) {
+            return null;
+        }
+        return rowForCustomerOrder(rows, processingOrder.getOrderId());
+    }
+
+    /** 客户维度的一行（订单 → 客户）。订单 id 缺失或查不到 ⇒ null。 */
+    private com.migao.admin.dto.QualityCostBreakdownView.Row rowForCustomerOrder(
+            java.util.Map<String, com.migao.admin.dto.QualityCostBreakdownView.Row> rows, String orderId) {
+        if (!StringUtils.hasText(orderId)) {
+            return null;
+        }
+        Order order = orderMapper.selectById(orderId);
+        if (order == null) {
+            return null;
+        }
+        String label = StringUtils.hasText(order.getCustomerName())
+                ? order.getCustomerName() : order.getCustomerPhone();
+        if (!StringUtils.hasText(label)) {
+            return null;
+        }
+        String key = "cus:" + (StringUtils.hasText(order.getCustomerPhone())
+                ? order.getCustomerPhone() : label);
+        return rows.computeIfAbsent(key, k -> newRow(key, label));
+    }
+
+    private static com.migao.admin.dto.QualityCostBreakdownView.Row newRow(String key, String label) {
+        return com.migao.admin.dto.QualityCostBreakdownView.Row.builder()
+                .key(key).label(label)
+                .rework(BigDecimal.ZERO).reworkLines(0)
+                .compensation(BigDecimal.ZERO).compensationCount(0)
+                .total(BigDecimal.ZERO)
+                .build();
+    }
+
+    private static BigDecimal scale2(BigDecimal value) {
+        return (value == null ? BigDecimal.ZERO : value)
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+    }
+
+    /** 报工行的业务日（`workDate` 缺失 ⇒ 用创建时刻按业务时区换算，与 #3802 同一口径）。 */
+    private LocalDate workDay(com.migao.admin.entity.ProductionWorkLog log) {
+        if (log.getWorkDate() != null) {
+            return log.getWorkDate();
+        }
+        return log.getCreatedAt() == null ? null
+                : LocalDate.ofInstant(log.getCreatedAt().toInstant(), businessClock.zone());
+    }
+
+    /** 退款流水的业务日（`occurredAt` 缺失 ⇒ 用创建时刻）。 */
+    private LocalDate txnDay(com.migao.admin.entity.FinanceTransaction txn) {
+        if (txn.getOccurredAt() != null) {
+            return LocalDate.ofInstant(txn.getOccurredAt().toInstant(), businessClock.zone());
+        }
+        return txn.getCreatedAt() == null ? null
+                : LocalDate.ofInstant(txn.getCreatedAt().toInstant(), businessClock.zone());
+    }
+
+    /**
+     * 可选窗口：`from`/`to` 为 null 表示该侧不设界。
+     *
+     * <p>🔴 日期缺失（null）⇒ **计入**（「无法判窗」不等于「窗外」）：生产库上
+     * `production_work_logs.work_date` 是 NOT NULL、`finance_transactions.created_at` 有默认值，
+     * 真出现空日期只可能是异常存量 —— 此时漏算比多算更危险（前者让质量成本凭空变小）。</p>
+     */
+    private static boolean inWindow(LocalDate day, LocalDate from, LocalDate to) {
+        if (day == null) {
+            return true;
+        }
+        if (from != null && day.isBefore(from)) {
+            return false;
+        }
+        return to == null || !day.isAfter(to);
+    }
+
+    private static LocalDate parseDay(String date) {
+        return StringUtils.hasText(date) ? LocalDate.parse(date.trim()) : null;
     }
 
     private static OffsetDateTime startOfDay(String date, ZoneId zone) {

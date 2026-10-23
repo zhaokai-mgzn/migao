@@ -10,6 +10,7 @@ import type {
   ReportInventoryAging,
   ReportOrderMargins,
   ReportQualityCost,
+  ReportQualityCostBreakdown,
   ReportReceivableAging,
   ReportStaffPerformance,
 } from '@/types/reports'
@@ -63,6 +64,10 @@ export default function ReportsPage() {
   const [staff, setStaff] = useState<ReportStaffPerformance | null>(null)
   const [quality, setQuality] = useState<ReportQualityCost | null>(null)
   const [aging, setAging] = useState<ReportReceivableAging | null>(null)
+  // 质量成本的维度汇总（issue #7377 段 5）：默认按客户 —— 「贵在谁身上」比「贵在哪一步」更常问
+  const [qcDim, setQcDim] = useState<'customer' | 'process'>('customer')
+  const [qcBreakdown, setQcBreakdown] = useState<ReportQualityCostBreakdown | null>(null)
+  const [qcBreakdownLoading, setQcBreakdownLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -93,6 +98,27 @@ export default function ReportsPage() {
   useEffect(() => {
     load()
   }, [load])
+
+  /**
+   * 维度汇总单独取（不进 `load` 的 Promise.all）：切维度只该重取这一块，
+   * 不该把另外五张表一起打一遍。
+   */
+  const loadBreakdown = useCallback(async (dim: 'customer' | 'process') => {
+    setQcBreakdownLoading(true)
+    try {
+      const res = await reportApi.qualityCostBreakdown(dim)
+      setQcBreakdown(res.data?.data || null)
+    } catch (error) {
+      console.error('加载质量成本维度失败:', error)
+      setQcBreakdown(null)
+    } finally {
+      setQcBreakdownLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadBreakdown(qcDim)
+  }, [loadBreakdown, qcDim])
 
   /**
    * 导出当前**已加载**的读数（不额外请求、不重算）：CSV 里的数与页面上的数必然同源。
@@ -313,8 +339,100 @@ export default function ReportsPage() {
                   {unknownLabels(quality).join(' / ')}）
                 </p>
               )}
+
             </div>
           )}
+              {/*
+                维度汇总（issue #7377 段 5）：回答「贵在谁身上 / 贵在哪一步」。
+                🔴 「无法归属」必须单独露出来 —— 它是恒等式 `合计 = Σ行 + 无法归属` 的另一半，
+                悄悄丢掉会让每一行看着都对、总额却对不上。
+              */}
+              <div className="mt-3 border-t border-neutral-100 pt-3" data-testid="reports-quality-breakdown">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-neutral-500">贵在哪：</span>
+                    {(['customer', 'process'] as const).map((dim) => (
+                      <button
+                        key={dim}
+                        type="button"
+                        onClick={() => setQcDim(dim)}
+                        data-testid={`reports-quality-dim-${dim}`}
+                        className={`text-xs px-2 py-0.5 rounded-full border ${
+                          qcDim === dim
+                            ? 'border-primary-500 bg-primary-50 text-primary-700'
+                            : 'border-neutral-200 text-neutral-600 hover:bg-neutral-50'
+                        }`}
+                      >
+                        {dim === 'customer' ? '按客户' : '按工序'}
+                      </button>
+                    ))}
+                  </div>
+                  <ExportButton
+                    testId="reports-quality-breakdown-export"
+                    onClick={() =>
+                      exportCsv(
+                        `质量成本-${qcDim === 'customer' ? '按客户' : '按工序'}.csv`,
+                        ['对象', '返工工时', '赔付', '合计', '返工行数', '退款笔数'],
+                        (qcBreakdown?.rows ?? []).map((row) => [
+                          row.label,
+                          row.rework,
+                          row.compensation,
+                          row.total,
+                          row.reworkLines,
+                          row.compensationCount,
+                        ]),
+                      )
+                    }
+                  />
+                </div>
+
+                {qcBreakdownLoading ? (
+                  <p className="mt-2 text-xs text-neutral-500" data-testid="reports-quality-breakdown-loading">
+                    加载中…
+                  </p>
+                ) : !qcBreakdown?.hasData ? (
+                  <p className="mt-2 text-xs text-neutral-500" data-testid="reports-quality-breakdown-empty">
+                    暂无数据 —— 这个时间范围里没有返工报工或退款
+                  </p>
+                ) : (
+                  <div className="mt-2 space-y-1">
+                    {qcBreakdown.rows.slice(0, 5).map((row) => (
+                      <div
+                        key={row.key}
+                        className="flex justify-between gap-3 text-xs"
+                        data-testid="reports-quality-breakdown-row"
+                      >
+                        <span className="truncate text-neutral-700">{row.label}</span>
+                        <span className="whitespace-nowrap text-neutral-600">
+                          {money(row.total)}
+                          <span className="ml-2 text-neutral-400">
+                            返工 {money(row.rework)}
+                            {row.compensationCount > 0 && ` · 赔付 ${money(row.compensation)}`}
+                          </span>
+                        </span>
+                      </div>
+                    ))}
+                    {Number(qcBreakdown.unattributed?.total ?? 0) > 0 && (
+                      <div
+                        className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-700"
+                        data-testid="reports-quality-breakdown-unattributed"
+                      >
+                        <div className="flex justify-between gap-3">
+                          <span>无法归属</span>
+                          <span className="whitespace-nowrap">{money(qcBreakdown.unattributed.total)}</span>
+                        </div>
+                        {/* 原因单独一行写全：塞进「对象」那一列的窄格里会被省略号切成半句话（实测截图） */}
+                        <p className="mt-0.5 text-xs leading-snug text-amber-600">
+                          {qcBreakdown.unattributed.reason}
+                        </p>
+                      </div>
+                    )}
+                    <p className="text-xs text-neutral-400" data-testid="reports-quality-breakdown-notes">
+                      {(qcBreakdown.notes ?? []).join(' · ')}
+                    </p>
+                  </div>
+                )}
+              </div>
         </PageCard>
 
         <PageCard>

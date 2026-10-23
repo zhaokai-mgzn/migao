@@ -5464,3 +5464,39 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: QC-003
+    legacy_id: ""
+    title: "质量成本能按客户/工序摊开：合计=Σ行+无法归属、赔付无工序信息、未定价不计金额（issue #7377 段 5）"
+    domains:
+      - misc
+      - backend
+      - frontend
+      - quality
+    tier: normal
+    tags: [frontend-contract, quality-cost, breakdown, red-proof]
+    truths_ref: []
+    user_inputs:
+      - "用户（2026-10-23，逐字）：「继续」—— 承接 #7377 目标 2「质量成本 … 按客户/商品/工序三维汇总」：整表只回答「贵多少」，回答不了「贵在谁身上 / 贵在哪一步」。"
+    expectations: []
+    data_checks:
+      - "**判据 1（🔴 恒等式：合计 = Σ行 + 无法归属）**：关联不上的金额（报工没挂加工单 / 退款没挂订单）必须进 `unattributed` 并带原因 —— 悄悄丢掉会让「各行之和」比整表小，而每行单看都正常。判据 = `QualityCostBreakdownTest#totalsEqualRowsPlusUnattributed`（逐项复算 rework / compensation，不只看总和）。"
+      - "**判据 2（🔴 工序维度下赔付整体进未归属）**：退款流水没有工序字段 ⇒ 工序维度里赔付全部计入 `unattributed`，且说明里点出「不是『赔付为 0』」。判据 = `#processDimensionPutsCompensationIntoUnattributed`。"
+      - "**判据 3（未标工序的报工不编行）**：报工行没记工序名 ⇒ 进未归属（不造一个「其他」行把金额藏起来）。判据 = 同上。"
+      - "**判据 4（未定价不计金额但被数出来）**：`price_state='unpriced'` 的行不计金额，`notes` 里给行数。判据 = `#unpricedReworkIsCountedButNotAmounted`。"
+      - "**判据 5（🔴 窗口真的生效）**：窗外报工/退款不计；**整表（质量成本卡）也同批修**——原实现收了 `startDate/endDate` 却**没用**。判据 = `#windowFiltersBothSides` + `#qualityCostCardAlsoHonoursWindow`。"
+      - "**判据 6（空数据 ≠ 0）**：没有读数 ⇒ `hasData=false`、`totals=null`，页面写「暂无数据」不画 ¥0.00。判据 = `#emptyWindowHasNoData` + `reports.test.tsx#维度汇总空态`。"
+      - "**判据 7（维度非法 ⇒ 400）**：`dimension` 只接受 `customer`/`process`，其它值抛可读校验错（不静默返回空表）。判据 = `#unknownDimensionIsRejected`。"
+      - "**判据 8（前端只重取这一块）**：切维度只重取维度汇总，不重打整页五个端点；未归属金额单独一行展示（红证：把该行条件改成恒 false ⇒ 前端用例当场红，已注入并回滚）。判据 = `reports.test.tsx#维度汇总：默认按客户…` + `#无法归属的金额必须露出来`。"
+      - "**边界（照实登记）**：① **商品维度未做**（订单多商品 ⇒ 单一归属会编数，需先定按行拆分口径）；② 报废料不进本视图（本仓未采集）；③ 本视图不含售后单维度（退款流水无售后单关联列）。"
+    precondition: "本用例前端+后端口径：前置 = 质量成本整表（#7377 段 1）+ 返工报工（P0-3 成本快照）+ 退款流水。零网络、零 LLM。"
+    skip_reason: "[frontend-contract] 维度汇总的恒等式与「未归属必须露出来」，由 Java 单测 + 前端单测验证，非 LLM 行为，不进 agent-eval 冒烟"
+    merge_log: "2026-10-23 新增（issue #7377 段 5）。落码 = `QualityCostBreakdownView` + `ReportService.qualityCostBreakdown` + `ReportController` 端点 + `reports/page.tsx` 维度切换块 + 质量成本卡窗口修复。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/QualityCostBreakdownTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/controller/ReportControllerTest.java"
+        - "frontend/admin-web/tests/unit/pages/reports.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []

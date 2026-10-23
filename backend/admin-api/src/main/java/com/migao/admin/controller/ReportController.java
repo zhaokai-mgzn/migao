@@ -101,6 +101,21 @@ public class ReportController {
                 com.migao.admin.config.TenantContext.getTenantId(), scopeOwnerId));
     }
 
+    /**
+     * 质量成本的**维度汇总**：`GET /api/admin/reports/quality-cost/breakdown?dimension=customer|process`（issue #7377 段 5）。
+     *
+     * <p>把返工工时与赔付按客户 / 工序摊开；🔴 关联不上的金额进 `unattributed`（恒等式：
+     * 整表合计 = Σ行 + 未归属），不许静默丢弃。维度取值非法 ⇒ 400（不静默返回空）。</p>
+     */
+    @GetMapping("/quality-cost/breakdown")
+    public ApiResponse<com.migao.admin.dto.QualityCostBreakdownView> qualityCostBreakdown(
+            @RequestParam String dimension,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
+        return ApiResponse.success(
+                reportService.qualityCostBreakdown(dimension, startDate, endDate));
+    }
+
     /** 数据范围解析（与 P0-4 同口径：仓储在 role.data_scope，读权在 RoleService）。 */
     private final RoleService roleService;
 
