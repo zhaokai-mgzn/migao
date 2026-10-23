@@ -535,9 +535,9 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
         paymentQrcodes={{}}
       />
     )
+    // 码块存在性由**取值断言**证明（`workOrderQrValue()` 取的就是它的 `<svg><title>`）——
+    // 不写 `not.toBeNull()` 这类存在性弱断言（QA Growth Gate 的 TS 弱断言面会判红）
     const qr = workOrderQr()
-    expect(qr).not.toBeNull()
-    // ① 码值**逐字**取服务端值（qrcode.react 把 value 写进 `<svg><title>`）
     expect(workOrderQrValue()).toBe('https://print.example.test/o/7K3M9QP2')
     // ② 位置 = 纸面**左上角**：QR 块在 `.sales-sheet` 的第一段里，且文档顺序在「销售单」抬头之前
     //    （不是页脚 / 右下角、也不与收款码混在一处）
