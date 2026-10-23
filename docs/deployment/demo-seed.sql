@@ -33,23 +33,23 @@ WHERE NOT EXISTS (SELECT 1 FROM categories WHERE id = 'cat-fabric' AND tenant_id
 INSERT INTO products (id, tenant_id, name, category_id, base_price, description, unit, pricing_type, sku_code, status)
 SELECT 'p-zg-001', :tenant_id, '星空全遮光窗帘', 'cat-curtain', 98.00,
        '高精密涤纶三层织造，遮光率99%以上，物理遮光无甲醛，双面同色，垂感优良',
-       '米', 'per_meter', 'MG-ZG-001', 'active'
+       '米', 'per_meter', 'MG-ZG-001', 'on_sale'
 WHERE NOT EXISTS (SELECT 1 FROM products WHERE id = 'p-zg-001' AND tenant_id = :tenant_id);
 
 INSERT INTO products (id, tenant_id, name, category_id, base_price, description, unit, pricing_type, sku_code, status)
 SELECT 'p-zg-002', :tenant_id, '云朵半遮光窗帘', 'cat-curtain', 68.00,
        '涤纶高密度编织，遮光率75%-85%，莫兰迪色系，柔软细腻，适合客厅书房',
-       '米', 'per_meter', 'MG-ZG-002', 'active'
+       '米', 'per_meter', 'MG-ZG-002', 'on_sale'
 WHERE NOT EXISTS (SELECT 1 FROM products WHERE id = 'p-zg-002' AND tenant_id = :tenant_id);
 
 INSERT INTO products (id, tenant_id, name, category_id, base_price, description, unit, pricing_type, sku_code, status)
 SELECT 'p-sl-001', :tenant_id, '雾霭柔光纱帘', 'cat-sheer', 35.00,
        '涤纶雪纺纱，透光不透人，2.8米超宽幅减少拼接，轻盈飘逸',
-       '米', 'per_meter', 'MG-SL-001', 'active'
+       '米', 'per_meter', 'MG-SL-001', 'on_sale'
 WHERE NOT EXISTS (SELECT 1 FROM products WHERE id = 'p-sl-001' AND tenant_id = :tenant_id);
 
 -- ──────────────────────────────────────────────
--- 3. 颜色 + SKU 矩阵（颜色×售卖方式×门幅）
+-- 3. 颜色 + SKU 矩阵（颜色 × 门幅；售卖方式已在 V111 上移为商品级，不再是 SKU 维度）
 -- ──────────────────────────────────────────────
 -- 星空全遮光：象牙白/浅灰/藏蓝
 INSERT INTO product_colors (tenant_id, product_id, color_name, main_color_hex, sort_order)
@@ -86,24 +86,28 @@ INSERT INTO product_colors (tenant_id, product_id, color_name, main_color_hex, s
 SELECT :tenant_id, 'p-sl-001', '米白', '#F5EFE0', 2
 WHERE NOT EXISTS (SELECT 1 FROM product_colors WHERE tenant_id = :tenant_id AND product_id = 'p-sl-001' AND color_name = '米白');
 
--- SKU：星空全遮光（象牙白 × 2.8米）
+-- SKU：星空全遮光（象牙白 × 2.8）
 -- 色号用**相关子查询**取（`FROM product_colors c`），不是 `DO` 块里的 `SELECT … INTO`：
 -- 后者要把 `:tenant_id` 带进 dollar-quoted 体内，而 psql 在体内不做替换（issue #5502）。
 -- 写法与 tests/agent_eval/fixtures/*.sql 的 SKU 段同源：`price` 取货号 `base_price`。
+-- ⚠️ `door_width` 落 **canonical 裸数值**（与 `SkuMatrix.tsx` 的 `normalizeDoorWidth`、
+--    eval 种子 `'2.8'` 同口径）；带单位的 `2.8米` 只允许出现在**显示层**。
 INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
-SELECT :tenant_id, c.product_id, c.id, c.color_name, '2.8米', p.base_price, 500, 'ZG001-象牙白-2.8米'
+SELECT :tenant_id, c.product_id, c.id, c.color_name, '2.8', p.base_price, 500,
+       p.sku_code || '-' || c.color_name || '-2.8'
 FROM product_colors c
 JOIN products p ON p.id = c.product_id
 WHERE c.tenant_id = :tenant_id AND c.product_id = 'p-zg-001' AND c.color_name = '象牙白'
-  AND NOT EXISTS (SELECT 1 FROM product_skus WHERE tenant_id = :tenant_id AND product_id = 'p-zg-001' AND color_id = c.id AND door_width = '2.8米');
+  AND NOT EXISTS (SELECT 1 FROM product_skus WHERE tenant_id = :tenant_id AND product_id = 'p-zg-001' AND color_id = c.id AND door_width = '2.8');
 
--- SKU：雾霭柔光纱（白色 × 2.8米）
+-- SKU：雾霭柔光纱（白色 × 2.8）
 INSERT INTO product_skus (tenant_id, product_id, color_id, color_name, door_width, price, stock, sku_code)
-SELECT :tenant_id, c.product_id, c.id, c.color_name, '2.8米', p.base_price, 800, 'SL001-白色-2.8米'
+SELECT :tenant_id, c.product_id, c.id, c.color_name, '2.8', p.base_price, 800,
+       p.sku_code || '-' || c.color_name || '-2.8'
 FROM product_colors c
 JOIN products p ON p.id = c.product_id
 WHERE c.tenant_id = :tenant_id AND c.product_id = 'p-sl-001' AND c.color_name = '白色'
-  AND NOT EXISTS (SELECT 1 FROM product_skus WHERE tenant_id = :tenant_id AND product_id = 'p-sl-001' AND color_id = c.id AND door_width = '2.8米');
+  AND NOT EXISTS (SELECT 1 FROM product_skus WHERE tenant_id = :tenant_id AND product_id = 'p-sl-001' AND color_id = c.id AND door_width = '2.8');
 
 -- ──────────────────────────────────────────────
 -- 4. 加工项（6 个布艺核心加工项）
