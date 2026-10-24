@@ -45,6 +45,7 @@ class StocktakeServiceTest {
     private StockBatchMapper stockBatchMapper;
     private WarehouseService warehouseService;
     private ApprovalService approvalService;
+    private StockBatchConsumptionService stockBatchConsumptionService;
     private StocktakeService service;
 
     private static final Warehouse WAREHOUSE = warehouse();
@@ -87,13 +88,25 @@ class StocktakeServiceTest {
         stockBatchMapper = Mockito.mock(StockBatchMapper.class);
         warehouseService = Mockito.mock(WarehouseService.class);
         approvalService = Mockito.mock(ApprovalService.class);
+        stockBatchConsumptionService = Mockito.mock(StockBatchConsumptionService.class);
         service = new StocktakeService(stocktakeMapper, itemMapper, stockBatchMapper,
-                warehouseService, approvalService, new com.migao.admin.time.BusinessClock());
+                warehouseService, approvalService, new com.migao.admin.time.BusinessClock(),
+                stockBatchConsumptionService);
         when(warehouseService.require(1L)).thenReturn(WAREHOUSE);
+        // 缺省桩：剩余 = quantity（存量用例的口径不变；要验「剩余 ≠ 入库量」的用例自行覆盖）
+        when(stockBatchConsumptionService.remainingMeters(eq(7L), any())).thenAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            java.util.Collection<StockBatch> rows = inv.getArgument(1);
+            Map<Long, BigDecimal> out = new HashMap<>();
+            for (StockBatch b : rows) {
+                out.put(b.getId(), b.getQuantity());
+            }
+            return out;
+        });
     }
 
     @Test
-    @DisplayName("出任务：账面数取自**当刻**批次量，逐批次落明细")
+    @DisplayName("出任务：账面数取自**当刻的剩余米数**（缺省桩下 = quantity），逐批次落明细")
     void openSnapshotsBookQty() {
         when(stocktakeMapper.selectList(any())).thenReturn(List.of());
         when(stockBatchMapper.selectList(any())).thenReturn(List.of(batch(10L, "100"), batch(11L, "50")));
@@ -104,6 +117,85 @@ class StocktakeServiceTest {
         assertThat(view.getItems()).hasSize(2);
         assertThat(view.getItems().get(0).getBookQty()).isEqualByComparingTo("100");
         Mockito.verify(itemMapper, Mockito.times(2)).insert(any(StocktakeItem.class));
+    }
+
+    @Test
+    @DisplayName("🔴 账面量 = **剩余米数**（入库 67 / 已派工 20.5 ⇒ 46.5），不是入库量 67（#7618）")
+    void openSnapshotsRemainingNotInbound() {
+        when(stocktakeMapper.selectList(any())).thenReturn(List.of());
+        StockBatch b = batch(10L, "67");
+        when(stockBatchMapper.selectList(any())).thenReturn(List.of(b));
+        when(stockBatchConsumptionService.remainingMeters(eq(7L), any()))
+                .thenReturn(Map.of(10L, new BigDecimal("46.5")));
+
+        var view = service.open(1L, "月末盘点", null);
+
+        assertThat(view.getItems()).hasSize(1);
+        // 现算 67−20.5 会得到 46.5 —— 但页面/服务都不许自己减，必须取派生的那个数（这里 46.5 故意
+        // 与 67 不同；把实现换回 bookQty(quantity) ⇒ 本断言红）
+        assertThat(view.getItems().get(0).getBookQty()).isEqualByComparingTo("46.5");
+        assertThat(view.getItems().get(0).getBookQty()).isNotEqualByComparingTo("67");
+    }
+
+    @Test
+    @DisplayName("已经用尽（剩余 0）的批次不进盘点清单（盘它没有意义，明细也不该膨胀）")
+    void openSkipsExhaustedBatches() {
+        when(stocktakeMapper.selectList(any())).thenReturn(List.of());
+        when(stockBatchMapper.selectList(any())).thenReturn(List.of(batch(10L, "60"), batch(11L, "50")));
+        when(stockBatchConsumptionService.remainingMeters(eq(7L), any())).thenReturn(Map.of(
+                10L, new BigDecimal("0"), 11L, new BigDecimal("12.5")));
+
+        var view = service.open(1L, null, null);
+
+        assertThat(view.getItems()).hasSize(1);
+        assertThat(view.getItems().get(0).getBatchId()).isEqualTo(11L);
+        assertThat(view.getItems().get(0).getBookQty()).isEqualByComparingTo("12.5");
+    }
+
+    @Test
+    @DisplayName("🔴 完成盘点：差异落到 quantity 后，**派生剩余恰等于实盘**（46.5 盘成 50 ⇒ quantity 67 + 3.5）")
+    void completeLandsRemainingEqualsCounted() {
+        when(stocktakeMapper.selectById("ST-1")).thenReturn(stocktake("counting"));
+        when(itemMapper.selectList(any())).thenReturn(List.of(StocktakeItem.builder()
+                .id(1L).stocktakeId("ST-1").batchId(10L).batchNo("PC-00010")
+                .bookQty(new BigDecimal("46.5")).countedQty(new BigDecimal("50"))
+                .diffQty(new BigDecimal("3.5")).build()));
+        when(approvalService.consume(eq(Approval.TYPE_STOCKTAKE_DIFF), anyString(), any(), any()))
+                .thenReturn("AP-1");
+        StockBatch batch = batch(10L, "67");
+        when(stockBatchMapper.selectById(10L)).thenReturn(batch);
+        when(stockBatchConsumptionService.remainingMeters(eq(7L), any()))
+                .thenReturn(Map.of(10L, new BigDecimal("46.5")));
+        when(stockBatchMapper.updateById(org.mockito.ArgumentMatchers.<StockBatch>any())).thenReturn(1);
+        when(stocktakeMapper.update(any(), any())).thenReturn(1);
+
+        service.complete("ST-1");
+
+        // quantity 67 + diff 3.5 = 70.5；而剩余 = 70.5 + (−20.5) = 50 = 实盘
+        assertThat(batch.getQuantity()).isEqualByComparingTo("70.5");
+        assertThat(batch.getUnitCost()).as("成本快照一字不动").isEqualByComparingTo("12.3456");
+    }
+
+    @Test
+    @DisplayName("🔴 判负按**剩余**（quantity 够、剩余不够 ⇒ 必须拒；改前用 quantity 会放行）")
+    void completeRejectsNegativeRemainingEvenIfInboundSufficient() {
+        when(stocktakeMapper.selectById("ST-1")).thenReturn(stocktake("counting"));
+        when(itemMapper.selectList(any())).thenReturn(List.of(StocktakeItem.builder()
+                .id(1L).stocktakeId("ST-1").batchId(10L).batchNo("PC-00010")
+                .bookQty(new BigDecimal("5")).countedQty(BigDecimal.ZERO)
+                .diffQty(new BigDecimal("-5")).build()));
+        when(approvalService.consume(eq(Approval.TYPE_STOCKTAKE_DIFF), anyString(), any(), any()))
+                .thenReturn("AP-1");
+        StockBatch batch = batch(10L, "60");     // 入库 60（够减），但当前只剩 5 米
+        when(stockBatchMapper.selectById(10L)).thenReturn(batch);
+        when(stockBatchConsumptionService.remainingMeters(eq(7L), any()))
+                .thenReturn(Map.of(10L, new BigDecimal("4")));   // 盘 0 ⇒ 剩余 −1 ⇒ 拒
+
+        assertThatThrownBy(() -> service.complete("ST-1"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("负数");
+        Mockito.verify(stockBatchMapper, Mockito.never())
+                .updateById(org.mockito.ArgumentMatchers.<StockBatch>any());
     }
 
     @Test

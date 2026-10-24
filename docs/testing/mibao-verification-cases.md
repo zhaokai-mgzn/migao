@@ -5729,11 +5729,11 @@
 ### STK-001. 盘点单：账面快照 + 差异必经审批 + 调整只改数量（issue #7373 段 2） 🔵
 ```
 你: 用户（2026-10-21，逐字）：「继续主动推进，不要一直让我点头」—— 主动推进 P1-1 段 2（盘点单），承接 issue #7373 判据「盘点差异调整前后库存恒等式」与 issue #7374 的 `stocktake_diff` 闸门。
-数据: **判据 1（账面快照）**：出任务时把该仓**当前有货**批次的量快照成 `book_qty`（NOT NULL）。不留快照，事后 `stock_batches.quantity` 早变了，差异就无法复算、也解释不了「当时为什么判它少了 3 米」。判据 = `StocktakeServiceTest#openSnapshotsBookQty` + `StocktakeMapperTest#bookQtyIsNotNull`。
+数据: **判据 1（账面快照）**：出任务时把该仓**当前还有剩余**的批次的**剩余米数**（派生 = 入库量 + Σdelta，唯一入口 = `StockBatchConsumptionService#remainingMeters`）快照成 `book_qty`（NOT NULL）。不留快照，事后 `stock_batches.quantity` 早变了，差异就无法复算、也解释不了「当时为什么判它少了 3 米」。🔴 issue #7618：改前快照的是 `quantity`（原始入库量）⇒ 裁剪过的批次账面偏高、已用尽的批次还要盘；现派生成剩余并**过滤掉剩余 0 的批次**。判据 = `StocktakeServiceTest#openSnapshotsRemainingNotInbound`（入库 67 / 已消耗 20.5 ⇒ 账面 46.5，不是 67）+ `#openSkipsExhaustedBatches` + `StocktakeMapperTest#bookQtyIsNotNull`。🔴 红证（2026-10-24 实测）：把 `bookQty` 换回 `batch.getQuantity()` 且去掉剩余过滤 ⇒ `StocktakeServiceTest` 14 条里恰 2 条红（正是上面两条），其余全绿；还原（md5 一致）⇒ 全绿。
 数据: **判据 2（逐批次差异）**：`差异 = 实盘 − 账面`；**未录实盘 ⇒ 差异 null（不是 0）**。判据 = `StocktakePolicyTest#diffPerLine` + `#uncountedIsNullNotZero`。
 数据: **判据 3（🔴 差异必经审批）**：完成盘点时有差异 ⇒ 必须有**已通过且未用掉**的 `stocktake_diff` 审批（对象 = 盘点单号，金额 = |差异| 合计），否则**写面直接拒**并给出申请路径；命中则当场消费（一笔一批）。判据 = `StocktakeServiceTest#completeRejectsDiffWithoutApproval`（红证：无审批即拒）。
 数据: **判据 4（无差异不逼审批）**：账实相符 ⇒ 直接完成（把「盘点过、一样」也逼去审批，只会让人绕过盘点）。判据 = `#completeWithoutDiffNeedsNoApproval`。
-数据: **判据 5（🔴 调整只改数量）**：差异调整只改 `stock_batches.quantity`，**不动 `unit_cost`**（盘点是账实对齐，不是成本重估；顺手改成本会让毛利凭空变化）。判据 = `#completeAppliesDiffAndKeepsCost` + 真库 `StocktakeRealDbTest#fullFlowWithoutDiff`（断言 cost 一字不动）。
+数据: **判据 5（🔴 调整只改数量）**：差异调整只改 `stock_batches.quantity`，**不动 `unit_cost`**（盘点是账实对齐，不是成本重估；顺手改成本会让毛利凭空变化）。🔴 由于 `diff = 实盘 − 剩余`，落到 `quantity` 后**派生剩余恰等于实盘**（盘 46.5 → 50 ⇒ quantity 67 + 3.5，剩余 = 50）；判负准入改按**剩余**（`quantity` 够、剩余不够的盘亏必须拒）。判据 = `#completeAppliesDiffAndKeepsCost` + `#completeLandsRemainingEqualsCounted` + `#completeRejectsNegativeRemainingEvenIfInboundSufficient` + 真库 `StocktakeRealDbTest#fullFlowWithoutDiff`（断言 cost 一字不动）。
 数据: **判据 6（恒等式与准入）**：`Σ(实盘−账面) == Σ存储差异`（抓「改了实盘没同步差异」的脏数据）；有一条没录实盘就不能完成；调整后数量不得为负。判据 = `StocktakePolicyTest#storedColumnsAgree` + `#allCountedRequired` + `#adjustmentNeverNegative`。
 数据: **判据 7（同仓唯一进行中）**：同一仓库同时只能有一个 `counting` 盘点 —— **部分唯一索引**兜住（不是服务层查一遍），并发发起时映射成可读冲突。判据 = `StocktakeMapperTest#oneOpenStocktakePerWarehouseIsAConstraint` + `StocktakeServiceTest#openRejectsSecondOpenStocktake`。
 数据: **判据 8（并发与端点契约）**：完成走 CAS（`status='counting'` 条件更新，落空 ⇒ 可读 409）；路由逐字、读 `inbound:view` / 写 `inbound:create`（零授权 delta）；**完成面只收盘点单 id**（差异/调整量由服务端算，客户端递进来就等于绕过审批）。判据 = `#completeLosesCas` + `StocktakeControllerTest`。
@@ -5741,7 +5741,7 @@
 前置: 本用例 [backend-contract] + 真库：前置 = `stocktakes`/`stocktake_items`（V184）+ `approvals`（V181）+ 真实 PG 集群（CI 注入 `MIGAO_REQUIRE_REALDB`）。零网络、零 LLM。
 跳过: [backend-contract] 盘点恒等式 / 差异审批闸门 / 真库列一致性，由 Java 单测与真库判据验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
-溯源: 2026-10-21 新增（issue #7373 段 2）。落码 = `Stocktake`/`StocktakeItem` + 两个 Mapper + `StocktakePolicy`（恒等式与准入）+ `StocktakeService`（出任务/录实盘/完成/作废，差异接 `ApprovalService.consume`）+ `StocktakeController` + V184 + 真库判据。 ｜ tags: backend-contract, realdb, inventory, stocktake, approval, red-proof
+溯源: 2026-10-21 新增（issue #7373 段 2）。2026-10-24 改判（issue #7618，用户逐字「账面应该展示实际的？剩余米数」）：判据 1 的账面口径由「批次量 quantity」改为**剩余米数**（派生唯一入口 = 台账服务），并新增「剩余 0 的批次不进清单」「完成后剩余 = 实盘」「判负按剩余」三条；页面列名改「账面剩余」并给算式说明（`stocktakes.test.tsx` 断言）。落码 = `Stocktake`/`StocktakeItem` + 两个 Mapper + `StocktakePolicy`（恒等式与准入）+ `StocktakeService`（出任务/录实盘/完成/作废，差异接 `ApprovalService.consume`）+ `StocktakeController` + V184 + 真库判据。 ｜ tags: backend-contract, realdb, inventory, stocktake, approval, red-proof
 
 ### PRC-003. 价格本可维护：协议价 / 等级价 / 阶梯价 upsert + 价格必须 > 0（issue #7375 段 3） 🔵
 ```
@@ -5888,6 +5888,7 @@
 数据: **判据 3（🔴 部分未数不给合计）**：还有批次没数时，差异合计写「待录入（还有 N 个批次没数）」，**不给出一个看起来已对账的合计**；全部数完后照实显示（含 0）。判据 = 同文件两条合计用例。
 数据: **判据 4（有差异要审批）**：完成被服务端拒绝（「必须先有已通过的盘点差异审批」）时，页面**原样显示服务端原文**，不吞成「操作失败」。判据 = 同文件#完成被服务端拒绝。
 数据: **判据 5（实盘允许 0）**：实盘量可以提交 0（盘空的真实结果）、最多 1 位小数；两位小数/负数在前端拦下且不打接口。判据 = 同文件#录实盘：0 可以提交。
+数据: **判据 6（账面口径说清，issue #7618）**：明细列名是「**账面剩余**」（不是「账面量」），表下有算式说明「账面剩余 = 入库米数 − 已派工消耗（出任务当刻快照）—— 与库存明细 ▸ 批次余量是同一个数，已用完的批次不会出现在这张单里」。判据 = `stocktakes.test.tsx#明细：账面 / 实盘 / 差异逐格` 里的列名 + `stocktake-book-basis` 两处断言。
 数据: **判据 6（出任务必须选仓）**：不选仓 ⇒ 页面自己拦住且不打接口；选了仓 ⇒ `POST /api/admin/stocktakes?warehouseId=`（账面数 = 出任务当刻快照）。判据 = 同文件#出盘点任务。
 数据: **边界（照实登记）**：① 不在本页建仓/改仓（仓库主数据归仓储域）；② 周期盘点计划（到点自动出任务）未做；③ 列表接口只回单头（`items` 恒空、`warehouseCode` 恒 null）⇒ 仓名由页面按 id 查、逐批次明细点击后才拉；④ 视觉验收走 mock `/api/**` 的生产构建截图（`acceptance/2026-10-22-7373-stocktake-page/`），验布局/空态/落位，不验真库读数（真库由后端单测承担）。
 前置: 本用例是 [frontend-contract]：前置 = 盘点接口（#7458）+ 菜单五副本 + rbac 清单。零网络、零 LLM。

@@ -2,7 +2,7 @@
  * 盘点读面的前端形状（issue #7373 P1-1 段 2 后端 / 段 3 前端页面）。
  *
  * 真值 owner = `backend/admin-api` 的 `StocktakeView`（字段名逐字对齐，不另造口径）：
- * `bookQty` = **出任务当刻**的账面快照，`countedQty` / `diffQty` 为 `null` = **还没数**
+ * `bookQty` = **出任务当刻**的**剩余米数**快照（issue #7618 起；改前是原始入库量），`countedQty` / `diffQty` 为 `null` = **还没数**
  * （`null` 与 `0` 是两件事：没数 ≠ 数出来是 0）。
  */
 export type StocktakeStatus = 'counting' | 'completed' | 'cancelled'
@@ -11,7 +11,7 @@ export interface StocktakeLine {
   batchId: number
   batchNo: string | null
   skuCode: string | null
-  /** 盘点当刻的账面量（快照，不随后续入库变化）。 */
+  /** 盘点当刻的**剩余米数**（派生 = 入库米数 − 已派工消耗；快照，不随后续入库变化）。 */
   bookQty: number | null
   /** 实盘量；`null` = 还没数。 */
   countedQty: number | null
