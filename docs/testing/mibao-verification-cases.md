@@ -6215,7 +6215,7 @@
 真值: ai-chat.context-memory
 溯源: 2026-09-04 新增：issue #2821 延续切片 C（vision 分析落槽 + base_skill 接线） ｜ tags: ontology, vision, context_memory, grounding, base_skill
 
-## 订单域（68 case）
+## 订单域（69 case）
 
 ### OR-061. 发货后 N 天自动完成订单（保留人工「确认收货」提前完成）：锚点 orders.shipped_at（V148）+ 一条带谓词的原子 UPDATE RETURNING（CTE） ⇒ 单机与集群同一套代码只生效一次（issue #6262） 🔵
 ```
@@ -7066,17 +7066,17 @@
 ```
 溯源: 2026-09-21 新增（issue #4874；用户原话「新增订单时尺寸数量到特殊选项我们要简化为两步搞定，我建议尺寸数量+工艺规格合并到一个区块，另外两个合并」）。此前四段手风琴（①尺寸与数量 ②工艺规格 ③加工项 ④特殊选项）只有分散在各测试里的锚点，**没有一条用例锚住「几步」这个结构事实**。 2026-09-28 改判（用户当次会话逐字「订单这里的布局得优化，正常用户提供净窗高/窗宽，然后再确认是否要韩折/打孔 定型等信息即可，其他信息尽量推导」）：两步 → **三步**（①用料与规格 ②加工项 ③其他），净尺寸从步骤 1 提到**组级常显**；本条判据随之改为钉住三块结构与「净尺寸不在任何一步里」（判据强度不减：仍是「恰好 N 个 + 反向断言 + 内容归属」三条一起钉）。🔴 2026-09-29 再改判（用户逐字「其他的这块选择区域归属到加工项区域中，不要单独搞个折叠块了，用户打开加工项区域时一同打开，另外不要命名叫『其他』，改成**特殊选项**」；issue #5794）：三步 → **两步**（①用料与规格 ②加工项「含特殊选项 / 部位备注」）；判据 1 / 3 同步改判（**恰好 2 个 + `wizard-step-3` 与 `wizard-step-4` 双反向断言**，强度不减反增），旧口径逐条留档。 ｜ tags: order, craft_spec, ui_structure, backend_contract
 
-### OR-044. 加工项区块的「加工费组合」明细块 —— 组合名逐字同源 + 未定价可就地改单价并随建单提交 🔵
+### OR-044. 加工项区块的「加工费组合」明细块 —— 组合名逐字同源 + 就地改**本单**单价（未配置 / 已配置都给入口）并随建单提交 🔵
 ```
 数据: 判据 1·**组合名逐字同源**：块内 `fee-combination-name` = `processingFeeDetail.items.join(' + ')`（与「加工费组合」页同一写法）；组合键为空 ⇒ 显示「没有可匹配的组合（缺选配信息）」，**不渲染空组合名**（`unpricedCombinationLabel` 的既有口径）。
-数据: 判据 2·**未定价 ⇒ 就地改单价**：`fee_source='unpriced'` ∧ 组合键非空 ⇒ 出现 `fee-unit-price-override`；输入后**立即以该价重发 `feePreview`**（`mockFeePreview` 末次调用的 `items[0].processingInfo.processingFeeOverride` = 输入值），且**建单请求体**里同一键 = 同一值 —— 预览与提交**共用** `buildLineProcessingInfo`（本仓硬纪律：试算与提交必须看到同一份选配）。红证：删掉 `processingFeeOverride` 的落库 ⇒ 请求体断言红。
+数据: 判据 2·**改价入口**（🔴 2026-10-24 改判，issue #7642）：组合键非空 ⇒ 出现 `fee-unit-price-override`（**未定价与已配置的行都有** —— 用户逐字「新增订单中的加工费组合需要允许修改」）；输入后**立即以该价重发 `feePreview`**（`mockFeePreview` 末次调用的 `items[0].processingInfo.processingFeeOverride` = 输入值），且**建单请求体**里同一键 = 同一值 —— 预览与提交**共用** `buildLineProcessingInfo`（本仓硬纪律：试算与提交必须看到同一份选配）。红证：删掉 `processingFeeOverride` 的落库 ⇒ 请求体断言红。
 数据: 判据 3·**组合键为空 ⇒ 不给入口**（没有 key 可同步）：输入框不出现、`fee-combination-no-composition` 提示在位。红证：无条件渲染输入框 ⇒ 该反向断言红。
-数据: 判据 4·**已定价行只读**：`fee-unit-price` 显示服务端价、无输入框，且不再出现「去『加工费组合』定价」链接。
+数据: 判据 4·**已配置行也允许改本单单价 + 组合价目参考价常显**（🔴 2026-10-24 改判，issue #7642；旧口径「已定价行只读」**已作废**——它的后果 = 商家配了价目之后，某一单要按谈好的价收**没有任何入口**）：未改价时 `fee-unit-price` = 命中价（`¥10.00/米`）；改价后仍显示**组合价目** `¥10.00/米`（取服务端 `processingFeeDetail.configured_unit_price`，**不是**被改后的价）、来源列变「手动改价」、并出现 `fee-override-scope` =「本单改价，组合价目不变」；已配置行仍**不**出现「去『加工费组合』定价」链接。红证：把入口退回「仅未定价行」⇒ 本判据与 #7642 用例的入口断言红。
 数据: 判据 5·**入口常驻 + 陈旧改价清零**（2026-09-21 独立复核 #4878 补）：① 预览转 `fee_source='manual'` 之后输入框**仍在**（打错一个字还能改）；② 勾/取消加工项（组合键变）⇒ 上一组合的 `processingFeeOverride` **被清零**，不得给新组合静默定价。红证：把任一条退回去 ⇒ 对应断言单独变红。
-数据: 判据 6·**与后端采纳条件对齐**（跨端一致性；后端侧判据见 PG-042 判据 9/10）：仅「组合未命中 ∧ 键非空 ∧ override 为正数」才采用；命中组合时**忽略** override。
+数据: 判据 6·**与后端采纳条件对齐**（跨端一致性；后端侧判据见 PG-042 判据 9/10）：组合键非空 ∧ override 为正数 ⇒ 后端采用（`fee_source='manual'`、金额 = 本单价 × 米数），**不论组合是否已配置**（#7642 改判）；已配置 ⇒ 本单按改价收但**不回写**价目（`configured_unit_price` 非空 ⇒ 回写侧跳过）。
 跳过: [backend-contract] 下单页 ↔ 后端取价契约（admin-web vitest，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/orders-new-fee-preview.test.tsx 执行
 ```
-溯源: 2026-09-21 新增（issue #4874 + #4872；用户原话「订单中加工费组合未配置的情况下，允许更改该单价，并且在加工项下面添加具体的组合名」）。背景：V77 的 92 行组合价目**全部 disabled** ⇒ 今天任何订单都取不到组合价，本条是商家**自建价目**的唯一通路（不是回落、不是默认价）。判据 5 为独立复核（#4878）补。 ｜ tags: order, processing_fee, manual_override, backend_contract
+溯源: 2026-09-21 新增（issue #4874 + #4872；用户原话「订单中加工费组合未配置的情况下，允许更改该单价，并且在加工项下面添加具体的组合名」）。背景：V77 的 92 行组合价目**全部 disabled** ⇒ 今天任何订单都取不到组合价，本条是商家**自建价目**的唯一通路（不是回落、不是默认价）。判据 5 为独立复核（#4878）补。 2026-10-24 改判（issue #7642，用户逐字「**新增订单中的加工费组合需要允许修改**」，口径 = **只改本单单价**）：判据 2 / 4 / 6 由「未定价才可改、已定价只读」改为「组合键非空即可改（**含已配置**）」+ 组合价目参考价常显（`configured_unit_price`）+「本单改价，组合价目不变」；未配置行的建单回写（#4872）一字未动。 ｜ tags: order, processing_fee, manual_override, backend_contract
 
 ### OR-045. 新增订单收货信息 —— 「常用物流/快递」+「常用物流公司」两控件（选客户默认带出 → 落 orders 两列 → 发货页订单值优先） 🔵
 ```
@@ -7429,6 +7429,16 @@
 真值: ⚠️ 缺口（见对应模板 ⚠️ 注释）
 溯源: 2026-10-17 新增（issue #7110）。取号 = `scripts/next_case_id.py OR` 现取（main 001-067）⇒ **OR-068**。病根（读源）：`OrderDetail.tsx` 的「待付款倒计时」前置判断是 `displayStatus !== 'pending_payment' || !order.paymentDeadline` —— 而 `paymentDeadline` 在 `OrderDetailResponse` 里**根本不存在**（`orders` 表也无该列、全仓无写入点、无「超时未付 ⇒ 自动取消」规则）⇒ 恒为假 ⇒ **倒计时从未渲染过**（连「--:--」都不会出现）。它与 #7078 是**同一个病第二次长出来**（屏幕面读后端不存在的键；可选键谁都能加，运行时读到 undefined 既不报错也不渲染 ⇒ 编译器与测试都不拦）。修法：① 撤下倒计时 UI（`calcCountdown` / state / 定时器 / prop / JSX 那一行）与 `Order.paymentDeadline` 类型键；② 两条 e2e spec 的 mock 与断言同口径；③ **类级固化** = 新守卫 test_order_detail_reads_have_backend_source.py（真语料零漂移 + 豁免 fail-closed + 解析不空转 + 判别力/负控）。边界：本页 20 个读点在撤下后**零豁免**；若产品日后真要「支付截止」，那是**新功能**（先补后端真值源再回加键），不是本单的缺口。 ｜ tags: order, order-detail, phantom-field, class-guard, backend-contract, frontend
 
+### OR-069. 删除待付款订单前先查活跃作业单：命中则 422 并给出作业单号（否则作业单悬挂 ⇒ 作业看板对已删父订单扇出 404）(issue #7633) 🔵
+```
+你: 用户 2026-10-24 截图：作业看板一进页面就弹「请求的资源不存在」（可叠多层），列表里出现订单号 / 客户都是「—」的作业单行；点「刷新」仍复现
+数据: 判据 1·🔴 **有活跃作业单 ⇒ 拒绝删除**（会红）：`OrderService.deleteOrder` 在状态闸门之后、`orderMapper.deleteById` 之前调 `processingOrderMapper.selectActiveByOrderId(order.getId(), order.getTenantId())`；命中 ⇒ `BusinessException.validationError`，文案含**作业单号**（可归因到具体那张单）且含「**作废**」这个动作词（用户 2026-10-24 口径：订单不做物理删除，出口是作废；实测文案 =「订单已生成作业单（<单号>），不能删除；请先作废该作业单」），订单与明细都不得被软删。`deleteById` 仍是 `@TableLogic` 逻辑删除（本单未改成物理删）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java 的 `deleteOrder_RejectedWhenActiveProcessingOrderExists`（红证：摘掉该闸门 ⇒ 本条不抛 ⇒ 红；实测改前 = 该用例不抛异常）
+数据: 判据 2·**负控：无作业单的待付款单仍可删**（闸门不许把既有能力打成一律 422）。执行点 = 同文件 `deleteOrder_SucceedsWhenNoActiveProcessingOrder`
+数据: 判据 3·**覆盖范围（照实登记）**：`selectActiveByOrderId` 的活跃集 = `deleted = 0 AND status IN ('generated','issued','in_processing','completed')`（backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingOrderMapper.java，租户由拦截器注入）⇒ **已取消（cancelled）/ 已软删**的作业单不挡删单 —— 那正是「先作废该作业单再删单」的合法路径。
+跳过: [backend-contract] Java 单测契约（零 LLM 环节）⇒ 不进 agent-eval 冒烟；机器判红通道 = traces.tests
+```
+溯源: 2026-10-24 新增（issue #7633）。取号 = `scripts/next_case_id.py OR` 现取（main 001-068）⇒ **OR-069**。病根：`ProcessingOrderService.GENERATABLE_ORDER_STATUSES` 自 #7626 起 = {pending, confirmed} ⇒ 待付款订单也能先有作业单，而 `deleteOrder` 的准入只有「状态必须是 pending」一道闸 ⇒ 删单成功、作业单悬挂（看板对已删父订单扇出 404）。修法 = 抄同文件 `updatePendingOrderContent` 的正面先例（同一 `selectActiveByOrderId` 口径），在状态闸门与 `deleteById` 之间加一道闸。 ｜ tags: order, processing-order, orphan, backend-contract
+
 ## 加工项域（31 case）
 
 ### PP-002. 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query） 🔵
@@ -7632,12 +7642,12 @@
 数据: 判据 6·**改组合价 ⇒ 新单按新价；已生成订单一字不变**（R13 快照优先）：读面读 `processing_info.processingFeeDetail` 的落库值，**不重算** ⇒ 历史订单金额不随价目表漂移；存量单（接线前生成、无 detail）读 0 且不拿 Σ 加工项冒充。证据：OrderServiceTest「changingCombinationPriceLeavesExistingOrderUntouched」「readPathsReturnStoredFeeNotRecomputed」「legacyOrderWithoutStoredDetailReadsZero」（**注入**：读面改成重算 ⇒ 红，实测 98.40 vs 19.00）
 数据: 判据 7·**加工费不带商品维度**（R15）：同一选配在任意商品上取到同一个组合价（#4371 解耦后组合费用表是店铺级）。证据：ProcessingFeeCalculatorTest「sameCompositionSamePriceOnAnyProduct」
 数据: 判据 8·**两套账不互读**（R9）：对外加工费**不得**由 `production_operations.unit_price` / 加工项目录单价算出（那两处是给工人付的成本）。证据：ProcessingFeeCalculatorTest「processingFeeNeverDerivedFromOperationUnitPrice」（**注入**：让取价读工序/加工项单价 ⇒ 红）
-数据: 判据 9·**行级人工改价**（issue #4872，用户 2026-09-21 裁定「订单中加工费组合**未配置**的情况下，**允许更改该单价**」）：`processing_info.processingFeeOverride`（元/米）**仅当**该行组合**未命中**活跃价目 ∧ 组合键非空 ∧ override 是**正数**时被采用 ⇒ `fee_source='manual'`、`price_source='manual'`、`unit_price`=override、金额 = override × 加工费米数（已定价特殊选项照常计入）。**组合命中时一律忽略 override**（既有组合价一字不动 —— 改价不得成为绕过组合价的旁路）。非正数（0 / 负 / 非数值）**不算改价**（0 元改价与没改价在金额上不可区分 ⇒ 视为未改价，仍走 unpriced 且**显式可见**）。未命中 ∧ override ∧ **缺米数** ⇒ 仍 `unpriced`（与判据 5 同族：不凭 quantity 猜米数），detail 里保留 override 可见 + 可行动 hint。证据：ProcessingFeeCalculatorTest「manualOverrideOnUnmatchedCombinationUsesOverrideTimesMeters」「manualOverrideIsIgnoredWhenCombinationIsPriced」（**注入**：把 override 分支提到命中判定之前 ⇒ 红）「withoutOverrideUnmatchedCombinationKeepsUnpriced」「nonPositiveOverrideIsNotAManualPrice」「manualOverrideWithoutCompositionStaysUnpriced」「manualOverrideWithoutMetersStaysUnpriced」「manualOverrideStillChargesPricedSpecialOptions」
-数据: 判据 10·**建单同事务回写加工费组合**（issue #4872，用户裁定「当订单**创建成功后**，同步**新增加工费组合&单价**到加工费配置中」）：对每条 `fee_source='manual'` 的行，按 `compositionKey` **同源口径** upsert `processing_fee_combinations`（`status='active'`、`source='实证'`）+ 追加版本台账（走既有 `appendVersion`，**不绕过**）。幂等三态：已存在同键 **active** 行 ⇒ **不覆盖其价**；已存在 **disabled** 行 ⇒ **复活为 active 并写本次订单价**（V77 那批 92 行全部 disabled ⇒ 这是主路径）；都不存在 ⇒ 新建。**无 manual 行 ⇒ 零回写调用**（正常建单路径不多一次写库、金额一字不变）。⚠️ **agent 通道被挡**（同日独立复核 #4878 补）：`order_create` 把 `processingFeeOverride` 列入 `_AGENT_FORBIDDEN_CRAFT_SPEC_KEYS` 并丢弃 —— 否则模型幻觉的一个正数会经 `createOrderForAgent` → `createOrder` 写进**租户共享价目**（且不走 `createCombination` 的护栏）。证据：ProcessingFeeCombinationCommandServiceTest「upsertFromOrderCreatesCombinationAndVersionLedger」「upsertFromOrderNeverOverwritesActivePrice」「upsertFromOrderRevivesDisabledRow」（**2026-10-03 幽灵名订正，issue #6147**：旧写的 `upsertFromOrderRevivesDisabledCombination` 在仓里**不存在**）+ OrderServiceTest「createOrder_manualOverrideOnUnmatchedCombination」「createOrder_manualOverrideIgnoredWhenCombinationMatches」（**注入**：摘掉 `OrderService` 的回写循环 ⇒ 两条红）+ ai-agent `test_agent_cannot_write_manual_fee_override`
+数据: 判据 9·**行级人工改价**（issue #4872，用户 2026-09-21 裁定「订单中加工费组合**未配置**的情况下，**允许更改该单价**」）：`processing_info.processingFeeOverride`（元/米）**只要**组合键非空 ∧ override 是**正数**就被采用（🔴 2026-10-24 改判，**组合是否已配置价目都不影响** —— 旧口径「仅未配置」的后果 = 商家配了价目之后，某一单要按谈好的价收**没有任何入口**；用户逐字「新增订单中的加工费组合需要允许修改」） ⇒ `fee_source='manual'`、`price_source='manual'`、`unit_price`=override、金额 = override × 加工费米数（已定价特殊选项照常计入）。**组合命中时同样采用本单改价**（🔴 #7642 改判：旧口径「一律忽略 override」已作废）⇒ `fee_source='manual'`、`unit_price`=override、`matched_rule_id=null`，并把被覆盖的那条**价目价**记进 detail 的 `configured_unit_price`（键**只加不改**；未配置行**不写**这个键，免得读面以为有个价目价）。价目那一份**不动**（回写侧见判据 10）。非正数（0 / 负 / 非数值）**不算改价**（0 元改价与没改价在金额上不可区分 ⇒ 视为未改价，仍走 unpriced 且**显式可见**）。未命中 ∧ override ∧ **缺米数** ⇒ 仍 `unpriced`（与判据 5 同族：不凭 quantity 猜米数），detail 里保留 override 可见 + 可行动 hint。证据：ProcessingFeeCalculatorTest「manualOverrideOnUnmatchedCombinationUsesOverrideTimesMeters」「manualOverrideOnPricedCombinationUsesOverrideForThisOrder」「manualOverrideOnUnmatchedCombinationRecordsNoConfiguredPrice」（**注入**：把 override 的采用退回「仅未命中」⇒ 第二条红，实测 `fee_source` 仍是 `matched`）「withoutOverrideUnmatchedCombinationKeepsUnpriced」「nonPositiveOverrideIsNotAManualPrice」「manualOverrideWithoutCompositionStaysUnpriced」「manualOverrideWithoutMetersStaysUnpriced」「manualOverrideStillChargesPricedSpecialOptions」
+数据: 判据 10·**建单同事务回写加工费组合**（issue #4872，用户裁定「当订单**创建成功后**，同步**新增加工费组合&单价**到加工费配置中」）：对每条 `fee_source='manual'` **且该组合本来没有价目**（`Fee#configuredUnitPrice()` 为空）的行，按 `compositionKey` **同源口径** upsert `processing_fee_combinations`（`status='active'`、`source='实证'`）+ 追加版本台账（走既有 `appendVersion`，**不绕过**）。🔴 #7642：组合**已配置**（`configured_unit_price` 非空）⇒ **零回写**（只改本单单价 —— 回写会把这一单的谈定价变成租户共享价，之后所有同组合的新单都按它算钱）。幂等三态：已存在同键 **active** 行 ⇒ **不覆盖其价**；已存在 **disabled** 行 ⇒ **复活为 active 并写本次订单价**（V77 那批 92 行全部 disabled ⇒ 这是主路径）；都不存在 ⇒ 新建。**无 manual 行 ⇒ 零回写调用**（正常建单路径不多一次写库、金额一字不变）。⚠️ **agent 通道被挡**（同日独立复核 #4878 补）：`order_create` 把 `processingFeeOverride` 列入 `_AGENT_FORBIDDEN_CRAFT_SPEC_KEYS` 并丢弃 —— 否则模型幻觉的一个正数会经 `createOrderForAgent` → `createOrder` 写进**租户共享价目**（且不走 `createCombination` 的护栏）。证据：ProcessingFeeCombinationCommandServiceTest「upsertFromOrderCreatesCombinationAndVersionLedger」「upsertFromOrderNeverOverwritesActivePrice」「upsertFromOrderRevivesDisabledRow」（**2026-10-03 幽灵名订正，issue #6147**：旧写的 `upsertFromOrderRevivesDisabledCombination` 在仓里**不存在**）+ OrderServiceTest「createOrder_manualOverrideOnUnmatchedCombination」「createOrder_manualOverrideOnConfiguredCombination」（**注入**：摘掉 `OrderService` 的回写循环 ⇒ 第一条红；去掉 #7642 的 skip 条件 ⇒ 第二条红 —— 「本单改价悄悄改了租户共享价目」）+ ai-agent `test_agent_cannot_write_manual_fee_override`
 数据: **未落地（如实登记）**：① 前端 `orders/new/page.tsx` 仍是本地自算（本单**只做后端**，PR #4424 正在改该文件）⇒ 页面显示 ≠ 落库（R10 未闭合）；② C 端 `curtain_calc.py` 的 `DEFAULT_PROCESSING_PRICE` 常量未降级为种子 ⇒ 报价单与订单的**双算**（R10 / 关联 #4118）未闭合；③ ~~`fee_source=manual`（人工改价通道）只定义未落码~~ ⇒ **2026-09-21 已落码**（issue #4872，见判据 9/10；`manual` 三态至此齐全）；④ ai-agent 侧 `order_create` 不声明 processingFee 的推广登记在关联 #4390（#4872 仍未做）；⑤ **改价后「停用过的组合被复活」时，读面不保留停用前价的历史查询面**（版本台账有行，UI/端点未开）；⑥ `logisticsType` 值域（express/logistics）**未加校验**（只 trim 落库）。
 跳过: [backend-contract] 后端契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 ProcessingFeeCalculatorTest + ProcessingFeeCombinationCommandServiceTest + OrderServiceTest 执行
 ```
-溯源: 2026-09-19 新增（issue #4406，P1；用户裁定「未定价组合 ⇒ 加工费 = 0（unpriced），直接切，不回落 Σ 加工项」）。**2026-09-19 改判（issue #4594 用户裁定）**：`fee_source=unpriced` 收窄为**只表达组合那半**（不再蕴含「行金额 = 0」）—— 已定价的特殊选项照常计入行金额；枚举取值不变、`amount` 语义不变。交付：ProcessingFeeCalculator（选配 → 归一化组合键 → 匹配 processing_fee_combinations → 单价 × 加工费米数）+ OrderService 接线（创建/列表/详情三条读面）+ processingFeeDetail 可审计构成随行落库 + fee_source 三态。**未做**：前端下单页改调服务端计价、C 端 DEFAULT_PROCESSING_PRICE 降级为种子（双算 R10 未闭合）、manual 改价通道、ai-agent 侧推广。 **2026-09-21 改判（issue #4872，用户裁定「未配置的组合允许改该单价」+「建单成功后同步新增加工费组合&单价到加工费配置中」）**：新增**判据 9**（行级 `processingFeeOverride` ⇒ `fee_source='manual'`；命中组合时**忽略** override；非正数不算改价 —— 各有红证）与**判据 10**（建单**同事务**回写 `processing_fee_combinations` + 版本台账，幂等三态：active 不覆盖 / disabled 复活 / 无则新建；无 manual 行零调用；agent 通道已挡）；「未落地 ③」随之**销账**（manual 通道已落码）。判据 1~8 与 `expectations` 一字未动、断言只增不减。 ｜ tags: processing_fee, fee_combination, consumption_face, fee_source, unpriced, snapshot_priority, manual_override
+溯源: 2026-10-24 改判（issue #7642，用户逐字「**新增订单中的加工费组合需要允许修改**」，口径 = **只改本单单价**）：判据 9 的采用条件去掉「组合未命中」并新增 `configured_unit_price` 审计键（未配置行不写）；判据 10 收窄为「已配置 ⇒ 不回写」。旧口径逐条留档在判据 9 正文。 2026-09-19 新增（issue #4406，P1；用户裁定「未定价组合 ⇒ 加工费 = 0（unpriced），直接切，不回落 Σ 加工项」）。**2026-09-19 改判（issue #4594 用户裁定）**：`fee_source=unpriced` 收窄为**只表达组合那半**（不再蕴含「行金额 = 0」）—— 已定价的特殊选项照常计入行金额；枚举取值不变、`amount` 语义不变。交付：ProcessingFeeCalculator（选配 → 归一化组合键 → 匹配 processing_fee_combinations → 单价 × 加工费米数）+ OrderService 接线（创建/列表/详情三条读面）+ processingFeeDetail 可审计构成随行落库 + fee_source 三态。**未做**：前端下单页改调服务端计价、C 端 DEFAULT_PROCESSING_PRICE 降级为种子（双算 R10 未闭合）、manual 改价通道、ai-agent 侧推广。 **2026-09-21 改判（issue #4872，用户裁定「未配置的组合允许改该单价」+「建单成功后同步新增加工费组合&单价到加工费配置中」）**：新增**判据 9**（行级 `processingFeeOverride` ⇒ `fee_source='manual'`；命中组合时**忽略** override；非正数不算改价 —— 各有红证）与**判据 10**（建单**同事务**回写 `processing_fee_combinations` + 版本台账，幂等三态：active 不覆盖 / disabled 复活 / 无则新建；无 manual 行零调用；agent 通道已挡）；「未落地 ③」随之**销账**（manual 通道已落码）。判据 1~8 与 `expectations` 一字未动、断言只增不减。 ｜ tags: processing_fee, fee_combination, consumption_face, fee_source, unpriced, snapshot_priority, manual_override
 
 ### PG-043. 特殊选项按套计价（包 A）- route_rules 加对客单价列 + 加工费 = 组合价×米数 + Σ(选项价×套数) + 92 行合成价目 🔵
 ```
@@ -10981,7 +10991,7 @@
 真值: token-refresh.no-loop
 溯源: 2026-08-25 新增：admin-web lib-token-refresh 覆盖率补全（issue #2421） ｜ tags: token_refresh, auth, no_loop
 
-## 前端 UI 域（135 case）
+## 前端 UI 域（136 case）
 
 ### UI-001. 织物质感设计 token - primary/accent/neutral 三阶与默认蓝清理 🔵
 ```
@@ -12949,6 +12959,20 @@
 真值: frontend-fix.vitest
 溯源: 2026-10-23 新增（issue #7536，用户两次逐字报障：报价单没有收款码 / 二维码白边要裁掉）。根因两条：① `usePaymentQrcodes` 只在 `beforeprint` 取码，而预览层不派发该事件、真打印的纸面快照又在 `beforeprint` 当帧完成（异步请求来不及）⇒ 预览永远空、第一次打印无码；② 上传原图原样塞进 22mm 方框，白边一起印上。修法：模块级缓存取码（预览/打印目标时触发、`usePrintDoc` 打印前 await）+ **上传时** canvas 裁到内容外接框（失败退回原文件）。口径改动登记：① 取消「第二次打印才带码」；② 裁边由「渲染时」改为「上传时」（用户裁定）。 ｜ tags: ui, admin-web, print, quotation, sales-doc, payment-qrcode
 
+### UI-136. 作业看板：父订单已删（列表 orderNo 缺失）的行不再发 operations/piecework（404 toast 风暴），订单号列写「订单已删除」（issue #7633） 🔵
+```
+你: 用户 2026-10-24 PC 端截图：打开作业看板就弹 toast「请求的资源不存在」（可叠多层），列表里出现订单号 / 客户都是「—」的作业单行；点「刷新」仍复现
+期望: direct_reply
+数据: 判据 1·🔴 **父订单缺失的行零请求**（会红）：判定口径 = 列表响应里 `!po.orderNo`（`processing_orders.order_id` 是 NOT NULL 外键、列表与明细同租户 ⇒ `orderNo == null` 当且仅当父订单已软删 / 不可解析），这类行**不进**懒加载 `pending` ⇒ 对 `/production/orders/{orderId}/operations` 与 `/production/orders/{orderId}/piecework` 各 **0 次**调用。执行点 = frontend/admin-web/tests/unit/pages/production-board.test.tsx 的「#7633 父订单已删的行：不扇出 operations/piecework，订单号列显示「订单已删除」」（红证：改前实测 `expected 1 to be +0`，即该行确实发了一次 `getOrderOperations('order-uuid-gone')`）
+数据: 判据 2·**同一用例内的负控**：正常行（`orderNo` 有值）**照常**请求两个端点 —— 否则「一个都不发」也能让判据 1 变绿（空跑式假绿）。
+数据: 判据 3·**可见文案是业务话**：该行订单号单元格渲染「订单已删除」（不是「—」、不是内部键）；客户列保持「—」（不编造客户）；**不新增**常驻告警条 / 红块、**不给**这类行「重试」入口（§31 P1/P3）。
+数据: 边界（照实登记）：① 「父订单缺失」的判定依赖 `orderNo` 缺失去推断，**不是**显式契约字段（若后续要 `orderMissing: true` 这类显式位，另立单改契约）；② 这些行仍在列表里（本 PR 不删数据 —— 存量孤儿子行的软删由 #7633 主会话在数据侧完成，物理清理涉钱需人工裁定）；③ 进度 / 计件两列对这类行仍显示 `0%（0/0）` / `¥0.00`（既有「详情缺失」形态，未改）。
+前置: 本用例是 [backend-contract] 纯前端取数/渲染契约用例：列表与两个详情端点都由单测打桩（不碰真库、不依赖共享夹具）；前置不成立时对应单测直接红，agent-eval 栈不跑它
+跳过: [backend-contract] 纯前端取数 + 渲染契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/production-board.test.tsx 执行
+```
+真值: frontend-fix.vitest
+溯源: 2026-10-24 新增（issue #7633）。取号 = `scripts/next_case_id.py UI` 现取（main 001-135）⇒ **UI-136**。病根：懒加载对当前页每一行都发 `operations` + `piecework`，父订单已软删的行让 `ProductionService.resolveOrder` 返回 404「订单不存在」（该语义正确、不改），而全局 404 分支弹 toast ⇒ 每行 2 次、一进页面 N 次。修法 = 列表响应里 `!po.orderNo` 的行不进 `pending`（不请求、不重试），订单号列写「订单已删除」。 ｜ tags: ui, admin-web, production-board, orphan, backend-contract
+
 ## 跨切面工具域（2 case）
 
 ### UT-001. 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值 🔵
@@ -12978,8 +13002,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：882（活跃 141，跳过 741）
-- tier 分布：smoke 12 / normal 814 / adversarial 32
+- 用例总数：884（活跃 141，跳过 743）
+- tier 分布：smoke 12 / normal 816 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12997,14 +13021,14 @@
 - 杂项域：156
 - 商家入驻域：7
 - 领域本体域：4
-- 订单域：68
+- 订单域：69
 - 加工项域：31
 - 加工单域：77
 - 商品域：132
 - 工具注册器域：1
 - 设置域：10
 - 令牌刷新域：4
-- 前端 UI 域：135
+- 前端 UI 域：136
 - 跨切面工具域：2
 
 ### 真值缺口用例（truths_ref 为空，已在模板 ⚠️ 注释标注）
@@ -13207,7 +13231,7 @@
 - OR-040: 下单页系统识别（②工艺规格 · 只读 + 可裁决）—— 超高/超宽**按企业阈值参数判定**（净窗宽 > oversize_width_threshold ⇒ 超宽；净窗高 > oversize_height_threshold ⇒ 超高；默认 6 / 4 米、随判定请求下发；**与加工类型 / 门幅 / 褶倍都无关**）+ 倒幅由 cuttingMode 唯一推导（无手选项）；正幅不推导（它不在加工项目录里）｜ 🔴 2026-09-22 改判（issue #5130）：原「按加工类型分流 + 与门幅比」判据已退役（#4661 / #4662 / #4877 判定面三条一并退役，改判留档见下）
 - OR-042: 下单页自动算料 —— 勾加工项/改尺寸即自动重发试算并写回数量（来源两态：公式计算 / 人工指定）+ 对花·花距进试算（定宽买高每幅 +1 花距）+ **三条** fail-closed 复核（原第四条「纱帘不算料」已于 2026-09-21 随 #4875 口径反转作废）
 - OR-043: 下单页分区块化 —— 四段手风琴合并为「用料与规格」+「加工项」两个区块（#4874 两步化 → 2026-09-28 三步化 → 🔴 2026-09-29 回到两步：「特殊选项 / 部位备注」并入②加工项；净尺寸提到组级；🔴 2026-09-30 第六批步骤 1 去掉「（系统推导）」后缀）
-- OR-044: 加工项区块的「加工费组合」明细块 —— 组合名逐字同源 + 未定价可就地改单价并随建单提交
+- OR-044: 加工项区块的「加工费组合」明细块 —— 组合名逐字同源 + 就地改**本单**单价（未配置 / 已配置都给入口）并随建单提交
 - OR-045: 新增订单收货信息 —— 「常用物流/快递」+「常用物流公司」两控件（选客户默认带出 → 落 orders 两列 → 发货页订单值优先）
 - OR-046: 订单体现「客户要求优先整卷发货」+ 分配落库（100 米 / 一卷 60 米 ⇒ 1 整卷 60 + 散剪 40）
 - OR-048: 下单页图片识别 —— 明细条目 → 匹配候选（可解释） → 用户选品 → 建订单行（数量 / 规格 / 单价）+ 不猜商品 / 不落库 / 单价只来自目录·SKU / 门幅只来自所选 SKU / 没认准的明细也要说清「目录里没有匹配的商品」
@@ -13222,6 +13246,7 @@
 - OR-066: 入库单「过账 × 作废」交叉竞态：至多一个赢家 + 「已作废的单」不得改库存 / 不得留入库台账（issue #6928）
 - OR-067: 订单详情三个时刻（收款 / 发货 / 完成）显示服务端真值：paid_at 只在 pending→confirmed 边写、received_at 两条完成路都写（issue #7078）
 - OR-068: 订单详情撤下「支付倒计时」（其 paymentDeadline 后端从不下发、倒计时从未启动）+ 落「读面键 ⊆ OrderDetailResponse」类级守卫（issue #7110）
+- OR-069: 删除待付款订单前先查活跃作业单：命中则 422 并给出作业单号（否则作业单悬挂 ⇒ 作业看板对已删父订单扇出 404）(issue #7633)
 - PG-001: 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）
 - PG-002: 生成加工单 - 幂等：同一订单已有活跃加工单 → 拒绝重复生成
 - PG-003: 生成加工单 - 无加工项订单不生成（现货成品直跳发货）

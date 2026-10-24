@@ -1,5 +1,5 @@
 package com.migao.admin.service;
-// case_ids: OR-006, FN-001, OR-001, PG-003, PG-009, PG-010, PG-042, OR-023, OR-046, OR-053, FN-006
+// case_ids: OR-006, FN-001, OR-001, PG-003, PG-009, PG-010, PG-042, OR-023, OR-046, OR-053, FN-006, OR-069
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.time.BusinessClock;
@@ -1096,6 +1096,59 @@ class OrderServiceTest {
         assertThatThrownBy(() -> orderService.deleteOrder("order-001"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("仅允许删除待确认状态的订单");
+    }
+
+    /**
+     * issue #7633（OR-069）：pending 订单**已生成活跃作业单** ⇒ 拒绝删除。
+     *
+     * <p>病根：`GENERATABLE_ORDER_STATUSES` 自 #7626 起含 `pending` ⇒ 待付款订单也能先有作业单；
+     * 而准入此前只有「状态必须是 pending」一道闸 ⇒ 删单成功、作业单悬挂 ⇒ 看板对已删父订单
+     * 扇出 404（toast 风暴）。判据 = 抛 422 业务异常 + 文案带**作业单号**（可归因到具体那张单）。
+     * 红证：摘掉 `deleteOrder` 的 `selectActiveByOrderId` 闸门 ⇒ 本条不抛 ⇒ 红。</p>
+     */
+    @Test
+    @DisplayName("删除订单失败 - 已生成活跃作业单（issue #7633）")
+    void deleteOrder_RejectedWhenActiveProcessingOrderExists() {
+        // given：pending 订单 + 一张 generated 作业单（活跃）
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        ProcessingOrder active = ProcessingOrder.builder()
+                .id("po-001").tenantId(1L).orderId("order-001")
+                .processingOrderNo("JG-20261024-3226").status("generated").build();
+        when(processingOrderMapper.selectActiveByOrderId("order-001", 1L)).thenReturn(active);
+
+        // when & then：拒绝删除（不静默留下悬挂作业单）
+        assertThatThrownBy(() -> orderService.deleteOrder("order-001"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("作业单")
+                .hasMessageContaining("JG-20261024-3226")
+                // 用户口径（2026-10-24）：出口是**作废**（订单不做物理删除），文案必须给出这个动作词
+                .hasMessageContaining("作废该作业单")
+                .satisfies(ex -> assertThat(((BusinessException) ex).getCode()).isEqualTo("VALIDATION_ERROR"));
+        // 订单与明细都不得被动过
+        verify(orderMapper, never()).deleteById(anyString());
+        verify(orderItemMapper, never()).deleteById(anyString());
+    }
+
+    /**
+     * issue #7633（OR-069）负控：闸门不得把「没有作业单的 pending 单」也拦下 ——
+     * 删单是既有正常能力，退化成「一律 422」会把这条路径打死。
+     */
+    @Test
+    @DisplayName("删除订单成功 - pending 且无活跃作业单（#7633 负控）")
+    void deleteOrder_SucceedsWhenNoActiveProcessingOrder() {
+        // given
+        when(orderMapper.selectById("order-001")).thenReturn(testOrder);
+        when(processingOrderMapper.selectActiveByOrderId("order-001", 1L)).thenReturn(null);
+        when(orderMapper.deleteById("order-001")).thenReturn(1);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of(testOrderItem));
+        when(orderItemMapper.deleteById("item-001")).thenReturn(1);
+
+        // when
+        orderService.deleteOrder("order-001");
+
+        // then
+        verify(orderMapper).deleteById("order-001");
+        verify(orderItemMapper).deleteById("item-001");
     }
 
     // ======================== 生成订单号测试 ========================
@@ -3183,7 +3236,7 @@ class OrderServiceTest {
 
     // ================================================================
     // 行级人工改价 + 建单回写配置（issue #4872，case_ids: PG-042）
-    //   取价算法本身的判据（manual / 命中忽略 override / unpriced 不变）见 ProcessingFeeCalculatorTest；
+    //   取价算法本身的判据（manual / 命中按本单改价 #7642 / unpriced 不变）见 ProcessingFeeCalculatorTest；
     //   幂等三态与版本台账见 ProcessingFeeCombinationCommandServiceTest；
     //   本段断言的是**接线**：金额进总额、构成落库、回写被发射/不被发射。
     // ================================================================
@@ -3227,8 +3280,8 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("#4872 判据②·组合**命中** + override ⇒ override 被忽略（金额不变）、**不回写配置**")
-    void createOrder_manualOverrideIgnoredWhenCombinationMatches() {
+    @DisplayName("#7642·组合**命中** + override ⇒ 本单按 override 计（总额 752.75），**价目不动**（零回写）")
+    void createOrder_manualOverrideOnConfiguredCombination() {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("processingMeters", new BigDecimal("12.30"));
         info.put("processingItems", List.of(Map.of("id", "p1", "name", "打孔",
@@ -3240,19 +3293,24 @@ class OrderServiceTest {
         OrderCreateRequest request = createOrderRequestWithFee(info);
         orderService.createOrder(request, 1L);
 
-        // 仍按组合价 8.00 × 12.30 = 98.40 ⇒ 总额 697.40（采用 override ⇒ 752.75 ⇒ 红）
+        // 本单按 12.50 × 12.30 = 153.75 ⇒ 总额 752.75（改判前忽略 override = 697.40 ⇒ 红）
         ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
         verify(orderMapper).insert(orderCaptor.capture());
-        assertThat(orderCaptor.getValue().getTotalAmount()).isEqualByComparingTo("697.40");
-        assertThat(orderCaptor.getValue().getTotalAmount()).isNotEqualByComparingTo("752.75");
+        assertThat(orderCaptor.getValue().getTotalAmount()).isEqualByComparingTo("752.75");
+        assertThat(orderCaptor.getValue().getTotalAmount()).isNotEqualByComparingTo("697.40");
 
         ArgumentCaptor<OrderItem> itemCaptor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(itemCaptor.capture());
         assertThat(feeDetailOf(itemCaptor.getValue().getProcessingInfo()))
-                .containsEntry("fee_source", "matched")
-                .containsEntry("unit_price", new BigDecimal("8.00"));
+                .containsEntry("fee_source", "manual")
+                .containsEntry("unit_price", new BigDecimal("12.50"))
+                .containsEntry("price_source", "manual")
+                .containsEntry("amount", new BigDecimal("153.75"))
+                // 被覆盖的那条价目价 —— 落库构成里要能回答「本单收多少、价目是多少」
+                .containsEntry("configured_unit_price", new BigDecimal("8.00"));
 
-        // 命中 ⇒ 不该动配置（覆盖既有组合价 = 改价通道成了绕过组合价的旁路）
+        // 🔴 用户 2026-10-24 裁定「只改本单单价」⇒ **已配置的组合不回写全局价目**
+        //   红证：去掉 OrderService 的 skip 条件 ⇒ 本断言红（本单改价悄悄改了租户共享价目）
         verify(processingFeeCombinationCommandService, never())
                 .upsertFromOrderOverride(any(), any(), any(), any());
     }
