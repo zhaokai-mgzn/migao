@@ -11,7 +11,7 @@
 # 环境：
 #   REPO_ROOT   仓库根（默认本仓库）；MAIN_REPO  主仓库（提供 .venv/.env/rsa 等 worktree 缺件，默认 ../migao）
 #   OUT_DIR     截图/报告输出（默认 <repo>/acceptance/2026-09-14/merchant-ui-smoke/out）
-#   PHONE/SMS_CODE  登录手机号/万能码（默认 13800138000/123456）
+#   PHONE/SMS_CODE  登录手机号/万能码（默认 13600136000/123456 = 商家管理员；`13800138000` 是 C 端顾客，见 issue #7479）
 # 服务：admin-api(:8090) + admin-web(:3001) + ai-agent(:8001，可选) —— 端口与 §2.3 隔离
 # 注意：本脚本需兼容 macOS 自带 bash 3.2 —— `$var` 后紧跟非 ASCII 字符会被并入变量名
 # （如 `$path（` → `path<0xE3>` 报 unbound variable，本机实测 exit 127），因此所有后跟中文的
@@ -31,7 +31,7 @@ MAIN_REPO="${MAIN_REPO:-$(dirname "$REPO_ROOT")/migao}"
 API_PORT=8090
 WEB_PORT=3001
 AGENT_PORT=8001
-PHONE="${PHONE:-13800138000}"
+PHONE="${PHONE:-13600136000}"
 SMS_CODE="${SMS_CODE:-123456}"
 KEEP=0
 EXTRA_ARGS=()
@@ -267,14 +267,15 @@ else
 fi
 
 # ── 3. SMS 限流清理 + 防刷窗口（登录旅程需要发码）──
-"${PYTHON_BIN:-python3}" - "$REPO_ROOT/backend/admin-api/.env" << 'EOF' >/dev/null 2>&1 || true
+"${PYTHON_BIN:-python3}" - "$REPO_ROOT/backend/admin-api/.env" "$PHONE" << 'EOF' >/dev/null 2>&1 || true
 import sys, redis
 env = open(sys.argv[1]).read()
 pw = [l for l in env.split('\n') if l.startswith('REDIS_PASSWORD=')][0].split('=',1)[1]
 host = [l for l in env.split('\n') if l.startswith('REDIS_HOST=')][0].split('=',1)[1]
 port = [l for l in env.split('\n') if l.startswith('REDIS_PORT=')][0].split('=',1)[1]
 r = redis.Redis(host=host, port=int(port), password=pw, decode_responses=True)
-for phone in ['13800138000']:
+# 🔴 必须清**当前登录号**的限流键（issue #7479：原先写死 C 端顾客号 ⇒ 换号后一个都没清到）
+for phone in [sys.argv[2]]:
     for k in [f'sms:limit:{phone}', f'sms:daily:{phone}', f'sms:fail:{phone}']:
         r.delete(k)
 EOF
