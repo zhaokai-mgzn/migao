@@ -878,10 +878,19 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
      *
      * <p>改单（#5842）同样走它：商家在未定价行上就地改价这件事，与「这次是新单还是改单」无关；
      * 两条路各接一次就会分叉成「改单改的价不进组合台账」。</p>
+     *
+     * <p>🔴 #7642（用户 2026-10-24 裁定「新增订单中的加工费组合需要允许修改」= **只改本单单价**）：
+     * 组合**已配置**（{@link ProcessingFeeCalculator.Fee#configuredUnitPrice()} 非 null）⇒ 价目里
+     * 已经有这一条，本单改价**不**回写（回写会把这一单的谈定价变成租户共享价，之后所有同组合的新单
+     * 都按它算钱）。未配置 ⇒ 仍走既有 upsert —— 那是「自建价目」的唯一通路。</p>
      */
     private void syncProcessingFeeCombinations(List<ProcessingFeeCalculator.Fee> itemFees, Long tenantId) {
         for (ProcessingFeeCalculator.Fee fee : itemFees) {
             if (!ProcessingFeeCalculator.FEE_SOURCE_MANUAL.equals(fee.feeSource())) {
+                continue;
+            }
+            // #7642：本单改价覆盖的是**已配置**的组合 ⇒ 价目不动（见方法注释）
+            if (fee.configuredUnitPrice() != null) {
                 continue;
             }
             processingFeeCombinationCommandService.upsertFromOrderOverride(

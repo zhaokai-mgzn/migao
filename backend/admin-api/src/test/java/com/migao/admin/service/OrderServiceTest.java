@@ -3183,7 +3183,7 @@ class OrderServiceTest {
 
     // ================================================================
     // 行级人工改价 + 建单回写配置（issue #4872，case_ids: PG-042）
-    //   取价算法本身的判据（manual / 命中忽略 override / unpriced 不变）见 ProcessingFeeCalculatorTest；
+    //   取价算法本身的判据（manual / 命中按本单改价 #7642 / unpriced 不变）见 ProcessingFeeCalculatorTest；
     //   幂等三态与版本台账见 ProcessingFeeCombinationCommandServiceTest；
     //   本段断言的是**接线**：金额进总额、构成落库、回写被发射/不被发射。
     // ================================================================
@@ -3227,8 +3227,8 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("#4872 判据②·组合**命中** + override ⇒ override 被忽略（金额不变）、**不回写配置**")
-    void createOrder_manualOverrideIgnoredWhenCombinationMatches() {
+    @DisplayName("#7642·组合**命中** + override ⇒ 本单按 override 计（总额 752.75），**价目不动**（零回写）")
+    void createOrder_manualOverrideOnConfiguredCombination() {
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("processingMeters", new BigDecimal("12.30"));
         info.put("processingItems", List.of(Map.of("id", "p1", "name", "打孔",
@@ -3240,19 +3240,24 @@ class OrderServiceTest {
         OrderCreateRequest request = createOrderRequestWithFee(info);
         orderService.createOrder(request, 1L);
 
-        // 仍按组合价 8.00 × 12.30 = 98.40 ⇒ 总额 697.40（采用 override ⇒ 752.75 ⇒ 红）
+        // 本单按 12.50 × 12.30 = 153.75 ⇒ 总额 752.75（改判前忽略 override = 697.40 ⇒ 红）
         ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
         verify(orderMapper).insert(orderCaptor.capture());
-        assertThat(orderCaptor.getValue().getTotalAmount()).isEqualByComparingTo("697.40");
-        assertThat(orderCaptor.getValue().getTotalAmount()).isNotEqualByComparingTo("752.75");
+        assertThat(orderCaptor.getValue().getTotalAmount()).isEqualByComparingTo("752.75");
+        assertThat(orderCaptor.getValue().getTotalAmount()).isNotEqualByComparingTo("697.40");
 
         ArgumentCaptor<OrderItem> itemCaptor = ArgumentCaptor.forClass(OrderItem.class);
         verify(orderItemMapper).insert(itemCaptor.capture());
         assertThat(feeDetailOf(itemCaptor.getValue().getProcessingInfo()))
-                .containsEntry("fee_source", "matched")
-                .containsEntry("unit_price", new BigDecimal("8.00"));
+                .containsEntry("fee_source", "manual")
+                .containsEntry("unit_price", new BigDecimal("12.50"))
+                .containsEntry("price_source", "manual")
+                .containsEntry("amount", new BigDecimal("153.75"))
+                // 被覆盖的那条价目价 —— 落库构成里要能回答「本单收多少、价目是多少」
+                .containsEntry("configured_unit_price", new BigDecimal("8.00"));
 
-        // 命中 ⇒ 不该动配置（覆盖既有组合价 = 改价通道成了绕过组合价的旁路）
+        // 🔴 用户 2026-10-24 裁定「只改本单单价」⇒ **已配置的组合不回写全局价目**
+        //   红证：去掉 OrderService 的 skip 条件 ⇒ 本断言红（本单改价悄悄改了租户共享价目）
         verify(processingFeeCombinationCommandService, never())
                 .upsertFromOrderOverride(any(), any(), any(), any());
     }
