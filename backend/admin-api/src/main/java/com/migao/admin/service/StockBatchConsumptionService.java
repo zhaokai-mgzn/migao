@@ -1840,6 +1840,11 @@ public class StockBatchConsumptionService {
      *
      * <p>同一行同一批次可能既有扣减又有回补（作废后重新生成）⇒ 取**净额**；
      * 净额为 0（已完全回补）⇒ 该行**不出现在结果里**（工人不该被告知去裁一个已经不扣账的批次）。</p>
+     *
+     * <p>🔴 <b>一行可能涉及多个批次</b>（issue #7647：裁剪报工换批次 ⇒ 回补原批次 + 扣实裁批次）⇒
+     * 返回的必须是**当前实际在用的那一批**（净额最大的那一批，并列取最后出现者），而不是「第一行见到的批次」
+     * —— 改前按行序取第一个 batchNo、米数却把各批次的净额相加，换过批次之后工人屏会显示
+     * 「原批次 + 新批次的米数」（判据 = {@code StockBatchConsumptionCuttingReportTest#assignmentsFollowTheBatchAfterAReportMove}）。</p>
      */
     public Map<String, BatchAssignment> assignmentsOf(Long tenantId, String processingOrderNo) {
         if (!StringUtils.hasText(processingOrderNo)) {
@@ -1851,18 +1856,44 @@ public class StockBatchConsumptionService {
                         .eq(StockBatchConsumption::getProcessingOrderNo, processingOrderNo)
                         .eq(StockBatchConsumption::getDeleted, 0)
                         .orderByAsc(StockBatchConsumption::getId));
+        // 逐 (明细行 → 批次) 净消耗（正 = 这一行用了这么多米）
+        Map<String, Map<String, BigDecimal>> netByItem = new LinkedHashMap<>();
+        Map<String, Integer> lastSeen = new LinkedHashMap<>();
+        for (int i = 0; i < rows.size(); i++) {
+            StockBatchConsumption c = rows.get(i);
+            String itemId = c.getOrderItemId();
+            String batchNo = c.getBatchNo();
+            if (!StringUtils.hasText(itemId) || !StringUtils.hasText(batchNo)) {
+                continue; // 盘点行没有明细行键（列形状约束保证不会走到这里，防御性跳过）
+            }
+            netByItem.computeIfAbsent(itemId, k -> new LinkedHashMap<>())
+                    .merge(batchNo, StockQuantity.orZero(c.getDelta()).negate(), BigDecimal::add);
+            lastSeen.put(itemId + "#" + batchNo, i);
+        }
         Map<String, BatchAssignment> out = new LinkedHashMap<>();
-        for (StockBatchConsumption c : rows) {
-            BatchAssignment current = out.get(c.getOrderItemId());
-            BigDecimal meters = StockQuantity.orZero(c.getDelta()).negate();
-            if (current == null) {
-                out.put(c.getOrderItemId(), new BatchAssignment(c.getBatchNo(), meters));
-            } else {
-                out.put(c.getOrderItemId(), new BatchAssignment(current.batchNo(),
-                        current.meters().add(meters)));
+        for (Map.Entry<String, Map<String, BigDecimal>> entry : netByItem.entrySet()) {
+            String itemId = entry.getKey();
+            String bestBatch = null;
+            BigDecimal bestMeters = BigDecimal.ZERO;
+            Integer bestSeen = null;
+            for (Map.Entry<String, BigDecimal> b : entry.getValue().entrySet()) {
+                BigDecimal meters = StockQuantity.orZero(b.getValue());
+                if (meters.signum() <= 0) {
+                    continue;
+                }
+                Integer seen = lastSeen.get(itemId + "#" + b.getKey());
+                if (meters.compareTo(bestMeters) > 0
+                        || (meters.compareTo(bestMeters) == 0 && seen != null
+                            && (bestSeen == null || seen > bestSeen))) {
+                    bestBatch = b.getKey();
+                    bestMeters = meters;
+                    bestSeen = seen;
+                }
+            }
+            if (bestBatch != null) {
+                out.put(itemId, new BatchAssignment(bestBatch, bestMeters));
             }
         }
-        out.entrySet().removeIf(e -> e.getValue().meters().compareTo(BigDecimal.ZERO) == 0);
         return out;
     }
 

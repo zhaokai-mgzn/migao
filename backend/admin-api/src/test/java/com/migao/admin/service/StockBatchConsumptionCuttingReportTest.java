@@ -21,6 +21,7 @@ import org.mockito.quality.Strictness;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -275,6 +276,33 @@ class StockBatchConsumptionCuttingReportTest {
                 row(3L, 2L, "PC-B", "-10", StockBatchConsumption.REASON_CUTTING_REPORT),
                 row(4L, 2L, "PC-B", "10", StockBatchConsumption.REASON_PROCESSING_ORDER_CANCELLED));
         assertThat(service.reverse(TENANT, PO_NO, ORDER_NO, "加工单作废")).isZero();
+    }
+
+    @Test
+    @DisplayName("🔴 报工换批后工人读面的批次跟着换（改前会返回「第一行见到的 A」+ B 的米数）")
+    void assignmentsFollowTheBatchAfterAReportMove() {
+        stubExistingRows(
+                row(1L, 1L, "PC-A", "-10", StockBatchConsumption.REASON_PROCESSING_ORDER),
+                row(2L, 1L, "PC-A", "10", StockBatchConsumption.REASON_CUTTING_REPORT),
+                row(3L, 2L, "PC-B", "-10", StockBatchConsumption.REASON_CUTTING_REPORT));
+
+        Map<String, StockBatchConsumptionService.BatchAssignment> moved =
+                service.assignmentsOf(TENANT, PO_NO);
+
+        assertThat(moved).containsKey(ITEM_ID);
+        assertThat(moved.get(ITEM_ID).batchNo()).isEqualTo("PC-B");
+        assertThat(moved.get(ITEM_ID).meters()).isEqualByComparingTo("10");
+    }
+
+    @Test
+    @DisplayName("纯派工单的指派读数与改前逐值相同（批次 A、净额 10 米）")
+    void assignmentsKeepPureDispatchBehavior() {
+        stubExistingRows(row(1L, 1L, "PC-A", "-10", StockBatchConsumption.REASON_PROCESSING_ORDER));
+
+        Map<String, StockBatchConsumptionService.BatchAssignment> out = service.assignmentsOf(TENANT, PO_NO);
+
+        assertThat(out.get(ITEM_ID).batchNo()).isEqualTo("PC-A");
+        assertThat(out.get(ITEM_ID).meters()).isEqualByComparingTo("10");
     }
 
     @Test
