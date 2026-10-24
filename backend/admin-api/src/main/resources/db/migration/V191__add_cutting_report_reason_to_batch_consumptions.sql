@@ -17,7 +17,16 @@
 -- 新来源 + 回补改成**净额口径**之后，「作废 ⇒ 该行净额归零」由构造保证（判据 =
 -- `StockBatchConsumptionCuttingReportTest#reverseRestoresNetToZeroWhenReportMovedBatch`）。
 --
--- ## 列形状（无需改约束）
+-- ## 🔴 为什么要同时把 `uk_batch_consumption_line` 收窄（真库 23505，单测测不出来）
+--   V116 的幂等闸是 `(tenant_id, processing_order_no, batch_id, order_item_id, reason) WHERE deleted = 0`
+--   的**部分唯一索引**（它的目的是「派工不重复扣 / 作废回补可重跑」）。报工纠偏**天然会写多行**：
+--   ① 派工未指定的行**分次报工** ⇒ 同一 (批次 × 明细行 × cutting_report) 第二次扣减撞唯一键；
+--   ② 工人先改成 B、又改回 A ⇒ A 上会同时有「回补 + 扣减」两行。
+--   ⇒ 幂等闸的**对象**只该是派工两条腿（`processing_order` / `processing_order_cancelled`），
+--   报工行用**净额**语义（同一行同一批次多行，读面按 Σdelta 聚合）。谓词加 `reason <> 'cutting_report'`：
+--   派工侧的唯一性一字未动（判据见 `BatchConsumptionLedgerRealDbTest` 的 23505 用例）。
+--
+# ## 列形状（无需改约束）
 -- 本族行与 `processing_order` 同形：`stocktake_run_id` 为 NULL、`processing_order_no` / `order_item_id`
 -- 非空 ⇒ 现有 `ck_batch_consumption_source_shape` 原样成立（它把 stocktake 族与非 stocktake 族钉成互斥，
 -- 不枚举具体 reason）。
@@ -30,10 +39,19 @@
 -- 会 42710）。
 --
 -- -- DELETE FROM stock_batch_consumptions WHERE reason = 'cutting_report';
+-- -- DROP INDEX IF EXISTS uk_batch_consumption_line;
+-- -- CREATE UNIQUE INDEX uk_batch_consumption_line ON stock_batch_consumptions (tenant_id, processing_order_no, batch_id, order_item_id, reason) WHERE deleted = 0;
 -- -- ALTER TABLE stock_batch_consumptions DROP CONSTRAINT IF EXISTS ck_batch_consumption_reason;
 -- -- ALTER TABLE stock_batch_consumptions ADD CONSTRAINT ck_batch_consumption_reason CHECK (reason IN ('processing_order', 'processing_order_cancelled', 'stocktake'));
 
 BEGIN;
+
+-- ① 幂等闸收窄：报工纠偏行允许同一 (批次 × 明细行) 多行（分次报工 / 换批次后再换回，都是合法事实）；
+--    派工两条腿的唯一性**一字未动**（谓词只是把它们之外的那一族排除掉）。
+DROP INDEX IF EXISTS uk_batch_consumption_line;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_batch_consumption_line
+    ON stock_batch_consumptions (tenant_id, processing_order_no, batch_id, order_item_id, reason)
+    WHERE deleted = 0 AND reason <> 'cutting_report';
 
 ALTER TABLE stock_batch_consumptions DROP CONSTRAINT IF EXISTS ck_batch_consumption_reason;
 ALTER TABLE stock_batch_consumptions
@@ -59,6 +77,16 @@ BEGIN
     IF constraint_def NOT LIKE '%stocktake%' THEN
         RAISE EXCEPTION 'V191 终态对账失败：ck_batch_consumption_reason 丢了 stocktake（实际 = %）—— 回滚本迁移',
             constraint_def;
+    END IF;
+
+    -- 幂等闸：必须是部分唯一索引、且把 cutting_report 排除在外（漏掉谓词 ⇒ 分次报工撞 23505）
+    SELECT indexdef INTO constraint_def FROM pg_indexes
+     WHERE indexname = 'uk_batch_consumption_line'
+       AND tablename = 'stock_batch_consumptions';
+    IF constraint_def IS NULL OR constraint_def NOT LIKE '%UNIQUE%'
+       OR constraint_def NOT LIKE '%cutting_report%' THEN
+        RAISE EXCEPTION 'V191 终态对账失败：uk_batch_consumption_line 没有排除 cutting_report（实际 = %）'
+            ' —— 回滚本迁移', constraint_def;
     END IF;
 END $$;
 

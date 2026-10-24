@@ -620,6 +620,8 @@ infer_next(set, scanned_order_item_id):
 | 派工已指定、工人换批 | 同上但目标批不是净额那一批 | 回补原批（+净额）+ 扣实裁批（−净额），净额不变 |
 | 派工未指定 | 该行**从来没有**派工族行 | 扣本次报工米数（分次报工累计正确）；改批则把净额整体搬过去 |
 
+**幂等闸随之收窄**：`uk_batch_consumption_line` 的谓词加 `reason <> 'cutting_report'` —— 派工两条腿仍「同一加工单 × 明细行 × 批次 × reason 只许一行」，而报工纠偏行**允许同一元组多行**（分次报工 / 换批次后再换回，都是合法事实）；不收窄的话第二次分次报工就会撞 23505（真库判据：`BatchConsumptionLedgerRealDbTest#cuttingReportRowsMayRepeatButDispatchRowsMayNot`）。
+
 **作废回补改净额口径**：`reverse` 从「逐行回补 + 按 (批次×订单行) 去重」改成「按 (批次×订单行) 净消耗回补」——
 纠偏行会让同一对出现多行，逐行口径会漏补/多补；净额口径下「作废 ⇒ 净额归零」由构造保证，重跑零写入。
 纯派工单的回补量与改前**逐值相同**（判据：`StockBatchConsumptionCuttingReportTest#reverseKeepsPureDispatchBehavior`）。
