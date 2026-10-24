@@ -6,11 +6,15 @@
 由 `ui-evidence/shot.mjs` 生成：静态服务本仓 `frontend/worker-h5` + Playwright 路由打桩
 （`/api/worker/**` 全部由脚本内夹具返回），**不碰真库、不起 admin-api**。
 
-跑法（在仓库根；playwright 取自 `tests/node_modules`）：
+跑法（任意目录；路径从脚本自身推，不写死绝对路径）：
 
 ```
 node acceptance/2026-10-24-7647-cutting-batch/ui-evidence/shot.mjs
 ```
+
+playwright 的取法：`PLAYWRIGHT_REQUIRE_BASE` → `<repo>/tests/node_modules/playwright` →
+兄弟主仓库（worktree 形态 `../..//migao/tests`）依次尝试；都没有时脚本**直接报错并指路**（不静默跳过）。
+截图直接写在本目录（`01-…` ~ `04-…`）。
 
 ## 四张图各证明什么
 

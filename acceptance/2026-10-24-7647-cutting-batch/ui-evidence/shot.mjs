@@ -4,11 +4,31 @@ import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { extname, join, normalize } from 'node:path'
 import { createRequire } from 'node:module'
+import { existsSync } from 'node:fs'
+import { dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const ROOT = '/Users/guangzhen.zk/ai native/migao-wt/7647-cutting-report-batch/frontend/worker-h5'
-const OUT = '/tmp/wh5-visual/out'
+// 路径一律从**本文件**推（换机器 / 换 worktree 都能复跑；不写死任何绝对路径）。
+// 🔴 必须用 fileURLToPath 而不是 `URL.pathname`：本仓路径含空格（`ai native`）⇒ pathname 是 `%20` 编码，
+//    直接拼路径会 ENOENT（实测）。
+const REPO = fileURLToPath(new URL('../../../', import.meta.url))   // <repo>/
+const ROOT = join(REPO, 'frontend/worker-h5')
+const OUT = fileURLToPath(new URL('./', import.meta.url))           // 本目录（ui-evidence/）
 const PORT = 5197
-const { chromium } = createRequire('/Users/guangzhen.zk/ai native/migao/tests/package.json')('playwright')
+// playwright 挂在仓库 `tests/` 目录（与本仓 ui-smoke 的取法一致）。**worktree 里 tests/node_modules 未安装**
+// （实测：linked worktree 只有源码）⇒ 依次尝试：环境变量 → 本仓 → 兄弟主仓库（worktree 形态）。
+const PW_BASES = [
+  process.env.PLAYWRIGHT_REQUIRE_BASE,
+  join(REPO, 'tests/package.json'),
+  // worktree 形态：主仓库与 worktree 同父（`migao-wt/<分支>`）或 upper 一级（`<parent>/migao`）各试一次
+  join(REPO, '..', '..', 'migao', 'tests/package.json'),
+  join(REPO, '..', 'migao', 'tests/package.json'),
+].filter(Boolean)
+const PW_BASE = PW_BASES.find((p) => existsSync(join(dirname(p), 'node_modules', 'playwright')))
+if (!PW_BASE) {
+  throw new Error('找不到 playwright：装到 <repo>/tests/node_modules，或用 PLAYWRIGHT_REQUIRE_BASE 指向含它的 package.json')
+}
+const { chromium } = createRequire(PW_BASE)('playwright')
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml' }
 
@@ -75,17 +95,20 @@ async function shoot({ assigned, name, viewport, act }) {
   await page.waitForSelector('#wh5-report', { timeout: 20000 })
   if (act) await act(page)
   await page.screenshot({ path: `${OUT}/${name}.png`, fullPage: true })
-  console.log(name, 'errors=', errors, 'batchRequired=', await page.locator('#wh5-batch').count(), 'disabled=', await page.locator('#wh5-report').isDisabled())
+  // 回执屏上按钮已消失（报工成功换屏）⇒ isDisabled 会等不到元素，这里只做诊断、不阻断
+  const report = page.locator('#wh5-report')
+  const disabled = (await report.count()) === 0 ? 'n/a（已换屏）' : await report.isDisabled()
+  console.log(name, 'errors=', errors, 'batchBlock=', await page.locator('#wh5-batch').count(), 'reportDisabled=', disabled)
   await ctx.close()
 }
 
-await shoot({ assigned: true, name: '1-assigned-prefilled', viewport: { width: 390, height: 844 } })
-await shoot({ assigned: false, name: '2-unassigned-empty-disabled', viewport: { width: 390, height: 844 } })
-await shoot({ assigned: false, name: '3-typed-enabled', viewport: { width: 390, height: 844 }, act: async (p) => {
+await shoot({ assigned: true, name: '01-assigned-prefilled', viewport: { width: 390, height: 844 } })
+await shoot({ assigned: false, name: '02-unassigned-empty-disabled', viewport: { width: 390, height: 844 } })
+await shoot({ assigned: false, name: '03-typed-enabled', viewport: { width: 390, height: 844 }, act: async (p) => {
   await p.fill('#wh5-batch-input', 'PC-20261018-0002')
   await p.click('#wh5-batch-candidates button')
 } })
-await shoot({ assigned: true, name: '4-receipt-after-report', viewport: { width: 390, height: 844 }, act: async (p) => {
+await shoot({ assigned: true, name: '04-receipt-after-report', viewport: { width: 390, height: 844 }, act: async (p) => {
   await p.click('#wh5-report')
   await p.waitForSelector('.wh5-notice', { timeout: 15000 }).catch(() => {})
   await p.waitForTimeout(300)

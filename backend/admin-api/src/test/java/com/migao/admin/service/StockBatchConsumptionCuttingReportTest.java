@@ -279,6 +279,22 @@ class StockBatchConsumptionCuttingReportTest {
     }
 
     @Test
+    @DisplayName("净额已归零的行（只剩作废回补）⇒ 零写入，不写 0 米假分录")
+    void zeroNetLineWritesNothing() {
+        StockBatch a = batch(1L, "PC-A", "20");
+        stubExistingRows(
+                row(1L, 1L, "PC-A", "-10", StockBatchConsumption.REASON_PROCESSING_ORDER),
+                row(2L, 1L, "PC-A", "10", StockBatchConsumption.REASON_PROCESSING_ORDER_CANCELLED));
+        stubNoPriorDelta();
+
+        StockBatchConsumptionService.CuttingReportResult result = apply(a, "PC-A", "10");
+
+        verify(consumptionMapper, never()).insert(any(StockBatchConsumption.class));
+        assertThat(result.batchRemaining()).isEqualByComparingTo("20");
+        assertThat(result.shortageMeters()).isNull();
+    }
+
+    @Test
     @DisplayName("🔴 报工换批后工人读面的批次跟着换（改前会返回「第一行见到的 A」+ B 的米数）")
     void assignmentsFollowTheBatchAfterAReportMove() {
         stubExistingRows(

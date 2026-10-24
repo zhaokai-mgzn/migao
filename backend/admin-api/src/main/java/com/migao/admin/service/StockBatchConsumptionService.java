@@ -651,6 +651,13 @@ public class StockBatchConsumptionService {
         boolean onlyTarget = consumedByBatch.size() == 1 && consumedByBatch.containsKey(target.getId());
         List<Map.Entry<StockBatch, BigDecimal>> writes = new ArrayList<>();
         if (dispatchAssigned) {
+            // 🔴 净额已归零（该行只剩「扣减 + 作废回补」，比如加工单作废后重建）⇒ **零写入**：
+            //    搬「0 米」会写出一条 delta=0 的假分录（余量不变、但读「这批为什么少了 0 米」的人会懵）。
+            if (consumedTotal.signum() == 0) {
+                return new CuttingReportResult(target.getBatchNo(),
+                        remainingMeters(tenantId, List.of(target)).getOrDefault(target.getId(),
+                                StockQuantity.orZero(target.getQuantity())), null);
+            }
             if (!onlyTarget) {
                 for (Map.Entry<Long, BigDecimal> e : consumedByBatch.entrySet()) {
                     StockBatch from = requireBatch(tenantId, e.getKey(), batchNoById.get(e.getKey()));

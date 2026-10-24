@@ -1413,12 +1413,7 @@ public class ProductionService {
         OrderItem cuttingItem = cuttingBatchItem(op, tenantId);
         // 🔴 先校验再写：批次必填（422）发生在报工明细落库之前 —— 虽然同事务回滚也能保证干净，
         //    但先校验能让「没填批次」这种最常见的错**不白跑**一遍写路径。
-        if (cuttingItem != null && !StringUtils.hasText(cuttingBatchNo)) {
-            throw new BusinessException(StockBatchConsumptionService.ERR_BATCH_REQUIRED,
-                    "这道「" + OPERATION_CUTTING + "」要填这次裁的是哪一批（本次未记账）", 422,
-                    "请照卷上印的批次号填写（例如 PC-20261020-0007）；智能派单指定过批次的会预填，"
-                            + "按实际裁的那一卷改即可");
-        }
+        requireCuttingBatch(cuttingItem, cuttingBatchNo);
         Map<String, Object> result = applyReport(order, po, op, qty, qualifiedQty, workType, identity, tenantId);
         if (cuttingItem != null) {
             StockBatchConsumptionService.CuttingReportResult batch = stockBatchConsumptionService
@@ -1433,6 +1428,22 @@ public class ProductionService {
             }
         }
         return result;
+    }
+
+    /**
+     * 裁剪工序的批次**必填**闸（issue #7647）：`cuttingItem == null`（非裁剪 / 零批次商品）⇒ 不拦。
+     *
+     * <p>独立成一个**具名**方法（而不是内联在 `applyScanComplete` 里）有两个理由：① 拒绝码的契约守卫
+     * （`tests/unit_ci_workflows/test_contract_ledger_reject_codes.py`）按**符号**读真抛点，内联在重载方法里
+     * 会让它抓不到这个码；② 「先校验再写」的语义要求它在任何写库之前被调用。</p>
+     */
+    private void requireCuttingBatch(OrderItem cuttingItem, String batchNo) {
+        if (cuttingItem != null && !StringUtils.hasText(batchNo)) {
+            throw new BusinessException(StockBatchConsumptionService.ERR_BATCH_REQUIRED,
+                    "这道「" + OPERATION_CUTTING + "」要填这次裁的是哪一批（本次未记账）", 422,
+                    "请照卷上印的批次号填写（例如 PC-20261020-0007）；智能派单指定过批次的会预填，"
+                            + "按实际裁的那一卷改即可");
+        }
     }
 
     /**
