@@ -215,6 +215,15 @@ function typeZeroDotFive(el: HTMLInputElement): string[] {
   })
 }
 
+/**
+ * 打开「加工费组合」的**铅笔改价**（issue #7658，用户 2026-10-24「样式改成工艺项 · 计件单价的样式」）：
+ * 读态只有「价 + ✏️」，点铅笔才出输入框；改完点 ✓ 才生效（✕ 取消不落价）。
+ */
+const startFeeEdit = (block: HTMLElement) => {
+  fireEvent.click(within(block).getByTestId('fee-price-edit'))
+  return within(block).getByTestId('fee-unit-price-override') as HTMLInputElement
+}
+
 const pickChip = (label: string, text: string) => {
   // 2026-09-29 第三次裁定：**枚举字段**（加工类型 / 打开方式 / 款式 / 用料公式 / 是否对花 / 档位）
   // 已由 chips 改**原生下拉** ⇒ 选中 = 改下拉的值；页面侧仍是 chips 的几组
@@ -397,9 +406,11 @@ describe('#5210 区块 2：改单价（元/米 override）', { timeout: 20000 },
     // 勾一个 per_meter 加工项 ⇒ 该行进入取价面（#4874：未定价 + 组合键非空才有改价入口）
     fireEvent.click(screen.getByRole('checkbox'))
     const block = await screen.findByTestId('processing-fee-combinations')
-    const override = within(block).getByTestId('fee-unit-price-override') as HTMLInputElement
+    const override = startFeeEdit(block)
 
     expect(typeZeroDotFive(override)).toEqual(['0', '0.', '0.5'])
+    // #7658：铅笔改价是「改完点 ✓ 才生效」⇒ 保存后才发预览
+    fireEvent.click(within(block).getByTestId('fee-price-save'))
     await waitFor(() => {
       const last = mockFeePreview.mock.calls.at(-1)![0]
       expect(last.items[0].processingInfo.processingFeeOverride).toBe(0.5)
@@ -520,10 +531,7 @@ describe('#5210 形态：8 格都是 text + decimal，className 与旧实现逐�
     expandProcessing()
     fireEvent.click(screen.getByRole('checkbox'))
     const block = await screen.findByTestId('processing-fee-combinations')
-    expectNumberBox(
-      within(block).getByTestId('fee-unit-price-override') as HTMLInputElement,
-      COMPACT_INPUT_CLASS
-    )
+    expectNumberBox(startFeeEdit(block), COMPACT_INPUT_CLASS)
   })
 
   it('布料行 2 格（数量 / 单价）', async () => {

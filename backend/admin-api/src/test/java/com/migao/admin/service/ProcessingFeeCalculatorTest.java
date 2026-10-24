@@ -991,19 +991,53 @@ class ProcessingFeeCalculatorTest {
     }
 
     @Test
-    @DisplayName("#4872·非正数 override（0 / 负数 / 非数值）**不算改价** ⇒ 仍走 unpriced（0 元改价 = 静默归零，不许）")
-    void nonPositiveOverrideIsNotAManualPrice() {
+    @DisplayName("#7658·**负数 / 非数值** override 仍不算改价（fail-closed：不静默改价，也不静默归零）")
+    void negativeOrGarbageOverrideIsNotAManualPrice() {
         givenCombinations(combination("定型+打孔+韩褶", "8.00"));
 
-        for (Object override : List.of(BigDecimal.ZERO, new BigDecimal("-5.00"), "abc", "")) {
+        for (Object override : List.of(new BigDecimal("-5.00"), "abc", "")) {
             ProcessingFeeCalculator.Fee fee = compute(withOverride(
                     processingInfo(new BigDecimal("12.30"), "韩褶", "打孔"), override));
             assertThat(fee.feeSource())
-                    .as("override=%s 不得被当成人改价（0/负数/非数值一律 = 没改价）", override)
+                    .as("override=%s 不得被当成人改价（负数/非数值一律 = 没改价）", override)
                     .isEqualTo(ProcessingFeeCalculator.FEE_SOURCE_UNPRICED);
             assertThat(fee.amount()).isEqualByComparingTo("0");
             assertThat(fee.hint()).isNotBlank();
         }
+    }
+
+    @Test
+    @DisplayName("#7658·**0 元是本单有效单价**：已配置组合同样按 0 计（用户 2026-10-24「改成 0 后费用明细未联动」）")
+    void zeroOverrideOnPricedCombinationIsAZeroManualPrice() {
+        givenCombinations(combination("打孔+韩褶", "8.00"));
+
+        ProcessingFeeCalculator.Fee fee = compute(withOverride(
+                processingInfo(new BigDecimal("12.30"), "韩褶", "打孔"), BigDecimal.ZERO));
+
+        // 红证（改前）：0 被当成「没改价」⇒ 走 matched、金额 8.00 × 12.30 = 98.40
+        assertThat(fee.feeSource()).isEqualTo(ProcessingFeeCalculator.FEE_SOURCE_MANUAL);
+        assertThat(fee.unitPrice()).isEqualByComparingTo("0");
+        assertThat(fee.priceSource()).isEqualTo("manual");
+        assertThat(fee.amount()).isEqualByComparingTo("0");
+        // 被覆盖的价目价仍可审计（本单 0 元、价目 8.00/米 —— 两个数都在）
+        assertThat(fee.detail())
+                .containsEntry("fee_source", "manual")
+                .containsEntry("unit_price", BigDecimal.ZERO)
+                .containsEntry("amount", new BigDecimal("0.00"))
+                .containsEntry("configured_unit_price", new BigDecimal("8.00"));
+    }
+
+    @Test
+    @DisplayName("#7658·未配置组合 + 0 元 ⇒ 同样是 manual 0 元，但 detail **不带** configured_unit_price")
+    void zeroOverrideOnUnmatchedCombinationOmitsConfiguredPrice() {
+        givenCombinations(combination("定型+打孔+韩褶", "8.00"));
+
+        ProcessingFeeCalculator.Fee fee = compute(withOverride(
+                processingInfo(new BigDecimal("12.30"), "韩褶", "打孔"), BigDecimal.ZERO));
+
+        assertThat(fee.feeSource()).isEqualTo(ProcessingFeeCalculator.FEE_SOURCE_MANUAL);
+        assertThat(fee.amount()).isEqualByComparingTo("0");
+        assertThat(fee.detail()).doesNotContainKey("configured_unit_price");
     }
 
     @Test
