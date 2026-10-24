@@ -3,7 +3,7 @@ r"""**台账首行的 schema 头** + 「缺头自愈」的判据（issue #7655�
 
 ## 病灶（2026-10-24 现取读数）
 
-`scripts/package-heavy-entry-ledger.sh` 写台账时，第 1 行本应是 schema 头
+`scripts/package-heavy-entry-ledger.sh` 写台账时，**首行**本应是 schema 头
 （`_kind` = `migao.package-heavy-entry-ledger`）；而仓内
 `tests/unit_ci_workflows/package_heavy_entry_ledger.jsonl` 的**首行是一条判定记录**。
 `_ensure_header` 用 `head -1 | grep -q` 认头 ⇒ 不认 ⇒ `_die_undecidable`（exit 3）
