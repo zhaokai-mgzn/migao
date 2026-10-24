@@ -12904,7 +12904,7 @@
 数据: 判据 2·位置在纸面左上角（会红）：二维码块属于 `.sales-sheet` 的第一段（与抬头并排），且文档顺序在「销售单」标题之前；不与页脚收款码混在一处。执行点 = 同文件「⑬ 有作业单扫码短链…」
 数据: 判据 3·纸面只留**竖排**「扫码报工」、短码不上产品面（会红，issue #7608）：标签带 `writing-mode: vertical-rl`（改成横排 ⇒ 红），且 `sales-work-order-short-code` 节点取不到（把短码行加回去 ⇒ 红）。兜底不靠这张纸：工人报工页有「输码（短码 / 加工单号 / 订单号）」输入框，短码仍印在任务卡上（`TaskCardPrint` 的 `part_short_code`），本单纸面本来就印「单号」。执行点 = 同文件「⑬ 纸面只留**竖排**「扫码报工」，短码不印在销售单上（issue #7608）」
 数据: 判据 4·缺码不画假码（会红）：无 `scan_url`（存量单未实例化短码 / 没有作业单 / 读面没取到）⇒ 零二维码、零占位框，纸面既不出现作业单号也不出现裸短码（扫出来只有一串文本、打不开任何页面 = issue #6867 治过的病）。执行点 = 同文件「⑬ 缺码不画假码」
-数据: 判据 5·**类级元守卫**（让同类进不来）：受管打印单据里不得出现扫码短链路径段（`/o/` 作业单级 · `/s/` 部位级）—— 谁再在纸面拼域名 / 路径段 ⇒ 红（含内存注入自证：拼路径段的样本判红、逐字取 `scan_url` 的样本判绿，防「空判据」）。执行点 = tests/unit_ci_workflows/test_print_media_matrix_guard.py 的 C11（test_c11_print_docs_never_assemble_scan_short_links）
+数据: 判据 5·**类级元守卫**（让同类进不来）：受管打印单据里不得出现扫码短链路径段（`/o/` 作业单级 · `/s/` 部位级）—— 谁再在纸面拼域名 / 路径段 ⇒ 红（含内存注入自证：拼路径段的样本判红、逐字取 `scan_url` 的样本判绿，防「空判据」）。执行点 = tests/unit_ci_workflows/test_print_media_matrix_guard.py 的 C11（test_c11_print_docs_never_assemble_scan_short_links）；另一条类级判据 = 同文件 C12（test_c12_customer_visible_docs_never_print_internal_short_code）：客户可见纸面（销售单 / 报价单 / 发货单 / 加工单）不得读取或渲染 `short_code` —— 把短码行加回销售单即红
 前置: 本用例是 [backend-contract] 纯前端打印版式契约（jsdom 渲染），不依赖真实服务与共享夹具；前置不成立时对应单测直接红，agent-eval 栈不跑它
 跳过: [backend-contract] 纯前端打印版式与扫码入口取值（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/SalesDoc.test.tsx 执行
 ```
