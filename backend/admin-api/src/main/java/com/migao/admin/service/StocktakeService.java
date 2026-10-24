@@ -89,10 +89,22 @@ public class StocktakeService {
         }
 
         // 账面快照：只快照**有货**的批次（0 量的批次盘了也没有意义，且会让明细无限膨胀）
-        List<StockBatch> batches = stockBatchMapper.selectList(new LambdaQueryWrapper<StockBatch>()
+        //
+        // 🔴 默认仓还收「未指定仓」与「写成仓名」的批次（issue #7592）：入库单的「仓库 / 仓位」是
+        //    **自由文本**，商家留空或写「主仓」都不会等于编码 ⇒ 只按编码匹配的话，盘点单会是 0 行明细
+        //    （「仓库下拉有数据了，出任务还是空的」是同一个缺陷的下半段）。
+        //    非默认仓仍是严格按编码：写错仓必须拦，不许「尽力而为」。
+        LambdaQueryWrapper<StockBatch> batchQuery = new LambdaQueryWrapper<StockBatch>()
                 .eq(StockBatch::getTenantId, warehouse.getTenantId())
-                .eq(StockBatch::getWarehouse, warehouse.getCode())
-                .gt(StockBatch::getQuantity, BigDecimal.ZERO));
+                .gt(StockBatch::getQuantity, BigDecimal.ZERO);
+        if (Boolean.TRUE.equals(warehouse.getIsDefault())) {
+            batchQuery.apply(
+                    "(warehouse = {0} OR warehouse = {1} OR btrim(coalesce(warehouse, '')) = '')",
+                    warehouse.getCode(), warehouse.getName());
+        } else {
+            batchQuery.eq(StockBatch::getWarehouse, warehouse.getCode());
+        }
+        List<StockBatch> batches = stockBatchMapper.selectList(batchQuery);
         List<StocktakeItem> items = new ArrayList<>();
         for (StockBatch batch : batches) {
             StocktakeItem item = StocktakeItem.builder()

@@ -3649,7 +3649,7 @@
 ```
 溯源: 2026-10-16 新增（issue #6962，P5·并发；族级跟踪单 #6953 的 P5 包**首批 3 处**之一）。取号 = 现取 main ∪ 全部在飞分支的 KN 号最大（9）⇒ **KN-010**（`next_case_id.py` 与全 ref 复核一致）。 ｜ tags: concurrency, cas, idempotency, backend-contract, realdb
 
-## 杂项域（155 case）
+## 杂项域（156 case）
 
 ### MC-001. 记忆提取解析 - 纯 JSON/内嵌数组/非法输入 🔵
 ```
@@ -5694,6 +5694,20 @@
 跳过: [backend-contract] 仓库约束与调拨守恒，由 Java 单测验证，非 LLM 行为，不进 agent-eval 冒烟
 ```
 溯源: 2026-10-21 新增（issue #7373 段 1）。落码 = `Warehouse`/`StockTransfer`/`StockTransferItem` + 三个 Mapper + `WarehouseService`（默认仓切换/编码冲突）+ `StockTransferPolicy`（守恒纯函数）+ `StockTransferService`（即时调拨，批次改仓、缸号随行）+ `WarehouseController` + V182。 ｜ tags: backend-contract, inventory, warehouse, transfer, red-proof
+
+### WH-002. 开租即种默认主仓 + 盘点默认仓收「未指定仓」的批次（issue #7592） 🔵
+```
+你: 用户（2026-10-24，逐字）：「盘点单的上的仓库下拉选择没有数据，这个需要在先创建仓库吧？在哪去创建？」
+数据: **判据 1（开租种默认主仓·真库）**：空库真跑入驻链路 ⇒ 该租户 `warehouses` 恰 1 行，`code`/`name` = `OnboardingInitialData.DEFAULT_WAREHOUSE_CODE/NAME`、`is_default = true`；再调一次播种 ⇒ 返回 0、行数仍 1（幂等、不种出第二个仓）。判据 = `NewTenantOnboardingCategoryRealDbTest#onboardingSeedsDefaultCategoryAndFirstProductSucceeds` + `WarehouseSeedServiceTest`。
+数据: **判据 2（🔴 漏种必须红·注入红证）**：摘掉播种 + 摘掉后置条件探针 ⇒ 入驻「成功」但仓 0 行（= issue #7592 的原始读数：仓库下拉为空）；只摘播种、保留后置条件 ⇒ 入驻当场失败 `ONBOARDING_REQUIRED_DATA_MISSING`（缺 `default_warehouse`）。判据 = `#neuteredWarehouseSeedReproducesEmptyDropdown`。
+数据: **判据 3（类级元守卫）**：开租必需初始数据清单 ⇄ 入驻链路双向对账（未登记即红、enforced 项的键必须在 `assertRequiredInitialData` 方法体内）。判据 = `tests/unit_ci_workflows/test_onboarding_required_seed_guard.py`。
+数据: **判据 4（🔴 默认仓收「未指定仓」批次·真库）**：默认仓出任务 ⇒ 快照包含 `warehouse` 为空/空白的批次（入库单的「仓库」是自由文本，留空 ≠ 别的仓），且**不**包含别的仓（`WH-B`）的批次。判据 = `StocktakeRealDbTest#defaultWarehouseAlsoCountsUnspecifiedBatches`。
+数据: **判据 5（迁移回填·幂等）**：V189 只给「一个仓都没有」的租户补一条默认主仓（`NOT EXISTS deleted = 0`）；已有仓档案的租户一行不动、不碰 `uk_warehouses_single_default`。
+数据: **边界（照实登记）**：① 不做仓库管理页 / 调拨页（用户 2026-10-24 裁定「零 UI 最小解」）—— 多仓仍只能走 `POST /api/admin/warehouses`；② **不改写**历史批次的仓库自由文本 ⇒ 文本既非编码也非仓名、且非空的批次不计入主仓盘点（多仓建档页的归属）；③ 库存滞销报表「按仓筛选」按 `code` 与批次文本比对 ⇒ 对历史自由文本不生效（后续单）。
+前置: 本用例是 [backend-contract]：前置 = `warehouses`（V182）+ 默认主仓播种（`WarehouseSeedService`）+ V189 回填。零网络、零 LLM。
+跳过: [backend-contract] 开租播种与盘点快照口径，由 Java 单测/真库验证，非 LLM 行为，不进 agent-eval 冒烟
+```
+溯源: 2026-10-24 新增（issue #7592）。落码 = `WarehouseSeedService`（幂等播种）+ `RegistrationService` 接线 + `OnboardingInitialData.REQUIRED` 登记 + 后置条件探针 + V189（存量租户回填）+ `StocktakeService.open` 默认仓收「未指定仓」。 ｜ tags: backend-contract, inventory, warehouse, onboarding, red-proof
 
 ### OPS-001. 云上「采购单加载失败」根因：BOOLEAN 逻辑删列 + 全局整数语义 ⇒ 真库 500（issue #7373 复盘） 🔵
 ```
@@ -12943,8 +12957,8 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：880（活跃 141，跳过 739）
-- tier 分布：smoke 12 / normal 812 / adversarial 32
+- 用例总数：881（活跃 141，跳过 740）
+- tier 分布：smoke 12 / normal 813 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
 - API 层域：21
@@ -12959,7 +12973,7 @@
 - 财务对账域：6
 - 人事域：13
 - 知识问答域：9
-- 杂项域：155
+- 杂项域：156
 - 商家入驻域：7
 - 领域本体域：4
 - 订单域：68
@@ -13136,6 +13150,7 @@
 - PRC-002: 下单服务端定价：价格本命中以服务端为准 + 逐行留痕（issue #7375 段 2）
 - APP-001: 具名审批流：四态 + 不能自批 + 单次消费 + 超授信闸门出口（issue #7374 段 1）
 - WH-001: 多仓与调拨：仓库实体 + 默认仓唯一 + 调拨守恒与缸号随行（issue #7373 段 1）
+- WH-002: 开租即种默认主仓 + 盘点默认仓收「未指定仓」的批次（issue #7592）
 - OPS-001: 云上「采购单加载失败」根因：BOOLEAN 逻辑删列 + 全局整数语义 ⇒ 真库 500（issue #7373 复盘）
 - STK-001: 盘点单：账面快照 + 差异必经审批 + 调整只改数量（issue #7373 段 2）
 - PRC-003: 价格本可维护：协议价 / 等级价 / 阶梯价 upsert + 价格必须 > 0（issue #7375 段 3）
