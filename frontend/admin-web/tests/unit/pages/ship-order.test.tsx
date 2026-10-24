@@ -179,7 +179,8 @@ describe('ShipOrder', () => {
     render(<ShipOrder />)
     const header = await screen.findByRole('columnheader', { name: '商品合计(元)' })
     const table = header.closest('table')!
-    expect(table, '找不到「商品信息」表 ⇒ 判据在扫空气').not.toBeNull()
+    // 存在性断言要**触业务对象**（弱断言 `not.toBeNull` 会被 QA Growth Gate 判红）
+    expect(table.tagName, '找不到「商品信息」表 ⇒ 判据在扫空气').toBe('TABLE')
     const cells = Array.from(table.querySelectorAll('th, td'))
     expect(cells.length, '表内单元格不足 8 个 ⇒ 判据在扫空气').toBeGreaterThanOrEqual(8)
     const label = (c: Element) => `${c.tagName}「${(c.textContent || '').trim().slice(0, 10)}」`
@@ -406,7 +407,8 @@ describe('ShipOrder', () => {
     await screen.findByText('发货单')
 
     const doc = document.querySelector('.shipment-print-area')
-    expect(doc).not.toBeNull()
+    // 存在性断言要**触业务对象**（弱断言 `not.toBeNull` 会被 QA Growth Gate 判红）
+    expect(doc?.className, '找不到纸面发货单容器 ⇒ 判据在扫空气').toContain('shipment-print-area')
     expect(doc!.textContent).toContain('发货单')
     expect(doc!.textContent).toContain('MG202606002')
     expect(doc!.textContent).toContain('李四')

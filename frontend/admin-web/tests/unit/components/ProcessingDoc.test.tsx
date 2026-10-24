@@ -6,8 +6,9 @@ import { render, cleanup, screen } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-// SalesDoc 与 ProcessingDoc 都会（经 hook / 组件）触到 `@/lib/api` —— 打桩成「无码」，
-// 避免 jsdom 真发 XHR（噪音）。「无码 ⇒ 整块不出现」的判据仍由组件行为决定。
+// ProcessingDoc 经 `useCompanyName` 触到 `@/lib/api`（企业名回落读面）—— 这里打一个**部分**替身，
+// 让 jsdom 落到「取不到 ⇒ 空串」分支，避免真发 XHR（噪音）。
+// （收款码与本单据无关：加工单自 issue #7219 起不印二维码、销售单自 issue #7589 起不印收款码。）
 const mockGetPaymentQrcodes = vi.fn()
 vi.mock('@/lib/api', () => ({
   settingsApi: { getPaymentQrcodes: (...args: unknown[]) => mockGetPaymentQrcodes(...args) },

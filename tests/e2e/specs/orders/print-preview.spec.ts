@@ -1,4 +1,4 @@
-// case_ids: UI-027, UI-134
+// case_ids: UI-027, UI-134, UI-062
 /**
  * 打印链路（issue #5914）—— 真实浏览器判据。
  *
@@ -300,7 +300,8 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
     )
 
     await page.goto(`/orders/${ORDER_ID}`)
-    await page.getByRole('button', { name: /打印销售单/ }).click()
+    // issue #7544：入口收敛成页面级唯一的「打印」，打印层默认选中销售单（`PRINT_SPEC_DEFAULT`）
+    await page.getByTestId('order-print-entry').click()
     const preview = page.getByTestId('print-preview')
     await expect(preview).toBeVisible()
 
@@ -320,6 +321,11 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
     expect(qrBox.x - sheetBox.x).toBeLessThan(20)
     expect(qrBox.y - sheetBox.y).toBeLessThan(20)
 
+    // 🔴 销售单纸面**不印收款码**（issue #7589）：真浏览器里连图片节点都不该有
+    //（收款码只属于报价单；旧形态这里会出现 `sales-qr-wechat` / `sales-qr-alipay` 两张图）
+    await expect(preview.locator('[data-testid^="sales-qr-"]')).toHaveCount(0)
+    await expect(preview.locator('[data-testid="sales-sheet"] img')).toHaveCount(0)
+
     // 多模态取证（真浏览器截图，人工读图用）
     await preview.screenshot({ path: '/tmp/ui7530-sales-doc-work-order-qr.png' })
 
@@ -333,7 +339,7 @@ test.describe('商家后台打印链路（UI-026 / issue #5914）', () => {
       })
     )
     await page.reload()
-    await page.getByRole('button', { name: /打印销售单/ }).click()
+    await page.getByTestId('order-print-entry').click()
     const preview2 = page.getByTestId('print-preview')
     await expect(preview2).toBeVisible()
     await expect(preview2.locator('[data-testid="sales-work-order-qr"]')).toHaveCount(0)

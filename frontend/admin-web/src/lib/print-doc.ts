@@ -10,7 +10,8 @@ import type { PrintMediaId } from './print-media'
  * 🔴 **不等就出纸的形态**：`beforeprint` 派发完当帧快照 ⇒ 异步取回的码来不及进 DOM
  * ⇒ 「第一次打印没有收款码、第二次才有」（实测读数见 `use-payment-qrcodes.ts` 口径 3）。
  *
- * 只等**已经在取**的那一份（`peekPaymentQrcodes()`）：没人要码的页面（洗水唛 / 发货单）
+ * 只等**已经在取**的那一份（`peekPaymentQrcodes()`）：没人要码的页面（洗水唛 / 发货单 / 销售单 ——
+ * 销售单自 issue #7589 起不印收款码）
  * 不会因此多发一次请求 —— 而那条请求要 `order:list`，在别的页面上会变成 403 提示。
  * 上限 2.5s：请求卡住时**宁可出纸**也不让「打印」按钮变成没反应的死键。
  */
