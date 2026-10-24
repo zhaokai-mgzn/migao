@@ -1,3 +1,4 @@
+# case_ids: AS-001, AS-003
 """
 售后工单 / 通知系统 / Dashboard 模块冒烟测试 (P1)
 
@@ -61,8 +62,10 @@ class TestAfterSalesAPI:
         )
         _skip_if_unsupported(resp, "Create after-sale")
 
-        # 200 创建成功，或 4xx 因订单不存在/校验失败被拒绝；后端可达即认为接口可用
-        assert resp.status_code in (200, 201, 400, 422, 500), (
+        # 200 创建成功，或 4xx 因订单不存在/校验失败被拒绝；后端可达即认为接口可用。
+        # 🔴 issue #7583 缺陷 4：**5xx 不许进这个集合** —— 旧形态 `in (200, 201, 400, 422, 500)`
+        #    让后端 500 也能绿（这条 smoke-p1 对**生产**跑）。5xx = 真坏了 ⇒ 判红。
+        assert resp.status_code in (200, 201, 400, 422), (
             f"Unexpected status creating after-sale: "
             f"{resp.status_code} {resp.text[:300]}"
         )

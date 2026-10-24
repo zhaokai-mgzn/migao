@@ -2417,7 +2417,13 @@ async function jrun(name, fn, page, deps) {
   } catch (e) {
     const msg = String(e.message || e).slice(0, 200)
     console.log(`❌ ${name}\n   超时/异常: ${msg}`)
-    results.push({ journey: name, pass: false, skipped: false, unconfigured: false, error_class: null, errors: [`超时/异常: ${msg}`], notes: [], evidence: [] })
+    // 🔴 SDQS D5（docs/testing/smoke-data-quality.md；issue #7583 缺陷 8）：失败路径也要留**现场图**。
+    //    截图此前只写在 `journey().done` 里，而抛错/超时的旅程**走不到 done** ⇒ 零证据，
+    //    下一次再出现只能靠人复跑。独立文件名（`-failed.png`）以免覆盖同名旅程的正常截图；
+    //    拍不到不阻塞（可能浏览器已崩），但**必须尝试**并登记进 evidence。
+    const shot = join(OUT, 'screenshots', `${name}-failed.png`)
+    try { await page.screenshot({ path: shot, fullPage: false }) } catch {}
+    results.push({ journey: name, pass: false, skipped: false, unconfigured: false, error_class: null, errors: [`超时/异常: ${msg}`], notes: [], evidence: [shot] })
   }
 }
 
