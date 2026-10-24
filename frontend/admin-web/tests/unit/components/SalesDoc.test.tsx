@@ -553,7 +553,7 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
     expect(qr!.closest('[data-testid^="sales-qr-"]')).toBeNull()
   })
 
-  it('⑬ 短码人可读：扫码枪 / 相机读不出时由印在码旁的短码兜底', () => {
+  it('⑬ 纸面只留**竖排**「扫码报工」，短码不印在销售单上（issue #7608）', () => {
     render(
       <SalesDoc
         order={buildOrder()}
@@ -561,8 +561,14 @@ describe('SalesDoc（销售单 · 三联纸 241mm × 140mm，issue #5651）', ()
         processingOrder={buildProcessingOrder()}
       />
     )
+    const label = document.querySelector('[data-testid="sales-work-order-qr-label"]') as HTMLElement | null
     expect(text('sales-work-order-qr-label')).toBe('扫码报工')
-    expect(text('sales-work-order-short-code')).toBe('7K3M9QP2')
+    // 竖排是**机制**不是装饰：`writing-mode: vertical-rl` 让这一列只占一行字宽（≈3mm）。
+    // 换成横排 ⇒ 这条必红（4 个字横排 ≈9mm，正是本单要省掉的那一段）。
+    expect(label?.style.writingMode).toBe('vertical-rl')
+    // 短码从产品面退场（用户 2026-10-24 逐字「不要在产品上体现短码了，工人端还有输入短码的地方」）：
+    // 节点不渲染。手输兜底仍在工人端输入框 / 任务卡 / 本单纸面本来就印的「单号」，兜底没断。
+    expect(document.querySelector('[data-testid="sales-work-order-short-code"]')).toBeNull()
   })
 
   it('⑬ 缺码**不画假码**：无 scan_url ⇒ 整块不出现（零 QR / 零占位框 / 不回落作业单号）', () => {

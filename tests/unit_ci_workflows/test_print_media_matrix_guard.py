@@ -21,6 +21,7 @@
 | C8 | **纸面不印工序清单**（issue #7274：用户逐字「工序细节不用在打印单上，移除掉工序相关的表格信息」） | 把工序清单（`operationsByItem` / `OPERATIONS_DOC_COLUMNS` / `processing-doc-operation`）接回任一受管打印单据 ⇒ 红 |
 | C9 | **发货单「加工项」是一行、不是表格**（issue #7275：用户逐字「加工项表格应该用一行表达…比如改成a+b+c这样？」） | 退回逐项两列表（出现 `<DocTh>加工项</DocTh>` / 去掉 `shipment-processing-items` 锚点）⇒ 红 |
 | C11 | **纸面扫码码值只取服务端下发**（issue #7530）：受管打印单据里不得出现扫码短链路径段（`/o/` 作业单级 · `/s/` 部位级）—— 前端拼域名 / 路径段 = 第二份真值，而**纸上的码印出去就收不回来** | 把销售单的码值改成 `` `${base}/o/${processingOrder.short_code}` `` ⇒ 红 |
+| C12 | **客户可见纸面不出现内部短码**（issue #7608）：销售单 / 报价单 / 发货单 / 加工单不得读取或渲染`short_code`（客户拿到的那张纸只印「扫码报工」+ 码值；短码归工人侧：任务卡 / 工人端输入框） | 把短码行加回销售单（读 `processingOrder.short_code`）⇒ 红 |
 | C10 | **纸面不带浏览器页眉页脚**（issue #7309：用户逐字「我建议拿掉打印的页头和页脚」，附打印成品截图） | 把浏览器打印介质的上下 `@page` 边距写回「够大」（≥ 8.7mm）/ A4 没有 `contentInset` / 单据容器不带内缩 + `box-decoration-break: clone` ⇒ 红 |
 
 ⚠️ **判据按「去注释后的代码」判定**：各单据的文件头都**用注释解释**这些坑（会写出反例），
@@ -807,3 +808,47 @@ def test_c11_print_docs_never_assemble_scan_short_links():
     assert _short_link_segments("const v = `${base}/o/${po.short_code}`") == ["/o/"]
     assert _short_link_segments("const v = `${base}/s/${part_short_code}`") == ["/s/"]
     assert _short_link_segments("const v = processingOrder.scan_url") == []
+
+
+# ── C12：客户可见纸面不得出现内部短码（issue #7608）──────────────────────────────
+
+#: **客户可见**单据（客户 / 收货方拿到的那几张纸）：内部短码不上这些面。
+#: ⚠️ `TaskCardPrint` 是**工人标签**，它照旧必须印 `part_short_code`（§11.7 第一兜底）
+#: ⇒ 本判据**故意**不覆盖它；分母写死四条（不是空集 —— 空集比空集是恒等，那种绿是假绿）。
+CUSTOMER_DOCS: tuple[str, ...] = (
+    "frontend/admin-web/src/components/orders/ShipmentDoc.tsx",
+    "frontend/admin-web/src/components/orders/QuotationDoc.tsx",
+    "frontend/admin-web/src/components/orders/ProcessingDoc.tsx",
+    "frontend/admin-web/src/components/orders/SalesDoc.tsx",
+)
+
+
+def _internal_short_code_refs(code: str) -> list[str]:
+    """C12 判据本体：代码（已剥注释）里对内部短码的引用。"""
+    return [name for name in ("short_code", "shortCode") if name in code]
+
+
+def test_c12_customer_visible_docs_never_print_internal_short_code():
+    """C12：客户可见单据**不得**读取 / 渲染内部短码（issue #7608）。
+
+    病（issue #7608）：销售单是**随货给客户**的那张，印出 8 位作业单短码 = 把内部标识摆到
+    客户眼前（§31 P3「不摆内部标识」）。用户 2026-10-24 逐字「不要在产品上体现短码了，
+    工人端还有输入短码的地方」⇒ 销售单纸面只留「扫码报工」标签，短码留在**工人侧**
+    （任务卡的 `part_short_code` / 工人端「输码」输入框 / 纸面本来就印的「单号」）。
+
+    红证 = 内存注入（不写盘）：读 `short_code` / `shortCode` 的样本必须判红，只读 `scan_url` 的判绿。
+    """
+    problems: list[str] = []
+    for rel in CUSTOMER_DOCS:
+        hits = _internal_short_code_refs(_strip_comments(_read(rel)))
+        if hits:
+            problems.append(
+                f"{rel} 引用了内部短码 {hits} —— 客户可见纸面只许印「扫码报工」+ 码值，"
+                "短码归工人侧（任务卡 / 工人端输入框，issue #7608）"
+            )
+    assert problems == [], "\n".join(problems)
+
+    # 判别力自证（内存注入）：一红一绿，否则本判据是空断言
+    assert _internal_short_code_refs("const c = processingOrder.short_code") == ["short_code"]
+    assert _internal_short_code_refs("const c = po.shortCode ?? ''") == ["shortCode"]
+    assert _internal_short_code_refs("const v = processingOrder.scan_url") == []

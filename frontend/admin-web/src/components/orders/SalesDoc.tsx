@@ -117,8 +117,16 @@ import type { Order, OrderItem, ProcessingOrder } from '@/types'
  * 2. **缺码不画假码**：没有 `scan_url`（存量单未实例化短码 / 没有作业单 / 读面没取到）⇒
  *    **整块不出现**，不画占位框、**不回落作业单号**（回落 = 扫出来只有一串文本、打不开任何页面，
  *    正是 #6867 治过的病）；
- * 3. **短码人可读**：码旁印 `processingOrder.short_code`（8 位）—— 扫码枪 / 相机读不出时
- *    工人可**手输**（#6867 设计 §11.7「不是可选项」）。
+ * 3. **短码不上销售单纸面**（issue #7608，用户 2026-10-24 逐字「不要在产品上体现短码了，
+ *    工人端还有输入短码的地方」）：本单是**随货给客户**的那张，印内部短码属 §31 P3
+ *    「不摆内部标识」⇒ 码旁只留一行**竖排**「扫码报工」（`writing-mode: vertical-rl`，
+ *    4 字高 ≈34px < 码高 56px，不额外占高度；横向只占一行字宽）。
+ *    **手输兜底仍在三处**：工人报工页的「输码（短码 / 加工单号 / 订单号）」输入框
+ *    （`frontend/worker-h5/src/render.mjs`）、任务卡上的 `part_short_code`
+ *    （`frontend/admin-web/src/components/production/TaskCardPrint.tsx`）、
+ *    以及本单纸面本来就印的「单号」（订单号，H5 四形态之一）。
+ *    ⚠️ §11.7 的「码旁必须印短码」是**加工单纸**口径（`ProcessingDoc` 另有「加工单纸面不承载
+ *    扫码入口」）—— **不要**据此把短码「顺手」补回销售单。
  *
  * 🔴 版面预算：二维码块与抬头**并排**（≈15mm 见方、`level="M"`），不额外起一段 ——
  * 三联纸单联可用高只有 128mm，多起一段会挤掉「本单应收 / 页脚提示」。
@@ -135,8 +143,8 @@ interface SalesDocProps {
   shipments: OrderShipmentRead | null
   /**
    * 作业单读面（订单详情页已加载，与 `ProcessingDoc` **同一份**来源）—— 左上角扫码报工码的
-   * **唯一**取值来源，只读两个服务端字段：
-   * `scan_url`（码值，前端**不拼**）与 `short_code`（码旁人可读短码）。
+   * **唯一**取值来源，只读 `scan_url`（码值，前端**不拼**）；`short_code` 自 issue #7608 起
+   * **不印在销售单上**（见文件头「左上角…」第 3 条），本组件不读它。
    *
    * 缺省 / `null` = 没有作业单或读面没取到 ⇒ 二维码**整块不出现**（不画假码，见文件头）。
    */
@@ -262,10 +270,9 @@ export default function SalesDoc({
   const hasDiscount = typeof order.discountAmount === 'number'
   /**
    * 左上角作业单扫码报工码（issue #7530）—— 码值**逐字**取服务端 `scan_url`，前端不拼；
-   * 短码只用于码旁人可读（手输兜底）。两者都缺 ⇒ 整块不渲染（缺码不画假码）。
+   * 无码 ⇒ 整块不渲染（缺码不画假码）。短码自 issue #7608 起不再印在销售单上。
    */
   const workOrderQrValue = (processingOrder?.scan_url ?? '').trim()
-  const workOrderShortCode = (processingOrder?.short_code ?? '').trim()
 
   const doc = (
     <div
@@ -334,18 +341,15 @@ export default function SalesDoc({
                 title={workOrderQrValue}
                 data-testid="sales-work-order-qr-svg"
               />
-              <div className="leading-tight text-neutral-500">
-                <div className="text-[0.7em]" data-testid="sales-work-order-qr-label">
-                  扫码报工
-                </div>
-                {workOrderShortCode !== '' && (
-                  <div
-                    className="font-mono text-[0.85em] leading-tight font-semibold text-neutral-700"
-                    data-testid="sales-work-order-short-code"
-                  >
-                    {workOrderShortCode}
-                  </div>
-                )}
+              {/* 「扫码报工」竖排（issue #7608）：4 字高 ≈34px < 码高 56px ⇒ 不额外占高度；
+                  横向只占一行字宽（≈3mm）—— 原来是那 8 位短码把它撑到 ≈13mm。
+                  短码不上销售单纸面（用户 2026-10-24 裁定），见文件头「左上角…」第 3 条。 */}
+              <div
+                className="text-[0.7em] leading-tight text-neutral-500"
+                style={{ writingMode: 'vertical-rl' }}
+                data-testid="sales-work-order-qr-label"
+              >
+                扫码报工
               </div>
             </div>
           )}
