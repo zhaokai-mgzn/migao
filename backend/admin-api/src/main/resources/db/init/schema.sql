@@ -2050,7 +2050,9 @@ CREATE TABLE IF NOT EXISTS stock_batch_consumptions (
 -- 幂等闸：同一加工单的同一明细行 × 同一批次 × 同一 reason 只允许一行
 CREATE UNIQUE INDEX IF NOT EXISTS uk_batch_consumption_line
     ON stock_batch_consumptions (tenant_id, processing_order_no, batch_id, order_item_id, reason)
-    WHERE deleted = 0;
+    -- V191（issue #7647）：报工纠偏行（cutting_report）允许同一 (批次 × 明细行) 多行
+    --（分次报工 / 换批次后再换回）；派工两条腿的唯一性不变。
+    WHERE deleted = 0 AND reason <> 'cutting_report';
 -- V143（issue #5865）幂等闸 ②：盘点**同一 run × 批次**至多一行（网络重试 / 连点不得双记）。
 -- 谓词 `stocktake_run_id IS NOT NULL` ⇒ 不带运行标识的扣料行一行都不受影响。
 CREATE UNIQUE INDEX IF NOT EXISTS uk_batch_consumption_stocktake
@@ -2061,7 +2063,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_batch_consumption_stocktake
 ALTER TABLE stock_batch_consumptions DROP CONSTRAINT IF EXISTS ck_batch_consumption_reason;
 ALTER TABLE stock_batch_consumptions
     ADD CONSTRAINT ck_batch_consumption_reason
-    CHECK (reason IN ('processing_order', 'processing_order_cancelled', 'stocktake'));
+    CHECK (reason IN ('processing_order', 'processing_order_cancelled', 'stocktake', 'cutting_report'));
 ALTER TABLE stock_batch_consumptions DROP CONSTRAINT IF EXISTS ck_batch_consumption_source_shape;
 ALTER TABLE stock_batch_consumptions
     ADD CONSTRAINT ck_batch_consumption_source_shape

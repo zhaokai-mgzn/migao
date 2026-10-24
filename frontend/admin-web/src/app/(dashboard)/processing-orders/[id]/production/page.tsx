@@ -18,6 +18,7 @@ import { routeSourceNotice } from '@/lib/route-source'
 // ⇒ `logical_name` 缺失时会渲染成 ` · 布帘` 或 `—`，而进度表渲染的是快照名原文。
 import { operationDisplayName } from '@/lib/operation-display'
 import ProductionProgressTable from '@/components/production/ProductionProgressTable'
+import ProcessingOrderActions from '@/components/production/ProcessingOrderActions'
 import QualityCheckPanel from '@/components/production/QualityCheckPanel'
 import PieceworkTable from '@/components/production/PieceworkTable'
 import CutPlanTable from '@/components/production/CutPlanTable'
@@ -538,6 +539,16 @@ export default function ProcessingOrderProductionPage() {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* 作业单状态动作（issue #7634）：从销售订单「作业单」块搬来 —— 发加工 / 开始加工 /
+              加工完成 / 取消 只在生产侧发生，订单详情只读。 */}
+          <div
+            className="rounded-lg border border-neutral-200 bg-white p-4"
+            data-testid="production-actions-panel"
+          >
+            <h2 className="mb-3 text-sm font-medium text-neutral-900">作业单状态</h2>
+            <ProcessingOrderActions po={po} onChanged={(next) => setPo(next)} />
           </div>
 
           {/* 路线来源提示（issue #4307）：default 高亮警示，partial 提示 —— 不得静默 */}

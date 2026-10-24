@@ -53,6 +53,22 @@ public class StockBatchConsumption {
      */
     public static final String REASON_STOCKTAKE = "stocktake";
 
+    /**
+     * 变更来源：**裁剪报工确认批次**（V191 / issue #7647）—— 工人报「裁剪」那一刻，对该行
+     * **实际裁的批次**做核对 / 纠偏：负 = 扣实裁批次，正 = 回补原批次（同一事务内，该行净额不变
+     * 或按本次报工米数增加）。
+     *
+     * <p>与 {@link #REASON_PROCESSING_ORDER} 的区别是**时点与触发者**：派工扣减发生在
+     * 生成加工单那一刻（商家侧、按排料口径），本族发生在工人报工时（车间侧、按实际批次）；
+     * 列形状与扣料行**同族**（{@code processing_order_no} / {@code order_item_id} 非空，
+     * {@code stocktake_run_id} 为 NULL）⇒ 既有 {@code ck_batch_consumption_source_shape} 原样成立。</p>
+     *
+     * <p>为什么必须与派工来源分开：作废回补按**净额**回补（{@code StockBatchConsumptionService#reverse}），
+     * 两族混在一个 reason 里会让「派工那一笔」与「报工纠偏那一笔」分不开 ——
+     * 「这批为什么少了 1.5 米」必须答得出是派工计划的，还是工人实裁的。</p>
+     */
+    public static final String REASON_CUTTING_REPORT = "cutting_report";
+
     @TableId(type = IdType.AUTO)
     private Long id;
 

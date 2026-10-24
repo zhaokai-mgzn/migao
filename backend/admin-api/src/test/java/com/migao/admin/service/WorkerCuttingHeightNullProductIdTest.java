@@ -383,6 +383,10 @@ class WorkerCuttingHeightNullProductIdTest {
                         + "现取**无**变量级 index site（#6878 补「跨行方法声明」识别后新浮出 —— 旧实现按单行匹配 "
                         + "`METHOD_DECL` ⇒ **跨行声明的方法整条被漏掉**，实测同时浮出本方法与 `ensureSetsFor`）"),
                 Map.entry("partTokensByItemId", "ProductionService｜现取无索引调用点（存量）"),
+                Map.entry("productCodesOf", "ProductionService｜工人屏「货号」= 商品货号（issue #7636）："
+                        + "无 product_id / 商品查不到 / 货号为空 ⇒ 空集分支 `return Map.of();`；"
+                        + "调用点已 `productId == null ? null : productCodeByProductId.get(productId)` 显式短路 "
+                        + "（空键不可交给不可变表，issue #6219 同族）"),
                 Map.entry("assignmentsOf", "StockBatchConsumptionService｜现取无索引调用点（工人端读面待接）"),
                 Map.entry("snapshotSkus", "StockLedgerService｜现取无索引调用点（存量）"),
                 Map.entry("activeOperationsById", "ProductionService｜空集（本批报工为空）时 `return Collections.emptyMap()`。"
@@ -400,11 +404,13 @@ class WorkerCuttingHeightNullProductIdTest {
         static final Map<String, IndexSite> INDEX_SITES = Map.ofEntries(
                 // ── 本单：修完必须继续容忍空键（否则本单的判据当场红） ──
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/WorkerCuttingHeightService.java|brands",
-                        new IndexSite("brands", "brands", "productId", "item.getProductId()", 164, Verdict.KEY_NULLABLE,
-                                "本单病灶：product_id 可为空（存量明细）⇒ 已显式短路 + 空集改可变表（双重）")),
+                        new IndexSite("brands", "brands", "productId", "item.getProductId()", 170, Verdict.KEY_NULLABLE,
+                                "本单病灶：product_id 可为空（存量明细）⇒ 已显式短路 + 空集改可变表（双重）。"
+                                + "2026-10-24（issue #7647）：`read()` 追加裁剪批次两键后行号下移 6 行（164→170），判定依据未变")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/WorkerCuttingHeightService.java|items",
-                        new IndexSite("items", "itemsOf", "itemId", "entry.get(\"order_item_id\")", 152, Verdict.KEY_NULLABLE,
-                                "itemId 来自扫描结果可能为 null ⇒ `itemId == null ? null : items.get(itemId)` 短路")),
+                        new IndexSite("items", "itemsOf", "itemId", "entry.get(\"order_item_id\")", 158, Verdict.KEY_NULLABLE,
+                                "itemId 来自扫描结果可能为 null ⇒ `itemId == null ? null : items.get(itemId)` 短路。"
+                                + "2026-10-24（issue #7647）：同上下移 6 行（152→158），判定依据未变")),
                 // issue #7373 段 2：盘点完成时按**下标**对齐「明细行 ↔ 计算行」——
                 // 两个 List 都是本方法内直接构造的可变 ArrayList/stream().toList()，
                 // 下标由 `for (int i = 0; i < items.size(); i++)` 给出 ⇒ 永不为 null，也不查不可变表。
@@ -434,12 +440,13 @@ class WorkerCuttingHeightNullProductIdTest {
                                 Verdict.READ_IS_NULL_TOLERANT, "getOrDefault(c.getId(), 0L) ⇒ 空键安全")),
                 // ── 存量：get + 可能为 null 的键 ⇒ 由调用点显式短路（本包不改这些文件，仅登记） ──
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionScanService.java|specByItemId",
-                        new IndexSite("specByItemId", "specByItemIdOf", "op.getOrderItemId()", "op.getOrderItemId()", 594,
+                        new IndexSite("specByItemId", "specByItemIdOf", "op.getOrderItemId()", "op.getOrderItemId()", 603,
                                 Verdict.KEY_NULLABLE,
-                                "调用点已 `specByItemId == null ? null : ...get(op.getOrderItemId())` 短路")),
+                                "调用点已 `specByItemId == null ? null : ...get(op.getOrderItemId())` 短路"
+                                        + "（2026-10-24 / issue #7647：`resolve()` 追加批次三键后行号 594→603，判定未变）")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java|itemGroupKey",
                         new IndexSite("itemGroupKey", "itemIdToGroupKey", "itemGroupKey.get(spec.orderItemId())",
-                                "spec.orderItemId()", 268,
+                                "spec.orderItemId()", 290,
                                 Verdict.KEY_NULLABLE,
                                 "⚙️ 登记面事实（issue #6878 订正；**不是**「已安全」结论）：真正交给 `setByGroup.get(...)` 的键是"
                                         + "**派生值** `itemGroupKey.get(spec.orderItemId())`（字段 = 派生键表达式，本轮由"
@@ -454,10 +461,17 @@ class WorkerCuttingHeightNullProductIdTest {
                                         + "`DERIVED_KEY_SITES` 承担（登记站点 A ⇄ 站点 B；未登记 / 摘掉判空 / 换 getOrDefault "
                                         + "⇒ 那里具名判红）—— 本条目只保证「产出方与调用点被登记且不陈旧」。")),
                 Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java|setByGroup",
-                        new IndexSite("setByGroup", "ensureSetsFor", "derivedKey", "itemGroupKey.get(spec.orderItemId())", 269,
+                        new IndexSite("setByGroup", "ensureSetsFor", "derivedKey", "itemGroupKey.get(spec.orderItemId())", 291,
                                 Verdict.KEY_NULLABLE,
                                 "两级取值的外层表（#6878 补登记；产出方 `ensureSetsFor` 同 PR 补登记后本调用点才被扫到）。"
                                         + "键 = 派生值 `itemGroupKey.get(...)`，改后先落局部变量 `derivedKey` 再判空")),
+                // issue #7636：商品货号（工人屏「货号」）—— 产出方 `productCodesOf` 的空集分支是 `Map.of()`，
+                // 键 = `order_items.product_id`（存量明细可为空）⇒ 调用点必须显式短路空键。
+                Map.entry("backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java|productCodeByProductId",
+                        new IndexSite("productCodeByProductId", "productCodesOf", "productId", "item.getProductId()", 897,
+                                Verdict.KEY_NULLABLE,
+                                "`productId == null ? null : productCodeByProductId.get(productId)` 显式短路"
+                                        + "（空键交给不可变表 = NPE，issue #6219 同族；本行新增时曾实测红）")),
                 // ── 存量同族风险点（本包文件族外，**不顺手改**）：键可能为 null 且本文件内无处置。
                 //    承载体 = 独立 issue #6226（主会话按 origin/main 逐字复核开单）⇒ 本判据不在此红，
                 //    但条目仍受「未登记即红 / 台账不许陈旧」约束。──

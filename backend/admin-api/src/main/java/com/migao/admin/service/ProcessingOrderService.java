@@ -563,10 +563,11 @@ public class ProcessingOrderService {
      * 待派池视图（issue #5169 判据 5 的可查面）。
      *
      * <h2>池的定义（唯一口径）</h2>
-     * <b>已确认支付</b>（{@code orders.status = 'confirmed'} —— 池**仍只收已确认单**：池是「催派」口径，
-     * 待付款单入池会立刻被算成超时未派（issue #7626 只放宽了**生成闸门**，未改池的定义；
-     * 待付款单在订单详情页可直接生成作业单）。
-     * 且 **无活跃加工单**（排除口径与 {@code uk_processing_orders_active} 逐字相同）。
+     * <b>待付款 + 已确认</b>（{@code orders.status ∈ }{@link #GENERATABLE_ORDER_STATUSES}）且
+     * **无活跃加工单**（排除口径与 {@code uk_processing_orders_active} 逐字相同）。
+     * 🔴 issue #7634（用户 2026-10-24 裁定「只需要能让未付款的订单也能去生产即可，也要统一走智能派单」）：
+     * 待付款单**入池** —— 订单详情页的直派入口已全部收走，派单页成为**唯一**派单面；
+     * 作业单是生产计划（不扣库存、不记资金，扣减仍在 {@code confirmPayment}），故未收款也能进生产。
      * 无加工部位的单（配件/赠品行、无加工项）**不进池**：它们本来就不会生成加工单，
      * 进池只会让「池里有单却派不了」变成噪声。
      *
@@ -587,17 +588,17 @@ public class ProcessingOrderService {
      */
     public ProductionPoolViews.Pool pool(Long tenantId, BigDecimal maxWaitHoursRaw) {
         BigDecimal maxWaitHours = maxWaitHours(maxWaitHoursRaw);
-        List<Order> confirmed = orderMapper.selectList(new LambdaQueryWrapper<Order>()
+        List<Order> poolable = orderMapper.selectList(new LambdaQueryWrapper<Order>()
                 .eq(Order::getTenantId, tenantId)
                 .eq(Order::getDeleted, 0)
-                .eq(Order::getStatus, "confirmed")
+                .in(Order::getStatus, GENERATABLE_ORDER_STATUSES)
                 .orderByAsc(Order::getCreatedAt)
                 .orderByAsc(Order::getId));
-        if (confirmed == null) {
-            confirmed = List.of();
+        if (poolable == null) {
+            poolable = List.of();
         }
         List<String> ids = new ArrayList<>();
-        for (Order order : confirmed) {
+        for (Order order : poolable) {
             if (order.getId() != null) {
                 ids.add(order.getId());
             }
@@ -616,7 +617,7 @@ public class ProcessingOrderService {
         Set<String> urgentOrders = new LinkedHashSet<>();
         List<ProductionPoolViews.PoolLine> urgentLines = new ArrayList<>();
         int lineCount = 0;
-        for (Order order : confirmed) {
+        for (Order order : poolable) {
             if (order.getId() == null || dispatched.contains(order.getId())) {
                 continue;
             }
@@ -1575,14 +1576,14 @@ public class ProcessingOrderService {
 
     /** 直派被拒的商家可见文案（单一真值：@see #generateDirect）。 */
     public static final String DIRECT_DISPATCH_POOL_REQUIRED_MESSAGE =
-            "该订单未加急：请到「智能派单」合并派单（同料合并更省料）";
+            "作业单统一在「智能派单」生成：请到「智能派单」勾选该单派单（同料合并更省料）";
 
-    /** 直派被拒时的可行动建议（加急例外必须**同句说清**，否则商家以为彻底派不了）。 */
+    /** 直派被拒时的可行动建议（#7634：待付款 / 加急同样走派单页 —— 不再有直派例外）。 */
     public static final String DIRECT_DISPATCH_POOL_REQUIRED_SUGGESTION =
-            "到后台「智能派单」页勾选该单派单；加急订单可直接在此生成作业单。";
+            "到后台「智能派单」页勾选该单派单；待付款与加急订单同样在派单页派，不再从订单详情直派。";
 
     /**
-     * 订单详情页 / agent 的**直派**入口（issue #7507：非加急订单必须走智能派单）。
+     * 订单详情页 / agent 的**直派**入口 —— issue #7634 起对**所有**订单关闸（原 #7507 只拦非加急）。
      *
      * <h2>为什么要在这里关闸（而不是只藏按钮）</h2>
      * {@code POST /api/admin/processing-orders/generate} 与智能派单的
@@ -1592,9 +1593,10 @@ public class ProcessingOrderService {
      * 失去合并省料的机会（用户 2026-10-23：「为什么从订单可以直接生成加工单，而不是默认走智能派单流程」）。
      * 只藏前端按钮挡不住 API / agent ⇒ 闸落在服务端这一处。
      *
-     * <h2>加急单为什么放行</h2>
-     * 既有裁定（issue #5177）：「允许加急的订单直接派，不加急的同批次候选池优先」。加急单**不进池**
-     * （派单页把它放插队区单派），故直派这条出口保留，口径与池的插队区一致。
+     * <h2>加急单也不再放行（issue #7634，2026-10-24 用户裁定）</h2>
+     * 旧口径（issue #5177 / #7507）给加急单留了直派出口。用户 2026-10-24 裁定「一起收，也要统一走
+     * 智能派单」⇒ 本入口对**所有**订单关闸；加急单改在派单页的**插队区单派**
+     * （{@code /dispatch} + {@code pooled=false}），能力不受影响。
      *
      * <h2>结果面</h2>
      * 与 {@link #generate} 逐单同一形状：被拒的单记 {@code GenerateResult.fail(rawId, code, message,
@@ -1617,7 +1619,7 @@ public class ProcessingOrderService {
             Order order = resolveOrder(rawId, tenantId);
             // 解析不到的订单**不在这里另造文案**：留给 generate() 的既有 ORDER_NOT_FOUND 分支
             // （两处文案必然漂移；「哪一步先失败」也是既有契约的一部分）。
-            if (order != null && !Boolean.TRUE.equals(order.getIsUrgent())) {
+            if (order != null) {
                 slots[i] = GenerateResult.fail(rawId, ERR_DIRECT_DISPATCH_POOL_REQUIRED,
                         DIRECT_DISPATCH_POOL_REQUIRED_MESSAGE, DIRECT_DISPATCH_POOL_REQUIRED_SUGGESTION);
                 continue;

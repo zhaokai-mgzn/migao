@@ -4,12 +4,14 @@ import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.migao.admin.dto.BatchStockViews;
 import com.migao.admin.entity.Order;
 import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProcessingOrderSet;
 import com.migao.admin.entity.ProcessingPositionOperation;
 import com.migao.admin.entity.ProcessingSetPartToken;
+import com.migao.admin.entity.Product;
 import com.migao.admin.entity.ProductionWorkLog;
 import com.migao.admin.entity.WorkerReportAudit;
 import com.migao.admin.exception.BusinessException;
@@ -18,6 +20,7 @@ import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProcessingPositionOperationMapper;
 import com.migao.admin.mapper.ProcessingSetPartTokenMapper;
+import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductionWorkLogMapper;
 import com.migao.admin.mapper.WorkerReportAuditMapper;
 import com.migao.admin.worker.WorkerIdentity;
@@ -94,6 +97,15 @@ public class ProductionService {
      */
     public static final String ENDPOINT_REPORT =
             "POST /api/admin/production/orders/{orderId}/operations/{operationId}/report";
+
+    /**
+     * 需要确认批次的工序名（issue #7647，用户 2026-10-24 裁定「**仅工序名恰好是「裁剪」的一道**」）。
+     *
+     * <p>判定点是<b>工序实例的 operation_name 逐字相等</b>（`裁剪-布` / `精裁-布` / `裁剪-纱` 等
+     * 变体**不在**本单范围）—— 用逐字比较而不是 `startsWith`：工艺变体是另一道活，
+     * 把它也算进来等于扩大用户裁定的范围。</p>
+     */
+    public static final String OPERATION_CUTTING = "裁剪";
 
     /**
      * 回放标记键名（与既有 {@code ClientRequestIdService.replayedMarker} 同口径，
@@ -183,6 +195,16 @@ public class ProductionService {
      */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private ProcessingSetPartTokenMapper setPartTokenMapper;
+
+    /**
+     * 商品表（**只读**，issue #7636）：工人屏「货号」= 商品货号 {@code products.sku_code}，
+     * 而 {@code order_items.sku_code} 是 SKU 码（颜色 × 门幅）—— 两者不是一件事。
+     *
+     * <p>字段注入理由同上面几个只读依赖：本类构造签名被 21+ 处 {@code new ProductionService(...)} 装配，
+     * 加构造参数会把它们全改一遍。未装配时降级成「不显示货号」并打 WARN（见 {@link #productCodesOf}）。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ProductMapper productMapper;
 
     /**
      * 印刷品上的码的稳定域名（issue #4946；设计 {@code docs/design/worker-h5-scan-and-report.md}
@@ -858,9 +880,24 @@ public class ProductionService {
         if (items == null) {
             return byId;
         }
+        // 商品货号（issue #7636）：`order_items.sku_code` 是 **SKU 码**（颜色 × 门幅，
+        // `ProductService#generateSkuCode` 的 `{货号}-{色序2位}-{门幅}`，如 `2659-01-28`），
+        // 商品级货号 = `products.sku_code`（订单详情的 `OrderItemResponse.skuCode` 也取自它，issue #386）。
+        // 用户 2026-10-24 逐字「货号实际是2659」⇒ 工人屏「货号」必须印这一份。
+        Map<String, String> productCodeByProductId = productCodesOf(items);
         for (OrderItem item : items) {
             Map<String, Object> spec = new LinkedHashMap<>();
             spec.put("product_name", item.getProductName());
+            // 缺值不写键 ⇒ 读面 null ⇒ 工人屏整行不渲染（与 roll_count 同一口径，不回落 SKU 码）。
+            // 落的是**快照源键** `productCode`（camelCase，与同一批 `colorName` / `doorWidth` 同族）——
+            // 下发键 `product_code` 由 `PositionDetailFields.SNAPSHOT_SOURCE_KEYS` 翻译一次。
+            // 🔴 `product_id` 可为空（存量明细）⇒ 空键必须**显式短路**：`Map.of().get(null)` 抛 NPE
+            // （不可变表对空键的语义，issue #6219 同一族坑）。
+            String productId = item.getProductId();
+            String productCode = productId == null ? null : productCodeByProductId.get(productId);
+            if (productCode != null) {
+                spec.put("productCode", productCode);
+            }
             // 宽/高：V63 列（下单页必填，issue #4420 起真的会写）
             spec.put("width", item.getWidth());
             spec.put("height", item.getHeight());
@@ -896,6 +933,44 @@ public class ProductionService {
             byId.put(item.getId(), spec);
         }
         return byId;
+    }
+
+    /**
+     * 商品货号（{@code products.sku_code}）按商品 id 索引 —— **只读**，只服务「工人屏货号」这一面
+     * （issue #7636，用户 2026-10-24 逐字「货号实际是2659」）。
+     *
+     * <p>为什么要回查商品：{@code order_items.sku_code} 是 <b>SKU 码</b>（{@code {货号}-{色序2位}-{门幅}}，
+     * 颜色 × 门幅的组合），商品级货号只在 {@code products.sku_code} 上（订单详情
+     * {@code OrderItemResponse.skuCode} 也取自它，issue #386）。不在订单行上加列、不在前端切字符串
+     * （切字符串 = 第二份会漂的口径）。</p>
+     *
+     * <p>缺值口径：无 {@code product_id} / 商品已删 / 货号为空 ⇒ <b>不放进结果</b>（调用方不写键）
+     * ⇒ 工人屏按既有「缺值整行不渲染」处理 —— <b>不回落</b>成 SKU 码（那正是本单要治的错值）。</p>
+     *
+     * <p>未装配（既有单测直接 {@code new ProductionService(...)}，本类构造签名被 21+ 处装配依赖）⇒
+     * 返回空表并打 WARN：只读面降级成「不显示货号」（不静默、不影响其它键）。</p>
+     */
+    private Map<String, String> productCodesOf(List<OrderItem> items) {
+        if (productMapper == null) {
+            log.warn("ProductMapper 未装配 —— 工人屏不显示商品货号（issue #7636，只读面降级）");
+            return Map.of();
+        }
+        Set<String> productIds = new LinkedHashSet<>();
+        for (OrderItem item : items) {
+            if (StringUtils.hasText(item.getProductId())) {
+                productIds.add(item.getProductId());
+            }
+        }
+        if (productIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> byProductId = new LinkedHashMap<>();
+        for (Product product : productMapper.selectBatchIds(productIds)) {
+            if (product != null && product.getId() != null && StringUtils.hasText(product.getSkuCode())) {
+                byProductId.put(product.getId(), product.getSkuCode().trim());
+            }
+        }
+        return byProductId;
     }
 
     /**
@@ -1306,12 +1381,137 @@ public class ProductionService {
     public Map<String, Object> applyScanComplete(Order order, ProcessingOrder po, ProcessingPositionOperation op,
                                                  BigDecimal qty, BigDecimal qualifiedQty, String workType,
                                                  WorkerIdentity identity, Long tenantId) {
+        return applyScanComplete(order, po, op, qty, qualifiedQty, workType, identity, tenantId, null);
+    }
+
+    /**
+     * 扫码报工 + **裁剪批次核对**（issue #7647，用户 2026-10-24 裁定）。
+     *
+     * <p>🔴 <b>批次纠偏与报工明细同生共死</b>：两者都在本方法这一个事务里 —— 加工单级批次台账
+     * （{@code stock_batch_consumptions}）的写入若失败，报工明细/CAS/计件**一并回滚**
+     * （绝不出现「报了工、批次账没动」或反过来的半成品）。</p>
+     *
+     * <p>适用面与豁免：</p>
+     * <ul>
+     *   <li>只有工序名<b>恰好等于</b> {@link #OPERATION_CUTTING} 的工序要批次（用户裁定，见常量注释）；</li>
+     *   <li>该商品 × SKU **从未按批次入库**（零批次行）⇒ 不强制、也不落账（存量商品不能被卡死生产）；</li>
+     *   <li>其余工序：`cuttingBatchNo` 一个字节都不读（与改前逐字相同）。</li>
+     * </ul>
+     *
+     * @param cuttingBatchNo 工人确认的批次号（裁剪工序必填；其余工序可为 null）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> applyScanComplete(Order order, ProcessingOrder po, ProcessingPositionOperation op,
+                                                 BigDecimal qty, BigDecimal qualifiedQty, String workType,
+                                                 WorkerIdentity identity, Long tenantId,
+                                                 String cuttingBatchNo) {
         // 🔴 扫码 = 开工 / 领活（issue #4967，2026-09-21 用户裁定）：`applyReport` 里的
         // `recordReporter`（V92 的 `worker_id` / `worker_name` / `started_at` 三列）在这条路径上
         // **必然**执行 —— 工人扫码的身份由 `X-Worker-Session-Id` 从服务端解，无 session 在
         // Controller 就 401 了 ⇒ identity 恒非 null。这是「三列由 C 模式预留**转正**为默认路径写入」
         // 的落点（列 V92 已建 ⇒ 不新增迁移）。
-        return applyReport(order, po, op, qty, qualifiedQty, workType, identity, tenantId);
+        OrderItem cuttingItem = cuttingBatchItem(op, tenantId);
+        // 🔴 先校验再写：批次必填（422）发生在报工明细落库之前 —— 虽然同事务回滚也能保证干净，
+        //    但先校验能让「没填批次」这种最常见的错**不白跑**一遍写路径。
+        requireCuttingBatch(cuttingItem, cuttingBatchNo);
+        Map<String, Object> result = applyReport(order, po, op, qty, qualifiedQty, workType, identity, tenantId);
+        if (cuttingItem != null) {
+            StockBatchConsumptionService.CuttingReportResult batch = stockBatchConsumptionService
+                    .applyCuttingReport(tenantId, po.getProcessingOrderNo(), order.getOrderNo(),
+                            op.getOrderItemId(), cuttingItem.getProductId(), cuttingItem.getSkuId(),
+                            cuttingItem.getSkuCode(), cuttingBatchNo, qty);
+            if (batch != null) {
+                // 回执三键（issue #7647）：工人屏据此显示「批次 + 余量」，余量不足时显式给缺口
+                result.put("batch_no", batch.batchNo());
+                result.put("batch_remaining", batch.batchRemaining());
+                result.put("batch_shortage_meters", batch.shortageMeters());
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 裁剪工序的批次**必填**闸（issue #7647）：`cuttingItem == null`（非裁剪 / 零批次商品）⇒ 不拦。
+     *
+     * <p>独立成一个**具名**方法（而不是内联在 `applyScanComplete` 里）有两个理由：① 拒绝码的契约守卫
+     * （`tests/unit_ci_workflows/test_contract_ledger_reject_codes.py`）按**符号**读真抛点，内联在重载方法里
+     * 会让它抓不到这个码；② 「先校验再写」的语义要求它在任何写库之前被调用。</p>
+     */
+    private void requireCuttingBatch(OrderItem cuttingItem, String batchNo) {
+        if (cuttingItem != null && !StringUtils.hasText(batchNo)) {
+            throw new BusinessException(StockBatchConsumptionService.ERR_BATCH_REQUIRED,
+                    "这道「" + OPERATION_CUTTING + "」要填这次裁的是哪一批（本次未记账）", 422,
+                    "请照卷上印的批次号填写（例如 PC-20261020-0007）；智能派单指定过批次的会预填，"
+                            + "按实际裁的那一卷改即可");
+        }
+    }
+
+    /**
+     * 本道工序是否要确认批次（**唯一判据**，解析面与记账面共用 —— 两处各写一份必然漂）。
+     *
+     * @return 该行明细（需要批次时）；`null` = 本道工序不涉及裁剪批次（非「裁剪」/ 明细取不到 /
+     *         该 SKU 零批次入库 / 批次服务未装配）
+     */
+    private OrderItem cuttingBatchItem(ProcessingPositionOperation op, Long tenantId) {
+        if (stockBatchConsumptionService == null || op == null
+                || !OPERATION_CUTTING.equals(op.getOperationName())
+                || !StringUtils.hasText(op.getOrderItemId())) {
+            return null;
+        }
+        OrderItem item = orderItemMapper.selectById(op.getOrderItemId());
+        if (item == null || !tenantId.equals(item.getTenantId())
+                || !Integer.valueOf(0).equals(item.getDeleted())) {
+            return null; // 取不到 = 不知道是哪一行的布 ⇒ 不猜、不拦生产（解析面同款降级）
+        }
+        return stockBatchConsumptionService.tracksBatches(tenantId, item.getProductId(), item.getSkuId())
+                ? item : null;
+    }
+
+    /**
+     * 裁剪批次**可见面**（issue #7647）：给扫码解析响应追加三键 ——
+     * `batch_required`（要不要批次）/ `batch_no`（派工指定批次，预填值）/ `batch_candidates`
+     * （候选批次 + 余量 + 够不够）。
+     *
+     * <p>🔴 键**恒在**（缺值 null / 空数组）：页面按「缺键就缺」渲染，三键恒在才能让「不需要批次」
+     * 与「老后端没这个能力」在响应上分得开。判定与记账面**同一个** {@link #cuttingBatchItem}。</p>
+     *
+     * <p>候选上限 8 条（常驻面克制：工人屏是车间一屏，不是库存浏览器）：按入库先后（FIFO）取前 8 条
+     * —— 与派工候选列表**同一份**取数（{@code StockBatchConsumptionService#remaining}），不另算余量。</p>
+     */
+    Map<String, Object> cuttingBatchView(ProcessingOrder po, String orderItemId,
+                                         ProcessingPositionOperation op, Long tenantId) {
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("batch_required", Boolean.FALSE);
+        view.put("batch_no", null);
+        view.put("batch_candidates", List.of());
+        OrderItem item = cuttingBatchItem(op, tenantId);
+        if (item == null || (StringUtils.hasText(orderItemId) && !orderItemId.equals(item.getId()))) {
+            return view;
+        }
+        view.put("batch_required", Boolean.TRUE);
+        if (po != null) {
+            StockBatchConsumptionService.BatchAssignment assignment =
+                    batchAssignmentsOf(po, tenantId).get(item.getId());
+            if (assignment != null) {
+                view.put("batch_no", assignment.batchNo());
+            }
+        }
+        BigDecimal needed = op.getQty() == null
+                ? null : op.getQty().subtract(op.getDoneQty() == null ? BigDecimal.ZERO : op.getDoneQty());
+        List<Map<String, Object>> candidates = new ArrayList<>();
+        for (BatchStockViews.BatchRemaining row
+                : stockBatchConsumptionService.remaining(tenantId, item.getProductId(), item.getSkuId(), true)) {
+            if (candidates.size() >= 8) {
+                break;
+            }
+            Map<String, Object> c = new LinkedHashMap<>();
+            c.put("batch_no", row.batchNo());
+            c.put("remaining_meters", row.remainingMeters());
+            c.put("enough", needed == null || row.remainingMeters().compareTo(needed) >= 0);
+            candidates.add(c);
+        }
+        view.put("batch_candidates", candidates);
+        return view;
     }
 
     /**
