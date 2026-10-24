@@ -1121,6 +1121,8 @@ class OrderServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("作业单")
                 .hasMessageContaining("JG-20261024-3226")
+                // 用户口径（2026-10-24）：出口是**作废**（订单不做物理删除），文案必须给出这个动作词
+                .hasMessageContaining("作废该作业单")
                 .satisfies(ex -> assertThat(((BusinessException) ex).getCode()).isEqualTo("VALIDATION_ERROR"));
         // 订单与明细都不得被动过
         verify(orderMapper, never()).deleteById(anyString());
