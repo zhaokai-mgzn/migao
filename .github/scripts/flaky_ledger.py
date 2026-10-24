@@ -1643,14 +1643,21 @@ def _merge_pages(pages) -> dict:
 def _gh_api(path: str, *, method: str = "GET", fields=None) -> dict:
     """`gh api` 薄封装。默认 **GET**（`--paginate --slurp` ⇒ 多页合并，见 `_merge_pages`）。
 
-    #5687：另支持**写**（`method="POST"` + `fields`）—— 目前唯一调用方是「窗口型疑似的跟踪单」
-    的创建（`ensure_tracking_issue`）。写路径**不带** `--paginate`（分页是读侧的语义）。
+    #5687：另支持**写**（`method="POST"` + `fields`）—— 调用方是标签自愈（`ensure_label`）
+    与跟踪单创建（`ensure_tracking_issue`）。写路径**不带** `--paginate`（分页是读侧的语义）。
     """
     cmd = ["gh", "api", "--paginate", "--slurp"]
     if method != "GET":
         cmd = ["gh", "api", "-X", method]
     for key, value in (fields or {}).items():
         # `-f` 走字符串语义（`-F` 会把 `@`/数字做强转 —— 跟踪单的 body 里正好有 `#`/`@` 形态）
+        # 🔴 #7614：**数组**字段（如 `labels`）必须逐项发成 `-f 'labels[]=v'` —— 发成 `-f labels=v`
+        # 是**字符串**，GitHub 回 422 `For 'properties/labels', "v" is not an array`
+        # （实测：机械开单因此**从未成功过**，见 issue #7614）。
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                cmd += ["-f", f"{key}[]={item}"]
+            continue
         cmd += ["-f", f"{key}={value}"]
     cmd.append(path)
     out = subprocess.run(cmd, check=True, capture_output=True, text=True).stdout
@@ -2109,6 +2116,53 @@ def branch_head_age_minutes():
 
 TRACKING_LABEL = "flaky/tracking"
 
+#: #7632：标签是**仓库设置、不在代码里**（fork / 新仓 / 设置被改都会丢）⇒ 用之前必须自愈。
+#: 颜色/描述与 `.github/workflows/flaky-triage.yml` 里 `gh label create` 的那一份**同值**
+#: （两处都是「确保它存在」，改一处忘另一处只会让颜色漂移，不影响判定）。
+TRACKING_LABEL_COLOR = "1D76DB"
+TRACKING_LABEL_DESCRIPTION = "flaky / 窗口型疑似的跟踪标签（CI 机械开单用；#5687 / #5960）"
+
+
+def ensure_label(repo: str, name: str = TRACKING_LABEL, *,
+                 color: str = TRACKING_LABEL_COLOR,
+                 description: str = TRACKING_LABEL_DESCRIPTION) -> None:
+    """**保证**标签存在（幂等：先 `POST /labels`；已存在（422）⇒ `PATCH /labels/<name>` 更新）。
+
+    🔴 #7632（实证）：仓库里**没有** `flaky/tracking` 标签（`gh api repos/<repo>/labels/flaky%2Ftracking`
+    ⇒ 404），而 `POST /issues` 带一个**不存在**的标签 ⇒ GitHub 返回 **422**。后果是
+    「`flaky/rerun-green` + `block/merge` 打上了（PR 被封）」而「写台账 + 开跟踪单」全部失败
+    —— fail-closed 是对的，但**没有任何 durable 记录**说明「哪次失败被哪次重跑掩盖」，
+    解除封锁时只能翻 run 日志（PR #7599 / #7646 各撞一次）。
+
+    旧实现的标签创建只写在 workflow 的 `②′b`（**仅 `mark_suspect` 触发**）⇒ `mark_flaky`
+    这条路上**从来没有**人建过它。修法 = 在**建单之前**（本函数）自愈，两类 kind 都覆盖。
+
+    fail-closed：建标签失败 ⇒ 抛 `RuntimeError`（调用方随即红）—— **不许**吞掉后继续去撞 422。
+    """
+    # 走 REST（`_gh_api`）而不是 `gh label create`：单测里对 `_gh_api` 的桩**自动覆盖**这一步，
+    # 不会有「测试真去调 gh」的旁路（#7632 的第一版就是这么红的）。
+    try:
+        _gh_api(f"repos/{repo}/labels", method="POST", fields={
+            "name": name, "color": color, "description": description})
+        return
+    except subprocess.CalledProcessError as exc:
+        detail = ((exc.stderr or "") + (exc.stdout or "")).strip().replace("\n", " ")
+        # 已存在 ⇒ GitHub 返回 422 `already_exists` ⇒ 走更新（把颜色/描述拉回代码里的值）
+        if "422" not in detail and "already_exists" not in detail:
+            raise RuntimeError(
+                f"标签 `{name}` 自愈失败（创建退出 {exc.returncode}）：{detail[:160] or '无 stderr'}"
+                " ⇒ fail-closed（否则建跟踪单会因未知标签 422）") from exc
+    quoted = name.replace("/", "%2F")
+    try:
+        _gh_api(f"repos/{repo}/labels/{quoted}", method="PATCH", fields={
+            "new_name": name, "color": color, "description": description})
+    except subprocess.CalledProcessError as exc:
+        detail = ((exc.stderr or "") + (exc.stdout or "")).strip().replace("\n", " ")
+        raise RuntimeError(
+            f"标签 `{name}` 自愈失败（更新退出 {exc.returncode}）：{detail[:160] or '无 stderr'}"
+            " ⇒ fail-closed（否则建跟踪单会因未知标签 422）") from exc
+
+
 #: 🔴 #5960：**每一个需要跟踪单的 kind 各自的 marker**（单一事实源）。
 #:
 #: 为什么必须**按 kind 分开**（不能共用一个 marker）：`flaky` 与 `suspect-window-deterministic`
@@ -2153,8 +2207,8 @@ def ensure_tracking_issue(repo: str, job: str, *, subject: str = "",
                           kind: str = SUSPECT_WINDOW_KIND) -> dict:
     """**保证**该 job 有一张 open 跟踪单；返回 `{"number": int|None, "created": bool, "url": str}`。
 
-    **幂等**：已有 ⇒ 复用（`_gh_api` 只读路径）；没有 ⇒ 新建（`issues` write 权限已在
-    `flaky-triage.yml` 的 `permissions:` 里，不新增任何 secret）。
+    **幂等**：已有 ⇒ 复用（`_gh_api` 只读路径）；没有 ⇒ **先自愈标签**（#7632）再新建
+    （`issues` write 权限已在 `flaky-triage.yml` 的 `permissions:` 里，不新增任何 secret）。
 
     fail-closed（抛 `RuntimeError`）：拿不到事实 / 建不出来 ⇒ 调用方必须红 —— 否则
     「强制跟踪」会静默退化成「没有跟踪单也照样记一条」（正是 #5307 治过的形态）。
@@ -2214,11 +2268,14 @@ def ensure_tracking_issue(repo: str, job: str, *, subject: str = "",
             "（本单只承接「这条 flaky 的机制由谁定位」）。\n\n"
             "**台账**：`.github/flaky-ledger.json`（条目按 `(workflow, run_id, job)` 幂等键定位）。\n"
         )
-    # ⚠️ 参数是 **`title=`/`body=`**（`gh api -f` 语义）；`labels` 用 CSV 字符串（同 `gh` CLI 口径）。
+    # 🔴 #7632：建单前**先保证标签存在** —— 不存在时 `POST /issues` 带该标签会 422（实测两次）
+    ensure_label(repo)
+    # ⚠️ 参数是 **`title=`/`body=`**（`gh api -f` 语义）；`labels` 必须是**列表** —— 数组字段由
+    # `_gh_api` 逐项发成 `-f 'labels[]=…'`（#7614 实测：发成字符串 ⇒ 422，开单链从未成功过）。
     listing = _gh_api(f"repos/{repo}/issues", method="POST", fields={
         "title": title,
         "body": body,
-        "labels": TRACKING_LABEL,
+        "labels": [TRACKING_LABEL],
     })
     number = listing.get("number") if isinstance(listing, dict) else None
     if not isinstance(number, int):

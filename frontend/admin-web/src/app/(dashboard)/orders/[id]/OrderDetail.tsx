@@ -486,17 +486,14 @@ export default function OrderDetailPage() {
       </SectionCard>
 
       {/* 加工单（issue #3340）：订单 producing 阶段的子进度。
-          items（issue #5145 阶段 1）：生成加工单时据此取逐面料行的派工候选（系统给建议值、文员可改）。 */}
+          🔴 issue #7634：本块**只读** —— 派单在「智能派单」页、状态流转在生产明细页；
+          订单详情不再传 isUrgent / items（不再直派、不再取批次候选）。 */}
       {canViewProcessingOrder && <ProcessingOrderBlock
         orderId={order.id}
         orderStatus={order.status}
         // issue #7079 第 5 包：要不要作业 / 要哪一型，一律取服务端读面（`work_order_kind`）——
         // 旧写法 `processingItems.length > 0` 只覆盖「含加工项」那一半，卖布单被漏掉 ⇒ 没有生成出口。
         workOrderKind={workOrderKindOf(order)}
-        // issue #7507：加急 = 唯一保留的「详情页直派」例外（非加急默认走智能派单）；
-        // 真值来自订单读面 `is_urgent`（缺键 = 不加急 ⇒ 受限一侧，不做客户端默认）。
-        isUrgent={order.isUrgent === true}
-        items={order.items ?? []}
         operations={orderOperations}
         onStatusChange={setProcessingOrder}
         onReloadReady={acceptBlockReload}

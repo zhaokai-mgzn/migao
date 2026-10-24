@@ -87,6 +87,18 @@ function renderItemsSummary(po: ProcessingOrder): string[] {
   return lines.filter(Boolean)
 }
 
+/**
+ * issue #7633：该行的**父订单已不可解析**（软删 / 缺失）。
+ *
+ * 判定口径 = 列表响应里 `orderNo` 缺失：`processing_orders.order_id` 是 NOT NULL 外键、
+ * 列表与明细同租户，而列表用 `selectBatchIds`（`@TableLogic` 过滤软删）批量取父订单
+ * ⇒ `orderNo == null` **当且仅当**父订单已软删 / 不可解析。
+ * 🔴 这是**推断**、不是显式契约字段（不改 API）；将来若要显式位（如 `orderMissing`）另立单。
+ */
+function isOrderMissing(po: ProcessingOrder): boolean {
+  return !po.orderNo
+}
+
 export default function ProductionBoardPage() {
   const router = useRouter()
   // issue #5913：「订单详情」入口的守卫码与 `/orders` 的前端路由守卫同码（layout.tsx 的
@@ -145,7 +157,9 @@ export default function ProductionBoardPage() {
 
   useEffect(() => {
     if (loading || error) return
-    const pending = pageRows.filter((r) => !detailCache.current.has(r.po.id))
+    // issue #7633：父订单已删的行**不进** pending ⇒ 不再对 operations / piecework 扇出 404
+    //（不进 pending 就天然不重试；它们也不写缓存，对 `pending` 收敛无影响）。
+    const pending = pageRows.filter((r) => !isOrderMissing(r.po) && !detailCache.current.has(r.po.id))
     if (pending.length === 0) return
     let cancelled = false
     Promise.allSettled(
@@ -350,7 +364,15 @@ export default function ProductionBoardPage() {
                     <td className="px-4 py-4 whitespace-nowrap text-neutral-600" data-testid={`production-row-kind-${po.id}`}>
                       {ORDER_KIND_LABELS[orderKindOf(po)]}
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-neutral-600">{po.orderNo ?? '—'}</td>
+                    {/* issue #7633：父订单已删（`orderNo` 缺失）⇒ 说清「订单已删除」，而不是留一个
+                        「—」让人以为数据坏了。客户列仍「—」（不编造客户）；不给这类行「重试」入口
+                        （重试必然还是 404），也不新增常驻告警条（§31 P1/P3）。 */}
+                    <td
+                      className="px-4 py-4 whitespace-nowrap text-neutral-600"
+                      data-testid={`production-row-orderno-${po.id}`}
+                    >
+                      {isOrderMissing(po) ? '订单已删除' : po.orderNo ?? '—'}
+                    </td>
                     <td className="px-4 py-4 whitespace-nowrap text-neutral-900">{po.customerName ?? '—'}</td>
                     {/* 商品与数量：宽度必须收紧 —— 本列是 #4357 合并时新增的第 8 列，过宽会把
                         「操作」列挤出容器右缘（§15.3：vitest 看不见，几何探针实测 1440px 视口

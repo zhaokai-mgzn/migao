@@ -1,10 +1,12 @@
 """
-语音识别（ASR）API — 基于 DashScope paraformer-realtime-8k-v2
+语音识别（ASR）API — 阿里云 MaaS 实时识别（qwen-audio 系列）
 
 POST /api/chat/transcribe
   接收音频文件，返回转写文本。
 
-免费额度: 36,000 秒（paraformer-realtime-8k-v2），用完即停。
+端点与凭据（issue #7661，用户 2026-10-24 裁定）：语音面切到 MaaS（token-plan）host，
+`ASR_API_KEY` 与 `ASR_WEBSOCKET_BASE_URL` 都由环境注入；**不再回落 PRIMARY_API_KEY**
+（那是 DeepSeek 的 key，打到百炼只会 401 —— 缺 key 必须 fail-closed，不能静默拿错 key）。
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+import dashscope
 from dashscope.audio.asr.recognition import Recognition, RecognitionCallback
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from loguru import logger
@@ -61,7 +64,7 @@ class _CollectorCallback(RecognitionCallback):
     """收集 ASR 识别结果（按 sentence_id 保留每句最新文本，拼接完整转写）
 
     缺陷修复（B 端语音「只能识别后半段」）：旧实现只取 sentences[-1]（最后一句），
-    DashScope paraformer-realtime 对带停顿的多句语音会逐句返回，
+    实时识别服务对带停顿的多句语音会逐句返回，
     用户说的前半句（如"你好"）被整段丢弃。现按 sentence_id 保留每句最新
     文本（partial 中间结果被同句后续事件自然覆盖），full_text 拼接全部句子。
     """
@@ -129,6 +132,18 @@ def _convert_to_wav(audio_data: bytes, source_format: str) -> bytes:
             Path(tmp_out_path).unlink(missing_ok=True)
 
 
+def _apply_asr_endpoint() -> None:
+    """把 dashscope SDK 的实时识别端点指到 MaaS host（issue #7661）。
+
+    `Recognition` 没有实例级 endpoint 参数，只读模块级 `dashscope.base_websocket_api_url`
+    （SDK 自己的 MaaS 形态见 dashscope/common/env.py）⇒ 在这里一处设置。
+    `ASR_WEBSOCKET_BASE_URL` 为空则不覆盖（= 用 SDK 默认 dashscope.aliyuncs.com，留作回滚口）。
+    """
+    url = (settings.ASR_WEBSOCKET_BASE_URL or "").strip()
+    if url:
+        dashscope.base_websocket_api_url = url
+
+
 async def _transcribe_audio(
     audio_data: bytes,
     format: str,
@@ -149,9 +164,11 @@ async def _transcribe_audio(
     if language_hints is None:
         language_hints = [settings.ASR_LANGUAGE_HINTS]
 
-    api_key = settings.ASR_API_KEY or settings.PRIMARY_API_KEY
+    # 旧百炼 key 退役（issue #7661）：**不回落** PRIMARY_API_KEY（DeepSeek key），缺就 fail-closed
+    api_key = settings.ASR_API_KEY
     if not api_key:
         raise ValueError("ASR_API_KEY 未配置")
+    _apply_asr_endpoint()
 
     callback = _CollectorCallback()
 

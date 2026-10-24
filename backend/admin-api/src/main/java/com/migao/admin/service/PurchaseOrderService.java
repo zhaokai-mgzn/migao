@@ -102,8 +102,23 @@ public class PurchaseOrderService {
         BigDecimal total = ZERO;
         List<BigDecimal> amounts = new ArrayList<>();
         for (PurchaseOrderCreateRequest.Item item : items) {
-            if (trimToNull(item.skuId()) == null) {
+            String skuId = trimToNull(item.skuId());
+            if (skuId == null) {
                 throw BusinessException.validationError("采购明细缺少 SKU");
+            }
+            // SKU 归属（issue #7568）：直连 API 曾能落「指向不存在 SKU」的明细 —— 收货面解析不到展示名、
+            // 应付却照算。租户面由 MyBatis 租户拦截器兜（跨租户 selectById ⇒ null）⇒ 与「不存在」同一出口，
+            // 不额外造一个能把「别家租户有这个 SKU」读出来的分支。
+            ProductSku sku = skuMapper.selectById(skuId);
+            if (sku == null) {
+                throw BusinessException.validationError(
+                        "采购明细的 SKU 不存在或不属于当前租户：请从选品器重新选择（skuId=" + skuId + "）");
+            }
+            String declaredProductId = trimToNull(item.productId());
+            if (declaredProductId != null && !declaredProductId.equals(sku.getProductId())) {
+                throw BusinessException.validationError(
+                        "采购明细的商品与 SKU 不一致：SKU " + skuId + " 不属于商品 " + declaredProductId
+                        + "，请重新选择");
             }
             BigDecimal qty = item.quantity();
             if (qty == null || qty.signum() <= 0) {

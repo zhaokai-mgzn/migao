@@ -1,4 +1,4 @@
-// case_ids: PG-062
+// case_ids: PG-062, PG-093
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -463,6 +463,45 @@ class BatchConsumptionLedgerRealDbTest {
         assertThat(countRows("JG-5190-I1")).as("对照组：行数仍不变").isEqualTo(rowsAfterFirst);
         assertThat(sqlStateOfRejected(sameTuple)).as("对照组：回滚后唯一闸必须回来")
                 .isEqualTo("23505");
+    }
+
+    @Test
+    @DisplayName("🔴 判据5b（issue #7647）：报工纠偏行允许同一 (批次×明细行) 多行；派工行仍只许一行")
+    void cuttingReportRowsMayRepeatButDispatchRowsMayNot() throws Exception {
+        long batchId = newBatch(LEDGER_PRODUCT, LEDGER_SKU_ID, LEDGER_SKU, "PC-7647-C1", "60");
+        // ① 派工未指定的行**分次报工**：同一 (批次 × 明细行 × cutting_report) 两张扣减行都必须落库
+        //    （这是 V191 收窄 uk_batch_consumption_line 谓词的**承重判据** —— mock 面测不出来）
+        exec(cuttingRow(batchId, "-3", "3", "3"));
+        exec(cuttingRow(batchId, "-4", "4", "4"));
+        assertThat(countRows("JG-7647-C1")).as("分次报工两行都在").isEqualTo(2);
+        assertThat(remainingOf(batchId)).as("余量 60 − 3 − 4 = 53").isEqualByComparingTo("53");
+
+        // ② 换批次后又改回：同一批次上的「回补 + 扣减」两行同样要能落库（净额归零）
+        exec(cuttingRow(batchId, "4", "-4", "-4"));
+        exec(cuttingRow(batchId, "-4", "4", "4"));
+        assertThat(countRows("JG-7647-C1")).as("回补 + 再扣减两行都在").isEqualTo(4);
+        assertThat(remainingOf(batchId)).as("余量 53 + 4 − 4 = 53").isEqualByComparingTo("53");
+
+        // ③ 派工行（processing_order）的幂等闸**一个字都没放宽**：同一元组第二行仍 23505
+        String dispatch = "INSERT INTO stock_batch_consumptions (tenant_id, batch_id, batch_no, product_id,"
+                + " sku_id, sku_code, delta, before_qty, after_qty, formula_meters, planned_meters, unit_cost,"
+                + " reason, processing_order_no, order_no, order_item_id, operator, note) VALUES ("
+                + TENANT_ID + ", " + batchId + ", 'PC-7647-C1', '" + LEDGER_PRODUCT + "', " + LEDGER_SKU_ID
+                + ", '" + LEDGER_SKU + "', -3, 60, 57, 3, 3, 12.5, 'processing_order', 'JG-7647-C2',"
+                + " 'ORD-JG-7647-C2', 'item-7647-c2', 'system', '7647 派工幂等闸')";
+        exec(dispatch);
+        assertThat(sqlStateOfRejected(dispatch)).as("派工行重复 ⇒ 仍被 uk_batch_consumption_line 挡下")
+                .isEqualTo("23505");
+    }
+
+    /** 报工纠偏行（V191）：`formula_meters = planned_meters = −delta`（与盘点族同一条符号约定）。 */
+    private static String cuttingRow(long batchId, String delta, String formula, String planned) {
+        return "INSERT INTO stock_batch_consumptions (tenant_id, batch_id, batch_no, product_id,"
+                + " sku_id, sku_code, delta, before_qty, after_qty, formula_meters, planned_meters, unit_cost,"
+                + " reason, processing_order_no, order_no, order_item_id, operator, note) VALUES ("
+                + TENANT_ID + ", " + batchId + ", 'PC-7647-C1', '" + LEDGER_PRODUCT + "', " + LEDGER_SKU_ID
+                + ", '" + LEDGER_SKU + "', " + delta + ", 60, 60, " + formula + ", " + planned + ", 12.5,"
+                + " 'cutting_report', 'JG-7647-C1', 'ORD-JG-7647-C1', 'item-7647', 'system', '7647 纠偏夹具')";
     }
 
     // ══════════════════════════════════ 判据 6：余量分布四档逐值可复算

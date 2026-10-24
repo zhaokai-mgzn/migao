@@ -21,9 +21,9 @@ import com.migao.admin.mapper.PurchaseOrderReceiptMapper;
 import com.migao.admin.mapper.SupplierMapper;
 import com.migao.admin.time.BusinessClock;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.DisplayName;import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -72,6 +72,9 @@ class PurchaseOrderServiceTest {
         lenient().when(businessClock.today()).thenReturn(LocalDate.of(2026, 10, 20));
         lenient().when(supplierMapper.selectById(SUPPLIER)).thenReturn(
                 Supplier.builder().id(SUPPLIER).tenantId(TENANT).name("杭州染整一厂").status("active").build());
+        // issue #7568：建单要校验 SKU 归属，故夹具里的 SKU 必须是**真的存在**的（默认夹具 SKU-1）。
+        lenient().when(skuMapper.selectById("SKU-1")).thenReturn(
+                ProductSku.builder().id(1L).tenantId(TENANT).productId("prod-1").skuCode("SKU-1").build());
     }
 
     private PurchaseOrder order(String status) {
@@ -193,6 +196,55 @@ class PurchaseOrderServiceTest {
                 TENANT, "buyer"))
                 .isInstanceOf(BusinessException.class).hasMessageContaining("小数");
         verify(orderMapper, never()).insert(any(PurchaseOrder.class));
+    }
+
+    @Test
+    @DisplayName("建单拒绝不存在的 SKU（issue #7568）：直连 API 不许落指向鬼 SKU 的明细 —— 收货面会解析不到、应付照算")
+    void createRejectsUnknownSku() {
+        assertThatThrownBy(() -> service.create(new PurchaseOrderCreateRequest(
+                SUPPLIER, null, null, null,
+                List.of(new PurchaseOrderCreateRequest.Item("SKU-ghost", BigDecimal.ONE,
+                        new BigDecimal("10.00"), null))),
+                TENANT, "buyer"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("SKU 不存在或不属于当前租户");
+        // 先校验、后写：任何一行不合法都不留半张采购单
+        verify(orderMapper, never()).insert(any(PurchaseOrder.class));
+        verify(itemMapper, never()).insert(any(PurchaseOrderItem.class));
+    }
+
+    @Test
+    @DisplayName("建单拒绝「商品与 SKU 不一致」（issue #7568）：别家商品的 productId 不许挂在别人的 SKU 上")
+    void createRejectsSkuFromAnotherProduct() {
+        lenient().when(skuMapper.selectById("SKU-9")).thenReturn(
+                ProductSku.builder().id(9L).tenantId(TENANT).productId("prod-9").skuCode("SKU-9").build());
+        assertThatThrownBy(() -> service.create(new PurchaseOrderCreateRequest(
+                SUPPLIER, null, null, null,
+                List.of(new PurchaseOrderCreateRequest.Item("SKU-9", BigDecimal.ONE,
+                        new BigDecimal("10.00"), "prod-1"))),
+                TENANT, "buyer"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("商品与 SKU 不一致");
+        verify(orderMapper, never()).insert(any(PurchaseOrder.class));
+    }
+
+    @Test
+    @DisplayName("合法 SKU ⇒ 建单成功且 product_id 落库（issue #7568 的反向对照：校验不许把正常路径一起挡死）")
+    void createPersistsProductIdOfValidSku() {
+        givenInsertsAssignIds();
+        lenient().when(itemMapper.selectList(any())).thenReturn(List.of(item("100")));
+        lenient().when(receiptMapper.selectList(any())).thenReturn(List.of());
+
+        service.create(new PurchaseOrderCreateRequest(
+                SUPPLIER, null, null, null,
+                List.of(new PurchaseOrderCreateRequest.Item("SKU-1", new BigDecimal("100"),
+                        new BigDecimal("10.00"), "prod-1"))),
+                TENANT, "buyer");
+
+        ArgumentCaptor<PurchaseOrderItem> captor = ArgumentCaptor.forClass(PurchaseOrderItem.class);
+        verify(itemMapper).insert(captor.capture());
+        assertThat(captor.getValue().getProductId()).isEqualTo("prod-1");
+        assertThat(captor.getValue().getSkuId()).isEqualTo("SKU-1");
     }
 
     @Test

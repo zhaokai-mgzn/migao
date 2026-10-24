@@ -4393,8 +4393,8 @@ cases:
     expectations:
       - tool: direct_reply
     data_checks:
-      - "🔴 **判据 1（会红，前端可见面）**：卖布单（`work_order_kind = outbound`、`processingItems` 为空）且无作业单 ⇒ 订单详情「作业单」区块必须出现**「生成出库作业单」**按钮 + 按型说明（按钮文案取 `ORDER_KIND_LABELS`，不新造词），且屏上**不出现**机器键 `outbound` / `work_order_kind`。执行点 = `frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx`（`UI-115 判据 1`）。**红证**：把 `canGenerate` 退回 `notFound && hasProcessing && …`（旧形态）⇒ 红。"
-      - "🔴 **判据 2（会红，不实文案）**：空态文案**不得**再出现「无加工项订单无需加工环节」——它对卖布单**不实**（卖布单正需要裁剪/打包作业）。需要作业但当前状态还不能生成 ⇒ 显示按型的**可行动**说明（「该订单需要作业单（出库作业单），当前状态还不能生成」+ 下一步是什么）；无需要报工的作业 ⇒ 「该订单无需作业单（没有加工项，也不是卖布单）」。执行点 = 同文件 `UI-115 判据 3/4`。**红证**：把空态改回那句旧文案 ⇒ 判据 3 红。"
+      - "🔴 **判据 1（会红，前端可见面）**：卖布单（`work_order_kind = outbound`、`processingItems` 为空）且无作业单 ⇒ 订单详情「作业单」区块必须出现**「去智能派单」**入口 + 按型说明（业务名取 `ORDER_KIND_LABELS`，不新造词），且屏上**不出现**机器键 `outbound` / `work_order_kind`。🔴 issue #7634 起生成入口**一律**收走（不再按型/按加急给「生成…」按钮）⇒ 判据看的是「按型说明 + 派单页入口」，不是「生成按钮」。执行点 = `frontend/admin-web/tests/unit/components/ProcessingOrderBlock.test.tsx`（`UI-115 判据 1`）。**红证**：把按型说明换回无型文案（丢掉 `ORDER_KIND_LABELS`）⇒ 红。"
+      - "🔴 **判据 2（会红，不实文案）**：空态文案**不得**再出现「无加工项订单无需加工环节」——它对卖布单**不实**（卖布单正需要裁剪/打包作业）。需要作业但当前状态还不能派单 ⇒ 显示按型的**可行动**说明（「该订单需要作业单（出库作业单），当前状态还不能派单」+ 下一步是什么）；无需要报工的作业 ⇒ 「该订单无需作业单（没有加工项，也不是卖布单）」。执行点 = 同文件 `UI-115 判据 3/4`。**红证**：把空态改回那句旧文案 ⇒ 判据 3 红。"
       - "🔴 **判据 3（会红，发货页前置守卫）**：卖布单在 `/orders/{id}/ship` 必须被**前置阻断**（不渲染发货表单「确认发货 / 确认物流」）+ 可行动出口（「返回订单详情」）+ 按型引导句（「该订单是卖布单：先完成出库作业单的裁剪与打包报工，再发货」）；作业单已完成 ⇒ 放行；**无作业**的普通单（`work_order_kind` 缺键）⇒ 不查作业单、直接渲染表单（不许误拦）。执行点 = `frontend/admin-web/tests/unit/components/ShipOrderGuard.test.tsx`（`UI-115 判据 1~4`）。**红证**：把守卫退回 `order.processingItems?.length > 0` ⇒ 卖布单那 3 条红。"
       - "🔴 **判据 4（会红，详情页发货入口）**：订单详情的发货入口对卖布单同样有前置提示（按型引导句），作业单已完成才出可点的「发货」。执行点 = `frontend/admin-web/tests/unit/components/OrderDetailShipGuard.test.tsx`（`UI-115 判据 5~7`）。**红证**：退回 `processingItems` 单侧判据 ⇒ 卖布单直接渲染「发货」按钮 ⇒ 红。"
       - "🔴 **判据 5（会红，读面同源）**：`OrderShipGuard.requiredOrderKind` 与 `needsWork` **必须同源**（有型 ⇔ 需要作业），且逐值：全卖布行 ⇒ `outbound` / 含加工项或混合 ⇒ `processing` / 无作业 ⇒ `null`；卖布行以 JSON **字符串** 形态出现时仍判出库。执行点 = `backend/admin-api/src/test/java/com/migao/admin/service/OrderShipGuardTest.java`（`requiredOrderKind*` 6 条）。**红证**：让 `hasFabricSaleLine` 恒假 / 按 `processingItems` 单侧判 ⇒ 红。"
@@ -4919,11 +4919,11 @@ cases:
     data_checks:
       - "判据 1·后端不落库（会红）：POST /api/admin/products/ai-images 只回 {url, model}（data 恰好两个键）；控制器依赖面恰好 ProductImageGenerationService（无 ProductService / Mapper）。执行点 = ProductImageControllerTest + ProductImageGenerationServiceTest。"
       - "判据 2·链路收口（会红）：临时 URL 只允许从 *.aliyuncs.com 下载并转存 OSS（非百炼域名 ⇒ 422 且不下载）；样图必须 https；用途白名单 main/texture/craft/scene 之外 ⇒ 422 且不发起生成请求。"
-      - "判据 3·ai-agent 模型轮换（会红）：配额类错误（429 / AllocationQuota）与「模型接不了该请求」（HTTP 400 InvalidParameter，实测 qwen-mt-image-2.0，issue #7341）自动切下一个模型；审核类 400（DataInspectionFailed）不切模型；默认链 = qwen-mt-image-2.0（用户 2026-10-23 裁定：qwen-image-* 免费额度用尽，issue #7538）且它不接图生图 ⇒ 全链不可用时报「模型不接这类请求（非配额原因）」而不是「额度用尽」；全部用尽 ⇒ 503；未配置 Key ⇒ 503 且不发外部请求。执行点 = backend/ai-agent-service/tests/test_generator.py。"
+      - "判据 3·ai-agent 模型轮换（会红）：配额类错误（429 / AllocationQuota）与「模型接不了该请求」（HTTP 400 InvalidParameter）自动切下一个模型；审核类 400（DataInspectionFailed）不切模型；**默认链 = qwen-image-3.0-pro、端点 = 阿里云 MaaS token-plan 的原生多模态路径（用户 2026-10-24 裁定，issue #7661）**，旧百炼模型与旧 host 不得回流（类级守卫 = tests/unit_ci_workflows/test_maas_audio_image_single_source.py 的 G1/G3）；全链不可用时报「模型不接这类请求（非配额原因）」而不是「额度用尽」；全部用尽 ⇒ 503；未配置 Key ⇒ 503 且不发外部请求（**不回落 PRIMARY 的 DeepSeek key**）。执行点 = backend/ai-agent-service/tests/test_generator.py。"
       - "判据 4·前端（会红，issue #7533 改判）：无样图 ⇒ 按钮 disabled + 先上传提示；默认用第 1 张、多图可切换样图（生成携带所选样图 URL + kind）；**生成成功即自动填入图片位**（主图 ⇒ onApplyMain / images[0]；细节·工艺·场景 ⇒ onApplyDetail / detailImages 末位），**不存在「用这张」按钮**（回归守卫）；**再生成一张 ⇒ 携带上一次自动填入的 URL 作为 replaceUrl**（替换、不叠加；换用途跨槽位同样先摘旧位）；生成中 loading；失败**不落位**且错误可见可行动。执行点 = frontend/admin-web/tests/unit/components/ProductImageAI.test.tsx。"
       - "判据 5·落位闭环（会红，issue #7533）：渲染真实 `ProductForm` ⇒ 生成成功**无需任何额外点击**主图位即变为 [生成图, 原图]；点「提交并上架」⇒ `onSubmit` 载荷 `images` 带上该 URL（= 用户逐字「保存后也没有」的判据）；再生成 ⇒ 替换不叠加；细节用途 ⇒ `detailImages` 末位；**生成期间（~40s）商家改过图片列表 ⇒ 落位基于最新列表**（删掉的图不复活、新图不丢，靠函数式更新）。执行点 = frontend/admin-web/tests/unit/components/ProductFormAIImage.test.tsx；编辑态样图候选去重 = ProductForm.test.tsx。"
     skip_reason: "[backend-contract] 纯页面 AI 辅助入口（不经过 LLM 对话/工具），由 admin-api 单测 + ai-agent pytest + 前端 vitest 执行，不进入 agent-eval 冒烟"
-    merge_log: "2026-10-19 新增（issue #7335）。数据侧：同日已为测试租户 46 的 6 个无图商品生成 24 张（6 主图 + 18 明细图）并写入 products.main_image / images / detail_images（qwen-image-3.0 封面 + 2.1-pro/mt-image-2.0/2.1-turbo 明细图自动切换）。功能侧：模型/提示词内核在 ai-agent（不落库、配额轮换），转存与页面入口在 admin-api/admin-web；平台统一 Key（用户 2026-10-19 裁定）。2026-10-19 追加（issue #7341）：默认回落链去掉图片翻译模型 qwen-mt-image-2.0，400 InvalidParameter 转为「切下一个模型」。2026-10-19 追加（issue #7344，用户 20:21 建议「编辑页也支持补图」）：入口本就在共享 ProductForm（编辑页可用），本次补多图切换样图 + 用这张后面板不收起。2026-10-23 追加（issue #7538，用户裁定）：默认链切到 qwen-mt-image-2.0（qwen-image-* 免费额度用尽）；它是图片翻译模型、不接图生图（#7341）⇒ 生成返回 503「模型不接这类请求（非配额原因）」，恢复 = 换回可用模型（裁定断言会提示同步配置注释 / .env.example / 本判据）。2026-10-23 改判（issue #7533，用户逐字「商品的AI生图点击生成后，不会自动设置到对应图片位置，而且保存后也没有」）：**生成成功即自动填入图片位**，取消「用这张」这一步（实测：改前生成后 images 不变、点用这张后才变、提交载荷正常 ⇒ 缺的只是自动落位）；再生成 = 替换上一张（replaceUrl 从两个列表摘除，不叠加）。"
+    merge_log: "2026-10-19 新增（issue #7335）。数据侧：同日已为测试租户 46 的 6 个无图商品生成 24 张（6 主图 + 18 明细图）并写入 products.main_image / images / detail_images（qwen-image-3.0 封面 + 2.1-pro/mt-image-2.0/2.1-turbo 明细图自动切换）。功能侧：模型/提示词内核在 ai-agent（不落库、配额轮换），转存与页面入口在 admin-api/admin-web；平台统一 Key（用户 2026-10-19 裁定）。2026-10-19 追加（issue #7341）：默认回落链去掉图片翻译模型 qwen-mt-image-2.0，400 InvalidParameter 转为「切下一个模型」。2026-10-19 追加（issue #7344，用户 20:21 建议「编辑页也支持补图」）：入口本就在共享 ProductForm（编辑页可用），本次补多图切换样图 + 用这张后面板不收起。2026-10-23 追加（issue #7538，用户裁定）：默认链切到 qwen-mt-image-2.0（qwen-image-* 免费额度用尽）；它是图片翻译模型、不接图生图（#7341）⇒ 生成返回 503「模型不接这类请求（非配额原因）」，恢复 = 换回可用模型（裁定断言会提示同步配置注释 / .env.example / 本判据）。2026-10-23 改判（issue #7533，用户逐字「商品的AI生图点击生成后，不会自动设置到对应图片位置，而且保存后也没有」）：**生成成功即自动填入图片位**，取消「用这张」这一步（实测：改前生成后 images 不变、点用这张后才变、提交载荷正常 ⇒ 缺的只是自动落位）；再生成 = 替换上一张（replaceUrl 从两个列表摘除，不叠加）。2026-10-24 追加（issue #7661，用户裁定「主推理模型不要更换，只更换语音识别和图片生成的模型的 key endpoint 和模型名」）：生图默认链改判为 qwen-image-3.0-pro、端点改判为 MaaS token-plan 原生多模态路径；同一批把语音识别切到 qwen-audio-3.0-realtime-plus + MaaS 实时端点并**退役旧百炼 key**（缺 key fail-closed，不再回落主推理的 DeepSeek key）。判据 3 随之改判；类级守卫 = tests/unit_ci_workflows/test_maas_audio_image_single_source.py（G1 默认值 / G2 无 key 回落 / G3 旧模型名退场）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_generator.py"
@@ -5182,6 +5182,80 @@ cases:
         - "frontend/admin-web/tests/unit/lib/print-doc.test.tsx"
         - "frontend/admin-web/tests/unit/components/QuotationDoc.test.tsx"
         - "frontend/admin-web/tests/unit/components/SalesDoc.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
+  # UI-136（issue #7633）：父订单已删的作业单行不再扇出 404，订单号列写「订单已删除」
+  # ==========================================================================
+  - id: UI-136
+    legacy_id: ""
+    title: "作业看板：父订单已删（列表 orderNo 缺失）的行不再发 operations/piecework（404 toast 风暴），订单号列写「订单已删除」（issue #7633）"
+    domains:
+      - ui
+      - frontend
+      - processing-order
+    tier: normal
+    tags:
+      - ui
+      - admin-web
+      - production-board
+      - orphan
+      - backend-contract
+    truths_ref:
+      - frontend-fix.vitest
+    user_inputs:
+      - "用户 2026-10-24 PC 端截图：打开作业看板就弹 toast「请求的资源不存在」（可叠多层），列表里出现订单号 / 客户都是「—」的作业单行；点「刷新」仍复现"
+    precondition: "本用例是 [backend-contract] 纯前端取数/渲染契约用例：列表与两个详情端点都由单测打桩（不碰真库、不依赖共享夹具）；前置不成立时对应单测直接红，agent-eval 栈不跑它"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·🔴 **父订单缺失的行零请求**（会红）：判定口径 = 列表响应里 `!po.orderNo`（`processing_orders.order_id` 是 NOT NULL 外键、列表与明细同租户 ⇒ `orderNo == null` 当且仅当父订单已软删 / 不可解析），这类行**不进**懒加载 `pending` ⇒ 对 `/production/orders/{orderId}/operations` 与 `/production/orders/{orderId}/piecework` 各 **0 次**调用。执行点 = frontend/admin-web/tests/unit/pages/production-board.test.tsx 的「#7633 父订单已删的行：不扇出 operations/piecework，订单号列显示「订单已删除」」（红证：改前实测 `expected 1 to be +0`，即该行确实发了一次 `getOrderOperations('order-uuid-gone')`）"
+      - "判据 2·**同一用例内的负控**：正常行（`orderNo` 有值）**照常**请求两个端点 —— 否则「一个都不发」也能让判据 1 变绿（空跑式假绿）。"
+      - "判据 3·**可见文案是业务话**：该行订单号单元格渲染「订单已删除」（不是「—」、不是内部键）；客户列保持「—」（不编造客户）；**不新增**常驻告警条 / 红块、**不给**这类行「重试」入口（§31 P1/P3）。"
+      - "边界（照实登记）：① 「父订单缺失」的判定依赖 `orderNo` 缺失去推断，**不是**显式契约字段（若后续要 `orderMissing: true` 这类显式位，另立单改契约）；② 这些行仍在列表里（本 PR 不删数据 —— 存量孤儿子行的软删由 #7633 主会话在数据侧完成，物理清理涉钱需人工裁定）；③ 进度 / 计件两列对这类行仍显示 `0%（0/0）` / `¥0.00`（既有「详情缺失」形态，未改）。"
+    skip_reason: "[backend-contract] 纯前端取数 + 渲染契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/production-board.test.tsx 执行"
+    merge_log: "2026-10-24 新增（issue #7633）。取号 = `scripts/next_case_id.py UI` 现取（main 001-135）⇒ **UI-136**。病根：懒加载对当前页每一行都发 `operations` + `piecework`，父订单已软删的行让 `ProductionService.resolveOrder` 返回 404「订单不存在」（该语义正确、不改），而全局 404 分支弹 toast ⇒ 每行 2 次、一进页面 N 次。修法 = 列表响应里 `!po.orderNo` 的行不进 `pending`（不请求、不重试），订单号列写「订单已删除」。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/production-board.test.tsx"
+
+  - id: UI-137
+    legacy_id: ""
+    title: "工人端裁剪报工确认批次：派工批次预填可改 / 未指派空着必须手输 / 回执带批次与余量（issue #7647）"
+    domains:
+      - ui
+      - frontend
+      - production
+    tier: normal
+    tags:
+      - ui
+      - worker-h5
+      - production
+      - scan-report
+      - batch-stock
+    truths_ref:
+      - frontend-fix.vitest
+    user_inputs:
+      - "裁剪报工的时候需要工人裁剪的哪个批次，如果通过智能派单的就默认展示指定批次，允许工人改，如果没指定批次就需要工人手输才能完成报工"
+    precondition: "本用例是 [backend-contract] 纯前端契约用例：服务端解析响应（`batch_required` / `batch_no` / `batch_candidates`）与报工回执由单测自建并打桩（假 DOM + fetch 替身，不碰真库），前置不成立时单测直接红；agent-eval 栈不跑它"
+    expectations: []
+    data_checks:
+      - "**判据 1·区块只在需要批次时出现（会红）**：`batch_required === true` ⇒ 报工主屏出「批次（这次从哪一批裁）」输入框 `#wh5-batch-input`；缺键 / false ⇒ 批次区块**一个字节都不渲染**、报工按钮与请求体与改前逐字一致（老响应零回归）。执行点 = frontend/worker-h5/tests/worker-h5-cutting-batch.test.mjs 的用例 ①②④。**红证**：把 `isBatchRequired` 改成恒 true ⇒ ④ 红；区块恒不渲染 ⇒ ①②③ 等 7 条红。"
+      - "**判据 2·派工批次预填且可改（会红）**：有派工批次 ⇒ 输入框 `value` = 该批次，工人可改成别的批次并原样进入请求体；没有 ⇒ 输入框为空。执行点 = 同文件用例 ①②③。**红证**：`currentBatchNo` 忽略工人输入（恒用预填）⇒ ③⑥⑦⑧-b 红。"
+      - "**判据 3·没填不让报工（会红）**：`batch_required` 且输入 trim 后为空 ⇒ 报工按钮 `disabled` + 一句可行动提示；硬点（模拟绕过 disabled）也**一个写请求都不发**。执行点 = 同文件用例 ②③-b。**红证**：去掉 render 侧的 `batchBlocked` 分支 ⇒ ②⑧ 红；去掉 app 侧闸 ⇒ ③-b 红（发出了请求）。"
+      - "**判据 4·请求体带工人确认的批次（会红）**：点报工时请求体含 `batch_no`（= 输入框/候选点选后的值，trim 过）；非裁剪工序**不带**该键（白名单构造）。执行点 = 同文件用例 ③④ + frontend/worker-h5/src/api.mjs 的 `completeByScan`。**红证**：api 侧不写 `body.batch_no` ⇒ ③ 红。"
+      - "**判据 5·候选批次可点选（会红）**：`batch_candidates[]` 渲染成 chip（批次号 + 余量 + 余量不足标记），点一下填入输入框；候选为空 ⇒ 整块候选区不渲染。执行点 = 同文件用例 ⑤。**红证**：不接线候选点击 ⇒ ⑤ 红；候选为空仍渲染空壳 ⇒ ⑤'' 红。"
+      - "**判据 6·回执显示批次与余量、缺键不印假数据（会红）**：报工成功回执句追加「批次 X · 余量 Y 米」；`batch_shortage_meters > 0` 追加缺口说明；三键缺键 / null ⇒ 整句不渲染（屏上不出现 `undefined` / `NaN` / `null`）。执行点 = 同文件用例 ⑥⑦。**红证**：把回执尾部改成 naive 插值 ⇒ ⑦ 红；不追加批次尾 ⇒ ⑥⑦ 红。"
+      - "**判据 7·下一屏只认服务端重解析（会红）**：报工成功后的下一屏按回执的 `next_batch_required` / `next_batch_no` / `next_batch_candidates` 渲染 —— 下一道不要批次（车位/打包）⇒ 批次区块**不出现**且按钮可点；仍要批次（报废不推进 ⇒ 仍是裁剪）⇒ 输入框空 + 按钮禁用 + 候选来自服务端；服务端给了预填值 ⇒ 预填。工人手输的值**不带到下一屏**（`state.batchNo` 清回 null）。执行点 = 同文件用例 ⑧ / ⑧′ / ⑧″ / ⑧-b。**红证**：沿用上一屏的 `batch_required` ⇒ ⑧ 红（打包屏多出输入框、按钮被禁死）；清空成 false ⇒ ⑧′ 红（裁剪屏填不了批次）；`resolved` 不清 `batchNo` ⇒ ⑧-b 红。"
+      - "**判据 8·一体机不被新规则卡死（会红）**：机台页（`machine.mjs` / `machine-app.mjs`）对裁剪工序：有派工批次 ⇒ 报工请求自动带 `batch_no`（屏面一字不变）；没有 ⇒ **零请求** + 大字「本单未指派批次：请到报工页填写批次后再报工」+ 去报工页入口；非裁剪 ⇒ 请求体不带该键。执行点 = frontend/worker-h5/tests/worker-h5-machine.test.mjs 的 ⑦ / ⑦′ / ⑦″。**红证**：机台不带 `batch_no` ⇒ ⑦ 红；去掉机台批次闸 ⇒ ⑦′ 红（发了请求）；恒显阻断提示 ⇒ ⑦″ 红。"
+    skip_reason: "[backend-contract] 纯前端（假 DOM + fetch 替身驱动真实装配层；无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/worker-h5/tests/worker-h5-cutting-batch.test.mjs 与 worker-h5-machine.test.mjs 执行"
+    merge_log: "2026-10-24 新增（issue #7647，用户逐字见 PG-092）。形态按用户裁定：派工指定批次默认展示、允许改；未指定必须手输才能完成报工；回执当场给「批次 + 余量 + 缺口」。前端**不按工序名猜**适用面（只认服务端 `batch_required`）—— 判定与记账面**同一个** `ProductionService#cuttingBatchItem`。同批处理一体机回归（机台页刻意无文本输入元素 ⇒ 无派工批次时指路报工页，不新增输入框）。"
+    traces:
+      tests:
+        - "frontend/worker-h5/tests/worker-h5-cutting-batch.test.mjs"
+        - "frontend/worker-h5/tests/worker-h5-machine.test.mjs"
       ci:
         - pr-check.yml
       verifies: []

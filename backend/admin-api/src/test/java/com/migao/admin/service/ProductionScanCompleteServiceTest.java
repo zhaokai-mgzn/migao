@@ -1,8 +1,9 @@
-// case_ids: PG-018, PG-039, PG-086
+// case_ids: PG-018, PG-039, PG-086, PG-093
 package com.migao.admin.service;
 
 import com.migao.admin.config.TenantContext;
 import com.migao.admin.entity.Order;
+import com.migao.admin.entity.OrderItem;
 import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProcessingOrderSet;
 import com.migao.admin.entity.ProcessingPositionOperation;
@@ -28,6 +29,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.lang.reflect.Method;
@@ -116,6 +118,9 @@ class ProductionScanCompleteServiceTest {
     private ProductionWorkLogMapper workLogMapper;
     @Mock
     private ClientRequestIdService clientRequestIdService;
+    /** 批次账（issue #7647）：裁剪报工的「核对 + 纠偏」腿；其余工序不该碰它（never 断言钉住）。 */
+    @Mock
+    private StockBatchConsumptionService stockBatchConsumptionService;
 
     private ProductionService productionService;
     private ProductionScanService scanService;
@@ -137,6 +142,9 @@ class ProductionScanCompleteServiceTest {
                         processingOrderMapper, orderMapper, productionService),
                 orderMapper);
         service = new ProductionScanCompleteService(scanService, productionService, clientRequestIdService);
+        // 批次账是**字段注入**（构造签名被 27 处既有测试直接装配，不能加参数）⇒ 测试里同样按字段装。
+        // 默认 mock 的 `tracksBatches` 返回 false ⇒ 非「裁剪」工序与存量商品行为逐字不变。
+        ReflectionTestUtils.setField(productionService, "stockBatchConsumptionService", stockBatchConsumptionService);
 
         // 幂等占位：默认「首次」（claim=true）。重复提交的用例单独把它改成 false。
         when(clientRequestIdService.claim(any(), any(), any())).thenReturn(true);
@@ -897,6 +905,93 @@ class ProductionScanCompleteServiceTest {
     }
 
     /** 「三处写入一个字节都没发生」的判据（拒绝路径与同键回放共用）。 */
+    // ============================================================ ⑨ 裁剪报工确认批次（issue #7647）
+
+    @Test
+    @DisplayName("🔴 裁剪缺批次 ⇒ 422 BATCH_REQUIRED，且零写入（不落明细、不推进进度、不记账）")
+    void cuttingWithoutBatchIsRejectedBeforeAnyWrite() {
+        stubPending(op(OP_CLOTH, ITEM_CLOTH, 1, "裁剪", "11", "0", new BigDecimal("3.50")));
+        stubCuttingBatch(true);
+
+        assertThatThrownBy(() -> service.complete(body(TOKEN), TENANT, "key-1", WORKER))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "BATCH_REQUIRED");
+        assertNothingWritten();
+        verify(stockBatchConsumptionService, never())
+                .applyCuttingReport(any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("裁剪 + 填了批次 ⇒ 同事务核对批次（拿到工人填的值与本次米数），回执带批次/余量/缺口")
+    void cuttingWithBatchReconcilesAndReturnsReceipt() {
+        stubPending(op(OP_CLOTH, ITEM_CLOTH, 1, "裁剪", "11", "0", new BigDecimal("3.50")));
+        stubCuttingBatch(true);
+        when(stockBatchConsumptionService.applyCuttingReport(any(), any(), any(), any(), any(), any(), any(),
+                any(), any())).thenReturn(new StockBatchConsumptionService.CuttingReportResult(
+                        "PC-20261020-0007", new BigDecimal("32.5"), new BigDecimal("3.5")));
+        Map<String, Object> payload = body(TOKEN);
+        payload.put("batch_no", "  PC-20261020-0007  "); // 前后空白由服务端 text 归一
+
+        Map<String, Object> result = service.complete(payload, TENANT, "key-1", WORKER);
+
+        ArgumentCaptor<String> batchNo = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<BigDecimal> meters = ArgumentCaptor.forClass(BigDecimal.class);
+        verify(stockBatchConsumptionService).applyCuttingReport(eq(TENANT), eq(PO_NO), eq("SO-1"),
+                eq(ITEM_CLOTH), eq("prod-1"), eq(12L), eq("SKU-A"), batchNo.capture(), meters.capture());
+        assertThat(batchNo.getValue()).isEqualTo("PC-20261020-0007");
+        assertThat(meters.getValue()).isEqualByComparingTo("11");
+        assertThat(result.get("batch_no")).isEqualTo("PC-20261020-0007");
+        assertThat((BigDecimal) result.get("batch_remaining")).isEqualByComparingTo("32.5");
+        assertThat((BigDecimal) result.get("batch_shortage_meters")).isEqualByComparingTo("3.5");
+        // 下一屏的批次判据由**同一次重解析**给出（issue #7647）：这里重解析仍是「裁剪」⇒ true；
+        // 键恒在（值可 null / []），页面据此渲染下一屏而不是沿用上一屏。
+        assertThat(result).containsEntry("next_batch_required", true);
+        assertThat(result).containsKey("next_batch_no");
+        assertThat(result.get("next_batch_candidates")).isInstanceOf(List.class);
+        // 报工照常落库（批次核对不改变记账判据）
+        assertThat(capturedWorkLog().getOperationId()).isEqualTo(OP_CLOTH);
+    }
+
+    @Test
+    @DisplayName("零批次入库的存量商品 ⇒ 不强制批次（否则存量商品永远报不上工），也不落批次账")
+    void cuttingWithoutAnyBatchRowsIsExempt() {
+        stubPending(op(OP_CLOTH, ITEM_CLOTH, 1, "裁剪", "11", "0", new BigDecimal("3.50")));
+        stubCuttingBatch(false);
+
+        Map<String, Object> result = service.complete(body(TOKEN), TENANT, "key-1", WORKER);
+
+        assertThat(result).doesNotContainKeys("batch_no", "batch_remaining", "batch_shortage_meters");
+        assertThat(capturedWorkLog().getOperationId()).isEqualTo(OP_CLOTH);
+        verify(stockBatchConsumptionService, never())
+                .applyCuttingReport(any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("非「裁剪」工序（精裁-布）⇒ 传了 batch_no 也不读、不落账（与改前逐字相同）")
+    void nonCuttingOperationIgnoresBatchNo() {
+        stubPending(op(OP_CLOTH, ITEM_CLOTH, 1, "精裁-布", "11", "0", new BigDecimal("3.50")));
+        stubCuttingBatch(true);
+        Map<String, Object> payload = body(TOKEN);
+        payload.put("batch_no", "PC-20261020-0007");
+
+        Map<String, Object> result = service.complete(payload, TENANT, "key-1", WORKER);
+
+        assertThat(result).doesNotContainKeys("batch_no", "batch_remaining", "batch_shortage_meters");
+        // 非裁剪工序 ⇒ 下一屏的批次判据恒 false（不摆输入框）
+        assertThat(result).containsEntry("next_batch_required", false);
+        verify(stockBatchConsumptionService, never())
+                .applyCuttingReport(any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    /** 裁剪批次判据的夹具：明细行（商品 × SKU）+ 该 SKU 是否有批次行（`tracksBatches`）。 */
+    private void stubCuttingBatch(boolean tracks) {
+        when(orderItemMapper.selectById(ITEM_CLOTH)).thenReturn(OrderItem.builder()
+                .id(ITEM_CLOTH).tenantId(TENANT).productId("prod-1").skuId(12L).skuCode("SKU-A")
+                .deleted(0).build());
+        when(stockBatchConsumptionService.tracksBatches(eq(TENANT), eq("prod-1"), eq(12L)))
+                .thenReturn(tracks);
+    }
+
     private void assertNoWrites() {
         verify(workLogMapper, never()).insert(any(ProductionWorkLog.class));
         verify(positionOperationMapper, never())
