@@ -14,6 +14,7 @@ import {
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
 import NotificationBell from './NotificationBell'
+import ApprovalBell from './ApprovalBell'
 import MobileEntryHeader from './MobileEntry'
 
 interface HeaderProps {
@@ -100,8 +101,10 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   { match: (p) => p.startsWith('/quality-inspections'), crumbs: [{ label: '生产管理' }, { label: '质检记录' }] },
   // 返工单（issue #7377）：与 `config/menu.ts` 的 `rework-orders`、服务端两处菜单节点同名同组
   { match: (p) => p.startsWith('/rework-orders'), crumbs: [{ label: '生产管理' }, { label: '返工单' }] },
-  // 审批中心（issue #7374）：与 `config/menu.ts` 的 `approvals`、服务端两处菜单节点同名同组
-  { match: (p) => p.startsWith('/approvals'), crumbs: [{ label: '交易管理' }, { label: '审批中心' }] },
+  // 审批中心（issue #7593，用户 2026-10-24 裁定）：**侧边栏菜单项已撤除**，入口改到顶栏
+  // `ApprovalBell`（图标 + 待审数徽标 + 面板）⇒ 它现在**没有父组**，面包屑是**单级**
+  // （与「商品管理」「通知中心」同口径）。菜单名 / 页面名仍是「审批中心」，与 `/approvals` 页一致。
+  { match: (p) => p.startsWith('/approvals'), crumbs: [{ label: '审批中心' }] },
   // /production = 作业单唯一入口（issue #4357 与原「加工单」菜单合并）
   { match: (p) => p.startsWith('/production'), crumbs: [{ label: '生产管理' }, { label: '作业看板' }] },
   // 入库单（issue #5071）：V111（#5034）新增菜单项时**漏了本表这一处** ⇒ 面包屑只剩「工作台」一项。
@@ -248,11 +251,16 @@ export default function Header({ title, breadcrumbs, onOpenMobileNav }: HeaderPr
         )}
       </div>
 
-      {/* 右侧：手机端入口 + 通知 + 用户信息 */}
+      {/* 右侧：手机端入口 + 待审批 + 通知 + 用户信息 */}
       <div className="flex items-center gap-3">
         {/* 手机端入口（issue #7198）：扫码是**跨设备交接的工具**（不是一条配置）⇒ 常驻面只占
             一个图标，点开才画码（§31 P1 常驻面克制；旧落位埋在设置页 3~4 步深处）。 */}
         <MobileEntryHeader />
+
+        {/* 待审批（issue #7593，用户 2026-10-24 裁定「审批中心菜单放置到右上角…不要单独搞个菜单」）：
+            审批是「有人在等你」的待办 ⇒ 图标 + 待审数徽标；侧边栏那一行已撤掉（静态菜单项没有信号）。
+            组件内部按 `finance:view` 门控 ⇒ 无该码的岗位不渲染这个图标。 */}
+        <ApprovalBell />
 
         {/* 通知铃铛 */}
         <NotificationBell />

@@ -91,8 +91,8 @@ class MenuControllerTest {
             "质检记录",
             // 🔴 2026-10-23（issue #7377）：生产管理组新增「返工单」（复用售后读码 after_sales:view）
             "返工单",
-            // 🔴 2026-10-23（issue #7374）：交易管理组新增「审批中心」（读码 finance:view）
-            "审批中心",
+            // 🔴 2026-10-24（issue #7593，用户裁定）：原「审批中心」菜单项**已撤除** —— 入口改顶栏
+            // 待办入口（`ApprovalBell`）；页面 `/approvals` 与路由守卫保留 ⇒ 本表不再有这一项。
             // 🔴 2026-10-20（issue #7369 段 4）：仓储与物料组新增「采购单」（同取 inbound:view，紧随供应商）
             "入库单", "供应商", "采购单", "库存明细",
             // 🔴 2026-10-22（issue #7373）：仓储与物料组新增「盘点单」（读码 inbound:view，紧随库存明细）
@@ -325,9 +325,11 @@ class MenuControllerTest {
         // 本轮：客户列表 / 售后工单已移入「客户服务」组 ⇒ 只剩「定价 → 下单 → 收款」+ 组尾动作码
         // 🔴 2026-10-22（issue #7375 段 3）：新增组内第一项「价格本」（码 order:list —— 与销售订单同码，
         // 因为价格本页第一屏读的就是 PricingController 的类级 `order:list`）。
-        assertEquals(List.of("价格本", "销售订单", "财务对账", "审批中心", "订单详情"),
+        // 🔴 2026-10-24（issue #7593，用户裁定）：「审批中心」撤出侧边栏（入口改顶栏待办入口）⇒ 本组只剩
+        // 价格本 / 销售订单 / 财务对账 + 组尾动作码（订单详情）。
+        assertEquals(List.of("价格本", "销售订单", "财务对账", "订单详情"),
                 labels(trade.path("children")));
-        assertEquals(List.of("order:list", "order:list", "finance:view", "finance:view", "order:detail"),
+        assertEquals(List.of("order:list", "order:list", "finance:view", "order:detail"),
                 codes(trade.path("children")));
     }
 

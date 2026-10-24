@@ -2110,8 +2110,10 @@ ROUTE_MENU_ANCHORS: dict[str, str] = {
     "/rework-orders": "返工单",
     "/customers": "客户列表",
     "/finance": "财务对账",
-    # 审批中心（issue #7374）：守卫码 = 菜单节点码 = 该页第一屏读端点（GET /api/admin/approvals）的类级 finance:view
-    "/approvals": "审批中心",
+    # 🔴 2026-10-24（issue #7593，用户裁定「审批中心菜单放置到右上角……不要单独搞个菜单」）：
+    # 「审批中心」菜单项**已撤除** ⇒ 本锚点**销账**（陈旧登记即红），改登记进 `ROUTE_WITHOUT_MENU_NODE`。
+    # 守卫前缀 `/approvals` 与码 `finance:view` **一字未动**（页面仍在、地址栏直达仍被拦）；
+    # 入口 = 顶栏 `ApprovalBell`（前端组件，不参与菜单节点判据）。
     "/employees": "员工管理",
     # 🔴 2026-10-09（issue #6580）：节点改名「企业基础信息」→「**企业基础设置**」、节点码改
     # `production:view`（守卫码同批改，见 `(dashboard)/layout.tsx` 的 `ROUTE_PERMISSION_MAP`）。
@@ -2170,6 +2172,14 @@ ROUTE_WITHOUT_MENU_NODE: dict[str, str] = {
     # 页面已是**重定向薄壳** → `/dashboard`（`briefing/page.tsx`，正文删除）⇒ 旧深链不 404。
     # ⚠️ 判据 11③ 要求「无节点必须逐条带理由」：这条就是那个理由（不许删守卫前缀来「对齐」）。
     "/briefing": "「每日简报」菜单项已移除（issue #7087：结论卡改挂在「经营看板」上、由企业开关驱动）⇒ 本前缀只作旧深链兼容（重定向薄壳 → `/dashboard`），**无菜单节点可钉**（节点归「经营看板」，同码 `dashboard:view`）",
+    # 🔴 2026-10-24（issue #7593，用户裁定「审批中心菜单放置到右上角……不要单独搞个菜单」）：
+    # 这是**新形态**（不是旧链兼容）—— 页面完整保留、**入口本身**就是顶栏待办入口（`ApprovalBell`），
+    # 菜单里没有它、也**不该**有它。守卫前缀与码一字不动（`finance:view`，与「财务对账」同码
+    # ⇒ 有财务读权的岗位照旧进得去；无码者地址栏直达仍被拦）。
+    # ⚠️ 判据 11③ 要求「无节点必须逐条带理由」：这条就是那个理由（**不许**为了「对齐」把页面或守卫删掉）。
+    # 该页第一屏读端点（`approvalApi.list`，类级 `finance:view`）的码一致性由 `ApprovalController`
+    # 的类级注解 + `approvals.test.tsx` 承担（菜单节点已不存在 ⇒ 判据 12 的命题在此页不适定）。
+    "/approvals": "「审批中心」菜单项已移除（issue #7593：入口改为**顶栏待办入口** `ApprovalBell`）⇒ 页面与守卫保留、**无菜单节点可钉**；码仍为 `finance:view`（与「财务对账」同码，零授权 delta）",
 }
 
 
@@ -2301,8 +2311,9 @@ MENU_READ_ENDPOINT_ANCHORS: dict[str, MenuReadAnchor] = {
         "customerApi.getCustomers", "customerApi.getCustomerTags")),
     "/finance": MenuReadAnchor("财务对账", "finance/page.tsx", (
         "financeApi.getSummary", "financeApi.getTransactions", "financeApi.getReconciliation")),
-    # 审批中心（issue #7374）：节点码 `finance:view` = 本页第一屏读端点（`approvalApi.list`）的类级码
-    "/approvals": MenuReadAnchor("审批中心", "approvals/page.tsx", ("approvalApi.list",)),
+    # 🔴 2026-10-24（issue #7593）：「审批中心」菜单项已撤除（入口改顶栏 `ApprovalBell`）⇒ 页面第一屏
+    # 读端点（`approvalApi.list`，类级 `finance:view`）**不再有菜单节点可对**，本锚点同批销账。
+    # 该页的读码仍由 `ROUTE_WITHOUT_MENU_NODE['/approvals']` 的理由承担（与 `/briefing` 同族形态）。
     "/production": MenuReadAnchor("作业看板", "production/page.tsx", ("processingOrderApi.list",)),
     "/production/pool": MenuReadAnchor("智能派单", "production/pool/page.tsx",
                                        ("poolBoardApi.getBoard",)),

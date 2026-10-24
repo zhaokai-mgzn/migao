@@ -24,6 +24,7 @@ node scripts/visual-check/customer-detail-tags-empty.mjs # 客户详情「标签
 node scripts/visual-check/settings-calc-caliber-decimals.mjs # 算料口径 3 位小数 + 允许设 0（issue #7548）
 node scripts/visual-check/order-detail-print-entry.mjs   # 订单详情唯一「打印」入口 + 打印层选单据（issue #7544）
 node scripts/visual-check/quotation-print-preview.mjs   # 订单详情「打印报价单」预览层（issue #7527）
+node scripts/visual-check/approvals-header.mjs   # 顶栏「待审批」入口 + 侧边栏撤掉审批中心（issue #7593）
 open /tmp/reports-filled.png /tmp/reports-empty.png
 ```
 
