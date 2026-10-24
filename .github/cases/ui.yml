@@ -5185,3 +5185,41 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  # ==========================================================================
+  # UI-136（issue #7633）：父订单已删的作业单行不再扇出 404，订单号列写「订单已删除」
+  # ==========================================================================
+  - id: UI-136
+    legacy_id: ""
+    title: "作业看板：父订单已删（列表 orderNo 缺失）的行不再发 operations/piecework（404 toast 风暴），订单号列写「订单已删除」（issue #7633）"
+    domains:
+      - ui
+      - frontend
+      - processing-order
+    tier: normal
+    tags:
+      - ui
+      - admin-web
+      - production-board
+      - orphan
+      - backend-contract
+    truths_ref:
+      - frontend-fix.vitest
+    user_inputs:
+      - "用户 2026-10-24 PC 端截图：打开作业看板就弹 toast「请求的资源不存在」（可叠多层），列表里出现订单号 / 客户都是「—」的作业单行；点「刷新」仍复现"
+    precondition: "本用例是 [backend-contract] 纯前端取数/渲染契约用例：列表与两个详情端点都由单测打桩（不碰真库、不依赖共享夹具）；前置不成立时对应单测直接红，agent-eval 栈不跑它"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "判据 1·🔴 **父订单缺失的行零请求**（会红）：判定口径 = 列表响应里 `!po.orderNo`（`processing_orders.order_id` 是 NOT NULL 外键、列表与明细同租户 ⇒ `orderNo == null` 当且仅当父订单已软删 / 不可解析），这类行**不进**懒加载 `pending` ⇒ 对 `/production/orders/{orderId}/operations` 与 `/production/orders/{orderId}/piecework` 各 **0 次**调用。执行点 = frontend/admin-web/tests/unit/pages/production-board.test.tsx 的「#7633 父订单已删的行：不扇出 operations/piecework，订单号列显示「订单已删除」」（红证：改前实测 `expected 1 to be +0`，即该行确实发了一次 `getOrderOperations('order-uuid-gone')`）"
+      - "判据 2·**同一用例内的负控**：正常行（`orderNo` 有值）**照常**请求两个端点 —— 否则「一个都不发」也能让判据 1 变绿（空跑式假绿）。"
+      - "判据 3·**可见文案是业务话**：该行订单号单元格渲染「订单已删除」（不是「—」、不是内部键）；客户列保持「—」（不编造客户）；**不新增**常驻告警条 / 红块、**不给**这类行「重试」入口（§31 P1/P3）。"
+      - "边界（照实登记）：① 「父订单缺失」的判定依赖 `orderNo` 缺失去推断，**不是**显式契约字段（若后续要 `orderMissing: true` 这类显式位，另立单改契约）；② 这些行仍在列表里（本 PR 不删数据 —— 存量孤儿子行的软删由 #7633 主会话在数据侧完成，物理清理涉钱需人工裁定）；③ 进度 / 计件两列对这类行仍显示 `0%（0/0）` / `¥0.00`（既有「详情缺失」形态，未改）。"
+    skip_reason: "[backend-contract] 纯前端取数 + 渲染契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/production-board.test.tsx 执行"
+    merge_log: "2026-10-24 新增（issue #7633）。取号 = `scripts/next_case_id.py UI` 现取（main 001-135）⇒ **UI-136**。病根：懒加载对当前页每一行都发 `operations` + `piecework`，父订单已软删的行让 `ProductionService.resolveOrder` 返回 404「订单不存在」（该语义正确、不改），而全局 404 分支弹 toast ⇒ 每行 2 次、一进页面 N 次。修法 = 列表响应里 `!po.orderNo` 的行不进 `pending`（不请求、不重试），订单号列写「订单已删除」。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/pages/production-board.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
