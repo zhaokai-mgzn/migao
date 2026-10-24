@@ -3280,6 +3280,40 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("#7658·本单改成 **0 元** ⇒ 总额只剩商品（零加工费）、构成落 manual + 价目参考，且**零回写**")
+    void createOrder_zeroOverrideOnConfiguredCombination() {
+        Map<String, Object> info = new LinkedHashMap<>();
+        info.put("processingMeters", new BigDecimal("12.30"));
+        info.put("processingItems", List.of(Map.of("id", "p1", "name", "打孔",
+                "unitPrice", new BigDecimal("9.50"), "quantity", new BigDecimal("2"))));
+        info.put("processingFeeOverride", BigDecimal.ZERO);
+
+        givenPricedCombinations("打孔", "8.00");
+
+        OrderCreateRequest request = createOrderRequestWithFee(info);
+        orderService.createOrder(request, 1L);
+
+        // 用户 2026-10-24：「在订单中改成 0 后，费用明细的展示费用未联动更改」
+        // ⇒ 本单加工费 = 0 × 12.30 = 0 ⇒ 总额 = 商品 599.00（改前走 matched = 697.40 ⇒ 红）
+        ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+        verify(orderMapper).insert(orderCaptor.capture());
+        assertThat(orderCaptor.getValue().getTotalAmount()).isEqualByComparingTo("599.00");
+        assertThat(orderCaptor.getValue().getTotalAmount()).isNotEqualByComparingTo("697.40");
+
+        ArgumentCaptor<OrderItem> itemCaptor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(itemCaptor.capture());
+        assertThat(feeDetailOf(itemCaptor.getValue().getProcessingInfo()))
+                .containsEntry("fee_source", "manual")
+                .containsEntry("unit_price", BigDecimal.ZERO)
+                .containsEntry("amount", new BigDecimal("0.00"))
+                .containsEntry("configured_unit_price", new BigDecimal("8.00"));
+
+        // 0 元**不写进**租户共享价目（否则免费单会把整条组合价清零）
+        verify(processingFeeCombinationCommandService, never())
+                .upsertFromOrderOverride(any(), any(), any(), any());
+    }
+
+    @Test
     @DisplayName("#7642·组合**命中** + override ⇒ 本单按 override 计（总额 752.75），**价目不动**（零回写）")
     void createOrder_manualOverrideOnConfiguredCombination() {
         Map<String, Object> info = new LinkedHashMap<>();

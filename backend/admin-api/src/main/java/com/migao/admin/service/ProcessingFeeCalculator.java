@@ -905,15 +905,17 @@ public class ProcessingFeeCalculator {
     /**
      * 行级**人工改价**单价（元/米）：{@code processing_info.processingFeeOverride}（issue #4872）。
      *
-     * <p>只认**正数**：缺键 / 非数值 / {@code ≤ 0} 一律返回 {@code null}（= 没有改价）。
-     * 为什么 0 与负数不算改价：「0 元改价」与「没改价」在金额上不可区分，而前者会把一行加工费
-     * **静默算成 0**（同 #4308「静默回落」纪律：静默 = 算错钱且无人知道）⇒ 视为未改价，
-     * 走既有的 {@code unpriced} 路径（金额 0 + 可行动提示，**显式可见**）。</p>
+     * <p>认**非负数**：缺键 / 非数值 / **负数** 一律返回 {@code null}（= 没有改价）。
+     * 🔴 **0 是有效单价**（issue #7658，用户 2026-10-24：「在订单中改成 0 后，费用明细的展示费用
+     * 未联动更改」）—— 它表示**本单免加工费**：金额 = 0 × 米数 = 0、`fee_source='manual'`，
+     * 且 **0 不回写价目**（见 {@code OrderService#syncProcessingFeeCombinations}）。
+     * 旧口径「0 与负数都不算改价」已作废：它让商家填了 0 却仍按组合价收钱（静默错账方向）。
+     * 负数仍视为没改价（负价不是价）；「清空改价」由前端发**缺键**表达，与 0 分得开。</p>
      */
     private static BigDecimal overridePrice(Object processingInfo) {
         Map<String, Object> info = asMap(processingInfo);
         BigDecimal value = info == null ? null : decimal(info.get(OVERRIDE_KEY));
-        return value != null && value.compareTo(BigDecimal.ZERO) > 0 ? value : null;
+        return value != null && value.compareTo(BigDecimal.ZERO) >= 0 ? value : null;
     }
 
     /** 加工费米数（= 主布行米数）：{@code processingMeters} 优先，兼容 {@code fabric_meters}。 */
