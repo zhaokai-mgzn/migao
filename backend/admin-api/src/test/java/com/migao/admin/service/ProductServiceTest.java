@@ -1518,7 +1518,9 @@ class ProductServiceTest {
         request.setName("库存口径测试帘");
         request.setCategoryId("cat-001");
         request.setBasePrice(new BigDecimal("68.00"));
-        request.setStock(BigDecimal.valueOf(999)); // 非权威的请求值：不得成为商品级列的最终值
+        // issue #7597：建品请求里的 stock 与 skus[].stock 都已被忽略 ⇒ 本判据改钉为
+        // 「派生列 = SKU 汇总」这条不变量本身（两边都是 0，且请求值 999 / 30 / 70 一个都不许漏进库）
+        request.setStock(BigDecimal.valueOf(999));
         ProductSkuInput s1 = new ProductSkuInput();
         s1.setDoorWidth("2.8米");
         s1.setStock(BigDecimal.valueOf(30));
@@ -1547,8 +1549,10 @@ class ProductServiceTest {
         // When
         productService.createProduct(request, 1L);
 
-        // Then: 商品级 stock 被回写为 SKU 汇总 100（而非请求值 999）
+        // Then: 商品级 stock = SKU 汇总（issue #7597 后两边都是 0；请求值 999 / 30 / 70 全部被忽略）
         assertThat(insertedSkus).as("应生成 2 个 SKU").hasSize(2);
+        assertThat(insertedSkus).allSatisfy(sku ->
+                assertThat(sku.getStock()).as("建品的 SKU 库存入参必须被忽略").isEqualByComparingTo("0"));
         ArgumentCaptor<Product> updateCaptor = ArgumentCaptor.forClass(Product.class);
         verify(productMapper, atLeastOnce()).updateById(updateCaptor.capture());
         Product synced = updateCaptor.getAllValues().stream()
@@ -1557,7 +1561,7 @@ class ProductServiceTest {
                 .orElseThrow(() -> new AssertionError("SKU 变更后未回写商品级 stock"));
         assertThat(synced.getStock())
                 .as("商品级 stock 必须等于 SKU 汇总（权威）")
-                .isEqualTo(BigDecimal.valueOf(100));
+                .isEqualByComparingTo("0");
     }
 
     @Test

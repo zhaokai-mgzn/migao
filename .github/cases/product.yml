@@ -5611,3 +5611,44 @@ cases:
       ci:
         - pr-check.yml
       verifies: []
+
+  - id: PR-132
+    legacy_id: ""
+    title: "商品档案不再设置库存：表单 / 建品接口 / Excel 导入三面下线，存量按真实单据净额重算（V190）"
+    domains:
+      - product
+    tier: normal
+    persona: ""
+    tags:
+      - product
+      - stock
+      - product_contract
+      - data_migration
+    truths_ref:
+      - product-sku-stock.status-flow
+    user_inputs:
+      - "我们现在商品中设置了库存数值，这个要移除了，要根据真实库存数据来"
+    expectations: []
+    data_checks:
+      - "判据 1·**商品表单无库存录入口**（改前必红）：SKU 矩阵表头不含「库存」列、每行只有价格一个输入框、批量填写区没有「数量」框；源码（剥注释后）不再出现 `STOCK_UNIT` / `'stock'` / `batchStock` / 「库存（」任何一个。注入红证：把 `<th>库存（米）</th>` 与库存 `NumberInput` 加回去 ⇒ 判据红。判据本体 = frontend/admin-web/tests/unit/components/SkuMatrixStockRemoved.test.tsx（4 条行为 + 1 条静态扫描）；连带 = SkuMatrixNumbers.test.tsx 只剩价格逐键与编辑既有值，ProductForm.test.tsx 的「总库存」断言改成只读说明。"
+      - "判据 2·**建品接口忽略库存**（改前必红）：`ProductCreateRequest.stock=500` + `skus[].stock=300` ⇒ 落库 `products.stock=0`、`product_skus.stock=0`，且**不落**「新 SKU 初始库存（基线行）」台账行；`colors × doorWidths` 自动生成的 SKU 同样为 0（改前默认 100）。注入红证：把 `input.getStock()` 透传 / 恢复默认 100 ⇒ ProductCreateStockIgnoredTest 两条各红。"
+      - "判据 3·**Excel 导入不再建立库存**（改前必红）：`IMPORT_HEADERS` 不含「库存」（模板与解析同源）；旧文件仍带「库存」列时按未知列忽略 —— 行照常落库、库存 0，且不再因 2.755 被拒。注入红证：把库存加回 `IMPORT_HEADERS` 并恢复精度准入 ⇒ 判据红。判据本体 = ProductBulkImportServiceTest 的 legacyStockColumnIsIgnored / importHeaderFaceIsIsomorphicToExport / templateCanBeImportedBackAsIs。"
+      - "判据 4·**存量按真实单据净额重算**（V190，真库执行）：SKU 库存 = `reason IN (inbound, order, aftersales) OR (reason='manual' AND note LIKE '库存盘点：%')` 的台账净额，clamp ≥ 0；手工基线 / 表单改库存 / 手工调整**不计**。6 种形态实测：纯手工 30 ⇒ 0；入库 100 + 订单 -10 ⇒ 90；入库 50 + 手工调整 -20 ⇒ 50；入库 20 + 批次盘点 +5 ⇒ 25；净额 -7 ⇒ 0 且不落 0 变更行；无 SKU 商品 ⇒ 0。有变化的 SKU 各落一条 `manual` 补偿行（before=改前 / after=重算值），第二遍执行 0 行新增（幂等），且所有补偿行 `after_qty == product_skus.stock`。可重放证据 = acceptance/2026-10-24-7597-product-stock-from-documents/verify_v190_migration.py（真起临时 PG + schema.sql）；静态守卫 = tests/unit_ci_workflows/test_migration_immutability.py / test_migration_idempotency.py / test_migration_references_exist_in_schema.py。"
+      - "判据 5·**读面仍是只读余额、写面边界不清算**：商品列表 / 详情继续返回 `stock`（= SKU 汇总）且表单「总库存」为只读说明；**保留**改品 stock 分支（批量库存调整 / Agent 调整）作为唯一还在的绝对库存写面，其落账链条与幂等由 ProductStockLedgerRealDbTest 判据 1b/2/3 在真库上钉住（首行 before=0、逐次首尾相接、同值重放不增行）；订单侧库存校验**未改**（库存 0 ⇒ 拒绝下单，这是「只认真实入库」的有意后果）。"
+    skip_reason: "[backend-contract] 商品档案口径 + 破坏性数据迁移（前端组件 + Java 单测 + 真库迁移脚本，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/components/SkuMatrixStockRemoved.test.tsx、backend/admin-api/src/test/java/com/migao/admin/service/ProductCreateStockIgnoredTest.java、ProductBulkImportServiceTest.java、ProductStockLedgerRealDbTest.java、ProductUpdatePruneScopeRealDbTest.java 与 tests/unit_ci_workflows/test_migration_*.py 执行；V190 的真库执行证据见 acceptance/2026-10-24-7597-product-stock-from-documents/（CI 的迁移判据是静态的，不执行 SQL）"
+    merge_log: "2026-10-24 新增（用户裁定逐字：「我们现在商品中设置了库存数值，这个要移除了，要根据真实库存数据来」；同日两问的选择：① 移除范围 = A「表单不再录入，库存只由真实单据产生」；② 存量数据 = C「清零，只认真实入库」，该选项原文写明「会改变现网可售数量，风险最高」）。为什么是「按真实单据净额重算」而不是无脑置 0：置 0 会让「入库 60 米」的商品变成 0 而 `stock_batches` 仍有 60 米，`BatchStockViews` 的 `diff = batchRemaining − skuStock` 恒等式当场破；纯手工库存的商品算出 0 = 用户选择的「清零」。"
+    traces:
+      tests:
+        - "frontend/admin-web/tests/unit/components/SkuMatrixStockRemoved.test.tsx"
+        - "frontend/admin-web/tests/unit/components/SkuMatrixNumbers.test.tsx"
+        - "frontend/admin-web/tests/unit/components/ProductForm.test.tsx"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductCreateStockIgnoredTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductBulkImportServiceTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductStockLedgerRealDbTest.java"
+        - "backend/admin-api/src/test/java/com/migao/admin/service/ProductUpdatePruneScopeRealDbTest.java"
+        - "tests/unit_ci_workflows/test_migration_immutability.py"
+        - "tests/unit_ci_workflows/test_migration_idempotency.py"
+        - "acceptance/2026-10-24-7597-product-stock-from-documents/verify_v190_migration.py"
+      ci:
+        - pr-check.yml
+      verifies: []

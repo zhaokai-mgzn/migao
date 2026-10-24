@@ -102,14 +102,14 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      * 售卖方式是**商品级基础属性**，不得回退成 SKU 维度。</p>
      */
     static final String[] IMPORT_HEADERS =
-            {"商品名称", "货号", "分类ID", "价格", "库存", "描述", "颜色", "门幅", "SKU编码"};
+            {"商品名称", "货号", "分类ID", "价格", "描述", "颜色", "门幅", "SKU编码"};
 
     /** 导入**必填**表头：缺列 ⇒ 整包拒绝（列都不在时逐行报错只会刷屏，且没有一行是能修的）。 */
     private static final List<String> REQUIRED_IMPORT_HEADERS = List.of("商品名称", "货号", "价格");
 
     /** 导入可列表头（缺了不报错；文案里列出来让商家知道模板该长什么样）。 */
     private static final List<String> OPTIONAL_IMPORT_HEADERS =
-            List.of("分类ID", "库存", "描述", "颜色", "门幅", "SKU编码");
+            List.of("分类ID", "描述", "颜色", "门幅", "SKU编码");
 
     /**
      * 商品品牌存储在 product_attributes 表的 attr_key
@@ -626,12 +626,10 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
      */
     @Transactional(rollbackFor = Exception.class)
     public ProductResponse doCreateProduct(ProductCreateRequest request, Long tenantId) {
-        // issue #5063（V115）：库存是 1 位小数口径（0.1 米粒度）⇒ **超过 1 位小数显式拒绝**
-        // （fail-closed；静默取整 = 账面与实物不符且无人发现，正是本单要治的形态）。
-        // issue #6199：`products.stock` 是**绝对值**（实物米数）⇒ 同一次准入**还要拒负数**
-        // （改前这里只过 `requireOneDecimalOrNull`：只校精度、不校符号 ⇒ 传 -5 得 200 且落库）。
-        // 判据单点在 StockQuantity；这里只做入口归一，不在 Service 里另写一套小数位/符号判断。
-        request.setStock(StockQuantity.requireNonNegativeOrNull(request.getStock(), "库存 stock"));
+        // 🔴 issue #7597（用户裁定 2026-10-24）：商品档案不再设置库存数值 —— 建品请求里的 `stock`
+        // 一律**不使用**（不校验、不落库），新建 SKU 从 0 起算；库存只由真实单据产生
+        // （入库单过账 / 订单扣减 / 售后回补 / 批次盘点）。
+        request.setStock(BigDecimal.ZERO);
         // 金额精度准入（issue #6228）：`products.base_price` / `product_skus.price` 是 NUMERIC(·,2)，
         // 超 2 位有效小数会被 PG 静默四舍五入。**判在入口**（本方法会先 insert `products` 行、
         // 之后才走 saveColorsAndSkus 收口）⇒ 这样"拒绝"才发生在任何写之前。`null` = 不改，透传。
@@ -706,7 +704,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         saveColorsAndSkus(product.getId(), product.getSkuCode(), tenantId,
                 request.getColors(),
                 request.getSellingMethods(), request.getDoorWidths(),
-                product.getBasePrice(), product.getStock(),
+                product.getBasePrice(),
                 request.getSkus(), true);
 
         // 保存商品属性（brand + specifications，存入 product_attributes 表）
@@ -827,13 +825,12 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 保证订单 processingInfo 里存的旧 skuId/colorId 仍可被 OrderService.matchSkuId 寻址恢复库存）
         if (request.getColors() != null || request.getSkus() != null
                 || request.getSellingMethods() != null || request.getDoorWidths() != null) {
-            // price/stock 优先取请求值，否则用商品当前值
+            // 价格优先取请求值，否则用商品当前值；库存不随改品写入（issue #7597）
             BigDecimal skuPrice = request.getBasePrice() != null ? request.getBasePrice() : product.getBasePrice();
-            BigDecimal skuStock = request.getStock() != null ? request.getStock() : product.getStock();
             saveColorsAndSkus(id, product.getSkuCode(), tenantId,
                     request.getColors(),
                     request.getSellingMethods(), request.getDoorWidths(),
-                    skuPrice, skuStock,
+                    skuPrice,
                     request.getSkus(), true);
         } else if (request.getBasePrice() != null) {
             // 改价必须落到 SKU（issue #3743 / OR-014）：只给 basePrice、不给
@@ -924,7 +921,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                                     List<String> sellingMethods,
                                     List<String> doorWidths,
                                     BigDecimal basePrice,
-                                    BigDecimal stock,
                                     List<ProductSkuInput> skuInputs,
                                     boolean pruneMissing) {
         // 金额精度准入（issue #6228）：`products.base_price` / `product_skus.price` 是 NUMERIC(·,2)，
@@ -934,13 +930,13 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         // 这里是建品/改品/导入/Agent 四条路径写 SKU 价的**唯一收口**，判在这里才无死角。
         basePrice = MoneyScale.requireTwoDecimalsOrNull(basePrice, "商品基础价 basePrice");
         requireSkuPrices(skuInputs);
-        // issue #5063（V115）：SKU 库存是库存链路的**权威列**，逐行准入（最多 1 位小数）——
-        // 这里是所有建品/改品路径（表单 / Agent / 矩阵式生成）写 SKU stock 的**唯一收口**；
-        // issue #6199：同一次准入还要拒**负数**（SKU 库存也是绝对值）。
+        // 🔴 issue #7597：商品档案不再设置库存 —— 请求里的 SKU 库存**一律忽略**（置 null）：
+        // 新建 SKU 从 0 起算、既有 SKU 保持现值。这里是建品/改品/导入/Agent 四条路径写 SKU 的
+        // 唯一收口 ⇒ 判在这里即无死角；同时不再对一个「不会被采纳的数值」做精度/符号准入。
         if (skuInputs != null) {
             for (ProductSkuInput input : skuInputs) {
                 if (input != null) {
-                    input.setStock(StockQuantity.requireNonNegativeOrNull(input.getStock(), "SKU 库存 stock"));
+                    input.setStock(null);
                     // 文本列长度准入（issue #6302）：SKU 行落 `product_skus` 的 varchar 列
                     // （编码 / 门幅 / 颜色名）。判在本方法开头 = 本方法内任何写之前；Excel 导入与
                     // agent 路径也经过这条收口（它们同样手工构造 ProductSkuInput）。
@@ -1072,8 +1068,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     sku.setColorName(colorName);
                     sku.setDoorWidth(dw);
                     sku.setPrice(basePrice);
-                    sku.setStock(stock != null && stock.compareTo(BigDecimal.ZERO) > 0
-                            ? stock : BigDecimal.valueOf(100));
+                    // issue #7597：删掉「未给库存 ⇒ 默认 100」这条**凭空造库存**的路径（新 SKU 从 0 起算）
+                    sku.setStock(BigDecimal.ZERO);
                     // 自动生成 SKU 编码
                     Integer colorSeq = colorSeqMap.get(colorName);
                     sku.setSkuCode(generateSkuCode(productId, productSkuCode,
@@ -1110,7 +1106,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     matched.setColorName(input.getColorName());
                     matched.setDoorWidth(input.getDoorWidth());
                     matched.setPrice(input.getPrice() != null ? input.getPrice() : matched.getPrice());
-                    matched.setStock(input.getStock() != null ? input.getStock() : matched.getStock());
+                    // 库存不随改品写入（issue #7597）：既有 SKU 保持现值
                     if (StringUtils.hasText(input.getSkuCode())) {
                         matched.setSkuCode(input.getSkuCode());
                     }
@@ -1124,7 +1120,7 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     entity.setColorName(input.getColorName());
                     entity.setDoorWidth(input.getDoorWidth());
                     entity.setPrice(input.getPrice() != null ? input.getPrice() : BigDecimal.ZERO);
-                    entity.setStock(input.getStock() != null ? input.getStock() : BigDecimal.ZERO);
+                    entity.setStock(BigDecimal.ZERO);   // issue #7597：新建 SKU 一律从 0 起算
                     // 优先使用传入的 skuCode，未传入则自动生成
                     String skuCode = StringUtils.hasText(input.getSkuCode())
                             ? input.getSkuCode()
@@ -1915,12 +1911,8 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
                     "价格必须大于 0，当前值 " + parsedRow.price.toPlainString());
         }
 
-        // issue #5063（V115）：库存是 1 位小数口径（0.1 米粒度）⇒ 复用 StockQuantity 的准入判据，
-        // **不在这里另写一套小数位判断**；超过 1 位小数显式拒绝（禁止静默取整/截断）。
-        // issue #6199：导入的库存列同样是**绝对值** ⇒ 负数一并拒绝（导入面此前与改品面同款漏了符号）。
-        parsedRow.stock = StockQuantity.requireNonNegativeOrNull(
-                readCellNumber(row, header.get("库存"), "库存", rowNo), "第 " + rowNo + " 行库存");
-
+        // 🔴 issue #7597：导入模板已移除「库存」列（商品档案不再设置库存数值）。
+        // 旧文件里若仍带该列，按「未知列」忽略 —— 库存只能由真实单据产生（入库单 / 批次盘点）。
         parsedRow.colorName = normalizeBlankToNull(cellByHeader(row, header, "颜色"));
         parsedRow.doorWidth = normalizeBlankToNull(cellByHeader(row, header, "门幅"));
         if ((parsedRow.colorName == null) != (parsedRow.doorWidth == null)) {
@@ -2047,8 +2039,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         head.name = ColumnTextLength.requireWithinOrNull(head.name, 255, "导入行商品名称 name");
         head.skuCode = ColumnTextLength.requireWithinOrNull(head.skuCode, 30, "导入行商品货号 skuCode");
         head.categoryId = ColumnTextLength.requireWithinOrNull(head.categoryId, 64, "导入行分类 categoryId");
-        boolean groupHasSku = group.stream().anyMatch(r -> r.hasSku);
-
         // 幂等键查询：命中 ⇒ 原地更新（不新建行）；未命中 ⇒ 新建
         Product existing = productMapper.selectByTenantAndSkuCode(tenantId, head.skuCode);
 
@@ -2060,8 +2050,9 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             product.setCategoryId(head.categoryId);
             product.setBasePrice(head.price);
             product.setDescription(head.description);
-            // 有 SKU 组时该列是**派生列**（#4038，写完 SKU 由 syncProductStockFromSkus 回写汇总）
-            product.setStock(StockQuantity.orZero(head.stock));
+            // 有 SKU 组时该列是**派生列**（#4038，写完 SKU 由 syncProductStockFromSkus 回写汇总）；
+            // 无 SKU 组时也恒为 0（issue #7597：商品档案不建立库存）
+            product.setStock(BigDecimal.ZERO);
             product.setTenantId(tenantId);
             // 导入一律 draft（与既有导入口径一致）：上架是商家的显式动作，不由导入代劳
             product.setStatus("draft");
@@ -2077,10 +2068,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             patch.setCategoryId(head.categoryId);
             patch.setBasePrice(head.price);
             patch.setDescription(head.description);
-            // 「未填 = 不改」：无 SKU 组且库存列留空时不动既有库存（不得把留空当 0 清零）
-            if (!groupHasSku && head.stock != null) {
-                patch.setStock(head.stock);
-            }
             patch.setEditedBy(getCurrentUsername());
             patch.setEditedAt(OffsetDateTime.now());
             productMapper.updateById(patch);
@@ -2105,13 +2092,14 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             sku.setColorName(row.colorName);
             sku.setDoorWidth(row.doorWidth);
             sku.setPrice(row.price);
-            sku.setStock(row.stock);        // null = 未填 ⇒ 既有 SKU 保留原库存（saveColorsAndSkus 的既有语义）
+            // issue #7597：导入不再建立库存（库存列已从模板移除）
+            sku.setStock(null);
             sku.setSkuCode(row.skuCodeOfSku);
             skuInputs.add(sku);
         }
 
         saveColorsAndSkus(productId, head.skuCode, tenantId, colorInputs, null,
-                new ArrayList<>(doorWidths), head.price, StockQuantity.orZero(head.stock),
+                new ArrayList<>(doorWidths), head.price,
                 skuInputs, false);
     }
 
@@ -2125,7 +2113,6 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
         private String skuCode;
         private String categoryId;
         private BigDecimal price;
-        private BigDecimal stock;
         private String description;
         private String colorName;
         private String doorWidth;
@@ -2224,10 +2211,11 @@ public class ProductService extends ServiceImpl<ProductMapper, Product> {
             }
 
             // 示例行
+            // issue #7597：模板不再有「库存」列（商品档案不建立库存；期初/进货走入库单）
             Object[][] examples = {
-                    {"雪尼尔遮光帘", "MH-001", "", 128.5, 60.5, "米白色雪尼尔", "米白", "2.8m", "MH-001-01-28"},
-                    {"雪尼尔遮光帘", "MH-001", "", 128.5, 12, "米白色雪尼尔", "米白", "3.2m", "MH-001-01-32"},
-                    {"罗马杆配件", "PJ-001", "", 35, 8, "2.8m 铝合金杆", "", "", ""},
+                    {"雪尼尔遮光帘", "MH-001", "", 128.5, "米白色雪尼尔", "米白", "2.8m", "MH-001-01-28"},
+                    {"雪尼尔遮光帘", "MH-001", "", 128.5, "米白色雪尼尔", "米白", "3.2m", "MH-001-01-32"},
+                    {"罗马杆配件", "PJ-001", "", 35, "2.8m 铝合金杆", "", "", ""},
             };
             for (int r = 0; r < examples.length; r++) {
                 Row row = sheet.createRow(r + 1);

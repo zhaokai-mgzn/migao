@@ -1041,7 +1041,8 @@ async function productsNew(page) {
     // ── SDQS D1（docs/testing/smoke-data-quality.md）：建品**必须**把 SKU 矩阵填出来 ──
     // 旧形态只填标题 + 一档门幅就「存草稿」⇒ 造出来的商品 `product_skus` **零行**，而旅程照记 ✅
     // （2026-10-23 用户投诉「冒烟数据商品 SKU 都没有」）。这里填「2 颜色 × 1 门幅」= 2 条 SKU：
-    // 颜色走批量输入框（`BatchColorInput`），价格/库存走批量填写（`SkuMatrix` 的批量工具栏）。
+    // 颜色走批量输入框（`BatchColorInput`），价格走批量填写（`SkuMatrix` 的批量工具栏）。
+    // 🔴 issue #7597：库存不再由商品档案录入（批量工具栏的「数量」框已删除）⇒ 这里只批量填价格。
     const colorInput = page.locator('textarea[placeholder*="每行一个颜色名称"]').first()
     if (!(await waitVisible(colorInput, 10000))) throw new Error('建品页 10s 内未见「批量添加颜色」输入框')
     await colorInput.fill('米白,浅灰')
@@ -1050,8 +1051,6 @@ async function productsNew(page) {
     const priceInput = page.locator('input[placeholder="价格"]').first()
     if (!(await waitVisible(priceInput, 8000))) throw new Error('建品页未见 SKU 批量「价格」输入框')
     await priceInput.fill('30.8')
-    const stockInput = page.locator('input[placeholder="数量"]').first()
-    await stockInput.fill('120')
     await page.getByRole('button', { name: '批量填写', exact: true }).first().click()
     await page.waitForTimeout(600)
     // SKU 矩阵逐行非空（只数行数会被「空行」骗过 —— 价格/库存是逐格 input）
@@ -1059,8 +1058,9 @@ async function productsNew(page) {
     const skuRowCount = await matrixRows.count()
     if (skuRowCount < 2) throw new Error(`SKU 矩阵应 ≥2 行（2 颜色 × 1 门幅），现取 ${skuRowCount} 行`)
     const cellValues = await matrixRows.evaluateAll((rows) => rows.map((r) => [...r.querySelectorAll('input')].map((i) => i.value)))
-    const emptyCells = cellValues.filter((vals) => vals.length < 2 || !vals[0] || vals[1] === '').length
-    if (emptyCells > 0) throw new Error(`SKU 矩阵有 ${emptyCells} 行价格/库存为空：${JSON.stringify(cellValues).slice(0, 200)}`)
+    // issue #7597：每行只剩价格一个输入框（库存列已退场）⇒ 非空判据按 1 格算
+    const emptyCells = cellValues.filter((vals) => vals.length < 1 || !vals[0]).length
+    if (emptyCells > 0) throw new Error(`SKU 矩阵有 ${emptyCells} 行价格为空：${JSON.stringify(cellValues).slice(0, 200)}`)
     await page.getByRole('button', { name: /存草稿|存为草稿/ }).first().click().catch(() => {})
     await page.waitForTimeout(2500)
     await nav(page, '/products', '')
