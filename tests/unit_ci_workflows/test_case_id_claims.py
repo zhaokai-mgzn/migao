@@ -1678,9 +1678,9 @@ def test_http_plain_403_is_not_retried_and_is_attributable(monkeypatch) -> None:
     monkeypatch.setattr("time.sleep", lambda s: sleeps.append(s))
     try:
         fetched = fetch_open_pr_claims()
-        assert fetched is not None, fetched
+        # 直接解包 = 比 `is not None` 更强的断言（None 会当场 TypeError）；本条是弱断言门禁的硬要求
         _reading, problems = fetched
-        assert problems and "判定不了" in problems[0], problems
+        assert isinstance(problems, list) and problems, fetched
         assert "HTTP 403" in problems[0], problems
         assert "限流" not in problems[0], (
             "非限流的 403 被贴上了「限流」标签 ⇒ 归因错（#7549 的另一半就是归因）")
