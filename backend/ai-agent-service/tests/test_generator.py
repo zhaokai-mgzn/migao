@@ -6,7 +6,8 @@
 - 配额类错误（429 / AllocationQuota）自动切下一个模型；全部用尽 ⇒ 明确错误；
 - 非配额错误不静默换模型；
 - 全链都「接不了这类请求」⇒ 报不可用而非「额度用尽」（2026-10-23 起的默认链即此形态）；
-- 默认链 = 用户 2026-10-23 的裁定（qwen-mt-image-2.0）；
+- 默认链 = 用户 2026-10-24 的裁定（qwen-image-3.0-pro，issue #7661 切到 MaaS token-plan）；
+- 缺 key 不回落 PRIMARY（DeepSeek key）；端点主机 = MaaS（旧 dashscope 痕迹退场）；
 - 内部端点只回 `image_url` / `model`（不落库、不返回临时凭据）。
 """
 # case_ids: UI-129
@@ -141,25 +142,51 @@ def test_content_moderation_error_does_not_switch_model(monkeypatch):
     assert len(calls) == 1
 
 
-def test_default_chain_is_the_2026_10_23_user_decision():
-    """默认链 = qwen-mt-image-2.0（用户 2026-10-23 裁定：qwen-image-* 免费额度用尽）。
+def test_default_chain_is_the_2026_10_24_user_decision():
+    """默认链 = qwen-image-3.0-pro（用户 2026-10-24 裁定，issue #7661：生图切到 MaaS token-plan）。
 
-    🔴 这条断言**有意钉住一个已知不可用的模型**：qwen-mt-image-2.0 是图片翻译模型，不接图生图
-    （issue #7341）。所以它红了通常是**好消息** —— 有人换回了可用模型 ⇒ 请一并更新
-    app/config.py 的裁定注释、.env.example、.github/cases/ui.yml 的 UI-129 判据 3（别只删断言）。
+    🔴 这条断言钉住「平台统一 key 真能出图」的那个模型：改回图片翻译模型 `qwen-mt-image-2.0`
+    （不接图生图，issue #7341/#7538）等于让商家点一次拿一次 503。它红了通常是**好消息**
+    —— 有人换了模型 ⇒ 请一并更新 app/config.py 的裁定注释、.env.example、
+    .github/cases/ui.yml 的 UI-129 判据 3（别只删断言）。
     """
     from app.config import Settings
 
     default = Settings.model_fields["IMAGE_GEN_MODELS"].default
-    assert [m.strip() for m in default.split(",") if m.strip()] == ["qwen-mt-image-2.0"]
+    assert [m.strip() for m in default.split(",") if m.strip()] == ["qwen-image-3.0-pro"]
+
+
+def test_image_endpoint_is_maas_not_legacy_bailian():
+    """生图端点 = MaaS 原生多模态路径（issue #7661）；旧 dashscope.aliyuncs.com 不得残留。"""
+    from app.config import Settings
+
+    base = Settings.model_fields["IMAGE_GEN_BASE_URL"].default
+    assert "token-plan.cn-beijing.maas.aliyuncs.com" in base
+    assert "/api/v1/services/aigc/" in base
+    assert "dashscope.aliyuncs.com" not in base
+
+
+def test_missing_key_never_falls_back_to_primary(monkeypatch):
+    """旧百炼 key 退役后：IMAGE_GEN_API_KEY / ASR_API_KEY 都空 ⇒ fail-closed，绝不拿 PRIMARY 顶。
+
+    PRIMARY 是 DeepSeek 的 key（主推理不动），打到 MaaS/百炼只会 401 —— 而且错因会被
+    「有 key」这件事掩盖（响应变成 invalid_api_key 而不是「未配置」）。
+    """
+    _settings(monkeypatch, IMAGE_GEN_API_KEY="", ASR_API_KEY="")
+    monkeypatch.setattr(gen.settings, "PRIMARY_API_KEY", "sk-deepseek-primary")
+
+    assert gen._api_key() == ""
+    with pytest.raises(gen.ImageGenerationUnavailable):
+        asyncio.run(gen.generate_product_image("https://oss/sample.png", "某商品", "main"))
 
 
 def test_all_models_unsupported_is_not_reported_as_quota(monkeypatch):
     """全链都「接不了这类请求」⇒ 报不可用，不报「额度用尽」（商家看到的理由必须是真的）。
 
-    形态来源 = 2026-10-23 起的默认链（qwen-mt-image-2.0，issue #7341 实测 400 InvalidParameter）。
+    形态来源 = issue #7341 实测（图片翻译模型对图生图载荷回 400 InvalidParameter）。
+    本用例只钉**语义**、不钉具体模型名 —— 模型会轮换（issue #7661），语义不许退化。
     """
-    _settings(monkeypatch, IMAGE_GEN_MODELS="qwen-mt-image-2.0")
+    _settings(monkeypatch, IMAGE_GEN_MODELS="model-a")
 
     def handler(request):
         return httpx.Response(
@@ -169,7 +196,7 @@ def test_all_models_unsupported_is_not_reported_as_quota(monkeypatch):
         asyncio.run(gen.generate_product_image(
             "https://oss/sample.png", "某商品", "main", client=_client(handler)))
     message = str(excinfo.value)
-    assert "qwen-mt-image-2.0" in message
+    assert "model-a" in message
     assert "不接" in message
     assert "额度" not in message
 

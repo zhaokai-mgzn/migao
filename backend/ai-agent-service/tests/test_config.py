@@ -54,6 +54,23 @@ class TestDefaults:
         assert s.VISION_BASE_URL == "https://api.deepseek.com/v1"
         assert s.VISION_ENABLED is True
 
+    def test_audio_and_image_defaults_point_to_maas(self):
+        """语音识别 / 商品生图 = 阿里云 MaaS token-plan（issue #7661，用户 2026-10-24 裁定）
+
+        🔴 **主推理 / 视觉不动**：这两行断言就是「只切换语音与生图」的机器口径 ——
+        有人顺手把 PRIMARY_MODEL 也换掉时，上面 `test_vision_defaults_deepseek` 先红。
+        """
+        s = _make_settings()
+        assert s.ASR_MODEL == "qwen-audio-3.0-realtime-plus"
+        assert s.ASR_WEBSOCKET_BASE_URL == (
+            "wss://token-plan.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference"
+        )
+        assert s.IMAGE_GEN_MODELS == "qwen-image-3.0-pro"
+        assert s.IMAGE_GEN_BASE_URL == (
+            "https://token-plan.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/"
+            "multimodal-generation/generation"
+        )
+
 
 class TestLlmCredentialAliases:
     """LLM_* 统一读取（PRIMARY 优先，VISION 兜底 —— 原 MINIMAX_* 语义）"""

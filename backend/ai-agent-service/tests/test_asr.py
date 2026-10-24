@@ -317,3 +317,86 @@ class TestAsrRejectLogging:
         assert expect in logged, f"拒收日志缺少原因「{expect}」：{logged}"
         assert f"size={len(data)}" in logged, f"拒收日志缺少读数 size={len(data)}：{logged}"
         mock_transcribe.assert_not_called()
+
+
+class TestMaasEndpointAndCredential:
+    """issue #7661：语音切到阿里云 MaaS（token-plan）+ 旧百炼 key 退役。
+
+    这两条都是「静默错」形态：端点没拨过去 ⇒ SDK 照旧打 dashscope.aliyuncs.com（新 key → 401）；
+    key 回落 PRIMARY ⇒ 缺 ASR_API_KEY 时拿 DeepSeek key 去请求（也 401，但错因不可见）。
+    """
+
+    def test_recognition_uses_maas_model_endpoint_and_key(self, monkeypatch):
+        import asyncio
+
+        import dashscope
+
+        from app.api import asr
+
+        monkeypatch.setattr(asr.settings, "ASR_API_KEY", "sk-maas-test")
+        monkeypatch.setattr(asr.settings, "ASR_MODEL", "qwen-audio-3.0-realtime-plus")
+        monkeypatch.setattr(
+            asr.settings,
+            "ASR_WEBSOCKET_BASE_URL",
+            "wss://token-plan.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference",
+        )
+        # 默认值来自 SDK（dashscope.aliyuncs.com）；monkeypatch 负责测试后复原，避免污染其它用例
+        monkeypatch.setattr(
+            dashscope, "base_websocket_api_url",
+            "wss://dashscope.aliyuncs.com/api-ws/v1/inference", raising=False,
+        )
+        monkeypatch.setattr(asr, "_convert_to_wav", lambda data, fmt: b"wav-bytes")
+
+        captured = {}
+        built = []
+
+        class _Sentence:
+            def get_sentence(self):
+                return {"sentence_id": 1, "text": "帮我查订单"}
+
+        class _FakeRecognition:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+                self._cb = kwargs["callback"]
+                self.frames = []
+                self.stopped = False
+                built.append(self)
+
+            def start(self):
+                self._cb.on_event(_Sentence())
+
+            def send_audio_frame(self, data):
+                self.frames.append(data)
+
+            def stop(self):
+                self.stopped = True
+
+        monkeypatch.setattr(asr, "Recognition", _FakeRecognition)
+
+        text = asyncio.run(asr._transcribe_audio(b"audio", format="wav", sample_rate=16000))
+
+        assert captured["model"] == "qwen-audio-3.0-realtime-plus"
+        assert captured["api_key"] == "sk-maas-test"
+        assert dashscope.base_websocket_api_url == (
+            "wss://token-plan.cn-beijing.maas.aliyuncs.com/api-ws/v1/inference"
+        )
+        assert text == "帮我查订单"
+        # 送帧/收尾确实发生（否则「识别成功」可能只是一次空跑）
+        assert built[0].frames == [b"wav-bytes"]
+        assert built[0].stopped
+
+    def test_missing_key_fails_closed_and_never_uses_primary(self, monkeypatch):
+        import asyncio
+
+        from app.api import asr
+
+        monkeypatch.setattr(asr.settings, "ASR_API_KEY", "")
+        monkeypatch.setattr(asr.settings, "PRIMARY_API_KEY", "sk-deepseek-primary")
+        built = []
+        monkeypatch.setattr(asr, "Recognition", lambda **kw: built.append(kw))
+
+        with pytest.raises(ValueError) as excinfo:
+            asyncio.run(asr._transcribe_audio(b"audio", format="wav", sample_rate=16000))
+
+        assert "ASR_API_KEY" in str(excinfo.value)
+        assert built == [], "缺 ASR_API_KEY 时不得构造 Recognition（更不得用 PRIMARY key 顶）"
