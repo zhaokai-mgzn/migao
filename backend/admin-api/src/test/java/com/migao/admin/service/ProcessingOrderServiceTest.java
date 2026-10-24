@@ -3613,14 +3613,33 @@ class ProcessingOrderServiceTest {
     // ── PG-004 未确认订单 ──────────────────────────────────────────
 
     @Test
-    @DisplayName("PG-004 pending 订单 → 拒绝生成")
-    void generatePendingOrderRejected() {
+    @DisplayName("PG-004（issue #7626）待付款（pending）订单 → 允许生成（作业单是生产计划，不扣库存 / 不记资金）")
+    void generatePendingOrderAllowed() {
+        stubLibrary();
         Order pending = Order.builder()
                 .id("order-pending").tenantId(TENANT).orderNo("ORD-P")
                 .status("pending").build();
         when(orderMapper.selectById("order-pending")).thenReturn(pending);
+        when(orderItemMapper.selectList(any()))
+                .thenReturn(List.of(orderItemWithProcessing("米白")));
+        when(processingOrderMapper.selectActiveByOrderId("order-pending", TENANT)).thenReturn(null);
+        when(processingOrderMapper.insert(any(ProcessingOrder.class))).thenReturn(1);
 
         var results = processingOrderService.generate(List.of("order-pending"), TENANT, "u1");
+
+        // 用户 2026-10-24 裁定 A：「销售单的扫码报工码不要跟确认收款挂钩」⇒ 待付款单也能先生成作业单
+        assertThat(results.get(0).isSuccess()).isTrue();
+    }
+
+    @Test
+    @DisplayName("PG-004 反向护栏（issue #7626）：闸门只放宽到待付款 —— 已取消订单仍拒绝生成")
+    void generateCancelledOrderRejected() {
+        Order cancelled = Order.builder()
+                .id("order-cancelled").tenantId(TENANT).orderNo("ORD-C")
+                .status("cancelled").build();
+        when(orderMapper.selectById("order-cancelled")).thenReturn(cancelled);
+
+        var results = processingOrderService.generate(List.of("order-cancelled"), TENANT, "u1");
 
         assertThat(results.get(0).isSuccess()).isFalse();
         assertThat(results.get(0).getMessage()).contains("不允许生成加工单");

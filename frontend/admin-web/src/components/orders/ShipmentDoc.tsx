@@ -6,7 +6,7 @@ import type { Order, OrderItem, LogisticsInfo, OrderProcessingItem } from '@/typ
 import type { PrintTarget } from './index'
 import { printBodyFontPt, printContentInsetCss, printPageRule } from '@/lib/print-media'
 import { useCompanyName } from '@/lib/use-company-name'
-import { orderItemSku } from '@/lib/order-item-sku'
+import { orderItemCurtainType, orderItemSku } from '@/lib/order-item-sku'
 import { cn, formatFullDateTime } from '@/lib/utils'
 
 /**
@@ -268,19 +268,21 @@ export default function ShipmentDoc({
       <table className="w-full border-collapse mb-2" style={{ tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            <DocTh className="w-[26%]">商品</DocTh>
+            <DocTh className="w-[24%]">商品</DocTh>
             <DocTh className="w-[9%]">货号</DocTh>
             <DocTh className="w-[9%]">颜色</DocTh>
-            <DocTh className="w-[12%]">门幅</DocTh>
-            <DocTh align="right" className="w-[13%]">单价(元/米)</DocTh>
+            <DocTh className="w-[11%]">门幅</DocTh>
+            {/* 帘种（issue #7625）：布帘 / 纱帘 —— 用户 2026-10-24「给所有打印预览表格都加一列」 */}
+            <DocTh className="w-[8%]">帘种</DocTh>
+            <DocTh align="right" className="w-[12%]">单价(元/米)</DocTh>
             <DocTh align="right" className="w-[11%]">数量(米)</DocTh>
-            <DocTh align="right" className="w-[14%]">金额(元)</DocTh>
+            <DocTh align="right" className="w-[16%]">金额(元)</DocTh>
           </tr>
         </thead>
         <tbody>
           {items.length === 0 && (
             <tr>
-              <td className="border border-neutral-400 px-2 py-3 text-center text-neutral-500" colSpan={7}>
+              <td className="border border-neutral-400 px-2 py-3 text-center text-neutral-500" colSpan={8}>
                 暂无商品明细
               </td>
             </tr>
@@ -296,6 +298,7 @@ export default function ShipmentDoc({
                 <DocTd>{sku.code}</DocTd>
                 <DocTd>{sku.color}</DocTd>
                 <DocTd>{sku.doorWidth}</DocTd>
+                <DocTd>{orderItemCurtainType(item)}</DocTd>
                 <DocTd align="right">{formatAmount(item.unitPrice)}</DocTd>
                 <DocTd align="right">{formatQty(item.quantity)}</DocTd>
                 <DocTd align="right">{formatAmount(item.amount)}</DocTd>
@@ -304,7 +307,7 @@ export default function ShipmentDoc({
           })}
           {items.length > 0 && (
             <tr>
-              <td className="border border-neutral-400 px-2 py-1.5 text-right font-semibold" colSpan={5}>
+              <td className="border border-neutral-400 px-2 py-1.5 text-right font-semibold" colSpan={6}>
                 合计
               </td>
               <DocTd align="right" bold>

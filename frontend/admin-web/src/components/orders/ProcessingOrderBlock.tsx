@@ -331,7 +331,14 @@ export default function ProcessingOrderBlock({
   // 卖布单行上没有加工项，只按 processingItems 推会判「不需要」⇒ 没有生成出口。
   // wire 键是 snake_case（issue #7319）；本组件的 prop 保持 camelCase 的组件 API，这里显式换一次键。
   const neededKind = workOrderKindOf({ work_order_kind: workOrderKind })
-  const canGenerate = notFound && neededKind !== null && (orderStatus === 'confirmed' || orderStatus === 'producing')
+  // 🔴 待付款（后端 `pending` / 前端规范化后的 `pending_payment`）**也能生成作业单**（issue #7626）：
+  // 作业单是生产计划（不扣库存、不记资金），扣减仍只发生在 `confirmPayment` ——
+  // 旧闸门让待付款单永远没有作业单 ⇒ 销售单上没有扫码报工码（用户 2026-10-24 报的形态）。
+  const awaitingPayment = orderStatus === 'pending' || orderStatus === 'pending_payment'
+  const canGenerate =
+    notFound &&
+    neededKind !== null &&
+    (awaitingPayment || orderStatus === 'confirmed' || orderStatus === 'producing')
   const canAct = po && !['completed', 'cancelled'].includes(po.status)
   // 工序清单按 `order_item_id` 索引一次（issue #6901；与洗水码/批号同一把钥匙）
   const operationsIndex = operationsByItem(operations)
@@ -507,12 +514,18 @@ export default function ProcessingOrderBlock({
 
       {!loading && canGenerate && neededKind && (
         <div className="mt-3 rounded-lg border border-primary-100 bg-primary-50/50 p-4">
-          {isUrgent ? (
+          {isUrgent || awaitingPayment ? (
             <>
               {/* 加急例外（issue #7507 / #5177）：加急单不参与合并 ⇒ 保留直派这条路
-                  （派单页也把加急单放插队区单派，两处口径一致）。 */}
+                  （派单页也把加急单放插队区单派，两处口径一致）。
+                  待付款（issue #7626）：智能派单池**只收已确认单** ⇒ 待付款单只能在这里生成，
+                  否则「收款前拿不到作业单 ⇒ 销售单没有扫码报工码」。 */}
               <p className="text-sm text-neutral-600">{WORK_ORDER_NEEDED_COPY[neededKind].generateIntro}</p>
-              <p className="mt-1 text-xs text-neutral-500">加急单不参与合并，可直接生成作业单。</p>
+              <p className="mt-1 text-xs text-neutral-500">
+                {awaitingPayment
+                  ? '待付款单不参与智能派单合并，可先在这里生成作业单；收款流程与库存扣减不受影响。'
+                  : '加急单不参与合并，可直接生成作业单。'}
+              </p>
               {/* 按钮文案 = 「生成」+ 该型的**中文业务名**（`ORDER_KIND_LABELS`，不新造词）：
                   卖布单出「生成出库作业单」、成品帘单出「生成加工单」。 */}
               <Button className="mt-3" size="sm" disabled={busy} onClick={handleGenerate}>
@@ -545,11 +558,8 @@ export default function ProcessingOrderBlock({
           <div data-testid="processing-order-generate-not-yet" className="mt-2 text-sm text-neutral-500">
             <p>该订单需要作业单（{ORDER_KIND_LABELS[neededKind]}），当前状态还不能生成。</p>
             <p className="mt-1">
-              请先
-              {orderStatus === 'pending_shipment'
-                ? '在生产待办里生成作业单'
-                : '确认订单（订单进入「已确认」后即可派单）'}
-              ，再{isUrgent ? `回来生成${ORDER_KIND_LABELS[neededKind]}` : '到「智能派单」派单'}。
+              仅「待付款 / 已确认 / 生产中」的订单可生成作业单
+              {isUrgent ? '；加急单可直接生成' : '；已确认后到「智能派单」派单'}。
             </p>
           </div>
         ) : (

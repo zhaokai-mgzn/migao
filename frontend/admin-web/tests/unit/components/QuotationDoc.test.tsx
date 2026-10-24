@@ -204,13 +204,13 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       expect(text).toContain('第3套/共3套')
     })
 
-    it('8 列表头齐全（组件/货号/颜色/门幅/尺寸/数量(米)/单价(元/米)/小计）—— issue #6869 / #7527', () => {
+    it('8 列表头齐全（货号/颜色/门幅/帘种/尺寸/数量(米)/单价(元/米)/小计）—— issue #6869 / #7527 / #7625', () => {
       render(<QuotationDoc order={buildOrder()} />)
       for (const col of [
-        '组件',
         '货号',
         '颜色',
         '门幅',
+        '帘种',
         '尺寸',
         '数量(米)',
         '单价(元/米)',
@@ -218,22 +218,24 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       ]) {
         expect(screen.getAllByText(col).length).toBeGreaterThanOrEqual(1)
       }
-      // 表头列数 = 8（品名退出后不多不少；多出一格 ⇒ 下面这条红）
+      // 表头列数 = 8（品名 / 组件退出后各补一列「帘种」，不多不少；多出一格 ⇒ 下面这条红）
       const head = doc()!.querySelector('.quotation-set thead tr') as HTMLElement
       expect(head.querySelectorAll('th')).toHaveLength(8)
       // 退场的列（按时间顺序）：部位（#4521 后对普通订单恒空）→ 品名（#7527，与加工费行重复）
+      // → 组件（#7625，用户 2026-10-24「不要组件这一列」，改由「帘种」承载「这块布是布帘还是纱帘」）
       expect(screen.queryByText('品名')).toBeNull()
       expect(screen.queryByText('部位')).toBeNull()
       expect(screen.queryByText('部位信息')).toBeNull()
       expect(screen.queryByText('部位备注')).toBeNull()
+      expect(screen.queryByText('组件')).toBeNull()
     })
 
-    it('面料行：组件 = componentRole / 货号 = skuCode / 颜色 = colorName / 门幅 = doorWidth / 数量 = quantity 米 / 单价 = unitPrice / 小计 = subtotal', () => {
+    it('面料行：帘种 = 布帘 / 货号 = skuCode / 颜色 = colorName / 门幅 = doorWidth / 数量 = quantity 米 / 单价 = unitPrice / 小计 = subtotal', () => {
       render(<QuotationDoc order={buildOrder()} />)
       const text = docText()
       // 🔴 issue #7527：品名（`productName`）**不上纸** —— 把「品名」列加回来这条当场红
       expect(text).not.toContain('布艺遮光帘A')
-      expect(text).toContain('主布')
+      expect(text).toContain('布帘')
       // 🔴 货号取响应真字段 `skuCode` —— 夹具**没有** `productCode`（幽灵字段），
       // 旧实现（读 `productCode`）在这一格印空 ⇒ 本判据即红证
       expect(text).toContain('0012')
@@ -254,26 +256,51 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
         (tr) => tr.querySelector('td')?.textContent?.trim() === '工艺'
       )
       expect(craftRow).toBeUndefined()
-      // 每一行的首格只剩「组件」（面料行 = 主布 / 加工费行 = 加工费）
-      const firstCells = Array.from(doc()!.querySelectorAll('.quotation-set tbody tr')).map((tr) =>
-        tr.querySelector('td')?.textContent?.trim()
+      // 每一行的帘种格（第 4 格，index 3）—— 面料行与加工费行同属一块帘 ⇒ 逐字相同
+      const curtainCells = Array.from(doc()!.querySelectorAll('.quotation-set tbody tr')).map((tr) =>
+        tr.querySelectorAll('td')[3]?.textContent?.trim()
       )
-      expect(firstCells).toEqual(['主布'])
+      expect(curtainCells).toEqual(['布帘'])
     })
 
-    it('组件缺 componentRole ⇒ 按主布印（缺省即主布）', () => {
+    it('帘种缺键 ⇒ 按布帘印（写侧口径「主帘缺省即布帘」，issue #4521 / #7625）', () => {
       render(
         <QuotationDoc
           order={buildOrder({
             items: [
               buildItem({
-                processingInfo: { curtainType: '布帘', colorName: '米白' },
+                processingInfo: { colorName: '米白' },
               }),
             ],
           })}
         />
       )
-      expect(docText()).toContain('主布')
+      expect(docText()).toContain('布帘')
+    })
+
+    it('帘种：显式 `curtainType=纱帘` ⇒ 印「纱帘」；布料单（无帘）⇒ 不冒充布帘', () => {
+      render(
+        <QuotationDoc
+          order={buildOrder({
+            items: [
+              buildItem({
+                id: 'item-sheer',
+                processingInfo: { curtainType: '纱帘', colorName: '象牙白', doorWidth: '3.0米' },
+              }),
+              buildItem({
+                id: 'item-fabric',
+                processingInfo: { colorName: '米白', saleForm: '布料' },
+              }),
+            ],
+          })}
+        />
+      )
+      // 第 1 套 = 纱帘；第 2 套 = 布料（无帘种 ⇒ 空着，不印「布帘」冒充）
+      const blocks = Array.from(doc()!.querySelectorAll('.quotation-set'))
+      const curtainOf = (block: Element): string =>
+        block.querySelectorAll('tbody tr')[0]?.querySelectorAll('td')[3]?.textContent?.trim() ?? ''
+      expect(curtainOf(blocks[0])).toBe('纱帘')
+      expect(curtainOf(blocks[1])).toBe('')
     })
 
     it('尺寸 = width × height（米）', () => {
@@ -313,7 +340,7 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
       expect(doc()!.querySelectorAll('.quotation-set tbody tr')).toHaveLength(1)
     })
 
-    it('加工费行：processingFee > 0 才出，组件 = 加工费 / 数量 = quantity 米 / 单价 = 小计 = processingFee', () => {
+    it('加工费行：processingFee > 0 才出，帘种同行 = 布帘 / 数量 = quantity 米 / 单价 = 小计 = processingFee', () => {
       render(
         <QuotationDoc
           order={buildOrder({ items: [buildItem({ processingFee: 250, subtotal: 1250 })] })}
