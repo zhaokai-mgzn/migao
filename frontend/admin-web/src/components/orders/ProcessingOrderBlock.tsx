@@ -523,7 +523,7 @@ export default function ProcessingOrderBlock({
               <p className="text-sm text-neutral-600">{WORK_ORDER_NEEDED_COPY[neededKind].generateIntro}</p>
               <p className="mt-1 text-xs text-neutral-500">
                 {awaitingPayment
-                  ? '待付款单不进「智能派单」池，可先在这里生成作业单；收款流程与库存扣减不受影响。'
+                  ? '待付款单不参与智能派单合并，可先在这里生成作业单；收款流程与库存扣减不受影响。'
                   : '加急单不参与合并，可直接生成作业单。'}
               </p>
               {/* 按钮文案 = 「生成」+ 该型的**中文业务名**（`ORDER_KIND_LABELS`，不新造词）：
