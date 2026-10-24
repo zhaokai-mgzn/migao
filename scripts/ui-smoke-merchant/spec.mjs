@@ -19,7 +19,9 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:3001'
 // 管理端 API（node 侧直连，见 adminApi 的注释说明为什么不从页面内 fetch）
 const API_BASE = process.env.API_BASE || 'http://127.0.0.1:8090'
 const OUT = process.env.OUT_DIR || '/tmp/ui-smoke/out'
-const PHONE = process.env.PHONE || '13800138000'
+// 🔴 商家后台冒烟必须用**商家管理员**账号（issue #7479：`13800138000` 是 C 端顾客账号，
+//    管理端登录会被服务端拒绝「该账号非管理员」）；值 = docs/testing/demo-readiness.md 的同一口径。
+const PHONE = process.env.PHONE || '13600136000'
 const SMS_CODE = process.env.SMS_CODE || '123456'
 const GROUP = process.argv.includes('--group') ? process.argv[process.argv.indexOf('--group') + 1] : ''
 // .env 值两侧可能带引号（本文件**不用字面量**写那两个引号字符：`tests/unit_ci_workflows/

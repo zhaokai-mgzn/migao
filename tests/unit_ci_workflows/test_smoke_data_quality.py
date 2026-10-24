@@ -297,3 +297,77 @@ def test_failed_journey_leaves_screenshot():
     assert "-failed.png" in body, (
         "失败截图没有独立文件名（会覆盖同名旅程的正常截图）")
     assert "evidence" in body, "失败截图没有进 evidence ⇒ 汇总里看不到它"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 商家后台演示/冒烟凭据的**同一口径**（issue #7479）
+#
+# 病根（2026-10-22 实测）：商家后台登录页用 `13800138000` 被服务端拒绝
+# 「该账号非管理员，请使用员工登录入口」—— 库里该手机号是 **C 端顾客**（role=customer）。
+# 而冒烟 spec / 冒烟脚本 / 三份演示文档**默认**都写着这个号 ⇒ 谁照文档做谁撞墙，
+# 且冒烟默认值本身就是「一定登不上」。
+#
+# 判据（同一口径 = 单一真值，不许三处各写各的）：
+# ① spec.mjs 的默认 PHONE、ui_smoke_merchant.sh 的默认 PHONE、demo-readiness.md 的「演示前用 <号>」三者必须相等；
+# ② 三份商家侧文档里凡出现 C 端顾客号，同一行必须写明「C 端 / 顾客」，避免被当成管理员凭据。
+# ══════════════════════════════════════════════════════════════════════════════
+
+MERCHANT_ADMIN_PHONE = "13600136000"
+CUSTOMER_PHONE = "13800138000"
+MERCHANT_FACING_DOCS = (
+    REPO_ROOT / "docs" / "testing" / "demo-readiness.md",
+    REPO_ROOT / "docs" / "deployment" / "poc-rehearsal-checklist.md",
+    REPO_ROOT / "docs" / "testing" / "frontend-acceptance-checklist.md",
+)
+
+
+def _spec_default_phone() -> str:
+    source = SPEC.read_text(encoding="utf-8")
+    match = re.search(r"const PHONE = process\.env\.PHONE \|\| '(\d{11})'", source)
+    assert match, "spec.mjs 的默认 PHONE 取不到（判据锚点失效 ⇒ 判不了，不得当通过）"
+    return match.group(1)
+
+
+def _shell_default_phone() -> str:
+    source = SHELL.read_text(encoding="utf-8")
+    match = re.search(r'PHONE="\$\{PHONE:-(\d{11})\}"', source)
+    assert match, "ui_smoke_merchant.sh 的默认 PHONE 取不到（判据锚点失效）"
+    return match.group(1)
+
+
+def _documented_merchant_phone() -> str:
+    source = MERCHANT_FACING_DOCS[0].read_text(encoding="utf-8")
+    match = re.search(r"演示前用 (\d{11}) / 万能码", source)
+    assert match, "demo-readiness.md 里找不到「演示前用 <手机号> / 万能码」这句（判据锚点失效）"
+    return match.group(1)
+
+
+class TestMerchantDemoCredentials:
+    def test_smoke_defaults_are_the_merchant_admin(self):
+        spec_phone = _spec_default_phone()
+        shell_phone = _shell_default_phone()
+        doc_phone = _documented_merchant_phone()
+        assert spec_phone == shell_phone == doc_phone == MERCHANT_ADMIN_PHONE, (
+            "商家侧登录号三处不一致（或又写回 C 端顾客号）—— issue #7479："
+            f"spec={spec_phone} shell={shell_phone} doc={doc_phone} 期望={MERCHANT_ADMIN_PHONE}")
+
+    def test_customer_phone_is_always_qualified_as_customer(self):
+        offenders = []
+        for doc in MERCHANT_FACING_DOCS:
+            for lineno, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
+                if CUSTOMER_PHONE not in line:
+                    continue
+                if "C 端" in line or "顾客" in line:
+                    continue
+                offenders.append(f"{doc.relative_to(REPO_ROOT)}:{lineno}")
+        assert not offenders, (
+            "这些商家侧文档行把 C 端顾客号当成登录凭据写（没写清它是 C 端/顾客）—— issue #7479："
+            + ", ".join(offenders))
+
+    def test_sms_rate_limit_cleanup_uses_the_login_phone(self):
+        """登录前清 SMS 限流键时，必须清**当前登录号**——写死号码 ⇒ 换号后一个都没清到。"""
+        source = SHELL.read_text(encoding="utf-8")
+        block = re.search(r"for phone in \[(.+?)\]:", source)
+        assert block, "找不到 SMS 限流清理的号码列表（判据锚点失效）"
+        assert "sys.argv" in block.group(1), (
+            "SMS 限流清理写死了手机号（issue #7479 现场：写死 C 端顾客号 ⇒ 换号后限流键没清、登录旅程会 400）")

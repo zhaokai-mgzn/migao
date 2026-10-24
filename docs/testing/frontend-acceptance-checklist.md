@@ -10,7 +10,7 @@
 
 ## 执行方式（AI 侧）
 
-1. 起服务：admin-web(:3001) + admin-api(:8080) + ai-agent(:8001)，登录 13800138000/123456；
+1. 起服务：admin-web(:3001) + admin-api(:8080) + ai-agent(:8001)，登录 13600136000/123456（商家管理员，见 issue #7479）；
 2. 每个剧本：`npx playwright test` 或临时 spec 采集 DOM 状态 + `toHaveScreenshot` 截图证据；
 3. 判定：可机器断言的走 L1（DOM 断言/禁用态/文案）；视觉走 UA（AI 看截图 + 证据引用）；
 4. 产出：每项 ✅/❌ + 证据（截图/DOM 快照/轮次原文），回填 issue 评论区。

@@ -52,7 +52,7 @@ API 层 8/8 ≠ UI 层可用；**只跑 6 个文件的 E2E gate ≠ 全量 UI �
 | 售后工单列表 / 详情 | **未验证** | 反证：nightly 同 SHA `after-sales-list` 16 / **2 fail**、`after-sales-detail` 11 / **1 fail** | 少量红，但不是全绿 | 演示前手动点开售后列表 + 详情 |
 | 设置 / 通知 / 加工项 / 存储 | **未验证** | 反证：`processing` 0 / **40 fail**、`settings` 8 / 14、`notifications` 6 / 12、`oss-dual-bucket` 4 / 6 | 加工项 spec 全红；**菜单结构同步说明**：订单管理组下新增「加工单」菜单项（加工单列表页，`permissionCode=processing:manage`），见下行 | 演示若涉及加工单，**手动走一遍**（或直接演示下行加工单列表页） |
 | 加工单列表页（`processing-orders`，**本包新增**） | **机器级** | ① 已追加进 `Demo Evidence Gate` manifest（`tests/e2e/demo-path-specs.txt` 第 8 个 spec：`orders/processing-orders.spec.ts`，PR 合入后 CI 自动跑）；② 本包本地 fixture 复跑 **12 passed** 两轮（`12 passed (32.3s)` / `12 passed (25.2s)`，执行行见 PR body，SHA `6a55d73b` 起的工作分支） | 状态机按钮的**真后端联动**（真 PATCH 落库 + 订单状态回退联动）不在本层；快照**不含金额**（决策 2 不含销售价，列表无金额列，见 PR body 存疑） | 演示前手动点一次「发加工 / 开始加工 / 加工完成 / 取消」任一操作，确认订单详情页加工单块状态同步 |
-| 登录页 | **证据引用** | 本包实测（2026-09-15）：`https://merchant.migaozn.com/` → **HTTP 307** 跳 `/login`；`/login` → **HTTP 200** | 登录**提交**链路（短信码）没有 e2e 覆盖：`specs/auth/login-sms.spec.ts` / `register.spec.ts` 属 `auth-pages` project，**没有任何 workflow 跑它**（`--project=web` 会 ignore `specs/auth/`） | 演示前用 13800138000 / 万能码 123456 亲手登一次（短信网关仍是 bypass） |
+| 登录页 | **证据引用** | 本包实测（2026-09-15）：`https://merchant.migaozn.com/` → **HTTP 307** 跳 `/login`；`/login` → **HTTP 200** | 登录**提交**链路（短信码）没有 e2e 覆盖：`specs/auth/login-sms.spec.ts` / `register.spec.ts` 属 `auth-pages` project，**没有任何 workflow 跑它**（`--project=web` 会 ignore `specs/auth/`） | 演示前用 13600136000 / 万能码 123456 亲手登一次（短信网关仍是 bypass）（`13800138000` 是 **C 端顾客**账号，只用于顾客侧/客服侧演示，商家后台登录用不了 —— issue #7479） |
 
 ### 1.3 活环境（当前可用，本包实测）
 
