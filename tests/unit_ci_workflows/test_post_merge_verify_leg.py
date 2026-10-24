@@ -1267,7 +1267,13 @@ def test_judging_step_voices_the_no_pr_context_exit():
 
 SUMMARY_HARD_LIMIT = 1024 * 1024      # GitHub step summary 硬上限（1 MiB）
 ISSUE_BODY_HARD_LIMIT = 65536         # GitHub issue body 上限（字符）
-FAILURE_LIST_NEEDLE = "grep -E '^(FAILED|ERROR) '"
+#: 失败清单的取材面（issue #7673）：判据本体把失败判据打成 **`❌ …`**（`scripts/post_merge_verify.py`
+#: 的 `print(f"❌ {problem}", file=sys.stderr)`，已并入同一输出文件）⇒ 只认 `FAILED/ERROR` 前缀会在
+#: 「判红」时**一条都取不到**（实测 2026-10-25：`失败清单（前 40 条）` 之后为空）。
+FAILURE_LIST_NEEDLE = "grep -E '^(FAILED|ERROR) |^❌ '"
+#: 双引号里**未转义**的反引号 = bash 命令替换（实测把 `FM-E21` 当命令执行 ⇒ `command not found`，
+#: 该行摘要文字被吞）。单引号 echo（如 ``` 围栏）不受影响，单独放行。
+UNESCAPED_BACKTICK_RE = re.compile(r"(?<!\\)`")
 EXCERPT_FILE = "/tmp/post-merge-verify-excerpt.txt"
 ISSUE_EXCERPT_FILE = "/tmp/post-merge-verify-issue-excerpt.txt"
 BUDGET_RE = re.compile(r"^\s*(SUMMARY_EXCERPT_BYTES|ISSUE_EXCERPT_BYTES|FAILED_MAX)=(\d+)\s*$", re.MULTILINE)
@@ -1288,6 +1294,20 @@ def _marker_run(doc: dict, marker: str) -> str:
         if marker in run:
             return "\n".join(ln for ln in run.splitlines() if not ln.strip().startswith("#"))
     return ""
+
+
+def unescaped_backtick_lines(run: str) -> list[str]:
+    """双引号 echo 里**未转义**的反引号行（单引号 echo / 注释不算：那里反引号是字面量）。"""
+    bad: list[str] = []
+    for line in run.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("echo '"):
+            continue
+        if UNESCAPED_BACKTICK_RE.search(stripped):
+            bad.append(stripped)
+    return bad
 
 
 def summary_budget_problems(doc: dict) -> list[str]:
@@ -1312,9 +1332,11 @@ def summary_budget_problems(doc: dict) -> list[str]:
     if ISSUE_EXCERPT_FILE not in judging:
         problems.append(f"没有为承接单生成限长摘录（{ISSUE_EXCERPT_FILE}）")
     if FAILURE_LIST_NEEDLE not in judging:
-        problems.append("失败清单没打到 stdout（缺 `grep -E '^(FAILED|ERROR) '`）⇒ 判红不可 grep")
+        problems.append("失败清单没打到 stdout（缺 `grep -E '^(FAILED|ERROR) |^❌ '`）⇒ 判红不可 grep")
     elif 'head -n "$FAILED_MAX"' not in judging:
         problems.append('失败清单没有条数上限（缺 `head -n "$FAILED_MAX"`）⇒ 清单自身也会压垮输出')
+    for bad in unescaped_backtick_lines(judging):
+        problems.append(f"双引号里的反引号没转义（bash 会当命令替换，实测把 `FM-E21` 当命令执行）⇒ {bad[:120]}")
     if 'echo "ISSUE_EXCERPT_BYTES=$ISSUE_EXCERPT_BYTES" >> "$GITHUB_ENV"' not in judging:
         problems.append("预算常量没有经 `$GITHUB_ENV` 传给承接单那一步 ⇒ **兜底路径**只能读未限长文件")
     hook = _marker_run(doc, HOOK_STEP_MARKER)
@@ -1332,6 +1354,25 @@ def summary_budget_problems(doc: dict) -> list[str]:
     return problems
 
 
+class TestFailureListIsActuallyGreppable:
+    """issue #7673：判红必须**真能** grep 到失败清单（不是「有个 grep」就算）。"""
+
+    def test_failure_list_covers_the_judging_scripts_marker(self):
+        doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+        judging = _marker_run(doc, BUDGET_STEP_MARKER)
+        assert "^❌ " in judging, (
+            "失败清单只认 FAILED/ERROR 前缀，而判据本体把失败打成 `❌ …`（scripts/post_merge_verify.py）"
+            " ⇒ 判红时清单一律为空（实测 2026-10-25，issue #7673）")
+
+    def test_summary_echo_has_no_unescaped_backticks(self):
+        doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+        judging = _marker_run(doc, BUDGET_STEP_MARKER)
+        bad = unescaped_backtick_lines(judging)
+        assert bad == [], (
+            "双引号里的反引号会被 bash 当命令替换 ⇒ 执行不存在的命令、并吞掉该行摘要（实测 "
+            "`line 198: FM-E21: command not found`）⇒ 改成 \\` 转义：" + repr(bad))
+
+
 class TestVolumeBudgets:
     def test_real_workflow_has_the_three_budgets(self):
         doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
@@ -1343,7 +1384,7 @@ class TestVolumeBudgets:
             'cp /tmp/post-merge-verify.txt /tmp/post-merge-verify-excerpt.txt'),
         "summary_over_limit": ("SUMMARY_EXCERPT_BYTES=200000", "SUMMARY_EXCERPT_BYTES=2000000"),
         "issue_over_limit": ("ISSUE_EXCERPT_BYTES=30000", "ISSUE_EXCERPT_BYTES=999999"),
-        "drop_failure_list": ("grep -E '^(FAILED|ERROR) ' /tmp/post-merge-verify.txt", "true  # 清单被删"),
+        "drop_failure_list": (FAILURE_LIST_NEEDLE + " /tmp/post-merge-verify.txt", "true  # 清单被删"),
         "drop_failure_cap": ('head -n "$FAILED_MAX" \\\n            > /tmp/post-merge-verify-failed.txt',
                              '> /tmp/post-merge-verify-failed.txt'),
         "hook_fallback_uncapped": ('tail -c "${ISSUE_EXCERPT_BYTES:-30000}" /tmp/post-merge-verify-excerpt.txt',
