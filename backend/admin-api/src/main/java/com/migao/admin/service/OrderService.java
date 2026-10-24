@@ -1364,6 +1364,15 @@ public class OrderService extends ServiceImpl<OrderMapper, Order> {
             throw BusinessException.validationError("仅允许删除待确认状态的订单，当前状态: " + order.getStatus());
         }
 
+        // issue #7633：已生成**活跃作业单** ⇒ 拒绝删除，否则作业单悬挂、作业看板对已删父订单扇出 404。
+        // 口径与 updatePendingOrderContent 同源（同一 selectActiveByOrderId：未软删 + 非 cancelled + 同租户）；
+        // 待付款订单自 #7626 起也能先生成作业单 ⇒ 这道闸是「删单前必须先作废作业单」。
+        ProcessingOrder active = processingOrderMapper.selectActiveByOrderId(order.getId(), order.getTenantId());
+        if (active != null) {
+            throw BusinessException.validationError(String.format(
+                    "订单已生成作业单（%s），不能删除；如需删除请先作废该作业单", active.getProcessingOrderNo()));
+        }
+
         // 逻辑删除订单
         // issue #6956 · 现象 C：判影响行数（并发双删只许一次成功；0 行 = 已被别人删掉）
         if (orderMapper.deleteById(id) == 0) {

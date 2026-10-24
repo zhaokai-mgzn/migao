@@ -9298,6 +9298,24 @@ _CASE_OR_068 = EvalCase(
     forbidden_card_text=[],
 )
 
+# ── OR-069 [NORMAL] 删除待付款订单前先查活跃作业单：命中则 422 并给出作业单号（否则作业单悬挂 ⇒ 作业看板对已删父订单扇出 404）(issue #7633)（源: cases/order.yml）──
+_CASE_OR_069 = EvalCase(
+    id='OR-069',
+    legacy_id='',
+    title='删除待付款订单前先查活跃作业单：命中则 422 并给出作业单号（否则作业单悬挂 ⇒ 作业看板对已删父订单扇出 404）(issue #7633)',
+    skill=Skill.ORDER,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-24 截图：作业看板一进页面就弹「请求的资源不存在」（可叠多层），列表里出现订单号 / 客户都是「—」的作业单行；点「刷新」仍复现'],
+    expectations=[],
+    data_checks=['判据 1·🔴 **有活跃作业单 ⇒ 拒绝删除**（会红）：`OrderService.deleteOrder` 在状态闸门之后、`orderMapper.deleteById` 之前调 `processingOrderMapper.selectActiveByOrderId(order.getId(), order.getTenantId())`；命中 ⇒ `BusinessException.validationError`，文案含**作业单号**（可归因到具体那张单），订单与明细都不得被软删。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java 的 `deleteOrder_RejectedWhenActiveProcessingOrderExists`（红证：摘掉该闸门 ⇒ 本条不抛 ⇒ 红；实测改前 = 该用例不抛异常）', '判据 2·**负控：无作业单的待付款单仍可删**（闸门不许把既有能力打成一律 422）。执行点 = 同文件 `deleteOrder_SucceedsWhenNoActiveProcessingOrder`', "判据 3·**覆盖范围（照实登记）**：`selectActiveByOrderId` 的活跃集 = `deleted = 0 AND status IN ('generated','issued','in_processing','completed')`（backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingOrderMapper.java，租户由拦截器注入）⇒ **已取消（cancelled）/ 已软删**的作业单不挡删单 —— 那正是「先作废该作业单再删单」的合法路径。"],
+    skip_reason='[backend-contract] Java 单测契约（零 LLM 环节）⇒ 不进 agent-eval 冒烟；机器判红通道 = traces.tests',
+    tags=['order', 'processing-order', 'orphan', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PG-001 [NORMAL] 生成加工单 - 已确认含加工项订单 → 加工单生成（**不**推进订单；issue #4305）（源: cases/processing-order.yml）──
 _CASE_PG_001 = EvalCase(
     id='PG-001',
@@ -16487,6 +16505,25 @@ _CASE_UI_135 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端取数/图片处理契约用例：收款码 map 由单测自建并注入 settingsApi 打桩（不碰真库、不依赖共享夹具）；前置不成立时对应单测直接红，agent-eval 栈不跑它',
 )
 
+# ── UI-136 [NORMAL] 作业看板：父订单已删（列表 orderNo 缺失）的行不再发 operations/piecework（404 toast 风暴），订单号列写「订单已删除」（issue #7633）（源: cases/ui.yml）──
+_CASE_UI_136 = EvalCase(
+    id='UI-136',
+    legacy_id='',
+    title='作业看板：父订单已删（列表 orderNo 缺失）的行不再发 operations/piecework（404 toast 风暴），订单号列写「订单已删除」（issue #7633）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['用户 2026-10-24 PC 端截图：打开作业看板就弹 toast「请求的资源不存在」（可叠多层），列表里出现订单号 / 客户都是「—」的作业单行；点「刷新」仍复现'],
+    expectations=['direct_reply'],
+    data_checks=["判据 1·🔴 **父订单缺失的行零请求**（会红）：判定口径 = 列表响应里 `!po.orderNo`（`processing_orders.order_id` 是 NOT NULL 外键、列表与明细同租户 ⇒ `orderNo == null` 当且仅当父订单已软删 / 不可解析），这类行**不进**懒加载 `pending` ⇒ 对 `/production/orders/{orderId}/operations` 与 `/production/orders/{orderId}/piecework` 各 **0 次**调用。执行点 = frontend/admin-web/tests/unit/pages/production-board.test.tsx 的「#7633 父订单已删的行：不扇出 operations/piecework，订单号列显示「订单已删除」」（红证：改前实测 `expected 1 to be +0`，即该行确实发了一次 `getOrderOperations('order-uuid-gone')`）", '判据 2·**同一用例内的负控**：正常行（`orderNo` 有值）**照常**请求两个端点 —— 否则「一个都不发」也能让判据 1 变绿（空跑式假绿）。', '判据 3·**可见文案是业务话**：该行订单号单元格渲染「订单已删除」（不是「—」、不是内部键）；客户列保持「—」（不编造客户）；**不新增**常驻告警条 / 红块、**不给**这类行「重试」入口（§31 P1/P3）。', '边界（照实登记）：① 「父订单缺失」的判定依赖 `orderNo` 缺失去推断，**不是**显式契约字段（若后续要 `orderMissing: true` 这类显式位，另立单改契约）；② 这些行仍在列表里（本 PR 不删数据 —— 存量孤儿子行的软删由 #7633 主会话在数据侧完成，物理清理涉钱需人工裁定）；③ 进度 / 计件两列对这类行仍显示 `0%（0/0）` / `¥0.00`（既有「详情缺失」形态，未改）。'],
+    skip_reason='[backend-contract] 纯前端取数 + 渲染契约（无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/production-board.test.tsx 执行',
+    tags=['ui', 'admin-web', 'production-board', 'orphan', 'backend-contract'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端取数/渲染契约用例：列表与两个详情端点都由单测打桩（不碰真库、不依赖共享夹具）；前置不成立时对应单测直接红，agent-eval 栈不跑它',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -17014,6 +17051,7 @@ ALL_CASES = (
     _CASE_OR_066,
     _CASE_OR_067,
     _CASE_OR_068,
+    _CASE_OR_069,
     _CASE_PG_001,
     _CASE_PG_002,
     _CASE_PG_003,
@@ -17404,6 +17442,7 @@ ALL_CASES = (
     _CASE_UI_133,
     _CASE_UI_134,
     _CASE_UI_135,
+    _CASE_UI_136,
     _CASE_UT_001,
     _CASE_UT_002,
 )
