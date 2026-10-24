@@ -1,4 +1,4 @@
-// case_ids: PG-045
+// case_ids: PG-045, PG-092
 package com.migao.admin.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -286,6 +286,36 @@ class WorkerCuttingHeightServiceTest {
     // ============================================================ 夹具
 
     /** 扫码解析结果（部位级）：两部位（布帘扫到的 / 纱帘）+ 用料清单。 */
+    @Test
+    @DisplayName("⑦ 裁剪批次两键**原样透传**解析面（issue #7647）：机台页据此自动带批次 / 指路报工页")
+    void cuttingBatchKeysArePassedThroughToTheMachineScreen() {
+        Map<String, Object> view = setPositionView();
+        view.put("batch_required", true);
+        view.put("batch_no", "PC-20261020-0007");
+        stubScan(view);
+        stubOrderLine(items());
+        when(cuttingHeightConfigMapper.selectOne(any())).thenReturn(storedConfig());
+
+        Map<String, Object> out = service.read("7K3M9QP2", TENANT);
+
+        assertThat(out.get("batch_required")).isEqualTo(true);
+        assertThat(out.get("batch_no")).isEqualTo("PC-20261020-0007");
+    }
+
+    @Test
+    @DisplayName("⑦′ 解析面没这两个键（老后端 / 非裁剪）⇒ 机台页按 false / null（缺键就缺，绝不猜）")
+    void missingCuttingBatchKeysDegradeToFalseAndNull() {
+        stubScan(setPositionView());
+        stubOrderLine(items());
+        when(cuttingHeightConfigMapper.selectOne(any())).thenReturn(storedConfig());
+
+        Map<String, Object> out = service.read("7K3M9QP2", TENANT);
+
+        assertThat(out.get("batch_required")).isEqualTo(false);
+        assertThat(out).containsKey("batch_no");
+        assertThat(out.get("batch_no")).isNull();
+    }
+
     private static Map<String, Object> setPositionView() {
         Map<String, Object> scanned = new LinkedHashMap<>();
         scanned.put("order_item_id", "it-cloth");
