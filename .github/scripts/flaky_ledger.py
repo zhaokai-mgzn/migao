@@ -1643,14 +1643,21 @@ def _merge_pages(pages) -> dict:
 def _gh_api(path: str, *, method: str = "GET", fields=None) -> dict:
     """`gh api` 薄封装。默认 **GET**（`--paginate --slurp` ⇒ 多页合并，见 `_merge_pages`）。
 
-    #5687：另支持**写**（`method="POST"` + `fields`）—— 目前唯一调用方是「窗口型疑似的跟踪单」
-    的创建（`ensure_tracking_issue`）。写路径**不带** `--paginate`（分页是读侧的语义）。
+    #5687：另支持**写**（`method="POST"` + `fields`）—— 调用方是标签自愈（`ensure_label`）
+    与跟踪单创建（`ensure_tracking_issue`）。写路径**不带** `--paginate`（分页是读侧的语义）。
     """
     cmd = ["gh", "api", "--paginate", "--slurp"]
     if method != "GET":
         cmd = ["gh", "api", "-X", method]
     for key, value in (fields or {}).items():
         # `-f` 走字符串语义（`-F` 会把 `@`/数字做强转 —— 跟踪单的 body 里正好有 `#`/`@` 形态）
+        # 🔴 #7614：**数组**字段（如 `labels`）必须逐项发成 `-f 'labels[]=v'` —— 发成 `-f labels=v`
+        # 是**字符串**，GitHub 回 422 `For 'properties/labels', "v" is not an array`
+        # （实测：机械开单因此**从未成功过**，见 issue #7614）。
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                cmd += ["-f", f"{key}[]={item}"]
+            continue
         cmd += ["-f", f"{key}={value}"]
     cmd.append(path)
     out = subprocess.run(cmd, check=True, capture_output=True, text=True).stdout
@@ -2263,11 +2270,12 @@ def ensure_tracking_issue(repo: str, job: str, *, subject: str = "",
         )
     # 🔴 #7632：建单前**先保证标签存在** —— 不存在时 `POST /issues` 带该标签会 422（实测两次）
     ensure_label(repo)
-    # ⚠️ 参数是 **`title=`/`body=`**（`gh api -f` 语义）；`labels` 用 CSV 字符串（同 `gh` CLI 口径）。
+    # ⚠️ 参数是 **`title=`/`body=`**（`gh api -f` 语义）；`labels` 必须是**列表** —— 数组字段由
+    # `_gh_api` 逐项发成 `-f 'labels[]=…'`（#7614 实测：发成字符串 ⇒ 422，开单链从未成功过）。
     listing = _gh_api(f"repos/{repo}/issues", method="POST", fields={
         "title": title,
         "body": body,
-        "labels": TRACKING_LABEL,
+        "labels": [TRACKING_LABEL],
     })
     number = listing.get("number") if isinstance(listing, dict) else None
     if not isinstance(number, int):
