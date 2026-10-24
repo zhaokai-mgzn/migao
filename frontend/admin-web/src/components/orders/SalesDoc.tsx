@@ -12,7 +12,6 @@ import {
   printUsableHeightMm,
   type PrintMediaId,
 } from '@/lib/print-media'
-import { usePaymentQrcodes } from '@/lib/use-payment-qrcodes'
 import { useCompanyName } from '@/lib/use-company-name'
 import { orderItemSku } from '@/lib/order-item-sku'
 import {
@@ -20,11 +19,11 @@ import {
   SALES_QTY_NOT_SHIPPED,
   type OrderShipmentRead,
 } from '@/lib/sales-shipment'
-import { cn, resolveImageUrl } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 // 页脚「温馨提示」与报价单**同一句**（#4965）—— 从既有那份 import，不复制一份会漂移的副本
 import { QUOTATION_FOOTER_NOTICE } from './QuotationDoc'
 import type { PrintTarget } from './index'
-import type { Order, OrderItem, PaymentQrcodeMap, ProcessingOrder } from '@/types'
+import type { Order, OrderItem, ProcessingOrder } from '@/types'
 
 /**
  * 销售单（可打印纸质文档 · **三联纸 241mm × 140mm**，issue #5651）——
@@ -61,7 +60,8 @@ import type { Order, OrderItem, PaymentQrcodeMap, ProcessingOrder } from '@/type
  *    🔴 「品名」列自 issue #7530 起**退场**（用户 2026-10-23 逐字「销售单不要品名」）——
  *    单据身份由货号 / 颜色 / 门幅承载，不印商品名；
  * ③ 汇总：上期余额 / 预存抵扣 / 优惠金额 / **本单应收** / 账户余额；
- * ④ 页脚：温馨提示 + 扫码支付 QR（无码 ⇒ 整块不出现，**不画假码**）。
+ * ④ 页脚：**只留温馨提示**（issue #7589，用户 2026-10-24 逐字「销售单打印处右下角的二维码移除掉」）
+ *    —— 收款码**不上销售单**，本组件也不再读它（报价单仍印收款码，那是另一份单据）。
  *
  * ## 金额口径（🔴 三条红线，勿随手改）
  *
@@ -121,7 +121,7 @@ import type { Order, OrderItem, PaymentQrcodeMap, ProcessingOrder } from '@/type
  *    工人可**手输**（#6867 设计 §11.7「不是可选项」）。
  *
  * 🔴 版面预算：二维码块与抬头**并排**（≈15mm 见方、`level="M"`），不额外起一段 ——
- * 三联纸单联可用高只有 128mm，多起一段会挤掉「本单应收 / 收款码」。
+ * 三联纸单联可用高只有 128mm，多起一段会挤掉「本单应收 / 页脚提示」。
  */
 interface SalesDocProps {
   order: Order
@@ -146,8 +146,6 @@ interface SalesDocProps {
    * （见文件头「介质是参数，不是副本」）。
    */
   media?: PrintMediaId
-  /** 收款码 map；不传 ⇒ 组件在打印时自取（`usePaymentQrcodes`，失败即「无码」） */
-  paymentQrcodes?: PaymentQrcodeMap
   /** 本次打印的目标（`'sales'` = 打印本销售单）—— 不加限定会把同页兄弟单据藏掉 */
   printTarget?: PrintTarget | null
   /**
@@ -173,7 +171,7 @@ interface SalesDocProps {
  * ⇒ 新列清单只保留**有真值**的列（取值口 = `lib/order-item-sku.ts`）。
  * ⛔ 原「备注」列**直接撤掉**（不换成空列、也不另起备注子行）：它印的 `item.color` 已由
  * 「颜色」列承载，而 `item.specification` 是「品名 + colorName」的同义重复（§31 P2 信息不重复）；
- * 更要紧的是三联纸单联只有 128mm 可用高，多一行子行会挤掉「本单应收 / 收款码」
+ * 更要紧的是三联纸单联只有 128mm 可用高，多一行子行会挤掉「本单应收 / 页脚提示」
  * （实测 >6 行即溢出被裁，见 `lib/print-media.json` 与 `PrintDocPreview` 的自检）。
  *
  * 🔴 issue #7530（用户 2026-10-23 逐字「销售单不要品名」）：「品名」列**退场** ⇒ 9 列变 8 列。
@@ -236,17 +234,11 @@ function formatDate(value?: string | null): string | null {
   return parsed.isValid() ? parsed.format('YYYY-MM-DD') : null
 }
 
-const PAYMENT_TYPE_LABELS: Record<string, string> = {
-  wechat: '微信',
-  alipay: '支付宝',
-}
-
 export default function SalesDoc({
   order,
   shipments,
   processingOrder,
   media = 'continuous-241x140',
-  paymentQrcodes,
   printTarget,
   inline,
   className,
@@ -255,10 +247,6 @@ export default function SalesDoc({
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
 
-  // `active`：预览层（inline）或本次打印目标就是销售单 ⇒ 才取码（常驻挂载时不打扰，issue #7536）
-  const qrcodes = usePaymentQrcodes(paymentQrcodes, {
-    active: Boolean(inline) || printTarget === 'sales',
-  })
   const companyName = useCompanyName()
 
   if (!mounted) return null
@@ -269,15 +257,6 @@ export default function SalesDoc({
   const continuous = isContinuousFeed(media)
   // 连续纸：容器高度 = 单联可用高度（页长 − 上下边距），超出即裁 —— 绝不跨联
   const sheetHeightMm = continuous ? printUsableHeightMm(media) : null
-  const qrEntries = Object.entries(qrcodes)
-    .map(([type, qr]) => ({
-      type,
-      label: PAYMENT_TYPE_LABELS[type] || type,
-      imageUrl: resolveImageUrl(qr?.imageUrl),
-      payeeName: paperText(qr?.payeeName, ''),
-    }))
-    .filter((entry) => entry.imageUrl !== '')
-
   const docNo = paperText(order.orderNo)
   const date = formatDate(order.createdAt)
   const hasDiscount = typeof order.discountAmount === 'number'
@@ -515,28 +494,9 @@ export default function SalesDoc({
           」占位，不编数）。
         </div>
 
-        {/* ===== ④ 页脚：温馨提示 + 扫码支付 QR（无码 ⇒ 整块不出现，不画假码） ===== */}
-        <div className="flex items-end justify-between gap-3 border-t border-neutral-300 pt-1">
-          <div className="min-w-0 text-[0.85em] text-neutral-600">{QUOTATION_FOOTER_NOTICE}</div>
-          {qrEntries.length > 0 && (
-            <div className="flex shrink-0 items-end gap-2">
-              {qrEntries.map((entry) => (
-                <div key={entry.type} className="text-center">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={entry.imageUrl}
-                    alt={`${entry.label}收款码`}
-                    data-testid={`sales-qr-${entry.type}`}
-                    className="h-[18mm] w-[18mm] border border-neutral-300 object-contain"
-                  />
-                  <div className="text-[0.75em] text-neutral-500">{entry.label}</div>
-                  {entry.payeeName !== '' && (
-                    <div className="text-[0.75em] text-neutral-500">{entry.payeeName}</div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+        {/* ===== ④ 页脚：只留温馨提示（issue #7589：销售单纸面不印收款码） ===== */}
+        <div className="min-w-0 border-t border-neutral-300 pt-1 text-[0.85em] text-neutral-600">
+          {QUOTATION_FOOTER_NOTICE}
         </div>
       </div>
     </div>

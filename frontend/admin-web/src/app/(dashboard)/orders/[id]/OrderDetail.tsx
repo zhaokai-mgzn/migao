@@ -521,7 +521,8 @@ export default function OrderDetailPage() {
       />
 
       {/* 纸质销售单（**三联纸 241mm × 140mm**，issue #5651）：随货给客户的那张；
-          扫码支付走与报价单**同一份**收款码读取口（`lib/use-payment-qrcodes.ts`）。
+          🔴 页脚**不印收款码**（issue #7589，用户 2026-10-24 逐字「销售单打印处右下角的二维码移除掉」）
+          —— 收款码只留在报价单上。
           `processingOrder` 只用于左上角的**作业单扫码报工码**（issue #7530）：码值取服务端
           `scan_url`，与 `ProcessingDoc` **同一份来源**（不新增读面）；无码 ⇒ 该块不出现。 */}
       <SalesDoc
