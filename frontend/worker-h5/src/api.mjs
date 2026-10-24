@@ -364,9 +364,11 @@ export function createApi(opts = {}) {
      *        **只在旧码路径**由 `render.mjs` 的 `legacySelection()` 给出（新码恒 null ⇒ body 只带
      *        token）。它**不**决定工序：工序仍由服务端推断（防呆⑤）。
      * @param {number} [p.qty] 省略 = 服务端取「剩余应做」（A 模式：做完扫一次 = 完工）
+     * @param {string} [p.batchNo] 裁剪批次（issue #7647）：**只有** `batch_required` 为真的屏才传，
+     *        trim 后非空才进请求体；合法性与归属（该批次是否属于本行商品 / SKU）由服务端硬闸（422）。
      * @param {string} [p.clientRequestId] 幂等键（**同一次提交必须复用同一个**）
      */
-    async completeByScan({ token, operationId, qty, qualifiedQty, workType, selection, clientRequestId } = {}) {
+    async completeByScan({ token, operationId, qty, qualifiedQty, workType, batchNo, selection, clientRequestId } = {}) {
       // 🔴 白名单式构造（**不是**把入参展开）：默认**只带 token** —— 调用方硬塞
       // `unit_price` / `factor` / `worker_id` / 顶层 `setId`/`orderItemId` 也进不去请求体。
       // 历史计件单价在**报工那一刻**由服务端固化（§3.6 W6 红线），前端永远不参与定价。
@@ -385,6 +387,9 @@ export function createApi(opts = {}) {
       if (qty !== undefined && qty !== null) body.qty = qty
       if (qualifiedQty !== undefined && qualifiedQty !== null) body.qualified_qty = qualifiedQty
       if (workType) body.work_type = workType
+      // 🔴 裁剪批次（issue #7647）：同样**白名单式**——只有 trim 后非空才进 body。
+      //    非裁剪工序调用方根本不传 ⇒ 请求体与改前**逐字节相同**；批次号是否合法 / 属于本行由服务端硬闸。
+      if (typeof batchNo === 'string' && batchNo.trim()) body.batch_no = batchNo.trim()
       const data = await request('/api/worker/production/scan/complete', {
         method: 'POST',
         // 刻意**不含** worker_id / worker_name：身份由 X-Worker-Session-Id 解（设计 §3.1）
@@ -403,6 +408,11 @@ export function createApi(opts = {}) {
         setProgress: data.set_progress,
         setCompleted: data.set_completed,
         nextOperation: data.next_operation,
+        // 裁剪批次回执（issue #7647）：三键**可能缺键**（老后端 / 非裁剪工序）⇒ 原样透出，
+        // 由渲染层按「缺键就缺」处理（绝不把 `undefined` / `NaN` 印上屏）。
+        batchNo: data.batch_no,
+        batchRemaining: data.batch_remaining,
+        batchShortageMeters: data.batch_shortage_meters,
       }
     },
 
