@@ -111,8 +111,11 @@ export default function StocktakesPage() {
   const warehouseLabel = useCallback(
     (id: number) => {
       const w = warehouses.find((x) => x.id === id)
+      // 只显示**仓名**（issue #7616，用户 2026-10-24：「直接叫主仓即可，不要带括号和 main」）：
+      // 编码是内部键，拼在商家面前既重复又像内部标识；同名消歧是将来有多仓时的事，
+      // 届时用业务字段（仓名 + 位置），不拿编码顶上。
       // 查不到就照实写「未知仓库」——不猜、不拿 id 当名字冒充
-      return w ? (w.code ? `${w.name}（${w.code}）` : w.name) : `未知仓库 #${id}`
+      return w ? w.name : `未知仓库 #${id}`
     },
     [warehouses],
   )
@@ -500,7 +503,7 @@ export default function StocktakesPage() {
               <option value="">选择仓库</option>
               {warehouses.map((w) => (
                 <option key={w.id} value={w.id}>
-                  {w.name}（{w.code}）
+                  {w.name}
                 </option>
               ))}
             </select>
