@@ -544,12 +544,16 @@ function batchBlock(state, view) {
 export function afterComplete(view, receipt) {
   // `work_type` 与 `__requestId` 同族：**丢掉** ⇒ 下一屏回到默认「正常」
   // （否则「报废」会悄悄留在屏上，下一笔正常做出来的活被记成报废）。
-  // 批次（issue #7647）同族但**只丢值、留判据**：`batch_no`（这一笔实际裁的批次）与
-  // `batch_candidates`（余量是记账**前**的读数，已经过期）丢掉；`batch_required` 留着 ——
-  // 它是「这一行要不要批次」的属性，丢了工人连输入框都没有（只能重扫），而留着只是要他重填一次。
+  // 批次（issue #7647）：下一屏的判据**只认服务端那一次重解析**（`next_batch_*`），既不沿用上一屏
+  // （会让「打包」屏多出一个不该有的输入框、按钮还被禁死），也不一律清空
+  // （报废不推进进度 ⇒ 下一道仍是「裁剪」，清空了工人就填不了批次、报不上去）。
+  // 这一笔的 `batch_no` / `batch_candidates`（余量是记账**前**的读数）照旧丢弃。
   const { __requestId, work_type: _workType, batch_no: _batchNo, batch_candidates: _batchCandidates, ...rest } = view ?? {}
   return {
     ...rest,
+    batch_required: receipt?.nextBatchRequired === true,
+    batch_no: typeof receipt?.nextBatchNo === 'string' ? receipt.nextBatchNo : null,
+    batch_candidates: Array.isArray(receipt?.nextBatchCandidates) ? receipt.nextBatchCandidates : [],
     set_no: receipt.setNo ?? view?.set_no ?? null,
     position: receipt.position ?? view?.position ?? null,
     set_progress: receipt.setProgress ?? view?.set_progress ?? null,

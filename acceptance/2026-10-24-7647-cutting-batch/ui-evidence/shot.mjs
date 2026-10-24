@@ -88,7 +88,7 @@ async function shoot({ assigned, name, viewport, act }) {
     if (url.pathname.endsWith('/production/current-worker')) return json({ worker_id: 'w-1', worker_no: 'W001', worker_name: '张三' })
     if (url.pathname.endsWith('/worker/me')) return json({ worker_id: 'w-1', worker_name: '张三', pages: ['report', 'cut_calc'] })
     if (url.pathname.endsWith('/production/scan')) return json(resolvePayload({ assigned }))
-    if (url.pathname.endsWith('/production/scan/complete')) return json({ operation_id: 'op-1', done_qty: 10, status: 'done', order_completed: false, set_no: '1', position: '布帘', set_progress: { done: 1, total: 2 }, set_completed: false, next_operation: { logical_name: '打包' }, batch_no: assigned ? 'PC-20261020-0007' : 'PC-20261018-0002', batch_remaining: -1.5, batch_shortage_meters: 4.5 })
+    if (url.pathname.endsWith('/production/scan/complete')) return json({ operation_id: 'op-1', done_qty: 10, status: 'done', order_completed: false, set_no: '1', position: '布帘', set_progress: { done: 1, total: 2 }, set_completed: false, next_operation: { logical_name: '打包' }, batch_no: assigned ? 'PC-20261020-0007' : 'PC-20261018-0002', batch_remaining: -1.5, batch_shortage_meters: 4.5, next_batch_required: false, next_batch_no: null, next_batch_candidates: [] })
     return json({})
   })
   await page.goto(`http://127.0.0.1:${PORT}/index.html?t=scan-visual-token`)

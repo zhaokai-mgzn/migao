@@ -16,7 +16,9 @@
 //   ⑤ 候选批次渲染 + 点一下就填入输入框；候选为空 ⇒ 整块候选区不渲染；
 //   ⑥ 回执显示「批次 X · 余量 Y 米」；`batch_shortage_meters > 0` ⇒ 追加缺口提示；
 //   ⑦ 回执三键**缺键 / null** ⇒ 屏上不出现 `undefined` / `NaN` / `null`；
-//   ⑧ 新一屏（重扫 / 报工后）⇒ 工人手输的批次**不带走**（下一笔必须重新确认，绝不静默沿用）。
+//   ⑧ 报工后的下一屏**只认服务端重解析**（`next_batch_*`）：下一道不要批次 ⇒ 不摆输入框；
+//      仍要批次（报废不推进进度）⇒ 输入框空 + 按钮禁用；服务端给了预填值 ⇒ 预填。
+//      工人手输的值**不带到下一屏**（新一屏必须重新确认，绝不静默沿用）。
 //
 // 零依赖（不引 jsdom / happy-dom）：假 DOM 只实现本页真正用到的那几个 API（最少代码阶梯）。
 
@@ -233,6 +235,8 @@ const receipt = (over = {}) => ({
       set_no: 3, position: { order_item_id: 'oi-cloth', position_name: '布帘' }, rerouted: false,
       set_progress: { total: 2, done: 1, percent: 50 }, set_completed: false,
       next_operation: { operation_id: 'op-sew', logical_name: '车位', position: '布帘', qty: 10, unit: '米' },
+      // 下一屏批次判据（issue #7647）：默认「下一道 = 车位」⇒ 不需要批次
+      next_batch_required: false, next_batch_no: null, next_batch_candidates: [],
       ...over,
     },
   },
@@ -459,18 +463,60 @@ test('🔴 ⑦ 回执三键缺键 / null ⇒ 屏上不出现 `undefined` / `NaN`
 
 // ============================================================ ⑧ 新一屏不带走上一笔的批次
 
-test('🔴 ⑧ 报工成功后的下一屏 ⇒ 输入框**空**、按钮再次禁用（这一笔的批次绝不静默沿用）', async () => {
+test('🔴 ⑧ 报工成功后的下一屏 ⇒ 下一道不要批次时**不摆**输入框（服务端 next_batch_required=false）', async () => {
   const { doc, app } = await pageFor({
     view: VIEW_ASSIGNED,
-    receiptBody: receipt({ batch_no: 'PC-20261020-0007', batch_remaining: 32.5, batch_shortage_meters: null }),
+    receiptBody: receipt({
+      batch_no: 'PC-20261020-0007', batch_remaining: 32.5, batch_shortage_meters: null,
+      // 下一道 = 打包（不是「裁剪」）⇒ 服务端明确回 false
+      next_batch_required: false, next_batch_no: null, next_batch_candidates: [],
+    }),
   })
   try {
     await doc.fire('wh5-report') // 预填值直接提交
     const html = doc.html
-    assert.match(html, /id="wh5-batch"/, '下一道仍要确认批次（`batch_required` 是本行的属性，不随这一笔消失）')
+    assert.ok(!html.includes('id="wh5-batch"'), '下一道不要求批次 ⇒ 批次区块一个字节都不出现')
+    assert.match(html, /<button id="wh5-report" class="wh5-primary" type="button">报 工<\/button>/,
+      '下一道照常可报（不能被上一屏的判据禁死）')
+  } finally {
+    app.destroy()
+  }
+})
+
+test('🔴 ⑧′ 下一道**仍要**批次（报废不推进进度 ⇒ 仍是裁剪）⇒ 输入框空 + 按钮禁用 + 候选来自服务端', async () => {
+  const { doc, app } = await pageFor({
+    view: VIEW_ASSIGNED,
+    receiptBody: receipt({
+      batch_no: 'PC-20261020-0007', batch_remaining: 32.5, batch_shortage_meters: null,
+      next_batch_required: true, next_batch_no: null,
+      next_batch_candidates: [{ batch_no: 'PC-20261020-0007', remaining_meters: 32.5, enough: true }],
+    }),
+  })
+  try {
+    await doc.fire('wh5-report') // 预填值直接提交
+    const html = doc.html
+    assert.match(html, /id="wh5-batch"/, '下一道仍要确认批次')
     assert.match(inputHtml(html), /value=""/, '下一笔的输入框必须空（绝不把上一笔的批次留在框里）')
     assert.match(html, /<button id="wh5-report" class="wh5-primary" type="button" disabled>报 工<\/button>/)
-    assert.ok(!html.includes('id="wh5-batch-candidates"'), '上一笔的候选（余量是记账前的读数）不带到下一屏')
+    assert.match(html, /data-batch-no="PC-20261020-0007"/, '候选由服务端重解析下发')
+  } finally {
+    app.destroy()
+  }
+})
+
+test('⑧″ 下一道仍要批次且服务端给了预填值 ⇒ 输入框预填（按钮可点）', async () => {
+  const { doc, app } = await pageFor({
+    view: VIEW_ASSIGNED,
+    receiptBody: receipt({
+      batch_no: 'PC-20261020-0007', batch_remaining: 32.5, batch_shortage_meters: null,
+      next_batch_required: true, next_batch_no: 'PC-20261020-0007', next_batch_candidates: [],
+    }),
+  })
+  try {
+    await doc.fire('wh5-report')
+    const html = doc.html
+    assert.match(inputHtml(html), /value="PC-20261020-0007"/)
+    assert.match(html, /<button id="wh5-report" class="wh5-primary" type="button">报 工<\/button>/)
   } finally {
     app.destroy()
   }

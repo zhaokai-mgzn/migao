@@ -261,12 +261,24 @@ public class ProductionScanCompleteService {
             result.put("set_progress", next.get("set_progress"));
             result.put("set_completed", next.get("completed"));
             result.put("next_operation", next.get("operation"));
+            // 🔴 下一屏的批次判据（issue #7647）也必须**来自这次重解析**，不能沿用上一屏的：
+            //    报「裁剪」之后下一道通常是「打包」（不要求批次），沿用旧值会让工人屏多出一个不该有的输入框、
+            //    而且按钮被禁死；反过来（报废不推进进度 ⇒ 下一道仍是「裁剪」）如果丢掉判据，工人就填不了批次
+            //    ⇒ 报不上去。⇒ 三个键随下一道一起下发（键恒在；失败分支给 false / null / []）。
+            result.put("next_batch_required", Boolean.TRUE.equals(next.get("batch_required")));
+            result.put("next_batch_no", next.get("batch_no"));
+            result.put("next_batch_candidates", next.get("batch_candidates"));
         } catch (RuntimeException e) {
             log.warn("[扫码完成] 下一道推断失败（本次报工已成功落库，仅缺「下一道」提示）: error={}",
                     e.getMessage());
             result.put("set_progress", null);
             result.put("set_completed", null);
             result.put("next_operation", null);
+            // 推断失败 ⇒ 「下一道要不要批次」**未知** ⇒ 按不需要处理（宁可不显示，也不摆一个没人能填的必填框）；
+            // 真报上去缺批次时服务端仍会 422 并给出可行动文案。
+            result.put("next_batch_required", Boolean.FALSE);
+            result.put("next_batch_no", null);
+            result.put("next_batch_candidates", java.util.List.of());
         }
     }
 

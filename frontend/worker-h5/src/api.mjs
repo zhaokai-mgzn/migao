@@ -413,6 +413,12 @@ export function createApi(opts = {}) {
         batchNo: data.batch_no,
         batchRemaining: data.batch_remaining,
         batchShortageMeters: data.batch_shortage_meters,
+        // 下一屏的批次判据（issue #7647）：服务端已经用**同一次重解析**算好（报「裁剪」后下一道通常是
+        // 「打包」⇒ 不需要批次；报废不推进进度 ⇒ 下一道仍是「裁剪」⇒ 仍需要）。页面据此渲染下一屏，
+        // **不沿用上一屏的旧值**（那会让打包屏多出输入框、或让裁剪屏填不了批次）。缺键 ⇒ false/null/[]。
+        nextBatchRequired: data.next_batch_required === true,
+        nextBatchNo: typeof data.next_batch_no === 'string' ? data.next_batch_no : null,
+        nextBatchCandidates: Array.isArray(data.next_batch_candidates) ? data.next_batch_candidates : [],
       }
     },
 

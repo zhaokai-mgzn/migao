@@ -610,6 +610,7 @@ infer_next(set, scanned_order_item_id):
 | `GET /api/worker/production/cutting-height` | `batch_required` / `batch_no` | **原样透传**解析面（机台页报工走同一写入口） |
 | `POST /api/worker/production/scan/complete` 请求 | `batch_no`（可选） | 裁剪工序必填；其余工序忽略 |
 | 同上响应 | `batch_no` / `batch_remaining` / `batch_shortage_meters` | 本次落定的批次 / 记账后余量 / 缺口（>0） |
+| 同上响应（下一屏） | `next_batch_required` / `next_batch_no` / `next_batch_candidates` | 下一道的批次判据（**同一次重解析**：报完裁剪通常是打包 ⇒ false；报废不推进 ⇒ 仍裁剪 ⇒ true）；页面渲染下一屏只认它 |
 
 **账务模型**（`stock_batch_consumptions` 第四个来源 `cutting_report`，V191）：
 `净消耗 = −Σdelta`（逐 批次 × 订单行）。三种情形：

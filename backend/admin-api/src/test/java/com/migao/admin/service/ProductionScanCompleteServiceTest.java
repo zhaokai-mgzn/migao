@@ -943,6 +943,11 @@ class ProductionScanCompleteServiceTest {
         assertThat(result.get("batch_no")).isEqualTo("PC-20261020-0007");
         assertThat((BigDecimal) result.get("batch_remaining")).isEqualByComparingTo("32.5");
         assertThat((BigDecimal) result.get("batch_shortage_meters")).isEqualByComparingTo("3.5");
+        // 下一屏的批次判据由**同一次重解析**给出（issue #7647）：这里重解析仍是「裁剪」⇒ true；
+        // 键恒在（值可 null / []），页面据此渲染下一屏而不是沿用上一屏。
+        assertThat(result).containsEntry("next_batch_required", true);
+        assertThat(result).containsKey("next_batch_no");
+        assertThat(result.get("next_batch_candidates")).isInstanceOf(List.class);
         // 报工照常落库（批次核对不改变记账判据）
         assertThat(capturedWorkLog().getOperationId()).isEqualTo(OP_CLOTH);
     }
@@ -972,6 +977,8 @@ class ProductionScanCompleteServiceTest {
         Map<String, Object> result = service.complete(payload, TENANT, "key-1", WORKER);
 
         assertThat(result).doesNotContainKeys("batch_no", "batch_remaining", "batch_shortage_meters");
+        // 非裁剪工序 ⇒ 下一屏的批次判据恒 false（不摆输入框）
+        assertThat(result).containsEntry("next_batch_required", false);
         verify(stockBatchConsumptionService, never())
                 .applyCuttingReport(any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
