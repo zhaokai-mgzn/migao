@@ -10,3 +10,4 @@
 {"id":"1792233158.59439.23448","ts":"2026-10-17T10:32:38Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/quality-inspection-admin","why":"--allow-package-heavy（命令行显式）"}
 {"id":"1792828930.43471.10135","ts":"2026-10-24T08:02:11Z","role":"package","decision":"refused","at":"/Users/guangzhen.zk/ai native/migao-wt/7655-ledger-header","why":"子包 worktree 直跑全量（无批次标记）"}
 {"id":"1792828933.43552.15529","ts":"2026-10-24T08:02:13Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7655-ledger-header","why":"--allow-package-heavy（命令行显式）"}
+{"id":"1792829840.17347.24055","ts":"2026-10-24T08:17:20Z","role":"package","decision":"override","at":"/Users/guangzhen.zk/ai native/migao-wt/7655-ledger-header","why":"--allow-package-heavy（命令行显式）"}
