@@ -140,7 +140,10 @@ function numberOrNull(value: unknown): number | null {
 }
 
 const PAYMENT_TYPE_LABELS: Record<string, string> = {
-  wechat: '微信',
+  // issue #7605（用户 2026-10-24 逐字「这里把微信改成微信支付是否更好？」）：白纸上「二维码 + 微信」
+  // 在中文语境里默认指「加微信好友」，而这里印的是**收款码** ⇒ 必须说清是**支付通道**。
+  // ⚠️ 支付宝**不加**「支付」：本词自带支付语义，加了是重复（**不是漏改**，别"统一"成 `支付宝支付`）。
+  wechat: '微信支付',
   alipay: '支付宝',
 }
 
@@ -245,7 +248,12 @@ export default function QuotationDoc({
                   alt={`${entry.label}收款码`}
                   className="w-[22mm] h-[22mm] object-contain border border-neutral-300"
                 />
-                <div className="text-[10px] text-neutral-500 mt-0.5">{entry.label}</div>
+                <div
+                  className="text-[10px] text-neutral-500 mt-0.5"
+                  data-testid={`payment-qr-label-${entry.type}`}
+                >
+                  {entry.label}
+                </div>
                 {entry.payeeName && (
                   <div className="text-[10px] text-neutral-500">{entry.payeeName}</div>
                 )}
