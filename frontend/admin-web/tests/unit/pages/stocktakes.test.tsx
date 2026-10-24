@@ -97,7 +97,9 @@ describe('盘点单页面', () => {
     await screen.findByTestId('stocktakes-table')
     const row = screen.getByTestId('stocktake-row-st1')
     expect(row.textContent).toContain('PD202610220001')
-    expect(row.textContent).toContain('主仓（WH01）')
+    // 只显示仓名（issue #7616）：编码是内部键，不许拼在商家面前（「主仓（WH01）」那种形态）
+    expect(row.textContent).toContain('主仓')
+    expect(row.textContent).not.toContain('WH01')
     expect(screen.getByTestId('stocktake-status-st1').textContent).toBe('盘点中')
   })
 
@@ -148,6 +150,17 @@ describe('盘点单页面', () => {
     fireEvent.change(screen.getByTestId('stocktake-form-warehouse'), { target: { value: '9' } })
     fireEvent.click(screen.getByTestId('stocktake-open-submit'))
     await waitFor(() => expect(stocktakeApi.open).toHaveBeenCalledWith(9, undefined))
+  })
+
+  it('出任务下拉：仓库只显示仓名，不拼编码（issue #7616，用户：「直接叫主仓即可，不要带括号和 main」）', async () => {
+    render(<StocktakesPage />)
+    await screen.findByTestId('stocktakes-table')
+    fireEvent.click(screen.getByTestId('stocktake-open'))
+
+    expect((await screen.findByRole('option', { name: '主仓' })).textContent).toBe('主仓')
+    expect(screen.getByRole('option', { name: '加工仓' }).textContent).toBe('加工仓')
+    // 变异即红：把编码拼回去（「主仓（WH01）」）⇒ 这两条查询都命中不到纯仓名
+    expect(screen.queryByRole('option', { name: /WH\d/ })).toBeNull()
   })
 
   it('🔴 录实盘：0 可以提交（盘空是真实结果）；两位小数/负数在前端拦下且不打接口', async () => {
