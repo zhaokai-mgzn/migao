@@ -64,14 +64,15 @@ describe('ProductForm (#1284 — 表单行对齐)', () => {
     expect(screen.getAllByRole('button', { name: /使用第\d张作为样图/ })).toHaveLength(2)
   })
 
-  it('「总库存」「拍下减库存」两行 label 均含 * 必填标记', () => {
+  it('「总库存」只读展示且不再必填（issue #7597）', () => {
     render(<ProductForm onSubmit={mockOnSubmit} />)
 
-    const stockLabels = screen.getAllByText(/总库存/)
-    const deductionLabels = screen.getAllByText(/拍下减库存/)
-
-    expect(stockLabels.length).toBeGreaterThanOrEqual(1)
-    expect(deductionLabels.length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/总库存/).length).toBeGreaterThanOrEqual(1)
+    // 库存不再由商品表单录入 ⇒ 说明文字指向真实单据；SKU 矩阵里没有库存输入框
+    expect(
+      screen.getByText(/商品资料不再录入库存/)
+    ).toBeTruthy()
+    expect(screen.queryByText(/若需修改请在销售规格表格内修改对应库存/)).toBeNull()
   })
 
   it('「拍下减库存」渲染 RadioGroup（是/付款减库存）', () => {

@@ -349,16 +349,9 @@ class AgentProductServiceTest {
                     .hasMessageContaining("1 位小数");
         }
 
-        @Test @DisplayName("PR-048 建品 stock = 2.755 ⇒ 显式拒绝（库存类输入同一判据，改前会被静默存成 2.8）")
-        void rejectsThreeDecimalStockOnCreate() {
-            com.migao.admin.dto.ProductCreateRequest req = new com.migao.admin.dto.ProductCreateRequest();
-            req.setName("测试商品");
-            req.setStock(new BigDecimal("2.755"));
-
-            assertThatThrownBy(() -> productService.createProduct(req, 1L))
-                    .isInstanceOf(BusinessException.class)
-                    .hasMessageContaining("1 位小数");
-        }
+        // 🔴 issue #7597：原「建品 stock = 2.755 ⇒ 显式拒绝」（PR-048）随「商品档案不再设置库存」退场 ——
+        // 建品请求里的 stock **根本不被读取**，也就没有精度可校验。建品侧的新判据（忽略库存、落 0）
+        // 由 ProductCreateStockIgnoredTest 承担；精度判据仍在改品 / Agent 调整面（上面三条）。
 
         @Test @DisplayName("商品不存在 — notFound")
         void productNotFound() {

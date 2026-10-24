@@ -84,10 +84,11 @@ const FROZEN_TABLES: string[] = [
   'src/components/products/BatchStockPanel.tsx::表[档位|批次数|占比]',
   'src/components/products/BatchStockPanel.tsx::表[货号|SKU 库存|批次余量|差额|已售扣减|已派工扣减|其它台账|台账外存量|恒等式]',
   'src/components/products/BatchStocktakeForm.tsx::表[批次号|货号|当前余量|实盘米数|差异]',
-  // 同上（issue #6662）：`库存（米）` → `库存（{STOCK_UNIT}）`，锚同步；条数不变（缺陷仍在）
-  'src/components/products/SkuMatrix.tsx::表[颜色分类|规格尺寸|*价格（元）|*库存（~）]',
+  // 2026-10-24（issue #7597）：SkuMatrix 的**库存列整体退场**（商品档案不再设置库存）⇒
+  // 原条目的锚（`*库存（~）`）已不存在 = 死条目；顺手把剩下 3 个 th 补上 `whitespace-nowrap`
+  // ⇒ 该表不再是缺陷 ⇒ 条目**删除**（基线下调，与上面 #6754 同形态）。
 ]
-const TABLE_BASELINE = 21
+const TABLE_BASELINE = 20
 
 /**
  * 存量台账·规则 ②（手写药丸）：同上，冻结于 2026-10-06（issue #6398），**改前** 6 条 → **5**。

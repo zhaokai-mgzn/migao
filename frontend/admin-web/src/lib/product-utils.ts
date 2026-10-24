@@ -86,14 +86,11 @@ export function validateProductForm(
       const totalCells =
         form.colors.length * form.doorWidths.filter(Boolean).length
       const list = form.skus || []
-      const filled = list.filter(
-        (s) => Number(s.price) > 0 && Number(s.stock) >= 0,
-      )
-      const allValid =
-        list.length >= totalCells &&
-        list.every((s) => Number(s.price) > 0 && Number(s.stock) >= 0)
+      // 库存不在商品表单录入（issue #7597）⇒ SKU 完整性只校验价格；库存由真实单据维护
+      const filled = list.filter((s) => Number(s.price) > 0)
+      const allValid = list.length >= totalCells && list.every((s) => Number(s.price) > 0)
       if (!allValid || filled.length < totalCells) {
-        errs.skus = '请完整填写所有 SKU 的价格与库存'
+        errs.skus = '请完整填写所有 SKU 的价格'
       }
     }
   }
