@@ -14,6 +14,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
@@ -62,8 +63,9 @@ class ReportServiceTest {
     @DisplayName("合计 = 逐单之和（两单已知成本 ⇒ 收入 2000、毛利 1100）")
     void totalsAreSumOfRows() {
         when(orderMapper.selectList(any())).thenReturn(List.of(order("o1"), order("o2")));
-        when(orderMarginService.margin("o1")).thenReturn(margin("o1", "1000", "400", "100", true, "500"));
-        when(orderMarginService.margin("o2")).thenReturn(margin("o2", "1000", "300", "100", true, "600"));
+        when(orderMarginService.margins(anyList())).thenReturn(List.of(
+                margin("o1", "1000", "400", "100", true, "500"),
+                margin("o2", "1000", "300", "100", true, "600")));
 
         var report = service.orderMargins(null, null, null);
 
@@ -90,8 +92,9 @@ class ReportServiceTest {
     @DisplayName("🔴 成本未知的单**不进毛利合计**，但单独计数（合计少算了多少必须说出来）")
     void unknownCostRowsAreExcludedAndCounted() {
         when(orderMapper.selectList(any())).thenReturn(List.of(order("o1"), order("o2")));
-        when(orderMarginService.margin("o1")).thenReturn(margin("o1", "1000", "400", "100", true, "500"));
-        when(orderMarginService.margin("o2")).thenReturn(margin("o2", "1000", null, null, false, null));
+        when(orderMarginService.margins(anyList())).thenReturn(List.of(
+                margin("o1", "1000", "400", "100", true, "500"),
+                margin("o2", "1000", null, null, false, null)));
 
         var report = service.orderMargins(null, null, null);
 
@@ -117,12 +120,29 @@ class ReportServiceTest {
     @DisplayName("只有成本未知的单 ⇒ 合计的收入等仍可算（未知只影响毛利口径），但毛利为 null")
     void allUnknownCostKeepsRevenueButNullMargin() {
         when(orderMapper.selectList(any())).thenReturn(List.of(order("o1")));
-        when(orderMarginService.margin("o1")).thenReturn(margin("o1", "1000", null, null, false, null));
+        when(orderMarginService.margins(anyList()))
+                .thenReturn(List.of(margin("o1", "1000", null, null, false, null)));
 
         var report = service.orderMargins(null, null, null);
 
         assertThat(report.getUnknownCostOrders()).isEqualTo(1);
         assertThat(report.getTotals().getGrossMargin())
                 .as("没有一单能算毛利 ⇒ 合计毛利为 null（不是 0）").isNull();
+    }
+
+    @Test
+    @DisplayName("🔴 取数是**批量**的：N 张单只调一次 margins（逐单 margin = 8 条 SQL/单，issue #7582）")
+    void fetchesMarginsInOneBatch() {
+        when(orderMapper.selectList(any())).thenReturn(List.of(order("o1"), order("o2"), order("o3")));
+        when(orderMarginService.margins(anyList())).thenReturn(List.of(
+                margin("o1", "1000", "400", "100", true, "500"),
+                margin("o2", "1000", "300", "100", true, "600"),
+                margin("o3", "1000", "300", "100", true, "600")));
+
+        service.orderMargins(null, null, null);
+
+        // 退回逐单实现 ⇒ 这里的 times(1) 变 times(3)，本判据红
+        Mockito.verify(orderMarginService, Mockito.times(1)).margins(anyList());
+        Mockito.verify(orderMarginService, Mockito.never()).margin(anyString());
     }
 }

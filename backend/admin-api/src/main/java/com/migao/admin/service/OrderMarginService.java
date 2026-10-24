@@ -13,6 +13,8 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -57,6 +59,71 @@ public class OrderMarginService {
         Long tenantId = order.getTenantId();
 
         Map<String, Object> fabric = orderMapper.selectFabricCost(tenantId, order.getOrderNo());
+        BigDecimal refunded = sumRefund(order.getId(), tenantId);
+        return assemble(order, fabric, refunded, productionService.piecework(order.getId(), tenantId));
+    }
+
+    /**
+     * **批量**毛利（issue #7582，报表中心的订单毛利）：面料 1 条 `GROUP BY`、退款 1 条 `IN`、计件 4 条
+     * —— 合计 6 条 SQL 与订单数**无关**，替代原来「每单 8 条」的 N+1（500 单上界 ≈ 4000 条）。
+     *
+     * <p>🔴 只是**取数**变了：逐单仍交给 {@link #assemble} → {@link OrderMargin#compute} 这唯一一份口径 ⇒
+     * 批量与逐单逐字段相同。判据 = {@code OrderMarginBatchTest}（同一批订单两条路径逐单比对，
+     * 任一字段不等即红）。</p>
+     *
+     * @param orders 调用方已查出的订单（本方法不回查订单 —— 单条路径在这里还要多一条）
+     */
+    public List<OrderMarginView> margins(List<Order> orders) {
+        if (orders == null || orders.isEmpty()) {
+            return List.of();
+        }
+        Long tenantId = orders.get(0).getTenantId();
+        List<String> orderNos = new ArrayList<>(orders.size());
+        List<String> orderIds = new ArrayList<>(orders.size());
+        for (Order order : orders) {
+            if (order.getOrderNo() != null) {
+                orderNos.add(order.getOrderNo());
+            }
+            orderIds.add(order.getId());
+        }
+
+        // ① 面料：一次 GROUP BY（三元组与 selectFabricCost 逐字相同）
+        Map<String, Map<String, Object>> fabricByOrderNo = new HashMap<>();
+        if (!orderNos.isEmpty()) {
+            for (Map<String, Object> row : orderMapper.selectFabricCosts(tenantId, orderNos)) {
+                fabricByOrderNo.put(String.valueOf(row.get("order_no")), row);
+            }
+        }
+        // ② 退款：一次 IN + 内存分组（条件与 sumRefund 相同：refund ∧ success ∧ 同租户）
+        Map<String, BigDecimal> refundByOrderId = new HashMap<>();
+        for (FinanceTransaction txn : financeTransactionMapper.selectList(
+                new LambdaQueryWrapper<FinanceTransaction>()
+                        .eq(FinanceTransaction::getTenantId, tenantId)
+                        .eq(FinanceTransaction::getType, "refund")
+                        .eq(FinanceTransaction::getStatus, "success")
+                        .in(FinanceTransaction::getOrderId, orderIds))) {
+            if (txn.getOrderId() == null) {
+                continue;
+            }
+            refundByOrderId.merge(txn.getOrderId(),
+                    txn.getAmount() == null ? BigDecimal.ZERO : txn.getAmount(), BigDecimal::add);
+        }
+        // ③ 计件：4 条批量（ProductionService 里仍是同一份聚合，见 pieceworkByOrders）
+        Map<String, Map<String, Object>> pieceworkByOrderId =
+                productionService.pieceworkByOrders(orders, tenantId);
+
+        List<OrderMarginView> views = new ArrayList<>(orders.size());
+        for (Order order : orders) {
+            views.add(assemble(order, fabricByOrderNo.get(order.getOrderNo()),
+                    refundByOrderId.getOrDefault(order.getId(), BigDecimal.ZERO),
+                    pieceworkByOrderId.get(order.getId())));
+        }
+        return views;
+    }
+
+    /** 单张订单的**唯一装配处**：{@link #margin} 与 {@link #margins} 共用（口径只此一份）。 */
+    private OrderMarginView assemble(Order order, Map<String, Object> fabric,
+                                     BigDecimal refunded, Map<String, Object> piecework) {
         BigDecimal fabricCost = fabric == null ? BigDecimal.ZERO : toDecimal(fabric.get("fabric_cost"));
         int unknownLines = fabric == null ? 0 : ((Number) fabric.getOrDefault("unknown_lines", 0)).intValue();
         int lines = fabric == null ? 0 : ((Number) fabric.getOrDefault("lines", 0)).intValue();
@@ -67,16 +134,15 @@ public class OrderMarginService {
         } else if (unknownLines > 0) {
             fabricCost = null;   // 有行缺进价 ⇒ 成本未知（绝不当 0）
         }
-
-        BigDecimal refunded = sumRefund(order.getId(), tenantId);
-        Map<String, Object> piecework = productionService.piecework(order.getId(), tenantId);
-        BigDecimal laborCost = toDecimal(piecework.get("total")).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal refundedAmount = refunded == null ? BigDecimal.ZERO : refunded;
+        BigDecimal laborCost = toDecimal(piecework == null ? null : piecework.get("total"))
+                .setScale(2, RoundingMode.HALF_UP);
         int unpricedLines = countUnpricedLabor(piecework);
         if (unpricedLines > 0) {
             laborCost = null;   // 有未定价报工 ⇒ 加工成本未知（不按 0 计入）
         }
         OrderMargin.Result result = OrderMargin.compute(
-                order.getTotalAmount(), refunded, fabricCost, unknownLines, laborCost, unpricedLines);
+                order.getTotalAmount(), refundedAmount, fabricCost, unknownLines, laborCost, unpricedLines);
 
         return OrderMarginView.builder()
                 .orderId(order.getId())
@@ -84,7 +150,7 @@ public class OrderMarginService {
                 .status(order.getStatus())
                 .scope(OrderMargin.SCOPE_FABRIC_AND_LABOR)
                 .revenue(scale(order.getTotalAmount()))
-                .refunded(scale(refunded))
+                .refunded(scale(refundedAmount))
                 .fabricCost(result.fabricCost())
                 .laborCost(result.laborCost())
                 .unpricedLaborLines(unpricedLines)
