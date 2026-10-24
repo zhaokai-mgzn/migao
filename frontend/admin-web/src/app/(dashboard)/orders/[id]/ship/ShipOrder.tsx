@@ -604,14 +604,16 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
       <table className="w-full text-sm">
         <thead className="bg-neutral-50 text-neutral-600">
           <tr>
-            <Th className="pl-0">商品</Th>
-            <Th className="pl-0">商品货号</Th>
+            {/* 整表统一居中（issue #7590）：与订单详情页「商品信息」表同一形态 —— 改前 商品/货号/颜色/
+                门幅 左对齐、数量居中、金额三列右对齐 ⇒ 三种对齐并存。对齐由下面的 `Th` / `Td` 一处承担。 */}
+            <Th>商品</Th>
+            <Th>商品货号</Th>
             <Th>颜色</Th>
             <Th>门幅</Th>
-            <Th align="right">单价(元/米)</Th>
-            <Th align="center">数量(米)</Th>
-            <Th align="right">金额(元)</Th>
-            <Th align="right">商品合计(元)</Th>
+            <Th>单价(元/米)</Th>
+            <Th>数量(米)</Th>
+            <Th>金额(元)</Th>
+            <Th>商品合计(元)</Th>
           </tr>
         </thead>
         <tbody className="divide-y divide-neutral-100">
@@ -627,27 +629,27 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
                 {rowIdx === 0 && (
                   <td
                     rowSpan={group.rows.length}
-                    className="pl-0 pr-3 py-3 align-top border-r border-neutral-100 font-medium text-neutral-900"
+                    className="px-3 py-3 text-center align-top border-r border-neutral-100 font-medium text-neutral-900"
                   >
                     {group.productName}
                   </td>
                 )}
-                <Td className="pl-0">{sku.code || '-'}</Td>
+                <Td>{sku.code || '-'}</Td>
                 <Td>{sku.color || '-'}</Td>
                 <Td>{sku.doorWidth || '-'}</Td>
-                <Td align="right" className="text-red-500 font-medium">
+                <Td className="text-red-500 font-medium">
                   {formatAmount(row.unitPrice)}
                 </Td>
-                <Td align="center" className="text-primary-600 font-medium">
+                <Td className="text-primary-600 font-medium">
                   {row.quantity}
                 </Td>
-                <Td align="right" className="text-primary-600 font-medium">
+                <Td className="text-primary-600 font-medium">
                   {formatAmount(row.amount)}
                 </Td>
                 {rowIdx === 0 && (
                   <td
                     rowSpan={group.rows.length}
-                    className="px-3 py-3 text-right align-top border-l border-neutral-100 text-primary-600 font-semibold"
+                    className="px-3 py-3 text-center align-top border-l border-neutral-100 text-primary-600 font-semibold"
                   >
                     {formatAmount(group.groupTotal)}
                   </td>
@@ -662,22 +664,15 @@ function ProductTable({ groups }: { groups: ProductGroup[] }) {
   )
 }
 
-function Th({
-  children,
-  align = 'left',
-  className,
-}: {
-  children: React.ReactNode
-  align?: 'left' | 'right' | 'center'
-  className?: string
-}) {
+/** 表头 / 数据格（issue #7590）：**整表一律居中**（口径同订单详情页 `ProductTable`）。
+ *
+ *  改前对齐是逐列参数（商品/货号/颜色/门幅 左、数量 中、金额三列 右）⇒ 同一张表三种对齐并存。
+ *  这两个组件只服务这一张发货页商品表（非导出）⇒ 对齐只有这一处，调用点不再有可漂移的旋钮。 */
+function Th({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <th
       className={cn(
-        'px-3 py-2.5 text-xs font-semibold text-neutral-600 whitespace-nowrap',
-        align === 'right' && 'text-right',
-        align === 'center' && 'text-center',
-        align === 'left' && 'text-left',
+        'px-3 py-2.5 text-xs font-semibold text-neutral-600 whitespace-nowrap text-center',
         className
       )}
     >
@@ -686,26 +681,6 @@ function Th({
   )
 }
 
-function Td({
-  children,
-  align = 'left',
-  className,
-}: {
-  children: React.ReactNode
-  align?: 'left' | 'right' | 'center'
-  className?: string
-}) {
-  return (
-    <td
-      className={cn(
-        'px-3 py-3 text-neutral-700',
-        align === 'right' && 'text-right',
-        align === 'center' && 'text-center',
-        align === 'left' && 'text-left',
-        className
-      )}
-    >
-      {children}
-    </td>
-  )
+function Td({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <td className={cn('px-3 py-3 text-neutral-700 text-center', className)}>{children}</td>
 }
