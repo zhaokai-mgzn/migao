@@ -10722,6 +10722,24 @@ _CASE_PG_091 = EvalCase(
     precondition='卖布行订单（processing_info.saleForm=布料、无加工项）：A 单 sellingMethod=full_roll + rollCount=2；B 单 sellingMethod=bulk_cut。',
 )
 
+# ── PG-092 [NORMAL] 裁剪报工必须确认批次：派工批次预填可改 / 未指派必须手输 / 批次账同事务纠偏（issue #7647）（源: cases/processing-order.yml）──
+_CASE_PG_092 = EvalCase(
+    id='PG-092',
+    legacy_id='',
+    title='裁剪报工必须确认批次：派工批次预填可改 / 未指派必须手输 / 批次账同事务纠偏（issue #7647）',
+    skill=Skill.PRODUCT,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['裁剪报工的时候需要工人裁剪的哪个批次，如果通过智能派单的就默认展示指定批次，允许工人改，如果没指定批次就需要工人手输才能完成报工，并且实时更新库存', '只有整卷售卖的时候才需要出库，裁剪不需要生成出库'],
+    expectations=[],
+    data_checks=['**判据 1·缺批次即拒绝（会红，Java 写面）**：工序名恰好是「裁剪」且该商品 × SKU 有批次行时，报工不带 `batch_no` ⇒ 422 `BATCH_REQUIRED`，且**零写入**（不落 `production_work_logs`、不推进进度、不记账）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanCompleteServiceTest.java 的 `cuttingWithoutBatchIsRejectedBeforeAnyWrite`。**红证**：把 `ProductionService#applyScanComplete` 里的必填校验删掉 ⇒ 该用例红（会以成功路径走完）。', '**判据 2·批次号错了不落账（会红）**：批次不存在 ⇒ 422 `BATCH_NOT_FOUND`；批次属于别的商品 / 别的 SKU ⇒ 422 `BATCH_SKU_MISMATCH`；两种都**一行都不写**。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/StockBatchConsumptionCuttingReportTest.java 的 `unknownBatchIsRejectedWithoutWriting` / `foreignSkuBatchIsRejectedWithoutWriting`。**红证**：把 `applyCuttingReport` 的存在性/SKU 校验删掉 ⇒ 两条用例红（脏批次会落成账）。', '**判据 3·派工批次一致 ⇒ 零写入（会红）**：智能派单已扣过该批次的该行，工人填的批次与之一致时**不重复扣**，该行净额与余量逐值不变（排料省下的米数不受影响）。执行点 = 同文件 `sameBatchAsDispatchWritesNothing`。**红证**：去掉「同批次直接返回」分支（改成每次都扣）⇒ 该用例红（`insert` 被调用一次）。', '**判据 4·换批次 ⇒ 同一事务两条分录（会红）**：工人填的批次与派工批次不同 ⇒ 先回补原批次（+净额）、再扣实裁批次（−净额），该行净额**不变**、两批次余量各自正确。执行点 = 同文件 `differentBatchMovesTheNet`。**红证**：只扣新批次不回补旧批次 ⇒ 用例红（该行净额翻倍）。', '**判据 5·派工未指定 ⇒ 报工时按本次米数扣（会红）**：该行从来没有派工族分录时，按本次报工米数扣工人填的批次；分次报工累计正确（11 + 4 = 15）。执行点 = 同文件 `unassignedDeductsReportedMeters`。**红证**：把 `dispatchAssigned` 分支的判断写反 ⇒ 用例红（第一次就零写入）。', '**判据 6·余量不足放行 + 显式缺口（会红）**：余量不够时**不挡报工**（不挡工人记工钱），台账如实落负余量，回执给 `batch_shortage_meters`。执行点 = 同文件 `insufficientStockIsAllowedWithExplicitShortage` + `ProductionScanCompleteServiceTest#cuttingWithBatchReconcilesAndReturnsReceipt`（回执三键）。**红证**：改成 fail-closed（余量不足抛错）⇒ 用例红；回执不传缺口键 ⇒ 断言红。', '**判据 7·豁免与零回归（会红）**：该 SKU 从未按批次入库 ⇒ 不强制批次、也不落账（存量商品不能报不上工）；非「裁剪」工序（`精裁-布`）传了 `batch_no` 也不读、不落账。执行点 = `ProductionScanCompleteServiceTest#cuttingWithoutAnyBatchRowsIsExempt` / `#nonCuttingOperationIgnoresBatchNo`。**红证**：把 `tracksBatches` 豁免删掉 ⇒ 第一条红；去掉工序名判定 ⇒ 第二条红。', '**判据 8·作废按净额归零（会红）**：换过批次的加工单作废 ⇒ 按 (批次 × 订单行) 净额回补（净额归零，**不二次回补**），重跑零写入；纯派工单的回补量与改前逐值相同。执行点 = `StockBatchConsumptionCuttingReportTest#reverseRestoresNetToZeroAfterBatchMove` / `#reverseKeepsPureDispatchBehavior`。**红证**：回补改回「只回 reason=processing_order 的行」⇒ 换批次的那条用例红（B 批次的扣减永远回补不掉，A 批次被回补两次）。', '**判据 9·读面两键先下发（会红）**：扫码解析响应对「裁剪」追加 `batch_required` / `batch_no`（派工批次，预填值）/ `batch_candidates`（余量 + `enough`），其余工序三键为 false / null / []（键恒在）；一体机裁高读面**原样透传** `batch_required` / `batch_no`。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/ProductionScanServiceDetailFieldsTest.java 的 `cuttingScanCarriesBatchView` / `nonCuttingScanHasNoBatchRequirement` + WorkerCuttingHeightServiceTest.java 的 `cuttingBatchKeysArePassedThroughToTheMachineScreen` / `missingCuttingBatchKeysDegradeToFalseAndNull`。**红证**：从 `ProductionScanService#resolve` 删掉 `cuttingBatchView` 三键 ⇒ 前两条红；从 `WorkerCuttingHeightService#read` 删掉两键 ⇒ 机台用例红。', '**边界（照实登记）**：① 只覆盖工人扫码报工写入口（`/api/worker/production/scan/complete`），商家端逐道报工不改；② 余量允许为负（对账读面能读出负余量批次，不做自动平账）；③ 报告时**不**回写派工计划的米数（「同批次零写入」是有意的：报工米数与排料口径不是一回事）；④ 该 SKU 零批次入库 ⇒ 不强制批次（安全默认）。'],
+    skip_reason='[backend-contract] admin-api 单测（无 LLM 行为面；批次判定、纠偏与回补全部是确定性规则）',
+    tags=['processing-order', 'production', 'scan-report', 'batch-stock'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+)
+
 # ── PP-002 [NORMAL] 加工项目录与工序库查询（只读；覆盖 #5247 新接入的 operation_catalog_query）（源: cases/processing.yml）──
 _CASE_PP_002 = EvalCase(
     id='PP-002',
@@ -16487,6 +16505,25 @@ _CASE_UI_135 = EvalCase(
     precondition='本用例是 [backend-contract] 纯前端取数/图片处理契约用例：收款码 map 由单测自建并注入 settingsApi 打桩（不碰真库、不依赖共享夹具）；前置不成立时对应单测直接红，agent-eval 栈不跑它',
 )
 
+# ── UI-136 [NORMAL] 工人端裁剪报工确认批次：派工批次预填可改 / 未指派空着必须手输 / 回执带批次与余量（issue #7647）（源: cases/ui.yml）──
+_CASE_UI_136 = EvalCase(
+    id='UI-136',
+    legacy_id='',
+    title='工人端裁剪报工确认批次：派工批次预填可改 / 未指派空着必须手输 / 回执带批次与余量（issue #7647）',
+    skill=Skill.GENERAL,
+    difficulty=Difficulty.NORMAL,
+    user_inputs=['裁剪报工的时候需要工人裁剪的哪个批次，如果通过智能派单的就默认展示指定批次，允许工人改，如果没指定批次就需要工人手输才能完成报工'],
+    expectations=[],
+    data_checks=['**判据 1·区块只在需要批次时出现（会红）**：`batch_required === true` ⇒ 报工主屏出「批次（这次从哪一批裁）」输入框 `#wh5-batch-input`；缺键 / false ⇒ 批次区块**一个字节都不渲染**、报工按钮与请求体与改前逐字一致（老响应零回归）。执行点 = frontend/worker-h5/tests/worker-h5-cutting-batch.test.mjs 的用例 ①②④。**红证**：把 `isBatchRequired` 改成恒 true ⇒ ④ 红；区块恒不渲染 ⇒ ①②③ 等 7 条红。', '**判据 2·派工批次预填且可改（会红）**：有派工批次 ⇒ 输入框 `value` = 该批次，工人可改成别的批次并原样进入请求体；没有 ⇒ 输入框为空。执行点 = 同文件用例 ①②③。**红证**：`currentBatchNo` 忽略工人输入（恒用预填）⇒ ③⑥⑦⑧-b 红。', '**判据 3·没填不让报工（会红）**：`batch_required` 且输入 trim 后为空 ⇒ 报工按钮 `disabled` + 一句可行动提示；硬点（模拟绕过 disabled）也**一个写请求都不发**。执行点 = 同文件用例 ②③-b。**红证**：去掉 render 侧的 `batchBlocked` 分支 ⇒ ②⑧ 红；去掉 app 侧闸 ⇒ ③-b 红（发出了请求）。', '**判据 4·请求体带工人确认的批次（会红）**：点报工时请求体含 `batch_no`（= 输入框/候选点选后的值，trim 过）；非裁剪工序**不带**该键（白名单构造）。执行点 = 同文件用例 ③④ + frontend/worker-h5/src/api.mjs 的 `completeByScan`。**红证**：api 侧不写 `body.batch_no` ⇒ ③ 红。', "**判据 5·候选批次可点选（会红）**：`batch_candidates[]` 渲染成 chip（批次号 + 余量 + 余量不足标记），点一下填入输入框；候选为空 ⇒ 整块候选区不渲染。执行点 = 同文件用例 ⑤。**红证**：不接线候选点击 ⇒ ⑤ 红；候选为空仍渲染空壳 ⇒ ⑤'' 红。", '**判据 6·回执显示批次与余量、缺键不印假数据（会红）**：报工成功回执句追加「批次 X · 余量 Y 米」；`batch_shortage_meters > 0` 追加缺口说明；三键缺键 / null ⇒ 整句不渲染（屏上不出现 `undefined` / `NaN` / `null`）。执行点 = 同文件用例 ⑥⑦。**红证**：把回执尾部改成 naive 插值 ⇒ ⑦ 红；不追加批次尾 ⇒ ⑥⑦ 红。', '**判据 7·换屏不沿用上一笔（会红）**：重扫 / 报工完成后，工人手输的批次**不带走**（`state.batchNo` 清回 null ⇒ 预填重新来自服务端），绝不静默沿用下一笔。执行点 = 同文件用例 ⑧ / ⑧-b。**红证**：`resolved` 不清 `batchNo` ⇒ ⑧-b 红；`afterComplete` 保留上一笔的 `batch_no` ⇒ ⑧ 红。', '**判据 8·一体机不被新规则卡死（会红）**：机台页（`machine.mjs` / `machine-app.mjs`）对裁剪工序：有派工批次 ⇒ 报工请求自动带 `batch_no`（屏面一字不变）；没有 ⇒ **零请求** + 大字「本单未指派批次：请到报工页填写批次后再报工」+ 去报工页入口；非裁剪 ⇒ 请求体不带该键。执行点 = frontend/worker-h5/tests/worker-h5-machine.test.mjs 的 ⑦ / ⑦′ / ⑦″。**红证**：机台不带 `batch_no` ⇒ ⑦ 红；去掉机台批次闸 ⇒ ⑦′ 红（发了请求）；恒显阻断提示 ⇒ ⑦″ 红。'],
+    skip_reason='[backend-contract] 纯前端（假 DOM + fetch 替身驱动真实装配层；无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/worker-h5/tests/worker-h5-cutting-batch.test.mjs 与 worker-h5-machine.test.mjs 执行',
+    tags=['ui', 'worker-h5', 'production', 'scan-report', 'batch-stock'],
+    persona='',
+    debug_user='',
+    form_prefill=[],
+    forbidden_card_text=[],
+    precondition='本用例是 [backend-contract] 纯前端契约用例：服务端解析响应（`batch_required` / `batch_no` / `batch_candidates`）与报工回执由单测自建并打桩（假 DOM + fetch 替身，不碰真库），前置不成立时单测直接红；agent-eval 栈不跑它',
+)
+
 # ── UT-001 [NORMAL] 跨服务字段映射 - Java camelCase ↔ Python snake_case 双向转换与兼容取值（源: cases/utils.yml）──
 _CASE_UT_001 = EvalCase(
     id='UT-001',
@@ -17091,6 +17128,7 @@ ALL_CASES = (
     _CASE_PG_088,
     _CASE_PG_090,
     _CASE_PG_091,
+    _CASE_PG_092,
     _CASE_PP_002,
     _CASE_PP_006,
     _CASE_PP_007,
@@ -17404,6 +17442,7 @@ ALL_CASES = (
     _CASE_UI_133,
     _CASE_UI_134,
     _CASE_UI_135,
+    _CASE_UI_136,
     _CASE_UT_001,
     _CASE_UT_002,
 )
