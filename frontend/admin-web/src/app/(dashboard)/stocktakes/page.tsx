@@ -471,7 +471,7 @@ export default function StocktakesPage() {
               </div>
 
               <p className="mt-3 text-xs text-neutral-400" data-testid="stocktake-book-basis">
-                「账面剩余」= 入库米数 − 已派工消耗（出任务当刻的快照）—— 与「库存明细 ▸ 批次余量」是同一个数。
+                「账面剩余」= 入库米数 − 已派工消耗（出任务那一刻的数）—— 与「库存明细 ▸ 批次余量」是同一个数。
                 已经用完的批次不会出现在这张单里。
               </p>
             </>
@@ -497,7 +497,7 @@ export default function StocktakesPage() {
       >
         <div className="space-y-3">
           <p className="text-sm text-neutral-600">
-            账面数取**出任务那一刻的剩余米数**（入库米数 − 已派工消耗）；之后入库的变化不会算进这张单。
+            账面数取出任务那一刻的剩余米数（入库米数 − 已派工消耗）；之后入库的变化不会算进这张单。
           </p>
           <label className="block text-sm font-medium text-neutral-700">
             仓库
