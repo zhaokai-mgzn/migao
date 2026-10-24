@@ -3,8 +3,10 @@
 export interface PriceBookRow {
   id: string
   price: number
-  /** 协议价：客户 id */
+  /** 协议价：客户 id（**只给程序用，不上屏** —— 上屏用 customer_name） */
   customer_id?: string
+  /** 协议价：客户展示名（服务端给：微信昵称 → 手机号 → 未命名客户 / 客户已移除，issue #7623） */
+  customer_name?: string
   /** 等级价：VIP 等级 */
   vip_level?: string
   /** 阶梯价：门槛与上限 */

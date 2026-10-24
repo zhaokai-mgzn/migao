@@ -1,6 +1,7 @@
-// case_ids: PRC-003
+// case_ids: PRC-003, PRC-005
 package com.migao.admin.service;
 
+import com.migao.admin.dto.PriceBookView;
 import com.migao.admin.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -10,7 +11,9 @@ import org.mockito.Mockito;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -97,5 +100,46 @@ class PriceBookServiceTest {
         assertThatThrownBy(() -> service.list(1L, null, null))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("skuId");
+    }
+
+    @Test
+    @DisplayName("🔴 协议价的行给的是**客户展示名**（join 客户档案 + 两级兜底；绝不把客户 id 当名字）")
+    void protocolRowsCarryCustomerDisplayName() {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", "1");
+        row.put("customer_id", "c-1");
+        row.put("price", new BigDecimal("88"));
+        row.put("customer_name", "王芳");
+        when(jdbcTemplate.<Map<String, Object>>queryForList(
+                ArgumentMatchers.contains("customer_sku_prices"), any(Object.class), any(Object.class)))
+                .thenReturn(List.of(row));
+        when(jdbcTemplate.<Map<String, Object>>queryForList(
+                ArgumentMatchers.contains("vip_level_prices"), any(Object.class), any(Object.class)))
+                .thenReturn(List.of());
+        when(jdbcTemplate.<Map<String, Object>>queryForList(
+                ArgumentMatchers.contains("sku_tier_prices"), any(Object.class), any(Object.class)))
+                .thenReturn(List.of());
+
+        PriceBookView view = service.list(1L, 10L, null);
+
+        // ① 展示名随行下发（页面直接渲染名字，不再印内部编号）
+        org.assertj.core.api.Assertions.assertThat(view.getProtocol()).hasSize(1);
+        org.assertj.core.api.Assertions.assertThat(view.getProtocol().get(0))
+                .containsEntry("customer_name", "王芳")
+                .containsEntry("customer_id", "c-1");
+
+        // ② 判的是**读面契约**：查询必须 join 客户档案，且兜底写在 SQL 里
+        //    （缺名 ⇒ 手机号 / 未命名客户；档案不存在 ⇒ 客户已移除）—— 否则前端只能退回印 id
+        String protocolSql = Mockito.mockingDetails(jdbcTemplate).getInvocations().stream()
+                .filter(i -> "queryForList".equals(i.getMethod().getName()))
+                .map(i -> String.valueOf(i.<Object>getArgument(0)))
+                .filter(sql -> sql.contains("customer_sku_prices"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("没有走到协议价查询"));
+        org.assertj.core.api.Assertions.assertThat(protocolSql)
+                .contains("LEFT JOIN customer_profiles")
+                .contains("AS customer_name")
+                .contains("客户已移除")
+                .contains("未命名客户");
     }
 }

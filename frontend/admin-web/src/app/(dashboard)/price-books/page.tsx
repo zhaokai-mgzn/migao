@@ -304,7 +304,7 @@ export default function PriceBooksPage() {
                   {items.map((row) => (
                     <li key={row.id} className="flex items-center justify-between gap-2">
                       <span className="text-neutral-600">
-                        {kind === 'protocol' ? row.customer_id
+                        {kind === 'protocol' ? (row.customer_name || '未命名客户')
                           : kind === 'vip-level' ? row.vip_level
                           : `满 ${row.min_qty} 米${row.max_qty ? ` · 至 ${row.max_qty} 米` : ' 起'}`}
                       </span>
