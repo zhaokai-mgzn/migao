@@ -10808,8 +10808,11 @@
 ```
 溯源: 2026-10-20 新增（issue #7351；用户 2026-10-20 裁定「B. A + AI 给候选文案，商家确认后采用」）：营销三板斧候选流程的机器判据 = 未确认前禁止调工具。按 #4262，本用例不在合入时自动跑，留给下一次手动集中评测。 ｜ tags: product, poster, journey, marketing, fail_closed
 
-### PR-074. 商品图生成 - 对已选商品生成商品图（缺主图/能力不可用都可行动拒绝；成功发卡：PC 下载 / 手机保存相册） 🔵
+### PR-074. 商品图生成 - 对已选商品生成商品图（先定位再生成；成功发卡：PC 下载 / 手机保存相册；缺主图/不可用都可行动拒绝） 🔵
 ```
+你: 帮我把「星空全遮光」这款商品生成一张主图
+期望: product_search
+期望: product_image_generate(kind=main)
 数据: 判据 0·**机器可判**：缺 `product_id` / `kind` 不在白名单 / 商品没有可用主图 ⇒ `success=False`（`missing_params` 或工具错误码 `IMAGE_SOURCE_MISSING`）；成功时 `success=true`、`data.image_url` 非空、`data.product.name` 逐字等于 admin-api 返回的商品名（判据源 = `backend/ai-agent-service/tests/test_product_image_generate.py`）。
 数据: 判据 1·**入口 = 已选商品**（issue #7541；用户 2026-10-23 裁定）：`product_id` 必填，模型先 `product_search` / `product_detail` 定位；缺参 / `kind` 越界 ⇒ 立刻失败且**零 admin-api 调用、零生图调用**。注入红证：缺参放行到取商品 ⇒ 变红。
 数据: 判据 2·**样图只来自该商品主图**：样图取 `GET /api/admin/products/{id}` 的 `mainImage`（缺失回退 `images[0]`）；两者都没有、或不是 http(s) 完整地址 ⇒ `IMAGE_SOURCE_MISSING` + **零生图调用**，不拿别的商品凑、不编造。注入红证：缺主图时改传空串给内核 ⇒ 变红。
@@ -10818,11 +10821,11 @@
 数据: 判据 5·**卡发射条件**：`_detect_card_type('product_image_generate')` → `generated_image`；`_should_send_card` 只在 `success=true` **且** `data.image_url` 非空时为真（失败 / 空图不发卡，避免前端画空图框）。注入红证：去掉 image_url 判据 ⇒ 变红。
 数据: 判据 6·**跨端契约**：该工具只绑黄金策 `product` / `general` ⇒ B 端桌面 `ToolResultCard` 与 B 端移动 `MessageBubble` 都必须有 `generated_image` 渲染分支，C 端（元元）不可达（判据 = `backend/ai-agent-service/tests/test_card_type_cross_end_contract.py` 现算）。注入红证：删掉任一端的分支 ⇒ 变红。
 数据: 判据 7·**PC 下载 / 手机保存到相册**：桌面卡点「下载图片」走「取文件再按 `商品图-<商品名>.png` 存盘」，取不到时打开原图并明说可「图片另存为」（不谎报已下载）；移动卡在微信内置浏览器弹「长按图片保存」（JS 无法直接写相册，不谎报已保存）。注入红证：微信分支改成提示「已保存」⇒ 变红。
-数据: 判据 8·🔴 **凭证失效 = 能力不可用，且不给「再生成一次」**（2026-10-25 线上实测：现役 MaaS key 打真实端点回 `HTTP 401 InvalidApiKey`，端点可达 ⇒ 失败是凭证问题，不是配额、也不是「这次运气不好」）：`401` / `403` 与 `InvalidApiKey` / `AccessDenied` 归入 `ImageGenerationAuthError`（`ImageGenerationUnavailable` 族 ⇒ 对外码仍是 `IMAGE_GEN_UNAVAILABLE`，**不新增第五个码**，三端契约不变），并且**不逐模型重试**（`IMAGE_GEN_MODELS` 配两个模型也只发 **1** 次请求 —— 账号级问题换模型还是 401）；商家可见话术里**不得**出现「再生成一次」/「晚些再让我生成」/「额度」，可行动出路「先在『商品管理』里手工上传」必须保留。判据 = `backend/ai-agent-service/tests/test_generator.py::test_credential_failure_is_unavailable_and_never_rotates`（401 / 403 两参）与 `backend/ai-agent-service/tests/test_product_image_generate.py::TestFailureSemantics::test_credential_failure_is_capability_unavailable_not_retryable`（走真内核 + `MockTransport`，钉「401 一路传到商家那句人话」）。内部端点 `/images/generate` 同口径：凭证失效 ⇒ **503**（不是 502 —— 502 会被 admin-api 读成供应商偶发故障、引向「稍后再试」），判据 = `backend/ai-agent-service/tests/test_generator.py::test_internal_endpoint_credential_failure_is_503_not_502`。回退红证（实测）：撤掉 `_is_auth_failure` 分支 ⇒ `4 failed, 35 passed`（工具侧读数 `assert 'IMAGE_GEN_FAILED' == 'IMAGE_GEN_UNAVAILABLE'`；端点侧读数 `502 = HTTPException(status_code=502, ... 生图失败（HTTP 401）：InvalidApiKey)`）；恢复 ⇒ `39 passed`。
-必须失败: product_image_generate
-跳过: [backend-contract] 工具 + 两端渲染契约（无 LLM 环节）：断言由 backend/ai-agent-service/tests/test_product_image_generate.py、test_card_type_cross_end_contract.py 与 frontend/admin-web/tests/unit/components/GeneratedImageCard.test.tsx 执行；真实出图还依赖生图模型可用性（#7661 已切到 qwen-image-3.0-pro + MaaS 端点，但新 key 实测 401（2026-10-25 复测仍 `InvalidApiKey`，端点可达）⇒ 可用性未证实），合入时**不跑**端到端生成
+数据: 判据 8·**行为面：先定位再生成**（2026-10-25 首次成功出图后补，issue #7541 的重启条件）：本轮必须先 `product_search` / `product_detail` 拿到商品，再调 `product_image_generate`；`args.product_id` 来自上一步结果（**值级相等**），不得凭空编 UUID、也不得跳过定位直接生成。
+数据: 判据 9·**行为面：成功与不可用都说真话**：生成成功 ⇒ `success=true` 且 `data.image_url` 以 `http(s)` 开头（值级）；生成不可用 ⇒ `error.code` **逐字**为 `IMAGE_GEN_UNAVAILABLE`，**不得**是 `IMAGE_GEN_QUOTA_EXCEEDED`（判据 4 在行为面的镜像）。
+数据: 判据 10·**行为面：不谎报落库/保存**：回复文本不得出现「已写入商品档案 / 已保存到相册 / 已上传」——图只在卡里（PC 下载 / 手机长按保存是人工动作）。
 ```
-溯源: 2026-10-23 新增（issue #7541：黄金策「对已选商品生成商品图」—— 工具 + 对话卡预览；PC 下载 / 手机保存相册；不写表单、不落库；失败语义三分）。按 #4262，本用例不在合入时自动跑，留给下一次手动集中评测。2026-10-25 补判据 8（关联 #7541：凭证类失败 401/403 语义修正 —— 线上实测现役 key 回 401 `InvalidApiKey`；工具侧不再说「再生成一次」、内核不再逐模型重试、内部端点 503 而非 502；红证 4 failed / 35 passed ⇄ 恢复后 39 passed）。 ｜ tags: product, image_generation, tool, backend_contract, fail_closed
+溯源: 2026-10-23 新增（issue #7541：黄金策「对已选商品生成商品图」—— 工具 + 对话卡预览；PC 下载 / 手机保存相册；不写表单、不落库；失败语义三分）。2026-10-25 **转可跑**（重启条件已满足）：MaaS Key 轮换后本机真跑成功出图（`qwen-image-3.0-pro` → OSS URL），同一 PR 补判据 8/9/10（行为面：先定位再生成 / 成功与不可用都说真话 / 不谎报落库）并**清空 skip_reason**；`must_fail` 删除（生成已能成功，旧断言会与真实成功互斥）。同 PR 删除 `eval-coverage-baseline.yml` 里 `product_image_generate` 的 `uncovered` 登记。 ｜ tags: product, image_generation, tool, backend_contract, fail_closed, behavior
 
 ### PR-132. 商品档案不再设置库存：表单 / 建品接口 / Excel 导入三面下线，存量按真实单据净额重算（V190） 🔵
 ```
@@ -13061,7 +13064,7 @@
 
 ## 覆盖统计（生成）
 
-- 用例总数：887（活跃 141，跳过 746）
+- 用例总数：887（活跃 142，跳过 745）
 - tier 分布：smoke 12 / normal 819 / adversarial 32
 - 售后域：16
 - Agent 核心域：11
@@ -13421,7 +13424,7 @@
 - PR-053: 营销海报 - 商品事实 + 商家确认文案生成海报卡（缺文案 fail-closed；PC 下载 / 手机保存相册）
 - PR-054: 营销海报旅程 - 先问商家要文案，拿到「开门红 + 卖点」后才调海报工具（不得自行编文案）
 - PR-073: 营销海报 - 商家让 AI 写文案：先按营销三板斧给 2~3 组候选，确认前不得调海报工具
-- PR-074: 商品图生成 - 对已选商品生成商品图（缺主图/能力不可用都可行动拒绝；成功发卡：PC 下载 / 手机保存相册）
+- PR-074: 商品图生成 - 对已选商品生成商品图（先定位再生成；成功发卡：PC 下载 / 手机保存相册；缺主图/不可用都可行动拒绝）
 - UI-048: 工艺配置页：规则 / 工序删除的二次确认改**弹框**（与「删除工艺路线」同一形态；弹框写清删的是哪一条 + 删除中禁用 + 失败理由逐条）
 - UI-049: 工艺项页·**一张表装全部工序**（用户裁定 2026-09-21：删【打包发货】独立区块 ⇒ 两层分区退场；按车间分组可折叠；**不再有部位列**）
 - UI-050: 工艺项页·**【打包发货】独立区块已删除**（用户裁定 2026-09-21）+ 工艺路线并入该位置**同屏** + 两个 tab（工序管理 / 算料配置）+ **行为变更如实登记**（零价目行的工序**进表**：`data-state=no_row` + 行尾 `管理▸` 可停用/删除，issue #5875）
