@@ -24,13 +24,17 @@
    ============================================  ==========================
    `ImageGenerationUnavailable`（未配置 Key /      `IMAGE_GEN_UNAVAILABLE`
    开关关闭 / **模型接不了这类图生图请求**）
+   `ImageGenerationAuthError`（凭证 / 权限失效：  `IMAGE_GEN_UNAVAILABLE`
+   401 `InvalidApiKey` / 403 `AccessDenied`）      同码，但**话术里不给「再生成一次」**
    `ImageGenerationQuotaExceeded`（所有模型都因配额）`IMAGE_GEN_QUOTA_EXCEEDED`
    其它供应商失败                                    `IMAGE_GEN_FAILED`
    商品没有可用主图                                  `IMAGE_SOURCE_MISSING`
    ============================================  ==========================
 
-   四种都带可行动的 `suggestion`；用户可见 `message` **一律不说成「额度用尽」**
-   （模型不接这类请求 ≠ 额度没了 —— 这是本工具存在的理由之一）。
+   四种失败码都带可行动的 `suggestion`；用户可见 `message` **一律不说成「额度用尽」**
+   （模型不接这类请求 / 凭证失效 都不等于额度没了 —— 这是本工具存在的理由之一）。
+   凭证失效的出路与「这次没成功」正相反：**重试永远不会成功**（要平台换 Key），
+   如实说成「能力用不了」而不是「再生成一次」（2026-10-25 线上实测 401 `InvalidApiKey`）。
 6. **不新增 LLM 文案生成**：不写标题、不写卖点、不生成任何营销文案
    （文案类需求走 `marketing_poster`）。
 
@@ -48,6 +52,7 @@ from loguru import logger
 
 from app.images.generator import (
     KINDS,
+    ImageGenerationAuthError,
     ImageGenerationError,
     ImageGenerationQuotaExceeded,
     ImageGenerationUnavailable,
@@ -65,7 +70,9 @@ KIND_LABELS = {
 }
 
 
-#: 四种失败语义的**可行动**话术（互不冒充；用户面一律不说成「额度用尽」）。
+#: 四种工具错误码的**可行动**话术（互不冒充；用户面一律不说成「额度用尽」）。
+#: 另有一条**同码不同话术**的 `IMAGE_GEN_CREDENTIAL`（码仍是 `IMAGE_GEN_UNAVAILABLE`）：
+#: 凭证失效时唯一正确的事是「平台换 Key」，给「再生成一次」等于把商家引向一个永远不会成功的动作。
 #: 调用点一律就地构造 `ToolResult(success=False, error=…, message=…, suggestion=…)`
 #: （**不**包一层自定义构造器：模型可见文本的射程判据只认已登记的构造点，
 #: 判据 = `tests/unit_ci_workflows/test_dead_capability_meta_guard.py::test_suggestion_kwarg_is_only_on_registered_builders`）。
@@ -84,6 +91,16 @@ _IMAGE_FAILURES: Dict[str, Dict[str, str]] = {
         "message": "商品图生成能力现在用不了（可能是配置未开通，或当前模型接不了这类图生图请求）",
         "suggestion": "不要再说「额度用尽」——这不是额度问题。可以晚些再让我生成，"
                       "或先在「商品管理」里手工上传一张商品图；如一直不行请告知商家该能力暂未开通。",
+    },
+    # 凭证 / 权限失效（401 `InvalidApiKey` / 403 `AccessDenied`，2026-10-25 线上实测）：
+    # 对外码仍是 `IMAGE_GEN_UNAVAILABLE`（配置/能力问题，不是可重试的失败），但**话术必须换**——
+    # 「晚些再让我生成」/「再生成一次」对一个无效 Key 是**永远不会成功**的建议（反向出路）。
+    "IMAGE_GEN_CREDENTIAL": {
+        "error": "IMAGE_GEN_UNAVAILABLE",
+        "message": "商品图生成现在用不了（平台侧的生图凭证失效了，需要平台更换后才能用）",
+        "suggestion": "这不是额度问题，也不是这张图的问题：现在请让商家先在「商品管理」里手工上传一张"
+                      "商品图；凭证换好之前重复生成不会成功，先不要重试 —— "
+                      "如商家追问，就说明是平台侧的生图凭证问题、已在处理。",
     },
     "IMAGE_GEN_QUOTA_EXCEEDED": {
         "error": "IMAGE_GEN_QUOTA_EXCEEDED",
@@ -269,6 +286,17 @@ class ProductImageGenerateTool(BaseTool):
                 image_url=image_url,
                 product_name=product_name,
                 kind=kind,
+            )
+        except ImageGenerationAuthError as e:
+            # 凭证 / 权限失效：同属「能力不可用」，但**不能**沿用「可以晚些再让我生成」——
+            # 重试永远不会成功（2026-10-25 线上实测：现役 MaaS key 回 401 InvalidApiKey）。
+            logger.error(f"Product image generate credential invalid: product={product_id}, err={e}")
+            failure = _IMAGE_FAILURES["IMAGE_GEN_CREDENTIAL"]
+            return ToolResult(
+                success=False,
+                error=failure["error"],
+                message=failure["message"],
+                suggestion=failure["suggestion"],
             )
         except ImageGenerationUnavailable as e:
             # 含「模型接不了这类请求」—— 与额度用尽**必须**分开，不冒充。
