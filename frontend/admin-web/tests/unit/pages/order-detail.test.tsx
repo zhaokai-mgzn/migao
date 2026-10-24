@@ -223,6 +223,29 @@ describe('OrderDetailPage', () => {
     })
   })
 
+  // ===== 商品信息表：整表统一居中（issue #7590）=====
+  // 改前实测（2026-10-24 用户截图）：商品/商品货号/颜色/规格尺寸 左对齐、数量 居中、
+  // 单价/金额/商品合计 右对齐 ⇒ **同一张表三种对齐并存**，列与列之间没有稳定参照边。
+  // 用户裁定「要不都设计成居中」⇒ 判据 = 表内**每一个** th / td 都带 `text-center`，
+  // 且**不带** `text-left` / `text-right`（后者会按 CSS 顺序覆盖居中 ⇒「看着居中、其实逐格漂移」）。
+  it('商品信息表：每个表头与数据格都居中（issue #7590）', async () => {
+    render(<OrderDetailPage />)
+    const header = await screen.findByRole('columnheader', { name: '商品合计' })
+    const table = header.closest('table')!
+    expect(table, '找不到「商品信息」表 ⇒ 判据在扫空气').not.toBeNull()
+    const cells = Array.from(table.querySelectorAll('th, td'))
+    expect(cells.length, '表内单元格不足 8 个 ⇒ 判据在扫空气').toBeGreaterThanOrEqual(8)
+    const label = (c: Element) => `${c.tagName}「${(c.textContent || '').trim().slice(0, 10)}」`
+    expect(
+      cells.filter((c) => !c.className.split(/\s+/).includes('text-center')).map(label),
+      '这些单元格没有居中（整表统一居中，见 issue #7590）'
+    ).toEqual([])
+    expect(
+      cells.filter((c) => /\btext-(left|right)\b/.test(c.className)).map(label),
+      '这些单元格同时带了 text-left / text-right ⇒ 会覆盖居中'
+    ).toEqual([])
+  })
+
   it('should show empty state when order not found', async () => {
     mockGetOrder.mockResolvedValue({ data: { data: null } })
     render(<OrderDetailPage />)

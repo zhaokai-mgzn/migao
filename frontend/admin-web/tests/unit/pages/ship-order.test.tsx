@@ -172,6 +172,27 @@ describe('ShipOrder', () => {
     })
   })
 
+  // ===== 商品信息表：整表统一居中（issue #7590）=====
+  // 发货页这份 `ProductTable` 是订单详情页的复制体，改前**同形态**混用左/中/右对齐。
+  // 判据与详情页一致（两份必须同步收敛，否则「同一个商品表在两个页面长得不一样」）。
+  it('商品信息表：每个表头与数据格都居中（issue #7590）', async () => {
+    render(<ShipOrder />)
+    const header = await screen.findByRole('columnheader', { name: '商品合计(元)' })
+    const table = header.closest('table')!
+    expect(table, '找不到「商品信息」表 ⇒ 判据在扫空气').not.toBeNull()
+    const cells = Array.from(table.querySelectorAll('th, td'))
+    expect(cells.length, '表内单元格不足 8 个 ⇒ 判据在扫空气').toBeGreaterThanOrEqual(8)
+    const label = (c: Element) => `${c.tagName}「${(c.textContent || '').trim().slice(0, 10)}」`
+    expect(
+      cells.filter((c) => !c.className.split(/\s+/).includes('text-center')).map(label),
+      '这些单元格没有居中（整表统一居中，见 issue #7590）'
+    ).toEqual([])
+    expect(
+      cells.filter((c) => /\btext-(left|right)\b/.test(c.className)).map(label),
+      '这些单元格同时带了 text-left / text-right ⇒ 会覆盖居中'
+    ).toEqual([])
+  })
+
   it('should render confirm shipping info section', async () => {
     render(<ShipOrder />)
     await waitFor(() => {

@@ -427,6 +427,9 @@ printf '%s\\n' "$*" >> "$STUB_NODE_LOG"
 if [ -n "${STUB_NO_ARTIFACTS:-}" ]; then exit "${STUB_EXIT_CODE:-0}"; fi
 printf '# 商家后端 UI 冒烟结果\\n' > "$SMOKE_OUT_DIR/smoke-summary.md"
 printf '[]\\n' > "$SMOKE_OUT_DIR/smoke-results.json"
+# 数据质量快照（SDQS）：真 spec 会写它；壳脚本缺它即判红，桩必须同形，否则本判据测的就不是
+# 「spec 有没有被调起」而是「数据体检有没有被跑」。
+printf '%s\\n' '{"schema_version":1,"ran_journeys":["08-products-list"],"entities":{"products":{"collected":true,"total":1,"sampled":1,"with_skus":1},"skus":{"collected":true,"total":2,"door_width_noncanonical":0}},"fixtures":{"products_created":0,"products_with_skus":0,"products_residue":0}}' > "$SMOKE_OUT_DIR/smoke-data.json"
 exit "${STUB_EXIT_CODE:-0}"
 """
 
@@ -478,6 +481,7 @@ def _run_spec_segment(tmp_path: Path, *, src: str | None = None, spec_present: b
         f'SCRIPT_DIR="{wt}/scripts"\n'
         f'OUT_DIR="{out}"\n'
         f'MAIN_REPO="{wt}"\n'
+        f'REPO_ROOT="{REPO_ROOT}"\n'
         "WEB_PORT=3001\nPHONE=13800138000\nSMS_CODE=123456\n"
         f"{extra_args}\n"
         + (src if src is not None else _spec_segment())

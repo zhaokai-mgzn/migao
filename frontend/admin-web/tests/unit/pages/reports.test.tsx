@@ -1,4 +1,4 @@
-// case_ids: RPT-001, RPT-007, RPT-008
+// case_ids: RPT-001, RPT-004, RPT-007, RPT-008
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import ReportsPage, { presetRange } from '@/app/(dashboard)/reports/page'
@@ -93,6 +93,28 @@ describe('报表中心页面', () => {
     await waitFor(() => expect(screen.getByTestId('reports-margin-body')).toBeInTheDocument())
     expect(screen.getByTestId('reports-margin-gross').textContent).toContain('350.00')
     expect(screen.getByTestId('reports-margin-unknown').textContent).toContain('2 单成本未知')
+  })
+
+  it('🔴 一张表慢不拖累其余四张：毛利未返回时，账龄已有读数（issue #7582）', async () => {
+    emptyAll()
+    // 订单毛利「永不返回」= 最慢的那张卡（改了 N+1 之后它也不该再锁住整页）
+    reportApi.orderMargins.mockImplementation(() => new Promise(() => {}))
+    reportApi.receivableAging.mockImplementation(() =>
+      wrap({
+        asOf: '2026-10-23',
+        hasData: true,
+        customerCount: 1,
+        buckets: [{ bucket: 'NOT_DUE', label: '未到期', amount: 1200, orderCount: 1 }],
+        customers: [],
+        totals: { outstanding: 1200, overdue: 0, orderCount: 1 },
+      }),
+    )
+    render(<ReportsPage />)
+
+    // 断言的是「同时」：毛利仍显示加载中，账龄那张已经出了读数
+    await waitFor(() => expect(screen.getByTestId('reports-aging-outstanding')).toBeInTheDocument())
+    expect(screen.getByTestId('reports-margin-loading')).toBeInTheDocument()
+    expect(screen.getByTestId('reports-aging-outstanding').textContent).toContain('1,200.00')
   })
 
   it('🔴 质量成本未知分项显示「未采集 / 未知」，并标注合计不完整', async () => {
@@ -352,13 +374,42 @@ describe('报表中心页面', () => {
     expect((screen.getByTestId('reports-filter-to') as HTMLInputElement).value).toBe(expected.to)
   })
 
+  it('🔴 默认区间 = 本月：挂载即带「本月 1 号 ~ 今天」，不是「全部」', async () => {
+    emptyAll()
+    render(<ReportsPage />)
+    const expected = presetRange('thisMonth')
+
+    // 首屏请求就带上了本月起止（改回空默认 ⇒ 本判据红）
+    await waitFor(() =>
+      expect(reportApi.orderMargins).toHaveBeenCalledWith({
+        startDate: expected.from,
+        endDate: expected.to,
+      }),
+    )
+    expect(reportApi.staffPerformance).toHaveBeenCalledWith({ startDate: expected.from, endDate: expected.to })
+    expect(reportApi.qualityCost).toHaveBeenCalledWith({ startDate: expected.from, endDate: expected.to })
+    // 两个输入框回填成人能读到的日期（默认值不能只存在于请求参数里）
+    expect((screen.getByTestId('reports-filter-from') as HTMLInputElement).value).toBe(expected.from)
+    expect((screen.getByTestId('reports-filter-to') as HTMLInputElement).value).toBe(expected.to)
+    // 此刻读数两张表**不受区间影响**（默认值不许顺手传给它俩）
+    expect(reportApi.inventoryAging).toHaveBeenCalledWith(undefined)
+    expect(reportApi.receivableAging).toHaveBeenCalledWith()
+  })
+
   it('点「全部」⇒ 清空区间，请求不带日期参数（不是传两个空串）', async () => {
     emptyAll()
     render(<ReportsPage />)
     await waitFor(() => expect(reportApi.orderMargins).toHaveBeenCalledTimes(1))
 
+    // 默认已填本月，「到」那侧仍有值 ⇒ 只改「从」时请求里仍带 endDate（默认值不许被静默丢掉）
+    const defaultTo = presetRange('thisMonth').to
     fireEvent.change(screen.getByTestId('reports-filter-from'), { target: { value: '2026-10-01' } })
-    await waitFor(() => expect(reportApi.orderMargins).toHaveBeenLastCalledWith({ startDate: '2026-10-01' }))
+    await waitFor(() =>
+      expect(reportApi.orderMargins).toHaveBeenLastCalledWith({
+        startDate: '2026-10-01',
+        endDate: defaultTo,
+      }),
+    )
 
     fireEvent.click(screen.getByTestId('reports-filter-all'))
     await waitFor(() => expect(reportApi.orderMargins).toHaveBeenLastCalledWith({}))

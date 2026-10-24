@@ -99,8 +99,10 @@ public class ReportService {
         List<BigDecimal> margins = new ArrayList<>();
         int unknownCost = 0;
 
-        for (Order order : orderMapper.selectList(wrapper)) {
-            var margin = orderMarginService.margin(order.getId());
+        // 🔴 批量取数（issue #7582）：原来逐单 `margin(...)` = **8 条 SQL/单**（500 单上界 ⇒ 约 4000 条）。
+        // 报表只要合计，却按单全量点查；改成一次 GROUP BY / IN（条数与单数无关），逐单金额仍由
+        // `OrderMargin.compute` 这唯一一份口径产出 —— 批量只换「怎么取数」，不换算式。
+        for (var margin : orderMarginService.margins(orderMapper.selectList(wrapper))) {
             boolean known = margin.isCostKnown();
             if (!known) {
                 // 成本未知**不进合计**（把未知当 0 会让毛利虚高）—— 但计数，让读者知道少算了多少

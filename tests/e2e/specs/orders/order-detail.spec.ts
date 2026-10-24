@@ -100,6 +100,33 @@ test.describe('订单详情 - 待付款状态', () => {
     await expect(page.getByText('支付倒计时')).toHaveCount(0)
   })
 
+  // issue #7590：整表统一居中 —— **效果层**判据（真浏览器计算样式，不是 class 字符串）。
+  // 改前 th / td 混用左、中、右三种对齐（用户 2026-10-24 截图）⇒ 列与列之间没有稳定参照边。
+  // 为什么还要一条 e2e：单测只看 className，JSX 里多一层包裹 / 继承 / 内联样式都能让
+  // 「类名对了、渲染仍不居中」溜过去；这里判的是**渲染出来的** text-align。
+  test('商品信息表：每个表头与数据格的计算样式都是居中（issue #7590）', async ({ page }) => {
+    const table = page
+      .getByRole('table')
+      .filter({ has: page.getByRole('columnheader', { name: '商品合计' }) })
+    await expect(table).toBeVisible()
+
+    const cells = await table.locator('th, td').evaluateAll((nodes) =>
+      nodes.map((node) => ({
+        tag: node.tagName,
+        text: (node.textContent || '').trim().slice(0, 12),
+        align: getComputedStyle(node).textAlign,
+      }))
+    )
+    // 语料面自证：8 列表头 + 至少一行数据格 ⇒ 少于此数说明选择器已漂移（否则本判据会空跑通过）
+    expect(cells.length, '表内单元格不足 ⇒ 本判据在扫空气').toBeGreaterThanOrEqual(8)
+    const misaligned = cells.filter((c) => c.align !== 'center').map((c) => `${c.tag}「${c.text}」=${c.align}`)
+    expect(misaligned, '这些单元格的计算 text-align 不是 center（用户裁定：整表统一居中）').toEqual([])
+
+    // 留图供读图判定（§15.7）：`MIGAO_SHOT_DIR=/tmp/xxx npx playwright test ...`
+    const shotDir = process.env.MIGAO_SHOT_DIR
+    if (shotDir) await table.screenshot({ path: `${shotDir}/order-detail-product-table.png` })
+  })
+
   test('应显示关闭订单和确认付款按钮', async ({ page }) => {
     await expect(page.getByRole('button', { name: '关闭订单' })).toBeVisible()
     await expect(page.getByRole('button', { name: /确认付款/ })).toBeVisible()
@@ -118,9 +145,17 @@ test.describe('订单详情 - 待付款状态', () => {
     await expect(page.getByText('订单实收款')).toBeVisible()
   })
 
-  test('加工项表格应显示加工项名称和金额', async ({ page }) => {
-    // ⚠️ strict-mode：加工项名同样有「屏幕版 + 打印联」两份
-    await expect(page.getByText('韩式打褶定型').first()).toBeVisible()
+  // issue #4882：加工项**表**已从屏幕面整表退场（加工项没有单价 / 计价方式的真值 ⇒ 逐项金额列无意义）。
+  // 加工项名称仍出现在**纸质单据**（打印联，屏幕隐藏）里。
+  // 🔴 本用例改前断言的是 `getByText('韩式打褶定型').first()` **可见** —— 而 DOM 里 `.first()` 命中的
+  //    正是那份**隐藏的打印联** ⇒ 恒红（2026-10-24 实测：在**未改动源码**上同样红，属存量腐烂，
+  //    与本轮表格对齐改动无关）。按现状改成两条互补断言：
+  //    ① 纸质单据里仍有（`.not.toHaveCount(0)`，防止单据删掉后这条变成恒真空跑）；
+  //    ② 屏幕面不再显示（`.first()` 不可见）。
+  test('加工项只出现在纸质单据里（屏幕表已随 #4882 退场）', async ({ page }) => {
+    const matches = page.getByText('韩式打褶定型')
+    await expect(matches.first()).toBeHidden()
+    await expect(matches).not.toHaveCount(0)
   })
 
   test('收货信息应显示收货人、电话、地址', async ({ page }) => {

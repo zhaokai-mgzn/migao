@@ -1,5 +1,9 @@
-# case_ids: UI-014, UI-016
+# case_ids: MC-012
 """冒烟数据质量判据的守卫（SDQS，issue #7580 现场；规范 = `docs/testing/smoke-data-quality.md`）。
+
+> **case 声明口径**：`.github/cases/` 目前**没有**「冒烟数据质量」域的条目；本文件与同族守卫
+> （`tests/unit_ci_workflows/test_ui_smoke_*.py` 四份）一致声明 **MC-012**（研发工具/基建判据的登记号）。
+> 若将来为该域立真实用例，应由用例库所有权包登记后改写本行（不自己编 ID）。
 
 ## 病灶（2026-10-23 现取读数）
 
@@ -96,6 +100,15 @@ def test_no_sku_at_all_is_red():
                                                               "sampled": 12, "with_skus": 0}))
     assert "DQ-1" in _codes(violations)
     assert "SKU" in violations[0]["why"]
+
+
+def test_empty_product_face_is_red():
+    """空商品面也是「空态冒充绿」（Q1）：0 件商品 ⇒ `DQ-1` 判红，不是通过。"""
+    checker = _load_checker()
+    violations, _ = checker.evaluate(_bad(entities__products={"collected": True, "total": 0,
+                                                              "sampled": 0, "with_skus": 0}))
+    assert "DQ-1" in _codes(violations)
+    assert "0 行" in violations[0]["why"]
 
 
 def test_fixture_product_without_sku_is_red():

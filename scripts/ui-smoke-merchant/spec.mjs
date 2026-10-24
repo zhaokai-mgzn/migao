@@ -159,6 +159,11 @@ function journey(name, opts = {}) {
     // 预算到点后不再开新旅程（哨兵形态同上，调用方的 done 变成 no-op）
     if (ABORTED) return { page, rec: null, done: async () => null, skipped: true }
     const rec = { journey: name, pass: true, errors: [], notes: [], evidence: [], skipped: false, unconfigured: false, error_class: null }
+    // 同一旅程名**只允许一条记录**：整轮看门狗到点后会先给「没跑到的」补记 skip，而 `runAll`
+    // 仍在继续 —— 跑到时再 push 就是同名两条（汇总计数与名册对账都会失真）。
+    // 口径：真跑出来的记录**顶替**那条占位 skip（它证明「其实跑到了」）。
+    const prior = results.findIndex((r) => r.journey === name)
+    if (prior >= 0) results.splice(prior, 1)
     results.push(rec)
     CURRENT_REC = rec
     const errs = []
@@ -1081,7 +1086,7 @@ async function productsNew(page) {
     fixture.withSkus = skus.length
     if (skus.length < 2) throw new Error(`自造商品 ${rec.id} 只有 ${skus.length} 条 SKU（应 ≥2）：冒烟数据不合格（SDQS D1）`)
     const badPrice = skus.filter((s) => !(Number(s.price) > 0))
-    const badDoor = skus.filter((s) => !/^[0-9]+(\.[0-9]+)?$/.test(String(s.doorWidth ?? s.doorWidth ?? '')))
+    const badDoor = skus.filter((s) => !/^[0-9]+(\.[0-9]+)?$/.test(String(s.doorWidth ?? '')))
     if (badPrice.length || badDoor.length) {
       throw new Error(`SKU 数据不合格：价格≤0 ${badPrice.length} 条 / 门幅非 canonical ${badDoor.length} 条：${JSON.stringify(skus).slice(0, 240)}`)
     }

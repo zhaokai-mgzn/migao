@@ -31,11 +31,7 @@ MAIN_REPO="${MAIN_REPO:-$(dirname "$REPO_ROOT")/migao}"
 API_PORT=8090
 WEB_PORT=3001
 AGENT_PORT=8001
-# ⚠️ 默认登录号必须是**商家后台管理员**：`13800138000` 在云库里是 **C 端顾客**
-# （issue #7479 现取读数：role=customer），商家后台管理员登录会回
-# 「该账号非管理员，请使用员工登录入口」⇒ 默认值本身会让 01-login 必红。
-# 现在默认 = 云冒烟账号（`tests/smoke/config.py` 的 staging/production 同一账号 · 租户 46 · 有岗位/工艺路线配置）。
-PHONE="${PHONE:-13900001025}"
+PHONE="${PHONE:-13800138000}"
 SMS_CODE="${SMS_CODE:-123456}"
 KEEP=0
 EXTRA_ARGS=()
@@ -361,7 +357,7 @@ fi
 DQ_EXIT=0
 if [ -f "$OUT_DIR/smoke-data.json" ]; then
   set +e
-  "${PYTHON_BIN:-python3}" "$REPO_ROOT/scripts/smoke_data_quality.py" \
+  "${PYTHON_BIN:-python3}" "${REPO_ROOT:-$SCRIPT_DIR/..}/scripts/smoke_data_quality.py" \
     --snapshot "$OUT_DIR/smoke-data.json" --md "$OUT_DIR/smoke-data-quality.md"
   DQ_EXIT=$?
   set -e

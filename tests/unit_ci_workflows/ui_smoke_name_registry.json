@@ -50,9 +50,9 @@
       "line_anchor": "awaitpage.getByRole('button',{name:'添加颜色',exact:true}).first().click()",
       "kind": "exact_single_node",
       "driver": [
-        "frontend/admin-web/src/components/products/SkuMatrix.tsx::<Button type=\"button\" size=\"sm\" onClick={handleApply} disabled={!text.trim()}>添加颜色</Button>"
+        "frontend/admin-web/src/components/products/SkuMatrix.tsx::<button>添加颜色</button>"
       ],
-      "reason": "建品页 SKU 矩阵「批量添加颜色」面板的提交按钮（SkuMatrix.tsx 的 `<Button …>添加颜色</Button>`）：「添加颜色」是该元素**唯一文本节点**（面板标题「批量添加颜色」是另一个元素）⇒ exact 合法；文案若改成「添加颜色分类」等同页其它文案，判据 N 会具名红。",
+      "reason": "建品页批量颜色区（SkuMatrix 的 BatchColorInput）的「添加颜色」按钮：该元素唯一的文本节点就是这四个字 ⇒ exact 合法。同页还有「添加颜色分类」（逐色添加）——exact 用来保证点到的是批量入口，而不是另一个同前缀按钮。",
       "driver_files": [
         "frontend/admin-web/src/components/products/SkuMatrix.tsx"
       ]
@@ -62,9 +62,9 @@
       "line_anchor": "awaitpage.getByRole('button',{name:'批量填写',exact:true}).first().click()",
       "kind": "exact_single_node",
       "driver": [
-        "frontend/admin-web/src/components/products/SkuMatrix.tsx::<Button type=\"button\" size=\"sm\" variant=\"secondary\" onClick={handleBatchFill}>批量填写</Button>"
+        "frontend/admin-web/src/components/products/SkuMatrix.tsx::<button>批量填写</button>"
       ],
-      "reason": "SKU 矩阵批量工具栏的「批量填写」按钮（SkuMatrix.tsx）：「批量填写」是该按钮**唯一文本节点**，同页另一处「点击“批量填写”即可」是提示句 ⇒ exact 只命中按钮本身；文案漂移时判据 N 具名红。",
+      "reason": "SKU 矩阵工具栏的「批量填写」按钮：唯一文本节点就是这四个字 ⇒ exact 合法；同段提示文案里的同名字样不是按钮节点，exact 不会把它算进来。",
       "driver_files": [
         "frontend/admin-web/src/components/products/SkuMatrix.tsx"
       ]

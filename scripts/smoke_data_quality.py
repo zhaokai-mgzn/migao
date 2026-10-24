@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# case_ids: UI-014, UI-016
+# case_ids: MC-012
 """冒烟**数据质量**体检（SDQS：`docs/testing/smoke-data-quality.md`）。
 
 ## 为什么要有它（2026-10-23 现取读数）
@@ -151,7 +151,14 @@ def evaluate(snapshot: dict) -> tuple[list[dict], list[dict]]:
                 "why": "商品快照缺 total/with_skus（无法判定 SKU 覆盖）",
                 "observed": {"total": total, "with_skus": with_skus},
             })
-        elif total >= 1 and with_skus < 1:
+        elif total < 1:
+            # 空商品面同样不是「有效结论」：没有商品 ⇒ 商品/SKU/订单明细全链都没数据可测
+            violations.append({
+                "code": "DQ-1", "rule": "product_nonempty",
+                "why": "商品面 0 行（相关旅程已跑 ⇒ 空态不能记通过）",
+                "observed": {"products.total": 0},
+            })
+        elif with_skus < 1:
             violations.append({
                 "code": "DQ-1", "rule": "product_sku_present",
                 "why": f"{int(total)} 件商品里**没有任何一件**有 SKU（`product_skus` 覆盖 = 0）",
