@@ -71,7 +71,7 @@
     "jest-environment-jsdom": "^29.7.0",
     "miniprogram-automator": "^0.12.1",
     "postcss": "^8.5.30",
-    "sass": "^1.69.0",
+    "sass": "^1.106.0",
     "ts-jest": "^29.2.5",
     "typescript": "^5.1.0",
     "webpack": "5.91.0"
