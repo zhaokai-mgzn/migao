@@ -14,6 +14,11 @@
       "key": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionScanService.java::specByItemIdOf",
       "disposition": "accepted",
       "why": "索引实参 op.getOrderItemId() 的判空**不在索引那一行**、而在同一个 for 循环的入口（`op.getOrderItemId() == null ⇒ continue`）⇒ 到 set_overview 的索引点恒非 null。这是「非局部判空」，机械锁盖不到 ⇒ 本条按 §28.2.2 如实登记为人写的 why。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/service/ProductionService.java::productCodesOf",
+      "disposition": "accepted",
+      "why": "issue #7636 新增（商品货号索引）。索引实参 productId 的判空**在同一表达式的三元短路里**（`productId == null ? null : productCodeByProductId.get(productId)`）⇒ 空键到不了不可变表；守卫只机械认字符串字面量，表达式内判空它盖不到 ⇒ 按 §28.2.2 登记人写 why。同一站点另有 Java 侧台账（WorkerCuttingHeightNullProductIdTest 的 INDEX_SITES —— 本行新增时实测判红过），且键为空时该行按「缺值不渲染」不上屏。"
     }
   ],
   "tolerant_fixes": [
