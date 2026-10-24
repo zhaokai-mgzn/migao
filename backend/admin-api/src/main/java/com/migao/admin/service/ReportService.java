@@ -171,18 +171,21 @@ public class ReportService {
             batchQuery.eq(com.migao.admin.entity.StockBatch::getWarehouse, warehouseCode.trim());
         }
 
+        // 取数形态（issue #7586）：**一条聚合查询**（GROUP BY batch_id + MAX(created_at)）——
+        // 此前把整表扣减流水拉回内存逐行求最大，行数随流水线性涨（库存滞销页最慢的那一段）。
         java.util.Map<Long, LocalDate> lastOutbound = new java.util.HashMap<>();
-        for (com.migao.admin.entity.StockBatchConsumption row : stockBatchConsumptionMapper.selectList(
-                new LambdaQueryWrapper<com.migao.admin.entity.StockBatchConsumption>()
-                        .lt(com.migao.admin.entity.StockBatchConsumption::getDelta, BigDecimal.ZERO))) {
-            if (row.getBatchId() == null || row.getCreatedAt() == null) {
+        java.time.ZoneId zone = businessClock.zone();
+        for (java.util.Map<String, Object> row : stockBatchConsumptionMapper.selectMaps(
+                new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.migao.admin.entity.StockBatchConsumption>()
+                        .select("batch_id", "MAX(created_at) AS last_outbound_at")
+                        .lt("delta", BigDecimal.ZERO)
+                        .groupBy("batch_id"))) {
+            Object batchId = row.get("batch_id");
+            LocalDate day = toBusinessDay(row.get("last_outbound_at"), zone);
+            if (batchId == null || day == null) {
                 continue;
             }
-            LocalDate day = LocalDate.ofInstant(row.getCreatedAt().toInstant(), businessClock.zone());
-            LocalDate existing = lastOutbound.get(row.getBatchId());
-            if (existing == null || day.isAfter(existing)) {
-                lastOutbound.put(row.getBatchId(), day);
-            }
+            lastOutbound.put(((Number) batchId).longValue(), day);
         }
 
         List<com.migao.admin.dto.InventoryReportView.Row> rows = new ArrayList<>();
@@ -486,9 +489,31 @@ public class ReportService {
         BigDecimal unattributedScrap = BigDecimal.ZERO;
         int unattributedScrapLines = 0;
 
-        for (com.migao.admin.entity.ProductionWorkLog log : productionWorkLogMapper.selectList(
-                new LambdaQueryWrapper<com.migao.admin.entity.ProductionWorkLog>()
-                        .in(com.migao.admin.entity.ProductionWorkLog::getWorkType, "rework", "scrap"))) {
+        // 取数形态（issue #7586）：先把两张源表各读**一次**，再把「报工 → 加工单 → 订单」两跳
+        // 各用**一条 IN 查询**建成映射 —— 此前按每一行报工 / 每一笔退款各点查 2~3 次（N+1）。
+        java.util.List<com.migao.admin.entity.ProductionWorkLog> logs =
+                productionWorkLogMapper.selectList(
+                        new LambdaQueryWrapper<com.migao.admin.entity.ProductionWorkLog>()
+                                .in(com.migao.admin.entity.ProductionWorkLog::getWorkType, "rework", "scrap"));
+        java.util.List<com.migao.admin.entity.FinanceTransaction> refunds =
+                financeTransactionMapper.selectList(
+                        new LambdaQueryWrapper<com.migao.admin.entity.FinanceTransaction>()
+                                .eq(com.migao.admin.entity.FinanceTransaction::getType, "refund")
+                                .eq(com.migao.admin.entity.FinanceTransaction::getStatus, "success"));
+        java.util.Map<String, com.migao.admin.entity.ProcessingOrder> processingOrders = indexById(
+                selectByIds(processingOrderMapper, logs.stream()
+                        .map(com.migao.admin.entity.ProductionWorkLog::getProcessingOrderId).toList()),
+                com.migao.admin.entity.ProcessingOrder::getId);
+        java.util.List<String> orderIds = new java.util.ArrayList<>();
+        for (com.migao.admin.entity.ProcessingOrder processingOrder : processingOrders.values()) {
+            orderIds.add(processingOrder.getOrderId());
+        }
+        for (com.migao.admin.entity.FinanceTransaction refund : refunds) {
+            orderIds.add(refund.getOrderId());
+        }
+        java.util.Map<String, Order> orders = indexById(selectByIds(orderMapper, orderIds), Order::getId);
+
+        for (com.migao.admin.entity.ProductionWorkLog log : logs) {
             if (!inWindow(workDay(log), from, to)) {
                 continue;
             }
@@ -500,7 +525,7 @@ public class ReportService {
                     log.getQty() == null ? BigDecimal.ZERO : log.getQty());
             boolean isScrap = "scrap".equals(log.getWorkType());
             if (byProduct) {
-                String orderId = orderIdOfProcessingOrder(log.getProcessingOrderId());
+                String orderId = orderIdOfProcessingOrder(log.getProcessingOrderId(), processingOrders);
                 boolean ok = allocateToProducts(rows, orderId, amount, itemCache,
                         isScrap ? "scrap" : "rework");
                 if (!ok) {
@@ -515,7 +540,7 @@ public class ReportService {
                 continue;
             }
             com.migao.admin.dto.QualityCostBreakdownView.Row row =
-                    byProcess ? rowForProcess(rows, log) : rowForCustomer(rows, log);
+                    byProcess ? rowForProcess(rows, log) : rowForCustomer(rows, log, processingOrders, orders);
             if (row == null) {
                 if (isScrap) {
                     unattributedScrap = unattributedScrap.add(amount);
@@ -535,10 +560,7 @@ public class ReportService {
 
         BigDecimal unattributedCompensation = BigDecimal.ZERO;
         int unattributedCompensationCount = 0;
-        for (com.migao.admin.entity.FinanceTransaction refund : financeTransactionMapper.selectList(
-                new LambdaQueryWrapper<com.migao.admin.entity.FinanceTransaction>()
-                        .eq(com.migao.admin.entity.FinanceTransaction::getType, "refund")
-                        .eq(com.migao.admin.entity.FinanceTransaction::getStatus, "success"))) {
+        for (com.migao.admin.entity.FinanceTransaction refund : refunds) {
             if (!inWindow(txnDay(refund), from, to)) {
                 continue;
             }
@@ -553,7 +575,7 @@ public class ReportService {
             }
             // 🔴 退款流水没有工序信息 ⇒ 工序维度下赔付**整体**进未归属（不是「赔付为 0」）
             com.migao.admin.dto.QualityCostBreakdownView.Row row =
-                    byProcess ? null : rowForCustomerOrder(rows, refund.getOrderId());
+                    byProcess ? null : rowForCustomerOrder(rows, refund.getOrderId(), orders);
             if (row == null) {
                 unattributedCompensation = unattributedCompensation.add(amount);
                 unattributedCompensationCount++;
@@ -652,25 +674,28 @@ public class ReportService {
     /** 客户维度的一行：报工 → 加工单 → 订单 → 客户；任一环缺失 ⇒ null（进未归属）。 */
     private com.migao.admin.dto.QualityCostBreakdownView.Row rowForCustomer(
             java.util.Map<String, com.migao.admin.dto.QualityCostBreakdownView.Row> rows,
-            com.migao.admin.entity.ProductionWorkLog log) {
+            com.migao.admin.entity.ProductionWorkLog log,
+            java.util.Map<String, com.migao.admin.entity.ProcessingOrder> processingOrders,
+            java.util.Map<String, Order> orders) {
         if (!StringUtils.hasText(log.getProcessingOrderId())) {
             return null;
         }
         com.migao.admin.entity.ProcessingOrder processingOrder =
-                processingOrderMapper.selectById(log.getProcessingOrderId());
+                processingOrders.get(log.getProcessingOrderId());
         if (processingOrder == null) {
             return null;
         }
-        return rowForCustomerOrder(rows, processingOrder.getOrderId());
+        return rowForCustomerOrder(rows, processingOrder.getOrderId(), orders);
     }
 
     /** 客户维度的一行（订单 → 客户）。订单 id 缺失或查不到 ⇒ null。 */
     private com.migao.admin.dto.QualityCostBreakdownView.Row rowForCustomerOrder(
-            java.util.Map<String, com.migao.admin.dto.QualityCostBreakdownView.Row> rows, String orderId) {
+            java.util.Map<String, com.migao.admin.dto.QualityCostBreakdownView.Row> rows, String orderId,
+            java.util.Map<String, Order> orders) {
         if (!StringUtils.hasText(orderId)) {
             return null;
         }
-        Order order = orderMapper.selectById(orderId);
+        Order order = orders.get(orderId);
         if (order == null) {
             return null;
         }
@@ -695,12 +720,70 @@ public class ReportService {
     }
 
     /** 报工 → 加工单 → 订单 id（商品维度的桥；任一环缺失 ⇒ null）。 */
-    private String orderIdOfProcessingOrder(String processingOrderId) {
+    private String orderIdOfProcessingOrder(String processingOrderId,
+                                            java.util.Map<String, com.migao.admin.entity.ProcessingOrder> processingOrders) {
         if (!StringUtils.hasText(processingOrderId)) {
             return null;
         }
-        com.migao.admin.entity.ProcessingOrder po = processingOrderMapper.selectById(processingOrderId);
+        com.migao.admin.entity.ProcessingOrder po = processingOrders.get(processingOrderId);
         return po == null ? null : po.getOrderId();
+    }
+
+    /**
+     * 取数形态（issue #7586）：按 id 集合**一条 IN 查询**读回，再按 id 建映射 —— 取代「按行点查」。
+     *
+     * <p>空集合 ⇒ 不发查询（`IN ()` 是非法 SQL）；{@code mapper == null} ⇒ 空映射
+     * （单测里按需注掉的依赖，语义 = 「查不到」而不是 NPE）。</p>
+     */
+    private <T> java.util.List<T> selectByIds(
+            com.baomidou.mybatisplus.core.mapper.BaseMapper<T> mapper,
+            java.util.Collection<String> ids) {
+        java.util.LinkedHashSet<String> clean = new java.util.LinkedHashSet<>();
+        for (String id : ids == null ? java.util.List.<String>of() : ids) {
+            if (StringUtils.hasText(id)) {
+                clean.add(id);
+            }
+        }
+        if (clean.isEmpty() || mapper == null) {
+            return java.util.List.of();
+        }
+        return mapper.selectByIds(clean);
+    }
+
+    private static <T> java.util.Map<String, T> indexById(
+            java.util.List<T> rows, java.util.function.Function<T, String> idOf) {
+        java.util.Map<String, T> map = new java.util.LinkedHashMap<>();
+        for (T row : rows == null ? java.util.List.<T>of() : rows) {
+            String id = row == null ? null : idOf.apply(row);
+            if (StringUtils.hasText(id)) {
+                map.put(id, row);
+            }
+        }
+        return map;
+    }
+
+    /**
+     * 聚合查询的读数 → **业务日**（PG `timestamptz` 经 MyBatis 出来可能是 `Timestamp` / `OffsetDateTime`；
+     * 不可识别的类型 ⇒ 抛错，**不猜**）。
+     */
+    private static LocalDate toBusinessDay(Object value, java.time.ZoneId zone) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof java.sql.Timestamp ts) {
+            return LocalDate.ofInstant(ts.toInstant(), zone);
+        }
+        if (value instanceof java.time.OffsetDateTime odt) {
+            return LocalDate.ofInstant(odt.toInstant(), zone);
+        }
+        if (value instanceof java.time.LocalDateTime ldt) {
+            return ldt.atZone(zone).toLocalDate();
+        }
+        if (value instanceof LocalDate day) {
+            return day;
+        }
+        throw new IllegalStateException(
+                "批次最后出库时间的读数是不可识别的类型：" + value.getClass().getName() + "（不猜，补 toBusinessDay）");
     }
 
     /** 已分配过的行数（只用于「商品维度下返工/赔付有没有真的摊出去」的旁证，不参与金额）。 */
