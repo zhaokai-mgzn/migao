@@ -732,7 +732,6 @@ public class StockBatchConsumptionService {
                 b.getSkuId(), b.getSkuCode(), b.getInboundNo(), b.getDyeLot(), b.getReceivedDate(),
                 b.getUnitCost(), plain(inbound), plain(used.negate()), plain(rest));
     }
-    }
 
     /**
      * 剩余量分布（四档 `≤0.2m / 0.2~0.5m / 0.5~1m / &gt;1m`，按批次数与占比）。
