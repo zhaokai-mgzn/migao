@@ -144,7 +144,7 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
     expect(document.body.textContent).not.toContain('加工费合计（元）：—')
   })
 
-  it('#4882 / #7275：加工项压成**一行**（`名称×数量 + …`），加工费合计走行级落库值', () => {
+  it('#4882 / #7275 / #7605：加工项压成**一行**，数量不等 ⇒ 逐项写；加工费合计走行级落库值', () => {
     const order = buildOrder({
       hasProcessing: true,
       // 加工费真值源 = **行级落库 `processingFee`**（issue #4406：组合价 × 加工费米数）
@@ -158,9 +158,11 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
     render(<ShipmentDoc order={order} />)
 
     // ① 逐项真值压成**一行**（issue #7275 用户逐字「加工项表格应该用一行表达…比如改成a+b+c这样？」）。
-    //    红证：退回逐项一行（`<table>` 两列）⇒ `toBe` 与 `closest('table')` 两条同时红
+    //    issue #7605（用户 2026-10-24 裁定）：数量**不等** ⇒ 逐项写、**不**硬提公因子（把不等的数
+    //    压成一个 = 报错数）；行内不写单位（单位提到区头一次）。
+    //    红证：退回逐项两列表（`<table>`）⇒ 本断言与 `closest('table')` 两条同时红。
     const itemsLine = screen.getByTestId('shipment-processing-items')
-    expect(itemsLine.textContent?.trim()).toBe('打孔×12.5 + 定型×1')
+    expect(itemsLine.textContent?.trim()).toBe('打孔 12.5 + 定型 1')
     expect(screen.getByText('加工费合计（元）：37.50').closest('table')).toBeNull()
 
     // ② 凭证的核对价值（名称 + 米数）仍在 —— 省版面不得把「做了什么加工、各多少」一起删掉
@@ -174,7 +176,45 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
     expect(document.body.textContent).not.toContain('加工费合计（元）：0.00')
   })
 
-  it('#7275：缺数量的加工项仍**显式**印 `—`（`名称×—`，不静默吞掉）', () => {
+  it('#7605：数量**全等** ⇒ 数字只说一遍（`定型、韩褶 各 6`）+ 单位只在区头出现一次', () => {
+    const order = buildOrder({
+      hasProcessing: true,
+      items: [{ ...buildOrder().items![0], processingFee: 42 }],
+      processingItems: [
+        { id: 'pr-1', name: '定型', quantity: 6 },
+        { id: 'pr-2', name: '韩褶', quantity: 6 },
+      ],
+    })
+    render(<ShipmentDoc order={order} />)
+
+    // 用户 2026-10-24 逐字「这里的加工项应该改成A+B 然后乘以数量是否更好」——要的是**数字别印两遍**，
+    // 但不接受 `（A+B）×6`：纯文本有运算优先级歧义（`定型 + 韩褶×6`），且与同行「加工费合计」并排
+    // 会诱导客户按 ×N 去乘出一个算不出来的数（加工费真值 = 组合价 元/米 × 加工费米数）。
+    const itemsLine = screen.getByTestId('shipment-processing-items')
+    expect(itemsLine.textContent?.trim()).toBe('定型、韩褶 各 6')
+
+    // 单位提到区头**一次**（行内不再写「米」，也不出现 `×`）
+    expect(document.body.textContent).toContain('加工项（数量：米）')
+    expect(itemsLine.textContent ?? '').not.toContain('米')
+    // 🔴 反向判据：`×` 与括号算式一律不得进这一行（改回 `定型×6 + 韩褶×6` 或 `（定型+韩褶）×6` ⇒ 必红）
+    expect(itemsLine.textContent ?? '').not.toContain('×')
+    expect(itemsLine.textContent ?? '').not.toContain('（')
+
+    // 单项不写「各」（「定型 各 6」是病句）
+    cleanup()
+    render(
+      <ShipmentDoc
+        order={buildOrder({
+          hasProcessing: true,
+          items: [{ ...buildOrder().items![0], processingFee: 3 }],
+          processingItems: [{ id: 'pr-9', name: '定型', quantity: 6 }],
+        })}
+      />
+    )
+    expect(screen.getByTestId('shipment-processing-items').textContent?.trim()).toBe('定型 6')
+  })
+
+  it('#7275 / #7605：缺数量的加工项仍**显式**印 `—`（`名称 —`，不静默吞掉）', () => {
     const order = buildOrder({
       hasProcessing: true,
       items: [{ ...buildOrder().items![0], processingFee: 0 }],
@@ -183,7 +223,7 @@ describe('ShipmentDoc — 发货单纸面内容', () => {
     render(<ShipmentDoc order={order} />)
     // 缺值不静默留空（范式同 issue #6720 / `SHIPMENT_DOC_MISSING`）——
     // 红证：把该项写成 `item.name`（丢掉数量）⇒ 本断言红
-    expect(screen.getByTestId('shipment-processing-items').textContent?.trim()).toBe('打孔×—')
+    expect(screen.getByTestId('shipment-processing-items').textContent?.trim()).toBe('打孔 —')
   })
 
   it('商品明细表的「单价(元/米)」「金额(元)」列**不受影响**（商品行语义，非加工项）', () => {

@@ -571,10 +571,25 @@ SHIPMENT_DOC = "frontend/admin-web/src/components/orders/ShipmentDoc.tsx"
 SHIPMENT_PROCESSING_LINE_ANCHOR = 'data-testid="shipment-processing-items"'
 #: 退回逐项表格的形态（表头格）
 SHIPMENT_PROCESSING_TABLE_HEAD = "<DocTh>加工项</DocTh>"
-#: 同一行区块里必须同时有的两样真值（防「锚点在、内容被掏空」的假绿）：
-#: ① 逐项渲染模板（`名称×数量`）② 加工费合计标签（仍与逐项同一行区块）
-SHIPMENT_PROCESSING_ITEM_TEMPLATE = "{item.name}×"
+#: 同一行区块里必须同时有的三样真值（防「锚点在、内容被掏空」的假绿）：
+#: ① 一行文案走**单一构建器**（issue #7605 起是 `processingItemsText()`，不在 JSX 里另拼一份）
+#: ② 构建器里**两种形态都在**（全等 ⇒ `各 N` / 不等 ⇒ 逐项；且**不得**出现 `×`）
+#: ③ 加工费合计标签（仍与逐项同一行区块）
+SHIPMENT_PROCESSING_TEXT_CALL = "processingItemsText(processingItems)"
+SHIPMENT_PROCESSING_BUILDER = (
+    "export function processingItemsText(items: readonly OrderProcessingItem[]): string {"
+)
+SHIPMENT_PROCESSING_UNIFORM_MARK = " 各 "
 SHIPMENT_PROCESSING_FEE_LABEL = "加工费合计（元）"
+
+
+def _processing_items_builder_body(code: str) -> str:
+    """截出 `processingItemsText()` 的函数体（找不到 ⇒ 空串；供「形态」判据读它的实现）。"""
+    start = code.find(SHIPMENT_PROCESSING_BUILDER)
+    if start < 0:
+        return ""
+    end = code.find("\n}", start)
+    return code[start:] if end < 0 else code[start:end]
 
 
 def _shipment_processing_line_problems(rel: str, code: str) -> list[str]:
@@ -587,13 +602,35 @@ def _shipment_processing_line_problems(rel: str, code: str) -> list[str]:
     if SHIPMENT_PROCESSING_TABLE_HEAD in code:
         problems.append(
             f"`{rel}` 又把加工项写回表格（命中 `{SHIPMENT_PROCESSING_TABLE_HEAD}`）—— "
-            "加工项必须是一行 `名称×数量 + …`（issue #7275）"
+            "加工项必须是一行（issue #7275）"
         )
-    if SHIPMENT_PROCESSING_ITEM_TEMPLATE not in code:
+    if SHIPMENT_PROCESSING_TEXT_CALL not in code:
         problems.append(
-            f"`{rel}` 找不到逐项渲染模板 `{SHIPMENT_PROCESSING_ITEM_TEMPLATE}` —— "
-            "「一行」里必须逐项印 `名称×数量`（只剩名字 = 把送货核对的米数丢了；issue #7275）"
+            f"`{rel}` 的加工项行没有走单一构建器 `{SHIPMENT_PROCESSING_TEXT_CALL}` —— "
+            "在 JSX 里另拼一份 = 第二份口径（改一处另一处静默不一致；issue #7605）"
         )
+    body = _processing_items_builder_body(code)
+    if SHIPMENT_PROCESSING_BUILDER not in code or not body:
+        problems.append(
+            f"`{rel}` 找不到构建器 `{SHIPMENT_PROCESSING_BUILDER}` —— "
+            "加工项一行文案必须由它产出（issue #7605）"
+        )
+    else:
+        if SHIPMENT_PROCESSING_UNIFORM_MARK not in body:
+            problems.append(
+                f"`{rel}` 的 `processingItemsText()` 里找不到全等形态 `{SHIPMENT_PROCESSING_UNIFORM_MARK}` —— "
+                "数量全等时数字只说一遍（`定型、韩褶 各 6`）是用户 2026-10-24 裁定（issue #7605）"
+            )
+        if "formatQty(" not in body:
+            problems.append(
+                f"`{rel}` 的 `processingItemsText()` 没走 `formatQty(` —— "
+                "数量缺值必须仍显式印 `—`（issue #7275 / #7605）"
+            )
+        if "×" in body:
+            problems.append(
+                f"`{rel}` 的 `processingItemsText()` 里出现了 `×` —— "
+                "`（A+B）×6` 有运算优先级歧义、且会诱导客户拿它去乘出加工费（issue #7605）"
+            )
     if SHIPMENT_PROCESSING_FEE_LABEL not in code:
         problems.append(
             f"`{rel}` 找不到 `{SHIPMENT_PROCESSING_FEE_LABEL}` —— "
@@ -603,7 +640,7 @@ def _shipment_processing_line_problems(rel: str, code: str) -> list[str]:
 
 
 def test_c9_shipment_processing_items_stay_on_one_line():
-    """C9：发货单「加工项」是一行 `名称×数量 + …`（退回表格 ⇒ 红）。"""
+    """C9：发货单「加工项」是一行、走二态构建器（退回表格 / 退回 `名称×数量` ⇒ 红）。"""
     rel = SHIPMENT_DOC
     code = _strip_comments(_read(rel))
     assert _shipment_processing_line_problems(rel, code) == [], "\n  ".join(
@@ -617,12 +654,29 @@ def test_c9_shipment_processing_items_stay_on_one_line():
     )
     line = (
         '<span data-testid="shipment-processing-items">'
-        "{processingItems.map((item, i) => <span key={i}>{item.name}×{formatQty(item.quantity)}</span>)}"
-        "</span>"
-        "<span>加工费合计（元）：{formatAmount(processingFeeTotal)}</span>"
+        "{processingItemsText(processingItems)}</span>"
+        "<span>加工费合计（元）：{formatAmount(processingFeeTotal)}</span>\n"
+        "export function processingItemsText(items: readonly OrderProcessingItem[]): string {\n"
+        "  const qty = items.map((it) => formatQty(it.quantity))\n"
+        "  if (uniform) return `${items.map((it) => it.name).join('、')} 各 ${qty[0]}`\n"
+        "  return items.map((it, idx) => `${it.name} ${qty[idx]}`).join(' + ')\n"
+        "}"
     )
     assert _shipment_processing_line_problems("(合成样本·修后)", line) == [], (
-        "一行写法被判红 ⇒ C9 会把合规实现喂红（假红）"
+        "合规写法被判红 ⇒ C9 会把合规实现喂红（假红）"
+    )
+    # 判别力自证（内存注入）：退回旧的 `名称×数量` 模板 ⇒ 必须红（issue #7605 的形态）
+    legacy = line.replace("{processingItemsText(processingItems)}", "{item.name}×{formatQty(item.quantity)}")
+    assert _shipment_processing_line_problems("(合成样本·旧写法)", legacy), (
+        "退回 `名称×数量` 模板**没判红** ⇒ C9 对 #7605 的形态没有判别力"
+    )
+    # 判别力自证：构建器里塞回 `×` ⇒ 必须红
+    legacy2 = line.replace(
+        "  return items.map((it, idx) => `${it.name} ${qty[idx]}`).join(' + ')",
+        "  return items.map((it, idx) => `${it.name}×${qty[idx]}`).join(' + ')",
+    )
+    assert _shipment_processing_line_problems("(合成样本·构建器带×)", legacy2), (
+        "构建器里出现 `×` **没判红** ⇒ 提公因子那类写法能溜进来"
     )
 
 

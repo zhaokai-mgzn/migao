@@ -621,7 +621,14 @@ describe('QuotationDoc — 报价单纸面内容（issue #4965）', () => {
         await Promise.resolve()
       })
       expect(doc()?.querySelector('img')?.getAttribute('src')).toContain('wx.png')
-      expect(docText()).toContain('微信')
+      // issue #7605：收款码标签**逐字**「微信支付」（用户 2026-10-24 逐字「这里把微信改成微信支付是否更好？」）。
+      // 白纸上「二维码 + 微信」在中文语境里默认指「加微信好友」⇒ 收款码必须说清是**支付通道**。
+      // 🔴 红证：把标签改回「微信」⇒ 下面三条同时红（旧写法 `toContain('微信')` 对新旧两种文案都绿 = 零判别力）。
+      expect(docText()).toContain('微信支付')
+      expect(doc()?.querySelector('[data-testid="payment-qr-label-wechat"]')?.textContent).toBe('微信支付')
+      expect(doc()?.querySelector('img')?.getAttribute('alt')).toBe('微信支付收款码')
+      // 反向：`alt` 不得退回「微信收款码」（只改 caption、漏改 alt 的形态）
+      expect(doc()?.querySelector('img')?.getAttribute('alt')).not.toBe('微信收款码')
     })
   })
 
