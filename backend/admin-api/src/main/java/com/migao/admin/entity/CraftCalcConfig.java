@@ -46,7 +46,8 @@ public class CraftCalcConfig {
     /** 单色每折吃布（米）；引擎默认 0.25 */
     private BigDecimal perFoldSingle;
 
-    /** 拼色「拼次 → 每折吃布（米）」；JSONB，键为拼次的**字符串形态**（JSON 对象键恒为字符串） */
+    /** 拼色「拼次 → **配布长度**（米，整幅一次）」；JSONB，键为拼次的**字符串形态**（JSON 对象键恒为字符串）。
+     *  ⚠️ 键名是跨端冻结的历史名（issue #7560：值语义 = 配布长度，不是每折系数） */
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Object perFoldMixedTimes;
 
@@ -55,6 +56,12 @@ public class CraftCalcConfig {
 
     /** 多开余量（米）；引擎默认 0.3 */
     private BigDecimal marginMulti;
+
+    /** **拼色**单开余量（米）；引擎默认 0.15（V188，issue #7560：单开 / 多开两套独立参数） */
+    private BigDecimal marginMixedSingle;
+
+    /** **拼色**多开余量（米）；引擎默认 0.20（V188） */
+    private BigDecimal marginMixedMulti;
 
     /** 褶倍下限（护栏，行业美学红线）；引擎默认 1.5 */
     private BigDecimal minFullness;
@@ -110,6 +117,8 @@ public class CraftCalcConfig {
         config.put("per_fold_mixed_times", perFoldMixedTimes);
         config.put("margin_single", marginSingle);
         config.put("margin_multi", marginMulti);
+        config.put("margin_mixed_single", marginMixedSingle);
+        config.put("margin_mixed_multi", marginMixedMulti);
         config.put("min_fullness", minFullness);
         config.put("tiers", tiers);
         config.put("default_formula", defaultFormula);

@@ -265,6 +265,7 @@ export default function FloatingAssistant() {
                 defaultHeight={isFullscreen ? '100vh' : 'min(720px, calc(100vh - 3rem))'}
                 defaultWidth={isFullscreen ? '100%' : 'min(920px, calc(100vw - 3rem))'}
                 showTopHandle={!isFullscreen}
+                fullscreen={isFullscreen}
                 className={cn(
                   'bg-white shadow-float rounded-2xl border border-neutral-200/80',
                   isFullscreen && 'rounded-none border-0'

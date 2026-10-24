@@ -1,10 +1,12 @@
 """
-语音识别（ASR）API — 基于 DashScope paraformer-realtime-8k-v2
+语音识别（ASR）API — 阿里云 MaaS 实时识别（qwen-audio 系列）
 
 POST /api/chat/transcribe
   接收音频文件，返回转写文本。
 
-免费额度: 36,000 秒（paraformer-realtime-8k-v2），用完即停。
+端点与凭据（issue #7661，用户 2026-10-24 裁定）：语音面切到 MaaS（token-plan）host，
+`ASR_API_KEY` 与 `ASR_WEBSOCKET_BASE_URL` 都由环境注入；**不再回落 PRIMARY_API_KEY**
+（那是 DeepSeek 的 key，打到百炼只会 401 —— 缺 key 必须 fail-closed，不能静默拿错 key）。
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
+import dashscope
 from dashscope.audio.asr.recognition import Recognition, RecognitionCallback
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from loguru import logger
@@ -40,6 +43,16 @@ MAX_AUDIO_DURATION_S = 60          # 最长 60 秒
 MIN_AUDIO_SIZE = 1024
 
 
+def _log_reject(reason: str, tenant_id, size: int, filename: Optional[str], content_type: Optional[str]) -> None:
+    """拒收必须**原因可读**（#7310：2026-10-19 生产 7 次 400 只记 `status=400`，
+    真实原因「0 字节音频」只能靠 nginx 响应体字节数反解才定位到）
+    """
+    logger.warning(
+        f"ASR 拒收：{reason} | tenant={tenant_id}, size={size} bytes, "
+        f"filename={filename!r}, content_type={content_type!r}"
+    )
+
+
 class TranscribeResponse(BaseModel):
     """语音转文字响应"""
     text: str = Field(description="转写文本")
@@ -51,7 +64,7 @@ class _CollectorCallback(RecognitionCallback):
     """收集 ASR 识别结果（按 sentence_id 保留每句最新文本，拼接完整转写）
 
     缺陷修复（B 端语音「只能识别后半段」）：旧实现只取 sentences[-1]（最后一句），
-    DashScope paraformer-realtime 对带停顿的多句语音会逐句返回，
+    实时识别服务对带停顿的多句语音会逐句返回，
     用户说的前半句（如"你好"）被整段丢弃。现按 sentence_id 保留每句最新
     文本（partial 中间结果被同句后续事件自然覆盖），full_text 拼接全部句子。
     """
@@ -119,6 +132,18 @@ def _convert_to_wav(audio_data: bytes, source_format: str) -> bytes:
             Path(tmp_out_path).unlink(missing_ok=True)
 
 
+def _apply_asr_endpoint() -> None:
+    """把 dashscope SDK 的实时识别端点指到 MaaS host（issue #7661）。
+
+    `Recognition` 没有实例级 endpoint 参数，只读模块级 `dashscope.base_websocket_api_url`
+    （SDK 自己的 MaaS 形态见 dashscope/common/env.py）⇒ 在这里一处设置。
+    `ASR_WEBSOCKET_BASE_URL` 为空则不覆盖（= 用 SDK 默认 dashscope.aliyuncs.com，留作回滚口）。
+    """
+    url = (settings.ASR_WEBSOCKET_BASE_URL or "").strip()
+    if url:
+        dashscope.base_websocket_api_url = url
+
+
 async def _transcribe_audio(
     audio_data: bytes,
     format: str,
@@ -139,9 +164,11 @@ async def _transcribe_audio(
     if language_hints is None:
         language_hints = [settings.ASR_LANGUAGE_HINTS]
 
-    api_key = settings.ASR_API_KEY or settings.PRIMARY_API_KEY
+    # 旧百炼 key 退役（issue #7661）：**不回落** PRIMARY_API_KEY（DeepSeek key），缺就 fail-closed
+    api_key = settings.ASR_API_KEY
     if not api_key:
         raise ValueError("ASR_API_KEY 未配置")
+    _apply_asr_endpoint()
 
     callback = _CollectorCallback()
 
@@ -212,11 +239,14 @@ async def transcribe_audio(
     # 校验文件大小与有效性（#2984：空/极小音频给友好 400，不再裸 500）
     audio_data = await audio.read()
     if len(audio_data) == 0:
+        _log_reject("音频为空", current_user.tenant_id, len(audio_data), audio.filename, audio.content_type)
         raise HTTPException(status_code=400, detail="音频文件为空，未检测到声音")
     if len(audio_data) < MIN_AUDIO_SIZE:
         # 极小文件 = 空口录音/误触录音，ASR 无法识别，前置拦截省一次外部调用
+        _log_reject("音频过小", current_user.tenant_id, len(audio_data), audio.filename, audio.content_type)
         raise HTTPException(status_code=400, detail="未检测到有效音频内容，录音可能过短或麦克风未开启")
     if len(audio_data) > MAX_AUDIO_SIZE:
+        _log_reject("音频过大", current_user.tenant_id, len(audio_data), audio.filename, audio.content_type)
         raise HTTPException(status_code=400, detail=f"音频文件过大，最大 {MAX_AUDIO_SIZE // 1024 // 1024}MB")
 
     # 推断格式
@@ -232,6 +262,13 @@ async def transcribe_audio(
         # WebM/MP3 有损压缩，按较高码率 128kbps 估算
         estimated_s = len(audio_data) / (128 * 1024 / 8)
     if estimated_s > MAX_AUDIO_DURATION_S + 5:  # 5s 容差
+        _log_reject(
+            f"时长超限（约 {int(estimated_s)}s）",
+            current_user.tenant_id,
+            len(audio_data),
+            audio.filename,
+            audio.content_type,
+        )
         raise HTTPException(
             status_code=400,
             detail=f"音频时长约 {int(estimated_s)}s，超过上限 {MAX_AUDIO_DURATION_S}s",

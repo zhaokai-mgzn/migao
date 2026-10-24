@@ -292,6 +292,11 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
         # 它回注册表、被 `reminder` skill 绑定 ⇒ F6 要求 `_VALIDATION_RULES` 规则
         # ⇒ **域无关**的校验目标表新增一项 ⇒ 未绑它的 skill 各 +1 死角。
         "scheduled_task_manage",
+        # issue #7514：算料口径变更（新 A 档写工具 `craft_calc_config_update`）⇒ 同 #5314/#6486 的形态：
+        # 它回注册表、被 `product` skill 绑定 ⇒ F6 要求 `_VALIDATION_RULES` 规则
+        # ⇒ **域无关**的校验目标表新增一项 ⇒ 未绑它的 skill 各 +1 死角
+        # （运行时由 #4079 的 `cross_skill_target` 逐条拦下，见 test_every_registered_gap_is_rejected_at_runtime）。
+        "craft_calc_config_update",
     }),
     # customer_order：自己工具集 11 个（含 validate_input）→ 死角 10 个（#5247 复算）
     "customer_order": frozenset({
@@ -304,6 +309,11 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
         # 它回注册表、被 `reminder` skill 绑定 ⇒ F6 要求 `_VALIDATION_RULES` 规则
         # ⇒ **域无关**的校验目标表新增一项 ⇒ 未绑它的 skill 各 +1 死角。
         "scheduled_task_manage",
+        # issue #7514：算料口径变更（新 A 档写工具 `craft_calc_config_update`）⇒ 同 #5314/#6486 的形态：
+        # 它回注册表、被 `product` skill 绑定 ⇒ F6 要求 `_VALIDATION_RULES` 规则
+        # ⇒ **域无关**的校验目标表新增一项 ⇒ 未绑它的 skill 各 +1 死角
+        # （运行时由 #4079 的 `cross_skill_target` 逐条拦下，见 test_every_registered_gap_is_rejected_at_runtime）。
+        "craft_calc_config_update",
     }),
     # settings：自己工具集 4 个（含 validate_input）→ 死角 9 个（#5247 复算）
     # ⚠️ 该 skill 仍**注册在全局 registry**（#5247 只把它从黄金策的 `skill_names` 移出，文件与
@@ -322,6 +332,11 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
         # 它回注册表、被 `reminder` skill 绑定 ⇒ F6 要求 `_VALIDATION_RULES` 规则
         # ⇒ **域无关**的校验目标表新增一项 ⇒ 未绑它的 skill 各 +1 死角。
         "scheduled_task_manage",
+        # issue #7514：算料口径变更（新 A 档写工具 `craft_calc_config_update`）⇒ 同 #5314/#6486 的形态：
+        # 它回注册表、被 `product` skill 绑定 ⇒ F6 要求 `_VALIDATION_RULES` 规则
+        # ⇒ **域无关**的校验目标表新增一项 ⇒ 未绑它的 skill 各 +1 死角
+        # （运行时由 #4079 的 `cross_skill_target` 逐条拦下，见 test_every_registered_gap_is_rejected_at_runtime）。
+        "craft_calc_config_update",
     }),
 }
 
@@ -340,21 +355,34 @@ A5_GAP_BASELINE: dict[str, frozenset[str]] = {
 A5_REANCHOR_ADDITIONS: dict[str, frozenset[str]] = {
     # ── issue #5314（批量更新，Agent 侧）────────────────────────────────────────
     # 形态与窄例外逐条对上：产品决策**新增**了一个 A 档写工具（`product_batch_update`：
-    # 批量改价 / 批量上下架 + 撤销），它回注册表、被 `product` skill 绑定 ⇒ 按 F6 必须有
+    # 批量改价 / 批量库存调整 + 撤销），它回注册表、被 `product` skill 绑定 ⇒ 按 F6 必须有
     # `_VALIDATION_RULES` 规则 ⇒ **域无关**的校验目标表新增一项 ⇒ 仍绑着 `validate_input`
     # 但执行不了它的 3 个 skill（customer_aftersales / customer_order / settings）各 +1 死角。
     # 三条正当性（`test_reanchored_additions_trace_to_a_real_product_change` 逐条核）：
     # ① 已注册 ② 写工具（read_only=False）③ 被 `product` skill 绑定。
     # 计数对账：账本 32 − 增量 3 == `A5_BASELINE_COUNT_PRE_5247`（29）。
-    "customer_aftersales": frozenset({"product_batch_update", "scheduled_task_manage"}),
-    "customer_order": frozenset({"product_batch_update", "scheduled_task_manage"}),
+    "customer_aftersales": frozenset({
+        "product_batch_update", "scheduled_task_manage",
+        # issue #7514：算料口径变更（新 A 档写工具，被 `product` skill 绑定）⇒ 同 #5314 形态。
+        "craft_calc_config_update",
+    }),
+    "customer_order": frozenset({
+        "product_batch_update", "scheduled_task_manage",
+        # issue #7514：同上（各 +1）。
+        "craft_calc_config_update",
+    }),
     # 🔴 issue #7040（2026-10-16 通知域独立 + 变更接回）：`notification_manage` 重新成为
     # **写工具**（`mark_read` / `read_all` 接回）⇒ 按 F6 它必须有 `_VALIDATION_RULES` 规则
     # ⇒ **域无关**的校验目标表新增一项 ⇒ 仍绑 `validate_input` 的 `settings` **+1 死角**。
     # 三条正当性（`test_reanchored_additions_trace_to_a_real_product_change` 逐条核）：
     # ① 已注册 ② 写工具（`read_only=False`）③ 被 `notification` skill 绑定。
     # 计数对账：账本 **31** − 增量 **4** == `A5_BASELINE_COUNT_PRE_5247`（**27**）。
-    "settings": frozenset({"product_batch_update", "scheduled_task_manage", "notification_manage"}),
+    "settings": frozenset({
+        "product_batch_update", "scheduled_task_manage", "notification_manage",
+        # issue #7514：同上（各 +1）。计数对账：账本 **39** − 增量 **10**
+        # == `A5_BASELINE_COUNT_PRE_5247`（**29**）—— 锚点常量不变。
+        "craft_calc_config_update",
+    }),
 }
 
 # 锚点条数的**计数对账**基准：`账本总数 − 增量条数` 必须等于它（只改数字会被这条拦住）。

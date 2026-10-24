@@ -4,12 +4,31 @@
 -- 本文件是 **2026-05-30 的一次性快照**，此后未随迁移链更新，**两个方向都已失真**
 -- （2026-09-11 实测，逐表比对 backend/admin-api/src/main/resources/db/init/schema.sql）：
 --
---   本文件缺失（schema.sql 已有，共 45 张）：
+--   本文件缺失（schema.sql 已有，共 62 张）：
 --     agent_batches, agent_batch_items
 --      批量更新的批次资源（V127，issue #5314 服务端包 —— 一张批次 + 一张逐条明细；
 --      明细的 old_value 是**撤销的唯一依据**，**不得**改用 audit_logs：审计是有界 fail-open、丢行允许），
 --     client_request_keys, craft_calc_configs, daily_briefings, fabric_remnants,
 --     finance_transactions,
+--     receipt_allocations
+--      客户收款核销（V176，issue #7370 段 3 —— 一笔收款冲抵多张订单；现金真值仍在 finance_transactions，
+--      本表只记「冲到哪张单、各多少」，故与 finance_transactions 必须**一起**出现在缺失清单里），
+--     rework_orders
+--      返工单（V185，issue #7377 段 2 —— 售后工单 → 返工 → 完成回写；同一售后单同时只能有一个
+--      未完结返工单，由部分唯一索引兜住）。缺这张表，「已闭环但返工单还在做」就无从判定。
+--     stocktakes, stocktake_items
+--      盘点单（V184，issue #7373 段 2 —— 按仓库出任务 → 录实盘 → 差异经 `approvals.stocktake_diff` 审批后调整）。
+--      两张必须一起列：单头没有明细就是一张空任务，明细没有单头就没有「哪次盘点的快照」。
+--     warehouses, stock_transfers, stock_transfer_items
+--      多仓与调拨（V182，issue #7373 段 1）。三张必须**一起**列：调拨单头与明细分表，
+--      而「仓库」在本迁移前只是若干表上的**文本字段**；缺任何一张，「调拨两端数量守恒」都无从判定。
+--     approvals
+--      具名审批（V181，issue #7374 段 1 —— 改价 / 超授信 / 退款 / 采购超额 / 盘点差异五类共用一张表）。
+--      **业务对象不存审批结论副本**：订单等按 object_ref 读本表；超授信类单次消费（consumed_at）。
+--     customer_sku_prices, vip_level_prices, sku_tier_prices
+--      价格本三张（V179，issue #7375 段 1 —— 协议价 / 等级价 / 阶梯价）。三张必须**一起**列出：
+--      解析优先级就在它们之间判定（协议 > 等级 > 阶梯 > SKU 标准价），缺任何一张都会让
+--      「该按哪个价」失去依据；四层皆无时的「未定价」也不是 0 元。
 --     knowledge_candidates,
 --     knowledge_cards, processing_fee_combination_versions, processing_fee_combinations,
 --     processing_orders, processing_order_sets, processing_position_operations,
@@ -40,6 +59,19 @@
 --      「是按成品帘来检查的」）⇒ **没有** operation_id 列；记 检验人 / 检验时刻 / 判定（pass·rework·scrap）
 --      / 不合格原因（判定≠pass 时必填，服务层裁）；与报工是**两套并存、互不覆盖**的口径
 --      （报工 = 数量事实、质检 = 成品帘判定）—— 质检不重算报工数量、不参与计件），
+--     supplier_payments
+--      供应商付款（V174，issue #7369 段 3-B —— 一行 = 一笔付款：金额 / 日期 / 方式 / 回单号 / 状态，
+--      作废留痕不物理删），
+--     supplier_payment_allocations
+--      付款冲抵明细（同 V174 —— 一行 = 这笔钱冲到哪张入库单、多少；合计 ≤ 付款额、单张单累计 ≤ 该单金额），
+--     purchase_orders, purchase_order_items, purchase_order_receipts
+--      采购单 + 明细 + 收货记录（V175，issue #7369 段 4 —— 一单可多次收货：头/明细/每次到货各一行；
+--      「已收多少」是 Σ 收货的派生值，不在明细上累加；提前关闭留原因、不删单），
+--     suppliers
+--      供应商主数据（V170，issue #7369 P0-1 段 1 —— 一行 = 一家供应商：名称 / 联系人 / 电话 /
+--      账期天数（NULL=未设置、0=现结、正数=N 天）/ 状态（active|inactive）/ 备注）。
+--      与入库单上的 `supplier` **文本列**不是同一件东西：那是单据快照，这是档案（可改名、可停用、
+--      被多张单据引用）；单据侧 `supplier_id` 引用属 issue #7369 段 2，本条只登记表本身，
 --     production_work_logs, remnant_small_item_specs, role_permissions,
 --     session_states, stock_ledger_entries,
 --     tenant_param_audit（V131，issue #5131 §22 P6：企业参数变更留痕 = 一行一个参数键的一次变更；

@@ -14,13 +14,18 @@ import { createApi, PAGES_UNREAD, SESSION_EXPIRED } from './api.mjs'
 import { deviceHomeFromLocation, enterpriseCodeFromLocation, normalizeEnterpriseCode, parseScanInput } from './scan-input.mjs'
 import {
   afterComplete,
+  batchBlocked,
+  BATCH_GATE_HINT,
+  currentBatchNo,
   DEFAULT_WORKER_IDLE_MINUTES,
   DEFAULT_WORK_TYPE,
   doneNotice,
+  effectivePages,
   initialState,
   legacySelection,
   MACHINE_ENTRY_HREF,
   normalizeWorkType,
+  PAGE_INSPECT,
   reduce,
   renderPage,
 } from './render.mjs'
@@ -138,6 +143,38 @@ const ALIVE_MIN_INTERVAL_MS = 5000
 /** 后台对账失败（**非**身份面）时的屏上措辞：说事实 + 说清**不影响报工**（§31：不摆内部标识、不吓人）。 */
 const ALIVE_UNREACHABLE_NOTICE = '与服务器核对没成功（网络不稳）：不影响报工，回到本页会自动再核对'
 
+/**
+ * `setTimeout` 能接受的最大延时 = 2^31-1 ms（issue #7251）。
+ *
+ * 超过它，浏览器 / Node 会把延时**钳成 ~1ms 立即触发**（Node 实测：
+ * `TimeoutOverflowWarning ... Timeout duration was set to 1` + `fired after 3 ms`；
+ * MDN：`delay > 2147483647ms` 按 1ms 处理）。30 天 = **2,592,000,000 ms** 正落在这一侧。
+ */
+export const MAX_TIMER_DELAY_MS = 2147483647
+
+/**
+ * 把闲置登出延时切成每片 ≤ `MAX_TIMER_DELAY_MS` 的片（issue #7251；纯函数，单测覆盖服务端全区间）。
+ *
+ * 🔴 **口径不变**：各片之和 = `Math.max(1, minutes) * 60_000`（30 天就是 30 天）。
+ * 变的只是**怎么排** —— 旧实现把整个延时一次性塞进 `setTimeout`：
+ * 超上限 ⇒ 被平台钳成 ~1ms ⇒ ① 「闲置 30 天登出」从未按 30 天排期（节流分支不重排 ⇒ 之后不再有闲置登出）；
+ * ② 每次 `armIdle()` 立刻多打一轮 `current-worker` + `/me`。
+ * 新实现按片上链：前 N-1 片到期**只续排**，**最后一片**到期才真的做一次后台对账。
+ *
+ * @param {number} minutes 服务端下发的 `idle_minutes`（`worker.session.idle-minutes`，可配区间 5~43200）
+ * @returns {number[]} 依次入队的分片（毫秒）；每片 ≤ `MAX_TIMER_DELAY_MS`，和 = 总延时
+ */
+export function idleSlices(minutes) {
+  let left = Math.max(1, minutes) * 60_000
+  const slices = []
+  while (left > 0) {
+    const slice = Math.min(left, MAX_TIMER_DELAY_MS)
+    slices.push(slice)
+    left -= slice
+  }
+  return slices
+}
+
 export function createApp({ doc, api, location = globalThis.location, storage = null }) {
   const href = typeof location === 'string' ? location : location?.href ?? ''
   // 企业编码（issue #6564）：短链 302 的 `?tenant_code=` 只是**初值**（预填进输入框，可编辑）
@@ -221,6 +258,53 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     }
   }
 
+  // ══════════════════════════════════════════════════════════════════════════════
+  // 质检（issue #7162）：扫水洗唛后读这一件的最新判定 / 录判定（生成质检单）。
+  //
+  // 🔴 只在 `inspect` ∈ 页面集时读 —— 但**真正**的准入在服务端 `/api/worker/quality/**`
+  //    （工人档案里没开这一页 ⇒ 403）。这里少渲染一块，不等于挡住了接口。
+  // ══════════════════════════════════════════════════════════════════════════════
+  const qualityItemId = () => state.view?.position?.order_item_id ?? null
+
+  async function loadQuality() {
+    const itemId = qualityItemId()
+    if (!itemId) return
+    if (!effectivePages(state).opened.has(PAGE_INSPECT)) return
+    dispatch({ type: 'qualityLoading' })
+    try {
+      const d = await api.qualityLatest(itemId)
+      // 读回来时屏已经换了一件 ⇒ 丢弃（避免把上一件的判定画到这一件上）
+      if (qualityItemId() !== itemId) return
+      dispatch({ type: 'qualityLoaded', latest: d.latest })
+    } catch (e) {
+      dispatch({ type: 'qualityFailed', error: e?.message ?? String(e) })
+    }
+  }
+
+  async function submitQuality() {
+    const form = state.qualityForm
+    const itemId = qualityItemId()
+    if (!form || !itemId) return
+    // 原因由**提交那一刻**从 DOM 读（不在 input 事件里重绘，否则每敲一个字就丢焦点）
+    const reason = (doc.getElementById('wh5-quality-reason')?.value ?? '').trim()
+    if (form.result !== 'pass' && !reason) {
+      dispatch({ type: 'qualityFormError', error: '判定为「返工」或「报废」时，必须填写不合格原因。' })
+      return
+    }
+    dispatch({ type: 'qualitySubmitting' })
+    try {
+      const latest = await api.createQuality({
+        orderItemId: itemId,
+        result: form.result,
+        ...(form.result === 'pass' ? {} : { reason }),
+      })
+      dispatch({ type: 'qualitySubmitted', latest })
+    } catch (e) {
+      // 服务端下发的业务文案原样显示（不把 HTTP 状态码当工人文案）
+      dispatch({ type: 'qualityFormError', error: e?.message ?? String(e) })
+    }
+  }
+
   /**
    * 闲置登出：定时器（服务端 `idle_minutes`）+ 可见性变化双保险。
    *
@@ -229,10 +313,20 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
    * 2026-10-07 用户裁定「延长到 1 个月」；上一版一周 10080）。正常链路服务端**恒回** `idle_minutes`
    * （登录响应就带 ⇒ 进 state），故兜底只在拿不到时生效；但字面 `15` 会让降级路径比服务端早 43185 分钟踢人。
    */
-  function armIdle() {
+  function armIdle(minutesArg) {
     if (idleTimer) clearTimeout(idleTimer)
-    const minutes = state.worker?.idleMinutes ?? DEFAULT_WORKER_IDLE_MINUTES
-    idleTimer = setTimeout(() => { void checkAlive() }, Math.max(1, minutes) * 60_000)
+    const minutes = minutesArg ?? state.worker?.idleMinutes ?? DEFAULT_WORKER_IDLE_MINUTES
+    // 🔴 分片排队（issue #7251）：旧实现是**单次** `setTimeout(30 天)`，而 2,592,000,000 ms
+    //    超过 2^31-1 ⇒ 平台把延时钳成 ~1ms **立即触发** ⇒ 30 天排期从未生效、且每次装配多打一轮对账。
+    //    现在只有**最后一片**到期才 `checkAlive()`；前几片只续排（首片到期 ≠ 闲置到期）。
+    const slices = idleSlices(minutes)
+    const schedule = (i) => {
+      idleTimer = setTimeout(() => {
+        if (i + 1 < slices.length) schedule(i + 1)
+        else void checkAlive()
+      }, slices[i])
+    }
+    schedule(0)
   }
 
   /**
@@ -343,7 +437,8 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     on('wh5-switch', async () => {
       // 一步切换：**保留** state.view（不丢扫码上下文）—— 只把身份换掉
       await api.logout()
-      state = { ...state, worker: null, mode: 'login', notice: '请登录要切换到的工人（扫码结果已保留）' }
+      // 换人 ⇒ 上一班手输的批次**不带走**（批次归属涉钱：绝不能把 A 的批次留给 B 报工）
+      state = { ...state, worker: null, mode: 'login', batchNo: null, notice: '请登录要切换到的工人（扫码结果已保留）' }
       draw()
     })
 
@@ -355,6 +450,14 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     on('wh5-rescan', () => {
       dispatch({ type: 'resolved', view: null })
       draw()
+    })
+
+    // 质检（issue #7162）：展开表单 / 选判定 / 取消 / 提交（原因在提交时从 DOM 读）
+    on('wh5-quality-open', () => dispatch({ type: 'qualityFormOpen' }))
+    on('wh5-quality-cancel', () => dispatch({ type: 'qualityFormClose' }))
+    on('wh5-quality-submit', () => { void submitQuality() })
+    doc.querySelectorAll?.('[data-quality-result]').forEach((el) => {
+      el.addEventListener('click', () => dispatch({ type: 'qualityResult', result: el.dataset.qualityResult }))
     })
 
     // 报工三态（issue #5652 第二刀）：选择只落在 `state.view.work_type`（纯状态动作、**不发请求**）。
@@ -375,6 +478,15 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
       //    ⇒ 没有闸就会被连点。抄机台页那一把（machine-app.mjs::reportWork 的 `if (state.reporting) return`）。
       //    叠在既有幂等键之上：键保证「服务端只算一次」，闸保证「客户端只发一次」——两道都要。
       if (state.reporting) return
+      // 🔴 裁剪批次门禁（issue #7647）：要批次却没填 ⇒ **一个请求都不发**（服务端也有硬闸，但先拦一次
+      //    免得工人干等一个注定 422 的答复）。非裁剪工序 `batchBlocked` 恒 false ⇒ 这段是 no-op。
+      if (batchBlocked(state, state.view)) {
+        dispatch({ type: 'error', error: BATCH_GATE_HINT })
+        return
+      }
+      // 这一笔的批次在**按下那一刻**取值（早于 await / 重绘 ⇒ 送出的就是工人看到的那个值）。
+      // 非裁剪工序 ⇒ `''` ⇒ api 侧不写 `batch_no` 键（请求体与改前逐字节相同）。
+      const batchNo = currentBatchNo(state, state.view)
       // 🔴 幂等键**同一屏复用**（重试 = 服务端回放首次结果，绝不重复计件）；成功换屏 ⇒ 换新键。
       // 刻意**不**每次点击都新造一个：那样「第一次其实成功了、响应丢了，工人再点一次」= 第二笔报工。
       // 🔴 跨刷新（#4814）：屏上的键随刷新消失 ⇒ 补第二条通道 —— 上次**没收到服务端答复**的那一次
@@ -400,6 +512,7 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
           // 会把**报废**那笔记成**满额合格**。非「正常」一律显式 `qualified_qty: 0`
           // （不猜数量：`qty` 仍缺省 ⇒ 服务端照旧按「剩余应做」推进进度，"这次做了多少"不由前端编）。
           qualifiedQty: workType === DEFAULT_WORK_TYPE ? undefined : 0,
+          batchNo,
           clientRequestId,
         })
         // 服务端已答复（首次成功或回放）⇒ 这一笔有结论：下一笔必须换新键
@@ -433,6 +546,35 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
     for (const el of doc.querySelectorAll('[data-work-type]')) {
       el.addEventListener('click', () => dispatchWorkType(el.dataset.workType))
     }
+
+    // ── 裁剪报工：确认批次（issue #7647）──
+    // 🔴 **不整页重渲染**：每敲一个字就 `draw()` 会重建输入框 ⇒ 焦点丢失、光标跳走
+    //    （现场表现为「批次号打不进字」）。⇒ `input` 事件只做两件事：把值记进状态 + **就地**同步
+    //    报工按钮的禁用态与门禁提示（元素句柄不变，输入框保持可用）。
+    const syncBatchGate = () => {
+      const blocked = batchBlocked(state, state.view)
+      const report = doc.getElementById('wh5-report')
+      if (report && report.disabled !== blocked) report.disabled = blocked
+      const hint = doc.getElementById('wh5-batch-hint')
+      if (hint) hint.textContent = blocked ? BATCH_GATE_HINT : ''
+    }
+    const batchInput = doc.getElementById('wh5-batch-input')
+    if (batchInput) {
+      batchInput.addEventListener('input', () => {
+        state = reduce(state, { type: 'batch', batchNo: String(batchInput.value ?? '') })
+        syncBatchGate()
+      })
+    }
+    // 候选批次（服务端下发的本次可用批次 + 本批余量）：点一下就填入，同样不重绘。
+    for (const el of doc.querySelectorAll('[data-batch-no]')) {
+      el.addEventListener('click', () => {
+        const no = el.dataset.batchNo ?? ''
+        state = reduce(state, { type: 'batch', batchNo: no })
+        const input = doc.getElementById('wh5-batch-input')
+        if (input) input.value = no
+        syncBatchGate()
+      })
+    }
   }
 
   /**
@@ -453,6 +595,7 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
       state = { ...state, view: { ...view, __token: token, __selection: selection } }
       // 重扫同一张码且上次提交没收到答复 ⇒ 明说「这一下是回放、不会重复计件」
       dispatch({ type: 'resolved', view: state.view, notice: resumedNotice(token) })
+      void loadQuality()
     } catch (e) {
       fail(e)
     }
@@ -471,6 +614,7 @@ export function createApp({ doc, api, location = globalThis.location, storage = 
         view: { ...view, __token: token, ...(selection ? { __selection: selection } : {}) },
       }
       dispatch({ type: 'resolved', view: state.view, notice: resumedNotice(token) })
+      void loadQuality()
     } catch (e) {
       fail(e)
     }

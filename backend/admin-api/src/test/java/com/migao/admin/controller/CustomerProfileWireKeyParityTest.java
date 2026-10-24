@@ -98,6 +98,10 @@ class CustomerProfileWireKeyParityTest extends BaseControllerTest {
 
     private static final String CUSTOMER_ID = "cust-key-001";
 
+    /** 数据范围解析（issue #7372）：本类只验键名对账，范围不收窄（未打桩 ⇒ 返回 null）。 */
+    @org.mockito.Mock
+    private com.migao.admin.service.RoleService roleService;
+
     @Mock
     private CustomerProfileMapper customerProfileMapper;
     @Mock
@@ -364,7 +368,7 @@ class CustomerProfileWireKeyParityTest extends BaseControllerTest {
         if (productionInclusion) {
             mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
         }
-        return MockMvcBuilders.standaloneSetup(new CustomerController(customerService))
+        return MockMvcBuilders.standaloneSetup(new CustomerController(customerService, roleService))
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(mapper))
                 .build();
     }

@@ -19,7 +19,11 @@ const MOCK_POSITIONS = [
 ]
 
 const MOCK_MENUS = [
-  { id: 1, code: 'dashboard', name: '工作台', children: [{ id: 11, code: 'dashboard:view', name: '查看数据看板', label: '查看数据看板' }] },
+  // ⚠️ 本表是**合成 mock**（`/api/admin/roles/all` 的响应假数据），不是真实菜单源；但它承载判据
+  // 「选岗位 ⇒ 默认权限预填」的**节点名 → 权限码**映射 ⇒ 节点名取**现役**菜单名，免得 spec
+  // 描述一个已不存在的菜单（🔴 2026-10-17 issue #7087：`dashboard:view` 现只由**最前席位一级项**
+  // 「经营看板」承载 —— 原 mock 名「工作台」是**已撤销的组名**）。
+  { id: 1, code: 'dashboard', name: '经营看板', children: [{ id: 11, code: 'dashboard:view', name: '查看数据看板', label: '查看数据看板' }] },
   { id: 2, code: 'products', name: '商品管理', children: [
     { id: 21, code: 'products:view', name: '查看商品', label: '查看商品' },
     { id: 22, code: 'products:edit', name: '编辑商品', label: '编辑商品' },

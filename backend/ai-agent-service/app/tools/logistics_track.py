@@ -91,9 +91,13 @@ class LogisticsTrackTool(BaseTool):
         "【反例】查订单详情(金额/商品/客户)用 order_query，不要混淆。【标注】READONLY"
     )
 
-    # 权限码（admin-api 目录）：AgentOrderController 的物流/轨迹端点 `@RequirePermission("order:list")`
-    # （物流是订单读面的一部分）⇒ 与 controller 同码。
-    required_permissions = ["order:list"]
+    # 权限码（admin-api 目录）：本工具调两个 admin-api 端点，各自生效码**逐个对齐**（判据 =
+    # `test_agent_permission_parity.py` 判据 2「工具码 ≡ 端点生效码」，不等即红）：
+    #   ① `GET /api/admin/orders`（按单号/关键词把订单号解析成 uuid）= `order:list`；
+    #   ② `GET /api/admin/orders/{id}`（读订单详情拿运单号）= `order:detail`（issue #7276 起）——
+    #     改前该端点挂 `order:list`，故本工具当时只声明 `order:list`；端点收码后同批补本码，
+    #     否则「能查列表、不能查详情」会让物流查询对「只勾订单列表」的岗位静默 403。
+    required_permissions = ["order:list", "order:detail"]
     read_only = True   # 只读（BaseTool 默认值，显式声明以便权限面自检）
 
     parameters = {

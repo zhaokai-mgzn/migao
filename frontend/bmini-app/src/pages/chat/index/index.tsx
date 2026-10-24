@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState } from 'react'
+import { useEffect, useCallback, useRef, useState } from 'react'
 import { View, Text } from '@tarojs/components'
 import Taro, { useDidShow } from '@tarojs/taro'
 import { useChatStore } from '../../../store/chatStore'
@@ -8,6 +8,7 @@ import { currentLandingCode } from '../../../utils/inbound/deepLink'
 // 商家面身份护栏（issue #6567）：纯工人设备打开本页 ⇒ 送回工人工作台
 import { useMerchantSurfaceGuard } from '../../../utils/roleGuard'
 import MessageList from '../../../components/chat/MessageList'
+import ChatHeader, { nextHeaderCollapsed } from '../../../components/chat/ChatHeader'
 import MessageInput from '../../../components/chat/MessageInput'
 import QuickActions from '../../../components/chat/QuickActions'
 // 黄金策唤出授权门 + 能力位来源（issue #5642 功能⑤）
@@ -27,6 +28,7 @@ export default function ChatPage() {
     error,
     handedOff,
     quickActions,
+    quickTools,
     loadQuickActions,
     ensureLatestSession,
     createSession,
@@ -43,6 +45,24 @@ export default function ChatPage() {
   // —— 前端不判任何权限码（哪些码算管理员是服务端单一真值，改一处即 h5 与 admin-web 同步）。
   // `null` = 尚未取到 ⇒ 门不渲染任何一侧（避免把「还没拿到」误报成「没权限」）。
   const [mibaoAllowed, setMibaoAllowed] = useState<boolean | null>(null)
+
+  // issue #7265：顶部品牌渐变层可折叠（用户逐字「应该允许向上折叠，增大对话文字显示空间」）。
+  // 滚动联动：对话区向下滚过 24px 收起、回到 8px 以内展开；折叠键可手动切换。
+  const [headerCollapsed, setHeaderCollapsed] = useState(false)
+  const headerCollapsedRef = useRef(false)
+  const applyHeaderCollapsed = useCallback((next: boolean) => {
+    if (headerCollapsedRef.current === next) return
+    headerCollapsedRef.current = next
+    setHeaderCollapsed(next)
+  }, [])
+  const handleScrollOffset = useCallback(
+    (scrollTop: number) => applyHeaderCollapsed(nextHeaderCollapsed(headerCollapsedRef.current, scrollTop)),
+    [applyHeaderCollapsed],
+  )
+  const toggleHeader = useCallback(
+    () => applyHeaderCollapsed(!headerCollapsedRef.current),
+    [applyHeaderCollapsed],
+  )
 
   useEffect(() => {
     try {
@@ -61,7 +81,8 @@ export default function ChatPage() {
     if (currentLandingCode().present) return
 
     // 检查登录状态（B 端首次登录需账号密码，无微信静默登录）
-    if (!checkAuth()) {
+    // 🔴 `checkAuth` 是异步的（issue #7249）：exp 过期时它会先续期，续不到才判未登录
+    if (!(await checkAuth())) {
       Taro.showToast({ title: '请先登录', icon: 'none' })
       setTimeout(() => Taro.redirectTo({ url: '/pages/auth/login/index' }), 600)
       return
@@ -148,23 +169,14 @@ export default function ChatPage() {
 
   return (
     <View className='chat-page' style={{ paddingTop: statusBarHeight }}>
-      {/* 自定义导航栏：深蓝渐变品牌头 */}
-      <View className='chat-page__navbar'>
-        <View className='chat-page__navbar-title'>
-          <View className='chat-page__navbar-logo' />
-          <Text className='chat-page__navbar-name'>{buildBotName(user?.botName)}</Text>
-          <View className='chat-page__navbar-badge'>
-            <Text className='chat-page__navbar-badge-text'>AI</Text>
-          </View>
-        </View>
-        <View className='chat-page__navbar-right'>
-          <Text className='chat-page__navbar-sub'>{buildBrandSubtitle(user?.tenantName)}</Text>
-          {/* 新对话（清空工作状态，不展示会话列表） */}
-          <View className='chat-page__new-chat' onClick={handleNewChat} hoverClass='chat-page__new-chat--hover'>
-            <Text className='chat-page__new-chat-text'>🔄 新对话</Text>
-          </View>
-        </View>
-      </View>
+      {/* 自定义导航栏：深蓝渐变品牌头（issue #7265 起可向上折叠，把空间让给对话正文） */}
+      <ChatHeader
+        botName={buildBotName(user?.botName)}
+        subtitle={buildBrandSubtitle(user?.tenantName)}
+        collapsed={headerCollapsed}
+        onToggle={toggleHeader}
+        onNewChat={handleNewChat}
+      />
 
       {/* 🔴 黄金策唤出授权门（issue #5642 功能⑤）：未授权 ⇒ 明确「需要管理员授权」+ 可行动引导 */}
       <MibaoAccessGate allowed={mibaoAllowed}>
@@ -190,8 +202,15 @@ export default function ChatPage() {
           </View>
         ) : (
           <>
-            <MessageList messages={messages} isStreaming={isStreaming} onInteract={handleSend} />
-            {showQuickActions && <QuickActions actions={quickActions} onAction={handleQuickAction} />}
+            <MessageList
+              messages={messages}
+              isStreaming={isStreaming}
+              onInteract={handleSend}
+              onScrollOffset={handleScrollOffset}
+            />
+            {showQuickActions && (
+              <QuickActions actions={quickActions} tools={quickTools} onAction={handleQuickAction} />
+            )}
           </>
         )}
       </View>

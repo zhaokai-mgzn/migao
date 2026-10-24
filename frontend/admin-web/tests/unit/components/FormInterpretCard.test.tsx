@@ -1,4 +1,4 @@
-// case_ids: PR-008, PR-022, OR-048
+// case_ids: PR-008, PR-022, OR-048, PR-131
 /**
  * FormInterpretCard（issue #6367 包 P3）—— 建品页表单里的「识别 + 一次性推理」结果卡。
  *
@@ -36,10 +36,12 @@ vi.mock('next/image', () => ({
 
 import FormInterpretCard from '@/components/image-recognize/FormInterpretCard'
 import {
+  PAGE_FILL_SOURCE_DECLARED,
   PAGE_FILL_SOURCE_INTERPRETED,
   PAGE_FILL_SOURCE_RECOGNIZED,
   type PageFillField,
 } from '@/lib/agent-page-fill'
+import { parseDeclaredFacts } from '@/lib/declared-facts'
 
 const IMAGE_URL = 'https://oss.example.com/a.jpg'
 
@@ -76,11 +78,17 @@ const INTERPRETED_FIELD = field({
 
 const FIELDS: PageFillField[] = [RECOGNIZED_FIELD, EMPTY_FIELD, INTERPRETED_FIELD]
 
-function renderCard(fields: PageFillField[] = FIELDS) {
+function renderCard(fields: PageFillField[] = FIELDS, hint = '') {
   const onFill = vi.fn()
-  render(<FormInterpretCard imageUrl={IMAGE_URL} fields={fields} onFill={onFill} />)
+  const facts = hint ? parseDeclaredFacts(hint) : undefined
+  render(
+    <FormInterpretCard imageUrl={IMAGE_URL} fields={fields} facts={facts} onFill={onFill} />,
+  )
   return { onFill }
 }
+
+/** 用户 2026-10-23 写进「补充一句」的原文（逐字） */
+const USER_HINT = '这个商品的货号是2659，颜色格式是2659-序号+颜色名，门幅是2.8和3.2'
 
 const keysOf = (fields: Array<{ key: string }>) => fields.map((f) => f.key)
 
@@ -207,5 +215,83 @@ describe('FormInterpretCard（issue #6367 包 P3）', () => {
     fireEvent.click(screen.getByTestId('form-interpret-fill'))
 
     expect(onFill.mock.calls[0][0][0].value).toBe(DESCRIPTION_HTML)
+  })
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // issue #7528：「补充一句」里的字面事实 ⇒ 第三段 `[商家填写]`
+  // ══════════════════════════════════════════════════════════════════════════
+  it('判据 6：商家写下的货号 / 门幅进第三段，且可逐格取消', () => {
+    const { onFill } = renderCard([EMPTY_FIELD], USER_HINT)
+
+    const declared = screen.getByTestId('form-interpret-group-declared')
+    expect(declared.textContent).toContain(PAGE_FILL_SOURCE_DECLARED)
+    // 门幅那格原本是空的（图没写）⇒ 现在按商家写的那句话填上；货号是新增的一格
+    expect(within(declared).getByTestId('form-interpret-field-door_width').textContent).toContain(
+      '2.8、3.2',
+    )
+    expect(within(declared).getByTestId('form-interpret-field-sku_code').textContent).toContain(
+      '2659',
+    )
+    expect(screen.getByTestId('form-interpret-check-sku_code')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('form-interpret-fill'))
+    const passed = onFill.mock.calls[0][0]
+    expect(keysOf(passed)).toEqual(['door_width', 'sku_code'])
+    // 来源可分辨：这两格不是「从图上抄的」
+    expect(passed.map((f: { source: string }) => f.source)).toEqual([
+      PAGE_FILL_SOURCE_DECLARED,
+      PAGE_FILL_SOURCE_DECLARED,
+    ])
+  })
+
+  it('判据 7：图上已经抄到的值**不被覆盖**（图是事实源；商家想改就在表单里改）', () => {
+    const recognizedWidth = field({
+      key: 'door_width',
+      label: '门幅',
+      value: '3.4',
+      source: PAGE_FILL_SOURCE_RECOGNIZED,
+    })
+    const { onFill } = renderCard([recognizedWidth], USER_HINT)
+
+    // 门幅那格仍是图上抄的值 ⇒ 它**不**出现在第三段（货号仍会出现，那是图里没有的格）
+    const declared = screen.getByTestId('form-interpret-group-declared')
+    expect(within(declared).queryByTestId('form-interpret-field-door_width')).toBeNull()
+    fireEvent.click(screen.getByTestId('form-interpret-fill'))
+    const passed = onFill.mock.calls[0][0]
+    expect(passed.find((f: { key: string }) => f.key === 'door_width').value).toBe('3.4')
+    expect(passed.find((f: { key: string }) => f.key === 'door_width').source).toBe(
+      PAGE_FILL_SOURCE_RECOGNIZED,
+    )
+  })
+
+  it('判据 8：模型推的格可以被商家明说的字面事实覆盖（人写的 > 模型推的）', () => {
+    const { onFill } = renderCard([INTERPRETED_FIELD], '提花工艺，货号是2659')
+
+    const declared = screen.getByTestId('form-interpret-group-declared')
+    expect(within(declared).getByTestId('form-interpret-field-craft').textContent).toContain('提花')
+    fireEvent.click(screen.getByTestId('form-interpret-fill'))
+    const craft = onFill.mock.calls[0][0].find((f: { key: string }) => f.key === 'craft')
+    expect(craft.value).toBe('提花')
+    expect(craft.source).toBe(PAGE_FILL_SOURCE_DECLARED)
+  })
+
+  it('判据 9：颜色按命名规则改名（来源仍是「图上抄的」，名下注明规则）', () => {
+    const colorField = field({
+      key: 'color',
+      label: '颜色',
+      value: '01米白、02雾霾蓝',
+      source: PAGE_FILL_SOURCE_RECOGNIZED,
+    })
+    const { onFill } = renderCard([colorField], USER_HINT)
+
+    const cell = screen.getByTestId('form-interpret-field-color')
+    expect(cell.textContent).toContain('2659-1米白、2659-2雾霾蓝')
+    expect(screen.getByTestId('form-interpret-note-color').textContent).toContain('命名规则')
+
+    fireEvent.click(screen.getByTestId('form-interpret-fill'))
+    const color = onFill.mock.calls[0][0].find((f: { key: string }) => f.key === 'color')
+    expect(color.value).toBe('2659-1米白、2659-2雾霾蓝')
+    // 颜色内容是图上抄的 ⇒ 来源不改成「商家填写」（避免把「抄的」标成「他写的」）
+    expect(color.source).toBe(PAGE_FILL_SOURCE_RECOGNIZED)
   })
 })

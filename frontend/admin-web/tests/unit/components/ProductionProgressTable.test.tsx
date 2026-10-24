@@ -215,14 +215,17 @@ describe('ProductionProgressTable', () => {
     expect(within(screen.getByTestId('operation-row-op-2')).getByTestId('op-workers')).toHaveTextContent('—')
   })
 
-  it('既有 6 列顺序不变，「报工人」追加在表尾', () => {
+  it('既有 6 列顺序不变；issue #7140 起「合格 / 返工 / 报废」三列插在「报工人」之前（报工人仍是表尾）', () => {
     render(<ProductionProgressTable positions={positions} />)
 
     const headers = within(screen.getByTestId('position-group-布帘'))
       .getAllByRole('columnheader')
       .map((th) => th.textContent)
     // issue #4910：第 4 列由「单价」改判为「计件单价」（值本来就是计件单价，列宽/顺序一字未动）
-    expect(headers).toEqual(['工序', '分组', '应做数量', '计件单价', '状态', '已完成数量', '报工人'])
+    expect(headers).toEqual([
+      '工序', '分组', '应做数量', '计件单价', '状态', '已完成数量',
+      '合格', '返工', '报废', '报工人',
+    ])
   })
 
   // ── 套口径（issue #4686，用户裁定 2026-09-20「一樘窗 = 一套」）──
@@ -309,7 +312,8 @@ describe('ProductionProgressTable 未定价（issue #4696）', () => {
     expect(within(row).getByTestId('op-unit-price')).not.toHaveTextContent('¥0.00')
     expect(within(row).getByTestId('op-unit-price-pricing-link')).toHaveAttribute(
       'href',
-      '/production/routings',
+      // issue #7182：旧「工艺配置」页已下架 ⇒ 落点 = 唯一写面（作业定价域）
+      '/settings?domain=operation-prices',
     )
   })
 

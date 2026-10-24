@@ -1345,7 +1345,7 @@ cases:
     # un-skip 判据：B 端重新接线「客户标签增删」「售后工单状态流转」**且**能下发确认卡时，按当时
     # 的能力面重写四轮诉求（`#7040` 的「非单据对象创建」缺口清单可查）。
     skip_reason: "[backend-contract] 2026-10-16 能力边界终版（关联 #7048 P4）：四轮诉求（建品／下单／客户写／工单改状态）在 B 端全部禁止或已下线 ⇒ `tool: interact` 期望奖励的是被裁定禁止的写确认卡，本用例无判别力（agent 如实拒绝反被判红）。断言保留待重锚；重锚判据见上方注释。"
-    merge_log: "issue #2777：G6 interact 绑定 B 端 + admin-web store 字段透传修复。2026-09-16（#3961）语料形态修复：user_inputs 由**能力问答**改为四类写操作的真实触发语（原语料两轮零工具调用 = 假红，污染整轮 completion 判定，见 #3955），四类覆盖面保留；expectations 不变（tool: interact）；data_checks 改为显式标注静态契约由单测/前端单测承重、行为面只留「任一链路下发交互卡」；补 persona: mibao（B 端专属，消除跨腿隐患）；补 namespaces（张三/13800138000 与 10 条用例互斥）；补 pre_clean product_remove（自建商品名重试前置复位）；④ 售后改状态轮有意不答卡，避免与 AS-004 争用 seed 工单；生成物已重渲染。2026-09-18 #4099（burn-down，metric 收紧为 entries ⇒ 必须整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（④ 轮按名字下单 ⇒ 该名字唯一是它真正依赖且**只读**的前置；不选 order_count_for_phone，因本用例自己会建单、漂移判据必然判红）+ namespaces 补 `product_name:遮光窗帘`（护住该前置的基线/漂移两格）；客户/工单两个维度无可声明类型，如实登记为未覆盖；断言（user_inputs/expectations/data_checks/pre_clean）原样未动"
+    merge_log: "issue #2777：G6 interact 绑定 B 端 + admin-web store 字段透传修复。2026-09-16（#3961）语料形态修复：user_inputs 由**能力问答**改为四类写操作的真实触发语（原语料两轮零工具调用 = 假红，污染整轮 completion 判定，见 #3955），四类覆盖面保留；expectations 不变（tool: interact）；data_checks 改为显式标注静态契约由单测/前端单测承重、行为面只留「任一链路下发交互卡」；补 persona: mibao（B 端专属，消除跨腿隐患）；补 namespaces（张三/13800138000 与 10 条用例互斥）；补 pre_clean product_remove（自建商品名重试前置复位）；④ 售后改状态轮有意不答卡，避免与 AS-004 争用 seed 工单；生成物已重渲染。2026-09-18 #4099（burn-down，metric 收紧为 entries ⇒ 必须整条销账）：补 `precondition[product_count_for_keyword: 遮光窗帘, expect: 1]`（④ 轮按名字下单 ⇒ 该名字唯一是它真正依赖且**只读**的前置；不选 order_count_for_phone，因本用例自己会建单、漂移判据必然判红）+ namespaces 补 `product_name:遮光窗帘`（护住该前置的基线/漂移两格）；客户/工单两个维度无可声明类型，如实登记为未覆盖；断言（user_inputs/expectations/data_checks/pre_clean）原样未动 ｜ 2026-10-16（issue #5247 / #7048 P4）：整条**退役**（`skip_reason` 见本条目；四轮诉求全部命中 B 端禁止面/下线面）—— 本条 merge_log 补记退役依据，退出时不删条目（留史，可追溯）"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_skill_routing_integrity.py"
@@ -2567,6 +2567,23 @@ cases:
     # ⚠️ 残留（如实登记，未固化）：`degraded` 分支取决于 vision 供应商对**这一张**图的识别结果，
     # 不是本仓可判定的确定性行为 ⇒ 「复跑仍可能因 `recognition_degraded` 红」，此时红**不可归因于 agent**
     # （本用例 `precondition` 已逐字声明同一件事）。
+    # ── 🔴 2026-10-19 真根因现取定位（issue #7302 的第一版判断**是错的**，在此更正）──────────
+    # 旧判断：「评测栈内无视觉模型 ⇒ image_recognize 必然 degraded」—— **不成立**。现取三条硬证据：
+    #   ① 配置逐字：`app/config.py` 的 `VISION_MODEL = "deepseek-flash"`，同处注释写「2026-09-10 起
+    #      DeepSeek-V4.1-Flash 原生多模态，模型名统一为 deepseek-flash」；推理/视觉同 key；
+    #   ② 实调用（2026-10-19 本机单次诊断，非评测跑）：`recognize("product", [本用例那张图])`
+    #      ⇒ 模型**正常返回** 372 字符结构化 JSON，五个字段全 `value: null`，其中逐字写着
+    #      「图片为纯色渐变测试图，未标注任何色号或颜色名文字」；
+    #   ③ 该图 URL 公开可达：HTTP 200 / `image/png` / 104709 bytes。
+    # ⇒ 视觉**是通的**；`recognition_degraded` 是工具**按设计 fail-closed**（不编造、不半填）——
+    #    因为**这张 fixture 图本身没有任何可抽信息**。错的不是产品、不是环境，是**本用例原来的
+    #    `must_succeed`（恒红空断言：要求从空图里抽出字段）**。
+    # 用户 2026-10-19 裁定：「deepseek 模型就是多模态模型，支持视觉」。据此已改为：
+    #   · 删 `must_succeed`，保留 `expectations`（必须**调**识别 = 本用例真正要钉的行为面）；
+    #   · 补 `forbidden_text`（这种图**不得声称识别成功 / 已填好**）；
+    #   · 撤 `skip_reason`（用例回到活口，下一跑的真实行为直接可见）。
+    # 覆盖体检的 `image_recognize/uncovered` 豁免条目同 PR 删除（本用例即为它的行为面承重）。
+
     user_inputs:
       - text: "照这张图帮我建个商品。"
         images:
@@ -2575,8 +2592,9 @@ cases:
       - tool: image_recognize
     # 效果层断言（「调用了 ≠ 成了」#3778）：只有 expectations 时，工具返回
     # success=false（图片抓不到 / target 非法 / 权限拒绝）照样满分 ⇒ 补 must_succeed。
-    must_succeed:
-      - tool: image_recognize
+    # ⚠️ **刻意不写 `must_succeed`**（2026-10-19 更正）：fixture 图是**无文字的产品实拍渐变图**
+    # ⇒ 识别内核按设计返回 degraded（不编造）；要求「必须识别成功」= **恒红空断言**。
+    # 本用例真正钉的是「**调了**识别（= 上面的 `expectations`）+ **不声称成功**（= 下面的 `forbidden_text`）」。
     required_args:
       - tool: image_recognize
         fields:
@@ -2602,7 +2620,13 @@ cases:
       - "图片分析失败"
       - "无法识别图片"
       - "图片无法处理"
+      # 2026-10-19 补：这张图没有任何可抽信息（模型原文见上方「真根因」段）⇒ 不得声称成功/已填好。
+      - "识别成功"
+      - "已为您填好"
+      - "已自动填入"
+      - "已经帮您把信息填好"
     data_checks:
+      - "前置（机器计分型，precondition）：视觉链路**可用** —— `recognize()` 返回结构化 JSON 而非抛异常（2026-10-19 本机单次诊断实测：HTTP 200 / `image/png` / 104709 bytes，模型回 372 字符、5 字段全 null）（success=true）"
       - "识别结果进**同页填充计划**（`page_fill` 计划），**不落库、不提交** —— 提交永远是商家在页面上点按钮；机械判据 = backend/ai-agent-service/tests/test_tools_image_recognize.py 的 TestNoWriteBoundary（静态扫描识别内核不 import 写入缝）"
       - "回复说明「哪几格已填、哪几格留空及原因」；取值不在店铺目录里 ⇒ 给候选 + 解释、**不填**（不猜）"
       - "⚠️ 本用例**不自动派发真实 LLM 评测**（用户裁定 #4262 / #4974：手动、用户显式触发）：只登记用例，等 #5966 那次 B 端集中跑批时验证"
@@ -2690,4 +2714,246 @@ cases:
         - "backend/ai-agent-service/tests/test_channel_greeting.py"
       ci:
         - ai-agent-tests.yml
+      verifies: []
+
+  - id: CH-047
+    legacy_id: ""
+    title: "页面上下文注入信封不得落库（切回会话时不得把内部提示当用户消息上屏）"
+    domains:
+      - chat
+    tier: normal
+    tags:
+      - chat
+      - page-context
+      - persistence
+      - display-integrity
+    truths_ref: []
+    user_inputs:
+      - "商家在**生产页**（/production）问「我想看下当前的生产风险」⇒ 黄金策照常回答；**切走会话再切回来**，用户气泡里必须只有「我想看下当前的生产风险」，不得出现「黄金策正在用户当前页面上：/production…」这类内部提示"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**落库的是用户原话**：带 `page_context` 发一轮（登记 route）⇒ `session_memory.save_message` 收到的 `role=\"user\"` 消息 `content` == 用户原话（不含信封）。执行点 = backend/ai-agent-service/tests/test_page_context_persistence.py 的 `TestEnvelopeNeverPersisted::test_plain_chat_persists_user_question_not_envelope`。"
+      - "**信封只进本轮 LLM 文本**（功能不退化）：入口把「LLM 文本（含信封）」与「落库文本（原话）」**分开**递交。执行点 = 同 class 的 `test_entry_forwards_both_texts`。"
+      - "**旧行回放归一**：库里已含信封的历史行（登记 route 形态 / 未登记页面的常量降级形态）经 `GET /history/{session_id}` 与 `_convert_history_to_agent_format` 读出后只剩问题；内部文档路径不止屏。执行点 = 同文件 `TestReadBackNormalisation::test_history_endpoint_strips_legacy_envelope` / `test_agent_history_strips_legacy_envelope`。"
+      - "**类级往返（渲染 ⇄ 剥离）**：登记表**现取**的每条 route（含/不含实体 id）+ 降级形态，`strip(render(问题)) == 问题` —— 渲染形态改了而剥离没跟上 ⇒ 当场红。执行点 = 同文件 `test_strip_is_inverse_of_render_for_every_route`。"
+      - "**负控：不吞用户内容**：以同样句子开头但形态不完整（缺尾部提示 / 不是开头）⇒ 原样返回。执行点 = 同文件 `test_strip_keeps_user_text_that_only_looks_like_envelope`。"
+    skip_reason: "[backend-contract] 判据全部是**入口级 + 纯函数**（零 LLM、零网络）：落库文本、历史回放、剥离往返，由 backend/ai-agent-service/tests/test_page_context_persistence.py 执行；「黄金策回答质量」属行为面，按用户裁定（#4262 / #4974）手动集中跑一次，本轮不自动派发真实 LLM 评测"
+    precondition: "前置 = `app.context.page_registry.render_page_context` 与 `_handle_page_ctx_request` 可导入；`PAGE_REGISTRY` 非空（空登记表 ⇒ 类级往返判据自证失败并红）"
+    merge_log: "2026-10-17 新增（issue #7112）：页面上下文信封此前被当作用户消息落库 ⇒ 切回会话时整段内部提示上屏（并污染会话标题与记忆抽取）。修复 = 写侧分离（信封只进本轮 LLM 文本）+ 读侧归一（历史回放剥离，不改写历史数据）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_page_context_persistence.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
+
+  - id: CH-048
+    legacy_id: ""
+    title: "黄金策回复不得暴露内部路由（后台「销售订单」页(/orders)）—— 源头话术去路由 + 出站清洗兜底 + 负控"
+    domains:
+      - chat
+    tier: normal
+    tags:
+      - chat
+      - display-integrity
+      - internal-route
+      - sanitize
+    # ⚠️ 真值缺口（照实登记，同 CH-046 / CH-047）：现有真值模板没有「对外文案不得含内部路由」
+    # 条目 ⇒ truths_ref 为空（truths.py check 对该形态只告警不阻塞）；新增真值须另开单改模板。
+    truths_ref: []
+    user_inputs:
+      - "商家问「这个订单怎么发货」⇒ 黄金策如实说明不能代办并引导到后台「销售订单」页；回复里**只允许中文页面名**，不得出现内部前端路由（`(/orders)` 形态）。2026-10-18 生产实证：session `sess_742201cbf83f4f58` 的 assistant 正文逐字含「发货操作在后台「订单列表」页(/orders)对应订单上点「发货」即可」"
+    expectations:
+      - tool: direct_reply
+    data_checks:
+      - "**源头去路由**：模型可见话术（工具 description / references 提示词 / base_skill 失败指引）**零**路由 token。判据 = `grep -rnE '\\(/[a-zA-Z][a-zA-Z0-9/_-]*\\)' backend/ai-agent-service/app --include=*.py --include=*.md` 读数为 0（2026-10-18 现取：修前 .py 7 处 + 模型可见 .md 41 处）。"
+      - "**出站清洗形态**：`strip_internal_routes` 对三种括号形态（半角 / 全角 / 括号内空白）整段删除；删除点两侧都是中文 ⇒ 不留空格（`页 (/orders)找到` → `页找到`），否则保留恰好 1 个空格；markdown 链接 `[订单列表](/orders)` 只留 `订单列表`。执行点 = backend/ai-agent-service/tests/test_route_hygiene.py 的 `TestStripInternalRoutes`。"
+      - "**负控 + 幂等**：`¥29/米`、`定高买宽/定宽买高`、`http(s)://…`、围栏代码块与行内反引号内的 `/orders` 逐字不变；已清洗文本再跑逐字不变。执行点 = 同 class 的 `test_negative_controls_untouched` / `test_idempotent` / `test_protected_fence_does_not_break_outer_cleaning`。"
+      - "**接线（会红）**：真驱动 `_agent_stream_to_sse`（B 端 admin 与 C 端 customer 两条）⇒ SSE 文本与**落库** assistant 文本都不含路由；库中存量旧行经 `GET /history/{session_id}` 回放同样干净。执行点 = 同文件 `TestOutboundWiring` / `TestHistoryReplayWiring`。红证（2026-10-18 实测）：摘掉 chat.py 的收口调用 ⇒ 5 failed / 16 passed。"
+      - "**结构级守卫**：`chat.py` 不再出现 `SSEEvent.text(_mask_for_customer(`、历史回放走收口、落库前 `strip_internal_routes(assistant_content)` 在位。执行点 = 同文件 `TestWiringIsStructural`。"
+    skip_reason: "[backend-contract] 判据全部是**纯函数 + 入口级**（零 LLM、零网络）：话术 grep、清洗形态/负控/幂等、SSE/落库/历史回放接线，由 backend/ai-agent-service/tests/test_route_hygiene.py 执行；「黄金策是否真的照新话术引导」属行为面，按用户裁定（#4262 / #4974）手动集中跑一次，本轮不自动派发真实 LLM 评测"
+    precondition: "前置 = `app.utils.route_hygiene.strip_internal_routes` 可导入、`app/api/chat.py` 的 `_sanitize_outbound_text` 收口在位（摘掉 ⇒ 接线判据红，不会表现成「本轮回复刚好没提路由」的假绿）"
+    merge_log: "2026-10-18 新增（issue #7236）：取号 = 现取 chat.yml 最大号 CH-047 + 1 = CH-048（chat 域，不用 UI 前缀；同批无其它 chat 号在飞）。覆盖两层修复：① 源头话术去路由（app/**/*.py 7 处 + 模型可见 references/*.md 41 处）；② 出站纯函数清洗兜底，并接在落库 / SSE 下发 / 历史回放三处收口（`_mask_for_customer` 语义不动，只在同一收口点追加一层）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_route_hygiene.py"
+      ci:
+        - ai-agent-tests.yml
+      verifies: []
+
+  - id: CH-049
+    legacy_id: ""
+    title: "做不了的事如实说：问「帮我开个客服账号」不得承诺代办，须说清办不了 + 给后台落点"
+    domains:
+      - chat
+    tier: normal
+    persona: mibao
+    tags:
+      - chat
+      - capability-boundary
+      - refusal-integrity
+    truths_ref: []
+    user_inputs:
+      - "帮我开个客服账号，姓名李四，手机号 13800009999"
+      - "你别让我去后台，直接帮我建好就行"
+    # ⚠️ 刻意**不写** `expectations`：本用例判的是「**怎么答**」（不承诺 + 给落点），
+    # 而不是「必须/禁止调工具」—— agent 先查一眼员工列表（employee_manage list）是合理的，
+    # 写 `direct_reply` 会把「先查再答」误判成红。机器判据 = forbidden_text + 下面那条
+    # 机器计分型前置 data_check（`success=true`，见 assertion_taxonomy 的口径）。
+    forbidden_text:
+      - "已为您创建"
+      - "已帮您创建"
+      - "已提交创建申请"
+      - "稍后为您创建"
+      - "正在为您创建"
+      - "我这就帮您建"
+      - "已经安排"
+      - "稍后开通"
+      - "同事会联系您"
+      - "暂未接线"
+      - "未接线"
+    want_text:
+      - round: 1
+        text: "后台"
+      - round: 1
+        text: "员工管理"
+      - round: 2
+        any_of:
+          - "后台"
+          - "组织管理"
+          - "员工管理"
+    precondition: "前置 = 能力边界投影段在位且如实（`app/agents/capability_boundary.py` 渲染出「员工账号的创建与变更 → 后台「组织管理 → 员工管理」」，2026-10-19 实测 product/staff 两个 prompt 都已注入）；前置不成立 ⇒ 回复没有落点，判红会伪装成「agent 不会答」"
+    data_checks:
+      - "前置（precondition）：`employee_manage` 在 B 端可达集里只有 list/detail、**无写 action**（success=true；真值 = app/tools/employee_manage.py 的 action 枚举 + capability_boundary.mibao_reachable_tool_names）"
+      - "两轮回复都必须给出**后台落点**：至少出现「组织管理」与「员工管理」（真实侧边栏节点；真值 = backend/ai-agent-service/app/agents/capability_boundary.py 的 UNITS，2026-10-19 渲染实测逐字为「员工账号的创建与变更 → 后台「组织管理 → 员工管理」」）"
+      - "不得用承诺代办的措辞替代落点（机器断言 = forbidden_text）：允许「我这边办不了 / 没有这个能力」，不允许「已在为您创建」"
+      - "工具面：employee_manage 只剩 list/detail（写 action 随 #5247 只读化下线）⇒ 任何写调用都不可能成功；本用例只判「不承诺 + 给落点」，**不要求**必须调工具"
+    skip_reason: ""
+    merge_log: "2026-10-19 新增（issue #7027 的用例补齐）：当天 B 端基线 65/69 绿，但**没有一条用例**钉住「被问到做不了的事时怎么答」—— 而这正是 #7291 能力边界投影段要防的形态（旧 prompt 里 9 处写「非单据对象创建 ✅ 支持」，模型承诺后办不成）。取号 = 现取 chat.yml 最大号 CH-048 + 1。 ｜ 2026-10-19（issue #7334 二次审计）：补 `want_text`（两轮都要给「后台」落点、首轮要「员工管理」）+ 更多禁词（正在创建 / 我这就帮您建 / 已经安排 / 暂未接线 等）；此前「路径」只写在自然语义 data_checks 里，模型回一句「我办不了」也能过。"
+    traces:
+      tests:
+      ci:
+      verifies: []
+
+  - id: CH-050
+    legacy_id: ""
+    title: "定时提醒真跑：说「3 天后提醒我跟进张先生」→ 确认卡 → 落一条待办；再说取消"
+    domains:
+      - chat
+    tier: normal
+    persona: mibao
+    tags:
+      - chat
+      - scheduled_task
+      - write_path
+    truths_ref:
+      - agent-notification.scheduled-task-trio
+    user_inputs:
+      - "3 天后提醒我跟进张先生"
+      - "确认"
+      - "算了，把刚才那条提醒取消掉"
+    expectations:
+      - tool: scheduled_task_manage
+      - tool: interact
+      - tool: scheduled_task_manage
+    must_succeed:
+      - tool: scheduled_task_manage
+    namespaces:
+      - "scheduled_task:跟进张先生"
+    precondition: "前置 = 定时提醒流程绑定 `scheduled_task_manage` 且 DEBUG 身份有 admin/operator 角色（`app/graph/skills` 的 reminder skill 绑定 + 工具的 allowed_roles；2026-10-19 B 端可达集实测含该工具）；前置不成立 ⇒ 期望 unmatched，判红会伪装成「agent 不会建提醒」"
+    data_checks:
+      - "三件套（fire_at / task_type / criterion）必须由模型从自然语言抽全 —— 工具本地 fail-closed：缺任一 ⇒ missing_arguments（在发 HTTP 之前就拒），**调用成功即证明抽全**"
+      - "写面必须走确认卡（interact component=confirm）：A 档可逆写不得免卡直写，商家点头后才落库"
+      - "第 3 轮的取消必须带创建时返回的 task id（工具 action 闭集 = create/list/cancel，真值见 AG-011 与 tests/test_scheduled_task_manage.py）"
+    skip_reason: ""
+    merge_log: "2026-10-19 新增（issue #7027 的用例补齐）：定时提醒是 B 端现有写能力之一，但此前**只有工具面契约用例 AG-011**（走 `[backend-contract]` skip、零 LLM 行为）⇒ 商家说一句「3 天后提醒我跟进张先生」到底能不能落库，评测从来没跑过。本用例覆盖「建 + 取消」两段真实说法。"
+    traces:
+      tests:
+      ci:
+      verifies: []
+
+  - id: CH-051
+    legacy_id: ""
+    title: "能力边界正向：问「能改商品名称吗」不得被误判为不支持（改名是 ✅）"
+    domains:
+      - chat
+    tier: normal
+    persona: mibao
+    tags:
+      - chat
+      - capability-boundary
+      - false-refusal
+    truths_ref: []
+    user_inputs:
+      - "你们能帮我把商品名称改一下吗？"
+    expectations:
+      - tool: direct_reply
+    forbidden_text:
+      - "改名不在能力内"
+      - "不支持改名"
+      - "不能改名"
+      - "改不了名"
+      - "没有改名能力"
+    want_text:
+      - any_of:
+          - "改名"
+          - "名称"
+    precondition: "前置 = 改名是可写能力：`product_update.parameters.properties` 含 `name`，且 `capability_boundary.UNITS.product_rename` 的 required_props=name 解析为 True（2026-10-19 实测）；前置不成立 ⇒ 模型可能被投影段误导成误拒，判红会伪装成「agent 不听话」"
+    data_checks:
+      - "前置（precondition）：`product_update.parameters.properties` 含 `name`，且 `capability_boundary.UNITS.product_rename` 解析为 True（success=true；真值 = app/tools/product_update.py 的 schema + app/agents/capability_boundary.py 的 required_props=name；2026-10-19 实测）"
+      - "正向能力：`product_update(name=…)` 是 B 端可写面（`capability_boundary.UNITS.product_rename` required_props=name；`PRODUCT_SYSTEM_PROMPT` 与 `prompts/product.md` 都写改名可做）；回答应确认可以改名（或问清要改哪个商品），不出现 forbidden_text。"
+      - "本条是 #7291 投影段「✅ 清单不全」的反向对照：如果模型把「上下架不在能力内」泛化成「改名也不在能力内」，本用例必须红。"
+      - "能力询问先直接回答（#7347/CH-051）：`prompts/product.md` 写明「能力询问先答改名、不要预调工具」，`product_update` 工具描述写明「只问能不能/可以吗 ⇒ 直接回答能力，不预调 product_search/product_update」；判据 = backend/ai-agent-service/tests/test_product_prompt_capability_question.py。"
+    skip_reason: ""
+    merge_log: "2026-10-19 新增（issue #7334 二次审计 P0-2 的正向对照）：#7291 的投影段曾只列「商品改价」，而域名 prompt 说改名可做 ⇒ 模型有理由误拒。2026-10-19 收口（#7347）：实测该问句两次触发 tool calls（expect direct_reply），已把「能力询问先直接回答、不预调工具」写进 product.md / 工具描述 / 直接回复，并加静态判据；取号说明保留。"
+
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_capability_boundary.py"
+        - "backend/ai-agent-service/tests/test_product_prompt_capability_question.py"
+      ci:
+        - agent-eval.yml
+      verifies: []
+
+  - id: CH-052
+    legacy_id: ""
+    title: "上下架按裁定 A 不做：问「批量下架」不得声称已下架，须给商品管理落点"
+    domains:
+      - chat
+    tier: normal
+    persona: mibao
+    tags:
+      - chat
+      - capability-boundary
+      - refusal-integrity
+    truths_ref: []
+    user_inputs:
+      - "帮我把这两款商品批量下架"
+    expectations:
+      - tool: direct_reply
+    forbidden_text:
+      - "已下架"
+      - "已为您下架"
+      - "已批量下架"
+      - "批量下架成功"
+      - "正在下架"
+      - "已提交下架"
+    want_text:
+      - any_of:
+          - "后台"
+          - "商品管理"
+    precondition: "前置 = A 口径已落地：`product_update.parameters` 无 status、`product_batch_update.batch_type.enum` 无 product_status（判据 = backend/ai-agent-service/tests/test_capability_boundary.py::test_decided_off_status_is_not_exposed_by_tools + test_product_batch_update.py::test_status_batch_type_is_rejected）；前置不成立 ⇒ 模型可能真的调用成功，判红会伪装成「agent 不听话」"
+    data_checks:
+      - "前置（precondition）：`product_update.parameters` 无 status、`product_batch_update.batch_type.enum` 无 product_status（success=true；真值 = backend/ai-agent-service/tests/test_capability_boundary.py::test_decided_off_status_is_not_exposed_by_tools；2026-10-19 实测）"
+      - "上下架（单件与批量）按用户 2026-10-16 裁定都 ❌（#7334 裁定 A）；`product_update` 无 status 参数、`product_batch_update` 的 batch_type 只剩 product_price / inventory_stock（工具面拒绝，不是靠 prompt 自律）。"
+      - "回答必须给后台落点「商品管理」页；不得声称已下架/已提交/正在下架，也不得发写确认卡。"
+    skip_reason: ""
+    merge_log: "2026-10-19 新增（issue #7334 二次审计 P0-A）：用户裁定「上下架都 ❌」后，补一条真实说法用例把「不得声称已下架 + 给后台落点」变成机器断言；此前只有 PR-007/PR-025 的退役条目，没有一条在跑的 B 端拒绝用例。取号 = CH-050 + 2 = CH-052（同 CH-051 的取号说明）。"
+    traces:
+      tests:
+        - "backend/ai-agent-service/tests/test_capability_boundary.py"
+        - "backend/ai-agent-service/tests/test_product_batch_update.py"
+      ci:
+        - agent-eval.yml
       verifies: []

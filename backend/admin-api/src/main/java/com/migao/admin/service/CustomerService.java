@@ -18,6 +18,7 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.lang.reflect.Field;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -32,6 +33,18 @@ import java.util.stream.Collectors;
 public class CustomerService extends ServiceImpl<CustomerProfileMapper, CustomerProfile> {
 
     private final CustomerProfileMapper customerProfileMapper;
+
+    /** 业务「今天」/业务时区单点（issue #3802）：账龄分档的基准日不许多头算。 */
+    private final com.migao.admin.time.BusinessClock businessClock;
+
+    /**
+     * 审批出口（issue #7374，P1-2 段 1）：超授信时找「已通过且未用掉」的审批放行。
+     *
+     * <p>{@code @Autowired(required = false)}：不扫 Spring 组件的切片上下文与直接 new 构造的既有单测
+     * 没有该 bean ⇒ 退回**改前行为**（没有审批出口，超限即拒），不是静默放行。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ApprovalService approvalService;
     private final CustomerTagMapper customerTagMapper;
     private final CustomerSegmentMapper customerSegmentMapper;
     private final CustomerSegmentMemberMapper customerSegmentMemberMapper;
@@ -61,7 +74,32 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
     public PageResponse<CustomerProfile> getCustomerPage(long page, long size,
                                                           String sourceChannel, String vipLevel,
                                                           String keyword, Long tenantId) {
+        return getCustomerPage(page, size, sourceChannel, vipLevel, keyword, tenantId, null);
+    }
+
+    /**
+     * 客户列表 + **数据范围**（issue #7372 段 2）。
+     *
+     * <p>口径（用户 2026-10-21 裁定）：「加『客户负责人』字段，未指派的按『有单的客户』兜底」⇒
+     * `owner_user_id = 我` **或**（`owner_user_id IS NULL` 且我有该客户（按 phone 关联）的单）。
+     * 没有兜底的话，存量客户全是未指派 ⇒ 业务员上线当天看不见任何客户，看起来像数据丢了。</p>
+     *
+     * @param scopeOwnerId 非 null ⇒ 本人范围（值 = 当前用户 id）；null ⇒ 不收窄（租户级）
+     */
+    public PageResponse<CustomerProfile> getCustomerPage(long page, long size,
+                                                          String sourceChannel, String vipLevel,
+                                                          String keyword, Long tenantId,
+                                                          String scopeOwnerId) {
         LambdaQueryWrapper<CustomerProfile> wrapper = new LambdaQueryWrapper<>();
+        if (StringUtils.hasText(scopeOwnerId)) {
+            // 本人范围：我负责的 + 未指派但我出过单的（子查询按 phone 归属，与账龄口径同键）
+            wrapper.and(w -> w.eq(CustomerProfile::getOwnerUserId, scopeOwnerId)
+                    .or()
+                    .apply("(owner_user_id IS NULL AND EXISTS ("
+                            + "SELECT 1 FROM orders o WHERE o.tenant_id = customer_profiles.tenant_id"
+                            + " AND o.deleted = 0 AND o.created_by = {0}"
+                            + " AND o.customer_phone = customer_profiles.phone))", scopeOwnerId));
+        }
 
         // 来源渠道筛选
         if (StringUtils.hasText(sourceChannel)) {
@@ -113,8 +151,22 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
      * @return 客户详情Map
      */
     public Map<String, Object> getCustomerDetail(String customerId) {
+        return getCustomerDetail(customerId, null);
+    }
+
+    /**
+     * 客户详情 + **数据范围**（issue #7372 段 2）：范围外 ⇒ 与「不存在」**同一个 404**（不 403，
+     * 不泄露「这个客户存在」）。
+     *
+     * <p>判据与列表**同一条**（{@link #ownedByMe}）：列表筛掉的和详情拦掉的必须是同一批，
+     * 否则会出现「列表里没有、拼 id 却打得开」这种半成品。</p>
+     */
+    public Map<String, Object> getCustomerDetail(String customerId, String scopeOwnerId) {
         CustomerProfile profile = customerProfileMapper.selectById(customerId);
         if (profile == null) {
+            throw BusinessException.notFound("客户");
+        }
+        if (StringUtils.hasText(scopeOwnerId) && !ownedByMe(profile, scopeOwnerId)) {
             throw BusinessException.notFound("客户");
         }
 
@@ -174,15 +226,11 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
      */
     @Transactional(rollbackFor = Exception.class)
     public CustomerProfile createCustomer(CustomerProfile profile) {
-        // 检查手机号唯一性（如果有手机号）
-        if (StringUtils.hasText(profile.getPhone())) {
-            LambdaQueryWrapper<CustomerProfile> wrapper = new LambdaQueryWrapper<>();
-            wrapper.eq(CustomerProfile::getPhone, profile.getPhone())
-                    .eq(CustomerProfile::getTenantId, profile.getTenantId());
-            CustomerProfile existing = customerProfileMapper.selectOne(wrapper);
-            if (existing != null) {
-                throw BusinessException.validationError("该手机号已存在客户档案");
-            }
+        // 检查手机号唯一性（如果有手机号）。
+        // issue #7257：读侧改用 findFirstByPhone —— 历史重复行存在时 selectOne 会抛 TooManyResultsException（500）
+        if (StringUtils.hasText(profile.getPhone())
+                && customerProfileMapper.findFirstByPhone(profile.getTenantId(), profile.getPhone()) != null) {
+            throw BusinessException.validationError("该手机号已存在客户档案");
         }
 
         // 设置默认值
@@ -205,9 +253,13 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
             profile.setRegisteredAt(OffsetDateTime.now());
         }
 
-        customerProfileMapper.insert(profile);
-        log.info("创建客户档案成功: id={}, phone={}", profile.getId(), profile.getPhone());
-        return profile;
+        // issue #7257：撞唯一键（并发下对手先建）⇒ 收敛成同一句 422，而不是把 DataIntegrityViolation 冒成 500
+        CustomerProfileWriter.Result result = CustomerProfileWriter.ensureByPhone(customerProfileMapper, profile);
+        if (!result.created()) {
+            throw BusinessException.validationError("该手机号已存在客户档案");
+        }
+        log.info("创建客户档案成功: id={}, phone={}", result.profile().getId(), result.profile().getPhone());
+        return result.profile();
     }
 
     /**
@@ -222,37 +274,28 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
     @Transactional(rollbackFor = Exception.class)
     public CustomerProfile createFromSession(Long tenantId, String wechatOpenid,
                                               String wechatNickname, String sourceChannel) {
-        // 先检查是否已存在
-        if (StringUtils.hasText(wechatOpenid)) {
-            LambdaQueryWrapper<CustomerProfile> wrapper = new LambdaQueryWrapper<>();
-            wrapper.eq(CustomerProfile::getWechatOpenid, wechatOpenid)
-                    .eq(CustomerProfile::getTenantId, tenantId);
-            CustomerProfile existing = customerProfileMapper.selectOne(wrapper);
-            if (existing != null) {
-                // 更新最后活跃时间
-                existing.setLastActiveAt(OffsetDateTime.now());
-                customerProfileMapper.updateById(existing);
-                return existing;
-            }
+        // issue #7257：建档收口到单一实现点（回读 → 撞键不插 → 撞并发回读对手那条）。
+        // 原先是「selectOne 判空 + insert」的读改写：本表没有唯一约束 ⇒ 并发会静默建出两条档案。
+        if (!StringUtils.hasText(wechatOpenid)) {
+            CustomerProfile anonymous = CustomerProfileWriter.candidate(tenantId)
+                    .wechatNickname(wechatNickname)
+                    .build();
+            anonymous.setSourceChannel(sourceChannel != null ? sourceChannel : "wechat_mini");
+            // openid 为空 ⇒ 无处去重（保持原有行为），但建行仍只从写面发生
+            return CustomerProfileWriter.createAnonymous(customerProfileMapper, anonymous);
         }
-
-        CustomerProfile profile = CustomerProfile.builder()
-                .tenantId(tenantId)
-                .wechatOpenid(wechatOpenid)
+        CustomerProfile candidate = CustomerProfileWriter.candidate(tenantId)
                 .wechatNickname(wechatNickname)
-                .sourceChannel(sourceChannel != null ? sourceChannel : "wechat_mini")
-                .vipLevel("normal")
-                .customerStatus("active")
-                .lifecycleStage("new")
-                .totalOrders(0)
-                .totalConsumption(BigDecimal.ZERO)
-                .registeredAt(OffsetDateTime.now())
-                .lastActiveAt(OffsetDateTime.now())
                 .build();
-
-        customerProfileMapper.insert(profile);
-        log.info("从会话自动创建客户档案: id={}, wechatOpenid={}", profile.getId(), wechatOpenid);
-        return profile;
+        // 显式赋值（而不是塞进 builder 链）：本表有「字段级真值守卫」（issue #5362），它按
+        // `CustomerProfile x = …` + `x.setXxx(v)` 与 `CustomerProfile.builder()` 链两种形态扫写入点；
+        // 写面抽到 CustomerProfileWriter 之后 builder 链换了入口，故真值级写入在这里显式表达。
+        candidate.setWechatOpenid(wechatOpenid);
+        candidate.setSourceChannel(sourceChannel != null ? sourceChannel : "wechat_mini");
+        CustomerProfileWriter.Result result = CustomerProfileWriter.ensureByOpenid(customerProfileMapper, candidate);
+        log.info("从会话建档{}: id={}, wechatOpenid={}", result.created() ? "成功" : "命中既有档案",
+                result.profile().getId(), wechatOpenid);
+        return result.profile();
     }
 
     /**
@@ -274,37 +317,19 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
             return null;
         }
 
-        // 按 phone + tenantId 查询是否已存在
-        LambdaQueryWrapper<CustomerProfile> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(CustomerProfile::getPhone, customerPhone)
-                .eq(CustomerProfile::getTenantId, tenantId);
-        CustomerProfile existing = customerProfileMapper.selectOne(wrapper);
-        if (existing != null) {
-            existing.setLastActiveAt(OffsetDateTime.now());
-            customerProfileMapper.updateById(existing);
-            return existing;
-        }
-
-        OffsetDateTime now = OffsetDateTime.now();
-        CustomerProfile profile = CustomerProfile.builder()
-                .tenantId(tenantId)
+        // issue #7257：同一条写面（回读 → 撞键不插 → 撞并发回读对手那条）
+        CustomerProfile candidate = CustomerProfileWriter.candidate(tenantId)
                 .wechatNickname(customerName)
                 .phone(customerPhone)
                 .agentNotes(StringUtils.hasText(customerAddress) ? "首单收货地址：" + customerAddress : null)
-                .vipLevel("normal")
-                .customerStatus("active")
-                .lifecycleStage("new")
-                .totalOrders(1)
-                .totalConsumption(BigDecimal.ZERO)
-                .sourceChannel("order")
-                .registeredAt(now)
-                .lastActiveAt(now)
                 .build();
-
-        customerProfileMapper.insert(profile);
-        log.info("从订单自动创建客户档案: id={}, phone={}, tenantId={}",
-                profile.getId(), customerPhone, tenantId);
-        return profile;
+        candidate.setSourceChannel("order");
+        // 首单建档的既有口径：订单数从 1 起算（不是 0）—— 原先写在 builder 链里，抽出写面后显式表达
+        candidate.setTotalOrders(1);
+        CustomerProfileWriter.Result result = CustomerProfileWriter.ensureByPhone(customerProfileMapper, candidate);
+        log.info("从订单建档{}: id={}, phone={}, tenantId={}",
+                result.created() ? "成功" : "命中既有档案", result.profile().getId(), customerPhone, tenantId);
+        return result.profile();
     }
 
     /**
@@ -586,7 +611,10 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
         if (tag == null) {
             throw BusinessException.notFound("标签");
         }
-        customerTagMapper.deleteById(tagId);
+        // issue #6956 · 现象 C：并发双删只许一次成功（0 行 = 已被别人删掉）
+        if (customerTagMapper.deleteById(tagId) == 0) {
+            throw BusinessException.notFound("标签");
+        }
         log.info("删除客户标签成功: id={}", tagId);
     }
 
@@ -754,5 +782,236 @@ public class CustomerService extends ServiceImpl<CustomerProfileMapper, Customer
             }
         }
         return row;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // 客户授信与往来（issue #7370，P0-2 段 1）
+    // 口径：NULL = 未启用授信（存量客户零回归）；0 = 启用但零额度；正数 = 额度（闭区间）。
+    // 判定谓词在 CreditPolicy（纯函数，逐格有判据）；本类只做「取数 + 调它 + 落库」。
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 该客户的已欠合计（未结清订单金额）。
+     *
+     * <p>口径 = `paid_at IS NULL` 且未取消的订单金额之和；逐笔核销（P0-2 段 3）上线后换成
+     * 「Σ订单 - Σ核销收款 + Σ退款」，本方法签名不变。
+     */
+    public BigDecimal creditOutstanding(Long tenantId, String phone) {
+        if (!StringUtils.hasText(phone)) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal value = orderMapper.selectOutstandingTotal(tenantId, phone);
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
+    /** 授信读数：未启用授信 ⇒ creditLimit/available 为 null（与「额度 0」可区分）。 */
+    public com.migao.admin.dto.CreditStatusResponse creditStatus(String customerId) {
+        CustomerProfile profile = customerProfileMapper.selectById(customerId);
+        if (profile == null) {
+            throw BusinessException.notFound("客户");
+        }
+        BigDecimal limit = profile.getCreditLimit();
+        BigDecimal outstanding = creditOutstanding(profile.getTenantId(), profile.getPhone());
+        BigDecimal available = limit == null
+                ? null
+                : CreditPolicy.evaluate(limit, outstanding, BigDecimal.ZERO).available();
+        return com.migao.admin.dto.CreditStatusResponse.builder()
+                .customerId(customerId)
+                .creditLimit(limit)
+                .paymentTermsDays(profile.getPaymentTermsDays())
+                .outstanding(outstanding)
+                .available(available)
+                .build();
+    }
+
+    /**
+     * 下单闸门：超出授信额度 ⇒ 拒绝（提示含额度 / 已欠 / 本单 / 尚缺）。
+     * 未建档客户或未启用授信 ⇒ 放行（与存量行为逐字一致）。
+     */
+    public void assertWithinCredit(Long tenantId, String phone, BigDecimal amount) {
+        assertWithinCreditOrApproved(tenantId, phone, amount);
+    }
+
+    /**
+     * 授信闸门 + **审批出口**（issue #7374，P1-2 段 1）。
+     *
+     * <p>改前：超授信只能「先收款 / 调额度」两条路，「这一单特殊，请主管批」没有出口 —— 只能线下
+     * 微信说一声，事后查不到谁批的。改后：超限时去 {@code approvals} 找一条**已通过、未用掉、
+     * 金额覆盖本次超出额** 的 `credit_override`；命中即放行并**当场消费**（一笔一批），
+     * 没命中照旧拒，但错误信息给出「怎么申请」的路径。</p>
+     *
+     * <p>🔴 审批结论**不落副本**在任何业务表上：这里只是读审批表 + 消费，订单不存「已批准」布尔
+     * （否则审批被撤回后订单还写着已批准 —— 双真值）。</p>
+     *
+     * @return 被消费的审批 id（{@code null} = 本单没有用审批放行）
+     */
+    public String assertWithinCreditOrApproved(Long tenantId, String phone, BigDecimal amount) {
+        if (!StringUtils.hasText(phone)) {
+            return null;
+        }
+        // issue #7257 纪律：客户档案**读侧不用 selectOne**（历史重复行会抛 TooManyResults ⇒ 500）
+        // ⇒ 走单一读实现点 findFirstByPhone（与建档写面的判重同一口径）。
+        CustomerProfile profile = customerProfileMapper.findFirstByPhone(tenantId, phone);
+        if (profile == null || profile.getCreditLimit() == null) {
+            return null;
+        }
+        BigDecimal outstanding = creditOutstanding(tenantId, phone);
+        CreditPolicy.Decision decision = CreditPolicy.evaluate(profile.getCreditLimit(), outstanding, amount);
+        if (decision.allowed()) {
+            return null;
+        }
+        // 审批出口：已通过 + 未用掉 + 金额覆盖**本次超出额**（批 5000 不能用来过 8000 的单）
+        String consumed = approvalService == null ? null
+                : approvalService.consume(com.migao.admin.entity.Approval.TYPE_CREDIT_OVERRIDE,
+                        phone.trim(), decision.excess(), null);
+        if (consumed != null) {
+            log.info("[credit] 超授信经审批放行 | tenant={} customer={} excess={} approval={}",
+                    tenantId, profile.getId(), decision.excess(), consumed);
+            return consumed;
+        }
+        log.info("[credit] 超授信被拒 | tenant={} customer={} limit={} outstanding={} amount={} excess={}",
+                tenantId, profile.getId(), profile.getCreditLimit(), outstanding, amount, decision.excess());
+        throw BusinessException.validationError(String.format(
+                "超出客户授信额度：本单 ¥%s + 已欠 ¥%s > 额度 ¥%s，尚缺 ¥%s。"
+                        + "请先收款/冲账、由管理员调整授信额度，"
+                        + "或提交「超授信下单」审批（objectType=credit_override，objectRef=%s，金额 ≥ 尚缺额度）后重试。",
+                amount.toPlainString(), outstanding.toPlainString(),
+                profile.getCreditLimit().toPlainString(), decision.excess().toPlainString(),
+                phone.trim()));
+    }
+
+    /** 设置/清空授信（显式 null = 停用授信）。 */
+    public com.migao.admin.dto.CreditStatusResponse updateCreditSettings(
+            String customerId, com.migao.admin.dto.CreditSettingsRequest request) {
+        CustomerProfile profile = customerProfileMapper.selectById(customerId);
+        if (profile == null) {
+            throw BusinessException.notFound("客户");
+        }
+        BigDecimal limit = request.getCreditLimit();
+        Integer terms = request.getPaymentTermsDays();
+        if (limit != null && limit.signum() < 0) {
+            throw BusinessException.validationError("授信额度不得为负：" + limit.toPlainString());
+        }
+        if (terms != null && (terms < 0 || terms > 365)) {
+            throw BusinessException.validationError("账期天数须在 0~365 之间：" + terms);
+        }
+        profile.setCreditLimit(limit);
+        profile.setPaymentTermsDays(terms);
+        customerProfileMapper.updateById(profile);
+        log.info("[credit] 授信设置 | tenant={} customer={} limit={} terms={}",
+                profile.getTenantId(), customerId, limit, terms);
+        return creditStatus(customerId);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // 应收账龄（issue #7370，P0-2 段 2）
+    // 分档规则钉在纯函数 ReceivableAging（逐格判据）；本方法只做「取数 → 分档 → 汇总」。
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    /**
+     * 应收账龄：全局合计 + 按客户分行，各五档（未到期 / 1-30 / 31-60 / 61-90 / 90+）。
+     *
+     * <p>到期日 = 下单日的**业务日期** + 该客户账期天数（{@code null}/0 ⇒ 现结，到期日 = 下单日）。
+     * 「业务日期」由 {@link BusinessClock} 给出（容器是 UTC，直接取 {@code LocalDate.ofInstant(UTC)} 会差一天）。</p>
+     *
+     * <p>恒等式（判据复算）：{@code totalOutstanding == Σ五档 == Σ客户行}。</p>
+     */
+    public com.migao.admin.dto.ReceivableAgingResponse receivableAging(Long tenantId) {
+        return receivableAging(tenantId, null);
+    }
+
+    /**
+     * 应收账龄（可选按**制单人**收窄 —— 报表中心的数据范围 P0-4 同口径）。
+     *
+     * @param createdBy 非空 ⇒ 只算该用户创建的单（{@code self} 范围）；{@code null} ⇒ 全量（财务口径）
+     */
+    public com.migao.admin.dto.ReceivableAgingResponse receivableAging(Long tenantId, String createdBy) {
+        LocalDate today = businessClock.today();
+        List<com.migao.admin.dto.ReceivableAgingRow> rows =
+                orderMapper.selectReceivableRows(tenantId, createdBy);
+        // 业务日期换算**只在这里**做（容器是 UTC：取 UTC 日期会让「当天」差一天，见 #3802/#6200）——
+        // 换算用 BusinessClock.zone()，下游纯函数只做日期运算（不引时区 ⇒ 逐格可测）。
+        for (com.migao.admin.dto.ReceivableAgingRow row : rows) {
+            if (row.getCreatedAt() != null) {
+                row.setBusinessDate(LocalDate.ofInstant(row.getCreatedAt().toInstant(), businessClock.zone()));
+            }
+        }
+        return ReceivableAging.summarize(rows, termsByPhone(tenantId, rows), today);
+    }
+
+    /** 该租户下「电话 → 账期天数」；读侧不用 selectOne（#7257：历史重复行会抛 TooManyResults）。 */
+    private Map<String, Integer> termsByPhone(Long tenantId, List<com.migao.admin.dto.ReceivableAgingRow> rows) {
+        Set<String> phones = new LinkedHashSet<>();
+        for (com.migao.admin.dto.ReceivableAgingRow row : rows) {
+            if (StringUtils.hasText(row.getCustomerPhone())) {
+                phones.add(row.getCustomerPhone());
+            }
+        }
+        if (phones.isEmpty()) {
+            // 空集**不返回不可变表**（issue #6219：调用方一旦用空键索引就 NPE 500）⇒ 返回可变表
+            return new HashMap<>();
+        }
+        List<CustomerProfile> profiles = customerProfileMapper.selectList(
+                new LambdaQueryWrapper<CustomerProfile>()
+                        .eq(CustomerProfile::getTenantId, tenantId)
+                        .in(CustomerProfile::getPhone, phones));
+        Map<String, Integer> terms = new HashMap<>();
+        for (CustomerProfile profile : profiles) {
+            if (profile.getPhone() != null && !terms.containsKey(profile.getPhone())) {
+                terms.put(profile.getPhone(), profile.getPaymentTermsDays());
+            }
+        }
+        return terms;
+    }
+
+
+
+    /**
+     * 指派 / 撤回客户负责人（issue #7372 段 2）—— 这一列**唯一**的写入点。
+     *
+     * <p>为什么必须有这个入口：没有写入点，`owner_user_id` 永远只有 `NULL`（未指派），
+     * 数据范围 `self` 就只能靠「出过单」兜底 ⇒ 「把客户分给某人」这件事在系统里**不存在**。
+     * 有了它，兜底才只是兜底，而不是唯一规则。</p>
+     *
+     * @param ownerUserId 新负责人 id；**null / 空白 = 撤回指派**（回到「未指派」，重新走兜底）
+     */
+    public void assignOwner(String customerId, String ownerUserId) {
+        CustomerProfile profile = customerProfileMapper.selectById(customerId);
+        if (profile == null) {
+            throw BusinessException.notFound("客户");
+        }
+        String normalized = org.springframework.util.StringUtils.hasText(ownerUserId)
+                ? ownerUserId.trim() : null;
+        // 走实体 setter + updateById（本仓既有写法）：字段真值判据按 setter 识别写入点，
+        // 用 Lambda 的 `.set(...)` 会被判成「零写入点」而红（那是判据的射程，改判据不如按既有写法写）
+        profile.setOwnerUserId(normalized);
+        customerProfileMapper.updateById(profile);
+    }
+
+    /**
+     * 客户是否属于该用户的**本人范围**（issue #7372 段 2）：与列表 SQL **同一口径**，
+     * 不另写第二份规则。
+     *
+     * <ul>
+     *   <li>负责人是本人 ⇒ 可见；</li>
+     *   <li>未指派（`owner_user_id IS NULL`）且本人有该客户（按 phone）的单 ⇒ 可见（存量兜底）；</li>
+     *   <li>已指派给别人 ⇒ 不可见（哪怕本人出过单 —— 指派是明确的业务决定，不能被兜底覆盖）。</li>
+     * </ul>
+     */
+    private boolean ownedByMe(CustomerProfile profile, String userId) {
+        if (userId.equals(profile.getOwnerUserId())) {
+            return true;
+        }
+        if (profile.getOwnerUserId() != null) {
+            return false;
+        }
+        if (!org.springframework.util.StringUtils.hasText(profile.getPhone())) {
+            return false;
+        }
+        Long count = orderMapper.selectCount(new LambdaQueryWrapper<com.migao.admin.entity.Order>()
+                .eq(com.migao.admin.entity.Order::getTenantId, profile.getTenantId())
+                .eq(com.migao.admin.entity.Order::getCreatedBy, userId)
+                .eq(com.migao.admin.entity.Order::getCustomerPhone, profile.getPhone()));
+        return count != null && count > 0;
     }
 }

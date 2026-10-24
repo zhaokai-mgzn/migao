@@ -99,6 +99,8 @@ const mockUpdateSettings = vi.fn()
 const mockGetAiConfig = vi.fn()
 const mockUpdateAiConfig = vi.fn()
 const mockUploadImage = vi.fn()
+const mockGetPaymentQrcodes = vi.fn()
+const mockUpdatePaymentQrcode = vi.fn()
 const mockGetOperationPositions = vi.fn()
 const mockGetRoutings = vi.fn()
 const mockGetFeeCombinations = vi.fn()
@@ -109,10 +111,19 @@ const mockGetSmallItemSpecs = vi.fn()
 const mockBriefingGetConfig = vi.fn()
 const mockBriefingUpdateConfig = vi.fn()
 
+// issue #7536：白边在**上传时**裁（本单裁定「直接改成上传时裁」）—— 桩成「返回裁好的文件」，
+// 这样判据能钉住「上传的是裁后的那份、不是原图」。
+const mockTrimWhiteMarginFile = vi.fn()
+vi.mock('@/lib/qr-image', () => ({
+  trimWhiteMarginFile: (...args: unknown[]) => mockTrimWhiteMarginFile(...args),
+}))
+
 vi.mock('@/lib/api', () => ({
   settingsApi: {
     getSettings: (...args: any[]) => mockGetSettings(...args),
     updateSettings: (...args: any[]) => mockUpdateSettings(...args),
+    getPaymentQrcodes: (...args: any[]) => mockGetPaymentQrcodes(...args),
+    updatePaymentQrcode: (...args: any[]) => mockUpdatePaymentQrcode(...args),
     getAiConfig: (...args: any[]) => mockGetAiConfig(...args),
     updateAiConfig: (...args: any[]) => mockUpdateAiConfig(...args),
   },
@@ -259,7 +270,7 @@ function mockApiSuccess() {
   )
   mockGetFeeCombinations.mockResolvedValue(ok({ total: 3, combinations: [] }))
   mockGetFeeGaps.mockResolvedValue(ok({ unpriced_combination_total: 0 }))
-  // ⚠️ 读面**整份 11 键**（issue #6825）：改前只回 { hem_margin } 一个键 —— 那是「后端只回一个键」
+  // ⚠️ 读面**整份 13 键**（issue #6825；#7560 起含拼色单开/多开两键）：改前只回 { hem_margin } 一个键 —— 那是「后端只回一个键」
   // 的假形状，会让本页保存那一跳的「全量键」判据**恒真**（缺键是因为夹具本来就缺，不是因为代码对）。
   mockGetCraftCalcConfig.mockResolvedValue(
     ok({
@@ -269,6 +280,8 @@ function mockApiSuccess() {
         per_fold_mixed_times: { '1': 0.65, '2': 0.7 },
         margin_single: 0.2,
         margin_multi: 0.3,
+        margin_mixed_single: 0.15,
+        margin_mixed_multi: 0.2,
         min_fullness: 1.5,
         tiers: { standard: { fullness: 2, label: '标准工艺' }, economy: { fullness: 1.8, label: '经济工艺' } },
         default_formula: 'pleat',
@@ -611,6 +624,61 @@ describe('判据 6：域状态徽标**与主线同源**（G4），且没被主�
 // 判据 7：搬迁的能力零回归（企业信息 / AI 客服 / 通知设置）
 // ══════════════════════════════════════════════════════════════════════════════
 describe('判据 7：原四个 tab 的能力迁入域后零回归', () => {
+  it('收款码（issue #7219）：企业信息域展示已上传的微信码 + 上传入口', async () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams('domain=enterprise'))
+    mockGetPaymentQrcodes.mockResolvedValue({
+      data: { data: { wechat: { imageUrl: 'https://oss.example.com/wx.png' } } },
+    })
+    render(<SettingsPage />)
+    expect(await screen.findByTestId('settings-payment-qrcodes')).toBeInTheDocument()
+    expect(await screen.findByAltText('微信收款码')).toHaveAttribute('src', 'https://oss.example.com/wx.png')
+    expect(screen.getByRole('button', { name: /更换收款码/ })).toBeInTheDocument()
+    // 支付宝未上传 ⇒ 上传入口（不是「更换」）
+    expect(screen.getByRole('button', { name: /上传收款码/ })).toBeInTheDocument()
+  })
+
+  it('🔴 收款码上传前先裁白边（issue #7536）：上传的是**裁后**的文件，落库的是它的 URL', async () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams('domain=enterprise'))
+    mockGetPaymentQrcodes.mockResolvedValue({ data: { data: {} } })
+    const original = new File(['original'], 'qr-with-margin.png', { type: 'image/png' })
+    const trimmed = new File(['trimmed'], 'qr-with-margin.png', { type: 'image/png' })
+    mockTrimWhiteMarginFile.mockResolvedValue(trimmed)
+    mockUploadImage.mockResolvedValue({ data: { data: { url: 'https://oss.example.com/wx-trimmed.png' } } })
+    mockUpdatePaymentQrcode.mockResolvedValue({ data: { data: {} } })
+
+    render(<SettingsPage />)
+    const panel = await screen.findByTestId('settings-payment-qrcodes')
+    const input = panel.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [original] } })
+
+    await waitFor(() => expect(mockUploadImage).toHaveBeenCalledTimes(1))
+    // 上传的是**裁后**那份（不是用户选的原图）—— 把裁边去掉 ⇒ 这里当场红
+    expect(mockUploadImage.mock.calls[0][0]).toBe(trimmed)
+    await waitFor(() =>
+      expect(mockUpdatePaymentQrcode).toHaveBeenCalledWith('wechat', {
+        imageUrl: 'https://oss.example.com/wx-trimmed.png',
+      })
+    )
+  })
+
+  it('裁边失败（返回原文件）⇒ 照常上传，不把上传流程堵死（issue #7536）', async () => {
+    mockSearchParams.mockReturnValue(new URLSearchParams('domain=enterprise'))
+    mockGetPaymentQrcodes.mockResolvedValue({ data: { data: {} } })
+    const original = new File(['original'], 'qr.png', { type: 'image/png' })
+    mockTrimWhiteMarginFile.mockResolvedValue(original)
+    mockUploadImage.mockResolvedValue({ data: { data: { url: 'https://oss.example.com/qr.png' } } })
+    mockUpdatePaymentQrcode.mockResolvedValue({ data: { data: {} } })
+
+    render(<SettingsPage />)
+    const panel = await screen.findByTestId('settings-payment-qrcodes')
+    const input = panel.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [original] } })
+
+    await waitFor(() => expect(mockUploadImage).toHaveBeenCalledTimes(1))
+    expect(mockUploadImage.mock.calls[0][0]).toBe(original)
+    await waitFor(() => expect(mockUpdatePaymentQrcode).toHaveBeenCalled())
+  })
+
   it('企业信息域：公司名称 / 企业编码 失焦即保存（#5899，无保存按钮）', async () => {
     mockUpdateSettings.mockResolvedValue({ data: {} })
     mockSearchParams.mockReturnValue(new URLSearchParams('domain=enterprise'))
@@ -665,29 +733,19 @@ describe('判据 7：原四个 tab 的能力迁入域后零回归', () => {
     expect(toast.success).toHaveBeenCalledWith('已关闭系统通知')
   })
 
-  it('手机端入口（#5668）：未配置 ⇒ 明确说明且**不画码**（缺码不画假码）', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BMINI_H5_URL', '')
+  it('手机端入口（#7212）：企业信息域**不再**渲染入口块 —— 扫码入口只在顶栏右上角', async () => {
+    // 用户 2026-10-18 逐字「这块直接移除吧，已经迁移到右上角了」。
+    // 顶栏入口的行为判据在 components/MobileEntry.test.tsx；这里钉的是**设置页不再有第二个入口**。
+    vi.stubEnv('NEXT_PUBLIC_BMINI_H5_URL', 'https://bmini-entry.invalid/b/')
     mockSearchParams.mockReturnValue(new URLSearchParams('domain=enterprise'))
     try {
       render(<SettingsPage />)
-      const entry = await screen.findByTestId('bmini-h5-entry')
-      expect(screen.getByTestId('bmini-h5-unconfigured')).toHaveTextContent('尚未开通手机版')
-      expect(entry.querySelector('svg')).toBeNull()
+      expect(await screen.findByTestId('config-domain-panel-enterprise')).toBeInTheDocument()
+      expect(screen.queryByTestId('bmini-h5-entry')).toBeNull()
+      expect(screen.queryByTestId('bmini-h5-url')).toBeNull()
       expect(screen.queryByTestId('bmini-h5-qr')).toBeNull()
-    } finally {
-      vi.unstubAllEnvs()
-    }
-  })
-
-  it('手机端入口（#5668）：配置了地址 ⇒ 二维码内容逐字等于该值（哨兵值 ⇒ 硬编码必红）', async () => {
-    const SENTINEL_URL = 'https://bmini-entry.invalid/b/'
-    vi.stubEnv('NEXT_PUBLIC_BMINI_H5_URL', SENTINEL_URL)
-    mockSearchParams.mockReturnValue(new URLSearchParams('domain=enterprise'))
-    try {
-      render(<SettingsPage />)
-      const qr = await screen.findByTestId('bmini-h5-qr')
-      expect(qr.querySelector('title')?.textContent).toBe(SENTINEL_URL)
-      expect(screen.getByTestId('bmini-h5-url')).toHaveTextContent(SENTINEL_URL)
+      expect(screen.queryByRole('button', { name: '复制链接' })).toBeNull()
+      expect(screen.queryByRole('button', { name: '显示二维码' })).toBeNull()
     } finally {
       vi.unstubAllEnvs()
     }
@@ -809,8 +867,11 @@ describe('判据 7：域内零 tab（两层导航并存 = 用户说的「分不�
     const input = await screen.findByTestId('calc-caliber-scalar-per_fold_single')
     fireEvent.change(input, { target: { value: '0.42' } })
 
-    await userEvent.click(screen.getByTestId('calc-caliber-save'))
-    await waitFor(() => expect(mockUpdateCraftCalcConfig).toHaveBeenCalledTimes(1))
+    /**
+     * issue #7183：保存按钮已退场 ⇒ 变更自己进**防抖窗口**（0.6 秒）后由面板发 `PUT`。
+     * 这里等「请求真的发出去了」，**不点任何按钮**（点不到才是对的形态）。
+     */
+    await waitFor(() => expect(mockUpdateCraftCalcConfig).toHaveBeenCalledTimes(1), { timeout: 5000 })
 
     // 🔴 红证：页面把 `calcDraft` 解构掉一个键再发（「只发改过的那个键」那种写法）⇒ 本断言当场红。
     //    面板侧的同类判据用的是测试自建的宿主，**盖不到页面这一跳**（实测：注入丢键 ⇒ 页面用例全绿）。
@@ -821,6 +882,8 @@ describe('判据 7：域内零 tab（两层导航并存 = 用户说的「分不�
         'per_fold_mixed_times',
         'margin_single',
         'margin_multi',
+        'margin_mixed_single',
+        'margin_mixed_multi',
         'min_fullness',
         'tiers',
         'default_formula',
@@ -837,10 +900,13 @@ describe('判据 7：域内零 tab（两层导航并存 = 用户说的「分不�
     mockSearchParams.mockReturnValue(new URLSearchParams('domain=calc'))
     render(<SettingsPage />)
     const panel = await screen.findByTestId('config-domain-panel-calc')
-    // 8 个标量里至少有一个输入框常驻（类级守卫逐域遍历在
+    // 10 个标量里至少有一个输入框常驻（类级守卫逐域遍历在
     // frontend/admin-web/tests/unit/lib/domain-write-surface.test.tsx）
     expect(within(panel).getByTestId('calc-caliber-scalar-per_fold_single')).toBeInTheDocument()
-    expect(within(panel).getByTestId('calc-caliber-save')).toBeInTheDocument()
+    // issue #7183：写面还在，但**保存按钮不在**了 —— 改由「保存态」这处可见证据承担写出口标记
+    expect(within(panel).getByTestId('calc-caliber-save-state')).toBeInTheDocument()
+    expect(within(panel).queryByTestId('calc-caliber-save')).toBeNull()
+    expect(within(panel).queryByTestId('calc-caliber-restore-defaults')).toBeNull()
   })
 
   it('台账无幽灵 + 🔴 判别力自证（台账清零后循环体不执行 ⇒ 必须另有自证）', () => {
@@ -946,31 +1012,6 @@ describe('判据 8：读面失败 ≠ 空态 / 关闭态（issue #6663）', () =
     )
   })
 
-  it('手机端入口未开通：说商家能行动的话，**不出现 env 名与构建指令**（§31 P3）', async () => {
-    vi.stubEnv('NEXT_PUBLIC_BMINI_H5_URL', '')
-    mockSearchParams.mockReturnValue(new URLSearchParams('domain=enterprise'))
-    try {
-      render(<SettingsPage />)
-      const entry = await screen.findByTestId('bmini-h5-unconfigured')
-      expect(entry).toHaveTextContent('尚未开通手机版')
-      expect(entry).toHaveTextContent('请联系服务方')
-      // 环境变量名 / 构建指令不得上屏（§31 P3「不摆内部标识」）
-      expect(entry.textContent).not.toMatch(/NEXT_PUBLIC_/)
-      expect(entry.textContent).not.toMatch(/重新构建|部署|环境变量/)
-      /**
-       * 🔴 **同时**必须保留「未配置」逐字 —— 这两条约束是**一对张力**，本包实测踩过：
-       * 我第一轮只做了「去运维腔」，把「未配置」一起删掉 ⇒ CI 的既有元守卫
-       * `tests/unit_ci_workflows/test_frontend_bmini_entry_single_source.py` 判据 4 当场红
-       * （「无值分支必须逐字说明『未配置』（不许静默什么都不画）」）。
-       * ⇒ 口径是「**换措辞，不删锚点**」：商家看的是人话，而「未配置」是**状态锚点**。
-       * 这里把两条一起钉住，谁再单边改动都会当面红。
-       */
-      expect(entry.textContent).toContain('未配置')
-      expect(screen.queryByTestId('bmini-h5-qr')).toBeNull()
-    } finally {
-      vi.unstubAllEnvs()
-    }
-  })
 })
 
 // ══════════════════════════════════════════════════════════════════════════════

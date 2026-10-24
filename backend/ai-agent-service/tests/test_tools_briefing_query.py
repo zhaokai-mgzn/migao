@@ -247,15 +247,17 @@ AUDIT_OFF_SNAPSHOT = dict(WIRED_SNAPSHOT, audit_tool_logging=False)
 
 
 def _assert_source_caveats_are_disclosed(message):
-    """**判据本体**（#5388）：数据源**固有边界**不得静默 —— 审计 fail-open ⇒ 只可能漏报；
-    审计留痕自 #5303 起才带改价真值 ⇒ 更早的记录不判定。
+    """**判据本体**（#5388 → #7201）：数据源**固有边界**不得静默 —— 但只说人话。
 
-    为什么连 `wired` 的空命中也要说：审计是**旁路**（3s 上限、允许丢行）——
+    改前这里断言 `fail-open` / `#5303` **出现在消息里** —— 那正是 #7201 的病灶：
+    工程口径进了模型的唯一摘要，模型会照着念给商家。现在断言的是**披露意图**
+    （「可能漏报」「空结果不等于绝对没有」）；工程原文只留在 `data` 里供按需下钻。
+
+    为什么连 `wired` 的空命中也要说：审计是**旁路**（可能丢行）——
     空命中只代表「窗口内没有可判定的改价记录」，不代表绝对无事。
     """
-    assert "fail-open" in message, "审计源的 fail-open 边界未披露"
-    assert "漏报" in message, "必须说清方向（只可能漏报、不会误报）"
-    assert "#5303" in message, "改价的历史边界（更早的记录不判定）未披露"
+    assert "可能漏报" in message, "数据源边界未披露（必须说清「可能漏报」）"
+    assert "不等于绝对没有" in message, "必须说清「空结果 ≠ 绝对无事」"
     for forbidden in ("今日无异常", "无异常", "一切正常", "没有异常", "未发现异常", "暂无异常"):
         assert forbidden not in message, f"出现了「{forbidden}」类表述（会把空命中读成没问题）"
     return True
@@ -600,8 +602,9 @@ class TestNotWiredDisclosure:
         assert not [e for e in result.data["proactive_status"].values() if e["status"] != "wired"], \
             "本快照必须**全部接线**（否则下面的边界断言与「未接线披露」串台）"
         assert message.startswith("今日经营日报如下")
-        assert "fail-open" in message and "#5303" in message, "数据源固有边界必须照说"
-        assert "默认 0" in message, "让利源的默认值边界也要说（否则老订单的 0 被读成「确实没打折」）"
+        assert _assert_source_caveats_are_disclosed(message) is True
+        assert "fail-open" not in message and "#5303" not in message, (
+            "工程口径（fail-open / issue 号）不许进模型的唯一摘要（issue #7201）")
 
     @patch("app.tools.briefing_query.get_admin_api_client")
     async def test_red_proof_missing_disclosure_fails_the_judgement(self, mock_get_client):
@@ -660,8 +663,11 @@ class TestSourceCaveatsDisclosure:
         assert status["price_change_over"]["status"] == "not_enabled"
         assert status["discount_over"]["status"] == "wired", "让利那条**不受**审计影响（不同数据源）"
         message = result.message or ""
-        assert "你还没开启写工具审计留痕" in message
-        assert _assert_source_caveats_are_disclosed(message) is True
+        # 🔴 #7201：可行动态说「是你没开」+ 商家指引（display），不抛引擎 reason（快照键 / 成本核算口径）
+        assert "你还没开启" in message, "可行动状态必须说清「是**你**没开」（不是系统没有这个能力）"
+        assert "改价" in message, "开启指引要落到这条规则上（引擎 `display`）"
+        assert "审计留痕" not in message, "工程口径（写工具审计留痕）不许进模型摘要（issue #7201）"
+        assert "cost_accounting" not in message, "快照键不许进模型摘要（issue #7201）"
 
     def test_red_proof_missing_caveat_segment_fails_the_judgement(self):
         """**注入式红证**：消息里没有边界披露（只报「今日经营日报如下」）⇒ 判据必红"""
@@ -677,6 +683,103 @@ class TestSourceCaveatsDisclosure:
             for spec in engine.RULES)
         status = engine.proactive_status(WIRED_SNAPSHOT, rules=stripped)
         assert status["price_change_over"]["caveats"] == []
+
+
+class TestMerchantWordingOnly:
+    """issue #7201：消息是模型的**唯一摘要** ⇒ 只许出现商家话术；工程原文留在 `data`。
+
+    病灶（#7195 的顺带发现）：`incomplete` 拼 `reason`、`not_enabled` 拼 `reason`、
+    `caveats` 整段原文广播 ⇒ 模型照着念「审计上报是 fail-open（3s 硬上限、允许丢行）」
+    「批次明细 agent_batch_items…」这类话给商家，并把「你没开」压成「系统没做」。
+    """
+
+    #: 内部标识（出现在消息里 ⇒ 模型可能转述给商家）
+    INTERNAL_MARKERS = (
+        "装配层", "fail-open", "审计留痕", "#5303", "#5317", "row_fields", "row_meta",
+        "_UNTRACKED", ".py", "agent_batch_items", "product_batch_update", "cost_accounting",
+        "行数组", "快照",
+    )
+
+    @pytest.mark.asyncio
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_message_never_carries_engineering_text(self, mock_get_client):
+        """五类快照（全接线 / 审计没跑 / 成本没开 / 行被截断 / 多条未接线）逐一扫消息。"""
+        for label, snapshot in (
+            ("全接线", WIRED_SNAPSHOT),
+            ("审计没在跑", AUDIT_OFF_SNAPSHOT),
+            ("成本核算没开", dict(WIRED_SNAPSHOT, cost_accounting=False)),
+            ("行被截断", TRUNCATED_SNAPSHOT),
+            ("多条未接线", UNWIRED_SNAPSHOT),
+        ):
+            client = AsyncMock()
+            client.get = AsyncMock(return_value={
+                "success": True,
+                "data": {"bizDate": "2026-09-22", "sourceSnapshot": snapshot}})
+            mock_get_client.return_value = client
+
+            message = (await BriefingQueryTool().execute(context=ALLOWED)).message or ""
+
+            leaked = [token for token in self.INTERNAL_MARKERS if token in message]
+            assert leaked == [], f"[{label}] 消息泄漏了内部标识 {leaked}：{message}"
+
+    @pytest.mark.asyncio
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_not_enabled_carries_the_actionable_display(self, mock_get_client):
+        """`not_enabled` 的商家指引来自引擎 `display`（不是 `reason` 的原文）。"""
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"bizDate": "2026-09-22",
+                     "sourceSnapshot": dict(WIRED_SNAPSHOT, cost_accounting=False)}})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED)
+
+        entry = result.data["proactive_status"]["below_cost_price"]
+        assert entry["status"] == "not_enabled"
+        assert entry["display"] in (result.message or ""), (
+            "消息里必须是引擎给的商家话术（模型可直接转述）")
+        assert entry["reason"] not in (result.message or ""), "诊断面原文不许进消息"
+
+    @pytest.mark.asyncio
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_incomplete_names_the_rule_without_reason_text(self, mock_get_client):
+        """`incomplete` 点名规则 + 一句「可能遗漏」，不把截断上限 / 字段名抛给模型。"""
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={
+            "success": True,
+            "data": {"bizDate": "2026-09-22", "sourceSnapshot": TRUNCATED_SNAPSHOT}})
+        mock_get_client.return_value = client
+
+        message = (await BriefingQueryTool().execute(context=ALLOWED)).message or ""
+
+        assert "本次数据不完整" in message
+        assert "可能有遗漏" in message
+        assert "上限 500 行" not in message, "截断细节（诊断面）不许进消息"
+        assert TRUNCATED_SNAPSHOT["row_meta"]["orders"]["limit"] != 0  # 前提：夹具真的带上限
+
+
+    @pytest.mark.asyncio
+    @patch("app.tools.briefing_query.get_admin_api_client")
+    async def test_product_health_view_message_also_stays_plain(self, mock_get_client):
+        """同一个文件里的第二处侧门：`view=product_health` 的字段 `reason` 也不许进消息。"""
+        snapshot = dict(VIEW_SNAPSHOT)
+        # 一行退货没有 product_id ⇒ `return_rate` 落 incomplete，其 gap 原文含「装配层不猜」
+        # （旧实现把 reason 整段拼进消息 ⇒ 内部标识随之上屏）。
+        snapshot["returns"] = [dict(VIEW_SNAPSHOT["returns"][0], product_id="")]
+        client = AsyncMock()
+        client.get = AsyncMock(return_value={"success": True, "data": snapshot})
+        mock_get_client.return_value = client
+
+        result = await BriefingQueryTool().execute(context=ALLOWED, view="product_health")
+        message = result.message or ""
+        reason = result.data["fields"]["return_rate"]["reason"]
+
+        assert result.data["fields"]["return_rate"]["status"] == "incomplete", (
+            "前提：这一行让 return_rate 真的不完整（否则本判据是空跑）")
+        assert "装配层" in (reason or ""), f"前提：reason 里确实带内部标识（实际：{reason}）"
+        leaked = [token for token in self.INTERNAL_MARKERS if token in message]
+        assert leaked == [], f"视图消息泄漏了内部标识 {leaked}：{message}"
 
 
 class TestIncompleteDisclosure:
@@ -698,7 +801,7 @@ class TestIncompleteDisclosure:
 
         message = result.message or ""
         assert "本次数据不完整" in message, "截断必须显式说出来（有界不许变成静默少报）"
-        assert "超 N 天未发货" in message, "点名的必须是**哪条**规则不完整"
+        assert "超时未发货" in message, "点名的必须是**哪条**规则不完整"
         for forbidden in ("今日无异常", "无异常", "一切正常", "未发现异常"):
             assert forbidden not in message
         assert result.data["proactive_status"]["unshipped_overdue"]["status"] == "incomplete"
@@ -772,10 +875,14 @@ def _not_enabled_segment(message):
 
 
 def _assert_not_enabled_disclosure(message):
-    """**判据本体**（#5348）：没开启的能力必须**点名** + 说清「是**你**没开」+ 给出**可行动**的开启引导。"""
+    """**判据本体**（#5348 → #7201）：没开启的能力必须**点名** + 说清「是**你**没开」+ 给出**可行动**的开启指引。
+
+    指引读的是引擎 `display`（商家话术）；`reason` 里的「快照 cost_accounting=false」这类
+    内部口径**不进消息**（#7201：消息是模型的唯一摘要，工程原文会被照着念）。
+    """
     segment = _not_enabled_segment(message)
     assert "低于成本价的订单" in segment, "必须点名是哪条能力没开启"
-    assert "成本核算" in segment, "必须说清没开的是什么（成本核算）"
+    assert "录入单价" in segment, "必须给出**可行动**的开启指引（补录成本单价）"
     assert "尚未接入" not in segment, "「没开启」不得用「系统尚未接入」的措辞（两态不可合并）"
     for forbidden in ("今日无异常", "无异常", "一切正常", "没有异常", "未发现异常", "暂无异常"):
         assert forbidden not in message, f"出现了「{forbidden}」类表述（会把空命中读成没问题）"
@@ -786,7 +893,7 @@ class TestNotEnabledDisclosure:
     """判据 3（#5348）：**系统有、该租户没开** ⇒ `not_enabled`，话术必须与 `not_wired` 分得开。
 
     对照判据（会红吗）：把工具消息里「你还没开启…」那段删掉、或把它并进「尚未接入」那句
-    ⇒ 本类第 2 条必红（见两条注入式红证）；把 reason（开启引导）抹掉 ⇒ 引导判据必红。
+    ⇒ 本类第 2 条必红（见两条注入式红证）；把 display（开启指引）抹掉 ⇒ 引导判据必红。
     """
 
     @patch("app.tools.briefing_query.get_admin_api_client")
@@ -832,7 +939,7 @@ class TestNotEnabledDisclosure:
         mock_get_client.return_value = client
         result = await BriefingQueryTool().execute(context=ALLOWED)
 
-        merged = (result.message or "").replace("你还没开启成本核算", "尚未接入：成本核算")
+        merged = (result.message or "").replace("你还没开启", "尚未接入：成本核算")
         assert merged != (result.message or ""), "被替换的措辞原本不在消息里 ⇒ 本红证是空跑"
         with pytest.raises(AssertionError):
             _assert_not_enabled_disclosure(merged)
@@ -847,6 +954,6 @@ class TestNotEnabledDisclosure:
         mock_get_client.return_value = client
         result = await BriefingQueryTool().execute(context=ALLOWED)
 
-        assert "成本核算" in (result.message or ""), "引导话术原本就在消息里（否则下一条是空跑）"
+        assert "录入单价" in (result.message or ""), "引导话术原本就在消息里（否则下一条是空跑）"
         with pytest.raises(AssertionError):
-            _assert_not_enabled_disclosure((result.message or "").replace("成本核算", "这项能力"))
+            _assert_not_enabled_disclosure((result.message or "").replace("录入单价", "这项能力"))

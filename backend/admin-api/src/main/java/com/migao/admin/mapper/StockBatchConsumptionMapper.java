@@ -44,6 +44,22 @@ public interface StockBatchConsumptionMapper extends BaseMapper<StockBatchConsum
     String DISPATCH_REASONS_SQL = "'processing_order', 'processing_order_cancelled'";
 
     /**
+     * **耗料族**来源（= 派工两态 + 裁剪报工纠偏，V191 / issue #7647）—— 给「按 SKU 汇总扣减」的
+     * **对账腿**用（{@code sumDeltaBySku}）。
+     *
+     * <p>🔴 为什么它必须与 {@link #DISPATCH_REASONS_SQL} 分开（两把尺子，各有用处）：</p>
+     * <ul>
+     *   <li><b>省料度量</b>（{@code sumSavingByPeriodCohortMaterial}）只认派工：省下的米数由排料
+     *       那一刻确定；报工纠偏行不产生「省料」，混进来只会虚增行数；</li>
+     *   <li><b>对账</b>（{@code sumDeltaBySku}）必须认全部耗料：批次余量是按**所有** delta 派生的，
+     *       漏掉报工扣减，差额就解释不了（「账实不符」恰恰是对账要能说清的那件事）。</li>
+     * </ul>
+     *
+     * <p>新增耗料来源时：<b>默认不进</b>省料腿、**必须显式**决定是否进对账腿 —— 同黑名单改白名单的理由。</p>
+     */
+    String MATERIAL_REASONS_SQL = DISPATCH_REASONS_SQL + ", 'cutting_report'";
+
+    /**
      * **盘点分录的原子落账**（issue #6301）：撞幂等闸
      * {@code uk_batch_consumption_stocktake (tenant_id, stocktake_run_id, batch_id) WHERE stocktake_run_id IS NOT NULL AND deleted = 0}
      * ⇒ <b>不插</b>，并在**同一条语句**里把「谁先到」判出来。
@@ -110,7 +126,7 @@ public interface StockBatchConsumptionMapper extends BaseMapper<StockBatchConsum
             + "COALESCE(SUM(formula_meters), 0) AS formula_sum "
             + "FROM stock_batch_consumptions "
             + "WHERE tenant_id = #{tenantId} AND deleted = 0 AND sku_id IS NOT NULL "
-            + "AND reason IN (" + DISPATCH_REASONS_SQL + ") "
+            + "AND reason IN (" + MATERIAL_REASONS_SQL + ") "
             + "GROUP BY sku_id")
     List<SkuDeltaSum> sumDeltaBySku(@Param("tenantId") Long tenantId);
 
@@ -252,4 +268,20 @@ public interface StockBatchConsumptionMapper extends BaseMapper<StockBatchConsum
         private BigDecimal deltaSum;
         private BigDecimal formulaSum;
     }
+
+    /**
+     * Σ领料成本 = {@code Σ(|planned_meters| × unit_cost)}（issue #7408 的下推面，源口径同 V119 随行快照）。
+     *
+     * <p>改前 {@code RemnantService#issuedCostTotal} 把本租户**全部**「有均价且有计划米数」的消耗行
+     * 读进 JVM 累乘 —— 这张表行数比余料表更多（一次领料/消耗一行）⇒ 每次打开余料台账页都要全量搬运。
+     * 下推后回一行标量，且 {@code (tenant_id, …)} 前导索引可用。</p>
+     *
+     * <p>均价未知 / 计划米数未知的行**不参与**（与改前 {@code isNotNull} 两个谓词逐字一致）——
+     * 拿今天的批次价折算历史领料成本正是 V119 要防的那件事。</p>
+     */
+    @Select("SELECT COALESCE(SUM(ABS(planned_meters) * unit_cost), 0) "
+            + "FROM stock_batch_consumptions "
+            + "WHERE tenant_id = #{tenantId} AND deleted = 0 "
+            + "AND unit_cost IS NOT NULL AND planned_meters IS NOT NULL")
+    BigDecimal sumIssuedCost(@Param("tenantId") Long tenantId);
 }

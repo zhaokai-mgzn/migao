@@ -144,7 +144,10 @@ public class NotificationRuleService {
             throw BusinessException.notFound("通知规则");
         }
         assertTenantOwned(tenantId, existing.getTenantId(), "规则");
-        ruleMapper.deleteById(id);
+        // issue #6956 · 现象 C：判影响行数（并发双删只许一次成功）
+        if (ruleMapper.deleteById(id) == 0) {
+            throw BusinessException.notFound("通知规则");
+        }
         log.info("删除通知规则成功: id={}, tenantId={}", id, tenantId);
     }
 

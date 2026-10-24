@@ -73,6 +73,7 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
     private MockMvc mockMvc;
 
     @Mock private OrderService orderService;
+    @Mock private com.migao.admin.service.RoleService roleService;
     @Mock private OrderLogisticsService orderLogisticsService;
     @Mock private OrderShipmentService orderShipmentService;
     @Mock private StockLedgerService stockLedgerService;
@@ -85,7 +86,7 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
     @BeforeEach
     void setUp() {
         super.baseSetUp();
-        orderController = new OrderController(orderService, orderLogisticsService, orderShipmentService);
+        orderController = new OrderController(orderService, roleService, orderLogisticsService, orderShipmentService);
         stockLedgerController = new StockLedgerController(stockLedgerService);
         notificationController = new NotificationController(notificationService);
         mockMvc = withGate();
@@ -114,7 +115,7 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
 
     private void stubEmptyPages() {
         when(orderService.getOrderPage(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(),
-                any(), any(), any(), any(), any(), any(), any())).thenReturn(PageResponse.of(0L, 1L, 20L, List.of()));
+                any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(PageResponse.of(0L, 1L, 20L, List.of()));
         when(stockLedgerService.getLedgerPage(any(), any(), any(), any(), anyLong(), anyLong()))
                 .thenReturn(PageResponse.of(0L, 1L, 20L, List.of()));
         when(notificationService.queryNotifications(anyString(), any(NotificationQueryRequest.class)))
@@ -164,7 +165,7 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
         verify(orderService).getOrderPage(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(),
-                any(), any(), any(), any(), any(), any(), any());
+                any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -188,7 +189,7 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
                 .andExpect(jsonPath("$.data.total").value(0))
                 .andExpect(jsonPath("$.data.size").value(20));
         verify(orderService).getOrderPage(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(),
-                any(), any(), any(), any(), any(), any(), any());
+                any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -205,7 +206,7 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
         stubEmptyPages();
         mockMvc.perform(get("/api/admin/orders")).andExpect(status().isOk());
         verify(orderService).getOrderPage(anyLong(), anyLong(), any(), any(), any(), any(), any(), any(),
-                any(), any(), any(), any(), any(), any(), any());
+                any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     // ────────────────────────── ④ 摘线对照（判据非空自证） ──────────────────────────
@@ -232,7 +233,7 @@ class PaginationParamGateEndpointTest extends BaseControllerTest {
         mockMvc.perform(get("/api/admin/orders").param("page", "1").param("size", "-5"))
                 .andExpect(status().isBadRequest());
         verify(orderService, never()).getOrderPage(anyLong(), anyLong(), any(), any(), any(), any(), any(),
-                any(), any(), any(), any(), any(), any(), any(), any());
+                any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test

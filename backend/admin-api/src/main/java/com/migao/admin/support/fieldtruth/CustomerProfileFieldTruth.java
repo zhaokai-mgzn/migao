@@ -66,6 +66,18 @@ public final class CustomerProfileFieldTruth {
         f.put("customerStatus", has("建档默认 \"active\"（常量种子）+ CustomerService#updateCustomer 非空拷贝（真值级：active/silent/churn_warning/churned 可被改写）"));
         f.put("sourceChannel", has("createFromSession .sourceChannel(sourceChannel != null ? sourceChannel : \"wechat_mini\") / createFromOrder .sourceChannel(\"order\")（真值来自建档来源）"));
 
+        // ── 授信与账期（issue #7370，P0-2 段 1）──
+        // 两列都是**有真值**：写入点 = CustomerService#updateCreditSettings（PUT /customers/{id}/credit，
+        // customerProfileMapper.updateById）；且**语义上 null 就是真值**（= 未启用授信），
+        // 不是「未知」—— 所以不进遮蔽清单，也绝不能被读面当成 0（0 = 启用但零额度）。
+        f.put("creditLimit", has("CustomerService#updateCreditSettings 显式写入（客户详情「授信与往来」保存）；null = 未启用授信（真值，不是未知），0 = 零额度"));
+        f.put("paymentTermsDays", has("CustomerService#updateCreditSettings 显式写入（同上端点）；null = 未设置，0 = 现结"));
+
+        // ── 客户负责人（issue #7372 段 2，V178）──
+        // 有真值：数据范围 self 的归属判定读它（CustomerService#ownedByMe + 列表 SQL）。
+        // null 是**真值**（= 未指派，业务态），不是「未知」⇒ 不进遮蔽清单；也不会被读成 0。
+        f.put("ownerUserId", has("CustomerService#assignOwner 显式写入（PUT /customers/{id}/owner，V178）；null = 未指派（真值，不是未知）"));
+
         // ── RFM 评分（issue #5362 的核心取证面：有列、有读面、无计算）──
         f.put("rScore", none("全仓零写入点（setRScore / builder / SQL SET 零命中）：无任何 RFM 计算逻辑，DB DEFAULT 0 不是「1-5 分」的真值"));
         f.put("fScore", none("全仓零写入点：同上（频率分从未被计算）"));

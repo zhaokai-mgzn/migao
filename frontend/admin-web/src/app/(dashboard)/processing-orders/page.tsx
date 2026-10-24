@@ -1,9 +1,9 @@
 import { redirect } from 'next/navigation'
 
 /**
- * 旧「加工单」列表入口 → 生产看板（issue #4357）。
+ * 旧「加工单」列表入口 → 作业看板（issue #4357）。
  *
- * 原列表页与「生产看板」/production 是**同一实体、同一端点**（processingOrderApi.list）的
+ * 原列表页与「作业看板」/production 是**同一实体、同一端点**（processingOrderApi.list）的
  * 两份渲染；#4357 把「加工单」菜单并入生产管理组并与看板合并为单一入口
  * ⇒ 本页不再渲染列表，直接重定向到唯一入口（旧书签/外部深链不 404）。
  *

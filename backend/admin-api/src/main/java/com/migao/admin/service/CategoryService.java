@@ -147,7 +147,11 @@ public class CategoryService extends ServiceImpl<CategoryMapper, Category> {
             throw BusinessException.validationError("该分类下有关联商品，无法删除");
         }
 
-        categoryMapper.deleteById(id);
+        // issue #6956 · 现象 C：判影响行数 —— 并发双删时只有一次真删到（`deleted = 0` 谓词），
+        // 另一个必须看得见（404），不能两个都回「删除成功」。
+        if (categoryMapper.deleteById(id) == 0) {
+            throw BusinessException.notFound("分类");
+        }
         log.info("删除分类成功: id={}", id);
     }
 

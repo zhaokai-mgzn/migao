@@ -303,6 +303,7 @@
         "where": "on.pull_request.paths",
         "paths": [
           "frontend/worker-h5/**",
+          "frontend/admin-web/tailwind.config.ts",
           ".github/workflows/worker-h5-tests.yml"
         ]
       },
@@ -608,18 +609,17 @@
     {
       "file": "tests/unit_ci_workflows/test_operation_display_name_guard.py",
       "symbol": "FACES",
-      "bound": 7,
+      "bound": 6,
       "members": [
         "frontend/admin-web/src/components/production/ProductionProgressTable.tsx",
         "frontend/admin-web/src/app/(dashboard)/production/piecework/page.tsx",
         "frontend/admin-web/src/components/production/PieceworkTable.tsx",
         "frontend/admin-web/src/components/chat/ProductionProgressCard.tsx",
         "frontend/admin-web/src/app/(dashboard)/processing-orders/[id]/production/page.tsx",
-        "frontend/admin-web/src/components/orders/ProcessingDoc.tsx",
         "frontend/admin-web/src/components/orders/ProcessingOrderBlock.tsx"
       ],
       "issue": "#5007",
-      "note": "该处只写 `assert len(...) >= N`（只防清空、不防删一项）⇒ 由逐项冻结承担「多一个/少一个都红」；下界断言本身按文件所有权留在原文件"
+      "note": "该处只写 `assert len(...) >= N`（只防清空、不防删一项）⇒ 由逐项冻结承担「多一个/少一个都红」；下界断言本身按文件所有权留在原文件；issue #7274：A4 纸质加工单 ProcessingDoc 退役（纸面不印工序）⇒ 成员 7 → 6，下界同步 7 → 6。"
     },
     {
       "file": "tests/unit_ci_workflows/test_operation_display_name_guard.py",

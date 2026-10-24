@@ -1,4 +1,4 @@
-// case_ids: API-010, CU-006, PG-021
+// case_ids: API-010, CU-006, PG-021, STK-002
 package com.migao.admin.service;
 
 import com.migao.admin.dto.LoginRequest;
@@ -568,27 +568,35 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("全权账号：两个顶层一级项 + 六个组 + 通知中心**逐组逐项**镜像 menu.ts（组 key/名/顺序/组内 key/名/路径/顺序）")
+    @DisplayName("全权账号：最前席位一级项「经营看板」+ 五个组 + 尾席位「商品管理」「企业基础设置」+ 通知中心**逐组逐项**镜像 menu.ts")
     void currentUserMenusMirrorFrontendIaForAllPermissions() {
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("*");
 
-        // 🔴 2026-10-06（issue #6457，用户裁定方案 A1）：一级项**排在所有分组之后**、通知中心之前
-        //（原为「工作台组之后」）—— 与前端渲染顺序逐项一致。
-        // 🔴 issue #6580：第 2 个一级项由「参数总览」改为「企业基础设置」（组织管理组的组内项升为
-        // 一级项；席位不变，码仍取既有 `production:view`；位置 = 「商品管理」之后、通知中心之前）。
+        // 🔴 2026-10-17（issue #7087，用户裁定）：「工作台」组**整组撤销** ⇒ 顶层第 0 项 = **最前席位**
+        // 一级项「经营看板」（前端 `menu.ts` 的 `standaloneHeadItems` 的对应物），随后才是五个组；
+        // 「每日简报」菜单项删除。尾席位沿用 #6457 的口径（**所有分组之后**：商品管理 → 企业基础设置
+        // → 通知中心）—— 与前端渲染顺序逐项一致。
+        // 🔴 2026-10-22（issue #7376）：最前席位增至**两项** —— 经营看板 → 报表中心
+        //（同属经营数据面：报表是看板的下钻；同码 `dashboard:view` ⇒ 零授权 delta）。
         assertThat(keysOf(menus)).containsExactly(
-                "workspace", "customer-service", "trade-center",
-                "production-center", "inventory-center", "org-center",
+                "dashboard", "reports", "customer-service", "trade-center",
+                "production-center", "supply-chain", "inventory-center", "org-center",
                 "products", "settings", "notifications");
         assertThat(namesOf(menus)).containsExactly(
-                "工作台", "客户服务", "交易管理",
-                "生产管理", "仓储与物料", "组织管理",
+                "经营看板", "报表中心", "客户服务", "交易管理",
+                "生产管理", "供应链", "仓储与物料", "组织管理",
                 "商品管理", "企业基础设置", "通知中心");
 
-        // 工作台（#5271 由「独立项」改为组）
-        var workspace = groupByKey(menus, "workspace");
-        assertThat(namesOf(workspace.getChildren())).containsExactly("经营看板", "每日简报");
-        assertThat(pathsOf(workspace.getChildren())).containsExactly("/dashboard", "/briefing");
+        // 🔴 #7087：最前席位 = 「经营看板」**顶层一级项**（不是组）—— key / name / path 三项逐值，
+        // 且 `children` 为空（旧形态是 `workspace` 组，组内两个节点：经营看板 + 每日简报）。
+        var dashboard = menus.get(0);
+        assertThat(dashboard.getKey()).isEqualTo("dashboard");
+        assertThat(dashboard.getName()).isEqualTo("经营看板");
+        assertThat(dashboard.getPath()).isEqualTo("/dashboard");
+        assertThat(dashboard.getChildren()).isNullOrEmpty();
+        // 反向：旧「工作台」组（含空组形态）与「每日简报」项都不再下发
+        assertThat(keysOf(menus)).doesNotContain("workspace", "briefing");
+        assertThat(allNames(menus)).doesNotContain("工作台", "每日简报");
 
         // 客户服务组（#5778 新建）：原「智能客服」组 + 客户侧两项
         var cs = groupByKey(menus, "customer-service");
@@ -599,27 +607,37 @@ class AuthServiceTest {
                 "/agent-workspace/human-sessions", "/knowledge", "/after-sales", "/customers");
 
         var trade = groupByKey(menus, "trade-center");
+        // 🔴 2026-10-22（issue #7375 段 3）：交易管理组新增「价格本」（交易前置）⇒ 组内第一项
+        // 🔴 2026-10-24（issue #7593，用户裁定）：「审批中心」撤出侧边栏 —— 入口改**顶栏待办入口**
+        // （前端 `components/layout/ApprovalBell.tsx`），`/approvals` 页面与路由守卫保留 ⇒ 本组只剩三项。
         assertThat(keysOf(trade.getChildren()))
-                .containsExactly("orders", "finance");
+                .containsExactly("price-books", "orders", "finance");
         assertThat(pathsOf(trade.getChildren()))
-                .containsExactly("/orders", "/finance");
+                .containsExactly("/price-books", "/orders", "/finance");
 
         var production = groupByKey(menus, "production-center");
         // 🔴 2026-10-09（issue #6580）：本组**由 5 项收拢为 3 项** —— 「加工项管理」
         //（`processing`）「工艺配置」（`production-process`）两个菜单项按用户裁定移除
         //（功能体并入一级项「企业基础设置」页内的配置域；旧路径保留为重定向）。
+        // 🔴 2026-10-17（issue #7140）：本组新增「质检记录」（`production:inspect`）
+        // 🔴 2026-10-23（issue #7377）：本组新增「返工单」（`after_sales:view`，复用售后读码 ⇒ 零授权 delta）
         assertThat(keysOf(production.getChildren())).containsExactly(
-                "production-board", "production-pool", "production-piecework");
+                "production-board", "production-pool", "production-piecework", "quality-inspections",
+                "rework-orders");
         assertThat(pathsOf(production.getChildren())).containsExactly(
-                "/production", "/production/pool", "/production/piecework");
+                "/production", "/production/pool", "/production/piecework", "/quality-inspections",
+                "/rework-orders");
 
+        // 🔴 2026-10-20（issue #7369，用户裁定「得加个新大菜单」）：单据三节点已移到「供应链」组；
+        // 本组只剩库存与出库（库存明细 → 发货单 → 余料台账 → 省料看板）。
+        var supplyChain = groupByKey(menus, "supply-chain");
+        assertThat(keysOf(supplyChain.getChildren())).containsExactly(
+                "inbound-orders", "suppliers", "purchase-orders");
         var inventory = groupByKey(menus, "inventory-center");
-        // 🔴 2026-10-06（方案 A1）：单据（进 → 账 → 出）→ 台账 → 分析
         assertThat(keysOf(inventory.getChildren())).containsExactly(
-                "inbound-orders", "stock-ledger", "shipments", "production-remnants",
-                "production-saving-board");
+                "stock-ledger", "stocktakes", "shipments", "production-remnants", "production-saving-board");
         assertThat(pathsOf(inventory.getChildren())).containsExactly(
-                "/inbound-orders", "/stock-ledger", "/shipments", "/production/remnants",
+                "/stock-ledger", "/stocktakes", "/shipments", "/production/remnants",
                 "/production/saving-board");
 
         var org = groupByKey(menus, "org-center");
@@ -643,7 +661,7 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("生产管理组（#6580 收拢为 3 项 + #5291/#5699 P4）：production:view = 生产看板/计件工资，智能派单 = processing:view")
+    @DisplayName("生产管理组（#6580 收拢为 3 项 + #5291/#5699 P4）：production:view = 作业看板/计件工资，智能派单 = processing:view")
     void currentUserMenusExposeProductionGroup() {
         // issue #5291：生产域新增**读**码 `production:view` —— 「看得见这一页」与「改得动生产数据」
         // 就此分开；**智能派单**仍按 `processing:manage`（同组不同权，其读端点用 processing:view、
@@ -653,9 +671,9 @@ class AuthServiceTest {
         var production = groupByKey(readOnly, "production-center");
         assertThat(production.getName()).isEqualTo("生产管理");
         // 🔴 issue #6580：「加工项管理」「工艺配置」两个菜单项已移除（功能体并入一级项
-        // 「企业基础设置」页内的配置域）⇒ 只持 `production:view` 时本组剩「生产看板 + 计件工资」。
+        // 「企业基础设置」页内的配置域）⇒ 只持 `production:view` 时本组剩「作业看板 + 计件工资」。
         assertThat(namesOf(production.getChildren()))
-                .containsExactly("生产看板", "计件工资");
+                .containsExactly("作业看板", "计件工资");
         assertThat(pathsOf(production.getChildren())).containsExactly(
                 "/production", "/production/piecework");
         // 同组不同权：智能派单**不**随读码一起出现（拆码没有变成「一组一起放行」）
@@ -666,7 +684,7 @@ class AuthServiceTest {
         assertThat(allNames(readOnly)).contains("企业基础设置");
 
         // 🔴 issue #5699（P4，子菜单粒度）之后**各页按自己的码**门控（不再「同组一起放行」）：
-        //   · production:view ⇒ 生产看板 + 计件工资（+ #6580 起的一级项「企业基础设置」）
+        //   · production:view ⇒ 作业看板 + 计件工资（+ #6580 起的一级项「企业基础设置」）
         //   · processing:view ⇒ 智能派单（其页面读码）
         //   · product:list ⇒ 省料看板（其页面读码）
         // 反向断言（只持 processing:manage）：生产管理组**整组不出现**（该组没有任何节点再挂 manage），
@@ -681,7 +699,7 @@ class AuthServiceTest {
         // 新码持有者的正向读数（各自只点亮自己那一页 ⇒ 证明节点码 ≡ 页面读码）
         var poolOnly = groupByKey(menusForPermissions("processing:view"), "production-center");
         assertThat(namesOf(poolOnly.getChildren())).containsExactly("智能派单");
-        // issue #6404：`product:list` 现在点亮**两页**（省料看板 + 库存明细）—— 与「订单列表 / 发货单」
+        // issue #6404：`product:list` 现在点亮**两页**（省料看板 + 库存明细）—— 与「销售订单 / 发货单」
         // 同取 `order:list` 同式：**同码 ≠ 同权**，两页各自的读端点注解就是这个码。
         // ⚠️ 2026-10-06（issue #6457）：组内顺序变为「进 → 账 → 出 → 台账 → 分析」
         // ⇒ 本权限集（只有这两页可见）的顺序是**库存明细 → 省料看板**。
@@ -690,55 +708,65 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("工作台组：经营看板 + 每日简报（同码 dashboard:view；#5699 P4 起经营看板也按该码门控）")
-    void currentUserMenusGateBriefingByDashboardView() {
+    @DisplayName("🔴 #7087 + #7376：最前席位两项（经营看板 → 报表中心）；持 dashboard:view 时点亮两项 + 通知中心")
+    void currentUserMenusExposeDashboardAsTopLevelItem() {
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("dashboard:view");
 
-        var workspace = groupByKey(menus, "workspace");
-        assertThat(workspace.getName()).isEqualTo("工作台");
-        assertThat(namesOf(workspace.getChildren())).containsExactly("经营看板", "每日简报");
-        assertThat(pathsOf(workspace.getChildren())).containsExactly("/dashboard", "/briefing");
-        // 除工作台外只有独立项「通知中心」（dashboard:view 不点亮任何其它组）
-        assertThat(keysOf(menus)).containsExactly("workspace", "notifications");
+        // 旧形态 = 「工作台」组（组内 经营看板 + 每日简报）；#7087 起组没了、简报项没了。
+        // 🔴 #7376：`dashboard:view` 现由**两个**最前席位一级项承载（经营看板 + 报表中心）。
+        assertThat(keysOf(menus)).containsExactly("dashboard", "reports", "notifications");
+        var dashboard = menus.get(0);
+        assertThat(dashboard.getName()).isEqualTo("经营看板");
+        assertThat(dashboard.getPath()).isEqualTo("/dashboard");
+        assertThat(dashboard.getChildren()).isNullOrEmpty();
+        // 反向：不得再有「工作台」组 / 「每日简报」项（也不再是「整组消失」的形态）
+        assertThat(keysOf(menus)).doesNotContain("workspace", "briefing");
+        assertThat(allNames(menus)).doesNotContain("工作台", "每日简报");
     }
 
     @Test
-    @DisplayName("负控：无 dashboard:view ⇒ 每日简报不出现（经营看板仍在）；无权限的组整组不出现")
+    @DisplayName("负控：无 dashboard:view ⇒ 经营看板（顶层一级项）**不出现**、且不再有整组消失的形态；无权限的组整组不出现")
     void currentUserMenusHideGroupsWithoutPermission() {
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("order:list");
 
-        // 顶层只有「交易管理 + 仓储与物料 + 通知中心」—— #5699 P4 起经营看板也按 dashboard:view 门控
-        // ⇒ 无该码时工作台组**整组**不出现（不再有「组内只剩经营看板」这一形态）。
-        // 🔴 #5939：「仓储与物料」在**该权限下可见**了 —— 因为「发货单」取的就是 order:list（与订单列表
+        // 顶层只有「交易管理 + 仓储与物料 + 通知中心」—— 经营看板按 dashboard:view 门控（#5699 P4），
+        // 🔴 #7087 起它是**顶层一级项** ⇒ 无该码时**这一项**不出现（旧形态「工作台组整组消失」随组
+        // 撤销一并消失；「每日简报」则根本不再下发）。
+        // 🔴 #5939：「仓储与物料」在**该权限下可见**了 —— 因为「发货单」取的就是 order:list（与销售订单
         // 同一批人在用）。这不是放宽门禁：该组里**只有**发货单一项，余料台账/省料看板仍各要自己的码
         // （见下方「同组不等于同权」专条）。
         assertThat(keysOf(menus)).containsExactly("trade-center", "inventory-center", "notifications");
         assertThat(keysOf(groupByKey(menus, "inventory-center").getChildren())).containsExactly("shipments");
-        assertThat(allNames(menus)).doesNotContain("经营看板", "每日简报");
+        assertThat(allNames(menus)).doesNotContain("经营看板", "每日简报", "工作台");
         // 负控（整组不出现，不得漏权限门控）
         assertThat(allNames(menus)).doesNotContain(
-                "每日简报", "生产管理", "智能客服", "商品与加工项", "组织管理");
+                "每日简报", "生产管理", "智能客服", "商品与加工项", "组织管理", "客户服务");
         assertThat(keysOf(menus)).doesNotContain(
                 "production-center", "smart-customer-service", "product-center",
-                "org-center", "customer-center");
+                "org-center", "customer-center", "workspace", "dashboard");
     }
     @Test
     @DisplayName("仓储与物料组：入库单落在**独立的** inbound:view 判定里（不得塞进 processing:manage）")
     void currentUserMenusGateInboundOrdersIndependently() {
         // 只有 inbound:view、没有 processing:manage ⇒ 入库单必须可见（否则仓管看不到菜单），
-        // 且该组只含它一项
+        // 且该组只含它这一族：入库单 / 供应商 / 采购单（issue #7369 两段：档案面与采购面同取 inbound:view）
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus = menusForPermissions("inbound:view");
 
-        // #5699 P4：经营看板也按 `dashboard:view` 门控 ⇒ 只持 inbound:view 时工作台组**整组不出现**
-        //（本条因此顺带成为「经营看板不再无条件出现」的负控）。
-        assertThat(keysOf(menus)).containsExactly("inventory-center", "notifications");
-        var inventory = groupByKey(menus, "inventory-center");
-        assertThat(inventory.getName()).isEqualTo("仓储与物料");
-        assertThat(namesOf(inventory.getChildren())).containsExactly("入库单");
-        assertThat(pathsOf(inventory.getChildren())).containsExactly("/inbound-orders");
+        // #5699 P4：经营看板也按 `dashboard:view` 门控（#7087 起它是**顶层一级项**）⇒ 只持 inbound:view 时
+        //**它这一项**不出现（本条因此顺带成为「经营看板不再无条件出现」的负控）。
+        // #7373：盘点单也持 inbound:view ⇒ 本权限集下「仓储与物料」组**在**（组内只这一项）
+        assertThat(keysOf(menus)).containsExactly("supply-chain", "inventory-center", "notifications");
+        var supply = groupByKey(menus, "supply-chain");
+        assertThat(supply.getName()).isEqualTo("供应链");
+        assertThat(namesOf(supply.getChildren())).containsExactly("入库单", "供应商", "采购单");
+        assertThat(pathsOf(supply.getChildren()))
+                .containsExactly("/inbound-orders", "/suppliers", "/purchase-orders");
+        var inventoryGroup = groupByKey(menus, "inventory-center");
+        assertThat(namesOf(inventoryGroup.getChildren())).containsExactly("盘点单");
+        assertThat(pathsOf(inventoryGroup.getChildren())).containsExactly("/stocktakes");
         // 自证渲染面非空（入库单自己）+ 反向：processing:manage 的两项确实被门控挡在外面
         assertThat(allNames(menus)).contains("入库单");
-        assertThat(allNames(menus)).doesNotContain("余料台账", "省料看板", "生产看板");
+        assertThat(allNames(menus)).doesNotContain("余料台账", "省料看板", "作业看板");
     }
 
     @Test
@@ -747,7 +775,7 @@ class AuthServiceTest {
         List<com.migao.admin.dto.UserInfoResponse.MenuItem> menus =
                 menusForPermissions("customer:view", "finance:view");
 
-        // #5699 P4：经营看板按 `dashboard:view` 门控 ⇒ 本组权限集不含它时工作台组不出现。
+        // #5699 P4：经营看板按 `dashboard:view` 门控（#7087 起 = 顶层**一级项**）⇒ 本权限集不含它时该项不出现。
         // 🔴 #5778：客户列表移入「客户服务」组、财务对账留在「交易管理」组 ⇒ 两个组同时出现。
         assertThat(keysOf(menus)).containsExactly("customer-service", "trade-center", "notifications");
         var customerService = groupByKey(menus, "customer-service");
@@ -756,6 +784,8 @@ class AuthServiceTest {
         assertThat(pathsOf(customerService.getChildren())).containsExactly("/customers");
         var trade = groupByKey(menus, "trade-center");
         assertThat(trade.getName()).isEqualTo("交易管理");
+        // 🔴 2026-10-24（issue #7593）：「审批中心」菜单项已撤除（入口改顶栏）⇒ 只持 finance:view 时
+        // 交易管理组 = **财务对账**（审批中心页仍进得去：路由守卫码同为 finance:view，零授权 delta）。
         assertThat(namesOf(trade.getChildren())).containsExactly("财务对账");
         assertThat(pathsOf(trade.getChildren())).containsExactly("/finance");
         assertThat(keysOf(menus)).doesNotContain("customer-center", "customers", "finance");

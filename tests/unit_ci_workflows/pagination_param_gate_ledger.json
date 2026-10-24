@@ -118,6 +118,11 @@
       "why": "经查询 DTO 绑 page/size（DTO 自带默认值、无共同基类）⇒ 同一 HTTP 参数集仍过单点闸；DTO 属性名与 HTTP 参数名可以不同（实测 ProductQueryRequest.productId 对 @RequestParam productCode），故准入放在取参层而不是 DTO 层。"
     },
     {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/QualityCheckController.java::targets",
+      "source": "@RequestParam",
+      "why": "经 `@RequestParam` 取 page/size（`GET /api/admin/quality-inspections/targets`，issue #7140 新增的待检清单读面）⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400；另服务端自身把 `size` 封顶 100（不信任调用方）⇒ 不会出现「负 size = 不分页」那种整表返回。"
+    },
+    {
       "key": "backend/admin-api/src/main/java/com/migao/admin/controller/RegistrationController.java::getRegistrations",
       "source": "@RequestParam",
       "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
@@ -131,6 +136,11 @@
       "key": "backend/admin-api/src/main/java/com/migao/admin/controller/SettingsController.java::getLoginLogs",
       "source": "@RequestParam",
       "why": "经 `@RequestParam` 取 page/size ⇒ 请求参数集必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），非法值 ⇒ 400，不再出现「total=0 却返回整页」。"
+    },
+    {
+      "key": "backend/admin-api/src/main/java/com/migao/admin/controller/StockBatchController.java::batchesPage",
+      "source": "@RequestParam",
+      "why": "批次余量分页读面（issue #7604）：`page`/`size` 经 `@RequestParam` 取 ⇒ 必过单点闸 `PaginationParamGate.requireValid`（`PaginationParamInterceptor.preHandle` 委派），负数/超上界 ⇒ 400，不会退化成「total=0 却返回整表」。"
     },
     {
       "key": "backend/admin-api/src/main/java/com/migao/admin/controller/StockBatchController.java::consumptions",

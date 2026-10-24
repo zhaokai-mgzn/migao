@@ -1,0 +1,74 @@
+{
+  "viewport": 750,
+  "pageScrollWidth": 750,
+  "scrolls": [
+    {
+      "clientWidth": 622,
+      "scrollWidth": 823,
+      "scrollable": true,
+      "rect": {
+        "x": 43,
+        "w": 622,
+        "h": 208
+      }
+    },
+    {
+      "clientWidth": 555,
+      "scrollWidth": 557,
+      "scrollable": true,
+      "rect": {
+        "x": 43,
+        "w": 555,
+        "h": 156
+      }
+    }
+  ],
+  "tables": [
+    {
+      "rows": 4,
+      "cells": 24,
+      "rect": {
+        "x": 43,
+        "w": 823,
+        "h": 208
+      }
+    },
+    {
+      "rows": 3,
+      "cells": 9,
+      "rect": {
+        "x": 43,
+        "w": 557,
+        "h": 156
+      }
+    }
+  ],
+  "wrappers": [
+    {
+      "wide": true,
+      "rect": {
+        "x": 24,
+        "w": 660,
+        "h": 367
+      }
+    },
+    {
+      "wide": true,
+      "rect": {
+        "x": 24,
+        "w": 593,
+        "h": 270
+      }
+    },
+    {
+      "wide": false,
+      "rect": {
+        "x": 24,
+        "w": 548,
+        "h": 188
+      }
+    }
+  ],
+  "literalPipes": 0
+}
+✅ RESULT {"literalPipes":0,"tableCount":2,"sixColScrollable":true,"wideBubbleWidth":660,"plainBubbleWidth":548}

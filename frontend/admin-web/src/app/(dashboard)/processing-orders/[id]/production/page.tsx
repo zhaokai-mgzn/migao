@@ -18,6 +18,8 @@ import { routeSourceNotice } from '@/lib/route-source'
 // ⇒ `logical_name` 缺失时会渲染成 ` · 布帘` 或 `—`，而进度表渲染的是快照名原文。
 import { operationDisplayName } from '@/lib/operation-display'
 import ProductionProgressTable from '@/components/production/ProductionProgressTable'
+import ProcessingOrderActions from '@/components/production/ProcessingOrderActions'
+import QualityCheckPanel from '@/components/production/QualityCheckPanel'
 import PieceworkTable from '@/components/production/PieceworkTable'
 import CutPlanTable from '@/components/production/CutPlanTable'
 import PrintDocPreview from '@/components/orders/PrintDocPreview'
@@ -249,7 +251,7 @@ export default function ProcessingOrderProductionPage() {
     requestPrint('labels')
   }
 
-  /** 直连通道要的水洗唛数据（部位 + 快照行 ⇒ 纸面行清单，走**单一处**映射；issue #6439 → #6656）
+  /** 预览页脚「蓝牙无线打印」要的水洗唛数据（部位 + 快照行 ⇒ 纸面行清单，走**单一处**映射；issue #6439 → #6656 → #7288）
    *
    * 🔴 与系统打印（`TaskCardPrint`）传的是**同一份**数据源：改动前这里只传了 4 个键
    * （码 / 短码 / 件名 / 部位）⇒ 直连打出来的纸面比预览少十行（issue #6656 的根因）。 */
@@ -497,12 +499,6 @@ export default function ProcessingOrderProductionPage() {
                   打印任务卡
                 </Button>
               </div>
-
-              {/* 免驱动直连打印机（issue #6439）—— **与上面那条并存，不是替换**：
-                  「打印任务卡」走系统打印，覆盖**任何**装了驱动的打印机（Windows 驱动 / USB /
-                  网络 / 已配对蓝牙）；这条只覆盖**带网页蓝牙协议**的机型，胜在**不用装驱动**。
-                  两条通道的能力面与边界见 `frontend/admin-web/src/lib/label-print/capability.ts`。 */}
-              <DirectLabelPrint className="mt-2" labels={washLabels} onRecordPrint={recordPrintOnce} />
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -543,6 +539,16 @@ export default function ProcessingOrderProductionPage() {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* 作业单状态动作（issue #7634）：从销售订单「作业单」块搬来 —— 发加工 / 开始加工 /
+              加工完成 / 取消 只在生产侧发生，订单详情只读。 */}
+          <div
+            className="rounded-lg border border-neutral-200 bg-white p-4"
+            data-testid="production-actions-panel"
+          >
+            <h2 className="mb-3 text-sm font-medium text-neutral-900">作业单状态</h2>
+            <ProcessingOrderActions po={po} onChanged={(next) => setPo(next)} />
           </div>
 
           {/* 路线来源提示（issue #4307）：default 高亮警示，partial 提示 —— 不得静默 */}
@@ -769,6 +775,18 @@ export default function ProcessingOrderProductionPage() {
             )}
           </div>
 
+          {/* 质检区（issue #7140 = #5652 的**商家面**）：按成品帘记录判定（谁检的 / 何时 / 合格·返工·报废 / 原因）。
+              🔴 **只在持 `production:inspect` 时渲染**（判定属独立质检员岗位 + 管理员；用户 2026-10-17
+              裁定「保持现状」⇒ 不是所有人都该看到这一区，也不是所有人都能录）。权限门在**调用方**
+              —— `QualityCheckPanel` 自己不判码（避免两处口径）。
+              ⚠️ 数据来自质检记录读面（按本单过滤），与「工序进度」「计件」并列、**不互相改写**：
+              报工 = 数量事实，质检 = 成品帘判定（#5652 的两套口径并存）。 */}
+          {hasPermission('production:inspect') && po?.id && (
+            <div className="rounded-lg border border-neutral-200 bg-white p-5">
+              <QualityCheckPanel processingOrderId={po.id} positions={operations?.positions} />
+            </div>
+          )}
+
           {/* 可打印洗水码（issue #4946：一个商品行/部位一张；issue #5646 纸宽 30mm→50mm ⇒ 50mm×60mm，
               码 = 该部位自己的 scan_url）；屏幕隐藏（display:none），点「打印任务卡」时只打印它 */}
           <TaskCardPrint
@@ -785,13 +803,19 @@ export default function ProcessingOrderProductionPage() {
           />
 
           {/* 打印前的**纸面自检层**（issue #5914）：标签 50×60mm 的纸型没配好 = 整卷打废，
-              所以洗水码也走「先看纸面再打」。预览实例**不传 printTarget** ⇒ 不上纸。 */}
+              所以洗水码也走「先看纸面再打」。预览实例**不传 printTarget** ⇒ 不上纸。
+
+              🔴 免驱动直连（Web Bluetooth，issue #6439）那条通道的入口**在这个弹层的页脚**
+              （issue #7288：用户 2026-10-18「做到水洗唛打印预览中，在右下角加个按钮叫蓝牙无线打印」）
+              —— 与「打印」并排，两条通道在同一个视野里：预览里看到的就是要打的那张纸。
+              两条通道的能力面与边界见 `frontend/admin-web/src/lib/label-print/capability.ts`。 */}
           <PrintDocPreview
             target={previewTarget}
             title={PRINT_TARGET_SPECS.labels.title}
             media={PRINT_TARGET_SPECS.labels.media}
             onPrint={printTaskCards}
             onClose={closePreview}
+            actions={<DirectLabelPrint labels={washLabels} onRecordPrint={recordPrintOnce} />}
           >
             {previewTarget === 'labels' && (
               <TaskCardPrint

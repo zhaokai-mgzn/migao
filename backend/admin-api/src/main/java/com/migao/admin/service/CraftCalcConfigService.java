@@ -66,11 +66,13 @@ public class CraftCalcConfigService {
     public static final String DEFAULTS_SOURCE_UNAVAILABLE = "unavailable";
 
     /**
-     * 褶倍下限的**行业美学红线**：配置可配但**不可关**（低于它 ⇒ 422）。
+     * 褶倍下限的**行业美学红线**：配置可配，**0 = 关闭**（issue #7548），其余值不得低于它。
      *
      * <p>与算料引擎 {@code curtain_calc.MIN_FULLNESS}（= 引擎默认配置的 {@code min_fullness}）
-     * <b>同值</b>；这里是**护栏常量**（写面拒绝），不是公式参数 —— 引擎自身只校验「正数」，
-     * 关掉下限的责任在不可信输入的边界上（本服务）。</p>
+     * <b>同值</b>；这里是**护栏常量**（写面拒绝），不是公式参数 —— 引擎自身只校验「非负」，
+     * 关掉下限的责任在不可信输入的边界上（本服务）。
+     * 🔴 用户 2026-10-23 裁定（issue #7548）：「0 = 关闭」，而 0 与红线之间的值仍拒
+     * （那个灰区既不守美感、又不像 0 那样是明确选择）。</p>
      *
      * <p>跨源漂移守卫 = {@code tests/unit_ci_workflows/test_craft_calc_config_contract.py}
      * 逐值读 {@code curtain_calc.py} 比对（引擎改红线而 Java 没跟 ⇒ 红）。</p>
@@ -87,14 +89,37 @@ public class CraftCalcConfigService {
      */
     public static final List<String> CONFIG_KEYS = List.of(
             "per_fold_single", "per_fold_mixed_times", "margin_single", "margin_multi",
+            "margin_mixed_single", "margin_mixed_multi",
             "min_fullness", "tiers", "default_formula", "hem_margin",
             "meters_rounding_step", "oversize_width_threshold", "oversize_height_threshold");
 
-    /** 必须是**正数**的标量键（引擎 {@code _POSITIVE_CONFIG_KEYS} 同集合）。 */
+    /** 全部**数值**标量键（引擎 {@code DEFAULT_CRAFT_CALC_CONFIG} 的数值键，逐字同名；顺序 = 读面键序）。 */
     private static final List<String> NUMERIC_KEYS = List.of(
-            "per_fold_single", "margin_single", "margin_multi", "min_fullness",
-            "hem_margin", "meters_rounding_step",
+            "per_fold_single", "margin_single", "margin_multi",
+            "margin_mixed_single", "margin_mixed_multi",
+            "min_fullness", "hem_margin", "meters_rounding_step",
             "oversize_width_threshold", "oversize_height_threshold");
+
+    /**
+     * 必须是**正数**的数值键（引擎 {@code _POSITIVE_CONFIG_KEYS} 同集合）。
+     *
+     * <p>🔴 issue #7548（用户 2026-10-23 裁定「另外还要都允许设置为0」）后**只剩这一项**：
+     * 0 米/折 ⇒ 用料 0 米 ⇒ **0 元报价**，且算料引擎的褶数公式要除以它 ⇒ 有意不放开。</p>
+     */
+    private static final List<String> POSITIVE_KEYS = List.of("per_fold_single");
+
+    /**
+     * 允许 **0** 的数值键（负数仍拒）—— 用户 2026-10-23 裁定（issue #7548）。
+     *
+     * <p>0 的语义逐项明确、且不会把用料算成 0：余量 / 上下卷边（0 = 不留边）、
+     * 两个超阈（0 = 全部按超宽 / 超高）、褶倍下限（0 = **关闭**该护栏，见
+     * {@link #MIN_FULLNESS_RED_LINE}）、进位步长（0 = **不进位**）。
+     * 与引擎 {@code curtain_calc._NON_NEGATIVE_CONFIG_KEYS} 同集合（同口径守卫）。</p>
+     */
+    private static final List<String> NON_NEGATIVE_KEYS = List.of(
+            "margin_single", "margin_multi", "margin_mixed_single", "margin_mixed_multi",
+            "min_fullness", "hem_margin",
+            "meters_rounding_step", "oversize_width_threshold", "oversize_height_threshold");
 
     private final CraftCalcConfigMapper craftCalcConfigMapper;
     private final CraftCalcClient craftCalcClient;
@@ -123,7 +148,10 @@ public class CraftCalcConfigService {
                 return null;
             }
             BigDecimal value = new BigDecimal(String.valueOf(raw));
-            return value.signum() > 0 ? value : null;
+            // 🔴 issue #7548：**0 是明确配置**（上下不留边，用户 2026-10-23「都允许设置为0」）⇒ 照常
+            // 交给排料（0 卷边 ⇒ 每块占用的门幅宽 = 窗高，排料本身仍成立）；只有**取不到**才 null。
+            // 负数是写面拒绝的脏值 ⇒ 仍按「不可用」处理（不拿脏值去排料）。
+            return value.signum() >= 0 ? value : null;
         } catch (RuntimeException e) {
             log.warn("取上下卷边失败 ⇒ 本次不排料（按公式口径扣、saved=0）: tenant={}, error={}",
                     tenantId, e.getMessage());
@@ -247,15 +275,21 @@ public class CraftCalcConfigService {
      * 校验 + 归一（数值统一成 {@link BigDecimal}），失败 ⇒ 422 带**逐条**理由。
      *
      * <p>规则（与算料引擎 {@code resolve_craft_calc_config} 同口径，<b>更严的一处是护栏</b>）：
-     * 数值键 &gt; 0 · {@code per_fold_mixed_times} 非空且键为正整数、值 &gt; 0 ·
+     * {@code per_fold_single} &gt; 0；其余数值键 **≥ 0**（issue #7548：0 = 不留边 / 关闭褶倍下限 /
+     * 不进位 / 全部按超额；负数仍拒）· {@code per_fold_mixed_times} 非空且键为正整数、值 &gt; 0 ·
      * {@code tiers} 非空且每档 {@code fullness} &gt; 0 且 ≥ {@code min_fullness} ·
-     * {@code min_fullness} ≥ 行业红线 · {@code default_formula} 在枚举内。</p>
+     * {@code min_fullness} 是 0（关闭）或不低于行业红线 · {@code default_formula} 在枚举内。</p>
      *
      * <p>⚠️ 与 issue 文本的两处**照实差异**（以实现为准，见 PR 边界节）：
      * ① issue 写 {@code margin_* ≥ 0}，而引擎 {@code _POSITIVE_CONFIG_KEYS} 要求 <b>&gt; 0</b>
      * （0 会被引擎拒绝 ⇒ 存进去也算不出料）⇒ 这里跟引擎；
      * ② issue 写 {@code meters_rounding_step = 0.1}，而引擎接受任意正步长
      * （引擎自测就用 0.05）⇒ 这里只要求 &gt; 0，不做「必须等于 0.1」的第二份口径。</p>
+     *
+     * <p>🔴 **2026-10-23 改判（issue #7548，用户逐字「另外还要都允许设置为0」）**：上面的 ①
+     * 已不成立 —— 引擎与写面**同时**放开「0 有含义」的 7 个数值键（每个键的 0 语义见
+     * {@link #NON_NEGATIVE_KEYS}）。只有 {@code per_fold_single} 与拼色系数 / 档位褶倍仍须 &gt; 0
+     * （0 米 = 0 元报价）。</p>
      */
     Map<String, Object> validate(Map<String, Object> body) {
         List<ApiResponse.ErrorDetail> details = new ArrayList<>();
@@ -282,9 +316,13 @@ public class CraftCalcConfigService {
             }
             if (value == null) {
                 details.add(BusinessException.detail(key, "必须是数字，收到 " + in.get(key)));
-            } else if (value.signum() <= 0) {
+            } else if (POSITIVE_KEYS.contains(key) && value.signum() <= 0) {
                 details.add(BusinessException.detail(key,
-                        "必须大于 0，收到 " + value.toPlainString() + "（0/负会让该口径静默失效，算料引擎也会拒）"));
+                        "必须大于 0，收到 " + value.toPlainString() + "（0 米/折 = 用料 0 米 = 0 元报价）"));
+            } else if (value.signum() < 0) {
+                details.add(BusinessException.detail(key,
+                        "不能是负数，收到 " + value.toPlainString()
+                                + "（0 允许：不留边 / 关闭护栏 / 不进位 / 全部按超额）"));
             } else {
                 out.put(key, value);
             }
@@ -292,10 +330,13 @@ public class CraftCalcConfigService {
 
         Object minFullnessRaw = out.get("min_fullness");
         BigDecimal minFullness = minFullnessRaw instanceof BigDecimal b ? b : MIN_FULLNESS_RED_LINE;
-        if (minFullnessRaw instanceof BigDecimal b && b.compareTo(MIN_FULLNESS_RED_LINE) < 0) {
+        // 🔴 issue #7548：**0 = 明确关闭该护栏**（用户 2026-10-23「另外还要都允许设置为0」）；
+        // 0 以外的灰区（0 < x < 红线）仍拒 —— 那种值是「以为放宽了一点、实际用料不足且无人知道」。
+        if (minFullnessRaw instanceof BigDecimal b && b.signum() > 0
+                && b.compareTo(MIN_FULLNESS_RED_LINE) < 0) {
             details.add(BusinessException.detail("min_fullness",
-                    "不得低于行业红线 " + MIN_FULLNESS_RED_LINE.toPlainString() + "（可配但**不可关**："
-                            + "低于它 = 用料不足且无人知道），收到 " + b.toPlainString()));
+                    "只能是 0（关闭该护栏）或不低于行业红线 " + MIN_FULLNESS_RED_LINE.toPlainString()
+                            + "（红线以下、0 以上的值会让用料不足且无人知道），收到 " + b.toPlainString()));
         }
 
         Object mixedRaw = in.get("per_fold_mixed_times");

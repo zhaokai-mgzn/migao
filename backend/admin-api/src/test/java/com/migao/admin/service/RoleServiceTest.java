@@ -371,6 +371,40 @@ class RoleServiceTest {
                 });
     }
 
+    // ======================== displayPosition 测试 ========================
+    // 2026-10-18 用户截图「这里的岗位不要用英文」：`users.position` 存角色码的老行，
+    // 展示层（/api/auth/me · /api/admin/user/info）必须解析成岗位名再上屏。
+
+    @Test
+    @DisplayName("岗位展示名 - 角色码 ⇒ 角色名（存量脚本建号的行不再印英文）")
+    void displayPosition_RoleCodeResolvesToName() {
+        // given：code 命中（`knowledge_editor` 是历史脚本建号写法）
+        when(roleMapper.selectOne(any(LambdaQueryWrapper.class)))
+                .thenReturn(Role.builder().code("knowledge_editor").name("知识编辑").build());
+
+        // when / then
+        assertThat(roleService.displayPosition("knowledge_editor", 1L)).isEqualTo("知识编辑");
+    }
+
+    @Test
+    @DisplayName("岗位展示名 - 中文岗位名 ⇒ 原样（不因为解析不到就丢掉人话）")
+    void displayPosition_UnknownPositionKeepsRaw() {
+        // given：code 与 name 两次查询都没命中（自定义岗位名，没有登记角色）
+        when(roleMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+
+        // when / then
+        assertThat(roleService.displayPosition("车间主任", 1L)).isEqualTo("车间主任");
+    }
+
+    @Test
+    @DisplayName("岗位展示名 - 空值 ⇒ 原样返回（不查库、不凭空造岗位名）")
+    void displayPosition_BlankStaysBlank() {
+        assertThat(roleService.displayPosition(null, 1L)).isNull();
+        assertThat(roleService.displayPosition("  ", 1L)).isEqualTo("  ");
+        // 反空跑：空值路径**一次库都不查**（否则 /me 对空岗位的员工多一次无意义查询）
+        verifyNoInteractions(roleMapper);
+    }
+
     // ======================== getUserRoles 测试 ========================
 
     @Test
@@ -409,27 +443,31 @@ class RoleServiceTest {
     @Test
     @DisplayName("为用户分配角色成功")
     void assignRoleToUser_Success() {
-        // given
-        when(userRoleMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
-        when(userRoleMapper.insert(any(UserRole.class))).thenReturn(1);
+        // given（issue #7256：写面收口到 UserRoleWriter —— 无软删行 + 条件插入命中 1 行）
+        when(userRoleMapper.reviveSoftDeleted(any(), anyString(), anyString())).thenReturn(0);
+        when(userRoleMapper.insertIfAbsent(any(UserRole.class))).thenReturn(1);
 
         // when
         roleService.assignRoleToUser("user-001", "role-001", 1L);
 
         // then
-        verify(userRoleMapper).insert(any(UserRole.class));
+        verify(userRoleMapper).insertIfAbsent(any(UserRole.class));
+        verify(userRoleMapper, never()).insert(any(UserRole.class));
     }
 
     @Test
     @DisplayName("为用户分配角色失败 - 已拥有该角色")
     void assignRoleToUser_AlreadyAssigned() {
-        // given
-        when(userRoleMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(testUserRole);
+        // given（issue #7256：已存在 ⇒ **幂等成功**，不再抛 422 —— 并发重试与"点了两次"服务端不可区分，
+        // 报错只会制造 500；授权本身是幂等动作）
+        when(userRoleMapper.reviveSoftDeleted(any(), anyString(), anyString())).thenReturn(0);
+        when(userRoleMapper.insertIfAbsent(any(UserRole.class))).thenReturn(0);
 
-        // when & then
-        assertThatThrownBy(() -> roleService.assignRoleToUser("user-001", "role-001", 1L))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("已拥有该角色");
+        // when
+        roleService.assignRoleToUser("user-001", "role-001", 1L);
+
+        // then：不抛错，且不再有第二次插入
+        verify(userRoleMapper).insertIfAbsent(any(UserRole.class));
     }
 
     // ======================== removeRoleFromUser 测试 ========================

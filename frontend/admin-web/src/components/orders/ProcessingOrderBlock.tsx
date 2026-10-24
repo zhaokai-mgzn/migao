@@ -1,28 +1,34 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Modal } from '@/components/ui'
-import { batchStockApi, processingOrderApi } from '@/lib/api'
+import { useRouter } from 'next/navigation'
+import { Button } from '@/components/ui'
+import { processingOrderApi } from '@/lib/api'
 // 工艺规格展示的单一真值定义（设计文档 §4.9「一份 spec，三处渲染」）
 import { craftSpecLine } from '@/lib/craft-display'
 // 「工艺行但不要门幅」的唯一实现（issue #6893：本组件已在属性行里印过门幅）；
 // 数量 + 单位的**唯一**取值口（issue #6901：屏幕块与「复制全部」文本共用，不各拼一份 ——
 // 订单行自己的 `unit` 键 DTO 未下发 ⇒ 由调用方补加工单**快照行**的单位）
 import { craftRowsWithoutDoorWidth, quantityWithUnit } from '@/lib/order-item-sku'
-// 工序清单的索引 / 状态文案（issue #6901）：与加工单纸面**同一份**实现
-// （`lib/operation-list.ts`，由纸面单据 `./ProcessingDoc` 转出）；
+// 工序清单的索引 / 状态文案（issue #6901）：唯一实现 = `lib/operation-list.ts`
+// （🔴 纸面自 issue #7274 起**不印工序** ⇒ 屏幕块直接走这一份，不再经 `./ProcessingDoc` 转出）；
 // 显示名一律走仓内**唯一**口径 `lib/operation-display.ts`（issue #4621）
-import { operationsByItem, operationStatusText } from './ProcessingDoc'
+import { operationsByItem, operationStatusText } from '@/lib/operation-list'
 import { operationDisplayName } from '@/lib/operation-display'
-// 状态文案单一来源：与列表页共用（加工单状态机语义见 lib/processing-order.ts）
-import { PROCESSING_ORDER_STATUS_LABELS as STATUS_TEXT } from '@/lib/processing-order'
+// 状态文案单一来源：与列表页共用（加工单状态机语义见 lib/processing-order.ts）；
+// issue #7079：作业单两型（加工单 / 出库作业单）的中文业务名与判定也取同一份 ——
+// 🔴 机器键（`processing` / `outbound`）绝不上屏。
+import {
+  ORDER_KIND_LABELS,
+  PROCESSING_ORDER_STATUS_LABELS as STATUS_TEXT,
+  orderKindOf,
+  workOrderKindOf,
+  type WorkOrderKind,
+} from '@/lib/processing-order'
 // 米数展示口径（0.1 米粒度、去尾随 .0）—— 与库存/批次账同一份工具
 import { formatStockQuantity } from '@/lib/stock-quantity'
 import type {
-  BatchCandidate,
-  OrderItem,
   ProcessingOrder,
-  ProcessingOrderGenerateBatch,
   ProcessingOrderItem,
   ProductionOperation,
   ProductionPosition,
@@ -30,20 +36,21 @@ import type {
 import { SellingMethodLabels } from '@/types'
 
 interface Props {
-  /**
-   * 点「打印」时交给调用方（= 页面级共享打印入口，issue #5914）。**不传 ⇒ 不渲染该按钮** ——
-   * 本组件不再自带打印实现（旧实现是全局副作用源，见按钮处注释）。
-   */
-  onPrintProcessing?: () => void
   orderId: string
   orderStatus: string
-  /** 订单是否含加工项（由父组件从明细判断） */
-  hasProcessing: boolean
   /**
-   * 订单明细（订单详情页已有数据）：生成加工单时据此取**逐面料行的派工候选**
-   * （V116 / issue #5145 阶段 1）。缺省/空 ⇒ 该单无从指派批次，直接按原路径生成。
+   * **没有作业单时该生成哪一型**（订单详情读面键 `work_order_kind`，issue #7079 第 5 包）。
+   *
+   * 🔴 它同时就是「这单发货前**要不要**作业」的判据：`null` = 不要（订单直发，不渲染生成入口）。
+   * **不许**改用 `order.processingItems?.length` 自己推（那只覆盖「含加工项」那一半 ⇒
+   * 卖布单没有生成出口）。值由服务端 `OrderShipGuard.requiredOrderKind` 给出（与发货守卫同一份判据）。
    */
-  items?: OrderItem[]
+  workOrderKind: WorkOrderKind
+  /**
+   * @deprecated issue #7079 第 5 包起**不再消费**（只覆盖「含加工项」的单侧信号，卖布单被漏掉）；
+   * 判据一律走 {@link Props.workOrderKind}。保留字段只为兼容存量调用点，新代码不要传。
+   */
+  hasProcessing?: boolean
   /**
    * 本订单的**工序清单**（既有读面 `GET /api/admin/production/orders/{id}/operations`
    * 的 `positions[]`，issue #6901）—— 由订单详情页加载后原样传进来（本组件**不取数**）。
@@ -67,12 +74,12 @@ function formatAmount(v?: number): string {
   return String(v)
 }
 
-/** 本地时区今天（yyyy-MM-dd）：发加工交期 date 控件 min 与防御校验同口径（issue #3901） */
-function todayLocal(): string {
-  const d = new Date()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  return `${d.getFullYear()}-${mm}-${dd}`
+/**
+ * 生产明细页路径（issue #7634）：作业单状态的**唯一**写面。
+ * 用加工单号（服务端与前端同一口径，`useRouteId` 认单号/订单号/UUID）。
+ */
+function PRODUCTION_PATH(processingOrderNo: string): string {
+  return `/processing-orders/${processingOrderNo}/production`
 }
 
 /**
@@ -88,75 +95,6 @@ function sellingMethodLabel(value: string): string {
   return (SellingMethodLabels as Record<string, string>)[value]
     ?? SELLING_METHOD_EXTRA[value]
     ?? '未知方式'
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// 派工指定批次（V116 / issue #5145 阶段 1）：系统给候选 + 建议值，文员确认、可改
-// ══════════════════════════════════════════════════════════════════════════════
-
-/** 可派工的面料行（来源 = 订单明细，非发明字段） */
-interface AssignSource {
-  /** = `order_items.id` = 加工单快照行的 `itemId`（后端据此认行） */
-  itemId: string
-  productId: string
-  /** SKU id（**雪花号字符串**，issue #5904：原样透传，不许 Number()） */
-  skuId?: string
-  label: string
-  /** 行米数（后端按「向上进位到 0.1」判余量是否够） */
-  meters: number
-}
-
-/** 对话框里的一行（= 一个面料行 + 它的候选批次） */
-interface AssignRow extends Omit<AssignSource, 'productId' | 'skuId'> {
-  /** 候选批次（含余量不够的：列出来但**不可选**，免得选到必被后端拒的那一批） */
-  candidates: BatchCandidate[]
-  /** 可选项（余量够本行）；空 ⇒ 本行不指派 */
-  selectable: BatchCandidate[]
-  /** 不可指派的原因（无候选 / 缺 SKU 标识 / 查询失败） */
-  reason?: string
-}
-
-/**
- * 订单明细 → 可派工的面料行。行筛选与后端 `ProcessingOrderService.buildSnapshot` **同口径**
- * （前端多列一行会让后端整批拒；少列一行则文员无法指派）：有加工项的行 + 卖布行（`saleForm=布料`）。
- */
-function assignSourcesOf(items: OrderItem[]): AssignSource[] {
-  const rows: AssignSource[] = []
-  for (const it of items) {
-    const info = (it.processingInfo ?? {}) as Record<string, unknown>
-    const procs = Array.isArray(info.processingItems) ? info.processingItems : []
-    if (procs.length === 0 && info.saleForm !== '布料') continue
-    const meters = Number(it.quantity)
-    // 🔴 issue #5904：`info.skuId` 是**雪花号字符串**（≈2.1e18 > 2^53）—— `Number()` 会吞掉末位，
-    // 拿一个"看起来像"的 id 去查候选批次 ⇒ 查不到（或串到不存在的 SKU）。这里只判「是不是正整数串」。
-    const rawSkuId = typeof info.skuId === 'string' || typeof info.skuId === 'number' ? String(info.skuId) : ''
-    const skuId = /^\d+$/.test(rawSkuId) && !/^0+$/.test(rawSkuId) ? rawSkuId : undefined
-    if (!it.id || !it.productId || !Number.isFinite(meters) || meters <= 0) continue
-    // 🔴 issue #6882：原为 `info.colorName ?? it.color` —— 行级 `color` **不在详情响应里**
-    // （`order_items` 表也没有这一列）⇒ 那个 `??` 分支是**死代码**（永远回落不到），
-    // 颜色只有一个真值源 = `processingInfo.colorName`。
-    const color = info.colorName
-    rows.push({
-      itemId: it.id,
-      productId: it.productId,
-      skuId,
-      label: `${it.productName ?? ''}${color ? `（${color}）` : ''}`,
-      meters,
-    })
-  }
-  return rows
-}
-
-/** 候选下拉的选项文案：批次号 + 剩余米数 + 收货日期（余量不够本行的显式标注） */
-function candidateLabel(c: BatchCandidate): string {
-  const date = c.receivedDate ? `收货 ${c.receivedDate}` : '收货日期未记'
-  return `${c.batchNo}（余 ${formatStockQuantity(c.remainingMeters)} 米 · ${date}${c.enough ? '' : ' · 不足本行'}）`
-}
-
-/** 默认选中后端建议值；建议值缺席/不够本行时回落到候选首位（FIFO 序由后端给） */
-function defaultPickOf(row: AssignRow): string {
-  const suggested = row.candidates.find((c) => c.suggested && c.enough)
-  return (suggested ?? row.selectable[0])?.batchNo ?? ''
 }
 
 /**
@@ -185,18 +123,23 @@ export function snapshotAttrParts(
 
 /**
  * 一道工序的**片段**（应做数量+单位、状态）—— 屏幕块与「复制全部」文本共用。
- * 显示名由两处各自调 `ProcessingDoc` 的同一份工序块口径（`operationDisplayName`）。
+ * 显示名一律走仓内唯一口径 `operationDisplayName()`（`@/lib/operation-display`）；
+ * 🔴 纸面自 issue #7274 起不再消费工序清单。
  */
 export function operationParts(op: ProductionOperation): string[] {
   const qty = quantityWithUnit({ quantity: op.qty, unit: op.unit })
   return [qty, operationStatusText(op.status)].filter((part) => part !== '')
 }
 
-/** 加工单纯文本（复制给加工方/贴 Excel，一行一加工项） */
+/** 作业单**纯文本**（复制给加工方/贴 Excel，一行一加工项）
+ *
+ * issue #7079：两型的措辞不同 —— 出库作业单**没有加工方、没有交期** ⇒ 这两行不出现（缺值不渲染）。
+ */
 function toPlainText(po: ProcessingOrder, operations?: ProductionPosition[] | null): string {
   const operationsIndex = operationsByItem(operations)
+  const outbound = orderKindOf(po) === 'outbound'
   const lines: string[] = []
-  lines.push(`加工单：${po.processingOrderNo}`)
+  lines.push(`${ORDER_KIND_LABELS[orderKindOf(po)]}：${po.processingOrderNo}`)
   if (po.customerName) lines.push(`客户：${po.customerName}`)
   if (po.processor) lines.push(`加工方：${po.processor}`)
   if (po.expectedDeliveryDate) lines.push(`交期：${po.expectedDeliveryDate}`)
@@ -238,28 +181,16 @@ function toPlainText(po: ProcessingOrder, operations?: ProductionPosition[] | nu
 export default function ProcessingOrderBlock({
   orderId,
   orderStatus,
-  hasProcessing,
-  items,
+  workOrderKind,
   operations,
   onStatusChange,
-  onPrintProcessing,
   onReloadReady,
 }: Props) {
+  const router = useRouter()
   const [po, setPo] = useState<ProcessingOrder | null>(null)
   const [notFound, setNotFound] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [form, setForm] = useState<null | { action: 'issue' | 'cancel'; processor?: string; date?: string; reason?: string }>(null)
   const [error, setError] = useState('')
-  /** 生成失败时后端给的可行动建议（原样展示，与 message 分行 —— 缺料 fail-closed 的落点） */
-  const [errorHint, setErrorHint] = useState('')
-  /** 批次指派对话框；null = 未打开（一行都指派不了时**不开**，直接按原路径生成） */
-  const [assign, setAssign] = useState<AssignRow[] | null>(null)
-  /** 简单流转（开始加工 / 加工完成）待确认的那个动作（issue #6664 第 4 条） */
-  const [simpleAction, setSimpleAction] = useState<'start' | 'complete' | null>(null)
-  const [simpleBusy, setSimpleBusy] = useState(false)
-  const [picks, setPicks] = useState<Record<string, string>>({})
-
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -287,118 +218,22 @@ export default function ProcessingOrderBlock({
     onReloadReady?.(load)
   }, [load, onReloadReady])
 
-  const canGenerate = notFound && hasProcessing && (orderStatus === 'confirmed' || orderStatus === 'producing')
-  const canAct = po && !['completed', 'cancelled'].includes(po.status)
+  // 作业单两型（issue #7079）：缺键 = 存量单 ⇒ 按**加工单**处理（不把存量单读成出库）。
+  // 出库作业单**没有加工方、没有交期** ⇒ 那两处写面与展示整块不渲染；也**不**走「发加工」。
+  const kind = po ? orderKindOf(po) : 'processing'
+  const outbound = kind === 'outbound'
+  // 「要不要作业」+「要哪一型」都取**订单详情读面**的同一个信号（issue #7079 第 5 包）——
+  // 卖布单行上没有加工项，只按 processingItems 推会判「不需要」⇒ 没有生成出口。
+  // wire 键是 snake_case（issue #7319）；本组件的 prop 保持 camelCase 的组件 API，这里显式换一次键。
+  const neededKind = workOrderKindOf({ work_order_kind: workOrderKind })
+  // 🔴 本块**只读**（issue #7634，用户裁定「统一走智能派单」）：派单只在智能派单页做，
+  // 状态流转只在生产明细页做 —— 这里既不发 POST /generate，也不发 PATCH 状态。
+  // 「能不能派单」= 派单池的收单口径（待付款也在池里，issue #7634）；终态/已取消单不进池。
+  const canDispatch = ['pending', 'pending_payment', 'confirmed', 'producing'].includes(orderStatus)
+  /** 需要作业单但还没有 ⇒ 只给「去智能派单」入口 */
+  const needsWorkOrder = notFound && neededKind !== null
   // 工序清单按 `order_item_id` 索引一次（issue #6901；与洗水码/批号同一把钥匙）
   const operationsIndex = operationsByItem(operations)
-
-  /** 取本单各面料行的派工候选（逐行独立；取不到 ⇒ 该行不指派，**绝不猜**候选） */
-  const loadAssignRows = useCallback(async (): Promise<AssignRow[]> => {
-    return Promise.all(
-      assignSourcesOf(items ?? []).map(async (s): Promise<AssignRow> => {
-        const base = { itemId: s.itemId, label: s.label, meters: s.meters }
-        // 明细没记 SKU ⇒ 候选无法定位到具体 SKU（会串色/串门幅），本行不指派
-        if (s.skuId == null) {
-          return { ...base, candidates: [], selectable: [], reason: '明细未记录 SKU，无法核对批次归属' }
-        }
-        try {
-          const res = await batchStockApi.candidates({
-            productId: s.productId,
-            skuId: s.skuId,
-            meters: s.meters,
-          })
-          const candidates = res.data?.data?.candidates ?? []
-          const selectable = candidates.filter((c) => c.enough)
-          return selectable.length > 0
-            ? { ...base, candidates, selectable }
-            : { ...base, candidates, selectable, reason: '现有批次余量都不够本行' }
-        } catch {
-          return { ...base, candidates: [], selectable: [], reason: '候选批次查询失败' }
-        }
-      }),
-    )
-  }, [items])
-
-  /** 生成加工单（可带逐行批次指派）：失败时 message + suggestion 原样展示 */
-  const submitGenerate = async (batches: ProcessingOrderGenerateBatch[]) => {
-    setBusy(true)
-    setError('')
-    setErrorHint('')
-    try {
-      // 没有指派任何行 ⇒ **单参调用**：请求体只有 orderIds，行为与今天逐字相同
-      const res = batches.length > 0
-        ? await processingOrderApi.generate([orderId], batches)
-        : await processingOrderApi.generate([orderId])
-      const r = res.data?.data?.[0]
-      if (r?.success) {
-        setAssign(null)
-        await load()
-      } else {
-        setError(r?.message ?? '生成失败')
-        // 后端建议**逐字转发**（不改写、不吞掉）
-        setErrorHint(r?.suggestion ?? '')
-      }
-    } catch {
-      setError('生成失败，请稍后重试')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  /**
-   * 点「生成加工单」：先取候选 —— 有可指派的行 ⇒ 让文员确认/改选批次；
-   * **一行都指派不了**（无候选 / 无 SKU 标识 / 查不到）⇒ 不弹空对话框挡路，按原路径生成。
-   */
-  const handleGenerate = async () => {
-    setBusy(true)
-    setError('')
-    setErrorHint('')
-    // 取候选失败 ⇒ 各行按「不可指派」处理（回落到原路径生成，绝不因候选查询把生成卡住）
-    const rows = await loadAssignRows().catch(() => [] as AssignRow[])
-    setBusy(false)
-    if (!rows.some((r) => r.selectable.length > 0)) {
-      await submitGenerate([])
-      return
-    }
-    setPicks(Object.fromEntries(rows.map((r) => [r.itemId, defaultPickOf(r)])))
-    setAssign(rows)
-  }
-
-  /** 确认指派：没选批次的行**不进** batches（= 该行不指派、不扣批次库存） */
-  const confirmAssign = () => {
-    const batches: ProcessingOrderGenerateBatch[] = (assign ?? [])
-      .map((r) => ({ orderId, itemId: r.itemId, batchNo: picks[r.itemId] ?? '' }))
-      .filter((b) => b.batchNo !== '')
-    submitGenerate(batches)
-  }
-
-  const handleAction = async () => {
-    if (!po || !form) return
-    // issue #3901：交期不允许早于今天（date 控件 min 之外的双保险，兜住非控件路径）
-    if (form.action === 'issue' && form.date && form.date < todayLocal()) {
-      setError('交付日期不能早于今天')
-      return
-    }
-    setBusy(true)
-    setError('')
-    setErrorHint('')
-    try {
-      const res = await processingOrderApi.update(po.id, {
-        action: form.action,
-        processor: form.processor,
-        expectedDeliveryDate: form.date,
-        reason: form.reason,
-      })
-      const data = res.data?.data
-      setPo(data ?? po)
-      onStatusChange?.(data ?? po)
-      setForm(null)
-    } catch {
-      setError('操作失败，请确认加工单状态与填写内容')
-    } finally {
-      setBusy(false)
-    }
-  }
 
   const handleCopy = async () => {
     if (!po) return
@@ -410,125 +245,62 @@ export default function ProcessingOrderBlock({
     }
   }
 
-  /** start/complete 简单流转：先弹框确认（issue #6664 第 4 条：不再用 window.confirm），
-   *  在飞时按钮 disabled（防连点重复请求） */
-  const handleSimpleAction = (action: 'start' | 'complete') => {
-    if (!po) return
-    setSimpleAction(action)
-  }
-
-  const runSimpleAction = async () => {
-    if (!po || !simpleAction) return
-    if (simpleBusy) return
-    setSimpleBusy(true)
-    setError('')
-    setErrorHint('')
-    try {
-      const res = await processingOrderApi.update(po.id, { action: simpleAction })
-      const data = res.data?.data
-      setPo(data ?? po)
-      onStatusChange?.(data ?? po)
-      setSimpleAction(null)
-    } catch {
-      setError('操作失败，请确认加工单状态')
-    } finally {
-      setSimpleBusy(false)
-    }
-  }
-
-  /** 失败提示：message（后端逐字）+ suggestion（后端逐字，分行） */
-  const errorBlock = (
-    <>
-      <p className="text-xs text-red-500">{error}</p>
-      {errorHint && <p className="mt-1 text-xs text-amber-700">{errorHint}</p>}
-    </>
-  )
+  /** 失败提示：本块唯一的失败面 = 「复制全部」拿不到剪贴板 */
+  const errorBlock = <p className="text-xs text-red-500">{error}</p>
 
   return (
     <div className="mt-6">
 
       <div className="flex items-center justify-between po-no-print">
-        <h3 className="text-base font-semibold text-neutral-900">加工单</h3>
+        <h3 className="text-base font-semibold text-neutral-900">作业单</h3>
+        {/* 「复制全部」留在这里：它是**文本通道**（作业单文本发给加工方 / 贴进 Excel），
+            不是打印通道。issue #7544 只把**打印**收口到页面级唯一入口（预览层里选「加工单」），
+            区块内不再有自己的打印按钮 —— 同页两个打印入口正是这张单里要消掉的形态。 */}
         {po && (
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={handleCopy}>复制全部</Button>
-            {/* 打印 = 走**共享打印入口**（issue #5914）：与本页「打印加工单」是同一份 A4 制式。
-                旧写法（`@media print { body * { visibility: hidden } }` + 打印屏幕区块）已被删除 ——
-                它是**全局副作用源**（隐藏元素仍占版面 ⇒ 空白页，issue #3896 / #3912 的遗留项），
-                且与门户式单据共页时会把整个外壳 `display:none` 掉（#4983 登记的既有缺陷）。 */}
-            {onPrintProcessing && (
-              <Button variant="secondary" size="sm" onClick={onPrintProcessing}>打印</Button>
-            )}
           </div>
         )}
       </div>
+      {error && <div className="mt-2">{errorBlock}</div>}
 
       {loading && <div className="py-4 text-sm text-neutral-400">加载中…</div>}
 
-      {!loading && canGenerate && (
+      {/* 🔴 无作业单 ⇒ **只给入口**（issue #7634）：五个写动作（生成作业单 / 发加工 / 开始加工 /
+          加工完成 / 取消）全部退出本块 —— 派单在「智能派单」页做（同料合并更省料），
+          状态流转在生产明细页做。本块不再有任何让销售订单直接推进生产的口子。 */}
+      {!loading && needsWorkOrder && neededKind && canDispatch && (
         <div className="mt-3 rounded-lg border border-primary-100 bg-primary-50/50 p-4">
-          <p className="text-sm text-neutral-600">该订单含加工项，可生成加工单发给加工方（订单将进入「生产中」）。</p>
-          <Button className="mt-3" size="sm" disabled={busy} onClick={handleGenerate}>
-            {busy ? '生成中…' : '生成加工单'}
+          <p className="text-sm text-neutral-600">
+            该订单需要{ORDER_KIND_LABELS[neededKind]}。到「智能派单」勾选本单派单 —— 同料订单合并领料，更省料。
+          </p>
+          <p className="mt-1 text-xs text-neutral-500">
+            待付款与加急订单同样在「智能派单」派（加急走插队区立即派单）。
+          </p>
+          <Button className="mt-3" size="sm" data-testid="po-go-pool" onClick={() => router.push('/production/pool')}>
+            去智能派单
           </Button>
-          {/* 对话框开着时失败提示在对话框里（两处只会有一处可见，避免同一句话出现两遍） */}
-          {error && !assign && <div className="mt-2">{errorBlock}</div>}
         </div>
       )}
 
-      {!loading && notFound && !canGenerate && (
-        <p className="mt-2 text-sm text-neutral-400">该订单无加工单（无加工项订单无需加工环节）。</p>
+      {!loading && needsWorkOrder && neededKind && !canDispatch && (
+        <div data-testid="processing-order-generate-not-yet" className="mt-2 text-sm text-neutral-500">
+          <p>该订单需要作业单（{ORDER_KIND_LABELS[neededKind]}），当前状态还不能派单。</p>
+          <p className="mt-1">仅「待付款 / 已确认 / 生产中」的订单可派单。</p>
+        </div>
       )}
 
-      {/* 批次指派（issue #5145 阶段 1）：系统按 FIFO 给建议值，文员可改；不选的行不指派 */}
-      <Modal
-        open={assign !== null}
-        onClose={() => setAssign(null)}
-        title="选择批次"
-        width={720}
-        footer={
-          <>
-            {error && <div className="mr-auto">{errorBlock}</div>}
-            <Button variant="secondary" onClick={() => setAssign(null)}>取消</Button>
-            <Button disabled={busy} onClick={confirmAssign}>{busy ? '生成中…' : '确认生成'}</Button>
-          </>
-        }
-      >
-        <p className="mb-3 text-xs text-neutral-500">
-          每行面料从哪一批裁由你定：系统按「入库日期早者优先」给建议值，可自行改选；
-          选「不指派」的行不扣批次库存（余量不够本行的批次不可选）。
-        </p>
-        <div className="space-y-3">
-          {(assign ?? []).map((row) => (
-            <div key={row.itemId} className="rounded-md border border-neutral-200 bg-neutral-50 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                <span className="font-medium text-neutral-900">{row.label}</span>
-                <span className="text-xs text-neutral-500">{formatStockQuantity(row.meters)} 米</span>
-              </div>
-              {row.selectable.length > 0 ? (
-                <select
-                  data-testid={`batch-select-${row.itemId}`}
-                  aria-label={`${row.label}批次`}
-                  className="mt-2 w-full rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm"
-                  value={picks[row.itemId] ?? ''}
-                  onChange={(e) => setPicks({ ...picks, [row.itemId]: e.target.value })}
-                >
-                  <option value="">不指派（不扣批次库存）</option>
-                  {row.candidates.map((c) => (
-                    <option key={c.batchNo} value={c.batchNo} disabled={!c.enough}>
-                      {candidateLabel(c)}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <p data-testid={`batch-unavailable-${row.itemId}`} className="mt-2 text-xs text-amber-700">
-                  无可用批次 —— {row.reason ?? '该 SKU 没有可用批次'}
-                </p>
-              )}
-            </div>
-          ))}
-        </div>
-      </Modal>
+      {!loading && notFound && neededKind === null && (
+        <>
+          <p className="mt-2 text-sm text-neutral-400">该订单无需作业单（没有加工项，也不是卖布单）。</p>
+          {/* 可行动出口（issue #7222）：只宣判不给出路 ⇒ 商家不知道去哪儿安排裁剪。
+              没标售卖形态时系统**不会**生成裁剪 / 打包作业，也不会拦发货（三段静默放行）。 */}
+          <p className="mt-1 text-sm text-neutral-400">
+            如果是卖布单（按米卖布），这张单还没有标记售卖形态 —— 系统不会生成裁剪 / 打包作业，
+            也不会拦发货。请作废后重新下单，并在下单页把「售卖形态」选成「布料」。
+          </p>
+        </>
+      )}
 
       {po && (
         <div className="po-print-area mt-3 rounded-lg border border-neutral-200 p-4">
@@ -536,13 +308,28 @@ export default function ProcessingOrderBlock({
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 pb-3">
             <div>
               <span className="text-lg font-semibold text-neutral-900">{po.processingOrderNo}</span>
+              {/* 类型可见（issue #7079）：中文业务名「加工单」/「出库作业单」，机器键不上屏 */}
+              <span
+                className="ml-2 rounded bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600"
+                data-testid="processing-order-kind"
+              >
+                {ORDER_KIND_LABELS[kind]}
+              </span>
               <span className="ml-2 rounded bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700">
                 {STATUS_TEXT[po.status] ?? po.status}
               </span>
             </div>
             <div className="text-sm text-neutral-500">
-              {po.processor && <span className="mr-3">加工方：{po.processor}</span>}
-              {po.expectedDeliveryDate && <span>交期：{po.expectedDeliveryDate}</span>}
+              {/* 出库作业单（issue #7079）：**没有加工方、没有交期** ⇒ 这两个写面不渲染，
+                  改为如实说明原因（不印空标题，也不给「—」冒充有值）。 */}
+              {outbound ? (
+                <span>卖布单不设加工方与交期</span>
+              ) : (
+                <>
+                  {po.processor && <span className="mr-3">加工方：{po.processor}</span>}
+                  {po.expectedDeliveryDate && <span>交期：{po.expectedDeliveryDate}</span>}
+                </>
+              )}
             </div>
           </div>
 
@@ -647,92 +434,27 @@ export default function ProcessingOrderBlock({
           </div>
           {po.remark && <p className="mt-2 text-xs text-neutral-500">整体备注：{po.remark}</p>}
 
-          {/* 操作区 */}
+          {/* 出库作业单（issue #7079）：卖布单**不生成加工单**，只按裁剪 / 打包两道出库作业推进 ——
+              页面级一次说明，不逐行重复。 */}
+          {outbound && (
+            <p className="mt-2 text-xs text-neutral-500" data-testid="processing-order-outbound-note">
+              卖布单只做出库作业（裁剪 / 打包），没有加工方与交期，报工后按件计件。
+            </p>
+          )}
+
+          {/* 操作区（issue #7634）：本块**不写生产状态** —— 四个动作只在生产明细页。
+              这里只给一个去处，避免商家在销售订单里"直接加工"。 */}
           <div className="po-no-print mt-4 flex flex-wrap items-center gap-2 border-t border-neutral-100 pt-3">
-            {canAct && po.status === 'generated' && (
-              <Button size="sm" onClick={() => setForm({ action: 'issue' })}>发加工</Button>
-            )}
-            {canAct && po.status === 'issued' && (
-              <Button size="sm" disabled={simpleBusy} onClick={() => handleSimpleAction('start')}>开始加工</Button>
-            )}
-            {canAct && po.status === 'in_processing' && (
-              <Button size="sm" disabled={simpleBusy} onClick={() => handleSimpleAction('complete')}>加工完成</Button>
-            )}
-            {canAct && (
-              <Button variant="secondary" size="sm" onClick={() => setForm({ action: 'cancel' })}>取消加工单</Button>
-            )}
+            <Button size="sm" data-testid="po-go-production" onClick={() => router.push(PRODUCTION_PATH(po.processingOrderNo))}>
+              去生产明细
+            </Button>
             {po.status === 'completed' && (
               <span className="text-xs text-green-600">加工已完成，可发货（发货需在订单物流中填写运单）</span>
             )}
-            {error && !assign && <div>{errorBlock}</div>}
           </div>
 
-          {/* 发加工/取消 内联表单 */}
-          {form && (
-            <div className="po-no-print mt-3 rounded-md border border-neutral-200 bg-neutral-50 p-3 text-sm">
-              {form.action === 'issue' ? (
-                <>
-                  <div className="mb-2 flex flex-wrap gap-2">
-                    <input
-                      className="rounded border border-neutral-300 px-2 py-1 text-sm"
-                      placeholder="加工方（如：朝阳加工厂）"
-                      value={form.processor ?? ''}
-                      onChange={(e) => setForm({ ...form, processor: e.target.value })}
-                    />
-                    <input
-                      className="rounded border border-neutral-300 px-2 py-1 text-sm"
-                      type="date"
-                      min={todayLocal()}
-                      placeholder="交期 yyyy-MM-dd"
-                      value={form.date ?? ''}
-                      onChange={(e) => setForm({ ...form, date: e.target.value })}
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" disabled={busy} onClick={handleAction}>确认发加工</Button>
-                    <Button variant="secondary" size="sm" onClick={() => setForm(null)}>取消</Button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <input
-                    className="mb-2 w-full rounded border border-neutral-300 px-2 py-1 text-sm"
-                    placeholder="取消原因（必填，涉及订单状态联动）"
-                    value={form.reason ?? ''}
-                    onChange={(e) => setForm({ ...form, reason: e.target.value })}
-                  />
-                  <div className="flex gap-2">
-                    <Button size="sm" disabled={busy || !form.reason} onClick={handleAction}>确认取消</Button>
-                    <Button variant="secondary" size="sm" onClick={() => setForm(null)}>返回</Button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
         </div>
       )}
-
-      {/* 简单流转确认弹框（issue #6664 第 4 条）：与仓内自研 Modal 同一世界观；
-          取消 ⇒ 不发请求；在飞 ⇒ 按钮 disabled（防连点重复请求） */}
-      <Modal
-        open={simpleAction !== null}
-        onClose={() => { if (!simpleBusy) setSimpleAction(null) }}
-        title="确认状态流转"
-        footer={
-          <>
-            <Button variant="secondary" disabled={simpleBusy} onClick={() => setSimpleAction(null)}>取消</Button>
-            <Button loading={simpleBusy} onClick={() => void runSimpleAction()}>确认</Button>
-          </>
-        }
-      >
-        <p className="text-sm text-neutral-600">
-          将加工单 {po?.processingOrderNo} 标记为「{simpleAction === 'start' ? '开始加工' : '加工完成'}」。
-        </p>
-        <p className="mt-2 text-sm text-neutral-500">
-          该动作会写入加工单状态、不可撤销，请确认后再提交。
-        </p>
-        {error && <div className="mt-2">{errorBlock}</div>}
-      </Modal>
     </div>
   )
 }

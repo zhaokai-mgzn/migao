@@ -28,7 +28,7 @@
   import 即红（Collection Error）；把「孔」分支②（按米估算）错标 fallback ⇒
   `test_hole_estimate_is_not_reported_as_placeholder_fallback` 红。
 """
-# case_ids: PP-010
+# case_ids: PP-010, PG-091
 
 import pytest
 from unittest.mock import AsyncMock, patch
@@ -38,6 +38,7 @@ from app.production.routing import (
     DIRECT_QTY_KEYS,
     FOLD_KEYS,
     HOLE_ESTIMATE_SUFFIX,
+    ROLL_KEYS,
     HOLE_KEYS,
     HOLE_PER_METER,
     METER_KEYS,
@@ -321,9 +322,21 @@ class TestSourceKeysDriftGate:
                 f"已声明单位 {unit} 没有候选键 ⇒ qty_source 会静默错报 fallback"
             )
 
+    def test_roll_outbound_qty_comes_from_order_roll_count(self):
+        """整卷出库（issue #7523）：应做数量 = 订单行卷数；缺键兜底 1（一次出库作业）。"""
+        from app.production.routing import qty_and_source
+
+        assert _qty_for("出库", {"roll_count": 3}) == 3.0
+        assert qty_and_source("出库", {"roll_count": 3}) == (3.0, "roll_count")
+        # 缺键 ⇒ 兜底 1（绝不落 0），标签如实报 fallback
+        assert _qty_for("出库", {}) == 1.0
+        assert qty_and_source("出库", {}) == (1.0, "fallback")
+        # 显式 0 / 负数视同缺键（与 `_pick` 同一条判据）
+        assert _qty_for("出库", {"roll_count": 0}) == 1.0
+
     def test_direct_qty_keys_are_declared_qty_keys(self):
         """「直接供数」清单必须是 `_qty_for` 读键的子集（改名/删除即红）。"""
-        assert set(DIRECT_QTY_KEYS) <= set(METER_KEYS) | set(FOLD_KEYS)
+        assert set(DIRECT_QTY_KEYS) <= set(METER_KEYS) | set(FOLD_KEYS) | set(ROLL_KEYS)
 
     @pytest.mark.parametrize("operation", sorted(OPERATION_CATALOG))
     def test_declared_source_key_is_really_consumed_by_qty_for(self, operation):

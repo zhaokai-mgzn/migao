@@ -102,11 +102,10 @@ from app.tools.registry import create_default_registry
 # 真值表（判据的唯一来源 —— 测试与红证夹具共用这一处，不写第二份）
 # ──────────────────────────────────────────────────────────────────────────────
 
-#: admin-api 权限目录（30 码，`RegistrationService` 的 defaultPermissions 逐条对齐；
+#: admin-api 权限目录（29 码，`RegistrationService` 的 defaultPermissions 逐条对齐；
 #: 该判据按**集合**比对 ⇒ 新增码必须同批落在这里，否则「镜像腐烂 ⇒ 工具层按错码授权」判红）
 PERMISSION_CATALOG = frozenset({
     "dashboard:view",
-    "product:manage",
     "product:list",
     "product:create",
     "product:category",
@@ -116,7 +115,7 @@ PERMISSION_CATALOG = frozenset({
     "processing:manage",
     "processing:view",
     "processing:update",
-    # 生产域**读**码（issue #5291）：生产看板 / 加工项 / 工艺配置 / 计件等读面此前与写面同用
+    # 生产域**读**码（issue #5291）：作业看板 / 加工项 / 工艺配置 / 计件等读面此前与写面同用
     # `processing:manage`（写面码，只读持有者要么被假拒绝、要么被迫拿到写权）；本次拆出读码。
     "production:view",
     # 生产执行**写**码（issue #5699 的 I4）：把守建加工单/报工/打印/发货四个真写端点
@@ -267,6 +266,9 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     # issue #5247 进场：算料配置读面 —— 此前配置读写同用 `processing:manage`。
     # issue #5291：读面改挂生产域读码 `production:view`（写面 `PUT` 仍是 `processing:manage`）。
     "craft_calc_config_query": ("production:view",),
+    # issue #7514 进场：算料配置**写面** —— `CraftCalcConfigController` 的 `PUT` 仍是类级
+    # `processing:manage`（与工序库 / 工艺路线写面同码；读面见上一行）。
+    "craft_calc_config_update": ("processing:manage",),
     # issue #4923 进场：工艺配置读面聚合（路线缺口 / 信号映射 / 路线来源异常 / 加工费组合 /
     # 加工费缺口 / 卡点，6 个 action 全是 GET）—— 声明生产域**读**码，与侧边栏「工艺配置」
     # 节点同码（同族只读工具一致）。
@@ -294,7 +296,9 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     "inventory_manage": ("product:list",),
     # issue #5246：知识卡片**读**码 knowledge:view（写/发布/归档仍 knowledge:manage）。
     "knowledge_search": ("knowledge:view",),
-    "logistics_track": ("order:list",),
+    # 🔴 issue #7276：`GET /api/admin/orders/{id}` 的生效码改为 `order:detail`（改前挂 `order:list`）
+    # ⇒ 本工具两个端点的生效码 = {order:list（列表解析）, order:detail（详情拿运单号）}，声明必须逐字对齐。
+    "logistics_track": ("order:list", "order:detail"),
     # 🔴 issue #5302 改判：`notification_manage` 从本表**移出**（settings 域收口）——
     # 它的两个读端点都没有生效码 ⇒ 工具不持码、回到角色层（见 `ROLE_GATED_B_SIDE_TOOLS`
     # 与文件头 `notification_manage` 段）。原码 `["system:manage", "employee:list"]`
@@ -321,10 +325,14 @@ TOOL_PERMISSION_CODES: dict[str, tuple[str, ...]] = {
     # issue #5291：生产域已有专属读码 ⇒ 三端点改挂 `production:view`（写面不变）。
     "processing_order_set_query": ("production:view",),
     "processing_order_update": ("processing:update",),
-    # issue #5314：批量改价 / 批量上下架的端点码与**逐条写同码**（契约 §三「不新开权限面」；
+    # issue #5314：批量改价 / 批量库存调整的端点码与**逐条写同码**（契约 §三「不新开权限面」；
     # 契约正文括注的 `product:update` 在权限目录里不存在 ⇒ 取「同码」这条更硬的判据）。
     "product_batch_update": ("product:create",),
     "product_detail": ("product:list",),
+    # issue #7351：营销海报工具只调用 `GET /api/admin/products/{id}`（与 product_detail 同码）。
+    "marketing_poster": ("product:list",),
+    # issue #7541：商品图生成工具只调用 `GET /api/admin/products/{id}`（与 product_detail 同码）。
+    "product_image_generate": ("product:list",),
     "product_manage": ("product:create",),
     "product_search": ("product:list",),
     "product_update": ("product:create",),
@@ -361,6 +369,8 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     "category_manage": frozenset({"operator", "product_manager"}),
     # issue #5247 进场；issue #5291：改挂 `production:view` 后持有角色不变（目录推导）。
     "craft_calc_config_query": frozenset({"operator", "product_manager", "inspector"}),
+    # issue #7514：写面码 `processing:manage` 的持有角色（目录推导，不手抄）。
+    "craft_calc_config_update": frozenset({"operator", "product_manager"}),
     # issue #4923 进场：声明 `production:view` ⇒ 目录推导的持有角色 = operator + product_manager
     # （与 `craft_calc_config_query` / `operation_catalog_query` 同码同放行集）。
     # ⚠️ C 端恒不可达：C 端 JWT 无权限码（`UserIdentity.permissions` 默认空）⇒ 元元不做权限码授权。
@@ -406,6 +416,10 @@ EXPECTED_ALLOWED_ROLES: dict[str, frozenset[str]] = {
     # issue #5314：与 `product_update` 同码 ⇒ 放行集**逐字相同**（目录推导，不额外授予）
     "product_batch_update": frozenset({"operator", "product_manager"}),
     "product_detail": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
+    # issue #7351：与 `product_detail` 同码 ⇒ 放行集逐字相同（目录推导，不额外授予）。
+    "marketing_poster": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
+    # issue #7541：与 `product_detail` 同码 ⇒ 放行集逐字相同（目录推导，不额外授予）。
+    "product_image_generate": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
     "product_manage": frozenset({"operator", "product_manager"}),
     "product_search": frozenset({"knowledge_editor", "operator", "product_manager", "sales"}),
     "product_update": frozenset({"operator", "product_manager"}),

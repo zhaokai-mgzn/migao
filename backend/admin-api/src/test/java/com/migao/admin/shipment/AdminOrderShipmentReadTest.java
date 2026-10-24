@@ -145,11 +145,11 @@ class AdminOrderShipmentReadTest {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // ② 权限码：与同页既有读面同码（order:list）
+    // ② 权限码：与同页既有读面同码（issue #7276 起 = order:detail）
     // ══════════════════════════════════════════════════════════════════════════
 
     @Test
-    @DisplayName("🔴 权限码 = order:list（与 GET /api/admin/orders/{id} 同码；删注解 ⇒ 本判据红）")
+    @DisplayName("🔴 权限码 = order:detail（与 GET /api/admin/orders/{id} 同码；issue #7276 收码 ⇒ 改回 order:list 本判据红）")
     void adminReadFaceCarriesTheSameReadCodeAsTheOrderDetailPage() throws Exception {
         Method read = readEndpoint();
         RequirePermission code = read.getAnnotation(RequirePermission.class);
@@ -158,15 +158,21 @@ class AdminOrderShipmentReadTest {
                         + "`test_agent_permission_parity.py` 判据 8 会判红：未注解端点必须登记，而本面**不该**登记豁免）")
                 .isNotNull();
         assertThat(code.value())
-                .as("读码取**既有**码 order:list（不新造权限码）：与同页既有读面同码 ⇒ "
-                        + "不会出现「页面打得开、单据 403」的割裂；order:detail 今天只是菜单节点码、无端点承载")
-                .isEqualTo("order:list");
+                .as("读码 = order:detail（issue #7276：人类 2026-10-18 裁定「让订单详情这个码真正生效」）——"
+                        + "与同页详情读面同码 ⇒ 不会出现「页面打得开、单据 403」的割裂。"
+                        + "⚠️ 改前这里是 order:list：那个口径下「订单详情」在岗位权限页里是**勾了不生效**的死码"
+                        + "（census 端点数现取 = 0）")
+                .isEqualTo("order:detail");
 
         Method detail = Arrays.stream(OrderController.class.getDeclaredMethods())
                 .filter(m -> m.getName().equals("getOrderById"))
                 .findFirst().orElseThrow();
         assertThat(detail.getAnnotation(RequirePermission.class).value())
-                .as("对照组：同页既有详情读面用的就是 order:list ⇒ 两读面同码（这条断言把「同码」钉成事实）")
+                .as("同页详情读面的码 = order:detail（**具名**，不是「与上一条相等」——"
+                        + "两条读面一起漂回 order:list 时，「相等」这种写法会假绿）")
+                .isEqualTo("order:detail");
+        assertThat(detail.getAnnotation(RequirePermission.class).value())
+                .as("两读面同码（结构事实：本页读得开、页内单据就读得开）")
                 .isEqualTo(code.value());
     }
 

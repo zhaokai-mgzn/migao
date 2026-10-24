@@ -1,4 +1,4 @@
-// case_ids: PG-001, PG-005, PG-008, UI-030, PR-068
+// case_ids: PG-001, PG-005, PG-008, PG-090, UI-030, PR-068
 
 package com.migao.admin.controller;
 
@@ -50,7 +50,7 @@ class ProcessingOrderControllerTest extends BaseControllerTest {
     @Test
     @DisplayName("POST /generate — 批量生成（PG-001）")
     void generate() throws Exception {
-        when(processingOrderService.generate(anyList(), any(), eq(1L), any(), any()))
+        when(processingOrderService.generateDirect(anyList(), any(), eq(1L), any(), any()))
                 .thenReturn(List.of(ProcessingOrderService.GenerateResult.ok("order-1", "JG-20260912-0001")));
 
         mockMvc.perform(post("/api/admin/processing-orders/generate")
@@ -62,9 +62,30 @@ class ProcessingOrderControllerTest extends BaseControllerTest {
     }
 
     @Test
+    @DisplayName("🔴 #7507 POST /generate — 非加急直派被拒：code + 指路文案原样下发（订单详情页据此上屏）")
+    void generatePassesThroughDirectDispatchRejection() throws Exception {
+        when(processingOrderService.generateDirect(anyList(), any(), eq(1L), any(), any()))
+                .thenReturn(List.of(ProcessingOrderService.GenerateResult.fail("order-1",
+                        ProcessingOrderService.ERR_DIRECT_DISPATCH_POOL_REQUIRED,
+                        ProcessingOrderService.DIRECT_DISPATCH_POOL_REQUIRED_MESSAGE,
+                        ProcessingOrderService.DIRECT_DISPATCH_POOL_REQUIRED_SUGGESTION)));
+
+        mockMvc.perform(post("/api/admin/processing-orders/generate")
+                        .contentType("application/json")
+                        .content("{\"orderIds\":[\"order-1\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].success").value(false))
+                .andExpect(jsonPath("$.data[0].code").value("DIRECT_DISPATCH_POOL_REQUIRED"))
+                .andExpect(jsonPath("$.data[0].message").value(
+                        org.hamcrest.Matchers.containsString("智能派单")))
+                .andExpect(jsonPath("$.data[0].suggestion").value(
+                        org.hamcrest.Matchers.containsString("加急")));
+    }
+
+    @Test
     @DisplayName("#5167 POST /generate — assignmentRule 原样下传（缺省不传 = null ⇒ 服务侧走缺省 fifo 且不补位）")
     void generatePassesAssignmentRule() throws Exception {
-        when(processingOrderService.generate(anyList(), any(), eq(1L), any(), eq("best_fit")))
+        when(processingOrderService.generateDirect(anyList(), any(), eq(1L), any(), eq("best_fit")))
                 .thenReturn(List.of(ProcessingOrderService.GenerateResult.ok("order-1", "JG-1")));
 
         mockMvc.perform(post("/api/admin/processing-orders/generate")
@@ -73,7 +94,7 @@ class ProcessingOrderControllerTest extends BaseControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].success").value(true));
 
-        verify(processingOrderService).generate(anyList(), any(), eq(1L), any(), eq("best_fit"));
+        verify(processingOrderService).generateDirect(anyList(), any(), eq(1L), any(), eq("best_fit"));
     }
 
     @Test

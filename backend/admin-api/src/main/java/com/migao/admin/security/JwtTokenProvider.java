@@ -56,7 +56,9 @@ public class JwtTokenProvider {
     @Getter
     private long accessTokenExpiration;
 
-    @Value("${jwt.refresh-token-expiration:604800}")
+    // 🔴 兜底值必须与 application.yml 的 jwt.refresh-token-expiration 同值（issue #7249）：
+    // 两处漂移 ⇒ 没有该配置项的环境会静默回到旧值（判据 = tests/unit_ci_workflows/test_refresh_token_lifetime.py）
+    @Value("${jwt.refresh-token-expiration:2592000}")
     @Getter
     private long refreshTokenExpiration;
 

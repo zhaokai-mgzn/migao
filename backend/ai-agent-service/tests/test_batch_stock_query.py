@@ -232,9 +232,10 @@ class TestPermissionAlignment:
     COVERED = ("/batches", "/distribution", "/saving-board", "/saving-trend")
 
     def test_controller_permissions_are_parsed(self):
-        """前置自断言：解析器真能读到 7 个端点（否则下面的子集断言会真空通过）"""
+        """前置自断言：解析器真能读到 8 个端点（否则下面的子集断言会真空通过）"""
         perms = _endpoint_permissions(_CONTROLLER.read_text(encoding="utf-8"))
-        assert len(perms) == 7, f"端点解析数不符（解析器坏了 ⇒ 判据空跑）：{perms}"
+        # 8 = 本单接的 4 个 + reconcile / candidates / consumptions + 批次余量分页（issue #7604）
+        assert len(perms) == 8, f"端点解析数不符（解析器坏了 ⇒ 判据空跑）：{perms}"
         assert set(perms.values()) == {"product:list"}
 
     def test_tool_permission_code_equals_endpoint_permission_verbatim(self, tool):

@@ -411,7 +411,11 @@ function whiteCardClassesOf(source: string): string[] {
     for (const qualified of rule.qualified) {
       const last = qualified.split(' ').pop() as string
       if (!isCardFormClass(last)) continue
-      const white = rule.decls.some((d) => /^background(?:-color)?\s*:\s*(?:#fff(?:fff)?|white)$/i.test(d))
+      // 🔴 issue #7240 起工人工作台的语料改成**设计变量**（`$bg-primary` == #FFFFFF）⇒
+      // 「白底卡」的识别面必须同时认 token，否则这一半判据在 token 化的页面上会**静默失去射程**。
+      const white = rule.decls.some((d) =>
+        /^background(?:-color)?\s*:\s*(?:#fff(?:fff)?|white|\$bg-primary)$/i.test(d),
+      )
       if (white) found.push(last.replace(/\./g, '').split(':')[0])
     }
   }
@@ -424,7 +428,7 @@ function hasNonWhiteSurface(source: string, rootClass: string): boolean {
     for (const qualified of rule.qualified) {
       const last = qualified.split(' ').pop() as string
       if (last.replace(/\./g, '').split(':')[0] !== rootClass) continue
-      const bad = /^background(?:-color)?\s*:\s*(?:#fff(?:fff)?|white|transparent|none|rgba?\(\s*255\s*,\s*255\s*,\s*255)/i
+      const bad = /^background(?:-color)?\s*:\s*(?:#fff(?:fff)?|white|transparent|none|\$bg-primary|rgba?\(\s*255\s*,\s*255\s*,\s*255)/i
       if (rule.decls.some((d) => /^background(?:-color)?\s*:/.test(d) && !bad.test(d))) return true
     }
   }
@@ -463,15 +467,21 @@ describe('类级守卫：白卡片页必须有页面底色（issue #6760 的另�
   })
 
   it('🔴 判别力自证：摘掉底色 / 把底色写成白 / 只把底色写进注释 ⇒ 各自判红（内存变异，不落仓库）', () => {
-    const noSurface = workerHomeSource.replace(/^\s*background:\s*#f5f7fa;\s*$/m, '')
+    const noSurface = workerHomeSource.replace(/^\s*background:\s*\$bg-secondary;\s*$/m, '')
     expect(noSurface).not.toBe(workerHomeSource) // 注入先自证生效
     expect(whiteCardsOnWhiteSurface(noSurface)).toBe(true)
 
-    const whiteSurface = workerHomeSource.replace('background: #f5f7fa;', 'background: #ffffff;')
+    const whiteSurface = workerHomeSource.replace(
+      'background: $bg-secondary;',
+      'background: $bg-primary;',
+    )
     expect(whiteSurface).not.toBe(workerHomeSource)
     expect(whiteCardsOnWhiteSurface(whiteSurface)).toBe(true) // 写白 = 没写
 
-    const commentOnly = workerHomeSource.replace(/^\s*background:\s*#f5f7fa;\s*$/m, '  // background: #f5f7fa;')
+    const commentOnly = workerHomeSource.replace(
+      /^\s*background:\s*\$bg-secondary;\s*$/m,
+      '  // background: $bg-secondary;',
+    )
     expect(commentOnly).not.toBe(workerHomeSource)
     expect(whiteCardsOnWhiteSurface(commentOnly)).toBe(true) // 注释不算声明
   })

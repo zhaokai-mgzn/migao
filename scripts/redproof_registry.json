@@ -446,7 +446,7 @@
         "kind": "surefire",
         "fqn": "com.migao.admin.service.PoolBoardUrgencyTest",
         "method": "poolReadFaceSurvivesLegacyItemWithoutProcessingInfo",
-        "red_text": "because \"pi\" is null"
+        "red_text": "Cannot invoke \"java.util.Map.size\\(\\)\" because \"m\" is null"
       },
       "requires": [
         "cmd:java",

@@ -1,4 +1,4 @@
-// case_ids: PG-018, BM-006, DF-017
+// case_ids: PG-018, BM-006, DF-017, UI-137
 //
 // 一体机「机台模式」判据（母单 #5161；设计 docs/design/cutting-height-config-and-terminal.md §2.6
 // + 2026-09-29 追加裁定「一体机本期要做报工，且是一条链」）。
@@ -639,4 +639,56 @@ test('🔴 机台屏有「去报工页」出口，且是 keep=1（只本次，�
 
 test('🔴 屏上标题 = 「裁高计算（一体机）」（改前叫「机台模式」）', () => {
   assert.match(renderScan(initialMachineState()), /<h1>裁高计算（一体机）<\/h1>/, '等扫码那一屏的标题要用人话')
+})
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ⑦ 裁剪报工确认批次（issue #7647）：一体机也走**同一个**写入口 ⇒ 同批处理
+//
+// 后端新规则：「裁剪」工序缺 `batch_no` ⇒ 422 `BATCH_REQUIRED`。机台页刻意**没有任何文本输入
+// 元素**（`machine.html` 头注释 = IME 兜底那道保险，扫码枪是唯一输入面）⇒ 两种形态：
+//   ① 有派工批次 ⇒ **自动带**（屏面一字不变，工人什么都不用做）；
+//   ② 没有 ⇒ **一个请求都不发**（发了必 422 = 现场卡住）+ 大字指路到报工页（复用既有出口）。
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** 裁剪工序的一屏（在既有夹具上加契约三键）。 */
+const cuttingScreen = (over = {}) => ({ ...screen(), batch_required: true, ...over })
+
+test('🔴 ⑦ 一体机 + 裁剪 + 派工指定批次 ⇒ 报工请求体**自动带** `batch_no`（工人什么都不用做）', async () => {
+  const { doc, app, calls } = machineApp({ screenData: cuttingScreen({ batch_no: 'PC-20261020-0007' }) })
+  await scan(app, doc)
+
+  doc.click('[data-machine-report]')
+  await once()
+
+  const post = calls.find((c) => c.method === 'POST')
+  assert.deepEqual(post.body, { token: '7K3M9QP2', batch_no: 'PC-20261020-0007' },
+    '有派工批次 ⇒ 自动确认（否则现场被 422 卡住 = 回归）')
+  // 屏面一字不变：不加输入框、不加新按钮
+  assert.ok(!/type="text"/.test(doc.root.innerHTML), '机台页仍不许出现文本输入元素')
+})
+
+test('🔴 ⑦′ 一体机 + 裁剪 + **没有**派工批次 ⇒ 零写请求 + 大字指路报工页（按钮禁用）', async () => {
+  const { doc, app, calls } = machineApp({ screenData: cuttingScreen({ batch_no: null }) })
+  await scan(app, doc)
+
+  const html = doc.root.innerHTML
+  assert.match(html, /本单未指派批次：请到报工页填写批次后再报工/, '必须给一条可行动的大字提示')
+  assert.equal(html.includes(`href="${MACHINE_REPORT_HREF}"`), true, '提示必须带「去报工页」入口（复用既有出口）')
+  assert.match(html, /data-machine-report[^>]*disabled/, '这一笔报不了 ⇒ 按钮禁用（不能看着像能报）')
+
+  doc.click('[data-machine-report]')
+  await once()
+  assert.equal(calls.filter((c) => c.method === 'POST').length, 0, '没有批次时一个写请求都不发（发了必 422）')
+})
+
+test('🔴 ⑦″ 一体机 + 非裁剪（批次三键缺键）⇒ 请求体不带 `batch_no`（零回归）', async () => {
+  const { doc, app, calls } = machineApp()
+  await scan(app, doc)
+
+  assert.ok(!/批次/.test(doc.root.innerHTML), '非裁剪工序的机台屏不许出现批次字样')
+  doc.click('[data-machine-report]')
+  await once()
+
+  const post = calls.find((c) => c.method === 'POST')
+  assert.deepEqual(Object.keys(post.body), ['token'], '非裁剪 ⇒ 请求体与改前逐字节一致')
 })

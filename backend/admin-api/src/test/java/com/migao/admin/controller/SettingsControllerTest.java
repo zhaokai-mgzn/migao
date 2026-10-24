@@ -588,6 +588,19 @@ class SettingsControllerTest {
     class PaymentQrcodes {
 
         @Test
+        @DisplayName("读 = order:list（销售可打印带码报价单）；写 = system:manage（仅管理员可改，issue #7225）")
+        void permissions_readForSales_writeForAdminOnly() throws Exception {
+            var read = SettingsController.class.getMethod("getPaymentQrcodes");
+            var write = SettingsController.class.getMethod("upsertPaymentQrcode", String.class, Map.class);
+            assertThat(read.getAnnotation(com.migao.admin.security.RequirePermission.class).value())
+                    .as("销售持 order:list 而不是 system:manage ⇒ 读码必须是 order:list")
+                    .isEqualTo("order:list");
+            assertThat(write.getAnnotation(com.migao.admin.security.RequirePermission.class).value())
+                    .as("上传/更换收款码只允许管理员")
+                    .isEqualTo("system:manage");
+        }
+
+        @Test
         @DisplayName("GET 收款二维码 -> 200 返回按类型分组")
         void getReturnsGroupedByType() throws Exception {
             var q = com.migao.admin.entity.TenantPaymentQrcode.builder()

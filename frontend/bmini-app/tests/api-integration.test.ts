@@ -185,10 +185,12 @@ describe('chatService API', () => {
       })
 
       const { getQuickActions } = require('../src/services/chatService')
-      const actions = await getQuickActions()
+      const result = await getQuickActions()
 
-      expect(actions).toHaveLength(1)
-      expect(actions[0].name).toBe('查订单')
+      // issue #7351：返回 {actions, tools}（六格问句 + 工具类入口分开）
+      expect(result.actions).toHaveLength(1)
+      expect(result.actions[0].name).toBe('查订单')
+      expect(result.tools).toEqual([])
     })
 
     it('获取失败应返回空数组', async () => {
@@ -198,9 +200,9 @@ describe('chatService API', () => {
       })
 
       const { getQuickActions } = require('../src/services/chatService')
-      const actions = await getQuickActions()
+      const result = await getQuickActions()
 
-      expect(actions).toEqual([])
+      expect(result).toEqual({ actions: [], tools: [] })
     })
   })
 })

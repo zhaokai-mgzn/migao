@@ -11,6 +11,7 @@
  */
 import type { RecognizedField } from './api'
 import type { ProductColor, ProductFormData } from '@/types'
+import { SPEC_EN_TO_CN } from './attribute-keys'
 import { craftItemKeyOf } from './order-craft-fields'
 import { MAX_COLORS } from './product-limits'
 import { nextTempId, normalizeDoorWidth, rebuildSkus, sameDoorWidth } from './sku-utils'
@@ -161,7 +162,8 @@ export interface ProductPrefill {
  * |---|---|---|
  * | `name` | `name`（商品标题） | 同名直填 |
  * | `description` | `description`（图文描述 → 商品描述富文本区，issue #6362） | 同名直填（**文案**不是事实：低可信度 —— 页面上按**解读来源**挂另一枚徽标提醒复核；本节只搬值、**不引用深通道** —— 判据 5 的射程与本文件的分工见 `docs/wiki/Frontend.md`）；`ProductFormData.description` 已存在、提交链路已通 ⇒ **不新增落库字段** |
- * | `material` / `craft` | `specifications.material` / `.craft` | `ProductAttributes` 读的是**英文 key**（`lib/attribute-keys.ts`：表单内部英文 key、提交时 `toChineseSpecKeys` 转中文落库）⇒ 只有英文 key 才**在表单里看得见**，且落库口径仍是「材质 / 工艺」 |
+ * | `material` / `craft`（及 `weight` / `function` / `style` / `pattern`） | `specifications.<en-key>` | `ProductAttributes` 读的是**英文 key**（`lib/attribute-keys.ts`：表单内部英文 key、提交时 `toChineseSpecKeys` 转中文落库）⇒ 只有英文 key 才**在表单里看得见**，且落库口径仍是「材质 / 工艺」 |
+ * | `sku_code` | `skuCode`（货号，必填项） | 来源只有 `[商家填写]`（issue #7528：内核字段表里没有这一格） |
  * | `color` | `colors[].colorName` | `ProductColor` 需要 `id` ⇒ 复用 SkuMatrix「添加颜色」同一条路径的 `nextTempId()` |
  * | `door_width` | `doorWidths[]` | 与 `color` **同为清单字段**（issue #6403）：拆多值 → 逐个 `normalizeDoorWidth` 归一 → 丢非数 → 按 `sameDoorWidth` 去重 |
  * | `price` | **不映射**（有意） | `ProductFormData.price` 只是 `derivePrice(skus, price)` 的**兜底值**，商品页上**没有任何控件显示它** ⇒ 预填了商家看不见也改不了（「看得见才敢提交」）⇒ 留给商家在 SKU 矩阵里按门幅填 |
@@ -176,6 +178,15 @@ export function buildProductPrefill(fields: RecognizedField[]): ProductPrefill {
     recognizedFields.push('name')
   }
 
+  // 商品货号（issue #7528）：唯一来源是**商家在文字框里明说的**（`[商家填写]`）——
+  // 图片识别与模型推理都不产这一格（内核字段表里根本没有它）。本函数只做**键映射**，
+  // 不发明值：`sku_code` 有值才写键（空键会覆盖商家手填的货号）。
+  const skuCode = valueOf(fields, 'sku_code')
+  if (skuCode) {
+    initialData.skuCode = skuCode
+    recognizedFields.push('sku_code')
+  }
+
   // **商品描述文案**（issue #6362）：落点是既有富文本区（`Section title="图文描述"` → `form.description`，
   // 提交链路已通 ⇒ **不新增落库字段**）。它是**推理产物**（来源 = 深通道那枚「解读」标记）⇒ 低可信度，
   // 页面据 `recognizedFields` 挂徽标提醒复核。
@@ -188,9 +199,11 @@ export function buildProductPrefill(fields: RecognizedField[]): ProductPrefill {
     recognizedFields.push('description')
   }
 
-  // 规格属性：表单内部英文 key（material / craft），提交时由 ProductForm 转中文落库
+  // 规格属性：表单内部英文 key（weight / material / function / craft / style / pattern），
+  // 提交时由 ProductForm 转中文落库。键集**不在这里再写一份** —— 真值 = `SPEC_EN_TO_CN`
+  // （issue #7528：写死的两键会让「功能 / 风格 / 花型」认出来也进不了表单，且没有任何东西会红）。
   const specifications: Record<string, string> = {}
-  for (const key of ['material', 'craft']) {
+  for (const key of Object.keys(SPEC_EN_TO_CN)) {
     const v = valueOf(fields, key)
     if (v) {
       specifications[key] = v

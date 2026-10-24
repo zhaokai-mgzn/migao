@@ -1,4 +1,4 @@
-// case_ids: OB-006
+// case_ids: OB-006, OB-007, WH-002
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -11,6 +11,8 @@ import com.migao.admin.dto.ProductCreateRequest;
 import com.migao.admin.dto.ProductResponse;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.CategoryMapper;
+import com.migao.admin.mapper.ProcessingCategoryMapper;
+import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.PermissionMapper;
 import com.migao.admin.mapper.ProductAttributeMapper;
 import com.migao.admin.mapper.ProductColorMapper;
@@ -23,6 +25,7 @@ import com.migao.admin.mapper.TenantApplicationMapper;
 import com.migao.admin.mapper.TenantMapper;
 import com.migao.admin.mapper.UserMapper;
 import com.migao.admin.mapper.UserRoleMapper;
+import com.migao.admin.mapper.WarehouseMapper;
 import com.migao.admin.security.PermissionInterceptor;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.LongValue;
@@ -94,12 +97,19 @@ import static org.mockito.Mockito.when;
  *       入驻<b>当场失败</b>（{@code ONBOARDING_REQUIRED_DATA_MISSING}）—— 「漏种」从静默变成开租当场红；</li>
  *   <li><b>判据 4（幂等·真库）</b>：入驻已种下 1 行后，再对同一租户调播种 ⇒ 返回 0、行数仍为 1
  *       （重复入驻 / 重试不种出重复分类）。</li>
+ *   <li><b>判据 5（#7148 · 默认加工项目录）</b>：入驻后该租户 {@code processing_items} 恰
+ *       {@code ProcessingItemSeedService.CATALOG.size()} 行**存活项**、全部挂在
+ *       {@code OnboardingInitialData.DEFAULT_PROCESSING_CATEGORY_NAME} 分类下（真外键）、
+ *       {@code craft_hint} 逐条照目录；再调播种 ⇒ 返回 0、行数不变（幂等）；</li>
+ *   <li><b>判据 6（#7148 的判别力·注入红证 C）</b>：只把**加工项目录**那步摘掉、保留后置条件校验 ⇒
+ *       入驻<b>当场失败</b>（{@code ONBOARDING_REQUIRED_DATA_MISSING}）——
+ *       「目录漏种」从静默变成开租当场红。</li>
  * </ol>
  *
  * <p>缺 PG 二进制 ⇒ {@link PgCluster#startOrAbort()}：CI（{@code MIGAO_REQUIRE_REALDB=1}）判红；
  * 本机未设该标记 ⇒ 显式 skip（「没跑」长得像「没跑」，不是通过）。</p>
  */
-@DisplayName("#6295 新租户入驻即种默认商品分类 ⇒ 首建商品不再 422（真库）")
+@DisplayName("#6295/#7148 新租户入驻即种默认商品分类 + 默认加工项目录（真库）")
 class NewTenantOnboardingCategoryRealDbTest {
 
     private static PgCluster cluster;
@@ -107,6 +117,10 @@ class NewTenantOnboardingCategoryRealDbTest {
     private static SqlSessionFactory factory;
     private static SqlSession session;
     private static ProductCategorySeedService realSeedService;
+    /** #7148：默认加工项目录播种（真 mappers）。 */
+    private static ProcessingItemSeedService realItemSeedService;
+    /** #7592：默认主仓播种（真 mappers）。 */
+    private static WarehouseSeedService realWarehouseSeedService;
     private static ProductService productService;
 
     @BeforeAll
@@ -153,7 +167,8 @@ class NewTenantOnboardingCategoryRealDbTest {
         for (Class<?> mapper : List.of(TenantApplicationMapper.class, TenantMapper.class, UserMapper.class,
                 UserRoleMapper.class, RoleMapper.class, PermissionMapper.class, RolePermissionMapper.class,
                 CategoryMapper.class, ProductMapper.class, ProductColorMapper.class, ProductSkuMapper.class,
-                ProductAttributeMapper.class, StockLedgerMapper.class)) {
+                ProductAttributeMapper.class, StockLedgerMapper.class,
+                ProcessingCategoryMapper.class, ProcessingItemMapper.class, WarehouseMapper.class)) {
             configuration.addMapper(mapper);
         }
         factory = new MybatisSqlSessionFactoryBuilder().build(configuration);
@@ -173,6 +188,11 @@ class NewTenantOnboardingCategoryRealDbTest {
         // ServiceImpl 的 baseMapper（createProduct 末尾按 id 回读会用到）
         ReflectionTestUtils.setField(productService, "baseMapper", session.getMapper(ProductMapper.class));
         realSeedService = new ProductCategorySeedService(session.getMapper(CategoryMapper.class));
+        realItemSeedService = new ProcessingItemSeedService(
+                session.getMapper(ProcessingCategoryMapper.class),
+                session.getMapper(ProcessingItemMapper.class));
+        // #7592：默认主仓播种（真 mapper ⇒ 判据读的是真落库的那一行）
+        realWarehouseSeedService = new WarehouseSeedService(session.getMapper(WarehouseMapper.class));
     }
 
     @AfterAll
@@ -192,7 +212,7 @@ class NewTenantOnboardingCategoryRealDbTest {
     @DisplayName("判据1·空库真跑入驻链路 ⇒ 分类恰 1 行（具名）⇒ 用它首建商品成功（改前：分类 0 行 ⇒ 422）")
     void onboardingSeedsDefaultCategoryAndFirstProductSucceeds() throws Exception {
         long appId = insertPendingApplication("杭州观星台布艺有限公司", "13800001501");
-        long tenantId = approveAndGetTenantId(registrationServiceWith(realSeedService), appId,
+        long tenantId = approveAndGetTenantId(registrationServiceWith(realSeedService, realItemSeedService), appId,
                 "杭州观星台布艺有限公司");
 
         TenantContext.setTenantId(tenantId);
@@ -205,6 +225,19 @@ class NewTenantOnboardingCategoryRealDbTest {
             assertThat(categoryNamesOf(tenantId))
                     .as("默认分类必须具名，且名字来自单一来源 OnboardingInitialData.DEFAULT_PRODUCT_CATEGORY_NAME")
                     .containsExactly(OnboardingInitialData.DEFAULT_PRODUCT_CATEGORY_NAME);
+
+            // #7592：开租即有默认主仓（改前 = 0 行 ⇒ 盘点单「出盘点任务」的仓库下拉为空）
+            System.out.println("[#7592 判据1] 入驻后 tenantId=" + tenantId
+                    + " 的仓 = " + warehouseRowsOf(tenantId));
+            assertThat(warehouseRowsOf(tenantId))
+                    .as("新租户入驻后必须恰有一个默认主仓（code/name = 单一来源常量、is_default = true）")
+                    .containsExactly("code=" + OnboardingInitialData.DEFAULT_WAREHOUSE_CODE
+                            + "|name=" + OnboardingInitialData.DEFAULT_WAREHOUSE_NAME
+                            + "|isDefault=true");
+            assertThat(realWarehouseSeedService.seedDefaultWarehouse(tenantId))
+                    .as("已有仓 ⇒ 幂等跳过（返回 0）").isZero();
+            assertThat(warehouseRowsOf(tenantId))
+                    .as("行数必须仍是 1（没有种出第二个仓 / 没碰默认仓唯一索引）").hasSize(1);
 
             String categoryId = categoryIdsOf(tenantId).get(0);
 
@@ -235,9 +268,14 @@ class NewTenantOnboardingCategoryRealDbTest {
         doReturn(0).when(neutered).seedDefaultCategory(anyLong());
         // 注入 ②：连后置条件探针一起摘掉，让入驻"成功"——模拟**只有种子被摘掉**的旧形态
         doReturn(1L).when(neutered).countCategories(anyLong());
+        // 注入 ③（issue #7148）：加工项目录同样摘掉 + 摘掉它的后置条件探针 —— 本判据只观察
+        //   「分类是空的」这一条链（否则 enforced 的目录那项会先让入驻 fail-closed）。
+        ProcessingItemSeedService neuteredItems = spy(realItemSeedService);
+        doReturn(0).when(neuteredItems).seedDefaultCatalog(anyLong());
+        doReturn(1L).when(neuteredItems).countProcessingItems(anyLong());
 
         long appId = insertPendingApplication("杭州无分类布艺有限公司", "13800001502");
-        long tenantId = approveAndGetTenantId(registrationServiceWith(neutered), appId,
+        long tenantId = approveAndGetTenantId(registrationServiceWith(neutered, neuteredItems), appId,
                 "杭州无分类布艺有限公司");
 
         TenantContext.setTenantId(tenantId);
@@ -280,7 +318,8 @@ class NewTenantOnboardingCategoryRealDbTest {
 
         long appId = insertPendingApplication("杭州后置条件布艺有限公司", "13800001503");
 
-        assertThatThrownBy(() -> registrationServiceWith(neutered).approveApplication(appId, null, null))
+        assertThatThrownBy(() -> registrationServiceWith(neutered, realItemSeedService)
+                .approveApplication(appId, null, null))
                 .as("入驻后置条件的元守卫：漏种必需初始数据 ⇒ 开租必须当场失败（不是静默产出不可用租户）")
                 .isInstanceOf(BusinessException.class)
                 .extracting(e -> ((BusinessException) e).getCode())
@@ -293,7 +332,7 @@ class NewTenantOnboardingCategoryRealDbTest {
     @DisplayName("判据4·入驻后再调播种 ⇒ 返回 0、分类行数仍为 1（重复入驻/重试不种出重复分类）")
     void seedingIsIdempotentOnRealDatabase() throws Exception {
         long appId = insertPendingApplication("杭州幂等布艺有限公司", "13800001504");
-        long tenantId = approveAndGetTenantId(registrationServiceWith(realSeedService), appId,
+        long tenantId = approveAndGetTenantId(registrationServiceWith(realSeedService, realItemSeedService), appId,
                 "杭州幂等布艺有限公司");
         assertThat(categoryRowsOf(tenantId)).as("夹具前提：入驻已种下 1 行").hasSize(1);
 
@@ -312,10 +351,116 @@ class NewTenantOnboardingCategoryRealDbTest {
         }
     }
 
+    // ══════════════════════════════ 判据 5：入驻即种默认加工项目录（issue #7148）
+
+    @Test
+    @DisplayName("判据5·真库：入驻后加工项目录恰 15 项存活项（挂「加工费」分类、craftHint 照目录）⇒ 再种幂等")
+    void onboardingSeedsProcessingCatalogOnRealDatabase() throws Exception {
+        long appId = insertPendingApplication("杭州加工项布艺有限公司", "13800001505");
+        long tenantId = approveAndGetTenantId(
+                registrationServiceWith(realSeedService, realItemSeedService), appId,
+                "杭州加工项布艺有限公司");
+
+        TenantContext.setTenantId(tenantId);
+        try {
+            List<String> rows = processingItemRowsOf(tenantId);
+            System.out.println("[#7148 判据5] 入驻后 tenantId=" + tenantId + " 的加工项 = " + rows);
+            assertThat(rows)
+                    .as("新租户入驻后必须有整份默认加工项目录（改前 = 0 行 ⇒ 开箱选不到加工项）")
+                    .hasSize(ProcessingItemSeedService.CATALOG.size());
+            assertThat(processingItemNamesOf(tenantId))
+                    .as("目录逐条具名（含用户点名的常用项；不含已撤出的接高）")
+                    .contains("韩褶", "打孔", "定型")
+                    .doesNotContain("接高");
+            assertThat(processingCategoryNamesOf(tenantId))
+                    .as("默认分类 = 单一来源常量（与既有租户同名）")
+                    .contains(OnboardingInitialData.DEFAULT_PROCESSING_CATEGORY_NAME);
+            assertThat(processingItemCategoryNamesOf(tenantId))
+                    .as("每一项都挂在「加工费」这个分类下（外键 REFERENCES processing_categories(id)）")
+                    .containsOnly(OnboardingInitialData.DEFAULT_PROCESSING_CATEGORY_NAME);
+            assertThat(processingItemCraftHintsOf(tenantId))
+                    .as("craftHint 逐条照目录（工艺维的受控来源）")
+                    .containsExactlyInAnyOrderElementsOf(
+                            ProcessingItemSeedService.CATALOG.stream()
+                                    .map(ProcessingItemSeedService.CatalogItem::craftHint).toList());
+
+            int again = realItemSeedService.seedDefaultCatalog(tenantId);
+            System.out.println("[#7148 判据5] 再调播种 ⇒ 返回 " + again + "，加工项 = " + rows);
+            assertThat(again).as("已有目录 ⇒ 幂等跳过（返回 0）").isZero();
+            assertThat(processingItemRowsOf(tenantId)).as("行数必须不变（没有种出重复项）")
+                    .hasSize(ProcessingItemSeedService.CATALOG.size());
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    // ══════════════════════════════ 判据 6：注入红证 C（只摘目录种子，保留后置条件 ⇒ 开租当场失败）
+
+    @Test
+    @DisplayName("判据6·注入红证C（#7148）：只摘掉加工项目录种子（保留后置条件）⇒ 入驻当场 fail-closed")
+    void neuteredProcessingCatalogSeedFailsOnboarding() throws Exception {
+        ProcessingItemSeedService neuteredItems = spy(realItemSeedService);
+        doReturn(0).when(neuteredItems).seedDefaultCatalog(anyLong());
+        // countProcessingItems 保持真实（现取探针）⇒ 后置条件必须发现「目录缺了」
+
+        long appId = insertPendingApplication("杭州无加工项布艺有限公司", "13800001506");
+        assertThatThrownBy(() -> registrationServiceWith(realSeedService, neuteredItems)
+                .approveApplication(appId, null, null))
+                .as("后置条件的元守卫：目录为空 ⇒ 开租必须当场失败（不是静默产出空目录租户）")
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getCode())
+                .isEqualTo("ONBOARDING_REQUIRED_DATA_MISSING");
+    }
+
+    // ══════════════════════════════ 判据 7：注入红证 D（摘掉主仓种子 ⇒ 盘点无仓可选，issue #7592）
+
+    @Test
+    @DisplayName("判据7·注入红证D（#7592）：摘掉默认主仓种子 ⇒ 仓 0 行（= 用户实测形态）；保留后置条件 ⇒ 开租当场失败")
+    void neuteredWarehouseSeedReproducesEmptyDropdown() throws Exception {
+        // ① 连后置条件探针一起摘掉 ⇒ 入驻「成功」但 warehouses 仍是 0 行（= issue #7592 的原始读数）
+        WarehouseSeedService neuteredAndBlind = spy(realWarehouseSeedService);
+        doReturn(0).when(neuteredAndBlind).seedDefaultWarehouse(anyLong());
+        doReturn(1L).when(neuteredAndBlind).countWarehouses(anyLong());
+
+        long appId = insertPendingApplication("杭州无仓布艺有限公司", "13800001507");
+        long tenantId = approveAndGetTenantId(
+                registrationServiceWith(realSeedService, realItemSeedService, neuteredAndBlind),
+                appId, "杭州无仓布艺有限公司");
+
+        TenantContext.setTenantId(tenantId);
+        try {
+            System.out.println("[#7592 判据7·注入红证D] 摘掉种子后 tenantId=" + tenantId
+                    + " 的仓 = " + warehouseRowsOf(tenantId));
+            assertThat(warehouseRowsOf(tenantId))
+                    .as("注入生效自证：摘掉种子 ⇒ 该租户仓必须为 0 行（= 盘点仓库下拉为空的原始形态）")
+                    .isEmpty();
+        } finally {
+            TenantContext.clear();
+        }
+
+        // ② 只摘种子、保留后置条件 ⇒ 开租当场 fail-closed（「漏种」从静默变成红）
+        WarehouseSeedService neutered = spy(realWarehouseSeedService);
+        doReturn(0).when(neutered).seedDefaultWarehouse(anyLong());
+        long failAppId = insertPendingApplication("杭州后置条件布艺有限公司", "13800001508");
+        assertThatThrownBy(() -> registrationServiceWith(realSeedService, realItemSeedService, neutered)
+                .approveApplication(failAppId, null, null))
+                .as("后置条件元守卫：仓为空 ⇒ 开租必须当场失败（不是静默产出无法盘点的租户）")
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining(OnboardingInitialData.WAREHOUSE_KEY);
+    }
+
     // ══════════════════════════════ 夹具
 
     /** 入驻链路（真 mappers + 真 UserService/RoleService；只把与本判据无关的协作者置为 mock）。 */
-    private static RegistrationService registrationServiceWith(ProductCategorySeedService seeder) {
+    private static RegistrationService registrationServiceWith(ProductCategorySeedService seeder,
+                                                               ProcessingItemSeedService itemSeeder) {
+        return registrationServiceWith(seeder, itemSeeder, realWarehouseSeedService);
+    }
+
+    /** 同上，但可注入默认主仓播种（#7592 的注入红证要把它 spy 掉）。 */
+    private static RegistrationService registrationServiceWith(ProductCategorySeedService seeder,
+                                                               ProcessingItemSeedService itemSeeder,
+                                                               WarehouseSeedService warehouseSeeder) {
         UserMapper userMapper = session.getMapper(UserMapper.class);
         RoleMapper roleMapper = session.getMapper(RoleMapper.class);
         UserRoleMapper userRoleMapper = session.getMapper(UserRoleMapper.class);
@@ -346,7 +491,9 @@ class NewTenantOnboardingCategoryRealDbTest {
                 reviewClient,
                 redisTemplate,
                 productionSeedTemplateService,
-                seeder);
+                seeder,
+                itemSeeder,
+                warehouseSeeder);
     }
 
     private static long approveAndGetTenantId(RegistrationService service, long applicationId,
@@ -418,6 +565,59 @@ class NewTenantOnboardingCategoryRealDbTest {
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     rows.add("name=" + rs.getString(1) + "|categoryId=" + rs.getString(2));
+                }
+            }
+        }
+        return rows;
+    }
+
+    private static List<String> processingItemRowsOf(long tenantId) throws SQLException {
+        List<String> rows = new ArrayList<>();
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(
+                     "SELECT name, category_id, craft_hint, status FROM processing_items"
+                             + " WHERE tenant_id = ? AND deleted = 0 ORDER BY name")) {
+            ps.setLong(1, tenantId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    rows.add("name=" + rs.getString(1) + "|categoryId=" + rs.getString(2)
+                            + "|craftHint=" + rs.getString(3) + "|status=" + rs.getString(4));
+                }
+            }
+        }
+        return rows;
+    }
+
+    private static List<String> processingItemNamesOf(long tenantId) throws SQLException {
+        return stringsOf("SELECT name FROM processing_items WHERE tenant_id = ? AND deleted = 0 ORDER BY name",
+                tenantId);
+    }
+
+    private static List<String> processingCategoryNamesOf(long tenantId) throws SQLException {
+        return stringsOf("SELECT name FROM processing_categories WHERE tenant_id = ? AND deleted = 0", tenantId);
+    }
+
+    private static List<String> processingItemCategoryNamesOf(long tenantId) throws SQLException {
+        return stringsOf("SELECT c.name FROM processing_items i JOIN processing_categories c"
+                + " ON c.id = i.category_id WHERE i.tenant_id = ? AND i.deleted = 0", tenantId);
+    }
+
+    private static List<String> processingItemCraftHintsOf(long tenantId) throws SQLException {
+        return stringsOf("SELECT craft_hint FROM processing_items WHERE tenant_id = ? AND deleted = 0", tenantId);
+    }
+
+    /** #7592：仓档案读数（code / name / 默认仓）——「下拉有没有数据」的直接证据。 */
+    private static List<String> warehouseRowsOf(long tenantId) throws SQLException {
+        List<String> rows = new ArrayList<>();
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(
+                     "SELECT code, name, is_default FROM warehouses"
+                             + " WHERE tenant_id = ? AND deleted = 0 ORDER BY code")) {
+            ps.setLong(1, tenantId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    rows.add("code=" + rs.getString(1) + "|name=" + rs.getString(2)
+                            + "|isDefault=" + rs.getBoolean(3));
                 }
             }
         }

@@ -50,7 +50,7 @@ _INTENT_DESCRIPTIONS: dict[str, str] = {
     # 加工单域（issue #4196 恢复接入）：描述必须让分类器分清「加工项（店铺目录）」与
     # 「加工单（订单生产履约单据）」——否则用户问加工单会被归到加工项（PG-017 的缺陷形态）。
     'processing_order_query': '查询加工单状态/进度（订单的生产履约单据；不是加工项目录）',
-    'processing_order_generate': '为已确认且含加工项的订单生成加工单（批量，写操作）',
+    'processing_order_generate': '为已确认、且有需要报工作业的订单生成作业单（含加工项 ⇒ 加工单；卖布单 ⇒ 出库作业单；批量，写操作）',
     'processing_order_update': '发加工/开始/完成/取消加工单（改加工单状态，写操作）',
     'after_sales': '退货、退款、换货、售后服务（仅咨询政策）',
     'after_sales_create': '创建/受理/流转/处理/关闭售后工单等售后工单管理场景',

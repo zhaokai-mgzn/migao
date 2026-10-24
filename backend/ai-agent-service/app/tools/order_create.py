@@ -640,6 +640,14 @@ class OrderCreateTool(BaseTool):
                                 "colorId": {"type": "string", "description": "颜色ID（**product_detail 不返回该字段**：Agent 路径不要臆造；需要 ID 族请用 skuId）"},
                                 "colorName": {"type": "string", "minLength": 1,
                                               "description": "颜色名称（取 product_detail skus[].color_name 原值）。商品有多个不同 SKU 价时必填"},
+                                # 售卖形态（issue #4493 显式落库；issue #7222 补进工具面）：
+                                # 卖布单**必须**带 `saleForm=布料`。缺这个键时系统认不出卖布单 ——
+                                # 不生成出库作业单、不进派单池、也不拦发货 ⇒ 工人拿不到裁剪/打包活（且不报错）。
+                                "saleForm": {
+                                    "type": "string",
+                                    "enum": ["布料", "成品帘"],
+                                    "description": "售卖形态：布料 = 按米卖布（行上没有加工项，但仍要走「裁剪 → 打包」出库作业并给工人报工计件）；成品帘 = 做好的帘子。**卖布单必须传「布料」**，否则下游认不出它是卖布单",
+                                },
                                 "sellingMethod": {
                                     "type": "string",
                                     "enum": ["bulk_cut", "full_roll"],

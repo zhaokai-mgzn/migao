@@ -415,7 +415,11 @@ def test_empty_array_guard_has_discriminating_power():
 
 # ── 判据 2：「没跑」必须长得像「没跑」—— 真语料（段落实跑）+ 桩 spec/node ──────────────
 SMOKE_SPEC_START = "# ── 4. 跑冒烟 spec"
-SMOKE_SPEC_END = "# ── 5. 停栈"
+# ⚠️ 段尾取 **4b**（SDQS 数据质量体检）之前：本腿判的是「spec 真被调起 + 参数逐字转发」，
+#    而桩 node 不产出 `smoke-data.json` ⇒ 4b 必然判 `DQ-U` 并折成非零（那是**正确**行为，
+#    但它会让本腿的 `returncode == 0` 断言失去判别力）。4b 的接线由
+#    `tests/unit_ci_workflows/test_smoke_data_quality.py` 判据 D 单独守着，两腿不互相冒充。
+SMOKE_SPEC_END = "# ── 4b. 数据质量体检"
 
 STUB_NODE = """#!/usr/bin/env bash
 # 桩 node：① 记录 argv（= spec 真被调起的**标记**）② 按 spec.mjs 的成功路径落两个汇总文件。
@@ -423,6 +427,9 @@ printf '%s\\n' "$*" >> "$STUB_NODE_LOG"
 if [ -n "${STUB_NO_ARTIFACTS:-}" ]; then exit "${STUB_EXIT_CODE:-0}"; fi
 printf '# 商家后端 UI 冒烟结果\\n' > "$SMOKE_OUT_DIR/smoke-summary.md"
 printf '[]\\n' > "$SMOKE_OUT_DIR/smoke-results.json"
+# 数据质量快照（SDQS）：真 spec 会写它；壳脚本缺它即判红，桩必须同形，否则本判据测的就不是
+# 「spec 有没有被调起」而是「数据体检有没有被跑」。
+printf '%s\\n' '{"schema_version":1,"ran_journeys":["08-products-list"],"entities":{"products":{"collected":true,"total":1,"sampled":1,"with_skus":1},"skus":{"collected":true,"total":2,"door_width_noncanonical":0}},"fixtures":{"products_created":0,"products_with_skus":0,"products_residue":0}}' > "$SMOKE_OUT_DIR/smoke-data.json"
 exit "${STUB_EXIT_CODE:-0}"
 """
 
@@ -474,6 +481,7 @@ def _run_spec_segment(tmp_path: Path, *, src: str | None = None, spec_present: b
         f'SCRIPT_DIR="{wt}/scripts"\n'
         f'OUT_DIR="{out}"\n'
         f'MAIN_REPO="{wt}"\n'
+        f'REPO_ROOT="{REPO_ROOT}"\n'
         "WEB_PORT=3001\nPHONE=13800138000\nSMS_CODE=123456\n"
         f"{extra_args}\n"
         + (src if src is not None else _spec_segment())

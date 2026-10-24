@@ -134,7 +134,6 @@ public class PermissionService {
         // 两处数组的**码列现已逐值相等**（守卫方式：按行抽第 2 列 diff）。
         String[][] catalog = {
                 {"仪表板查看", "dashboard:view", "dashboard", "view", "查看数据概览"},
-                {"商品管理", "product:manage", "product", "manage", "管理商品(旧大类码，兼容)"},
                 {"商品管理", "product:list", "product", "list", "查看商品管理"},
                 {"新增商品", "product:create", "product", "create", "新增/编辑/上下架商品"},
                 {"商品分类", "product:category", "product", "category", "管理商品分类"},

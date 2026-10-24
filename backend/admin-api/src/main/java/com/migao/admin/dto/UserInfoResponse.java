@@ -135,7 +135,11 @@ public class UserInfoResponse {
         private String nickname;
 
         /**
-         * 岗位（员工档案，User 实体 position 字段；#3099 右上角用户卡片展示）
+         * 岗位的**展示名**（#3099 右上角用户卡片展示；取值口径 = `RoleService#displayPosition`）。
+         *
+         * <p>⚠️ 不是 `users.position` 原值：存量行里可能是**角色码**（API / 脚本建号，
+         * 如 `knowledge_editor`）⇒ 服务端已解析成岗位名（「知识编辑」）再下发；
+         * 解析不到的（自定义岗位名）原样返回。2026-10-18 用户截图「这里的岗位不要用英文」。</p>
          */
         private String position;
 

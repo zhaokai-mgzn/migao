@@ -13,7 +13,10 @@
 // **当场抛错**（`No "X" export is defined on the "lucide-react" mock`），不是静默。
 
 import {
+  BadgeCheck,
   BarChart3,
+  FileSpreadsheet,
+  Tags,
   Bell,
   Coins,
   BookOpen,
@@ -23,16 +26,20 @@ import {
   ClipboardCheck,
   ClipboardList,
   Factory,
+  Handshake,
   Headphones,
   Layers,
   LayoutDashboard,
   MessageSquare,
-  Newspaper,
   Package,
   PackageOpen,
   Recycle,
+  Route,
+  ScanLine,
+  Wrench,
   ScrollText,
   ShieldCheck,
+  ShoppingBag,
   ShoppingCart,
   UserCircle,
   Users,
@@ -45,7 +52,11 @@ import {
 
 /** 图标名（`menu.ts` 里的字符串）→ lucide 组件 */
 export const menuIconMap: Record<string, LucideIcon> = {
+  // 质检记录（issue #7140）：质检 = 「合格判定」⇒ 徽章 + 对勾（与其它三枚工序/生产图标互不同形）
+  BadgeCheck,
   BarChart3,
+  FileSpreadsheet,
+  Tags,
   Bell,
   Coins,
   BookOpen,
@@ -55,16 +66,19 @@ export const menuIconMap: Record<string, LucideIcon> = {
   ClipboardCheck,
   ClipboardList,
   Factory,
+  Handshake,
   Headphones,
   Layers,
-  LayoutDashboard,
   MessageSquare,
-  Newspaper,
   Package,
   PackageOpen,
   Recycle,
+  Route,
+  ScanLine,
+  Wrench,
   ScrollText,
   ShieldCheck,
+  ShoppingBag,
   ShoppingCart,
   UserCircle,
   Users,
@@ -77,6 +91,10 @@ export const menuIconMap: Record<string, LucideIcon> = {
   // `SlidersHorizontal`（参数总览）三枚图标随各自菜单项**移除**而销账 —— 判据② 要求
   // 「注册表 ⇄ `menu.ts` 用到的图标名」**双向相等**：留着就是死映射（会把用不到的名字
   // 也算进注册面）。
+  // 🔴 2026-10-17（issue #7087，同一条口径再执行一次）：`Newspaper`（「每日简报」菜单项删除）
+  // 与 `LayoutDashboard`（「工作台」组**整组撤销**后无人再用）两枚同样销账。
+  // ⚠️ `LayoutDashboard` **仍**是 `resolveMenuIcon` 的默认兜底（下方 `fallback` 形参直接引用
+  // lucide 组件，**不**经本注册表）⇒ 它的 import 保留，只是不再占注册表一格。
 }
 
 /**

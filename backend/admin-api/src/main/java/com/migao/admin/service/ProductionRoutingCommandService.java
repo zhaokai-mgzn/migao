@@ -1,7 +1,6 @@
 package com.migao.admin.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.migao.admin.dto.ApiResponse;
 import com.migao.admin.entity.ProcessingItem;
 import com.migao.admin.entity.ProductionOperation;
@@ -71,7 +70,8 @@ public class ProductionRoutingCommandService {
      * {@code ProcessingOrderService#rulePositionMatches}）。DB 的 CHECK 约束同批由
      * {@code backend/admin-api/src/main/resources/db/migration-archive/V109__allow_position_trigger_kind.sql} 放开。</p>
      */
-    private static final Set<String> TRIGGER_KINDS = Set.of("craft", "option", "processing_item", "position");
+    private static final Set<String> TRIGGER_KINDS = Set.of(
+            "craft", "option", "processing_item", "position", "sales_form");
 
     /** 规则动作（路线编排档）：插入 / 移除（与读面 {@code ROUTE_ACTIONS} 同口径）。 */
     private static final Set<String> ACTIONS = Set.of("insert", "remove");
@@ -79,6 +79,10 @@ public class ProductionRoutingCommandService {
     private static final String TRIGGER_KIND_OPTION = "option";
     private static final String TRIGGER_KIND_CRAFT = "craft";
     private static final String TRIGGER_KIND_PROCESSING_ITEM = "processing_item";
+    /** 售卖方式维（issue #7523）：{@code full_roll}（整卷）/ {@code bulk_cut}（散剪）。 */
+    private static final String TRIGGER_KIND_SALES_FORM = "sales_form";
+    /** 售卖方式触发值的**闭词表**（与订单行 {@code sellingMethod} 的机器值逐字一致）。 */
+    private static final Set<String> SALES_FORM_VOCABULARY = Set.of("full_roll", "bulk_cut");
     /** 部位维（issue #4962）—— 见 {@link #TRIGGER_KINDS} 的类注释。 */
     private static final String TRIGGER_KIND_POSITION = ProcessingOrderService.TRIGGER_KIND_POSITION;
 
@@ -281,15 +285,18 @@ public class ProductionRoutingCommandService {
             throw BusinessException.validationError("删除工艺路线未通过校验（" + details.size() + " 条问题）",
                     details, "先把另一条路线设为默认（PUT is_default=true），或先新建一条路线");
         }
-        // ⚠️ 必须**显式写列**（issue #4608），不得写成 `setDeleted(1); updateById(template);`：
+        // 🔴 条件更新（issue #6962 P5-③）：谓词 = id + tenant_id + deleted = 0，按**影响行数**判是否真删到。
+        // 修前这里只有 `.eq(id)`：① 缺 tenant 限定 ⇒ 跨租户误删（拿到别人的 id 就删别人的路线）；
+        // ② 无 deleted=0、不判行数 ⇒ 重复删照样回「成功」（0 行当成功）。
+        // ⚠️ 仍必须**显式写列**（issue #4608），不得写成 `setDeleted(1); updateById(template);`：
         // MP 全局逻辑删除（application.yml 的 mybatis-plus.global-config.db-config.logic-delete-field=deleted）
         // 会把逻辑删除字段从 updateById 的 SET 子句里**剔除** ⇒ deleted 永不落库，而调用仍返回成功
-        // = 删除静默 no-op（用户实测「提示成功但数据还在」）。显式 .set(...) 绕过字段剔除，
-        // 同时保住审计字段 updated_at（「谁在什么时候删的」是排查工序错配的唯一证据）。
-        productionRouteTemplateMapper.update(null, new LambdaUpdateWrapper<ProductionRouteTemplate>()
-                .eq(ProductionRouteTemplate::getId, id)
-                .set(ProductionRouteTemplate::getDeleted, 1)
-                .set(ProductionRouteTemplate::getUpdatedAt, OffsetDateTime.now()));
+        // = 删除静默 no-op（用户实测「提示成功但数据还在」）。
+        if (productionRouteTemplateMapper.markDeletedByIdAndTenant(id, tenantId) == 0) {
+            ProductionRouteTemplate fresh = productionRouteTemplateMapper.selectById(id);
+            throw BusinessException.conflict(deleteRoutingConflictMessage(fresh, tenantId),
+                    "请刷新工艺路线列表后重试");
+        }
         log.info("删除工艺路线: tenantId={}, routingId={}, name={}", tenantId, template.getId(), template.getName());
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", template.getId());
@@ -315,17 +322,41 @@ public class ProductionRoutingCommandService {
                 || !Integer.valueOf(0).equals(rule.getDeleted())) {
             throw BusinessException.notFound("条件工序规则");
         }
-        // 同 deleteRouting：显式写列（issue #4608）—— updateById 会把 deleted 从 SET 里剔除 ⇒ 静默 no-op。
-        productionRouteRuleMapper.update(null, new LambdaUpdateWrapper<ProductionRouteRule>()
-                .eq(ProductionRouteRule::getId, id)
-                .set(ProductionRouteRule::getDeleted, 1)
-                .set(ProductionRouteRule::getUpdatedAt, OffsetDateTime.now()));
+        // 同 deleteRouting：条件更新（issue #6962 P5-③，谓词 id + tenant_id + deleted = 0）+ 影响行数判定；
+        // 并且显式写列（issue #4608）—— updateById 会把 deleted 从 SET 里剔除 ⇒ 静默 no-op。
+        if (productionRouteRuleMapper.markDeletedByIdAndTenant(id, tenantId) == 0) {
+            ProductionRouteRule fresh = productionRouteRuleMapper.selectById(id);
+            throw BusinessException.conflict(deleteRouteRuleConflictMessage(fresh, tenantId),
+                    "请刷新条件工序规则列表后重试");
+        }
         log.info("软删条件工序规则: tenantId={}, ruleId={}, trigger={}",
                 tenantId, rule.getId(), rule.getTriggerValue());
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", rule.getId());
         result.put("deleted", true);
         return result;
+    }
+
+    /**
+     * 删路线抢不到（影响行数 0）⇒ 409 文案，带**实际当前态**。
+     *
+     * <p>三种可能分开说（修前一律回「成功」）：① 已被别人删过（{@code deleted=1}）；
+     * ② 非本租户（不泄漏别的租户的存在性 —— 与 {@code findRouting} 的 404 同口径，但读判之后
+     * 被改过 ⇒ 这里按「不可见」措辞，不确认对方存在）；③ 行已不存在。文案<b>不指内部端点</b>。</p>
+     */
+    private static String deleteRoutingConflictMessage(ProductionRouteTemplate fresh, Long tenantId) {
+        if (fresh == null || !tenantId.equals(fresh.getTenantId())) {
+            return "该工艺路线不存在或不属于当前租户，未执行删除";
+        }
+        return "该工艺路线已被删除（当前为已删除状态），未重复删除";
+    }
+
+    /** 删条件工序规则抢不到（影响行数 0）⇒ 409 文案，同 {@link #deleteRoutingConflictMessage}。 */
+    private static String deleteRouteRuleConflictMessage(ProductionRouteRule fresh, Long tenantId) {
+        if (fresh == null || !tenantId.equals(fresh.getTenantId())) {
+            return "该条件工序规则不存在或不属于当前租户，未执行删除";
+        }
+        return "该条件工序规则已被删除（当前为已删除状态），未重复删除";
     }
 
     // ══════════════════ 特殊选项对客单价（元/套，issue #4567）══════════════════
@@ -454,7 +485,8 @@ public class ProductionRoutingCommandService {
         if (!TRIGGER_KINDS.contains(triggerKind)) {
             details.add(BusinessException.detail("trigger_kind", String.format(
                     "触发类型「%s」不在取值域内（只能是 工艺 craft / 特殊选项 option / 加工项 processing_item"
-                            + " / 部位 position）—— `shaped` 是表结构预留、没有规则行可落，故不收", triggerKind)));
+                            + " / 部位 position / 售卖方式 sales_form）—— `shaped` 是表结构预留、"
+                            + "没有规则行可落，故不收", triggerKind)));
         }
         if (!ACTIONS.contains(action)) {
             details.add(BusinessException.detail("action", String.format(
@@ -561,6 +593,10 @@ public class ProductionRoutingCommandService {
             // （与上面 `position` 键**同一份**判据，不另抄一份）。
             return ProductionOperationQueryService.POSITION_LIMIT_VOCABULARY.contains(triggerValue);
         }
+        if (TRIGGER_KIND_SALES_FORM.equals(triggerKind)) {
+            // 售卖方式（issue #7523）：闭词表 = 订单行 sellingMethod 的机器值
+            return SALES_FORM_VOCABULARY.contains(triggerValue);
+        }
         if (TRIGGER_KIND_CRAFT.equals(triggerKind)) {
             return productionOperationQueryService.activeCraftNames(tenantId).contains(triggerValue);
         }
@@ -577,6 +613,10 @@ public class ProductionRoutingCommandService {
 
     /** 触发值不在词表时的**可行动**理由（逐 kind 说清去哪儿建）。 */
     private static String triggerValueMissingReason(String triggerKind, String triggerValue) {
+        if (TRIGGER_KIND_SALES_FORM.equals(triggerKind)) {
+            return String.format("售卖方式「%s」不在取值域里 —— 实例化侧只可能传「整卷」或「散剪」，"
+                            + "写别的值这条规则**永不生效**，请从列表里选", triggerValue);
+        }
         if (TRIGGER_KIND_POSITION.equals(triggerKind)) {
             return String.format("部位「%s」不在部位闭词表（%s）里 —— 实例化侧只可能传这几个部位，"
                             + "写别的值这条规则**永不生效**，请从列表里选",

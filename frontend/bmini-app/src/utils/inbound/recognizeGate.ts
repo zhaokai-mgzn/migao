@@ -165,7 +165,7 @@ export function checkDraftInput(input: DraftInput): DraftCheck {
     return { ok: false, message: NO_SKU_MATCH_MESSAGE }
   }
   if (String(input.rollLengthM ?? '').trim() === '') {
-    return { ok: false, message: '请填写卷长（米/卷），入库米数 = 卷数 × 卷长（服务端会校验数值口径）' }
+    return { ok: false, message: '请填写卷长（米/卷），入库米数 = 卷数 × 卷长（系统会核对米数）' }
   }
   if (!input.confirmed) {
     return { ok: false, message: '请先核对实物并勾选「我确认」后再提交（过账不可撤销）' }

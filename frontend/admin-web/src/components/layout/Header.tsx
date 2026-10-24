@@ -6,14 +6,16 @@ import {
   User,
   LogOut,
   ChevronDown,
-  Phone,
   Briefcase,
   Building2,
   Menu,
+  Info,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { cn } from '@/lib/utils'
 import NotificationBell from './NotificationBell'
+import ApprovalBell from './ApprovalBell'
+import MobileEntryHeader from './MobileEntry'
 
 interface HeaderProps {
   title?: string
@@ -25,19 +27,21 @@ interface HeaderProps {
 // 路由 → 面包屑映射（与侧边栏菜单结构对齐）
 // 🔴 issue #5271 重设计后，本表的**组名**必须与 `config/menu.ts` 的 `MenuGroup.name` 逐字一致：
 //    商品管理 → **商品与加工项**；订单管理/客户管理 → **交易管理**（客户列表、财务对账并入）；
-//    入库单/余料台账/省料看板 → **仓储与物料**（新组，原在生产管理组）。
+//    入库单 → **供应链**（issue #7369：采购到货的登记面，随供应链走）；余料台账/省料看板 → **仓储与物料**。
 //    判据：tests/unit/lib/menu-breadcrumb-coverage.test.tsx（PG-038，逐菜单项断言末项 == 菜单名）。
 // 顺序敏感：更具体的子路径放在前面，避免被父路径前缀匹配
 const ROUTE_BREADCRUMB_MAP: Array<{
   match: (path: string) => boolean
   crumbs: { label: string; href?: string }[]
 }> = [
-  // 工作台
-  { match: (p) => p === '/' || p === '/dashboard', crumbs: [{ label: '工作台', href: '/dashboard' }, { label: '经营看板' }] },
-  // 每日简报（issue #5071）：此前**没有条目** ⇒ 落兜底分支、面包屑只剩「工作台」一项，
-  // §15.2「面包屑与侧边栏菜单名一致」不成立（与 #5034 的入库单是**同一形态**的漏改）。
-  // ⚠️ 本表是 `find` 取**首个命中**、顺序敏感 ⇒ 前缀不得写宽（`p.startsWith('/b')` 会抢走别的匹配）。
-  { match: (p) => p.startsWith('/briefing'), crumbs: [{ label: '工作台' }, { label: '每日简报' }] },
+  // 经营看板（2026-10-17 issue #7087：由「工作台」组升为**一级项**、并撤掉「工作台」组）
+  // 🔴 一级项**没有父组** ⇒ 面包屑是**单级**（与「商品管理」「通知中心」同口径；#5877）。
+  { match: (p) => p === '/' || p === '/dashboard', crumbs: [{ label: '经营看板' }] },
+  // 报表中心（issue #7376 / #7377）：一级项（与经营看板同席位），面包屑只有自己一层。
+  { match: (p) => p === '/reports', crumbs: [{ label: '报表中心' }] },
+  // 每日简报（issue #3468；2026-10-17 issue #7087 撤掉菜单项）：`/briefing` 现为**重定向薄壳**
+  // → `/dashboard`（旧深链不 404）⇒ 本表不再为它保留条目 —— 面包屑的末项必须是**真实存在的
+  // 侧边栏菜单名**（§15.2 的可执行定义在 `menu-breadcrumb-coverage.test.tsx`）。
 
   // 客户服务组（本轮 2026-09-29 用户裁定**新建**：原「智能客服」组 + 客户侧两项合并）
   // 🔴 首项 = 组名「客户服务」，与侧边栏 `config/menu.ts` 的 `customer-service` 组逐字一致
@@ -71,33 +75,49 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   //   · `/production/processing-fees`（同上页的第二个 tab）→ 同前
   //   · `/production/routings`（原「工艺配置」）→ `/settings?domain=craft-route`
   //   · `/processing`（更早的旧路径）→ 同 `/production/processing`
-  // ⚠️ 必须排在 `/production` 之前（本表 `find` 取首个命中，否则会被「生产看板」抢走）。
+  // ⚠️ 必须排在 `/production` 之前（本表 `find` 取首个命中，否则会被「作业看板」抢走）。
   {
     match: (p) =>
       p.startsWith('/production/processing') || p.startsWith('/production/routings') || p.startsWith('/processing'),
     crumbs: [{ label: '企业基础设置' }],
   },
   // 智能派单（issue #5177）：**必须排在 `/production` 之前** —— 本表是 `find` 取**首个命中**，
-  // `/production` 那条会抢走 `/production/pool`（面包屑会退化成「生产看板」= §15.2 不成立）。
+  // `/production` 那条会抢走 `/production/pool`（面包屑会退化成「作业看板」= §15.2 不成立）。
   // 组名/菜单名与 `config/menu.ts` 的 `production-pool`、服务端两处菜单节点逐字一致。
   { match: (p) => p.startsWith('/production/pool'), crumbs: [{ label: '生产管理' }, { label: '智能派单' }] },
   // 省料看板（issue #5159）：同样**必须排在 `/production` 之前**（本表 `find` 取首个命中，
-  // `/production` 会抢走它 ⇒ 面包屑退化成「生产看板」= §15.2 不成立）。
+  // `/production` 会抢走它 ⇒ 面包屑退化成「作业看板」= §15.2 不成立）。
   // 组名/菜单名与 `config/menu.ts` 的 `production-saving-board`、服务端两处菜单节点逐字一致。
   { match: (p) => p.startsWith('/production/saving-board'), crumbs: [{ label: '仓储与物料' }, { label: '省料看板' }] },
   // 余料台账（issue #5146 建页 / issue #5191 **进侧边栏**）：菜单项名 = 「余料台账」，
   // 与 `config/menu.ts` 的 `production-remnants`、服务端两处菜单节点**逐字一致**
   // （§15.2「面包屑末项 == 侧边栏菜单名」；守卫 tests/unit/lib/menu-breadcrumb-coverage.test.tsx）。
-  // ⚠️ 必须排在下面的 `/production` 之前（本表 `find` 取首个命中，否则面包屑退化成「生产看板」）。
+  // ⚠️ 必须排在下面的 `/production` 之前（本表 `find` 取首个命中，否则面包屑退化成「作业看板」）。
   // issue #5271：本页随「面料进出与消耗」动线**移入「仓储与物料」组**（原生产管理组）。
   { match: (p) => p.startsWith('/production/remnants'), crumbs: [{ label: '仓储与物料' }, { label: '余料台账' }] },
   { match: (p) => p.startsWith('/production/piecework'), crumbs: [{ label: '生产管理' }, { label: '计件工资' }] },
-  // /production = 加工单唯一入口（issue #4357 与原「加工单」菜单合并）
-  { match: (p) => p.startsWith('/production'), crumbs: [{ label: '生产管理' }, { label: '生产看板' }] },
+  // 质检记录（issue #7140）：菜单名与 `config/menu.ts` 的 `quality-inspections`、服务端两处菜单节点
+  // **逐字一致**（§15.2「面包屑末项 == 侧边栏菜单名」，守卫 menu-breadcrumb-coverage.test.tsx）。
+  { match: (p) => p.startsWith('/quality-inspections'), crumbs: [{ label: '生产管理' }, { label: '质检记录' }] },
+  // 返工单（issue #7377）：与 `config/menu.ts` 的 `rework-orders`、服务端两处菜单节点同名同组
+  { match: (p) => p.startsWith('/rework-orders'), crumbs: [{ label: '生产管理' }, { label: '返工单' }] },
+  // 审批中心（issue #7593，用户 2026-10-24 裁定）：**侧边栏菜单项已撤除**，入口改到顶栏
+  // `ApprovalBell`（图标 + 待审数徽标 + 面板）⇒ 它现在**没有父组**，面包屑是**单级**
+  // （与「商品管理」「通知中心」同口径）。菜单名 / 页面名仍是「审批中心」，与 `/approvals` 页一致。
+  { match: (p) => p.startsWith('/approvals'), crumbs: [{ label: '审批中心' }] },
+  // /production = 作业单唯一入口（issue #4357 与原「加工单」菜单合并）
+  { match: (p) => p.startsWith('/production'), crumbs: [{ label: '生产管理' }, { label: '作业看板' }] },
   // 入库单（issue #5071）：V111（#5034）新增菜单项时**漏了本表这一处** ⇒ 面包屑只剩「工作台」一项。
   // 组名/菜单名与侧边栏 `config/menu.ts` 的 `inbound-orders` 逐字一致；
   // issue #5271：随「面料进出与消耗」动线**移入「仓储与物料」组**（原生产管理组）。
-  { match: (p) => p.startsWith('/inbound-orders'), crumbs: [{ label: '仓储与物料' }, { label: '入库单' }] },
+  // 供应商（issue #7369）：新增菜单项同批补面包屑（V111/#5034 漏过一次的教训）。
+  // 🔴 issue #7369（用户 2026-10-20 裁定「得加个新大菜单」）：三项已从「仓储与物料」移到「供应链」
+  // —— 面包屑的组名必须与菜单组名逐字一致（本文件文件头的硬约束），漏改就是「同页面两个组名」。
+  { match: (p) => p.startsWith('/suppliers'), crumbs: [{ label: '供应链' }, { label: '供应商' }] },
+  // 价格本（issue #7375 段 3）：归属「交易管理」组 —— 定价是交易前置。
+  { match: (p) => p.startsWith('/price-books'), crumbs: [{ label: '交易管理' }, { label: '价格本' }] },
+  { match: (p) => p.startsWith('/purchase-orders'), crumbs: [{ label: '供应链' }, { label: '采购单' }] },
+  { match: (p) => p.startsWith('/inbound-orders'), crumbs: [{ label: '供应链' }, { label: '入库单' }] },
   // 发货单（issue #5939，用户 2026-10-02 裁定）：与「入库单」对称的出口单据，同属「仓储与物料」组。
   // 组名/菜单名与侧边栏 `config/menu.ts` 的 `shipments`、服务端两处菜单节点逐字一致（判据 PG-038）。
   { match: (p) => p.startsWith('/shipments'), crumbs: [{ label: '仓储与物料' }, { label: '发货单' }] },
@@ -105,10 +125,13 @@ const ROUTE_BREADCRUMB_MAP: Array<{
   // 新增菜单项必须同批补面包屑，否则末项退化成「工作台」。组名/菜单名与 `config/menu.ts` 的
   // `stock-ledger`、服务端两处菜单节点**逐字一致**（判据 PG-038 / §15.2）。
   { match: (p) => p.startsWith('/stock-ledger'), crumbs: [{ label: '仓储与物料' }, { label: '库存明细' }] },
+  // 盘点单（issue #7373）：组名/菜单名与 `config/menu.ts` 的 `stocktakes`、服务端两处菜单节点逐字一致
+  //（§15.2「面包屑末项 == 侧边栏菜单名」）。
+  { match: (p) => p.startsWith('/stocktakes'), crumbs: [{ label: '仓储与物料' }, { label: '盘点单' }] },
 
   // 交易管理组（本轮 2026-09-29 收窄为**「下单 → 收款」两项**：客户列表 / 售后工单已移入
   // 「客户服务」组 —— 用户原话「客户管理也不属于交易管理」「（售后）和客户管理……都属于服务客户的功能」）
-  { match: (p) => p.startsWith('/orders'), crumbs: [{ label: '交易管理' }, { label: '订单列表' }] },
+  { match: (p) => p.startsWith('/orders'), crumbs: [{ label: '交易管理' }, { label: '销售订单' }] },
   { match: (p) => p.startsWith('/finance'), crumbs: [{ label: '交易管理' }, { label: '财务对账' }] },
 
   // 客户服务组的两项业务页（与上面的 /agent-workspace、/knowledge 同组）
@@ -131,7 +154,9 @@ const ROUTE_BREADCRUMB_MAP: Array<{
 function resolveBreadcrumbs(pathname: string | null): { label: string; href?: string }[] {
   if (!pathname) return [{ label: '经营看板' }]
   const matched = ROUTE_BREADCRUMB_MAP.find((m) => m.match(pathname))
-  return matched ? matched.crumbs : [{ label: '工作台', href: '/dashboard' }]
+  // 兜底（未知路径）：给一条**真实存在的入口**回得来 —— 2026-10-17（issue #7087）「工作台」组撤销后，
+  // 兜底项 = 一级项「经营看板」（与 `/`、`/dashboard` 同一条），不再是已不存在的组名。
+  return matched ? matched.crumbs : [{ label: '经营看板', href: '/dashboard' }]
 }
 
 export default function Header({ title, breadcrumbs, onOpenMobileNav }: HeaderProps) {
@@ -226,8 +251,17 @@ export default function Header({ title, breadcrumbs, onOpenMobileNav }: HeaderPr
         )}
       </div>
 
-      {/* 右侧：通知 + 用户信息 */}
+      {/* 右侧：手机端入口 + 待审批 + 通知 + 用户信息 */}
       <div className="flex items-center gap-3">
+        {/* 手机端入口（issue #7198）：扫码是**跨设备交接的工具**（不是一条配置）⇒ 常驻面只占
+            一个图标，点开才画码（§31 P1 常驻面克制；旧落位埋在设置页 3~4 步深处）。 */}
+        <MobileEntryHeader />
+
+        {/* 待审批（issue #7593，用户 2026-10-24 裁定「审批中心菜单放置到右上角…不要单独搞个菜单」）：
+            审批是「有人在等你」的待办 ⇒ 图标 + 待审数徽标；侧边栏那一行已撤掉（静态菜单项没有信号）。
+            组件内部按 `finance:view` 门控 ⇒ 无该码的岗位不渲染这个图标。 */}
+        <ApprovalBell />
+
         {/* 通知铃铛 */}
         <NotificationBell />
 
@@ -276,17 +310,17 @@ export default function Header({ title, breadcrumbs, onOpenMobileNav }: HeaderPr
                 )}
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-neutral-900">{displayName}</p>
-                  <p className="truncate text-xs text-neutral-500">
-                    {user?.email || user?.username || ''}
-                  </p>
+                  <p className="truncate text-xs text-neutral-500">{user?.email || ''}</p>
                 </div>
               </div>
 
-              {/* 丰富信息：#3099 手机号 / 岗位 / 所属企业 */}
+              {/* 丰富信息：#3099 账号名 / 岗位 / 所属企业
+                  issue #7272：这一行取值是 `user.username`（登录账号，`/me` 不提供 phone）⇒ 标签不能写「手机号」，
+                  否则 `reg_sales` 这类非手机号账号会被标成手机号（用户 2026-10-18 截图逐字「手机号展示成账号了」）。 */}
               <div className="space-y-2 px-4 py-3 text-sm">
                 <div className="flex items-center gap-2 text-neutral-600">
-                  <Phone className="h-3.5 w-3.5 text-neutral-400" />
-                  <span className="w-14 shrink-0 text-neutral-400">手机号</span>
+                  <User className="h-3.5 w-3.5 text-neutral-400" />
+                  <span className="w-14 shrink-0 text-neutral-400">账号名</span>
                   <span className="truncate text-neutral-800">{user?.username || '-'}</span>
                 </div>
                 <div className="flex items-center gap-2 text-neutral-600">
@@ -300,6 +334,18 @@ export default function Header({ title, breadcrumbs, onOpenMobileNav }: HeaderPr
                   <span className="truncate text-neutral-800">{user?.tenantName || '-'}</span>
                 </div>
               </div>
+
+              {/* 关于观星台（issue #7491）：公司名 / 产品介绍的去处 —— 按需查看，不占租户工作台的常驻面。
+                  新标签页打开，不把商家从当前工作台带走（target=_blank + noopener）。 */}
+              <a
+                href="/about"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex w-full items-center gap-2 border-t border-neutral-100 px-4 py-2.5 text-sm text-neutral-600 transition-colors hover:bg-neutral-50"
+              >
+                <Info className="h-4 w-4 text-neutral-400" />
+                关于观星台
+              </a>
 
               <button
                 onClick={handleLogout}

@@ -199,6 +199,8 @@ public class ProductionScanCompleteService {
         Order order = productionService.resolveOrder(orderId, tenantId);
         ProcessingOrder po = productionService.requireActiveProcessingOrder(order, tenantId);
         ProcessingPositionOperation op = productionService.requireActiveOperation(po.getId(), operationId, tenantId);
+        // 🔴 「质检」工序没有报工动作（issue #7186）：与逐道报工**同一份**判据（不复制第二套文案）。
+        DocumentOperationLinkage.rejectManualReport(op);
 
         // 数量：默认 = 剩余应做（首次报工 = 应做数量；见类注释的偏离登记）
         BigDecimal qty = ProductionService.bd(body == null ? null : body.get("qty"), null);
@@ -226,8 +228,12 @@ public class ProductionScanCompleteService {
         }
 
         // ② 一次事务（跨 bean 调用 ⇒ @Transactional 代理生效）：明细 + CAS + done_at + 完工判定
+        //    + 裁剪批次核对（issue #7647）：同事务 ⇒ 批次账写失败则本次报工整体回滚。
+        //    `batch_no` 只在「工序名恰好=裁剪且该 SKU 按批次入库」时被消费（判定在
+        //    `ProductionService#cuttingBatchItem`，本类不复制第二份）；其余工序一个字节都不读。
+        String cuttingBatchNo = ProductionService.str(body == null ? null : body.get("batch_no"));
         Map<String, Object> result = productionService.applyScanComplete(
-                order, po, op, qty, qualifiedQty, workType, identity, tenantId);
+                order, po, op, qty, qualifiedQty, workType, identity, tenantId, cuttingBatchNo);
 
         // ③ 一屏闭环回执：本道完成 + 本套（套号/部位/进度）+ 下一道是什么
         result.put("set_no", scan.get("set_no"));
@@ -255,12 +261,24 @@ public class ProductionScanCompleteService {
             result.put("set_progress", next.get("set_progress"));
             result.put("set_completed", next.get("completed"));
             result.put("next_operation", next.get("operation"));
+            // 🔴 下一屏的批次判据（issue #7647）也必须**来自这次重解析**，不能沿用上一屏的：
+            //    报「裁剪」之后下一道通常是「打包」（不要求批次），沿用旧值会让工人屏多出一个不该有的输入框、
+            //    而且按钮被禁死；反过来（报废不推进进度 ⇒ 下一道仍是「裁剪」）如果丢掉判据，工人就填不了批次
+            //    ⇒ 报不上去。⇒ 三个键随下一道一起下发（键恒在；失败分支给 false / null / []）。
+            result.put("next_batch_required", Boolean.TRUE.equals(next.get("batch_required")));
+            result.put("next_batch_no", next.get("batch_no"));
+            result.put("next_batch_candidates", next.get("batch_candidates"));
         } catch (RuntimeException e) {
             log.warn("[扫码完成] 下一道推断失败（本次报工已成功落库，仅缺「下一道」提示）: error={}",
                     e.getMessage());
             result.put("set_progress", null);
             result.put("set_completed", null);
             result.put("next_operation", null);
+            // 推断失败 ⇒ 「下一道要不要批次」**未知** ⇒ 按不需要处理（宁可不显示，也不摆一个没人能填的必填框）；
+            // 真报上去缺批次时服务端仍会 422 并给出可行动文案。
+            result.put("next_batch_required", Boolean.FALSE);
+            result.put("next_batch_no", null);
+            result.put("next_batch_candidates", java.util.List.of());
         }
     }
 

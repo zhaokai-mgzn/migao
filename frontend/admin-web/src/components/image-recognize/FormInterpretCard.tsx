@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Image from 'next/image'
 import { Button } from '@/components/ui'
 import { resolveImageUrl } from '@/lib/utils'
@@ -8,10 +8,16 @@ import { htmlToPlainText } from '@/lib/rich-text-plain'
 import type { RecognizedField } from '@/lib/api'
 import { RECOGNIZE_NO_REASON, referenceFields } from '@/lib/image-recognize'
 import {
+  PAGE_FILL_SOURCE_DECLARED,
   PAGE_FILL_SOURCE_INTERPRETED,
   PAGE_FILL_SOURCE_RECOGNIZED,
   type PageFillField,
 } from '@/lib/agent-page-fill'
+import {
+  declaredCellsOf,
+  renamedColorValue,
+  type DeclaredFacts,
+} from '@/lib/declared-facts'
 
 /**
  * 卡片消费 / 回传的字段集合 —— 直接复用既有**字段计划**的形状，**不另造第二份**
@@ -23,6 +29,13 @@ interface FormInterpretCardProps {
   /** 已上传的图片 URL（缩略图用 —— 就是识别用的那张，不是另拍的，也不是装饰） */
   imageUrl: string
   fields: FormInterpretFields
+  /**
+   * 商家在「补充一句」里写下的**字面事实**（issue #7528，`lib/declared-facts.ts` 解析）。
+   *
+   * 给了就多出第三段 `[商家填写]`（货号 / 门幅 / 规格属性），并把颜色按命名规则改名 ——
+   * 这些都是**确定性解析**的结果（零 LLM），与另外两枚来源（`[图片识别]` / `[米宝解读]`）可分辨。
+   */
+  facts?: DeclaredFacts
   /** 「一键填入」：把**选中的、有值的**格子交回页面（沿用页面既有的 `onRecognized` 回调） */
   onFill: (fields: RecognizedField[]) => void
   className?: string
@@ -34,13 +47,13 @@ function hasValue(field: PageFillField): boolean {
 }
 
 /**
- * 两段的来源归口 —— **只比对字符串**（契约里 `source` 只有两个取值）。
+ * 来源归口 —— **只比对字符串**（`source` 一共三个取值：抄的 / 推的 / 商家写的）。
  * 没给来源的格子（= 抄不到）归到第一段：它的 `reason` 也要让商家看见，不该凭空消失。
  */
 function sourceGroupOf(field: PageFillField): string {
-  return field.source === PAGE_FILL_SOURCE_INTERPRETED
-    ? PAGE_FILL_SOURCE_INTERPRETED
-    : PAGE_FILL_SOURCE_RECOGNIZED
+  if (field.source === PAGE_FILL_SOURCE_INTERPRETED) return PAGE_FILL_SOURCE_INTERPRETED
+  if (field.source === PAGE_FILL_SOURCE_DECLARED) return PAGE_FILL_SOURCE_DECLARED
+  return PAGE_FILL_SOURCE_RECOGNIZED
 }
 
 const GROUPS = [
@@ -54,13 +67,85 @@ const GROUPS = [
     testid: 'form-interpret-group-interpreted',
     title: `${PAGE_FILL_SOURCE_INTERPRETED} 黄金策推的`,
   },
+  {
+    source: PAGE_FILL_SOURCE_DECLARED,
+    testid: 'form-interpret-group-declared',
+    title: `${PAGE_FILL_SOURCE_DECLARED} 按你写的那句话`,
+  },
 ] as const
+
+/**
+ * 把「商家填写」与颜色命名规则合并进字段计划（issue #7528）—— 纯函数，**不改入参**。
+ *
+ * 三条合并规则：
+ * 1. **颜色改名**：有命名规则且 `color` 格有值 ⇒ 按 `货号-序号+颜色名` 改写（来源仍是
+ *    `[图片识别]`：颜色内容是图上抄的，只有**命名格式**是商家写的 —— 在 `note` 里说清）；
+ * 2. **空格才填**：`[图片识别]` 已有值的格**一律不动**（图是事实源，错也是他看得见的）；
+ * 3. **可覆盖模型推断**：`[米宝解读]` 的值是人推的，商家明说的字面事实优先。
+ */
+export function mergeDeclaredFacts(
+  fields: FormInterpretFields,
+  facts?: DeclaredFacts,
+): FormInterpretFields {
+  if (!facts) return fields
+  let merged = fields
+
+  if (facts.colorRule) {
+    merged = merged.map((field) => {
+      if (field.key !== 'color' || !hasValue(field)) return field
+      const renamed = renamedColorValue(String(field.value), facts.colorRule)
+      if (!renamed) return field
+      const note = field.note
+        ? `${field.note}（已按你写的命名规则改为 ${renamed}）`
+        : `已按你写的命名规则（货号-序号+颜色名）改为 ${renamed}`
+      return { ...field, value: renamed, note }
+    })
+  }
+
+  for (const cell of declaredCellsOf(facts)) {
+    const index = merged.findIndex((field) => field.key === cell.key)
+    if (index < 0) {
+      merged = [
+        ...merged,
+        {
+          key: cell.key,
+          label: cell.label,
+          value: cell.value,
+          source: PAGE_FILL_SOURCE_DECLARED,
+          reason: cell.reason,
+          candidates: [],
+          note: null,
+          note_source: null,
+        },
+      ]
+      continue
+    }
+    const existing = merged[index]
+    if (hasValue(existing) && existing.source !== PAGE_FILL_SOURCE_INTERPRETED) continue
+    merged = merged.map((field, i) =>
+      i === index
+        ? {
+            ...field,
+            value: cell.value,
+            source: PAGE_FILL_SOURCE_DECLARED,
+            reason: cell.reason,
+            note: null,
+            note_source: null,
+          }
+        : field,
+    )
+  }
+  return merged
+}
 
 /**
  * 「识别 + 一次性推理」的**内嵌结果卡**（issue #6367 包 P3）—— 纯展示 + 一次填充回调。
  *
- * 用户口径（逐字）：**不是**弹窗 / 对话 / 气泡；两段分组（`[图片识别]` 从图上抄的 /
- * `[米宝解读]` 黄金策推的，各带 `note` 依据）；每格可勾选/取消，「一键填入」把选中的格子交回页面。
+ * 用户口径（逐字）：**不是**弹窗 / 对话 / 气泡；分段展示，各带 `note` 依据；
+ * 每格可勾选/取消，「一键填入」把选中的格子交回页面。
+ *
+ * 段：`[图片识别]` 从图上抄的 / `[米宝解读]` 黄金策推的 / `[商家填写]` 按他写的那句话
+ * （第三段是 issue #7528：货号 / 门幅 / 规格属性 —— 由 `lib/declared-facts.ts` 确定性解析）。
  *
  * 🔴 **不落库**：本组件不 import 任何写端点，也只调调用方给的那一个 `onFill`
  * （= 页面既有的 `onRecognized`）——「填表」与「提交」是两件事，后者永远是人的动作。
@@ -69,16 +154,21 @@ const GROUPS = [
 export default function FormInterpretCard({
   imageUrl,
   fields,
+  facts,
   onFill,
   className,
 }: FormInterpretCardProps) {
-  // 默认全选：识别 + 解读的结果是**候选**，商家取消掉不想要的即可（多一步「全选」没有价值）
-  const [selected, setSelected] = useState<string[]>(() =>
-    fields.filter(hasValue).map((field) => field.key),
-  )
+  const merged = useMemo(() => mergeDeclaredFacts(fields, facts), [fields, facts])
+
+  // 默认全选：识别 + 解读 + 商家填写的结果都是**候选**，商家取消掉不想要的即可
+  // （多一步「全选」没有价值）。🔴 存的是**取消勾选的**键（而不是选中键）：
+  // 商家改那句文字后，新解析出来的格子会出现在 `merged` 里，存选中键会让它**默认不选中**。
+  const [deselected, setDeselected] = useState<string[]>([])
+  const isSelected = (field: PageFillField) => hasValue(field) && !deselected.includes(field.key)
+  const selectedCount = merged.filter(isSelected).length
 
   const toggle = (key: string) =>
-    setSelected((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]))
+    setDeselected((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]))
 
   /**
    * 「一键填入」= 选中的**有值**格子 + **参考格**（issue #6529：`value` 为空、`reference` 有值）。
@@ -87,10 +177,7 @@ export default function FormInterpretCard({
    * 「按名称**查目录**」的输入：订单侧明细正是靠它才对商家说得出「目录里没有这个商品」。
    */
   const handleFill = () =>
-    onFill([
-      ...fields.filter((field) => hasValue(field) && selected.includes(field.key)),
-      ...referenceFields(fields),
-    ])
+    onFill([...merged.filter(isSelected), ...referenceFields(merged)])
 
   return (
     <div
@@ -113,7 +200,7 @@ export default function FormInterpretCard({
       </div>
 
       {GROUPS.map((group) => {
-        const groupFields = fields.filter((field) => sourceGroupOf(field) === group.source)
+        const groupFields = merged.filter((field) => sourceGroupOf(field) === group.source)
         // 这一段没有格子就不占版面（有格子的那一段照常显示）
         if (groupFields.length === 0) return null
         return (
@@ -127,7 +214,7 @@ export default function FormInterpretCard({
                       type="checkbox"
                       className="mt-0.5"
                       data-testid={`form-interpret-check-${field.key}`}
-                      checked={selected.includes(field.key)}
+                      checked={isSelected(field)}
                       onChange={() => toggle(field.key)}
                     />
                     {/* issue #6403 缺陷 2：值可能是 HTML（富文本区的落值口径）⇒ 展示层转可读纯文本；
@@ -176,7 +263,7 @@ export default function FormInterpretCard({
         size="sm"
         className="mt-2"
         data-testid="form-interpret-fill"
-        disabled={selected.length === 0}
+        disabled={selectedCount === 0}
         onClick={handleFill}
       >
         一键填入

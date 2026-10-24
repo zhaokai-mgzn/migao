@@ -20,14 +20,15 @@
       "label": "A4 纸",
       "technology": "laser-inkjet",
       "pageSize": "A4",
-      "pageMargin": "12mm",
+      "pageMargin": "0",
+      "contentInset": "12mm",
       "pageBoxMm": { "widthMm": 210, "heightMm": 297 },
       "continuousFeed": false,
       "carbonCopies": 1,
       "minFontPt": 9,
       "measurement": "measured",
       "pendingMeasurements": [],
-      "note": "激光 / 喷墨 + 浏览器 window.print()（分页由浏览器负责，需抑制页眉页脚）。在用：发货单（#3768）、报价单（#4965）、加工单（#5651）。minFontPt 9pt = 既有 A4 单据的正文 12px 口径（不是量出来的下限）。"
+      "note": "激光 / 喷墨 + 浏览器 window.print()（分页由浏览器负责）。🔴 `pageMargin` **必须是 0**（issue #7309）：Chrome 把自己的页眉页脚（版式日期 / 文档标题 / 页面 URL / 页码）画在 `@page` 的页边距里，上下边距一够大就照画（实测 8.7mm 不画 / 8.8mm 画）⇒ 0 边距 = 没有可画的边距 = 必然不出。版面内缩 12mm 是**真值**，写在 `contentInset`，由单据容器的 padding 承担（`box-decoration-break: clone` 让第 2 页起也重复这段内缩）。在用：发货单（#3768）、报价单（#4965）、加工单（#5651）。minFontPt 9pt = 既有 A4 单据的正文 12px 口径（不是量出来的下限）。"
     },
     {
       "id": "label-50x60",

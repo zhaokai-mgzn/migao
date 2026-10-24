@@ -3,12 +3,13 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { AlertTriangle, Plus, RotateCcw, Search, Calendar } from 'lucide-react'
-import { Button, Modal, PageHeader, PageCard } from '@/components/ui'
+import { Button, Modal, PageHeader, PageCard, SELECT_CONTROL } from '@/components/ui'
 import ProductTable, { ProductSortField, ProductSortOrder } from '@/components/products/ProductTable'
 import { productApi } from '@/lib/api'
 import { toast } from 'sonner'
 import type { Product, ProductStatus, ProductImportResult } from '@/types'
 import { usePermission } from '@/lib/permission'
+import { cn } from '@/lib/utils'
 
 // 状态选项（PRD：全部/出售中/已下架/审核中/草稿）
 const STATUS_OPTIONS: { value: '' | ProductStatus; label: string }[] = [
@@ -514,7 +515,7 @@ export default function ProductsPage() {
                   setStatus(v)
                   syncUrl({ status: v || undefined, page: 1 })
                 }}
-                className="w-full h-9 pl-3 pr-9 rounded border border-neutral-300 bg-white text-sm appearance-none focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
+                className={cn(SELECT_CONTROL, 'w-full')}
               >
                 {STATUS_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>

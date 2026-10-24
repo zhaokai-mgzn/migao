@@ -1,0 +1,26 @@
+{
+  "ok": true,
+  "viewport": "390x844",
+  "checks": {
+    "blockVisible": true,
+    "initialState": "未检",
+    "formVisible": true,
+    "resultOptions": 3,
+    "generatedNotice": true,
+    "stateAfter": "返工",
+    "reasonShown": true,
+    "postBody": {
+      "order_item_id": "item-1",
+      "result": "rework",
+      "reason": "缝线开裂"
+    }
+  },
+  "consoleErrors": [],
+  "posts": [
+    {
+      "order_item_id": "item-1",
+      "result": "rework",
+      "reason": "缝线开裂"
+    }
+  ]
+}

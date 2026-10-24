@@ -3,6 +3,11 @@ package com.migao.admin.security;
 import com.migao.admin.exception.BusinessException;
 import com.migao.admin.mapper.AfterSalesTicketMapper;
 import com.migao.admin.mapper.CategoryMapper;
+import com.migao.admin.mapper.CustomerProfileMapper;
+import com.migao.admin.mapper.FinanceTransactionMapper;
+import com.migao.admin.mapper.SupplierMapper;
+import com.migao.admin.mapper.PurchaseOrderMapper;
+import com.migao.admin.mapper.SupplierPaymentMapper;
 import com.migao.admin.mapper.ProcessingCategoryMapper;
 import com.migao.admin.mapper.ProcessingItemMapper;
 import com.migao.admin.mapper.ProductMapper;
@@ -56,6 +61,24 @@ public class TenantResourceOwnership {
      */
     private final WorkerAdminService workerAdminService;
 
+    /** 客户档案的归属认定（issue #7370 的授信写端点）：与 product/category 同款 —— 只判「本租户可见吗」。 */
+    private final CustomerProfileMapper customerProfileMapper;
+
+    /**
+     * 收款流水的归属认定（issue #7370 段 3 的核销写端点）：`finance_transactions` 是现金真值源，
+     * 核销要能确认「这笔水流属于本租户」—— 只判可见性，不动金额。
+     */
+    private final FinanceTransactionMapper financeTransactionMapper;
+
+    /** 供应商档案的归属认定（issue #7369）：只判「本租户可见吗」，不改任何业务状态。 */
+    private final SupplierMapper supplierMapper;
+
+    /** 付款单的归属认定（issue #7369 段 3-B 作废端点）：同上，只判本租户可见。 */
+    private final SupplierPaymentMapper supplierPaymentMapper;
+
+    /** 采购单的归属认定（issue #7369 段 4 的详情/收货/关闭端点）：同上。 */
+    private final PurchaseOrderMapper purchaseOrderMapper;
+
     /**
      * 资源键 → 归属认定（认定不过 ⇒ 抛 {@code NOT_FOUND}，与既有 404 路径同一份异常与文案）。
      *
@@ -90,6 +113,31 @@ public class TenantResourceOwnership {
      */
     @PostConstruct
     public void registerChecks() {
+        checks.put("supplier", id -> {
+            if (supplierMapper.selectById(id) == null) {
+                throw BusinessException.notFound("供应商");
+            }
+        });
+        checks.put("supplierPayment", id -> {
+            if (supplierPaymentMapper.selectById(id) == null) {
+                throw BusinessException.notFound("付款单");
+            }
+        });
+        checks.put("purchaseOrder", id -> {
+            if (purchaseOrderMapper.selectById(id) == null) {
+                throw BusinessException.notFound("采购单");
+            }
+        });
+        checks.put("receiptTransaction", id -> {
+            if (financeTransactionMapper.selectById(id) == null) {
+                throw BusinessException.notFound("收款流水");
+            }
+        });
+        checks.put("customer", id -> {
+            if (customerProfileMapper.selectById(id) == null) {
+                throw BusinessException.notFound("客户");
+            }
+        });
         checks.put("product", id -> {
             if (productMapper.selectById(id) == null) {
                 throw BusinessException.notFound("商品");

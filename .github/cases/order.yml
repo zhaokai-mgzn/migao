@@ -2955,11 +2955,12 @@ cases:
     # `CraftCalcClient` / `POST /api/admin/orders/craft-calc`（试算，不落库）。
     # 口径 = 用户 2026-09-19 裁定：褶数法（标准档 2.0）——`褶数 = round((W×N − margin)/0.25)`
     # 再按开数取整；`用料 = 每折吃布 × 褶数 + margin`（单开 0.2 / 多开 0.3）。
-    # **每折吃布随款式/拼次变化**（同一次裁定，纸质速查表表头原文「拼色下料 1个折 0.65 / 2个折 1.2」，
-    # 是**用料**口径）：单色 0.25 / 拼色·拼1次 0.65 / 拼色·拼2次 1.2 米每折；余量不随拼色变化。
+    # **拼色 = 主布 + 配布**（issue #7560 改判；纸表表头「拼色下料 1个折 0.65 / 2个折 1.2」= **配布定长**）：
+    # 主布仍 0.25 米/折（四条列斜率同为 0.25），主布余量 = 单色余量 − 0.05×开数（单开 0.15 / 对开 0.20），
+    # 另加配布定长 0.65（拼1次）/ 1.2（拼2次）米，**整幅一次**。
     # 纸表逐值复现（本单的锚）：单开 0.25n+0.2、对开 0.25n+0.3；
     # 抽验 4折=1.2 / 8折=2.3 / 48折=12.3 / 52折=13.3 / 56折=14.3；6.6m 双开标准档 ⇒ 52 折 / 13.3 米；
-    # 拼色 52 折双开 ⇒ 拼1次 34.1 米 / 拼2次 62.7 米。
+    # 拼色 52 折双开 ⇒ 拼1次 13.9 米（13.2+0.65 进位）/ 拼2次 14.4 米（改前 34.1 / 62.7 = 按米/折乘 52 折）。
     # ⚠️ 缺口（不猜不插值）：纸表未登记 `拼3次` 的用料系数 ⇒ 端点 fail-closed `MIXED_PER_FOLD_NOT_REGISTERED`。
     # 架构口径：**不新增第二份算料逻辑** —— 端点只调 `curtain_calc.build_quote`，
     # `formula_text` 由后端按同一份数字产出（前端/Java 侧自拼 = 第二份算料逻辑）。
@@ -2970,10 +2971,10 @@ cases:
     data_checks:
       - "（散文、**不计分**）褶数法纸表逐值复现：单开 0.25n+0.2、对开 0.25n+0.3（4折=1.2/8折=2.3/48折=12.3/52折=13.3/56折=14.3）"
       - "（散文、**不计分**）单一真值：端点返回值 === 直调 curtain_calc.build_quote 逐值相等；formula_text 与数值同源（后端产出）"
-      - "（散文、**不计分**）拼色用料系数（用户 2026-09-19 裁定）：拼1次 0.65 / 拼2次 1.2 米每折；52 折双开 ⇒ 34.1 / 62.7 米；拼3次未登记 ⇒ fail-closed 显式报缺口"
+      - "（散文、**不计分**）拼色用料（issue #7560）：主布 0.25 米/折 + 拼色余量（单开 0.15 / 对开 0.20）+ 配布定长（拼1次 0.65 / 拼2次 1.2 米，整幅一次）；52 折双开 ⇒ 13.9 / 14.4 米；拼3次未登记 ⇒ fail-closed 显式报缺口"
       - "（散文、**不计分**）响应算料键 = **snake_case**（设计文档 §4.5 / CALC_INFO_KEYS 同口径）：fabric_meters / pleat_count / per_panel_pleats / per_fold / fullness / fullness_actual / formula_used / formula_text / source / craft_tier / warning —— 前端可原样塞进 processingInfo，零映射"
     skip_reason: "[backend-contract] 内部端点 + Java 客户端由 pytest（tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）验证，非 LLM 行为，不进入 agent-eval 冒烟"
-    merge_log: "2026-09-19 新增（issue #4421 后端半边）：算料试算端点 + 褶数法单一真值 + 纸表逐值复现。前端（下单页试算接线）由另一会话承担，本用例只锚后端契约。同日追加用户裁定：拼色每折吃布系数（拼1次 0.65 / 拼2次 1.2 米每折，纸表表头原文，是**用料**而非计价）—— 与真值源 §10 旧措辞冲突，已按裁定改正 docs §10；`拼3次` 纸表未登记 ⇒ 显式缺口 fail-closed，不插值。"
+    merge_log: "2026-09-19 新增（issue #4421 后端半边）：算料试算端点 + 褶数法单一真值 + 纸表逐值复现。前端（下单页试算接线）由另一会话承担，本用例只锚后端契约。同日追加用户裁定：拼色每折吃布系数（拼1次 0.65 / 拼2次 1.2 米每折，纸表表头原文，是**用料**而非计价）—— 与真值源 §10 旧措辞冲突，已按裁定改正 docs §10；`拼3次` 纸表未登记 ⇒ 显式缺口 fail-closed，不插值。 ｜ 2026-10-23（issue #7560，用户裁定「按纸表」）**改判**：前述「米/折」读法作废 —— 0.65/1.2 是**配布定长**；主布不改每折吃布、余量每幅 −0.05；52 折双开 34.1/62.7 → **13.9 / 14.4** 米。依据 = 同页纸表「主布拼色对开」52 折写 13.2 米（与 34.1 不可能同时成立）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_production/test_craft_calc.py"
@@ -3038,7 +3039,7 @@ cases:
 
   - id: OR-034
     legacy_id: ""
-    title: "工艺规格「一份 spec，三处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染"
+    title: "工艺规格「一份 spec，多处渲染」——展示映射三口径（订单 camelCase / 报价单 snake_case）+ 缺值不渲染（issue #7527 起报价单纸面不再渲染工艺行）"
     domains:
       - order
       - product
@@ -3054,14 +3055,14 @@ cases:
       - "（无 LLM 环节：本用例的判据由前端 vitest 单测直接执行，见 traces.tests）"
     expectations: []
     data_checks:
-      - "**一份定义吃两种键名口径**（设计文档 §4.9「一份 spec，三处渲染」）：`craft-display` 的 `craftSpecRows` 同时吃**订单/快照层 camelCase**（`order_items.processing_info` / `items_snapshot`）与**报价单 snake_case**（`curtain_calc` 输出）—— 两处各写一套定义 = 第二份口径，漂移的那一份不会变红。"
+      - "**一份定义吃两种键名口径**（设计文档 §4.9「一份 spec，三处渲染」）：`craft-display` 的 `craftSpecRows` 同时吃**订单/快照层 camelCase**（`order_items.processing_info` / `items_snapshot`）与**报价单 snake_case**（`curtain_calc` 输出）—— 两处各写一套定义 = 第二份口径，漂移的那一份不会变红。⚠️ **2026-10-23 起（issue #7527）报价单纸面不再渲染工艺行**（用户 2026-10-23 逐字「报价单不要品名列和工艺行」）⇒ 渲染面由三处收敛为**订单详情页 + 加工单**（`ProcessingDoc`）两处；`craftSpecRows` 的**两种键名口径不变**（函数仍吃 snake_case，只是纸面不再调用它）。"
       - "**§4.9 字段表逐项渲染**：**17** 个字段按表出（部位 / 工艺 / 加工类型 / 打开方式 / 是否定型 / 款式 / 特殊选项 / 总褶数 / 褶数（每片）/ 幅数 / 褶倍 / 实际褶倍 / 米数 / 加工费米数 / 算料公式 / 是否对花 / 花距）；格式化口径 = 布尔 → 是/否、米数带单位、倍数带单位、选项数组顿号连接。⚠️ **2026-09-21 改判（issue #4876）**：原表里的「**褶距**」行**已整体删除**（用户裁定「应该直接删除这个字段，要做就做干净」）⇒ 字段数由 18 变 17，且**存量单也不再渲染褶距**（载荷里仍带 `pleatSpacing` 时断言它**不被渲染** —— 见 `craft-display.test.ts` 的 #4876 判据与三个组件测试的反向断言）。工位口径：`OrderLineCraftFields.materialize` / `order_items.pleat_spacing` 列**仍在**（DB 列与 Java 读面未删，属数据层存量；删的是**展示行**）。"
       - "**打开方式 1/2/3/4 → 单开/双开/三开/四开**（issue #4387 判据 1：候选必须含三开）；未知开数如实标「N 开」（不猜、不落默认值）。"
       - "**加工类型取真值来源 `formula_used`**：`fixed_height*` → 定高买宽、`fixed_width*` / `roman_panel` → 定宽买高；未知 formula **fail-closed**（宁少一行，不漏内部代号给顾客）；订单层 `cuttingMode` 直存中文时优先于 `formula_used`。"
       - "**缺值不渲染（§4.9 硬约束 2）**：键缺席 / `null` / 空串 / 空数组 / 非有限数 ⇒ 该行**不出现**，绝不出现 `undefined` / `null` / `NaN`，也不补默认值；部分缺值只渲染有值的行（存量单形态：完全没有工艺键 ⇒ 无「工艺规格」块，页面仍正常渲染）。"
       - "**订单详情直读不二次推导**：真值来源 = `order_items.processing_info`（camelCase，§4.5），`OrderDetail` 的「商品明细」表按它渲染工艺规格与算料口径两块；`processingInfo=null`（存量单）时页面正常且无工艺块。"
     skip_reason: "[backend-contract] 前端展示契约（admin-web 组件 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-display.test.ts 与 frontend/admin-web/tests/unit/components/OrderDetailCraftSpec.test.tsx 执行"
-    merge_log: "2026-09-19 新增（issue #4431 B7 的用例追溯补正）：#4355（三处展示工艺规格）的行为此前**零评测用例**，新增测试借 `OR-001`（订单列表查询）与 `UI-020`（订单列表采购明细的**加工费**展示）过门禁 —— 后者虽在订单页但测的是加工费行，**不覆盖**工艺规格字段的渲染/格式化/缺值口径。本用例把判据挂到真实行为上：展示映射是**三处共用的同一份定义**，故它的判据必须覆盖两种键名口径 + 缺值硬约束。**不改运行时行为、不改断言强度**。"
+    merge_log: "2026-09-19 新增（issue #4431 B7 的用例追溯补正）：#4355（三处展示工艺规格）的行为此前**零评测用例**，新增测试借 `OR-001`（订单列表查询）与 `UI-020`（订单列表采购明细的**加工费**展示）过门禁 —— 后者虽在订单页但测的是加工费行，**不覆盖**工艺规格字段的渲染/格式化/缺值口径。本用例把判据挂到真实行为上：展示映射是**多处共用的同一份定义**，故它的判据必须覆盖两种键名口径 + 缺值硬约束。**不改运行时行为、不改断言强度**。2026-10-23（issue #7527）同步事实：报价单纸面撤掉工艺行 ⇒ 渲染面收敛为两处（订单详情页 + 加工单），映射定义与判据强度均未变。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/lib/craft-display.test.ts"
@@ -3134,10 +3135,11 @@ cases:
       - "**判据 7·入参不变就不重发**：`craftCalcSignature` 对同一入参恒定（写回 `quantity` 不会再次触发试算）；改宽 / 改开数 / 改拼次 ⇒ 签名变化（该重算的必须重算）；`null` 入参 ⇒ 空签名（不触发请求）。"
       - "**判据 8·失败给可行动提示、不给估算值**：`craftCalcErrorText` 优先取后端 `error.message`（如「拼3次纸表未登记」），无任何 message 时给兜底文案（不得空串，也不得悄悄算一个数）。"
       - "**判据 9·用料来源两态是真值**（真值源 §8「用料必须带来源」）：「公式计算」与「人工指定」是两个不同真值 —— 手改后不得被静默改回。"
+      - "**判据 10·改档位 ⇒ 重发试算并把新米数**写回**「用料米数」**（issue #7649，用户 2026-10-24「切换倍数法的档位没有再去算用料米数」）：`craft_tier` 进签名 ⇒ 改档必须重发；返回的 `fabric_meters` 必须写回输入框（只重发不写回 = 商家看到旧数）。⚠️ 本条只守**页面接线**；「引擎真的按档位算」的口径判据 = OR-041 判据 9（`test_fullness_follows_craft_tier`）—— 本缺陷当时在**引擎侧**（倍数法分支忽略 `craft_tier`），前端可以全绿。红证：把写回那半去掉 ⇒ 输入框停在 13.3 ⇒ `orders-new-craft-calc.test.tsx` 判据 3b 红。"
       - "**与 OR-032 的分工**（main 的后端半边用例，issue #4421）：`OR-032` 锚**端点契约**（褶数法纸表逐值、单一真值、snake_case 响应键）；本条锚**下单页前端接线**（何时发/不发请求、预填与人工指定的两态、失败不退回估算值）。两条互补，不重复。"
       - "**红证（实现前）**：`@/lib/craft-calc-request` 不存在 ⇒ import 即红；接线侧数量恒为手填 1。"
     skip_reason: "[backend-contract] 前端写侧契约（admin-web 页面接线 + 纯函数，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/lib/craft-calc-request.test.ts 与 frontend/admin-web/tests/unit/pages/orders-new-craft-calc.test.tsx 执行"
-    merge_log: "2026-09-19 新增（issue #4431 B7 的用例追溯补正）：#4421 / #4434（下单页算料试算接线 —— 布艺工艺规格链路的「算料」半边）的行为此前**零评测用例**，新增测试借 `OR-009`（下单全流程）/ `OR-014`（下单加工项数量规则）/ `UI-038`（新增订单表单**选择已有客户**）过门禁 —— 三条都**不覆盖**算料试算（`UI-038` 与被测行为完全无关）。本用例把判据挂到真实行为上：算料试算的三条 fail-closed + 用料来源两态 + 签名去重。**不改运行时行为、不改断言强度**。2026-09-19（issue #4575 用例库收口）：**判据 6 改判** —— 原「非韩褶工艺（打孔/四爪钩/穿杆/平幔）⇒ 不发请求」是**过期断言**（#4527 用户裁定「打孔按倍数法算布料，默认选择 2 倍」后，打孔已改判为「照常发请求、走倍数法」），留着它给的是**假信号**；改为与 `craft-calc-request.ts` 的 `CALC_CRAFTS` / `CRAFT_CALC_FORMULA_BY_CRAFT` / `CRAFT_CALC_MOUNTING_BY_CRAFT` 逐值一致的事实（打孔 ⇒ `fullness` + `eyelet`；未登记工艺 ⇒ 不发请求），标题同步去掉「按褶数法自动算」这一对打孔不成立的普适说法。**断言面只此一处改判，其余 8 条一字未动、无放宽。** 2026-09-19（issue #4598）：**判据 1 / 2 / 3 / 4 措辞同步** —— 它们原文用「数量」指代**帘行米数输入框**，而该输入框的 label 自 #4598 起是「用料米数」（旧文案「数量」，issue #4598）⇒ 措辞改为字段名本身，**语义与断言强度一字未变**（该输入框的值 = 加工费米数，改它 ⇒ 加工费随之变）。"
+    merge_log: "2026-09-19 新增（issue #4431 B7 的用例追溯补正）：#4421 / #4434（下单页算料试算接线 —— 布艺工艺规格链路的「算料」半边）的行为此前**零评测用例**，新增测试借 `OR-009`（下单全流程）/ `OR-014`（下单加工项数量规则）/ `UI-038`（新增订单表单**选择已有客户**）过门禁 —— 三条都**不覆盖**算料试算（`UI-038` 与被测行为完全无关）。本用例把判据挂到真实行为上：算料试算的三条 fail-closed + 用料来源两态 + 签名去重。**不改运行时行为、不改断言强度**。2026-09-19（issue #4575 用例库收口）：**判据 6 改判** —— 原「非韩褶工艺（打孔/四爪钩/穿杆/平幔）⇒ 不发请求」是**过期断言**（#4527 用户裁定「打孔按倍数法算布料，默认选择 2 倍」后，打孔已改判为「照常发请求、走倍数法」），留着它给的是**假信号**；改为与 `craft-calc-request.ts` 的 `CALC_CRAFTS` / `CRAFT_CALC_FORMULA_BY_CRAFT` / `CRAFT_CALC_MOUNTING_BY_CRAFT` 逐值一致的事实（打孔 ⇒ `fullness` + `eyelet`；未登记工艺 ⇒ 不发请求），标题同步去掉「按褶数法自动算」这一对打孔不成立的普适说法。**断言面只此一处改判，其余 8 条一字未动、无放宽。** 2026-09-19（issue #4598）：**判据 1 / 2 / 3 / 4 措辞同步** —— 它们原文用「数量」指代**帘行米数输入框**，而该输入框的 label 自 #4598 起是「用料米数」（旧文案「数量」，issue #4598）⇒ 措辞改为字段名本身，**语义与断言强度一字未变**（该输入框的值 = 加工费米数，改它 ⇒ 加工费随之变）。 2026-10-24 新增判据 10（issue #7649，用户逐字「切换倍数法的档位没有再去算用料米数」）：改档位 ⇒ 重发试算**并把新米数写回「用料米数」**（原判据只验「请求带 craft_tier」，没验「米数跟着变」⇒ 引擎忽略档位时前端全绿）。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/lib/craft-calc-request.test.ts"
@@ -3433,7 +3435,12 @@ cases:
     # ⑤ 默认公式：不传 formula / 未指定工艺 ⇒ 韩褶公式，且 `formula_text` 串首写明所用公式（静默走另一支 ⇒ 红）；
     # ⑥ 开数系数不得翻倍：同一成品宽下 单开与双开的 fullness 结果**相等**（总宽再×开数 ⇒ 22.0 ⇒ 红）；
     # ⑦ 既有 fail-closed 不变：缺宽/缺高/无自动算料口径工艺/纱帘 ⇒ 不发请求（前端 fail-closed 回归）；
-    # ⑧ 其余算料输出（褶数/幅数/金额）逐值回归：与改前一致（52 折 / 13.3 米 / 34.1 / 62.7 / 11.8）。
+    # ⑧ 其余算料输出（褶数/幅数/金额）逐值回归：单色与改前一致（52 折 / 13.3 米 / 11.8）；拼色按 issue #7560 改判（13.9 / 14.4）。
+    # ⑨ 🔴 #7649（用户 2026-10-24「切换倍数法的档位没有再去算用料米数」）：**档位 ⇒ 倍数** ——
+    #    `formula='fullness'` 且给了 `craft_tier` ⇒ 倍数 = `tiers[tier].fullness`（standard 2.0 / economy 1.8）；
+    #    显式 `fullness` 入参优先；未知档位键 ⇒ 标准档；档位倍数 < `min_fullness` ⇒ fail-closed
+    #    （与褶数法**同一把尺子**）。红证：把「档位 ⇒ 倍数」退回「倍数法只回显档位」⇒
+    #    `test_fullness_follows_craft_tier` 红（改前实测两档都是 11.0 米 / fullness 2.0）。
     # 配置可注入：`build_quote(..., config=None)` ⇒ 默认值 = 既有常量逐值不变（显式传默认配置 == 不传）；
     # 非法配置显式报错（**不静默回退默认值**）；配置**沿调用链传递**，不读进模块级可变全局。
     # ⚠️ 架构口径：**不新增第二份算料逻辑** —— 推导表唯一口径在算料引擎（`CRAFT_FORMULA`），
@@ -3450,8 +3457,9 @@ cases:
       - "（散文、**不计分**）用料米数一律**向上进位到 0.1**（`ceil(x*10)/10`）：截断 / 四舍五入即违约；进位只在总用料上做一次；金额/单价相关量不跟着改口径"
       - "（散文、**不计分**）配置可注入（用户追加裁定「可能得支持每个商家自定义配置」）：默认值 = 既有常量逐值不变；护栏（褶倍下限 / 正数校验 / tiers 非空）不因可配而消失，非法配置显式报错；配置沿调用链显式传递"
       - "（散文、**不计分**）公式串由**后端**（算料引擎）产出并写明所用公式（`韩褶公式：` / `褶倍数公式：`）；Java / TS 侧只搬运、不自拼（自拼 = 第二份算料逻辑）；前端 `PLEAT_CRAFTS` 门必须放行打孔（否则「打孔按倍数法算布料」在页面上永不发生）"
+      - "（散文、**不计分**）**档位 ⇒ 倍数**（issue #7649，2026-10-24 用户实测「切换倍数法的档位没有再去算用料米数」）：`formula='fullness'` ∧ 给了 `craft_tier` ⇒ 倍数取该档 `tiers[tier].fullness`（standard 2.0 / economy 1.8；ANCHOR 5.5m 双开 ⇒ 11.0 / **9.9** 米），公式串里的倍数与实际相乘**同值**；显式 `fullness` 入参**优先**；未知档位键回落标准档；档位倍数 < `min_fullness` ⇒ 与褶数法**同一条** fail-closed（不静默降档、也不静默放行）。⚠️ **旧口径留档**：改前倍数法分支只把 `craft_tier` 回显进响应、不参与计算（`test_fullness_ignores_craft_tier` 把实现当成了口径，已改判）。"
     skip_reason: "[backend-contract] 算料公式属确定性纯计算（无 LLM 行为）：判据在 pytest（tests/test_craft_calc_formula.py / tests/test_production/test_craft_calc.py）与 JUnit（CraftCalcClientTest / CraftCalcControllerTest）+ vitest（craft-calc-request.test.ts / craft-calc-formula-sync.test.ts / orders-new-craft-calc.test.tsx），不进 agent-eval 冒烟"
-    merge_log: "2026-09-19 新增（issue #4527，包 D 算料口径）：用户裁定「两种用料计算方法可选、默认韩褶 + 用料米数保留一位小数（向上进位）+ 按打开方式系数（逐片口径）」，追加裁定「韩褶用韩褶公式算布料，打孔按倍数法算布料，默认选择 2 倍」与「公式参数支持每个商家自定义配置」。落码 = `curtain_calc.py`（`formula` 入参 + `CRAFT_FORMULA`/`CRAFT_MOUNTING` 推导表 + `DEFAULT_CRAFT_CALC_CONFIG` + `ceil_to_step` + 逐片口径 + 引擎产出 `formula_text`）、`internal.py` 端点透传 `formula`/`craft`、Java 代理透传（不复制算料逻辑）、`craft-calc-request.ts`（放行打孔 + mounting/formula 随 craft 走 + 有守卫的映射副本）。**不改运行时金额口径**（金额仍 = 用料 × 单价，只用料米数按裁定向上进位到 0.1）。编号：起草用 OR-039，合并 main 时 main 已占用 OR-039/OR-040（包 B #4526）⇒ 顺延 OR-041。2026-09-19（issue #4575 用例库收口）：**判据 ①（公式推导链）改判** —— 原写「**工艺** ⇒ 公式」，而 #4566 之后 `craft` 是**由加工项派生**（`craftFromItems` 读 `processing_items.craft_hint`）⇒ 原文少了「勾加工项 ⇒ 派生 craft」这一段真实链路（没人钉「勾加工项『韩褶』⇒ 公式 `pleat`」）。改为逐段写全：勾带 `craft_hint` 的加工项 ⇒ `craftFromItems` 派生 ⇒ 引擎 `resolve_craft_rule` 推导（韩褶⇒`pleat`+`s_hook` / 打孔⇒`fullness`+`eyelet` / 未勾选⇒默认韩褶公式 / 穿杆·平幔⇒不发请求），标题与注释同步；证据指向真实测试 `craft-calc-request.test.ts` / `craft-calc-formula-sync.test.ts` / `orders-new-craft-calc.test.tsx`。**其余判据（②~⑧ + 配置可注入 + 架构口径）一字未动、无放宽。**"
+    merge_log: "2026-09-19 新增（issue #4527，包 D 算料口径）：用户裁定「两种用料计算方法可选、默认韩褶 + 用料米数保留一位小数（向上进位）+ 按打开方式系数（逐片口径）」，追加裁定「韩褶用韩褶公式算布料，打孔按倍数法算布料，默认选择 2 倍」与「公式参数支持每个商家自定义配置」。落码 = `curtain_calc.py`（`formula` 入参 + `CRAFT_FORMULA`/`CRAFT_MOUNTING` 推导表 + `DEFAULT_CRAFT_CALC_CONFIG` + `ceil_to_step` + 逐片口径 + 引擎产出 `formula_text`）、`internal.py` 端点透传 `formula`/`craft`、Java 代理透传（不复制算料逻辑）、`craft-calc-request.ts`（放行打孔 + mounting/formula 随 craft 走 + 有守卫的映射副本）。**不改运行时金额口径**（金额仍 = 用料 × 单价，只用料米数按裁定向上进位到 0.1）。编号：起草用 OR-039，合并 main 时 main 已占用 OR-039/OR-040（包 B #4526）⇒ 顺延 OR-041。2026-09-19（issue #4575 用例库收口）：**判据 ①（公式推导链）改判** —— 原写「**工艺** ⇒ 公式」，而 #4566 之后 `craft` 是**由加工项派生**（`craftFromItems` 读 `processing_items.craft_hint`）⇒ 原文少了「勾加工项 ⇒ 派生 craft」这一段真实链路（没人钉「勾加工项『韩褶』⇒ 公式 `pleat`」）。改为逐段写全：勾带 `craft_hint` 的加工项 ⇒ `craftFromItems` 派生 ⇒ 引擎 `resolve_craft_rule` 推导（韩褶⇒`pleat`+`s_hook` / 打孔⇒`fullness`+`eyelet` / 未勾选⇒默认韩褶公式 / 穿杆·平幔⇒不发请求），标题与注释同步；证据指向真实测试 `craft-calc-request.test.ts` / `craft-calc-formula-sync.test.ts` / `orders-new-craft-calc.test.tsx`。**其余判据（②~⑧ + 配置可注入 + 架构口径）一字未动、无放宽。** 2026-10-24 新增判据（issue #7649，用户逐字「切换倍数法的档位没有再去算用料米数」）：倍数法**按档位取倍数**（改前倍数法分支只回显 `craft_tier`、不参与计算）；原 `test_fullness_ignores_craft_tier` 把实现当成了口径，已随本条改判为 `test_fullness_follows_craft_tier`（旧口径留档于判据 9 正文）。"
     traces:
       tests:
         - "backend/ai-agent-service/tests/test_craft_calc_formula.py"
@@ -3551,7 +3559,7 @@ cases:
 
   - id: OR-044
     legacy_id: ""
-    title: "加工项区块的「加工费组合」明细块 —— 组合名逐字同源 + 未定价可就地改单价并随建单提交"
+    title: "加工项区块的「加工费组合」明细块 —— 组合名逐字同源 + 就地改**本单**单价（未配置 / 已配置都给入口）并随建单提交"
     domains:
       - order
       - processing
@@ -3567,13 +3575,14 @@ cases:
     expectations: []
     data_checks:
       - "判据 1·**组合名逐字同源**：块内 `fee-combination-name` = `processingFeeDetail.items.join(' + ')`（与「加工费组合」页同一写法）；组合键为空 ⇒ 显示「没有可匹配的组合（缺选配信息）」，**不渲染空组合名**（`unpricedCombinationLabel` 的既有口径）。"
-      - "判据 2·**未定价 ⇒ 就地改单价**：`fee_source='unpriced'` ∧ 组合键非空 ⇒ 出现 `fee-unit-price-override`；输入后**立即以该价重发 `feePreview`**（`mockFeePreview` 末次调用的 `items[0].processingInfo.processingFeeOverride` = 输入值），且**建单请求体**里同一键 = 同一值 —— 预览与提交**共用** `buildLineProcessingInfo`（本仓硬纪律：试算与提交必须看到同一份选配）。红证：删掉 `processingFeeOverride` 的落库 ⇒ 请求体断言红。"
+      - "判据 2·**改价入口 = 读态价 + 铅笔 → 输入 → ✓ 保存**（🔴 2026-10-24 两次改判：issue #7642 放开到已配置行；issue #7658 改交互形态 —— 用户逐字「样式改成工艺项 · 计件单价的样式」）：组合键非空 ⇒ 读态显示 `fee-unit-price` + 铅笔 `fee-price-edit`；点铅笔才出现 `fee-unit-price-override`（**未定价与已配置的行都有**），改完点 ✓（`fee-price-save`）才生效、✕（`fee-price-cancel`）⇒ 回读态且**不发请求、不落价**；保存后**立即以该价重发 `feePreview`**（`mockFeePreview` 末次调用的 `items[0].processingInfo.processingFeeOverride` = 输入值），且**建单请求体**里同一键 = 同一值 —— 预览与提交**共用** `buildLineProcessingInfo`（本仓硬纪律：试算与提交必须看到同一份选配）。红证：删掉 `processingFeeOverride` 的落库 ⇒ 请求体断言红。"
       - "判据 3·**组合键为空 ⇒ 不给入口**（没有 key 可同步）：输入框不出现、`fee-combination-no-composition` 提示在位。红证：无条件渲染输入框 ⇒ 该反向断言红。"
-      - "判据 4·**已定价行只读**：`fee-unit-price` 显示服务端价、无输入框，且不再出现「去『加工费组合』定价」链接。"
-      - "判据 5·**入口常驻 + 陈旧改价清零**（2026-09-21 独立复核 #4878 补）：① 预览转 `fee_source='manual'` 之后输入框**仍在**（打错一个字还能改）；② 勾/取消加工项（组合键变）⇒ 上一组合的 `processingFeeOverride` **被清零**，不得给新组合静默定价。红证：把任一条退回去 ⇒ 对应断言单独变红。"
-      - "判据 6·**与后端采纳条件对齐**（跨端一致性；后端侧判据见 PG-042 判据 9/10）：仅「组合未命中 ∧ 键非空 ∧ override 为正数」才采用；命中组合时**忽略** override。"
+      - "判据 4·**已配置行也允许改本单单价 + 组合价目参考价常显**（🔴 2026-10-24 改判，issue #7642；旧口径「已定价行只读」**已作废**——它的后果 = 商家配了价目之后，某一单要按谈好的价收**没有任何入口**）：未改价时 `fee-unit-price` = 命中价（`¥10.00/米`，读态只有价 + 铅笔）；改价后 `fee-unit-price` = **本单生效价**（`¥12.50/米`），另有 `fee-configured-price` 显示**组合价目** `¥10.00/米`（取服务端 `processingFeeDetail.configured_unit_price`，**不是**被改后的价）、来源列变「手动改价」、并出现 `fee-override-scope` =「本单改价，组合价目不变」；已配置行仍**不**出现「去『加工费组合』定价」链接。红证：把入口退回「仅未定价行」⇒ 本判据与 #7642 用例的入口断言红。"
+      - "判据 5·**入口常驻 + 陈旧改价清零**（2026-09-21 独立复核 #4878 补；#7658 改述）：① 预览转 `fee_source='manual'` 之后**铅笔仍在**（点开就能再改，打错一个字还能改）；② 勾/取消加工项（组合键变）⇒ 上一组合的 `processingFeeOverride` **被清零**，不得给新组合静默定价。红证：把任一条退回去 ⇒ 对应断言单独变红。"
+      - "判据 6·**与后端采纳条件对齐**（跨端一致性；后端侧判据见 PG-042 判据 9/10）：组合键非空 ∧ override 为**非负数**（`0` 也是有效价 —— #7658）⇒ 后端采用（`fee_source='manual'`、金额 = 本单价 × 米数），**不论组合是否已配置**（#7642 改判）；已配置 ⇒ 本单按改价收但**不回写**价目（`configured_unit_price` 非空 ⇒ 回写侧跳过）。"
+      - "判据 7·**`0` 是本单有效单价**（issue #7658，用户 2026-10-24：「在订单中改成 0 后，费用明细的展示费用未联动更改」）：填 `0` 保存 ⇒ 预览请求体与建单请求体都带 `processingFeeOverride=0`，**费用明细该行联动到 `13.3 米 × ¥0.00/米`**、读态价 `¥0.00/米`、来源列「手动改价」、`fee-configured-price` 仍显组合价目；**空框**才表示「不改价」（不发该键）。红证：把取值退回 `positiveOrNull`（0 丢成 null）⇒ 预览不带键、明细仍按组合价 ⇒ 红。"
     skip_reason: "[backend-contract] 下单页 ↔ 后端取价契约（admin-web vitest，无 LLM 环节，不进 agent-eval 冒烟）：断言由 frontend/admin-web/tests/unit/pages/orders-new-fee-preview.test.tsx 执行"
-    merge_log: "2026-09-21 新增（issue #4874 + #4872；用户原话「订单中加工费组合未配置的情况下，允许更改该单价，并且在加工项下面添加具体的组合名」）。背景：V77 的 92 行组合价目**全部 disabled** ⇒ 今天任何订单都取不到组合价，本条是商家**自建价目**的唯一通路（不是回落、不是默认价）。判据 5 为独立复核（#4878）补。"
+    merge_log: "2026-10-24 改判（issue #7658，用户 2026-10-24 两张截图 + 逐字「样式改成工艺项 · 计件单价的样式」「在订单中改成 0 后，费用明细的展示费用未联动更改」）：① 入口形态由「常驻输入框」改成**读态价 + 铅笔就地改**（✓ 保存 / ✕ 取消，草稿不发请求）；② **`0` 成为有效本单价**（预览/提交都带 0、费用明细联动 ¥0.00、空框才表示不改价）；③ 组合价目参考价改成独立元素 `fee-configured-price`（读态价 = 本单生效价）。旧口径留档于判据 2 / 4 / 5 正文。 2026-09-21 新增（issue #4874 + #4872；用户原话「订单中加工费组合未配置的情况下，允许更改该单价，并且在加工项下面添加具体的组合名」）。背景：V77 的 92 行组合价目**全部 disabled** ⇒ 今天任何订单都取不到组合价，本条是商家**自建价目**的唯一通路（不是回落、不是默认价）。判据 5 为独立复核（#4878）补。 2026-10-24 改判（issue #7642，用户逐字「**新增订单中的加工费组合需要允许修改**」，口径 = **只改本单单价**）：判据 2 / 4 / 6 由「未定价才可改、已定价只读」改为「组合键非空即可改（**含已配置**）」+ 组合价目参考价常显（`configured_unit_price`）+「本单改价，组合价目不变」；未配置行的建单回写（#4872）一字未动。"
     traces:
       tests:
         - "frontend/admin-web/tests/unit/pages/orders-new-fee-preview.test.tsx"
@@ -4472,6 +4481,119 @@ cases:
       tests:
         - "backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderCancelRaceRealDbTest.java"
         - "backend/admin-api/src/test/java/com/migao/admin/service/InboundOrderStatusCasMetaGuardTest.java"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
+  # OR-067（issue #7078，屏幕面幽灵字段）：订单详情「支付 / 发货 / 确认收货时间」恒 "-"，
+  # 而状态引导第 1 步的「已付款 ✓」是从 status 推出来的 ⇒ 同屏自相矛盾
+  # ==========================================================================
+  - id: OR-067
+    legacy_id: ""
+    title: "订单详情三个时刻（收款 / 发货 / 完成）显示服务端真值：paid_at 只在 pending→confirmed 边写、received_at 两条完成路都写（issue #7078）"
+    domains:
+      - order
+      - ui
+      - backend
+    tier: normal
+    tags:
+      - order
+      - order-detail
+      - phantom-field
+      - data-quality
+      - backend-contract
+      - migration
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-17 真机截图（订单 20261016769570012）：订单详情这里的状态引导和实际的不一致了？—— 引导第 1 步「已付款 ✓」，而同屏「支付时间 / 支付交易号」都是 `-`"
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 **结构：paid_at 只在 pending → confirmed 这条边上写**（回退边不得写）：`OrderService.transitionStatusAtomic` 必须同时出现「新态 confirmed」与「**期望前驱 pending**」两个限定 —— 该方法被 producing → confirmed（作废加工单退回待发货）复用，在那里写会把「支付时间」顶成当天而屏幕上看不出异常。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderPaidAndReceivedAtWriteGuardTest.java 的 `paidAtIsWrittenOnlyOnTheConfirmEdge`（含判别力自证：摘掉前驱限定 / 多出第二个写面 ⇒ 各自判红）"
+      - "判据 2·🔴 **结构：received_at 由两条完成路各写一次** —— 商家「确认收货」= `transitionStatusAtomic`（to=completed）；「发货后 N 天自动完成」**不经**该方法，必须在 `OrderMapper.autoCompleteShippedOrders` 自己的条件 UPDATE 里同写（漏写那条腿 ⇒ 那批单永远空值，且不会有别的东西变红）。执行点 = 同文件 `receivedAtIsWrittenOnBothCompletedPaths`（自证注入：把 `received_at = NOW()` 换成 `updated_at = NOW()` ⇒ 判红）"
+      - "判据 3·**详情响应必须透出三个时刻**（否则屏幕退回「恒 -」）：`OrderDetailResponse` 同时含 `private OffsetDateTime paidAt;` / `shippedAt;` / `receivedAt;`。执行点 = 同文件 `detailResponseExposesTheThreeTimestamps`（自证注入：删任一键 ⇒ 判红）"
+      - "判据 4·**屏幕面渲染真值**（用户可见的那一面）：基础信息「支付时间 / 发货时间 / 确认收货时间」三行显示服务端下发的时刻（期望值用与 `DateTimeCell` 同一份格式化口径算，不写死字符串 ⇒ 跨时区不假红）；缺值仍渲染 `-`（存量未采集 ⇒ 占位，不崩不猜）。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx 的「基础信息渲染服务端下发的 支付时间 / 发货时间 / 确认收货时间（不再是恒 -）」与存量未采集占位那条"
+      - "判据 5·**「支付交易号」行撤下**（后端无真值源 ⇒ 建了也恒 `-`）：屏幕不再渲染该行；前端类型面删掉 `paymentNo`（#6882 同款：让编译器成为类级守卫，再读即编译期红）。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx 的「不再渲染支付交易号行」"
+      - "判据 6·**迁移只搬已存在的事实**（V160）：`paid_at` 从 `finance_transactions` 的 `type='income'`（全仓唯一写入点 = `confirmPayment` 的「订单确认收款」）取最早一笔回填；`received_at` **不回填**（存量 completed 单无 durable 完成时刻）⇒ 老单该行仍为 `-`（登记，不是缺口）。迁移幂等 = `ADD COLUMN IF NOT EXISTS` + `WHERE paid_at IS NULL`。"
+    skip_reason: "[backend-contract] 结构判据（Java 源码面）+ 数据迁移 + 前端展示判据（admin-web vitest）：零 LLM 环节 ⇒ 不进 agent-eval 冒烟；机器判红通道 = traces.tests"
+    merge_log: "2026-10-17 新增（issue #7078，用户裁定 A：补真值）。取号 = `scripts/next_case_id.py OR` 现取（main 001-066）⇒ **OR-067**。病根（读源，不是漏列）：详情页读 `order.paidAt / paymentNo / shippedAt / receivedAt`，而 `OrderDetailResponse` 全文只有 `LogisticsInfo.shippedAt` 一处时间键、`orders` 表也没有对应列 ⇒ 那几行**恒 `-`**，与订单走到哪一步无关（与 #6882「屏幕面读后端未下发的字段」同类；那一包只清了行级字段）。而状态引导第 1 步的勾是 `OrderProgressSteps.getStepStates()` 从 `status` 推出来的 ⇒「已付款 ✓」与「支付时间 -」必然同屏自相矛盾。修法：① V160 加 `paid_at` / `received_at` 两列（`shipped_at` 是 V148 已有列，本单只**透出**）；② 写入点 = `transitionStatusAtomic` 的 pending→confirmed 边（用期望前驱限定，避开回退边）与 completed 边 + `autoCompleteShippedOrders` 的 SQL；③ `OrderDetailResponse` 补三键（`BeanUtils` 同名带出，不另立第二份口径）；④ 支付交易号行撤下、前端类型面删 `paymentNo`。边界：存量 completed 单不回填 `received_at`；自动完成的单 `received_at` = 自动完成时刻（列注释与判据里写明）。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderPaidAndReceivedAtWriteGuardTest.java"
+        - "frontend/admin-web/tests/unit/pages/order-detail.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
+  # OR-068（issue #7110，屏幕面幽灵字段的**类级收口**）：订单详情「待付款」那个
+  # 「支付倒计时」读的 `paymentDeadline` 后端从不下发（无列 / 无写入点 / 无超时规则）
+  # ⇒ 从未启动；本包撤下 UI + 类型键，并落「读面键 ⊆ DTO 字段」类级守卫
+  # ==========================================================================
+  - id: OR-068
+    legacy_id: ""
+    title: "订单详情撤下「支付倒计时」（其 paymentDeadline 后端从不下发、倒计时从未启动）+ 落「读面键 ⊆ OrderDetailResponse」类级守卫（issue #7110）"
+    domains:
+      - order
+      - ui
+      - backend
+    tier: normal
+    tags:
+      - order
+      - order-detail
+      - phantom-field
+      - class-guard
+      - backend-contract
+      - frontend
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-17「这个继续做 #7110」—— 该单由 #7078 的边界声明登记而来（同一个病第二次长出来）"
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 **类级守卫：订单详情读面键必须逐个有后端来源** —— `OrderDetail.tsx` 里每个 `order.<键>` / `order?.<键>`（含解构）都必须是 `OrderDetailResponse` 的**顶层字段**，或登记进 `EXEMPT` **并写明理由**；豁免表 fail-closed（空理由 / 已不再被读取的陈旧条目 ⇒ 判红）；解析不许空转（字段数 / 读点数**下限**断言 —— 正则失配必须红，不许在「零读点」上静默变绿）。执行点 = tests/unit_ci_workflows/test_order_detail_reads_have_backend_source.py（A/B/C/D 四条；D 含四种坏形态注入 + 「只改注释 ⇒ 不红」负控）。口径依据：本仓 Jackson 未开 SNAKE_CASE 且该 DTO 无 `@JsonProperty` 改名 ⇒ Java 字段名 = 下发 JSON 键。"
+      - "判据 2·**屏幕面不再渲染「支付倒计时」**（撤的是那一行，不是整块）：待付款订单即使**注入** `paymentDeadline` 也不出现倒计时文案，而「待买家付款」与「修改订单 / 关闭订单 / 打印报价单」入口**仍在**。执行点 = frontend/admin-web/tests/unit/pages/order-detail.test.tsx 的「待付款订单不渲染「支付倒计时」（后端无该真值，issue #7110）」"
+      - "判据 3·**e2e 断言同口径**（防「不先补真值源就把倒计时加回来」）：两条 spec 的 mock 去掉 `paymentDeadline`，断言由「应显示支付倒计时」改为「不再渲染支付倒计时」。执行点 = tests/e2e/specs/orders/order-detail.spec.ts 与 tests/e2e/specs/orders/screen-product-identity.spec.ts（⚠️ `tests/e2e/specs/orders/**` 不在 CI 的 demo manifest 里 ⇒ 这两条是**同口径登记**，机器判红由判据 1 与 2 承担）"
+      - "判据 4·**类型面撤键**：`frontend/admin-web/src/types/index.ts` 不再有 `paymentDeadline`（再读即编译期红 —— 编译器当类级守卫，同 #7078 撤 `paymentNo` 的处理）。"
+      - "判据 5·**边界（照实登记）**：本守卫只覆盖 `OrderDetail.tsx` 一份文件（历史上两次事故都在这里），**不是**全仓前端↔后端字段对账；只判**存在性**（字段存在但值恒 null 判不了，那一半归 #6890 的读面键台账 + §15.7 真机验收）；判不了 `order?.[动态键]` / `as any` 强转后的读取。"
+    skip_reason: "[backend-contract] 结构判据（TSX↔DTO 静态对账 + 前端展示判据）：零 LLM 环节 ⇒ 不进 agent-eval 冒烟；机器判红通道 = traces.tests"
+    merge_log: "2026-10-17 新增（issue #7110）。取号 = `scripts/next_case_id.py OR` 现取（main 001-067）⇒ **OR-068**。病根（读源）：`OrderDetail.tsx` 的「待付款倒计时」前置判断是 `displayStatus !== 'pending_payment' || !order.paymentDeadline` —— 而 `paymentDeadline` 在 `OrderDetailResponse` 里**根本不存在**（`orders` 表也无该列、全仓无写入点、无「超时未付 ⇒ 自动取消」规则）⇒ 恒为假 ⇒ **倒计时从未渲染过**（连「--:--」都不会出现）。它与 #7078 是**同一个病第二次长出来**（屏幕面读后端不存在的键；可选键谁都能加，运行时读到 undefined 既不报错也不渲染 ⇒ 编译器与测试都不拦）。修法：① 撤下倒计时 UI（`calcCountdown` / state / 定时器 / prop / JSX 那一行）与 `Order.paymentDeadline` 类型键；② 两条 e2e spec 的 mock 与断言同口径；③ **类级固化** = 新守卫 test_order_detail_reads_have_backend_source.py（真语料零漂移 + 豁免 fail-closed + 解析不空转 + 判别力/负控）。边界：本页 20 个读点在撤下后**零豁免**；若产品日后真要「支付截止」，那是**新功能**（先补后端真值源再回加键），不是本单的缺口。"
+    traces:
+      tests:
+        - "tests/unit_ci_workflows/test_order_detail_reads_have_backend_source.py"
+        - "frontend/admin-web/tests/unit/pages/order-detail.test.tsx"
+      ci:
+        - pr-check.yml
+      verifies: []
+
+  # ==========================================================================
+  # OR-069（issue #7633，类级缺陷）：待付款订单也能先有作业单（#7626）⇒ 删单不再无脑放行
+  # ==========================================================================
+  - id: OR-069
+    legacy_id: ""
+    title: "删除待付款订单前先查活跃作业单：命中则 422 并给出作业单号（否则作业单悬挂 ⇒ 作业看板对已删父订单扇出 404）(issue #7633)"
+    domains:
+      - order
+      - processing-order
+      - backend
+    tier: normal
+    tags:
+      - order
+      - processing-order
+      - orphan
+      - backend-contract
+    truths_ref: []
+    user_inputs:
+      - "用户 2026-10-24 截图：作业看板一进页面就弹「请求的资源不存在」（可叠多层），列表里出现订单号 / 客户都是「—」的作业单行；点「刷新」仍复现"
+    expectations: []
+    data_checks:
+      - "判据 1·🔴 **有活跃作业单 ⇒ 拒绝删除**（会红）：`OrderService.deleteOrder` 在状态闸门之后、`orderMapper.deleteById` 之前调 `processingOrderMapper.selectActiveByOrderId(order.getId(), order.getTenantId())`；命中 ⇒ `BusinessException.validationError`，文案含**作业单号**（可归因到具体那张单）且含「**作废**」这个动作词（用户 2026-10-24 口径：订单不做物理删除，出口是作废；实测文案 =「订单已生成作业单（<单号>），不能删除；请先作废该作业单」），订单与明细都不得被软删。`deleteById` 仍是 `@TableLogic` 逻辑删除（本单未改成物理删）。执行点 = backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java 的 `deleteOrder_RejectedWhenActiveProcessingOrderExists`（红证：摘掉该闸门 ⇒ 本条不抛 ⇒ 红；实测改前 = 该用例不抛异常）"
+      - "判据 2·**负控：无作业单的待付款单仍可删**（闸门不许把既有能力打成一律 422）。执行点 = 同文件 `deleteOrder_SucceedsWhenNoActiveProcessingOrder`"
+      - "判据 3·**覆盖范围（照实登记）**：`selectActiveByOrderId` 的活跃集 = `deleted = 0 AND status IN ('generated','issued','in_processing','completed')`（backend/admin-api/src/main/java/com/migao/admin/mapper/ProcessingOrderMapper.java，租户由拦截器注入）⇒ **已取消（cancelled）/ 已软删**的作业单不挡删单 —— 那正是「先作废该作业单再删单」的合法路径。"
+    skip_reason: "[backend-contract] Java 单测契约（零 LLM 环节）⇒ 不进 agent-eval 冒烟；机器判红通道 = traces.tests"
+    merge_log: "2026-10-24 新增（issue #7633）。取号 = `scripts/next_case_id.py OR` 现取（main 001-068）⇒ **OR-069**。病根：`ProcessingOrderService.GENERATABLE_ORDER_STATUSES` 自 #7626 起 = {pending, confirmed} ⇒ 待付款订单也能先有作业单，而 `deleteOrder` 的准入只有「状态必须是 pending」一道闸 ⇒ 删单成功、作业单悬挂（看板对已删父订单扇出 404）。修法 = 抄同文件 `updatePendingOrderContent` 的正面先例（同一 `selectActiveByOrderId` 口径），在状态闸门与 `deleteById` 之间加一道闸。"
+    traces:
+      tests:
+        - "backend/admin-api/src/test/java/com/migao/admin/service/OrderServiceTest.java"
       ci:
         - pr-check.yml
       verifies: []

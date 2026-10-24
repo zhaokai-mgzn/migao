@@ -98,6 +98,8 @@ _NO_ACTION_PARAM_TOOL_ACTION: Dict[str, str] = {
     "aftersale_create": "create",
     "product_update": "update",
     "sku_update": "update",
+    # 算料配置变更（issue #7514）：单一动作 = 改配置里点名的键，无 `action` 参数。
+    "craft_calc_config_update": "update",
     # human_handoff 建的是**投诉工单**（description：「自动创建投诉工单 → 通知管理员」）
     # ⚠️ 该工具**已按用户裁定退场（模型不可达，见 `create_default_registry` 的注册行注释）**，
     #    但本条目**保留**：本表的判据口径是「源码里 `read_only = False` 的工具」
@@ -651,6 +653,10 @@ def create_default_registry() -> ToolRegistry:
     """
     from app.tools.product_search import ProductSearchTool
     from app.tools.product_detail import ProductDetailTool
+    # 营销海报（issue #7351）：商品事实 + 操作员确认的文案 → 海报卡载荷（纯只读）
+    from app.tools.marketing_poster import MarketingPosterTool
+    # 商品图生成（issue #7541）：样图（商品主图）→ 图生图 → 商品图卡载荷（纯只读，不落库）
+    from app.tools.product_image_generate import ProductImageGenerateTool
     from app.tools.logistics_track import LogisticsTrackTool
     from app.tools.customer_logistics_track import CustomerLogisticsTrackTool
     from app.tools.knowledge_search import KnowledgeSearchTool
@@ -709,6 +715,9 @@ def create_default_registry() -> ToolRegistry:
     from app.tools.operation_catalog_query import OperationCatalogQueryTool
     from app.tools.briefing_query import BriefingQueryTool
     from app.tools.craft_calc_config_query import CraftCalcConfigQueryTool
+    # 算料配置**写面**（issue #7514，用户 2026-10-23 裁定「黄金策要能支持算料配置的创建和变更」）：
+    # A 档可逆写（改单键/多键 + 逐键前后对照）—— `read_only=False` + `requires_confirmation=True`。
+    from app.tools.craft_calc_config_update import CraftCalcConfigUpdateTool
     from app.tools.processing_order_set_query import ProcessingOrderSetQueryTool
     # 工艺配置读面缺口/异常/卡点/加工费组合（issue #4923）：6 个此前零覆盖的**只读**端点。
     from app.tools.craft_config_query import CraftConfigQueryTool
@@ -727,6 +736,12 @@ def create_default_registry() -> ToolRegistry:
     # 注册所有 Tool
     registry.register(ProductSearchTool())
     registry.register(ProductDetailTool())
+    # 营销海报（issue #7351）：只读、仅 B 端；可达性由 persona 的 skill 工具集决定
+    # （黄金策 product / general；C 端一律不绑）。
+    registry.register(MarketingPosterTool())
+    # 商品图生成（issue #7541）：只读、仅 B 端；可达性由 persona 的 skill 工具集决定
+    # （黄金策 product / general；C 端一律不绑）。
+    registry.register(ProductImageGenerateTool())
     registry.register(LogisticsTrackTool())
     registry.register(CustomerLogisticsTrackTool())
     registry.register(KnowledgeSearchTool())
@@ -760,7 +775,7 @@ def create_default_registry() -> ToolRegistry:
     registry.register(CategoryManageTool())
     registry.register(ProcessingItemManageTool())
     registry.register(ProductUpdateTool())
-    # 批量更新（issue #5314 的 Agent 侧）：批量改价 / 批量上下架 + 撤销，走冻结契约的
+    # 批量更新（issue #5314 的 Agent 侧）：批量改价 / 批量库存调整 + 撤销，走冻结契约的
     # `/api/admin/agent/batches` 四个端点。注册表只决定「工具存在」；可达性由 persona 的
     # skill 工具集决定（黄金策 product；C 端一律不绑 —— 批量写是商户员工能力）。
     registry.register(ProductBatchUpdateTool())
@@ -796,6 +811,9 @@ def create_default_registry() -> ToolRegistry:
     registry.register(OperationCatalogQueryTool())
     registry.register(BriefingQueryTool())
     registry.register(CraftCalcConfigQueryTool())
+    # 算料配置写面（issue #7514）：只绑 `general`（A 档补回域由
+    # tests/unit_ci_workflows/test_mibao_b_end_readonly.py 的 A_TIER_SKILLS 机械钉住）。
+    registry.register(CraftCalcConfigUpdateTool())
     registry.register(ProcessingOrderSetQueryTool())
     registry.register(CraftConfigQueryTool())
 
