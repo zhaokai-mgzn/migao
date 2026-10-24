@@ -8,6 +8,7 @@ import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProcessingOrderSet;
 import com.migao.admin.entity.ProcessingPositionOperation;
 import com.migao.admin.entity.ProcessingSetPartToken;
+import com.migao.admin.entity.Product;
 import com.migao.admin.entity.ProductAttribute;
 import com.migao.admin.mapper.CuttingHeightConfigMapper;
 import com.migao.admin.mapper.OrderItemMapper;
@@ -17,6 +18,7 @@ import com.migao.admin.mapper.ProcessingOrderSetMapper;
 import com.migao.admin.mapper.ProcessingPositionOperationMapper;
 import com.migao.admin.mapper.ProcessingSetPartTokenMapper;
 import com.migao.admin.mapper.ProductAttributeMapper;
+import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductionWorkLogMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,6 +29,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -134,6 +137,9 @@ class PositionDetailFieldsTest {
     private CuttingHeightConfigMapper cuttingHeightConfigMapper;
     @Mock
     private ProductAttributeMapper productAttributeMapper;
+    /** 商品表（**只读**，issue #7636）：工人屏「货号」= 商品货号 `products.sku_code`。 */
+    @Mock
+    private ProductMapper productMapper;
 
     private ProductionService productionService;
     private ProductionScanService scanService;
@@ -146,6 +152,12 @@ class PositionDetailFieldsTest {
         // `fillDetailKeys` / `positionRow`）—— mock 掉它们等于把被测口径换成桩（「绿了但没跑」）。
         productionService = new ProductionService(processingOrderMapper, positionOperationMapper,
                 workLogMapper, orderMapper, orderItemMapper, clientRequestIdService);
+        // 商品货号（issue #7636）：`ProductMapper` 是**字段注入**的只读依赖（本类构造签名被 21+ 处
+        // `new ProductionService(...)` 装配，不为一个只读键改构造）⇒ 这里反射挂上，避免「绿了但没跑」
+        // （不挂 = 该键恒 null ⇒ 下面的 `product_code` 值断言会红，不是被跳过）。
+        ReflectionTestUtils.setField(productionService, "productMapper", productMapper);
+        when(productMapper.selectBatchIds(any())).thenReturn(List.of(
+                Product.builder().id("p-1").tenantId(TENANT).skuCode("2659").build()));
         ProductionStuckPointService stuckPointService = new ProductionStuckPointService(
                 productionService, positionOperationMapper, processingOrderSetMapper, 4.0);
         scanService = new ProductionScanService(setPartTokenMapper, processingOrderSetMapper, processingOrderMapper,
@@ -180,7 +192,9 @@ class PositionDetailFieldsTest {
         // 键集 ⊇ 既有四键 + 全键集（`operations` 这类编排键由读面按需追加 ⇒ 不断言"无多余键"）
         assertThat(cloth.keySet()).containsAll(expectedScanKeys());
         // 值逐字来自订单行（同一份 `orderSpecByItemId` 取数）
-        assertThat(cloth.get("sku")).isEqualTo("MG-006901");
+        // 货号 = **商品货号**（`products.sku_code`，issue #7636）；SKU 码不再下发到工人两面
+        assertThat(cloth.get("product_code")).isEqualTo("2659");
+        assertThat(cloth).doesNotContainKey("sku");
         assertThat(cloth.get("color_name")).isEqualTo("雾霾蓝");
         assertThat(cloth.get("door_width")).isEqualTo("2.8");
         assertThat(cloth.get("selling_method")).isEqualTo("bulk_cut");
@@ -189,8 +203,8 @@ class PositionDetailFieldsTest {
         assertThat(cloth.get("pleat_count")).isEqualTo(48);
         assertThat(cloth.get("per_panel_pleats")).isEqualTo(24);
         assertThat(cloth.get("panels")).isEqualTo(2);
-        assertThat(cloth.get("formula")).isEqualTo("窗宽×褶倍÷门幅");
-        assertThat(cloth.get("craft_tier")).isEqualTo("标准");
+        // 三键已按 issue #7636 删除（用户 2026-10-24 逐字：只印实际褶倍 / 删用料公式与算料档位）
+        assertThat(cloth).doesNotContainKeys("fullness", "formula", "craft_tier");
         assertThat(cloth.get("special_options")).isEqualTo(List.of("加线", "包边"));
         assertThat(cloth.get("style")).isEqualTo("拼色");
         assertThat(cloth.get("has_pattern")).isEqualTo(true);
@@ -258,7 +272,9 @@ class PositionDetailFieldsTest {
                 "curtain_type", "open_count", "cutting_mode", "is_shaped",
                 "sku", "color_name", "door_width", "selling_method",
                 "craft_tier", "special_options", "component_role",
-                "has_pattern", "pattern_repeat", "formula_text", "processing_meters");
+                "has_pattern", "pattern_repeat", "formula_text", "processing_meters",
+                // 货号 = 工人面的 canonical 键；商家面只有 camelCase 兼容支（`productCode`）
+                "product_code");
         // 既有键的**值与来源**一字未变（本面取自 `order_items` 列 + 既有快照键）
         assertThat(cloth.get("width")).isEqualTo(new BigDecimal("2.92"));
         assertThat(cloth.get("craft")).isEqualTo("韩褶");
@@ -307,7 +323,8 @@ class PositionDetailFieldsTest {
         assertThat(cloth.get("cutting_mode")).isEqualTo("定高买宽");
         assertThat(cloth.get("fullness")).isEqualTo(new BigDecimal("2.0"));
         // 新增键（此前机台屏**没有**的组 1 / 组 3 / 组 5）
-        assertThat(cloth.get("sku")).isEqualTo("MG-006901");
+        assertThat(cloth.get("product_code")).isEqualTo("2659");
+        assertThat(cloth).doesNotContainKey("sku");
         assertThat(cloth.get("color_name")).isEqualTo("雾霾蓝");
         assertThat(cloth.get("door_width")).isEqualTo("2.8");
         assertThat(cloth.get("fullness_actual")).isEqualTo(new BigDecimal("2.35"));
