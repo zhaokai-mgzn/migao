@@ -15,6 +15,9 @@
    （429 / `AllocationQuota` / `Throttling` / free tier）与**模型不可用**
    （ModelNotFound / UnsupportedModel / HTTP 400 InvalidParameter）才切下一个 —— 其它错误直接上抛，
    不把「提示词写错了」伪装成「换个模型试试」。
+   🔴 **凭证 / 权限类错误（401 `InvalidApiKey` / 403 `AccessDenied`）例外：一次都不轮换**
+   —— 账号级问题，同一个 Key 换模型还是 401，轮换只白烧请求与时间（2026-10-25 线上实测）。
+   它归入 `ImageGenerationAuthError`（`ImageGenerationUnavailable` 的子类 ⇒ 对外 503 语义、不可重试）。
    ⚠️ **当前配置（用户 2026-10-24 裁定，issue #7661，见 app/config.py 的 `IMAGE_GEN_MODELS`）**：
    `qwen-image-3.0-pro`，端点 = MaaS token-plan 的原生多模态路径。历史坑（保留以免重犯）：
    2026-10-23 曾切到图片翻译模型（不接图生图载荷，issue #7341/#7538）⇒ 全链不可用时**必须**报
@@ -45,6 +48,19 @@ class ImageGenerationUnavailable(ImageGenerationError):
 
 class ImageGenerationQuotaExceeded(ImageGenerationError):
     """配置的所有模型都因配额不可用（对外 503 + 可行动 suggestion）。"""
+
+
+class ImageGenerationAuthError(ImageGenerationUnavailable):
+    """生图服务**凭证 / 权限**失效（HTTP 401 `InvalidApiKey` / 403 `AccessDenied`）。
+
+    归到「不可用」这一族（对外 503 语义、**不可重试**），而不是「这次没成功、再试一次」：
+    Key 无效时重试永远不会成功（2026-10-25 线上实测：现役 MaaS key 打真实端点回 401
+    `InvalidApiKey`，端点可达）。与「配额用尽」也**不冒充** —— 等额度解决不了凭证问题。
+
+    为什么不复用父类直接抛：本类在 `generate_product_image` 的轮换循环里**立即上抛**
+    （账号级问题，换模型同一个 Key 还是 401），而普通 `ImageGenerationUnavailable`
+    （模型接不了这类请求）仍需继续试下一个模型。
+    """
 
 
 #: 按商品名里的品类给「主图」一个**贴近真实用途**的场景（不按名称硬编码商品，只选场景）。
@@ -126,6 +142,23 @@ def _is_model_unavailable(data: Dict, status: int) -> bool:
     return status == 400 and "InvalidParameter" in code
 
 
+def _is_auth_failure(data: Dict, status: int) -> bool:
+    """凭证 / 权限失败 ⇒ **账号级、不可重试**（也不许换模型重试）。
+
+    形态来源 = 2026-10-25 线上实测：现役 MaaS key 打真实端点回
+    `HTTP 401 {"code": "InvalidApiKey", "message": "Invalid API-key provided."}`（0.48s，端点可达）。
+    这类错误此前落进「其它错误」分支 ⇒ 对外等价于「这次没成功，**再生成一次**」，
+    而真实动作是「平台侧换 Key」⇒ 给商家的方向正好反了（重试永远不会成功）。
+    """
+    code = str(data.get("code") or "")
+    message = str(data.get("message") or "")
+    if status in (401, 403):
+        return True
+    return any(k in code or k in message for k in (
+        "InvalidApiKey", "invalid_api_key", "Unauthorized", "AccessDenied", "SignatureDoesNotMatch",
+    ))
+
+
 def _extract_image(data: Dict) -> Optional[str]:
     message = ((data.get("output") or {}).get("choices") or [{}])[0].get("message") or {}
     content = message.get("content")
@@ -157,6 +190,11 @@ async def _request_one(model: str, prompt: str, image_url: str, client: httpx.As
         data = {"message": resp.text[:300]}
 
     if resp.status_code != 200 or data.get("output") is None:
+        # 凭证/权限优先判：账号级问题既不是配额、也不该被当成「这次运气不好」（顺序有意义）
+        if _is_auth_failure(data, resp.status_code):
+            raise ImageGenerationAuthError(
+                f"{model}: 生图凭证无效（HTTP {resp.status_code}）："
+                f"{data.get('code') or data.get('message')}")
         if _is_quota(data, resp.status_code):
             raise ImageGenerationQuotaExceeded(f"{model}: {data.get('code') or data.get('message')}")
         if _is_model_unavailable(data, resp.status_code):
@@ -200,6 +238,9 @@ async def generate_product_image(
                 url = await _request_one(model, prompt, image_url, http_client)
                 logger.info(f"[image-gen] ok model={model} kind={kind} product={product_name!r}")
                 return {"image_url": url, "model": model}
+            except ImageGenerationAuthError:
+                # 账号级凭证问题：换 `IMAGE_GEN_MODELS` 里下一个模型还是 401 ⇒ 不空转、立即上抛
+                raise
             except ImageGenerationQuotaExceeded as e:
                 quota_hit = True
                 reasons.append(str(e))
