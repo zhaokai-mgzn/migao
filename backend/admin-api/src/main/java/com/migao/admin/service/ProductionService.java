@@ -11,6 +11,7 @@ import com.migao.admin.entity.ProcessingOrder;
 import com.migao.admin.entity.ProcessingOrderSet;
 import com.migao.admin.entity.ProcessingPositionOperation;
 import com.migao.admin.entity.ProcessingSetPartToken;
+import com.migao.admin.entity.Product;
 import com.migao.admin.entity.ProductionWorkLog;
 import com.migao.admin.entity.WorkerReportAudit;
 import com.migao.admin.exception.BusinessException;
@@ -19,6 +20,7 @@ import com.migao.admin.mapper.OrderMapper;
 import com.migao.admin.mapper.ProcessingOrderMapper;
 import com.migao.admin.mapper.ProcessingPositionOperationMapper;
 import com.migao.admin.mapper.ProcessingSetPartTokenMapper;
+import com.migao.admin.mapper.ProductMapper;
 import com.migao.admin.mapper.ProductionWorkLogMapper;
 import com.migao.admin.mapper.WorkerReportAuditMapper;
 import com.migao.admin.worker.WorkerIdentity;
@@ -193,6 +195,16 @@ public class ProductionService {
      */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private ProcessingSetPartTokenMapper setPartTokenMapper;
+
+    /**
+     * 商品表（**只读**，issue #7636）：工人屏「货号」= 商品货号 {@code products.sku_code}，
+     * 而 {@code order_items.sku_code} 是 SKU 码（颜色 × 门幅）—— 两者不是一件事。
+     *
+     * <p>字段注入理由同上面几个只读依赖：本类构造签名被 21+ 处 {@code new ProductionService(...)} 装配，
+     * 加构造参数会把它们全改一遍。未装配时降级成「不显示货号」并打 WARN（见 {@link #productCodesOf}）。</p>
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ProductMapper productMapper;
 
     /**
      * 印刷品上的码的稳定域名（issue #4946；设计 {@code docs/design/worker-h5-scan-and-report.md}
@@ -868,9 +880,24 @@ public class ProductionService {
         if (items == null) {
             return byId;
         }
+        // 商品货号（issue #7636）：`order_items.sku_code` 是 **SKU 码**（颜色 × 门幅，
+        // `ProductService#generateSkuCode` 的 `{货号}-{色序2位}-{门幅}`，如 `2659-01-28`），
+        // 商品级货号 = `products.sku_code`（订单详情的 `OrderItemResponse.skuCode` 也取自它，issue #386）。
+        // 用户 2026-10-24 逐字「货号实际是2659」⇒ 工人屏「货号」必须印这一份。
+        Map<String, String> productCodeByProductId = productCodesOf(items);
         for (OrderItem item : items) {
             Map<String, Object> spec = new LinkedHashMap<>();
             spec.put("product_name", item.getProductName());
+            // 缺值不写键 ⇒ 读面 null ⇒ 工人屏整行不渲染（与 roll_count 同一口径，不回落 SKU 码）。
+            // 落的是**快照源键** `productCode`（camelCase，与同一批 `colorName` / `doorWidth` 同族）——
+            // 下发键 `product_code` 由 `PositionDetailFields.SNAPSHOT_SOURCE_KEYS` 翻译一次。
+            // 🔴 `product_id` 可为空（存量明细）⇒ 空键必须**显式短路**：`Map.of().get(null)` 抛 NPE
+            // （不可变表对空键的语义，issue #6219 同一族坑）。
+            String productId = item.getProductId();
+            String productCode = productId == null ? null : productCodeByProductId.get(productId);
+            if (productCode != null) {
+                spec.put("productCode", productCode);
+            }
             // 宽/高：V63 列（下单页必填，issue #4420 起真的会写）
             spec.put("width", item.getWidth());
             spec.put("height", item.getHeight());
@@ -906,6 +933,44 @@ public class ProductionService {
             byId.put(item.getId(), spec);
         }
         return byId;
+    }
+
+    /**
+     * 商品货号（{@code products.sku_code}）按商品 id 索引 —— **只读**，只服务「工人屏货号」这一面
+     * （issue #7636，用户 2026-10-24 逐字「货号实际是2659」）。
+     *
+     * <p>为什么要回查商品：{@code order_items.sku_code} 是 <b>SKU 码</b>（{@code {货号}-{色序2位}-{门幅}}，
+     * 颜色 × 门幅的组合），商品级货号只在 {@code products.sku_code} 上（订单详情
+     * {@code OrderItemResponse.skuCode} 也取自它，issue #386）。不在订单行上加列、不在前端切字符串
+     * （切字符串 = 第二份会漂的口径）。</p>
+     *
+     * <p>缺值口径：无 {@code product_id} / 商品已删 / 货号为空 ⇒ <b>不放进结果</b>（调用方不写键）
+     * ⇒ 工人屏按既有「缺值整行不渲染」处理 —— <b>不回落</b>成 SKU 码（那正是本单要治的错值）。</p>
+     *
+     * <p>未装配（既有单测直接 {@code new ProductionService(...)}，本类构造签名被 21+ 处装配依赖）⇒
+     * 返回空表并打 WARN：只读面降级成「不显示货号」（不静默、不影响其它键）。</p>
+     */
+    private Map<String, String> productCodesOf(List<OrderItem> items) {
+        if (productMapper == null) {
+            log.warn("ProductMapper 未装配 —— 工人屏不显示商品货号（issue #7636，只读面降级）");
+            return Map.of();
+        }
+        Set<String> productIds = new LinkedHashSet<>();
+        for (OrderItem item : items) {
+            if (StringUtils.hasText(item.getProductId())) {
+                productIds.add(item.getProductId());
+            }
+        }
+        if (productIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> byProductId = new LinkedHashMap<>();
+        for (Product product : productMapper.selectBatchIds(productIds)) {
+            if (product != null && product.getId() != null && StringUtils.hasText(product.getSkuCode())) {
+                byProductId.put(product.getId(), product.getSkuCode().trim());
+            }
+        }
+        return byProductId;
     }
 
     /**
